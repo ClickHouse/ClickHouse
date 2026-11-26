@@ -1,0 +1,155 @@
+---
+title: '安全的组织内网络连接'
+sidebarTitle: '组织内网络连接'
+hidden: false
+description: '借助 ClickHouse Cloud 私有网络连接，使用 remoteSecure() 从一个 ClickHouse Cloud 服务查询同一组织、同一区域内的另一个服务，即使源服务启用了 PrivateLink 或配置了严格的 IP 访问列表也同样适用'
+keywords: ['remoteSecure', 'service to service', 'cross service', 'private networking', 'privatelink', 'ip access list', 'named collection', 'organization network connectivity']
+doc_type: 'guide'
+---
+
+import { PrivatePreviewBadge } from '/snippets/zh/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
+
+<PrivatePreviewBadge />
+
+借助安全的组织内网络连接，一个 ClickHouse Cloud 服务可以通过 [`remoteSecure()`](/zh/reference/functions/table-functions/remote) 查询同一组织和区域内的另一个服务。流量始终在 ClickHouse Cloud 的私有网络内传输，不经过公共互联网，因此即使被读取的服务已通过 [PrivateLink](/zh/products/cloud/guides/security/connectivity/private-networking/aws-privatelink) 或 [IP 访问列表](/zh/products/cloud/guides/security/connectivity/setting-ip-filters)限制了访问，该功能依然可用。
+
+适用场景：
+
+* 您的服务仅允许通过 PrivateLink 或严格的 IP 访问列表访问，因此无法通过公网端点使用 `remoteSecure()`。
+* 您的安全要求不允许服务之间的流量经过公共互联网。
+* 您的服务之间未通过[仓库](/zh/products/cloud/features/infrastructure/warehouses) (计算与计算分离) 共享数据，但需要跨服务查询。
+
+<Note>
+  此功能目前处于私有预览阶段，每个连接均由我们的团队为您配置。如需加入，请联系您的 ClickHouse account team 或 [ClickHouse 支持团队](https://clickhouse.com/support/program)。
+</Note>
+
+## 工作原理 {#how-it-works}
+
+本指南使用以下两个术语：
+
+* **Producer**：存放您要读取的表的服务。
+* **Consumer**：运行 `remoteSecure()` 从 Producer 读取数据的服务。
+
+ClickHouse Cloud 会建立一条从 Consumer 到 Producer 的单向连接。Consumer 使用由 ClickHouse Cloud 管理的证书进行身份验证，Producer 则通过标准的 `GRANT` 控制 Consumer 可以读取哪些表。整个过程无需创建或轮换任何密码。
+
+查询必须通过以下三项检查：
+
+1. **网络**：只有已建立连接的 Consumer 才能通过私有网络访问 Producer。
+2. **身份**：Consumer 使用与其主机名绑定的证书进行身份验证。
+3. **表权限**：Producer 通过 `GRANT` 决定 Consumer 可以读取哪些表。读取任何未授权的表都会返回访问被拒绝错误。
+
+## 前置条件 {#prerequisites}
+
+* 两个服务位于同一 ClickHouse Cloud 组织、同一云服务提供商和同一区域。例如，位于 AWS `us-east-2` 的服务无法连接到位于 AWS `us-west-2` 的服务。在创建连接之前，我们的团队会确认您的服务是否符合条件。
+* 两个服务均不属于受监管 (HIPAA 或 PCI) 服务。
+* 您已获取两个服务的服务 ID 和主机名。这两项信息均可在控制台中各服务的 **设置** 页面上找到。
+* 您能够以管理员身份在两个服务上运行 SQL。
+
+<Tip>
+  建议先使用测试服务，以免影响生产环境。创建首个连接时，Consumer 会进行一次滚动重启。
+</Tip>
+
+## 建立连接 {#setup}
+
+### 向我们提供服务详情 {#send-service-details}
+
+私有预览期间，控制台 UI 暂不支持管理连接。请将以下信息发送给您的 ClickHouse 联系人：
+
+* 生产者和消费者的服务 ID。请注明哪个是生产者、哪个是消费者，以及是否需要双向查询。
+* 可以对消费者执行滚动重启的时间。之后再建立连接时不会触发任何重启。
+
+### ClickHouse 创建连接 {#clickhouse-creates-connection}
+
+我们会确认两个服务均符合条件，然后创建连接。接着，我们会在 Producer 服务上创建一个名为 `rt_<Consumer service ID>`、通过证书进行身份验证的用户，并将该用户的确切名称发送给您。
+
+### 授予消费者对表的访问权限 {#grant-access}
+
+您可以运行下方的测试查询，也可以在生产者上为您自己的表授予 select 权限。
+
+```sql
+CREATE TABLE default.rs_demo_events (id UInt32, val String) ENGINE = MergeTree ORDER BY id;
+
+INSERT INTO default.rs_demo_events VALUES (1, 'hello'), (2, 'from the Producer');
+
+GRANT SELECT ON default.rs_demo_events TO `rt_<Consumer service ID>`;
+
+CREATE TABLE default.rs_demo_no_grant (id UInt32) ENGINE = MergeTree ORDER BY id;
+```
+
+### 从 Consumer 查询 {#query-from-consumer}
+
+在 Consumer 上运行以下语句。我们将为您启用目前处于私有预览阶段的命名集合功能。以下 SQL 会创建一个指向 Producer 的[命名集合](/zh/concepts/features/configuration/server-config/named-collections)，然后通过它进行查询。请使用控制台中显示的 Producer 主机名，即您直接连接该服务时所用的主机名。
+
+```sql
+CREATE NAMED COLLECTION IF NOT EXISTS my_producer AS
+    host = '<Producer hostname>',
+    port = 9440,
+    user = 'rt_<Consumer service ID>',
+    database = 'default';
+
+SELECT * FROM remoteSecure(my_producer, table = 'rs_demo_events');
+
+SELECT * FROM remoteSecure(my_producer, table = 'rs_demo_no_grant');
+```
+
+如果您运行了测试查询，会发现第一个查询成功返回了结果，而第二个查询则因权限不足而报出访问被拒绝错误。
+
+## 限制 {#limitations}
+
+### 适用范围 {#scope}
+
+* 查询为只读。Consumer 可以通过 `remoteSecure()` 执行 `SELECT`，但无法向 Producer 执行 `INSERT`。
+* 两个服务必须位于同一组织、同一云服务提供商和同一区域内。跨区域和跨组织连接功能已在规划中。
+* 每个连接仅对应一个服务。如果您使用了[仓库](/zh/products/cloud/features/infrastructure/warehouses)，与其中某个服务建立的连接并不适用于共享其数据的其他服务，每个服务都需要单独建立连接。
+* 连接是单向的。如需双向查询，需要建立两个连接。
+* 读取操作由 Producer 执行，与目前使用 [`remoteSecure()`](/zh/reference/functions/table-functions/remote) 表函数时相同。
+
+### 空闲 {#idling}
+
+* 处于空闲或已停止状态的 Producer 不会因 `remoteSecure()` 查询而被唤醒，该查询会返回 connection refused。如果 Consumer 需要可靠地查询 Producer，请在 Producer 上关闭[空闲](/zh/products/cloud/features/autoscaling/idling)功能。这意味着 Producer 将持续运行，计算资源也会持续计费。
+* 如果 Consumer 在查询执行期间进入空闲状态，长时间运行的 `remoteSecure()` 查询可能会失败。
+
+### 错误消息 {#error-messages}
+
+大多数故障只会表现为通用的网络错误，例如连接被拒绝、握手被拒绝或超时，而不会给出指明具体原因的消息。请参考下方的[故障排查](#troubleshooting)表，并将错误文本发送给我们，以便我们改进这些消息。
+
+### 删除服务 {#deleting-a-service}
+
+存在连接时，仍可删除其中任一服务。在私有预览期间，如果您删除了其中一个服务，请告知我们，以便我们清理该连接。
+
+## 故障排查 {#troubleshooting}
+
+| 现象               | 可能原因                           | 处理方法                                                                  |
+| ---------------- | ------------------------------ | --------------------------------------------------------------------- |
+| 访问被拒绝            | 该表未向 Consumer 所用的用户授权          | 在 Producer 上运行 `GRANT SELECT`，具体参见[授予 Consumer 访问表的权限](#grant-access) |
+| 身份验证失败           | 命名集合中的用户与我们创建的用户不一致            | 核对我们发送给您的用户名                                                          |
+| 连接被拒绝            | Producer 处于空闲或已停止状态，或该方向上未建立连接 | 启动 Producer。如果 Producer 已在运行，请与我们确认连接方向                               |
+| 查询卡住或超时，且无明确错误信息 | 连接可能尚未完全建立                     | 联系我们，并提供双方的服务 ID                                                      |
+
+## 常见问题 {#faq}
+
+<AccordionGroup>
+  <Accordion title="这会产生额外费用吗？" id="cost">
+    您只需为实际使用的计算资源付费，包括 Producer 处于非空闲状态的时间。
+  </Accordion>
+
+  <Accordion title="我需要管理密码或证书吗？" id="credentials">
+    不需要。Consumer 使用 ClickHouse Cloud 代为管理的证书进行身份验证。
+  </Accordion>
+
+  <Accordion title="流量会经过公共互联网吗？" id="public-internet">
+    不会。流量始终在 ClickHouse Cloud 的私有网络内传输，因此即使 Producer 仅接受 PrivateLink 流量，或其 IP 访问列表未放行任何地址，该功能仍可正常工作。
+  </Accordion>
+
+  <Accordion title="Producer 能否从 Consumer 读取数据？" id="reverse-reads">
+    不能，除非您另行申请建立一个反方向的连接。
+  </Accordion>
+
+  <Accordion title="启用此功能会重启我的服务吗？" id="restarts">
+    Consumer 上建立首个连接时会触发一次滚动重启。Producer 不会重启，之后新增连接或执行撤销操作也不会导致任何重启。
+  </Accordion>
+
+  <Accordion title="如何移除访问权限？" id="remove-access">
+    要移除对某个表的访问权限，请在 Producer 上运行 `REVOKE`。私有预览期间，如需移除连接本身，请联系您的 ClickHouse 对接人。
+  </Accordion>
+</AccordionGroup>

@@ -1,17 +1,21 @@
 #include <Interpreters/inplaceBlockConversions.h>
 
+#include <functional>
 #include <utility>
 
 #include <Core/Block.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
+#include <Databases/enableAllExperimentalSettings.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
+#include <Interpreters/misc.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTWithAlias.h>
 
 #include <Columns/ColumnArray.h>
@@ -38,6 +42,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/NestedUtils.h>
 #include <Interpreters/RequiredSourceColumnsVisitor.h>
+#include <Functions/FunctionFactory.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/StorageDummy.h>
@@ -585,6 +590,12 @@ static bool isSubcolumnOfAvailableColumn(
     return requested_columns.contains(parent_name) || additional_available_columns.contains(parent_name);
 }
 
+bool mayLeaveColumnToMissingDefaults(const StorageSnapshotPtr & storage_snapshot, const NameAndTypePair & column)
+{
+    /// A superset of the two cases in which `fillMissingColumns` leaves a column unfilled.
+    return hasDefault(storage_snapshot, column) || (storage_snapshot && column.isSubcolumn());
+}
+
 static String removeTupleElementsFromSubcolumn(String subcolumn_name, const Names & tuple_elements)
 {
     /// Add a dot to the end of name for convenience.
@@ -692,6 +703,35 @@ void fillMissingColumns(
             auto column_in_storage = tryGetColumnInStorage(storage_snapshot, *requested_column);
             const auto & column_for_type = column_in_storage ? *column_in_storage : *requested_column;
 
+            /// Subcolumn names count arrays from the root of the column (`sizeN`, a JSON path below an array),
+            /// so a subcolumn is taken from the whole column when the shared offsets are its outer arrays.
+            const auto & type_in_storage = column_for_type.getTypeInStorage();
+            const auto * array_in_storage = typeid_cast<const DataTypeArray *>(type_in_storage.get());
+            if (column_for_type.isSubcolumn() && array_in_storage
+                && array_in_storage->getNumberOfDimensions() >= current_offsets.size())
+            {
+                DataTypePtr element_type = type_in_storage;
+                for (size_t level = 0; level < current_offsets.size(); ++level)
+                    element_type = assert_cast<const DataTypeArray &>(*element_type).getNestedType();
+
+                /// Every element is the default, so the subcolumn of one element is replicated.
+                ColumnPtr column = createColumnWithDefaultValue(*element_type, "", 1);
+                for (size_t level = 0; level < current_offsets.size(); ++level)
+                    column = ColumnArray::create(column, ColumnUInt64::create(1, 1));
+
+                column = type_in_storage->getSubcolumn(column_for_type.getSubcolumnName(), column);
+                for (size_t level = 0; level < current_offsets.size(); ++level)
+                    column = assert_cast<const ColumnArray &>(*column).getDataPtr();
+
+                size_t data_size = assert_cast<const ColumnUInt64 &>(*current_offsets.back()).getData().back();
+                column = ColumnConst::create(column, data_size)->convertToFullColumnIfConst();
+                for (auto it = current_offsets.rbegin(); it != current_offsets.rend(); ++it)
+                    column = ColumnArray::create(column, *it);
+
+                res_columns[i] = std::move(column);
+                continue;
+            }
+
             Names tuple_elements;
             SerializationPtr serialization = IDataType::getSerialization(column_for_type);
 
@@ -729,6 +769,94 @@ void fillMissingColumns(
             res_columns[i] = createColumnWithDefaultValue(*requested_column->getTypeInStorage(), requested_column->getSubcolumnName(), num_rows);
         }
     }
+}
+
+/// Whether `ast` calls a function whose result its arguments do not determine. A function that is not known here, such
+/// as a user-defined one, is taken as one, and a subquery and an `IN` with a set read from a table as well.
+static bool callsNonDeterministicFunction(const IAST & ast, const ContextPtr & context)
+{
+    if (ast.as<ASTSubquery>())
+        return true;
+
+    if (const auto * function = ast.as<ASTFunction>(); function && function->name != "lambda")
+    {
+        /// The set of `IN` is constant only when it is written in the expression, such as in `k IN (1, 2)`. A set
+        /// read from a table, such as one of the `Set` engine, can change between two reads.
+        if (functionIsInOrGlobalInOperator(function->name))
+        {
+            const auto * arguments = function->arguments ? function->arguments->as<ASTExpressionList>() : nullptr;
+            if (!arguments || arguments->children.size() != 2)
+                return true;
+
+            const auto & set = arguments->children[1];
+            const auto * set_function = set->as<ASTFunction>();
+            if (!set->as<ASTLiteral>() && !(set_function && set_function->name == "tuple"))
+                return true;
+        }
+
+        /// These are as deterministic as the aggregate function their arguments name, such as an unseeded
+        /// `groupArraySample`, which is known only with the types of its arguments.
+        static const NameSet functions_of_aggregate_functions{"arrayReduce", "arrayReduceInRanges", "initializeAggregation"};
+        const auto resolver = FunctionFactory::instance().tryGet(function->name, context);
+        if (!resolver || !resolver->isDeterministic() || functions_of_aggregate_functions.contains(resolver->getName()))
+            return true;
+    }
+
+    return std::ranges::any_of(ast.children, [&](const ASTPtr & child) { return callsNonDeterministicFunction(*child, context); });
+}
+
+NameSet getNonDeterministicDefaults(
+    const Names & column_names,
+    const ColumnsDescription & columns,
+    const std::function<bool(const String &)> & is_filled_from_default_in_some_part,
+    ContextPtr context)
+{
+    const auto defaults = columns.getDefaults();
+
+    /// The functions of a default are made as a reader makes them to fill a column, with the settings of the features they
+    /// can use turned on (see `IMergeTreeReader::createContextForDefaultExpressions`): the query can have the settings the
+    /// default was created with off.
+    ContextMutablePtr context_for_defaults;
+
+    /// For each column with a default visited, whether its default is non-deterministic. A subcolumn, which a default
+    /// can read as well, is filled together with its column.
+    std::unordered_map<String, bool> visited;
+    std::function<bool(const String &)> is_non_deterministic = [&](const String & name)
+    {
+        const auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, name);
+        if (!column)
+            return false;
+
+        const auto it = defaults.find(column->getNameInStorage());
+        if (it == defaults.end() || !is_filled_from_default_in_some_part(it->first))
+            return false;
+
+        if (const auto visited_it = visited.find(it->first); visited_it != visited.end())
+            return visited_it->second;
+
+        RequiredSourceColumnsVisitor::Data required_columns;
+        auto expression = it->second.expression->clone();
+        RequiredSourceColumnsVisitor(required_columns).visit(expression);
+
+        if (!context_for_defaults)
+        {
+            context_for_defaults = Context::createCopy(context);
+            enableAllExperimentalSettings(context_for_defaults);
+        }
+
+        const bool result = callsNonDeterministicFunction(*it->second.expression, context_for_defaults)
+            || std::ranges::any_of(required_columns.requiredColumns(), is_non_deterministic);
+        visited.emplace(it->first, result);
+        return result;
+    };
+
+    NameSet result;
+    for (const auto & name : column_names)
+    {
+        if (is_non_deterministic(name))
+            result.insert(name);
+    }
+    return result;
 }
 
 }

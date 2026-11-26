@@ -15,6 +15,7 @@
 
 #include <Common/OpenSSLHelpers.h>
 #include <Common/SipHash.h>
+#include <Common/SipHashStrings.h>
 #include <Common/typeid_cast.h>
 #include <Common/safe_cast.h>
 #include <Common/HashTable/Hash.h>
@@ -41,6 +42,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
+#include <IO/WriteBufferFromString.h>
 #include <Common/TargetSpecific.h>
 #include <base/IPv4andIPv6.h>
 #include <base/range.h>
@@ -49,6 +51,11 @@
 
 #include <algorithm>
 #include <memory>
+
+/// Hash functions are built on wrapping arithmetic: multiplications by large odd constants,
+/// additions of the length and of the block words. Switch off the check for unsigned integer
+/// overflow for the whole file instead of annotating every single implementation.
+#pragma clang attribute push (__attribute__((__no_sanitize__("unsigned-integer-overflow"))), apply_to = function)
 
 namespace DB
 {
@@ -77,14 +84,14 @@ namespace impl
         ColumnPtr key1;
         bool is_const = false;
 
-        size_t size() const
+        [[nodiscard]] size_t size() const
         {
             chassert(key0 && key1);
             chassert(key0->size() == key1->size());
             return key0->size();
         }
 
-        SipHashKey getKey(size_t i) const
+        [[nodiscard]] SipHashKey getKey(size_t i) const
         {
             if (is_const)
                 i = 0;
@@ -95,7 +102,7 @@ namespace impl
         }
 
         /// Replicate key columns so that each array element gets the key of its parent row.
-        SipHashKeyColumns replicateForArray(const ColumnArray::Offsets & offsets) const
+        [[nodiscard]] SipHashKeyColumns replicateForArray(const ColumnArray::Offsets & offsets) const
         {
             if (is_const)
                 return *this;
@@ -309,6 +316,15 @@ struct SipHash128Impl
 
     static UInt128 combineHashes(UInt128 h1, UInt128 h2) { return combineHashesFunc<UInt128, SipHash128Impl>(h1, h2); }
     static UInt128 apply(const char * data, const size_t size) { return sipHash128(data, size); }
+    static UInt128 applyPadded(const char * data, const size_t size) { return sipHash128Padded(data, size); }
+    static void applyPaddedStrings(const char * chars, const UInt64 * offsets, size_t num_rows, UInt128 * hashes)
+    {
+        sipHash128PaddedStrings(chars, offsets, num_rows, hashes);
+    }
+    static void applyPaddedFixedStrings(const char * chars, size_t n, size_t num_rows, UInt128 * hashes)
+    {
+        sipHash128PaddedFixedStrings(chars, n, num_rows, hashes);
+    }
 
     static constexpr bool use_int_hash_for_pods = false;
     static constexpr bool return_bigint_instead_of_fixedstring = false;
@@ -813,7 +829,7 @@ struct ImplXXH3_128
     static constexpr bool return_bigint_instead_of_fixedstring = true;
 };
 
-DECLARE_MULTITARGET_CODE(
+DECLARE_X86_64_MULTITARGET_CODE(
 
 template <typename Impl, typename Name>
 class FunctionIntHash : public IFunction
@@ -913,7 +929,7 @@ public:
     }
 };
 
-) // DECLARE_MULTITARGET_CODE
+) // DECLARE_X86_64_MULTITARGET_CODE
 
 /// The implementation is picked once, from what the CPU supports. Everything except execution comes from
 /// the default implementation, which this class derives from.
@@ -923,14 +939,14 @@ class FunctionIntHash : public TargetSpecific::Default::FunctionIntHash<Impl, Na
 public:
     explicit FunctionIntHash([[maybe_unused]] ContextPtr context)
     {
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
         if (isArchSupported(TargetArch::x86_64_v4))
         {
             impl = std::make_unique<TargetSpecific::x86_64_v4::FunctionIntHash<Impl, Name>>();
             return;
         }
 #endif
-#if USE_MULTITARGET_CODE && !defined(__AVX2__)
+#if USE_X86_64_MULTITARGET_CODE && !defined(__AVX2__)
         /// Only reached from the translation units pinned to `-march=x86-64-v2` in
         /// `src/Functions/CMakeLists.txt` (`FunctionsHashingMisc.cpp`), where `Default` inherits v2
         /// codegen and this per-function body is the only AVX2 one. Everywhere else `Default` is
@@ -944,7 +960,7 @@ public:
         impl = std::make_unique<TargetSpecific::Default::FunctionIntHash<Impl, Name>>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         return impl->executeImpl(arguments, result_type, input_rows_count);
     }
@@ -958,7 +974,7 @@ private:
     std::unique_ptr<IFunction> impl;
 };
 
-DECLARE_MULTITARGET_CODE(
+DECLARE_X86_64_MULTITARGET_CODE(
 
 template <typename Impl, bool Keyed, typename KeyType, typename KeyColumnsType>
 class FunctionAnyHash : public IFunction
@@ -1192,6 +1208,30 @@ private:
         }
     }
 
+    /// The unkeyed `sipHash128` hashes the strings of a `ColumnString` or a `ColumnFixedString` several at a time.
+    static constexpr bool hashes_many_strings = !Keyed && requires(const char * chars, const UInt64 * offsets, size_t n, ToType * hashes) {
+        Impl::applyPaddedStrings(chars, offsets, n, hashes);
+        Impl::applyPaddedFixedStrings(chars, n, n, hashes);
+    };
+
+    /// Calls `hash_rows` to compute one hash per row of `vec_to`. With `first` they are stored in `vec_to`, otherwise
+    /// combined with the hashes already there.
+    template <bool first, typename HashRows>
+    static void setHashes(const KeyType & key, typename ColumnVector<ToType>::Container & vec_to, HashRows && hash_rows)
+    {
+        if constexpr (first)
+        {
+            hash_rows(vec_to.data());
+        }
+        else
+        {
+            PaddedPODArray<ToType> hashes(vec_to.size());
+            hash_rows(hashes.data());
+            for (size_t i = 0; i < vec_to.size(); ++i)
+                vec_to[i] = combineHashes(key, vec_to[i], hashes[i]);
+        }
+    }
+
     template <bool first>
     void executeString(const KeyColumnsType & key_cols, const IColumn * column, typename ColumnVector<ToType>::Container & vec_to) const
     {
@@ -1204,22 +1244,29 @@ private:
             const typename ColumnString::Offsets & offsets = col_from->getOffsets();
             size_t size = offsets.size();
 
-            ColumnString::Offset current_offset = 0;
-            for (size_t i = 0; i < size; ++i)
+            if constexpr (hashes_many_strings)
             {
-                if constexpr (Keyed)
-                    if (!key_cols.is_const && i != 0)
-                        key = Impl::getKey(key_cols, i);
-                const ToType hash = apply(key,
-                    reinterpret_cast<const char *>(&data[current_offset]),
-                    offsets[i] - current_offset);
+                const char * chars = reinterpret_cast<const char *>(data.data());
+                setHashes<first>(key, vec_to, [&](ToType * hashes) { Impl::applyPaddedStrings(chars, offsets.data(), size, hashes); });
+            }
+            else
+            {
+                ColumnString::Offset current_offset = 0;
+                for (size_t i = 0; i < size; ++i)
+                {
+                    if constexpr (Keyed)
+                        if (!key_cols.is_const && i != 0)
+                            key = Impl::getKey(key_cols, i);
+                    const ToType hash
+                        = applyPadded(key, reinterpret_cast<const char *>(&data[current_offset]), offsets[i] - current_offset);
 
-                if constexpr (first)
-                    vec_to[i] = hash;
-                else
-                    vec_to[i] = combineHashes(key, vec_to[i], hash);
+                    if constexpr (first)
+                        vec_to[i] = hash;
+                    else
+                        vec_to[i] = combineHashes(key, vec_to[i], hash);
 
-                current_offset = offsets[i];
+                    current_offset = offsets[i];
+                }
             }
         }
         else if (const ColumnFixedString * col_from_fixed = checkAndGetColumn<ColumnFixedString>(column))
@@ -1228,16 +1275,24 @@ private:
             size_t n = col_from_fixed->getN();
             size_t size = data.size() / n;
 
-            for (size_t i = 0; i < size; ++i)
+            if constexpr (hashes_many_strings)
             {
-                if constexpr (Keyed)
-                    if (!key_cols.is_const && i != 0)
-                        key = Impl::getKey(key_cols, i);
-                const ToType hash = apply(key, reinterpret_cast<const char *>(&data[i * n]), n);
-                if constexpr (first)
-                    vec_to[i] = hash;
-                else
-                    vec_to[i] = combineHashes(key, vec_to[i], hash);
+                const char * chars = reinterpret_cast<const char *>(data.data());
+                setHashes<first>(key, vec_to, [&](ToType * hashes) { Impl::applyPaddedFixedStrings(chars, n, size, hashes); });
+            }
+            else
+            {
+                for (size_t i = 0; i < size; ++i)
+                {
+                    if constexpr (Keyed)
+                        if (!key_cols.is_const && i != 0)
+                            key = Impl::getKey(key_cols, i);
+                    const ToType hash = applyPadded(key, reinterpret_cast<const char *>(&data[i * n]), n);
+                    if constexpr (first)
+                        vec_to[i] = hash;
+                    else
+                        vec_to[i] = combineHashes(key, vec_to[i], hash);
+                }
             }
         }
         else if (const ColumnConst * col_from_const = checkAndGetColumnConstStringOrFixedString(column))
@@ -1680,6 +1735,15 @@ public:
             return Impl::apply(begin, size);
     }
 
+    /// For data that is followed by at least 7 readable bytes, such as a value of a padded column.
+    static ToType applyPadded(const KeyType & key, const char * begin, size_t size)
+    {
+        if constexpr (!Keyed && requires { Impl::applyPadded(begin, size); })
+            return Impl::applyPadded(begin, size);
+        else
+            return apply(key, begin, size);
+    }
+
     static ToType combineHashes(const KeyType & key, ToType h1, ToType h2)
     {
         if constexpr (Keyed)
@@ -1689,7 +1753,7 @@ public:
     }
 };
 
-) // DECLARE_MULTITARGET_CODE
+) // DECLARE_X86_64_MULTITARGET_CODE
 
 struct ImplWyHash64;
 
@@ -1730,7 +1794,7 @@ class FunctionAnyHash : public TargetSpecific::Default::FunctionAnyHash<Impl, Ke
 public:
     explicit FunctionAnyHash([[maybe_unused]] ContextPtr context)
     {
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
         if constexpr (hash_avx512_usage<Impl> != HashAVX512Usage::Never)
         {
             if (isArchSupported(TargetArch::x86_64_v4))
@@ -1740,7 +1804,7 @@ public:
         baseline_impl = makeBaselineImpl();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         if (avx512_impl && wantsAVX512(arguments))
             return avx512_impl->executeImpl(arguments, result_type, input_rows_count);
@@ -1755,7 +1819,7 @@ public:
 private:
     static std::unique_ptr<IFunction> makeBaselineImpl()
     {
-#if USE_MULTITARGET_CODE && !defined(__AVX2__)
+#if USE_X86_64_MULTITARGET_CODE && !defined(__AVX2__)
         /// See the note in `FunctionIntHash`: only the v2-pinned translation units get here.
         if (isArchSupported(TargetArch::x86_64_v3))
             return std::make_unique<TargetSpecific::x86_64_v3::FunctionAnyHash<Impl, Keyed, KeyType, KeyColumnsType>>();
@@ -1861,29 +1925,29 @@ public:
     static constexpr auto name = "URLHash";
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionURLHash>(); }
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    bool isVariadic() const override { return true; }
-    size_t getNumberOfArguments() const override { return 0; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] bool isVariadic() const override { return true; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     /// Disable default Variant implementation for compatibility.
     /// Hash values must remain stable, so we don't want the Variant adaptor to change hash computation.
-    bool useDefaultImplementationForVariant() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForVariant() const override { return false; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(String, [Integer]) -> UInt64";
     }
 
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {
         return std::make_shared<DataTypeUInt64>();
     }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
         const auto arg_count = arguments.size();
 
@@ -1895,7 +1959,7 @@ public:
     }
 
 private:
-    ColumnPtr executeSingleArg(const ColumnsWithTypeAndName & arguments) const
+    [[nodiscard]] ColumnPtr executeSingleArg(const ColumnsWithTypeAndName & arguments) const
     {
         const auto * col_untyped = arguments.front().column.get();
 
@@ -1924,7 +1988,7 @@ private:
             ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}", arguments[0].column->getName(), getName());
     }
 
-    ColumnPtr executeTwoArgs(const ColumnsWithTypeAndName & arguments) const
+    [[nodiscard]] ColumnPtr executeTwoArgs(const ColumnsWithTypeAndName & arguments) const
     {
         const auto * level_col = arguments.back().column.get();
         const auto * col_untyped = arguments.front().column.get();
@@ -2023,5 +2087,7 @@ using FunctionXXH3_128 = FunctionAnyHash<ImplXXH3_128>;
 
 using FunctionWyHash64 = FunctionAnyHash<ImplWyHash64>;
 }
+
+#pragma clang attribute pop
 
 #pragma clang diagnostic pop

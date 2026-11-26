@@ -18,6 +18,7 @@ from urllib.parse import unquote, urlparse
 
 from ._environment import _Environment
 from .artifact import Artifact
+from .cache import Cache
 from .cidb import CIDB
 from .digest import Digest
 from .docker import (  # noqa: F401  - re-exported: the pull policy moved to docker.py
@@ -274,10 +275,21 @@ class Runner:
             else:
                 print("WARNING: Failed to fetch changed file metadata for PR")
 
+        if (pr > 0 or branch) and sha and Settings.S3_ARTIFACT_BUCKET:
+            # Artifacts of a salted job are in their own directory (see `Cache.artifact_dir`),
+            # and only the run that produced them knows the salts.
+            salts = Cache.load_digest_salts()
+            if salts is None:
+                print(
+                    "NOTE: the run published no digest salts, artifact directories are not salted"
+                )
+            elif salts:
+                Info().store_kv_data(Cache.DIGEST_SALTS_KV_KEY, salts)
+
         Result.create_from(name=job.name, status=Result.Status.PENDING).dump()
 
     def _setup_env(self, _workflow, job):
-        # source env file to write data into fs (workflow config json, workflow status json)
+        # source env file to write data into the filesystem (workflow config json, workflow status json)
         Shell.check(f". {Settings.ENV_SETUP_SCRIPT}", verbose=True, strict=True)
 
         # parse the same env script and apply envs from python so that this process sees them
@@ -338,7 +350,7 @@ class Runner:
     def _pre_run(self, workflow, job, local_job_run=False):
         if job.name == Settings.CI_CONFIG_JOB_NAME:
             GH.print_actions_debug_info()
-        dirty = Shell.get_output("git status --short", verbose=False) or ""
+        dirty = Shell.get_output("git status --short --ignore-submodules=dirty", verbose=False) or ""
         if dirty:
             print(f"NOTE: Dirty repo state before job start:\n{dirty}")
         else:
@@ -411,7 +423,7 @@ class Runner:
 
                 for artifact_path in artifact_paths:
                     if "*" in artifact_path:
-                        s3_path = f"{Settings.S3_ARTIFACT_BUCKET}/{prefix}/{Utils.normalize_string(artifact._provided_by)}/"
+                        s3_path = f"{Settings.S3_ARTIFACT_BUCKET}/{prefix}/{Cache.artifact_dir(artifact._provided_by)}/"
                         include_pattern = Path(artifact_path).name
                         assert "*" in include_pattern
                         names = self._last_upload_names(
@@ -434,7 +446,7 @@ class Runner:
                                 for n in matched
                             )
                     else:
-                        s3_path = f"{Settings.S3_ARTIFACT_BUCKET}/{prefix}/{Utils.normalize_string(artifact._provided_by)}/{Path(artifact_path).name}"
+                        s3_path = f"{Settings.S3_ARTIFACT_BUCKET}/{prefix}/{Cache.artifact_dir(artifact._provided_by)}/{Path(artifact_path).name}"
                         downloaded = S3.copy_file_from_s3(
                             s3_path=s3_path,
                             local_path=Settings.INPUT_DIR,
@@ -616,7 +628,7 @@ class Runner:
         if preserve_stdio:
             print("WARNING: Preserving stdio")
 
-        # work around for old clickhouse jobs
+        # workaround for old clickhouse jobs
         os.environ["PRAKTIKA"] = "1"
         if env.WORKFLOW_CONFIG:
             try:
@@ -765,10 +777,22 @@ class Runner:
                 settings = rewritten_settings
 
             local_env_flag = f"--env-file {self.LOCAL_ENV_FILE}" if Path(self.LOCAL_ENV_FILE).exists() else ""
-            cmd = f"docker run {tty} --rm --name {container_name} {'--user $(id -u):$(id -g)' if not from_root else ''} -e PYTHONUNBUFFERED=1 -e PYTHONSAFEPATH=1 -e PYTHONPATH={container_pythonpath_q} {local_env_flag} --volume {host_dir_q}:{current_dir_q} --volume {package_dir_q}:{package_dir_q} {extra_mounts} {gh_mount} --workdir={current_dir_q} {' '.join(settings)} {docker} {job.command}"
+            read_token_flag = "-e GITHUB_TOKEN" if job.enable_gh_read_token else ""
+            cmd = f"docker run {tty} --rm --name {container_name} {'--user $(id -u):$(id -g)' if not from_root else ''} -e PYTHONUNBUFFERED=1 -e PYTHONSAFEPATH=1 -e PYTHONPATH={container_pythonpath_q} {read_token_flag} {local_env_flag} --volume {host_dir_q}:{current_dir_q} --volume {package_dir_q}:{package_dir_q} {extra_mounts} {gh_mount} --workdir={current_dir_q} {' '.join(settings)} {docker} {job.command}"
         else:
             cmd = job.command
         job_env = _job_python_env()
+        if job.enable_gh_read_token:
+            # Keep the read token out of the parent process: report publication
+            # authenticates separately, after the job command finishes.
+            read_token = (
+                os.environ.get("PRAKTIKA_GITHUB_READ_TOKEN")
+                or os.environ.get("GITHUB_TOKEN")
+            )
+            if read_token:
+                job_env["GITHUB_TOKEN"] = read_token
+            elif not env.LOCAL_RUN:
+                raise RuntimeError("GitHub read token is missing or empty")
 
         if param:
             print(f"Custom --param [{param}] will be passed to job's script")
@@ -828,7 +852,7 @@ class Runner:
                 host_metrics = host_metrics_collector.stop()
 
                 # When running Docker containers as root (non-rootless mode), any files
-                # created by the job will be owned by root.  Fix ownership here, before
+                # created by the job will be owned by root. Fix ownership here, before
                 # reading the result file or writing the host-side result, so that the
                 # host user can open them without a PermissionError.
                 if job.run_in_docker and not no_docker and from_root:
@@ -836,18 +860,36 @@ class Runner:
                     uid = os.getuid()
                     gid = os.getgid()
                     chown_cmd = f"docker run --rm --user root --volume {host_dir_q}:{current_dir} --workdir={current_dir} {docker} chown -R {uid}:{gid} {Settings.TEMP_DIR}"
-                    Shell.run(chown_cmd)
+                    if Shell.run(chown_cmd) != 0:
+                        # The docker daemon can go away together with the job container.
+                        Shell.run(f"sudo -n chown -R {uid}:{gid} {Settings.TEMP_DIR}")
 
-                self._finalize_job_result(
+                result = self._finalize_job_result(
                     job,
                     process,
                     exit_code,
                     host_metrics,
                     workflow.enable_exit_code_result,
                 )
+                if (
+                    result.is_ok()
+                    and result.is_completed_by_job()
+                    and not process.timeout_exceeded
+                    and self._is_docker_daemon_death(
+                        exit_code, process.get_latest_log(max_lines=20)
+                    )
+                ):
+                    # `complete_job` exits 0 on an OK verdict; the CLI lost that exit code with the daemon.
+                    print(
+                        "NOTE: docker daemon went away after the job completed - keep its result"
+                    )
+                    result.set_label(
+                        "docker_daemon_death",
+                        hint=f"Docker daemon went away after the job completed, exit code [{exit_code}]",
+                    ).dump()
+                    exit_code = 0
         finally:
-            # Idempotent: a no-op if stop() already ran above; guarantees the
-            # sampling thread is always joined even if TeePopen raised.
+            # Idempotent no-op if stop() already ran; still joins the sampling thread if TeePopen raised.
             host_metrics_collector.stop()
 
         return exit_code
@@ -998,7 +1040,7 @@ class Runner:
             if providing_artifacts:
                 print(f"Job provides s3 artifacts [{providing_artifacts}]")
                 artifact_links = []
-                s3_path = f"{Settings.S3_ARTIFACT_BUCKET}/{env.get_s3_prefix()}/{Utils.normalize_string(env.JOB_NAME)}"
+                s3_path = f"{Settings.S3_ARTIFACT_BUCKET}/{env.get_s3_prefix()}/{Cache.artifact_dir(env.JOB_NAME)}"
                 # Every object uploaded to the artifact bucket must carry a
                 # "retention" tag: S3 lifecycle filters cannot match "objects
                 # without a tag", so untagged objects would be covered by no
@@ -1312,7 +1354,7 @@ class Runner:
                     traceback.print_exc()
                     print(f"ERROR: failed to notify Slack users: {e}")
 
-        dirty = Shell.get_output("git status --short", verbose=False) or ""
+        dirty = Shell.get_output("git status --short --ignore-submodules=dirty", verbose=False) or ""
         if dirty:
             print(f"NOTE: Dirty repo state after job:\n{dirty}")
         else:

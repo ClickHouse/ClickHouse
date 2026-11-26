@@ -8,16 +8,11 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/NodeEvaluationRange.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/checkArguments.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/dropMetricName.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/getToGridAggregateFunctionArguments.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/fixedAtModifier.h>
 #include <Storages/TimeSeries/timeSeriesTypesToAST.h>
-
-
-namespace DB::ErrorCodes
-{
-    extern const int CANNOT_EXECUTE_PROMQL_QUERY;
-}
 
 
 namespace DB::PrometheusQueryToSQL
@@ -25,29 +20,6 @@ namespace DB::PrometheusQueryToSQL
 
 namespace
 {
-    /// Checks if the types of the specified arguments are valid for the function.
-    void checkArgumentTypes(std::string_view function_name, const std::vector<SQLQueryPiece> & arguments, const ConverterContext & context)
-    {
-        size_t expected_number_of_arguments = 1;
-
-        if (arguments.size() != expected_number_of_arguments)
-        {
-                throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
-                                "Function '{}' expects {} {}, got {} arguments",
-                                function_name, expected_number_of_arguments, (expected_number_of_arguments == 1 ? "argument" : "arguments"),
-                                arguments.size());
-        }
-
-        const auto & argument = arguments[0];
-        if (argument.type != ResultType::RANGE_VECTOR)
-        {
-            throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
-                            "Function {} expects an argument of type {}, but expression {} has type {}",
-                            function_name, ResultType::RANGE_VECTOR,
-                            getPromQLText(argument, context), argument.type);
-        }
-    }
-
     struct ImplInfo
     {
         std::string_view ch_function_name;
@@ -232,6 +204,9 @@ bool isFunctionOverRange(std::string_view function_name)
 SQLQueryPiece applyFunctionOverRange(
     const PrometheusQueryTree::Function * function_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context)
 {
+    checkNumberOfArguments(function_node, arguments, 1);
+    checkArgumentType(function_node, arguments, 0, ResultType::RANGE_VECTOR, context);
+
     return applyFunctionOverRange(function_node, function_node->function_name, std::move(arguments), context);
 }
 
@@ -245,8 +220,6 @@ SQLQueryPiece applyFunctionOverRange(
 {
     const auto * impl_info = getImplInfo(function_name);
     chassert(impl_info);
-
-    checkArgumentTypes(function_name, arguments, context);
 
     auto node_range = context.node_range_getter.get(node);
     if (node_range.empty())
@@ -265,11 +238,12 @@ SQLQueryPiece applyFunctionOverRange(
     ASTs aggregate_function_arguments = getToGridAggregateFunctionArguments(argument, context);
 
     const auto * fixed_at_node = getFixedAtModifier(argument);
-    const auto aggregation_range = getRangeAggregationRange(fixed_at_node, node_range, context);
+    const auto aggregation_range = getRangeAggregationRange(argument, node_range, context);
 
     /// A range vector made from a scalar has no `group` column. The result is still a vector grid with one series without
     /// tags, because the aggregate function returns NULL for a window without enough samples and only VECTOR_GRID can hold NULL.
-    const bool from_scalar = (argument.store_method != StoreMethod::VECTOR_GRID) && (argument.store_method != StoreMethod::RAW_DATA);
+    const bool from_scalar = (argument.store_method == StoreMethod::CONST_SCALAR)
+        || (argument.store_method == StoreMethod::SINGLE_SCALAR) || (argument.store_method == StoreMethod::SCALAR_GRID);
 
     SelectQueryBuilder builder;
 

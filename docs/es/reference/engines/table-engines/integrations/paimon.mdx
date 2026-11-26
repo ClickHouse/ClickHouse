@@ -15,10 +15,10 @@ Admite lecturas de instantáneas, lecturas incrementales y poda básica de parti
 ## Crear tabla {#create-table}
 
 Tenga en cuenta que la tabla Paimon ya debe existir en el almacenamiento; este comando no acepta parámetros DDL para crear una tabla nueva.
-La creación de tablas `Paimon*` está condicionada por `allow_experimental_paimon_storage_engine` (desactivado de forma predeterminada), así que actívelo antes de ejecutar `CREATE TABLE`.
+La creación de tablas `Paimon*` está condicionada por `enable_paimon_storage_engine` (desactivado de forma predeterminada), así que actívelo antes de ejecutar `CREATE TABLE`.
 
 ```sql
-SET allow_experimental_paimon_storage_engine = 1;
+SET enable_paimon_storage_engine = 1;
 
 CREATE TABLE paimon_table_s3
     ENGINE = PaimonS3(url, [, access_key_id, secret_access_key] [,format] [,compression])
@@ -71,20 +71,46 @@ CREATE TABLE paimon_table ENGINE=PaimonS3(paimon_conf, filename = 'test_table')
 * Poda de particiones cuando `use_paimon_partition_pruning` está habilitado.
 * Actualización opcional de metadatos en segundo plano cuando se configura.
 * UUID de tabla estable al usar bases de datos Atomic/Replicated, lo que permite usar macros `{uuid}` en las rutas de Keeper.
+* Evolución del esquema: cada archivo de datos se lee con el esquema con el que se escribió, y sus columnas top-level se hacen corresponder con el esquema actual mediante el ID de campo de Paimon. De este modo, las columnas renombradas y las columnas eliminadas y vueltas a añadir con el mismo nombre se leen igual que en Spark.
 
 ## Tablas con clave primaria {#primary-key-tables}
 
-La fusión en lectura (merge-on-read) no está implementada, por lo que **las tablas con clave primaria no se pueden leer**: el lector devuelve la unión sin procesar de los
-archivos de datos de la instantánea, que todavía contiene las versiones de fila reemplazadas por upserts posteriores. Por ello, al leer una tabla cuyo esquema
-declara `primary-key` se lanza una excepción.
+La fusión en lectura (merge-on-read) no está implementada, por lo que una tabla con clave primaria solo puede leerse en los casos en que Paimon la lee sin fusión: un bucket se
+lee cuando todos sus archivos de datos están por encima del nivel 0, se sabe que no contienen filas de retracción y se encuentran en un único nivel. Con
+`deletion-vectors.enabled` o `'merge-engine' = 'first-row'`, los archivos pueden estar en varios niveles y, salvo que
+`batch-scan-mode` tenga un modo distinto de `none`, los archivos de nivel 0 no se leen hasta que se compactan, igual que en Paimon.
+Leer cualquier otro bucket lanza una excepción; una compactación completa en Paimon (`compact_strategy => 'full'`) permite leerlo. Las lecturas
+incrementales de tablas con clave primaria no son compatibles.
+
+## Tablas con vectores de eliminación {#deletion-vectors}
+
+Los vectores de eliminación no se aplican, por lo que **las instantáneas con vectores de eliminación no se pueden leer**: el resultado seguiría
+conteniendo las filas que eliminaron sentencias `DELETE` y `UPDATE` posteriores. Por ello, leer una instantánea cuyo manifiesto de índice enumera
+vectores de eliminación lanza una excepción, incluso después de desactivar `deletion-vectors.enabled`.
+
+Una compactación completa en Paimon (`compact_strategy => 'full'`) aplica los vectores de eliminación, y las instantáneas creadas a partir
+de ella vuelven a poder leerse.
+
+Una lectura incremental se detiene en la primera instantánea no consumida con vectores de eliminación y permanece ahí incluso después de una compactación
+completa, ya que todas las instantáneas hasta esa compactación enumeran los mismos vectores de eliminación. El cursor no avanza.
+La lectura se reanuda cuando Paimon hace expirar esas instantáneas, o cuando se abandonan moviendo el cursor a la instantánea de
+la compactación completa, lo que descarta todas las instantáneas aún no consumidas hasta ese punto (consulte
+[Cuando no se puede leer una instantánea](#when-a-snapshot-cannot-be-read)):
+
+```bash
+clickhouse-keeper-client -q "set '<paimon_keeper_path>/committed_snapshot' '<snapshot id of the full compaction>'"
+```
+
+En cualquier caso, las filas eliminadas por esos vectores de eliminación siguen presentes en los datos que la lectura incremental ya ha devuelto.
 
 ## Configuración {#settings}
 
 Este motor usa la misma configuración que los motores correspondientes de almacenamiento de objetos y añade ajustes específicos de Paimon:
 
-* `allow_experimental_paimon_storage_engine` — habilita la creación de los motores de tabla `Paimon`, `PaimonS3`, `PaimonAzure`, `PaimonHDFS` y `PaimonLocal`. Valor predeterminado: `0` (deshabilitado).
+* `enable_paimon_storage_engine` — habilita la creación de los motores de tabla `Paimon`, `PaimonS3`, `PaimonAzure`, `PaimonHDFS` y `PaimonLocal`. Valor predeterminado: `0` (deshabilitado).
 * `use_paimon_metadata_files_cache` — habilita la caché de archivos de metadatos de Paimon (almacena en caché listas de manifiestos y manifiestos deserializados). Establézcalo en `1` para habilitarlo y en `0` para deshabilitarlo. Valor predeterminado: `0`. La forma en que esta configuración surte efecto difiere entre las funciones de tabla y los motores de tabla persistentes; consulte la nota a continuación.
 * `paimon_incremental_read` — habilita el modo de lectura incremental.
+* `paimon_incremental_read_append_overwrite` — la lectura incremental también devuelve las filas que escriben las instantáneas `OVERWRITE`, al igual que `streaming-read-append-overwrite` de Paimon. Valor predeterminado: `0`.
 * `paimon_metadata_refresh_interval_sec` — intervalo, en segundos, de actualización de metadatos en segundo plano. Cuando se establece en un valor superior a 0, una tarea en segundo plano obtiene periódicamente la instantánea y el esquema más recientes desde el almacenamiento de objetos. Valor predeterminado: 30.
 * `paimon_keeper_path` — ruta de Keeper para el estado de lectura incremental. Debe configurarse y ser única para cada tabla; admite macros como `{database}`, `{table}`, `{uuid}`.
 * `paimon_replica_name` — nombre de la réplica para el estado de lectura incremental. Debe configurarse y ser único para cada réplica; admite macros como `{replica}`.
@@ -92,7 +118,7 @@ Este motor usa la misma configuración que los motores correspondientes de almac
 Ejemplo (habilitar el motor experimental de Paimon y la caché de archivos de metadatos):
 
 ```sql
-SET allow_experimental_paimon_storage_engine = 1;
+SET enable_paimon_storage_engine = 1;
 SET use_paimon_metadata_files_cache = 1;
 
 CREATE TABLE paimon_cached
@@ -144,6 +170,57 @@ FROM paimon_inc
 SETTINGS max_consume_snapshots = 2;
 ```
 
+### Retroceso del almacén {#rewinding-the-warehouse}
+
+El cursor de Keeper en `paimon_keeper_path` registra hasta dónde se ha consumido el stream, y las lecturas incrementales asumen que el almacén solo avanza: los ids de instantánea de Paimon aumentan de forma monótona y nunca se reutilizan. Hacer expirar instantáneas antiguas no supone ningún problema: elimina un prefijo y deja intactos los ids posteriores.
+
+Mover el almacén *hacia atrás* invalida esa suposición. Restaurar el almacén a partir de una copia de seguridad anterior, revertirlo con otro motor o eliminar y volver a crear la tabla Paimon en la misma ruta son operaciones que hacen retroceder los ids de instantánea, de modo que el escritor acaba reutilizando ids que el cursor ya ha consumido.
+
+**Hacer retroceder el almacén requiere restablecer el cursor en la misma operación.** El cursor también registra a qué instantánea apunta, por lo que, una vez que el escritor ha reutilizado el id de instantánea del cursor, la lectura falla con `INVALID_STATE`: no se lee nada y el cursor queda intacto. Para recuperarse, apunte el cursor a la instantánea a la que se hizo retroceder el almacén, lo que permite leer todas las instantáneas escritas desde el retroceso, o establézcalo en su valor actual, lo que omite las instantáneas con ids reutilizados. Un cursor establecido manualmente, o escrito por una versión anterior, se da por válido tal como está escrito hasta que una lectura lo hace avanzar. No es posible comprobar nada una vez que Paimon ha hecho expirar la instantánea a la que apunta el cursor, ni tampoco en el caso de un retroceso que conserva la instantánea del cursor y se produce mientras una lectura está cargando las instantáneas posteriores.
+
+Si el retroceso deja el cursor apuntando más allá de la instantánea más reciente del almacén, la lectura falla con `INVALID_STATE` en lugar de indicar que no hay datos nuevos, y el mensaje de error incluye el comando de recuperación. No se lee nada y el cursor queda intacto, por lo que cada sondeo posterior fallará de la misma manera hasta que se resuelva el problema:
+
+```
+clickhouse-keeper-client -q "set '<paimon_keeper_path>/committed_snapshot' '<latest snapshot id>'"
+```
+
+No elimine el nodo `committed_snapshot` para recuperarse. Un cursor ausente significa &quot;nunca consumido&quot;, por lo que la siguiente lectura volverá a leer la tabla completa en lugar de reanudarse.
+
+Antes de restablecer el cursor, pause todos los consumidores que compartan `paimon_keeper_path`, incluidas las vistas materializadas actualizables, y espere a que finalicen las lecturas in-flight.
+
+El commit de una lectura depende del cursor que esta observó. Si el cursor cambia después de esa observación pero antes del commit, la lectura falla con `INVALID_STATE`, no entrega nada y mantiene el valor que usted estableció. Una lectura que ya haya realizado el commit puede entregar igualmente su batch después de restablecer el cursor; en ese caso, retroceder el cursor puede provocar que ese batch se entregue de nuevo.
+
+No elimine ni reemplace `processing_lock` manualmente. Es un nodo efímero que pertenece a la sesión de ClickHouse Keeper que ejecuta la lectura incremental; su ciclo de vida no es una interfaz de recuperación para el operador.
+
+### Cuando no se puede leer una instantánea {#when-a-snapshot-cannot-be-read}
+
+Las instantáneas que Paimon ha expirado se omiten automáticamente: la expiración elimina un prefijo de los ids de instantánea, por lo que se sabe que todo lo que quede por debajo de la instantánea más antigua del almacén ya no existe, y el cursor lo deja atrás.
+
+Cualquier otro fallo al leer una instantánea —un error transitorio del almacenamiento de objetos, un archivo de instantánea corrupto— hace que la consulta falle y deja el cursor donde está. No existe, de forma deliberada, ningún parámetro de configuración para tolerar esto. Omitir una instantánea no leída supone eliminar de forma permanente los datos confirmados (committed) en ella, y un interruptor permanente de &quot;tolerar errores&quot; convertiría cualquier futuro corte de red en una pérdida de datos silenciosa. Como el cursor no se modifica, un error transitorio no requiere ninguna intervención: el siguiente sondeo vuelve a leer el mismo rango y se completa correctamente.
+
+Si una instantánea es realmente ilegible y el stream debe seguir avanzando, descártela explícitamente. El mensaje de error indica el comando, pero tenga en cuenta lo que implica: la lectura fallida no entregó nada, por lo que mover el cursor a la instantánea ilegible descarta **todas** las instantáneas aún no consumidas hasta ella inclusive, no solo la ilegible.
+
+Con el cursor en 1 y las instantáneas 2, 3 y 4 pendientes, siendo la 3 ilegible:
+
+```bash
+# Abandons snapshots 2 and 3; the next read resumes at 4.
+clickhouse-keeper-client -q "set '/clickhouse/tables/<uuid>/committed_snapshot' '3'"
+```
+
+Para conservar las instantáneas legibles, primero realice el vaciado hasta la instantánea ilegible. Cada sondeo consume una instantánea y hace avanzar el cursor hasta llegar a la que no se puede leer:
+
+```sql
+-- Delivers snapshot 2 and advances the cursor to 2; the next poll fails on 3 again.
+SELECT * FROM paimon_inc SETTINGS max_consume_snapshots = 1;
+```
+
+```bash
+# Now only snapshot 3 is abandoned.
+clickhouse-keeper-client -q "set '/clickhouse/tables/<uuid>/committed_snapshot' '3'"
+```
+
+En cualquier caso, la decisión queda registrada como una acción explícita del operador, en lugar de inferirse a partir de un parámetro de configuración.
+
 ## De Paimon a MergeTree mediante una vista materializada actualizable {#paimon-to-mergetree-via-refresh-mv}
 
 Puede crear un pipeline de extremo a extremo que sincronice continuamente datos de una tabla Paimon a una tabla MergeTree mediante una vista materializada actualizable en modo `APPEND`. Cada ciclo de actualización lee solo los datos incrementales nuevos de Paimon y los añade a la tabla de destino.
@@ -153,7 +230,7 @@ Puede crear un pipeline de extremo a extremo que sincronice continuamente datos 
 En el ejemplo siguiente se usa `PaimonLocal`. Sustituya el motor por `PaimonS3`, `PaimonAzure`, `PaimonHDFS` o el motor `Paimon` con detección automática, según corresponda para su backend de almacenamiento:
 
 ```sql
-SET allow_experimental_paimon_storage_engine = 1;
+SET enable_paimon_storage_engine = 1;
 
 -- Local storage
 CREATE TABLE paimon_mv_source
@@ -217,7 +294,10 @@ DROP TABLE IF EXISTS paimon_mv_source SYNC;
 * La lectura incremental usa entrega como máximo una vez: la instantánea confirmada avanza cuando se recopilan los archivos de datos, antes de que los datos se consuman realmente. Si la consulta falla después de la recopilación de archivos, las instantáneas omitidas no se volverán a leer en un reintento.
 * El motor de tabla es de solo lectura; no se admite la modificación de datos.
 * La lectura incremental no gestiona las eliminaciones de datos históricos del origen Paimon. Si los datos upstream de Paimon se eliminan o actualizan, las filas correspondientes ya escritas en una tabla de destino MergeTree de ClickHouse no se eliminarán automáticamente. Debe ejecutar manualmente `ALTER TABLE ... DELETE` en la tabla MergeTree para limpiar los datos obsoletos.
+* La primera lectura incremental devuelve todas las filas de la instantánea actual. A partir de entonces, una lectura incremental entrega únicamente las filas de las instantáneas `APPEND`, al igual que la lectura en streaming de Paimon sobre una tabla append: las instantáneas `COMPACT`, `OVERWRITE` y `ANALYZE` se omiten. Paimon confirma como `OVERWRITE` toda escritura que elimina o reescribe archivos de datos (`INSERT OVERWRITE`, `TRUNCATE` y las reescrituras copy-on-write de `DELETE`, `UPDATE` y de un `MERGE INTO` que actualiza o elimina filas), por lo que las filas que escribe dicho commit, como las nuevas versiones de las filas actualizadas, no se entregan, y se registra una advertencia por cada instantánea `OVERWRITE` omitida. Con `paimon_incremental_read_append_overwrite = 1` sí se entregan, como ocurre con `streaming-read-append-overwrite` de Paimon, junto con las filas sin cambios de cada archivo de datos que el commit reescribió, salvo los archivos de datos que elimine una instantánea posterior leída por la misma consulta. Las instantáneas `COMPACT` no se leen, de modo que una consulta que lee una instantánea `APPEND`, un `COMPACT` que fusiona el archivo que esta añadió y un `OVERWRITE` que reescribe el archivo fusionado devuelve las filas tanto del archivo original como del reescrito: las filas sin cambios aparecen dos veces en su resultado, y las modificadas, en sus versiones antigua y nueva. `paimon_target_snapshot_id` sigue devolviendo el delta de cualquier instantánea.
+* Después de la primera lectura incremental, una instantánea con un tipo de commit que ClickHouse no reconoce hace fallar la lectura incremental, y todas las posteriores fallarán también hasta que se actualice ClickHouse o se mueva el cursor más allá de esa instantánea en Keeper, tal como indica el mensaje de error.
 * Si la tabla Paimon subyacente se elimina y se vuelve a crear en la misma ruta de almacenamiento de objetos (por ejemplo, mediante Flink o Spark), debe ejecutar `DROP` y volver a ejecutar `CREATE` en la tabla de ClickHouse correspondiente. ClickHouse detecta la recreación comparando la marca de tiempo de creación de schema-0 y genera un error; la tabla de ClickHouse obsoleta no puede usarse hasta que se vuelva a crear.
+* Los campos dentro de una columna `ROW` se asocian a los archivos de datos por nombre, no por el id de campo de Paimon. Por ello, leer un archivo de datos escrito antes de que se renombrara un campo dentro de un `ROW`, o antes de que se eliminara dicho campo y se añadiera otro con el mismo nombre (comparado sin distinguir entre mayúsculas y minúsculas), lanza un error: el resultado contendría `NULL` para el campo renombrado y los valores del campo eliminado para el que se volvió a añadir. Sí se admite añadir y eliminar campos. Reescribir la tabla con el esquema actual en Paimon, por ejemplo con `INSERT OVERWRITE <table> SELECT * FROM <table>`, permite leer las instantáneas creadas a partir de ese momento. Una lectura incremental que llega a un archivo de datos de este tipo lanza un error sin avanzar su cursor. Para continuar, espere a que caduquen en Paimon las instantáneas confirmadas antes del cambio, o descártelas moviendo el cursor a la última de ellas, lo que descarta todas las instantáneas aún no consumidas hasta ese punto (consulte [Cuando no se puede leer una instantánea](#when-a-snapshot-cannot-be-read)).
 
 ## Alias {#aliases}
 
@@ -243,7 +323,7 @@ El motor de tabla `Paimon` detecta automáticamente el backend de almacenamiento
 | FLOAT                             | Float32                    |
 | DOUBLE                            | Float64                    |
 | STRING,VARCHAR,BYTES,VARBINARY    | String                     |
-| DATE                              | Date                       |
+| DATE                              | Date32                     |
 | TIME(p),TIME                      | Time(&#39;UTC&#39;)        |
 | TIMESTAMP(p) WITH LOCAL TIME ZONE | DateTime64                 |
 | TIMESTAMP(p)                      | DateTime64(&#39;UTC&#39;)  |
@@ -252,6 +332,7 @@ El motor de tabla `Paimon` detecta automáticamente el backend de almacenamiento
 | DECIMAL(P,S)                      | Decimal(P,S)               |
 | ARRAY                             | Array                      |
 | MAP                               | Map                        |
+| ROW                               | Tuple                      |
 
 ## Compatibilidad de particiones {#partition-supported}
 

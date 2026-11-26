@@ -1,5 +1,7 @@
 #include <Common/BlobStorageLogWriter.h>
 
+#include <Common/HTTPConnectionInfo.h>
+
 #include <base/getThreadId.h>
 #include <Common/CurrentThread.h>
 #include <Common/ThreadStatus.h>
@@ -13,13 +15,13 @@ namespace DB
 
 void BlobStorageLogWriter::addEvent(
     BlobStorageLogElement::EventType event_type,
-    const String & bucket,
-    const String & remote_path,
+    std::string_view bucket,
+    std::string_view remote_path,
     const String & local_path_,
     size_t data_size,
     size_t elapsed_microseconds,
     Int32 error_code,
-    const String & error_message,
+    std::string_view error_message,
     BlobStorageLogElement::EvenTime time_now)
 {
     addEventImpl(
@@ -34,7 +36,7 @@ void BlobStorageLogWriter::addCopyEvent(
     size_t data_size,
     size_t elapsed_microseconds,
     Int32 error_code,
-    const String & error_message)
+    std::string_view error_message)
 {
     addEventImpl(
         BlobStorageLogElement::EventType::Copy,
@@ -52,17 +54,23 @@ void BlobStorageLogWriter::addCopyEvent(
 
 void BlobStorageLogWriter::addEventImpl(
     BlobStorageLogElement::EventType event_type,
-    const String & bucket,
-    const String & remote_path,
+    std::string_view bucket,
+    std::string_view remote_path,
     const String & local_path_,
     const String & source_bucket,
     const String & source_remote_path,
     size_t data_size,
     size_t elapsed_microseconds,
     Int32 error_code,
-    const String & error_message,
+    std::string_view error_message,
     BlobStorageLogElement::EvenTime time_now)
 {
+    /// Which connection carried the request we are about to log. The caller has opened an
+    /// `HTTPConnectionInfoScope` around the request and this call. Taken first, before anything can
+    /// return early, so that the tail entries of a batch that shared one request see an empty slot
+    /// even when the first entry was skipped.
+    const auto connection = takeCurrentHTTPConnectionInfo();
+
     if (!log)
     {
         LOG_TEST(getLogger("BlobStorageLogWriter"), "No log, skipping {}", remote_path);
@@ -94,6 +102,17 @@ void BlobStorageLogWriter::addEventImpl(
         element.source_remote_path = source_remote_path;
         element.data_size = data_size;
         element.elapsed_microseconds = elapsed_microseconds;
+
+        if (connection.has_value)
+        {
+            element.connection_id = connection.id;
+            element.connection_local_port = connection.local_port;
+            element.connection_socket_inode = connection.socket_inode;
+            element.connection_requests = connection.requests_served;
+            element.connection_age_microseconds = connection.age_microseconds;
+            element.connection_idle_microseconds = connection.idle_microseconds;
+        }
+
         element.error_code = error_code;
         element.error_message = error_message;
 
