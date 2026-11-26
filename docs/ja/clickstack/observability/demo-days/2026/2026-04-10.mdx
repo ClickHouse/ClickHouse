@@ -1,0 +1,74 @@
+---
+slug: /clickstack/observability/demo-days/2026/2026-04-10
+title: 'デモデイズ - 2026-04-10'
+sidebarTitle: '2026-04-10'
+description: '2026-04-10 の ClickStack デモデー'
+doc_type: 'guide'
+keywords: ['ClickStack', 'Demo days']
+---
+
+## ピン留め可能なデータソースフィルター {#pinnable-datasource-filters}
+
+*デモ担当者: [@brandon-pereira](https://github.com/brandon-pereira)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/j-b1ztSl8IQ" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+データソースフィルターをピン留めして、チーム全体で共有できるようになりました。任意のフィルターのピンアイコンをクリックすると、自分専用としてピン留めするか、チーム全員と共有するかを選択できます。共有フィルターはフィルター一覧の上部にある専用セクションに表示されるため、チームメンバーは正確なフィルター名を知らなくても簡単に見つけて適用できます。
+
+これはコミュニティから特に要望の多かった機能の 1 つです。今後は、フィルターの設定をチーム内で別途伝える必要がなくなります。共有フィルターはピン留めした時点で全ユーザーに表示されます。また、フィルターのキーだけでなく特定のフィルター値も共有できるため、フィルターに関するコンテキストをそのまま引き継げます。
+
+**関連するプルリクエスト:** [#2047](https://github.com/hyperdxio/hyperdx/pull/2047) [HDX-2300] チーム全体でフィルターを参照・発見しやすくする共有フィルターを導入
+
+## ClickStack Cloud からのサービスの起動 {#waking-service-from-clickstack-cloud}
+
+*デモ担当者: [@brandon-pereira](https://github.com/brandon-pereira)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/Od7X0NOCqY0" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+ClickStack Cloud のユーザーは、スリープ中のサービスをアプリ内から直接起動できるようになりました。これまでは、サービスが停止していると「再試行」のプロンプトが表示されるものの、アプリがサービスを実際に起動することはありませんでした。そのため、いったん ClickStack Cloud に移動して手動でサービスを起動し、元の画面に戻ってから改めて再試行を押す必要がありました。
+
+今回の改善により、この一連の操作をアプリがすべて行うようになりました。サービスがスリープ中の場合はプロンプトに「wake service」と表示され、今いる画面を離れることなく起動処理全体が完了します。小さな使い勝手の改善ではありますが、ワークフローを何度も中断させていた煩わしい手順が不要になります。しばらく使っていなかった ClickStack を開いて、すぐにデータを確認したいときに特に便利です。
+
+## AI 機能の一貫した有効化 {#consistent-enabling-of-ai-features}
+
+*デモ担当者: [@brandon-pereira](https://github.com/brandon-pereira)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/zS5OekPCzC0" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+ClickStack の AI 機能は、ClickHouse Cloud のコントロールプレーンからのみ切り替える方式に変更され、ここが信頼できる唯一の情報源となりました。以前は、ClickStack のコントロールプレーンとアプリ内の 2 か所に、互いに連動しないチェックボックスがありました。一方を有効化しても他方が同期される保証はなく、AI が実際に有効になっているのかどうか分かりにくいという問題がありました。
+
+現在、ClickStack 内のチェックボックスは ClickHouse Cloud へのリンクとしてのみ機能し、それ以外の操作はできないよう無効化されています。ClickHouse Cloud でトグルを切り替えると、ClickStack でもその機能が自動的に利用可能になります。これにより AI の有効化が一貫した予測可能なものとなり、どの設定が実際の動作を制御しているのか迷うこともなくなります。
+
+## 生のSQLによるアラート {#raw-sql-alerting}
+
+*デモ担当者: [@pulpdrew](https://github.com/pulpdrew)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/bYYcYHkyy2E" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+生のSQLで作成した折れ線グラフでアラートを利用できるようになりました。既存の生のSQLによるチャート機能が拡張され、しきい値ベースの通知に対応しています。カスタム SQL クエリに基づく折れ線グラフであれば、そのチャートにアラートをアタッチし、他のチャートアラートと同じように設定できます。しきい値の比較には時間間隔と日付範囲の両方のパラメータが必要なため、現時点では折れ線グラフと棒グラフでのみ利用できます。
+
+これにより、非常に強力なユースケースが可能になります。デモでは、現在の時間間隔におけるエラー数をカウントして直前の30時間間隔と比較し、その値が過去の平均を標準偏差の2倍以上上回った場合にフラグを立てるクエリを紹介しています。このような統計的な異常検知も、適切なSQLを書いてしきい値を設定するだけで実現できます。アラートの設定はチャートエディタ内の折りたたみ可能なセクションにまとめられているため、実際に必要になるまでUIをすっきりと保てます。
+
+**関連プルリクエスト:** [#2073](https://github.com/hyperdxio/hyperdx/pull/2073) feat: Implement alerting for Raw SQL-based dashboard tiles, [#2085](https://github.com/hyperdxio/hyperdx/pull/2085) refactor: Create TileAlertEditor component
+
+## HyperDX TUI の改善 {#hyperdx-tui-improvements}
+
+*デモ担当者: [@wrn14897](https://github.com/wrn14897)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/cIigBpcrYlw" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+HyperDX のターミナル UI は、さらに手軽に使い始められるようになりました。`npm install -g @hyperdx/cli` でグローバルにインストールし、`hdx` を実行するだけで起動できます。`--tui` フラグを指定すると、対話型のターミナルインターフェイスを直接開けます。バイナリは `npm` 経由で `hdx` としても提供されるため、パッケージをインストールすれば追加のインストール手順は不要です。
+
+今週は、インストール周りの改善に加えて、注目すべき機能が 2 つ追加されました。まず、エラーメッセージがターミナル上で適切なハイライトと構造化された形式で表示されるようになりました。Web フロントエンドと同じフォーマットのパターンに揃えているため、ブラウザでも TUI でも同じレベルの詳細情報を確認できます。また、新たに SQL プレビューが追加され、実際に実行されているクエリを確認できるようになりました。さらに、イベントビューアーから `Shift+A` で開ける新しいアラートページも追加されました。ターミナルを離れることなく、設定済みのすべてのアラートの概要と最近のトリガー履歴を確認できます。
+
+**関連 プルリクエスト:** [#2095](https://github.com/hyperdxio/hyperdx/pull/2095) [HDX-3966] TUI のエラーメッセージのレンダリングを改善し、SQL プレビューを追加、[#2093](https://github.com/hyperdxio/hyperdx/pull/2093) [HDX-3969] 概要と最近の履歴を表示するアラートページ (Shift+A) を追加、[#2043](https://github.com/hyperdxio/hyperdx/pull/2043) [HDX-3919] @hyperdx/cli パッケージを追加、[#2101](https://github.com/hyperdxio/hyperdx/pull/2101) [HDX-3976] CLI: apiUrl から appUrl に移行し、対話型ログインフローを追加

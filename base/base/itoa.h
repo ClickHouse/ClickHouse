@@ -107,9 +107,9 @@ ALWAYS_INLINE inline char * writeUnsignedText(U value, char * p)
 
 /// The sign without a branch, which mispredicts on mixed-sign data: '-' is always written, and the magnitude
 /// `(i ^ sign) - sign`, in unsigned arithmetic so that the minimum value fits, is written over it when `i` is
-/// not negative.
+/// not negative. That subtraction wraps around on purpose for negative values.
 template <typename T>
-ALWAYS_INLINE inline char * writeSignedText(T i, char * p)
+ALWAYS_INLINE_NO_SANITIZE_UNSIGNED_OVERFLOW inline char * writeSignedText(T i, char * p)
 {
     using U = std::make_unsigned_t<T>;
     U sign = static_cast<U>(i >> (sizeof(T) * 8 - 1));

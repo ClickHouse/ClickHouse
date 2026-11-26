@@ -8,6 +8,7 @@ from jinja2 import Environment, Template
 
 import helpers.client
 from helpers.cluster import ClickHouseCluster
+from helpers.network import PartitionManager
 from helpers.test_tools import wait_condition
 
 cluster = ClickHouseCluster(__file__)
@@ -1216,3 +1217,33 @@ def test_randomize_for_is_applied_before_the_first_refresh(module_setup_tables):
         assert attempt == 0, f"both replicas scheduled the first refresh for {time1}, so it carries no per-replica offset"
 
     _drop_randomize_objects()
+
+
+def test_coordinated_refresh_is_spread_across_replicas(module_setup_tables):
+    """Without RANDOMIZE FOR, each replica waits a random refresh_coordination_jitter_ms delay before
+    racing for a due refresh, so the replica closest to Keeper doesn't win every time."""
+    node.query("DROP TABLE IF EXISTS jitter_rmv ON CLUSTER default SYNC")
+    node.query("DROP TABLE IF EXISTS jitter_tgt ON CLUSTER default SYNC")
+    node.query("CREATE TABLE jitter_tgt ON CLUSTER default (host String) ENGINE = ReplicatedMergeTree ORDER BY tuple()")
+
+    # Without the delay, the replica with the extra latency to Keeper would lose every race.
+    with PartitionManager() as pm:
+        pm.add_network_delay(node2, 100)
+        node.query(
+            "CREATE MATERIALIZED VIEW jitter_rmv ON CLUSTER default REFRESH EVERY 1 SECOND APPEND TO jitter_tgt "
+            "AS SELECT hostName() AS host"
+        )
+
+        # The initial refresh is due right away, so SYSTEM WAIT VIEW must wait for it through the random delay.
+        node.query("SYSTEM WAIT VIEW jitter_rmv")
+        node.query("SYSTEM SYNC REPLICA jitter_tgt")
+        assert int(node.query("SELECT count() FROM jitter_tgt")) > 0
+
+        # The chance that one replica wins every one of ~60 refreshes is negligible.
+        hosts = node.query_with_retry(
+            "SELECT uniqExact(host) FROM jitter_tgt", check_callback=lambda r: r.strip() == "2", retry_count=60, sleep_time=1
+        )
+        assert hosts.strip() == "2", "the same replica performed every refresh"
+
+    node.query("DROP TABLE jitter_rmv ON CLUSTER default SYNC")
+    node.query("DROP TABLE jitter_tgt ON CLUSTER default SYNC")

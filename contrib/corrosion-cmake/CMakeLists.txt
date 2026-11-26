@@ -93,12 +93,20 @@ if (USE_MUSL)
     string(REGEX REPLACE "-isystem [^ ]*musl[^ ]*" "" CMAKE_C_FLAGS_STRIPPED "${CMAKE_C_FLAGS}")
     string(REGEX REPLACE "-isystem [^ ]*musl[^ ]*" "" CMAKE_CXX_FLAGS_STRIPPED "${CMAKE_CXX_FLAGS}")
 
-    set(MUSL_ARCH_DIR "${ClickHouse_SOURCE_DIR}/contrib/musl/arch/${MUSL_ARCH}")
-    set(MUSL_GENERIC_DIR "${ClickHouse_SOURCE_DIR}/contrib/musl/arch/generic")
+    set(MUSL_STUB_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/musl-cmake/include")
     set(MUSL_GENERATED_DIR "${ClickHouse_BINARY_DIR}/contrib/musl-cmake/include")
     set(MUSL_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/musl/include")
+    set(MUSL_ARCH_DIR "${ClickHouse_SOURCE_DIR}/contrib/musl/arch/${MUSL_ARCH}")
+    set(MUSL_GENERIC_DIR "${ClickHouse_SOURCE_DIR}/contrib/musl/arch/generic")
+    set(MUSL_KERNEL_HEADERS_DIR "${ClickHouse_BINARY_DIR}/contrib/musl-cmake/kernel-headers")
 
-    set(MUSL_C_INCLUDES "-isystem ${MUSL_GENERATED_DIR} -isystem ${MUSL_ARCH_DIR} -isystem ${MUSL_GENERIC_DIR} -isystem ${MUSL_INCLUDE_DIR}")
+    # The regex above strips every "-isystem ...musl..." entry, so we must reconstruct the full
+    # musl header surface that cmake/linux/toolchain-{x86_64,aarch64}.cmake put into CMAKE_*_FLAGS
+    # via MUSL_INCLUDE_FLAGS. Keep this in sync with those toolchain files: the stub headers (e.g.
+    # execinfo.h) and the kernel-headers directory are part of the set and must not be dropped,
+    # otherwise Cargo cc/cxx builds compile against a narrower header surface than the rest of
+    # the tree. The order matches the toolchain's -isystem order.
+    set(MUSL_C_INCLUDES "-isystem ${MUSL_STUB_INCLUDE_DIR} -isystem ${MUSL_GENERATED_DIR} -isystem ${MUSL_INCLUDE_DIR} -isystem ${MUSL_ARCH_DIR} -isystem ${MUSL_GENERIC_DIR} -isystem ${MUSL_KERNEL_HEADERS_DIR}")
 
     set(MUSL_CXX_INCLUDES "-isystem ${CXX_INCLUDE_DIR} -nostdinc++ ${MUSL_C_INCLUDES} -D_LIBCPP_HAS_MUSL_LIBC=1")
 
@@ -147,6 +155,13 @@ if (CMAKE_OSX_DEPLOYMENT_TARGET)
     set(RUST_CFLAGS "${RUST_CFLAGS} -mmacosx-version-min=${CMAKE_OSX_DEPLOYMENT_TARGET}")
 endif()
 
+if (SANITIZE STREQUAL "undefined" OR SANITIZE STREQUAL "address,undefined")
+    # The C and C++ code built by the crates (e.g. a copy of `zstd` in `zstd-sys`) is third-party,
+    # like the code in `contrib`, which is not checked for unsigned integer overflows either.
+    set(RUST_CXXFLAGS "${RUST_CXXFLAGS} -fno-sanitize=unsigned-integer-overflow")
+    set(RUST_CFLAGS "${RUST_CFLAGS} -fno-sanitize=unsigned-integer-overflow")
+endif()
+
 get_target_property(CXX_PUBLIC_DEFS cxx INTERFACE_COMPILE_DEFINITIONS)
 if (CXX_PUBLIC_DEFS)
     list(TRANSFORM CXX_PUBLIC_DEFS PREPEND "-D")
@@ -161,8 +176,8 @@ else()
     set(RUSTCWRAPPER "")
 endif()
 
-# Note that RUSTFLAGS_CPU is defined in cpu_features.cmake
-set(RUSTFLAGS ${RUSTFLAGS_CPU})
+# Note that RUSTFLAGS_CPU is defined in cpu_features.cmake and RUSTFLAGS_ADD in the root CMakeLists.txt
+set(RUSTFLAGS ${RUSTFLAGS_CPU} ${RUSTFLAGS_ADD})
 
 # Otherwise /usr/bin/ld will not be able to link our openssl build (built with lld) to openssl rust wrapper (built ld)
 if (LINKER_NAME MATCHES "lld")
@@ -181,27 +196,43 @@ if (TOOLCHAIN_PATH)
     list(APPEND RUSTFLAGS "-C" "link-arg=--gcc-toolchain=${TOOLCHAIN_PATH}")
 endif()
 
-set(RUST_CARGO_BUILD_STD "")
+# Rebuild the standard library with our RUSTFLAGS, so it gets the sanitizer instrumentation and the stack protector too.
+set(RUST_CARGO_BUILD_STD "-Zbuild-std=std,panic_abort,core,alloc")
 # For more info: https://doc.rust-lang.org/beta/unstable-book/compiler-flags/sanitizer.html#memorysanitizer
 if (SANITIZE STREQUAL "memory")
-    set(RUST_CARGO_BUILD_STD "-Zbuild-std=std,panic_abort,core,alloc")
     list(APPEND RUSTFLAGS "-Zsanitizer=memory" "-Zsanitizer-memory-track-origins")
 elseif (SANITIZE STREQUAL "thread")
-    set(RUST_CARGO_BUILD_STD "-Zbuild-std=std,panic_abort,core,alloc")
     list(APPEND RUSTFLAGS "-Zsanitizer=thread")
 elseif (SANITIZE STREQUAL "address" OR SANITIZE STREQUAL "address,undefined")
     # Rust has no UBSan, so the combined ASan+UBSan build applies only ASan. Besides the
     # instrumentation itself, `-Zsanitizer=address` arms wasmtime's `cfg(asan)` guard, preventing
     # a stray munmap of live memory at thread exit: https://github.com/bytecodealliance/wasmtime/issues/13857
-    set(RUST_CARGO_BUILD_STD "-Zbuild-std=std,panic_abort,core,alloc")
     list(APPEND RUSTFLAGS "-Zsanitizer=address")
 endif()
 
-# rustc refuses to combine a sanitizer with a statically linked libc (the musl Rust target
+# Clang CFI is whole-program: the Rust code, its standard library included, is emitted as LLVM bitcode with CFI type
+# metadata and checked in the final link with the C and C++ code (which uses the same normalized integer encoding).
+if (ENABLE_CFI)
+    # The final link reads the bitcode of rustc, and LLVM does not read bitcode of a newer version than its own.
+    if (NOT Rust_LLVM_VERSION_MAJOR OR COMPILER_VERSION_MAJOR VERSION_LESS Rust_LLVM_VERSION_MAJOR)
+        message(FATAL_ERROR "ENABLE_CFI requires Clang ${Rust_LLVM_VERSION_MAJOR} or newer, the LLVM version of rustc "
+            "${Rust_VERSION} (${Rust_TOOLCHAIN}); found Clang ${CMAKE_CXX_COMPILER_VERSION}.")
+    endif()
+    list(APPEND RUSTFLAGS "-Clinker-plugin-lto" "-Zsanitizer=cfi" "-Zsanitizer-cfi-normalize-integers")
+    # The next trait solver fails to normalize the projections that the CFI type ids of some trait methods build (an
+    # internal compiler error in Cranelift since nightly-2026-08-22, https://github.com/rust-lang/rust/issues/166055),
+    # so CFI builds use the previous one.
+    list(APPEND RUSTFLAGS "-Znext-solver=no")
+    if (ENABLE_CFI_DIAGNOSTICS)
+        list(APPEND RUSTFLAGS "-Zsanitizer-cfi-diag" "-Zsanitizer-cfi-recover")
+    endif()
+endif()
+
+# rustc refuses to combine a sanitizer, CFI included, with a statically linked libc (the musl Rust target
 # defaults to `crt-static`). Disabling it only switches Rust's thread-locals to the
 # general-dynamic TLS model, which calls __tls_get_addr - already provided by musl's static
 # libc for exactly this case - so the resulting staticlib still needs no dynamic loader.
-if (USE_MUSL AND NOT SANITIZE STREQUAL "")
+if (USE_MUSL AND (NOT SANITIZE STREQUAL "" OR ENABLE_CFI))
     list(APPEND RUSTFLAGS "-C" "target-feature=-crt-static")
 endif()
 
@@ -222,6 +253,8 @@ endif()
 # the BOOL value `OFF`, which is not equal to the empty string (see cmake/sanitize.cmake).
 if (SANITIZE)
     list(APPEND RUSTFLAGS "--cfg" "rustix_use_libc")
+    # Check the preconditions of unsafe std functions (alignment, overlap, ...). A violation aborts, so not in production.
+    list(APPEND RUSTFLAGS "-Zub-checks=yes")
 endif()
 
 # Set metadata flag to force different hashes for different sanitizers
@@ -425,7 +458,12 @@ function(clickhouse_postprocess_rust_lib target_name)
     add_custom_target(${ARG_STEP}_${target_name} DEPENDS "${_output}")
     # Each step runs after the previous one: other generators attach the previous step's rule to this target too.
     add_dependencies(${ARG_STEP}_${target_name} ${_previous_step})
-    add_dependencies(${target_name} ${ARG_STEP}_${target_name})
+    # A dependency of `<target>` is an order-only dependency of every object of every target that links it, so the
+    # C++ compilation would wait for the step, although only the link needs its result. Ninja finds the rule by the
+    # path of the library in the link command; other generators need the dependency between the targets.
+    if (NOT CMAKE_GENERATOR MATCHES "Ninja")
+        add_dependencies(${target_name} ${ARG_STEP}_${target_name})
+    endif()
     set_property(TARGET ${target_name} PROPERTY CLICKHOUSE_RUST_LIB "${_output}")
     set_property(TARGET ${target_name} PROPERTY CLICKHOUSE_RUST_LIB_STEP ${ARG_STEP}_${target_name})
 
@@ -462,9 +500,7 @@ function(clickhouse_config_crate_env target_name)
        corrosion_set_env_vars(${target_name} "CARGO_BUILD_RUSTC_WRAPPER=${RUSTCWRAPPER}")
     endif()
 
-    if (NOT "${RUST_CARGO_BUILD_STD}" STREQUAL "")
-        corrosion_set_cargo_flags(${target_name} "${RUST_CARGO_BUILD_STD}")
-    endif()
+    corrosion_set_cargo_flags(${target_name} "${RUST_CARGO_BUILD_STD}")
 
     # See [1] for more details, but basically:
     # - we need to explicitly set CXXSTDLIB to avoid using of libstdc++

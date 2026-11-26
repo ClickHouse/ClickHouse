@@ -1,36 +1,32 @@
 ---
 slug: /use-cases/AI_ML/AIChat/semantic-layer
 sidebarTitle: 'Personalizando o chat do Assistant com uma camada semântica'
-title: 'Otimizando as conversas do Assistant com uma camada semântica'
-description: 'Guia para usar o AGENTS.md e fornecer regra de negócio personalizada e instruções específicas dos dados ao agente de chat do Assistant'
-keywords: ['AI', 'ClickHouse Cloud', 'Agente', 'AGENTS.md', 'Camada Semântica', 'Instruções Personalizadas', 'Prompt de Sistema']
+title: 'Otimizando conversas do Assistant com uma camada semântica'
+description: 'Guia sobre como usar o AGENTS.md para fornecer regras de negócio personalizadas e instruções específicas para seus dados ao agente de chat do Assistant'
+keywords: ['AI', 'ClickHouse Cloud', 'Agent', 'AGENTS.md', 'Semantic Layer', 'Custom Instructions', 'System Prompt']
 show_related_blogs: true
 doc_type: 'guide'
 ---
 
-O agente de chat do Assistant pode ser personalizado para entender a regra de negócio específica, as estruturas de dados e o conhecimento de domínio da sua organização por meio do **AGENTS.md** — uma consulta salva especial que atua como uma camada semântica sobre o prompt de sistema do agente.
+O agente de chat do Assistant pode ser personalizado para entender as regras de negócio, as estruturas de dados e o conhecimento de domínio específicos da sua empresa por meio do **AGENTS.md**, uma consulta salva especial que funciona como uma camada semântica sobre o prompt do sistema do agente.
 
-Ao criar um arquivo AGENTS.md, você pode fornecer instruções personalizadas que são injetadas no início de cada conversa para orientar a geração de consultas SQL e a análise de dados com base nos requisitos, cálculos e convenções exclusivos da sua organização.
+Ao criar um arquivo AGENTS.md, você pode fornecer instruções personalizadas que são inseridas no início de cada conversa para orientar a geração de consultas SQL e a análise de dados de acordo com os requisitos, cálculos e convenções próprios da sua organização.
 
-<div id="how-it-works">
-  ## Como funciona
-</div>
+## Como funciona {#how-it-works}
 
-Quando você salva uma consulta chamada &quot;AGENTS.md&quot; (sensível a maiúsculas e minúsculas) no Cloud Console:
+Quando você salva uma consulta com o nome &quot;AGENTS.md&quot; (diferenciando maiúsculas de minúsculas) no Console da nuvem:
 
-1. O agente de chat do Assistant carrega esse arquivo automaticamente quando uma mensagem é enviada
-2. O conteúdo é inserido em uma tag de conteúdo estruturado e injetado no `prompt de sistema` do agente
-3. As instruções são aplicadas a todas as conversas do Assistant chat nesse serviço
+1. O agente de chat do Assistant carrega esse arquivo automaticamente sempre que uma mensagem é enviada
+2. O conteúdo é inserido em uma tag de conteúdo estruturado e injetado no prompt do sistema do agente
+3. As instruções são aplicadas a todas as conversas do chat do Assistant nesse serviço
 
-<div id="creating-agents-md">
-  ## Criando AGENTS.md
-</div>
+## Criando o AGENTS.md {#creating-agents-md}
 
 <Steps>
   <Step title="Crie a consulta salva" id="create-query">
-    1. No Cloud Console, crie uma nova consulta
-    2. Dê a ela exatamente este nome: **&quot;AGENTS.md&quot;** (sensível a maiúsculas e minúsculas)
-    3. Escreva suas instruções personalizadas no editor de texto da consulta (não SQL de fato)
+    1. No Console da nuvem, crie uma nova consulta
+    2. Dê a ela exatamente o nome **&quot;AGENTS.md&quot;** (diferencia maiúsculas de minúsculas)
+    3. Escreva suas instruções personalizadas no editor de texto da consulta (não é SQL de verdade)
     4. Salve a consulta
   </Step>
 
@@ -40,37 +36,29 @@ Quando você salva uma consulta chamada &quot;AGENTS.md&quot; (sensível a maiú
     * Regras de negócio e cálculos
     * Orientações sobre a estrutura de dados
     * Terminologia específica do domínio
-    * Padrões comuns de consulta
+    * Padrões de consulta comuns
     * Regras de otimização de desempenho
   </Step>
 </Steps>
 
-<div id="best-practices">
-  ## Boas práticas
-</div>
+## Boas práticas {#best-practices}
 
-<div id="finite-resource">
-  ### Trate o contexto como um recurso finito
-</div>
+### Trate o contexto como um recurso finito {#finite-resource}
 
-O contexto é precioso — cada token consome o &quot;orçamento de atenção&quot; do agente. Assim como os humanos têm memória de trabalho limitada, os modelos de linguagem sofrem degradação de desempenho à medida que o contexto cresce. Isso significa encontrar o **menor conjunto possível de tokens mais informativos** que maximize a probabilidade do resultado desejado.
+O contexto é precioso: cada token consome o &quot;orçamento de atenção&quot; do agente. Assim como os humanos, que têm memória de trabalho limitada, os modelos de linguagem perdem desempenho à medida que o contexto cresce. Por isso, o objetivo é encontrar o **menor conjunto possível de tokens de alto sinal** que maximize a probabilidade de obter o resultado desejado.
 
-<div id="right-altitude">
-  ### Encontre o nível certo de detalhe
-</div>
+### Encontre o nível de abstração adequado {#right-altitude}
 
 Busque um equilíbrio entre dois extremos:
 
-* **Específico demais**: Codificar de forma rígida uma lógica if-else frágil, que gera instabilidade e aumenta a complexidade de manutenção
-* **Vago demais**: Orientações genéricas que não fornecem sinais concretos ou pressupõem, de forma equivocada, um contexto compartilhado
+* **Específico demais**: lógica if-else rígida e codificada diretamente (hard-coded), que torna o sistema frágil e difícil de manter
+* **Vago demais**: orientações de alto nível que não fornecem sinais concretos ou que pressupõem, equivocadamente, um contexto compartilhado
 
-O nível ideal de detalhe é específico o suficiente para orientar o comportamento com eficácia, mas flexível o bastante para que o modelo aplique heurísticas robustas. Comece com um prompt mínimo no melhor modelo disponível e, em seguida, adicione instruções claras com base nos modos de falha observados.
+O nível ideal é específico o suficiente para orientar o comportamento de forma eficaz, mas flexível o bastante para que o modelo aplique heurísticas sólidas. Comece com um prompt mínimo no melhor modelo disponível e, depois, adicione instruções claras com base nos modos de falha observados.
 
-<div id="structured-sections">
-  ### Organize em seções estruturadas
-</div>
+### Organize com seções estruturadas {#structured-sections}
 
-Use tags XML ou cabeçalhos Markdown para criar seções distintas e fáceis de consultar:
+Use tags XML ou títulos Markdown para criar seções distintas e fáceis de examinar rapidamente:
 
 ```xml
 <background_information>
@@ -86,30 +74,24 @@ How to use specific ClickHouse features
 </tool_guidance>
 ```
 
-<div id="canonical-examples">
-  ### Forneça exemplos diversos e canônicos
-</div>
+### Forneça exemplos diversos e canônicos {#canonical-examples}
 
-Os exemplos são como “imagens que valem mais que mil palavras”. Em vez de abarrotar seu prompt com todos os casos extremos, selecione um conjunto enxuto e diverso de exemplos que represente com clareza o comportamento esperado.
+Os exemplos são como &quot;uma imagem que vale mais que mil palavras&quot;. Em vez de entulhar seu prompt com todos os casos extremos possíveis, selecione um conjunto enxuto de exemplos diversos que ilustrem com eficácia o comportamento esperado.
 
-<div id="minimal-complete">
-  ### Mantenha o mínimo, mas sem deixar de ser completo
-</div>
+### Mantenha o conteúdo mínimo, porém completo {#minimal-complete}
 
-* Inclua apenas instruções necessárias com frequência
-* Seja conciso — contexto demais prejudica o desempenho devido à &quot;deterioração do contexto&quot;
+* Inclua apenas as instruções usadas com frequência
+* Seja conciso — um contexto maior prejudica o desempenho devido à &quot;context rot&quot; (deterioração do contexto)
 * Remova regras desatualizadas ou raramente usadas
 * Garanta informações suficientes para orientar o comportamento desejado
 
 <Tip>
-  Mínimo não significa necessariamente curto. Você precisa de detalhes suficientes para garantir que o agente siga o comportamento esperado, apenas evite verbosidade desnecessária.
+  Mínimo não significa necessariamente curto. É preciso haver detalhes suficientes para garantir que o agente se comporte como esperado; basta evitar verbosidade desnecessária.
 </Tip>
 
-<div id="example-calculated-metrics">
-  ## Exemplo: Métricas calculadas a partir de dados brutos
-</div>
+## Exemplo: métricas calculadas a partir de dados brutos {#example-calculated-metrics}
 
-Oriente o agente quando as métricas exigirem cálculos específicos, em vez de acesso direto à coluna:
+Oriente o agente quando as métricas exigirem cálculos específicos, em vez de acesso direto às colunas:
 
 ```xml
 <metric_calculations>
@@ -130,11 +112,9 @@ GROUP BY date;
 </metric_calculations>
 ```
 
-<div id="example-business-logic">
-  ## Exemplo: Regras de negócio
-</div>
+## Exemplo: Regras de negócio {#example-business-logic}
 
-Defina cálculos e classificações específicos do domínio:
+Defina cálculos e categorizações específicos do domínio:
 
 ```xml
 <business_rules>
@@ -166,11 +146,9 @@ Always include these categorizations when generating traffic or revenue reports.
 </business_rules>
 ```
 
-<div id="example-data-quirks">
-  ## Exemplo: peculiaridades da estrutura de dados
-</div>
+## Exemplo: peculiaridades da estrutura de dados {#example-data-quirks}
 
-Documente formatos de dados não convencionais ou decisões herdadas relacionadas ao schema:
+Documente formatos de dados pouco convencionais ou decisões de schema legadas:
 
 ```xml
 <data_structure_notes>
@@ -197,11 +175,9 @@ FROM products;
 </data_structure_notes>
 ```
 
-<div id="example-terminology">
-  ## Exemplo: terminologia do domínio
-</div>
+## Exemplo: terminologia de domínio {#example-terminology}
 
-Relacione os termos de negócio à implementação técnica:
+Mapeie termos de negócio para a implementação técnica correspondente:
 
 ```xml
 <terminology>

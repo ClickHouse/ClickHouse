@@ -11,7 +11,7 @@ integration:
 ---
 
 <div id="what-mongodb-resync-do">
-  ### 重新同步会执行什么操作？
+  ### 重新同步会执行什么操作？ {#what-mongodb-resync-do}
 </div>
 
 重新同步会按顺序执行以下操作：
@@ -28,22 +28,16 @@ integration:
   因为每次都会涉及使用并行线程进行初始加载。
 </Note>
 
-<div id="guide-mongodb-resync">
-  ### 重新同步 ClickPipe 指南
-</div>
+### 重新同步 ClickPipe 指南 {#guide-mongodb-resync}
 
 1. 在 **Data Sources** 选项卡中，点击你要重新同步的 MongoDB ClickPipe。
-2. 前往 **Settings** 选项卡。
+2. 前往 **设置** 选项卡。
 3. 点击 **重新同步** 按钮。
 
 <div className="ch-image-md">
-
-<Frame>
-
-![](/images/integrations/data-ingestion/clickpipes/postgres/resync_button.webp)
-
-</Frame>
-
+  <Frame>
+    ![](/images/integrations/data-ingestion/clickpipes/postgres/resync_button.webp)
+  </Frame>
 </div>
 
 4. 此时会弹出一个确认对话框。再次点击 **重新同步**。
@@ -51,4 +45,4 @@ integration:
 6. 等待该管道的状态变为 **Setup** 或 **Snapshot**。
 7. 你可以在 **Tables** 选项卡的 **Initial Load Stats** 部分监控重新同步的初始加载进度。
 8. 初始加载完成后，管道会以原子方式将 `_resync` 表与原始表进行交换。交换期间，状态将显示为 **重新同步**。
-9. 交换完成后，管道将进入 **Running** 状态；如果已启用，则会执行 CDC。
+9. 交换完成后，管道将进入 **Running** 状态；如果已启用，则会执行 CDC（变更数据捕获）。

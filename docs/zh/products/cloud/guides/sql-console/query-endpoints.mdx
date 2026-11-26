@@ -4,13 +4,13 @@ slug: /cloud/get-started/query-endpoints
 description: '轻松从您保存的查询创建 REST API 端点'
 keywords: ['api', '查询 api 端点', '查询端点', '查询 rest api']
 title: 设置查询 API 端点
-doc_type: '指南'
+doc_type: 'guide'
 ---
 
 **查询 API 端点**功能允许您直接根据 ClickHouse Cloud 控制台中任意已保存的 SQL 查询创建 API 端点。您可以通过 HTTP 访问这些 API 端点来执行已保存的查询，而无需使用原生驱动程序连接到您的 ClickHouse Cloud 服务。
 
 <div id="quick-start-guide">
-  ## 前提条件
+  ## 前提条件 {#quick-start-guide}
 </div>
 
 继续之前，请确保你具备：
@@ -67,25 +67,17 @@ doc_type: '指南'
     现在快速运行这个查询，在 SQL 编辑器右侧的查询变量输入框中指定年份 `2010`，确认它能够正常工作：
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![测试示例查询](/images/cloud/sqlconsole/endpoints-testquery.webp)
-
-    </Frame>
-
+      <Frame>
+        ![测试示例查询](/images/cloud/sqlconsole/endpoints-testquery.webp)
+      </Frame>
     </div>
 
     接下来，保存该查询：
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![保存示例查询](/images/cloud/sqlconsole/endpoints-savequery.webp)
-
-    </Frame>
-
+      <Frame>
+        ![保存示例查询](/images/cloud/sqlconsole/endpoints-savequery.webp)
+      </Frame>
     </div>
 
     有关已保存查询的更多文档，请参阅 [&quot;Saving a query&quot;](/zh/products/cloud/features/sql-console-features/sql-console#saving-a-query) 部分。
@@ -96,13 +88,9 @@ doc_type: '指南'
     系统会提示你指定哪些 API 密钥可以访问该端点：
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![配置查询端点](/images/cloud/sqlconsole/endpoints-configure.webp)
-
-    </Frame>
-
+      <Frame>
+        ![配置查询端点](/images/cloud/sqlconsole/endpoints-configure.webp)
+      </Frame>
     </div>
 
     选择 API 密钥后，系统会要求你：
@@ -115,16 +103,12 @@ doc_type: '指南'
     界面中会显示一个示例 `curl` 命令，便于你发送测试请求：
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![端点 curl 命令](/images/cloud/sqlconsole/endpoints-completed.webp)
-
-    </Frame>
-
+      <Frame>
+        ![端点 curl 命令](/images/cloud/sqlconsole/endpoints-completed.webp)
+      </Frame>
     </div>
 
-    为方便起见，界面中显示的 `curl` 命令如下：
+    为方便起见，界面中显示的 curl 命令如下：
 
     ```bash
     curl -H "Content-Type: application/json" -s --user '<key_id>:<key_secret>' '<API-endpoint>?format=JSONEachRow&param_year=<value>'
@@ -139,31 +123,23 @@ doc_type: '指南'
     创建查询 API 端点后，你可以使用 `curl` 或任何其他 HTTP 客户端测试其是否正常工作：
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![端点 curl 测试](/images/cloud/sqlconsole/endpoints-curltest.webp)
-
-    </Frame>
-
+      <Frame>
+        ![端点 curl 测试](/images/cloud/sqlconsole/endpoints-curltest.webp)
+      </Frame>
     </div>
 
     发送第一个请求后，**共享** 按钮右侧应会立即出现一个新按钮。点击它会打开一个弹出面板，其中包含该查询的监控数据：
 
     <div className="ch-image-sm">
-
-    <Frame>
-
-    ![端点监控](/images/cloud/sqlconsole/endpoints-monitoring.webp)
-
-    </Frame>
-
+      <Frame>
+        ![端点监控](/images/cloud/sqlconsole/endpoints-monitoring.webp)
+      </Frame>
     </div>
   </Step>
 </Steps>
 
 <div id="implementation-details">
-  ## 实现细节
+  ## 实现细节 {#implementation-details}
 </div>
 
 此端点用于执行您已保存的查询 API 端点中的查询。
@@ -177,7 +153,7 @@ POST /query-endpoints/{queryEndpointId}/run
 ```
 
 <div id="http-methods">
-  ### HTTP 方法
+  ### HTTP 方法 {#http-methods}
 </div>
 
 | 方法       | 用途             | 参数                                     |
@@ -198,7 +174,7 @@ POST /query-endpoints/{queryEndpointId}/run
 * 流式文件上传或大体量数据
 
 <div id="authentication">
-  ### 身份验证
+  ### 身份验证 {#authentication}
 </div>
 
 **必需：** 是
@@ -206,11 +182,11 @@ POST /query-endpoints/{queryEndpointId}/run
 **权限：** 访问查询端点所需的相应权限
 
 <div id="request-configuration">
-  ### 请求配置
+  ### 请求配置 {#request-configuration}
 </div>
 
 <div id="url-params">
-  #### URL 参数
+  #### URL 参数 {#url-params}
 </div>
 
 | 参数                | 必填    | 描述             |
@@ -218,7 +194,7 @@ POST /query-endpoints/{queryEndpointId}/run
 | `queryEndpointId` | **是** | 要执行的查询端点的唯一标识符 |
 
 <div id="query-params">
-  #### 查询参数
+  #### 查询参数 {#query-params}
 </div>
 
 | 参数                    | 必填 | 描述                                                           | 示例                       |
@@ -229,7 +205,7 @@ POST /query-endpoints/{queryEndpointId}/run
 | `:clickhouse_setting` | 否  | 任意受支持的 [ClickHouse 设置](/zh/reference/settings/session-settings) | `?max_threads=8`         |
 
 <div id="headers">
-  #### 请求头
+  #### 请求头 {#headers}
 </div>
 
 | 请求头                             | 必需 | 描述                     | 值                         |
@@ -240,11 +216,11 @@ POST /query-endpoints/{queryEndpointId}/run
 ***
 
 <div id="request-body">
-  ### 请求体
+  ### 请求体 {#request-body}
 </div>
 
 <div id="params">
-  #### 参数
+  #### 参数 {#params}
 </div>
 
 | 参数               | 类型     | 必填 | 描述       |
@@ -253,7 +229,7 @@ POST /query-endpoints/{queryEndpointId}/run
 | `format`         | string | 否  | 返回格式     |
 
 <div id="supported-formats">
-  #### 支持的格式
+  #### 支持的格式 {#supported-formats}
 </div>
 
 | 版本                  | 支持的格式                                                                                                                                                                    |
@@ -264,18 +240,18 @@ POST /query-endpoints/{queryEndpointId}/run
 ***
 
 <div id="responses">
-  ### 返回结果
+  ### 返回结果 {#responses}
 </div>
 
 <div id="success">
-  #### 成功
+  #### 成功 {#success}
 </div>
 
 **状态：** `200 OK`
 查询已成功执行。
 
 <div id="error-codes">
-  #### 错误码
+  #### 错误码 {#error-codes}
 </div>
 
 | 状态码                | 说明          |
@@ -285,7 +261,7 @@ POST /query-endpoints/{queryEndpointId}/run
 | `404 Not Found`    | 未找到指定的查询端点  |
 
 <div id="error-handling-best-practices">
-  #### 错误处理最佳实践
+  #### 错误处理最佳实践 {#error-handling-best-practices}
 </div>
 
 * 确保请求中包含有效的身份验证凭据
@@ -295,7 +271,7 @@ POST /query-endpoints/{queryEndpointId}/run
 ***
 
 <div id="upgrading-endpoint-versions">
-  ### 升级端点版本
+  ### 升级端点版本 {#upgrading-endpoint-versions}
 </div>
 
 要从版本 1 升级到版本 2：
@@ -310,11 +286,11 @@ POST /query-endpoints/{queryEndpointId}/run
 * 提升的性能和功能
 
 <div id="examples">
-  ## 示例
+  ## 示例 {#examples}
 </div>
 
 <div id="basic-request">
-  ### 基本请求
+  ### 基本请求 {#basic-request}
 </div>
 
 **查询 API 端点 SQL：**
@@ -324,7 +300,7 @@ SELECT database, name AS num_tables FROM system.tables LIMIT 3;
 ```
 
 <div id="version-1">
-  #### 版本 1
+  #### 版本 1 {#version-1}
 </div>
 
 <Tabs>
@@ -382,7 +358,7 @@ SELECT database, name AS num_tables FROM system.tables LIMIT 3;
 </Tabs>
 
 <div id="version-2">
-  #### 版本 2
+  #### 版本 2 {#version-2}
 </div>
 
 <Tabs>
@@ -436,7 +412,7 @@ SELECT database, name AS num_tables FROM system.tables LIMIT 3;
 </Tabs>
 
 <div id="request-with-query-variables-and-version-2-on-jsoncompacteachrow-format">
-  ### 使用查询变量和 JSONCompactEachRow 格式版本 2 发起请求
+  ### 使用查询变量和 JSONCompactEachRow 格式版本 2 发起请求 {#request-with-query-variables-and-version-2-on-jsoncompacteachrow-format}
 </div>
 
 **查询 API 端点 SQL：**
@@ -503,7 +479,7 @@ SELECT name, database FROM system.tables WHERE match(name, {tableNameRegex: Stri
 </Tabs>
 
 <div id="request-with-array-in-the-query-variables-that-inserts-data-into-a-table">
-  ### 在查询变量中使用数组并向表中插入数据的请求
+  ### 在查询变量中使用数组并向表中插入数据的请求 {#request-with-array-in-the-query-variables-that-inserts-data-into-a-table}
 </div>
 
 **表 SQL：**
@@ -568,7 +544,7 @@ INSERT INTO default.t_arr VALUES ({arr: Array(Array(Array(UInt32)))});
 </Tabs>
 
 <div id="request-with-clickhouse-settings-max_threads-set-to-8">
-  ### 将 ClickHouse 设置 `max_threads` 设为 8 的请求
+  ### 将 ClickHouse 设置 `max_threads` 设为 8 的请求 {#request-with-clickhouse-settings-max_threads-set-to-8}
 </div>
 
 **查询 API 端点 SQL：**
@@ -616,7 +592,7 @@ SELECT * FROM system.tables;
 </Tabs>
 
 <div id="request-and-parse-the-response-as-a-stream">
-  ### 请求并将响应作为stream解析
+  ### 请求并将响应作为stream解析 {#request-and-parse-the-response-as-a-stream}
 </div>
 
 **查询 API 端点 SQL：**
@@ -688,7 +664,7 @@ SELECT name, database FROM system.tables;
 </Tabs>
 
 <div id="insert-a-stream-from-a-file-into-a-table">
-  ### 将文件中的stream插入表中
+  ### 将文件中的stream插入表中 {#insert-a-stream-from-a-file-into-a-table}
 </div>
 
 创建文件 `./samples/my_first_table_2024-07-11.csv`，内容如下：

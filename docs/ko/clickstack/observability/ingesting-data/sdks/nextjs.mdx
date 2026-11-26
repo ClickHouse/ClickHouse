@@ -1,0 +1,97 @@
+---
+slug: /clickstack/observability/ingesting-data/sdks/nextjs
+description: 'ClickHouse Observability 및 자가 관리형 배포 환경에서 Next.js를 설정하고 구성하는 방법입니다.'
+title: 'Next.js'
+doc_type: 'guide'
+keywords: ['ClickHouse Observability', 'SDK', 'instrumentation']
+sidebarTitle: 'Next.js'
+---
+
+import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
+
+import { ClickStackIntegrates } from '/snippets/ko/components/ClickStackIntegrates/ClickStackIntegrates.jsx'
+
+Next.js 배포 환경에 맞는 서버 측 instrumentation을 선택하십시오.
+
+* **자체 호스팅, Node.js 런타임:** ClickStack Node.js SDK를 사용하십시오.
+* **Vercel 또는 Edge 런타임:** `@vercel/otel`을 사용하십시오.
+
+브라우저 텔레메트리와 세션 리플레이를 설정하려면 [브라우저 SDK 가이드](/ko/clickstack/observability/ingesting-data/sdks/browser)를 참조하십시오.
+
+<ClickStackIntegrates signals={['traces']} />
+
+## 자체 호스팅 Next.js {#self-hosted-nextjs}
+
+Node.js 22.15 이상 버전을 사용하고 SDK를 설치하십시오:
+
+```shell
+npm install @clickhouse/clickstack-node
+```
+
+프로젝트 루트에 `instrumentation.ts` 파일을 생성하십시오. 애플리케이션에서 `src` 디렉터리를 사용하는 경우에는 `src`에 생성합니다. SDK는 Node.js 런타임에서만 초기화하십시오.
+
+```typescript
+export async function register() {
+  if (process.env.NEXT_RUNTIME === 'nodejs') {
+    const { init } = await import('@clickhouse/clickstack-node');
+    init();
+  }
+}
+```
+
+SDK가 서버 번들 외부에서 로드되도록 기존 Next.js 구성의 `serverExternalPackages`에 SDK를 추가하십시오:
+
+```javascript
+// next.config.mjs
+export default {
+  serverExternalPackages: ['@clickhouse/clickstack-node'],
+};
+```
+
+아래에서 대상을 구성하고, 애플리케이션을 식별할 수 있도록 `OTEL_SERVICE_NAME`을 설정하십시오. 이때 SDK를 별도로 미리 로드하거나 다른 OpenTelemetry SDK를 초기화하지 마십시오. 추가 옵션은 [Node.js 가이드](/ko/clickstack/observability/ingesting-data/sdks/nodejs)를 참조하십시오.
+
+종료 및 배포 시 고려 사항은 [SDK의 Next.js 가이드](https://github.com/ClickHouse/clickstack-node#nextjs)를 참조하십시오.
+
+## Vercel 및 Edge 런타임 {#vercel-or-edge}
+
+[Next.js OpenTelemetry 설정 지침](https://nextjs.org/docs/app/guides/open-telemetry)에 따라 `@vercel/otel`을 사용하십시오. 앞에서 설명한 ClickStack Node.js SDK 초기화 대신 이 설정을 사용합니다.
+
+아래 연결 설정을 사용하여 [OTLP 내보내기](https://github.com/vercel/otel/tree/main/packages/otel#registerotelconfig-configuration)를 구성하십시오. 예시 대상과 신호별 엔드포인트 재정의는 모두 아래 값으로 대체하고, 변수는 배포 구성에서 설정하십시오.
+
+Vercel 배포에서 이미 추적 통합을 사용하고 있다면 이 대상에 맞는 [사용자 정의 익스포터](https://nextjs.org/docs/app/guides/open-telemetry#custom-exporters)를 구성하십시오. 엔드포인트 환경 변수만으로는 기존 통합 설정이 재정의되지 않습니다.
+
+## 대상 구성 {#configure-destination}
+
+어떤 instrumentation 옵션을 사용하든 서비스 이름을 설정하십시오:
+
+```shell
+export OTEL_SERVICE_NAME='my-nextjs-app'
+```
+
+<Tabs>
+  <Tab title="완전 관리형">
+    <BetaBadge label="베타 제공" />
+
+    서비스에서 **팀 설정 → 데이터 → Managed Telemetry**를 열고 **OTLP HTTP 엔드포인트**와 **API Key**를 복사하십시오. HTTPS 엔드포인트는 포트를 포함한 전체 주소를 사용하십시오:
+
+    ```shell
+    export OTEL_EXPORTER_OTLP_ENDPOINT='https://YOUR_OTEL_ENDPOINT:4318'
+    export OTEL_EXPORTER_OTLP_HEADERS='authorization=Bearer%20YOUR_INGESTION_API_KEY'
+    export OTEL_EXPORTER_OTLP_PROTOCOL='http/protobuf'
+    ```
+  </Tab>
+
+  <Tab title="자가 관리형">
+    collector의 OTLP HTTP 엔드포인트와 수집 키를 사용하십시오. collector에 TLS가 구성되어 있지 않으면 `https://` 대신 `http://`를 사용하십시오. collector 설정 방법은 [OpenTelemetry로 데이터 수집하기](/ko/clickstack/observability/ingesting-data/opentelemetry#self-managed)를 참조하십시오.
+
+    ```shell
+    export OTEL_EXPORTER_OTLP_ENDPOINT='https://YOUR_COLLECTOR_HOST:4318'
+    export OTEL_EXPORTER_OTLP_HEADERS='authorization=YOUR_INGESTION_API_KEY'
+    export OTEL_EXPORTER_OTLP_PROTOCOL='http/protobuf'
+    ```
+  </Tab>
+</Tabs>
+
+## 수집 확인 {#verify-ingestion}
+
+애플리케이션을 시작한 다음 서버에서 렌더링되는 페이지나 API 라우트로 요청을 보내십시오. ClickHouse Observability에서 최근 시간 범위를 선택한 후 Traces에서 애플리케이션의 서비스 이름을 찾으십시오.
