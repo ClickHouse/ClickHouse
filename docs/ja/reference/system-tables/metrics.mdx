@@ -50,6 +50,26 @@ Aggregator スレッドプール内のスレッド数。
 
 Aggregator スレッドプール内でキューに入っている、または実行中のジョブ数。
 
+### AIRequestThreads {#airequestthreads}
+
+AI リクエスト用スレッドプール内のスレッド数。
+
+### AIRequestThreadsActive {#airequestthreadsactive}
+
+タスクを実行中の AI リクエスト用スレッドプール内のスレッド数。
+
+### AIRequestThreadsScheduled {#airequestthreadsscheduled}
+
+AI リクエスト用のスレッドプールで、キューに入っているジョブまたは実行中のジョブの数。
+
+### AmberConnectionsStored {#amberconnectionsstored}
+
+Amber の セッションプール に保存されているセッションの総数
+
+### AmberConnectionsTotal {#amberconnectionstotal}
+
+Amber のすべてのセッションの合計数 (pool に保存済みのセッションと、現在使用中のセッションの合計)
+
 ### ASTFuzzerAccumulatedFragments {#astfuzzeraccumulatedfragments}
 
 今後のミューテーションで使用するために、サーバー側のAST fuzzerが蓄積したASTフラグメント数。
@@ -382,18 +402,6 @@ CPUスロット待機中のプリエンプトされたスレッドの総数
 
 CPU slots 数のソフト制限値
 
-### ConcurrentHashJoinPoolThreads {#concurrenthashjoinpoolthreads}
-
-同時実行ハッシュ結合用スレッドプール内のスレッド数。
-
-### ConcurrentHashJoinPoolThreadsActive {#concurrenthashjoinpoolthreadsactive}
-
-タスクを実行中の同時実行ハッシュ結合用スレッドプール内のスレッド数。
-
-### ConcurrentHashJoinPoolThreadsScheduled {#concurrenthashjoinpoolthreadsscheduled}
-
-同時実行ハッシュ結合用のスレッドプールで、キューに入っているジョブまたは実行中のジョブの数。
-
 ### ConcurrentQueryAcquired {#concurrentqueryacquired}
 
 取得済みのクエリスロットの総数
@@ -606,6 +614,14 @@ ClickHouse のディスク経由で S3 の cloud storage からデータを読�
 
 現在のAZに登録されている分散キャッシュサーバーの数
 
+### DistrCacheServerCommittedTemporaryFiles {#distrcacheservercommittedtemporaryfiles}
+
+この分散キャッシュサーバープロセスが所有するコミット済み一時ファイルの数
+
+### DistrCacheServerCommittedTemporaryFilesBytes {#distrcacheservercommittedtemporaryfilesbytes}
+
+この分散キャッシュサーバープロセスが所有する、コミット済み一時ファイルの合計サイズ (バイト単位)
+
 ### DistrCacheServerConnections {#distrcacheserverconnections}
 
 分散キャッシュ から ClickHouse server への確立済み接続数
@@ -621,6 +637,18 @@ ClickHouse のディスク経由で S3 の cloud storage からデータを読�
 ### DistrCacheSharedLimitCount {#distrcachesharedlimitcount}
 
 DistributedCache::ConnectionPool::SharedLimit に基づく、オープン中の接続数
+
+### DistrCacheTemporaryDataActiveIds {#distrcachetemporarydataactiveids}
+
+有効なコミット済み一時データ ID の数
+
+### DistrCacheTemporaryDataConnectionsBypassingPool {#distrcachetemporarydataconnectionsbypassingpool}
+
+分散キャッシュ クライアントのメトリクス。一時データ用に接続プールを経由せずに開かれた接続の数
+
+### DistrCacheTemporaryDataServers {#distrcachetemporarydataservers}
+
+コミット済みの一時データを保持しているサーバー数
 
 ### DistrCacheUsedConnections {#distrcacheusedconnections}
 
@@ -854,13 +882,13 @@ cache 内の領域確保を試みているスレッド数
 
 グローバルスレッドプールでキューに入っている、または実行中のジョブ数。
 
-### GlueCatalogSchemaCacheBytes {#gluecatalogschemacachebytes}
+### GPUExpressionKernelCacheBytes {#gpuexpressionkernelcachebytes}
 
-Glue カタログにおける現在の Iceberg スキーマのフィールド型を保持するキャッシュのサイズ (バイト単位)
+GPU エンジンが式用にコンパイルし、デバイス上に読み込んだまま保持しているカーネルの PTX のサイズ (バイト単位)。
 
-### GlueCatalogSchemaCacheEntries {#gluecatalogschemacacheentries}
+### GPUExpressionKernelCacheCount {#gpuexpressionkernelcachecount}
 
-Glue カタログ内の現在の Iceberg スキーマのフィールド型を保持するキャッシュのエントリ数
+GPU エンジンが式向けにコンパイルし、デバイス上に読み込んだまま保持しているカーネルの数。
 
 ### HashedDictionaryThreads {#hasheddictionarythreads}
 
@@ -873,6 +901,18 @@ HashedDictionary のスレッドプールでタスクを実行中のスレッド
 ### HashedDictionaryThreadsScheduled {#hasheddictionarythreadsscheduled}
 
 HashedDictionary の thread pool でキューに入っている、または実行中のジョブ数。
+
+### HashJoinDestroyThreads {#hashjoindestroythreads}
+
+ハッシュ結合の右テーブル破棄用スレッドプール内のスレッド数。
+
+### HashJoinDestroyThreadsActive {#hashjoindestroythreadsactive}
+
+タスクを実行中の、ハッシュ結合の右テーブル破棄用スレッドプール内のスレッド数。
+
+### HashJoinDestroyThreadsScheduled {#hashjoindestroythreadsscheduled}
+
+ハッシュ結合の右テーブルを破棄するためのスレッドプールで、キューに入っているジョブまたは実行中のジョブの数。
 
 ### HiveFilesCacheBytes {#hivefilescachebytes}
 
@@ -942,18 +982,6 @@ IcebergCompaction スレッドプールでタスクを実行しているスレ�
 
 IcebergCompaction スレッドプール内でキューに入っている、または実行中のジョブ数。
 
-### IcebergManifestDecodeThreads {#icebergmanifestdecodethreads}
-
-Iceberg のデータマニフェストファイルのデコードに使用されるスレッドプール内のスレッド数。
-
-### IcebergManifestDecodeThreadsActive {#icebergmanifestdecodethreadsactive}
-
-Iceberg のデータマニフェストファイルのデコードに使用されるスレッドプールで、タスクを実行中のスレッド数。
-
-### IcebergManifestDecodeThreadsScheduled {#icebergmanifestdecodethreadsscheduled}
-
-Iceberg のデータマニフェストファイルのデコードに使用されるスレッドプールにおいて、キューに入っている、または実行中の job の数。
-
 ### IcebergMetadataFilesCacheBytes {#icebergmetadatafilescachebytes}
 
 Iceberg メタデータキャッシュのサイズ (バイト単位)
@@ -961,6 +989,14 @@ Iceberg メタデータキャッシュのサイズ (バイト単位)
 ### IcebergMetadataFilesCacheFiles {#icebergmetadatafilescachefiles}
 
 Iceberg のメタデータキャッシュに保存されているファイル数
+
+### IcebergRESTCatalogWarehouseCacheEntries {#icebergrestcatalogwarehousecacheentries}
+
+Iceberg REST カタログサーバーのウェアハウスキャッシュ内にあるウェアハウスの数
+
+### IcebergRESTCatalogWarehouseCacheSize {#icebergrestcatalogwarehousecachesize}
+
+Iceberg REST カタログサーバーの warehouse キャッシュのサイズ。warehouse 1 つにつき 1 としてカウントされます
 
 ### IcebergSchedulePoolSize {#icebergschedulepoolsize}
 
@@ -1325,6 +1361,18 @@ MergeTree パーツローダー用スレッドプールで、キュー待ちま�
 ### MergeTreeSnapshotCommitThreadsScheduled {#mergetreesnapshotcommitthreadsscheduled}
 
 スナップショットのコミットに使用される、スケジュールされているスレッド数
+
+### MergeTreeStatisticsLoaderThreads {#mergetreestatisticsloaderthreads}
+
+パーツの統計情報を読み込むためのスレッドプール内のスレッド数。
+
+### MergeTreeStatisticsLoaderThreadsActive {#mergetreestatisticsloaderthreadsactive}
+
+タスクを実行中の、パーツの統計情報読み込み用スレッドプール内のスレッド数。
+
+### MergeTreeStatisticsLoaderThreadsScheduled {#mergetreestatisticsloaderthreadsscheduled}
+
+パーツの統計情報を読み込むためのスレッドプールで、キューに入っているジョブまたは実行中のジョブの数。
 
 ### MergeTreeSubcolumnsReaderThreads {#mergetreesubcolumnsreaderthreads}
 
@@ -2269,6 +2317,18 @@ TimeSeries テーブルの tags テーブルが持つ重複排除キャッシュ
 ### 一時ファイル総数 {#totaltemporaryfiles}
 
 作成された一時ファイル数
+
+### TransactionLogEntries {#transactionlogentries}
+
+最後に一覧表示した時点でのトランザクションログ (`/log`) 内のエントリ数
+
+### TransactionsRunning {#transactionsrunning}
+
+このレプリカで開始され、現在実行中のトランザクションの数
+
+### TransactionWatermarkLag {#transactionwatermarklag}
+
+最新のトランザクションスナップショットからグローバルウォーターマークを差し引いた値です。新しいトランザクションは、この値の分だけ CSN が遅れた状態で読み取りを行います
 
 ### UDFDriverInvokerThreads {#udfdriverinvokerthreads}
 

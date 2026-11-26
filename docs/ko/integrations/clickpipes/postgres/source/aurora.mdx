@@ -13,14 +13,12 @@ integration:
 import { IAMAuthentication } from "/snippets/ko/clickpipes/_iam_authentication.mdx";
 
 <div id="supported-postgres-versions">
-  ## 지원되는 Postgres 버전
+  ## 지원되는 Postgres 버전 {#supported-postgres-versions}
 </div>
 
 ClickPipes는 Aurora PostgreSQL 호환 에디션 12 이상을 지원합니다.
 
-<div id="enable-logical-replication">
-  ## 논리적 복제 활성화
-</div>
+## 논리적 복제 활성화 {#enable-logical-replication}
 
 Aurora 인스턴스에 다음 설정이 이미 구성되어 있으면 이 섹션은 건너뛰어도 됩니다.
 
@@ -42,52 +40,34 @@ postgres=> SHOW rds.logical_replication ;
    * `rds.logical_replication`을 1로 설정합니다
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Aurora에서 파라미터 그룹을 찾는 위치](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/parameter_group_in_blade.webp)
-
-</Frame>
-
+  <Frame>
+    ![Aurora에서 파라미터 그룹을 찾는 위치](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/parameter_group_in_blade.webp)
+  </Frame>
 </div>
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![rds.logical_replication 변경](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/change_rds_logical_replication.webp)
-
-</Frame>
-
+  <Frame>
+    ![rds.logical_replication 변경](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/change_rds_logical_replication.webp)
+  </Frame>
 </div>
 
 2. 새 파라미터 그룹을 Aurora PostgreSQL 클러스터에 적용합니다
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![새 파라미터 그룹으로 Aurora PostgreSQL 수정](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/modify_parameter_group.webp)
-
-</Frame>
-
+  <Frame>
+    ![새 파라미터 그룹으로 Aurora PostgreSQL 수정](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/modify_parameter_group.webp)
+  </Frame>
 </div>
 
 3. 변경 사항을 적용하기 위해 Aurora 클러스터를 재부팅합니다
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Aurora PostgreSQL 재부팅](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/reboot_rds.webp)
-
-</Frame>
-
+  <Frame>
+    ![Aurora PostgreSQL 재부팅](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/reboot_rds.webp)
+  </Frame>
 </div>
 
-<div id="configure-database-user">
-  ## 데이터베이스 사용자 구성
-</div>
+## 데이터베이스 사용자 구성 {#configure-database-user}
 
 관리자 권한 사용자로 Aurora PostgreSQL writer 인스턴스에 연결한 다음, 다음 명령을 실행합니다:
 
@@ -123,16 +103,16 @@ postgres=> SHOW rds.logical_replication ;
   CREATE PUBLICATION clickpipes FOR TABLE table_to_replicate, table_to_replicate2;
   ```
 
-  * 특정 스키마의 모든 테이블에 대한 publication을 생성하려면:
+* 특정 스키마의 모든 테이블에 대한 publication을 생성하려면:
 
-    ```sql
-    CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
-    ```
+  ```sql
+  CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
+  ```
 
 `clickpipes` publication은 변경 이벤트가 ClickPipes로 스트리밍될 테이블 집합을 정의합니다. 모든 테이블을 복제할 계획이 아니라면 `FOR ALL TABLES` 사용은 권장하지 않습니다. 불필요한 테이블이 포함되면 Postgres에서 ClickPipes로 전송되는 WAL 트래픽이 증가하고 전체 복제 효율이 저하되기 때문입니다.
 
 <div id="iam-authentication">
-  ### IAM authentication 사용(선택 사항)
+  ### IAM authentication 사용(선택 사항) {#iam-authentication}
 </div>
 
 <IAMAuthentication engine="postgres" service="aurora">
@@ -142,43 +122,33 @@ postgres=> SHOW rds.logical_replication ;
 </IAMAuthentication>
 
 <div id="configure-network-access">
-  ## 네트워크 액세스 설정
+  ## 네트워크 액세스 설정 {#configure-network-access}
 </div>
 
-<div id="ip-based-access-control">
-  ### IP 기반 접근 제어
-</div>
+### IP 기반 접근 제어 {#ip-based-access-control}
 
 Aurora 클러스터로의 트래픽을 제한하려면 [문서에 안내된 정적 NAT IP 주소](/ko/integrations/clickpipes/networking/static-ips)를 Aurora 보안 그룹의 `Inbound rules`에 추가하십시오.
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Aurora PostgreSQL에서 보안 그룹은 어디에서 찾습니까?](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/security_group_in_rds_postgres.webp)
-
-</Frame>
-
+  <Frame>
+    ![Aurora PostgreSQL에서 보안 그룹을 찾는 위치](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/security_group_in_rds_postgres.webp)
+  </Frame>
 </div>
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![위 보안 그룹의 인바운드 규칙 편집](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/edit_inbound_rules.webp)
-
-</Frame>
-
+  <Frame>
+    ![위 보안 그룹의 인바운드 규칙 편집](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/edit_inbound_rules.webp)
+  </Frame>
 </div>
 
 <div id="private-access-via-aws-privatelink">
-  ### AWS PrivateLink를 통한 프라이빗 액세스
+  ### AWS PrivateLink를 통한 프라이빗 액세스 {#private-access-via-aws-privatelink}
 </div>
 
 프라이빗 네트워크를 통해 Aurora 클러스터에 연결하려면 AWS PrivateLink를 사용할 수 있습니다. 연결을 설정하려면 [ClickPipes용 AWS PrivateLink 설정 가이드](/ko/resources/support-center/knowledge-base/cloud-services/aws-privatelink-setup-for-clickpipes)를 따르십시오.
 
 <div id="aurora-specific-considerations">
-  ### Aurora 관련 고려 사항
+  ### Aurora 관련 고려 사항 {#aurora-specific-considerations}
 </div>
 
 Aurora PostgreSQL에서 ClickPipes를 설정할 때는 다음 사항을 유의하십시오.
@@ -192,7 +162,7 @@ Aurora PostgreSQL에서 ClickPipes를 설정할 때는 다음 사항을 유의�
 4. **스토리지 관련 고려 사항**: Aurora의 스토리지 계층은 클러스터의 모든 인스턴스에서 공유되므로, 표준 RDS보다 논리적 복제 성능이 더 좋을 수 있습니다.
 
 <div id="dealing-with-dynamic-cluster-endpoints">
-  ### 동적 클러스터 엔드포인트 처리하기
+  ### 동적 클러스터 엔드포인트 처리하기 {#dealing-with-dynamic-cluster-endpoints}
 </div>
 
 Aurora는 적절한 인스턴스로 자동 라우팅되는 안정적인 엔드포인트를 제공하지만, 일관된 연결을 보장하기 위한 추가적인 방법은 다음과 같습니다.
@@ -202,7 +172,7 @@ Aurora는 적절한 인스턴스로 자동 라우팅되는 안정적인 엔드�
 2. 리전 간 복제를 사용하는 경우, 지연 시간을 줄이고 장애 허용을 높이기 위해 각 리전별로 별도의 ClickPipes를 설정하는 것을 고려하세요.
 
 <div id="whats-next">
-  ## 다음 단계
+  ## 다음 단계 {#whats-next}
 </div>
 
 이제 [ClickPipe를 생성](/ko/integrations/clickpipes/postgres/index)하고 Aurora PostgreSQL 클러스터에서 ClickHouse Cloud로 데이터 수집을 시작할 수 있습니다.

@@ -14,9 +14,7 @@ doc_type: 'reference'
 
 يمكن استخدام كلتا الدالتين في استعلامات `SELECT` و`INSERT` عندما يكون الهدف `db`/`table` عاديًا. وعندما يكون الهدف نفسه دالة جدول (على سبيل المثال `remote('127.0.0.1', numbers(10))`)، يكون الجدول للقراءة فقط: لا يوجد جدول بعيد يمكن إجراء `INSERT` فيه، لذلك يُرفَض `INSERT` مع استثناء `NOT_IMPLEMENTED`.
 
-<div id="syntax">
-  ## البنية النحوية
-</div>
+## البنية النحوية {#syntax}
 
 ```sql
 remote(addresses_expr, [db, table, user [, password], sharding_key][, SETTINGS name = value, ...])
@@ -27,31 +25,25 @@ remoteSecure(addresses_expr, [db.table, user [, password], sharding_key][, SETTI
 remoteSecure(named_collection[, option=value [,..]][, SETTINGS name = value, ...])
 ```
 
-<div id="parameters">
-  ## المعلمات
-</div>
+## المعلمات {#parameters}
 
 | الوسيطة                      | الوصف                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `addresses_expr`             | عنوان خادم بعيد أو تعبير يُولِّد عدة عناوين لخوادم بعيدة. التنسيق: `host` أو `host:port`.<br /><br />    يمكن تحديد `host` على أنه اسم خادم، أو عنوان IPv4 أو عنوان IPv6. يجب تحديد عنوان IPv6 داخل `[]`.<br /><br />    يشير `port` إلى منفذ TCP على الخادم البعيد. إذا لم يُحدَّد المنفذ، فسيتم استخدام [tcp&#95;port](/ar/reference/settings/server-settings/settings/tcp-port#tcp_port) من ملف إعدادات الخادم لدالة الجدول `remote` (افتراضيًا 9000) و[tcp&#95;port&#95;secure](/ar/reference/settings/server-settings/settings/tcp-port#tcp_port_secure) لدالة الجدول `remoteSecure` (افتراضيًا 9440).<br /><br />    بالنسبة إلى عناوين IPv6، يكون تحديد المنفذ إلزاميًا.<br /><br />    إذا تم تحديد المعلمة `addresses_expr` فقط، فسيتم استخدام `system.one` افتراضيًا لكل من `db` و`table`.<br /><br />    النوع: [String](/ar/reference/data-types/string). |
+| `addresses_expr`             | عنوان خادم بعيد أو تعبير يُولِّد عدة عناوين لخوادم بعيدة. التنسيق: `host` أو `host:port`.<br /><br />    يمكن تحديد `host` على أنه اسم خادم، أو عنوان IPv4 أو عنوان IPv6. يجب تحديد عنوان IPv6 داخل `[]`.<br /><br />    يشير `port` إلى منفذ TCP على الخادم البعيد. إذا لم يُحدَّد المنفذ، فسيتم استخدام [tcp&#95;port](/ar/reference/settings/server-settings/settings/tcp-port#tcp_port) من ملف إعدادات الخادم لدالة الجدول `remote` (افتراضيًا 9000) و[tcp&#95;port&#95;secure](/ar/reference/settings/server-settings/settings/tcp-port#tcp_port_secure) لدالة الجدول `remoteSecure` (افتراضيًا 9440).<br /><br />    بالنسبة إلى عناوين IPv6، يكون تحديد المنفذ إلزاميًا.<br /><br />    إذا تم تحديد المعلمة `addresses_expr` فقط، فسيتم استخدام `system.one` افتراضيًا لكل من `db` و`table`.<br /><br />    النوع: [String](/ar/reference/data-types/string). |
 | `db`                         | اسم قاعدة البيانات. النوع: [String](/ar/reference/data-types/string).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | `table`                      | اسم الجدول. النوع: [String](/ar/reference/data-types/string).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| `user`                       | اسم المستخدم. إذا لم يُحدَّد، فستُستخدم القيمة `default`. النوع: [String](/ar/reference/data-types/string).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| `password`                   | كلمة مرور المستخدم. إذا لم تُحدَّد، فستُستخدم كلمة مرور فارغة. النوع: [String](/ar/reference/data-types/string).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| `user`                       | اسم المستخدم. إذا لم يُحدَّد، فستُستخدم القيمة `default`. النوع: [String](/ar/reference/data-types/string).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| `password`                   | كلمة مرور المستخدم. إذا لم تُحدَّد، فستُستخدم كلمة مرور فارغة. النوع: [String](/ar/reference/data-types/string).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | `sharding_key`               | مفتاح التقسيم الأفقي لدعم توزيع البيانات عبر العُقد. على سبيل المثال: `insert into remote('127.0.0.1:9000,127.0.0.2', db, table, 'default', rand())`. النوع: [UInt32](/ar/reference/data-types/int-uint).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| `SETTINGS name = value, ...` | إعدادات جدول Distributed الذي تُنشئه الدالة، مثل `skip_unavailable_shards`. اختياري. تكون للإعدادات المحددة في الاستعلام الأولوية عليها. يُقبل هذا البند داخل دالة الجدول فقط؛ ويأخذ محرّكا الجدول `Remote` و`RemoteSecure` الإعدادات نفسها بعد تعريف المحرك، راجع [محركي Remote وRemoteSecure](/ar/reference/engines/table-engines/special/distributed#distributed-remote-engines).                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| `SETTINGS name = value, ...` | إعدادات جدول Distributed الذي تُنشئه الدالة، مثل `skip_unavailable_shards`. اختياري. تكون للإعدادات المحددة في الاستعلام الأولوية عليها. تُقبل هذه العبارة داخل دالة الجدول فقط؛ ويأخذ محرّكا الجدول `Remote` و`RemoteSecure` الإعدادات نفسها بعد تعريف المحرك، راجع [محركي Remote وRemoteSecure](/ar/reference/engines/table-engines/special/distributed#distributed-remote-engines).                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 
 يمكن أيضًا تمرير الوسائط باستخدام [المجموعات المسماة](/ar/concepts/features/configuration/server-config/named-collections).
 
-<div id="returned-value">
-  ## القيمة المُعادة
-</div>
+## القيمة المُعادة {#returned-value}
 
 جدول موجود على خادم بعيد.
 
-<div id="usage">
-  ## الاستخدام
-</div>
+## الاستخدام {#usage}
 
 نظرًا إلى أن دالتي الجداول `remote` و`remoteSecure` تعيدان إنشاء الاتصال مع كل طلب، يُنصح باستخدام جدول `Distributed` بدلًا من ذلك. كذلك، إذا كانت أسماء المضيفين محددة، فستُحلّ هذه الأسماء، ولن تُحتسب الأخطاء عند العمل مع عدة نسخ متماثلة. وعند معالجة عدد كبير من الاستعلامات، احرص دائمًا على إنشاء جدول `Distributed` مسبقًا، ولا تستخدم دالة الجدول `remote`.
 
@@ -65,9 +57,7 @@ remoteSecure(named_collection[, option=value [,..]][, SETTINGS name = value, ...
 
 يمكن استخدام المعلمات نفسها مع محركي الجدول `Remote` و`RemoteSecure` لإنشاء جدول دائم بدلًا من جدول مُخصّص، راجع [محركي Remote وRemoteSecure](/ar/reference/engines/table-engines/special/distributed#distributed-remote-engines). والفرق الوحيد هو عبارة `SETTINGS`: إذ تستخدمها المحركات بعد تعريف المحرك، `ENGINE = Remote(...) SETTINGS skip_unavailable_shards = 1`، وليس ضمن الوسيطات.
 
-<div id="addresses">
-  ### العناوين
-</div>
+### العناوين {#addresses}
 
 ```text
 example01-01-1
@@ -86,13 +76,9 @@ localhost
 example01-01-1,example01-02-1
 ```
 
-<div id="examples">
-  ## أمثلة
-</div>
+## أمثلة {#examples}
 
-<div id="selecting-data-from-a-remote-server">
-  ### استعلام البيانات من خادم بعيد:
-</div>
+### استعلام البيانات من خادم بعيد: {#selecting-data-from-a-remote-server}
 
 ```sql
 SELECT * FROM remote('127.0.0.1', db.remote_engine_table) LIMIT 3;
@@ -107,9 +93,7 @@ CREATE NAMED COLLECTION creds AS
 SELECT * FROM remote(creds, table='remote_engine_table') LIMIT 3;
 ```
 
-<div id="inserting-data-into-a-table-on-a-remote-server">
-  ### إدراج البيانات في جدول على خادم بعيد:
-</div>
+### إدراج البيانات في جدول على خادم بعيد: {#inserting-data-into-a-table-on-a-remote-server}
 
 ```sql
 CREATE TABLE remote_table (name String, value UInt32) ENGINE=Memory;
@@ -117,15 +101,11 @@ INSERT INTO FUNCTION remote('127.0.0.1', currentDatabase(), 'remote_table') VALU
 SELECT * FROM remote_table;
 ```
 
-<div id="migration-of-tables-from-one-system-to-another">
-  ### ترحيل الجداول من نظام إلى آخر:
-</div>
+### ترحيل الجداول من نظام إلى آخر: {#migration-of-tables-from-one-system-to-another}
 
 يستخدم هذا المثال جدولًا واحدًا من مجموعة بيانات نموذجية. قاعدة البيانات هي `imdb`، والجدول هو `actors`.
 
-<div id="on-the-source-clickhouse-system-the-system-that-currently-hosts-the-data">
-  #### على نظام ClickHouse المصدر (النظام الذي يستضيف البيانات حاليًا)
-</div>
+#### على نظام ClickHouse المصدر (النظام الذي يستضيف البيانات حاليًا) {#on-the-source-clickhouse-system-the-system-that-currently-hosts-the-data}
 
 * تحقّق من قاعدة البيانات المصدر واسم الجدول (`imdb.actors`)
 
@@ -148,17 +128,15 @@ SELECT * FROM remote_table;
 الناتج
 
 ```sql
-  CREATE TABLE imdb.actors (`id` UInt32,
-                            `first_name` String,
-                            `last_name` String,
-                            `gender` FixedString(1))
-                  ENGINE = MergeTree
-                  ORDER BY (id, first_name, last_name, gender);
+CREATE TABLE imdb.actors (`id` UInt32,
+                          `first_name` String,
+                          `last_name` String,
+                          `gender` FixedString(1))
+                ENGINE = MergeTree
+                ORDER BY (id, first_name, last_name, gender);
 ```
 
-<div id="on-the-destination-clickhouse-system">
-  #### على نظام ClickHouse الهدف
-</div>
+#### على نظام ClickHouse الهدف {#on-the-destination-clickhouse-system}
 
 * أنشئ قاعدة البيانات الهدف:
 
@@ -177,9 +155,7 @@ SELECT * FROM remote_table;
                   ORDER BY (id, first_name, last_name, gender);
   ```
 
-<div id="back-on-the-source-deployment">
-  #### بالعودة إلى عملية نشر المصدر
-</div>
+#### بالعودة إلى عملية نشر المصدر {#back-on-the-source-deployment}
 
 أدرِج البيانات في قاعدة البيانات الجديدة والجدول الجديد اللذين أُنشئا على النظام البعيد. ستحتاج إلى المضيف، والمنفذ، واسم المستخدم، وكلمة المرور، وقاعدة البيانات الوجهة، وجدول الوجهة.
 
@@ -189,9 +165,7 @@ remoteSecure('remote.clickhouse.cloud:9440', 'imdb.actors', 'USER', 'PASSWORD')
 SELECT * from imdb.actors
 ```
 
-<div id="globs-in-addresses">
-  ## المطابقة بالأنماط
-</div>
+## المطابقة بالأنماط {#globs-in-addresses}
 
 تُستخدم الأنماط داخل `{ }` لإنشاء مجموعة من الشظايا وتحديد النُسخ المتماثلة. وإذا وُجدت عدة أزواج من `{ }`، فسيتم إنشاء حاصل الضرب الديكارتي للمجموعات المقابلة.
 

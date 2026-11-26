@@ -1,0 +1,86 @@
+---
+slug: /clickstack/observability/architecture
+description: 'Arquitectura de ClickHouse Observability totalmente gestionado'
+title: 'Arquitectura'
+toc_max_heading_level: 2
+doc_type: 'reference'
+keywords: ['ClickHouse Observability', 'totalmente gestionado', 'arquitectura']
+sidebarTitle: 'Arquitectura'
+---
+
+import { BetaBadge } from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge label="Oferta en Beta" />
+
+ClickHouse Observability se ejecuta íntegramente en **ClickHouse Cloud** y ofrece un backend de observabilidad totalmente gestionado que conserva el mismo modelo de datos y la misma experiencia de usuario de ClickStack. Para implementaciones autogestionadas, consulte la [arquitectura autogestionada](/es/clickstack/self-configured/architecture).
+
+En este modelo, ClickHouse Cloud se encarga de alojar, operar y proteger **ClickHouse, la UI de ClickStack y el recolector de ingestión de OpenTelemetry (OTel)**. Los usuarios son responsables de instrumentar sus aplicaciones y de enviar la telemetría desde su entorno al servicio administrado.
+
+<div className="ch-image-lg">
+  <Frame>
+    ![Arquitectura totalmente gestionada con el recolector de OpenTelemetry, ClickHouse y la UI de ClickStack operados por ClickHouse Cloud](/images/use-cases/observability/clickstack-managed-architecture.svg)
+  </Frame>
+</div>
+
+### Recolector de OpenTelemetry: ingesta de datos {#open-telemetry-collector-managed}
+
+ClickHouse Observability incluye un recolector de OpenTelemetry (OTel) gestionado para ingestar telemetría de forma abierta y estandarizada. En su servicio, abra **Configuración del equipo → Data → Managed Telemetry** para copiar el endpoint OTLP y la clave de API. Consulte [Envío de datos de OpenTelemetry](/es/clickstack/observability/ingesting-data/opentelemetry) para obtener instrucciones de conexión y autenticación.
+
+El recolector exporta la telemetría a ClickHouse Cloud en lotes eficientes y utiliza esquemas de tabla optimizados para cada señal de telemetría.
+
+ClickHouse Cloud gestiona el recolector de ingestión. Aun así, es posible que siga necesitando recolectores en su propio entorno para recopilar telemetría, como métricas del host o logs de Kubernetes, y reenviarla al endpoint gestionado.
+
+### ClickHouse Cloud: el motor {#clickhouse-cloud}
+
+En el núcleo de ClickHouse Observability se encuentra ClickHouse Cloud, una versión sin servidor de ClickHouse, una base de datos orientada a columnas diseñada para el análisis en tiempo real a gran escala. Se encarga de la ingestión y las consultas de los datos de observabilidad, lo que permite:
+
+* Búsquedas rápidas en grandes volúmenes de eventos
+* Ingestión de telemetría high-cardinality a gran escala
+* Compresión orientada a columnas para datos de observabilidad
+* Compatibilidad nativa con datos JSON semiestructurados, lo que permite la evolución dinámica del esquema
+* Un potente motor SQL con cientos de funciones analíticas integradas
+
+ClickHouse Cloud trata los datos de observabilidad como eventos amplios, lo que permite una correlación profunda entre logs, métricas y trazas en una única estructura unificada.
+
+Además de lo que ofrece ClickHouse Open Source, aporta una serie de ventajas para la observabilidad:
+
+* Escalado automático de la capacidad de cómputo con independencia del almacenamiento
+* Almacenamiento de objetos para conservar la telemetría con independencia de la capacidad de cómputo
+* Autenticación integrada
+* Funcionalidades de seguridad y cumplimiento normativo
+* Actualizaciones sin interrupciones
+
+### UI de ClickStack: la interfaz {#hyperdx}
+
+La UI de ClickStack es la interfaz de usuario de ClickStack. Ofrece:
+
+* Búsqueda en lenguaje natural y con sintaxis estilo Lucene
+* Seguimiento en vivo (live tailing) para depuración en real-time
+* Vistas unificadas de logs, métricas y trazas
+* Reproducción de sesiones para la observabilidad del frontend
+* Creación de paneles de control y configuración de alertas
+* Interfaz de consultas SQL para análisis avanzados
+
+Diseñada específicamente para ClickHouse, la UI de ClickStack combina una potente búsqueda con flujos de trabajo intuitivos, lo que le permite detectar anomalías, investigar problemas y obtener información valiosa rápidamente.
+
+En ClickHouse Observability, la interfaz de usuario está integrada en el sistema de autenticación de la consola de ClickHouse Cloud.
+
+### Aislamiento entre ingestión y consultas {#ingestion-query-isolation}
+
+ClickHouse Observability utiliza capacidad de cómputo independiente para la ingestión y las consultas. La capacidad de cómputo de escritura se encarga de la telemetría entrante y del mantenimiento de datos en segundo plano. La capacidad de cómputo de lectura atiende las búsquedas, los dashboards, los notebooks y las consultas de alertas. Ambas acceden al mismo almacenamiento de objetos subyacente.
+
+Esta separación reduce la competencia por recursos entre los workloads de ingestión y de consulta. Si la capacidad de cómputo de escritura deja de estar disponible temporalmente, la de lectura puede seguir consultando los datos almacenados, aunque es posible que la telemetría más reciente llegue con retraso. Si la capacidad de cómputo de lectura no está disponible, la ingestión puede continuar, pero las búsquedas y la evaluación de alertas pueden verse interrumpidas.
+
+### Escalado {#scaling}
+
+ClickHouse Cloud gestiona la capacidad a medida que cambian los workload. Los recolectores gestionados escalan horizontalmente para absorber el tráfico de ingestión, mientras que la capacidad de cómputo de escritura y la de lectura escalan de forma independiente entre sí y con respecto al almacenamiento.
+
+El escalado no es instantáneo. Los aumentos repentinos de ingestión pueden retrasar el momento en que la nueva telemetría queda disponible para búsqueda, y los picos de consultas pueden aumentar los tiempos de respuesta mientras se ajusta la capacidad. Separar los workload ayuda a limitar el impacto de uno sobre el otro.
+
+### Almacenamiento en búfer de la ingestión y recuperación {#ingestion-buffering-recovery}
+
+El recolector gestionado intenta primero escribir la telemetría en ClickHouse. Si ClickHouse no puede aceptar escrituras de forma temporal, la canalización de ingestión puede almacenar lotes en Amazon S3 para volver a aplicarlos más adelante. Este búfer temporal de ingestión es independiente del almacenamiento de objetos que utiliza ClickHouse para la telemetría almacenada. Cuando se reanudan las escrituras, los datos almacenados temporalmente en el búfer se ingieren en ClickHouse.
+
+Durante la recuperación, la telemetría reciente puede llegar con retraso o desordenada mientras se procesan los datos acumulados. Este almacenamiento en búfer permite recuperarse de interrupciones temporales de escritura, pero no proporciona conmutación por error cross-region ni garantiza la entrega en todos los escenarios de fallo.
+
+Aun así, es posible que se pierdan algunos datos, como los que solo se encuentran en la memoria de un recolector en el momento en que este se detiene, o los lotes que no se pueden escribir ni en ClickHouse ni en S3. Configure sus agentes de envío y recolectores para que reintenten las exportaciones fallidas y, cuando sea compatible, utilice colas persistentes para conservar la telemetría durante las interrupciones.
