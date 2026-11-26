@@ -33,4 +33,12 @@ do
     # The `Buffers` format takes the number of rows of a block from its columns, so it refuses such rows too.
     echo "with_mergeable_state, Buffers"
     $client --stage with_mergeable_state --format Buffers --query "$QUERY" 2>&1 | grep -o -m1 "NOT_IMPLEMENTED" | head -n1
+
+    # Every output format gets the rows in several blocks. The formats that put the blocks together or
+    # draw a table have to cope with a result that has no columns: a format may refuse it, but the
+    # client must not be killed by a signal or get a logical error.
+    echo "with_mergeable_state, every output format, several blocks"
+    $CLICKHOUSE_LOCAL --query "SELECT 'SELECT count() OVER () FROM numbers(5) WHERE number > 0 FORMAT ' || name || ';' FROM system.formats WHERE is_output ORDER BY name" \
+        | $client --stage with_mergeable_state --max_block_size 1 --max_threads 1 --ignore-error 2>&1 >/dev/null \
+        | grep -c -E "Received signal|Hardening assertion|Logical error|LOGICAL_ERROR" || true
 done
