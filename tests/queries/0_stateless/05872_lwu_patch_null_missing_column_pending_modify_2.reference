@@ -1,0 +1,94 @@
+done s v1	1	
+done s v1 stored	1
+done s v1	1	abc
+done s v1	2	u
+done s v1	3	abc
+done d v1	1	
+done d v1 stored	1
+done d v1	1	d1
+done d v1	2	u
+done d v1	3	d3
+done lc v1	1	
+done lc v1 stored	1
+done lc v1	1	abc
+done lc v1	2	u
+done lc v1	3	abc
+done x v1	1	
+done x v1 stored	1
+done x v1	1	(7)	7
+done x v1	2	(5)	5
+done x v1	3	(7)	7
+done x v1 where	1
+done x v1 where	3
+done arr v1	1	
+done arr v1 stored	1
+done arr v1	1	[7]
+done arr v1	2	[5]
+done arr v1	3	[7]
+done v v1	1	
+done v v1 stored	1
+done v v1	1	abc	0
+done v v1	2	u	0
+done v v1	3	abc	0
+done dyn v1	1	
+done dyn v1 stored	1
+done dyn v1	1	abc	0
+done dyn v1	2	u	0
+done dyn v1	3	abc	0
+done y v1	1	
+done y v1 stored	1
+done y v1	1	7
+done y v1	2	5
+done y v1	3	7
+done xs v1	1	
+done xs v1 stored	1
+done xs v1	1	7	[7,7]	{'k':7}	7	7	seven	7	7
+done xs v1	2	\N	[]	{}	\N	\N	\N	\N	5
+done xs v1	3	7	[7,7]	{'k':7}	7	7	seven	7	7
+done s v2	1	
+done s v2 stored	1
+done s v2	1	abc
+done s v2	2	u
+done s v2	3	abc
+done d v2	1	
+done d v2 stored	1
+done d v2	1	d1
+done d v2	2	u
+done d v2	3	d3
+done lc v2	1	
+done lc v2 stored	1
+done lc v2	1	abc
+done lc v2	2	u
+done lc v2	3	abc
+done x v2	1	
+done x v2 stored	1
+done x v2	1	(7)	7
+done x v2	2	(5)	5
+done x v2	3	(7)	7
+done x v2 where	1
+done x v2 where	3
+done arr v2	1	
+done arr v2 stored	1
+done arr v2	1	[7]
+done arr v2	2	[5]
+done arr v2	3	[7]
+done v v2	1	
+done v v2 stored	1
+done v v2	1	abc	0
+done v v2	2	u	0
+done v v2	3	abc	0
+done dyn v2	1	
+done dyn v2 stored	1
+done dyn v2	1	abc	0
+done dyn v2	2	u	0
+done dyn v2	3	abc	0
+done y v2	1	
+done y v2 stored	1
+done y v2	1	7
+done y v2	2	5
+done y v2	3	7
+done xs v2	1	
+done xs v2 stored	1
+done xs v2	1	7	[7,7]	{'k':7}	7	7	seven	7	7
+done xs v2	2	\N	[]	{}	\N	\N	\N	\N	5
+done xs v2	3	7	[7,7]	{'k':7}	7	7	seven	7	7

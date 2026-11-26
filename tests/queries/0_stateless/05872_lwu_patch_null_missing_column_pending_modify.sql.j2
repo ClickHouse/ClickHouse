@@ -1,0 +1,63 @@
+-- A NULL written by a lightweight update into a column the data part does not store, before a pending
+-- MODIFY COLUMN from a Nullable type to a non-Nullable one, reads as the new DEFAULT, as for a stored column.
+-- One table per column: patch parts cannot be read with more than one pending MODIFY COLUMN.
+
+SET enable_lightweight_update = 1;
+SET enable_nullable_tuple_type = 1;
+
+{% set columns = [
+    ('s', 'Nullable(String)', "'old'", 'String', "'abc'", "'u'", 's'),
+    ('d', 'Nullable(String)', "'old'", 'String', "concat('d', toString(id))", "'u'", 'd'),
+    ('lc', 'LowCardinality(Nullable(String))', "'old'", 'LowCardinality(String)', "'abc'", "'u'", 'lc'),
+    ('x', 'Nullable(Tuple(a Nullable(UInt64)))', 'tuple(1)', 'Tuple(a Nullable(UInt64))', 'tuple(7)', 'tuple(5)', 'x'),
+    ('arr', 'Nullable(String)', "'[9]'", 'Array(UInt8)', '[7]', "'[5]'", 'arr'),
+    ('v', 'Nullable(String)', "'old'", 'Variant(String, UInt64)', "'abc'", "'u'", 'v, isNull(v)'),
+    ('dyn', 'Nullable(String)', "'old'", 'Dynamic', "'abc'", "'u'", 'dyn, isNull(dyn)'),
+    ('y', 'Nullable(Tuple(a UInt64))', 'tuple(1)', 'Tuple(a UInt64)', 'tuple(7)', 'tuple(5)', 'y.a'),
+    ('xs', 'Nullable(Tuple(a Nullable(UInt64), b Array(UInt64), c Map(String, UInt64), d Variant(UInt64, String), e LowCardinality(Nullable(String)), f Nullable(Tuple(g UInt64)), h UInt64))',
+     "tuple(1, [1], map('k', 1), 1::UInt64, 'one', tuple(1), 1)",
+     'Tuple(a Nullable(UInt64), b Array(UInt64), c Map(String, UInt64), d Variant(UInt64, String), e LowCardinality(Nullable(String)), f Nullable(Tuple(g UInt64)), h UInt64)',
+     "tuple(7, [7, 7], map('k', 7), 7::UInt64, 'seven', tuple(7), 7)",
+     "tuple(NULL, [], map(), NULL, NULL, NULL, 5)",
+     'xs.a, xs.b, xs.c, xs.d, xs.d.UInt64, xs.e, xs.f.g, xs.h'),
+] -%}
+
+{% for version in ['v1', 'v2'] -%}
+{% for col, old_type, old_default, new_type, new_default, value, expr in columns -%}
+
+-- {{ col }} ({{ version }}): the MODIFY is pending while the table is read.
+DROP TABLE IF EXISTS t_pending_{{ col }}_{{ version }} SYNC;
+CREATE TABLE t_pending_{{ col }}_{{ version }} (id UInt64) ENGINE = MergeTree ORDER BY id
+SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1, patch_parts_version = '{{ version }}';
+INSERT INTO t_pending_{{ col }}_{{ version }} VALUES (1), (2), (3);
+SYSTEM STOP MERGES t_pending_{{ col }}_{{ version }};
+ALTER TABLE t_pending_{{ col }}_{{ version }} ADD COLUMN {{ col }} {{ old_type }} DEFAULT {{ old_default }};
+UPDATE t_pending_{{ col }}_{{ version }} SET {{ col }} = NULL WHERE id = 1;
+UPDATE t_pending_{{ col }}_{{ version }} SET {{ col }} = {{ value }} WHERE id = 2;
+ALTER TABLE t_pending_{{ col }}_{{ version }} MODIFY COLUMN {{ col }} {{ new_type }} DEFAULT {{ new_default }}
+SETTINGS alter_sync = 0, mutations_sync = 0;
+{% if col in ('v', 'dyn') -%}
+-- A newer update writes a NULL that the new type holds.
+UPDATE t_pending_{{ col }}_{{ version }} SET {{ col }} = NULL WHERE id = 3;
+{% endif -%}
+{% if col == 'xs' -%}
+-- A column named like the null map of xs does not change how xs is read.
+ALTER TABLE t_pending_{{ col }}_{{ version }} ADD COLUMN `xs.null` UInt8 DEFAULT 42;
+{% endif -%}
+SELECT 'pending {{ col }} {{ version }}',
+    (SELECT count() FROM system.mutations WHERE database = currentDatabase() AND table = 't_pending_{{ col }}_{{ version }}' AND NOT is_done),
+    (SELECT count() FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_pending_{{ col }}_{{ version }}'
+        AND active AND name NOT LIKE 'patch-%' AND column = '{{ col }}');
+SELECT '{{ col }} {{ version }}', id, {{ expr }} FROM t_pending_{{ col }}_{{ version }} ORDER BY id;
+{% if col == 's' -%}
+SELECT '{{ col }} {{ version }} prewhere', id FROM t_pending_{{ col }}_{{ version }} PREWHERE s = 'abc' ORDER BY id;
+{% endif -%}
+{% if col == 'xs' -%}
+SELECT '{{ col }} {{ version }} where', id FROM t_pending_{{ col }}_{{ version }} WHERE xs.a = 7 ORDER BY id;
+SELECT '{{ col }} {{ version }} prewhere', id, xs.a, xs.b FROM t_pending_{{ col }}_{{ version }} PREWHERE xs.h IN (5, 7) ORDER BY id;
+SELECT '{{ col }} {{ version }} full', id, xs, xs.a, `xs.null` FROM t_pending_{{ col }}_{{ version }} ORDER BY id;
+{% endif -%}
+DROP TABLE t_pending_{{ col }}_{{ version }} SYNC;
+
+{% endfor -%}
+{% endfor -%}

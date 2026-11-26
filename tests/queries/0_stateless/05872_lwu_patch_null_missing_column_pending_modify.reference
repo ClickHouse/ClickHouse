@@ -1,0 +1,92 @@
+pending s v1	1	0
+s v1	1	abc
+s v1	2	u
+s v1	3	abc
+s v1 prewhere	1
+s v1 prewhere	3
+pending d v1	1	0
+d v1	1	d1
+d v1	2	u
+d v1	3	d3
+pending lc v1	1	0
+lc v1	1	abc
+lc v1	2	u
+lc v1	3	abc
+pending x v1	1	0
+x v1	1	(7)
+x v1	2	(5)
+x v1	3	(7)
+pending arr v1	1	0
+arr v1	1	[7]
+arr v1	2	[5]
+arr v1	3	[7]
+pending v v1	1	0
+v v1	1	abc	0
+v v1	2	u	0
+v v1	3	\N	1
+pending dyn v1	1	0
+dyn v1	1	abc	0
+dyn v1	2	u	0
+dyn v1	3	\N	1
+pending y v1	1	0
+y v1	1	7
+y v1	2	5
+y v1	3	7
+pending xs v1	1	0
+xs v1	1	7	[7,7]	{'k':7}	7	7	seven	7	7
+xs v1	2	\N	[]	{}	\N	\N	\N	\N	5
+xs v1	3	7	[7,7]	{'k':7}	7	7	seven	7	7
+xs v1 where	1
+xs v1 where	3
+xs v1 prewhere	1	7	[7,7]
+xs v1 prewhere	2	\N	[]
+xs v1 prewhere	3	7	[7,7]
+xs v1 full	1	(7,[7,7],{'k':7},7,'seven',(7),7)	7	42
+xs v1 full	2	(NULL,[],{},NULL,NULL,NULL,5)	\N	42
+xs v1 full	3	(7,[7,7],{'k':7},7,'seven',(7),7)	7	42
+pending s v2	1	0
+s v2	1	abc
+s v2	2	u
+s v2	3	abc
+s v2 prewhere	1
+s v2 prewhere	3
+pending d v2	1	0
+d v2	1	d1
+d v2	2	u
+d v2	3	d3
+pending lc v2	1	0
+lc v2	1	abc
+lc v2	2	u
+lc v2	3	abc
+pending x v2	1	0
+x v2	1	(7)
+x v2	2	(5)
+x v2	3	(7)
+pending arr v2	1	0
+arr v2	1	[7]
+arr v2	2	[5]
+arr v2	3	[7]
+pending v v2	1	0
+v v2	1	abc	0
+v v2	2	u	0
+v v2	3	\N	1
+pending dyn v2	1	0
+dyn v2	1	abc	0
+dyn v2	2	u	0
+dyn v2	3	\N	1
+pending y v2	1	0
+y v2	1	7
+y v2	2	5
+y v2	3	7
+pending xs v2	1	0
+xs v2	1	7	[7,7]	{'k':7}	7	7	seven	7	7
+xs v2	2	\N	[]	{}	\N	\N	\N	\N	5
+xs v2	3	7	[7,7]	{'k':7}	7	7	seven	7	7
+xs v2 where	1
+xs v2 where	3
+xs v2 prewhere	1	7	[7,7]
+xs v2 prewhere	2	\N	[]
+xs v2 prewhere	3	7	[7,7]
+xs v2 full	1	(7,[7,7],{'k':7},7,'seven',(7),7)	7	42
+xs v2 full	2	(NULL,[],{},NULL,NULL,NULL,5)	\N	42
+xs v2 full	3	(7,[7,7],{'k':7},7,'seven',(7),7)	7	42
