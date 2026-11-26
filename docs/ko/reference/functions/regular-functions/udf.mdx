@@ -6,20 +6,24 @@ title: '사용자 정의 함수(UDFs)'
 doc_type: 'reference'
 ---
 
+import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
+
 import { CloudNotSupportedBadge } from "/snippets/ko/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 import { ExperimentalBadge } from "/snippets/ko/components/ExperimentalBadge/ExperimentalBadge.jsx";
 
 ClickHouse는 여러 유형의 사용자 정의 함수(UDF)를 지원합니다.
 
-* [실행 파일 기반 UDFs](#executable-user-defined-functions)는 외부 프로그램이나 스크립트(Python, Bash 등)를 시작한 뒤, STDIN / STDOUT을 통해 데이터 블록을 해당 프로그램으로 스트리밍합니다. ClickHouse를 다시 컴파일하지 않고도 기존 코드나 도구를 통합할 때 사용할 수 있습니다. 프로세스 내부 옵션보다 호출당 오버헤드가 크므로, 더 무거운 로직을 처리하거나 다른 런타임이 필요한 경우에 가장 적합합니다.
+* [실행형 UDFs](#executable-user-defined-functions)는 외부 프로그램이나 스크립트(Python, Bash 등)를 시작한 뒤, STDIN / STDOUT을 통해 데이터 블록을 해당 프로그램으로 스트리밍합니다. ClickHouse를 다시 컴파일하지 않고도 기존 코드나 도구를 통합할 때 사용할 수 있습니다. 프로세스 내부 옵션보다 호출당 오버헤드가 크므로, 더 무거운 로직을 처리하거나 다른 런타임이 필요한 경우에 가장 적합합니다.
 * [SQL UDFs](#sql-user-defined-functions)는 `CREATE FUNCTION`을 사용해 SQL만으로 정의합니다. 쿼리 계획에 인라인되어 확장되므로(프로세스 경계 없음) 가볍고, 표현식 로직을 재사용하거나 복잡한 계산 컬럼을 단순화하는 데 적합합니다.
 * [Experimental WebAssembly UDFs](#webassembly-user-defined-functions)는 서버 프로세스 내 샌드박스에서 WebAssembly로 컴파일된 코드를 실행합니다. 외부 실행형보다 호출당 오버헤드가 낮고 네이티브 확장 기능보다 격리 수준이 높아, WASM을 대상으로 할 수 있는 언어(예: C/C++/Rust)로 작성한 사용자 정의 알고리즘에 적합합니다.
-* [Experimental 드라이버 기반 실행형 UDF](#driver-based-executable-user-defined-functions)는 연산자가 제공하는 &quot;드라이버&quot;가 `CREATE FUNCTION ... ENGINE = DriverName(...) AS '...'`에 제공된 코드 스니펫을 함수 생성 시점에 실행 파일 기반 UDF로 변환하도록 합니다(예를 들어 컴파일을 통해). 이는 실행 파일 기반 UDFs를 기반으로 하며, 서버 측 드라이버 구성이 필요합니다.
+* [Experimental driver-based executable UDFs](#driver-based-executable-user-defined-functions)는 연산자가 제공하는 &quot;드라이버&quot;가 `CREATE FUNCTION ... ENGINE = DriverName(...) AS '...'`에 제공된 코드 스니펫을 함수 생성 시점에 실행형 UDF로 변환하도록 합니다(예를 들어 컴파일을 통해). 이는 실행형 UDFs를 기반으로 하며, 서버 측 드라이버 구성이 필요합니다.
 
 ## 실행형 사용자 정의 함수 {#executable-user-defined-functions}
 
+<BetaBadge />
+
 <Note>
-  ClickHouse Cloud에서 실행 파일 기반 UDF는 일반 제공되며 Cloud Console, Cloud API 또는 Terraform을 통해 생성됩니다. 컴파일된 바이너리용 Native 런타임을 포함한 Cloud 전용 절차는 [User-defined functions in Cloud](/ko/products/cloud/features/sql-console-features/user-defined-functions)를 참조하십시오.
+  ClickHouse Cloud에서 실행형 UDF는 일반 제공되며 Cloud Console, Cloud API 또는 Terraform을 통해 생성됩니다. 컴파일된 바이너리용 Native 런타임을 포함한 Cloud 전용 절차는 [User-defined functions in Cloud](/ko/products/cloud/features/sql-console-features/user-defined-functions)를 참조하십시오.
 </Note>
 
 ClickHouse는 데이터를 처리하기 위해 외부 실행 프로그램이나 스크립트를 호출할 수 있습니다.
@@ -52,14 +56,7 @@ ClickHouse는 데이터를 처리하기 위해 외부 실행 프로그램이나 
 
 명령은 `STDIN`에서 인수를 읽고 결과를 `STDOUT`으로 출력해야 합니다. 또한 인수를 반복적으로 처리해야 합니다. 즉, 인수 청크 하나를 처리한 뒤 다음 청크를 기다려야 합니다.
 
-<Note>
-  `TabSeparated` 포맷을 사용하면 ClickHouse는 [TabSeparated 이스케이프 규칙](/ko/reference/formats/TabSeparated/TabSeparated#tabseparated-data-formatting)에 따라 명령에 전달하는 인수의 특수 문자를 이스케이프 처리하고, 명령 출력의 이스케이프를 해제합니다. 예를 들어 인수에 포함된 백슬래시는 `\\`로, 탭이나 줄 바꿈은 각각 `\t`, `\n`으로 명령에 전달됩니다. 명령 역시 출력을 동일한 방식으로 이스케이프 처리해야 합니다. 그렇지 않으면 출력에 포함된 백슬래시(예: JSON 텍스트의 백슬래시)가 이스케이프 시퀀스의 시작으로 해석되어 결과가 잘못되거나 파싱에 실패합니다.
-
-  명령이 출력을 이스케이프 처리하지 않는다면 다음 포맷 중 하나를 대신 사용하십시오.
-
-  * [`TabSeparatedRaw`](/ko/reference/formats/TabSeparated/TabSeparatedRaw): 값을 이스케이프 처리하지 않으므로 값에 탭이나 줄 바꿈이 포함되어서는 안 됩니다.
-  * [`JSONEachRow`](/ko/reference/formats/JSON/JSONEachRow): 문자열에 백슬래시, 탭, 줄 바꿈이 포함되어도 됩니다. 아래의 [JSON 예시](#udf-stdin)를 참고하십시오.
-</Note>
+## 실행형 사용자 정의 함수 {#executable-user-defined-functions}
 
 ## 예시 {#examples}
 
@@ -615,17 +612,6 @@ DROP FUNCTION [IF EXISTS] name [ON CLUSTER cluster]
 * `UnsafeC` - 샌드박스 없이 호스트에서 직접 코드를 컴파일하고 실행합니다. 이름에서 알 수 있듯이 격리를 전혀 제공하지 않으며, 신뢰할 수 있는 환경과 테스트 용도로만 사용하도록 설계되었습니다.
 
 이 예시 드라이버는 출발점으로 삼기 위한 것입니다. 신뢰할 수 없는 사용자에게 노출하기 전에 환경에 맞게 샌드박스 구성을 검토하고 강화하십시오.
-
-### 타사 드라이버 {#third-party-drivers}
-
-드라이버는 ClickHouse 외부에서 제공될 수도 있습니다. 이러한 드라이버는 ClickHouse가 아닌 각 작성자가 유지 관리하므로, 신뢰할 수 없는 사용자에게 노출하기 전에 예시 드라이버와 마찬가지로 직접 검토하십시오.
-
-* [`HyperlightPython`](https://github.com/hyperlight-dev/hyperlight-unikraft/tree/main/integrations/clickhouse) - 자체 커널을 갖춘 [Hyperlight](https://github.com/hyperlight-dev/hyperlight) 마이크로 가상 머신(VM)에서 Python 함수 본문을 실행합니다. Hyperlight는 [Cloud Native Computing Foundation](https://www.cncf.io/projects/hyperlight/)의 샌드박스 프로젝트입니다. 각 행 블록은 게스트의 스냅샷에서 새로 시작하므로, 코드는 네트워크를 사용할 수 없고 서버의 파일에 액세스할 수 없으며 쿼리 간에 상태가 유지되지 않습니다. `/dev/kvm`을 지원하는 Linux가 필요합니다.
-
-  ```sql
-  CREATE FUNCTION py_words ARGUMENTS (s String) RETURNS UInt64
-  ENGINE = HyperlightPython AS 'return len(s.split())';
-  ```
 
 ## 관련 콘텐츠 {#related-content}
 

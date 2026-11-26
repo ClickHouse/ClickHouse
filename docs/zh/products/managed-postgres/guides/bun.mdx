@@ -7,6 +7,10 @@ keywords: ['managed postgres', 'bun', 'bun.sql', 'typescript', 'javascript', 'tl
 doc_type: 'guide'
 ---
 
+import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.guides-bun-beta" />
+
 [Bun](https://bun.sh) 是一个 JavaScript 和 TypeScript 运行时，内置 Postgres 客户端 `Bun.sql`，因此无需另行安装驱动程序。
 在本指南中，您将通过经过验证的 TLS 连接将 Bun 连接到 ClickHouse Managed Postgres，创建一张表，执行查询和事务，并使用 `Bun.serve` 通过 HTTP 对外提供这些行数据。
 

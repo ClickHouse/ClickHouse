@@ -7,6 +7,10 @@ keywords: ['managed postgres', 'go', 'golang', 'pgx', 'pgxpool', 'golang-migrate
 doc_type: 'guide'
 ---
 
+import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.guides-go-beta" />
+
 [pgx](https://github.com/jackc/pgx)는 Go에서 가장 널리 사용되는 PostgreSQL 드라이버이며, `pgxpool`은 pgx가 제공하는 연결 풀(connection pool)입니다. 이 가이드에서는 검증된 TLS로 Go 서비스를 ClickHouse Managed Postgres에 연결하고, [golang-migrate](https://github.com/golang-migrate/migrate) 마이그레이션으로 `todos` 테이블을 생성한 뒤, `net/http` 서버에서 생성(create), 조회(read), 수정(update), 삭제(delete) 요청을 처리합니다.
 
 ## 사전 요구 사항 {#prerequisites}

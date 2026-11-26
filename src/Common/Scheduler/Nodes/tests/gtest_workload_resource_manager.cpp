@@ -13,7 +13,6 @@
 #include <Core/Defines.h>
 #include <Core/Settings.h>
 
-#include <Common/CacheLine.h>
 #include <Common/EventRateMeter.h>
 #include <Common/CurrentThread.h>
 #include <Common/FailPoint.h>
@@ -61,7 +60,7 @@
 #ifdef SCHEDULER_DEBUG
 #include <iostream>
 #include <base/getThreadId.h>
-#define DBG_PRINT(...) std::cout << fmt::format("\033[01;3{}m[{}] {:#x} {} {}\033[00m {}:{}\n", 1 + getThreadId() % 8, getThreadId(), reinterpret_cast<uintptr_t>(this), fmt::format(__VA_ARGS__), __PRETTY_FUNCTION__, __FILE__, __LINE__)
+#define DBG_PRINT(...) std::cout << fmt::format("\033[01;3{}m[{}] {} {} {}\033[00m {}:{}\n", 1 + getThreadId() % 8, getThreadId(), reinterpret_cast<void*>(this), fmt::format(__VA_ARGS__), __PRETTY_FUNCTION__, __FILE__, __LINE__)
 #else
 #include <base/defines.h>
 #define DBG_PRINT(...) UNUSED(__VA_ARGS__)
@@ -96,8 +95,8 @@ namespace CurrentMetrics
 class WorkloadEntityTestStorage : public WorkloadEntityStorageBase
 {
 public:
-    explicit WorkloadEntityTestStorage(std::unique_ptr<IWorkloadEntityStorage> next_storage_ = {})
-        : WorkloadEntityStorageBase(Context::getGlobalContextInstance(), std::move(next_storage_))
+    WorkloadEntityTestStorage()
+        : WorkloadEntityStorageBase(Context::getGlobalContextInstance())
     {}
 
     std::string_view getName() const override { return "test"; }
@@ -219,9 +218,6 @@ private:
         return OperationResult::Ok;
     }
 };
-
-namespace
-{
 
 struct ResourceTest : ResourceTestManager<WorkloadResourceManager>
 {
@@ -346,8 +342,6 @@ struct ResourceTest : ResourceTestManager<WorkloadResourceManager>
         });
     }
 };
-
-}
 
 using TestGuard = ResourceTest::Guard;
 
@@ -877,7 +871,7 @@ public:
 private:
     UInt64 last_update_ns = 0;
     std::atomic<UInt64> consumed{0};
-    char padding[DB::CH_CACHE_LINE_SIZE] = {}; // to avoid false sharing
+    char padding[64] = {}; // to avoid false sharing
 };
 
 class ThreadMetricsGroup : public boost::noncopyable
@@ -960,7 +954,7 @@ public:
         return *this;
     }
 
-    [[nodiscard]] UInt64 burstUpperBound(double burst_sec, size_t max_concurrent_threads, size_t max_concurrent_queries, size_t quantum_ns) const
+    UInt64 burstUpperBound(double burst_sec, size_t max_concurrent_threads, size_t max_concurrent_queries, size_t quantum_ns) const
     {
         // It is hard to calculate tight upper bound for burst.
         // First, we take into account configured burst,
@@ -1129,10 +1123,6 @@ struct TestQuery {
     UInt64 work_left = UInt64(-1);
     String name;
 
-    // Park control (to emulate worker threads entering a non-CPU wait, e.g. blocking I/O).
-    bool park_requested = false;
-    size_t parked_threads = 0;
-
     // Only used if preemption is enabled
     struct ThreadStatus
     {
@@ -1227,53 +1217,6 @@ struct TestQuery {
             }
             std::this_thread::sleep_for(std::chrono::microseconds(100));
         }
-    }
-
-    // Ask all worker threads to park their CPU lease (emulate entering a blocking-I/O wait).
-    void requestPark()
-    {
-        std::unique_lock lock{mutex};
-        park_requested = true;
-        cv.notify_all();
-    }
-
-    // Let parked worker threads unpark and resume.
-    void releasePark()
-    {
-        std::unique_lock lock{mutex};
-        park_requested = false;
-        cv.notify_all();
-    }
-
-    // Wait until at least `count` worker threads have parked their lease.
-    void waitParkedThreads(size_t count)
-    {
-        std::unique_lock lock{mutex};
-        cv.wait(lock, [=, this] { return parked_threads >= count || query_is_finished; });
-    }
-
-    // If a park was requested, park this worker's lease (freeing its CPU slot), block until the
-    // park is released, then unpark. Master thread (0) is noncompeting and never parks here.
-    void maybePark(ISlotLease * cpu_lease, size_t thread_num)
-    {
-        if (!cpu_lease || thread_num == 0)
-            return;
-        {
-            std::unique_lock lock{mutex};
-            if (!park_requested || query_is_finished)
-                return;
-        }
-        if (!cpu_lease->park()) // free the CPU slot (the give-back happens here)
-            return;             // no-op (e.g. shutting down) -> do not unpark
-        {
-            std::unique_lock lock{mutex};
-            ++parked_threads;
-            cv.notify_all();
-            cv.wait(lock, [this] { return !park_requested || query_is_finished; });
-            --parked_threads;
-            cv.notify_all();
-        }
-        cpu_lease->unpark(); // re-acquire the slot (borrow)
     }
 
     // Returns unique thread number
@@ -1373,7 +1316,6 @@ struct TestQuery {
         {
             if (!controlConcurrency(cpu_lease))
                 break;
-            maybePark(cpu_lease, thread_num);
             if (!doWork(thread_num))
                 break;
         }
@@ -1505,33 +1447,6 @@ TEST(SchedulerWorkloadResourceManager, CPUSchedulingRoundRobin)
         // Q0 - is done, Q1 still have pending resource requests, but we cancel it
         queries.clear();
     }
-
-    t.wait();
-}
-
-TEST(SchedulerWorkloadResourceManager, CPULeaseParkDoesNotOverAcquireOwnSlots)
-{
-    // Regression: a single query occupies all its slots and parks its workers all at once (a long
-    // sequential phase). Parking must not push `granted` positive while every slot_id is leased —
-    // that would make the executor acquire an out-of-range slot (OOB in its per-slot arrays). The
-    // query must finish cleanly.
-    ResourceTest t;
-
-    // Target mode (master and worker share one resource), the only mode where parking is enabled.
-    t.query("CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)");
-    t.query("CREATE WORKLOAD all SETTINGS max_concurrent_threads = 4");
-
-    auto q = std::make_shared<TestQuery>(t);
-    q->start(TestQuery::AllocateLease, "all", 4); // master + 3 workers (all competing)
-    q->waitStartedThreads(4);
-
-    // All three worker threads park simultaneously. With the old accounting this made `granted > 0`
-    // while every slot_id was leased -> over-acquire -> out-of-range slot_id.
-    q->requestPark();
-    q->waitParkedThreads(3);
-
-    q->releasePark();
-    q.reset();
 
     t.wait();
 }
@@ -1815,13 +1730,13 @@ struct ProfileEventCounter
         initial_value = getValue();
     }
 
-    [[nodiscard]] size_t count() const
+    size_t count() const
     {
         return getValue() - initial_value;
     }
 
 private:
-    [[nodiscard]] size_t getValue() const
+    size_t getValue() const
     {
         return ProfileEvents::global_counters[event];
     }
@@ -4574,8 +4489,8 @@ TEST(SchedulerWorkloadResourceManager, ConfigLoadValidatesWorkloadSettings)
     }
     {
         ResourceTest t;
-        // A `FOR <resource>` clause must target an existing RESOURCE: a workload of that name does
-        // not count (parity with storeEntity's forEachReference check).
+        // A `FOR <resource>` clause must target an existing RESOURCE, not a workload (parity with
+        // storeEntity's forEachReference check).
         EXPECT_THROW(
             t.storage.loadFromString(
                 "CREATE WORKLOAD all;\n"
@@ -4589,116 +4504,6 @@ TEST(SchedulerWorkloadResourceManager, ConfigLoadValidatesWorkloadSettings)
             t.storage.loadFromString("CREATE WORKLOAD all SETTINGS scheduler = 'fair' FOR missing_resource"),
             DB::Exception);
     }
-}
-
-/// Whether the manager has a scheduler node of workload `child` below a node of workload `parent`
-static bool hasWorkloadNodeUnder(ResourceTest & t, const String & resource, const String & parent, const String & child)
-{
-    bool seen = false;
-    t.manager->forEachNode([&](const String & r, const String & path, ISchedulerNode *)
-    {
-        auto parent_pos = path.find("/" + parent + "/");
-        if (r == resource && parent_pos != String::npos && path.find("/" + child, parent_pos + parent.size() + 1) != String::npos)
-            seen = true;
-    });
-    return seen;
-}
-
-// Moving workloads so that a parent becomes a child is applied in an order that keeps the hierarchy acyclic
-TEST(SchedulerWorkloadResourceManager, ReversedHierarchyIsApplied)
-{
-    ResourceTest t;
-    t.storage.loadFromString("CREATE RESOURCE memory (MEMORY RESERVATION); CREATE WORKLOAD a; CREATE WORKLOAD b IN a");
-    EXPECT_TRUE(hasWorkloadNodeUnder(t, "memory", "a", "b"));
-    t.storage.loadFromString("CREATE RESOURCE memory (MEMORY RESERVATION); CREATE WORKLOAD b; CREATE WORKLOAD a IN b");
-    EXPECT_TRUE(hasWorkloadNodeUnder(t, "memory", "b", "a"));
-
-    t.storage.loadFromString("CREATE RESOURCE memory (MEMORY RESERVATION); CREATE WORKLOAD a; CREATE WORKLOAD b IN a");
-    EXPECT_TRUE(hasWorkloadNodeUnder(t, "memory", "a", "b"));
-    t.storage.loadFromString("CREATE RESOURCE memory (MEMORY RESERVATION); CREATE WORKLOAD b; CREATE WORKLOAD a IN b");
-    EXPECT_TRUE(hasWorkloadNodeUnder(t, "memory", "b", "a"));
-
-    // An unchanged workload between the moved ones
-    t.storage.loadFromString("CREATE RESOURCE memory (MEMORY RESERVATION); CREATE WORKLOAD a; CREATE WORKLOAD b IN a; CREATE WORKLOAD c IN b");
-    t.storage.loadFromString("CREATE RESOURCE memory (MEMORY RESERVATION); CREATE WORKLOAD b; CREATE WORKLOAD c IN b; CREATE WORKLOAD a IN c");
-    EXPECT_TRUE(hasWorkloadNodeUnder(t, "memory", "c", "a"));
-}
-
-// A workload dropped together with the creation of a resource of the same name is dropped only after its children
-// leave it
-TEST(SchedulerWorkloadResourceManager, WorkloadReplacedByResourceOutlivesItsChildren)
-{
-    ResourceTest t;
-    t.storage.loadFromString("CREATE RESOURCE io (READ DISK d); CREATE WORKLOAD a; CREATE WORKLOAD b IN a");
-    t.storage.loadFromString("CREATE RESOURCE io (READ DISK d); CREATE RESOURCE a (WRITE DISK d); CREATE WORKLOAD b SETTINGS weight = 2 FOR a");
-
-    bool has_b_in_a = false;
-    t.manager->forEachNode([&](const String & resource, const String & path, ISchedulerNode *)
-    {
-        if (resource == "a" && path.ends_with("/b"))
-            has_b_in_a = true;
-    });
-    EXPECT_TRUE(has_b_in_a);
-}
-
-// A workload created together with the drop of a resource of the same name is created before its new children are
-// attached to it
-TEST(SchedulerWorkloadResourceManager, ResourceReplacedByWorkloadPrecedesItsChildren)
-{
-    ResourceTest t;
-    t.storage.loadFromString("CREATE RESOURCE io (READ DISK d); CREATE RESOURCE a (WRITE DISK d); CREATE WORKLOAD b SETTINGS weight = 2 FOR a");
-    t.storage.loadFromString("CREATE RESOURCE io (READ DISK d); CREATE WORKLOAD a; CREATE WORKLOAD b IN a");
-    EXPECT_FALSE(t.manager->hasResource("a"));
-    EXPECT_TRUE(hasWorkloadNodeUnder(t, "io", "a", "b"));
-}
-
-// A workload and a resource may have the same name, in one storage and across storages
-TEST(SchedulerWorkloadResourceManager, WorkloadAndResourceWithSameName)
-{
-    constexpr auto WORKLOAD = WorkloadEntityType::Workload;
-    constexpr auto RESOURCE = WorkloadEntityType::Resource;
-
-    auto config_storage = std::make_unique<WorkloadEntityTestStorage>();
-    auto * config = config_storage.get();
-    WorkloadEntityTestStorage storage(std::move(config_storage));
-    ResourceManagerPtr manager = std::make_shared<WorkloadResourceManager>(
-        std::shared_ptr<IWorkloadEntityStorage>(&storage, [](IWorkloadEntityStorage *) {}));
-
-    storage.executeQuery("CREATE RESOURCE x (WRITE DISK d, READ DISK d)");
-    storage.executeQuery("CREATE WORKLOAD x SETTINGS max_io_requests = 1 FOR x");
-    config->loadFromString("CREATE WORKLOAD io; CREATE RESOURCE all (READ DISK d2)");
-    storage.executeQuery("CREATE RESOURCE io (READ DISK d3)");
-    storage.executeQuery("CREATE WORKLOAD all IN io SETTINGS max_io_requests = 2 FOR all");
-
-    // As `system.workloads` and `system.resources` see them
-    std::set<WorkloadEntityKey> keys;
-    for (const auto & [key, entity] : storage.getAllEntities())
-        keys.insert(key);
-    std::set<WorkloadEntityKey> expected{
-        {WORKLOAD, "x"}, {RESOURCE, "x"},
-        {WORKLOAD, "io"}, {RESOURCE, "io"},
-        {WORKLOAD, "all"}, {RESOURCE, "all"}};
-    EXPECT_EQ(keys, expected);
-
-    for (const char * name : {"x", "io", "all"})
-        EXPECT_TRUE(manager->hasResource(name)) << name;
-    EXPECT_TRUE(manager->acquire("x")->has("x"));
-    EXPECT_TRUE(manager->acquire("all")->has("all"));
-
-    // Statements address one kind only
-    EXPECT_THROW(storage.executeQuery("CREATE RESOURCE x (READ DISK d)"), DB::Exception);
-    EXPECT_THROW(storage.executeQuery("DROP RESOURCE x"), DB::Exception); // referenced by the workload `x`
-    storage.executeQuery("DROP WORKLOAD x");
-    EXPECT_TRUE(storage.has(RESOURCE, "x"));
-    storage.executeQuery("DROP RESOURCE x");
-    storage.executeQuery("DROP RESOURCE io");
-    EXPECT_TRUE(storage.has(WORKLOAD, "io"));
-    EXPECT_FALSE(storage.has(RESOURCE, "io"));
-
-    // The configuration may define both kinds with one name as well
-    config->loadFromString("CREATE WORKLOAD io; CREATE RESOURCE all (READ DISK d2); CREATE WORKLOAD z; CREATE RESOURCE z (QUERY)");
-    EXPECT_TRUE(storage.has(WORKLOAD, "z"));
-    EXPECT_TRUE(storage.has(RESOURCE, "z"));
 }
 
 // Unit-test coverage for the lazy-allocation path in CPULeaseAllocation

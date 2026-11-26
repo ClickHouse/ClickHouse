@@ -91,19 +91,6 @@ Valeurs possibles :
 * 0 — `SELECT` lève une exception si le fichier vide n’est pas compatible avec le format demandé.
 * 1 — `SELECT` renvoie un résultat vide pour un fichier vide.
 
-## azure_skip_hidden_files {#azure_skip_hidden_files}
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "Nouveau paramètre : ignore les blobs dont un segment de chemin situé sous le préfixe sans glob commence par `_` ou `.` lors de l’énumération de fichiers par glob, comme le font les autres lecteurs de l’écosystème Hive. Les tables avec `partition_strategy = 'hive'` ignorent toujours ces chemins."}]}]} />
-
-Active ou désactive l’omission des chemins cachés lors de l’énumération de fichiers par glob dans les tables utilisant le moteur [AzureBlobStorage](/fr/reference/engines/table-engines/integrations/azureBlobStorage), c’est-à-dire des blobs dont un segment de chemin situé sous le préfixe sans glob du chemin commence par `_` ou `.`. Un segment contenant `=` est un répertoire de partition (par exemple `_p=1` pour une colonne de partitionnement `_p`) et n’est pas considéré comme caché. Les rédacteurs de l’écosystème Hive (Hive, Spark, Trino) placent leurs sorties en cours dans un stockage intermédiaire et écrivent des objets marqueurs sous ces chemins (`_temporary/`, `.spark-staging-<id>/`, `_SUCCESS`) ; leur lecture crée donc une condition de concurrence avec la validation du rédacteur. Les segments situés dans le préfixe sans glob ne sont pas vérifiés. Les tables avec `partition_strategy = 'hive'` ignorent toujours les chemins cachés, quelle que soit la valeur de ce paramètre.
-
-Valeurs possibles :
-
-* 0 — chaque blob correspondant au glob est lu.
-* 1 — les blobs comportant un segment de chemin caché sous le préfixe sans glob sont ignorés.
-
 ## azure_strict_upload_part_size {#azure_strict_upload_part_size}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
@@ -146,6 +133,6 @@ Lorsque cette option est définie sur `false`, toutes les tentatives utilisent d
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "Nouveau paramètre permettant de détecter les écrasements sur place concurrents de blobs Azure pendant une lecture, en associant chaque `GET` à l'`ETag` obtenu lors du listage via `If-Match` et en validant l'`ETag` de la réponse, comme le fait `s3_validate_etag_on_read` pour S3. Le paramètre `compatibility` défini sur une version antérieure à 26.10 rétablit le comportement précédent (aucune validation)."}]}]} />
 
-Lors de la lecture d&#39;un blob depuis Azure Blob Storage via les fonctions de table `azureBlobStorage` / `azureBlobStorageCluster` ou le table engine `AzureBlobStorage`, chaque requête `GET` est associée à la génération du blob observée lors de son énumération, en envoyant son `ETag` dans l&#39;en-tête `If-Match`, et l&#39;`ETag` de la réponse est vérifié. La lecture d&#39;un seul fichier émet de nombreuses requêtes `GET` sur des plages d&#39;octets ; si le blob est écrasé sur place entre ces requêtes (par exemple par un rédacteur externe qui réécrit une clé fixe), les lectures pourraient sans cela être reconstituées à partir de deux générations différentes du blob, ce qui se manifesterait par un checksum corrompu ou une erreur d&#39;analyse. La taille enregistrée lors de l&#39;énumération sert également de borne supérieure à la lecture ; elle n&#39;est donc valable que pour la génération à laquelle elle correspond. Lorsqu&#39;une divergence est détectée, la lecture échoue avec `AZURE_OBJECT_CHANGED_DURING_READ` au lieu de renvoyer des données incohérentes. Ne désactivez ce paramètre que pour les charges de travail qui lisent délibérément des blobs en cours d&#39;écrasement et qui tolèrent des lectures incohérentes. Ce paramètre ne s&#39;applique pas aux fichiers des tables Iceberg lus sans requête de métadonnées d&#39;objet (manifestes, ainsi que fichiers de données Parquet et ORC lus via une table), qui ne sont jamais écrasés.
+Lors de la lecture d&#39;un blob depuis Azure Blob Storage via les fonctions de table `azureBlobStorage` / `azureBlobStorageCluster` ou le table engine `AzureBlobStorage`, chaque requête `GET` est associée à la génération du blob observée lors de son énumération, en envoyant son `ETag` dans l&#39;en-tête `If-Match`, et l&#39;`ETag` de la réponse est vérifié. La lecture d&#39;un seul fichier émet de nombreuses requêtes `GET` sur des plages d&#39;octets ; si le blob est écrasé sur place entre ces requêtes (par exemple par un rédacteur externe qui réécrit une clé fixe), les lectures pourraient sans cela être reconstituées à partir de deux générations différentes du blob, ce qui se manifesterait par un checksum corrompu ou une erreur d&#39;analyse. La taille enregistrée lors de l&#39;énumération sert également de borne supérieure à la lecture ; elle n&#39;est donc valable que pour la génération à laquelle elle correspond. Lorsqu&#39;une divergence est détectée, la lecture échoue avec `AZURE_OBJECT_CHANGED_DURING_READ` au lieu de renvoyer des données incohérentes. Ne désactivez ce paramètre que pour les charges de travail qui lisent délibérément des blobs en cours d&#39;écrasement et qui tolèrent des lectures incohérentes.
 
 {/*AUTOGENERATED_END*/}

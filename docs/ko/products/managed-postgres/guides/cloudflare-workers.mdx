@@ -7,6 +7,10 @@ keywords: ['managed postgres', 'cloudflare', 'cloudflare workers', 'hyperdrive',
 doc_type: 'guide'
 ---
 
+import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.guides-cloudflare-workers-beta" />
+
 [Cloudflare Workers](https://developers.cloudflare.com/workers/)는 Cloudflare 네트워크에서 코드를 실행하고, [Hyperdrive](https://developers.cloudflare.com/hyperdrive/)는 이 네트워크에서 데이터베이스로 연결되는 연결 풀을 유지합니다. 따라서 요청할 때마다 TCP 및 TLS 핸드셰이크를 새로 수행하는 비용이 들지 않습니다. 이 가이드에서는 인스턴스의 인증서를 검증하는 Hyperdrive 구성을 생성하고, [`node-postgres`](https://node-postgres.com/)(`pg`)로 행을 생성하고 읽는 TypeScript Worker를 빌드합니다. 그런 다음 `wrangler dev`로 로컬에서 실행하고 `workers.dev`에 배포합니다.
 
 ## 사전 요구 사항 {#prerequisites}

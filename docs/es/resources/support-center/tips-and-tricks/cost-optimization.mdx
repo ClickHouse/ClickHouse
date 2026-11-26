@@ -24,7 +24,9 @@ description: 'Estrategias de optimización de costos compartidas en encuentros d
 
 *Descubra cómo [ClickHouse Cloud puede ayudar a gestionar los costos operativos](/es/products/cloud/getting-started/intro)*.
 
-## Estrategia de compresión: LZ4 vs ZSTD en producción {#compression-strategy}
+<div id="compression-strategy">
+  ## Estrategia de compresión: LZ4 vs ZSTD en producción
+</div>
 
 Cuando Microsoft Clarity necesitó manejar cientos de terabytes de datos, descubrió que la elección de la compresión tiene un impacto enorme en los costos. A esa escala, cada ahorro de almacenamiento cuenta, y se enfrentaban a una disyuntiva clásica: rendimiento frente a costos de almacenamiento. Microsoft Clarity maneja volúmenes masivos: dos petabytes de datos sin comprimir al mes en todas las cuentas, procesando alrededor de 60.000 consultas por hora en ocho nodos y sirviendo miles de millones de vistas de página desde millones de sitios web. A esta escala, la estrategia de compresión se convierte en un factor crítico de costo.
 
@@ -37,7 +39,9 @@ Al principio utilizaban la compresión predeterminada [LZ4](/es/reference/statem
 * Impacto manejable en el rendimiento de la ingestión y las consultas
 * Reducción significativa de costos a escala de cientos de TB
 
-## Estrategia de retención basada en columnas {#column-retention}
+<div id="column-retention">
+  ## Estrategia de retención basada en columnas
+</div>
 
 Una de las técnicas más eficaces para optimizar costos consiste en analizar qué columnas se utilizan realmente. Microsoft Clarity implementa sofisticadas estrategias de retención basadas en columnas mediante las capacidades de telemetría integradas de ClickHouse. ClickHouse proporciona métricas detalladas sobre el uso del almacenamiento por columna, así como patrones de consulta completos: a qué columnas se accede, con qué frecuencia, la duración de las consultas y las estadísticas generales de uso.
 
@@ -54,7 +58,9 @@ Este enfoque basado en datos permite tomar decisiones estratégicas sobre las po
 
 * [Gestión de datos - TTL a nivel de columna](/es/guides/use-cases/observability/build-your-own/managing-data)
 
-## Gestión de datos basada en particiones {#partition-management}
+<div id="partition-management">
+  ## Gestión de datos basada en particiones
+</div>
 
 Microsoft Clarity descubrió que la estrategia de particionado influye tanto en el rendimiento como en la simplicidad operativa. Su enfoque: particionar por fecha y ordenar por hora. Esta estrategia aporta múltiples ventajas, más allá de la simple eficiencia de la limpieza: facilita enormemente la limpieza de datos, simplifica los cálculos de facturación de su servicio orientado al cliente y ayuda a cumplir los requisitos del RGPD para la eliminación fila por fila.
 
@@ -69,7 +75,9 @@ Microsoft Clarity descubrió que la estrategia de particionado influye tanto en 
 
 * [Gestión de datos - Particiones](/es/guides/use-cases/observability/build-your-own/managing-data#partitions)
 
-## Estrategia de conversión de cadenas a enteros {#string-integer-conversion}
+<div id="string-integer-conversion">
+  ## Estrategia de conversión de cadenas a enteros
+</div>
 
 Las plataformas de analítica suelen enfrentarse a un problema de almacenamiento con datos categóricos que se repiten en millones de filas. El equipo de ingeniería de Microsoft se encontró con este problema en sus datos de analítica de búsqueda y desarrolló una solución eficaz que logró reducir en un 60% el almacenamiento de los conjuntos de datos afectados.
 
@@ -90,7 +98,9 @@ Esta arquitectura preserva la experiencia de usuario: las personas siguen viendo
   Este es un ejemplo usado específicamente para el caso de datos de Microsoft Clarity. Si tienes todos tus datos en ClickHouse o no tienes restricciones para mover datos a ClickHouse, prueba a usar [diccionarios](/es/concepts/features/dictionaries/index) en su lugar.
 </Note>
 
-## Videos {#video-sources}
+<div id="video-sources">
+  ## Videos
+</div>
 
 * **[Microsoft Clarity y ClickHouse](https://www.youtube.com/watch?v=rUVZlquVGw0)** - Equipo de Microsoft Clarity
 * **[La trayectoria de ClickHouse en Contentsquare](https://www.youtube.com/watch?v=zvuCBAl2T0Q)** - Doron Hoffman &amp; Guram Sigua (ContentSquare)

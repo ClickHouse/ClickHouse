@@ -7,19 +7,25 @@ keywords: ['セマンティック検索', 'ベクトル類似度', '近似最近
 doc_type: 'guide'
 ---
 
-## はじめに {#introduction}
+<div id="introduction">
+  ## はじめに
+</div>
 
 [Hacker News dataset](https://news.ycombinator.com/) には、2,874 万件の投稿とそのベクトル埋め込みが含まれています。これらの埋め込みは、[SentenceTransformers](https://sbert.net/) のモデル [all-MiniLM-L6-v2](https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2) を使用して生成されています。各埋め込みベクトルの次元数は `384` です。
 
 このデータセットは、ユーザー生成のテキストデータをもとに構築された大規模な実運用のベクトル検索アプリケーションについて、設計、サイジング、性能の各側面を確認するのに役立ちます。
 
-## データセットの詳細 {#dataset-details}
+<div id="dataset-details">
+  ## データセットの詳細
+</div>
 
 ベクトル埋め込みを含む完全なデータセットは、ClickHouse により、単一の `Parquet` ファイルとして [S3バケット](https://clickhouse-datasets.s3.amazonaws.com/hackernews-miniLM/hackernews_part_1_of_1.parquet) で提供されています。
 
 このデータセットに必要なストレージ容量とメモリ要件を見積もるため、まず [ドキュメント](/ja/reference/engines/table-engines/mergetree-family/annindexes) を参照してサイジングを実施することを推奨します。
 
-## 手順 {#steps}
+<div id="steps">
+  ## 手順
+</div>
 
 <Steps>
   <Step title="テーブルを作成" id="create-table">
@@ -99,7 +105,7 @@ doc_type: 'guide'
 
     このHackerNewsデータセットには、[all-MiniLM-L6-v2](https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2)モデルによって生成されたベクトル埋め込みが含まれています。
 
-    以下に、`sentence_transformers1 Pythonパッケージを使用して埋め込みベクトルをプログラムで生成する方法を示す Python スクリプトの例を示します。検索用の埋め込みベクトルは、`SELECT&#96; クエリ内の [`cosineDistance()`](/ja/reference/functions/regular-functions/distance-functions#cosineDistance) 関数に引数として渡されます。
+    以下に、`sentence_transformers` Pythonパッケージを使用して埋め込みベクトルをプログラムで生成する方法を示す Python スクリプトの例を示します。検索用の埋め込みベクトルは、`SELECT` クエリ内の [`cosineDistance()`](/ja/reference/functions/regular-functions/distance-functions#cosineDistance) 関数に引数として渡されます。
 
     ```python
     from sentence_transformers import SentenceTransformer
@@ -202,7 +208,7 @@ doc_type: 'guide'
     ---------
     ```
 
-## 要約デモアプリケーション {#summarization-demo-application}
+    ## 要約デモアプリケーション
 
     上記の例では、ClickHouse を使用したセマンティック検索とドキュメントの取得を実演しました。
 

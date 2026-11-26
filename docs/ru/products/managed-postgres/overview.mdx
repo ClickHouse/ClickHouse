@@ -1,12 +1,16 @@
 ---
 slug: /cloud/managed-postgres
 title: 'ClickHouse Managed Postgres'
-description: 'Быстрый, масштабируемый Postgres enterprise-grade на базе NVMe-хранилища с нативной интеграцией с ClickHouse для Real-time аналитики'
-keywords: ['managed postgres', 'postgresql', 'облачная база данных', 'сервис Postgres', 'nvme postgres', 'интеграция с ClickHouse']
+description: 'Быстрый, масштабируемый Postgres корпоративного класса на базе NVMe-хранилища с нативной интеграцией с ClickHouse для Real-time аналитики'
+keywords: ['managed postgres', 'postgresql', 'облачная база данных', 'сервис Postgres', 'nvme postgres', 'интеграция ClickHouse']
 doc_type: 'guide'
 ---
 
-ClickHouse Managed Postgres — это управляемый сервис Postgres enterprise-grade, созданный для высокой производительности и масштабируемости. Благодаря NVMe-хранилищу, физически размещённому рядом с вычислительными ресурсами, он обеспечивает до 10 раз более высокую производительность для рабочих нагрузок, упирающихся в производительность дисковой подсистемы, по сравнению с альтернативами, использующими сетевое хранилище, такое как EBS.
+import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.overview-beta" />
+
+ClickHouse Managed Postgres — это управляемый сервис Postgres корпоративного класса, созданный для высокой производительности и масштабируемости. Благодаря NVMe-хранилищу, физически размещённому рядом с вычислительными ресурсами, он обеспечивает до 10 раз более высокую производительность для рабочих нагрузок, упирающихся в производительность дисковой подсистемы, по сравнению с альтернативами, использующими сетевое хранилище, такое как EBS.
 
 Созданный в партнёрстве с [Ubicloud](https://www.ubicloud.com/), чья команда основателей ранее создавала решения мирового уровня для Postgres в Citus Data, Heroku и Microsoft, ClickHouse Managed Postgres решает типичные проблемы производительности быстрорастущих приложений: замедление ингестии и обновлений, медленное выполнение VACUUM, рост tail latency и всплески WAL из-за ограниченного числа дисковых IOPS.
 
@@ -14,17 +18,13 @@ ClickHouse Managed Postgres — это управляемый сервис Postg
 
 Используйте Postgres для транзакционных рабочих нагрузок приложения (OLTP): создания заказов, обновления складских запасов и управления учётными записями пользователей. Postgres выступает вашей системой учёта: связанные изменения фиксируются или откатываются вместе в рамках одной транзакции.
 
-Когда приложению дополнительно требуется аналитика по большим датасетам, добавьте сервис ClickHouse и свяжите их с помощью ClickPipes.
-
-<Note>
-  [WalShadow](/ru/products/managed-postgres/sync-to-clickhouse/walshadow), который сейчас доступен в закрытой предварительной версии, обеспечивает репликацию из Postgres в ClickHouse с более низкой задержкой и высокой пропускной способностью.
-</Note>
+Когда приложению дополнительно требуется аналитика по большим датасетам, добавьте сервис ClickHouse и свяжите их с помощью ClickPipes:
 
 ```mermaid
 flowchart LR
-    Application -->|#nbsp;Reads and writes#nbsp;| Postgres
-    Postgres -->|#nbsp;CDC#nbsp;| ClickHouse
-    Analytics -->|#nbsp;Queries#nbsp;| ClickHouse
+    Application -->|Reads and writes| Postgres
+    Postgres -->|Committed changes via ClickPipes| ClickHouse
+    Analytics -->|Queries| ClickHouse
 ```
 
 1. Ваше приложение читает и записывает операционные данные в Postgres, группируя связанные изменения в транзакции.
@@ -59,11 +59,11 @@ ClickHouse Managed Postgres доступен у следующих облачн�
 
 | Облачный провайдер | Доступность     |
 | ------------------ | --------------- |
-| AWS                | Общедоступен    |
-| GCP                | закрытая предварительная версия |
+| AWS                | Public Beta     |
+| GCP                | Private Preview |
 
 <Note>
-  ClickHouse Managed Postgres на GCP находится в статусе закрытой предварительной версии. Записаться в список ожидания закрытой предварительной версии для GCP можно [здесь](https://clickhouse.com/cloud/postgres#gcp-waitlist). Подробнее — в [анонсе](https://clickhouse.com/blog/postgres-managed-by-clickhouse-gcp-private-preview).
+  ClickHouse Managed Postgres на GCP находится в статусе Private Preview. Записаться в список ожидания Private Preview для GCP можно [здесь](https://clickhouse.com/cloud/postgres#gcp-waitlist). Подробнее — в [анонсе](https://clickhouse.com/blog/postgres-managed-by-clickhouse-gcp-private-preview).
 </Note>
 
 ## Нативная интеграция с ClickHouse {#clickhouse-integration}
@@ -73,10 +73,6 @@ ClickHouse Managed Postgres изначально интегрирован с Cli
 ### Репликация из Postgres в ClickHouse {#postgres-replication}
 
 Реплицируйте данные из Postgres в ClickHouse с помощью [коннектора Postgres CDC в ClickPipes](/ru/integrations/clickpipes/postgres/index). Коннектор поддерживает как начальную загрузку, так и непрерывную инкрементальную синхронизацию и уже проверен в реальных условиях сотнями корпоративных клиентов, переносящих сотни терабайт данных в месяц.
-
-<Note>
-  [WalShadow](/ru/products/managed-postgres/sync-to-clickhouse/walshadow) — функция, которая сейчас доступна в закрытой предварительной версии, — обеспечивает репликацию из Postgres в ClickHouse с меньшей задержкой и высокой пропускной способностью.
-</Note>
 
 ### pg_clickhouse: единый слой запросов {#pg-clickhouse}
 

@@ -195,15 +195,13 @@ Valeur par défaut : chaîne vide.
 
 ### `after_processing_move_uri` {#after_processing_move_uri}
 
-URI du compartiment S3 vers lequel déplacer les fichiers traités avec succès, lorsque la destination est un autre compartiment S3.
+URI du bucket S3 vers lequel déplacer les fichiers traités avec succès, si la destination est un autre bucket S3.
 
-Définir ce paramètre revient au même flux de données que `INSERT INTO FUNCTION s3('<destination>') SELECT * FROM <table>` ; il nécessite donc le grant `WRITE` sur la source `S3`. Un grant restreint par un filtre d&#39;URL ne suffit pas, car le déplacement écrit des clés construites à partir de `after_processing_move_prefix` et des clés source, et non à partir de l&#39;URI. `ALTER TABLE ... MODIFY SETTING` nécessite également `SELECT` sur la table. La destination doit être autorisée par `remote_url_allow_hosts`. Le déplacement analyse toujours l&#39;URI avec détection automatique du style, comme le fait la fonction de table `s3` avec la valeur par défaut de `s3_uri_style` ; le paramètre du serveur `uri_style` et le paramètre de requête `s3_uri_style` ne s&#39;y appliquent donc pas.
+Valeurs possibles :
 
-Valeurs possibles :
+* String.
 
-* string.
-
-Valeur par défaut : chaîne vide.
+Valeur par défaut : chaîne vide.
 
 ### `after_processing_tag_key` {#after_processing_tag_key}
 

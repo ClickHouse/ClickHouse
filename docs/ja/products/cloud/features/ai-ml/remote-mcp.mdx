@@ -14,7 +14,7 @@ doc_type: 'reference'
 ClickHouse Cloud の リモートMCPサーバー機能は、外部エージェントが分析コンテキストを取得するために利用できる標準インターフェイスを提供することで、この課題に対応します。
 MCP (Model Context Protocol) は、LLM を利用した AI アプリケーションが構造化データにアクセスするための標準です。
 このインテグレーションにより、外部エージェントはデータベースやテーブルの一覧表示、スキーマの確認、スコープが制限された読み取り専用の SELECT クエリの実行を行えます。
-認証は OAuth 2.0 または [ClickHouse Cloud API キー](/ja/cloud/manage/openapi) で行います。サーバーは ClickHouse Cloud 上で完全マネージド型として提供されるため、セットアップや保守は不要です。
+認証は OAuth 2.0 または [ClickHouse Cloud API キー](/cloud/manage/openapi) で行います。サーバーは ClickHouse Cloud 上で完全マネージド型として提供されるため、セットアップや保守は不要です。
 
 これにより、分析、要約、コード生成、探索などの用途に応じて、エージェント型ツールは ClickHouse に簡単に接続し、必要なデータを取得できるようになります。
 
@@ -22,14 +22,14 @@ MCP (Model Context Protocol) は、LLM を利用した AI アプリケーショ�
 
 ClickHouse には、2 つのMCPサーバーがあります。
 
-|             | リモートMCPサーバー (Cloud)                                            | オープンソースMCPサーバー                                                           |
-| ----------- | -------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| **ソース**     | ClickHouse Cloud が完全マネージド型で提供                                  | GitHub 上の [mcp-clickhouse](https://github.com/ClickHouse/mcp-clickhouse) |
-| **トランスポート** | Streamable HTTP (`https://mcp.clickhouse.cloud/mcp`)           | ローカル stdio                                                               |
-| **対応環境**    | ClickHouse Cloud サービスおよび Managed Postgres サービス                 | あらゆる ClickHouse インスタンス (セルフホストまたは Cloud)                                 |
-| **認証**      | Cloud の認証情報を使用する OAuth 2.0、または ClickHouse Cloud APIキー       | 環境変数                                                                     |
-| **ツール**     | クエリ実行、スキーマ探索、サービス管理、バックアップ、ClickPipes、請求、Postgres の監視に対応するツール群 | 3 個のツール: `run_select_query`, `list_databases`, `list_tables`             |
-| **セットアップ**  | インストール不要。MCPクライアント をエンドポイントに向けて認証します。                          | サーバーをローカルにインストールして実行                                                     |
+|             | リモートMCPサーバー (Cloud)                                      | オープンソースMCPサーバー                                                           |
+| ----------- | -------------------------------------------------------- | ------------------------------------------------------------------------ |
+| **ソース**     | ClickHouse Cloud が完全マネージド型で提供                             | GitHub 上の [mcp-clickhouse](https://github.com/ClickHouse/mcp-clickhouse) |
+| **トランスポート** | Streamable HTTP (`https://mcp.clickhouse.cloud/mcp`)     | ローカル stdio                                                               |
+| **対応環境**    | ClickHouse Cloud サービス                                    | あらゆる ClickHouse インスタンス (セルフホストまたは Cloud)                                 |
+| **認証**      | Cloud の認証情報を使用する OAuth 2.0、または ClickHouse Cloud の API キー | 環境変数                                                                     |
+| **ツール**     | クエリ実行、スキーマ探索、サービス管理、バックアップ、ClickPipes、請求をカバーする 13 個のツール  | 3 個のツール: `run_select_query`, `list_databases`, `list_tables`             |
+| **セットアップ**  | インストール不要。MCPクライアント をエンドポイントに向けて認証します。                    | サーバーをローカルにインストールして実行                                                     |
 
 リモートMCPサーバーは、管理すべきインフラストラクチャなしで、サービス管理、バックアップ監視、ClickPipe の可視化、請求データなどを含む、ClickHouse Cloud との最も充実したインテグレーションを提供します。
 セルフホストの ClickHouse インスタンスについては、[オープンソースMCPサーバーのガイド](/ja/guides/use-cases/ai-ml/MCP/index)を参照してください。
@@ -37,9 +37,8 @@ ClickHouse には、2 つのMCPサーバーがあります。
 ## リモートMCPサーバーの有効化 {#enabling}
 
 リモートMCPサーバーが接続を受け付けられるようにするには、事前に各サービスごとに有効化する必要があります。
-ClickHouse クラウドコンソールで対象のサービスを開き、**Connect** ボタンをクリックして **MCP** を選択し、有効化してください。
-ClickHouse サービスの場合、リモートMCPサーバーの有効化・無効化には、`control-plane:service:manage-mcp` のアクセス許可が必要です (詳しくは[コンソールのロールとアクセス許可](/ja/products/cloud/reference/security/console-roles#console-permissions)を参照してください) 。
-Managed Postgres サービスの場合は、サービスの **Connect** パネルを開き、**Enable Model Context Protocol** をオンにしてください。読み取りレプリカには、親データベースのMCP設定がそのまま継承されます。
+ClickHouse Cloudコンソールで対象のサービスを開き、**Connect** ボタンをクリックして **MCP** を選択し、有効化してください。
+リモートMCPサーバーの有効化・無効化には、`control-plane:service:manage-mcp` のアクセス許可が必要です (詳しくは[コンソールのロールとアクセス許可](/ja/products/cloud/reference/security/console-roles#console-permissions)を参照してください) 。
 スクリーンショット付きの詳しい手順については、[セットアップガイド](/ja/products/cloud/features/ai-ml/mcp/remote-mcp#enable-remote-mcp-server)を参照してください。
 
 ## エンドポイント {#endpoint}
@@ -71,7 +70,7 @@ API キーによるアクセス範囲は、そのキーに設定されたロー�
 
 ## 利用可能なツール {#available-tools}
 
-リモートMCPサーバーは、以下のカテゴリのツールを提供しています。利用できるツールは、認証方式と有効になっている機能によって異なります。
+リモートMCPサーバーは、以下のカテゴリに分類された13個のツールを提供しています。
 
 ### クエリとスキーマの探索 {#query-and-schema}
 
@@ -83,21 +82,6 @@ API キーによるアクセス範囲は、そのキーに設定されたロー�
 | `list_databases`   | ClickHouse service で利用可能なすべてのデータベースを一覧表示します。     | `serviceId`                                                                       |
 | `list_tables`      | データベース内のすべてのテーブルを、カラム定義を含めて一覧表示します。              | `serviceId`、`database`、必要に応じて `like` または `notLike` (テーブル名を絞り込むための SQL LIKE パターン)  |
 
-### Managed Postgres {#managed-postgres}
-
-これらのツールは、Managed Postgres サービスに対するクエリの実行と監視を行います。まず `get_organizations` で `organizationId` を確認し、次に `get_services_list` で `serviceType` が `postgres` のサービスを探して、その `id` を `serviceId` として使用します。
-
-| ツール                                       | 説明                                                                                       | パラメータ                                                                                                                                              |
-| ----------------------------------------- | ---------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `run_postgres_select_query`               | Postgres サービスに対して読み取り専用のSQLクエリを実行します。OAuth 認証が必要で、ClickHouse Cloud APIキーでは使用できません。       | `organizationId`、`serviceId`、`query`、任意で `database` (デフォルト: `postgres`) および `timeoutSeconds` (1–3600、デフォルト: 300)                                   |
-| `list_postgres_slow_query_patterns`       | 低速クエリのパターンを、レイテンシ、呼び出し回数、行数、CPU、I/O、WAL、エラーの集約メトリクスとともに一覧表示します。所要時間の単位はマイクロ秒です。          | `organizationId`、`serviceId`、`fromDate`、`toDate`、任意で `limit` (1–500、デフォルト: 20)、`offset`、`sortBy`、`sortOrder`、`dbName`、`dbUser`、`dbOperation`、`app` |
-| `get_postgres_slow_query_pattern_details` | 直近 24 時間におけるクエリパターンの最近の実行を最大 10 件返します。利用可能な場合は集約メトリクスも返します。                              | `organizationId`、`serviceId`、`queryId`、`dbName`、`dbUser`、`dbOperation`、任意で `app`                                                                   |
-| `get_postgres_metrics`                    | CPU、メモリ、ディスク、ネットワーク、接続、キャッシュヒット率、トランザクション、待機に関する時系列メトリクスを返します。各メトリクスには単位とラベル付きの系列が含まれます。 | `organizationId`、`serviceId`、`fromDate`、`toDate`、任意で `bucketSizeSeconds` (正の整数。省略時は自動で選択されます)                                                      |
-
-`fromDate` と `toDate` には、`2026-11-03T00:00:00.000Z` のようなミリ秒精度の UTC タイムスタンプを指定します。開始時刻は範囲に含まれます。終了時刻は、低速クエリのパターンでは分単位の粒度で範囲に含まれ、メトリクスでは範囲に含まれません。
-
-低速クエリパターンを詳しく調べるには、`list_postgres_slow_query_patterns` から取得した `queryId`、`dbName`、`dbUser`、`dbOperation`、`app` を `get_postgres_slow_query_pattern_details` に渡します。`application_name` を持たないクエリの場合は、空の `app` 文字列をそのまま渡してください。`app` を省略すると、すべてのアプリケーションが対象になります。
-
 ### 組織 {#organizations}
 
 | ツール                        | 説明                                               | パラメーター           |
@@ -107,10 +91,10 @@ API キーによるアクセス範囲は、そのキーに設定されたロー�
 
 ### サービス {#services}
 
-| ツール                   | 説明                                                                                          | パラメータ                         |
-| --------------------- | ------------------------------------------------------------------------------------------- | ----------------------------- |
-| `get_services_list`   | 組織内の ClickHouse サービスおよび Managed Postgres サービスを一覧表示します。各サービスの種類は `serviceType` フィールドで識別できます。 | `organizationId`              |
-| `get_service_details` | ClickHouse サービスまたは Managed Postgres サービスの詳細を取得します。サービスの種類は自動的に判別されます。                       | `organizationId`; `serviceId` |
+| ツール                   | 説明                                     | パラメータ                         |
+| --------------------- | -------------------------------------- | ----------------------------- |
+| `get_services_list`   | ClickHouse Cloud 組織内のすべてのサービスを一覧表示します。 | `organizationId`              |
+| `get_service_details` | 特定のサービスの詳細を取得します。                      | `organizationId`; `serviceId` |
 
 ### バックアップ {#backups}
 

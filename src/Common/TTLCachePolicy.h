@@ -37,7 +37,7 @@ public:
         actual[user_id].num_items -= 1;
     }
 
-    [[nodiscard]] bool approveWrite(const UUID & user_id, size_t entry_size_in_bytes) const override
+    bool approveWrite(const UUID & user_id, size_t entry_size_in_bytes) const override
     {
         auto it_actual = actual.find(user_id);
         Resources actual_for_user{.size_in_bytes = 0, .num_items = 0}; /// if no user is found, the default is no resource consumption
@@ -110,22 +110,22 @@ public:
     }
 
 
-    [[nodiscard]] size_t sizeInBytes() const override
+    size_t sizeInBytes() const override
     {
         return size_in_bytes;
     }
 
-    [[nodiscard]] size_t count() const override
+    size_t count() const override
     {
         return cache.size();
     }
 
-    [[nodiscard]] size_t maxSizeInBytes() const override
+    size_t maxSizeInBytes() const override
     {
         return max_size_in_bytes;
     }
 
-    [[nodiscard]] size_t maxCount() const override
+    size_t maxCount() const override
     {
         return max_count;
     }
@@ -193,7 +193,7 @@ public:
         return it->second;
     }
 
-    [[nodiscard]] bool contains(const Key & key) const override
+    bool contains(const Key & key) const override
     {
         return cache.count(key) != 0;
     }
@@ -270,14 +270,11 @@ public:
                 Base::user_quotas->increaseActual(*key.user_id, entry_size_in_bytes);
         }
 
-        /// Both operands have to be cast: with an unsigned right-hand side the subtraction happens
-        /// in `size_t` and only the conversion of the wrapped result back to `Int64` makes a shrinking
-        /// cache report a negative delta.
-        CurrentMetrics::add(size_in_bytes_metric, static_cast<Int64>(size_in_bytes) - static_cast<Int64>(old_size_in_bytes));
-        CurrentMetrics::add(count_metric, static_cast<Int64>(cache.size()) - static_cast<Int64>(old_size));
+        CurrentMetrics::add(size_in_bytes_metric, static_cast<Int64>(size_in_bytes) - old_size_in_bytes);
+        CurrentMetrics::add(count_metric, static_cast<Int64>(cache.size()) - old_size);
     }
 
-    [[nodiscard]] std::vector<KeyMapped> dump() const override
+    std::vector<KeyMapped> dump() const override
     {
         std::vector<KeyMapped> res;
         res.reserve(cache.size());

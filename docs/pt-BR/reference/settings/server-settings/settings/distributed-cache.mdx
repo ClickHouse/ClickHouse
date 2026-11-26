@@ -12,71 +12,15 @@ import SettingsInfoBlock from "/snippets/pt-BR/components/SettingsInfoBlock/Sett
 
 Essas configurações configuram o servidor ClickHouse e são geradas automaticamente a partir do código-fonte do ClickHouse.
 
-## distributed_cache_apply_throttling_settings_from_client {#distributed_cache_apply_throttling_settings_from_client}
+## distributed_cache_apply_throttling_settings_from_client
 
 <SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />Indica se o servidor de cache deve aplicar as configurações de throttling recebidas do cliente.
 
-## distributed_cache_keep_up_free_connections_ratio {#distributed_cache_keep_up_free_connections_ratio}
+## distributed_cache_keep_up_free_connections_ratio
 
 <SettingsInfoBlock type="Float" default_value="0.1" changeable_without_restart="No" />Limite flexível para o número de conexões ativas livres que o cache distribuído tentará manter. Quando o número de conexões livres ficar abaixo de distributed&#95;cache&#95;keep&#95;up&#95;free&#95;connections&#95;ratio * max&#95;connections, as conexões com a atividade mais antiga serão fechadas até que esse número volte a ficar acima do limite.
 
-## distributed_cache_temporary_data_background_retry_delay_milliseconds {#distributed_cache_temporary_data_background_retry_delay_milliseconds}
-
-<SettingsInfoBlock type="NonZeroUInt64" default_value="30000" changeable_without_restart="No" />Atraso, em milissegundos, antes de uma nova tentativa, em segundo plano, de dados temporários confirmados.
-
-## distributed_cache_temporary_data_cleanup_period_milliseconds {#distributed_cache_temporary_data_cleanup_period_milliseconds}
-
-<SettingsInfoBlock type="NonZeroUInt64" default_value="1000" changeable_without_restart="No" />Intervalo, em milissegundos, entre as limpezas de dados temporários confirmados que já expiraram.
-
-## distributed_cache_temporary_data_confirmation_retry_delay_milliseconds {#distributed_cache_temporary_data_confirmation_retry_delay_milliseconds}
-
-<SettingsInfoBlock type="UInt64" default_value="500" changeable_without_restart="No" />Tempo de espera, em milissegundos, antes de tentar novamente a confirmação da publicação de dados temporários já confirmados (committed).
-
-## distributed_cache_temporary_data_control_hello_timeout_milliseconds {#distributed_cache_temporary_data_control_hello_timeout_milliseconds}
-
-<SettingsInfoBlock type="NonZeroUInt64" default_value="2000" changeable_without_restart="No" />Um controle de dados temporários confirmado estende o ciclo de vida de um arquivo, no máximo, até o instante do hello da conexão de controle + este tempo limite + o TTL, em milissegundos. Após o hello, o cliente aguarda a resposta pelo mesmo tempo. O cliente usa o próprio valor, lido quando um arquivo confirmado é criado (no caso de renovações em segundo plano, na inicialização). Um valor diferente no cliente e no servidor do distributed cache não reduz o ciclo de vida de um arquivo para menos que o hello + o TTL.
-
-## distributed_cache_temporary_data_max_bytes_per_server {#distributed_cache_temporary_data_max_bytes_per_server}
-
-<SettingsInfoBlock type="UInt64" default_value="1099511627776" changeable_without_restart="No" />Tamanho total máximo, em bytes, dos arquivos temporários confirmados mantidos por um servidor de distributed cache. Os arquivos temporários confirmados ficam fixados no cache de arquivos e não podem ser removidos até serem liberados ou expirarem; assim, esse limite determina quanto do cache eles podem ocupar. O padrão é 1 TiB. Ao atingir o limite, o servidor rejeita a publicação de novos arquivos temporários confirmados. `0` significa ilimitado.
-
-## distributed_cache_temporary_data_max_connections_bypassing_pool {#distributed_cache_temporary_data_max_connections_bypassing_pool}
-
-<SettingsInfoBlock type="UInt64" default_value="5000" changeable_without_restart="Yes" />Só tem efeito no ClickHouse Cloud. Número máximo de conexões por servidor do distributed cache que os arquivos temporários podem abrir sem passar pelo pool de conexões. Quando o limite é atingido, os dados temporários aguardam uma conexão em pool por `distributed_cache_wait_connection_from_pool_milliseconds` e, em seguida, falham. `0` significa ilimitado. As breves trocas de controle de dados temporários confirmados (confirmação, renovação, liberação) sempre abrem uma nova conexão e não entram nessa contagem. Pode ser alterada sem reinicialização.
-
-## distributed_cache_temporary_data_max_control_batch_ids {#distributed_cache_temporary_data_max_control_batch_ids}
-
-<SettingsInfoBlock type="NonZeroUInt64" default_value="1024" changeable_without_restart="No" />Número máximo de IDs de dados temporários confirmados que o cliente envia em uma única requisição de controle. Valores acima de 65536 são limitados a 65536 (o limite do protocolo).
-
-## distributed_cache_temporary_data_max_files_per_server {#distributed_cache_temporary_data_max_files_per_server}
-
-<SettingsInfoBlock type="UInt64" default_value="100000" changeable_without_restart="No" />Número máximo de arquivos temporários confirmados mantidos por um servidor de distributed cache. O valor padrão é alto porque esse limite serve apenas como salvaguarda para restringir a memória usada no rastreamento dos arquivos; a capacidade é limitada principalmente por `distributed_cache_temporary_data_max_bytes_per_server`. Quando o limite é atingido, o servidor rejeita a publicação de novos arquivos temporários confirmados. `0` significa ilimitado.
-
-## distributed_cache_temporary_data_pool_behaviour_on_limit {#distributed_cache_temporary_data_pool_behaviour_on_limit}
-
-<SettingsInfoBlock type="DistributedCachePoolBehaviourOnLimit" default_value="allocate_bypassing_pool" changeable_without_restart="Yes" />Só tem efeito no ClickHouse Cloud. Comportamento das conexões do distributed cache para dados temporários quando o limite do pool de conexões é atingido. Os dados temporários não têm um armazenamento de objetos ao qual recorrer; por isso, por padrão, é aberta uma conexão que contorna o pool em vez de falhar. Aplica-se aos arquivos temporários de consultas e de operações em segundo plano (mesclagens, backups). As trocas breves de controle de dados temporários confirmados (confirmação, renovação, liberação) sempre abrem uma nova conexão e não utilizam esta configuração. Com `wait`, aguarda uma conexão em pool durante `distributed_cache_wait_connection_from_pool_milliseconds` e, em seguida, falha. Pode ser alterada sem reinicialização.
-
-## distributed_cache_temporary_data_renewal_period_seconds {#distributed_cache_temporary_data_renewal_period_seconds}
-
-<SettingsInfoBlock type="NonZeroUInt64" default_value="900" changeable_without_restart="No" />Período, em segundos, entre as renovações da propriedade confirmada de dados temporários.
-
-## distributed_cache_temporary_data_ttl_seconds {#distributed_cache_temporary_data_ttl_seconds}
-
-<SettingsInfoBlock type="NonZeroUInt64" default_value="3600" changeable_without_restart="No" />Ciclo de vida, em segundos, de um arquivo temporário confirmado.
-
-## distributed_cache_warmer_max_bytes_in_queue {#distributed_cache_warmer_max_bytes_in_queue}
-
-<SettingsInfoBlock type="UInt64" default_value="107374182400" changeable_without_restart="No" />Só tem efeito no ClickHouse Cloud. Tamanho total máximo dos intervalos que o cache warmer mantém na fila para um disco sem cache do sistema de arquivos local; acima desse limite, os intervalos mais antigos são descartados (com um cache local, o warmer usa o próprio `max_size`). Zero significa ilimitado.
-
-## distributed_cache_warmer_max_file_segment_size {#distributed_cache_warmer_max_file_segment_size}
-
-<SettingsInfoBlock type="NonZeroUInt64" default_value="33554432" changeable_without_restart="No" />Só tem efeito no ClickHouse Cloud. Tamanho dos intervalos em que o cache warmer lê uma parte obtida para o distributed cache quando o disco da parte não tem cache do sistema de arquivos local (com um cache local, o warmer usa o próprio `max_file_segment_size`).
-
-## distributed_cache_warmer_max_segments_in_queue {#distributed_cache_warmer_max_segments_in_queue}
-
-<SettingsInfoBlock type="UInt64" default_value="100000" changeable_without_restart="No" />Só tem efeito no ClickHouse Cloud. Número máximo de intervalos que o cache warmer mantém na fila para um disco sem cache do sistema de arquivos local; acima desse limite, os intervalos mais antigos são descartados (quando há cache local, o warmer usa o `max_elements` dele). Zero significa ilimitado.
-
-## distributed_cache_write_pool_size {#distributed_cache_write_pool_size}
+## distributed_cache_write_pool_size
 
 <SettingsInfoBlock type="UInt64" default_value="100" changeable_without_restart="No" />O número máximo de solicitações de gravação do cache distribuído executadas simultaneamente em uma background thread (em todas as queries). Quando o limite é atingido, a gravação no write-through cache é ignorada (os dados continuam sendo gravados no armazenamento de objetos), de modo que não fica bloqueada aguardando um slot nem cria um número ilimitado de threads. Gravações de temporary data não usam background threads e não são afetadas pelo limite.
 

@@ -113,18 +113,14 @@ Chunk KafkaSource::generateImpl()
     MutableColumns virtual_columns = virtual_header.cloneEmptyColumns();
 
     EmptyReadBuffer empty_buf;
-    auto parser_shared_resources = FormatParserSharedResources::singleThreaded(context->getSettingsRef());
-    auto create_format = [&]
-    {
-        return FormatFactory::instance().getInput(
-            storage.getFormatName(),
-            empty_buf,
-            non_virtual_header,
-            context,
-            max_block_size,
-            std::nullopt,
-            parser_shared_resources);
-    };
+    auto input_format = FormatFactory::instance().getInput(
+        storage.getFormatName(),
+        empty_buf,
+        non_virtual_header,
+        context,
+        max_block_size,
+        std::nullopt,
+        FormatParserSharedResources::singleThreaded(context->getSettingsRef()));
 
     std::optional<std::string> exception_message;
     size_t total_rows = 0;
@@ -146,7 +142,7 @@ Chunk KafkaSource::generateImpl()
                     result_columns[i]->rollback(*checkpoints[i]);
 
                     // all data columns will get default value in case of error
-                    non_virtual_header.getByPosition(i).type->insertDefaultInto(*result_columns[i]);
+                    result_columns[i]->insertDefault();
                 }
                 return 1;
             }
@@ -175,10 +171,7 @@ Chunk KafkaSource::generateImpl()
         }
     };
 
-    StreamingFormatExecutor executor(non_virtual_header, std::move(create_format), std::move(on_error));
-
-    const auto storage_id = storage.getStorageID();
-    const Field table_name = storage_id.getTableName();
+    StreamingFormatExecutor executor(non_virtual_header, input_format, std::move(on_error));
 
     bool cancelled = false;
 
@@ -261,7 +254,7 @@ Chunk KafkaSource::generateImpl()
                 }
                 virtual_columns[6]->insert(headers_names);
                 virtual_columns[7]->insert(headers_values);
-                virtual_columns[8]->insert(table_name);
+                virtual_columns[8]->insert(storage.getStorageID().getTableName());
                 if (handle_error_mode == StreamingHandleErrorMode::STREAM)
                 {
                     if (exception_message)
@@ -281,6 +274,7 @@ Chunk KafkaSource::generateImpl()
             {
                 chassert(exception_message);
                 const auto time_now = std::chrono::system_clock::now();
+                auto storage_id = storage.getStorageID();
 
                 auto dead_letter_queue = context->getDeadLetterQueue();
                 if (!dead_letter_queue)

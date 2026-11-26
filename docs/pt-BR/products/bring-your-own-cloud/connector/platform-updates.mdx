@@ -8,6 +8,7 @@ doc_type: 'guide'
 ---
 
 import { PrivatePreviewBadge } from '/snippets/pt-BR/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
 
 <PrivatePreviewBadge />
 
@@ -28,20 +29,16 @@ O executor nunca aplica um pacote que você não tenha aprovado. Ele recusa uma 
 
 ## Aprovar uma atualização de plataforma {#approve-a-platform-update}
 
-<div className="ch-image-lg">
-  <Frame>
-    ![Fluxo de aprovação de plataforma do Conector do ClickHouse](/images/cloud/reference/byoc-connector-platform-approval.svg)
-  </Frame>
-</div>
+<Image img="/images/cloud/reference/byoc-connector-platform-approval.svg" size="lg" alt="Fluxo de aprovação de plataforma do ClickHouse Connector" />
 
-### Credenciais do registro {#registry-credentials}
+### Credenciais de registry {#registry-credentials}
 
-A autenticação no registro depende do modo de distribuição de imagens registrado para o seu ambiente:
+A autenticação no registry depende do modo de distribuição de imagens registrado para o seu ambiente:
 
-* **Acesso direto ao registro da ClickHouse.** Execute a aprovação na VM EC2 do connector. Tanto o `approve` quanto a sincronização de plataforma do executor assumem a função read-only de pull do ECR do seu ambiente, com credenciais obtidas do serviço de metadados da instância EC2. Essa função faz login no registro de charts; o executor também a utiliza para verificar se as imagens da plataforma existem. Perfis da AWS, credenciais de ambiente ou credenciais de SSO em uma estação de trabalho não substituem o instance profile. Seu kubeconfig continua fornecendo as credenciais de cluster-admin, separadas, que aplicam a metade de permissões.
-* **Charts em outro registro ECR, incluindo seu próprio espelho.** O login no registro de charts usa as credenciais implícitas da AWS do processo que executa o `approve` ou o executor. Essas credenciais precisam ter permissão de leitura nesse registro.
+* **Acesso direto ao registry da ClickHouse.** Execute a aprovação na VM EC2 do connector. Tanto o `approve` quanto a sincronização de plataforma do executor assumem a função read-only de puller do ECR do seu ambiente com credenciais do instance metadata service do EC2. Essa função faz login no registry do chart; o executor também a usa para verificar se as imagens de plataforma existem. Perfis da AWS, credenciais de ambiente ou credenciais de SSO em uma workstation não substituem o instance profile. O seu kubeconfig continua fornecendo as credenciais separadas de cluster-admin que aplicam a metade de permissões.
+* **Charts em outro registry ECR, incluindo o seu próprio mirror.** O login no chart usa as credenciais ambient da AWS do processo que executa o `approve` ou o executor. Essas credenciais precisam ter permissão de leitura nesse registry.
 
-Use o procedimento da estação de trabalho Kubernetes descrito abaixo somente em implantações com registro espelhado e com a aprovação de plataforma Kubernetes habilitada. Para acesso direto, peça antes à sua equipe de conta que confirme um ambiente de execução compatível com o instance profile EC2 necessário.
+Use o procedimento de workstation do Kubernetes abaixo somente em deployments com registry espelhado e com a aprovação de plataforma do Kubernetes habilitada. Para acesso direto, peça primeiro à sua equipe de conta que confirme um ambiente de execução compatível com o instance profile do EC2 necessário.
 
 <Steps>
   <Step title="Localize o pacote preparado" id="find-the-staged-bundle">

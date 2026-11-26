@@ -13,11 +13,13 @@ import { VersionHistory } from "/snippets/es/components/VersionHistory/VersionHi
 
 Estas configuraciones están disponibles en [system.merge&#95;tree&#95;settings](/es/reference/system-tables/merge_tree_settings) y se generan automáticamente a partir del código fuente de ClickHouse.
 
-## map_serialization_version {#map_serialization_version}
+<div id="map_serialization_version">
+  ## map_serialization_version
+</div>
 
 <SettingsInfoBlock type="MergeTreeMapSerializationVersion" default_value="basic" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.3"},{"label": "basic"},{"label": "Añadir un parámetro de configuración para controlar la versión de serialización de Map"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.3"},{"label": "basic"},{"label": "Añadir una opción de configuración para controlar la versión de serialización de Map"}]}]} />
 
 Controla el método de serialización utilizado para las columnas `Map`.
 
@@ -27,9 +29,10 @@ Valores posibles:
 * with&#95;buckets — Divide las claves en buckets durante la serialización. El uso de buckets mejora la lectura de claves individuales de Map.
 
 El número de buckets en la serialización `with_buckets` se determina mediante [max&#95;buckets&#95;in&#95;map](/es/reference/settings/merge-tree-settings/max#max_buckets_in_map) y [map&#95;buckets&#95;strategy](/es/reference/settings/merge-tree-settings/map-buckets#map_buckets_strategy).
-Un `Map` cuyo tipo de clave contenga `JSON` o `Dynamic` siempre se escribe en un único bucket, independientemente del resto de parámetros de configuración de buckets.
 
-## map_serialization_version_for_zero_level_parts {#map_serialization_version_for_zero_level_parts}
+<div id="map_serialization_version_for_zero_level_parts">
+  ## map_serialization_version_for_zero_level_parts
+</div>
 
 <SettingsInfoBlock type="MergeTreeMapSerializationVersion" default_value="basic" />
 

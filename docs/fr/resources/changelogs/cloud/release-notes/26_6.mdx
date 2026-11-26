@@ -9,10 +9,6 @@ doc_type: 'changelog'
 
 ## Modifications non rétrocompatibles {#backward-incompatible-changes}
 
-### Identifiants de la source du dictionnaire {#dictionary-source-credentials}
-
-* À partir de la version 26.6.1.240 de ClickHouse Cloud, les utilisateurs autres que `default` ne peuvent plus créer de dictionnaire dont l’utilisateur de la source `CLICKHOUSE` est `default`, quel que soit le mot de passe fourni. Cela s’applique également lorsque les identifiants de la source proviennent d’une collection nommée. Il était déjà obligatoire de spécifier à la fois `user` et `password` ; désormais, spécifier explicitement `default` est rejeté avec l’erreur `BAD_ARGUMENTS` (code 36) : ``A non-default user cannot create a dictionary that connects as passwordless dictionary source user `default`.`` Mettez à jour le DDL de création et de migration des dictionnaires afin d’utiliser un utilisateur source dédié, disposant du privilège `SELECT` sur la table source. Consultez l’[exemple de source de dictionnaire ClickHouse](/fr/reference/statements/create/dictionary/sources/clickhouse).
-
 ### Modifications des requêtes et de la syntaxe {#query-and-syntax-changes}
 
 * Les window functions `RANK` et `DENSE_RANK` refusent désormais les arguments et lèvent `NUMBER_OF_ARGUMENTS_DOESNT_MATCH`, conformément à la norme SQL. Auparavant, des requêtes telles que `RANK(x) OVER (ORDER BY id)` étaient acceptées silencieusement et l&#39;argument était ignoré, ce qui semait fréquemment la confusion chez les utilisateurs. Pour rétablir le comportement permissif précédent, définissez `allow_rank_dense_rank_arguments = 1`. [#104324](https://github.com/ClickHouse/ClickHouse/pull/104324) ([groeneai](https://github.com/groeneai)).

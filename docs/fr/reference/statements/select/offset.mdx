@@ -20,24 +20,22 @@ doc_type: 'reference'
 
 Les formes `OFFSET ... FETCH` de la norme SQL ne peuvent pas être combinées avec la forme de plage [`LIMIT ... AFTER ... UNTIL`](/fr/reference/statements/select/limit#limit-after-until).
 
-La valeur `offset_row_count` ou `fetch_row_count` peut être un nombre ou une constante littérale. Vous pouvez omettre `fetch_row_count` ; par défaut, elle est égale à 1.
+La valeur `offset_row_count` ou `fetch_row_count` peut être un nombre ou une constante littérale. Vous pouvez omettre `fetch_row_count` ; par défaut, elle est égale à 1.
 
-`OFFSET` spécifie le nombre de lignes à ignorer avant de commencer à renvoyer des lignes de l’ensemble de résultats de la requête. `OFFSET n` ignore les `n` premières lignes du résultat.
+`OFFSET` spécifie le nombre de lignes à ignorer avant de commencer à renvoyer des lignes du jeu de résultats de la requête. `OFFSET n` ignore les `n` premières lignes du résultat.
 
-Les valeurs négatives de `OFFSET` sont prises en charge : `OFFSET -n` ignore les `n` dernières lignes du résultat.
+Les valeurs négatives de `OFFSET` sont prises en charge : `OFFSET -n` ignore les `n` dernières lignes du résultat.
 
-Les valeurs fractionnaires de `OFFSET` sont également prises en charge : `OFFSET n` - si 0 &lt; n &lt; 1, alors les n * 100 % premières lignes du résultat sont ignorées.
+Les valeurs fractionnaires de `OFFSET` sont également prises en charge : `OFFSET n` - si 0 &lt; n &lt; 1, alors les n * 100 % premières lignes du résultat sont ignorées.
 
-Exemple :
-• `OFFSET 0.1` - ignore les 10 % premières lignes du résultat.
+Exemple :
+• `OFFSET 0.1` - ignore les 10 % premières lignes du résultat.
 
 > **Note**
 > • La fraction doit être un nombre [Float64](/fr/reference/data-types/float) inférieur à 1 et supérieur à zéro.
 > • Si le calcul produit un nombre fractionnaire de lignes, il est arrondi à l&#39;entier supérieur.
 
 `FETCH` spécifie le nombre maximal de lignes pouvant figurer dans le résultat d&#39;une requête.
-`FETCH ... ONLY` fonctionne sans `ORDER BY`, comme `LIMIT`, mais rien ne garantit que les lignes renvoyées soient déterministes.
-`FETCH ... WITH TIES` nécessite `ORDER BY` pour identifier les lignes à égalité avec la dernière ligne sélectionnée.
 
 L&#39;option `ONLY` est utilisée pour renvoyer les lignes qui suivent immédiatement celles omises par `OFFSET`. Dans ce cas, `FETCH` est une alternative à la clause [LIMIT](/fr/reference/statements/select/limit). Par exemple, la requête suivante
 
@@ -61,7 +59,7 @@ L’option `WITH TIES` permet de renvoyer toutes les lignes supplémentaires à 
   Le décalage effectif peut aussi dépendre du paramètre [offset](/fr/reference/settings/session-settings/other#offset).
 </Note>
 
-## Exemples {#examples}
+## Exemples
 
 Table d’entrée :
 

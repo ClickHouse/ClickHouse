@@ -185,7 +185,7 @@ ORDER BY per_trace_sum ASC
 </Note>
 
 ClickHouse предоставляет встроенный веб-интерфейс для просмотра статистики памяти jemalloc по HTTP-конечной точке `/jemalloc`.
-Он показывает метрики памяти в реальном времени в виде графиков, включая allocated, active, resident и mapped memory, а также статистику по аренам и bin.
+Он показывает метрики памяти в реальном времени в виде графиков, включая allocated, active, resident и mapped memory, а также статистику по arena и bin.
 Вы также можете получать глобальные профили кучи и профили кучи отдельных запросов напрямую из интерфейса.
 
 <Tabs>
@@ -194,7 +194,7 @@ ClickHouse предоставляет встроенный веб-интерфе
     http://localhost:8123/jemalloc
     ```
 
-    Интерфейс сервера включает все вкладки: Summary, Allocations, Арены, Operations, Global Profiler, Query Profiler, Fragmentation и Необработанный вывод.
+    Интерфейс сервера включает все вкладки: Summary, Allocations, Arenas, Operations, Global Profiler, Query Profiler, Fragmentation и Raw Output.
   </Tab>
 
   <Tab title="Keeper">
@@ -214,21 +214,21 @@ ClickHouse предоставляет встроенный веб-интерфе
     </clickhouse>
     ```
 
-    После включения интерфейс предоставляет те же визуализации, что и сервер, — Summary, Allocations, Арены, Operations, Global Profiler и Необработанный вывод, — за исключением вкладок Query Profiler и Fragmentation, для которых требуется SQL-доступ к системным таблицам.
+    После включения интерфейс предоставляет те же визуализации, что и сервер, — Summary, Allocations, Arenas, Operations, Global Profiler и Raw Output, — за исключением вкладок Query Profiler и Fragmentation, для которых требуется SQL-доступ к системным таблицам.
 
     <Warning>
       **Безопасность**
 
-      У управляющего HTTP-порта Keeper нет аутентификации на уровне приложения. В отличие от интерфейса jemalloc в ClickHouse Server, где все запросы данных проходят через обработчик SQL HTTP и требуют имени пользователя и пароля, конечные точки REST API Keeper не аутентифицируются. Это соответствует другим управляющим HTTP-конечным точкам Keeper (commands, storage, dashboard).
+      У управляющего HTTP-порта Keeper нет аутентификации на уровне приложения. В отличие от jemalloc UI в ClickHouse Server, где все запросы данных проходят через обработчик SQL HTTP и требуют имени пользователя и пароля, конечные точки REST API Keeper не аутентифицируются. Это соответствует другим управляющим HTTP-конечным точкам Keeper (commands, storage, dashboard).
 
       Ограничьте доступ к этому порту с помощью средств сетевого уровня: привяжите Keeper к localhost, используйте правила firewall или разместите его за reverse proxy с аутентификацией. Если `listen_host` не настроен, Keeper по умолчанию прослушивает только localhost.
     </Warning>
 
     Keeper также предоставляет конечные точки REST API для программного доступа:
 
-    * `GET /jemalloc/stats` — необработанный вывод `malloc_stats_print`
+    * `GET /jemalloc/stats` — сырой вывод `malloc_stats_print`
     * `GET /jemalloc/status` — состояние профилирования в формате JSON (`prof_enabled`, `prof_active`, `thread_active_init`, `lg_sample`)
-    * `GET /jemalloc/profile?format={collapsed|raw}` — сбрасывает профиль кучи с символизацией на стороне сервера и возвращает свёрнутый стек, подходящий для построения флеймграфа (по умолчанию), либо профиль кучи в том же виде, что и формат `raw` в `system.jemalloc_profile_text`
+    * `GET /jemalloc/profile?format={collapsed|raw}` — сбрасывает профиль кучи с символизацией на стороне сервера и возвращает свёрнутый стек, подходящий для построения флеймграфа (по умолчанию), либо сырой дамп jemalloc
   </Tab>
 </Tabs>
 
@@ -256,7 +256,7 @@ SELECT * FROM system.jemalloc_profile_text
 
 Формат вывода задаётся настройкой `jemalloc_profile_text_output_format`, которая поддерживает три значения:
 
-* `raw` — профиль кучи в том виде, в каком его формирует jemalloc, но без публикации адресов времени выполнения: адреса стека внутри бинарного файла ClickHouse заменяются на смещения в нём, прочие адреса (разделяемые библиотеки, JIT-код) — на `0`, а карта памяти (`MAPPED_LIBRARIES`) удаляется. `jeprof` анализирует такой профиль вместе с бинарным файлом ClickHouse: `jeprof /path/to/clickhouse profile.heap`.
+* `raw` — необработанный профиль кучи, созданный jemalloc.
 * `symbolized` — формат, совместимый с jeprof, со встроенными символами функций. Поскольку символы уже встроены, `jeprof` может анализировать вывод без бинарного файла ClickHouse.
 * `collapsed` (по умолчанию) — свёрнутый стек в формате, совместимом с FlameGraph: по одному стеку на строку с количеством байтов.
 

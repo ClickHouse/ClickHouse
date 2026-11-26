@@ -1,9 +1,9 @@
--- Tags: no-msan
-
 -- ==========================================================================
 -- Comprehensive test for parseQueryToJSON / formatQueryFromJSON
 -- covering all AST types and all AST fields.
 -- ==========================================================================
+
+SET allow_experimental_json_type = 0; -- avoid interference with JSON column type
 
 -- ==========================================================================
 -- 1. ASTSelectWithUnionQuery

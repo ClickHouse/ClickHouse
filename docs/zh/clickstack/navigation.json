@@ -1,418 +1,50 @@
 {
-  "item": "ClickHouse Observability",
-  "dropdowns": [
+  "icon": "/images/icons/icon-clickstack.svg",
+  "item": "ClickStack",
+  "pages": [
+    "zh/clickstack/index",
     {
-      "dropdown": "ClickHouse Observability",
-      "icon": "/images/icons/icon-clickhouse-observability.svg",
+      "expanded": true,
+      "group": "入门",
       "pages": [
-        "zh/clickstack/observability/index",
+        "zh/clickstack/overview",
         {
           "expanded": true,
-          "group": "Introduction",
+          "group": "快速入门",
           "pages": [
-            "zh/clickstack/observability/overview",
-            "zh/clickstack/observability/getting-started/index",
-            {
-              "group": "Sample datasets",
-              "root": "zh/clickstack/observability/example-datasets/index",
-              "pages": [
-                "zh/clickstack/observability/example-datasets/sample-data",
-                "zh/clickstack/observability/example-datasets/kubernetes",
-                "zh/clickstack/observability/example-datasets/local-data",
-                "zh/clickstack/observability/example-datasets/session-replay",
-                "zh/clickstack/observability/example-datasets/chrome-extension",
-                "zh/clickstack/observability/example-datasets/otelgen",
-                "zh/clickstack/observability/example-datasets/telemetrygen",
-                "zh/clickstack/observability/example-datasets/instrument-application"
-              ]
-            },
-            "zh/clickstack/observability/architecture",
-            "zh/clickstack/observability/faq"
+            "zh/clickstack/getting-started/index",
+            "zh/clickstack/getting-started/managed",
+            "zh/clickstack/getting-started/oss"
           ]
         },
         {
-          "group": "Features",
+          "group": "示例数据集",
           "pages": [
-            "zh/clickstack/observability/features/search",
-            {
-              "group": "Dashboards",
-              "pages": [
-                "zh/clickstack/observability/features/dashboards/overview",
-                "zh/clickstack/observability/features/dashboards/dashboard-templates",
-                "zh/clickstack/observability/features/dashboards/sql-visualizations",
-                "zh/clickstack/observability/features/dashboards/row-click-drilldowns",
-                "zh/clickstack/observability/features/dashboards/release-markers"
-              ]
-            },
-            "zh/clickstack/observability/notebooks",
-            "zh/clickstack/observability/text-to-chart",
-            "zh/clickstack/observability/text-to-dashboard",
-            "zh/clickstack/observability/features/event-patterns",
-            "zh/clickstack/observability/features/event-deltas",
-            "zh/clickstack/observability/features/alerts",
-            "zh/clickstack/observability/features/anomaly-detection",
-            "zh/clickstack/observability/service-maps",
-            "zh/clickstack/observability/features/session-replay",
-            "zh/clickstack/observability/mcp",
-            "zh/clickstack/observability/url-parameters",
-            {
-              "group": "Demo days",
-              "root": "zh/clickstack/observability/demo-days/index",
-              "pages": [
-                {
-                  "group": "2026",
-                  "pages": [
-                    {
-                      "group": "October",
-                      "pages": [
-                        "zh/clickstack/demo-days/2026/2026-10-22",
-                        "zh/clickstack/demo-days/2026/2026-10-15",
-                        "zh/clickstack/demo-days/2026/2026-10-08",
-                        "zh/clickstack/demo-days/2026/2026-10-01"
-                      ]
-                    },
-                    {
-                      "group": "September",
-                      "pages": [
-                        "zh/clickstack/demo-days/2026/2026-09-24",
-                        "zh/clickstack/observability/demo-days/2026/2026-09-17",
-                        "zh/clickstack/observability/demo-days/2026/2026-09-10",
-                        "zh/clickstack/observability/demo-days/2026/2026-09-04"
-                      ]
-                    },
-                    {
-                      "group": "August",
-                      "pages": [
-                        "zh/clickstack/observability/demo-days/2026/2026-08-28",
-                        "zh/clickstack/observability/demo-days/2026/2026-08-21",
-                        "zh/clickstack/observability/demo-days/2026/2026-08-15",
-                        "zh/clickstack/observability/demo-days/2026/2026-08-07"
-                      ]
-                    },
-                    {
-                      "group": "July",
-                      "pages": [
-                        "zh/clickstack/observability/demo-days/2026/2026-07-31",
-                        "zh/clickstack/observability/demo-days/2026/2026-07-24",
-                        "zh/clickstack/observability/demo-days/2026/2026-07-17",
-                        "zh/clickstack/observability/demo-days/2026/2026-07-10",
-                        "zh/clickstack/observability/demo-days/2026/2026-07-02"
-                      ]
-                    },
-                    {
-                      "group": "June",
-                      "pages": [
-                        "zh/clickstack/observability/demo-days/2026/2026-06-26",
-                        "zh/clickstack/observability/demo-days/2026/2026-06-18",
-                        "zh/clickstack/observability/demo-days/2026/2026-06-12",
-                        "zh/clickstack/observability/demo-days/2026/2026-06-05"
-                      ]
-                    },
-                    {
-                      "group": "May",
-                      "pages": [
-                        "zh/clickstack/observability/demo-days/2026/2026-05-29",
-                        "zh/clickstack/observability/demo-days/2026/2026-05-22",
-                        "zh/clickstack/observability/demo-days/2026/2026-05-15",
-                        "zh/clickstack/observability/demo-days/2026/2026-05-08"
-                      ]
-                    },
-                    {
-                      "group": "April",
-                      "pages": [
-                        "zh/clickstack/observability/demo-days/2026/2026-04-17",
-                        "zh/clickstack/observability/demo-days/2026/2026-04-10",
-                        "zh/clickstack/observability/demo-days/2026/2026-04-03"
-                      ]
-                    }
-                  ]
-                }
-              ]
-            }
+            "zh/clickstack/example-datasets/index",
+            "zh/clickstack/example-datasets/sample-data",
+            "zh/clickstack/example-datasets/kubernetes",
+            "zh/clickstack/example-datasets/local-data",
+            "zh/clickstack/example-datasets/remote-demo-data",
+            "zh/clickstack/example-datasets/session-replay",
+            "zh/clickstack/example-datasets/chrome-extension",
+            "zh/clickstack/example-datasets/otelgen",
+            "zh/clickstack/example-datasets/telemetrygen",
+            "zh/clickstack/example-datasets/instrument-application"
           ]
         },
-        {
-          "expanded": true,
-          "group": "Administration",
-          "pages": [
-            "zh/clickstack/observability/managing/overview",
-            "zh/clickstack/observability/managing/config",
-            "zh/clickstack/observability/managing/rbac"
-          ]
-        },
-        {
-          "group": "Guides",
-          "pages": [
-            {
-              "expanded": true,
-              "group": "Ingesting data",
-              "pages": [
-                "zh/clickstack/observability/ingesting-data/overview",
-                "zh/clickstack/observability/ingesting-data/opentelemetry",
-                "zh/clickstack/observability/ingesting-data/vector",
-                {
-                  "group": "Integrations",
-                  "pages": [
-                    "zh/clickstack/observability/integration-examples/index",
-                    "zh/clickstack/observability/integration-examples/nginx-logs",
-                    "zh/clickstack/observability/integration-examples/nginx-traces",
-                    "zh/clickstack/observability/integration-examples/redis-logs",
-                    "zh/clickstack/observability/integration-examples/redis-metrics",
-                    "zh/clickstack/observability/integration-examples/cloudwatch",
-                    "zh/clickstack/observability/integration-examples/aws-lambda",
-                    {
-                      "group": "Host logs",
-                      "pages": [
-                        "zh/clickstack/observability/integration-examples/host-logs",
-                        "zh/clickstack/observability/integration-examples/host-logs/ec2"
-                      ]
-                    },
-                    "zh/clickstack/observability/integration-examples/jvm-metrics",
-                    "zh/clickstack/observability/integration-examples/kafka-metrics",
-                    "zh/clickstack/observability/integration-examples/kubernetes",
-                    "zh/clickstack/observability/integration-examples/mysql",
-                    "zh/clickstack/observability/integration-examples/nodejs-traces",
-                    "zh/clickstack/observability/integration-examples/postgres-logs",
-                    "zh/clickstack/observability/integration-examples/postgres-metrics",
-                    "zh/clickstack/observability/integration-examples/systemd",
-                    "zh/clickstack/observability/integration-examples/temporal",
-                    "zh/clickstack/observability/integration-examples/cloudflare",
-                    "zh/clickstack/observability/integration-examples/kafka-logs",
-                    "zh/clickstack/observability/integration-examples/mongodb-logs"
-                  ]
-                },
-                {
-                  "group": "Language SDKs",
-                  "pages": [
-                    "zh/clickstack/observability/ingesting-data/sdks/index",
-                    "zh/clickstack/observability/ingesting-data/sdks/instrument-with-ai",
-                    "zh/clickstack/observability/ingesting-data/sdks/browser",
-                    "zh/clickstack/observability/ingesting-data/sdks/nodejs",
-                    "zh/clickstack/observability/ingesting-data/sdks/python",
-                    "zh/clickstack/observability/ingesting-data/sdks/golang",
-                    "zh/clickstack/observability/ingesting-data/sdks/java",
-                    "zh/clickstack/observability/ingesting-data/sdks/ruby",
-                    "zh/clickstack/observability/ingesting-data/sdks/elixir",
-                    "zh/clickstack/observability/ingesting-data/sdks/deno",
-                    "zh/clickstack/observability/ingesting-data/sdks/nestjs",
-                    "zh/clickstack/observability/ingesting-data/sdks/nextjs",
-                    "zh/clickstack/observability/ingesting-data/sdks/react-native",
-                    "zh/clickstack/observability/ingesting-data/sdks/aws-lambda"
-                  ]
-                }
-              ]
-            },
-            {
-              "expanded": true,
-              "group": "Migration guides",
-              "pages": [
-                "zh/clickstack/observability/migration/index",
-                {
-                  "group": "Migrating from Elastic",
-                  "pages": [
-                    "zh/clickstack/observability/migration/elastic/index",
-                    "zh/clickstack/observability/migration/elastic/intro",
-                    "zh/clickstack/observability/migration/elastic/search",
-                    "zh/clickstack/observability/migration/elastic/migrating-data",
-                    "zh/clickstack/observability/migration/elastic/migrating-agents",
-                    "zh/clickstack/observability/migration/elastic/migrating-sdks"
-                  ]
-                },
-                "zh/clickstack/observability/migration/datadog/index"
-              ]
-            }
-          ]
-        },
-        {
-          "expanded": true,
-          "group": "Integration partners",
-          "pages": [
-            "zh/clickstack/observability/integration-partners/index",
-            "zh/clickstack/observability/integration-partners/bindplane",
-            "zh/clickstack/observability/integration-partners/bitdrift",
-            "zh/clickstack/observability/integration-partners/odigos",
-            "zh/clickstack/observability/integration-partners/telflo"
-          ]
-        },
-        {
-          "group": "Self-managed",
-          "pages": [
-            "zh/clickstack/self-configured/overview",
-            "zh/clickstack/self-configured/getting-started/managed",
-            "zh/clickstack/self-configured/architecture",
-            "zh/clickstack/self-configured/deployment/managed",
-            {
-              "group": "Configuration and schemas",
-              "pages": [
-                "zh/clickstack/self-configured/ingesting-data/collector",
-                "zh/clickstack/self-configured/managing/config",
-                "zh/clickstack/self-configured/ingesting-data/schemas",
-                "zh/clickstack/self-configured/ingesting-data/schema/map-vs-json",
-                "zh/clickstack/self-configured/ingesting-data/trace-sampling"
-              ]
-            },
-            {
-              "group": "Administration",
-              "pages": [
-                "zh/clickstack/self-configured/managing/overview",
-                "zh/clickstack/self-configured/managing/estimating-resources",
-                "zh/clickstack/self-configured/managing/isolating-read-write",
-                "zh/clickstack/self-configured/managing/materialized-views",
-                "zh/clickstack/self-configured/managing/performance-tuning",
-                "zh/clickstack/self-configured/managing/production",
-                "zh/clickstack/self-configured/managing/ttl"
-              ]
-            },
-            {
-              "group": "Migration reference",
-              "pages": [
-                {
-                  "group": "Elasticsearch",
-                  "pages": [
-                    "zh/clickstack/self-configured/migration/elastic/concepts",
-                    "zh/clickstack/self-configured/migration/elastic/types"
-                  ]
-                }
-              ]
-            }
-          ]
-        },
-        {
-          "group": "API reference",
-          "pages": [
-            {
-              "group": "Dashboards",
-              "pages": [
-                "GET /v1/organizations/{organizationId}/services/{serviceId}/clickstack/dashboards",
-                "POST /v1/organizations/{organizationId}/services/{serviceId}/clickstack/dashboards",
-                "GET /v1/organizations/{organizationId}/services/{serviceId}/clickstack/dashboards/{clickStackDashboardId}",
-                "PUT /v1/organizations/{organizationId}/services/{serviceId}/clickstack/dashboards/{clickStackDashboardId}",
-                "DELETE /v1/organizations/{organizationId}/services/{serviceId}/clickstack/dashboards/{clickStackDashboardId}",
-                "POST /v1/organizations/{organizationId}/services/{serviceId}/clickstack/dashboards/validate"
-              ]
-            },
-            {
-              "group": "Alerts",
-              "pages": [
-                "GET /v1/organizations/{organizationId}/services/{serviceId}/clickstack/alerts",
-                "POST /v1/organizations/{organizationId}/services/{serviceId}/clickstack/alerts",
-                "GET /v1/organizations/{organizationId}/services/{serviceId}/clickstack/alerts/{clickStackAlertId}",
-                "PUT /v1/organizations/{organizationId}/services/{serviceId}/clickstack/alerts/{clickStackAlertId}",
-                "DELETE /v1/organizations/{organizationId}/services/{serviceId}/clickstack/alerts/{clickStackAlertId}"
-              ]
-            },
-            {
-              "group": "Sources",
-              "pages": [
-                "GET /v1/organizations/{organizationId}/services/{serviceId}/clickstack/sources",
-                "POST /v1/organizations/{organizationId}/services/{serviceId}/clickstack/sources",
-                "GET /v1/organizations/{organizationId}/services/{serviceId}/clickstack/sources/{clickStackSourceId}",
-                "PUT /v1/organizations/{organizationId}/services/{serviceId}/clickstack/sources/{clickStackSourceId}",
-                "DELETE /v1/organizations/{organizationId}/services/{serviceId}/clickstack/sources/{clickStackSourceId}"
-              ]
-            },
-            {
-              "group": "Webhooks",
-              "pages": [
-                "GET /v1/organizations/{organizationId}/services/{serviceId}/clickstack/webhooks",
-                "POST /v1/organizations/{organizationId}/services/{serviceId}/clickstack/webhooks",
-                "POST /v1/organizations/{organizationId}/services/{serviceId}/clickstack/webhooks/validate",
-                "PUT /v1/organizations/{organizationId}/services/{serviceId}/clickstack/webhooks/{clickStackWebhookId}",
-                "DELETE /v1/organizations/{organizationId}/services/{serviceId}/clickstack/webhooks/{clickStackWebhookId}"
-              ]
-            },
-            {
-              "group": "Roles",
-              "pages": [
-                "GET /v1/organizations/{organizationId}/services/{serviceId}/clickstack/roles",
-                "POST /v1/organizations/{organizationId}/services/{serviceId}/clickstack/roles",
-                "GET /v1/organizations/{organizationId}/services/{serviceId}/clickstack/roles/{clickStackRoleId}",
-                "PUT /v1/organizations/{organizationId}/services/{serviceId}/clickstack/roles/{clickStackRoleId}",
-                "DELETE /v1/organizations/{organizationId}/services/{serviceId}/clickstack/roles/{clickStackRoleId}"
-              ]
-            },
-            {
-              "group": "Saved searches",
-              "pages": [
-                "GET /v1/organizations/{organizationId}/services/{serviceId}/clickstack/saved-searches",
-                "POST /v1/organizations/{organizationId}/services/{serviceId}/clickstack/saved-searches",
-                "GET /v1/organizations/{organizationId}/services/{serviceId}/clickstack/saved-searches/{clickStackSavedSearchId}",
-                "PUT /v1/organizations/{organizationId}/services/{serviceId}/clickstack/saved-searches/{clickStackSavedSearchId}",
-                "DELETE /v1/organizations/{organizationId}/services/{serviceId}/clickstack/saved-searches/{clickStackSavedSearchId}"
-              ]
-            }
-          ],
-          "expanded": true,
-          "root": "zh/clickstack/observability/api-reference",
-          "openapi": {
-            "source": "_specs/cloud-openapi.json",
-            "directory": "zh/clickstack/observability/api-reference"
-          }
-        },
-        {
-          "group": "Onboarding guides",
-          "hidden": true,
-          "pages": [
-            "zh/clickstack/managed-onboarding/instrument-application-serverless",
-            "zh/clickstack/managed-onboarding/instrument-application",
-            "zh/clickstack/managed-onboarding/managed-getting-started",
-            "zh/clickstack/managed-onboarding/migrating-from-datadog-serverless",
-            "zh/clickstack/managed-onboarding/monitoring-aws-cloudwatch-logs-serverless",
-            "zh/clickstack/managed-onboarding/monitoring-aws-cloudwatch-logs",
-            "zh/clickstack/managed-onboarding/monitoring-kubernetes-serverless",
-            "zh/clickstack/managed-onboarding/monitoring-kubernetes",
-            "zh/clickstack/managed-onboarding/setting-up-your-opentelemetry-collector-serverless",
-            "zh/clickstack/managed-onboarding/setting-up-your-opentelemetry-collector",
-            "zh/clickstack/managed-onboarding/tuning-clickstack-schema",
-            "zh/clickstack/observability/managed-onboarding/instrument-application",
-            "zh/clickstack/observability/managed-onboarding/monitoring-aws-cloudwatch-logs",
-            "zh/clickstack/observability/managed-onboarding/monitoring-kubernetes",
-            "zh/clickstack/observability/managed-onboarding/tuning-clickstack-schema",
-            "zh/clickstack/self-configured/managed-onboarding/instrument-application",
-            "zh/clickstack/self-configured/managed-onboarding/managed-getting-started",
-            "zh/clickstack/self-configured/managed-onboarding/monitoring-aws-cloudwatch-logs",
-            "zh/clickstack/self-configured/managed-onboarding/monitoring-kubernetes",
-            "zh/clickstack/self-configured/managed-onboarding/setting-up-your-opentelemetry-collector",
-            "zh/clickstack/self-configured/managed-onboarding/tuning-clickstack-schema"
-          ]
-        }
+        "zh/clickstack/architecture",
+        "zh/clickstack/faq"
       ]
     },
     {
-      "dropdown": "ClickStack (OSS)",
-      "icon": "/images/clickstack/clickstack-icon-dark.svg",
+      "group": "功能",
       "pages": [
-        "zh/clickstack",
         {
-          "expanded": true,
-          "group": "Introduction",
+          "group": "部署",
           "pages": [
-            "zh/clickstack/overview",
-            "zh/clickstack/getting-started/oss",
+            "zh/clickstack/deployment/overview",
             {
-              "group": "Sample datasets",
-              "pages": [
-                "zh/clickstack/example-datasets/index",
-                "zh/clickstack/example-datasets/sample-data",
-                "zh/clickstack/example-datasets/kubernetes",
-                "zh/clickstack/example-datasets/local-data",
-                "zh/clickstack/example-datasets/remote-demo-data",
-                "zh/clickstack/example-datasets/session-replay",
-                "zh/clickstack/example-datasets/chrome-extension",
-                "zh/clickstack/example-datasets/otelgen",
-                "zh/clickstack/example-datasets/telemetrygen",
-                "zh/clickstack/example-datasets/instrument-application"
-              ]
-            },
-            "zh/clickstack/architecture",
-            "zh/clickstack/faq"
-          ]
-        },
-        {
-          "group": "Features",
-          "pages": [
-            {
-              "group": "Deployment",
+              "group": "开源",
               "pages": [
                 "zh/clickstack/deployment/oss",
                 "zh/clickstack/deployment/all-in-one",
@@ -431,7 +63,7 @@
                       ]
                     },
                     {
-                      "group": "v1.x (deprecated)",
+                      "group": "v1.x（已弃用）",
                       "pages": [
                         "zh/clickstack/deployment/helm-v1",
                         "zh/clickstack/deployment/helm-configuration-v1",
@@ -447,223 +79,219 @@
                 "zh/clickstack/deployment/clickhouse-embedded"
               ]
             },
-            "zh/clickstack/features/search",
+            "zh/clickstack/deployment/managed"
+          ]
+        },
+        "zh/clickstack/features/search",
+        {
+          "group": "仪表板",
+          "pages": [
+            "zh/clickstack/features/dashboards/overview",
+            "zh/clickstack/features/dashboards/dashboard-templates",
+            "zh/clickstack/features/dashboards/sql-visualizations",
+            "zh/clickstack/features/dashboards/row-click-drilldowns",
+            "zh/clickstack/features/dashboards/release-markers"
+          ]
+        },
+        "zh/clickstack/notebooks",
+        "zh/clickstack/text-to-chart",
+        "zh/clickstack/features/event-patterns",
+        "zh/clickstack/features/event-deltas",
+        "zh/clickstack/features/alerts",
+        "zh/clickstack/service-maps",
+        "zh/clickstack/features/session-replay",
+        "zh/clickstack/mcp",
+        "zh/clickstack/url-parameters",
+        {
+          "group": "演示日",
+          "pages": [
+            "zh/clickstack/demo-days/index",
             {
-              "group": "Dashboards",
+              "group": "2026",
               "pages": [
-                "zh/clickstack/features/dashboards/overview",
-                "zh/clickstack/features/dashboards/dashboard-templates",
-                "zh/clickstack/features/dashboards/sql-visualizations",
-                "zh/clickstack/features/dashboards/row-click-drilldowns",
-                "zh/clickstack/features/dashboards/release-markers"
-              ]
-            },
-            "zh/clickstack/text-to-chart",
-            "zh/clickstack/features/event-patterns",
-            "zh/clickstack/features/event-deltas",
-            "zh/clickstack/features/alerts",
-            "zh/clickstack/service-maps",
-            "zh/clickstack/features/session-replay",
-            "zh/clickstack/mcp",
-            "zh/clickstack/url-parameters",
-            {
-              "group": "Demo days",
-              "pages": [
-                "zh/clickstack/demo-days/index",
                 {
-                  "group": "2026",
+                  "group": "9 月",
                   "pages": [
-                    {
-                      "group": "October",
-                      "pages": [
-                        "zh/clickstack/demo-days/2026/2026-10-22",
-                        "zh/clickstack/demo-days/2026/2026-10-15",
-                        "zh/clickstack/demo-days/2026/2026-10-08",
-                        "zh/clickstack/demo-days/2026/2026-10-01"
-                      ]
-                    },
-                    {
-                      "group": "September",
-                      "pages": [
-                        "zh/clickstack/demo-days/2026/2026-09-24",
-                        "zh/clickstack/demo-days/2026/2026-09-17",
-                        "zh/clickstack/demo-days/2026/2026-09-10",
-                        "zh/clickstack/demo-days/2026/2026-09-04"
-                      ]
-                    },
-                    {
-                      "group": "August",
-                      "pages": [
-                        "zh/clickstack/demo-days/2026/2026-08-28",
-                        "zh/clickstack/demo-days/2026/2026-08-21",
-                        "zh/clickstack/demo-days/2026/2026-08-15",
-                        "zh/clickstack/demo-days/2026/2026-08-07"
-                      ]
-                    },
-                    {
-                      "group": "July",
-                      "pages": [
-                        "zh/clickstack/demo-days/2026/2026-07-31",
-                        "zh/clickstack/demo-days/2026/2026-07-24",
-                        "zh/clickstack/demo-days/2026/2026-07-17",
-                        "zh/clickstack/demo-days/2026/2026-07-10",
-                        "zh/clickstack/demo-days/2026/2026-07-02"
-                      ]
-                    },
-                    {
-                      "group": "June",
-                      "pages": [
-                        "zh/clickstack/demo-days/2026/2026-06-26",
-                        "zh/clickstack/demo-days/2026/2026-06-18",
-                        "zh/clickstack/demo-days/2026/2026-06-12",
-                        "zh/clickstack/demo-days/2026/2026-06-05"
-                      ]
-                    },
-                    {
-                      "group": "May",
-                      "pages": [
-                        "zh/clickstack/demo-days/2026/2026-05-29",
-                        "zh/clickstack/demo-days/2026/2026-05-22",
-                        "zh/clickstack/demo-days/2026/2026-05-15",
-                        "zh/clickstack/demo-days/2026/2026-05-08"
-                      ]
-                    },
-                    {
-                      "group": "April",
-                      "pages": [
-                        "zh/clickstack/demo-days/2026/2026-04-17",
-                        "zh/clickstack/demo-days/2026/2026-04-10",
-                        "zh/clickstack/demo-days/2026/2026-04-03"
-                      ]
-                    }
+                    "zh/clickstack/demo-days/2026/2026-09-24",
+                    "zh/clickstack/demo-days/2026/2026-09-17",
+                    "zh/clickstack/demo-days/2026/2026-09-10",
+                    "zh/clickstack/demo-days/2026/2026-09-04"
+                  ]
+                },
+                {
+                  "group": "8 月",
+                  "pages": [
+                    "zh/clickstack/demo-days/2026/2026-08-28",
+                    "zh/clickstack/demo-days/2026/2026-08-21",
+                    "zh/clickstack/demo-days/2026/2026-08-15",
+                    "zh/clickstack/demo-days/2026/2026-08-07"
+                  ]
+                },
+                {
+                  "group": "7 月",
+                  "pages": [
+                    "zh/clickstack/demo-days/2026/2026-07-31",
+                    "zh/clickstack/demo-days/2026/2026-07-24",
+                    "zh/clickstack/demo-days/2026/2026-07-17",
+                    "zh/clickstack/demo-days/2026/2026-07-10",
+                    "zh/clickstack/demo-days/2026/2026-07-02"
+                  ]
+                },
+                {
+                  "group": "6 月",
+                  "pages": [
+                    "zh/clickstack/demo-days/2026/2026-06-26",
+                    "zh/clickstack/demo-days/2026/2026-06-18",
+                    "zh/clickstack/demo-days/2026/2026-06-12",
+                    "zh/clickstack/demo-days/2026/2026-06-05"
+                  ]
+                },
+                {
+                  "group": "5 月",
+                  "pages": [
+                    "zh/clickstack/demo-days/2026/2026-05-29",
+                    "zh/clickstack/demo-days/2026/2026-05-22",
+                    "zh/clickstack/demo-days/2026/2026-05-15",
+                    "zh/clickstack/demo-days/2026/2026-05-08"
+                  ]
+                },
+                {
+                  "group": "4 月",
+                  "pages": [
+                    "zh/clickstack/demo-days/2026/2026-04-17",
+                    "zh/clickstack/demo-days/2026/2026-04-10",
+                    "zh/clickstack/demo-days/2026/2026-04-03"
                   ]
                 }
               ]
             }
           ]
-        },
-        {
-          "expanded": true,
-          "group": "Administration",
-          "pages": [
-            "zh/clickstack/managing/overview",
-            "zh/clickstack/managing/config",
-            "zh/clickstack/managing/estimating-resources",
-            "zh/clickstack/managing/materialized-views",
-            "zh/clickstack/managing/performance-tuning",
-            "zh/clickstack/managing/production",
-            "zh/clickstack/managing/ttl"
-          ]
-        },
-        {
-          "group": "Guides",
-          "pages": [
-            {
-              "expanded": true,
-              "group": "Ingesting data",
-              "pages": [
-                "zh/clickstack/ingesting-data/overview",
-                "zh/clickstack/ingesting-data/opentelemetry",
-                "zh/clickstack/ingesting-data/vector",
-                "zh/clickstack/ingesting-data/collector",
-                "zh/clickstack/ingesting-data/schemas",
-                "zh/clickstack/ingesting-data/schema/map-vs-json",
-                "zh/clickstack/ingesting-data/trace-sampling",
-                {
-                  "group": "Integrations",
-                  "pages": [
-                    "zh/clickstack/integration-examples/index",
-                    "zh/clickstack/integration-examples/nginx-logs",
-                    "zh/clickstack/integration-examples/nginx-traces",
-                    "zh/clickstack/integration-examples/redis-logs",
-                    "zh/clickstack/integration-examples/redis-metrics",
-                    "zh/clickstack/integration-examples/cloudwatch",
-                    "zh/clickstack/integration-examples/aws-lambda",
-                    {
-                      "group": "Host logs",
-                      "pages": [
-                        "zh/clickstack/integration-examples/host-logs",
-                        "zh/clickstack/integration-examples/host-logs/ec2"
-                      ]
-                    },
-                    "zh/clickstack/integration-examples/jvm-metrics",
-                    "zh/clickstack/integration-examples/kafka-metrics",
-                    "zh/clickstack/integration-examples/kubernetes",
-                    "zh/clickstack/integration-examples/mysql",
-                    "zh/clickstack/integration-examples/nodejs-traces",
-                    "zh/clickstack/integration-examples/postgres-logs",
-                    "zh/clickstack/integration-examples/postgres-metrics",
-                    "zh/clickstack/integration-examples/systemd",
-                    "zh/clickstack/integration-examples/temporal",
-                    "zh/clickstack/integration-examples/cloudflare",
-                    "zh/clickstack/integration-examples/kafka-logs",
-                    "zh/clickstack/integration-examples/mongodb-logs"
-                  ]
-                },
-                {
-                  "group": "Language SDKs",
-                  "pages": [
-                    "zh/clickstack/ingesting-data/sdks/index",
-                    "zh/clickstack/ingesting-data/sdks/browser",
-                    "zh/clickstack/ingesting-data/sdks/nodejs",
-                    "zh/clickstack/ingesting-data/sdks/python",
-                    "zh/clickstack/ingesting-data/sdks/golang",
-                    "zh/clickstack/ingesting-data/sdks/java",
-                    "zh/clickstack/ingesting-data/sdks/ruby",
-                    "zh/clickstack/ingesting-data/sdks/elixir",
-                    "zh/clickstack/ingesting-data/sdks/deno",
-                    "zh/clickstack/ingesting-data/sdks/nestjs",
-                    "zh/clickstack/ingesting-data/sdks/nextjs",
-                    "zh/clickstack/ingesting-data/sdks/react-native",
-                    "zh/clickstack/ingesting-data/sdks/aws-lambda"
-                  ]
-                }
-              ]
-            },
-            {
-              "expanded": true,
-              "group": "Migration guides",
-              "pages": [
-                "zh/clickstack/migration/index",
-                {
-                  "group": "Migrating from Elastic",
-                  "pages": [
-                    "zh/clickstack/migration/elastic/index",
-                    "zh/clickstack/migration/elastic/intro",
-                    "zh/clickstack/migration/elastic/concepts",
-                    "zh/clickstack/migration/elastic/types",
-                    "zh/clickstack/migration/elastic/search",
-                    "zh/clickstack/migration/elastic/migrating-data",
-                    "zh/clickstack/migration/elastic/migrating-agents",
-                    "zh/clickstack/migration/elastic/migrating-sdks"
-                  ]
-                },
-                "zh/clickstack/migration/datadog/index"
-              ]
-            }
-          ]
-        },
-        {
-          "expanded": true,
-          "group": "Integration partners",
-          "pages": [
-            "zh/clickstack/integration-partners/index",
-            "zh/clickstack/integration-partners/bindplane",
-            "zh/clickstack/integration-partners/bitdrift",
-            "zh/clickstack/integration-partners/odigos",
-            "zh/clickstack/integration-partners/telflo"
-          ]
-        },
-        {
-          "expanded": true,
-          "group": "API reference",
-          "openapi": {
-            "source": "https://raw.githubusercontent.com/hyperdxio/hyperdx/refs/heads/main/packages/api/openapi.json",
-            "directory": "zh/clickstack/api-reference"
-          },
-          "root": "zh/clickstack/api-reference"
         }
       ]
+    },
+    {
+      "expanded": true,
+      "group": "管理 ClickStack",
+      "pages": [
+        "zh/clickstack/managing/overview",
+        "zh/clickstack/managing/admin",
+        "zh/clickstack/managing/config",
+        "zh/clickstack/managing/estimating-resources",
+        "zh/clickstack/managing/isolating-read-write",
+        "zh/clickstack/managing/materialized-views",
+        "zh/clickstack/managing/performance-tuning",
+        "zh/clickstack/managing/production",
+        "zh/clickstack/managing/rbac",
+        "zh/clickstack/managing/ttl"
+      ]
+    },
+    {
+      "group": "指南",
+      "pages": [
+        {
+          "expanded": true,
+          "group": "数据摄取",
+          "pages": [
+            "zh/clickstack/ingesting-data/overview",
+            "zh/clickstack/ingesting-data/opentelemetry",
+            "zh/clickstack/ingesting-data/vector",
+            "zh/clickstack/ingesting-data/collector",
+            "zh/clickstack/ingesting-data/schemas",
+            "zh/clickstack/ingesting-data/schema/map-vs-json",
+            "zh/clickstack/ingesting-data/trace-sampling",
+            {
+              "group": "集成",
+              "pages": [
+                "zh/clickstack/integration-examples/index",
+                "zh/clickstack/integration-examples/nginx-logs",
+                "zh/clickstack/integration-examples/nginx-traces",
+                "zh/clickstack/integration-examples/redis-logs",
+                "zh/clickstack/integration-examples/redis-metrics",
+                "zh/clickstack/integration-examples/cloudwatch",
+                "zh/clickstack/integration-examples/aws-lambda",
+                {
+                  "group": "主机日志",
+                  "pages": [
+                    "zh/clickstack/integration-examples/host-logs",
+                    "zh/clickstack/integration-examples/host-logs/ec2"
+                  ]
+                },
+                "zh/clickstack/integration-examples/jvm-metrics",
+                "zh/clickstack/integration-examples/kafka-metrics",
+                "zh/clickstack/integration-examples/kubernetes",
+                "zh/clickstack/integration-examples/mysql",
+                "zh/clickstack/integration-examples/nodejs-traces",
+                "zh/clickstack/integration-examples/postgres-logs",
+                "zh/clickstack/integration-examples/postgres-metrics",
+                "zh/clickstack/integration-examples/systemd",
+                "zh/clickstack/integration-examples/temporal",
+                "zh/clickstack/integration-examples/cloudflare",
+                "zh/clickstack/integration-examples/kafka-logs",
+                "zh/clickstack/integration-examples/mongodb-logs"
+              ]
+            },
+            {
+              "group": "语言 SDK",
+              "pages": [
+                "zh/clickstack/ingesting-data/sdks/index",
+                "zh/clickstack/ingesting-data/sdks/browser",
+                "zh/clickstack/ingesting-data/sdks/nodejs",
+                "zh/clickstack/ingesting-data/sdks/python",
+                "zh/clickstack/ingesting-data/sdks/golang",
+                "zh/clickstack/ingesting-data/sdks/java",
+                "zh/clickstack/ingesting-data/sdks/ruby",
+                "zh/clickstack/ingesting-data/sdks/elixir",
+                "zh/clickstack/ingesting-data/sdks/deno",
+                "zh/clickstack/ingesting-data/sdks/nestjs",
+                "zh/clickstack/ingesting-data/sdks/nextjs",
+                "zh/clickstack/ingesting-data/sdks/react-native",
+                "zh/clickstack/ingesting-data/sdks/aws-lambda"
+              ]
+            }
+          ]
+        },
+        {
+          "expanded": true,
+          "group": "迁移指南",
+          "pages": [
+            "zh/clickstack/migration/index",
+            {
+              "group": "从 Elastic 迁移",
+              "pages": [
+                "zh/clickstack/migration/elastic/index",
+                "zh/clickstack/migration/elastic/intro",
+                "zh/clickstack/migration/elastic/concepts",
+                "zh/clickstack/migration/elastic/types",
+                "zh/clickstack/migration/elastic/search",
+                "zh/clickstack/migration/elastic/migrating-data",
+                "zh/clickstack/migration/elastic/migrating-agents",
+                "zh/clickstack/migration/elastic/migrating-sdks"
+              ]
+            },
+            "zh/clickstack/migration/datadog/index"
+          ]
+        }
+      ]
+    },
+    {
+      "expanded": true,
+      "group": "集成合作伙伴",
+      "pages": [
+        "zh/clickstack/integration-partners/index",
+        "zh/clickstack/integration-partners/bindplane",
+        "zh/clickstack/integration-partners/bitdrift",
+        "zh/clickstack/integration-partners/odigos",
+        "zh/clickstack/integration-partners/telflo"
+      ]
+    },
+    {
+      "expanded": true,
+      "group": "API 参考文档",
+      "openapi": {
+        "directory": "zh/clickstack/api-reference",
+        "source": "https://raw.githubusercontent.com/hyperdxio/hyperdx/refs/heads/main/packages/api/openapi.json"
+      },
+      "root": "zh/clickstack/api-reference"
     }
   ]
 }

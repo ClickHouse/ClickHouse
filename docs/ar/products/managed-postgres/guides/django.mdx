@@ -7,6 +7,10 @@ keywords: ['managed postgres', 'django', 'python', 'psycopg', 'psycopg 3', 'orm'
 doc_type: 'guide'
 ---
 
+import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.guides-django-beta" />
+
 [Django](https://www.djangoproject.com/) إطار عمل ويب مكتوب بلغة بايثون، يتضمن أداة مدمجة لربط الكائنات بقواعد البيانات (ORM) ونظامًا مدمجًا للترحيل، ويتواصل مع PostgreSQL عبر المشغّل [psycopg 3](https://www.psycopg.org/psycopg3/). ستربط في هذا الدليل مشروع Django جديدًا بـ ClickHouse Managed Postgres عبر PgBouncer، وتنشئ جدول `todos` باستخدام عملية ترحيل، ثم تعالج طلبات الإنشاء والقراءة والتحديث والحذف من خلال عرض JSON بسيط. ويستخدم كل اتصال بروتوكول TLS مع التحقق الكامل من الشهادة.
 
 ## المتطلبات الأساسية {#prerequisites}

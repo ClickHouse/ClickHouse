@@ -143,9 +143,7 @@ with engine.connect() as conn:
 
 SQLAlchemy の接続を介してドライバーが送出するエラーには、`clickhouse_connect.dbapi` からエクスポートされている DB-API クラスが使用されます。これらは `clickhouse_connect.driver.exceptions` 内の対応するクラスと同一のクラスオブジェクトであるため、SQLAlchemy はこれらを該当する `sqlalchemy.exc.DBAPIError` サブクラスでラップします。`StreamFailureError` は `OperationalError` の一種であり、`sqlalchemy.exc.OperationalError` としてラップされます。
 
-テーブルが存在しない場合、カラムの検査およびテーブルのリフレクションでは `sqlalchemy.exc.NoSuchTableError` が送出されます。この例外は `sqlalchemy.exc.NoResultFound` も継承しているため、既存のハンドラーでも引き続き捕捉できます。エラーメッセージは `Table <database>.<table_name> does not exist` です。
-
-SQL の実行には、ドライバーの [HTTP 再試行ポリシー](/ja/integrations/language-clients/python/driver-api#http-retries)が適用されます。Native一括挿入処理には、[挿入の再試行ポリシー](/ja/integrations/language-clients/python/advanced-inserting#insert-retries-and-deduplication)が適用されます。
+SQL の実行には、ドライバーの [HTTP 再試行ポリシー](/ja/integrations/language-clients/python/driver-api#http-retries)が適用されます。ネイティブの一括挿入処理には、[挿入の再試行ポリシー](/ja/integrations/language-clients/python/advanced-inserting#insert-retries-and-deduplication)が適用されます。
 
 呼び出し元によるキャンセルが明示的な `AsyncConnection.invalidate()` の呼び出しを中断する可能性がある場合は、無効化処理を自身が管理するタスク内で実行し、キャンセルを伝播させる前にそのタスクの完了を待機してください。これにより、SQLAlchemy は接続レコードの管理処理を最後まで完了できます:
 
@@ -229,36 +227,15 @@ SQLAlchemy が `literal_binds` または `literal_execute` によってバイン
 
 ClickHouse の `DateTime64` SQLAlchemy 型が指定された Python の `datetime` 値は、クライアント側のパラメータおよびインラインリテラルにおいてマイクロ秒が保持されます。これには Nullable な値や、配列およびタプル内にネストされた値も含まれます。ClickHouse は宣言された精度を適用します。Python の `datetime` が扱えるのは小数点以下最大 6 桁までです。通常の `DateTime` 値は秒単位のフォーマットのままです。`text()` ステートメントで秒未満の値を保持するには、`bindparam("ts", type_=DateTime64(6))` のように型を明示的に指定してください。
 
-`DateTime64(9)` でバインドされた `pandas.Timestamp` 値は、パラメータおよびインラインリテラルにおいてナノ秒が保持されます。
-
 SQLAlchemy のカラム型はサーバーのスキーマと一致させる必要があります。サーバー側の `DateTime` カラムに対して `DateTime64` を宣言すると、秒未満の値がレンダリングされ、INSERT 時や `IN` 比較で変換エラーが発生する可能性があります。
 
 SQLAlchemy 2.x では、ClickHouse の `Tuple` 要素を含む汎用 `sqlalchemy.ARRAY` 型をインラインリテラルとして使用する場合、SQLAlchemy が各タプルを 1 つの要素として扱えるよう、`dimensions=1`(ネストされた配列の場合は、それに応じたより大きな次元数)を指定する必要があります。SQLAlchemy 1.4 では、汎用 `ARRAY` 型のインラインリテラルはサポートされていません。
 
-型指定された名前付き `Tuple` パラメータには、宣言されたフィールドとキーが完全に一致する辞書を渡せます。クライアントは、バインドパラメータおよびインラインリテラルにおいて、宣言で定義されたフィールド順を使用します。配列や他のタプル内にある名前付きタプルも同様です。これは同期挿入と非同期挿入、述語、および両方のパラメータモードに適用されます。フィールドが不足していたり余分なフィールドがあったりすると、クエリパラメータのバインド時に `ProgrammingError` が送出されます。Native一括挿入の処理は従来どおりです。型指定されていない `exec_driver_sql()` パラメータに渡された辞書は、設定に従って JSON または Map としてフォーマットされます。
-
-`Map` 値内で名前付きタプルを使用する場合は、`common.set_setting("dict_parameter_format", "map")` を設定してください。これにより、バインドパラメータおよびインラインリテラルにおいて、Map 内の型指定された `DateTime64` 値の秒未満の値も保持されます。
-
 名前付きの datetime パラメータを再利用する場合、秒未満の値を保持するには、すべての出現箇所で互換性のある `DateTime64` バインド型を指定する必要があります。型が指定されていない箇所や型が競合する箇所があると、秒単位のフォーマットのままになります。各 `bindparam` に `type_=DateTime64(6)` を設定するか、適切な型を指定した別々のパラメータ名を使用してください。
-
-同じバインド名を再利用し、名前付き `Tuple` の出現箇所ごとに異なるフィールド名を宣言している場合も同様です。クライアントはその名前について位置依存の処理にフォールバックするため、辞書値は並べ替えられず、サーバーによって拒否されます。別々のパラメータ名を使用するか、位置指定のタプルを渡してください。
-
-### 名前付きタプル {#sqlalchemy-named-tuples}
-
-名前付きタプルのフィールドは、`elements` マッピングで宣言します。キーには空でない文字列を指定する必要があり、値には ClickHouse SQLAlchemy の型クラスまたは設定済みのインスタンスを指定できます。フィールドの順序はマッピングの反復順序に従い、名前は自動的に引用符で囲まれます。
-
-```python
-from clickhouse_connect.cc_sqlalchemy.datatypes.sqltypes import String, Tuple, UInt32
-
-details_type = Tuple(elements={"user_id": UInt32, "display name": String()})
-# Tuple(`user_id` UInt32, `display name` String)
-```
-
-名前なしタプルには `Tuple(UInt32, String)` または `Tuple(elements=[UInt32, String])` を使用します。位置指定の要素と `elements` キーワードを併用することはできません。
 
 ### JSON型ヒント {#sqlalchemy-json-type-hints}
 
-`typed_paths` マッピングを使用して、型付きパスを宣言します。パスの型には、ClickHouse SQLAlchemyの型クラス、設定済みのインスタンス、またはClickHouseの型名文字列を指定できます。型名文字列は、`Dynamic` のようにSQLAlchemyのコンストラクタを持たない型にも対応しており、複雑な型式を設定する用途にも利用できます。
+`typed_paths` マッピングを使用して、型付きパスを宣言します。パスの型には、ClickHouse SQLAlchemyの型クラス、設定済みのインスタンス、またはClickHouseの型名文字列を指定できます。型名文字列は、`Dynamic` のようにSQLAlchemyのコンストラクタを持たない型にも対応しており、複雑な型式を設定する用途にも利用できます。また、名前付き `Tuple` の名前も保持されます。
 
 型名文字列には、``Array(JSON(`child` UInt32))`` のような設定済みのネストされたJSON型を含めることができます。これらの文字列内で認識されるClickHouseの型名は大文字・小文字を区別せず、正規の表記で出力されます。文字列には、完全な型式を1つだけ含める必要があります。末尾に余分なテキストがある場合や、ネストされたJSON引数の形式が不正な場合は拒否されます。
 
@@ -465,8 +442,6 @@ ClickHouse は再帰的なマテリアライズド CTE をサポートしてい�
 
 ClickHouse Connect は、ClickHouse データ型、テーブルエンジン、Dictionary 機能、データベース DDL、テーブルリフレクションをサポートしています。
 
-`Inspector.get_table_names()` は、互換性のためにすべての種類のビューを含みます。`MetaData.reflect()` はデフォルトでそれらを含み、`only` を使用すると名前を指定してビューを選択できます。non-materialized なビューには `Inspector.get_view_names()` を、materialized view には `Inspector.get_materialized_view_names()` を使用してください。どちらのメソッドも `schema` を受け付け、SQLAlchemy 1.4.40 以降 (2.x を含む) で動作します。`Inspector.get_view_definition()` は、ビューまたは materialized view に保存されている `SELECT` を返します。テーブルや存在しない名前を指定した場合は `NoSuchTableError` を送出します。リフレクションで取得されたビューにはエンジンがありません。その `Table` には `clickhousedb_table_type` が含まれ、値は `view`、`materialized_view`、`window_view`、`live_view` のいずれかです。
-
 `clickhouse_connect.cc_sqlalchemy.datatypes.sqltypes` の `Nullable()` と `LowCardinality()` は、ClickHouse の SQLAlchemy 型クラスまたはインスタンスを受け取り、型チェッカーに対して元の具体的な型を保持します。例えば、`Nullable(String)` は `String` インスタンスを返すため、そのまま `Column` に渡せます。型チェッカーは `[Nullable(String)]` の型を `list[String]` と推論します。リストに他の ClickHouse の型も含まれる場合は、`clickhouse_connect.cc_sqlalchemy.datatypes.base` から `ChSqlaType` をインポートし、`list[ChSqlaType]` として型注釈を付けてください。
 
 単独の `Variant` カラムは SQLAlchemy の内部型を通じてリフレクションされ、Alembic の 自動生成 は型変更を繰り返すことなく、その 標準的な生の型名を保持します。`Geometry` および `MultiPoint` カラムは、公開されている SQLAlchemy の型としてリフレクションされます。
@@ -501,9 +476,7 @@ with engine.connect() as conn:
 SQLAlchemy オブジェクトでは、存在する場合、`clickhousedb_codec`、
 `clickhousedb_ttl`、`clickhousedb_materialized`、`clickhousedb_alias` などのダイアレクト固有のオプションが使用されます。
 `Inspector.get_columns()` が返す公開の辞書には、
-対応する `clickhouse_*` キーが引き続き含まれます。これらの辞書では、`server_default`、
-`clickhouse_materialized`、`clickhouse_alias`、`clickhouse_ttl` の値は SQL 文字列です。
-これらから `Column` を構築するには、それぞれを `sqlalchemy.text()` でラップしてください。
+対応する `clickhouse_*` キーが引き続き含まれます。
 
 新しいテーブルおよびカラムの宣言には `clickhousedb_*` を使用してください。ドライバーが生成する
 メタデータおよび Alembic のリビジョンでは、これらの名前が使用されます。ClickHouse Connect は
@@ -523,7 +496,7 @@ Alembic の操作引数は、従来の名前のまま使用できます。
 
 `Memory()`、`Log()`、`StripeLog()`、`TinyLog()`、`Null()`、`Set()` は引数なしで指定でき、Alembic の自動生成でも往復変換が可能です。従来の辞書形式の引数も引き続きサポートされています。エンジン設定を指定するには `settings={...}` を使用します。
 
-`SummingMergeTree` と `ReplicatedSummingMergeTree` は、キーワード専用の任意引数 `columns` を受け付けます。既存の位置引数の意味は変わらないため、`SummingMergeTree("id")` は引き続き `ORDER BY id` を設定します。
+`SummingMergeTree` と `ReplicatedSummingMergeTree` では、キーワード専用の任意引数 `columns` を指定できます。既存の位置引数の意味は変わらないため、`SummingMergeTree("id")` は従来どおり `ORDER BY id` を設定します。
 
 ```python
 from clickhouse_connect.cc_sqlalchemy.ddl.tableengine import SummingMergeTree
@@ -532,7 +505,7 @@ engine_clause = SummingMergeTree("id", columns=("delta", "n_tx"))
 # Sum delta and n_tx for rows with the same id.
 ```
 
-文字列、SQLAlchemy のカラム、マッピングされたカラム属性、またはそれらからなる空でないリストまたはタプルを渡します。リストおよびタプル内の文字列要素は、識別子として引用符で囲まれます。単一の文字列を渡した場合は、`"delta"` や `"(delta, n_tx)"` のような生の SQL として扱われます。サーバー側では、これらのカラムを識別子で指定する必要があります。`columns` を省略すると、合計対象のカラムは ClickHouse によって選択されます。リフレクションおよび Alembic の自動生成では、明示的に指定したカラムリストが保持されます。
+文字列、SQLAlchemy のカラム、マッピングされたカラム属性、またはそれらからなる空でないリストまたはタプルを渡します。リストおよびタプル内の文字列要素は、識別子としてクォートされます。単一の文字列を渡した場合は、`"delta"` や `"(delta, n_tx)"` のような生の SQL として扱われます。サーバー側では、これらのカラムを識別子で指定する必要があります。`columns` を省略すると、合計対象のカラムは ClickHouse によって選択されます。リフレクションおよび Alembic の自動生成では、明示的に指定したカラムリストが保持されます。
 
 ## 挿入と基本的な ORM の使用 {#sqlalchemy-inserts}
 
@@ -582,117 +555,6 @@ with Session(engine) as session:
     session.commit()
 ```
 
-## ビューとSQL関数 {#sqlalchemy-views-functions}
-
-Alembic には、通常のビューおよび SQL のユーザー定義関数を明示的に作成・置換・削除するためのヘルパーが用意されています。
-
-```python
-from alembic import op
-
-op.create_clickhouse_view("active_events", "SELECT id FROM analytics.events", schema="analytics")
-op.create_clickhouse_view("active_events", "SELECT id FROM analytics.events WHERE id > 13", schema="analytics", or_replace=True)
-op.drop_clickhouse_view("active_events", schema="analytics", if_exists=True)
-
-op.create_clickhouse_function("analytics_increment_v1", "(value) -> value + 13")
-op.create_clickhouse_function("analytics_increment_v1", "(value) -> value + 79", or_replace=True)
-op.drop_clickhouse_function("analytics_increment_v1", if_exists=True)
-```
-
-どちらの作成ヘルパーも `if_not_exists=False` と `or_replace=False` を受け付けます。両方に `True` を渡すと `ValueError` が送出されます。SQL のボディは文字列としてそのまま ClickHouse に渡されます。名前は、すでに引用符で囲まれている場合を除き、識別子として引用符で囲まれます。関数名は、ドットを含む場合でも 1 つの識別子として扱われます。SQL関数はサーバー全体で共有されるため、関数ヘルパーおよび検査メソッドには `schema` 引数がありません。データベースや移行ストリームをまたいで一意となる関数名、またはバージョン付きの関数名を使用してください。これらの操作はオンライン実行とオフラインでの SQL レンダリングの両方に対応しており、`run_sync` を介した非同期 SQLAlchemy 接続も利用できます。
-
-`or_replace=True` を指定すると、置換を明示的に要求します。ClickHouse では、既存のテーブルまたは materialized view を同名の通常のビューで置換でき、その場合は元のオブジェクトのデータが破棄されます。`DROP VIEW` は基となるテーブルには使用できませんが、materialized view は削除できます。`IF NOT EXISTS` を指定した場合、既存の定義はそのまま残り、その内容は検証されません。置換や条件付き作成からは安全なダウングレードを推論できないため、以前の定義を使用して明示的に記述してください。削除の場合も、ダウングレード用の定義を明示的に記述する必要があります。定義を復元しても、破棄されたデータは復元されません。SQL関数の置換には、`CREATE FUNCTION` と `DROP FUNCTION` の両方の権限が必要です。
-
-ClickHouse は、ビュー定義を保存する際に SQL UDF の呼び出しを展開します。そのため、SQL UDF を置換しても、それを使用している既存のビューは更新されません。新しい定義を反映するには、該当するビューを再作成するか、明示的に変更してください。
-
-通常のビューは、既存の `get_view_names(schema=...)` および `get_view_definition(name, schema=...)` メソッドで検査できます。SQL関数の検査は ClickHouse ダイアレクト固有の機能です:
-
-```python
-from sqlalchemy import inspect
-
-inspector = inspect(connection)
-names = inspector.get_clickhouse_function_names()
-create_sql = inspector.get_clickhouse_function_definition("analytics_increment_v1")
-```
-
-関数のインスペクションの対象は `SQLUserDefined` 関数のみで、組み込み関数および実行可能関数は含まれません。名前はソート済みで返されます。定義はラムダのボディだけではなく、保存済みの `CREATE FUNCTION` ステートメント全体です。存在しない名前を指定すると `sqlalchemy.exc.NoResultFound` が送出されます。カタログへのアクセスエラーはそのまま伝播します。ユーザーのクエリでバイトを返すフォーマットが指定されている場合でも、メタデータのインスペクション結果はテキストのままです。これらのヘルパーは、宣言的なビューや関数のエンティティ、自動生成による比較、依存関係の順序付けには対応していません。明示的な移行操作は依存関係の順序どおりに記述し、レンダリング時には `render_as_batch=False` を使用してください。
-
-## データスキッピングインデックス {#sqlalchemy-skip-indexes}
-
-ClickHouse のデータスキッピングインデックスは、テーブル引数として宣言します。この API には SQLAlchemy が必要ですが、Alembic がなくても動作します。
-
-```python
-from sqlalchemy import Column, MetaData, Table, inspect
-from clickhouse_connect.cc_sqlalchemy import ClickHouseIndex, engines, types
-
-metadata = MetaData()
-events = Table(
-    "events",
-    metadata,
-    Column("value", types.UInt32),
-    Column("label", types.String),
-    ClickHouseIndex("value_idx", "value", "minmax"),
-    ClickHouseIndex("label_idx", "label", "bloom_filter(0.01)", granularity=4),
-    engines.MergeTree(order_by="value"),
-)
-metadata.create_all(engine)
-
-indexes = inspect(engine).get_clickhouse_indexes("events")
-```
-
-索引の式と型には、ClickHouse SQL をそのまま記述します。定義は変更不可で、名前はテーブル内で重複のないものにする必要があります。宣言は `clickhousedb_indexes` テーブルオプションに保存されます。このオプションには `ClickHouseIndex` 定義のシーケンスも指定できます。`Table.to_metadata()` はこれらの宣言を保持し、`CREATE TABLE` はこれらをインラインでレンダリングします。`if_not_exists`、`first`、`after_index` は命令型の ALTER ヘルパーでは引き続き使用できますが、インラインでの作成やスキーマ比較には影響しません。
-
-`Inspector.get_clickhouse_indexes()` は、明示的に定義された索引について再適用可能な定義を返します。リフレクションされた式では、ネストされたタプルを含む ClickHouse の索引式リストを保持するため、`tuple(...)` ラッパーが使用されます。サーバーが暗黙的に作成した索引は、カタログの `creation` フィールドに基づいて除外されます。カタログのエラーや不明な分類が発生した場合は、エラーが送出されます。カタログは `creation` を公開している必要があります。このフィールドについては、ClickHouse 26.1.1.912 および 25.12.2.54 へのバックポートのリリースノートに記載されています。互換性はバージョン文字列ではなく、実際のクエリによって確認されます。
-
-汎用の `Inspector.get_indexes()` は引き続き空のリストを返します。`Table(..., autoload_with=engine)` はスキップ索引のカタログを読み取りません。カラムと索引の両方を明示的にコピーするには、次のようにします。
-
-```python
-inspector = inspect(engine)
-reflected = Table(
-    "events",
-    MetaData(),
-    autoload_with=engine,
-    clickhousedb_indexes=inspector.get_clickhouse_indexes("events"),
-)
-```
-
-## プロジェクション {#sqlalchemy-projections}
-
-Alembic を使わずに、SELECT プロジェクションをテーブル引数として宣言できます。
-
-```python
-from sqlalchemy import Column, MetaData, Table, inspect
-from clickhouse_connect.cc_sqlalchemy import ClickHouseProjection, engines, types
-
-metadata = MetaData()
-events = Table(
-    "events",
-    metadata,
-    Column("value", types.UInt32),
-    Column("label", types.String),
-    ClickHouseProjection("by_label", "SELECT value, label ORDER BY label, value"),
-    engines.MergeTree(order_by="value"),
-)
-metadata.create_all(engine)
-
-projections = inspect(engine).get_clickhouse_projections("events")
-```
-
-`select` は、プロジェクションの括弧内に記述する生のSQLです。定義はイミュータブルであり、プロジェクション名はテーブル内で一意である必要があります。`clickhousedb_projections` テーブルオプションには、`ClickHouseProjection` 定義のシーケンスを指定することもできます。`Table.to_metadata()` は宣言を保持し、`CREATE TABLE` はそれらをインラインでレンダリングします。Dictionary ではプロジェクション宣言は使用できません。`if_not_exists`、`first`、`after_projection` は命令的な ALTER ヘルパー向けに引き続き利用できますが、インラインでの作成や比較には影響しません。`clickhouse_connect.cc_sqlalchemy.alembic` および `.alembic.operations` からのインポートは、既存の位置引数によるコンストラクタ呼び出しも含め、引き続きサポートされます。
-
-`Inspector.get_clickhouse_projections()` は、ワイルドカード、エイリアス、グループ化、並び順を保持したまま、保存済みの SELECT 定義を返します。プロジェクションレベルの `WITH SETTINGS` や索引ベースのプロジェクション形式は、SELECT のみを扱う API では定義を完全に保持できないため、拒否されます。カタログの取得に失敗した場合もエラーが送出されます。通常の `Table(..., autoload_with=engine)` はプロジェクションカタログを読み取りません。カラムとプロジェクションを明示的にコピーするには、次のようにします。
-
-```python
-inspector = inspect(engine)
-reflected = Table(
-    "events",
-    MetaData(),
-    autoload_with=engine,
-    clickhousedb_projections=inspector.get_clickhouse_projections("events"),
-)
-```
-
-検査を行うには、対象テーブルが参照可能であり、かつ `system.projections` の `database`、`table`、`name`、`type`、`query`、`settings` フィールドにアクセスできる必要があります。このカタログは ClickHouse 24.9.1.3278 で追加されました。ただし、このカタログが存在するだけでは、比較機能がサポートされているとは限りません。ドライバーは、カタログと正規化クエリを使用して、対応している機能を確認します。
-
 ## Alembic 移行 {#sqlalchemy-alembic}
 
 ClickHouse Connect には、ClickHouse のスキーマ移行向けの Alembic インテグレーションが含まれています。インストールするには、次を実行します。
@@ -715,19 +577,7 @@ alembic init -t async alembic
 
 生成される `alembic.ini` では `script_location = %(here)s/alembic` が使用されます。移行ディレクトリの名前が `alembic` の場合はこの設定をそのまま使用し、それ以外の場合は `alembic init` に渡したディレクトリに更新してください。`alembic/env.py` をリポジトリに含まれている [非同期 Alembic `env.py` の例](https://github.com/ClickHouse/clickhouse-connect/blob/main/examples/alembic_async/env.py) に置き換え、`alembic.ini` で `sqlalchemy.url` を設定します。
 
-ダイアレクトのインテグレーションを登録するには、Alembic の `env.py` で `clickhouse_connect.cc_sqlalchemy.alembic` をインポートします。自動生成では、テーブルの作成と削除、カラムの追加/変更/削除、デフォルト値、コメント、MergeTree テーブル設定など、一般的なテーブル変更に対応しています。テーブル名やカラム名のリネームには手動操作を使用してください。生成された移行は、適用前に必ずすべて確認してください。
-
-ClickHouse Cloud では、移行用エンジンの URL に `alter_sync=2` を追加し、後続のリフレクションでレプリカ全体に反映済みのスキーマ変更が参照されるようにしてください。これは、接続が置き換えられた場合や、アップグレード直後に自動生成を実行する場合に重要です。`select_sequential_consistency=1` の対象はデータの読み取りであり、スキーマ変更は対象外です。
-
-バージョンテーブルへの挿入処理は挿入時の重複排除をバイパスするため、ダウングレード時に以前記録されたリビジョンを復元できます。生成されるオフライン SQL では `SETTINGS deduplicate_insert = 'disable'` を使用するため、対象サーバーでこの設定が利用可能である必要があります。オンライン移行では、サーバーが新しい設定に対応していない場合、レガシーの `insert_deduplicate = 0` 設定を使用します。通常のテーブルへの挿入処理では、設定済みの重複排除の動作が維持されます。
-
-自動生成では、メタデータとサーバーの両方に存在するテーブルについて、宣言されたテーブルエンジンをサーバー側のものと比較します。エンジンファミリー、位置指定のエンジン引数、`ORDER BY`、`PRIMARY KEY`、`PARTITION BY`、`SAMPLE BY`、テーブルの `TTL` に対する変更の自動移行は非サポートです。そのため差異がある場合は、空のリビジョンや誤解を招くリビジョンを書き出す代わりに `UnsupportedTableChangeError` が送出されます。サーバーの ALTER サポート状況と影響を受けるデータを確認したうえで、明示的な移行を記述してください。この例外は、テーブル、オプション、および両方の表記を含む `TableOptionDrift` レコードのタプル `drifts` を保持します。例外の生成には少なくとも 1 つのドリフトが必要で、ドリフトがない場合は `ValueError` が送出されます。式は正規化後に比較され、それでもテキストが異なる場合は、サーバーの `formatQuerySingleLine` によって `INTERVAL 30 DAY` と `toIntervalDay(30)` のような表記の違いが判定されます。引用符で囲まれたエンジン引数は、デコード後の文字列内容が空白や句読点を含めて厳密に比較されます。TTL 句は `ALTER TABLE t MODIFY TTL ...` の形式にフォーマットされ、`DELETE WHERE`、`TO VOLUME`、`RECOMPRESS` などのアクションは保持されます。`MergeTree` と Cloud の `Shared*` および `Replicated*` バリアントは同一のファミリーとして扱われ、レプリケーションパスの引数は比較されません。
-
-宣言されたエンジンの `settings` がサーバーと異なる場合は `op.modify_clickhouse_table_settings(...)` として出力され、ダウングレードでは各設定が復元またはリセットされます。デフォルト値や、真偽値・数値の同等な表記は、`system.merge_tree_settings` の値と型に基づいて解決されます。文字列型の設定は文字列としての意味が維持されます。モデルで宣言されていない設定は保持されます。これには、以前の移行の後にモデルから削除された設定も含まれます。リフレクションではこれらの設定とサーバーが自動的に追加した設定を区別できないため、自動生成によってこれらが自動的にリセットされることはありません。リセットが必要な場合は、`op.reset_clickhouse_table_settings(...)` を明示的に使用してください。`index_granularity` や `index_granularity_bytes` などの読み取り専用の設定は、キーと同様に比較され、変更は拒否されます。比較をスキップするには、`context.configure()` に `clickhousedb_compare_table_options=False` を渡します。
-
-リフレクションされたビューおよび materialized view はテーブルではありません。これらは `include_object` によって除外されるため、メタデータに存在しないビューに対して自動生成が `drop_table` を提案することはありません。これらは通常のビュー用または materialized view 用のヘルパーで管理してください。
-
-`op.alter_column(..., server_default=None)` は `MODIFY COLUMN ... REMOVE DEFAULT` を発行します。サーバーが受け付けるのはこの形式のみです。カラムに `DEFAULT` がない場合や、`MATERIALIZED` または `ALIAS` を使用している場合、サーバーはこのステートメントを拒否するため、デフォルト値が存在する場合にのみ削除をリクエストしてください。型の変更のみを行う場合は、既存のデフォルト値が維持されます。ダイアレクトのカラムオプションも同じルールに従います。プロパティを削除するには `clickhousedb_codec=None`、`clickhousedb_ttl=None`、`clickhousedb_alias=None`、または `clickhousedb_materialized=None` を渡し、設定するには値を渡します。これらのプロパティの設定または削除のみを行う場合、`existing_type` は不要です。TTL、別名、マテリアライズの SQL 式には `text(...)` を使用してください (例: `clickhousedb_ttl=text("ts + INTERVAL 7 DAY")`) 。渡されなかったオプションは変更されません。`clickhousedb_` と従来の `clickhouse_` のどちらの名前も使用できます。`alter_column` に両方の名前が渡された場合は、`None` を含め、明示的に指定された `clickhousedb_` の値が優先されます。
+ダイアレクトのインテグレーションを登録するには、Alembic の `env.py` で `clickhouse_connect.cc_sqlalchemy.alembic` をインポートします。自動生成では、テーブルの作成と削除、カラムの追加/変更/削除、デフォルト値、コメントなど、一般的なテーブル変更に対応しています。テーブル名やカラム名のリネームには手動操作を使用してください。生成された移行は、適用前に必ずすべて確認してください。
 
 メタデータで `AggregateFunction` のステートバージョンが省略されている場合、自動生成ではリフレクションされた既存のバージョンをそのまま受け入れます。たとえば、`AggregateFunction(uniq, UInt32)` はリフレクションされた `AggregateFunction(1, uniq, UInt32)` と一致するものとみなされます。これはネストされた型の内部でも同様です。ただし、集約関数、そのパラメータ、または引数の型を変更した場合は、型の変更として検出されます。
 
@@ -740,190 +590,12 @@ ClickHouse 固有の `op.*` ヘルパーでは、次の操作をサポートし�
 * データスキッピングインデックス (追加、マテリアライズ、削除) 。
 * プロジェクション (追加、マテリアライズ、削除) 。
 * MergeTree テーブル設定の変更とリセット。
-* 通常のビューおよび SQL 関数の作成、置き換え、削除。
 * materialized view の作成と削除。
 * Dictionary の作成、削除、再読み込み。
 
-**アップグレードに関する注意:** Alembic は、明示的に定義されたスキップインデックスと SELECT プロジェクションをデフォルトで比較します。以前の命令型の移行でのみ作成されたオブジェクトは、管理対象のテーブルメタデータに存在しない場合、削除操作が生成される可能性があります。アップグレードする前に、それらを `ClickHouseIndex` または `ClickHouseProjection` で宣言するか、`include_name` または `include_object` で管理対象外のオブジェクトを除外するか、`context.configure()` で該当する比較を無効にしてください。
+ClickHouse のデータスキッピングインデックスは SQLAlchemy の索引ではありません。部分的または不正確な DDL を避けるため、`Index`、`Column(index=True)`、`op.create_index`、`op.drop_index` は使用できません。`op.add_clickhouse_index` と `op.drop_clickhouse_index` を使用してください。
 
-```python
-context.configure(
-    connection=connection,
-    target_metadata=metadata,
-    clickhousedb_compare_indexes=False,
-    clickhousedb_compare_projections=False,
-)
-```
-
-各オプションは、それぞれのカタログ読み取りと、テーブル削除時のダウングレード用スナップショットをスキップします。編集を行うと、削除操作と追加操作が個別に生成されます。ダウングレードでは定義が復元されますが、どちらの方向でも以前のマテリアライズ状態は復元されません。プロジェクションを置き換えると、既存のプロジェクションパーツは破棄されます。再構築のコストを確認したうえで、既存のパーツに置き換え後のプロジェクションを直ちに反映する必要がある場合は、`MATERIALIZE PROJECTION` を明示的に実行してください。索引のマテリアライズも引き続き明示的に行う必要があります。
-
-自動生成に対応させるには、`ClickHouseIndex` でスキップ索引を宣言してください。または、明示的なリビジョン内で既存の `op.add_clickhouse_index` および `op.drop_clickhouse_index` ヘルパーを使用します。`clickhouse_connect.cc_sqlalchemy.alembic` および `.alembic.operations` からのインポートも引き続きサポートされます。標準の SQLAlchemy の `Index`、`Column(index=True)`、`op.create_index`、`op.drop_index` は引き続き使用できません。
-
-管理対象テーブルでは、デフォルトで、生存中の明示的な索引の集合が宣言によって管理されます。宣言されていない明示的な索引については、命令的な移行によってのみ作成された索引も含め、削除操作が生成されます。expression、インデックスの種類、パラメータ、または実効粒度が変更された場合は、削除とそれに続く追加が個別に生成されます。ダウングレードでは以前の定義が復元されます。操作はレンダリング前に `process_revision_directives` から参照できます。ポリシー用のフックでは、索引とプロジェクションの編集をスキーマ名、テーブル名、オブジェクト名で対応付けてください。操作が隣接していることを前提にしないでください。どちらの方向でも以前のマテリアライズ状態は復元されず、`MATERIALIZE INDEX` も生成されません。既存のパーツに索引を直ちに適用する必要がある場合は、明示的にマテリアライズしてください。
-
-索引の追加、削除、編集は `render_as_batch=False` で生成してください。これらのヘルパーは Alembic の遅延バッチキューをサポートしていないため、`render_as_batch=True` を指定すると生成時にエラーが送出されます。テーブル作成時およびテーブル削除のダウングレードスナップショットにおけるインライン索引は、引き続きサポートされます。
-
-バッチブロック内で実行するその他の ClickHouse 独自の操作 (テーブル設定、プロジェクション、マテリアライズなど) にも同じ制約が適用されます。これらの操作はバッチモードの外で生成してください。
-
-`op.batch_alter_table()` による物理的なバッチ再作成では、カラム、エンジン、`clickhousedb_indexes` を含む完全な `copy_from` Table を渡してください。カラムと索引の両方を読み込むには上記の明示的なリフレクションの例を使用し、オフライン移行の場合は完全なメタデータを指定してください。自動的なオンライン再作成では、実行時に索引カタログを読み取り、明示的な索引を持つテーブルについてはテーブルの作成や削除を行う前に処理を拒否します。自動生成の比較をオプトアウトしても、このガードは回避されません。
-
-標準の `include_name` および `include_object` フックは `type_="index"` を受け取ります。名前フィルタはリフレクションされた候補と宣言された候補の両方に適用されるため、除外された名前は管理対象外のままとなります。オブジェクトフィルタは通常どおり `reflected` と `compare_to` の値を受け取ります。渡される索引オブジェクトでは、定義フィールドと `.table` を参照できます。たとえば、Alembic 標準の管理対象外オブジェクト向けレシピである `reflected and compare_to is None` を使用すると、命令的にのみ管理される索引を保護できます。テーブルフィルタは索引カタログの読み取り前に適用されます。新規作成されるテーブルのインライン索引も、ポリシーフックの前にフィルタされます。
-
-比較では、ClickHouse 固有の表記やデフォルト値を考慮するため、サーバー側の整形と解析を利用します。式の解析には、現在のテーブル、サーバーの関数、および設定が使用されます。そのため、アナライザーと、想定どおりの `EXPLAIN` 出力が必要です。これらの機能は ClickHouse 26.8 で検証済みであり、ソースレビューは 26.6 を対象に実施しています。カタログフィールドが存在するというだけでは、古いサーバーで比較がサポートされるとは限りません。索引に影響する `ALIAS` 定義を変更した場合は、索引を比較する前に明示的なカラム移行が必要です。
-
-索引の編集では、同じリビジョンで追加される物理カラムを参照できます。追加予定の新しいカラムが解析で不明な識別子として報告された場合、自動生成は追加カラムを利用可能な状態にして式全体を検証し、索引の削除と追加の前にカラムの追加を出力します。タイプミスやフィルタで除外されたカラムなど、それ以外の不明な識別子については、従来どおり `IndexComparisonError` が送出されます。
-
-`minmax()`、`MinMax()`、`minmax` のように、型の空の括弧や大文字・小文字の違いは同一とみなして比較されます。一方、省略された型引数は比較時に展開されません。そのため、`bloom_filter` と `bloom_filter(0.025)` を切り替えると、サーバーがそのデフォルト値を使用している場合でも、一度だけ削除と追加が発生することがあります。
-
-比較では、任意の SQL 式の等価性までは判定しません。正規化に成功しても結果の形式が異なる場合、式が同じ値を返すとしても、自動生成は置き換えを生成します。こうした変更は内容をレビューするか、該当する索引を明示的な移行とフィルタで管理してください。
-
-カタログへのアクセス、式の解決、または想定どおりの正規化出力のいずれかが得られない場合、自動生成は `IndexComparisonError` を送出します。このエラーには、テーブル、索引、宣言された定義とリフレクションされた定義、および原因が含まれます。編集内容は慎重にレビューしてください。削除と追加はそれぞれ独立した非トランザクションのステートメントであるため、追加に失敗すると古い索引が失われた状態になる可能性があります。
-
-### プロジェクションの自動生成 {#projection-autogenerate}
-
-Alembic は、デフォルトで管理対象テーブル上の SELECT プロジェクションを比較します。実際のプロジェクション集合は宣言によって決まります。宣言されていないプロジェクションからは削除操作が生成され、定義が変更されたプロジェクションからは個別の削除操作と追加操作が生成されます。自動生成では、テーブルごとにプロジェクションの削除、カラムの追加と変更、インデックス操作、プロジェクションの追加、カラムの削除の順に操作が並びます。カラムの削除は、テーブルのコンパレータの処理完了後に Alembic によって末尾に追加されます。ポリシーフックでは、スキーマ名、テーブル名、プロジェクション名をもとに編集を対応付けてください。削除と追加の間に他の操作が入る場合があります。ダウングレードでは、削除後に再作成されるテーブル上のプロジェクションを含め、以前の定義が復元されます。各操作は、レンダリング前に `process_revision_directives` に対して完全な定義を公開します。`MATERIALIZE PROJECTION` は生成されず、アップグレードとダウングレードのいずれでも、以前のパートのマテリアライズ状態は復元されません。既存のパートですぐにプロジェクションを利用する必要がある場合は、明示的にマテリアライズしてください。
-
-`AggregatingMergeTree` など、標準とは異なるマージ動作を持つエンジンでは、`deduplicate_merge_projection_mode='throw'` の場合、ClickHouse は `ADD PROJECTION` を拒否します。プロジェクションの追加や置換 (元々インラインで宣言されたプロジェクションの置換を含む) を適用する前に、この設定を明示的に `drop` または `rebuild` にしてください。
-
-`include_name` と `include_object` には `type_="projection"` が渡されます。名前フィルタは、リフレクションされた名前と宣言された名前の両方に適用されます。オブジェクトフィルタには、`.table`、`reflected`、`compare_to` を持つ定義が渡されます。一般的な `reflected and compare_to is None` のレシピを使えば、命令的にのみ作成されたプロジェクションを保護できます。テーブルフィルタはカタログの読み取り前に実行され、新規作成されるテーブル上のインライン定義はポリシーフックより前にフィルタされます。フィルタ対象のプロジェクションや無関係なテーブル上に非サポートの定義があっても、比較は妨げられません。
-
-比較では、ClickHouse の CREATE 正規化に従い、サーバーの完全なプロジェクション文法フォーマッタと、`system.functions` に登録された大文字と小文字を区別しない関数名および別名を使用します。通常の SELECT として実際のテーブルに対して解析するのではなく、ワイルドカードや集約式を含む SELECT の構造をそのまま保持します。フォーマット、識別子のクォート、登録済みの大文字と小文字を区別しない関数の表記の違いは、同一とみなされます。`sumIf` と `SumIf` のように大文字と小文字を区別する名前は、別物として扱われます。フォーマット後の定義が異なる場合は、グループ化の括弧を無視したパース済み構文木も比較されます。ClickHouse のバージョンや ClickHouse Cloud によって冗長な括弧の保存方法が一貫しないため、冗長な括弧や、`value + 13` と `plus(value, 13)` のような演算子と関数の表記の違いは同一とみなされます。それ以外の構造上の差異からは、削除操作と追加操作が生成されます。比較は任意の SQL の等価性を証明するものではなく、カラムの依存関係も検証しません。置換後の定義では、同じリビジョン内で先に追加された物理カラムを参照できます。適用前に、変更された ALIAS カラムを含め、依存関係を確認してください。無効な依存関係は DDL の実行時にエラーとなります。また、削除と追加はトランザクションで保護されない個別のステートメントであるため、追加に失敗すると古いプロジェクションが失われた状態になる可能性があります。
-
-カタログフィールドの欠落、カタログへのアクセスエラー、フォーマットまたは関数メタデータの取得不可、プロジェクションレベルの `WITH SETTINGS`、インデックスベースの形式の場合は、テーブル、プロジェクション、宣言された定義とリフレクションされた定義、および理由を含む `ProjectionComparisonError` が発生します。正規化に失敗した場合は、置換が生成される代わりにこの診断エラーが発生します。非サポートのプロジェクションは、フィルタで除外するか、明示的な移行で管理してください。`query_masking_rules` によってカタログが返す SELECT テキストが変更される場合、比較や再実行の結果が信頼できなくなる可能性があります。影響を受けるプロジェクションには、明示的な移行、フィルタ、または比較のオプトアウトを使用してください。関数の正規化には、`system.functions` の `name`、`is_aggregate`、`case_insensitive`、`alias_to` フィールドが必要です。対応状況は、バージョン文字列ではなく、カタログおよびフォーマッタへの実際のクエリによって判定されます。
-
-プロジェクションの追加、削除、編集は `render_as_batch=False` で生成してください。インラインの CREATE 定義と、テーブル削除のダウングレード用スナップショットは引き続きサポートされます。物理的なバッチ再作成を行う場合は、カラム、エンジン、`clickhousedb_projections` を含む完全な `copy_from` メタデータを指定してください。自動オンライン再作成ではプロジェクションカタログが読み取られ、プロジェクションを持つテーブルは DDL の実行前に拒否されます。比較のオプトアウトを使用しても、この実行時のガードは回避できません。
-
-完全な [Alembic の実践例](https://github.com/ClickHouse/clickhouse-connect/blob/main/clickhouse_connect/cc_sqlalchemy/alembic/WORKED_EXAMPLE.md)を参照してください。`clickhouse-sqlalchemy` から移行する場合は、[移行ガイド](https://github.com/ClickHouse/clickhouse-connect/blob/main/clickhouse_connect/cc_sqlalchemy/MIGRATING_FROM_CLICKHOUSE_SQLALCHEMY.md)もあわせてお読みください。
-
-### レンダリング前に生成された操作を分類する {#classify-generated-operations-before-rendering}
-
-ClickHouse の 21 個のマイグレーション操作クラスはすべて、
-`clickhouse_connect.cc_sqlalchemy.alembic` およびその `operations` モジュールから公開されています。
-`process_revision_directives` 内で `isinstance` を使ってこれらを検査するか、
-Alembic の `Rewriter.rewrites` に登録してください。従来のアンダースコア付きの名前も
-同じクラスのエイリアスとして残っているため、既存の登録やインポートはそのまま動作します。
-
-検査用に公開されているフィールドは、コンストラクタの引数と一致します。テーブル操作は
-`table_name`、`schema`、`clickhouse_settings` を公開します。単一の索引操作は
-`name` を公開します。追加操作では、さらに `expression`、`type_`、`granularity`、`if_not_exists`、
-`first`、`after_index` も公開されます。プロジェクションの追加操作は、索引の expression、型、粒度のフィールドの代わりに
-`select` と `after_projection` を公開します。削除操作は
-`if_exists` を公開し、単一の索引またはプロジェクションについては、以前の定義が利用可能な場合に `existing_index` または
-`existing_projection` も公開します。マテリアライズ操作は
-`if_exists` と `partition` を公開します。グループ化された追加操作は、`indexes` または
-`projections` を `ClickHouseIndex` または `ClickHouseProjection` のタプルとして保持します。グループ化された
-削除操作は `names` をタプルとして保持します。グループ化された操作については、すべてのメンバーを検査してください。
-
-`ModifyClickHouseTableSettingsOp` は `settings` と、省略可能な
-`existing_settings` を公開します。`ResetClickHouseTableSettingsOp` は `names` のタプルを公開します。
-これらのテーブル設定は、query-level の `clickhouse_settings` マッピングとは別物です。
-ビューおよび関数の作成操作は、`name`、`select` または `expression`、
-`if_not_exists`、`or_replace` を公開します。ビューではさらに `schema` も公開されます。マテリアライズドビューの
-作成操作は、`name`、`schema`、`to_table`、`to_schema`、`select`、
-`if_not_exists` を公開します。Dictionary の作成操作は、`name`、`schema`、`columns` タプル、
-`primary_key`、`source`、`layout`、`lifetime`、`comment`、`if_not_exists`、
-`clickhouse_settings` を公開します。ビュー、関数、マテリアライズドビュー、Dictionary の削除操作は
-`name` と `if_exists` に加え、コンストラクタが受け付ける場合は `schema` と `clickhouse_settings` も公開します。
-Dictionary のリロード操作は `name` と `schema` を公開します。SQL フラグメントは
-文字列のまま保持され、マッピングは指定された値をそのまま保持します。逆操作では
-以前の定義が必要になる場合や、`NotImplementedError` が送出される場合があります。定義が逆操作に対応していても、
-実体化されたデータは復元されません。
-
-この例はアプリケーション側のポリシーであり、ドライバーが安全性を保証するものではありません。
-明示的に選んだ索引の形式またはテーブル設定のみを許可し、置換や
-未知の操作はレビューに回し、スタンドアロンの索引削除、スタンドアロンの
-プロジェクション削除、および破壊的な組み込み操作は拒否します。これらのルールは、お使いのデプロイメントに合わせて変更してください。
-作成操作であってもフィールドの検査は必要です。ビューに `or_replace=True` を指定すると、
-名前が衝突するテーブルのデータが破棄される可能性があります。また、生の SQL 本体や Dictionary ソースもレビューが必要です。
-
-```python
-import logging
-
-from alembic.operations import ops
-from clickhouse_connect.cc_sqlalchemy import alembic as ch_alembic
-
-
-def leaves(operation):
-    if isinstance(operation, ops.OpContainer):
-        for child in operation.ops:
-            yield from leaves(child)
-    else:
-        yield operation
-
-
-def object_key(operation):
-    if isinstance(operation, (ch_alembic.AddClickHouseIndexOp,
-                              ch_alembic.DropClickHouseIndexOp)):
-        kind = "index"
-    elif isinstance(operation, (ch_alembic.AddClickHouseProjectionOp,
-                                ch_alembic.DropClickHouseProjectionOp)):
-        kind = "projection"
-    else:
-        return None
-    return kind, operation.schema, operation.table_name, operation.name
-
-
-def classify_tree(tree, direction):
-    operations = list(leaves(tree))
-    adds = {object_key(op) for op in operations if isinstance(
-        op, (ch_alembic.AddClickHouseIndexOp, ch_alembic.AddClickHouseProjectionOp))}
-    drops = {object_key(op) for op in operations if isinstance(
-        op, (ch_alembic.DropClickHouseIndexOp, ch_alembic.DropClickHouseProjectionOp))}
-    replacements = adds & drops
-    for operation in operations:
-        verdict, reason = "review", "operation needs explicit review"
-        if isinstance(operation, (ops.DropTableOp, ops.DropColumnOp, ops.ExecuteSQLOp)):
-            verdict, reason = "rejected", "destructive change or opaque SQL"
-        elif object_key(operation) in replacements:
-            reason = "replacement can discard existing materialization"
-        elif isinstance(operation, (ch_alembic.DropClickHouseIndexOp,
-                                    ch_alembic.DropClickHouseProjectionOp,
-                                    ch_alembic.DropClickHouseIndexesOp,
-                                    ch_alembic.DropClickHouseProjectionsOp)):
-            verdict, reason = "rejected", "removal requires a separate migration"
-        elif direction == "upgrade":
-            if isinstance(operation, ch_alembic.AddClickHouseIndexOp):
-                if (operation.type_ == "minmax" and operation.expression == "value"
-                        and operation.granularity == 1 and not operation.first
-                        and operation.after_index is None and not operation.clickhouse_settings):
-                    verdict, reason = "allowed", "approved index definition"
-            elif isinstance(operation, ch_alembic.ModifyClickHouseTableSettingsOp):
-                if (dict(operation.settings) == {"max_bytes_to_merge_at_max_space_in_pool": 107374182400}
-                        and not operation.clickhouse_settings):
-                    verdict, reason = "allowed", "approved table setting value"
-        yield direction, operation, verdict, reason
-
-
-def review_revision(context, revision, directives):
-    # Scope: a single-engine env.py. clickhouse_writer uses singular roots.
-    for script in directives:
-        if len(script.upgrade_ops_list) != 1 or len(script.downgrade_ops_list) != 1:
-            raise ValueError("This policy hook supports one operation stream only")
-        findings = [
-            *classify_tree(script.upgrade_ops_list[0], "upgrade"),
-            *classify_tree(script.downgrade_ops_list[0], "downgrade"),
-        ]
-        for direction, op, verdict, reason in findings:
-            logging.getLogger("alembic.policy").info(
-                "%s: %s: %s: %s", direction, type(op).__name__, verdict, reason)
-        blocked = [f"{direction}: {type(op).__name__}: {verdict}: {reason}"
-                   for direction, op, verdict, reason in findings
-                   if direction == "upgrade" and verdict != "allowed"]
-        if blocked:
-            raise ValueError("Migration requires review:\n" + "\n".join(blocked))
-    ch_alembic.clickhouse_writer(context, revision, directives)
-```
-
-`context.configure()` には、`clickhouse_writer` の代わりに `process_revision_directives=review_revision` を
-渡します。このフックは両方向の検出結果をログに記録し、アップグレードの検出結果に応じてリビジョンの
-生成を制御します。ダウングレードの検出結果については、ダウングレードを実行する前に別途レビューが必要です。
-ただし、承認済みのアップグレードの書き込みがブロックされることはありません。このフックはネストされたコンテナを走査し、隣接しているかどうかに関係なく、
-種類、スキーマ、テーブル、名前に基づいて置換をペアにします。グループ化された追加操作と、
-認識されないすべての操作は、デフォルトでレビュー対象になります。このレシピがサポートするのは、方向ごとに 1 つのエンジンと
-1 つの操作ストリームのみです。分類器でリストのルートを使用しても、
-`clickhouse_writer` がマルチエンジン対応のフックになるわけではありません。生成されたツリーが空であっても、それが示すのは、
-有効かつサポート対象の比較で変更が見つからなかったということだけです。ビュー、関数、
-Dictionary、その他のサポート対象外の比較については、引き続き明示的な移行が必要です。
+完全な [Alembic の実例](https://github.com/ClickHouse/clickhouse-connect/blob/main/clickhouse_connect/cc_sqlalchemy/alembic/WORKED_EXAMPLE.md) を参照してください。`clickhouse-sqlalchemy` から移行するユーザーは、[移行ガイド](https://github.com/ClickHouse/clickhouse-connect/blob/main/clickhouse_connect/cc_sqlalchemy/MIGRATING_FROM_CLICKHOUSE_SQLALCHEMY.md) も確認してください。
 
 ## 対象範囲と制限事項 {#scope-and-limitations}
 

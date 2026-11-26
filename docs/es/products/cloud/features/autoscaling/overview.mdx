@@ -19,28 +19,28 @@ El escalado es la capacidad de ajustar los recursos disponibles para satisfacer 
 
 ## Elección de una opción de compute {#choosing-a-compute-option}
 
-Elija una opción en función de si desea cambiar la capacidad de su servicio existente, aislar una carga de trabajo en compute dedicado o añadir compute de forma temporal a una consulta elegible.
+Elija una opción en función de si desea cambiar la capacidad de su service existente, aislar una carga de trabajo en compute dedicado o añadir compute de forma temporal a una consulta elegible.
 
-| Opción                                                                         | Qué hace                                                                                                                                                 | Cuándo usarla                                                                                                    |
-| ------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| Escalado de su servicio existente                                               | El escalado vertical cambia la CPU y la memoria. El escalado horizontal cambia el número de réplicas, de forma manual o automática donde sea compatible. | Desea que su servicio existente escale hacia arriba o hacia abajo según cambie la demanda de la carga de trabajo. |
-| [Warehouses](/es/products/cloud/features/infrastructure/warehouses)               | Crea servicios independientes con compute y endpoints dedicados que comparten los mismos datos.                                                           | Necesita un aislamiento de compute duradero para distintas cargas de trabajo.                                    |
-| [On-Demand Compute](/es/products/cloud/features/infrastructure/on-demand-compute) | Asigna temporalmente workers de un grupo gestionado a través de su servicio y endpoint existentes.                                                        | Una consulta `SELECT` elegible necesita compute adicional sin redimensionar el servicio.                          |
+| Opción                                                                         | Qué hace                                                                                                                                               | Cuándo usarla                                                                                          |
+| ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------ |
+| Escalado de su service existente                                               | El escalado vertical cambia la CPU y la memoria. El escalado horizontal cambia el número de réplicas, de forma manual o automática donde sea compatible. | Desea que su service existente escale hacia arriba o hacia abajo según cambie la demanda de la carga de trabajo. |
+| [Warehouses](/es/products/cloud/features/infrastructure/warehouses)               | Crea services independientes con compute y endpoints dedicados que comparten los mismos datos.                                                         | Necesita un aislamiento de compute duradero para distintas cargas de trabajo.                                  |
+| [On-Demand Compute](/es/products/cloud/features/infrastructure/on-demand-compute) | Asigna temporalmente workers de un grupo gestionado a través de su service y endpoint existentes.                                                      | Una consulta `SELECT` elegible necesita compute adicional sin redimensionar el service.                |
 
 <Note>
-  La compatibilidad con el escalado varía según el nivel y el perfil del servicio. El [escalado automático horizontal](/es/products/cloud/features/autoscaling/horizontal-autoscaling) está en Beta. On-Demand Compute está en Private Preview y solo admite consultas `SELECT` elegibles.
+  La compatibilidad con el escalado varía según el nivel y el perfil del service. El [escalado automático horizontal](/es/products/cloud/features/autoscaling/horizontal-autoscaling) está en Private Preview. On-Demand Compute también está en Private Preview y solo admite consultas `SELECT` elegibles.
 </Note>
 
 ## Cómo funciona el escalado en ClickHouse Cloud {#how-scaling-works-in-clickhouse-cloud}
 
-ClickHouse Cloud admite el escalado horizontal manual para los servicios de los niveles Scale y Enterprise. Los servicios del nivel Scale también admiten escalado automático vertical; la compatibilidad con el escalado automático vertical en el nivel Enterprise depende del perfil, como se describe a continuación. El [escalado automático horizontal](/es/products/cloud/features/autoscaling/horizontal-autoscaling) está disponible en Beta para los servicios de los niveles Scale y Enterprise.
+ClickHouse Cloud admite el escalado horizontal manual para los servicios de los niveles Scale y Enterprise. Los servicios del nivel Scale también admiten autoescalado vertical; la compatibilidad con el autoescalado vertical en el nivel Enterprise depende del perfil, como se describe a continuación. El [escalado automático horizontal](/es/products/cloud/features/autoscaling/horizontal-autoscaling) está disponible en Private Preview para los servicios de los niveles Scale y Enterprise.
 
 Para los servicios del nivel Enterprise, el escalado funciona de la siguiente manera:
 
 * **Escalado horizontal**: El escalado horizontal manual está disponible en todos los perfiles estándar y personalizados del nivel Enterprise.
 * **Escalado vertical**:
-  * Los perfiles estándar `1:4` admiten escalado automático vertical.
-  * Los perfiles personalizados (`highMemory` y `highCPU`) no admiten escalado automático vertical ni escalado vertical manual. Sin embargo, estos servicios pueden escalarse verticalmente poniéndose en contacto con el soporte.
+  * Los perfiles estándar `1:4` admiten autoescalado vertical.
+  * Los perfiles personalizados (`highMemory` y `highCPU`) no admiten autoescalado vertical ni escalado vertical manual. Sin embargo, estos servicios pueden escalarse verticalmente poniéndose en contacto con el soporte.
 
 <Note>
   El escalado en ClickHouse Cloud se realiza mediante lo que denominamos el enfoque [&quot;Make Before Break&quot; (MBB)](/es/products/cloud/features/autoscaling/make-before-break).

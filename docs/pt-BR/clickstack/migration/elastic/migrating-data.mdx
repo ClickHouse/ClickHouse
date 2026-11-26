@@ -8,7 +8,9 @@ keywords: ['ClickStack']
 doc_type: 'guide'
 ---
 
-## Estratégia de operação em paralelo {#parallel-operation-strategy}
+<div id="parallel-operation-strategy">
+  ## Estratégia de operação em paralelo
+</div>
 
 Ao migrar do Elastic para o ClickStack em casos de uso de observabilidade, recomendamos uma abordagem de **operação em paralelo** em vez de tentar migrar dados históricos. Essa estratégia oferece várias vantagens:
 
@@ -24,7 +26,9 @@ Ao migrar do Elastic para o ClickStack em casos de uso de observabilidade, recom
   Demonstramos uma abordagem para migrar dados essenciais do Elasticsearch para o ClickHouse na seção [&quot;Migração de dados&quot;](#migrating-data). Isso não deve ser usado com datasets maiores, pois raramente tem bom desempenho — fica limitado pela capacidade do Elasticsearch de exportar com eficiência, com suporte apenas ao formato JSON.
 </Info>
 
-### Etapas de implementação {#implementation-steps}
+<div id="implementation-steps">
+  ### Etapas de implementação
+</div>
 
 <Steps>
   <Step title="Configure a ingestão dupla" id="configure-dual-ingestion">
@@ -50,7 +54,9 @@ Ao migrar do Elastic para o ClickStack em casos de uso de observabilidade, recom
   </Step>
 </Steps>
 
-### Retenção de longo prazo {#long-term-retention}
+<div id="long-term-retention">
+  ### Retenção de longo prazo
+</div>
 
 Para organizações que exigem períodos de retenção mais longos:
 
@@ -58,7 +64,9 @@ Para organizações que exigem períodos de retenção mais longos:
 * Os recursos de [armazenamento em camadas](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-multiple-volumes) do ClickStack podem ajudar a gerenciar dados de longo prazo com eficiência.
 * Considere usar [visões materializadas](/pt-BR/concepts/features/materialized-views/incremental-materialized-view) para manter dados históricos agregados ou filtrados, ao mesmo tempo em que permite que os dados brutos expirem.
 
-### Cronograma de migração {#migration-timeline}
+<div id="migration-timeline">
+  ### Cronograma de migração
+</div>
 
 O cronograma de migração dependerá dos seus requisitos de retenção de dados:
 
@@ -66,11 +74,15 @@ O cronograma de migração dependerá dos seus requisitos de retenção de dados
 * **Retenção mais longa**: mantenha a operação em paralelo até que os dados expirem no Elastic.
 * **Dados históricos**: se for absolutamente necessário, considere usar [Migração de dados](#migrating-data) para importar dados históricos específicos.
 
-## Configurações de migração {#migration-settings}
+<div id="migration-settings">
+  ## Configurações de migração
+</div>
 
 Ao migrar do Elastic para o ClickStack, suas configurações de indexação e armazenamento precisarão ser adaptadas à arquitetura do ClickHouse. Enquanto o Elasticsearch depende de escalonamento horizontal e sharding para garantir desempenho e tolerância a falhas e, por isso, usa vários shards por padrão, o ClickHouse é otimizado para escalonamento vertical e normalmente tem melhor desempenho com menos shards.
 
-### Configurações recomendadas {#recommended-settings}
+<div id="recommended-settings">
+  ### Configurações recomendadas
+</div>
 
 Recomendamos começar com **um único shard** e escalar verticalmente. Essa configuração é adequada para a maioria das cargas de trabalho de observabilidade e simplifica tanto o gerenciamento quanto o ajuste de desempenho das consultas.
 
@@ -82,7 +94,9 @@ Recomendamos começar com **um único shard** e escalar verticalmente. Essa conf
   * Usar [`ReplicatedMergeTree`](/pt-BR/reference/engines/table-engines/mergetree-family/replication) se alta disponibilidade for necessária
   * Para tolerância a falhas, [1 réplica do seu shard](/pt-BR/reference/engines/table-engines/mergetree-family/replication) normalmente é suficiente em cargas de trabalho de observabilidade.
 
-### Quando fazer sharding {#when-to-shard}
+<div id="when-to-shard">
+  ### Quando fazer sharding
+</div>
 
 O sharding pode ser necessário se:
 
@@ -92,7 +106,9 @@ O sharding pode ser necessário se:
 
 Se você realmente precisar fazer sharding, consulte [Escalonamento horizontal](/pt-BR/guides/oss/deployment-and-scaling/examples/2-shards-1-replica) para obter orientações sobre chaves de shard e a configuração de tabela distribuída.
 
-### Retenção e TTL {#retention-and-ttl}
+<div id="retention-and-ttl">
+  ### Retenção e TTL
+</div>
 
 O ClickHouse usa [cláusulas TTL](/pt-BR/clickstack/managing/production#configure-ttl) em tabelas MergeTree para gerenciar a expiração dos dados. As políticas de TTL podem:
 
@@ -102,7 +118,9 @@ O ClickHouse usa [cláusulas TTL](/pt-BR/clickstack/managing/production#configur
 
 Recomendamos alinhar a configuração de TTL do ClickHouse às suas políticas de retenção existentes no Elastic para manter um ciclo de vida dos dados consistente durante a migração. Para ver exemplos, consulte a [configuração de TTL de produção do ClickStack](/pt-BR/clickstack/managing/production#configure-ttl).
 
-## Migração de dados {#migrating-data}
+<div id="migrating-data">
+  ## Migração de dados
+</div>
 
 Embora recomendemos a operação em paralelo para a maior parte dos dados de observabilidade, há casos específicos em que a migração direta de dados do Elasticsearch para o ClickHouse pode ser necessária:
 
@@ -424,14 +442,12 @@ As etapas a seguir permitem migrar um único índice do Elasticsearch usando o C
       ```
     </Accordion>
 
-    <Note>
-      Nas versões 24.8 a 25.2, habilite os tipos `JSON` e `Variant` com `SET allow_experimental_json_type = 1, allow_experimental_variant_type = 1;` antes de criar as tabelas desta página.
-    </Note>
-
     O schema equivalente da tabela no ClickHouse:
 
     <Accordion title="Schema do ClickHouse">
       ```sql
+      SET enable_json_type = 1;
+
       CREATE TABLE logs_system_syslog
       (
           `@timestamp` DateTime,
@@ -533,6 +549,8 @@ As etapas a seguir permitem migrar um único índice do Elasticsearch usando o C
     Como alternativa, você pode simplesmente criar uma tabela com uma coluna `JSON`.
 
     ```sql
+    SET enable_json_type = 1;
+
     CREATE TABLE syslog_json
     (
      `json` JSON(`host.name` String, `@timestamp` DateTime)
@@ -652,9 +670,5 @@ As etapas a seguir permitem migrar um único índice do Elasticsearch usando o C
     ```
 
     Observe que é necessário escapar o nome do campo `@timestamp` e usar o formato de entrada `JSONAsObject`.
-
-    <Note>
-      Nas versões 24.8 a 25.2, adicione `--allow_experimental_json_type=1` a este comando `clickhouse-client`. Ele é executado em uma sessão própria, e `input('json JSON')` precisa do tipo `JSON` habilitado nessa sessão.
-    </Note>
   </Step>
 </Steps>

@@ -245,18 +245,18 @@ Lista de etiquetas disponibles:
 | `replica`                      | Igual que `zookeeper`. Se prefiere `zookeeper`                                              |                                                                                                                     |
 | `no-fasttest`                  | La prueba no se ejecuta en [Fast test](#test-types)                                         | La prueba usa el table engine `MySQL`, que está deshabilitado en Fast test                                          |
 | `fasttest-only`                | La prueba solo se ejecuta en [Fast test](#test-types)                                       |                                                                                                                     |
-| `no-[asan, tsan, msan, ubsan]` | Deshabilita las pruebas en compilaciones con [sanitizadores](#sanitizers)                      | La prueba se ejecuta en QEMU, que no funciona con sanitizadores                                                        |
+| `no-[asan, tsan, msan, ubsan]` | Deshabilita las pruebas en compilaciones con [sanitizers](#sanitizers)                      | La prueba se ejecuta en QEMU, que no funciona con sanitizers                                                        |
 | `no-replicated-database`       | Deshabilita la prueba cuando la base de datos predeterminada usa `ReplicatedDatabaseEngine` |                                                                                                                     |
 | `no-ordinary-database`         | Deshabilita la prueba cuando el database engine predeterminado es `Ordinary`                |                                                                                                                     |
 | `no-parallel`                  | Deshabilita la ejecución en paralelo de otras pruebas con esta                              | La prueba lee de tablas `system` y los invariantes pueden romperse                                                  |
 | `no-parallel-replicas`         | Deshabilita la prueba cuando las réplicas paralelas están habilitadas                       |                                                                                                                     |
 | `no-debug`                     | Deshabilita las pruebas en compilaciones Debug                                              |                                                                                                                     |
 | `no-release`                   | Deshabilita las pruebas en compilaciones Release                                            |                                                                                                                     |
-| `no-darwin`                    | Deshabilita la prueba en macOS (Darwin)                                                     | La prueba depende de funcionalidades específicas de Linux, como consultas distribuidas, `procfs` o el servidor HTTP |
+| `no-darwin`                    | Deshabilita la prueba en macOS (Darwin)                                                     | La prueba depende de características específicas de Linux, como consultas distribuidas, `procfs` o el servidor HTTP |
 
-También se admiten las siguientes opciones: `no-polymorphic-parts`, `no-random-settings`, `no-random-merge-tree-settings`, `no-cpu-x86_64`, `no-cpu-aarch64`, `no-cpu-ppc64le`, `no-s3-storage`.
+También se admiten las siguientes opciones: `no-polymorphic-parts`, `no-random-settings`, `no-random-merge-tree-settings`, `no-backward-compatibility-check`, `no-cpu-x86_64`, `no-cpu-aarch64`, `no-cpu-ppc64le`, `no-s3-storage`.
 
-Además de los ajustes anteriores, puede usar flags `USE_*` de `system.build_options` para definir el uso de funcionalidades concretas de ClickHouse.
+Además de los ajustes anteriores, puede usar flags `USE_*` de `system.build_options` para definir el uso de características concretas de ClickHouse.
 Por ejemplo, si su prueba usa una tabla MySQL, debe añadir la etiqueta `use-mysql`.
 
 ### Especificación de límites para valores aleatorios de configuración {#specifying-limits-for-random-settings}

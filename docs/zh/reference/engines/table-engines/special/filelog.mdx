@@ -37,7 +37,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 引擎参数：
 
 * `path_to_logs` – 要订阅的日志文件路径。可以是包含日志文件的目录路径，也可以是单个日志文件的路径。与 [file](/zh/reference/functions/table-functions/file) 表函数一样，相对路径会基于 `user_files_path` 目录进行解析；如果某个相对路径从服务器工作目录来看已位于 `user_files_path` 内，则保持其原有含义 (例如，服务器在其数据目录中运行时 (如官方 Docker 镜像) 的路径 `user_files/my_app/app.log`) 。路径中的文件名可以包含[通配符](/zh/reference/functions/table-functions/file#globs-in-path) (`*`、`?`、`{abc,def}`、`{N..M}`) ，以仅读取目录中匹配的文件，参见[使用通配符选择文件](#selecting-files-with-globs)。请注意，ClickHouse 只允许使用 `user_files` 目录内的路径。
-* `format_name` - 记录格式。请注意，FileLog 会将文件中的每一行视为一条单独的记录，因此并非所有数据格式都适用。只有以换行符结尾的行才会被读取，因此仍在写入的最后一行会等到写完后，在之后的某次轮询中读取。
+* `format_name` - 记录格式。请注意，FileLog 会将文件中的每一行视为一条单独的记录，因此并非所有数据格式都适用。
 
 可选参数：
 
@@ -45,10 +45,10 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 * `poll_max_batch_size` — 单次轮询可拉取的最大记录数。默认值：[max&#95;block&#95;size](/zh/reference/settings/session-settings/max#max_block_size)。
 * `max_block_size` — 轮询的最大批次大小 (按记录数计) 。默认值：[max&#95;insert&#95;block&#95;size](/zh/reference/settings/session-settings/max-insert#max_insert_block_size)。
 * `max_threads` - 用于解析文件的最大线程数，默认值为 0，这表示该值将为 max(1, physical&#95;cpu&#95;cores / 4)。
-* `poll_directory_watch_events_backoff_init` - 表的流式任务的初始休眠时间，该任务在没有新数据时会执行退避。在 macOS 上，该值同时也是目录监视线程的初始休眠时间。默认值：`500`。
-* `poll_directory_watch_events_backoff_max` - 表的流式任务的最大休眠时间。在 macOS 上，该值同时也是目录监视线程的最大休眠时间。默认值：`32000`。
+* `poll_directory_watch_events_backoff_init` - 目录监视线程的初始休眠时间。默认值：`500`。
+* `poll_directory_watch_events_backoff_max` - 目录监视线程的最大休眠时间。默认值：`32000`。
 * `poll_directory_watch_events_backoff_factor` - 退避速度，默认采用指数退避。默认值：`2`。
-* `handle_error_mode` — FileLog 引擎 的错误处理方式。可选值：default (若某条记录解析失败，直接执行的 `SELECT` 会抛出异常；而当表以流式方式写入物化视图时，该记录会被跳过，错误则写入服务器日志) ，stream (异常消息和原始记录将保存在虚拟列 `_error` 和 `_raw_record` 中) 。
+* `handle_error_mode` — FileLog 引擎 的错误处理方式。可选值：default (若某条记录解析失败，直接执行的 `SELECT` 会抛出异常；而当表以流式方式写入 materialized view 时，该记录会被跳过，错误则写入服务器日志) ，stream (异常消息和原始记录将保存在虚拟列 `_error` 和 `_raw_record` 中) 。
 
 ## 说明 {#description}
 

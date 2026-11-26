@@ -29,20 +29,24 @@ REST-каталог — это стандартизированная специ
 <Note>
   Поскольку эта возможность находится в стадии бета, вам нужно включить её с помощью:
   `SET allow_database_iceberg = 1;`
-
-  В версиях до 25.8, где эта возможность ещё экспериментальная, используйте вместо этого `SET allow_experimental_database_iceberg = 1;`. В приведённых ниже SQL-запросах используется именно этот вариант, поскольку в Docker-конфигурации этого руководства зафиксирована версия ClickHouse 25.5.6.
 </Note>
 
-## Локальная среда разработки {#local-development-setup}
+<div id="local-development-setup">
+  ## Локальная среда разработки
+</div>
 
 Для локальной разработки и тестирования можно использовать контейнеризированный REST-каталог. Такой подход хорошо подходит для обучения, прототипирования и сред разработки.
 
-### Предварительные требования {#local-prerequisites}
+<div id="local-prerequisites">
+  ### Предварительные требования
+</div>
 
 1. **Docker и Docker Compose**: Убедитесь, что Docker установлен и запущен
 2. **Пример настройки**: Можно использовать различные конфигурации Docker Compose (см. альтернативные Docker-образы ниже)
 
-### Настройка локального REST-каталога {#setting-up-local-rest-catalog}
+<div id="setting-up-local-rest-catalog">
+  ### Настройка локального REST-каталога
+</div>
 
 Вы можете использовать различные контейнеризованные реализации REST-каталога, например **[Databricks docker-spark-iceberg](https://github.com/databricks/docker-spark-iceberg/blob/main/docker-compose.yml?ref=blog.min.io)**, который предоставляет полноценную среду Spark + Iceberg + REST-каталог на базе `docker-compose`, что делает его удобным вариантом для тестирования интеграций с Iceberg.
 
@@ -89,7 +93,9 @@ docker-compose logs -f
   Для настройки REST-каталога необходимо, чтобы в таблицы Iceberg сначала были загружены тестовые данные. Прежде чем выполнять запросы к этим таблицам через ClickHouse, убедитесь, что среда Spark создала их и заполнила данными. Доступность таблиц зависит от конкретной конфигурации docker-compose и скриптов загрузки тестовых данных.
 </Note>
 
-### Подключение к локальному REST-каталогу {#connecting-to-local-rest-catalog}
+<div id="connecting-to-local-rest-catalog">
+  ### Подключение к локальному REST-каталогу
+</div>
 
 Подключитесь к контейнеру ClickHouse:
 
@@ -100,7 +106,7 @@ docker exec -it clickhouse clickhouse-client
 Затем создайте подключение базы данных к REST-каталогу:
 
 ```sql
-SET allow_experimental_database_iceberg = 1;
+SET allow_database_iceberg = 1;
 
 CREATE DATABASE demo
 ENGINE = DataLakeCatalog('http://rest:8181/v1', 'admin', 'password')
@@ -110,7 +116,9 @@ SETTINGS
     warehouse = 'demo'
 ```
 
-## Запросы к таблицам REST-каталога с помощью ClickHouse {#querying-rest-catalog-tables-using-clickhouse}
+<div id="querying-rest-catalog-tables-using-clickhouse">
+  ## Запросы к таблицам REST-каталога с помощью ClickHouse
+</div>
 
 После настройки подключения вы можете выполнять запросы через REST-каталог. Например:
 
@@ -194,7 +202,9 @@ SHOW CREATE TABLE `default.taxis`;
 └───────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## Загрузка данных из вашего озера данных в ClickHouse {#loading-data-from-your-data-lake-into-clickhouse}
+<div id="loading-data-from-your-data-lake-into-clickhouse">
+  ## Загрузка данных из вашего озера данных в ClickHouse
+</div>
 
 Если вам нужно загрузить данные из REST-каталога в ClickHouse, сначала создайте локальную таблицу в ClickHouse:
 

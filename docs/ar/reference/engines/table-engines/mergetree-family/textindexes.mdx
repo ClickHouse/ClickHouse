@@ -4,7 +4,7 @@ keywords: ['البحث النصي الكامل', 'فهرس نصي', 'فهرس', 
 sidebarTitle: 'البحث النصي الكامل باستخدام الفهارس النصية'
 slug: /engines/table-engines/mergetree-family/textindexes
 title: 'البحث النصي الكامل باستخدام الفهارس النصية'
-doc_type: 'reference'
+doc_type: 'مرجع'
 ---
 
 import { CloudNotSupportedBadge } from "/snippets/ar/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
@@ -593,7 +593,7 @@ SELECT count() FROM table WHERE hasAllTokens(str, ['running']);
 
   تحدد المعلمة الاختيارية `posting_list_block_size` (الافتراضي: 1048576) حجم كتل قائمة الترحيل بالصفوف.
 
-  تحدد المعلمة الاختيارية `posting_list_codec` (الافتراضي: `pfor`) برنامج الترميز الخاص بقائمة الترحيل:
+  تحدد المعلمة الاختيارية `posting_list_codec` (الافتراضي: `none`) برنامج الترميز الخاص بقائمة الترحيل:
 
   * `none` - تُخزَّن قوائم الترحيل من دون ضغط إضافي.
   * `bitpacking` - يطبّق [الترميز التفاضلي (delta)](https://en.wikipedia.org/wiki/Delta_encoding)، ثم [حزم البتات](https://dev.to/madhav_baby_giraffe/bit-packing-the-secret-to-optimizing-data-storage-and-transmission-m70) (وذلك داخل كتل ثابتة الحجم). يبطئ استعلامات SELECT، ولا يُنصح به حاليًا.
@@ -865,16 +865,6 @@ SELECT count() FROM table WHERE has(array, 'clickhouse');
 ```sql
 SELECT count() FROM table WHERE hasAny(tags, ['clickhouse', 'olap']);
 SELECT count() FROM table WHERE hasAll(tags, ['clickhouse', 'olap']);
-```
-
-#### `arrayJoin` {#functions-example-arrayjoin}
-
-يستخدم الشرط المطبَّق على عنصر واحد من المصفوفة المفهرَسة الفهرسَ بالطريقة نفسها التي تستخدمه بها `has` و`hasAny`؛ إذ يستفيد `arrayJoin(tags) = 'clickhouse'` من الفهرس كما يستفيد منه `has(tags, 'clickhouse')`، ويستفيد `arrayJoin(tags) IN (set)` منه كما يستفيد منه `hasAny(tags, set)`. وينطبق ذلك أيضًا على `GLOBAL IN`، وعلى `IN` مع `transform_null_in = 1` عندما لا تحتوي المجموعة على `NULL`، وعلى عبارة `ARRAY JOIN`. ويقتصر دور الفهرس على تخطي حبيبات البيانات، إذ يظل ClickHouse يتحقق من الشرط على كل عنصر. أما `LEFT ARRAY JOIN` فلا تستخدم الفهرس.
-
-مثال:
-
-```sql
-SELECT arrayJoin(tags) AS tag FROM table WHERE tag IN ('clickhouse', 'olap');
 ```
 
 #### `mapContains` {#functions-example-mapcontains}
@@ -1584,29 +1574,26 @@ Aggregating
 يتحكم إعداد مستوى الجدول [`text_index_serialization_version`](/ar/reference/settings/merge-tree-settings/text-index) (القيمة الافتراضية: `v2_with_positions`) في إصدار تنسيق الفهارس النصية المخزنة على القرص.
 هذا الإعداد تفضيل وليس قيدًا صارمًا: فإذا تعذر على الإصدار المُهيأ تمثيل فهرس، يُختار تلقائيًا إصدار أحدث قادر على تمثيله، لذا لا تفشل كتابة فهرس نصي بسبب هذا الإعداد.
 أثناء الترقية المتتابعة، ثبّت التنسيق باستخدام إعداد [`compatibility`](/ar/reference/settings/session-settings/compatibility#compatibility) على الخوادم التي تمت ترقيتها بالفعل: فعند ضبطه على إصدار أقدم من الإصدار الذي أُضيف فيه التنسيق المقابل، يعود `text_index_serialization_version` تلقائيًا إلى قيمة أقدم، وتواصل الخوادم الأحدث كتابة التنسيق الذي لا تزال الخوادم الأقدم قادرة على قراءته.
+أما ترميز قائمة النشر فلا يخضع لهذا الإصدار: فجزء البيانات المكتوب باستخدام `posting_list_codec = 'pfor'` (أو إعداد `text_index_posting_list_codec`) لا يمكن أن تقرأه الخوادم السابقة لهذا الترميز، ولا يمنع استخدامَه `text_index_serialization_version` ولا `compatibility`، لأن الترميز المحدد باسم الفهرس تكون له الأسبقية على تفضيل الإصدار، تمامًا كما هو الحال مع `support_phrase_search`. لا تُفعّل `pfor` قبل ترقية كل خادم قد يقرأ الجدول.
 
-أما ترميز قائمة النشر فلا يتحكم فيه `text_index_serialization_version`. ولا يمكن للخوادم الأقدم من الإصدار 26.10 قراءة أجزاء البيانات المكتوبة باستخدام الترميز `pfor`.
+## فهارس النص مقابل الفهارس المعتمدة على Bloom filter {#text-index-vs-bloom-filter-indexes}
 
-بدءًا من الإصدار 26.11، أصبح `pfor` القيمة الافتراضية للإعداد [`text_index_posting_list_codec`](/ar/reference/settings/merge-tree-settings/text-index#text_index_posting_list_codec). لذا أثناء الترقية المتتابعة، اضبط [`compatibility`](/ar/reference/settings/session-settings/compatibility#compatibility) على إصدار أقدم من 26.11 على الخوادم التي تمت ترقيتها. عندئذٍ تعود القيمة الافتراضية إلى `none`، وتواصل هذه الخوادم كتابة أجزاء بيانات يمكن للخوادم الأقدم قراءتها.
-
-## فهارس نصية مقابل الفهارس المعتمدة على Bloom filter {#text-index-vs-bloom-filter-indexes}
-
-يمكن تسريع المسندات الخاصة بـ String باستخدام فهارس نصية والفهارس المعتمدة على Bloom filter (أنواع الفهارس `bloom_filter` و`ngrambf_v1` و`tokenbf_v1` و`sparse_grams`)، إلا أن كليهما يختلفان اختلافًا جوهريًا من حيث التصميم وحالات الاستخدام المستهدفة:
+يمكن تسريع predicates الخاصة بـ String باستخدام فهارس النص والفهارس المعتمدة على Bloom filter (أنواع الفهارس `bloom_filter` و`ngrambf_v1` و`tokenbf_v1` و`sparse_grams`)، إلا أن كليهما يختلفان اختلافًا جوهريًا من حيث التصميم وحالات الاستخدام المستهدفة:
 
 **فهارس Bloom filter**
 
-* تستند إلى بنى بيانات احتمالية قد تؤدي إلى false positives.
+* تستند إلى هياكل بيانات احتمالية قد تؤدي إلى false positives.
 * لا يمكنها إلا الإجابة عن أسئلة الانتماء إلى مجموعة، أي إن العمود قد يحتوي على الرمز X أو أنه بالتأكيد لا يحتوي على X.
 * تخزّن معلومات على مستوى الحبيبة، مما يتيح تخطي نطاقات واسعة أثناء تنفيذ query.
 * يصعب ضبطها على نحو صحيح (راجع [هنا](/ar/reference/engines/table-engines/mergetree-family/mergetree#n-gram-bloom-filter) للاطلاع على مثال).
-* وهي مدمجة نسبيًا (بضعة كيلوبايتات أو ميغابايتات لكل جزء بيانات).
+* وهي مدمجة نسبيًا (بضعة كيلوبايتات أو ميغابايتات لكل part).
 
-**فهارس نصية**
+**فهارس النص**
 
 * تبني فهرسًا معكوسًا حتميًا على الرموز. ولا يمكن أن تنتج عن الفهرس نفسه false positives.
 * مُحسّنة خصيصًا لأعباء عمل البحث النصي.
 * تخزّن معلومات على مستوى الصف، مما يتيح lookup فعّالًا للمصطلحات.
-* وهي كبيرة نسبيًا (من عشرات إلى مئات الميغابايتات لكل جزء بيانات).
+* وهي كبيرة نسبيًا (من عشرات إلى مئات الميغابايتات لكل part).
 
 تدعم الفهارس المعتمدة على Bloom filter البحث النصي الكامل فقط كـ &quot;أثر جانبي&quot;:
 
@@ -1614,10 +1601,10 @@ Aggregating
 * وهي لا تدعم البحث باستخدام عدة رموز.
 * وهي لا توفر خصائص الأداء المتوقعة من فهرس معكوس.
 
-أما الفهارس النصية، فعلى النقيض، فهي مصممة خصيصًا للبحث النصي الكامل:
+أما فهارس النص، فعلى النقيض، فهي مصممة خصيصًا للبحث النصي الكامل:
 
 * فهي توفر tokenization وpreprocessing
-* وتوفر دعمًا فعّالًا لـ `hasAllTokens` و`LIKE` و`match` ودوال البحث النصي المشابهة.
+* وتوفر دعمًا فعّالًا لـ `hasAllTokens` و`LIKE` و`match` ووظائف البحث النصي المشابهة.
 * وتتمتع بقابلية توسّع أفضل بكثير مع المجموعات النصية الكبيرة.
 
 ## تفاصيل التنفيذ {#implementation}

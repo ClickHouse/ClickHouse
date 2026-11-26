@@ -631,9 +631,9 @@ fmt.Printf("col1=%v, col2=%v, col3=%v, col4=%v, col5=%v\n", col1, col2, col3, co
 
 ### Nullable {#nullable}
 
-Go の値 `Nil` は、ClickHouse の `NULL` を表します。これは、フィールドが `Nullable` として宣言されている場合に使用できます。挿入時には、通常のカラムと `Nullable` カラムの両方に `Nil` を渡せます。前者では、その型のデフォルト値が保存されます。たとえば、`string` であれば空文字列です。`Nullable` 版では、ClickHouse に `NULL 値` が格納されます。
+Go の値 `Nil` は、ClickHouse の `NULL` を表します。これは、フィールドが `Nullable` として宣言されている場合に使用できます。insert 時には、通常のカラムと `Nullable` カラムの両方に `Nil` を渡せます。前者では、その型のデフォルト値が保存されます。たとえば、`string` であれば空文字列です。`Nullable` 版では、ClickHouse に `NULL 値` が格納されます。
 
-scan 時には、`Nullable` フィールドの `nil` 値を表現するために、ユーザーは `nil` を扱える型へのポインタ (たとえば `*string`) を渡す必要があります。以下の例では、`Nullable(String)` である `col1` は、そのため `**string` を受け取ります。これにより `nil` を表現できます。`nil` を表現できない宛先 (たとえば `*int64`) に NULL をスキャンすると、&quot;converting NULL to *int64 is unsupported&quot; というエラーが返されます。`sql.Scanner` を実装している型では、その型独自の `Scan(nil)` によって NULL が処理されます。
+scan 時には、`Nullable` フィールドの `nil` 値を表現するために、ユーザーは `nil` を扱える型へのポインタ (たとえば `*string`) を渡す必要があります。以下の例では、`Nullable(String)` である `col1` は、そのため `**string` を受け取ります。これにより `nil` を表現できます。
 
 ```go
 if err = conn.Exec(ctx, `

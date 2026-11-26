@@ -501,17 +501,13 @@ SELECT * FROM remote(remote1, database = default, table = test);
 
 ### مثال على استخدام المجموعات المسماة مع قاموس مصدره ClickHouse {#example-of-using-named-collections-with-a-dictionary-with-source-clickhouse}
 
-<Note title="ClickHouse Cloud">
-  عند إنشاء قاموس يقرأ من جدول ClickHouse، أدرج اسم المستخدم وكلمة المرور لمستخدم مخصّص في عبارة `SOURCE`. ويجب أن يمتلك هذا المستخدم صلاحية `SELECT` على الجدول المصدر. راجع [مثال مصدر القاموس من نوع ClickHouse](/ar/reference/statements/create/dictionary/sources/clickhouse).
-</Note>
-
 ```sql
 CREATE NAMED COLLECTION remote_dict AS
 host = 'localhost',
 port = 9000,
 database = 'default',
-user = 'dict_reader',
-password = 'dict_reader_password';
+user = 'default',
+password = '';
 
 CREATE DICTIONARY dict(a Int64, b String)
 PRIMARY KEY a
@@ -556,22 +552,6 @@ kafka_max_block_size = '1048576';
     </named_collections>
 </clickhouse>
 ```
-
-### TLS وشهادات العميل {#kafka-mtls-named-collection}
-
-تُعدّ مسارات TLS و`ssl.key.password` من [إعدادات librdkafka الموسّعة](/ar/reference/engines/table-engines/integrations/kafka#kafka-tls-sasl-named-collections)، وليست من إعدادات `kafka_*` الخاصة بمحرك جدول Kafka. في المجموعة المسمّاة، اضبطها باستخدام البادئة `kafka.` في DDL (مثل `kafka.ssl_ca_location`) أو ضمن `<kafka>` في XML (مثل `<ssl_ca_location>`). وعندما يستخدم `ENGINE = Kafka(collection)` المجموعةَ، لا تُدمَج تهيئة `<kafka>` العامة الخاصة بالخادم.
-
-```sql
-CREATE NAMED COLLECTION kafka_mtls AS
-    kafka.security_protocol = 'SASL_SSL',
-    kafka.sasl_mechanism = 'PLAIN',
-    kafka.ssl_ca_location = '/etc/clickhouse/certs/ca.pem',
-    kafka.ssl_certificate_location = '/etc/clickhouse/certs/client.pem',
-    kafka.ssl_key_location = '/etc/clickhouse/certs/client.key',
-    kafka.ssl_key_password = 'secret';
-```
-
-استخدم `SETTINGS` على مستوى الجدول لتحديد `kafka_broker_list` و`kafka_topic_list` و`kafka_group_name` و`kafka_format` و`kafka_sasl_username` و`kafka_sasl_password` عندما يلزم أن تختلف هذه القيم من جدول إلى آخر. يمكنك الاطلاع على مثال كامل لعبارة `CREATE TABLE` في [TLS وSASL مع المجموعات المسمّاة](/ar/reference/engines/table-engines/integrations/kafka#kafka-tls-sasl-named-collections).
 
 ### مصادقة OAUTHBEARER/OIDC {#oauthbearer-oidc-authentication}
 

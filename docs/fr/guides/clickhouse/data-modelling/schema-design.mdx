@@ -6,19 +6,19 @@ keywords: ['schéma', 'conception de schéma', 'optimisation des requêtes']
 doc_type: 'guide'
 ---
 
+import { Image } from "/snippets/fr/components/Image.jsx";
+
 Comprendre les principes d’une conception de schéma efficace est essentiel pour optimiser les performances de ClickHouse. Cela implique des choix qui supposent souvent des compromis, l’approche optimale dépendant des requêtes traitées ainsi que de facteurs tels que la fréquence de mise à jour des données, les exigences de latence et le volume de données. Ce guide présente les bonnes pratiques de conception de schéma et les techniques de modélisation des données permettant d’optimiser les performances de ClickHouse.
 
-## Jeu de données Stack Overflow {#stack-overflow-dataset}
+<div id="stack-overflow-dataset">
+  ## Jeu de données Stack Overflow
+</div>
 
-Pour les exemples de ce guide, nous utilisons un sous-ensemble du jeu de données Stack Overflow. Il contient tous les publications, votes, utilisateurs, commentaires et badges de Stack Overflow de 2008 à avril 2024. Ces données sont disponibles au format Parquet, selon les schémas ci-dessous, dans le bucket S3 `s3://datasets-documentation/stackoverflow/parquet/` :
+Pour les exemples de ce guide, nous utilisons un sous-ensemble du jeu de données Stack Overflow. Il contient tous les posts, votes, utilisateurs, commentaires et badges de Stack Overflow de 2008 à avril 2024. Ces données sont disponibles au format Parquet, selon les schémas ci-dessous, dans le bucket S3 `s3://datasets-documentation/stackoverflow/parquet/` :
 
 > Les clés primaires et les relations indiquées ne sont pas imposées par des contraintes (Parquet est un format de fichier, pas un format de table) et servent uniquement à montrer comment les données sont liées ainsi que les clés uniques qu’elles possèdent.
 
-<div className="ch-image-lg">
-  <Frame>
-    ![Schéma Stack Overflow](/images/data-modeling/stackoverflow-schema.webp)
-  </Frame>
-</div>
+<Image img="/images/data-modeling/stackoverflow-schema.webp" size="lg" alt="Schéma Stack Overflow" />
 
 <br />
 
@@ -27,7 +27,7 @@ Le jeu de données Stack Overflow contient plusieurs tables liées entre elles. 
 Le schéma ci-dessus n’est volontairement pas optimal pour les besoins de ce guide.
 
 <div id="establish-initial-schema">
-  ## Définir le schéma initial {#establish-initial-schema}
+  ## Définir le schéma initial
 </div>
 
 Comme la table `posts` sera la cible de la plupart des requêtes d’analytique, nous nous concentrons sur la définition du schéma de cette table. Ces données sont disponibles dans le bucket S3 public `s3://datasets-documentation/stackoverflow/parquet/posts/*.parquet`, à raison d’un fichier par année.
@@ -133,7 +133,7 @@ INSERT INTO posts SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.
 > La requête ci-dessus charge 60 M de lignes. Bien que ce soit peu pour ClickHouse, les utilisateurs disposant d’une connexion Internet plus lente peuvent souhaiter ne charger qu’un sous-ensemble de données. Pour cela, il suffit de préciser, au moyen d’un motif glob, les années à charger, par ex. `https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/2008.parquet` ou `https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/{2008, 2009}.parquet`. Voir [ici](/fr/reference/functions/table-functions/file#globs-in-path) comment les motifs glob peuvent être utilisés pour cibler des sous-ensembles de fichiers.
 
 <div id="optimizing-types">
-  ## Optimisation des types {#optimizing-types}
+  ## Optimisation des types
 </div>
 
 L’un des secrets des performances des requêtes ClickHouse est la compression.
@@ -231,21 +231,19 @@ Nous ne conservons aucune valeur NULL dans notre nouveau schéma. L’insertion 
 Clés primaires (de tri) dans ClickHouse
 Les utilisateurs issus de bases de données OLTP recherchent souvent le concept équivalent dans ClickHouse.
 
-## Choisir une clé de tri {#choosing-an-ordering-key}
+<div id="choosing-an-ordering-key">
+  ## Choisir une clé de tri
+</div>
 
 À l&#39;échelle à laquelle ClickHouse est souvent utilisé, l&#39;efficacité de la mémoire et du disque est primordiale. Les données sont écrites dans les tables ClickHouse par blocs appelés parts, selon des règles qui régissent leur fusion en arrière-plan. Dans ClickHouse, chaque part possède son propre index primaire. Lorsque des parts sont fusionnées, les index primaires de la part résultante le sont également. L&#39;index primaire d&#39;une part comporte une entrée d&#39;index par groupe de lignes — cette technique est appelée indexation éparse.
 
-<div className="ch-image-md">
-  <Frame>
-    ![Indexation éparse dans ClickHouse](/images/data-modeling/schema-design-indices.webp)
-  </Frame>
-</div>
+<Image img="/images/data-modeling/schema-design-indices.webp" size="md" alt="Indexation éparse dans ClickHouse" />
 
 La clé choisie dans ClickHouse détermine non seulement l&#39;index, mais aussi l&#39;ordre dans lequel les données sont écrites sur le disque. Elle peut donc avoir un impact considérable sur le niveau de compression, ce qui peut à son tour affecter les performances des requêtes. Une clé de tri qui amène les valeurs de la plupart des colonnes à être écrites dans un ordre contigu permettra à l&#39;algorithme de compression sélectionné (ainsi qu&#39;aux codecs) de compresser les données plus efficacement.
 
 > Toutes les colonnes d&#39;une table seront triées selon la valeur de la clé de tri spécifiée, qu&#39;elles soient incluses ou non dans la clé elle-même. Par exemple, si `CreationDate` est utilisée comme clé, l&#39;ordre des valeurs dans toutes les autres colonnes correspondra à celui des valeurs de la colonne `CreationDate`. Plusieurs clés de tri peuvent être spécifiées — elles suivront alors la même sémantique qu&#39;une clause `ORDER BY` dans une requête `SELECT`.
 
-Quelques règles simples peuvent vous aider à choisir une clé de tri. Les critères ci-dessous peuvent parfois entrer en conflit ; examinez-les donc dans cet ordre. Ce processus vous permettra d&#39;identifier plusieurs clés, 4 à 5 étant généralement suffisantes :
+Quelques règles simples peuvent vous aider à choisir une clé de tri. Les critères ci-dessous peuvent parfois entrer en conflit ; examinez-les donc dans cet ordre. Ce processus vous permettra d&#39;identifier plusieurs clés, 4 à 5 étant généralement suffisantes :
 
 * Sélectionnez les colonnes qui correspondent à vos filtres les plus courants. Si une colonne est fréquemment utilisée dans des clauses `WHERE`, privilégiez son inclusion dans votre clé par rapport à des colonnes moins souvent utilisées.
   Préférez les colonnes qui permettent d&#39;exclure un pourcentage élevé du nombre total de lignes lors du filtrage, afin de réduire la quantité de données à lire.
@@ -255,7 +253,7 @@ Quelques règles simples peuvent vous aider à choisir une clé de tri. Les crit
 Lorsque vous identifiez le sous-ensemble de colonnes à utiliser pour la clé de tri, déclarez-les dans un ordre précis. Cet ordre peut fortement influencer à la fois l&#39;efficacité du filtrage sur les colonnes de clé secondaires dans les requêtes et le taux de compression des fichiers de données de la table. En général, il est préférable d&#39;ordonner les clés par cardinalité croissante. Il faut toutefois mettre cela en balance avec le fait que le filtrage sur des colonnes apparaissant plus tard dans la clé de tri sera moins efficace que sur celles apparaissant plus tôt dans le tuple. Trouvez le bon compromis entre ces comportements et tenez compte de vos modèles d&#39;accès (et surtout, testez différentes variantes).
 
 <div id="example">
-  ### Exemple {#example}
+  ### Exemple
 </div>
 
 En appliquant les recommandations ci-dessus à notre table `posts`, supposons que nos utilisateurs souhaitent effectuer des analyses avec filtrage par date et par type de publication, par ex. :
@@ -352,7 +350,7 @@ LIMIT 3
 Pour les utilisateurs intéressés par les gains de compression obtenus grâce à l’utilisation de types spécifiques et de clés de tri appropriées, consultez [La compression dans ClickHouse](/fr/guides/clickhouse/data-modelling/compression/compression-in-clickhouse). Si vous souhaitez améliorer davantage la compression, nous vous recommandons également la section [Choisir le bon codec de compression pour les colonnes](/fr/guides/clickhouse/data-modelling/compression/compression-in-clickhouse#choosing-the-right-column-compression-codec).
 
 <div id="next-data-modeling-techniques">
-  ## Suite : Techniques de modélisation des données {#next-data-modeling-techniques}
+  ## Suite : Techniques de modélisation des données
 </div>
 
 Jusqu&#39;à présent, nous n&#39;avons migré qu&#39;une seule table. Bien que cela nous ait permis d&#39;introduire quelques concepts fondamentaux de ClickHouse, la plupart des schémas ne sont malheureusement pas aussi simples.

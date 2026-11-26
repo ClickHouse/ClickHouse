@@ -55,7 +55,7 @@ struct AggregateFunctionTimeseriesCompensatedSumTraits
             count += added.count;
         }
 
-        [[nodiscard]] Float64 getSum() const { return sum + compensation; }
+        Float64 getSum() const { return sum + compensation; }
 
     private:
         void addCompensated(Float64 value)
@@ -101,7 +101,7 @@ struct AggregateFunctionTimeseriesCompensatedSumTraits
             sliding_sum.removeBefore(cut_off);
         }
 
-        [[nodiscard]] std::optional<ResultType> getResult(GridScaleTimestampType /*grid_timestamp*/) const
+        std::optional<ResultType> getResult(GridScaleTimestampType /*grid_timestamp*/) const
         {
             const Summary combined = sliding_sum.getCurrentSum();
 

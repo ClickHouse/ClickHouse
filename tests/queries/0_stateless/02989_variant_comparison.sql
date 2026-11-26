@@ -1,3 +1,4 @@
+set allow_experimental_variant_type=1;
 set allow_suspicious_types_in_order_by=1;
 set use_variant_default_implementation_for_comparisons = 0;
 

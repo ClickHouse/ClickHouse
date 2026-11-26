@@ -12,71 +12,15 @@ import SettingsInfoBlock from "/snippets/fr/components/SettingsInfoBlock/Setting
 
 Ces paramètres configurent le serveur ClickHouse et sont générés automatiquement à partir du code source de ClickHouse.
 
-## distributed_cache_apply_throttling_settings_from_client {#distributed_cache_apply_throttling_settings_from_client}
+## distributed_cache_apply_throttling_settings_from_client
 
 <SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />Indique si le serveur de cache doit appliquer les paramètres de limitation du débit reçus du client.
 
-## distributed_cache_keep_up_free_connections_ratio {#distributed_cache_keep_up_free_connections_ratio}
+## distributed_cache_keep_up_free_connections_ratio
 
 <SettingsInfoBlock type="Float" default_value="0.1" changeable_without_restart="No" />Limite souple du nombre de connexions actives que le distributed cache tentera de maintenir libres. Lorsque le nombre de connexions libres passe sous distributed&#95;cache&#95;keep&#95;up&#95;free&#95;connections&#95;ratio * max&#95;connections, les connexions dont l&#39;activité est la plus ancienne sont fermées jusqu&#39;à ce que ce nombre repasse au-dessus de la limite.
 
-## distributed_cache_temporary_data_background_retry_delay_milliseconds {#distributed_cache_temporary_data_background_retry_delay_milliseconds}
-
-<SettingsInfoBlock type="NonZeroUInt64" default_value="30000" changeable_without_restart="No" />Délai, en millisecondes, avant une nouvelle tentative en arrière-plan concernant des données temporaires validées.
-
-## distributed_cache_temporary_data_cleanup_period_milliseconds {#distributed_cache_temporary_data_cleanup_period_milliseconds}
-
-<SettingsInfoBlock type="NonZeroUInt64" default_value="1000" changeable_without_restart="No" />Période, en millisecondes, entre deux nettoyages des données temporaires validées et expirées.
-
-## distributed_cache_temporary_data_confirmation_retry_delay_milliseconds {#distributed_cache_temporary_data_confirmation_retry_delay_milliseconds}
-
-<SettingsInfoBlock type="UInt64" default_value="500" changeable_without_restart="No" />Délai, en millisecondes, avant une nouvelle tentative de confirmation de la publication des données temporaires validées.
-
-## distributed_cache_temporary_data_control_hello_timeout_milliseconds {#distributed_cache_temporary_data_control_hello_timeout_milliseconds}
-
-<SettingsInfoBlock type="NonZeroUInt64" default_value="2000" changeable_without_restart="No" />Un contrôle de données temporaires validé prolonge la durée de vie d’un fichier au plus jusqu’à l’instant du Hello de la connexion de contrôle + ce délai d’attente + le TTL, en millisecondes. Le client attend la réponse pendant la même durée après le Hello. Le client utilise sa propre valeur, lue lors de la création d’un fichier validé (ou au démarrage, pour les renouvellements en arrière-plan). Une valeur différente côté client et côté serveur de cache distribué ne ramène pas la durée de vie d’un fichier en deçà de Hello + TTL.
-
-## distributed_cache_temporary_data_max_bytes_per_server {#distributed_cache_temporary_data_max_bytes_per_server}
-
-<SettingsInfoBlock type="UInt64" default_value="1099511627776" changeable_without_restart="No" />Taille totale maximale, en octets, des fichiers temporaires validés conservés par un serveur de cache distribué. Les fichiers temporaires validés sont épinglés dans le cache de fichiers et ne peuvent pas être évincés tant qu&#39;ils n&#39;ont pas été libérés ou n&#39;ont pas expiré ; cette limite plafonne donc la part du cache qu&#39;ils peuvent occuper. La valeur par défaut est de 1 TiB. Lorsque la limite est atteinte, le serveur refuse la publication de nouveaux fichiers temporaires validés. `0` signifie illimité.
-
-## distributed_cache_temporary_data_max_connections_bypassing_pool {#distributed_cache_temporary_data_max_connections_bypassing_pool}
-
-<SettingsInfoBlock type="UInt64" default_value="5000" changeable_without_restart="Yes" />N’a d’effet que dans ClickHouse Cloud. Nombre maximal de connexions par serveur de cache distribué que les fichiers temporaires peuvent ouvrir en contournant le pool de connexions. Lorsque cette limite est atteinte, les données temporaires attendent une connexion issue du pool pendant `distributed_cache_wait_connection_from_pool_milliseconds`, puis échouent. `0` signifie aucune limite. Les brefs échanges de contrôle portant sur les données temporaires validées (confirmation, renouvellement, libération) ouvrent toujours une nouvelle connexion et ne sont pas comptabilisés. Peut être modifié sans redémarrage.
-
-## distributed_cache_temporary_data_max_control_batch_ids {#distributed_cache_temporary_data_max_control_batch_ids}
-
-<SettingsInfoBlock type="NonZeroUInt64" default_value="1024" changeable_without_restart="No" />Nombre maximal d&#39;ID de données temporaires validés que le client envoie dans une même requête de contrôle. Les valeurs supérieures à 65536 sont ramenées à 65536 (limite imposée par le protocole).
-
-## distributed_cache_temporary_data_max_files_per_server {#distributed_cache_temporary_data_max_files_per_server}
-
-<SettingsInfoBlock type="UInt64" default_value="100000" changeable_without_restart="No" />Nombre maximal de fichiers temporaires validés conservés par un serveur de cache distribué. La valeur par défaut est élevée, car cette limite ne sert que de garde-fou pour borner la mémoire nécessaire au suivi des fichiers ; la capacité est principalement limitée par `distributed_cache_temporary_data_max_bytes_per_server`. Lorsque la limite est atteinte, le serveur refuse la publication de nouveaux fichiers temporaires validés. `0` signifie aucune limite.
-
-## distributed_cache_temporary_data_pool_behaviour_on_limit {#distributed_cache_temporary_data_pool_behaviour_on_limit}
-
-<SettingsInfoBlock type="DistributedCachePoolBehaviourOnLimit" default_value="allocate_bypassing_pool" changeable_without_restart="Yes" />N’a d’effet que dans ClickHouse Cloud. Comportement des connexions du Distributed Cache pour les données temporaires lorsque la limite du pool de connexions est atteinte. Les données temporaires ne disposent d’aucun stockage d’objet vers lequel basculer : par défaut, une connexion contournant le pool est donc ouverte plutôt que de renvoyer une erreur. Ce paramètre s’applique aux fichiers temporaires des requêtes ainsi qu’à ceux des opérations en arrière-plan (fusions, sauvegardes). Les brefs échanges de contrôle portant sur les données temporaires validées (confirmation, renouvellement, libération) ouvrent toujours une nouvelle connexion et ne sont pas soumis à ce paramètre. Avec `wait`, le système attend une connexion issue d’un pool pendant `distributed_cache_wait_connection_from_pool_milliseconds`, puis échoue. Peut être modifié sans redémarrage.
-
-## distributed_cache_temporary_data_renewal_period_seconds {#distributed_cache_temporary_data_renewal_period_seconds}
-
-<SettingsInfoBlock type="NonZeroUInt64" default_value="900" changeable_without_restart="No" />Période, en secondes, entre deux renouvellements de la propriété des données temporaires validées.
-
-## distributed_cache_temporary_data_ttl_seconds {#distributed_cache_temporary_data_ttl_seconds}
-
-<SettingsInfoBlock type="NonZeroUInt64" default_value="3600" changeable_without_restart="No" />Durée de vie, en secondes, d&#39;un fichier temporaire validé.
-
-## distributed_cache_warmer_max_bytes_in_queue {#distributed_cache_warmer_max_bytes_in_queue}
-
-<SettingsInfoBlock type="UInt64" default_value="107374182400" changeable_without_restart="No" />N’a d’effet que dans ClickHouse Cloud. Taille totale maximale des plages que le préchauffeur de cache conserve en file d’attente pour un disque dépourvu de cache du système de fichiers local ; au-delà de cette limite, les plages les plus anciennes sont supprimées (avec un cache local, le préchauffeur utilise son paramètre `max_size`). La valeur zéro signifie aucune limite.
-
-## distributed_cache_warmer_max_file_segment_size {#distributed_cache_warmer_max_file_segment_size}
-
-<SettingsInfoBlock type="NonZeroUInt64" default_value="33554432" changeable_without_restart="No" />N’a d’effet que dans ClickHouse Cloud. Taille des plages par lesquelles le préchauffeur de cache lit une partie de données récupérée dans le Distributed Cache lorsque le disque de cette partie de données ne dispose d’aucun cache du système de fichiers local (avec un cache local, le préchauffeur utilise son propre `max_file_segment_size`).
-
-## distributed_cache_warmer_max_segments_in_queue {#distributed_cache_warmer_max_segments_in_queue}
-
-<SettingsInfoBlock type="UInt64" default_value="100000" changeable_without_restart="No" />N’a d’effet que dans ClickHouse Cloud. Nombre maximal de plages que le préchauffeur de cache conserve en file d’attente pour un disque dépourvu de cache du système de fichiers local ; au-delà de cette limite, les plages les plus anciennes sont supprimées (avec un cache local, le préchauffeur utilise son paramètre `max_elements`). Une valeur de zéro signifie aucune limite.
-
-## distributed_cache_write_pool_size {#distributed_cache_write_pool_size}
+## distributed_cache_write_pool_size
 
 <SettingsInfoBlock type="UInt64" default_value="100" changeable_without_restart="No" />Le nombre maximal de requêtes d’écriture du distributed cache pouvant s’exécuter simultanément sur un thread d’arrière-plan (toutes requêtes confondues). Lorsque cette limite est atteinte, l’écriture dans le cache en écriture directe est ignorée (les données sont toujours écrites dans le stockage d’objets) ; elle n’est donc ni bloquée dans l’attente d’un slot ni à l’origine d’un nombre illimité de threads. Les écritures de données temporaires n’utilisent pas de threads d’arrière-plan et ne sont pas affectées par cette limite.
 

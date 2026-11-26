@@ -82,7 +82,7 @@ public:
         high_nibble_table[high] = high_nibble_bit[high];
     }
 
-    [[nodiscard]] ALWAYS_INLINE constexpr bool contains(char c) const
+    ALWAYS_INLINE constexpr bool contains(char c) const
     {
         return table[static_cast<UInt8>(c)];
     }
@@ -144,7 +144,7 @@ private:
     static constexpr ptrdiff_t SCALAR_PREFIX = 16;
 
 #if defined(__SSSE3__) || defined(__aarch64__)
-    /// Vector extensions lower each lane operation to one SSE/NEON instruction.
+    /// GCC/Clang vector extensions lower each lane operation to one SSE/NEON instruction.
     /// Only the byte permutation has no portable spelling.
     using UInt8x16 = UInt8 __attribute__((vector_size(16)));
     using Int8x16 = Int8 __attribute__((vector_size(16)));
@@ -178,7 +178,7 @@ private:
     }
 
     /// Tests the membership of 16 bytes at once: 0xFF in the lanes of the bytes that are in the set, 0x00 in the others.
-    [[nodiscard]] ALWAYS_INLINE Int8x16 containsVector(UInt8x16 bytes) const
+    ALWAYS_INLINE Int8x16 containsVector(UInt8x16 bytes) const
     {
         const auto low_table = std::bit_cast<UInt8x16>(low_nibble_table);
         const auto high_table = std::bit_cast<UInt8x16>(high_nibble_table);

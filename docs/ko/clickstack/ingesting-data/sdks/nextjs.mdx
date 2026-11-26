@@ -8,71 +8,103 @@ keywords: ['clickstack', 'sdk', '로깅', '통합', '애플리케이션 모니�
 
 import { ClickStackIntegrates } from '/snippets/ko/components/ClickStackIntegrates/ClickStackIntegrates.jsx'
 
-Next.js 배포 환경에 맞는 서버 측 instrumentation을 선택하세요.
+ClickStack은 Next 13.2+의
+[Next.js 서버리스 함수](https://nextjs.org/docs/pages/building-your-application/optimizing/open-telemetry#manual-opentelemetry-configuration)에서
+네이티브 OpenTelemetry 트레이스를 수집할 수 있습니다.
 
-* **자체 호스팅, Node.js 런타임:** ClickStack Node.js SDK를 사용하세요.
-* **Vercel 또는 Edge 런타임:** `@vercel/otel`을 사용하세요.
+<ClickStackIntegrates signals={['logs', 'traces']} />
 
-브라우저 텔레메트리와 세션 리플레이는 [브라우저 SDK 가이드](/ko/clickstack/ingesting-data/sdks/browser)를 참조하세요.
+<Note>
+  세션 리플레이 또는 브라우저 측 모니터링이 필요하다면, 대신 [브라우저 통합](/ko/clickstack/ingesting-data/sdks/browser)을 설치하세요.
+</Note>
 
-<ClickStackIntegrates signals={['traces']} />
+## 설치하기 {#installing}
 
-## 자체 호스팅 Next.js {#self-hosted-nextjs}
+### instrumentation hook 활성화(v15 이하 필수) {#enable-instrumentation-hook}
 
-Node.js 22.15 이상 버전을 사용하고 SDK를 설치하십시오:
+시작하려면 `next.config.js`에서 `experimental.instrumentationHook = true;`를 설정해 Next.js instrumentation hook을 활성화해야 합니다.
 
-```shell
-npm install @clickhouse/clickstack-node
+**예시:**
+
+```javascript
+const nextConfig = {
+  experimental: {
+    instrumentationHook: true,
+  },
+  // otel 패키지 경고 무시
+  // https://github.com/open-telemetry/opentelemetry-js/issues/4173#issuecomment-1822938936
+  webpack: (
+    config,
+    { buildId, dev, isServer, defaultLoaders, nextRuntime, webpack },
+  ) => {
+    if (isServer) {
+      config.ignoreWarnings = [{ module: /opentelemetry/ }];
+    }
+    return config;
+  },
+};
+
+module.exports = nextConfig;
 ```
 
-프로젝트 루트에 `instrumentation.ts`를 생성하십시오. 애플리케이션에서 `src` 디렉터리를 사용한다면 `src`에 생성하십시오. SDK는 Node.js 런타임에서만 초기화하십시오:
+### ClickHouse OpenTelemetry SDK 설치하기 {#install-sdk}
 
-```typescript
+<Tabs>
+  <Tab title="NPM">
+    ```shell
+    npm install @hyperdx/node-opentelemetry 
+    ```
+  </Tab>
+
+  <Tab title="Yarn">
+    ```shell
+    yarn add @hyperdx/node-opentelemetry 
+    ```
+  </Tab>
+</Tabs>
+
+### instrumentation 파일 만들기 {#create-instrumentation-files}
+
+Next.js 프로젝트 루트에 `instrumentation.ts`(또는 `.js`) 파일을 만들고, 아래 내용을 추가하십시오:
+
+```javascript
 export async function register() {
   if (process.env.NEXT_RUNTIME === 'nodejs') {
-    const { init } = await import('@clickhouse/clickstack-node');
-    init();
+    const { init } = await import('@hyperdx/node-opentelemetry');
+    init({
+      apiKey: '<YOUR_INGESTION_API_KEY>', // optionally configure via `HYPERDX_API_KEY` env var
+      service: '<YOUR_SERVICE_NAME>', // optionally configure via `OTEL_SERVICE_NAME` env var
+      additionalInstrumentations: [], // optional, default: []
+    });
   }
 }
 ```
 
-SDK가 서버 번들 외부에서 로드되도록 기존 Next.js 구성의 `serverExternalPackages`에 SDK를 추가하세요:
+이렇게 하면 Next.js가 서버리스 함수가 호출될 때마다 OpenTelemetry instrumentation을 불러올 수 있습니다.
 
-```javascript
-// next.config.mjs
-export default {
-  serverExternalPackages: ['@clickhouse/clickstack-node'],
-};
-```
+### 환경 변수 구성 {#configure-environment-variables}
 
-아래에서 대상을 구성하고, 애플리케이션을 식별할 수 있도록 `OTEL_SERVICE_NAME`을 설정하십시오. 이와 함께 SDK를 사전 로드하거나 다른 OpenTelemetry SDK를 초기화하지 마십시오. 추가 옵션은 [Node.js 가이드](/ko/clickstack/ingesting-data/sdks/nodejs)를 참조하십시오.
+OpenTelemetry를 통해 트레이스를 ClickStack으로 직접 전송하는 경우, 스팬이 OTel collector로 전송되도록 다음 환경 변수를 설정하여 Next.js
+서버를 시작해야 합니다:
 
-종료 처리 및 배포 시 고려 사항은 [SDK의 Next.js 가이드](https://github.com/ClickHouse/clickstack-node#nextjs)를 참조하십시오.
+<Tabs>
+  <Tab title="Managed ClickStack">
+    ```sh copy
+    OTEL_SERVICE_NAME=<YOUR_SERVICE_NAME> \
+    OTEL_EXPORTER_OTLP_ENDPOINT=<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT>
+    npm run dev
+    ```
+  </Tab>
 
-## Vercel 및 Edge 런타임 {#vercel-or-edge}
+  <Tab title="ClickStack 오픈 소스">
+    ```sh copy
+    HYPERDX_API_KEY=<YOUR_INGESTION_API_KEY> \
+    OTEL_SERVICE_NAME=<YOUR_SERVICE_NAME> \
+    OTEL_EXPORTER_OTLP_ENDPOINT=<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT>
+    npm run dev
+    ```
+  </Tab>
+</Tabs>
 
-[Next.js OpenTelemetry 설정 지침](https://nextjs.org/docs/app/guides/open-telemetry)에 따라 `@vercel/otel`을 사용하십시오. 위의 ClickStack Node.js SDK 초기화 대신 이 방식으로 설정하십시오.
-
-아래 연결 설정을 사용하여 [OTLP 내보내기](https://github.com/vercel/otel/tree/main/packages/otel#registerotelconfig-configuration)를 구성하십시오. 예시로 지정된 대상과 신호별 엔드포인트 재정의는 모두 아래 값으로 대체하고, 배포 구성에 변수를 설정하십시오.
-
-Vercel 배포에서 이미 추적 통합을 사용하고 있다면 이 대상으로 데이터를 보내도록 [사용자 정의 익스포터](https://nextjs.org/docs/app/guides/open-telemetry#custom-exporters)를 구성하십시오. 엔드포인트 환경 변수만으로는 기존 통합 설정이 재정의되지 않습니다.
-
-## 대상 구성 {#configure-destination}
-
-어떤 instrumentation 옵션을 사용하든 서비스 이름을 설정하십시오:
-
-```shell
-export OTEL_SERVICE_NAME='my-nextjs-app'
-```
-
-ClickStack 수집기의 OTLP HTTP 엔드포인트와 수집 키를 설정하십시오. collector에 TLS가 구성되어 있지 않다면 `http://`를 사용하십시오. collector 설정 방법은 [OpenTelemetry로 데이터 수집하기](/ko/clickstack/ingesting-data/opentelemetry)를 참조하십시오.
-
-```shell
-export OTEL_EXPORTER_OTLP_ENDPOINT='https://YOUR_COLLECTOR_HOST:4318'
-export OTEL_EXPORTER_OTLP_HEADERS='authorization=YOUR_INGESTION_API_KEY'
-export OTEL_EXPORTER_OTLP_PROTOCOL='http/protobuf'
-```
-
-## 수집 확인 {#verify-ingestion}
-
-애플리케이션을 시작한 다음 서버 렌더링 페이지나 API 라우트로 요청을 보내십시오. ClickStack에서 최근 시간 범위를 선택한 후 Traces에서 애플리케이션의 서비스 이름을 찾으십시오.
+Vercel에 배포하는 경우, 위의 모든 환경 변수가
+배포 환경에 맞게 구성되어 있는지 확인하세요.

@@ -45,11 +45,9 @@ CREATE TABLE s3_engine_table (name String, value UInt32)
 * `format` — 文件的[格式](/zh/reference/formats/index#formats-overview)。
 * `aws_access_key_id`, `aws_secret_access_key` - [AWS](https://aws.amazon.com/) 账户用户的长期凭证。你可以使用它们对请求进行身份验证。该参数是可选的。如果未指定凭证，则会使用配置文件中的凭证。更多信息请参见 [Using S3 for Data Storage](/zh/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-s3)。
 * `compression` — 压缩类型。支持的值：`none`、`gzip/gz`、`deflate`、`brotli/br`、`xz/LZMA`、`zstd/zst`、`lz4`、`bz2`、`snappy`。该参数是可选的。默认情况下，会根据文件扩展名自动检测压缩类型。对于 `snappy`，传输格式由 [snappy&#95;mode](/zh/reference/settings/session-settings/other#snappy_mode) 设置选择 (默认为 `basic`) 。
-* `partition_strategy` – 可选值：`wildcard` 或 `hive`。`wildcard` 要求路径中包含 `{_partition_id}`，它会被替换为分区键。`hive` 不允许使用通配符，假定该路径是表根路径，并生成 Hive 风格的分区目录，以 Snowflake IDs 作为文件名、文件格式作为扩展名。未显式指定策略时，包含 `{_partition_id}` 的路径使用 `wildcard`。包含其他 通配符 的路径不使用分区策略，并忽略 `PARTITION BY`。不包含 通配符 的路径在 `file_like_engine_default_partition_strategy` 为 `hive` 时使用 `hive`；否则不使用分区策略。
+* `partition_strategy` – 可选值：`wildcard` 或 `hive`。`wildcard` 要求路径中包含 `{_partition_id}`，它会被替换为分区键。`hive` 不允许使用通配符，假定该路径是表根路径，并生成 Hive 风格的分区目录，以 Snowflake IDs 作为文件名、文件格式作为扩展名。未显式指定策略时，包含 `{_partition_id}` 的路径使用 `wildcard`。包含其他 glob 的路径不使用分区策略，并忽略 `PARTITION BY`。不包含 glob 的路径在 `file_like_engine_default_partition_strategy` 为 `hive` 时使用 `hive`；否则不使用分区策略。
 * `partition_columns_in_data_file` - 仅与 `hive` 分区策略一起使用。用于告知 ClickHouse 是否应在数据文件中包含分区列。默认为 `false`。
 * `storage_class_name` - 可选值：`STANDARD`、`REDUCED_REDUNDANCY`、`STANDARD_IA`、`ONEZONE_IA`、`INTELLIGENT_TIERING`、`GLACIER_IR`、`EXPRESS_ONEZONE`。仅支持可立即检索的 S3 storage classes (不支持 `GLACIER` 和 `DEEP_ARCHIVE` 等归档类) 。可用于指定 [AWS S3 Intelligent Tiering](https://aws.amazon.com/s3/storage-classes/intelligent-tiering/)。
-* `upload_checksum_algorithm` - 可选。上传时使用的校验和算法：`MD5` (以 `Content-MD5` 发送) 、`CRC32` 或 `SHA256` (以 `x-amz-checksum-*` 发送) 。留空时使用 `Content-MD5`，对于 S3Express 桶则使用 `CRC32`。对 GCS 无效。
-* `delete_checksum_algorithm` - 可选。批量 `DeleteObjects` 请求所用的校验和算法：`MD5` (以 `Content-MD5` 发送) 、`CRC32` 或 `SHA256`。留空时使用 `MD5`；对于 S3Express 桶使用 `CRC32`；当 `MD5` 不可用 (FIPS 模式) 或被服务器拒绝时使用 `SHA256`。对 GCS 无效。
 * `extra_credentials` - 可选。用于在 ClickHouse Cloud 中传递用于基于角色的访问控制的 `role_arn`。配置步骤请参见 [Secure S3](/zh/products/cloud/guides/data-sources/accessing-s3-data-securely)。
 
 ### 数据缓存 {#data-cache}
@@ -85,17 +83,17 @@ SETTINGS filesystem_cache_name = 'cache_for_s3', enable_filesystem_cache = 1;
 
 ### PARTITION BY {#partition-by}
 
-`PARTITION BY` —— 可选。在大多数情况下，你不需要分区键；即使需要，通常也无需使用比按月更细的分区键。分区主要是一种数据管理手段：每个分区都会写入单独的文件。使用 `hive` 分区策略时，对分区列进行过滤的查询只会读取匹配分区的文件。绝不要使用粒度过细的分区。不要按客户标识符或名称对数据进行分区。
+`PARTITION BY` —— 可选。在大多数情况下，你不需要分区键；即使需要，通常也无需使用比按月更细的分区键。分区不会加快查询速度 (与 `ORDER BY` 表达式不同) 。绝不要使用粒度过细的分区。不要按客户标识符或名称对数据进行分区 (应改为将客户标识符或名称作为 `ORDER BY` 表达式中的第一列) 。
 
-`hive` 分区策略是 `file_like_engine_default_partition_strategy` 设置的默认值。使用该策略时，分区键必须由表列组成，例如 `PARTITION BY (year, month)`。像 `toYYYYMM(date_column)` 这样的表达式需要使用 `wildcard` 策略，并在路径中包含 `{_partition_id}`。使用 `wildcard` 策略的表只能写入，不能读取。
+如果按月分区，请使用 `toYYYYMM(date_column)` 表达式，其中 `date_column` 是一个 [Date](/zh/reference/data-types/date) 类型的日期列。这里的分区名称采用 `"YYYYMM"` 格式。
 
 #### 分区策略 {#partition-strategy}
 
 `wildcard`：将文件路径中的 `{_partition_id}` 通配符替换为实际的分区键。不支持读取。当路径包含 `{_partition_id}` 时，默认选择此策略。
 
-未设置 `partition_strategy` 时，包含其他 通配符 的路径不使用分区策略，并忽略 `PARTITION BY`。不含 通配符 的路径会在 `file_like_engine_default_partition_strategy` 为 `hive` 时使用 `hive`；否则不使用分区策略。
+未设置 `partition_strategy` 时，包含其他 glob 的路径不使用分区策略，并忽略 `PARTITION BY`。不含 glob 的路径会在 `file_like_engine_default_partition_strategy` 为 `hive` 时使用 `hive`；否则不使用分区策略。
 
-`hive` 实现了适用于读写的 Hive 风格分区。读取通过递归 通配符 模式实现，等价于 `SELECT * FROM s3('table_root/**.parquet')`，区别在于会按照 Hive 生态系统的惯例跳过隐藏路径 (即表根目录下以 `_` 或 `.` 开头的路径分段，例如 `_temporary/`、`.spark-staging-<id>/`、`_SUCCESS`) 。对于未使用分区策略的普通 通配符 路径，可通过 `s3_skip_hidden_files` / `azure_skip_hidden_files` / `hdfs_skip_hidden_files` 设置实现相同的过滤。
+`hive` 实现了适用于读写的 Hive 风格分区。读取通过递归 glob 模式实现，等价于 `SELECT * FROM s3('table_root/**.parquet')`。
 写入时会按以下格式生成文件：`<prefix>/<key1=val1/key2=val2...>/<snowflakeid>.<toLower(file_format)>`。
 
 注意：使用 `hive` 分区策略时，`use_hive_partitioning` 设置不会生效。

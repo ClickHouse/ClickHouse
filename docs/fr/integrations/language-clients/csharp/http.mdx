@@ -11,6 +11,8 @@ integration:
   - website: 'https://github.com/ClickHouse/clickhouse-cs'
 ---
 
+import { Image } from "/snippets/fr/components/Image.jsx";
+
 Le client C# officiel pour se connecter à ClickHouse.
 Le code source du client est disponible dans le [dépôt GitHub](https://github.com/ClickHouse/clickhouse-cs).
 Initialement développé par [Oleg V. Kozlyuk](https://github.com/DarkWanderer).
@@ -308,19 +310,11 @@ Les informations de votre service ClickHouse Cloud sont disponibles dans la cons
 
 Sélectionnez un service et cliquez sur **Connect** :
 
-<div className="ch-image-md">
-  <Frame>
-    ![Bouton Connect d'un service ClickHouse Cloud](/images/_snippets/cloud-connect-button.webp)
-  </Frame>
-</div>
+<Image img="/images/_snippets/cloud-connect-button.webp" size="md" alt="Bouton Connect d'un service ClickHouse Cloud" border />
 
 Choisissez **C#**. Les informations de connexion s&#39;affichent en dessous.
 
-<div className="ch-image-md">
-  <Frame>
-    ![Informations de connexion C# de ClickHouse Cloud](/images/_snippets/connection-details-csharp.webp)
-  </Frame>
-</div>
+<Image img="/images/_snippets/connection-details-csharp.webp" size="md" alt="Informations de connexion C# de ClickHouse Cloud" border />
 
 Si vous utilisez ClickHouse en autogéré, les informations de connexion vous sont fournies par votre administrateur ClickHouse.
 
@@ -332,7 +326,7 @@ using ClickHouse.Driver;
 using var client = new ClickHouseClient("Host=localhost;Username=default;Password=secret");
 ```
 
-Ou avec `ClickHouseClientSettings` :
+Ou avec `ClickHouseClientSettings` :
 
 ```csharp
 using ClickHouse.Driver;
@@ -346,7 +340,7 @@ var settings = new ClickHouseClientSettings
 using var client = new ClickHouseClient(settings);
 ```
 
-Pour les scénarios d&#39;injection de dépendances, utilisez `IHttpClientFactory` :
+Pour les scénarios d&#39;injection de dépendances, utilisez `IHttpClientFactory` :
 
 ```csharp
 // In your DI configuration. No AutomaticDecompression needed — the driver decodes
@@ -1912,23 +1906,23 @@ Lors de l’insertion de données, le driver convertit les types .NET en types C
 
 #### Types de date et d’heure {#type-map-writing-datetime}
 
-| Type ClickHouse | Types .NET acceptés                                                           | Notes                                                                                              |
+| Type ClickHouse | Types .NET acceptés                                                           | Remarques                                                                                              |
 | --------------- | ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| Date            | `DateTime`, `DateTimeOffset`, `DateOnly`, types NodaTime                      | Converti en nombre de jours Unix au format UInt16 ; plage prise en charge : `[1970-01-01, 2149-06-06]` |
-| Date32          | `DateTime`, `DateTimeOffset`, `DateOnly`, types NodaTime                      | Converti en nombre de jours Unix au format Int32 ; plage prise en charge : `[1900-01-01, 2299-12-31]`  |
-| DateTime        | `DateTime`, `DateTimeOffset`, `DateOnly`, types NodaTime                      | Voir les précisions ci-dessous ; plage prise en charge : `[1970-01-01, 2106-02-07 06:28:15]` UTC       |
+| Date            | `DateTime`, `DateTimeOffset`, `DateOnly`, types NodaTime                      | Converti en nombre de jours Unix au format UInt16 ; plage prise en charge : `[1970-01-01, 2149-06-06]` |
+| Date32          | `DateTime`, `DateTimeOffset`, `DateOnly`, types NodaTime                      | Converti en nombre de jours Unix au format Int32 ; plage prise en charge : `[1900-01-01, 2299-12-31]`  |
+| DateTime        | `DateTime`, `DateTimeOffset`, `DateOnly`, types NodaTime                      | Voir les précisions ci-dessous ; plage prise en charge : `[1970-01-01, 2106-02-07 06:28:15]` UTC       |
 | DateTime32      | `DateTime`, `DateTimeOffset`, `DateOnly`, types NodaTime                      | Identique à DateTime                                                                                   |
 | DateTime64      | `DateTime`, `DateTimeOffset`, `DateOnly`, types NodaTime                      | Précision déterminée par le paramètre Scale                                                            |
-| Time            | `TimeSpan`, `TimeOnly`, `int`                                                 | Valeur bornée à ±999:59:59 ; int est interprété comme un nombre de secondes                            |
-| Time64          | `TimeSpan`, `TimeOnly`, `decimal`, `double`, `float`, `int`, `long`, `string` | Chaîne analysée au format `[-]HHH:MM:SS[.fraction]` ; valeur bornée à ±999:59:59.999999999             |
+| Time            | `TimeSpan`, `TimeOnly`, `int`                                                 | Valeur bornée à ±999:59:59 ; int est interprété comme un nombre de secondes                            |
+| Time64          | `TimeSpan`, `TimeOnly`, `decimal`, `double`, `float`, `int`, `long`, `string` | Chaîne analysée au format `[-]HHH:MM:SS[.fraction]` ; valeur bornée à ±999:59:59.999999999             |
 
 <Note>
   **Valeurs hors plage**
 
-  Lors de l’écriture en binaire, les valeurs `Date`, `Date32`, `DateTime` et `DateTime32` hors de leur plage prise en charge déclenchent une `ArgumentOutOfRangeException` au moment de l’appel à `Write`. L’exception indique le type de la colonne et la plage prise en charge. Auparavant, ces valeurs pouvaient être tronquées sans avertissement lors de leur conversion en entier 32 bits, puis réinterprétées par le serveur, ce qui produisait des timestamps valides, mais erronés.
+  Lors de l’écriture en binaire, les valeurs `Date`, `Date32`, `DateTime` et `DateTime32` hors de leur plage prise en charge déclenchent une `ArgumentOutOfRangeException` au moment de l’appel à `Write`. L’exception indique le type de la colonne et la plage prise en charge. Auparavant, ces valeurs pouvaient être tronquées sans avertissement lors de leur conversion en entier 32 bits, puis réinterprétées par le serveur, ce qui produisait des timestamps valides, mais erronés.
 </Note>
 
-Le driver tient compte de `DateTime.Kind` lors de l’écriture des valeurs :
+Le driver tient compte de `DateTime.Kind` lors de l’écriture des valeurs :
 
 | DateTime.Kind | Paramètres HTTP                                                                             | Écriture en masse                                                   |
 | ------------- | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
@@ -1938,7 +1932,7 @@ Le driver tient compte de `DateTime.Kind` lors de l’écriture des valeurs :
 
 Les valeurs `DateTimeOffset` conservent toujours l’instant exact.
 
-**Exemple : DateTime UTC (instant préservé)**
+**Exemple : DateTime UTC (instant préservé)**
 
 ```csharp
 var utcTime = new DateTime(2024, 1, 15, 12, 0, 0, DateTimeKind.Utc);
@@ -1947,7 +1941,7 @@ var utcTime = new DateTime(2024, 1, 15, 12, 0, 0, DateTimeKind.Utc);
 // Read from DateTime('UTC') column: 12:00 UTC
 ```
 
-**Exemple : DateTime non spécifié (heure locale)**
+**Exemple : DateTime non spécifié (heure locale)**
 
 ```csharp
 var wallClock = new DateTime(2024, 1, 15, 14, 30, 0, DateTimeKind.Unspecified);
@@ -1955,7 +1949,7 @@ var wallClock = new DateTime(2024, 1, 15, 14, 30, 0, DateTimeKind.Unspecified);
 // Read back from DateTime('Europe/Amsterdam') column: 14:30
 ```
 
-**Recommandation :** pour un comportement aussi simple et prévisible que possible, utilisez `DateTimeKind.Utc` ou `DateTimeOffset` pour toutes les opérations sur les valeurs DateTime. Votre code se comportera ainsi de la même manière, quel que soit le fuseau horaire du serveur, du client ou de la colonne.
+**Recommandation :** pour un comportement aussi simple et prévisible que possible, utilisez `DateTimeKind.Utc` ou `DateTimeOffset` pour toutes les opérations sur les valeurs DateTime. Votre code se comportera ainsi de la même manière, quel que soit le fuseau horaire du serveur, du client ou de la colonne.
 
 #### Paramètres HTTP et copie en masse : quelle différence ? {#datetime-http-param-vs-bulkcopy}
 

@@ -18,7 +18,9 @@ doc_type: 'reference'
   이러한 타입의 값을 처리할 때 모호성이 발생할 수 있기 때문입니다. 기본적으로 이런 `Variant` 타입을 생성하면 예외가 발생하지만, 설정 `allow_suspicious_variant_types`를 사용해 활성화할 수 있습니다.
 </Note>
 
-## Variant 생성하기 {#creating-variant}
+<div id="creating-variant">
+  ## Variant 생성하기
+</div>
 
 테이블 컬럼 정의에서 `Variant` 타입을 사용하는 방법:
 
@@ -108,7 +110,9 @@ SELECT map('a', range(number), 'b', number, 'c', 'str_' || toString(number)) as 
 └───────────────────────────────┘
 ```
 
-## Variant 중첩 타입을 서브컬럼으로 읽기 {#reading-variant-nested-types-as-subcolumns}
+<div id="reading-variant-nested-types-as-subcolumns">
+  ## Variant 중첩 타입을 서브컬럼으로 읽기
+</div>
 
 Variant 타입은 타입 이름을 서브컬럼으로 사용해 Variant 컬럼에서 특정 중첩 타입 하나를 읽을 수 있도록 지원합니다.
 따라서 `variant Variant(T1, T2, T3)` 컬럼이 있으면 `variant.T2` 구문을 사용해 `T2` 타입의 서브컬럼을 읽을 수 있습니다.
@@ -186,11 +190,15 @@ SELECT toTypeName(variantType(v)) FROM test LIMIT 1;
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-## Variant 컬럼과 다른 컬럼 사이의 변환 {#conversion-between-a-variant-column-and-other-columns}
+<div id="conversion-between-a-variant-column-and-other-columns">
+  ## Variant 컬럼과 다른 컬럼 사이의 변환
+</div>
 
 `Variant` 타입의 컬럼에 대해 수행할 수 있는 변환은 4가지입니다.
 
-### String 컬럼을 Variant 컬럼으로 변환하기 {#converting-a-string-column-to-a-variant-column}
+<div id="converting-a-string-column-to-a-variant-column">
+  ### String 컬럼을 Variant 컬럼으로 변환하기
+</div>
 
 `String`에서 `Variant`로의 변환은 문자열 값을 파싱해 `Variant` 타입의 값을 추출하는 방식으로 수행됩니다:
 
@@ -237,7 +245,9 @@ SELECT '[1, 2, 3]'::Variant(String, Array(UInt64)) as variant, variantType(varia
 └───────────┴──────────────┘
 ```
 
-### 일반 컬럼을 Variant 컬럼으로 변환하기 {#converting-an-ordinary-column-to-a-variant-column}
+<div id="converting-an-ordinary-column-to-a-variant-column">
+  ### 일반 컬럼을 Variant 컬럼으로 변환하기
+</div>
 
 타입이 `T`인 일반 컬럼은 해당 타입을 포함하는 `Variant` 컬럼으로 변환할 수 있습니다:
 
@@ -263,7 +273,9 @@ SELECT '[1, 2, 3]'::Variant(String)::Variant(String, Array(UInt64), UInt64) as v
 └───────────┴──────────────┘
 ```
 
-### Variant 컬럼을 일반 컬럼으로 변환하기 {#converting-a-variant-column-to-an-ordinary-column}
+<div id="converting-a-variant-column-to-an-ordinary-column">
+  ### Variant 컬럼을 일반 컬럼으로 변환하기
+</div>
 
 `Variant` 컬럼은 일반 컬럼으로 변환할 수 있습니다. 이 경우 모든 중첩된 variant가 대상 타입으로 변환됩니다:
 
@@ -281,9 +293,9 @@ SELECT v::Nullable(Float64) FROM test;
 └──────────────────────────────┘
 ```
 
-대상 타입으로 변환할 수 없는 대안 타입이 있더라도, 컬럼에 해당 대안 타입의 값이 포함된 경우에만 오류가 발생합니다.
-
-### Variant를 다른 Variant로 변환하기 {#converting-a-variant-to-another-variant}
+<div id="converting-a-variant-to-another-variant">
+  ### Variant를 다른 Variant로 변환하기
+</div>
 
 `Variant` 컬럼은 다른 `Variant` 컬럼으로 변환할 수 있지만, 대상 `Variant` 컬럼에 원래 `Variant`의 모든 중첩 타입이 포함된 경우에만 가능합니다:
 
@@ -301,7 +313,9 @@ SELECT v::Variant(UInt64, String, Array(UInt64)) FROM test;
 └───────────────────────────────────────────────────┘
 ```
 
-## 데이터에서 Variant 타입 읽기 {#reading-variant-type-from-the-data}
+<div id="reading-variant-type-from-the-data">
+  ## 데이터에서 Variant 타입 읽기
+</div>
 
 모든 텍스트 형식(TSV, CSV, CustomSeparated, Values, JSONEachRow 등)에서 `Variant` 타입을 읽을 수 있습니다. 데이터를 파싱하는 동안 ClickHouse는 값을 가장 적합한 Variant 타입으로 삽입하려고 시도합니다.
 
@@ -334,7 +348,9 @@ $$)
 └─────────────────────┴───────────────┴──────┴───────┴─────────────────────┴─────────┘
 ```
 
-## Variant 타입 값 비교 {#comparing-values-of-variant-data}
+<div id="comparing-values-of-variant-data">
+  ## Variant 타입 값 비교
+</div>
 
 `Variant` 타입의 값은 동일한 `Variant` 타입의 값과만 비교할 수 있습니다.
 
@@ -466,7 +482,9 @@ SELECT v, variantType(v) FROM test ORDER by v;
 
 **참고** 기본적으로 `Variant` 타입은 `GROUP BY`/`ORDER BY` 키로 사용할 수 없습니다. 사용하려면 이 타입의 특수한 비교 규칙을 고려하고 `allow_suspicious_types_in_group_by`/`allow_suspicious_types_in_order_by` 설정을 활성화하십시오.
 
-## Variant를 지원하는 JSONExtract 함수 {#jsonextract-functions-with-variant}
+<div id="jsonextract-functions-with-variant">
+  ## Variant를 지원하는 JSONExtract 함수
+</div>
 
 모든 `JSONExtract*` 함수는 `Variant` 타입을 지원합니다.
 
@@ -500,7 +518,9 @@ SELECT JSONExtractKeysAndValues('{"a" : 42, "b" : "Hello", "c" : [1,2,3]}', 'Var
 └────────────────────────────────────────┴───────────────────────────────────────────────────────┘
 ```
 
-## Variant 인수를 사용하는 함수 {#functions-with-variant-arguments}
+<div id="functions-with-variant-arguments">
+  ## Variant 인수를 사용하는 함수
+</div>
 
 ClickHouse의 대부분의 함수는 **Variant에 대한 기본 구현**을 통해 `Variant` 타입 인수를 자동으로 지원합니다.
 `26.1` 버전부터는 Variant 타입을 명시적으로 처리하지 않는 함수에 Variant 컬럼이 전달되면 ClickHouse는 다음을 수행합니다:
@@ -570,7 +590,9 @@ SELECT v + 10 AS result, toTypeName(result) FROM test3;
   0으로 나누기, 메모리 부족)는 실제 문제를 조용히 숨기지 않도록 평소처럼 그대로 발생합니다.
 </Note>
 
-### 유형 불일치 시 동작 {#variant-type-mismatch-behavior}
+<div id="variant-type-mismatch-behavior">
+  ### 유형 불일치 시 동작
+</div>
 
 설정 `variant_throw_on_type_mismatch`는 함수가 `Variant` 컬럼에 적용될 때, 행에 실제로 저장된 유형이 해당 함수와 호환되지 않으면 어떻게 처리할지를 제어합니다:
 
@@ -583,10 +605,10 @@ SELECT v + 10 AS result, toTypeName(result) FROM test3;
 CREATE TABLE test (v Variant(String, UInt64)) ENGINE = Memory;
 INSERT INTO test VALUES ('hello'), (42), ('foo');
 
--- 기본값 (불일치 시 예외 발생): length()는 UInt64를 허용하지 않으므로 쿼리에서 예외가 발생합니다.
-SELECT length(v) FROM test;  -- ILLEGAL_TYPE_OF_ARGUMENT 예외 발생
+-- Default (throw on mismatch): length() does not accept UInt64, so the query throws.
+SELECT length(v) FROM test;  -- throws ILLEGAL_TYPE_OF_ARGUMENT
 
--- throw 비활성화 시: 호환되지 않는 행은 NULL을 반환합니다.
+-- With throw disabled: incompatible rows return NULL.
 SET variant_throw_on_type_mismatch = false;
 SELECT v, length(v) FROM test ORDER BY v::String NULLS LAST;
 ```
@@ -597,31 +619,6 @@ SELECT v, length(v) FROM test ORDER BY v::String NULLS LAST;
 │ hello │         5 │
 │ 42    │      ᴺᵁᴸᴸ │
 └───────┴───────────┘
-```
-
-## Variant 인수를 사용하는 집계 함수 {#aggregate-functions-with-variant-arguments}
-
-`count`, `any`, `groupArray`, `uniq` 계열 등 일부 집계 함수는 `Variant` 인수를 네이티브로 처리합니다.
-`sum`, `avg`, `min`, `max`, `quantile`, 통계 함수, 그리고 `argMin` 및 `argMax`의 `val` 인수처럼 특정 타입의 값에서만 동작하는 집계 함수는 각 대안 타입의 최소 공통 상위 타입을 `Nullable`로 감싼 타입에 적용됩니다.
-
-```text
-f(variant) == f(CAST(variant AS Nullable(supertype(T1, ..., TN))))
-```
-
-`Variant`의 `NULL` 값은 일반적인 경우와 마찬가지로 건너뜁니다. 대안 타입들에 공통 상위 타입(common supertype)이 없거나 해당 상위 타입을 `Nullable`로 감쌀 수 없으면 `ILLEGAL_TYPE_OF_ARGUMENT` 예외가 발생합니다.
-
-**예시:**
-
-```sql
-SET allow_suspicious_variant_types = 1;
-SELECT sum(v), max(v), toTypeName(sum(v))
-FROM values('v Variant(UInt32, Float64)', 1::UInt32, 2.5::Float64, NULL);
-```
-
-```text
-┌─sum(v)─┬─max(v)─┬─toTypeName(sum(v))─┐
-│    3.5 │    2.5 │ Nullable(Float64)  │
-└────────┴────────┴────────────────────┘
 ```
 
 {/*AUTOGENERATED_END*/}

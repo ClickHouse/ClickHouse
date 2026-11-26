@@ -15,22 +15,6 @@ import { VersionHistory } from "/snippets/fr/components/VersionHistory/VersionHi
 
 Ces paramètres sont disponibles dans [system.merge&#95;tree&#95;settings](/fr/reference/system-tables/merge_tree_settings) et sont générés automatiquement à partir du code source de ClickHouse.
 
-## adaptive_codec_selection_period {#adaptive_codec_selection_period}
-
-<BetaBadge />
-
-<SettingsInfoBlock type="NonZeroUInt64" default_value="8" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "8"},{"label": "Nouveau paramètre"}]}]} />
-
-Évaluer le coût d&#39;un bloc consiste à le compresser avec chaque codec candidat et à conserver la sortie la plus petite. Avec `enable_adaptive_codec_selection`, le flux d&#39;une colonne est divisé en fenêtres de ce nombre de blocs. Dans chaque fenêtre, un bloc sert d&#39;échantillon : son coût est évalué, et les autres blocs réutilisent le codec gagnant.
-Un bloc qui réutilise le gagnant est réévalué lorsque le gagnant écrit davantage par octet source que le codec arrivé en deuxième position sur le bloc évalué. Si aucun codec n&#39;a réduit la taille du bloc évalué, il n&#39;y a pas de gagnant, et le bloc suivant est alors évalué.
-Un bloc évalué n&#39;est jamais plus volumineux que ce que produirait le codec par défaut ; ce n&#39;est pas forcément le cas d&#39;un bloc qui réutilise le gagnant.
-Avec `1`, chaque bloc est évalué. Les parts compactes évaluent toujours chaque bloc.
-Les événements de profilage `AdaptiveCodecBlocksPriced`, `AdaptiveCodecBlocksRepriced` et `AdaptiveCodecBlocksReused` comptabilisent les blocs de chaque type par fusion ou mutation dans `system.part_log`.
-`AdaptiveCodecBytesDefault` et `AdaptiveCodecBytesWritten` additionnent respectivement la taille obtenue avec le codec par défaut et la taille écrite des blocs échantillons ; leur ratio correspond donc au gain apporté par la sélection adaptative, exact avec une période de `1`.
-Les flux dont les seuls candidats sont le codec par défaut et `NONE` ne sont pas comptabilisés.
-
 ## adaptive_write_buffer_initial_size {#adaptive_write_buffer_initial_size}
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="16384" />
@@ -99,16 +83,6 @@ Le type de statistiques `minmax` est obsolète : il s&#39;agit d&#39;un sous-ens
 
 Temps cible d’exécution d’une étape de fusion ou de mutation. Peut être dépassé si
 une étape prend plus de temps
-
-## cache_temporarily_for_merges {#cache_temporarily_for_merges}
-
-<ExperimentalBadge />
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "Nouveau paramètre expérimental."}]}]} />
-
-Les lectures effectuées par les fusions en arrière-plan et les mutations utilisent le cache du système de fichiers comme tampon temporaire : en cas d&#39;échec de cache (cache miss), les données sont chargées dans le cache puis lues depuis celui-ci, et le cache les supprime dès que plus personne ne les détient, sauf si un lecteur ou un rédacteur extérieur à ce mode les a utilisées. Seul le `ReaderExecutor` expérimental prend en charge ce paramètre ; les autres lecteurs contournent le cache. `force_read_through_cache_for_merges` est prioritaire.
 
 ## clean_deleted_rows {#clean_deleted_rows}
 
@@ -186,16 +160,12 @@ aller-retour vers Keeper.
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.4"},{"label": ""},{"label": "Nouveau paramètre"}]}]} />
 
 Indique le codec de compression par défaut à utiliser si aucun n’est défini pour une colonne donnée dans la définition de la table.
-Ordre de sélection du codec de compression pour une colonne :
+Ordre de sélection du codec de compression pour une colonne :
 
 1. Codec de compression défini pour la colonne dans la définition de la table
 2. Codec de compression défini dans `default_compression_codec` (ce paramètre)
 3. Codec de compression par défaut défini dans les paramètres `compression`
-
-Le combinateur de codecs `FirstApplicable` sélectionne un codec en fonction du type de données de chaque colonne (et de chacun de ses flux) ;
-par exemple, `FirstApplicable(PCO, ZSTD(3))` compresse les nombres avec `PCO` et les autres données avec `ZSTD(3)`. Au moins une de ses
-alternatives doit pouvoir s’appliquer à n’importe quel type de données, et les codecs avec perte n’y sont pas autorisés.
-Valeur par défaut : une chaîne vide (non définie).
+   Valeur par défaut : une chaîne vide (non définie).
 
 ## disk {#disk}
 
@@ -214,17 +184,6 @@ Valeurs possibles :
 * `v1`
 * `v2`
 * `v3`
-
-## empty_parts_lifetime {#empty_parts_lifetime}
-
-<SettingsInfoBlock type="Seconds" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "Nouveau paramètre"}]}]} />
-
-Âge minimal, en secondes, d&#39;une part vide avant que `remove_empty_parts` ne la supprime. L&#39;âge est calculé à partir du
-`modification_time` de la part ; une fusion ou une mutation qui produit une nouvelle part vide le remet donc à zéro. Ce paramètre ne retarde pas
-les autres mécanismes de remplacement de la part : une fusion qui l&#39;inclut, ou un `TRUNCATE` ou un `DROP` qui la couvre, la rend obsolète,
-comme pour toute autre part. La valeur 0 supprime les parts vides sans délai.
 
 ## enforce_index_structure_match_on_partition_manipulation {#enforce_index_structure_match_on_partition_manipulation}
 
@@ -264,26 +223,6 @@ conserver tous.
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Contrôle la manière dont les lectures effectuées par les fusions en arrière-plan et les mutations gèrent les défauts de cache. Lorsque ce paramètre est désactivé, les plages déjà présentes dans le cache sont utilisées, mais les plages manquantes sont lues directement depuis le stockage sous-jacent, sans alimenter le cache. Lorsqu&#39;il est activé, les plages manquantes sont lues en passant par le cache et stockées dans le cache du système de fichiers, ainsi que dans le Distributed Cache si celui-ci est activé. Cela permet de préchauffer les données pour les lectures ultérieures, mais consomme également de la capacité de cache.
-
-## group_fsync_before_insert_finish {#group_fsync_before_insert_finish}
-
-<SettingsInfoBlock type="BoolAuto" default_value="auto" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "auto"},{"label": "nouveau paramètre"}]}]} />
-
-Prend effet conjointement avec `fsync_after_insert`, si la table est stockée sur des disques locaux.
-Un `INSERT` qui écrit de nombreuses parts n&#39;attend pas le fsync après chaque part : les parts
-sont validées dès leur écriture, et les fichiers de toutes les parts font l&#39;objet d&#39;un fsync
-groupé avant la fin de l&#39;`INSERT` (les parts validées depuis plus de 30 secondes font
-l&#39;objet d&#39;un fsync anticipé). Entre-temps, l&#39;OS écrit les données sur le disque en arrière-plan.
-Les parts peuvent devenir visibles pour les requêtes avant d&#39;être durables, mais l&#39;`INSERT`
-n&#39;est acquitté qu&#39;une fois cette durabilité atteinte.
-
-S&#39;il est désactivé, chaque part fait l&#39;objet d&#39;un fsync dès son écriture, avant d&#39;être validée.
-
-La valeur par défaut `auto` ne l&#39;active que pour les tables non répliquées. Pour les tables répliquées,
-une autre réplique peut dédupliquer un `INSERT` par rapport à une part validée mais pas encore
-synchronisée par fsync sur cette réplique, et l&#39;acquitter avant que les données ne soient durables.
 
 ## initialization_retry_period {#initialization_retry_period}
 
@@ -411,18 +350,6 @@ Valeurs possibles :
 
 Seule la version `v3` permet de modifier la version de sérialisation des données partagées.
 
-## object_typed_shared_data_serialization_version {#object_typed_shared_data_serialization_version}
-
-<SettingsInfoBlock type="MergeTreeObjectTypedSharedDataSerializationVersion" default_value="v1" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "v1"},{"label": "nouveau paramètre"}]}]} />
-
-Version de sérialisation des données partagées typées du type de données JSON : la structure qui stocke ensemble les chemins typés déclarés `SHARED` d&#39;une part, dans un nombre constant de fichiers, au lieu d&#39;un ensemble de fichiers distinct par chemin.
-
-Valeurs possibles :
-
-* `v1` - pour chaque granule, les données de chaque chemin `SHARED` dans l&#39;ordre des chemins, la position de début des données de chaque chemin étant enregistrée dans un flux de marques, de sorte que la lecture de certains chemins ne décode que ceux-ci.
-
 ## old_parts_lifetime {#old_parts_lifetime}
 
 <SettingsInfoBlock type="Seconds" default_value="480" />
@@ -491,7 +418,7 @@ améliore malgré tout les taux de compression par rapport à l’ordre initial 
   Cette liberté de réorganiser les lignes est limitée lorsqu’une clé primaire est définie
   pour la table. Dans ClickHouse, une clé primaire `C1, C2, ..., CN` impose que
   les lignes de la table soient triées par les colonnes `C1`, `C2`, ... `Cn` ([index clusterisé](https://en.wikipedia.org/wiki/Database_index#Clustered)).
-  Par conséquent, les lignes ne peuvent être réorganisées qu’au sein de « classes d’équivalence »,
+  Par conséquent, les lignes ne peuvent être réorganisées qu’au sein de « classes d’équivalence »,
   c’est-à-dire d’ensembles de lignes qui ont les mêmes valeurs dans leurs colonnes de clé primaire.
   L’idée est que les clés primaires à cardinalité élevée, par ex. les clés primaires
   incluant une colonne d’horodatage `DateTime64`, conduisent à de nombreuses petites classes
@@ -508,7 +435,7 @@ améliore malgré tout les taux de compression par rapport à l’ordre initial 
   et repose sur le tri des lignes de chaque classe d’équivalence par cardinalité croissante
   des colonnes ne faisant pas partie de la clé primaire.
 
-  Elle comporte trois étapes :
+  Elle comporte trois étapes :
 
   1. Trouver toutes les classes d’équivalence à partir des valeurs des lignes dans les colonnes de clé primaire.
   2. Pour chaque classe d’équivalence, calculer (ou, le plus souvent, estimer) les cardinalités
@@ -518,42 +445,14 @@ améliore malgré tout les taux de compression par rapport à l’ordre initial 
 </details>
 
 Si ce paramètre est activé, les opérations d’insert entraînent des coûts CPU supplémentaires pour analyser et
-optimiser l’ordre des lignes des nouvelles données. Les INSERTs devraient prendre 30 à 50 %
+optimiser l’ordre des lignes des nouvelles données. Les INSERTs devraient prendre 30 à 50 %
 de temps en plus selon les caractéristiques des données.
-Les taux de compression de LZ4 ou ZSTD s’améliorent en moyenne de 20 à 40 %.
+Les taux de compression de LZ4 ou ZSTD s’améliorent en moyenne de 20 à 40 %.
 
 Ce paramètre fonctionne mieux pour les tables sans clé primaire ou avec une clé primaire à faible cardinalité,
 c’est-à-dire une table avec seulement quelques valeurs distinctes de clé primaire.
 Les clés primaires à cardinalité élevée, par ex. celles impliquant des colonnes d’horodatage de type
 `DateTime64`, ne devraient pas tirer parti de ce paramètre.
-
-## optimize_row_order_if_no_order_by {#optimize_row_order_if_no_order_by}
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "Nouveau paramètre permettant d’activer automatiquement l’optimisation de l’ordre des lignes pour les tables ordinaires de la famille MergeTree sans clé de tri."}]}]} />
-
-Détermine si l’optimisation de l’ordre des lignes (voir `optimize_row_order`) est appliquée
-automatiquement lors de l’insertion pour les tables dont la clé de tri est vide, c’est-à-dire les tables
-déclarées avec `ORDER BY ()` ou `ORDER BY tuple()`.
-
-Désactivé par défaut. Activez-le pour les tables où une meilleure compressibilité
-des parts nouvellement insérées avec LZ4 ou ZSTD compte davantage que le maintien
-de l’ordre d’insertion et du débit d’insertion.
-
-Comme avec `optimize_row_order`, les insertions entraînent un coût CPU supplémentaire pour analyser et
-optimiser l’ordre des lignes des nouvelles données. Désactivez ce paramètre s’il est plus important de conserver
-l’ordre d’insertion d’origine des lignes ou de maximiser le débit d’insertion que d’optimiser
-la compression.
-
-Une valeur `optimize_row_order = 0` définie explicitement a la préséance : l’ordre des lignes d’une telle table n’est
-alors jamais optimisé, quelle que soit la valeur de ce paramètre.
-
-Comme avec `optimize_row_order`, l’optimisation s’applique uniquement aux tables ordinaires
-de la famille `MergeTree`, y compris `ReplicatedMergeTree`. Les moteurs spécialisés
-de la famille, comme `ReplacingMergeTree`,
-`CollapsingMergeTree` ou `AggregatingMergeTree`, ne bénéficient jamais de l’optimisation de l’ordre des lignes
-et conservent l’ordre des lignes insérées.
 
 ## packed_skip_index_max_bytes {#packed_skip_index_max_bytes}
 

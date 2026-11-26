@@ -8,71 +8,103 @@ keywords: ['clickstack', 'sdk', 'integración', 'monitorización de aplicaciones
 
 import { ClickStackIntegrates } from '/snippets/es/components/ClickStackIntegrates/ClickStackIntegrates.jsx'
 
-Elige la instrumentación del lado del servidor para tu despliegue de Next.js:
+ClickStack puede ingestar trazas nativas de OpenTelemetry desde tus
+[funciones sin servidor de Next.js](https://nextjs.org/docs/pages/building-your-application/optimizing/open-telemetry#manual-opentelemetry-configuration)
+en Next 13.2+.
 
-* **Autoalojado, tiempo de ejecución de Node.js:** usa el SDK de Node.js de ClickStack.
-* **Vercel o el tiempo de ejecución Edge:** usa `@vercel/otel`.
+<ClickStackIntegrates signals={['logs', 'traces']} />
 
-Para la telemetría del navegador y la reproducción de sesiones, consulta la [guía del SDK para navegador](/es/clickstack/ingesting-data/sdks/browser).
+<Note>
+  Si buscas session replay/monitorización del lado del navegador, te conviene instalar la [integración de navegador](/es/clickstack/ingesting-data/sdks/browser) en su lugar.
+</Note>
 
-<ClickStackIntegrates signals={['traces']} />
+## Instalación {#installing}
 
-## Next.js autoalojado {#self-hosted-nextjs}
+### Habilitar el hook de instrumentación (obligatorio para v15 y versiones anteriores) {#enable-instrumentation-hook}
 
-Use Node.js 22.15 o una versión posterior e instale el SDK:
+Para empezar, deberá habilitar el hook de instrumentación de Next.js configurando `experimental.instrumentationHook = true;` en su archivo `next.config.js`.
 
-```shell
-npm install @clickhouse/clickstack-node
+**Ejemplo:**
+
+```javascript
+const nextConfig = {
+  experimental: {
+    instrumentationHook: true,
+  },
+  // Ignorar advertencias de paquetes OTel 
+  // https://github.com/open-telemetry/opentelemetry-js/issues/4173#issuecomment-1822938936
+  webpack: (
+    config,
+    { buildId, dev, isServer, defaultLoaders, nextRuntime, webpack },
+  ) => {
+    if (isServer) {
+      config.ignoreWarnings = [{ module: /opentelemetry/ }];
+    }
+    return config;
+  },
+};
+
+module.exports = nextConfig;
 ```
 
-Cree `instrumentation.ts` en la raíz de su proyecto, o en `src` si su aplicación utiliza ese directorio. Inicialice el SDK únicamente en el tiempo de ejecución de Node.js:
+### Instalar el SDK de OpenTelemetry para ClickHouse {#install-sdk}
 
-```typescript
+<Tabs>
+  <Tab title="NPM">
+    ```shell
+    npm install @hyperdx/node-opentelemetry 
+    ```
+  </Tab>
+
+  <Tab title="Yarn">
+    ```shell
+    yarn add @hyperdx/node-opentelemetry 
+    ```
+  </Tab>
+</Tabs>
+
+### Crear archivos de instrumentación {#create-instrumentation-files}
+
+Crea un archivo llamado `instrumentation.ts` (o `.js`) en la raíz de tu proyecto de Next.js con el contenido siguiente:
+
+```javascript
 export async function register() {
   if (process.env.NEXT_RUNTIME === 'nodejs') {
-    const { init } = await import('@clickhouse/clickstack-node');
-    init();
+    const { init } = await import('@hyperdx/node-opentelemetry');
+    init({
+      apiKey: '<YOUR_INGESTION_API_KEY>', // optionally configure via `HYPERDX_API_KEY` env var
+      service: '<YOUR_SERVICE_NAME>', // optionally configure via `OTEL_SERVICE_NAME` env var
+      additionalInstrumentations: [], // optional, default: []
+    });
   }
 }
 ```
 
-Agregue el SDK a `serverExternalPackages` en su configuración actual de Next.js para que se cargue fuera del bundle del servidor:
+Esto permitirá que Next.js importe la instrumentación de OpenTelemetry para cualquier invocación de una función sin servidor.
 
-```javascript
-// next.config.mjs
-export default {
-  serverExternalPackages: ['@clickhouse/clickstack-node'],
-};
-```
+### Configurar variables de entorno {#configure-environment-variables}
 
-Configure el destino a continuación y defina `OTEL_SERVICE_NAME` para identificar su aplicación. No precargue además el SDK ni inicialice otro SDK de OpenTelemetry. Para ver más opciones, consulte la [guía de Node.js](/es/clickstack/ingesting-data/sdks/nodejs).
+Si estás enviando trazas directamente a ClickStack mediante OpenTelemetry, tendrás que iniciar tu servidor de Next.js
+con las siguientes variables de entorno para enviar los spans al OTel collector:
 
-Para consideraciones sobre la terminación del proceso y el despliegue, consulte las [recomendaciones del SDK para Next.js](https://github.com/ClickHouse/clickstack-node#nextjs).
+<Tabs>
+  <Tab title="Managed ClickStack">
+    ```sh copy
+    OTEL_SERVICE_NAME=<YOUR_SERVICE_NAME> \
+    OTEL_EXPORTER_OTLP_ENDPOINT=<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT>
+    npm run dev
+    ```
+  </Tab>
 
-## Vercel y tiempo de ejecución de Edge {#vercel-or-edge}
+  <Tab title="ClickStack Open Source">
+    ```sh copy
+    HYPERDX_API_KEY=<YOUR_INGESTION_API_KEY> \
+    OTEL_SERVICE_NAME=<YOUR_SERVICE_NAME> \
+    OTEL_EXPORTER_OTLP_ENDPOINT=<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT>
+    npm run dev
+    ```
+  </Tab>
+</Tabs>
 
-Use `@vercel/otel` siguiendo las [instrucciones de configuración de OpenTelemetry para Next.js](https://nextjs.org/docs/app/guides/open-telemetry). Utilice esta configuración en lugar de la inicialización del SDK de Node.js de ClickStack descrita anteriormente.
-
-Configure la [exportación OTLP](https://github.com/vercel/otel/tree/main/packages/otel#registerotelconfig-configuration) con los ajustes de conexión que se indican a continuación. Reemplace los destinos de ejemplo y las sobrescrituras de endpoint específicas de cada señal, y defina las variables en la configuración de su despliegue.
-
-Si su despliegue de Vercel ya utiliza una integración de tracing, configure un [exportador personalizado](https://nextjs.org/docs/app/guides/open-telemetry#custom-exporters) para este destino; las variables de entorno del endpoint no bastan por sí solas para sobrescribir esa integración.
-
-## Configure su destino {#configure-destination}
-
-Establezca un nombre de servicio para cualquiera de las dos opciones de instrumentación:
-
-```shell
-export OTEL_SERVICE_NAME='my-nextjs-app'
-```
-
-Configure el endpoint HTTP de OTLP y la clave de ingestión de su recopilador de ClickStack. Use `http://` si su recolector no tiene TLS configurado. Para configurar el recolector, consulte [Ingesta con OpenTelemetry](/es/clickstack/ingesting-data/opentelemetry).
-
-```shell
-export OTEL_EXPORTER_OTLP_ENDPOINT='https://YOUR_COLLECTOR_HOST:4318'
-export OTEL_EXPORTER_OTLP_HEADERS='authorization=YOUR_INGESTION_API_KEY'
-export OTEL_EXPORTER_OTLP_PROTOCOL='http/protobuf'
-```
-
-## Verificar la ingestión {#verify-ingestion}
-
-Inicie su aplicación y envíe solicitudes a una página renderizada en el servidor o a una ruta de API. En ClickStack, seleccione un intervalo de tiempo reciente y busque el nombre del servicio de su aplicación en Traces.
+Si haces el despliegue en Vercel, asegúrate de que todas las variables de entorno anteriores estén configuradas
+para tu despliegue.

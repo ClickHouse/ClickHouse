@@ -12,23 +12,27 @@ import SettingsInfoBlock from "/snippets/es/components/SettingsInfoBlock/Setting
 
 Estas opciones de configuración están disponibles en [system.settings](/es/reference/system-tables/settings) y se generan automáticamente a partir del [código fuente](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## filesystem_prefetch_max_memory_usage {#filesystem_prefetch_max_memory_usage}
+<div id="filesystem_prefetch_max_memory_usage">
+  ## filesystem_prefetch_max_memory_usage
+</div>
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="1073741824" />
 
 Uso máximo de memoria para las precargas.
 
-También se aplica a las fusiones y mutaciones.
-
 Valor predeterminado en Cloud: 10% de la memoria total.
 
-## filesystem_prefetch_step_bytes {#filesystem_prefetch_step_bytes}
+<div id="filesystem_prefetch_step_bytes">
+  ## filesystem_prefetch_step_bytes
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 Paso de prelectura en bytes. Cero significa `auto`: el mejor paso de prelectura se determinará automáticamente de forma aproximada, pero puede que no sea el óptimo al 100 %. El valor real puede ser diferente debido a la configuración filesystem&#95;prefetch&#95;min&#95;bytes&#95;for&#95;single&#95;read&#95;task
 
-## filesystem_prefetch_step_marks {#filesystem_prefetch_step_marks}
+<div id="filesystem_prefetch_step_marks">
+  ## filesystem_prefetch_step_marks
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 

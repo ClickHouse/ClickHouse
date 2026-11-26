@@ -24,28 +24,33 @@ keywords: ['SDK ClickStack', 'языковые SDK ClickStack', 'SDK OpenTelemet
 <Info>
   **Совместимость с OpenTelemetry**
 
-  Хотя ClickStack предлагает собственные SDK для языков программирования с расширенными возможностями телеметрии, вы также можете без проблем использовать уже имеющиеся SDK OpenTelemetry.
+  Хотя ClickStack предлагает собственные SDK для разных языков с расширенными возможностями телеметрии, вы также можете без проблем использовать уже имеющиеся SDK OpenTelemetry.
 </Info>
 
 <br />
 
-| Язык                                               | Описание                                                                   | Ссылка                                                                    |
-| -------------------------------------------------- | -------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
-| AWS Lambda                                         | ClickStack Node.js SDK для асинхронных обработчиков или слои OpenTelemetry | [Документация](/ru/clickstack/ingesting-data/sdks/aws-lambda)                |
-| Browser                                            | JavaScript SDK для браузерных приложений                                   | [Документация](/ru/clickstack/ingesting-data/sdks/browser)                   |
-| Elixir                                             | Приложения на Elixir                                                       | [Документация](/ru/clickstack/ingesting-data/sdks/elixir)                    |
-| Go                                                 | Приложения и микросервисы на Go                                            | [Документация](/ru/clickstack/ingesting-data/sdks/golang)                    |
-| Java                                               | Приложения на Java                                                         | [Документация](/ru/clickstack/ingesting-data/sdks/java)                      |
-| NestJS                                             | ClickStack Node.js SDK для NestJS                                          | [Документация](/ru/clickstack/ingesting-data/sdks/nestjs)                    |
-| Next.js (самоуправляемое развертывание на Node.js) | ClickStack Node.js SDK                                                     | [Документация](/ru/clickstack/ingesting-data/sdks/nextjs#self-hosted-nextjs) |
-| Next.js (Vercel или Edge)                          | `@vercel/otel`                                                             | [Документация](/ru/clickstack/ingesting-data/sdks/nextjs#vercel-or-edge)     |
-| Node.js                                            | ClickStack Node.js SDK                                                     | [Документация](/ru/clickstack/ingesting-data/sdks/nodejs)                    |
-| Deno                                               | Встроенная поддержка OpenTelemetry                                         | [Документация](/ru/clickstack/ingesting-data/sdks/deno)                      |
-| Python                                             | Приложения на Python и веб-сервисы                                         | [Документация](/ru/clickstack/ingesting-data/sdks/python)                    |
-| React Native                                       | Мобильные приложения на React Native                                       | [Документация](/ru/clickstack/ingesting-data/sdks/react-native)              |
-| Ruby                                               | Приложения на Ruby on Rails и веб-сервисы                                  | [Документация](/ru/clickstack/ingesting-data/sdks/ruby)                      |
+| Язык         | Описание                                             | Ссылка                                                       |
+| ------------ | ---------------------------------------------------- | ------------------------------------------------------------ |
+| AWS Lambda   | Инструментирование функций AWS Lambda                | [Документация](/ru/clickstack/ingesting-data/sdks/aws-lambda)   |
+| Browser      | JavaScript SDK для браузерных приложений             | [Документация](/ru/clickstack/ingesting-data/sdks/browser)      |
+| Elixir       | Приложения на Elixir                                 | [Документация](/ru/clickstack/ingesting-data/sdks/elixir)       |
+| Go           | Приложения и микросервисы на Go                      | [Документация](/ru/clickstack/ingesting-data/sdks/golang)       |
+| Java         | Приложения на Java                                   | [Документация](/ru/clickstack/ingesting-data/sdks/java)         |
+| NestJS       | Приложения на NestJS                                 | [Документация](/ru/clickstack/ingesting-data/sdks/nestjs)       |
+| Next.js      | Приложения на Next.js                                | [Документация](/ru/clickstack/ingesting-data/sdks/nextjs)       |
+| Node.js      | Среда выполнения JavaScript для серверных приложений | [Документация](/ru/clickstack/ingesting-data/sdks/nodejs)       |
+| Deno         | Приложения на Deno                                   | [Документация](/ru/clickstack/ingesting-data/sdks/deno)         |
+| Python       | Приложения на Python и веб-сервисы                   | [Документация](/ru/clickstack/ingesting-data/sdks/python)       |
+| React Native | Мобильные приложения на React Native                 | [Документация](/ru/clickstack/ingesting-data/sdks/react-native) |
+| Ruby         | Приложения на Ruby on Rails и веб-сервисы            | [Документация](/ru/clickstack/ingesting-data/sdks/ruby)         |
 
 ## Защита с помощью ключа API {#securing-api-key}
+
+<Info>
+  **Не требуется для Управляемого ClickStack**
+
+  Для Управляемого ClickStack ключ API не нужен.
+</Info>
 
 Чтобы отправлять данные в ClickStack через OTel collector, SDKs должны указывать ключ API для приёма данных. Его можно задать либо с помощью функции `init` в SDK, либо через переменную окружения `OTEL_EXPORTER_OTLP_HEADERS`:
 
@@ -53,9 +58,9 @@ keywords: ['SDK ClickStack', 'языковые SDK ClickStack', 'SDK OpenTelemet
 OTEL_EXPORTER_OTLP_HEADERS='authorization=<YOUR_INGESTION_API_KEY>'
 ```
 
-Этот ключ API создаётся приложением интерфейса ClickStack и доступен в приложении в разделе `Team Settings → API Keys`.
+Этот ключ API создаётся приложением ClickStack с интерфейсом HyperDX и доступен в приложении в разделе `Team Settings → API Keys`.
 
-Для большинства [SDK для языков программирования](/ru/clickstack/ingesting-data/sdks/index) и библиотек телеметрии, поддерживающих OpenTelemetry, достаточно задать переменную окружения `OTEL_EXPORTER_OTLP_ENDPOINT` в приложении или указать её при инициализации SDK:
+Для большинства [языковых SDK](/ru/clickstack/ingesting-data/sdks/index) и библиотек телеметрии, поддерживающих OpenTelemetry, достаточно задать переменную окружения `OTEL_EXPORTER_OTLP_ENDPOINT` в приложении или указать её при инициализации SDK:
 
 ```shell
 export OTEL_EXPORTER_OTLP_ENDPOINT=<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT>

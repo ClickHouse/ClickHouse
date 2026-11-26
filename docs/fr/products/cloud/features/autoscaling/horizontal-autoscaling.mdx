@@ -7,12 +7,8 @@ title: 'Autoscaling horizontal'
 doc_type: 'guide'
 ---
 
-import { BetaBadge } from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
-
-<BetaBadge />
-
 <Note>
-  L&#39;autoscaling horizontal est en bêta et disponible pour les plans Scale et Enterprise. Son comportement et ses fonctionnalités sont susceptibles d&#39;évoluer avant la disponibilité générale.
+  L&#39;autoscaling horizontal est disponible en Private Preview pour les plans Scale et Enterprise. Pour demander l&#39;accès, contactez votre équipe de compte ClickHouse ou le support.
 </Note>
 
 L&#39;autoscaling horizontal ajoute ou supprime automatiquement des répliques de votre service en fonction de la demande de charge de travail. Alors que l&#39;autoscaling vertical modifie la taille de chaque réplique, l&#39;autoscaling horizontal modifie le nombre de répliques. Elle est donc particulièrement adaptée aux charges de travail où la demande provient d&#39;un nombre accru de requêtes plutôt que de requêtes plus lourdes.
@@ -78,6 +74,7 @@ Les événements de mise à l’échelle sont visibles dans le tableau de bord d
 
 ## Limitations connues {#known-limitations}
 
-* La taille verticale du réplica doit être fixée en définissant la mémoire minimale sur une valeur égale à la mémoire maximale.
+* L&#39;autoscaling horizontal est en Private Preview et doit être activé pour votre organisation par l&#39;équipe d&#39;assistance ClickHouse.
+* La taille verticale des répliques doit être fixée en définissant la mémoire minimale sur une valeur égale à la mémoire maximale.
 * Des limites de répliques s&#39;appliquent ; consultez [Limites d&#39;utilisation](/fr/cloud/bestpractices/usage-limits) pour connaître celles qui s&#39;appliquent à votre service, et contactez l&#39;assistance si vous avez besoin de répliques supplémentaires.
 * Des recommandations sont formulées toutes les 10 minutes ; l&#39;autoscaling horizontal n&#39;est pas conçu pour absorber des pics de moins d&#39;une minute. Pour des pics prévisibles, envisagez le [scheduled scaling](/fr/products/cloud/features/autoscaling/scheduled-scaling).

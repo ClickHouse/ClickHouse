@@ -1,4 +1,4 @@
-const AgentPrompt = ({ prompt, title = "إعداد بمساعدة الوكيل", description, outline, outlineLabel = "ما سيقوم به الوكيل", repositoryUrl, repositoryLabel = "ClickHouse/agent-skills" }) => {
+export const AgentPrompt = ({ prompt, title = "إعداد بمساعدة الوكيل", description, outline, outlineLabel = "ما سيقوم به الوكيل", repositoryUrl, repositoryLabel = "ClickHouse/agent-skills" }) => {
   const [copied, setCopied] = useState(false)
 
   const handleCopy = async () => {
@@ -102,5 +102,3 @@ const AgentPrompt = ({ prompt, title = "إعداد بمساعدة الوكيل",
     </div>
   )
 }
-
-export { AgentPrompt };

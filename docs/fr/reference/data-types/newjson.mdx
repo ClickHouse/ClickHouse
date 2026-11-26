@@ -12,7 +12,7 @@ doc_type: 'reference'
 
 import WhenToUseJson from '/snippets/fr/_when-to-use-json.mdx';
 
-<Card title="Vous cherchez un guide ?" href="/fr/concepts/best-practices/json-type" icon="book">
+<Card title="Vous cherchez un guide ?" href="/fr/concepts/best-practices/json-type" icon="book">
   Consultez notre guide des bonnes pratiques pour JSON, avec des exemples, des fonctionnalités avancées et des points à prendre en compte lors de l’utilisation du type JSON.
 </Card>
 
@@ -22,7 +22,7 @@ Le type `JSON` stocke des documents JavaScript Object Notation (JSON) dans une s
   Dans ClickHouse Open-Source, le type de données JSON est considéré comme prêt pour la production à partir de la version 25.3. Il n’est pas recommandé d’utiliser ce type en production dans les versions antérieures.
 </Note>
 
-Pour déclarer une colonne de type `JSON`, vous pouvez utiliser la syntaxe suivante :
+Pour déclarer une colonne de type `JSON`, vous pouvez utiliser la syntaxe suivante :
 
 ```sql
 <column_name> JSON
@@ -30,22 +30,20 @@ Pour déclarer une colonne de type `JSON`, vous pouvez utiliser la syntaxe suiva
     max_dynamic_paths=N,
     max_dynamic_types=M,
     some.path TypeName,
-    SHARED some.path TypeName,
     SKIP path.to.skip,
     SKIP REGEXP 'paths_regexp'
 )
 ```
 
-Les paramètres de la syntaxe ci-dessus sont définis comme suit :
+Les paramètres de la syntaxe ci-dessus sont définis comme suit :
 
 | Paramètre                   | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | Valeur par défaut |
 | --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------- |
-| `max_dynamic_paths`         | Paramètre facultatif indiquant combien de chemins peuvent être stockés séparément en tant que sous-colonnes dans un même block de données stocké séparément (par exemple dans une même part pour une table MergeTree). <br /><br />Si cette limite est dépassée, tous les autres chemins sont stockés ensemble dans une structure unique appelée [données partagées](#shared-data-structure).<br /><br />Il existe également des [moyens](#controlling-the-number-of-dynamic-paths) de modifier la limite des chemins dynamiques sans changer ce paramètre. | `1024`            |
-| `max_dynamic_types`         | Paramètre facultatif compris entre `1` et `255` indiquant combien de types de données différents peuvent être stockés séparément dans une même colonne de chemin de type `Dynamic` au sein d&#39;un même block de données stocké séparément (par exemple dans une même part pour une table MergeTree). <br /><br />Si cette limite est dépassée, tous les nouveaux types sont stockés ensemble dans une structure unique appelée `shared variant`.                                                                                                                | `32`              |
-| `some.path TypeName`        | Indication de type facultative pour un chemin particulier dans le JSON. Ces chemins seront toujours stockés comme sous-colonnes avec le type spécifié.                                                                                                                                                                                                                                                                                                                                                                                                                     |                   |
-| `SHARED some.path TypeName` | Indication de type dont le chemin est stocké dans une part MergeTree avec les autres chemins `SHARED` de la colonne, dans un nombre constant de fichiers, plutôt que dans des fichiers dédiés. Voir [chemins typés `SHARED`](#shared-typed-paths).                                                                                                                                                                                                                                                                                                               |                   |
-| `SKIP path.to.skip`         | Indication facultative pour un chemin particulier à ignorer lors de l’analyse du JSON. Ces chemins ne seront jamais stockés dans la colonne JSON. Si le chemin spécifié est un objet JSON imbriqué, l&#39;objet imbriqué entier sera ignoré.                                                                                                                                                                                                                                                                                                                     |                   |
-| `SKIP REGEXP 'path_regexp'` | Indication facultative avec une expression régulière utilisée pour ignorer des chemins lors de l’analyse du JSON. Tous les chemins qui correspondent à cette expression régulière ne seront jamais stockés dans la colonne JSON.                                                                                                                                                                                                                                                                                                                                 |                   |
+| `max_dynamic_paths`         | Paramètre facultatif indiquant combien de chemins peuvent être stockés séparément en tant que sous-colonnes dans un même block de données stocké séparément (par exemple dans une même data part pour une table MergeTree). <br /><br />Si cette limite est dépassée, tous les autres chemins sont stockés ensemble dans une structure unique appelée [données partagées](#shared-data-structure).<br /><br />Il existe également des [moyens](#controlling-the-number-of-dynamic-paths) de modifier la limite des chemins dynamiques sans changer ce paramètre. | `1024`            |
+| `max_dynamic_types`         | Paramètre facultatif compris entre `1` et `255` indiquant combien de data types différents peuvent être stockés séparément dans une même colonne de chemin de type `Dynamic` au sein d&#39;un même block de données stocké séparément (par exemple dans une même data part pour une table MergeTree). <br /><br />Si cette limite est dépassée, tous les nouveaux types sont stockés ensemble dans une structure unique appelée `shared variant`.                                                                                                                | `32`              |
+| `some.path TypeName`        | Type hint facultatif pour un chemin particulier dans le JSON. Ces chemins seront toujours stockés comme sous-colonnes avec le type spécifié.                                                                                                                                                                                                                                                                                                                                                                                                                     |                   |
+| `SKIP path.to.skip`         | Indication facultative pour un chemin particulier à ignorer lors de l’analyse du JSON. Ces chemins ne seront jamais stockés dans la colonne JSON. Si le chemin spécifié est un objet JSON imbriqué, l&#39;objet imbriqué entier sera ignoré.                                                                                                                                                                                                                                                                                                                       |                   |
+| `SKIP REGEXP 'path_regexp'` | Indication facultative avec une expression régulière utilisée pour ignorer des chemins lors de l’analyse du JSON. Tous les chemins qui correspondent à cette expression régulière ne seront jamais stockés dans la colonne JSON.                                                                                                                                                                                                                                                                                                                                   |                   |
 
 <WhenToUseJson />
 
@@ -919,28 +917,6 @@ La taille des fragments est contrôlée par le paramètre MergeTree [object&#95;
 Il ne s&#39;agit pas d&#39;une limite stricte : si le dernier fragment est inférieur à la moitié de la taille cible, il est fusionné avec le fragment précédent,
 de sorte que la taille réelle des fragments varie de `target/2` à `1.5 * target`.
 
-## Chemins typés `SHARED` {#shared-typed-paths}
-
-Dans une partie de données [MergeTree](/fr/reference/engines/table-engines/mergetree-family/mergetree), chaque chemin typé est stocké comme une colonne à part entière, avec un fichier par sous-flux de son type. Une colonne comportant des centaines de chemins typés produit donc des centaines de fichiers par partie de données, et sur un stockage d’objet, chaque lecture de fichier correspond à une requête distincte. Lorsqu’un chemin typé est marqué `SHARED`, il est stocké dans les données partagées typées de la partie de données : tous les chemins `SHARED` d’une colonne sont écrits ensemble dans trois fichiers, quel que soit leur nombre. Les données sont organisées granule par granule, puis chemin par chemin, et la position des données de chaque chemin est enregistrée : la lecture d’un chemin ne décode ainsi que ce seul chemin.
-
-```sql
-CREATE TABLE test (json JSON(SHARED a UInt32, SHARED b.c Array(String), d String)) ENGINE = MergeTree ORDER BY tuple();
-```
-
-Ici, `a` et `b.c` sont stockés dans les données partagées typées, et `d` dans une colonne qui lui est propre. Hormis son mode de stockage, un chemin `SHARED` est un chemin typé comme les autres : les valeurs sont analysées et converties (CAST) vers le type déclaré, le chemin et ses sous-colonnes se lisent avec la même syntaxe (`json.a`, `json.b.c`, `json.b.c.size0`), et il est pris en compte dans les lectures de sous-objets et de sous-colonnes combinées. En dehors des parties de données MergeTree, par exemple avec le moteur `Memory` ou le format `Native`, le modificateur n&#39;a aucun effet.
-
-Choisissez `SHARED` pour les colonnes comportant de nombreux chemins typés, en particulier sur un stockage d’objet, où le nombre de fichiers par partie de données compte davantage que le nombre d&#39;octets lus pour un chemin donné. La lecture d&#39;un chemin `SHARED` porte sur les blocs compressés contenant ses données, qu&#39;il peut partager avec des chemins voisins ; elle peut donc lire un peu plus de données que celle d&#39;un chemin disposant de ses propres fichiers. Les blocs sont tronqués dès qu&#39;ils atteignent `min_compress_block_size`, ce qui borne cet excédent.
-
-Le modificateur s&#39;ajoute ou se supprime avec `ALTER TABLE ... MODIFY COLUMN` :
-
-```sql
-ALTER TABLE test MODIFY COLUMN json JSON(SHARED a UInt32, SHARED b.c Array(String), SHARED d String);
-```
-
-Lorsque les [indications de type différées](#lazy-type-hints) sont activées, cette modification est limitée aux métadonnées : les parties de données existantes conservent leur disposition jusqu&#39;à leur fusion. Dans le cas contraire, les parties de données sont réécrites. Les parties de données de l&#39;une et l&#39;autre disposition sont lues conjointement.
-
-Le format sur disque des données partagées typées est versionné par le paramètre MergeTree `object_typed_shared_data_serialization_version` ; `v1` est pour l&#39;instant la seule version disponible.
-
 ## Contrôle du nombre de chemins dynamiques dans JSON au sein des parts MergeTree {#controlling-the-number-of-dynamic-paths}
 
 La principale façon de définir une limite pour les chemins dynamiques dans JSON consiste à utiliser le paramètre `max_dynamic_paths` dans la déclaration du type JSON.
@@ -1402,13 +1378,12 @@ Voir [Index basés sur les valeurs avec JSONAllValues](/fr/reference/engines/tab
 
 ## Conseils pour mieux utiliser le type JSON {#tips-for-better-usage-of-the-json-type}
 
-Avant de créer une colonne `JSON` et d’y charger des données, tenez compte des conseils suivants :
+Avant de créer une colonne `JSON` et d’y charger des données, tenez compte des conseils suivants :
 
 * Analysez vos données et indiquez autant de chemins que possible, avec leurs types. Cela rendra le stockage et la lecture bien plus efficaces.
-* Si une table `MergeTree` comporte de nombreux chemins typés, en particulier sur un stockage d’objet, déclarez-les `SHARED` afin que le nombre de fichiers par partie de données reste constant. Voir [chemins typés `SHARED`](#shared-typed-paths).
 * Réfléchissez aux chemins dont vous aurez besoin et à ceux dont vous n’aurez jamais besoin. Indiquez les chemins inutiles dans la section `SKIP` et, si nécessaire, dans la section `SKIP REGEXP`. Cela améliorera le stockage.
 * Ne définissez pas le paramètre `max_dynamic_paths` sur des valeurs trop élevées, car cela peut rendre le stockage et la lecture moins efficaces.
-  Bien que cela dépende fortement des paramètres du système, comme la mémoire, le CPU, etc., une règle générale consiste à ne pas définir `max_dynamic_paths` au-delà de 10 000 pour le stockage sur le système de fichiers local et de 1024 pour le stockage sur le système de fichiers distant.
+  Bien que cela dépende fortement des paramètres du système, comme la mémoire, le CPU, etc., une règle générale consiste à ne pas définir `max_dynamic_paths` au-delà de 10 000 pour le stockage sur le système de fichiers local et de 1024 pour le stockage sur le système de fichiers distant.
 
 ## Pour aller plus loin {#further-reading}
 

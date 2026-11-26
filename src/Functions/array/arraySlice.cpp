@@ -1,4 +1,3 @@
-#include <base/arithmeticOverflow.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
@@ -20,7 +19,6 @@
 
 #include <limits>
 #include <optional>
-#include <base/sanitizer_defs.h>
 
 
 namespace DB
@@ -57,14 +55,14 @@ public:
     static constexpr auto name = "arraySlice";
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArraySlice>(); }
 
-    [[nodiscard]] String getName() const override { return name; }
+    String getName() const override { return name; }
 
-    [[nodiscard]] bool isVariadic() const override { return true; }
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
+    bool isVariadic() const override { return true; }
+    size_t getNumberOfArguments() const override { return 0; }
 
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         const size_t number_of_arguments = arguments.size();
 
@@ -100,7 +98,6 @@ public:
         return arguments[0].type;
     }
 
-    [[nodiscard]] NO_SANITIZE_UNSIGNED_OVERFLOW
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type, size_t input_rows_count) const override
     {
         if (return_type->onlyNull())
@@ -164,7 +161,7 @@ public:
                 if (offset > 0)
                     sink = GatherUtils::sliceFromLeftConstantOffsetUnbounded(*source, static_cast<size_t>(offset - 1));
                 else
-                    sink = GatherUtils::sliceFromRightConstantOffsetUnbounded(*source, common::negateIgnoreOverflow(static_cast<size_t>(offset)));
+                    sink = GatherUtils::sliceFromRightConstantOffsetUnbounded(*source, -static_cast<size_t>(offset));
             }
             else if (isColumnConst(*length_column))
             {
@@ -172,7 +169,7 @@ public:
                 if (offset > 0)
                     sink = GatherUtils::sliceFromLeftConstantOffsetBounded(*source, static_cast<size_t>(offset - 1), length);
                 else
-                    sink = GatherUtils::sliceFromRightConstantOffsetBounded(*source, common::negateIgnoreOverflow(static_cast<size_t>(offset)), length);
+                    sink = GatherUtils::sliceFromRightConstantOffsetBounded(*source, -static_cast<size_t>(offset), length);
             }
             else
                 sink = GatherUtils::sliceDynamicOffsetBounded(*source, *offset_column, *length_column);
@@ -188,10 +185,10 @@ public:
         return sink;
     }
 
-    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
-    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
+    bool useDefaultImplementationForConstants() const override { return true; }
+    bool useDefaultImplementationForNulls() const override { return false; }
     /// When set to true, materializes the columns whenever the offset or length is a full column.
-    [[nodiscard]] bool useDefaultImplementationForReplicatedColumns() const override { return false; }
+    bool useDefaultImplementationForReplicatedColumns() const override { return false; }
 
 private:
     struct QBitSliceBounds
@@ -209,7 +206,7 @@ private:
     /// `require_constants` must be true during type inference but false during execution:
     /// useDefaultImplementationForConstants may have unwrapped the all-constant case into non-const single-row columns
     /// by the time executeImpl runs, while the values read via `(*column)[0]` are still correct.
-    [[nodiscard]] QBitSliceBounds getQBitSliceBounds(const DataTypeQBit & qbit_type, const ColumnsWithTypeAndName & arguments, bool require_constants) const
+    QBitSliceBounds getQBitSliceBounds(const DataTypeQBit & qbit_type, const ColumnsWithTypeAndName & arguments, bool require_constants) const
     {
         const size_t dimension = qbit_type.getDimension();
 
@@ -259,7 +256,7 @@ private:
             else
             {
                 /// Compute |offset| in the unsigned domain: -INT64_MIN does not fit in Int64. Offset 0 falls here too.
-                const UInt64 abs_offset = common::negateIgnoreOverflow(static_cast<UInt64>(*offset));
+                const UInt64 abs_offset = UInt64(0) - static_cast<UInt64>(*offset);
                 if (abs_offset == 0)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
                                     "Offset {} of function {} is out of range for a QBit of dimension {}: "
@@ -281,7 +278,7 @@ private:
             if (*length >= 0)
             {
                 const size_t requested_length = static_cast<size_t>(*length);
-                const UInt64 abs_offset = offset && *offset < 0 ? common::negateIgnoreOverflow(static_cast<UInt64>(*offset)) : 0;
+                const UInt64 abs_offset = offset && *offset < 0 ? UInt64(0) - static_cast<UInt64>(*offset) : 0;
                 if (abs_offset > dimension)
                 {
                     /// `getSliceFromRight` clamps an oversized negative offset to the left edge, but preserves the
@@ -295,7 +292,7 @@ private:
             else
             {
                 /// A negative length leaves the last |length| elements of the vector unselected, as for Arrays.
-                const UInt64 abs_length = common::negateIgnoreOverflow(static_cast<UInt64>(*length));
+                const UInt64 abs_length = UInt64(0) - static_cast<UInt64>(*length);
                 result_length = abs_length < result_length ? result_length - static_cast<size_t>(abs_length) : 0;
             }
         }
@@ -319,7 +316,7 @@ private:
         return std::make_shared<DataTypeQBit>(qbit_type.getElementType(), bounds.length, bounds.length);
     }
 
-    [[nodiscard]] ColumnPtr executeQBitSlice(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
+    ColumnPtr executeQBitSlice(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
     {
         const auto & qbit_type = assert_cast<const DataTypeQBit &>(*removeNullable(arguments[0].type));
         const QBitSliceBounds bounds = getQBitSliceBounds(qbit_type, arguments, /*require_constants=*/false);
@@ -474,7 +471,7 @@ REGISTER_FUNCTION(ArraySlice)
     FunctionDocumentation::Description description = R"(
 Returns a slice of the array, with `NULL` elements included.
 
-The first argument may also be a [QBit](/reference/data-types/qbit): the result is a QBit over the selected dimensions (a projection to a subset of dimensions). In that case `offset` and `length` must be constants, because the dimension of a QBit is part of its type, and the slice must select at least one dimension. A slice aligned to the QBit's stride-group boundaries keeps the stride and reuses the stored bit-plane streams without copying.
+The first argument may also be a [QBit](/sql-reference/data-types/qbit): the result is a QBit over the selected dimensions (a projection to a subset of dimensions). In that case `offset` and `length` must be constants, because the dimension of a QBit is part of its type, and the slice must select at least one dimension. A slice aligned to the QBit's stride-group boundaries keeps the stride and reuses the stored bit-plane streams without copying.
     )";
     FunctionDocumentation::Syntax syntax = "arraySlice(arr, offset [, length])";
     FunctionDocumentation::Arguments arguments = {

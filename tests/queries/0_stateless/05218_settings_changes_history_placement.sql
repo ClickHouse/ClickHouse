@@ -90,14 +90,8 @@ SELECT value FROM system.settings WHERE name = 'filesystem_cache_wait_for_concur
 SET compatibility = '26.2';
 SELECT value FROM system.settings WHERE name = 'filesystem_cache_wait_for_concurrent_download_timeout_milliseconds';
 
-SELECT 'backported to 26.10';
-SET compatibility = '26.10';
-SELECT name, value FROM system.settings
-WHERE name IN ('query_plan_join_order_use_interesting_orders', 'query_plan_optimize_join_order_algorithm',
-               'query_plan_optimize_join_order_conflict_detector')
-ORDER BY name;
-SET compatibility = '26.9';
-SELECT name, value FROM system.settings
-WHERE name IN ('query_plan_join_order_use_interesting_orders', 'query_plan_optimize_join_order_algorithm',
-               'query_plan_optimize_join_order_conflict_detector')
-ORDER BY name;
+SELECT 'iceberg_manifest_decode_concurrency backported to 26.8';
+SET compatibility = '26.8';
+SELECT value FROM system.settings WHERE name = 'iceberg_manifest_decode_concurrency';
+SET compatibility = '26.7';
+SELECT value FROM system.settings WHERE name = 'iceberg_manifest_decode_concurrency';

@@ -59,7 +59,7 @@ b_w [(json.a, json)]	1
 b_w [(json.a, json)] max_block_size = 7	1
 b_w [(json.c, json.a, json.b)]	1
 b_w [(json.c, json.a, json.b)] max_block_size = 7	1
-b_w paths after	['b']	['d']	['a','b','c','d']
+b_w paths after	['b','d']	[]	['a','b','c','d']
 b_w [json]	1
 b_w [(json.c.size0, json.a)] max_block_size = 5	1
 1
@@ -137,7 +137,7 @@ b_cn [(json.a, json)]	1
 b_cn [(json.a, json)] max_block_size = 7	1
 b_cn [(json.c, json.a, json.b)]	1
 b_cn [(json.c, json.a, json.b)] max_block_size = 7	1
-b_cn paths after	['b']	['d']	['a','b','c','d']
+b_cn paths after	['b','d']	[]	['a','b','c','d']
 b_cn [json]	1
 b_cn [(json.c.size0, json.a)] max_block_size = 5	1
 1
@@ -197,8 +197,8 @@ p_cn removed	40	780	c0	Dynamic	1560	1560
 p_cn mutations	1
 p_cn a to String	String	780	0
 p_cn hints dropped	44	Dynamic	40	4
-p_cn layout	all_1_2_1_3	1	1
-p_cn layout	all_4_4_0	0	1
+p_cn layout	all_1_2_1_3	1	0
+p_cn layout	all_4_4_0	0	0
 p_cn to String	44	44	{"a":"0","b":0,"c":"c0","q":{"r":"r0"}}
 1
 -- a column absent from the part: added by ALTER or cleared, its SHARED paths read as defaults

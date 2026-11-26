@@ -4,7 +4,7 @@ keywords: ['clickhouse', 'go', 'golang', '타입', '데이터 타입', '복합 �
 description: 'clickhouse-go에서의 Go 타입 매핑과 복합 타입 지원.'
 slug: /integrations/language-clients/go/data-types
 title: '데이터 타입'
-doc_type: 'reference'
+doc_type: '참고'
 ---
 
 ## 타입 변환 {#type-conversions}
@@ -631,9 +631,9 @@ fmt.Printf("col1=%v, col2=%v, col3=%v, col4=%v, col5=%v\n", col1, col2, col3, co
 
 ### 널 허용 {#nullable}
 
-Go의 Nil 값은 ClickHouse의 NULL을 나타냅니다. 이는 필드가 널 허용으로 선언된 경우 사용할 수 있습니다. 삽입 시점에는 일반 컬럼과 널 허용 컬럼 모두에 Nil을 전달할 수 있습니다. 일반 컬럼의 경우 해당 유형의 기본값이 저장됩니다. 예를 들어 문자열에는 빈 문자열이 저장됩니다. 널 허용 컬럼의 경우 ClickHouse에 NULL 값이 저장됩니다.
+Go의 Nil 값은 ClickHouse의 NULL을 나타냅니다. 이는 필드가 널 허용으로 선언된 경우 사용할 수 있습니다. 삽입 시점에는 일반 컬럼과 널 허용 컬럼 모두에 Nil을 전달할 수 있습니다. 일반 컬럼의 경우 해당 유형의 기본값이 저장됩니다. 예를 들어 string에는 빈 문자열이 저장됩니다. 널 허용 컬럼의 경우 ClickHouse에 NULL 값이 저장됩니다.
 
-스캔 시점에는 널 허용 필드의 nil 값을 나타내기 위해 nil을 지원하는 유형의 포인터(예: *string)를 전달해야 합니다. 아래 예시에서 Nullable(String)인 col1은 따라서 **string을 받습니다. 이렇게 하면 nil을 표현할 수 있습니다. nil을 표현할 수 없는 대상(예: *int64)에 NULL을 스캔하면 &quot;converting NULL to *int64 is unsupported&quot; 오류가 반환됩니다. `sql.Scanner`를 구현한 타입은 자체 `Scan(nil)`으로 NULL을 처리합니다.
+스캔 시점에는 널 허용 필드의 nil 값을 나타내기 위해 nil을 지원하는 유형의 포인터(예: *string)를 전달해야 합니다. 아래 예시에서 Nullable(String)인 col1은 따라서 **string을 받습니다. 이렇게 하면 nil을 표현할 수 있습니다.
 
 ```go
 if err = conn.Exec(ctx, `

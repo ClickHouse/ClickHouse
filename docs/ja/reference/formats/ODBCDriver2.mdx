@@ -12,9 +12,11 @@ doc_type: 'reference'
 | -- | -- | ----- |
 | ✗  | ✔  |       |
 
-## 説明 {#description}
+<div id="description">
+  ## 説明
+</div>
 
-`ODBCDriver2` フォーマットは、HTTP 経由でクエリ結果を [ClickHouse の `ODBC` ドライバー](/ja/concepts/features/interfaces/odbc/index)に転送するためのバイナリ出力専用フォーマットです。ドライバーは `default_format` を
+`ODBCDriver2` フォーマットは、HTTP 経由でクエリ結果を [ClickHouse の `ODBC` ドライバー](/ja/concepts/features/interfaces/odbc)に転送するためのバイナリ出力専用フォーマットです。ドライバーは `default_format` を
 `ODBCDriver2` に設定してこのフォーマットをリクエストします。通常、ユーザーが直接選択することはありません。
 
 ストリーム内のすべての整数は、リトルエンディアンのバイト順でエンコードされた符号付き 32 ビット値です。文字列は、バイト長の後に
@@ -30,7 +32,9 @@ doc_type: 'reference'
 `NULL` 値は長さ `-1` でエンコードされます。空の非 NULL 文字列の長さは `0` です。totals が存在する場合は、
 同じ行エンコードを使用し、通常の行の後に続きます。
 
-## 使用例 {#example-usage}
+<div id="example-usage">
+  ## 使用例
+</div>
 
 次のクエリは、このフォーマットのテストで扱われる値を代表するものです。
 
@@ -53,7 +57,9 @@ clickhouse-client --query \
 
 通常、ドライバーは HTTP リクエストに `default_format=ODBCDriver2` を追加し、レスポンスをデコードします。
 
-## フォーマット設定 {#format-settings}
+<div id="format-settings">
+  ## フォーマット設定
+</div>
 
 `ODBCDriver2` は、個々の値に対して標準のテキストシリアライゼーション設定を使用します。フォーマット自体に固有の設定はありません。
 

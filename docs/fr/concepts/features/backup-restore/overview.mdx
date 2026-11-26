@@ -132,18 +132,14 @@ BACKUP TABLE test.table
 ## Utilisation des collections nommées {#using-named-collections}
 
 Les collections nommées vous permettent de stocker des paires clé-valeur (comme des identifiants S3, des endpoints et des paramètres) réutilisables dans les opérations de sauvegarde/restauration.
-Elles permettent de :
+Elles permettent de :
 
 * Masquer les identifiants aux utilisateurs sans accès administrateur
 * Simplifier les commandes en centralisant les configurations complexes
 * Assurer la cohérence entre les opérations
 * Éviter l’exposition des identifiants dans les journaux de requêtes
 
-Voir [« collections nommées »](/fr/concepts/features/configuration/server-config/named-collections) pour plus de détails.
-
-Les collections nommées créées en SQL peuvent elles-mêmes être exportées dans une sauvegarde, puis restaurées à partir de
-celle-ci, via la table `system.named_collections` ; voir
-[« Sauvegarde et restauration des collections nommées »](/fr/concepts/features/backup-restore/named-collections).
+Voir [« collections nommées »](/fr/concepts/features/configuration/server-config/named-collections) pour plus de détails.
 
 ## Sauvegarde des tables système, de journalisation ou de gestion des accès {#system-backups}
 
@@ -171,13 +167,6 @@ Cette fonctionnalité ne fonctionne que pour les configurations gérées au moye
 (désignées sous le nom de [&quot;contrôle d’accès et gestion des comptes pilotés par SQL&quot;](/fr/concepts/features/security/access-rights#enabling-access-control)).
 Les configurations d’accès définies dans les fichiers de configuration du serveur ClickHouse (par ex. `users.xml`)
 ne sont pas incluses dans les sauvegardes et ne peuvent pas être restaurées par cette méthode.
-
-<Note>
-  Dans les versions de ClickHouse antérieures à la 26.10, les politiques de lignes, les settings profiles et les quotas restaurés avec `RESTORE` apparaissent
-  dans `system.row_policies`, `system.settings_profiles` et `system.quotas`, mais ne sont pas appliqués immédiatement
-  aux requêtes. Exécutez [`SYSTEM RELOAD USERS`](/fr/reference/statements/system#reload-users) une fois la restauration terminée
-  pour les appliquer.
-</Note>
 
 ## Syntaxe générale {#syntax}
 

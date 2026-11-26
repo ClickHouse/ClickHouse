@@ -7,8 +7,10 @@ keywords: ['セマンティック検索', 'ベクトル類似度', '近似最近
 doc_type: 'guide'
 ---
 
+import { Image } from "/snippets/ja/components/Image.jsx";
+
 <div id="introduction">
-  ## はじめに {#introduction}
+  ## はじめに
 </div>
 
 [LAION 5Bデータセット](https://laion.ai/blog/laion-5b/) には、58.5億件の画像・テキスト埋め込みと、
@@ -20,7 +22,7 @@ doc_type: 'guide'
 画像から画像への検索の両方に使用できます。
 
 <div id="dataset-details">
-  ## データセットの詳細 {#dataset-details}
+  ## データセットの詳細
 </div>
 
 完全なデータセットは、[opendatalab/laion5b-downloader](https://github.com/opendatalab/laion5b-downloader) を使用してダウンロードできます。
@@ -31,7 +33,7 @@ ClickHouse は、1,000 万件のベクトルのサブセットをパブリック
 このデータセットに必要なストレージ容量とメモリ要件を見積もるため、まず [ドキュメント](/ja/reference/engines/table-engines/mergetree-family/annindexes) を参照してサイジングを行うことを推奨します。
 
 <div id="steps">
-  ## 手順 {#steps}
+  ## 手順
 </div>
 
 <Steps>
@@ -159,10 +161,6 @@ ClickHouse は、1,000 万件のベクトルのサブセットをパブリック
 
     上記の検索結果は以下のとおりです。
 
-    <div className="ch-image-md">
-      <Frame>
-        ![ベクトル類似度検索の結果](/images/getting-started/example-datasets/laion5b_visualization_1.webp)
-      </Frame>
-    </div>
+    <Image img="/images/getting-started/example-datasets/laion5b_visualization_1.webp" alt="ベクトル類似度検索の結果" size="md" />
   </Step>
 </Steps>

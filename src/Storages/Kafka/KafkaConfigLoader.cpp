@@ -24,9 +24,7 @@
 #include <IO/S3/getAvailabilityZone.h>
 #include <chrdkafka_conf_sensitive.h>
 #include <algorithm>
-#include <charconv>
 #include <csignal>
-#include <limits>
 #include <unordered_set>
 
 namespace CurrentMetrics
@@ -47,7 +45,7 @@ namespace KafkaSetting
     extern const KafkaSettingsString kafka_security_protocol;
     extern const KafkaSettingsString kafka_sasl_mechanism;
     extern const KafkaSettingsString kafka_sasl_username;
-    extern const KafkaSettingsSecretString kafka_sasl_password;
+    extern const KafkaSettingsString kafka_sasl_password;
     extern const KafkaSettingsString kafka_compression_codec;
     extern const KafkaSettingsInt64 kafka_compression_level;
     extern const KafkaSettingsString kafka_autodetect_client_rack;
@@ -240,24 +238,6 @@ String toKafkaPropertyName(const String & key)
     return name;
 }
 
-/// Rejects the values of the allowed properties that librdkafka accepts but cannot use.
-void checkSQLKafkaPropertyValue(const String & name, const String & value)
-{
-    if (name != "topic.metadata.propagation.max.ms")
-        return;
-
-    /// librdkafka accepts up to 3600000 but converts the value to microseconds in a 32-bit `int`: larger values overflow.
-    /// The format is stricter than the one of librdkafka (which reads a prefix of the value with `strtol`),
-    /// so the number that librdkafka reads is never greater than the number checked here.
-    static constexpr UInt64 max_value = std::numeric_limits<int>::max() / 1000;
-    UInt64 parsed = 0;
-    const char * end = value.data() + value.size();
-    const auto [pos, error] = std::from_chars(value.data(), end, parsed);
-    if (error != std::errc() || pos != end || parsed > max_value)
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS, "Kafka property `{}` must be an integer between 0 and {}, got `{}`", name, max_value, value);
-}
-
 /// Only properties reviewed for use without access to server-local resources may be set from SQL.
 /// Match the exact name passed to librdkafka, including any `topic.` prefix.
 void checkSQLKafkaProperty(const String & name, const String & value)
@@ -352,7 +332,6 @@ void checkSQLKafkaProperty(const String & name, const String & value)
         "topic.compression.type",
         "topic.delivery.timeout.ms",
         "topic.message.timeout.ms",
-        "topic.metadata.propagation.max.ms",
         "topic.metadata.refresh.interval.ms",
         "topic.partitioner",
         "topic.request.required.acks",
@@ -360,10 +339,7 @@ void checkSQLKafkaProperty(const String & name, const String & value)
     };
     static_assert(std::ranges::is_sorted(allowed_properties));
     if (std::ranges::binary_search(allowed_properties, std::string_view(name)))
-    {
-        checkSQLKafkaPropertyValue(name, value);
         return;
-    }
 
     /// `probe` is not a path: librdkafka searches a fixed list of the standard locations of CA certificates.
     if (value == "probe" && (name == "ssl.ca.location" || name == "https.ca.location"))
@@ -626,7 +602,7 @@ void updateConfigurationFromConfig(
     if (!kafka_settings[KafkaSetting::kafka_sasl_username].value.empty())
         kafka_config.set("sasl.username", kafka_settings[KafkaSetting::kafka_sasl_username]);
     if (!kafka_settings[KafkaSetting::kafka_sasl_password].value.empty())
-        kafka_config.set("sasl.password", String(kafka_settings[KafkaSetting::kafka_sasl_password].value));
+        kafka_config.set("sasl.password", kafka_settings[KafkaSetting::kafka_sasl_password]);
     if (!kafka_settings[KafkaSetting::kafka_compression_codec].value.empty())
         kafka_config.set("compression.codec", kafka_settings[KafkaSetting::kafka_compression_codec]);
 

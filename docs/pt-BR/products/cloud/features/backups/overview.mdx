@@ -4,15 +4,16 @@ slug: /cloud/features/backups
 title: 'Backups'
 keywords: ['backups', 'backups na nuvem', 'restauração']
 description: 'Apresenta uma visão geral dos recursos de backup no ClickHouse Cloud'
-doc_type: 'reference'
+doc_type: 'referência'
 ---
 
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
 import { ScalePlanFeatureBadge } from "/snippets/pt-BR/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
 
 Os backups do banco de dados foram projetados para permitir que você restaure um serviço a um estado anterior com base no último backup bem-sucedido.
 
 <div id="backups">
-  ## Backups {#backups}
+  ## Backups
 </div>
 
 ### Como os backups funcionam no ClickHouse Cloud {#how-backups-work-in-clickhouse-cloud}
@@ -25,11 +26,7 @@ Na captura de tela abaixo, os quadrados com linha contínua mostram os backups c
 
 No Dia 1, um backup completo é feito para iniciar a cadeia de backups. No Dia 2, um backup incremental é feito, e tanto os backups completos quanto os incrementais ficam disponíveis para restauração. Até o Dia 7, temos um backup completo e seis backups incrementais na cadeia, todos visíveis e disponíveis para restauração. No Dia 8, fazemos um novo backup completo e, no Dia 9, assim que temos dois backups na nova cadeia, a cadeia anterior é descartada.
 
-<div className="ch-image-lg">
-  <Frame>
-    ![Exemplo de cadeia de backups no ClickHouse Cloud](/images/cloud/manage/backup-chain.webp)
-  </Frame>
-</div>
+<Image img="/images/cloud/manage/backup-chain.webp" size="lg" alt="Exemplo de cadeia de backups no ClickHouse Cloud" />
 
 ### Política de backup padrão {#default-backup-policy}
 
@@ -59,7 +56,7 @@ A retenção controla por quanto tempo os dados de backup são mantidos; a frequ
 Consulte [&quot;Configurar agendamentos de backup&quot;](/pt-BR/products/cloud/guides/backups/configurable-backups) para ver as etapas de configuração dos seus backups.
 
 <div id="byob">
-  ## Backups com seu próprio bucket (BYOB) {#byob}
+  ## Backups com seu próprio bucket (BYOB)
 </div>
 
 O ClickHouse Cloud permite exportar backups para o armazenamento na conta do seu provedor de serviços em nuvem (CSP) (AWS S3, Google Cloud Storage ou Azure Blob Storage).
@@ -69,22 +66,16 @@ A configuração de retenção de backups se aplica aos backups gravados no seu 
 Para saber como funcionam os backups do ClickHouse Cloud, consulte a documentação de [backups](/pt-BR/products/cloud/guides/backups/review-and-restore-backups).
 
 Neste guia, mostramos como exportar backups para o armazenamento de objetos da AWS, GCP e Azure, bem como restaurar esses backups da sua conta em um novo serviço do ClickHouse Cloud.
-Também compartilhamos comandos de backup / restauração que permitem exportar backups para o seu bucket e restaurá-los.
+Também compartilhamos comandos de backup / restore que permitem exportar backups para o seu bucket e restaurá-los.
 
 <Info>
   **Backups entre regiões**
 
   Qualquer uso em que os backups sejam exportados para uma
   região diferente dentro do mesmo provedor de Cloud gerará cobranças de [transferência de dados](/pt-BR/products/cloud/reference/billing/network-data-transfer).
+
+  No momento, não oferecemos suporte a backup / restore para serviços que usam [Transparent Data Encryption (TDE)](/pt-BR/products/cloud/guides/security/cmek#transparent-data-encryption-tde) nem para serviços regulados.
 </Info>
-
-<Warning>
-  **Serviços que não podem exportar backups para o seu próprio bucket**
-
-  Backups para o seu próprio bucket não estão disponíveis para serviços criados com o tipo de região **compatível com a HIPAA** ou **Em conformidade com PCI** (serviços regulados), nem para serviços que usam [Criptografia Transparente de Dados (TDE)](/pt-BR/products/cloud/guides/security/cmek#transparent-data-encryption-tde).
-
-  Para serviços regulados, trata-se de um controle de segurança do ambiente regulado, e não de uma configuração: a opção **Set up external backup** fica desabilitada no console e o privilégio `BACKUP` não é concedido; portanto, também não é permitido usar `BACKUP ... TO` para um bucket externo. Backups gerenciados pelo ClickHouse, agendamentos de backups configuráveis e restaurações para um novo serviço na mesma região continuam disponíveis. Consulte [Integração inicial HIPAA](/pt-BR/products/cloud/guides/security/compliance/hipaa-onboarding#backups) e [Integração inicial PCI](/pt-BR/products/cloud/guides/security/compliance/pci-onboarding#backups).
-</Warning>
 
 Consulte [&quot;Exportar backups para sua própria conta Cloud&quot;](/pt-BR/products/cloud/guides/backups/bring-your-own-backup/export-backups-to-own-cloud-account) para ver exemplos de como fazer backups completos e backups incrementais no armazenamento de objetos da AWS, GCP e Azure, bem como como restaurá-los.
 

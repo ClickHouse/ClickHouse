@@ -493,8 +493,8 @@ static DecimalField<T> readDecimalFieldBinary(ReadBuffer & buf)
     readBinary(value, buf);
     UInt32 scale = 0;
     readBinary(scale, buf);
-    /// The scale comes from the data; an out-of-range value later overruns a
-    /// fixed-size buffer in the decimal text writer, so reject it here.
+    /// The scale is attacker-controlled wire data; an out-of-range value later overruns a
+    /// fixed-size buffer in the decimal text writer, so reject it at the boundary.
     if (scale > DecimalUtils::max_precision<T>)
         throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Scale {} is out of bounds (max scale: {})",
                         scale, DecimalUtils::max_precision<T>);
@@ -1126,10 +1126,8 @@ Field Field::restoreFromDump(std::string_view dump_)
     {
         std::string_view after_prefix = dump.substr(prefix.length());
         size_t comma = after_prefix.find(',');
-        if (comma == std::string_view::npos)
-            show_error();
         size_t end = after_prefix.find(')', comma + 1);
-        if (end != after_prefix.length() - 1)
+        if ((comma == std::string_view::npos) || (end != after_prefix.length() - 1))
             show_error();
         std::string_view name_view = after_prefix.substr(0, comma);
         std::string_view data_view = after_prefix.substr(comma + 1, end - comma - 1);

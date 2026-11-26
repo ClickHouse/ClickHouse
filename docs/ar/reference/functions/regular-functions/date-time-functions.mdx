@@ -944,13 +944,13 @@ SELECT dateAdd('1998-06-16'::Date, INTERVAL 10 year)
 
 كبديل للدالة age، راجع الدالة [`dateDiff`](#dateDiff).
 
-**الصيغة**
+**البنية**
 
 ```sql
 age('unit', startdate, enddate[, timezone])
 ```
 
-**الوسيطات**
+**المعاملات**
 
 * `unit` — نوع الفاصل الزمني للنتيجة.
 
@@ -970,11 +970,11 @@ age('unit', startdate, enddate[, timezone])
 
 * `startdate` — أول قيمة زمنية للطرح (المطروح). [`Date`](/ar/reference/data-types/date) أو [`Date32`](/ar/reference/data-types/date32) أو [`DateTime`](/ar/reference/data-types/datetime) أو [`DateTime64`](/ar/reference/data-types/datetime64)
 * `enddate` — ثاني قيمة زمنية يُطرح منها (المطروح منه). [`Date`](/ar/reference/data-types/date) أو [`Date32`](/ar/reference/data-types/date32) أو [`DateTime`](/ar/reference/data-types/datetime) أو [`DateTime64`](/ar/reference/data-types/datetime64)
-* `timezone` — اختياري. اسم المنطقة الزمنية. إذا تم تحديده، فسيُطبَّق على كلٍّ من startdate و enddate. وإذا لم يتم تحديده، فستُستخدم المنطقتان الزمنيتان لـ startdate و enddate. وإذا لم تكونا متماثلتين، فالنتيجة غير محددة. [`String`](/ar/reference/data-types/string)
+* `timezone` — اختياري. اسم المنطقة الزمنية. إذا تم تحديده، فسيُطبَّق على كلٍّ من startdate و enddate. وإذا لم يتم تحديده، فستُستخدم المنطقتان الزمنيتان لـ startdate و enddate. وإذا لم تكونا متماثلتين، فالنتيجة غير محددة. [`String`](/ar/reference/data-types/string)
 
 **القيمة المعادة**
 
-تعيد الفرق بين enddate و startdate معبَّرًا عنه بوحدة unit. [`Int32`](/ar/reference/data-types/int-uint)
+تعيد الفرق بين enddate و startdate معبَّرًا عنه بوحدة unit. [`Int32`](/ar/reference/data-types/int-uint)
 
 **أمثلة**
 
@@ -1207,7 +1207,7 @@ SELECT changeYear('2024-01-01'::DateTime, 2023)
 
 ## dateDiff {#dateDiff}
 
-أُضيف في: v23.4.0
+تم تقديمه في: v23.4.0
 
 يعيد عدد حدود `unit` المحددة التي جرى تجاوزها بين `startdate` و`enddate`.
 يُحسب الفرق باستخدام الوحدات النسبية. على سبيل المثال، الفرق بين 2021-12-29 و2022-01-01 هو 3 أيام للوحدة day
@@ -1219,15 +1219,15 @@ SELECT changeYear('2024-01-01'::DateTime, 2023)
 
 كبديل لـ `dateDiff`، راجع الدالة [`age`](#age).
 
-**الصيغة**
+**البنية**
 
 ```sql
 dateDiff(unit, startdate, enddate[, timezone])
 ```
 
-**الأسماء المستعارة**: `timestampDiff`, `TIMESTAMP_DIFF`, `DATE_DIFF`, `timestamp_diff`, `date_diff`
+**الأسماء المستعارة**: `timestampDiff`, `TIMESTAMP_DIFF`, `DATE_DIFF`, `date_diff`, `timestamp_diff`
 
-**الوسيطات**
+**المعاملات**
 
 * `unit` — نوع الفاصل الزمني المستخدم في النتيجة.
 
@@ -1247,11 +1247,11 @@ dateDiff(unit, startdate, enddate[, timezone])
 
 * `startdate` — القيمة الزمنية الأولى التي تُطرح (المطروح). [`Date`](/ar/reference/data-types/date) أو [`Date32`](/ar/reference/data-types/date32) أو [`DateTime`](/ar/reference/data-types/datetime) أو [`DateTime64`](/ar/reference/data-types/datetime64)
 * `enddate` — القيمة الزمنية الثانية التي يُطرح منها (المطروح منه). [`Date`](/ar/reference/data-types/date) أو [`Date32`](/ar/reference/data-types/date32) أو [`DateTime`](/ar/reference/data-types/datetime) أو [`DateTime64`](/ar/reference/data-types/datetime64)
-* `timezone` — اختياري. اسم المنطقة الزمنية. إذا تم تحديده، فسيُطبَّق على كلٍّ من `startdate` و`enddate`. وإذا لم يتم تحديده، فستُستخدم المنطقتان الزمنيتان لـ `startdate` و`enddate`. وإذا لم تكونا متماثلتين، فستكون النتيجة غير محددة. [`String`](/ar/reference/data-types/string)
+* `timezone` — اختياري. اسم المنطقة الزمنية. إذا تم تحديده، فسيُطبَّق على كلٍّ من `startdate` و`enddate`. وإذا لم يتم تحديده، فستُستخدم المنطقتان الزمنيتان لـ `startdate` و`enddate`. وإذا لم تكونا متماثلتين، فستكون النتيجة غير محددة. [`String`](/ar/reference/data-types/string)
 
 **القيمة المعادة**
 
-تعيد الفرق بين `enddate` و`startdate` معبَّرًا عنه بوحدة `unit`. [`Int64`](/ar/reference/data-types/int-uint)
+تعيد الفرق بين `enddate` و`startdate` معبَّرًا عنه بوحدة `unit`. [`Int64`](/ar/reference/data-types/int-uint)
 
 **أمثلة**
 
@@ -1428,7 +1428,7 @@ SELECT now(), dateTrunc('hour', now(), 'Asia/Istanbul');
 | %H            | الساعة بتنسيق 24 ساعة (00-23)                            | 22         |
 | %i            | الدقيقة (00-59)                                          | 33         |
 | %I            | الساعة بتنسيق 12 ساعة (01-12)                            | 10         |
-| %j            | رقم اليوم في السنة (001-366)                                      | 002        |
+| %j            | يوم السنة (001-366)                                      | 002        |
 | %k            | الساعة بتنسيق 24 ساعة (00-23)                            | 14         |
 | %l            | الساعة بتنسيق 12 ساعة (01-12)                            | 09         |
 | %m            | الشهر كرقم صحيح (01-12)                                  | 01         |
@@ -1451,11 +1451,11 @@ SELECT now(), dateTrunc('hour', now(), 'Asia/Istanbul');
 | %z            | إزاحة الوقت عن UTC بصيغة +HHMM أو -HHMM                  | -0500      |
 | %%            | علامة %                                                  | %          |
 
-* في إصدارات ClickHouse الأقدم من v23.4، تطبع `%f` صفرًا واحدًا (0) إذا كانت القيمة المنسّقة من النوع Date أو Date32 أو DateTime (التي لا تحتوي على أجزاء من الثانية) أو من النوع DateTime64 بدقة تساوي 0.
-* في إصدارات ClickHouse الأقدم من v25.1، تطبع `%f` عددًا من الخانات يساوي عدد المنازل العشرية الخاص بـ DateTime64 بدلًا من 6 خانات ثابتة.
+* في إصدارات ClickHouse الأقدم من v23.4، تطبع `%f` صفرًا واحدًا (0) إذا كانت القيمة المنسّقة من النوع Date أو Date32 أو DateTime (التي لا تحتوي على أجزاء كسرية من الثانية) أو من النوع DateTime64 بدقة تساوي 0.
+* في إصدارات ClickHouse الأقدم من v25.1، تطبع `%f` عددًا من الخانات يساوي precision الخاصة بـ DateTime64 بدلًا من 6 خانات ثابتة.
 * في إصدارات ClickHouse الأقدم من v23.4، تطبع `%M` الدقيقة (00-59) بدلًا من الاسم الكامل للشهر (January-December).
 
-**الصيغة**
+**البنية**
 
 ```sql
 formatDateTime(datetime, format[, timezone])
@@ -1528,7 +1528,7 @@ LIMIT 10
 
 ## formatDateTimeInJodaSyntax {#formatDateTimeInJodaSyntax}
 
-أُضيفت في: v23.1.0
+أُضيفت في: v20.1.0
 
 تُشبه `formatDateTime`، إلا أنها تنسّق قيم التاريخ والوقت بأسلوب Joda بدلًا من أسلوب MySQL. راجع [توثيق Joda Time](https://joda-time.sourceforge.net/apidocs/org/joda/time/format/DateTimeFormat.html).
 
@@ -1548,7 +1548,7 @@ LIMIT 10
 | e             | يوم الأسبوع                        | رقم        | 2                          |
 | E             | يوم الأسبوع                        | نص         | Tuesday; Tue               |
 | y             | السنة                              | سنة        | 1996                       |
-| D             | رقم اليوم في السنة                     | رقم        | 189                        |
+| D             | اليوم من السنة                     | رقم        | 189                        |
 | M             | شهر السنة                          | شهر        | July; Jul; 07              |
 | d             | يوم الشهر                          | رقم        | 10                         |
 | a             | نصف اليوم                          | نص         | PM                         |
@@ -1564,19 +1564,17 @@ LIMIT 10
 | &#39;         | إفلات للنص                         | فاصل       |                            |
 | &#39;&#39;    | علامة اقتباس مفردة                 | قيمة حرفية | &#39;                      |
 
-**الصيغة**
+**البنية**
 
 ```sql
 formatDateTimeInJodaSyntax(datetime, format[, timezone])
 ```
 
-**الأسماء المستعارة**: `FORMAT_DATETIME`
-
-**الوسيطات**
+**الوسائط**
 
 * `datetime` — تاريخ أو تاريخ ووقت لتنسيقه. [`DateTime`](/ar/reference/data-types/datetime) أو [`Date`](/ar/reference/data-types/date) أو [`Date32`](/ar/reference/data-types/date32) أو [`DateTime64`](/ar/reference/data-types/datetime64)
 * `format` — سلسلة تنسيق تتضمن حقول استبدال بنمط Joda. [`String`](/ar/reference/data-types/string)
-* `timezone` — اختياري. اسم المنطقة الزمنية للوقت المنسَّق. [`String`](/ar/reference/data-types/string)
+* `timezone` — اختياري. اسم المنطقة الزمنية للوقت المنسَّق. [`String`](/ar/reference/data-types/string)
 
 **القيمة المُعادة**
 
@@ -1584,7 +1582,7 @@ formatDateTimeInJodaSyntax(datetime, format[, timezone])
 
 **أمثلة**
 
-**تنسيق التاريخ والوقت باستخدام صيغة Joda**
+**تنسيق التاريخ والوقت باستخدام بنية Joda**
 
 ```sql title=Query
 SELECT formatDateTimeInJodaSyntax(toDateTime('2010-01-04 12:34:56'), 'yyyy-MM-dd HH:mm:ss')
@@ -2160,7 +2158,7 @@ SELECT monthName(date_value)
 now([timezone])
 ```
 
-**الأسماء البديلة**: `localtimestamp`, `current_timestamp`
+**الأسماء البديلة**: `current_timestamp`, `localtimestamp`
 
 **الوسائط**
 
@@ -3297,19 +3295,19 @@ SELECT timestamp('2023-12-31 12:00:00', '12:00:00.11') AS ts;
 أُضيفت في: v21.4.0
 
 تعيد اسم المنطقة الزمنية للجلسة الحالية، أو تحوّل إزاحة منطقة زمنية
-أو اسمها إلى الاسم المعياري للمنطقة الزمنية.
+أو اسمها إلى الاسم القياسي للمنطقة الزمنية.
 
 <Note>
   هذه الدالة غير حتمية: قد تُرجع نتائج مختلفة للوسائط نفسها.
 </Note>
 
-**الصيغة**
+**البنية**
 
 ```sql
 timezone()
 ```
 
-**الأسماء المستعارة**: `current_timezone`, `timeZone`
+**الأسماء البديلة**: `timeZone`
 
 **الوسيطات**
 
@@ -3317,7 +3315,7 @@ timezone()
 
 **القيمة المُعادة**
 
-يُرجع الاسم المعياري للمنطقة الزمنية على هيئة [`String`](/ar/reference/data-types/string)
+يُرجع اسم المنطقة الزمنية المعياري على هيئة [`String`](/ar/reference/data-types/string)
 
 **أمثلة**
 
@@ -3422,7 +3420,7 @@ timezoneOffset(Time) AS Offset_in_seconds,
 toDayOfMonth(datetime)
 ```
 
-**الأسماء المستعارة**: `DAYOFMONTH`, `DAY`, `DAY_OF_MONTH`
+**الأسماء البديلة**: `DAYOFMONTH`, `DAY`
 
 **الوسائط**
 
@@ -3468,7 +3466,7 @@ SELECT toDayOfMonth(toDateTime('2023-04-21 10:20:30'))
 toDayOfWeek(datetime[, mode[, timezone]])
 ```
 
-**الأسماء المستعارة**: `DAYOFWEEK`، `DAY_OF_WEEK`
+**الأسماء البديلة**: `DAYOFWEEK`
 
 **الوسيطات**
 
@@ -3499,17 +3497,17 @@ SELECT
 
 ## toDayOfYear {#toDayOfYear}
 
-قُدِّمت في: v18.4.0
+قُدِّمت في: v18.4.0
 
 تُرجِع رقم اليوم ضمن السنة (1-366) لقيمة من النوع `Date` أو `DateTime`.
 
-**الصيغة**
+**الصياغة**
 
 ```sql
 toDayOfYear(datetime)
 ```
 
-**الأسماء المستعارة**: `DAYOFYEAR`, `DAY_OF_YEAR`
+**الأسماء المستعارة**: `DAYOFYEAR`
 
 **الوسيطات**
 
@@ -3649,7 +3647,7 @@ SELECT toHour(toDateTime('2023-04-21 10:20:30'))
 
 أُضيفت في: v20.1.0
 
-تُرجع رقم أسبوع ISO لتاريخ أو تاريخ مع وقت.
+تُرجع رقم أسبوع ISO لتاريخ أو تاريخ ووقت.
 
 هذه دالة توافقية وتكافئ `toWeek(date, 3)`.
 تبدأ أسابيع ISO يوم الاثنين، ويشمل الأسبوع الأول من السنة يوم 4 يناير.
@@ -3664,9 +3662,7 @@ SELECT toHour(toDateTime('2023-04-21 10:20:30'))
 toISOWeek(datetime[, timezone])
 ```
 
-**الأسماء المستعارة**: `WEEK_OF_YEAR`
-
-**الوسيطات**
+**المعاملات**
 
 * `datetime` — تاريخ أو تاريخ مع وقت لاستخراج رقم أسبوع ISO منه. [`Date`](/ar/reference/data-types/date) أو [`DateTime`](/ar/reference/data-types/datetime) أو [`Date32`](/ar/reference/data-types/date32) أو [`DateTime64`](/ar/reference/data-types/datetime64)
 * `timezone` — اختياري. المنطقة الزمنية. [`String`](/ar/reference/data-types/string)
@@ -3705,15 +3701,13 @@ SELECT toDate('2025-12-29') AS date, toISOWeek(date) AS isoWeek, toYear(date) AS
 
 أُضيف في: v18.4.0
 
-يحوِّل تاريخًا أو تاريخًا مع وقت إلى رقم السنة وفق معيار ISO.
+يحوِّل تاريخًا أو تاريخًا مع وقت إلى رقم السنة وفق معيار ISO.
 
-**الصيغة**
+**البنية**
 
 ```sql
 toISOYear(datetime)
 ```
-
-**الأسماء المستعارة**: `YEAR_OF_WEEK`
 
 **الوسائط**
 
@@ -3743,19 +3737,19 @@ toISOYear(toDateTime('2024-10-02 01:30:00')) as year2
 
 أُضيف في: v1.1.0
 
-يُقرِّب قيمة من نوع تاريخ أو تاريخ مع وقت إلى آخر يوم في الشهر.
+يُقرِّب قيمة من نوع تاريخ أو تاريخ مع وقت إلى آخر يوم في الشهر.
 
 <Note>
   يمكن تهيئة نوع الإرجاع من خلال الإعداد [`enable_extended_results_for_datetime_functions`](/ar/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions).
 </Note>
 
-**الصيغة**
+**البنية**
 
 ```sql
 toLastDayOfMonth(value)
 ```
 
-**الأسماء المستعارة**: `LAST_DAY_OF_MONTH`, `LAST_DAY`
+**الأسماء المستعارة**: `LAST_DAY`
 
 **الوسيطات**
 
@@ -4720,16 +4714,14 @@ SELECT toStartOfISOYear(toDateTime('2023-04-21 10:20:30'))
 
 أُضيفت في: v20.1.0
 
-تُعمِّم هذه الدالة دوال `toStartOf*()` الأخرى باستخدام الصيغة `toStartOfInterval(date_or_date_with_time, INTERVAL x unit [, time_zone])`.
+تُعمِّم هذه الدالة دوال `toStartOf*()` الأخرى باستخدام البنية `toStartOfInterval(date_or_date_with_time, INTERVAL x unit [, time_zone])`.
 
 على سبيل المثال،
 
-* تُقرِّب `toStartOfInterval(t, INTERVAL 1 YEAR)` إلى الحدّ نفسه الذي تُقرِّب إليه `toStartOfYear(t)`,
-* تُقرِّب `toStartOfInterval(t, INTERVAL 1 MONTH)` إلى الحدّ نفسه الذي تُقرِّب إليه `toStartOfMonth(t)`,
-* تُقرِّب `toStartOfInterval(t, INTERVAL 1 DAY)` إلى الحدّ نفسه الذي تُقرِّب إليه `toStartOfDay(t)`,
-* تُقرِّب `toStartOfInterval(t, INTERVAL 15 MINUTE)` إلى الحدّ نفسه الذي تُقرِّب إليه `toStartOfFifteenMinutes(t)`.
-
-قد يختلف نوع النتيجة عن نوع نتيجة هذه الدوال (انظر أدناه).
+* تُرجع `toStartOfInterval(t, INTERVAL 1 YEAR)` النتيجة نفسها التي تُرجعها `toStartOfYear(t)`,
+* تُرجع `toStartOfInterval(t, INTERVAL 1 MONTH)` النتيجة نفسها التي تُرجعها `toStartOfMonth(t)`,
+* تُرجع `toStartOfInterval(t, INTERVAL 1 DAY)` النتيجة نفسها التي تُرجعها `toStartOfDay(t)`,
+* تُرجع `toStartOfInterval(t, INTERVAL 15 MINUTE)` النتيجة نفسها التي تُرجعها `toStartOfFifteenMinutes(t)`.
 
 يُجرى الحساب بالاستناد إلى نقاط زمنية محددة:
 
@@ -4753,14 +4745,7 @@ SELECT toStartOfISOYear(toDateTime('2023-04-21 10:20:30'))
 
 تحاكي صيغة التحميل الزائد الثانية الدالة `time_bucket()` في TimescaleDB، وكذلك الدالة `date_bin()` في PostgreSQL.
 
-تكون النتيجة من نوع الوسيطة `value` نفسه: ‏`Date` لـ `Date`، و`Date32` لـ `Date32`، و`DateTime` لـ `DateTime`، و`DateTime64` بعدد المنازل العشرية نفسه لـ `DateTime64`.
-والاستثناء الوحيد هو استخدام وحدة أصغر من الثانية أدق من عدد المنازل العشرية لوسيطة `DateTime64` (على سبيل المثال، `INTERVAL 1500 MILLISECOND` مع `DateTime64(0)`): ففي هذه الحالة يكون للنتيجة عدد المنازل العشرية الخاص بالوحدة، وهو ما يتيح تمثيل حدود الحاويات.
-أما النتيجة التي تقع دون نطاق `Date` أو `DateTime` (على سبيل المثال، تقريب `1970-01-01` نزولًا إلى أسبوع) فتُقيَّد بقيمتها الدنيا.
-عند تعطيل الإعداد [`to_start_of_interval_preserves_argument_type`](/ar/reference/settings/session-settings#to_start_of_interval_preserves_argument_type)، يعتمد نوع النتيجة بدلًا من ذلك على وحدة الفاصل الزمني،
-كما في الإصدارات السابقة لـ 26.11: ‏`Date` لـ `WEEK` والوحدات الأطول، و`DateTime` للوحدات من `DAY` وحتى `SECOND`، و`DateTime64` بعدد المنازل العشرية الخاص بالوحدة للوحدات الأصغر من الثانية.
-ينطبق هذا على صيغة التحميل الزائد التي لا تتضمن `origin`، أما صيغة التحميل الزائد التي تتضمن `origin` فتحافظ على نوع الوسيطة في هذه الحالة أيضًا، باستثناء أن النتيجة يكون لها عدد المنازل العشرية الخاص بالوحدة عند استخدام وسيطة `DateTime64` مع وحدة أصغر من الثانية.
-
-**الصيغة**
+**البنية**
 
 ```sql
 toStartOfInterval(value, INTERVAL x unit[, time_zone])
@@ -4769,14 +4754,14 @@ toStartOfInterval(value, INTERVAL x unit[, origin[, time_zone]])
 
 **الأسماء البديلة**: `date_bin`, `time_bucket`
 
-**الوسيطات**
+**الوسيط**
 
-* `value` — قيمة تاريخ أو تاريخ مع وقت تُقرَّب نزولًا. [`Date`](/ar/reference/data-types/date) أو [`Date32`](/ar/reference/data-types/date32) أو [`DateTime`](/ar/reference/data-types/datetime) أو [`DateTime64`](/ar/reference/data-types/datetime64)
-* `x` — رقم يمثّل طول الفاصل الزمني. - `unit` — وحدة الفاصل الزمني: YEAR, QUARTER, MONTH, WEEK, DAY, HOUR, MINUTE, SECOND, MILLISECOND, MICROSECOND, NANOSECOND. - `time_zone` — اختياري. اسم المنطقة الزمنية كسلسلة نصية. - `origin` — اختياري. نقطة الأصل للحساب (في التوقيع الثاني فقط).
+* `value` — قيمة تاريخ أو تاريخ مع وقت تُقرَّب نزولًا. [`Date`](/ar/reference/data-types/date) أو [`DateTime`](/ar/reference/data-types/datetime) أو [`DateTime64`](/ar/reference/data-types/datetime64)
+* `x` — رقم يمثّل طول الفاصل الزمني. - `unit` — وحدة الفاصل الزمني: YEAR, QUARTER, MONTH, WEEK, DAY, HOUR, MINUTE, SECOND, MILLISECOND, MICROSECOND, NANOSECOND. - `time_zone` — اختياري. اسم المنطقة الزمنية كسلسلة نصية. - `origin` — اختياري. نقطة بدء الحساب (في التوقيع الثاني فقط).
 
 **القيمة المُعادة**
 
-تعيد بداية الفاصل الزمني الذي تقع ضمنه قيمة الإدخال، وبالنوع نفسه لقيمة الإدخال. [`Date`](/ar/reference/data-types/date) أو [`Date32`](/ar/reference/data-types/date32) أو [`DateTime`](/ar/reference/data-types/datetime) أو [`DateTime64`](/ar/reference/data-types/datetime64)
+تعيد بداية الفاصل الزمني الذي تقع ضمنه قيمة الإدخال. [`DateTime`](/ar/reference/data-types/datetime)
 
 **أمثلة**
 
@@ -4788,7 +4773,7 @@ SELECT toStartOfInterval(toDateTime('2023-01-15 14:30:00'), INTERVAL 1 MONTH)
 
 ```response title=Response
 ┌─toStartOfInterval(toDateTime('2023-01-15 14:30:00'), toIntervalMonth(1))─┐
-│                                                      2023-01-01 00:00:00 │
+│                                                               2023-01-01 │
 └──────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -5381,8 +5366,7 @@ int32samoa: 1546300800
 
 أُضيفت في: v23.8.0
 
-تحوِّل قيمة تاريخ أو تاريخ مع وقت من منطقة زمنية إلى طابع زمني بتوقيت UTC. تُضمَّن هذه الدالة أساسًا للتوافق مع Apache Spark وأطر العمل المشابهة.
-يُحوَّل الوقت المحلي الذي يتكرر أو لا وجود له بسبب تغيير التوقيت الصيفي بالطريقة نفسها التي تتبعها `toDateTime`.
+تحوِّل قيمة تاريخ أو تاريخ ووقت من منطقة زمنية إلى طابع زمني بتوقيت UTC. تُضمَّن هذه الدالة أساسًا للتوافق مع Apache Spark وأطر العمل المشابهة.
 
 **الصيغة**
 
@@ -5392,14 +5376,14 @@ toUTCTimestamp(datetime, time_zone)
 
 **الأسماء البديلة**: `to_utc_timestamp`
 
-**الوسيطات**
+**المعاملات**
 
-* `datetime` — قيمة ثابتة من نوع تاريخ أو تاريخ مع وقت، أو تعبير. [`DateTime`](/ar/reference/data-types/datetime) أو [`DateTime64`](/ar/reference/data-types/datetime64)
+* `datetime` — قيمة ثابتة من نوع تاريخ أو تاريخ ووقت، أو تعبير. [`DateTime`](/ar/reference/data-types/datetime) أو [`DateTime64`](/ar/reference/data-types/datetime64)
 * `time_zone` — قيمة ثابتة من نوع String أو تعبير يمثّل المنطقة الزمنية. [`String`](/ar/reference/data-types/string)
 
 **القيمة المُعادة**
 
-تعيد قيمة تاريخ أو تاريخ مع وقت في المنطقة الزمنية UTC. [`DateTime`](/ar/reference/data-types/datetime) أو [`DateTime64`](/ar/reference/data-types/datetime64)
+تعيد قيمة تاريخ أو تاريخ ووقت في المنطقة الزمنية UTC. [`DateTime`](/ar/reference/data-types/datetime) أو [`DateTime64`](/ar/reference/data-types/datetime64)
 
 **أمثلة**
 
@@ -5757,16 +5741,16 @@ SELECT toDate('2016-12-27') AS date, toYearWeek(date) AS yearWeek0, toYearWeek(d
 يعيد التاريخ الحالي وقت تحليل الاستعلام. وهو مطابق لـ `toDate(now())`.
 
 <Note>
-  هذه الدالة غير حتمية: قد تُرجع نتائج مختلفة للوسيطات نفسها.
+  هذه الدالة غير حتمية: قد تُرجع نتائج مختلفة للمعاملات نفسها.
 </Note>
 
-**الصيغة**
+**البنية**
 
 ```sql
 today()
 ```
 
-**الأسماء البديلة**: `curdate`, `current_date`
+**الأسماء البديلة**: `current_date`, `curdate`
 
 **الوسيطات**
 
@@ -5792,7 +5776,7 @@ SELECT today() AS today, curdate() AS curdate, current_date() AS current_date FO
 └────────────┴────────────┴──────────────┘
 ```
 
-**صيغة SQL القياسية بدون أقواس**
+**صياغة SQL القياسية بدون أقواس**
 
 ```sql title=Query
 SELECT TODAY, CURDATE,CURRENT_DATE

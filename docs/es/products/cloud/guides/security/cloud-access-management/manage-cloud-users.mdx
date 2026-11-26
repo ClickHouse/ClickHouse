@@ -7,15 +7,19 @@ doc_type: 'guide'
 keywords: ['usuarios de Cloud', 'gestión de acceso', 'seguridad', 'permisos', 'gestión de equipos']
 ---
 
+import { Image } from "/snippets/es/components/Image.jsx";
+
 import { EnterprisePlanFeatureBadge } from "/snippets/es/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
 
 Esta guía está dirigida a los usuarios que tienen el rol de Admin en ClickHouse Cloud.
 
 <div id="add-users">
-  ## Añade usuarios a tu organización {#add-users}
+  ## Añade usuarios a tu organización
 </div>
 
-### Invitar a usuarios {#invite-users}
+<div id="invite-users">
+  ### Invitar a usuarios
+</div>
 
 Los administradores pueden invitar a varios usuarios a la vez y asignarles uno o varios roles al enviar la invitación.
 
@@ -23,46 +27,30 @@ Los administradores pueden invitar a varios usuarios a la vez y asignarles uno o
   <Step title="Accede a la configuración de la organización y selecciona Users and roles" id="users-and-roles-1">
     En la página de servicios, selecciona el nombre de tu organización. En el menú emergente, selecciona la opción `Users and roles`.
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![](/images/cloud/guides/control_plane/1_users_and_roles.webp)
-      </Frame>
-    </div>
+    <Image img="/images/cloud/guides/control_plane/1_users_and_roles.webp" size="lg" />
   </Step>
 
   <Step title="Selecciona 'Invite members' en la esquina superior izquierda" id="invite-members">
     Haz clic en el botón `Invite members` en la esquina superior izquierda.
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![](/images/cloud/guides/control_plane/manage_cloud_users/2_invite_user.webp)
-      </Frame>
-    </div>
+    <Image img="/images/cloud/guides/control_plane/manage_cloud_users/2_invite_user.webp" size="lg" />
   </Step>
 
   <Step title="Introduce la dirección de correo electrónico de los nuevos miembros y asigna roles" id="add-email-and-roles">
     Introduce las direcciones de correo electrónico de los nuevos miembros en la parte superior de la pantalla de invitación. Selecciona uno o varios roles para asignárselos a los usuarios.
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![](/images/cloud/guides/control_plane/manage_cloud_users/3_invite_user.webp)
-      </Frame>
-    </div>
+    <Image img="/images/cloud/guides/control_plane/manage_cloud_users/3_invite_user.webp" size="lg" />
   </Step>
 
   <Step title={<>Haz clic en <code>Send invites</code></>} id="send-invites">
     Haz clic en `Send invites` en la parte inferior de la pantalla. Los usuarios recibirán un correo electrónico a través del cual podrán unirse a la organización. Para obtener más información sobre cómo aceptar invitaciones, consulta [Manage my account](/es/products/cloud/guides/security/cloud-access-management/manage-my-account).
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![](/images/cloud/guides/control_plane/manage_cloud_users/4_invite_user.webp)
-      </Frame>
-    </div>
+    <Image img="/images/cloud/guides/control_plane/manage_cloud_users/4_invite_user.webp" size="lg" />
   </Step>
 </Steps>
 
 <div id="add-users-via-saml">
-  ### Añadir usuarios mediante el proveedor de identidad SAML {#add-users-via-saml}
+  ### Añadir usuarios mediante el proveedor de identidad SAML
 </div>
 
 <EnterprisePlanFeatureBadge feature="SAML SSO" />
@@ -74,12 +62,14 @@ Si su organización está configurada para [SAML SSO](/es/products/cloud/guides/
 3. Siga las instrucciones de `Administra las asignaciones de roles de usuario` que aparecen a continuación para otorgar permisos.
 
 <div id="enforce-saml">
-  ### Exigir autenticación exclusivamente con SAML {#enforce-saml}
+  ### Exigir autenticación exclusivamente con SAML
 </div>
 
 Una vez que tenga al menos un usuario de SAML en la organización asignado al rol de Admin, elimine de la organización a los usuarios con otros métodos de autenticación para exigir la autenticación exclusivamente con SAML en toda la organización.
 
-## Administra las asignaciones de roles de usuario {#manage-role-assignments}
+<div id="manage-role-assignments">
+  ## Administra las asignaciones de roles de usuario
+</div>
 
 Los usuarios con el rol de Admin pueden actualizar los permisos de otros usuarios en cualquier momento.
 
@@ -87,31 +77,19 @@ Los usuarios con el rol de Admin pueden actualizar los permisos de otros usuario
   <Step title="Accede a configuración de la organización y selecciona Users and roles" id="users-and-roles-2">
     En la página de servicios, selecciona el nombre de tu organización. En el menú emergente, selecciona la opción `Users and roles`.
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![](/images/cloud/guides/control_plane/1_users_and_roles.webp)
-      </Frame>
-    </div>
+    <Image img="/images/cloud/guides/control_plane/1_users_and_roles.webp" size="lg" />
   </Step>
 
   <Step title="Selecciona el usuario que deseas actualizar y selecciona Edit" id="select-user-to-update">
     Selecciona la opción de menú al final de la fila del usuario cuyo acceso deseas modificar. En el menú emergente, selecciona `edit`.
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![](/images/cloud/guides/control_plane/manage_cloud_users/5_edit_user.webp)
-      </Frame>
-    </div>
+    <Image img="/images/cloud/guides/control_plane/manage_cloud_users/5_edit_user.webp" size="lg" />
   </Step>
 
   <Step title="Actualiza los permisos" id="update-permissions">
     Haz clic en el cuadro `Roles` para desplegar el menú. Selecciona las casillas para agregar o quitar roles del usuario. Consulta [Console roles and permissions](/es/products/cloud/reference/security/console-roles) para ver la lista de roles y permisos asociados.
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![](/images/cloud/guides/control_plane/manage_cloud_users/6_edit_user.webp)
-      </Frame>
-    </div>
+    <Image img="/images/cloud/guides/control_plane/manage_cloud_users/6_edit_user.webp" size="lg" />
   </Step>
 
   <Step title="Guarda tus cambios" id="save-changes">
@@ -120,7 +98,7 @@ Los usuarios con el rol de Admin pueden actualizar los permisos de otros usuario
 </Steps>
 
 <div id="remove-user">
-  ## Eliminar un usuario {#remove-user}
+  ## Eliminar un usuario
 </div>
 
 <Info>

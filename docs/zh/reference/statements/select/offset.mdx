@@ -36,8 +36,6 @@ SQL 标准的 `OFFSET ... FETCH` 形式不能与 [`LIMIT ... AFTER ... UNTIL`](/
 > • 如果计算结果得到的行数不是整数，则会向上取整到下一个整数。
 
 `FETCH` 指定查询结果中最多可包含的行数。
-与 `LIMIT` 一样，`FETCH ... ONLY` 无需 `ORDER BY` 即可使用，但无法保证返回的行是确定性的。
-`FETCH ... WITH TIES` 必须配合 `ORDER BY` 使用，以确定与最后一个选中行并列的行。
 
 `ONLY` 选项用于返回紧接在被 `OFFSET` 省略的行之后的那些行。在这种情况下，`FETCH` 可作为 [LIMIT](/zh/reference/statements/select/limit) 子句的替代方案。例如，以下查询
 
@@ -61,7 +59,7 @@ SELECT * FROM test_fetch ORDER BY a LIMIT 3 OFFSET 1;
   实际偏移量还可能取决于 [offset](/zh/reference/settings/session-settings/other#offset) 设置。
 </Note>
 
-## 示例 {#examples}
+## 示例
 
 输入表：
 

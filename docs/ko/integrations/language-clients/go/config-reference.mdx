@@ -82,12 +82,12 @@ rows, err := conn.Query(ctx, "SELECT ...")
 
 ### 인증 {#authentication}
 
-| 옵션              | 유형                          | 기본값           | DSN 매개변수                       | 설명                                                                                      | 권장 사항                                                        | 잘못 구성했을 때                                                                                                                                                           |
-| --------------- | --------------------------- | ------------- | ------------------------------ | --------------------------------------------------------------------------------------- | ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Auth.Username` | `string`                    | `"default"`   | `username` 또는 URL 사용자 부분       | ClickHouse 인증에 사용할 사용자 이름                                                               | 운영 환경에서는 `default`를 절대 사용하지 마십시오. 최소 권한만 부여된 전용 사용자를 생성하십시오. | 잘못된 사용자 이름: `"Code: 516. DB::Exception: Authentication failed"`. 빈 문자열: 별도 경고 없이 `"default"`를 사용합니다.                                                                |
-| `Auth.Password` | `string`                    | `""`          | `password` 또는 URL 비밀번호 부분      | ClickHouse 인증에 사용할 비밀번호                                                                 | 운영 환경에서는 환경 변수 또는 시크릿 관리자를 사용하십시오. DSN의 특수 문자는 URL 인코딩하십시오.  | 잘못된 비밀번호: `"Code: 516. DB::Exception: Authentication failed"`. 특수 문자를 URL 인코딩하지 않음: DSN 파싱 오류가 발생하며, 이때 비밀번호는 `xxxxx`로 표시됩니다([DSN 구문 분석 오류](#dsn-parse-errors) 참조). |
-| `Auth.Database` | `string`                    | `""` (서버 기본값) | `database` 또는 URL 경로 (`/mydb`) | 연결의 기본 데이터베이스                                                                           | 항상 명시적으로 지정하십시오. 운영 환경에서는 애플리케이션별 전용 데이터베이스를 사용하십시오.         | 존재하지 않음: `"Code: 81. DB::Exception: Database xyz doesn't exist"`. 다중 테넌트 구성에서 비워 두면: 쿼리가 잘못된 데이터베이스로 전송됩니다.                                                         |
-| `GetJWT`        | `func(ctx) (string, error)` | `nil`         | (프로그래밍 방식에서만)                  | ClickHouse Cloud 인증용 JWT를 반환하는 콜백입니다. `WithJWT(token)`으로 쿼리별 재정의할 수 있습니다. *(v2.35.0부터)* | 토큰 캐싱/갱신을 구현하십시오. 연결/요청마다 호출됩니다.                             | 만료된 토큰: 인증 오류. 콜백이 차단되면: 타임아웃. JWT는 사용자 이름/비밀번호보다 우선합니다. TLS가 필요하며, 없으면 별도 경고 없이 사용자 이름/비밀번호로 대체됩니다.                                                                |
+| 옵션              | 유형                          | 기본값           | DSN 매개변수                       | 설명                                                                                      | 권장 사항                                                        | 잘못 구성된 경우                                                                                                   |
+| --------------- | --------------------------- | ------------- | ------------------------------ | --------------------------------------------------------------------------------------- | ------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------- |
+| `Auth.Username` | `string`                    | `"default"`   | `username` 또는 URL 사용자 부분       | ClickHouse 인증에 사용할 사용자 이름                                                               | 운영 환경에서는 `default`를 절대 사용하지 마십시오. 최소 권한만 부여된 전용 사용자를 생성하십시오. | 잘못된 사용자 이름: `"Code: 516. DB::Exception: Authentication failed"`. 빈 문자열: 별도 경고 없이 `"default"`를 사용합니다.        |
+| `Auth.Password` | `string`                    | `""`          | `password` 또는 URL 비밀번호 부분      | ClickHouse 인증에 사용할 비밀번호                                                                 | 운영 환경에서는 환경 변수 또는 시크릿 관리자를 사용하십시오. DSN의 특수 문자는 URL 인코딩하십시오.  | 잘못된 비밀번호: `"Code: 516. DB::Exception: Authentication failed"`. 특수 문자를 URL 인코딩하지 않음: 파싱 오류.                  |
+| `Auth.Database` | `string`                    | `""` (서버 기본값) | `database` 또는 URL 경로 (`/mydb`) | 연결의 기본 데이터베이스                                                                           | 항상 명시적으로 지정하십시오. 운영 환경에서는 애플리케이션별 전용 데이터베이스를 사용하십시오.         | 존재하지 않음: `"Code: 81. DB::Exception: Database xyz doesn't exist"`. 다중 테넌트 구성에서 비워 두면: 쿼리가 잘못된 데이터베이스로 전송됩니다. |
+| `GetJWT`        | `func(ctx) (string, error)` | `nil`         | (프로그래밍 방식에서만)                  | ClickHouse Cloud 인증용 JWT를 반환하는 콜백입니다. `WithJWT(token)`으로 쿼리별 재정의할 수 있습니다. *(v2.35.0부터)* | 토큰 캐싱/갱신을 구현하십시오. 연결/요청마다 호출됩니다.                             | 만료된 토큰: 인증 오류. 콜백이 차단되면: 타임아웃. JWT는 사용자 이름/비밀번호보다 우선합니다. TLS가 필요하며, 없으면 별도 경고 없이 사용자 이름/비밀번호로 대체됩니다.        |
 
 ```go
 GetJWT: func(ctx context.Context) (string, error) {
@@ -455,28 +455,6 @@ batch, err := conn.PrepareBatch(ctx, "INSERT INTO table",
 * `system.users` 테이블에서 자격 증명을 확인하세요
 * DSN 비밀번호의 특수 문자에 URL 인코딩 문제가 없는지 확인하세요
 * 사용자에게 지정된 데이터베이스에 대한 접근 권한이 있는지 확인하세요
-
-### DSN 구문 분석 오류 {#dsn-parse-errors}
-
-**원인:** DSN이 유효한 URL이 아닙니다. 비밀번호에 포함된 특수 문자(예: `/`, `?`, `#`, `@`, `:`, `&`)가 URL 인코딩되지 않은 경우가 대부분입니다.
-
-DSN 구문 분석 오류 메시지에는 자격 증명이 표시되지 않습니다. 오류 메시지에서 userinfo의 비밀번호, `password` 쿼리 매개변수(query parameter), `http_proxy` 쿼리 매개변수에 포함된 비밀번호는 `xxxxx`로 대체됩니다:
-
-```text
-parse "clickhouse://user:xxxxx@127.0.0.1:abc/db": invalid port ":abc" after host
-```
-
-파서 오류에 자격 증명의 일부가 포함될 수 있으면 드라이버는 세부 정보를 숨깁니다.
-
-```text
-parse "clickhouse://user:xxxxx@127.0.0.1:9000/db": invalid URL (details hidden because they may contain credentials; URL-encode the username, password and http_proxy values)
-```
-
-**해결 방법:**
-
-* DSN에 포함된 사용자 이름과 비밀번호를 URL 인코딩하십시오. 예를 들어 `url.UserPassword("user", password).String()`을 사용하거나, `password` 쿼리 매개변수(query parameter)에는 `url.QueryEscape(password)`를 사용하면 됩니다.
-* `http_proxy` 쿼리 매개변수에 지정하는 프록시 URL 전체를 URL 인코딩하십시오.
-* 오류에 여전히 `details hidden`이 표시되면 DSN 대신 `clickhouse.Open`을 사용하여 코드에서 `Options`를 설정하십시오.
 
 ### TLS 인증서 오류 {#tls-errors}
 

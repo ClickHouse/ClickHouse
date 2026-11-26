@@ -33,9 +33,9 @@ ENGINE = HDFS(URI, format)
 
 ### PARTITION BY {#partition-by}
 
-`PARTITION BY` — 任意です。ほとんどの場合、パーティションキーは不要です。必要な場合でも、通常は月単位より細かいパーティションキーは必要ありません。パーティション化は主にデータ管理のための手法であり、各パーティションは個別のファイルに書き込まれます。`hive` パーティション方式では、パーティションカラムでフィルタするクエリは、一致するパーティションのファイルのみを読み取ります。細かすぎるパーティション化は絶対に避けてください。クライアント識別子や名前でデータをパーティション化しないでください。
+`PARTITION BY` — 任意です。ほとんどの場合、パーティションキーは不要です。必要な場合でも、通常は月単位より細かいパーティションキーは必要ありません。パーティション化してもクエリは高速化されません (`ORDER BY` 式とは異なります) 。細かすぎるパーティション化は絶対に避けてください。クライアント識別子や名前でデータをパーティション化しないでください (代わりに、クライアント識別子または名前を `ORDER BY` 式の最初のカラムにしてください) 。
 
-`file_like_engine_default_partition_strategy` で設定されるデフォルトの `hive` パーティション方式では、パーティションキーはテーブルのカラムで構成する必要があります (例: `PARTITION BY (year, month)`) 。`toYYYYMM(date_column)` のような式を使用するには、`wildcard` 方式を使用し、パスに `{_partition_id}` を含める必要があります。`wildcard` 方式を使用するテーブルは、書き込みはできますが読み取りはできません。
+月単位でパーティション化するには、`toYYYYMM(date_column)` 式を使用します。ここで、`date_column` は [Date](/ja/reference/data-types/date) 型の日付カラムです。この場合のパーティション名は `"YYYYMM"` フォーマットになります。
 
 **例:**
 
@@ -99,6 +99,8 @@ SELECT * FROM hdfs_engine_table LIMIT 2
    * &#39;hdfs://hdfs1:9000/another&#95;dir/some&#95;file&#95;3&#39;
 
 2. これら 6 つのファイルすべてからなるテーブルを作成する方法はいくつかあります。
+
+{/* */}
 
 ```sql
 CREATE TABLE table_with_range (name String, value UInt32) ENGINE = HDFS('hdfs://hdfs1:9000/{some,another}_dir/some_file_{1..3}', 'TSV')

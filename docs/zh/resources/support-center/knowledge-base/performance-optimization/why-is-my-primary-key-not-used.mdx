@@ -6,11 +6,15 @@ tags: ['性能与优化']
 keywords: ['主键']
 ---
 
-## 检查主键使用情况 {#checking-your-primary-key}
+<div id="checking-your-primary-key">
+  ## 检查主键使用情况
+</div>
 
 用户有时会发现，自己明明认为是在按主键排序或过滤，但查询速度仍比预期更慢。本文将说明如何确认是否使用了该键，并重点介绍一些未使用该键的常见原因。
 
-## 创建表 {#create-table}
+<div id="create-table">
+  ## 创建表
+</div>
 
 下面是一个简单的表示例：
 
@@ -26,7 +30,9 @@ ORDER BY (code, toUnixTimestamp(timestamp))
 
 请注意，我们的排序键中的第二个条目是 `toUnixTimestamp(timestamp)`。
 
-## 填充数据 {#populate-data}
+<div id="populate-data">
+  ## 填充数据
+</div>
 
 向此表写入 1 亿行数据：
 
@@ -48,7 +54,9 @@ FROM logs
 1 row in set. Elapsed: 0.002 sec.
 ```
 
-## 基本过滤 {#basic-filtering}
+<div id="basic-filtering">
+  ## 基本过滤
+</div>
 
 如果按代码过滤，我们可以在输出中看到扫描的行数：- `49.15 thousand`。请注意，这只是总计 1 亿行中的一部分。
 
@@ -58,11 +66,11 @@ FROM logs
 WHERE code = '200'
 
 ┌────────c─┐
-│ 65607542 │ -- 65.61 million
+│ 65607542 │ -- 6561 万
 └──────────┘
 
-1 row in set. Elapsed: 0.021 sec. Processed 49.15 thousand rows, 49.17 KB (2.34 million rows/s., 2.34 MB/s.)
-Peak memory usage: 92.70 KiB.
+1 行记录。耗时：0.021 秒。已处理 4.915 万行，49.17 KB（每秒 234 万行，2.34 MB/s。）
+峰值内存占用：92.70 KiB。
 ```
 
 此外，我们还可以通过 `EXPLAIN indexes=1` 子句来确认已使用该索引：
@@ -104,7 +112,9 @@ PrimaryKey
   对排序键中靠后的键进行过滤，其效率不如对元组中靠前的键进行过滤。原因请参见[这里](/zh/guides/clickhouse/data-modelling/sparse-primary-indexes#secondary-key-columns-can-not-be-inefficient)
 </Note>
 
-## 按多个键过滤 {#multi-key-filtering}
+<div id="multi-key-filtering">
+  ## 按多个键过滤
+</div>
 
 假设我们按 `code` 和 `timestamp` 进行过滤：
 
@@ -146,7 +156,9 @@ WHERE (code = '200') AND (timestamp >= '2025-01-01 00:00:00') AND (timestamp <= 
 
 在这种情况下，这两个排序键都会用于过滤行，因此只需要读取 `87` 个粒度。
 
-## 在排序中使用键 {#using-keys-in-sorting}
+<div id="using-keys-in-sorting">
+  ## 在排序中使用键
+</div>
 
 ClickHouse 还可以利用排序键高效地进行排序。具体来说，
 

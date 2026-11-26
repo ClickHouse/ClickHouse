@@ -65,10 +65,8 @@ SETTINGS
 
 * `kafka_broker_list` — Список брокеров, разделённых запятыми (например, `localhost:9092`).
 * `kafka_topic_list` — Список топиков Kafka.
-* `kafka_group_name` — Группа потребителей Kafka. Смещения чтения отслеживаются отдельно для каждой группы. Если вы не хотите, чтобы сообщения дублировались в кластере, используйте везде одно и то же имя группы. Поддерживается раскрытие макросов (например, `'consumers_{replica}'`): так каждая реплика может использовать собственную группу потребителей и читать все сообщения.
+* `kafka_group_name` — Группа потребителей Kafka. Смещения чтения отслеживаются отдельно для каждой группы. Если вы не хотите, чтобы сообщения дублировались в кластере, используйте везде одно и то же имя группы.
 * `kafka_format` — Формат сообщений. Используется та же нотация, что и для SQL-функции `FORMAT`, например `JSONEachRow`. Дополнительные сведения см. в разделе [Форматы](/ru/reference/formats/index).
-
-Значения `kafka_broker_list`, `kafka_topic_list`, `kafka_group_name`, `kafka_client_id` и `kafka_schema` поддерживают раскрытие макросов: `{database}` и `{table}` заменяются на имя базы данных и имя таблицы соответственно, а другие макросы, например `{shard}` и `{replica}`, берутся из раздела `macros` конфигурации сервера.
 
 Необязательные параметры:
 
@@ -109,71 +107,18 @@ SETTINGS
 * `kafka_partition_shard_num` — Текущий номер сегмента для статической привязки партиций к сегментам. Должен быть от 1 до `kafka_shard_count` включительно. Партиции назначаются по формуле `partition_id % kafka_shard_count == kafka_partition_shard_num - 1`. Поддерживает раскрытие макросов (например, `'{shard}'`). Должен использоваться вместе с `kafka_shard_count`. Поддерживается только в StorageKafka2 (требуются `kafka_keeper_path` и `kafka_replica_name`). По умолчанию: `''` (отключено).
 * `kafka_shard_count` — Общее количество сегментов, участвующих в потреблении. Используется вместе с `kafka_partition_shard_num` для статического назначения партиций. Должен использоваться вместе с `kafka_partition_shard_num`. Поддерживается только в StorageKafka2. По умолчанию: `0` (отключено).
 
-## TLS и SASL с именованными коллекциями {#kafka-tls-sasl-named-collections}
-
-Движок таблиц Kafka предоставляет лишь подмножество настроек [librdkafka](https://github.com/confluentinc/librdkafka/blob/master/CONFIGURATION.md) в виде параметров уровня таблицы `kafka_*` (например, `kafka_security_protocol`, `kafka_sasl_mechanism`, `kafka_sasl_username` и `kafka_sasl_password`). **Пути к сертификатам TLS, закрытые ключи и пароли ключей не являются настройками таблицы**; задавайте их как расширенные свойства `librdkafka`.
-
-Для `ENGINE = Kafka(named_collection)`:
-
-* Ключи `kafka_*` верхнего уровня в именованной коллекции являются настройками движка таблиц Kafka (брокеры, топик, формат, а также перечисленные выше настройки протокола/SASL).
-* Ключи с префиксом `kafka.` в `CREATE NAMED COLLECTION` или вложенные в `<kafka>` в XML перенаправляются в `librdkafka`. Символы подчёркивания в имени ключа преобразуются в точки (например, `kafka.ssl_ca_location` → `ssl.ca.location` или `<ssl_ca_location>` внутри `<kafka>` → `ssl.ca.location`).
-
-При использовании именованной коллекции **глобальный серверный блок `<kafka>` из `config.xml` с ней не объединяется**. Каждая коллекция должна содержать все расширенные свойства, необходимые таблице (включая файлы TLS и `security.protocol`, если он не задан через непустые `SETTINGS` таблицы).
-
-Типичная структура для `SASL_SSL` с клиентскими сертификатами: пути TLS и `ssl.key.password` храните в именованной коллекции, а `kafka_broker_list`, `kafka_topic_list`, `kafka_group_name`, `kafka_format` и при необходимости `kafka_sasl_username` / `kafka_sasl_password` задайте в секции `SETTINGS` таблицы. И `kafka.security_protocol`, и `kafka_security_protocol` задают `security.protocol`, при этом приоритет имеет непустая настройка таблицы. Если это свойство уже хранится в коллекции, настройка таблицы становится переопределением именованной коллекции: для него требуется привилегия `SHOW NAMED COLLECTIONS SECRETS` на коллекцию, а если ключ помечен как `NOT OVERRIDABLE`, возникает ошибка `Override not allowed`. То же самое относится к `kafka_sasl_mechanism`, `kafka_sasl_username` и `kafka_sasl_password`.
-
-Пример (пути к сертификатам должны существовать на каждом сервере ClickHouse, где запущены потребители этой таблицы):
-
-```sql
-CREATE NAMED COLLECTION kafka_mtls AS
-    kafka.security_protocol = 'SASL_SSL',
-    kafka.sasl_mechanism = 'PLAIN',
-    kafka.ssl_ca_location = '/etc/clickhouse/certs/ca.pem',
-    kafka.ssl_certificate_location = '/etc/clickhouse/certs/client.pem',
-    kafka.ssl_key_location = '/etc/clickhouse/certs/client.key',
-    kafka.ssl_key_password = 'secret';
-
-CREATE TABLE queue (
-    id UInt64,
-    payload String
-) ENGINE = Kafka(kafka_mtls)
-SETTINGS
-    kafka_broker_list = 'broker:9092',
-    kafka_topic_list = 'topic',
-    kafka_group_name = 'group',
-    kafka_format = 'JSONEachRow',
-    kafka_sasl_username = 'user',
-    kafka_sasl_password = 'password';
-```
-
-Те же расширенные настройки в именованной коллекции, заданной в XML:
-
-```xml
-<clickhouse>
-    <named_collections>
-        <kafka_mtls>
-            <kafka>
-                <security_protocol>SASL_SSL</security_protocol>
-                <sasl_mechanism>PLAIN</sasl_mechanism>
-                <ssl_ca_location>/etc/clickhouse/certs/ca.pem</ssl_ca_location>
-                <ssl_certificate_location>/etc/clickhouse/certs/client.pem</ssl_certificate_location>
-                <ssl_key_location>/etc/clickhouse/certs/client.key</ssl_key_location>
-                <ssl_key_password>secret</ssl_key_password>
-            </kafka>
-        </kafka_mtls>
-    </named_collections>
-</clickhouse>
-```
-
-Все свойства, связанные с TLS, приведены в [справочнике по конфигурации librdkafka](https://github.com/confluentinc/librdkafka/blob/master/CONFIGURATION.md). О значениях по умолчанию на уровне всего сервера без именованных коллекций см. раздел [Configuration](#configuration) ниже.
-
 ## Аутентификация OAUTHBEARER/OIDC {#oauthbearer-oidc-authentication}
 
 Аутентификация `OAUTHBEARER` использует [свойства конфигурации librdkafka](https://github.com/confluentinc/librdkafka/blob/master/CONFIGURATION.md). Для потока OIDC client credentials настройте `sasl.oauthbearer.method`, `sasl.oauthbearer.client.id`, `sasl.oauthbearer.client.secret`, `sasl.oauthbearer.token.endpoint.url` и `sasl.oauthbearer.scope`.
 
 При задании этих свойств в XML-конфигурации ClickHouse заменяйте точки символами подчёркивания. Например, для `sasl.oauthbearer.client.id` используйте `<sasl_oauthbearer_client_id>`.
 
-Для `ENGINE = Kafka(named_collection)` расширенные настройки `librdkafka` (включая OIDC) задаются в том же пространстве имён `kafka.` / `<kafka>`, которое описано в разделе [TLS и SASL с именованными коллекциями](#kafka-tls-sasl-named-collections). При использовании именованной коллекции глобальная серверная конфигурация `<kafka>` с ней не объединяется, поэтому каждая коллекция должна содержать все необходимые свойства OIDC. Полный пример см. в разделе [Именованные коллекции Kafka](/ru/concepts/features/configuration/server-config/named-collections#oauthbearer-oidc-authentication).
+Для `ENGINE = Kafka(named_collection)` в именованной коллекции используются два пространства имён:
+
+* Ключи верхнего уровня `kafka_*` — это настройки движка таблицы Kafka, например `kafka_security_protocol` и `kafka_sasl_mechanism`.
+* Ключи, вложенные в `<kafka>`, — это расширенные настройки `librdkafka`, включая перечисленные выше свойства OIDC.
+
+При использовании именованной коллекции глобальная серверная конфигурация `<kafka>` с ней не объединяется, поэтому каждая коллекция должна содержать все необходимые свойства OIDC. Полный пример см. в разделе [Именованные коллекции Kafka](/ru/concepts/features/configuration/server-config/named-collections#oauthbearer-oidc-authentication).
 
 Примеры:
 
@@ -360,7 +305,7 @@ SETTINGS
 
 **Учетные данные AWS:**
 
-По умолчанию сервер не получает никаких учетных данных AWS для `AWS_MSK_IAM`, и аутентификация завершается ошибкой `AWS credentials are empty or expired`. Чтобы сервер мог аутентифицироваться с помощью своей идентичности AWS, получаемой из окружения, добавьте в конфигурацию сервера:
+Учетные данные всегда загружаются из `~/.aws/credentials` и `~/.aws/config` (файлов профиля AWS), если они присутствуют. Чтобы также включить профили экземпляров EC2, переменные среды (`AWS_ACCESS_KEY_ID` и т. д.), роли задач ECS и другие автоматические источники учетных данных, добавьте в конфигурацию сервера:
 
 ```xml
 <kafka>
@@ -368,15 +313,7 @@ SETTINGS
 </kafka>
 ```
 
-К источникам учетных данных, получаемых из окружения, относятся: переменные окружения (`AWS_ACCESS_KEY_ID` и т. д.), профили экземпляров EC2 (IMDS), роли IAM для служебных учётных записей (IRSA), роли задач ECS, SSO, а также файлы профилей `~/.aws/credentials` и `~/.aws/config`.
-
 Этот параметр могут настраивать только администраторы сервера. Значение по умолчанию: `false`.
-
-<Warning>
-  Этот параметр небезопасен. Когда он включен, любой пользователь с grant на источник `KAFKA` и правом `CREATE TABLE` может указать в настройках таблицы механизм `AWS_MSK_IAM`, список брокеров и регион AWS. Затем сервер подписывает token `kafka-cluster:Connect` от имени собственной идентичности AWS и отправляет этот token на выбранный пользователем брокер. Token содержит ID ключа доступа AWS и полный токен сеанса STS, а принимающий хост может повторно использовать его для доступа к кластерам MSK в этом регионе от имени сервера.
-
-  Включайте этот параметр, только если вы готовы доверить идентичность AWS сервера каждому пользователю, который может создавать таблицы Kafka. Ограничьте хосты, к которым могут подключаться таблицы Kafka, с помощью [remote&#95;url&#95;allow&#95;hosts](/ru/reference/settings/server-settings/settings/remote#remote_url_allow_hosts); по умолчанию этот параметр пуст (разрешены все хосты).
-</Warning>
 
 **PrivateLink и пользовательский DNS:**
 
@@ -399,7 +336,7 @@ SETTINGS
 
 **Разрешения IAM:**
 
-Разрешения для потребителя (для чтения сообщений):
+Разрешения для consumer (для чтения сообщений):
 
 ```json
 {

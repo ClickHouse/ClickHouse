@@ -7,6 +7,10 @@ keywords: ['managed postgres', 'rust', 'sqlx', 'sqlx-cli', 'axum', 'tokio', 'rus
 doc_type: 'guide'
 ---
 
+import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.guides-rust-beta" />
+
 [sqlx](https://github.com/launchbadge/sqlx) 是一个异步的纯 Rust SQL 工具包，内置连接池和迁移功能。在本指南中，您将使用 `sqlx-cli` 迁移创建一个 `todos` 表，并通过一个小型 [axum](https://github.com/tokio-rs/axum) 服务器处理增删改查 (CRUD) 请求。所有连接均使用 TLS，并启用完整的证书验证。
 
 ## 前置条件 {#prerequisites}

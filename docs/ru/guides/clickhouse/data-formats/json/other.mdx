@@ -14,7 +14,9 @@ doc_type: 'reference'
   Для разных объектов в рамках одной и той же схемы можно использовать разные методы. Например, для одних объектов лучше всего подходит тип `String`, а для других — тип `Map`. Обратите внимание: если используется тип `String`, принимать дальнейшие решения о схеме уже не нужно. Кроме того, внутри ключа `Map` можно вкладывать вложенные объекты, включая `String`, представляющий JSON, как показано ниже:
 </Info>
 
-## Использование типа String {#using-string}
+<div id="using-string">
+  ## Использование типа String
+</div>
 
 Если объекты очень динамичны, не имеют предсказуемой структуры и содержат произвольные вложенные объекты, следует использовать тип `String`. Значения можно извлекать на этапе выполнения запроса с помощью JSON-функций, как показано ниже.
 
@@ -37,7 +39,7 @@ CREATE TABLE people
     `tags` String
 )
 ENGINE = MergeTree
-ORDER BY username;
+ORDER BY username
 
 INSERT INTO people FORMAT JSONEachRow
 {"id":1,"name":"Clicky McCliickHouse","username":"Clicky","email":"clicky@clickhouse.com","address":[{"street":"Victor Plains","suite":"Suite 879","city":"Wisokyburgh","zipcode":"90566-7771","geo":{"lat":-43.9509,"lng":-34.4618}}],"phone_numbers":["010-692-6593","020-192-3333"],"website":"clickhouse.com","company":{"name":"ClickHouse","catchPhrase":"The real-time data warehouse for analytics","labels":{"type":"database systems","founded":"2021"}},"dob":"2007-03-31","tags":{"hobby":"Databases","holidays":[{"year":2024,"location":"Azores, Portugal"}],"car":{"model":"Tesla","year":2023}}}
@@ -165,7 +167,9 @@ Peak memory usage: 205.98 MiB.
 
 Гибкость этого подхода достигается ценой заметных потерь в производительности и усложнения синтаксиса, поэтому его следует использовать только для очень динамичных объектов в схеме.
 
-### Простые JSON-функции {#simple-json-functions}
+<div id="simple-json-functions">
+  ### Простые JSON-функции
+</div>
 
 В приведённых выше примерах используется семейство функций JSON*. Они используют полноценный JSON-парсер на основе [simdjson](https://github.com/simdjson/simdjson), который выполняет строгий разбор и различает одно и то же поле, вложенное на разных уровнях. Эти функции способны работать с JSON, который синтаксически корректен, но плохо отформатирован, например с двойными пробелами между ключами.
 

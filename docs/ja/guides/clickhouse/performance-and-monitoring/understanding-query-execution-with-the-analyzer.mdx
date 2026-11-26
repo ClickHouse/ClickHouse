@@ -7,6 +7,8 @@ doc_type: 'guide'
 keywords: ['クエリ実行', 'アナライザ', 'クエリ最適化', 'explain', 'パフォーマンス']
 ---
 
+import { Image } from "/snippets/ja/components/Image.jsx";
+
 ClickHouse はクエリを非常に高速に処理しますが、クエリ実行の仕組みはそれほど単純ではありません。`SELECT` クエリがどのように実行されるのかを見ていきましょう。これを説明するために、まず ClickHouse のテーブルにいくつかデータを追加してみます。
 
 ```sql
@@ -27,11 +29,7 @@ INSERT INTO session_events SELECT * FROM generateRandom('clientId UUID,
 
 ClickHouse にデータが入ったので、いくつかのクエリを実行し、その実行の仕組みを見ていきましょう。クエリの実行はいくつもの段階に分解されます。クエリ実行の各段階は、対応する `EXPLAIN` クエリを使って分析し、トラブルシュートできます。これらの段階は以下の図にまとめられています。
 
-<div className="ch-image-md">
-  <Frame>
-    ![EXPLAINクエリのステップ](/images/guides/developer/analyzer1.webp)
-  </Frame>
-</div>
+<Image img="/images/guides/developer/analyzer1.webp" alt="EXPLAINクエリのステップ" size="md" />
 
 クエリ実行時に各要素がどのように機能するのかを見ていきましょう。いくつかのクエリを取り上げ、`EXPLAIN` ステートメントを使って確認します。
 
@@ -143,7 +141,7 @@ EXPLAIN QUERY TREE passes=20 SELECT min(timestamp) AS minimum_date, max(timestam
 2回の実行を比較すると、別名とPROJECTIONの解決を確認できます。
 
 <div id="planner">
-  ## プランナー {#planner}
+  ## プランナー
 </div>
 
 プランナーはクエリツリーを受け取り、それを基にクエリプランを構築します。クエリツリーは特定のクエリで何を行いたいかを示し、クエリプランはそれをどのように実行するかを示します。追加の最適化もクエリプランの一部として行われます。クエリプランを確認するには、`EXPLAIN PLAN` または `EXPLAIN` を使用できます (`EXPLAIN` は `EXPLAIN PLAN` を実行します) 。
@@ -262,7 +260,9 @@ GROUP BY type
 
 これで、使用されているすべての入力、関数、別名、データ型を確認できます。プランナーが適用する最適化の一部は、[こちら](https://github.com/ClickHouse/ClickHouse/blob/master/src/Processors/QueryPlan/Optimizations/Optimizations.h)で確認できます。
 
-## クエリパイプライン {#query-pipeline}
+<div id="query-pipeline">
+  ## クエリパイプライン
+</div>
 
 クエリパイプラインはクエリプランから生成されます。クエリパイプラインはクエリプランと非常に似ていますが、ツリーではなくグラフである点が異なります。ClickHouse がクエリをどのように実行するか、またどのリソースが使用されるかを把握できます。クエリパイプラインを分析することで、入出力のどこにボトルネックがあるかを特定できます。前述のクエリを使って、クエリパイプラインの実行を確認してみましょう。
 
@@ -358,11 +358,7 @@ digraph
 
 この出力をコピーして[こちら](https://dreampuf.github.io/GraphvizOnline)に貼り付けると、以下のグラフが生成されます。
 
-<div className="ch-image-md">
-  <Frame>
-    ![グラフ出力](/images/guides/developer/analyzer3.webp)
-  </Frame>
-</div>
+<Image img="/images/guides/developer/analyzer3.webp" alt="グラフ出力" size="md" />
 
 白い長方形はパイプラインノードを、灰色の長方形はクエリプランのステップを表し、`x` に続く数字は使用されている入力/出力の数を示します。コンパクト形式での表示が不要な場合は、`compact=0` を追加してください：
 
@@ -402,11 +398,7 @@ digraph
 }
 ```
 
-<div className="ch-image-md">
-  <Frame>
-    ![コンパクトなグラフの出力](/images/guides/developer/analyzer4.webp)
-  </Frame>
-</div>
+<Image img="/images/guides/developer/analyzer4.webp" alt="コンパクトなグラフの出力" size="md" />
 
 ClickHouse はなぜ複数のスレッドでテーブルを読み込まないのでしょうか。テーブルにさらにデータを追加してみましょう：
 
@@ -465,16 +457,12 @@ digraph
 }
 ```
 
-<div className="ch-image-md">
-  <Frame>
-    ![並列グラフの出力](/images/guides/developer/analyzer5.webp)
-  </Frame>
-</div>
+<Image img="/images/guides/developer/analyzer5.webp" alt="並列グラフの出力" size="md" />
 
 つまり、データ量が十分でなかったため、エグゼキュータは処理を並列化しないと判断しました。さらに行を追加すると、グラフに示されているように、エグゼキュータは複数のスレッドを使用するようになりました。
 
 <div id="executor">
-  ## エグゼキュータ {#executor}
+  ## エグゼキュータ
 </div>
 
 最後に、クエリ実行の最終段階はエグゼキュータが担います。エグゼキュータはクエリパイプラインを受け取り、実行します。`SELECT`、`INSERT`、`INSERT SELECT` のどれを実行するかによって、使用されるエグゼキュータの種類は異なります。

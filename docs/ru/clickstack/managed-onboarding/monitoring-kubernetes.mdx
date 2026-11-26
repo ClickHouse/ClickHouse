@@ -1,30 +1,23 @@
 ---
 slug: /use-cases/observability/clickstack/monitoring-kubernetes
-title: 'Мониторинг Kubernetes с ClickHouse Observability'
-sidebarTitle: 'Мониторинг Kubernetes'
-description: 'Сбор журналов, метрик инфраструктуры и событий из кластера Kubernetes в ClickHouse Observability в самоуправляемом варианте'
+title: 'Мониторинг Kubernetes с Managed ClickStack'
+description: 'Сбор журналов, метрик инфраструктуры и событий из кластера Kubernetes в Managed ClickStack'
 doc_type: 'guide'
-keywords: ['clickstack', 'kubernetes', 'k8s', 'self-managed', 'ClickHouse Observability', 'журналы', 'метрики', 'события', 'daemonset', 'helm']
+keywords: ['clickstack', 'kubernetes', 'k8s', 'managed', 'обсервабилити', 'журналы', 'метрики', 'события', 'daemonset', 'helm']
 unlisted: true
 custom_edit_url: null
 hide_advert: true
 ---
 
-<Note>
-  **Вы используете самоуправляемый вариант**
+import { Image } from "/snippets/ru/components/Image.jsx";
 
-  Вы решили настроить ClickHouse Observability самостоятельно, используя [самоуправляемый вариант](/ru/clickstack/self-configured/overview). В этом варианте вы сами запускаете коллектор OpenTelemetry, управляете ингестией в ваш сервис ClickHouse Cloud, настраиваете схему и разделяете рабочие нагрузки ингестии и запросов с помощью warehouses. См. разделы [Коллектор OpenTelemetry](/ru/clickstack/self-configured/ingesting-data/collector), [Настройка производительности](/ru/clickstack/self-configured/managing/performance-tuning) и [Изоляция рабочих нагрузок чтения и записи](/ru/clickstack/self-configured/managing/isolating-read-write).
+Это руководство поможет вам настроить сбор журналов, метрик инфраструктуры и событий Kubernetes из кластера в Управляемый ClickStack, а затем просматривать их во встроенной панели мониторинга Kubernetes.
 
-  Предпочитаете бессерверный вариант, в котором ClickHouse берёт на себя ингестию, схемы и вычислительные ресурсы? Используйте вариант ClickHouse Observability по умолчанию и следуйте руководству [Мониторинг Kubernetes с OpenTelemetry](/ru/clickstack/managed-onboarding/monitoring-kubernetes-serverless).
-</Note>
+Здесь используется стандартная для OpenTelemetry схема: два коллектора, развернутые через [Helm-чарт OpenTelemetry](https://github.com/open-telemetry/opentelemetry-helm-charts/tree/main/charts/opentelemetry-collector), каждый из которых пересылает данные в ваш коллектор-шлюз ClickStack по OTLP. **ДемонСет** запускается на каждом узле для сбора журналов контейнеров и метрик Кубелета. **Развертывание** с одной репликой собирает события Kubernetes и метрики всего кластера. Подробнее о роли шлюза см. в разделе [Роли коллектора](/ru/clickstack/ingesting-data/collector#collector-roles).
 
-Это руководство поможет вам настроить сбор журналов, метрик инфраструктуры и событий Kubernetes из кластера в ClickHouse Observability, а затем просматривать их во встроенной панели мониторинга Kubernetes.
+В этом руководстве предполагается, что вы завершили [Setting up your OpenTelemetry Collector](/ru/clickstack/managed-onboarding/setting-up-your-opentelemetry-collector) и что у вас уже запущен коллектор-шлюз ClickStack.
 
-Здесь используется стандартная для OpenTelemetry схема: два коллектора, развернутые через [Helm-чарт OpenTelemetry](https://github.com/open-telemetry/opentelemetry-helm-charts/tree/main/charts/opentelemetry-collector), каждый из которых пересылает данные в ваш коллектор-шлюз ClickStack по OTLP. **ДемонСет** запускается на каждом узле для сбора журналов контейнеров и метрик Кубелета. **Развертывание** с одной репликой собирает события Kubernetes и метрики всего кластера. Подробнее о роли шлюза см. в разделе [Роли коллектора](/ru/clickstack/self-configured/ingesting-data/collector#collector-roles-self-configured).
-
-В этом руководстве предполагается, что вы завершили [Setting up your OpenTelemetry Collector](/ru/clickstack/self-configured/managed-onboarding/setting-up-your-opentelemetry-collector) и что у вас уже запущен коллектор-шлюз ClickStack.
-
-Для рабочей нагрузки, размещенной в Kubernetes, сам коллектор-шлюз должен быть развернут **внутри того же кластера с использованием upstream Helm-чарта OpenTelemetry и образа коллектора ClickStack**. Чтобы установить его, выполните шаги для Helm из раздела [Развертывание коллектора](/ru/clickstack/self-configured/ingesting-data/collector#configuring-the-collector-self-configured). **Обязательно сохраните эту конечную точку OTLP**.
+Для рабочей нагрузки, размещенной в Kubernetes, сам коллектор-шлюз должен быть развернут **внутри того же кластера с использованием upstream Helm-чарта OpenTelemetry и образа коллектора ClickStack**. Чтобы установить его, выполните шаги для Helm из раздела [Развертывание коллектора](/ru/clickstack/ingesting-data/collector#configuring-the-collector). **Обязательно сохраните эту конечную точку OTLP**.
 
 <Steps>
   <Step title="Подготовьте всё необходимое" id="gather-prerequisites">
@@ -309,27 +302,15 @@ hide_advert: true
   <Step title="Проверьте в интерфейсе ClickStack" id="confirm-in-ui">
     Откройте свой сервис в [консоли ClickHouse Cloud](https://console.clickhouse.cloud) и выберите **ClickStack** в левом меню.
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![Запуск ClickStack](/images/use-cases/observability/clickstack-cloud-v2.webp)
-      </Frame>
-    </div>
+    <Image img="/images/use-cases/observability/clickstack-cloud-v2.webp" size="lg" alt="Запуск ClickStack" border />
 
     В представлении **Search** переключите источник на `Logs` и установите временной диапазон **Последние 15 минут**. Журналы контейнеров со всего кластера должны появиться в течение нескольких секунд с такими атрибутами, как `k8s.namespace.name`, `k8s.pod.name` и `k8s.node.name`.
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![Представление ClickStack Search с журналами Kubernetes](/images/use-cases/observability/clickstack-search-with-k8-logs.webp)
-      </Frame>
-    </div>
+    <Image img="/images/use-cases/observability/clickstack-search-with-k8-logs.webp" size="lg" alt="Представление ClickStack Search с журналами Kubernetes" />
 
     Чтобы увидеть метрики и события инфраструктуры в контексте, откройте встроенную панель мониторинга **Kubernetes**, перейдя в **Dashboards** -&gt; **Kubernetes**. Данные должны появиться на всех вкладках: `Pods`, `Nodes` и `Namespaces`.
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![Панель мониторинга Kubernetes в ClickStack](/images/use-cases/observability/clickstack-dashboard-kubernetes.webp)
-      </Frame>
-    </div>
+    <Image img="/images/use-cases/observability/clickstack-dashboard-kubernetes.webp" size="lg" alt="Панель мониторинга Kubernetes в ClickStack" border />
 
     Если ничего не отображается:
 
@@ -339,10 +320,10 @@ hide_advert: true
   </Step>
 
   <Step title="Дополнительные материалы" id="further-reading">
-    * [Справочник по интеграции с Kubernetes](/ru/clickstack/observability/integration-examples/kubernetes#self-managed) с полным набором приёмников, процессоров и параметров настройки.
-    * [Передача тегов resource в поды](/ru/clickstack/observability/integration-examples/kubernetes#application-metadata) с более подробной информацией об обогащении на стороне приложения.
-    * [Защита коллектора](/ru/clickstack/self-configured/ingesting-data/collector#securing-the-collector-self-configured) с помощью TLS на конечной точке OTLP и пользователей ингестии с минимально необходимыми привилегиями.
-    * [Оценка ресурсов](/ru/clickstack/self-configured/ingesting-data/collector#estimating-resources-self-configured) для развертываний шлюза и агента при ожидаемой пропускной способности.
-    * [Выход в продакшн](/ru/clickstack/self-configured/managing/production) с рекомендациями по переходу в продакшн.
+    * [Справочник по интеграции с Kubernetes](/ru/clickstack/integration-examples/kubernetes) с полным набором приёмников, процессоров и параметров настройки.
+    * [Передача тегов resource в поды](/ru/clickstack/integration-examples/kubernetes#forwarding-resouce-tags-to-pods) с более подробной информацией об обогащении на стороне приложения.
+    * [Защита коллектора](/ru/clickstack/ingesting-data/collector#securing-the-collector) с помощью TLS на конечной точке OTLP и пользователей ингестии с минимально необходимыми привилегиями.
+    * [Оценка ресурсов](/ru/clickstack/ingesting-data/collector#estimating-resources) для развертываний шлюза и агента при ожидаемой пропускной способности.
+    * [Выход в продакшн](/ru/clickstack/managing/production) с рекомендациями по переходу в продакшн.
   </Step>
 </Steps>

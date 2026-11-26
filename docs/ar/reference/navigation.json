@@ -1,17 +1,18 @@
 {
-  "item": "Reference",
+  "icon": "/images/icons/icon-reference.svg",
+  "item": "المرجع",
   "pages": [
     "ar/reference/home",
     {
       "expandable": true,
       "expanded": true,
-      "group": "SQL Reference",
+      "group": "مرجع SQL",
       "pages": [
         "ar/reference/syntax",
         {
           "expandable": true,
           "expanded": false,
-          "group": "Statements",
+          "group": "العبارات",
           "pages": [
             "ar/reference/statements/index",
             {
@@ -25,7 +26,6 @@
                 "ar/reference/statements/alter/comment",
                 "ar/reference/statements/alter/constraint",
                 "ar/reference/statements/alter/database-comment",
-                "ar/reference/statements/alter/database-setting",
                 "ar/reference/statements/alter/delete",
                 "ar/reference/statements/alter/named-collection",
                 "ar/reference/statements/alter/order-by",
@@ -66,7 +66,7 @@
                     "ar/reference/statements/create/dictionary/lifetime",
                     {
                       "expanded": false,
-                      "group": "Layouts",
+                      "group": "التخطيطات",
                       "pages": [
                         "ar/reference/statements/create/dictionary/layouts/overview",
                         "ar/reference/statements/create/dictionary/layouts/flat",
@@ -78,7 +78,6 @@
                         "ar/reference/statements/create/dictionary/layouts/range-hashed",
                         "ar/reference/statements/create/dictionary/layouts/hierarchical",
                         "ar/reference/statements/create/dictionary/layouts/naive-bayes",
-                        "ar/reference/statements/create/dictionary/layouts/xgboost",
                         "ar/reference/statements/create/dictionary/layouts/polygon",
                         "ar/reference/statements/create/dictionary/layouts/ip-trie",
                         "ar/reference/statements/create/dictionary/layouts/regexp-tree"
@@ -86,7 +85,7 @@
                     },
                     {
                       "expanded": false,
-                      "group": "Sources",
+                      "group": "المصادر",
                       "pages": [
                         "ar/reference/statements/create/dictionary/sources/overview",
                         "ar/reference/statements/create/dictionary/sources/local-file",
@@ -177,7 +176,6 @@
                 "ar/reference/statements/select/qualify",
                 "ar/reference/statements/select/replace_modifier",
                 "ar/reference/statements/select/sample",
-                "ar/reference/statements/select/shuffle",
                 "ar/reference/statements/select/union",
                 "ar/reference/statements/select/where",
                 "ar/reference/statements/select/with"
@@ -187,7 +185,6 @@
             "ar/reference/statements/set",
             "ar/reference/statements/show",
             "ar/reference/statements/system",
-            "ar/reference/statements/transactions",
             "ar/reference/statements/truncate",
             "ar/reference/statements/undrop",
             "ar/reference/statements/update",
@@ -197,7 +194,7 @@
         {
           "expandable": true,
           "expanded": false,
-          "group": "Operators",
+          "group": "المعاملات",
           "pages": [
             "ar/reference/operators/index"
           ]
@@ -207,12 +204,12 @@
     {
       "expandable": true,
       "expanded": false,
-      "group": "Data Types",
+      "group": "أنواع البيانات",
       "pages": [
         "ar/reference/data-types/index",
         {
           "expanded": false,
-          "group": "Numeric types",
+          "group": "الأنواع الرقمية",
           "pages": [
             "ar/reference/data-types/int-uint",
             "ar/reference/data-types/float",
@@ -222,7 +219,7 @@
         },
         {
           "expanded": false,
-          "group": "String types",
+          "group": "الأنواع النصية",
           "pages": [
             "ar/reference/data-types/string",
             "ar/reference/data-types/fixedstring"
@@ -230,7 +227,7 @@
         },
         {
           "expanded": false,
-          "group": "Date and time types",
+          "group": "أنواع التاريخ والوقت",
           "pages": [
             "ar/reference/data-types/date",
             "ar/reference/data-types/date32",
@@ -242,7 +239,7 @@
         },
         {
           "expanded": false,
-          "group": "Network types",
+          "group": "أنواع الشبكات",
           "pages": [
             "ar/reference/data-types/ipv4",
             "ar/reference/data-types/ipv6"
@@ -250,7 +247,7 @@
         },
         {
           "expanded": false,
-          "group": "Composite types",
+          "group": "الأنواع المركّبة",
           "pages": [
             "ar/reference/data-types/array",
             "ar/reference/data-types/tuple",
@@ -260,7 +257,7 @@
         },
         {
           "expanded": false,
-          "group": "Semi-structured types",
+          "group": "الأنواع شبه المهيكلة",
           "pages": [
             "ar/reference/data-types/newjson",
             "ar/reference/data-types/dynamic",
@@ -269,7 +266,7 @@
         },
         {
           "expanded": false,
-          "group": "Nullable and optional types",
+          "group": "الأنواع التي تقبل القيم الفارغة والأنواع الاختيارية",
           "pages": [
             "ar/reference/data-types/nullable",
             "ar/reference/data-types/lowcardinality"
@@ -277,7 +274,7 @@
         },
         {
           "expanded": false,
-          "group": "Specialized types",
+          "group": "الأنواع المتخصصة",
           "pages": [
             "ar/reference/data-types/uuid",
             "ar/reference/data-types/enum",
@@ -288,7 +285,7 @@
         },
         {
           "expanded": false,
-          "group": "Aggregate function types",
+          "group": "أنواع الدوال التجميعية",
           "pages": [
             "ar/reference/data-types/aggregatefunction",
             "ar/reference/data-types/simpleaggregatefunction"
@@ -296,7 +293,7 @@
         },
         {
           "expanded": false,
-          "group": "Special Data Types",
+          "group": "أنواع البيانات الخاصة",
           "pages": [
             "ar/reference/data-types/special-data-types/index",
             "ar/reference/data-types/special-data-types/expression",
@@ -306,7 +303,7 @@
           ]
         },
         {
-          "group": "Binary encoding",
+          "group": "الترميز الثنائي",
           "pages": [
             "ar/reference/data-types/data-types-binary-encoding"
           ]
@@ -316,17 +313,17 @@
     {
       "expandable": true,
       "expanded": false,
-      "group": "Engines",
+      "group": "المحركات",
       "pages": [
         "ar/reference/engines/engines",
         {
           "expanded": false,
-          "group": "Table Engines",
+          "group": "محركات الجداول",
           "pages": [
             "ar/reference/engines/table-engines/index",
             {
               "expanded": false,
-              "group": "Integrations",
+              "group": "التكاملات",
               "pages": [
                 "ar/reference/engines/table-engines/integrations/index",
                 "ar/reference/engines/table-engines/integrations/arrowflight",
@@ -334,7 +331,6 @@
                 "ar/reference/engines/table-engines/integrations/azureBlobStorage",
                 "ar/reference/engines/table-engines/integrations/bigquery",
                 "ar/reference/engines/table-engines/integrations/deltalake",
-                "ar/reference/engines/table-engines/integrations/elasticsearch",
                 "ar/reference/engines/table-engines/integrations/embedded-rocksdb",
                 "ar/reference/engines/table-engines/integrations/ExternalDistributed",
                 "ar/reference/engines/table-engines/integrations/hdfs",
@@ -361,7 +357,7 @@
             },
             {
               "expanded": false,
-              "group": "Log Family",
+              "group": "عائلة Log",
               "pages": [
                 "ar/reference/engines/table-engines/log-family/index",
                 "ar/reference/engines/table-engines/log-family/log",
@@ -371,7 +367,7 @@
             },
             {
               "expanded": false,
-              "group": "MergeTree Family",
+              "group": "عائلة MergeTree",
               "pages": [
                 "ar/reference/engines/table-engines/mergetree-family/index",
                 "ar/reference/engines/table-engines/mergetree-family/mergetree",
@@ -390,7 +386,7 @@
             },
             {
               "expanded": false,
-              "group": "Special",
+              "group": "أنواع خاصة",
               "pages": [
                 "ar/reference/engines/table-engines/special/index",
                 "ar/reference/engines/table-engines/special/alias",
@@ -417,7 +413,7 @@
         },
         {
           "expanded": false,
-          "group": "Database Engines",
+          "group": "محركات قواعد البيانات",
           "pages": [
             "ar/reference/engines/database-engines/index",
             "ar/reference/engines/database-engines/atomic",
@@ -446,12 +442,12 @@
     {
       "expandable": true,
       "expanded": false,
-      "group": "Functions",
+      "group": "الدوال",
       "pages": [
         "ar/reference/functions/index",
         {
           "expanded": false,
-          "group": "Regular functions",
+          "group": "الدوال العادية",
           "pages": [
             "ar/reference/functions/regular-functions/overview",
             "ar/reference/functions/regular-functions/ai-functions",
@@ -473,7 +469,7 @@
             "ar/reference/functions/regular-functions/functions-for-nulls",
             {
               "expanded": false,
-              "group": "Geo",
+              "group": "البيانات الجغرافية",
               "pages": [
                 "ar/reference/functions/regular-functions/geo/index",
                 "ar/reference/functions/regular-functions/geo/coordinates",
@@ -517,7 +513,7 @@
         },
         {
           "expanded": false,
-          "group": "Aggregate Functions",
+          "group": "الدوال التجميعية",
           "pages": [
             "ar/reference/functions/aggregate-functions/index",
             "ar/reference/functions/aggregate-functions/combinators",
@@ -525,7 +521,7 @@
             "ar/reference/functions/aggregate-functions/parametric-functions",
             {
               "expanded": false,
-              "group": "Reference",
+              "group": "المرجع",
               "pages": [
                 "ar/reference/functions/aggregate-functions/reference-index",
                 "ar/reference/functions/aggregate-functions/aggThrow",
@@ -724,7 +720,7 @@
         },
         {
           "expanded": false,
-          "group": "Table functions",
+          "group": "دالات الجداول",
           "pages": [
             "ar/reference/functions/table-functions/index",
             "ar/reference/functions/table-functions/arrowflight",
@@ -735,7 +731,6 @@
             "ar/reference/functions/table-functions/deltalake",
             "ar/reference/functions/table-functions/deltalakeCluster",
             "ar/reference/functions/table-functions/dictionary",
-            "ar/reference/functions/table-functions/elasticsearch",
             "ar/reference/functions/table-functions/executable",
             "ar/reference/functions/table-functions/eval",
             "ar/reference/functions/table-functions/file",
@@ -782,7 +777,6 @@
             "ar/reference/functions/table-functions/timeSeriesSamples",
             "ar/reference/functions/table-functions/timeSeriesSelector",
             "ar/reference/functions/table-functions/timeSeriesTags",
-            "ar/reference/functions/table-functions/timeSeriesTimeRanges",
             "ar/reference/functions/table-functions/url",
             "ar/reference/functions/table-functions/urlCluster",
             "ar/reference/functions/table-functions/values",
@@ -793,7 +787,7 @@
         },
         {
           "expanded": false,
-          "group": "Window functions",
+          "group": "دوال النوافذ",
           "pages": [
             "ar/reference/functions/window-functions/index",
             "ar/reference/functions/window-functions/cume_dist",
@@ -813,7 +807,7 @@
           ]
         },
         {
-          "group": "User Defined Functions",
+          "group": "الدوال المعرّفة من قِبل المستخدم",
           "pages": [
             "ar/reference/functions/regular-functions/udf",
             "ar/reference/functions/regular-functions/wasm_udf"
@@ -824,7 +818,7 @@
     {
       "expandable": true,
       "expanded": false,
-      "group": "Formats",
+      "group": "الصيغ",
       "pages": [
         "ar/reference/formats/index",
         {
@@ -1006,14 +1000,13 @@
         },
         "ar/reference/formats/Values",
         "ar/reference/formats/Vertical",
-        "ar/reference/formats/Vortex",
         "ar/reference/formats/XML"
       ]
     },
     {
       "expandable": true,
       "expanded": false,
-      "group": "Settings",
+      "group": "الإعدادات",
       "pages": [
         "ar/reference/settings/index",
         {
@@ -1034,7 +1027,7 @@
     {
       "expandable": true,
       "expanded": false,
-      "group": "System Tables",
+      "group": "جداول النظام",
       "pages": [
         "ar/reference/system-tables/overview",
         "ar/reference/system-tables/aggregate_function_combinators",
@@ -1063,7 +1056,6 @@
         "ar/reference/system-tables/completions",
         "ar/reference/system-tables/constraints",
         "ar/reference/system-tables/contributors",
-        "ar/reference/system-tables/connections",
         "ar/reference/system-tables/crash_log",
         "ar/reference/system-tables/current_roles",
         "ar/reference/system-tables/dashboards",
@@ -1111,7 +1103,6 @@
         "ar/reference/system-tables/iceberg_files",
         "ar/reference/system-tables/iceberg_history",
         "ar/reference/system-tables/iceberg_metadata_log",
-        "ar/reference/system-tables/iceberg_metadata_log_entries",
         "ar/reference/system-tables/information_schema",
         "ar/reference/system-tables/instrumentation",
         "ar/reference/system-tables/jemalloc_arena_bins",
@@ -1220,7 +1211,7 @@
       ]
     },
     {
-      "group": "Data Lakes",
+      "group": "بحيرات البيانات",
       "pages": [
         "ar/reference/datalakes"
       ]

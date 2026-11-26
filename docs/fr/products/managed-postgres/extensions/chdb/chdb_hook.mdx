@@ -38,25 +38,19 @@ cibles.
 Chargez chdb&#95;hook de l&#39;une des façons suivantes en tant que superutilisateur. Utilisez
 celle qui correspond le mieux à votre cas d&#39;utilisation :
 
-<Note>
-  Sur ClickHouse Managed Postgres :
-
-  * La SQL Console de ClickHouse Cloud ne prend pas encore en charge la commande
-    `LOAD 'chdb_hook'`, mais celle-ci peut être exécutée via psql ou toute autre
-    connexion à la base de données.
-  * `ALTER SYSTEM` n&#39;est pas autorisé et `postgresql.conf` ne peut pas être modifié ; les
-    exemples ci-dessous qui en dépendent ne s&#39;appliquent donc pas. Utilisez plutôt `ALTER DATABASE` ou
-    `ALTER ROLE`.
-  * Vous pouvez également contacter le [support](https://clickhouse.com/support/program) pour
-    ajouter `chdb_hook` à la configuration de votre service Postgres ; il pourra alors
-    aussi être utilisé dans la SQL Console.
-</Note>
-
 * Explicitement, via la commande [LOAD] ; valable pour la durée d&#39;une session :
 
   ```sql
   LOAD 'chdb_hook';
   ```
+
+  <Note>
+    La SQL Console de ClickHouse Cloud ne prend pas encore en charge la commande
+    `LOAD 'chdb_hook'`, mais celle-ci peut être exécutée via psql ou toute autre
+    connexion à la base de données. Sinon, contactez votre interlocuteur Support pour
+    l&#39;ajouter à la configuration de votre service Postgres ; elle pourra ensuite être
+    utilisée dans la SQL Console.
+  </Note>
 
 * Pour toutes les sessions, via le paramètre [session&#95;preload&#95;libraries], dans
   `postgresql.conf` :
@@ -778,7 +772,7 @@ chdb&#95;hook respecte le [Semantic Versioning] pour ses releases publiques.
 * La minor version est incrémentée en cas de changements SQL rétrocompatibles
 * La version de patch est incrémentée en cas de changements portant uniquement sur le binary
 
-Une fois installé, PostgreSQL indique la version via la fonction
+Une fois installé, PostgreSQL la version via la fonction
 [`pg_get_loaded_modules()`] de Postgres 18.
 
 ```sql
@@ -864,4 +858,4 @@ Copyright (c) 2026, ClickHouse
 
 [`max_parsing_threads`]: https://clickhouse.com/docs/reference/settings/session-settings/max#max_parsing_threads "ClickHouse Docs : paramètre de session max_parsing_threads"
 
-[encodage de la base de données]: https://www.postgresql.org/docs/current/multibyte.html "Documentation PostgreSQL : prise en charge des jeux de caractères"
+[encodage de la base de données]: https://www.postgresql.org/docs/current/multibyte.html "PostgreSQL Docs : prise en charge des jeux de caractères"

@@ -91,28 +91,6 @@ La valeur de ce paramètre n&#39;inclut pas la longueur de l&#39;extension de fi
 est donc recommandé de la définir en dessous de la longueur maximale d&#39;un nom de fichier (généralement 255
 octets), avec une certaine marge afin d&#39;éviter des erreurs du système de fichiers.
 
-## max_memory_ratio_to_activate_adaptive_write_buffer {#max_memory_ratio_to_activate_adaptive_write_buffer}
-
-<SettingsInfoBlock type="Float" default_value="0.03125" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0.03125"},{"label": "Nouveau paramètre. Active les tampons d’écriture adaptatifs lorsque les tampons préalloués par une partie au format Wide occuperaient au moins cette fraction de la limite de mémoire du serveur, afin qu’une table comportant de nombreuses colonnes ne réserve pas des centaines de mégaoctets de tampons d’écriture sur un petit serveur. La valeur précédente désactive ce déclencheur, ce qui préserve le comportement antérieur à la version 26.11."}]}]} />
-
-Active également les tampons d’écriture adaptatifs lorsque les tampons préalloués par une partie au format Wide occuperaient au moins cette
-fraction de la limite de mémoire du serveur (`max_server_memory_usage`), indépendamment de
-`min_columns_to_activate_adaptive_write_buffer`.
-
-Une partie au format Wide préalloue deux tampons de `max_compress_block_size` pour chaque flux qu’elle écrit — le tampon
-de fichier et le tampon de bloc du compresseur —, si bien qu’une table comportant de nombreuses colonnes réserve des centaines de mégaoctets
-avant même d’écrire le moindre octet, et que chaque fusion concurrente réserve à nouveau cette quantité. C’est négligeable sur un gros
-serveur, mais cela représente une part importante du budget mémoire sur un petit serveur, où un `INSERT` peut alors échouer avec l’erreur
-`MEMORY_LIMIT_EXCEEDED`.
-
-Ce paramètre s’applique aux insertions ainsi qu’aux fusions et mutations des tables non répliquées. Les fusions et mutations des tables
-répliquées l’ignorent : les tampons d’écriture adaptatifs modifient les décalages stockés dans les marques, et les répliques comparent les sommes de contrôle
-des parts qu’elles fusionnent ; les tampons ne doivent donc pas dépendre de la limite de mémoire d’une réplique.
-
-Définissez-le sur `0` pour désactiver ce déclencheur et n’activer les tampons d’écriture adaptatifs qu’en fonction du nombre de colonnes.
-
 ## max_partitions_to_read {#max_partitions_to_read}
 
 <SettingsInfoBlock type="Int64" default_value="-1" />

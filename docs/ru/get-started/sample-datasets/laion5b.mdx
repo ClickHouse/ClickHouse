@@ -7,8 +7,10 @@ keywords: ['семантический поиск', 'векторное сход
 doc_type: 'guide'
 ---
 
+import { Image } from "/snippets/ru/components/Image.jsx";
+
 <div id="introduction">
-  ## Введение {#introduction}
+  ## Введение
 </div>
 
 [Датасет LAION 5b](https://laion.ai/blog/laion-5b/) содержит 5,85 миллиарда эмбеддингов пар «изображение—текст» и
@@ -19,7 +21,7 @@ doc_type: 'guide'
 изображений по тексту, так и для поиска изображений по изображению.
 
 <div id="dataset-details">
-  ## Сведения о датасете {#dataset-details}
+  ## Сведения о датасете
 </div>
 
 Полный датасет можно скачать с помощью [opendatalab/laion5b-downloader](https://github.com/opendatalab/laion5b-downloader).
@@ -30,7 +32,7 @@ ClickHouse также предоставил подмножество из 10 м
 Мы рекомендуем пользователям сначала оценить требуемые ресурсы, чтобы определить требования к хранилищу и памяти для этого датасета, обратившись к [документации](/ru/reference/engines/table-engines/mergetree-family/annindexes).
 
 <div id="steps">
-  ## Шаги {#steps}
+  ## Шаги
 </div>
 
 <Steps>
@@ -164,10 +166,6 @@ ClickHouse также предоставил подмножество из 10 м
 
     Результат поиска показан ниже:
 
-    <div className="ch-image-md">
-      <Frame>
-        ![Результаты поиска по векторной схожести](/images/getting-started/example-datasets/laion5b_visualization_1.webp)
-      </Frame>
-    </div>
+    <Image img="/images/getting-started/example-datasets/laion5b_visualization_1.webp" alt="Результаты поиска по векторной схожести" size="md" />
   </Step>
 </Steps>

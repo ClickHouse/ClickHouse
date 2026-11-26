@@ -2,7 +2,7 @@
 sidebarTitle: 'Introduction'
 description: 'Exécutez des requêtes analytiques sur ClickHouse directement depuis PostgreSQL sans avoir à réécrire le moindre SQL'
 slug: '/cloud/managed-postgres/extensions/pg_clickhouse'
-title: 'Documentation de pg_clickhouse'
+title: 'Documentation de référence de pg_clickhouse'
 doc_type: 'landing-page'
 keywords: ['PostgreSQL', 'Postgres', 'FDW', 'foreign data wrapper', 'pg_clickhouse', 'extension']
 ---
@@ -65,8 +65,6 @@ doté de 36 Go de mémoire.
 | [requête 20] |     473 ms |             28 ms |          |
 | [requête 21] |    1145 ms |           4470 ms |          |
 | [requête 22] |     270 ms |             45 ms |     ✼    |
-
-## Installation {#installation}
 
 ### Compiler à partir des sources {#compile-from-source}
 
@@ -210,42 +208,6 @@ superutilisateur &quot;postgres&quot; par défaut :
 make installcheck PGUSER=postgres
 ```
 
-### CloudNativePG {#cloudnativepg}
-
-Ajoutez pg&#95;clickhouse à un cluster [CloudNativePG] à l&#39;aide de [ExtensionConfiguration] :
-
-```yaml
-apiVersion: postgresql.cnpg.io/v1
-kind: Cluster
-metadata:
-  name: cluster-example
-spec:
-  # ... <snip>
-  postgresql:
-    # ExtensionConfiguration
-    extensions:
-      - name: pg_clickhouse
-        image:
-        reference: ghcr.io/ClickHouse/cnpg-pg_clickhouse:{pg_major_version}-{pg_clickhouse_version}
-```
-
-Pour la charger dans une base de données, utilisez [ExtensionSpec] :
-
-```yaml
-apiVersion: postgresql.cnpg.io/v1
-kind: Database
-metadata:
-  name: pg_clickhouse-cluster
-spec:
-  name: app
-  owner: app
-  cluster:
-    name: pg_clickhouse-cluster
-  extensions:
-    - name: pg_clickhouse
-      version: {pg_clickhouse_version}
-```
-
 ### Activation {#loading}
 
 Une fois `pg_clickhouse` installé, vous pouvez l’ajouter à une base de données en vous connectant
@@ -272,7 +234,7 @@ make] et [CMake].
 ## Feuille de route {#road-map}
 
 Notre priorité absolue est de finaliser la couverture du pushdown pour les charges de travail analytiques avant
-d’ajouter des fonctionnalités DML. Notre feuille de route :
+d’ajouter des fonctionnalités DML. Notre feuille de route :
 
 * Obtenir une planification optimale pour les 10 requêtes TPC-H restantes sans pushdown
 * Tester et corriger le pushdown pour les requêtes ClickBench
@@ -281,6 +243,8 @@ d’ajouter des fonctionnalités DML. Notre feuille de route :
 * Autoriser les paramètres ClickHouse au niveau du serveur et de la session via CREATE SERVER
   et les GUC
 * Prendre en charge tous les types de données ClickHouse
+* Prendre en charge les opérations lightweight DELETE et UPDATE
+* Prendre en charge l’insertion par lot via COPY
 * Ajouter une fonction pour exécuter une requête ClickHouse arbitraire et renvoyer ses
   résultats sous forme de tables
 * Ajouter la prise en charge du pushdown des requêtes UNION lorsqu’elles interrogent toutes la base de données distante
@@ -290,7 +254,6 @@ d’ajouter des fonctionnalités DML. Notre feuille de route :
 * [David E. Wheeler](https://justatheory.com/)
 * [serprex](https://github.com/serprex)
 * [Josh Ventura](https://github.com/JoshDreamland)
-* [Kaushik Iska](https://github.com/iskakaushik)
 * [Ildus Kurbangaliev](https://github.com/ildus)
 * [Ibrar Ahmed](https://github.com/ibrarahmad)
 
@@ -313,7 +276,7 @@ d’ajouter des fonctionnalités DML. Notre feuille de route :
 
 [PostgreSQL Yum]: https://yum.postgresql.org
 
-[Client PGXN]: https://pgxn.github.io/pgxnclient/ "Documentation du client PGXN"
+[PGXN client]: https://pgxn.github.io/pgxnclient/ "Documentation du client PGXN"
 
 [Homebrew]: https://formulae.brew.sh/formula/pgxnclient#default "Client PGXN sur Homebrew"
 
@@ -321,7 +284,7 @@ d’ajouter des fonctionnalités DML. Notre feuille de route :
 
 [`postgresql.conf` parameters]: https://www.postgresql.org/docs/devel/runtime-config-client.html#RUNTIME-CONFIG-CLIENT-OTHER
 
-[PostgreSQL]: https://www.postgresql.org "PostgreSQL : la base de données relationnelle open source la plus avancée au monde"
+[PostgreSQL]: https://www.postgresql.org "PostgreSQL : la base de données relationnelle open source la plus avancée au monde"
 
 [libcurl]: https://curl.se/libcurl/ "libcurl — votre bibliothèque de transfert réseau"
 
@@ -329,21 +292,13 @@ d’ajouter des fonctionnalités DML. Notre feuille de route :
 
 [GNU make]: https://www.gnu.org/software/make "GNU Make"
 
-[CMake]: https://cmake.org/ "CMake : un puissant système de build logiciel"
+[CMake]: https://cmake.org/ "CMake : un puissant système de build logiciel"
 
 [LibSSL]: https://openssl-library.org "Bibliothèque OpenSSL"
 
 [TPC-H]: https://www.tpc.org/tpch/
 
-[re2]: https://github.com/ClickHouse/pg_re2 "pg_re2 : fonctions d'expressions régulières compatibles ClickHouse utilisant RE2"
-
-[CloudNativePG]: https://cloudnative-pg.io/ "Exécuter PostgreSQL à la manière de Kubernetes"
-
-[ExtensionConfiguration]: https://cloudnative-pg.io/docs/devel/cloudnative-pg.v1#extensionconfiguration
-
-&quot;Documentation CloudNativePG : ExtensionConfiguration :
-[ExtensionSpec]: https://cloudnative-pg.io/docs/devel/cloudnative-pg.v1#extensionspec
-&quot;Documentation CloudNativePG : ExtensionSpec :
+[re2]: https://github.com/ClickHouse/pg_re2 "pg_re2 : fonctions d'expressions régulières compatibles ClickHouse utilisant RE2"
 
 [Requête 1] https://github.com/ClickHouse/pg&#95;clickhouse/blob/main/dev/tpch/queries/1.sql
 [Requête 2] https://github.com/ClickHouse/pg&#95;clickhouse/blob/main/dev/tpch/queries/2.sql

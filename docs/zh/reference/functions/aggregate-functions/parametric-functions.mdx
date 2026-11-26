@@ -609,7 +609,7 @@ CREATE TABLE sum_map
     `timeslot` DateTime,
     `statusMap` Nested(status UInt16, requests UInt64)
 )
-ENGINE = Log;
+ENGINE = Log
 
 INSERT INTO sum_map VALUES
     ('2000-01-01', '2000-01-01 00:00:00', [1, 2, 3], [10, 10, 10]),
@@ -644,7 +644,7 @@ SELECT sumMapFiltered([1, 4, 8])(statusMap.status, statusMap.requests) FROM sum_
 
 **返回值**
 
-* 返回一个包含两个数组的元组：按排序顺序排列的键，以及对应键求和后的值。
+* 返回一个包含两个数组的元组：按顺序排序的键，以及对应键求和后的值。
 
 **示例**
 
@@ -657,7 +657,7 @@ CREATE TABLE sum_map
     `timeslot` DateTime,
     `statusMap` Nested(status UInt8, requests UInt8)
 )
-ENGINE = Log;
+ENGINE = Log
 
 INSERT INTO sum_map VALUES
     ('2000-01-01', '2000-01-01 00:00:00', [1, 2, 3], [10, 10, 10]),

@@ -19,7 +19,9 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
   Ознакомьтесь с нашим сервисом [ClickHouse Managed Postgres](/ru/products/managed-postgres/overview). Благодаря NVMe-хранилищу, физически расположенному рядом с вычислительными ресурсами, он обеспечивает производительность до 10 раз выше для рабочих нагрузок, упирающихся в производительность диска, по сравнению с альтернативами на сетевом хранилище, такими как EBS, а также позволяет реплицировать данные из Postgres в ClickHouse с помощью коннектора Postgres CDC в ClickPipes.
 </Tip>
 
-## Использование движка таблицы PostgreSQL {#using-the-postgresql-table-engine}
+<div id="using-the-postgresql-table-engine">
+  ## Использование движка таблицы PostgreSQL
+</div>
 
 Движок таблицы `PostgreSQL` позволяет выполнять из ClickHouse операции **SELECT** и **INSERT** с данными, хранящимися на удалённом сервере PostgreSQL.
 В этой статье на примере одной таблицы показаны базовые способы интеграции.
@@ -203,7 +205,9 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
   </Step>
 </Steps>
 
-## Использование движка базы данных MaterializedPostgreSQL {#using-the-materializedpostgresql-database-engine}
+<div id="using-the-materializedpostgresql-database-engine">
+  ## Использование движка базы данных MaterializedPostgreSQL
+</div>
 
 <CloudNotSupportedBadge />
 
@@ -299,7 +303,7 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
     2. Включите экспериментальную возможность PostgreSQL для движка базы данных:
 
     ```sql
-    SET enable_database_materialized_postgresql=1
+    SET allow_experimental_database_materialized_postgresql=1
     ```
 
     3. Создайте новую реплицируемую базу данных и определите исходную таблицу:

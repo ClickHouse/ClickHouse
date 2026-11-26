@@ -4,8 +4,6 @@
 -- Scenarios 1-10 live in `04927_cascades_aggregation_pushdown_correctness`: the scenario list
 -- is split in two so each half fits the flaky-check time budget.
 
-SET query_plan_remove_unused_joins = 0; -- The joins are what is tested, including the ones whose other side is not read
-
 DROP TABLE IF EXISTS t_corr_left;
 DROP TABLE IF EXISTS t_corr_right_multi;
 DROP TABLE IF EXISTS t_corr_right_uniq;

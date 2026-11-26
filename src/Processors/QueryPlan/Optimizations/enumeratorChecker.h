@@ -9,7 +9,6 @@
 #include <bit>
 #include <limits>
 #include <vector>
-#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -31,7 +30,7 @@ public:
     DPTable & getDPTable() { return dp_table; }
     const DPTable & getDPTable() const { return dp_table; }
 
-    [[nodiscard]] size_t numRelations() const { return nr_relations; }
+    size_t numRelations() const { return nr_relations; }
 private:
     DPTable dp_table;
     const size_t nr_relations;
@@ -54,15 +53,15 @@ public:
     void accept(UInt result_subset_, UInt lhs_subset_, UInt rhs_subset_);
 
     DPTable & getDPTable() { return dp_table; }
-    [[nodiscard]] const DPTable & getDPTable() const { return dp_table; }
+    const DPTable & getDPTable() const { return dp_table; }
 
-    [[nodiscard]] size_t numRelations() const { return num_relations; }
+    size_t numRelations() const { return num_relations; }
 private:
     using Plan = typename DPTable::DPEntry::Plan;
 
     /// Offers the sort-merge joins of the two sides, one per equivalence class they may be merged on.
     void acceptMergeJoins(UInt result_subset, UInt lhs_subset, UInt rhs_subset, JoinKind kind, JoinStrictness strictness,
-        const SelectivityEstimate & selectivity, const VectorWithMemoryTracking<JoinActionRef *> & edges);
+        const SelectivityEstimate & selectivity, const std::vector<JoinActionRef *> & edges);
 
     struct MergeInputCandidate
     {
@@ -73,14 +72,14 @@ private:
     {
         std::array<MergeInputCandidate, 2> items;
         size_t size = 0;
-        [[nodiscard]] const MergeInputCandidate * begin() const { return items.data(); }
-        [[nodiscard]] const MergeInputCandidate * end() const { return items.data() + size; }
+        const MergeInputCandidate * begin() const { return items.data(); }
+        const MergeInputCandidate * end() const { return items.data() + size; }
     };
     /// The plans of the subset that may feed a merge join on the equivalence class: its cheapest plan, and its
     /// cheapest plan sorted by the class if it is another one. Plans without a row estimate are left out.
     MergeInputCandidates mergeInputCandidates(UInt subset, Int32 key) const;
     /// The cheapest plan of the subset for -1, else its plan in `ordered`.
-    [[nodiscard]] const Plan & planAt(UInt subset, Int8 index) const { return index < 0 ? dp_table[subset] : dp_table[subset].ordered[index]; }
+    const Plan & planAt(UInt subset, Int8 index) const { return index < 0 ? dp_table[subset] : dp_table[subset].ordered[index]; }
 
     DPTable dp_table;
     Optimizer & optimizer;
@@ -207,7 +206,7 @@ EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::mergeInputCandidates(const UIn
 template <class TDPTable, class TOptimizer>
 void EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::acceptMergeJoins(
     const UInt result_subset, const UInt lhs_subset, const UInt rhs_subset, const JoinKind kind, const JoinStrictness strictness,
-    const SelectivityEstimate & selectivity, const VectorWithMemoryTracking<JoinActionRef *> & edges)
+    const SelectivityEstimate & selectivity, const std::vector<JoinActionRef *> & edges)
 {
     const auto left_mask = static_cast<UInt32>(lhs_subset);
     const auto right_mask = static_cast<UInt32>(rhs_subset);

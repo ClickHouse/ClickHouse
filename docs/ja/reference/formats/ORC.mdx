@@ -15,47 +15,53 @@ doc_type: 'reference'
 | -- | -- | ----- |
 | ✔  | ✔  |       |
 
-## 説明 {#description}
+<div id="description">
+  ## 説明
+</div>
 
 [Apache ORC](https://orc.apache.org/) は、[Hadoop](https://hadoop.apache.org/) エコシステムで広く利用されている列指向ストレージフォーマットです。
 
-## データ型の対応 {#data-types-matching-orc}
+<div id="data-types-matching-orc">
+  ## データ型の対応
+</div>
 
 以下の表は、サポートされている ORC のデータ型と、`INSERT` および `SELECT` クエリでそれぞれ対応する ClickHouse の [データ型](/ja/reference/data-types/index) を比較したものです。
 
-| ORC データ型 (`INSERT`)           | ClickHouse データ型                                                                     | ORC データ型 (`SELECT`) |
-| ----------------------------- | ----------------------------------------------------------------------------------- | ------------------- |
-| `Boolean`                     | [Bool](/ja/reference/data-types/boolean)                                               | `Boolean`           |
-| `Tinyint`                     | [Int8/UInt8](/ja/reference/data-types/int-uint)/[Enum8](/ja/reference/data-types/enum)    | `Tinyint`           |
-| `Smallint`                    | [Int16/UInt16](/ja/reference/data-types/int-uint)/[Enum16](/ja/reference/data-types/enum) | `Smallint`          |
-| `Int`                         | [Int32/UInt32](/ja/reference/data-types/int-uint)                                      | `Int`               |
-| `Bigint`                      | [Int64/UInt64](/ja/reference/data-types/int-uint)                                      | `Bigint`            |
-| `Float`                       | [Float32](/ja/reference/data-types/float)                                              | `Float`             |
-| `Double`                      | [Float64](/ja/reference/data-types/float)                                              | `Double`            |
-| `Decimal`                     | [Decimal](/ja/reference/data-types/decimal)                                            | `Decimal`           |
-| `Date`                        | [Date32](/ja/reference/data-types/date32)                                              | `Date`              |
-| `Timestamp`                   | [DateTime64](/ja/reference/data-types/datetime64)                                      | `Timestamp`         |
-| `String`, `Varchar`, `Binary` | [String](/ja/reference/data-types/string)                                              | `String`            |
-| `Char`                        | [FixedString](/ja/reference/data-types/fixedstring)                                    | `String`            |
-| `List`                        | [Array](/ja/reference/data-types/array)                                                | `List`              |
-| `Struct`                      | [Tuple](/ja/reference/data-types/tuple)                                                | `Struct`            |
-| `Map`                         | [Map](/ja/reference/data-types/map)                                                    | `Map`               |
-| `Int`                         | [IPv4](/ja/reference/data-types/int-uint)                                              | `Int`               |
-| `Binary`                      | [IPv6](/ja/reference/data-types/ipv6)                                                  | `Binary`            |
-| `Binary`                      | [Int128/UInt128/Int256/UInt256](/ja/reference/data-types/int-uint)                     | `Binary`            |
-| `Binary`                      | [Decimal256](/ja/reference/data-types/decimal)                                         | `Binary`            |
-| `Union`                       | [Variant](/ja/reference/data-types/variant)                                            | `Union`             |
+| ORC データ型 (`INSERT`)      | ClickHouse データ型                                                                | ORC データ型 (`SELECT`) |
+| ----------------------------- | ----------------------------------------------------------------------------------- | ------------------------ |
+| `Boolean`                     | [Bool](/ja/reference/data-types/boolean)                                               | `Boolean`                |
+| `Tinyint`                     | [Int8/UInt8](/ja/reference/data-types/int-uint)/[Enum8](/ja/reference/data-types/enum)    | `Tinyint`                |
+| `Smallint`                    | [Int16/UInt16](/ja/reference/data-types/int-uint)/[Enum16](/ja/reference/data-types/enum) | `Smallint`               |
+| `Int`                         | [Int32/UInt32](/ja/reference/data-types/int-uint)                                      | `Int`                    |
+| `Bigint`                      | [Int64/UInt64](/ja/reference/data-types/int-uint)                                      | `Bigint`                 |
+| `Float`                       | [Float32](/ja/reference/data-types/float)                                              | `Float`                  |
+| `Double`                      | [Float64](/ja/reference/data-types/float)                                              | `Double`                 |
+| `Decimal`                     | [Decimal](/ja/reference/data-types/decimal)                                            | `Decimal`                |
+| `Date`                        | [Date32](/ja/reference/data-types/date32)                                              | `Date`                   |
+| `Timestamp`                   | [DateTime64](/ja/reference/data-types/datetime64)                                      | `Timestamp`              |
+| `String`, `Varchar`, `Binary` | [String](/ja/reference/data-types/string)                                              | `String`                 |
+| `Char`                        | [FixedString](/ja/reference/data-types/fixedstring)                                    | `String`                 |
+| `List`                        | [Array](/ja/reference/data-types/array)                                                | `List`                   |
+| `Struct`                      | [Tuple](/ja/reference/data-types/tuple)                                                | `Struct`                 |
+| `Map`                         | [Map](/ja/reference/data-types/map)                                                    | `Map`                    |
+| `Int`                         | [IPv4](/ja/reference/data-types/int-uint)                                              | `Int`                    |
+| `Binary`                      | [IPv6](/ja/reference/data-types/ipv6)                                                  | `Binary`                 |
+| `Binary`                      | [Int128/UInt128/Int256/UInt256](/ja/reference/data-types/int-uint)                     | `Binary`                 |
+| `Binary`                      | [Decimal256](/ja/reference/data-types/decimal)                                         | `Binary`                 |
+| `Union`                       | [Variant](/ja/reference/data-types/variant)                                            | `Union`                  |
 
 * その他の型はサポートされていません。
 * ORC の `Union` カラムはユニオンのブランチ型に対する [Variant](/ja/reference/data-types/variant) として読み取られ、`Variant` カラムはそのブランチ型に対する ORC の `Union` として書き込まれます。`Variant` はブランチ型をソートするため、ブランチの順序が ORC ファイルと異なる場合があることに注意してください。重複するブランチ型を含むユニオン (例: `uniontype<int,int>`) はサポートされていません。
 * Array はネスト可能で、引数として `Nullable` 型の値を取ることもできます。`Tuple` 型と `Map` 型もネストできます。
 * ClickHouse テーブルのカラムのデータ型は、対応する ORC のデータフィールドと一致している必要はありません。データを挿入する際、ClickHouse はまず上記の表に従ってデータ型を解釈し、その後、ClickHouse テーブルのカラムに設定されたデータ型へデータを [CAST](/ja/reference/functions/regular-functions/type-conversion-functions#CAST) します。
-* `1969-12-31 23:59:59.001` から `1969-12-31 23:59:59.999999999` (UTC) までの `DateTime64` の値は、`1970-01-01 00:00:00` として書き込まれます。これは [ORC 仕様](https://orc.apache.org/specification/ORCv1/#timestamp-columns) の不備によるものです。ORC 仕様ではタイムスタンプを秒とナノ秒に分けて保存し、ナノ秒は負の値を取りません。リファレンス実装では、999999 ナノ秒を超える負のタイムスタンプに 1 秒を加算し、リーダー側でそれを減算しますが、この方式では -1 秒から 0 秒の間のタイムスタンプが 0 秒として保存され、エポック以降の値として読み戻されてしまいます。このようなタイムスタンプの書き込み方は実装によって異なります。Apache ORC の Java および C++ のライターは 1 秒後の値として読み戻されるように書き込みます。一方、Arrow ORC アダプター (PyArrow) は負のナノ秒を書き込みますが、これは仕様で許可されておらず、Java のリーダーでは拒否されます。ClickHouse は代わりにエポックを書き込むため、どのリーダーでも同じ値として読み戻されます。
-* タイムスタンプのライターとリーダーのタイムゾーンが異なる場合、Apache ORC の Java リーダーと ClickHouse は、ライターが加算したその 1 秒をタイムゾーン変換の前に減算しますが、Apache ORC の C++ リーダー (PyArrow でも使用) は変換後に減算します。そのため C++ リーダーでは、どのライターで書き込まれたファイルであっても、1970 年より前でエポックからタイムゾーンオフセットの範囲内にあるタイムスタンプが 1 秒ずれて読み取られる場合があります。
 
-## 使用例 {#example-usage}
+<div id="example-usage">
+  ## 使用例
+</div>
 
-### データの挿入 {#inserting-data}
+<div id="inserting-data">
+  ### データの挿入
+</div>
 
 次のデータを含む、`football.orc` という名前の ORC ファイルを使用します。
 
@@ -87,7 +93,9 @@ doc_type: 'reference'
 INSERT INTO football FROM INFILE 'football.orc' FORMAT ORC;
 ```
 
-### データの読み込み {#reading-data}
+<div id="reading-data">
+  ### データの読み込み
+</div>
 
 `ORC`フォーマットを使用してデータを読み込みます。
 
@@ -102,7 +110,9 @@ FORMAT ORC
   ORC はバイナリ形式のため、ターミナル上では人間が読める形では表示されません。ORC ファイルを出力するには、`INTO OUTFILE` を使用してください。
 </Tip>
 
-## フォーマット設定 {#format-settings}
+<div id="format-settings">
+  ## フォーマット設定
+</div>
 
 | 設定                                                                                                                                                                                              | 説明                                               | デフォルト   |
 | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------ | ------- |

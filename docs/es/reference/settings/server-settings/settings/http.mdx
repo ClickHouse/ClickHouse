@@ -132,11 +132,11 @@ El valor predeterminado es &quot;Ok.&quot; (con un salto de línea al final)
 
 **Ejemplo**
 
-Abre la interfaz de usuario web integrada (`/play`) al acceder a `http://localhost: http_port`.
+Abre `https://tabix.io/` al acceder a `http://localhost: http_port`.
 
 ```xml
 <http_server_default_response>
-  <![CDATA[<html><head><meta http-equiv="refresh" content="0; url=/play"></head><body><a href="/play">ClickHouse Web UI</a></body></html>]]>
+  <![CDATA[<html ng-app="SMI2"><head><base href="http://ui.tabix.io/"></head><body><div ui-view="" class="content-ui"></div><script src="http://loader.tabix.io/master.js"></script></body></html>]]>
 </http_server_default_response>
 ```
 

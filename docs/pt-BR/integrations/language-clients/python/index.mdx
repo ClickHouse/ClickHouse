@@ -32,7 +32,7 @@ Se você estiver atualizando da versão 0.15.x ou anterior, consulte o [guia de 
 
 | Componente  | Versões compatíveis                                                                                                                                                                                           |
 | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Python      | 3.10 a 3.15. Compilações free-threaded, como 3.14t e 3.15t, têm suporte experimental.                                                                                                                         |
+| Python      | 3.10 a 3.14. Compilações free-threaded, como 3.14t, têm suporte experimental.                                                                                                                                 |
 | ClickHouse  | Lançamentos do ClickHouse com suporte ativo. A CI testa as [séries de lançamentos LTS e estáveis listadas aqui](https://github.com/ClickHouse/clickhouse-connect/blob/main/.github/clickhouse-versions.json). |
 | SQLAlchemy  | 1.4.40 ou posterior, abaixo de 3.0, para o dialect síncrono. 2.0.44 ou posterior, abaixo de 3.0, para o dialect assíncrono.                                                                                   |
 | Pandas      | 2.x e 3.x                                                                                                                                                                                                     |
@@ -40,7 +40,7 @@ Se você estiver atualizando da versão 0.15.x ou anterior, consulte o [guia de 
 | aiohttp     | 3.9 ou posterior                                                                                                                                                                                              |
 | Plataformas | Linux, macOS e Windows nas arquiteturas com wheels publicadas para cada versão do Python                                                                                                                      |
 
-O pacote inclui wheels compiladas quando disponíveis e usa uma implementação em Python puro quando as extensões Cython não podem ser compiladas. PyArrow é compatível com Python 3.10 a 3.15. Python 3.14 requer PyArrow 22 ou posterior, e Python 3.15 requer PyArrow 26 ou posterior. No Python 3.14 e posteriores, o `lz4` é um extra opcional, e a compressão padrão usa o módulo zstd da biblioteca padrão. O `lz4` ainda não publica wheels para CPython 3.15 nem para compilações free-threaded do Python 3.14+; por isso, ao instalar o extra `lz4` nessas versões, ele é compilado a partir do código-fonte, o que exige um compilador C.
+O pacote inclui wheels compiladas quando disponíveis e usa uma implementação em Python puro quando as extensões Cython não podem ser compiladas. PyArrow é compatível com Python 3.10 a 3.14. Python 3.14 requer PyArrow 22 ou posterior.
 
 ## Instalação {#installation}
 
@@ -62,7 +62,6 @@ pip install "clickhouse-connect[sqlalchemy-async]" # Async SQLAlchemy dialect
 pip install "clickhouse-connect[alembic]"    # SQLAlchemy and Alembic
 pip install "clickhouse-connect[chdb]"       # Embedded chDB backend
 pip install "clickhouse-connect[rust]"       # Experimental Rust codec
-pip install "clickhouse-connect[lz4]"        # lz4 compression on Python 3.14+
 pip install "clickhouse-connect[tzdata]"     # IANA time zones on minimal systems
 ```
 
@@ -89,10 +88,10 @@ As wheels geradas pelo fallback padrão não contêm extensões compiladas, mas 
 pip cache remove clickhouse_connect
 ```
 
-Verifique se os quatro módulos de extensão estão presentes. Isso imprime `True` quando estiverem:
+Verifique se os três módulos de extensão estão presentes. Isso imprime `True` quando estiverem:
 
 ```bash
-python -c "from importlib.util import find_spec; print(all(find_spec(m) for m in ('clickhouse_connect.driverc.buffer', 'clickhouse_connect.driverc.dataconv', 'clickhouse_connect.driverc.npconv', 'clickhouse_connect.driverc.sqlscan')))"
+python -c "from importlib.util import find_spec; print(all(find_spec(m) for m in ('clickhouse_connect.driverc.buffer', 'clickhouse_connect.driverc.dataconv', 'clickhouse_connect.driverc.npconv')))"
 ```
 
 Importar `clickhouse_connect.driverc.npconv` diretamente também exige que o NumPy esteja instalado.

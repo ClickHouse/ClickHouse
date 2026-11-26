@@ -100,28 +100,12 @@ def started_cluster() -> typing.Generator[ClickHouseCluster, None, None]:
             f"model = 'test-model', "
             f"api_key = 'test-key'"
         )
-        # Endpoint whose structured reply has every field `null`.
-        instance.query(
-            f"CREATE NAMED COLLECTION ai_mock_null_fields AS "
-            f"provider = 'openai', "
-            f"endpoint = 'http://localhost:{MOCK_PORT}/v1/chat/completions_null_fields', "
-            f"model = 'test-model', "
-            f"api_key = 'test-key'"
-        )
         # Endpoint that always replies with plain text, ignoring `response_format`, as a
         # model/gateway that doesn't support structured output would.
         instance.query(
             f"CREATE NAMED COLLECTION ai_mock_no_structured_output AS "
             f"provider = 'openai', "
             f"endpoint = 'http://localhost:{MOCK_PORT}/v1/chat/completions_no_structured_output', "
-            f"model = 'test-model', "
-            f"api_key = 'test-key'"
-        )
-        # Endpoint whose structured reply starts with whitespace.
-        instance.query(
-            f"CREATE NAMED COLLECTION ai_mock_leading_whitespace AS "
-            f"provider = 'openai', "
-            f"endpoint = 'http://localhost:{MOCK_PORT}/v1/chat/completions_leading_whitespace', "
             f"model = 'test-model', "
             f"api_key = 'test-key'"
         )
@@ -1300,25 +1284,6 @@ def test_extract_json_schema(started_cluster):
     assert "age" in parsed
 
 
-def test_extract_json_schema_sole_result_field(started_cluster):
-    """A schema whose only field is `result` returns the JSON object, also for a `null` value.
-    Only instruction mode unwraps `result`."""
-    schema = """'{"result": "the value"}'"""
-    assert (
-        instance.query(f"SELECT aiExtract('sample', {schema}, map('credentials', 'ai_mock'))")
-        == '{"result": "sample"}\n'
-    )
-    assert (
-        instance.query(f"SELECT aiExtract('sample', {schema}, map('credentials', 'ai_mock_null_fields'))")
-        == '{"result": null}\n'
-    )
-    # Instruction mode keeps returning an empty string for `null`.
-    assert (
-        instance.query("SELECT aiExtract('sample', 'the value', map('credentials', 'ai_mock_null_fields'))")
-        == "\n"
-    )
-
-
 def test_extract_multiple_rows(started_cluster):
     instance.query("TRUNCATE TABLE test_input")
     instance.query("INSERT INTO test_input VALUES ('text1'), ('text2'), ('text3')")
@@ -1341,29 +1306,6 @@ def test_extract_null_input(started_cluster):
     lines = result.strip().split("\n")
     assert "\\N" in lines
     assert len(lines) == 2
-
-
-def test_structured_output_leading_whitespace(started_cluster):
-    """A structured reply that starts with whitespace is still unwrapped by
-    aiClassify, aiFilter and aiExtract."""
-    instance.query("TRUNCATE TABLE test_input")
-    instance.query("INSERT INTO test_input VALUES ('The checkout page crashes')")
-    result = instance.query(
-        "SELECT aiClassify(x, ['bug', 'question'], map('credentials', 'ai_mock_leading_whitespace')), "
-        "aiFilter(x, 'is a bug report', map('credentials', 'ai_mock_leading_whitespace')), "
-        "aiExtract(x, 'the page', map('credentials', 'ai_mock_leading_whitespace')) FROM test_input",
-    )
-    assert result.strip() == "bug\t1\tThe checkout page crashes"
-
-
-def test_no_structured_output_strips_whitespace(started_cluster):
-    """A bare-text reply from a provider that ignores `response_format` is trimmed too."""
-    result = instance.query(
-        "SELECT hex(aiClassify('\\n\\nbug', ['bug', 'question'], map('credentials', 'ai_mock_no_structured_output'))), "
-        "hex(aiClassify(' {bug} ', [' {bug} '], map('credentials', 'ai_mock_no_structured_output'))), "
-        "hex(aiExtract('  the page\\n', 'the page', map('credentials', 'ai_mock_no_structured_output')))",
-    )
-    assert result == "627567\t7B6275677D\t7468652070616765\n"
 
 
 # ---------------------------------------------------------------------------

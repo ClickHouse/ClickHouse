@@ -1,12 +1,13 @@
 ---
 title: 'Modelo de privilegios'
 sidebarTitle: 'Modelo de privilegios'
-description: 'Exactamente lo que el ClickHouse Connector puede y no puede hacer: identities, conexiones salientes, permisos de ClickHouse, RBAC de Kubernetes, acceso a la nube, atribución y minimización de datos'
+description: 'Exactamente lo que el ClickHouse Connector puede y no puede hacer: identities, outbound connections, ClickHouse grants, RBAC de Kubernetes, acceso a la nube, atribución y minimización de datos'
 keywords: ['BYOC', 'cloud', 'bring your own cloud', 'connector', 'privilege', 'security', 'managed mode', 'executor']
 doc_type: 'reference'
 ---
 
 import { PrivatePreviewBadge } from '/snippets/es/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
+import { Image } from "/snippets/es/components/Image.jsx";
 
 <PrivatePreviewBadge />
 
@@ -14,19 +15,15 @@ Esta página es la referencia de seguridad del ClickHouse Connector: sus identid
 
 ## Identidades {#identities}
 
-<div className="ch-image-lg">
-  <Frame>
-    ![Modelo de identity de ClickHouse Connector](/images/cloud/reference/byoc-connector-identity-model.svg)
-  </Frame>
-</div>
+<Image img="/images/cloud/reference/byoc-connector-identity-model.svg" size="lg" alt="Modelo de identity de ClickHouse Connector" />
 
-* **El certificado de cliente mTLS del connector**, que lleva el ID de su organización como nombre común, autentica cada demonio ante su endpoint del connector. `clicklink clctl instances create` utiliza el mismo certificado y la misma clave HMAC cuando llama al endpoint.
-* **`pcm_scraper` y `pcm_troubleshooter`** son los usuarios de ClickHouse de solo lectura con los que se conectan el scraper y el Solucionador de problemas. El executor no tiene ningún usuario de ClickHouse.
-* **Los ServiceAccounts del Solucionador de problemas**, uno por cada implementación aprovisionada, disponen de las vistas de Kubernetes de solo lectura que puede utilizar una sesión de soporte.
+* **El certificado de cliente mTLS del conector**, que lleva el ID de su organización como nombre común, autentica cada demonio ante su endpoint del conector. `clicklink clctl instances create` utiliza el mismo certificado y la misma clave HMAC cuando llama al endpoint.
+* **`pcm_scraper` y `pcm_troubleshooter`** son los usuarios de ClickHouse de solo lectura con los que se conectan el scraper y el solucionador de problemas. El executor no tiene ningún usuario de ClickHouse.
+* **Los ServiceAccounts del Troubleshooter**, uno por cada implementación aprovisionada, disponen de las vistas de Kubernetes de solo lectura que puede utilizar una sesión de soporte.
 * **`pcm-executor`** es el ServiceAccount de Kubernetes del executor para el ciclo de vida de los servicios gestionados. Una ValidatingAdmissionPolicy limita sus escrituras a los espacios de nombres de los servicios.
 * **`pcm-platform`** es la identity del executor para las actualizaciones de la plataforma. Su comando `clicklink clctl platform approve` emite un token válido durante 2 horas y nunca lo renueva; entre aprobaciones, el executor no tiene acceso de escritura a la capa de la plataforma.
 * **El rol de IAM por servicio** (`CH-S3-<service>-<region>-00-Role` de forma predeterminada) lo crea `clicklink clctl executor prepare` con sus credenciales. Está acotado a los buckets de datos y de copia de seguridad de ese servicio y solo goza de la confianza del ServiceAccount de Kubernetes de ese servicio, de modo que ni el executor ni ClickHouse pueden asumirlo.
-* **El perfil de instancia de la VM EC2 del connector** asume el rol de pull de ECR de solo lectura de su entorno para el acceso directo a la plataforma, tanto para el inicio de sesión de charts como para las comprobaciones de imágenes. La CLI de aprobación emplea la misma ruta de perfil de instancia; los perfiles de AWS de la estación de trabajo o las credenciales de SSO no lo sustituyen. Otros registros de charts de ECR utilizan credenciales de AWS del entorno. Las descargas de imágenes se realizan en sus nodos con su propio rol de pull. El executor no guarda credenciales para sus buckets ni para IAM, y no realiza llamadas a S3 ni a IAM. Consulte [credenciales del registro](/es/products/bring-your-own-cloud/connector/platform-updates#registry-credentials).
+* **El perfil de instancia de la VM EC2 del conector** asume el rol de pull de ECR de solo lectura de su entorno para el acceso directo a la plataforma, tanto para el inicio de sesión de charts como para las comprobaciones de imágenes. La CLI de aprobación emplea la misma ruta de perfil de instancia; los perfiles de AWS de la estación de trabajo o las credenciales de SSO no lo sustituyen. Otros registries de charts de ECR utilizan credenciales ambiente de AWS. Las descargas de imágenes se realizan en sus nodos con su propio rol de pull. El executor no guarda credenciales para sus buckets ni para IAM, y no realiza llamadas a S3 ni a IAM. Consulte [credenciales del registry](/es/products/bring-your-own-cloud/connector/platform-updates#registry-credentials).
 * **Sus propias credenciales** aplican todos los permisos: el permiso de acceso del executor en `init --managed`, los buckets y el rol en `prepare`, la mitad correspondiente a los permisos de cada actualización de plataforma en `approve` y la limpieza en `teardown`.
 
 ## Qué puede hacer el conector {#what-the-connector-can-do}

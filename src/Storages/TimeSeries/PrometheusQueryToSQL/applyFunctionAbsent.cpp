@@ -7,11 +7,17 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyFunctionOverRange.h>
-#include <Storages/TimeSeries/PrometheusQueryToSQL/checkArguments.h>
 #include <Storages/TimeSeries/timeSeriesTypesToAST.h>
+#include <Common/Exception.h>
 
 #include <map>
 #include <unordered_set>
+
+
+namespace DB::ErrorCodes
+{
+    extern const int CANNOT_EXECUTE_PROMQL_QUERY;
+}
 
 
 namespace DB::PrometheusQueryToSQL
@@ -92,10 +98,26 @@ SQLQueryPiece applyFunctionAbsent(const PrometheusQueryTree::Function * function
     const auto function_name = function_node->function_name;
     const auto expected_argument_type = (function_name == "absent_over_time") ? ResultType::RANGE_VECTOR : ResultType::INSTANT_VECTOR;
 
-    checkNumberOfArguments(function_node, arguments, 1);
-    checkArgumentType(function_node, arguments, 0, expected_argument_type, context);
+    if (arguments.size() != 1)
+    {
+        throw Exception(
+            ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
+            "Function '{}' expects 1 argument, but was called with {} arguments",
+            function_name,
+            arguments.size());
+    }
 
     const auto & argument = arguments[0];
+    if (argument.type != expected_argument_type)
+    {
+        throw Exception(
+            ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
+            "Function '{}' expects an argument of type {}, but expression {} has type {}",
+            function_name,
+            expected_argument_type,
+            getPromQLText(argument, context),
+            argument.type);
+    }
 
     const auto & node_range = context.node_range_getter.get(function_node);
     if (node_range.empty())
@@ -140,8 +162,7 @@ SQLQueryPiece applyFunctionAbsent(const PrometheusQueryTree::Function * function
             }
 
             case StoreMethod::CONST_STRING:
-            case StoreMethod::SAMPLES:
-            case StoreMethod::TIMESTAMP_AND_VALUE:
+            case StoreMethod::RAW_DATA:
             {
                 /// Can't get in here because these store methods are incompatible with an instant vector.
                 throwUnexpectedStoreMethod(argument, context);

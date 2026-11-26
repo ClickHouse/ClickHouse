@@ -10,64 +10,46 @@ integration:
   - category: 'clickpipes'
 ---
 
-Il existe des situations où il peut être utile de mettre en pause un ClickPipe Postgres. Par exemple, vous pouvez vouloir effectuer des analyses sur des données existantes dans un état figé. Il se peut aussi que vous soyez en train d’effectuer des mises à niveau de Postgres. Voici comment mettre en pause puis reprendre un ClickPipe Postgres.
+import { Image } from "/snippets/fr/components/Image.jsx";
 
-<Warning>
-  Si la table `_peerdb_raw_mirror_*` du pipeline d’ingestion possède un TTL, y compris un TTL configuré automatiquement par ClickPipes, les événements encore présents dans cette table à l’expiration du TTL sont supprimés, même lorsque le pipeline d’ingestion est en pause. Avant de planifier une pause prolongée, exécutez `SHOW CREATE TABLE` sur la table brute pour vérifier son TTL, et veillez à ce que la pause soit plus courte que celui-ci. Consultez la section [Rétention de la table brute](/fr/integrations/clickpipes/postgres/faq#raw-mirror-table-retention).
-</Warning>
+Il existe des situations où il peut être utile de mettre en pause un Postgres ClickPipe. Par exemple, vous pouvez vouloir effectuer des analyses sur des données existantes dans un état figé. Il se peut aussi que vous soyez en train d’effectuer des mises à niveau de Postgres. Voici comment mettre en pause puis reprendre un Postgres ClickPipe.
 
-## Étapes pour mettre en pause un ClickPipe Postgres {#pause-clickpipe-steps}
+<div id="pause-clickpipe-steps">
+  ## Étapes pour mettre en pause un ClickPipe Postgres
+</div>
 
 1. Dans l’onglet Sources de données, cliquez sur le ClickPipe Postgres que vous souhaitez mettre en pause.
 2. Accédez à l’onglet **Paramètres**.
 3. Cliquez sur le bouton **Pause**.
 
-<div className="ch-image-md">
-  <Frame>
-    ![](/images/integrations/data-ingestion/clickpipes/postgres/pause_button.webp)
-  </Frame>
-</div>
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/pause_button.webp" border size="md" />
 
 4. Une boîte de dialogue de confirmation devrait s’afficher. Cliquez de nouveau sur Pause.
 
-<div className="ch-image-md">
-  <Frame>
-    ![](/images/integrations/data-ingestion/clickpipes/postgres/pause_dialog.webp)
-  </Frame>
-</div>
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/pause_dialog.webp" border size="md" />
 
 4. Accédez à l’onglet **Métriques**.
-5. Après environ 5 secondes (et également après actualisation de la page), le statut du pipeline d’ingestion devrait être **En pause**.
+5. Après environ 5 secondes (et également après actualisation de la page), le statut du pipe devrait être **En pause**.
 
 <Warning>
   Mettre en pause un ClickPipe Postgres n’arrête pas l’augmentation des slots de réplication.
 </Warning>
 
-<div className="ch-image-md">
-  <Frame>
-    ![](/images/integrations/data-ingestion/clickpipes/postgres/pause_status.webp)
-  </Frame>
-</div>
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/pause_status.webp" border size="md" />
 
-## Étapes pour reprendre un ClickPipe Postgres {#resume-clickpipe-steps}
+<div id="resume-clickpipe-steps">
+  ## Étapes pour reprendre un ClickPipe Postgres
+</div>
 
 1. Dans l’onglet Sources de données, cliquez sur le ClickPipe Postgres que vous souhaitez reprendre. Le statut du miroir doit initialement être **En pause**.
 2. Accédez à l’onglet **Paramètres**.
 3. Cliquez sur le bouton **Reprendre**.
 
-<div className="ch-image-md">
-  <Frame>
-    ![](/images/integrations/data-ingestion/clickpipes/postgres/resume_button.webp)
-  </Frame>
-</div>
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/resume_button.webp" border size="md" />
 
 4. Une boîte de dialogue de confirmation s’affiche. Cliquez de nouveau sur Reprendre.
 
-<div className="ch-image-md">
-  <Frame>
-    ![](/images/integrations/data-ingestion/clickpipes/postgres/resume_dialog.webp)
-  </Frame>
-</div>
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/resume_dialog.webp" border size="md" />
 
 5. Accédez à l’onglet **Métriques**.
-6. Après environ 5 secondes (et également après actualisation de la page), le statut du pipeline d’ingestion doit être **En cours d’exécution**.
+6. Après environ 5 secondes (et également après actualisation de la page), le statut du pipe doit être **En cours d’exécution**.

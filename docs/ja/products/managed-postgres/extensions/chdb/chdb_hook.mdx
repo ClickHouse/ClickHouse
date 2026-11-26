@@ -36,19 +36,16 @@ chdb&#95;hook モジュールは PostgreSQL の [COPY](#copy-overloading) コマ
 
 以下のいずれかの方法で、super user として chdb&#95;hook をロードします。ユースケースに最も適した方法を選んでください:
 
-<Note>
-  ClickHouse Managed Postgres の場合:
-
-  * ClickHouse Cloud の SQL Console は現時点では `LOAD 'chdb_hook'` コマンドに対応していませんが、psql やその他の database connection 経由であれば実行できます。
-  * `ALTER SYSTEM` は使用できず、`postgresql.conf` も編集できないため、これらを前提とする以下の例は適用できません。代わりに `ALTER DATABASE` または `ALTER ROLE` を使用してください。
-  * あるいは、[サポート](https://clickhouse.com/support/program)に連絡して Postgres service の configuration に `chdb_hook` を追加してもらうこともできます。追加後は SQL Console でも使用できるようになります。
-</Note>
-
 * [LOAD] コマンドによる明示的なロード。session が続く間のみ有効です:
 
   ```sql
   LOAD 'chdb_hook';
   ```
+
+  <Note>
+    ClickHouse Cloud の SQL Console は現時点では `LOAD 'chdb_hook'` コマンドに対応していませんが、psql やその他の database connection 経由であれば実行できます。
+    そうでない場合は、サポート担当者に連絡して Postgres service の configuration に追加してもらってください。追加後は SQL Console でも使用できるようになります。
+  </Note>
 
 * すべての sessions を対象とする場合は、`postgresql.conf` で [session&#95;preload&#95;libraries] SETTING を指定します:
 
@@ -74,14 +71,14 @@ chdb&#95;hook モジュールは PostgreSQL の [COPY](#copy-overloading) コマ
   ALTER ROLE name SET session_preload_libraries = 'chdb_hook';
   ```
 
-* [shared&#95;preload&#95;libraries] SETTING により サーバー 起動時にロードする方法。すべての sessions と databases から常に利用できるようになります:
+* [shared&#95;preload&#95;libraries] SETTING により server 起動時にロードする方法。すべての sessions と databases から常に利用できるようになります:
 
   ```ini
   shared_preload_libraries = chdb_hook
   ```
 
 <Warning>
-  chdb&#95;hook をロードすると、`pg_read_server_files` または `pg_write_server_files` ロールに属するユーザーが、Postgres サーバー 上のファイルや クラウドストレージ との間でデータを `COPY` できるようになる点に注意してください。
+  chdb&#95;hook をロードすると、`pg_read_server_files` または `pg_write_server_files` ロールに属するユーザーが、Postgres server 上のファイルや cloud storage との間でデータを `COPY` できるようになる点に注意してください。
 </Warning>
 
 ## COPY のオーバーロード {#copy-overloading}
@@ -295,7 +292,7 @@ COPY users TO 'file:///tmp/users.parquet' (
 
 #### `encoding_check` {#encoding_check}
 
-chDB の String 値および JSON 値を変換する際に、[データベースの文字エンコーディング] で無効となる文字の扱い方を定義します。次のいずれかを指定します。
+chDB の String 値および JSON 値を変換する際に、[database encoding] で無効となる文字の扱い方を定義します。次のいずれかを指定します。
 
 * `fail` (デフォルト) : エラーを発生させます
 * `remove`: 無効なバイトを削除します
@@ -679,8 +676,8 @@ chdb&#95;hook は、公開リリースにおいて [Semantic Versioning] に準�
 * minor version は後方互換性のある SQL の変更時にインクリメントされます
 * patch バージョンは binary のみの変更時にインクリメントされます
 
-インストール後は、PostgreSQL が Postgres 18 の
-[`pg_get_loaded_modules()`] 関数でバージョンを報告します。
+インストール後は、PostgreSQL のバージョンを Postgres 18 の
+[`pg_get_loaded_modules()`] 関数で確認できます。
 
 ```sql
 SELECT version FROM pg_get_loaded_modules() WHERE module_name = 'chdb_hook';
@@ -759,10 +756,10 @@ Copyright (c) 2026, ClickHouse
 
 [`pg_get_loaded_modules()`]: https://pgpedia.info/g/pg_get_loaded_modules.html "pgPedia: pg_get_loaded_modules()"
 
-[`max_memory_usage`]: https://clickhouse.com/docs/reference/settings/session-settings/max-memory-usage "ClickHouse Docs: max_memory_usage_* セッション設定"
+[`max_memory_usage`]: https://clickhouse.com/docs/reference/settings/session-settings/max-memory-usage "ClickHouse Docs: max_memory_usage_* session settings"
 
 [`max_threads`]: https://clickhouse.com/docs/reference/settings/session-settings/max-threads "ClickHouse Docs: max_threads_* セッション設定"
 
 [`max_parsing_threads`]: https://clickhouse.com/docs/reference/settings/session-settings/max#max_parsing_threads "ClickHouse Docs: max_parsing_threads セッション設定"
 
-[データベースの文字エンコーディング]: https://www.postgresql.org/docs/current/multibyte.html "PostgreSQL Docs: 文字セットのサポート"
+[database encoding]: https://www.postgresql.org/docs/current/multibyte.html "PostgreSQL Docs: 文字セットのサポート"

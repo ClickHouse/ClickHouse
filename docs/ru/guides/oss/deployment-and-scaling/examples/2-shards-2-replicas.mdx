@@ -7,6 +7,8 @@ doc_type: 'guide'
 keywords: ['развертывание кластера', 'репликация', 'сегментирование', 'высокая доступность', 'масштабируемость']
 ---
 
+import { Image } from "/snippets/ru/components/Image.jsx";
+
 import ConfigExplanation from '/snippets/ru/_config_explanation.mdx';
 import ListenHost from '/snippets/ru/_listen_host.mdx';
 import KeeperConfig from '/snippets/ru/_keeper_config.mdx';
@@ -14,7 +16,6 @@ import KeeperConfigExplanation from '/snippets/ru/_keeper_explanation.mdx';
 import VerifyKeeperStatus from '/snippets/ru/_verify_keeper_using_mntr.mdx';
 import DedicatedKeeperServers from '/snippets/ru/_dedicated_keeper_servers.mdx';
 import ExampleFiles from '/snippets/ru/_working_example.mdx';
-
 import CloudTip from '/snippets/ru/_cloud_tip.mdx';
 
 > В этом примере вы узнаете, как настроить простой кластер ClickHouse,
@@ -24,16 +25,12 @@ import CloudTip from '/snippets/ru/_cloud_tip.mdx';
 
 Архитектура кластера, который вы будете настраивать, показана ниже:
 
-<div className="ch-image-md">
-  <Frame>
-    ![Схема архитектуры для 2 сегментов и 1 реплики](/images/deployment-guides/replication-sharding-examples/both.webp)
-  </Frame>
-</div>
+<Image img="/images/deployment-guides/replication-sharding-examples/both.webp" size="md" alt="Схема архитектуры для 2 сегментов и 1 реплики" />
 
 <DedicatedKeeperServers />
 
 <div id="prerequisites">
-  ## Предварительные требования {#prerequisites}
+  ## Предварительные требования
 </div>
 
 * Вы уже настраивали [локальный сервер ClickHouse](/ru/get-started/setup/install)
@@ -174,7 +171,7 @@ import CloudTip from '/snippets/ru/_cloud_tip.mdx';
   </Step>
 
   <Step title="Настройка узлов ClickHouse" id="configure-clickhouse-servers">
-### Настройка сервера {#server-setup}
+### Настройка сервера
 
     Теперь измените каждый пустой файл конфигурации `config.xml`, расположенный по пути
     `fs/volumes/clickhouse-{}/etc/clickhouse-server/config.d`. Выделенные ниже строки
@@ -260,7 +257,7 @@ import CloudTip from '/snippets/ru/_cloud_tip.mdx';
 
     Каждый раздел приведённого выше конфигурационного файла подробно описан ниже.
 
-#### Сеть и логирование {#networking}
+#### Сеть и логирование
 
     <ListenHost />
 
@@ -279,7 +276,7 @@ import CloudTip from '/snippets/ru/_cloud_tip.mdx';
 
     Дополнительные сведения о конфигурации логирования см. в комментариях в стандартном [файле конфигурации](https://github.com/ClickHouse/ClickHouse/blob/master/programs/server/config.xml) ClickHouse.
 
-#### Конфигурация кластера {#cluster-config}
+#### Конфигурация кластера
 
     Конфигурация кластера задаётся в блоке `<remote_servers>`.
     Здесь определяется имя кластера `cluster_2S_2R`.
@@ -328,7 +325,7 @@ import CloudTip from '/snippets/ru/_cloud_tip.mdx';
     и служит шаблоном для распределённых DDL-запросов — запросов, выполняемых
     по всему кластеру с помощью предложения `ON CLUSTER`.
 
-#### Конфигурация Keeper {#keeper-config-explanation}
+#### Конфигурация Keeper
 
     Раздел `<ZooKeeper>` сообщает ClickHouse, где запущен ClickHouse Keeper (или ZooKeeper).
     Поскольку мы используем кластер ClickHouse Keeper, необходимо указать каждый узел `<node>` кластера,
@@ -358,7 +355,7 @@ import CloudTip from '/snippets/ru/_cloud_tip.mdx';
       для производственных сред мы настоятельно рекомендуем запускать ClickHouse Keeper на выделенных узлах.
     </Note>
 
-#### Настройка макросов {#macros-config-explanation}
+#### Настройка макросов
 
     Кроме того, раздел `<macros>` используется для определения подстановок параметров для
     реплицированных таблиц. Они перечислены в `system.macros` и позволяют использовать подстановки
@@ -371,7 +368,7 @@ import CloudTip from '/snippets/ru/_cloud_tip.mdx';
     </macros>
     ```
 
-### Конфигурация пользователя {#cluster-configuration}
+### Конфигурация пользователя
 
     Теперь внесите следующие изменения в каждый пустой файл конфигурации `users.xml`, расположенный по пути
     `fs/volumes/clickhouse-{}/etc/clickhouse-server/users.d`:
@@ -425,7 +422,7 @@ import CloudTip from '/snippets/ru/_cloud_tip.mdx';
   <Step title="Настройка ClickHouse Keeper" id="configure-clickhouse-keeper-nodes">
     Далее вы настроите ClickHouse Keeper, который используется для координации работы.
 
-### Настройка Keeper {#configuration-explanation}
+### Настройка Keeper
 
     <KeeperConfig />
 

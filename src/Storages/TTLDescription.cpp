@@ -1409,7 +1409,7 @@ static void checkTTLGroupBySetForAggregateFunctions(
 /// check existed still loads. It must not then execute: it deletes rows whose own TTL is far in the
 /// future and reads past the end of the expression column for an empty array. `buildExpression` and
 /// `buildWhereExpression` are the only way a consumer gets a runnable expression out of a stored
-/// description (`TTLTransform`, `TTLCalcTransform` and
+/// description (`TTLTransform`, `TTLCalcTransform`, `TTLDeleteFilterTransform` and
 /// `MergeTreeDataWriter::updateTTL` all go through them), so failing here turns the silent row loss into
 /// a failed INSERT or TTL merge. The table still attaches, so `ALTER TABLE ... REMOVE TTL` or a
 /// `MODIFY TTL` to a sane expression repairs it.
@@ -1449,8 +1449,7 @@ TTLDescription TTLDescription::getTTLFromAST(
     const ColumnsDescription & columns,
     ContextPtr context,
     const KeyDescription & primary_key,
-    TTLValidationMode validation_mode,
-    bool trust_recompression_codec)
+    TTLValidationMode validation_mode)
 {
     const auto expression_context = getTTLExpressionContext(context);
 
@@ -1614,13 +1613,11 @@ TTLDescription TTLDescription::getTTLFromAST(
             /// On `ATTACH` (loading stored metadata) the codec checks are relaxed the same way column codecs are:
             /// a table created on an earlier version must still load even if its recompression codec would now be
             /// rejected at `CREATE`, otherwise the server could fail to start after an upgrade. A create with
-            /// `allow_suspicious_ttl_expressions` also skips them, matching `checkTTLExpression` below. A stored TTL that an
-            /// `ALTER` rebuilds without defining it again does not check the codec either.
+            /// `allow_suspicious_ttl_expressions` also skips them, matching `checkTTLExpression` below.
             result.recompression_codec =
                 CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(
                     ttl_element->recompression_codec, {},
-                    skip_validation || trust_recompression_codec ? CodecValidationSettings::trusted()
-                                                                 : CodecValidationSettings(context->getSettingsRef()));
+                    skip_validation ? CodecValidationSettings::trusted() : CodecValidationSettings(context->getSettingsRef()));
         }
     }
 
@@ -1674,8 +1671,7 @@ TTLTableDescription TTLTableDescription::getTTLForTableFromAST(
     const ColumnsDescription & columns,
     ContextPtr context,
     const KeyDescription & primary_key,
-    TTLValidationMode validation_mode,
-    bool trust_recompression_codec)
+    TTLValidationMode validation_mode)
 {
     TTLTableDescription result;
     if (!definition_ast)
@@ -1686,8 +1682,7 @@ TTLTableDescription TTLTableDescription::getTTLForTableFromAST(
     bool have_unconditional_delete_ttl = false;
     for (const auto & ttl_element_ptr : definition_ast->children)
     {
-        auto ttl = TTLDescription::getTTLFromAST(
-            ttl_element_ptr, columns, context, primary_key, validation_mode, trust_recompression_codec);
+        auto ttl = TTLDescription::getTTLFromAST(ttl_element_ptr, columns, context, primary_key, validation_mode);
         if (ttl.mode == TTLMode::DELETE)
         {
             if (!ttl.where_expression_ast)

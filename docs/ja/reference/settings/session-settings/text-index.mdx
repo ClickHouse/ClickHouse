@@ -27,9 +27,9 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "50"},{"label": "新しい設定"}]}]} />
 
-辞書スキャンによるテキストインデックスの LIKE 評価が有効な場合に、読み取る大きなポスティングリストの最大数です。
+テキスト索引の LIKE 評価で辞書スキャンが有効な場合に、読み取る大きなポスティングリストの最大数です。
 
-[use&#95;text&#95;index&#95;like&#95;evaluation&#95;by&#95;dictionary&#95;scan](/ja/reference/settings/session-settings/use-text#use_text_index_like_evaluation_by_dictionary_scan) を有効にする必要があります。
+`use_text_index_like_evaluation_by_dictionary_scan` を有効にする必要があります。
 
 ## text_index_like_min_pattern_length {#text_index_like_min_pattern_length}
 
@@ -37,12 +37,12 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "4"},{"label": "新しい設定"}]}]} />
 
-辞書スキャンによるテキストインデックスの LIKE 評価を使用するために必要な、LIKE/ILIKE パターン内の英数字 needle、または `startsWith`/`endsWith` の needle の最小長です。
+辞書スキャンによるテキスト索引の LIKE 評価を使用するために必要な、LIKE/ILIKE パターン内の英数字 needle、または `startsWith`/`endsWith` の needle の最小長です。
 このしきい値より短いパターンは、一致する辞書トークンが多すぎるため、コストの高いスキャンを避ける目的でスキップされます。
 
 任意のパターンが適格となる `array` トークナイザーでは、しきい値はパターン全体に含まれるワイルドカード以外の文字数と比較されます。
 
-[use&#95;text&#95;index&#95;like&#95;evaluation&#95;by&#95;dictionary&#95;scan](/ja/reference/settings/session-settings/use-text#use_text_index_like_evaluation_by_dictionary_scan) を有効にする必要があります。
+`use_text_index_like_evaluation_by_dictionary_scan` を有効にする必要があります。
 
 ## text_index_posting_list_apply_mode {#text_index_posting_list_apply_mode}
 

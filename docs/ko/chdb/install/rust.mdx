@@ -9,9 +9,13 @@ doc_type: 'guide'
 
 chDB-rust는 chDB용 실험적 FFI(Foreign Function Interface) 바인딩을 제공하며, 이를 통해 외부 의존성 없이 Rust 애플리케이션에서 ClickHouse 쿼리를 직접 실행할 수 있습니다.
 
-## 설치 {#installation}
+<div id="installation">
+  ## 설치
+</div>
 
-### libchdb 설치 {#install-libchdb}
+<div id="install-libchdb">
+  ### libchdb 설치
+</div>
 
 chDB 라이브러리를 설치하세요:
 
@@ -19,11 +23,15 @@ chDB 라이브러리를 설치하세요:
 curl -sL https://lib.chdb.io | bash
 ```
 
-## 사용법 {#usage}
+<div id="usage">
+  ## 사용법
+</div>
 
 chDB Rust는 stateless 모드와 stateful 모드 모두에서 쿼리 실행을 지원합니다.
 
-### Stateless 사용 {#stateless-usage}
+<div id="stateless-usage">
+  ### Stateless 사용
+</div>
 
 상태를 유지하지 않는 간단한 쿼리의 경우:
 
@@ -49,7 +57,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-### Stateful 사용(Sessions) {#stateful-usage-sessions}
+<div id="stateful-usage-sessions">
+  ### Stateful 사용(Sessions)
+</div>
 
 데이터베이스와 테이블처럼 상태를 유지해야 하는 쿼리에는:
 
@@ -107,21 +117,29 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-## 빌드 및 테스트 {#building-testing}
+<div id="building-testing">
+  ## 빌드 및 테스트
+</div>
 
-### 프로젝트 빌드 {#build-the-project}
+<div id="build-the-project">
+  ### 프로젝트 빌드
+</div>
 
 ```bash
 cargo build
 ```
 
-### 테스트 실행 {#run-tests}
+<div id="run-tests">
+  ### 테스트 실행
+</div>
 
 ```bash
 cargo test
 ```
 
-### 개발 의존성 {#development-dependencies}
+<div id="development-dependencies">
+  ### 개발 의존성
+</div>
 
 프로젝트에는 다음 개발 의존성이 포함됩니다:
 
@@ -129,7 +147,9 @@ cargo test
 * `tempdir` (v0.3.7) - 테스트에서 임시 디렉터리 처리
 * `thiserror` (v1) - 오류 처리 유틸리티
 
-## 오류 처리 {#error-handling}
+<div id="error-handling">
+  ## 오류 처리
+</div>
 
 chDB Rust는 `Error` enum을 통해 폭넓은 오류 처리 기능을 제공합니다:
 
@@ -155,6 +175,8 @@ match execute("SELECT 1", None) {
 }
 ```
 
-## GitHub 리포지토리 {#github-repository}
+<div id="github-repository">
+  ## GitHub 리포지토리
+</div>
 
 프로젝트의 GitHub 리포지토리는 [chdb-io/chdb-rust](https://github.com/chdb-io/chdb-rust)에서 찾을 수 있습니다.

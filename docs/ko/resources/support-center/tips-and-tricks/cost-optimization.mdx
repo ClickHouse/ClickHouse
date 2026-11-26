@@ -24,7 +24,9 @@ description: '실제 운영 환경의 예시와 검증된 기법을 바탕으로
 
 *[ClickHouse Cloud가 운영 비용 관리에 어떻게 도움이 되는지 알아보세요](/ko/products/cloud/getting-started/intro)*.
 
-## 압축 전략: 운영 환경에서의 LZ4 vs ZSTD {#compression-strategy}
+<div id="compression-strategy">
+  ## 압축 전략: 운영 환경에서의 LZ4 vs ZSTD
+</div>
 
 Microsoft Clarity는 수백 테라바이트의 데이터를 처리해야 하면서, 압축 방식 선택이 비용에 큰 영향을 미친다는 사실을 확인했습니다. 이 정도 규모에서는 저장 공간을 조금이라도 절감하는 것이 중요하며, 성능과 스토리지 비용 사이의 전형적인 절충 관계에 직면하게 됩니다. Microsoft Clarity는 대규모 워크로드를 처리합니다. 전체 계정에서 월 2페타바이트의 압축되지 않은 데이터를 처리하고, 8개의 노드에서 시간당 약 60,000개의 쿼리를 수행하며, 수백만 개의 웹사이트에서 발생하는 수십억 건의 페이지 뷰를 지원합니다. 이러한 규모에서는 압축 전략이 핵심적인 비용 요인이 됩니다.
 
@@ -37,7 +39,9 @@ Microsoft Clarity는 수백 테라바이트의 데이터를 처리해야 하면�
 * 수집과 쿼리 성능에 대한 영향이 관리 가능한 수준
 * 수백 TB 규모에서 상당한 비용 절감
 
-## 컬럼 기반 보존 전략 {#column-retention}
+<div id="column-retention">
+  ## 컬럼 기반 보존 전략
+</div>
 
 가장 강력한 비용 최적화 기법 중 하나는 실제로 어떤 컬럼이 사용되는지 분석하는 것입니다. Microsoft Clarity는 ClickHouse에 내장된 텔레메트리 기능을 활용해 정교한 컬럼 기반 보존 전략을 구현합니다. ClickHouse는 컬럼별 스토리지 사용량에 대한 상세한 메트릭과 함께 포괄적인 쿼리 패턴, 즉 어떤 컬럼이 얼마나 자주 조회되는지, 쿼리 소요 시간, 전반적인 사용 통계를 제공합니다.
 
@@ -54,7 +58,9 @@ Microsoft Clarity는 수백 테라바이트의 데이터를 처리해야 하면�
 
 * [데이터 관리 - 컬럼 수준 TTL](/ko/guides/use-cases/observability/build-your-own/managing-data)
 
-## 파티션 기반 데이터 관리 {#partition-management}
+<div id="partition-management">
+  ## 파티션 기반 데이터 관리
+</div>
 
 Microsoft Clarity는 파티셔닝 전략이 성능과 운영의 단순성에 모두 영향을 준다는 점을 확인했습니다. 이들의 접근 방식은 날짜로 파티셔닝하고 시간순으로 정렬하는 것입니다. 이 전략은 단순히 정리 효율성만 높이는 데 그치지 않고, 데이터 정리를 매우 쉽게 만들고, 고객 대상 서비스의 청구 계산을 단순화하며, 행 기반 삭제에 대한 GDPR 컴플라이언스 요구 사항도 지원합니다.
 
@@ -69,7 +75,9 @@ Microsoft Clarity는 파티셔닝 전략이 성능과 운영의 단순성에 모
 
 * [데이터 관리 - 파티션](/ko/guides/use-cases/observability/build-your-own/managing-data#partitions)
 
-## 문자열-정수 변환 전략 {#string-integer-conversion}
+<div id="string-integer-conversion">
+  ## 문자열-정수 변환 전략
+</div>
 
 분석 플랫폼은 수백만 개의 행에 반복적으로 나타나는 범주형 데이터 때문에 저장 공간 문제에 자주 직면합니다. Microsoft 엔지니어링 팀은 검색 분석 데이터에서 이 문제를 겪었고, 영향을 받는 데이터셋의 저장 공간을 60% 줄이는 효과적인 해결책을 개발했습니다.
 
@@ -90,7 +98,9 @@ Microsoft는 별도의 MySQL 데이터베이스를 사용해 문자열-정수 �
   이 예시는 Microsoft Clarity의 데이터 시나리오에 특화된 예시입니다. 모든 데이터가 ClickHouse에 있거나 데이터를 ClickHouse로 옮기는 데 제약이 없다면, 대신 [Dictionaries](/ko/concepts/features/dictionaries/index)를 사용해 보십시오.
 </Note>
 
-## 영상 자료 {#video-sources}
+<div id="video-sources">
+  ## 영상 자료
+</div>
 
 * **[Microsoft Clarity and ClickHouse](https://www.youtube.com/watch?v=rUVZlquVGw0)** - Microsoft Clarity 팀
 * **[ClickHouse journey in Contentsquare](https://www.youtube.com/watch?v=zvuCBAl2T0Q)** - Doron Hoffman &amp; Guram Sigua (ContentSquare)

@@ -207,21 +207,3 @@ def test_table_of_version_5():
     }
     data = get_json_from_api("/v5/api/v1/metadata?metric=cpu_usage")["data"]
     assert data == {"cpu_usage": ALL_METADATA["cpu_usage"]}
-
-
-# The endpoint reads the metric families through `timeSeriesMetricFamilies` as the user of the request,
-# so it needs `SHOW COLUMNS` on the TimeSeries table, which `SELECT` on the table implies.
-def test_metadata_requires_show_columns():
-    node.query("DROP USER IF EXISTS metadata_reader")
-    node.query("CREATE USER metadata_reader IDENTIFIED BY 'password'")
-    try:
-        node.query("GRANT CREATE TEMPORARY TABLE ON *.* TO metadata_reader")
-        params = {"user": "metadata_reader", "password": "password"}
-        error = get_bad_data_from_api("/api/v1/metadata", params=params)["error"]
-        assert "Not enough privileges" in error, error
-        assert "SHOW COLUMNS ON default.prometheus" in error, error
-        node.query("GRANT SELECT ON default.prometheus TO metadata_reader")
-        data = get_json_from_api("/api/v1/metadata", params=params)["data"]
-        assert data == ALL_METADATA
-    finally:
-        node.query("DROP USER IF EXISTS metadata_reader")

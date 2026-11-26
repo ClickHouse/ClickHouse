@@ -160,16 +160,6 @@ ClickHouse Cloud에서만 적용됩니다. system.distributed&#95;cache&#95;log�
 
 ClickHouse Cloud에서만 적용됩니다. Distributed Cache에서 seek를 수행할 최소 바이트 수입니다.
 
-## distributed_cache_min_inflight_bytes_to_discard_connection {#distributed_cache_min_inflight_bytes_to_discard_connection}
-
-<CloudOnlyBadge />
-
-<SettingsInfoBlock type="UInt64" default_value="4194304" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "4194304"},{"label": "읽기 요청이 취소되었을 때 전송 중인 데이터가 적으면 Distributed Cache 연결을 유지하도록 하는 새로운 설정입니다. 기본값은 4 MiB이며, 0으로 설정하면 이전 동작(데이터가 아직 도착할 수 있으면 항상 연결을 폐기)으로 돌아갑니다."}]}]} />
-
-ClickHouse Cloud에서만 적용됩니다. 데이터가 아직 도착할 수 있는 상태에서 Distributed Cache 읽기 요청이 취소되면, 전송 중인 바이트의 추정치가 이 값을 초과할 경우 연결을 폐기합니다. 그렇지 않으면 연결을 풀로 반환하며, 이후 해당 연결에서 실행되는 다음 요청이 남은 데이터를 비웁니다. 0으로 설정하면 항상 연결을 폐기합니다. 탐색 시에는 먼저 `distributed_cache_min_inflight_bytes_to_discard_connection_on_seek`가 동일한 연결에서 다시 요청할지 여부를 결정하며, 다시 요청하지 않고 요청이 취소되는 경우에는 이 설정도 적용됩니다. 해당 설정과 달리 이 설정에서 0은 &quot;항상 폐기&quot;를 의미합니다. `distributed_cache_discard_connection_if_unread_data`가 비활성화된 경우에는 연결이 항상 유지되므로 이 설정은 효과가 없습니다.
-
 ## distributed_cache_min_inflight_bytes_to_discard_connection_on_seek {#distributed_cache_min_inflight_bytes_to_discard_connection_on_seek}
 
 <CloudOnlyBadge />
@@ -270,7 +260,7 @@ ClickHouse Cloud에서만 적용됩니다. `system.distributed_cache_registry` �
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.10"},{"label": "3000"},{"label": "새로운 설정"}]}]} />
 
-ClickHouse Cloud에서만 적용됩니다. Distributed Cache 서버(Distributed Cache server)로 데이터를 전송할 때의 타임아웃으로, 단위는 밀리초입니다. Client가 데이터를 전송해야 하지만 이 인터벌 동안 한 바이트도 전송하지 못하면 예외가 발생합니다.
+ClickHouse Cloud에서만 적용됩니다. distributed cache server로 데이터를 전송할 때의 timeout으로, 단위는 밀리초입니다. 클라이언트가 데이터를 전송해야 하지만 이 인터벌 동안 한 바이트도 전송하지 못하면 예외가 발생합니다.
 
 ## distributed_cache_tcp_keep_alive_timeout_ms {#distributed_cache_tcp_keep_alive_timeout_ms}
 

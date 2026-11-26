@@ -1,4 +1,5 @@
 -- For runs with the old analyzer
+SET enable_analyzer=1;
 
 SET enable_parallel_replicas=1, automatic_parallel_replicas_mode=2, parallel_replicas_local_plan=1,
     parallel_replicas_for_non_replicated_merge_tree=1, max_parallel_replicas=3, cluster_for_parallel_replicas='parallel_replicas';
@@ -22,10 +23,6 @@ SET query_plan_enable_optimizations = 1;
 -- randomized in CI. `group_by_two_level_threshold` is randomized too and decides single- vs two-level
 -- aggregation, so each query below pins it to the level it means to exercise.
 SET max_threads=4;
-
--- The adaptive aggregator also takes an aggregation with both two-level thresholds at 0, and it records its
--- output in its own way, so the pipelines under test are those of the ordinary aggregation.
-SET enable_adaptive_aggregator=0;
 
 DROP TABLE IF EXISTS oba_u16;
 DROP TABLE IF EXISTS oba_u32;

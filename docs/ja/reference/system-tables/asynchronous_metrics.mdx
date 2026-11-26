@@ -116,10 +116,6 @@ OS の I/O スケジューラによって、すべてのブロックデバイス
 
 CGroups に基づく CPU コア数の最大値です。
 
-### CGroupMemoryInactiveFile {#cgroupmemoryinactivefile}
-
-CGroupMemoryUsed の読み取り元と同じ cgroup において、非アクティブなファイルバックのページキャッシュに使用されているメモリ量 (バイト単位) です。これは回収可能なメモリであり、メモリ逼迫時にはカーネルがこれを削除できます。Kubernetes と cAdvisor は、未加工の cgroup メモリ使用量 (cgroup v2 では memory.current、cgroup v1 では memory.usage&#95;in&#95;bytes) からこの値を差し引いて、ワーキングセットサイズ (WSS) を算出します。なお、CGroupMemoryUsed はこの未加工の使用量とは異なり、ファイルバックのページキャッシュがすでに除外されている点に注意してください。この値は、cgroup v2 の場合、および cgroup v1 でサーバーがコンテナ内で実行され、メモリコントローラーのマウントがそのコンテナ自身の cgroup である場合に、キューブレットがそのコンテナに対して使用する値と一致します。cgroup v1 では値がメモリコントローラーのマウントのルートから読み取られるため、サーバーがネストされた v1 cgroup 内で実行されているホストでは、サーバー自身の cgroup ではなく、そのルート配下の階層全体が対象になります。カーネルが memory.stat でこの統計値を公開していない場合、このメトリクスは存在しません。
-
 ### CGroupMemoryTotal {#cgroupmemorytotal}
 
 cgroup 内のメモリの総量 (バイト単位) です。0 の場合、制限は OSMemoryTotal と同じです。
@@ -164,37 +160,9 @@ CPU コアがユーザー空間のコードを実行していた時間の比率�
 
 ディスクのオブジェクトストレージから削除するためにエンキューされているブロブの推定数 (ブロブマネージャーのデッドキュー) で、ディスク名をキーとします。ブロブレプリケーションを使用していないディスクでは 0 が報告されます。
 
-### DictionaryFailedCount {#dictionaryfailedcount}
-
-現在失敗状態にある Dictionary の数 (一時的な状態である FAILED&#95;AND&#95;RELOADING も含む) 。
-
-### DictionaryLoadedCount {#dictionaryloadedcount}
-
-現在読み込み済みの状態にある Dictionary の数です (一時的な状態である LOADED&#95;AND&#95;RELOADING を含みます) 。
-
-### DictionaryLoadingCount {#dictionaryloadingcount}
-
-現在、初回の読み込み中である Dictionary の数 (読み込み済み、または読み込みに失敗した Dictionary の再読み込みは含まない) 。
-
-### DictionaryMaxQueryCount {#dictionarymaxquerycount}
-
-読み込み済みの Dictionary におけるクエリ数の最大値です。クエリ数は、各 Dictionary が最後に読み込まれた時点からカウントされます。
-
 ### DictionaryMaxUpdateDelay {#dictionarymaxupdatedelay}
 
 Dictionary 更新の最大遅延時間 (秒)
-
-### DictionaryTotalBytesAllocated {#dictionarytotalbytesallocated}
-
-現在読み込まれているすべての Dictionary が割り当てているメモリの合計バイト数 (各 Dictionary インスタンスの `getBytesAllocated` の合計値) 。
-
-### DictionaryTotalCount {#dictionarytotalcount}
-
-サーバーが認識している Dictionary の総数 (読み込み状態は問わない) 。
-
-### DictionaryTotalElementCount {#dictionarytotalelementcount}
-
-現在読み込まれているすべての Dictionary に格納されているキーの総数。
 
 ### DictionaryTotalFailedUpdates {#dictionarytotalfailedupdates}
 

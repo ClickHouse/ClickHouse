@@ -33,17 +33,17 @@ El método síncrono `Client.raw_stream` tiene la misma API que `raw_query`, per
 
 ### Método `raw_insert` de Client {#client-rawinsert-method}
 
-El método `Client.raw_insert` permite realizar inserciones directas de objetos `bytes` o generadores de objetos `bytes` mediante la conexión del Client. Como no procesa la carga útil de la inserción, ofrece un rendimiento muy alto. El método proporciona opciones para especificar los ajustes y el formato de inserción:
+El método `Client.raw_insert` permite realizar inserciones directas de objetos `bytes` o generadores de objetos `bytes` mediante la conexión del Client. Como no procesa la carga útil de la inserción, ofrece un rendimiento muy alto. El método proporciona opciones para especificar la configuración y el formato de inserción:
 
-| Parámetro            | tipo                                 | Default  | Descripción                                                                                                                                                                                         |
-| -------------------- | ------------------------------------ | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `table`              | str                                  | Required | El nombre simple de la tabla o el nombre de tabla calificado con la base de datos.                                                                                                                  |
-| `column_names`       | Sequence[str]                        | `None`   | Nombres de columna para el bloque de inserción. Obligatorio cuando `fmt` no incluye nombres.                                                                                                        |
-| `insert_block`       | str, bytes, generator, or `BinaryIO` | Required | Datos que se van a insertar. Las cadenas se codifican con la codificación del Client. `AsyncClient.raw_insert` acepta un iterable asíncrono, como un generador asíncrono, en lugar de un generador. |
-| `settings`           | dict                                 | `None`   | Consulte [Argumento de configuración](/es/integrations/language-clients/python/driver-api#settings-argument-1).                                                                                                 |
-| `fmt`                | str                                  | `None`   | Formato de entrada de ClickHouse de la carga útil de `insert_block`. Se usa `Native` cuando no se especifica ningún formato.                                                                        |
-| `compression`        | str                                  | `None`   | Compresión ya aplicada a `insert_block`, como `"gzip"`, `"lz4"` o `"zstd"`.                                                                                                                         |
-| `transport_settings` | dict                                 | `None`   | encabezados HTTP añadidos a esta solicitud.                                                                                                                                                         |
+| Parameter            | Type                                 | Default  | Description                                                                                                                  |
+| -------------------- | ------------------------------------ | -------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `table`              | str                                  | Required | El nombre simple de la tabla o el nombre de tabla calificado con la base de datos.                                           |
+| `column_names`       | Sequence[str]                        | `None`   | Nombres de columna para el bloque de inserción. Obligatorio cuando `fmt` no incluye nombres.                                 |
+| `insert_block`       | str, bytes, generator, or `BinaryIO` | Required | Datos que se van a insertar. Las cadenas se codifican con la codificación del Client.                                        |
+| `settings`           | dict                                 | `None`   | Consulte [Settings argument](/es/integrations/language-clients/python/driver-api#settings-argument-1).                          |
+| `fmt`                | str                                  | `None`   | Formato de entrada de ClickHouse de la carga útil de `insert_block`. Se usa `Native` cuando no se especifica ningún formato. |
+| `compression`        | str                                  | `None`   | Compresión ya aplicada a `insert_block`, como `"gzip"`, `"lz4"` o `"zstd"`.                                                  |
+| `transport_settings` | dict                                 | `None`   | encabezados HTTP añadidos a esta solicitud.                                                                                  |
 
 Es responsabilidad de quien realiza la llamada garantizar que `insert_block` esté en el formato especificado y use el método de compresión indicado. ClickHouse Connect usa estas inserciones sin procesar para cargas de archivos y tablas de PyArrow, delegando la tarea de analizar en el servidor de ClickHouse.
 
@@ -173,20 +173,6 @@ ClickHouse Connect usa grupos de conexiones de `urllib3` para gestionar la conex
 
 Las opciones de socket predeterminadas habilitan TCP keepalive y `TCP_NODELAY`. El sistema operativo se encarga de gestionar el tamaño de los búferes de envío y recepción del socket.
 
-Pase `dedicated_pool=True` cuando las conexiones de un Client síncrono deban liberarse al cerrarse dicho Client:
-
-```python
-import clickhouse_connect
-
-with clickhouse_connect.get_client(dedicated_pool=True) as client:
-    result = client.query("SELECT 13")
-    print(result.first_row)
-```
-
-El Client tiene su propio grupo independiente con las opciones de proxy y TLS configuradas. Los grupos dedicados no se comparten, ni siquiera cuando hay un proxy configurado. `client.close()` cierra de inmediato las conexiones inactivas. Las respuestas activas pueden terminar, y sus conexiones se cierran cuando se devuelven al grupo. Cerrar el Client no cancela las consultas en ejecución.
-
-Use un Client dedicado durante toda la duración de un trabajo o de un componente de la aplicación, y reutilícelo para varias consultas. Cada Client dedicado crea sus propias conexiones y realiza su propio establecimiento de TLS para HTTPS. Evite crear muchos Clients dedicados de corta duración. El valor predeterminado `dedicated_pool=False` mantiene las reglas existentes de selección de grupos, incluidos los grupos independientes para opciones de TLS personalizadas. Combinar `dedicated_pool=True` con `pool_mgr` lanza `ProgrammingError`.
-
 En aplicaciones multihilo de gran tamaño, puede ser conveniente usar grupos de conexiones independientes. Se pueden proporcionar grupos de conexiones personalizados mediante el argumento de palabra clave `pool_mgr` de la función principal `clickhouse_connect.get_client`:
 
 ```python
@@ -203,6 +189,6 @@ Los Clients pueden compartir un gestor de grupos, o cada Client puede usar un ge
 
 Para establecer opciones de socket, pase `socket_options` a `httputil.get_pool_manager` o a `httputil.get_pool_manager_options`. Esto sustituye por completo la lista predeterminada, incluidas las opciones de keepalive y `TCP_NODELAY`. Pase `[]` o `None` para no aplicar ninguna opción de socket explícita.
 
-El cliente asíncrono tiene su propio grupo de `aiohttp` en lugar de usar `urllib3`. Acepta `dedicated_pool`, aunque no tiene ningún efecto. Cada cliente asíncrono tiene su propio connector sea cual sea el valor del indicador, por lo que `dedicated_pool=False` no activa el uso compartido. Configure el grupo mediante `connector_limit`, `connector_limit_per_host` y `keepalive_timeout` en `get_async_client`. La llamada a `await async_client.close_connections()` rota el grupo sin interrumpir las solicitudes en curso.
+El Client async tiene su propio grupo de `aiohttp` en lugar de usar `urllib3`. Configúrelo mediante `connector_limit`, `connector_limit_per_host` y `keepalive_timeout` en `get_async_client`. La llamada a `await async_client.close_connections()` rota el grupo sin interrumpir las solicitudes en curso.
 
 En las consultas e inserciones async, la espera de un slot libre en el grupo no tiene timeout. Lea por completo o cierre las respuestas en streaming para liberar sus slots del grupo. `connect_timeout` empieza a contar cuando hay un slot disponible y abarca la resolución DNS, el establecimiento de TCP y TLS y la negociación con el proxy. `send_receive_timeout` limita las lecturas del socket. Para fijar un plazo límite para toda la operación, incluida la espera en el grupo, use `asyncio.wait_for`; por ejemplo: `await asyncio.wait_for(client.query("SELECT 13"), timeout=30)`.

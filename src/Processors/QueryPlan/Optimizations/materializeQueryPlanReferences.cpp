@@ -1,5 +1,4 @@
 #include <Common/typeid_cast.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Planner/Utils.h>
 #include <Processors/QueryPlan/CommonSubplanReferenceStep.h>
 #include <Processors/QueryPlan/CommonSubplanStep.h>
@@ -50,7 +49,7 @@ PreparedSets::Subqueries extractSetsForMaterialization(QueryPlan::Node & subplan
         std::move(step_sets.begin(), step_sets.end(), std::back_inserter(sets));
     }
 
-    VectorWithMemoryTracking<QueryPlan::Node *> stack{&subplan_root};
+    std::vector<QueryPlan::Node *> stack{&subplan_root};
     while (!stack.empty())
     {
         auto * node = stack.back();
@@ -84,7 +83,7 @@ PreparedSets::Subqueries extractSetsForMaterialization(QueryPlan::Node & subplan
 }
 
 void materializeQueryPlanReferences(
-    QueryPlan::Node & node, QueryPlan::Nodes & nodes, std::vector<FutureSetFromSubqueryPtr> & extracted_sets) // STYLE_CHECK_ALLOW_STD_CONTAINERS -- this is `PreparedSets::Subqueries`; naming it here would need the full PreparedSets header
+    QueryPlan::Node & node, QueryPlan::Nodes & nodes, std::vector<FutureSetFromSubqueryPtr> & extracted_sets)
 {
     auto * subplan_reference = typeid_cast<CommonSubplanReferenceStep *>(node.step.get());
     if (!subplan_reference)
@@ -119,20 +118,20 @@ void materializeQueryPlanReferences(
 
 void optimizeUnusedCommonSubplans(QueryPlan::Node & node)
 {
-    /// Decorrelation can wrap the same plan several times, and the node is visited once, so the whole chain is removed.
-    while (typeid_cast<CommonSubplanStep *>(node.step.get()))
-    {
-        if (node.children.size() != 1)
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Expected CommonSubplanStep to have exactly one child, but got {}",
-                node.children.size());
+    auto * common_subplan = typeid_cast<CommonSubplanStep *>(node.step.get());
+    if (!common_subplan)
+        return;
 
-        auto * child = node.children[0];
+    if (node.children.size() != 1)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Expected CommonSubplanStep to have exactly one child, but got {}",
+            node.children.size());
 
-        node.step = std::move(child->step);
-        node.children = std::move(child->children);
-    }
+    auto * child = node.children[0];
+
+    node.step = std::move(child->step);
+    node.children = std::move(child->children);
 }
 
 }

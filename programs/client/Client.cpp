@@ -35,7 +35,6 @@
 #include <IO/WriteBufferFromOStream.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/SecretArgumentsRegistry.h>
 #include <Parsers/SecretArguments.h>
 
 #include <Client/JWTProvider.h>
@@ -45,14 +44,9 @@
 #include <Core/Defines.h>
 
 #include <AggregateFunctions/registerAggregateFunctions.h>
-#include <WindowFunctions/registerWindowFunctions.h>
-#include <Databases/registerDatabases.h>
-#include <Dictionaries/registerDictionaries.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/registerFormats.h>
 #include <Functions/registerFunctions.h>
-#include <Storages/registerStorages.h>
-#include <TableFunctions/registerTableFunctions.h>
 
 #include <Storages/MergeTree/MergeTreeSettings.h>
 
@@ -103,10 +97,6 @@ Client::~Client() = default;
 
 void Client::processError(std::string_view query) const
 {
-    /// The reader of the output went away, e.g. `clickhouse-client -q '...' | head -1`: stop quietly.
-    if (stdout_is_broken)
-        return;
-
     if (server_exception)
     {
         fmt::print(
@@ -421,13 +411,8 @@ try
     registerFormats();
     registerFunctions();
     registerAggregateFunctions();
-    registerWindowFunctions();
-    /// Hiding the secrets of engine arguments needs the engines, which declare them.
-    registerTableFunctions();
-    registerDatabases();
-    registerStorages();
-    registerDictionaries();
-    setSecretArgumentsFinder(&SecretArgumentsRegistry::instance());
+    /// The engines are not registered, so the secrets of their arguments are shown.
+    setSecretArgumentsFinder(&NoSecretArgumentsFinder::instance());
 
     processConfig();
     adjustSettings(client_context);
@@ -534,7 +519,7 @@ try
         /// error, and the AST fuzzer reports an early stop - losing the server, say - only
         /// through this exit code, so granting it success would end a truncated fuzzer run with
         /// `Fuzzer exited with success`.
-        if ((buzz_house || query_fuzzer_runs || create_query_fuzzer_runs || !ignore_error) && !stdout_is_broken)
+        if (buzz_house || query_fuzzer_runs || create_query_fuzzer_runs || !ignore_error)
         {
             // If exception code isn't zero, we should return non-zero return
             // code anyway.
@@ -561,9 +546,6 @@ try
 }
 catch (Exception & e)
 {
-    if (stdout_is_broken)
-        return 0;
-
     bool need_print_stack_trace = config().getBool("stacktrace", false) && e.code() != ErrorCodes::NETWORK_ERROR;
     std::cerr << getExceptionMessageForLogging(e, need_print_stack_trace, true) << std::endl << std::endl;
     /// If exception code isn't zero, we should return non-zero return code anyway.
@@ -571,9 +553,6 @@ catch (Exception & e)
 }
 catch (...)
 {
-    if (stdout_is_broken)
-        return 0;
-
     std::cerr << getCurrentExceptionMessage(false) << std::endl;
     return getCurrentExceptionCode();
 }

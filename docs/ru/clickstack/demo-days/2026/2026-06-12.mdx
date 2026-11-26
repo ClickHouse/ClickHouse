@@ -7,7 +7,9 @@ doc_type: 'guide'
 keywords: ['ClickStack', 'Демо-дни']
 ---
 
-## Инструмент миграции схемы {#schema-migration-tool}
+<div id="schema-migration-tool">
+  ## Инструмент миграции схемы
+</div>
 
 *Демо от [@wrn14897](https://github.com/wrn14897)*
 
@@ -19,7 +21,9 @@ keywords: ['ClickStack', 'Демо-дни']
 
 Далее планируется поддержка изменений схемы на уровне всего развертывания, что приблизит эту возможность к стадии общей доступности. 
 
-## Фильтры на уровне источника для оповещений и MCP {#source-level-filters-for-alerts-and-mcp}
+<div id="source-level-filters-for-alerts-and-mcp">
+  ## Фильтры на уровне источника для оповещений и MCP
+</div>
 
 *Демо от [@pulpdrew](https://github.com/pulpdrew)*
 
@@ -35,7 +39,9 @@ MCP также получил поддержку фильтров на уров�
 
 **Связанные PR:** [#2459](https://github.com/hyperdxio/hyperdx/pull/2459) feat: show icon on tiles with excluded source-scoped filters, [#2331](https://github.com/hyperdxio/hyperdx/pull/2331) feat: Add source scoping to dashboard filters
 
-## Подходящие столбцы при создании источников {#candidate-columns-when-building-sources}
+<div id="candidate-columns-when-building-sources">
+  ## Подходящие столбцы при создании источников
+</div>
 
 *Демо от [@karl-power](https://github.com/karl-power)*
 
@@ -49,19 +55,23 @@ MCP также получил поддержку фильтров на уров�
 
 **Связанные PR:** [#2436](https://github.com/hyperdxio/hyperdx/pull/2436) feat: add source field suggestions
 
-## Оповещения об аномалиях с group-by (WIP) {#anomaly-alerts-with-group-by}
+<div id="anomaly-alerts-with-group-by">
+  ## Оповещения об аномалиях с group-by (WIP)
+</div>
 
 *Демо от [@fleon](https://github.com/fleon)*
 
 <Frame>
-  <iframe src="https://www.youtube.com/embed/70UzCRUTK7M" title="Видеоплеер YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+  <iframe src="https://www.youtube.com/embed/70UzCRUTK7M" title="Проигрыватель видео YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
 </Frame>
 
 В этой работе решается проблема удобства использования при обнаружении аномалий в сгруппированных временных рядах. Если одновременно отображать зоны аномалий для всех серий, график быстро становится нечитаемым. Подход Химаншу показывает зоны аномалий через легенду при наведении курсора, сохраняя их отображение непосредственно на графике, когда выбрана одна серия.
 
 Эта возможность всё ещё находится в активной разработке и требует дополнительных улучшений перед релизом.
 
-## Селектор нескольких моделей для оценки MCP {#mcp-eval-multi-model-selector}
+<div id="mcp-eval-multi-model-selector">
+  ## Селектор нескольких моделей для оценки MCP
+</div>
 
 *Демо от [@brandon-pereira](https://github.com/brandon-pereira)*
 
@@ -71,11 +81,13 @@ MCP также получил поддержку фильтров на уров�
 
 Фреймворк оценки MCP теперь поддерживает одновременный запуск одного набора оценок для нескольких моделей. Brandon демонстрирует эту возможность, сравнивая Fable, Opus и Sonnet в рамках одного запуска после выхода Fable.
 
-Как в наборе оценок ClickHouse, так и в наборе для интерфейса ClickStack Fable показала заметно более сильные результаты на вопросах, специфичных для ClickStack. Если бы только эту модель ещё можно было использовать :).
+Как в наборе оценок ClickHouse, так и в наборе HyperDX Fable показала заметно более сильные результаты на вопросах, специфичных для ClickStack. Если бы только эту модель ещё можно было использовать :).
 
 **Связанные PR:** [#2438](https://github.com/hyperdxio/hyperdx/pull/2438) feat(hdx-eval): support multi-model comparison in eval batches, [#2414](https://github.com/hyperdxio/hyperdx/pull/2414) feat: AI eval framework for benchmarking MCP servers
 
-## Все инструменты расследования в notebook теперь используют MCP {#all-notebook-tools-now-use-the-mcp}
+<div id="all-notebook-tools-now-use-the-mcp">
+  ## Все инструменты расследования в notebook теперь используют MCP
+</div>
 
 *Демо от [@brandon-pereira](https://github.com/brandon-pereira)*
 
@@ -87,7 +99,9 @@ MCP также получил поддержку фильтров на уров�
 
 Следующими запланированы плитки notebook с Raw SQL.
 
-## Приёмник Datadog {#datadog-receiver}
+<div id="datadog-receiver">
+  ## Приёмник Datadog
+</div>
 
 *Демо от [@SpencerTorres](https://github.com/SpencerTorres)*
 
@@ -101,7 +115,9 @@ MCP также получил поддержку фильтров на уров�
 
 64-битные числовые trace ID в Datadog также преобразуются в 128-битный формат OpenTelemetry, что обеспечивает корректную корреляцию трассировок в ClickStack. Ожидается, что приёмник войдёт в дистрибутив коллектора ClickStack; также планируется дополнительное тестирование сквозной корреляции трассировок.
 
-## Шаблоны событий: любой столбец {#event-patterns-any-column}
+<div id="event-patterns-any-column">
+  ## Шаблоны событий: любой столбец
+</div>
 
 *Демо от [@knudtty](https://github.com/knudtty)*
 
@@ -115,7 +131,9 @@ MCP также получил поддержку фильтров на уров�
 
 **Связанные PR:** [#2460](https://github.com/hyperdxio/hyperdx/pull/2460) feat: add pattern column selector for event pattern matching on any column
 
-## Ссылки между спанами (WIP) {#span-links}
+<div id="span-links">
+  ## Ссылки между спанами (WIP)
+</div>
 
 *Демо от [@alex-fedotyev](https://github.com/alex-fedotyev)*
 
@@ -129,7 +147,9 @@ Alex показывает раннюю реализацию поддержки �
 
 **Связанные PR:** [#2463](https://github.com/hyperdxio/hyperdx/pull/2463) feat(traces): отображение ссылок между спанами в просмотрщике трасс
 
-## Подсветка временных рядов при наведении {#time-series-highlighting-on-hover}
+<div id="time-series-highlighting-on-hover">
+  ## Подсветка временных рядов при наведении
+</div>
 
 *Демо от [@alex-fedotyev](https://github.com/alex-fedotyev)*
 
@@ -143,7 +163,9 @@ Alex показывает раннюю реализацию поддержки �
 
 **Связанные PR:** [#2456](https://github.com/hyperdxio/hyperdx/pull/2456) feat: highlight the series nearest the cursor in time chart tooltips
 
-## Дублирование серий {#duplicate-series}
+<div id="duplicate-series">
+  ## Дублирование серий
+</div>
 
 *Демо от [@alex-fedotyev](https://github.com/alex-fedotyev)*
 
@@ -157,7 +179,9 @@ Alex показывает раннюю реализацию поддержки �
 
 **Связанные PR:** [#2453](https://github.com/hyperdxio/hyperdx/pull/2453) feat(chart-explorer): дублирование серии в конструкторе графиков
 
-## Редактируемые плашки фильтров (в разработке) {#editable-pill-filters}
+<div id="editable-pill-filters">
+  ## Редактируемые плашки фильтров (в разработке)
+</div>
 
 *Демо от [@alex-fedotyev](https://github.com/alex-fedotyev)*
 

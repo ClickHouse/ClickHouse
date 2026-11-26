@@ -7,6 +7,10 @@ keywords: ['managed postgres', 'phoenix', 'elixir', 'ecto', 'postgrex', 'mix', '
 doc_type: 'guide'
 ---
 
+import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.guides-phoenix-beta" />
+
 [Phoenix](https://www.phoenixframework.org/) هو إطار عمل ويب مبني بلغة Elixir، ويعتمد على [Ecto](https://ecto.hexdocs.pm/) والمشغّل [Postgrex](https://postgrex.hexdocs.pm/) للاتصال بـ PostgreSQL. في هذا الدليل، ستنشئ تطبيق Phoenix، وتربطه بـ ClickHouse Managed Postgres عبر اتصال TLS مع التحقق من الشهادة، ثم تنفّذ عملية ترحيل (migration) باستخدام Ecto، وتوفّر مورد `todos` بتنسيق JSON.
 
 ## المتطلبات الأساسية {#prerequisites}

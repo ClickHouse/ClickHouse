@@ -1,7 +1,6 @@
 #include <Databases/DataLake/GlueCatalog.h>
 #include <Poco/JSON/Object.h>
 #include <Core/ServerSettings.h>
-#include <Databases/DatabasesCommon.h>
 #include <IO/SeekableReadBuffer.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
 
@@ -20,12 +19,8 @@
 #include <aws/glue/model/TableInput.h>
 #include <aws/glue/model/StorageDescriptor.h>
 #include <aws/glue/model/Column.h>
-#include <aws/core/client/DefaultRetryStrategy.h>
-#include <aws/core/http/HttpResponse.h>
 
 #include <Common/Exception.h>
-#include <Common/CurrentThread.h>
-#include <Common/ThreadStatus.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 
@@ -54,8 +49,6 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Common/FailPoint.h>
-#include <Common/setThreadName.h>
-#include <Common/threadPoolCallbackRunner.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
@@ -83,7 +76,6 @@ namespace DB::Setting
     extern const SettingsBool enable_s3_requests_logging;
     extern const SettingsUInt64 s3_connect_timeout_ms;
     extern const SettingsUInt64 s3_request_timeout_ms;
-    extern const SettingsBool iceberg_list_only_v_prefixed_metadata_files;
 }
 
 namespace DB::ServerSetting
@@ -98,29 +90,13 @@ namespace DataLake
 namespace
 {
 
-/// The generated Glue error mapper marks every modeled exception as not retryable, including server
-/// faults such as `InternalServiceException` (HTTP 500), so a transient status is retried regardless.
-class GlueRetryStrategy : public Aws::Client::DefaultRetryStrategy
-{
-public:
-    /// NOLINTNEXTLINE(google-runtime-int)
-    [[nodiscard]] bool ShouldRetry(const Aws::Client::AWSError<Aws::Client::CoreErrors> & error, long attempted_retries) const override
-    {
-        if (attempted_retries >= m_maxRetries)
-            return false;
-        if (DB::CurrentThread::isInitialized() && DB::CurrentThread::get().isQueryCanceled())
-            return false;
-        return error.ShouldRetry() || Aws::Http::IsRetryableHttpResponseCode(error.GetResponseCode());
-    }
-};
-
 /// A Glue table is readable only if it is an Iceberg table. `table_type` is available in
 /// both the bulk `GetTables` listing and `tryGetTableMetadata`, so the two stay consistent.
 bool isReadableGlueTable(const Aws::Glue::Model::Table & table)
 {
     const auto & parameters = table.GetParameters();
     auto it = parameters.find("table_type");
-    const auto & table_type = it != parameters.end() ? it->second : "";
+    const std::string table_type = it != parameters.end() ? it->second : "";
     return Poco::toUpper(table_type) == "ICEBERG";
 }
 
@@ -130,7 +106,7 @@ GlueCatalog::GlueCatalog(
     const String & endpoint,
     DB::ContextPtr context_,
     const CatalogSettings & settings_,
-    const DB::SecretString & table_engine_definition_,
+    DB::ASTPtr table_engine_definition_,
     bool allow_server_credentials_in_user_queries_)
     : ICatalog("")
     , DB::WithContext(context_)
@@ -175,7 +151,7 @@ GlueCatalog::GlueCatalog(
         s3_slow_all_threads_after_network_error,
         s3_slow_all_threads_after_retryable_error,
         enable_s3_requests_logging,
-        /* group = */ DB::HTTPConnectionGroupType::STORAGE,
+        /* for_disk_s3 = */ false,
         /* opt_disk_name = */ {},
         /* request_throttler = */ {});
 
@@ -184,15 +160,14 @@ GlueCatalog::GlueCatalog(
     client_configuration.connectTimeoutMs = static_cast<unsigned>(global_settings[DB::Setting::s3_connect_timeout_ms]);
     client_configuration.requestTimeoutMs = static_cast<unsigned>(global_settings[DB::Setting::s3_request_timeout_ms]);
     client_configuration.region = region;
-    client_configuration.retryStrategy = std::make_shared<GlueRetryStrategy>();
     auto endpoint_provider = std::make_shared<Aws::Glue::GlueEndpointProvider>();
 
-    Aws::Auth::AWSCredentials credentials{Aws::String(settings_.aws_access_key_id), Aws::String(settings_.aws_secret_access_key)};
+    Aws::Auth::AWSCredentials credentials(settings_.aws_access_key_id, settings_.aws_secret_access_key);
     /// Only for testing when we are mocking glue
     if (!endpoint.empty())
     {
         client_configuration.endpointOverride = endpoint;
-        endpoint_provider->OverrideEndpoint(Aws::String(endpoint));
+        endpoint_provider->OverrideEndpoint(endpoint);
 
         if (credentials.IsEmpty() && !creds_config.forbid_implicit_credentials)
         {
@@ -234,14 +209,14 @@ DataLake::ICatalog::Namespaces GlueCatalog::getDatabases(const std::string & pre
         if (outcome.IsSuccess())
         {
             const auto & databases_result = outcome.GetResult();
-            const auto & dbs = databases_result.GetDatabaseList();
+            const std::vector<Aws::Glue::Model::Database> & dbs = databases_result.GetDatabaseList();
             LOG_TEST(log, "Success getting databases for prefix '{}', total dbs {}", prefix, dbs.size());
             for (const auto & db : dbs)
             {
                 const auto & db_name = db.GetName();
                 if (!db_name.starts_with(prefix))
                     continue;
-                result.emplace_back(db_name);
+                result.push_back(db_name);
                 if (limit != 0 && result.size() >= limit)
                     break;
             }
@@ -283,7 +258,7 @@ CatalogTables GlueCatalog::getTablesForDatabase(const std::string & db_name, siz
         if (outcome.IsSuccess())
         {
             const auto & tables_result = outcome.GetResult();
-            const auto & tables = tables_result.GetTableList();
+            const std::vector<Aws::Glue::Model::Table> & tables = tables_result.GetTableList();
             LOG_TEST(log, "Success getting table for database '{}', total tables {}", db_name, tables.size());
             for (const auto & table : tables)
             {
@@ -296,7 +271,7 @@ CatalogTables GlueCatalog::getTablesForDatabase(const std::string & db_name, siz
                 if (limit != 0 && result.size() >= limit)
                     break;
                 result.push_back(CatalogTable{
-                    .name = fmt::format("{}.{}", db_name, table.GetName()),
+                    .name = db_name + "." + table.GetName(),
                     .is_readable = isReadableGlueTable(table),
                 });
             }
@@ -322,25 +297,12 @@ CatalogTables GlueCatalog::getTablesForDatabase(const std::string & db_name, siz
 CatalogTables GlueCatalog::getTables() const
 {
     auto databases = getDatabases("");
-
-    /// Glue has no call that lists the tables of every database, so this issues one `GetTables` request per
-    /// database. Issuing them one after another makes `SHOW TABLES` take seconds to minutes in an account
-    /// with hundreds of databases, so they run in parallel, like the per-namespace listing of `RestCatalog`.
-    /// Every database writes to its own slot, which keeps the result in the order of `GetDatabases`.
-    std::vector<CatalogTables> tables_by_database(databases.size());
-    {
-        auto & pool = getContext()->getIcebergCatalogThreadpool();
-        DB::ThreadPoolCallbackRunnerLocal<void> runner(pool, DB::ThreadName::DATALAKE_GLUE_CATALOG);
-        /// Reserve tracking capacity, so `enqueueAndKeepTrack` cannot schedule a job and then fail to track it.
-        runner.reserve(databases.size());
-        for (size_t i = 0; i < databases.size(); ++i)
-            runner.enqueueAndKeepTrack([this, &databases, &tables_by_database, i] { tables_by_database[i] = getTablesForDatabase(databases[i]); });
-        runner.waitForAllToFinishAndRethrowFirstError();
-    }
-
     CatalogTables result;
-    for (auto & tables_in_database : tables_by_database)
-        std::move(tables_in_database.begin(), tables_in_database.end(), std::back_inserter(result));
+    for (const auto & database : databases)
+    {
+        auto tables_in_database = getTablesForDatabase(database);
+        result.insert(result.end(), tables_in_database.begin(), tables_in_database.end());
+    }
     return result;
 }
 
@@ -402,11 +364,11 @@ bool GlueCatalog::tryGetTableMetadata(
             const auto & table_params = table_outcome.GetParameters();
             if (table_params.contains("metadata_location"))
             {
-                result.setDataLakeSpecificProperties(DataLakeSpecificProperties{.iceberg_metadata_file_location = String(table_params.at("metadata_location"))});
+                result.setDataLakeSpecificProperties(DataLakeSpecificProperties{.iceberg_metadata_file_location = table_params.at("metadata_location")});
             }
             else if (const auto & location = table_outcome.GetStorageDescriptor().GetLocation(); !location.empty())
             {
-                String location_with_slash(location);
+                String location_with_slash = location;
                 if (!location_with_slash.ends_with('/'))
                     location_with_slash += '/';
 
@@ -478,11 +440,11 @@ bool GlueCatalog::tryGetTableMetadata(
                 if (column_params.contains("iceberg.field.current") && column_params.at("iceberg.field.current") == "false")
                     continue;
 
-                String column_type(column.GetType());
+                String column_type = column.GetType();
                 if (column_type == "timestamp_nano")
                     column_type = DB::Iceberg::f_timestamp_ns;
 
-                schema.push_back({String(column.GetName()), getType(column_type, can_be_nullable)});
+                schema.push_back({column.GetName(), getType(column_type, can_be_nullable)});
             }
             result.setSchema(schema);
         }
@@ -543,8 +505,7 @@ ICatalog::CredentialsRefreshCallback GlueCatalog::getCredentialsConfigurationCal
     /// S3 client is pinned to a snapshot that goes stale on long reads. This
     /// callback re-asks the same provider for current credentials each time
     /// `ReadBufferFromS3` reports an `ExpiredToken`, letting the read recover.
-    /// `self` keeps catalog alive while S3 client holds this callback.
-    return [this, self = shared_from_this(), storage_id]() -> std::shared_ptr<IStorageCredentials>
+    return [this, storage_id]() -> std::shared_ptr<IStorageCredentials>
     {
         LOG_DEBUG(log, "Refreshing AWS credentials for {} after expired token", storage_id.getNameForLogs());
         auto credentials = credentials_provider->GetAWSCredentials();
@@ -568,13 +529,10 @@ bool GlueCatalog::empty() const
 
 GlueCatalog::ObjectStorageWithPath GlueCatalog::createObjectStorageForEarlyTableAccess(const String & s3_location, const TableMetadata & table_metadata) const
 {
-    auto table_engine_definition_ast = DB::parseDatabaseEngineDefinition(table_engine_definition);
-    DB::ASTStorage * storage = table_engine_definition_ast->as<DB::ASTStorage>();
-    DB::ASTs args;
-    if (storage->engine->arguments)
-        args = storage->engine->arguments->children;
+    DB::ASTStorage * storage = table_engine_definition->as<DB::ASTStorage>();
+    DB::ASTs args = storage->engine->arguments->children;
 
-    String storage_endpoint = !settings.storage_endpoint.empty() ? settings.storage_endpoint : encodeLocationForURI(s3_location);
+    String storage_endpoint = !settings.storage_endpoint.empty() ? settings.storage_endpoint : s3_location;
     if (args.empty())
         args.emplace_back(DB::make_intrusive<DB::ASTLiteral>(storage_endpoint));
     else
@@ -628,15 +586,10 @@ String GlueCatalog::resolveMetadataPathFromTableLocation(const String & table_lo
     auto storage_settings = std::make_shared<DB::DataLakeStorageSettings>();
     storage_settings->loadFromSettingsChanges(settings.allChanged());
 
-    auto resolve_context = DB::Context::createCopy(getContext());
-    DB::Settings resolve_settings = resolve_context->getSettingsCopy();
-    resolve_settings[DB::Setting::iceberg_list_only_v_prefixed_metadata_files] = false;
-    resolve_context->setSettings(resolve_settings);
-
     try
     {
         auto [metadata_version, metadata_path, compression_method, _] = DB::Iceberg::getLatestOrExplicitMetadataFileAndVersion(
-            object_storage, table_path, *storage_settings, nullptr, resolve_context, log.get(), std::nullopt, DB::CompressionMethod::None);
+            object_storage, table_path, *storage_settings, nullptr, getContext(), log.get(), std::nullopt, DB::CompressionMethod::None);
 
         LOG_TRACE(log, "Resolved metadata path '{}' (version {}) for table location '{}'", metadata_path, metadata_version, table_location);
 
@@ -903,7 +856,7 @@ bool GlueCatalog::commitTableUpdate(
         const auto & existing = get_outcome.GetResult().GetTable();
         const auto & parameters = existing.GetParameters();
         auto current_it = parameters.find("metadata_location");
-        const String current_metadata_path(current_it == parameters.end() ? "" : current_it->second);
+        const String current_metadata_path = current_it == parameters.end() ? "" : current_it->second;
 
         /// An earlier `UpdateTable` landed, but its response was lost and the retry was rejected by `VersionId`.
         if (current_metadata_path == new_metadata_path)

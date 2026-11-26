@@ -7,14 +7,12 @@ keywords: ['RBAC', 'Amazon S3', '身份验证']
 doc_type: 'guide'
 ---
 
+import { Image } from "/snippets/zh/components/Image.jsx";
+
 本指南介绍 ClickHouse Cloud 客户如何利用基于角色的访问控制，通过 Amazon Simple Storage Service (S3) 进行身份验证，并安全地访问其数据。
 在开始配置安全的 S3 访问之前，先了解其工作原理非常重要。下面概述了 ClickHouse 服务如何通过承担客户 AWS 账户中的角色来访问私有 S3 存储桶。
 
-<div className="ch-image-lg">
-  <Frame>
-    ![ClickHouse 安全访问 S3 概览](/images/cloud/security/secures3.webp)
-  </Frame>
-</div>
+<Image img="/images/cloud/security/secures3.webp" size="lg" alt="ClickHouse 安全访问 S3 概览" />
 
 <br />
 
@@ -33,14 +31,10 @@ doc_type: 'guide'
 
 5. 复制如下所示该服务的 **Service role ID (IAM)** 值。
 
-<div className="ch-image-lg">
-  <Frame>
-    ![获取 ClickHouse 服务的 IAM 角色 ARN](/images/cloud/security/secures3_arn.webp)
-  </Frame>
-</div>
+<Image img="/images/cloud/security/secures3_arn.webp" size="lg" alt="获取 ClickHouse 服务的 IAM 角色 ARN" border />
 
 <div id="setting-up-iam-assume-role">
-  ## 配置 IAM Assume Role {#setting-up-iam-assume-role}
+  ## 配置 IAM Assume Role
 </div>
 
 IAM Assume Role 可通过以下两种方式之一进行配置：
@@ -49,15 +43,15 @@ IAM Assume Role 可通过以下两种方式之一进行配置：
 * [手动创建 IAM 角色](#option-2-manually-create-iam-role)
 
 <div id="option-1-deploying-with-cloudformation-stack">
-  ### 通过 CloudFormation stack 部署 {#option-1-deploying-with-cloudformation-stack}
+  ### 通过 CloudFormation stack 部署
 </div>
 
 1. 在 Web 浏览器中，使用具有创建和管理 IAM 角色 权限的 IAM 用户登录您的 AWS 账户。
 
 2. 访问以下 [CloudFormation URL](https://us-west-2.console.aws.amazon.com/cloudformation/home?region=us-west-2#/stacks/quickcreate?templateURL=https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/cf-templates/secure-s3.yaml\&stackName=ClickHouseSecureS3)，填写 CloudFormation stack。
 
-3. 在标题为 “ClickHouse Instance Roles” 的输入框中，输入 (或粘贴) 您之前获取的 Service 角色 ID (IAM) 。
-   您可以直接粘贴其在 Cloud Console 中显示的 Service 角色 ID (IAM)。
+3. 在标题为 “ClickHouse Instance Roles” 的输入框中，输入 (或粘贴) 您之前获取的 Service role ID (IAM) 。
+   您可以直接粘贴其在 Cloud Console 中显示的 Service role ID (IAM)。
 
 4. 在标题为 “Bucket Names” 的输入框中输入您的 存储桶 名称。如果您的 存储桶 URL 为 `https://ch-docs-s3-bucket.s3.eu-central-1.amazonaws.com/clickhouseS3/`，则 存储桶 名称为 `ch-docs-s3-bucket`。
 
@@ -67,13 +61,13 @@ IAM Assume Role 可通过以下两种方式之一进行配置：
 
 5. 配置 CloudFormation stack。以下是这些参数的更多信息。
 
-| 参数                        |          默认值         | 说明                                                                  |
-| :------------------------ | :------------------: | :------------------------------------------------------------------ |
-| RoleName                  | ClickHouseAccess-001 | ClickHouse Cloud 将用于访问您的 S3 存储桶 的新 角色 名称。                         |
-| 角色 Session Name         |           *          | 角色 Session Name 可用作共享密钥，以进一步保护您的 存储桶。                             |
-| ClickHouse Instance Roles |                      | 可使用此安全 S3 集成 的 ClickHouse 服务 IAM 角色 列表，以逗号分隔。                       |
-| Bucket Access             |         Read         | 设置所提供 存储桶 的访问级别。                                                    |
-| Bucket Names              |                      | 此 角色 可访问的 存储桶 名称列表，以逗号分隔。**注意：**&#x8BF7;使用 存储桶 名称，而不是完整的 存储桶 ARN。 |
+| 参数                        |          默认值         | 说明                                                           |
+| :------------------------ | :------------------: | :----------------------------------------------------------- |
+| RoleName                  | ClickHouseAccess-001 | ClickHouse Cloud 将用于访问您的 S3 存储桶 的新 role 名称。                  |
+| Role Session Name         |           *          | Role Session Name 可用作共享密钥，以进一步保护您的 存储桶。                      |
+| ClickHouse Instance Roles |                      | 可使用此安全 S3 集成 的 ClickHouse 服务 IAM 角色 列表，以逗号分隔。                |
+| Bucket Access             |         Read         | 设置所提供 存储桶 的访问级别。                                             |
+| Bucket Names              |                      | 此 role 可访问的 存储桶 名称列表，以逗号分隔。**注意：**请使用 存储桶 名称，而不是完整的 存储桶 ARN。 |
 
 6. 选中 **I acknowledge that AWS CloudFormation might create IAM resources with custom names.** 复选框
 
@@ -85,14 +79,10 @@ IAM Assume Role 可通过以下两种方式之一进行配置：
 
 10. 复制此 集成 的 **RoleArn** 值，这就是访问您的 S3 存储桶 所需的内容。
 
-<div className="ch-image-lg">
-  <Frame>
-    ![显示 IAM 角色 ARN 的 CloudFormation stack 输出](/images/cloud/security/secures3_output.webp)
-  </Frame>
-</div>
+<Image img="/images/cloud/security/secures3_output.webp" size="lg" alt="显示 IAM Role ARN 的 CloudFormation stack 输出" border />
 
 <div id="option-2-manually-create-iam-role">
-  ### 手动创建 IAM 角色 {#option-2-manually-create-iam-role}
+  ### 手动创建 IAM 角色
 </div>
 
 1. 使用具有创建和管理 IAM 角色 权限的 IAM 用户，在 Web 浏览器中登录你的 AWS 账户。

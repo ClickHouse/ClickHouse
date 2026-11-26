@@ -139,10 +139,6 @@ BACKUP TABLE test.table
 
 См. [&quot;именованные коллекции&quot;](/ru/concepts/features/configuration/server-config/named-collections) для получения дополнительной информации.
 
-Сами именованные коллекции, созданные средствами SQL, также можно экспортировать в резервную копию и восстанавливать из
-неё через таблицу `system.named_collections`; см. раздел
-[«Резервное копирование и восстановление именованных коллекций»](/ru/concepts/features/backup-restore/named-collections).
-
 ## Резервное копирование системных таблиц, таблиц логов и таблиц управления доступом {#system-backups}
 
 Системные таблицы также можно включать в процессы резервного копирования и восстановления, но
@@ -169,12 +165,6 @@ settings&#95;profiles и quotas, особым образом обрабатыв�
 (обозначаемых как [&quot;система управления доступом и учётными записями на основе SQL&quot;](/ru/concepts/features/security/access-rights#enabling-access-control)).
 Конфигурации доступа, определённые в файлах конфигурации сервера ClickHouse (например, `users.xml`),
 не включаются в резервные копии и не могут быть восстановлены этим методом.
-
-<Note>
-  В версиях ClickHouse до 26.10 политики строк, профили настроек и квоты, восстановленные с помощью `RESTORE`,
-  отображаются в `system.row_policies`, `system.settings_profiles` и `system.quotas`, но применяются к запросам
-  не сразу. Чтобы применить их, после завершения восстановления выполните [`SYSTEM RELOAD USERS`](/ru/reference/statements/system#reload-users).
-</Note>
 
 ## Общий синтаксис {#syntax}
 

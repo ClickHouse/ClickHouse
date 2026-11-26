@@ -7,7 +7,9 @@ keywords: ['busca semântica', 'similaridade vetorial', 'vizinhos mais próximos
 doc_type: 'guide'
 ---
 
-## Introdução {#introduction}
+<div id="introduction">
+  ## Introdução
+</div>
 
 O [conjunto de dados Hacker News](https://news.ycombinator.com/) contém 28,74 milhões de
 postagens e seus embeddings vetoriais. Os embeddings foram gerados com o modelo [SentenceTransformers](https://sbert.net/) [all-MiniLM-L6-v2](https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2). A dimensão de cada vetor de embedding é `384`.
@@ -15,13 +17,17 @@ postagens e seus embeddings vetoriais. Os embeddings foram gerados com o modelo 
 Este conjunto de dados pode ser usado para explorar os aspectos de projeto, dimensionamento e desempenho de uma aplicação real de busca vetorial em grande escala,
 construída sobre dados textuais gerados por usuários.
 
-## Detalhes do conjunto de dados {#dataset-details}
+<div id="dataset-details">
+  ## Detalhes do conjunto de dados
+</div>
 
 O conjunto de dados completo com embeddings vetoriais é disponibilizado pela ClickHouse como um único arquivo `Parquet` em um [bucket do S3](https://clickhouse-datasets.s3.amazonaws.com/hackernews-miniLM/hackernews_part_1_of_1.parquet)
 
 Recomendamos que os usuários façam primeiro uma análise de dimensionamento para estimar os requisitos de armazenamento e memória desse conjunto de dados, consultando a [documentação](/pt-BR/reference/engines/table-engines/mergetree-family/annindexes).
 
-## Etapas {#steps}
+<div id="steps">
+  ## Etapas
+</div>
 
 <Steps>
   <Step title="Criar tabela" id="create-table">
@@ -103,8 +109,8 @@ Recomendamos que os usuários façam primeiro uma análise de dimensionamento pa
     [all-MiniLM-L6-v2](https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2).
 
     Um exemplo de script Python é fornecido abaixo para demonstrar como gerar programaticamente
-    vetores de embedding usando o pacote Python `sentence_transformers1. O vetor de embedding de busca
-          é então passado como argumento para a função [`cosineDistance()`](/reference/functions/regular-functions/distance-functions#cosineDistance) na consulta `SELECT&#96;.
+    vetores de embedding usando o pacote Python `sentence_transformers`. O vetor de embedding de busca
+    é então passado como argumento para a função [`cosineDistance()`](/pt-BR/reference/functions/regular-functions/distance-functions#cosineDistance) na consulta `SELECT`.
 
     ```python
     from sentence_transformers import SentenceTransformer
@@ -207,7 +213,7 @@ Recomendamos que os usuários façam primeiro uma análise de dimensionamento pa
     ---------
     ```
 
-## Aplicativo de demonstração de sumarização {#summarization-demo-application}
+    ## Aplicativo de demonstração de sumarização
 
     O exemplo acima mostrou a busca semântica e a recuperação de documentos usando o ClickHouse.
 

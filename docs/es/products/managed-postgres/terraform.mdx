@@ -7,7 +7,11 @@ keywords: ['managed postgres', 'terraform', 'infraestructura como código', 'iac
 doc_type: 'guide'
 ---
 
-Los servicios de ClickHouse Managed Postgres se pueden crear y administrar mediante el recurso `clickhouse_postgres_service` del [proveedor de Terraform de ClickHouse](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs/resources/postgres_service). Esta página describe la configuración del proveedor y ofrece ejemplos de configuración para este recurso y sus fuentes de datos complementarias.
+import { BetaBadge } from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.terraform-beta" />
+
+Los servicios de ClickHouse Managed Postgres se pueden crear y administrar mediante el recurso `clickhouse_postgres_service` del [proveedor de Terraform de ClickHouse](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs/resources/postgres_service). Esta página describe la configuración del proveedor y ofrece ejemplos de configuración para este recurso y sus fuentes de datos asociadas.
 
 <Note>
   Este recurso está en alpha y su comportamiento puede cambiar en futuras versiones del proveedor. Se distribuye en el build habitual del proveedor. Esta página documenta la versión **v3.21.0** del proveedor y posteriores. Consulta las [releases del proveedor](https://github.com/ClickHouse/terraform-provider-clickhouse/releases) para más detalles.

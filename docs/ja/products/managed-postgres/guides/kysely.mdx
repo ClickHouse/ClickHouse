@@ -7,6 +7,10 @@ keywords: ['managed postgres', 'kysely', 'typescript', 'node.js', 'node-postgres
 doc_type: 'guide'
 ---
 
+import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.guides-kysely-beta" />
+
 [Kysely](https://kysely.dev) は、TypeScript 向けの型安全な SQL クエリビルダーです。このガイドでは、[`pg`](https://node-postgres.com/) ドライバーを使用し、証明書検証付きの TLS で Kysely を ClickHouse Managed Postgres に接続します。さらに、Kysely の移行機能でテーブルを作成し、Node.js で小規模な ToDo API を提供します。
 
 ## 前提条件 {#prerequisites}

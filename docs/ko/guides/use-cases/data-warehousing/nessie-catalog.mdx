@@ -9,9 +9,9 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
+import { ExperimentalBadge } from "/snippets/ko/components/ExperimentalBadge/ExperimentalBadge.jsx";
 
-<BetaBadge />
+<ExperimentalBadge />
 
 <Note>
   Nessie 카탈로그와의 통합은 Iceberg 테이블에서만 작동합니다.
@@ -29,22 +29,26 @@ Nessie는 데이터 레이크를 위한 오픈 소스 트랜잭션 카탈로그�
 * Docker 또는 Kubernetes에서의 **프로덕션 환경에 적합한** 배포
 
 <Note>
-  이 기능은 베타 단계입니다. 다음 명령으로 활성화하십시오:
-  `SET allow_database_iceberg = 1;`
-
-  이 기능이 실험적 기능이었던 25.8 이전 버전에서는 `SET allow_experimental_database_iceberg = 1;`을 대신 사용하십시오.
+  이 기능은 아직 실험적 기능이므로, 다음을 사용해 활성화해야 합니다:
+  `SET allow_experimental_database_iceberg = 1;`
 </Note>
 
-## 로컬 개발 환경 설정 {#local-development-setup}
+<div id="local-development-setup">
+  ## 로컬 개발 환경 설정
+</div>
 
 로컬에서 개발하고 테스트할 때는 컨테이너화된 Nessie 환경을 사용할 수 있습니다. 이 방식은 학습, 프로토타입 제작, 개발 환경에 적합합니다.
 
-### 사전 준비 사항 {#local-prerequisites}
+<div id="local-prerequisites">
+  ### 사전 준비 사항
+</div>
 
 1. **Docker 및 Docker Compose**: Docker가 설치되어 있고 실행 중인지 확인하세요
 2. **예제 설정**: 공식 Nessie docker-compose 구성을 사용할 수 있습니다
 
-### 로컬 Nessie 카탈로그 설정 {#setting-up-local-nessie-catalog}
+<div id="setting-up-local-nessie-catalog">
+  ### 로컬 Nessie 카탈로그 설정
+</div>
 
 Nessie, 인메모리 버전 저장소, 객체 스토리지용 MinIO를 포함한 전체 환경을 제공하는 공식 [Nessie docker-compose setup](https://projectnessie.org/guides/)을 사용할 수 있습니다.
 
@@ -148,7 +152,9 @@ docker-compose logs -f
   Nessie 설정은 인메모리 버전 저장소를 사용하므로, 먼저 샘플 데이터를 Iceberg 테이블에 로드해야 합니다. ClickHouse를 통해 해당 테이블에 쿼리하기 전에 환경에서 테이블이 생성되고 데이터가 채워져 있는지 확인하십시오.
 </Note>
 
-### 로컬 Nessie 카탈로그에 연결하기 {#connecting-to-local-nessie-catalog}
+<div id="connecting-to-local-nessie-catalog">
+  ### 로컬 Nessie 카탈로그에 연결하기
+</div>
 
 ClickHouse 컨테이너에 연결하세요:
 
@@ -159,14 +165,16 @@ docker exec -it nessie-clickhouse clickhouse-client
 그런 다음 Nessie 카탈로그에 대한 데이터베이스 연결을 생성합니다:
 
 ```sql
-SET allow_database_iceberg = 1;
+SET allow_experimental_database_iceberg = 1;
 
 CREATE DATABASE demo
 ENGINE = DataLakeCatalog('http://nessie:19120/iceberg', 'admin', 'password')
 SETTINGS catalog_type = 'rest', storage_endpoint = 'http://minio:9002/my-bucket', warehouse = 'warehouse'
 ```
 
-## ClickHouse로 Nessie 카탈로그 테이블 쿼리하기 {#querying-nessie-catalog-tables-using-clickhouse}
+<div id="querying-nessie-catalog-tables-using-clickhouse">
+  ## ClickHouse로 Nessie 카탈로그 테이블 쿼리하기
+</div>
 
 이제 연결이 설정되었으므로 Nessie 카탈로그를 통해 쿼리할 수 있습니다. 예시는 다음과 같습니다:
 
@@ -250,7 +258,9 @@ SHOW CREATE TABLE `default.taxis`;
 └───────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## 데이터 레이크의 데이터를 ClickHouse로 로드하기 {#loading-data-from-your-data-lake-into-clickhouse}
+<div id="loading-data-from-your-data-lake-into-clickhouse">
+  ## 데이터 레이크의 데이터를 ClickHouse로 로드하기
+</div>
 
 Nessie 카탈로그의 데이터를 ClickHouse로 로드해야 한다면, 먼저 로컬 ClickHouse 테이블을 생성하십시오:
 

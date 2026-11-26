@@ -116,10 +116,6 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 
 根据 CGroups 计算的最大 CPU 核心数。
 
-### CGroupMemoryInactiveFile {#cgroupmemoryinactivefile}
-
-在读取 CGroupMemoryUsed 的同一 cgroup 中，非活跃的文件页缓存所占用的内存量，单位为字节。这部分属于可回收内存：在内存压力下，内核可以将其释放。Kubernetes 和 cAdvisor 会用原始 cgroup 内存使用量 (cgroup v2 上为 memory.current，cgroup v1 上为 memory.usage&#95;in&#95;bytes) 减去该值，得出工作集大小 (WSS) 。请注意，CGroupMemoryUsed 并非上述原始使用量，因为它已排除了文件页缓存。在 cgroup v2 上，该值与 kubelet 节点代理针对容器所使用的值一致；在 cgroup v1 上，如果服务器运行在容器中，且 memory 控制器的挂载点就是该容器自身的 cgroup，两者同样一致。在 cgroup v1 上，该值从 memory 控制器挂载根目录读取，因此如果主机上的服务器运行在嵌套的 v1 cgroup 中，该值涵盖的是该根目录下的整个层次结构，而非服务器自身的 cgroup。如果内核未在 memory.stat 中提供该统计项，则不会生成此指标。
-
 ### CGroupMemoryTotal {#cgroupmemorytotal}
 
 cgroup 中的内存总量，单位为字节。如果该值为 0，则限制与 OSMemoryTotal 相同。
@@ -164,37 +160,9 @@ CPU 核心执行用户态代码的时间占比。它还包括由于 CPU 内部�
 
 预计已加入队列、等待从磁盘对象存储中删除的 blob 数量 (blob 管理器 的死对象队列) ，以磁盘名称为键。未启用 blob 复制的磁盘报告 0。
 
-### DictionaryFailedCount {#dictionaryfailedcount}
-
-当前处于失败状态的字典数量 (包括 FAILED&#95;AND&#95;RELOADING 这一过渡状态) 。
-
-### DictionaryLoadedCount {#dictionaryloadedcount}
-
-当前处于已加载状态的字典数量 (包括 LOADED&#95;AND&#95;RELOADING 这一过渡状态) 。
-
-### DictionaryLoadingCount {#dictionaryloadingcount}
-
-当前正在首次加载的字典数量 (不包括已加载或加载失败后重新加载的字典) 。
-
-### DictionaryMaxQueryCount {#dictionarymaxquerycount}
-
-所有已加载字典中查询次数的最大值，各字典的查询次数均从其上次加载时开始统计。
-
 ### 字典最大更新延迟 {#dictionarymaxupdatedelay}
 
 字典更新的最大延迟时间 (以秒为单位)
-
-### DictionaryTotalBytesAllocated {#dictionarytotalbytesallocated}
-
-当前所有已加载字典分配的总字节数 (即各字典实例 `getBytesAllocated` 值的总和) 。
-
-### DictionaryTotalCount {#dictionarytotalcount}
-
-服务器已知的字典总数 (不论加载状态如何) 。
-
-### DictionaryTotalElementCount {#dictionarytotalelementcount}
-
-当前所有已加载字典中存储的键总数。
 
 ### 字典TotalFailedUpdates {#dictionarytotalfailedupdates}
 

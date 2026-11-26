@@ -48,10 +48,7 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 コンパクションによって生成される iceberg parquet データファイルの最大バイト数。
 
 デフォルト値は Iceberg table property `write.target-file-size-bytes` のドキュメント記載のデフォルト値 (512 MiB) に合わせています。
-https://iceberg.apache.org/docs/1.5.2/configuration/ を参照してください。この上限は、その時点までに書き込み済みのファイルのサイズ、
-つまり圧縮サイズと比較されます。これは `iceberg_data_file_size_lower_threshold_compaction` と同じ尺度です。
-そのため、未完成の Parquet 行グループやエンコード中の行グループなど、ライターがまだバッファに保持している分だけ、
-ファイルがこの上限を超えることがあります。この値は
+https://iceberg.apache.org/docs/1.5.2/configuration/ を参照してください。この値は
 `iceberg_data_file_size_lower_threshold_compaction` より大きく保ってください。そうしないと、すべての出力ファイルが下限しきい値を下回り、
 再びコンパクションの対象として選択されてしまいます。
 

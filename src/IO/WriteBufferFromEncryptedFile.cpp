@@ -11,7 +11,7 @@ namespace DB
 WriteBufferFromEncryptedFile::WriteBufferFromEncryptedFile(
     size_t buffer_size_,
     std::unique_ptr<WriteBufferFromFileBase> out_,
-    const SecretString & key_,
+    const String & key_,
     const FileEncryption::Header & header_,
     size_t old_file_size,
     bool use_adaptive_buffer_size_,
@@ -40,13 +40,6 @@ void WriteBufferFromEncryptedFile::finalFlushBefore()
     /// Note that if there is no data to write an empty file will be written, even without the initialization vector
     /// (see nextImpl(): it writes the initialization vector only if there is some data ready to write).
     /// That's fine because DiskEncrypted allows files without initialization vectors when they're empty.
-}
-
-void WriteBufferFromEncryptedFile::preFinalize()
-{
-    next();
-
-    out->preFinalize();
 }
 
 void WriteBufferFromEncryptedFile::sync()

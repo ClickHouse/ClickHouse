@@ -7,10 +7,12 @@ title: 'إعداد نقاط نهاية واجهة برمجة تطبيقات ال
 doc_type: 'guide'
 ---
 
+import { Image } from "/snippets/ar/components/Image.jsx";
+
 تتيح لك ميزة **نقاط نهاية واجهة برمجة تطبيقات الاستعلام** إنشاء نقطة نهاية API مباشرةً من أي استعلام SQL محفوظ في وحدة تحكم ClickHouse Cloud. وستتمكن من الوصول إلى نقاط نهاية API عبر HTTP لتنفيذ استعلاماتك المحفوظة دون الحاجة إلى الاتصال بخدمة ClickHouse Cloud الخاصة بك باستخدام برنامج تشغيل أصلي.
 
 <div id="quick-start-guide">
-  ## المتطلبات المسبقة {#quick-start-guide}
+  ## المتطلبات المسبقة
 </div>
 
 قبل المتابعة، تأكد من توفر ما يلي لديك:
@@ -41,7 +43,7 @@ doc_type: 'guide'
       مثلًا 10 ملايين صف.
     </Tip>
 
-    كمثال على استعلام، سنعرض أفضل 10 uploaders حسب متوسط عدد المشاهدات لكل فيديو، ضمن معلمة استعلام باسم `year` يُدخلها المستخدم.
+    كمثال على استعلام، سنعرض أفضل 10 uploaders حسب متوسط عدد المشاهدات لكل فيديو، ضمن query parameter باسم `year` يُدخله المستخدم.
 
     ```sql highlight={11}
     WITH sum(view_count) AS view_sum,
@@ -60,25 +62,17 @@ doc_type: 'guide'
       LIMIT 10
     ```
 
-    لاحظ أن هذا الاستعلام يحتوي على معلمة (`year`) مميزة في المقتطف أعلاه.
-    يمكنك تحديد معلمات الاستعلام باستخدام `{ }` مع نوع المعلمة.
-    يكتشف محرر الاستعلام في وحدة تحكم SQL تلقائيًا تعبيرات معلمات الاستعلام في ClickHouse ويوفّر حقل إدخال لكل معلمة.
+    لاحظ أن هذا الاستعلام يحتوي على parameter (`year`) مميز في المقتطف أعلاه.
+    يمكنك تحديد معلمات الاستعلام باستخدام `{ }` مع نوع الـ parameter.
+    يكتشف محرر الاستعلام في SQL Console تلقائيًا تعبيرات query parameter في ClickHouse ويوفّر حقل إدخال لكل parameter.
 
     لنشغّل هذا الاستعلام سريعًا للتأكد من أنه يعمل، وذلك بتحديد السنة `2010` في مربع إدخال متغيرات الاستعلام على الجانب الأيمن من محرر SQL:
 
-    <div className="ch-image-md">
-      <Frame>
-        ![اختبر استعلام المثال](/images/cloud/sqlconsole/endpoints-testquery.webp)
-      </Frame>
-    </div>
+    <Image img="/images/cloud/sqlconsole/endpoints-testquery.webp" size="md" alt="اختبر استعلام المثال" />
 
     بعد ذلك، احفظ الاستعلام:
 
-    <div className="ch-image-md">
-      <Frame>
-        ![احفظ استعلام المثال](/images/cloud/sqlconsole/endpoints-savequery.webp)
-      </Frame>
-    </div>
+    <Image img="/images/cloud/sqlconsole/endpoints-savequery.webp" size="md" alt="احفظ استعلام المثال" />
 
     يمكن العثور على مزيد من الوثائق حول استعلام محفوظ في قسم [&quot;Saving a query&quot;](/ar/products/cloud/features/sql-console-features/sql-console#saving-a-query).
   </Step>
@@ -87,11 +81,7 @@ doc_type: 'guide'
     يمكن تهيئة نقاط نهاية واجهة برمجة تطبيقات الاستعلام مباشرةً من عرض الاستعلام بالنقر على الزر **Share** ثم اختيار `API Endpoint`.
     سيُطلب منك تحديد مفاتيح API التي يجب أن تتمكن من الوصول إلى نقطة النهاية:
 
-    <div className="ch-image-md">
-      <Frame>
-        ![هيئ نقطة نهاية الاستعلام](/images/cloud/sqlconsole/endpoints-configure.webp)
-      </Frame>
-    </div>
+    <Image img="/images/cloud/sqlconsole/endpoints-configure.webp" size="md" alt="هيئ نقطة نهاية الاستعلام" />
 
     بعد اختيار مفتاح API، سيُطلب منك:
 
@@ -102,11 +92,7 @@ doc_type: 'guide'
 
     سيُعرض مثال لأمر `curl` حتى تتمكن من إرسال طلب اختبار:
 
-    <div className="ch-image-md">
-      <Frame>
-        ![أمر curl لنقطة النهاية](/images/cloud/sqlconsole/endpoints-completed.webp)
-      </Frame>
-    </div>
+    <Image img="/images/cloud/sqlconsole/endpoints-completed.webp" size="md" alt="أمر curl لنقطة النهاية" />
 
     يرد أمر curl المعروض في الواجهة أدناه للتيسير:
 
@@ -115,31 +101,23 @@ doc_type: 'guide'
     ```
   </Step>
 
-  <Step title="معلمات واجهة برمجة تطبيقات الاستعلام" id="query-api-parameters">
-    يمكن تحديد معلمات الاستعلام في الاستعلام باستخدام الصياغة `{parameter_name: type}`. سيجري اكتشاف هذه المعلمات تلقائيًا، وستتضمن حمولة طلب المثال كائن `queryVariables` يمكنك من خلاله تمرير هذه المعلمات.
+  <Step title="معاملات واجهة برمجة تطبيقات الاستعلام" id="query-api-parameters">
+    يمكن تحديد معلمات الاستعلام في الاستعلام باستخدام الصياغة `{parameter_name: type}`. سيجري اكتشاف هذه المعاملات تلقائيًا، وستتضمن حمولة طلب المثال كائن `queryVariables` يمكنك من خلاله تمرير هذه المعاملات.
   </Step>
 
   <Step title="الاختبار والمراقبة" id="testing-and-monitoring">
     بمجرد إنشاء نقطة النهاية لواجهة برمجة تطبيقات الاستعلام، يمكنك اختباره باستخدام `curl` أو أي HTTP client آخر:
 
-    <div className="ch-image-md">
-      <Frame>
-        ![اختبار curl لنقطة النهاية](/images/cloud/sqlconsole/endpoints-curltest.webp)
-      </Frame>
-    </div>
+    <Image img="/images/cloud/sqlconsole/endpoints-curltest.webp" size="md" alt="اختبار curl لنقطة النهاية" />
 
     بعد إرسال أول طلب، من المفترض أن يظهر زر جديد مباشرةً إلى يمين الزر **Share**. سيؤدي النقر عليه إلى فتح flyout يحتوي على بيانات المراقبة الخاصة بالاستعلام:
 
-    <div className="ch-image-sm">
-      <Frame>
-        ![مراقبة نقطة النهاية](/images/cloud/sqlconsole/endpoints-monitoring.webp)
-      </Frame>
-    </div>
+    <Image img="/images/cloud/sqlconsole/endpoints-monitoring.webp" size="sm" alt="مراقبة نقطة النهاية" />
   </Step>
 </Steps>
 
 <div id="implementation-details">
-  ## تفاصيل التنفيذ {#implementation-details}
+  ## تفاصيل التنفيذ
 </div>
 
 تُنفِّذ نقطة النهاية هذه الاستعلامات على نقاط نهاية واجهة برمجة تطبيقات الاستعلام المحفوظة لديك.
@@ -153,7 +131,7 @@ POST /query-endpoints/{queryEndpointId}/run
 ```
 
 <div id="http-methods">
-  ### أساليب HTTP {#http-methods}
+  ### أساليب HTTP
 </div>
 
 | الأسلوب  | حالة الاستخدام                             | المعلمات                                                        |
@@ -174,7 +152,7 @@ POST /query-endpoints/{queryEndpointId}/run
 * تحميل الملفات المتدفّق أو البيانات الكبيرة
 
 <div id="authentication">
-  ### المصادقة {#authentication}
+  ### المصادقة
 </div>
 
 **مطلوب:** نعم
@@ -182,11 +160,11 @@ POST /query-endpoints/{queryEndpointId}/run
 **الأذونات:** الأذونات المناسبة لنقطة نهاية الاستعلام
 
 <div id="request-configuration">
-  ### تهيئة الطلب {#request-configuration}
+  ### تهيئة الطلب
 </div>
 
 <div id="url-params">
-  #### معلمات عنوان URL {#url-params}
+  #### معلمات عنوان URL
 </div>
 
 | المعلمة           | مطلوب   | الوصف                                                |
@@ -194,7 +172,7 @@ POST /query-endpoints/{queryEndpointId}/run
 | `queryEndpointId` | **نعم** | المعرّف الفريد لنقطة نهاية الاستعلام المطلوب تشغيلها |
 
 <div id="query-params">
-  #### معلمات الاستعلام {#query-params}
+  #### معلمات الاستعلام
 </div>
 
 | المعلمة               | مطلوب | الوصف                                                                             | مثال                     |
@@ -205,7 +183,7 @@ POST /query-endpoints/{queryEndpointId}/run
 | `:clickhouse_setting` | لا    | أي [إعداد في ClickHouse](/ar/reference/settings/session-settings) مدعوم              | `?max_threads=8`         |
 
 <div id="headers">
-  #### الترويسات {#headers}
+  #### الترويسات
 </div>
 
 | الترويسة                        | مطلوب | الوصف                                                       | القيم                                           |
@@ -216,11 +194,11 @@ POST /query-endpoints/{queryEndpointId}/run
 ***
 
 <div id="request-body">
-  ### جسم الطلب {#request-body}
+  ### جسم الطلب
 </div>
 
 <div id="params">
-  #### المعلمات {#params}
+  #### المعلمات
 </div>
 
 | المعلمة          | النوع      | مطلوب | الوصف                            |
@@ -229,7 +207,7 @@ POST /query-endpoints/{queryEndpointId}/run
 | `format`         | سلسلة نصية | لا    | تنسيق الاستجابة                  |
 
 <div id="supported-formats">
-  #### التنسيقات المدعومة {#supported-formats}
+  #### التنسيقات المدعومة
 </div>
 
 | الإصدار               | التنسيقات المدعومة                                                                                                                                                       |
@@ -240,18 +218,18 @@ POST /query-endpoints/{queryEndpointId}/run
 ***
 
 <div id="responses">
-  ### الاستجابات {#responses}
+  ### الاستجابات
 </div>
 
 <div id="success">
-  #### نجاح {#success}
+  #### نجاح
 </div>
 
 **الحالة:** `200 OK`
 تم تنفيذ الاستعلام بنجاح.
 
 <div id="error-codes">
-  #### رموز الخطأ {#error-codes}
+  #### رموز الخطأ
 </div>
 
 | رمز الحالة         | الوصف                                          |
@@ -261,7 +239,7 @@ POST /query-endpoints/{queryEndpointId}/run
 | `404 Not Found`    | لم يتم العثور على نقطة نهاية الاستعلام المحددة |
 
 <div id="error-handling-best-practices">
-  #### أفضل الممارسات لمعالجة الأخطاء {#error-handling-best-practices}
+  #### أفضل الممارسات لمعالجة الأخطاء
 </div>
 
 * تأكد من تضمين بيانات اعتماد مصادقة صالحة في الطلب
@@ -271,7 +249,7 @@ POST /query-endpoints/{queryEndpointId}/run
 ***
 
 <div id="upgrading-endpoint-versions">
-  ### ترقية إصدارات endpoint {#upgrading-endpoint-versions}
+  ### ترقية إصدارات endpoint
 </div>
 
 للترقية من الإصدار 1 إلى الإصدار 2:
@@ -286,11 +264,11 @@ POST /query-endpoints/{queryEndpointId}/run
 * تحسينات في الأداء والوظائف
 
 <div id="examples">
-  ## أمثلة {#examples}
+  ## أمثلة
 </div>
 
 <div id="basic-request">
-  ### طلب بسيط {#basic-request}
+  ### طلب بسيط
 </div>
 
 **استعلام SQL الخاص بـ نقطة نهاية واجهة برمجة تطبيقات الاستعلام:**
@@ -300,7 +278,7 @@ SELECT database, name AS num_tables FROM system.tables LIMIT 3;
 ```
 
 <div id="version-1">
-  #### الإصدار 1 {#version-1}
+  #### الإصدار 1
 </div>
 
 <Tabs>
@@ -358,7 +336,7 @@ SELECT database, name AS num_tables FROM system.tables LIMIT 3;
 </Tabs>
 
 <div id="version-2">
-  #### الإصدار 2 {#version-2}
+  #### الإصدار 2
 </div>
 
 <Tabs>
@@ -412,7 +390,7 @@ SELECT database, name AS num_tables FROM system.tables LIMIT 3;
 </Tabs>
 
 <div id="request-with-query-variables-and-version-2-on-jsoncompacteachrow-format">
-  ### طلب مع متغيرات الاستعلام والإصدار 2 بتنسيق JSONCompactEachRow {#request-with-query-variables-and-version-2-on-jsoncompacteachrow-format}
+  ### طلب مع متغيرات الاستعلام والإصدار 2 بتنسيق JSONCompactEachRow
 </div>
 
 **SQL الخاص بنقطة نهاية واجهة برمجة تطبيقات الاستعلام:**
@@ -479,7 +457,7 @@ SELECT name, database FROM system.tables WHERE match(name, {tableNameRegex: Stri
 </Tabs>
 
 <div id="request-with-array-in-the-query-variables-that-inserts-data-into-a-table">
-  ### طلب يستخدم مصفوفة في متغيرات الاستعلام لإدراج بيانات في جدول {#request-with-array-in-the-query-variables-that-inserts-data-into-a-table}
+  ### طلب يستخدم مصفوفة في متغيرات الاستعلام لإدراج بيانات في جدول
 </div>
 
 **تعليمة SQL للجدول:**
@@ -544,7 +522,7 @@ INSERT INTO default.t_arr VALUES ({arr: Array(Array(Array(UInt32)))});
 </Tabs>
 
 <div id="request-with-clickhouse-settings-max_threads-set-to-8">
-  ### طلب مع تعيين إعداد ClickHouse `max_threads` إلى 8 {#request-with-clickhouse-settings-max_threads-set-to-8}
+  ### طلب مع تعيين إعداد ClickHouse `max_threads` إلى 8
 </div>
 
 **SQL الخاص بـ نقطة نهاية واجهة برمجة تطبيقات الاستعلام:**
@@ -592,7 +570,7 @@ SELECT * FROM system.tables;
 </Tabs>
 
 <div id="request-and-parse-the-response-as-a-stream">
-  ### أرسل الطلب وحلّل الاستجابة كتدفق {#request-and-parse-the-response-as-a-stream}
+  ### أرسل الطلب وحلّل الاستجابة كتدفق
 </div>
 
 **SQL الخاص بنقطة نهاية واجهة برمجة تطبيقات الاستعلام:**
@@ -664,7 +642,7 @@ SELECT name, database FROM system.tables;
 </Tabs>
 
 <div id="insert-a-stream-from-a-file-into-a-table">
-  ### إدراج دفق من ملف في جدول {#insert-a-stream-from-a-file-into-a-table}
+  ### إدراج دفق من ملف في جدول
 </div>
 
 أنشئ ملفًا باسم `./samples/my_first_table_2024-07-11.csv` بالمحتوى التالي:

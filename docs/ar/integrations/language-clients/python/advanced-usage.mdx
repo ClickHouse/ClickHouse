@@ -4,7 +4,7 @@ keywords: ['ClickHouse', 'بايثون', 'متقدم', 'خام', 'غير متز�
 description: 'الاستخدام المتقدم مع ClickHouse Connect'
 slug: /integrations/language-clients/python/advanced-usage
 title: 'الاستخدام المتقدم'
-doc_type: 'reference'
+doc_type: 'مرجع'
 ---
 
 ## واجهة برمجة التطبيقات الخام {#raw-api}
@@ -35,15 +35,15 @@ doc_type: 'reference'
 
 تتيح الطريقة `Client.raw_insert` إجراء عمليات إدراج مباشرة لكائنات `bytes` أو مولدات كائنات `bytes` باستخدام اتصال العميل. ونظرًا لأنها لا تجري أي معالجة لحمولة الإدراج، فهي عالية الكفاءة جدًا. كما توفّر الطريقة خيارات لتحديد الإعدادات وتنسيق الإدراج:
 
-| معلمة                | النوع                                 | Default  | الوصف                                                                                                                                                                     |
-| -------------------- | ------------------------------------ | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `table`              | str                                  | مطلوب | الجدول الهدف البسيط أو المؤهل باسم قاعدة البيانات.                                                                                                                              |
-| `column_names`       | Sequence[str]                        | `None`   | أسماء الأعمدة الخاصة بكتلة الإدراج. وهي مطلوبة عندما لا يتضمن `fmt` الأسماء.                                                                                                    |
-| `insert_block`       | str, bytes, generator, or `BinaryIO` | مطلوب | البيانات المطلوب إدراجها. تُرمَّز السلاسل النصية باستخدام ترميز العميل. تقبل `AsyncClient.raw_insert` كائنًا غير متزامن قابلًا للتكرار، مثل مولّد غير متزامن، بدلًا من المولّد. |
-| `settings`           | dict                                 | `None`   | راجع [وسيطة الإعدادات](/ar/integrations/language-clients/python/driver-api#settings-argument-1).                                                                                   |
-| `fmt`                | str                                  | `None`   | تنسيق الإدخال في ClickHouse لحمولة `insert_block`. يُستخدم `Native` عندما لا يتم تحديد تنسيق.                                                                                   |
-| `compression`        | str                                  | `None`   | الضغط المُطبَّق مسبقًا على `insert_block`، مثل `"gzip"` أو `"lz4"` أو `"zstd"`.                                                                                                 |
-| `transport_settings` | dict                                 | `None`   | ترويسات HTTP المضافة إلى هذا الطلب.                                                                                                                                             |
+| معلمة            | Type                                 | Default  | Description                                                                                   |
+| -------------------- | ------------------------------------ | -------- | --------------------------------------------------------------------------------------------- |
+| `table`              | str                                  | Required | الجدول الهدف البسيط أو المؤهل باسم قاعدة البيانات.                                            |
+| `column_names`       | Sequence[str]                        | `None`   | أسماء الأعمدة الخاصة بكتلة الإدراج. وهي مطلوبة عندما لا يتضمن `fmt` الأسماء.                  |
+| `insert_block`       | str, bytes, generator, or `BinaryIO` | Required | البيانات المطلوب إدراجها. تُرمَّز السلاسل النصية باستخدام ترميز العميل.                       |
+| `settings`           | dict                                 | `None`   | راجع [وسيطة الإعدادات](/ar/integrations/language-clients/python/driver-api#settings-argument-1). |
+| `fmt`                | str                                  | `None`   | تنسيق الإدخال في ClickHouse لحمولة `insert_block`. يُستخدم `Native` عندما لا يتم تحديد تنسيق. |
+| `compression`        | str                                  | `None`   | الضغط المُطبَّق مسبقًا على `insert_block`، مثل `"gzip"` أو `"lz4"` أو `"zstd"`.               |
+| `transport_settings` | dict                                 | `None`   | ترويسات HTTP المضافة إلى هذا الطلب.                                                           |
 
 تقع على عاتق المستدعي مسؤولية التأكد من أن `insert_block` بالتنسيق المحدد ويستخدم طريقة الضغط المحددة. ويستخدم ClickHouse Connect عمليات الإدراج الخام هذه لرفع الملفات وجداول PyArrow، مع تفويض التحليل إلى خادم ClickHouse.
 
@@ -173,21 +173,7 @@ client = clickhouse_connect.get_client(
 
 تُفعّل خيارات المقبس الافتراضية آلية TCP keepalive و`TCP_NODELAY`، بينما يتولى نظام التشغيل إدارة أحجام المخازن المؤقتة للإرسال والاستقبال الخاصة بالمقبس.
 
-مرّر `dedicated_pool=True` إذا أردت تحرير اتصالات العميل المتزامن عند إغلاقه:
-
-```python
-import clickhouse_connect
-
-with clickhouse_connect.get_client(dedicated_pool=True) as client:
-    result = client.query("SELECT 13")
-    print(result.first_row)
-```
-
-يمتلك العميل تجمعًا منفصلًا مُهيّأً بخيارات الوكيل وTLS المحددة. ولا تُشارَك التجمعات المخصّصة مع عملاء آخرين، حتى عند تهيئة وكيل. يُغلق `client.close()` الاتصالات الخاملة فورًا، بينما يمكن للاستجابات النشطة أن تكتمل، وتُغلق اتصالاتها عند إعادتها إلى التجمع. ولا يؤدي إغلاق العميل إلى إلغاء الاستعلامات قيد التنفيذ.
-
-استخدم عميلًا مخصّصًا طوال مدة حياة المهمة أو مكوّن التطبيق، وأعد استخدامه لتنفيذ عدة استعلامات. ينشئ كل عميل مخصّص اتصالاته الخاصة ويُجري إعداد TLS الخاص به لاتصالات HTTPS، لذا تجنّب إنشاء عدد كبير من العملاء المخصّصين قصيري العمر. يحافظ الإعداد الافتراضي `dedicated_pool=False` على قواعد اختيار التجمع الحالية، بما في ذلك استخدام تجمعات منفصلة لخيارات TLS المخصّصة. ويؤدي الجمع بين `dedicated_pool=True` و`pool_mgr` إلى إثارة `ProgrammingError`.
-
-بالنسبة إلى التطبيقات الكبيرة متعددة الخيوط، قد يكون من الأنسب استخدام تجمعات اتصالات HTTP منفصلة. ويمكن توفير تجمعات اتصالات HTTP مخصّصة عبر وسيطة الكلمة المفتاحية `pool_mgr` للدالة الرئيسية `clickhouse_connect.get_client`:
+بالنسبة إلى التطبيقات الكبيرة متعددة الخيوط، قد يكون من الأنسب استخدام تجمعات اتصالات HTTP منفصلة. ويمكن توفير تجمعات اتصالات HTTP مخصّصة عبر وسيط الكلمة المفتاحية `pool_mgr` للدالة الرئيسية `clickhouse_connect.get_client`:
 
 ```python
 import clickhouse_connect
@@ -203,6 +189,6 @@ client2 = clickhouse_connect.get_client(pool_mgr=big_pool_mgr)
 
 لتعيين خيارات المقبس، مرّر `socket_options` إلى `httputil.get_pool_manager` أو `httputil.get_pool_manager_options`. يؤدي ذلك إلى استبدال القائمة الافتراضية بأكملها، بما فيها خيارات keepalive و`TCP_NODELAY`. مرّر `[]` أو `None` إذا كنت لا تريد تطبيق أي خيارات مقبس صريحة.
 
-يمتلك العميل غير المتزامن تجمع `aiohttp` بدلًا من استخدام `urllib3`. ويقبل الخيار `dedicated_pool` لكنه لا يُحدث أي أثر، إذ يمتلك كل عميل غير متزامن الموصل الخاص به أيًّا كانت قيمة هذا الخيار، لذا فإن `dedicated_pool=False` لا يُفعّل المشاركة. قم بتكوين التجمع من خلال `connector_limit` و`connector_limit_per_host` و`keepalive_timeout` في `get_async_client`. يؤدي استدعاء `await async_client.close_connections()` إلى تبديل التجمع دوريًا دون مقاطعة الطلبات قيد التنفيذ.
+يمتلك العميل غير المتزامن تجمع `aiohttp` بدلًا من استخدام `urllib3`. قم بتكوينه من خلال `connector_limit` و`connector_limit_per_host` و`keepalive_timeout` في `get_async_client`. يؤدي استدعاء `await async_client.close_connections()` إلى تبديل التجمع دوريًا دون مقاطعة الطلبات قيد التنفيذ.
 
 في الاستعلامات وعمليات الإدراج غير المتزامنة، لا توجد مهلة زمنية لانتظار توفّر خانة شاغرة في التجمع. لذا اقرأ الاستجابات المتدفقة بالكامل أو أغلقها لتحرير خانات التجمع التي تشغلها. تبدأ `connect_timeout` بعد توفّر خانة، وتشمل تحليل أسماء DNS وإعداد اتصال TCP وTLS والتفاوض مع الوكيل. أما `send_receive_timeout` فتحدّ من مدة عمليات القراءة من المقبس. ولتعيين موعد نهائي للعملية بأكملها، بما في ذلك انتظار التجمع، استخدم `asyncio.wait_for`، على سبيل المثال: `await asyncio.wait_for(client.query("SELECT 13"), timeout=30)`.

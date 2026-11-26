@@ -1,16 +1,18 @@
 ---
 slug: /intro
 sidebarTitle: '什么是 ClickHouse？'
-description: 'ClickHouse® 是一个用于联机分析处理（OLAP）的列式 SQL 数据库管理系统（DBMS）。它既提供开源软件版本，也提供云服务。'
+description: 'ClickHouse® 是一个用于联机分析处理（OLAP）的列式 SQL 数据库管理系统（DBMS）。它既提供开源软件版本，也提供 Cloud 服务。'
 title: '什么是 ClickHouse？'
 keywords: ['ClickHouse', '列式数据库', 'OLAP 数据库', '分析型数据库', '高性能数据库']
 doc_type: 'guide'
 ---
 
-ClickHouse® 是一款高性能列式 SQL 数据库管理系统 (DBMS) ，用于联机分析处理 (OLAP) 。它既有[开源软件](https://github.com/ClickHouse/ClickHouse)版本，也提供[云服务](https://clickhouse.com/cloud)。
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+ClickHouse® 是一款高性能列式 SQL 数据库管理系统 (DBMS) ，用于在线分析处理 (OLAP) 。它既有[开源软件](https://github.com/ClickHouse/ClickHouse)版本，也提供[云服务](https://clickhouse.com/cloud)。
 
 <div id="what-are-analytics">
-  ## 什么是分析？ {#what-are-analytics}
+  ## 什么是分析？
 </div>
 
 分析 (也称为 OLAP，即 Online Analytical Processing) 是指针对海量数据集执行包含复杂计算 (例如聚合、字符串处理和算术运算) 的 SQL 查询。
@@ -19,7 +21,9 @@ ClickHouse® 是一款高性能列式 SQL 数据库管理系统 (DBMS) ，用于
 
 在许多使用场景中，[分析查询必须是“实时”](https://clickhouse.com/engineering-resources/what-is-real-time-analytics)的，也就是在不到一秒内返回结果。
 
-## 行式存储与列式存储 {#row-oriented-vs-column-oriented-storage}
+<div id="row-oriented-vs-column-oriented-storage">
+  ## 行式存储与列式存储
+</div>
 
 只有采用正确的数据“组织方式”，才能实现这样的性能水平。
 
@@ -47,11 +51,7 @@ LIMIT 8;
 
 你可以[在 ClickHouse SQL Playground 中运行此查询](https://sql.clickhouse.com?query=U0VMRUNUIE1vYmlsZVBob25lTW9kZWwsIENPVU5UKCkgQVMgYyAKRlJPTSBtZXRyaWNhLmhpdHMgCldIRVJFIAogICAgICBSZWdpb25JRCA9IDIyOSAKICBBTkQgRXZlbnREYXRlID49ICcyMDEzLTA3LTAxJyAKICBBTkQgRXZlbnREYXRlIDw9ICcyMDEzLTA3LTMxJyAKICBBTkQgTW9iaWxlUGhvbmUgIT0gMCAKICBBTkQgTW9iaWxlUGhvbmVNb2RlbCBub3QgaW4gWycnLCAnaVBhZCddIApHUk9VUCBCWSBNb2JpbGVQaG9uZU1vZGVsCk9SREVSIEJZIGMgREVTQyAKTElNSVQgODs\&chart=eyJ0eXBlIjoicGllIiwiY29uZmlnIjp7InhheGlzIjoiTW9iaWxlUGhvbmVNb2RlbCIsInlheGlzIjoiYyJ9fQ\&run_query=true)，它只会从现有的[100 多个列中](https://sql.clickhouse.com/?query=U0VMRUNUIG5hbWUKRlJPTSBzeXN0ZW0uY29sdW1ucwpXSEVSRSBkYXRhYmFzZSA9ICdtZXRyaWNhJyBBTkQgdGFibGUgPSAnaGl0cyc7\&tab=results\&run_query=true)选取并过滤少数几个，并在几毫秒内返回结果：
 
-<div className="ch-image-lg">
-  <Frame>
-    ![列式数据库中的示例查询](/images/column-oriented-example-query.webp)
-  </Frame>
-</div>
+<Image img="/images/column-oriented-example-query.webp" alt="列式数据库中的示例查询" size="lg" />
 
 如上图的统计信息所示，该查询在 92 毫秒内处理了 1 亿行，吞吐量约为每秒超过 10 亿行，或者说每秒传输略低于 7 GB 的数据。
 
@@ -59,55 +59,47 @@ LIMIT 8;
 
 在行式数据库中，尽管上面的查询只处理了现有列中的少数几个，系统仍然需要将其他列的数据从磁盘加载到内存中。原因在于，数据在磁盘上是以称为 [块](https://en.wikipedia.org/wiki/Block_\(data_storage\)) 的数据块形式存储的 (通常是固定大小，例如 4 KB 或 8 KB) 。块是从磁盘读入内存的最小数据单位。当应用程序或数据库请求数据时，操作系统的磁盘 I/O 子系统会从磁盘读取所需的块。即使只需要块中的一部分，整个块也会被读入内存 (这是由磁盘和文件系统的设计决定的) ：
 
-<div className="ch-image-lg">
-  <Frame>
-    ![行式数据库结构](/images/row-oriented.webp)
-  </Frame>
-</div>
+<Image img="/images/row-oriented.webp" alt="行式数据库结构" size="lg" />
 
 **列式 DBMS**
 
 由于每一列的值在磁盘上都是连续存储的，因此运行上述查询时不会加载任何不必要的数据。
 由于按块存储以及从磁盘到内存的传输方式都与分析查询的数据访问模式相契合，查询时只需从磁盘读取所需的列，从而避免对未使用数据进行不必要的 I/O。与行式存储相比，这种方式要[快得多](https://benchmark.clickhouse.com/)，因为行式存储会读取整行数据 (包括无关的列) ：
 
-<div className="ch-image-lg">
-  <Frame>
-    ![列式数据库结构](/images/column-oriented.webp)
-  </Frame>
-</div>
+<Image img="/images/column-oriented.webp" alt="列式数据库结构" size="lg" />
 
 <div id="data-replication-and-integrity">
-  ## 数据复制与完整性 {#data-replication-and-integrity}
+  ## 数据复制与完整性
 </div>
 
 ClickHouse 使用异步多主复制机制，确保数据以冗余方式存储在多个节点上。数据写入任意一个可用副本后，其余副本会在后台拉取各自的副本。系统会在不同副本之间保持数据一致。在大多数故障情况下，恢复过程会自动完成；在较复杂的情况下，则会半自动完成。
 
 <div id="role-based-access-control">
-  ## 基于角色的访问控制 {#role-based-access-control}
+  ## 基于角色的访问控制
 </div>
 
 ClickHouse 使用 SQL 查询来管理用户账户，并支持配置基于角色的访问控制，其方式与 ANSI SQL 标准及常见的关系型数据库管理系统类似。
 
 <div id="sql-support">
-  ## SQL 支持 {#sql-support}
+  ## SQL 支持
 </div>
 
 ClickHouse 支持一种[基于 SQL 的声明式查询语言](/zh/reference/home)，在许多情况下与 ANSI SQL 标准相同。支持的查询子句包括 [GROUP BY](/zh/reference/statements/select/group-by)、[ORDER BY](/zh/reference/statements/select/order-by)、[FROM](/zh/reference/statements/select/from) 中的子查询、[JOIN](/zh/reference/statements/select/join) 子句、[IN](/zh/reference/statements/in) 运算符、[窗口函数](/zh/reference/functions/window-functions/index) 以及标量子查询。
 
 <div id="approximate-calculation">
-  ## 近似计算 {#approximate-calculation}
+  ## 近似计算
 </div>
 
 ClickHouse 提供了以精度换取性能的多种方式。例如，某些聚合函数会以近似方式计算去重值计数、中位数和分位数。此外，还可以仅基于部分样本数据运行查询，以快速得到近似结果。最后，还可以只对有限数量的键进行聚合，而不是覆盖所有键。键的分布偏斜程度不同，这种方式在资源消耗远低于精确计算的情况下，仍能提供相当准确的结果。
 
 <div id="adaptive-join-algorithms">
-  ## 自适应 JOIN 算法 {#adaptive-join-algorithms}
+  ## 自适应 JOIN 算法
 </div>
 
 ClickHouse 会自适应地选择 JOIN 算法：先使用速度更快的哈希 JOIN；如果涉及多个大表，则切换到归并 JOIN。
 
 <div id="superior-query-performance">
-  ## 卓越的查询性能 {#superior-query-performance}
+  ## 卓越的查询性能
 </div>
 
 ClickHouse 以极快的查询性能而闻名。

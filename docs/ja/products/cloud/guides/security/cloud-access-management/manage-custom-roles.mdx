@@ -7,7 +7,9 @@ doc_type: 'guide'
 keywords: ['カスタムロール', 'セキュリティ', '権限']
 ---
 
-このガイドは、ClickHouse Cloud で 管理者 ロールを持つユーザーを対象としています。
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+このガイドは、ClickHouse Cloud で Admin ロールを持つユーザーを対象としています。
 
 ClickHouse Cloud のお客様は、あらかじめ定義されたシステムロールを選択することも、ユーザーに割り当てるカスタムロールを作成することもできます。システムロールと、それに関連付けられた権限の詳細については、[Console roles and permissions](/ja/products/cloud/reference/security/console-roles)を参照してください。このガイドでは、カスタムロールの管理方法について詳しく説明します。
 
@@ -19,44 +21,28 @@ ClickHouse Cloud のお客様は、あらかじめ定義されたシステムロ
   <Step title="組織設定にアクセスし、`Users and roles` を選択する" id="users-and-roles-1">
     サービスページで、組織名を選択します。ポップアップメニューから `Users and roles` を選択します。
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![](/images/cloud/guides/control_plane/1_users_and_roles.webp)
-      </Frame>
-    </div>
+    <Image img="/images/cloud/guides/control_plane/1_users_and_roles.webp" size="lg" />
   </Step>
 
-  <Step title={<><code>Roles</code> タブを選択する</>} id="roles-tab">
+  <Step title={<>`Roles` タブを選択する</>} id="roles-tab">
     画面上部中央の `Roles` タブを選択します。
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![](/images/cloud/guides/control_plane/manage_custom_roles/2_custom_role.webp)
-      </Frame>
-    </div>
+    <Image img="/images/cloud/guides/control_plane/manage_custom_roles/2_custom_role.webp" size="lg" />
   </Step>
 
   <Step title={<>右上の <code>Create new role</code> を選択する</>} id="create-new-role">
     画面右上の `Create new role` ボタンを選択します。
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![](/images/cloud/guides/control_plane/manage_custom_roles/3_custom_role.webp)
-      </Frame>
-    </div>
+    <Image img="/images/cloud/guides/control_plane/manage_custom_roles/3_custom_role.webp" size="lg" />
   </Step>
 
   <Step title="ロールに名前を付ける" id="name-the-role">
     わかりやすいロール名を入力します。この名前は、ユーザーや API キーにロールを割り当てる際に表示されます。
 
-    <div className="ch-image-md">
-      <Frame>
-        ![](/images/cloud/guides/control_plane/manage_custom_roles/4_custom_role.webp)
-      </Frame>
-    </div>
+    <Image img="/images/cloud/guides/control_plane/manage_custom_roles/4_custom_role.webp" size="md" />
   </Step>
 
-  <Step title={<><code>Allow</code> をクリックし、権限のスコープを選択する</>} id="scope-permissions">
+  <Step title={<>`Allow` をクリックし、権限のスコープを選択する</>} id="scope-permissions">
     `Allow` ボタンをクリックし、Organization、Service、Database の権限から選択します。すべての権限の説明については、[Console roles and permissions](/ja/products/cloud/reference/security/console-roles) を参照してください。
 
     <Tip>
@@ -69,21 +55,13 @@ ClickHouse Cloud のお客様は、あらかじめ定義されたシステムロ
       **Data Sources** タブにアクセスするには、現在このロールに `Manage selected services` 権限が必要です。
     </Info>
 
-    <div className="ch-image-md">
-      <Frame>
-        ![](/images/cloud/guides/control_plane/manage_custom_roles/5_custom_role.webp)
-      </Frame>
-    </div>
+    <Image img="/images/cloud/guides/control_plane/manage_custom_roles/5_custom_role.webp" size="md" />
   </Step>
 
   <Step title="新しいロールを確認する" id="review-role">
     作成を確定する前に、新しいロールに割り当てた権限を確認します。完了したら `Create role` をクリックします。
 
-    <div className="ch-image-md">
-      <Frame>
-        ![](/images/cloud/guides/control_plane/manage_custom_roles/6_custom_role.webp)
-      </Frame>
-    </div>
+    <Image img="/images/cloud/guides/control_plane/manage_custom_roles/6_custom_role.webp" size="md" />
   </Step>
 </Steps>
 
@@ -101,23 +79,11 @@ ClickHouse Cloud のお客様は、あらかじめ定義されたシステムロ
   Cloud 管理のデータベースロールは、SQL コンソール内の JWT セッションと互換性のない、手動で割り当てられた [`sql-console-role:<email>`](/ja/products/cloud/guides/security/cloud-access-management/manage-database-users#sql-console-users-and-roles) ロールに代わるものです。
 </Warning>
 
-<Warning>
-  `Custom` アクセスを持つ `Data` ポリシーは、組み込みの [SQL コンソール管理者または SQL コンソール読み取り専用](/ja/products/cloud/reference/security/console-roles#sql-console-roles) ロールによってメンバーに付与されるデータベースアクセスに追加されるのではなく、それを置き換えます。あるサービスに対して `Custom` アクセスを持つカスタムロールにメンバーが 1 つでも属している場合、そのサービスにおけるメンバーの SQL コンソールセッションには、そのメンバーのカスタムロールで定義された権限のみが付与されます。これは組織の管理者にも適用されます。複数のカスタムロールに属している場合、それらの権限は統合されます。
-
-  メンバーが必要とするすべての権限をポリシーに含めてください。書き込みアクセスが必要なメンバーを、読み取りアクセスのみを付与するカスタムロールに追加しないでください。
-</Warning>
-
-Cloud 管理のデータベースロールが保持するのは権限のみです。`cloud:` ロールに割り当てられた [SETTINGS PROFILE](/ja/concepts/features/configuration/settings/settings-profiles)、クォータ、行ポリシーは SQL コンソールセッションには適用されず、SQL コンソールセッションではサービスのデフォルト設定が使用されます。単一のクエリで使用するリソースを制限するには、クエリに `SETTINGS` 句を追加します (例: `SETTINGS max_memory_usage = 10000000000`)。
-
 ### 前提条件 {#manage-database-roles-prerequisites}
 
-サービス上のカスタムデータベースロールは、[JWT認証](/ja/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup)に依存しており、無効になっている間は適用されません。ロールに `Data` ポリシーを追加する前に、サービスに移動し、`Settings` を開き、`Security` セクションで `JWT authentication` カードを見つけます。`SQL Console` トグルが有効になっていることを確認してください。
+サービス上のカスタムデータベースロールは、[JWT 認証](/ja/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup)に依存しており、無効になっている間は適用されません。ロールに `Data` ポリシーを追加する前に、サービスに移動し、`Settings` を開き、`Security` セクションで `JWT authentication` カードを見つけます。`SQL Console` トグルが有効になっていることを確認してください。
 
-<div className="ch-image-lg">
-  <Frame>
-    ![SQL コンソールトグルが有効になっているJWT認証カード](/images/cloud/security/jwt/jwt-sql-console-toggle.png)
-  </Frame>
-</div>
+<Image img="/images/cloud/security/jwt/jwt-sql-console-toggle.png" alt="SQL Consoleトグルが有効になっているJWT認証カード" size="lg" force />
 
 <Steps>
   <Step title="ロールダイアログを開く" id="open-role-dialog">
@@ -143,15 +109,9 @@ Cloud 管理のデータベースロールが保持するのは権限のみで�
   </Step>
 
   <Step title="アクセスレベルを選択する" id="choose-data-access-level">
-    `Read-only`、`Admin`、または `Custom` アクセスを選択します。`Custom` アクセスでは、ClickHouse の [`GRANT` ステートメント](/ja/reference/statements/grant)を使用して、特定のデータアクセス権限を定義します。`Custom` アクセスは、ポリシーの対象が単一のサービスである場合にのみ選択できます。複数のサービスにカスタム権限を定義するには、サービスごとに個別の `Data` ポリシーを追加します。[warehouse](/ja/products/cloud/features/infrastructure/warehouses) 内のサービスの場合は、warehouse のプライマリサービスで `Custom` アクセスを定義してください。この設定は warehouse 内のすべてのサービスに適用されます。
+    `Read-only`、`Admin`、または `Custom` アクセスを選択します。`Custom` アクセスでは、ClickHouse の [`GRANT` ステートメント](/ja/reference/statements/grant)を使用して、特定のデータアクセス権限を定義します。`Custom` アクセスは、ポリシーの対象が単一のサービスである場合にのみ選択できます。複数のサービスにカスタム権限を定義するには、サービスごとに個別の `Data` ポリシーを追加します。
 
-    `Custom` アクセスで受け付けられるのは、`GRANT SELECT ON db.table` のような権限の付与のみです。`GRANT my_role` のようにロールを付与するステートメントや、`TO` 句または `FROM` 句を含むステートメントは拒否されます。
-
-    <div className="ch-image-md">
-      <Frame>
-        ![カスタムGRANTステートメントでデータ権限が定義された新しいロールの作成ダイアログ](/images/cloud/guides/control_plane/manage_custom_roles/create_role_data_permissions.webp)
-      </Frame>
-    </div>
+    <Image img="/images/cloud/guides/control_plane/manage_custom_roles/create_role_data_permissions.webp" alt="カスタムGRANTステートメントでデータ権限が定義された新しいロールの作成ダイアログ" size="md" />
   </Step>
 
   <Step title="ロールを作成する" id="create-role-with-data-permissions">
@@ -173,16 +133,14 @@ SELECT * FROM system.roles;
 └────────────────┴──────────────────────────────────────┴─────────┘
 ```
 
-自身の SQL コンソールセッションが持つ権限を確認するには、SQL コンソールで `SHOW GRANTS` を実行します。出力には、カスタムロールの権限を統合したものが一覧表示されます。SQL コンソールのセッション自体は `cloud:` ロールを保持していないため、`currentRoles` は空の配列を返します。
-
 <div id="update-custom-role">
-  ## カスタムロールを更新する {#update-custom-role}
+  ## カスタムロールを更新する
 </div>
 
 カスタムロールは、作成後に更新できます。ロールから削除された権限はユーザーから失われ、追加された権限はユーザーに付与されます。
 
 <Tip>
-  ユーザーの権限は加算式です。ユーザーが複数のロールを通じてある操作を実行する権限を持っている場合、1 つのロールからのみ権限が削除されても、すぐにアクセスできなくなるとは限りません。ただし、データベースアクセスには例外が 1 つあります。`Custom` アクセスが設定された `Data` ポリシーは、組み込みの SQL コンソールのデータベースアクセスに置き換わります。詳しくは [データベースロールを管理する](#manage-database-roles) を参照してください。
+  ユーザーの権限は加算式です。ユーザーが複数のロールを通じてある操作を実行する権限を持っている場合、1 つのロールからのみ権限が削除されても、すぐにアクセスできなくなるとは限りません。
 </Tip>
 
 1. 組織設定に移動し、`Users and roles` を選択します
@@ -193,7 +151,7 @@ SELECT * FROM system.roles;
 6. `Edit role` を選択します
 
 <div id="delete-custom-role">
-  ## カスタムロールを削除する {#delete-custom-role}
+  ## カスタムロールを削除する
 </div>
 
 カスタムロールはいつでも削除できます。

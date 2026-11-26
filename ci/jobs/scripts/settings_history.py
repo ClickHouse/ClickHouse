@@ -135,7 +135,7 @@ def parse_declaration_changes(files):
     of `SETTINGS_DECLARATION_FILES`. Only names and versions are returned, never free text from the diff:
 
     - "declarations": `{"namespace", "name", "record_versions"}` of every declaration added or whose default text
-      changed (rule A), with "default_changed" telling the latter apart.
+      changed (rule A).
     - "records": `{"namespace", "name", "record_versions"}` of every setting with a record whose version disappeared
       entirely (rule B), unless the setting itself was removed.
     - "added_records": `{"namespace", "name", "version"}` of every record the diff adds (rule D), deduplicated.
@@ -187,7 +187,7 @@ def parse_declaration_changes(files):
         return {"namespace": namespace, "name": name, "record_versions": versions}
 
     declarations = [
-        {**with_versions(namespace, name), "default_changed": (namespace, name) in removed_headers}
+        with_versions(namespace, name)
         for (namespace, name), default in added_headers.items()
         if removed_headers.get((namespace, name), object()) != default
     ]

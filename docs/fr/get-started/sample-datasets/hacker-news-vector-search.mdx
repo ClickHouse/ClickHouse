@@ -7,7 +7,9 @@ keywords: ['recherche sémantique', 'similarité vectorielle', 'plus proches voi
 doc_type: 'guide'
 ---
 
-## Introduction {#introduction}
+<div id="introduction">
+  ## Introduction
+</div>
 
 Le [jeu de données Hacker News](https://news.ycombinator.com/) contient 28,74 millions
 de publications et leurs embeddings vectoriels. Les embeddings ont été générés à l’aide du modèle [SentenceTransformers](https://sbert.net/) [all-MiniLM-L6-v2](https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2). La dimension de chaque vecteur d’embedding est de `384`.
@@ -15,17 +17,21 @@ de publications et leurs embeddings vectoriels. Les embeddings ont été génér
 Ce jeu de données peut être utilisé pour explorer les aspects de conception, de dimensionnement et de performances d’une application de recherche vectorielle à grande échelle,
 en conditions réelles, construite à partir de données textuelles générées par les utilisateurs.
 
-## Détails du jeu de données {#dataset-details}
+<div id="dataset-details">
+  ## Détails du jeu de données
+</div>
 
 Le jeu de données complet avec des embeddings vectoriels est mis à disposition par ClickHouse sous la forme d’un seul fichier `Parquet` dans un [bucket S3](https://clickhouse-datasets.s3.amazonaws.com/hackernews-miniLM/hackernews_part_1_of_1.parquet)
 
 Nous recommandons de commencer par un exercice de dimensionnement afin d’estimer les besoins en stockage et en mémoire de ce jeu de données en consultant la [documentation](/fr/reference/engines/table-engines/mergetree-family/annindexes).
 
-## Étapes {#steps}
+<div id="steps">
+  ## Étapes
+</div>
 
 <Steps>
   <Step title="Créer la table" id="create-table">
-    Créez la table `hackernews` pour stocker les publications &amp; leurs embeddings, ainsi que les attributs associés :
+    Créez la table `hackernews` pour stocker les publications &amp; leurs embeddings, ainsi que les attributs associés :
 
     ```sql
     CREATE TABLE hackernews
@@ -56,17 +62,17 @@ Nous recommandons de commencer par un exercice de dimensionnement afin d’estim
   </Step>
 
   <Step title="Charger les données" id="load-table">
-    Pour charger le jeu de données à partir du fichier `Parquet`, exécutez l’instruction SQL suivante :
+    Pour charger le jeu de données à partir du fichier `Parquet`, exécutez l’instruction SQL suivante :
 
     ```sql
     INSERT INTO hackernews SELECT * FROM s3('https://clickhouse-datasets.s3.amazonaws.com/hackernews-miniLM/hackernews_part_1_of_1.parquet', NOSIGN);
     ```
 
-    L’insertion de 28,74 millions de lignes dans la table va prendre quelques minutes.
+    L’insertion de 28,74 millions de lignes dans la table va prendre quelques minutes.
   </Step>
 
   <Step title="Créer un index de similarité vectorielle" id="build-vector-similarity-index">
-    Exécutez la requête SQL suivante pour définir et créer un index de similarité vectorielle sur la colonne `vector` de la table `hackernews` :
+    Exécutez la requête SQL suivante pour définir et créer un index de similarité vectorielle sur la colonne `vector` de la table `hackernews` :
 
     ```sql
     ALTER TABLE hackernews ADD INDEX vector_index vector TYPE vector_similarity('hnsw', 'cosineDistance', 384, 'bf16', 64, 512);
@@ -79,11 +85,11 @@ Nous recommandons de commencer par un exercice de dimensionnement afin d’estim
     Vous devez sélectionner avec soin les valeurs optimales de ces paramètres en évaluant le temps de construction de l’index et la qualité des résultats de recherche
     associés aux valeurs retenues.
 
-    La construction et l’enregistrement de l’index peuvent même prendre quelques minutes, voire une heure, pour l’ensemble du jeu de données de 28,74 millions, selon le nombre de cœurs CPU disponibles et la bande passante du stockage.
+    La construction et l’enregistrement de l’index peuvent même prendre quelques minutes, voire une heure, pour l’ensemble du jeu de données de 28,74 millions, selon le nombre de cœurs CPU disponibles et la bande passante du stockage.
   </Step>
 
   <Step title="Effectuer une recherche ANN" id="perform-ann-search">
-    Une fois l’index de similarité vectorielle construit, les requêtes de recherche vectorielle utiliseront automatiquement cet index :
+    Une fois l’index de similarité vectorielle construit, les requêtes de recherche vectorielle utiliseront automatiquement cet index :
 
     ```sql title="Query"
     SELECT id, title, text
@@ -104,7 +110,7 @@ Nous recommandons de commencer par un exercice de dimensionnement afin d’estim
 
     Un exemple de script Python est fourni ci-dessous pour montrer comment générer de manière programmatique
     des vecteurs d&#39;embeddding en utilisant le package Python `sentence_transformers1`. Le vecteur d&#39;embedding de recherche
-    est ensuite passé en argument à la fonction [`cosineDistance()`](/fr/reference/functions/regular-functions/distance-functions#cosineDistance) dans la requête &#96;SELECT&#96;.
+    est ensuite passé en argument à la fonction [`cosineDistance()`](/fr/reference/functions/regular-functions/distance-functions#cosineDistance) dans la requête `SELECT`.
 
     ```python
     from sentence_transformers import SentenceTransformer
@@ -207,7 +213,7 @@ Nous recommandons de commencer par un exercice de dimensionnement afin d’estim
     ---------
     ```
 
-## Application de démonstration de résumé {#summarization-demo-application}
+    ## Application de démonstration de résumé
 
     L&#39;exemple ci-dessus a illustré la recherche sémantique et la récupération de documents avec ClickHouse.
 
@@ -218,8 +224,8 @@ Nous recommandons de commencer par un exercice de dimensionnement afin d’estim
     1. Accepte un *sujet* saisi par l’utilisateur
     2. Génère un vecteur d’embedding pour le *sujet* à l’aide de `SentenceTransformers` avec le modèle `all-MiniLM-L6-v2`
     3. Récupère des publications/commentaires très pertinents via une recherche par similarité vectorielle dans la table `hackernews`
-    4. Utilise `LangChain` et l’API Chat OpenAI `gpt-3.5-turbo` pour **résumer** le contenu récupéré à l’étape #3.
-       Les publications/commentaires récupérés à l’étape #3 sont transmis comme *contexte* à l’API Chat et constituent le maillon essentiel de Generative AI.
+    4. Utilise `LangChain` et l’API Chat OpenAI `gpt-3.5-turbo` pour **résumer** le contenu récupéré à l’étape #3.
+       Les publications/commentaires récupérés à l’étape #3 sont transmis comme *contexte* à l’API Chat et constituent le maillon essentiel de Generative AI.
 
     Un exemple d&#39;exécution de l&#39;application de résumé est présenté ci-dessous, suivi du code de l&#39;application de résumé. L&#39;exécution de l&#39;application nécessite qu&#39;une clé API OpenAI soit définie dans la variable d&#39;environnement `OPENAI_API_KEY`. La clé API OpenAI peut être obtenue après inscription sur https://platform.openai.com.
 

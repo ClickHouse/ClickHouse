@@ -23,16 +23,6 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 
 تمكين التجميع المستقل لـ partitions على threads منفصلة عندما يكون مفتاح partition مناسبًا لمفتاح `GROUP BY`. يكون ذلك مفيدًا عندما يكون عدد partitions قريبًا من عدد الأنوية وتكون أحجام partitions متقاربة إلى حدٍّ ما. تقوم الآليات الاستدلالية في `ReadFromMergeTree` تلقائيًا بتعطيل هذا التحسين في التخطيطات غير الملائمة (عدد قليل جدًا من partitions، أو عدد كبير جدًا منها، أو أحجام partitions غير متوازنة بشكل ملحوظ)؛ راجع `force_aggregate_partitions_independently` لتجاوز هذه الفحوصات.
 
-## allow_ai_functions {#allow_ai_functions}
-
-**الأسماء البديلة**: `allow_experimental_ai_functions`
-
-<SettingsInfoBlock type="Bool" default_value="1" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "دوال الذكاء الاصطناعي في مرحلة تجريبية ومفعّلة افتراضيًا. كان اسم الإعداد آنذاك `allow_experimental_ai_functions`، وأصبح الآن اسمًا بديلًا له. تُحافَظ على القيمة الافتراضية بصرف النظر عن قيمة `compatibility`."}]}, {"id": "row-2","items": [{"label": "26.4"},{"label": "0"},{"label": "إعداد جديد. كان اسم الإعداد آنذاك `allow_experimental_ai_functions`، وأصبح الآن اسمًا بديلًا له."}]}, {"id": "row-3","items": [{"label": "26.11"},{"label": "1"},{"label": "أُضيف اسم بديل للإعداد `allow_experimental_ai_functions`."}]}]} />
-
-يسمح باستخدام دوال الذكاء الاصطناعي (`aiGenerate`، `aiClassify`، `aiFilter`، `aiExtract`، `aiTranslate`، `aiRedact`، `aiEmbed`، `aiSimilarity`). عند تعطيله، يُطلق أي استعلام يستخدم هذه الدوال استثناءً.
-
 ## allow_archive_path_syntax {#allow_archive_path_syntax}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -159,6 +149,18 @@ Cloud default value: `1`.
 
 إذا ضُبطت القيمة على true، فسيُسمح للمستخدم بتنفيذ استعلامات DDL.
 
+## allow_delta_kernel_rs {#allow_delta_kernel_rs}
+
+<BetaBadge />
+
+**الأسماء المستعارة**: `allow_experimental_delta_kernel_rs`
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "الاسم الجديد لـ `allow_experimental_delta_kernel_rs`، الذي لم يعد تجريبيًا ويُحتفَظ به كاسم مستعار. لم تتغير القيمة الافتراضية."}]}, {"id": "row-2","items": [{"label": "25.5"},{"label": "1"},{"label": "إعداد جديد. قُدِّم في البداية باسم `allow_experimental_delta_kernel_rs`، وهو الآن اسم مستعار له؛ ويُدرج هذا الصف تحت الاسم المعياري للحفاظ على السجل الكامل."}]}]} />
+
+يسمح باستخدام تنفيذ `delta-kernel-rs` لقراءة جداول Delta Lake.
+
 ## allow_delta_lake_create_table {#allow_delta_lake_create_table}
 
 <ExperimentalBadge />
@@ -187,9 +189,9 @@ Cloud default value: `1`.
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "إعداد جديد يتيح تقييم `DISTINCT` بشكل مستقل لكل partition عندما يكون تعبير partition دالة حتمية لأعمدة `DISTINCT`."}]}]} />
 
-فعّل التقييم المستقل لـ `DISTINCT` لكل partition على خيوط تنفيذ منفصلة عندما يكون تعبير partition دالة حتمية لأعمدة `DISTINCT`، مع تجاوز الدمج بين التدفقات. يفيد ذلك عندما يكون عدد partitionات قريبًا من عدد الأنوية وتكون partitionات متقاربة الحجم؛ وإلا، تتجاوزه آلية استدلالية للتكلفة. راجع [max&#95;number&#95;of&#95;partitions&#95;for&#95;independent&#95;distinct](/ar/reference/settings/session-settings/max-number#max_number_of_partitions_for_independent_distinct) و[force&#95;distinct&#95;partitions&#95;independently](/ar/reference/settings/session-settings/force#force_distinct_partitions_independently). لا يُطبَّق مع `FINAL` أو النسخ المتماثلة المتوازية.
+فعّل التقييم المستقل لـ `DISTINCT` لكل partition على خيوط تنفيذ منفصلة عندما يكون تعبير partition دالة حتمية لأعمدة `DISTINCT`، مع تجاوز الدمج بين التدفقات. يفيد ذلك عندما يكون عدد partitionات قريبًا من عدد الأنوية وتكون partitionات متقاربة الحجم؛ وإلا، تتجاوزه آلية استدلالية للتكلفة. راجع [max&#95;number&#95;of&#95;partitions&#95;for&#95;independent&#95;distinct](/ar/reference/settings/session-settings/max-number#max_number_of_partitions_for_independent_distinct) و[force&#95;distinct&#95;partitions&#95;independently](/ar/reference/settings/session-settings/force#force_distinct_partitions_independently). لا يُطبَّق مع `FINAL` أو النسخ المتماثلة المتوازية.
 
-يُطبَّق الحدّان [max&#95;rows&#95;in&#95;distinct](/ar/reference/settings/session-settings/max-rows#max_rows_in_distinct) و[max&#95;bytes&#95;in&#95;distinct](/ar/reference/settings/session-settings/max-bytes#max_bytes_in_distinct) على الحجم المجمّع لمجموعات partitionات كلها، ما دامت التدفقات منفصلة.
+لا يُطبَّق عند تعيين [max&#95;rows&#95;in&#95;distinct](/ar/reference/settings/session-settings/max-rows#max_rows_in_distinct) أو [max&#95;bytes&#95;in&#95;distinct](/ar/reference/settings/session-settings/max-bytes#max_bytes_in_distinct): إذ تُفرض هذه الحدود بواسطة تحويل `DISTINCT` الواحد الذي يعالج النتيجة المدمجة بالكامل، لذلك يُحتفظ بالدمج بين التدفقات للحفاظ على دلالتها الشاملة.
 
 ## allow_distributed_ddl {#allow_distributed_ddl}
 
@@ -226,18 +228,6 @@ Cloud default value: `1`.
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 السماح بتنفيذ الدالة multiIf بشكل عمودي
-
-## allow_expire_snapshots {#allow_expire_snapshots}
-
-<ExperimentalBadge />
-
-**الأسماء البديلة**: `allow_experimental_expire_snapshots`
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.3"},{"label": "0"},{"label": "إعداد جديد."}]}, {"id": "row-2","items": [{"label": "26.11"},{"label": "0"},{"label": "تمت إضافة اسم بديل للإعداد `allow_experimental_expire_snapshots`."}]}]} />
-
-يتيح تنفيذ أمر Iceberg ‏`ALTER TABLE ... EXECUTE expire_snapshots`.
 
 ## allow_fuzz_query_functions {#allow_fuzz_query_functions}
 
@@ -461,20 +451,6 @@ Cloud default value: `1`.
 ولا تؤدي التغييرات التي تُجرى باستخدام `SET` أو `SETTINGS` على مستوى الاستعلام إلى تغيير سلوك الأعمدة الفرعية المستخرجة.
 ولتغيير سلوك الأعمدة الفرعية المستخرجة، حدّث `allow_nullable_tuple_in_extracted_subcolumns` في تهيئة ملف التعريف عند بدء التشغيل (على سبيل المثال، users.xml) ثم أعد تشغيل الخادم.
 
-## allow_parallel_distinct {#allow_parallel_distinct}
-
-<SettingsInfoBlock type="Bool" default_value="1" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "إعداد جديد لتقييم `DISTINCT` النهائي بالتوازي باستخدام التقسيم القائم على التجزئة."}]}]} />
-
-يُقيِّم هذا الإعداد `DISTINCT` النهائي على عدة خيوط تنفيذ عبر تقسيم تدفقات الإدخال وفقًا لتجزئة أعمدة `DISTINCT`. وبذلك تصل المفاتيح المتساوية إلى التدفق نفسه، مما يتيح إزالة التكرارات من كل تقسيم على حدة.
-
-وخلافًا للإعداد [allow&#95;distinct&#95;partitions&#95;independently](/ar/reference/settings/session-settings/allow#allow_distinct_partitions_independently)، لا يشترط هذا الإعداد وجود علاقة بين مفتاح التقسيم في الجدول وأعمدة `DISTINCT`. ويُوضع حدٌّ أقصى لعدد تدفقات الإدخال وتقسيمات التجزئة بمعزل عن `max_threads`، للحدّ من تكلفة تقسيم الكتل وربط التدفقات.
-
-لا يُطبَّق التقسيم القائم على التجزئة على الإدخال المرتّب ترتيبًا شاملًا، لأن `DISTINCT` يحافظ على هذا الترتيب. ويسري كلٌّ من [max&#95;rows&#95;in&#95;distinct](/ar/reference/settings/session-settings/max-rows#max_rows_in_distinct) و[max&#95;bytes&#95;in&#95;distinct](/ar/reference/settings/session-settings/max-bytes#max_bytes_in_distinct) على الحجم المجمّع لجميع تقسيمات التجزئة.
-
-لا يوجد ترتيب محدد للصفوف عند استخدام `DISTINCT` دون `ORDER BY`، لذا قد يُعيد هذا التحسين القيم المميزة نفسها بترتيب مختلف. وبالتالي، قد يؤدي استخدام `LIMIT` أو `OFFSET` أو `LIMIT BY` على نتائج `DISTINCT` غير المرتبة إلى اختيار مجموعة جزئية مختلفة من الصفوف.
-
 ## allow_preliminary_distinct_abandoning {#allow_preliminary_distinct_abandoning}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -519,14 +495,6 @@ Cloud default value: `1`.
 بشكل افتراضي، هذا غير مسموح به: إذ إن `REPLACE PARTITION` من مصدر لا يحتوي على بيانات في الـ partition المطلوب يُطلق استثناءً، لأن العملية في هذه الحالة تصبح فعليًا `DROP PARTITION` صامتًا على الوجهة (تُزال بيانات الوجهة ولا يستبدلها شيء)، وهو سبب شائع لفقدان البيانات عن طريق الخطأ (راجع [#23727](https://github.com/ClickHouse/ClickHouse/issues/23727)).
 
 فعّل هذا الإعداد لاستعادة السلوك السابق، على سبيل المثال عندما تستخدم عمدًا partition فارغًا في المصدر لمسح البيانات في الوجهة. وإذا أردت حذفًا غير مشروط، فالأفضل استخدام `ALTER TABLE ... DROP PARTITION ...` بدلًا من ذلك.
-
-## allow_reserved_column_names {#allow_reserved_column_names}
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "رفض الأعمدة التي يطابق اسمها اسم عمود افتراضي في جدول MergeTree"}]}]} />
-
-يسمح بأن يحمل عمود في جدول من عائلة `MergeTree` اسم أحد الأعمدة الافتراضية للجدول (مثل `_part` أو `_part_offset` أو `_table`) في `CREATE TABLE`، وفي `ATTACH TABLE` مع تعريف كامل، وفي `ALTER TABLE ... ADD COLUMN` و`RENAME COLUMN`. ويحجب هذا العمود العمودَ الافتراضي المماثل له في الاسم. أما الجداول التي تحتوي على مثل هذا العمود مسبقًا، فتُحمَّل بصرف النظر عن قيمة هذا الإعداد. وتُرفض أسماء الأعمدة الافتراضية الدائمة في جميع الأحوال.
 
 ## allow_settings_after_format_in_insert {#allow_settings_after_format_in_insert}
 

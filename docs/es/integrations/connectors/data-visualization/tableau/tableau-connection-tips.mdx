@@ -10,12 +10,13 @@ integration:
   - category: 'data_visualization'
 ---
 
+import { Image } from "/snippets/es/components/Image.jsx";
 import { ClickHouseSupportedBadge } from "/snippets/es/components/ClickHouseSupported/ClickHouseSupported.jsx";
 
 <ClickHouseSupportedBadge />
 
 <div id="initial-sql-tab">
-  ## Pestaña Initial SQL {#initial-sql-tab}
+  ## Pestaña Initial SQL
 </div>
 
 Si la casilla *Set Session ID* está activada en la pestaña Advanced (de forma predeterminada), puede establecer [ajustes](/es/reference/settings/session-settings) a nivel de sesión usando
@@ -25,7 +26,7 @@ SET my_setting=value;
 ```
 
 <div id="advanced-tab">
-  ## Pestaña Advanced {#advanced-tab}
+  ## Pestaña Advanced
 </div>
 
 En el 99 % de los casos no necesitas la pestaña Advanced; para el 1 % restante, puedes usar la siguiente configuración:
@@ -45,7 +46,7 @@ En el 99 % de los casos no necesitas la pestaña Advanced; para el 1 % restante,
 * Casilla **Set Session ID**. Es necesaria para establecer configuraciones a nivel de sesión en la pestaña Initial SQL; genera un `session_id` con un timestamp y un número seudoaleatorio con el formato `"tableau-jdbc-connector-*{timestamp}*-*{number}*"`
 
 <div id="limited-support-for-uint64-int128-uint256-data-types">
-  ## Compatibilidad limitada con los tipos de datos UInt64, Int128, (U)Int256 {#limited-support-for-uint64-int128-uint256-data-types}
+  ## Compatibilidad limitada con los tipos de datos UInt64, Int128, (U)Int256
 </div>
 
 De forma predeterminada, el driver muestra los campos de tipo *UInt64, Int128, (U)Int256* como cadenas, **pero solo los muestra, no los convierte**. Esto significa que, cuando intente escribir el siguiente campo calculado, obtendrá un error

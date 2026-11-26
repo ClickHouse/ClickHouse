@@ -176,14 +176,14 @@ BlockInfo 由一系列字段组成，每个字段前面都有一个 VarUInt 类�
 
 `kind_stack` 字节以枚举值表示某列的非默认序列化方式：
 
-| Byte   | Name                         | 含义                                                                 | 对 `data` 传输格式的影响                                 |
-| ------ | ---------------------------- | ------------------------------------------------------------------ | ------------------------------------------------ |
-| `0x00` | DEFAULT                      | 默认序列化                                                              | 与 `has_custom = 0` 相同                            |
-| `0x01` | SPARSE                       | 稀疏序列化 (v54465+)                                                    | 偏移流 + 非默认值；见下文                                   |
-| `0x02` | DETACHED                     | 由并行块封送 (parallel block marshalling) 包装在 `ColumnBLOB` 中的列 (v54478+) | 预先封送的 blob：`VarUInt size` + 相应数量的字节；见下文          |
-| `0x03` | DETACHED&#95;OVER&#95;SPARSE | 包装在 `ColumnBLOB` 中的稀疏列                                             | 与 `DETACHED` 相同的 blob 载荷；见下文                     |
-| `0x04` | REPLICATED                   | 针对重复值的字典形式 (v54482+)                                               | 索引流 + 紧凑元素值；见下文                                  |
-| `0x05` | COMBINATION                  | 多序列化类型栈                                                           | 后跟 VarUInt `count` 以及 `count` 个后续 kind 字节——见下方说明 |
+| Byte   | Name                         | 含义                                                                  | 对 `data` 传输格式的影响                                 |
+| ------ | ---------------------------- | ------------------------------------------------------------------- | ------------------------------------------------ |
+| `0x00` | DEFAULT                      | 默认序列化                                                               | 与 `has_custom = 0` 相同                            |
+| `0x01` | SPARSE                       | 稀疏序列化 (v54465+)                                                     | 偏移流 + 非默认值；见下文                                   |
+| `0x02` | DETACHED                     | 由并行块封送 (parallel block marshalling) 包装在 `ColumnBLOB` 中的列 (v54478+)  | 预先封送的 blob：`VarUInt size` + 相应数量的字节；见下文          |
+| `0x03` | DETACHED&#95;OVER&#95;SPARSE | 包装在 `ColumnBLOB` 中的稀疏列                                              | 与 `DETACHED` 相同的 blob 载荷；见下文                     |
+| `0x04` | REPLICATED                   | 针对重复值的字典形式 (v54482+)                                                | 索引流 + 稠密元素值；见下文                                  |
+| `0x05` | COMBINATION                  | 多 kind 栈                                                            | 后跟 VarUInt `count` 以及 `count` 个后续 kind 字节——见下方说明 |
 
 **`COMBINATION` 载荷使用另一套枚举。** 上表前五行是*紧凑*的单字节编码。`COMBINATION` (`0x05`) 是一种通用转义，用于表示上述编码未涵盖的任意栈：其后跟随一个 `VarUInt` `count`，然后是 `count` 个单字节条目。这些条目**并非**上表中的紧凑编码，而是原始的 `ISerialization::Kind` 值：
 
@@ -198,24 +198,23 @@ BlockInfo 由一系列字段组成，每个字段前面都有一个 VarUInt 类�
 
 `count` 是栈的完整长度，**包括每个栈开头的 `DEFAULT` 条目**。由于紧凑编码已涵盖所有包含一个或两个条目的栈，`COMBINATION` 的 `count` 始终不小于 3。
 
-**序列化类型栈的有效性。** 对于格式错误的栈，解码器会以 `INCORRECT_DATA` 拒绝，而不会按其描述构建序列化：
+**Kind 栈的有效性。** 对于格式错误的栈，解码器会以 `INCORRECT_DATA` 拒绝，而不会按其描述构建序列化：
 
 * 栈必须以 `DEFAULT` 开头；
 * 栈必须是 `DEFAULT`、`SPARSE`、`REPLICATED`、`DETACHED` 的子序列——这也是各 kind 逐层包装的顺序。`SPARSE` 可以位于 `REPLICATED` 内部，反之则不行；`DETACHED` 始终位于最后，因为 `ColumnBLOB` 保存的是其下层所有内容的序列化形式。这也意味着同一 kind 不会出现两次，因此 `count` 不会超过 kind 的总数。
 
 请注意，此顺序与上述 kind 字节值的顺序并不一致。其他任何栈所描述的列布局，既不会有写入器构建，也无法通过任何物化步骤解包还原为声明类型的普通列——例如，值列本身为稀疏或副本形式的 `ColumnSparse` 将始终保持包装状态。
 
-**`Tuple` 列的递归 `kind_stack`。** 上述 `kind_stack` 载荷是单个列自身序列化信息对应的字节 (或 `COMBINATION` 序列) 。`Tuple` 携带一个 `SerializationInfoTuple`，它会先写入该 tuple *自身*的序列化类型栈载荷，再按顺序为*每个*元素各写入一个完整的序列化类型栈载荷；解码器按同样的递归结构读回。因此，对于 `Tuple(A, B, C)`，字段 4 的字节为 `[tuple_kind][A_kind][B_kind][C_kind]`；若某个元素本身又是复合类型，其元素载荷同样是递归的。只要 tuple 自身的信息*或任一元素*的信息为非默认，就会设置 `has_custom_serialization` 字节 (字段 3) ，因此即使 `Tuple` 中只有一个元素是稀疏形式，也会触发序列化类型栈载荷。如果解码器对 `Tuple` 只读取开头的单个枚举字节，就会过早停止，并把剩余的元素 kind 字节误读为列数据。
-元素的栈中永远不会包含 `REPLICATED` 或 `DETACHED`：二者都只包装整个顶层列；如果元素栈中出现其中任何一个，解码器都会以 `INCORRECT_DATA` 拒绝。
+**`Tuple` 列的递归 `kind_stack`。** 上述 `kind_stack` 载荷是单个列自身序列化信息对应的字节 (或 `COMBINATION` 序列) 。`Tuple` 携带一个 `SerializationInfoTuple`，它会先写入该 tuple *自身*的 kind 栈载荷，再按顺序为*每个*元素各写入一个完整的 kind 栈载荷；解码器按同样的递归结构读回。因此，对于 `Tuple(A, B, C)`，字段 4 的字节为 `[tuple_kind][A_kind][B_kind][C_kind]`；若某个元素本身又是复合类型，其元素载荷同样是递归的。只要 tuple 自身的信息*或任一元素*的信息为非默认，就会设置 `has_custom_serialization` 字节 (字段 3) ，因此即使 `Tuple` 中只有一个元素是稀疏或副本形式，也会触发 kind 栈载荷。如果解码器对 `Tuple` 只读取开头的单个枚举字节，就会过早停止，并把剩余的元素 kind 字节误读为列数据。
 
-**稀疏传输格式。** 当 `kind_stack = 0x01` 时，列的 `data` 由两个流组成，二者在同一个共享 TCP 流中首尾相接地依次写入：
+**稀疏传输格式。** 当 `kind_stack = 0x01` 时，列 `data` 由两个流组成，二者在同一个共享 TCP 流中依次连续写入：
 
 1. **偏移流** — 由一系列 `VarUInt` 组成。每个值 `v` 有以下两种情况：
    * 第 62 位 (高位) 未置位的 `v`：`(v & 0x3FFFFFFFFFFFFFFF)` = 下一个显式非默认值之前的默认位置数量。该非默认位置为 `cursor + group_size`，其中 `cursor` 为当前累计位置；之后 `cursor` 前进 `group_size + 1`。
    * 第 62 位已置位 (`END_OF_GRANULE_FLAG`) 的 `v`：清除该标志后的值 = 最后一个非默认值之后的尾随默认位置数量。该值标志着当前数据块偏移流的结束。
 2. **值流** — `count` 个以内部类型紧凑编码的非默认值，其中 `count` 为上面读取到的非 EOG VarUInt 的数量。
 
-解码器在重建包含 `num_rows` 个条目的紧凑列时，会用内部类型的默认值填充所有非显式位置 (整数和浮点数为 `0`，`String` 为 `""`，`Date` 为 `0` 天，依此类推) 。
+解码器在重建包含 `num_rows` 个条目的稠密列时，会用内部类型的默认值填充所有非显式位置 (整数和浮点数为 `0`，`String` 为 `""`，`Date` 为 `0` 天，依此类推) 。
 
 稀疏 `Nullable(T)` 列属于特殊情况，因为 `Nullable(T)` 的默认值是 **NULL**。稀疏编码会完全省略常规的 `Nullable` 空值映射流：偏移流标识非默认 (即非 NULL) 位置，值流仅以 `T` 类型紧凑存储这些非 NULL 值，所有非显式位置则重建为 NULL。因此，解码器*不得*在值流中查找空值映射，也*不得*用实际存在的 `0` 填充空缺，而应填充 NULL。
 
@@ -230,20 +229,17 @@ BlockInfo 由一系列字段组成，每个字段前面都有一个 VarUInt 类�
 [elements: num_elements dense inner-type values]
 ```
 
-解码器为每个输出行 `i` 选取 `elements[indexes[i]]`，以此重建紧凑列。复合内部类型会递归处理：先按内部类型物化元素列表，再按索引取值。已支持的内部类型包括各叶子类型、`Nullable(T)`、`Array(T)`、`Tuple(...)`、`Map(K, V)`、`Nested(...)` (每个字段均按 `Array` 方式展开) 以及 `LowCardinality(T)` (保留共享字典，仅对每个元素的键进行索引) 。
+解码器为每个输出行 `i` 选取 `elements[indexes[i]]`，以此重建稠密列。复合内部类型会递归处理：先按内部类型物化元素列表，再按索引取值。已支持的内部类型包括各叶元素类型、`Nullable(T)`、`Array(T)`、`Tuple(...)`、`Map(K, V)`、`Nested(...)` (每个字段均按 `Array` 方式展开) 以及 `LowCardinality(T)` (保留共享字典，仅对每个元素的键进行索引) 。
 
 **Detached 传输格式。** `DETACHED` (`0x02`) 和 `DETACHED_OVER_SPARSE` (`0x03`) *确实*会出现在网络传输中，并非仅供内部使用。在 TCP 路径上，如果启用了压缩，且协商的修订版本不低于 `DBMS_MIN_REVISON_WITH_PARALLEL_BLOCK_MARSHALLING` (v54478) ，列将经过以下三个步骤：
 
 1. 每个符合条件的列 (非 `const`、非 `Tuple`，且所在块的行数大于 1) 会被包装到一个 `ColumnBLOB` 中，其中保存的是已在主线程之外完成编组和压缩的列。
-2. 将 `DETACHED` 追加到被包装列的序列化类型栈中。
+2. 将 `DETACHED` 追加到被包装列的 kind stack 中。
 3. 列的 `data` 先写入一个 `VarUInt` 类型的 blob 大小，随后紧跟相同字节数的 blob 数据。
 
 如果被包装的列是稀疏列，则其 stack 为 `{DEFAULT, SPARSE, DETACHED}`，序列化后即为 `DETACHED_OVER_SPARSE`。客户端解码此类列时，先读取 blob 长度和字节，再解压该 blob，以恢复内部列载荷 (参见压缩部分中的 [`ColumnBLOB` 说明](#compression-negotiation)) 。
 
-`DETACHED` 具有方向性：它只能出现在服务器发送的结果块中，且只能作用于整个顶层列——绝不能作为 `Tuple` 的某个元素 kind 出现。与其他 kind 不同，它会使运行时列变为 `ColumnBLOB`，而非所声明类型的列，因此只有当接收方自身的管道能够将该 blob 还原时，接收方才会接受它。
-
-**发送到服务器的块中的 kind。** 所有非默认 kind 都具有方向性：它们只会出现在服务器发送的结果块中。
-发送到服务器的块 (包括插入数据、`input` 表函数的数据、外部表数据和标量，无论来自客户端还是其他服务器) 只携带 `DEFAULT` 栈：发送方会在发送前将列转换为完整列；若此类块中出现任何其他 kind，服务器都会以 `INCORRECT_DATA` 拒绝。
+`DETACHED` 具有方向性：它只能出现在服务器发送的结果块中，且只能作用于整个顶层列——绝不能作为 `Tuple` 的某个元素 kind 出现。与其他 kind 不同，它会使运行时列变为 `ColumnBLOB`，而非所声明类型的列，因此只有当接收方自身的管道能够将该 blob 还原时，接收方才会接受它。正因如此，对于客户端发送的任何块 (无论是外部表数据、标量还是插入数据) ，只要其中包含 `DETACHED`，服务器都会以 `INCORRECT_DATA` 拒绝。
 
 ### Block 变体 {#block-variants}
 
@@ -322,14 +318,13 @@ BlockInfo 由一系列字段组成，每个字段前面都有一个 VarUInt 类�
 | 特性                                         | 阈值常量                                                               | 修订版本    | 低于阈值时的效果                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | ------------------------------------------ | ------------------------------------------------------------------ | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `BlockInfo` 前缀                             | (任意 `> 0` 的值)                                                      | `1`     | 完全省略 [`BlockInfo`](#blockinfo) 前缀；块仅由 `num_columns`、`num_rows` 和各列组成。                                                                                                                                                                                                                                                                                                                                                                           |
-| `has_custom_serialization` 字节              | `DBMS_MIN_REVISION_WITH_CUSTOM_SERIALIZATION`                      | `54454` | 省略每列的 [`has_custom_serialization`](#column-wire-layout) 字节；所有列均使用默认序列化 (不使用稀疏、副本形式或分离形式) 。                                                                                                                                                                                                                                                                                                                                                      |
+| `has_custom_serialization` 字节              | `DBMS_MIN_REVISION_WITH_CUSTOM_SERIALIZATION`                      | `54454` | 省略每列的 [`has_custom_serialization`](#column-wire-layout) 字节；所有列均使用默认序列化 (不使用稀疏、副本形式或分离形式) 。                                                                                                                                                                                                                                                                                                                                                        |
 | 线上传输中的 `LowCardinality`                    | `DBMS_MIN_REVISION_WITH_LOW_CARDINALITY_TYPE`                      | `54405` | 特殊情况——**不**遵循简单的“低于阈值即生效”规则。仅当修订版本*非零*且低于 `54405`，或另行强制剥离时，`LowCardinality(T)` 才会被剥离为基本类型 `T`。修订版本为 `0` 时会保留该类型。参见下方说明。                                                                                                                                                                                                                                                                                                                         |
 | V2 `Dynamic` / `JSON` 序列化                  | `DBMS_MIN_REVISION_WITH_V2_DYNAMIC_AND_JSON_SERIALIZATION`         | `54473` | `Dynamic` 和 `JSON`/`Object` 使用 V1 序列化 (带 `max_dynamic_*` 参数) ，而非 V2。                                                                                                                                                                                                                                                                                                                                                                            |
 | 偏移量 `String` 序列化                           | `DBMS_MIN_REVISION_WITH_STRING_WITH_SIZE_STREAM_SERIALIZATION`     | `54492` | 低于阈值时，`String` 列数据使用逐值布局 (每行一个 `VarUInt` 长度前缀 + 原始字节) ，而非[偏移量布局](#string-type) (先是以 `UInt64` 表示的累计字节偏移量，然后是拼接在一起的全部数据) 。该控制完全取决于修订版本，没有逐列的线上传输标记。达到或高于阈值时，偏移量布局同样适用于嵌套在复合类型 (`Array`、`Nullable`、`Map`、`Tuple`、`Variant`、`Dynamic`、`JSON`) 中的 `String`，但**不**适用于 `LowCardinality` 列的字典：`LowCardinality` 字典始终以默认嵌套序列化写入，因此其 `String` 值仍采用逐值布局 (包括 `LowCardinality(String)` 和 `LowCardinality(Nullable(String))`) 。`Buffers` 格式不属于协议的一部分，始终使用逐值布局。 |
 | 聚合函数版本控制                                   | `DBMS_MIN_REVISION_WITH_AGGREGATE_FUNCTIONS_VERSIONING`            | `54452` | 写入 `AggregateFunction` 状态时不内嵌版本号。                                                                                                                                                                                                                                                                                                                                                                                                               |
 | `quantileDeterministic` 状态中的 `skip_degree` | `DBMS_MIN_REVISION_WITH_QUANTILE_DETERMINISTIC_SKIP_DEGREE`        | `54491` | `AggregateFunction(quantileDeterministic, ...)` 状态 (以及同一函数的 `quantiles`/`median` 写法) 以状态版本 `0` 写入，不含末尾的 `UInt8 skip_degree`。参见[类型别名](#type-aliases)下的说明。                                                                                                                                                                                                                                                                                        |
 | `uniq` 状态中的 64 位哈希样本                       | `DBMS_MIN_REVISION_WITH_UNIQ_STATE_VERSION_1`                      | `54493` | `AggregateFunction(uniq, ...)` 状态以状态版本 `0` 写入：既没有开头的标志字节，也没有末尾的 64 位哈希样本。参见[类型别名](#type-aliases)下的说明。                                                                                                                                                                                                                                                                                                                                           |
-| 版本化的 `-Merge` 状态                           | `DBMS_MIN_REVISION_WITH_MERGE_COMBINATOR_STATE_VERSION`            | `54494` | `-Merge` 函数自身的状态 (而非其所合并的状态) 以版本 `0` 写入；当其类型中未写明版本时，也按版本 `0` 读取。例如，对于分布式的 `quantileDeterministicMerge(state)`，分片发送的是 `AggregateFunction(quantileDeterministicMerge, AggregateFunction(1, quantileDeterministic, UInt64, UInt64))`：载荷遵循外层 `AggregateFunction` 的版本 (此处为 `0`) ，因此不含末尾的 `skip_degree`。其中的 `1` 属于参数类型，不适用于该载荷。参见[类型别名](#type-aliases)下的说明。                                                                                           |
 | `BlockInfo` 中的 `out_of_order_buckets`      | `DBMS_MIN_REVISION_WITH_OUT_OF_ORDER_BUCKETS_IN_AGGREGATION`       | `54480` | 不写入 `BlockInfo` 字段 ID `3` (参见 [BlockInfo](#blockinfo)) 。                                                                                                                                                                                                                                                                                                                                                                                        |
 | 并行块封送 (`DETACHED`)                         | `DBMS_MIN_REVISON_WITH_PARALLEL_BLOCK_MARSHALLING`                 | `54478` | 列不会被包装在 `ColumnBLOB` 中；也不会出现 `DETACHED` / `DETACHED_OVER_SPARSE` 类别 (参见 [kind&#95;stack](#kind-stack-and-sparse-encoding)) 。                                                                                                                                                                                                                                                                                                                    |
 | `DateTime(tz)` 类型参数                        | `DBMS_MIN_REVISION_WITH_TIME_ZONE_PARAMETER_IN_DATETIME_DATA_TYPE` | `54337` | 时区参数会从 `type` 字符串中去除——`DateTime('UTC')` 仅声明为 `DateTime`。                                                                                                                                                                                                                                                                                                                                                                                        |
@@ -552,9 +547,9 @@ C0 3F                    little-endian, widens to Float32 1.5
 
 #### Time 和 Time64(scale) {#time-and-time64}
 
-表示时钟时长，而非某个时间点。`Time` 是有符号的秒数，以 4 字节小端序 Int32 编码；`Time64(scale)` 是给定十进制标度 (0–9) 下的有符号 tick 数，以 8 字节小端序 Int64 编码，与 `DateTime64` 的传输格式形态相同。
+表示时钟时长，而非某个时间点。`Time` 是有符号的秒数，以 4 字节小端序 Int32 编码；`Time64(scale)` 是给定十进制标度 (0–9) 下的有符号 tick 数，以 8 字节小端序 Int64 编码，与 `DateTime64` 的 wire 形态相同。
 
-其文本形式为 `[-]HH:MM:SS[.fraction]`，但与 `DateTime` 不同，小时字段**不会**按一天 24 小时回绕：它表示总小时数，可以超过 23。显示的数值上限为 `999:59:59` (`3599999` 秒) ；超出上限的值在渲染时，秒部分取上限值，而存储的小数部分保持原样，因此 tick 数 `3700000.25` 会渲染为 `999:59:59.250000`。`CAST` 会将存储值饱和截断为目标标度下可表示的最大 tick (对于 `Time64(6)` 为 `999:59:59.999999`) ，而非截断到整秒；但算术运算仍可能在列中留下超出范围的 tick 数，这类值仅在显示时才被截断到上限。上述行为均不影响传输格式字节，传输格式字节始终是普通的有符号整数。
+其文本形式为 `[-]HH:MM:SS[.fraction]`，但与 `DateTime` 不同，小时字段**不会**按一天 24 小时回绕：它表示总小时数，可以超过 23。显示的数值上限为 `999:59:59` (`3599999` 秒) ；超出上限的值在渲染时，秒部分取上限值，而存储的小数部分保持原样，因此 tick 数 `3700000.25` 会渲染为 `999:59:59.250000`。`CAST` 会将存储值饱和截断为目标标度下可表示的最大 tick (对于 `Time64(6)` 为 `999:59:59.999999`) ，而非截断到整秒；但算术运算仍可能在列中留下超出范围的 tick 数，这类值仅在显示时才被截断到上限。上述行为均不影响 wire 字节，wire 字节始终是普通的有符号整数。
 
 `Time` 值 `45296` (`12:34:56`) ：
 
@@ -569,7 +564,7 @@ F0 B0 00 00              Int32 LE = 45296
 ```
 
 <Note>
-  自 25.12 版本起，`Time` 和 `Time64` 已默认启用。在 25.6 至 25.11 版本的服务器上，需要设置 `enable_time_time64_type = 1`。
+  `Time` 和 `Time64` 为实验性类型，需要在服务器上启用 `allow_experimental_time_time64_type = 1`。
 </Note>
 
 #### Interval {#interval}
@@ -1075,7 +1070,7 @@ Field 'b' stream (3 strings, 6 bytes):
 <Note>
   有两种相关类型**并非**别名。它们都是有效的 `Native` 列类型——例如，客户端可能会从 `-State` 组合器或分布式聚合中接收到 `AggregateFunction` 列——但它们各自携带专门的载荷，不在本页讨论范围之内：
 
-  * `AggregateFunction(func, ...)` 保存的是*中间*聚合状态 (而非最终值) ；其二进制布局取决于具体的聚合函数及其版本。函数名可以带有参数，每个参数均以 SQL 字面量形式输出，例如 `AggregateFunction(topK(3), UInt64)`。若参数值没有无歧义的裸字面量形式，即 `Decimal`、宽整数、`UUID`、`IPv4`/`IPv6` 或非负 `Int64`，则会带显式的 `::Type` 后缀输出，例如 `AggregateFunction(topK('3'::Decimal32(0)), UInt64)`；在数组或元组参数中，后缀附加在各个元素上，因此需要检查参数的解码器必须同时接受这两种写法。仅需要参数类型的解码器则不受影响。 版本化的聚合函数会将非零状态版本作为类型字符串的第一个参数写出——`AggregateFunction(1, quantileDeterministic, UInt64, UInt64)`——而版本 `0` 不会输出，因此类型字符串仍为 `AggregateFunction(quantileDeterministic, UInt64, UInt64)`。在已协商的连接上 (修订版本大于 `0`) ，写入器**仅**根据协议修订版本选择版本——绝不会采用其本地类型上恰好固定的版本，因为在传输层面上，版本 `0` 与“未通知版本”无法区分——因此同一函数在不同连接上可能通知不同的版本，读取器必须从类型字符串中获取版本，而不能假定其为最新版本。在修订版本 `0` 下，不存在需要为其推导版本的 peer——该 stream 是自描述的，并由写入方自行读回——因此类型上固定的版本会保留在 stream 中 (以及所通知的类型字符串中) ，而不会降级为 `0`。 `quantileDeterministic` (包括 `quantilesDeterministic` 和 `medianDeterministic` 写法) 自修订版本 `54491` 起版本化：版本 `1` 会在状态末尾追加一个 `UInt8 skip_degree`，其前缀与版本 `0` 逐字节相同。低于该修订版本时，写入器输出版本 `0` 的状态，因此较旧的 peer 不受影响。`uniq` 自修订版本 `54493` 起版本化：版本 `1` 会在版本 `0` 布局之前添加一个标志字节；当标志的第 `0` 位被置位时，还会追加一个由完整 64 位哈希组成的小型附加样本，每个哈希均与常量 `0x9E3779B97F4A0000` 进行异或 (依次为 `UInt8 skip_degree`、`VarUInt count`，然后是 8 字节的值) ，从而在基数超过二十亿时仍能保持估算的准确性；版本 `0` 的状态仅携带 32 位主样本。标志的第 `1` 位表示 64 位样本*不完整*——即该状态已合并了一个版本 `0` 的状态，而后者的元素从未进入过 64 位样本——此时不会写入 64 位样本，读取器必须仅根据 32 位主样本进行估算 (并在其后续写出的状态中继续标明这一点) ；因此这两个位互斥，读取器必须拒绝同时设置这两个位的状态。其他位均未定义，读取器必须拒绝设置了任何其他位的状态。 上述规则同样适用于嵌套在容器类型中的状态——`Array`、`Tuple`、`Map`、`Nullable`、`Variant` (其中备选类型写出的版本会改变类型字符串，但不会改变判别值顺序) ，以及 `Nested` / `SimpleAggregateFunction` 包装器。这些规则也适用于聚合函数组合器：作用于版本化函数的透传组合器——`uniqIf`、`uniqArray`、`uniqForEach`、`uniqMap`、`uniqArgMin` / `uniqArgMax`、`uniqOrNull` / `uniqOrDefault`、`uniqResample`，以及隐式的 `Nullable` 参数适配器——会将版本传递给其载荷中包含的嵌套状态，在新生成状态的类型字符串中以与普通函数完全相同的方式写出嵌套函数的当前版本 (`AggregateFunction(1, uniqIf, UInt64, UInt8)`) ，并在已协商的连接上以同样方式根据协议修订版本推导版本。包装器的自定义名称中还包含一份其参数类型的副本，因此写入器必须使用相同的已协商聚合状态版本重建该副本；否则其头部可能会为版本 `0` 的载荷通知版本 `1`。 `Variant` 有一种边界情况根本无法在传输层面表示：当两个备选类型仅在写出的状态版本上不同时 (这作为列类型是合法的，因为类型字符串不同) ，按已协商修订版本对两者重新设定版本会使它们合并为同一个备选类型，因此发送方必须令传输失败，而不能通知与载荷实际写入版本不符的版本。`Dynamic` 是按修订版本推导版本这一规则的有意例外：`Dynamic` 列会自行通知其嵌套类型——通过其自身的类型列表以及[二进制类型编码](/zh/reference/data-types/data-types-binary-encoding)，后者的显式版本字段携带写出的状态版本 (其共享 variant 中的值即使在静态存储时也以这种方式嵌入其类型) ——这些通知属于该列自身的数据，对任何 peer 和任何介质都完全相同，因此绝不会针对已协商修订版本进行重写。因此，嵌套在 `Dynamic` 值中的状态会以其类型中写出的版本写入 (新生成的状态会携带该版本，因为 `-State` 查询结果会写出其版本) ；若类型中未写出版本，则以版本 `0` 写入，在所有连接和介质上均是如此。
+  * `AggregateFunction(func, ...)` 保存的是*中间*聚合状态 (而非最终值) ；其二进制布局取决于具体的聚合函数及其版本。函数名可以带有参数，每个参数均以 SQL 字面量形式输出，例如 `AggregateFunction(topK(3), UInt64)`。某些聚合函数会在参数后输出显式的 `::Type` 后缀，例如 `AggregateFunction(topK('3'::Decimal32(0)), UInt64)`，这是因为 `Decimal` 或宽整数值没有可直接输出的裸字面量形式；是否这样做取决于具体函数，而非格式本身，因此需要检查参数的解码器必须同时接受这两种写法。仅需要参数类型的解码器则不受影响。版本化的聚合函数会将非零状态版本作为类型字符串的第一个参数写出——`AggregateFunction(1, quantileDeterministic, UInt64, UInt64)`——而版本 `0` 不会输出，因此类型字符串仍为 `AggregateFunction(quantileDeterministic, UInt64, UInt64)`。在已协商的连接上 (修订版本大于 `0`) ，写入器**仅**根据协议修订版本选择版本——绝不会采用其本地类型上恰好固定的版本，因为在传输层面上，版本 `0` 与“未通知版本”无法区分——因此同一函数在不同连接上可能通知不同的版本，读取器必须从类型字符串中获取版本，而不能假定其为最新版本。在修订版本 `0` 下，不存在需要为其推导版本的 peer——该 stream 是自描述的，并由写入方自行读回——因此类型上固定的版本会保留在 stream 中 (以及所通知的类型字符串中) ，而不会降级为 `0`。`quantileDeterministic` (包括 `quantilesDeterministic` 和 `medianDeterministic` 写法) 自修订版本 `54491` 起版本化：版本 `1` 会在状态末尾追加一个 `UInt8 skip_degree`，其前缀与版本 `0` 逐字节相同。低于该修订版本时，写入器输出版本 `0` 的状态，因此较旧的 peer 不受影响。`uniq` 自修订版本 `54493` 起版本化：版本 `1` 会在版本 `0` 布局之前添加一个标志字节；当标志的第 `0` 位被置位时，还会追加一个由完整 64 位哈希组成的小型附加样本，每个哈希均与常量 `0x9E3779B97F4A0000` 进行异或 (依次为 `UInt8 skip_degree`、`VarUInt count`，然后是 8 字节的值) ，从而在基数超过二十亿时仍能保持估算的准确性；版本 `0` 的状态仅携带 32 位主样本。标志的第 `1` 位表示 64 位样本*不完整*——即该状态已合并了一个版本 `0` 的状态，而后者的元素从未进入过 64 位样本——此时不会写入 64 位样本，读取器必须仅根据 32 位主样本进行估算 (并在其后续写出的状态中继续标明这一点) ；因此这两个位互斥，读取器必须拒绝同时设置这两个位的状态。其他位均未定义，读取器必须拒绝设置了任何其他位的状态。上述规则同样适用于嵌套在容器类型中的状态——`Array`、`Tuple`、`Map`、`Nullable`、`Variant` (其中备选类型写出的版本会改变类型字符串，但不会改变判别值顺序) ，以及 `Nested` / `SimpleAggregateFunction` 包装器。这些规则也适用于聚合函数组合器：作用于版本化函数的透传组合器——`uniqIf`、`uniqArray`、`uniqForEach`、`uniqMap`、`uniqArgMin` / `uniqArgMax`、`uniqOrNull` / `uniqOrDefault`、`uniqResample`，以及隐式的 `Nullable` 参数适配器——会将版本传递给其载荷中包含的嵌套状态，在新生成状态的类型字符串中以与普通函数完全相同的方式写出嵌套函数的当前版本 (`AggregateFunction(1, uniqIf, UInt64, UInt8)`) ，并在已协商的连接上以同样方式根据协议修订版本推导版本。包装器的自定义名称中还包含一份其参数类型的副本，因此写入器必须使用相同的已协商聚合状态版本重建该副本；否则其头部可能会为版本 `0` 的载荷通知版本 `1`。`Variant` 有一种边界情况根本无法在传输层面表示：当两个备选类型仅在写出的状态版本上不同时 (这作为列类型是合法的，因为类型字符串不同) ，按已协商修订版本对两者重新设定版本会使它们合并为同一个备选类型，因此发送方必须令传输失败，而不能通知与载荷实际写入版本不符的版本。`Dynamic` 是按修订版本推导版本这一规则的有意例外：`Dynamic` 列会自行通知其嵌套类型——通过其自身的类型列表以及[二进制类型编码](/zh/reference/data-types/data-types-binary-encoding)，后者的显式版本字段携带写出的状态版本 (其共享 variant 中的值即使在静态存储时也以这种方式嵌入其类型) ——这些通知属于该列自身的数据，对任何 peer 和任何介质都完全相同，因此绝不会针对已协商修订版本进行重写。因此，嵌套在 `Dynamic` 值中的状态会以其类型中写出的版本写入 (新生成的状态会携带该版本，因为 `-State` 查询结果会写出其版本) ；若类型中未写出版本，则以版本 `0` 写入，在所有连接和介质上均是如此。
   * `QBit(T, N[, stride])` 以位平面转置的方式存储向量，适用于向量搜索工作负载；其传输层 stream 布局 (按组优先排列的 `FixedString` 位平面 stream，显式指定 `stride` 时共有 `element_size * (N / stride)` 个) 及其二进制类型编码 (标签 `0x36`，当 `stride != N` 时为 `0x37` `QBitWithStride`) 已在 [`QBit` 数据类型页面](/zh/reference/data-types/qbit)和[二进制类型编码](/zh/reference/data-types/data-types-binary-encoding)参考文档中说明，因此 `Native` 读取器无需再从 C++ 源代码中推断这些细节。
 </Note>
 
@@ -1425,73 +1420,35 @@ ClickHouse 可以使用一种内部帧格式压缩 `Native` 流中的列数据�
 
 服务器为整流 `Native` 帧信息生成的正是以下三种编解码器：HTTP `compress=1` 输出使用服务器的默认编解码器 (`ZSTD(3)`) ，而原生 TCP 协议则根据 `network_compression_method` 使用 `LZ4`、`ZSTD` 或 `NONE`。通用的 `Native` 客户端只需生成和解析这几种即可。
 
-| 字节     | 方法   | 请求正文编码                                  |
+| 字节     | 方法   | 请求正文编码                                    |
 | ------ | ---- | --------------------------------------- |
-| `0x02` | NONE | 请求正文为原始字节 (未压缩) 。帧仍会照常发出；接收方会校验 校验和。    |
-| `0x82` | LZ4  | 请求正文为 **LZ4 块格式**，*而非* LZ4 帧格式。不含魔数。    |
-| `0x90` | ZSTD | 请求正文为原始 zstd 单帧流 (标准 zstd 魔数包含在请求正文中) 。 |
-
-### per-column 编解码器帧 {#per-column-codec-frames}
-
-上述三种方法字节 (`NONE`/`LZ4`/`ZSTD`) 是 ClickHouse 传输层唯一会*发出*的字节：`compress=1` 输出和网络压缩路径都只会使用其中之一。不过，负责解码帧的共享 `CompressedReadBuffer` 会根据方法字节在完整的编解码器 registry 中进行分派，因此任何已注册的 per-column 编解码器字节 (见下文) 在输入时都会被*接受*，HTTP `decompress=1` 路径也不例外。所以，可互操作的实现无需生成这些帧，但完全通用的读取器必须能够识别它们 (或者直接拒绝未知字节，而不是错误地解析它们) 。
-
-`0xa0` (PCO) 承载由 `PCO` 编解码器写入的自描述请求正文：
-
-```text
-[1 byte:  W]        ← element width in bytes (1, 2, 4 or 8); high bit 0x80 = "stored"
-[1 byte:  B]        ← number of leading raw bytes = uncompressed_size mod W
-[B bytes]           ← the raw leading partial value (as in Gorilla/FPC)
-[payload]           ← if the 0x80 flag is set: the raw uncompressed bytes;
-                      otherwise: a standalone pcodec (.pco) stream of (uncompressed_size − B) / W values
-```
-
-当 `0x80` 标志位未设置时，载荷是一个独立的 `.pco` 流，与 pcodec 参考实现逐字节兼容，并自描述其数值类型；仅当压缩无法减小块大小时才使用存储形式 (标志位已设置) ，从而将输出大小限制为输入大小加上两个头部字节。`PCO` 在压缩时需要列类型，但解码时不需要：元素宽度 `W` 以及 `.pco` 流中携带的数值类型已足够。如果解码器知道预期的列类型，还会拒绝 `W` (对于压缩形式，还包括其嵌入的数值类型) 与该类型不一致的块，而不是重新解释这些值。
-
-`0xa1` (GDeflate) 承载由 `GDeflate` 编解码器写入的请求正文。未压缩字节会被拆分为若干 65536 字节的数据块 (最后一个可能更短) ，每个数据块被压缩为一个独立的 GDeflate 页。GDeflate 是 Deflate 的一种变体，包含 32 个交错的子流，可由 nvcomp 和 DirectStorage 在 GPU 上解压：
-
-```text
-[4 bytes:  N LE u32]                       ← number of chunks = ceil(uncompressed_size / 65536)
-[4 bytes × N: compressed chunk size LE u32]
-[chunk × N]                                ← each a GDeflate page, followed by zero bytes up to a multiple of 4
-```
-
-块 `i` 展开为该数据块中的字节 `[i × 65536, min((i + 1) × 65536, uncompressed_size))`。第一个块紧跟在大小字段之后开始，并且每个块的起始位置相对于请求正文起始处的偏移量都是 4 的倍数。
+| `0x02` | NONE | 请求正文为原始字节 (未压缩) 。帧仍会照常发出；接收方会校验 校验和。 |
+| `0x82` | LZ4  | 请求正文为 **LZ4 块格式**，*而非* LZ4 帧格式。不含魔数。      |
+| `0x90` | ZSTD | 请求正文为原始 zstd 单帧流 (标准 zstd 魔数包含在请求正文中) 。     |
 
 方法字节还用于标识[列级编解码器](/zh/reference/statements/create/table/codec)。这些编解码器在 MergeTree 磁盘路径上按列应用，而不是作用于整流帧信息；但 `decompress=1` HTTP 输入路径会从每个帧的方法字节中读取编解码器，因此这些字节中的任何一个都可能合法地出现在输入中。所以，符合规范的解码器必须能够识别整个已分配的取值空间，遇到未实现的字节时应直接拒绝，而不是错误地解析请求正文。这些编解码器的请求正文格式各不相同，不在本通用帧约定的范围内：
 
-| 字节     | 方法                                                 |
-| ------ | -------------------------------------------------- |
-| `0x91` | `Multiple` (一种复合编解码器，包装一系列嵌套编解码器)                  |
-| `0x92` | `Delta`                                            |
-| `0x93` | `T64`                                              |
-| `0x94` | `DoubleDelta`                                      |
-| `0x95` | `Gorilla`                                          |
-| `0x96` | `AES_128_GCM_SIV` (加密)                             |
-| `0x97` | `AES_256_GCM_SIV` (加密)                             |
-| `0x98` | `FPC`                                              |
-| `0x9a` | `GCD`                                              |
-| `0x9c` | `ALP`                                              |
-| `0x9d` | `SZ3`                                              |
-| `0x9e` | `Quantized`                                        |
-| `0x9f` | `ZXC`                                              |
-| `0xa0` | `PCO` (参见[per-column 编解码器帧](#per-column-codec-frames))      |
-| `0xa1` | `GDeflate` (参见[per-column 编解码器帧](#per-column-codec-frames)) |
+| 字节     | 方法                               |
+| ------ | -------------------------------- |
+| `0x91` | `Multiple` (封装一系列嵌套编解码器的组合编解码器)  |
+| `0x92` | `Delta`                          |
+| `0x93` | `T64`                            |
+| `0x94` | `DoubleDelta`                    |
+| `0x95` | `Gorilla`                        |
+| `0x96` | `AES_128_GCM_SIV` (加密)           |
+| `0x97` | `AES_256_GCM_SIV` (加密)           |
+| `0x98` | `FPC`                            |
+| `0x9a` | `GCD`                            |
+| `0x9c` | `ALP`                            |
+| `0x9d` | `SZ3`                            |
+| `0x9e` | `Quantized`                      |
+| `0x9f` | `ZXC`                            |
 
-`DoubleDelta` (`0x94`) 以 MSB 优先的前缀/符号/幅值位存储二阶差值。基于字的解码会保留这种编码、元素数量以及末字节填充。
+`DoubleDelta` (`0x94`) 以 MSB 优先的前缀/符号/幅值位存储二阶差分。基于字的解码会保留这种编码方式、元素数量以及末字节填充。
 
-字节 `0x99` (`DeflateQpl`) 和 `0x9b` (`ZSTD_QPL`) 曾分配给现已移除的编解码器，目前作为保留值，不会被复用。
-
-`0x9c` (`ALP`) 是一种适用于 `Float32` 和 `Float64` 的无损编解码器 (自适应无损浮点压缩) 。
-
-`0x9d` (`SZ3`) 是一种 **Experimental** 的误差有界*有损*编解码器，适用于 `Float32`、`Float64` 以及由这些类型构成的 `Array`。只有启用 `enable_sz3_codec` 设置后，才能使用 `CODEC(SZ3)` 创建表；但解压时始终接受该方法字节，以确保先前写入的数据仍可读取。
+`0x9c` (`ALP`) 是一种适用于 `Float32` 和 `Float64` 的 **beta** 无损编解码器 (自适应无损浮点压缩) 。只有启用 `enable_alp_codec` 设置后，才能使用 `CODEC(ALP)` 创建表；但解压时始终接受该方法字节，以确保先前写入的数据仍可读取。`0x9d` (`SZ3`) 是一种 **Experimental** 的误差有界*有损*编解码器，适用于 `Float32`、`Float64` 以及由这些类型构成的 `Array`。只有启用 `enable_sz3_codec` 设置后，才能使用 `CODEC(SZ3)` 创建表；但解压时始终接受该方法字节，以确保先前写入的数据仍可读取。`0x9f` (`ZXC`) 是一种 **Experimental** 的非对称 LZ 编解码器：压缩较慢，但解压极快，压缩率介于 `LZ4` 和 `ZSTD` 之间。只有启用 `enable_zxc_codec` 设置后，才能使用 `CODEC(ZXC)` 创建表；但解压时始终接受该方法字节，以确保先前写入的数据仍可读取。字节 `0x99` (`DeflateQpl`) 和 `0x9b` (`ZSTD_QPL`) 曾分配给现已移除的编解码器，目前作为保留值，不会被复用。
 
 `0x9e` (`Quantized`) 是一种 **Experimental** 的列编解码器，适用于稠密向量列 (`Array(Float32)` 及类似类型) 。与 `NONE` 一样，它采用直通方式，全精度请求正文按原样存储；但启用它后会附加一种序列化方式，额外写入一个紧凑的量化伴随流，用于加速向量搜索。只有启用 `enable_quantized_codec` 设置后，才能使用 `CODEC(Quantized(...))` 创建表，而解压时始终接受该方法字节。
-
-`0x9f` (`ZXC`) 是一种 **beta** 的非对称 LZ 编解码器：压缩较慢，但解压极快，压缩率介于 `LZ4` 和 `ZSTD` 之间。只有启用 `enable_zxc_codec` 设置后，才能使用 `CODEC(ZXC)` 创建表；但解压时始终接受该方法字节，以确保先前写入的数据仍可读取。
-
-`0xa0` (`PCO`) 是一种适用于定宽数值列的 **beta** 无损编解码器，由 pcodec Rust 库实现。只有启用 `enable_pco_codec` 设置后，才能使用 `CODEC(PCO)` 创建表。在包含该库的构建中，解压时始终接受该方法字节，以确保先前写入的数据仍可读取。若服务器构建时未包含该库 (未启用 Rust，或设置了 `ENABLE_PCO=OFF`) ，则不会注册该编解码器，并会以 `UNKNOWN_CODEC` 错误拒绝 `0xa0` 帧。
-
-`0xa1` (`GDeflate`) 是一种 **Experimental** 的 Deflate 变体，其数据块可由 GPU 并行解压。只有启用 `enable_gdeflate_codec` 设置后，才能使用 `CODEC(GDeflate)` 创建表；但解压时始终接受该方法字节，以确保先前写入的数据仍可读取。
 
 ### 校验和 {#checksum}
 

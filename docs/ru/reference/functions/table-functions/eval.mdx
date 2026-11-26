@@ -8,10 +8,10 @@ doc_type: 'reference'
 
 Табличная функция `eval` вычисляет свой аргумент в строку запроса, а затем выполняет её как один SELECT-запрос.
 
-Эта табличная функция является экспериментальной и по умолчанию отключена. Чтобы включить её, используйте настройку `enable_eval_table_function`:
+Эта табличная функция является экспериментальной и по умолчанию отключена. Чтобы включить её, используйте настройку `allow_experimental_eval_table_function`:
 
 ```sql
-SET enable_eval_table_function = 1;
+SET allow_experimental_eval_table_function = 1;
 ```
 
 ## Синтаксис {#syntax}
@@ -112,4 +112,4 @@ SELECT x + 1 FROM eval('SELECT 4 AS x');
 ## См. также {#related}
 
 * [табличная функция `view`](/ru/reference/functions/table-functions/view)
-* настройка `enable_eval_table_function`
+* настройка `allow_experimental_eval_table_function`

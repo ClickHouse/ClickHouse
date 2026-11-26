@@ -63,17 +63,15 @@ ClickHouse에 대한 삽입의 원자성, 격리성 또는 지속성을 확인�
 * ACID에서 말하는 &quot;consistency&quot;는 분산 시스템의 의미를 다루지 않습니다. 이에 대해서는 https://jepsen.io/consistency 를 참조하십시오. 이는 다른 설정(`select_sequential_consistency`)으로 제어됩니다
 * 이 설명은 여러 테이블, materialized view, 여러 SELECT 등에 걸쳐 완전한 기능의 트랜잭션을 지원하는 새로운 트랜잭션 기능은 다루지 않습니다(다음 섹션인 Transactions, Commit, and Rollback 참조)
 
-## 트랜잭션(transaction), 커밋 및 롤백 {#transactions-commit-and-rollback}
+## 트랜잭션, 커밋 및 롤백 {#transactions-commit-and-rollback}
 
 <ExperimentalBadge />
 
 <CloudNotSupportedBadge />
 
-이 문서 상단에서 설명한 기능에 더해, ClickHouse는 트랜잭션(transaction), 커밋, 롤백 기능을 실험적으로 지원합니다.
+이 문서 상단에서 설명한 기능에 더해, ClickHouse는 트랜잭션, 커밋, 롤백 기능을 실험적으로 지원합니다.
 
 애플리케이션 워크로드에는 [ClickHouse Managed Postgres](/ko/products/managed-postgres/overview#transactions-and-analytics)를 고려하십시오.
-
-트랜잭션(transaction)을 제어하는 SQL 문은 [`BEGIN TRANSACTION`](/ko/reference/statements/transactions) 참고 페이지에서 설명합니다.
 
 ### 요구 사항 {#requirements}
 
@@ -90,8 +88,8 @@ ClickHouse에 대한 삽입의 원자성, 격리성 또는 지속성을 확인�
 ### 참고 사항 {#notes-1}
 
 * 이는 실험적 기능이므로 변경될 수 있습니다.
-* 트랜잭션(transaction) 중 예외가 발생하면 해당 트랜잭션(transaction)을 커밋할 수 없습니다. 여기에는 오타로 인해 발생한 `UNKNOWN_FUNCTION` 예외를 포함한 모든 예외가 해당합니다. 단, 파싱할 수 없는 쿼리나 쿼리 매개변수가 누락되었거나 유효하지 않은 쿼리는 여기에 해당하지 않습니다. 이러한 쿼리는 실행되지 않으며, 트랜잭션(transaction)은 계속 실행 중인 상태로 유지됩니다.
-* 중첩 트랜잭션(transaction)은 지원되지 않습니다. 현재 트랜잭션(transaction)을 완료한 후 새 트랜잭션(transaction)을 시작하십시오.
+* 트랜잭션(트랜잭션) 중 예외가 발생하면 해당 트랜잭션을 커밋할 수 없습니다. 여기에는 오타로 인해 발생한 `UNKNOWN_FUNCTION` 예외를 포함한 모든 예외가 해당합니다.
+* 중첩 트랜잭션은 지원되지 않습니다. 현재 트랜잭션을 완료한 후 새 트랜잭션을 시작하십시오.
 
 ### 구성 {#configuration}
 
@@ -210,17 +208,7 @@ ORDER BY n
 Ok.
 ```
 
-#### 트랜잭션(transaction)을 시작하고 행을 삽입합니다 {#begin-a-transaction-and-insert-a-row}
-
-트랜잭션(transaction) 내에서는 비동기 삽입(asynchronous inserts)이 지원되지 않으며 [`async_insert`](/ko/reference/settings/session-settings/async-insert#async_insert)는 기본적으로 활성화되어 있으므로, 먼저 세션에서 이 설정을 비활성화하십시오:
-
-```sql
-SET async_insert = 0
-```
-
-```response
-Ok.
-```
+#### 트랜잭션을 시작하고 행을 삽입합니다 {#begin-a-transaction-and-insert-a-row}
 
 ```sql
 BEGIN TRANSACTION
@@ -250,7 +238,7 @@ FROM mergetree_table
 ```
 
 <Note>
-  트랜잭션(transaction) 내에서 테이블을 쿼리하면 아직 커밋되지 않았더라도 행이 삽입된 상태임을 확인할 수 있습니다.
+  트랜잭션 내에서 테이블을 쿼리하면 아직 커밋되지 않았더라도 행이 삽입된 상태임을 확인할 수 있습니다.
 </Note>
 
 #### 트랜잭션을 롤백한 다음 테이블을 다시 쿼리합니다 {#rollback-the-transaction-and-query-the-table-again}

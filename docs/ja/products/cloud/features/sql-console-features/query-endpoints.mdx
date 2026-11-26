@@ -7,35 +7,31 @@ title: 'クエリ API エンドポイント'
 doc_type: 'guide'
 ---
 
+import { Image } from "/snippets/ja/components/Image.jsx";
+
 対話型のデータ駆動アプリケーションを構築するには、高速なデータベース、適切に構造化されたデータ、最適化されたクエリだけでは十分ではありません。
 フロントエンドやマイクロサービスでも、それらのクエリが返すデータを簡単に利用できる手段が必要です。できれば、適切に構造化された API を介して利用できるのが望ましいでしょう。
 
 **クエリ API エンドポイント** 機能を使用すると、ClickHouse Cloud console に保存された任意の保存クエリから API エンドポイントを直接作成できます。
 これにより、ネイティブドライバーを使って ClickHouse Cloud サービスに接続しなくても、HTTP 経由で API エンドポイントにアクセスして保存クエリを実行できます。
 
-## IP アクセス制御 {#ip-access-control}
+<div id="ip-access-control">
+  ## IP アクセス制御
+</div>
 
-クエリ API エンドポイントでは、APIキー単位の IP 許可リストが適用されます。SQL Console と同様に、クエリ API エンドポイントは ClickHouse のインフラストラクチャ内部からリクエストをプロキシするため、サービスレベルの IP 許可リスト設定は適用されません。
+クエリ API エンドポイントでは、API キー単位の IP 許可リストが適用されます。SQL Console と同様に、クエリ API エンドポイントは ClickHouse のインフラストラクチャ内部からリクエストをプロキシするため、サービスレベルの IP 許可リスト設定は適用されません。
 
 クエリ API エンドポイントを呼び出せるクライアントを制限するには、次の手順に従います。
 
 <Steps>
   <Step title="API キーの設定を開く" id="open-settings">
-    1. ClickHouse Cloud Console → **Organization** → **APIキー** に移動します
+    1. ClickHouse Cloud Console → **Organization** → **API Keys** に移動します
 
-    <div className="ch-image-md">
-      <Frame>
-        ![APIキー](/images/cloud/guides/query-endpoints/console-api-keys.webp)
-      </Frame>
-    </div>
+    <Image img="/images/cloud/guides/query-endpoints/console-api-keys.webp" size="md" alt="API Keys" />
 
-    2. クエリ API エンドポイントで使用する APIキーの横にある **Edit** をクリックします
+    2. クエリ API エンドポイントで使用する API キーの横にある **Edit** をクリックします
 
-    <div className="ch-image-md">
-      <Frame>
-        ![Edit](/images/cloud/guides/query-endpoints/api-key-edit.webp)
-      </Frame>
-    </div>
+    <Image img="/images/cloud/guides/query-endpoints/api-key-edit.webp" size="md" alt="Edit" />
   </Step>
 
   <Step title="許可する IP アドレスを追加する" id="add-ips">
@@ -43,13 +39,9 @@ doc_type: 'guide'
     2. IP アドレスまたは CIDR 範囲 (例: `203.0.113.1` または `203.0.113.0/24`) を入力します
     3. 必要に応じて複数のエントリを追加します
 
-    <div className="ch-image-md">
-      <Frame>
-        ![Specific locations](/images/cloud/guides/query-endpoints/specific-locations.webp)
-      </Frame>
-    </div>
+    <Image img="/images/cloud/guides/query-endpoints/specific-locations.webp" size="md" alt="Specific locations" />
 
-    クエリ API エンドポイントを作成するには、Admin Console ロールと、適切な権限を持つ APIキーが必要です。
+    クエリ API エンドポイントを作成するには、Admin Console ロールと、適切な権限を持つ API キーが必要です。
   </Step>
 </Steps>
 

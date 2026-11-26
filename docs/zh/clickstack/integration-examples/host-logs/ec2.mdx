@@ -7,16 +7,18 @@ doc_type: 'guide'
 keywords: ['EC2', 'AWS', '主机日志', 'systemd', 'syslog', 'OTel', 'ClickStack', '系统监控', '云元数据']
 ---
 
+import { Image } from "/snippets/zh/components/Image.jsx";
+
 import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
 <Info>
   **简而言之**
 
-  使用 OpenTelemetry Collector 在 ClickStack 中收集并可视化 EC2 系统日志，同时自动富集 EC2 元数据 (实例 ID、区域、AZ、实例类型) 。包含演示数据集和预构建仪表板。
+  使用 OpenTelemetry Collector 在 ClickStack 中收集并可视化 EC2 系统日志，同时自动富集 EC2 元数据 (实例 ID、区域、AZ、实例类型) 。包含演示数据集和预置仪表板。
 </Info>
 
 <div id="existing-ec2">
-  ## 与现有 EC2 实例集成 {#existing-ec2}
+  ## 与现有 EC2 实例集成
 </div>
 
 本节介绍如何在 EC2 实例上安装 OpenTelemetry Collector，以收集系统日志并将其发送到 ClickStack，同时自动进行 EC2 元数据富集。这种分布式架构可用于生产环境，并且能够扩展到多个实例。
@@ -30,7 +32,7 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
 如果想在配置生产实例之前先测试 EC2 主机日志集成，可以在[&quot;演示数据集&quot;](/zh/clickstack/integration-examples/host-logs/ec2#demo-dataset)部分使用我们预先配置好的环境和示例数据进行测试。
 
 <div id="prerequisites">
-  ##### 前置条件 {#prerequisites}
+  ##### 前置条件
 </div>
 
 * ClickStack 实例已在运行 (可以是本地部署、云端或本机环境)
@@ -276,8 +278,8 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     </Info>
   </Step>
 
-  <Step title="在 ClickStack 用户界面中验证日志" id="verifying-logs">
-    采集器运行后，登录 ClickStack 用户界面，确认日志已连同 EC2 元数据一起流入：
+  <Step title="在 HyperDX 中验证日志" id="verifying-logs">
+    采集器运行后，登录 HyperDX，确认日志已连同 EC2 元数据一起流入：
 
     1. 进入搜索视图
     2. 将 source 设置为 `Logs`
@@ -290,22 +292,14 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
        * `host.type` (实例类型)
        * `cloud.availability_zone`
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![EC2 日志搜索视图](/images/clickstack/host-logs/ec2/search-view.webp)
-      </Frame>
-    </div>
+    <Image img="/images/clickstack/host-logs/ec2/search-view.webp" alt="EC2 日志搜索视图" />
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![显示元数据的 EC2 日志详情](/images/clickstack/host-logs/ec2/log-view.webp)
-      </Frame>
-    </div>
+    <Image img="/images/clickstack/host-logs/ec2/log-view.webp" alt="显示元数据的 EC2 日志详情" />
   </Step>
 </Steps>
 
 <div id="demo-dataset">
-  ## 演示数据集 {#demo-dataset}
+  ## 演示数据集
 </div>
 
 对于希望在配置生产实例前先测试 EC2 主机日志集成的用户，我们提供了一个包含模拟 EC2 元数据的演示数据集。
@@ -410,35 +404,27 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
       -e CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml \
       -v "$(pwd)/ec2-host-logs-demo.yaml:/etc/otelcol-contrib/custom.config.yaml:ro" \
       -v "$(pwd)/journal.log:/tmp/host-demo/journal.log:ro" \
-      clickhouse/clickstack-all-in-one:latest
+      docker.hyperdx.io/hyperdx/hyperdx-all-in-one:latest
     ```
   </Step>
 
-  <Step title="在 ClickStack 用户界面中验证日志" id="verify-demo-logs">
+  <Step title="在 HyperDX 中验证日志" id="verify-demo-logs">
     collector 运行后：
 
-    1. 打开 [ClickStack 用户界面](http://localhost:8080/) 并登录账户 (你可能需要先创建账户)
+    1. 打开 [HyperDX](http://localhost:8080/) 并登录账户 (你可能需要先创建账户)
     2. 进入搜索视图，并将 source 设置为 `Logs`
     3. 将时间范围设置为 **2025-11-10 00:00:00 - 2025-11-13 00:00:00**
     4. 按 `source:ec2-demo` 过滤
     5. 展开一条日志，在资源属性中查看 EC2 元数据
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![EC2 日志搜索视图](/images/clickstack/host-logs/ec2/search-view-demo.webp)
-      </Frame>
-    </div>
+    <Image img="/images/clickstack/host-logs/ec2/search-view-demo.webp" alt="EC2 日志搜索视图" />
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![包含元数据的 EC2 日志详情](/images/clickstack/host-logs/ec2/log-view-demo.webp)
-      </Frame>
-    </div>
+    <Image img="/images/clickstack/host-logs/ec2/log-view-demo.webp" alt="包含元数据的 EC2 日志详情" />
 
     <Info>
       **时区显示**
 
-      ClickStack 用户界面会按你浏览器的本地时区显示时间戳。演示数据覆盖 **2025-11-11 00:00:00 - 2025-11-12 00:00:00 (UTC)**。较大的时间范围可确保无论你位于何处，都能看到演示日志。看到日志后，你可以将范围缩小到 24 小时，以获得更清晰的可视化效果。
+      HyperDX 会按你浏览器的本地时区显示时间戳。演示数据覆盖 **2025-11-11 00:00:00 - 2025-11-12 00:00:00 (UTC)**。较大的时间范围可确保无论你位于何处，都能看到演示日志。看到日志后，你可以将范围缩小到 24 小时，以获得更清晰的可视化效果。
     </Info>
 
     你应会看到包含模拟 EC2 上下文的日志，包括：
@@ -450,7 +436,9 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
   </Step>
 </Steps>
 
-## 仪表盘和可视化 {#dashboards}
+<div id="dashboards">
+  ## 仪表盘和可视化
+</div>
 
 为了帮助你开始使用 ClickStack 监控 EC2 主机日志，我们提供了包含云上下文信息的关键可视化。
 
@@ -459,33 +447,21 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/host-logs-dashboard.json'} download="host-logs-dashboard.json" eventName="docs.ec2_host_logs_monitoring.dashboard_download">下载仪表盘配置文件</TrackedLink>。
   </Step>
 
-  <Step title="导入预构建仪表板" id="import-dashboard">
-    1. 打开 ClickStack 用户界面，进入“仪表盘”部分
-    2. 点击右上角省略号菜单下的 **导入仪表盘**
+  <Step title="导入预置仪表盘" id="import-dashboard">
+    1. 打开 HyperDX，进入“仪表盘”部分
+    2. 点击右上角省略号菜单下的 **Import Dashboard**
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![导入仪表盘按钮](/images/clickstack/import-dashboard.webp)
-      </Frame>
-    </div>
+    <Image img="/images/clickstack/import-dashboard.webp" alt="导入仪表盘按钮" />
 
-    3. 上传 `host-logs-dashboard.json` 文件，然后点击 **完成导入**
+    3. 上传 `host-logs-dashboard.json` 文件，然后点击 **Finish Import**
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![完成导入](/images/clickstack/host-logs/import-dashboard.webp)
-      </Frame>
-    </div>
+    <Image img="/images/clickstack/host-logs/import-dashboard.webp" alt="完成导入" />
   </Step>
 
   <Step title="查看仪表盘" id="created-dashboard">
     仪表盘创建后，其中的所有可视化都已预先配置好：
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![EC2 日志仪表盘](/images/clickstack/host-logs/host-logs-dashboard.webp)
-      </Frame>
-    </div>
+    <Image img="/images/clickstack/host-logs/host-logs-dashboard.webp" alt="EC2 日志仪表盘" />
 
     你可以按 EC2 上下文筛选仪表盘中的可视化：
 
@@ -500,11 +476,11 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
 </Steps>
 
 <div id="troubleshooting">
-  ## 故障排查 {#troubleshooting}
+  ## 故障排查
 </div>
 
 <div id="no-metadata">
-  ### 日志中未显示 EC2 元数据 {#no-metadata}
+  ### 日志中未显示 EC2 元数据
 </div>
 
 **验证是否可以访问 EC2 元数据服务：**
@@ -532,7 +508,9 @@ sudo journalctl -u otelcol-contrib -f | grep -i "ec2\|metadata\|resourcedetectio
 # 如果在前台运行，请检查 stdout
 ```
 
-### ClickStack 用户界面中未出现日志 {#no-logs}
+<div id="no-logs">
+  ### HyperDX 中未出现日志
+</div>
 
 **确认 syslog 文件存在且正在写入：**
 
@@ -550,24 +528,24 @@ cat /var/log/syslog | head -20
 **验证与 ClickStack 的网络连通性：**
 
 ```bash
-# Test OTLP endpoint
+# 测试 OTLP 端点
 curl -v http://YOUR_CLICKSTACK_HOST:4318/v1/logs
 
-# Should get a response (even if error, means endpoint is reachable)
+# 应收到响应（即使返回错误，也说明端点可达）
 ```
 
 **检查采集器日志中是否有报错：**
 
 ```bash
-# If running in foreground
-# Look for error messages in stdout
+# 如果在前台运行
+# 在标准输出中查找错误信息
 
-# If running as systemd service
+# 如果作为 systemd 服务运行
 sudo journalctl -u otelcol-contrib -f | grep -i "error\|failed"
 ```
 
 <div id="logs-not-parsing">
-  ### 日志解析有误 {#logs-not-parsing}
+  ### 日志解析有误
 </div>
 
 **请确认 syslog 格式：**
@@ -589,7 +567,7 @@ tail -5 /var/log/messages
 如果你的格式不一致，请根据所用的发行版，使用[创建采集器配置](#create-config)部分中相应的配置选项卡。
 
 <div id="systemd-issues">
-  ### Collector 无法作为 systemd 服务启动 {#systemd-issues}
+  ### Collector 无法作为 systemd 服务启动
 </div>
 
 **检查服务状态：**
@@ -611,7 +589,7 @@ sudo journalctl -u otelcol-contrib -n 50
 * 读取日志文件时存在权限问题
 
 <div id="next-steps">
-  ## 后续步骤 {#next-steps}
+  ## 后续步骤
 </div>
 
 * 为关键系统事件 (服务故障、身份验证失败、磁盘告警) 设置[告警](/zh/clickstack/features/alerts)
@@ -619,6 +597,8 @@ sudo journalctl -u otelcol-contrib -n 50
 * 将 EC2 主机日志与应用日志关联起来，以便进行更全面的故障排查
 * 为安全监控 (SSH 尝试、sudo 使用情况、防火墙拦截) 创建自定义仪表盘
 
-## 用于生产环境 {#going-to-production}
+<div id="going-to-production">
+  ## 用于生产环境
+</div>
 
 本指南介绍如何将 OpenTelemetry Collector 直接安装到 EC2 实例上，这是主机级监控推荐采用的生产环境部署方式。若要在大量实例上管理采集器，建议使用配置管理工具 (Ansible、Chef、Puppet) ，或在 Kubernetes 环境中使用 OpenTelemetry Operator。有关生产环境配置，请参见[发送 OpenTelemetry 数据](/zh/clickstack/ingesting-data/opentelemetry)。

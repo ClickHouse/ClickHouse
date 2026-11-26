@@ -367,49 +367,6 @@ SELECT arrayBottomK((x, y) -> y, 2, ['a', 'b', 'c'], [3, 1, 2])
 ['b','c']
 ```
 
-## arrayCombinations {#arrayCombinations}
-
-Добавлено в: v26.10.0
-
-Возвращает все комбинации (неупорядоченные выборки без повторяющихся индексов) длины `k` из исходного массива. Перебор выполняется по индексам, поэтому одинаковые значения могут приводить к появлению дублирующихся строк в результате. При `k = 0` возвращает `[[]]`. Общий размер результата в пределах одного блока ограничен параметром `function_range_max_elements_in_block`; каждый сгенерированный массив учитывается как его размер плюс один.
-
-**Синтаксис**
-
-```sql
-arrayCombinations(arr, k)
-```
-
-**Аргументы**
-
-* `arr` — исходный массив. [`Array(T)`](/ru/reference/data-types/array)
-* `k` — длина каждой генерируемой комбинации. Не должна превышать размер исходного массива. Поддерживаются типы `Int8`, `Int16`, `Int32`, `Int64`, `UInt8`, `UInt16`, `UInt32` и `UInt64`. [`(U)Int*`](/ru/reference/data-types/int-uint)
-
-**Возвращаемое значение**
-
-Все комбинации длины `k`. [`Array(Array(T))`](/ru/reference/data-types/array)
-
-**Примеры**
-
-**Пример использования**
-
-```sql title=Query
-SELECT arrayCombinations([1, 2, 3], 2);
-```
-
-```response title=Response
-[[1,2],[1,3],[2,3]]
-```
-
-**Пример с `k = 0`**
-
-```sql title=Query
-SELECT arrayCombinations([1, 2, 3], 0);
-```
-
-```response title=Response
-[[]]
-```
-
 ## arrayCompact {#arrayCompact}
 
 Добавленный в: v20.1.0
@@ -483,7 +440,7 @@ SELECT arrayConcat([1, 2], [3, 4], [5, 6]) AS res
 
 `arrayCount` — это [функция высшего порядка](/ru/reference/functions/regular-functions/overview#higher-order-functions).
 
-<Note>
+<Info>
   **Используйте настройку `array_count_legacy_uint32_result`, чтобы получать результат типа `UInt32`**
 
   В версии 26.10 внесено обратно несовместимое изменение: `arrayCount` возвращает `UInt64` вместо `UInt32`, чтобы результат оставался точным для массивов, содержащих более `4294967295` подходящих элементов.
@@ -491,7 +448,7 @@ SELECT arrayConcat([1, 2], [3, 4], [5, 6]) AS res
   Чтобы сохранить прежнее поведение (и тип результата `UInt32`, и его константность), установите для настройки `array_count_legacy_uint32_result` (по умолчанию `false`) значение `true`.
 
   Во время поэтапного обновления кластера распределённый запрос, инициированный ещё не обновлённым сервером, не передаёт эту настройку, поэтому зависящие от типа выражения, которые вычисляются локально на уже обновлённых сегментах (например, `byteSize(arrayCount(...))`), получают там `UInt64`. Чтобы такие запросы работали без каких-либо изменений до обновления всего кластера, установите `array_count_legacy_uint32_result = 1` на обновлённых серверах для пользователей, от имени которых выполняются запросы на сегментах, и удалите эту настройку после завершения обновления. Какой именно это пользователь, зависит от конфигурации кластера: если настроен межсерверный `secret`, сегмент выполняет запрос от имени текущего пользователя initiator; в противном случае используется пользователь из определения кластера или из табличной функции `remote` (по умолчанию — `default`). Самый простой и надёжный способ — включить эту настройку для всех пользователей обновлённых серверов.
-</Note>
+</Info>
 
 **Синтаксис**
 
@@ -688,12 +645,12 @@ SELECT arrayDistinct([1, 2, 2, 3, 1]);
 
 ## arrayDotProduct {#arrayDotProduct}
 
-Добавлено в: v23.5.0
+Добавленный в: v23.5.0
 
 Возвращает скалярное произведение двух массивов.
 
 <Note>
-  Размеры двух векторов должны быть одинаковыми. Массивы и Tuple также могут содержать элементы разных типов.
+  Размеры двух векторов должны быть одинаковыми. Типы Array и Tuple также могут содержать элементы разных типов.
 </Note>
 
 **Синтаксис**
@@ -712,7 +669,7 @@ arrayDotProduct(v1, v2)
 Скалярное произведение двух векторов.
 
 <Note>
-  Возвращаемый тип определяется типами аргументов. Если массивы или Tuple содержат элементы разных типов, то тип результата — супертип.
+  Возвращаемый тип определяется типами аргументов. Если Array или Tuple содержат элементы разных типов, то тип результата — супертип.
   Два массива `BFloat16` накапливаются и возвращают значение типа `Float32` (то же правило, что и для двух массивов `Float32`).
 </Note>
 
@@ -2556,272 +2513,6 @@ SELECT arrayNormalizedGini([0.9, 0.3, 0.8, 0.7],[6, 1, 0, 2]);
 (0.18055555555555558,0.2638888888888889,0.6842105263157896)
 ```
 
-## arrayPackBitGroupsToFixedString {#arrayPackBitGroupsToFixedString}
-
-Добавлено в: v26.10.0
-
-Аналогична `arrayPackBitsToFixedString`, но лямбда-функция возвращает целое число, младшие `g` бит которого образуют группу, а группы
-плотно упаковываются (начиная со старшего бита) в `FixedString(n)`. Результатом являются первые `n` байт
-`arrayPackBitGroupsToString` (от группы, пересекающей границу, берутся только её старшие биты), дополненные нулями до `n`
-байт. Размер `n` и размер группы `g` должны быть положительными константами, причём `g` не должен превышать 64.
-
-**Синтаксис**
-
-```sql
-arrayPackBitGroupsToFixedString(f, n, g, arr1[, arr2, ...])
-```
-
-**Аргументы**
-
-* `f` — лямбда-функция, вычисляющая значение группы для каждого элемента. [`Lambda function`](/ru/reference/functions/regular-functions/overview#arrow-operator-and-lambda)
-* `n` — размер результирующей строки `FixedString` в байтах. [`(U)Int8/16/32/64`](/ru/reference/data-types/int-uint)
-* `g` — количество бит в группе. [`(U)Int8/16/32/64`](/ru/reference/data-types/int-uint)
-* `arr1[, arr2, ...]` — один или несколько массивов одинакового размера для упаковки. Лямбда-функция принимает по одному аргументу для каждого массива. [`Array(T)`](/ru/reference/data-types/array)
-
-**Возвращаемое значение**
-
-Возвращает упакованные биты. [`FixedString(n)`](/ru/reference/data-types/fixedstring)
-
-**Примеры**
-
-**Пример**
-
-```sql title=Query
-SELECT arrayPackBitGroupsToFixedString(x -> x, 2, 4, [3, 0, 3, 1])
-```
-
-```response title=Response
-01
-```
-
-## arrayPackBitGroupsToString {#arrayPackBitGroupsToString}
-
-Добавлено в: v26.10.0
-
-Аналогична `arrayPackBitsToString`, но лямбда-функция возвращает целое число, младшие `g` бит которого образуют группу, а группы
-упаковываются подряд, без промежутков (начиная со старшего бита). Длина результата составляет `ceil(size_of_array * g / 8)` байт.
-Размер группы `g` должен быть константой от 1 до 64.
-
-**Синтаксис**
-
-```sql
-arrayPackBitGroupsToString(f, g, arr1[, arr2, ...])
-```
-
-**Аргументы**
-
-* `f` — лямбда-функция, вычисляющая значение группы для каждого элемента. [`Lambda function`](/ru/reference/functions/regular-functions/overview#arrow-operator-and-lambda)
-* `g` — количество битов в группе. [`(U)Int8/16/32/64`](/ru/reference/data-types/int-uint)
-* `arr1[, arr2, ...]` — один или несколько массивов одинакового размера, которые нужно упаковать. Лямбда-функция принимает по одному аргументу для каждого массива. [`Array(T)`](/ru/reference/data-types/array)
-
-**Возвращаемое значение**
-
-Возвращает упакованные биты. [`String`](/ru/reference/data-types/string)
-
-**Примеры**
-
-**Пример**
-
-```sql title=Query
-SELECT arrayPackBitGroupsToString(x -> x, 4, [3, 0, 3, 1])
-```
-
-```response title=Response
-01
-```
-
-## arrayPackBitGroupsToUInt64 {#arrayPackBitGroupsToUInt64}
-
-Добавлено в: v26.10.0
-
-Аналогична `arrayPackBitsToUInt64`, но лямбда-функция возвращает целое число, младшие `g` бит которого образуют группу, а группы
-упаковываются подряд, без промежутков (внутри каждого байта старший бит идёт первым, байты интерпретируются в порядке байтов от младшего к старшему, поэтому
-`arrayPackBitGroupsToUInt64(f, g, arr) = reinterpretAsUInt64(arrayPackBitGroupsToString(f, g, arr))`). Результат
-содержит первые 64 бита упакованного потока: если 64 не делится на `g` нацело, то от группы, пересекающей границу,
-берутся только её старшие биты. Размер группы `g` должен быть константой от 1 до 64.
-
-**Синтаксис**
-
-```sql
-arrayPackBitGroupsToUInt64(f, g, arr1[, arr2, ...])
-```
-
-**Аргументы**
-
-* `f` — лямбда-функция, вычисляющая значение группы для каждого элемента. [`Lambda function`](/ru/reference/functions/regular-functions/overview#arrow-operator-and-lambda)
-* `g` — количество битов в группе. [`(U)Int8/16/32/64`](/ru/reference/data-types/int-uint)
-* `arr1[, arr2, ...]` — один или несколько массивов одинакового размера, которые нужно упаковать. Лямбда-функция принимает по одному аргументу для каждого массива. [`Array(T)`](/ru/reference/data-types/array)
-
-**Возвращаемое значение**
-
-Возвращает упакованные биты. [`UInt64`](/ru/reference/data-types/int-uint)
-
-**Примеры**
-
-**Пример**
-
-```sql title=Query
-SELECT arrayPackBitGroupsToUInt64(x -> x, 4, [1, 2, 3])
-```
-
-```response title=Response
-12306
-```
-
-## arrayPackBitsToFixedString {#arrayPackBitsToFixedString}
-
-Добавлено в: v26.10.0
-
-Применяет лямбда-функцию к каждому элементу массива и упаковывает полученные биты в `FixedString(n)`.
-Для каждого элемента лямбда-функция возвращает целое число, которое интерпретируется как один бит (ноль или не ноль).
-Биты записываются начиная со старшего, поэтому результат совпадает с первыми `n` байтами результата `arrayPackBitsToString`.
-Если в массиве больше `n * 8` элементов, лишние игнорируются; если меньше — результат дополняется нулями до `n` байт.
-Размер `n` должен быть положительной константой.
-
-**Синтаксис**
-
-```sql
-arrayPackBitsToFixedString(f, n, arr1[, arr2, ...])
-```
-
-**Аргументы**
-
-* `f` — лямбда-функция, вычисляющая бит для каждого элемента. [`Lambda function`](/ru/reference/functions/regular-functions/overview#arrow-operator-and-lambda)
-* `n` — размер результирующей строки `FixedString` в байтах. [`(U)Int8/16/32/64`](/ru/reference/data-types/int-uint)
-* `arr1[, arr2, ...]` — один или несколько упаковываемых массивов одинакового размера. Лямбда-функция принимает по одному аргументу для каждого массива. [`Array(T)`](/ru/reference/data-types/array)
-
-**Возвращаемое значение**
-
-Возвращает упакованные биты. [`FixedString(n)`](/ru/reference/data-types/fixedstring)
-
-**Примеры**
-
-**Пример**
-
-```sql title=Query
-SELECT arrayPackBitsToFixedString(x -> x, 2, [0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 1])
-```
-
-```response title=Response
-01
-```
-
-## arrayPackBitsToString {#arrayPackBitsToString}
-
-Добавлено в: v26.10.0
-
-Применяет лямбда-функцию к каждому элементу массива и упаковывает полученные биты в `String`.
-Для каждого элемента лямбда-функция возвращает целое число, которое интерпретируется как один бит (нулевое или ненулевое значение).
-Биты записываются начиная со старшего; длина результата составляет `ceil(size_of_array / 8)` байт.
-
-**Синтаксис**
-
-```sql
-arrayPackBitsToString(f, arr1[, arr2, ...])
-```
-
-**Аргументы**
-
-* `f` — лямбда-функция, вычисляющая бит для каждого элемента. [`Lambda function`](/ru/reference/functions/regular-functions/overview#arrow-operator-and-lambda)
-* `arr1[, arr2, ...]` — один или несколько массивов одинакового размера, которые нужно упаковать. Лямбда-функция принимает по одному аргументу для каждого массива. [`Array(T)`](/ru/reference/data-types/array)
-
-**Возвращаемое значение**
-
-Возвращает упакованные биты. [`String`](/ru/reference/data-types/string)
-
-**Примеры**
-
-**Пример**
-
-```sql title=Query
-SELECT arrayPackBitsToString(x -> x, [0, 0, 1, 1, 0, 0, 0, 0])
-```
-
-```response title=Response
-0
-```
-
-## arrayPackBitsToUInt64 {#arrayPackBitsToUInt64}
-
-Добавлено в: v26.10.0
-
-Применяет лямбда-функцию к каждому элементу массива и упаковывает полученные биты в `UInt64`.
-Для каждого элемента лямбда-функция возвращает целое число, которое рассматривается как один бит (ноль или ненулевое значение).
-Поток битов раскладывается по байтам, начиная со старшего бита (байты получаются те же, что и у `arrayPackBitsToString`),
-а сами байты интерпретируются в порядке от младшего к старшему (little-endian), поэтому
-`arrayPackBitsToUInt64(f, arr) = reinterpretAsUInt64(arrayPackBitsToString(f, arr))`.
-Используются только первые 64 элемента; если элементов меньше, оставшиеся биты заполняются нулями.
-
-**Синтаксис**
-
-```sql
-arrayPackBitsToUInt64(f, arr1[, arr2, ...])
-```
-
-**Аргументы**
-
-* `f` — лямбда-функция, вычисляющая бит для каждого элемента. [`Lambda function`](/ru/reference/functions/regular-functions/overview#arrow-operator-and-lambda)
-* `arr1[, arr2, ...]` — один или несколько массивов одинакового размера, которые нужно упаковать. Лямбда-функция принимает по одному аргументу для каждого массива. [`Array(T)`](/ru/reference/data-types/array)
-
-**Возвращаемое значение**
-
-Возвращает упакованные биты. [`UInt64`](/ru/reference/data-types/int-uint)
-
-**Примеры**
-
-**Пример**
-
-```sql title=Query
-SELECT arrayPackBitsToUInt64(x -> x, [1, 0, 0, 0, 0, 0])
-```
-
-```response title=Response
-128
-```
-
-## arrayPartialPermutations {#arrayPartialPermutations}
-
-Добавлено в: v26.10.0
-
-Возвращает все частичные перестановки (упорядоченные выборки без повторяющихся индексов) длины `k` из исходного массива. Перебор выполняется по индексам, поэтому одинаковые значения могут давать в результате дублирующиеся строки. При `k = 0` возвращает `[[]]`. Общий размер результата в пределах одного блока ограничен параметром `function_range_max_elements_in_block`; каждый сгенерированный массив учитывается как его размер плюс один.
-
-**Синтаксис**
-
-```sql
-arrayPartialPermutations(arr, k)
-```
-
-**Аргументы**
-
-* `arr` — исходный массив. [`Array(T)`](/ru/reference/data-types/array)
-* `k` — длина каждой генерируемой частичной перестановки. Не должна превышать размер исходного массива. Поддерживаются типы `Int8`, `Int16`, `Int32`, `Int64`, `UInt8`, `UInt16`, `UInt32` и `UInt64`. [`(U)Int*`](/ru/reference/data-types/int-uint)
-
-**Возвращаемое значение**
-
-Все частичные перестановки длины `k`. [`Array(Array(T))`](/ru/reference/data-types/array)
-
-**Примеры**
-
-**Пример использования**
-
-```sql title=Query
-SELECT arrayPartialPermutations([1, 2, 3], 2);
-```
-
-```response title=Response
-[[1,2],[1,3],[2,1],[2,3],[3,1],[3,2]]
-```
-
-**Пример с `k = 0`**
-
-```sql title=Query
-SELECT arrayPartialPermutations([1, 2, 3], 0);
-```
-
-```response title=Response
-[[]]
-```
-
 ## arrayPartialReverseSort {#arrayPartialReverseSort}
 
 Добавленный в: v23.2.0
@@ -3085,38 +2776,6 @@ SELECT arrayPartialSort((x, y) -> -y, 1, [0, 1, 2], [1, 2, 3]) as res
 
 ```response title=Response
 [2,1,0]
-```
-
-## arrayPermutations {#arrayPermutations}
-
-Добавлено в: v26.10.0
-
-Возвращает все перестановки элементов исходного массива. Перебор выполняется по индексам, поэтому при наличии одинаковых значений в результате могут появиться дублирующиеся строки. Для пустого исходного массива возвращает `[[]]`. Общий размер результата в пределах одного блока ограничен параметром `function_range_max_elements_in_block`; каждый сгенерированный массив учитывается как его размер плюс один.
-
-**Синтаксис**
-
-```sql
-arrayPermutations(arr)
-```
-
-**Аргументы**
-
-* `arr` — Исходный массив. [`Array(T)`](/ru/reference/data-types/array)
-
-**Возвращаемое значение**
-
-Все перестановки исходного массива. [`Array(Array(T))`](/ru/reference/data-types/array)
-
-**Примеры**
-
-**Пример использования**
-
-```sql title=Query
-SELECT arrayPermutations([1, 2, 3]);
-```
-
-```response title=Response
-[[1,2,3],[1,3,2],[2,1,3],[2,3,1],[3,1,2],[3,2,1]]
 ```
 
 ## arrayPopBack {#arrayPopBack}
@@ -3485,8 +3144,6 @@ SELECT arrayReduce('uniqUpTo(3)', [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
 
 Применяет агрегатную функцию к элементам массива в заданных диапазонах и возвращает массив с результатом для каждого диапазона.
 Функция вернёт тот же результат, что и несколько вызовов `arrayReduce(agg_func, arraySlice(arr1, index, length), ...)`.
-Единственное отличие в том, что длина считается беззнаковой: длина, превышающая максимальное значение `Int64`, означает выборку всей оставшейся части массива,
-тогда как `arraySlice` интерпретирует такое значение как отрицательную длину.
 
 **Синтаксис**
 
@@ -3565,62 +3222,6 @@ SELECT arrayRemove(['a', NULL, 'b', NULL], NULL)
 
 ```response title=Response
 ['a','b']
-```
-
-## arrayRemoveAt {#arrayRemoveAt}
-
-Добавлено в: v26.10.0
-
-Удаляет из массива элемент с указанным индексом.
-Используется индексация от 1. Отрицательные индексы отсчитываются с конца массива.
-Если индекс выходит за границы массива, массив возвращается без изменений.
-Индекс 0 недопустим.
-
-**Синтаксис**
-
-```sql
-arrayRemoveAt(arr, index)
-```
-
-**Аргументы**
-
-* `arr` — исходный массив. [`Array(T)`](/ru/reference/data-types/array)
-* `index` — целочисленный индекс удаляемого элемента; не может иметь тип Nullable. Отрицательные индексы отсчитываются с конца. [`(U)Int8/16/32/64`](/ru/reference/data-types/int-uint)
-
-**Возвращаемое значение**
-
-Возвращает исходный массив без элемента с индексом `index` или исходный массив без изменений, если `index` выходит за границы массива. [`Array(T)`](/ru/reference/data-types/array)
-
-**Примеры**
-
-**Положительный индекс**
-
-```sql title=Query
-SELECT arrayRemoveAt([1, 2, 3, 4], 2)
-```
-
-```response title=Response
-[1,3,4]
-```
-
-**Отрицательный индекс**
-
-```sql title=Query
-SELECT arrayRemoveAt([1, 2, 3, 4], -1)
-```
-
-```response title=Response
-[1,2,3]
-```
-
-**Выход за границы**
-
-```sql title=Query
-SELECT arrayRemoveAt([1, 2, 3, 4], 10)
-```
-
-```response title=Response
-[1,2,3,4]
 ```
 
 ## arrayResize {#arrayResize}
@@ -4174,8 +3775,6 @@ SELECT arraySimilarity(['A', 'B', 'C'], ['A', 'K', 'L'], [1.0, 2, 3], [3.0, 4, 5
 arraySlice(arr, offset [, length])
 ```
 
-**Псевдонимы**: `slice`
-
 **Аргументы**
 
 * `arr` — Массив, из которого берётся срез. [`Array(T)`](/ru/reference/data-types/array) или [`QBit`](/ru/reference/data-types/qbit)
@@ -4525,172 +4124,6 @@ SELECT arrayTranspose([['a', 'b'], ['c', 'd']])
 [['a','c'],['b','d']]
 ```
 
-## arrayTreePreorder {#arrayTreePreorder}
-
-Добавлено в: v26.11.0
-
-Раскладывает дерево (или лес), хранящееся в виде двух массивов — идентификаторов узлов и идентификаторов родителей, — в прямом порядке обхода в глубину (preorder).
-
-Элемент `i` массивов `ids` и `parent_ids` описывает входной узел `i` и его родителя.
-Функция возвращает именованный кортеж из четырёх массивов. Все они упорядочены в порядке preorder, и все позиции указаны с индексацией от 1:
-элемент `k` описывает `k`-й узел в порядке preorder.
-
-* `order[k]` — входной индекс этого узла. Массивы данных приводятся к порядку preorder с помощью `arrayMap(i -> x[i], t.order)`.
-* `size[k]` — количество узлов в поддереве этого узла, включая сам узел. Поддерево занимает непрерывный диапазон позиций `[k, k + size[k])`.
-* `parent[k]` — позиция (в порядке preorder) узла, идентификатор которого равен идентификатору родителя данного узла, или `0`, если такого узла нет.
-* `depth[k]` — расстояние от этого узла до корня его дерева; для корней равно `0`.
-
-Узел `a` является предком узла `b` тогда и только тогда, когда `a < b AND b < a + size[a]`.
-Аддитивные агрегатные функции по поддереву вычисляются как разность двух префиксных сумм (см. [`arrayCumSum`](#arrayCumSum)).
-Прочие агрегатные функции по поддереву можно вычислить с помощью [`arraySlice`](#arraySlice) от массива данных, переупорядоченного в порядке preorder.
-
-Деревья записываются одно за другим в том порядке, в котором их корни следуют во входных данных, а дочерние узлы каждого узла обходятся во входном порядке,
-поэтому результат детерминирован. Временная сложность линейна относительно размера массива, а глубина дерева не ограничена.
-
-Функция не генерирует исключений из-за содержимого массивов и строит корректный лес из любых входных данных:
-
-* Узел является корнем, если идентификатор его родителя равен `NULL` или отсутствует в `ids` (например, пустая строка или узел-сирота).
-* Если ссылки на родителей образуют цикл, то у узла цикла, который встречается во входных данных первым, ссылка на родителя разрывается, и этот узел становится корнем. Его `parent` сохраняет позицию его реального родителя, которая больше его собственной позиции, поэтому условие `parent[k] > k` означает, что цикл был разорван в позиции `k`. Узел, являющийся собственным родителем, получает `parent[k] = k`.
-* Если в `ids` есть повторяющиеся значения, дочерние узлы подключаются к первому вхождению.
-
-Идентификаторы сравниваются по хешу. Они не могут быть числами с плавающей запятой или содержать их (поскольку `0.0` и `-0.0` равны, но имеют разные хеши),
-а также не могут быть значениями типов `Dynamic`, `Variant` и `JSON` (поскольку `NULL` внутри них сравнивался бы как обычное значение, тогда как `NULL` типа `Nullable` делает узел корнем).
-
-Структуру входных данных можно восстановить по результату (см. примеры ниже):
-
-* Есть ли цикл: `arrayExists((p, k) -> p > k, t.parent, arrayEnumerate(t.parent))`.
-* Позиции, в которых были разорваны циклы: `arrayFilter((k, p) -> p > k, arrayEnumerate(t.parent), t.parent)`.
-* Позиции корней деревьев: `arrayFilter((k, d) -> d = 0, arrayEnumerate(t.depth), t.depth)`, а количество деревьев равно `countEqual(t.depth, 0)`.
-* Позиции узлов, идентификатор родителя которых отсутствует: `arrayFilter((k, p) -> p = 0, arrayEnumerate(t.parent), t.parent)`.
-* Являются ли входные данные одним деревом с настоящим корнем: `t.size[1] = length(ids) AND t.parent[1] <= 1`. Это условие допускает оба способа задания корня (отсутствующий идентификатор родителя даёт `0`, ссылка на себя — `1`) и отвергает массив, представляющий собой один большой цикл.
-* Позиции узлов цикла, разорванного в позиции `r`: `arrayFilter(x -> x + t.size[x] > t.parent[r], range(r, t.parent[r] + 1))`. Это узлы от `r` до его реального родителя `t.parent[r]`, поддерево которых содержит этого реального родителя.
-* Повторяющиеся идентификаторы: `arrayEnumerateUniq(ids) > 1`.
-
-Чтобы получить входной индекс узла в позиции `k`, используйте `t.order[k]`.
-
-**Синтаксис**
-
-```sql
-arrayTreePreorder(ids, parent_ids)
-```
-
-**Аргументы**
-
-* `ids` — идентификаторы узлов. Числа с плавающей запятой, `Dynamic`, `Variant` и `JSON` не поддерживаются. [`Array(T)`](/ru/reference/data-types/array)
-* `parent_ids` — идентификаторы родительских узлов, по одному на каждый узел. Размер должен совпадать с размером `ids`. [`Array(T)`](/ru/reference/data-types/array)
-
-**Возвращаемое значение**
-
-Возвращает Tuple, описывающий структуру дерева в прямом порядке обхода (preorder). [`Tuple(order Array(UInt32), size Array(UInt32), parent Array(UInt32), depth Array(UInt32))`](/ru/reference/data-types/tuple)
-
-**Примеры**
-
-**Пример использования**
-
-```sql title=Query
-SELECT arrayTreePreorder(['G2', 'A', 'T1', 'B', 'G1', 'G3'], ['B', '', 'B', 'A', 'A', 'A']) AS t
-```
-
-```response title=Response
-([2,4,1,3,5,6],[6,3,1,1,1,1],[0,1,2,2,1,1],[0,1,2,2,1,1])
-```
-
-**Стоимость и число потомков каждого спана агента в трассе**
-
-```sql title=Query
-WITH
-    ['A', 'G1', 'B', 'G2', 'T1', 'G3'] AS ids,
-    ['', 'A', 'A', 'B', 'B', 'A'] AS parent_ids,
-    ['AGENT', 'GENERATION', 'AGENT', 'GENERATION', 'TOOL', 'GENERATION'] AS types,
-    [0, 2, 0, 3, 0, 1] AS costs,
-    arrayTreePreorder(ids, parent_ids) AS t,
-    arrayCumSum(arrayMap(i -> costs[i], t.order)) AS cum
-SELECT arrayMap(k -> (ids[t.order[k]], cum[k + t.size[k] - 1] - cum[k], t.size[k] - 1),
-    arrayFilter(k -> types[t.order[k]] = 'AGENT', arrayEnumerate(t.order))) AS res
-```
-
-```response title=Response
-[('A',6,5),('B',3,2)]
-```
-
-**Недопустимые входные данные: цикл C -&gt; D -&gt; E -&gt; C, узел F ниже цикла, узел-сирота G**
-
-```sql title=Query
-SELECT arrayTreePreorder(['A', 'B', 'C', 'D', 'E', 'F', 'G'], ['', 'A', 'D', 'E', 'C', 'C', 'Z']) AS t
-```
-
-```response title=Response
-([1,2,3,5,4,6,7],[2,1,4,2,1,1,1],[0,1,5,3,4,3,0],[0,1,0,1,2,1,0])
-```
-
-**Обнаружение циклов и мест их разрыва**
-
-```sql title=Query
-WITH
-    ['A', 'B', 'C', 'D', 'E', 'F', 'G'] AS ids,
-    arrayTreePreorder(ids, ['', 'A', 'D', 'E', 'C', 'C', 'Z']) AS t
-SELECT
-    arrayExists((p, k) -> p > k, t.parent, arrayEnumerate(t.parent)) AS has_cycle,
-    arrayFilter((k, p) -> p > k, arrayEnumerate(t.parent), t.parent) AS cut_positions,
-    arrayMap(k -> ids[t.order[k]], cut_positions) AS cut_ids
-```
-
-```response title=Response
-┌─has_cycle─┬─cut_positions─┬─cut_ids─┐
-│         1 │ [3]           │ ['C']   │
-└───────────┴───────────────┴─────────┘
-```
-
-**Корни, количество деревьев, узлы без найденного родителя, проверка на единственное дерево**
-
-```sql title=Query
-WITH
-    ['A', 'B', 'C', 'D', 'E', 'F', 'G'] AS ids,
-    arrayTreePreorder(ids, ['', 'A', 'D', 'E', 'C', 'C', 'Z']) AS t
-SELECT
-    arrayMap(k -> ids[t.order[k]], arrayFilter((k, d) -> d = 0, arrayEnumerate(t.depth), t.depth)) AS roots,
-    countEqual(t.depth, 0) AS trees,
-    arrayMap(k -> ids[t.order[k]], arrayFilter((k, p) -> p = 0, arrayEnumerate(t.parent), t.parent)) AS parent_not_found,
-    t.size[1] = length(ids) AND t.parent[1] <= 1 AS is_one_tree
-```
-
-```response title=Response
-┌─roots─────────┬─trees─┬─parent_not_found─┬─is_one_tree─┐
-│ ['A','C','G'] │     3 │ ['A','G']        │           0 │
-└───────────────┴───────┴──────────────────┴─────────────┘
-```
-
-**Узлы цикла, разорванного в позиции 3**
-
-```sql title=Query
-WITH
-    ['A', 'B', 'C', 'D', 'E', 'F', 'G'] AS ids,
-    arrayTreePreorder(ids, ['', 'A', 'D', 'E', 'C', 'C', 'Z']) AS t,
-    3 AS r
-SELECT arrayMap(k -> ids[t.order[k]], arrayFilter(x -> x + t.size[x] > t.parent[r], range(r, t.parent[r] + 1))) AS cycle
-```
-
-```response title=Response
-┌─cycle─────────┐
-│ ['C','E','D'] │
-└───────────────┘
-```
-
-**Повторяющиеся идентификаторы: дочерние узлы привязываются к первому вхождению**
-
-```sql title=Query
-WITH ['a', 'b', 'a', 'c'] AS ids
-SELECT
-    arrayFilter((id, n) -> n > 1, ids, arrayEnumerateUniq(ids)) AS duplicate_ids,
-    arrayTreePreorder(ids, ['', 'a', '', 'a']).order AS order
-```
-
-```response title=Response
-┌─duplicate_ids─┬─order─────┐
-│ ['a']         │ [1,2,4,3] │
-└───────────────┴───────────┘
-```
-
 ## arrayUnion {#arrayUnion}
 
 Добавленный в: v24.10.0
@@ -4703,15 +4136,13 @@ SELECT
 arrayUnion(arr1, arr2, ..., arrN)
 ```
 
-**Псевдонимы**: `array_union`
-
 **Аргументы**
 
 * `arrN` — N массивов, из которых создаётся новый массив. [`Array(T)`](/ru/reference/data-types/array)
 
 **Возвращаемое значение**
 
-Возвращает массив с различными элементами из исходных массивов [`Array(T)`](/ru/reference/data-types/array)
+Возвращает массив с уникальными элементами из исходных массивов [`Array(T)`](/ru/reference/data-types/array)
 
 **Примеры**
 
@@ -4867,15 +4298,13 @@ SELECT arrayZip(['a', 'b', 'c'], [5, 2, 1]);
 arrayZipUnaligned(arr1, arr2, ..., arrN)
 ```
 
-**Псевдонимы**: `zip`
-
 **Аргументы**
 
 * `arr1, arr2, ..., arrN` — N массивов, объединённых в один массив. [`Array(T)`](/ru/reference/data-types/array)
 
 **Возвращаемое значение**
 
-Возвращает массив с элементами из исходных массивов, сгруппированными в кортежи. Типы данных в кортеже совпадают с типами входных массивов и идут в том же порядке, в котором передаются массивы. [`Array(T)`](/ru/reference/data-types/array) или [`Tuple(T1, T2, ...)`](/ru/reference/data-types/tuple)
+Возвращает массив с элементами из исходных массивов, объединёнными в кортежи. Типы данных в кортеже совпадают с типами входных массивов и идут в том же порядке, в котором передаются массивы. [`Array(T)`](/ru/reference/data-types/array) или [`Tuple(T1, T2, ...)`](/ru/reference/data-types/tuple)
 
 **Примеры**
 
@@ -4887,39 +4316,6 @@ SELECT arrayZipUnaligned(['a'], [1, 2, 3]);
 
 ```response title=Response
 [('a',1),(NULL,2),(NULL,3)]
-```
-
-## array_position {#array_position}
-
-Добавлено в: v26.8.0
-
-Функция совместимости с PostgreSQL. Возвращает позицию (с индексацией от 1) первого вхождения элемента в массив или `NULL`, если элемент не найден. Если в качестве элемента передан `NULL`, выполняется поиск первого `NULL` в массиве — так же, как в PostgreSQL. Нативный аналог в ClickHouse — функция `indexOf`, которая возвращает 0 вместо `NULL`.
-
-**Синтаксис**
-
-```sql
-array_position(array, element)
-```
-
-**Аргументы**
-
-* `array` — массив, в котором выполняется поиск. [`Array(T)`](/ru/reference/data-types/array)
-* `element` — искомый элемент. [`Any`](/ru/reference/data-types/index)
-
-**Возвращаемое значение**
-
-Позиция первого вхождения (с индексацией от 1) или `NULL`, если элемент отсутствует в массиве. [`Nullable(UInt64)`](/ru/reference/data-types/nullable)
-
-**Примеры**
-
-**Пример**
-
-```sql title=Query
-SELECT array_position(['a', 'b'], 'b')
-```
-
-```response title=Response
-2
 ```
 
 ## countEqual {#countEqual}
@@ -4966,7 +4362,7 @@ SELECT countEqual([1, 2, NULL, NULL], NULL)
 Массив считается пустым, если не содержит ни одного элемента.
 
 <Note>
-  Если столбец больше нигде в запросе не используется, функция может читать только подстолбец [size0](/ru/reference/data-types/array#array-size) вместо чтения и обработки всего столбца типа Array. Запрос `SELECT empty(arr) FROM TABLE;` преобразуется в `SELECT arr.size0 = 0 FROM TABLE;`. Эта оптимизация управляется настройкой [`optimize_functions_to_subcolumns`](/ru/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns), которая включена по умолчанию.
+  Можно оптимизировать, включив [настройку `optimize_functions_to_subcolumns`](/ru/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns). При `optimize_functions_to_subcolumns = 1` функция читает только подстолбец [size0](/ru/reference/data-types/array#array-size) вместо чтения и обработки всего столбца типа Array. Запрос `SELECT empty(arr) FROM TABLE;` преобразуется в `SELECT arr.size0 = 0 FROM TABLE;`.
 </Note>
 
 Функция также работает со строками и UUID.
@@ -5924,7 +5320,7 @@ Unicode &quot;кодовых точек&quot;, и не то же самое, ч�
 length(x)
 ```
 
-**Псевдонимы**: `CARDINALITY`, `OCTET_LENGTH`
+**Псевдонимы**: `OCTET_LENGTH`, `CARDINALITY`
 
 **Аргументы**
 
@@ -6010,14 +5406,14 @@ SELECT 'ábc' AS str, length(str), lengthUTF8(str)
 
 ## notEmpty {#notEmpty}
 
-Добавлено в: v1.1.0
+Добавленный в: v1.1.0
 
 Проверяет, является ли входной массив непустым.
 
 Массив считается непустым, если содержит хотя бы один элемент.
 
 <Note>
-  Если столбец больше нигде в запросе не используется, функция может читать только подстолбец [size0](/ru/reference/data-types/array#array-size) вместо чтения и обработки всего столбца типа Array. Запрос `SELECT notEmpty(arr) FROM table` преобразуется в `SELECT arr.size0 != 0 FROM TABLE`. Эта оптимизация управляется настройкой [`optimize_functions_to_subcolumns`](/ru/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns), которая включена по умолчанию.
+  Можно оптимизировать, включив настройку [`optimize_functions_to_subcolumns`](/ru/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns). При `optimize_functions_to_subcolumns = 1` функция читает только подстолбец [size0](/ru/reference/data-types/array#array-size) вместо чтения и обработки всего столбца типа Array. Запрос `SELECT notEmpty(arr) FROM table` преобразуется в `SELECT arr.size0 != 0 FROM TABLE`.
 </Note>
 
 Функция также работает для строк и UUID.

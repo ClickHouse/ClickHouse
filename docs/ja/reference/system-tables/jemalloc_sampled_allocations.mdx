@@ -15,7 +15,7 @@ jemalloc ヒーププロファイラ によってサンプリングされた、�
 
 ## カラム {#columns}
 
-* `trace` ([Array(UInt64)](/ja/reference/data-types/array)) — 割り当てを行ったバックトレースのアドレス。leaf フレーム が先頭に並びます。メインの ClickHouse バイナリ内のアドレスはバイナリ内のオフセットとして保存され (`system.trace_log.trace` と同じ規約) 、バイナリ外のフレームは 0 として保存されます。jemalloc がスタックを巻き戻せなかった場合は空になります。`addressToSymbol` と `demangle` でシンボル化できます (`allow_introspection_functions` が必要です) 。
+* `trace` ([Array(UInt64)](/ja/reference/data-types/array)) — 割り当てを行ったバックトレースのアドレス。leaf frame が先頭に並びます (`system.trace_log.trace` と同じ規約) 。jemalloc がスタックを巻き戻せなかった場合は空になります。`addressToSymbol` と `demangle` でシンボル化できます (`allow_introspection_functions` が必要です) 。
 * `age_ns` ([UInt64](/ja/reference/data-types/int-uint)) — プロファイルが flush された時点を基準とした、その割り当てが生存している時間 (ナノ秒) 。
 * `size` ([UInt64](/ja/reference/data-types/int-uint)) — 要求された割り当てサイズ (バイト単位) 。
 * `usize` ([UInt64](/ja/reference/data-types/int-uint)) — 利用可能なサイズ (バイト単位) 。すなわち、要求が切り上げられた先の size class のサイズです。

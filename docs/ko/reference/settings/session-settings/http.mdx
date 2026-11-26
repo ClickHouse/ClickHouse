@@ -19,7 +19,7 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "HTTP 요청의 URL 경로에서 데이터베이스 이름을 인식하는 새로운 설정."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "1"},{"label": "기본적으로 활성화됨: HTTP 인터페이스는 URL 경로의 `\/database\/` 구성 요소를 현재 데이터베이스로 해석합니다."}]}]} />
 
-활성화하면 HTTP 인터페이스는 URL 경로의 `/database/` 구성 요소를 인식하여 현재 데이터베이스로 사용합니다. 또한 `/database/table.CSV`와 같이 데이터베이스 접두사가 붙은 경로 기반 `PUT` 업로드도 활성화합니다.
+활성화하면 HTTP 인터페이스는 URL 경로의 `/database/` 구성 요소를 인식하여 현재 데이터베이스로 사용합니다.
 
 이 설정은 경로 스타일로 라우팅된 요청을 해석할지 여부를 제어하는 사용자별 설정입니다. 라우팅 자체는 서버 수준의 `http_allow_path_requests` 구성 설정(기본적으로 활성화됨)에 의해 전역적으로 제어됩니다. HTTP 인터페이스가 경로 스타일 요청(예: `/my_db/my_table.csv`)을 쿼리 핸들러로 라우팅하려면 이 설정을 활성화해야 합니다. 라우팅 여부는 요청 인증 전에 결정되므로 사용자별 설정에 따라 달라질 수 없습니다. `http_allow_path_requests`가 비활성화되어 있으면 알 수 없는 경로는 일반 `404`를 반환합니다. 라우팅 후에는 인증된 사용자의 유효 설정을 기준으로 이 설정을 다시 확인하므로 사용자, 역할 또는 프로필별로 선택적으로 비활성화할 수 있습니다.
 
@@ -52,7 +52,7 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "HTTP 요청의 URL 경로에서 선택적 포맷\/압축 확장자를 포함한 테이블 이름을 인식하는 새로운 설정입니다."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "1"},{"label": "기본적으로 활성화됨: HTTP 인터페이스는 URL 경로의 마지막 구성 요소를 `table[.format[.compression]]`으로 해석하고 `SELECT * FROM table`의 결과로 응답합니다."}]}]} />
 
-활성화하면 HTTP 인터페이스는 URL 경로의 마지막 구성 요소를 `table`, `table.format` 또는 `table.format.compression` 형식의 테이블 이름으로 인식합니다. `GET` 및 `HEAD` 요청에서는 이 경로가 `SELECT * FROM table`로 해석되며, 경로 기반 `PUT` 요청에서는 업로드 대상이 되는 기존 대상 테이블(destination table)과 입력 형식을 지정합니다.
+활성화하면 HTTP 인터페이스는 URL 경로의 마지막 구성 요소를 `table`, `table.format` 또는 `table.format.compression` 형식의 테이블 이름으로 인식합니다. 이 경로는 `SELECT * FROM table`로 해석됩니다.
 
 [`http_allow_database_as_path`](/ko/reference/settings/session-settings/http#http_allow_database_as_path)와 마찬가지로 사용자별 설정입니다. 경로 스타일 요청의 라우팅은 서버 수준의 `http_allow_path_requests` 구성 설정으로 전역적으로 제어됩니다(라우팅은 인증 전에 수행됨).
 
@@ -155,8 +155,6 @@ HTTP&#95;NOT&#95;FOUND 오류가 발생한 글롭 패턴의 URL을 건너뜁니�
 <SettingsInfoBlock type="Int64" default_value="3" />
 
 [enable&#95;http&#95;compression = 1](/ko/reference/settings/session-settings/enable#enable_http_compression)일 때 HTTP 요청에 대한 응답의 데이터 압축 수준을 설정합니다.
-
-이 설정은 zlib 기반 방식인 `gzip` 및 `deflate`에만 적용됩니다. 그 외 방식(`zstd`, `lz4`, `br`, `xz` 등)의 압축 수준은 [output&#95;format&#95;compression&#95;level](/ko/reference/settings/formats/output-format#output_format_compression_level)로 설정합니다.
 
 가능한 값: 1~~12의 숫자입니다. `9`를 초과하는 수준은 `libdeflate`가 포함된 기본 빌드가 필요합니다. `libdeflate`가 없는 빌드는 1~~9 수준만 지원합니다.
 

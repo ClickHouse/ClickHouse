@@ -9,12 +9,16 @@ doc_type: 'changelog'
 
 Modifications pertinentes pour les services ClickHouse Cloud basés sur la version v24.6.
 
-## Modification non rétrocompatible {#backward-incompatible-change}
+<div id="backward-incompatible-change">
+  ## Modification non rétrocompatible
+</div>
 
 * Refonte du traitement parallèle en mode `Ordered` du stockage `S3Queue`. Cette PR n’est pas rétrocompatible pour le mode `Ordered` si vous utilisiez les paramètres `s3queue_processing_threads_num` ou `s3queue_total_shards_num`. Le paramètre `s3queue_total_shards_num` a été supprimé ; auparavant, son utilisation n’était autorisée qu’avec `s3queue_allow_experimental_sharded_mode`, désormais déprécié. Un nouveau paramètre a été ajouté : `s3queue_buckets`. [#64349](https://github.com/ClickHouse/ClickHouse/pull/64349) ([Kseniia Sumarokova](https://github.com/kssenii)).
 * De nouvelles fonctions `snowflakeIDToDateTime`, `snowflakeIDToDateTime64`, `dateTimeToSnowflakeID` et `dateTime64ToSnowflakeID` ont été ajoutées. Contrairement aux fonctions existantes `snowflakeToDateTime`, `snowflakeToDateTime64`, `dateTimeToSnowflake` et `dateTime64ToSnowflake`, les nouvelles fonctions sont compatibles avec la fonction `generateSnowflakeID`, c’est-à-dire qu’elles acceptent les Snowflake IDs générés par `generateSnowflakeID` et produisent des Snowflake IDs du même type que `generateSnowflakeID` (c.-à-d. `UInt64`). En outre, les nouvelles fonctions utilisent par défaut l’époque UNIX (c.-à-d. 1970-01-01), comme `generateSnowflakeID`. Si nécessaire, une autre époque peut être fournie, par exemple celle de Twitter/X, 2010-11-04, soit 1288834974657 ms après l’époque UNIX. Les anciennes fonctions de conversion sont dépréciées et seront supprimées après une période de transition : pour continuer à les utiliser malgré tout, activez le paramètre `allow_deprecated_snowflake_conversion_functions`. [#64948](https://github.com/ClickHouse/ClickHouse/pull/64948) ([Robert Schulze](https://github.com/rschu1ze)).
 
-## Nouvelle fonctionnalité {#new-feature}
+<div id="new-feature">
+  ## Nouvelle fonctionnalité
+</div>
 
 * Prise en charge des tuples vides. [#55061](https://github.com/ClickHouse/ClickHouse/pull/55061) ([Amos Bird](https://github.com/amosbird)).
 * Ajout de fonctions d&#39;encodage et de décodage de la courbe de Hilbert. [#60156](https://github.com/ClickHouse/ClickHouse/pull/60156) ([Artem Mustafin](https://github.com/Artemmm91)).
@@ -32,7 +36,9 @@ Modifications pertinentes pour les services ClickHouse Cloud basés sur la versi
 * Introduction de deux colonnes supplémentaires dans `system.query_log` : `used_privileges` et `missing_privileges`. `used_privileges` est renseignée avec les privilèges qui ont été vérifiés pendant l&#39;exécution de la requête, et `missing_privileges` contient les privilèges requis qui sont absents. [#64597](https://github.com/ClickHouse/ClickHouse/pull/64597) ([Alexey Katsman](https://github.com/alexkats)).
 * Ajout d&#39;un paramètre `output_format_pretty_display_footer_column_names` qui, lorsqu&#39;il est activé, affiche les noms de colonnes à la fin de la table pour les tables longues (50 lignes par défaut), le seuil du nombre minimal de lignes étant contrôlé par `output_format_pretty_display_footer_column_names_min_rows`. [#65144](https://github.com/ClickHouse/ClickHouse/pull/65144) ([Shaun Struwig](https://github.com/Blargian)).
 
-## Amélioration des performances {#performance-improvement}
+<div id="performance-improvement">
+  ## Amélioration des performances
+</div>
 
 * Corrige une régression de performances de cross join introduite dans #60459 (24.5). #65243 (Nikita Taranov).
 * Améliore la visibilité des resoumissions io&#95;uring. Renomme l&#39;événement de profil IOUringSQEsResubmits -&gt; IOUringSQEsResubmitsAsync et en ajoute un nouveau : IOUringSQEsResubmitsSync. #63699 (Tomer Shafir).
@@ -62,7 +68,9 @@ Modifications pertinentes pour les services ClickHouse Cloud basés sur la versi
 * Met à jour la condition pour utiliser la copie côté serveur pour les backups vers Azure blob storage. [#64518](https://github.com/ClickHouse/ClickHouse/pull/64518) ([SmitaRKulkarni](https://github.com/SmitaRKulkarni)).
 * Optimise l’utilisation de la mémoire lors des vertical merges pour les tables avec un grand nombre de skip indexes. [#64580](https://github.com/ClickHouse/ClickHouse/pull/64580) ([Anton Popov](https://github.com/CurtizJ)).
 
-## Amélioration {#improvement}
+<div id="improvement">
+  ## Amélioration
+</div>
 
 * Rétablit le comportement de ClickHouse dans sa manière de fonctionner et d’interpréter les Tuples au format CSV. Ce changement annule effectivement ClickHouse/ClickHouse#60994 et ne le rend disponible qu’au moyen de quelques paramètres : output&#95;format&#95;csv&#95;serialize&#95;tuple&#95;into&#95;separate&#95;columns, input&#95;format&#95;csv&#95;deserialize&#95;separate&#95;columns&#95;into&#95;tuple et input&#95;format&#95;csv&#95;try&#95;infer&#95;strings&#95;from&#95;quoted&#95;tuples. #65170 (Nikita Mikhaylov).
 * `SHOW CREATE TABLE` exécuté sur les tables système affichera désormais le commentaire propre à chaque table, très utile pour expliquer pourquoi cette table est nécessaire. [#63788](https://github.com/ClickHouse/ClickHouse/pull/63788) ([Nikita Mikhaylov](https://github.com/nikitamikhaylov)).
@@ -88,9 +96,11 @@ Modifications pertinentes pour les services ClickHouse Cloud basés sur la versi
 * Désactivation des transactions pour les stockages non pris en charge, y compris pour les vues matérialisées. [#64918](https://github.com/ClickHouse/ClickHouse/pull/64918) ([alesapin](https://github.com/alesapin)).
 * Interdiction de la clause `QUALIFY` dans l’ancien analyseur. L’ancien analyseur ignorait `QUALIFY`, ce qui pouvait entraîner une suppression inattendue de données dans les mutations. [#65356](https://github.com/ClickHouse/ClickHouse/pull/65356) ([Dmitry Novik](https://github.com/novikd)).
 
-## Correction de bug (dysfonctionnement visible par l’utilisateur dans une version stable officielle) {#bug-fix-user-visible-misbehavior-in-an-official-stable-release}
+<div id="bug-fix-user-visible-misbehavior-in-an-official-stable-release">
+  ## Correction de bug (dysfonctionnement visible par l’utilisateur dans une version stable officielle)
+</div>
 
-* Correction du problème de l’index de saut &#39;set&#39; qui ne fonctionnait pas avec IN et indexHint(). #62083 (Michael Kolupaev).
+* Correction du problème de l’index de saut `set` qui ne fonctionnait pas avec IN et indexHint(). #62083 (Michael Kolupaev).
 * Correction des query avec FINAL qui renvoyaient un résultat incorrect lorsque la table n’utilisait pas l’adaptive granularity. #62432 (Duc Canh Le).
 * Prise en charge de l’exécution d’une function lors de l’affectation d’une valeur à une parameterized view. #63502 (SmitaRKulkarni).
 * Correction du suivi de la mémoire pour Parquet. #63584 (Michael Kolupaev).
@@ -99,7 +109,7 @@ Modifications pertinentes pour les services ClickHouse Cloud basés sur la versi
 * Correction de la résolution du sélecteur COLUMNS non qualifié. Préserve l’ordre des columns en entrée et interdit l’utilisation d’identifiants inconnus. #63962 (Dmitry Novik).
 * Correction d’une erreur d’aliases cycliques pour des aliases cycliques de types différents (expression et function). #63993 (Nikolai Kochetov).
 * Cette correction utilisera un Context redéfini approprié avec le bon definisseur pour chaque vue individuelle du query pipeline. #64079 (pufit).
-* Correction dans l’analyzer : l’erreur &quot;Not found column&quot; est corrigée lors de l’utilisation de INTERPOLATE. #64096 (Yakov Olkhovskiy).
+* Correction dans l’analyzer : l’erreur &quot;Not found column&quot; est corrigée lors de l’utilisation de INTERPOLATE. #64096 (Yakov Olkhovskiy).
 * Évite LOGICAL&#95;ERROR lors d’un CREATE TABLE comme MaterializedView. #64174 (Raúl Marín).
 * Le query cache considère désormais comme différentes deux queries identiques exécutées sur des databases différentes. Le comportement précédent pouvait être utilisé pour contourner l’absence de privileges nécessaires à la lecture d’une table. #64199 (Robert Schulze).
 * Correction d’un abort possible en cas d’exception non interceptée dans ~WriteBufferFromFileDescriptor de StatusFile. #64206 (Kruglov Pavel).
@@ -107,14 +117,14 @@ Modifications pertinentes pour les services ClickHouse Cloud basés sur la versi
 * Correction d’un accurateCast inattendu de string vers integer. #64255 (wudidapaopao).
 * Correction de la simplification CNF dans le cas où un groupe OR contient des atomes mutuellement exclusifs. #64256 (Eduard Karacharov).
 * Correction de la validation de la taille du Query Tree. #64377 (Dmitry Novik).
-* Correction de l’erreur logique : bad cast pour une Buffer table avec PREWHERE. #64388 (Nikolai Kochetov).
+* Correction de l’erreur logique : bad cast pour une Buffer table avec PREWHERE. #64388 (Nikolai Kochetov).
 * Correction des query CREATE TABLE AS pour les tables avec des expressions par défaut. #64455 (Anton Popov).
 * Correction du comportement de optimize&#95;read&#95;in&#95;order pour ORDER BY ... NULLS FIRST / LAST sur les tables avec des keys nullable. #64483 (Eduard Karacharov).
 * Correction des erreurs Expression nodes list expected 1 projection names et Unknown expression or identifier pour les query avec des aliases vers GLOBAL IN.. #64517 (Nikolai Kochetov).
 * Correction d’une erreur Cannot find column dans des distributed queries avec un CTE constant dans la clé GROUP BY. #64519 (Nikolai Kochetov).
 * Correction de la sortie de la function formatDateTimeInJodaSyntax lorsqu’un Formatter génère un nombre impair de caractères et que le dernier caractère est 0. Par exemple, SELECT formatDateTimeInJodaSyntax(toDate(&#39;2012-05-29&#39;), &#39;D&#39;) renvoie désormais correctement 150 au lieu de 15 auparavant. #64614 (LiuNeng).
 * Ne pas Rewrite l’aggregation si le combinator -If est déjà utilisé. #64638 (Dmitry Novik).
-* Correction de la type inference pour float (dans le cas d’un petit buffer, p. ex. `--max_read_buffer_size` 1). #64641 (Azat Khuzhin).
+* Correction de la type inference pour float (dans le cas d’un petit buffer, p. ex. --max&#95;read&#95;buffer&#95;size 1). #64641 (Azat Khuzhin).
 * Corrige un bug pouvant entraîner des TTL non fonctionnels avec des expressions. #64694 (alesapin).
 * Corrige la suppression des expressions WHERE et PREWHERE toujours vraies (pour le nouvel analyzer). #64695 (Nikolai Kochetov).
 * Corrige l’élimination excessive de parts par les text indexes basés sur des jetons (ngrambf , full&#95;text) lors du filtrage sur le résultat de startsWith, endsWith, match, multiSearchAny. #64720 (Eduard Karacharov).

@@ -103,7 +103,6 @@ namespace MergeTreeSetting
 namespace FailPoints
 {
     extern const char database_catalog_drop_finally_before_id_erase[];
-    extern const char database_catalog_drop_finally_after_notify[];
 }
 
 class DatabaseNameHints : public IHints<>
@@ -115,7 +114,7 @@ public:
         : database_catalog(database_catalog_)
     {}
 
-    [[nodiscard]] VectorWithMemoryTracking<String> getAllRegisteredNames() const override
+    VectorWithMemoryTracking<String> getAllRegisteredNames() const override
     {
         auto context = CurrentThread::tryGetQueryContext();
         if (!context)
@@ -313,18 +312,6 @@ void DatabaseCatalog::shutdownImpl(std::function<void()> shutdown_system_logs)
             /// Only user databases: enumerating a predefined one can materialize a lazily created
             /// system table during shutdown, and none of them holds a `Buffer` table anyway.
             if (isPredefinedDatabase(database.first))
-                continue;
-
-            /// Neither a data lake catalog nor a `Remote` database: listing their tables is a request
-            /// to another server, which can be retried for minutes when that server is unreachable,
-            /// and their tables hold no buffered rows.
-            if (database.second->isDatalakeCatalog() || database.second->isRemoteDatabase())
-                continue;
-
-            /// Nor an `Overlay` database: it forwards the listing to its sources, which can be the databases
-            /// skipped above, and returns `StorageAlias` tables, which hold no buffered rows either.
-            /// Its sources are visited by this loop on their own.
-            if (!database.second->ownsTables())
                 continue;
 
             try
@@ -615,12 +602,8 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
 
 bool DatabaseCatalog::isPredefinedTable(const StorageID & table_id) const
 {
-    static const char * information_schema_views[] = {
-        "schemata", "tables", "views", "columns", "key_column_usage", "referential_constraints", "statistics",
-        "engines", "character_sets", "collations", "user_privileges", "schema_privileges", "table_privileges", "column_privileges"};
-    static const char * information_schema_views_uppercase[] = {
-        "SCHEMATA", "TABLES", "VIEWS", "COLUMNS", "KEY_COLUMN_USAGE", "REFERENTIAL_CONSTRAINTS", "STATISTICS",
-        "ENGINES", "CHARACTER_SETS", "COLLATIONS", "USER_PRIVILEGES", "SCHEMA_PRIVILEGES", "TABLE_PRIVILEGES", "COLUMN_PRIVILEGES"};
+    static const char * information_schema_views[] = {"schemata", "tables", "views", "columns"};
+    static const char * information_schema_views_uppercase[] = {"SCHEMATA", "TABLES", "VIEWS", "COLUMNS"};
 
     auto check_database_and_table_name = [&](const String & database_name, const String & table_name)
     {
@@ -629,14 +612,15 @@ bool DatabaseCatalog::isPredefinedTable(const StorageID & table_id) const
             auto storage = getSystemDatabase()->tryGetTable(table_name, getContext());
             return storage && storage->isSystemStorage();
         }
-        /// Each view is attached under both its lowercase and its UPPERCASE name in both databases
-        /// (see attachInformationSchema), so both spellings are predefined in both databases.
-        if (database_name == INFORMATION_SCHEMA || database_name == INFORMATION_SCHEMA_UPPERCASE)
+        if (database_name == INFORMATION_SCHEMA)
         {
             return std::find(std::begin(information_schema_views), std::end(information_schema_views), table_name)
-                    != std::end(information_schema_views)
-                || std::find(std::begin(information_schema_views_uppercase), std::end(information_schema_views_uppercase), table_name)
-                    != std::end(information_schema_views_uppercase);
+                != std::end(information_schema_views);
+        }
+        if (database_name == INFORMATION_SCHEMA_UPPERCASE)
+        {
+            return std::find(std::begin(information_schema_views_uppercase), std::end(information_schema_views_uppercase), table_name)
+                != std::end(information_schema_views_uppercase);
         }
         return false;
     };
@@ -1117,22 +1101,6 @@ void DatabaseCatalog::updateUUIDMapping(const UUID & uuid, DatabasePtr database,
     chassert(prev_database && prev_table);
     prev_database = std::move(database);
     prev_table = std::move(table);
-}
-
-bool DatabaseCatalog::replaceUnusedTableInUUIDMapping(const UUID & uuid, const StoragePtr & old_table, StoragePtr new_table)
-{
-    chassert(uuid != UUIDHelpers::Nil && getFirstLevelIdx(uuid) < uuid_map.size());
-    chassert(old_table && new_table);
-    UUIDToStorageMapPart & map_part = uuid_map[getFirstLevelIdx(uuid)];
-    std::lock_guard lock{map_part.mutex};
-    auto it = map_part.map.find(uuid);
-    if (it == map_part.map.end() || it->second.second != old_table)
-        return false;
-    /// The mapping and the caller.
-    if (old_table.use_count() != 2)
-        return false;
-    it->second.second = std::move(new_table);
-    return true;
 }
 
 bool DatabaseCatalog::hasUUIDMapping(const UUID & uuid)
@@ -1647,9 +1615,7 @@ void DatabaseCatalog::undropTable(StorageID table_id, std::function<void()> thro
         for (auto it = tables_marked_dropped.begin(); it != tables_marked_dropped.end(); ++it)
         {
             auto storage_ptr = it->table;
-            if (it->table_id.uuid == table_id.uuid &&
-                it->table_id.database_name == table_id.database_name &&
-                it->table_id.table_name == table_id.table_name)
+            if (it->table_id.uuid == table_id.uuid)
             {
                 it_dropped_table = it;
                 dropped_table = *it;
@@ -1825,9 +1791,6 @@ void DatabaseCatalog::dropTablesParallel(TablesMarkedAsDropped tables_to_drop)
                 /// tables_marked_dropped_ids until the guarded erase below: window for a same-UUID re-drop.
                 FailPointInjection::pauseFailPoint(FailPoints::database_catalog_drop_finally_before_id_erase);
 
-                /// The dropped storage is destroyed before the waiters of `DROP ... SYNC` see the drop finished.
-                table_iterator->table.reset();
-
                 TableMarkedAsDropped table_to_delete_without_lock;
                 {
                     std::lock_guard lock(tables_marked_dropped_mutex);
@@ -1845,8 +1808,6 @@ void DatabaseCatalog::dropTablesParallel(TablesMarkedAsDropped tables_to_drop)
 
                     wait_table_finally_dropped.notify_all();
                 }
-
-                FailPointInjection::pauseFailPoint(FailPoints::database_catalog_drop_finally_after_notify);
             }
             catch (...)
             {
@@ -1910,7 +1871,7 @@ void DatabaseCatalog::dropTableFinally(const TableMarkedAsDropped & table)
     ///   or it is better to bypass it e.g. to avoid interactions with a remote storage
     auto is_disk_eligible_for_search = [](DiskPtr disk, std::shared_ptr<MergeTreeData> storage)
     {
-        bool is_disk_eligible = !disk->isBroken() && !disk->isReadOnly();
+        bool is_disk_eligible = !disk->isReadOnly();
 
         /// Disk is not actually used by MergeTree table
         if (is_disk_eligible && storage && !storage->getStoragePolicy()->tryGetVolumeIndexByDiskName(disk->getName()).has_value())

@@ -7,6 +7,10 @@ keywords: ['managed postgres', 'prisma', 'prisma orm', 'prisma migrate', 'typesc
 doc_type: 'guide'
 ---
 
+import { BetaBadge } from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.guides-prisma-beta" />
+
 [Prisma ORM](https://www.prisma.io/orm) est un ORM TypeScript qui propose un schéma déclaratif, un outil de migration (Prisma Migrate) et un client généré à typage sûr. Dans ce guide, vous allez connecter Prisma à ClickHouse Managed Postgres, créer une table au moyen d&#39;une migration, puis l&#39;interroger depuis un script et un petit endpoint HTTP.
 
 Ce guide utilise Prisma ORM 7 (testé avec la version `7.10.0`), la version stable actuelle.

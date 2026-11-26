@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-fasttest, no-parallel, no-object-storage, no-random-settings, no-flaky-check, no-msan
+# Tags: long, no-fasttest, no-parallel, no-object-storage, no-random-settings, no-flaky-check
 # no-flaky-check: Too slow
 
 set -e
@@ -16,10 +16,10 @@ for disk in 's3_disk' 'local_disk' 'azure'; do
     cache_path=02241_filesystem_cache_on_write_operations_$disk
     $CLICKHOUSE_CLIENT --echo --query "DROP TABLE IF EXISTS test_02241"
     # Pin the default compression codec to `LZ4` so the per-part `data.bin` cached-segment sizes asserted
-    # below (the `Vertical` outputs) stay fixed regardless of the server default codec. The total size of
-    # the cache is not checked: it additionally counts a few bytes per part from auxiliary streams written
-    # with the server default codec (`ZSTD(3)`) that this setting does not control, and their sizes depend
-    # on the version of the compression library. Only the number of the cache entries is checked.
+    # below (the `Vertical` outputs) stay fixed regardless of the server default codec. Note: the aggregate
+    # `sum(size)` over `system.filesystem_cache` additionally counts a few bytes per part from auxiliary
+    # streams written with the server default codec that this setting does not control, so those totals
+    # track the current default (`ZSTD(3)`) and must be regenerated if the default codec changes.
     $CLICKHOUSE_CLIENT --echo --query "CREATE TABLE test_02241 (key UInt32, value String) Engine=MergeTree() ORDER BY key SETTINGS disk=disk(type='cache', path='$cache_path', disk='$disk', max_size=10_000_000_000, cache_on_write_operations=1), min_bytes_for_wide_part = 10485760, compress_marks=false, compress_primary_key=false, min_bytes_for_full_part_storage=0, ratio_of_defaults_for_sparse_serialization = 1, write_marks_for_substreams_in_compact_parts=1, serialization_info_version='basic', auto_statistics_types = '', default_compression_codec='LZ4'"
     $CLICKHOUSE_CLIENT --echo --query "SYSTEM STOP MERGES test_02241"
     cache_name=$($CLICKHOUSE_CLIENT -q "SELECT name FROM system.disks WHERE cache_path LIKE '%$cache_path'")
@@ -45,7 +45,7 @@ for disk in 's3_disk' 'local_disk' 'azure'; do
     FORMAT Vertical"
 
     $CLICKHOUSE_CLIENT --echo --query "SELECT count() FROM (SELECT arrayJoin(cache_paths) AS cache_path, local_path, remote_path FROM system.remote_data_paths ) AS data_paths INNER JOIN system.filesystem_cache AS caches ON data_paths.cache_path = caches.cache_path WHERE caches.cache_name = '$cache_name'"
-    $CLICKHOUSE_CLIENT --echo --query "SELECT count() FROM system.filesystem_cache WHERE cache_name = '$cache_name'"
+    $CLICKHOUSE_CLIENT --echo --query "SELECT count(), sum(size) FROM system.filesystem_cache WHERE cache_name = '$cache_name'"
 
     $CLICKHOUSE_CLIENT --echo --enable_filesystem_cache_on_write_operations=1 --query "INSERT INTO test_02241 SELECT number, toString(number) FROM numbers(100)"
 
@@ -67,7 +67,7 @@ for disk in 's3_disk' 'local_disk' 'azure'; do
     FORMAT Vertical"
 
     $CLICKHOUSE_CLIENT --echo --query "SELECT count() FROM (SELECT arrayJoin(cache_paths) AS cache_path, local_path, remote_path FROM system.remote_data_paths ) AS data_paths INNER JOIN system.filesystem_cache AS caches ON data_paths.cache_path = caches.cache_path WHERE caches.cache_name = '$cache_name'"
-    $CLICKHOUSE_CLIENT --echo --query "SELECT count() FROM system.filesystem_cache WHERE cache_name = '$cache_name'"
+    $CLICKHOUSE_CLIENT --echo --query "SELECT count(), sum(size) FROM system.filesystem_cache WHERE cache_name = '$cache_name'"
 
     $CLICKHOUSE_CLIENT --echo --query "SELECT * FROM test_02241 FORMAT Null"
     $CLICKHOUSE_CLIENT --echo --query "SELECT count() FROM system.filesystem_cache WHERE cache_hits > 0 AND cache_name = '$cache_name'"
@@ -75,7 +75,7 @@ for disk in 's3_disk' 'local_disk' 'azure'; do
     $CLICKHOUSE_CLIENT --echo --query "SELECT * FROM test_02241 FORMAT Null"
     $CLICKHOUSE_CLIENT --echo --query "SELECT count() FROM system.filesystem_cache WHERE cache_hits > 0 AND cache_name = '$cache_name'"
 
-    $CLICKHOUSE_CLIENT --echo --query "SELECT count() FROM system.filesystem_cache WHERE cache_name = '$cache_name'"
+    $CLICKHOUSE_CLIENT --echo --query "SELECT count(), sum(size) size FROM system.filesystem_cache WHERE cache_name = '$cache_name'"
 
     echo "SYSTEM CLEAR FILESYSTEM CACHE"
     drop_filesystem_cache $cache_name
@@ -100,24 +100,24 @@ for disk in 's3_disk' 'local_disk' 'azure'; do
     FORMAT Vertical;"
 
     $CLICKHOUSE_CLIENT --echo --query "SELECT count() FROM (SELECT arrayJoin(cache_paths) AS cache_path, local_path, remote_path FROM system.remote_data_paths ) AS data_paths INNER JOIN system.filesystem_cache AS caches ON data_paths.cache_path = caches.cache_path WHERE caches.cache_name = '$cache_name'"
-    $CLICKHOUSE_CLIENT --echo --query "SELECT count() FROM system.filesystem_cache WHERE cache_name = '$cache_name'"
+    $CLICKHOUSE_CLIENT --echo --query "SELECT count(), sum(size) FROM system.filesystem_cache WHERE cache_name = '$cache_name'"
 
-    $CLICKHOUSE_CLIENT --echo --query "SELECT count() FROM system.filesystem_cache WHERE cache_name = '$cache_name'"
+    $CLICKHOUSE_CLIENT --echo --query "SELECT count(), sum(size) FROM system.filesystem_cache WHERE cache_name = '$cache_name'"
     $CLICKHOUSE_CLIENT --echo --enable_filesystem_cache_on_write_operations=1 --query "INSERT INTO test_02241 SELECT number, toString(number) FROM numbers(100) SETTINGS enable_filesystem_cache_on_write_operations=0"
-    $CLICKHOUSE_CLIENT --echo --query "SELECT count() FROM system.filesystem_cache WHERE cache_name = '$cache_name'"
+    $CLICKHOUSE_CLIENT --echo --query "SELECT count(), sum(size) FROM system.filesystem_cache WHERE cache_name = '$cache_name'"
 
     $CLICKHOUSE_CLIENT --echo --enable_filesystem_cache_on_write_operations=1 --query "INSERT INTO test_02241 SELECT number, toString(number) FROM numbers(100)"
     $CLICKHOUSE_CLIENT --echo --enable_filesystem_cache_on_write_operations=1 --query "INSERT INTO test_02241 SELECT number, toString(number) FROM numbers(300, 10000)"
-    $CLICKHOUSE_CLIENT --echo --query "SELECT count() FROM system.filesystem_cache WHERE cache_name = '$cache_name'"
+    $CLICKHOUSE_CLIENT --echo --query "SELECT count(), sum(size) FROM system.filesystem_cache WHERE cache_name = '$cache_name'"
 
     $CLICKHOUSE_CLIENT --echo --query "SYSTEM START MERGES test_02241"
 
     $CLICKHOUSE_CLIENT --echo --enable_filesystem_cache_on_write_operations=1 --query "OPTIMIZE TABLE test_02241 FINAL"
 
-    $CLICKHOUSE_CLIENT --echo --query "SELECT count() FROM system.filesystem_cache WHERE cache_name = '$cache_name'"
+    $CLICKHOUSE_CLIENT --echo --query "SELECT count(), sum(size) FROM system.filesystem_cache WHERE cache_name = '$cache_name'"
 
     $CLICKHOUSE_CLIENT --echo --enable_filesystem_cache_on_write_operations=1 --mutations_sync=2 --query "ALTER TABLE test_02241 UPDATE value = 'kek' WHERE key = 100"
-    $CLICKHOUSE_CLIENT --echo --query "SELECT count() FROM system.filesystem_cache WHERE cache_name = '$cache_name'"
+    $CLICKHOUSE_CLIENT --echo --query "SELECT count(), sum(size) FROM system.filesystem_cache WHERE cache_name = '$cache_name'"
     $CLICKHOUSE_CLIENT --echo --enable_filesystem_cache_on_write_operations=1 --query "INSERT INTO test_02241 SELECT number, toString(number) FROM numbers(5000000)"
 
     $CLICKHOUSE_CLIENT --echo --query "SYSTEM FLUSH LOGS query_log"

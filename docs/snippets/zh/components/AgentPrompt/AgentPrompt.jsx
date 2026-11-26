@@ -1,4 +1,4 @@
-const AgentPrompt = ({ prompt, title = "Agent 辅助设置", description, outline, outlineLabel = "Agent 将执行的操作", repositoryUrl, repositoryLabel = "ClickHouse/agent-skills" }) => {
+export const AgentPrompt = ({ prompt, title = "Agent 辅助设置", description, outline, outlineLabel = "Agent 将执行的操作", repositoryUrl, repositoryLabel = "ClickHouse/agent-skills" }) => {
   const [copied, setCopied] = useState(false)
 
   const handleCopy = async () => {
@@ -102,5 +102,3 @@ const AgentPrompt = ({ prompt, title = "Agent 辅助设置", description, outlin
     </div>
   )
 }
-
-export { AgentPrompt };

@@ -52,7 +52,7 @@ opentelemetry-bootstrap -a install
   </Tab>
 </Tabs>
 
-*`OTEL_SERVICE_NAME` 环境变量用于在 ClickStack 用户界面中标识你的服务，你可以将其设置为任意名称。*
+*`OTEL_SERVICE_NAME` 环境变量用于在 HyperDX 应用中标识你的服务，你可以将其设置为任意名称。*
 
 ### 使用 OpenTelemetry Python agent 运行应用 {#run-the-application-with-otel-python-agent}
 
@@ -126,7 +126,7 @@ logger.setLevel(logging.DEBUG)
 
 OpenTelemetry Python SDK 通常会在出错时将错误信息显示在控制台中。
 不过，如果你没有遇到任何错误，却发现数据没有如预期那样出现在
-ClickStack 用户界面中，则可以启用调试模式。启用调试模式后，所有遥测数据都会打印到控制台，
+HyperDX 中，则可以启用调试模式。启用调试模式后，所有遥测数据都会打印到控制台，
 这样你就可以确认应用程序是否已正确埋点，并生成了
 预期的数据。
 

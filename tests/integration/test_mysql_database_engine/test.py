@@ -177,16 +177,6 @@ def test_clickhouse_ddl_for_mysql_database(started_cluster):
         assert is_perm_ordinary == "0", f"Expected is_permanently=0 for ordinary detach, got {is_perm_ordinary}"
         clickhouse_node.query("ATTACH TABLE test_database.test_table")
 
-        # A short ATTACH in a session whose `mysql_datatypes_support_level` differs from the default keeps the stored
-        # definition: the session value is not added to its SETTINGS, which DatabaseMySQL would reject.
-        for settings in ({"mysql_datatypes_support_level": "decimal"}, {"compatibility": "26.6"}):
-            clickhouse_node.query("DETACH TABLE test_database.test_table")
-            clickhouse_node.query("ATTACH TABLE test_database.test_table", settings=settings)
-            assert "test_table" in clickhouse_node.query("SHOW TABLES FROM test_database")
-            clickhouse_node.query("DETACH DATABASE test_database")
-            clickhouse_node.query("ATTACH DATABASE test_database", settings=settings)
-            assert "mysql_datatypes_support_level" not in clickhouse_node.query("SHOW CREATE DATABASE test_database")
-
         clickhouse_node.query("DROP DATABASE test_database")
         assert "test_database" not in clickhouse_node.query("SHOW DATABASES")
 
@@ -1165,18 +1155,6 @@ def test_backup_database(started_cluster):
         assert "backup_database" not in clickhouse_node.query("SHOW DATABASES")
 
         clickhouse_node.query(f"RESTORE DATABASE backup_database FROM {backup_name}")
-        assert (
-            clickhouse_node.query("SHOW CREATE DATABASE backup_database")
-            == "CREATE DATABASE backup_database\\nENGINE = MySQL(\\'mysql80:3306\\', \\'backup_database\\', \\'root\\', \\'[HIDDEN]\\')\n"
-        )
-
-        # A RESTORE in a session whose `mysql_datatypes_support_level` differs from the default keeps the definition
-        # from the backup: the session value is not added to its SETTINGS, which RESTORE would reject.
-        clickhouse_node.query("DROP DATABASE backup_database SYNC")
-        clickhouse_node.query(
-            f"RESTORE DATABASE backup_database FROM {backup_name}",
-            settings={"mysql_datatypes_support_level": "decimal"},
-        )
         assert (
             clickhouse_node.query("SHOW CREATE DATABASE backup_database")
             == "CREATE DATABASE backup_database\\nENGINE = MySQL(\\'mysql80:3306\\', \\'backup_database\\', \\'root\\', \\'[HIDDEN]\\')\n"

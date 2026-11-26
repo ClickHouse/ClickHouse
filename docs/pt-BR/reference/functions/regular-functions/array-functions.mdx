@@ -367,49 +367,6 @@ SELECT arrayBottomK((x, y) -> y, 2, ['a', 'b', 'c'], [3, 1, 2])
 ['b','c']
 ```
 
-## arrayCombinations {#arrayCombinations}
-
-Introduzido em: v26.10.0
-
-Retorna todas as combinações (seleções não ordenadas sem índices repetidos) de comprimento `k` a partir do array de origem. A enumeração é feita por índices, portanto valores iguais podem gerar linhas duplicadas no resultado. Para `k = 0`, retorna `[[]]`. O tamanho total do resultado por bloco é limitado por `function_range_max_elements_in_block`; cada array gerado é contabilizado como seu tamanho mais um.
-
-**Sintaxe**
-
-```sql
-arrayCombinations(arr, k)
-```
-
-**Argumentos**
-
-* `arr` — Array de origem. [`Array(T)`](/pt-BR/reference/data-types/array)
-* `k` — Comprimento de cada combinação gerada. Não pode exceder o tamanho do array de origem. Aceita `Int8`, `Int16`, `Int32`, `Int64`, `UInt8`, `UInt16`, `UInt32` e `UInt64`. [`(U)Int*`](/pt-BR/reference/data-types/int-uint)
-
-**Valor retornado**
-
-Todas as combinações de comprimento `k`. [`Array(Array(T))`](/pt-BR/reference/data-types/array)
-
-**Exemplos**
-
-**Exemplo de uso**
-
-```sql title=Query
-SELECT arrayCombinations([1, 2, 3], 2);
-```
-
-```response title=Response
-[[1,2],[1,3],[2,3]]
-```
-
-**Exemplo com `k = 0`**
-
-```sql title=Query
-SELECT arrayCombinations([1, 2, 3], 0);
-```
-
-```response title=Response
-[[]]
-```
-
 ## arrayCompact {#arrayCompact}
 
 Introduzido em: v20.1.0
@@ -483,7 +440,7 @@ Se `func` não for especificada, retorna o número de elementos não zero no arr
 
 `arrayCount` é uma [função de ordem superior](/pt-BR/reference/functions/regular-functions/overview#higher-order-functions).
 
-<Note>
+<Info>
   **Use a configuração `array_count_legacy_uint32_result` para retornar `UInt32`**
 
   A versão 26.10 introduziu uma alteração incompatível com versões anteriores: `arrayCount` passou a retornar `UInt64` em vez de `UInt32`, para que o resultado seja exato em arrays com mais de `4294967295` elementos correspondentes.
@@ -491,7 +448,7 @@ Se `func` não for especificada, retorna o número de elementos não zero no arr
   Para manter o comportamento anterior (tanto o tipo de resultado `UInt32` quanto a constância do resultado), defina a configuração `array_count_legacy_uint32_result` (padrão: `false`) como `true`.
 
   Durante uma atualização gradual de um cluster, uma consulta distribuída iniciada por um servidor ainda não atualizado não repassa essa configuração; assim, expressões sensíveis ao tipo avaliadas localmente em shards já atualizados (por exemplo, `byteSize(arrayCount(...))`) passam a ver `UInt64` nesses shards. Para manter essas consultas totalmente inalteradas até que todo o cluster seja atualizado, defina `array_count_legacy_uint32_result = 1` nos servidores atualizados para os usuários com os quais as consultas são executadas nos shards e remova essa configuração após a conclusão do upgrade. O usuário em questão depende da configuração do cluster: com um `secret` interserver configurado, o shard executa a consulta como o usuário atual do iniciador; caso contrário, é usado o usuário da definição do cluster ou da função de tabela `remote` (`default`, se nenhum for especificado). A abordagem mais simples e robusta é habilitar a configuração para todos os usuários dos servidores atualizados.
-</Note>
+</Info>
 
 **Sintaxe**
 
@@ -2556,272 +2513,6 @@ SELECT arrayNormalizedGini([0.9, 0.3, 0.8, 0.7],[6, 1, 0, 2]);
 (0.18055555555555558,0.2638888888888889,0.6842105263157896)
 ```
 
-## arrayPackBitGroupsToFixedString {#arrayPackBitGroupsToFixedString}
-
-Introduzido em: v26.10.0
-
-Igual a `arrayPackBitsToFixedString`, mas a lambda retorna um inteiro cujos `g` bits menos significativos formam um grupo, e os grupos
-são empacotados de forma contígua (bit mais significativo primeiro) em uma `FixedString(n)`. O resultado corresponde aos primeiros `n` bytes de
-`arrayPackBitGroupsToString` (um grupo que cruza a fronteira contribui apenas com seus bits iniciais), preenchidos com zeros até `n`
-bytes. Tanto o tamanho `n` quanto o tamanho do grupo `g` devem ser constantes positivas, e `g` não pode exceder 64.
-
-**Sintaxe**
-
-```sql
-arrayPackBitGroupsToFixedString(f, n, g, arr1[, arr2, ...])
-```
-
-**Argumentos**
-
-* `f` — Função lambda que gera o valor do grupo para cada elemento. [`função lambda`](/pt-BR/reference/functions/regular-functions/overview#arrow-operator-and-lambda)
-* `n` — O tamanho da `FixedString` resultante, em bytes. [`(U)Int8/16/32/64`](/pt-BR/reference/data-types/int-uint)
-* `g` — O número de bits por grupo. [`(U)Int8/16/32/64`](/pt-BR/reference/data-types/int-uint)
-* `arr1[, arr2, ...]` — Um ou mais arrays de mesmo tamanho a serem empacotados. A lambda recebe um argumento por array. [`Array(T)`](/pt-BR/reference/data-types/array)
-
-**Valor retornado**
-
-Retorna os bits empacotados. [`FixedString(n)`](/pt-BR/reference/data-types/fixedstring)
-
-**Exemplos**
-
-**Exemplo**
-
-```sql title=Query
-SELECT arrayPackBitGroupsToFixedString(x -> x, 2, 4, [3, 0, 3, 1])
-```
-
-```response title=Response
-01
-```
-
-## arrayPackBitGroupsToString {#arrayPackBitGroupsToString}
-
-Introduzido em: v26.10.0
-
-Igual a `arrayPackBitsToString`, mas a lambda retorna um inteiro cujos `g` bits menos significativos formam um grupo, e os grupos
-são empacotados de forma contígua (do bit mais significativo para o menos significativo). O comprimento do resultado é de `ceil(size_of_array * g / 8)` bytes.
-O tamanho do grupo `g` deve ser uma constante entre 1 e 64.
-
-**Sintaxe**
-
-```sql
-arrayPackBitGroupsToString(f, g, arr1[, arr2, ...])
-```
-
-**Argumentos**
-
-* `f` — Função lambda que gera o valor do grupo para cada elemento. [`função lambda`](/pt-BR/reference/functions/regular-functions/overview#arrow-operator-and-lambda)
-* `g` — O número de bits por grupo. [`(U)Int8/16/32/64`](/pt-BR/reference/data-types/int-uint)
-* `arr1[, arr2, ...]` — Um ou mais arrays de mesmo tamanho a serem empacotados. A lambda recebe um argumento por array. [`Array(T)`](/pt-BR/reference/data-types/array)
-
-**Valor retornado**
-
-Retorna os bits empacotados. [`String`](/pt-BR/reference/data-types/string)
-
-**Exemplos**
-
-**Exemplo**
-
-```sql title=Query
-SELECT arrayPackBitGroupsToString(x -> x, 4, [3, 0, 3, 1])
-```
-
-```response title=Response
-01
-```
-
-## arrayPackBitGroupsToUInt64 {#arrayPackBitGroupsToUInt64}
-
-Introduzido em: v26.10.0
-
-Igual a `arrayPackBitsToUInt64`, mas a lambda retorna um inteiro cujos `g` bits menos significativos formam um grupo, e os grupos
-são empacotados de forma contígua (bit mais significativo primeiro em cada byte, com os bytes interpretados em ordem little-endian, de modo que
-`arrayPackBitGroupsToUInt64(f, g, arr) = reinterpretAsUInt64(arrayPackBitGroupsToString(f, g, arr))`). O resultado
-contém os primeiros 64 bits do fluxo empacotado: se `g` não for divisor de 64, o grupo que ultrapassa essa fronteira
-contribui apenas com seus bits iniciais. O tamanho do grupo `g` deve ser uma constante entre 1 e 64.
-
-**Sintaxe**
-
-```sql
-arrayPackBitGroupsToUInt64(f, g, arr1[, arr2, ...])
-```
-
-**Argumentos**
-
-* `f` — Função lambda que gera o valor do grupo para cada elemento. [`função lambda`](/pt-BR/reference/functions/regular-functions/overview#arrow-operator-and-lambda)
-* `g` — O número de bits por grupo. [`(U)Int8/16/32/64`](/pt-BR/reference/data-types/int-uint)
-* `arr1[, arr2, ...]` — Um ou mais arrays de mesmo tamanho a serem empacotados. A lambda recebe um argumento por array. [`Array(T)`](/pt-BR/reference/data-types/array)
-
-**Valor retornado**
-
-Retorna os bits empacotados. [`UInt64`](/pt-BR/reference/data-types/int-uint)
-
-**Exemplos**
-
-**Exemplo**
-
-```sql title=Query
-SELECT arrayPackBitGroupsToUInt64(x -> x, 4, [1, 2, 3])
-```
-
-```response title=Response
-12306
-```
-
-## arrayPackBitsToFixedString {#arrayPackBitsToFixedString}
-
-Introduzido em: v26.10.0
-
-Aplica uma função lambda a cada elemento do array e empacota os bits resultantes em uma `FixedString(n)`.
-Para cada elemento, a lambda retorna um inteiro que é tratado como um único bit (zero ou diferente de zero).
-Os bits são gravados a partir do bit mais significativo, de modo que o resultado corresponde aos primeiros `n` bytes de `arrayPackBitsToString`.
-Se o array tiver mais de `n * 8` elementos, os excedentes são ignorados; se tiver menos, o resultado é preenchido com zeros até `n` bytes.
-O tamanho `n` deve ser uma constante positiva.
-
-**Sintaxe**
-
-```sql
-arrayPackBitsToFixedString(f, n, arr1[, arr2, ...])
-```
-
-**Argumentos**
-
-* `f` — Função lambda que gera o bit para cada elemento. [`função lambda`](/pt-BR/reference/functions/regular-functions/overview#arrow-operator-and-lambda)
-* `n` — O tamanho da `FixedString` resultante, em bytes. [`(U)Int8/16/32/64`](/pt-BR/reference/data-types/int-uint)
-* `arr1[, arr2, ...]` — Um ou mais arrays de mesmo tamanho a serem empacotados. A função lambda recebe um argumento para cada array. [`Array(T)`](/pt-BR/reference/data-types/array)
-
-**Valor retornado**
-
-Retorna os bits empacotados. [`FixedString(n)`](/pt-BR/reference/data-types/fixedstring)
-
-**Exemplos**
-
-**Exemplo**
-
-```sql title=Query
-SELECT arrayPackBitsToFixedString(x -> x, 2, [0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 1])
-```
-
-```response title=Response
-01
-```
-
-## arrayPackBitsToString {#arrayPackBitsToString}
-
-Introduzido em: v26.10.0
-
-Aplica uma função lambda a cada elemento do array e empacota os bits resultantes em uma `String`.
-Para cada elemento, a lambda retorna um inteiro que é tratado como um único bit (zero ou diferente de zero).
-Os bits são gravados a partir do bit mais significativo; o comprimento do resultado é de `ceil(size_of_array / 8)` bytes.
-
-**Sintaxe**
-
-```sql
-arrayPackBitsToString(f, arr1[, arr2, ...])
-```
-
-**Argumentos**
-
-* `f` — Função lambda que gera o bit para cada elemento. [`função lambda`](/pt-BR/reference/functions/regular-functions/overview#arrow-operator-and-lambda)
-* `arr1[, arr2, ...]` — Um ou mais arrays de mesmo tamanho a serem empacotados. A lambda recebe um argumento por array. [`Array(T)`](/pt-BR/reference/data-types/array)
-
-**Valor retornado**
-
-Retorna os bits empacotados. [`String`](/pt-BR/reference/data-types/string)
-
-**Exemplos**
-
-**Exemplo**
-
-```sql title=Query
-SELECT arrayPackBitsToString(x -> x, [0, 0, 1, 1, 0, 0, 0, 0])
-```
-
-```response title=Response
-0
-```
-
-## arrayPackBitsToUInt64 {#arrayPackBitsToUInt64}
-
-Introduzido em: v26.10.0
-
-Aplica uma função lambda a cada elemento do array e empacota os bits resultantes em um `UInt64`.
-Para cada elemento, a lambda retorna um inteiro que é tratado como um único bit (zero ou diferente de zero).
-A sequência de bits é distribuída pelos bytes a partir do bit mais significativo (gerando os mesmos bytes que `arrayPackBitsToString`),
-e os bytes são interpretados na ordem little-endian, de modo que
-`arrayPackBitsToUInt64(f, arr) = reinterpretAsUInt64(arrayPackBitsToString(f, arr))`.
-Apenas os primeiros 64 elementos são usados; se houver menos, os bits restantes serão zero.
-
-**Sintaxe**
-
-```sql
-arrayPackBitsToUInt64(f, arr1[, arr2, ...])
-```
-
-**Argumentos**
-
-* `f` — Função lambda que gera o bit para cada elemento. [`função lambda`](/pt-BR/reference/functions/regular-functions/overview#arrow-operator-and-lambda)
-* `arr1[, arr2, ...]` — Um ou mais arrays de mesmo tamanho a serem empacotados. A função lambda recebe um argumento por array. [`Array(T)`](/pt-BR/reference/data-types/array)
-
-**Valor retornado**
-
-Retorna os bits empacotados. [`UInt64`](/pt-BR/reference/data-types/int-uint)
-
-**Exemplos**
-
-**Exemplo**
-
-```sql title=Query
-SELECT arrayPackBitsToUInt64(x -> x, [1, 0, 0, 0, 0, 0])
-```
-
-```response title=Response
-128
-```
-
-## arrayPartialPermutations {#arrayPartialPermutations}
-
-Introduzido em: v26.10.0
-
-Retorna todas as permutações parciais (seleções ordenadas sem índices repetidos) de comprimento `k` do array de origem. A enumeração é feita por índices, de modo que valores iguais podem gerar linhas duplicadas no resultado. Para `k = 0`, retorna `[[]]`. O tamanho total do resultado por bloco é limitado por `function_range_max_elements_in_block`; cada array gerado conta como seu tamanho mais um.
-
-**Sintaxe**
-
-```sql
-arrayPartialPermutations(arr, k)
-```
-
-**Argumentos**
-
-* `arr` — Array de origem. [`Array(T)`](/pt-BR/reference/data-types/array)
-* `k` — Comprimento de cada permutação parcial gerada. Não pode exceder o tamanho do array de origem. Aceita `Int8`, `Int16`, `Int32`, `Int64`, `UInt8`, `UInt16`, `UInt32` e `UInt64`. [`(U)Int*`](/pt-BR/reference/data-types/int-uint)
-
-**Valor retornado**
-
-Todas as permutações parciais de comprimento `k`. [`Array(Array(T))`](/pt-BR/reference/data-types/array)
-
-**Exemplos**
-
-**Exemplo de uso**
-
-```sql title=Query
-SELECT arrayPartialPermutations([1, 2, 3], 2);
-```
-
-```response title=Response
-[[1,2],[1,3],[2,1],[2,3],[3,1],[3,2]]
-```
-
-**Exemplo com `k = 0`**
-
-```sql title=Query
-SELECT arrayPartialPermutations([1, 2, 3], 0);
-```
-
-```response title=Response
-[[]]
-```
-
 ## arrayPartialReverseSort {#arrayPartialReverseSort}
 
 Introduzido em: v23.2.0
@@ -3085,38 +2776,6 @@ SELECT arrayPartialSort((x, y) -> -y, 1, [0, 1, 2], [1, 2, 3]) as res
 
 ```response title=Response
 [2,1,0]
-```
-
-## arrayPermutations {#arrayPermutations}
-
-Introduzido em: v26.10.0
-
-Retorna todas as permutações dos elementos do array de origem. A enumeração é feita por índices, portanto valores iguais podem gerar linhas duplicadas no resultado. Para um array de origem vazio, retorna `[[]]`. O tamanho total do resultado por bloco é limitado por `function_range_max_elements_in_block`; cada array gerado é contabilizado como seu tamanho mais um.
-
-**Sintaxe**
-
-```sql
-arrayPermutations(arr)
-```
-
-**Argumentos**
-
-* `arr` — Array de origem. [`Array(T)`](/pt-BR/reference/data-types/array)
-
-**Valor retornado**
-
-Todas as permutações do array de origem. [`Array(Array(T))`](/pt-BR/reference/data-types/array)
-
-**Exemplos**
-
-**Exemplo de uso**
-
-```sql title=Query
-SELECT arrayPermutations([1, 2, 3]);
-```
-
-```response title=Response
-[[1,2,3],[1,3,2],[2,1,3],[2,3,1],[3,1,2],[3,2,1]]
 ```
 
 ## arrayPopBack {#arrayPopBack}
@@ -3485,8 +3144,6 @@ Introduzido em: v20.4.0
 
 Aplica uma função de agregação aos elementos do array nos intervalos especificados e retorna um array contendo o resultado correspondente a cada intervalo.
 A função retornará o mesmo resultado que várias chamadas de `arrayReduce(agg_func, arraySlice(arr1, index, length), ...)`.
-A única diferença é que o comprimento é sem sinal: um comprimento maior que o valor máximo de `Int64` seleciona o restante do array,
-enquanto `arraySlice` interpreta esse valor como um comprimento negativo.
 
 **Sintaxe**
 
@@ -3565,62 +3222,6 @@ SELECT arrayRemove(['a', NULL, 'b', NULL], NULL)
 
 ```response title=Response
 ['a','b']
-```
-
-## arrayRemoveAt {#arrayRemoveAt}
-
-Introduzido em: v26.10.0
-
-Remove de um array o elemento no índice especificado.
-Os índices são baseados em 1. Índices negativos são contados a partir do final do array.
-Se o índice estiver fora dos limites do array, o array é retornado sem alterações.
-O índice 0 é inválido.
-
-**Sintaxe**
-
-```sql
-arrayRemoveAt(arr, index)
-```
-
-**Argumentos**
-
-* `arr` — Array de origem. [`Array(T)`](/pt-BR/reference/data-types/array)
-* `index` — Índice inteiro não Nullable do elemento a ser removido. Índices negativos são contados a partir do final. [`(U)Int8/16/32/64`](/pt-BR/reference/data-types/int-uint)
-
-**Valor retornado**
-
-Retorna o array de origem sem o elemento na posição `index`, ou o array original se `index` estiver fora dos limites. [`Array(T)`](/pt-BR/reference/data-types/array)
-
-**Exemplos**
-
-**Índice positivo**
-
-```sql title=Query
-SELECT arrayRemoveAt([1, 2, 3, 4], 2)
-```
-
-```response title=Response
-[1,3,4]
-```
-
-**Índice negativo**
-
-```sql title=Query
-SELECT arrayRemoveAt([1, 2, 3, 4], -1)
-```
-
-```response title=Response
-[1,2,3]
-```
-
-**Fora dos limites**
-
-```sql title=Query
-SELECT arrayRemoveAt([1, 2, 3, 4], 10)
-```
-
-```response title=Response
-[1,2,3,4]
 ```
 
 ## arrayResize {#arrayResize}
@@ -4164,7 +3765,7 @@ SELECT arraySimilarity(['A', 'B', 'C'], ['A', 'K', 'L'], [1.0, 2, 3], [3.0, 4, 5
 
 Introduzido em: v1.1.0
 
-Retorna uma fatia do array, incluindo elementos `NULL`.
+Retorna uma parte do array, incluindo elementos `NULL`.
 
 O primeiro argumento também pode ser um [QBit](/pt-BR/reference/data-types/qbit): o resultado é um QBit nas dimensões selecionadas (uma projeção para um subconjunto de dimensões). Nesse caso, `offset` e `length` devem ser constantes, pois a dimensão de um QBit faz parte de seu tipo, e a fatia deve selecionar pelo menos uma dimensão. Uma fatia alinhada aos limites dos grupos de stride do QBit mantém o stride e reutiliza os fluxos de planos de bits armazenados sem cópia.
 
@@ -4173,8 +3774,6 @@ O primeiro argumento também pode ser um [QBit](/pt-BR/reference/data-types/qbit
 ```sql
 arraySlice(arr, offset [, length])
 ```
-
-**Nomes alternativos**: `slice`
 
 **Argumentos**
 
@@ -4525,172 +4124,6 @@ SELECT arrayTranspose([['a', 'b'], ['c', 'd']])
 [['a','c'],['b','d']]
 ```
 
-## arrayTreePreorder {#arrayTreePreorder}
-
-Introduzido em: v26.11.0
-
-Organiza em pré-ordem de busca em profundidade uma árvore (ou uma floresta) armazenada como dois arrays: identificadores de nós e identificadores de pais.
-
-O elemento `i` de `ids` e `parent_ids` descreve o nó de entrada `i` e seu pai.
-A função retorna uma tupla nomeada de quatro arrays. Todos estão em pré-ordem, e todas as posições são baseadas em 1:
-o elemento `k` descreve o `k`-ésimo nó da pré-ordem.
-
-* `order[k]` — o índice de entrada deste nó. Para colocar arrays de dados em pré-ordem, use `arrayMap(i -> x[i], t.order)`.
-* `size[k]` — o número de nós na subárvore deste nó, incluindo o próprio nó. A subárvore corresponde ao intervalo contíguo de posições `[k, k + size[k])`.
-* `parent[k]` — a posição em pré-ordem do nó cujo identificador é igual ao identificador do pai deste nó, ou `0` se esse nó não existir.
-* `depth[k]` — a distância deste nó até a raiz de sua árvore; `0` para as raízes.
-
-O nó `a` é ancestral do nó `b` se e somente se `a < b AND b < a + size[a]`.
-Funções agregadas aditivas sobre uma subárvore correspondem à diferença entre duas somas de prefixo (veja [`arrayCumSum`](#arrayCumSum)).
-Outras funções agregadas sobre uma subárvore podem ser obtidas aplicando [`arraySlice`](#arraySlice) a um array de dados reordenado em pré-ordem.
-
-As árvores são gravadas uma a uma, na ordem de entrada de suas raízes, e os filhos de cada nó são visitados na ordem de entrada,
-de modo que o resultado é determinístico. A complexidade de tempo é linear em relação ao tamanho do array, e não há limite para a profundidade da árvore.
-
-A função não lança exceção em razão do conteúdo dos arrays e produz uma floresta válida a partir de qualquer entrada:
-
-* Um nó é raiz se o identificador de seu pai for `NULL` ou não estiver presente em `ids` — por exemplo, uma string vazia ou um nó órfão.
-* Se os vínculos de pai formarem um ciclo, o vínculo do nó do ciclo que aparece primeiro na entrada é cortado, e esse nó se torna uma raiz. Seu `parent` mantém a posição de seu pai real, que é maior que sua própria posição; assim, `parent[k] > k` indica que um ciclo foi cortado na posição `k`. Um nó que é seu próprio pai recebe `parent[k] = k`.
-* Se `ids` tiver valores duplicados, os filhos são anexados à primeira ocorrência.
-
-Os identificadores são comparados por hash. Eles não podem ser nem conter números de ponto flutuante (porque `0.0` e `-0.0` são iguais, mas têm hashes diferentes),
-nem valores `Dynamic`, `Variant` e `JSON` (porque um `NULL` dentro deles seria comparado como um valor comum, enquanto um `NULL` de um tipo `Nullable` gera uma raiz).
-
-A estrutura da entrada pode ser deduzida a partir do resultado (veja os exemplos abaixo):
-
-* Existe um ciclo: `arrayExists((p, k) -> p > k, t.parent, arrayEnumerate(t.parent))`.
-* Posições em que os ciclos foram cortados: `arrayFilter((k, p) -> p > k, arrayEnumerate(t.parent), t.parent)`.
-* Posições das raízes das árvores: `arrayFilter((k, d) -> d = 0, arrayEnumerate(t.depth), t.depth)`; o número de árvores é `countEqual(t.depth, 0)`.
-* Posições dos nós cujo identificador de pai não está presente: `arrayFilter((k, p) -> p = 0, arrayEnumerate(t.parent), t.parent)`.
-* A entrada é uma única árvore com uma raiz real: `t.size[1] = length(ids) AND t.parent[1] <= 1`. Essa expressão aceita as duas convenções de raiz (um identificador de pai ausente resulta em `0`; um autolaço resulta em `1`) e rejeita um array que forme um único grande ciclo.
-* Posições dos nós do ciclo cortado na posição `r`: `arrayFilter(x -> x + t.size[x] > t.parent[r], range(r, t.parent[r] + 1))`. São os nós entre `r` e seu pai real `t.parent[r]` cuja subárvore contém o pai real.
-* Identificadores duplicados: `arrayEnumerateUniq(ids) > 1`.
-
-Para obter o índice de entrada do nó na posição `k`, use `t.order[k]`.
-
-**Sintaxe**
-
-```sql
-arrayTreePreorder(ids, parent_ids)
-```
-
-**Argumentos**
-
-* `ids` — Identificadores dos nós. Números de ponto flutuante, `Dynamic`, `Variant` e `JSON` não são suportados. [`Array(T)`](/pt-BR/reference/data-types/array)
-* `parent_ids` — Identificadores dos pais, um por nó. Deve ter o mesmo tamanho que `ids`. [`Array(T)`](/pt-BR/reference/data-types/array)
-
-**Valor retornado**
-
-Retorna a tupla do layout em pré-ordem. [`Tuple(order Array(UInt32), size Array(UInt32), parent Array(UInt32), depth Array(UInt32))`](/pt-BR/reference/data-types/tuple)
-
-**Exemplos**
-
-**Exemplo de uso**
-
-```sql title=Query
-SELECT arrayTreePreorder(['G2', 'A', 'T1', 'B', 'G1', 'G3'], ['B', '', 'B', 'A', 'A', 'A']) AS t
-```
-
-```response title=Response
-([2,4,1,3,5,6],[6,3,1,1,1,1],[0,1,2,2,1,1],[0,1,2,2,1,1])
-```
-
-**Custo e número de descendentes de cada span de agente de um trace**
-
-```sql title=Query
-WITH
-    ['A', 'G1', 'B', 'G2', 'T1', 'G3'] AS ids,
-    ['', 'A', 'A', 'B', 'B', 'A'] AS parent_ids,
-    ['AGENT', 'GENERATION', 'AGENT', 'GENERATION', 'TOOL', 'GENERATION'] AS types,
-    [0, 2, 0, 3, 0, 1] AS costs,
-    arrayTreePreorder(ids, parent_ids) AS t,
-    arrayCumSum(arrayMap(i -> costs[i], t.order)) AS cum
-SELECT arrayMap(k -> (ids[t.order[k]], cum[k + t.size[k] - 1] - cum[k], t.size[k] - 1),
-    arrayFilter(k -> types[t.order[k]] = 'AGENT', arrayEnumerate(t.order))) AS res
-```
-
-```response title=Response
-[('A',6,5),('B',3,2)]
-```
-
-**Entrada inválida: um ciclo C -&gt; D -&gt; E -&gt; C, um nó F abaixo do ciclo e um nó órfão G**
-
-```sql title=Query
-SELECT arrayTreePreorder(['A', 'B', 'C', 'D', 'E', 'F', 'G'], ['', 'A', 'D', 'E', 'C', 'C', 'Z']) AS t
-```
-
-```response title=Response
-([1,2,3,5,4,6,7],[2,1,4,2,1,1,1],[0,1,5,3,4,3,0],[0,1,0,1,2,1,0])
-```
-
-**Detectar ciclos e identificar onde foram interrompidos**
-
-```sql title=Query
-WITH
-    ['A', 'B', 'C', 'D', 'E', 'F', 'G'] AS ids,
-    arrayTreePreorder(ids, ['', 'A', 'D', 'E', 'C', 'C', 'Z']) AS t
-SELECT
-    arrayExists((p, k) -> p > k, t.parent, arrayEnumerate(t.parent)) AS has_cycle,
-    arrayFilter((k, p) -> p > k, arrayEnumerate(t.parent), t.parent) AS cut_positions,
-    arrayMap(k -> ids[t.order[k]], cut_positions) AS cut_ids
-```
-
-```response title=Response
-┌─has_cycle─┬─cut_positions─┬─cut_ids─┐
-│         1 │ [3]           │ ['C']   │
-└───────────┴───────────────┴─────────┘
-```
-
-**Raízes, número de árvores, nós cujo pai não é encontrado e verificação de árvore única**
-
-```sql title=Query
-WITH
-    ['A', 'B', 'C', 'D', 'E', 'F', 'G'] AS ids,
-    arrayTreePreorder(ids, ['', 'A', 'D', 'E', 'C', 'C', 'Z']) AS t
-SELECT
-    arrayMap(k -> ids[t.order[k]], arrayFilter((k, d) -> d = 0, arrayEnumerate(t.depth), t.depth)) AS roots,
-    countEqual(t.depth, 0) AS trees,
-    arrayMap(k -> ids[t.order[k]], arrayFilter((k, p) -> p = 0, arrayEnumerate(t.parent), t.parent)) AS parent_not_found,
-    t.size[1] = length(ids) AND t.parent[1] <= 1 AS is_one_tree
-```
-
-```response title=Response
-┌─roots─────────┬─trees─┬─parent_not_found─┬─is_one_tree─┐
-│ ['A','C','G'] │     3 │ ['A','G']        │           0 │
-└───────────────┴───────┴──────────────────┴─────────────┘
-```
-
-**Nós do ciclo interrompido na posição 3**
-
-```sql title=Query
-WITH
-    ['A', 'B', 'C', 'D', 'E', 'F', 'G'] AS ids,
-    arrayTreePreorder(ids, ['', 'A', 'D', 'E', 'C', 'C', 'Z']) AS t,
-    3 AS r
-SELECT arrayMap(k -> ids[t.order[k]], arrayFilter(x -> x + t.size[x] > t.parent[r], range(r, t.parent[r] + 1))) AS cycle
-```
-
-```response title=Response
-┌─cycle─────────┐
-│ ['C','E','D'] │
-└───────────────┘
-```
-
-**Identificadores duplicados: os filhos são anexados à primeira ocorrência**
-
-```sql title=Query
-WITH ['a', 'b', 'a', 'c'] AS ids
-SELECT
-    arrayFilter((id, n) -> n > 1, ids, arrayEnumerateUniq(ids)) AS duplicate_ids,
-    arrayTreePreorder(ids, ['', 'a', '', 'a']).order AS order
-```
-
-```response title=Response
-┌─duplicate_ids─┬─order─────┐
-│ ['a']         │ [1,2,4,3] │
-└───────────────┴───────────┘
-```
-
 ## arrayUnion {#arrayUnion}
 
 Introduzido em: v24.10.0
@@ -4702,8 +4135,6 @@ Recebe vários arrays e retorna um array que contém todos os elementos presente
 ```sql
 arrayUnion(arr1, arr2, ..., arrN)
 ```
-
-**Nomes alternativos**: `array_union`
 
 **Argumentos**
 
@@ -4867,8 +4298,6 @@ Combina vários arrays em um único array, permitindo arrays não alinhados (arr
 arrayZipUnaligned(arr1, arr2, ..., arrN)
 ```
 
-**Nomes alternativos**: `zip`
-
 **Argumentos**
 
 * `arr1, arr2, ..., arrN` — N arrays a serem combinados em um único array. [`Array(T)`](/pt-BR/reference/data-types/array)
@@ -4887,39 +4316,6 @@ SELECT arrayZipUnaligned(['a'], [1, 2, 3]);
 
 ```response title=Response
 [('a',1),(NULL,2),(NULL,3)]
-```
-
-## array_position {#array_position}
-
-Introduzido em: v26.8.0
-
-Função de compatibilidade com o PostgreSQL. Retorna a posição (baseada em 1) da primeira ocorrência do elemento no array, ou `NULL` quando o elemento não está presente. Um elemento `NULL` faz com que seja buscado o primeiro `NULL` do array, como no PostgreSQL. O equivalente nativo no ClickHouse é `indexOf`, que retorna 0 em vez de `NULL`.
-
-**Sintaxe**
-
-```sql
-array_position(array, element)
-```
-
-**Argumentos**
-
-* `array` — O array a ser pesquisado. [`Array(T)`](/pt-BR/reference/data-types/array)
-* `element` — O elemento a ser procurado. [`Any`](/pt-BR/reference/data-types/index)
-
-**Valor retornado**
-
-A posição (baseada em 1) da primeira ocorrência, ou `NULL` se o elemento não estiver presente. [`Nullable(UInt64)`](/pt-BR/reference/data-types/nullable)
-
-**Exemplos**
-
-**Exemplo**
-
-```sql title=Query
-SELECT array_position(['a', 'b'], 'b')
-```
-
-```response title=Response
-2
 ```
 
 ## countEqual {#countEqual}
@@ -4966,7 +4362,7 @@ Verifica se o array de entrada está vazio.
 Um array é considerado vazio se não contiver nenhum elemento.
 
 <Note>
-  Quando a coluna não é usada em nenhum outro lugar da consulta, a função pode ler apenas a subcoluna [size0](/pt-BR/reference/data-types/array#array-size), em vez de ler e processar toda a coluna de array. A consulta `SELECT empty(arr) FROM TABLE;` é transformada em `SELECT arr.size0 = 0 FROM TABLE;`. Essa otimização é controlada pela configuração [`optimize_functions_to_subcolumns`](/pt-BR/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns), que vem habilitada por padrão.
+  Pode ser otimizada ao habilitar a [`configuração optimize_functions_to_subcolumns`](/pt-BR/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns). Com `optimize_functions_to_subcolumns = 1`, a função lê apenas a subcoluna [size0](/pt-BR/reference/data-types/array#array-size), em vez de ler e processar toda a coluna de array. A consulta `SELECT empty(arr) FROM TABLE;` é transformada em `SELECT arr.size0 = 0 FROM TABLE;`.
 </Note>
 
 A função também funciona com strings ou UUIDs.
@@ -5924,7 +5320,7 @@ Não há problema em haver bytes NULL ASCII em strings, e eles também serão co
 length(x)
 ```
 
-**Aliases**: `CARDINALITY`, `OCTET_LENGTH`
+**Aliases**: `OCTET_LENGTH`, `CARDINALITY`
 
 **Argumentos**
 
@@ -6017,7 +5413,7 @@ Verifica se o array de entrada não está vazio.
 Um array é considerado não vazio se contiver pelo menos um elemento.
 
 <Note>
-  Quando a coluna não é usada em nenhum outro ponto da consulta, a função pode ler apenas a subcoluna [size0](/pt-BR/reference/data-types/array#array-size), em vez de ler e processar toda a coluna do tipo array. A consulta `SELECT notEmpty(arr) FROM table` é transformada em `SELECT arr.size0 != 0 FROM TABLE`. Essa otimização é controlada pela configuração [`optimize_functions_to_subcolumns`](/pt-BR/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns), que vem habilitada por padrão.
+  Pode ser otimizada ativando a configuração [`optimize_functions_to_subcolumns`](/pt-BR/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns). Com `optimize_functions_to_subcolumns = 1`, a função lê apenas a subcoluna [size0](/pt-BR/reference/data-types/array#array-size), em vez de ler e processar toda a coluna do tipo array. A consulta `SELECT notEmpty(arr) FROM table` é transformada em `SELECT arr.size0 != 0 FROM TABLE`.
 </Note>
 
 A função também funciona com Strings ou UUIDs.

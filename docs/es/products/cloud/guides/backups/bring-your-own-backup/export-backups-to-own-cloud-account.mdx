@@ -14,12 +14,6 @@ Exportar copias de seguridad a su propia cuenta no desactiva, por lo general, la
 
 En esta guía, mostramos ejemplos de cómo crear copias de seguridad completas e incrementales en el almacenamiento de objetos de AWS, GCP y Azure, así como de cómo restaurarlas.
 
-<Warning>
-  **No disponible para servicios regulados**
-
-  Los servicios creados con el tipo de región **conforme con HIPAA** o **compatible con PCI** no pueden exportar copias de seguridad a un bucket propiedad del cliente. El entorno regulado no permite escribir en almacenamiento externo a él, por lo que la opción **Set up external backup** está deshabilitada en la consola y el privilegio `BACKUP` descrito a continuación no se concede en estos servicios. Las copias de seguridad administradas por ClickHouse, incluida la programación configurable, siguen estando disponibles. Consulte [incorporación de HIPAA](/es/products/cloud/guides/security/compliance/hipaa-onboarding#backups) e [incorporación de PCI](/es/products/cloud/guides/security/compliance/pci-onboarding#backups).
-</Warning>
-
 <Note>
   Si exporta copias de seguridad a una región distinta dentro del mismo proveedor de nube, se aplicarán cargos por [transferencia de datos](/es/products/cloud/reference/billing/network-data-transfer).
 
@@ -46,19 +40,19 @@ Necesitará los siguientes datos para exportar/restaurar copias de seguridad en 
 1. endpoint de S3 de AWS, en el formato:
 
 ```text
-s3://<bucket_name>.s3.amazonaws.com/<directory>
+  s3://<bucket_name>.s3.amazonaws.com/<directory>
 ```
 
 Por ejemplo:
 
 ```text
-s3://testchbackups.s3.amazonaws.com/backups/
+  s3://testchbackups.s3.amazonaws.com/backups/
 ```
 
 Dónde:
 
 * `testchbackups` es el nombre del bucket de S3 al que se exportarán las copias de seguridad.
-* `backups` es un subdirectorio opcional.
+  * `backups` es un subdirectorio opcional.
 
 2. La clave de acceso y la clave secreta de AWS. También se admite la autenticación basada en roles de AWS y puede usarse en lugar de la clave de acceso y la clave secreta de AWS.
 

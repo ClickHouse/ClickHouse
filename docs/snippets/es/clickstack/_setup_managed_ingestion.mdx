@@ -6,7 +6,7 @@ import ManagedIngestionExampleOtelConfig from '/snippets/es/clickstack/_config_e
 
 <img src="/images/clickstack/getting-started/start_ingestion.webp" alt="" />
 
-Selecciona &quot;Start Ingestion&quot; y se te pedirá que elijas una fuente de ingestión. El servicio admite OpenTelemetry y [Vector](https://vector.dev/) como principales fuentes de ingestión. Sin embargo, los usuarios también pueden enviar datos directamente a ClickHouse con su propio esquema mediante cualquiera de las [integraciones compatibles con ClickHouse Cloud](/es/integrations/home).
+Selecciona &quot;Start Ingestion&quot; y se te pedirá que elijas una fuente de ingestión. Managed ClickStack admite OpenTelemetry y [Vector](https://vector.dev/) como principales fuentes de ingestión. Sin embargo, los usuarios también pueden enviar datos directamente a ClickHouse con su propio esquema mediante cualquiera de las [integraciones compatibles con ClickHouse Cloud](/es/integrations/home).
 
 <img src="/images/clickstack/getting-started/select_source.webp" alt="" />
 
@@ -19,11 +19,11 @@ Selecciona &quot;Start Ingestion&quot; y se te pedirá que elijas una fuente de 
 
 <Tabs>
   <Tab title="OpenTelemetry">
-    Para enviar datos de OpenTelemetry al servicio, se recomienda usar un OpenTelemetry Collector. El collector actúa como un gateway que recibe datos de OpenTelemetry de sus aplicaciones (y de otros collectors) y los reenvía a ClickHouse Cloud.
+    Para enviar datos de OpenTelemetry a Managed ClickStack, se recomienda usar un OpenTelemetry Collector. El collector actúa como un gateway que recibe datos de OpenTelemetry de sus aplicaciones (y de otros collectors) y los reenvía a ClickHouse Cloud.
 
     Si aún no tiene uno en ejecución, inicie un collector siguiendo los pasos a continuación. Si ya tiene collectors existentes, también se incluye un ejemplo de configuración.
 
-### Iniciar un collector {#start-a-collector}
+    ### Iniciar un collector
 
     A continuación se asume la ruta recomendada: usar la **distribución de ClickStack de OpenTelemetry Collector**, que incluye procesamiento adicional y está optimizada específicamente para ClickHouse Cloud. Si desea usar su propio OpenTelemetry Collector, consulte [&quot;Configurar collectors existentes.&quot;](#configure-existing-collectors)
 
@@ -36,12 +36,12 @@ Selecciona &quot;Start Ingestion&quot; y se te pedirá que elijas una fuente de 
     <Info>
       **Despliegue en producción**
 
-      Aunque este comando usa el usuario `default` para conectarse al servicio, debería crear un usuario dedicado al [pasar a producción](/es/clickstack/self-configured/managing/production#create-a-database-ingestion-user-managed) y modificar su configuración.
+      Aunque este comando usa el usuario `default` para conectarse a Managed ClickStack, debería crear un usuario dedicado al [pasar a producción](/es/clickstack/managing/production#create-a-database-ingestion-user-managed) y modificar su configuración.
     </Info>
 
     Al ejecutar este único comando, se inicia el ClickStack collector con endpoints de OTLP expuestos en los puertos 4317 (gRPC) y 4318 (HTTP). Si ya tiene instrumentación y agentes de OpenTelemetry, puede comenzar de inmediato a enviar datos de telemetría a estos endpoints.
 
-### Configurar collectors existentes {#configure-existing-collectors}
+    ### Configurar collectors existentes
 
     También es posible configurar sus propios OpenTelemetry Collectors existentes o usar su propia distribución del collector.
 
@@ -57,22 +57,22 @@ Selecciona &quot;Start Ingestion&quot; y se te pedirá que elijas una fuente de 
 
     <img src="/images/clickstack/getting-started/otel_collector_start.webp" alt="" />
 
-    Para obtener más información sobre cómo configurar collectors de OpenTelemetry, consulte [&quot;Ingestión con OpenTelemetry.&quot;](/es/clickstack/self-configured/ingesting-data/collector)
+    Para obtener más información sobre cómo configurar collectors de OpenTelemetry, consulte [&quot;Ingestión con OpenTelemetry.&quot;](/es/clickstack/ingesting-data/opentelemetry)
 
-### Iniciar la ingestión (opcional) {#start-ingestion-optional}
+    ### Iniciar la ingestión (opcional)
 
     Si tiene aplicaciones o infraestructura existentes para instrumentar con OpenTelemetry, vaya a las guías pertinentes enlazadas desde la UI.
 
-    Para instrumentar sus aplicaciones y recopilar traces y logs, siga las instrucciones para entornos autogestionados de las [guías de SDKs de lenguajes](/es/clickstack/observability/ingesting-data/sdks/index), que envían datos a su OpenTelemetry Collector, que actúa como gateway para la ingestión en el servicio.
+    Para instrumentar sus aplicaciones y recopilar traces y logs, use los [SDKs de lenguajes compatibles](/es/clickstack/ingesting-data/sdks/index), que envían datos a su OpenTelemetry Collector, que actúa como gateway para la ingestión en Managed ClickStack.
 
-    Los logs pueden [recopilarse usando OpenTelemetry Collectors](/es/clickstack/observability/integration-examples/host-logs#self-managed) que se ejecutan en modo agent y reenvían datos al mismo collector. Para la monitorización de Kubernetes, siga la [guía específica](/es/clickstack/observability/integration-examples/kubernetes#self-managed). Para otras integraciones, consulte nuestras [guías de inicio rápido](/es/clickstack/observability/integration-examples/index).
+    Los logs pueden [recopilarse usando OpenTelemetry Collectors](/es/clickstack/integration-examples/host-logs) que se ejecutan en modo agent y reenvían datos al mismo collector. Para la monitorización de Kubernetes, siga la [guía específica](/es/clickstack/integration-examples/kubernetes). Para otras integraciones, consulte nuestras [guías de inicio rápido](/es/clickstack/integration-examples/index).
 
-### Datos de demostración {#demo-data}
+    ### Datos de demostración
 
     Como alternativa, si no tiene datos existentes, pruebe uno de nuestros datasets de ejemplo.
 
-    * [Dataset de ejemplo](/es/clickstack/observability/example-datasets/sample-data#self-managed) - Cargue un dataset de ejemplo de nuestra demo pública. Diagnostique un problema sencillo.
-    * [Archivos locales y métricas](/es/clickstack/observability/example-datasets/local-data#self-managed) - Cargue archivos locales y supervise el sistema en OSX o Linux usando un OTel collector local.
+    * [Dataset de ejemplo](/es/clickstack/example-datasets/sample-data) - Cargue un dataset de ejemplo de nuestra demo pública. Diagnostique un problema sencillo.
+    * [Archivos locales y métricas](/es/clickstack/example-datasets/local-data) - Cargue archivos locales y supervise el sistema en OSX o Linux usando un OTel collector local.
 
     <br />
   </Tab>
@@ -85,12 +85,12 @@ Selecciona &quot;Start Ingestion&quot; y se te pedirá que elijas una fuente de 
     <Info>
       **Timestamp obligatorio**
 
-      El único requisito estricto para el servicio es que los datos incluyan una **columna timestamp** (o un campo de tiempo equivalente), que puede declararse al configurar la fuente de datos en la interfaz de usuario de ClickStack.
+      El único requisito estricto para Managed ClickStack es que los datos incluyan una **columna timestamp** (o un campo de tiempo equivalente), que puede declararse al configurar la fuente de datos en la interfaz de usuario de ClickStack.
     </Info>
 
     A continuación, se asume que tienes una instancia de Vector en ejecución, preconfigurada con pipelines de ingestión y enviando datos.
 
-### Crear una base de datos y una tabla {#create-a-database-and-table}
+    ### Crear una base de datos y una tabla
 
     Vector requiere que la tabla y el esquema estén definidos antes de la ingestión de datos.
 
@@ -126,13 +126,13 @@ Selecciona &quot;Start Ingestion&quot; y se te pedirá que elijas una fuente de 
 
     La tabla debe ajustarse al esquema de salida generado por Vector. Ajusta el esquema según sea necesario para tus datos, siguiendo las [mejores prácticas de esquema recomendadas](/es/concepts/best-practices/select-data-type).
 
-    Te recomendamos encarecidamente que entiendas cómo funcionan las [claves primarias](/es/concepts/core-concepts/primary-indexes) en ClickHouse y que elijas una clave de ordenación en función de tus patrones de acceso. Consulta la guía [específica de ClickStack](/es/clickstack/self-configured/managing/performance-tuning#choosing-a-primary-key) sobre cómo elegir una clave primaria.
+    Te recomendamos encarecidamente que entiendas cómo funcionan las [claves primarias](/es/concepts/core-concepts/primary-indexes) en ClickHouse y que elijas una clave de ordenación en función de tus patrones de acceso. Consulta la guía [específica de ClickStack](/es/clickstack/managing/performance-tuning#choosing-a-primary-key) sobre cómo elegir una clave primaria.
 
     Una vez creada la tabla, copia el fragmento de configuración que se muestra. Ajusta la entrada para que consuma tus pipelines existentes, así como la tabla de destino y la base de datos, si es necesario. Las credenciales deberían aparecer ya rellenadas.
 
     <img src="/images/clickstack/getting-started/vector_config.webp" alt="" />
 
-    Para ver más ejemplos de ingesta de datos con Vector, consulta [&quot;Ingesta con Vector&quot;](/es/clickstack/observability/ingesting-data/vector#self-managed) o la [documentación del sink de ClickHouse para Vector](https://vector.dev/docs/reference/configuration/sinks/clickhouse/) para opciones avanzadas.
+    Para ver más ejemplos de ingesta de datos con Vector, consulta [&quot;Ingesta con Vector&quot;](/es/clickstack/ingesting-data/vector) o la [documentación del sink de ClickHouse para Vector](https://vector.dev/docs/reference/configuration/sinks/clickhouse/) para opciones avanzadas.
 
     <br />
   </Tab>

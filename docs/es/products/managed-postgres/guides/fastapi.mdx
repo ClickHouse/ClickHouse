@@ -2,12 +2,16 @@
 slug: /cloud/managed-postgres/guides/fastapi
 sidebarTitle: 'FastAPI y SQLAlchemy'
 title: 'Usar FastAPI y SQLAlchemy con ClickHouse Managed Postgres'
-description: 'Conecte una aplicación FastAPI a ClickHouse Managed Postgres con SQLAlchemy async y asyncpg, ejecute migraciones de Alembic y exponga endpoints CRUD mediante TLS verificado'
+description: 'Conecte una aplicación FastAPI a ClickHouse Managed Postgres con SQLAlchemy asíncrono y asyncpg, ejecute migraciones de Alembic y exponga endpoints CRUD mediante TLS verificado'
 keywords: ['managed postgres', 'fastapi', 'sqlalchemy', 'asyncpg', 'alembic', 'python', 'uvicorn', 'pgbouncer', 'migrations', 'tls']
 doc_type: 'guide'
 ---
 
-[FastAPI](https://fastapi.tiangolo.com/) es un framework web async para Python, y [SQLAlchemy](https://www.sqlalchemy.org/) es el ORM de Python más utilizado. En esta guía, definirá un modelo tipado de SQLAlchemy, creará su tabla mediante una migración de [Alembic](https://alembic.sqlalchemy.org/) y expondrá con FastAPI endpoints para crear, leer, actualizar y eliminar registros. La aplicación usa el controlador [asyncpg](https://magicstack.github.io/asyncpg/), y todas las conexiones emplean TLS con verificación completa de certificados.
+import { BetaBadge } from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.guides-fastapi-beta" />
+
+[FastAPI](https://fastapi.tiangolo.com/) es un framework web asíncrono para Python, y [SQLAlchemy](https://www.sqlalchemy.org/) es el ORM de Python más utilizado. En esta guía, definirá un modelo tipado de SQLAlchemy, creará su tabla mediante una migración de [Alembic](https://alembic.sqlalchemy.org/) y expondrá con FastAPI endpoints para crear, leer, actualizar y eliminar registros. La aplicación usa el controlador [asyncpg](https://magicstack.github.io/asyncpg/), y todas las conexiones emplean TLS con verificación completa de certificados.
 
 ## Requisitos previos {#prerequisites}
 

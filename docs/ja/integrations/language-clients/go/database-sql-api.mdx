@@ -311,9 +311,9 @@ if err := rows.Err(); err != nil {
 
 [完全なサンプル](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/std/query_rows.go)
 
-## 非同期 挿入 {#async-insert}
+## 非同期 INSERT {#async-insert}
 
-非同期挿入は、`ExecContext` メソッドで 挿入 を実行することで行えます。以下のように、非同期モードを有効にしたコンテキストを渡す必要があります。これにより、クライアントがサーバーでの 挿入 完了まで待機するか、データを受信した時点で応答するかをユーザーが指定できます。これは実質的に、パラメーター [wait&#95;for&#95;async&#95;insert](/ja/reference/settings/session-settings#wait_for_async_insert) を制御します。
+非同期挿入は、`ExecContext` メソッドで INSERT を実行することで行えます。以下のように、非同期モードを有効にしたコンテキストを渡す必要があります。これにより、クライアントがサーバーでの INSERT 完了まで待機するか、データを受信した時点で応答するかをユーザーが指定できます。これは実質的に、パラメーター [wait&#95;for&#95;async&#95;insert](/ja/reference/settings/session-settings#wait_for_async_insert) を制御します。
 
 ```go
 const ddl = `
@@ -340,29 +340,7 @@ ctx := clickhouse.Context(context.Background(), clickhouse.WithStdAsync(false))
 }
 ```
 
-[サンプル全体](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/std/async_native.go)
-
-### バッチでの非同期 INSERT {#async-insert-batch}
-
-`WithAsync` はバッチ挿入にも適用されます。バッチでは、`PrepareContext` に渡したコンテキストのみが使用されます。そのため、非同期コンテキストは `PrepareContext` に渡してください。`Stmt.ExecContext` に渡したコンテキストは、バッチには反映されません。`Commit` は、`PrepareContext` に渡したコンテキストの設定でバッチを送信します。
-
-```go
-ctx := clickhouse.Context(context.Background(), clickhouse.WithAsync(true))
-tx, err := conn.Begin()
-if err != nil {
-    return err
-}
-stmt, err := tx.PrepareContext(ctx, "INSERT INTO example") // WithAsync must be on this context
-if err != nil {
-    return err
-}
-for i := 0; i < 100; i++ {
-    if _, err := stmt.Exec(i, "Golang SQL database driver", []uint8{1, 2, 3, 4, 5, 6, 7, 8, 9}, time.Now()); err != nil {
-        return err
-    }
-}
-return tx.Commit()
-```
+[サンプル全体](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/std/async.go)
 
 ## サーバー側クエリパラメータ {#server-side-query-parameters}
 

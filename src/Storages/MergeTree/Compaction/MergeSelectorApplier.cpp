@@ -6,10 +6,8 @@
 #include <Storages/MergeTree/Compaction/MergeSelectors/TTLMergeSelector.h>
 #include <Storages/MergeTree/Compaction/MergeSelectors/TrivialMergeSelector.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
-#include <Storages/MergeTree/MergeType.h>
 
 #include <Common/logger_useful.h>
-#include <Core/MergeSelectorAlgorithm.h>
 
 #include <limits>
 
@@ -65,7 +63,7 @@ MergeSelectorChoices pack(const ChooseContext & ctx, PartsRanges && ranges, Merg
     {
         const bool apply_patch_parts = ctx.merge_tree_settings[MergeTreeSetting::apply_patches_on_merge];
         PartsRange patch_parts = apply_patch_parts ? ctx.predicate.getPatchesToApplyOnMerge(parts) : PartsRange{};
-        return MergeSelectorChoice{std::move(parts), std::move(patch_parts), merge_type, MergeCoverage::PartitionSegment};
+        return MergeSelectorChoice{std::move(parts), std::move(patch_parts), merge_type};
     };
 
     MergeSelectorChoices choices;

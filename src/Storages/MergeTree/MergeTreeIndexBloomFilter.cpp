@@ -15,7 +15,6 @@
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeMapHelpers.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Functions/FunctionsMiscellaneous.h>
 #include <Functions/IFunction.h>
@@ -35,7 +34,6 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeIndexJSONSubcolumnHelper.h>
 #include <Storages/MergeTree/RPNBuilder.h>
-#include <Common/StringUtils.h>
 #include <base/arithmeticOverflow.h>
 
 
@@ -577,9 +575,9 @@ std::optional<MapIndexInfo> tryParseMapSubcolumn(
     const String & column_name,
     const Block & header,
     const ActionsDAG::NodeRawConstPtrs & index_nodes,
-    const IsShadowingColumn & is_shadowing_column)
+    const NameSet & shadowing_columns)
 {
-    auto parsed = tryParseMapSubcolumnName(column_name, is_shadowing_column);
+    auto parsed = tryParseMapSubcolumnName(column_name, shadowing_columns);
     if (!parsed)
         return std::nullopt;
 
@@ -610,7 +608,7 @@ std::optional<MapIndexInfo> tryResolveMapInfoFromNode(
     const RPNBuilderTreeNode & key_node,
     const Block & header,
     const ActionsDAG::NodeRawConstPtrs & index_nodes,
-    const IsShadowingColumn & is_shadowing_column)
+    const NameSet & shadowing_columns)
 {
     if (key_node.isFunction())
     {
@@ -637,7 +635,7 @@ std::optional<MapIndexInfo> tryResolveMapInfoFromNode(
         }
     }
 
-    return tryParseMapSubcolumn(key_node.getColumnName(), header, index_nodes, is_shadowing_column);
+    return tryParseMapSubcolumn(key_node.getColumnName(), header, index_nodes, shadowing_columns);
 }
 
 }
@@ -647,14 +645,14 @@ MergeTreeIndexConditionBloomFilter::MergeTreeIndexConditionBloomFilter(
     ContextPtr context_,
     const Block & header_,
     size_t hash_functions_,
-    IsShadowingColumn is_column_shadowing_map_subcolumn_,
+    NameSet columns_shadowing_map_subcolumns_,
     JSONIndexArgumentTypes json_argument_types_,
     IsShadowingJSONSubcolumn is_shadowing_json_subcolumn_,
     ActionsDAG::NodeRawConstPtrs index_nodes_)
     : WithContext(context_)
     , header(header_)
     , hash_functions(hash_functions_)
-    , is_column_shadowing_map_subcolumn(std::move(is_column_shadowing_map_subcolumn_))
+    , columns_shadowing_map_subcolumns(std::move(columns_shadowing_map_subcolumns_))
     , json_argument_types(std::move(json_argument_types_))
     , is_shadowing_json_subcolumn(std::move(is_shadowing_json_subcolumn_))
     , index_nodes(std::move(index_nodes_))
@@ -852,14 +850,6 @@ bool MergeTreeIndexConditionBloomFilter::traverseFunction(const RPNBuilderTreeNo
         }
     }
 
-    /// `empty(s)` of a string is the same as `s = ''`: `ConvertEmptyStringComparisonToFunctionPass` rewrites the latter to the former.
-    if (function_name == "empty" && arguments_size == 1 && parent == nullptr)
-    {
-        auto arg = function.getArgumentAt(0);
-        if (isString(removeNullable(removeLowCardinality(arg.getDAGNode()->result_type))))
-            return traverseTreeEquals("equals", arg, std::make_shared<DataTypeString>(), Field(String()), out, nullptr);
-    }
-
     if (arguments_size != 2)
         return false;
 
@@ -939,52 +929,16 @@ static bool bloomFilterHashDomainMatches(const DataTypePtr & value_type, const D
     return (isInteger(value) && isInteger(element)) || value->equals(*element);
 }
 
-/// LEFT ARRAY JOIN is arrayJoin(emptyArrayToSingle(col)), the default element it adds is not in an index on col.
-/// The index may be on the array itself or on its lossless conversion.
+/// LEFT ARRAY JOIN is arrayJoin(emptyArrayToSingle(col)), the default element it adds is not in an index on col
 static std::optional<size_t> findArrayJoinIndexPosition(
-    const RPNBuilderTreeNode & wrapped_node, const Block & header, const ActionsDAG::NodeRawConstPtrs & index_nodes, bool & padded)
+    const RPNBuilderTreeNode & node, const Block & header, const ActionsDAG::NodeRawConstPtrs & index_nodes, bool & padded)
 {
-    auto find = [&](const RPNBuilderTreeNode & array)
-    {
-        if (auto position = findIndexPosition(header, index_nodes, array))
-            return position;
-        return findIndexPosition(header, index_nodes, unwrapLosslessConversion(array));
-    };
-
-    if (auto position = find(wrapped_node))
+    if (auto position = findIndexPosition(header, index_nodes, node))
         return position;
-
-    const auto node = unwrapLosslessConversion(wrapped_node);
     if (!node.isFunction() || node.toFunctionNode().getFunctionName() != "emptyArrayToSingle")
         return std::nullopt;
     padded = true;
-    auto position = find(node.toFunctionNode().getArgumentAt(0));
-    if (!position)
-        return std::nullopt;
-
-    /// The padded element must be the default of the index element type, which a conversion
-    /// that adds or drops `Nullable` changes.
-    const auto * padded_array_type = typeid_cast<const DataTypeArray *>(node.getDAGNode()->result_type.get());
-    const auto * index_array_type = typeid_cast<const DataTypeArray *>(header.getByPosition(*position).type.get());
-    if (!padded_array_type || !index_array_type
-        || padded_array_type->getNestedType()->getDefault() != index_array_type->getNestedType()->getDefault())
-        return std::nullopt;
-    return position;
-}
-
-/// True if `column` holds the element LEFT ARRAY JOIN pads an empty array with: the default of `element_type`.
-static bool containsPaddedElement(const IColumn & column, const IDataType & element_type)
-{
-    if (element_type.isDefaultInsertTrivial())
-        return column.getNumberOfDefaultRows() != 0;
-
-    auto padded_column = element_type.createColumn();
-    element_type.insertDefaultInto(*padded_column);
-    const Field padded_element = (*padded_column)[0];
-    for (size_t row = 0; row < column.size(); ++row)
-        if (column[row] == padded_element)
-            return true;
-    return false;
+    return findIndexPosition(header, index_nodes, node.toFunctionNode().getArgumentAt(0));
 }
 
 bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
@@ -1094,7 +1048,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
     }
 
     /// Handle both `arrayElement(map, 'key') IN (set)` and `map.key_<serialized_key> IN (set)`.
-    if (auto map_info = tryResolveMapInfoFromNode(key_node, header, index_nodes, is_column_shadowing_map_subcolumn))
+    if (auto map_info = tryResolveMapInfoFromNode(key_node, header, index_nodes, columns_shadowing_map_subcolumns))
     {
         /** It is important to ignore keys like column_map['Key'] IN ('') because if the key does not exist in the map
           * we return the default value for arrayElement.
@@ -1162,11 +1116,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
 
     /// `arrayJoin(col) IN (set)` needs a set element in the granule, same as `hasAny(col, set)`.
     /// `notIn` is not derivable: a granule holding a set element still yields rows outside the set.
-    /// `nullIn` over a NULL-free set selects the same rows as `in`.
-    const bool is_in = function_name == "in" || function_name == "globalIn";
-    const bool is_null_in = (function_name == "nullIn" || function_name == "globalNullIn")
-        && prepared_set && prepared_set->getDataTypes().size() == 1 && !prepared_set->hasNull();
-    if (!is_in && !is_null_in)
+    if (function_name != "in" && function_name != "globalIn")
         return false;
     if (!column)
         return false;
@@ -1189,14 +1139,8 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
     if (!bloomFilterHashDomainMatches(type, array_nested_type))
         return false;
 
-    /// A NULL of a set, e.g. inside a tuple element, does not cast to a non-`Nullable` element type and matches no element.
-    const auto * nullable_column = typeid_cast<const ColumnNullable *>(column.get());
-    if (nullable_column && !canContainNull(*array_nested_type)
-        && std::ranges::any_of(nullable_column->getNullMapData(), [](UInt8 is_null) { return is_null != 0; }))
-        return false;
-
     const auto & converted_column = castColumn(ColumnWithTypeAndName{column, type, ""}, array_nested_type);
-    if (padded && containsPaddedElement(*converted_column, *array_nested_type))
+    if (padded && converted_column->getNumberOfDefaultRows() != 0)
         return false;
 
     out.predicate.emplace_back(
@@ -1235,7 +1179,7 @@ static Field coerceStringFieldLikeSearchFunction(
         if (!cast_to_supertype && fixed_string_type && value.size() > fixed_string_type->getN())
             return {};
 
-        trimRight(value, '\0');
+        value.resize(value.find_last_not_of('\0') + 1);
     }
 
     if (fixed_string_type)
@@ -1278,7 +1222,7 @@ static std::optional<Field> tryConvertEnumNameConstant(const Field & value_field
 
     String name = value_field.safeGet<String>();
     if (isFixedString(removeLowCardinalityAndNullable(value_type)))
-        trimRight(name, '\0');
+        name.resize(name.find_last_not_of('\0') + 1);
 
     return tryConvertFieldToType(Field(std::move(name)), *enum_type, nullptr, {}, /* strict */ true);
 }
@@ -1320,9 +1264,11 @@ static ColumnPtr createColumnFromConstantArray(
         if ((f.isNull() && !is_nullable) || f.isDecimal(f.getType())) /// NOLINT(readability-static-accessed-through-instance)
             return nullptr;
 
-        /// `has`, `hasAny` and `hasAll` compare a `String` or `FixedString` constant with an `Enum` by the name
+        /// `hasAny`/`hasAll` compare a `String` or `FixedString` constant with `Enum` elements by the name
         /// of the enum value, see `tryConvertEnumNameConstant`.
-        std::optional<Field> enum_value = tryConvertEnumNameConstant(f, element_type, actual_type);
+        std::optional<Field> enum_value;
+        if (coerce_like_search_function)
+            enum_value = tryConvertEnumNameConstant(f, element_type, actual_type);
 
         Field converted;
         if (enum_value)
@@ -1466,7 +1412,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
                     if (converted_field.isNull())
                         return false;
 
-                    if (padded && containsPaddedElement(*array_type->getNestedType()->createColumnConst(1, converted_field), *array_type->getNestedType()))
+                    if (padded && array_type->getNestedType()->createColumnConst(1, converted_field)->isDefaultAt(0))
                         return false;
 
                     out.function = RPNElement::FUNCTION_HAS;
@@ -1509,8 +1455,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
             else if (function_name == "has")
             {
                 /// `has(<constant array>, <indexed scalar>)` compares `Field`s directly
-                /// (arrayIndex.h `executeConst`), so it needs the padded form and no coercion;
-                /// a string searched for an `Enum` is compared by its name.
+                /// (arrayIndex.h `executeConst`), so it needs the padded form and no coercion.
                 const DataTypePtr actual_type = BloomFilter::getPrimitiveType(index_type);
                 ColumnPtr column = createColumnFromConstantArray(value_field, value_type, actual_type, /*coerce_like_search_function=*/ false);
 
@@ -1681,7 +1626,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
     /// Handle both `arrayElement(map, 'key') = value` and `map.key_<serialized_key> = value`.
     if (function_name == "equals")
     {
-        if (auto map_info = tryResolveMapInfoFromNode(key_node, header, index_nodes, is_column_shadowing_map_subcolumn))
+        if (auto map_info = tryResolveMapInfoFromNode(key_node, header, index_nodes, columns_shadowing_map_subcolumns))
         {
             /** It is important to ignore keys like column_map['Key'] = '' because if the key does not exist in the map
               * we return the default value for arrayElement.
@@ -1819,7 +1764,7 @@ MergeTreeIndexAggregatorPtr MergeTreeIndexBloomFilter::createIndexAggregator() c
 MergeTreeIndexConditionPtr MergeTreeIndexBloomFilter::createIndexCondition(const ActionsDAG::Node * predicate, ContextPtr context) const
 {
     return std::make_shared<MergeTreeIndexConditionBloomFilter>(
-        predicate, context, index.sample_block, hash_functions, getMapSubcolumnShadowingCheck(), collectJSONIndexArgumentTypes(*index.expression),
+        predicate, context, index.sample_block, hash_functions, getColumnsShadowingMapSubcolumns(), collectJSONIndexArgumentTypes(*index.expression),
         getJSONSubcolumnShadowingCheck(),
         index.expression->getActionsDAG().getOutputs());
 }

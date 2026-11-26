@@ -1,5 +1,4 @@
 #include <Processors/Formats/ISchemaReader.h>
-#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Formats/SchemaInferenceUtils.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -144,7 +143,7 @@ NamesAndTypesList IRowSchemaReader::readSchema()
         if (column_names.size() != data_types.size())
             data_types.resize(column_names.size());
 
-        UnorderedSetWithMemoryTracking<std::string_view> names_set;
+        std::unordered_set<std::string_view> names_set;
         for (const auto & name : column_names)
         {
             if (names_set.contains(name))
@@ -271,17 +270,14 @@ NamesAndTypesList IRowWithNamesSchemaReader::readSchema()
 
     bool eof = false;
     auto names_and_types = readRowAndGetNamesAndDataTypes(eof);
-    UnorderedMapWithMemoryTracking<String, DataTypePtr> names_to_types;
-    VectorWithMemoryTracking<String> names_order;
+    std::unordered_map<String, DataTypePtr> names_to_types;
+    std::vector<String> names_order;
     names_to_types.reserve(names_and_types.size());
     names_order.reserve(names_and_types.size());
     for (const auto & [name, type] : names_and_types)
     {
         if (names_to_types.contains(name))
-            throw Exception(
-                ErrorCodes::INCORRECT_DATA,
-                "Duplicate column name found while schema inference: \"{}\". You can enable setting input_format_skip_duplicated_fields to keep the first value of a repeated field",
-                name);
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Duplicate column name found while schema inference: \"{}\"", name);
 
         auto hint_it = hints.find(name);
         if (hint_it != hints.end())
@@ -298,14 +294,11 @@ NamesAndTypesList IRowWithNamesSchemaReader::readSchema()
             /// We reached eof.
             break;
 
-        UnorderedSetWithMemoryTracking<std::string_view> names_set; /// We should check for duplicate column names in current row
+        std::unordered_set<std::string_view> names_set; /// We should check for duplicate column names in current row
         for (auto & [name, new_type] : new_names_and_types)
         {
             if (names_set.contains(name))
-                throw Exception(
-                    ErrorCodes::INCORRECT_DATA,
-                    "Duplicate column name found while schema inference: \"{}\". You can enable setting input_format_skip_duplicated_fields to keep the first value of a repeated field",
-                    name);
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Duplicate column name found while schema inference: \"{}\"", name);
             names_set.insert(name);
 
             auto it = names_to_types.find(name);
@@ -334,15 +327,8 @@ NamesAndTypesList IRowWithNamesSchemaReader::readSchema()
         throw Exception(ErrorCodes::EMPTY_DATA_PASSED, "Cannot read rows from the data");
 
     NamesAndTypesList result = getStaticNamesAndTypes();
-    NameSet static_names;
-    for (const auto & [name, _] : result)
-        static_names.insert(getColumnMatchingKeyForSchemaInference(name, format_settings));
     for (auto & name : names_order)
     {
-        /// The row reader fills a static column before the row's fields, so a field of the same name is a repeated one.
-        if (format_settings.skip_duplicated_fields && static_names.contains(getColumnMatchingKeyForSchemaInference(name, format_settings)))
-            continue;
-
         auto & type = names_to_types[name];
         /// Don't check/change types from hints.
         if (!hints.contains(name))

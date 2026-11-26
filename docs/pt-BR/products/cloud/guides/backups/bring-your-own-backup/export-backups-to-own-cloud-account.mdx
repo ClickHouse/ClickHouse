@@ -14,12 +14,6 @@ Exportar backups para sua própria conta normalmente não desativa os backups ge
 
 Neste guia, mostramos exemplos de como fazer backups completos e backups incrementais na AWS, no GCP e no armazenamento de objetos do Azure, assim como restaurar a partir desses backups.
 
-<Warning>
-  **Não disponível para serviços regulamentados**
-
-  Serviços criados com o tipo de região **compatível com a HIPAA** ou **em conformidade com o PCI** não podem exportar backups para um bucket de propriedade do cliente. O ambiente regulamentado não permite gravações em armazenamento externo a ele; por isso, a opção **Set up external backup** fica desabilitada no console e o privilégio `BACKUP` descrito abaixo não é concedido nesses serviços. Os backups gerenciados pelo ClickHouse, incluindo agendamentos configuráveis, continuam disponíveis. Consulte [configuração inicial da HIPAA](/pt-BR/products/cloud/guides/security/compliance/hipaa-onboarding#backups) e [configuração inicial do PCI](/pt-BR/products/cloud/guides/security/compliance/pci-onboarding#backups).
-</Warning>
-
 <Note>
   Qualquer uso em que backups sejam exportados para uma região diferente dentro do mesmo provedor de nuvem estará sujeito a cobranças de [transferência de dados](/pt-BR/products/cloud/reference/billing/network-data-transfer).
 
@@ -46,19 +40,19 @@ Você precisará dos seguintes detalhes para exportar/restaurar backups no bucke
 1. endpoint do S3 da AWS, no formato:
 
 ```text
-s3://<bucket_name>.s3.amazonaws.com/<directory>
+  s3://<bucket_name>.s3.amazonaws.com/<directory>
 ```
 
 Por exemplo:
 
 ```text
-s3://testchbackups.s3.amazonaws.com/backups/
+  s3://testchbackups.s3.amazonaws.com/backups/
 ```
 
 Onde:
 
 * `testchbackups` é o nome do bucket do S3 para onde os backups serão exportados.
-* `backups` é um subdiretório opcional.
+  * `backups` é um subdiretório opcional.
 
 2. Chave de acesso e chave secreta da AWS. A autenticação baseada em AWS Role também é compatível e pode ser usada no lugar da chave de acesso e da chave secreta da AWS.
 

@@ -3,7 +3,7 @@
 #include "config.h"
 
 #include <IO/WriteBuffer.h>
-#include <Common/UTF8Helpers.h>
+#include <Poco/UTF8Encoding.h>
 
 #include <base/types.h>
 
@@ -65,45 +65,11 @@ void writeValidUTF8(const char * begin, const char * end, WriteBuffer & out)
 
     while (p < end)
     {
-        const UInt8 * u = reinterpret_cast<const UInt8 *>(p);
+        /// Fast skip of ASCII
+        p = skipASCIIBlocks(p, end);
+        if (!(p < end))
+            break;
 
-        /// Dense Unicode needs no ASCII scan.
-        if (u[0] < 0x80)
-        {
-            p = skipASCII(begin, p, end);
-            if (p == end)
-                break;
-            u = reinterpret_cast<const UInt8 *>(p);
-        }
-
-        /// A well-formed character moves `p` by a constant, so the next one does not wait for a table lookup.
-        const UInt8 lead = u[0];
-        if (lead >= 0xC2 && lead < 0xE0)
-        {
-            if (end - p >= 2 && (u[1] & 0xC0) == 0x80)
-            {
-                p += 2;
-                continue;
-            }
-        }
-        else if (lead >= 0xE0 && lead < 0xF0)
-        {
-            if (end - p >= 3 && UTF8::isLegalSequence(u, 3))
-            {
-                p += 3;
-                continue;
-            }
-        }
-        else if (lead >= 0xF0 && lead < 0xF5)
-        {
-            if (end - p >= 4 && UTF8::isLegalSequence(u, 4))
-            {
-                p += 4;
-                continue;
-            }
-        }
-
-        /// Invalid or truncated sequences.
         size_t len = length_of_utf8_sequence[static_cast<unsigned char>(*p)];
 
         if (len > 4)
@@ -119,7 +85,7 @@ void writeValidUTF8(const char * begin, const char * end, WriteBuffer & out)
             /// Sequence was not fully written to this buffer.
             break;
         }
-        else if (UTF8::isLegalSequence(reinterpret_cast<const UInt8 *>(p), len))
+        else if (Poco::UTF8Encoding::isLegal(reinterpret_cast<const unsigned char *>(p), static_cast<int>(len)))
         {
             /// Valid sequence.
             p += len;

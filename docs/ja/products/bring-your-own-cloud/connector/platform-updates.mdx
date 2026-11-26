@@ -8,6 +8,7 @@ doc_type: 'guide'
 ---
 
 import { PrivatePreviewBadge } from '/snippets/ja/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
+import { Image } from "/snippets/ja/components/Image.jsx";
 
 <PrivatePreviewBadge />
 
@@ -28,20 +29,16 @@ executor が未承認の バンドル を適用することは決してありま
 
 ## プラットフォーム更新の承認 {#approve-a-platform-update}
 
-<div className="ch-image-lg">
-  <Frame>
-    ![ClickHouse Connector のプラットフォーム承認フロー](/images/cloud/reference/byoc-connector-platform-approval.svg)
-  </Frame>
-</div>
+<Image img="/images/cloud/reference/byoc-connector-platform-approval.svg" size="lg" alt="ClickHouse Connector のプラットフォーム承認フロー" />
 
-### レジストリの認証情報 {#registry-credentials}
+### レジストリ認証情報 {#registry-credentials}
 
-レジストリの認証方法は、ご利用の環境に登録されているイメージ配布モードによって異なります。
+レジストリの認証方式は、環境に登録されているイメージの配布モードによって異なります。
 
-* **ClickHouse のレジストリへの直接アクセス。** 承認はコネクタの EC2 VM 上で実行してください。`approve` と executor のプラットフォーム同期はいずれも、EC2 インスタンスメタデータサービスから取得した認証情報を使用して、ご利用の環境の読み取り専用 ECR puller ロールを引き受けます。このロールでチャートレジストリにログインし、executor はさらにこのロールを使用してプラットフォームイメージの存在をチェックします。ワークステーション上の AWS プロファイル、環境変数の認証情報、SSO 認証情報は、インスタンスプロファイルの代わりにはなりません。権限側の半分を適用する cluster-admin 認証情報は、これとは別に引き続き kubeconfig から提供されます。
-* **別の ECR レジストリ (自社のミラーを含む) にあるチャート。** チャートへのログインには、`approve` または executor を実行するプロセスの、実行環境から暗黙的に取得されるAWS認証情報が使用されます。この認証情報には、対象レジストリの読み取り権限が必要です。
+* **ClickHouse のレジストリへの直接アクセス。** 承認はコネクタの EC2 VM 上で実行します。`approve` と executor の プラットフォーム同期 はいずれも、EC2 instance metadata サービス から取得した認証情報を使用して、環境の読み取り専用 ECR プラーロールを assume します。このロールでチャートレジストリにログインし、executor はプラットフォームイメージの存在確認にもこのロールを使用します。ワークステーション上の AWS プロファイル、環境変数による認証情報、SSO 認証情報は instance profile の代わりにはなりません。権限側の半分を適用するクラスター管理者の認証情報は、引き続き kubeconfig から提供されます。
+* **自前のミラーを含む、別の ECR レジストリ上のチャート。** チャートへのログインには、`approve` または executor を実行しているプロセスの ambient な AWS 認証情報が使用されます。これらの認証情報には、そのレジストリへの読み取り権限が必要です。
 
-以下の Kubernetes ワークステーションでの手順は、Kubernetes プラットフォーム承認が有効になっているミラーレジストリ構成のデプロイメントでのみ使用してください。直接アクセスの場合は、まずアカウントチームに問い合わせ、必要な EC2 インスタンスプロファイルを備えたサポート対象の実行環境であることを確認してください。
+以下の Kubernetes ワークステーション手順は、Kubernetes プラットフォーム承認を有効にしたミラーレジストリ構成のデプロイメントでのみ使用してください。直接アクセスの場合は、まず必要な EC2 instance profile を備えたサポート対象の実行環境であることを account team に確認してください。
 
 <Steps>
   <Step title="ステージング済みのバンドルを確認する" id="find-the-staged-bundle">

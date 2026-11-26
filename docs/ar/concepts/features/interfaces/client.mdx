@@ -3,8 +3,10 @@ description: 'توثيق واجهة عميل سطر الأوامر لـ ClickHou
 sidebarTitle: 'عميل ClickHouse'
 slug: /interfaces/client
 title: 'عميل ClickHouse'
-doc_type: 'reference'
+doc_type: 'مرجع'
 ---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
 
 يوفّر ClickHouse عميل سطر أوامر أصليًا لتنفيذ استعلامات SQL مباشرةً على خادم ClickHouse.
 ويدعم كلًا من الوضع التفاعلي (لتنفيذ الاستعلامات مباشرةً) ووضع الدُفعات (للبرامج النصية والأتمتة).
@@ -64,13 +66,9 @@ Connected to ClickHouse server version 24.12.2.
 
 ### الاتصال بـ ClickHouse Cloud {#connecting-cloud}
 
-تتوفر تفاصيل خدمة ClickHouse Cloud الخاصة بك في وحدة تحكم ClickHouse Cloud. حدِّد الخدمة التي تريد الاتصال بها ثم انقر على **Connect**:
+تتوفر تفاصيل خدمة ClickHouse Cloud الخاصة بك في وحدة تحكم ClickHouse Cloud. حدِّد الخدمة التي تريد الاتصال بها ثم انقر على **Connect**:
 
-<div className="ch-image-md">
-  <Frame>
-    ![زر Connect لخدمة ClickHouse Cloud](/images/_snippets/cloud-connect-button.webp)
-  </Frame>
-</div>
+<Image img="/images/_snippets/cloud-connect-button.webp" size="md" alt="زر Connect لخدمة ClickHouse Cloud" />
 
 <br />
 
@@ -78,17 +76,13 @@ Connected to ClickHouse server version 24.12.2.
 
 اختر **Native**، وستظهر التفاصيل مع مثال لأمر `clickhouse-client`:
 
-<div className="ch-image-md">
-  <Frame>
-    ![بيانات الاتصال عبر البروتوكول الأصلي (Native TCP) في ClickHouse Cloud](/images/_snippets/connection-details-native.webp)
-  </Frame>
-</div>
+<Image img="/images/_snippets/connection-details-native.webp" size="md" alt="تفاصيل اتصال Native TCP لخدمة ClickHouse Cloud" />
 
-### تخزين الاتصالات في ملف تهيئة {#connection-credentials}
+### تخزين تفاصيل الاتصال في ملف تهيئة {#connection-credentials}
 
-يمكنك تخزين بيانات الاتصال لخادم ClickHouse واحد أو أكثر في [ملف تهيئة](#configuration_files).
+يمكنك تخزين تفاصيل الاتصال بخادم ClickHouse واحد أو أكثر في [ملف تهيئة](#configuration_files).
 
-تكون الصيغة على النحو التالي:
+يكون التنسيق كما يلي:
 
 ```xml
 <config>
@@ -109,10 +103,10 @@ Connected to ClickHouse server version 24.12.2.
 </config>
 ```
 
-راجع [القسم الخاص بملفات التهيئة](#configuration_files) لمزيد من المعلومات.
+راجع [قسم ملفات التهيئة](#configuration_files) لمزيد من المعلومات.
 
 <Note>
-  للتركيز على بناء جملة الاستعلام، تُحذف بيانات الاتصال (`--host` و`--port` وغيرها) من بقية الأمثلة. احرص على إضافتها عند تشغيل الأوامر.
+  للتركيز على بناء جملة الاستعلام، حُذفت تفاصيل الاتصال (`--host`, `--port`، إلخ) من بقية الأمثلة. تذكّر إضافتها عند استخدام الأوامر.
 </Note>
 
 ## الوضع التفاعلي {#interactive-mode}
@@ -260,14 +254,6 @@ clickhouse-cloud (polyglot) :)
 
   iTerm2: انتقل إلى Preferences -&gt; Profile -&gt; Keys -&gt; Left Option key ثم انقر على Esc+
 </Tip>
-
-### وضع Vim {#vim-mode}
-
-شغّل العميل مع المَعلمة `--vim` لتحرير الاستعلامات باستخدام مفاتيح شبيهة بمفاتيح `vim`.
-يبدأ الإدخال في وضع الإدراج؛ ويؤدي الضغط على `Esc` إلى الانتقال إلى الوضع العادي، حيث تتوفر أوامر الحركة (`h`، `j`، `k`، `l`، `w`، `b`، `e`، `0`، `$`، `f`، `t`، `%`، `gg`، `G`، ...)، والمُعامِلات (`d`، `c`) مع أعداد التكرار وكائنات النص (`iw`، `aw`، `i(`، `a(`، ...)، إضافةً إلى أوامر مثل `x`، `r`، `s`، `o`، `A`، `I`، `D`، `C`.
-في وضع Vim، يُدرج `Enter` سطرًا جديدًا في وضع الإدراج، وينقل المؤشر إلى السطر التالي في الوضع العادي؛ ولإرسال الاستعلام اضغط `Ctrl + j`.
-في الوضع العادي، يفتح `v` الاستعلام الحالي في المحرر (غير متاح في العميل المُضمَّن).
-تعمل اختصارات البحث في السجل (`Ctrl + r`، `Ctrl + s`، `Ctrl + t`، `Alt + r`) و`Alt + #` في الوضع العادي أيضًا.
 
 ## وضع الدُفعات {#batch-mode}
 
@@ -877,13 +863,12 @@ speedscope:http://speedscope-host/#profileURL=qp%3Fid%3Dc8ecc783-e753-4b38-97f1-
 
 | الخيار                                              | الوصف                                                                                                                        | القيمة الافتراضية            |
 | --------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- | ---------------------------- |
-| `-c [ -C, --config, --config-file ] <path-to-file>` | موقع ملف التهيئة الخاص بالعميل إذا لم يكن موجودًا في أحد المواقع الافتراضية. راجع [ملفات التهيئة](#configuration_files). | -                            |
+| `-c [ -C, --config, --config-file ] <path-to-file>` | موقع ملف الإعدادات الخاص بالعميل إذا لم يكن موجودًا في أحد المواقع الافتراضية. راجع [ملفات الإعدادات](#configuration_files). | -                            |
 | `--help`                                            | اطبع ملخص الاستخدام ثم اخرج. استخدمه مع `--verbose` لعرض جميع الخيارات الممكنة، بما في ذلك إعدادات الاستعلام.                | -                            |
 | `--history_file <path-to-file>`                     | مسار ملف يحتوي على سجل الأوامر.                                                                                              | -                            |
 | `--history_max_entries`                             | الحد الأقصى لعدد العناصر في ملف السجل.                                                                                       | `1000000` (1 مليون)          |
 | `--prompt <prompt>`                                 | حدّد موجّهًا مخصصًا.                                                                                                         | `display_name` الخاص بالخادم |
 | `--verbose`                                         | زيادة مستوى تفصيل المخرجات.                                                                                                  | -                            |
-| `--vim`                                             | محاكاة وضع تحرير `vim` في الوضع التفاعلي. راجع [وضع Vim](#vim-mode).                                                         | -                            |
 | `-V [ --version ]`                                  | اطبع الإصدار ثم اخرج.                                                                                                        | -                            |
 
 ### خيارات الاتصال {#command-line-options-connection}

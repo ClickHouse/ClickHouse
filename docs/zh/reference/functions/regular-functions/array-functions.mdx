@@ -367,49 +367,6 @@ SELECT arrayBottomK((x, y) -> y, 2, ['a', 'b', 'c'], [3, 1, 2])
 ['b','c']
 ```
 
-## arrayCombinations {#arrayCombinations}
-
-引入版本：v26.10.0
-
-返回源数组中所有长度为 `k` 的组合 (即不重复选取同一索引的无序选择) 。由于枚举基于索引进行，相等的值可能会在结果中产生重复行。当 `k = 0` 时，返回 `[[]]`。每个块的结果总大小受 `function_range_max_elements_in_block` 限制，其中每个生成的数组按其大小加一计算。
-
-**语法**
-
-```sql
-arrayCombinations(arr, k)
-```
-
-**参数**
-
-* `arr` — 源数组。[`Array(T)`](/zh/reference/data-types/array)
-* `k` — 生成的每个组合的长度，不得超过源数组的大小。支持 `Int8`、`Int16`、`Int32`、`Int64`、`UInt8`、`UInt16`、`UInt32` 和 `UInt64`。[`(U)Int*`](/zh/reference/data-types/int-uint)
-
-**返回值**
-
-所有长度为 `k` 的组合。[`Array(Array(T))`](/zh/reference/data-types/array)
-
-**示例**
-
-**使用示例**
-
-```sql title=Query
-SELECT arrayCombinations([1, 2, 3], 2);
-```
-
-```response title=Response
-[[1,2],[1,3],[2,3]]
-```
-
-**`k = 0` 示例**
-
-```sql title=Query
-SELECT arrayCombinations([1, 2, 3], 0);
-```
-
-```response title=Response
-[[]]
-```
-
 ## arrayCompact {#arrayCompact}
 
 引入版本：v20.1.0
@@ -483,7 +440,7 @@ SELECT arrayConcat([1, 2], [3, 4], [5, 6]) AS res
 
 `arrayCount` 是一个[高阶函数](/zh/reference/functions/regular-functions/overview#higher-order-functions)。
 
-<Note>
+<Info>
   **使用设置 `array_count_legacy_uint32_result` 返回 `UInt32`**
 
   26.10 版本引入了一项向后不兼容的变更：`arrayCount` 改为返回 `UInt64` 而非 `UInt32`，这样即使数组中匹配的元素超过 `4294967295` 个，结果也依然精确。
@@ -491,7 +448,7 @@ SELECT arrayConcat([1, 2], [3, 4], [5, 6]) AS res
   如需保留之前的行为 (包括 `UInt32` 结果类型和结果的常量性) ，请将设置 `array_count_legacy_uint32_result` (默认值：`false`) 设为 `true`。
 
   在集群滚动升级期间，由尚未升级的服务器发起的分布式查询不会转发此设置，因此在已升级分片上本地计算的类型敏感表达式 (例如 `byteSize(arrayCount(...))`) 会得到 `UInt64`。若要在整个集群升级完成前让此类查询的行为完全保持不变，请在已升级的服务器上，为执行分片端查询的用户设置 `array_count_legacy_uint32_result = 1`，并在升级完成后移除该设置。具体是哪个用户取决于集群配置：如果配置了 interserver `secret`，分片会以发起服务器的当前用户身份执行查询；否则使用集群定义中指定的用户，或 `remote` 表函数中指定的用户 (未指定时为 `default`) 。最简单稳妥的做法是为已升级服务器上的所有用户启用该设置。
-</Note>
+</Info>
 
 **语法**
 
@@ -501,7 +458,7 @@ arrayCount([func, ] arr1, ...)
 
 **参数**
 
-* `func` — 可选。应用于数组中每个元素的函数。[`lambda 函数`](/zh/reference/functions/regular-functions/overview#arrow-operator-and-lambda)
+* `func` — 可选。应用于数组中每个元素的函数。[`Lambda 函数`](/zh/reference/functions/regular-functions/overview#arrow-operator-and-lambda)
 * `arr1, ..., arrN` — N 个数组。[`Array(T)`](/zh/reference/data-types/array)
 
 **返回值**
@@ -2548,272 +2505,6 @@ SELECT arrayNormalizedGini([0.9, 0.3, 0.8, 0.7],[6, 1, 0, 2]);
 (0.18055555555555558,0.2638888888888889,0.6842105263157896)
 ```
 
-## arrayPackBitGroupsToFixedString {#arrayPackBitGroupsToFixedString}
-
-引入版本：v26.10.0
-
-与 `arrayPackBitsToFixedString` 相同，区别在于 lambda 返回一个整数，其低 `g` 位构成一个分组，各分组
-按最高有效位优先的顺序连续打包到 `FixedString(n)` 中。结果为
-`arrayPackBitGroupsToString` 的前 `n` 个字节 (跨越边界的分组仅贡献其高位部分) ，不足 `n`
-字节时以零填充。大小 `n` 和分组大小 `g` 都必须是正的常量，且 `g` 不得大于 64。
-
-**语法**
-
-```sql
-arrayPackBitGroupsToFixedString(f, n, g, arr1[, arr2, ...])
-```
-
-**参数**
-
-* `f` — 为每个元素生成分组值的 Lambda 函数。[`Lambda function`](/zh/reference/functions/regular-functions/overview#arrow-operator-and-lambda)
-* `n` — 结果 `FixedString` 的大小 (以字节为单位) 。[`(U)Int8/16/32/64`](/zh/reference/data-types/int-uint)
-* `g` — 每个分组的位数。[`(U)Int8/16/32/64`](/zh/reference/data-types/int-uint)
-* `arr1[, arr2, ...]` — 一个或多个待打包的等长数组。lambda 的参数个数与数组个数相同，每个数组对应一个参数。[`Array(T)`](/zh/reference/data-types/array)
-
-**返回值**
-
-返回打包后的位。[`FixedString(n)`](/zh/reference/data-types/fixedstring)
-
-**示例**
-
-**示例**
-
-```sql title=Query
-SELECT arrayPackBitGroupsToFixedString(x -> x, 2, 4, [3, 0, 3, 1])
-```
-
-```response title=Response
-01
-```
-
-## arrayPackBitGroupsToString {#arrayPackBitGroupsToString}
-
-引入版本：v26.10.0
-
-与 `arrayPackBitsToString` 类似，但 lambda 返回一个整数，其低 `g` 位构成一组，各组
-按最高有效位优先的顺序连续打包。结果长度为 `ceil(size_of_array * g / 8)` 字节。
-组大小 `g` 必须是 1 到 64 之间的常量。
-
-**语法**
-
-```sql
-arrayPackBitGroupsToString(f, g, arr1[, arr2, ...])
-```
-
-**参数**
-
-* `f` — 为每个元素生成分组值的 Lambda 函数。[`Lambda function`](/zh/reference/functions/regular-functions/overview#arrow-operator-and-lambda)
-* `g` — 每个分组的位数。[`(U)Int8/16/32/64`](/zh/reference/data-types/int-uint)
-* `arr1[, arr2, ...]` — 一个或多个大小相同的待打包数组。lambda 的参数个数与数组个数相同，每个数组对应一个参数。[`Array(T)`](/zh/reference/data-types/array)
-
-**返回值**
-
-返回打包后的位。[`String`](/zh/reference/data-types/string)
-
-**示例**
-
-**示例**
-
-```sql title=Query
-SELECT arrayPackBitGroupsToString(x -> x, 4, [3, 0, 3, 1])
-```
-
-```response title=Response
-01
-```
-
-## arrayPackBitGroupsToUInt64 {#arrayPackBitGroupsToUInt64}
-
-引入版本：v26.10.0
-
-与 `arrayPackBitsToUInt64` 相同，但 lambda 返回一个整数，其低 `g` 位构成一组，各组
-连续打包 (每个字节内按最高有效位优先，字节按小端序解释，因此
-`arrayPackBitGroupsToUInt64(f, g, arr) = reinterpretAsUInt64(arrayPackBitGroupsToString(f, g, arr))`) 。结果
-为打包流的前 64 位：如果 `g` 不能整除 64，则跨越边界的那一组
-仅提供其开头的若干位。组大小 `g` 必须是 1 到 64 之间的常量。
-
-**语法**
-
-```sql
-arrayPackBitGroupsToUInt64(f, g, arr1[, arr2, ...])
-```
-
-**参数**
-
-* `f` — 为每个元素生成分组值的 Lambda 函数。[`Lambda function`](/zh/reference/functions/regular-functions/overview#arrow-operator-and-lambda)
-* `g` — 每个分组的位数。[`(U)Int8/16/32/64`](/zh/reference/data-types/int-uint)
-* `arr1[, arr2, ...]` — 一个或多个大小相同的待打包数组。lambda 的参数个数与数组个数相同，每个数组对应一个参数。[`Array(T)`](/zh/reference/data-types/array)
-
-**返回值**
-
-返回打包后的位。[`UInt64`](/zh/reference/data-types/int-uint)
-
-**示例**
-
-**示例**
-
-```sql title=Query
-SELECT arrayPackBitGroupsToUInt64(x -> x, 4, [1, 2, 3])
-```
-
-```response title=Response
-12306
-```
-
-## arrayPackBitsToFixedString {#arrayPackBitsToFixedString}
-
-引入版本：v26.10.0
-
-对数组中的每个元素应用 lambda 函数，并将所得的位打包为 `FixedString(n)`。
-lambda 为每个元素返回一个整数，该整数被视为单个比特 (零或非零) 。
-位按最高有效位优先的顺序写入，因此结果即为 `arrayPackBitsToString` 结果的前 `n` 个字节。
-如果数组元素超过 `n * 8` 个，多余的元素将被忽略；如果不足，结果将以零填充至 `n` 个字节。
-大小 `n` 必须为正整数常量。
-
-**语法**
-
-```sql
-arrayPackBitsToFixedString(f, n, arr1[, arr2, ...])
-```
-
-**参数**
-
-* `f` — 为每个元素生成比特的 Lambda 函数。[`Lambda function`](/zh/reference/functions/regular-functions/overview#arrow-operator-and-lambda)
-* `n` — 结果 `FixedString` 的大小 (以字节为单位) 。[`(U)Int8/16/32/64`](/zh/reference/data-types/int-uint)
-* `arr1[, arr2, ...]` — 一个或多个大小相同、待打包的数组。lambda 对每个数组各接收一个参数。[`Array(T)`](/zh/reference/data-types/array)
-
-**返回值**
-
-返回打包后的位。[`FixedString(n)`](/zh/reference/data-types/fixedstring)
-
-**示例**
-
-**示例**
-
-```sql title=Query
-SELECT arrayPackBitsToFixedString(x -> x, 2, [0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 1])
-```
-
-```response title=Response
-01
-```
-
-## arrayPackBitsToString {#arrayPackBitsToString}
-
-引入版本：v26.10.0
-
-对数组中的每个元素应用 lambda 函数，并将得到的位打包为一个 `String`。
-对于每个元素，lambda 返回一个整数，该整数被视为单个比特 (零或非零) 。
-各位按最高有效位优先的顺序写入；结果长度为 `ceil(size_of_array / 8)` 字节。
-
-**语法**
-
-```sql
-arrayPackBitsToString(f, arr1[, arr2, ...])
-```
-
-**参数**
-
-* `f` — 为每个元素生成对应比特的 Lambda 函数。[`Lambda function`](/zh/reference/functions/regular-functions/overview#arrow-operator-and-lambda)
-* `arr1[, arr2, ...]` — 一个或多个待打包的数组，各数组大小须相同。lambda 的参数个数与数组个数一致，每个数组对应一个参数。[`Array(T)`](/zh/reference/data-types/array)
-
-**返回值**
-
-返回打包后的位。[`String`](/zh/reference/data-types/string)
-
-**示例**
-
-**示例**
-
-```sql title=Query
-SELECT arrayPackBitsToString(x -> x, [0, 0, 1, 1, 0, 0, 0, 0])
-```
-
-```response title=Response
-0
-```
-
-## arrayPackBitsToUInt64 {#arrayPackBitsToUInt64}
-
-引入版本：v26.10.0
-
-对数组中的每个元素应用 lambda 函数，并将所得的位打包为一个 `UInt64`。
-lambda 为每个元素返回一个整数，该整数被视为单个比特 (零或非零) 。
-比特流以最高有效位优先的方式排布到各字节中 (所得字节与 `arrayPackBitsToString` 相同) ，
-这些字节再按小端序解释，因此
-`arrayPackBitsToUInt64(f, arr) = reinterpretAsUInt64(arrayPackBitsToString(f, arr))`。
-仅使用前 64 个元素；若元素不足 64 个，其余位均为零。
-
-**语法**
-
-```sql
-arrayPackBitsToUInt64(f, arr1[, arr2, ...])
-```
-
-**参数**
-
-* `f` — 为每个元素生成对应比特的 Lambda 函数。[`Lambda function`](/zh/reference/functions/regular-functions/overview#arrow-operator-and-lambda)
-* `arr1[, arr2, ...]` — 一个或多个大小相同的待打包数组。lambda 的参数个数与数组个数相同，每个数组对应一个参数。[`Array(T)`](/zh/reference/data-types/array)
-
-**返回值**
-
-返回打包后的位。[`UInt64`](/zh/reference/data-types/int-uint)
-
-**示例**
-
-**示例**
-
-```sql title=Query
-SELECT arrayPackBitsToUInt64(x -> x, [1, 0, 0, 0, 0, 0])
-```
-
-```response title=Response
-128
-```
-
-## arrayPartialPermutations {#arrayPartialPermutations}
-
-引入版本：v26.10.0
-
-返回源数组中所有长度为 `k` 的部分排列 (即不重复选取索引的有序选择) 。由于枚举基于索引进行，相等的值可能会在结果中产生重复行。当 `k = 0` 时，返回 `[[]]`。每个块的结果总大小受 `function_range_max_elements_in_block` 限制；每个生成的数组计为其大小加一。
-
-**语法**
-
-```sql
-arrayPartialPermutations(arr, k)
-```
-
-**参数**
-
-* `arr` — 源数组。[`Array(T)`](/zh/reference/data-types/array)
-* `k` — 生成的每个部分排列的长度，不得超过源数组的大小。支持 `Int8`、`Int16`、`Int32`、`Int64`、`UInt8`、`UInt16`、`UInt32` 和 `UInt64`。[`(U)Int*`](/zh/reference/data-types/int-uint)
-
-**返回值**
-
-所有长度为 `k` 的部分排列。[`Array(Array(T))`](/zh/reference/data-types/array)
-
-**示例**
-
-**使用示例**
-
-```sql title=Query
-SELECT arrayPartialPermutations([1, 2, 3], 2);
-```
-
-```response title=Response
-[[1,2],[1,3],[2,1],[2,3],[3,1],[3,2]]
-```
-
-**`k = 0` 示例**
-
-```sql title=Query
-SELECT arrayPartialPermutations([1, 2, 3], 0);
-```
-
-```response title=Response
-[[]]
-```
-
 ## arrayPartialReverseSort {#arrayPartialReverseSort}
 
 引入版本：v23.2.0
@@ -3077,38 +2768,6 @@ SELECT arrayPartialSort((x, y) -> -y, 1, [0, 1, 2], [1, 2, 3]) as res
 
 ```response title=Response
 [2,1,0]
-```
-
-## arrayPermutations {#arrayPermutations}
-
-引入版本：v26.10.0
-
-返回源数组中元素的所有排列。排列是按索引枚举的，因此相等的值可能会在结果中产生重复行。若源数组为空，则返回 `[[]]`。每个块的结果总大小受 `function_range_max_elements_in_block` 限制，其中每个生成的数组计为其大小加一。
-
-**语法**
-
-```sql
-arrayPermutations(arr)
-```
-
-**参数**
-
-* `arr` — 源数组。[`Array(T)`](/zh/reference/data-types/array)
-
-**返回值**
-
-源数组的所有排列。[`Array(Array(T))`](/zh/reference/data-types/array)
-
-**示例**
-
-**使用示例**
-
-```sql title=Query
-SELECT arrayPermutations([1, 2, 3]);
-```
-
-```response title=Response
-[[1,2,3],[1,3,2],[2,1,3],[2,3,1],[3,1,2],[3,2,1]]
 ```
 
 ## arrayPopBack {#arrayPopBack}
@@ -3477,8 +3136,6 @@ SELECT arrayReduce('uniqUpTo(3)', [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
 
 对给定范围内的数组元素应用聚合函数，并返回一个数组，其中包含每个范围对应的结果。
 该函数返回的结果与多次执行 `arrayReduce(agg_func, arraySlice(arr1, index, length), ...)` 相同。
-唯一的区别在于，此处的 length 是无符号的：若 length 大于 `Int64` 的最大值，则会选取数组的剩余全部元素；
-而 `arraySlice` 会将此类值视为负数长度。
 
 **语法**
 
@@ -3557,62 +3214,6 @@ SELECT arrayRemove(['a', NULL, 'b', NULL], NULL)
 
 ```response title=Response
 ['a','b']
-```
-
-## arrayRemoveAt {#arrayRemoveAt}
-
-引入版本：v26.10.0
-
-从 array 中移除指定索引处的元素。
-索引从 1 开始。负索引表示从 array 末尾倒数。
-如果索引超出 array 的范围，则原样返回该 array。
-索引 0 无效。
-
-**语法**
-
-```sql
-arrayRemoveAt(arr, index)
-```
-
-**参数**
-
-* `arr` — 源数组。[`Array(T)`](/zh/reference/data-types/array)
-* `index` — 要移除元素的整数索引，类型不能为 Nullable。负数索引表示从末尾开始计数。[`(U)Int8/16/32/64`](/zh/reference/data-types/int-uint)
-
-**返回值**
-
-返回移除 `index` 处元素后的源数组；如果 `index` 超出范围，则返回原数组。[`Array(T)`](/zh/reference/data-types/array)
-
-**示例**
-
-**正数索引**
-
-```sql title=Query
-SELECT arrayRemoveAt([1, 2, 3, 4], 2)
-```
-
-```response title=Response
-[1,3,4]
-```
-
-**负索引**
-
-```sql title=Query
-SELECT arrayRemoveAt([1, 2, 3, 4], -1)
-```
-
-```response title=Response
-[1,2,3]
-```
-
-**超出范围**
-
-```sql title=Query
-SELECT arrayRemoveAt([1, 2, 3, 4], 10)
-```
-
-```response title=Response
-[1,2,3,4]
 ```
 
 ## arrayResize {#arrayResize}
@@ -4160,8 +3761,6 @@ SELECT arraySimilarity(['A', 'B', 'C'], ['A', 'K', 'L'], [1.0, 2, 3], [3.0, 4, 5
 arraySlice(arr, offset [, length])
 ```
 
-**别名**: `slice`
-
 **参数**
 
 * `arr` — 要切片的数组。[`Array(T)`](/zh/reference/data-types/array) 或 [`QBit`](/zh/reference/data-types/qbit)
@@ -4174,7 +3773,7 @@ arraySlice(arr, offset [, length])
 
 **示例**
 
-**使用示例**
+**用法示例**
 
 ```sql title=Query
 SELECT arraySlice([1, 2, NULL, 4, 5], 2, 3) AS res;
@@ -4511,172 +4110,6 @@ SELECT arrayTranspose([['a', 'b'], ['c', 'd']])
 [['a','c'],['b','d']]
 ```
 
-## arrayTreePreorder {#arrayTreePreorder}
-
-引入版本：v26.11.0
-
-将以两个数组 (节点标识符和父节点标识符) 存储的树 (或森林) 按深度优先前序遍历进行排列。
-
-`ids` 和 `parent_ids` 的第 `i` 个元素描述输入节点 `i` 及其父节点。
-该函数返回一个由四个数组组成的命名元组。所有数组均按前序排列，且所有位置均从 1 开始索引：
-第 `k` 个元素描述前序中的第 `k` 个节点。
-
-* `order[k]` — 该节点的输入索引。可使用 `arrayMap(i -> x[i], t.order)` 将数据数组重排为前序。
-* `size[k]` — 该节点子树中的节点数 (包括该节点本身) 。子树对应连续的位置范围 `[k, k + size[k])`。
-* `parent[k]` — 标识符等于该节点父标识符的节点在前序中的位置；如果不存在这样的节点，则为 `0`。
-* `depth[k]` — 该节点到其所在树根节点的距离，根节点为 `0`。
-
-当且仅当 `a < b AND b < a + size[a]` 时，节点 `a` 是节点 `b` 的祖先。
-子树上的可加性聚合可通过两个前缀和之差求得 (参见 [`arrayCumSum`](#arrayCumSum)) 。
-子树上的其他聚合可对已重排为前序的数据数组使用 [`arraySlice`](#arraySlice) 获得。
-
-各棵树按其根节点的输入顺序依次输出，每个节点的子节点也按输入顺序访问，
-因此结果是确定性的。时间复杂度与数组大小呈线性关系，且对树的深度没有限制。
-
-该函数不会因数组内容而抛出异常，并且对任意输入都能构造出有效的森林：
-
-* 如果某节点的父标识符为 `NULL` 或不存在于 `ids` 中 (例如空字符串或孤立节点) ，则该节点为根节点。
-* 如果父链接构成环，则环中在输入里最先出现的节点的链接会被截断，该节点成为根节点。其 `parent` 仍保留其真实父节点的位置，该位置大于其自身位置，因此 `parent[k] > k` 表示在位置 `k` 处截断了一个环。以自身为父节点的节点，其值为 `parent[k] = k`。
-* 如果 `ids` 中存在重复值，子节点会附加到第一个匹配项上。
-
-标识符通过哈希进行比较。标识符不能是或包含浮点数 (因为 `0.0` 与 `-0.0` 相等，但哈希值不同) ，
-也不能是或包含 `Dynamic`、`Variant` 和 `JSON` 值 (因为其中的 `NULL` 会被当作普通值比较，而 `Nullable` 类型的 `NULL` 会使节点成为根节点) 。
-
-可以从结果中推导出输入的结构 (参见下方示例) ：
-
-* 是否存在环：`arrayExists((p, k) -> p > k, t.parent, arrayEnumerate(t.parent))`。
-* 环被截断的位置：`arrayFilter((k, p) -> p > k, arrayEnumerate(t.parent), t.parent)`。
-* 各树根节点的位置：`arrayFilter((k, d) -> d = 0, arrayEnumerate(t.depth), t.depth)`，树的数量为 `countEqual(t.depth, 0)`。
-* 父标识符不存在的节点的位置：`arrayFilter((k, p) -> p = 0, arrayEnumerate(t.parent), t.parent)`。
-* 输入是否为一棵具有真实根节点的树：`t.size[1] = length(ids) AND t.parent[1] <= 1`。该条件兼容两种根节点约定 (父标识符不存在时为 `0`，自环时为 `1`) ，并会排除整体构成一个大环的数组。
-* 在位置 `r` 处截断的环中各节点的位置：`arrayFilter(x -> x + t.size[x] > t.parent[r], range(r, t.parent[r] + 1))`。即从 `r` 到其真实父节点 `t.parent[r]` 之间、子树包含该真实父节点的那些节点。
-* 重复的标识符：`arrayEnumerateUniq(ids) > 1`。
-
-要获取位置 `k` 处节点的输入索引，请使用 `t.order[k]`。
-
-**语法**
-
-```sql
-arrayTreePreorder(ids, parent_ids)
-```
-
-**参数**
-
-* `ids` — 节点标识符。不支持浮点数、`Dynamic`、`Variant` 和 `JSON`。[`Array(T)`](/zh/reference/data-types/array)
-* `parent_ids` — 父节点标识符，每个节点对应一个。大小必须与 `ids` 相同。[`Array(T)`](/zh/reference/data-types/array)
-
-**返回值**
-
-返回表示前序布局的元组。[`Tuple(order Array(UInt32), size Array(UInt32), parent Array(UInt32), depth Array(UInt32))`](/zh/reference/data-types/tuple)
-
-**示例**
-
-**使用示例**
-
-```sql title=Query
-SELECT arrayTreePreorder(['G2', 'A', 'T1', 'B', 'G1', 'G3'], ['B', '', 'B', 'A', 'A', 'A']) AS t
-```
-
-```response title=Response
-([2,4,1,3,5,6],[6,3,1,1,1,1],[0,1,2,2,1,1],[0,1,2,2,1,1])
-```
-
-**trace 中每个 agent 跨度的成本及其后代节点数量**
-
-```sql title=Query
-WITH
-    ['A', 'G1', 'B', 'G2', 'T1', 'G3'] AS ids,
-    ['', 'A', 'A', 'B', 'B', 'A'] AS parent_ids,
-    ['AGENT', 'GENERATION', 'AGENT', 'GENERATION', 'TOOL', 'GENERATION'] AS types,
-    [0, 2, 0, 3, 0, 1] AS costs,
-    arrayTreePreorder(ids, parent_ids) AS t,
-    arrayCumSum(arrayMap(i -> costs[i], t.order)) AS cum
-SELECT arrayMap(k -> (ids[t.order[k]], cum[k + t.size[k] - 1] - cum[k], t.size[k] - 1),
-    arrayFilter(k -> types[t.order[k]] = 'AGENT', arrayEnumerate(t.order))) AS res
-```
-
-```response title=Response
-[('A',6,5),('B',3,2)]
-```
-
-**无效输入：一个环 C -&gt; D -&gt; E -&gt; C、环下方的节点 F，以及孤立节点 G**
-
-```sql title=Query
-SELECT arrayTreePreorder(['A', 'B', 'C', 'D', 'E', 'F', 'G'], ['', 'A', 'D', 'E', 'C', 'C', 'Z']) AS t
-```
-
-```response title=Response
-([1,2,3,5,4,6,7],[2,1,4,2,1,1,1],[0,1,5,3,4,3,0],[0,1,0,1,2,1,0])
-```
-
-**检测环并找出其断开的位置**
-
-```sql title=Query
-WITH
-    ['A', 'B', 'C', 'D', 'E', 'F', 'G'] AS ids,
-    arrayTreePreorder(ids, ['', 'A', 'D', 'E', 'C', 'C', 'Z']) AS t
-SELECT
-    arrayExists((p, k) -> p > k, t.parent, arrayEnumerate(t.parent)) AS has_cycle,
-    arrayFilter((k, p) -> p > k, arrayEnumerate(t.parent), t.parent) AS cut_positions,
-    arrayMap(k -> ids[t.order[k]], cut_positions) AS cut_ids
-```
-
-```response title=Response
-┌─has_cycle─┬─cut_positions─┬─cut_ids─┐
-│         1 │ [3]           │ ['C']   │
-└───────────┴───────────────┴─────────┘
-```
-
-**根节点、树的数量、找不到父节点的节点，以及单棵树检查**
-
-```sql title=Query
-WITH
-    ['A', 'B', 'C', 'D', 'E', 'F', 'G'] AS ids,
-    arrayTreePreorder(ids, ['', 'A', 'D', 'E', 'C', 'C', 'Z']) AS t
-SELECT
-    arrayMap(k -> ids[t.order[k]], arrayFilter((k, d) -> d = 0, arrayEnumerate(t.depth), t.depth)) AS roots,
-    countEqual(t.depth, 0) AS trees,
-    arrayMap(k -> ids[t.order[k]], arrayFilter((k, p) -> p = 0, arrayEnumerate(t.parent), t.parent)) AS parent_not_found,
-    t.size[1] = length(ids) AND t.parent[1] <= 1 AS is_one_tree
-```
-
-```response title=Response
-┌─roots─────────┬─trees─┬─parent_not_found─┬─is_one_tree─┐
-│ ['A','C','G'] │     3 │ ['A','G']        │           0 │
-└───────────────┴───────┴──────────────────┴─────────────┘
-```
-
-**在位置 3 处断开的环中的节点**
-
-```sql title=Query
-WITH
-    ['A', 'B', 'C', 'D', 'E', 'F', 'G'] AS ids,
-    arrayTreePreorder(ids, ['', 'A', 'D', 'E', 'C', 'C', 'Z']) AS t,
-    3 AS r
-SELECT arrayMap(k -> ids[t.order[k]], arrayFilter(x -> x + t.size[x] > t.parent[r], range(r, t.parent[r] + 1))) AS cycle
-```
-
-```response title=Response
-┌─cycle─────────┐
-│ ['C','E','D'] │
-└───────────────┘
-```
-
-**标识符重复时：子节点挂在首次出现的节点下**
-
-```sql title=Query
-WITH ['a', 'b', 'a', 'c'] AS ids
-SELECT
-    arrayFilter((id, n) -> n > 1, ids, arrayEnumerateUniq(ids)) AS duplicate_ids,
-    arrayTreePreorder(ids, ['', 'a', '', 'a']).order AS order
-```
-
-```response title=Response
-┌─duplicate_ids─┬─order─────┐
-│ ['a']         │ [1,2,4,3] │
-└───────────────┴───────────┘
-```
-
 ## arrayUnion {#arrayUnion}
 
 引入版本：v24.10.0
@@ -4688,8 +4121,6 @@ SELECT
 ```sql
 arrayUnion(arr1, arr2, ..., arrN)
 ```
-
-**别名**：`array_union`
 
 **参数**
 
@@ -4851,8 +4282,6 @@ SELECT arrayZip(['a', 'b', 'c'], [5, 2, 1]);
 arrayZipUnaligned(arr1, arr2, ..., arrN)
 ```
 
-**别名**：`zip`
-
 **参数**
 
 * `arr1, arr2, ..., arrN` — 将 N 个数组合并为一个数组。[`Array(T)`](/zh/reference/data-types/array)
@@ -4871,39 +4300,6 @@ SELECT arrayZipUnaligned(['a'], [1, 2, 3]);
 
 ```response title=Response
 [('a',1),(NULL,2),(NULL,3)]
-```
-
-## array_position {#array_position}
-
-引入版本：v26.8.0
-
-PostgreSQL 兼容性函数。返回该元素在 array 中首次出现的位置 (从 1 开始索引) ；若该元素不存在，则返回 `NULL`。与 PostgreSQL 一致，若传入的元素为 `NULL`，则查找 array 中第一个 `NULL` 的位置。ClickHouse 中对应的原生函数是 `indexOf`，它在未找到时返回 0 而非 `NULL`。
-
-**语法**
-
-```sql
-array_position(array, element)
-```
-
-**参数**
-
-* `array` — 要搜索的 array。[`Array(T)`](/zh/reference/data-types/array)
-* `element` — 要搜索的元素。[`Any`](/zh/reference/data-types/index)
-
-**返回值**
-
-返回该元素首个匹配项的位置 (从 1 开始索引) ；若该元素不存在，则返回 `NULL`。[`Nullable(UInt64)`](/zh/reference/data-types/nullable)
-
-**示例**
-
-**示例**
-
-```sql title=Query
-SELECT array_position(['a', 'b'], 'b')
-```
-
-```response title=Response
-2
 ```
 
 ## countEqual {#countEqual}
@@ -4950,7 +4346,7 @@ SELECT countEqual([1, 2, NULL, NULL], NULL)
 如果数组不包含任何元素，则视为空数组。
 
 <Note>
-  当该列未在查询的其他位置使用时，该函数只需读取 [size0](/zh/reference/data-types/array#array-size) 子列，而无需读取并处理整个数组列。查询 `SELECT empty(arr) FROM TABLE;` 会转换为 `SELECT arr.size0 = 0 FROM TABLE;`。此优化由 [`optimize_functions_to_subcolumns`](/zh/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns) 设置控制，该设置默认启用。
+  启用 [`optimize_functions_to_subcolumns` setting](/zh/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns) 后可对此进行优化。将 `optimize_functions_to_subcolumns = 1` 时，该函数只会读取 [size0](/zh/reference/data-types/array#array-size) 子列，而不是读取并处理整个数组列。查询 `SELECT empty(arr) FROM TABLE;` 会转换为 `SELECT arr.size0 = 0 FROM TABLE;`。
 </Note>
 
 该函数也适用于 String 或 UUID。
@@ -4971,7 +4367,7 @@ empty(arr)
 
 **示例**
 
-**使用示例**
+**用法示例**
 
 ```sql title=Query
 SELECT empty([]);
@@ -5887,7 +5283,7 @@ SELECT indexOfAssumeSorted([1, 3, 3, 3, 4, 4, 5], 4)
 
 ## length {#length}
 
-引入版本：v1.1.0
+Introduced in：v1.1.0
 
 计算字符串或数组的长度。
 
@@ -5901,13 +5297,13 @@ SELECT indexOfAssumeSorted([1, 3, 3, 3, 4, 4, 5], 4)
 
 字符串中可以包含 ASCII NULL 字节，这些字节也会被计入。
 
-**语法**
+**Syntax**
 
 ```sql
 length(x)
 ```
 
-**别名**: `CARDINALITY`, `OCTET_LENGTH`
+**别名**: `OCTET_LENGTH`, `CARDINALITY`
 
 **参数**
 
@@ -5993,14 +5389,14 @@ SELECT 'ábc' AS str, length(str), lengthUTF8(str)
 
 ## notEmpty {#notEmpty}
 
-引入版本：v1.1.0
+版本引入：v1.1.0
 
 检查输入数组是否非空。
 
 如果数组至少包含一个元素，则视为非空。
 
 <Note>
-  如果该列未在查询的其他位置使用，该函数可以只读取 [size0](/zh/reference/data-types/array#array-size) 子列，而不是读取并处理整个数组列。查询 `SELECT notEmpty(arr) FROM table` 会转换为 `SELECT arr.size0 != 0 FROM TABLE`。此优化由 [`optimize_functions_to_subcolumns`](/zh/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns) 设置控制，该设置默认启用。
+  可通过启用 [`optimize_functions_to_subcolumns`](/zh/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns) 设置进行优化。当 `optimize_functions_to_subcolumns = 1` 时，该函数只会读取 [size0](/zh/reference/data-types/array#array-size) 子列，而不是读取并处理整个数组列。查询 `SELECT notEmpty(arr) FROM table` 会转换为 `SELECT arr.size0 != 0 FROM TABLE`。
 </Note>
 
 该函数也适用于 String 或 UUID。

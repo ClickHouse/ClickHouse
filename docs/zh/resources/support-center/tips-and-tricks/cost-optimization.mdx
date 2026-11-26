@@ -24,7 +24,9 @@ description: '来自 ClickHouse 社区 meetup 的成本优化策略，包含真�
 
 *了解 [ClickHouse Cloud 如何帮助管理运营成本](/zh/products/cloud/getting-started/intro)。*
 
-## 压缩策略：生产环境中的 LZ4 与 ZSTD {#compression-strategy}
+<div id="compression-strategy">
+  ## 压缩策略：生产环境中的 LZ4 与 ZSTD
+</div>
 
 当 Microsoft Clarity 需要处理数百 TB 的数据时，他们发现压缩方案的选择会对成本产生巨大影响。在这样的规模下，哪怕只节省一点存储空间都很重要，因此他们面临着一个经典取舍：性能还是存储成本。Microsoft Clarity 处理着海量数据——所有账户每月总计 2 PB 的未压缩数据，在 8 个节点上每小时处理约 60,000 次查询，并为数百万个网站提供数十亿次页面浏览。在这种规模下，压缩策略就成了关键的成本因素。
 
@@ -37,7 +39,9 @@ description: '来自 ClickHouse 社区 meetup 的成本优化策略，包含真�
 * 对摄取和查询的性能影响可控
 * 在数百 TB 规模下显著降低了成本
 
-## 基于列的保留策略 {#column-retention}
+<div id="column-retention">
+  ## 基于列的保留策略
+</div>
 
 最有效的成本优化方法之一，就是分析哪些列实际上被使用了。Microsoft Clarity 利用 ClickHouse 内置的遥测能力，实施了精细的基于列的保留策略。ClickHouse 可按列提供详细的存储使用指标，以及全面的查询模式信息：哪些列被访问、访问频率、查询耗时以及整体使用统计。
 
@@ -54,7 +58,9 @@ description: '来自 ClickHouse 社区 meetup 的成本优化策略，包含真�
 
 * [管理数据 - 列级生存时间 (TTL)](/zh/guides/use-cases/observability/build-your-own/managing-data)
 
-## 基于分区的数据管理 {#partition-management}
+<div id="partition-management">
+  ## 基于分区的数据管理
+</div>
 
 Microsoft Clarity 发现，分区策略同时会影响性能和运维简便性。他们采用的方法是：按日期分区，按小时排序。除了提升清理效率之外，这一策略还带来了多方面的收益——它使数据清理变得极为简单，简化了其面向客户服务的计费计算，并支持 GDPR 对按行删除的合规要求。
 
@@ -69,7 +75,9 @@ Microsoft Clarity 发现，分区策略同时会影响性能和运维简便性�
 
 * [数据管理 - 分区](/zh/guides/use-cases/observability/build-your-own/managing-data#partitions)
 
-## 字符串到整数的转换策略 {#string-integer-conversion}
+<div id="string-integer-conversion">
+  ## 字符串到整数的转换策略
+</div>
 
 分析平台在处理跨数百万行反复出现的分类数据时，往往会面临存储挑战。Microsoft 的工程团队在其搜索分析数据中遇到了这个问题，并开发出一种有效的解决方案，使受影响数据集的存储占用减少了 60%。
 
@@ -90,7 +98,9 @@ Microsoft 使用单独的 MySQL 数据库实现了一套字符串到整数的映
   这是一个专门针对 Microsoft Clarity 数据场景的示例。如果你的所有数据都在 ClickHouse 中，或者没有将数据迁移到 ClickHouse 的限制，建议改用 [字典](/zh/concepts/features/dictionaries/index)。
 </Note>
 
-## 相关视频 {#video-sources}
+<div id="video-sources">
+  ## 相关视频
+</div>
 
 * **[Microsoft Clarity 与 ClickHouse](https://www.youtube.com/watch?v=rUVZlquVGw0)** - Microsoft Clarity Team
 * **[Contentsquare 中的 ClickHouse 之旅](https://www.youtube.com/watch?v=zvuCBAl2T0Q)** - Doron Hoffman &amp; Guram Sigua (ContentSquare)

@@ -1,11 +1,13 @@
 ---
 slug: /use-cases/observability/clickstack/integrations/temporal-metrics
-title: 'Monitorización de las métricas de Temporal Cloud con ClickStack'
+title: 'Supervisión de las métricas de Temporal Cloud con ClickStack'
 sidebarTitle: 'Métricas de Temporal Cloud'
-description: 'Monitorización de las métricas de Temporal Cloud con ClickStack'
+description: 'Supervisión de las métricas de Temporal Cloud con ClickStack'
 doc_type: 'guide'
 keywords: ['Temporal', 'métricas', 'OTEL', 'ClickStack']
 ---
+
+import { Image } from "/snippets/es/components/Image.jsx";
 
 import { TrackedLink } from "/snippets/es/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
@@ -20,17 +22,17 @@ Temporal ofrece una capa de abstracción para crear aplicaciones simples, sofist
 <Info>
   **Resumen**
 
-  Supervisa las métricas de Temporal Cloud en ClickStack mediante el receiver de Prometheus de OTel. Incluye un panel de control preconfigurado.
+  Supervisa las métricas de Temporal Cloud en ClickStack mediante el receiver de Prometheus de OTel. Incluye un dashboard preconfigurado.
 </Info>
 
 <div id="existing-temporal">
-  ## Integración con Temporal Cloud existente {#existing-temporal}
+  ## Integración con Temporal Cloud existente
 </div>
 
 En esta sección se explica cómo configurar ClickStack mediante la configuración del ClickStack OTel collector con el receiver de Prometheus.
 
 <div id="prerequisites">
-  ## Requisitos previos {#prerequisites}
+  ## Requisitos previos
 </div>
 
 * Instancia de ClickStack en funcionamiento
@@ -49,7 +51,7 @@ En esta sección se explica cómo configurar ClickStack mediante la configuraci�
   </Step>
 
   <Step title="Crear una configuración personalizada del OTel collector" id="custom-otel">
-    ClickStack permite ampliar la configuración base del OpenTelemetry collector montando un archivo de configuración personalizado y definiendo una variable de entorno. La configuración personalizada se combina con la configuración base gestionada por la UI de ClickStack a través de OpAMP.
+    ClickStack permite ampliar la configuración base del OpenTelemetry collector montando un archivo de configuración personalizado y definiendo una variable de entorno. La configuración personalizada se combina con la configuración base gestionada por HyperDX a través de OpAMP.
 
     Cree un archivo llamado `temporal-metrics.yaml` con la siguiente configuración:
 
@@ -115,7 +117,7 @@ En esta sección se explica cómo configurar ClickStack mediante la configuraci�
 
     Todos los comandos asumen que se ejecutan desde el directorio de ejemplo, donde se almacenan `temporal-metrics.yaml` y `temporal.key`.
 
-##### Opción 1: Docker Compose {#docker-compose}
+    ##### Opción 1: Docker Compose
 
     Actualice la configuración de despliegue de ClickStack:
 
@@ -131,7 +133,7 @@ En esta sección se explica cómo configurar ClickStack mediante la configuraci�
           # ... other volumes ...
     ```
 
-##### Opción 2: `docker run` (imagen todo en uno) {#all-in-one}
+    ##### Opción 2: `docker run` (imagen todo en uno)
 
     Si usas la imagen todo en uno con `docker run`:
 
@@ -145,66 +147,52 @@ En esta sección se explica cómo configurar ClickStack mediante la configuraci�
     ```
   </Step>
 
-  <Step title="Verificar métricas en la UI de ClickStack" id="verifying-metrics">
-    Una vez configurado todo, inicia sesión en la UI de ClickStack y verifica que las métricas estén llegando:
+  <Step title="Verificar métricas en HyperDX" id="verifying-metrics">
+    Una vez configurado todo, inicia sesión en HyperDX y verifica que las métricas estén llegando:
 
     1. Ve al explorador de métricas
     2. Busca métricas que empiecen por `temporal` (p. ej., `temporal_cloud_v1_workflow_success_count`, `temporal_cloud_v1_poll_timeout_count`)
     3. Deberías ver puntos de datos de métricas según el intervalo de recopilación configurado
 
-    <div className="ch-image-md">
-      <Frame>
-        ![Métricas de Temporal](/images/clickstack/temporal/temporal-metrics.webp)
-      </Frame>
-    </div>
+    <Image img="/images/clickstack/temporal/temporal-metrics.webp" alt="Métricas de Temporal" size="md" />
   </Step>
 </Steps>
 
-## Paneles de control y visualización {#dashboards}
+<div id="dashboards">
+  ## Dashboards y visualización
+</div>
 
 Para ayudarte a empezar a monitorear Temporal Cloud con ClickStack, proporcionamos algunas visualizaciones de ejemplo para las métricas de Temporal.
 
 <Steps>
   <Step title="Descargar la configuración del dashboard" id="download">
-    <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/temporal-metrics-dashboard.json'} download="temporal-metrics-dashboard.json" eventName="docs.temporal_metrics_monitoring.dashboard_download">Descargar el archivo de configuración del panel de control</TrackedLink>.
+    <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/temporal-metrics-dashboard.json'} download="temporal-metrics-dashboard.json" eventName="docs.temporal_metrics_monitoring.dashboard_download">Descargar el archivo de configuración del dashboard</TrackedLink>.
   </Step>
 
   <Step title="Importar el dashboard preconfigurado" id="import-dashboard">
-    1. Abre la UI de ClickStack y ve a la sección Paneles de control
-    2. Haz clic en **Import Panel de control** en la esquina superior derecha, dentro del menú de tres puntos
+    1. Abre HyperDX y ve a la sección Dashboards
+    2. Haz clic en **Import Dashboard** en la esquina superior derecha, dentro del menú de tres puntos
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![Botón Import Panel de control](/images/clickstack/import-dashboard.webp)
-      </Frame>
-    </div>
+    <Image img="/images/clickstack/import-dashboard.webp" alt="Botón Import Dashboard" />
 
     3. Sube el archivo `temporal-metrics-dashboard.json` y haz clic en **Finish Import**
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![Diálogo Finish Import](/images/clickstack/temporal/import-temporal-metrics-dashboard.webp)
-      </Frame>
-    </div>
+    <Image img="/images/clickstack/temporal/import-temporal-metrics-dashboard.webp" alt="Diálogo Finish Import" />
   </Step>
 
   <Step title="Ver el dashboard" id="created-dashboard">
-    El panel de control se creará con todas las visualizaciones ya configuradas:
+    El dashboard se creará con todas las visualizaciones ya configuradas:
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![Panel de control de métricas de Temporal](/images/clickstack/temporal/temporal-metrics-dashboard.webp)
-      </Frame>
-    </div>
+    <Image img="/images/clickstack/temporal/temporal-metrics-dashboard.webp" alt="Dashboard de métricas de Temporal" />
   </Step>
 </Steps>
 
 <div id="troubleshooting">
-  ## Solución de problemas {#troubleshooting}
+  ## Solución de problemas
 </div>
 
 <div id="troubleshooting-not-loading">
-  ### La configuración personalizada no se carga {#troubleshooting-not-loading}
+  ### La configuración personalizada no se carga
 </div>
 
 Verifica que la variable de entorno `CUSTOM_OTELCOL_CONFIG_FILE` esté configurada correctamente:
@@ -235,12 +223,14 @@ docker exec <container-name> cat /etc/otelcol-contrib/temporal.key
 # Esto debería mostrar el contenido de tu temporal.key
 ```
 
-### No aparecen métricas en la UI de ClickStack {#no-metrics}
+<div id="no-metrics">
+  ### No aparecen métricas en HyperDX
+</div>
 
 Comprueba que se pueda acceder a Temporal Cloud desde el collector:
 
 ```bash
-# From the ClickStack container
+# Desde el contenedor de ClickStack
 docker exec <container-name> curl -H "Authorization: Bearer <API_KEY>" https://metrics.temporal.io/v1/metrics
 ```
 
@@ -254,14 +244,14 @@ Verifica que la configuración efectiva incluya tu receiver de Prometheus:
 
 ```bash
 docker exec <container> cat /etc/otel/supervisor-data/effective.yaml | grep -A 10 "Prometheus:"
-## usually, docker exec clickstack cat /etc/otel/supervisor-data/effective.yaml | grep -A 10 "prometheus:"
+## normalmente, docker exec clickstack cat /etc/otel/supervisor-data/effective.yaml | grep -A 10 "prometheus:"
 ```
 
 Compruebe si hay errores en los logs del agente collector:
 
 ```bash
 docker exec <container> cat /etc/otel/supervisor-data/agent.log | grep -i Prometheus
-# Look for connection errors or authentication failures
+# Buscar errores de conexión o fallos de autenticación
 # docker exec clickstack cat /etc/otel/supervisor-data/agent.log | grep -i Prometheus
 ```
 
@@ -269,30 +259,32 @@ Revise los logs del collector:
 
 ```bash
 docker exec <container> cat /var/log/otel-collector.log | grep -i error
-# Look for config parsing errors - early supervisor.opamp-client can be ignored 
+# Buscar errores de análisis de configuración - los errores tempranos de supervisor.opamp-client pueden ignorarse 
 # docker exec clickstack cat /var/log/otel-collector.log | grep -i error
 ```
 
 <div id="auth-errors">
-  ### Errores de autenticación {#auth-errors}
+  ### Errores de autenticación
 </div>
 
 Si ve errores de autenticación en los logs, compruebe su clave de API.
 
 <div id="network-issues">
-  ### Problemas de conectividad de red {#network-issues}
+  ### Problemas de conectividad de red
 </div>
 
 Si ClickStack no puede conectarse a Temporal Cloud, asegúrate de que tu archivo de Docker Compose o tus comandos `docker run` permitan la [conectividad de red externa](https://docs.docker.com/engine/network/#drivers).
 
 <div id="next-steps">
-  ## Siguientes pasos {#next-steps}
+  ## Siguientes pasos
 </div>
 
 * Configura [alertas](/es/clickstack/features/alerts) para métricas críticas (tasas de fallo de los flujos de trabajo, crecimiento del atraso de tareas, latencia entre la programación y el inicio)
 * Crea paneles adicionales para casos de uso específicos (monitorización a nivel de espacio de nombres, rendimiento por tipo de flujo de trabajo)
 * Supervisa varias cuentas de Temporal Cloud duplicando la configuración del receiver con distintos endpoints y nombres de servicio
 
-## Preparación para producción {#going-to-production}
+<div id="going-to-production">
+  ## Preparación para producción
+</div>
 
 Esta guía amplía el OpenTelemetry Collector integrado de ClickStack para facilitar una configuración rápida. Para implementaciones de producción, recomendamos ejecutar su propio OTel Collector y enviar los datos al endpoint OTLP de ClickStack. Consulte [Envío de datos de OpenTelemetry](/es/clickstack/ingesting-data/opentelemetry) para ver la configuración de producción.

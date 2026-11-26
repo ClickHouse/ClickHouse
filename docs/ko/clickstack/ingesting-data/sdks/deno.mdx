@@ -8,30 +8,55 @@ keywords: ['Deno ClickStack SDK', 'Deno OpenTelemetry', 'ClickStack Deno 통합'
 
 import { ClickStackIntegrates } from '/snippets/ko/components/ClickStackIntegrates/ClickStackIntegrates.jsx'
 
-Deno에 내장된 OpenTelemetry 지원을 사용해 로그, 메트릭, trace를 ClickStack으로 전송할 수 있습니다. ClickStack Node.js SDK나 레거시 Deno 로깅 패키지는 필요하지 않습니다.
+<ClickStackIntegrates signals={['logs']} />
 
-<ClickStackIntegrates signals={['logs', 'metrics', 'traces']} />
+<Note>
+  현재 OpenTelemetry 로깅만 지원합니다. 트레이싱 지원은 [다음 가이드](https://dev.to/grunet/leveraging-opentelemetry-in-deno-45bj#a-minimal-interesting-example)를 참조하십시오.
+</Note>
 
-## OpenTelemetry 설정 {#set-up-opentelemetry}
+## 로깅 {#logging}
 
-공식 [Deno OpenTelemetry 설정 지침](https://docs.deno.com/runtime/fundamentals/open_telemetry/)에 따라 애플리케이션을 계측하십시오. 아래와 같이 대상을 구성한 다음, 애플리케이션을 시작할 때 Deno의 내장 통합 기능을 활성화하십시오:
+로깅은 `std/log` 모듈에 사용자 지정 로거를 export하여 지원됩니다.
 
-```shell
-OTEL_DENO=true OTEL_SERVICE_NAME='my-deno-app' deno run app.ts
+**사용 예시:**
+
+```typescript
+import * as log from 'https://deno.land/std@0.203.0/log/mod.ts';
+import { OpenTelemetryHandler } from 'npm:@hyperdx/deno';
+
+log.setup({
+  handlers: {
+    otel: new OpenTelemetryHandler('DEBUG'),
+  },
+
+  loggers: {
+    'my-otel-logger': {
+      level: 'DEBUG',
+      handlers: ['otel'],
+    },
+  },
+});
+
+log.getLogger('my-otel-logger').info('Hello from Deno!');
 ```
 
-애플리케이션에 필요한 권한을 추가하십시오. 업스트림 지침에 나오는 예시 대상이나 콘솔 익스포터 설정은 신호별 엔드포인트 재정의를 포함하여 모두 교체하십시오.
+### 애플리케이션 실행 {#run-the-application}
 
-## 대상 구성 {#configure-destination}
+<Tabs>
+  <Tab title="Managed ClickStack">
+    ```shell
+    OTEL_EXPORTER_OTLP_ENDPOINT=<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT> \
+    OTEL_SERVICE_NAME="<YOUR_SERVICE_NAME>" \
+    deno run --allow-net --allow-env --allow-read --allow-sys --allow-run app.ts
+    ```
+  </Tab>
 
-ClickStack 수집기의 OTLP HTTP 엔드포인트와 수집 키를 설정하십시오. collector에 TLS가 구성되어 있지 않다면 `http://`를 사용하십시오. collector 설정 방법은 [OpenTelemetry로 데이터 수집하기](/ko/clickstack/ingesting-data/opentelemetry)를 참조하십시오.
-
-```shell
-export OTEL_EXPORTER_OTLP_ENDPOINT='https://YOUR_COLLECTOR_HOST:4318'
-export OTEL_EXPORTER_OTLP_HEADERS='authorization=YOUR_INGESTION_API_KEY'
-export OTEL_EXPORTER_OTLP_PROTOCOL='http/protobuf'
-```
-
-## 수집 확인 {#verify-ingestion}
-
-애플리케이션을 시작하고 트래픽을 발생시키십시오. ClickStack에서 최근 시간 범위를 선택한 다음 로그 또는 trace에서 애플리케이션의 서비스 이름을 찾으십시오. 메트릭은 내보내기가 완료될 때까지 잠시 기다린 후 메트릭에서 확인하십시오.
+  <Tab title="ClickStack Open Source">
+    ```shell
+    OTEL_EXPORTER_OTLP_HEADERS="authorization=<YOUR_INGESTION_API_KEY>" \
+    OTEL_EXPORTER_OTLP_ENDPOINT=<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT> \
+    OTEL_SERVICE_NAME="<YOUR_SERVICE_NAME>" \
+    deno run --allow-net --allow-env --allow-read --allow-sys --allow-run app.ts
+    ```
+  </Tab>
+</Tabs>

@@ -49,29 +49,6 @@ inline size_t seqLength(const UInt8 first_octet)
     return bits - 1 - first_zero;
 }
 
-/// Whether `[bytes, bytes + length)` is one well-formed UTF-8 sequence, with `length` taken from its first byte
-/// (`seqLength` or `length_of_utf8_sequence`). Plain comparisons, so that it inlines without jump tables.
-inline bool isLegalSequence(const UInt8 * bytes, size_t length)
-{
-    if (length < 1 || length > 4)
-        return false;
-
-    const UInt8 first = bytes[0];
-    bool legal = !(first >= 0x80 && first < 0xC2) && first <= 0xF4;
-    if (length >= 2)
-    {
-        /// The range of the second byte depends on the first one: no overlong or surrogate forms, nothing above U+10FFFF.
-        const UInt8 low = first == 0xE0 ? 0xA0 : (first == 0xF0 ? 0x90 : 0x80);
-        const UInt8 high = first == 0xED ? 0x9F : (first == 0xF4 ? 0x8F : 0xBF);
-        legal &= bytes[1] >= low && bytes[1] <= high;
-    }
-    if (length >= 3)
-        legal &= isContinuationOctet(bytes[2]);
-    if (length == 4)
-        legal &= isContinuationOctet(bytes[3]);
-    return legal;
-}
-
 /// Every byte except a continuation byte (`0b10xxxxxx`) starts a code point: as signed bytes, those above `0xBF`.
 inline size_t countCodePoints(const UInt8 * data, size_t size)
 {
@@ -155,8 +132,10 @@ size_t computeBytesBeforeWidth(const UInt8 * data, size_t size, size_t prefix, s
   */
 size_t computeBytesBeforeCodePoint(const UInt8 * data, size_t size, size_t limit) noexcept;
 
-/// True if `utf8CaseFold` maps a non-ASCII code point onto `c` or its other case, so a byte compare misses the match.
-/// Defined in StringSearcher.cpp, which the wasm parser does not build. Today no character qualifies.
+/// True if `Poco::Unicode::toLower` maps some non-ASCII code point onto the ASCII character `c`, or onto its
+/// other case. Today that set is {'k', 'K'}, reachable from U+212A KELVIN SIGN.
+/// Case-insensitive UTF-8 search folds per code point with that same rule, so a caller comparing bytes cannot
+/// reproduce it and must not answer a needle containing such a character.
 bool isASCIIReachableByCaseFolding(char c);
 
 }

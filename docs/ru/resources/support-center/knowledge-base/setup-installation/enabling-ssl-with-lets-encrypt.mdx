@@ -2,13 +2,17 @@
 title: Как включить SSL с Let's Encrypt на одном сервере ClickHouse
 description: Узнайте, как настроить SSL для одного сервера ClickHouse с помощью Let's Encrypt, включая выпуск сертификата, настройку и проверку.
 date: 2024-12-11
-tags: ['Security and Authentication']
+tags: ['Безопасность и аутентификация']
 keywords: ['SSL', 'Let/`s Encrypt']
 ---
 
-## Порядок действий {#steps-to-follow}
+import { Image } from "/snippets/ru/components/Image.jsx";
 
-Следующие шаги можно использовать, чтобы включить SSL для одного сервера ClickHouse с помощью [Let&#39;s Encrypt](https://letsencrypt.org/) — бесплатного, автоматизированного и открытого центра сертификации (CA), созданного для того, чтобы любому было проще защищать свои веб-сайты с помощью HTTPS. Автоматизируя процесс выпуска сертификата и продления сертификатов, Let&#39;s Encrypt позволяет поддерживать безопасность веб-сайтов без ручного вмешательства.
+<div id="steps-to-follow">
+  ## Порядок действий
+</div>
+
+Следующие шаги можно использовать, чтобы включить SSL для одного сервера ClickHouse с помощью [Let&#39;s Encrypt](https://letsencrypt.org/) — бесплатного, автоматизированного и открытого центра сертификации (CA), созданного для того, чтобы любому было проще защищать свои веб-сайты с помощью HTTPS. Автоматизируя процесс выпуска сертификата и renewal сертификатов, Let&#39;s Encrypt позволяет поддерживать безопасность веб-сайтов без ручного вмешательства.
 
 <Note>
   В этом руководстве предполагается, что ClickHouse установлен в стандартные каталоги пакетов. Во всех примерах используется домен `product-test-server.clickhouse-dev.com`. Замените его на свой домен.
@@ -53,11 +57,7 @@ product-test-server.clickhouse-dev.com. 300 IN A 34.248.59.9
 
 <br />
 
-<div className="ch-image-md">
-  <Frame>
-    ![Конфигурация AWS Security Group с открытым портом 80](/images/knowledgebase/lets-encrypt-ssl/port_80_security_group.webp)
-  </Frame>
-</div>
+<Image img="/images/knowledgebase/lets-encrypt-ssl/port_80_security_group.webp" size="md" alt="Конфигурация AWS Security Group с открытым портом 80" border />
 
 3. Установите [`certbot`](https://certbot.eff.org/instructions), например с помощью `apt`
 

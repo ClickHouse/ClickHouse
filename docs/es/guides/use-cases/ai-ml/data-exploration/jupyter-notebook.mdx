@@ -2,10 +2,12 @@
 slug: /use-cases/AI/jupyter-notebook
 sidebarTitle: 'Explorar datos con Jupyter notebooks y chDB'
 title: 'Explorar datos con Jupyter notebooks y chDB'
-description: 'Esta guía explica cómo configurar y usar chDB para explorar datos de ClickHouse Cloud o de archivos locales en Jupyter notebooks'
-keywords: ['ML', 'Jupyter', 'chDB', 'pandas']
+description: 'Esta guía explica cómo configurar y usar chDB para explorar datos de ClickHouse Cloud o de archivos locales en Jupyer notebooks'
+keywords: ['ML', 'Jupyer', 'chDB', 'pandas']
 doc_type: 'guide'
 ---
+
+import { Image } from "/snippets/es/components/Image.jsx";
 
 En esta guía, aprenderá a explorar un conjunto de datos de ClickHouse Cloud en un Jupyter notebook con la ayuda de [chDB](/es/chdb/index), un rápido motor SQL OLAP embebido impulsado por ClickHouse.
 
@@ -29,35 +31,25 @@ En esta guía, aprenderá a explorar un conjunto de datos de ClickHouse Cloud en
 Usaremos el conjunto de datos UK Property Price, disponible en ClickHouse Cloud como uno de los conjuntos de datos iniciales.
 Contiene datos sobre los precios de venta de viviendas en el Reino Unido desde 1995 hasta 2024.
 
-## Configuración {#setup}
+<div id="setup">
+  ## Configuración
+</div>
 
 Para añadir este conjunto de datos a un servicio existente de ClickHouse Cloud, inicia sesión en [console.clickhouse.cloud](https://console.clickhouse.cloud/) con los datos de tu cuenta.
 
-En el menú de la izquierda, haz clic en `Data sources`. Después, haz clic en `Predefined sample data`:
+En el menú de la izquierda, haz clic en `fuentes de datos`. Después, haz clic en `Predefined sample data`:
 
-<div className="ch-image-md">
-  <Frame>
-    ![Añadir conjunto de datos de ejemplo](/images/use-cases/AI_ML/jupyter/1.webp)
-  </Frame>
-</div>
+<Image size="md" img="/images/use-cases/AI_ML/jupyter/1.webp" alt="Añadir conjunto de datos de ejemplo" />
 
 Selecciona `Get started` en la tarjeta de datos de precios de compraventa de propiedades del Reino Unido (4GB):
 
-<div className="ch-image-md">
-  <Frame>
-    ![Seleccionar conjunto de datos de precios pagados del Reino Unido](/images/use-cases/AI_ML/jupyter/2.webp)
-  </Frame>
-</div>
+<Image size="md" img="/images/use-cases/AI_ML/jupyter/2.webp" alt="Seleccionar conjunto de datos de precios pagados del Reino Unido" />
 
 Luego, haz clic en `Import dataset`:
 
-<div className="ch-image-md">
-  <Frame>
-    ![Importar conjunto de datos de precios pagados del Reino Unido](/images/use-cases/AI_ML/jupyter/3.webp)
-  </Frame>
-</div>
+<Image size="md" img="/images/use-cases/AI_ML/jupyter/3.webp" alt="Importar conjunto de datos de precios pagados del Reino Unido" />
 
-ClickHouse creará automáticamente la tabla `pp_complete` en la base de datos `default` y la rellenará con 28.92 millones de filas de datos de precios.
+ClickHouse creará automáticamente la tabla `pp_complete` en la base de datos `default` y la rellenará con 28,92 millones de filas de datos de precios.
 
 Para reducir la probabilidad de exponer tus credenciales, te recomendamos añadir tu nombre de usuario y contraseña de Cloud como variables de entorno en tu equipo local.
 Desde una terminal, ejecuta el siguiente comando para añadir tu nombre de usuario y contraseña como variables de entorno:
@@ -88,20 +80,12 @@ jupyter notebook
 Debería abrirse una nueva ventana del navegador con la interfaz de Jupyter en `localhost:8888`.
 Haz clic en `File` &gt; `New` &gt; `Notebook` para crear un nuevo notebook.
 
-<div className="ch-image-md">
-  <Frame>
-    ![Crear un nuevo notebook](/images/use-cases/AI_ML/jupyter/4.webp)
-  </Frame>
-</div>
+<Image size="md" img="/images/use-cases/AI_ML/jupyter/4.webp" alt="Crear un nuevo notebook" />
 
 Se te pedirá que selecciones un kernel.
 Selecciona cualquier kernel de Python que tengas disponible; en este ejemplo, seleccionaremos `ipykernel`:
 
-<div className="ch-image-md">
-  <Frame>
-    ![Seleccionar kernel](/images/use-cases/AI_ML/jupyter/5.webp)
-  </Frame>
-</div>
+<Image size="md" img="/images/use-cases/AI_ML/jupyter/5.webp" alt="Seleccionar kernel" />
 
 En una celda vacía, puedes escribir el siguiente comando para instalar chDB, que usaremos para conectarnos a nuestra instancia remota de ClickHouse Cloud:
 
@@ -118,7 +102,9 @@ result = chdb.query("SELECT 'Hello, ClickHouse!' as message")
 print(result)
 ```
 
-## Exploración de los datos {#exploring-the-data}
+<div id="exploring-the-data">
+  ## Exploración de los datos
+</div>
 
 Con el conjunto de datos precio pagado del Reino Unido ya configurado y chDB en ejecución en un Jupyter notebook, ya podemos empezar a explorar los datos.
 
@@ -161,7 +147,7 @@ df = chdb.query(query, "DataFrame")
 df.head()
 ```
 
-En el fragmento anterior, `chdb.query(query, "DataFrame")` ejecuta la consulta especificada y muestra el resultado en la terminal como un DataFrame de Pandas.
+En el fragmento anterior, `chdb.query(query, "DataFrame")` ejecuta la consulta especificada y muestra el resultado en la terminal como un Pandas DataFrame.
 En la consulta, usamos la función `remoteSecure` para conectarnos a ClickHouse Cloud.
 La función `remoteSecure` recibe como parámetros:
 
@@ -179,11 +165,7 @@ Luego, el resultado se almacena como un DataFrame en una variable llamada `df`.
 
 `df.head` muestra solo las primeras filas de los datos devueltos:
 
-<div className="ch-image-md">
-  <Frame>
-    ![vista previa del dataframe](/images/use-cases/AI_ML/jupyter/6.webp)
-  </Frame>
-</div>
+<Image size="md" img="/images/use-cases/AI_ML/jupyter/6.webp" alt="vista previa del dataframe" />
 
 Ejecuta el siguiente comando en una celda nueva para comprobar los tipos de las columnas:
 
@@ -220,11 +202,7 @@ plt.tight_layout()
 plt.show()
 ```
 
-<div className="ch-image-md">
-  <Frame>
-    ![vista previa del DataFrame](/images/use-cases/AI_ML/jupyter/7.webp)
-  </Frame>
-</div>
+<Image size="md" img="/images/use-cases/AI_ML/jupyter/7.webp" alt="vista previa del DataFrame" />
 
 Quizá no resulte sorprendente que los precios de la vivienda en Londres hayan aumentado considerablemente con el tiempo.
 
@@ -280,11 +258,7 @@ df_2.head()
   ```
 </Accordion>
 
-<div className="ch-image-md">
-  <Frame>
-    ![vista previa del DataFrame](/images/use-cases/AI_ML/jupyter/8.webp)
-  </Frame>
-</div>
+<Image size="md" img="/images/use-cases/AI_ML/jupyter/8.webp" alt="vista previa del DataFrame" />
 
 Aunque faltan datos a partir de 2020, podemos graficar ambos conjuntos de datos en la misma gráfica para los años 1995 a 2019.
 En una celda nueva, ejecuta el siguiente comando:
@@ -330,11 +304,7 @@ plt.tight_layout()
 plt.show()
 ```
 
-<div className="ch-image-md">
-  <Frame>
-    ![Gráfico del conjunto de datos remoto y del conjunto de datos local](/images/use-cases/AI_ML/jupyter/9.webp)
-  </Frame>
-</div>
+<Image size="md" img="/images/use-cases/AI_ML/jupyter/9.webp" alt="Gráfico del conjunto de datos remoto y del conjunto de datos local" />
 
 A partir de los datos representados, vemos que las ventas comenzaron en torno a 160.000 en 1995 y aumentaron rápidamente, hasta alcanzar un máximo de alrededor de 540.000 en 1999.
 Después, los volúmenes descendieron bruscamente hasta mediados de la década de 2000, con una fuerte caída durante la crisis financiera de 2007-2008, hasta situarse en torno a 140.000.
@@ -343,7 +313,7 @@ El crecimiento se aceleró significativamente después de 2012, subiendo con fue
 A diferencia del volumen de ventas, los precios apenas se vieron afectados por la crisis de 2008 y mantuvieron una trayectoria ascendente. ¡Uf!
 
 <div id="summary">
-  ## Resumen {#summary}
+  ## Resumen
 </div>
 
 En esta guía se mostró cómo chDB permite explorar datos sin fricciones en Jupyter notebooks al conectar ClickHouse Cloud con fuentes de datos locales.

@@ -10,8 +10,10 @@ integration:
   - category: 'clickpipes'
 ---
 
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
 <div id="what-mysql-resync-do">
-  ### O que o Resync faz? {#what-mysql-resync-do}
+  ### O que o Resync faz?
 </div>
 
 O Resync envolve as seguintes operações, nesta ordem:
@@ -24,7 +26,7 @@ O Resync envolve as seguintes operações, nesta ordem:
 Todas as configurações do ClickPipe original são mantidas no ClickPipe de ressincronização. As estatísticas do ClickPipe original são limpas na UI.
 
 <div id="use-cases-mysql-resync">
-  ### Casos de uso para ressincronização de um ClickPipe {#use-cases-mysql-resync}
+  ### Casos de uso para ressincronização de um ClickPipe
 </div>
 
 Aqui estão alguns cenários:
@@ -37,17 +39,15 @@ Aqui estão alguns cenários:
   já que a carga inicial com threads paralelas está envolvida todas as vezes.
 </Note>
 
-### Guia de Resync do ClickPipe {#guide-mysql-resync}
+<div id="guide-mysql-resync">
+  ### Guia de Resync do ClickPipe
+</div>
 
 1. Na aba Data Sources, clique no MySQL ClickPipe que deseja ressincronizar.
-2. Vá até a aba **configurações**.
+2. Vá até a aba **Settings**.
 3. Clique no botão **Resync**.
 
-<div className="ch-image-md">
-  <Frame>
-    ![](/images/integrations/data-ingestion/clickpipes/postgres/resync_button.webp)
-  </Frame>
-</div>
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/resync_button.webp" border size="md" />
 
 4. Uma caixa de diálogo de confirmação deve aparecer. Clique em **Resync** novamente.
 5. Vá até a aba **Metrics**.

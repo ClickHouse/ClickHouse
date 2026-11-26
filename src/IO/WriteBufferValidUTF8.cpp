@@ -1,9 +1,9 @@
+#include <Poco/UTF8Encoding.h>
 #include <IO/WriteBufferValidUTF8.h>
 #include <IO/writeValidUTF8.h>
 #include <base/types.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
-#include <Common/UTF8Helpers.h>
 
 namespace DB
 {
@@ -94,7 +94,7 @@ void WriteBufferValidUTF8::nextImpl()
             /// Sequence was not fully written to this buffer.
             break;
         }
-        else if (UTF8::isLegalSequence(reinterpret_cast<const UInt8 *>(p), len))
+        else if (Poco::UTF8Encoding::isLegal(reinterpret_cast<const unsigned char *>(p), len))
         {
             /// Valid sequence.
             p += len;
@@ -164,7 +164,7 @@ void WriteBufferValidUTF8::finalizeImpl()
                 putReplacement();
                 ++p;
             }
-            else if (UTF8::isLegalSequence(reinterpret_cast<const UInt8 *>(p), len))
+            else if (Poco::UTF8Encoding::isLegal(reinterpret_cast<const unsigned char *>(p), len))
             {
                 /// Valid sequence
                 putValid(p, len);

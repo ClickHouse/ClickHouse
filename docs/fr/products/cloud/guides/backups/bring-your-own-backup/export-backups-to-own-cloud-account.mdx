@@ -14,12 +14,6 @@ L’export de sauvegardes vers votre propre compte ne désactive généralement 
 
 Dans ce guide, nous montrons des exemples de création de sauvegardes complètes et incrémentielles vers le stockage objet AWS, GCP et Azure, ainsi que la procédure de restauration à partir de ces sauvegardes.
 
-<Warning>
-  **Non disponible pour les services réglementés**
-
-  Les services créés avec le type de région **conforme à la loi HIPAA** ou **conforme à la norme PCI** ne peuvent pas exporter de sauvegardes vers un bucket appartenant au client. L’environnement réglementé n’autorise aucune écriture vers un stockage situé en dehors de son périmètre ; l’option **Set up external backup** est donc désactivée dans la console et le privilège `BACKUP` décrit ci-dessous n’est pas accordé sur ces services. Les sauvegardes gérées par ClickHouse, y compris les planifications configurables, restent disponibles. Consultez [Prise en main HIPAA](/fr/products/cloud/guides/security/compliance/hipaa-onboarding#backups) et [Prise en main PCI](/fr/products/cloud/guides/security/compliance/pci-onboarding#backups).
-</Warning>
-
 <Note>
   Toute utilisation impliquant l’export de sauvegardes vers une autre région chez le même fournisseur cloud entraîne des frais de [transfert de données](/fr/products/cloud/reference/billing/network-data-transfer).
 
@@ -43,22 +37,22 @@ Vous aurez besoin des informations suivantes pour exporter/restaurer des sauvega
 
 ### AWS {#aws}
 
-1. Endpoint S3 AWS, au format :
+1. Endpoint S3 AWS, au format :
 
 ```text
-s3://<bucket_name>.s3.amazonaws.com/<directory>
+  s3://<bucket_name>.s3.amazonaws.com/<directory>
 ```
 
-Par exemple :
+Par exemple :
 
 ```text
-s3://testchbackups.s3.amazonaws.com/backups/
+  s3://testchbackups.s3.amazonaws.com/backups/
 ```
 
-Où :
+Où :
 
 * `testchbackups` est le nom du bucket S3 vers lequel exporter les sauvegardes.
-* `backups` est un sous-répertoire facultatif.
+  * `backups` est un sous-répertoire facultatif.
 
 2. La clé d’accès AWS et la clé secrète AWS. L’authentification basée sur les rôles AWS est également prise en charge et peut être utilisée à la place de la clé d’accès AWS et de la clé secrète AWS.
 

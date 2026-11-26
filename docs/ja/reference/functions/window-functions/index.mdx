@@ -9,7 +9,9 @@ doc_type: 'reference'
 ウィンドウ関数を使用すると、現在の行に関連する行の集合に対して計算を実行できます。
 集約関数で行う計算と似た計算にも使用できますが、ウィンドウ関数では行が単一の出力にグループ化されることはなく、個々の行はそのまま返されます。
 
-## 標準ウィンドウ関数 {#standard-window-functions}
+<div id="standard-window-functions">
+  ## 標準ウィンドウ関数
+</div>
 
 ClickHouse は、ウィンドウおよびウィンドウ関数に対する標準 SQL 構文をサポートしています。
 以下の表は、現在サポートされている機能を示しています。
@@ -30,7 +32,9 @@ ClickHouse は、ウィンドウおよびウィンドウ関数に対する標準
 | `lag/lead(value, offset)`                                            | ✅          | 次のいずれかの回避策も使用できます:<br /> 1) `any(value) OVER (... ROWS BETWEEN <offset> PRECEDING AND <offset> PRECEDING)`、または `lead` の場合は `PRECEDING` の代わりに `FOLLOWING` <br /> 2) `lagInFrame/leadInFrame`。これらは同様の関数ですが、ウィンドウ フレーム を考慮します。`lag/lead` と同一の動作を得るには、`ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING` を使用してください。 |
 | [`ntile(buckets)`](/ja/reference/functions/window-functions/ntile)      | ✅          | たとえば、ウィンドウは `(PARTITION BY x ORDER BY y ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)` のように指定してください。                                                                                                                                                                                                        |
 
-## 構文 {#syntax}
+<div id="syntax">
+  ## 構文
+</div>
 
 ```text
 aggregate_function (column_name)
@@ -66,7 +70,9 @@ WINDOW window_name as ([
 └─────────────────┘  <--- UNBOUNDED FOLLOWING (END of the PARTITION)
 ```
 
-## ウィンドウ関数としてのみ使用できる関数 {#functions}
+<div id="functions">
+  ## ウィンドウ関数としてのみ使用できる関数
+</div>
 
 以下の関数は、ウィンドウ関数としてのみ使用できます。ほとんどは標準 SQL 関数ですが、`lagInFrame`、`leadInFrame`、`nonNegativeDerivative` は ClickHouse の拡張機能です。
 
@@ -87,11 +93,15 @@ WINDOW window_name as ([
 | [`ntile(buckets)`](/ja/reference/functions/window-functions/ntile)                                                                             | パーティション内で順序付けされた行を指定した数のバケットに分割し、現在の行が属するバケット番号を返します。                  |
 | [`nonNegativeDerivative(metric_column, timestamp_column[, INTERVAL X UNITS])`](/ja/reference/functions/window-functions/nonNegativeDerivative) | `timestamp_column` に対する `metric_column` の非負の導関数を計算します。ClickHouse 固有です。 |
 
-## 例 {#examples}
+<div id="examples">
+  ## 例
+</div>
 
 ウィンドウ関数の使用例をいくつか見てみましょう。
 
-### 行番号の付与 {#numbering-rows}
+<div id="numbering-rows">
+  ### 行番号の付与
+</div>
 
 ```sql
 CREATE TABLE salaries
@@ -149,7 +159,9 @@ FROM salaries;
 └─────────────────┴────────┴─────┴──────┴───────────┘
 ```
 
-### 集計関数 {#aggregation-functions}
+<div id="aggregation-functions">
+  ### 集計関数
+</div>
 
 各選手の給与を所属チームの平均給与と比較します。
 
@@ -195,7 +207,9 @@ FROM salaries;
 └─────────────────┴────────┴───────────────────────────┴─────────┴────────┘
 ```
 
-### カラムによるパーティション化 {#partitioning-by-column}
+<div id="partitioning-by-column">
+  ### カラムによるパーティション化
+</div>
 
 ```sql
 CREATE TABLE wf_partition
@@ -228,7 +242,9 @@ ORDER BY
 └──────────┴───────┴───────┴──────────────┘
 ```
 
-### フレームの境界 {#frame-bounding}
+<div id="frame-bounding">
+  ### フレームの境界
+</div>
 
 ```sql
 CREATE TABLE wf_frame
@@ -270,7 +286,7 @@ ORDER BY
 
 ```sql
 -- short form - no bound expression, no order by,
--- an equivalent of `ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING`
+-- an equalent of `ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING`
 SELECT
     part_key,
     value,
@@ -319,7 +335,7 @@ ORDER BY
 
 ```sql
 -- short form (frame is bounded by the beginning of a partition and the current row)
--- an equivalent of `ORDER BY order ASC ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW`
+-- an equalent of `ORDER BY order ASC ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW`
 SELECT
     part_key,
     value,
@@ -511,7 +527,9 @@ ORDER BY
 └────────────────┴──────────────┘
 ```
 
-### GROUPS フレーム {#groups-frame}
+<div id="groups-frame">
+  ### GROUPS フレーム
+</div>
 
 `GROUPS` フレームは、物理的な行 (`ROWS`) や `ORDER BY` 値 (`RANGE`) ではなく、`ORDER BY` キーが等しい行の集合である *ピアグループ* 全体を数えます。`N PRECEDING` と `N FOLLOWING` は、現在の行のピアグループの前後にある `N` 個のピアグループを数え、範囲に含まれるピアグループは常にそのすべての行を含みます。
 
@@ -547,11 +565,15 @@ ORDER BY order, value;
 * `RANGE` は `order` 値に基づくため、`1 PRECEDING` と `1 FOLLOWING` には、現在の行の `order` 値との差が1以内の行が含まれます。間隔が10ある場合、隣接行は条件を満たさないため、フレームには現在の `order` を共有する行のみが含まれます。
 * `GROUPS` はピアグループに基づくため、`1 PRECEDING` と `1 FOLLOWING` には、`order` 値間のギャップにかかわらず、隣接するグループ全体が常に含まれます。
 
-## 実践的な例 {#real-world-examples}
+<div id="real-world-examples">
+  ## 実践的な例
+</div>
 
 以下の例では、現実によくある問題を解決する方法を示します。
 
-### 部門ごとの最高給与／給与総額 {#maximumtotal-salary-per-department}
+<div id="maximumtotal-salary-per-department">
+  ### 部門ごとの最高給与／給与総額
+</div>
 
 ```sql
 CREATE TABLE employees
@@ -607,7 +629,9 @@ FROM
 └────────────┴──────┴────────┴────────────────────┴──────────────────────┴──────────────────┘
 ```
 
-### 累積和 {#cumulative-sum}
+<div id="cumulative-sum">
+  ### 累積和
+</div>
 
 ```sql
 CREATE TABLE warehouse
@@ -616,7 +640,7 @@ CREATE TABLE warehouse
     `ts` DateTime,
     `value` Float
 )
-ENGINE = Memory;
+ENGINE = Memory
 
 INSERT INTO warehouse VALUES
     ('sku38', '2020-01-01', 9),
@@ -648,7 +672,9 @@ ORDER BY
 └───────┴─────────────────────┴───────┴───────────────┘
 ```
 
-### 移動平均／スライディング平均 (3行ごと) {#moving--sliding-average-per-3-rows}
+<div id="moving--sliding-average-per-3-rows">
+  ### 移動平均／スライディング平均 (3行ごと)
+</div>
 
 ```sql
 CREATE TABLE sensors
@@ -696,7 +722,9 @@ ORDER BY
 └──────────┴─────────────────────┴───────┴───────────────────┘
 ```
 
-### 移動平均／スライディング平均 (10秒ごと) {#moving--sliding-average-per-10-seconds}
+<div id="moving--sliding-average-per-10-seconds">
+  ### 移動平均／スライディング平均 (10秒ごと)
+</div>
 
 ```sql
 SELECT
@@ -722,7 +750,9 @@ ORDER BY
 └──────────┴─────────────────────┴───────┴────────────────────────────┘
 ```
 
-### 移動平均 / スライディング平均 (10日ごと) {#moving--sliding-average-per-10-days}
+<div id="moving--sliding-average-per-10-days">
+  ### 移動平均 / スライディング平均 (10日ごと)
+</div>
 
 温度は秒精度で保存されていますが、`Range` と `ORDER BY toDate(ts)` を使用すると、サイズ 10 単位のフレームが形成され、`toDate(ts)` によってその単位は日になります。
 
@@ -777,15 +807,21 @@ ORDER BY
 └──────────────┴─────────────────────┴───────┴─────────────────────────┘
 ```
 
-## 参考資料 {#references}
+<div id="references">
+  ## 参考資料
+</div>
 
-### GitHub Issues {#github-issues}
+<div id="github-issues">
+  ### GitHub Issues
+</div>
 
 ウィンドウ関数 の初期サポートに向けたロードマップは、[この issue](https://github.com/ClickHouse/ClickHouse/issues/18097) にあります。
 
 ウィンドウ関数 に関連するすべての GitHub issue には、[comp-window-functions](https://github.com/ClickHouse/ClickHouse/labels/comp-window-functions) タグが付けられています。
 
-### テスト {#tests}
+<div id="tests">
+  ### テスト
+</div>
 
 これらのテストには、現在サポートされている構文の例が含まれています。
 
@@ -793,7 +829,9 @@ https://github.com/ClickHouse/ClickHouse/blob/master/tests/performance/window&#9
 
 https://github.com/ClickHouse/ClickHouse/blob/master/tests/queries/0&#95;stateless/01591&#95;window&#95;functions.sql
 
-### Postgres Docs {#postgres-docs}
+<div id="postgres-docs">
+  ### Postgres Docs
+</div>
 
 https://www.postgresql.org/docs/current/sql-select.html#SQL-WINDOW
 
@@ -803,7 +841,9 @@ https://www.postgresql.org/docs/devel/functions-window.html
 
 https://www.postgresql.org/docs/devel/tutorial-window.html
 
-### MySQL Docs {#mysql-docs}
+<div id="mysql-docs">
+  ### MySQL Docs
+</div>
 
 https://dev.mysql.com/doc/refman/8.0/en/window-function-descriptions.html
 
@@ -811,7 +851,9 @@ https://dev.mysql.com/doc/refman/8.0/en/window-functions-usage.html
 
 https://dev.mysql.com/doc/refman/8.0/en/window-functions-frames.html
 
-## 関連コンテンツ {#related-content}
+<div id="related-content">
+  ## 関連コンテンツ
+</div>
 
 * ブログ: [ClickHouseで時系列データを扱う](https://clickhouse.com/blog/working-with-time-series-data-and-functions-ClickHouse)
 * ブログ: [Gitコミットのシーケンスに対するウィンドウ関数と配列関数](https://clickhouse.com/blog/clickhouse-window-array-functions-git-commits)

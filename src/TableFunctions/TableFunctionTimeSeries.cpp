@@ -1,6 +1,5 @@
 #include <TableFunctions/TableFunctionTimeSeries.h>
 
-#include <Common/quoteString.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -70,8 +69,6 @@ void TableFunctionTimeSeriesTarget<target_kind>::parseArguments(const ASTPtr & a
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Couldn't get a table name from the arguments of the {} table function", name);
 
     time_series_storage_id = context->resolveStorageID(time_series_storage_id);
-    /// Finding the target table reads the definition of the TimeSeries table, as `DESCRIBE TABLE` of it does.
-    checkSourceTableAccess(context, time_series_storage_id, AccessType::SHOW_COLUMNS);
     target_table_type_name = getTargetTable(context)->getName();
 }
 
@@ -83,12 +80,6 @@ StoragePtr TableFunctionTimeSeriesTarget<target_kind>::getTargetTable(const Cont
     return time_series_storage->getTargetTable(target_kind, context);
 }
 
-
-template <ViewTarget::Kind target_kind>
-std::optional<String> TableFunctionTimeSeriesTarget<target_kind>::getParallelReplicasReadID() const
-{
-    return fmt::format("{}({}.{})", name, backQuoteIfNeed(time_series_storage_id.getDatabaseName()), backQuoteIfNeed(time_series_storage_id.getTableName()));
-}
 
 template <ViewTarget::Kind target_kind>
 StoragePtr TableFunctionTimeSeriesTarget<target_kind>::executeImpl(
@@ -121,7 +112,13 @@ void registerTableFunctionTimeSeries(TableFunctionFactory & factory)
     factory.registerFunction<TableFunctionTimeSeriesTarget<ViewTarget::Samples>>(
         {.description = R"DOCS_MD(
 `timeSeriesSamples(db_name.time_series_table)` - Returns the [samples](/reference/engines/table-engines/integrations/time-series#samples-table) table
-used by table `db_name.time_series_table` whose table engine is [TimeSeries](/reference/engines/table-engines/integrations/time-series), for example:
+used by table `db_name.time_series_table` whose table engine is [TimeSeries](/reference/engines/table-engines/integrations/time-series):
+
+```sql
+CREATE TABLE db_name.time_series_table ENGINE=TimeSeries SAMPLES samples_table
+```
+
+The function also works if the _samples_ table is inner:
 
 ```sql
 CREATE TABLE db_name.time_series_table ENGINE=TimeSeries SAMPLES INNER UUID '01234567-89ab-cdef-0123-456789abcdef'
@@ -145,7 +142,13 @@ The function `timeSeriesSamples` has an alias `timeSeriesData` which is kept for
     factory.registerFunction<TableFunctionTimeSeriesTarget<ViewTarget::Tags>>(
         {.description = R"DOCS_MD(
 `timeSeriesTags(db_name.time_series_table)` - Returns the [tags](/reference/engines/table-engines/integrations/time-series#tags-table) table
-used by table `db_name.time_series_table` whose table engine is the [TimeSeries](/reference/engines/table-engines/integrations/time-series) engine, for example:
+used by table `db_name.time_series_table` whose table engine is the [TimeSeries](/reference/engines/table-engines/integrations/time-series) engine:
+
+```sql
+CREATE TABLE db_name.time_series_table ENGINE=TimeSeries TAGS tags_table
+```
+
+The function also works if the _tags_ table is inner:
 
 ```sql
 CREATE TABLE db_name.time_series_table ENGINE=TimeSeries TAGS INNER UUID '01234567-89ab-cdef-0123-456789abcdef'
@@ -163,7 +166,13 @@ SELECT * FROM timeSeriesTags('db_name', 'time_series_table');
     factory.registerFunction<TableFunctionTimeSeriesTarget<ViewTarget::TimeRanges>>(
         {.description = R"DOCS_MD(
 `timeSeriesTimeRanges(db_name.time_series_table)` - Returns the [time ranges](/reference/engines/table-engines/integrations/time-series#time-ranges-table) table
-used by table `db_name.time_series_table` whose table engine is the [TimeSeries](/reference/engines/table-engines/integrations/time-series) engine, for example:
+used by table `db_name.time_series_table` whose table engine is the [TimeSeries](/reference/engines/table-engines/integrations/time-series) engine:
+
+```sql
+CREATE TABLE db_name.time_series_table ENGINE=TimeSeries TIME RANGES time_ranges_table
+```
+
+The function also works if the _time ranges_ table is inner:
 
 ```sql
 CREATE TABLE db_name.time_series_table ENGINE=TimeSeries TIME RANGES INNER UUID '01234567-89ab-cdef-0123-456789abcdef'
@@ -187,7 +196,13 @@ in the [tags](/reference/engines/table-engines/integrations/time-series#tags-tab
     factory.registerFunction<TableFunctionTimeSeriesTarget<ViewTarget::MetricFamilies>>(
         {.description = R"DOCS_MD(
 `timeSeriesMetricFamilies(db_name.time_series_table)` - Returns the [metric families](/reference/engines/table-engines/integrations/time-series#metric-families-table) table
-used by table `db_name.time_series_table` whose table engine is the [TimeSeries](/reference/engines/table-engines/integrations/time-series) engine, for example:
+used by table `db_name.time_series_table` whose table engine is the [TimeSeries](/reference/engines/table-engines/integrations/time-series) engine:
+
+```sql
+CREATE TABLE db_name.time_series_table ENGINE=TimeSeries METRIC FAMILIES metric_families_table
+```
+
+The function also works if the _metric families_ table is inner:
 
 ```sql
 CREATE TABLE db_name.time_series_table ENGINE=TimeSeries METRIC FAMILIES INNER UUID '01234567-89ab-cdef-0123-456789abcdef'
@@ -216,9 +231,9 @@ This function is similar to [range selectors](https://prometheus.io/docs/prometh
 ## Syntax {#syntax}
 
 ```sql
-timeSeriesSelector('db_name', 'time_series_table', 'instant_query', min_time, max_time, return_columns)
-timeSeriesSelector(db_name.time_series_table, 'instant_query', min_time, max_time, return_columns)
-timeSeriesSelector('time_series_table', 'instant_query', min_time, max_time, return_columns)
+timeSeriesSelector('db_name', 'time_series_table', 'instant_query', min_time, max_time)
+timeSeriesSelector(db_name.time_series_table, 'instant_query', min_time, max_time)
+timeSeriesSelector('time_series_table', 'instant_query', min_time, max_time)
 ```
 
 ## Arguments {#arguments}
@@ -228,38 +243,23 @@ timeSeriesSelector('time_series_table', 'instant_query', min_time, max_time, ret
 - `instant_query` - An instant selector written in [PromQL syntax](https://prometheus.io/docs/prometheus/latest/querying/basics/#instant-vector-selectors), without `@` or `offset` modifiers.
 - `min_time` - Start timestamp, inclusive.
 - `max_time` - End timestamp, inclusive.
-- `return_columns` - The columns returning the samples: `'samples'` or `'timestamp_and_value'`, see below.
 
 `min_time` and `max_time` can have fractions of a second even if the timestamps in the table are whole seconds:
 the function selects the samples with `min_time <= timestamp <= max_time` exactly, without rounding the bounds to the type of the timestamps.
 
 ## Returned value {#returned-value}
 
-The function returns the column `id` with the identifiers of the time series matching the specified selector, and the samples
-in the columns chosen by the argument `return_columns`:
-
-- `'samples'` - the column `samples` with the samples of a time series as an array of tuples `(timestamp, value)` sorted by timestamp.
-  The samples of a time series can be returned in multiple rows, for example one row per time bucket of the samples table.
-  Use the aggregate function `timeSeriesGroupArray` to merge the rows of a time series.
-- `'timestamp_and_value'` - the columns `timestamp` and `value` with one sample per row.
-
-A `TimeSeries` table of version 11 or later stores buckets of samples as arrays, the tables of earlier versions store one sample per row.
-The samples are converted when the requested columns differ from the layout of the table, which costs some time; the PromQL functions
-request the columns matching the layout of the table.
+The function returns three columns:
+- `id` - Contains the identifiers of time series matching the specified selector.
+- `timestamp` - Contains timestamps.
+- `value` - Contains values.
 
 There is no specific order for returned data.
 
-## Examples {#examples}
+## Example {#example}
 
 ```sql
-SELECT id, timeSeriesGroupArray(samples) AS samples
-FROM timeSeriesSelector(mytable, 'http_requests{job="prometheus"}', now() - INTERVAL 10 MINUTES, now(), 'samples')
-GROUP BY id
-```
-
-```sql
-SELECT id, timestamp, value
-FROM timeSeriesSelector(mytable, 'http_requests{job="prometheus"}', now() - INTERVAL 10 MINUTES, now(), 'timestamp_and_value')
+SELECT * FROM timeSeriesSelector(mytable, 'http_requests{job="prometheus"}', now() - INTERVAL 10 MINUTES, now())
 ```
 )DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, SecretArgumentsSpec{});
 
@@ -316,20 +316,13 @@ Instant selectors, range selectors, label matchers (`=`, `!=`, `=~`, `!~`), offs
 | Label | `label_replace`, `label_join` |
 | Type | `scalar`, `vector` |
 | Histogram | `histogram_quantile` |
-| Sort | `sort`, `sort_desc`, `sort_by_label`, `sort_by_label_desc` |
 | Other | `time`, `step`, `range`, `pi`, `absent`, `timestamp` |
 
 **Note**: `histogram_quantile` uses linear interpolation on classic histogram buckets (identified by the `le` label). Native histograms are not supported. The `phi` (quantile level) argument must be a constant scalar. Expressions that vary per step, such as `histogram_quantile(time() / 1000, ...)`, are rejected with a `NOT_IMPLEMENTED` exception.
 
 **Note**: `min_of(a, b)` and `max_of(a, b)` return the smaller or larger of two scalar values. Both arguments must be scalars.
 
-**Note**: The sort functions order the result only when they are the outermost function of the query. Anywhere else a sort function has no effect, while Prometheus keeps the order of a nested sort function, as in `abs(sort_desc(x))`.
-- `sort` and `sort_desc` order the result by sample value, with `NaN` last. Series with equal values are ordered by their labels.
-- `sort_by_label` and `sort_by_label_desc` order the result by the values of the specified labels, compared in natural order (`host2` before `host10`). A series without a specified label is ordered as if the label were empty. Series with equal values of these labels are ordered by all their labels.
-
-This order differs from Prometheus in three cases: numbers that differ only in leading zeros (`7` and `007`) are equal, numbers of any length are compared as numbers (Prometheus compares a number above the `Int64` range as text), and a series without a specified label is always before the series that have it (in Prometheus its position depends on the order of the input).
-
-**Note**: `step`, `range`, `min_of`, `max_of`, `ts_of_min_over_time`, `ts_of_max_over_time`, `ts_of_last_over_time`, `ts_of_first_over_time`, `mad_over_time`, `sort_by_label` and `sort_by_label_desc` are experimental functions in Prometheus (enabled there with `--enable-feature=promql-experimental-functions`); ClickHouse evaluates them without requiring that flag.
+**Note**: `step`, `range`, `min_of`, `max_of`, `ts_of_min_over_time`, `ts_of_max_over_time`, `ts_of_last_over_time`, `first_over_time`, `ts_of_first_over_time` and `mad_over_time` are experimental functions in Prometheus (enabled there with `--enable-feature=promql-experimental-functions`); ClickHouse evaluates them without requiring that flag.
 
 ### Operators {#operators}
 
@@ -404,16 +397,13 @@ Instant selectors, range selectors, label matchers (`=`, `!=`, `=~`, `!~`), offs
 | Label | `label_replace`, `label_join` |
 | Type | `scalar`, `vector` |
 | Histogram | `histogram_quantile` |
-| Sort | `sort`, `sort_desc`, `sort_by_label`, `sort_by_label_desc` |
 | Other | `time`, `step`, `range`, `pi`, `absent`, `timestamp` |
 
 **Note**: `histogram_quantile` uses linear interpolation on classic histogram buckets (identified by the `le` label). Native histograms are not supported. The `phi` (quantile level) argument must be a constant scalar. Expressions that vary per step, such as `histogram_quantile(time() / 1000, ...)`, are rejected with a `NOT_IMPLEMENTED` exception.
 
 **Note**: `min_of(a, b)` and `max_of(a, b)` return the smaller or larger of two scalar values. Both arguments must be scalars.
 
-**Note**: `sort`, `sort_desc`, `sort_by_label` and `sort_by_label_desc` have no effect in a range query: the result is always ordered by labels, as in Prometheus.
-
-**Note**: `step`, `range`, `min_of`, `max_of`, `ts_of_min_over_time`, `ts_of_max_over_time`, `ts_of_last_over_time`, `ts_of_first_over_time`, `mad_over_time`, `sort_by_label` and `sort_by_label_desc` are experimental functions in Prometheus (enabled there with `--enable-feature=promql-experimental-functions`); ClickHouse evaluates them without requiring that flag.
+**Note**: `step`, `range`, `min_of`, `max_of`, `ts_of_min_over_time`, `ts_of_max_over_time`, `ts_of_last_over_time`, `first_over_time`, `ts_of_first_over_time` and `mad_over_time` are experimental functions in Prometheus (enabled there with `--enable-feature=promql-experimental-functions`); ClickHouse evaluates them without requiring that flag.
 
 ### Operators {#operators}
 

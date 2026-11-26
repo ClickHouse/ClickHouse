@@ -143,8 +143,6 @@ with engine.connect() as conn:
 
 تستخدم الأخطاء التي يُطلقها المشغّل عبر اتصال SQLAlchemy أصنافَ DB-API المُصدَّرة من `clickhouse_connect.dbapi`. وهذه الأصناف هي كائنات الأصناف نفسها المقابلة لها في `clickhouse_connect.driver.exceptions`، ولذلك يغلّفها SQLAlchemy في الفئة الفرعية المطابقة من `sqlalchemy.exc.DBAPIError`. أما `StreamFailureError` فهو من نوع `OperationalError`، ويُغلَّف على هيئة `sqlalchemy.exc.OperationalError`.
 
-إذا لم يكن الجدول موجودًا، فإن فحص الأعمدة واستبطان الجدول يُثيران الاستثناء `sqlalchemy.exc.NoSuchTableError`. ويرث هذا الاستثناء أيضًا من `sqlalchemy.exc.NoResultFound`، لذا تظل معالجات الاستثناءات الحالية قادرة على التقاطه. ونص رسالته هو `Table <database>.<table_name> does not exist`.
-
 يخضع تنفيذ SQL لـ[سياسة إعادة المحاولة عبر HTTP](/ar/integrations/language-clients/python/driver-api#http-retries) الخاصة بالمشغّل، بينما تعتمد عمليات الإدراج المجمّع بتنسيق Native على [سياسة إعادة محاولة الإدراج](/ar/integrations/language-clients/python/advanced-inserting#insert-retries-and-deduplication).
 
 إذا كان الإلغاء من جهة المستدعي قد يقاطع استدعاءً صريحًا لـ `AsyncConnection.invalidate()`، فشغّل عملية الإبطال ضمن مهمة تملكها، وانتظر اكتمالها قبل تمرير الإلغاء. يتيح ذلك لـ SQLAlchemy إكمال عمليات تتبّع سجلات الاتصال:
@@ -229,36 +227,15 @@ with engine.connect() as conn:
 
 تحتفظ قيم `datetime` في بايثون المقترنة بنوع SQLAlchemy ‏`DateTime64` الخاص بـ ClickHouse بأجزاء الميكروثانية، سواء في المعلمات على جهة العميل أو في القيم الحرفية المضمّنة، بما في ذلك القيم القابلة للإلغاء (nullable) والقيم المتداخلة داخل المصفوفات والصفوف (tuples). ويطبّق ClickHouse الدقة المُعلَنة، علمًا بأن قيم `datetime` في بايثون توفّر ما يصل إلى ستة أرقام كسرية. أما قيم `DateTime` العادية فتحتفظ بتنسيق الثواني الكاملة. وفي حالة عبارة `text()`، حدِّد النوع صراحةً باستخدام `bindparam("ts", type_=DateTime64(6))` للحفاظ على أجزاء الثانية.
 
-تحتفظ قيمة `pandas.Timestamp` المقيّدة بالنوع `DateTime64(9)` بأجزاء النانوثانية في المعلمات وفي القيم الحرفية المضمّنة.
-
 يجب أن تتطابق أنواع الأعمدة في SQLAlchemy مع المخطط على الخادم؛ إذ إن تعريف `DateTime64` لعمود من النوع `DateTime` على الخادم يؤدي إلى عرض أجزاء الثانية، وقد يتسبب في أخطاء تحويل عند الإدراج وفي مقارنات `IN`.
 
 في SQLAlchemy 2.x، تتطلب القيم الحرفية المضمّنة لأنواع `sqlalchemy.ARRAY` العامة التي تحتوي على عناصر `Tuple` من ClickHouse تعيين `dimensions=1`، أو عدد الأبعاد الأعلى المناسب في حالة المصفوفات المتداخلة، كي يعامل SQLAlchemy كل صف (tuple) كعنصر واحد. ولا يدعم SQLAlchemy 1.4 القيم الحرفية المضمّنة لأنواع `ARRAY` العامة.
 
-تقبل معلمات `Tuple` المسمّاة المحددة النوع قواميسَ تتطابق مفاتيحها تمامًا مع الحقول المُعلَنة. ويعتمد العميل ترتيب الحقول الوارد في التعريف للمعلمات المقيّدة وللقيم الحرفية المضمّنة، بما في ذلك قيم Tuple المسمّاة الموجودة داخل المصفوفات أو داخل صفوف مرتبة أخرى. وينطبق ذلك على عمليات الإدراج المتزامنة وغير المتزامنة، وعلى الشروط، وعلى وضعَي المعلمات كليهما. ويؤدي نقص الحقول أو زيادتها إلى إثارة `ProgrammingError` عند ربط معلمات الاستعلام. أما عمليات الإدراج بالجملة باستخدام Native فتبقى معالجتها على حالها. وتحتفظ القواميس المُمرَّرة إلى معلمات `exec_driver_sql()` غير المحددة النوع بالتنسيق المُهيّأ لها، سواء بصيغة JSON أو map.
-
-لاستخدام قيم Tuple المسمّاة داخل قيم `Map`، عيِّن `common.set_setting("dict_parameter_format", "map")`. ويحافظ ذلك أيضًا على أجزاء الثانية لقيم `DateTime64` المحددة النوع داخل الخرائط، في المعلمات المقيّدة والقيم الحرفية المضمّنة على حدٍّ سواء.
-
 إذا أُعيد استخدام معلمة تاريخ ووقت مُسمّاة، فيجب أن يكون لكل موضع تظهر فيه نوع ربط `DateTime64` متوافق للحفاظ على أجزاء الثانية؛ فأي موضع غير محدد النوع أو ذي نوع متعارض يُبقي على تنسيق الثواني الكاملة. عيِّن `type_=DateTime64(6)` في كل `bindparam`، أو استخدم أسماء معلمات مختلفة بالأنواع المناسبة.
-
-وينطبق الأمر نفسه على اسم ربط مُعاد استخدامه تُعلِن مواضع `Tuple` المسمّاة فيه أسماء حقول مختلفة؛ إذ يلجأ العميل حينها إلى المعالجة الموضعية لهذا الاسم، فلا يُعاد ترتيب قيمة القاموس ويرفضها الخادم. استخدم أسماء معلمات مختلفة أو مرِّر Tuple موضعيًا.
-
-### الصفوف المرتبة المسمّاة {#sqlalchemy-named-tuples}
-
-عرّف حقول Tuple المسمّى باستخدام مطابقة `elements`. يجب أن تكون المفاتيح سلاسل نصية غير فارغة، أما القيم فيمكن أن تكون أصناف أنواع ClickHouse SQLAlchemy أو مثيلات مُهيّأة منها. تحافظ الحقول على ترتيب التكرار في المطابقة، وتُحاط الأسماء بعلامات اقتباس تلقائيًا.
-
-```python
-from clickhouse_connect.cc_sqlalchemy.datatypes.sqltypes import String, Tuple, UInt32
-
-details_type = Tuple(elements={"user_id": UInt32, "display name": String()})
-# Tuple(`user_id` UInt32, `display name` String)
-```
-
-استخدم `Tuple(UInt32, String)` أو `Tuple(elements=[UInt32, String])` للصفوف المرتبة غير المسمّاة. ولا يمكن الجمع بين العناصر الموضعية والرمز `elements`.
 
 ### تلميحات نوع JSON {#sqlalchemy-json-type-hints}
 
-أعلن عن مسارات JSON ذات الأنواع المحددة باستخدام تعيين `typed_paths`. يمكن أن يكون نوع المسار صنف نوع من ClickHouse SQLAlchemy، أو نسخة مهيَّأة، أو سلسلة نصية تحمل اسم نوع ClickHouse. وتدعم سلاسل أسماء الأنواع الأنواعَ التي لا يوجد لها مُنشئ في SQLAlchemy، مثل `Dynamic`، كما يمكن استخدامها لتعبيرات الأنواع المهيَّأة المعقدة.
+أعلن عن مسارات JSON ذات الأنواع المحددة باستخدام تعيين `typed_paths`. يمكن أن يكون نوع المسار صنف نوع من ClickHouse SQLAlchemy، أو نسخة مهيَّأة، أو سلسلة نصية تحمل اسم نوع ClickHouse. وتدعم سلاسل أسماء الأنواع الأنواعَ التي لا يوجد لها مُنشئ في SQLAlchemy، مثل `Dynamic`، كما يمكن استخدامها لتعبيرات الأنواع المهيَّأة المعقدة، وهي تحافظ على الأسماء داخل `Tuple` المسمّى.
 
 يمكن أن تحتوي سلاسل أسماء الأنواع على أنواع JSON متداخلة مهيَّأة مثل ``Array(JSON(`child` UInt32))``. وأسماء أنواع ClickHouse المعروفة غير حساسة لحالة الأحرف داخل هذه السلاسل، وتُخرَج بحالة الأحرف القياسية الخاصة بها. ويجب أن تحتوي السلسلة على تعبير نوع واحد كامل، إذ يُرفض أي نص لاحق أو وسائط JSON متداخلة غير صحيحة التكوين.
 
@@ -465,8 +442,6 @@ ranked = cte(sa_select(book.c.book_id), "ranked", materialized=True)
 
 يوفّر ClickHouse Connect أنواع بيانات ClickHouse، ومحركات الجداول، وبُنى القواميس، وDDL لقواعد البيانات، واستكشاف بنية الجداول.
 
-يتضمن `Inspector.get_table_names()` جميع أنواع العروض حفاظًا على التوافق. كما يتضمنها `MetaData.reflect()` افتراضيًا، ويمكن استخدام `only` لاختيار عرض بعينه حسب اسمه. استخدم `Inspector.get_view_names()` للعروض غير المُجسَّدة (non-materialized)، و`Inspector.get_materialized_view_names()` للعروض المُجسَّدة. تقبل كلتا الطريقتين `schema`، وتعملان مع SQLAlchemy 1.4.40 والإصدارات الأحدث، بما فيها 2.x. تُعيد `Inspector.get_view_definition()` استعلام `SELECT` المخزَّن للعرض أو العرض المُجسَّد، وتُطلق `NoSuchTableError` عند تمرير أسماء جداول أو أسماء غير موجودة. لا يملك العرض المنعكس محركًا، ويحمل كائن `Table` الخاص به الخيار `clickhousedb_table_type` مضبوطًا على `view` أو `materialized_view` أو `window_view` أو `live_view`.
-
 تقبل الدالتان `Nullable()` و`LowCardinality()` من `clickhouse_connect.cc_sqlalchemy.datatypes.sqltypes` صنف نوع SQLAlchemy خاصًا بـ ClickHouse أو مثيلًا منه، وتحافظان على نوعه الفعلي لكي تتعرّف عليه أدوات التحقق من الأنواع. على سبيل المثال، تُعيد `Nullable(String)` مثيلًا من `String` يمكن تمريره مباشرةً إلى `Column`. وتستنتج أدوات التحقق من الأنواع النوع `list[String]` للتعبير `[Nullable(String)]`. وإذا كانت القائمة تحتوي أيضًا على أنواع ClickHouse أخرى، فحدّد نوعها صراحةً بالتعليق التوضيحي `list[ChSqlaType]` واستورد `ChSqlaType` من `clickhouse_connect.cc_sqlalchemy.datatypes.base`.
 
 تُستكشف أعمدة `Variant` المستقلة (standalone) عبر نوع SQLAlchemy داخلي، ويحافظ التوليد التلقائي في Alembic على أسماء أنواعها الخام القياسية دون تغييرات متكررة في الأنواع. أما أعمدة `Geometry` و`MultiPoint` فتُستكشف كأنواع SQLAlchemy عامة.
@@ -501,9 +476,7 @@ with engine.connect() as conn:
 SQLAlchemy المنعكسة خيارات خاصة بكل لهجة مثل `clickhousedb_codec`
 و`clickhousedb_ttl` و`clickhousedb_materialized` و`clickhousedb_alias` إن وُجدت.
 أما القواميس العامة التي يُرجعها `Inspector.get_columns()` فتحتفظ
-بمفاتيح `clickhouse_*` المقابلة. وفي هذه القواميس، تكون `server_default`
-و`clickhouse_materialized` و`clickhouse_alias` و`clickhouse_ttl` سلاسل نصية بلغة SQL.
-ولإنشاء `Column` منها، غلّف كلًّا منها بـ `sqlalchemy.text()`.
+بمفاتيح `clickhouse_*` المقابلة.
 
 استخدم `clickhousedb_*` في تعريفات الجداول والأعمدة الجديدة، فهذه هي الأسماء التي تستخدمها البيانات الوصفية
 التي يولّدها المشغّل ومراجعات Alembic. كما يقرأ ClickHouse Connect
@@ -524,7 +497,7 @@ SQLAlchemy المنعكسة خيارات خاصة بكل لهجة مثل `clickh
 
 يمكن استدعاء `Memory()` و`Log()` و`StripeLog()` و`TinyLog()` و`Null()` و`Set()` دون أي وسائط، وتبقى بنيتها سليمة عند كتابتها ثم قراءتها عبر التوليد التلقائي في Alembic. ولا تزال وسيطة القاموس الحالية مدعومة. استخدم `settings={...}` لتمرير إعدادات المحرك.
 
-يقبل `SummingMergeTree` و`ReplicatedSummingMergeTree` وسيطة `columns` اختيارية لا تُمرَّر إلا بالاسم (keyword-only). وتحتفظ الوسائط الموضعية الحالية بمعناها، لذا لا يزال `SummingMergeTree("id")` يضبط `ORDER BY id`.
+يقبل `SummingMergeTree` و`ReplicatedSummingMergeTree` وسيطة `columns` اختيارية لا تُمرَّر إلا بالاسم. وتحتفظ الوسائط الموضعية الحالية بمعناها، لذا لا يزال `SummingMergeTree("id")` يضبط `ORDER BY id`.
 
 ```python
 from clickhouse_connect.cc_sqlalchemy.ddl.tableengine import SummingMergeTree
@@ -583,117 +556,6 @@ with Session(engine) as session:
     session.commit()
 ```
 
-## العروض ودوال SQL {#sqlalchemy-views-functions}
-
-يوفّر Alembic دوالَّ مساعدة صريحة لإنشاء العروض العادية والدوال المعرّفة من قِبل المستخدم بلغة SQL واستبدالها وحذفها:
-
-```python
-from alembic import op
-
-op.create_clickhouse_view("active_events", "SELECT id FROM analytics.events", schema="analytics")
-op.create_clickhouse_view("active_events", "SELECT id FROM analytics.events WHERE id > 13", schema="analytics", or_replace=True)
-op.drop_clickhouse_view("active_events", schema="analytics", if_exists=True)
-
-op.create_clickhouse_function("analytics_increment_v1", "(value) -> value + 13")
-op.create_clickhouse_function("analytics_increment_v1", "(value) -> value + 79", or_replace=True)
-op.drop_clickhouse_function("analytics_increment_v1", if_exists=True)
-```
-
-تقبل كلتا الدالتين المساعدتين للإنشاء الوسيطتين `if_not_exists=False` و`or_replace=False`. ويؤدي تمرير كلتيهما بالقيمة `True` إلى إثارة `ValueError`. ومتن SQL عبارة عن سلاسل نصية تُمرَّر كما هي إلى ClickHouse. تُحاط الأسماء بعلامات اقتباس بوصفها معرّفات ما لم تكن محاطة بها مسبقًا؛ ويُعدّ اسم الدالة معرّفًا واحدًا حتى لو احتوى على نقطة. دوال SQL عامة على مستوى الخادم، لذا لا تقبل الدوال المساعدة الخاصة بالدوال وطرق الفحص وسيطة `schema`. استخدم أسماء دوال فريدة على المستوى العام أو ذات إصدار محدد عبر قواعد البيانات وتدفقات الترحيل. تدعم هذه العمليات التنفيذ المباشر وتصيير SQL دون اتصال، بما في ذلك اتصالات SQLAlchemy غير المتزامنة عبر `run_sync`.
-
-تطلب `or_replace=True` الاستبدال صراحةً. إذ يمكن لـ ClickHouse أن يستبدل بجدول موجود أو بعرض مُجسَّد عرضًا عاديًا يحمل الاسم نفسه، مع التخلص من بيانات الكائن السابق. يرفض `DROP VIEW` حذف الجداول الأساسية، لكنه يستطيع حذف العروض المُجسَّدة. ويُبقي `IF NOT EXISTS` التعريف الموجود كما هو دون أن يتحقق منه. لا يمكن استنتاج عملية رجوع آمنة إلى إصدار أقدم من الاستبدال أو الإنشاء المشروط؛ لذا اكتبها صراحةً باستخدام التعريف السابق. وتحتاج عمليات الحذف كذلك إلى تعريفات صريحة للرجوع إلى إصدار أقدم. ولا تؤدي استعادة التعريف إلى استعادة البيانات التي تم التخلص منها. يتطلب استبدال دالة SQL امتيازَي `CREATE FUNCTION` و`DROP FUNCTION` معًا.
-
-يوسّع ClickHouse استدعاءات UDF المكتوبة بـ SQL عند تخزين تعريف العرض. لذا لا يؤدي استبدال UDF مكتوبة بـ SQL إلى تحديث العروض الموجودة التي تستخدمها؛ بل يجب إعادة إنشاء تلك العروض أو تعديلها صراحةً لتستخدم التعريف الجديد.
-
-افحص العروض العادية باستخدام الطريقتين الموجودتين `get_view_names(schema=...)` و`get_view_definition(name, schema=...)`. أما فحص دوال SQL فهو خاص بلهجة ClickHouse:
-
-```python
-from sqlalchemy import inspect
-
-inspector = inspect(connection)
-names = inspector.get_clickhouse_function_names()
-create_sql = inspector.get_clickhouse_function_definition("analytics_increment_v1")
-```
-
-يقتصر فحص الدوال على دوال `SQLUserDefined`، مع استبعاد الدوال المضمّنة والدوال القابلة للتنفيذ. وتُعاد الأسماء مرتّبة. والتعريف هو عبارة `CREATE FUNCTION` الكاملة المخزَّنة، وليس متن تعبير لامبدا فحسب؛ وتؤدي الأسماء المفقودة إلى إثارة `sqlalchemy.exc.NoResultFound`. أما أخطاء الوصول إلى الكتالوج فتُنقل كما هي. ويظل ناتج فحص البيانات الوصفية نصيًا حتى عندما تطلب صيغ استعلامات المستخدم بايتات. ولا تضيف هذه الدوال المساعدة كيانات تصريحية للعروض أو الدوال، ولا مقارنة التوليد التلقائي، ولا ترتيب التبعيات. لذا رتّب عمليات الترحيل الصريحة وفق التبعيات، واستخدم `render_as_batch=False` عند تصييرها.
-
-## فهارس تخطي البيانات {#sqlalchemy-skip-indexes}
-
-عرّف فهارس تخطي البيانات في ClickHouse بوصفها وسيطات للجدول. تتطلب واجهة برمجة التطبيقات هذه SQLAlchemy، وتعمل دون الحاجة إلى Alembic:
-
-```python
-from sqlalchemy import Column, MetaData, Table, inspect
-from clickhouse_connect.cc_sqlalchemy import ClickHouseIndex, engines, types
-
-metadata = MetaData()
-events = Table(
-    "events",
-    metadata,
-    Column("value", types.UInt32),
-    Column("label", types.String),
-    ClickHouseIndex("value_idx", "value", "minmax"),
-    ClickHouseIndex("label_idx", "label", "bloom_filter(0.01)", granularity=4),
-    engines.MergeTree(order_by="value"),
-)
-metadata.create_all(engine)
-
-indexes = inspect(engine).get_clickhouse_indexes("events")
-```
-
-تعبيرات الفهارس وأنواعها مكتوبة بصيغة ClickHouse SQL خام. التعريفات غير قابلة للتعديل، ويجب أن تكون الأسماء مميزة داخل الجدول الواحد. تُخزَّن التصريحات في خيار الجدول `clickhousedb_indexes`، الذي يقبل أيضًا متتالية من تعريفات `ClickHouseIndex`. تحافظ `Table.to_metadata()` عليها، بينما يُصيّرها `CREATE TABLE` بشكل مضمّن. تظل `if_not_exists` و`first` و`after_index` متاحة للدوال المساعدة الإجرائية الخاصة بـ ALTER، ولا تؤثر في الإنشاء المضمّن ولا في مقارنة المخطط.
-
-تُعيد `Inspector.get_clickhouse_indexes()` تعريفات قابلة لإعادة التنفيذ للفهارس الصريحة. وتستخدم التعبيرات المنعكسة غلاف `tuple(...)` للحفاظ على قائمة تعبيرات الفهرس في ClickHouse، بما في ذلك الصفوف المرتبة المتداخلة. وتُستبعد الفهارس الضمنية التي ينشئها الخادم اعتمادًا على حقل `creation` في الـ catalog. أما أخطاء الـ catalog والتصنيفات غير المعروفة فتؤدي إلى إثارة error. ويجب أن يوفّر الـ catalog الحقل `creation`، إذ توثّق ملاحظات إصدار ClickHouse هذا الحقل في الإصدار 26.1.1.912 وفي نقل التغييرات إلى الإصدار السابق 25.12.2.54. ويُتحقَّق من التوافق عبر الاستعلام الفعلي لا عبر سلسلة نصية تمثّل رقم الإصدار.
-
-تواصل الدالة العامة `Inspector.get_indexes()` إعادة قائمة فارغة. ولا يقرأ `Table(..., autoload_with=engine)` الـ catalog الخاص بـ skip-index. لنسخ الأعمدة والفهارس معًا بشكل صريح:
-
-```python
-inspector = inspect(engine)
-reflected = Table(
-    "events",
-    MetaData(),
-    autoload_with=engine,
-    clickhousedb_indexes=inspector.get_clickhouse_indexes("events"),
-)
-```
-
-## الإسقاطات {#sqlalchemy-projections}
-
-يمكنك تعريف إسقاطات SELECT بوصفها وسيطات للجدول، دون الحاجة إلى Alembic:
-
-```python
-from sqlalchemy import Column, MetaData, Table, inspect
-from clickhouse_connect.cc_sqlalchemy import ClickHouseProjection, engines, types
-
-metadata = MetaData()
-events = Table(
-    "events",
-    metadata,
-    Column("value", types.UInt32),
-    Column("label", types.String),
-    ClickHouseProjection("by_label", "SELECT value, label ORDER BY label, value"),
-    engines.MergeTree(order_by="value"),
-)
-metadata.create_all(engine)
-
-projections = inspect(engine).get_clickhouse_projections("events")
-```
-
-`select` هو نص SQL الخام الموجود داخل أقواس الإسقاط. التعريفات غير قابلة للتعديل، ويجب أن تكون أسماء الإسقاطات مميزة داخل الجدول الواحد. ويقبل خيار الجدول `clickhousedb_projections` أيضًا متتالية من تعريفات `ClickHouseProjection`. تحافظ `Table.to_metadata()` على التصريحات، ويُصيّرها `CREATE TABLE` بشكل مضمّن. ولا تقبل القواميس تصريحات الإسقاط. تظل `if_not_exists` و`first` و`after_projection` متاحة لدوال ALTER المساعدة الأمرية، ولا تؤثر في الإنشاء المضمّن أو المقارنة. ويظل الاستيراد من `clickhouse_connect.cc_sqlalchemy.alembic` و`.alembic.operations` مدعومًا، بما في ذلك وسيطات المُنشئ الموضعية الحالية.
-
-تُعيد `Inspector.get_clickhouse_projections()` تعريفات SELECT المخزَّنة، مع الحفاظ على أحرف البدل والأسماء المستعارة والتجميع والترتيب. وترفض `WITH SETTINGS` على مستوى الإسقاط وصيغ الإسقاط القائمة على الفهارس، لأن واجهة برمجة التطبيقات المقتصرة على SELECT لا يمكنها الحفاظ على تلك التعريفات كاملةً. كما يؤدي فشل الكتالوج إلى إثارة خطأ. ولا يقرأ `Table(..., autoload_with=engine)` العادي كتالوج الإسقاطات. لنسخ الأعمدة والإسقاطات صراحةً:
-
-```python
-inspector = inspect(engine)
-reflected = Table(
-    "events",
-    MetaData(),
-    autoload_with=engine,
-    clickhousedb_projections=inspector.get_clickhouse_projections("events"),
-)
-```
-
-يتطلب الفحص جدول هدف مرئيًا وصلاحية الوصول إلى الحقول `database` و`table` و`name` و`type` و`query` و`settings` في `system.projections`. وقد أضافت ClickHouse هذا الكتالوج في الإصدار 24.9.1.3278، غير أن وجوده وحده لا يكفي لإثبات دعم المقارنة؛ إذ يتحقق المشغّل من القدرات المدعومة عبر الكتالوج واستعلامات التطبيع.
-
 ## ترحيلات Alembic {#sqlalchemy-alembic}
 
 يتضمن ClickHouse Connect تكاملًا مع Alembic لإجراء ترحيلات مخطط ClickHouse. ثبّته باستخدام:
@@ -716,19 +578,7 @@ alembic init -t async alembic
 
 يستخدم ملف `alembic.ini` المُولَّد الإعداد `script_location = %(here)s/alembic`. أبقِ على هذا الإعداد إذا كان اسم دليل الترحيل `alembic`، وإلا فحدّثه ليشير إلى الدليل الذي مرّرته إلى `alembic init`. استبدل `alembic/env.py` بـ [مثال `env.py` غير المتزامن لـ Alembic](https://github.com/ClickHouse/clickhouse-connect/blob/main/examples/alembic_async/env.py) المُضمَّن في المستودع، ثم اضبط `sqlalchemy.url` في `alembic.ini`.
 
-استورد `clickhouse_connect.cc_sqlalchemy.alembic` في ملف `env.py` الخاص بـ Alembic لتسجيل تكامل اللهجة. يدعم التوليد التلقائي تغييرات الجداول الشائعة، بما في ذلك إنشاء الجداول وإزالتها، وإضافة الأعمدة وتعديلها وحذفها، والقيم الافتراضية، والتعليقات، وإعدادات جداول MergeTree. استخدم العمليات اليدوية لإعادة تسمية الجداول والأعمدة. راجع كل عملية ترحيل مولَّدة قبل تطبيقها.
-
-في ClickHouse Cloud، أضف `alter_sync=2` إلى URL محرك الترحيل كي يرى الاستبطان اللاحق تغييرات مخطط قاعدة البيانات المكتملة عبر النسخ المتماثلة. ويكتسب ذلك أهمية عند استبدال اتصال أو عند تشغيل التوليد التلقائي مباشرةً بعد ترقية. يغطي `select_sequential_consistency=1` قراءات البيانات، لا تغييرات المخطط.
-
-تتجاوز عمليات الإدراج في جدول الإصدارات آلية إزالة التكرار عند الإدراج، كي يتمكن الرجوع إلى إصدار أقدم من استعادة revision مُسجَّلة سابقًا. تستخدم عبارات SQL المولَّدة دون اتصال `SETTINGS deduplicate_insert = 'disable'`، مما يتطلب توفر هذا الإعداد على الخادم الهدف. أما الترحيلات المتصلة فتستخدم الإعداد القديم `insert_deduplicate = 0` عندما يفتقر الخادم إلى الإعداد الأحدث. وتحتفظ عمليات الإدراج في الجداول العادية بسلوك إزالة التكرار المُهيَّأ لها.
-
-يقارن التوليد التلقائي محرك الجدول المُعلَن بنظيره على الخادم للجداول الموجودة في كليهما. ولا يُدعَم الترحيل التلقائي للتغييرات في عائلة المحرك، أو وسيطات المحرك الموضعية، أو `ORDER BY`، أو `PRIMARY KEY`، أو `PARTITION BY`، أو `SAMPLE BY`، أو `TTL` الخاص بالجدول، لذا يؤدي أي اختلاف إلى إثارة `UnsupportedTableChangeError` بدلًا من كتابة revision فارغة أو مضلِّلة. اكتب ترحيلًا صريحًا بعد مراجعة دعم الخادم لـ ALTER والبيانات المتأثرة. يحمل الاستثناء صفًّا (tuple) باسم `drifts` من سجلات `TableOptionDrift` تتضمن الجدول والخيار والصيغتين كلتيهما. ويتطلب إنشاء الاستثناء انحرافًا واحدًا على الأقل، وإلا فإنه يثير `ValueError`. تُقارَن التعبيرات بعد توحيدها، وإذا ظل النص مختلفًا فإن الدالة `formatQuerySingleLine` على الخادم تحسم الفرق بين صيغ مثل `INTERVAL 30 DAY` و`toIntervalDay(30)`. وتُقارَن وسيطات المحرك المقتبسة وفق محتواها النصي بعد فك ترميزه مقارنةً حرفية، بما في ذلك المسافات البيضاء وعلامات الترقيم. تُنسَّق عبارات TTL على هيئة `ALTER TABLE t MODIFY TTL ...` مع الحفاظ على إجراءات مثل `DELETE WHERE` و`TO VOLUME` و`RECOMPRESS`. ويُعَدّ `MergeTree` ومتغيرات Cloud `Shared*` و`Replicated*` عائلة واحدة، ولا تُقارَن وسيطات مسار النسخ المتماثل.
-
-تظهر `settings` المحرك المُعلَنة التي تختلف عن قيمها على الخادم على هيئة `op.modify_clickhouse_table_settings(...)`، مع عملية رجوع إلى إصدار أقدم تستعيد كل إعداد أو تعيد ضبطه. تُستخدم القيم والأنواع الواردة في `system.merge_tree_settings` لتحديد القيم الافتراضية ومطابقة الصيغ المنطقية والرقمية المتكافئة، بينما تحتفظ الإعدادات النصية بمعناها النصي. تُحفَظ الإعدادات التي لا يُعلنها النموذج، بما في ذلك الإعدادات التي أُزيلت من النموذج بعد ترحيل سابق. ولا يستطيع الاستبطان التمييز بين هذه الإعدادات والإعدادات التي يحقنها الخادم، لذا لا يعيد التوليد التلقائي ضبطها تلقائيًا أبدًا. استخدم `op.reset_clickhouse_table_settings(...)` صراحةً عندما تقصد إعادة الضبط. أما الإعدادات المخصصة للقراءة فقط مثل `index_granularity` و`index_granularity_bytes` فتُقارَن وتُرفَض تغييراتها كما هو الحال مع المفاتيح. مرّر `clickhousedb_compare_table_options=False` إلى `context.configure()` لتخطي المقارنة.
-
-العروض والعروض المُجسَّدة المنعكسة ليست جداول، إذ يستبعدها `include_object`، لذا لا يقترح التوليد التلقائي أبدًا `drop_table` لعرض غير موجود في البيانات الوصفية. أدِرها باستخدام الأدوات المساعدة المعتادة للعروض أو العروض المُجسَّدة.
-
-تُصدِر `op.alter_column(..., server_default=None)` العبارة `MODIFY COLUMN ... REMOVE DEFAULT`، وهي الصيغة الوحيدة التي يقبلها الخادم. ويرفض الخادم هذه العبارة إذا لم يكن للعمود `DEFAULT` أو كان يستخدم `MATERIALIZED` أو `ALIAS`، لذا لا تطلب الإزالة إلا عند وجود قيمة افتراضية. أما تغيير النوع وحده فيُبقي على القيمة الافتراضية الموجودة. وتخضع خيارات الأعمدة الخاصة باللهجة للقاعدة نفسها: مرّر `clickhousedb_codec=None` أو `clickhousedb_ttl=None` أو `clickhousedb_alias=None` أو `clickhousedb_materialized=None` لإزالة الخاصية، أو مرّر قيمة لضبطها. ولا يتطلب ضبط هذه الخصائص أو إزالتها بمفردها تحديد `existing_type`. استخدم `text(...)` لتعبيرات SQL الخاصة بـ TTL والاسم البديل والأعمدة المُجسَّدة، على سبيل المثال `clickhousedb_ttl=text("ts + INTERVAL 7 DAY")`. وتبقى الخيارات التي لم تُمرَّر دون تغيير. وتُقبل الأسماء ذات البادئة `clickhousedb_` والأسماء القديمة ذات البادئة `clickhouse_` كلتاهما؛ وعند تمرير الاسمين معًا إلى `alter_column`، تكون الأولوية لقيمة `clickhousedb_` الصريحة، بما في ذلك `None`.
+استورد `clickhouse_connect.cc_sqlalchemy.alembic` في ملف `env.py` الخاص بـ Alembic لتسجيل تكامل اللهجة. يدعم التوليد التلقائي تغييرات الجداول الشائعة، بما في ذلك إنشاء الجداول وإزالتها، وإضافة الأعمدة وتعديلها وحذفها، والقيم الافتراضية، والتعليقات. استخدم العمليات اليدوية لإعادة تسمية الجداول والأعمدة. راجع كل عملية ترحيل مولَّدة قبل تطبيقها.
 
 عندما تُغفل البيانات الوصفية إصدار الحالة لـ `AggregateFunction`، يقبل التوليد التلقائي الإصدار المنعكس الموجود. على سبيل المثال، يتطابق `AggregateFunction(uniq, UInt32)` مع `AggregateFunction(1, uniq, UInt32)` المنعكس. وينطبق ذلك أيضًا داخل الأنواع المتداخلة. أما التغييرات على الدالة التجميعية أو معاملاتها أو أنواع وسيطاتها فلا تزال تُنتج تغييرًا في النوع.
 
@@ -741,190 +591,12 @@ alembic init -t async alembic
 * فهارس تخطي البيانات، بما في ذلك عمليات الإضافة وmaterialize والحذف.
 * الإسقاطات، بما في ذلك عمليات الإضافة وmaterialize والحذف.
 * تعديل إعدادات جدول MergeTree وإعادة ضبطها.
-* إنشاء طرق العرض العادية ودوال SQL واستبدالها وإزالتها.
 * إنشاء materialized view وإزالتها.
 * إنشاء القواميس وإزالتها وإعادة تحميلها.
 
-**ملاحظة حول الترقية:** يقارن Alembic افتراضيًا فهارس التخطي الصريحة وإسقاطات SELECT. وقد تُولِّد الكائنات التي أُنشئت عبر ترحيلات أمرية سابقة فقط عمليات حذف إذا لم تكن موجودة في البيانات الوصفية للجداول المُدارة. لذا، قبل الترقية، صرّح بها باستخدام `ClickHouseIndex` أو `ClickHouseProjection`، أو استبعد الكائنات غير المُدارة باستخدام `include_name` أو `include_object`، أو عطّل المقارنة المعنية في `context.configure()`:
+فهارس تخطي البيانات في ClickHouse ليست فهارس SQLAlchemy. يتم رفض `Index` و`Column(index=True)` و`op.create_index` و`op.drop_index` لتجنّب عبارات DDL الجزئية أو غير الصحيحة. استخدم `op.add_clickhouse_index` و`op.drop_clickhouse_index`.
 
-```python
-context.configure(
-    connection=connection,
-    target_metadata=metadata,
-    clickhousedb_compare_indexes=False,
-    clickhousedb_compare_projections=False,
-)
-```
-
-يتخطى كل خيار عمليات القراءة من الـ catalog الخاصة به، ولقطات الرجوع إلى إصدار أقدم المرتبطة بحذف الجداول. تُولِّد التعديلات عمليتَي حذف وإضافة منفصلتين. يستعيد الرجوع إلى إصدار أقدم التعريفات، لكن لا يستعيد أيٌّ من الاتجاهين التجسيد السابق. يؤدي استبدال إسقاط إلى التخلص من أجزاء الإسقاط الموجودة الخاصة به. راجع تكلفة إعادة البناء هذه، وشغّل `MATERIALIZE PROJECTION` صراحةً عندما تحتاج الأجزاء الموجودة إلى الإسقاط البديل فورًا. كما يظل تجسيد الفهارس صريحًا.
-
-صرّح عن فهارس تخطي البيانات باستخدام `ClickHouseIndex` لدعم التوليد التلقائي، أو استخدم الدوال المساعدة الموجودة `op.add_clickhouse_index` و`op.drop_clickhouse_index` في المراجعات الصريحة. تظل عمليات الاستيراد من `clickhouse_connect.cc_sqlalchemy.alembic` و`.alembic.operations` مدعومة. ولا تزال `Index` و`Column(index=True)` و`op.create_index` و`op.drop_index` القياسية في SQLAlchemy مرفوضة.
-
-بالنسبة إلى الجداول المُدارة، تتحكم التصريحات افتراضيًا في مجموعة الفهارس الصريحة القائمة. يُنتج أي فهرس صريح غير مُصرَّح عنه عملية حذف، بما في ذلك الفهارس التي أُنشئت سابقًا عبر عمليات ترحيل إجرائية فقط. ويُنتج تغيير التعبير أو نوع الفهرس أو المَعلمة أو مستوى التفصيل الفعلي عملية حذف منفصلة تليها عملية إضافة. ويستعيد الرجوع إلى إصدار أقدم التعريف السابق. تظل العمليات مرئية لـ `process_revision_directives` قبل التصيير. ينبغي لخطافات السياسة أن تُقرن تعديلات الفهارس والإسقاطات حسب المخطط والجدول واسم الكائن، دون الاعتماد على التجاور. لا يستعيد أيٌّ من الاتجاهين التجسيد السابق، ولا تُولَّد أي عبارة `MATERIALIZE INDEX`. نفّذ التجسيد صراحةً إذا كانت أجزاء البيانات الموجودة تحتاج إلى الفهرس فورًا.
-
-أنشئ عمليات إضافة الفهارس وإزالتها وتعديلها باستخدام `render_as_batch=False`. لا تدعم الدوال المساعدة لهذه العمليات قائمة انتظار الدفعات المؤجلة في Alembic، لذا يُثير `render_as_batch=True` خطأً أثناء التوليد. وتظل الفهارس المضمّنة في عمليات إنشاء الجداول ولقطات التراجع الخاصة بحذف الجداول مدعومة.
-
-ينطبق القيد نفسه على عمليات ClickHouse المخصصة الأخرى داخل كتلة الدفعة، بما في ذلك إعدادات الجدول والإسقاطات والتجسيد. أنشئ هذه العمليات خارج وضع الدفعة.
-
-لإعادة الإنشاء الفعلي عبر الدفعة باستخدام `op.batch_alter_table()`، مرّر كائن Table كاملًا في `copy_from` يتضمن الأعمدة والمحرك و`clickhousedb_indexes`. استخدم مثال الانعكاس الصريح أعلاه لتحميل الأعمدة والفهارس معًا، أو وفّر بيانات وصفية كاملة لعمليات الترحيل دون اتصال. تقرأ إعادة الإنشاء التلقائية في الوضع المتصل catalog الفهارس وقت التنفيذ، وترفض الجداول التي تحتوي على فهارس صريحة قبل إنشاء أي جداول أو حذفها. ولا يؤدي إلغاء الاشتراك في مقارنة التوليد التلقائي إلى تجاوز هذه الحماية.
-
-تتلقى خطافات `include_name` و`include_object` القياسية القيمة `type_="index"`. وتنطبق عوامل التصفية حسب الاسم على المرشحين المنعكسين والمُعلَنين على حد سواء، بحيث يظل الاسم المستبعد خارج الإدارة. وتتلقى عوامل تصفية الكائنات القيمتين المعتادتين `reflected` و`compare_to`، وتكشف كائنات الفهارس التي تتلقاها عن حقول التعريف و`.table`. فعلى سبيل المثال، تحمي وصفة Alembic القياسية للكائنات غير المُدارة، `reflected and compare_to is None`، الفهارس المُعرَّفة إجرائيًا فقط. وتُطبَّق عوامل تصفية الجداول قبل عمليات القراءة من catalog الفهارس، كما تُصفّى الفهارس المضمّنة في الجداول المُنشأة حديثًا قبل خطافات السياسات.
-
-تعتمد المقارنة على التنسيق والتحليل اللذين يجريهما الخادم لمراعاة صيغ الكتابة والقيم الافتراضية في ClickHouse. ويعتمد تحليل التعبيرات على الجدول الحالي ودوال الخادم والإعدادات، ويتطلب المحلل ومخرجات `EXPLAIN` المتوقعة. وقد جرى التحقق من هذه الإمكانات على ClickHouse 26.8، مع مراجعة الشيفرة المصدرية للإصدار 26.6. ولا يكفي وجود حقل catalog وحده لإثبات دعم المقارنة على خادم أقدم. كما تتطلب تعديلات تعريفات `ALIAS` التي تؤثر في أحد الفهارس ترحيلًا صريحًا للعمود قبل مقارنة الفهارس.
-
-يمكن أن يشير تعديل الفهرس إلى عمود فعلي مُضاف في المراجعة نفسها. فإذا أبلغ التحليل عن هذا العمود الجديد المُجدول بوصفه معرّفًا غير معروف، يتحقق التوليد التلقائي من التعبير كاملًا مع إتاحة الأعمدة المضافة، ثم يُصدر إضافة العمود قبل حذف الفهرس وإضافته. أما المعرّفات غير المعروفة الأخرى، بما فيها الأخطاء الإملائية والأعمدة التي استبعدتها عوامل التصفية، فتظل تُثير `IndexComparisonError`.
-
-تُعدّ الأقواس الفارغة بعد النوع واختلافات حالة الأحرف، مثل `minmax()` و`MinMax()` و`minmax`، متطابقة عند المقارنة. ولا تُستكمل وسائط النوع المحذوفة لأغراض المقارنة: فالتبديل بين `bloom_filter` و`bloom_filter(0.025)` قد يُنتج حذفًا وإضافة لمرة واحدة رغم أن الخادم يستخدم تلك القيمة الافتراضية.
-
-لا تُثبت المقارنة التكافؤ بين تعبيرات SQL العشوائية. فعندما ينجح التطبيع لكن تختلف الصيغ الناتجة، يُنشئ التوليد التلقائي عملية استبدال حتى لو كانت التعبيرات تُعيد القيم نفسها. لذا راجع مثل هذه التغييرات، أو أدِر تلك الفهارس باستخدام عمليات ترحيل صريحة وعوامل تصفية.
-
-إذا تعذّر الوصول إلى catalog، أو تعذّر تحليل التعبير، أو لم تتوفر مخرجات التطبيع المتوقعة، يُثير التوليد التلقائي `IndexComparisonError` متضمنًا الجدول والفهرس والتعريفين المُعلَن والمنعكس وسبب الخطأ. راجع التعديلات بعناية؛ فالحذف والإضافة عبارتان منفصلتان لا تُنفَّذان ضمن معاملة واحدة، وقد يؤدي فشل الإضافة إلى فقدان الفهرس القديم.
-
-### التوليد التلقائي للإسقاطات {#projection-autogenerate}
-
-يقارن Alembic افتراضيًا إسقاطات SELECT على الجداول المُدارة. وتتحكم التصريحات في مجموعة الإسقاطات الفعلية، إذ تُنتج الإسقاطات غير المُصرَّح بها عمليات حذف، وتُنتج التعريفات المتغيرة عمليتي حذف وإضافة منفصلتين. يرتّب التوليد التلقائي العمليات على كل جدول كالتالي: حذف الإسقاطات، ثم إضافة الأعمدة وتعديلها، ثم عمليات الفهارس، ثم إضافة الإسقاطات، ثم حذف الأعمدة. ويُلحق Alembic عمليات حذف الأعمدة بعد انتهاء أدوات مقارنة الجداول. لذا اربط التعديلات في خطافات السياسة حسب المخطط والجدول واسم الإسقاط، فقد تظهر عمليات أخرى بين الحذف والإضافة. تستعيد عمليات الرجوع إلى إصدار أقدم التعريفات السابقة، بما في ذلك الإسقاطات على الجداول المحذوفة التي يُعاد إنشاؤها. وتتيح العمليات التعريفات الكاملة لـ `process_revision_directives` قبل التصيير. لا يُولَّد `MATERIALIZE PROJECTION`، ولا تستعيد الترقية ولا الرجوع إلى إصدار أقدم حالة تجسيد الأجزاء السابقة. لذا نفّذ التجسيد صراحةً عندما تحتاج الأجزاء الموجودة إلى الإسقاط فورًا.
-
-بالنسبة إلى `AggregatingMergeTree` والمحركات الأخرى ذات سلوك الدمج غير القياسي، يرفض ClickHouse الأمر `ADD PROJECTION` عندما يكون `deduplicate_merge_projection_mode='throw'`. اضبطه صراحةً على `drop` أو `rebuild` قبل تطبيق إضافات الإسقاطات أو استبدالاتها، بما في ذلك استبدال الإسقاطات التي صُرِّح بها في الأصل بشكل مضمّن.
-
-تتلقى `include_name` و`include_object` القيمة `type_="projection"`. تنطبق عوامل تصفية الأسماء على الأسماء المنعكسة والمُصرَّح بها معًا. وتتلقى عوامل تصفية الكائنات تعريفات تحتوي على `.table` و`reflected` و`compare_to`. وتحمي الوصفة المعتادة `reflected and compare_to is None` الإسقاطات المُعرَّفة إجرائيًا فقط. تعمل عوامل تصفية الجداول قبل قراءة catalog، وتُصفّى التعريفات المضمّنة على الجداول المُنشأة حديثًا قبل خطافات السياسة. ولا تمنع التعريفات غير المدعومة على الإسقاطات المُصفّاة أو على الجداول غير ذات الصلة إجراءَ المقارنة.
-
-تستخدم المقارنة محدِّد التنسيق الكامل لقواعد الإسقاطات في الخادم، وأسماء الدوال وأسماءها البديلة غير الحساسة لحالة الأحرف الموجودة في `system.functions`، متّبعةً تطبيع CREATE في ClickHouse. وهي تحافظ على بنية SELECT، بما في ذلك أحرف البدل وتعبيرات التجميع، بدلًا من تحليل SELECT عادي مقابل الجدول الفعلي. ولا تُعدّ الاختلافات في التنسيق، أو في اقتباس المعرّفات، أو في كتابة أسماء الدوال المسجلة دون حساسية لحالة الأحرف اختلافاتٍ. أما الأسماء الحساسة لحالة الأحرف مثل `sumIf` و`SumIf` فتبقى مختلفة. وعندما تختلف التعريفات المنسّقة، تفحص المقارنة أيضًا شجرة البناء المحلَّلة التي تتجاهل أقواس التجميع. لذا تُعدّ الأقواس الزائدة وصيغ كتابة العوامل والدوال مثل `value + 13` و`plus(value, 13)` متساوية، لأن إصدارات ClickHouse وClickHouse Cloud تخزّن الأقواس الزائدة بشكل غير متسق. أما الاختلافات البنيوية الأخرى فتولّد عمليتي حذف وإضافة. لا تُثبت المقارنة تكافؤ استعلامات SQL العشوائية ولا تتحقق من تبعيات الأعمدة. فقد يشير الاستبدال إلى عمود فعلي أُضيف في مرحلة سابقة ضمن الـ revision نفسها. لذا راجع التبعيات، بما في ذلك أعمدة ALIAS المتغيرة، قبل تطبيقه. تفشل التبعيات غير الصالحة عند تنفيذ DDL، وقد يؤدي فشل الإضافة إلى غياب الإسقاط القديم، لأن الحذف والإضافة عبارتان منفصلتان لا تُنفَّذان ضمن معاملة واحدة.
-
-تؤدي حقول catalog المفقودة، وأخطاء الوصول إلى catalog، وعدم توفر بيانات التنسيق أو البيانات الوصفية للدوال، و`WITH SETTINGS` على مستوى الإسقاط، والصيغ المعتمدة على الفهارس إلى إطلاق `ProjectionComparisonError` مع ذكر الجدول والإسقاط والتعريفين المُصرَّح به والمنعكس والسبب. وعند الإخفاق في التطبيع، يُطلَق هذا التشخيص بدلًا من توليد استبدال. صفِّ الإسقاطات غير المدعومة أو أدِرها باستخدام عمليات ترحيل صريحة. إذا غيّرت `query_masking_rules` نص SELECT الذي يُرجعه catalog، فقد تصبح المقارنة وإعادة التشغيل غير موثوقتين. في هذه الحالة استخدم عمليات ترحيل صريحة أو عوامل تصفية أو خيار تعطيل المقارنة للإسقاطات المتأثرة. يتطلب تطبيع الدوال توفر الحقول `name` و`is_aggregate` و`case_insensitive` و`alias_to` في `system.functions`. ويُتحقَّق من الدعم عبر استعلامات فعلية على catalog ومحدِّد التنسيق، لا عبر سلاسل الإصدار.
-
-ولّد إضافات الإسقاطات وإزالاتها وتعديلاتها باستخدام `render_as_batch=False`. وتظل تعريفات CREATE المضمّنة ولقطات الرجوع إلى إصدار أقدم الخاصة بحذف الجداول مدعومة. ولإعادة الإنشاء الفعلية على دفعات، وفّر بيانات وصفية كاملة في `copy_from` تتضمن الأعمدة والمحرك و`clickhousedb_projections`. تقرأ إعادة الإنشاء التلقائية عبر الإنترنت catalog الإسقاطات، وترفض الجداول التي تحتوي على إسقاطات قبل تنفيذ DDL. ولا يتجاوز خيار تعطيل المقارنة آلية الحماية هذه عند التنفيذ.
-
-راجع [مثال Alembic العملي](https://github.com/ClickHouse/clickhouse-connect/blob/main/clickhouse_connect/cc_sqlalchemy/alembic/WORKED_EXAMPLE.md) الكامل. وننصح المستخدمين الذين يرحّلون من `clickhouse-sqlalchemy` بقراءة [دليل الترحيل](https://github.com/ClickHouse/clickhouse-connect/blob/main/clickhouse_connect/cc_sqlalchemy/MIGRATING_FROM_CLICKHOUSE_SQLALCHEMY.md) أيضًا.
-
-### تصنيف العمليات المُولَّدة قبل عرضها {#classify-generated-operations-before-rendering}
-
-جميع أصناف عمليات ترحيل ClickHouse البالغ عددها 21 متاحة للعموم من
-`clickhouse_connect.cc_sqlalchemy.alembic` ومن الوحدة `operations` التابعة لها. استخدم
-`isinstance` لفحصها داخل `process_revision_directives` أو سجّلها
-باستخدام `Rewriter.rewrites` الخاصة بـ Alembic. تظل الأسماء القديمة التي تبدأ بالشرطة السفلية أسماءً بديلة
-للأصناف نفسها، لذا تواصل التسجيلات وعمليات الاستيراد الحالية عملها دون تغيير.
-
-تتطابق حقول الفحص العامة مع وسيطات المُنشئ. تكشف عمليات الجداول عن
-`table_name` و`schema` و`clickhouse_settings`. وتكشف عمليات الفهرس المفرد عن
-`name`. وتكشف عمليات الإضافة كذلك عن `expression` و`type_` و`granularity` و`if_not_exists`
-و`first` و`after_index`. أما عمليات إضافة الإسقاطات فتكشف عن `select` و
-`after_projection` بدلًا من حقول التعبير والنوع ومستوى التجزئة الخاصة بالفهرس. وتكشف عمليات الحذف عن
-`if_exists`، وكذلك عن `existing_index` أو
-`existing_projection` بالنسبة إلى الفهارس أو الإسقاطات المفردة عند توفر تعريف سابق. وتكشف عمليات التجسيد عن
-`if_exists` و`partition`. وتخزّن عمليات الإضافة المجمّعة `indexes` أو
-`projections` على هيئة Tuple من `ClickHouseIndex` أو `ClickHouseProjection`. وتخزّن عمليات الحذف
-المجمّعة `names` على هيئة Tuple. افحص كل عضو في أي عملية مجمّعة.
-
-يكشف `ModifyClickHouseTableSettingsOp` عن `settings` وعن `existing_settings` الاختياري.
-ويكشف `ResetClickHouseTableSettingsOp` عن Tuple من `names`.
-وتختلف إعدادات الجدول هذه عن مطابقة `clickhouse_settings` على مستوى الاستعلام.
-تكشف عمليات إنشاء العروض والدوال عن `name` و`select` أو `expression`
-و`if_not_exists` و`or_replace`. وتكشف العروض أيضًا عن `schema`. وتكشف عملية إنشاء
-العرض المُجسَّد عن `name` و`schema` و`to_table` و`to_schema` و`select`
-و`if_not_exists`. وتكشف عملية إنشاء القاموس عن `name` و`schema` وTuple باسم `columns`
-و`primary_key` و`source` و`layout` و`lifetime` و`comment` و`if_not_exists`
-و`clickhouse_settings`. وتكشف عمليات حذف العروض والدوال والعروض المُجسَّدة والقواميس عن
-`name` و`if_exists`، إضافةً إلى `schema` و`clickhouse_settings` حيثما يقبلها
-المُنشئ. وتكشف عملية إعادة تحميل القاموس عن `name` و`schema`. وتظل أجزاء SQL
-سلاسل نصية، وتحتفظ المطابقات بالقيم المُمرَّرة إليها. وقد تتطلب العمليات العكسية
-تعريفات سابقة أو تُطلق `NotImplementedError`. ولا يؤدي التعريف القابل للعكس
-إلى استعادة البيانات المُخزَّنة فعليًا.
-
-يمثل هذا المثال سياسة على مستوى التطبيق، لا ضمانًا للأمان يقدّمه برنامج التشغيل. فهو لا يسمح
-إلا بشكل فهرس أو إعداد جدول مُختار صراحةً، ويُحيل عمليات الاستبدال
-والعمليات غير المعروفة إلى المراجعة، ويرفض عمليات حذف الفهارس المستقلة، وعمليات حذف الإسقاطات
-المستقلة، والعمليات المدمجة الهدّامة. عدّل هذه القواعد بما يناسب عملية النشر لديك. وحتى
-عمليات الإنشاء تتطلب فحص الحقول: إذ قد يؤدي `or_replace=True` على عرض إلى فقدان
-بيانات جدول يحمل الاسم نفسه، كما تحتاج نصوص SQL الخام ومصادر القواميس إلى مراجعة.
-
-```python
-import logging
-
-from alembic.operations import ops
-from clickhouse_connect.cc_sqlalchemy import alembic as ch_alembic
-
-
-def leaves(operation):
-    if isinstance(operation, ops.OpContainer):
-        for child in operation.ops:
-            yield from leaves(child)
-    else:
-        yield operation
-
-
-def object_key(operation):
-    if isinstance(operation, (ch_alembic.AddClickHouseIndexOp,
-                              ch_alembic.DropClickHouseIndexOp)):
-        kind = "index"
-    elif isinstance(operation, (ch_alembic.AddClickHouseProjectionOp,
-                                ch_alembic.DropClickHouseProjectionOp)):
-        kind = "projection"
-    else:
-        return None
-    return kind, operation.schema, operation.table_name, operation.name
-
-
-def classify_tree(tree, direction):
-    operations = list(leaves(tree))
-    adds = {object_key(op) for op in operations if isinstance(
-        op, (ch_alembic.AddClickHouseIndexOp, ch_alembic.AddClickHouseProjectionOp))}
-    drops = {object_key(op) for op in operations if isinstance(
-        op, (ch_alembic.DropClickHouseIndexOp, ch_alembic.DropClickHouseProjectionOp))}
-    replacements = adds & drops
-    for operation in operations:
-        verdict, reason = "review", "operation needs explicit review"
-        if isinstance(operation, (ops.DropTableOp, ops.DropColumnOp, ops.ExecuteSQLOp)):
-            verdict, reason = "rejected", "destructive change or opaque SQL"
-        elif object_key(operation) in replacements:
-            reason = "replacement can discard existing materialization"
-        elif isinstance(operation, (ch_alembic.DropClickHouseIndexOp,
-                                    ch_alembic.DropClickHouseProjectionOp,
-                                    ch_alembic.DropClickHouseIndexesOp,
-                                    ch_alembic.DropClickHouseProjectionsOp)):
-            verdict, reason = "rejected", "removal requires a separate migration"
-        elif direction == "upgrade":
-            if isinstance(operation, ch_alembic.AddClickHouseIndexOp):
-                if (operation.type_ == "minmax" and operation.expression == "value"
-                        and operation.granularity == 1 and not operation.first
-                        and operation.after_index is None and not operation.clickhouse_settings):
-                    verdict, reason = "allowed", "approved index definition"
-            elif isinstance(operation, ch_alembic.ModifyClickHouseTableSettingsOp):
-                if (dict(operation.settings) == {"max_bytes_to_merge_at_max_space_in_pool": 107374182400}
-                        and not operation.clickhouse_settings):
-                    verdict, reason = "allowed", "approved table setting value"
-        yield direction, operation, verdict, reason
-
-
-def review_revision(context, revision, directives):
-    # Scope: a single-engine env.py. clickhouse_writer uses singular roots.
-    for script in directives:
-        if len(script.upgrade_ops_list) != 1 or len(script.downgrade_ops_list) != 1:
-            raise ValueError("This policy hook supports one operation stream only")
-        findings = [
-            *classify_tree(script.upgrade_ops_list[0], "upgrade"),
-            *classify_tree(script.downgrade_ops_list[0], "downgrade"),
-        ]
-        for direction, op, verdict, reason in findings:
-            logging.getLogger("alembic.policy").info(
-                "%s: %s: %s: %s", direction, type(op).__name__, verdict, reason)
-        blocked = [f"{direction}: {type(op).__name__}: {verdict}: {reason}"
-                   for direction, op, verdict, reason in findings
-                   if direction == "upgrade" and verdict != "allowed"]
-        if blocked:
-            raise ValueError("Migration requires review:\n" + "\n".join(blocked))
-    ch_alembic.clickhouse_writer(context, revision, directives)
-```
-
-مرّر `process_revision_directives=review_revision` إلى `context.configure()` بدلًا من
-`clickhouse_writer`. يسجّل الخطاف النتائج في كلا الاتجاهين، ويجعل توليد المراجعة (revision) مشروطًا بنتائج
-الترقية. وتتطلب نتائج الرجوع إلى إصدار أقدم مراجعة منفصلة قبل تنفيذ
-الرجوع إلى إصدار أقدم، لكنها لا تمنع كتابة ترقية تمت الموافقة عليها. يجتاز الخطاف الحاويات المتداخلة ويقرن عمليات الاستبدال بحسب
-النوع والمخطط والجدول والاسم، بصرف النظر عن تجاورها. وتُحال الإضافات المجمّعة وجميع
-العمليات غير المعروفة إلى المراجعة افتراضيًا. تدعم هذه الوصفة محركًا واحدًا
-ودفق عمليات واحدًا لكل اتجاه، واستخدام جذور على هيئة قوائم في المصنِّف لا
-يجعل `clickhouse_writer` خطافًا متعدد المحركات. ولا تُثبت الشجرة المولَّدة الفارغة سوى
-أن المقارنات المفعّلة والمدعومة لم تعثر على أي تغييرات. أما طرق العرض والدوال
-والقواميس وغيرها من المقارنات غير المدعومة فلا تزال تتطلب عمليات ترحيل صريحة.
+راجع [المثال العملي الكامل لـ Alembic](https://github.com/ClickHouse/clickhouse-connect/blob/main/clickhouse_connect/cc_sqlalchemy/alembic/WORKED_EXAMPLE.md). كما ينبغي للمستخدمين الذين يرحّلون من `clickhouse-sqlalchemy` قراءة [دليل الترحيل](https://github.com/ClickHouse/clickhouse-connect/blob/main/clickhouse_connect/cc_sqlalchemy/MIGRATING_FROM_CLICKHOUSE_SQLALCHEMY.md).
 
 ## النطاق والقيود {#scope-and-limitations}
 

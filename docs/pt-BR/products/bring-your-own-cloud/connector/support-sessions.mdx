@@ -7,6 +7,7 @@ doc_type: 'guide'
 ---
 
 import { PrivatePreviewBadge } from '/snippets/pt-BR/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
 
 <PrivatePreviewBadge />
 
@@ -18,18 +19,14 @@ Uma sessão de suporte é uma janela de tempo limitado na qual o solucionador de
 
 As sessões regem apenas os diagnósticos. Os comandos de ciclo de vida de serviços em modo managed trafegam pelo canal separado do executor, que uma sessão de suporte não abre nem controla; consulte [managed services](/pt-BR/products/bring-your-own-cloud/connector/managed-services#service-lifecycle).
 
-<div className="ch-image-lg">
-  <Frame>
-    ![Fluxo de confiança da sessão de suporte do ClickHouse Connector](/images/cloud/reference/byoc-connector-session-trust.svg)
-  </Frame>
-</div>
+<Image img="/images/cloud/reference/byoc-connector-session-trust.svg" size="lg" alt="Fluxo de confiança da sessão de suporte do ClickHouse Connector" />
 
 Você controla as sessões por meio de duas interfaces:
 
 * **O gateway de sessão**, uma API autenticada embutida no solucionador de problemas. Ele atende `POST /v1/clctl/session/enable`, `POST /v1/clctl/session/disable` e `GET /v1/clctl/session/status`. Toda chamada exige um OIDC ID token de curta duração cujo e-mail esteja na sua allowlist de operadores.
-* **O arquivo de sessão local**, em instalações em VM Linux, gravado no host com acesso root.
+* **O arquivo de sessão local**, em instalações em Linux VM, gravado no host com acesso root.
 
-O transporte do gateway depende do destino. Um gateway em VM serve TLS autossinado, cuja impressão digital cada operador fixa (pinning). Um gateway no Kubernetes escuta localmente no pod via HTTP; você o acessa com `kubectl port-forward` (o túnel trafega sobre o TLS do API server) ou por meio de uma Entrada que termina TLS com um certificado emitido por uma CA.
+O transporte do gateway depende do target. Um gateway em VM serve TLS autossinado, cuja impressão digital cada operator fixa (pinning). Um gateway no Kubernetes escuta localmente no pod via HTTP; você o acessa com `kubectl port-forward` (o túnel trafega sobre o TLS do API server) ou por meio de uma Entrada que terminates TLS com um certificate emitido por uma CA.
 
 Você define a postura das suas sessões, incluindo a allowlist de operadores, durante o `clicklink clctl init`.
 

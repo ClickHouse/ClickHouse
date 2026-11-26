@@ -29,20 +29,24 @@ O catálogo REST é uma especificação padronizada de API para catálogos Icebe
 <Note>
   Como este recurso está em beta, você precisará habilitá-lo com:
   `SET allow_database_iceberg = 1;`
-
-  Em versões anteriores à 25.8, nas quais o recurso ainda é experimental, use `SET allow_experimental_database_iceberg = 1;` em vez disso. O SQL abaixo usa esse nome porque a configuração Docker deste guia fixa o ClickHouse na versão 25.5.6.
 </Note>
 
-## Configuração de desenvolvimento local {#local-development-setup}
+<div id="local-development-setup">
+  ## Configuração de desenvolvimento local
+</div>
 
 Para desenvolvimento e testes locais, você pode usar uma configuração de catálogo REST em contêiner. Essa abordagem é ideal para aprendizado, prototipagem e ambientes de desenvolvimento.
 
-### Pré-requisitos {#local-prerequisites}
+<div id="local-prerequisites">
+  ### Pré-requisitos
+</div>
 
 1. **Docker e Docker Compose**: Certifique-se de que o Docker esteja instalado e em execução
 2. **Configuração de exemplo**: Você pode usar diferentes configurações do `docker-compose` (veja as imagens Docker alternativas abaixo)
 
-### Configurando o catálogo REST local {#setting-up-local-rest-catalog}
+<div id="setting-up-local-rest-catalog">
+  ### Configurando o catálogo REST local
+</div>
 
 Você pode usar várias implementações de catálogo REST em contêiner, como o **[Databricks docker-spark-iceberg](https://github.com/databricks/docker-spark-iceberg/blob/main/docker-compose.yml?ref=blog.min.io)**, que fornece um ambiente completo com Spark + Iceberg + catálogo REST via docker-compose, tornando-o ideal para testar integrações com o Iceberg.
 
@@ -89,7 +93,9 @@ docker-compose logs -f
   A configuração do catálogo REST exige que os dados de exemplo sejam carregados primeiro nas tabelas Iceberg. Certifique-se de que o ambiente do Spark tenha criado e populado as tabelas antes de tentar fazer consultas nelas por meio do ClickHouse. A disponibilidade das tabelas depende da configuração específica do docker-compose e dos scripts de carregamento dos dados de exemplo.
 </Note>
 
-### Conectando-se ao Catálogo REST local {#connecting-to-local-rest-catalog}
+<div id="connecting-to-local-rest-catalog">
+  ### Conectando-se ao Catálogo REST local
+</div>
 
 Conecte-se ao seu contêiner do ClickHouse:
 
@@ -100,7 +106,7 @@ docker exec -it clickhouse clickhouse-client
 Em seguida, crie a conexão do banco de dados com o catálogo REST:
 
 ```sql
-SET allow_experimental_database_iceberg = 1;
+SET allow_database_iceberg = 1;
 
 CREATE DATABASE demo
 ENGINE = DataLakeCatalog('http://rest:8181/v1', 'admin', 'password')
@@ -110,7 +116,9 @@ SETTINGS
     warehouse = 'demo'
 ```
 
-## Consultando tabelas do catálogo REST com o ClickHouse {#querying-rest-catalog-tables-using-clickhouse}
+<div id="querying-rest-catalog-tables-using-clickhouse">
+  ## Consultando tabelas do catálogo REST com o ClickHouse
+</div>
 
 Agora que a conexão está estabelecida, você já pode começar a fazer consultas pelo catálogo REST. Por exemplo:
 
@@ -194,7 +202,9 @@ SHOW CREATE TABLE `default.taxis`;
 └───────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## Carregando dados do seu lago de dados para o ClickHouse {#loading-data-from-your-data-lake-into-clickhouse}
+<div id="loading-data-from-your-data-lake-into-clickhouse">
+  ## Carregando dados do seu lago de dados para o ClickHouse
+</div>
 
 Se você precisar carregar dados do catálogo REST para o ClickHouse, comece criando uma tabela local no ClickHouse:
 

@@ -11,13 +11,17 @@ doc_type: 'reference'
 
 Représente le contenu d’une projection dans des tables MergeTree. Peut servir à l’introspection.
 
-## Syntaxe {#syntax}
+<div id="syntax">
+  ## Syntaxe
+</div>
 
 ```sql
 mergeTreeProjection(database, table, projection)
 ```
 
-## Arguments {#arguments}
+<div id="arguments">
+  ## Arguments
+</div>
 
 | Argument     | Description                                                           |
 | ------------ | --------------------------------------------------------------------- |
@@ -25,13 +29,15 @@ mergeTreeProjection(database, table, projection)
 | `table`      | Le nom de la table à partir de laquelle lire la projection.           |
 | `projection` | La projection à lire.                                                 |
 
-Pour déterminer la structure de l&#39;ensemble de résultats, par exemple avec `DESCRIBE`, le privilège `SHOW COLUMNS` sur la table source est requis. Pour lire les données, le privilège `SELECT` sur cette même table source est requis.
-
-## Valeur renvoyée {#returned-value}
+<div id="returned-value">
+  ## Valeur renvoyée
+</div>
 
 Un objet de type table contenant les colonnes fournies par la projection spécifiée.
 
-## Exemple d’utilisation {#usage-example}
+<div id="usage-example">
+  ## Exemple d’utilisation
+</div>
 
 ```sql
 CREATE TABLE test

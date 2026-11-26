@@ -955,8 +955,6 @@
          with an empty user name). Set to an empty value to reject such connections.
          Never applied to interserver connections.
          Can be overridden per endpoint in the <protocols> section with the same tag.
-
-         The substituted user is authenticated as usual (password, <networks>, ...).
     -->
     <!-- <default_session_user>default</default_session_user> -->
 
@@ -999,31 +997,6 @@
          PR_SET_NO_NEW_PRIVS, logs a warning and runs without a seccomp policy.
     -->
     <seccomp>trap</seccomp>
-
-    <!-- Isolate the server from the filesystem of the host at startup (Linux only): it moves into a new mount
-         namespace where only the paths it needs according to this configuration are visible - its data, logs,
-         configuration, certificates, the credentials of the clouds (as the tokens of the service accounts of Kubernetes),
-         a few system files - and nothing else, in particular no shell. With CAP_SYS_ADMIN it runs in a new PID namespace
-         too, and the original process stays outside as a supervisor, with the PID of the pid file.
-         With "best_effort", if the kernel or a container runtime does not allow it, the server logs a warning and
-         runs without any isolation; with "enforce", it does not start then. "disabled" (the default without this
-         line) turns it off.
-         Executable user defined functions and dictionaries that run scripts need their interpreters and libraries:
-         list them in "filesystem_isolation_paths", or disable the isolation.
-         Without CAP_SYS_ADMIN the server has to create a user namespace as well, and loses its other capabilities,
-         such as CAP_NET_BIND_SERVICE (ports below 1024) and CAP_IPC_LOCK.
-    -->
-    <filesystem_isolation>best_effort</filesystem_isolation>
-    <!--
-    <filesystem_isolation_paths>
-        <read_only>/bin</read_only>
-        <read_only>/usr/bin</read_only>
-        <read_only>/lib</read_only>
-        <read_only>/lib64</read_only>
-        <read_only>/usr/lib</read_only>
-        <read_write>/mnt/exchange</read_write>
-    </filesystem_isolation_paths>
-    -->
 
     <![CDATA[
          Uncomment below in order to use JDBC table engine and function.
@@ -1886,7 +1859,6 @@
     <cpu_slot_preemption>true</cpu_slot_preemption>
     <cpu_slot_quantum_ns>10000000</cpu_slot_quantum_ns>
     <cpu_slot_preemption_timeout_ms>1000</cpu_slot_preemption_timeout_ms>
-    <cpu_slot_parking>true</cpu_slot_parking>
     -->
 
     <!-- Settings to tune cpu and memory overload warnings for system.warnings.
@@ -1998,7 +1970,7 @@
         </rule>
         <rule>
             <name>hide sensitive HTTP query-string parameters</name>
-            <regexp>([?&amp;][^&amp;=]*(?:secret|password|passwd|token|credential|signature|key)[^&amp;=]*=)[^&amp;\s]*</regexp>
+            <regexp>([?&][^&=]*(?:secret|password|passwd|token|credential|signature|key)[^&=]*=)[^&\s]*</regexp>
             <replace>\1[HIDDEN]</replace>
         </rule>
     </query_masking_rules> -->

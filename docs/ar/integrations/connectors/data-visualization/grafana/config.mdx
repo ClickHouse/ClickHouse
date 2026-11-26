@@ -1,14 +1,16 @@
 ---
-sidebarTitle: 'إعدادات المكوّن الإضافي'
+sidebarTitle: 'تهيئة المكون الإضافي'
 slug: /integrations/grafana/config
 description: 'خيارات التهيئة للمكون الإضافي لمصدر بيانات ClickHouse في Grafana'
 title: 'تهيئة مصدر بيانات ClickHouse في Grafana'
 doc_type: 'guide'
-keywords: ['إعدادات المكوّن الإضافي في Grafana', 'إعدادات مصدر البيانات', 'معلمات الاتصال', 'إعداد المصادقة', 'خيارات المكون الإضافي']
+keywords: ['تهيئة المكون الإضافي في Grafana', 'إعدادات مصدر البيانات', 'معلمات الاتصال', 'إعداد المصادقة', 'خيارات المكون الإضافي']
 integration:
   - support_level: 'core'
   - category: 'data_visualization'
 ---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
 
 import { ClickHouseSupportedBadge } from "/snippets/ar/components/ClickHouseSupported/ClickHouseSupported.jsx";
 
@@ -24,11 +26,7 @@ import { ClickHouseSupportedBadge } from "/snippets/ar/components/ClickHouseSupp
 
 مثال على شاشة التهيئة:
 
-<div className="ch-image-sm">
-  <Frame>
-    ![مثال على إعداد آمن للبروتوكول الأصلي](/images/integrations/data-visualization/grafana/config_common.webp)
-  </Frame>
-</div>
+<Image size="sm" img="/images/integrations/data-visualization/grafana/config_common.webp" alt="مثال على تهيئة آمنة للبروتوكول الأصلي" border />
 
 مثال على ملف YAML للإعدادات الشائعة:
 
@@ -54,20 +52,18 @@ secureJsonData:
   tlsClientKey:  <string> # TLS client key
 ```
 
-لاحظ أنه تُضاف خاصية `version` عند حفظ التهيئة من واجهة المستخدم. ويُظهر ذلك إصدار المكوّن الإضافي الذي حُفظ به الإعداد.
+لاحظ أنه تُضاف خاصية `version` عند حفظ التهيئة من واجهة المستخدم. ويُظهر ذلك إصدار المكوّن الإضافي الذي حُفظت به التهيئة.
 
-### بروتوكول HTTP {#http-protocol}
+<div id="http-protocol">
+  ### بروتوكول HTTP
+</div>
 
 ستظهر إعدادات إضافية إذا اخترت الاتصال عبر بروتوكول HTTP.
 
-<div className="ch-image-md">
-  <Frame>
-    ![خيارات إعداد HTTP إضافية](/images/integrations/data-visualization/grafana/config_http.webp)
-  </Frame>
-</div>
+<Image size="md" img="/images/integrations/data-visualization/grafana/config_http.webp" alt="خيارات إعداد HTTP إضافية" border />
 
 <div id="http-path">
-  #### مسار HTTP {#http-path}
+  #### مسار HTTP
 </div>
 
 إذا كان خادم HTTP لديك مُتاحًا ضمن مسار URL مختلف، يمكنك إضافته هنا.
@@ -79,7 +75,7 @@ jsonData:
 ```
 
 <div id="custom-http-headers">
-  #### رؤوس HTTP مخصّصة {#custom-http-headers}
+  #### رؤوس HTTP مخصّصة
 </div>
 
 يمكنك إضافة رؤوس مخصّصة إلى الطلبات المُرسلة إلى الخادم لديك.
@@ -112,11 +108,7 @@ secureJsonData:
 
 هذه الإعدادات الإضافية اختيارية.
 
-<div className="ch-image-sm">
-  <Frame>
-    ![مثال لإعدادات إضافية](/images/integrations/data-visualization/grafana/config_additional.webp)
-  </Frame>
-</div>
+<Image size="sm" img="/images/integrations/data-visualization/grafana/config_additional.webp" alt="مثال لإعدادات إضافية" border />
 
 مثال YAML:
 
@@ -131,7 +123,7 @@ jsonData:
 ```
 
 <div id="opentelemetry">
-  ### OpenTelemetry {#opentelemetry}
+  ### OpenTelemetry
 </div>
 
 يأتي OpenTelemetry ‏(OTel) مدمجًا بشكل وثيق في المكوّن الإضافي.
@@ -151,13 +143,9 @@ jsonData:
 
 مثال على شاشة تهيئة السجلات:
 
-<div className="ch-image-sm">
-  <Frame>
-    ![إعداد السجلات](/images/integrations/data-visualization/grafana/config_logs.webp)
-  </Frame>
-</div>
+<Image size="sm" img="/images/integrations/data-visualization/grafana/config_logs.webp" alt="إعداد السجلات" border />
 
-مثال على YAML لإعداد السجلات:
+مثال على YAML لتهيئة السجلات:
 
 ```yaml
 jsonData:
@@ -193,13 +181,9 @@ jsonData:
 
 مثال على شاشة تهيئة التتبعات:
 
-<div className="ch-image-sm">
-  <Frame>
-    ![إعداد التتبعات](/images/integrations/data-visualization/grafana/config_traces.webp)
-  </Frame>
-</div>
+<Image size="sm" img="/images/integrations/data-visualization/grafana/config_traces.webp" alt="إعداد التتبعات" border />
 
-مثال على YAML لإعداد التتبعات:
+مثال على YAML لتهيئة التتبعات:
 
 ```yaml
 jsonData:
@@ -233,7 +217,7 @@ jsonData:
 أوقف مفتاح التبديل، أو اضبط `showTraceLinks: false` في YAML، لإخفائها.
 
 <div id="column-aliases">
-  ### الأسماء المستعارة للأعمدة {#column-aliases}
+  ### الأسماء المستعارة للأعمدة
 </div>
 
 يُعدّ استخدام الأسماء المستعارة للأعمدة طريقةً عملية للاستعلام عن بياناتك بأسماء وأنواع مختلفة.
@@ -247,7 +231,7 @@ jsonData:
 * تطبّق كثيرًا دوالًا لتحويل الأعمدة التي تختارها
 
 <div id="table-defined-alias-columns">
-  #### أعمدة ALIAS المعرّفة على الجدول {#table-defined-alias-columns}
+  #### أعمدة ALIAS المعرّفة على الجدول
 </div>
 
 يوفّر ClickHouse دعمًا مدمجًا للأسماء المستعارة للأعمدة، ويعمل مع Grafana مباشرةً.
@@ -284,7 +268,7 @@ CREATE TABLE aliases (
 )
 ```
 
-إليك كيف يمكننا محاكاة سلوك العمود `ALIAS` باستخدام جدول الأسماء المستعارة:
+إليك كيف يمكننا محاكاة سلوك العمود `ALIAS` باستخدام جدول alias:
 
 ```sql
 CREATE TABLE example_table (
@@ -300,19 +284,11 @@ INSERT INTO example_table_aliases (`alias`, `select`, `type`) VALUES
 
 يمكننا بعد ذلك إعداد هذا الجدول لاستخدامه في Grafana. لاحظ أن الاسم يمكن أن يكون أي اسم، أو حتى يمكن تعريفه في قاعدة بيانات منفصلة:
 
-<div className="ch-image-md">
-  <Frame>
-    ![مثال على إعداد جدول الأسماء المستعارة](/images/integrations/data-visualization/grafana/alias_table_config_example.webp)
-  </Frame>
-</div>
+<Image size="md" img="/images/integrations/data-visualization/grafana/alias_table_config_example.webp" alt="مثال على إعداد جدول الأسماء المستعارة" border />
 
 سيعرض Grafana الآن نتائج جدول الأسماء المستعارة بدلًا من النتائج الناتجة عن `DESC example_table`:
 
-<div className="ch-image-md">
-  <Frame>
-    ![مثال على استعلام جدول الأسماء المستعارة](/images/integrations/data-visualization/grafana/alias_table_select_example.webp)
-  </Frame>
-</div>
+<Image size="md" img="/images/integrations/data-visualization/grafana/alias_table_select_example.webp" alt="مثال على استعلام جدول الأسماء المستعارة" border />
 
 يمكن استخدام كلا نوعَي الأسماء المستعارة لإجراء تحويلات معقدة للأنواع أو لاستخراج حقول JSON.
 

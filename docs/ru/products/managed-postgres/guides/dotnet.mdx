@@ -7,6 +7,10 @@ keywords: ['managed postgres', '.net', 'dotnet', 'c#', 'asp.net core', 'entity f
 doc_type: 'guide'
 ---
 
+import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.guides-dotnet-beta" />
+
 [Entity Framework Core](https://learn.microsoft.com/ef/core/) (EF Core) — это ORM для .NET, а [Npgsql](https://www.npgsql.org/efcore/) — его провайдер для PostgreSQL. В этом руководстве вы разработаете минимальный API на ASP.NET Core, создадите для него таблицу с помощью миграции EF Core и реализуете конечные точки для создания, чтения, обновления и удаления данных. Все соединения используют TLS с полной проверкой сертификата.
 
 ## Предварительные требования {#prerequisites}

@@ -39,9 +39,9 @@ HyperDXRum.init({
 });
 ```
 
-### 附加用户信息或元数据 (可选) {#attach-user-information-metadata}
+### 附加用户信息或元数据 (可选)
 
-附加用户信息后，您就可以在 ClickStack 用户界面中搜索/过滤会话和事件。
+附加用户信息后，您就可以在 HyperDX 中搜索/过滤会话和事件。
 这可以在客户端会话期间的任何时间点调用。当前客户端会话以及调用后发送的所有事件，
 都会与该用户信息相关联。
 
@@ -54,7 +54,7 @@ HyperDXRum.setGlobalAttributes({
   userEmail: user.email,
   userName: user.name,
   teamName: user.team.name,
-  // Other custom properties...
+  // 其他自定义属性...
 });
 ```
 

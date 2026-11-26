@@ -11,6 +11,8 @@ integration:
   - website: 'https://github.com/ClickHouse/clickhouse-cs'
 ---
 
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
 O cliente oficial em C# para se conectar ao ClickHouse.
 O código-fonte do cliente está disponível no [repositório do GitHub](https://github.com/ClickHouse/clickhouse-cs).
 Desenvolvido originalmente por [Oleg V. Kozlyuk](https://github.com/DarkWanderer).
@@ -308,19 +310,11 @@ Os dados de conexão com seu serviço do ClickHouse Cloud estão disponíveis no
 
 Selecione um serviço e clique em **Connect**:
 
-<div className="ch-image-md">
-  <Frame>
-    ![Botão Connect do serviço ClickHouse Cloud](/images/_snippets/cloud-connect-button.webp)
-  </Frame>
-</div>
+<Image img="/images/_snippets/cloud-connect-button.webp" size="md" alt="Botão Connect do serviço ClickHouse Cloud" border />
 
 Escolha **C#**. Os dados de conexão serão exibidos abaixo.
 
-<div className="ch-image-md">
-  <Frame>
-    ![Dados de conexão do ClickHouse Cloud para C#](/images/_snippets/connection-details-csharp.webp)
-  </Frame>
-</div>
+<Image img="/images/_snippets/connection-details-csharp.webp" size="md" alt="Dados de conexão do ClickHouse Cloud para C#" border />
 
 Se você usa o ClickHouse autogerenciado, os dados de conexão são definidos pelo administrador do ClickHouse.
 
@@ -1935,7 +1929,7 @@ O driver respeita `DateTime.Kind` ao gravar valores:
 | ------------- | ------------------------------------------------------------------------------------- | --------------------------------------------------------- |
 | Utc           | Instante preservado                                                                   | Instante preservado                                       |
 | Local         | Instante preservado                                                                   | Instante preservado                                       |
-| Unspecified   | Interpretado como hora local no fuso horário do tipo do parâmetro (UTC por padrão) | Interpretado como hora local no fuso horário da coluna |
+| Unspecified   | Interpretado como horário civil no fuso horário do tipo do parâmetro (UTC por padrão) | Interpretado como horário civil no fuso horário da coluna |
 
 Os valores de `DateTimeOffset` sempre preservam o instante exato.
 

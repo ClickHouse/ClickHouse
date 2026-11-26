@@ -11,7 +11,7 @@
 -- caps use 0 = unlimited so they never drop below the query's `LIMIT`. `no-parallel-replicas` (like the
 -- other lazy-materialization tests): parallel replicas rewrite the read before lazy materialization runs.
 
-SET query_plan_remove_unused_joins = 0; -- The joins are what is tested, including the ones whose other side is not read
+SET enable_analyzer = 1;
 SET query_plan_filter_push_down = 1;
 SET query_plan_merge_expressions = 1;
 -- merged the pushed outer `cluster` predicate with the inner `ts` predicate into one filter node;

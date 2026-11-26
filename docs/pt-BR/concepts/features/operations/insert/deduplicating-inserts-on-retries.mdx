@@ -12,24 +12,34 @@ Quando uma inserção é tentada novamente, o ClickHouse tenta determinar se os 
 
 A desduplicação abrange inserções síncronas, inserções assíncronas e consultas `INSERT ... SELECT`. Uma configuração, `deduplicate_insert`, controla as inserções síncronas e assíncronas. `INSERT ... SELECT` exige cuidado adicional e tem sua própria configuração. Consulte [Configurações que controlam a desduplicação de inserções](#settings-that-control-insert-deduplication).
 
-## Limitações {#limitations}
+<div id="limitations">
+  ## Limitações
+</div>
 
-### Status incerto da inserção {#uncertain-insert-status}
+<div id="uncertain-insert-status">
+  ### Status incerto da inserção
+</div>
 
 O usuário deve repetir a operação de inserção até que ela seja concluída com sucesso. Se todas as tentativas falharem, é impossível determinar se os dados foram inseridos ou não. Quando há visões materializadas envolvidas, também não fica claro em quais tabelas os dados podem ter aparecido. As visões materializadas podem estar dessincronizadas em relação à tabela de origem.
 
-### Limite da janela de desduplicação {#deduplication-window-limit}
+<div id="deduplication-window-limit">
+  ### Limite da janela de desduplicação
+</div>
 
 Se mais de `*_deduplication_window` outras operações de inserção ocorrerem durante a sequência de tentativas, a desduplicação pode não funcionar como esperado. Nesse caso, os mesmos dados podem ser inseridos várias vezes.
 
-## Configurações que controlam a desduplicação de inserções {#settings-that-control-insert-deduplication}
+<div id="settings-that-control-insert-deduplication">
+  ## Configurações que controlam a desduplicação de inserções
+</div>
 
 O ClickHouse desduplica uma inserção somente quando ambas as condições a seguir são atendidas:
 
 1. A tabela de destino mantém um log de desduplicação. Essa é uma configuração no nível da tabela.
 2. A desduplicação está habilitada para a consulta. Essa é uma configuração no nível da consulta.
 
-### Configurações no nível da tabela {#insert-deduplication-for-tables}
+<div id="insert-deduplication-for-tables">
+  ### Configurações no nível da tabela
+</div>
 
 **Somente motores `*MergeTree` oferecem suporte à desduplicação durante a inserção.**
 
@@ -41,7 +51,9 @@ As configurações acima determinam os parâmetros do log de desduplicação de 
   [`replicated_deduplication_window_for_async_inserts`](/pt-BR/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window_for_async_inserts) e [`replicated_deduplication_window_seconds_for_async_inserts`](/pt-BR/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window_seconds_for_async_inserts) são configurações legadas. Inserções síncronas e assíncronas agora compartilham um log de desduplicação, portanto `replicated_deduplication_window` controla ambas. As configurações legadas apenas delimitavam o antigo diretório do ClickHouse Keeper, o que é importante durante um upgrade gradual.
 </Note>
 
-### Configurações no nível da consulta {#query-level-insert-deduplication}
+<div id="query-level-insert-deduplication">
+  ### Configurações no nível da consulta
+</div>
 
 | Configuração                                                                                                                                          | Aplica-se a                                 | Padrão                 | Finalidade                                                                       |
 | ----------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------- | ---------------------- | -------------------------------------------------------------------------------- |
@@ -58,13 +70,17 @@ As configurações acima determinam os parâmetros do log de desduplicação de 
 
 Observe que uma consulta executada com `deduplicate_insert = disable` não grava `block_id`s para seus blocos. Esses dados não podem ser desduplicados posteriormente, mesmo que você repita o insert com `deduplicate_insert = enable`. O mesmo vale quando a tabela de destino não mantém um log de desduplicação: nada é registrado e, portanto, nada pode ser identificado em uma nova tentativa.
 
-### Precedência {#precedence}
+<div id="precedence">
+  ### Precedência
+</div>
 
 1. Para uma consulta `INSERT ... SELECT`, o parâmetro `deduplicate_insert_select` é determinante. Consulte [Desduplicação para INSERT ... SELECT](#deduplication-for-insert-select).
 2. Para todos os outros comandos `INSERT`, o parâmetro `deduplicate_insert` é determinante.
 3. `insert_deduplicate` e `async_insert_deduplicate` são lidos apenas quando `deduplicate_insert` é `backward_compatible_choice`.
 
-### Configurações legadas e obsoletas {#legacy-and-obsolete-settings}
+<div id="legacy-and-obsolete-settings">
+  ### Configurações legadas e obsoletas
+</div>
 
 | Configuração                                                                                             | Status                                                                       | Use em vez desta            |
 | -------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- | --------------------------- |
@@ -79,7 +95,9 @@ Observe que uma consulta executada com `deduplicate_insert = disable` não grava
 
 A versão 26.2 também alterou os valores padrão de `async_insert` e `deduplicate_blocks_in_dependent_materialized_views` para ativados. A configuração [`compatibility`](/pt-BR/reference/settings/session-settings/compatibility#compatibility) controla as três. Se você definir `compatibility` como uma versão anterior à `26.2`, essas configurações manterão os valores padrão antigos: `deduplicate_insert` passa a ser `backward_compatible_choice`, delegando a decisão a `insert_deduplicate` e `async_insert_deduplicate`. Uma configuração definida explicitamente é sempre respeitada e nunca é afetada por `compatibility`.
 
-## Como funciona a desduplicação de inserções {#how-insert-deduplication-works}
+<div id="how-insert-deduplication-works">
+  ## Como funciona a desduplicação de inserções
+</div>
 
 Quando os dados são inseridos no ClickHouse, eles são divididos em blocos com base no número de linhas e bytes.
 
@@ -89,7 +107,9 @@ Essa abordagem funciona bem quando as inserções contêm dados diferentes. No e
 
 Para consultas `INSERT ... VALUES`, a divisão dos dados inseridos em blocos é determinística e definida pelas configurações. Portanto, você deve repetir as inserções com os mesmos valores de configuração da operação inicial.
 
-## Desduplicação para `INSERT ... SELECT` {#deduplication-for-insert-select}
+<div id="deduplication-for-insert-select">
+  ## Desduplicação para `INSERT ... SELECT`
+</div>
 
 Em consultas `INSERT ... SELECT`, a parte `SELECT` deve retornar os mesmos dados na mesma ordem em todas as tentativas. Caso contrário, os blocos e os `block_id`s serão diferentes, e a nova tentativa não será reconhecida como duplicada.
 
@@ -118,7 +138,9 @@ Lembre-se de que a tabela selecionada pode ser atualizada entre as tentativas. O
 
 Escolha o caminho que corresponda ao significado que você deseja atribuir a uma nova tentativa. Além disso, ao inserir grandes volumes de dados, o número de blocos pode exceder a janela do log de desduplicação, e o ClickHouse não saberá que deve desduplicar os blocos.
 
-## Desduplicação de inserções assíncronas {#deduplication-for-asynchronous-inserts}
+<div id="deduplication-for-asynchronous-inserts">
+  ## Desduplicação de inserções assíncronas
+</div>
 
 As inserções assíncronas ([`async_insert`](/pt-BR/reference/settings/session-settings/async-insert#async_insert), habilitadas por padrão desde a versão 26.2) são desduplicadas em novas tentativas da mesma forma que as inserções síncronas. `deduplicate_insert` controla ambos, portanto não é necessário um parâmetro separado.
 
@@ -128,7 +150,9 @@ Os dois tipos de inserção também compartilham um único log de desduplicaçã
   Antes da versão 26.2, a desduplicação de inserções assíncronas era desabilitada por padrão e controlada por `async_insert_deduplicate`. Essa configuração agora é lida apenas quando `deduplicate_insert` é `backward_compatible_choice`.
 </Note>
 
-### Granularidade da desduplicação {#asynchronous-insert-deduplication-granularity}
+<div id="asynchronous-insert-deduplication-granularity">
+  ### Granularidade da desduplicação
+</div>
 
 O servidor reúne várias inserções assíncronas em um batch e grava esse batch como uma ou mais partes, pelo menos uma para cada valor distinto da chave de partição. A desduplicação funciona por consulta do usuário, e não por batch:
 
@@ -143,17 +167,19 @@ Isso tem duas consequências:
 
 Os eventos `DuplicatedAsyncInserts` e `SelfDuplicatedAsyncInserts` em [`system.events`](/pt-BR/reference/system-tables/events) contabilizam esses dois casos.
 
-### Inserções assíncronas e visões materializadas {#asynchronous-inserts-and-materialized-views}
+<div id="asynchronous-inserts-and-materialized-views">
+  ### Inserções assíncronas e visões materializadas
+</div>
 
-A desduplicação de inserções assíncronas funciona em conjunto com visões materializadas dependentes. A regra é: entra um bloco, sai um bloco. O ClickHouse grava a saída de uma visão para um lote gravado em disco como um único bloco, independentemente do que a consulta interna faça, por exemplo, filtragem, agregação, `ARRAY JOIN` ou um `JOIN` que adiciona linhas. As configurações de tamanho do bloco [`min_insert_block_size_rows`](/pt-BR/reference/settings/session-settings/min-insert#min_insert_block_size_rows) e [`min_insert_block_size_bytes`](/pt-BR/reference/settings/session-settings/min-insert#min_insert_block_size_bytes) não dividem esse bloco.
+A desduplicação de inserções assíncronas funciona em conjunto com visões materializadas dependentes. A regra é simples: entra um bloco, sai um bloco. Se a consulta interna de uma visão transforma um bloco de entrada em um bloco de saída, a desduplicação funciona. Se a visão emitir um segundo bloco, o ClickHouse lançará uma exceção `NOT_IMPLEMENTED`.
 
-O fator limitante é a memória. Toda a saída de uma visão para um lote é mantida em memória, portanto seu tamanho é aproximadamente o tamanho do lote multiplicado pelo número de linhas que a visão produz por linha de entrada. Se ela não couber nos limites de memória da consulta e do servidor, o insert falha com uma exceção `MEMORY_LIMIT_EXCEEDED`. Isso afeta principalmente visões que multiplicam linhas, por exemplo, um `ARRAY JOIN` sobre arrays grandes ou um `JOIN` que corresponde a muitas linhas. Para uma visão desse tipo, você pode:
+Uma visão emite um segundo bloco quando sua saída não cabe mais em um único bloco. [`max_block_size`](/pt-BR/reference/settings/session-settings/max#max_block_size) define quantas linhas cabem. Transformações de colunas, filtragem e agregação nunca adicionam linhas, portanto, sempre permanecem em um único bloco. Um `JOIN` pode adicionar linhas. Ele funciona enquanto o resultado permanecer abaixo de `max_block_size` e falha acima desse limite.
 
-* Reduzir o tamanho dos lotes com [`async_insert_max_data_size`](/pt-BR/reference/settings/session-settings/async-insert#async_insert_max_data_size).
-* Definir [`deduplicate_blocks_in_dependent_materialized_views`](/pt-BR/reference/settings/session-settings/other#deduplicate_blocks_in_dependent_materialized_views) como `0`. Assim, a saída da visão é dividida em blocos do tamanho habitual, mas um insert tentado novamente é inserido outra vez nas tabelas de destino da visão.
-* Usar inserções síncronas, que desduplicam a saída de uma visão composta por vários blocos.
+Para inserir por meio de uma visão que emite mais de um bloco, defina `deduplicate_blocks_in_dependent_materialized_views = 0` ou use inserts síncronos.
 
-## Desduplicação de inserções com visões materializadas {#insert-deduplication-with-materialized-views}
+<div id="insert-deduplication-with-materialized-views">
+  ## Desduplicação de inserções com visões materializadas
+</div>
 
 Quando uma tabela tem uma ou mais visões materializadas, os dados inseridos também são inseridos no destino dessas visões com as transformações definidas. Os dados transformados também passam por desduplicação em novas tentativas. O ClickHouse realiza a desduplicação para visões materializadas da mesma forma que desduplica os dados inseridos na tabela de destino.
 
@@ -167,9 +193,13 @@ A desduplicação nas tabelas sob visões materializadas também é controlada p
 
 Ao inserir blocos em tabelas sob visões materializadas, o ClickHouse calcula o `block_id` aplicando hash a uma string que combina os `block_id`s da tabela de origem com identificadores adicionais. Isso garante uma desduplicação precisa dentro das visões materializadas, permitindo distinguir os dados com base na inserção original, independentemente de quaisquer transformações aplicadas antes de chegarem à tabela de destino sob a visão materializada.
 
-## Exemplos {#examples}
+<div id="examples">
+  ## Exemplos
+</div>
 
-### Blocos idênticos após transformações em uma visão materializada {#identical-blocks-after-materialized-view-transformations}
+<div id="identical-blocks-after-materialized-view-transformations">
+  ### Blocos idênticos após transformações em uma visão materializada
+</div>
 
 Blocos idênticos gerados durante a transformação em uma visão materializada não são desduplicados, porque se baseiam em dados inseridos diferentes.
 
@@ -289,7 +319,9 @@ ORDER by all;
 
 Aqui vemos que, quando tentamos novamente as inserções, todos os dados são desduplicados. A desduplicação funciona tanto para as tabelas `dst` quanto para `mv_dst`.
 
-### Blocos idênticos durante a inserção {#identical-blocks-on-insertion}
+<div id="identical-blocks-on-insertion">
+  ### Blocos idênticos durante a inserção
+</div>
 
 ```sql
 CREATE TABLE dst
@@ -330,7 +362,9 @@ ORDER BY all;
 
 Com as configurações  acima, dois blocos resultam do select– portanto, deveria haver dois blocos para inserção na tabela `dst`. No entanto, vemos que apenas um bloco foi inserido na tabela `dst`. Isso ocorreu porque o segundo bloco foi desduplicado. Ele tem os mesmos dados e a chave de desduplicação `block_id`, calculada como um hash dos dados inseridos. Esse comportamento não era o esperado. Casos assim são raros, mas teoricamente podem acontecer. Para lidar corretamente com esses casos, o usuário precisa fornecer um `insert_deduplication_token`. Vamos corrigir isso com os exemplos a seguir:
 
-### Blocos idênticos durante a inserção com `insert_deduplication_token` {#identical-blocks-in-insertion-with-insert_deduplication_token}
+<div id="identical-blocks-in-insertion-with-insert_deduplication_token">
+  ### Blocos idênticos durante a inserção com `insert_deduplication_token`
+</div>
 
 ```sql
 CREATE TABLE dst
@@ -425,7 +459,9 @@ ORDER BY all;
 
 Essa inserção também é desduplicada, embora contenha dados inseridos distintos. Observe que `insert_deduplication_token` tem prioridade: o ClickHouse não usa o hash dos dados quando `insert_deduplication_token` é fornecido.
 
-### Diferentes operações de inserção produzem os mesmos dados após a transformação na tabela subjacente da visão materializada {#different-insert-operations-generate-the-same-data-after-transformation-in-the-underlying-table-of-the-materialized-view}
+<div id="different-insert-operations-generate-the-same-data-after-transformation-in-the-underlying-table-of-the-materialized-view">
+  ### Diferentes operações de inserção produzem os mesmos dados após a transformação na tabela subjacente da visão materializada
+</div>
 
 ```sql
 CREATE TABLE dst
@@ -523,7 +559,9 @@ ORDER by all;
 
 Inserimos dados diferentes a cada vez. No entanto, os mesmos dados são inseridos na tabela `mv_dst`. Os dados não são desduplicados porque os dados de origem eram diferentes.
 
-### Inserções de diferentes visões materializadas em uma única tabela subjacente com dados equivalentes {#different-materialized-view-inserts-into-one-underlying-table-with-equivalent-data}
+<div id="different-materialized-view-inserts-into-one-underlying-table-with-equivalent-data">
+  ### Inserções de diferentes visões materializadas em uma única tabela subjacente com dados equivalentes
+</div>
 
 ```sql
 CREATE TABLE dst

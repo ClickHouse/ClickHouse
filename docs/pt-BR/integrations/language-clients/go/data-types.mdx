@@ -4,7 +4,7 @@ keywords: ['clickhouse', 'go', 'golang', 'tipos', 'tipos de dados', 'tipos compl
 description: 'Mapeamentos de tipos em Go e suporte a tipos complexos no clickhouse-go.'
 slug: /integrations/language-clients/go/data-types
 title: 'Tipos de dados'
-doc_type: 'reference'
+doc_type: 'referência'
 ---
 
 ## Conversões de tipo {#type-conversions}
@@ -633,7 +633,7 @@ fmt.Printf("col1=%v, col2=%v, col3=%v, col4=%v, col5=%v\n", col1, col2, col3, co
 
 O valor Nil em Go representa um NULL no ClickHouse. Isso pode ser usado se um campo for declarado como Nullable. No momento do insert, Nil pode ser passado tanto para a versão normal quanto para a versão Nullable de uma coluna. No primeiro caso, o valor padrão do tipo será persistido, por exemplo, uma string vazia para string. Já na versão Nullable, um valor NULL será armazenado no ClickHouse.
 
-No momento da leitura, o usuário deve passar um ponteiro para um tipo que aceite nil, por exemplo, *string, para representar o valor nil de um campo Nullable. No exemplo abaixo, col1, que é um Nullable(String), recebe, portanto, um **string. Isso permite representar nil. Ler um NULL em um destino que não consegue representar nil, por exemplo, *int64, retorna o erro &quot;converting NULL to *int64 is unsupported&quot;. Tipos que implementam `sql.Scanner` tratam NULL por meio do próprio `Scan(nil)`.
+No momento da leitura, o usuário deve passar um ponteiro para um tipo que aceite nil, por exemplo, *string, para representar o valor nil de um campo Nullable. No exemplo abaixo, col1, que é um Nullable(String), recebe, portanto, um **string. Isso permite representar nil.
 
 ```go
 if err = conn.Exec(ctx, `

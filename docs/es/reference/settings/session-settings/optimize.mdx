@@ -49,14 +49,6 @@ Posibles valores:
 * 0 — siempre,
 * entero negativo - nunca.
 
-## optimize_constant_columns_after_filter {#optimize_constant_columns_after_filter}
-
-<SettingsInfoBlock type="Bool" default_value="1" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "Nueva configuración para reemplazar las columnas filtradas por `ColumnConst` cuando un predicado de igualdad garantiza que todos los valores que pasan el filtro son iguales a una constante."}]}]} />
-
-Reemplazar las columnas filtradas por `ColumnConst` cuando un predicado de igualdad garantiza que todos los valores que pasan el filtro son iguales a una constante.
-
 ## optimize_count_from_files {#optimize_count_from_files}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -277,18 +269,6 @@ añadir filtros adicionales sobre un paso de lectura de `MergeTree` (p. ej., pus
 `JOIN`, reescrituras de proyección). Cuando ya existe un `PREWHERE`, el nuevo
 filtro se fusiona con él mediante `AND` en lugar de permanecer como un paso de filtro independiente.
 
-## optimize_projection_skip_index_ratio {#optimize_projection_skip_index_ratio}
-
-<SettingsInfoBlock type="Float" default_value="0.5" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0.5"},{"label": "Nueva configuración que controla cuándo la selección de proyecciones aplica los índices de omisión diferidos de la tabla base antes de comparar costes: la pasada adicional solo se ejecuta si el mejor candidato de proyección lee más de esta fracción de la estimación de marcas de la tabla padre basada únicamente en la clave primaria. El valor anterior, 1.0, restaura el comportamiento previo: con una proporción = 1, el refinamiento nunca se ejecuta, ya que solo podría influir en candidatos que la comparación basada únicamente en la clave primaria ya descarta de todos modos."}]}]} />
-
-Cuando `use_skip_indexes_on_data_read` está habilitado, los índices de omisión de la tabla base se aplican durante la lectura de datos, por lo que el número de marcas con el que se compara un candidato de proyección normal se estima únicamente a partir de la clave primaria. Si el mejor candidato de proyección normal lee más de esta fracción de dicha estimación y la tabla base tiene índices de omisión aplicables a la consulta, estos se aplican a la tabla base durante la planificación y se utiliza el número de marcas refinado para la comparación. Con `0` se aplican siempre; con `1` se mantiene la comparación basada únicamente en la clave primaria. Las proyecciones de agregación no se ven afectadas.
-
-Valores posibles:
-
-* Un número de coma flotante en el rango `[0, 1]`.
-
 ## optimize_qbit_distance_function_reads {#optimize_qbit_distance_function_reads}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -409,14 +389,6 @@ Optimiza los predicados de Date y DateTime convirtiendo las funciones en compara
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "1"},{"label": "Eliminar los elementos finales de ORDER BY una vez que todas las claves de GROUP BY queden incluidas en el prefijo de ORDER BY."}]}]} />
 
 Eliminar los elementos finales de ORDER BY una vez que todas las claves de GROUP BY queden incluidas en el prefijo de ORDER BY.
-
-## optimize_uniq_exact_radix_partitioning {#optimize_uniq_exact_radix_partitioning}
-
-<SettingsInfoBlock type="Bool" default_value="1" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "Nueva configuración para calcular un único `uniqExact` o `count(DISTINCT)` sin `GROUP BY` particionando los valores según su hash, en lugar de fusionar los conjuntos hash de cada thread."}]}]} />
-
-Calcula un único `uniqExact` (y `count(DISTINCT)`, que lo utiliza de forma predeterminada) en una consulta sin `GROUP BY` particionando los valores según su hash, en lugar de fusionar los conjuntos hash de cada thread. Cada thread dirige sus valores a las particiones; después, se eliminan los duplicados de las particiones en paralelo, cada una en un conjunto hash lo bastante pequeño como para caber en la caché de la CPU, y el resultado es la suma de sus tamaños. Se aplica a un solo argumento de un tipo numérico de hasta 64 bits, `Date`, `Date32`, `DateTime`, `Enum`, `IPv4`, `IPv6`, `UUID`, integers de 128 bits, `String`, `FixedString` o `Nullable` de cualquiera de ellos, cuando el resultado se finaliza en el mismo servidor. Cada thread sigue insertando en su propio conjunto pequeño, igual que en la agregación ordinaria, hasta que el conjunto excede el tamaño de la caché de la CPU, de modo que el enrutamiento solo se activa con entradas high-cardinality, y un thread vuelve a su propio conjunto si la mayoría de sus valores resultan ser repetidos.
 
 ## optimize_uniq_to_count {#optimize_uniq_to_count}
 

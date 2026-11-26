@@ -9,10 +9,6 @@ doc_type: 'changelog'
 
 ## 後方互換性を持たない変更 {#backward-incompatible-changes}
 
-### Dictionary ソースの認証情報 {#dictionary-source-credentials}
-
-* ClickHouse Cloud バージョン 26.6.1.240 以降、`default` 以外のユーザーは、指定したパスワードにかかわらず、`CLICKHOUSE` ソースのユーザーとして `default` を指定した Dictionary を作成できなくなりました。これは、ソースの認証情報を名前付きコレクションから取得する場合にも適用されます。`user` と `password` の両方の指定は以前から必須でしたが、今後は `default` を明示的に指定すると、`BAD_ARGUMENTS` (code 36) エラーで拒否されます: ``A non-default user cannot create a dictionary that connects as passwordless dictionary source user `default`.`` Dictionary の作成および移行に使用する DDL を更新し、ソーステーブルに対する `SELECT` 権限を持つ専用のソースユーザーを使用するよう変更してください。詳細は [ClickHouse Dictionary ソースの例](/ja/reference/statements/create/dictionary/sources/clickhouse) を参照してください。
-
 ### クエリと構文の変更 {#query-and-syntax-changes}
 
 * ウィンドウ関数 `RANK` および `DENSE_RANK` は、SQL standard に準拠し、引数を受け付けずに `NUMBER_OF_ARGUMENTS_DOESNT_MATCH` をスローするようになりました。従来は `RANK(x) OVER (ORDER BY id)` のようなクエリが引数を無視したまま暗黙的に受け入れられており、ユーザーの混乱を招く一因となっていました。従来の寛容な動作に戻すには、`allow_rank_dense_rank_arguments = 1` を設定してください。[#104324](https://github.com/ClickHouse/ClickHouse/pull/104324) ([groeneai](https://github.com/groeneai))。

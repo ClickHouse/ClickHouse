@@ -12,7 +12,9 @@ import SettingsInfoBlock from "/snippets/zh/components/SettingsInfoBlock/Setting
 
 这些设置是由 [source](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/FormatFactorySettings.h) 自动生成的。
 
-## schema_inference_hints {#schema_inference_hints}
+<div id="schema_inference_hints">
+  ## schema_inference_hints
+</div>
 
 对于没有 schema 的格式，用于在 schema 推断 中作为提示的列名和类型列表。
 
@@ -36,7 +38,9 @@ z   IPv4
   如果 `schema_inference_hints` 格式不正确，或者包含拼写错误、错误的数据类型等问题，那么整个 schema&#95;inference&#95;hints 都会被忽略。
 </Note>
 
-## schema_inference_make_columns_nullable {#schema_inference_make_columns_nullable}
+<div id="schema_inference_make_columns_nullable">
+  ## schema_inference_make_columns_nullable
+</div>
 
 <SettingsInfoBlock type="UInt64Auto" default_value="3" />
 
@@ -48,14 +52,18 @@ z   IPv4
 * 2 或 `auto` - 仅当列在 schema 推断 期间解析的样本中包含 `NULL`，或者文件 metadata 包含列可空性信息时，推断出的类型才会是 `Nullable`，
 * 3 - 如果该格式包含文件 metadata，则推断出的类型可空性将与其保持一致 (例如 Parquet) ；否则始终为 `Nullable` (例如 CSV) 。
 
-## schema_inference_make_json_columns_nullable {#schema_inference_make_json_columns_nullable}
+<div id="schema_inference_make_json_columns_nullable">
+  ## schema_inference_make_json_columns_nullable
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 控制在 schema 推断 中将推断出的 JSON type 设为 `Nullable`。
 如果此设置与 schema&#95;inference&#95;make&#95;columns&#95;nullable 同时启用，则推断出的 JSON type 将为 `Nullable`。
 
-## schema_inference_mode {#schema_inference_mode}
+<div id="schema_inference_mode">
+  ## schema_inference_mode
+</div>
 
 <SettingsInfoBlock type="SchemaInferenceMode" default_value="default" />
 

@@ -19,13 +19,17 @@ keywords: ['clickstack', 'kubernetes', 'السجلات', 'الرصد', 'مراق
 
 يفترض هذا الدليل أنك قمت بنشر [ClickStack OTel collector بوصفه gateway](/ar/clickstack/ingesting-data/collector)، مع تأمينه باستخدام مفتاح واجهة برمجة تطبيقات للإدخال.
 
-## إنشاء ملفات تكوين مخطط Helm لـ OTel {#creating-the-otel-helm-chart-config-files}
+<div id="creating-the-otel-helm-chart-config-files">
+  ## إنشاء ملفات تكوين مخطط Helm لـ OTel
+</div>
 
 لجمع السجلات والمقاييس من كل عقدة ومن العنقود نفسه، سنحتاج إلى نشر جامعَي OpenTelemetry منفصلين. سيُنشر أحدهما كـ DaemonSet لجمع السجلات والمقاييس من كل عقدة، وسيُنشر الآخر كعملية نشر لجمع السجلات والمقاييس من العنقود نفسه.
 
-### إنشاء Kubernetes secret لمفتاح API {#create-api-key-secret}
+<div id="create-api-key-secret">
+  ### إنشاء Kubernetes secret لمفتاح API
+</div>
 
-أنشئ Kubernetes secret جديدًا باستخدام [مفتاح واجهة برمجة تطبيقات للإدخال](/ar/clickstack/ingesting-data/opentelemetry#sending-otel-data) من واجهة مستخدم ClickStack. ستستخدمه المكوّنات المُثبّتة أدناه لإدخال البيانات بأمان إلى ClickStack OTel collector لديك:
+أنشئ Kubernetes secret جديدًا باستخدام [مفتاح واجهة برمجة تطبيقات للإدخال](/ar/clickstack/ingesting-data/opentelemetry#sending-otel-data) من HyperDX. ستستخدمه المكوّنات المُثبّتة أدناه لإدخال البيانات بأمان إلى ClickStack OTel collector لديك:
 
 ```shell
 kubectl create secret generic hyperdx-secret \
@@ -39,7 +43,9 @@ kubectl create configmap -n=otel-demo otel-config-vars --from-literal=YOUR_OTEL_
 # e.g. kubectl create configmap -n=otel-demo otel-config-vars --from-literal=YOUR_OTEL_COLLECTOR_ENDPOINT=http://my-hyperdx-hdx-oss-v2-otel-collector:4318
 ```
 
-### إنشاء تهيئة الـ DaemonSet {#creating-the-daemonset-configuration}
+<div id="creating-the-daemonset-configuration">
+  ### إنشاء تهيئة الـ DaemonSet
+</div>
 
 سيجمع الـ DaemonSet السجلات والمقاييس من كل عقدة في العنقود، لكنه لن يجمع أحداث Kubernetes أو المقاييس على مستوى العنقود بالكامل.
 
@@ -249,7 +255,9 @@ curl -O https://raw.githubusercontent.com/ClickHouse/clickhouse-docs/refs/heads/
   </Tab>
 </Tabs>
 
-### إنشاء تهيئة النشر {#creating-the-deployment-configuration}
+<div id="creating-the-deployment-configuration">
+  ### إنشاء تهيئة النشر
+</div>
 
 لجمع أحداث Kubernetes والمقاييس على مستوى العنقود بالكامل، سنحتاج إلى نشر جامع OpenTelemetry منفصل ككائن Deployment.
 
@@ -383,9 +391,11 @@ curl -O https://raw.githubusercontent.com/ClickHouse/clickhouse-docs/refs/heads/
   </Tab>
 </Tabs>
 
-## نشر جامع البيانات OpenTelemetry {#deploying-the-otel-collector}
+<div id="deploying-the-otel-collector">
+  ## نشر جامع OpenTelemetry
+</div>
 
-يمكن الآن نشر جامع البيانات OpenTelemetry في عنقود Kubernetes لديك باستخدام [مخطط Helm لـ OpenTelemetry](https://github.com/open-telemetry/opentelemetry-helm-charts/tree/main/charts/opentelemetry-collector).
+يمكن الآن نشر جامع OpenTelemetry في عنقود Kubernetes لديك باستخدام [مخطط Helm لـ OpenTelemetry](https://github.com/open-telemetry/opentelemetry-helm-charts/tree/main/charts/opentelemetry-collector).
 
 أضف مستودع Helm الخاص بـ OpenTelemetry:
 
@@ -393,7 +403,7 @@ curl -O https://raw.githubusercontent.com/ClickHouse/clickhouse-docs/refs/heads/
 helm repo add open-telemetry https://open-telemetry.github.io/opentelemetry-helm-charts # Add OTel Helm repo
 ```
 
-ثبّت مخطط Helm باستخدام الإعدادات أعلاه:
+ثبّت حزمة Helm باستخدام الإعدادات أعلاه:
 
 ```shell copy
 helm install my-opentelemetry-collector-deployment open-telemetry/opentelemetry-collector -f k8s_deployment.yaml
@@ -401,9 +411,11 @@ helm install my-opentelemetry-collector-daemonset open-telemetry/opentelemetry-c
 ```
 
 الآن، يُفترض أن تظهر المقاييس والسجلات وأحداث Kubernetes من عنقود Kubernetes لديك
-داخل واجهة مستخدم ClickStack.
+داخل HyperDX.
 
-## تمرير وسوم المورد إلى الكبسولات (مُوصى به) {#forwarding-resouce-tags-to-pods}
+<div id="forwarding-resouce-tags-to-pods">
+  ## تمرير وسوم المورد إلى الكبسولات (مُوصى به)
+</div>
 
 لربط السجلات والمقاييس والتتبعات على مستوى التطبيق ببيانات Kubernetes الوصفية
 (مثل اسم الكبسولة، ومساحة الأسماء، وما إلى ذلك)، ستحتاج إلى تمرير بيانات Kubernetes الوصفية

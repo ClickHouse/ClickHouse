@@ -34,7 +34,7 @@ private:
     /// ETag observed at read setup; each GET response ETag is checked against it to catch an
     /// in-place overwrite mid-read (instead of stitching two object generations). Empty means skip.
     String expected_etag;
-    /// `getCacheTokenHash` of the ETag each GET response must have, when only the hash is known (on a
+    /// `getETagHash` of the ETag each GET response must have, when only the hash is known (on a
     /// distributed cache server). 0 means skip.
     UInt64 expected_etag_hash;
     const S3::S3RequestSettings request_settings;
@@ -112,8 +112,6 @@ public:
     std::string getStopReason() const { return stop_reason; }
 
     std::optional<RemoteFileMetadata> getRemoteFileMetadata() const override;
-
-    void setIOSchedulingSettings(const IOSchedulingSettings & io_scheduling) override;
 
 private:
     std::unique_ptr<S3::ReadBufferFromGetObjectResult> initialize(size_t attempt);

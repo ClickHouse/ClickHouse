@@ -1,8 +1,10 @@
--- Tags: no-fasttest, long, no-msan
+-- Tags: no-fasttest, long
 -- Random settings limits: index_granularity=(8192, None); index_granularity_bytes=(100000, None); max_threads=(4, 32)
 -- index_granularity is floored at the engine default on purpose: tiny granules multiply the
 -- mark count over these 71 SELECTs and timed the test out on slow builds.
 
+SET enable_json_type = 1;
+set allow_experimental_variant_type = 1;
 set use_variant_as_common_type = 1;
 set session_timezone = 'UTC';
 

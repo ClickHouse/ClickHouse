@@ -198,13 +198,11 @@ SETTINGS
 
 ### `after_processing_move_uri` {#after_processing_move_uri}
 
-移動先が別のS3バケットである場合に、正常に処理されたファイルの移動先となるS3バケットのURI。
-
-この設定は `INSERT INTO FUNCTION s3('<destination>') SELECT * FROM <table>` と同じデータフローになるため、`S3` ソースに対する `WRITE` 権限が必要です。URLフィルタで制限された権限では不十分です。移動処理では、URIではなく `after_processing_move_prefix` と移動元のキーから構築されたキーに書き込むためです。また、`ALTER TABLE ... MODIFY SETTING` を実行するには、テーブルに対する `SELECT` 権限も必要です。宛先は `remote_url_allow_hosts` で許可されている必要があります。移動処理では、`s3` テーブル関数がデフォルトの `s3_uri_style` で行うのと同様に、常にスタイルを自動検出してURIをパースします。そのため、`uri_style` サーバー設定および `s3_uri_style` クエリ設定は適用されません。
+宛先が別の S3 バケットである場合に、正常に処理されたファイルの移動先となる S3 バケットの URI。
 
 設定可能な値:
 
-* String。
+* String.
 
 デフォルト値: 空文字列。
 

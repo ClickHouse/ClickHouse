@@ -19,19 +19,22 @@ ClickHouse prend en charge l’intégration avec plusieurs catalogues (Unity, Gl
   `SET allow_database_iceberg = 1;`
 </Note>
 
-## Prérequis {#prerequisites}
+<div id="prerequisites">
+  ## Prérequis
+</div>
 
-Avant de créer une connexion entre ClickHouse et le Catalogue d’exécution Lakehouse (BigLake Metastore), assurez-vous de disposer des éléments suivants :
+Avant de créer une connexion entre ClickHouse et le catalogue d’exécution du lakehouse (BigLake Metastore), assurez-vous de disposer des éléments suivants :
 
-* Un **projet Google Cloud** avec le Catalogue d’exécution Lakehouse activé
-* Des identifiants, au choix :
-  * Une **clé de compte de service** : un fichier de clé JSON d’un compte de service disposant d’un accès au catalogue et au bucket GCS, créé via [Google Cloud Console](https://docs.cloud.google.com/iam/docs/keys-create-delete). C’est l’option recommandée pour les serveurs, car elle ne dépend pas d’une session utilisateur.
-  * Des **identifiants Application Default** (ID client OAuth et secret client) pour une application, créés via [Google Cloud Console](https://docs.cloud.google.com/docs/authentication/provide-credentials-adc), ainsi qu’un **jeton d’actualisation** obtenu en suivant le flux OAuth avec les scopes appropriés (par ex. `https://www.googleapis.com/auth/bigquery` et le scope de stockage pour GCS)
-* Un **chemin de warehouse** : un bucket GCS (et un préfixe facultatif) où vos tables sont stockées, par ex. `gs://your-bucket` ou `gs://your-bucket/prefix`
+* Un **projet Google Cloud** avec le catalogue d’exécution du lakehouse activé
+* Des **identifiants Application Default** (ID client OAuth et secret client) pour une application, créés via [Google Cloud Console](https://docs.cloud.google.com/docs/authentication/provide-credentials-adc)
+* Un **jeton d&#39;actualisation** obtenu en suivant le flux OAuth avec les scopes appropriés (par ex. `https://www.googleapis.com/auth/bigquery` et le scope de stockage pour GCS)
+* Un **chemin de warehouse** : un bucket GCS (et un préfixe facultatif) où vos tables sont stockées, par ex. `gs://your-bucket` ou `gs://your-bucket/prefix`
 
-## Créer une connexion entre le Catalogue d’exécution Lakehouse et ClickHouse {#creating-a-connection}
+<div id="creating-a-connection">
+  ## Créer une connexion entre le catalogue d’exécution du lakehouse et ClickHouse
+</div>
 
-Une fois les identifiants OAuth configurés, créez une base de données dans ClickHouse qui utilise le moteur de base de données [DataLakeCatalog](/fr/reference/engines/database-engines/datalake) :
+Une fois les identifiants OAuth configurés, créez une base de données dans ClickHouse qui utilise le moteur de base de données [DataLakeCatalog](/fr/reference/engines/database-engines/datalake) :
 
 ```sql
 SET allow_database_iceberg = 1;
@@ -47,21 +50,9 @@ SETTINGS
     warehouse = 'gs://<bucket_name>/<optional-prefix>';
 ```
 
-Pour vous authentifier avec une clé de compte de service plutôt, transmettez le contenu du fichier de clé JSON dans `google_service_account_key` et le projet dans `google_project_id`. ClickHouse signe un JWT avec la clé, l’échange contre un jeton d’accès et le renouvelle automatiquement. Ce même jeton sert à lire les fichiers de données depuis GCS. La clé est masquée dans `SHOW CREATE DATABASE` ainsi que dans les logs.
-
-```sql
-CREATE DATABASE lakehouse_runtime_catalog
-ENGINE = DataLakeCatalog('https://biglake.googleapis.com/iceberg/v1/restcatalog')
-SETTINGS
-    catalog_type = 'biglake',
-    google_service_account_key = '{"type": "service_account", "client_email": "...", "private_key": "...", ...}',
-    google_project_id = '<gcp-project-id>',
-    warehouse = 'gs://<bucket_name>/<optional-prefix>';
-```
-
-`google_service_account_key` et les paramètres `google_adc_*` s’excluent mutuellement. Aucun d’eux ne peut être combiné avec le paramètre `disk`, car une table stockée sur un disque lit ses fichiers de données avec les identifiants du disque, et non avec ceux du catalogue.
-
-## Interroger les tables du catalogue d’exécution du lakehouse avec ClickHouse {#querying-lakehouse-runtime-tables}
+<div id="querying-lakehouse-runtime-tables">
+  ## Interroger les tables du catalogue d’exécution du lakehouse avec ClickHouse
+</div>
 
 Une fois la connexion établie, vous pouvez interroger les tables enregistrées dans le catalogue d’exécution du lakehouse.
 
@@ -95,7 +86,9 @@ Pour afficher la définition de la table :
 SHOW CREATE TABLE `lakehouse_runtime_catalog.my_iceberg_table`;
 ```
 
-## Chargement de données du Lakehouse dans ClickHouse {#loading-data-into-clickhouse}
+<div id="loading-data-into-clickhouse">
+  ## Chargement de données du Lakehouse dans ClickHouse
+</div>
 
 Pour charger les données d&#39;une table du Lakehouse runtime catalog dans une table ClickHouse locale afin d&#39;accélérer les requêtes répétées, créez une table MergeTree et insérez les données depuis le catalogue :
 

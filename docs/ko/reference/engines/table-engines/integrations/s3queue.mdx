@@ -196,9 +196,7 @@ SETTINGS
 
 ### `after_processing_move_uri` {#after_processing_move_uri}
 
-대상이 다른 S3 버킷인 경우, 정상적으로 처리된 파일을 이동할 S3 버킷의 URI입니다.
-
-이 설정은 `INSERT INTO FUNCTION s3('<destination>') SELECT * FROM <table>`과 동일한 데이터 흐름이므로, `S3` 소스에 대한 `WRITE` 권한 부여가 필요합니다. URL 필터(filter)로 제한된 권한 부여로는 충분하지 않습니다. 이동 작업은 URI가 아니라 `after_processing_move_prefix`와 소스 키를 기반으로 생성된 키에 데이터를 쓰기 때문입니다. `ALTER TABLE ... MODIFY SETTING`을 실행하려면 해당 테이블에 대한 `SELECT` 권한도 필요합니다. 대상은 `remote_url_allow_hosts`에서 허용되어 있어야 합니다. 이동 작업은 기본 `s3_uri_style`을 사용하는 `s3` 테이블 함수와 마찬가지로 항상 스타일을 자동 감지하여 URI를 파싱하므로, `uri_style` 서버 설정과 `s3_uri_style` 쿼리 설정(query setting)은 적용되지 않습니다.
+대상이 다른 S3 버킷인 경우, 성공적으로 처리된 파일을 이동할 S3 버킷의 URI입니다.
 
 가능한 값:
 

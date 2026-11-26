@@ -19,17 +19,20 @@ ClickHouse는 여러 카탈로그(Unity, Glue, Polaris 등)와의 통합을 지�
   `SET allow_database_iceberg = 1;`
 </Note>
 
-## 사전 요구 사항 {#prerequisites}
+<div id="prerequisites">
+  ## 사전 요구 사항
+</div>
 
 ClickHouse에서 Lakehouse 런타임 카탈로그(BigLake 메타스토어)로 연결을 생성하기 전에 다음 사항을 준비하십시오:
 
 * Lakehouse 런타임 카탈로그가 활성화된 **Google Cloud 프로젝트**
-* 다음 중 하나의 자격 증명:
-  * **서비스 계정 키**: 카탈로그와 GCS 버킷에 대한 액세스 권한이 있는 서비스 계정의 JSON 키 파일로, [Google Cloud Console](https://docs.cloud.google.com/iam/docs/keys-create-delete)을 통해 생성합니다. 사용자 세션에 의존하지 않으므로 서버 환경에서 권장되는 옵션입니다.
-  * [Google Cloud Console](https://docs.cloud.google.com/docs/authentication/provide-credentials-adc)을 통해 애플리케이션용으로 생성한 **Application Default 자격 증명**(OAuth client ID 및 client secret)과, 적절한 범위(예: `https://www.googleapis.com/auth/bigquery` 및 GCS용 storage 범위)로 OAuth 흐름을 완료해 획득한 **refresh token**
+* [Google Cloud Console](https://docs.cloud.google.com/docs/authentication/provide-credentials-adc)을 통해 애플리케이션용으로 생성한 **Application Default 자격 증명**(OAuth client ID 및 client secret)
+* 적절한 범위(예: `https://www.googleapis.com/auth/bigquery` 및 GCS용 storage 범위)로 OAuth 흐름을 완료해 획득한 **refresh token**
 * 테이블이 저장된 GCS 버킷(및 선택적 prefix)을 가리키는 **warehouse** 경로(예: `gs://your-bucket` 또는 `gs://your-bucket/prefix`)
 
-## Lakehouse 런타임 카탈로그와 ClickHouse 간 연결 생성 {#creating-a-connection}
+<div id="creating-a-connection">
+  ## Lakehouse 런타임 카탈로그와 ClickHouse 간 연결 생성
+</div>
 
 OAuth 자격 증명이 준비되면 [DataLakeCatalog](/ko/reference/engines/database-engines/datalake) 데이터베이스 엔진을 사용하는 데이터베이스를 ClickHouse에 생성하십시오:
 
@@ -47,21 +50,9 @@ SETTINGS
     warehouse = 'gs://<bucket_name>/<optional-prefix>';
 ```
 
-대신 서비스 계정 키로 인증하려면 `google_service_account_key`에 JSON 키 파일의 내용을, `google_project_id`에 프로젝트 ID를 전달하십시오. ClickHouse는 이 키로 JWT에 서명한 후 액세스 토큰으로 교환하며, 토큰을 자동으로 갱신합니다. GCS에서 데이터 파일을 읽을 때도 동일한 토큰이 사용됩니다. 키는 `SHOW CREATE DATABASE` 결과와 로그에서 마스킹 처리됩니다.
-
-```sql
-CREATE DATABASE lakehouse_runtime_catalog
-ENGINE = DataLakeCatalog('https://biglake.googleapis.com/iceberg/v1/restcatalog')
-SETTINGS
-    catalog_type = 'biglake',
-    google_service_account_key = '{"type": "service_account", "client_email": "...", "private_key": "...", ...}',
-    google_project_id = '<gcp-project-id>',
-    warehouse = 'gs://<bucket_name>/<optional-prefix>';
-```
-
-`google_service_account_key`와 `google_adc_*` 설정은 함께 사용할 수 없습니다. 또한 디스크에 있는 테이블은 카탈로그의 자격 증명이 아닌 디스크의 자격 증명으로 데이터 파일을 읽으므로, 두 설정 모두 `disk` 설정과 함께 사용할 수 없습니다.
-
-## ClickHouse를 사용하여 Lakehouse 런타임 카탈로그 테이블 쿼리하기 {#querying-lakehouse-runtime-tables}
+<div id="querying-lakehouse-runtime-tables">
+  ## ClickHouse를 사용하여 Lakehouse 런타임 카탈로그 테이블 쿼리하기
+</div>
 
 연결이 생성되면 Lakehouse 런타임 카탈로그에 등록된 테이블을 쿼리할 수 있습니다.
 
@@ -95,7 +86,9 @@ SELECT count(*) FROM `lakehouse_runtime_catalog.my_iceberg_table`;
 SHOW CREATE TABLE `lakehouse_runtime_catalog.my_iceberg_table`;
 ```
 
-## Lakehouse에서 ClickHouse로 데이터 로드하기 {#loading-data-into-clickhouse}
+<div id="loading-data-into-clickhouse">
+  ## Lakehouse에서 ClickHouse로 데이터 로드하기
+</div>
 
 반복 실행되는 쿼리를 더 빠르게 처리하기 위해 Lakehouse 런타임 카탈로그 테이블의 데이터를 로컬 ClickHouse 테이블로 로드하려면 MergeTree 테이블을 생성한 다음 카탈로그에서 데이터를 삽입합니다:
 

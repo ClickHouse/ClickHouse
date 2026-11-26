@@ -14,12 +14,6 @@ ClickHouse Cloud는 자체 클라우드 서비스 제공업체(CSP) 계정(AWS S
 
 이 가이드에서는 AWS, GCP, Azure 객체 스토리지로 전체 및 증분 백업을 수행하는 방법과 해당 백업에서 복원하는 방법에 대한 예시를 보여드립니다.
 
-<Warning>
-  **규제 대상 서비스에서는 사용할 수 없음**
-
-  **HIPAA 준수** 또는 **PCI 준수** 리전 유형으로 생성된 서비스는 고객 소유 버킷으로 백업을 내보낼 수 없습니다. 규제 환경에서는 해당 환경 외부의 스토리지에 데이터를 쓸 수 없으므로, 콘솔에서 **Set up external backup** 옵션이 비활성화되며 이러한 서비스에는 아래에 설명된 `BACKUP` 권한(privilege)이 부여되지 않습니다. 일정 구성을 포함한 ClickHouse가 관리하는 백업은 계속 사용할 수 있습니다. 자세한 내용은 [HIPAA 온보딩](/ko/products/cloud/guides/security/compliance/hipaa-onboarding#backups) 및 [PCI 온보딩](/ko/products/cloud/guides/security/compliance/pci-onboarding#backups)을 참조하십시오.
-</Warning>
-
 <Note>
   동일한 클라우드 제공업체 내에서 백업을 다른 리전으로 내보내면 [데이터 전송](/ko/products/cloud/reference/billing/network-data-transfer) 요금이 부과됩니다.
 
@@ -46,19 +40,19 @@ ClickHouse Cloud는 자체 클라우드 서비스 제공업체(CSP) 계정(AWS S
 1. AWS S3 엔드포인트(형식은 다음과 같음):
 
 ```text
-s3://<bucket_name>.s3.amazonaws.com/<directory>
+  s3://<bucket_name>.s3.amazonaws.com/<directory>
 ```
 
 예를 들어:
 
 ```text
-s3://testchbackups.s3.amazonaws.com/backups/
+  s3://testchbackups.s3.amazonaws.com/backups/
 ```
 
 여기서:
 
 * `testchbackups`는 백업을 내보낼 S3 버킷의 이름입니다.
-* `backups`는 선택 사항인 하위 디렉터리입니다.
+  * `backups`는 선택 사항인 하위 디렉터리입니다.
 
 2. AWS 액세스 키와 시크릿 키. AWS 액세스 키와 시크릿 키 대신 역할 기반 인증도 지원합니다.
 

@@ -1,15 +1,13 @@
 #pragma once
 
 #include <Processors/Formats/Impl/Parquet/Reader.h>
-#include <Common/VectorWithMemoryTracking.h>
-#include <Common/SharedMutex.h>
 
 namespace DB::Parquet
 {
 
 struct AtomicBitSet
 {
-    VectorWithMemoryTracking<std::atomic<UInt64>> a;
+    std::vector<std::atomic<UInt64>> a;
 
     void resize(size_t bits);
 
@@ -26,16 +24,7 @@ struct AtomicBitSet
         return (x & mask) != 0;
     }
 
-    [[nodiscard]] bool test(size_t i, std::memory_order memory_order) const
-    {
-        return (a[i >> 6].load(memory_order) >> (i & 63)) & 1;
-    }
-
-    /// First set bit at or after `start`.
-    [[nodiscard]] std::optional<size_t> findNext(size_t start) const;
-    [[nodiscard]] std::optional<size_t> findFirst() const { return findNext(0); }
-    /// First bit at or after `start` that is set here and not in `mask` (of the same size).
-    [[nodiscard]] std::optional<size_t> findNextAndNot(const AtomicBitSet & mask, size_t start) const;
+    std::optional<size_t> findFirst();
 };
 
 // I'd like to talk to the manager.
@@ -51,12 +40,7 @@ public:
     /// (I'm trying this style because the usual pattern of passing-through lots of arguments through
     /// layers of constructors seems bad. This seems better but still not great, hopefully there's an
     /// even better way.)
-    /// `other_row_groups_are_read_by_other_readers` means that the row groups not in `row_groups_to_read_`
-    /// are read by other readers of the same query, so they are not counted as pruned by this one.
-    void init(
-        FormatParserSharedResourcesPtr parser_shared_resources_,
-        RowGroupSelection row_groups_to_read_,
-        bool other_row_groups_are_read_by_other_readers = false);
+    void init(FormatParserSharedResourcesPtr parser_shared_resources_, const std::optional<std::vector<size_t>> & buckets_to_read_);
 
     ~ReadManager();
 
@@ -103,15 +87,6 @@ private:
         };
     };
 
-    /// A stage schedules its tasks in two steps:
-    ///  1. When a row group or row subgroup reaches the stage, `setTasksToSchedule` stores its tasks in
-    ///     `row_group_tasks_to_schedule`. Nothing is prefetched or charged for them yet, except by `readAheadColumnData`.
-    ///  2. `scheduleTasksIfNeeded` takes stored tasks in row group order while the stage is within its share of the
-    ///     reader's limits (see `is_privileged_task` for the exception). It starts their prefetches, charges the
-    ///     prefetched bytes (and the estimated output of `ColumnData`) to `memory_usage`, and queues the tasks in the
-    ///     thread pool. Below the low watermark it does so even when all the stage's threads are busy.
-    /// So with background reads (`Prefetcher::readsInBackground`), data is read ahead of decoding as far as the stage's
-    /// memory share allows, instead of when a thread picks the task up. The shares are per stage, see `MemoryUsageDiff`.
     struct Stage
     {
         std::atomic<size_t> memory_usage {0};
@@ -126,7 +101,7 @@ private:
         /// So each pair <row group, stage> is a sequence of groups of tasks, and their scheduling
         /// doesn't need any mutexes.
         AtomicBitSet schedulable_row_groups;
-        VectorWithMemoryTracking<VectorWithMemoryTracking<Task>> row_group_tasks_to_schedule;
+        std::vector<std::vector<Task>> row_group_tasks_to_schedule;
     };
 
     FormatParserSharedResourcesPtr parser_shared_resources;
@@ -138,38 +113,25 @@ private:
     std::atomic<size_t> first_incomplete_row_group {0};
 
     std::mutex delivery_mutex;
-    std::priority_queue<Task, VectorWithMemoryTracking<Task>, Task::Comparator> delivery_queue TSA_GUARDED_BY(delivery_mutex);
+    std::priority_queue<Task, std::vector<Task>, Task::Comparator> delivery_queue;
     std::condition_variable delivery_cv;
-    std::exception_ptr exception TSA_GUARDED_BY(delivery_mutex);
-    RowGroupSelection row_groups_to_read;
+    std::exception_ptr exception;
+    /// Nullopt means that ReadManager reads all row groups
+    std::optional<std::unordered_set<UInt64>> row_groups_to_read;
 
     /// Used when `reader.row_groups_ordered_by_top_k`, see admitTopKRowGroups.
     struct TopKAdmission
     {
         size_t min_outstanding = 1;
         std::mutex mutex;
-        size_t next_row_group TSA_GUARDED_BY(mutex) = 0;
+        size_t next_row_group = 0;
         /// Admitted row groups that are not fully read yet.
-        size_t outstanding TSA_GUARDED_BY(mutex) = 0;
-        size_t admitted TSA_GUARDED_BY(mutex) = 0;
+        size_t outstanding = 0;
+        size_t admitted = 0;
     };
     TopKAdmission top_k_admission;
 
-    /// Whether readAheadColumnData starts ColumnData prefetches of schedulable row groups ahead of their decoding.
-    bool column_data_read_ahead = false;
-    /// Held shared by ColumnData admission rounds and exclusively by readAheadColumnData, which never overlaps them.
-    SharedMutex column_data_prefetch_mutex;
-    /// Row groups whose current ColumnData prefetches were started by read-ahead and whose decoding
-    /// was not scheduled yet. Modified with column_data_prefetch_mutex locked.
-    AtomicBitSet column_data_read_ahead_row_groups;
-    /// Depth slots held by each such row group; set by readAheadColumnData, zeroed by the admission round that unsets its bit.
-    VectorWithMemoryTracking<size_t> column_data_read_ahead_run_slots;
-    /// Slots held by all row groups.
-    std::atomic<size_t> column_data_read_ahead_count {0};
-
-    void scheduleTask(Task task, bool is_first_in_group, MemoryUsageDiff & diff, VectorWithMemoryTracking<Task> & out_tasks);
-    /// The estimated memory of the output of the primitive column `column_idx` in the row subgroup.
-    MemoryUsageToken reserveOutputColumnMemory(size_t column_idx, const RowGroup & row_group, const RowSubgroup & row_subgroup, MemoryUsageDiff & diff);
+    void scheduleTask(Task task, bool is_first_in_group, MemoryUsageDiff & diff, std::vector<Task> & out_tasks);
     void runTask(Task task, bool last_in_batch, MemoryUsageDiff & diff);
     /// A live reservation handle on the memory the dictionary-filter pruning path may still use: the
     /// reader's memory high watermark minus what the `Dictionary` stage already holds (the decoded
@@ -180,17 +142,15 @@ private:
     /// across all row groups pruning in parallel (see `PruningMemoryReservation` and
     /// `Reader::applyBloomAndDictionaryFilters`).
     PruningMemoryReservation pruningMemoryReservation(const MemoryUsageDiff & diff);
-    void runBatchOfTasks(const VectorWithMemoryTracking<Task> & tasks) noexcept;
+    void runBatchOfTasks(const std::vector<Task> & tasks) noexcept;
     void scheduleTasksIfNeeded(ReadStage stage_idx);
-    void readAheadColumnData();
-    void addColumnDataPrefetches(const Task & task, VectorWithMemoryTracking<PrefetchHandle *> & out);
     void finishRowGroupStage(size_t row_group_idx, ReadStage stage, MemoryUsageDiff & diff);
     void finishRowSubgroupStage(size_t row_group_idx, size_t row_subgroup_idx, ReadStage stage, size_t step_idx, MemoryUsageDiff & diff);
     /// Free some memory ColumnChunk that's not needed after decoding is done in all row sugroups.
     /// Call sites should be careful to not call it from multiple threads in parallel.
     void clearColumnChunk(ColumnChunk & column, MemoryUsageDiff & diff);
     void clearRowSubgroup(RowSubgroup & row_subgroup, MemoryUsageDiff & diff);
-    void setTasksToSchedule(size_t row_group_idx, ReadStage stage, VectorWithMemoryTracking<Task> add_tasks, MemoryUsageDiff & diff);
+    void setTasksToSchedule(size_t row_group_idx, ReadStage stage, std::vector<Task> add_tasks, MemoryUsageDiff & diff);
     void addTasksToReadColumns(size_t row_group_idx, size_t row_subgroup_idx, ReadStage stage, size_t step_idx, MemoryUsageDiff & diff);
     void advanceDeliveryPtrIfNeeded(size_t row_group_idx, MemoryUsageDiff & diff);
     void admitTopKRowGroups(MemoryUsageDiff & diff);

@@ -7,7 +7,11 @@ keywords: ['managed postgres', 'ruby on rails', 'rails', 'active record', 'ruby'
 doc_type: 'guide'
 ---
 
-يُعدّ [Ruby on Rails](https://rubyonrails.org/) إطار عمل ويب متكاملًا (full-stack)، تدعم أداةُ ربط الكائنات بقواعد البيانات الخاصة به، Active Record، قاعدةَ بيانات PostgreSQL عبر حزمة gem المسماة `pg`.
+import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.guides-ruby-on-rails-beta" />
+
+يُعدّ [Ruby on Rails](https://rubyonrails.org/) إطار عمل ويب متكاملًا (full-stack)، تدعم أداةُ ربط الكائنات بقواعد البيانات الخاصة به، Active Record، قاعدةَ بيانات PostgreSQL عبر حزمة `pg`.
 في هذا الدليل، ستُنشئ تطبيق Rails جديدًا، وتربطه بـ ClickHouse Managed Postgres عبر اتصال TLS موثَّق، ثم تُشغّل عملية ترحيل، وتُتيح مورد `Post` مُولَّدًا باستخدام أداة هيكل أولي.
 
 ## المتطلبات الأساسية {#prerequisites}

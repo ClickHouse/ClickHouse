@@ -6,7 +6,9 @@ tags: ['工具和实用程序']
 keywords: ['Windows']
 ---
 
-## 示例 {#example}
+<div id="example">
+  ## 示例
+</div>
 
 本示例展示了如何为隶属于不同 AD 安全组的 AD 用户授予 ClickHouse 中相应角色的访问权限。它还展示了如何将同一用户添加到多个 AD 用户组中，从而获得多个角色授予的访问权限。
 
@@ -33,27 +35,15 @@ keywords: ['Windows']
 
 * 示例 AD 环境和 OU 结构：
 
-<div className="ch-image-md">
-  <Frame>
-    ![示例 AD 环境和 OU 结构](/images/knowledgebase/windows-ad-ch-roles/AD_Env_and_UO_structure.webp)
-  </Frame>
-</div>
+<Image img={ad_env} size="md" alt="示例 AD 环境和 OU 结构" />
 
 * 示例 AD 安全组配置：
 
-<div className="ch-image-md">
-  <Frame>
-    ![示例 AD 安全组配置](/images/knowledgebase/windows-ad-ch-roles/AD_Group_clickhouse_ad_db1_users.webp)
-  </Frame>
-</div>
+<Image img={ad_group} size="md" alt="示例 AD 安全组配置" />
 
 * 示例 AD 用户配置：
 
-<div className="ch-image-md">
-  <Frame>
-    ![示例 AD 用户配置](/images/knowledgebase/windows-ad-ch-roles/AD_user_clickhouse_db1_user.webp)
-  </Frame>
-</div>
+<Image img={ad_user} size="md" alt="示例 AD 用户配置" />
 
 1. 在 Windows AD Users and Groups 中，将每个用户添加到各自对应的组；这些组会映射到 ClickHouse 角色 (示例见下一步) 。
 
@@ -66,11 +56,7 @@ keywords: ['Windows']
 
 * 示例用户组成员关系：
 
-<div className="ch-image-md">
-  <Frame>
-    ![示例用户组成员关系](/images/knowledgebase/windows-ad-ch-roles/AD_user_to_group.webp)
-  </Frame>
-</div>
+<Image img={ad_user_group} size="md" alt="示例用户组成员关系" />
 
 2. 在 ClickHouse 的 `config.xml` 中，为每个 ClickHouse 节点添加 `ldap_servers` 配置。
 
@@ -103,7 +89,7 @@ keywords: ['Windows']
 有关完整选项，请参阅文档：
 [https://clickhouse.com/docs/operations/external-authenticators/ldap#ldap-server-definition](https://clickhouse.com/docs/operations/external-authenticators/ldap#ldap-server-definition)
 
-3. 在每个 ClickHouse 节点的 `config.xml` 中，添加包含 `<ldap>` 条目的 `<user_directories>` 配置。
+3. 在 ClickHouse `config.xml` 中，为每个 ClickHouse 节点添加包含 `<ldap>` 条目的 `<user_directories>` 配置。
 
 ```
 <user_directories>
@@ -126,7 +112,7 @@ keywords: ['Windows']
 </user_directories>
 ```
 
-| xml tag              | 描述                                        | 示例值                                          |
+| xml tag              | 说明                                        | 示例值                                          |
 | -------------------- | ----------------------------------------- | -------------------------------------------- |
 | user&#95;directories | 定义要使用哪些身份验证器                              | NA                                           |
 | ldap                 | 包含要使用的 LDAP 服务器设置 (在此 AD 中)               | NA                                           |

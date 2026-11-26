@@ -12,71 +12,15 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 
 تُهيِّئ هذه الإعدادات خادم ClickHouse، وهي مُولَّدة تلقائيًا من الشيفرة المصدرية لـ ClickHouse.
 
-## distributed_cache_apply_throttling_settings_from_client {#distributed_cache_apply_throttling_settings_from_client}
+## distributed_cache_apply_throttling_settings_from_client
 
 <SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />ما إذا كان ينبغي لخادم ذاكرة التخزين المؤقت تطبيق إعدادات throttling المستلَمة من العميل.
 
-## distributed_cache_keep_up_free_connections_ratio {#distributed_cache_keep_up_free_connections_ratio}
+## distributed_cache_keep_up_free_connections_ratio
 
 <SettingsInfoBlock type="Float" default_value="0.1" changeable_without_restart="No" />حدّ مرن لعدد الاتصالات النشطة التي تحاول ذاكرة التخزين المؤقت الموزعة الإبقاء عليها متاحة. إذا انخفض عدد الاتصالات المتاحة إلى أقل من distributed&#95;cache&#95;keep&#95;up&#95;free&#95;connections&#95;ratio * max&#95;connections، فستُغلَق الاتصالات الأقدم نشاطًا حتى يرتفع العدد مجددًا فوق هذا الحد.
 
-## distributed_cache_temporary_data_background_retry_delay_milliseconds {#distributed_cache_temporary_data_background_retry_delay_milliseconds}
-
-<SettingsInfoBlock type="NonZeroUInt64" default_value="30000" changeable_without_restart="No" />مدة التأخير، بالمللي ثانية، قبل إعادة محاولة معالجة البيانات المؤقتة المُثبَّتة في الخلفية.
-
-## distributed_cache_temporary_data_cleanup_period_milliseconds {#distributed_cache_temporary_data_cleanup_period_milliseconds}
-
-<SettingsInfoBlock type="NonZeroUInt64" default_value="1000" changeable_without_restart="No" />الفترة الفاصلة بين عمليات تنظيف البيانات المؤقتة المُثبَّتة منتهية الصلاحية، بالمللي ثانية.
-
-## distributed_cache_temporary_data_confirmation_retry_delay_milliseconds {#distributed_cache_temporary_data_confirmation_retry_delay_milliseconds}
-
-<SettingsInfoBlock type="UInt64" default_value="500" changeable_without_restart="No" />مدة الانتظار بالمللي ثانية قبل إعادة محاولة تأكيد نشر البيانات المؤقتة المُثبَّتة.
-
-## distributed_cache_temporary_data_control_hello_timeout_milliseconds {#distributed_cache_temporary_data_control_hello_timeout_milliseconds}
-
-<SettingsInfoBlock type="NonZeroUInt64" default_value="2000" changeable_without_restart="No" />يمدّد التحكم المُثبَّت في البيانات المؤقتة مدة حياة الملف بحدٍّ أقصى حتى وقت رسالة hello الخاصة باتصال التحكم + مهلة الانتظار هذه + قيمة TTL، بالمللي ثانية. ينتظر العميل الاستجابة المدة نفسها بعد إرسال رسالة hello. يستخدم العميل قيمته الخاصة التي يقرؤها عند إنشاء ملف مُثبَّت (أو عند بدء التشغيل في حالة عمليات التجديد في الخلفية). ولا يؤدي اختلاف القيمة بين العميل وخادم ذاكرة التخزين المؤقت الموزعة إلى تقليص مدة حياة الملف إلى أقل من وقت رسالة hello + قيمة TTL.
-
-## distributed_cache_temporary_data_max_bytes_per_server {#distributed_cache_temporary_data_max_bytes_per_server}
-
-<SettingsInfoBlock type="UInt64" default_value="1099511627776" changeable_without_restart="No" />الحجم الإجمالي الأقصى بالبايتات للملفات المؤقتة المُثبَّتة التي يحتفظ بها خادم ذاكرة التخزين المؤقت الموزعة واحد. تبقى الملفات المؤقتة المُثبَّتة مُقيَّدة في ذاكرة التخزين المؤقت للملفات (file cache) ولا يمكن إخلاؤها إلى أن يتم تحريرها أو تنتهي صلاحيتها، ولذلك يضع هذا الحد سقفًا للمساحة التي يمكن أن تشغلها من ذاكرة التخزين المؤقت. القيمة الافتراضية هي 1 TiB. عند بلوغ هذا الحد، يرفض الخادم نشر أي ملفات مؤقتة مُثبَّتة جديدة. تعني القيمة `0` عدم وجود حد.
-
-## distributed_cache_temporary_data_max_connections_bypassing_pool {#distributed_cache_temporary_data_max_connections_bypassing_pool}
-
-<SettingsInfoBlock type="UInt64" default_value="5000" changeable_without_restart="Yes" />يسري مفعوله فقط في ClickHouse Cloud. الحد الأقصى لعدد الاتصالات التي يمكن للملفات المؤقتة فتحها لكل خادم ذاكرة التخزين المؤقت الموزعة دون المرور عبر تجمّع الاتصالات. عند بلوغ هذا الحد، تنتظر البيانات المؤقتة توفُّر اتصال ضمن تجمّع الاتصالات لمدة `distributed_cache_wait_connection_from_pool_milliseconds`، ثم تفشل العملية. تعني القيمة `0` عدم وجود حد. أما عمليات التبادل القصيرة الخاصة بالتحكم في البيانات المؤقتة المُثبَّتة (التأكيد، والتجديد، والتحرير)، فتفتح دائمًا اتصالًا جديدًا ولا تُحتسب ضمن هذا الحد. يمكن تغيير هذا الإعداد دون إعادة التشغيل.
-
-## distributed_cache_temporary_data_max_control_batch_ids {#distributed_cache_temporary_data_max_control_batch_ids}
-
-<SettingsInfoBlock type="NonZeroUInt64" default_value="1024" changeable_without_restart="No" />الحد الأقصى لعدد معرّفات (IDs) البيانات المؤقتة المُثبَّتة التي يرسلها العميل في طلب تحكم واحد. تُقيَّد القيم التي تتجاوز 65536 عند 65536 (وهو الحد الذي يفرضه البروتوكول).
-
-## distributed_cache_temporary_data_max_files_per_server {#distributed_cache_temporary_data_max_files_per_server}
-
-<SettingsInfoBlock type="UInt64" default_value="100000" changeable_without_restart="No" />الحد الأقصى لعدد الملفات المؤقتة المُثبَّتة التي يحتفظ بها خادم ذاكرة التخزين المؤقت الموزعة واحد. القيمة الافتراضية مرتفعة لأن هذا الحد ليس سوى ضمانة احتياطية تقيّد الذاكرة المستخدمة لتتبّع الملفات، إذ تُحدَّد السعة أساسًا بالإعداد `distributed_cache_temporary_data_max_bytes_per_server`. عند بلوغ هذا الحد، يرفض الخادم نشر ملفات مؤقتة مُثبَّتة جديدة. تعني القيمة `0` عدم وجود حد.
-
-## distributed_cache_temporary_data_pool_behaviour_on_limit {#distributed_cache_temporary_data_pool_behaviour_on_limit}
-
-<SettingsInfoBlock type="DistributedCachePoolBehaviourOnLimit" default_value="allocate_bypassing_pool" changeable_without_restart="Yes" />يسري مفعوله فقط في ClickHouse Cloud. يحدد سلوك اتصالات distributed cache الخاصة بالبيانات المؤقتة عند بلوغ حد تجمّع الاتصالات. نظرًا إلى عدم وجود تخزين كائني يمكن للبيانات المؤقتة اللجوء إليه، يُفتح افتراضيًا اتصال يتجاوز التجمّع بدلًا من الإخفاق. ينطبق ذلك على الملفات المؤقتة للاستعلامات ولعمليات الخلفية (الدمج والنسخ الاحتياطية). أما عمليات تبادل التحكم القصيرة الخاصة بالبيانات المؤقتة المُثبَّتة (التأكيد والتجديد والتحرير)، فتفتح دائمًا اتصالًا جديدًا ولا تخضع لهذا الإعداد. عند ضبط القيمة على `wait`، ينتظر اتصالًا ضمن تجمّع الاتصالات لمدة `distributed_cache_wait_connection_from_pool_milliseconds` ثم يُخفق. يمكن تغييره دون إعادة التشغيل.
-
-## distributed_cache_temporary_data_renewal_period_seconds {#distributed_cache_temporary_data_renewal_period_seconds}
-
-<SettingsInfoBlock type="NonZeroUInt64" default_value="900" changeable_without_restart="No" />الفترة الزمنية بالثواني بين عمليات التجديد المُثبَّتة لملكية البيانات المؤقتة.
-
-## distributed_cache_temporary_data_ttl_seconds {#distributed_cache_temporary_data_ttl_seconds}
-
-<SettingsInfoBlock type="NonZeroUInt64" default_value="3600" changeable_without_restart="No" />مدة حياة الملف المؤقت المُثبَّت بالثواني.
-
-## distributed_cache_warmer_max_bytes_in_queue {#distributed_cache_warmer_max_bytes_in_queue}
-
-<SettingsInfoBlock type="UInt64" default_value="107374182400" changeable_without_restart="No" />يسري مفعوله فقط في ClickHouse Cloud. الحد الأقصى للحجم الإجمالي للنطاقات التي يحتفظ بها مُسخِّن ذاكرة التخزين المؤقت في قائمة الانتظار لقرص لا يملك ذاكرة تخزين مؤقت محلية لنظام الملفات؛ وعند تجاوز هذا الحد تُستبعَد أقدم النطاقات (أما عند وجود ذاكرة تخزين مؤقت محلية، فيعتمد المُسخِّن على قيمة `max_size` الخاصة بها). وتعني القيمة صفر عدم وجود حد.
-
-## distributed_cache_warmer_max_file_segment_size {#distributed_cache_warmer_max_file_segment_size}
-
-<SettingsInfoBlock type="NonZeroUInt64" default_value="33554432" changeable_without_restart="No" />يسري مفعوله فقط في ClickHouse Cloud. يحدد حجم النطاقات التي يقرأ ضمنها مُسخِّن ذاكرة التخزين المؤقت جزء البيانات الذي جرى جلبه إلى distributed cache، وذلك عندما لا يتوفر لقرص جزء البيانات ذاكرة تخزين مؤقت لنظام الملفات المحلي (أما عند توفر ذاكرة تخزين مؤقت محلية، فيستخدم المُسخِّن الإعداد `max_file_segment_size` الخاص بها).
-
-## distributed_cache_warmer_max_segments_in_queue {#distributed_cache_warmer_max_segments_in_queue}
-
-<SettingsInfoBlock type="UInt64" default_value="100000" changeable_without_restart="No" />يسري مفعوله فقط في ClickHouse Cloud. الحد الأقصى لعدد النطاقات التي يُبقيها مُسخِّن ذاكرة التخزين المؤقت في قائمة الانتظار لقرص لا يتوفر فيه ذاكرة تخزين مؤقت لنظام الملفات المحلي؛ وعند تجاوز هذا الحد تُستبعد أقدم النطاقات (أما عند توفر ذاكرة تخزين مؤقت محلية، فيعتمد المُسخِّن على الإعداد `max_elements` الخاص بها). تعني القيمة صفر عدم وجود حد.
-
-## distributed_cache_write_pool_size {#distributed_cache_write_pool_size}
+## distributed_cache_write_pool_size
 
 <SettingsInfoBlock type="UInt64" default_value="100" changeable_without_restart="No" />الحد الأقصى لعدد طلبات الكتابة إلى ذاكرة التخزين المؤقت الموزعة التي تعمل على الخيط الخلفي في الوقت نفسه (على مستوى جميع الاستعلامات). عند الوصول إلى هذا الحد، يتم تخطي الكتابة إلى ذاكرة التخزين المؤقت من نوع write-through (مع بقاء البيانات مكتوبة إلى التخزين الكائني)، بحيث لا تُحجب في انتظار فتحة تنفيذ ولا تؤدي إلى إنشاء عدد غير محدود من الخيوط. أما كتابات البيانات المؤقتة فلا تستخدم الخيوط الخلفية ولا تتأثر بهذا الحد.
 

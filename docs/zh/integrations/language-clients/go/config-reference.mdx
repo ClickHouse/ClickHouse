@@ -82,12 +82,12 @@ rows, err := conn.Query(ctx, "SELECT ...")
 
 ### 身份验证 {#authentication}
 
-| 选项              | 类型                          | 默认值               | DSN 参数                        | 说明                                                                               | 最佳实践                                            | 配置错误时                                                                                                                                    |
-| --------------- | --------------------------- | ----------------- | ----------------------------- | -------------------------------------------------------------------------------- | ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| `Auth.Username` | `string`                    | `"default"`       | `username` 或 URL 用户部分         | 用于 ClickHouse 身份验证的用户名                                                           | 生产环境中绝不要使用 `default`。请创建权限最小化的专用用户。             | 用户名错误：`"Code: 516. DB::Exception: Authentication failed"`。空字符串：会静默使用 `"default"`。                                                        |
-| `Auth.Password` | `string`                    | `""`              | `password` 或 URL 密码部分         | 用于 ClickHouse 身份验证的密码                                                            | 生产环境中请使用环境变量或 secret 管理器。在 DSN 中对特殊字符进行 URL 编码。 | 密码错误：`"Code: 516. DB::Exception: Authentication failed"`。特殊字符未进行 URL 编码：会出现 DSN 解析错误，且密码显示为 `xxxxx` (参见 [DSN 解析错误](#dsn-parse-errors)) 。 |
-| `Auth.Database` | `string`                    | `""` (服务端 默认值) | `database` 或 URL 路径 (`/mydb`) | 连接 的默认数据库                                                                | 始终显式指定。生产环境中请为每个应用使用专用数据库。                      | 不存在：`"Code: 81. DB::Exception: Database xyz doesn't exist"`。在多租户设置中留空：查询会落到错误的数据库。                                                       |
-| `GetJWT`        | `func(ctx) (string, error)` | `nil`             | (仅可通过程序方式设置)                  | 返回用于 ClickHouse Cloud 身份验证的 JWT 的回调。可通过 `WithJWT(token)` 为每个查询覆盖。*(自 v2.35.0 起)* | 实现标记缓存/刷新——它会在每次 连接/request 时调用。        | 标记过期：会出现身份验证错误。阻塞式回调：会导致超时。JWT 的优先级高于用户名/密码。需要 TLS——否则会静默回退到用户名/密码。                                                                      |
+| 选项              | 类型                          | 默认值                | DSN 参数                         | 说明                                                                                           | 最佳实践                                            | 配置错误时                                                                              |
+| --------------- | --------------------------- | ------------------ | ------------------------------ | -------------------------------------------------------------------------------------------- | ----------------------------------------------- | ---------------------------------------------------------------------------------- |
+| `Auth.Username` | `string`                    | `"default"`        | `username` 或 URL 用户部分          | 用于 ClickHouse 身份验证的用户名                                                                       | 生产环境中绝不要使用 `default`。请创建权限最小化的专用用户。             | 用户名错误：`"Code: 516. DB::Exception: Authentication failed"`。空字符串：会静默使用 `"default"`。  |
+| `Auth.Password` | `string`                    | `""`               | `password` 或 URL 密码部分          | 用于 ClickHouse 身份验证的密码                                                                        | 生产环境中请使用环境变量或 secret 管理器。在 DSN 中对特殊字符进行 URL 编码。 | 密码错误：`"Code: 516. DB::Exception: Authentication failed"`。特殊字符未进行 URL 编码：会出现解析错误。   |
+| `Auth.Database` | `string`                    | `""` (server 默认值)  | `database` 或 URL 路径 (`/mydb`)  | connection 的默认数据库                                                                            | 始终显式指定。生产环境中请为每个应用使用专用数据库。                      | 不存在：`"Code: 81. DB::Exception: Database xyz doesn't exist"`。在多租户设置中留空：查询会落到错误的数据库。 |
+| `GetJWT`        | `func(ctx) (string, error)` | `nil`              |  (仅可通过程序方式设置)                  | 返回用于 ClickHouse Cloud 身份验证的 JWT 的回调。可通过 `WithJWT(token)` 为每个查询覆盖。*&#x20;(自 v2.35.0 起)&#x20;*&#x20;| 实现标记缓存/刷新——它会在每次 connection/request 时调用。        | 标记过期：会出现身份验证错误。阻塞式回调：会导致超时。JWT 的优先级高于用户名/密码。需要 TLS——否则会静默回退到用户名/密码。                |
 
 ```go
 GetJWT: func(ctx context.Context) (string, error) {
@@ -455,28 +455,6 @@ batch, err := conn.PrepareBatch(ctx, "INSERT INTO table",
 * 对照 `system.users` 表核实凭据
 * 检查 DSN 密码中的特殊字符是否存在 URL 编码问题
 * 确认该用户有权访问指定数据库
-
-### DSN 解析错误 {#dsn-parse-errors}
-
-**原因：** DSN 不是有效的 URL。通常是因为密码中包含未经 URL 编码的特殊字符 (例如 `/`、`?`、`#`、`@`、`:` 或 `&`) 。
-
-DSN 解析错误不会泄露凭证。错误信息会将 userinfo 中的密码、`password` 查询参数以及 `http_proxy` 查询参数中的密码替换为 `xxxxx`：
-
-```text
-parse "clickhouse://user:xxxxx@127.0.0.1:abc/db": invalid port ":abc" after host
-```
-
-如果解析器错误中可能包含部分凭证信息，驱动程序会隐藏错误详情：
-
-```text
-parse "clickhouse://user:xxxxx@127.0.0.1:9000/db": invalid URL (details hidden because they may contain credentials; URL-encode the username, password and http_proxy values)
-```
-
-**解决方法：**
-
-* 对 DSN 中的用户名和密码进行 URL 编码，例如使用 `url.UserPassword("user", password).String()`；对于 `password` 查询参数，则使用 `url.QueryEscape(password)`。
-* 对 `http_proxy` 查询参数中的完整 proxy URL 进行 URL 编码。
-* 如果错误信息仍显示 `details hidden`，请改为在代码中通过 `clickhouse.Open` 设置 `Options`，不再使用 DSN。
 
 ### TLS 证书错误 {#tls-errors}
 

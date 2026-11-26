@@ -7,6 +7,8 @@ title: 'Interfaz MySQL'
 doc_type: 'guide'
 ---
 
+import { Image } from "/snippets/es/components/Image.jsx";
+
 ClickHouse admite el MySQL wire protocol. Esto permite que ciertos clientes que no disponen de conectores nativos de ClickHouse utilicen en su lugar el protocolo MySQL, y se ha validado con las siguientes herramientas de BI:
 
 * [Looker Studio](/es/integrations/connectors/data-visualization/looker-studio-and-clickhouse)
@@ -23,52 +25,38 @@ Si hay un driver nativo disponible (por ejemplo, [DBeaver](/es/integrations/conn
 Si tu caso de uso implica una herramienta concreta que no tiene un driver nativo de ClickHouse y te gustaría usarla a través de la interfaz MySQL, y has encontrado ciertas incompatibilidades, por favor [crea un issue](https://github.com/ClickHouse/ClickHouse/issues) en el repositorio de ClickHouse.
 
 <Note>
-  Para ofrecer una mejor compatibilidad con el dialecto SQL de las herramientas de BI anteriores, la interfaz MySQL de ClickHouse ejecuta implícitamente las consultas SELECT con el parámetro de configuración [prefer&#95;column&#95;name&#95;to&#95;alias = 1](/es/reference/settings/session-settings/prefer#prefer_column_name_to_alias).
+  Para ofrecer una mejor compatibilidad con el dialecto SQL de las herramientas de BI anteriores, la interfaz MySQL de ClickHouse ejecuta implícitamente las consultas SELECT con el ajuste [prefer&#95;column&#95;name&#95;to&#95;alias = 1](/es/reference/settings/session-settings/prefer#prefer_column_name_to_alias).
   Esto no se puede desactivar y, en casos excepcionales, puede dar lugar a un comportamiento distinto entre las consultas enviadas a las interfaces de consulta normal y MySQL de ClickHouse.
 </Note>
 
-## Habilitar la interfaz MySQL en ClickHouse Cloud {#enabling-the-mysql-interface-on-clickhouse-cloud}
+<div id="enabling-the-mysql-interface-on-clickhouse-cloud">
+  ## Habilitar la interfaz MySQL en ClickHouse Cloud
+</div>
 
 1. Después de crear tu servicio de ClickHouse Cloud, haz clic en el botón `Connect`.
 
 <br />
 
-<div className="ch-image-md">
-  <Frame>
-    ![Pantalla de credenciales - Prompt](/images/interfaces/mysql0.webp)
-  </Frame>
-</div>
+<Image img="/images/interfaces/mysql0.webp" alt="Pantalla de credenciales - Prompt" size="md" />
 
 2. Cambia el menú desplegable `Connect with` a `MySQL`.
 
 <br />
 
-<div className="ch-image-md">
-  <Frame>
-    ![Pantalla de credenciales - MySQL seleccionado](/images/interfaces/mysql1.webp)
-  </Frame>
-</div>
+<Image img="/images/interfaces/mysql1.webp" alt="Pantalla de credenciales - MySQL seleccionado" size="md" />
 
 3. Activa el interruptor para habilitar la interfaz MySQL en este servicio específico. Esto expondrá el puerto `3306` para este servicio y te mostrará la pantalla de conexión MySQL, que incluye tu nombre de usuario MySQL único. La contraseña será la misma que la del usuario predeterminado del servicio.
 
 <br />
 
-<div className="ch-image-md">
-  <Frame>
-    ![Pantalla de credenciales - MySQL habilitado](/images/interfaces/mysql2.webp)
-  </Frame>
-</div>
+<Image img="/images/interfaces/mysql2.webp" alt="Pantalla de credenciales - MySQL habilitado" size="md" />
 
 Copia la cadena de conexión MySQL que se muestra.
 
-<div className="ch-image-md">
-  <Frame>
-    ![Pantalla de credenciales - Cadena de conexión](/images/interfaces/mysql3.webp)
-  </Frame>
-</div>
+<Image img="/images/interfaces/mysql3.webp" alt="Pantalla de credenciales - Cadena de conexión" size="md" />
 
 <div id="creating-multiple-mysql-users-in-clickhouse-cloud">
-  ## Crear varios usuarios MySQL en ClickHouse Cloud {#creating-multiple-mysql-users-in-clickhouse-cloud}
+  ## Crear varios usuarios MySQL en ClickHouse Cloud
 </div>
 
 De forma predeterminada, existe un usuario integrado `mysql4<subdomain>`, que usa la misma contraseña que `default`. La parte `<subdomain>` es el primer segmento del hostname de tu servicio de ClickHouse Cloud. Este formato es necesario para trabajar con herramientas que implementan una conexión segura, pero no proporcionan [información SNI durante el handshake de TLS](https://www.cloudflare.com/learning/ssl/what-is-sni), lo que hace imposible realizar el enrutamiento interno sin una pista adicional en el nombre de usuario (el cliente de consola de MySQL es una de esas herramientas).
@@ -112,7 +100,7 @@ Puedes crear usuarios adicionales para usar con la interfaz MySQL si, por ejempl
 4. Usa el usuario creado para conectarte a tu servicio de ClickHouse Cloud mediante la interfaz MySQL.
 
 <div id="troubleshooting-multiple-mysql-users-in-clickhouse-cloud">
-  ### Solución de problemas con varios usuarios MySQL en ClickHouse Cloud {#troubleshooting-multiple-mysql-users-in-clickhouse-cloud}
+  ### Solución de problemas con varios usuarios MySQL en ClickHouse Cloud
 </div>
 
 Si ha creado un nuevo usuario MySQL y ve el siguiente error al conectarse mediante el cliente de línea de comandos de MySQL:
@@ -124,7 +112,7 @@ ERROR 2013 (HY000): Lost connection to MySQL server at 'reading authorization pa
 En este caso, asegúrese de que el nombre de usuario siga el formato `mysql4<subdomain>_<username>`, como se indica ([más arriba](#creating-multiple-mysql-users-in-clickhouse-cloud)).
 
 <div id="enabling-the-mysql-interface-on-self-managed-clickhouse">
-  ## Habilitar la interfaz MySQL en ClickHouse autogestionado {#enabling-the-mysql-interface-on-self-managed-clickhouse}
+  ## Habilitar la interfaz MySQL en ClickHouse autogestionado
 </div>
 
 Añada la opción [mysql&#95;port](/es/reference/settings/server-settings/settings/mysql#mysql_port) al archivo de configuración de su servidor. Por ejemplo, puede definir el puerto en un nuevo archivo XML dentro de la [carpeta](/es/concepts/features/configuration/server-config/configuration-files) `config.d/`:
@@ -142,7 +130,7 @@ Inicie el servidor de ClickHouse y busque un mensaje de registro similar al sigu
 ```
 
 <div id="connect-mysql-to-clickhouse">
-  ## Conectar MySQL a ClickHouse {#connect-mysql-to-clickhouse}
+  ## Conectar MySQL a ClickHouse
 </div>
 
 El siguiente comando muestra cómo conectar el cliente MySQL `mysql` a ClickHouse:

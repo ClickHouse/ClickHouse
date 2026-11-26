@@ -75,13 +75,6 @@ BuildRuntimeFilterTransform::BuildRuntimeFilterTransform(
 }
 
 
-RuntimeFilterConstPtr BuildRuntimeFilterTransform::getRegisteredFilter() const
-{
-    if (!query_context)
-        return nullptr;
-    return query_context->getRuntimeFilterLookup()->find(filter_key);
-}
-
 IProcessor::Status BuildRuntimeFilterTransform::prepare()
 {
     /// Invariant: the filter is published BEFORE the output port closes on end-of-stream.

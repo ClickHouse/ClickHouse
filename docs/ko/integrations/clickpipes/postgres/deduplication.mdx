@@ -10,20 +10,22 @@ integration:
   - category: 'clickpipes'
 ---
 
-Postgres에서 ClickHouse로 복제된 갱신(updates) 및 삭제 작업은 ClickHouse의 데이터 저장 구조와 복제 과정으로 인해 ClickHouse에 중복된 행이 생길 수 있습니다. 이 페이지에서는 그 이유와 ClickHouse에서 중복을 처리하기 위한 전략을 설명합니다.
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+Postgres에서 ClickHouse로 복제된 업데이트 및 삭제 작업은 ClickHouse의 데이터 저장 구조와 복제 과정으로 인해 ClickHouse에 중복된 행이 생길 수 있습니다. 이 페이지에서는 그 이유와 ClickHouse에서 중복을 처리하기 위한 전략을 설명합니다.
 
 <div id="how-does-data-get-replicated">
-  ## 데이터는 어떻게 복제됩니까? {#how-does-data-get-replicated}
+  ## 데이터는 어떻게 복제됩니까?
 </div>
 
 <div id="PostgreSQL-logical-decoding">
-  ### PostgreSQL 논리 디코딩 {#PostgreSQL-logical-decoding}
+  ### PostgreSQL 논리 디코딩
 </div>
 
 ClickPipes는 Postgres에서 변경 사항이 발생하는 즉시 이를 읽어들이기 위해 [Postgres Logical Decoding](https://www.pgedge.com/blog/logical-replication-evolution-in-chronological-order-clustering-solution-built-around-logical-replication)을 사용합니다. Postgres의 Logical Decoding 프로세스를 사용하면 ClickPipes와 같은 클라이언트가 사람이 읽을 수 있는 형식, 즉 일련의 INSERT, UPDATE, DELETE 형태로 변경 사항을 수신할 수 있습니다.
 
 <div id="replacingmergetree">
-  ### ReplacingMergeTree {#replacingmergetree}
+  ### ReplacingMergeTree
 </div>
 
 ClickPipes는 [ReplacingMergeTree](/ko/reference/engines/table-engines/mergetree-family/replacingmergetree) 엔진을 사용해 Postgres 테이블을 ClickHouse에 매핑합니다. ClickHouse는 append-only 워크로드에서 가장 뛰어난 성능을 발휘하며, 빈번한 UPDATE는 권장하지 않습니다. 이때 ReplacingMergeTree가 특히 강력합니다.
@@ -56,15 +58,13 @@ PRIMARY KEY id
 ORDER BY id;
 ```
 
-### 이해를 돕기 위한 예시 {#illustrative-example}
+<div id="illustrative-example">
+  ### 이해를 돕기 위한 예시
+</div>
 
 아래 그림은 ClickPipes를 사용해 PostgreSQL과 ClickHouse 사이에서 테이블 `users`가 동기화되는 기본 예시를 보여줍니다.
 
-<div className="ch-image-lg">
-  <Frame>
-    ![ClickPipes 초기 적재](/images/integrations/data-ingestion/clickpipes/postgres/postgres-cdc-initial-load.webp)
-  </Frame>
-</div>
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/postgres-cdc-initial-load.webp" alt="ClickPipes 초기 적재" size="lg" />
 
 **1단계**에서는 PostgreSQL의 2개 행에 대한 초기 스냅샷과, ClickPipes가 이 2개 행을 ClickHouse로 초기 적재하는 과정을 보여줍니다. 보시다시피 두 행 모두 변경 없이 그대로 ClickHouse에 복사됩니다.
 
@@ -77,7 +77,7 @@ ORDER BY id;
 ClickHouse와 PostgreSQL에서 동일한 쿼리 결과를 보장하려면 어떻게 해야 할까요?
 
 <div id="deduplicate-using-final-keyword">
-  ### FINAL 키워드를 사용해 중복 제거 {#deduplicate-using-final-keyword}
+  ### FINAL 키워드를 사용해 중복 제거
 </div>
 
 ClickHouse 쿼리에서 데이터 중복을 제거하는 권장 방법은 [FINAL 수정자](/ko/reference/statements/select/from#final-modifier)를 사용하는 것입니다. 이렇게 하면 중복 제거된 행만 반환됩니다.
@@ -133,7 +133,7 @@ LIMIT 10
 ```
 
 <div id="final-setting">
-  #### FINAL 설정 {#final-setting}
+  #### FINAL 설정
 </div>
 
 쿼리에서 각 테이블 이름에 FINAL 수정자를 추가하는 대신, [FINAL 설정](/ko/reference/settings/session-settings/other#final)을 사용하면 쿼리의 모든 테이블에 자동으로 적용할 수 있습니다.
@@ -150,7 +150,7 @@ SELECT count(*) FROM posts;
 ```
 
 <div id="row-policy">
-  #### ROW policy {#row-policy}
+  #### ROW policy
 </div>
 
 중복된 `_peerdb_is_deleted = 0` filter를 숨기는 가장 쉬운 방법은 [ROW policy](/ko/concepts/features/security/access-rights#row-policy-management)를 사용하는 것입니다. 아래는 테이블 votes의 모든 쿼리에서 삭제된 행이 제외되도록 ROW policy를 생성하는 예시입니다.
@@ -163,7 +163,7 @@ CREATE ROW POLICY cdc_policy ON votes FOR SELECT USING _peerdb_is_deleted = 0 TO
 > 행 정책은 사용자와 역할 목록을 대상으로 적용됩니다. 이 예시에서는 모든 사용자와 역할에 적용됩니다. 필요에 따라 특정 사용자 또는 역할에만 적용하도록 조정할 수 있습니다.
 
 <div id="query-like-with-postgres">
-  ### Postgres처럼 쿼리하기 {#query-like-with-postgres}
+  ### Postgres처럼 쿼리하기
 </div>
 
 분석용 데이터셋을 PostgreSQL에서 ClickHouse로 마이그레이션할 때는 데이터 처리 방식과 쿼리 실행 방식의 차이로 인해 애플리케이션 쿼리를 수정해야 하는 경우가 많습니다.
@@ -171,7 +171,7 @@ CREATE ROW POLICY cdc_policy ON votes FOR SELECT USING _peerdb_is_deleted = 0 TO
 이 섹션에서는 기존 쿼리는 그대로 유지하면서 데이터를 중복 제거하는 기법을 살펴봅니다.
 
 <div id="views">
-  #### 뷰 {#views}
+  #### 뷰
 </div>
 
 [뷰](/ko/reference/statements/create/view#normal-view)는 쿼리에서 FINAL 키워드를 감추는 데 매우 효과적인 방법입니다. 데이터를 저장하지 않고, 액세스할 때마다 다른 테이블을 단순히 읽기만 하기 때문입니다.
@@ -200,7 +200,7 @@ LIMIT 10
 ```
 
 <div id="refreshable-material-view">
-  #### 갱신 가능 구체화 뷰 {#refreshable-material-view}
+  #### 갱신 가능 구체화 뷰
 </div>
 
 또 다른 방법은 [갱신 가능 구체화 뷰](/ko/concepts/features/materialized-views/refreshable-materialized-view)를 사용하는 것입니다. 이를 사용하면 행의 중복을 제거하는 쿼리 실행을 예약하고, 그 결과를 대상 테이블에 저장할 수 있습니다. 예약된 갱신이 실행될 때마다 대상 테이블은 최신 쿼리 결과로 대체됩니다.

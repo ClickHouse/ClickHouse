@@ -74,8 +74,6 @@ ClickHouse Keeper 既可作为 ZooKeeper 的独立替代方案使用，也可作
 | `snapshots_to_keep`                                    | 保留的快照数量。                                                                                                                                                                                                                                                                      | `3`              |
 | `compress_snapshots_with_zstd_format`                  | 以 ZSTD 格式写入快照，而不是使用 ClickHouse 自定义的 LZ4 块格式。                                                                                                                                                                                                                                  | `true`           |
 | `snapshot_zstd_compression_level`                      | 快照的 ZSTD 压缩级别。级别越低占用的 CPU 越少，但生成的快照更大。负值会选择 ZSTD 的 fast 级别。仅在启用 `compress_snapshots_with_zstd_format` 时生效。                                                                                                                                                                    | `3`              |
-| `snapshot_transfer_chunk_size`                         | 发送快照时每个对象的字节数。在所有 Keeper 服务器都支持分块传输之前，请保持为 `0` (一次性发送整个快照) 。                                                                                                                                                                                                                  | `0`              |
-| `snapshot_transfer_remote_disk_streaming`              | 向跟随者发送位于远程磁盘上的快照时，不将整个文件缓存到内存中。leader 会为每个跟随者分别读取一次远程存储。需要将 `snapshot_transfer_chunk_size` 设为非零值。                                                                                                                                                                             | `false`          |
 | `stale_log_gap`                                        | 当 leader 认为跟随者已过时，并向其发送快照而不是日志时使用的阈值。                                                                                                                                                                                                                                         | `10000`          |
 | `fresh_log_gap`                                        | 节点变为最新状态时的阈值。                                                                                                                                                                                                                                                                 | `200`            |
 | `max_requests_batch_size`                              | 请求发送到 RAFT 前，按请求数计算的批次最大大小。                                                                                                                                                                                                                                                   | `100`            |
@@ -483,7 +481,7 @@ ClickHouse Keeper 提供了 HTTP 接口，用于检查副本是否已准备好�
 
 ### 功能开关 {#feature-flags}
 
-除[不支持的功能](#unsupported-features)外，Keeper 与 ZooKeeper 及其客户端兼容，但也引入了一些 ClickHouse 客户端可用的特有功能和请求类型。
+Keeper 与 ZooKeeper 及其客户端完全兼容，但也引入了一些 ClickHouse 客户端可用的特有功能和请求类型。
 由于这些功能可能带来不兼容的变更，因此其中大多数默认处于禁用状态，可通过 `keeper_server.feature_flags` 配置启用。
 也可以显式禁用所有功能。
 如果您想为 Keeper 集群启用某个新功能，建议先将集群中的所有 Keeper 实例升级到支持该功能的版本，再启用该功能本身。
@@ -503,16 +501,13 @@ ClickHouse Keeper 提供了 HTTP 接口，用于检查副本是否已准备好�
 
 以下功能可用：
 
-| 功能                     | 描述                                                                                  | 默认值 |
-| ---------------------- | ----------------------------------------------------------------------------------- | --- |
-| `multi_read`           | 支持 read multi 请求                                                                    | `1` |
-| `filtered_list`        | 支持 list 请求，可按节点类型 (临时 或 persistent) 过滤结果                                     | `1` |
-| `check_not_exists`     | 支持 `CheckNotExists` 请求，用于断言节点不存在                                                    | `1` |
-| `create_if_not_exists` | 支持 `CreateIfNotExists` 请求；如果节点不存在，则尝试创建该节点。如果节点已存在，则不会进行任何更改，并返回 `ZOK`              | `1` |
-| `remove_recursive`     | 支持 `RemoveRecursive` 请求，用于删除节点及其整个子树                                                | `1` |
-| `persistent_watches`   | 支持 ZooKeeper 中带 `PERSISTENT` 监听注册的 `addWatch`，以及 `removeWatches` 和 `removeAllWatches` | `1` |
-| `create_with_stats`    | 支持返回所创建节点 `Stat` 的 ZooKeeper `create` (即 `Create2` 请求)                              | `0` |
-| `create_ttl`           | 支持创建 `PERSISTENT_WITH_TTL` 节点的 ZooKeeper `create`。生存时间 (TTL) 节点不能有子节点。              | `0` |
+| 功能                     | 描述                                                                     | 默认值 |
+| ---------------------- | ---------------------------------------------------------------------- | --- |
+| `multi_read`           | 支持 read multi 请求                                                       | `1` |
+| `filtered_list`        | 支持 list 请求，可按节点类型 (ephemeral 或 persistent) 过滤结果                        | `1` |
+| `check_not_exists`     | 支持 `CheckNotExists` 请求，用于断言节点不存在                                       | `1` |
+| `create_if_not_exists` | 支持 `CreateIfNotExists` 请求；如果节点不存在，则尝试创建该节点。如果节点已存在，则不会进行任何更改，并返回 `ZOK` | `1` |
+| `remove_recursive`     | 支持 `RemoveRecursive` 请求，用于删除节点及其整个子树                                   | `1` |
 
 <Note>
   从 25.7 版本开始，部分功能开关默认启用。
@@ -1503,6 +1498,10 @@ Keeper 重新配置的实现有一些注意事项：
 
 虽然 ClickHouse Keeper 的目标是与 ZooKeeper 完全兼容，但仍有一些功能尚未实现 (不过相关开发仍在持续进行) ：
 
-* 不支持在 TTL 节点下创建子节点，即使已启用 `create_ttl` 也不行。与 ZooKeeper 不同，Keeper 会对此类请求返回 `ZBADARGUMENTS`。
+* [`create`](https://zookeeper.apache.org/doc/r3.9.1/apidocs/zookeeper-server/org/apache/zookeeper/ZooKeeper.html#create\(java.lang.String,byte%5B%5D,java.util.List,org.apache.zookeeper.CreateMode,org.apache.zookeeper.data.Stat\)) 不支持返回 `Stat` 对象
+* [`create`](https://zookeeper.apache.org/doc/r3.9.1/apidocs/zookeeper-server/org/apache/zookeeper/ZooKeeper.html#create\(java.lang.String,byte%5B%5D,java.util.List,org.apache.zookeeper.CreateMode,org.apache.zookeeper.data.Stat\)) 不支持 [生存时间 (TTL)](https://zookeeper.apache.org/doc/r3.9.1/apidocs/zookeeper-server/org/apache/zookeeper/CreateMode.html#PERSISTENT_WITH_TTL)
+* [`addWatch`](https://zookeeper.apache.org/doc/r3.9.1/apidocs/zookeeper-server/org/apache/zookeeper/ZooKeeper.html#addWatch\(java.lang.String,org.apache.zookeeper.Watcher,org.apache.zookeeper.AddWatchMode\)) 不支持 [`PERSISTENT`](https://zookeeper.apache.org/doc/r3.9.1/apidocs/zookeeper-server/org/apache/zookeeper/AddWatchMode.html#PERSISTENT) 监听
+* 不支持 [`removeWatch`](https://zookeeper.apache.org/doc/r3.9.1/apidocs/zookeeper-server/org/apache/zookeeper/ZooKeeper.html#removeWatches\(java.lang.String,org.apache.zookeeper.Watcher,org.apache.zookeeper.Watcher.WatcherType,boolean\)) 和 [`removeAllWatches`](https://zookeeper.apache.org/doc/r3.9.1/apidocs/zookeeper-server/org/apache/zookeeper/ZooKeeper.html#removeAllWatches\(java.lang.String,org.apache.zookeeper.Watcher.WatcherType,boolean\))
+* 不支持 `setWatches`
 * 不支持创建 [`CONTAINER`](https://zookeeper.apache.org/doc/r3.5.1-alpha/api/org/apache/zookeeper/CreateMode.html) 类型的 znode
 * 不支持 [`SASL 身份验证`](https://cwiki.apache.org/confluence/display/ZOOKEEPER/Zookeeper+and+SASL)

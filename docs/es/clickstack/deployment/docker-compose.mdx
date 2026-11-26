@@ -3,23 +3,21 @@ slug: /use-cases/observability/clickstack/deployment/docker-compose
 title: 'Docker Compose'
 description: 'Despliegue de ClickStack Open Source con Docker Compose - la pila de observabilidad de ClickHouse'
 doc_type: 'guide'
-keywords: ['ClickStack Docker Compose', 'Docker Compose ClickHouse', 'Despliegue de la UI de ClickStack con Docker', 'Guía de despliegue de ClickStack', 'OpenTelemetry Docker Compose']
+keywords: ['ClickStack Docker Compose', 'Docker Compose ClickHouse', 'Despliegue de HyperDX con Docker', 'Guía de despliegue de ClickStack', 'OpenTelemetry Docker Compose']
 ---
+
+import { Image } from "/snippets/es/components/Image.jsx";
 
 import JSONSupport from '/snippets/es/_json_support.mdx';
 
 Todos los componentes de ClickStack Open Source se distribuyen por separado como imágenes de Docker individuales:
 
 * **ClickHouse**
-* **UI de ClickStack**
+* **HyperDX**
 * **OpenTelemetry collector (OTel)**
 * **MongoDB**
 
 Estas imágenes pueden combinarse y desplegarse localmente con Docker Compose.
-
-<Tip>
-  Lleve su observabilidad más allá de un despliegue local con [ClickHouse Observability](/es/clickstack/observability), sin tener que gestionar la infraestructura. [Regístrese en ClickHouse Cloud](https://clickhouse.cloud/signUp?loc=docs-clickstack-docker-compose-inline) para empezar.
-</Tip>
 
 Docker Compose expone puertos adicionales para observabilidad e ingestión según la configuración predeterminada de `otel-collector`:
 
@@ -32,7 +30,7 @@ Docker Compose expone puertos adicionales para observabilidad e ingestión segú
 Estos puertos permiten integraciones con diversas fuentes de telemetría y hacen que el OpenTelemetry collector esté listo para producción para distintas necesidades de ingestión.
 
 <div id="suitable-for">
-  ### Adecuado para {#suitable-for}
+  ### Adecuado para
 </div>
 
 * Pruebas locales
@@ -40,7 +38,9 @@ Estos puertos permiten integraciones con diversas fuentes de telemetría y hacen
 * Implementaciones en producción en las que no se requiere tolerancia a fallos y un solo servidor basta para alojar todos los datos de ClickHouse
 * Al implementar ClickStack, pero alojando ClickHouse por separado; por ejemplo, con ClickHouse Cloud.
 
-## Pasos de despliegue {#deployment-steps}
+<div id="deployment-steps">
+  ## Pasos de despliegue
+</div>
 
 <br />
 
@@ -54,8 +54,8 @@ Estos puertos permiten integraciones con diversas fuentes de telemetría y hacen
     ```
   </Step>
 
-  <Step title="Accede a la UI de ClickStack" id="navigate-to-hyperdx-ui">
-    Visita [http://localhost:8080](http://localhost:8080) para acceder a la UI de ClickStack.
+  <Step title="Accede a la UI de HyperDX" id="navigate-to-hyperdx-ui">
+    Visita [http://localhost:8080](http://localhost:8080) para acceder a la UI de HyperDX.
 
     Crea un usuario e introduce un nombre de usuario y una contraseña que cumplan los requisitos.
 
@@ -67,11 +67,7 @@ Estos puertos permiten integraciones con diversas fuentes de telemetría y hacen
       Puedes sobrescribir la conexión predeterminada de la instancia integrada de ClickHouse. Para obtener más información, consulta [&quot;Uso de ClickHouse Cloud&quot;](#using-clickhouse-cloud).
     </Info>
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![UI de ClickStack](/images/use-cases/observability/hyperdx-login.webp)
-      </Frame>
-    </div>
+    <Image img="/images/use-cases/observability/hyperdx-login.webp" alt="UI de HyperDX" size="lg" />
 
     Para ver un ejemplo de uso de una instancia alternativa de ClickHouse, consulta [&quot;Uso de ClickHouse Cloud&quot;](#using-clickhouse-cloud).
   </Step>
@@ -83,16 +79,12 @@ Estos puertos permiten integraciones con diversas fuentes de telemetría y hacen
 
     Si se te solicita crear una fuente, conserva todos los valores predeterminados y completa el campo `Table` con el valor `otel_logs`. El resto de la configuración debería detectarse automáticamente, por lo que podrás hacer clic en `Save New Source`.
 
-    <div className="ch-image-md">
-      <Frame>
-        ![Crear fuente de logs](/images/use-cases/observability/hyperdx-logs.webp)
-      </Frame>
-    </div>
+    <Image img="/images/use-cases/observability/hyperdx-logs.webp" alt="Crear fuente de logs" size="md" />
   </Step>
 </Steps>
 
 <div id="modifying-settings">
-  ## Modificar la configuración de compose {#modifying-settings}
+  ## Modificar la configuración de compose
 </div>
 
 Puede modificar la configuración de la pila, como la versión utilizada, mediante el archivo de variables de entorno:
@@ -123,16 +115,16 @@ HYPERDX_OTEL_EXPORTER_CLICKHOUSE_DATABASE=default
 ```
 
 <div id="configuring-collector">
-  ### Configuración del OpenTelemetry collector {#configuring-collector}
+  ### Configuración del OpenTelemetry collector
 </div>
 
 La configuración del OTel collector puede modificarse si es necesario; consulta [&quot;Modificar la configuración&quot;](/es/clickstack/ingesting-data/collector#modifying-otel-collector-configuration).
 
 <div id="using-clickhouse-cloud">
-  ## Uso de ClickHouse Cloud {#using-clickhouse-cloud}
+  ## Uso de ClickHouse Cloud
 </div>
 
-Esta distribución puede utilizarse con ClickHouse Cloud, pero es diferente de [Self-managed ClickHouse Observability](/es/clickstack/self-configured/deployment/managed). En esta configuración, administras tú mismo la UI de ClickStack mientras usas ClickHouse Cloud solo para compute y Storage. Salvo que tengas un motivo concreto para operar la UI de forma independiente, te recomendamos usar Self-managed ClickHouse Observability, que incluye authentication integrada y funciones Enterprise adicionales, y evita que tengas que administrar tú mismo la UI de ClickStack.
+Esta distribución puede utilizarse con ClickHouse Cloud, pero es diferente de [Managed ClickStack](/es/clickstack/deployment/managed). En esta configuración, administras tú mismo la UI de ClickStack mientras usas ClickHouse Cloud solo para compute y Storage. Salvo que tengas un motivo concreto para operar la UI de forma independiente, te recomendamos usar Managed ClickStack, que incluye authentication integrada y funciones Enterprise adicionales, y evita que tengas que administrar tú mismo la UI de ClickStack.
 
 Debes:
 
@@ -163,6 +155,6 @@ Debes:
 
   `CLICKHOUSE_ENDPOINT` debe ser el endpoint HTTPS de ClickHouse Cloud, incluido el puerto `8443`; por ejemplo, `https://mxl4k3ul6a.us-east-2.aws.clickhouse.com:8443`
 
-* Al conectarte a la UI de ClickStack y crear una conexión a ClickHouse, usa tus credenciales de Cloud.
+* Al conectarte a la UI de HyperDX y crear una connection a ClickHouse, usa tus credentials de Cloud.
 
 <JSONSupport />

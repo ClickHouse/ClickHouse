@@ -37,7 +37,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 エンジン引数:
 
 * `path_to_logs` – サブスクライブするログファイルのパス。ログファイルを含むディレクトリへのパス、または単一のログファイルへのパスを指定できます。相対パスは、[file](/ja/reference/functions/table-functions/file) テーブル関数と同様に、`user_files_path` ディレクトリを基準に解決されます。ただし、サーバーの作業ディレクトリを基準にすでに `user_files_path` 内を指している相対パス (たとえば、公式 Docker イメージのようにサーバーがデータディレクトリ内で実行されている場合の `user_files/my_app/app.log`) は、作業ディレクトリを基準とするパスとして扱われます。パス内のファイル名には [glob](/ja/reference/functions/table-functions/file#globs-in-path) (`*`、`?`、`{abc,def}`、`{N..M}`) を使用でき、ディレクトリ内で一致するファイルのみを読み込めます。詳しくは [glob によるファイルの選択](#selecting-files-with-globs) を参照してください。なお、ClickHouse で指定できるのは `user_files` ディレクトリ内のパスのみです。
-* `format_name` - レコードのフォーマット。FileLog はファイル内の各行を個別のレコードとして処理するため、すべてのデータフォーマットがこれに適しているわけではありません。行は改行で終わった時点で読み取られます。そのため、まだ書き込み中の最終行は、書き込みが完了した後の `poll` で読み取られます。
+* `format_name` - レコードのフォーマット。FileLog はファイル内の各行を個別のレコードとして処理するため、すべてのデータフォーマットがこれに適しているわけではありません。
 
 パラメータ:
 
@@ -45,8 +45,8 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 * `poll_max_batch_size` — 1 回の `poll` で取得するレコードの最大数。デフォルト: [max&#95;block&#95;size](/ja/reference/settings/session-settings/max#max_block_size)。
 * `max_block_size` — `poll` の最大バッチサイズ (レコード数) 。デフォルト: [max&#95;insert&#95;block&#95;size](/ja/reference/settings/session-settings/max-insert#max_insert_block_size)。
 * `max_threads` - ファイルをパースする最大スレッド数。デフォルトは 0 で、この場合は max(1, physical&#95;cpu&#95;cores / 4) が使用されます。
-* `poll_directory_watch_events_backoff_init` - テーブルのストリーミングタスクの初期スリープ値。このタスクは、新しいデータがない間はバックオフします。macOS では、ディレクトリを監視するスレッドの初期スリープ値でもあります。デフォルト: `500`。
-* `poll_directory_watch_events_backoff_max` - テーブルのストリーミングタスクの最大スリープ値。macOS では、ディレクトリを監視するスレッドの最大スリープ値でもあります。デフォルト: `32000`。
+* `poll_directory_watch_events_backoff_init` - ディレクトリ監視スレッドの初期スリープ値。デフォルト: `500`。
+* `poll_directory_watch_events_backoff_max` - ディレクトリ監視スレッドの最大スリープ値。デフォルト: `32000`。
 * `poll_directory_watch_events_backoff_factor` - バックオフの進み方。デフォルトは指数関数的です。デフォルト: `2`。
 * `handle_error_mode` — FileLog エンジン のエラー処理方法。設定可能な値: default (レコードのパースに失敗した場合、直接の `SELECT` では例外がスローされます。テーブルが materialized view にストリーミングしている間は、そのレコードはスキップされ、エラーはサーバーログに書き込まれます) 、stream (例外メッセージと生のレコードが仮想カラム `_error` および `_raw_record` に保存されます) 。
 

@@ -13,7 +13,7 @@ import { RunnableCode } from "/snippets/ru/components/RunnableCode/RunnableCode.
   В этом руководстве вы узнаете, как с помощью ClickHouse выполнять аналитические запросы к большим объёмам данных.
   Кроме того, вы научитесь обогащать данные с помощью словаря и писать запросы с JOIN.
 
-  ## Предварительные требования {#prerequisites}
+  ## Предварительные требования
 
   Для работы с этим руководством вам понадобится:
 
@@ -361,7 +361,7 @@ import { RunnableCode } from "/snippets/ru/components/RunnableCode/RunnableCode.
     </Step>
   </Steps>
 
-  ## Дальнейшие шаги {#next-steps}
+  ## Дальнейшие шаги
 
   Подробнее о ClickHouse читайте в следующих разделах документации:
 
@@ -385,7 +385,7 @@ import { RunnableCode } from "/snippets/ru/components/RunnableCode/RunnableCode.
     [&quot;Характеристики Песочницы ClickHouse&quot;](/ru/get-started/sample-datasets/playground#specifications).
   </Note>
 
-  ## Создайте таблицу trips {#create-the-table-trips}
+  ## Создайте таблицу trips
 
   Для начала создайте таблицу для поездок на такси:
 
@@ -416,7 +416,7 @@ import { RunnableCode } from "/snippets/ru/components/RunnableCode/RunnableCode.
   PRIMARY KEY (pickup_datetime, dropoff_datetime);
   ```
 
-  ## Загрузка данных напрямую из объектного хранилища {#load-the-data-directly-from-object-storage}
+  ## Загрузка данных напрямую из объектного хранилища
 
   Для знакомства с данными пользователи могут загрузить их небольшую часть (3 миллиона строк). Данные хранятся в файлах в формате TSV в объектном хранилище, откуда их легко потоково загрузить в
   ClickHouse Cloud с помощью табличной функции `s3`.
@@ -485,7 +485,7 @@ import { RunnableCode } from "/snippets/ru/components/RunnableCode/RunnableCode.
     </Tab>
   </Tabs>
 
-  ## Примеры запросов {#sample-queries}
+  ## Примеры запросов
 
   Следующие запросы выполняются на выборке, описанной выше. Вы можете запускать эти примеры запросов на полном наборе данных в [sql.clickhouse.com](https://sql.clickhouse.com/?query=U0VMRUNUIGNvdW50KCkgRlJPTSBueWNfdGF4aS50cmlwcw\&chart=eyJ0eXBlIjoibGluZSIsImNvbmZpZyI6eyJ0aXRsZSI6IlRlbXBlcmF0dXJlIGJ5IGNvdW50cnkgYW5kIHllYXIiLCJ4YXhpcyI6InllYXIiLCJ5YXhpcyI6ImNvdW50KCkiLCJzZXJpZXMiOiJDQVNUKHBhc3Nlbmdlcl9jb3VudCwgJ1N0cmluZycpIn19), изменив приведённые ниже запросы так, чтобы они использовали таблицу `nyc_taxi.trips`.
 
@@ -547,7 +547,7 @@ import { RunnableCode } from "/snippets/ru/components/RunnableCode/RunnableCode.
   ORDER BY passenger_count ASC
   ```
 
-  ## Скачивание подготовленных партиций {#download-of-prepared-partitions}
+  ## Скачивание подготовленных партиций
 
   <Note>
     В следующих шагах приведены сведения об исходном наборе данных и описан способ загрузки подготовленных партиций в среду самоуправляемого сервера ClickHouse.
@@ -573,7 +573,7 @@ import { RunnableCode } from "/snippets/ru/components/RunnableCode/RunnableCode.
     Если вы будете выполнять приведённые ниже запросы, используйте полное имя таблицы — `datasets.trips_mergetree`.
   </Info>
 
-  ## Результаты на одном сервере {#results-on-single-server}
+  ## Результаты на одном сервере
 
   Q1:
 
@@ -657,7 +657,7 @@ import { RunnableCode } from "/snippets/ru/components/RunnableCode/RunnableCode.
   В данном случае время выполнения запроса определяется прежде всего сетевой задержкой.
   Мы выполняли запросы с клиента, расположенного в другом датацентре, нежели кластер, из-за чего задержка увеличивалась примерно на 20 мс.
 
-  ## Итоги {#summary}
+  ## Итоги
 
   | серверы            | Q1    | Q2    | Q3    | Q4    |
   | ------------------ | ----- | ----- | ----- | ----- |

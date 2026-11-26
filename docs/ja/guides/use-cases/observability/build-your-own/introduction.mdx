@@ -7,17 +7,17 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-## はじめに {#introduction}
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+<div id="introduction">
+  ## はじめに
+</div>
 
 このガイドは、ClickHouse を使って、ログとトレースを中心とした独自の SQL ベースのオブザーバビリティソリューションを構築したい方向けに作成されています。インジェスト時の考慮事項、アクセスパターンに合わせたスキーマの最適化、非構造化ログからの構造化情報の抽出など、独自ソリューションを構築するうえで必要となるあらゆる側面を扱います。
 
 ClickHouse 単体は、オブザーバビリティ向けのすぐに使えるソリューションではありません。しかし、比類のない圧縮率と超高速なクエリ応答時間を実現できる、オブザーバビリティデータ向けの非常に効率的なストレージエンジンとして活用できます。ClickHouse をオブザーバビリティソリューションの一部として利用するには、UI とデータ収集フレームワークの両方が必要です。現在は、オブザーバビリティシグナルの可視化には **Grafana**、データ収集には **OpenTelemetry** の利用を推奨しています (どちらも公式にサポートされているインテグレーションです) 。
 
-<div className="ch-image-md">
-  <Frame>
-    ![シンプルなOTel](/images/use-cases/observability/observability-1.webp)
-  </Frame>
-</div>
+<Image img="/images/use-cases/observability/observability-1.webp" alt="シンプルなOTel" size="md" />
 
 <br />
 
@@ -28,7 +28,7 @@ ClickHouse 単体は、オブザーバビリティ向けのすぐに使えるソ
 </Info>
 
 <div id="why-use-clickhouse">
-  ## なぜ ClickHouse を使うのか？ {#why-use-clickhouse}
+  ## なぜ ClickHouse を使うのか？
 </div>
 
 あらゆる集中型オブザーバビリティストアにおいて最も重要なのは、多様なソースから集められる膨大なログデータをすばやく集計、分析、検索できることです。この一元化によりトラブルシューティングが効率化され、サービス障害の根本原因を特定しやすくなります。
@@ -48,7 +48,7 @@ ClickHouse 単体は、オブザーバビリティ向けのすぐに使えるソ
 * **オープンソースとオープン標準** - オープンソースデータベースとして、ClickHouse は OpenTelemetry のようなオープン標準を採用しています。ベンダーロックインの課題を回避しながら、プロジェクトに貢献し積極的に参加できる点も魅力です。
 
 <div id="when-should-you-use-clickhouse-for-observability">
-  ## どのような場合にオブザーバビリティで ClickHouse を使うべきか {#when-should-you-use-clickhouse-for-observability}
+  ## どのような場合にオブザーバビリティで ClickHouse を使うべきか
 </div>
 
 オブザーバビリティデータに ClickHouse を使うには、SQL ベースのオブザーバビリティを受け入れる必要があります。SQL ベースのオブザーバビリティの歴史については [こちらのブログ記事](https://clickhouse.com/blog/the-state-of-sql-based-observability) をおすすめしますが、要点をまとめると次のとおりです。
@@ -71,7 +71,7 @@ ClickHouse 単体は、オブザーバビリティ向けのすぐに使えるソ
 * エコシステムがさらに成熟し、SQL ベースのオブザーバビリティがもっとすぐに使えるようになるのを待ちたい
 
 <div id="logs-and-traces">
-  ## ログとトレース {#logs-and-traces}
+  ## ログとトレース
 </div>
 
 オブザーバビリティのユースケースは、ログ、トレース、メトリクスという3つの明確な柱で構成されています。それぞれで、データ型とアクセスパターンが異なります。
@@ -93,7 +93,9 @@ ClickHouse 単体は、オブザーバビリティ向けのすぐに使えるソ
   ClickHouseはメトリクスデータの保存にも使用できますが、この領域はClickHouseではまだ成熟度が低く、PrometheusデータフォーマットやPromQLのサポートなどの機能にはまだ十分対応していません。
 </Info>
 
-### 分散トレーシング {#distributed-tracing}
+<div id="distributed-tracing">
+  ### 分散トレーシング
+</div>
 
 分散トレーシングは、オブザーバビリティにおける重要な機能です。分散トレース (単にトレースとも呼ばれます) は、リクエストがシステム内をたどる経路を表します。リクエストはエンドユーザーまたはアプリケーションから発生し、システム全体へと波及していき、通常はマイクロサービス間で一連のアクションの流れを生み出します。この一連の流れを記録し、後続のイベントを相関付けられるようにすることで、オブザーバビリティの利用者や SRE は、アーキテクチャがどれほど複雑であっても、あるいはサーバーレスであっても、アプリケーションフロー内の問題を診断できるようになります。
 
@@ -101,10 +103,6 @@ ClickHouse 単体は、オブザーバビリティ向けのすぐに使えるソ
 
 ほとんどのオブザーバビリティベンダーは、この情報をウォーターフォールとして可視化し、相対的なタイミングを長さに比例した横棒で示します。たとえば、Grafana では次のようになります。
 
-<div className="ch-image-lg">
-  <Frame>
-    ![トレースの例](/images/use-cases/observability/observability-2.webp)
-  </Frame>
-</div>
+<Image img="/images/use-cases/observability/observability-2.webp" alt="トレースの例" size="lg" border />
 
 ログやトレースの概念をより深く理解したい場合は、[OpenTelemetry のドキュメント](https://opentelemetry.io/docs/concepts/)を強くお勧めします。

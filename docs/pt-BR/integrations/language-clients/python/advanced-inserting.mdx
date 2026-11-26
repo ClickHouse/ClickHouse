@@ -49,8 +49,6 @@ Os formatos de escrita são implementados para um número limitado de tipos. Na 
 
 Normalmente, não é necessário substituir um formato de escrita, mas os métodos em `clickhouse_connect.datatypes.format` podem definir um globalmente. Wrappers de contêiner, como `Array`, `Nullable` e `LowCardinality`, preservam o comportamento de formatação do tipo do elemento.
 
-Inserts diretos em colunas de inteiros de 8 a 64 bits rejeitam NaN e infinito de ponto flutuante com `DataError`, inclusive em colunas que aceitam nulos e em valores aninhados. Use `None` para representar o NULL do SQL em uma coluna de inteiros anulável. Uma coluna de inteiros não anulável rejeita `None`. O `insert_df` grava valores ausentes como NULL em uma coluna de inteiros anulável e como 0 em uma não anulável, com qualquer um dos dois codecs.
-
 #### Opções de formato de escrita {#write-format-options}
 
 | ClickHouse Type       | Tipo nativo do Python              | Formatos de escrita | Comentários                                                                                                                                                                                                                                     |
@@ -65,7 +63,7 @@ Inserts diretos em colunas de inteiros de 8 a 64 bits rejeitam NaN e infinito de
 | Interval*             | int                                |                     | Os valores são contagens de 64 bits com sinal na unidade do tipo interval.                                                                                                                                                                      |
 | String                | str or bytes                       |                     | Uma coluna deve conter texto ou bytes de forma consistente.                                                                                                                                                                                     |
 | FixedString           | bytes                              | string              | Valores String são preenchidos com bytes zero. Bytes vazios são gravados como bytes todos zero.                                                                                                                                                 |
-| Enum[8,16]            | str or int                         |                     | Insira labels como strings ou como códigos inteiros. Labels e códigos podem ser usados juntos na mesma coluna.                                                                                                                                  |
+| Enum[8,16]            | str or int                         |                     | Insira labels como strings ou seus valores inteiros subjacentes.                                                                                                                                                                                |
 | Date                  | datetime.date or datetime.datetime | int                 | Valores inteiros são interpretados como dias desde 1970-01-01.                                                                                                                                                                                  |
 | Date32                | datetime.date or datetime.datetime | int                 | Valores inteiros são interpretados como deslocamentos de dias com sinal.                                                                                                                                                                        |
 | DateTime              | datetime.datetime                  | int                 | Valores inteiros são interpretados como segundos desde a epoch.                                                                                                                                                                                 |
@@ -84,12 +82,6 @@ Inserts diretos em colunas de inteiros de 8 a 64 bits rejeitam NaN e infinito de
 | MultiPoint            | Sequence[tuple]                    |                     | Cada ponto é uma tupla de 2 elementos. A inserção de valores MultiPoint exige o ClickHouse 26.8 ou posterior.                                                                                                                                   |
 | Geometry              | tuple or list                      |                     | Valores Point são tuplas de 2 elementos. Envolva valores baseados em lista, incluindo MultiPoint, com `typed_variant` para selecionar um membro de geometria.                                                                                   |
 | QBit                  | Sequence[float]                    |                     | O NumPy é usado automaticamente para uma transposição de bits mais rápida quando instalado.                                                                                                                                                     |
-
-#### Valores de Enum {#enum-values}
-
-Labels de string desconhecidos lançam `clickhouse_connect.driver.exceptions.DataError`, informando o nome da coluna e o label inválido. Isso também vale para valores dentro de `Array` e `Tuple` e para DataFrames do Pandas. Uma string vazia só é válida se for um label declarado.
-
-Inserts a partir de listas Python aceitam `None` apenas para `Nullable(Enum8(...))` ou `Nullable(Enum16(...))`. Em colunas Enum não anuláveis, `insert_df` converte valores ausentes no inteiro zero antes da serialização.
 
 #### Valores Date e Date32 {#date-and-date32-values}
 
@@ -243,8 +235,6 @@ A configuração global `naive_datetime_insert` controla inserções nativas de 
 * `"local"` é o padrão na versão 1.x. O Python interpreta o valor no fuso horário do processo quando `.timestamp()` é chamado. Isso preserva o comportamento atual.
 * `"server"` interpreta o valor como hora do relógio no fuso horário declarado pela coluna `DateTime` ou `DateTime64`. Se a coluna não tiver fuso horário, usa o fuso horário do servidor informado quando o cliente se conectou.
 
-Com o codec Python no modo `"local"`, se `.timestamp()` lançar `OSError` próximo ao epoch ou antes dele no Windows, o driver tenta novamente com o fuso horário local detectado associado ao valor. Instale `tzlocal` ou defina `TZ` como um nome de fuso horário IANA resolvível antes de importar o driver para fornecer regras históricas de fuso horário. Caso contrário, o fallback pode usar um deslocamento fixo que não corresponde ao horário de verão histórico.
-
 Defina a opção antes de uma inserção. Ela é lida quando cada coluna de inserção nativa que contém objetos `datetime` do Python ou strings ISO `DateTime64` é serializada; portanto, a alteração se aplica a clientes existentes e contextos de inserção reutilizáveis.
 
 ```python
@@ -260,7 +250,7 @@ client.insert("events", [[naive_time]], column_names=["event_time"])
 
 Com `"server"`, o ClickHouse Connect associa o `tzinfo` de destino antes de converter o valor em epoch. Para fusos horários IANA, segue as regras da biblioteca padrão para transições de horário de verão. Uma sobreposição no outono usa o valor `fold` do `datetime`. Por padrão, `fold=0` seleciona o deslocamento anterior à transição, enquanto `fold=1` seleciona o deslocamento posterior. Uma lacuna na primavera usa a mesma seleção de deslocamento e não é rejeitada nem normalizada.
 
-Horários de relógio inexistentes na lacuna da primavera podem não ser preservados em uma conversão de ida e volta por meio de um parâmetro de consulta no modo de relógio, pois o parsing de texto do ClickHouse pode selecionar um deslocamento diferente. Use um `datetime` com fuso horário ou um horário de relógio válido quando o instante for importante.
+Horários de relógio inexistentes na lacuna da primavera podem não ser preservados em uma conversão de ida e volta por meio de um parâmetro de consulta no modo de relógio, pois a análise de texto do ClickHouse pode selecionar um deslocamento diferente. Use um `datetime` com fuso horário ou um horário de relógio válido quando o instante for importante.
 
 A opção se aplica apenas a inserções nativas de objetos Python `datetime` e strings ISO sem fuso horário aceitas por `DateTime64`. Colunas NumPy e Pandas com dtype `datetime64` sem fuso horário mantêm a conversão existente de horário de relógio em UTC.
 

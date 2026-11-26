@@ -7,6 +7,10 @@ keywords: ['managed postgres', 'fastapi', 'sqlalchemy', 'asyncpg', 'alembic', 'p
 doc_type: 'guide'
 ---
 
+import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.guides-fastapi-beta" />
+
 [FastAPI](https://fastapi.tiangolo.com/) 是一个异步 Python Web 框架，[SQLAlchemy](https://www.sqlalchemy.org/) 则是使用最广泛的 Python ORM。在本指南中，您将定义一个带类型注解的 SQLAlchemy 模型，通过 [Alembic](https://alembic.sqlalchemy.org/) 迁移创建对应的表，并使用 FastAPI 提供增、查、改、删 (CRUD) 端点。该应用使用 [asyncpg](https://magicstack.github.io/asyncpg/) 驱动程序，所有连接均启用 TLS，并执行完整的证书验证。
 
 ## 前置条件 {#prerequisites}

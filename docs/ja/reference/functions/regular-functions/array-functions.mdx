@@ -367,49 +367,6 @@ SELECT arrayBottomK((x, y) -> y, 2, ['a', 'b', 'c'], [3, 1, 2])
 ['b','c']
 ```
 
-## arrayCombinations {#arrayCombinations}
-
-導入バージョン: v26.10.0
-
-ソース配列から長さ `k` のすべての組み合わせ (同じインデックスを繰り返さない、順序を考慮しない選択) を返します。列挙はインデックスに基づいて行われるため、値が等しい要素があると結果に重複行が含まれることがあります。`k = 0` の場合は `[[]]` を返します。ブロックあたりの結果の合計サイズは `function_range_max_elements_in_block` によって制限されます。生成される各配列は、そのサイズに 1 を加えた数としてカウントされます。
-
-**構文**
-
-```sql
-arrayCombinations(arr, k)
-```
-
-**引数**
-
-* `arr` — ソース配列。[`Array(T)`](/ja/reference/data-types/array)
-* `k` — 生成する各組み合わせの長さ。ソース配列のサイズ以下である必要があります。`Int8`、`Int16`、`Int32`、`Int64`、`UInt8`、`UInt16`、`UInt32`、`UInt64` に対応しています。[`(U)Int*`](/ja/reference/data-types/int-uint)
-
-**戻り値**
-
-長さ `k` のすべての組み合わせ。[`Array(Array(T))`](/ja/reference/data-types/array)
-
-**例**
-
-**使用例**
-
-```sql title=Query
-SELECT arrayCombinations([1, 2, 3], 2);
-```
-
-```response title=Response
-[[1,2],[1,3],[2,3]]
-```
-
-**`k = 0` の例**
-
-```sql title=Query
-SELECT arrayCombinations([1, 2, 3], 0);
-```
-
-```response title=Response
-[[]]
-```
-
 ## arrayCompact {#arrayCompact}
 
 導入バージョン: v20.1.0
@@ -483,15 +440,15 @@ SELECT arrayConcat([1, 2], [3, 4], [5, 6]) AS res
 
 `arrayCount` は[高階関数](/ja/reference/functions/regular-functions/overview#higher-order-functions)です。
 
-<Note>
+<Info>
   **`UInt32` を返すには設定 `array_count_legacy_uint32_result` を使用します**
 
-  バージョン 26.10 で後方互換性のない変更が導入されました。条件に一致する要素が `4294967295` 個を超える Array でも正確な結果が得られるよう、`arrayCount` は `UInt32` ではなく `UInt64` を返すようになりました。
+  バージョン 26.10 で後方互換性のない変更が導入されました。条件に一致する要素が `4294967295` 個を超える配列でも正確な結果が得られるよう、`arrayCount` は `UInt32` ではなく `UInt64` を返すようになりました。
   結果の定数性も変更されています。非定数の配列と、定数 false に畳み込まれる述語を組み合わせた場合、26.10 より前は結果が定数カラムでした (`isConstant(arrayCount(...))` は `1` を返していました) が、現在はフルカラムとなり (`isConstant` は `0` を返します) 、`length(arrayFilter(...))` と同じ挙動になります。
-  以前の挙動 (`UInt32` の結果の型と結果の定数性の両方) を維持するには、設定 `array_count_legacy_uint32_result` (デフォルト: `false`) を `true` に設定してください。
+  以前の挙動 (`UInt32` の結果型と結果の定数性の両方) を維持するには、設定 `array_count_legacy_uint32_result` (デフォルト: `false`) を `true` に設定してください。
 
   クラスターのローリングアップグレード中は、まだアップグレードされていないサーバーをイニシエーターとする分散クエリではこの設定が転送されません。そのため、アップグレード済みの分片上でローカルに評価される型依存の式 (例: `byteSize(arrayCount(...))`) では `UInt64` が返されます。クラスター全体のアップグレードが完了するまでこうしたクエリの挙動を一切変えたくない場合は、アップグレード済みのサーバー上で、分片側のクエリを実行するユーザーに対して `array_count_legacy_uint32_result = 1` を設定し、アップグレード完了後に削除してください。どのユーザーが該当するかはクラスターの設定によって異なります。サーバー間の `secret` が設定されている場合、分片はイニシエーターの現在のユーザーとしてクエリを実行します。それ以外の場合は、クラスター定義または `remote` テーブル関数で指定されたユーザー (指定がなければ `default`) が該当します。最も簡単かつ確実なのは、アップグレード済みサーバーのすべてのユーザーに対してこの設定を有効にする方法です。
-</Note>
+</Info>
 
 **構文**
 
@@ -502,7 +459,7 @@ arrayCount([func, ] arr1, ...)
 **引数**
 
 * `func` — 任意。配列の各要素に適用する関数。[`ラムダ関数`](/ja/reference/functions/regular-functions/overview#arrow-operator-and-lambda)
-* `arr1, ..., arrN` — N 個の Array。[`Array(T)`](/ja/reference/data-types/array)
+* `arr1, ..., arrN` — N 個の配列。[`Array(T)`](/ja/reference/data-types/array)
 
 **戻り値**
 
@@ -2553,272 +2510,6 @@ SELECT arrayNormalizedGini([0.9, 0.3, 0.8, 0.7],[6, 1, 0, 2]);
 (0.18055555555555558,0.2638888888888889,0.6842105263157896)
 ```
 
-## arrayPackBitGroupsToFixedString {#arrayPackBitGroupsToFixedString}
-
-導入バージョン: v26.10.0
-
-`arrayPackBitsToFixedString` と同様ですが、ラムダは下位 `g` ビットを 1 つのグループとする整数を返し、各グループは
-最上位ビットから順に `FixedString(n)` へ連続して詰め込まれます。結果は
-`arrayPackBitGroupsToString` の先頭 `n` バイト (境界をまたぐグループは先頭側のビットのみが含まれます) であり、`n`
-バイトに満たない部分はゼロでパディングされます。サイズ `n` とグループサイズ `g` はいずれも正の定数でなければならず、`g` は 64 以下である必要があります。
-
-**構文**
-
-```sql
-arrayPackBitGroupsToFixedString(f, n, g, arr1[, arr2, ...])
-```
-
-**引数**
-
-* `f` — 各要素のグループ値を生成するラムダ関数。[`ラムダ関数`](/ja/reference/functions/regular-functions/overview#arrow-operator-and-lambda)
-* `n` — 結果の `FixedString` のサイズ (バイト単位) 。[`(U)Int8/16/32/64`](/ja/reference/data-types/int-uint)
-* `g` — 1 グループあたりのビット数。[`(U)Int8/16/32/64`](/ja/reference/data-types/int-uint)
-* `arr1[, arr2, ...]` — パック対象となる、同じサイズの 1 つ以上の配列。ラムダは配列ごとに 1 つの引数を受け取ります。[`Array(T)`](/ja/reference/data-types/array)
-
-**戻り値**
-
-パックされたビットを返します。[`FixedString(n)`](/ja/reference/data-types/fixedstring)
-
-**例**
-
-**例**
-
-```sql title=Query
-SELECT arrayPackBitGroupsToFixedString(x -> x, 2, 4, [3, 0, 3, 1])
-```
-
-```response title=Response
-01
-```
-
-## arrayPackBitGroupsToString {#arrayPackBitGroupsToString}
-
-導入バージョン: v26.10.0
-
-`arrayPackBitsToString` と同様ですが、ラムダは整数を返し、その下位 `g` ビットが 1 つのグループとなります。各グループは
-隙間なく連続してパックされます (最上位ビットが先頭) 。結果の長さは `ceil(size_of_array * g / 8)` バイトです。
-グループサイズ `g` は 1 から 64 までの定数で指定する必要があります。
-
-**構文**
-
-```sql
-arrayPackBitGroupsToString(f, g, arr1[, arr2, ...])
-```
-
-**引数**
-
-* `f` — 各要素のグループ値を生成するラムダ関数。[`ラムダ関数`](/ja/reference/functions/regular-functions/overview#arrow-operator-and-lambda)
-* `g` — 1グループあたりのビット数。[`(U)Int8/16/32/64`](/ja/reference/data-types/int-uint)
-* `arr1[, arr2, ...]` — パック対象となる、同じサイズの1つ以上の配列。ラムダは配列ごとに1つの引数を受け取ります。[`Array(T)`](/ja/reference/data-types/array)
-
-**戻り値**
-
-パックされたビットを返します。[`String`](/ja/reference/data-types/string)
-
-**例**
-
-**例**
-
-```sql title=Query
-SELECT arrayPackBitGroupsToString(x -> x, 4, [3, 0, 3, 1])
-```
-
-```response title=Response
-01
-```
-
-## arrayPackBitGroupsToUInt64 {#arrayPackBitGroupsToUInt64}
-
-導入バージョン: v26.10.0
-
-`arrayPackBitsToUInt64` と同様ですが、ラムダは整数を返し、その下位 `g` ビットが 1 つのグループとなります。各グループは
-連続してパックされます (各バイト内では最上位ビットが先頭となり、バイトは little-endian の順序で解釈されます。したがって
-`arrayPackBitGroupsToUInt64(f, g, arr) = reinterpretAsUInt64(arrayPackBitGroupsToString(f, g, arr))` となります) 。結果には
-パックされたストリームの先頭 64 ビットが格納されます。`g` で 64 が割り切れない場合、境界をまたぐグループについては
-その先頭側のビットのみが結果に含まれます。グループサイズ `g` は 1 から 64 までの定数でなければなりません。
-
-**構文**
-
-```sql
-arrayPackBitGroupsToUInt64(f, g, arr1[, arr2, ...])
-```
-
-**引数**
-
-* `f` — 各要素のグループ値を生成するラムダ関数。[`ラムダ関数`](/ja/reference/functions/regular-functions/overview#arrow-operator-and-lambda)
-* `g` — グループあたりのビット数。[`(U)Int8/16/32/64`](/ja/reference/data-types/int-uint)
-* `arr1[, arr2, ...]` — パック対象となる、同じサイズの1つ以上の配列。ラムダは配列ごとに1つの引数を受け取ります。[`Array(T)`](/ja/reference/data-types/array)
-
-**戻り値**
-
-パックされたビットを返します。[`UInt64`](/ja/reference/data-types/int-uint)
-
-**例**
-
-**例**
-
-```sql title=Query
-SELECT arrayPackBitGroupsToUInt64(x -> x, 4, [1, 2, 3])
-```
-
-```response title=Response
-12306
-```
-
-## arrayPackBitsToFixedString {#arrayPackBitsToFixedString}
-
-導入バージョン: v26.10.0
-
-配列の各要素にラムダ関数を適用し、得られたビットを `FixedString(n)` にパックします。
-ラムダは各要素に対して整数を返し、その値は 1 ビット (ゼロまたは非ゼロ) として扱われます。
-ビットは最上位ビットから順に書き込まれるため、結果は `arrayPackBitsToString` の先頭 `n` バイトと一致します。
-配列の要素数が `n * 8` を超える場合、残りの要素は無視されます。不足する場合は、結果が `n` バイトになるまでゼロでパディングされます。
-サイズ `n` は正の定数でなければなりません。
-
-**構文**
-
-```sql
-arrayPackBitsToFixedString(f, n, arr1[, arr2, ...])
-```
-
-**引数**
-
-* `f` — 各要素に対応するビットを生成するラムダ関数。[`ラムダ関数`](/ja/reference/functions/regular-functions/overview#arrow-operator-and-lambda)
-* `n` — 結果の `FixedString` のサイズ (バイト単位)。[`(U)Int8/16/32/64`](/ja/reference/data-types/int-uint)
-* `arr1[, arr2, ...]` — パック対象となる、同じサイズの 1 つ以上の配列。ラムダは配列ごとに 1 つの引数を受け取ります。[`Array(T)`](/ja/reference/data-types/array)
-
-**戻り値**
-
-パックされたビットを返します。[`FixedString(n)`](/ja/reference/data-types/fixedstring)
-
-**例**
-
-**例**
-
-```sql title=Query
-SELECT arrayPackBitsToFixedString(x -> x, 2, [0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 1])
-```
-
-```response title=Response
-01
-```
-
-## arrayPackBitsToString {#arrayPackBitsToString}
-
-導入バージョン: v26.10.0
-
-配列の各要素にラムダ関数を適用し、得られたビットを `String` にパックします。
-ラムダは各要素に対して整数を返し、その値は 1 つのビット (ゼロまたは非ゼロ) として扱われます。
-ビットは最上位ビットから順に書き込まれ、結果の長さは `ceil(size_of_array / 8)` バイトになります。
-
-**構文**
-
-```sql
-arrayPackBitsToString(f, arr1[, arr2, ...])
-```
-
-**引数**
-
-* `f` — 各要素に対応するビットを生成するラムダ関数。[`ラムダ関数`](/ja/reference/functions/regular-functions/overview#arrow-operator-and-lambda)
-* `arr1[, arr2, ...]` — パック対象となる、サイズが等しい 1 つ以上の配列。ラムダ関数は配列ごとに 1 つの引数を受け取ります。[`Array(T)`](/ja/reference/data-types/array)
-
-**戻り値**
-
-パックされたビットを返します。[`String`](/ja/reference/data-types/string)
-
-**例**
-
-**例**
-
-```sql title=Query
-SELECT arrayPackBitsToString(x -> x, [0, 0, 1, 1, 0, 0, 0, 0])
-```
-
-```response title=Response
-0
-```
-
-## arrayPackBitsToUInt64 {#arrayPackBitsToUInt64}
-
-導入バージョン: v26.10.0
-
-配列の各要素にラムダ関数を適用し、得られたビットを `UInt64` にパックします。
-ラムダは各要素に対して整数を返し、その値は 1 つのビット (ゼロまたは非ゼロ) として扱われます。
-ビットストリームは最上位ビットを先頭としてバイト単位に配置され (`arrayPackBitsToString` と同じバイト列) 、
-各バイトは little-endian の順序で解釈されます。つまり、
-`arrayPackBitsToUInt64(f, arr) = reinterpretAsUInt64(arrayPackBitsToString(f, arr))` が成り立ちます。
-使用されるのは先頭の 64 要素のみです。要素数が 64 未満の場合、残りのビットはゼロになります。
-
-**構文**
-
-```sql
-arrayPackBitsToUInt64(f, arr1[, arr2, ...])
-```
-
-**引数**
-
-* `f` — 各要素に対応するビットを生成するラムダ関数。[`ラムダ関数`](/ja/reference/functions/regular-functions/overview#arrow-operator-and-lambda)
-* `arr1[, arr2, ...]` — パック対象となる、同じサイズの1つ以上の配列。ラムダは配列ごとに1つの引数を受け取ります。[`Array(T)`](/ja/reference/data-types/array)
-
-**戻り値**
-
-パックされたビットを返します。[`UInt64`](/ja/reference/data-types/int-uint)
-
-**例**
-
-**例**
-
-```sql title=Query
-SELECT arrayPackBitsToUInt64(x -> x, [1, 0, 0, 0, 0, 0])
-```
-
-```response title=Response
-128
-```
-
-## arrayPartialPermutations {#arrayPartialPermutations}
-
-導入バージョン: v26.10.0
-
-ソース配列から長さ `k` のすべての部分順列 (インデックスを重複させずに順序付けして選んだもの) を返します。列挙はインデックス単位で行われるため、等しい値が含まれていると、結果に重複行が生じることがあります。`k = 0` の場合は `[[]]` を返します。ブロックあたりの結果の合計サイズは `function_range_max_elements_in_block` によって制限されます。生成される各配列は、そのサイズに 1 を加えた値としてカウントされます。
-
-**構文**
-
-```sql
-arrayPartialPermutations(arr, k)
-```
-
-**引数**
-
-* `arr` — ソース配列。[`Array(T)`](/ja/reference/data-types/array)
-* `k` — 生成する各部分順列の長さ。ソース配列のサイズ以下である必要があります。`Int8`、`Int16`、`Int32`、`Int64`、`UInt8`、`UInt16`、`UInt32`、`UInt64` に対応しています。[`(U)Int*`](/ja/reference/data-types/int-uint)
-
-**戻り値**
-
-長さ `k` のすべての部分順列。[`Array(Array(T))`](/ja/reference/data-types/array)
-
-**例**
-
-**使用例**
-
-```sql title=Query
-SELECT arrayPartialPermutations([1, 2, 3], 2);
-```
-
-```response title=Response
-[[1,2],[1,3],[2,1],[2,3],[3,1],[3,2]]
-```
-
-**`k = 0` の例**
-
-```sql title=Query
-SELECT arrayPartialPermutations([1, 2, 3], 0);
-```
-
-```response title=Response
-[[]]
-```
-
 ## arrayPartialReverseSort {#arrayPartialReverseSort}
 
 導入バージョン: v23.2.0
@@ -3082,38 +2773,6 @@ SELECT arrayPartialSort((x, y) -> -y, 1, [0, 1, 2], [1, 2, 3]) as res
 
 ```response title=Response
 [2,1,0]
-```
-
-## arrayPermutations {#arrayPermutations}
-
-導入バージョン: v26.10.0
-
-ソース配列の要素のすべての順列を返します。列挙は要素の位置 (インデックス) に基づいて行われるため、同じ値の要素が含まれている場合は、結果に重複行が現れることがあります。ソース配列が空の場合は `[[]]` を返します。ブロックあたりの結果の合計サイズは `function_range_max_elements_in_block` によって制限されます。生成される各配列は、そのサイズに 1 を加えた数としてカウントされます。
-
-**構文**
-
-```sql
-arrayPermutations(arr)
-```
-
-**引数**
-
-* `arr` — ソース配列。[`Array(T)`](/ja/reference/data-types/array)
-
-**戻り値**
-
-ソース配列のすべての順列。[`Array(Array(T))`](/ja/reference/data-types/array)
-
-**例**
-
-**使用例**
-
-```sql title=Query
-SELECT arrayPermutations([1, 2, 3]);
-```
-
-```response title=Response
-[[1,2,3],[1,3,2],[2,1,3],[2,3,1],[3,1,2],[3,2,1]]
 ```
 
 ## arrayPopBack {#arrayPopBack}
@@ -3482,8 +3141,6 @@ SELECT arrayReduce('uniqUpTo(3)', [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
 
 指定した範囲内の配列要素に集約関数を適用し、各範囲に対応する結果を格納した配列を返します。
 この関数は、`arrayReduce(agg_func, arraySlice(arr1, index, length), ...)` を複数回実行した場合と同じ結果を返します。
-唯一の違いは、length が符号なしとして扱われる点です。`Int64` の最大値を超える length を指定すると配列の残りすべてが選択されますが、
-`arraySlice` ではそのような値は負の length として解釈されます。
 
 **構文**
 
@@ -3493,13 +3150,13 @@ arrayReduceInRanges(agg_f, ranges, arr1[, arr2, ... ,arrN])
 
 **引数**
 
-* `agg_f` — 使用する 集約関数 の名前。[`String`](/ja/reference/data-types/string)
-* `ranges` — 集約する範囲。集約を開始するインデックス `i` と、集約対象の範囲 `r` を含む `(i, r)` 形式の Tuple の配列。[`Array(T)`](/ja/reference/data-types/array) または [`Tuple(T)`](/ja/reference/data-types/tuple)
-* `arr1[, arr2, ... ,arrN]` — 集約関数 に渡す N 個の配列。[`Array(T)`](/ja/reference/data-types/array)
+* `agg_f` — 使用する aggregate function の名前。[`String`](/ja/reference/data-types/string)
+* `ranges` — 集約する範囲。集約を開始する索引 `i` と、集約対象の範囲 `r` を含む `(i, r)` 形式の Tuple の配列。[`Array(T)`](/ja/reference/data-types/array) または [`Tuple(T)`](/ja/reference/data-types/tuple)
+* `arr1[, arr2, ... ,arrN]` — aggregate function に渡す N 個の配列。[`Array(T)`](/ja/reference/data-types/array)
 
 **戻り値**
 
-指定した範囲に対する 集約関数 の結果を含む配列を返します。[`Array(T)`](/ja/reference/data-types/array)
+指定した範囲に対する aggregate function の結果を含む配列を返します。[`Array(T)`](/ja/reference/data-types/array)
 
 **例**
 
@@ -3562,62 +3219,6 @@ SELECT arrayRemove(['a', NULL, 'b', NULL], NULL)
 
 ```response title=Response
 ['a','b']
-```
-
-## arrayRemoveAt {#arrayRemoveAt}
-
-導入バージョン: v26.10.0
-
-配列から、指定したインデックス位置にある要素を削除します。
-インデックスは1始まりです。負のインデックスを指定すると、配列の末尾から数えます。
-インデックスが配列の範囲外の場合は、配列が変更されずにそのまま返されます。
-インデックス 0 は無効です。
-
-**構文**
-
-```sql
-arrayRemoveAt(arr, index)
-```
-
-**引数**
-
-* `arr` — ソース配列。[`Array(T)`](/ja/reference/data-types/array)
-* `index` — 削除する要素のインデックス。Nullable ではない整数で指定します。負のインデックスは末尾から数えます。[`(U)Int8/16/32/64`](/ja/reference/data-types/int-uint)
-
-**戻り値**
-
-`index` の位置にある要素を取り除いたソース配列を返します。`index` が範囲外の場合は、元の配列をそのまま返します。[`Array(T)`](/ja/reference/data-types/array)
-
-**例**
-
-**正のインデックス**
-
-```sql title=Query
-SELECT arrayRemoveAt([1, 2, 3, 4], 2)
-```
-
-```response title=Response
-[1,3,4]
-```
-
-**負のインデックス**
-
-```sql title=Query
-SELECT arrayRemoveAt([1, 2, 3, 4], -1)
-```
-
-```response title=Response
-[1,2,3]
-```
-
-**範囲外**
-
-```sql title=Query
-SELECT arrayRemoveAt([1, 2, 3, 4], 10)
-```
-
-```response title=Response
-[1,2,3,4]
 ```
 
 ## arrayResize {#arrayResize}
@@ -4168,8 +3769,6 @@ SELECT arraySimilarity(['A', 'B', 'C'], ['A', 'K', 'L'], [1.0, 2, 3], [3.0, 4, 5
 arraySlice(arr, offset [, length])
 ```
 
-**別名**: `slice`
-
 **引数**
 
 * `arr` — スライス対象の Array。[`Array(T)`](/ja/reference/data-types/array) または [`QBit`](/ja/reference/data-types/qbit)
@@ -4519,170 +4118,6 @@ SELECT arrayTranspose([['a', 'b'], ['c', 'd']])
 [['a','c'],['b','d']]
 ```
 
-## arrayTreePreorder {#arrayTreePreorder}
-
-導入バージョン: v26.11.0
-
-ノード識別子と親識別子の 2 つの配列として保存された木 (またはフォレスト) を、深さ優先の前順 (preorder) で並べます。
-
-`ids` と `parent_ids` の要素 `i` は、入力ノード `i` とその親を表します。
-この関数は 4 つの配列からなる名前付きタプルを返します。いずれの配列も前順に並んでおり、位置はすべて 1始まりです。
-要素 `k` は前順における `k` 番目のノードを表します。
-
-* `order[k]` — このノードの入力インデックス。データ配列は `arrayMap(i -> x[i], t.order)` で前順に並べ替えられます。
-* `size[k]` — このノードの部分木に含まれるノード数 (ノード自身を含む)。部分木は位置の連続した範囲 `[k, k + size[k])` です。
-* `parent[k]` — 識別子がこのノードの親識別子と一致するノードの前順位置。該当するノードがない場合は `0`。
-* `depth[k]` — このノードから所属する木のルートまでの距離。ルートの場合は `0`。
-
-ノード `a` がノード `b` の祖先となるのは、`a < b AND b < a + size[a]` が成り立つ場合に限ります。
-部分木に対する加法的な集約は、2 つのプレフィックス和の差分として求められます ([`arrayCumSum`](#arrayCumSum) を参照)。
-それ以外の部分木に対する集約は、前順に並べ替えたデータ配列に [`arraySlice`](#arraySlice) を適用することで求められます。
-
-木はルートの入力順に 1 つずつ書き出され、各ノードの子も入力順に訪問されるため、結果は決定論的です。時間計算量は配列サイズに対して線形で、木の深さに制限はありません。
-
-この関数は配列の内容を理由に例外をスローすることはなく、どのような入力からでも有効なフォレストを構築します。
-
-* 親識別子が `NULL` であるか、`ids` に存在しない場合 (例: 空文字列や孤立ノード)、そのノードはルートになります。
-* 親リンクが循環を形成している場合、循環内で入力順が最も早いノードのリンクが切断され、そのノードがルートになります。このノードの `parent` には実際の親の位置が保持され、その値は自身の位置より大きくなります。したがって、`parent[k] > k` は位置 `k` で循環が切断されたことを示します。自分自身を親とするノードは `parent[k] = k` になります。
-* `ids` に重複した値がある場合、子は最初の出現にアタッチ済みになります。
-
-識別子はハッシュによって比較されます。そのため、識別子に浮動小数点数 (`0.0` と `-0.0` は等しいもののハッシュ値が異なるため) や、`Dynamic`、`Variant`、`JSON` の値 (それらの内部の `NULL` は通常の値として比較される一方、`Nullable` 型の `NULL` はルートとして扱われるため) を使用したり、含めたりすることはできません。
-
-入力の構造は結果から判別できます (以下の例を参照)。
-
-* 循環があるかどうか: `arrayExists((p, k) -> p > k, t.parent, arrayEnumerate(t.parent))`。
-* 循環が切断された位置: `arrayFilter((k, p) -> p > k, arrayEnumerate(t.parent), t.parent)`。
-* 木のルートの位置: `arrayFilter((k, d) -> d = 0, arrayEnumerate(t.depth), t.depth)`。木の数は `countEqual(t.depth, 0)` で求められます。
-* 親識別子が存在しないノードの位置: `arrayFilter((k, p) -> p = 0, arrayEnumerate(t.parent), t.parent)`。
-* 入力が実際のルートを持つ 1 つの木かどうか: `t.size[1] = length(ids) AND t.parent[1] <= 1`。この式はどちらのルートの表現 (存在しない親識別子は `0`、自己ループは `1` になる) も許容し、全体が 1 つの大きな循環になっている配列は除外します。
-* 位置 `r` で切断された循環に属するノードの位置: `arrayFilter(x -> x + t.size[x] > t.parent[r], range(r, t.parent[r] + 1))`。これは、`r` から実際の親 `t.parent[r]` までのノードのうち、部分木に実際の親を含むノードです。
-* 重複した識別子: `arrayEnumerateUniq(ids) > 1`。
-
-位置 `k` にあるノードの入力インデックスを取得するには、`t.order[k]` を使用します。
-
-**構文**
-
-```sql
-arrayTreePreorder(ids, parent_ids)
-```
-
-**引数**
-
-* `ids` — ノードの識別子。浮動小数点数、`Dynamic`、`Variant`、`JSON` はサポートされていません。[`Array(T)`](/ja/reference/data-types/array)
-* `parent_ids` — 親ノードの識別子 (ノードごとに 1 つ)。`ids` と同じサイズである必要があります。[`Array(T)`](/ja/reference/data-types/array)
-
-**戻り値**
-
-前順レイアウトのタプルを返します。[`Tuple(order Array(UInt32), size Array(UInt32), parent Array(UInt32), depth Array(UInt32))`](/ja/reference/data-types/tuple)
-
-**例**
-
-**使用例**
-
-```sql title=Query
-SELECT arrayTreePreorder(['G2', 'A', 'T1', 'B', 'G1', 'G3'], ['B', '', 'B', 'A', 'A', 'A']) AS t
-```
-
-```response title=Response
-([2,4,1,3,5,6],[6,3,1,1,1,1],[0,1,2,2,1,1],[0,1,2,2,1,1])
-```
-
-**トレース内の各エージェントスパンのコストと子孫スパン数**
-
-```sql title=Query
-WITH
-    ['A', 'G1', 'B', 'G2', 'T1', 'G3'] AS ids,
-    ['', 'A', 'A', 'B', 'B', 'A'] AS parent_ids,
-    ['AGENT', 'GENERATION', 'AGENT', 'GENERATION', 'TOOL', 'GENERATION'] AS types,
-    [0, 2, 0, 3, 0, 1] AS costs,
-    arrayTreePreorder(ids, parent_ids) AS t,
-    arrayCumSum(arrayMap(i -> costs[i], t.order)) AS cum
-SELECT arrayMap(k -> (ids[t.order[k]], cum[k + t.size[k] - 1] - cum[k], t.size[k] - 1),
-    arrayFilter(k -> types[t.order[k]] = 'AGENT', arrayEnumerate(t.order))) AS res
-```
-
-```response title=Response
-[('A',6,5),('B',3,2)]
-```
-
-**無効な入力: 循環 C -&gt; D -&gt; E -&gt; C、循環の下位にあるノード F、孤立ノード G**
-
-```sql title=Query
-SELECT arrayTreePreorder(['A', 'B', 'C', 'D', 'E', 'F', 'G'], ['', 'A', 'D', 'E', 'C', 'C', 'Z']) AS t
-```
-
-```response title=Response
-([1,2,3,5,4,6,7],[2,1,4,2,1,1,1],[0,1,5,3,4,3,0],[0,1,0,1,2,1,0])
-```
-
-**循環の検出と切断箇所の特定**
-
-```sql title=Query
-WITH
-    ['A', 'B', 'C', 'D', 'E', 'F', 'G'] AS ids,
-    arrayTreePreorder(ids, ['', 'A', 'D', 'E', 'C', 'C', 'Z']) AS t
-SELECT
-    arrayExists((p, k) -> p > k, t.parent, arrayEnumerate(t.parent)) AS has_cycle,
-    arrayFilter((k, p) -> p > k, arrayEnumerate(t.parent), t.parent) AS cut_positions,
-    arrayMap(k -> ids[t.order[k]], cut_positions) AS cut_ids
-```
-
-```response title=Response
-┌─has_cycle─┬─cut_positions─┬─cut_ids─┐
-│         1 │ [3]           │ ['C']   │
-└───────────┴───────────────┴─────────┘
-```
-
-**ルート、木の数、親が見つからないノード、単一の木であるかの確認**
-
-```sql title=Query
-WITH
-    ['A', 'B', 'C', 'D', 'E', 'F', 'G'] AS ids,
-    arrayTreePreorder(ids, ['', 'A', 'D', 'E', 'C', 'C', 'Z']) AS t
-SELECT
-    arrayMap(k -> ids[t.order[k]], arrayFilter((k, d) -> d = 0, arrayEnumerate(t.depth), t.depth)) AS roots,
-    countEqual(t.depth, 0) AS trees,
-    arrayMap(k -> ids[t.order[k]], arrayFilter((k, p) -> p = 0, arrayEnumerate(t.parent), t.parent)) AS parent_not_found,
-    t.size[1] = length(ids) AND t.parent[1] <= 1 AS is_one_tree
-```
-
-```response title=Response
-┌─roots─────────┬─trees─┬─parent_not_found─┬─is_one_tree─┐
-│ ['A','C','G'] │     3 │ ['A','G']        │           0 │
-└───────────────┴───────┴──────────────────┴─────────────┘
-```
-
-**位置 3 で切断された循環のノード**
-
-```sql title=Query
-WITH
-    ['A', 'B', 'C', 'D', 'E', 'F', 'G'] AS ids,
-    arrayTreePreorder(ids, ['', 'A', 'D', 'E', 'C', 'C', 'Z']) AS t,
-    3 AS r
-SELECT arrayMap(k -> ids[t.order[k]], arrayFilter(x -> x + t.size[x] > t.parent[r], range(r, t.parent[r] + 1))) AS cycle
-```
-
-```response title=Response
-┌─cycle─────────┐
-│ ['C','E','D'] │
-└───────────────┘
-```
-
-**識別子が重複する場合：子ノードは最初に出現したノードにアタッチ済みになります**
-
-```sql title=Query
-WITH ['a', 'b', 'a', 'c'] AS ids
-SELECT
-    arrayFilter((id, n) -> n > 1, ids, arrayEnumerateUniq(ids)) AS duplicate_ids,
-    arrayTreePreorder(ids, ['', 'a', '', 'a']).order AS order
-```
-
-```response title=Response
-┌─duplicate_ids─┬─order─────┐
-│ ['a']         │ [1,2,4,3] │
-└───────────────┴───────────┘
-```
-
 ## arrayUnion {#arrayUnion}
 
 導入バージョン: v24.10.0
@@ -4695,15 +4130,13 @@ SELECT
 arrayUnion(arr1, arr2, ..., arrN)
 ```
 
-**別名**: `array_union`
-
 **引数**
 
 * `arrN` — 新しい配列の作成元となる N 個の配列。[`Array(T)`](/ja/reference/data-types/array)
 
 **戻り値**
 
-ソース配列内の重複のない要素からなる配列を返します [`Array(T)`](/ja/reference/data-types/array)
+ソース配列内の一意な要素からなる配列を返します [`Array(T)`](/ja/reference/data-types/array)
 
 **例**
 
@@ -4858,8 +4291,6 @@ SELECT arrayZip(['a', 'b', 'c'], [5, 2, 1]);
 arrayZipUnaligned(arr1, arr2, ..., arrN)
 ```
 
-**別名**: `zip`
-
 **引数**
 
 * `arr1, arr2, ..., arrN` — 1つの配列に結合する N 個の配列。[`Array(T)`](/ja/reference/data-types/array)
@@ -4878,39 +4309,6 @@ SELECT arrayZipUnaligned(['a'], [1, 2, 3]);
 
 ```response title=Response
 [('a',1),(NULL,2),(NULL,3)]
-```
-
-## array_position {#array_position}
-
-導入バージョン: v26.8.0
-
-PostgreSQL 互換性関数です。配列内で要素が最初に出現する位置を 1始まりで返し、要素が存在しない場合は `NULL` を返します。要素に `NULL` を指定すると、PostgreSQL と同様に、配列内で最初に現れる `NULL` を検索します。ClickHouse ネイティブで対応する関数は `indexOf` ですが、こちらは `NULL` ではなく 0 を返します。
-
-**構文**
-
-```sql
-array_position(array, element)
-```
-
-**引数**
-
-* `array` — 検索対象の配列。[`Array(T)`](/ja/reference/data-types/array)
-* `element` — 検索する要素。[`Any`](/ja/reference/data-types/index)
-
-**戻り値**
-
-要素が最初に出現する位置 (1始まり) 。要素が存在しない場合は `NULL`。[`Nullable(UInt64)`](/ja/reference/data-types/nullable)
-
-**例**
-
-**例**
-
-```sql title=Query
-SELECT array_position(['a', 'b'], 'b')
-```
-
-```response title=Response
-2
 ```
 
 ## countEqual {#countEqual}
@@ -4957,7 +4355,7 @@ SELECT countEqual([1, 2, NULL, NULL], NULL)
 配列に要素が1つも含まれていない場合、その配列は空と見なされます。
 
 <Note>
-  クエリ内の他の箇所でそのカラムが使用されていない場合、この関数は配列カラム全体を読み取って処理する代わりに、[size0](/ja/reference/data-types/array#array-size) サブカラムのみを読み取ることができます。クエリ `SELECT empty(arr) FROM TABLE;` は `SELECT arr.size0 = 0 FROM TABLE;` に変換されます。この最適化は [`optimize_functions_to_subcolumns`](/ja/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns) 設定によって制御され、デフォルトで有効になっています。
+  [`optimize_functions_to_subcolumns` 設定](/ja/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns)を有効にすることで最適化できます。`optimize_functions_to_subcolumns = 1` の場合、この関数は配列カラム全体を読み取って処理する代わりに、[size0](/ja/reference/data-types/array#array-size) サブカラムのみを読み取ります。クエリ `SELECT empty(arr) FROM TABLE;` は `SELECT arr.size0 = 0 FROM TABLE;` に変換されます。
 </Note>
 
 この関数は String や UUID に対しても使用できます。
@@ -4970,11 +4368,11 @@ empty(arr)
 
 **引数**
 
-* `arr` — 入力配列。[`Array(T)`](/ja/reference/data-types/array)
+* `arr` — 入力Array。[`Array(T)`](/ja/reference/data-types/array)
 
 **戻り値**
 
-空の配列の場合は `1`、空でない配列の場合は `0` を返します。[`UInt8`](/ja/reference/data-types/int-uint)
+空のArrayの場合は `1`、空でないArrayの場合は `0` を返します。[`UInt8`](/ja/reference/data-types/int-uint)
 
 **例**
 
@@ -5896,10 +5294,10 @@ SELECT indexOfAssumeSorted([1, 3, 3, 3, 4, 4, 5], 4)
 
 導入バージョン: v1.1.0
 
-文字列または配列の長さを計算します。
+文字列またはArrayの長さを計算します。
 
 * String または FixedString 引数の場合: 文字列のバイト数を計算します。
-* 配列 引数の場合: 配列 の要素数を計算します。
+* Array 引数の場合: Array の要素数を計算します。
 * QBit 引数の場合: ベクトルの次元を計算します。
 * FixedString または QBit 引数に適用した場合、この関数は定数式になります。
 
@@ -5915,15 +5313,15 @@ Unicode の &quot;grapheme clusters&quot; の数
 length(x)
 ```
 
-**別名**: `CARDINALITY`, `OCTET_LENGTH`
+**別名**: `OCTET_LENGTH`, `CARDINALITY`
 
 **引数**
 
-* `x` — バイト数 (String/FixedString の場合)、要素数 (配列 の場合)、または次元数 (QBit の場合) を計算する値。[`String`](/ja/reference/data-types/string) または [`FixedString`](/ja/reference/data-types/fixedstring) または [`Array(T)`](/ja/reference/data-types/array) または [`QBit`](/ja/reference/data-types/qbit)
+* `x` — バイト数 (String/FixedString の場合)、要素数 (Array の場合)、または次元数 (QBit の場合) を計算する値。[`String`](/ja/reference/data-types/string) または [`FixedString`](/ja/reference/data-types/fixedstring) または [`Array(T)`](/ja/reference/data-types/array) または [`QBit`](/ja/reference/data-types/qbit)
 
 **戻り値**
 
-String/FixedString `x` のバイト数、配列 `x` の要素数、または QBit `x` の次元数を返します。[`UInt64`](/ja/reference/data-types/int-uint)
+String/FixedString `x` のバイト数、Array `x` の要素数、または QBit `x` の次元数を返します。[`UInt64`](/ja/reference/data-types/int-uint)
 
 **例**
 
@@ -5937,7 +5335,7 @@ SELECT length('Hello, world!')
 13
 ```
 
-**配列の例**
+**Arrayの例**
 
 ```sql title=Query
 SELECT length(['Hello', 'world'])
@@ -6003,12 +5401,12 @@ SELECT 'ábc' AS str, length(str), lengthUTF8(str)
 
 導入バージョン: v1.1.0
 
-入力配列 が空でないかどうかを確認します。
+入力された Array が空でないかどうかを確認します。
 
-配列 は、少なくとも 1 つの要素を含んでいれば空ではないと見なされます。
+Array は、少なくとも 1 つの要素を含んでいれば空ではないと見なされます。
 
 <Note>
-  そのカラムがクエリ内のほかの箇所で使用されていない場合、この関数は 配列 全体のカラムを読み取って処理する代わりに、[size0](/ja/reference/data-types/array#array-size) サブカラムだけを読み取ることができます。クエリ `SELECT notEmpty(arr) FROM table` は `SELECT arr.size0 != 0 FROM TABLE` に変換されます。この最適化は [`optimize_functions_to_subcolumns`](/ja/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns) 設定で制御され、この設定はデフォルトで有効になっています。
+  [`optimize_functions_to_subcolumns`](/ja/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns) 設定を有効にすると、この関数を最適化できます。`optimize_functions_to_subcolumns = 1` の場合、この関数は Array 全体のカラムを読み取って処理する代わりに、[size0](/ja/reference/data-types/array#array-size) サブカラムだけを読み取ります。クエリ `SELECT notEmpty(arr) FROM table` は `SELECT arr.size0 != 0 FROM TABLE` に変換されます。
 </Note>
 
 この関数は String や UUID に対しても使用できます。

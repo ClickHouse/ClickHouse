@@ -6,10 +6,11 @@ keywords: ['partições', 'partition by']
 doc_type: 'guide'
 ---
 
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
 import { RunnableCode } from "/snippets/pt-BR/components/RunnableCode/RunnableCode.jsx";
 
 <div id="what-are-table-partitions-in-clickhouse">
-  ## O que são partições de tabela no ClickHouse? {#what-are-table-partitions-in-clickhouse}
+  ## O que são partições de tabela no ClickHouse?
 </div>
 
 <br />
@@ -17,7 +18,7 @@ import { RunnableCode } from "/snippets/pt-BR/components/RunnableCode/RunnableCo
 As partições agrupam as [partes de dados](/pt-BR/concepts/core-concepts/parts) de uma tabela na [família de motores MergeTree](/pt-BR/reference/engines/table-engines/mergetree-family/index) em unidades lógicas organizadas — uma forma de organizar os dados que faz sentido do ponto de vista conceitual e se alinha a critérios específicos, como intervalos de tempo, categorias ou outros atributos-chave. Essas unidades lógicas facilitam o gerenciamento, a consulta e a otimização dos dados.
 
 <div id="partition-by">
-  ### PARTITION BY {#partition-by}
+  ### PARTITION BY
 </div>
 
 O particionamento pode ser habilitado quando uma tabela é inicialmente definida por meio da [cláusula PARTITION BY](/pt-BR/reference/engines/table-engines/mergetree-family/custom-partitioning-key). Essa cláusula pode conter uma expressão SQL em quaisquer colunas, cujos resultados definirão a qual partição uma linha pertence.
@@ -39,15 +40,13 @@ PARTITION BY toStartOfMonth(date);
 
 Você pode [consultar esta tabela](https://sql.clickhouse.com/?query=U0VMRUNUICogRlJPTSB1ay51a19wcmljZV9wYWlkX3NpbXBsZV9wYXJ0aXRpb25lZA\&run_query=true\&tab=results) no nosso Playground SQL do ClickHouse.
 
-### Estrutura no disco {#structure-on-disk}
+<div id="structure-on-disk">
+  ### Estrutura no disco
+</div>
 
 Sempre que um conjunto de linhas é inserido na tabela, em vez de criar (com [pelo menos](/pt-BR/reference/settings/session-settings/max-insert#max_insert_block_size)) uma única parte de dados contendo todas as linhas inseridas (como descrito [aqui](/pt-BR/concepts/core-concepts/parts)), o ClickHouse cria uma nova parte de dados para cada valor único de chave de partição entre as linhas inseridas:
 
-<div className="ch-image-lg">
-  <Frame>
-    ![PROCESSAMENTO DE INSERT](/images/managing-data/core-concepts/partitions.webp)
-  </Frame>
-</div>
+<Image img="/images/managing-data/core-concepts/partitions.webp" size="lg" alt="PROCESSAMENTO DE INSERT" />
 
 <br />
 
@@ -56,22 +55,20 @@ Em seguida, para cada partição identificada, as linhas são processadas [como 
 
 Observe que, com o particionamento habilitado, o ClickHouse cria automaticamente [índices MinMax](https://github.com/ClickHouse/ClickHouse/blob/dacc8ebb0dac5bbfce5a7541e7fc70f26f7d5065/src/Storages/MergeTree/IMergeTreeDataPart.h#L341) para cada parte de dados. Eles são simplesmente arquivos para cada coluna da tabela usada na expressão da chave de partição, contendo os valores mínimo e máximo dessa coluna dentro da parte de dados.
 
-### Mesclagens por partição {#per-partition-merges}
+<div id="per-partition-merges">
+  ### Mesclagens por partição
+</div>
 
 Com o particionamento habilitado, o ClickHouse só faz [mesclagem](/pt-BR/concepts/core-concepts/merges) de partes de dados dentro das partições, mas não entre partições. Isso é ilustrado na nossa tabela de exemplo acima:
 
-<div className="ch-image-lg">
-  <Frame>
-    ![MESCLAGENS DE PARTES](/images/managing-data/core-concepts/merges_with_partitions.webp)
-  </Frame>
-</div>
+<Image img="/images/managing-data/core-concepts/merges_with_partitions.webp" size="lg" alt="MESCLAGENS DE PARTES" />
 
 <br />
 
 Como ilustrado no diagrama acima, partes pertencentes a partições diferentes nunca são mescladas. Se for escolhida uma chave de partição com alta cardinalidade, as partes distribuídas por milhares de partições nunca serão candidatas à mesclagem, ultrapassando os limites pré-configurados e causando o temido erro `Too many parts`. Resolver esse problema é simples: escolha uma chave de partição adequada com [cardinalidade abaixo de 1000..10000](https://github.com/ClickHouse/ClickHouse/blob/ffc5b2c56160b53cf9e5b16cfb73ba1d956f7ce4/src/Storages/MergeTree/MergeTreeDataWriter.cpp#L121).
 
 <div id="monitoring-partitions">
-  ## Monitorando partições {#monitoring-partitions}
+  ## Monitorando partições
 </div>
 
 Você pode [consultar](https://sql.clickhouse.com/?query=U0VMRUNUIERJU1RJTkNUIF9wYXJ0aXRpb25fdmFsdWUgQVMgcGFydGl0aW9uCkZST00gdWsudWtfcHJpY2VfcGFpZF9zaW1wbGVfcGFydGl0aW9uZWQKT1JERVIgQlkgcGFydGl0aW9uIEFTQw\&run_query=true\&tab=results) a lista de todas as partições únicas existentes da nossa tabela de exemplo usando a [coluna virtual](/pt-BR/reference/engines/table-engines/index#table_engines-virtual_columns) `_partition_value`:
@@ -100,11 +97,11 @@ Como alternativa, o ClickHouse rastreia todas as partes e partições de todas a
 </RunnableCode>
 
 <div id="what-are-table-partitions-used-for">
-  ## Para que servem as partições de tabela? {#what-are-table-partitions-used-for}
+  ## Para que servem as partições de tabela?
 </div>
 
 <div id="data-management">
-  ### Gerenciamento de dados {#data-management}
+  ### Gerenciamento de dados
 </div>
 
 No ClickHouse, o particionamento é, прежде de tudo, um recurso de gerenciamento de dados. Ao organizar os dados logicamente com base em uma expressão de partição, cada partição pode ser gerenciada de forma independente. Por exemplo, o esquema de particionamento da tabela de exemplo acima permite cenários em que apenas os últimos 12 meses de dados são mantidos na tabela principal, com os dados mais antigos sendo removidos automaticamente por meio de uma [regra de TTL](/pt-BR/concepts/features/operations/delete/ttl) (veja a última linha adicionada na instrução DDL):
@@ -141,7 +138,9 @@ ORDER BY (town, street)
 TTL date + INTERVAL 12 MONTH TO VOLUME 'slow_but_cheap';
 ```
 
-### Otimização de consultas {#query-optimization}
+<div id="query-optimization">
+  ### Otimização de consultas
+</div>
 
 As partições podem ajudar no desempenho das consultas, mas isso depende muito dos padrões de acesso. Se as consultas atingirem apenas algumas partições (idealmente uma), o desempenho pode melhorar. Em geral, isso só é útil se a chave de partição não estiver na chave primária e você estiver filtrando por ela, como mostra a consulta de exemplo abaixo.
 
@@ -159,11 +158,7 @@ A consulta é executada na nossa tabela de exemplo acima e [calcula](https://sql
 
 O ClickHouse processa essa consulta aplicando uma sequência de técnicas de poda para evitar avaliar dados irrelevantes:
 
-<div className="ch-image-lg">
-  <Frame>
-    ![MESCLAGENS DE PARTES 2](/images/managing-data/core-concepts/partition-pruning.webp)
-  </Frame>
-</div>
+<Image img="/images/managing-data/core-concepts/partition-pruning.webp" size="lg" alt="MESCLAGENS DE PARTES 2" />
 
 <br />
 
@@ -237,7 +232,7 @@ A saída acima mostra:
 Isso significa que o ClickHouse varreu e processou 1 grânulo (bloco de [8192](/pt-BR/reference/settings/merge-tree-settings/index-granularity#index_granularity) linhas) em 6 milissegundos para calcular o resultado da consulta.
 
 <div id="partitioning-is-primarily-a-data-management-feature">
-  ### O particionamento é principalmente um recurso de gerenciamento de dados {#partitioning-is-primarily-a-data-management-feature}
+  ### O particionamento é principalmente um recurso de gerenciamento de dados
 </div>
 
 Esteja ciente de que consultar todas as partições normalmente é mais lento do que executar a mesma consulta em uma tabela não particionada.

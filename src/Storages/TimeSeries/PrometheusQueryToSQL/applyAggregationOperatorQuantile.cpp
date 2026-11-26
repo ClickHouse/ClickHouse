@@ -5,7 +5,6 @@
 #include <Parsers/ASTLiteral.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
-#include <Storages/TimeSeries/PrometheusQueryToSQL/checkArguments.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/toVectorGrid.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/transformGroupASTForAggregationOperator.h>
 #include <Storages/TimeSeries/timeSeriesTypesToAST.h>
@@ -16,6 +15,7 @@
 
 namespace DB::ErrorCodes
 {
+    extern const int CANNOT_EXECUTE_PROMQL_QUERY;
     extern const int NOT_IMPLEMENTED;
 }
 
@@ -25,6 +25,42 @@ namespace DB::PrometheusQueryToSQL
 
 namespace
 {
+    /// Checks if the types of the specified arguments are valid for the `quantile` aggregation operator.
+    void checkArgumentTypes(
+        const PrometheusQueryTree::AggregationOperator * operator_node,
+        const std::vector<SQLQueryPiece> & arguments,
+        const ConverterContext & context)
+    {
+        const auto & operator_name = operator_node->operator_name;
+
+        if (arguments.size() != 2)
+        {
+            throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
+                            "Aggregation operator '{}' expects 2 arguments, but was called with {} arguments",
+                            operator_name, arguments.size());
+        }
+
+        const auto & phi_arg = arguments[0];
+
+        if (phi_arg.type != ResultType::SCALAR)
+        {
+            throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
+                            "Aggregation operator '{}' expects first argument of type {}, but expression {} has type {}",
+                            operator_name, ResultType::SCALAR,
+                            getPromQLText(phi_arg, context), phi_arg.type);
+        }
+
+        const auto & vector_arg = arguments[1];
+
+        if (vector_arg.type != ResultType::INSTANT_VECTOR)
+        {
+            throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
+                            "Aggregation operator '{}' expects second argument of type {}, but expression {} has type {}",
+                            operator_name, ResultType::INSTANT_VECTOR,
+                            getPromQLText(vector_arg, context), vector_arg.type);
+        }
+    }
+
     /// Converts the quantile parameter phi to an AST expression usable in SQL.
     ASTPtr getPhi(SQLQueryPiece && phi_arg, ConverterContext & context)
     {
@@ -59,9 +95,7 @@ namespace
 SQLQueryPiece applyAggregationOperatorQuantile(
     const PrometheusQueryTree::AggregationOperator * operator_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context)
 {
-    checkNumberOfArguments(operator_node, arguments, 2);
-    checkArgumentType(operator_node, arguments, 0, ResultType::SCALAR, context);
-    checkArgumentType(operator_node, arguments, 1, ResultType::INSTANT_VECTOR, context);
+    checkArgumentTypes(operator_node, arguments, context);
 
     auto & phi_arg = arguments[0];
     auto & vector_arg = arguments[1];

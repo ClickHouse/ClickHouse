@@ -2,27 +2,31 @@
 slug: /use-cases/observability/clickstack/dashboards/row-click-drilldowns
 title: 'Drilldowns al hacer clic en filas de una tabla'
 sidebarTitle: 'Drilldowns al hacer clic en filas'
-description: 'Convierte un tile de tabla en un flujo de trabajo de inspección: haz clic en una fila para profundizar en un dashboard específico o en los logs y trazas subyacentes, limitados a la fila seleccionada'
+description: 'Convierte un tile de tabla en un flujo de trabajo de inspección: haz clic en una fila para profundizar en un dashboard específico o en los logs y traces subyacentes, limitados a la fila seleccionada'
 doc_type: 'guide'
 keywords: ['clickstack', 'dashboards', 'drilldown', 'tabla', 'clic en una fila', 'inspección', 'observabilidad']
 ---
+
+import { Image } from "/snippets/es/components/Image.jsx";
 
 Un tile de tabla suele ser un **catálogo**: una fila por servicio, host, endpoint o grupo de errores, con unas pocas columnas que puntúan cada uno. Las acciones al hacer clic en una fila convierten ese catálogo en un flujo de inspección. Recorres el catálogo para encontrar la fila que importa, haces clic en ella y ClickStack transmite los valores de la fila seleccionada como filtros. El destino se abre entonces ya acotado a ese único elemento, sin tener que reconstruir ninguna consulta a mano.
 
 Un clic puede llevar a uno de estos dos lugares:
 
 * **otro dashboard**, para una vista centrada en un único elemento, como un dashboard de detalle por servicio, o
-* **los eventos subyacentes** en [Búsqueda](/es/clickstack/features/search), para los logs o trazas que hay detrás de la fila.
+* **los eventos subyacentes** en [Búsqueda](/es/clickstack/features/search), para los logs o traces que hay detrás de la fila.
 
 Ambos casos de uso siguientes parten del mismo catálogo (un inventario de servicios) y desde ahí profundizan en cada destino. Las acciones al hacer clic en una fila se aplican solo a los tiles de tabla. Son distintas del [drilldown a Búsqueda](/es/clickstack/features/dashboards/overview#drilldown-to-search) desde gráficos, que abre un menú contextual al hacer clic en un punto de un gráfico de líneas o de barras.
 
-## Inspeccionar un servicio en su propio dashboard {#inspect-in-dashboard}
+<div id="inspect-in-dashboard">
+  ## Inspeccionar un servicio en su propio dashboard
+</div>
 
 Una tabla de resumen con una fila por servicio responde a la pregunta &quot;¿qué servicio está fallando?&quot;. Al hacer clic en una fila, se puede abrir un dashboard específico de ese servicio que responde &quot;¿qué está pasando dentro?&quot;, limitado al servicio en el que hiciste clic. El siguiente patrón combina una tabla de inventario de servicios con un dashboard `Service Detail`.
 
 <Steps>
   <Step title="Crear el dashboard de detalle" id="detail-dashboard">
-    Crea un dashboard llamado `Service Detail` y añade un [filtro personalizado](/es/clickstack/features/dashboards/overview#custom-filters) con la expresión `ServiceName` en tu fuente de trazas. El filtro a nivel de dashboard limita cada tile a un único servicio, por lo que los tiles no tienen que fijar un servicio en sus consultas. Añade las vistas por servicio que quieras: métricas clave RED (solicitudes, errores, duración P95), un gráfico de percentiles de latencia (P50, P95, P99), la tasa de solicitudes a lo largo del tiempo y un desglose por endpoint agrupado por `SpanName`.
+    Crea un dashboard llamado `Service Detail` y añade un [filtro personalizado](/es/clickstack/features/dashboards/overview#custom-filters) con la expresión `ServiceName` en tu fuente de trazas. El filtro a nivel de dashboard limita cada tile a un único servicio, por lo que los tiles no tienen que fijar un servicio en sus queries. Añade las vistas por servicio que quieras: métricas clave RED (solicitudes, errores, duración P95), un chart de percentiles de latencia (P50, P95, P99), la tasa de solicitudes a lo largo del tiempo y un desglose por endpoint agrupado por `SpanName`.
 
     Guarda primero este dashboard para poder seleccionarlo como destino en el siguiente paso.
   </Step>
@@ -36,11 +40,7 @@ Una tabla de resumen con una fila por servicio responde a la pregunta &quot;¿qu
 
     Ordena por `Requests` de forma descendente para que los servicios con más tráfico aparezcan arriba. Esta tabla es el catálogo: una fila por servicio, puntuado según RED.
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![Tabla de inventario de servicios con columnas RED (Requests, Errors, P95 Duration) para cada servicio, ordenada por volumen de solicitudes, sobre una tendencia de solicitudes a lo largo del tiempo](/images/clickstack/dashboards/row-click-catalog.webp)
-      </Frame>
-    </div>
+    <Image img="/images/clickstack/dashboards/row-click-catalog.webp" alt="Tabla de inventario de servicios con columnas RED (Requests, Errors, P95 Duration) para cada servicio, ordenada por volumen de solicitudes, sobre una tendencia de solicitudes a lo largo del tiempo" size="lg" />
 
     <Tip>
       **Empieza por la columna de agrupación**
@@ -50,7 +50,7 @@ Una tabla de resumen con una fila por servicio responde a la pregunta &quot;¿qu
   </Step>
 
   <Step title="Configurar el clic en la fila" id="wire-dashboard">
-    En la tabla de inventario, abre **Row Click Action**, selecciona **Dashboard** y elige `Service Detail` en la lista de dashboards. Elegir el dashboard directamente lo fija por ID. El enlace sigue funcionando si el dashboard se renombra más adelante, y también se conserva al exportar e importar el dashboard. (Reserva la opción **Template** para elegir un dashboard distinto por fila; consulta [Configurar una acción al hacer clic en una fila](#set-up).)
+    En la tabla de inventario, abre **Row Click Action**, selecciona **Dashboard** y elige `Service Detail` en la lista de dashboards. Elegir el dashboard directamente lo fija por ID. El enlace sigue funcionando si el dashboard se renombra más adelante, y también se conserva al exportar e importar el dashboard. (Reserva la opción **Template** para elegir un dashboard distinto por fila; consulta [Configurar una acción de clic en fila](#set-up).)
 
     Como `Service Detail` declara un filtro personalizado `ServiceName`, el panel lateral rellena previamente un filtro vacío para esa expresión. Completa su plantilla:
 
@@ -61,17 +61,15 @@ Una tabla de resumen con una fila por servicio responde a la pregunta &quot;¿qu
   </Step>
 
   <Step title="Hacer clic en una fila" id="click-dashboard">
-    Al pasar el cursor sobre una fila, se muestra un enlace en el borde derecho de la tabla, con una indicación que describe la acción (`Open dashboard "Service Detail"`). Al hacer clic en la fila, se abre el dashboard `Service Detail` con su filtro `Service` establecido en el valor seleccionado, de modo que cada tile (las métricas clave RED, los percentiles de latencia y el desglose por endpoint) queda limitado a ese único servicio con un solo clic.
+    Al pasar el cursor sobre una fila, se muestra un enlace en el borde derecho de la tabla, con una indicación que describe la acción (`Open dashboard \"Service Detail\"`). Al hacer clic en la fila, se abre el dashboard `Service Detail` con su filtro `Service` establecido en el valor seleccionado, de modo que cada tile (las métricas clave RED, los percentiles de latencia y el desglose por endpoint) queda limitado a ese único servicio con un solo clic.
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![Dashboard Service Detail después de hacer clic en una fila, con el filtro Service establecido en el servicio seleccionado y las métricas clave RED, los percentiles de latencia y el desglose por endpoint limitados a ese servicio](/images/clickstack/dashboards/row-click-drilldown.webp)
-      </Frame>
-    </div>
+    <Image img="/images/clickstack/dashboards/row-click-drilldown.webp" alt="Dashboard Service Detail después de hacer clic en una fila, con el filtro Service establecido en el servicio seleccionado y las métricas clave RED, los percentiles de latencia y el desglose por endpoint limitados a ese servicio" size="lg" />
   </Step>
 </Steps>
 
-## Ir de un servicio a sus trazas {#jump-to-traces}
+<div id="jump-to-traces">
+  ## Ir de un servicio a sus trazas
+</div>
 
 A veces no quieres otra vista de agregación; quieres los eventos sin procesar. La acción **Búsqueda** envía el clic a la página [Búsqueda](/es/clickstack/features/search) en lugar de a un dashboard, y abre los logs o trazas detrás de esa fila, ya filtrados.
 
@@ -90,29 +88,23 @@ Partiendo de la misma tabla de inventario de servicios, haz que el clic en la fi
   <Step title="Haz clic en una fila" id="click-search">
     Al hacer clic en una fila de servicio, se abre la página de Búsqueda en esa fuente de trazas, filtrada por `ServiceName = <service>`, para que llegues a los spans de ese servicio dentro del mismo intervalo de tiempo.
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![Página de Búsqueda abierta en la fuente de trazas tras hacer clic en una fila, filtrada por el servicio seleccionado](/images/clickstack/dashboards/row-click-search-drilldown.webp)
-      </Frame>
-    </div>
+    <Image img="/images/clickstack/dashboards/row-click-search-drilldown.webp" alt="Página de Búsqueda abierta en la fuente de trazas tras hacer clic en una fila, filtrada por el servicio seleccionado" size="lg" />
   </Step>
 </Steps>
 
 La misma estructura funciona para cualquier catálogo de elementos. Agrupa la tabla por una operación (`SpanName`) o por un atributo de endpoint en lugar de `ServiceName`, usa esa columna como plantilla para el filtro y, con cada clic en una fila, se abrirán los eventos de esa operación o endpoint. Para un `group-by` sobre un atributo map, consulta la nota sobre alias en [Validación y limitaciones](#validation).
 
-## Configurar una acción al hacer clic en una fila {#set-up}
+<div id="set-up">
+  ## Configurar una acción al hacer clic en una fila
+</div>
 
 Las acciones al hacer clic en una fila se configuran en el propio tile de tabla; no hay una página independiente para ellas. Agrega o edita un tile y establece su tipo de visualización en **Table**. Entonces aparece un botón de **Row Click Action** en la barra de herramientas del editor, junto a **Display Settings**. El botón solo se muestra en los tiles de tabla, y su etiqueta refleja la acción actual: `Row Click Action: Default`, `Row Click Action: Search` o `Row Click Action: Dashboard`. Haz clic en él para abrir el panel lateral.
 
-<div className="ch-image-lg">
-  <Frame>
-    ![Panel lateral de Row Click Action en modo Dashboard, con el dashboard Service Detail seleccionado como destino y un filtro ServiceName generado a partir de la fila en la que se hizo clic](/images/clickstack/dashboards/row-click-drawer.webp)
-  </Frame>
-</div>
+<Image img="/images/clickstack/dashboards/row-click-drawer.webp" alt="Panel lateral de Row Click Action en modo Dashboard, con el dashboard Service Detail seleccionado como destino y un filtro ServiceName generado a partir de la fila en la que se hizo clic" size="lg" />
 
 El panel lateral ofrece tres acciones:
 
-* **Default**: el comportamiento predeterminado. Al hacer clic en una fila, se abre la página de Búsqueda, filtrada por los valores de las columnas de agrupación de la fila y el intervalo de tiempo seleccionado. Esto es lo que obtienes cuando no se configura ninguna acción personalizada.
+* **Default**: el comportamiento predeterminado. Al hacer clic en una fila, se abre la página de Búsqueda, filtrada por los valores de las columnas group-by de la fila y el intervalo de tiempo seleccionado. Esto es lo que obtienes cuando no se configura ninguna acción personalizada.
 * **Búsqueda**: envía el clic a la página de Búsqueda de una fuente que elijas.
 * **Dashboard**: envía el clic a otro dashboard de tu equipo.
 
@@ -125,13 +117,13 @@ Para **Búsqueda** y **Dashboard**, eliges a dónde lleva el clic y defines con 
 <Info>
   **Las plantillas hacen referencia a las columnas de la tabla**
 
-  Una plantilla `{{...}}` se resuelve usando las propias columnas del tile de tabla: las columnas de agrupación y cada serie por su nombre o alias, exactamente como aparecen en la tabla. No ve las columnas de la fuente subyacente que la tabla no selecciona. Para que un valor se transfiera mediante un clic, debe ser una columna de la tabla; por eso `{{ServiceName}}` funciona, porque `ServiceName` es la columna de agrupación de la tabla, y una columna con alias se referencia por su alias. Si haces referencia a un nombre que la tabla no tiene, el clic falla con `Row has no column '<name>'`.
+  Una plantilla `{{...}}` se resuelve usando las propias columnas del tile de tabla: las columnas group-by y cada serie por su nombre o alias, exactamente como aparecen en la tabla. No ve las columnas de la fuente subyacente que la tabla no selecciona. Para que un valor se transfiera mediante un clic, debe ser una columna de la tabla; por eso `{{ServiceName}}` funciona, porque `ServiceName` es la columna de agrupación de la tabla, y una columna con alias se referencia por su alias. Si haces referencia a un nombre que la tabla no tiene, el clic falla con `Row has no column '<name>'`.
 </Info>
 
 Haz clic en **Aplicar** para validar las plantillas (ClickStack informa de cualquiera que tenga una sintaxis no válida) y, a continuación, guarda el dashboard para conservar la acción.
 
 <div id="how-it-resolves">
-  ## Cómo se resuelven el destino y los filtros {#how-it-resolves}
+  ## Cómo se resuelven el destino y los filtros
 </div>
 
 Cuando un usuario hace clic en una fila, ClickStack resuelve la acción en función de esa fila:
@@ -146,7 +138,7 @@ Cuando un usuario hace clic en una fila, ClickStack resuelve la acción en funci
 </Info>
 
 <div id="validation">
-  ## Validación y limitaciones {#validation}
+  ## Validación y limitaciones
 </div>
 
 * **Solo tiles de tabla.** El botón **Row Click Action** aparece en los tiles de tabla, tanto en la tabla del constructor de gráficos como en una tabla [basada en SQL](/es/clickstack/features/dashboards/sql-visualizations). Los demás tipos de tile no tienen acción de clic en fila.

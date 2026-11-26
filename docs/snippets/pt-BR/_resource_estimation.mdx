@@ -2,7 +2,7 @@
 title: Estimativa de Recursos
 ---
 
-O conteúdo a seguir apresenta um modelo para estimar os recursos de computação e armazenamento necessários para uma implantação de observabilidade com base no volume de ingestão esperado. Os valores obtidos são **apenas estimativas** e devem ser usados como uma **linha de base inicial** — não são uma resposta prescritiva. Os requisitos reais dependem da complexidade das consultas, da concorrência, das políticas de retenção e da variação na vazão de ingestão. Sempre monitore o uso de recursos e escale conforme necessário.
+O conteúdo a seguir apresenta um modelo para estimar os recursos de computação e armazenamento necessários para uma implantação do ClickStack com base no volume de ingestão esperado. Os valores obtidos são **apenas estimativas** e devem ser usados como uma **linha de base inicial** — não são uma resposta prescritiva. Os requisitos reais dependem da complexidade das consultas, da concorrência, das políticas de retenção e da variação na vazão de ingestão. Sempre monitore o uso de recursos e escale conforme necessário.
 
 <Warning>
   **Todos os valores são baseados em ingestão bruta não comprimida**
@@ -12,7 +12,7 @@ O conteúdo a seguir apresenta um modelo para estimar os recursos de computaçã
   Esse é o valor que você deve estimar com base nos pipelines existentes de logs, traces e métricas. Os valores de armazenamento na tabela abaixo já consideram uma **taxa de compressão de 10x** aplicada a esse volume bruto.
 </Warning>
 
-Provisione capacidade computacional para cobrir duas cargas de trabalho independentes: **ingestão** e **consulta**.
+Ao implantar o ClickStack, provisione capacidade computacional para cobrir duas cargas de trabalho independentes: **ingestão** e **consulta**.
 
 | Carga de trabalho | Recursos estimados                                                  |
 | ----------------- | ------------------------------------------------------------------- |
@@ -32,7 +32,7 @@ Provisione capacidade computacional para cobrir duas cargas de trabalho independ
   * Embora a computação de consulta possa ser escalada de forma independente da computação de ingestão, ela continua intrinsicamente vinculada ao volume de ingestão. Assumimos que, à medida que a ingestão aumenta, a densidade dos dados cresce, resultando em volumes de varredura maiores no momento da consulta e, consequentemente, em maiores requisitos de computação para consulta.
 </Accordion>
 
-A tabela a seguir apresenta exemplos de dimensionamento com base no aumento do throughput de ingestão em megabytes por segundo, juntamente com os volumes de dados correspondentes em terabytes por mês. Isso pressupõe uma média sustentada de **1 QPS** em todos os tipos de consulta (pesquisa, dashboards, alertas).
+A tabela a seguir apresenta exemplos de dimensionamento com base no aumento do throughput de ingestão em megabytes por segundo, juntamente com os volumes de dados correspondentes em terabytes por mês. Isso pressupõe uma média sustentada de **1 QPS** do ClickStack em todos os tipos de consulta (pesquisa, dashboards, alertas).
 
 | MB/s | TB/mês | CPUs de ingestão | CPUs de consulta | CPUs totais | Armazenamento total (por mês) (GB) |
 | ---: | -----: | ---------------: | ---------------: | ----------: | ---------------------------------: |

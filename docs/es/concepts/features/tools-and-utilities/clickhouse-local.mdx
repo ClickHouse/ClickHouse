@@ -201,7 +201,7 @@ $ clickhouse-local --copy < data.json > data.csv
 
 ## Uso {#usage}
 
-De forma predeterminada, `clickhouse-local` tiene acceso a los datos de un servidor de ClickHouse en el mismo host y no depende de la configuración del servidor. También permite cargar la configuración del servidor mediante el argumento `--config-file`. Los datos se almacenan en un directorio específico para datos de aplicaciones dentro del directorio personal (`$XDG_DATA_HOME/clickhouse-local` o `~/.local/share/clickhouse-local` en Linux, `~/Library/Application Support/clickhouse-local` en macOS), por lo que se conservan entre ejecuciones. Use `--path` para utilizar otra ubicación, o `--tmp` para trabajar con un directorio temporal único que se elimina al salir. Solo una instancia puede trabajar con un mismo directorio a la vez.
+De forma predeterminada, `clickhouse-local` tiene acceso a los datos de un servidor de ClickHouse en el mismo host y no depende de la configuración del servidor. También permite cargar la configuración del servidor mediante el argumento `--config-file`. Para los datos temporales, se crea por defecto un directorio temporal de datos único.
 
 Si no se especifica `--config-file`, `clickhouse-local` busca un archivo de configuración en las siguientes ubicaciones y utiliza el primero que encuentre:
 
@@ -210,7 +210,7 @@ Si no se especifica `--config-file`, `clickhouse-local` busca un archivo de conf
 3. `$HOME/.clickhouse-local/config.xml`, `$HOME/.clickhouse-local/config.yaml`, `$HOME/.clickhouse-local/config.yml`
 4. `/etc/clickhouse-local/config.xml`, `/etc/clickhouse-local/config.yaml`, `/etc/clickhouse-local/config.yml`
 
-El archivo de configuración puede escribirse en XML o en YAML, con el mismo formato que el del servidor de ClickHouse; consulte [&quot;Archivos de configuración&quot;](/es/operations/configuration-files).
+El archivo de configuración puede escribirse en XML o en YAML, con el mismo formato que el del servidor de ClickHouse; consulte [&quot;Archivos de configuración&quot;](/operations/configuration-files).
 
 Uso básico (Linux):
 
@@ -252,8 +252,6 @@ Argumentos:
 * `--logger.level` — nivel de registro.
 * `--ignore-error` — no detener el procesamiento si falla una consulta: el error se notifica en `stderr` y se procesa la siguiente consulta. Como los errores se ignoran, el proceso finaliza con un código de éxito aunque algunas consultas hayan fallado.
 * `-c`, `--config-file` — ruta al archivo de configuración en el mismo formato que el del servidor de ClickHouse. Si no se indica, `clickhouse-local` busca por sí mismo su archivo de configuración principal (consulte [&quot;Archivos de configuración&quot;](#configuration-files)); la configuración solo queda vacía cuando no existe ninguno de los archivos buscados.
-* `--path` — el directorio para los datos. De forma predeterminada, se usa un directorio designado para los datos de la aplicación dentro del directorio personal (`$XDG_DATA_HOME/clickhouse-local` o `~/.local/share/clickhouse-local` en Linux, `~/Library/Application Support/clickhouse-local` en macOS), y los datos se conservan entre ejecuciones.
-* `--tmp` — usa un directorio temporal único para los datos, que se elimina al salir (este era el comportamiento predeterminado en versiones anteriores). No tiene efecto si se especifica `--path`.
 * `--no-system-tables` — no adjuntar las tablas del sistema.
 * `--help` — referencia de argumentos para `clickhouse-local`.
 * `-V`, `--version` — imprime la información de la versión y sale.

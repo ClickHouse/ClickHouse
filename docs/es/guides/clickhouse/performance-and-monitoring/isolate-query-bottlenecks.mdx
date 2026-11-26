@@ -9,12 +9,13 @@ doc_type: 'guide'
 keywords: ['optimización de consultas', 'cuellos de botella en consultas', 'rendimiento', 'pruebas de rendimiento']
 ---
 
+import { Image } from "/snippets/es/components/Image.jsx";
 import NYCTaxiExampleDataset from '/snippets/es/_nyc_taxi_example_dataset.mdx';
 
 La optimización de consultas resulta más sencilla si se modifica una parte de la consulta a la vez y se comparan los resultados con una referencia estable. Esta guía explica cómo simplificar progresivamente una consulta y usar las diferencias entre ejecuciones para identificar qué operaciones contribuyen más a su duración. A continuación, puede validar el posible cuello de botella antes de elegir una optimización.
 
 <div id="before-you-begin">
-  ## Antes de comenzar {#before-you-begin}
+  ## Antes de comenzar
 </div>
 
 Parta de un patrón recurrente de consultas lentas que desee investigar. Si todavía no ha identificado ninguno, consulte [Diagnosticar consultas lentas](/es/guides/clickhouse/performance-and-monitoring/diagnose-slow-queries), donde se explica el proceso.
@@ -28,7 +29,7 @@ Para ejecutar los ejemplos de esta guía tal como se muestran, cree y cargue la 
 La tabla de ejemplo usa `ORDER BY ()`, por lo que su filtro de fecha no puede usar una clave de ordenación para descartar datos durante la lectura. Use el ejemplo para practicar el método de comparación, no como objetivo de rendimiento.
 
 <div id="how-it-works">
-  ## Cómo funciona {#how-it-works}
+  ## Cómo funciona
 </div>
 
 Simplificar una consulta de forma progresiva permite comparar su duración antes y después de eliminar una etapa de trabajo. Las diferencias ayudan a determinar si conviene investigar el escaneo y filtrado, la agrupación, los cálculos de agregación o las operaciones posteriores, como la ordenación y el formato de salida:
@@ -43,7 +44,9 @@ Estas etapas se aplican directamente a las consultas de agregación convencional
   Estas diferencias son estimaciones de diagnóstico, no mediciones exactas de las etapas de ejecución de ClickHouse. Modificar la consulta puede alterar su plan de ejecución, las columnas leídas y los datos transmitidos entre etapas. Use los resultados para formular una hipótesis. A continuación, valídela con los registros de consultas y [`EXPLAIN`](/es/guides/clickhouse/performance-and-monitoring/diagnose-slow-queries#explain-statement).
 </Note>
 
-## Establece una referencia reproducible {#establish-a-repeatable-baseline}
+<div id="establish-a-repeatable-baseline">
+  ## Establece una referencia reproducible
+</div>
 
 Aplica las siguientes prácticas para que las mediciones sean comparables:
 
@@ -68,11 +71,7 @@ SET optimize_use_implicit_projections = 0;
 
 El flujo de trabajo combina ejecuciones controladas de consultas con mediciones del registro de consultas:
 
-<div className="ch-image-lg">
-  <Frame>
-    ![Flujo de trabajo para identificar consultas candidatas en registros de consultas y probar cambios de forma aislada](/images/guides/best-practices/query_optimization_diagram_1.webp)
-  </Frame>
-</div>
+<Image img="/images/guides/best-practices/query_optimization_diagram_1.webp" size="lg" alt="Flujo de trabajo para identificar consultas candidatas en registros de consultas y probar cambios de forma aislada" />
 
 Recopile las mediciones de cada ejecución de la siguiente manera:
 
@@ -88,7 +87,7 @@ Recopile las mediciones de cada ejecución de la siguiente manera:
 
    Si no puede ejecutar `SYSTEM FLUSH LOGS`, espere a que el registro de consultas se vacíe automáticamente y vuelva a intentar la búsqueda. Si el registro nunca aparece, verifique que el registro de consultas esté habilitado, que pueda leer `system.query_log` y que esté consultando el nodo que ejecutó la consulta.
 
-4. Busque el registro completado correspondiente a cada ID de consulta. `system.query_log` registra eventos `QueryStart` y `QueryFinish` para las consultas completadas. Filtre por `QueryFinish`, que contiene la duración final, las filas y los bytes leídos, y la memoria máxima:
+4. Busque el registro completado correspondiente a cada ID de consulta. `system.query_log` registra eventos `QueryStart` y `QueryFinish` para las consultas completadas. Filtre por `QueryFinish`, que contiene la duración final, las filas y los bytes leídos, y el pico de memoria:
 
    ```sql
    SELECT
@@ -104,7 +103,7 @@ Recopile las mediciones de cada ejecución de la siguiente manera:
    LIMIT 1;
    ```
 
-5. Para cada versión de la consulta, use la duración mediana de las ejecuciones medidas. Registre `read_rows`, `read_bytes` y la memoria máxima de la ejecución más cercana a esa mediana para que las mediciones sigan vinculadas a una ejecución real.
+5. Para cada versión de la consulta, use la duración mediana de las ejecuciones medidas. Registre `read_rows`, `read_bytes` y el pico de memoria de la ejecución más cercana a esa mediana para que las mediciones sigan vinculadas a una ejecución real.
 
 <Note>
   Para las consultas distribuidas, `memory_usage` en el registro `QueryFinish` de la consulta iniciadora no representa el pico de todo el clúster. Use `initial_query_id` para inspeccionar los registros `QueryFinish` secundarios en los nodos participantes.
@@ -114,7 +113,7 @@ Use una tabla como la siguiente para organizar las mediciones representativas. C
 
 <Tabs>
   <Tab title="Tabla">
-    | Ejecución | Versión de la consulta | Duración representativa | `read_rows` | `read_bytes` | Memoria máxima |
+    | Ejecución | Versión de la consulta | Duración representativa | `read_rows` | `read_bytes` | Pico de memoria |
     | --------- | ---------------------- | ----------------------- | ----------- | ------------ | --------------- |
     | A         | Consulta original      |                         |             |              |                 |
     | B         | `count` agrupado       |                         |             |              |                 |
@@ -132,7 +131,7 @@ Use una tabla como la siguiente para organizar las mediciones representativas. C
 </Tabs>
 
 <div id="run-progressively-simpler-queries">
-  ## Ejecute consultas cada vez más simples {#run-progressively-simpler-queries}
+  ## Ejecute consultas cada vez más simples
 </div>
 
 Para mostrar las tres comparaciones, el ejemplo utiliza la [carga de trabajo agrupada por intervalo de fechas](/es/guides/clickhouse/performance-and-monitoring/query-optimization-example#date-range-aggregation). Puede aplicar el método a otra consulta sin seguir el ejemplo paso a paso. Si la consulta no contiene `GROUP BY`, omita la ejecución B como se describe a continuación.
@@ -197,7 +196,7 @@ Para mostrar las tres comparaciones, el ejemplo utiliza la [carga de trabajo agr
 </Steps>
 
 <div id="interpret-the-differences">
-  ## Interprete las diferencias {#interpret-the-differences}
+  ## Interprete las diferencias
 </div>
 
 Compare duraciones representativas de ejecuciones repetidas, en lugar de restar dos mediciones individuales. Las diferencias grandes y constantes indican qué investigar a continuación:
@@ -210,7 +209,7 @@ Compare duraciones representativas de ejecuciones repetidas, en lugar de restar 
 | Las tres ejecuciones tienen duraciones similares     | La fuente de latencia podría ser común a las tres versiones, o la simplificación podría haber cambiado el plan de ejecución | Compare `read_rows`, `read_bytes` y el uso máximo de memoria entre las ejecuciones. Si también son similares, investigue las operaciones que conserva la ejecución C. De lo contrario, compare los planes de ejecución para identificar diferencias |
 
 <div id="compare-rows-read-with-count-result">
-  ### Compare las filas leídas con el resultado de count {#compare-rows-read-with-count-result}
+  ### Compare las filas leídas con el resultado de count
 </div>
 
 Compare el valor de `read_rows` de la ejecución C con el valor devuelto por `count`. Por ejemplo, si `read_rows` es de 100 millones y `count` devuelve 1 millón, ClickHouse examinó aproximadamente 100 filas de origen por cada fila contabilizada. Esto indica que el filtro descartó la mayoría de las filas leídas de la tabla, pero no permite determinar el motivo. Esta proporción está pensada para análisis sencillos de una sola tabla. Para consultas con múltiples fuentes de datos o proyecciones, interprete `read_rows` mediante el plan de ejecución.
@@ -225,7 +224,7 @@ SET use_skip_indexes_on_data_read = 0;
 A continuación, use [`EXPLAIN indexes = 1`](/es/guides/clickhouse/performance-and-monitoring/diagnose-slow-queries#explain-statement) para ver qué índices utilizó ClickHouse y cuántas partes y gránulos descartó cada índice. Si ClickHouse seleccionó más gránulos de los esperados, compruebe si los filtros se ajustan a la clave de ordenación de la tabla y si la poda de particiones o un índice de omisión de datos podrían descartar más gránulos. Si el plan no incluye una sección `Indexes`, `EXPLAIN` no informó de la poda de índices para esa consulta. Por el contrario, es esperable que una consulta analítica sobre toda la tabla lea la mayor parte de ella.
 
 <div id="validate-the-suspected-bottleneck">
-  ## Valide el posible cuello de botella {#validate-the-suspected-bottleneck}
+  ## Valide el posible cuello de botella
 </div>
 
 Una vez que la comparación indique un posible cuello de botella, valídelo antes de modificar el esquema o la consulta. Use pruebas adecuadas para la fuente de latencia sospechada:
@@ -237,6 +236,8 @@ Una vez que la comparación indique un posible cuello de botella, valídelo ante
 
 Consulte la [guía de diagnóstico de consultas lentas](/es/guides/clickhouse/performance-and-monitoring/diagnose-slow-queries#explain-statement) para obtener información detallada sobre los índices que devuelve `EXPLAIN`. Aplique un cambio específico y repita las ejecuciones A, B y C en las mismas condiciones. Confirme que el cambio redujo el trabajo previsto y no desplazó el cuello de botella a otro punto.
 
-## Próximos pasos {#next-steps}
+<div id="next-steps">
+  ## Próximos pasos
+</div>
 
 Continúe con [Enfoques de optimización](/es/guides/clickhouse/performance-and-monitoring/optimization-approaches) para asociar el posible cuello de botella con uno o varios cambios específicos.

@@ -22,14 +22,14 @@ MCP, 즉 Model Context Protocol은 LLM 기반 AI 애플리케이션이 구조화
 
 ClickHouse는 두 가지 MCP 서버를 제공합니다.
 
-|                    | 원격 MCP 서버 (Cloud)                                            | 오픈소스 MCP 서버                                                            |
-| ------------------ | ------------------------------------------------------------ | ---------------------------------------------------------------------- |
-| **Source**         | ClickHouse Cloud에서 완전 관리형으로 제공                               | GitHub의 [mcp-clickhouse](https://github.com/ClickHouse/mcp-clickhouse) |
-| **Transport**      | 스트리밍 가능한 HTTP (`https://mcp.clickhouse.cloud/mcp`)           | 로컬 stdio                                                               |
-| **Works with**     | ClickHouse Cloud 및 관리형 Postgres 서비스                      | 모든 ClickHouse 인스턴스 (자체 호스팅 또는 Cloud)                                   |
-| **Authentication** | Cloud 자격 증명을 사용하는 OAuth 2.0 또는 ClickHouse Cloud API 키      | 환경 변수                                                                  |
-| **Tools**          | 쿼리, 스키마 탐색, 서비스 관리, 백업, ClickPipes, 청구, Postgres 모니터링을 위한 도구 | 3개의 도구: `run_select_query`, `list_databases`, `list_tables`            |
-| **Setup**          | 설치가 필요 없습니다. MCP 클라이언트를 엔드포인트로 지정하고 인증하면 됩니다.                | 서버를 로컬에 설치하고 실행                                                        |
+|                    | 원격 MCP 서버 (Cloud)                                       | 오픈소스 MCP 서버                                                            |
+| ------------------ | ------------------------------------------------------- | ---------------------------------------------------------------------- |
+| **Source**         | ClickHouse Cloud에서 완전 관리형으로 제공                          | GitHub의 [mcp-clickhouse](https://github.com/ClickHouse/mcp-clickhouse) |
+| **Transport**      | 스트리밍 가능한 HTTP (`https://mcp.clickhouse.cloud/mcp`)      | 로컬 stdio                                                               |
+| **Works with**     | ClickHouse Cloud 서비스                                    | 모든 ClickHouse 인스턴스 (자체 호스팅 또는 Cloud)                                   |
+| **Authentication** | Cloud 자격 증명을 사용하는 OAuth 2.0 또는 ClickHouse Cloud API Key | 환경 변수                                                                  |
+| **Tools**          | 쿼리, 스키마 탐색, 서비스 관리, 백업, ClickPipes, 청구를 포괄하는 13개의 도구    | 3개의 도구: `run_select_query`, `list_databases`, `list_tables`            |
+| **Setup**          | 설치가 필요 없습니다. MCP 클라이언트를 엔드포인트로 지정하고 인증하면 됩니다.          | 서버를 로컬에 설치하고 실행                                                        |
 
 원격 MCP 서버는 관리할 인프라 없이 서비스 관리, 백업 모니터링, ClickPipe 확인, 청구 데이터 등을 포함해 ClickHouse Cloud와 가장 폭넓게 통합됩니다.
 자체 호스팅 ClickHouse 인스턴스의 경우 [오픈소스 MCP 서버 가이드](/ko/guides/use-cases/ai-ml/MCP/index)를 참조하십시오.
@@ -38,8 +38,7 @@ ClickHouse는 두 가지 MCP 서버를 제공합니다.
 
 원격 MCP 서버가 연결을 수락하려면 각 서비스에서 먼저 활성화되어 있어야 합니다.
 ClickHouse Cloud 콘솔에서 서비스를 연 다음 **Connect** 버튼을 클릭하고 **MCP**를 선택한 후 활성화하세요.
-ClickHouse 서비스에서 원격 MCP 서버를 활성화하거나 비활성화하려면 `control-plane:service:manage-mcp` 권한이 필요합니다([콘솔 역할 및 권한](/ko/products/cloud/reference/security/console-roles#console-permissions) 참조).
-관리형 Postgres 서비스에서는 서비스의 **Connect** 패널을 열고 **Enable Model Context Protocol**을 켜세요. 읽기 복제본(Read Replicas)은 상위 데이터베이스의 MCP 설정을 그대로 상속합니다.
+원격 MCP 서버를 활성화하거나 비활성화하려면 `control-plane:service:manage-mcp` 권한이 필요합니다([콘솔 역할 및 권한](/ko/products/cloud/reference/security/console-roles#console-permissions) 참조).
 스크린샷이 포함된 자세한 단계는 [설정 가이드](/ko/products/cloud/features/ai-ml/mcp/remote-mcp#enable-remote-mcp-server)를 참조하세요.
 
 ## 엔드포인트 {#endpoint}
@@ -71,7 +70,7 @@ API Key의 액세스 범위는 해당 키에 구성된 역할, 권한, 만료 �
 
 ## 사용 가능한 도구 {#available-tools}
 
-원격 MCP 서버는 다음 범주의 도구를 제공합니다. 사용할 수 있는 도구는 인증 메서드와 활성화된 기능에 따라 달라집니다.
+원격 MCP 서버는 다음 범주로 나뉜 13개의 도구를 제공합니다.
 
 ### 쿼리 및 스키마 탐색 {#query-and-schema}
 
@@ -83,21 +82,6 @@ API Key의 액세스 범위는 해당 키에 구성된 역할, 권한, 만료 �
 | `list_databases`   | ClickHouse 서비스에서 사용할 수 있는 모든 데이터베이스를 나열합니다. | `serviceId`                                                                    |
 | `list_tables`      | 데이터베이스의 모든 테이블을 컬럼 정의와 함께 나열합니다.            | `serviceId`; `database`; 선택적으로 `like` 또는 `notLike` (테이블 이름을 필터링하는 SQL LIKE 패턴) |
 
-### Managed Postgres {#managed-postgres}
-
-이 도구들은 관리형 Postgres 서비스를 쿼리하고 모니터링합니다. `get_organizations`로 `organizationId`를 확인한 다음, `get_services_list`로 `serviceType`이 `postgres`인 서비스를 찾아 해당 서비스의 `id`를 `serviceId`로 사용하십시오.
-
-| 도구                                        | 설명                                                                                                                            | 매개변수                                                                                                                                                           |
-| ----------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `run_postgres_select_query`               | Postgres 서비스에서 읽기 전용 SQL 쿼리(SQL query)를 실행합니다. OAuth 인증이 필요하며, ClickHouse Cloud API 키로는 사용할 수 없습니다.                           | `organizationId`; `serviceId`; `query`; 선택 사항: `database`(기본값: `postgres`), `timeoutSeconds`(1–3600, 기본값: 300)                                                 |
-| `list_postgres_slow_query_patterns`       | 느린 쿼리 패턴 목록을 지연 시간, 호출 횟수, 행 수, CPU, I/O, WAL, 오류에 대한 집계 메트릭과 함께 반환합니다. 소요 시간은 마이크로초 단위입니다.                                   | `organizationId`; `serviceId`; `fromDate`; `toDate`; 선택 사항: `limit`(1–500, 기본값: 20), `offset`, `sortBy`, `sortOrder`, `dbName`, `dbUser`, `dbOperation`, `app` |
-| `get_postgres_slow_query_pattern_details` | 지난 24시간 동안의 쿼리 패턴(query pattern) 최근 실행 내역을 최대 10개까지 반환하며, 가능한 경우 집계 메트릭도 함께 반환합니다.                                            | `organizationId`; `serviceId`; `queryId`; `dbName`; `dbUser`; `dbOperation`; 선택 사항: `app`                                                                      |
-| `get_postgres_metrics`                    | CPU, 메모리, 디스크, 네트워크, 연결, 캐시 적중률(Cache hit ratio), 트랜잭션(Transactions), 대기에 대한 시계열 메트릭을 반환합니다. 각 메트릭에는 단위와 레이블이 지정된 시계열이 포함됩니다. | `organizationId`; `serviceId`; `fromDate`; `toDate`; 선택 사항: `bucketSizeSeconds`(양의 정수, 생략 시 자동 선택)                                                             |
-
-`fromDate`와 `toDate`에는 `2026-11-03T00:00:00.000Z`와 같이 밀리초 정밀도의 UTC 타임스탬프를 사용하십시오. 시작 시점은 범위에 포함됩니다. 종료 시점은 느린 쿼리 패턴의 경우 분 단위 세분화 수준으로 포함되며, 메트릭의 경우 포함되지 않습니다.
-
-느린 쿼리 패턴을 자세히 확인하려면 `list_postgres_slow_query_patterns`에서 반환된 `queryId`, `dbName`, `dbUser`, `dbOperation`, `app`을 `get_postgres_slow_query_pattern_details`에 전달하십시오. `application_name`이 없는 쿼리는 `app`을 빈 문자열 그대로 전달하십시오. `app`을 생략하면 모든 애플리케이션이 포함됩니다.
-
 ### 조직 {#organizations}
 
 | Tool                       | 설명                                               | 매개변수             |
@@ -107,10 +91,10 @@ API Key의 액세스 범위는 해당 키에 구성된 역할, 권한, 만료 �
 
 ### 서비스 {#services}
 
-| 도구                  | Description                                                                       | 매개변수                          |
-| --------------------- | --------------------------------------------------------------------------------- | ----------------------------- |
-| `get_services_list`   | 조직 내 ClickHouse 및 관리형 Postgres 서비스를 조회하며, 각 서비스의 유형은 `serviceType` 필드로 식별합니다. | `organizationId`              |
-| `get_service_details` | ClickHouse 또는 관리형 Postgres 서비스의 상세 정보를 반환하며, 서비스 유형은 자동으로 감지합니다.              | `organizationId`; `serviceId` |
+| Tool                  | Description                         | 매개변수                          |
+| --------------------- | ----------------------------------- | ----------------------------- |
+| `get_services_list`   | ClickHouse Cloud 조직의 모든 서비스를 조회합니다. | `organizationId`              |
+| `get_service_details` | 특정 서비스의 상세 정보를 반환합니다.               | `organizationId`; `serviceId` |
 
 ### 백업 {#backups}
 

@@ -121,8 +121,8 @@ CREATE SERVER taxi_srv FOREIGN DATA WRAPPER clickhouse_fdw
 
 * `driver`：要使用的 ClickHouse 连接驱动程序，可以是 &quot;binary&quot; 或
   &quot;http&quot;。**必填。**
-* `compression`：binary 驱动程序 的 native 协议压缩，可选值为
-  &quot;none&quot;、&quot;lz4&quot; 或 &quot;zstd&quot;。默认为 &quot;lz4&quot;。http 驱动程序会忽略此选项。
+* `compression`：binary driver 的 native 协议压缩，可选值为
+  &quot;none&quot;、&quot;lz4&quot; 或 &quot;zstd&quot;。默认为 &quot;lz4&quot;。http 驱动会忽略此选项。
 * `dbname`：连接时使用的 ClickHouse 数据库。默认为
   &quot;default&quot;。
 * `host`：ClickHouse 服务器 的主机名。默认为 &quot;localhost&quot;；
@@ -149,19 +149,6 @@ CREATE SERVER taxi_srv FOREIGN DATA WRAPPER clickhouse_fdw
   * `replace`：在 UTF-8 编码下，将无效字节替换为
     Unicode 替换字符 (`�`) ；对于其他编码，与 `remove` 相同
   * `truncate`：在第一个无效字节处截断文本
-* `settings`：在此服务器上执行外部表查询和插入操作时随之发送的
-  [ClickHouse 设置]。语法与
-  [`pg_clickhouse.session_settings`](#pg_clickhousesession_settings) 相同。
-  可通过外部表的 `settings` 选项覆盖服务器设置。
-  对于相同的键，`pg_clickhouse.session_settings` 的值会同时覆盖这两者；
-  详情请参阅[设置优先级](#settings-precedence)。示例：
-
-  ```sql
-  ALTER SERVER taxi_srv OPTIONS(ADD settings 'max_threads 8, final 0');
-  ```
-
-  pg&#95;clickhouse 会在设置该选项时检查语法；ClickHouse 则会在查询实际使用这些值时
-  检查其有效性。
 
 ### ALTER SERVER {#alter-server}
 
@@ -345,25 +332,6 @@ CREATE FOREIGN TABLE acts (
 * `engine`：ClickHouse 表使用的[表引擎]。对于
   `CollapsingMergeTree()` 和 `AggregatingMergeTree()`，pg&#95;clickhouse
   会自动将参数应用于在该表上执行的函数表达式。
-* `settings`：对该表执行查询和插入操作时随附发送的
-  [ClickHouse 设置]。请使用
-  [`pg_clickhouse.session_settings`](#pg_clickhousesession_settings) 语法。
-  对于相同的键，表设置会覆盖[服务器设置](#create-server)，
-  因此各表可以使用表专属的设置，例如向量索引选项。
-  ClickHouse 对每个查询只使用一组设置。下推到 ClickHouse 的
-  连接和子查询会合并其所涉及各表的设置。如果多个表为同一设置
-  指定了不同的值，pg&#95;clickhouse 会忽略这些表级
-  值，但服务器设置或[会话设置](#pg_clickhousesession_settings)仍然
-  生效。此时会输出一条 `NOTICE`，报告
-  存在冲突的设置名称以及查询实际使用的值，或说明已回退到
-  ClickHouse 默认值。
-  参见[设置优先级](#settings-precedence)。
-
-  ```sql
-  ALTER FOREIGN TABLE acts OPTIONS(
-      ADD settings 'hnsw_candidate_list_size_for_search 512'
-  );
-  ```
 
 对于每一列，请使用与远程 ClickHouse 数据
 类型相对应的[数据类型](#data-types)。支持的列选项如下：
@@ -386,7 +354,7 @@ CREATE FOREIGN TABLE acts (
   ClickHouse 类型，并通过相应的列选项指定
   聚合函数名称，pg&#95;clickhouse 会自动在计算该列的聚合函数后追加
   `Merge`。请将该列声明为
-  可为空 (nullable) ，以避免出现 [状态列与 `NOT
+  可为空 (nullable) ，以避免出现 [状态列 and `NOT
   NULL`](#state-columns-and-not-null) 中所述的问题。
 
   ```sql
@@ -690,15 +658,6 @@ try=# EXPLAIN (ANALYZE, VERBOSE)
 
 “Foreign Scan”节点现在会按 `node_id` 下推聚合，将需要从 Postgres 拉回的行数从 1000 行 (全部行) 减少到仅 8 行，即每个节点 1 行。
 
-#### 分组集 {#grouping-sets}
-
-pg&#95;clickhouse 会使用 `GROUPING SETS` 子句在 ClickHouse 中执行 `GROUPING SETS`、`ROLLUP`、`CUBE` 和 `GROUPING()`。`GROUPING()` 下推需要
-ClickHouse 26.6 及以上版本。
-
-对于未包含在某个聚合键集合中的键，Postgres 会返回 NULL。ClickHouse 也是如此，
-但不能为 `Nullable` 的类型除外，例如 `Array` 和 `Map`。这些类型的键
-会返回空值，例如 array 返回 `{}`。
-
 ### 分区表 {#partitioned-tables}
 
 PostgreSQL [分区表]可以同时包含本地分区和由 ClickHouse 支持的外部分区。常见的布局是将较早的数据迁移到 ClickHouse，而较新的数据保留在 PostgreSQL 中：
@@ -723,7 +682,7 @@ CREATE TABLE events_2024 PARTITION OF events
 跨本地分区和外部分区的聚合需要启用 [partitionwise
 aggregation]，而 PostgreSQL 默认将其禁用：
 
-```sql
+```pgsql
 SET enable_partitionwise_aggregate = on;
 ```
 
@@ -740,7 +699,7 @@ try=# EXPLAIN (VERBOSE, COSTS OFF)
          ->  Foreign Scan
                Output: (PARTIAL count(*)), (PARTIAL sum(events.val)), (PARTIAL min(events.ts)), (PARTIAL max(events.ts))
                Relations: Aggregate on (events_2023 events)
-               Remote SQL: SELECT count(*), sumOrNull(val), minOrNull(ts), maxOrNull(ts) FROM "default".events
+               Remote SQL: SELECT count(*), sum(val), min(ts), max(ts) FROM "default".events
          ->  Partial Aggregate
                Output: PARTIAL count(*), PARTIAL sum(events_1.val), PARTIAL min(events_1.ts), PARTIAL max(events_1.ts)
                ->  Seq Scan on public.events_2024 events_1
@@ -858,57 +817,6 @@ try=# COPY logs FROM stdin CSV;
 > insert API。因此，[COPY] 目前通过 [INSERT](#insert) 语句
 > 插入记录。后续版本将对此进行改进。
 
-### UPDATE 和 DELETE {#update-and-delete}
-
-pg&#95;clickhouse 会将针对外部表的 [UPDATE] 和 [DELETE] 转换为单条
-ClickHouse [轻量级更新] 或 [轻量级删除] 语句执行：
-
-```pgsql
-try=# EXPLAIN (VERBOSE, COSTS OFF)
-       DELETE FROM logs WHERE resource = '/search' AND response >= 500;
-                                              QUERY PLAN
--------------------------------------------------------------------------------------------------------
- Delete on public.logs
-   ->  Foreign Delete on public.logs
-         Remote SQL: DELETE FROM "default".logs WHERE ((response >= 500)) AND ((resource = '/search'))
-(3 rows)
-```
-
-以下内容无法下推：
-
-* `RETURNING`
-* 连接，例如 `UPDATE ... FROM`、`DELETE ... USING` 或 `IN (SELECT ...)`
-* 外部表上的行级触发器，或带有 `WITH CHECK OPTION` 的视图
-
-不引用外层查询列的子查询会先在 Postgres 中运行，
-然后将其结果作为查询参数传递给 ClickHouse。
-
-在默认设置下，`UPDATE` 和 `DELETE` 会等待存储操作
-完成后才返回，因此后续查询能够看到其所做的更改。
-ClickHouse 不会报告受影响的行数，因此 Postgres 始终报告 `UPDATE 0`
-或 `DELETE 0`。
-
-轻量级 `DELETE` 要求使用 [MergeTree] 家族的表。轻量级
-`UPDATE` 要求 ClickHouse 25.7+，且表须为使用
-`SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1` 创建的 MergeTree 家族表 (
-`SummingMergeTree`、`AggregatingMergeTree` 和 `GraphiteMergeTree` 除外) 。
-如果使用 ClickHouse 25.7，还需设置 `allow_experimental_lightweight_update = 1`。
-`lightweight_deletes_sync` 等 ClickHouse 设置的传递方式与其他查询相同
-(参见[设置优先级](#settings-precedence)) 。
-
-### TRUNCATE {#truncate}
-
-使用 [TRUNCATE] 删除外部表中的所有行。pg&#95;clickhouse 会为每个表发送一条
-ClickHouse [TRUNCATE TABLE] 语句：
-
-```pgsql
-try=# TRUNCATE logs;
-TRUNCATE TABLE
-```
-
-ClickHouse 会立即执行截断，ROLLBACK 无法将其恢复。如果截断
-表的操作中途失败，已截断的表仍将保持截断状态。
-
 ### LOAD {#load}
 
 使用 [LOAD] 加载 pg&#95;clickhouse 共享库：
@@ -935,17 +843,16 @@ LOAD
 SET pg_clickhouse.session_settings = 'join_use_nulls 1, final 1';
 ```
 
-默认值为空字符串。pg&#95;clickhouse 始终会发送以下内置
-设置，此参数会按键覆盖其中的对应项：
+默认值为
 
 ```
 join_use_nulls 1, group_by_use_nulls 1, final 1, transform_null_in 0
 ```
 
-结果的正确性取决于以下设置：OUTER JOIN 的 `join_use_nulls`、
-[分组集](#grouping-sets) 的 `group_by_use_nulls`，以及
-`IN` 家族的 `transform_null_in` (请参阅
-[IN 和 NULL 语义](#in-and-null-semantics)) 。
+将其设为空字符串即可恢复为 ClickHouse server 的设置 —
+但请注意，下推的正确性取决于其中某些默认值：
+OUTER JOIN 的 `join_use_nulls` 以及 `IN` 家族的 `transform_null_in`
+(请参阅 [IN 和 NULL 语义](#in-and-null-semantics)) 。
 
 ```sql
 SET pg_clickhouse.session_settings = '';
@@ -993,7 +900,6 @@ $$;
 * `date_time_output_format`：http 驱动要求其为 &quot;iso&quot;
 * `format_tsv_null_representation`：http 驱动要求使用默认值
 * `output_format_tsv_crlf_end_of_line`：http 驱动要求使用默认值
-* `session_timezone`：在 ClickHouse 23.6 及更高版本中，pg&#95;clickhouse 会将其设为 PostgreSQL 的 [TimeZone]
 
 除此之外，pg&#95;clickhouse 不会校验这些设置，而是会在每次查询时将它们传递给
 ClickHouse。因此，它支持各个 ClickHouse 版本中的所有设置。
@@ -1001,30 +907,6 @@ ClickHouse。因此，它支持各个 ClickHouse 版本中的所有设置。
 请注意，必须先加载 pg&#95;clickhouse，才能设置
 `pg_clickhouse.session_settings`；可以使用[共享库预加载]，或者
 直接使用该扩展中的某个对象以确保其被加载。
-
-##### 设置优先级 {#settings-precedence}
-
-外部表的查询和插入操作会按键合并设置。后面的条目
-会覆盖前面的条目：
-
-1. 内置设置 (见上文)
-2. 外部服务器的 `settings`
-3. 外部表的 `settings`
-4. `pg_clickhouse.session_settings`
-
-覆盖配置仅作用于匹配的键。例如，表选项
-`settings 'final 0'` 会覆盖内置的 `final 1`。如需覆盖该表选项，可使用：
-
-```sql
-SET pg_clickhouse.session_settings = 'final 1';
-```
-
-现在，对该表的查询除了使用其他设置外，还会使用 `final 1`。
-
-[`clickhouse_query()`](#clickhouse_query) 和
-[`clickhouse_perform()`](#clickhouse_perform) 仅使用内置设置和
-`pg_clickhouse.session_settings`；`settings` 选项则适用于外部表上的查询和
-插入操作。
 
 #### `pg_clickhouse.pushdown_regex` {#pg_clickhousepushdown_regex}
 
@@ -1037,18 +919,6 @@ SET pg_clickhouse.pushdown_regex = 'false';
 ```
 
 详见[正则表达式](#regular-expressions)。
-
-#### `pg_clickhouse.vector_planner_warnings` {#pg_clickhousevector_planner_warnings}
-
-当 pgvector 最近邻搜索因其 `ORDER BY`
-或 `LIMIT` 子句而无法使用 ClickHouse 向量相似度索引时，pg&#95;clickhouse 默认会发出警告，并在每条警告中说明具体原因。如需关闭这些警告，请将
-`pg_clickhouse.vector_planner_warnings` 设置为 false：
-
-```sql
-SET pg_clickhouse.vector_planner_warnings = 'false';
-```
-
-详情请参阅[向量索引的使用](#vector-index-use)。
 
 ### ALTER ROLE {#alter-role}
 
@@ -1157,7 +1027,6 @@ FOREIGN TABLE](#create-foreign-table)。
 | Nullable(T)                  | T                           |                                         | 导入的列不带 NOT NULL 约束        |
 | Point                        | point                       |                                         |                           |
 | Polygon                      | polygon[]                   |                                         |                           |
-| QBit(T,N)                    | T[]                         |                                         | 将 N 个元素与位平面相互转置           |
 | Ring                         | polygon                     | lseg                                    | lseg 要求恰好两个点              |
 | SimpleAggregateFunction(f,T) | T                           |                                         | 以 T 类型存储值                 |
 | String                       | text                        | bytea; 输入兼容的类型                          | bytea 保留原始字节              |
@@ -1201,24 +1070,6 @@ ClickHouse 写入时的原样读取字节，请将 `String`、`FixedString`、`E
 值为 `3` 的 `IntervalDay` 会映射为整数 `3`。将
 `IntervalNanosecond` 映射为 `bigint` 可保留纳秒精度，而映射为
 `interval` 则会截断至微秒。
-
-### 向量类型 {#vector-types}
-
-安装 [pgvector] 扩展后，可将 ClickHouse 的浮点 array
-列声明为 `vector`，从而以 pgvector 值的形式读取和写入这些列：
-
-```sql
-CREATE FOREIGN TABLE items (
-    id        bigint NOT NULL,
-    embedding vector(768) NOT NULL
-) SERVER ch OPTIONS (table_name 'items');
-```
-
-| ClickHouse        | PostgreSQL  | 说明                           |
-| ----------------- | ----------- | ---------------------------- |
-| `Array(Float32)`  | `vector(n)` | 无损                           |
-| `Array(Float64)`  | `vector(n)` | 读取时舍入为 `real`；写入时保持精确        |
-| `Array(BFloat16)` | `vector(n)` | 读取时保持精确；写入时截断至 bfloat16 尾数精度 |
 
 ### BYTEA {#bytea}
 
@@ -1313,7 +1164,7 @@ SELECT c1, encode(c2::bytea, 'hex'), encode(c3::bytea, 'hex') FROM texts ORDER B
 但如果按 [BYTEA] 读取，则不会：
 
 ```pgsql
-try=# SELECT * FROM bytes;
+# SELECT * FROM bytes;
  c1 |                                                           c2                                                           |                                   c3
 ----+------------------------------------------------------------------------------------------------------------------------+------------------------------------------------------------------------
   1 | \x5c783162663766306363383231643331313738363136613535613865306335323637373733353339376364646536663431353361396664336437 | \x5c786165336232386364653032353432663831616363653837383332343534333064
@@ -1353,64 +1204,10 @@ SELECT id, vals FROM t1 WHERE vals[1:2] = ARRAY[10,20];
 SELECT id, vals FROM t1 WHERE vals[1:2][2] = 20; -- currently fails
 ```
 
-#### Tuple {#tuple}
-
-PostgreSQL 中没有与 ClickHouse [Tuple] 类型对应的类型。
-因此，[IMPORT FOREIGN SCHEMA](#import-foreign-schema) 会将 [Tuple] 列
-映射为 `text[]`，其中各元素按
-[Tuple] 中定义的顺序排列。pg&#95;clickhouse 在执行此类映射时会发出 `NOTICE`。
-
-例如，对于以下 ClickHouse 表：
-
-```sql
-CALL clickhouse_perform('ch_srv', $$
-    CREATE TABLE named_tuples (
-      a Tuple(s String, i Int64)
-    ) ENGINE = Memory
-$$);
-```
-
-[IMPORT FOREIGN SCHEMA](#import-foreign-schema) 会将其导入为：
-
-```
- attname |  type  | attndims | attnotnull
----------+--------+----------+------------
- a       | text[] |        1 | t
-```
-
-以值数组的形式插入 Tuple：
-
-```sql
-INSERT INTO named_tuples VALUES (ARRAY['y', '10']), (ARRAY['x', '-10']);
-```
-
-每个 array 包含的元素数量必须与 ClickHouse 元组所需的数量一致；不兼容的值会触发错误。
-
-获取到的数据如下：
-
-```pgsql
-try=# SELECT * FROM named_tuples;
-    a
----------
- {y,10}
- {x,-10}
-```
-
-无法通过数组下标访问值。换言之，以下查询
-会返回错误：
-
-```sql
-SELECT * FROM named_tuples WHERE a[2] = '10';
-```
-
-不过，请参阅[手动类型映射](#manual-type-mappings)，了解如何使用
-[复合类型]来映射元组元素的数据类型，以及如何按字段
-值进行查询。
-
 #### Map {#map}
 
 PostgreSQL 中没有与 ClickHouse [Map] 类型相对应的类型。
-因此，pg&#95;clickhouse 会将 [Map] 类型映射为 `text[][]`，其中每个键值对
+因此，pg&#95;clickhouse 会将 [Map] 列映射为 `text[][]`，其中每个键值对
 各自作为一个独立的 array。[IMPORT FOREIGN SCHEMA](#import-foreign-schema) 也采用
 这一映射。同样，也可以将 Map 以 array 的形式 `INSERT`。示例如下：
 
@@ -1439,15 +1236,14 @@ try=# SELECT * FROM maps;
 每个嵌套数组必须恰好包含两个文本值。如果值与 ClickHouse 中对应的键类型或值类型
 不兼容，将会报错。
 
-无法通过数组下标访问值。换言之，以下查询
-会返回错误：
+<Note>
+  插入 `Map` 需要使用 `binary` 驱动程序，该驱动程序会从 ClickHouse 服务器获取列类型。
+  `http` 驱动程序不具备这一能力，因此缺少对相应值进行格式化和插入所需的信息。
+</Note>
 
-```sql
-SELECT * FROM maps WHERE c2[1] = 'b';
-```
+#### Tuple {#tuple}
 
-不过，请参阅[手动类型映射](#manual-type-mappings)，了解如何使用
-[复合类型] 来映射 [Map] 元素的数据类型，以及如何按字段值进行查询。
+同样，ClickHouse 的 [Tuple] 列会映射为 `text[]`，并支持通过 binary driver 执行 `INSERT`。`IMPORT FOREIGN SCHEMA` 在执行此类映射时会发出 `NOTICE`。
 
 #### Nested {#nested}
 
@@ -1528,10 +1324,10 @@ INSERT INTO nests
 VALUES (1, ARRAY[['42', 'Arthur'], ['99', 'Barbara']]);
 ```
 
-不过，下标访问无法下推：
+不过，基于 Nested 类型的 `text[][]` 列无法下推：
 
 ```pgsql
-try=# SELECT * FROM nests WHERE c2[1][1] = '42`
+SELECT * FROM nests WHERE c2[1][1] = '42`
 ERROR:  pg_clickhouse: DB::Exception: First argument for function 'arrayElement' must be array, got 'Tuple(serial UInt32, order_id String)' instead
 ```
 
@@ -1544,7 +1340,7 @@ ClickHouse 的 Nested 语法。
 只要复合类型的字段名与 Nested 字段名完全一致，下推即可正常生效：
 
 ```sql
-SELECT * FROM nests WHERE (c2[1]).id = 42;
+SELECT * FROM nests WHERE c2[1].id = 42;
 ```
 
 ### 手动类型映射 {#manual-type-mappings}
@@ -1562,6 +1358,11 @@ CALL clickhouse_perform('ch_srv', $$
       labels Map(String, Int64),
       items  Nested(id Int32, name String)
     ) ORDER BY id SETTINGS flatten_nested = 0
+$$);
+
+CALL clickhouse_perform('ch_srv', $$
+    INSERT INTO events
+    VALUES(1, 'new', tuple(3, 4), {'k1': 5, 'k2': 6}, [tuple(100, 'xx')])
 $$);
 ```
 
@@ -1589,24 +1390,13 @@ CREATE FOREIGN TABLE events (
   下推时使用正确的名称。
 </Tip>
 
-如需使用自定义类型插入行，复合类型的字段顺序和类型须与 ClickHouse 中的声明保持一致。[Map] 的键和值分别对应第一个和第二个
-字段 (本例中为 `key` 和 `value`) 。`Nested` 和 `Map`
-会映射为复合类型数组，而 `Tuple` 则映射为单个复合值。
-向 `Nested` 列插入复合类型值需要使用 `binary` 驱动程序。
-
-```sql
-INSERT INTO events
-VALUES (
-    1, 'new', (3, 4),
-    ARRAY[('k1', 5), ('k2', 6)]::event_label[],
-    ARRAY[(100, 'xx'), (101, 'yy')]::event_item[]
-);
-```
-
-获取这些值的方法如下：
+复合类型的字段顺序和类型须与 ClickHouse 中的声明保持一致。[Map] 的键
+和值分别对应第一个和第二个字段 (本例中为 `key` 和 `value`) 。`Nested` 和 `Map` 会映射为复合类型数组，而 `Tuple`
+则映射为单个复合值：
 
 ```pgsql
-try=# SELECT * FROM events ORDER BY id; id | status | point |       labels        |          items
+SELECT * FROM events ORDER BY id;
+ id | status | point |       labels        |          items
 ----+--------+-------+---------------------+-------------------------
   1 | new    | (3,4) | {"(k1,5)","(k2,6)"} | {"(100,xx)","(101,yy)"}
 (1 row)
@@ -1616,9 +1406,9 @@ try=# SELECT * FROM events ORDER BY id; id | status | point |       labels      
 列表中：
 
 ```pgsql
-try=# SELECT (point).x,       (point).y,
-             (labels[1]).key, (labels[1]).value,
-             (items[1]).id,   (items[1]).name
+SELECT (point).x,       (point).y,
+       (labels[1]).key, (labels[1]).value,
+       (items[1]).id,   (items[1]).name
   FROM events ORDER BY id;
  x | y | key | value | id  | name
 ---+---+-----+-------+-----+------
@@ -1715,13 +1505,12 @@ pg&#95;clickhouse 会将条件子句 (`HAVING` 和 `WHERE` 子句) 中使用的�
 * `abs`: [abs](/zh/reference/functions/regular-functions/arithmetic-functions#abs)
 * `factorial`: [factorial](/zh/reference/functions/regular-functions/math-functions#factorial)
 * `mod` (int2/int4/int8/numeric): [取模](/zh/reference/functions/regular-functions/arithmetic-functions#modulo)
-* `pow` &amp; `power` (float8，不含 numeric): [pow](/zh/reference/functions/regular-functions/math-functions#pow)
+* `pow` &amp; `power` (float8，不含 numeric): [pow](https://clickhouse.com/docs/sql-reference/functions/math-functions#pow)
 * `round`: [round](/zh/reference/functions/regular-functions/rounding-functions#round)
 * `sin`, `cos`, `tan`, `atan`, `atan2`, `sinh`, `cosh`, `tanh`, `asinh`, `degrees`, `radians`, `pi`：[ClickHouse 数学函数](/zh/reference/functions/regular-functions/math-functions)
-  中的同名函数。`asin`、`acos`、`atanh`、`acosh` 不会下推：
-  对于超出范围的输入，PG 会报错，而 CH 会返回 `NaN`。
-* `date_part`：对于 `timestamp`
-  和 `timestamptz` 值，会将 PostgreSQL 的 [TimeZone] 传递给 ClickHouse。
+  中的同名函数。`asin`、`acos`、`atanh`、`acosh` 不会下推：对于超出范围的输入，PG
+  会报错，而 CH 会返回 `NaN`。
+* `date_part`:
   * `date_part('day')`: [toDayOfMonth](/zh/reference/functions/regular-functions/date-time-functions#toDayOfMonth)
   * `date_part('doy')`: [toDayOfYear](/zh/reference/functions/regular-functions/date-time-functions#toDayOfYear)
   * `date_part('dow')`: [toDayOfWeek](/zh/reference/functions/regular-functions/date-time-functions#toDayOfWeek)
@@ -1734,8 +1523,7 @@ pg&#95;clickhouse 会将条件子句 (`HAVING` 和 `WHERE` 子句) 中使用的�
   * `date_part('isoyear')`: [toISOYear](/zh/reference/functions/regular-functions/date-time-functions#toISOYear)
   * `date_part('week')`: [toISOYear](/zh/reference/functions/regular-functions/date-time-functions#toISOWeek)
   * `date_part('epoch')`: [toISOYear](/zh/reference/functions/regular-functions/date-time-functions#toUnixTimestamp)
-* `date_trunc`：对于 `timestamp`
-  和 `timestamptz` 值，会将 PostgreSQL 的 `TimeZone` 传递给 ClickHouse。
+* `date_trunc`:
   * `date_trunc('week')`: [toMonday](/zh/reference/functions/regular-functions/date-time-functions#toMonday)
   * `date_trunc('second')`: [toStartOfSecond](/zh/reference/functions/regular-functions/date-time-functions#toStartOfSecond)
   * `date_trunc('minute')`: [toStartOfMinute](/zh/reference/functions/regular-functions/date-time-functions#toStartOfMinute)
@@ -1744,17 +1532,9 @@ pg&#95;clickhouse 会将条件子句 (`HAVING` 和 `WHERE` 子句) 中使用的�
   * `date_trunc('month')`: [toStartOfMonth](/zh/reference/functions/regular-functions/date-time-functions#toStartOfMonth)
   * `date_trunc('quarter')`: [toStartOfQuarter](/zh/reference/functions/regular-functions/date-time-functions#toStartOfQuarter)
   * `date_trunc('year')`: [toStartOfYear](/zh/reference/functions/regular-functions/date-time-functions#toStartOfYear)
-* `extract(field FROM source)`：映射与 `date_part` 相同；对于 `timestamp` 和 `timestamptz` 值，会将 PostgreSQL 的
-  `TimeZone` 传递给 ClickHouse。
-* `date(timestamp)` &amp; `date(timestamptz)`: [toDate32](/zh/reference/functions/regular-functions/type-conversion-functions#toDate32)；
-  会将 PostgreSQL 的 `TimeZone` 传递给 ClickHouse，`date`
-  与 `timestamp` 或 `timestamptz` 之间的类型转换也是如此。
-* `AT TIME ZONE` &amp; `timezone(zone, source)`：先使用 [toString](/zh/reference/functions/regular-functions/type-conversion-functions#tostring)，
-  再使用 [toDateTime64](/zh/reference/functions/regular-functions/type-conversion-functions#todatetime64)，
-  以便在更改时区的同时保留本地日期和时间。将
-  `timestamp` 转换为 `timestamptz` 时，夏令时切换期间被跳过或重复的本地时间
-  会产生不同的结果：ClickHouse 会选择
-  比 PostgreSQL 更早的时间。
+* `extract(field FROM source)`：映射与 `date_part` 相同
+* `date(timestamp)` &amp; `date(timestamptz)`: [toDate](/zh/reference/functions/regular-functions/type-conversion-functions#toDate)
+  (反解析后为 CH 别名 `date`)
 * `array_position`：[indexOf](/zh/reference/functions/regular-functions/array-functions#indexOf)，配合
   [nullIf](reference/functions/regular-functions/functions-for-nulls#nullif)
   将 `0` 转换为 `NULL`；如果存在用于指定搜索起始索引的第三个参数，则使用
@@ -1764,9 +1544,9 @@ pg&#95;clickhouse 会将条件子句 (`HAVING` 和 `WHERE` 子句) 中使用的�
 * `array_append`: [arrayPushBack](/zh/reference/functions/regular-functions/array-functions#arrayPushBack)
 * `array_prepend`: [arrayPushFront](/zh/reference/functions/regular-functions/array-functions#arrayPushFront)
 * `array_remove`: [arrayRemove](/zh/reference/functions/regular-functions/array-functions#arrayRemove)
-* `cardinality`：在 ClickHouse 26.9+ 中为 [arrayFlattenedLength](/zh/reference/functions/regular-functions/array-functions#arrayFlattenedLength)，
+* `cardinality`：在 ClickHouse 26.9+ 中为 [arrayFlattenedLength](https://clickhouse.com/docs/sql-reference/functions/array-functions#arrayFlattenedLength)，
   否则为
-  [length](/zh/reference/functions/regular-functions/array-functions#length)，
+  [length](https://clickhouse.com/docs/sql-reference/functions/array-functions#length)，
   后者仅统计最外层数组
 * `array_length(array, 1)`：`nullIf(length(array), 0)`
 * `array_length` &amp; `cardinality`：[length](/zh/reference/functions/regular-functions/array-functions#length)
@@ -1801,7 +1581,7 @@ pg&#95;clickhouse 会将条件子句 (`HAVING` 和 `WHERE` 子句) 中使用的�
 * `regexp_split_to_array`: [splitByRegexp](/zh/reference/functions/regular-functions/splitting-merging-functions#splitByRegexp)
 * `md5`: [MD5](/zh/reference/functions/regular-functions/hash-functions#MD5)
 * `sha224`、`sha256`、`sha384` 和 `sha512`：对应的 ClickHouse
-  [SHA 函数](/zh/reference/functions/regular-functions/hash-functions#sha224)
+  [SHA 函数](https://clickhouse.com/docs/sql-reference/functions/hash-functions#sha224)
 * 当 `fmt` 为字符串常量 (不区分大小写) 时的 `encode(bytea, fmt)`：
   * `encode(bytea, 'hex')`：[hex](/zh/reference/functions/regular-functions/encoding-functions#hex)
     再套用 [lower](/zh/reference/functions/regular-functions/string-functions#lower)，
@@ -1820,8 +1600,7 @@ pg&#95;clickhouse 会将条件子句 (`HAVING` 和 `WHERE` 子句) 中使用的�
 * `to_char(timestamp[tz], fmt)`: [formatDateTime](/zh/reference/functions/regular-functions/date-time-functions#formatDateTime)
   当 `fmt` 为字符串常量，且其中每个关键字在
   ClickHouse 中都有完全对应的等价写法时。支持的关键字请参见兼容性说明中的 [to&#95;char()](#to_char)。
-  否则，该函数会在 PostgreSQL 中本地执行。对于 `timestamp` 和 `timestamptz` 值，会将 PostgreSQL 的 `TimeZone`
-  传递给 ClickHouse。
+  否则，该函数会在 PostgreSQL 中本地执行。
 * `statement_timestamp`, `transaction_timestamp`, &amp; `clock_timestamp`:
   [nowInBlock64](/zh/reference/functions/regular-functions/date-time-functions#nowInBlock64)
   (`nowInBlock64(9, $session_timezone)`)
@@ -1843,7 +1622,7 @@ pg&#95;clickhouse 会将条件子句 (`HAVING` 和 `WHERE` 子句) 中使用的�
 * `CURRENT_ROLE`：作为值从 PostgreSQL 函数中传入。
 * `SESSION_USER`：作为值从 PostgreSQL 函数传入。
 
-### 下推操作员 {#pushdown-operators}
+### 下推操作符 {#pushdown-operators}
 
 * 数组切片 (`arr[L:U]`): [arraySlice](/zh/reference/functions/regular-functions/array-functions#arraySlice)
 * `@>` (数组包含) : [hasAll](/zh/reference/functions/regular-functions/array-functions#hasAll)
@@ -1853,22 +1632,8 @@ pg&#95;clickhouse 会将条件子句 (`HAVING` 和 `WHERE` 子句) 中使用的�
 * `!~` (正则表达式不匹配) : [match](/zh/reference/functions/regular-functions/string-search-functions#match)
 * `~*` (不区分大小写的正则表达式不匹配) : [match](/zh/reference/functions/regular-functions/string-search-functions#match)
 * `!~*` (不区分大小写的正则表达式不匹配) : [match](/zh/reference/functions/regular-functions/string-search-functions#match)
-* `->>` (将 JSON/JSONB 元素提取为文本) : [子列语法](/zh/reference/data-types/newjson#reading-json-paths-as-sub-columns)
-* `->` (提取 JSON/JSONB) : [toJSONString](/zh/reference/functions/regular-functions/json-functions#toJSONString) + [子列语法](/zh/reference/data-types/newjson#reading-json-paths-as-sub-columns)
-* `jsonb` 下标 (`data['a']['b']`) : [toJSONString](/zh/reference/functions/regular-functions/json-functions#toJSONString) + [子列语法](/zh/reference/data-types/newjson#reading-json-paths-as-sub-columns)。
-  仅当作用对象为列、且下标为非 NULL 的常量文本时才会下推。
-  整数下标、数值文本下标以及非常量下标均在本地求值。
-* `/` (整数除法) : [intDiv](/zh/reference/functions/regular-functions/arithmetic-functions#intDiv)
-* `^` (指数) : [pow](/zh/reference/functions/regular-functions/math-functions#pow)
-* `|/` (平方根) : [sqrt](/zh/reference/functions/regular-functions/math-functions#sqrt)
-* `||/` (立方根) : [cbrt](/zh/reference/functions/regular-functions/math-functions#cbrt)
-* `@` (绝对值) : [abs](/zh/reference/functions/regular-functions/arithmetic-functions#abs)
-* `&` (按位与) : [bitAnd](/zh/reference/functions/regular-functions/bit-functions#bitAnd)
-* `|` (按位或) : [bitOr](/zh/reference/functions/regular-functions/bit-functions#bitOr)
-* `#` (按位异或) : [bitXor](/zh/reference/functions/regular-functions/bit-functions#bitXor)
-* `~` (按位取反) : [bitNot](/zh/reference/functions/regular-functions/bit-functions#bitNot)
-* `<<` (左移) : [bitShiftLeft](/zh/reference/functions/regular-functions/bit-functions#bitShiftLeft)
-* `>>` (右移) : [bitShiftRight](/zh/reference/functions/regular-functions/bit-functions#bitShiftRight)
+* `->>` (将 JSON/JSONB 元素提取为文本) : [sub-column syntax](/zh/reference/data-types/newjson#reading-json-paths-as-sub-columns)
+* `->` (提取 JSON/JSONB) : [toJSONString](/zh/reference/functions/regular-functions/json-functions#toJSONString) + [sub-column syntax](/zh/reference/data-types/newjson#reading-json-paths-as-sub-columns)
 
 ### IN 和 NULL 语义 {#in-and-null-semantics}
 
@@ -1891,8 +1656,8 @@ ANY`、`<> ALL`) ：若能够证明探测值和数组元素均不可能为 NULL�
 下推；对于非 `Nullable` 的 ClickHouse 列，[IMPORT FOREIGN SCHEMA] 会自动执行此操作。
 该推断基于非 NULL 常量、`NOT NULL` 列，以及对它们执行的基本算术运算 (`+`、`-`、`*`、一元 `-`) 。
 
-这些规则假定 ClickHouse 的默认设置为 `transform_null_in = 0`。pg&#95;clickhouse 会通过其内置的
-[会话设置](#pg_clickhousesession_settings)，
+这些规则假定 ClickHouse 的默认设置为 `transform_null_in = 0`。pg&#95;clickhouse 会通过
+[`pg_clickhouse.session_settings`](#pg_clickhousesession_settings) 参数的默认值，
 在每个查询中设置该值，
 以防止 ClickHouse 服务器 profile 对其进行静默更改。设置
 `transform_null_in = 1` 会破坏所有已下推 `IN` 的语义。
@@ -1938,97 +1703,11 @@ pg&#95;clickhouse 可识别部分核心扩展和第三方扩展中的函数，�
 * `soundex`：[soundex](/zh/reference/functions/regular-functions/string-functions#soundex)
 * `levenshtein` (2 参数) ：[editDistanceUTF8](/zh/reference/functions/regular-functions/string-functions#editDistanceUTF8)
 
-#### pgvector {#pgvector}
-
-以下作用于 `vector` 类型的 [pgvector] 运算符和函数会下推到
-ClickHouse：
-
-* `<->`、`l2_distance`：[L2Distance](/zh/reference/functions/regular-functions/distance-functions#L2Distance)
-* `<=>`、`cosine_distance`：[cosineDistance](/zh/reference/functions/regular-functions/distance-functions#cosineDistance)
-* `<#>`：取负的 [dotProduct](/zh/reference/functions/regular-functions/array-functions#arrayDotProduct)
-* `inner_product`：[dotProduct](/zh/reference/functions/regular-functions/array-functions#arrayDotProduct)
-* `<+>`、`l1_distance`：[L1Distance](/zh/reference/functions/regular-functions/distance-functions#L1Distance)
-* `vector_dims`：[length](/zh/reference/functions/regular-functions/array-functions#length)
-* `=`：[equals](/zh/reference/operators#equals)
-* `<>`：[notEquals](/zh/reference/operators#notEquals)
-
-最近邻查询会将距离排序和 `LIMIT` 连同所有 `WHERE` 条件一并下推到 ClickHouse：
-
-```sql
-SELECT id FROM items
- WHERE category = 'footwear'
- ORDER BY embedding <=> '[0.12, 0.03, 0.4]'
- LIMIT 10;
-```
-
-`EXPLAIN (VERBOSE)` 会显示远程查询：
-
-```sql
-SELECT id, embedding FROM items WHERE ((category = 'footwear'))
-ORDER BY cosineDistance(embedding, cast([0.12,0.03,0.4] as Array(Float32))) ASC NULLS LAST
-LIMIT 10
-```
-
-pgvector 的 `<#>` 返回的是负内积，因此 pg&#95;clickhouse 会将其排序转换为 `dotProduct(...) DESC`，这正是 ClickHouse 向量相似度索引
-所支持的形式。`<#>` 和 `inner_product` 需要 ClickHouse 23.8 或更高版本，因为从该版本起
-`dotProduct` 才支持数组参数；在更早的版本中，它们会在 Postgres 中求值。
-与 pgvector 一样，ClickHouse 以 `Float32` 精度计算 `Array(Float32)` 列的距离。
-
-带有用于打破平局的次级排序键时 (例如 `ORDER BY embedding <=> '[...]', id`) ，排序同样会被下推，但对于包含
-多个键的排序，ClickHouse 不会使用向量相似度索引。
-
-##### 向量索引的使用 {#vector-index-use}
-
-对于最近邻搜索，`EXPLAIN` 会显示所用的距离函数，以及可为其提供支持的
-ClickHouse [向量相似度索引][vector similarity index]。如果没有可用的索引，
-则会说明原因：
-
-```pgsql
-try=# EXPLAIN (VERBOSE, COSTS OFF) SELECT id FROM items ORDER BY embedding <=> '[1,0]' LIMIT 5;
-                                                                 QUERY PLAN
---------------------------------------------------------------------------------------------------------------------------------------------
- Foreign Scan on public.items
-   Output: id, (embedding <=> '[1,0]'::vector)
-   Vector Search: cosineDistance on embedding
-   Vector Index: none
-   Vector Index Not Used: index "items_idx" uses L2Distance (<->), not cosineDistance
-   Remote SQL: SELECT id, embedding FROM try.items ORDER BY cosineDistance(embedding, cast([1,0] as Array(Float32))) ASC NULLS LAST LIMIT 5
-(6 rows)
-```
-
-`EXPLAIN` 会从 ClickHouse 的
-`system.data_skipping_indices` 表中读取索引定义。如果查找失败，`EXPLAIN`
-会继续执行，但不显示索引详情。在以下情况下，ClickHouse 无法使用索引，而是
-逐行比较：
-
-* 索引使用的距离函数与搜索所用的不同
-* 该列没有索引
-* 排序为降序，或包含多个排序键
-* 查询没有 `LIMIT`，或 `LIMIT` 超过 `max_limit_for_vector_search_queries`
-* 某个 `WHERE` 条件未被下推，因此 `LIMIT` 也不会被下推
-* 服务器版本早于 ClickHouse 25.8
-
-这种精确搜索返回的是真正的最近邻。索引搜索要快得多，但结果是近似的。即使 `EXPLAIN` 列出了某个索引，ClickHouse
-也可能选择先过滤行再进行精确比较，例如当某个
-`WHERE` 条件匹配主键时。
-
-<Note>
-  当 pgvector 最近邻搜索因其 `ORDER BY` 或
-  `LIMIT` 而无法使用 ClickHouse 向量相似度索引时，查询规划阶段也会发出警告。可使用 `EXPLAIN` 获取更多详细信息。将
-  [`pg_clickhouse.vector_planner_warnings`](#pg_clickhousevector_planner_warnings)
-  设置为 false 即可关闭这些警告。
-</Note>
-
-pg&#95;clickhouse 会将 `vector` 常量类型转换为 `Array(Float32)`，因此相等比较
-所比较的正是 ClickHouse 在 `Array(Float32)`
-列中存储的同一组 `Float32` 值。`vector_norm`、`l2_normalize`、`subvector` 以及其他 pgvector
-函数不会被下推：在零向量、负偏移量或较旧版本的情况下，ClickHouse 中的等价函数行为有所不同。有关支持的列类型，请参阅“数据类型”下的 [Vector Types](#vector-types)。
-
-#### pgcrypto {#pgcrypto}
+#### pgcyrpto {#pgcrypto}
 
 * `digest(text, text)` 和 `digest(bytea, text)`：当算法为常量 `md5`、`sha1`、`sha224`、
   `sha256`、`sha384` 或 `sha512` (匹配时不区分大小写) 时，下推为对应的 ClickHouse
-  [哈希函数](/zh/reference/functions/regular-functions/hash-functions)。
+  [哈希函数](https://clickhouse.com/docs/sql-reference/functions/hash-functions)。
 
 ### 下推类型转换 {#pushdown-casts}
 
@@ -2070,18 +1749,6 @@ ClickHouse 会拒绝执行该类型转换。
 * [var&#95;op](/zh/reference/functions/aggregate-functions/varPop)
 * [var&#95;samp /variance](/zh/reference/functions/aggregate-functions/varSamp)
 
-以下 PostgreSQL 回归聚合函数在 ClickHouse 26.9 及更高版本中可下推到 ClickHouse 执行，在更早的 ClickHouse 版本中则仍在 Postgres 本地执行：
-
-* [regr&#95;avgx](/zh/reference/functions/aggregate-functions/regr_avgx)
-* [regr&#95;avgy](/zh/reference/functions/aggregate-functions/regr_avgy)
-* [regr&#95;count](/zh/reference/functions/aggregate-functions/regr_count)
-* [regr&#95;intercept](/zh/reference/functions/aggregate-functions/regr_intercept)
-* [regr&#95;r2](/zh/reference/functions/aggregate-functions/regr_r2)
-* [regr&#95;slope](/zh/reference/functions/aggregate-functions/regr_slope)
-* [regr&#95;sxx](/zh/reference/functions/aggregate-functions/regr_sxx)
-* [regr&#95;sxy](/zh/reference/functions/aggregate-functions/regr_sxy)
-* [regr&#95;syy](/zh/reference/functions/aggregate-functions/regr_syy)
-
 ### 自定义聚合函数 {#custom-aggregates}
 
 这些由 pg&#95;clickhouse 创建的自定义聚合函数，可为部分在 PostgreSQL
@@ -2102,7 +1769,7 @@ ClickHouse 会拒绝执行该类型转换。
 ### 下推有序集合聚合函数 {#pushdown-ordered-set-aggregates}
 
 这些[有序集合聚合函数]会映射为 ClickHouse 的[参数化
-聚合函数]：将其*直接参数*作为 parameter 传递，并将其 `ORDER BY` expression 作为 参数。例如，以下 PostgreSQL 查询：
+聚合函数]：将其*直接参数*作为 parameter 传递，并将其 `ORDER BY` expression 作为 argument。例如，以下 PostgreSQL 查询：
 
 ```sql
 SELECT percentile_cont(0.25) WITHIN GROUP (ORDER BY a) FROM t1;
@@ -2111,16 +1778,16 @@ SELECT percentile_cont(0.25) WITHIN GROUP (ORDER BY a) FROM t1;
 对应的 ClickHouse 查询如下：
 
 ```sql
-SELECT quantileOrNull(0.25)(a) FROM t1;
+SELECT quantile(0.25)(a) FROM t1;
 ```
 
 请注意，不支持非默认的 `ORDER BY` 后缀 `DESC` 和 `NULLS FIRST`，
 使用它们会报错。
 
 * `percentile_cont(double)`: [quantile](/zh/reference/functions/aggregate-functions/quantile)
-* `percentile_cont(double[])`: [quantiles](/zh/reference/functions/aggregate-functions/quantiles)
-* `percentile_disc(double)`: [quantileExactLow](/zh/reference/functions/aggregate-functions/quantileExactLow)
-* `percentile_disc(double[])`: [quantilesExactLow](/zh/reference/functions/aggregate-functions/quantilesExactLow)
+* `percentile_cont(double[])`: [quantiles](https://clickhouse.com/docs/reference/functions/aggregate-functions/quantiles)
+* `percentile_disc(double)`: [quantileExactLow](https://clickhouse.com/docs/reference/functions/aggregate-functions/quantileExactLow)
+* `percentile_disc(double[])`: [quantilesExactLow](https://clickhouse.com/docs/reference/functions/aggregate-functions/quantilesExactLow)
 
 ### 自定义有序集合聚合函数 {#custom-ordered-set-aggregates}
 
@@ -2134,25 +1801,25 @@ SELECT quantileOrNull(0.25)(a) FROM t1;
 
 这些由 pg&#95;clickhouse 创建的自定义[有序集合聚合函数]可为特定的 ClickHouse [参数化聚合函数]提供外部查询下推。如果其中任何函数无法下推，则会引发异常。
 
-* [quantile](/zh/reference/aggregate-functions/reference/quantile)
-* [quantileExact](/zh/reference/aggregate-functions/reference/quantileexact)
+* [quantile](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/quantile)
+* [quantileExact](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/quantileexact)
 
 ### 下推窗口函数 {#pushdown-window-functions}
 
 以下 PostgreSQL [窗口函数]可通过包含
 `OVER (PARTITION BY ... ORDER BY ...)` 子句的查询下推到 ClickHouse；适用时还包括窗口帧规范。
 
-* [row&#95;number](/zh/reference/functions/window-functions/row_number)
-* [rank](/zh/reference/functions/window-functions/rank)
-* [dense&#95;rank](/zh/reference/functions/window-functions/dense_rank)
-* [ntile](/zh/reference/functions/window-functions/ntile)
-* [cume&#95;dist](/zh/reference/functions/window-functions/cume_dist)
-* [percent&#95;rank](/zh/reference/functions/window-functions/percent_rank)
-* [lead](/zh/reference/functions/window-functions/lead)
-* [lag](/zh/reference/functions/window-functions/lag)
-* [first&#95;value](/zh/reference/functions/window-functions/first_value)
-* [last&#95;value](/zh/reference/functions/window-functions/last_value)
-* [nth&#95;value](/zh/reference/functions/window-functions/nth_value)
+* [row&#95;number](https://clickhouse.com/docs/reference/functions/window-functions/row_number)
+* [rank](https://clickhouse.com/docs/reference/functions/window-functions/rank)
+* [dense&#95;rank](https://clickhouse.com/docs/reference/functions/window-functions/dense_rank)
+* [ntile](https://clickhouse.com/docs/reference/functions/window-functions/ntile)
+* [cume&#95;dist](https://clickhouse.com/docs/reference/functions/window-functions/cume_dist)
+* [percent&#95;rank](https://clickhouse.com/docs/reference/functions/window-functions/percent_rank)
+* [lead](https://clickhouse.com/docs/reference/functions/window-functions/lead)
+* [lag](https://clickhouse.com/docs/reference/functions/window-functions/lag)
+* [first&#95;value](https://clickhouse.com/docs/reference/functions/window-functions/first_value)
+* [last&#95;value](https://clickhouse.com/docs/reference/functions/window-functions/last_value)
+* [nth&#95;value](https://clickhouse.com/docs/reference/functions/window-functions/nth_value)
 * `min` / `max` (带 `OVER` 子句)
 
 排名函数 (`row_number`、`rank`、`dense_rank`、`ntile`、`cume_dist`、
@@ -2291,10 +1958,7 @@ PostgreSQL 中用于 `timestamp` 和 `timestamp with time zone` 的 [`to_char()`
 
 ## 作者 {#authors}
 
-* [David E. Wheeler](https://justatheory.com/)
-* [serprex](https://github.com/serprex)
-* [Josh Ventura](https://github.com/JoshDreamland)
-* [Kaushik Iska](https://github.com/iskakaushik)
+[David E. Wheeler](https://justatheory.com/)
 
 ## 版权 {#copyright}
 
@@ -2370,25 +2034,9 @@ PostgreSQL 中用于 `timestamp` 和 `timestamp with time zone` 的 [`to_char()`
 
 [COPY]: https://www.postgresql.org/docs/current/sql-copy.html "PostgreSQL 文档：COPY"
 
-[UPDATE]: https://www.postgresql.org/docs/current/sql-update.html "PostgreSQL 文档：UPDATE"
-
-[DELETE]: https://www.postgresql.org/docs/current/sql-delete.html "PostgreSQL 文档：DELETE"
-
-[lightweight UPDATE]: /reference/statements/update "ClickHouse 文档：轻量级 UPDATE 语句"
-
-[lightweight DELETE]: /reference/statements/delete "ClickHouse 文档：轻量级 DELETE 语句"
-
-[MergeTree]: /reference/engines/table-engines/index/mergetree-family/mergetree "ClickHouse 文档：MergeTree"
-
-[TRUNCATE]: https://www.postgresql.org/docs/current/sql-truncate.html "PostgreSQL 文档：TRUNCATE"
-
-[TRUNCATE TABLE]: /reference/statements/truncate "ClickHouse 文档：TRUNCATE"
-
 [LOAD]: https://www.postgresql.org/docs/current/sql-load.html "PostgreSQL 文档：LOAD"
 
 [SET]: https://www.postgresql.org/docs/current/sql-set.html "PostgreSQL 文档：SET"
-
-[TimeZone]: https://www.postgresql.org/docs/current/runtime-config-client.html#GUC-TIMEZONE "PostgreSQL 文档：TimeZone"
 
 [ALTER ROLE]: https://www.postgresql.org/docs/current/sql-alterrole.html "PostgreSQL 文档：ALTER ROLE"
 
@@ -2418,38 +2066,34 @@ PostgreSQL 中用于 `timestamp` 和 `timestamp with time zone` 的 [`to_char()`
 
 [CALL]: https://www.postgresql.org/docs/current/sql-call.html "PostgreSQL 文档：CALL"
 
-[Array]: /reference/data-types/array "ClickHouse 文档：Array(T)"
-
-[Map]: /reference/data-types/map "ClickHouse 文档：Map"
-
-[Tuple]: /reference/data-types/tuple "ClickHouse 文档：Tuple(T1, T2, ...)"
-
-[Nested]: /reference/data-types/nested-data-structures/nested "ClickHouse 文档：Nested"
-
-[Enum]: /reference/data-types/enum "ClickHouse 文档：Enum"
-
-[String]: /reference/data-types/string "ClickHouse 文档：String"
-
-[TEXT]: https://www.postgresql.org/docs/current/datatype-character.html "PostgreSQL 文档：字符类型"
-
-[window functions]: https://www.postgresql.org/docs/current/functions-window.html "PostgreSQL 文档：窗口函数"
-
-[POSIX Regular Expressions]: https://www.postgresql.org/docs/current/functions-matching.html#FUNCTIONS-POSIX-REGEXP "PostgreSQL 文档：POSIX 正则表达式"
-
-[Postgres flags]: https://www.postgresql.org/docs/current/functions-matching.html#POSIX-EMBEDDED-OPTIONS-TABLE "PostgreSQL 文档：ARE 内嵌选项字母"
-
-[RE2]: https://github.com/google/re2/wiki/Syntax "RE2 语法"
-
-[re2 extension]: https://github.com/ClickHouse/pg_re2 "pg_re2：使用 RE2 的 ClickHouse 兼容正则函数"
-
-[intarray]: https://www.postgresql.org/docs/current/intarray.html "PostgreSQL 文档：intarray"
-
-[fuzzystrmatch]: https://www.postgresql.org/docs/current/fuzzystrmatch.html "PostgreSQL 文档：fuzzystrmatch"
-
-[pgvector]: https://github.com/pgvector/pgvector "pgvector：面向 Postgres 的开源向量相似度搜索"
-
-[vector similarity index]: /reference/engines/table-engines/mergetree-family/annindexes "ClickHouse 文档：精确与近似向量搜索"
-
-[`to_char()`]: https://www.postgresql.org/docs/current/functions-formatting.html "PostgreSQL 文档：数据类型格式化函数"
-
-[formatDateTime]: /reference/functions/regular-functions/date-time-functions#formatDateTime "ClickHouse 文档：formatDateTime"
+[Array] https://clickhouse.com/docs/reference/data-types/array
+&quot;ClickHouse 文档：Array(T)&quot;
+[Map]: https://clickhouse.com/docs/sql-reference/data-types/map
+&quot;ClickHouse 文档：Map&quot;
+[Tuple]: https://clickhouse.com/docs/reference/data-types/tuple
+&quot;ClickHouse 文档：Tuple(T1, T2, ...)&quot;
+[Nested]: https://clickhouse.com/docs/sql-reference/data-types/nested-data-structures/nested
+&quot;ClickHouse 文档：Nested&quot;
+[Enum]: https://clickhouse.com/docs/reference/data-types/enum
+&quot;ClickHouse 文档：Enum&quot;
+[String]: /reference/data-types/string
+&quot;ClickHouse 文档：String&quot;
+[TEXT]: https://www.postgresql.org/docs/current/datatype-character.html
+&quot;PostgreSQL 文档：字符类型&quot;
+[window functions]: https://www.postgresql.org/docs/current/functions-window.html
+&quot;PostgreSQL 文档：窗口函数&quot;
+[POSIX Regular Expressions]: https://www.postgresql.org/docs/current/functions-matching.html#FUNCTIONS-POSIX-REGEXP
+&quot;PostgreSQL 文档：POSIX 正则表达式&quot;
+[Postgres flags]: https://www.postgresql.org/docs/current/functions-matching.html#POSIX-EMBEDDED-OPTIONS-TABLE
+&quot;PostgreSQL 文档：ARE 内嵌选项字母&quot;
+[RE2]: https://github.com/google/re2/wiki/Syntax &quot;RE2 语法&quot;
+[re2 extension]: https://github.com/ClickHouse/pg&#95;re2
+&quot;pg&#95;re2：使用 RE2 的 ClickHouse 兼容正则函数&quot;
+[intarray]: https://www.postgresql.org/docs/current/intarray.html
+&quot;PostgreSQL 文档：intarray&quot;
+[fuzzystrmatch]: https://www.postgresql.org/docs/current/fuzzystrmatch.html
+&quot;PostgreSQL 文档：fuzzystrmatch&quot;
+[`to_char()`]: https://www.postgresql.org/docs/current/functions-formatting.html
+&quot;PostgreSQL 文档：数据类型格式化函数&quot;
+[formatDateTime]: /reference/functions/regular-functions/date-time-functions#formatDateTime
+&quot;ClickHouse 文档：formatDateTime&quot;

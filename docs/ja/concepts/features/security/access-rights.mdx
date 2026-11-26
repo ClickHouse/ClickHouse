@@ -38,7 +38,7 @@ SQL-driven ワークフローの使用を推奨します。これら 2 つの設
 すべてのユーザー、ロール、プロファイルなどと、それらに付与されているすべての grant を確認するには、[`SHOW ACCESS`](/ja/reference/statements/show#show-access) ステートメントを使用します。
 
 <div id="access-control-usage">
-  ## 概要 {#access-control-usage}
+  ## 概要
 </div>
 
 デフォルトでは、ClickHouse server には `default` ユーザーアカウントが用意されています。このアカウントでは SQL ベースのアクセス制御とアカウント管理 は使用できませんが、すべての権限を持っています。`default` ユーザーアカウントは、ユーザー名が定義されていないあらゆる場合に使用されます。たとえば、クライアントからのログイン時や分散クエリで使用されます。分散クエリ処理では、server またはクラスター の設定で [user and password](/ja/reference/engines/table-engines/special/distributed) プロパティが指定されていない場合、デフォルトのユーザーアカウントが使用されます。
@@ -50,7 +50,7 @@ ClickHouse を使い始めたばかりであれば、次の手順を検討して
 3. `default` ユーザーの [権限を制限し](/ja/concepts/features/configuration/settings/permissions-for-queries)、そのユーザーに対する SQL ベースのアクセス制御とアカウント管理 を無効にします。
 
 <div id="access-control-properties">
-  ### 現行ソリューションの特性 {#access-control-properties}
+  ### 現行ソリューションの特性
 </div>
 
 * データベースやテーブルが存在しなくても、それらに対する権限を付与できます。
@@ -58,7 +58,7 @@ ClickHouse を使い始めたばかりであれば、次の手順を検討して
 * 権限に有効期限の設定はありません。
 
 <div id="user-account-management">
-  ### ユーザーアカウント {#user-account-management}
+  ### ユーザーアカウント
 </div>
 
 ユーザーアカウントは、ClickHouse でユーザーを認可するためのアクセスエンティティです。ユーザーアカウントには、次の情報が含まれます。
@@ -81,7 +81,7 @@ ClickHouse を使い始めたばかりであれば、次の手順を検討して
 * [SHOW USERS](/ja/reference/statements/show#show-users)
 
 <div id="access-control-settings-applying">
-  ### 適用される設定 {#access-control-settings-applying}
+  ### 適用される設定
 </div>
 
 設定は、ユーザーアカウント、付与されたロール、設定プロファイルごとにそれぞれ異なる内容を構成できます。ユーザーのログイン時に、同じ設定が複数のアクセスエンティティに対して構成されている場合、その設定の値と制約は次の順序で適用されます (優先度の高い順) :
@@ -92,7 +92,7 @@ ClickHouse を使い始めたばかりであれば、次の手順を検討して
 4. サーバー全体に既定で適用される設定、または [default profile](/ja/reference/settings/server-settings/settings/default#default_profile) で適用される設定。
 
 <div id="role-management">
-  ### ロール {#role-management}
+  ### ロール
 </div>
 
 ロールは、アクセスエンティティをまとめたもので、ユーザーアカウントに付与できます。
@@ -116,20 +116,18 @@ ClickHouse を使い始めたばかりであれば、次の手順を検討して
 権限は、[GRANT](/ja/reference/statements/grant) クエリを使用してロールに付与できます。ロールから権限を取り消すには、ClickHouse では [REVOKE](/ja/reference/statements/revoke) クエリを使用します。
 
 <div id="row-policy-management">
-  #### ROW POLICY {#row-policy-management}
+  #### ROW POLICY
 </div>
 
 ROW POLICY は、ユーザーまたはロールがアクセスできる行を定義するフィルターです。ROW POLICY には、特定のテーブルに対するフィルターに加えて、この ROW POLICY を適用するロールやユーザーの一覧が含まれます。
 
 ROW POLICY は、テーブルデータがローカルで読み取られる場合に適用されます。[Distributed](/ja/reference/engines/table-engines/special/distributed) テーブル、または読み取りをリモートサーバーに委譲する別のテーブルの場合は、各サーバーの基になるテーブルにポリシーを定義してください。リモートサーバーをバックエンドとするテーブル自体に設定したポリシーは、送信されたクエリには適用できないため、そのテーブルを介した読み取りは拒否されます。イニシエーターが構築済みの読み取りプランを送信する場合、基になるテーブル上のこのようなポリシーは適用されないため、ROW POLICY を強制する必要があるユーザーでは [`serialize_query_plan = 0`](/ja/reference/settings/session-settings/serialize#serialize_query_plan) を維持してください ([issue #112891](https://github.com/ClickHouse/ClickHouse/issues/112891) を参照) 。
 
-ROW POLICY は、クエリが返す行をフィルタリングするものであり、行数を隠すわけではありません。[`system.tables`](/ja/reference/system-tables/tables) の `total_rows` や [`system.parts`](/ja/reference/system-tables/parts) の `rows` といったテーブルメタデータや、[`EXPLAIN ESTIMATE`](/ja/reference/statements/explain#explain-estimate)、クエリ進捗の `read_rows`、[`max_rows_to_read`](/ja/reference/settings/session-settings/max-rows#max_rows_to_read) による制限といったクエリ統計には、ポリシーによって非表示になっている行が含まれる場合があります。
-
 <Note>
   ROW POLICY が有効なのは、readonly アクセス権限がある場合に限られます。テーブルを変更したり、テーブル間でパーティションをコピーしたりできる場合、ROW POLICY による制限は実質的に意味をなさなくなります。
 </Note>
 
-管理クエリ:
+管理用クエリ:
 
 * [CREATE ROW POLICY](/ja/reference/statements/create/row-policy)
 * [ALTER ROW POLICY](/ja/reference/statements/alter/row-policy)
@@ -138,7 +136,7 @@ ROW POLICY は、クエリが返す行をフィルタリングするものであ
 * [SHOW POLICIES](/ja/reference/statements/show#show-policies)
 
 <div id="settings-profiles-management">
-  ### SETTINGS PROFILE {#settings-profiles-management}
+  ### SETTINGS PROFILE
 </div>
 
 SETTINGS PROFILE は、[設定](/ja/reference/settings/index)の集合です。SETTINGS PROFILE には、設定や制約に加え、このプロファイルが適用されるロールやユーザーの一覧が含まれます。
@@ -152,7 +150,7 @@ SETTINGS PROFILE は、[設定](/ja/reference/settings/index)の集合です。S
 * [SHOW PROFILES](/ja/reference/statements/show#show-profiles)
 
 <div id="quotas-management">
-  ### QUOTA {#quotas-management}
+  ### QUOTA
 </div>
 
 QUOTA はリソース使用量を制限します。詳細は [Quotas](/ja/concepts/features/configuration/server-config/quotas) を参照してください。
@@ -169,7 +167,7 @@ QUOTA には、一定期間ごとの一連の制限と、この QUOTA を使用�
 * [SHOW QUOTAS](/ja/reference/statements/show#show-quotas)
 
 <div id="enabling-access-control">
-  ### SQL ベースのアクセス制御とアカウント管理を有効にする {#enabling-access-control}
+  ### SQL ベースのアクセス制御とアカウント管理を有効にする
 </div>
 
 * 設定の保存先となるディレクトリを用意します。
@@ -190,7 +188,7 @@ QUOTA には、一定期間ごとの一連の制限と、この QUOTA を使用�
   3 つの設定すべてを 1 に設定すると、そのユーザーは完全な管理者になります。
 
 <div id="defining-sql-users-and-roles">
-  ## SQLユーザーとロールの定義 {#defining-sql-users-and-roles}
+  ## SQLユーザーとロールの定義
 </div>
 
 <Tip>
@@ -200,7 +198,7 @@ QUOTA には、一定期間ごとの一連の制限と、この QUOTA を使用�
 この記事では、SQLユーザーとロールを定義する基本と、それらの権限をデータベース、テーブル、行、カラムに適用する方法を説明します。
 
 <div id="enabling-sql-user-mode">
-  ### SQL ユーザーモードを有効にする {#enabling-sql-user-mode}
+  ### SQL ユーザーモードを有効にする
 </div>
 
 1. `users.xml` ファイルの `<default>` ユーザー配下で SQL ユーザーモードを有効にします。
@@ -229,7 +227,7 @@ QUOTA には、一定期間ごとの一連の制限と、この QUOTA を使用�
    ```
 
 <div id="defining-users">
-  ### ユーザーの作成 {#defining-users}
+  ### ユーザーの作成
 </div>
 
 1. SQL 管理者アカウントを作成します。
@@ -242,7 +240,7 @@ QUOTA には、一定期間ごとの一連の制限と、この QUOTA を使用�
    ```
 
 <div id="alter-permissions">
-  ## ALTER の権限 {#alter-permissions}
+  ## ALTER の権限
 </div>
 
 この記事では、権限の定義方法と、特権ユーザーが `ALTER` ステートメントを使用する際に権限がどのように機能するかについて理解を深めることを目的としています。

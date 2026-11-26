@@ -48,10 +48,7 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 合并整理产生的 iceberg parquet 数据文件的最大字节数。
 
 该默认值与 Iceberg 表属性 `write.target-file-size-bytes` 的文档默认值 (512 MiB) 保持一致，
-参见 https://iceberg.apache.org/docs/1.5.2/configuration/。该限制比较的是文件当前已写入的大小，即压缩后大小，
-与 `iceberg_data_file_size_lower_threshold_compaction` 采用相同的度量方式，
-因此文件最终大小可能会超出该限制，超出量为写入器仍在缓冲中的数据，例如尚未写完的 Parquet 行组以及正在
-编码的行组。请将其设置为高于
+参见 https://iceberg.apache.org/docs/1.5.2/configuration/。请将其设置为高于
 `iceberg_data_file_size_lower_threshold_compaction`，否则每个输出文件都会低于该下限阈值，
 从而再次被选中进行合并整理。
 

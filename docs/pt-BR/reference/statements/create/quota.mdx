@@ -19,7 +19,7 @@ CREATE QUOTA [IF NOT EXISTS | OR REPLACE] name [ON CLUSTER cluster_name]
     [IPV4_PREFIX_BITS number]
     [IPV6_PREFIX_BITS number]
     [FOR [RANDOMIZED] INTERVAL number {second | minute | hour | day | week | month | quarter | year}
-        {MAX { {queries | query_selects | query_inserts | errors | result_rows | result_bytes | read_rows | read_bytes | execution_time | written_bytes | written_rows | failed_sequential_authentications | queries_per_normalized_hash | profile_event_name} = number } [,...] | NO LIMITS | TRACKING ONLY} [,...]]
+        {MAX { {queries | query_selects | query_inserts | errors | result_rows | result_bytes | read_rows | read_bytes | execution_time | written_bytes | written_rows | failed_sequential_authentications | queries_per_normalized_hash} = number } [,...] | NO LIMITS | TRACKING ONLY} [,...]]
     [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
 ```
 
@@ -28,8 +28,6 @@ As chaves `user_name`, `ip_address`, `forwarded_ip_address`, `client_key`, `clie
 As opções `IPV4_PREFIX_BITS` e `IPV6_PREFIX_BITS` só podem ser usadas quando `KEYED BY` é `ip_address` ou `forwarded_ip_address`. Elas correspondem ao campo da tabela [system.quotas](/pt-BR/reference/system-tables/quotas).
 
 Os parâmetros `queries`, `query_selects`, `query_inserts`, `errors`, `result_rows`, `result_bytes`, `read_rows`, `read_bytes`, `execution_time`, `written_bytes`, `written_rows`, `failed_sequential_authentications`, `queries_per_normalized_hash` correspondem aos campos da tabela [system.quotas&#95;usage](/pt-BR/reference/system-tables/quotas_usage).
-
-Além dos tipos de recurso predefinidos acima, é possível definir um limite para qualquer evento de criação de perfil (consulte a tabela [system.events](/pt-BR/reference/system-tables/events)) pelo nome, por exemplo `MAX S3GetObject = 1000`. Os eventos de criação de perfil são contabilizados uma vez por consulta, no momento em que ela termina (com sucesso ou com erro): uma consulta que ultrapassa o limite ainda pode ser concluída, e as consultas seguintes são rejeitadas até o fim do intervalo. O consumo atual é informado na coluna `profile_events` da tabela [system.quotas&#95;usage](/pt-BR/reference/system-tables/quotas_usage).
 
 A cláusula `ON CLUSTER` permite criar quotas em um cluster; consulte [DDL distribuído](/pt-BR/reference/statements/distributed-ddl).
 
@@ -59,12 +57,6 @@ Limite cada padrão de consulta normalizado a no máximo 50 execuções por hora
 
 ```sql
 CREATE QUOTA qD FOR INTERVAL 1 hour MAX queries_per_normalized_hash = 50 TO default;
-```
-
-Limite o número de requisições `S3GetObject` e o número de consultas com falha por dia usando eventos de criação de perfil:
-
-```sql
-CREATE QUOTA qE FOR INTERVAL 1 day MAX S3GetObject = 100000, FailedQuery = 50 TO default;
 ```
 
 Outros exemplos, usando a configuração XML (não compatível com o ClickHouse Cloud), podem ser encontrados no [guia de quotas](/pt-BR/concepts/features/configuration/server-config/quotas).

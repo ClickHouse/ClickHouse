@@ -19,7 +19,9 @@ import { ExperimentalBadge } from "/snippets/ko/components/ExperimentalBadge/Exp
   [ClickHouse Managed Postgres](/ko/products/managed-postgres/overview) 서비스를 확인해 보십시오. 컴퓨트와 물리적으로 동일한 위치에 배치된 NVMe storage를 기반으로 하므로, EBS와 같은 network-attached storage를 사용하는 대안과 비교해 디스크 입출력에 병목이 있는 워크로드에서 최대 10배 더 빠른 성능을 제공하며, ClickPipes의 Postgres CDC 커넥터를 사용해 Postgres 데이터를 ClickHouse로 복제할 수 있습니다.
 </Tip>
 
-## PostgreSQL 테이블 엔진 사용하기 {#using-the-postgresql-table-engine}
+<div id="using-the-postgresql-table-engine">
+  ## PostgreSQL 테이블 엔진 사용하기
+</div>
 
 `PostgreSQL` 테이블 엔진을 사용하면 ClickHouse에서 원격 PostgreSQL 서버에 저장된 데이터에 대해 **SELECT** 및 **INSERT** 작업을 수행할 수 있습니다.
 이 문서에서는 하나의 테이블을 사용해 통합하는 기본 방법을 설명합니다.
@@ -203,7 +205,9 @@ import { ExperimentalBadge } from "/snippets/ko/components/ExperimentalBadge/Exp
   </Step>
 </Steps>
 
-## MaterializedPostgreSQL 데이터베이스 엔진 사용 {#using-the-materializedpostgresql-database-engine}
+<div id="using-the-materializedpostgresql-database-engine">
+  ## MaterializedPostgreSQL 데이터베이스 엔진 사용
+</div>
 
 <CloudNotSupportedBadge />
 
@@ -299,7 +303,7 @@ PostgreSQL 데이터베이스 엔진은 PostgreSQL 복제 기능을 사용하여
     2. 데이터베이스 엔진용 PostgreSQL 실험 기능을 활성화합니다:
 
     ```sql
-    SET enable_database_materialized_postgresql=1
+    SET allow_experimental_database_materialized_postgresql=1
     ```
 
     3. 복제할 새 데이터베이스를 생성하고 초기 테이블을 정의합니다:

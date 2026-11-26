@@ -2,16 +2,18 @@
 slug: /guides/sre/tls/configuring-tls
 sidebarTitle: 'Configuración de TLS'
 title: 'Configuración de TLS'
-description: 'Esta guía presenta unos ajustes sencillos y mínimos para que ClickHouse use certificados OpenSSL para validar las conexiones.'
+description: 'Esta guía presenta una configuración sencilla y mínima para que ClickHouse use certificados OpenSSL para validar las conexiones.'
 keywords: ['configuración de SSL', 'configuración de TLS', 'certificados OpenSSL', 'conexiones seguras', 'guía de SRE']
 doc_type: 'guide'
 ---
 
 import SelfManaged from '/snippets/es/_self_managed_only_automated.mdx';
 
+import { Image } from "/snippets/es/components/Image.jsx";
+
 <SelfManaged />
 
-Esta guía ofrece unos ajustes sencillos y mínimos para que ClickHouse use certificados OpenSSL para validar conexiones. Para esta demostración, se crean un certificado y una clave de una autoridad de certificación (CA) autofirmada, junto con certificados de nodo, a fin de establecer las conexiones con los ajustes adecuados.
+Esta guía ofrece una configuración sencilla y mínima para que ClickHouse use certificados OpenSSL para validar conexiones. Para esta demostración, se crean un certificado y una clave de una autoridad de certificación (CA) autofirmada, junto con certificados de nodo, a fin de establecer las conexiones con la configuración adecuada.
 
 <Note>
   La implementación de TLS es compleja y hay muchas opciones que se deben tener en cuenta para garantizar una implementación totalmente segura y robusta. Este es un tutorial básico con ejemplos de configuración básica de TLS. Consulte con su equipo de PKI/seguridad para generar los certificados adecuados para su organización.
@@ -318,6 +320,7 @@ Esta guía ofrece unos ajustes sencillos y mínimos para que ClickHouse use cert
            <transport_compression_level>0</transport_compression_level>
            <max_send_message_size>-1</max_send_message_size>
            <max_receive_message_size>-1</max_receive_message_size>
+           <verbose_logs>false</verbose_logs>
        </grpc>
        ```
 
@@ -458,11 +461,7 @@ Esta guía ofrece unos ajustes sencillos y mínimos para que ClickHouse use cert
 
     5. Inicie sesión en la UI de Play mediante la interfaz `https` en `https://chnode1.marsnet.local:8443/play`.
 
-       <div className="ch-image-md">
-         <Frame>
-           ![Configurar TLS](/images/guides/sre/configuring-ssl_01.webp)
-         </Frame>
-       </div>
+       <Image img="/images/guides/sre/configuring-ssl_01.webp" alt="Configurar TLS" size="md" border />
 
     <Note>
       el navegador mostrará un certificado no confiable, ya que se accede a él desde una estación de trabajo y los certificados no están en los almacenes de CA raíz de la máquina cliente.
@@ -514,7 +513,7 @@ Esta guía ofrece unos ajustes sencillos y mínimos para que ClickHouse use cert
 </Steps>
 
 <div id="configure-openssl-for-standalone-clickhouse-keeper">
-  ## Configurar OpenSSL para ClickHouse Keeper en modo independiente {#configure-openssl-for-standalone-clickhouse-keeper}
+  ## Configurar OpenSSL para ClickHouse Keeper en modo independiente
 </div>
 
 Al ejecutar ClickHouse Keeper como un proceso independiente (en lugar de estar integrado en ClickHouse server), los certificados y la configuración de OpenSSL deben configurarse por separado en el archivo de configuración de Keeper. De lo contrario, Keeper no podrá establecer conexiones seguras para la comunicación con el cliente (`tcp_port_secure`) ni para la replicación Raft entre nodos de Keeper.
@@ -558,13 +557,13 @@ La sección `<server>` se utiliza para las conexiones entrantes de los clientes 
 </Note>
 
 <div id="openssl-verification-modes">
-  ## Modos de verificación de OpenSSL y manejadores de certificados {#openssl-verification-modes}
+  ## Modos de verificación de OpenSSL y manejadores de certificados
 </div>
 
 La configuración `<openSSL>` admite varias opciones para `<verificationMode>` y `<invalidCertificateHandler>` que controlan cómo ClickHouse valida los certificados TLS. Estos ajustes se aplican a clickhouse-server, clickhouse-client y ClickHouse Keeper en modo independiente.
 
 <div id="verification-modes">
-  ### Modos de verificación {#verification-modes}
+  ### Modos de verificación
 </div>
 
 Configure `<verificationMode>` en la sección `<server>` o `<client>` de `<openSSL>`:
@@ -577,7 +576,7 @@ Configure `<verificationMode>` en la sección `<server>` o `<client>` de `<openS
 | `strict`  | Requiere y verifica por completo el certificado del peer. La conexión falla si el certificado no está presente, ha caducado o no está firmado por una CA de confianza. Recomendado para producción. |
 
 <div id="invalid-certificate-handlers">
-  ### Manejadores de certificados no válidos {#invalid-certificate-handlers}
+  ### Manejadores de certificados no válidos
 </div>
 
 Configura `<invalidCertificateHandler>` en la sección `<server>` o `<client>` de `<openSSL>`. Este manejador determina qué ocurre cuando falla la verificación del certificado. En el lado del servidor, controla la respuesta ante certificados de cliente no válidos. En el lado del cliente, controla la respuesta ante certificados de servidor no válidos.
@@ -588,7 +587,7 @@ Configura `<invalidCertificateHandler>` en la sección `<server>` o `<client>` d
 | `AcceptCertificateHandler` | Acepta la conexión incluso si el certificado no es válido. Úsalo solo para pruebas.                        |
 
 <div id="disabling-certificate-verification">
-  ### Ejemplo: desactivar la verificación de certificados {#disabling-certificate-verification}
+  ### Ejemplo: desactivar la verificación de certificados
 </div>
 
 <Warning>
@@ -682,7 +681,7 @@ como el nuevo, después cambie los certificados de nodo y de cliente por otros e
 por uno que contenga únicamente el nuevo certificado de CA.
 
 <div id="summary">
-  ## Resumen {#summary}
+  ## Resumen
 </div>
 
 Este artículo se ha centrado en configurar un entorno de ClickHouse con TLS. Los ajustes variarán según los requisitos de cada entorno de producción; por ejemplo, los niveles de verificación de certificados, los protocolos, los cifrados, etc. Pero ahora debería tener una buena comprensión de los pasos necesarios para configurar e implementar conexiones seguras.

@@ -11,7 +11,9 @@ keywords: ['example dataset', 'laion', 'image embeddings', 'sample data', 'machi
 
 このデータセットには、画像の URL、画像と画像キャプションそれぞれの埋め込み、画像と画像キャプションの類似度スコアに加え、メタデータ (画像の幅/高さ、ライセンス、NSFW フラグなど) が含まれています。このデータセットを使って、ClickHouse の[近似最近傍探索](/ja/reference/engines/table-engines/mergetree-family/annindexes)を実演できます。
 
-## データの準備 {#data-preparation}
+<div id="data-preparation">
+  ## データの準備
+</div>
 
 生データでは、埋め込みとメタデータはそれぞれ別のファイルに保存されています。データ準備の手順では、データをダウンロードし、ファイルを結合して、
 CSV に変換し、ClickHouse にインポートします。この処理には、次の `download.sh` スクリプトを使用できます。
@@ -75,7 +77,9 @@ seq 0 409 | xargs -P1 -I{} bash -c './download.sh {}'
 
 (上記の Python スクリプトは非常に遅く (ファイルごとに約 2〜10 分) 、大量のメモリを消費し (ファイルごとに 41 GB) 、生成される CSV ファイルも大きい (各 10 GB) ため、注意してください。十分な RAM がある場合は、`-P1` の値を増やして並列度を上げてください。それでも遅すぎる場合は、より良いインジェスト手順を検討してください。たとえば、.npy ファイルを Parquet に変換し、その後のすべての処理を ClickHouse で行う方法があります。)
 
-## テーブルを作成する {#create-table}
+<div id="create-table">
+  ## テーブルを作成する
+</div>
 
 まずは索引なしでテーブルを作成するには、次を実行します。
 
@@ -102,7 +106,9 @@ INSERT INTO laion FROM INFILE '{path_to_csv_files}/*.csv'
 
 `id` カラムはあくまで説明用であり、スクリプトによって重複する値が設定される点に注意してください。
 
-## ブルートフォースでベクトル類似度検索を実行する {#run-a-brute-force-vector-similarity-search}
+<div id="run-a-brute-force-vector-similarity-search">
+  ## ブルートフォースでベクトル類似度検索を実行する
+</div>
 
 ブルートフォースで近似ベクトル検索を実行するには、次を実行します。
 
@@ -133,7 +139,9 @@ SELECT url, caption FROM laion ORDER BY cosineDistance(image_embedding, {target:
 10 rows in set. Elapsed: 4.605 sec. Processed 100.38 million rows, 309.98 GB (21.80 million rows/s., 67.31 GB/s.)
 ```
 
-## ベクトル類似度索引を使って近似ベクトル類似度検索を実行する {#run-an-approximate-vector-similarity-search-with-a-vector-similarity-index}
+<div id="run-an-approximate-vector-similarity-search-with-a-vector-similarity-index">
+  ## ベクトル類似度索引を使って近似ベクトル類似度検索を実行する
+</div>
 
 それでは、テーブルに 2 つのベクトル類似度索引を定義します。
 
@@ -184,11 +192,15 @@ SELECT url, caption FROM laion ORDER BY cosineDistance(image_embedding, {target:
 ベクトル類似度索引を使用するベクトル類似度検索では、総当たり検索の結果とわずかに異なる結果が返される場合があります。
 HNSW パラメータを慎重に選定し、索引の品質を評価することで、HNSW 索引はリコールを 1 に近い値 (総当たり検索と同等の精度) まで高められる可能性があります。
 
-## UDFを使用した埋め込みの作成 {#creating-embeddings-with-udfs}
+<div id="creating-embeddings-with-udfs">
+  ## UDFを使用した埋め込みの作成
+</div>
 
 通常は、新しい画像や新しい画像キャプションの埋め込みを作成し、データ内で類似する画像／画像キャプションのペアを検索したいものです。クライアントを離れることなく `target` ベクトルを作成するには、[UDF](/ja/reference/functions/regular-functions/udf) を使用できます。データの作成時と検索用の新しい埋め込みの作成時には、同じモデルを使用することが重要です。以下のスクリプトでは、データセットでも使用されている `ViT-B/32` モデルを利用します。
 
-### テキスト埋め込み {#text-embeddings}
+<div id="text-embeddings">
+  ### テキスト埋め込み
+</div>
 
 まず、次の Python スクリプトを ClickHouse のデータパス内の `user_scripts/` ディレクトリに保存し、実行可能にします (`chmod +x encode_text.py`) 。
 
@@ -196,7 +208,7 @@ HNSW パラメータを慎重に選定し、索引の品質を評価すること
 
 ```python
 #!/usr/bin/python3
-#!Note: Change the above python3 executable location if a virtual env is being used.
+#!注意: 仮想環境を使用している場合は、上記のpython3実行ファイルのパスを変更してください。
 import clip
 import torch
 import numpy as np
@@ -238,7 +250,7 @@ if __name__ == '__main__':
 SELECT encode_text('cat');
 ```
 
-初回の実行はモデルの読み込みがあるため遅くなりますが、2回目以降は高速に実行されます。その後、出力を `SET param_target=...` にコピーすれば、クエリを簡単に記述できます。あるいは、`encode_text()` 関数を `cosineDistance` 関数の引数として直接使用することもできます：
+初回の実行はmodelの読み込みがあるため遅くなりますが、2回目以降は高速に実行されます。その後、出力を `SET param_target=...` にコピーすれば、クエリを簡単に記述できます。あるいは、`encode_text()` 関数を `cosineDistance` 関数のargumentとして直接使用することもできます：
 
 ```SQL
 SELECT url
@@ -249,7 +261,9 @@ LIMIT 10
 
 `encode_text()` UDF 自体が、埋め込みベクトルを計算して出力するまでに数秒かかる場合があることに注意してください。
 
-### 画像の埋め込み {#image-embeddings}
+<div id="image-embeddings">
+  ### 画像の埋め込み
+</div>
 
 画像の埋め込みも同様に作成できます。ローカルのファイルとして保存された画像の埋め込みを生成できる Python スクリプトも用意しています。
 

@@ -6,7 +6,6 @@
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Formats/MarkInCompressedFile.h>
 #include <IO/NullWriteBuffer.h>
-#include <Common/CurrentThread.h>
 #include <Common/FailPoint.h>
 #include <Common/SipHash.h>
 
@@ -77,8 +76,9 @@ MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
         cached_marks[MergeTreeDataPartCompact::DATA_FILE_NAME] = std::make_unique<MarksInCompressedFile::PlainArray>();
 }
 
-void MergeTreeDataPartWriterCompact::addStreams(const NameAndTypePair & name_and_type)
+void MergeTreeDataPartWriterCompact::addStreams(const NameAndTypePair & name_and_type, const ASTPtr & effective_codec_desc)
 {
+    const bool column_uses_default_codec = columnUsesDefaultCodec(name_and_type.getNameInStorage());
     ISerialization::StreamCallback callback = [&](const auto & substream_path)
     {
         chassert(!substream_path.empty());
@@ -88,7 +88,7 @@ void MergeTreeDataPartWriterCompact::addStreams(const NameAndTypePair & name_and
         if (compressed_streams.contains(stream_name))
             return;
 
-        auto compression_codec = getSubstreamCodec(name_and_type, substream_path);
+        auto compression_codec = getSubstreamCodec(effective_codec_desc, substream_path, column_uses_default_codec);
 
         UInt64 codec_id = compression_codec->getHash();
         /// Codecs that need the vector dimension upfront (e.g. SZ3) keep per-stream state in the codec
@@ -312,8 +312,6 @@ void MergeTreeDataPartWriterCompact::writeDataBlock(const Block & block, const G
 
     for (const auto & granule : granules)
     {
-        CurrentThread::checkIfNotCancelled();
-
         /// Tricky part, because we share compressed streams between different columns substreams.
         /// Compressed streams write data to the single file, but with different compression codecs.
         /// So we flush each stream (using next()) before using new one, because otherwise we will override
@@ -323,7 +321,6 @@ void MergeTreeDataPartWriterCompact::writeDataBlock(const Block & block, const G
         for (size_t i = 0; i < columns_list.size(); ++i, ++name_and_type)
         {
             bool is_first_substream = true;
-            const UInt64 min_compress_block_size = getEffectiveMinCompressBlockSize(*name_and_type);
             auto stream_getter = [&, this](const ISerialization::SubstreamPath & substream_path) -> WriteBuffer *
             {
                 String stream_name = ISerialization::getFileNameForStream(*name_and_type, substream_path, ISerialization::StreamFileNameSettings(*storage_settings));
@@ -354,15 +351,6 @@ void MergeTreeDataPartWriterCompact::writeDataBlock(const Block & block, const G
                     chassert(result_stream->hashing_buf.offset() == 0);
                     prev_stream->hashing_buf.next();
                 }
-                else if (prev_stream && settings.compress_per_substream_in_compact_parts && index_granularity_info.mark_type.with_substreams
-                    && settings.compress_per_column_in_compact_parts
-                    && prev_stream->hashing_buf.offset() >= min_compress_block_size)
-                {
-                    /// Cut a new block at a substream boundary only once it's worth closing: a subcolumn read
-                    /// then doesn't decompress the column's other substreams, while small substreams keep
-                    /// sharing a block.
-                    prev_stream->hashing_buf.next();
-                }
 
                 /// We have 2 types of marks in Compact part. With or without substreams.
                 /// In format without substreams we write single mark per column (here once on the first requested substream).
@@ -391,7 +379,7 @@ void MergeTreeDataPartWriterCompact::writeDataBlock(const Block & block, const G
             };
 
             auto serialize_settings = getSerializationSettings();
-            serialize_settings.min_compress_block_size = min_compress_block_size;
+            serialize_settings.min_compress_block_size = getEffectiveMinCompressBlockSize(*name_and_type);
             writeColumnSingleGranule(
                 block.getByName(name_and_type->name), block_sample.getByName(name_and_type->name),
                 getSerialization(name_and_type->name),

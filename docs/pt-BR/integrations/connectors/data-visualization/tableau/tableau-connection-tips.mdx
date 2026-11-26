@@ -10,12 +10,13 @@ integration:
   - category: 'data_visualization'
 ---
 
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
 import { ClickHouseSupportedBadge } from "/snippets/pt-BR/components/ClickHouseSupported/ClickHouseSupported.jsx";
 
 <ClickHouseSupportedBadge />
 
 <div id="initial-sql-tab">
-  ## Aba SQL inicial {#initial-sql-tab}
+  ## Aba SQL inicial
 </div>
 
 Se a caixa de seleção *Definir ID da sessão* estiver ativada na aba Avançada (padrão), você pode definir [configurações](/pt-BR/reference/settings/session-settings) da sessão usando
@@ -25,7 +26,7 @@ SET my_setting=value;
 ```
 
 <div id="advanced-tab">
-  ## Aba avançada {#advanced-tab}
+  ## Aba avançada
 </div>
 
 Em 99% dos casos, você não precisa da aba avançada; no 1% restante, pode usar as seguintes configurações:
@@ -45,7 +46,7 @@ Em 99% dos casos, você não precisa da aba avançada; no 1% restante, pode usar
 * **Caixa de seleção definir id da sessão**. Ela é necessária para definir configurações no nível da sessão na aba sql inicial; gera um `session_id` com um timestamp e um número pseudoaleatório no formato `"tableau-jdbc-connector-*{timestamp}*-*{number}*"`
 
 <div id="limited-support-for-uint64-int128-uint256-data-types">
-  ## Suporte limitado aos tipos de dados UInt64, Int128 e (U)Int256 {#limited-support-for-uint64-int128-uint256-data-types}
+  ## Suporte limitado aos tipos de dados UInt64, Int128 e (U)Int256
 </div>
 
 Por padrão, o driver exibe campos dos tipos *UInt64, Int128, (U)Int256* como strings, **mas apenas exibe, não converte**. Isso significa que, ao tentar criar o próximo campo calculado, você receberá um erro

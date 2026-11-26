@@ -7,6 +7,7 @@ description: 'Руководство по быстрому старту с Click
 doc_type: 'guide'
 ---
 
+import { Image } from "/snippets/ru/components/Image.jsx";
 import CloudQuickstartCLI from "/snippets/ru/quickstarts/_cloud_quickstart_cli.mdx";
 
 <Visibility for="agents">
@@ -16,134 +17,102 @@ import CloudQuickstartCLI from "/snippets/ru/quickstarts/_cloud_quickstart_cli.m
 <Visibility for="humans">
   <View title="Интерфейс Cloud">
     > Самый быстрый и простой способ начать работу с ClickHouse — создать новый
-    > сервис в [ClickHouse Cloud](https://console.clickhouse.cloud). В этом руководстве по быстрому старту мы покажем, как всё настроить
-    > всего за три простых шага.
+    > сервис в [ClickHouse Cloud](https://console.clickhouse.cloud). В этом руководстве по быстрому старту мы поможем вам настроить всё
+    > за три простых шага.
 
     <Steps>
       <Step title="Создайте сервис ClickHouse" id="1-create-a-clickhouse-service">
-        Чтобы создать бесплатный сервис ClickHouse в [ClickHouse Cloud](https://console.clickhouse.cloud), достаточно зарегистрироваться, выполнив следующие шаги:
+        Чтобы создать бесплатный сервис ClickHouse в [ClickHouse Cloud](https://console.clickhouse.cloud), зарегистрируйтесь, выполнив следующие действия:
 
         * Создайте аккаунт на [странице регистрации](https://clickhouse.cloud/signUp?loc=docs-cloud-quick-start)
-        * Зарегистрироваться можно с помощью электронной почты или через Google SSO, Microsoft SSO, AWS Marketplace, Google Cloud или Microsoft Azure
-        * Если вы регистрируетесь с помощью электронной почты и пароля, не забудьте в течение 24 часов подтвердить адрес электронной почты по ссылке из полученного письма
+        * Вы можете зарегистрироваться с помощью электронной почты либо через Google SSO, Microsoft SSO, AWS Marketplace, Google Cloud или Microsoft Azure
+        * Если вы регистрируетесь с помощью электронной почты и пароля, не забудьте подтвердить адрес электронной почты в течение следующих 24 часов по ссылке из полученного письма
         * Войдите, используя только что созданные имя пользователя и пароль
 
-        <div className="ch-image-lg">
-          <Frame>
-            ![Выбор тарифа](/images/_snippets/signup_page.webp)
-          </Frame>
-        </div>
+        <Image img="/images/_snippets/signup_page.webp" size="lg" alt="Выберите тариф" border />
 
         <br />
 
-        После входа ClickHouse Cloud запустит мастер первоначальной настройки, который поможет создать новый сервис ClickHouse. Выберите регион для развертывания сервиса и задайте ему имя:
+        После входа в систему ClickHouse Cloud запустит мастер онбординга, который поможет создать новый сервис ClickHouse. Выберите регион для развертывания сервиса и задайте ему имя:
 
-        <div className="ch-image-lg">
-          <Frame>
-            ![Новый сервис ClickHouse](/images/_snippets/createservice1.webp)
-          </Frame>
-        </div>
+        <Image img="/images/_snippets/createservice1.webp" size="lg" alt="Новый сервис ClickHouse" border />
 
         <br />
 
-        По умолчанию новым организациям назначается тариф Scale, и для них создаются 3 реплики, каждая с 4 VCPUs и 16 GiB оперативной памяти. [Вертикальное автомасштабирование](/ru/products/cloud/features/autoscaling/vertical) в тарифе Scale включено по умолчанию. Тарифный план организации можно изменить позже на странице «Plans».
+        По умолчанию для новых организаций выбирается уровень Scale: создаются 3 реплики, каждая с 4 vCPU и 16 ГиБ оперативной памяти. [Вертикальное автомасштабирование](/ru/products/cloud/features/autoscaling/vertical) на уровне Scale включено по умолчанию. Позже уровень организации можно изменить на странице &#39;Plans&#39;.
 
-        При необходимости настройте ресурсы сервиса, указав минимальный и максимальный размер, в пределах которого будут масштабироваться реплики. Когда всё будет готово, нажмите `Create service`.
+        При необходимости настройте ресурсы сервиса, указав минимальный и максимальный размеры, между которыми будут масштабироваться реплики. Когда всё будет готово, выберите `Create service`.
 
-        <div className="ch-image-lg">
-          <Frame>
-            ![Ограничения масштабирования](/images/_snippets/scaling_limits.webp)
-          </Frame>
-        </div>
+        <Image img="/images/_snippets/scaling_limits.webp" size="lg" alt="Ограничения масштабирования" border />
 
         <br />
 
-        Поздравляем! Ваш сервис ClickHouse Cloud запущен, первоначальная настройка завершена. Далее вы узнаете, как загружать данные и выполнять к ним запросы.
+        Поздравляем! Ваш сервис ClickHouse Cloud запущен, а онбординг завершён. Читайте далее, чтобы узнать, как начать приём данных и выполнять запросы к ним.
       </Step>
 
-      <Step title="Подключение к ClickHouse" id="2-connect-to-clickhouse">
+      <Step title="Подключитесь к ClickHouse" id="2-connect-to-clickhouse">
         Подключиться к ClickHouse можно двумя способами:
 
-        * через веб-консоль SQL;
-        * из вашего приложения.
+        * Через нашу веб-консоль SQL
+        * Из вашего приложения
 
         <br />
 
-### Подключение через консоль SQL {#connect-using-sql-console}
+### Подключение через консоль SQL
 
-        Чтобы вы могли быстро начать работу, ClickHouse предоставляет веб-консоль SQL, в которую вы попадёте автоматически после завершения первоначальной настройки.
+        Для быстрого начала работы ClickHouse предоставляет веб-консоль SQL, в которую вы будете перенаправлены после завершения онбординга.
 
-        <div className="ch-image-lg">
-          <Frame>
-            ![Консоль SQL](/images/_snippets/createservice8.webp)
-          </Frame>
-        </div>
+        <Image img="/images/_snippets/createservice8.webp" size="lg" alt="Консоль SQL" border />
 
-        Откройте новую вкладку запроса и выполните простой запрос, чтобы убедиться, что соединение работает:
+        Создайте вкладку запроса и выполните простой запрос, чтобы убедиться, что подключение работает:
 
         ```sql
         SHOW databases
         ```
 
-        В списке должны отображаться 4 базы данных, а также все базы данных, которые вы, возможно, добавили.
+        В списке должны отображаться 4 базы данных, а также все базы данных, добавленные вами.
 
-        <div className="ch-image-lg">
-          <Frame>
-            ![Консоль SQL](/images/_snippets/show_databases.webp)
-          </Frame>
-        </div>
+        <Image img="/images/_snippets/show_databases.webp" size="lg" alt="SQL Console" border />
 
         <br />
 
-        Готово — теперь вы можете начать работу с новым сервисом ClickHouse!
+        Готово — теперь вы можете начать использовать новый сервис ClickHouse!
 
-### Подключение из приложения {#connect-with-your-app}
+### Подключение приложения
 
-        Нажмите кнопку **Connect** в навигационном меню. Откроется модальное окно с учётными данными вашего сервиса и инструкциями по подключению через выбранный интерфейс или клиентскую библиотеку.
+        Нажмите кнопку подключения в навигационном меню. Откроется модальное окно с учетными данными для вашего сервиса и инструкциями по подключению через выбранный интерфейс или клиентскую библиотеку.
 
-        <div className="ch-image-lg">
-          <Frame>
-            ![Подключение к сервису](/images/_snippets/service_connect.webp)
-          </Frame>
-        </div>
+        <Image img="/images/_snippets/service_connect.webp" size="lg" alt="Service Connect" border />
 
         <br />
 
-        Если нужной клиентской библиотеки нет в списке, загляните в раздел [Интеграции](/ru/integrations/home).
+        Если нужной клиентской библиотеки нет в списке, ознакомьтесь с нашим списком [интеграций](/ru/integrations/home).
       </Step>
 
       <Step title="Добавить данные" id="3-add-data">
-        С данными ClickHouse раскрывается в полной мере! Добавить данные можно несколькими способами, и большинство из них доступно на странице «Источники данных», которую можно открыть в меню навигации.
+        ClickHouse раскрывается в полной мере, когда в нём есть данные! Добавить данные можно несколькими способами, и большинство из них доступны на странице Data Sources, которую можно открыть из меню навигации.
 
-        <div className="ch-image-lg">
-          <Frame>
-            ![Источники данных](/images/_snippets/data_sources.webp)
-          </Frame>
-        </div>
+        <Image img="/images/_snippets/data_sources.webp" size="lg" alt="Источники данных" border />
 
         <br />
 
         Загрузить данные можно следующими способами:
 
-        * Настройте ClickPipe, чтобы начать загрузку данных из таких источников данных, как S3, Postgres, Kafka и GCS
-        * Используйте консоль SQL
+        * Настройте ClickPipe для начала ингестии данных из таких источников, как S3, Postgres, Kafka и GCS
+        * Используйте SQL-консоль
         * Используйте клиент ClickHouse
-        * Загрузите файл  — поддерживаются форматы JSON, CSV и TSV
-        * Загрузите данные из файла по URL
+        * Загрузите файл — поддерживаются форматы JSON, CSV и TSV
+        * Загрузите данные по URL-адресу файла
 
-### ClickPipes {#clickpipes}
+### ClickPipes
 
-        [ClickPipes](/ru/integrations/clickpipes/home) — это управляемая интеграционная платформа, благодаря которой ингестия данных из самых разных источников сводится к нескольким нажатиям кнопок. Надёжная и масштабируемая архитектура ClickPipes, рассчитанная на самые требовательные рабочие нагрузки, обеспечивает стабильную производительность и надёжность. ClickPipes можно использовать как для долгосрочного стриминга, так и для однократных задач загрузки данных.
+        [ClickPipes](/ru/integrations/clickpipes/home) — это управляемая интеграционная платформа, которая позволяет загружать данные из самых разных источников буквально в несколько кликов. Разработанная для самых требовательных нагрузок, надежная и масштабируемая архитектура ClickPipes обеспечивает стабильную производительность и надежность. ClickPipes можно использовать как для долгосрочной потоковой передачи данных, так и для разовой загрузки данных.
 
-        <div className="ch-image-lg">
-          <Frame>
-            ![Выбор источника данных](/images/_snippets/select_data_source.webp)
-          </Frame>
-        </div>
+        <Image img="/images/_snippets/select_data_source.webp" size="lg" alt="Выберите источник данных" border />
 
         <br />
 
-### Добавление данных через консоль SQL {#add-data-using-the-sql-console}
+### Добавление данных через SQL Console
 
         Как и большинство систем управления базами данных, ClickHouse логически группирует таблицы в **базы данных**. Чтобы создать новую базу данных в ClickHouse, используйте команду [`CREATE DATABASE`](/ru/reference/statements/create/database):
 
@@ -151,7 +120,7 @@ import CloudQuickstartCLI from "/snippets/ru/quickstarts/_cloud_quickstart_cli.m
         CREATE DATABASE IF NOT EXISTS helloworld
         ```
 
-        Выполните следующую команду, чтобы создать таблицу с именем `my_first_table` в базе данных `helloworld`:
+        Выполните следующую команду, чтобы создать таблицу `my_first_table` в базе данных `helloworld`:
 
         ```sql
         CREATE TABLE helloworld.my_first_table
@@ -167,59 +136,59 @@ import CloudQuickstartCLI from "/snippets/ru/quickstarts/_cloud_quickstart_cli.m
 
         В приведённом выше примере `my_first_table` — это таблица [`MergeTree`](/ru/reference/engines/table-engines/mergetree-family/mergetree) с четырьмя столбцами:
 
-        * `user_id`:  32-битное беззнаковое целое число ([UInt32](/ru/reference/data-types/int-uint))
-        * `message`: тип данных [String](/ru/reference/data-types/string), который заменяет такие типы, как `VARCHAR`, `BLOB`, `CLOB` и другие, используемые в других СУБД
-        * `timestamp`: значение типа [DateTime](/ru/reference/data-types/datetime), представляющее момент времени
-        * `metric`: 32-битное число с плавающей запятой ([Float32](/ru/reference/data-types/float))
+        * `user_id`:  32-разрядное беззнаковое целое число ([UInt32](/ru/reference/data-types/int-uint))
+        * `message`: тип данных [String](/ru/reference/data-types/string), заменяющий типы `VARCHAR`, `BLOB`, `CLOB` и другие, используемые в других системах баз данных
+        * `timestamp`: значение [DateTime](/ru/reference/data-types/datetime), обозначающее момент времени
+        * `metric`: 32-разрядное число с плавающей запятой ([Float32](/ru/reference/data-types/float))
 
         <Info>
           **Движки таблиц**
 
-          Движок таблицы определяет:
+          Движки таблиц определяют:
 
-          * как и где хранятся данные;
-          * какие запросы поддерживаются;
-          * реплицируются ли данные.
+          * Как и где хранятся данные
+          * Какие запросы поддерживаются
+          * Реплицируются ли данные
 
           <br />
 
-          Выбор движков таблиц велик, но для простой таблицы на одноузловом сервере ClickHouse, скорее всего, подойдёт [`MergeTree`](/ru/reference/engines/table-engines/mergetree-family/mergetree).
+          Доступно множество движков таблиц, но для простой таблицы на одном сервере ClickHouse, скорее всего, подойдет [`MergeTree`](/ru/reference/engines/table-engines/mergetree-family/mergetree).
         </Info>
 
-#### Краткое введение в первичные ключи {#a-brief-intro-to-primary-keys}
+#### Краткое введение в первичные ключи
 
-        Прежде чем двигаться дальше, важно понять, как работают первичные ключи в ClickHouse (реализация
-        первичных ключей может показаться неожиданной!):
+        Прежде чем двигаться дальше, важно разобраться, как в ClickHouse работают первичные ключи (их реализация
+        может показаться неожиданной!):
 
-        * первичные ключи в ClickHouse ***не являются уникальными*** для каждой строки таблицы
+        * первичные ключи в ClickHouse ***не уникальны*** для каждой строки таблицы
 
-        Первичный ключ таблицы ClickHouse определяет порядок сортировки данных при записи на диск. Каждые 8,192 строки или 10MB
-        данных (этот объём называется **гранулярностью индекса**) образуют одну запись в файле индекса первичного ключа. Благодаря такой гранулярности
-        формируется **разреженный индекс**, который легко помещается в памяти, а гранулы представляют собой полосу минимального объёма
-        данных столбцов, обрабатываемого при выполнении `SELECT`-запросов.
+        Первичный ключ таблицы ClickHouse определяет, как данные сортируются при записи на диск. Каждые 8 192 строки или 10 МБ
+        данных (это называется **гранулярностью индекса**) создают запись в файле индекса первичного ключа. Концепция этой гранулярности
+        формирует **разреженный индекс**, который легко помещается в памяти, а гранулы представляют собой полосу наименьшего объёма
+        данных столбца, обрабатываемых во время запросов `SELECT`.
 
         Первичный ключ можно задать с помощью параметра `PRIMARY KEY`. Если при создании таблицы `PRIMARY KEY` не указан,
-        то ключом становится кортеж (Tuple), указанный в предложении `ORDER BY`. Если указаны и `PRIMARY KEY`, и `ORDER BY`, первичный ключ должен быть подмножеством порядка сортировки.
+        то ключом становится кортеж, заданный в секции `ORDER BY`. Если указаны и `PRIMARY KEY`, и `ORDER BY`, первичный ключ должен быть подмножеством порядка сортировки.
 
-        Первичный ключ одновременно является ключом сортировки и представляет собой Tuple `(user_id, timestamp)`.  Поэтому данные, сохранённые в каждом
-        файле столбца, будут отсортированы сначала по `user_id`, а затем по `timestamp`.
+        Первичный ключ одновременно является и ключом сортировки — кортежем `(user_id, timestamp)`. Поэтому данные, хранящиеся в каждом
+        файле столбца, будут отсортированы сначала по `user_id`, затем по `timestamp`.
 
-        Подробный разбор основных концепций ClickHouse см. в разделе [«Основные концепции»](/ru/concepts/core-concepts/index).
+        Подробное описание ключевых концепций ClickHouse см. в разделе [&quot;Основные концепции&quot;](/ru/concepts/core-concepts/index).
 
-#### Вставка данных в таблицу {#insert-data-into-your-table}
+#### Вставьте данные в вашу таблицу
 
         В ClickHouse можно использовать привычную команду [`INSERT INTO TABLE`](/ru/reference/statements/insert-into), однако важно понимать, что каждая вставка в таблицу [`MergeTree`](/ru/reference/engines/table-engines/mergetree-family/mergetree) приводит к созданию в хранилище новой **части** (part).
 
         <Tip>
-          **Рекомендуемая практика ClickHouse**
+          **Рекомендация ClickHouse**
 
-          Вставляйте большое количество строк в одном пакете — десятки тысяч или даже миллионы
-          строк за раз. Не беспокойтесь: ClickHouse без труда справляется с такими объёмами, а меньшее количество запросов на запись к вашему сервису поможет [сэкономить деньги](/ru/concepts/best-practices/selecting-an-insert-strategy#batch-inserts-if-synchronous).
+          Выполняйте вставку большого количества строк в каждом батче — десятков тысяч или даже миллионов
+          строк за раз. Не беспокойтесь: ClickHouse легко справится с таким объёмом, а вы [сэкономите деньги](/ru/concepts/best-practices/selecting-an-insert-strategy#batch-inserts-if-synchronous), отправляя меньше запросов на запись в сервис.
         </Tip>
 
         <br />
 
-        Даже в простом примере вставим сразу несколько строк:
+        Даже в простом примере вставим сразу несколько строк за один раз:
 
         ```sql
         INSERT INTO helloworld.my_first_table (user_id, message, timestamp, metric) VALUES
@@ -230,30 +199,26 @@ import CloudQuickstartCLI from "/snippets/ru/quickstarts/_cloud_quickstart_cli.m
         ```
 
         <Note>
-          Обратите внимание, что столбец `timestamp` заполняется с помощью различных функций для работы с [**Date**](/ru/reference/data-types/date) и [**DateTime**](/ru/reference/data-types/datetime). В ClickHouse есть сотни полезных функций — с ними можно [ознакомиться в разделе **Функции**](/ru/reference/functions/index).
+          Обратите внимание: столбец `timestamp` заполняется с помощью различных функций [**Date**](/ru/reference/data-types/date) и [**DateTime**](/ru/reference/data-types/datetime). В ClickHouse есть сотни полезных функций, с которыми можно [ознакомиться в разделе **Functions**](/ru/reference/functions/index).
         </Note>
 
-        Убедимся, что всё работает:
+        Проверим, что всё сработало:
 
         ```sql
         SELECT * FROM helloworld.my_first_table
         ```
 
-### Добавление данных с помощью клиента ClickHouse {#add-data-using-the-clickhouse-client}
+### Добавление данных с помощью клиента ClickHouse
 
-        Вы также можете подключиться к своему сервису ClickHouse Cloud с помощью инструмента командной строки [**клиент ClickHouse**](/ru/concepts/features/interfaces/client). Чтобы просмотреть параметры подключения, нажмите `Connect` в левом меню. В открывшемся диалоговом окне выберите `Native` в выпадающем списке:
+        Также вы можете подключиться к своему сервису ClickHouse Cloud с помощью инструмента командной строки [**clickhouse client**](/ru/concepts/features/interfaces/client). Чтобы получить эти данные, нажмите `Connect` в меню слева. В открывшемся диалоговом окне выберите `Native` в выпадающем списке:
 
-        <div className="ch-image-lg">
-          <Frame>
-            ![Сведения о подключении для клиента ClickHouse](/images/_snippets/client_details.webp)
-          </Frame>
-        </div>
+        <Image img="/images/_snippets/client_details.webp" size="lg" alt="сведения о подключении клиента ClickHouse" border />
 
         <br />
 
-        1. Установите [ClickHouse](/ru/get-started/setup/self-managed/quick-install).
+        1. Установите [ClickHouse](/ru/concepts/features/interfaces/cli).
 
-        2. Выполните следующую команду, подставив своё имя хоста, имя пользователя и пароль:
+        2. Выполните команду, указав имя хоста, имя пользователя и пароль:
 
         ```bash
         ./clickhouse client --host HOSTNAME.REGION.CSP.clickhouse.cloud \
@@ -262,13 +227,13 @@ import CloudQuickstartCLI from "/snippets/ru/quickstarts/_cloud_quickstart_cli.m
         --password <password>
         ```
 
-        Если появилось приглашение со смайликом, можно выполнять запросы!
+        Если появилось приглашение со смайликом, значит, можно выполнять запросы!
 
         ```response
         :)
         ```
 
-        3. Чтобы проверить, как это работает, выполните следующий запрос:
+        3. Выполните следующий запрос:
 
         <br />
 
@@ -291,7 +256,7 @@ import CloudQuickstartCLI from "/snippets/ru/quickstarts/_cloud_quickstart_cli.m
         4 rows in set. Elapsed: 0.008 sec.
         ```
 
-        4. Добавьте секцию [`FORMAT`](/ru/reference/statements/select/format), чтобы указать один из [многочисленных форматов вывода, поддерживаемых ClickHouse](/ru/reference/formats/index):
+        4. Добавьте предложение [`FORMAT`](/ru/reference/statements/select/format), чтобы указать один из [многих поддерживаемых ClickHouse форматов вывода](/ru/reference/formats/index):
 
         <br />
 
@@ -302,7 +267,7 @@ import CloudQuickstartCLI from "/snippets/ru/quickstarts/_cloud_quickstart_cli.m
         FORMAT TabSeparated
         ```
 
-        Приведённый выше запрос возвращает результат в формате tab-separated:
+        В приведённом выше запросе результат возвращается в виде значений, разделённых табуляцией:
 
         ```response
         Query id: 3604df1c-acfd-4117-9c56-f86c69721121
@@ -315,7 +280,7 @@ import CloudQuickstartCLI from "/snippets/ru/quickstarts/_cloud_quickstart_cli.m
         4 rows in set. Elapsed: 0.005 sec.
         ```
 
-        5. Чтобы выйти из `clickhouse client`, введите команду **exit**:
+        5. Чтобы выйти из `клиента ClickHouse`, введите команду **exit**:
 
         <br />
 
@@ -323,13 +288,13 @@ import CloudQuickstartCLI from "/snippets/ru/quickstarts/_cloud_quickstart_cli.m
         exit
         ```
 
-### Загрузка файла {#upload-a-file}
+### Загрузка файла
 
-        Типичная задача на старте работы с базой данных — вставка данных, которые уже есть у вас в файлах. Мы подготовили
-        пример данных в сети, которые можно вставить: это данные о кликстриме, включающие ID пользователя, URL посещённой страницы и
+        Одна из типичных задач в начале работы с базой данных — вставка данных, которые у вас уже есть в файлах. Мы разместили в интернете
+        пример данных, который вы можете вставить: это данные о кликах пользователей (clickstream), включающие ID пользователя, посещённый URL и
         временную метку события.
 
-        Предположим, что в CSV-файле `data.csv` содержится следующий текст:
+        Предположим, что в CSV-файле с именем `data.csv` содержится следующий текст:
 
         ```bash title="data.csv"
         102,This is data in a file,2022-02-22 10:43:28,123.45
@@ -349,15 +314,11 @@ import CloudQuickstartCLI from "/snippets/ru/quickstarts/_cloud_quickstart_cli.m
         --query='INSERT INTO helloworld.my_first_table FORMAT CSV' < data.csv
         ```
 
-        2. Если выполнить запрос в консоли SQL, можно увидеть, что в таблице появились новые строки:
+        2. Обратите внимание: при выполнении запроса из SQL-консоли в таблице теперь отображаются новые строки:
 
         <br />
 
-        <div className="ch-image-lg">
-          <Frame>
-            ![Новые строки из CSV-файла](/images/_snippets/new_rows_from_csv.webp)
-          </Frame>
-        </div>
+        <Image img="/images/_snippets/new_rows_from_csv.webp" size="lg" alt="Новые строки из CSV-файла" />
 
         <br />
       </Step>
@@ -367,21 +328,21 @@ import CloudQuickstartCLI from "/snippets/ru/quickstarts/_cloud_quickstart_cli.m
       **Фильтрация по IP Access List**
 
       Прежде чем продолжить, рекомендуем настроить фильтрацию по IP Access List.
-      Подробнее см. в разделе [&quot;Настройка IP-фильтров&quot;](/ru/products/cloud/guides/security/connectivity/setting-ip-filters).
+      Подробнее см. в разделе [&quot;Настройка IP filters&quot;](/ru/products/cloud/guides/security/connectivity/setting-ip-filters).
     </Tip>
 
-## Что дальше? {#whats-next}
+## Что дальше?
 
-    * В пошаговом руководстве по [данным о поездках такси Нью-Йорка](/ru/get-started/sample-datasets/nyc-taxi) вы вставите 2 миллиона строк в таблицу и напишете несколько аналитических запросов
-    * У нас есть список [демонстрационных наборов данных](/ru/get-started/sample-datasets/index) с инструкциями по их загрузке
-    * Посмотрите наше 12-минутное видео [Начало работы с ClickHouse](https://clickhouse.com/company/events/getting-started-with-clickhouse/)
-    * Если ваши данные поступают из внешнего источника, ознакомьтесь с нашей [подборкой руководств по интеграции](/ru/integrations/home) с очередями сообщений, базами данных, конвейерами и другими системами
-    * Если вы используете инструмент визуализации или BI-инструмент, ознакомьтесь с [руководствами пользователя по подключению интерфейса к ClickHouse](/ru/integrations/connectors/data-visualization/index)
-    * В руководстве пользователя по [первичным ключам](/ru/guides/clickhouse/data-modelling/sparse-primary-indexes) собрано всё, что нужно знать о первичных ключах и о том, как их определять
+    * В руководстве по работе с [данными о поездках такси Нью-Йорка](/ru/get-started/sample-datasets/nyc-taxi) вы вставите 2 миллиона строк в таблицу и выполните несколько аналитических запросов
+    * У нас есть список [демонстрационных наборов данных](/ru/get-started/sample-datasets/index) с инструкциями по их вставке
+    * Посмотрите наше 12-минутное видео [Getting Started with ClickHouse](https://clickhouse.com/company/events/getting-started-with-clickhouse/)
+    * Если ваши данные поступают из внешнего источника, ознакомьтесь с нашей [подборкой руководств по интеграции](/ru/integrations/home) для подключения к очередям сообщений, базам данных, конвейерам и другим системам
+    * Если вы используете инструмент UI/BI для визуализации данных, ознакомьтесь с [руководствами пользователя по подключению UI к ClickHouse](/ru/integrations/connectors/data-visualization/index)
+    * В руководстве пользователя по [первичным ключам](/ru/guides/clickhouse/data-modelling/sparse-primary-indexes) есть всё, что нужно знать о первичных ключах и их определении
   </View>
 
   <View title="CLI">
-    Эти шаги можно выполнить самостоятельно, автоматизировать с помощью скрипта или поручить ИИ-агенту. Инструкции для консоли доступны на вкладке **Cloud UI**.
+    Вы можете пройти этот путь самостоятельно, автоматизировать его с помощью скрипта или поручить ИИ-агенту. Для версии в консоли переключитесь в режим **Cloud UI**.
 
     <CloudQuickstartCLI />
   </View>

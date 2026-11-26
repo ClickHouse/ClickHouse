@@ -34,17 +34,26 @@ public:
         return std::make_shared<FunctionDateTimeToUUIDv7>();
     }
 
-    [[nodiscard]] String getName() const final { return name; }
-    [[nodiscard]] size_t getNumberOfArguments() const final { return 1; }
-    [[nodiscard]] bool isDeterministic() const override { return false; }
-    [[nodiscard]] bool isDeterministicInScopeOfQuery() const final { return false; }
-    [[nodiscard]] bool useDefaultImplementationForNulls() const final { return false; }
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const final { return false; }
-    [[nodiscard]] bool isVariadic() const final { return false; }
+    String getName() const final { return name; }
+    size_t getNumberOfArguments() const final { return 1; }
+    bool isDeterministic() const override { return false; }
+    bool isDeterministicInScopeOfQuery() const final { return false; }
+    bool useDefaultImplementationForNulls() const final { return false; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const final { return false; }
+    bool isVariadic() const final { return false; }
 
-    [[nodiscard]] String getSignatureString() const override { return "(DateTime) -> UUID"; }
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        FunctionArgumentDescriptors args{
+            {"value", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isDateTime), nullptr, "DateTime"}
+        };
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & , size_t input_rows_count) const override
+        validateFunctionArguments(*this, arguments, args);
+
+        return std::make_shared<DataTypeUUID>();
+    }
+
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & , size_t input_rows_count) const override
     {
         auto col_res = ColumnVector<UUID>::create();
         typename ColumnVector<UUID>::Container & vec_to = col_res->getData();
@@ -85,7 +94,6 @@ public:
     }
 };
 
-}
 
 REGISTER_FUNCTION(DateTimeToUUIDv7)
 {
@@ -108,7 +116,7 @@ SELECT dateTimeToUUIDv7(toDateTime('2021-08-15 18:57:56', 'Asia/Shanghai'));
         )",
         R"(
 ┌─dateTimeToUUIDv7(toDateTime('2021-08-15 18:57:56', 'Asia/Shanghai'))─┐
-│ 017b4976-0320-704b-b246-ff82ebc22cfd                                 │
+│ 018f05af-f4a8-778f-beee-1bedbc95c93b                                 │
 └──────────────────────────────────────────────────────────────────────┘
         )"
     },
@@ -134,5 +142,6 @@ SELECT dateTimeToUUIDv7(toDateTime('2021-08-15 18:57:56'));
 
     factory.registerFunction<FunctionDateTimeToUUIDv7>(documentation);
 
+}
 }
 }

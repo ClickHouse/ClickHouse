@@ -7,20 +7,21 @@ keywords: ['segurança do Postgres', 'lista de permissões de IP', 'criptografia
 doc_type: 'guide'
 ---
 
+import { BetaBadge } from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.security-beta" />
+
 O ClickHouse Managed Postgres foi desenvolvido com recursos de segurança de nível empresarial para proteger seus dados e atender aos requisitos de conformidade. Esta página aborda segurança de rede, criptografia e políticas de retenção de backups.
 
 ## Lista de permissões de IP {#ip-whitelisting}
 
 Os filtros de IP controlam quais endereços IP de origem têm permissão para se conectar à sua instância do ClickHouse Managed Postgres, fornecendo controle de acesso em nível de rede para proteger seu banco de dados contra conexões não autorizadas.
 
-<div className="ch-image-md">
-  <Frame>
-    ![Configuração da Lista de Acesso por IP](/images/managed-postgres/ip-filters.webp)
-  </Frame>
-</div>
+<Image img="/images/managed-postgres/ip-filters.webp" alt="Configuração da IP Access List" size="md" border />
 
 <div id="configuring-ip-filters">
-  ### Configuração de filtros de IP {#configuring-ip-filters}
+  ### Configuração de filtros de IP
 </div>
 
 Para configurar filtros de IP:
@@ -48,23 +49,42 @@ Você pode especificar:
   * IPs de pipelines de CI/CD para implantações automatizadas
 </Warning>
 
-## Criptografia {#encryption}
+<div id="encryption">
+  ## Criptografia
+</div>
 
-O ClickHouse Managed Postgres criptografa seus dados em repouso e em trânsito.
+O ClickHouse Managed Postgres criptografa seus dados tanto em repouso quanto em trânsito para garantir uma proteção abrangente.
 
 ### Criptografia em repouso {#encryption-at-rest}
 
-A criptografia em repouso está habilitada em todas as instâncias e não pode ser desativada. Ela é transparente para suas aplicações e não exige nenhuma configuração. Ela abrange:
+Todos os dados armazenados pelo ClickHouse Managed Postgres são criptografados em repouso para proteger contra acesso não autorizado à infraestrutura de armazenamento subjacente.
 
-* **Armazenamento NVMe:** arquivos de banco de dados, logs de transação e arquivos temporários, criptografados com algoritmos de criptografia padrão do setor.
-* **Armazenamento de objetos:** backups completos diários, arquivos WAL incrementais e dados de recuperação para um ponto no tempo.
+<div id="nvme-encryption">
+  #### Criptografia do armazenamento NVMe
+</div>
+
+Seus arquivos de banco de dados, logs de transações e arquivos temporários armazenados em unidades NVMe são criptografados com algoritmos de criptografia padrão do setor. Essa criptografia é transparente para suas aplicações e não requer configuração.
+
+#### Criptografia no armazenamento de objetos {#s3-encryption}
+
+Os backups e os arquivos de WAL (Write-Ahead Log) armazenados no armazenamento de objetos também são criptografados em repouso. Isso inclui:
+
+* Backups completos diários
+* Arquivos de WAL incrementais
+* Dados de recuperação pontual
+
+Todos os dados de backup são armazenados em buckets de armazenamento dedicados e isolados, com credenciais de escopo específico para cada instância, garantindo que os dados de backup permaneçam seguros e acessíveis apenas a sistemas autorizados.
+
+<Info>
+  A criptografia em repouso é habilitada por padrão para todas as instâncias do ClickHouse Managed Postgres e não pode ser desabilitada. Nenhuma configuração adicional é necessária.
+</Info>
 
 ### Criptografia em trânsito {#encryption-in-transit}
 
 Todas as conexões de rede com o ClickHouse Managed Postgres são protegidas com TLS (Transport Layer Security) para proteger os dados durante o tráfego entre suas aplicações e o banco de dados.
 
 <div id="tls-ssl">
-  #### Configuração de TLS/SSL {#tls-ssl}
+  #### Configuração de TLS/SSL
 </div>
 
 Por padrão, as conexões usam criptografia TLS sem verificação de certificado. Para workloads de produção, recomendamos usar TLS com verificação para garantir que você esteja se comunicando com o servidor correto.
@@ -154,7 +174,7 @@ Para conectar outro endpoint à mesma instância, por exemplo, a partir de outra
 O ClickHouse Managed Postgres faz backup automático dos seus dados para protegê-los contra exclusão acidental, corrupção ou outros cenários de perda de dados.
 
 <div id="retention-policy">
-  ### Política de retenção {#retention-policy}
+  ### Política de retenção
 </div>
 
 * **Período de retenção padrão**: 7 dias
@@ -163,6 +183,10 @@ O ClickHouse Managed Postgres faz backup automático dos seus dados para proteg�
 
 ### Segurança de backup {#backup-security}
 
-Os backups são [criptografados em repouso](#encryption-at-rest) e armazenados em buckets de armazenamento isolados por instância, com credenciais de escopo restrito, de modo que somente a instância do Postgres vinculada ao backup possa acessá-los.
+Os backups são armazenados com as mesmas garantias de segurança dos seus dados principais:
 
-Para mais detalhes sobre estratégias de backup e recuperação para um ponto no tempo, consulte a página [Backup e restauração](/pt-BR/products/managed-postgres/backup-and-restore).
+* **Criptografia em repouso** no armazenamento de objetos
+* **Buckets de armazenamento isolados** por instância, com credenciais de escopo restrito
+* **Controle de acesso** limitado à instância do Postgres vinculada ao backup.
+
+Para mais detalhes sobre estratégias de backup e recuperação pontual, consulte a página [Backup e restauração](/pt-BR/products/managed-postgres/backup-and-restore).

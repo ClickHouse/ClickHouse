@@ -7,6 +7,10 @@ keywords: ['managed postgres', 'bun', 'bun.sql', 'typescript', 'javascript', 'tl
 doc_type: 'guide'
 ---
 
+import { BetaBadge } from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.guides-bun-beta" />
+
 [Bun](https://bun.sh) est un environnement d&#39;exécution JavaScript et TypeScript doté d&#39;un client Postgres intégré, `Bun.sql`, ce qui vous évite d&#39;avoir à installer un driver.
 Dans ce guide, vous allez connecter Bun à ClickHouse Managed Postgres via une connexion TLS vérifiée, créer une table, exécuter des requêtes et une transaction, puis exposer les lignes via HTTP avec `Bun.serve`.
 

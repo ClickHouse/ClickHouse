@@ -7,6 +7,10 @@ keywords: ['managed postgres', 'drizzle', 'drizzle orm', 'drizzle-kit', 'typescr
 doc_type: 'guide'
 ---
 
+import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.guides-drizzle-beta" />
+
 [Drizzle ORM](https://orm.drizzle.team/) 是一个 TypeScript ORM，提供类 SQL 的查询构建器；`drizzle-kit` 是与之配套的命令行工具，用于生成和运行迁移。在本指南中，您将使用 TypeScript 定义一个 `todos` 表，通过 `drizzle-kit` 迁移创建该表，并用一个小型 Node.js HTTP 服务器处理增、删、改、查 (CRUD) 查询。所有连接均使用 TLS，并执行完整的证书验证。
 
 ## 前置条件 {#prerequisites}

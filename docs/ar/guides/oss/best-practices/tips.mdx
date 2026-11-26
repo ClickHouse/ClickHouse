@@ -10,7 +10,9 @@ import SelfManaged from '/snippets/ar/_self_managed_only_automated.mdx';
 
 <SelfManaged />
 
-## متحكّم تحجيم CPU {#cpu-scaling-governor}
+<div id="cpu-scaling-governor">
+  ## متحكّم تحجيم CPU
+</div>
 
 استخدم دائمًا متحكّم التحجيم `performance`. إذ يعمل متحكّم التحجيم `on-demand` بكفاءة أقل بكثير عند وجود طلب مرتفع ومستمر.
 
@@ -18,12 +20,16 @@ import SelfManaged from '/snippets/ar/_self_managed_only_automated.mdx';
 $ echo 'performance' | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor
 ```
 
-## قيود CPU {#cpu-limitations}
+<div id="cpu-limitations">
+  ## قيود CPU
+</div>
 
 قد ترتفع حرارة المعالجات. استخدم `dmesg` لمعرفة ما إذا كان تردد CPU قد قُيِّد بسبب ارتفاع الحرارة.
 يمكن أيضًا فرض هذا القيد خارجيًا على مستوى مركز البيانات. يمكنك استخدام `turbostat` لمراقبته أثناء التعرّض لحمل.
 
-## RAM {#ram}
+<div id="ram">
+  ## RAM
+</div>
 
 بالنسبة إلى أحجام البيانات الصغيرة (حتى نحو 200 جيجابايت مضغوطة)، فمن الأفضل استخدام ذاكرة بحجم يقترب قدر الإمكان من حجم البيانات.
 أما عند التعامل مع أحجام بيانات كبيرة ومعالجة الاستعلامات التفاعلية (عبر الإنترنت)، فينبغي استخدام مقدار مناسب من RAM (128 جيجابايت أو أكثر) بحيث يمكن أن تستوعب ذاكرة التخزين المؤقت للصفحات المجموعة الفرعية النشطة من البيانات.
@@ -38,7 +44,9 @@ $ echo 0 | sudo tee /proc/sys/vm/overcommit_memory
 استخدم `perf top` لمراقبة الوقت المُستغرَق في النواة لإدارة الذاكرة.
 كما أن الصفحات الضخمة الدائمة لا تحتاج أيضًا إلى تخصيص.
 
-### استخدام أقل من 16GB من RAM {#using-less-than-16gb-of-ram}
+<div id="using-less-than-16gb-of-ram">
+  ### استخدام أقل من 16GB من RAM
+</div>
 
 الكمية الموصى بها من RAM هي 32 GB أو أكثر.
 
@@ -59,7 +67,9 @@ $ echo 0 | sudo tee /proc/sys/vm/overcommit_memory
   .
 * لا نوصي باستخدام تكاملات S3 أو Kafka على الأجهزة ذات الذاكرة المنخفضة لأنها تتطلب قدرًا كبيرًا من الذاكرة للمخازن المؤقتة.
 
-## النظام الفرعي للتخزين {#storage-subsystem}
+<div id="storage-subsystem">
+  ## النظام الفرعي للتخزين
+</div>
 
 إذا كانت ميزانيتك تسمح باستخدام أقراص SSD، فاستخدمها.
 وإن لم تسمح بذلك، فاستخدم أقراص HDD. وستفي أقراص SATA HDD بسرعة 7200 دورة في الدقيقة بالغرض.
@@ -67,7 +77,9 @@ $ echo 0 | sudo tee /proc/sys/vm/overcommit_memory
 أعطِ الأفضلية لعدد أكبر من الخوادم ذات الأقراص الصلبة المحلية بدلاً من عدد أقل من الخوادم المزودة بأرفف أقراص متصلة.
 لكن لتخزين الأرشيفات التي تُجرى عليها استعلامات نادرة، فإن أرفف الأقراص تكون مناسبة.
 
-## RAID {#raid}
+<div id="raid">
+  ## RAID
+</div>
 
 عند استخدام HDD، يمكنك ضمّها في RAID-10 أو RAID-5 أو RAID-6 أو RAID-50.
 في Linux، يكون RAID البرمجي أفضل (باستخدام `mdadm`).
@@ -98,7 +110,9 @@ $ echo 4096 | sudo tee /sys/block/md2/md/stripe_cache_size
 
 تأكّد من أن [`fstrim`](https://en.wikipedia.org/wiki/Trim_\(computing\)) مفعّل لأقراص NVME وSSD في نظام التشغيل لديك (وعادةً ما يُنفَّذ باستخدام مهمة cron أو خدمة systemd).
 
-## نظام الملفات {#file-system}
+<div id="file-system">
+  ## نظام الملفات
+</div>
 
 يُعد Ext4 الخيار الأكثر موثوقية. اضبط خيارات الربط `noatime`. كما أن XFS يعمل جيدًا أيضًا.
 وينبغي أن تعمل معظم أنظمة الملفات الأخرى دون مشكلة.
@@ -110,18 +124,24 @@ $ echo 4096 | sudo tee /sys/block/md2/md/stripe_cache_size
 
 ومع أن ClickHouse يمكنه العمل عبر NFS، فإن ذلك ليس الخيار الأفضل.
 
-## نواة Linux {#linux-kernel}
+<div id="linux-kernel">
+  ## نواة Linux
+</div>
 
 لا تستخدم نواة Linux قديمةً.
 
-## الشبكة {#network}
+<div id="network">
+  ## الشبكة
+</div>
 
 إذا كنت تستخدم IPv6، فزِد حجم ذاكرة التخزين المؤقت للمسارات.
 كانت نواة Linux في الإصدارات السابقة لـ 3.2 تعاني عددًا كبيرًا من المشكلات في دعم IPv6.
 
 استخدم شبكة بسرعة 10 غيغابت على الأقل، إن أمكن. ستعمل سرعة 1 غيغابت أيضًا، لكنها ستكون أسوأ بكثير عند تصحيح النسخ المتماثلة التي تحتوي على عشرات التيرابايتات من البيانات، أو عند تنفيذ الاستعلامات الموزعة التي تتضمن كمية كبيرة من البيانات الوسيطة.
 
-## الصفحات الضخمة {#huge-pages}
+<div id="huge-pages">
+  ## الصفحات الضخمة
+</div>
 
 اضبط transparent huge pages دائمًا على `madvise`. في الأنوية الأقدم (قبل الإصدار 5.9)، قد يؤدي ضبط THP على `always` إلى تراجع كبير في الأداء، إذ تقضي النواة وقتًا مفرطًا في إلغاء تجزئة الذاكرة، خاصةً على الأنظمة التي تحتوي على 64 غيغابايت أو أكثر من RAM. وقد قدّم الإصدار 5.9 من النواة آلية compaction استباقية تتعامل مع THP بكفاءة أفضل بكثير، لكن ClickHouse لا يزال يعرض تحذيرًا عند بدء التشغيل إذا كان THP مضبوطًا على `always`، لذا يظل `madvise` هو الإعداد الموصى به بغض النظر عن إصدار النواة.
 
@@ -137,7 +157,9 @@ $ GRUB_CMDLINE_LINUX_DEFAULT="transparent_hugepage=madvise ..."
 
 بعد ذلك، نفّذ الأمر `sudo update-grub` ثم أعد التشغيل حتى تسري التغييرات.
 
-## إعدادات الهايبرفايزر {#hypervisor-configuration}
+<div id="hypervisor-configuration">
+  ## إعدادات الهايبرفايزر
+</div>
 
 إذا كنت تستخدم OpenStack، فاضبط
 
@@ -158,7 +180,9 @@ cpu_mode=host-passthrough
 هذا مهم لكي يتمكن ClickHouse من الحصول على المعلومات الصحيحة باستخدام التعليمة `cpuid`.
 وإلا فقد تواجه أعطال `Illegal instruction` عند تشغيل هايبرفايزر على طُرز CPU قديمة.
 
-## ClickHouse Keeper وZooKeeper {#zookeeper}
+<div id="zookeeper">
+  ## ClickHouse Keeper وZooKeeper
+</div>
 
 يُوصى باستخدام ClickHouse Keeper بديلاً عن ZooKeeper في مجموعات ClickHouse. راجع وثائق [ClickHouse Keeper](/ar/guides/oss/deployment-and-scaling/keeper/index)
 
@@ -230,12 +254,12 @@ preAllocSize=131072
 # is started. The default snapCount is 100000.
 snapCount=3000000
 
-# If this option is defined, requests will be logged to a trace file named
+# If this option is defined, requests will be will logged to a trace file named
 # traceFile.year.month.day.
 #traceFile=
 
 # Leader accepts client connections. Default value is "yes". The leader machine
-# coordinates updates. For higher update throughput at the slight expense of
+# coordinates updates. For higher update throughput at thes slight expense of
 # read throughput the leader can be configured to not accept clients and focus
 # on coordination.
 leaderServes=yes
@@ -314,10 +338,14 @@ script
 end script
 ```
 
-## برامج مكافحة الفيروسات {#antivirus-software}
+<div id="antivirus-software">
+  ## برامج مكافحة الفيروسات
+</div>
 
 إذا كنت تستخدم برنامج مكافحة فيروسات، فاضبطه بحيث يتجاهل المجلدات التي تحتوي على ملفات بيانات ClickHouse (`/var/lib/clickhouse`)، وإلا فقد يتراجع الأداء وقد تواجه أخطاء غير متوقعة أثناء إدخال البيانات وعمليات الدمج في الخلفية.
 
-## محتوى ذو صلة {#related-content}
+<div id="related-content">
+  ## محتوى ذو صلة
+</div>
 
 * [هل أنت في بداية استخدام ClickHouse؟ إليك 13 «خطأً قاتلًا» وكيفية تجنّبها](https://clickhouse.com/blog/common-getting-started-issues-with-clickhouse)

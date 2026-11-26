@@ -219,7 +219,7 @@ mkdir my-clickhouse-app && cd my-clickhouse-app
 cat > go.mod <<-END
   module my-clickhouse-app
 
-  go 1.26
+  go 1.21
 
   require github.com/ClickHouse/clickhouse-go/v2 main
 END
@@ -263,7 +263,6 @@ go run main.go
 | &gt;= 2.3, &lt; 2.41 |     1.18+     |
 |      &gt;= 2.41      |     1.21+     |
 |      &gt;= 2.43      |     1.24+     |
-|      &gt;= 2.50      |     1.26+     |
 
 ## Рекомендации {#best-practices}
 

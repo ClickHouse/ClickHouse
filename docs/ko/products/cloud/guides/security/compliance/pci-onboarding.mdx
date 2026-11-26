@@ -8,8 +8,9 @@ keywords: ['pci', '컴플라이언스', '결제 보안', '데이터 보호', '�
 ---
 
 import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
-
 import { EnterprisePlanFeatureBadge } from "/snippets/ko/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
+
+import { Image } from "/snippets/ko/components/Image.jsx";
 
 <EnterprisePlanFeatureBadge feature="PCI 컴플라이언스" />
 
@@ -31,15 +32,11 @@ ClickHouse의 컴플라이언스 프로그램과 제3자 감사 보고서의 제
   <Step title="조직에 PCI 활성화" id="enable-hipaa">
     1. 콘솔 왼쪽 하단에서 조직 이름을 선택합니다.
     2. **Organization details**를 클릭합니다.
-    3. **PCI 활성화**를 켭니다.
+    3. **Enable PCI**를 켭니다.
 
     <br />
 
-    <div className="ch-image-md ch-image-background-black">
-      <Frame>
-        ![PCI 활성화](/images/cloud/security/compliance/pci_1.webp)
-      </Frame>
-    </div>
+    <Image img="/images/cloud/security/compliance/pci_1.webp" size="md" alt="PCI 활성화" background="black" />
 
     <br />
 
@@ -47,11 +44,7 @@ ClickHouse의 컴플라이언스 프로그램과 제3자 감사 보고서의 제
 
     <br />
 
-    <div className="ch-image-md ch-image-background-black">
-      <Frame>
-        ![PCI 활성화됨](/images/cloud/security/compliance/pci_2.webp)
-      </Frame>
-    </div>
+    <Image img="/images/cloud/security/compliance/pci_2.webp" size="md" alt="PCI 활성화됨" background="black" />
 
     <br />
   </Step>
@@ -62,11 +55,7 @@ ClickHouse의 컴플라이언스 프로그램과 제3자 감사 보고서의 제
 
     <br />
 
-    <div className="ch-image-md ch-image-background-black">
-      <Frame>
-        ![PCI 리전에 배포](/images/cloud/security/compliance/pci_3.webp)
-      </Frame>
-    </div>
+    <Image img="/images/cloud/security/compliance/pci_3.webp" size="md" alt="PCI 리전에 배포" background="black" />
 
     <br />
 
@@ -77,7 +66,7 @@ ClickHouse의 컴플라이언스 프로그램과 제3자 감사 보고서의 제
 </Steps>
 
 <div id="migrate-to-hipaa">
-  ## 기존 서비스 마이그레이션 {#migrate-to-hipaa}
+  ## 기존 서비스 마이그레이션
 </div>
 
 필요한 경우 서비스를 규정을 준수하는 환경에 배포하는 것을 강력히 권장합니다. 서비스를 표준 리전에서 PCI 준수 리전으로 마이그레이션하는 과정에는 백업에서 복원하는 작업이 포함되며, 일부 다운타임이 발생할 수 있습니다.
@@ -96,9 +85,3 @@ ClickHouse의 컴플라이언스 프로그램과 제3자 감사 보고서의 제
 
   서비스는 동일한 클라우드 제공업체와 동일한 지리적 리전에 유지되어야 합니다. 이 프로세스는 동일한 클라우드 제공업체와 리전 내에서 서비스를 규정을 준수하는 환경으로 마이그레이션합니다.
 </Info>
-
-## PCI 준수 서비스의 백업 {#backups}
-
-ClickHouse 관리형 백업은 PCI 준수 서비스에서도 다른 서비스와 동일하게 작동합니다. 백업은 서비스와 동일한 클라우드 제공업체 및 리전에 저장되며, Enterprise 요금제 고객은 백업 주기와 보존 기간을 구성할 수 있습니다. 백업은 동일 리전의 새 서비스로 복원할 수 있으며, 다른 PCI 준수 서비스로도 복원할 수 있습니다.
-
-PCI 준수 서비스에서는 백업을 사용자 소유의 클라우드 계정으로 내보낼 수 없습니다. 규제 환경에서는 해당 환경 외부의 저장소에 쓰기 작업을 수행할 수 없으므로, 콘솔에서 **Set up external backup** 옵션이 비활성화되며 이러한 서비스에는 `BACKUP` 권한(privilege)이 부여되지 않습니다.

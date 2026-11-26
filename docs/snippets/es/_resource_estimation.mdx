@@ -2,7 +2,7 @@
 title: Estimación de recursos
 ---
 
-Lo siguiente ofrece un modelo para estimar los recursos de cómputo y almacenamiento necesarios para un despliegue de observabilidad en función del volumen de ingestión previsto. Los valores resultantes son **solo estimaciones** y deben utilizarse como una **línea base inicial**; no constituyen una respuesta prescriptiva. Los requisitos reales dependen de la complejidad de las consultas, la concurrencia, las políticas de retención y la variabilidad del rendimiento de ingestión. Supervise siempre el uso de recursos y escale según sea necesario.
+Lo siguiente ofrece un modelo para estimar los recursos de cómputo y almacenamiento necesarios para un despliegue de ClickStack en función del volumen de ingestión previsto. Los valores resultantes son **solo estimaciones** y deben utilizarse como una **línea base inicial**; no constituyen una respuesta prescriptiva. Los requisitos reales dependen de la complejidad de las consultas, la concurrencia, las políticas de retención y la variabilidad del rendimiento de ingestión. Supervise siempre el uso de recursos y escale según sea necesario.
 
 <Warning>
   **Todas las cifras se basan en la ingestión bruta sin comprimir**
@@ -12,7 +12,7 @@ Lo siguiente ofrece un modelo para estimar los recursos de cómputo y almacenami
   Esta es la cifra que debe estimar a partir de sus canalizaciones actuales de logs, traces y métricas. Las cifras de almacenamiento de la tabla siguiente ya tienen aplicada sobre este volumen bruto la **relación de compresión de 10x** asumida.
 </Warning>
 
-Aprovisione cómputo para cubrir dos cargas de trabajo independientes: **ingestión** y **consulta**.
+Al desplegar ClickStack, aprovisione cómputo para cubrir dos cargas de trabajo independientes: **ingestión** y **consulta**.
 
 | Carga de trabajo | Recursos estimados                                                        |
 | ---------------- | ------------------------------------------------------------------------- |
@@ -32,7 +32,7 @@ Aprovisione cómputo para cubrir dos cargas de trabajo independientes: **ingesti
   * Aunque el cómputo de consultas puede escalarse de forma independiente del cómputo de ingestión, sigue estando intrínsecamente vinculado al volumen de ingestión. Suponemos que, a medida que aumenta la ingestión, crece la densidad de datos, lo que da lugar a mayores volúmenes de escaneo en tiempo de consulta y, en consecuencia, a mayores requisitos de cómputo para las consultas.
 </Accordion>
 
-La siguiente tabla muestra ejemplos de dimensionamiento basados en un rendimiento de ingestión creciente en megabytes por segundo, junto con los volúmenes de datos correspondientes en terabytes por mes. Esto supone un promedio sostenido de **1 QPS** en todos los tipos de consultas (búsqueda, dashboards y alertas).
+La siguiente tabla muestra ejemplos de dimensionamiento basados en un rendimiento de ingestión creciente en megabytes por segundo, junto con los volúmenes de datos correspondientes en terabytes por mes. Esto supone un promedio sostenido de **1 QPS** desde ClickStack en todos los tipos de consultas (búsqueda, dashboards y alertas).
 
 | MB/s | TB/mes | CPU de ingestión | CPU de consulta | CPU totales | Almacenamiento total (por mes) (GB) |
 | ---: | -----: | ---------------: | --------------: | ----------: | ----------------------------------: |

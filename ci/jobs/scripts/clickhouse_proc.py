@@ -4,7 +4,6 @@ import io
 import os
 import platform
 import shlex
-import shutil
 import signal
 import subprocess
 import sys
@@ -315,10 +314,17 @@ class ClickHouseProc:
             )
 
     def create_log_export_config(self, config_dir=None):
-        # Raises on a failed write; an unfetched secret leaves the credentials `None`, so nothing is exported.
-        credentials = log_export.configure(config_dir or self.ch_config_dir)
-        if credentials:
-            self.log_export_host, self.log_export_password = credentials
+        # Write into the config dir the server actually reads. Callers that run
+        # the server from a non-default location (e.g. `ClickHouseService` under
+        # `ci/tmp/etc/clickhouse-server`) must pass it explicitly, otherwise the
+        # `system_logs_export` cluster lands in the default `ch_config_dir` and
+        # the server starts without it, failing replication setup with `Code:
+        # 701. Requested cluster 'system_logs_export' not found`.
+        config_dir = config_dir or self.ch_config_dir
+        self.log_export_host, self.log_export_password = log_export.get_credentials()
+        return log_export.create_config(
+            config_dir, self.log_export_host, self.log_export_password
+        )
 
     def start_log_exports(self, check_start_time):
         return log_export.start(
@@ -369,16 +375,7 @@ class ClickHouseProc:
         self._set_pid(replica_num, 0)
         Path(pid_file).unlink(missing_ok=True)
         Utils.clean_dir(Path(run_path))
-        # Empty the directory in place rather than recreate it: with `DBReplicated`, the replicas share it, and a
-        # server that isolates its filesystem (`filesystem_isolation`) keeps a bind mount of the directory it saw at
-        # startup, so it could not write its profiles into a directory removed and recreated by a later start.
-        jemalloc_profiles = p_temp_dir / "jemalloc_profiles"
-        jemalloc_profiles.mkdir(parents=True, exist_ok=True)
-        for entry in jemalloc_profiles.iterdir():
-            if entry.is_dir() and not entry.is_symlink():
-                shutil.rmtree(entry)
-            else:
-                entry.unlink()
+        Utils.clean_dir(p_temp_dir / "jemalloc_profiles")
 
         replicas = 3 if self.is_db_replicated else 1
         tsan_memory_limit_mb = (
@@ -544,54 +541,11 @@ class ClickHouseProc:
                     return False
         return True
 
-    def _stop_thread_fuzzer(self):
-        for proc, port in zip(
-            (self.proc, self.proc_1, self.proc_2), (self.port, self.port_1, self.port_2)
-        ):
-            if proc:
-                Shell.check(
-                    f'clickhouse-client --port {port} --receive_timeout=5 --query "SYSTEM STOP THREAD FUZZER"',
-                    verbose=True,
-                )
-
     # Grace period between the TERM the bound sends and the KILL that follows,
     # so a client that ignores TERM is still bounded.
     PREP_STEP_KILL_AFTER_S = 60
     # TERM deadline for one all-thread backtrace capture (seconds).
     STACK_CAPTURE_TIMEOUT_S = 300
-
-    # With `filesystem_isolation`, the pid file has the supervisor outside of the
-    # isolation, and the server runs under it: supervisor -> init of the PID
-    # namespace -> (watchdog ->) server. A debugger needs the server itself.
-    _SERVER_WRAPPER_NAMES = ("clickhouse-isol", "clickhouse-init", "ClickHouseWatch")
-
-    @staticmethod
-    def _namespace_pid(pid):
-        """The PID of `pid` in its own PID namespace, the last one of `NSpid`."""
-        try:
-            with open(f"/proc/{pid}/status") as f:
-                for line in f:
-                    if line.startswith("NSpid:"):
-                        return int(line.split()[-1])
-        except OSError:
-            pass
-        return pid
-
-    @classmethod
-    def _serving_pid(cls, pid):
-        for _ in range(len(cls._SERVER_WRAPPER_NAMES)):
-            try:
-                with open(f"/proc/{pid}/comm") as f:
-                    name = f.read().strip()
-                with open(f"/proc/{pid}/task/{pid}/children") as f:
-                    children = f.read().split()
-            except OSError:
-                return pid
-            if name not in cls._SERVER_WRAPPER_NAMES or not children:
-                return pid
-            # The first child: the init also adopts the orphans of the namespace.
-            pid = int(children[0])
-        return pid
 
     def _capture_server_stacks(self, tag):
         """Write an all-thread backtrace of each running server into `log_dir`.
@@ -603,7 +557,6 @@ class ClickHouseProc:
         for pid in (self.pid_0, self.pid_1, self.pid_2):
             if not pid:
                 continue
-            pid = self._serving_pid(pid)
             # gdb exits 0 even when the attach is refused, so its stderr goes
             # into the same file: the artifact explains its own emptiness.
             out = f"{self.log_dir}/{tag}-stacks-{pid}.log"
@@ -828,8 +781,6 @@ fi
             except subprocess.TimeoutExpired:
                 self.kafka_proc.kill()
 
-        # ThreadFuzzer (enabled in flaky check) makes the flush and shutdown many times slower.
-        self._stop_thread_fuzzer()
         self._flush_system_logs()
 
         self.save_system_metadata_files_from_remote_database_disk()
@@ -886,13 +837,10 @@ fi
         """
         if cls._status_lock_free(run_path):
             return
-        # With `filesystem_isolation`, the pid file has the supervisor, and the
-        # lock holder writes its PID inside its PID namespace.
-        pid = cls._serving_pid(pid)
         # Fail closed: signal only a pid the lock holder itself vouches for, so a
         # reused pid belonging to an unrelated process is never touched.
         first_line = Shell.get_output(f"head -1 {run_path}/status").strip()
-        if first_line != f"PID: {cls._namespace_pid(pid)}":
+        if first_line != f"PID: {pid}":
             print(f"WARNING: {run_path}/status disowns pid {pid}: {first_line!r}")
         else:
             print(
@@ -1680,8 +1628,9 @@ if __name__ == "__main__":
             if not Info().is_local_run:
                 # Disable log export for local runs - ideally this command wouldn't be triggered,
                 # but conditional disabling is complex in legacy bash scripts (run_fuzzer.sh, stress_runner.sh)
-                ch.create_log_export_config()
-            res = True
+                res = ch.create_log_export_config()
+            else:
+                res = True
         elif command == "logs_export_start":
             # FIXME: the start_time must be preserved globally in ENV or something like that
             # to get the same values in different DBs

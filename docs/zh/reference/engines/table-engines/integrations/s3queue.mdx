@@ -195,11 +195,9 @@ SETTINGS
 
 ### `after_processing_move_uri` {#after_processing_move_uri}
 
-当目标端为另一个 S3 存储桶时，用于指定成功处理的文件所要移动到的 S3 存储桶的 URI。
+如果目标端是另一个 S3 bucket，则用于将已成功处理的文件移动到该 S3 bucket 的 URI。
 
-设置此项与 `INSERT INTO FUNCTION s3('<destination>') SELECT * FROM <table>` 属于相同的数据流，因此需要对 `S3` 源拥有 `WRITE` 授权。仅受 URL 过滤器限定的授权并不够，因为移动操作写入的键是由 `after_processing_move_prefix` 和源键拼接而成的，而非取自该 URI。此外，`ALTER TABLE ... MODIFY SETTING` 还需要对该表拥有 `SELECT` 权限。目标端必须在 `remote_url_allow_hosts` 的允许范围内。移动操作始终通过自动风格检测来解析该 URI，与 `s3` 表函数在默认 `s3_uri_style` 下的行为一致，因此 `uri_style` 服务器设置和 `s3_uri_style` 查询设置对其均不生效。
-
-可选值：
+可能的值：
 
 * String。
 

@@ -15,7 +15,9 @@ doc_type: 'guide'
   تنتهي صلاحية الأحداث في Kubernetes API server بعد مدة TTL — ساعة واحدة افتراضيًا (`--event-ttl`). لذلك، تُعدّ هذه الأحداث مؤشرًا قصير الأمد على النشاط الحديث، وليست سجل تدقيق دائم.
 </Note>
 
-## عرض الأحداث {#viewing-events}
+<div id="viewing-events">
+  ## عرض الأحداث
+</div>
 
 أسرع طريقة للاطلاع عليها هي استخدام `kubectl describe` على المورد المخصص، إذ يعرض
 أحدث الأحداث في الأسفل:
@@ -47,13 +49,17 @@ kubectl -n $NS get events --watch
 حدث `ClickHouseCluster` (`clickhouse-controller`) وحدث `KeeperCluster`
 (`keeper-controller`).
 
-## مرجع أسباب الأحداث {#event-reasons}
+<div id="event-reasons">
+  ## مرجع أسباب الأحداث
+</div>
 
 يُصدر المشغِّل مجموعة ثابتة من الأسباب، مصنّفةً بحسب ما تصفه. تُفيد أحداث `Normal`
 بتقدّم متوقَّع، بينما تُفيد أحداث `Warning` بوجود إخفاق أو حالة
 ينبغي للمستخدم اتخاذ إجراء بشأنها.
 
-### دورة حياة المورد {#resource-lifecycle}
+<div id="resource-lifecycle">
+  ### دورة حياة المورد
+</div>
 
 يُصدَر لكلٍّ من `ClickHouseCluster` و`KeeperCluster` عندما يفشل المشغِّل في
 تطبيق موردٍ مملوك أثناء عملية المواءمة.
@@ -64,7 +70,9 @@ kubectl -n $NS get events --watch
 | `FailedUpdate` | تحذير | تعذّر على المشغِّل تحديث مورد.                                                                                         |
 | `FailedDelete` | تحذير | تعذّر على المشغِّل حذف مورد مملوك أثناء المواءمة أو التقليص.                                                           |
 
-### جاهزية العنقود {#cluster-readiness}
+<div id="cluster-readiness">
+  ### جاهزية العنقود
+</div>
 
 يُرسَل لكلا النوعين عندما يتجاوز العنقود حدًّا من حدود الجاهزية.
 
@@ -73,7 +81,9 @@ kubectl -n $NS get events --watch
 | `ClusterReady`    | عادي  | أصبح العنقود جاهزًا: لكل جزء بيانات في ClickHouse نسخة متماثلة جاهزة واحدة على الأقل، أو أن نصاب Keeper لديه قائد وعدد كافٍ من التابعين (أو أن نسخته المتماثلة المستقلة الوحيدة قيد التشغيل). |
 | `ClusterNotReady` | تحذير | خرج العنقود من حالة الجاهزية — لم يعد لأي جزء بيانات في ClickHouse نسخة متماثلة جاهزة، أو فقد نصاب Keeper قائده أو عددًا كبيرًا جدًا من التابعين.                                             |
 
-### التوسيع {#scaling}
+<div id="scaling">
+  ### التوسيع
+</div>
 
 يُصدَر على `KeeperCluster` عندما يغيّر المشغّل عدد النسخ المتماثلة.
 
@@ -92,7 +102,9 @@ kubectl -n $NS get events --watch
   حال دون تنفيذ التغيير.
 </Note>
 
-### External Secret {#external-secret}
+<div id="external-secret">
+  ### External Secret
+</div>
 
 يظهر على `ClickHouseCluster` عندما يُشير العنقود إلى Secret خارجي
 يتعذر على المشغّل استخدامه. راجع ميزة External Secret في
@@ -103,7 +115,9 @@ kubectl -n $NS get events --watch
 | `ExternalSecretNotFound` | تحذير | الـ Secret المشار إليه غير موجود في مساحة اسم العنقود.                                   |
 | `ExternalSecretInvalid`  | تحذير | الـ Secret موجود، لكنه يفتقد المفاتيح المطلوبة (لا يُبلَّغ عنه إلا ضمن سياسة `Observe`). |
 
-### فحوصات الإصدار {#version-checks}
+<div id="version-checks">
+  ### فحوصات الإصدار
+</div>
 
 تصدرها فحوصات الإصدار الخاصة بكلٍّ من `ClickHouseCluster` و`KeeperCluster`.
 ويختص `VersionProbeFailed` بـ Job فحص إصدار ClickHouse.
@@ -114,14 +128,16 @@ kubectl -n $NS get events --watch
 | `VersionDiverge`          | تحذير | يختلف الإصدار المكتشَف لإحدى النسخ المتماثلة عن الإصدار الذي اكتشفه المشغّل للعنقود. ويُخفى هذا التحذير أثناء التحديثات المتدرجة.                                                     |
 | `VersionUpgradeAvailable` | تحذير | يتوفر إصدار أحدث على قناة الترقية المُهيّأة، أو أن الإصدار قيد التشغيل ليس على تلك القناة، أو أنه لم يعد مدعومًا. ولا يُجري المشغّل الترقية تلقائيًا مطلقًا — فهذا الحدث للإعلام فقط. |
 
-### تحذيرات خادم ClickHouse {#clickhouse-warnings}
+<div id="clickhouse-warnings">
+  ### تحذيرات خادم ClickHouse
+</div>
 
 | السبب               | النوع | المعنى                                                                  |
 | ------------------- | ----- | ----------------------------------------------------------------------- |
 | `ClickHouseWarning` | تحذير | تحذير يبلّغ عنه خادم ClickHouse نفسه، ويُعاد نشره من `system.warnings`. |
 
 يختلف هذا السبب الأخير: فهو لا يصف الإجراءات التي ينفّذها المشغّل نفسه. في كل
-نسخة متماثلة يمكن الوصول إليها، يستعلم المشغّل دوريًا جدول
+نسخة متماثلة جاهزة، يستعلم المشغّل دوريًا جدول
 [`system.warnings`](https://clickhouse.com/docs/operations/system-tables/system_warnings) في الخادم،
 ويعيد نشر كل صف كحدث `Warning` على مستوى العنقود، مع إضافة بادئة تشير إلى
 النسخة المتماثلة التي صدر عنها. وبهذا تتحول تحذيرات ClickHouse الخاصة
@@ -133,7 +149,9 @@ kubectl -n $NS get events \
   --field-selector reason=ClickHouseWarning,involvedObject.name=<name>
 ```
 
-## الأحداث والمقاييس والحالات {#events-vs-metrics}
+<div id="events-vs-metrics">
+  ## الأحداث والمقاييس والحالات
+</div>
 
 يكشف المشغّل عن ثلاث واجهات للرصد؛ استخدم كلًّا منها فيما تجيده على أفضل وجه:
 
@@ -151,7 +169,9 @@ kubectl -n $NS get events \
 غالبًا ما يصف حدث `Warning` وحالة `False` المشكلة نفسها من زاويتين:
 فالحدث يلتقط اللحظة والرسالة، بينما تعكس الحالة الوضع إلى أن يزول.
 
-## استكشاف الأخطاء وإصلاحها باستخدام الأحداث {#troubleshooting}
+<div id="troubleshooting">
+  ## استكشاف الأخطاء وإصلاحها باستخدام الأحداث
+</div>
 
 فيما يلي بعض المؤشرات الشائعة وما تدل عليه:
 
@@ -170,7 +190,9 @@ kubectl -n $NS get events \
 * **`ClickHouseWarning`** — المشكلة داخل ClickHouse وليست في المشغّل.
   تعامل مع الرسالة كما تتعامل مع صف من `system.warnings`.
 
-## أدلة ذات صلة {#related-guides}
+<div id="related-guides">
+  ## أدلة ذات صلة
+</div>
 
 * [مراقبة المشغّل](/ar/products/kubernetes-operator/guides/monitoring) — المقاييس ومسبارات الصحة، وهي المقابل الأكثر ثباتًا للأحداث.
 * [التوسيع](/ar/products/kubernetes-operator/guides/scaling) — ما الذي تحميه `HorizontalScaleBlocked` وكيف تقيّد حدود النصاب في Keeper عملية التوسيع.

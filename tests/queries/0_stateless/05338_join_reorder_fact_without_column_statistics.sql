@@ -21,7 +21,6 @@ SET query_plan_join_shard_by_pk_ranges = 0;
 SET query_plan_merge_filter_into_join_condition = 1;
 SET query_plan_merge_filters = 1;
 SET query_plan_remove_unused_columns = 1;
-SET query_plan_remove_unused_joins = 0; -- The view joins a table whose columns are not read, and the order of all its joins is what is tested
 
 -- No column statistics on the fact table, so the NDV of its join keys is unknown.
 CREATE TABLE t1 (c1 Date, c2 String, c3 Int64, c4 Int64, c5 String, c6 Int64, c7 String, c8 String, c9 Decimal(38, 4), c10 String, c11 Int64) ENGINE = MergeTree PARTITION BY (c5, toYYYYMM(c1)) ORDER BY (c1, c2, c5) SETTINGS auto_statistics_types = '';

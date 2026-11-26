@@ -7,11 +7,13 @@ doc_type: 'guide'
 keywords: ['Dataflow', 'Pub/Sub', 'PubSub', '流式', '死信']
 ---
 
+import { Image } from "/snippets/zh/components/Image.jsx";
+
 Pub/Sub 到 ClickHouse 模板是一个流式管道，它从 Pub/Sub 订阅中读取 JSON 编码的消息，并将其写入 ClickHouse 表。
 无法解析或无法映射到目标 schema 的消息会被路由到死信目标端：ClickHouse 表、Pub/Sub topic，或两者兼有。
 
 <div id="pipeline-requirements">
-  ## 管道要求 {#pipeline-requirements}
+  ## 管道要求
 </div>
 
 * 源 Pub/Sub 订阅必须已存在。
@@ -23,7 +25,7 @@ Pub/Sub 到 ClickHouse 模板是一个流式管道，它从 Pub/Sub 订阅中读
 * 设置 `deadLetterTopic` 时，Pub/Sub topic 必须已存在。
 
 <div id="template-parameters">
-  ## 模板参数 {#template-parameters}
+  ## 模板参数
 </div>
 
 <br />
@@ -53,7 +55,7 @@ Pub/Sub 到 ClickHouse 模板是一个流式管道，它从 Pub/Sub 订阅中读
 </Note>
 
 <div id="message-format-and-schema-mapping">
-  ## 消息格式与 schema 映射 {#message-format-and-schema-mapping}
+  ## 消息格式与 schema 映射
 </div>
 
 Pub/Sub 消息必须是 JSON 对象，且其顶层字段名必须与目标 ClickHouse 表的列名完全一致。
@@ -71,7 +73,7 @@ Pub/Sub 消息必须是 JSON 对象，且其顶层字段名必须与目标 Click
 </Warning>
 
 <div id="type-conversion">
-  ### 类型转换 {#type-conversion}
+  ### 类型转换
 </div>
 
 JSON 值会被转换为对应的 ClickHouse 列类型：
@@ -87,7 +89,7 @@ JSON 值会被转换为对应的 ClickHouse 列类型：
 | [`String`](/zh/reference/data-types/string)                                           | 对于文本字段，直接按原样使用；非文本 JSON 节点会被序列化为其 JSON 字符串形式。      |
 
 <div id="batching-and-windowing">
-  ## 批处理和窗口化 {#batching-and-windowing}
+  ## 批处理和窗口化
 </div>
 
 由于该管道是流式的，传入的行会先在窗口中累积，然后再刷写到 ClickHouse。窗口策略取决于你提供的参数：
@@ -102,13 +104,13 @@ JSON 值会被转换为对应的 ClickHouse 列类型：
 调整这些值可以在延迟和插入效率之间进行权衡。较小的窗口可降低端到端延迟；较大的窗口则会生成更少但更大的 `INSERT` 批次。
 
 <div id="dead-letter-handling">
-  ## 死信处理 {#dead-letter-handling}
+  ## 死信处理
 </div>
 
 在 JSON 解析、schema 映射或类型强制转换过程中失败的消息，会被路由到已配置的死信目标端。必须至少提供 `clickHouseDeadLetterTable` 或 `deadLetterTopic` 之一；如果两者都已设置，则失败的消息会同时发送到这两者。
 
 <div id="clickhouse-dead-letter-table">
-  ### ClickHouse 死信表 {#clickhouse-dead-letter-table}
+  ### ClickHouse 死信表
 </div>
 
 设置 `clickHouseDeadLetterTable` 后，死信表必须已存在，并且采用以下固定 schema：
@@ -137,7 +139,7 @@ ORDER BY failed_at;
 </Note>
 
 <div id="pubsub-dead-letter-topic">
-  ### Pub/Sub 死信 topic {#pubsub-dead-letter-topic}
+  ### Pub/Sub 死信 topic
 </div>
 
 设置 `deadLetterTopic` 后，每条处理失败的消息都会重新发布到该 topic，并附带：
@@ -148,7 +150,9 @@ ORDER BY failed_at;
 
 这样一来，在底层 schema 或生产者问题解决后，就可以方便地重放失败消息。
 
-## 运行模板 {#running-the-template}
+<div id="running-the-template">
+  ## 运行模板
+</div>
 
 可在 Google Cloud Console 中使用 Pub/Sub 到 ClickHouse 模板。
 
@@ -159,14 +163,9 @@ ORDER BY failed_at;
 登录 Google Cloud Console 并搜索 Dataflow。
 
 1. 点击 `CREATE JOB FROM TEMPLATE` 按钮。
+   <Image img="/images/integrations/data-ingestion/google-dataflow/create_job_from_template_button.webp" border alt="Dataflow 控制台" />
 
-   <div className="ch-image-lg">
-     <Frame>
-       ![Dataflow 控制台](/images/integrations/data-ingestion/google-dataflow/create_job_from_template_button.webp)
-     </Frame>
-   </div>
-
-2. 打开模板表单后，输入 Job 名称并选择所需的区域。
+2. 打开模板表单后，输入作业名称并选择所需的区域。
 
    {/* PLACEHOLDER: add screenshot of the Pub/Sub to ClickHouse template initial form (job name + region) */}
 
@@ -185,31 +184,29 @@ ORDER BY failed_at;
 
 5. 你也可以按需自定义批处理 (`windowSeconds`、`batchRowCount`) 以及 `ClickHouseIO` 调优参数，详见[模板参数](#template-parameters)一节。
 
-### 监控 Job {#monitor-the-job}
-
-前往 Google Cloud Console 中的 [Dataflow Jobs 选项卡](https://console.cloud.google.com/dataflow/jobs) 以监控 Job 状态。你可以在其中查看 Job 详情，包括进度和错误信息：
-
-<div className="ch-image-lg">
-  <Frame>
-    ![显示正在运行的从 Pub/Sub 到 ClickHouse Job 的 Dataflow 控制台](/images/integrations/data-ingestion/google-dataflow/pubsub-inqueue-job.webp)
-  </Frame>
+<div id="monitor-the-job">
+  ### 监控作业
 </div>
 
-该模板还会在 `PubSubToClickHouse` 命名空间下导出以下自定义指标，可在 Dataflow Job 页面查看：
+前往 Google Cloud Console 中的 [Dataflow Jobs 选项卡](https://console.cloud.google.com/dataflow/jobs) 以监控作业状态。你可以在其中查看作业详情，包括进度和错误信息：
 
-| 指标                      | 类型           | 描述                           |
-| ----------------------- | ------------ | ---------------------------- |
-| `messages-received`     | Counter      | 解析步骤接收到的 Pub/Sub 消息总数。       |
-| `rows-parsed-ok`        | Counter      | 成功转换为一行并路由到主输出的消息数。          |
+<Image img="/images/integrations/data-ingestion/google-dataflow/pubsub-inqueue-job.webp" size="lg" border alt="显示正在运行的从 Pub/Sub 到 ClickHouse 作业的 Dataflow 控制台" />
+
+该模板还会在 `PubSubToClickHouse` 命名空间下导出以下自定义指标，可在 Dataflow 作业页面查看：
+
+| 指标                      | 类型           | 描述                             |
+| ----------------------- | ------------ | ------------------------------ |
+| `messages-received`     | Counter      | 解析步骤接收到的 Pub/Sub 消息总数。         |
+| `rows-parsed-ok`        | Counter      | 成功转换为一行并路由到主输出的消息数。            |
 | `rows-parse-failed`     | Counter      | 解析或 schema 映射失败，并被路由到死信的消息数。 |
-| `message-payload-bytes` | Distribution | 传入 Pub/Sub 消息载荷大小的分布，单位为字节。  |
+| `message-payload-bytes` | Distribution | 传入 Pub/Sub 消息载荷大小的分布，单位为字节。    |
 
 <div id="troubleshooting">
-  ## 故障排查 {#troubleshooting}
+  ## 故障排查
 </div>
 
 <div id="code-241-dbexception-memory-limit-total-exceeded">
-  ### 超出内存限制 (总量) 错误 (代码 241) {#code-241-dbexception-memory-limit-total-exceeded}
+  ### 超出内存限制 (总量) 错误 (代码 241)
 </div>
 
 当 ClickHouse 在处理大批次数据时内存耗尽，就会出现此错误。要解决此问题：
@@ -218,7 +215,7 @@ ORDER BY failed_at;
 * 减小批次大小：在 Dataflow job 配置中调小 `batchRowCount` (和/或 `maxInsertBlockSize`) ，以向 ClickHouse 发送更小的数据块，从而降低每个批次的内存消耗。
 
 <div id="all-messages-going-to-dlq">
-  ### 所有消息都被发送到死信目标端 {#all-messages-going-to-dlq}
+  ### 所有消息都被发送到死信目标端
 </div>
 
 最常见的原因是：
@@ -230,7 +227,7 @@ ORDER BY failed_at;
 检查 ClickHouse 死信表中的 `error_message` 和 `stack_trace` 列 (或 Pub/Sub 死信消息中的 `errorMessage` attribute) ，以确定根本原因。
 
 <div id="no-rows-arriving">
-  ### 管道已启动，但没有行写入 ClickHouse {#no-rows-arriving}
+  ### 管道已启动，但没有行写入 ClickHouse
 </div>
 
 * 确认订阅正在接收消息——查看 Dataflow 作业页面上的 `messages-received` 指标。
@@ -238,7 +235,7 @@ ORDER BY failed_at;
 * 验证 Dataflow 工作线程与 ClickHouse 端点之间的网络连通性 (防火墙、VPC 对等互连或 Private Service Connect) 。
 
 <div id="template-source-code">
-  ## 模板源代码 {#template-source-code}
+  ## 模板源代码
 </div>
 
 该模板的源代码位于：

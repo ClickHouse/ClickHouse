@@ -313,7 +313,7 @@ if err := rows.Err(); err != nil {
 
 ## 비동기 삽입 {#async-insert}
 
-비동기 삽입은 `ExecContext` 메서드를 사용해 삽입을 실행하면 구현할 수 있습니다. 아래와 같이 비동기 모드가 활성화된 컨텍스트를 전달해야 합니다. 이렇게 하면 클라이언트가 서버의 삽입 완료까지 기다릴지, 아니면 데이터가 수신되는 즉시 응답할지를 사용자가 지정할 수 있습니다. 이는 사실상 [wait&#95;for&#95;async&#95;insert](/ko/reference/settings/session-settings#wait_for_async_insert) 매개변수를 제어합니다.
+비동기 삽입은 `ExecContext` 메서드를 사용해 삽입을 실행하면 구현할 수 있습니다. 아래와 같이 비동기 모드가 활성화된 Context를 전달해야 합니다. 이렇게 하면 클라이언트가 서버의 삽입 완료까지 기다릴지, 아니면 데이터가 수신되는 즉시 응답할지를 사용자가 지정할 수 있습니다. 이는 사실상 [wait&#95;for&#95;async&#95;insert](/ko/reference/settings/session-settings#wait_for_async_insert) 매개변수를 제어합니다.
 
 ```go
 const ddl = `
@@ -340,29 +340,7 @@ ctx := clickhouse.Context(context.Background(), clickhouse.WithStdAsync(false))
 }
 ```
 
-[전체 예시](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/std/async_native.go)
-
-### 배치를 사용한 비동기 삽입 {#async-insert-batch}
-
-`WithAsync`는 배치 삽입에도 적용됩니다. 배치는 `PrepareContext`에 전달한 컨텍스트만 사용하므로, async 컨텍스트를 `PrepareContext`에 전달하십시오. `Stmt.ExecContext`에 전달한 컨텍스트는 배치에 영향을 주지 않습니다. `Commit`은 `PrepareContext`에 전달한 컨텍스트의 설정으로 배치를 전송합니다.
-
-```go
-ctx := clickhouse.Context(context.Background(), clickhouse.WithAsync(true))
-tx, err := conn.Begin()
-if err != nil {
-    return err
-}
-stmt, err := tx.PrepareContext(ctx, "INSERT INTO example") // WithAsync must be on this context
-if err != nil {
-    return err
-}
-for i := 0; i < 100; i++ {
-    if _, err := stmt.Exec(i, "Golang SQL database driver", []uint8{1, 2, 3, 4, 5, 6, 7, 8, 9}, time.Now()); err != nil {
-        return err
-    }
-}
-return tx.Commit()
-```
+[전체 예시](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/std/async.go)
 
 ## 서버 측 쿼리 매개변수 {#server-side-query-parameters}
 

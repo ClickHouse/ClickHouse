@@ -78,7 +78,11 @@ public:
         read_until_position.reset();
     }
 
-    void setRequestMap(ByteRangeSet ranges) override;
+    void setRequestMap(ByteRangeSet ranges) override
+    {
+        initInput();
+        file_in->setRequestMap(std::move(ranges));
+    }
 };
 
 }

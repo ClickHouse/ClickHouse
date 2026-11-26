@@ -27,9 +27,11 @@ FROM table2
 
 La condition peut être n’importe quelle expression, selon vos besoins.
 
-## Exemples {#examples}
+<div id="examples">
+  ## Exemples
+</div>
 
-Voici un exemple simple qui calcule l’intersection des nombres de 1 à 10 avec les nombres de 3 à 10 :
+Voici un exemple simple qui calcule l’intersection des nombres de 1 à 10 avec les nombres de 3 à 8 :
 
 ```sql title="Query"
 SELECT number FROM numbers(1,10) INTERSECT SELECT number FROM numbers(3,8);
@@ -43,12 +45,10 @@ SELECT number FROM numbers(1,10) INTERSECT SELECT number FROM numbers(3,8);
 │      6 │
 │      7 │
 │      8 │
-│      9 │
-│     10 │
 └────────┘
 ```
 
-`INTERSECT` est utile si vous avez deux tables ayant une colonne en commun (ou plusieurs). Vous pouvez effectuer l’intersection des résultats de deux requêtes, à condition que ces résultats contiennent les mêmes colonnes. Par exemple, supposons que nous disposions de quelques millions de lignes de données historiques sur les cryptomonnaies contenant les prix des transactions et les volumes :
+`INTERSECT` est utile si vous avez deux tables ayant une colonne en commun (ou plusieurs). Vous pouvez effectuer l’intersection des résultats de deux requêtes, à condition que ces résultats contiennent les mêmes colonnes. Par exemple, supposons que nous disposions de quelques millions de lignes de données historiques sur les cryptomonnaies contenant les prix des transactions et les volumes :
 
 ```sql title="Query"
 CREATE TABLE crypto_prices
@@ -67,7 +67,6 @@ INSERT INTO crypto_prices
    SELECT *
    FROM s3(
     'https://learn-clickhouse.s3.us-east-2.amazonaws.com/crypto_prices.csv',
-    NOSIGN,
     'CSVWithNames'
 );
 
@@ -92,7 +91,7 @@ LIMIT 10;
 └────────────┴─────────────┴─────────────┴──────────┴──────────────┴───────────────┘
 ```
 
-Supposons maintenant que nous disposions d’une table nommée `holdings` contenant une liste des cryptomonnaies que nous possédons, ainsi que le nombre d’unités :
+Supposons maintenant que nous disposions d’une table nommée `holdings` contenant une liste des cryptomonnaies que nous possédons, ainsi que le nombre d’unités :
 
 ```sql title="Query"
 CREATE TABLE holdings
@@ -108,11 +107,11 @@ INSERT INTO holdings VALUES
    ('Bitcoin', 200),
    ('Ethereum', 250),
    ('Ethereum', 5000),
-   ('DOGEFI', 10),
+   ('DOGEFI', 10);
    ('Bitcoin Diamond', 5000);
 ```
 
-Nous pouvons utiliser `INTERSECT` pour répondre à des questions telles que **&quot;Quelles cryptomonnaies détenons-nous et lesquelles se sont échangées à un prix supérieur à 100 $ ?&quot;** :
+Nous pouvons utiliser `INTERSECT` pour répondre à des questions telles que **&quot;Quelles cryptomonnaies détenons-nous et lesquelles se sont échangées à un prix supérieur à 100 $ ?&quot;** :
 
 ```sql title="Query"
 SELECT crypto_name FROM holdings
@@ -132,7 +131,9 @@ WHERE price > 100
 
 Cela signifie qu’à un moment donné, Bitcoin et Ethereum se sont négociés au-dessus de 100 $, tandis que DOGEFI et Bitcoin Diamond n’ont jamais dépassé 100 $ (du moins d’après les données dont nous disposons ici dans cet exemple).
 
-## INTERSECT DISTINCT {#intersect-distinct}
+<div id="intersect-distinct">
+  ## INTERSECT DISTINCT
+</div>
 
 Notez que, dans la requête précédente, nous avions plusieurs positions en Bitcoin et en Ethereum échangées au-dessus de 100 $. Il peut être utile de supprimer les lignes en double, puisqu’elles ne font que répéter ce que nous savons déjà. Vous pouvez ajouter `DISTINCT` à `INTERSECT` pour éliminer les lignes en double du résultat :
 

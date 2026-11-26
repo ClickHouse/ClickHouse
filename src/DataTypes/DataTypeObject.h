@@ -57,7 +57,6 @@ public:
 
     void insertDefaultInto(IColumn & column) const override;
     bool isDefaultInsertTrivial() const override;
-    MutableColumnConstPtr createColumnConst(size_t size, const Field & field) const override;
 
     bool isParametric() const override { return true; }
     bool canBeInsideNullable() const override { return true; }
@@ -65,7 +64,7 @@ public:
     bool canBeInsideSparseColumns() const override { return false; }
     bool isComparable() const override { return true; }
     bool isComparableForEquality() const override { return true; }
-    bool haveSubtypes() const override { return true; }
+    bool haveSubtypes() const override { return false; }
 
     bool equals(const IDataType & rhs) const override;
     /// Equal except for the set of SHARED typed paths. Such types have identical columns.

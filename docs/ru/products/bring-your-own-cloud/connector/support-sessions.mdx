@@ -7,6 +7,7 @@ doc_type: 'guide'
 ---
 
 import { PrivatePreviewBadge } from '/snippets/ru/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
+import { Image } from "/snippets/ru/components/Image.jsx";
 
 <PrivatePreviewBadge />
 
@@ -18,20 +19,16 @@ import { PrivatePreviewBadge } from '/snippets/ru/components/PrivatePreviewBadge
 
 Сеансы управляют исключительно диагностикой. Команды жизненного цикла для сервисов в режиме managed передаются по отдельному каналу исполнителя, который сеанс поддержки не открывает и не ограничивает; см. [managed services](/ru/products/bring-your-own-cloud/connector/managed-services#service-lifecycle).
 
-<div className="ch-image-lg">
-  <Frame>
-    ![Схема доверия сеанса поддержки коннектора ClickHouse](/images/cloud/reference/byoc-connector-session-trust.svg)
-  </Frame>
-</div>
+<Image img="/images/cloud/reference/byoc-connector-session-trust.svg" size="lg" alt="Схема доверия сеанса поддержки коннектора ClickHouse" />
 
 Управлять сеансами можно через две точки:
 
-* **Session gateway** — аутентифицируемый API, встроенный в средство диагностики. Он обслуживает `POST /v1/clctl/session/enable`, `POST /v1/clctl/session/disable` и `GET /v1/clctl/session/status`. Для каждого вызова требуется короткоживущий OIDC ID token, адрес электронной почты в котором есть в вашем списке разрешённых операторов.
+* **Session gateway** — аутентифицируемый API, встроенный в средство диагностики. Он обслуживает `POST /v1/clctl/session/enable`, `POST /v1/clctl/session/disable` и `GET /v1/clctl/session/status`. Для каждого вызова требуется короткоживущий OIDC ID token, адрес электронной почты в котором есть в вашем списке разрешённых.
 * **Локальный файл сеанса** при установке на Linux VM — он записывается на хосте с правами root.
 
 Транспорт шлюза зависит от целевой среды. Шлюз на ВМ использует самоподписанный TLS, отпечаток которого закрепляется у каждого оператора. Шлюз в Kubernetes слушает локально в поде по HTTP; доступ к нему осуществляется через `kubectl port-forward` (туннель идёт поверх TLS API server) или через Входной шлюз, который терминирует TLS с сертификатом, выпущенным CA.
 
-Конфигурация сеансов, включая список разрешённых операторов, задаётся во время выполнения `clicklink clctl init`.
+Конфигурация сеансов, включая список разрешённых, задаётся во время выполнения `clicklink clctl init`.
 
 ## Включение и отключение сеансов {#enabling-and-disabling-sessions}
 

@@ -211,7 +211,7 @@ La sortie attendue peut être fournie soit sous la forme d’un simple fichier `
 
 Un test peut avoir zéro, un ou plusieurs *tags* indiquant les restrictions sur les contextes dans lesquels il s’exécute dans la CI.
 
-Pour les tests `.sql`, les tags sont placés sur la première ligne sous forme de commentaire SQL :
+Pour les tests `.sql`, les tags sont placés sur la première ligne sous forme de commentaire SQL :
 
 ```sql
 -- Tags: no-fasttest, no-replicated-database
@@ -221,7 +221,7 @@ Pour les tests `.sql`, les tags sont placés sur la première ligne sous forme d
 SELECT 1
 ```
 
-Pour les tests `.sh`, les tags sont écrits sous forme de commentaire à la deuxième ligne :
+Pour les tests `.sh`, les tags sont écrits sous forme de commentaire à la deuxième ligne :
 
 ```bash
 #!/usr/bin/env bash
@@ -230,7 +230,7 @@ Pour les tests `.sh`, les tags sont écrits sous forme de commentaire à la deux
 # - no-replicated-database: <provide_a_reason_here>
 ```
 
-Liste des tags disponibles :
+Liste des tags disponibles :
 
 | Nom du tag                     | Description                                                                                | Exemple d&#39;utilisation                                                                                          |
 | ------------------------------ | ------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------ |
@@ -243,18 +243,18 @@ Liste des tags disponibles :
 | `global`                       | Identique à `shard`. Préférez `shard`                                                      |                                                                                                                    |
 | `zookeeper`                    | Le test nécessite ZooKeeper ou ClickHouse Keeper pour s&#39;exécuter                       | Le test utilise `ReplicatedMergeTree`                                                                              |
 | `replica`                      | Identique à `zookeeper`. Préférez `zookeeper`                                              |                                                                                                                    |
-| `no-fasttest`                  | Le test n&#39;est pas exécuté dans [test rapide](#test-types)                              | Le test utilise le moteur de table `MySQL`, qui est désactivé dans test rapide                                     |
+| `no-fasttest`                  | Le test n&#39;est pas exécuté dans [test rapide](#test-types)                              | Le test utilise le moteur de table `MySQL`, qui est désactivé dans test rapide                                    |
 | `fasttest-only`                | Le test est exécuté uniquement dans [test rapide](#test-types)                             |                                                                                                                    |
-| `no-[asan, tsan, msan, ubsan]` | Désactive les tests dans les constructions avec des [sanitizers](#sanitizers)                     | Le test est exécuté sous QEMU, qui ne fonctionne pas avec les sanitizers                                           |
+| `no-[asan, tsan, msan, ubsan]` | Désactive les tests dans les builds avec des [sanitizers](#sanitizers)                     | Le test est exécuté sous QEMU, qui ne fonctionne pas avec les sanitizers                                           |
 | `no-replicated-database`       | Désactive le test lorsque la base de données par défaut utilise `ReplicatedDatabaseEngine` |                                                                                                                    |
 | `no-ordinary-database`         | Désactive le test lorsque le moteur de base de données par défaut est `Ordinary`           |                                                                                                                    |
 | `no-parallel`                  | Empêche l&#39;exécution d&#39;autres tests en parallèle avec celui-ci                      | Le test lit les tables `system` et les invariants peuvent être rompus                                              |
 | `no-parallel-replicas`         | Désactive le test lorsque les répliques parallèles sont activées                           |                                                                                                                    |
-| `no-debug`                     | Désactive les tests dans les constructions de débogage                                                  |                                                                                                                    |
-| `no-release`                   | Désactive les tests dans les constructions Release                                                |                                                                                                                    |
-| `no-darwin`                    | Désactive le test sur macOS (Darwin)                                                       | Le test repose sur des fonctionnalités propres à Linux, comme les requêtes distribuées, `procfs` ou le serveur HTTP |
+| `no-debug`                     | Désactive les tests dans les builds Debug                                                  |                                                                                                                    |
+| `no-release`                   | Désactive les tests dans les builds Release                                                |                                                                                                                    |
+| `no-darwin`                    | Désactive le test sur macOS (Darwin)                                                       | Le test repose sur des fonctionnalités propres à Linux, comme les distributed queries, `procfs` ou le serveur HTTP |
 
-Les options suivantes sont également prises en charge : `no-polymorphic-parts`, `no-random-settings`, `no-random-merge-tree-settings`, `no-cpu-x86_64`, `no-cpu-aarch64`, `no-cpu-ppc64le`, `no-s3-storage`.
+Les options suivantes sont également prises en charge : `no-polymorphic-parts`, `no-random-settings`, `no-random-merge-tree-settings`, `no-backward-compatibility-check`, `no-cpu-x86_64`, `no-cpu-aarch64`, `no-cpu-ppc64le`, `no-s3-storage`.
 
 En plus des paramètres ci-dessus, vous pouvez utiliser les flags `USE_*` de `system.build_options` pour indiquer l&#39;utilisation de fonctionnalités ClickHouse particulières.
 Par exemple, si votre test utilise une table MySQL, vous devez ajouter le tag `use-mysql`.

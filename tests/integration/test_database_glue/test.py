@@ -21,7 +21,6 @@ import decimal
 from pyiceberg.types import (
     BinaryType,
     DoubleType,
-    LongType,
     NestedField,
     StringType,
     StructType,
@@ -43,19 +42,13 @@ def run_s3_mocks(started_cluster, args=[]):
     start_mock_servers(
         started_cluster,
         script_dir,
-        [
-            ("mock_sts.py", "sts.us-east-1.amazonaws.com", "80", args),
-            ("glue_fault_proxy.py", "sts.us-east-1.amazonaws.com", "8081"),
-        ],
+        [("mock_sts.py", "sts.us-east-1.amazonaws.com", "80", args)],
     )
 
 
 CATALOG_NAME = "test"
 
 BASE_URL = "http://glue:3000"
-
-# `s3_mocks/glue_fault_proxy.py`, which forwards to `BASE_URL`.
-GLUE_FAULT_PROXY_URL = "http://sts.us-east-1.amazonaws.com:8081"
 
 
 def get_glue_local_url(cluster):
@@ -206,7 +199,7 @@ def generate_arrow_data(num_rows=5):
     return table
 
 def create_clickhouse_glue_database(
-    started_cluster, node, name, additional_settings={}, query_settings={}, with_credentials=True, url=BASE_URL
+    started_cluster, node, name, additional_settings={}, query_settings={}, with_credentials=True
 ):
     settings = {
         "catalog_type": "glue",
@@ -229,7 +222,7 @@ def create_clickhouse_glue_database(
     node.query(
         f"""
 DROP DATABASE IF EXISTS {name};
-CREATE DATABASE {name} ENGINE = DataLakeCatalog('{url}'{credential_args})
+CREATE DATABASE {name} ENGINE = DataLakeCatalog('{BASE_URL}'{credential_args})
 SETTINGS {",".join((k+"="+repr(v) for k, v in settings.items()))}
     """,
         settings={
@@ -378,7 +371,6 @@ def started_cluster():
             main_configs=[
                 "configs/query_log.xml",
                 "configs/text_log.xml",
-                "configs/url_scheme_mappers.xml",
             ],
             user_configs=[],
             stay_alive=True,
@@ -1228,42 +1220,6 @@ def test_schema_evolution(started_cluster):
     assert node.query(f"SELECT x, y, w FROM {table_ref} ORDER BY ALL") == "123\t1\t\\N\n456\t2\thello\n"
 
 
-def test_writes_table_statistics_ndv(started_cluster):
-    node = started_cluster.instances["node1"]
-
-    test_ref = f"test_writes_table_statistics_ndv_{uuid.uuid4()}"
-    table_name = f"{test_ref}_table"
-    root_namespace = f"{test_ref}_namespace"
-    table_ref = f"{CATALOG_NAME}.`{root_namespace}.{table_name}`"
-    write_settings = {
-        "allow_insert_into_iceberg": 1,
-        "write_full_path_in_iceberg_metadata": 1,
-        "iceberg_write_table_statistics_ndv": 1,
-    }
-
-    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
-    create_clickhouse_glue_table(started_cluster, node, root_namespace, table_name, "(x String, y Int32)")
-    glue_client = boto3.client(
-        "glue", region_name="us-east-1", endpoint_url=get_glue_local_url(started_cluster)
-    )
-
-    node.query(f"INSERT INTO {table_ref} SELECT toString(number % 10), toInt32(number) FROM numbers(100)", settings=write_settings)
-    node.query(f"INSERT INTO {table_ref} SELECT toString(number % 20), toInt32(number) FROM numbers(50, 100)", settings=write_settings)
-
-    # The metadata Glue points at has statistics of its current snapshot that count the values of both inserts.
-    def read_object(path):
-        bucket, key = path.split("://", 1)[1].split("/", 1)
-        return started_cluster.minio_client.get_object(bucket, key).read()
-
-    metadata_location = glue_client.get_table(DatabaseName=root_namespace, Name=table_name)["Table"]["Parameters"]["metadata_location"]
-    metadata = json.loads(read_object(metadata_location))
-    schema = next(s for s in metadata["schemas"] if s["schema-id"] == metadata["current-schema-id"])
-    names = {field["id"]: field["name"] for field in schema["fields"]}
-    entry = next(e for e in metadata["statistics"] if e["snapshot-id"] == metadata["current-snapshot-id"])
-    assert {names[blob["fields"][0]]: int(blob["properties"]["ndv"]) for blob in entry["blob-metadata"]} == {"x": 20, "y": 150}
-    assert len(read_object(entry["statistics-path"])) == entry["file-size-in-bytes"]
-
-
 def test_writes_schema_evolution_concurrent_add_columns(started_cluster):
     node = started_cluster.instances["node1"]
 
@@ -1458,130 +1414,6 @@ def test_writes_do_not_overwrite_replaced_glue_metadata_of_same_version(started_
     node.query(f"INSERT INTO {table_ref} VALUES ('later');", settings=write_settings)
     node.query(f"ALTER TABLE {table_ref} ADD COLUMN y Nullable(String);", settings=write_settings)
     assert node.query(f"SELECT x, y FROM {table_ref} ORDER BY x") == "base\t\\N\nlater\t\\N\npaused\t\\N\n"
-
-
-def test_writes_rebuild_after_glue_version_id_conflict(started_cluster):
-    node = started_cluster.instances["node1"]
-    proxy = started_cluster.get_container_id("sts.us-east-1.amazonaws.com")
-
-    test_ref = uuid.uuid4().hex
-    db_name = f"glue_cas_{test_ref}"
-    root_namespace = f"cas_{test_ref}"
-    table_name = "t"
-    table_ref = f"{db_name}.`{root_namespace}.{table_name}`"
-    write_settings = {"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1}
-    failpoint = "glue_catalog_pause_before_update_table"
-
-    create_clickhouse_glue_database(started_cluster, node, db_name, url=GLUE_FAULT_PROXY_URL)
-    try:
-        create_clickhouse_glue_table(
-            started_cluster, node, root_namespace, table_name, "(x String)", catalog_name=db_name
-        )
-        glue_client = boto3.client(
-            "glue", region_name="us-east-1", endpoint_url=get_glue_local_url(started_cluster)
-        )
-
-        node.query(f"INSERT INTO {table_ref} VALUES ('base');", settings=write_settings)
-        base = glue_client.get_table(DatabaseName=root_namespace, Name=table_name)["Table"]
-        base_location = base["Parameters"]["metadata_location"]
-        external_location = f"{base_location.rsplit('/', 1)[0]}/00099-{uuid.uuid4()}.metadata.json"
-
-        def s3_url(location):
-            return "http://minio1:9001/" + location.split("://", 1)[1]
-
-        node.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
-        executor = ThreadPoolExecutor(max_workers=1)
-        try:
-            paused_insert = executor.submit(
-                node.query, f"INSERT INTO {table_ref} VALUES ('paused');", settings=write_settings, timeout=120
-            )
-            node.query(f"SYSTEM WAIT FAILPOINT {failpoint} PAUSE", timeout=60)
-
-            # Another engine commits after the insert has read the `VersionId` it sends with `UpdateTable`.
-            node.query(
-                f"INSERT INTO FUNCTION s3('{s3_url(external_location)}', '{minio_access_key}', '{minio_secret_key}', 'RawBLOB') "
-                f"SELECT * FROM s3('{s3_url(base_location)}', '{minio_access_key}', '{minio_secret_key}', 'RawBLOB')"
-            )
-            glue_client.update_table(
-                DatabaseName=root_namespace,
-                TableInput={
-                    "Name": table_name,
-                    "TableType": base["TableType"],
-                    "StorageDescriptor": {
-                        "Location": base["StorageDescriptor"]["Location"],
-                        "Columns": base["StorageDescriptor"]["Columns"],
-                    },
-                    "Parameters": {
-                        **base["Parameters"],
-                        "metadata_location": external_location,
-                        "previous_metadata_location": base_location,
-                    },
-                },
-            )
-
-            node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
-            # The stale `VersionId` is rejected once; the insert is rebuilt on top of the other commit instead of failing.
-            paused_insert.result(timeout=120)
-        finally:
-            node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
-            executor.shutdown(wait=False)
-
-        injected = started_cluster.exec_in_container(
-            proxy, ["curl", "-s", f"http://localhost:8081/injected/{root_namespace}"]
-        )
-        assert int(injected) == 1
-
-        after = glue_client.get_table(DatabaseName=root_namespace, Name=table_name)["Table"]
-        assert after["Parameters"]["previous_metadata_location"] == external_location
-        assert metadata_version(after) == 100
-        assert node.query(f"SELECT x FROM {table_ref} ORDER BY x") == "base\npaused\n"
-    finally:
-        node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
-
-
-def test_alternating_commits_with_pyiceberg(started_cluster):
-    # Iceberg Java and pyiceberg parse the table version only from `<N>-<uuid>.metadata.json`. When ClickHouse named
-    # its files `v<N>.metadata.json`, pyiceberg restarted the version at 0 and a later ClickHouse commit wanted a name
-    # it had already used, so every following write failed with `Write into iceberg was not successful`.
-    node = started_cluster.instances["node1"]
-
-    test_ref = f"test_alternating_commits_with_pyiceberg_{uuid.uuid4()}"
-    table_name = f"{test_ref}_table"
-    root_namespace = f"{test_ref}_namespace"
-    table_ref = f"{CATALOG_NAME}.`{root_namespace}.{table_name}`"
-    write_settings = {"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1}
-
-    catalog = load_catalog_impl(started_cluster)
-    catalog.create_namespace(root_namespace)
-    schema = Schema(NestedField(field_id=1, name="id", field_type=LongType(), required=False))
-    create_table(catalog, root_namespace, table_name, schema, PartitionSpec(), SortOrder(), table_name)
-    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
-
-    metastore_name = re.compile(r"(\d{5})-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.metadata\.json")
-    versions = []
-
-    def check_pointer():
-        file_name = catalog.load_table(f"{root_namespace}.{table_name}").metadata_location.rsplit("/", 1)[1]
-        match = metastore_name.fullmatch(file_name)
-        assert match, file_name
-        versions.append(int(match.group(1)))
-
-    expected = []
-    for i in range(3):
-        catalog.load_table(f"{root_namespace}.{table_name}").append(pa.table({"id": pa.array([10 * i], pa.int64())}))
-        check_pointer()
-        node.query(f"INSERT INTO {table_ref} VALUES ({10 * i + 1})", settings=write_settings)
-        check_pointer()
-        expected += [10 * i, 10 * i + 1]
-
-    catalog.load_table(f"{root_namespace}.{table_name}").append(pa.table({"id": pa.array([100], pa.int64())}))
-    node.query(f"ALTER TABLE {table_ref} DELETE WHERE id = 1", settings=write_settings)
-    check_pointer()
-    expected = sorted([x for x in expected if x != 1] + [100])
-
-    assert versions == sorted(set(versions)), versions
-    assert node.query(f"SELECT id FROM {table_ref} ORDER BY id") == "".join(f"{x}\n" for x in expected)
-    assert sorted(catalog.load_table(f"{root_namespace}.{table_name}").scan().to_arrow()["id"].to_pylist()) == expected
 
 
 def test_drop_table(started_cluster):
@@ -1860,27 +1692,6 @@ def test_table_without_metadata_location(started_cluster):
     node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
 
 
-def test_location_not_a_uri(started_cluster):
-    # Without `storage_endpoint` the location itself is the S3 URL; the timestamp column makes Glue read the
-    # metadata early through `createObjectStorageForEarlyTableAccess`.
-    node = started_cluster.instances["node1"]
-    test_ref = f"test_location_not_a_uri_{uuid.uuid4().hex[:8]}"
-    namespace = f"{test_ref}_ns"
-    table_name = f"{test_ref}_table"
-
-    catalog = load_catalog_impl(started_cluster)
-    catalog.create_namespace(namespace)
-    table = create_table(catalog, namespace, table_name, dir=f"{test_ref}/a b é")
-    table.append(generate_arrow_data(5))
-
-    create_clickhouse_glue_database(
-        started_cluster, node, CATALOG_NAME, additional_settings={"storage_endpoint": ""}
-    )
-    assert node.query(
-        f"SELECT count() FROM {CATALOG_NAME}.`{namespace}.{table_name}` SETTINGS optimize_trivial_count_query = 0"
-    ) == "5\n"
-
-
 def test_check_database(started_cluster):
     """Test that CHECK DATABASE works with Glue catalog database."""
     node = started_cluster.instances["node1"]
@@ -1985,7 +1796,7 @@ def test_sts_smoke(started_cluster):
     try:
         result = node.query(
             f"SELECT sum(value) FROM {db_name_fail}.`{root_namespace}.{table_name}` "
-            f"SETTINGS s3_max_single_read_retries = 1, s3_request_timeout_ms = 1000"
+            f"SETTINGS s3_max_single_read_retries = 1, s3_retry_attempts = 1, s3_request_timeout_ms = 1000"
         )
         assert False, f"Expected query to fail with wrong session name but got result: {result}"
     except Exception as e:
@@ -2210,7 +2021,7 @@ def test_sts_external_id(started_cluster):
     try:
         result = node.query(
             f"SELECT sum(value) FROM {db_name_fail}.`{root_namespace}.{table_name}` "
-            f"SETTINGS s3_max_single_read_retries = 1, s3_request_timeout_ms = 1000"
+            f"SETTINGS s3_max_single_read_retries = 1, s3_retry_attempts = 1, s3_request_timeout_ms = 1000"
         )
         assert False, f"Expected query to fail with wrong external id but got result: {result}"
     except Exception as e:
@@ -2560,49 +2371,6 @@ def test_exists_table_answers_only_from_not_found(started_cluster):
         assert (
             f"Exception calling GetTable for table {namespace}.{table_name}" in error
         ), error
-    finally:
-        node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
-
-
-def test_glue_retries_transient_server_error(started_cluster):
-    # Glue maps `InternalServiceException` (HTTP 500) to a non-retryable error, so a transient Glue failure
-    # must be retried by its HTTP status. The proxy fails the first two `GetTables` calls for a `transient_*`
-    # database and every call for a `denied_*` database.
-    node = started_cluster.instances["node1"]
-    proxy = started_cluster.get_container_id("sts.us-east-1.amazonaws.com")
-
-    def injected(database):
-        return int(
-            started_cluster.exec_in_container(
-                proxy, ["curl", "-s", f"http://localhost:8081/injected/{database}"]
-            )
-        )
-
-    test_ref = uuid.uuid4().hex
-    transient_namespace = f"transient_{test_ref}"
-    denied_namespace = f"denied_{test_ref}"
-    table_name = "t"
-    db_name = f"glue_fault_{test_ref}"
-
-    catalog = load_catalog_impl(started_cluster)
-    catalog.create_namespace(transient_namespace)
-    create_table(catalog, transient_namespace, table_name)
-
-    create_clickhouse_glue_database(started_cluster, node, db_name, url=GLUE_FAULT_PROXY_URL)
-    try:
-        # T1: the listing survives two transient failures. The count proves both were served.
-        assert f"{transient_namespace}.{table_name}" in node.query(f"SHOW TABLES FROM {db_name}")
-        assert injected(transient_namespace) == 2
-
-        # T2: a non-transient error is not retried and still fails the query.
-        error = node.query_and_get_error(
-            f"SELECT name FROM system.tables WHERE database = '{db_name}' "
-            f"AND name = '{denied_namespace}.{table_name}' "
-            f"SETTINGS show_data_lake_catalogs_in_system_tables = true"
-        )
-        assert "DATALAKE_DATABASE_ERROR" in error, error
-        assert "Injected access denied" in error, error
-        assert injected(denied_namespace) == 1
     finally:
         node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
 

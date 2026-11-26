@@ -14,7 +14,9 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Эти настройки доступны в [system.merge&#95;tree&#95;settings](/ru/reference/system-tables/merge_tree_settings) и автоматически генерируются на основе исходного кода ClickHouse.
 
-## allow_coalescing_columns_in_partition_or_order_key {#allow_coalescing_columns_in_partition_or_order_key}
+<div id="allow_coalescing_columns_in_partition_or_order_key">
+  ## allow_coalescing_columns_in_partition_or_order_key
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -23,7 +25,9 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 Если параметр включен, коалесцируемые столбцы в таблице CoalescingMergeTree можно использовать
 в партиции или ключе сортировки.
 
-## allow_commit_order_projection {#allow_commit_order_projection}
+<div id="allow_commit_order_projection">
+  ## allow_commit_order_projection
+</div>
 
 <ExperimentalBadge />
 
@@ -34,7 +38,9 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 Включает проекции, сохраняющие порядок коммита: они хранят виртуальные столбцы `_block_number` и `_block_offset`, что позволяет сохранять исходный порядок вставки при слияниях.
 Требует включения `enable_block_number_column` и `enable_block_offset_column`.
 
-## allow_dimensions_outside_sorting_key {#allow_dimensions_outside_sorting_key}
+<div id="allow_dimensions_outside_sorting_key">
+  ## allow_dimensions_outside_sorting_key
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -54,7 +60,9 @@ https://github.com/ClickHouse/ClickHouse/issues/751).
 Проверка применяется только к таблицам, которые действительно агрегируют данные (то есть имеют хотя бы один столбец
 с состоянием агрегатной функции), и пропускается, если включён `allow_tuple_element_aggregation`.
 
-## allow_floating_point_partition_key {#allow_floating_point_partition_key}
+<div id="allow_floating_point_partition_key">
+  ## allow_floating_point_partition_key
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -65,7 +73,9 @@ https://github.com/ClickHouse/ClickHouse/issues/751).
 * `0` — Использование ключа партиционирования с плавающей запятой запрещено.
 * `1` — Использование ключа партиционирования с плавающей запятой разрешено.
 
-## allow_minmax_index_for_json {#allow_minmax_index_for_json}
+<div id="allow_minmax_index_for_json">
+  ## allow_minmax_index_for_json
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -74,13 +84,17 @@ https://github.com/ClickHouse/ClickHouse/issues/751).
 Разрешает создавать индексы пропуска данных minmax для JSON-столбцов (Object). По умолчанию отключено, поскольку сериализация
 индекса minmax не может обрабатывать неоднородные значения Field, которые могут содержаться в JSON-столбцах.
 
-## allow_nullable_key {#allow_nullable_key}
+<div id="allow_nullable_key">
+  ## allow_nullable_key
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Разрешает использовать типы Nullable в качестве первичных ключей.
 
-## allow_part_offset_column_in_projections {#allow_part_offset_column_in_projections}
+<div id="allow_part_offset_column_in_projections">
+  ## allow_part_offset_column_in_projections
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -88,7 +102,9 @@ https://github.com/ClickHouse/ClickHouse/issues/751).
 
 Разрешает использовать столбец &#39;&#95;part&#95;offset&#39; в SELECT-запросе проекций.
 
-## allow_reduce_blocking_parts_task {#allow_reduce_blocking_parts_task}
+<div id="allow_reduce_blocking_parts_task">
+  ## allow_reduce_blocking_parts_task
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -97,7 +113,9 @@ https://github.com/ClickHouse/ClickHouse/issues/751).
 Фоновая задача, сокращающая количество блокирующих частей для таблиц shared merge tree.
 Только в ClickHouse Cloud
 
-## allow_remote_fs_zero_copy_replication {#allow_remote_fs_zero_copy_replication}
+<div id="allow_remote_fs_zero_copy_replication">
+  ## allow_remote_fs_zero_copy_replication
+</div>
 
 <ExperimentalBadge />
 
@@ -105,7 +123,9 @@ https://github.com/ClickHouse/ClickHouse/issues/751).
 
 Не используйте эту настройку в продакшне, так как она ещё не готова.
 
-## allow_summing_columns_in_partition_or_order_key {#allow_summing_columns_in_partition_or_order_key}
+<div id="allow_summing_columns_in_partition_or_order_key">
+  ## allow_summing_columns_in_partition_or_order_key
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -114,13 +134,17 @@ https://github.com/ClickHouse/ClickHouse/issues/751).
 При включении позволяет использовать суммируемые столбцы в таблице SummingMergeTree
 в партиции или ключе сортировки.
 
-## allow_suspicious_indices {#allow_suspicious_indices}
+<div id="allow_suspicious_indices">
+  ## allow_suspicious_indices
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Отклонять первичные/вторичные индексы и ключи сортировки с одинаковыми выражениями
 
-## allow_tuple_element_aggregation {#allow_tuple_element_aggregation}
+<div id="allow_tuple_element_aggregation">
+  ## allow_tuple_element_aggregation
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -132,17 +156,9 @@ CoalescingMergeTree. Вложенные Tuple рекурсивно развор�
 конечные элементы агрегируются независимо. Эта настройка неизменяема
 и должна быть указана при создании таблицы.
 
-## allow_vector_similarity_index_in_specialized_merge_tree {#allow_vector_similarity_index_in_specialized_merge_tree}
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "Новая настройка. Индексы векторного сходства по умолчанию больше не разрешены для специализированных движков MergeTree"}]}]} />
-
-Определяет, можно ли создавать индекс `vector_similarity` для таблиц на движках семейства `MergeTree`, отличных от `MergeTree` / `ReplicatedMergeTree`,
-например `ReplacingMergeTree` или `CollapsingMergeTree`. С такими движками запрос `SELECT ... FINAL`, использующий этот индекс, может возвращать неверные результаты.
-Настройка проверяется только при создании индекса, поэтому на существующие таблицы и `ATTACH` она не влияет.
-
-## allow_vertical_merges_from_compact_to_wide_parts {#allow_vertical_merges_from_compact_to_wide_parts}
+<div id="allow_vertical_merges_from_compact_to_wide_parts">
+  ## allow_vertical_merges_from_compact_to_wide_parts
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

@@ -35,15 +35,15 @@ doc_type: 'reference'
 
 `Client.raw_insert` 方法允许通过客户端连接直接插入 `bytes` 对象或 `bytes` 对象生成器。由于它不会对插入载荷进行任何处理，因此性能非常高。该方法提供了用于指定设置和插入格式的选项：
 
-| 参数                   | 类型                                   | 默认值    | 描述                                                                                       |
-| -------------------- | ------------------------------------ | ------ | ---------------------------------------------------------------------------------------- |
-| `table`              | str                                  | 必填     | 简单表名或带数据库限定名的目标表。                                                                        |
-| `column_names`       | Sequence[str]                        | `None` | 插入块的列名。当 `fmt` 不包含列名时为必填项。                                                               |
-| `insert_block`       | str, bytes, generator, or `BinaryIO` | 必填     | 要插入的数据。字符串会使用客户端编码进行编码。`AsyncClient.raw_insert` 接受异步可迭代对象 (例如异步生成器) ，而不是普通生成器。           |
-| `settings`           | dict                                 | `None` | 请参见 [Settings 参数](/zh/integrations/language-clients/python/driver-api#settings-argument-1)。 |
-| `fmt`                | str                                  | `None` | `insert_block` 载荷的 ClickHouse 输入格式。未指定格式时使用 `Native`。                                    |
-| `compression`        | str                                  | `None` | 已应用于 `insert_block` 的压缩，例如 `"gzip"`、`"lz4"` 或 `"zstd"`。                                  |
-| `transport_settings` | dict                                 | `None` | 添加到此请求的 HTTP 请求头。                                                                        |
+| 参数            | Type                                 | Default | Description                                                                              |
+| -------------------- | ------------------------------------ | ------- | ---------------------------------------------------------------------------------------- |
+| `table`              | str                                  | 必填      | 简单表名或带数据库限定名的目标表。                                                                        |
+| `column_names`       | Sequence[str]                        | `None`  | 插入块的列名。当 `fmt` 不包含列名时为必填项。                                                               |
+| `insert_block`       | str, bytes, generator, or `BinaryIO` | 必填      | 要插入的数据。字符串会使用客户端编码进行编码。                                                                  |
+| `settings`           | dict                                 | `None`  | 请参见 [Settings 参数](/zh/integrations/language-clients/python/driver-api#settings-argument-1)。 |
+| `fmt`                | str                                  | `None`  | `insert_block` 载荷的 ClickHouse 输入格式。未指定格式时使用 `Native`。                                    |
+| `compression`        | str                                  | `None`  | 已应用于 `insert_block` 的压缩，例如 `"gzip"`、`"lz4"` 或 `"zstd"`。                                  |
+| `transport_settings` | dict                                 | `None`  | 添加到此请求的 HTTP 请求头。                                                                        |
 
 调用方有责任确保 `insert_block` 采用指定的格式，并使用指定的压缩方法。ClickHouse Connect 会将这些原始插入用于文件上传和 PyArrow 表，并将解析工作交由 ClickHouse 服务器 处理。
 
@@ -173,20 +173,6 @@ ClickHouse Connect 使用 `urllib3` 连接池来管理与服务器之间的底�
 
 默认的套接字选项会启用 TCP keepalive 和 `TCP_NODELAY`。套接字发送缓冲区和接收缓冲区的大小由操作系统管理。
 
-如果需要在同步客户端关闭时释放其连接，请传入 `dedicated_pool=True`：
-
-```python
-import clickhouse_connect
-
-with clickhouse_connect.get_client(dedicated_pool=True) as client:
-    result = client.query("SELECT 13")
-    print(result.first_row)
-```
-
-客户端拥有独立的连接池，使用已配置的 proxy 和 TLS 选项。专用连接池不会共享，即使配置了 proxy 也是如此。`client.close()` 会立即关闭空闲连接。正在处理的响应仍可正常完成，相应的连接会在归还连接池时关闭。关闭客户端不会取消正在运行的查询。
-
-在作业或应用程序组件的整个生命周期内使用同一个专用客户端，并复用该客户端执行多次查询。每个专用客户端都会创建自己的连接，并为 HTTPS 单独完成 TLS 连接建立。避免创建大量短期使用的专用客户端。默认设置 `dedicated_pool=False` 会保留现有的连接池选择规则，包括为自定义 TLS 选项使用独立连接池。同时使用 `dedicated_pool=True` 和 `pool_mgr` 会引发 `ProgrammingError`。
-
 对于大型多线程应用，使用独立的连接池可能更合适。可以通过主 `clickhouse_connect.get_client` 函数的 `pool_mgr` 关键字参数提供自定义连接池：
 
 ```python
@@ -203,6 +189,6 @@ client2 = clickhouse_connect.get_client(pool_mgr=big_pool_mgr)
 
 要设置套接字选项，请将 `socket_options` 传给 `httputil.get_pool_manager` 或 `httputil.get_pool_manager_options`。这会替换整个默认选项列表，包括 keepalive 选项和 `TCP_NODELAY`。传入 `[]` 或 `None` 则表示不设置任何显式套接字选项。
 
-异步客户端使用的是 aiohttp 连接池，而不是 `urllib3`。它接受 `dedicated_pool` 参数，但该参数不起作用。无论该参数取何值，每个异步客户端都有自己的连接器，因此 `dedicated_pool=False` 不会启用共享。可通过 `get_async_client` 上的 `connector_limit`、`connector_limit_per_host` 和 `keepalive_timeout` 对连接池进行配置。调用 `await async_client.close_connections()` 会轮换连接池，而不会中断正在处理中的请求。
+async 客户端使用的是 aiohttp 连接池，而不是 `urllib3`。可通过 `get_async_client` 上的 `connector_limit`、`connector_limit_per_host` 和 `keepalive_timeout` 对其进行配置。调用 `await async_client.close_connections()` 会轮换连接池，而不会中断正在处理中的请求。
 
 对于异步查询和插入，等待空闲连接池槽位时不设超时。请完整读取或关闭流式响应，以释放其占用的连接池槽位。`connect_timeout` 在获得可用槽位后才开始计时，涵盖 DNS 解析、TCP 与 TLS 连接建立以及代理协商。`send_receive_timeout` 用于限制套接字读取的时间。若要为整个操作 (包括等待连接池的时间) 设置截止时间，请使用 `asyncio.wait_for`，例如 `await asyncio.wait_for(client.query("SELECT 13"), timeout=30)`。

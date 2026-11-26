@@ -404,7 +404,7 @@ SELECT * FROM search_tree ORDER BY path;
 
 要创建广度优先顺序，标准做法是添加一列来跟踪搜索深度：
 
-**示例：**&#x6309;广度优先顺序遍历树
+**示例：**按广度优先顺序遍历树
 
 ```sql
 WITH RECURSIVE search_tree AS (
@@ -420,12 +420,12 @@ SELECT * FROM search_tree ORDER BY depth;
 ```
 
 ```text
-┌─id─┬─parent_id─┬─data──────┬─path────┬─depth─┐
-│  0 │      ᴺᵁᴸᴸ │ ROOT      │ [0]     │     0 │
-│  1 │         0 │ Child_1   │ [0,1]   │     1 │
-│  2 │         0 │ Child_2   │ [0,2]   │     1 │
-│  3 │         1 │ Child_1_1 │ [0,1,3] │     2 │
-└────┴───────────┴───────────┴─────────┴───────┘
+┌─id─┬─link─┬─data──────┬─path────┬─depth─┐
+│  0 │ ᴺᵁᴸᴸ │ ROOT      │ [0]     │     0 │
+│  1 │    0 │ Child_1   │ [0,1]   │     1 │
+│  2 │    0 │ Child_2   │ [0,2]   │     1 │
+│  3 │    1 │ Child_1_1 │ [0,1,3] │     2 │
+└────┴──────┴───────────┴─────────┴───────┘
 ```
 
 ### 循环检测 {#cycle-detection}

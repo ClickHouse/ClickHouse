@@ -18,7 +18,9 @@ doc_type: 'reference'
   ベストプラクティスやパフォーマンスの最適化方法を含む ReplacingMergeTree の詳細なガイドは、[こちら](/ja/concepts/features/operations/update/replacing-merge-tree)で確認できます。
 </Note>
 
-## テーブルの作成 {#creating-a-table}
+<div id="creating-a-table">
+  ## テーブルの作成
+</div>
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -40,21 +42,25 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
   行の一意性は、`PRIMARY KEY` ではなく、テーブルの `ORDER BY` セクションによって決まります。
 </Note>
 
-## ReplacingMergeTree パラメータ {#replacingmergetree-parameters}
+<div id="replacingmergetree-parameters">
+  ## ReplacingMergeTree パラメータ
+</div>
 
-### `ver` {#ver}
+<div id="ver">
+  ### `ver`
+</div>
 
-`ver` — バージョン番号を表すカラムです。型は `UInt*`、`Date`、`DateTime`、`DateTime64` のいずれかです。省略可能なパラメータです。別のカラムのサブカラム (たとえば `Tuple` の要素や `JSON` の型付きパス) を指定することもできます: `ReplacingMergeTree(meta.ver)`。
+`ver` — バージョン番号を表すカラムです。型は `UInt*`、`Date`、`DateTime`、`DateTime64` のいずれかです。省略可能なパラメータです。
 
 マージ時、`ReplacingMergeTree` は同じソートキーを持つすべての行の中から 1 行だけを残します。
 
-* `ver` が設定されていない場合は、選択対象内の最後の行が残ります。選択対象とは、マージに参加する一連のパーツに含まれる行の集合です。最も後に作成されたパーツ (最後の 挿入) が選択対象の最後になります。したがって、重複排除後は、各一意のソートキーについて、直近の 挿入 で追加された最後の行が残ります。
+* `ver` が設定されていない場合は、選択対象内の最後の行が残ります。選択対象とは、マージに参加する一連のパーツに含まれる行の集合です。最も後に作成されたパーツ (最後の insert) が選択対象の最後になります。したがって、重複排除後は、各一意のソートキーについて、直近の insert で追加された最後の行が残ります。
 * `ver` が指定されている場合は、最大のバージョンを持つ行が残ります。複数の行で `ver` が同じ場合は、それらには &quot;`ver` が設定されていない場合&quot; のルールが適用されます。つまり、最も新しく挿入された行が残ります。
 
 例:
 
 ```sql
--- without ver - the last inserted 'wins'
+-- ver なし - 最後に挿入された行が「勝ち」
 CREATE TABLE myFirstReplacingMT
 (
     `key` Int64,
@@ -73,7 +79,7 @@ SELECT * FROM myFirstReplacingMT FINAL;
 │   1 │ second  │ 2020-01-01 00:00:00 │
 └─────┴─────────┴─────────────────────┘
 
--- with ver - the row with the biggest ver 'wins'
+-- ver あり - 最大の ver を持つ行が「勝ち」
 CREATE TABLE mySecondReplacingMT
 (
     `key` Int64,
@@ -93,11 +99,13 @@ SELECT * FROM mySecondReplacingMT FINAL;
 └─────┴─────────┴─────────────────────┘
 ```
 
-### `is_deleted` {#is_deleted}
+<div id="is_deleted">
+  ### `is_deleted`
+</div>
 
 `is_deleted` — マージ時に、この行のデータが state を表すのか、削除対象なのかを判定するために使用されるカラム名です。`1` は &quot;deleted&quot; 行、`0` は &quot;state&quot; 行です。
 
-カラムのデータ型 — `UInt8`。`ver` と同様に、別のカラムのサブカラムを指定することもできます。
+カラムのデータ型 — `UInt8`。
 
 <Note>
   `is_deleted` は、`ver` を使用している場合にのみ有効にできます。
@@ -118,7 +126,7 @@ SELECT * FROM mySecondReplacingMT FINAL;
 例:
 
 ```sql
--- with ver and is_deleted
+-- ver と is_deleted を使用
 CREATE OR REPLACE TABLE myThirdReplacingMT
 (
     `key` Int64,
@@ -137,7 +145,7 @@ select * from myThirdReplacingMT final;
 
 0 rows in set. Elapsed: 0.003 sec.
 
--- delete rows with is_deleted
+-- is_deleted で行を削除
 OPTIMIZE TABLE myThirdReplacingMT FINAL CLEANUP;
 
 INSERT INTO myThirdReplacingMT Values (1, 'first', '2020-01-01 00:00:00', 0);
@@ -149,7 +157,9 @@ select * from myThirdReplacingMT final;
 └─────┴─────────┴─────────────────────┴────────────┘
 ```
 
-## クエリ句 {#query-clauses}
+<div id="query-clauses">
+  ## クエリ句
+</div>
 
 `ReplacingMergeTree` テーブルの作成時には、`MergeTree` テーブルの作成時と同じ [句](/ja/reference/engines/table-engines/mergetree-family/mergetree) が必要です。
 
@@ -174,7 +184,9 @@ select * from myThirdReplacingMT final;
   * `ver` - バージョンを格納するカラム。省略可能なパラメータです。詳細は上記を参照してください。
 </details>
 
-## クエリ時の重複排除 &amp; FINAL {#query-time-de-duplication--final}
+<div id="query-time-de-duplication--final">
+  ## クエリ時の重複排除 &amp; FINAL
+</div>
 
 マージ時には、ReplacingMergeTree が重複する行を識別し、テーブル作成時に指定した `ORDER BY` カラムの値を一意の識別子として、最も大きいバージョンだけを保持します。ただし、これで保証されるのはあくまで結果整合性のみであり、行が確実に重複排除されるわけではないため、これに依存すべきではありません。そのため、更新行や削除行もクエリ時に考慮されることで、クエリ結果が不正確になる可能性があります。
 

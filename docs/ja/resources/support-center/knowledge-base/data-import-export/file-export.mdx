@@ -6,7 +6,9 @@ tags: ['データエクスポート']
 keywords: ['データのエクスポート', 'INTO OUTFILE', 'Fileテーブルエンジン']
 ---
 
-## INTO OUTFILE 句を使う {#using-into-outfile-clause}
+<div id="using-into-outfile-clause">
+  ## INTO OUTFILE 句を使う
+</div>
 
 クエリに [INTO OUTFILE](/ja/reference/statements/select/into-outfile) 句を追加します。
 
@@ -43,7 +45,9 @@ INTO OUTFILE 'taxi_rides.txt'
 FORMAT CSV
 ```
 
-## Fileテーブルエンジンを使用する {#using-a-file-engine-table}
+<div id="using-a-file-engine-table">
+  ## Fileテーブルエンジンを使用する
+</div>
 
 別の方法として、[File](/ja/reference/engines/table-engines/special/file) テーブルエンジンを使用できます。この場合、ClickHouse はファイルにデータを保存します。ファイルに対して直接クエリの実行やデータの挿入を行えます。
 
@@ -73,7 +77,9 @@ INSERT INTO my_table VALUES
   `File` テーブルエンジンは、ファイルシステム上のファイルを作成してクエリするのに非常に便利ですが、`File` テーブルは `MergeTree` テーブルではないため、`MergeTree` が持つ利点をすべて利用できるわけではない点に注意してください。ClickHouse から使いやすいフォーマットでデータをエクスポートするときは、手軽さを重視して `File` を使用してください。
 </Note>
 
-## コマンドラインでのリダイレクトを使用する {#using-command-line-redirection}
+<div id="using-command-line-redirection">
+  ## コマンドラインでのリダイレクトを使用する
+</div>
 
 ```bash
 $ clickhouse-client --query "SELECT * from table" --format FormatName > result.txt
