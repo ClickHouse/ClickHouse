@@ -30,6 +30,8 @@ struct SchemaConverter
     const Block * sample_block;
     const ColumnMapper * column_mapper = nullptr;
     VectorWithMemoryTracking<String> external_columns;
+    /// A path longer than this cannot be equal to the name of a requested column.
+    size_t max_requested_name_size = 0;
 
     VectorWithMemoryTracking<PrimitiveColumnInfo> primitive_columns;
     VectorWithMemoryTracking<OutputColumnInfo> output_columns;
@@ -104,6 +106,15 @@ private:
         const parq::SchemaElement * element = nullptr;
         std::optional<size_t> output_idx; // index in output_columns
 
+        /// Set if `name` and `parquet_name` are borrowed from the parent, which takes them back
+        /// truncated to these sizes in `takeBackPath`.
+        struct LentPath
+        {
+            size_t name_size = 0;
+            std::optional<size_t> parquet_name_size;
+        };
+        std::optional<LentPath> lent_path;
+
         [[nodiscard]] const String & getParquetName() const
         {
             return parquet_name.has_value() ? *parquet_name : name;
@@ -131,15 +142,48 @@ private:
             }
         }
 
-        TraversalNode prepareToRecurse(SchemaContext schema_context_, DataTypePtr type_hint_)
+        TraversalNode prepareToRecurse(SchemaContext schema_context_, DataTypePtr type_hint_, bool lend_path)
         {
+            std::optional<LentPath> lent;
+            String lent_name;
+            std::optional<String> lent_parquet_name;
+            if (lend_path)
+            {
+                lent = LentPath{.name_size = name.size(), .parquet_name_size = parquet_name ? std::optional(parquet_name->size()) : std::nullopt};
+                lent_name = std::exchange(name, String{});
+                lent_parquet_name = std::exchange(parquet_name, std::nullopt);
+            }
             TraversalNode res = *this;
+            if (lend_path)
+            {
+                res.name = std::move(lent_name);
+                res.parquet_name = std::move(lent_parquet_name);
+            }
+            res.lent_path = lent;
             res.schema_context = schema_context_;
             res.type_hint = std::move(type_hint_);
             res.map_element_to_skip.reset();
             res.element = nullptr;
             res.output_idx.reset();
             return res;
+        }
+
+        void takeBackPath(TraversalNode & child)
+        {
+            if (!child.lent_path)
+                return;
+            chassert(child.name.size() >= child.lent_path->name_size);
+            name = std::move(child.name);
+            name.resize(child.lent_path->name_size);
+            if (child.lent_path->parquet_name_size)
+            {
+                chassert(child.parquet_name && child.parquet_name->size() >= *child.lent_path->parquet_name_size);
+                parquet_name = std::move(child.parquet_name);
+                parquet_name->resize(*child.lent_path->parquet_name_size);
+            }
+            else
+                parquet_name.reset();
+            child.lent_path.reset();
         }
     };
 
@@ -165,6 +209,9 @@ private:
     VectorWithMemoryTracking<TupleInArray> tuples_in_arrays;
 
     void checkHasColumns();
+
+    /// Whether the children of `node` can borrow its path: nothing below it can be requested.
+    [[nodiscard]] bool canLendPath(const TraversalNode & node) const;
 
     void processSubtree(TraversalNode & node);
 

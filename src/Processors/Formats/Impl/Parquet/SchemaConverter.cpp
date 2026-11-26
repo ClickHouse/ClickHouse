@@ -105,6 +105,9 @@ void SchemaConverter::prepareForReading()
     chassert(sample_block);
     checkHasColumns();
 
+    for (const auto & column : *sample_block)
+        max_requested_name_size = std::max(max_requested_name_size, column.name.size());
+
     /// DFS the schema tree.
     size_t top_level_columns = size_t(file_metadata.schema.at(0).num_children);
     top_level_field_ids.emplace();
@@ -239,6 +242,12 @@ std::string_view SchemaConverter::useColumnMapperIfNeeded(
     return it->second;
 }
 
+bool SchemaConverter::canLendPath(const TraversalNode & node) const
+{
+    /// `ColumnMapper` can replace a path with a shorter one (`processSubtreeArrayInner`).
+    return sample_block && !column_mapper && !node.requested && node.name.size() >= max_requested_name_size;
+}
+
 static bool isPrimitiveNode(const parq::SchemaElement & elem)
 {
     /// `parquet.thrift` says "[num_children] is not set when the element is a primitive type".
@@ -258,12 +267,12 @@ static bool isPrimitiveNode(const parq::SchemaElement & elem)
 /// specification allows a reader to return a null reference for such rows, and returning the
 /// stored fields is not less informative than that (a reference with all fields null is the null
 /// reference), while avoiding a pass over the values.
-static void validateFileLogicalTypeGroup(const parq::FileMetaData & file_metadata, size_t group_schema_idx, const String & name_for_logging)
+static void validateFileLogicalTypeGroup(const parq::FileMetaData & file_metadata, size_t group_schema_idx, const std::function<String()> & get_name_for_logging)
 {
     const parq::SchemaElement & group = file_metadata.schema.at(group_schema_idx);
     const size_t first_child_idx = group_schema_idx + 1;
     if (group.num_children < 0 || size_t(group.num_children) > file_metadata.schema.size() - first_child_idx)
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Parquet schema element {} declares {} children, but only {} schema elements remain in the file", name_for_logging, group.num_children, file_metadata.schema.size() - first_child_idx);
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Parquet schema element {} declares {} children, but only {} schema elements remain in the file", get_name_for_logging(), group.num_children, file_metadata.schema.size() - first_child_idx);
 
     UnorderedSetWithMemoryTracking<std::string_view> seen_names;
     for (size_t i = 0; i < size_t(group.num_children); ++i)
@@ -274,16 +283,16 @@ static void validateFileLogicalTypeGroup(const parq::FileMetaData & file_metadat
         if (!kind.has_value())
             throw Exception(ErrorCodes::INCORRECT_DATA,
                 "Parquet column {} has `FILE` logical type, but contains unrecognized field `{}`. Valid fields are: {}",
-                name_for_logging, field.name, file_logical_type_field_names);
+                get_name_for_logging(), field.name, file_logical_type_field_names);
         if (!seen_names.insert(field.name).second)
             throw Exception(ErrorCodes::INCORRECT_DATA,
-                "Parquet column {} has `FILE` logical type, but contains field `{}` more than once", name_for_logging, field.name);
+                "Parquet column {} has `FILE` logical type, but contains field `{}` more than once", get_name_for_logging(), field.name);
         if (!isPrimitiveNode(field))
             throw Exception(ErrorCodes::INCORRECT_DATA,
-                "Parquet column {} has `FILE` logical type, but its field `{}` is a group", name_for_logging, field.name);
+                "Parquet column {} has `FILE` logical type, but its field `{}` is a group", get_name_for_logging(), field.name);
         if (field.repetition_type != parq::FieldRepetitionType::OPTIONAL)
             throw Exception(ErrorCodes::INCORRECT_DATA,
-                "Parquet column {} has `FILE` logical type, but its field `{}` is not OPTIONAL", name_for_logging, field.name);
+                "Parquet column {} has `FILE` logical type, but its field `{}` is not OPTIONAL", get_name_for_logging(), field.name);
 
         const parq::LogicalType & logical = field.logicalType;
         const bool has_annotation = field.__isset.logicalType || field.__isset.converted_type;
@@ -313,7 +322,7 @@ static void validateFileLogicalTypeGroup(const parq::FileMetaData & file_metadat
         if (!field.__isset.type || !valid_type)
             throw Exception(ErrorCodes::INCORRECT_DATA,
                 "Parquet column {} has `FILE` logical type, but its field `{}` has unexpected type (expected {}): {}",
-                name_for_logging, field.name, expected_type, thriftToString(field));
+                get_name_for_logging(), field.name, expected_type, thriftToString(field));
     }
 }
 
@@ -355,7 +364,7 @@ void SchemaConverter::processSubtree(TraversalNode & node)
         /// A column that is not in the data lake schema is never requested, and its physical name
         /// may coincide with an unrelated column of the current schema (e.g. a dropped `x` and a
         /// later re-added `x` have different field ids), so it must not be matched by name.
-        if (sample_block && !not_in_schema)
+        if (sample_block && !not_in_schema && node.name.size() <= max_requested_name_size)
         {
             /// Doing this lookup on each schema element to support reading individual tuple elements.
             /// E.g.:
@@ -469,7 +478,7 @@ void SchemaConverter::processSubtree(TraversalNode & node)
         if (isPrimitiveNode(*node.element))
             throw Exception(ErrorCodes::INCORRECT_DATA,
                 "Parquet column {} has `FILE` logical type, but it is a primitive column rather than a group", node.getNameForLogging());
-        validateFileLogicalTypeGroup(file_metadata, schema_idx - 1, node.getNameForLogging());
+        validateFileLogicalTypeGroup(file_metadata, schema_idx - 1, [&] { return node.getNameForLogging(); });
     }
 
     if (!processSubtreePrimitive(node) &&
@@ -747,7 +756,7 @@ bool SchemaConverter::processSubtreeMap(TraversalNode & node)
     }
     /// (MapTupleAsPlainTuple is needed to skip a level in the column name: it changes
     /// `my_map.key_value.key` to `my_map.key`.
-    TraversalNode subnode = node.prepareToRecurse(no_map ? SchemaContext::MapTupleAsPlainTuple : SchemaContext::MapTuple, array_type_hint);
+    TraversalNode subnode = node.prepareToRecurse(no_map ? SchemaContext::MapTupleAsPlainTuple : SchemaContext::MapTuple, array_type_hint, canLendPath(node));
     if (!no_map)
         subnode.map_element_to_skip = node.map_element_to_skip;
     const size_t schema_idx_before_map = schema_idx;
@@ -757,6 +766,7 @@ bool SchemaConverter::processSubtreeMap(TraversalNode & node)
     const size_t leaves_in_arrays_before_map = leaves_in_arrays.size();
     const size_t tuples_in_arrays_before_map = tuples_in_arrays.size();
     processSubtree(subnode);
+    node.takeBackPath(subnode);
 
     /// The offsets of a map come from a leaf of the side that is read. If that side has no leaf in the file, read the whole map.
     if (!no_map && node.map_element_to_skip.has_value() && subnode.output_idx.has_value()
@@ -768,8 +778,9 @@ bool SchemaConverter::processSubtreeMap(TraversalNode & node)
         output_columns.resize(output_columns_before_map);
         leaves_in_arrays.resize(leaves_in_arrays_before_map);
         tuples_in_arrays.resize(tuples_in_arrays_before_map);
-        subnode = node.prepareToRecurse(SchemaContext::MapTuple, array_type_hint);
+        subnode = node.prepareToRecurse(SchemaContext::MapTuple, array_type_hint, canLendPath(node));
         processSubtree(subnode);
+        node.takeBackPath(subnode);
     }
 
     if (!node.requested || !subnode.output_idx.has_value())
@@ -837,8 +848,9 @@ bool SchemaConverter::processSubtreeArrayOuter(TraversalNode & node)
     /// only one field: the middle level of a three-level list has no annotation.
     bool has_inner_group = child.num_children == 1 && !child.logicalType.__isset.FILE;
 
-    TraversalNode subnode = node.prepareToRecurse(has_inner_group ? SchemaContext::ListTuple : SchemaContext::ListElement, node.type_hint);
+    TraversalNode subnode = node.prepareToRecurse(has_inner_group ? SchemaContext::ListTuple : SchemaContext::ListElement, node.type_hint, canLendPath(node));
     processSubtree(subnode);
+    node.takeBackPath(subnode);
 
     if (!node.requested || !subnode.output_idx.has_value())
         return true;
@@ -857,10 +869,11 @@ bool SchemaConverter::processSubtreeArrayInner(TraversalNode & node)
     chassert(node.element->repetition_type == parq::FieldRepetitionType::REPEATED &&
              node.element->num_children == 1); // caller checked this
     /// (type_hint is already unwrapped to be element type, because of REPEATED)
-    TraversalNode subnode = node.prepareToRecurse(SchemaContext::ListElement, node.type_hint);
+    TraversalNode subnode = node.prepareToRecurse(SchemaContext::ListElement, node.type_hint, canLendPath(node));
 
     if (column_mapper && schema_idx < file_metadata.schema.size())
     {
+        chassert(!subnode.lent_path);
         const auto & elem_schema = file_metadata.schema.at(schema_idx);
         if (elem_schema.__isset.field_id)
         {
@@ -871,6 +884,7 @@ bool SchemaConverter::processSubtreeArrayInner(TraversalNode & node)
     }
 
     processSubtree(subnode);
+    node.takeBackPath(subnode);
 
     if (!node.requested || !subnode.output_idx.has_value())
         return true;
@@ -1023,9 +1037,10 @@ bool SchemaConverter::processSubtreeDynamic(TraversalNode & node)
     std::array<std::optional<size_t>, NumRoles> output_idx_of_role;
     for (size_t i = 0; i < num_children; ++i)
     {
-        TraversalNode subnode = node.prepareToRecurse(SchemaContext::None, nullptr);
+        TraversalNode subnode = node.prepareToRecurse(SchemaContext::None, nullptr, canLendPath(node));
         subnode.requested = node.requested && !unsupported.has_value();
         processSubtree(subnode);
+        node.takeBackPath(subnode);
         output_idx_of_role[role_of_child[i]] = subnode.output_idx;
     }
 
@@ -1068,8 +1083,9 @@ void SchemaConverter::processSubtreeTuple(TraversalNode & node)
     ///     ...
 
     /// Not a Map's key_value tuple: `map.keys` and `map.values` are the names of the subcolumns of a Map.
+    /// Only a name at least 2 shorter than a requested name can be its path prefix in `addMissingElementOfTupleInArray`.
     const bool is_tuple_in_array = sample_block && !node.requested && !node.not_in_datalake_schema && levels.back().rep > 0
-        && node.schema_context != SchemaContext::MapTuple;
+        && node.schema_context != SchemaContext::MapTuple && node.name.size() + 1 < max_requested_name_size;
     const size_t tuple_schema_idx = schema_idx - 1;
     const size_t leaves_start = leaves_in_arrays.size();
 
@@ -1209,13 +1225,14 @@ void SchemaConverter::processSubtreeTuple(TraversalNode & node)
         if (tuple_type_hint && idx_in_output_tuple.has_value() && element_requested)
             element_type_hint = tuple_type_hint->getElement(idx_in_output_tuple.value());
 
-        TraversalNode subnode = node.prepareToRecurse(SchemaContext::None, element_type_hint);
+        TraversalNode subnode = node.prepareToRecurse(SchemaContext::None, element_type_hint, canLendPath(node));
         subnode.requested = element_requested;
         subnode.inside_skipped_map_element |= skip_map_element;
         if (node.schema_context == SchemaContext::MapTuple && idx_in_output_tuple == 0)
             subnode.schema_context = SchemaContext::MapKey;
 
         processSubtree(subnode);
+        node.takeBackPath(subnode);
         auto element_idx = subnode.output_idx;
 
         if (element_requested)
