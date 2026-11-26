@@ -9,7 +9,9 @@ cluster = ClickHouseCluster(__file__)
 
 dictionary_node = cluster.add_instance("dictionary_node", stay_alive=True)
 main_node = cluster.add_instance(
-    "main_node", dictionaries=["configs/dictionaries/cache_ints_dictionary.xml"]
+    "main_node",
+    dictionaries=["configs/dictionaries/cache_ints_dictionary.xml"],
+    stay_alive=True,
 )
 
 
@@ -106,3 +108,41 @@ def test_simple_dict_get(started_cluster):
         time.sleep(3)
 
         test_helper()
+
+
+def keys_requested():
+    return int(
+        main_node.query(
+            "SELECT value FROM system.events WHERE event = 'DictCacheKeysRequested'"
+        )
+    )
+
+
+def test_shutdown_during_update(started_cluster):
+    # test_simple_dict_get restarts dictionary_node, which empties its Memory table,
+    # and leaves the dictionary in the update error backoff.
+    dictionary_node.query("INSERT INTO test.ints VALUES (9, 9, 9, 9, 9, 9, 9, 9, 9)")
+    main_node.query("SYSTEM RELOAD DICTIONARY experimental_dict")
+
+    query = "SELECT dictGet('experimental_dict', 'i8', toUInt64(9))"
+    assert main_node.query(query) == "9\n"
+
+    # The dictionary's max lifetime is 2 seconds.
+    time.sleep(3)
+
+    before = keys_requested()
+    main_node.query("SYSTEM ENABLE FAILPOINT cache_dictionary_update_sleep")
+
+    # Returns the expired value and queues an update, which sleeps in the update thread.
+    assert main_node.query(query) == "9\n"
+
+    deadline = time.monotonic() + 30
+    while keys_requested() == before:
+        assert time.monotonic() < deadline, "The update did not start"
+        time.sleep(0.1)
+
+    # The server must wait for the update while everything it uses is still alive.
+    assert main_node.stop_clickhouse(stop_wait_sec=60) is True
+    assert not main_node.contains_in_log("<Fatal>", from_host=True)
+
+    main_node.start_clickhouse()
