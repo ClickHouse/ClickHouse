@@ -353,3 +353,21 @@ INSERT INTO t_alter_previous_commands_group_sign VALUES (42, 7, 1);
 ALTER TABLE t_alter_previous_commands_group_sign MODIFY COLUMN `n.sign` Int8 AFTER `n.a`, DROP COLUMN n SETTINGS alter_sync = 2; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
 SELECT * FROM t_alter_previous_commands_group_sign;
 DROP TABLE t_alter_previous_commands_group_sign;
+
+-- A subcolumn that a type change of its column removes does not exist for the later commands.
+CREATE TABLE t_alter_previous_commands_subcolumn (id UInt64, z Tuple(UInt32, String)) ENGINE = MergeTree ORDER BY id;
+INSERT INTO t_alter_previous_commands_subcolumn VALUES (1, (5, 'q'));
+ALTER TABLE t_alter_previous_commands_subcolumn MODIFY COLUMN z String, MODIFY COLUMN `z.1` UInt256; -- { serverError NOT_FOUND_COLUMN_IN_BLOCK }
+ALTER TABLE t_alter_previous_commands_subcolumn MODIFY COLUMN z String, MODIFY COLUMN IF EXISTS `z.1` UInt256 SETTINGS alter_sync = 2;
+SELECT name, type FROM system.columns WHERE database = currentDatabase() AND table = 't_alter_previous_commands_subcolumn' ORDER BY position;
+SELECT * FROM t_alter_previous_commands_subcolumn;
+DROP TABLE t_alter_previous_commands_subcolumn;
+
+-- The same for a codec of the removed subcolumn.
+CREATE TABLE t_alter_previous_commands_subcolumn_codec (id UInt64, e Tuple(x UInt8, y UInt8, z UInt8)) ENGINE = MergeTree ORDER BY id;
+INSERT INTO t_alter_previous_commands_subcolumn_codec VALUES (1, (1, 2, 3));
+ALTER TABLE t_alter_previous_commands_subcolumn_codec MODIFY COLUMN e Tuple(x UInt8, y UInt8), MODIFY COLUMN IF EXISTS `e.z` CODEC(LZ4HC(4)) SETTINGS enable_subcolumn_codecs = 1, alter_sync = 2;
+SELECT name, type FROM system.columns WHERE database = currentDatabase() AND table = 't_alter_previous_commands_subcolumn_codec' ORDER BY position;
+SELECT position(create_table_query, 'CODEC') FROM system.tables WHERE database = currentDatabase() AND name = 't_alter_previous_commands_subcolumn_codec';
+SELECT * FROM t_alter_previous_commands_subcolumn_codec;
+DROP TABLE t_alter_previous_commands_subcolumn_codec;

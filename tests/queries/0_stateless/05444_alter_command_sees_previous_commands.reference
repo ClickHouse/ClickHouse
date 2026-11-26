@@ -68,3 +68,10 @@ x	String
 [11]	0	[42]
 1	[11]	0	[42]
 42	7	1
+id	UInt64
+z	String
+1	(5,\'q\')
+id	UInt64
+e	Tuple(x UInt8, y UInt8)
+0
+1	(1,2)
