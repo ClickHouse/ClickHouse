@@ -21,6 +21,23 @@
                 </replica>
             </shard>
         </test_cluster>
+        <test_cluster_three_replicas>
+            <shard>
+                <internal_replication>true</internal_replication>
+                <replica>
+                    <host>node_1</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
+                    <host>node_2</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
+                    <host>node_3</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </test_cluster_three_replicas>
     </remote_servers>
 </clickhouse>
 
