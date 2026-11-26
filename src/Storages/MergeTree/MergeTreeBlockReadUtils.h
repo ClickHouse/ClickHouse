@@ -110,7 +110,6 @@ struct MergeTreeBlockSizePredictor
         return static_cast<size_t>(static_cast<double>(bytes_quota) / std::max(1.0, read_bytes_per_row));
     }
 
-    /// An increase is taken at once, so that larger rows do not make the block that is read exceed the quota.
     void updateReadBytesPerRow(size_t rows_was_read, size_t bytes_was_read, double decay = calculateDecay())
     {
         if (rows_was_read == 0)
@@ -175,7 +174,6 @@ public:
 
     /// Bytes per row of the columns as they are read, before the rows are filtered.
     double read_bytes_per_row = 0;
-    /// Whether the filters dropped every row of the last read.
     bool all_rows_filtered_in_last_read = false;
 };
 
