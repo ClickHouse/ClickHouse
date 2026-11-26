@@ -1,0 +1,8 @@
+direct 15000 OK
+direct 16000 OK
+filter OK
+eval 20000 OK
+eval 200000 OK
+values OK
+values subquery OK
+0

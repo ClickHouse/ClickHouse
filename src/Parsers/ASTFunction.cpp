@@ -75,6 +75,8 @@ void ASTFunction::setNoEmptyArgs(bool value)
 
 void ASTFunction::appendColumnNameImpl(WriteBuffer & ostr) const
 {
+    checkStackSize();
+
     /// These functions contain some unexpected ASTs in arguments (e.g. SETTINGS or even a SELECT query)
     if (name == "view" || name == "viewIfPermitted" || name == "mysql" || name == "postgresql" || name == "mongodb" || name == "s3"
         || name == "obfuscate")
