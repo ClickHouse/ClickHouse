@@ -3,7 +3,6 @@
 #include <algorithm>
 #include <array>
 #include <memory>
-#include <unordered_set>
 #include <Databases/DataLake/DatabaseDataLake.h>
 #include <Access/ContextAccess.h>
 #include <Access/Common/AccessFlags.h>
@@ -17,6 +16,7 @@
 #include <Databases/DataLake/StaticStorageCredentials.h>
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBuffer.h>
@@ -245,10 +245,10 @@ DataLake::TableNameFilter toCatalogTableNameFilter(const TablesFilter & tables_f
 }
 
 /// Readable listed tables kept by `keep_table_name`, each once: a catalog can list a table more than once.
-Names getVisibleTableNames(const DataLake::CatalogTables & catalog_tables, const IDatabase::FilterByNameFunction & keep_table_name)
+VectorWithMemoryTracking<String> getVisibleTableNames(const DataLake::CatalogTables & catalog_tables, const IDatabase::FilterByNameFunction & keep_table_name)
 {
-    Names names;
-    std::unordered_set<std::string_view> seen;
+    VectorWithMemoryTracking<String> names;
+    UnorderedSetWithMemoryTracking<std::string_view> seen;
     for (const auto & catalog_table : catalog_tables)
     {
         if (!catalog_table.is_readable)
@@ -1673,7 +1673,7 @@ DatabaseTablesIteratorPtr DatabaseDataLake::getTablesIteratorImpl(
     /// and apply the name filter once, matching getLightweightTablesIterator (SHOW TABLES).
     /// The catalog listing is scoped by namespace at best, so drop the names the query cannot
     /// ask for here too - each surviving name costs a per-table metadata fetch below.
-    const DB::Names iceberg_tables = getVisibleTableNames(catalog_tables, combineFilters(filter_by_table_name, tables_filter));
+    const auto iceberg_tables = getVisibleTableNames(catalog_tables, combineFilters(filter_by_table_name, tables_filter));
 
     auto & pool = Context::getGlobalContextInstance()->getIcebergCatalogThreadpool();
 
