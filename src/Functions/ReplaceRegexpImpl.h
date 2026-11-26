@@ -414,19 +414,25 @@ struct ReplaceRegexpImpl
     /// Like calling `processString` for every row, but may run the regexp once per distinct haystack and copy
     /// the cached result for repeats; `ReplaceRegexpModeController` decides when that pays.
     /// Rows without the required prefix cannot match and are copied through directly.
+    /// The result offset is a local and `budget` is taken by value, not by reference to the caller's variables:
+    /// the closures below refer to them, and a closure that is not inlined makes what it refers to escape. The
+    /// callers are inlined together with this function, so their variables would escape as well, and the loop
+    /// over the JIT-compiled matcher, which calls opaque code for every match, could no longer keep its offset
+    /// and budget in registers.
     template <typename GetHaystack>
     static void processStringsDeduplicated(
         GetHaystack && get_haystack,
         size_t input_rows_count,
         ColumnString::Chars & res_data,
         ColumnString::Offsets & res_offsets,
-        ColumnString::Offset & res_offset,
         const re2::RE2 & searcher,
         int num_captures,
         const Instructions & instructions,
         ReplaceRegexpModeController::Hint * mode_hint,
-        CancellationBudget & budget)
+        CancellationBudget budget)
     {
+        ColumnString::Offset res_offset = 0;
+
         struct CachedResult
         {
             UInt64 start;
@@ -571,7 +577,6 @@ struct ReplaceRegexpImpl
             return;
         }
 
-        ColumnString::Offset res_offset = 0;
         res_data.reserve(haystack_data.size());
         res_offsets.resize(input_rows_count);
 
@@ -618,6 +623,7 @@ struct ReplaceRegexpImpl
 
         if (matcher)
         {
+            ColumnString::Offset res_offset = 0;
             for (size_t i = 0; i < input_rows_count; ++i)
             {
                 budget.charge();
@@ -641,7 +647,7 @@ struct ReplaceRegexpImpl
                     reinterpret_cast<const char *>(haystack_data.data() + from),
                     static_cast<size_t>(haystack_offsets[i] - from));
             },
-            input_rows_count, res_data, res_offsets, res_offset, searcher, num_captures, instructions, mode_hint, budget);
+            input_rows_count, res_data, res_offsets, searcher, num_captures, instructions, mode_hint, budget);
     }
 
     static void vectorVectorConstant(
@@ -851,7 +857,6 @@ struct ReplaceRegexpImpl
             return;
         }
 
-        ColumnString::Offset res_offset = 0;
         res_data.reserve(haystack_data.size());
         res_offsets.resize(input_rows_count);
 
@@ -866,7 +871,7 @@ struct ReplaceRegexpImpl
 
         processStringsDeduplicated(
             [&](size_t i) { return std::string_view(reinterpret_cast<const char *>(haystack_data.data() + i * n), n); },
-            input_rows_count, res_data, res_offsets, res_offset, searcher, num_captures, instructions, mode_hint, budget);
+            input_rows_count, res_data, res_offsets, searcher, num_captures, instructions, mode_hint, budget);
     }
 };
 
