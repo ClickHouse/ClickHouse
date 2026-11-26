@@ -80,6 +80,8 @@ bool IMergingTransformBase::tryInitializeInput(size_t input_num)
     if (input.isFinished())
     {
         input_state.is_initialized = true;
+        if (finishesOnEmptyInput(input_num))
+            state.is_finished = true;
         return true;
     }
 
@@ -120,6 +122,8 @@ bool IMergingTransformBase::tryInitializeInput(size_t input_num)
         }
 
         input_state.is_initialized = true;
+        if (finishesOnEmptyInput(input_num))
+            state.is_finished = true;
         return true;
     }
 
@@ -166,6 +170,16 @@ IProcessor::Status IMergingTransformBase::prepareInitializeInputs(const UpdatedI
             if (!input_states[input_num].is_initialized && tryInitializeInput(input_num))
                 --num_uninitialized_inputs;
         }
+    }
+
+    if (state.is_finished)
+    {
+        /// An input the merge cannot do without finished with no data: the first chunks of the other inputs
+        /// are not waited for and the chunks already received are not passed to the algorithm.
+        state.init_chunks.clear();
+        input_port_to_num = {};
+        is_initialized = true;
+        return Status::Ready;
     }
 
     if (num_uninitialized_inputs)
@@ -220,7 +234,12 @@ IProcessor::Status IMergingTransformBase::prepareImpl(const UpdatedInputPorts * 
         output.push(std::move(state.output_chunk));
 
     if (!is_initialized)
-        return prepareInitializeInputs(updated_inputs);
+    {
+        auto status = prepareInitializeInputs(updated_inputs);
+        /// A finish decided during the initialization skips `work`: the algorithm was not initialized.
+        if (!state.is_finished)
+            return status;
+    }
 
     if (!state.inputs_to_prefetch.empty())
     {

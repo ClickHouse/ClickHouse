@@ -48,6 +48,10 @@ protected:
     virtual void onNewInput(); /// Is called when new input is added. Only if have_all_inputs = false.
     virtual void onFinish() {} /// Is called when all data is processed.
 
+    /// Is called while waiting for the first chunks when an input finishes without data. Returns true if the merge
+    /// cannot produce a row without that input: the transform then finishes without waiting for the other inputs.
+    [[nodiscard]] virtual bool finishesOnEmptyInput(size_t /*input_num*/) const { return false; }
+
     /// Processor state.
     struct State
     {

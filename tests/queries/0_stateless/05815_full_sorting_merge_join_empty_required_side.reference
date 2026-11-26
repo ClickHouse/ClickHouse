@@ -1,0 +1,15 @@
+-- inner join, empty left side
+0
+-- inner join, empty right side
+0
+-- left join, empty left side
+0
+-- right join, empty right side
+0
+-- a left join keeps the left rows when the right side is empty
+10
+-- a right join keeps the right rows when the left side is empty
+10
+-- a full join keeps the rows of both sides
+10
+10

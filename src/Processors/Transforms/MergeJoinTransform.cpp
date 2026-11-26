@@ -1498,4 +1498,11 @@ void MergeJoinTransform::onFinish()
     algorithm.logElapsed(static_cast<double>(merging_elapsed_ns) / 1000000000ULL);
 }
 
+bool MergeJoinTransform::finishesOnEmptyInput(size_t input_num) const
+{
+    /// An inner join has no result without rows on either side, a one-sided join has none without rows on the preserved side.
+    const auto kind = algorithm.getKind();
+    return isInner(kind) || (input_num == 0 ? isLeft(kind) : isRight(kind));
+}
+
 }
