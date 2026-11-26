@@ -1,0 +1,26 @@
+-- shortest part names
+source part name length	7
+second dry run ok
+first dry run ok
+server alive	6
+merged	2	6
+merged	2	6
+-- short part names
+second dry run ok
+first dry run ok
+server alive	6
+merged	2	6
+merged	2	6
+-- temporary directory budget
+real merge directory length 19
+dry run directory length 25
+dry run costs 6 bytes more than the merge it simulates
+break-even part name length 15
+-- long part names
+source part name length	226	8
+second dry run ok
+first dry run ok
+server alive	6
+merged	2	6
+merged	2	6
+real merge ok	6

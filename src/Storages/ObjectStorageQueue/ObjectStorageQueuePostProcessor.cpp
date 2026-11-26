@@ -1,6 +1,3 @@
-#include <Common/DimensionalMetrics.h>
-#include <Common/ErrorCodes.h>
-#include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/FailPoint.h>
 #include <Common/setThreadName.h>
@@ -31,11 +28,6 @@ namespace ProfileEvents
     extern const Event ObjectStorageQueueTaggedObjects;
 }
 
-namespace DimensionalMetrics
-{
-    extern MetricFamily & ObjectStorageQueueFailures;
-}
-
 namespace DB
 {
 
@@ -49,8 +41,8 @@ namespace FailPoints
 namespace S3AuthSetting
 {
     extern const S3AuthSettingsString access_key_id;
-    extern const S3AuthSettingsSecretString secret_access_key;
-    extern const S3AuthSettingsSecretString session_token;
+    extern const S3AuthSettingsString secret_access_key;
+    extern const S3AuthSettingsString session_token;
     extern const S3AuthSettingsString role_arn;
     extern const S3AuthSettingsString role_session_name;
     extern const S3AuthSettingsString external_id;
@@ -59,9 +51,8 @@ namespace S3AuthSetting
     extern const S3AuthSettingsString metadata_service;
     extern const S3AuthSettingsString request_token_path;
     extern const S3AuthSettingsString google_adc_client_id;
-    extern const S3AuthSettingsSecretString google_adc_client_secret;
-    extern const S3AuthSettingsSecretString google_adc_refresh_token;
-    extern const S3AuthSettingsSecretString google_service_account_key;
+    extern const S3AuthSettingsString google_adc_client_secret;
+    extern const S3AuthSettingsString google_adc_refresh_token;
     extern const S3AuthSettingsS3UriStyle uri_style;
 }
 
@@ -74,25 +65,13 @@ namespace S3RequestSetting
 
 namespace ErrorCodes
 {
-    extern const int ACCESS_DENIED;
+    extern const int AZURE_BLOB_STORAGE_ERROR;
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int FAULT_INJECTED;
-}
-
-/// The number of `objects` which are not in `successful_objects`: the objects for which the action did not complete.
-static size_t countObjectsNotIn(const StoredObjects & objects, const StoredObjects & successful_objects)
-{
-    UnorderedSetWithMemoryTracking<std::string_view> successful_paths;
-    successful_paths.reserve(successful_objects.size());
-    for (const auto & object : successful_objects)
-        successful_paths.insert(object.remote_path);
-
-    size_t count = 0;
-    for (const auto & object : objects)
-        if (!successful_paths.contains(object.remote_path))
-            ++count;
-    return count;
+    extern const int FILE_CHANGED_DURING_READ;
+    extern const int S3_ERROR;
+    extern const int S3_OBJECT_CHANGED_DURING_READ;
 }
 
 ObjectStorageQueuePostProcessor::ObjectStorageQueuePostProcessor(
@@ -100,18 +79,36 @@ ObjectStorageQueuePostProcessor::ObjectStorageQueuePostProcessor(
     ObjectStorageType type_,
     ObjectStoragePtr object_storage_,
     String engine_name_,
-    const StorageID & storage_id_,
     const ObjectStorageQueueTableMetadata & table_metadata_,
     AfterProcessingSettings settings_)
     : WithContext(context_)
     , type(type_)
     , object_storage(object_storage_)
     , engine_name(engine_name_)
-    , storage_id(storage_id_)
     , table_metadata(table_metadata_)
     , settings(std::move(settings_))
     , log(getLogger("ObjectStorageQueuePostProcessor"))
 { }
+
+void ObjectStorageQueuePostProcessor::ChangedGeneration::rememberIfCurrentExceptionIsOne()
+{
+    /// The Azure paths report a replaced generation as `FILE_CHANGED_DURING_READ`; the S3 copy and
+    /// the S3 read buffer report it as `S3_OBJECT_CHANGED_DURING_READ`. Both mean the same thing here.
+    const int code = getCurrentExceptionCode();
+    if (code != ErrorCodes::FILE_CHANGED_DURING_READ && code != ErrorCodes::S3_OBJECT_CHANGED_DURING_READ)
+        return;
+
+    std::lock_guard lock(mutex);
+    if (!exception)
+        exception = std::current_exception();
+}
+
+void ObjectStorageQueuePostProcessor::ChangedGeneration::rethrowIfAny() const
+{
+    std::lock_guard lock(mutex);
+    if (exception)
+        std::rethrow_exception(exception);
+}
 
 void ObjectStorageQueuePostProcessor::process(
     const StoredObjects & objects,
@@ -135,57 +132,65 @@ void ObjectStorageQueuePostProcessor::process(
     {
         LOG_TRACE(log, "Removing {} objects", objects.size());
 
+        /// On Azure and on S3 the delete is pinned to the ingested generation: `removeObjectsIfExist`
+        /// sends the `ETag` of every object as `If-Match` (the `ETag` element of a `DeleteObjects`
+        /// request on S3), so an object overwritten after it was read is left in place
+        /// (`FILE_CHANGED_DURING_READ`) rather than deleted without the newer generation ever
+        /// having been ingested. An untagged object would be deleted by path; the source never
+        /// hands one over (it fails such a file instead of reading it).
+        if (type == ObjectStorageType::Azure || type == ObjectStorageType::S3)
+        {
+            for (const auto & object : objects)
+            {
+                if (object.etag.empty())
+                    throw Exception(
+                        type == ObjectStorageType::Azure ? ErrorCodes::AZURE_BLOB_STORAGE_ERROR : ErrorCodes::S3_ERROR,
+                        "Cannot delete {} object {}: the generation that was ingested is not known",
+                        type, object.remote_path);
+            }
+        }
+
         /// We do need to apply after-processing action before committing requests to keeper.
         /// See explanation in ObjectStorageQueueSource::FileIterator::nextImpl().
+        ChangedGeneration changed_generation;
         try
         {
             doWithRetries([&]{
                 fiu_do_on(FailPoints::object_storage_queue_fail_delete, {
                     throw Exception(ErrorCodes::FAULT_INJECTED, "Failed to remove objects");
                 });
+                /// Deletes every object it can before reporting one that changed.
                 object_storage->removeObjectsIfExist(objects, &successful_objects);
             });
             ProfileEvents::increment(ProfileEvents::ObjectStorageQueueRemovedObjects, objects.size());
         }
         catch (...)
         {
+            changed_generation.rememberIfCurrentExceptionIsOne();
             LOG_WARNING(
                 log,
                 "Failed to remove all {} objects with exception: {}",
                 objects.size(),
                 getExceptionMessage(std::current_exception(), /*with_stacktrace=*/ false)
             );
-            countFailedObjects(countObjectsNotIn(objects, successful_objects));
         }
+        changed_generation.rethrowIfAny();
     }
     else if (after_processing_action == ObjectStorageQueueAction::MOVE)
     {
-        /// Objects whose failure was already counted one by one by the move functions.
-        std::atomic<size_t> counted_failed_objects = 0;
-        try
+        switch (type)
         {
-            switch (type)
-            {
-                case ObjectStorageType::Azure:
-                    moveAzureBlobs(objects, successful_objects, counted_failed_objects);
-                    break;
-                case ObjectStorageType::S3:
-                    moveS3Objects(objects, successful_objects, counted_failed_objects);
-                    break;
-                default:
-                    throw Exception(
-                        ErrorCodes::LOGICAL_ERROR,
-                        "After processing move not allowed for storage type {}, only Azure and S3 supported",
-                        type);
-            }
-        }
-        catch (...)
-        {
-            /// The move stopped for the whole batch: count the objects that were not moved and not counted yet.
-            const size_t not_moved = countObjectsNotIn(objects, successful_objects);
-            const size_t already_counted = counted_failed_objects.load();
-            countFailedObjects(not_moved > already_counted ? not_moved - already_counted : 0);
-            throw;
+            case ObjectStorageType::Azure:
+                moveAzureBlobs(objects, successful_objects);
+                break;
+            case ObjectStorageType::S3:
+                moveS3Objects(objects, successful_objects);
+                break;
+            default:
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "After processing move not allowed for storage type {}, only Azure and S3 supported",
+                    type);
         }
     }
     else if (after_processing_action == ObjectStorageQueueAction::TAG)
@@ -209,7 +214,6 @@ void ObjectStorageQueuePostProcessor::process(
                 objects.size(),
                 getExceptionMessage(std::current_exception(), /*with_stacktrace=*/ false)
             );
-            countFailedObjects(countObjectsNotIn(objects, successful_objects));
         }
 #else
         throw Exception(
@@ -226,17 +230,6 @@ void ObjectStorageQueuePostProcessor::process(
             ObjectStorageQueueTableMetadata::actionToString(after_processing_action));
     }
 
-}
-
-void ObjectStorageQueuePostProcessor::countFailedObjects(size_t count) const
-{
-    if (!count)
-        return;
-
-    DimensionalMetrics::add(
-        DimensionalMetrics::ObjectStorageQueueFailures,
-        {storage_id.getDatabaseName(), storage_id.getTableName(), "after_processing", String(ErrorCodes::getName(getCurrentExceptionCode()))},
-        static_cast<DimensionalMetrics::Value>(count));
 }
 
 static constexpr size_t post_process_initial_backoff_ms = 100;
@@ -264,6 +257,14 @@ void ObjectStorageQueuePostProcessor::doWithRetries(std::function<void()> action
                 retries + 1,
                 getExceptionMessage(std::current_exception(), /*with_stacktrace=*/ false)
             );
+            /// The object is no longer the generation that was ingested. That does not heal with
+            /// time: every retry would be pinned to the same, now gone, generation and be refused
+            /// again, so the object is left in place for the caller to report. A later retry that
+            /// failed for another reason would also hide the change behind that other error, and
+            /// in non-`EXCLUSIVE` mode that other error is only logged.
+            const int code = getCurrentExceptionCode();
+            if (code == ErrorCodes::FILE_CHANGED_DURING_READ || code == ErrorCodes::S3_OBJECT_CHANGED_DURING_READ)
+                throw;
             if (try_no >= retries)
             {
                 // Letting the caller to catch the exception and log it with a meaningful message
@@ -305,29 +306,11 @@ static AzureBlobStorage::ConnectionParams getAzureConnectionParams(
 
 #endif
 
-void ObjectStorageQueuePostProcessor::checkAzureMoveDestination(
-    [[maybe_unused]] const String & move_connection_string, [[maybe_unused]] const String & move_container)
-{
-#if USE_AZURE_BLOB_STORAGE
-    AzureBlobStorage::ConnectionParams params;
-    AzureBlobStorage::processURL(move_connection_string, move_container, params.endpoint, params.auth_method);
-    params.forbid_implicit_credentials = true;
-    params.anonymous_fallback_for_server_credentials = true;
-    if (params.checkOrDropServerManagedCredentials())
-        throw Exception(
-            ErrorCodes::ACCESS_DENIED,
-            "Moving processed blobs to another Azure container requires explicit credentials in "
-            "`after_processing_move_connection_string`: a connection string or a SAS token. "
-            "It may not use the server's own identity.");
-#endif
-}
-
 void ObjectStorageQueuePostProcessor::moveWithinBucket(
     const StoredObjects & objects,
     const String & move_prefix,
     bool preserve_path,
-    StoredObjects & successful_objects,
-    std::atomic<size_t> & counted_failed_objects) const
+    StoredObjects & successful_objects) const
 {
     auto read_settings = getReadSettings();
     auto write_settings = getWriteSettings();
@@ -340,6 +323,7 @@ void ObjectStorageQueuePostProcessor::moveWithinBucket(
     TaskTracker task_tracker(schedule, post_process_max_inflight_object_moves, limited_log);
 
     std::atomic<size_t> moved_objects = 0;
+    ChangedGeneration changed_generation;
 
     std::vector<UInt8> succeeded(objects.size(), 0);
 
@@ -352,14 +336,31 @@ void ObjectStorageQueuePostProcessor::moveWithinBucket(
     try
     {
         size_t objects_index = 0;
-        for (const auto & object_from : objects)
+        for (const auto & object_from_of_this_iteration : objects)
         {
-            task_tracker.add([&, objects_index]{
+            /// The task runs asynchronously, so it owns the object it works on: everything it
+            /// needs - the source, and the destination derived from it - has to be a copy that
+            /// does not depend on where the loop over `objects` has got to by then.
+            task_tracker.add([&, objects_index, object_from = object_from_of_this_iteration]{
                 try
                 {
                     doWithRetries([&]{
+                        /// On Azure the move must be pinned to the ingested generation (see
+                        /// `moveAzureBlobs`); an untagged source would make `copyObject` select
+                        /// whatever generation exists now with a `HEAD`, and the source never
+                        /// hands over an untagged Azure object.
+                        if (type == ObjectStorageType::Azure && object_from.etag.empty())
+                            throw Exception(
+                                ErrorCodes::AZURE_BLOB_STORAGE_ERROR,
+                                "Cannot move Azure blob {}: the generation that was ingested is not known",
+                                object_from.remote_path);
+
                         auto object_to = applyMovePrefixIfPresent(object_from, move_prefix, preserve_path);
                         LOG_TRACE(log, "Copying object {} to {}", object_from.remote_path, object_to.remote_path);
+                        /// `object_from` names the generation that was ingested (its `ETag`, when
+                        /// the object storage reports one): the copy transfers that generation or
+                        /// fails, and the delete removes that generation or fails, so an object
+                        /// overwritten after it was read is never lost on the way.
                         object_storage->copyObject(
                             object_from,
                             object_to,
@@ -375,14 +376,13 @@ void ObjectStorageQueuePostProcessor::moveWithinBucket(
                 }
                 catch (...)
                 {
+                    changed_generation.rememberIfCurrentExceptionIsOne();
                     LOG_WARNING(
                         log,
-                        "Failed to move S3 object {} within bucket with exception: {}",
+                        "Failed to move object {} within bucket with exception: {}",
                         object_from.remote_path,
                         getExceptionMessage(std::current_exception(), /*with_stacktrace=*/ false)
                     );
-                    countFailedObjects(1);
-                    ++counted_failed_objects;
                 }
             });
 
@@ -407,15 +407,15 @@ void ObjectStorageQueuePostProcessor::moveWithinBucket(
         throw;
     }
     ProfileEvents::increment(ProfileEvents::ObjectStorageQueueMovedObjects, moved_objects);
+    changed_generation.rethrowIfAny();
 }
 
-void ObjectStorageQueuePostProcessor::moveS3Objects(
-    const StoredObjects & objects, StoredObjects & successful_objects, std::atomic<size_t> & counted_failed_objects) const
+void ObjectStorageQueuePostProcessor::moveS3Objects(const StoredObjects & objects, StoredObjects & successful_objects) const
 {
 #if USE_AWS_S3
     const String & move_uri = settings.after_processing_move_uri;
     const String & move_access_key_id = settings.after_processing_move_access_key_id;
-    const SecretString & move_secret_access_key = settings.after_processing_move_secret_access_key;
+    const String & move_secret_access_key = settings.after_processing_move_secret_access_key;
     const String & move_prefix = settings.after_processing_move_prefix;
 
     if (!move_uri.empty() || !move_access_key_id.empty() || !move_secret_access_key.empty())
@@ -455,7 +455,6 @@ void ObjectStorageQueuePostProcessor::moveS3Objects(
             s3_settings->auth_settings[S3AuthSetting::google_adc_client_id] = "";
             s3_settings->auth_settings[S3AuthSetting::google_adc_client_secret] = "";
             s3_settings->auth_settings[S3AuthSetting::google_adc_refresh_token] = "";
-            s3_settings->auth_settings[S3AuthSetting::google_service_account_key] = "";
             /// The move uses its own explicit keys, so also drop the request-auth material (headers/access
             /// headers and SSE-C/SSE-KMS keys) merged from the server `<s3>` config: otherwise the server's
             /// headers or encryption keys would be sent to the user-supplied move destination.
@@ -482,16 +481,45 @@ void ObjectStorageQueuePostProcessor::moveS3Objects(
                 ThreadName::S3_COPY_POOL);
 
             size_t moved_objects = 0;
+            ChangedGeneration changed_generation;
             for (const auto & object_from : objects)
             {
                 try
                 {
                     doWithRetries([&]{
                         const String src_bucket = s3_storage->getObjectsNamespace();
-                        size_t object_size = S3::getObjectSize(
+                        /// The copy is pinned to the generation of the source that was ingested (the
+                        /// `ETag` the listing reported): the `HeadObject` that measures the object has to
+                        /// describe that generation, and the copy carries it as
+                        /// `x-amz-copy-source-if-match`, so a source object overwritten after it was read
+                        /// is not copied as if the newer generation had been ingested - the copy fails
+                        /// with `S3_OBJECT_CHANGED_DURING_READ`, the object is left in place, and the
+                        /// error is rethrown once the batch is done, so that the file is not committed.
+                        /// The delete that follows a successful copy is pinned to the same generation:
+                        /// `removeObjectIfExists` sends the `ETag` of `object_from` as `If-Match`, so an
+                        /// object replaced between the pinned copy and the delete is left in place with
+                        /// `FILE_CHANGED_DURING_READ`, which aborts the batch like it does on Azure.
+                        ///
+                        /// The source never hands over an untagged object for a move (it fails such a
+                        /// file instead of reading it), and its read was pinned to this very
+                        /// generation (`afterProcessingNeedsIngestedGeneration`), so an untagged
+                        /// object here would be moved as whatever generation exists now.
+                        if (object_from.etag.empty())
+                            throw Exception(
+                                ErrorCodes::S3_ERROR,
+                                "Cannot move S3 object {}: the generation that was ingested is not known",
+                                object_from.remote_path);
+
+                        const auto object_info = S3::getObjectInfo(
                             *src_client,
                             src_bucket,
                             object_from.remote_path);
+                        if (object_info.etag != object_from.etag)
+                            throw Exception(
+                                ErrorCodes::S3_OBJECT_CHANGED_DURING_READ,
+                                "S3 object {} was not moved: it changed after it was ingested (its `ETag` is {} instead of {})",
+                                object_from.remote_path, object_info.etag, object_from.etag);
+                        const size_t object_size = object_info.size;
                         auto object_to = applyMovePrefixIfPresent(object_from, move_prefix, settings.after_processing_move_preserve_path);
 
                         LOG_INFO(log, "Copying {} ({} Bytes) to bucket {}", object_from.remote_path, object_size, dst_uri.bucket);
@@ -500,6 +528,8 @@ void ObjectStorageQueuePostProcessor::moveS3Objects(
                             /*src_bucket=*/ src_bucket,
                             /*src_key=*/ object_from.remote_path,
                             /*src_size=*/ object_size,
+                            /*src_etag=*/ object_from.etag,
+                            /*src_version_id=*/ "",
                             /*dest_s3_client=*/ dst_client,
                             /*dest_bucket=*/ dst_uri.bucket,
                             /*dest_key=*/ object_to.remote_path,
@@ -522,17 +552,17 @@ void ObjectStorageQueuePostProcessor::moveS3Objects(
                 }
                 catch (...)
                 {
+                    changed_generation.rememberIfCurrentExceptionIsOne();
                     LOG_WARNING(
                         log,
                         "Failed to move S3 object {} with exception: {}",
                         object_from.remote_path,
                         getExceptionMessage(std::current_exception(), /*with_stacktrace=*/ false)
                     );
-                    countFailedObjects(1);
-                    ++counted_failed_objects;
                 }
             }
             ProfileEvents::increment(ProfileEvents::ObjectStorageQueueMovedObjects, moved_objects);
+            changed_generation.rethrowIfAny();
         }
         else
         {
@@ -541,7 +571,7 @@ void ObjectStorageQueuePostProcessor::moveS3Objects(
     }
     else if (!move_prefix.empty())
     {
-        moveWithinBucket(objects, move_prefix, settings.after_processing_move_preserve_path, successful_objects, counted_failed_objects);
+        moveWithinBucket(objects, move_prefix, settings.after_processing_move_preserve_path, successful_objects);
     }
     else
     {
@@ -550,12 +580,10 @@ void ObjectStorageQueuePostProcessor::moveS3Objects(
 #else
     UNUSED(objects);
     UNUSED(successful_objects);
-    UNUSED(counted_failed_objects);
 #endif
 }
 
-void ObjectStorageQueuePostProcessor::moveAzureBlobs(
-    const StoredObjects & objects, StoredObjects & successful_objects, std::atomic<size_t> & counted_failed_objects) const
+void ObjectStorageQueuePostProcessor::moveAzureBlobs(const StoredObjects & objects, StoredObjects & successful_objects) const
 {
 #if USE_AZURE_BLOB_STORAGE
     const String & move_connection_string = settings.after_processing_move_connection_string;
@@ -576,28 +604,50 @@ void ObjectStorageQueuePostProcessor::moveAzureBlobs(
         {
             auto contextPtr = getContext();
             std::shared_ptr<const AzureBlobStorage::ContainerClient> src_client = azure_storage->getAzureBlobStorageClient();
-            const String src_container = azure_storage->getAzureBlobStorageConnectionParams()->getContainer();
-            checkAzureMoveDestination(move_connection_string, move_container);
             auto connection_params = getAzureConnectionParams(
                 move_connection_string,
                 move_container,
                 contextPtr);
-            connection_params.forbid_implicit_credentials = true;
-            connection_params.anonymous_fallback_for_server_credentials = false;
             const bool is_readonly = true;
             std::shared_ptr<AzureBlobStorage::ContainerClient> dst_client = AzureBlobStorage::getContainerClient(
                 connection_params,
                 is_readonly);
 
             size_t moved_objects = 0;
+            ChangedGeneration changed_generation;
             for (const auto & object_from : objects)
             {
                 try
                 {
                     doWithRetries([&]{
-                        Azure::Storage::Blobs::BlobClient blobClient = src_client->GetBlobClient(object_from.remote_path);
-                        auto properties = blobClient.GetProperties().Value;
-                        auto blob_size = properties.BlobSize;
+                        /// The move is pinned to the generation of the source that was ingested:
+                        /// the copy and the delete below both carry its `ETag`, so a source blob
+                        /// overwritten at any point after it was read is neither copied nor deleted
+                        /// as if the newer generation had been ingested. Either step then fails with
+                        /// `FILE_CHANGED_DURING_READ`, the blob is left in place, and the error is
+                        /// rethrown once the batch is done, so that the file is not committed.
+                        const String & src_etag = object_from.etag;
+                        if (src_etag.empty())
+                            throw Exception(
+                                ErrorCodes::AZURE_BLOB_STORAGE_ERROR,
+                                "Cannot move Azure blob {}: the generation that was ingested is not known",
+                                object_from.remote_path);
+
+                        /// The size normally comes from the same listing entry as the `ETag`. When
+                        /// it does not, a `HEAD` supplies it, and only if it still describes the
+                        /// ingested generation.
+                        size_t blob_size = object_from.bytes_size;
+                        if (blob_size == StoredObject::UnknownSize)
+                        {
+                            auto properties = src_client->GetBlobClient(object_from.remote_path).GetProperties().Value;
+                            const String current_etag = AzureBlobStorage::getETagOrEmpty(properties.ETag);
+                            if (AzureBlobStorage::normalizeETag(current_etag) != AzureBlobStorage::normalizeETag(src_etag))
+                                throw Exception(
+                                    ErrorCodes::FILE_CHANGED_DURING_READ,
+                                    "Azure blob {} was not moved: it changed after it was ingested (its `ETag` is {} instead of {})",
+                                    object_from.remote_path, current_etag, src_etag);
+                            blob_size = properties.BlobSize;
+                        }
                         auto object_to = applyMovePrefixIfPresent(object_from, move_prefix, settings.after_processing_move_preserve_path);
                         auto request_settings = azure_storage->getSettings();
                         auto read_settings = getReadSettings();
@@ -610,16 +660,16 @@ void ObjectStorageQueuePostProcessor::moveAzureBlobs(
                         copyAzureBlobStorageFile(
                             src_client,
                             dst_client,
-                            src_container,
+                            connection_params.getContainer(),
                             /* src_blob */ object_from.remote_path,
                             blob_size,
+                            src_etag,
                             move_container,
                             /* dest_blob */ object_to.remote_path,
                             request_settings,
                             read_settings,
                             std::optional<ObjectAttributes>(),
-                            scheduler,
-                            BlobStorageLogWriter::create(object_storage->getDiskName())
+                            scheduler
                         );
                         LOG_INFO(log, "Removing object {}", object_from.remote_path);
                         object_storage->removeObjectIfExists(object_from);
@@ -631,17 +681,17 @@ void ObjectStorageQueuePostProcessor::moveAzureBlobs(
                 }
                 catch (...)
                 {
+                    changed_generation.rememberIfCurrentExceptionIsOne();
                     LOG_WARNING(
                         log,
                         "Failed to move Azure object {} with exception: {}",
                         object_from.remote_path,
                         getExceptionMessage(std::current_exception(), /*with_stacktrace=*/ false)
                     );
-                    countFailedObjects(1);
-                    ++counted_failed_objects;
                 }
             }
             ProfileEvents::increment(ProfileEvents::ObjectStorageQueueMovedObjects, moved_objects);
+            changed_generation.rethrowIfAny();
         }
         else
         {
@@ -650,7 +700,7 @@ void ObjectStorageQueuePostProcessor::moveAzureBlobs(
     }
     else if (!move_prefix.empty())
     {
-        moveWithinBucket(objects, move_prefix, settings.after_processing_move_preserve_path, successful_objects, counted_failed_objects);
+        moveWithinBucket(objects, move_prefix, settings.after_processing_move_preserve_path, successful_objects);
     }
     else
     {
@@ -659,7 +709,6 @@ void ObjectStorageQueuePostProcessor::moveAzureBlobs(
 #else
     UNUSED(objects);
     UNUSED(successful_objects);
-    UNUSED(counted_failed_objects);
 #endif
 }
 

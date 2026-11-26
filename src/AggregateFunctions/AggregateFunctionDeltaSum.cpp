@@ -46,11 +46,11 @@ public:
         : IAggregateFunctionDataHelper<AggregationFunctionDeltaSumData<T>, AggregationFunctionDeltaSum<T>>{}
     {}
 
-    [[nodiscard]] String getName() const override { return "deltaSum"; }
+    String getName() const override { return "deltaSum"; }
 
     static DataTypePtr createResultType() { return std::make_shared<DataTypeNumber<T>>(); }
 
-    [[nodiscard]] bool allocatesMemoryInArena() const override { return false; }
+    bool allocatesMemoryInArena() const override { return false; }
 
     void NO_SANITIZE_UNDEFINED ALWAYS_INLINE add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
@@ -212,7 +212,7 @@ SELECT deltaSum(arrayJoin([2.25, 3, 4.5]))
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation::IntroducedIn introduced_in = {21, 3};
     FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
-    AggregateFunctionProperties properties = { .returns_default_when_only_null = true, .is_order_dependent = true, .variant_arguments_conversion = VariantArgumentsConversion::All};
+    AggregateFunctionProperties properties = { .returns_default_when_only_null = true, .is_order_dependent = true };
 
     factory.registerFunction("deltaSum", { createAggregateFunctionDeltaSum, documentation, properties });
 }

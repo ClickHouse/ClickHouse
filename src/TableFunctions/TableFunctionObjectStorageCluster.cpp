@@ -1,9 +1,6 @@
 #include "config.h"
-#include <Databases/DataLake/DataLakeConstants.h>
 
 #include <TableFunctions/TableFunctionFactory.h>
-#include <Storages/ObjectStorage/Azure/AzureSecretArguments.h>
-#include <Storages/ObjectStorage/S3/S3SecretArguments.h>
 #include <TableFunctions/TableFunctionObjectStorageCluster.h>
 #include <TableFunctions/registerTableFunctions.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
@@ -181,7 +178,6 @@ For details on optimizing the performance of the s3 function see [our detailed g
 - [S3 engine](/reference/engines/table-engines/integrations/s3)
 - [s3 table function](/reference/functions/table-functions/s3)
 )DOCS_MD", .category = FunctionDocumentation::Category::TableFunction},
-        s3TableFunctionSecretArguments(true),
         {.allow_readonly = false}
     );
 #endif
@@ -194,53 +190,23 @@ This table function is similar to the [s3Cluster function](/reference/functions/
 
 ## Syntax {#syntax}
 
-<Tabs>
-<Tab title="Connection string">
-
-Credentials are embedded in the connection string, so no separate `account_name`/`account_key` is needed:
-
 ```sql
-azureBlobStorageCluster(cluster_name, connection_string, container_name, blobpath [, format, compression, structure])
+azureBlobStorageCluster(cluster_name, connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression, structure])
 ```
-
-</Tab>
-<Tab title="Storage account URL">
-
-Requires `account_name` and `account_key` as separate arguments:
-
-```sql
-azureBlobStorageCluster(cluster_name, storage_account_url, container_name, blobpath, account_name, account_key [, format, compression, structure])
-```
-
-</Tab>
-<Tab title="Workload identity">
-
-Uses Azure workload identity via `extra_credentials`; mutually exclusive with `account_name` / `account_key` and requires `storage_account_url` (not `connection_string`):
-
-```sql
-azureBlobStorageCluster(cluster_name, storage_account_url, container_name, blobpath, extra_credentials(client_id=, tenant_id=) [, format, compression, structure])
-```
-
-Workload identity uses the server's own identity, so it is refused by default: enable `allow_server_credentials_in_user_queries` in the querying session or its settings profile.
-
-</Tab>
-</Tabs>
 
 ## Arguments {#arguments}
 
 | Argument            | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 |---------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `cluster_name`      | Name of a cluster that is used to build a set of addresses and connection parameters to remote and local servers.                                                                                                                                                                                                                                                                                                                                                                                                 |
-| `connection_string` | A connection string that includes embedded credentials (account name + account key or SAS token). When using this form, `account_name` and `account_key` should **not** be passed separately, and `client_id` / `tenant_id` cannot be used. See [Configure a connection string](https://learn.microsoft.com/en-us/azure/storage/common/storage-configure-connection-string?toc=%2Fazure%2Fstorage%2Fblobs%2Ftoc.json&bc=%2Fazure%2Fstorage%2Fblobs%2Fbreadcrumb%2Ftoc.json#configure-a-connection-string-for-an-azure-storage-account). |
-| `storage_account_url` | The storage account endpoint URL, e.g. `https://<account>.blob.core.windows.net/`. When using this form, pass either `account_name` and `account_key`, or `extra_credentials(client_id=, tenant_id=)` for workload identity. |
+| `connection_string` | storage_account_url` — connection_string includes account name & key ([Create connection string](https://learn.microsoft.com/en-us/azure/storage/common/storage-configure-connection-string?toc=%2Fazure%2Fstorage%2Fblobs%2Ftoc.json&bc=%2Fazure%2Fstorage%2Fblobs%2Fbreadcrumb%2Ftoc.json#configure-a-connection-string-for-an-azure-storage-account)) or you could also provide the storage account url here and account name & account key as separate parameters (see parameters account_name & account_key) | 
 | `container_name`    | Container name                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    
 | `blobpath`          | file path. Supports following wildcards in readonly mode: `*`, `**`, `?`, `{abc,def}` and `{N..M}` where `N`, `M` — numbers, `'abc'`, `'def'` — strings.                                                                                                                                                                                                                                                                                                                                                          |
-| `account_name`      | Storage account name. **Required** when using `storage_account_url` without SAS or workload identity; must **not** be passed with `connection_string` or `extra_credentials`. |
-| `account_key`       | Storage account key. **Required** when using `storage_account_url` without SAS or workload identity; must **not** be passed with `connection_string` or `extra_credentials`. |
+| `account_name`      | if storage_account_url is used, then account name can be specified here                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| `account_key`       | if storage_account_url is used, then account key can be specified here                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | `format`            | The [format](/reference/formats/index) of the file.                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | `compression`       | Supported values: `none`, `gzip/gz`, `deflate`, `brotli/br`, `xz/LZMA`, `zstd/zst`, `lz4`, `bz2`, `snappy`. By default, it will autodetect compression by file extension. (same as setting to `auto`). For `snappy`, the wire format is selected by the [snappy_mode](/reference/settings/session-settings/other#snappy_mode) setting (`basic` by default).                                                                                                                                                      |
 | `structure`         |  Structure of the table. Format `'column1_name column1_type, column2_name column2_type, ...'`.                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| `extra_credentials` | Use `client_id` and `tenant_id` for Azure workload identity authentication. Mutually exclusive with `account_name` / `account_key`, and requires `storage_account_url` (not `connection_string`). Every node in the cluster must have `AZURE_FEDERATED_TOKEN_FILE` set. |
 
 ## Returned value {#returned-value}
 
@@ -268,7 +234,6 @@ See [azureBlobStorage](/reference/functions/table-functions/azureBlobStorage#usi
 - [AzureBlobStorage engine](/reference/engines/table-engines/integrations/azureBlobStorage)
 - [azureBlobStorage table function](/reference/functions/table-functions/azureBlobStorage)
 )DOCS_MD", .category = FunctionDocumentation::Category::TableFunction},
-        azureTableFunctionSecretArguments(true),
         {.allow_readonly = false}
     );
 #endif
@@ -331,7 +296,6 @@ If your listing of files contains number ranges with leading zeros, use the cons
 - [HDFS engine](/reference/engines/table-engines/integrations/hdfs)
 - [HDFS table function](/reference/functions/table-functions/hdfs)
 )DOCS_MD", .category = FunctionDocumentation::Category::TableFunction},
-        SecretArgumentsSpec{},
         {.allow_readonly = false}
     );
 #endif
@@ -352,7 +316,6 @@ void registerTableFunctionIcebergCluster(TableFunctionFactory & factory)
             .syntax = "icebergLocalCluster(cluster, filename, format, [,compression])",
             .category = FunctionDocumentation::Category::TableFunction
         },
-        DataLake::withSecretSettings(SecretArgumentsSpec{}),
         {.allow_readonly = false}
     );
 
@@ -405,7 +368,6 @@ SELECT * FROM icebergS3Cluster('cluster_simple', 'http://test.s3.amazonaws.com/c
 - [Iceberg engine](/reference/engines/table-engines/integrations/iceberg)
 - [Iceberg table function](/reference/functions/table-functions/iceberg)
 )DOCS_MD", .category = FunctionDocumentation::Category::TableFunction},
-        DataLake::withSecretSettings(s3TableFunctionSecretArguments(true)),
         {.allow_readonly = false}
     );
 
@@ -415,7 +377,6 @@ SELECT * FROM icebergS3Cluster('cluster_simple', 'http://test.s3.amazonaws.com/c
             .syntax = "icebergS3Cluster(cluster, url, [, NOSIGN | access_key_id, secret_access_key, [session_token]], format, [,compression])",
             .category = FunctionDocumentation::Category::TableFunction
         },
-        DataLake::withSecretSettings(s3TableFunctionSecretArguments(true)),
         {.allow_readonly = false}
     );
 #endif
@@ -427,7 +388,6 @@ SELECT * FROM icebergS3Cluster('cluster_simple', 'http://test.s3.amazonaws.com/c
             .syntax = "icebergAzureCluster(cluster, connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression])",
             .category = FunctionDocumentation::Category::TableFunction
         },
-        DataLake::withSecretSettings(azureTableFunctionSecretArguments(true)),
         {.allow_readonly = false}
     );
 #endif
@@ -439,7 +399,6 @@ SELECT * FROM icebergS3Cluster('cluster_simple', 'http://test.s3.amazonaws.com/c
             .syntax = "icebergHDFSCluster(cluster, uri, [format], [structure], [compression_method])",
             .category = FunctionDocumentation::Category::TableFunction
         },
-        DataLake::withSecretSettings(SecretArgumentsSpec{}),
         {.allow_readonly = false}
     );
 #endif
@@ -453,6 +412,8 @@ void registerTableFunctionPaimonCluster(TableFunctionFactory & factory)
 #if USE_AWS_S3
     factory.registerFunction<TableFunctionPaimonCluster>(
         {.description = R"DOCS_MD(
+import { ExperimentalBadge } from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
+
 <ExperimentalBadge />
 
 This is an extension to the [paimon](/reference/functions/table-functions/paimon) table function.
@@ -491,7 +452,6 @@ A table with the specified structure for reading data from cluster in the specif
 
 - [Paimon table function](/reference/functions/table-functions/paimon)
 )DOCS_MD", .category = FunctionDocumentation::Category::TableFunction},
-        DataLake::withSecretSettings(s3TableFunctionSecretArguments(true)),
         {.allow_readonly = false}
     );
 
@@ -501,7 +461,6 @@ A table with the specified structure for reading data from cluster in the specif
             .syntax = "paimonS3Cluster(cluster, url, [, NOSIGN | access_key_id, secret_access_key, [session_token]], format, [,compression])",
             .category = FunctionDocumentation::Category::TableFunction
         },
-        DataLake::withSecretSettings(s3TableFunctionSecretArguments(true)),
         {.allow_readonly = false}
     );
 #endif
@@ -513,7 +472,6 @@ A table with the specified structure for reading data from cluster in the specif
             .syntax = "paimonAzureCluster(cluster, connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression])",
             .category = FunctionDocumentation::Category::TableFunction
         },
-        DataLake::withSecretSettings(azureTableFunctionSecretArguments(true)),
         {.allow_readonly = false}
     );
 #endif
@@ -525,7 +483,6 @@ A table with the specified structure for reading data from cluster in the specif
             .syntax = "paimonHDFSCluster(cluster, uri, [format], [structure], [compression_method])",
             .category = FunctionDocumentation::Category::TableFunction
         },
-        DataLake::withSecretSettings(SecretArgumentsSpec{}),
         {.allow_readonly = false}
     );
 #endif
@@ -555,7 +512,6 @@ deltaLakeS3Cluster(cluster_name, url [,aws_access_key_id, aws_secret_access_key]
 deltaLakeS3Cluster(cluster_name, named_collection[, option=value [,..]])
 
 deltaLakeAzureCluster(cluster_name, connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
-deltaLakeAzureCluster(cluster_name, storage_account_url, container_name, blobpath, extra_credentials(client_id=, tenant_id=) [,format] [,compression_method])
 deltaLakeAzureCluster(cluster_name, named_collection[, option=value [,..]])
 ```
 `deltaLakeS3Cluster` is an alias to `deltaLakeCluster`, both are for S3. 
@@ -565,7 +521,6 @@ deltaLakeAzureCluster(cluster_name, named_collection[, option=value [,..]])
 - `cluster_name` — Name of a cluster that is used to build a set of addresses and connection parameters to remote and local servers.
 - Description of all other arguments coincides with description of arguments in equivalent [deltaLake](/reference/functions/table-functions/deltalake) table function.
 - An optional `extra_credentials` parameter can be used to pass a `role_arn` for role-based access in ClickHouse Cloud. See [Secure S3](/products/cloud/guides/data-sources/accessing-s3-data-securely) for configuration steps.
-- For Azure (`deltaLakeAzureCluster`), `extra_credentials` takes `client_id` and `tenant_id` for workload identity and cannot be combined with `account_name` / `account_key`. The process must also have `AZURE_FEDERATED_TOKEN_FILE` set (`AZURE_TENANT_ID` / `AZURE_CLIENT_ID` if not passed explicitly; `AZURE_AUTHORITY_HOST` is optional). Workload identity uses the server's own identity, so it is refused by default: enable `allow_server_credentials_in_user_queries` in the querying session or its settings profile.
 
 ## Returned value {#returned-value}
 
@@ -584,7 +539,6 @@ A table with the specified structure for reading data from cluster in the specif
 - [deltaLake engine](/reference/engines/table-engines/integrations/deltalake)
 - [deltaLake table function](/reference/functions/table-functions/deltalake)
 )DOCS_MD", .category = FunctionDocumentation::Category::TableFunction},
-        DataLake::withSecretSettings(s3TableFunctionSecretArguments(true)),
         {.allow_readonly = false}
     );
     factory.registerFunction<TableFunctionDeltaLakeS3Cluster>(
@@ -593,7 +547,6 @@ A table with the specified structure for reading data from cluster in the specif
             .syntax = "deltaLakeS3Cluster(cluster, url, access_key_id, secret_access_key)",
             .category = FunctionDocumentation::Category::TableFunction
         },
-        DataLake::withSecretSettings(s3TableFunctionSecretArguments(true)),
         {.allow_readonly = false}
     );
 #endif
@@ -602,11 +555,9 @@ A table with the specified structure for reading data from cluster in the specif
     factory.registerFunction<TableFunctionDeltaLakeAzureCluster>(
         {
             .description = R"(The table function can be used to read the DeltaLake table stored on Azure object store in parallel for many nodes in a specified cluster.)",
-            .syntax = "deltaLakeAzureCluster(cluster, connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression])\n"
-                      "deltaLakeAzureCluster(cluster, storage_account_url, container_name, blobpath, extra_credentials(client_id=, tenant_id=) [,format] [,compression])",
+            .syntax = "deltaLakeAzureCluster(cluster, connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression])",
             .category = FunctionDocumentation::Category::TableFunction
         },
-        DataLake::withSecretSettings(azureTableFunctionSecretArguments(true)),
         {.allow_readonly = false}
     );
 #endif
@@ -658,7 +609,6 @@ A table with the specified structure for reading data from cluster in the specif
 - [Hudi engine](/reference/engines/table-engines/integrations/hudi)
 - [Hudi table function](/reference/functions/table-functions/hudi)
 )DOCS_MD", .category = FunctionDocumentation::Category::TableFunction},
-        DataLake::withSecretSettings(s3TableFunctionSecretArguments(true)),
         {.allow_readonly = false}
     );
 }

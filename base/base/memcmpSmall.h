@@ -4,10 +4,8 @@
 #include <bit>
 #include <cstdint>
 
-#include <base/bigEndianCompare.h>
 #include <base/MemorySanitizer.h>
 #include <base/simd.h>
-#include <base/unaligned.h>
 
 namespace detail
 {
@@ -22,15 +20,6 @@ inline int cmp(T a, T b)
     return 0;
 }
 
-}
-
-
-/** Compare memory regions of size 16 exactly.
-  */
-template <typename Char>
-inline int memcmp16(const Char * a, const Char * b)
-{
-    return compareBigEndian16(a, b);
 }
 
 
@@ -229,6 +218,24 @@ inline int memcmpSmallMultipleOf16(const Char * a, const Char * b, size_t size)
             offset += std::countr_zero(mask);
             return detail::cmp(a[offset], b[offset]);
         }
+    }
+
+    return 0;
+}
+
+
+/** Variant when the size is 16 exactly.
+  */
+template <typename Char>
+inline int memcmp16(const Char * a, const Char * b)
+{
+    uint16_t mask = _mm_cmp_epi8_mask(
+        _mm_loadu_si128(reinterpret_cast<const __m128i *>(a)), _mm_loadu_si128(reinterpret_cast<const __m128i *>(b)), _MM_CMPINT_NE);
+
+    if (mask)
+    {
+        auto offset = std::countr_zero(mask);
+        return detail::cmp(a[offset], b[offset]);
     }
 
     return 0;
@@ -468,6 +475,25 @@ inline int memcmpSmallMultipleOf16(const Char * a, const Char * b, size_t size)
 
 /** Variant when the size is 16 exactly.
   */
+template <typename Char>
+inline int memcmp16(const Char * a, const Char * b)
+{
+    uint16_t mask = static_cast<uint16_t>(_mm_movemask_epi8(
+        _mm_cmpeq_epi8(_mm_loadu_si128(reinterpret_cast<const __m128i *>(a)), _mm_loadu_si128(reinterpret_cast<const __m128i *>(b)))));
+    mask = static_cast<uint16_t>(~mask);
+
+    if (mask)
+    {
+        auto offset = std::countr_zero(mask);
+        return detail::cmp(a[offset], b[offset]);
+    }
+
+    return 0;
+}
+
+
+/** Variant when the size is 16 exactly.
+  */
 inline bool memequal16(const void * a, const void * b)
 {
     return 0xFFFF
@@ -670,6 +696,20 @@ inline int memcmpSmallMultipleOf16(const Char * a, const Char * b, size_t size)
     return 0;
 }
 
+template <typename Char>
+inline int memcmp16(const Char * a, const Char * b)
+{
+    uint64_t mask = getNibbleMask(
+        vceqq_u8(vld1q_u8(reinterpret_cast<const unsigned char *>(a)), vld1q_u8(reinterpret_cast<const unsigned char *>(b))));
+    mask = ~mask;
+    if (mask)
+    {
+        auto offset = std::countr_zero(mask) >> 2;
+        return detail::cmp(a[offset], b[offset]);
+    }
+    return 0;
+}
+
 inline bool memequal16(const void * a, const void * b)
 {
     return 0xFFFFFFFFFFFFFFFFull
@@ -766,6 +806,12 @@ inline int memcmpSmallMultipleOf16(const Char * a, const Char * b, size_t size)
     return memcmp(a, b, size);
 }
 
+template <typename Char>
+inline int memcmp16(const Char * a, const Char * b)
+{
+    return memcmp(a, b, 16);
+}
+
 inline bool memequal16(const void * a, const void * b)
 {
     return 0 == memcmp(a, b, 16);
@@ -801,41 +847,4 @@ inline int memcmpSmallCharsAllowOverflow15(const UInt8 * a, size_t a_size, const
     /// and the generic (memcmp-based) fallback may return arbitrary magnitude.
     const int res = memcmpSmallAllowOverflow15(a, a_size, b, b_size);
     return (res > 0) - (res < 0);
-}
-
-/** Compare memory regions for equality, reading only the bytes inside them, so unlike the variants
-  * above the regions do not have to be padded. Inlined, which is what matters for the short regions
-  * it is meant for, such as JSON keys or column names, where a `memcmp` call dominates the compare.
-  */
-template <typename Char>
-inline bool memequalSmall(const Char * a, size_t a_size, const Char * b, size_t b_size)
-{
-    if (a_size != b_size)
-        return false;
-
-    /// Each step reads the region as two overlapping halves, so no byte outside it is touched.
-    /// Compared as integers rather than with a constant size `memcmp`, which generates a longer loop.
-    if (a_size >= 8)
-    {
-        for (size_t offset = 0; offset + 8 < a_size; offset += 8)
-        {
-            if (unalignedLoad<UInt64>(a + offset) != unalignedLoad<UInt64>(b + offset))
-                return false;
-
-            /// Avoid clang loop-idiom optimization, which transforms the loop back into memcmp
-            __asm__ __volatile__("" : : : "memory");
-        }
-        return unalignedLoad<UInt64>(a + a_size - 8) == unalignedLoad<UInt64>(b + a_size - 8);
-    }
-    if (a_size >= 4)
-    {
-        return unalignedLoad<UInt32>(a) == unalignedLoad<UInt32>(b)
-            && unalignedLoad<UInt32>(a + a_size - 4) == unalignedLoad<UInt32>(b + a_size - 4);
-    }
-    if (a_size >= 2)
-    {
-        return unalignedLoad<UInt16>(a) == unalignedLoad<UInt16>(b)
-            && unalignedLoad<UInt16>(a + a_size - 2) == unalignedLoad<UInt16>(b + a_size - 2);
-    }
-    return a_size == 0 || a[0] == b[0];
 }

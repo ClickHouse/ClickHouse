@@ -27,27 +27,29 @@ namespace
         const SQLQueryPiece & right_argument,
         const ConverterContext & context)
     {
+        std::string_view operator_name = operator_node->operator_name;
+
         if ((left_argument.type != ResultType::SCALAR) && (left_argument.type != ResultType::INSTANT_VECTOR))
         {
             throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
-                            "{} expects two arguments of type {} or {}, but expression {} has type {}",
-                            operator_node->getTypeAndName(), ResultType::SCALAR, ResultType::INSTANT_VECTOR,
+                            "Binary operator '{}' expects two arguments of type {} or {}, but expression {} has type {}",
+                            operator_name, ResultType::SCALAR, ResultType::INSTANT_VECTOR,
                             getPromQLText(left_argument, context), left_argument.type);
         }
 
         if ((right_argument.type != ResultType::SCALAR) && (right_argument.type != ResultType::INSTANT_VECTOR))
         {
             throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
-                            "{} expects two arguments of type {} or {}, but expression {} has type {}",
-                            operator_node->getTypeAndName(), ResultType::SCALAR, ResultType::INSTANT_VECTOR,
+                            "Binary operator '{}' expects two arguments of type {} or {}, but expression {} has type {}",
+                            operator_name, ResultType::SCALAR, ResultType::INSTANT_VECTOR,
                             getPromQLText(right_argument, context), right_argument.type);
         }
 
         if ((left_argument.type == ResultType::SCALAR) && (right_argument.type == ResultType::SCALAR) && !operator_node->bool_modifier)
         {
             throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
-                            "{} on scalars requires the bool modifier",
-                            operator_node->getTypeAndName());
+                            "Comparison operator '{}' on scalars requires the bool modifier",
+                            operator_name);
         }
 
         if ((left_argument.type != ResultType::INSTANT_VECTOR) || (right_argument.type != ResultType::INSTANT_VECTOR))
@@ -55,8 +57,8 @@ namespace
             if (operator_node->group_left || operator_node->group_right)
             {
                 throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
-                                "{} with the group modifier expects two arguments of type {}, got {} and {}",
-                                operator_node->getTypeAndName(), ResultType::INSTANT_VECTOR, left_argument.type, right_argument.type);
+                                "Binary operator '{}' with the group modifier expects two arguments of type {}, got {} and {}",
+                                operator_name, ResultType::INSTANT_VECTOR, left_argument.type, right_argument.type);
             }
         }
     }
@@ -64,18 +66,17 @@ namespace
     struct ImplInfo
     {
         std::string_view ch_function_name;
-        bool (*compare_scalars)(Float64, Float64);
     };
 
     const ImplInfo * getImplInfo(std::string_view function_name)
     {
         static const std::unordered_map<std::string_view, ImplInfo> impl_map = {
-            {"==", {"equals", [](Float64 x, Float64 y) { return x == y; }}},
-            {"!=", {"notEquals", [](Float64 x, Float64 y) { return x != y; }}},
-            {">",  {"greater", [](Float64 x, Float64 y) { return x > y; }}},
-            {"<",  {"less", [](Float64 x, Float64 y) { return x < y; }}},
-            {">=", {"greaterOrEquals", [](Float64 x, Float64 y) { return x >= y; }}},
-            {"<=", {"lessOrEquals", [](Float64 x, Float64 y) { return x <= y; }}},
+            {"==", {"equals"}},
+            {"!=", {"notEquals"}},
+            {">",  {"greater"}},
+            {"<",  {"less"}},
+            {">=", {"greaterOrEquals"}},
+            {"<=", {"lessOrEquals"}},
         };
 
         auto it = impl_map.find(function_name);
@@ -109,20 +110,10 @@ SQLQueryPiece applyComparisonOperator(
     /// in terms of label handling.
     if (operator_node->bool_modifier)
     {
-        /// A comparison of two constant scalars is computed here, so the result is a constant too.
-        /// Vector matching is left to applySimpleBinaryOperator(), which rejects it for scalars.
-        if ((left_argument.store_method == StoreMethod::CONST_SCALAR) && (right_argument.store_method == StoreMethod::CONST_SCALAR)
-            && (operator_node->result_type == ResultType::SCALAR) && operator_node->labels.empty())
-        {
-            auto res = left_argument;
-            res.node = operator_node;
-            res.scalar_value = impl_info->compare_scalars(left_argument.scalar_value, right_argument.scalar_value) ? 1.0 : 0.0;
-            return res;
-        }
-
         auto apply_function_to_ast = [&](ASTPtr x, ASTPtr y) -> ASTPtr
         {
-            return timeSeriesScalarASTCast(makeASTFunction(impl_info->ch_function_name, std::move(x), std::move(y)));
+            return timeSeriesScalarASTCast(
+                makeASTFunction(impl_info->ch_function_name, std::move(x), std::move(y)), context.scalar_data_type);
         };
 
         return applySimpleBinaryOperator(

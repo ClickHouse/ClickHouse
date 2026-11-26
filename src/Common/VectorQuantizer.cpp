@@ -1,4 +1,3 @@
-#include <base/sanitizer_defs.h>
 #include <Common/VectorQuantizer.h>
 
 #include <Common/Exception.h>
@@ -81,7 +80,7 @@ size_t projectionWorkingDim(size_t dimensions)
 /// A fast structured random projection: PROJECTION_ROUNDS blocks of (random ±1 diagonal) * Hadamard transform,
 /// replacing a dense d*d Gaussian matrix (O(d*d) per vector) with an O(d log d) transform. Returns the concatenated
 /// sign-flip diagonals (PROJECTION_ROUNDS * working_dim entries, each +-1), generated deterministically from the seed.
-std::vector<float> NO_SANITIZE_UNSIGNED_OVERFLOW generateRandomProjection(size_t dimensions, UInt64 seed = RANDOM_PROJECTION_SEED)
+std::vector<float> generateRandomProjection(size_t dimensions, UInt64 seed = RANDOM_PROJECTION_SEED)
 {
     const size_t working_dim = projectionWorkingDim(dimensions);
     std::vector<float> sign_flips(static_cast<size_t>(PROJECTION_ROUNDS) * working_dim);
@@ -135,11 +134,6 @@ void applyRandomProjection(const std::vector<float> & sign_flips, const T * x, s
 #if defined(__aarch64__)
             if (is_optimized)
                 HadamardTransform::kroneckerNeon(work, kron_blocks, kron_m, hm);
-            else
-                HadamardTransform::kroneckerScalar<float>(work, kron_blocks, kron_m, hm);
-#elif defined(__AVX2__)
-            if (is_optimized)
-                HadamardTransform::kroneckerAvx2(work, kron_blocks, kron_m, hm);
             else
                 HadamardTransform::kroneckerScalar<float>(work, kron_blocks, kron_m, hm);
 #else
@@ -270,66 +264,25 @@ RaBitQQuery buildRaBitQQuery(const float * q, size_t dimensions)
 }
 
 /// Reconstruct `sum_i s_i * q_i` (the inner product of the +-1 sign code with the bit-sliced query) from the popcounts.
-/// `pc = popcount(code)` = number of +1 sign bits; `weighted = sum_j 2^j * popcount(code AND query_plane_j)`. This is
-/// the shared estimator core used by both 'rabitq' and the exact 'turboquant' (which sums two such dots).
-float raBitQNumeratorFromCounts(const RaBitQQuery & q, UInt64 pc, UInt64 weighted)
+/// `pc = popcount(code)` = number of +1 sign bits; `plane_pc[j] = popcount(code AND query_plane_j)`. This is the shared
+/// estimator core used by both 'rabitq' and the exact 'turboquant' (which sums two such dots).
+float raBitQNumeratorFromCounts(const RaBitQQuery & q, UInt64 pc, const UInt64 * plane_pc)
 {
-    /// sum_i b_i * q_tilde_i = sum_j 2^j * popcount(code AND plane_j) = weighted; approx sum over set bits of q_i:
-    ///   sum_{b_i=1} q_i ~= delta * weighted + q_min * pc.
+    /// sum_i b_i * q_tilde_i = sum_j 2^j * popcount(code AND plane_j); approx sum over set bits of q_i:
+    ///   sum_{b_i=1} q_i ~= delta * (sum_j 2^j * plane_pc[j]) + q_min * pc.
+    UInt64 weighted = 0;
+    for (int j = 0; j < RABITQ_QUERY_BITS; ++j)
+        weighted += plane_pc[j] << j;
     const float sum_set = q.delta * static_cast<float>(weighted) + q.q_min * static_cast<float>(pc);
     return 2.0f * sum_set - q.q_total; /// sum_i s_i * q_i
 }
 
-#if defined(__aarch64__)
-/// `RABITQ_TAIL_MASK + n` is 16 bytes: 16 - n zeros, then n bytes 0xFF that keep the last n bytes of a 16-byte step.
-alignas(32) constexpr UInt8 RABITQ_TAIL_MASK[32] = {
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
-#endif
-
-/// Bit-sliced dot: AND+popcount the +-1 sign code against each query bit-plane and return `sum_i s_i * q_i`. `code`
-/// points at `q.code_bytes` packed sign bits (no trailing factor is read here).
+/// Scalar bit-sliced dot: AND+popcount the +-1 sign code against each query bit-plane, 8 bytes at a time, and return
+/// `sum_i s_i * q_i`. `code` points at `q.code_bytes` packed sign bits (no trailing factor is read here).
 float raBitQNumerator(const RaBitQQuery & q, const char * code)
 {
     const size_t code_bytes = q.code_bytes;
     const UInt8 * planes = q.planes.data();
-#if defined(__aarch64__)
-    /// AArch64 has no scalar popcount instruction, so count 16 bytes at a time in vector registers.
-    using Words = UInt32 __attribute__((ext_vector_type(4)));
-    if (code_bytes >= sizeof(Words))
-    {
-        Words pc_lanes = {};
-        Words plane_lanes[RABITQ_QUERY_BITS] = {};
-        auto count_step = [&](size_t pos, Words keep)
-        {
-            Words code_words;
-            std::memcpy(&code_words, code + pos, sizeof(code_words));
-            code_words &= keep;
-            pc_lanes += __builtin_elementwise_popcount(code_words);
-            for (int j = 0; j < RABITQ_QUERY_BITS; ++j)
-            {
-                Words plane_words;
-                std::memcpy(&plane_words, planes + static_cast<size_t>(j) * code_bytes + pos, sizeof(plane_words));
-                plane_lanes[j] += __builtin_elementwise_popcount(code_words & plane_words);
-            }
-        };
-        const size_t full_bytes = code_bytes / sizeof(Words) * sizeof(Words);
-        for (size_t b = 0; b < full_bytes; b += sizeof(Words))
-            count_step(b, ~Words{});
-        if (const size_t rest = code_bytes - full_bytes)
-        {
-            /// The last 16 bytes of the code, with the bytes the loop has already counted masked out. Scalar loops
-            /// for the rest would cost more than a 16-byte step (no scalar popcount instruction).
-            Words keep;
-            std::memcpy(&keep, RABITQ_TAIL_MASK + rest, sizeof(keep));
-            count_step(code_bytes - sizeof(Words), keep);
-        }
-        Words weighted_lanes = plane_lanes[0];
-        for (int j = 1; j < RABITQ_QUERY_BITS; ++j)
-            weighted_lanes += plane_lanes[j] << j;
-        return raBitQNumeratorFromCounts(q, __builtin_reduce_add(pc_lanes), __builtin_reduce_add(weighted_lanes));
-    }
-#endif
     UInt64 pc = 0;
     UInt64 plane_pc[RABITQ_QUERY_BITS] = {};
     size_t b = 0;
@@ -352,10 +305,7 @@ float raBitQNumerator(const RaBitQQuery & q, const char * code)
         for (int j = 0; j < RABITQ_QUERY_BITS; ++j)
             plane_pc[j] += static_cast<UInt64>(std::popcount(cw & static_cast<unsigned>(planes[static_cast<size_t>(j) * code_bytes + b])));
     }
-    UInt64 weighted = 0;
-    for (int j = 0; j < RABITQ_QUERY_BITS; ++j)
-        weighted += plane_pc[j] << j;
-    return raBitQNumeratorFromCounts(q, pc, weighted);
+    return raBitQNumeratorFromCounts(q, pc, plane_pc);
 }
 
 /// 'rabitq' estimator -> cosineDistance.
@@ -622,11 +572,7 @@ void VectorQuantizer::encode(Encoder & encoder, const float * vec, char * dst)
             {
                 UInt32 u = 0;
                 std::memcpy(&u, &vec[i], sizeof(float));
-                /// A NaN is kept as a quiet NaN of the same sign: rounding its payload could turn it into an infinity, and
-                /// overflows 32 bits for a negative NaN. Rounding any other value stays within 32 bits.
-                const UInt16 b = (u & 0x7FFFFFFFu) > 0x7F800000u
-                    ? static_cast<UInt16>((u >> 16) | 0x0040u)
-                    : static_cast<UInt16>((u + 0x7FFFu + ((u >> 16) & 1u)) >> 16);
+                const UInt16 b = static_cast<UInt16>((u + 0x7FFFu + ((u >> 16) & 1u)) >> 16);
                 std::memcpy(dst + i * 2, &b, sizeof(UInt16));
             }
             return;

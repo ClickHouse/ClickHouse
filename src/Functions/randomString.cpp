@@ -27,28 +27,37 @@ public:
         return std::make_shared<FunctionRandomString>();
     }
 
-    [[nodiscard]] String getName() const override { return name; }
+    String getName() const override { return name; }
 
-    [[nodiscard]] bool isVariadic() const override { return true; }
+    bool isVariadic() const override { return true; }
 
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
+    size_t getNumberOfArguments() const override { return 0; }
 
-    [[nodiscard]] String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        return "(Number, [Any]) -> String";
+        FunctionArgumentDescriptors mandatory_args{
+            {"length", &isNumber, nullptr, "(U)Int*"}
+        };
+
+        FunctionArgumentDescriptors optional_args{
+            {"x", nullptr, nullptr, "Any"}
+        };
+
+        validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
+        return std::make_shared<DataTypeString>();
     }
 
-    [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {
         return std::make_shared<DataTypeString>();
     }
 
-    [[nodiscard]] bool isDeterministic() const override { return false; }
-    [[nodiscard]] bool isDeterministicInScopeOfQuery() const override { return false; }
+    bool isDeterministic() const override { return false; }
+    bool isDeterministicInScopeOfQuery() const override { return false; }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         auto col_to = ColumnString::create();
         ColumnString::Chars & data_to = col_to->getChars();
@@ -62,30 +71,14 @@ public:
         const IColumn & length_column = *arguments[0].column;
 
         IColumn::Offset offset = 0;
-        if (isColumnConst(length_column))
+        for (size_t row_num = 0; row_num < input_rows_count; ++row_num)
         {
-            /// Avoid the two virtual calls per row of `ColumnConst::getUInt`.
-            const size_t length = length_column.getUInt(0);
+            size_t length = length_column.getUInt(row_num);
             if (length > (1 << 30))
                 throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Too large string size in function {}", getName());
 
-            for (size_t row_num = 0; row_num < input_rows_count; ++row_num)
-            {
-                offset += length;
-                offsets_to[row_num] = offset;
-            }
-        }
-        else
-        {
-            for (size_t row_num = 0; row_num < input_rows_count; ++row_num)
-            {
-                size_t length = length_column.getUInt(row_num);
-                if (length > (1 << 30))
-                    throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Too large string size in function {}", getName());
-
-                offset += length;
-                offsets_to[row_num] = offset;
-            }
+            offset += length;
+            offsets_to[row_num] = offset;
         }
 
         /// Fill random bytes.
