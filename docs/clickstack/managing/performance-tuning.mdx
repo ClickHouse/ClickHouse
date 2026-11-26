@@ -863,6 +863,16 @@ MODIFY SETTING enable_block_number_column = 1, enable_block_offset_column = 1
 The settings apply to data written after the `ALTER`. Existing parts continue
 to use the old per-row lookup until they're rewritten by a merge.
 
+<Warning>
+This `ALTER` is refused if the table contains data and already has
+`enable_block_offset_column` enabled while `enable_block_number_column` is
+disabled. Parts merged in that state store `_block_offset` without
+`_block_number`, so the `(_block_number, _block_offset)` pairs in them aren't
+unique, and lightweight updates would modify or delete more rows than needed.
+For such a table, create a new table with both settings enabled and copy the
+data into it with `INSERT ... SELECT`.
+</Warning>
+
 ## Optimization 5. Exploiting materialized views {#exploiting-materialized-views}
 
 <BetaBadge/>

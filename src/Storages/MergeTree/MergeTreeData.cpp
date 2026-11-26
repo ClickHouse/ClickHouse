@@ -7541,6 +7541,31 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
 
     const bool is_secondary_replay = isSecondaryDDLReplay(local_context);
 
+    /// While `enable_block_offset_column` is enabled and `enable_block_number_column` is not, merges persist
+    /// `_block_offset` of the source parts but not `_block_number`. A merged part then has one block number
+    /// (the minimal block number of the part) for all of its rows, while the persisted block offsets repeat
+    /// between the rows that came from different source parts. Enabling `enable_block_number_column` after that
+    /// makes these non-unique pairs of (`_block_number`, `_block_offset`) permanent, and lightweight updates and
+    /// lightweight deletes in patch mode, which identify rows by this pair, would be applied to wrong rows.
+    /// This covers `MODIFY SETTING`, `RESET SETTING`, and any other way to get the setting enabled by this ALTER.
+    /// A table without rows has no such parts, so it is allowed there.
+    /// An ALTER that was already accepted by the initiator is not checked again.
+    if (!is_secondary_replay
+        && (*settings_from_storage)[MergeTreeSetting::enable_block_offset_column]
+        && !(*settings_from_storage)[MergeTreeSetting::enable_block_number_column]
+        && (*alter_effective_settings)[MergeTreeSetting::enable_block_number_column]
+        && getTotalActiveSizeInRows() != 0)
+    {
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Enabling the `_block_number` column materialization is prohibited for table {}, "
+            "because the `_block_offset` column is already enabled and the table contains data. "
+            "This may lead to duplicates in (`_block_number`, `_block_offset`), "
+            "so further lightweight updates would modify or delete more rows than needed, leading to data loss. "
+            "Create a new table with both settings enabled and copy the data into it instead",
+            getStorageID().getNameForLogs());
+    }
+
     /// A declaration that could not be analyzed is not in the analyzed set the checks below iterate, so an ALTER
     /// that invalidates it (dropping or retyping a column it uses) would be accepted and then persisted next to a
     /// table it no longer matches. `DROP PROJECTION` and `CLEAR PROJECTION` share a command type and cannot do that.
