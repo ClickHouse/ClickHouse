@@ -395,6 +395,8 @@ TEST(SchedulerWorkloadResourceManager, SchedulerAlgorithms)
         ClassifierPtr classifier = t.manager->acquire("all");
         ResourceLink link = classifier->get("res1");
         std::atomic<size_t> finished{0};
+        /// Joins the workers before the state they use is destroyed, also if scheduling one of them throws.
+        SCOPE_EXIT({ t.wait(); });
         for (size_t thread = 0; thread < threads; ++thread)
         {
             t.async([&]
