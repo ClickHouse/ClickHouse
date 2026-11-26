@@ -21,6 +21,13 @@ void inplaceMergeWithTempBuffer(Iterator begin, Iterator middle, Iterator end, L
     const size_t min_buffer_size = std::min(left_size, right_size);
     if (temp_buffer.size() < min_buffer_size)
     {
+        /// The contents are not kept, so the old memory is freed before the new one is allocated,
+        /// unless the buffer has `capacity` and it is enough.
+        bool has_enough_capacity = false;
+        if constexpr (requires { temp_buffer.capacity(); })
+            has_enough_capacity = temp_buffer.capacity() >= min_buffer_size;
+        if (!has_enough_capacity)
+            temp_buffer = TempBuffer{};
         /// `PODArray::resize` rounds the capacity up, which is not needed here.
         if constexpr (requires { temp_buffer.resize_exact(min_buffer_size); })
             temp_buffer.resize_exact(min_buffer_size);

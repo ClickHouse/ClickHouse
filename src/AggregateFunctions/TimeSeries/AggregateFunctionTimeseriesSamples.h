@@ -261,9 +261,9 @@ private:
     {
         /// Merging beats `::sort` while `num_runs <= sqrt(size) / 2`, which is checked as `4 * num_runs * num_runs <= size`.
         Sample * const end = samples + size;
-        Sample * run_ends[MAX_RUNS_TO_MERGE];
+        /// The beginnings of the runs, followed by the end of the last run.
+        Sample * run_begins[MAX_RUNS_TO_MERGE + 1];
         size_t num_runs = 0;
-        size_t longest_run_size = 0;
         for (Sample * pos = samples; pos != end;)
         {
             if (num_runs == MAX_RUNS_TO_MERGE || 4 * (num_runs + 1) * (num_runs + 1) > size)
@@ -271,34 +271,35 @@ private:
                 ::sort(samples, end, lessByTimestamp);
                 return;
             }
-            Sample * run_end = std::is_sorted_until(pos, end, lessByTimestamp);
-            longest_run_size = std::max<size_t>(longest_run_size, run_end - pos);
-            run_ends[num_runs++] = run_end;
-            pos = run_end;
+            run_begins[num_runs++] = pos;
+            pos = std::is_sorted_until(pos, end, lessByTimestamp);
         }
+        run_begins[num_runs] = end;
 
+        /// The tail is empty or already sorted, so there is nothing to merge.
         if (num_runs <= 1)
             return;
 
-        /// The memory for all the merges is allocated at once:
-        /// no merge copies more than a half of the tail, or more than the tail without its longest run.
-        merge_buffer.resize_exact(std::max(merge_buffer.size(), std::min(size / 2, size - longest_run_size)));
-
-        /// Adjacent runs are merged pairwise until one run is left.
-        while (num_runs > 1)
+        /// Adjacent runs are merged pairwise until one run is left: at first the found runs, then the runs made of `step` found runs each.
+        auto for_each_merge = [&](auto && f)
         {
-            size_t num_merged_runs = 0;
-            Sample * run_begin = samples;
-            for (size_t i = 0; i + 1 < num_runs; i += 2)
-            {
-                inplaceMergeWithTempBuffer(run_begin, run_ends[i], run_ends[i + 1], lessByTimestamp, merge_buffer);
-                run_begin = run_ends[i + 1];
-                run_ends[num_merged_runs++] = run_ends[i + 1];
-            }
-            if (num_runs % 2 != 0)
-                run_ends[num_merged_runs++] = run_ends[num_runs - 1];
-            num_runs = num_merged_runs;
-        }
+            for (size_t step = 1; step < num_runs; step *= 2)
+                for (size_t i = 0; i + step < num_runs; i += 2 * step)
+                    f(run_begins[i], run_begins[i + step], run_begins[std::min(i + 2 * step, num_runs)]);
+        };
+
+        /// The memory for all the merges is allocated at once: a merge copies the shorter of its two runs.
+        size_t largest_copy_size = 0;
+        for_each_merge([&](Sample * run_begin, Sample * run_middle, Sample * run_end)
+        {
+            largest_copy_size = std::max(largest_copy_size, std::min<size_t>(run_middle - run_begin, run_end - run_middle));
+        });
+        merge_buffer.resize_exact(std::max(merge_buffer.size(), largest_copy_size));
+
+        for_each_merge([&](Sample * run_begin, Sample * run_middle, Sample * run_end)
+        {
+            inplaceMergeWithTempBuffer(run_begin, run_middle, run_end, lessByTimestamp, merge_buffer);
+        });
     }
 
     /// Sorts the tail `[start_pos, size)` of a buffer whose prefix `[0, start_pos)` is sorted and unique, and merges the tail into the prefix.
