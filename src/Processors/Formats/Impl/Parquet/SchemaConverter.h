@@ -168,7 +168,6 @@ private:
             return res;
         }
 
-        /// Takes back the path lent to `child` by `prepareToRecurse`, if any.
         void takeBackPath(TraversalNode & child)
         {
             if (!child.lent_path)
