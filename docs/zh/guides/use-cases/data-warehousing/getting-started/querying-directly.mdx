@@ -67,7 +67,7 @@ ClickHouse 提供表函数，可直接查询存储在对象存储中的开放表
     Peak memory usage: 10.48 GiB.
     ```
 
-    ### 集群 Variant
+### 集群 Variant {#iceberg-cluster-variant}
 
     [`icebergS3Cluster`](/zh/reference/functions/table-functions/icebergCluster) 函数可将读取操作分布到 ClickHouse 集群中的多个节点上。发起节点与所有节点建立连接，并动态分发数据文件。每个工作节点按需请求并处理任务，直至所有文件读取完毕。`icebergCluster` 是 `icebergS3Cluster` 的别名。此外，Azure ([`icebergAzureCluster`](/zh/reference/functions/table-functions/icebergCluster)) 和 HDFS ([`icebergHDFSCluster`](/zh/reference/functions/table-functions/icebergCluster)) 也有对应的变体版本。
 
@@ -95,7 +95,7 @@ ClickHouse 提供表函数，可直接查询存储在对象存储中的开放表
     LIMIT 5
     ```
 
-    ### 表引擎
+### 表引擎 {#iceberg-table-engine}
 
     除了在每次查询中使用表函数外，您也可以使用 [`Iceberg` 表引擎](/zh/reference/engines/table-engines/integrations/iceberg) 创建持久化表。数据仍存储在对象存储中，按需读取，不会复制到 ClickHouse 中。其优势在于，表定义保存在 ClickHouse 中，可在用户和会话之间共享，无需每个用户单独指定存储路径和凭据。每种存储后端均有对应的引擎变体：`IcebergS3` (或 `Iceberg` 别名) 、`IcebergAzure`、`IcebergHDFS` 和 `IcebergLocal`。
 
@@ -169,7 +169,7 @@ ClickHouse 提供表函数，可直接查询存储在对象存储中的开放表
     <Info>
       **GCS 支持**
 
-      这些函数的 S3 变体也可用于 Google Cloud Storage (GCS)。
+      这些函数的 S3 版本也可用于 Google Cloud Storage (GCS)。
     </Info>
 
     **示例：**
@@ -197,7 +197,7 @@ ClickHouse 提供表函数，可直接查询存储在对象存储中的开放表
     Peak memory usage: 9.16 GiB.
     ```
 
-    ### 集群 Variant
+### 集群 Variant {#delta-cluster-variant}
 
     [`deltaLakeCluster`](/zh/reference/functions/table-functions/deltalakeCluster) 函数将读取操作分布到 ClickHouse 集群的多个节点上。发起节点将数据文件动态分发给工作节点以进行并行处理。`deltaLakeS3Cluster` 是 `deltaLakeCluster` 的别名。此外，还提供 Azure 变体 ([`deltaLakeAzureCluster`](/zh/reference/functions/table-functions/deltalakeCluster)) 。
 
@@ -213,7 +213,7 @@ ClickHouse 提供表函数，可直接查询存储在对象存储中的开放表
     <Info>
       **GCS 支持**
 
-      这些函数的 S3 变体也可用于 Google Cloud Storage (GCS)。
+      这些函数的 S3 版本也可用于 Google Cloud Storage (GCS)。
     </Info>
 
     **示例 (ClickHouse Cloud) ：**
@@ -231,7 +231,7 @@ ClickHouse 提供表函数，可直接查询存储在对象存储中的开放表
     LIMIT 5
     ```
 
-    ### 表引擎
+### 表引擎 {#delta-table-engine}
 
     如果使用 S3 兼容存储，可以使用 [`DeltaLake` 表引擎](/zh/reference/engines/table-engines/integrations/deltalake) 创建持久化表，从而避免在每次查询中重复使用表函数。数据仍存储在对象存储中，按需读取，不会复制到 ClickHouse 中。其优势在于，表定义存储在 ClickHouse 中，可在用户和会话之间共享，无需每位用户单独指定存储路径和凭据。
 
@@ -290,7 +290,7 @@ ClickHouse 提供表函数，可直接查询存储在对象存储中的开放表
     hudi(url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression])
     ```
 
-    ### 集群版本
+### 集群版本 {#hudi-cluster-variant}
 
     [`hudiCluster`](/zh/reference/functions/table-functions/hudiCluster) 函数会将读取操作分发到 ClickHouse 集群中的多个节点。发起节点会将数据文件动态分派给各个工作节点，以进行并行处理。
 
@@ -298,7 +298,7 @@ ClickHouse 提供表函数，可直接查询存储在对象存储中的开放表
     hudiCluster(cluster_name, url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression])
     ```
 
-    ### 表引擎
+### 表引擎 {#hudi-table-engine}
 
     除了在每次查询时都使用表函数之外，您还可以通过 [`Hudi` 表引擎](/zh/reference/engines/table-engines/integrations/hudi) 创建持久化表。数据仍存储在对象存储中，并按需读取——不会将任何数据复制到 ClickHouse。其优势在于，表定义保存在 ClickHouse 中，可在不同用户和会话之间共享，无需每位用户都单独指定存储路径和凭证。
 
@@ -330,7 +330,7 @@ ClickHouse 提供表函数，可直接查询存储在对象存储中的开放表
     paimonLocal(path_to_table, [,format] [,compression_method])
     ```
 
-    ### 集群变体
+### 集群变体 {#paimon-cluster-variant}
 
     [`paimonS3Cluster`](/zh/reference/functions/table-functions/paimonCluster) 函数将读操作分发到 ClickHouse 集群中的多个节点。发起节点会动态地将数据文件分派给各个工作节点进行并行处理。`paimonCluster` 是 `paimonS3Cluster` 的别名。Azure ([`paimonAzureCluster`](/zh/reference/functions/table-functions/paimonCluster)) 和 HDFS ([`paimonHDFSCluster`](/zh/reference/functions/table-functions/paimonCluster)) 也提供了相应的变体。
 
@@ -343,9 +343,9 @@ ClickHouse 提供表函数，可直接查询存储在对象存储中的开放表
     paimonHDFSCluster(cluster_name, path_to_table, [,format] [,compression_method])
     ```
 
-    ### 表引擎
+### 表引擎 {#paimon-table-engine}
 
-    ClickHouse 提供实验性的 [`PaimonS3`、`PaimonAzure`、`PaimonHDFS` 和 `PaimonLocal` 表引擎](/zh/reference/engines/table-engines/integrations/paimon)。使用 `allow_experimental_paimon_storage_engine = 1` 启用它们。
+    ClickHouse 提供实验性的 [`PaimonS3`、`PaimonAzure`、`PaimonHDFS` 和 `PaimonLocal` 表引擎](/zh/reference/engines/table-engines/integrations/paimon)。使用 `enable_paimon_storage_engine = 1` 启用它们。
 
     有关支持的功能 (包括存储后端等) ，请参阅[支持矩阵](/zh/guides/use-cases/data-warehousing/support-matrix#format-support)。如需查看完整参考信息，请参阅[`paimon` 表函数](/zh/reference/functions/table-functions/paimon)文档。
   </Tab>
