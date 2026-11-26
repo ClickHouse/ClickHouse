@@ -1568,29 +1568,29 @@ namespace
 {
 
 /// The per-row steps of the `GROUP BY ... LIMIT` top-K heap in an aggregation loop: skip the rows that cannot reach
-/// the result, and admit the new keys. With `enabled = false` every step compiles to nothing. Nothing here may be
-/// passed by reference to the heap: the loops need `skip_bitmap` and `skipped` in registers.
+/// the result, and admit the new keys. With `enabled = false` every step compiles to nothing.
+/// A skipped row does nothing but read the bitmap: no counter, which the compiler may keep in memory (an increment
+/// through memory on every row). The skipped rows are the batch's rows that never reached `admit`.
 template <bool enabled, typename Heap>
 class TopKRowFilter
 {
 public:
-    TopKRowFilter(Heap & heap_, const ColumnRawPtrs & key_columns, size_t begin, size_t end)
-        : heap(heap_)
-    {
-        if constexpr (enabled)
-            skip_bitmap = heap.startBatch(key_columns, begin, end);
-    }
+    explicit TopKRowFilter(Heap & heap_) : heap(heap_) {}
 
-    ALWAYS_INLINE bool skip(size_t row)
+    /// Before a loop that passes every row of `[begin, end)` to `skip`, and every row not skipped to `admit`.
+    void startBatch(const ColumnRawPtrs & key_columns, size_t begin, size_t end)
     {
         if constexpr (enabled)
         {
-            if (heap.shouldSkip(skip_bitmap, row))
-            {
-                ++skipped;
-                return true;
-            }
+            skip_bitmap = heap.startBatch(key_columns, begin, end);
+            batch_rows = end - begin;
         }
+    }
+
+    ALWAYS_INLINE bool skip(size_t row) const
+    {
+        if constexpr (enabled)
+            return heap.shouldSkip(skip_bitmap, row);
         return false;
     }
 
@@ -1599,6 +1599,7 @@ public:
     {
         if constexpr (enabled)
         {
+            ++admitted_rows;
             if (!emplace_result.isInserted())
                 return;
             if (state.isNullAt(row))
@@ -1619,6 +1620,7 @@ public:
     {
         if constexpr (enabled)
         {
+            const size_t skipped = batch_rows - admitted_rows;
             ProfileEvents::increment(ProfileEvents::AggregationTopKRowsSkipped, skipped);
             heap.recordRows(rows, skipped);
         }
@@ -1627,7 +1629,8 @@ public:
 private:
     Heap & heap;
     const UInt8 * skip_bitmap = nullptr;
-    size_t skipped = 0;
+    size_t batch_rows = 0;
+    size_t admitted_rows = 0;
 };
 
 }
@@ -1663,7 +1666,8 @@ void NO_INLINE Aggregator::executeImplBatchNoAggregates(
     const size_t key_start = all_keys_are_const ? 0 : row_begin;
     const size_t key_end = all_keys_are_const ? 1 : row_end;
 
-    TopKRowFilter<top_k, decltype(method.top_k_heap)> top_k_rows(method.top_k_heap, key_columns, key_start, key_end);
+    TopKRowFilter<top_k, decltype(method.top_k_heap)> top_k_rows(method.top_k_heap);
+    top_k_rows.startBatch(key_columns, key_start, key_end);
 
     static constexpr bool prefetch_cells = prefetch && HasPrefetchMemberFunc<decltype(method.data), KeyHolder>;
     ColumnsHashing::LookAheadKeysFor<prefetch_cells, KeyHolder> look_ahead_keys(key_start);
@@ -1756,11 +1760,7 @@ void NO_INLINE Aggregator::executeImplBatchSimpleCount(
         }
     }
 
-    /// If all keys are const, the key columns hold 1 row.
-    const size_t key_start = all_keys_are_const ? 0 : row_begin;
-    const size_t key_end = all_keys_are_const ? 1 : row_end;
-
-    TopKRowFilter<top_k, decltype(method.top_k_heap)> top_k_rows(method.top_k_heap, key_columns, key_start, key_end);
+    TopKRowFilter<top_k, decltype(method.top_k_heap)> top_k_rows(method.top_k_heap);
 
     if (all_keys_are_const)
     {
@@ -1798,6 +1798,8 @@ void NO_INLINE Aggregator::executeImplBatchSimpleCount(
     }
     else
     {
+        top_k_rows.startBatch(key_columns, row_begin, row_end);
+
         static constexpr bool prefetch_cells = prefetch && HasPrefetchMemberFunc<decltype(method.data), KeyHolder>;
         ColumnsHashing::LookAheadKeysFor<prefetch_cells, KeyHolder> look_ahead_keys(row_begin);
 
@@ -2011,7 +2013,7 @@ void NO_INLINE Aggregator::executeImplBatch(
 
     state.resetCache();
 
-    TopKRowFilter<top_k, decltype(method.top_k_heap)> top_k_rows(method.top_k_heap, key_columns, key_start, key_end);
+    TopKRowFilter<top_k, decltype(method.top_k_heap)> top_k_rows(method.top_k_heap);
     [[maybe_unused]] std::vector<DestroyedState> destroyed_states;
     /// Assign at the branch tails so `no_more_keys` is not live across either loop.
     bool all_places_are_non_null = false;
@@ -2019,6 +2021,8 @@ void NO_INLINE Aggregator::executeImplBatch(
     /// For all rows.
     if (!no_more_keys)
     {
+        top_k_rows.startBatch(key_columns, key_start, key_end);
+
         static constexpr bool prefetch_cells = prefetch && HasPrefetchMemberFunc<decltype(method.data), KeyHolder>;
         ColumnsHashing::LookAheadKeysFor<prefetch_cells, KeyHolder> look_ahead_keys(key_start);
 
