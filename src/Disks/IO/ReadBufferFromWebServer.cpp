@@ -314,9 +314,9 @@ bool ReadBufferFromWebServer::supportsReadAt()
     return false;
 }
 
-size_t ReadBufferFromWebServer::readBigAt(char * to, size_t n, size_t offset, const std::function<bool(size_t m)> & progress_callback) const
+size_t ReadBufferFromWebServer::readBigAt(char * to, size_t n, size_t file_offset, const std::function<bool(size_t m)> & progress_callback) const
 {
-    return impl->readBigAt(to, n, offset, progress_callback);
+    return impl->readBigAt(to, n, file_offset, progress_callback);
 }
 
 
