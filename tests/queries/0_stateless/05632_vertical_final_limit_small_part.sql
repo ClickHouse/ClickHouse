@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: the check of `read_rows` relies on the target key '0' being the first one in the sorting key order
+SET force_primary_key_reverse_order = 0;
+
 DROP TABLE IF EXISTS t_vf_limit;
 CREATE TABLE t_vf_limit (k String, v String, ver UInt64) ENGINE = ReplacingMergeTree(ver) ORDER BY k SETTINGS index_granularity = 1024;
 SYSTEM STOP MERGES t_vf_limit;

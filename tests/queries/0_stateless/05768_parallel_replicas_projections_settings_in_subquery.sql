@@ -2,6 +2,10 @@
 
 -- Parallel replicas enabled only in a subquery's SETTINGS: what a projection, the minmax / exact count or column statistics answer must still be returned.
 
+-- Disable force_primary_key_reverse_order: with a descending key and a large `index_granularity`, the rows with `x < 70000` fall into one partially matching granule,
+-- so there is no fully matching range of marks and the exact count projection is not used
+SET force_primary_key_reverse_order = 0;
+
 DROP TABLE IF EXISTS t_pr_subquery;
 CREATE TABLE t_pr_subquery (x UInt64, b UInt64) ENGINE = MergeTree ORDER BY x SETTINGS auto_statistics_types = 'basic';
 SYSTEM STOP MERGES t_pr_subquery;
