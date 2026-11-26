@@ -182,11 +182,6 @@ SerializationPtr SerializationTuple::create(ElementSerializations elems_, bool h
     return ISerialization::pooled(hash, [e = std::move(elems_), has_explicit_names_]() mutable { return new SerializationTuple(std::move(e), has_explicit_names_); });
 }
 
-bool SerializationTuple::isElementSubcolumn(const SubstreamPath & path, const String & element_name)
-{
-    return !path.empty() && path.back().type == Substream::TupleElement && path.back().name_of_substream == element_name;
-}
-
 void SerializationTuple::deserializeBinary(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     addElementSafe<void>(elems.size(), column, [&]
@@ -761,12 +756,12 @@ struct DeserializeBinaryBulkStateTuple : public ISerialization::DeserializeBinar
 {
     std::vector<ISerialization::DeserializeBinaryBulkStatePtr> states;
 
-    ISerialization::DeserializeBinaryBulkStatePtr cloneImpl(ISerialization::DeserializeBinaryBulkStateCloneContext & context) const override
+    ISerialization::DeserializeBinaryBulkStatePtr clone() const override
     {
         auto new_state = std::make_shared<DeserializeBinaryBulkStateTuple>();
         new_state->states.reserve(states.size());
         for (const auto & state : states)
-            new_state->states.push_back(state ? state->clone(context) : nullptr);
+            new_state->states.push_back(state ? state->clone() : nullptr);
 
         return new_state;
     }
@@ -936,20 +931,17 @@ bool SerializationTuple::supportsPooling() const
     return elems_support_pooling;
 }
 
-MutableColumnPtr SerializationTuple::wrapColumnForDeserialization(MutableColumnPtr column) const
+MutableColumnPtr SerializationTuple::createColumnForDeserialization(const IDataType & type) const
 {
-    /// Rebuild the tuple with each element wrapped by its own serialization (element serializations are
-    /// SerializationNamed wrappers that forward to the real element serialization, so kinds compose).
-    const auto & tuple = assert_cast<const ColumnTuple &>(*column);
+    const auto & tuple_type = assert_cast<const DataTypeTuple &>(type);
     if (elems.empty())
-        return column;
+        return tuple_type.createColumn();
 
-    MutableColumns wrapped;
-    wrapped.reserve(elems.size());
+    /// Element serializations are `SerializationNamed` wrappers that forward to the real element serialization, so kinds compose.
+    MutableColumns tuple_columns(elems.size());
     for (size_t i = 0; i != elems.size(); ++i)
-        wrapped.push_back(elems[i]->wrapColumnForDeserialization(tuple.getColumn(i).cloneEmpty()));
-
-    return ColumnTuple::create(std::move(wrapped));
+        tuple_columns[i] = elems[i]->createColumnForDeserialization(*tuple_type.getElement(i));
+    return ColumnTuple::create(std::move(tuple_columns));
 }
 
 }

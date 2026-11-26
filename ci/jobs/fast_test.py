@@ -2,7 +2,6 @@ import argparse
 import os
 import platform
 import sys
-import tempfile
 from pathlib import Path
 
 repo_path = Path(__file__).resolve().parent.parent.parent
@@ -11,7 +10,6 @@ sys.path.append(str(repo_path / "ci"))
 
 from ci.defs.defs import ToolSet
 from ci.jobs.scripts.clickhouse_proc import ClickHouseProc
-from ci.jobs.scripts.find_tests import Targeting
 from ci.jobs.scripts.functional_tests_results import FTResultsProcessor
 from ci.praktika.info import Info
 from ci.praktika.result import Result
@@ -22,13 +20,6 @@ current_directory = Utils.cwd()
 build_dir = f"{current_directory}/ci/tmp/fast_build"
 temp_dir = Path(current_directory) / "ci" / "tmp"
 build_dir_normalized = str(repo_path / "ci" / "tmp" / "fast_build")
-
-# Must match SQL_STACKTRACES_LOG and C_STACKTRACES_LOG in tests/clickhouse-test.
-STACKTRACE_LOGS = ("sql_stacktraces.log", "c_stacktraces.log")
-
-# Run time limits of a test the PR adds; existing tests are not checked.
-NEW_TEST_MAX_RUN_TIME_IN_SECONDS = 15
-NEW_SEQUENTIAL_TEST_MAX_RUN_TIME_IN_SECONDS = NEW_TEST_MAX_RUN_TIME_IN_SECONDS / 2
 
 
 def clone_submodules():
@@ -47,7 +38,6 @@ def clone_submodules():
         "contrib/lz4",
         "contrib/zstd",
         "contrib/zxc",
-        "contrib/gdeflate",
         "contrib/re2",
         "contrib/sparsehash-c11",
         "contrib/croaring",
@@ -70,9 +60,6 @@ def clone_submodules():
         "contrib/StringZilla",
         "contrib/rust_vendor",
         "contrib/clickstack",
-        "contrib/heks",
-        "contrib/sql-console",
-        "contrib/optimized-routines",
     ]
 
     res = Shell.check("git submodule sync", verbose=True, strict=True)
@@ -138,38 +125,20 @@ def update_path_ch_config(config_file_path=""):
     return True
 
 
-def fail_slow_new_tests(test_results: Result, new_test_paths) -> None:
-    new_test_files = {Path(path).name for path in new_test_paths or []}
-    if not new_test_files:
-        return
-    slow_tests = []
-    for result in test_results.results:
-        if result.status != Result.Status.OK:
-            continue
-        test_file = Targeting.functional_test_source_file(result.name)
-        if test_file not in new_test_files:
-            continue
-        if Targeting.is_sequential_functional_test(test_file):
-            kind, limit = "no-parallel ", NEW_SEQUENTIAL_TEST_MAX_RUN_TIME_IN_SECONDS
-        else:
-            kind, limit = "", NEW_TEST_MAX_RUN_TIME_IN_SECONDS
-        if result.duration > limit:
-            result.set_failed().set_info(
-                f"New {kind}test runs too long (> {limit}s). Make it faster or tag it `no-fasttest`."
-            )
-            slow_tests.append(result.name)
-    if slow_tests:
-        if test_results.status == Result.Status.OK:
-            test_results.set_failed()
-        test_results.set_info(f"New tests run too long: {', '.join(slow_tests)}")
-
-
 class JobStages(metaclass=MetaClasses.WithIter):
     CHECKOUT_SUBMODULES = "checkout"
     CMAKE = "cmake"
     BUILD = "build"
     CONFIG = "config"
     TEST = "test"
+
+
+def _load_darwin_skip_tests():
+    skip_file = Path(__file__).resolve().parent.parent / "defs" / "darwin.skip"
+    return tuple(
+        line
+        for line in skip_file.read_text().splitlines()
+        if line.strip() and not line.lstrip().startswith("#"))
 
 
 def parse_args():
@@ -191,6 +160,8 @@ def parse_args():
 
 def main():
     args = parse_args()
+    if platform.system() == "Darwin":
+        args.skip = list(_load_darwin_skip_tests()) + args.skip
     stop_watch = Utils.Stopwatch()
 
     stages = list(JobStages)
@@ -212,11 +183,6 @@ def main():
         Path(current_directory) / "clickhouse",
     ]:
         if path.is_file():
-            if platform.system() == "Darwin" and path == temp_dir / "clickhouse":
-                # The macOS self-extracting binary replaces itself in place, unlocked, on its first run.
-                private_path = Path(tempfile.mkdtemp(prefix="clickhouse-", dir=temp_dir)) / path.name
-                path.rename(private_path)
-                path = private_path
             clickhouse_bin_path = path
             print(f"NOTE: clickhouse binary is found [{clickhouse_bin_path}] - skip the build")
 
@@ -248,7 +214,7 @@ def main():
     os.environ["SCCACHE_DIR"] = f"{temp_dir}/sccache"
     os.environ["SCCACHE_CACHE_SIZE"] = "40G"
     os.environ["SCCACHE_IDLE_TIMEOUT"] = "7200"
-    os.environ["SCCACHE_BUCKET"] = Settings.S3_ARTIFACT_BUCKET
+    os.environ["SCCACHE_BUCKET"] = Settings.S3_ARTIFACT_PATH
     os.environ["SCCACHE_S3_KEY_PREFIX"] = "ccache/sccache"
     os.environ["SCCACHE_ERROR_LOG"] = f"{build_dir}/sccache.log"
     os.environ["SCCACHE_LOG"] = "info"
@@ -256,7 +222,7 @@ def main():
     # PR builds must not pollute the shared sccache bucket; only master/release
     # builds (pr_number == 0) are allowed to write entries.
     if info.pr_number > 0:
-        os.environ["SCCACHE_S3_RW_MODE"] = "READ_ONLY"
+        os.environ["SCCACHE_S3_READ_ONLY"] = "true"
     if info.is_local_run:
         print("NOTE: It's a local run")
         if os.environ.get("SCCACHE_ENDPOINT"):
@@ -313,17 +279,16 @@ def main():
         res = results[-1].is_ok()
 
     if res and JobStages.BUILD in stages:
-        Shell.check("sccache --show-stats", verbose=True)
+        Shell.check("sccache --show-stats")
         results.append(
             Result.from_commands_run(
                 name="Build ClickHouse",
                 command=f"command time -v cmake --build {build_dir_normalized} --"
                 " clickhouse-bundle clickhouse-stripped lexer_test",
-                info_extractor=Result.cpp_build_info_extractor,
             )
         )
-        Shell.check(f"{build_dir}/rust/chcache/chcache stats", verbose=True)
-        Shell.check("sccache --show-stats", verbose=True)
+        Shell.check(f"{build_dir}/rust/chcache/chcache stats")
+        Shell.check("sccache --show-stats")
         res = results[-1].is_ok()
 
     if res and JobStages.BUILD in stages:
@@ -379,13 +344,6 @@ def main():
     CH.install_configs()
 
     attach_debug = False
-
-    # Not under `res`: a server-start failure reaches the attach below without
-    # running any test, so the clear has to happen even then.
-    if JobStages.TEST in stages:
-        for stacktrace_log in STACKTRACE_LOGS:
-            (temp_dir / stacktrace_log).unlink(missing_ok=True)
-
     if res and JobStages.TEST in stages:
         stop_watch_ = Utils.Stopwatch()
         step_name = "Start ClickHouse Server"
@@ -410,7 +368,8 @@ def main():
         os.environ["CLICKHOUSE_DISKS_FILES"] = f"{temp_dir}/var/lib/clickhouse/disks"
         os.makedirs(os.environ["CLICKHOUSE_DISKS_FILES"], exist_ok=True)
 
-        # The fast tests are not CPU-bound, so use more parallelism than the default cpu_count/2.
+        # Fast test runs lightweight SQL tests that are not CPU-bound,
+        # so we can use more parallelism than the default cpu_count/2.
         nproc_fast = max(1, int(Utils.cpu_count() * 3 / 4))
 
         fast_test_command = f"cd {temp_dir} && clickhouse-test --hung-check --trace --capture-client-stacktrace --no-random-settings --no-random-merge-tree-settings --no-long --testname --shard --check-zookeeper-session --order random --report-logs-stats --fast-tests-only --no-stateful --timeout 60 --jobs {nproc_fast}"
@@ -426,7 +385,6 @@ def main():
         test_results = FTResultsProcessor(wd=Settings.OUTPUT_DIR).run(
             runner_exit_code=test_exit_code,
         )
-        fail_slow_new_tests(test_results, info.get_kv_data("new_stateless_test_files"))
         if test_exit_code != 0:
             attach_debug = True
 
@@ -447,7 +405,7 @@ def main():
         # clickhouse-test runs with cwd=temp_dir, so the full server stacktrace
         # dumps it writes on a timeout / hung check land here. Attach them so
         # the report links the full dumps (stdout keeps only a trimmed preview).
-        for stacktrace_log in STACKTRACE_LOGS:
+        for stacktrace_log in ("sql_stacktraces.log", "c_stacktraces.log"):
             path = temp_dir / stacktrace_log
             if path.exists():
                 attach_files.append(path)

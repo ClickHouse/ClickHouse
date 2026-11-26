@@ -40,8 +40,6 @@ struct ObjectInfo
 
     virtual ~ObjectInfo() = default;
 
-    virtual std::shared_ptr<ObjectInfo> clone() const { return std::make_shared<ObjectInfo>(*this); }
-
     virtual std::string getFileName() const { return relative_path_with_metadata.getFileName(); }
     virtual std::string getPath() const { return relative_path_with_metadata.relative_path; }
     virtual bool isArchive() const { return false; }
@@ -50,35 +48,16 @@ struct ObjectInfo
     virtual std::string getPathOrPathToArchiveIfArchive() const;
     virtual std::optional<std::string> getFileFormat() const { return std::nullopt; }
 
-    /// The exact size of the object as the table metadata records it, if it records a positive one.
     virtual std::optional<size_t> getFileSizeHint() const { return std::nullopt; }
-
-    virtual std::vector<UInt64> getSplitOffsetsHint() const { return {}; }
-
-    /// The number of rows of the object as the table metadata records it, before applying deletes, if known.
-    /// It is only an estimate used to report the progress of a query, not to compute any result.
-    virtual std::optional<size_t> getNumRowsHint() const
-    {
-        if (data_lake_metadata)
-            return data_lake_metadata->num_rows;
-        return std::nullopt;
-    }
 
     std::optional<ObjectMetadata> getObjectMetadata() const { return relative_path_with_metadata.metadata; }
     void setObjectMetadata(const ObjectMetadata & metadata) { relative_path_with_metadata.metadata = metadata; }
 
     FileBucketInfoPtr file_bucket_info;
-    /// Whether `file_bucket_info` only leaves out row groups the query condition cache proved to have no
-    /// match, rather than splitting the file between readers: only then does reading the buckets tell
-    /// which row groups of the whole file match.
-    bool file_bucket_info_from_query_condition_cache = false;
 
     /// Lazy materialization: if set, read only these rows of the file.
     /// Sorted absolute row indexes within the file, see FormatFilterInfo::rows_to_read.
     std::shared_ptr<const PaddedPODArray<UInt64>> rows_to_read;
-
-    /// Set for an archive entry whose name an earlier entry of the archive has, see `ArchiveEntryPositions`.
-    std::optional<size_t> archive_entry_index;
 
     String getIdentifier(bool include_file_bucket_info = true) const;
     String getIdentifierForPath(const String & path, bool include_file_bucket_info = true) const;
@@ -114,7 +93,7 @@ public:
         const DB::ActionsDAG & filter_,
         const NamesAndTypesList & virtual_columns_,
         const NamesAndTypesList & hive_partition_columns_,
-        StorageObjectStorageConfigurationPtr configuration_,
+        const std::string & object_namespace_,
         const ContextPtr & context_,
         std::function<void(FileProgress)> file_progress_callback_ = {});
 
@@ -130,7 +109,7 @@ public:
 
 private:
     const ObjectIterator iterator;
-    const StorageObjectStorageConfigurationPtr configuration;
+    const std::string object_namespace;
     const NamesAndTypesList virtual_columns;
     const NamesAndTypesList hive_partition_columns;
     const std::shared_ptr<ExpressionActions> filter_actions;
@@ -143,7 +122,7 @@ class ObjectIteratorSplitByBuckets : public IObjectIterator, private WithContext
 public:
     ObjectIteratorSplitByBuckets(
         ObjectIterator iterator_,
-        StorageObjectStorageConfigurationPtr configuration_,
+        const String & format_,
         ObjectStoragePtr object_storage_,
         const ContextPtr & context_,
         const StorageID & storage_id_ = StorageID::createEmpty(),
@@ -155,7 +134,7 @@ public:
 
 private:
     const ObjectIterator iterator;
-    StorageObjectStorageConfigurationPtr configuration;
+    String format;
     ObjectStoragePtr object_storage;
     FormatSettings format_settings;
     StorageID storage_id;

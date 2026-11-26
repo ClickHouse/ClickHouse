@@ -1,9 +1,8 @@
 #include <Core/BaseSettings.h>
+#include <Formats/ParseError.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <Common/FieldVisitorToString.h>
 #include <Common/logger_useful.h>
-#include <Common/maskURIPassword.h>
 
 #include <fmt/ranges.h>
 
@@ -102,17 +101,6 @@ void BaseSettingsHelpers::throwValuelessSettingHasValue(std::string_view name)
         "but it carries a different value", String{name}, String{name});
 }
 
-String BaseSettingsHelpers::formatValueForErrorMessage(const Field & value)
-{
-    return formatValueForErrorMessage(applyVisitor(FieldVisitorToString(), value));
-}
-
-String BaseSettingsHelpers::formatValueForErrorMessage(String str)
-{
-    maskURIPassword(&str);
-    return str;
-}
-
 /// Log the summary of unknown settings as a warning instead of warning for each one separately.
 void BaseSettingsHelpers::warningSettingNotFound(std::string_view name)
 {
@@ -138,6 +126,15 @@ void BaseSettingsHelpers::warningSettingNotFound(std::string_view name)
 
         unknown_settings_warning_logged = true;
     }
+}
+
+bool BaseSettingsHelpers::skipInvalidSettingValue(std::string_view name, const Exception & e)
+{
+    if (e.code() != ErrorCodes::BAD_ARGUMENTS && !isParseError(e.code()))
+        return false;
+
+    LOG_WARNING(getLogger("Settings"), "Cannot parse the value of setting `{}`, skipping it: {}", name, e.message());
+    return true;
 }
 
 void BaseSettingsHelpers::flushWarnings()

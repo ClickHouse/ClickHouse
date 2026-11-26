@@ -3,16 +3,12 @@
 #if USE_DELTA_KERNEL_RS
 #include <Storages/ObjectStorage/S3/Configuration.h>
 #include <Storages/ObjectStorage/Local/Configuration.h>
-#include <Disks/DiskObjectStorage/ObjectStorages/Local/LocalObjectStorage.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelHelper.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelUtils.h>
 #include <Common/FailPoint.h>
 #include <Common/SipHash.h>
 #include <Common/isValidUTF8.h>
 #include <Common/logger_useful.h>
-
-#include <algorithm>
-#include <filesystem>
 
 #if USE_AZURE_BLOB_STORAGE
 #include <Storages/ObjectStorage/Azure/Configuration.h>
@@ -224,9 +220,6 @@ std::vector<std::pair<std::string, std::string>> getAzureBuilderOptions(
 
     const auto & endpoint = connection_params.endpoint;
 
-    /// Given no credentials, the kernel's object store falls back to the machine's managed identity by itself.
-    const bool drop_credentials = connection_params.checkOrDropServerManagedCredentials();
-
     /// Supported options
     /// https://github.com/apache/arrow-rs-object-store/blob/main/src/azure/builder.rs#L390
     set_option("azure_container_name", endpoint.container_name);
@@ -343,39 +336,13 @@ std::vector<std::pair<std::string, std::string>> getAzureBuilderOptions(
     if (!endpoint.sas_auth.empty())
         set_option("azure_storage_sas_key", endpoint.sas_auth);
 
-    /// Given no key or SAS token, the kernel would use the managed identity. A connection string without them is
-    /// anonymous for the Azure SDK, so it is unsigned whatever the session; the helper outlives the session that built it.
-    const bool has_credential = std::ranges::any_of(options, [](const auto & option)
-        { return option.first == "azure_storage_account_key" || option.first == "azure_storage_sas_key"; });
-    const bool is_connection_string = std::holds_alternative<DB::AzureBlobStorage::ConnectionString>(connection_params.auth_method);
-
-    if (drop_credentials || (!has_credential && (is_connection_string || connection_params.forbid_implicit_credentials)))
-        set_option("azure_skip_signature", "true");
-
-    /// If the configuration carries an endpoint URL, pass it to the kernel explicitly, which
-    /// otherwise derives the public `<account>.blob.core.windows.net` host from the account
-    /// name (wrong for Azurite, sovereign clouds, private links). For ConnectionString auth
-    /// `storage_account_url` holds the raw connection string, not a URL, and the endpoint was
-    /// already set above from the parsed connection string. Plain HTTP must be allowed
-    /// explicitly, since the object-store builder is https-only by default.
-    if (endpoint.storage_account_url.starts_with("http://") || endpoint.storage_account_url.starts_with("https://"))
+    /// For non-standard endpoints (e.g., Azurite emulator), set the endpoint explicitly.
+    /// Also allow plain HTTP connections when the endpoint uses http://, since the object-store
+    /// Azure builder defaults to https_only=true and would reject plain HTTP requests.
+    if (!endpoint.storage_account_url.empty() && endpoint.storage_account_url.starts_with("http://"))
     {
-        std::string azure_endpoint = endpoint.storage_account_url;
-        /// Endpoint-style disk configurations (`<endpoint>http://host:port/account/container/prefix</endpoint>`)
-        /// keep only the scheme and host in `storage_account_url` and carry the account name as a
-        /// separate path segment (`add_account_name_to_url` is true), the same way
-        /// `Endpoint::getServiceEndpoint` re-assembles the URL for the SDK client. All other
-        /// configuration forms set `add_account_name_to_url` to false or leave it unset, keeping the
-        /// account either in the URL path already or in the host name, so nothing is appended for them.
-        if (!endpoint.account_name.empty() && endpoint.add_account_name_to_url.value_or(false))
-        {
-            if (!azure_endpoint.ends_with('/'))
-                azure_endpoint += '/';
-            azure_endpoint += endpoint.account_name;
-        }
-        set_option("azure_endpoint", azure_endpoint);
-        if (endpoint.storage_account_url.starts_with("http://"))
-            set_option("azure_allow_http", "true");
+        set_option("azure_endpoint", connection_params.getConnectionURL());
+        set_option("azure_allow_http", "true");
     }
 
     return options;
@@ -390,7 +357,7 @@ public:
         const std::string & blob_path_)
         : connection_params(connection_params_)
         , table_location(buildTableLocation(connection_params_, blob_path_))
-        , data_path(normalizeBlobPath(blob_path_))
+        , data_path(blob_path_)
     {}
 
     const std::string & getTableLocation() const override { return table_location; }
@@ -423,21 +390,13 @@ private:
     const std::string data_path;
     const LoggerPtr log = getLogger("AzureKernelHelper");
 
-    /// `blob_path` may carry a leading slash (e.g. from a disk-based configuration),
-    /// which Azure would keep as a part of the blob name. Strip it so that the data
-    /// path agrees with the normalized table location committed to the Delta log.
-    static std::string normalizeBlobPath(const std::string & blob_path)
-    {
-        if (!blob_path.empty() && blob_path.front() == '/')
-            return blob_path.substr(1);
-        return blob_path;
-    }
-
     static std::string buildTableLocation(
         const DB::AzureBlobStorage::ConnectionParams & params,
         const std::string & blob_path)
     {
-        auto path = normalizeBlobPath(blob_path);
+        auto path = blob_path;
+        if (!path.empty() && path.front() == '/')
+            path = path.substr(1);
 
         const auto & prefix = params.endpoint.prefix;
         std::string full_path = prefix.empty() ? path : (std::filesystem::path(prefix) / path).string();
@@ -451,11 +410,7 @@ private:
 class LocalKernelHelper final : public IKernelHelper
 {
 public:
-    /// `resolved_path` is `path_` resolved the same way the local object storage resolves the keys of data files.
-    LocalKernelHelper(const std::string & path_, const std::string & resolved_path)
-        : table_location(getTableLocation(resolved_path)), path(path_), directory(resolved_path)
-    {
-    }
+    explicit LocalKernelHelper(const std::string & path_) : table_location(getTableLocation(path_)), path(path_) {}
 
     const std::string & getTableLocation() const override { return table_location; }
 
@@ -472,25 +427,13 @@ public:
         return builder;
     }
 
-    /// The kernel's local `object_store` backend requires the table directory to exist before `get_engine_builder`; create it here.
-    void prepareForTableCreation() const override
-    {
-        std::filesystem::create_directories(directory);
-    }
-
 private:
     const std::string table_location;
     const std::string path;
-    const std::string directory;
 
-    /// The kernel accepts only an absolute `file://` URL. A relative path stays relative to the directory
-    /// the local object storage reads from (the current directory in `clickhouse-local`).
-    static std::string getTableLocation(const std::string & resolved_path)
+    static std::string getTableLocation(const std::string & path)
     {
-        std::string absolute_path = std::filesystem::absolute(resolved_path).lexically_normal().string();
-        while (absolute_path.size() > 1 && absolute_path.ends_with('/'))
-            absolute_path.pop_back();
-        return "file://" + absolute_path + "/";
+        return "file://" + path + "/";
     }
 };
 }
@@ -523,16 +466,14 @@ DeltaLake::KernelHelperPtr getKernelHelper(
         case DB::ObjectStorageType::Azure:
         {
             return std::make_shared<DeltaLake::AzureKernelHelper>(
-                *object_storage->getAzureBlobStorageConnectionParams(),
+                object_storage->getAzureBlobStorageConnectionParams(),
                 configuration->getRawPath().path);
         }
 #endif
         case DB::ObjectStorageType::Local:
         {
             const auto * local_conf = dynamic_cast<const DB::StorageLocalConfiguration *>(configuration.get());
-            const auto & path = local_conf->getPathForRead().path;
-            return std::make_shared<DeltaLake::LocalKernelHelper>(
-                path, DB::resolvePathRelativelyToBase(path, object_storage->getCommonKeyPrefix()));
+            return std::make_shared<DeltaLake::LocalKernelHelper>(local_conf->getPathForRead().path);
         }
         default:
         {

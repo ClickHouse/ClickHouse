@@ -6,12 +6,13 @@
 DROP TABLE IF EXISTS t;
 
 -- index_granularity: to be able to produce small blocks from reading
-CREATE TABLE t(key String, value UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity=128, default_compression_codec='LZ4', min_bytes_for_wide_part=0; -- parallel-replicas decision uses estimated bytes; force wide parts + pin codec so the estimate uses the on-disk LZ4 ratio, not the ZSTD(3) default fallback in the compact-part estimation path (both randomized server-side)
+CREATE TABLE t(key String, value UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity=128, default_compression_codec='LZ4'; -- parallel-replicas decision uses estimated bytes; pin codec (randomized server-side)
 
 SET enable_parallel_replicas=1, automatic_parallel_replicas_mode=1, parallel_replicas_local_plan=1, parallel_replicas_index_analysis_only_on_coordinator=1,
     parallel_replicas_for_non_replicated_merge_tree=1, max_parallel_replicas=3, cluster_for_parallel_replicas='parallel_replicas';
 
 -- For runs with the old analyzer
+SET enable_analyzer=1;
 
 -- max_block_size is set explicitly to ensure enough blocks will be fed to the statistics collector
 SET max_threads=4, max_block_size=128;

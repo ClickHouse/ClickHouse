@@ -7,14 +7,12 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Interpreters/FunctionSecretArgumentsFinder.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
-#include <Storages/RabbitMQ/RabbitMQ_fwd.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -36,7 +34,6 @@
 #include <Common/Exception.h>
 #include <Common/Macros.h>
 #include <Common/RemoteHostFilter.h>
-#include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
 #include <Common/parseAddress.h>
 
@@ -70,6 +67,7 @@ namespace RabbitMQSetting
     extern const RabbitMQSettingsStreamingHandleErrorMode rabbitmq_handle_error_mode;
     extern const RabbitMQSettingsString rabbitmq_host_port;
     extern const RabbitMQSettingsUInt64 rabbitmq_max_block_size;
+    extern const RabbitMQSettingsUInt64 rabbitmq_max_idle_producer_connections;
     extern const RabbitMQSettingsUInt64 rabbitmq_max_rows_per_message;
     extern const RabbitMQSettingsUInt64 rabbitmq_num_consumers;
     extern const RabbitMQSettingsUInt64 rabbitmq_num_queues;
@@ -91,6 +89,7 @@ static const uint32_t QUEUE_SIZE = 100000;
 static const auto MAX_FAILED_READ_ATTEMPTS = 10;
 static const auto RESCHEDULE_MS = 500;
 static const auto MAX_THREAD_WORK_DURATION_MS = 60000;
+static const auto PUBLISHER_CLEANUP_INTERVAL_MS = 5000;
 
 namespace ErrorCodes
 {
@@ -244,6 +243,10 @@ StorageRabbitMQ::StorageRabbitMQ(
     if (secure_connection)
         SSL_library_init();
 
+    publisher_pool = std::make_shared<RabbitMQPublisherPool>(
+        configuration, routing_keys, exchange_name, exchange_type, persistent,
+        (*rabbitmq_settings)[RabbitMQSetting::rabbitmq_max_idle_producer_connections].value, log);
+
     if (!columns_.getMaterialized().empty() || !columns_.getAliases().empty() || !columns_.getDefaults().empty() || !columns_.getEphemeral().empty())
     {
         context_->addOrUpdateWarningMessage(
@@ -311,6 +314,10 @@ StorageRabbitMQ::StorageRabbitMQ(
 
     init_task = getContext()->getMessageBrokerSchedulePool()->createTask(getStorageID(), "RabbitMQConnectionTask", [this]{ connectionFunc(); });
     init_task->deactivate();
+
+    publisher_cleanup_task = getContext()->getMessageBrokerSchedulePool()->createTask(
+        getStorageID(), "RabbitMQPublisherCleanupTask", [this]{ publisherCleanupFunc(); });
+    publisher_cleanup_task->deactivate();
 }
 
 StorageRabbitMQ::~StorageRabbitMQ() = default;
@@ -790,7 +797,7 @@ void StorageRabbitMQ::bindQueue(size_t queue_id, AMQP::TcpChannel & rabbit_chann
                  "Failed to declare queue. Probably queue settings are conflicting: "
                  "max_block_size, deadletter_exchange. Attempt specifying differently those settings "
                  "or use a different queue_base or manually delete previously declared queues, "
-                 "which were declared with the same names. ERROR reason: {}", std::string(message));
+                 "which  were declared with the same names. ERROR reason: {}", std::string(message));
     });
 
     AMQP::Table queue_settings;
@@ -989,8 +996,7 @@ void StorageRabbitMQ::read(
 
 SinkToStoragePtr StorageRabbitMQ::write(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/)
 {
-    auto producer = std::make_unique<RabbitMQProducer>(
-        configuration, routing_keys, exchange_name, exchange_type, producer_id.fetch_add(1), persistent, shutdown_called, log);
+    auto producer = std::make_unique<RabbitMQProducer>(publisher_pool, shutdown_called, log);
     size_t max_rows = max_rows_per_message;
     /// Need for backward compatibility.
     if (format_name == "Avro" && local_context->getSettingsRef()[Setting::output_format_avro_rows_in_file].changed)
@@ -1007,6 +1013,10 @@ SinkToStoragePtr StorageRabbitMQ::write(const ASTPtr &, const StorageMetadataPtr
 
 void StorageRabbitMQ::startup()
 {
+    /// Inserts are possible even if streaming to views is disabled.
+    if ((*rabbitmq_settings)[RabbitMQSetting::rabbitmq_max_idle_producer_connections] > 0)
+        publisher_cleanup_task->activateAndSchedule();
+
     if (getContext()->getMessageQueueDisableInsertion())
     {
         StreamingStorageRegistry::instance().registerTable(getStorageID());
@@ -1026,13 +1036,27 @@ void StorageRabbitMQ::startup()
     StreamingStorageRegistry::instance().registerTable(getStorageID());
 }
 
+void StorageRabbitMQ::publisherCleanupFunc()
+{
+    try
+    {
+        publisher_pool->cleanupIdlePublishers();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log);
+    }
+
+    publisher_cleanup_task->scheduleAfter(PUBLISHER_CLEANUP_INTERVAL_MS);
+}
+
 void StorageRabbitMQ::scheduleStreamingTasksImpl()
 {
     streaming_task->schedule();
 }
 
 
-void StorageRabbitMQ::shutdown(bool is_drop)
+void StorageRabbitMQ::shutdown(bool)
 {
     /// Needed to make this method idempotent
     if (shutdown_called.exchange(true))
@@ -1062,6 +1086,10 @@ void StorageRabbitMQ::shutdown(bool is_drop)
     LOG_TRACE(log, "Deactivating looping task");
     deactivateTask(looping_task, true, true);
 
+    /// Inserts are possible even if streaming to views is disabled, so close their idle connections in any case.
+    publisher_cleanup_task->deactivate();
+    publisher_pool->shutdown();
+
     if (getContext()->getMessageQueueDisableInsertion())
     {
         StreamingStorageRegistry::instance().unregisterTable(getStorageID(), /* if_exists */ true);
@@ -1082,14 +1110,8 @@ void StorageRabbitMQ::shutdown(bool is_drop)
             consumer->closeConnections();
         }
 
-        /// checkTableCanBeDropped() latches drop_table before the statement it guards can fail, and
-        /// nothing ever clears it, so the flag alone also marks a still-alive table whose TRUNCATE
-        /// or dependency check threw. Deleting the queues needs the shutdown to be a drop as well.
-        if (is_drop && drop_table)
-        {
-            waitForConsumerChannelsToClose(consumers_snapshot);
+        if (drop_table)
             cleanupRabbitMQ();
-        }
 
         /// It is important to close connection here - before removing consumers, because
         /// it will finish and clean callbacks, which might use those consumers data.
@@ -1116,52 +1138,7 @@ void StorageRabbitMQ::renameInMemory(const StorageID & new_table_id)
 {
     const auto prev_storage_id = getStorageID();
     IStorage::renameInMemory(new_table_id);
-    StreamingStorageRegistry::instance().renameTable(prev_storage_id, getStorageID(), /* if_exists */ true);
-}
-
-
-/// AMQP orders method completion per channel only, so a queue.delete issued on a fresh channel can
-/// be evaluated by the broker while the consumer is still registered on its own channel, and a
-/// classic queue then refuses AMQP::ifunused with PRECONDITION_FAILED. The broker deregisters a
-/// channel's consumers while handling its channel.close, before answering it, so waiting for that
-/// answer establishes the ordering the delete needs.
-void StorageRabbitMQ::waitForConsumerChannelsToClose(
-    const std::vector<std::weak_ptr<RabbitMQConsumer>> & consumers_snapshot) const
-{
-    if (use_user_setup || consumers_snapshot.empty() || !connection->isConnected())
-        return;
-
-    auto outstanding = [&consumers_snapshot]
-    {
-        for (const auto & consumer_weak : consumers_snapshot)
-            if (auto consumer = consumer_weak.lock(); consumer && !consumer->isChannelCloseCompleted())
-                return true;
-        return false;
-    };
-
-    /// Each close that completes stops the loop, so re-enter it while any consumer is outstanding.
-    /// The remaining time is read once per iteration, because computing it from a second reading
-    /// of the clock could underflow past the bound into an effectively unbounded wait.
-    Stopwatch watch;
-    while (outstanding())
-    {
-        const auto elapsed = watch.elapsedMilliseconds();
-        if (elapsed >= CONSUMER_CHANNEL_CLOSE_TIMEOUT_MS)
-            break;
-        if (!connection->getHandler().startBlockingLoopWithTimeout(CONSUMER_CHANNEL_CLOSE_TIMEOUT_MS - elapsed))
-            break;
-    }
-
-    if (outstanding())
-    {
-        for (const auto & consumer_weak : consumers_snapshot)
-            if (auto consumer = consumer_weak.lock())
-                consumer->abandonChannelClose();
-
-        LOG_WARNING(log, "Timed out waiting for consumer channels to close after {} ms. "
-                         "Queue deletion may be refused while the consumers are still registered",
-                    watch.elapsedMilliseconds());
-    }
+    StreamingStorageRegistry::instance().renameTable(prev_storage_id, getStorageID());
 }
 
 
@@ -1187,7 +1164,7 @@ void StorageRabbitMQ::cleanupRabbitMQ() const
             queue_names += queue;
         }
         LOG_WARNING(log,
-                    "RabbitMQ clean up not done, because there is no connection in table's shutdown. "
+                    "RabbitMQ clean up not done, because there is no connection in table's shutdown."
                     "There are {} queues ({}), which might need to be deleted manually. Exchanges will be auto-deleted",
                     queues.size(), queue_names);
         return;
@@ -1452,9 +1429,6 @@ bool StorageRabbitMQ::streamToViews(UInt64 cycle_epoch, bool drive_loop_on_worke
     auto block_io = interpreter.execute();
 
     block_io.pipeline.complete(Pipe::unitePipes(std::move(pipes)));
-    /// Read all consumers in parallel, as Kafka does: with `parallel_view_processing = 0` the pipeline has one thread, and
-    /// sources that share the flush deadline would run one after another, the later ones finding it already spent.
-    block_io.pipeline.setNumThreads(std::max(block_io.pipeline.getNumThreads(), num_created_consumers));
 
     std::atomic_size_t rows = 0;
     block_io.pipeline.setProgressCallback([&](const Progress & progress) { rows += progress.read_rows.load(); });
@@ -1630,12 +1604,6 @@ void registerStorageRabbitMQ(StorageFactory & factory)
     factory.registerStorage(
         "RabbitMQ",
         creator_fn,
-        SecretArgumentsSpec{
-            /// RabbitMQ(named_collection, rabbitmq_address = '...', rabbitmq_password = '...')
-            .secret_settings = RabbitMQ::SETTINGS_TO_HIDE,
-            .settings_as_arguments = true,
-            .custom = [](FunctionSecretArgumentsFinder & finder) { finder.maskPositionalsAfterCollectionName(); },
-        },
         StorageFactory::StorageFeatures{
             .supports_settings = true,
             .source_access_type = AccessTypeObjects::Source::RABBITMQ,
@@ -1681,6 +1649,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
     [rabbitmq_password = '',]
     [rabbitmq_commit_on_select = false,]
     [rabbitmq_max_rows_per_message = 1,]
+    [rabbitmq_max_idle_producer_connections = 0,]
     [rabbitmq_handle_error_mode = 'default']
 ```
 
@@ -1711,6 +1680,7 @@ Optional parameters:
 - `reject_unhandled_messages` - Reject messages (send RabbitMQ negative acknowledgement) in case of errors. This setting is automatically enabled if there is a `x-dead-letter-exchange` defined in `rabbitmq_queue_settings_list`.
 - `rabbitmq_commit_on_select` - Commit messages when select query is made. Default: `false`.
 - `rabbitmq_max_rows_per_message` — The maximum number of rows written in one RabbitMQ message for row-based formats. Default : `1`.
+- `rabbitmq_max_idle_producer_connections` - The maximum number of idle connections, each with an open channel, that the table keeps for subsequent `INSERT` queries. Reusing them avoids the cost of connecting to RabbitMQ (and of the TLS handshake) for every `INSERT`, for example when a materialized view writes to the table on each insert into its source. Idle connections are checked every few seconds: a connection that stayed idle for half of the heartbeat timeout negotiated with the server is closed, because the server closes it once the timeout passes, and so is a connection that was lost. `0` disables the reuse: every `INSERT` opens and closes its own connection. Default: `0`.
 - `rabbitmq_empty_queue_backoff_start_ms` — A start backoff point to reschedule read if the rabbitmq queue is empty.
 - `rabbitmq_empty_queue_backoff_end_ms` — An end backoff point to reschedule read if the rabbitmq queue is empty.
 - `rabbitmq_empty_queue_backoff_step_ms` — A backoff step to reschedule read if the rabbitmq queue is empty.

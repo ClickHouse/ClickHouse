@@ -68,7 +68,7 @@ You're recommended to review the following ClickHouse documentation before under
 - [How ClickHouse stores data: parts and granules](/guides/clickhouse/data-modelling/sparse-primary-indexes) - More advanced guide on how data is structured and queried in ClickHouse, covering granules and primary keys in detail.
 - [MergeTree](/reference/engines/table-engines/mergetree-family/mergetree)- Advanced MergeTree reference guide useful for commands and for internal specifics.
 
-All optimizations described below can be applied directly to the underlying tables using standard ClickHouse SQL, either through the [ClickHouse Cloud SQL console](/integrations/connectors/sql-clients/sql-console) or via the [ClickHouse client](/concepts/features/interfaces/client).
+All optimizations described below can be applied directly to the underlying tables using standard ClickHouse SQL, either through the [ClickHouse Cloud SQL console](/integrations/connectors/sql-clients/sql-console) or via the [ClickHouse client](/concepts/features/interfaces/cli).
 
 ## Optimization 1. Materialize frequently queried attributes {#materialize-frequently-queried-attributes}
 
@@ -275,11 +275,9 @@ available.
 <Info>
 **Text indexes vs `tokenbf_v1`**
 
-The current default traces schema uses
-`text(tokenizer = 'splitByNonAlpha', preprocessor = lower(SpanName))` to index
-normalized `SpanName` tokens. Older trace schemas can use `tokenbf_v1`, which
-is functionally similar but deprecated in ClickHouse 26.2 and above. New
-text-search indexes should use `text(tokenizer = ...)`.
+The older `tokenbf_v1` index type (still used in the default traces schema for
+`lower(SpanName)`) is functionally similar but deprecated in ClickHouse 26.2
+and above. New text-search indexes should use `text(tokenizer = ...)`.
 </Info>
 
 For a deeper reference on tokenizer options, preprocessors, and verification, see the [full-text search documentation](/reference/engines/table-engines/mergetree-family/textindexes).
@@ -393,14 +391,13 @@ The most reliable way to evaluate skip index pruning is to use `EXPLAIN indexes 
 
 `EXPLAIN` confirms whether pruning occurs, but it doesn't guarantee a net speedup. Skip indexes have a cost to evaluate, especially if the index is large. Always benchmark queries before and after adding and materializing an index to confirm real performance improvements.
 
-For example, the default Traces schema includes a text index for `TraceId`:
+For example, consider the default Bloom filter skip index for TraceId included with the default Traces schema:
 
 ```sql
-INDEX idx_trace_id TraceId TYPE text(tokenizer = 'array')
+INDEX idx_trace_id TraceId TYPE bloom_filter(0.001) GRANULARITY 1
 ```
 
-You can use `EXPLAIN indexes = 1` to confirm that a selective query uses this
-index:
+You can use `EXPLAIN indexes = 1` to see how effective it's for a selective query:
 
 ```sql
 EXPLAIN indexes = 1
@@ -411,14 +408,19 @@ WHERE (ServiceName = 'accounting')
 
 ReadFromMergeTree (otel_v2.otel_traces)
 Indexes:
+  PrimaryKey
+    Keys:
+      ServiceName
+    Parts: 6/18
+    Granules: 255/35898
   Skip
     Name: idx_trace_id
-    Description: text
+    Description: bloom_filter GRANULARITY 1
+    Parts: 1/6
+    Granules: 1/255
 ```
 
-The exact parts and granules reported depend on the data. In a selective query,
-primary key pruning narrows the search space first, and the text index can
-further reduce the data that must be read.
+In this case, the primary key filter reduces the dataset substantially first (from 35898 granules down to 255), and the Bloom filter then prunes that further to a single granule (1/255). This is the ideal pattern for skip indexes: primary key pruning narrows the search, then the skip index removes most of what remains.
 
 To validate the real impact, benchmark the query with stable settings and compare execution time. Use `FORMAT Null` to avoid result serialization overhead, and disable the query condition cache to keep runs repeatable:
 

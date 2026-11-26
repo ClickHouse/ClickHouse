@@ -33,6 +33,13 @@ void RabbitMQHandler::onReady(AMQP::TcpConnection * /* connection */)
     loop_state.store(Loop::RUN);
 }
 
+uint16_t RabbitMQHandler::onNegotiate(AMQP::TcpConnection * connection, uint16_t interval)
+{
+    const auto negotiated_interval = AMQP::LibUvHandler::onNegotiate(connection, interval);
+    heartbeat_interval.store(negotiated_interval);
+    return negotiated_interval;
+}
+
 void RabbitMQHandler::startLoop()
 {
     std::lock_guard lock(startup_mutex);
@@ -71,11 +78,6 @@ bool RabbitMQHandler::startBlockingLoopWithTimeout(uint64_t timeout_ms)
     LOG_DEBUG(log, "Started blocking loop with {}ms timeout.", timeout_ms);
 
     bool timed_out = false;
-
-    /// uv_timer_start() derives the deadline from the loop's cached time, which is only refreshed
-    /// while the loop runs. Between two blocking waits the loop is idle, so the cached value can be
-    /// arbitrarily far in the past and the timer would then already be overdue when it is armed.
-    uv_update_time(loop);
 
     uv_timer_t timer;
     uv_timer_init(loop, &timer);
