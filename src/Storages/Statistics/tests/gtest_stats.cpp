@@ -23,11 +23,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Core/Field.h>
-#include <Core/NamesAndTypes.h>
-#include <DataTypes/DataTypeString.h>
-#include <Interpreters/ActionsDAG.h>
-#include <Interpreters/ExpressionAnalyzer.h>
-#include <Interpreters/TreeRewriter.h>
+#include <Storages/MergeTree/RPNBuilder.h>
 #include <Storages/Statistics/Statistics.h>
 #include <Storages/Statistics/StatisticsBasic.h>
 #include <Storages/Statistics/StatisticsMinMax.h>
@@ -38,33 +34,11 @@
 #include <Parsers/parseQuery.h>
 #include <Parsers/ExpressionListParsers.h>
 
-#include "config.h"
-
 using namespace DB;
 
 namespace DB::ErrorCodes
 {
-extern const int ILLEGAL_STATISTICS;
 extern const int LOGICAL_ERROR;
-}
-
-namespace
-{
-
-/// Estimates the row count of a boolean `expression` over `columns` the way the planner feeds the
-/// estimator: the expression is built into an `ActionsDAG` and its output node is analysed.
-template <class Estimator>
-UInt64 estimateRowsFor(const Estimator & estimator, const String & expression, const NamesAndTypesList & columns)
-{
-    ContextPtr context = getContext().context;
-    ParserExpressionWithOptionalAlias parser(false);
-    ASTPtr ast = parseQuery(parser, expression, 10000, 10000, 10000);
-    auto syntax_result = TreeRewriter(context).analyze(ast, columns);
-    ActionsDAG dag = ExpressionAnalyzer(ast, syntax_result, context).getActionsDAG(/*add_aliases=*/ false, /*remove_unused_result=*/ false);
-    const auto * node = &dag.findInOutputs(ast->getColumnName());
-    return estimator->estimateRelationProfile(nullptr, node).rows;
-}
-
 }
 
 TEST(Statistics, TDigestLessThan)
@@ -184,13 +158,17 @@ TEST(Statistics, Estimator)
     estimator_builder.incrementRowCount(10000);
 
     auto estimator = estimator_builder.getEstimator();
-    NamesAndTypesList columns{{"a", data_type}, {"b", data_type}, {"c", data_type}};
 
     auto test_impl = [&](const String & expression, Int64 real_result, Float64 eps)
     {
-        UInt64 estimated_rows = estimateRowsFor(estimator, expression, columns);
-        std::cout << expression << " " << real_result << " " << estimated_rows << std::endl;
-        EXPECT_LT(std::abs(real_result - static_cast<Int64>(estimated_rows)), 10000 * eps);
+        ParserExpressionWithOptionalAlias exp_parser(false);
+        ContextPtr context = getContext().context;
+        RPNBuilderTreeContext tree_context(context, Block{{ DataTypeUInt8().createColumnConstWithDefaultValue(1), std::make_shared<DataTypeUInt8>(), "_dummy" }}, {});
+        ASTPtr ast = parseQuery(exp_parser, expression, 10000, 10000, 10000);
+        RPNBuilderTreeNode node(ast.get(), tree_context);
+        auto estimate_result = estimator->estimateRelationProfile(nullptr, node);
+        std::cout << expression << " " << real_result << " "<< estimate_result.rows << std::endl;
+        EXPECT_LT(std::abs(real_result - static_cast<Int64>(estimate_result.rows)), 10000 * eps);
     };
 
     auto test_f = [&](const String & expression, Int64 real_result, Float64 eps = 0.001)
@@ -301,6 +279,21 @@ ColumnStatisticsPtr buildNullableInt32Stats(
     return stats;
 }
 
+/// Estimate the row count for a SQL boolean expression evaluated against `estimator`.
+template <class Estimator>
+Float64 estimateRowsFor(Estimator & estimator, const String & expression)
+{
+    ParserExpressionWithOptionalAlias exp_parser(false);
+    ContextPtr context = getContext().context;
+    RPNBuilderTreeContext tree_context(
+        context,
+        Block{{DataTypeUInt8().createColumnConstWithDefaultValue(1), std::make_shared<DataTypeUInt8>(), "_dummy"}},
+        {});
+    ASTPtr ast = parseQuery(exp_parser, expression, 10000, 10000, 10000);
+    RPNBuilderTreeNode node(ast.get(), tree_context);
+    return static_cast<Float64>(estimator->estimateRelationProfile(nullptr, node).rows);
+}
+
 }
 
 TEST(Statistics, NullableEstimatorWithBasic)
@@ -326,12 +319,9 @@ TEST(Statistics, NullableEstimatorWithBasic)
     builder.incrementRowCount(1000);
     auto estimator = builder.getEstimator();
 
-    DataTypePtr nullable_int32 = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeInt32>());
-    NamesAndTypesList columns{{"a", nullable_int32}, {"b", nullable_int32}};
-
     auto check = [&](const String & expression, Float64 expected, Float64 eps)
     {
-        Float64 actual = static_cast<Float64>(estimateRowsFor(estimator, expression, columns));
+        Float64 actual = estimateRowsFor(estimator, expression);
         EXPECT_NEAR(actual, expected, eps) << "Expression: " << expression;
     };
 
@@ -402,19 +392,15 @@ TEST(Statistics, LikeSelectivity)
 {
     /// Build a simple estimator to test LIKE / NOT LIKE / ILIKE / NOT ILIKE
     /// selectivity defaults and their complement behavior under NOT.
-    /// LIKE selectivity is a fixed factor of the total row count, but the builder yields an estimator
-    /// only when it holds some statistics, so the String column gets `basic` ones.
-    tryRegisterFunctions();
+    DataTypePtr data_type = std::make_shared<DataTypeInt32>();
 
-    DataTypePtr data_type = std::make_shared<DataTypeString>();
-
-    MutableColumnPtr col = DataTypeString().createColumn();
+    MutableColumnPtr col = DataTypeInt32().createColumn();
     for (Int32 i = 0; i < 10000; i++)
-        col->insert(toString(i + 1));
+        col->insert(i + 1);
 
     ColumnStatisticsDescription mock_description;
     mock_description.data_type = data_type;
-    mock_description.types_to_desc.emplace(StatisticsType::Basic, SingleStatisticsDescription(StatisticsType::Basic, nullptr, false));
+    mock_description.types_to_desc.emplace(StatisticsType::TDigest, SingleStatisticsDescription(StatisticsType::TDigest, nullptr, false));
 
     ColumnDescription column_desc;
     column_desc.name = "a";
@@ -427,14 +413,16 @@ TEST(Statistics, LikeSelectivity)
     estimator_builder.addStatistics("a", stats);
     estimator_builder.incrementRowCount(10000);
     auto estimator = estimator_builder.getEstimator();
-    ASSERT_NE(estimator, nullptr);
-
-    NamesAndTypesList columns{{"a", data_type}};
 
     /// Helper: estimate rows for a condition string.
     auto estimate = [&](const String & expression) -> UInt64
     {
-        return estimateRowsFor(estimator, expression, columns);
+        ParserExpressionWithOptionalAlias exp_parser(false);
+        ContextPtr context = getContext().context;
+        RPNBuilderTreeContext tree_context(context, Block{{DataTypeUInt8().createColumnConstWithDefaultValue(1), std::make_shared<DataTypeUInt8>(), "_dummy"}}, {});
+        ASTPtr ast = parseQuery(exp_parser, expression, 10000, 10000, 10000);
+        RPNBuilderTreeNode node(ast.get(), tree_context);
+        return estimator->estimateRelationProfile(nullptr, node).rows;
     };
 
     /// default_like_factor = 0.1, total_rows = 10000.
@@ -861,75 +849,6 @@ TEST(Statistics, BasicDefaultCountRoundTrip)
     }
 }
 
-/// The selectivity estimator accumulates the statistics of the parts into a copy made by `cloneEmpty`. The copy
-/// must keep the structure of `basic` statistics deserialized from an older format without a default-value count:
-/// otherwise it gets a fabricated exact count of zero defaults, and the following parts with the same old statistics
-/// are discarded as incompatible.
-TEST(Statistics, BasicWithoutDefaultCountCloneEmpty)
-{
-    tryRegisterFunctions();
-
-    auto data_type = std::make_shared<DataTypeInt32>();
-    constexpr UInt8 numeric_min_max = 1u << 0;
-
-    /// `basic` statistics of 1000 rows with the given min and max, as written by 26.7 (`V4`) for a non-`Nullable` column.
-    auto load_legacy = [&](Int64 min, Int64 max)
-    {
-        String payload;
-        {
-            WriteBufferFromString buf(payload);
-            writeIntBinary(static_cast<UInt64>(1000), buf); /// row_count
-            writeIntBinary(numeric_min_max, buf);
-            writeFieldBinary(Field(min), buf);
-            writeFieldBinary(Field(max), buf);
-            buf.finalize();
-        }
-
-        String file;
-        {
-            WriteBufferFromString buf(file);
-            writeIntBinary(static_cast<UInt16>(4), buf); /// StatisticsFileVersion::V4
-            writeIntBinary(static_cast<UInt64>(1ULL << static_cast<UInt8>(StatisticsType::Basic)), buf);
-            writeStringBinary(data_type->getName(), buf);
-            writeIntBinary(static_cast<UInt64>(1000), buf); /// rows
-            writeIntBinary(static_cast<UInt64>(payload.size()), buf);
-            buf.write(payload.data(), payload.size());
-            buf.finalize();
-        }
-
-        ReadBufferFromString rb(file);
-        return ColumnStatistics::deserialize(rb, data_type);
-    };
-
-    auto part1 = load_legacy(0, 999);
-    auto part2 = load_legacy(1000, 1999);
-
-    auto accumulated = part1->cloneEmpty();
-    EXPECT_TRUE(accumulated->structureEquals(*part1));
-    accumulated->merge(part1);
-    EXPECT_FALSE(accumulated->getEstimate().estimated_default_count.has_value());
-    EXPECT_FALSE(accumulated->estimateEqual(Field(Int64(0))).has_value());
-
-    EXPECT_TRUE(accumulated->structureEquals(*part2));
-    accumulated->merge(part2);
-    auto estimate = accumulated->getEstimate();
-    ASSERT_TRUE(estimate.estimated_min.has_value());
-    ASSERT_TRUE(estimate.estimated_max.has_value());
-    EXPECT_EQ(*estimate.estimated_min, Field(Int64(0)));
-    EXPECT_EQ(*estimate.estimated_max, Field(Int64(1999)));
-
-    /// The same through the estimator: `x = 0` is not estimated as matching no rows, and both parts are used.
-    ConditionSelectivityEstimatorBuilder builder(getContext().context);
-    builder.addStatistics("x", part1);
-    builder.incrementRowCount(1000);
-    builder.addStatistics("x", part2);
-    builder.incrementRowCount(1000);
-    auto estimator = builder.getEstimator();
-    NamesAndTypesList columns{{"x", data_type}};
-    EXPECT_GT(estimateRowsFor(estimator, "x = 0", columns), 0u);
-    EXPECT_NEAR(static_cast<double>(estimateRowsFor(estimator, "x < 1500", columns)), 1500.0, 20.0);
-}
-
 TEST(Statistics, BasicDefaultCountArray)
 {
     auto data_type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt32>());
@@ -1013,164 +932,3 @@ TEST(Statistics, DeserializeV3SkipsRevertedNullCount)
     EXPECT_FALSE(restored->getStats().contains(StatisticsType::Basic));
     EXPECT_FALSE(restored->hasNullCount());
 }
-
-#if USE_DATASKETCHES
-
-TEST(Statistics, CountMinSketchRoundTrip)
-{
-    auto data_type = std::make_shared<DataTypeUInt64>();
-
-    auto round_trip = [&](const ColumnStatisticsPtr & stats)
-    {
-        WriteBufferFromOwnString wb;
-        stats->serialize(wb);
-        ReadBufferFromString rb(wb.str());
-        auto restored = ColumnStatistics::deserialize(rb, data_type);
-        EXPECT_TRUE(rb.eof());
-        return restored;
-    };
-
-    auto estimate_equal = [](const ColumnStatisticsPtr & stats, UInt64 value)
-    {
-        auto estimate = stats->getStats().at(StatisticsType::CountMinSketch)->estimateEqual(Field(value));
-        EXPECT_TRUE(estimate.has_value());
-        return estimate.value_or(-1.0);
-    };
-
-    /// An empty sketch.
-    {
-        auto restored = round_trip(createTestStats({StatisticsType::CountMinSketch}, data_type));
-        ASSERT_TRUE(restored != nullptr);
-        EXPECT_DOUBLE_EQ(estimate_equal(restored, 5), 0.0);
-    }
-
-    /// 1000 rows with the values 0 .. 9, 100 rows each.
-    {
-        MutableColumnPtr col = data_type->createColumn();
-        for (UInt64 i = 0; i < 1000; ++i)
-            col->insert(i % 10);
-        auto stats = createTestStats({StatisticsType::CountMinSketch}, data_type);
-        stats->build(std::move(col));
-
-        auto restored = round_trip(stats);
-        ASSERT_TRUE(restored != nullptr);
-        EXPECT_EQ(restored->getNumRows(), 1000u);
-        for (UInt64 value : {0, 5, 9, 10})
-            EXPECT_DOUBLE_EQ(estimate_equal(restored, value), estimate_equal(stats, value)) << "value " << value;
-        EXPECT_GE(estimate_equal(restored, 5), 100.0);
-    }
-}
-
-/// A malformed sketch makes `datasketches` throw `std::invalid_argument` or `std::out_of_range`, or parse into a sketch
-/// that is read out of bounds later. Each case must be rejected with `ILLEGAL_STATISTICS`: a `std::logic_error`
-/// escaping from `deserialize` lost the part and column context and aborted debug and sanitizer builds.
-TEST(Statistics, CountMinSketchDeserializeCorrupted)
-{
-    auto data_type = std::make_shared<DataTypeUInt64>();
-
-    /// `StatisticsCountMinSketch` itself, without the `ColumnStatistics` wrapper.
-    auto create = [&]
-    {
-        auto stats = MergeTreeStatisticsFactory::instance().tryCreateSingle(StatisticsType::CountMinSketch, data_type);
-        EXPECT_TRUE(stats != nullptr);
-        return stats;
-    };
-
-    /// `StatisticsCountMinSketch::serialize` writes the `UInt64` size of the sketch, then the sketch.
-    auto serialize = [&](const ColumnPtr & column)
-    {
-        auto stats = create();
-        stats->build(column);
-        WriteBufferFromOwnString wb;
-        stats->serialize(wb);
-        ReadBufferFromString rb(wb.str());
-        UInt64 size = 0;
-        readIntBinary(size, rb);
-        String bytes = wb.str().substr(sizeof(UInt64));
-        EXPECT_EQ(size, bytes.size());
-        return bytes;
-    };
-
-    MutableColumnPtr col = data_type->createColumn();
-    for (UInt64 i = 0; i < 1000; ++i)
-        col->insert(i % 10);
-    const String sketch_bytes = serialize(std::move(col));
-    const String empty_sketch_bytes = serialize(data_type->createColumn());
-
-    /// The sizes of 7 hashes x 2718 buckets: two preamble longs, then the total weight and the counters.
-    ASSERT_EQ(empty_sketch_bytes.size(), 16u);
-    ASSERT_EQ(sketch_bytes.size(), 16u + 8 * (1 + 7 * 2718));
-
-    auto with_size = [](UInt64 size, const String & bytes)
-    {
-        WriteBufferFromOwnString wb;
-        writeIntBinary(size, wb);
-        wb.write(bytes.data(), bytes.size());
-        return wb.str();
-    };
-
-    /// In the second preamble long: [8, 12) the number of buckets, 12 the number of hashes, [13, 15) the seed hash.
-    auto with_dimensions = [&](UInt32 buckets, UInt8 hashes)
-    {
-        String bytes = sketch_bytes;
-        memcpy(bytes.data() + 8, &buckets, sizeof(buckets));
-        bytes[12] = static_cast<char>(hashes);
-        return with_size(bytes.size(), bytes);
-    };
-
-    auto expect_illegal_statistics = [&](const String & case_name, const String & payload)
-    {
-        SCOPED_TRACE(case_name);
-        auto stats = create();
-        const size_t allocated_bytes = stats->allocatedBytes();
-        ReadBufferFromString rb(payload);
-        try
-        {
-            stats->deserialize(rb, StatisticsFileVersion::V4);
-            ADD_FAILURE() << "expected ILLEGAL_STATISTICS";
-        }
-        catch (const Exception & e)
-        {
-            EXPECT_EQ(e.code(), ErrorCodes::ILLEGAL_STATISTICS) << e.message();
-            EXPECT_NE(e.message().find("MATERIALIZE STATISTICS"), std::string::npos) << e.message();
-        }
-        catch (const std::exception & e)
-        {
-            ADD_FAILURE() << "expected DB::Exception, got std::exception: " << e.what();
-        }
-        /// The rejected sketch did not replace the existing one.
-        EXPECT_EQ(stats->allocatedBytes(), allocated_bytes);
-    };
-
-    /// The valid payloads are accepted.
-    for (const String & bytes : {sketch_bytes, empty_sketch_bytes})
-    {
-        auto stats = create();
-        const String payload = with_size(bytes.size(), bytes);
-        ReadBufferFromString rb(payload);
-        EXPECT_NO_THROW(stats->deserialize(rb, StatisticsFileVersion::V4));
-        EXPECT_TRUE(rb.eof());
-    }
-
-    {
-        String bytes = sketch_bytes;
-        bytes[13] = static_cast<char>(bytes[13] ^ 0xFF);
-        expect_illegal_statistics("seed hash", with_size(bytes.size(), bytes));
-    }
-
-    /// A valid sketch of other dimensions.
-    expect_illegal_statistics("1 hash x 3 buckets", with_dimensions(3, 1));
-
-    /// The number of counters overflows 32 bits, so `datasketches` 5.2.0 parses a sketch without counters.
-    expect_illegal_statistics("2 hashes x 2^31 buckets", with_dimensions(1u << 31, 2));
-
-    /// Truncated payloads with a consistent size. `datasketches` 5.2.0 does not detect a sketch that is
-    /// at most 16 bytes too short.
-    expect_illegal_statistics("truncated by 8 bytes", with_size(sketch_bytes.size() - 8, sketch_bytes.substr(0, sketch_bytes.size() - 8)));
-    expect_illegal_statistics("truncated to the preamble", with_size(16, sketch_bytes.substr(0, 16)));
-
-    /// A size that cannot be allocated (#91206).
-    expect_illegal_statistics("size UINT64_MAX", with_size(std::numeric_limits<UInt64>::max(), sketch_bytes));
-}
-
-#endif

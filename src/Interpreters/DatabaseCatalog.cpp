@@ -69,9 +69,6 @@ namespace ServerSetting
 {
     extern const ServerSettingsUInt64 database_atomic_delay_before_drop_table_sec;
     extern const ServerSettingsUInt64 database_catalog_drop_error_cooldown_sec;
-    extern const ServerSettingsUInt64 database_catalog_unused_dir_cleanup_period_sec;
-    extern const ServerSettingsUInt64 database_catalog_unused_dir_hide_timeout_sec;
-    extern const ServerSettingsUInt64 database_catalog_unused_dir_rm_timeout_sec;
 }
 
 namespace ErrorCodes
@@ -94,6 +91,7 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsBool fsync_metadata;
+    extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool show_data_lake_catalogs_in_system_tables;
     extern const SettingsBool show_remote_databases_in_system_tables;
 }
@@ -106,7 +104,6 @@ namespace MergeTreeSetting
 namespace FailPoints
 {
     extern const char database_catalog_drop_finally_before_id_erase[];
-    extern const char database_catalog_drop_finally_after_notify[];
 }
 
 class DatabaseNameHints : public IHints<>
@@ -258,13 +255,6 @@ void DatabaseCatalog::initializeAndLoadTemporaryDatabase()
 void DatabaseCatalog::createBackgroundTasks()
 {
     /// It has to be done before databases are loaded (to avoid a race condition on initialization)
-    if (Context::getGlobalContextInstance()->getApplicationType() == Context::ApplicationType::SERVER && getContext()->getServerSettings()[ServerSetting::database_catalog_unused_dir_cleanup_period_sec])
-    {
-        auto cleanup_task_holder
-            = getContext()->getSchedulePool()->createTask(StorageID::createEmpty(), "DatabaseCatalogCleanupStoreDirectoryTask", [this]() { this->cleanupStoreDirectoryTask(); });
-        cleanup_task = std::make_unique<BackgroundSchedulePoolTaskHolder>(std::move(cleanup_task_holder));
-    }
-
     auto drop_task_holder = getContext()->getSchedulePool()->createTask(StorageID::createEmpty(), "DatabaseCatalogDropTableTask", [this](){ this->dropTableDataTask(); });
     drop_task = std::make_unique<BackgroundSchedulePoolTaskHolder>(std::move(drop_task_holder));
 
@@ -274,14 +264,6 @@ void DatabaseCatalog::createBackgroundTasks()
 
 void DatabaseCatalog::startupBackgroundTasks()
 {
-    /// And it has to be done after all databases are loaded, otherwise cleanup_task may remove something that should not be removed
-    if (cleanup_task)
-    {
-        (*cleanup_task)->activate();
-        /// Do not start task immediately on server startup, it's not urgent.
-        (*cleanup_task)->scheduleAfter(static_cast<time_t>(getContext()->getServerSettings()[ServerSetting::database_catalog_unused_dir_hide_timeout_sec]) * 1000);
-    }
-
     (*drop_task)->activate();
     std::lock_guard lock{tables_marked_dropped_mutex};
     if (!tables_marked_dropped.empty())
@@ -292,9 +274,6 @@ void DatabaseCatalog::shutdownImpl(std::function<void()> shutdown_system_logs)
 {
     is_shutting_down = true;
     wait_table_finally_dropped.notify_all();
-
-    if (cleanup_task)
-        (*cleanup_task)->deactivate();
 
     if (drop_task)
         (*drop_task)->deactivate();
@@ -485,6 +464,7 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
         return {};
     }
 
+    bool analyzer = context_->getSettingsRef()[Setting::allow_experimental_analyzer];
     if (table_id.hasUUID())
     {
         /// Shortcut for tables which have persistent UUID
@@ -514,7 +494,8 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
             }
             return {};
         }
-        else
+        /// In old analyzer resolving done in multiple places, so we ignore TABLE_UUID_MISMATCH error.
+        else if (analyzer)
         {
             const auto & table_storage_id = db_and_table.second->getStorageID();
             if (db_and_table.first->getDatabaseName() != table_id.database_name ||
@@ -624,12 +605,8 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
 
 bool DatabaseCatalog::isPredefinedTable(const StorageID & table_id) const
 {
-    static const char * information_schema_views[] = {
-        "schemata", "tables", "views", "columns", "key_column_usage", "referential_constraints", "statistics",
-        "engines", "character_sets", "collations", "user_privileges", "schema_privileges", "table_privileges", "column_privileges"};
-    static const char * information_schema_views_uppercase[] = {
-        "SCHEMATA", "TABLES", "VIEWS", "COLUMNS", "KEY_COLUMN_USAGE", "REFERENTIAL_CONSTRAINTS", "STATISTICS",
-        "ENGINES", "CHARACTER_SETS", "COLLATIONS", "USER_PRIVILEGES", "SCHEMA_PRIVILEGES", "TABLE_PRIVILEGES", "COLUMN_PRIVILEGES"};
+    static const char * information_schema_views[] = {"schemata", "tables", "views", "columns"};
+    static const char * information_schema_views_uppercase[] = {"SCHEMATA", "TABLES", "VIEWS", "COLUMNS"};
 
     auto check_database_and_table_name = [&](const String & database_name, const String & table_name)
     {
@@ -638,14 +615,15 @@ bool DatabaseCatalog::isPredefinedTable(const StorageID & table_id) const
             auto storage = getSystemDatabase()->tryGetTable(table_name, getContext());
             return storage && storage->isSystemStorage();
         }
-        /// Each view is attached under both its lowercase and its UPPERCASE name in both databases
-        /// (see attachInformationSchema), so both spellings are predefined in both databases.
-        if (database_name == INFORMATION_SCHEMA || database_name == INFORMATION_SCHEMA_UPPERCASE)
+        if (database_name == INFORMATION_SCHEMA)
         {
             return std::find(std::begin(information_schema_views), std::end(information_schema_views), table_name)
-                    != std::end(information_schema_views)
-                || std::find(std::begin(information_schema_views_uppercase), std::end(information_schema_views_uppercase), table_name)
-                    != std::end(information_schema_views_uppercase);
+                != std::end(information_schema_views);
+        }
+        if (database_name == INFORMATION_SCHEMA_UPPERCASE)
+        {
+            return std::find(std::begin(information_schema_views_uppercase), std::end(information_schema_views_uppercase), table_name)
+                != std::end(information_schema_views_uppercase);
         }
         return false;
     };
@@ -846,12 +824,6 @@ DatabasePtr DatabaseCatalog::detachDatabase(ContextPtr local_context, const Stri
 void DatabaseCatalog::updateDatabaseName(const String & old_name, const String & new_name, const Strings & tables_in_database)
 {
     std::lock_guard lock{databases_mutex};
-
-    /// Re-check under the same lock as the rewrite: a concurrent `CREATE TABLE` in another database may
-    /// have added an edge to a table under the new name since the preflight check of the caller.
-    /// Nothing is modified yet, so the exception leaves the catalog intact.
-    checkDatabaseCanBeRenamedWithNoCyclicDependenciesUnlocked(old_name, new_name, tables_in_database);
-
     chassert(!databases.contains(new_name));
     auto it = databases.find(old_name);
     chassert(it != databases.end());
@@ -1420,8 +1392,6 @@ DatabaseAndTable DatabaseCatalog::tryGetDatabaseAndTable(const StorageID & table
 
 void DatabaseCatalog::loadMarkedAsDroppedTables()
 {
-    chassert(!cleanup_task);
-
     auto component_guard = Coordination::setCurrentComponent("DatabaseCatalog::loadMarkedAsDroppedTables");
     // Because some DBs might have a `disk` setting defining the disk to store the table metadata files,
     // we need to check the dropped metadata on these disks, not just the default database disk.
@@ -1660,15 +1630,10 @@ void DatabaseCatalog::undropTable(StorageID table_id, std::function<void()> thro
                 dropped_table = *it;
             }
         }
-        if (it_dropped_table == tables_marked_dropped.end() || !dynamic_cast<DatabaseOnDisk *>(database.get()))
+        if (it_dropped_table == tables_marked_dropped.end())
             throw Exception(ErrorCodes::UNKNOWN_TABLE,
                 "Table {} is being dropped, has been dropped, or the database engine does not support UNDROP",
                 table_id.getNameForLogs());
-        /// A lookup by `UUID` ignores the database name, so the table may have been dropped from another database.
-        if (it_dropped_table->table_id.database_name != table_id.database_name)
-            throw Exception(ErrorCodes::UNKNOWN_TABLE,
-                "Table {} was dropped from database {}, UNDROP into a different database is not supported",
-                table_id.getNameForLogs(), backQuoteIfNeed(it_dropped_table->table_id.database_name));
         /// Check the limit before moving the metadata file: a table that cannot be attached must
         /// stay in the dropped-table queue, so that `UNDROP` can be retried after freeing a slot.
         if (auto * database_on_disk = dynamic_cast<DatabaseOnDisk *>(database.get()))
@@ -1823,9 +1788,6 @@ void DatabaseCatalog::dropTablesParallel(TablesMarkedAsDropped tables_to_drop)
                 /// tables_marked_dropped_ids until the guarded erase below: window for a same-UUID re-drop.
                 FailPointInjection::pauseFailPoint(FailPoints::database_catalog_drop_finally_before_id_erase);
 
-                /// The dropped storage is destroyed before the waiters of `DROP ... SYNC` see the drop finished.
-                table_iterator->table.reset();
-
                 TableMarkedAsDropped table_to_delete_without_lock;
                 {
                     std::lock_guard lock(tables_marked_dropped_mutex);
@@ -1843,8 +1805,6 @@ void DatabaseCatalog::dropTablesParallel(TablesMarkedAsDropped tables_to_drop)
 
                     wait_table_finally_dropped.notify_all();
                 }
-
-                FailPointInjection::pauseFailPoint(FailPoints::database_catalog_drop_finally_after_notify);
             }
             catch (...)
             {
@@ -2247,172 +2207,6 @@ void DatabaseCatalog::checkTablesCanBeExchangedWithNoCyclicDependencies(const St
 
     check(referential_dependencies);
     check(loading_dependencies);
-}
-
-/// `RENAME DATABASE` re-keys every table of the database under the new name (see `updateDatabaseName`),
-/// which can merge a renamed table into a node that other tables already reference by the future name -
-/// the simplest case being a table `db.t = Alias(<new name>, t)` accepted at `CREATE` because the target
-/// database did not exist yet, and thus becoming a self-reference. Such a cycle in the server-wide
-/// dependency graph then makes every later DDL statement that adds a dependency edge fail with
-/// `INFINITE_LOOP`, anywhere on the server, and the database stops being listable after a restart.
-/// The check applies the rename to a copy of the graph and refuses the rename if it becomes cyclic, the
-/// same way `RENAME TABLE` and `EXCHANGE TABLES` do for a single table. The caller passes the exact set
-/// of tables it is about to re-key and holds the locks that keep that set stable until `updateDatabaseName`.
-/// This is a preflight check that lets the rename fail before anything is modified; `updateDatabaseName`
-/// repeats it in the same critical section as the rewrite, because DDL in other databases can add edges
-/// to the dependency graph in between.
-void DatabaseCatalog::checkDatabaseCanBeRenamedWithNoCyclicDependencies(
-    const String & old_database_name, const String & new_database_name, const Strings & tables_in_database)
-{
-    std::lock_guard lock{databases_mutex};
-    checkDatabaseCanBeRenamedWithNoCyclicDependenciesUnlocked(old_database_name, new_database_name, tables_in_database);
-}
-
-void DatabaseCatalog::checkDatabaseCanBeRenamedWithNoCyclicDependenciesUnlocked(
-    const String & old_database_name, const String & new_database_name, const Strings & tables_in_database) const
-{
-    auto check = [&](const TablesDependencyGraph & dependencies)
-    {
-        TablesDependencyGraph after_rename = dependencies;
-        for (const auto & table_name : tables_in_database)
-        {
-            auto old_dependencies = after_rename.removeDependencies(StorageID{old_database_name, table_name}, /* remove_isolated_tables= */ true);
-            after_rename.addDependencies(StorageID{new_database_name, table_name}, old_dependencies);
-        }
-
-        if (after_rename.hasCyclicDependencies())
-            throw Exception(
-                ErrorCodes::INFINITE_LOOP,
-                "Cannot rename database {} to {}, because it will lead to cyclic dependencies: {}",
-                backQuoteIfNeed(old_database_name),
-                backQuoteIfNeed(new_database_name),
-                after_rename.describeCyclicDependencies());
-    };
-
-    check(referential_dependencies);
-    check(loading_dependencies);
-}
-
-void DatabaseCatalog::cleanupStoreDirectoryTask()
-{
-    for (const auto & [disk_name, disk] : getContext()->getDisksMap())
-    {
-        if (!disk->supportsStat() || !disk->supportsChmod())
-            continue;
-
-        size_t affected_dirs = 0;
-        size_t checked_dirs = 0;
-        for (auto it = disk->iterateDirectory("store"); it->isValid(); it->next())
-        {
-            String prefix = it->name();
-            bool expected_prefix_dir = disk->existsDirectory(it->path()) && prefix.size() == 3 && isHexDigit(prefix[0]) && isHexDigit(prefix[1])
-                && isHexDigit(prefix[2]);
-
-            if (!expected_prefix_dir)
-            {
-                LOG_WARNING(log, "Found invalid directory {} on disk {}, will try to remove it", it->path(), disk_name);
-                checked_dirs += 1;
-                affected_dirs += maybeRemoveDirectory(disk_name, disk, it->path());
-                continue;
-            }
-
-            for (auto jt = disk->iterateDirectory(it->path()); jt->isValid(); jt->next())
-            {
-                String uuid_str = jt->name();
-                UUID uuid;
-                bool parsed = tryParse(uuid, uuid_str);
-
-                bool expected_dir = disk->existsDirectory(jt->path()) && parsed && uuid != UUIDHelpers::Nil && uuid_str.starts_with(prefix);
-
-                if (!expected_dir)
-                {
-                    LOG_WARNING(log, "Found invalid directory {} on disk {}, will try to remove it", jt->path(), disk_name);
-                    checked_dirs += 1;
-                    affected_dirs += maybeRemoveDirectory(disk_name, disk, jt->path());
-                    continue;
-                }
-
-                /// Order is important
-                if (!hasUUIDMapping(uuid))
-                {
-                    /// We load uuids even for detached and permanently detached tables,
-                    /// so it looks safe enough to remove directory if we don't have uuid mapping for it.
-                    /// No table or database using this directory should concurrently appear,
-                    /// because creation of new table would fail with "directory already exists".
-                    checked_dirs += 1;
-                    affected_dirs += maybeRemoveDirectory(disk_name, disk, jt->path());
-                }
-            }
-        }
-
-        if (affected_dirs)
-            LOG_INFO(log, "Cleaned up {} directories from store/ on disk {}", affected_dirs, disk_name);
-        if (checked_dirs == 0)
-            LOG_TEST(log, "Nothing to clean up from store/ on disk {}", disk_name);
-    }
-
-    (*cleanup_task)->scheduleAfter(static_cast<time_t>(getContext()->getServerSettings()[ServerSetting::database_catalog_unused_dir_cleanup_period_sec]) * 1000);
-}
-
-bool DatabaseCatalog::maybeRemoveDirectory(const String & disk_name, const DiskPtr & disk, const String & unused_dir)
-{
-    /// "Safe" automatic removal of some directory.
-    /// At first we do not remove anything and only revoke all access right.
-    /// And remove only if nobody noticed it after, for example, one month.
-
-    try
-    {
-        struct stat st = disk->stat(unused_dir);
-
-        if (st.st_uid != geteuid())
-        {
-            /// Directory is not owned by clickhouse, it's weird, let's ignore it (chmod will likely fail anyway).
-            LOG_WARNING(log, "Found directory {} with unexpected owner (uid={}) on disk {}", unused_dir, st.st_uid, disk_name);
-            return false;
-        }
-
-        time_t max_modification_time = std::max({st.st_atime, st.st_mtime, st.st_ctime});
-        time_t current_time = time(nullptr);
-        if (st.st_mode & (S_IRWXU | S_IRWXG | S_IRWXO))
-        {
-            if (current_time <= max_modification_time + static_cast<time_t>(getContext()->getServerSettings()[ServerSetting::database_catalog_unused_dir_hide_timeout_sec]))
-                return false;
-
-            LOG_INFO(log, "Removing access rights for unused directory {} from disk {} (will remove it when timeout exceed)", unused_dir, disk_name);
-
-            /// Explicitly update modification time just in case
-
-            disk->setLastModified(unused_dir, Poco::Timestamp::fromEpochTime(current_time));
-
-            /// Remove all access right
-            disk->chmod(unused_dir, 0);
-
-            return true;
-        }
-
-        auto unused_dir_rm_timeout_sec = static_cast<time_t>(getContext()->getServerSettings()[ServerSetting::database_catalog_unused_dir_rm_timeout_sec]);
-
-        if (!unused_dir_rm_timeout_sec)
-            return false;
-
-        if (current_time <= max_modification_time + unused_dir_rm_timeout_sec)
-            return false;
-
-        LOG_INFO(log, "Removing unused directory {} from disk {}", unused_dir, disk_name);
-
-        /// We have to set these access rights to make recursive removal work
-        disk->chmod(unused_dir, S_IRWXU);
-
-        disk->removeRecursive(unused_dir);
-
-        return true;
-    }
-    catch (...)
-    {
-        tryLogCurrentException(log, fmt::format("Failed to remove unused directory {} from disk {} ({})",
-                                                unused_dir, disk->getName(), disk->getPath()));
-        return false;
-    }
 }
 
 void DatabaseCatalog::reloadDisksTask()

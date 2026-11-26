@@ -23,8 +23,6 @@
 #include <iterator>
 #include <memory>
 #include <optional>
-#include <limits>
-#include <type_traits>
 #include <string>
 
 namespace DB
@@ -103,19 +101,7 @@ class FunctionWidthBucket final : public IFunction
         }
         if (operand >= high)
         {
-            /// The result type is deliberately one step wider than the count type so that this fits.
-            /// `UInt64` is the exception - nothing is wider - so reject the one count that would wrap
-            /// to zero, which is the bucket meaning "below the range".
-            if constexpr (std::is_same_v<TCountType, TResultType>)
-            {
-                if (count == std::numeric_limits<TCountType>::max())
-                    throw Exception(
-                        ErrorCodes::BAD_ARGUMENTS,
-                        "Last argument (count) for function {} is too large: the bucket for an operand above the range "
-                        "would be count + 1, which does not fit the result type",
-                        getName());
-            }
-            return static_cast<TResultType>(static_cast<TResultType>(count) + 1);
+            return count + 1;
         }
         return std::nullopt;
     }
@@ -203,12 +189,32 @@ public:
 
     size_t getNumberOfArguments() const override { return 4; }
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        return
-            "(NativeNumber, NativeNumber, NativeNumber, UInt8) -> UInt16"
-            " OR (NativeNumber, NativeNumber, NativeNumber, UInt16) -> UInt32"
-            " OR (NativeNumber, NativeNumber, NativeNumber, UInt32 | UInt64) -> UInt64";
+        FunctionArgumentDescriptors mandatory_args{
+            {"operand", isNativeNumber, nullptr, "native numeric"},
+            {"min_range", isNativeNumber, nullptr, "native numeric"},
+            {"max_range", isNativeNumber, nullptr, "native numeric"},
+            {"num_buckets", isNativeUInt, nullptr, "UInt8, UInt16, UInt32 or UInt64"}
+        };
+
+        validateFunctionArguments(*this, arguments, mandatory_args);
+
+        switch (arguments[3].type->getTypeId())
+        {
+            case TypeIndex::UInt8:
+                return std::make_shared<DataTypeUInt16>();
+            case TypeIndex::UInt16:
+                return std::make_shared<DataTypeUInt32>();
+            case TypeIndex::UInt32:
+                [[fallthrough]];
+            case TypeIndex::UInt64:
+                return std::make_shared<DataTypeUInt64>();
+            default:
+                break;
+        }
+
+        UNREACHABLE();
     }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }

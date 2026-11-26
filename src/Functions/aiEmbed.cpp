@@ -1,3 +1,4 @@
+#include <Access/Common/AccessFlags.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
@@ -55,9 +56,13 @@ class FunctionAiEmbed final : public IFunction
 public:
     static constexpr auto name = "aiEmbed";
 
-    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionAiEmbed>(context); }
+    static FunctionPtr create(ContextPtr context)
+    {
+        context->checkAccess(AccessType::aiEmbed);
+        return std::make_shared<FunctionAiEmbed>(context);
+    }
 
-    explicit FunctionAiEmbed(ContextPtr context_) : context(context_) {}
+    explicit FunctionAiEmbed(ContextPtr context_) : context(context_) { FunctionBaseAI::throwIfBackgroundExpression(context); }
 
     String getName() const override { return name; }
     bool isVariadic() const override { return true; }
@@ -95,6 +100,9 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
+        /// Before resolving the credentials: their validation errors must not reveal a named collection.
+        FunctionBaseAI::checkHasUser(getContext());
+
         const auto & settings = getContext()->getSettingsRef();
         auto params = FunctionBaseAI::resolveAIParams(
             getContext(), arguments, FunctionBaseAI::embeddingParams(), settings[Setting::ai_function_embedding_default_credentials]);

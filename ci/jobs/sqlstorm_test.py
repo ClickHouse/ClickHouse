@@ -14,12 +14,11 @@ from ci.jobs.scripts.server_cleanup import kill_leftover_server_processes
 
 temp_dir = f"{Utils.cwd()}/ci/tmp/"
 
-# The DBA StackOverflow dataset with ~18K SQLStorm queries. The queries are the
-# upstream PostgreSQL originals, except those that still need a hand-made
-# ClickHouse rewrite in the fork, plus the runtime rewriter in `tests/sqlstorm`.
-# Baseline on ClickHouse 26.11 master: 12237 of 18251 queries (67%) succeed.
+# Thresholds based on baseline run with ClickHouse 26.3 and ClickHouse-dialect queries.
+# The DBA StackOverflow dataset with ~18K SQLStorm queries.
+# With the PostgreSQL -> ClickHouse query rewriter, ~60% of queries succeed.
 MIN_TOTAL_QUERIES = 18_000
-MIN_SUCCESS_RATE = 0.60  # at least 60% queries should succeed
+MIN_SUCCESS_RATE = 0.50  # at least 50% queries should succeed
 
 
 class ClickHouseBinary:
@@ -314,11 +313,10 @@ def main():
     if results[-1].is_ok():
         print("Clone SQLStorm repo")
 
-        # Use the ClickHouse fork, which keeps a ClickHouse-dialect rewrite only
-        # for queries that master does not run in the original form yet.
+        # Use the ClickHouse fork with queries rewritten for ClickHouse dialect.
         # Pin to an immutable commit SHA so reruns are reproducible and historical
         # failures remain debuggable, matching the pattern used for `olapbench_commit`.
-        sqlstorm_commit = "480683c86e466475b795ff650a8e5521d9e72d22"
+        sqlstorm_commit = "31952876e628817190c8a787a21afea08ca2bf87"
 
         def clone_sqlstorm():
             if not Path(sqlstorm_repo).is_dir():
@@ -394,9 +392,8 @@ def main():
                 print("Data already downloaded, skipping")
                 return True
             if not Shell.check(
-                f"wget -nv --retry-connrefused --retry-on-host-error -O {data_archive} {data_url}",
+                f"wget -q -O {data_archive} {data_url}",
                 verbose=True,
-                retries=3,
             ):
                 return False
             if not Shell.check(

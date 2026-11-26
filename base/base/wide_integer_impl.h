@@ -81,7 +81,6 @@ using FromDoubleIntermediateType = boost::multiprecision::cpp_bin_float_double_e
 #endif
 
 namespace CityHash_v1_0_2 { struct uint128; }
-class BFloat16;
 
 namespace wide
 {
@@ -595,33 +594,16 @@ struct integer<Bits, Signed>::_impl
     {
         static_assert(sizeof(Integral) <= sizeof(base_type));
 
-        if constexpr (std::is_same_v<Integral, float> || std::is_same_v<Integral, BFloat16>)
-        {
-            const float value = static_cast<float>(rhs);
-            /// |value| < 2^63, false for NaN and infinities.
-            if ((std::bit_cast<uint32_t>(value) & 0x7fffffffu) < std::bit_cast<uint32_t>(0x1p63f))
-                wide_integer_from_builtin(self, static_cast<int64_t>(value));
-            else
-                wide_integer_from_builtin(self, static_cast<double>(value));
-        }
-        else if constexpr (std::is_floating_point_v<Integral>)
-        {
-            /// An 8-byte `long double` (arm64 macOS).
-            wide_integer_from_builtin(self, static_cast<double>(rhs));
-        }
-        else
-        {
-            self.items[little(0)] = _impl::to_Integral(rhs);
+        self.items[little(0)] = _impl::to_Integral(rhs);
 
-            /// Sign-extend with a value select instead of a branch: a data-dependent branch here
-            /// mispredicts on mixed-sign data and prevents vectorization of columnar conversion loops.
-            base_type extension = 0;
-            if constexpr (std::is_signed_v<Integral>)
-                extension = rhs < 0 ? base_type(-1) : base_type(0);
+        /// Sign-extend with a value select instead of a branch: a data-dependent branch here
+        /// mispredicts on mixed-sign data and prevents vectorization of columnar conversion loops.
+        base_type extension = 0;
+        if constexpr (std::is_signed_v<Integral>)
+            extension = rhs < 0 ? base_type(-1) : base_type(0);
 
-            for (unsigned i = 1; i < item_count; ++i)
-                self.items[little(i)] = extension;
-        }
+        for (unsigned i = 1; i < item_count; ++i)
+            self.items[little(i)] = extension;
     }
 
     template <typename TupleLike, size_t i = 0>
@@ -1468,12 +1450,7 @@ public:
             /// than `divide` below.
             integer<Bits, unsigned> numerator = make_positive(lhs);
             integer<Bits, unsigned> denominator = make_positive(integer<Bits, Signed>(rhs));
-            integer<Bits, unsigned> quotient;
-            /// The signed operators are out of line, so `divide` is inlined into them: a narrow division then stays in registers.
-            if constexpr (std::is_same_v<Signed, signed>)
-                [[clang::always_inline]] quotient = integer<Bits, unsigned>::_impl::divide(numerator, std::move(denominator));
-            else
-                quotient = integer<Bits, unsigned>::_impl::divide(numerator, std::move(denominator));
+            integer<Bits, unsigned> quotient = integer<Bits, unsigned>::_impl::divide(numerator, std::move(denominator));
 
             if (std::is_same_v<Signed, signed> && is_negative(rhs) != is_negative(lhs))
                 quotient = operator_unary_minus(quotient);
@@ -1494,10 +1471,7 @@ public:
             /// See the note in operator_slash about _BitInt(256).
             integer<Bits, unsigned> remainder = make_positive(lhs);
             integer<Bits, unsigned> denominator = make_positive(integer<Bits, Signed>(rhs));
-            if constexpr (std::is_same_v<Signed, signed>)
-                [[clang::always_inline]] integer<Bits, unsigned>::_impl::divide(remainder, std::move(denominator));
-            else
-                integer<Bits, unsigned>::_impl::divide(remainder, std::move(denominator));
+            integer<Bits, unsigned>::_impl::divide(remainder, std::move(denominator));
 
             if (std::is_same_v<Signed, signed> && is_negative(lhs))
                 remainder = operator_unary_minus(remainder);

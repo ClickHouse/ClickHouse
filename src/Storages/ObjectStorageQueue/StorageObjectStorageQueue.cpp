@@ -52,7 +52,6 @@
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperRetries.h>
 #include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
-#include <Common/quoteString.h>
 #include <Common/randomSeed.h>
 
 #include <filesystem>
@@ -250,11 +249,6 @@ namespace
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "Move to Azure container requires all of settings: move_connection_string, move_container");
                 }
-                /// A full user `ATTACH` is fresh input as well, so only a definition stored on this server is exempt.
-                if (!is_loading_from_existing_metadata)
-                    ObjectStorageQueuePostProcessor::checkAzureMoveDestination(
-                        queue_settings[ObjectStorageQueueSetting::after_processing_move_connection_string].toString(),
-                        queue_settings[ObjectStorageQueueSetting::after_processing_move_container].toString());
             }
             else if (!move_prefix)
             {
@@ -336,6 +330,8 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     std::optional<FormatSettings> format_settings_,
     ASTStorage * engine_args,
     LoadingStrictnessLevel mode,
+    ObjectStorageQueueTableMetadata::Source source,
+    bool strict_metadata_check,
     bool keep_data_in_keeper_)
     : IStreamingStorage(table_id_)
     , WithContext(context_)
@@ -471,18 +467,19 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     storage_metadata.setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns, context_));
     setInMemoryMetadata(storage_metadata);
 
-    Macros::MacroExpansionInfo macro_info;
     zk_path = chooseZooKeeperPath(
         getContext(),
         table_id_,
         context_->getSettingsRef(),
         *queue_settings_,
         UUIDHelpers::Nil,
-        &zookeeper_name,
-        &macro_info);
-    if (macro_info.expanded_database)
-        keeper_path_database_name = table_id_.database_name;
+        &zookeeper_name);
     LOG_INFO(log, "Using zookeeper path: {}", zk_path.string());
+
+    if (strict_metadata_check && source.empty())
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Cannot identify the source of the queue: the Azure endpoint is not an `http://` or `https://` URL");
 
     auto table_metadata = ObjectStorageQueueMetadata::syncWithKeeper(
         zookeeper_name,
@@ -491,7 +488,8 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
         storage_metadata.getColumns(),
         configuration_->format,
         context_,
-        is_attach,
+        source,
+        strict_metadata_check,
         log);
 
     if (table_metadata.getMode() == ObjectStorageQueueMode::EXCLUSIVE)
@@ -672,7 +670,7 @@ void StorageObjectStorageQueue::renameInMemory(const StorageID & new_table_id)
 {
     const auto prev_storage_id = getStorageID();
     IStorage::renameInMemory(new_table_id);
-    StreamingStorageRegistry::instance().renameTable(prev_storage_id, getStorageID(), /* if_exists */ true);
+    StreamingStorageRegistry::instance().renameTable(prev_storage_id, getStorageID());
 }
 
 bool StorageObjectStorageQueue::supportsSubsetOfColumns(const ContextPtr & context_) const
@@ -756,10 +754,6 @@ void StorageObjectStorageQueue::read(
         throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "Direct select is not allowed. "
                         "To enable use setting `stream_like_engine_allow_direct_select`. Be aware that usually the read data is removed from the queue.");
     }
-
-    /// The client keeps the creator's allowance for background processing; a direct reader is checked against its own.
-    checkSessionMayUseServerIdentity(*object_storage, local_context);
-
     bool do_commit_on_select = false;
     {
         std::lock_guard lock(mutex);
@@ -1307,6 +1301,13 @@ void StorageObjectStorageQueue::commit(
 
     ProfileEvents::increment(ProfileEvents::ObjectStorageQueueCommitRequests, requests.size());
 
+    /// The post-processing runs before the Keeper requests are sent on purpose: an object found to
+    /// be no longer the generation that was ingested (`FILE_CHANGED_DURING_READ`, see
+    /// `ObjectStorageQueuePostProcessor::process`) throws out of here, so that the batch is not
+    /// committed as processed. The files then go back to unprocessed (their `Processing` nodes are
+    /// released when the sources are destroyed) and the newer generation is ingested on a later pass,
+    /// instead of staying in the bucket untracked for good. The objects of the batch that were moved
+    /// or deleted are gone from the bucket, so that pass does not ingest them again.
     UnorderedSetWithMemoryTracking<String> post_processing_failed_paths;
 
     if (!successful_objects.empty()
@@ -1714,18 +1715,11 @@ void StorageObjectStorageQueue::checkAlterIsPossible(const AlterCommands & comma
 
     if (move_destination_changed)
     {
-        const String move_connection_string = get_move_destination_value(&new_settings, "after_processing_move_connection_string");
-        const String move_container = get_move_destination_value(&new_settings, "after_processing_move_container");
-
-        /// A move destination set by this query must carry its own credentials, as at `CREATE`.
-        if (type == ObjectStorageType::Azure && !move_connection_string.empty())
-            ObjectStorageQueuePostProcessor::checkAzureMoveDestination(move_connection_string, move_container);
-
         checkMoveDestinationHost(
             type,
             get_move_destination_value(&new_settings, "after_processing_move_uri"),
-            move_connection_string,
-            move_container,
+            get_move_destination_value(&new_settings, "after_processing_move_connection_string"),
+            get_move_destination_value(&new_settings, "after_processing_move_container"),
             local_context->getRemoteHostFilter());
     }
 }
@@ -1802,6 +1796,14 @@ void StorageObjectStorageQueue::alter(
         SettingsChanges changed_settings;
         std::set<std::string> new_settings_set;
 
+        std::set<std::string> settings_in_query;
+        for (const auto & command : alter_commands)
+        {
+            for (const auto & change : command.settings_changes)
+                settings_in_query.insert(change.name);
+            settings_in_query.insert(command.settings_resets.begin(), command.settings_resets.end());
+        }
+
         auto metadata = tryGetFilesMetadata();
         if (!metadata)
             throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Table {} is dropped or detached", getStorageID());
@@ -1809,6 +1811,28 @@ void StorageObjectStorageQueue::alter(
         const auto mode = metadata->getTableMetadata().getMode();
         const size_t dependencies_count = getDependencies();
         bool requires_detached_mv = false;
+
+        auto read_settings_in_keeper = [this]()
+        {
+            String metadata_in_keeper;
+            ObjectStorageQueueMetadata::getKeeperRetriesControl(log).retryLoop(
+                [&] { metadata_in_keeper = getZooKeeper()->get(zk_path / "metadata"); });
+            const auto table_metadata_in_keeper = ObjectStorageQueueTableMetadata::parse(metadata_in_keeper);
+            return getSettings(&table_metadata_in_keeper);
+        };
+        /// Shared by all tables with this `keeper_path` on this server, can differ from this table's `old_settings`.
+        auto local_shared_metadata_settings = getSettings(&metadata->getTableMetadata());
+        std::optional<ObjectStorageQueueSettings> settings_in_keeper;
+        auto differs_from_queue = [&](const SettingChange & setting)
+        {
+            if (!ObjectStorageQueueTableMetadata::isStoredInKeeper(setting.name) || !isSettingChangeable(setting.name, mode))
+                return false;
+            if (local_shared_metadata_settings.get(setting.name) != setting.value)
+                return true;
+            if (!settings_in_keeper)
+                settings_in_keeper.emplace(read_settings_in_keeper());
+            return settings_in_keeper->get(setting.name) != setting.value;
+        };
 
         for (auto & setting : new_settings)
         {
@@ -1825,7 +1849,8 @@ void StorageObjectStorageQueue::alter(
                     old_settings->begin(), old_settings->end(),
                     [&](const SettingChange & change) { return change.name == setting.name; });
 
-                setting_changed = it == old_settings->end() || it->value != setting.value;
+                setting_changed = it == old_settings->end() || it->value != setting.value
+                    || (settings_in_query.contains(setting.name) && differs_from_queue(setting));
             }
             if (!setting_changed)
                 continue;
@@ -1995,7 +2020,7 @@ StorageObjectStorageQueue::createFileIterator(ContextPtr local_context, const Ac
         shutdown_called);
 }
 
-ObjectStorageQueueSettings StorageObjectStorageQueue::getSettings() const
+ObjectStorageQueueSettings StorageObjectStorageQueue::getSettings(const ObjectStorageQueueTableMetadata * table_metadata_) const
 {
     /// We do not store queue settings
     /// (because of the inconvenience of keeping them in sync with ObjectStorageQueueTableMetadata),
@@ -2003,14 +2028,14 @@ ObjectStorageQueueSettings StorageObjectStorageQueue::getSettings() const
     ObjectStorageQueueSettings settings;
     /// If startup() for a table was not called, just use the default queue settings.
     /// The same holds after shutdown(), which drops the metadata handle while `startup_finished` stays set.
-    if (!startup_finished)
+    if (!startup_finished && !table_metadata_)
         return settings;
 
     auto metadata = tryGetFilesMetadata();
     if (!metadata)
         return settings;
 
-    const auto & table_metadata = metadata->getTableMetadata();
+    const auto & table_metadata = table_metadata_ ? *table_metadata_ : metadata->getTableMetadata();
     settings[ObjectStorageQueueSetting::mode] = table_metadata.mode;
     settings[ObjectStorageQueueSetting::after_processing] = table_metadata.after_processing;
     if (zookeeper_name == zkutil::DEFAULT_ZOOKEEPER_NAME)
@@ -2082,29 +2107,13 @@ void StorageObjectStorageQueue::checkTableCanBeRenamed(const StorageID & new_nam
     }
 }
 
-void StorageObjectStorageQueue::checkTableCanBeRenamedByDatabaseRename(const String & new_database_name) const
-{
-    /// Compared against the name the path was expanded with, not against the current one: the last step of
-    /// the Ordinary-to-Atomic conversion renames the database back to that name, which leaves the table on
-    /// its own Keeper node and must stay allowed.
-    if (!keeper_path_database_name || *keeper_path_database_name == new_database_name)
-        return;
-
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-        "Cannot rename the database of Storage{}Queue table {} to {}, because its `keeper_path` setting "
-        "expands the {{database}} macro (possibly nested in another macro). The Keeper path would change "
-        "and the table would process every file again",
-        configuration->getEngineName(), getStorageID().getNameForLogs(), backQuoteIfNeed(new_database_name));
-}
-
 String StorageObjectStorageQueue::chooseZooKeeperPath(
     const ContextPtr & context_,
     const StorageID & table_id,
     const Settings & settings,
     const ObjectStorageQueueSettings & queue_settings,
     UUID database_uuid,
-    String * result_zookeeper_name,
-    Macros::MacroExpansionInfo * result_macro_info)
+    String * result_zookeeper_name)
 {
     /// keeper_path setting can be set explicitly by the user in the CREATE query, or filled in registerQueueStorage.cpp.
     /// We also use keeper_path to determine whether we move it between databases, since the default path contains UUID of the database.
@@ -2158,8 +2167,6 @@ String StorageObjectStorageQueue::chooseZooKeeperPath(
         Macros::MacroExpansionInfo info;
         info.table_id = table_id;
         result_zk_path = context_->getMacros()->expand(result_zk_path, info);
-        if (result_macro_info)
-            *result_macro_info = info;
     }
 
     if (result_zookeeper_name)

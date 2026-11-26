@@ -76,11 +76,6 @@ void NegativeLimitStep::describeActions(JSONBuilder::JSONMap & map) const
     map.add("With Ties", with_ties);
 }
 
-QueryPlanStepPtr NegativeLimitStep::clone() const
-{
-    return std::make_unique<NegativeLimitStep>(*this);
-}
-
 /// Wire format and cross-version compatibility.
 ///
 /// The serialized layout is `flags` (one byte), then `limit` and `offset` (varuint), then -
@@ -110,7 +105,7 @@ void NegativeLimitStep::serialize(Serialization & ctx) const
     writeVarUInt(offset, ctx.out);
 
     if (with_ties)
-        serializeSortDescription(description, ctx.out, ctx.version, ctx.for_cache_key, ctx.input_header);
+        serializeSortDescription(description, ctx.out, ctx.version);
 }
 
 QueryPlanStepPtr NegativeLimitStep::deserialize(Deserialization & ctx)

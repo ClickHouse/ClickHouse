@@ -133,8 +133,6 @@ void UniqueKeyDenseIndexOps::ensureValidDenseIndex(MutableDataPartPtr & part, bo
         return;
 
     auto & log = data.log;
-    /// The handle is kept rather than `data.hasUniqueKey()`: the body needs the column list and
-    /// the snapshot below, so asking the storage would be an extra fetch.
     auto metadata_snapshot = data.getInMemoryMetadataPtr(data.getContext(), /*bypass_metadata_cache=*/false);
     if (!metadata_snapshot || !metadata_snapshot->hasUniqueKey())
         return;
@@ -226,7 +224,7 @@ void UniqueKeyDenseIndexOps::ensureValidDenseIndex(MutableDataPartPtr & part, bo
     {
 #if USE_ROCKSDB
         Stopwatch rebuild_watch;
-        Block accumulated = readUniqueKeyColumns(data, part, metadata_snapshot, uk_names);
+        Block accumulated = readUniqueKeyColumns(part, metadata_snapshot, uk_names);
         if (accumulated.rows() == 0)
             throw Exception(ErrorCodes::CORRUPTED_DATA,
                 "ensureValidDenseIndex: part {} has rows_count={} but sequential read yielded 0 rows; "
@@ -304,11 +302,11 @@ void UniqueKeyDenseIndexOps::onPartAttach(MutableDataPartPtr & part) const
 }
 
 
+#if USE_ROCKSDB
 Block UniqueKeyDenseIndexOps::readUniqueKeyColumns(
-    const MergeTreeData & data,
-    const std::shared_ptr<const IMergeTreeDataPart> & part,
+    const MutableDataPartPtr & part,
     const StorageMetadataPtr & metadata_snapshot,
-    const Names & uk_names)
+    const Names & uk_names) const
 {
     /// Read the part's UK columns through a single-part storage view — the same
     /// `StorageFromMergeTreeDataPart` path projection materialization and MutateTask
@@ -371,5 +369,6 @@ Block UniqueKeyDenseIndexOps::readUniqueKeyColumns(
         accumulated.getByPosition(c).column = std::move(accum_columns[c]);
     return accumulated;
 }
+#endif
 
 }

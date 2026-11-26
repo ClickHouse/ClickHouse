@@ -21,7 +21,6 @@ public:
     std::optional<Float64> estimateEqual(const Field & val) const override;
 
     String getNameForLogs() const override { return "TDigest"; }
-    size_t allocatedBytes() const override;
 
 private:
     QuantileTDigest<Float64> t_digest;

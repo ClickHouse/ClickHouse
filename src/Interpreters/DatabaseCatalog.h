@@ -267,7 +267,6 @@ public:
     void checkTableCanBeAddedWithNoCyclicDependencies(const QualifiedTableName & table_name, const TableNamesSet & new_referential_dependencies, const TableNamesSet & new_loading_dependencies);
     void checkTableCanBeRenamedWithNoCyclicDependencies(const StorageID & from_table_id, const StorageID & to_table_id);
     void checkTablesCanBeExchangedWithNoCyclicDependencies(const StorageID & table_id_1, const StorageID & table_id_2);
-    void checkDatabaseCanBeRenamedWithNoCyclicDependencies(const String & old_database_name, const String & new_database_name, const Strings & tables_in_database);
 
     struct TableMarkedAsDropped
     {
@@ -305,8 +304,6 @@ private:
 
     explicit DatabaseCatalog(ContextMutablePtr global_context_);
     void assertDatabaseDoesntExistUnlocked(const String & database_name) const TSA_REQUIRES(databases_mutex);
-    void checkDatabaseCanBeRenamedWithNoCyclicDependenciesUnlocked(
-        const String & old_database_name, const String & new_database_name, const Strings & tables_in_database) const TSA_REQUIRES(databases_mutex);
 
     /// Waits on the table lock at most `table_lock_timeout`, single attempt on the database lock.
     /// Always returns a guard, check `ownsTableLock` for the outcome.
@@ -339,9 +336,6 @@ private:
     TablesMarkedAsDropped getTablesToDrop();
     void dropTablesParallel(TablesMarkedAsDropped tables);
     void rescheduleDropTableTask();
-
-    void cleanupStoreDirectoryTask();
-    bool maybeRemoveDirectory(const String & disk_name, const DiskPtr & disk, const String & unused_dir);
 
     void reloadDisksTask();
 
@@ -397,7 +391,6 @@ private:
 
     std::unique_ptr<BackgroundSchedulePoolTaskHolder> drop_task;
     std::condition_variable wait_table_finally_dropped;
-    std::unique_ptr<BackgroundSchedulePoolTaskHolder> cleanup_task;
 
     std::unique_ptr<BackgroundSchedulePoolTaskHolder> reload_disks_task;
     std::mutex reload_disks_mutex;
@@ -411,7 +404,8 @@ private:
 /// This class is useful when creating a table or database.
 /// Usually we create IStorage/IDatabase object first and then add it to IDatabase/DatabaseCatalog.
 /// But such object may start using a directory in store/ since its creation.
-/// To avoid race with cleanupStoreDirectoryTask() we have to mark UUID as used first.
+/// To prevent another table or database from using the same UUID (and so the same directory)
+/// concurrently, we have to mark UUID as used first.
 /// Then we can either add DatabasePtr/StoragePtr to the created UUID mapping
 /// or remove the lock if creation failed.
 /// See also addUUIDMapping(...)

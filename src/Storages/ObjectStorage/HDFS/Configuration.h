@@ -63,6 +63,8 @@ public:
     Path getRawPath() const override { return path; }
     void setRawPath(const Path & p) override { path = p; }
     const String & getRawURI() const override { return url; }
+    /// The raw URI is only the authority, so grants never filter paths, and any path is checked as the authority.
+    [[nodiscard]] String getURIForAccessCheck(const String & /*write_path*/) const override { return url; }
 
     const Paths & getPaths() const override { return paths; }
     void setPaths(const Paths & paths_) override
@@ -72,9 +74,6 @@ public:
 
     String getNamespace() const override { return ""; }
     String getDataSourceDescription() const override { return url; }
-
-    /// The object storages created from now on reject writes and removals.
-    void setReadOnly() { read_only = true; }
     StorageObjectStorageQuerySettings getQuerySettings(const ContextPtr &) const override;
 
     void check(ContextPtr context) override;
@@ -94,7 +93,6 @@ private:
     String url;
     Path path;
     Paths paths;
-    bool read_only = false;
 };
 }
 
