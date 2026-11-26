@@ -1,0 +1,8 @@
+the whole identifier is a scalar column, the rest is a tuple
+10
+10
+7
+the whole identifier is a tuple column, the rest is a scalar
+7
+10
+10

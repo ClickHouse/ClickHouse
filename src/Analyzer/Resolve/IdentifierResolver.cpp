@@ -1439,26 +1439,44 @@ bool IdentifierResolver::tableNameIsHiddenByAlias(
 
                 const auto & [outer_table_expression_node, outer_table_expression_data] = *data_it;
 
-                /// The readings of one table expression: a readable one takes precedence over a blocking one.
-                OuterReading reading = tableExpressionDataReadingOfIdentifier(outer_table_expression_data, identifier, identifier_lookup, outer_scope->context);
-                const IQueryTreeNode * source = reading == OuterReading::ABSENT ? nullptr : node.get();
+                /** The readings of one table expression are tried in the order of `tryResolveIdentifierFromTableExpression`,
+                  * and the first one that binds the identifier decides, whether or not it provides it: the whole
+                  * identifier as a column or a subcolumn first, and the identifier without its first part, when that
+                  * part addresses the table expression, afterwards. With `analyzer_compatibility_prefer_alias_over_subcolumn`
+                  * the order is the opposite.
+                  *
+                  * What looks like `database.table` in this scope can be `table.column` in the enclosing one, e.g.
+                  * `FROM u AS default` with a `Tuple` column `t` gives `default.t.val` a reading there. The identifier
+                  * names another column then, which an equal table expression does not bind the same way, so that
+                  * reading has no source.
+                  */
+                const bool first_part_addresses_table_expression = identifier_column_qualifier_parts > 1
+                    && pathStartAddressesTableExpression(identifier.front(), outer_table_expression_node, outer_table_expression_data);
+                const bool prefer_alias_over_subcolumn
+                    = outer_scope->context->getSettingsRef()[Setting::analyzer_compatibility_prefer_alias_over_subcolumn];
 
-                /// What looks like `database.table` in this scope can be `table.column` in the enclosing one, e.g.
-                /// `FROM u AS default` with a `Tuple` column `t` gives `default.t.val` a reading there.
-                if (reading != OuterReading::READABLE
-                    && identifier_column_qualifier_parts > 1
-                    && pathStartAddressesTableExpression(identifier.front(), outer_table_expression_node, outer_table_expression_data))
+                auto reading_without_first_part = [&]
                 {
                     IdentifierView rest(identifier);
                     rest.popFirst();
-                    auto rest_reading = tableExpressionDataReadingOfIdentifier(outer_table_expression_data, rest, identifier_lookup, outer_scope->context);
-                    if (rest_reading != OuterReading::ABSENT)
-                    {
-                        /// The identifier names another column here, which an equal table expression does not bind the same way.
-                        reading = rest_reading;
-                        source = nullptr;
-                    }
+                    return tableExpressionDataReadingOfIdentifier(outer_table_expression_data, rest, identifier_lookup, outer_scope->context);
+                };
+
+                OuterReading reading = OuterReading::ABSENT;
+                const IQueryTreeNode * source = nullptr;
+
+                if (first_part_addresses_table_expression && prefer_alias_over_subcolumn)
+                    reading = reading_without_first_part();
+
+                if (reading == OuterReading::ABSENT)
+                {
+                    reading = tableExpressionDataReadingOfIdentifier(outer_table_expression_data, identifier, identifier_lookup, outer_scope->context);
+                    if (reading != OuterReading::ABSENT)
+                        source = node.get();
                 }
+
+                if (reading == OuterReading::ABSENT && first_part_addresses_table_expression && !prefer_alias_over_subcolumn)
+                    reading = reading_without_first_part();
 
                 switch (reading)
                 {
