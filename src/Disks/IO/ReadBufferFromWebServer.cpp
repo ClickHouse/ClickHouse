@@ -293,11 +293,25 @@ std::optional<Field> ReadBufferFromWebServer::getMetadata(const String & name) c
     if (name != "headers")
         return std::nullopt;
 
-    auto * self = const_cast<ReadBufferFromWebServer *>(this);
     if (!impl)
     {
-        self->setReadUntilPosition(1);
-        self->impl = self->initialize();
+        const auto current_offset = offset.load(std::memory_order_relaxed);
+        if (read_until_position && read_until_position <= current_offset)
+            return std::nullopt;
+        if (urls.size() != 1)
+            return std::nullopt;
+
+        /// A cached footer can answer the query without consuming this buffer.
+        /// Fetch only the headers of a real data response with a separate bounded
+        /// `GET`, leaving this buffer's position, bounds and external memory alone.
+        auto data_response = std::make_unique<ReadBufferFromWebServer>(
+            urls, context, StoredObject::UnknownSize, read_settings,
+            /*use_external_buffer_=*/ false, /*read_until_position_=*/ 0, headers, expected_etag);
+        if (current_offset)
+            data_response->seek(current_offset, SEEK_SET);
+        data_response->setReadUntilPosition(current_offset + 1);
+        std::ignore = data_response->next();
+        return Field(data_response->getResponseHeaders());
     }
 
     if (auto * http_buf = dynamic_cast<ReadWriteBufferFromHTTP *>(impl.get()))
