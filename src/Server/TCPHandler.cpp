@@ -122,6 +122,7 @@ namespace Setting
     extern const SettingsBool send_profile_events;
     extern const SettingsString send_logs_source_regexp;
     extern const SettingsSeconds send_timeout;
+    extern const SettingsOverflowMode timeout_overflow_mode;
     extern const SettingsTimezone session_timezone;
     extern const SettingsMilliseconds sleep_after_receiving_query_ms;
     extern const SettingsMilliseconds sleep_in_send_data_ms;
@@ -1452,6 +1453,18 @@ bool TCPHandler::receivePacketsExpectDataConcurrentWithExecutor(QueryState & sta
     }
 }
 
+/// The time left for reading external tables, in microseconds. See `QueryState::external_tables_time_limit_us`.
+static UInt64 getTimeLeftForExternalTablesOrThrow(const QueryState & state)
+{
+    const UInt64 limit_us = *state.external_tables_time_limit_us;
+    const UInt64 elapsed_us = state.watch.elapsedMicroseconds();
+    if (elapsed_us >= limit_us)
+        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED,
+            "Timeout exceeded while reading external table data. Spent {} ms, timeout is {} ms.",
+            elapsed_us / 1000, limit_us / 1000);
+    return limit_us - elapsed_us;
+}
+
 bool TCPHandler::receivePacketsExpectData(QueryState & state)
 {
     /// Poll interval should not be greater than receive_timeout
@@ -1466,8 +1479,21 @@ bool TCPHandler::receivePacketsExpectData(QueryState & state)
 
     while (tcp_server.isOpen() || !server.isCancelled())
     {
-        while (!in->poll(timeout_us))
+        while (true)
         {
+            /// The time limit of external tables is checked before every packet, whatever its type,
+            /// and the wait for the packet does not go past it.
+            UInt64 current_timeout_us = timeout_us;
+            if (state.external_tables_time_limit_us)
+                current_timeout_us = std::min(current_timeout_us, getTimeLeftForExternalTablesOrThrow(state));
+
+            if (in->poll(current_timeout_us))
+                break;
+
+            /// If both this limit and `receive_timeout` are over, this one is reported.
+            if (state.external_tables_time_limit_us)
+                getTimeLeftForExternalTablesOrThrow(state);
+
             size_t elapsed = size_t(watch.elapsedSeconds());
             if (elapsed > size_t(receive_timeout.totalSeconds()))
             {
@@ -1475,6 +1501,20 @@ bool TCPHandler::receivePacketsExpectData(QueryState & state)
                                 "Timeout exceeded while receiving data from client. Waited for {} seconds, timeout is {} seconds.",
                                 elapsed, receive_timeout.totalSeconds());
             }
+        }
+
+        if (state.external_tables_time_limit_us)
+        {
+            /// Reads inside the packet and writes until the next packet do not wait past the time limit either.
+            /// Not less than a millisecond, the granularity that socket timeouts are safe to rely on.
+            const Poco::Timespan time_left(static_cast<Poco::Timespan::TimeDiff>(std::max<UInt64>(getTimeLeftForExternalTablesOrThrow(state), 1000)));
+            /// A timeout of zero is no timeout, so it is limited as well.
+            auto limit_timeout = [&](const Poco::Timespan & timeout)
+            {
+                return timeout.totalMicroseconds() > 0 && timeout < time_left ? timeout : time_left;
+            };
+            socket().setReceiveTimeout(limit_timeout(receive_timeout));
+            socket().setSendTimeout(limit_timeout(send_timeout));
         }
 
         UInt64 packet_type = 0;
@@ -1547,30 +1587,32 @@ void TCPHandler::readTemporaryTables(QueryState & state)
     /// no sense in partial_result_on_first_cancel setting when temporary data is read.
     auto off_setting_guard = TurnOffBoolSettingTemporary(state.allow_partial_result_on_first_cancel);
 
+    /// The pipelines are finished by the empty block that ends the external data.
+    /// If it has not come, because of an exception or a cancellation, the data is not going to be used.
+    SCOPE_EXIT({ state.cancelExternalTablePipelines(); });
+
     /// The limit is taken from the context here and not in `extractConnectionSettingsFromContext`:
     /// that one runs before `executeQuery`, which applies the `SETTINGS` clause of the query,
     /// while the external tables are read from inside of it, when the settings are final.
-    const Poco::Timespan max_execution_time = state.query_context->getSettingsRef()[Setting::max_execution_time];
-    const bool has_time_limit = max_execution_time.totalMicroseconds() > 0;
+    const Settings & settings = state.query_context->getSettingsRef();
+    const Poco::Timespan max_execution_time = settings[Setting::max_execution_time];
 
-    /// A query cannot wait for its peer longer than it is allowed to run, so the limit also applies to the socket timeouts
-    /// until the end of the query. `receivePacketsExpectData` waits for at most `receive_timeout` at a time.
-    if (has_time_limit && (send_timeout > max_execution_time || receive_timeout > max_execution_time))
+    /// Restores the timeouts of the socket when the external tables are read, so they are limited only here.
+    std::optional<TimeoutSetter> timeout_restorer;
+    SCOPE_EXIT({ state.external_tables_time_limit_us.reset(); });
+
+    /// Reading external tables cannot be stopped halfway with a partial result,
+    /// so with `timeout_overflow_mode = 'break'` it is not limited, like before.
+    if (max_execution_time.totalMicroseconds() > 0 && settings[Setting::timeout_overflow_mode] == OverflowMode::THROW)
     {
-        send_timeout = std::min(send_timeout, max_execution_time);
-        receive_timeout = std::min(receive_timeout, max_execution_time);
-        /// The previous setter restores the timeouts of the socket when it is destroyed, so it has to go first.
-        state.timeout_setter.reset();
-        state.timeout_setter = std::make_unique<TimeoutSetter>(socket(), send_timeout, receive_timeout);
+        /// `receivePacketsExpectData` enforces it: before every packet, in the wait for a packet,
+        /// and with the timeouts of the socket, which it sets to the time left, inside a packet.
+        state.external_tables_time_limit_us = static_cast<UInt64>(max_execution_time.totalMicroseconds());
+        timeout_restorer.emplace(socket(), send_timeout, receive_timeout);
     }
 
     while (receivePacketsExpectData(state))
     {
-        if (has_time_limit && watch.elapsedMicroseconds() > static_cast<UInt64>(max_execution_time.totalMicroseconds()))
-            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED,
-                "Timeout exceeded while reading external table data. Spent {} ms, timeout is {} ms.",
-                watch.elapsedMilliseconds(), max_execution_time.totalMilliseconds());
-
         /// Data upload can take a long time, so send logs and profile events without waiting for it to finish.
         sendLogs(state);
         sendInsertProfileEvents(state);
@@ -3176,6 +3218,9 @@ bool TCPHandler::processData(QueryState & state, bool scalar)
 
     if (block.empty())
     {
+        /// All the data of the query is read, also if finishing the pipelines fails:
+        /// there is nothing left to skip after the exception.
+        state.read_all_data = true;
         state.finishExternalTablePipelines();
         return false;
     }

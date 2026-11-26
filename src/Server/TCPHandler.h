@@ -176,10 +176,10 @@ struct QueryState
         external_table_pipelines.clear();
     }
 
-    ~QueryState()
+    /// Drops the received data. Does not throw.
+    /// `PushingPipelineExecutor` has to be finished or cancelled explicitly before it is destroyed.
+    void cancelExternalTablePipelines()
     {
-        /// `PushingPipelineExecutor` has to be finished or cancelled explicitly before it is destroyed.
-        /// The pipelines that are still here belong to a query that failed or was cancelled while receiving external data.
         for (auto & [name, pipeline_holder] : external_table_pipelines)
         {
             try
@@ -191,6 +191,16 @@ struct QueryState
                 tryLogCurrentException(__PRETTY_FUNCTION__);
             }
         }
+        external_table_pipelines.clear();
+    }
+
+    /// Set while external tables are read with a time limit: the time since the start of the query (see `watch`),
+    /// in microseconds, by which it has to be over. `receivePacketsExpectData` does not wait for the client past it.
+    std::optional<UInt64> external_tables_time_limit_us;
+
+    ~QueryState()
+    {
+        cancelExternalTablePipelines();
     }
 
     ProfileEvents::ThreadIdToCountersSnapshot last_sent_snapshots;

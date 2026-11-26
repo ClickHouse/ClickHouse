@@ -1,4 +1,8 @@
-exception SOCKET_TIMEOUT between packets
-exception SOCKET_TIMEOUT inside a packet
-exception TIMEOUT_EXCEEDED while reading external table data
-values [3]
+between packets: exception TIMEOUT_EXCEEDED while reading external table data
+inside a packet: exception SOCKET_TIMEOUT inside a packet
+between packets, no socket timeouts: exception TIMEOUT_EXCEEDED while reading external table data
+inside a packet, no socket timeouts: exception SOCKET_TIMEOUT inside a packet
+only pings: exception TIMEOUT_EXCEEDED while reading external table data
+limit in the query: exception TIMEOUT_EXCEEDED while reading external table data
+limit of the query over the limit of the session: values [3]
+break mode: no exception while reading external table data

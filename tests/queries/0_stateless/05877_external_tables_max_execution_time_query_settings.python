@@ -7,11 +7,15 @@
 # and the server learns the limit only when it parses the query.
 #
 # The same limit applies to the time the server waits for the data of an external table:
-# a client that stops sending it gets an exception instead of holding the query for `receive_timeout`.
+# a client that stops sending it gets an exception instead of holding the query for `receive_timeout`,
+# also when `receive_timeout` is zero, which means no timeout, and when the client keeps sending `Ping` packets.
+#
+# With `timeout_overflow_mode = 'break'` external tables are read without the limit.
 
 import os
 import socket
 import sys
+import time
 import uuid
 
 CLICKHOUSE_HOST = os.environ.get("CLICKHOUSE_HOST", "127.0.0.1")
@@ -199,9 +203,7 @@ def readResponse(s):
         if packet_type == 2:  # Exception
             code, text = readException(s)
             if code == SOCKET_TIMEOUT:
-                # The first message is of the wait for the next packet, the second one is of a read from the socket.
-                if "while receiving data from client" in text:
-                    return "exception SOCKET_TIMEOUT between packets"
+                # A read from the socket inside a packet is limited by the timeout of the socket.
                 if "while reading from socket" in text:
                     return "exception SOCKET_TIMEOUT inside a packet"
                 return "exception SOCKET_TIMEOUT"
@@ -231,6 +233,8 @@ def readResponse(s):
             for _ in range(5):
                 readVarUInt(s)
             continue
+        if packet_type == 4:  # Pong
+            continue
         if packet_type == 5:  # EndOfStream
             return "values {}".format(values)
         if packet_type == 6:  # ProfileInfo
@@ -253,52 +257,96 @@ def connect():
     return s
 
 
+def sendPing(s):
+    ba = bytearray()
+    writeVarUInt(4, ba)  # Ping
+    s.sendall(ba)
+
+
+def setSessionSettings(s, settings):
+    sendQuery(s, "SET " + settings)
+    sendEmptyBlock(s)
+    readResponse(s)
+
+
+def clientStopsBetweenPackets(session_settings=None):
+    with connect() as s:
+        if session_settings:
+            setSessionSettings(s, session_settings)
+        sendQuery(s, "SELECT sum(x) FROM ext SETTINGS max_execution_time = 1")
+        # One block, and neither the rest of the table nor the empty block that ends the external data.
+        sendBlock(s, "ext", [("x", "UInt64")], 1, (1).to_bytes(8, "little"))
+        return readResponse(s)
+
+
+def clientStopsInsideAPacket(session_settings=None):
+    with connect() as s:
+        if session_settings:
+            setSessionSettings(s, session_settings)
+        sendQuery(s, "SELECT sum(x) FROM ext SETTINGS max_execution_time = 1")
+        # The block declares one row, but its data is not sent.
+        sendBlock(s, "ext", [("x", "UInt64")], 1)
+        return readResponse(s)
+
+
+def clientSendsOnlyPings():
+    with connect() as s:
+        sendQuery(s, "SELECT sum(x) FROM ext SETTINGS max_execution_time = 1")
+        sendBlock(s, "ext", [("x", "UInt64")], 1, (1).to_bytes(8, "little"))
+        # The server answers every `Ping`, so it never waits for a packet for long.
+        for _ in range(10):
+            sendPing(s)
+            time.sleep(0.2)
+        return readResponse(s)
+
+
 def limitFromQuerySettings():
     with connect() as s:
         # The limit is only in the query text and is below one second.
         # The first block alone takes longer than that to receive.
         sendQuery(s, "SELECT sum(x) FROM ext SETTINGS max_execution_time = 0.5")
         sendExternalTable(s, [1, 2, 3])
-        print(readResponse(s))
+        return readResponse(s)
 
 
 def querySettingsOverrideSession():
     with connect() as s:
-        sendQuery(s, "SET max_execution_time = 1")
-        sendEmptyBlock(s)
-        readResponse(s)
+        setSessionSettings(s, "max_execution_time = 1")
 
         # Receiving the table takes two seconds, which is more than the limit of the session
         # and less than the limit of the query.
         sendQuery(s, "SELECT sum(x) FROM ext SETTINGS max_execution_time = 60")
         sendExternalTable(s, [1, 2])
-        print(readResponse(s))
+        return readResponse(s)
 
 
-def clientStopsBetweenPackets():
+def breakModeIsNotLimited():
     with connect() as s:
-        sendQuery(s, "SELECT sum(x) FROM ext SETTINGS max_execution_time = 1")
-        # One block, and neither the rest of the table nor the empty block that ends the external data.
-        sendBlock(s, "ext", [("x", "UInt64")], 1, (1).to_bytes(8, "little"))
-        print(readResponse(s))
-
-
-def clientStopsInsideAPacket():
-    with connect() as s:
-        sendQuery(s, "SELECT sum(x) FROM ext SETTINGS max_execution_time = 1")
-        # The block declares one row, but its data is not sent.
-        sendBlock(s, "ext", [("x", "UInt64")], 1)
-        print(readResponse(s))
+        sendQuery(
+            s,
+            "SELECT sum(x) FROM ext SETTINGS max_execution_time = 0.5, timeout_overflow_mode = 'break'",
+        )
+        sendExternalTable(s, [1, 2])
+        response = readResponse(s)
+        # What the query returns after its time is over is not the subject here.
+        if "external table" in response:
+            return response
+        return "no exception while reading external table data"
 
 
 def main():
     # The stalled client is checked without the fail point, and the slow server is checked with it.
     if sys.argv[1] == "stalled_client":
-        clientStopsBetweenPackets()
-        clientStopsInsideAPacket()
+        zero_timeouts = "receive_timeout = 0, send_timeout = 0"
+        print("between packets:", clientStopsBetweenPackets())
+        print("inside a packet:", clientStopsInsideAPacket())
+        print("between packets, no socket timeouts:", clientStopsBetweenPackets(zero_timeouts))
+        print("inside a packet, no socket timeouts:", clientStopsInsideAPacket(zero_timeouts))
+        print("only pings:", clientSendsOnlyPings())
     else:
-        limitFromQuerySettings()
-        querySettingsOverrideSession()
+        print("limit in the query:", limitFromQuerySettings())
+        print("limit of the query over the limit of the session:", querySettingsOverrideSession())
+        print("break mode:", breakModeIsNotLimited())
 
 
 if __name__ == "__main__":
