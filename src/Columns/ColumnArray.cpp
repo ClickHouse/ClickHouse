@@ -1520,7 +1520,7 @@ ColumnPtr ColumnArray::indexImpl(const PaddedPODArray<T> & indexes, size_t limit
     size_t begin = 0;
     while (begin < limit)
     {
-        const size_t chunk_start = res_offsets[begin - 1];
+        const size_t chunk_start = res_offsets[static_cast<ssize_t>(begin) - 1];
         const size_t end = std::upper_bound(
             res_offsets.begin() + begin, res_offsets.begin() + limit, chunk_start + max_elements_to_gather_at_once) - res_offsets.begin();
 
