@@ -11,8 +11,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # miss, and each check asks for fewer than a tenth of the rows. A `String` key takes the map method without
 # aggregates, a `UInt64` key and a `UInt64, String` key take set methods. The methods of fixed-width keys and
 # one `String` key have no set form, so they are off, and the `UInt64, String` key takes the serialized set
-# method. The interleaved `String` key repeats each of four keys every fourth row, so no run forms, and each
-# repeat combines into the tail of its key's partition instead (see `AdaptivePartitionTails`). Each check
+# method. The interleaved `String` key repeats each of four keys every fourth row, so no run forms, and the
+# repeats combine into the tails of their keys' partitions instead (see `AdaptivePartitionTails`). Each check
 # compares the result with the one of the feature off; it runs in a clickhouse-local process of its own, so
 # the counters in `system.events` belong to it alone.
 function check()

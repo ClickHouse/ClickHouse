@@ -43,7 +43,8 @@ enum class AdaptiveMissCombine
 ///
 /// - A key-only miss adds nothing to the tail.
 /// - A count miss adds its rows to the tail's count: the descriptor's multiplicity while the tail is pending,
-///   the record's count once it is written, while that count keeps its stored width (see `addToStagedUInt`).
+///   the record's count once it is written, while that count keeps its stored width (see
+///   `AdaptivePartitionTails::addToCount`).
 /// - A row-selection miss whose row is not better adds its rows to the tail's multiplicity when the selection
 ///   counts rows. A row is better by a strictly larger rank, so the earlier row stays on a tie, as in
 ///   `argMax`. A better row takes a pending tail over by moving its descriptor's source row. A written record
