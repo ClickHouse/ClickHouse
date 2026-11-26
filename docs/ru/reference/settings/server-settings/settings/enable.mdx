@@ -20,6 +20,10 @@ import SettingsInfoBlock from "/snippets/ru/components/SettingsInfoBlock/Setting
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />Захватывать GPU при запуске сервера для выполнения на нём запросов. Сервер не запустится, если он собран без поддержки GPU или в системе нет устройства CUDA.
 
+## enable_iceberg_rest_catalog {#enable_iceberg_rest_catalog}
+
+<SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />Включает экспериментальный сервер REST-каталога Iceberg, настроенный в разделе `iceberg_rest_catalog`. Изменение вступает в силу после перезапуска сервера.
+
 ## enable_read_through_distributed_cache {#enable_read_through_distributed_cache}
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="Yes" />Действует только в ClickHouse Cloud. Разрешает чтение из распределённого кэша. Это переключатель уровня сервера, применяемый без перезапуска; ему также подчиняются фоновые операции без собственного профиля запроса (слияния, мутации, сбросы таблиц `Buffer`). Отдельные запросы могут переопределять его с помощью настройки `force_read_through_distributed_cache`.
