@@ -6,6 +6,7 @@
 #include <Interpreters/Context.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionResultSetting.h>
+#include <Functions/FunctionsMiscellaneous.h>
 #include <Functions/IFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTFunction.h>
@@ -43,6 +44,31 @@ void collectResultSettings(
     for (const auto & node : dag.getNodes())
         nodes.emplace(node.result_name, &node);
 
+    /// A call inside a lambda has no node in `dag`, but one in the body of the lambda.
+    UnorderedMapWithMemoryTracking<std::string_view, const ActionsDAG::Node *> lambda_nodes;
+    auto add_lambda_nodes = [&](this auto & self, const ActionsDAG & from) -> void
+    {
+        for (const auto & node : from.getNodes())
+        {
+            allNodeFunctions(node, [&](const IFunctionBase & function)
+            {
+                const ActionsDAG * body = nullptr;
+                if (const auto * capture = typeid_cast<const FunctionCapture *>(&function))
+                    body = &capture->getAcionsDAG();
+                else if (const auto * expression = typeid_cast<const FunctionExpression *>(&function))
+                    body = &expression->getAcionsDAG();
+                if (body)
+                {
+                    for (const auto & inner : body->getNodes())
+                        lambda_nodes.emplace(inner.result_name, &inner);
+                    self(*body);
+                }
+                return true;
+            });
+        }
+    };
+    add_lambda_nodes(dag);
+
     VectorWithMemoryTracking<const ActionsDAG::Node *> enclosing;
     auto visit = [&](this auto & self, const IAST & ast_node) -> void
     {
@@ -61,8 +87,15 @@ void collectResultSettings(
         {
             if (const auto * registered = FunctionFactory::instance().tryGetResultSettings(function->name))
             {
-                /// A call folded into a constant or inside a lambda has no node to ask, so all its declared settings count.
-                const IFunctionBase * built = node && node->type == ActionsDAG::ActionType::FUNCTION ? node->function_base.get() : nullptr;
+                /// A call folded into a constant has no node to ask, so all its declared settings count.
+                const ActionsDAG::Node * call = node;
+                if (!call)
+                {
+                    auto it = lambda_nodes.find(function->getColumnName());
+                    if (it != lambda_nodes.end())
+                        call = it->second;
+                }
+                const IFunctionBase * built = call && call->type == ActionsDAG::ActionType::FUNCTION ? call->function_base.get() : nullptr;
                 const String & expression = enclosing.back()->result_name;
                 auto entry = std::ranges::find(result_settings, expression, &ResultSettingsOfExpression::expression);
                 for (size_t i = 0; i < registered->settings.size(); ++i)
