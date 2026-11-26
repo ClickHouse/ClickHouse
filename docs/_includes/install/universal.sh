@@ -14,6 +14,8 @@ then
         # Check avx2 as a proxy, since every real CPU with AVX2 also has the other v3 features.
         if grep -q avx2 /proc/cpuinfo
         then
+            # The `amd64musl` path is kept for release branches built before the switch to the
+            # static musl binary, which publish a glibc binary under `amd64`.
             if ldd --version 2>&1 | grep -q musl
             then
                 DIR="amd64musl"

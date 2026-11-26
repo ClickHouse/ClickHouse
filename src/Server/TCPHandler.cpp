@@ -6,6 +6,7 @@
 #include <string_view>
 #include <Access/AccessControl.h>
 #include <Access/Credentials.h>
+#include <Client/SecondaryQuerySettings.h>
 #include <Columns/ColumnBLOB.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
@@ -46,6 +47,7 @@
 #include <base/scope_guard.h>
 #include <Poco/Net/SocketAddress.h>
 #include <Poco/Util/LayeredConfiguration.h>
+#include <Common/CurrentMemoryTracker.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/saturatedDuration.h>
@@ -148,6 +150,7 @@ namespace FailPoints
 extern const char parallel_replicas_delay_announcement[];
 extern const char parallel_replicas_reading_response_timeout[];
 extern const char tcp_handler_fail_connection_setup[];
+extern const char tcp_handler_pause_before_query_plan_deserialization[];
 }
 }
 
@@ -193,6 +196,7 @@ namespace DB::ErrorCodes
     extern const int INCORRECT_DATA;
     extern const int TCP_CONNECTION_LIMIT_REACHED;
     extern const int MEMORY_LIMIT_EXCEEDED;
+    extern const int QUERY_WAS_CANCELLED;
 
     // We have to distinguish the case when query is killed by `KILL QUERY` statement
     // and when it is killed by `Protocol::Client::Cancel` packet.
@@ -332,6 +336,23 @@ Block convertColumnsToBLOBs(
         res.insert(std::move(column));
     }
     return res;
+}
+
+/// For a query that fails with the exception being handled, `cancel` rethrows the exception of the cancelled execution.
+/// `QUERY_WAS_CANCELLED` can be caused by this cancellation itself, so it must not replace the one being handled.
+template <typename Executor>
+void cancelExecutorOnException(Executor & executor, const LoggerPtr & log)
+{
+    try
+    {
+        executor.cancel();
+    }
+    catch (...)
+    {
+        if (getCurrentExceptionCode() != ErrorCodes::QUERY_WAS_CANCELLED)
+            throw;
+        LOG_DEBUG(log, "Exception of the cancelled query execution: {}", getCurrentExceptionMessage(/* with_stacktrace */ false));
+    }
 }
 }
 
@@ -594,9 +615,7 @@ void TCPHandler::runImpl()
             /// If we need to shut down, or client disconnects.
             if (!tcp_server.isOpen() || in->isCanceled() || in->eof())
             {
-                LOG_TEST(log, "Closing connection (open: {}, in_canceled: {}, eof: {})",
-                    tcp_server.isOpen(), in->isCanceled(),
-                    !in->isCanceled() && in->eof());
+                LOG_TEST(log, "Closing connection (open: {}, in_canceled: {})", tcp_server.isOpen(), in->isCanceled());
                 return;
             }
         }
@@ -1439,6 +1458,16 @@ bool TCPHandler::receivePacketsExpectData(QueryState & state)
             std::min(
                 poll_interval * 1000000,
                 static_cast<UInt64>(receive_timeout.totalMicroseconds())));
+    /// ... but wake up often enough to keep the client's live metrics fresh while it is slow to
+    /// send the next data packet. Sessions the flush cannot serve keep the blocking poll.
+    /// For `INSERT ... RETURNING` with client-fed input, the result is written to `out` concurrently
+    /// by another thread (without `callback_mutex`), so we must not write service packets here.
+    const bool can_flush_while_waiting = !state.skipping_data && !state.send_result_while_receiving_data_for_input;
+    if (can_flush_while_waiting
+        && client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_PROFILE_EVENTS_IN_INSERT
+        && query_kind == ClientInfo::QueryKind::INITIAL_QUERY
+        && state.query_context->getSettingsRef()[Setting::send_profile_events])
+        timeout_us = std::min(timeout_us, std::max(min_timeout_us, interactive_delay));
 
     Stopwatch watch;
 
@@ -1452,6 +1481,14 @@ bool TCPHandler::receivePacketsExpectData(QueryState & state)
                 throw NetException(ErrorCodes::SOCKET_TIMEOUT,
                                 "Timeout exceeded while receiving data from client. Waited for {} seconds, timeout is {} seconds.",
                                 elapsed, receive_timeout.totalSeconds());
+            }
+
+            if (can_flush_while_waiting && after_send_progress.elapsed() / 1000 >= interactive_delay)
+            {
+                after_send_progress.restart();
+                sendLogs(state);
+                sendInsertProfileEvents(state);
+                out->sync();
             }
         }
 
@@ -1669,7 +1706,7 @@ void TCPHandler::processInsertQuery(QueryState & state)
         catch (...)
         {
             killQueryIfStoppedByClient(state);
-            executor.cancel();
+            cancelExecutorOnException(executor, log);
             throw;
         }
     };
@@ -1685,7 +1722,8 @@ void TCPHandler::processInsertQuery(QueryState & state)
         if (auto table = DatabaseCatalog::instance().tryGetTable(insert_query.table_id, state.query_context))
             async_insert_enabled |= table->areAsynchronousInsertsEnabled();
 
-    if (insert_queue && async_insert_enabled && !insert_query.select)
+    if (insert_queue && async_insert_enabled && !insert_query.select
+        && !AsynchronousInsertQueue::checkInsideTransaction(state.query_context))
     {
         auto result = processAsyncInsertQuery(state, *insert_queue);
         if (result.status == AsynchronousInsertQueue::PushResult::OK)
@@ -1819,7 +1857,23 @@ void TCPHandler::processOrdinaryQuery(QueryState & state)
 
                     // Block might be empty in case of timeout, i.e. there is no data to process
                     if (!block.empty() && !state.io.null_format && !discard_query_data)
+                    {
+                        /// An older initiator cannot receive the number of rows of a block with no columns, so the
+                        /// rows of this part of the result would be lost there. Fail rather than return a wrong result.
+                        /// No data was sent yet, so an initiator with `skip_unavailable_shards_mode` set to
+                        /// `unavailable_or_exception_before_processing` skips this shard, which is what that mode asks for.
+                        if (block.columns() == 0 && client_tcp_protocol_version < DBMS_MIN_REVISION_WITH_COLUMN_LESS_BLOCK_ROW_COUNT)
+                            throw Exception(
+                                ErrorCodes::NOT_IMPLEMENTED,
+                                "Cannot send {} rows that carry no columns: the client speaks protocol revision {}, "
+                                "and sending the number of rows of a block with no columns requires revision {}. "
+                                "Upgrade the server that initiates the query",
+                                block.rows(),
+                                client_tcp_protocol_version,
+                                DBMS_MIN_REVISION_WITH_COLUMN_LESS_BLOCK_ROW_COUNT);
+
                         sendData(state, block);
+                    }
 
                     out->sync();
                 }
@@ -1828,7 +1882,7 @@ void TCPHandler::processOrdinaryQuery(QueryState & state)
         catch (...)
         {
             killQueryIfStoppedByClient(state);
-            executor.cancel();
+            cancelExecutorOnException(executor, log);
             throw;
         }
 
@@ -1888,7 +1942,7 @@ void TCPHandler::processTablesStatusRequest()
             /// the hash validates below.
             request.read(*in, client_tcp_protocol_version);
 
-            String cluster_secret;
+            SecretString cluster_secret;
             try
             {
                 cluster_secret = server.context()->getCluster(cluster)->getSecret();
@@ -2402,7 +2456,7 @@ void TCPHandler::receiveHello()
         /// the exception back to the unauthenticated peer (see the handshake catch block).
         try
         {
-            String cluster_secret;
+            SecretString cluster_secret;
             try
             {
                 cluster_secret = server.context()->getCluster(cluster)->getSecret();
@@ -2846,7 +2900,7 @@ void TCPHandler::processQuery(std::shared_ptr<QueryState> & state)
         client_info.interface = ClientInfo::Interface::TCP_INTERSERVER;
 #if USE_SSL
 
-        String cluster_secret;
+        SecretString cluster_secret;
         try
         {
             cluster_secret = server.context()->getCluster(cluster)->getSecret();
@@ -3025,6 +3079,30 @@ void TCPHandler::processQuery(std::shared_ptr<QueryState> & state)
     }
     state->query_context->applySettingsChanges(settings_changes);
 
+    /// The clamp above may drop or change a value that the initiator passed for a setting that chooses the
+    /// method of an aggregation key (see `markAggregationMethodSettingsChanged`). This server would then
+    /// number two-level buckets differently from the initiator, which merges the buckets of all servers by
+    /// their numbers. So it disables two-level aggregation, as for an initiator of an older revision (see
+    /// `DBMS_MIN_REVISION_WITH_CURRENT_AGGREGATION_VARIANT_SELECTION_METHOD`): it sends single-level blocks,
+    /// and the initiator splits them into buckets with its own method. It keeps the value that its
+    /// constraints allow rather than the initiator's: any client may mark its query as secondary, so taking
+    /// the passed value would let a user get around its own constraints.
+    if (query_kind == ClientInfo::QueryKind::SECONDARY_QUERY
+        && aggregationMethodSettingsDifferFromInitiator(passed_settings, state->query_context->getSettingsRef()))
+    {
+        LOG_DEBUG(
+            log, "The settings constraints changed an aggregation method setting of the initiator, so two-level aggregation is disabled");
+        state->query_context->setSetting("group_by_two_level_threshold", Field(0));
+        state->query_context->setSetting("group_by_two_level_threshold_bytes", Field(0));
+    }
+
+    /// The clamp above drops a passed `group_by_overflow_mode` that is equal to the value of this server, so the
+    /// explicit mode of the user would look like a default (see `explicitGroupByOverflowModeIsLost`). Mark it as
+    /// changed again. The value stays the same, so this does not get around the constraints.
+    if (query_kind == ClientInfo::QueryKind::SECONDARY_QUERY
+        && explicitGroupByOverflowModeIsLost(passed_settings, state->query_context->getSettingsRef()))
+        state->query_context->setSetting("group_by_overflow_mode", passed_settings.get("group_by_overflow_mode"));
+
     /// Sets the default database if it wasn't set earlier for the session context. This runs after
     /// the passed settings are applied, so the database explicitly carried by the query packet wins
     /// over a `database` setting that may have arrived with the passed settings; `setCurrentDatabase`
@@ -3076,6 +3154,8 @@ bool TCPHandler::receiveQueryPlan(QueryState & state)
         throwUnexpectedPacket(Protocol::Client::QueryPlan);
 
     const auto & context = state.query_context;
+
+    FailPointInjection::pauseFailPoint(FailPoints::tcp_handler_pause_before_query_plan_deserialization);
 
     /// Query plans can be sent by a client here, so guard type decoding with the effective input limit.
     auto plan_and_sets = QueryPlan::deserialize(*in, context, getBinaryTypeDecodingComplexityLimit(context));

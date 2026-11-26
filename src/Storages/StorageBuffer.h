@@ -54,7 +54,7 @@ public:
         size_t rows = 0;  /// The number of rows in the block.
         size_t bytes = 0; /// The number of (uncompressed) bytes in the block.
 
-        std::string toString() const;
+        [[nodiscard]] std::string toString() const;
     };
 
     /** num_shards - the level of internal parallelism (the number of independent buffers)
@@ -94,7 +94,13 @@ public:
 
     bool supportsParallelInsert() const override { return true; }
 
-    bool supportsSubcolumns() const override { return true; }
+    bool supportsSubcolumns() const override
+    {
+        /// read() passes the requested subcolumns to the destination, so it must be able to read them (StripeLog can not).
+        if (auto destination = getDestinationTable())
+            return destination->supportsSubcolumns();
+        return true;
+    }
 
     bool supportsColumnsWithDynamicStructure() const override { return true; }
 

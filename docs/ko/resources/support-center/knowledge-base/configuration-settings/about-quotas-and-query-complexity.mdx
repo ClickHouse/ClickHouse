@@ -6,9 +6,7 @@ keywords: ['쿼터', '쿼리 복잡도']
 description: '쿼터와 쿼리 복잡도는 ClickHouse에서 사용자가 수행할 수 있는 작업을 제한하는 강력한 방법입니다. 이 KB 문서에서는 이 두 가지 서로 다른 접근 방식을 적용하는 예시를 보여줍니다.'
 ---
 
-<div id="about-quotas-and-query-complexity">
-  ## 쿼터와 쿼리 복잡도 소개
-</div>
+## 쿼터와 쿼리 복잡도 소개 {#about-quotas-and-query-complexity}
 
 [쿼터](/ko/concepts/features/configuration/server-config/quotas)와 [쿼리 복잡도](/ko/concepts/features/configuration/settings/query-complexity)는 ClickHouse에서 사용자가 수행할 수 있는 작업을 제한하는 강력한 방법입니다.
 
@@ -16,9 +14,7 @@ description: '쿼터와 쿼리 복잡도는 ClickHouse에서 사용자가 수행
 
 이 KB 문서에서는 이 두 가지 접근 방식을 적용하는 예시를 보여줍니다.
 
-<div id="the-sample-data">
-  ## 샘플 데이터
-</div>
+## 샘플 데이터 {#the-sample-data}
 
 다음 예시에서는 아래의 간단한 예시 테이블을 사용합니다:
 
@@ -70,9 +66,7 @@ clickhouse-cloud :) SELECT * FROM default.test_table_00006488 LIMIT 5
 -- 5 rows in set. Elapsed: 0.003 sec.
 ```
 
-<div id="using-quotas">
-  ## 쿼터 사용하기
-</div>
+## 쿼터 사용하기 {#using-quotas}
 
 이 예시에서는 10초 인터벌마다 결과 행을 최대 10개까지만 조회할 수 있는 쿼터(Quota)를 적용할 역할(Role)을 생성합니다:
 
@@ -136,7 +130,7 @@ clickhouse-cloud :) CREATE QUOTA quota_max_10_result_rows_per_10_seconds FOR INT
 이제 `user_with_quota` 사용자로 로그인하세요
 
 ```sql
--- 역할을 통해 쿼터가 적용된 사용자로 로그인
+-- login as the user where quota is applied through the role
 clickhouse-cloud :) SELECT user()
 
 -- SELECT user()
@@ -149,7 +143,7 @@ clickhouse-cloud :) SELECT user()
 
 -- 1 row in set. Elapsed: 0.002 sec.
 
--- 권한 부여 목록 조회
+-- list grants
 clickhouse-cloud :) SHOW GRANTS
 
 -- SHOW GRANTS
@@ -162,7 +156,7 @@ clickhouse-cloud :) SHOW GRANTS
 
 -- 1 row in set. Elapsed: 0.001 sec.
 
--- 현재 시간 확인
+-- check the time
 clickhouse-cloud :) select now()
 
 -- SELECT now()
@@ -175,7 +169,7 @@ clickhouse-cloud :) select now()
 
 -- 1 row in set. Elapsed: 0.001 sec.
 
--- 10개 행 쿼리
+-- query ten rows
 clickhouse-cloud :) SELECT * FROM test_table LIMIT 10
 
 -- SELECT *
@@ -199,7 +193,7 @@ clickhouse-cloud :) SELECT * FROM test_table LIMIT 10
 
 -- 10 rows in set. Elapsed: 0.002 sec.
 
--- 마지막 쿼리 이후 10초 인터벌 내에 추가 행 조회 시도
+-- attempt to get another row within the 10 seconds interval since the last query
 clickhouse-cloud :) SELECT * FROM test_table LIMIT 1
 
 -- SELECT *
@@ -214,7 +208,7 @@ clickhouse-cloud :) SELECT * FROM test_table LIMIT 1
 -- Code: 201. DB::Exception: Received from dxqjx1s5lt.eu-west-1.aws.clickhouse.cloud:9440. DB::Exception: Quota for user `user_with_quota` for 10s has been exceeded: result_rows = 11/10. 
 -- Interval will end at 2023-10-25 14:37:50. Name of quota template: `quota_max_10_result_rows_per_10_seconds`. (QUOTA_EXCEEDED)
 
--- 현재 시간 확인
+-- check the time
 clickhouse-cloud :) select now()
 
 -- SELECT now()
@@ -230,9 +224,7 @@ clickhouse-cloud :) select now()
 
 새로운 10개 행 결과 집합 &quot;allowance&quot;를 다시 받으려면 5초를 더 기다려야 한다는 점에 유의하십시오.
 
-<div id="using-query-complexity">
-  ## 쿼리 복잡도 사용하기
-</div>
+## 쿼리 복잡도 사용하기 {#using-query-complexity}
 
 이 예시에서는 각 쿼리에서 최대 1개 행만 반환되도록 하는 쿼리 복잡도 `SETTING`을 적용할 역할을 생성합니다.
 

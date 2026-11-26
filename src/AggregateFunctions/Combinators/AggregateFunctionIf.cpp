@@ -20,11 +20,11 @@ namespace ErrorCodes
 class AggregateFunctionCombinatorIf final : public IAggregateFunctionCombinator
 {
 public:
-    String getName() const override { return "If"; }
+    [[nodiscard]] String getName() const override { return "If"; }
 
-    VariantArgumentsOfNestedFunction getVariantArgumentsOfNestedFunction() const override { return VariantArgumentsOfNestedFunction::Forwarded; }
+    [[nodiscard]] VariantArgumentsOfNestedFunction getVariantArgumentsOfNestedFunction() const override { return VariantArgumentsOfNestedFunction::Forwarded; }
 
-    DataTypes transformArguments(const DataTypes & arguments) const override
+    [[nodiscard]] DataTypes transformArguments(const DataTypes & arguments) const override
     {
         if (arguments.empty())
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
@@ -45,7 +45,7 @@ public:
         return DataTypes(arguments.begin(), std::prev(arguments.end()));
     }
 
-    AggregateFunctionPtr transformAggregateFunction(
+    [[nodiscard]] AggregateFunctionPtr transformAggregateFunction(
         const AggregateFunctionPtr & nested_function,
         const AggregateFunctionProperties &,
         const DataTypes & arguments,
@@ -105,7 +105,7 @@ private:
     }
 
 public:
-    String getName() const override
+    [[nodiscard]] String getName() const override
     {
         return name;
     }
@@ -224,7 +224,7 @@ public:
 
 #if USE_EMBEDDED_COMPILER
 
-    bool isCompilable() const override
+    [[nodiscard]] bool isCompilable() const override
     {
         return canBeNativeType(*this->argument_types.back()) && this->nested_function->isCompilable();
     }
@@ -281,7 +281,7 @@ private:
 
 public:
 
-    String getName() const override
+    [[nodiscard]] String getName() const override
     {
         return Base::getName();
     }
@@ -425,6 +425,49 @@ public:
         }
     }
 
+    void addBatchSinglePlaceNotNull(
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr __restrict place,
+        const IColumn ** columns,
+        const UInt8 * null_map,
+        Arena * arena,
+        ssize_t) const final
+    {
+        if (filter_is_only_null)
+            return;
+
+        const size_t filter_column_num = number_of_arguments - 1;
+        auto final_null_flags = std::make_unique_for_overwrite<UInt8[]>(row_end);
+        std::copy(null_map + row_begin, null_map + row_end, final_null_flags.get() + row_begin);
+
+        absl::InlinedVector<const IColumn *, 5> nested_columns(number_of_arguments);
+        for (size_t arg = 0; arg < number_of_arguments; ++arg)
+        {
+            if (is_nullable[arg])
+            {
+                const ColumnNullable & nullable_col = assert_cast<const ColumnNullable &>(*columns[arg]);
+                const UInt8 * col_null_map = nullable_col.getNullMapData().data();
+                for (size_t row = row_begin; row < row_end; ++row)
+                    final_null_flags[row] |= col_null_map[row];
+                nested_columns[arg] = &nullable_col.getNestedColumn();
+            }
+            else
+                nested_columns[arg] = columns[arg];
+        }
+
+        const UInt8 * filter_values = assert_cast<const ColumnUInt8 &>(*nested_columns[filter_column_num]).getData().data();
+        for (size_t row = row_begin; row < row_end; ++row)
+            final_null_flags[row] |= !filter_values[row];
+
+        if (memoryIsByte(final_null_flags.get(), row_begin, row_end, 1))
+            return;
+
+        this->setFlag(place);
+        this->nested_function->addBatchSinglePlaceNotNull(
+            row_begin, row_end, this->nestedPlace(place), nested_columns.data(), final_null_flags.get(), arena, -1);
+    }
+
     void addBatch( /// NOLINT
         size_t row_begin,
         size_t row_end,
@@ -475,7 +518,7 @@ public:
 
 #if USE_EMBEDDED_COMPILER
 
-    bool isCompilable() const override
+    [[nodiscard]] bool isCompilable() const override
     {
         return canBeNativeType(*this->argument_types.back()) && this->nested_function->isCompilable();
     }
