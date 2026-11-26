@@ -1,0 +1,7 @@
+part	Wide
+none is large	n	1
+none is large	s	1
+after	10000	10000	10000
+zstd is small	n	1
+zstd is small	s	1
+1

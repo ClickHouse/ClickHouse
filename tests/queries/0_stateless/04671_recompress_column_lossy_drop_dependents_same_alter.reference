@@ -1,0 +1,7 @@
+drop projection then recompress	1000	999
+1
+drop index then recompress	1000	999
+1
+drop both then recompress	1000	999
+1
+recompress before drop rejected	1000

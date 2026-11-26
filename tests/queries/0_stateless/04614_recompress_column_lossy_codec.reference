@@ -1,0 +1,8 @@
+scalar wide part	Wide
+scalar lossy applied, within error	1	1
+array wide part	Wide
+array lengths preserved	1
+array lossy applied, within error	1	1
+pipeline lossy applied, within error	1	1
+delta array data intact	1
+1

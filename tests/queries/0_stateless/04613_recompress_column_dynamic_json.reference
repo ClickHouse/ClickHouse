@@ -1,0 +1,10 @@
+dynamic wide part	Wide
+dynamic none is large	1
+dynamic zstd is small	1
+dynamic point	1
+1
+json wide part	Wide
+json none is large	1
+json zstd is small	1
+json point	1	1
+1
