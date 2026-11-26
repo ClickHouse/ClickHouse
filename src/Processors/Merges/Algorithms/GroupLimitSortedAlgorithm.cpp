@@ -8,6 +8,20 @@
 namespace DB
 {
 
+namespace
+{
+
+/// Returns the bytes of `columns` divided by `rows`, rounded up. The caller guarantees a positive `rows`.
+size_t averageRowBytes(const ColumnRawPtrs & columns, size_t rows)
+{
+    size_t bytes = 0;
+    for (const auto * column : columns)
+        bytes += column->byteSize();
+    return (bytes + rows - 1) / rows;
+}
+
+}
+
 GroupLimitSortedAlgorithm::GroupLimitSortedAlgorithm(
     SharedHeaders input_headers,
     SharedHeader output_header_,
@@ -15,7 +29,8 @@ GroupLimitSortedAlgorithm::GroupLimitSortedAlgorithm(
     const std::optional<NameAndTypePair> & seen_rows_column,
     UInt64 group_offset_,
     UInt64 group_limit_end_,
-    size_t max_block_size_rows_)
+    size_t max_block_size_rows_,
+    size_t max_block_size_bytes_)
     : output_header(std::move(output_header_))
     , seen_column(seen_rows_column)
     , description(inputSortDescription(
@@ -24,6 +39,7 @@ GroupLimitSortedAlgorithm::GroupLimitSortedAlgorithm(
     , group_offset(group_offset_)
     , group_limit_end(group_limit_end_)
     , max_block_size_rows(max_block_size_rows_)
+    , max_block_size_bytes(max_block_size_bytes_)
     , merged_data(false, max_block_size_rows, 0, std::nullopt)
 {
     chassert(num_key_columns > 0);
@@ -105,6 +121,7 @@ void GroupLimitSortedAlgorithm::initialize(Inputs inputs)
             {
                 for (size_t i = 0; i < source.output_positions.size(); ++i)
                     source.output_columns[i] = cursor.all_columns[source.output_positions[i]];
+                source.average_row_bytes = averageRowBytes(source.output_columns, chunk.getNumRows());
                 output_inputs[source_num].chunk = projectOutput(chunk.clone(), source_num);
             }
         }
@@ -127,6 +144,7 @@ void GroupLimitSortedAlgorithm::consume(Input & input, size_t source_num)
     chassert(source.holds_seen_rows == (seenRows(cursor, 0) != 0));
     for (size_t i = 0; i < source.output_positions.size(); ++i)
         source.output_columns[i] = cursor.all_columns[source.output_positions[i]];
+    source.average_row_bytes = averageRowBytes(source.output_columns, chunk.getNumRows());
     queue.push(cursor);
 }
 
@@ -157,9 +175,33 @@ void GroupLimitSortedAlgorithm::saveLastKey()
     last_key.row_num = 0;
 }
 
+bool GroupLimitSortedAlgorithm::isOutputBlockFull() const
+{
+    return consumed_rows == max_block_size_rows
+        || (max_block_size_bytes && estimated_merged_bytes >= max_block_size_bytes);
+}
+
+size_t GroupLimitSortedAlgorithm::rowsBeforeByteBound(size_t source_num, size_t rows) const
+{
+    chassert(rows > 0 && (!max_block_size_bytes || estimated_merged_bytes < max_block_size_bytes));
+    const size_t row_bytes = sources[source_num].average_row_bytes;
+    if (!max_block_size_bytes || estimated_merged_bytes + rows * row_bytes < max_block_size_bytes)
+        return rows;
+    /// The rows cross the bound and the block is below it, so `row_bytes` and the result are positive.
+    return (max_block_size_bytes - estimated_merged_bytes + row_bytes - 1) / row_bytes;
+}
+
+void GroupLimitSortedAlgorithm::insertRows(const SortCursorImpl & cursor, size_t start, size_t length)
+{
+    const auto & source = sources[cursor.order];
+    merged_data.insertRows(source.output_columns, start, length, cursor.rows);
+    estimated_merged_bytes += length * source.average_row_bytes;
+}
+
 Chunk GroupLimitSortedAlgorithm::pull()
 {
     consumed_rows = 0;
+    estimated_merged_bytes = 0;
     return merged_data.pull();
 }
 
@@ -179,7 +221,7 @@ IMergingAlgorithm::Status GroupLimitSortedAlgorithm::mergeDistinctRows()
 {
     while (queue.isValid())
     {
-        if (consumed_rows == max_block_size_rows)
+        if (isOutputBlockFull())
             return Status(pull());
 
         auto [current_ptr, initial_batch_size] = queue.current();
@@ -190,7 +232,7 @@ IMergingAlgorithm::Status GroupLimitSortedAlgorithm::mergeDistinctRows()
         if (whole_chunk && consumed_rows)
             return Status(pull());
 
-        const size_t batch_size = std::min(initial_batch_size, max_block_size_rows - consumed_rows);
+        size_t batch_size = std::min(initial_batch_size, max_block_size_rows - consumed_rows);
         const size_t first_row = current->getRow();
         detail::RowRef current_key;
         current_key.set(current);
@@ -204,6 +246,12 @@ IMergingAlgorithm::Status GroupLimitSortedAlgorithm::mergeDistinctRows()
                 && last_key.hasEqualSortColumnsWith(current_key);
         }
 
+        /// A forwarded chunk passes its columns to the output without copying them, so it keeps its size. Any
+        /// other batch ends at the row with which the block reaches its byte bound.
+        const bool forward_chunk = whole_chunk && batch_size == initial_batch_size && skipped_rows == 0;
+        if (!forward_chunk && batch_size > skipped_rows)
+            batch_size = skipped_rows + rowsBeforeByteBound(current->order, batch_size - skipped_rows);
+
         /// The queue cannot pass a key while another input still has that key pending. Remembering the
         /// final processed key therefore also preserves suppression across batches and source refills.
         last_key = current_key;
@@ -216,23 +264,20 @@ IMergingAlgorithm::Status GroupLimitSortedAlgorithm::mergeDistinctRows()
         }
 
         const size_t rows_to_insert = batch_size - skipped_rows;
-        if (rows_to_insert)
+        if (forward_chunk)
         {
-            if (whole_chunk && batch_size == initial_batch_size && skipped_rows == 0)
-            {
-                auto & chunk = current_inputs[current->order].chunk;
-                merged_data.insertChunk(projectOutput(std::move(chunk), current->order), rows_to_insert);
-            }
-            else
-                merged_data.insertRows(sources[current->order].output_columns, first_row + skipped_rows, rows_to_insert, current->rows);
+            auto & chunk = current_inputs[current->order].chunk;
+            merged_data.insertChunk(projectOutput(std::move(chunk), current->order), rows_to_insert);
         }
+        else if (rows_to_insert)
+            insertRows(*current.impl, first_row + skipped_rows, rows_to_insert);
         consumed_rows += batch_size;
 
         if (source_exhausted)
         {
             const size_t source_num = current->order;
             Status status(source_num);
-            if (whole_chunk || consumed_rows == max_block_size_rows)
+            if (whole_chunk || isOutputBlockFull())
                 status.chunk = pull();
             return status;
         }
@@ -246,15 +291,21 @@ IMergingAlgorithm::Status GroupLimitSortedAlgorithm::mergeRankedRows()
 {
     while (queue.isValid())
     {
-        if (consumed_rows == max_block_size_rows)
+        if (isOutputBlockFull())
             return Status(pull());
 
         auto [current_ptr, initial_batch_size] = queue.current();
         auto current = *current_ptr;
-        const size_t batch_size = std::min(initial_batch_size, max_block_size_rows - consumed_rows);
+        size_t batch_size = std::min(initial_batch_size, max_block_size_rows - consumed_rows);
         const size_t first_row = current->getRow();
         const bool is_seen_source = sources[current->order].holds_seen_rows;
         const IColumn ** key_columns = current->sort_columns.data();
+
+        /// A batch of input rows ends at the row with which the block would reach its byte bound if every row
+        /// were emitted. Rows outside the window make this an overestimate, so the block can continue in the
+        /// next batch.
+        if (!is_seen_source)
+            batch_size = rowsBeforeByteBound(current->order, batch_size);
 
         size_t range_start = first_row;
         size_t range_length = 0;
@@ -262,7 +313,7 @@ IMergingAlgorithm::Status GroupLimitSortedAlgorithm::mergeRankedRows()
         {
             if (range_length == 0)
                 return;
-            merged_data.insertRows(sources[current->order].output_columns, range_start, range_length, current->rows);
+            insertRows(*current.impl, range_start, range_length);
             range_length = 0;
         };
 
@@ -312,7 +363,7 @@ IMergingAlgorithm::Status GroupLimitSortedAlgorithm::mergeRankedRows()
         if (source_exhausted)
         {
             Status status(current->order);
-            if (consumed_rows == max_block_size_rows)
+            if (isOutputBlockFull())
                 status.chunk = pull();
             return status;
         }

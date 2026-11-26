@@ -115,7 +115,8 @@ std::vector<UInt64> mergePayloads(
 {
     auto merge = std::make_shared<GroupLimitSortedTransform>(
         "GroupLimitSortedTransform", dynamic_inputs ? SharedHeaders{} : headers, std::move(output_header),
-        std::move(key_description), seen_rows, window.offset, window.end, block_size, !dynamic_inputs);
+        std::move(key_description), seen_rows, window.offset, window.end, block_size, /*max_block_size_bytes=*/ 0,
+        !dynamic_inputs);
     if (dynamic_inputs)
     {
         for (size_t i = 0; i < sources.size(); ++i)
@@ -181,7 +182,8 @@ TEST(GroupLimitSortedAlgorithm, SeenOnlyProgressIsBounded)
         output_header.erase("seen_rows");
         GroupLimitSortedAlgorithm algorithm(
             {header}, std::make_shared<const Block>(output_header), keyDescription(),
-            NameAndTypePair{"seen_rows", header->getByName("seen_rows").type}, offset, end, 2);
+            NameAndTypePair{"seen_rows", header->getByName("seen_rows").type}, offset, end, 2,
+            /*max_block_size_bytes=*/ 0);
         IMergingAlgorithm::Inputs inputs(1);
         inputs[0].chunk = makeChunk(*header, {1u, 1u, 2u, 3u, 4u}, 0, seen_rows);
         algorithm.initialize(std::move(inputs));
@@ -205,7 +207,7 @@ TEST(GroupLimitSortedAlgorithm, WholeChunkOfDistinctKeysForwardsColumns)
     const auto header = inputRowsHeader(seen_header);
     GroupLimitSortedAlgorithm algorithm(
         {header}, header, keyDescription(), NameAndTypePair{"seen_rows", seen_header->getByName("seen_rows").type},
-        /*group_offset_=*/ 0, /*group_limit_end_=*/ 1, 64);
+        /*group_offset_=*/ 0, /*group_limit_end_=*/ 1, 64, /*max_block_size_bytes=*/ 0);
     IMergingAlgorithm::Inputs inputs(1);
     inputs[0].chunk = makeChunk(*header, {1u, 2u, 3u}, 100);
     const auto * payload = inputs[0].chunk.getColumns()[1].get();
@@ -255,7 +257,8 @@ TEST(GroupLimitSortedAlgorithm, WithoutSeenRowsEveryRowIsAnInputRow)
     {
         SCOPED_TRACE(::testing::Message() << "window=[" << offset << ", " << end << ")");
         GroupLimitSortedAlgorithm algorithm(
-            {header, header}, header, keyDescription(), /*seen_rows_column=*/ std::nullopt, offset, end, 64);
+            {header, header}, header, keyDescription(), /*seen_rows_column=*/ std::nullopt, offset, end, 64,
+            /*max_block_size_bytes=*/ 0);
         IMergingAlgorithm::Inputs inputs(2);
         inputs[0].chunk = make_input(first_keys, 10);
         inputs[1].chunk = make_input(second_keys, 20);
@@ -305,7 +308,8 @@ TEST(GroupLimitSortedAlgorithm, InputRowsWithoutSeenCountsRankAfterSeenRows)
     {
         SCOPED_TRACE(::testing::Message() << "window=[" << offset << ", " << end << ")");
         GroupLimitSortedAlgorithm algorithm(
-            {seen_header, input_header}, input_header, keyDescription(), NameAndTypePair{"seen_rows", seen_type}, offset, end, 64);
+            {seen_header, input_header}, input_header, keyDescription(), NameAndTypePair{"seen_rows", seen_type}, offset, end, 64,
+            /*max_block_size_bytes=*/ 0);
         IMergingAlgorithm::Inputs inputs(2);
         auto seen_columns = seen_header->cloneEmptyColumns();
         seen_columns[0]->insert(1u);
@@ -536,7 +540,8 @@ TEST(GroupLimitSortedAlgorithm, RowsOfAKeyInConsecutiveChunksOfOneInput)
             /*preferred_block_bytes=*/ 0, group_limit);
         auto merge = std::make_shared<GroupLimitSortedTransform>(
             "GroupLimitSortedTransform", SharedHeaders{header}, header, keyDescription(),
-            NameAndTypePair{"seen_rows", seen_header->getByName("seen_rows").type}, /*group_offset=*/ 0, group_limit, 2);
+            NameAndTypePair{"seen_rows", seen_header->getByName("seen_rows").type}, /*group_offset=*/ 0, group_limit, 2,
+            /*max_block_size_bytes=*/ 0);
         EXPECT_EQ(pullPayloads({std::move(sort)}, std::move(merge), 2), expected);
     }
 }
@@ -611,7 +616,7 @@ TEST(GroupLimitSortedAlgorithm, RepeatedOutputColumns)
         SCOPED_TRACE(block_size);
         GroupLimitSortedAlgorithm algorithm(
             {header}, output_header, keyDescription(), NameAndTypePair{"seen_rows", seen_header->getByName("seen_rows").type},
-            /*group_offset_=*/ 0, /*group_limit_end_=*/ 1, block_size);
+            /*group_offset_=*/ 0, /*group_limit_end_=*/ 1, block_size, /*max_block_size_bytes=*/ 0);
         IMergingAlgorithm::Inputs inputs(1);
         inputs[0].chunk = makeChunk(*header, {1u, 2u, 3u}, 100);
         algorithm.initialize(std::move(inputs));

@@ -220,7 +220,7 @@ std::shared_ptr<BufferingToFileSink> MergeSortingTransform::prepareSpill()
             external_merging_sorted = std::make_shared<GroupLimitSortedTransform>(
                 "DistinctSortedTransform", SharedHeaders{}, shared_header_without_constants, description,
                 /*seen_rows_column=*/ std::nullopt, /*group_offset=*/ 0, /*group_limit_end=*/ 1,
-                merge_sorter->getMaxMergedBlockSize(), have_all_inputs);
+                merge_sorter->getMaxMergedBlockSize(), /*max_block_size_bytes=*/ 0, have_all_inputs);
         }
         else
         {

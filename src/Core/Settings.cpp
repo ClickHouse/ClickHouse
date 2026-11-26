@@ -4065,7 +4065,7 @@ Possible values:
 - `break`: stop executing the query and return the partial result.
 )", 0) \
     DECLARE(UInt64, prefer_external_sort_block_bytes, DEFAULT_BLOCK_SIZE * 256, R"(
-Preferred block size in bytes for spill files used by external `ORDER BY` and `DISTINCT`. Smaller blocks reduce memory usage when merging spill files.
+Preferred block size in bytes for the spill files of external `ORDER BY`, `DISTINCT` and `LIMIT BY`, and for the blocks that merging these files returns. Smaller blocks reduce memory usage when merging spill files.
 
 The block size is estimated from average row size, so blocks with unusually large rows can exceed this target. Set to `0` to size blocks by the row limit only.
 )", 0, \

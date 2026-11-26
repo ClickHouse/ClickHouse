@@ -20,12 +20,12 @@ public:
     GroupLimitSortedTransform(
         String name_, SharedHeaders input_headers, SharedHeader output_header, SortDescription key_description,
         const std::optional<NameAndTypePair> & seen_rows_column, UInt64 group_offset, UInt64 group_limit_end,
-        size_t max_block_size_rows, bool have_all_inputs = true)
+        size_t max_block_size_rows, size_t max_block_size_bytes, bool have_all_inputs = true)
         : IMergingTransform(
             input_headers, output_header, have_all_inputs, /*limit_hint_=*/ 0,
             /*always_read_till_end_=*/ false, /*empty_chunk_on_finish_=*/ false,
             input_headers, output_header, std::move(key_description), seen_rows_column, group_offset, group_limit_end,
-            max_block_size_rows)
+            max_block_size_rows, max_block_size_bytes)
         , name(std::move(name_))
     {
     }

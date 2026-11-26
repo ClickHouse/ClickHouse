@@ -1108,7 +1108,7 @@ typename ExternalGroupLimitTransform<Traits>::PreparedMerge ExternalGroupLimitTr
     prepared.merger = std::make_shared<GroupLimitSortedTransform>(
         String(Traits::merge_transform_name), SharedHeaders{}, merged_header, spill_layout->getKeySortDescription(),
         spill_layout->getSeenRowsColumn(), params.group_offset, params.group_limit_end, max_block_size_rows,
-        /*have_all_inputs=*/ false);
+        preferred_block_bytes, /*have_all_inputs=*/ false);
 
     if (preserve_input_order)
     {
