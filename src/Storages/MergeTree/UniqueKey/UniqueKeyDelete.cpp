@@ -1,0 +1,378 @@
+#include <Columns/ColumnLowCardinality.h>
+#include <Columns/ColumnsNumber.h>
+#include <Core/Settings.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/MutationsInterpreter.h>
+#include <Interpreters/ProcessList.h>
+#include <Interpreters/misc.h>
+#include <Parsers/ASTAlterQuery.h>
+#include <Parsers/ASTAssignment.h>
+#include <Parsers/ASTDeleteQuery.h>
+#include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTPartition.h>
+#include <Parsers/ASTSubquery.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
+#include <Storages/MergeTree/UniqueKey/DeleteBitmap.h>
+#include <Storages/MergeTree/UniqueKey/UniqueKeyTxn.h>
+#include <Storages/MergeTree/UniqueKey/UniqueKeyTxnCommit.h>
+#include <Storages/MutationCommands.h>
+#include <Storages/StorageMergeTree.h>
+
+#include <Common/FailPoint.h>
+#include <Common/ProfileEvents.h>
+#include <Common/assert_cast.h>
+#include <Common/logger_useful.h>
+
+#include <algorithm>
+#include <map>
+#include <set>
+
+
+namespace ProfileEvents
+{
+    extern const Event UniqueKeyDeleteRows;
+}
+
+
+namespace DB
+{
+
+namespace FailPoints
+{
+    extern const char unique_key_delete_pause_before_commit[];
+}
+
+
+namespace Setting
+{
+    extern const SettingsUInt64 max_parser_backtracks;
+    extern const SettingsUInt64 max_parser_depth;
+    extern const SettingsMaxThreads max_threads;
+}
+
+namespace ErrorCodes
+{
+    extern const int ABORTED;
+    extern const int ILLEGAL_COLUMN;
+    extern const int LOGICAL_ERROR;
+    extern const int SUPPORT_IS_DISABLED;
+    extern const int TIMEOUT_EXCEEDED;
+}
+
+namespace
+{
+
+/// A merge that retires a target between a partition's scan and its commit aborts the commit;
+/// each retry rescans the partition at a new snapshot, which sees the merged part.
+constexpr size_t MAX_ATTEMPTS_PER_PARTITION = 5;
+
+/// The partitions of `IN PARTITION`, or nullopt without one
+std::optional<std::set<String>> requestedPartitions(const MergeTreeData & storage, const ASTDeleteQuery & query, const ContextPtr & context)
+{
+    if (query.partitions)
+    {
+        std::set<String> partition_ids;
+        for (const auto & partition : query.partitions->children)
+            partition_ids.insert(storage.getPartitionIDFromQuery(partition, context));
+        return partition_ids;
+    }
+
+    if (query.partition)
+        return std::set<String>{storage.getPartitionIDFromQuery(query.partition, context)};
+
+    return std::nullopt;
+}
+
+/// The partitions the predicate can touch, in partition id order
+std::vector<String> partitionsToVisit(const MergeTreeData & storage, const ASTDeleteQuery & query, const ContextPtr & context)
+{
+    auto partition_ids = storage.getPartitionIdsPrunedByPredicate(
+        query.predicate, context, /*command_runs_in_background=*/false, nullptr);
+    if (!partition_ids)
+    {
+        auto all = storage.getAllPartitionIds();
+        partition_ids.emplace(all.begin(), all.end());
+    }
+
+    if (auto requested = requestedPartitions(storage, query, context))
+        std::erase_if(*partition_ids, [&](const String & partition_id) { return !requested->contains(partition_id); });
+
+    return {partition_ids->begin(), partition_ids->end()};
+}
+
+/// A literal, `tuple` or `array` of constant sets, or a `CAST` of one (a query parameter arrives as `_CAST(literal, 'T')`).
+/// Its set is built in one block, which a `break` set limit cannot cut short.
+bool isConstantSet(const IAST & ast)
+{
+    if (ast.as<ASTLiteral>())
+        return true;
+
+    const auto * function = ast.as<ASTFunction>();
+    if (!function)
+        return false;
+
+    if (function->name == "tuple" || function->name == "array")
+        return !function->arguments
+            || std::ranges::all_of(function->arguments->children, [](const ASTPtr & argument) { return isConstantSet(*argument); });
+
+    if (function->name == "CAST" || function->name == "_CAST")
+    {
+        const auto * arguments = function->arguments.get();
+        return arguments && arguments->children.size() == 2 && isConstantSet(*arguments->children[0])
+            && arguments->children[1]->as<ASTLiteral>();
+    }
+
+    return false;
+}
+
+/// The expression reads only the deleted table, with constants on the right of `IN`: a subquery or a table brings in
+/// SQL with its own settings, whose limits could end it early and leave a `NOT IN` set incomplete.
+void throwIfReadsTables(const IAST & ast)
+{
+    if (ast.as<ASTSubquery>())
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "DELETE on a UNIQUE KEY table does not support subqueries");
+
+    if (const auto * function = ast.as<ASTFunction>();
+        function && functionIsInOrGlobalInOperator(function->name) && function->arguments && function->arguments->children.size() == 2)
+    {
+        if (!isConstantSet(*function->arguments->children[1]))
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "DELETE on a UNIQUE KEY table supports only constants on the right of `{}`", function->name);
+    }
+
+    for (const auto & child : ast.children)
+        throwIfReadsTables(*child);
+}
+
+bool hasAlias(const IAST & ast, std::string_view alias)
+{
+    return ast.tryGetAlias() == alias
+        || std::ranges::any_of(ast.children, [&](const ASTPtr & child) { return hasAlias(*child, alias); });
+}
+
+/// `READ_COLUMN _part, _part_offset` plus an `UPDATE _row_exists = 0 IN PARTITION ID ... WHERE <predicate>`
+/// that is never applied: it only carries the predicate and the partition to `MutationsInterpreter`.
+/// An UPDATE because a DELETE stage reads every column; the UPDATE reads only the predicate's.
+MutationCommands scanCommands(
+    const ASTDeleteQuery & query, const StorageInMemoryMetadata & metadata, const String & partition_id, const ContextPtr & context)
+{
+    /// `READ_COLUMN` and the `IN PARTITION ID` filter on `_partition_id` resolve their column by name,
+    /// where a table column, or a predicate alias, of the same name wins.
+    for (const auto * name : {"_part", "_part_offset", "_partition_id"})
+    {
+        if (metadata.getColumns().has(name))
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                "DELETE on a UNIQUE KEY table reads the virtual column `{}`, which a table column of the same name shadows", name);
+        if (hasAlias(*query.predicate, name))
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                "DELETE on a UNIQUE KEY table reads the virtual column `{}`, which an alias of the same name in its predicate shadows",
+                name);
+    }
+
+    MutationCommands commands;
+    for (const auto * name : {"_part", "_part_offset"})
+    {
+        const auto column = metadata.virtuals.get(name, VirtualsKind::Ephemeral, VirtualsMaterializationPlace::Reader);
+        commands.push_back({.type = MutationCommand::READ_COLUMN, .column_name = column.name, .data_type = column.type});
+    }
+
+    auto partition = make_intrusive<ASTPartition>();
+    partition->setPartitionID(make_intrusive<ASTLiteral>(partition_id));
+
+    auto assignment = make_intrusive<ASTAssignment>();
+    assignment->column_name = RowExistsColumn::name;
+    assignment->children.push_back(make_intrusive<ASTLiteral>(Field(UInt8(0))));
+    auto assignments = make_intrusive<ASTExpressionList>();
+    assignments->children.push_back(std::move(assignment));
+
+    auto alter = make_intrusive<ASTAlterCommand>();
+    alter->type = ASTAlterCommand::UPDATE;
+    alter->update_assignments = alter->children.emplace_back(std::move(assignments)).get();
+    alter->partition = alter->children.emplace_back(std::move(partition)).get();
+    alter->predicate = alter->children.emplace_back(query.predicate->clone()).get();
+
+    const auto & settings = context->getSettingsRef();
+    commands.push_back(*MutationCommand::parse(
+        *alter,
+        /*parse_alter_commands=*/false,
+        /*with_pure_metadata_commands=*/false,
+        settings[Setting::max_parser_depth],
+        settings[Setting::max_parser_backtracks]));
+    return commands;
+}
+
+/// Adds a block's matches without a `Field` per row: `_part` through its dictionary index
+void addMatches(const Block & block, std::map<String, DeleteBitmap> & rows_by_part_name)
+{
+    const auto part_column = block.getByName("_part").column->convertToFullColumnIfConst();
+    const auto & parts = assert_cast<const ColumnLowCardinality &>(*part_column);
+    const auto & offsets = assert_cast<const ColumnUInt64 &>(*block.getByName("_part_offset").column).getData();
+
+    std::vector<DeleteBitmap *> rows_by_index(parts.getDictionary().size(), nullptr);
+    for (size_t row = 0; row < block.rows(); ++row)
+    {
+        auto & rows = rows_by_index[parts.getIndexAt(row)];
+        if (!rows)
+            rows = &rows_by_part_name[String(parts.getDataAt(row))];
+        rows->add(offsets[row]);
+    }
+}
+
+struct DeleteStatement
+{
+    StorageMergeTree & storage;
+    const ASTDeleteQuery & query;
+    const ContextPtr query_context;
+    /// The one the predicate was checked against.
+    const StorageMetadataPtr metadata_snapshot;
+    const LoggerPtr log;
+
+    /// The rows of one partition the predicate matches at `txn`'s snapshot. Scanned like a lightweight
+    /// update: the storage is read directly, so only `ALTER DELETE` is checked.
+    [[nodiscard]] DeleteRowsByPart findRowsInPartition(const MergeTreeTransactionPtr & txn, const String & partition_id) const
+    {
+        auto scan_context = Context::createCopy(query_context);
+        scan_context->makeQueryContext();
+        scan_context->setCurrentTransaction(txn);
+
+        /// The DELETE ignores the query's read limits; in `throw` mode the scan's index analysis would check them.
+        for (const auto * name : {"max_rows_to_read", "max_bytes_to_read", "max_rows_to_read_leaf", "max_bytes_to_read_leaf"})
+            scan_context->setSetting(name, Field(UInt64(0)));
+
+        MutationsInterpreter::Settings settings(/*can_execute_=*/true);
+        settings.return_mutated_rows = true;
+        settings.max_threads = query_context->getSettingsRef()[Setting::max_threads];
+
+        MutationsInterpreter interpreter(
+            storage.shared_from_this(),
+            metadata_snapshot,
+            scanCommands(query, *metadata_snapshot, partition_id, scan_context),
+            scan_context,
+            settings);
+
+        auto pipeline = QueryPipelineBuilder::getPipeline(interpreter.execute());
+        pipeline.setProcessListElement(query_context->getProcessListElement());
+
+        std::map<String, DeleteBitmap> rows_by_part_name;
+        PullingPipelineExecutor executor(pipeline);
+        Block block;
+        while (executor.pull(block))
+            if (block.rows())
+                addMatches(block, rows_by_part_name);
+
+        /// Otherwise a killed or timed-out scan looks like a DELETE that found fewer rows.
+        /// `checkTimeLimit` throws on a kill and on a `throw`-mode timeout; a `break`-mode one truncated the scan.
+        if (const auto status = pipeline.getProcessListElement(); status && !status->checkTimeLimit())
+            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED,
+                "UNIQUE KEY DELETE: the scan of partition {} ran out of time before it finished", partition_id);
+
+        DeleteRowsByPart rows_by_part;
+        for (auto & [part_name, rows] : rows_by_part_name)
+            rows_by_part.push_back({.part_name = part_name, .rows = std::make_shared<DeleteBitmap>(std::move(rows))});
+        return rows_by_part;
+    }
+
+    /// Scan and commit one partition under one transaction, retrying on a conflict.
+    /// Each partition has its own snapshot, so a DELETE is atomic per partition, not statement-wide as a mutation.
+    /// Returns the newly-dead rows committed.
+    [[nodiscard]] size_t deleteInPartition(const String & partition_id) const
+    {
+        for (size_t attempt = 1;; ++attempt)
+        {
+            auto uk_txn = beginUniqueKeyTransaction(query_context, "DELETE");
+            const auto rows_by_part = findRowsInPartition(uk_txn.getTransaction(), partition_id);
+            if (rows_by_part.empty())
+                return 0;
+
+            /// The window a merge can retire the scanned parts in, otherwise too narrow to hit.
+            FailPointInjection::pauseFailPoint(FailPoints::unique_key_delete_pause_before_commit);
+
+            try
+            {
+                return UniqueKeyTxnCommit::deleteRows(
+                    storage, {.transaction = uk_txn, .partition_id = partition_id, .rows_by_part = rows_by_part});
+            }
+            catch (Exception & e)
+            {
+                if (e.code() != ErrorCodes::ABORTED)
+                    throw;
+
+                if (attempt == MAX_ATTEMPTS_PER_PARTITION)
+                {
+                    e.addMessage("UNIQUE KEY DELETE gave up on partition {} after {} attempts", partition_id, attempt);
+                    throw;
+                }
+
+                LOG_DEBUG(log, "UNIQUE KEY DELETE (partition {}): attempt {} conflicted, rescanning: {}",
+                    partition_id, attempt, e.message());
+            }
+        }
+    }
+};
+
+}
+
+/// A synchronous `DELETE FROM`: each partition is scanned and committed under its own transaction, so the statement is
+/// atomic per partition, not as a whole.
+///
+/// The predicate must evaluate completely: a set built from another table's rows can be cut short by its own limits, and
+/// a truncated `NOT IN` set would delete rows that should stay.
+/// - Supported: the table's columns, constants and functions, e.g. `id = 5`, `startsWith(s, 'a')`, `has(arr, id)`,
+///   `dictGet(...)`; `IN` / `NOT IN` with constants: `id IN (1, 2)`, `id IN [1, 2]`, `id IN {ids:Array(UInt64)}`,
+///   `id IN CAST([1, 2], 'Array(UInt64)')`.
+/// - Refused: a subquery (`IN (SELECT ...)`, scalar, `EXISTS`); anything else on the right of `IN`: a table, a table
+///   function, a column, a lambda parameter, a computed list such as `(1, x + 1)`.
+/// - Refused: any DELETE on a table where an `ALIAS`, `DEFAULT` or `MATERIALIZED` column expression breaks these rules,
+///   whether or not the predicate names the column.
+/// - Refused before this point: `ON CLUSTER`, a table in a Replicated database.
+void StorageMergeTree::deleteByUniqueKey(const ASTPtr & query_ptr, ContextPtr query_context)
+{
+    assertNotReadonly();
+
+    if (!hasUniqueKey())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "deleteByUniqueKey called on table {} without UNIQUE KEY", getStorageID().getNameForLogs());
+
+    /// Refused before pruning, so a DELETE with no partition to visit is refused too.
+    throwIfInsideTransaction(query_context->getCurrentTransaction(), "DELETE");
+
+    const auto & query = query_ptr->as<ASTDeleteQuery &>();
+    const auto metadata_snapshot = getInMemoryMetadataPtr(query_context, /*bypass_metadata_cache=*/false);
+    throwIfReadsTables(*query.predicate);
+    /// Every column's expression, as any column can enter the scan (by name, through `*`, or under a `Nested` prefix):
+    /// an `ALIAS` one on every read, a `DEFAULT` or `MATERIALIZED` one in a part written before it was added.
+    for (const auto & column : metadata_snapshot->getColumns())
+    {
+        if (!column.default_desc.expression)
+            continue;
+        try
+        {
+            throwIfReadsTables(*column.default_desc.expression);
+        }
+        catch (Exception & e)
+        {
+            e.addMessage("in the expression of column {}", column.name);
+            throw;
+        }
+    }
+
+    const DeleteStatement statement{
+        .storage = *this,
+        .query = query,
+        .query_context = query_context,
+        .metadata_snapshot = metadata_snapshot,
+        .log = getLogger(getLogName())};
+
+    const auto partition_ids = partitionsToVisit(*this, query, query_context);
+
+    size_t total_committed_rows = 0;
+    for (const auto & partition_id : partition_ids)
+        total_committed_rows += statement.deleteInPartition(partition_id);
+
+    ProfileEvents::increment(ProfileEvents::UniqueKeyDeleteRows, total_committed_rows);
+}
+
+}

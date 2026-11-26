@@ -30,7 +30,7 @@ ClickHouse Cloud 支持使用 JSON Web Token (JWT) 对服务连接进行身份�
 </Tip>
 
 <div id="before-you-begin">
-  ## 开始前准备
+  ## 开始前准备 {#before-you-begin}
 </div>
 
 要为服务配置 JWT 提供商，您需要：
@@ -54,52 +54,46 @@ ClickHouse Cloud 支持使用 JSON Web Token (JWT) 对服务连接进行身份�
 
 添加或更新提供商时，ClickHouse 会验证并拉取 JWKS URL，因此会预先拒绝配置错误或无法访问的 URL。
 
-<div id="add-a-jwt-provider">
-  ## 添加 JWT 提供商
-</div>
+## 添加 JWT 提供程序 {#add-a-jwt-provider}
 
 <Steps>
   <Step title="打开服务安全设置" id="open-security-settings">
     进入您的服务，打开**设置**，然后滚动到**安全**部分。找到 **JWT 身份验证**卡片。
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![服务安全设置中的 JWT 身份验证部分](/images/cloud/security/jwt/jwt-section.png)
-
-    </Frame>
-
+      <Frame>
+        ![服务安全设置中的 JWT 身份验证部分](/images/cloud/security/jwt/jwt-section.png)
+      </Frame>
     </div>
   </Step>
 
-  <Step title="打开提供商弹出面板" id="open-flyout">
-    选择**设置 JWT 提供商** (如果已有提供商，则选择**管理 JWT 提供商**) 。随即会打开弹出面板，其中显示可填写的新提供商表单。
+  <Step title="打开提供程序弹出面板" id="open-flyout">
+    选择**设置 JWT 提供程序** (如果已有提供程序，则选择**管理 JWT 提供程序**) 。随即会打开弹出面板，其中显示可填写的新提供程序表单。
   </Step>
 
-  <Step title="填写提供商详细信息" id="fill-provider-details">
-    填写提供商表单，然后选择**保存**。
+  <Step title="填写提供程序详细信息" id="fill-provider-details">
+    填写提供程序表单，然后选择**保存**。
 
     | 字段            | 描述                                                                           |
     | ------------- | ---------------------------------------------------------------------------- |
-    | **名称**        | 此服务中该提供商的唯一名称。创建后无法更改。                                                       |
+    | **名称**        | 此服务中该提供程序的唯一名称。创建后无法更改。                                                       |
     | **签发方**       | 传入标记中预期的 `iss` 声明。                                                           |
     | **受众**        | 传入标记中预期的 `aud` 声明。                                                           |
     | **JWKS URL**  | 用于发布验证标记签名所需公钥的公开 HTTPS URL。                                                 |
     | **角色声明** (可选) | 用于从标记中读取 ClickHouse 角色的声明。留空以使用默认声明名称 `clickhouse:roles`。标记中指定的角色必须已存在于该服务中。 |
   </Step>
 
-  <Step title="按需添加更多提供商" id="add-more-providers">
-    使用**添加另一个提供商**配置更多提供商。每个服务最多可配置五个 JWT 提供商。
+  <Step title="按需添加更多提供程序" id="add-more-providers">
+    使用**添加另一个提供程序**配置更多提供程序。每个服务最多可配置五个 JWT 提供程序。
   </Step>
 </Steps>
 
 <Warning>
-  删除 JWT 提供商后，将立即不再接受为其签发的标记；任何仍使用这些标记进行身份验证的工作负载都将停止运行。
+  删除 JWT 提供程序后，将立即不再接受为其签发的标记；任何仍使用这些标记进行身份验证的工作负载都将停止运行。
 </Warning>
 
 <div id="limits">
-  ## 限制
+  ## 限制 {#limits}
 </div>
 
 * 每个服务最多可配置 **五个** JWT 提供商。
@@ -107,7 +101,7 @@ ClickHouse Cloud 支持使用 JSON Web Token (JWT) 对服务连接进行身份�
 * JWKS URL 必须是公网 HTTPS 端点。私网、内部或链路本地地址均会被拒绝。
 
 <div id="related">
-  ## 相关内容
+  ## 相关内容 {#related}
 </div>
 
 * [JWT 身份验证](/zh/concepts/features/security/external-authenticators/jwt) — 标记声明、临时用户和客户端使用。
