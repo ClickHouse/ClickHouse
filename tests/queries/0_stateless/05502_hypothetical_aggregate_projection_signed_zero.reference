@@ -1,0 +1,11 @@
+Baseline (after PK + partition + existing indexes):
+marks: 10
+rows: 2000
+With p (aggregate projection, hypothetical):
+marks: 10
+rows: 1000
+verdict: chosen
+z_inserted: 1000 rows, 10 marks
+z_materialized: 1000 rows, 10 marks
+inserted: 10 marks
+materialized: 10 marks

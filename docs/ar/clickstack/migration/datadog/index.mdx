@@ -2,266 +2,185 @@
 slug: /use-cases/observability/clickstack/migration/datadog
 title: 'الترحيل من Datadog إلى ClickStack'
 sidebarTitle: 'الترحيل من Datadog'
-description: 'الترحيل من Datadog إلى ClickStack باستخدام Datadog receiver في ClickStack مجمّع OpenTelemetry'
+description: 'الترحيل من Datadog إلى ClickStack باستخدام مستقبِل Datadog في ClickStack جامع البيانات OpenTelemetry'
 show_related_blogs: true
 doc_type: 'guide'
-keywords: ['Datadog', 'Datadog receiver', 'Datadog agent', 'OpenTelemetry collector', 'ترحيل', 'observability', 'ClickStack']
+keywords: ['Datadog', 'مستقبِل Datadog', 'Datadog agent', 'جامع البيانات OpenTelemetry', 'ترحيل', 'إمكانية المراقبة', 'ClickStack']
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
 import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/ExperimentalBadge.jsx";
 
 <ExperimentalBadge />
 
-عادةً ما يعني ترحيل منصة observability أكثر من مجرد تغيير مكان تخزين البيانات. فقد تكون وكلاء Datadog وSDKs منشورة بالفعل عبر آلاف التطبيقات والمضيفين والآلات الافتراضية وكبسولات Kubernetes. وإعادة تجهيز كل ذلك بـ instrumentation جديدة قبل أن تتمكن حتى من تقييم backend آخر تجعل الترحيل مشروعًا كبيرًا قبل أن يقدّم أي قيمة فعلية.
+عادةً ما يعني ترحيل منصة إمكانية المراقبة أكثر من مجرد تغيير مكان تخزين البيانات. فقد تكون وكلاء Datadog وSDKs منشورة بالفعل عبر آلاف التطبيقات والمضيفين والآلات الافتراضية وكبسولات Kubernetes. وإعادة تجهيز كل ذلك بإضافة أدوات الرصد الجديدة قبل أن تتمكن حتى من تقييم نظام خلفي آخر تجعل الترحيل مشروعًا كبيرًا قبل أن يقدّم أي قيمة فعلية.
 
-إن **مستقبِل Datadog** المضمَّن في توزيعة ClickStack من مجمّع OpenTelemetry ‏(OTel) يزيل هذه الكلفة الأولية. وتواصل وكلاء Datadog وSDKs الحالية لديك العمل من دون أي تغيير. وبدلًا من إرسال بيانات القياس عن بُعد إلى Datadog، توجّهها إلى المستقبِل، الذي يترجم حمولات الأصلية الخاصة بـ Datadog للسجلات وtrace وMetric إلى نموذج بيانات OpenTelemetry، ثم يمرّرها عبر مسار المجمّع القياسي إلى ClickStack.
+إن **مستقبِل Datadog** المضمَّن في توزيعة ClickStack من جامع البيانات OpenTelemetry ‏(OTel) يزيل هذه الكلفة الأولية. وتواصل وكلاء Datadog وSDKs الحالية لديك العمل من دون أي تغيير. وبدلًا من إرسال بيانات القياس عن بُعد إلى Datadog، توجّهها إلى المستقبِل، الذي يترجم حمولات الأصلية الخاصة بـ Datadog للسجلات والتتبّع وMetric إلى نموذج بيانات OpenTelemetry، ثم يمرّرها عبر مسار معالجة المُجمِّع القياسي إلى ClickStack.
 
-ولأن المستقبِل يعمل داخل مسار المجمّع عادي، يمكنك استخدامه من أجل:
+ولأن المستقبِل يعمل داخل مسار معالجة المُجمِّع العادي، يمكنك استخدامه من أجل:
 
 * **تقييم ClickStack إلى جانب Datadog** من دون المساس بشيفرة التطبيق، باستخدام الوكلاء الحاليين لديك لإرسال بيانات القياس عن بُعد نفسها إلى كلتا المنصتين.
-* **تسهيل عملية الترحيل**، بالانتقال إلى ClickStack مع الإبقاء على طبقة collection الحالية لديك كما هي، واعتماد instrumentation في OpenTelemetry تدريجيًا.
+* **تسهيل عملية الترحيل**، بالانتقال إلى ClickStack مع الإبقاء على طبقة collection الحالية لديك كما هي، واعتماد إضافة أدوات الرصد في OpenTelemetry تدريجيًا.
 * **تشغيل كلتا الحزمتين بالتوازي** على المدى الطويل، واستخدام كل منصة فيما تجيده على أفضل وجه.
 
-<Image img="/images/use-cases/observability/migrating_datadog_agents.png" alt="ترحيل وكلاء Datadog" size="lg" background />
-
-<div id="why-run-clickstack-alongside-datadog">
-  ## لماذا تُشغِّل ClickStack إلى جانب Datadog
+<div className="ch-image-lg">
+  <Frame>
+    ![ترحيل وكلاء Datadog](/images/use-cases/observability/migrating_datadog_agents.png)
+  </Frame>
 </div>
 
-بالنسبة إلى معظم الفرق، يكون الدافع لنقل بيانات الأوبزرفابيليتي خارج Datadog هو التكلفة. إذ تزداد أحجام السجلات والتتبعات مع توسّع التطبيقات وإضافة المزيد من الخدمات إليها، فتجد الفرق نفسها أمام خيارين: إما زيادة الإنفاق أو الاحتفاظ بقدر أقل من بيانات القياس عن بُعد التي تُنتجها. ثم إن ضوابط التكلفة هذه تحدّ مما يمكنكم رؤيته أثناء التحقيق: فالتتبعات المأخوذة بالعيّنة، والسجلات غير المفهرسة، والمقاييس المجمّعة، وفترات الاحتفاظ القصيرة، كلها تقلّل من السياق المتاح عندما تكونون في أمسّ الحاجة إليه.
+## لماذا تشغّل ClickStack إلى جانب Datadog {#why-run-clickstack-alongside-datadog}
 
-بُني [ClickStack](/ar/clickstack/overview) على ClickHouse، الذي يمكن أن يكون، في أعباء عمل السجلات والتتبّع الكبيرة، أكثر كفاءة من Datadog من حيث التكلفة بأكثر من 100 مرة. وهذا الفارق في اقتصاديات التخزين هو ما يجعل تشغيل ClickStack إلى جانب Datadog أمرًا مجديًا:
+بالنسبة إلى معظم الفرق، تكون التكلفة هي الدافع إلى نقل بيانات إمكانية المراقبة خارج Datadog. إذ تتزايد أحجام السجلات والتتبّعات مع توسّع التطبيقات وتزويد المزيد من الخدمات بأدوات الرصد، مما يضعك أمام خيارين: إما زيادة الإنفاق، أو الاحتفاظ بقدر أقل من بيانات القياس عن بُعد التي تنتجها. ثم تحدّ ضوابط التكلفة هذه مما يمكنك رؤيته أثناء التحقيق: فالتتبّعات المُعايَنة، والسجلات غير المفهرسة، والمقاييس المُجمَّعة، وفترات الاحتفاظ القصيرة، كلها تقلّص السياق المتاح حين تكون في أمسّ الحاجة إليه.
 
-* **فترات احتفاظ أطول.** اضبط مدة الاحتفاظ بما يناسب احتياجاتك التشغيلية بدلًا من ميزانيتك، واحتفظ بالأحداث التي قد تحتاج إليها بعد أسابيع أو حتى أشهر.
-* **بيانات كاملة الدقة.** خزّن كل سجل وكل تتبّع من دون أخذ عينات، بحيث تُجرى التحقيقات على بيانات كاملة بدلًا من مجموعة فرعية.
-* **من دون حدود لمعدل API.** استعلم عن بيانات القياس عن بُعد لديك كما لو كانت قاعدة بيانات، بدلًا من الوصول إليها عبر واجهة برمجة تطبيقات خاضعة للقياس، ومن دون تقييد للمعدل على مستوى كل استعلام أو كل نقطة نهاية.
-* **وصول كامل إلى SQL.** حلّل السجلات والمقاييس والتتبعات باستخدام SQL، واربطها ببيانات الأعمال أو بيانات البنية التحتية الموجودة أصلًا في ClickHouse.
-* **أعباء العمل المعتمدة على الوكلاء.** أتح بيانات القياس عن بُعد لديك لوكلاء الذكاء الاصطناعي عبر [ClickStack MCP server](/ar/clickstack/mcp)، وشغّل عددًا غير محدود من الاستعلامات التحليلية مباشرةً على ClickHouse.
+[ClickStack](/ar/clickstack/overview) مبني على ClickHouse، الذي قد تفوق كفاءته من حيث التكلفة كفاءة Datadog بأكثر من 100 ضعف في أحمال العمل الكبيرة الخاصة بالسجلات والتتبّع. وهذا الفرق في اقتصاديات التخزين هو ما يجعل تشغيل ClickStack إلى جانب Datadog أمرًا مجديًا:
 
-وتكون بيانات القياس عن بُعد كاملة الدقة ذات قيمة خاصة في التحقيقات المعتمدة على الوكلاء. فلا يمكن للوكيل أن يستدل على حدث جرى التخلّص منه قبل بدء التحقيق، كما أنه يحتاج إلى سجلّ تاريخي كافٍ لمقارنة الحادث الحالي بالإخفاقات السابقة، والتغيّرات السلوكية، والأنماط الممتدة على فترات أطول.
+* **فترات احتفاظ أطول.** اضبط فترة الاحتفاظ وفق احتياجاتك التشغيلية لا وفق ميزانيتك، واحتفظ بالأحداث التي قد تحتاج إليها بعد أسابيع أو أشهر.
+* **بيانات كاملة الدقة.** خزّن كل سجل وكل تتبّع دون أخذ عينات، بحيث تُجرى التحقيقات على بيانات كاملة لا على مجموعة جزئية منها.
+* **لا حدود لمعدل استدعاءات واجهة برمجة التطبيقات.** استعلم عن بيانات القياس عن بُعد كما تستعلم عن قاعدة بيانات، بدلًا من المرور عبر واجهة برمجة تطبيقات تُحتسب حسب الاستخدام، ودون أي تقييد للمعدل على مستوى الاستعلام أو نقطة النهاية.
+* **وصول كامل عبر SQL.** حلّل السجلات والمقاييس والتتبّعات باستخدام SQL، واربطها ببيانات الأعمال أو البنية التحتية الموجودة مسبقًا في ClickHouse.
+* **أحمال عمل قائمة على وكلاء الذكاء الاصطناعي.** أتِح بيانات القياس عن بُعد لوكلاء الذكاء الاصطناعي عبر [خادم MCP الخاص بـ ClickStack](/ar/clickstack/mcp)، وشغّل عددًا غير محدود من الاستعلامات التحليلية مباشرةً على ClickHouse.
 
-<div id="how-the-datadog-receiver-works">
-  ## كيف يعمل مستقبِل Datadog
+تكتسب بيانات القياس عن بُعد كاملة الدقة قيمة خاصة في التحقيقات القائمة على وكلاء الذكاء الاصطناعي؛ فالوكيل لا يستطيع الاستدلال على حدث جرى التخلص منه قبل بدء التحقيق، كما يحتاج إلى سجل كافٍ لمقارنة الحادثة الحالية بالأعطال السابقة والتغيّرات السلوكية والأنماط الممتدة على فترات أطول.
+
+## كيف يعمل مستقبِل Datadog {#how-the-datadog-receiver-works}
+
+في عملية نشر OpenTelemetry نموذجية، تُرسَل بيانات القياس عن بُعد إلى جامع البيانات OpenTelemetry قبل أن تصل إلى النظام الخلفي. يستقبل جامع البيانات البيانات من جوامع البيانات العاملة في وضع agent ومن [OpenTelemetry SDKs](/ar/clickstack/ingesting-data/sdks/index) التي تُستخدَم لتهيئة التطبيقات، ويطبّق أي عمليات تصفية أو تحويل، ويجمع الأحداث في دفعات، ثم يصدّرها إلى الوجهة المستهدفة.
+
+<div className="ch-image-lg">
+  <Frame>
+    ![مسار OTel بسيط](/images/use-cases/observability/simple_otel_pipeline.png)
+  </Frame>
 </div>
 
-في عملية نشر OpenTelemetry نموذجية، تُرسَل بيانات القياس عن بُعد إلى مجمّع OpenTelemetry قبل أن تصل إلى النظام الخلفي. يستقبل المجمّع البيانات من المجمّعات العاملة في وضع agent ومن [OpenTelemetry SDKs](/ar/clickstack/ingesting-data/sdks/index) التي تُستخدَم لتهيئة التطبيقات، ويطبّق أي عمليات تصفية أو تحويل، ويجمع الأحداث في دفعات، ثم يصدّرها إلى الوجهة المستهدفة.
+يضيف [مستقبِل Datadog](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/receiver/datadogreceiver) مُدخلاً آخر إلى هذه المعمارية. فهو يوفّر نقطة نهاية تفهم البروتوكولات التي تستخدمها وكلاء Datadog وSDKs الخاصة بها، ويحوّل حمولات Datadog الواردة إلى نموذج بيانات OpenTelemetry. ومن هناك تمر عبر مسار معالجة المُجمِّع المعتاد مثلها مثل أي بيانات قياس عن بُعد أخرى.
 
-<Image img="/images/use-cases/observability/simple_otel_pipeline.png" alt="مسار OTel بسيط" size="lg" background />
+تُعاد ببساطة تهيئة وكلاء Datadog الحالية لإرسال السجلات والتتبّعات إلى المستقبِل الذي يعمل على مُجمِّع ClickStack. وتحتفظ التطبيقات بـ Datadog SDKs الحالية، كما تبقى الوكلاء المنشورة بالفعل عبر بنيتك التحتية في مكانها.
 
-يضيف [مستقبِل Datadog](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/receiver/datadogreceiver) مُدخلاً آخر إلى هذه المعمارية. فهو يوفّر نقطة نهاية تفهم البروتوكولات التي تستخدمها عوامل Datadog وSDKs الخاصة بها، ويحوّل حمولات Datadog الواردة إلى نموذج بيانات OpenTelemetry. ومن هناك تمر عبر مسار المجمّع المعتاد مثلها مثل أي بيانات قياس عن بُعد أخرى.
-
-تُعاد ببساطة تهيئة عوامل Datadog الحالية لإرسال السجلات وآثار التتبّع إلى المستقبِل الذي يعمل على مجمّع ClickStack. وتحتفظ التطبيقات بـ Datadog SDKs الحالية، كما تبقى العوامل المنشورة بالفعل عبر بنيتك التحتية في مكانها.
-
-<Image img="/images/use-cases/observability/datadog_to_otel.png" alt="Datadog إلى OpenTelemetry" size="lg" background />
-
-ولأن مسار المجمّع يمكنه استخدام أكثر من مُصدِّر واحد، يمكن إرسال بيانات القياس عن بُعد نفسها إلى Datadog وClickStack في الوقت نفسه. وهذا ما يجعل التقييم جنبًا إلى جنب والتشغيل المتوازي على المدى الطويل ممكنين: إذ تقارن بين المنصتين باستخدام بيانات متطابقة، ثم تقرر ما إذا كنت ستُجري الترحيل.
-
-<Image img="/images/use-cases/observability/migrating_datadog_agents.png" alt="ترحيل عوامل Datadog" size="lg" background />
-
-<div id="what-the-receiver-handles">
-  ## ما الذي يتعامل معه المستقبِل
+<div className="ch-image-lg">
+  <Frame>
+    ![Datadog إلى OpenTelemetry](/images/use-cases/observability/datadog_to_otel.png)
+  </Frame>
 </div>
 
-يحوّل المستقبِل حمولات Datadog إلى تمثيلها الصحيح في OpenTelemetry، بحيث يتمكن ClickStack من تفسير البيانات وربطها والاستعلام عنها من دون أي منطق خاص بـ Datadog:
+ولأن مسار معالجة المُجمِّع يمكنه استخدام أكثر من مُصدِّر واحد، يمكن إرسال بيانات القياس عن بُعد نفسها إلى Datadog وClickStack في الوقت نفسه. وهذا ما يجعل التقييم جنبًا إلى جنب والتشغيل المتوازي على المدى الطويل ممكنين: إذ تقارن بين المنصتين باستخدام بيانات متطابقة، ثم تقرر ما إذا كنت ستُجري الترحيل.
 
-* **سجلات السجل.** تُحوَّل الطوابع الزمنية في Datadog من المللي ثانية إلى النانوثانية، وتُستخدم لملء حقول الطابع الزمني ووقت الرصد و`body` ودرجة الخطورة في OpenTelemetry، بحيث لا تعود السجلات تظهر عند حقبة Unix.
-* **سمات المورد ودرجة الخطورة.** تُطابَق حالات Datadog مثل `info` و`warn` و`error` مع `SeverityNumber` و`SeverityText` المقابلين في OpenTelemetry. كما تُرقَّى أسماء المضيفين، وأسماء الخدمات، والبيئات، والوسوم المعروفة الخاصة بالحاويات والسحابة وKubernetes إلى سمات مورد قياسية.
-* **الربط بين التتبّع والسجلات.** تملأ الحقول `dd.trace_id` و`dd.span_id` معرّفات التتبّع وspan في OpenTelemetry، ويعيد المستقبِل بناء معرّفات التتبّع الكاملة ذات 128 بت من التمثيل المجزأ الخاص بـ Datadog. وهذا السلوك مفعّل افتراضيًا، ويتيح للسجلات ووحدات span الواردة من Datadog أن ترتبط بالخدمات التي جرى instrument لها باستخدام OpenTelemetry.
-* **سجلات JSON المهيكلة.** ينفّذ الخيار `decode_json_message`، المفعّل افتراضيًا، معالجة JSON التي تحدث عادةً في backend الخاص بـ Datadog، مع استخراج `body` والطابع الزمني ودرجة الخطورة ومعرّفات التتبّع وحقول المورد وبقية السمات.
-* **التوافق مع agents الحالية.** يضغط Datadog Agent 7.59 والإصدارات الأحدث حمولات HTTP باستخدام Zstandard افتراضيًا. ويدعم المستقبِل Zstandard إلى جانب gzip، لذلك يمكن للـ agents الحالية الاتصال من دون رفض حمولاتها.
-
-هذه التغييرات مضمنة في توزيعة ClickStack collector ومُعدّة تلقائيًا، وهي متاحة أيضًا في مشروع [OpenTelemetry Collector Contrib](https://github.com/open-telemetry/opentelemetry-collector-contrib).
-
-<div id="enabling-the-datadog-receiver">
-  ## تمكين مستقبِل Datadog
+<div className="ch-image-lg">
+  <Frame>
+    ![ترحيل وكلاء Datadog](/images/use-cases/observability/migrating_datadog_agents.png)
+  </Frame>
 </div>
 
-يتضمن توزيع ClickStack لمجمّع OpenTelemetry مستقبِل Datadog، وهو يستمع على المنفذ `8126`. ويكون هذا المستقبِل معطّلًا افتراضيًا، ويُفعَّل باستخدام متغير البيئة `ENABLE_DATADOG_RECEIVER`.
+## ما الذي يعالجه المستقبِل {#what-the-receiver-handles}
 
-بمجرد تمكينه، وجّه Datadog agent إلى هذا المستقبِل واجرِ مصادقته باستخدام مفتاح إدخال إلى ClickStack. ويعتمد مصدر هذا المفتاح على طريقة النشر لديك: مع **Managed ClickStack** تشغّل جامعًا مستقلًا وتضبط المفتاح بنفسك عند بدء التشغيل، بينما مع **Open Source ClickStack** يُنشأ المفتاح تلقائيًا لك وتنسخه من واجهة ClickStack ‏(HyperDX). حدّد طريقة النشر الخاصة بك أدناه.
+يحوّل المستقبِل حمولات بيانات Datadog إلى تمثيلها الصحيح في OpenTelemetry، بحيث يتمكن ClickStack من تفسير البيانات وربطها والاستعلام عنها دون الحاجة إلى أي منطق خاص بـ Datadog:
 
-<Tabs>
-  <Tab title="ClickStack المُدار">
-    باستخدام Managed ClickStack، يمكنك نشر ClickStack collector مستقل يقوم باستيعاب البيانات إلى خدمة ClickHouse Cloud الخاصة بك. ويمكنك تأمين الـ collector عند بدء التشغيل باستخدام رمز مصادقة تختاره، ثم إعادة استخدام هذا الرمز نفسه بوصفه مفتاح API لـ Datadog agent.
+* **سجلات Log.** تُحوَّل الطوابع الزمنية لـ Datadog من الميلي ثانية إلى النانو ثانية، وتُستخدم لتعبئة حقول OpenTelemetry الخاصة بالطابع الزمني والطابع الزمني المرصود والمتن ودرجة الخطورة، فلا تعود السجلات تظهر عند حقبة Unix.
+* **سمات الموارد ودرجة الخطورة.** تُطابَق حالات Datadog مثل `info` و`warn` و`error` مع ما يقابلها من `SeverityNumber` و`SeverityText` في OpenTelemetry. كما تُرقّى أسماء المضيفين وأسماء الخدمات والبيئات، إضافةً إلى الوسوم المعروفة الخاصة بالحاويات والسحابة وKubernetes، إلى سمات موارد قياسية.
+* **ربط التتبّعات بالسجلات.** يُستخدم الحقلان `dd.trace_id` و`dd.span_id` لتعبئة معرّفات التتبّع وspan في OpenTelemetry، ويعيد المستقبِل بناء معرّفات التتبّع الكاملة بطول 128 بت انطلاقًا من التمثيل المجزّأ الذي يعتمده Datadog. وبفضل تفعيل هذه الميزة افتراضيًا، يمكن ربط السجلات وspans الواردة من Datadog بالخدمات المزوّدة بأدوات الرصد عبر OpenTelemetry.
+* **سجلات JSON المهيكلة.** يتولّى الخيار `decode_json_message`، المفعّل افتراضيًا، معالجة JSON التي تجري عادةً في الواجهة الخلفية لـ Datadog، فيستخرج المتن والطابع الزمني ودرجة الخطورة ومعرّفات التتبّع وحقول الموارد وبقية السمات.
+* **التوافق مع الإصدارات الحالية من الوكيل.** يضغط Datadog Agent 7.59 والإصدارات الأحدث حمولات HTTP باستخدام Zstandard افتراضيًا. ويدعم المستقبِل Zstandard إلى جانب gzip، بحيث تتصل الوكلاء الحالية دون أن تُرفض حمولاتها.
 
-    <Steps>
-      <Step title="انشر collector مع تفعيل receiver" id="deploy-collector-managed">
-        <Note>
-          **ClickStack OpenTelemetry collector مقابل OpenTelemetry collector القياسي**
+هذه التغييرات مضمّنة في توزيعة مُجمِّع ClickStack ومُهيّأة تلقائيًا، كما أنها متاحة أيضًا في مشروع [OpenTelemetry Collector Contrib](https://github.com/open-telemetry/opentelemetry-collector-contrib).
 
-          يكون Datadog receiver مضمّنًا ومُهيّأً مسبقًا في توزيع ClickStack الخاص بـ OpenTelemetry collector. وإذا كنت تفضّل استخدام توزيع [OpenTelemetry Collector Contrib](https://github.com/open-telemetry/opentelemetry-collector-contrib) القياسي، فستحتاج إلى تهيئة الـ receiver بنفسك. وتُرسل جميع تغييراتنا وتحسيناتنا على الـ receiver إلى upstream، لذا فهي متاحة هناك أيضًا. وللاطلاع على خيارات التهيئة، راجع [ملف README الخاص بـ Datadog receiver](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/receiver/datadogreceiver/README.md).
-        </Note>
+## تفعيل مستقبِل Datadog {#enabling-the-datadog-receiver}
 
-        شغّل [ClickStack collector المستقل](/ar/clickstack/ingesting-data/collector) مع توجيهه إلى خدمة ClickHouse Cloud الخاصة بك. فعّل Datadog receiver باستخدام `ENABLE_DATADOG_RECEIVER=true`، وافتح المنفذ `8126`، وأمّن الاستيعاب عبر تعيين `OTLP_AUTH_TOKEN` من اختيارك:
+يأتي مستقبِل Datadog مضمّنًا في توزيعة ClickStack الخاصة بجامع البيانات OpenTelemetry، ويستمع على المنفذ `8126`. وهو معطّل افتراضيًا، ويُفعَّل باستخدام متغير البيئة `ENABLE_DATADOG_RECEIVER`.
 
-        ```shell
-        export CLICKHOUSE_ENDPOINT=<HTTPS_ENDPOINT>
-        export CLICKHOUSE_USER=<CLICKHOUSE_USER>
-        export CLICKHOUSE_PASSWORD=<CLICKHOUSE_PASSWORD>
-        export OTLP_AUTH_TOKEN="a_very_secure_string"
+بعد تفعيله، وجّه وكيل Datadog إلى المستقبِل، وصادِق عليه باستخدام مفتاح الإدخال الذي تُنشئه واجهة ClickStack ‏(واجهة مستخدم ClickStack).
 
-        docker run --name clickstack-collector \
-          -e ENABLE_DATADOG_RECEIVER=true \
-          -e OTLP_AUTH_TOKEN=${OTLP_AUTH_TOKEN} \
-          -e CLICKHOUSE_ENDPOINT=${CLICKHOUSE_ENDPOINT} \
-          -e CLICKHOUSE_USER=${CLICKHOUSE_USER} \
-          -e CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD} \
-          -p 4317:4317 \
-          -p 4318:4318 \
-          -p 8126:8126 \
-          clickhouse/clickstack-otel-collector:latest
-        ```
+مع ClickStack مفتوح المصدر، يؤمّن جامع البيانات نقاط النهاية الخاصة به باستخدام مفتاح إدخال يُنشأ عند نشر التوزيعة. فعِّل المستقبِل، ثم انسخ هذا المفتاح من واجهة ClickStack ‏(واجهة مستخدم ClickStack)، واستخدمه كمفتاح API لوكيل Datadog.
 
-        أصبح الـ receiver متاحًا الآن على `http://localhost:8126`، والرمز الموجود في `OTLP_AUTH_TOKEN` هو المفتاح الذي تمرّره إلى Datadog agent. ولمزيد من التفاصيل حول تأمين الـ collector، بما في ذلك ما يعادله في Helm، راجع [&quot;تأمين الـ collector&quot;](/ar/clickstack/ingesting-data/collector#securing-the-collector).
-      </Step>
+<Steps>
+  <Step title="ابدأ مجمِّعًا مع تفعيل المستقبِل" id="start-collector-oss">
+    سيستخدم المثال أدناه [صورة الكل في واحد](/ar/clickstack/deployment/all-in-one). إذا كنت تستخدم نموذج توزيع مختلفًا، فتأكد من تمرير الخيار نفسه إلى الحاوية التي تشغّل جامع البيانات.
 
-      <Step title="هيّئ Datadog agent" id="configure-datadog-agent-managed">
-        حدّث configuration file الخاصة بالـ agent في `/opt/datadog-agent/etc/datadog.yaml` لإرسال السجلات والتتبعات والمقاييس إلى الـ receiver. استخدم قيمة `OTLP_AUTH_TOKEN` بوصفها مفتاح API، ووجّه كل destination إلى endpoint الخاصة بالـ receiver:
+    اضبط `ENABLE_DATADOG_RECEIVER=true` وافتح المنفذ `8126`:
 
-        ```yaml
-        api_key: "<YOUR_OTLP_AUTH_TOKEN>"
+    ```shell
+    docker run --name clickstack \
+      -p 8080:8080 \
+      -p 4317:4317 \
+      -p 4318:4318 \
+      -p 8126:8126 \
+      -e ENABLE_DATADOG_RECEIVER=true \
+      clickhouse/clickstack-all-in-one:latest
+    ```
 
-        # وجهة المقاييس
-        dd_url: "http://localhost:8126"
+    أصبح المستقبِل الآن متاحًا على `http://localhost:8126`.
 
-        # يدعم ClickStack حاليًا Datadog v2 metrics intake.
-        use_v3_api:
-          series:
-            enabled: false
+    <Note>
+      **تشغيل وكيل Datadog محليًا**
 
-        # وجهة التتبعات
-        apm_config:
-          enabled: true
-          apm_dd_url: "http://localhost:8126"
+      يستمع وكيل Datadog أيضًا على المنفذ `8126`. إذا كان الوكيل يعمل على المضيف نفسه الذي يعمل عليه جامع البيانات، فعيّن لجامع البيانات منفذ مضيف مختلفًا لتجنّب التعارض، مثل `-p 18126:8126`، ثم وجّه الوكيل إلى ذلك المنفذ بدلًا منه.
+    </Note>
 
-        # وجهة السجلات
-        logs_enabled: true
+    أكمل بقية عملية الإعداد كما هو موضح في [دليل البدء للإصدار مفتوح المصدر](/ar/clickstack/getting-started/oss#navigate-to-hyperdx-ui).
+  </Step>
 
-        logs_config:
-          logs_dd_url: "http://localhost:8126"
-          force_use_http: true
+  <Step title="انسخ مفتاح API للإدخال الخاص بك" id="copy-ingestion-key-oss">
+    في واجهة ClickStack ‏(واجهة مستخدم ClickStack)، اختر حسابك في الزاوية السفلية اليسرى، ثم انتقل إلى **Team Settings &gt; API Keys**، وانسخ **Ingestion API Key**.
 
-        # تتطلب هذه الإعدادات Datadog backend، ونحن لا نستخدمه، لذا نعطّلها.
-        remote_updates: false
+    <div className="ch-image-lg">
+      <Frame>
+        ![مفتاح إدخال ClickStack](/images/use-cases/observability/hyperdx_ingestion_key.png)
+      </Frame>
+    </div>
+  </Step>
 
-        remote_configuration:
-          enabled: false
-        ```
+  <Step title="اضبط عامل Datadog" id="configure-datadog-agent-oss">
+    حدِّث ملف الإعدادات للوكيل في `/opt/datadog-agent/etc/datadog.yaml` لإرسال السجلات والتتبعات والمقاييس إلى المستقبِل. استخدم مفتاح إدخال ClickStack الخاص بك كمفتاح API، ووجّه كل وجهة إلى نقطة نهاية المستقبِل:
 
-        يقوم هذا الإعداد بما يلي:
+    ```yaml
+    api_key: "<YOUR_CLICKSTACK_INGESTION_KEY>"
 
-        * يرسل المقاييس والتتبعات والسجلات إلى الـ receiver بدلًا من Datadog.
-        * يعطّل v3 metrics intake، لأن ClickStack يدعم Datadog v2 metrics endpoint.
-        * يوقف التحديثات عن بُعد والتهيئة عن بُعد، لأنهما يعتمدان على Datadog backend.
-      </Step>
+    # وجهة المقاييس
+    dd_url: "http://localhost:8126"
 
-      <Step title="أعد تشغيل agent" id="restart-agent-managed">
-        أعد تشغيل Datadog agent لالتقاط الإعدادات الجديدة. على MacOS:
+    # يدعم ClickStack حاليًا نقطة استقبال المقاييس Datadog v2.
+    use_v3_api:
+      series:
+        enabled: false
 
-        ```shell
-        sudo launchctl kickstart -k system/com.datadoghq.agent
-        ```
+    # وجهة التتبعات
+    apm_config:
+      enabled: true
+      apm_dd_url: "http://localhost:8126"
 
-        تتدفق بيانات telemetry من الـ agent الآن إلى ClickStack، حيث يمكنك استكشافها في HyperDX.
-      </Step>
-    </Steps>
-  </Tab>
+    # وجهة السجلات
+    logs_enabled: true
 
-  <Tab title="ClickStack مفتوح المصدر">
-    مع ClickStack مفتوح المصدر، يؤمّن المجمّع نقاط النهاية الخاصة به باستخدام مفتاح إدخال يُنشأ عند نشر التوزيعة. فعِّل المستقبِل، ثم انسخ هذا المفتاح من واجهة ClickStack ‏(HyperDX)، واستخدمه كمفتاح API لعامل Datadog.
+    logs_config:
+      logs_dd_url: "http://localhost:8126"
+      force_use_http: true
 
-    <Steps>
-      <Step title="ابدأ مجمِّعًا مع تفعيل المستقبِل" id="start-collector-oss">
-        سيستخدم المثال أدناه [image ‏all-in-one](/ar/clickstack/deployment/all-in-one). إذا كنت تستخدم نموذج توزيع مختلفًا، فتأكد من تمرير الخيار نفسه إلى الحاوية التي تشغّل المجمِّع.
+    # تتطلب هذه الوظائف الواجهة الخلفية لـ Datadog، ونحن لا نستخدمها، لذا نعطّلها.
+    remote_updates: false
 
-        اضبط `ENABLE_DATADOG_RECEIVER=true` وافتح المنفذ `8126`:
+    remote_configuration:
+      enabled: false
+    ```
 
-        ```shell
-        docker run --name clickstack \
-          -p 8080:8080 \
-          -p 4317:4317 \
-          -p 4318:4318 \
-          -p 8126:8126 \
-          -e ENABLE_DATADOG_RECEIVER=true \
-          clickhouse/clickstack-all-in-one:latest
-        ```
+    هذه الإعدادات:
 
-        أصبح المستقبِل الآن متاحًا على `http://localhost:8126`.
+    * ترسل المقاييس والتتبعات والسجلات إلى المستقبِل بدلًا من Datadog.
+    * تعطّل نقطة استقبال المقاييس v3، لأن المستقبِل يدعم نقطة نهاية مقاييس Datadog v2.
+    * توقف التحديثات عن بُعد والإعدادات عن بُعد، لأنهما يعتمدان على الواجهة الخلفية لـ Datadog.
+  </Step>
 
-        <Note>
-          **تشغيل عامل Datadog محليًا**
+  <Step title="أعِد تشغيل العامل" id="restart-agent-oss">
+    أعِد تشغيل وكيل Datadog حتى يلتقط الإعدادات الجديدة. على MacOS:
 
-          يستمع عامل Datadog أيضًا على المنفذ `8126`. إذا كان العامل يعمل على المضيف نفسه الذي يعمل عليه المجمِّع، فعيّن للمجمِّع منفذ مضيف مختلفًا لتجنّب التعارض، مثل `-p 18126:8126`، ثم وجّه العامل إلى ذلك المنفذ بدلًا منه.
-        </Note>
+    ```shell
+    sudo launchctl kickstart -k system/com.datadoghq.agent
+    ```
 
-        أكمل بقية عملية الإعداد كما هو موضح في [دليل البدء للإصدار مفتوح المصدر](/ar/clickstack/getting-started/oss#navigate-to-hyperdx-ui).
-      </Step>
+    تتدفق الآن بيانات القياس عن بُعد من الوكيل إلى ClickStack، حيث يمكنك استكشافها في واجهة مستخدم ClickStack.
+  </Step>
+</Steps>
 
-      <Step title="انسخ مفتاح API للإدخال الخاص بك" id="copy-ingestion-key-oss">
-        في واجهة ClickStack ‏(HyperDX)، اختر حسابك في الزاوية السفلية اليسرى، ثم انتقل إلى **Team Settings &gt; API Keys**، وانسخ **Ingestion API Key**.
+## مثال عملي {#worked-example}
 
-        <Image img="/images/use-cases/observability/hyperdx_ingestion_key.png" alt="مفتاح إدخال ClickStack" size="lg" background />
-      </Step>
-
-      <Step title="اضبط عامل Datadog" id="configure-datadog-agent-oss">
-        حدِّث ملف الإعداد للعامل في `/opt/datadog-agent/etc/datadog.yaml` لإرسال السجلات والتتبعات والمقاييس إلى المستقبِل. استخدم مفتاح إدخال ClickStack الخاص بك كمفتاح API، ووجّه كل وجهة إلى نقطة نهاية المستقبِل:
-
-        ```yaml
-        api_key: "<YOUR_CLICKSTACK_INGESTION_KEY>"
-
-        # وجهة المقاييس
-        dd_url: "http://localhost:8126"
-
-        # يدعم ClickStack حاليًا نقطة استقبال المقاييس Datadog v2.
-        use_v3_api:
-          series:
-            enabled: false
-
-        # وجهة التتبعات
-        apm_config:
-          enabled: true
-          apm_dd_url: "http://localhost:8126"
-
-        # وجهة السجلات
-        logs_enabled: true
-
-        logs_config:
-          logs_dd_url: "http://localhost:8126"
-          force_use_http: true
-
-        # تتطلب هذه الوظائف الواجهة الخلفية لـ Datadog، ونحن لا نستخدمها، لذا نعطّلها.
-        remote_updates: false
-
-        remote_configuration:
-          enabled: false
-        ```
-
-        هذا الإعداد:
-
-        * يرسل المقاييس والتتبعات والسجلات إلى المستقبِل بدلًا من Datadog.
-        * يعطّل نقطة استقبال المقاييس v3، لأن المستقبِل يدعم نقطة نهاية مقاييس Datadog v2.
-        * يوقف التحديثات عن بُعد والإعداد عن بُعد، لأنهما يعتمدان على الواجهة الخلفية لـ Datadog.
-      </Step>
-
-      <Step title="أعِد تشغيل العامل" id="restart-agent-oss">
-        أعِد تشغيل عامل Datadog حتى يلتقط الإعداد الجديد. على MacOS:
-
-        ```shell
-        sudo launchctl kickstart -k system/com.datadoghq.agent
-        ```
-
-        تتدفق الآن بيانات telemetry من العامل إلى ClickStack، حيث يمكنك استكشافها في HyperDX.
-      </Step>
-    </Steps>
-  </Tab>
-</Tabs>
-
-<div id="worked-example">
-  ## مثال عملي
-</div>
-
-يستخدم المثال التالي تطبيقًا تجريبيًا لعرض المسار الكامل من تطبيق جرى تزويده بأدوات الرصد، مرورًا بـ Datadog agent، وصولًا إلى ClickStack.
+يستخدم المثال التالي تطبيقًا تجريبيًا لعرض المسار الكامل من تطبيق جرى تزويده بأدوات الرصد، مرورًا بـ وكيل Datadog، وصولًا إلى ClickStack.
 
 <iframe width="768" height="432" src="https://www.youtube.com/embed/i4wj8C8yqYw" title="مشغّل فيديو YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
 
@@ -275,11 +194,15 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
     اتبع [التعليمات في README](https://github.com/ClickHouse/hn-news-analyzer/tree/datadog-instrumentation) لتشغيل التطبيق.
 
-    <Image img="/images/clickstack/getting-started/hackernews_main.webp" alt="تطبيق HackerNews Analyzer قيد التشغيل محليًا" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![تطبيق HackerNews Analyzer قيد التشغيل محليًا](/images/clickstack/getting-started/hackernews_main.webp)
+      </Frame>
+    </div>
   </Step>
 
   <Step title="تشغيل ClickStack مع تفعيل مستقبِل Datadog" id="launch-clickstack-example">
-    شغّل صورة all-in-one مع تفعيل مستقبِل Datadog. هنا نربط receiver بمنفذ المضيف `18126` حتى لا يتعارض مع Datadog agent المحلي، الذي يستخدم أيضًا `8126`:
+    شغّل صورة الكل في واحد مع تفعيل مستقبِل Datadog. هنا نربط المستقبِل بمنفذ المضيف `18126` حتى لا يتعارض مع وكيل Datadog المحلي، الذي يستخدم أيضًا `8126`:
 
     ```shell
     docker run --name clickstack \
@@ -292,38 +215,50 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
       clickhouse/clickstack-all-in-one:latest
     ```
 
-    يصبح receiver متاحًا على `http://127.0.0.1:18126`.
+    يصبح المستقبِل متاحًا على `http://127.0.0.1:18126`.
   </Step>
 
   <Step title="تثبيت Datadog agent وتهيئته" id="install-agent-example">
-    [ثبّت Datadog agent](https://docs.datadoghq.com/agent/?tab=Host-based). على MacOS:
+    [ثبّت وكيل Datadog](https://docs.datadoghq.com/agent/?tab=Host-based). على MacOS:
 
     ```shell
     DD_SITE="datadoghq.com" bash -c "$(curl -L https://install.datadoghq.com/scripts/install_mac_os.sh)"
     ```
 
-    حدّث `/opt/datadog-agent/etc/datadog.yaml` بحيث يشير إلى receiver على المنفذ `18126`، مع استخدام مفتاح إدخال ClickStack الخاص بك كمفتاح API، ثم أعد تشغيل agent:
+    حدّث `/opt/datadog-agent/etc/datadog.yaml` بحيث يشير إلى المستقبِل على المنفذ `18126`، مع استخدام مفتاح إدخال ClickStack الخاص بك كمفتاح API، ثم أعد تشغيل الوكيل:
 
     ```shell
     sudo launchctl kickstart -k system/com.datadoghq.agent
     ```
 
-    راجع [تفعيل مستقبِل Datadog](#enabling-the-datadog-receiver) للاطلاع على تهيئة agent الكاملة ولمعرفة مكان العثور على مفتاح الإدخال الخاص بك.
+    راجع [تفعيل مستقبِل Datadog](#enabling-the-datadog-receiver) للاطلاع على إعدادات الوكيل الكاملة ولمعرفة مكان العثور على مفتاح الإدخال الخاص بك.
   </Step>
 
   <Step title="استكشف بيانات القياس عن بُعد في ClickStack" id="explore-telemetry">
-    افتح واجهة HyperDX على [http://localhost:8080](http://localhost:8080) واستكشف traces وlogs وmetrics التي جُمعت من Datadog agent.
+    افتح واجهة مستخدم ClickStack على [http://localhost:8080](http://localhost:8080) واستكشف التتبّعات والسجلات والمقاييس التي جُمعت من وكيل Datadog.
 
-    <Image img="/images/use-cases/observability/datadog_clickstack_demo_2.png" alt="Datadog في ClickStack traces 2" size="lg" background />
+    <div className="ch-image-lg">
+      <Frame>
+        ![Datadog في ClickStack تتبّعات 2](/images/use-cases/observability/datadog_clickstack_demo_2.png)
+      </Frame>
+    </div>
 
-    <Image img="/images/use-cases/observability/datadog_clickstack_demo_1.png" alt="Datadog في ClickStack traces 1" size="lg" background />
+    <div className="ch-image-lg">
+      <Frame>
+        ![Datadog في ClickStack تتبّعات 1](/images/use-cases/observability/datadog_clickstack_demo_1.png)
+      </Frame>
+    </div>
 
-    <Image img="/images/use-cases/observability/datadog_clickstack_demo_3.png" alt="Datadog في ClickStack traces 3" size="lg" background />
+    <div className="ch-image-lg">
+      <Frame>
+        ![Datadog في ClickStack تتبّعات 3](/images/use-cases/observability/datadog_clickstack_demo_3.png)
+      </Frame>
+    </div>
   </Step>
 </Steps>
 
 <div id="what-you-can-migrate-today">
-  ## ما الذي يمكنك ترحيله اليوم
+  ## ما الذي يمكنك ترحيله اليوم {#what-you-can-migrate-today}
 </div>
 
 يُعد مستقبِل Datadog مكوّناً من فئة alpha في مجمّع OpenTelemetry Contrib، ومصنَّفاً على أنه Experimental ضمن توزيعة ClickStack collector، لذلك يتطلب تفعيل feature flag.

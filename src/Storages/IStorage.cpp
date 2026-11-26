@@ -23,6 +23,7 @@
 #include <Planner/collectSelectedColumnsFromTable.h>
 
 #include <algorithm>
+#include <Databases/IDatabase.h>
 
 
 namespace DB
@@ -33,13 +34,14 @@ namespace Setting
     extern const SettingsBool parallelize_output_from_storages;
     extern const SettingsBool distributed_aggregation_memory_efficient;
     extern const SettingsBool async_socket_for_remote;
-    extern const SettingsUInt64 max_distributed_connections;
+    extern const SettingsNonZeroUInt64 max_distributed_connections;
 }
 
 namespace ErrorCodes
 {
     extern const int TABLE_IS_DROPPED;
     extern const int NOT_IMPLEMENTED;
+    extern const int SUPPORT_IS_DISABLED;
     extern const int DEADLOCK_AVOIDED;
     extern const int LOGICAL_ERROR;
     extern const int CANNOT_RESTORE_TABLE;
@@ -255,7 +257,7 @@ void IStorage::read(
     const auto & settings = context->getSettingsRef();
     const size_t max_threads_execute_query = isRemote() && !settings[Setting::async_socket_for_remote]
         ? settings[Setting::max_distributed_connections]
-        : getEffectiveMaxThreads(settings);
+        : getEffectiveMaxThreads(*context);
     const size_t resize_to = std::min(num_streams, max_threads_execute_query);
 
     if (!should_not_resize && parallelize_output && parallelizeOutputAfterReading(context) && output_ports > 0
@@ -410,6 +412,12 @@ void IStorage::renameInMemory(const StorageID & new_table_id)
 bool IStorage::hasUniqueKey() const
 {
     return metadata.get()->hasUniqueKey();
+}
+
+void IStorage::deleteByUniqueKey(const ASTPtr &, ContextPtr)
+{
+    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+        "DELETE on a UNIQUE KEY table is not supported by engine {}", getName());
 }
 
 VectorWithMemoryTracking<String> IStorage::getAllRegisteredNames() const

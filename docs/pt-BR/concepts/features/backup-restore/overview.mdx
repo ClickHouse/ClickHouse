@@ -139,6 +139,10 @@ Elas ajudam a:
 
 Consulte [&quot;coleções nomeadas&quot;](/pt-BR/concepts/features/configuration/server-config/named-collections) para mais detalhes.
 
+As próprias coleções nomeadas criadas via SQL também podem ser exportadas para um backup e restauradas a partir
+dele por meio da tabela `system.named_collections`; consulte
+[&quot;Backup e restauração de coleções nomeadas&quot;](/pt-BR/concepts/features/backup-restore/named-collections).
+
 ## Backup de tabelas de sistema, de log ou de gerenciamento de acesso {#system-backups}
 
 As tabelas de sistema também podem ser incluídas nos seus fluxos de trabalho de backup e restauração, mas isso
@@ -165,6 +169,13 @@ Essa funcionalidade só funciona para configurações gerenciadas por meio de co
 (chamadas de [&quot;Controle de acesso e gerenciamento de contas orientados por SQL&quot;](/pt-BR/concepts/features/security/access-rights#enabling-access-control)).
 As configurações de acesso definidas em arquivos de configuração do servidor ClickHouse (por exemplo, `users.xml`)
 não são incluídas em backups e não podem ser restauradas por esse método.
+
+<Note>
+  Em versões do ClickHouse anteriores à 26.10, as row policies, os settings profiles e as quotas restaurados com `RESTORE` aparecem
+  em `system.row_policies`, `system.settings_profiles` e `system.quotas`, mas não são aplicados às consultas
+  imediatamente. Execute [`SYSTEM RELOAD USERS`](/pt-BR/reference/statements/system#reload-users) após a conclusão da restauração
+  para aplicá-los.
+</Note>
 
 ## Sintaxe geral {#syntax}
 

@@ -13,7 +13,6 @@ import pytest
 
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
-from helpers.network import PartitionManager
 from helpers.test_tools import TSV, assert_eq_with_retry
 from google.protobuf.internal.encoder import _VarintBytes
 from helpers.kafka import message_with_repeated_pb2
@@ -1451,11 +1450,11 @@ def test_kafka_virtual_columns_with_materialized_view(
             DROP TABLE IF EXISTS test.{kafka_table}_view;
             DROP TABLE IF EXISTS test.{kafka_table}_consumer;
             {create_query};
-            CREATE TABLE test.{kafka_table}_view (key UInt64, value UInt64, kafka_key String, topic String, offset UInt64, partition UInt64, timestamp Nullable(DateTime('UTC')))
+            CREATE TABLE test.{kafka_table}_view (key UInt64, value UInt64, kafka_key String, topic String, offset UInt64, partition UInt64, timestamp Nullable(DateTime('UTC')), table_name String)
                 ENGINE = MergeTree()
                 ORDER BY key;
             CREATE MATERIALIZED VIEW test.{kafka_table}_consumer TO test.{kafka_table}_view AS
-                SELECT *, _key as kafka_key, _topic as topic, _offset as offset, _partition as partition, _timestamp = 0 ? '1970-01-01 00:00:00' : toString(_timestamp) as timestamp FROM test.{kafka_table};
+                SELECT *, _key as kafka_key, _topic as topic, _offset as offset, _partition as partition, _timestamp = 0 ? '1970-01-01 00:00:00' : toString(_timestamp) as timestamp, _table as table_name FROM test.{kafka_table};
         """)
 
         messages = []
@@ -1472,6 +1471,10 @@ def test_kafka_virtual_columns_with_materialized_view(
         )
 
         k.kafka_check_result(result, True, "test_kafka_virtual2.reference")
+        assert (
+            instance.query(f"SELECT table_name, count() FROM test.{kafka_table}_view GROUP BY table_name")
+            == f"{kafka_table}\t50\n"
+        )
 
         instance.query(f"""
             DROP TABLE test.{kafka_table}_consumer;
@@ -2507,17 +2510,19 @@ def test_kafka_lot_of_partitions_partial_commit_of_bulk(
         """)
 
 
-# TODO(antaljanosbenjamin): find another way to make insertion fail
 @pytest.mark.parametrize(
-    "create_query_generator",
+    "create_query_generator, log_line",
     [
-        k.generate_old_create_table_query,
-        # k.generate_new_create_table_query,
+        (k.generate_new_create_table_query, "Saved offset 22"),
+        (k.generate_old_create_table_query, "Committed offset 22"),
     ],
 )
-def test_kafka_no_holes_when_write_suffix_failed(kafka_cluster, create_query_generator):
+def test_kafka_no_holes_when_write_suffix_failed(
+    kafka_cluster, create_query_generator, log_line
+):
     suffix = k.random_string(6)
     kafka_table = f"kafka_{suffix}"
+    definer = f"{kafka_table}_definer"
 
     admin_client = k.get_admin_client(kafka_cluster)
     topic_name = "no_holes_when_write_suffix_failed" + k.get_topic_postfix(
@@ -2547,28 +2552,29 @@ def test_kafka_no_holes_when_write_suffix_failed(kafka_cluster, create_query_gen
             CREATE TABLE test.{kafka_table}_view (key UInt64, value String)
                 ENGINE = ReplicatedMergeTree('/clickhouse/kafkatest/tables/{topic_name}', 'node1')
                 ORDER BY key;
+
+            CREATE USER {definer} SETTINGS insert_keeper_fault_injection_probability = 1;
+            GRANT SELECT ON test.{kafka_table} TO {definer};
+            GRANT INSERT ON test.{kafka_table}_view TO {definer};
+
+            CREATE MATERIALIZED VIEW test.{kafka_table}_consumer TO test.{kafka_table}_view
+                DEFINER = {definer} SQL SECURITY DEFINER
+                AS SELECT * FROM test.{kafka_table};
         """)
 
-        # init PartitionManager (it starts container) earlier
-        instance.query(f"""
-            CREATE MATERIALIZED VIEW test.{kafka_table}_consumer TO test.{kafka_table}_view AS
-                SELECT * FROM test.{kafka_table}
-                WHERE NOT sleepEachRow(0.25);
-        """)
+        # The push runs as the definer, so it fails at its first Keeper request. No push can
+        # succeed before the setting is switched off, so a written part proves that the failure
+        # came after the write.
+        instance.wait_for_log_line(
+            f"Fault injection before operation.*while pushing to view test.{kafka_table}_consumer",
+            timeout=60,
+        )
+        assert instance.contains_in_log(f"{kafka_table}_view.*Wrote block with")
+        instance.query(
+            f"ALTER USER {definer} SETTINGS insert_keeper_fault_injection_probability = 0"
+        )
 
-        instance.wait_for_log_line(f"{kafka_table}.*Polled batch of 20 messages")
-        # the tricky part here is that disconnect should happen after write prefix, but before write suffix
-        # we have 0.25 (sleepEachRow) * 20 ( Rows ) = 5 sec window after "Polled batch of 20 messages"
-        # while materialized view is working to inject zookeeper failure
-        with PartitionManager() as pm:
-            pm.drop_instance_zk_connections(instance)
-            # FIXME: we need to make sure that this happens during writing to RMT
-            instance.wait_for_log_line(
-                "Error.*(Connection loss|Coordination::Exception|DB::Exception: Coordination error: Operation timeout).*while pushing to view",
-                timeout=60,
-            )
-
-        instance.wait_for_log_line(f"{kafka_table}.*Committed offset 22")
+        instance.wait_for_log_line(f"{kafka_table}.*{log_line}")
 
         result = instance.query(
             f"SELECT count(), uniqExact(key), max(key) FROM test.{kafka_table}_view"
@@ -2578,8 +2584,9 @@ def test_kafka_no_holes_when_write_suffix_failed(kafka_cluster, create_query_gen
         # kafka_cluster.open_bash_shell('instance')
 
         instance.query(f"""
-            DROP TABLE test.{kafka_table}_consumer;
+            DROP TABLE test.{kafka_table}_consumer SYNC;
             DROP TABLE test.{kafka_table}_view SYNC;
+            DROP USER {definer};
         """)
 
         assert TSV(result) == TSV("22\t22\t22")
@@ -2965,6 +2972,61 @@ def test_kafka_engine_put_errors_to_stream(kafka_cluster, create_query_generator
             DROP TABLE test.{kafka_table};
             DROP TABLE test.{kafka_table}_data;
             DROP TABLE test.{kafka_table}_errors;
+        """)
+
+
+@pytest.mark.parametrize(
+    "create_query_generator",
+    [k.generate_old_create_table_query, k.generate_new_create_table_query],
+)
+def test_kafka_engine_put_errors_to_stream_enum_type_default(
+    kafka_cluster, create_query_generator
+):
+    # The row of a message that fails to parse gets the type default: the smallest element of an Enum without 0.
+    suffix = k.random_string(6)
+    kafka_table = f"kafka_{suffix}"
+
+    topic_name = "kafka_engine_put_errors_to_stream_enum" + k.get_topic_postfix(
+        create_query_generator
+    )
+    create_query = create_query_generator(
+        kafka_table,
+        "i Int64, e Enum8('a' = 1, 'b' = 2)",
+        topic_list=topic_name,
+        consumer_group=topic_name,
+        settings={"kafka_handle_error_mode": "stream"},
+    )
+    instance.query(
+        f"""
+        DROP TABLE IF EXISTS test.{kafka_table};
+        DROP TABLE IF EXISTS test.{kafka_table}_data;
+        {create_query};
+        CREATE MATERIALIZED VIEW test.{kafka_table}_data (i Int64, e Enum8('a' = 1, 'b' = 2), failed UInt8)
+            ENGINE = MergeTree
+            ORDER BY i
+            AS SELECT i, e, length(_error) > 0 AS failed FROM test.{kafka_table};
+
+        DETACH TABLE test.{kafka_table} SYNC;
+        ATTACH TABLE test.{kafka_table};
+        """
+    )
+
+    k.kafka_produce(kafka_cluster, topic_name, [json.dumps({"i": 1, "e": "b"}), "not json"])
+    with k.existing_kafka_topic(k.get_admin_client(kafka_cluster), topic_name):
+        instance.query_with_retry(
+            f"SELECT count() FROM test.{kafka_table}_data",
+            retry_count=120,
+            sleep_time=1,
+            check_callback=lambda x: int(x) == 2,
+        )
+        assert (
+            instance.query(f"SELECT i, e, failed FROM test.{kafka_table}_data ORDER BY i")
+            == "0\ta\t1\n1\tb\t0\n"
+        )
+
+        instance.query(f"""
+            DROP TABLE test.{kafka_table};
+            DROP TABLE test.{kafka_table}_data;
         """)
 
 
@@ -3860,7 +3922,6 @@ def test_kafka_json_type(kafka_cluster):
 
     instance.query(
         f"""
-        SET enable_json_type = 1;
         CREATE TABLE test.dst (
             a Int64,
         )

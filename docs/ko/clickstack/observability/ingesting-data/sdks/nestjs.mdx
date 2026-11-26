@@ -1,0 +1,67 @@
+---
+slug: /clickstack/observability/ingesting-data/sdks/nestjs
+description: 'ClickHouse Observability 및 자가 관리형 배포 환경에서 NestJS를 설정하고 구성하는 방법을 설명합니다.'
+title: 'NestJS'
+doc_type: 'guide'
+keywords: ['ClickHouse Observability', 'SDK', 'instrumentation']
+sidebarTitle: 'NestJS'
+---
+
+import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
+
+import { ClickStackIntegrates } from '/snippets/ko/components/ClickStackIntegrates/ClickStackIntegrates.jsx'
+
+ClickStack Node.js SDK를 사용해 NestJS 애플리케이션에서 텔레메트리를 수집하고 ClickHouse Observability로 전송할 수 있습니다. 이 SDK는 NestJS 요청에 대한 instrumentation을 제공하며 콘솔 출력도 함께 수집합니다.
+
+<ClickStackIntegrates signals={['logs', 'metrics', 'traces']} />
+
+## SDK 설치 {#install-sdk}
+
+Node.js 22.15 이상 버전을 사용하십시오.
+
+```shell
+npm install @clickhouse/clickstack-node
+```
+
+## 대상 구성 {#configure-destination}
+
+<Tabs>
+  <Tab title="완전 관리형">
+    <BetaBadge label="베타 제공" />
+
+    서비스에서 **팀 설정 → 데이터 → Managed Telemetry**를 열고 **OTLP HTTP 엔드포인트**와 **API Key**를 복사하십시오. 엔드포인트는 포트를 포함한 전체 HTTPS 주소를 사용해야 합니다.
+
+    ```shell
+    export OTEL_EXPORTER_OTLP_ENDPOINT='https://YOUR_OTEL_ENDPOINT:4318'
+    export OTEL_EXPORTER_OTLP_HEADERS='authorization=Bearer%20YOUR_INGESTION_API_KEY'
+    export OTEL_EXPORTER_OTLP_PROTOCOL='http/protobuf'
+    ```
+  </Tab>
+
+  <Tab title="자가 관리형">
+    collector의 OTLP HTTP 엔드포인트와 수집 키를 사용하십시오. collector에 TLS가 구성되어 있지 않은 경우 `https://` 대신 `http://`를 사용하십시오. collector 설정 방법은 [OpenTelemetry로 데이터 수집하기](/ko/clickstack/observability/ingesting-data/opentelemetry#self-managed)를 참조하십시오.
+
+    ```shell
+    export OTEL_EXPORTER_OTLP_ENDPOINT='https://YOUR_COLLECTOR_HOST:4318'
+    export OTEL_EXPORTER_OTLP_HEADERS='authorization=YOUR_INGESTION_API_KEY'
+    export OTEL_EXPORTER_OTLP_PROTOCOL='http/protobuf'
+    ```
+  </Tab>
+</Tabs>
+
+## 애플리케이션 시작하기 {#start-application}
+
+애플리케이션을 식별할 수 있도록 `OTEL_SERVICE_NAME`을 설정하십시오. NestJS 애플리케이션을 빌드한 후, 컴파일된 진입점보다 SDK가 먼저 로드되도록 하십시오:
+
+```shell
+npm run build
+OTEL_SERVICE_NAME='my-nestjs-app' node --import @clickhouse/clickstack-node/register dist/main.js
+```
+
+`dist/main.js`는 빌드 출력 경로에 맞게 변경하십시오. `ts-node`처럼 `require`를 후킹하는 트랜스파일러를 사용하는 경우에는 대신 `--require @clickhouse/clickstack-node/register`를 사용하십시오. 애플리케이션을 번들링하는 경우 SDK와 계측된 의존성은 번들에 포함하지 말고 외부(external)로 유지하십시오.
+
+NestJS의 기본 콘솔 로거는 그대로 사용할 수 있습니다. 사용자 정의 로거가 필요하면 Winston이나 Pino 같은 지원되는 통합을 사용하십시오. 구성 및 호환성에 대한 자세한 내용은 [Node.js 가이드](/ko/clickstack/observability/ingesting-data/sdks/nodejs)를 참조하십시오.
+
+## 수집 확인 {#verify-ingestion}
+
+컨트롤러에 요청을 보내 로그 메시지를 출력하십시오. ClickHouse Observability에서 최근 시간 범위를 선택한 다음 Logs 및 Traces에서 애플리케이션의 서비스 이름을 찾으십시오. Metrics는 내보내기가 완료될 때까지 잠시 기다린 후 확인하십시오.
