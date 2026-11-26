@@ -19,9 +19,7 @@ Los tipos anidados pueden ser tipos arbitrarios, excepto los tipos Nullable(...)
   porque trabajar con valores de esos tipos puede dar lugar a ambigüedades. De forma predeterminada, crear ese tipo `Variant` generará una excepción, pero puede habilitarse mediante la configuración `allow_suspicious_variant_types`
 </Note>
 
-<div id="creating-variant">
-  ## Creación de Variant
-</div>
+## Creación de Variant {#creating-variant}
 
 Uso del tipo `Variant` en la definición de una columna de una tabla:
 
@@ -111,9 +109,7 @@ SELECT map('a', range(number), 'b', number, 'c', 'str_' || toString(number)) as 
 └───────────────────────────────┘
 ```
 
-<div id="reading-variant-nested-types-as-subcolumns">
-  ## Lectura de tipos Variant anidados como subcolumnas
-</div>
+## Lectura de tipos Variant anidados como subcolumnas {#reading-variant-nested-types-as-subcolumns}
 
 El tipo Variant admite leer un único tipo anidado de una columna Variant usando el nombre del tipo como subcolumna.
 Por lo tanto, si tiene la columna `variant Variant(T1, T2, T3)`, puede leer una subcolumna de tipo `T2` con la sintaxis `variant.T2`;
@@ -192,15 +188,11 @@ SELECT toTypeName(variantType(v)) FROM test LIMIT 1;
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-<div id="conversion-between-a-variant-column-and-other-columns">
-  ## Conversión entre una columna Variant y otras columnas
-</div>
+## Conversión entre una columna Variant y otras columnas {#conversion-between-a-variant-column-and-other-columns}
 
 Hay 4 conversiones posibles que pueden realizarse con una columna `Variant`.
 
-<div id="converting-a-string-column-to-a-variant-column">
-  ### Conversión de una columna `String` a una columna `Variant`
-</div>
+### Conversión de una columna `String` a una columna `Variant` {#converting-a-string-column-to-a-variant-column}
 
 La conversión de `String` a `Variant` se realiza analizando un valor de tipo `Variant` a partir de la cadena:
 
@@ -247,9 +239,7 @@ SELECT '[1, 2, 3]'::Variant(String, Array(UInt64)) as variant, variantType(varia
 └───────────┴──────────────┘
 ```
 
-<div id="converting-an-ordinary-column-to-a-variant-column">
-  ### Convertir una columna ordinaria en una columna Variant
-</div>
+### Convertir una columna ordinaria en una columna Variant {#converting-an-ordinary-column-to-a-variant-column}
 
 Es posible convertir una columna ordinaria de tipo `T` en una columna `Variant` que contenga ese tipo:
 
@@ -275,9 +265,7 @@ SELECT '[1, 2, 3]'::Variant(String)::Variant(String, Array(UInt64), UInt64) as v
 └───────────┴──────────────┘
 ```
 
-<div id="converting-a-variant-column-to-an-ordinary-column">
-  ### Conversión de una columna Variant en una columna ordinaria
-</div>
+### Conversión de una columna Variant en una columna ordinaria {#converting-a-variant-column-to-an-ordinary-column}
 
 Es posible convertir una columna `Variant` en una columna ordinaria. En este caso, todas las variantes anidadas se convertirán al tipo de destino:
 
@@ -295,9 +283,9 @@ SELECT v::Nullable(Float64) FROM test;
 └──────────────────────────────┘
 ```
 
-<div id="converting-a-variant-to-another-variant">
-  ### Conversión de un `Variant` a otro `Variant`
-</div>
+Una alternativa que no se pueda convertir al tipo de destino provoca un error solo si la columna contiene valores de esa alternativa.
+
+### Conversión de un `Variant` a otro `Variant` {#converting-a-variant-to-another-variant}
 
 Es posible convertir una columna `Variant` en otra columna `Variant`, pero solo si la columna `Variant` de destino contiene todos los tipos anidados de la columna `Variant` original:
 
@@ -315,9 +303,7 @@ SELECT v::Variant(UInt64, String, Array(UInt64)) FROM test;
 └───────────────────────────────────────────────────┘
 ```
 
-<div id="reading-variant-type-from-the-data">
-  ## Lectura del tipo Variant a partir de los datos
-</div>
+## Lectura del tipo Variant a partir de los datos {#reading-variant-type-from-the-data}
 
 Todos los formatos de texto (TSV, CSV, CustomSeparated, Values, JSONEachRow, etc.) admiten la lectura del tipo `Variant`. Durante el análisis de los datos, ClickHouse intenta insertar el valor en el tipo de variante más adecuado.
 
@@ -350,9 +336,7 @@ $$)
 └─────────────────────┴───────────────┴──────┴───────┴─────────────────────┴─────────┘
 ```
 
-<div id="comparing-values-of-variant-data">
-  ## Comparación de valores del tipo Variant
-</div>
+## Comparación de valores del tipo Variant {#comparing-values-of-variant-data}
 
 Los valores de tipo `Variant` solo pueden compararse con valores del mismo tipo `Variant`.
 
@@ -484,9 +468,7 @@ SELECT v, variantType(v) FROM test ORDER by v;
 
 **Nota**: de forma predeterminada, el tipo `Variant` no está permitido en las claves `GROUP BY`/`ORDER BY`; si desea usarlo, tenga en cuenta su regla especial de comparación y habilite las opciones `allow_suspicious_types_in_group_by`/`allow_suspicious_types_in_order_by`.
 
-<div id="jsonextract-functions-with-variant">
-  ## Funciones JSONExtract con Variant
-</div>
+## Funciones JSONExtract con Variant {#jsonextract-functions-with-variant}
 
 Todas las funciones `JSONExtract*` admiten el tipo `Variant`:
 
@@ -520,9 +502,7 @@ SELECT JSONExtractKeysAndValues('{"a" : 42, "b" : "Hello", "c" : [1,2,3]}', 'Var
 └────────────────────────────────────────┴───────────────────────────────────────────────────────┘
 ```
 
-<div id="functions-with-variant-arguments">
-  ## Funciones con argumentos de tipo Variant
-</div>
+## Funciones con argumentos de tipo Variant {#functions-with-variant-arguments}
 
 La mayoría de las funciones de ClickHouse admiten automáticamente argumentos del tipo `Variant` mediante una **implementación predeterminada para Variant**.
 A partir de la versión `26.1`, cuando una función que no maneja explícitamente tipos Variant recibe una columna Variant, ClickHouse:
@@ -592,9 +572,7 @@ SELECT v + 10 AS result, toTypeName(result) FROM test3;
   la división por cero o la falta de memoria, se generan normalmente para evitar ocultar silenciosamente problemas reales.
 </Note>
 
-<div id="variant-type-mismatch-behavior">
-  ### Comportamiento ante incompatibilidades de tipos
-</div>
+### Comportamiento ante incompatibilidades de tipos {#variant-type-mismatch-behavior}
 
 La configuración `variant_throw_on_type_mismatch` controla lo que ocurre cuando se aplica una función a una columna `Variant` y el tipo real almacenado en una fila es incompatible con la función:
 
@@ -607,10 +585,10 @@ La configuración `variant_throw_on_type_mismatch` controla lo que ocurre cuando
 CREATE TABLE test (v Variant(String, UInt64)) ENGINE = Memory;
 INSERT INTO test VALUES ('hello'), (42), ('foo');
 
--- Default (throw on mismatch): length() does not accept UInt64, so the query throws.
-SELECT length(v) FROM test;  -- throws ILLEGAL_TYPE_OF_ARGUMENT
+-- Por defecto (lanza excepción en caso de incompatibilidad): length() no acepta UInt64, por lo que la consulta lanza una excepción.
+SELECT length(v) FROM test;  -- lanza ILLEGAL_TYPE_OF_ARGUMENT
 
--- With throw disabled: incompatible rows return NULL.
+-- Con la excepción deshabilitada: las filas incompatibles devuelven NULL.
 SET variant_throw_on_type_mismatch = false;
 SELECT v, length(v) FROM test ORDER BY v::String NULLS LAST;
 ```
@@ -621,6 +599,31 @@ SELECT v, length(v) FROM test ORDER BY v::String NULLS LAST;
 │ hello │         5 │
 │ 42    │      ᴺᵁᴸᴸ │
 └───────┴───────────┘
+```
+
+## Funciones de agregación con argumentos Variant {#aggregate-functions-with-variant-arguments}
+
+Algunas funciones de agregación, como `count`, `any`, `groupArray` y la familia `uniq`, admiten argumentos `Variant` de forma nativa.
+Las funciones de agregación que solo funcionan con valores de tipos específicos, como `sum`, `avg`, `min`, `max`, `quantile`, las funciones estadísticas y el argumento `val` de `argMin` y `argMax`, se aplican al supertipo común mínimo de las alternativas, envuelto en `Nullable`:
+
+```text
+f(variant) == f(CAST(variant AS Nullable(supertype(T1, ..., TN))))
+```
+
+Los valores `NULL` del `Variant` se omiten como de costumbre. Si las alternativas no tienen un supertipo común, o si este no puede estar dentro de `Nullable`, se lanza una excepción `ILLEGAL_TYPE_OF_ARGUMENT`.
+
+**Ejemplo:**
+
+```sql
+SET allow_suspicious_variant_types = 1;
+SELECT sum(v), max(v), toTypeName(sum(v))
+FROM values('v Variant(UInt32, Float64)', 1::UInt32, 2.5::Float64, NULL);
+```
+
+```text
+┌─sum(v)─┬─max(v)─┬─toTypeName(sum(v))─┐
+│    3.5 │    2.5 │ Nullable(Float64)  │
+└────────┴────────┴────────────────────┘
 ```
 
 {/*AUTOGENERATED_END*/}

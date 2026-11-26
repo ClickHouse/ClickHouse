@@ -1,6 +1,7 @@
 #pragma once
 
 #include "config.h"
+#include <Common/StackWithMemoryTracking.h>
 
 #if USE_MSGPACK
 
@@ -18,7 +19,8 @@ class ReadBuffer;
 class MsgPackVisitor : public msgpack::null_visitor
 {
 public:
-    explicit MsgPackVisitor(bool null_as_default_) : null_as_default(null_as_default_) {}
+    explicit MsgPackVisitor(bool null_as_default_, bool check_conversion_from_numbers_to_enum_)
+        : null_as_default(null_as_default_), check_conversion_from_numbers_to_enum(check_conversion_from_numbers_to_enum_) {}
 
     struct Info
     {
@@ -52,12 +54,14 @@ public:
 
     /// Update info_stack
     void set_info(IColumn & column, DataTypePtr type, UInt8 & read);
-    void reset();
+    /// Called by msgpack's parse_helper::init.
+    void init();
 
 private:
     /// Stack is needed to process arrays and maps
-    std::stack<Info> info_stack;
+    StackWithMemoryTracking<Info> info_stack;
     bool null_as_default;
+    bool check_conversion_from_numbers_to_enum;
 };
 
 class MsgPackRowInputFormat final : public IRowInputFormat

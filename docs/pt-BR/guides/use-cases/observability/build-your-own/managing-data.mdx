@@ -7,30 +7,30 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
-
 As implantações do ClickHouse para observabilidade invariavelmente envolvem grandes volumes de dados, que precisam ser gerenciados. O ClickHouse oferece vários recursos para auxiliar no gerenciamento desses dados.
 
 <Tip>
-  **O ClickStack oferece um esquema padrão otimizado**
+  **O ClickStack oferece um schema padrão otimizado**
 
-  **O ClickStack fornece esquemas prontos para uso para logs, traces e métricas** que incorporam os recursos mais recentes do ClickHouse (índices de texto para busca de texto completo e por chave de map, colunas materializadas e arrays ALIAS para filtragem com leitura direta, buscas de linhas por número de bloco) e foram testados em benchmark para oferecer um bom desempenho imediato em cargas de trabalho de logs e traces. Use-os como ponto de referência para o seu próprio design.
+  **O ClickStack fornece schemas prontos para uso para logs, traces e métricas** que incorporam os recursos mais recentes do ClickHouse (índices de texto para busca de texto completo e por chave de map, colunas materializadas e arrays ALIAS para filtragem com leitura direta, buscas de linhas por número de bloco) e foram testados em benchmark para oferecer um bom desempenho imediato em cargas de trabalho de logs e traces. Use-os como ponto de referência para o seu próprio design.
 
-  * DDL canônico: [Tabelas e esquemas usados pelo ClickStack](/pt-BR/clickstack/ingesting-data/schemas).
+  * DDL canônico: [Tabelas e schemas usados pelo ClickStack](/pt-BR/clickstack/ingesting-data/schemas).
   * Receitas de otimização: [Ajuste de desempenho do ClickStack](/pt-BR/clickstack/managing/performance-tuning). Muitas das recomendações nessa página (colunas materializadas, skip indexes, escolha da chave primária, projeções, visões materializadas) se aplicam diretamente a uma configuração criada por você.
 </Tip>
 
-<div id="partitions">
-  ## Partições
-</div>
+## Partições {#partitions}
 
 No ClickHouse, o particionamento permite separar logicamente os dados no disco de acordo com uma coluna ou expressão SQL. Ao separar os dados dessa forma, cada partição pode ser operada de maneira independente, por exemplo, excluída. Isso permite mover partições e, portanto, subconjuntos entre camadas de armazenamento com eficiência com base no tempo, ou [expirar dados/excluir de um cluster com eficiência](/pt-BR/reference/statements/alter/partition).
 
 O particionamento é especificado na tabela quando ela é definida inicialmente, por meio da cláusula `PARTITION BY`. Essa cláusula pode conter uma expressão SQL sobre qualquer coluna, e o resultado dessa expressão define para qual partição uma linha será enviada.
 
-<Image img="/images/use-cases/observability/observability-14.webp" alt="Partições" size="md" />
+<div className="ch-image-md">
+  <Frame>
+    ![Partições](/images/use-cases/observability/observability-14.webp)
+  </Frame>
+</div>
 
-As partes de dados são associadas logicamente (por meio de um prefixo comum no nome da pasta) a cada partição no disco e podem ser consultadas isoladamente. No exemplo abaixo, o esquema padrão `otel_logs` particiona por dia usando a expressão `toDate(Timestamp)`. À medida que as linhas são inseridas no ClickHouse, essa expressão é avaliada para cada linha, que é direcionada à partição resultante, caso ela exista (se a linha for a primeira de um dia, a partição será criada).
+As partes de dados são associadas logicamente (por meio de um prefixo comum no nome da pasta) a cada partição no disco e podem ser consultadas isoladamente. No exemplo abaixo, o schema padrão `otel_logs` particiona por dia usando a expressão `toDate(Timestamp)`. À medida que as linhas são inseridas no ClickHouse, essa expressão é avaliada para cada linha, que é direcionada à partição resultante, caso ela exista (se a linha for a primeira de um dia, a partição será criada).
 
 ```sql
 CREATE TABLE default.otel_logs
@@ -167,7 +167,7 @@ ORDER BY c DESC
 </Note>
 
 <div id="applications">
-  ### Aplicações
+  ### Aplicações {#applications}
 </div>
 
 O texto acima ilustra como os dados podem ser movidos e manipulados com eficiência no nível da partição. Na prática, você provavelmente usará operações de partição com mais frequência em casos de uso de observabilidade em dois cenários:
@@ -178,13 +178,13 @@ O texto acima ilustra como os dados podem ser movidos e manipulados com eficiên
 Exploramos ambos em detalhes abaixo.
 
 <div id="query-performance">
-  ### Desempenho de consultas
+  ### Desempenho de consultas {#query-performance}
 </div>
 
 Embora as partições possam ajudar no desempenho das consultas, isso depende muito dos padrões de acesso. Se as consultas atingirem apenas algumas partições (idealmente uma só), o desempenho pode melhorar. Em geral, isso só costuma ser útil se a chave de particionamento não estiver na chave primária e você estiver filtrando por ela. No entanto, consultas que precisam abranger muitas partições podem ter um desempenho pior do que teriam sem particionamento (pois possivelmente haverá mais partes). O benefício de atingir uma única partição será ainda menos perceptível — ou até inexistente — se a chave de particionamento já for uma entrada inicial na chave primária. O particionamento também pode ser usado para [otimizar consultas GROUP BY](/pt-BR/reference/engines/table-engines/mergetree-family/custom-partitioning-key#group-by-optimisation-using-partition-key) se os valores em cada partição forem únicos. No entanto, em geral, você deve garantir que a chave primária esteja otimizada e só considerar o particionamento como técnica de otimização de consultas em casos excepcionais, nos quais os padrões de acesso se concentrem em um subconjunto específico e previsível dos dados — por exemplo, particionamento por dia, com a maioria das consultas voltada para o último dia. Veja [aqui](https://medium.com/datadenys/using-partitions-in-clickhouse-3ea0decb89c4) um exemplo desse comportamento.
 
 <div id="data-management-with-ttl-time-to-live">
-  ## Gerenciamento de dados com TTL (time-to-live)
+  ## Gerenciamento de dados com TTL (time-to-live) {#data-management-with-ttl-time-to-live}
 </div>
 
 Time-to-Live (TTL) é um recurso fundamental em soluções de observabilidade baseadas em ClickHouse para retenção e gerenciamento eficientes de dados, especialmente considerando o grande volume de dados gerado continuamente. Implementar TTL no ClickHouse permite a expiração e a exclusão automáticas de dados antigos, garantindo o uso ideal do armazenamento e a manutenção do desempenho sem intervenção manual. Essa capacidade é essencial para manter o banco de dados enxuto, reduzir os custos de armazenamento e garantir que as consultas continuem rápidas e eficientes ao se concentrarem nos dados mais relevantes e recentes. Além disso, ela ajuda a cumprir as políticas de retenção de dados ao gerenciar sistematicamente o ciclo de vida dos dados, aumentando a sustentabilidade e a escalabilidade gerais da solução de observabilidade.
@@ -192,7 +192,7 @@ Time-to-Live (TTL) é um recurso fundamental em soluções de observabilidade ba
 O TTL pode ser especificado no nível da tabela ou da coluna no ClickHouse.
 
 <div id="table-level-ttl">
-  ### TTL no nível da tabela
+  ### TTL no nível da tabela {#table-level-ttl}
 </div>
 
 O esquema padrão para logs e traces inclui um TTL para que os dados expirem após um período especificado. Isso é definido no exportador do ClickHouse na chave `ttl`, por exemplo.
@@ -224,7 +224,7 @@ Por padrão, os dados com TTL expirado são removidos quando o ClickHouse [mescl
 **Importante: recomendamos usar a configuração [`ttl_only_drop_parts=1`](/pt-BR/reference/settings/merge-tree-settings/other#ttl_only_drop_parts) ** (aplicada pelo esquema padrão). Quando essa configuração está habilitada, o ClickHouse remove uma parte inteira quando todas as linhas nela tiverem expirado. Remover partes inteiras, em vez de limpar parcialmente linhas com TTL expirado (o que é feito por meio de mutações que consomem muitos recursos quando `ttl_only_drop_parts=0`), permite usar valores menores para `merge_with_ttl_timeout` e reduzir o impacto no desempenho do sistema. Se os dados estiverem particionados pela mesma unidade usada na expiração do TTL, por exemplo, dia, as partes naturalmente conterão apenas dados do intervalo definido. Isso garantirá que `ttl_only_drop_parts=1` possa ser aplicado com eficiência.
 
 <div id="column-level-ttl">
-  ### TTL em nível de coluna
+  ### TTL em nível de coluna {#column-level-ttl}
 </div>
 
 O exemplo acima aplica expiração aos dados no nível da tabela. Você também pode aplicar expiração aos dados no nível da coluna. À medida que os dados envelhecem, isso pode ser usado para remover colunas cujo valor nas investigações não justifique o custo adicional de recursos para mantê-las. Por exemplo, recomendamos manter a coluna `Body` caso novos metadados dinâmicos sejam adicionados e ainda não tenham sido extraídos no momento da inserção, por exemplo, um novo rótulo do Kubernetes. Após um período, por exemplo 1 mês, pode ficar evidente que esses metadados adicionais não são úteis, reduzindo assim o valor de manter a coluna `Body`.
@@ -246,11 +246,9 @@ ORDER BY (ServiceName, Timestamp)
   Especificar um TTL em nível de coluna exige que os usuários definam seu próprio esquema. Isso não pode ser especificado no OTel collector.
 </Note>
 
-<div id="recompressing-data">
-  ## Recompressão de dados
-</div>
+## Recompressão de dados {#recompressing-data}
 
-Embora normalmente recomendemos `ZSTD(1)` para dados de observabilidade, você pode experimentar diferentes algoritmos de compressão ou níveis mais altos de compressão, por exemplo, `ZSTD(3)`. Além de poder especificar isso ao criar o esquema, a compressão pode ser configurada para mudar após um determinado período. Isso pode ser apropriado se um codec ou algoritmo de compressão melhorar a compressão, mas prejudicar o desempenho das consultas. Esse compromisso pode ser aceitável para dados mais antigos, que são consultados com menos frequência, mas não para dados recentes, que são usados com mais frequência em investigações.
+O codec padrão funciona bem para dados de observabilidade. Além de poder especificar um codec ao criar o schema, a compressão pode ser configurada para mudar após um determinado período. Isso pode ser apropriado se um codec ou algoritmo de compressão melhorar a compressão, mas prejudicar o desempenho das consultas. Esse compromisso pode ser aceitável para dados mais antigos, que são consultados com menos frequência, mas não para dados recentes, que são usados com mais frequência em investigações.
 
 Um exemplo disso é mostrado abaixo, em que comprimimos os dados usando `ZSTD(3)` após 4 dias, em vez de excluí-los.
 
@@ -289,7 +287,7 @@ TTL Timestamp + INTERVAL 4 DAY RECOMPRESS CODEC(ZSTD(3))
 Mais detalhes e exemplos sobre como configurar TTL podem ser encontrados [aqui](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-multiple-volumes). Exemplos de como TTLs podem ser adicionados e modificados em tabelas e colunas podem ser encontrados [aqui](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-ttl). Para saber como TTLs permitem hierarquias de armazenamento, como arquiteturas hot-warm, consulte [Camadas de armazenamento](#storage-tiers).
 
 <div id="storage-tiers">
-  ## Camadas de armazenamento
+  ## Camadas de armazenamento {#storage-tiers}
 </div>
 
 No ClickHouse, você pode criar camadas de armazenamento em discos diferentes, por exemplo, dados quentes/recentes em SSD e dados mais antigos com backend em S3. Essa arquitetura permite usar armazenamento mais barato para dados mais antigos, que têm SLAs de consulta menos rígidos devido ao uso pouco frequente em investigações.
@@ -305,7 +303,7 @@ A criação de camadas de armazenamento exige que os usuários criem discos, que
 Embora os dados possam ser movidos manualmente entre discos usando o comando `ALTER TABLE MOVE PARTITION`, a movimentação de dados entre volumes também pode ser controlada usando TTLs. Um exemplo completo pode ser encontrado [aqui](/pt-BR/concepts/features/operations/delete/ttl#implementing-a-hotwarmcold-architecture).
 
 <div id="managing-schema-changes">
-  ## Gerenciando alterações de esquema
+  ## Gerenciando alterações de esquema {#managing-schema-changes}
 </div>
 
 Os esquemas de logs e traces inevitavelmente mudarão ao longo da vida útil de um sistema, por exemplo, à medida que os usuários passam a monitorar novos sistemas com metadados ou rótulos de pod do Kubernetes diferentes. Ao produzir dados usando o esquema OTel e capturar os dados originais do evento em formato estruturado, os esquemas do ClickHouse serão resilientes a essas mudanças. No entanto, à medida que novos metadados ficam disponíveis e os padrões de acesso das consultas mudam, você vai querer atualizar os esquemas para refletir essa evolução.
@@ -313,7 +311,7 @@ Os esquemas de logs e traces inevitavelmente mudarão ao longo da vida útil de 
 Para evitar indisponibilidade durante alterações de esquema, os usuários têm várias opções, que apresentamos abaixo.
 
 <div id="use-default-values">
-  ### Usar valores padrão
+  ### Usar valores padrão {#use-default-values}
 </div>
 
 Colunas podem ser adicionadas ao esquema usando [valores `DEFAULT`](/pt-BR/reference/statements/create/table#default). O valor padrão especificado será usado se ele não for informado durante o `INSERT`.
@@ -422,7 +420,7 @@ FROM otel_logs
 As linhas subsequentes terão a coluna `Size` preenchida durante a inserção.
 
 <div id="create-new-tables">
-  ### Criar novas tabelas
+  ### Criar novas tabelas {#create-new-tables}
 </div>
 
 Como alternativa ao processo acima, você pode simplesmente criar uma nova tabela de destino com o novo esquema. Quaisquer visões materializadas podem então ser modificadas para usar a nova tabela com o `ALTER TABLE MODIFY QUERY` acima. Com essa abordagem, você pode versionar suas tabelas, por exemplo, `otel_logs_v3`.

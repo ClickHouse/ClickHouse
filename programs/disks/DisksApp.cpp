@@ -2,7 +2,6 @@
 #include <Client/ClientBase.h>
 #include <Client/ReplxxLineReader.h>
 #include <Common/Exception.h>
-#include <Common/ErrnoException.h>
 #include <Common/SignalHandlers.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/filesystemHelpers.h>
@@ -49,7 +48,7 @@ namespace ErrorCodes
 
 LineReader::Patterns DisksApp::query_extenders = {"\\"};
 LineReader::Patterns DisksApp::query_delimiters = {""};
-String DisksApp::word_break_characters = " \t\v\f\a\b\r\n";
+[[clang::no_destroy]] String DisksApp::word_break_characters = " \t\v\f\a\b\r\n";
 
 CommandPtr DisksApp::getCommandByName(const String & command) const
 {
@@ -209,7 +208,7 @@ bool DisksApp::processQueryText(const String & text)
     {
         return true;
     }
-    if (exit_strings.contains(text))
+    if (isExitString(text))
         return false;
     CommandPtr command;
 
@@ -435,19 +434,6 @@ void DisksApp::initializeHistoryFile()
         history_file = config().getString("history-file");
     else
         history_file = home_path + "/.disks-file-history";
-
-    if (!history_file.empty() && !fs::exists(history_file))
-    {
-        try
-        {
-            FS::createFile(history_file);
-        }
-        catch (const ErrnoException & e)
-        {
-            if (e.getErrno() != EEXIST)
-                throw;
-        }
-    }
 
     history_max_entries = config().getUInt("history-max-entries", 1000000);
 }

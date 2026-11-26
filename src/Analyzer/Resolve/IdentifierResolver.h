@@ -7,12 +7,17 @@
 
 #include <Interpreters/Context_fwd.h>
 
+#include <Storages/IStorage_fwd.h>
+
 namespace DB
 {
 
 struct GetColumnsOptions;
 struct IdentifierResolveScope;
 struct AnalysisTableExpressionData;
+struct StorageID;
+struct StorageSnapshot;
+using StorageSnapshotPtr = std::shared_ptr<StorageSnapshot>;
 
 class QueryNode;
 class JoinNode;
@@ -42,11 +47,11 @@ struct SemiAntiJoinSideChecker
         const ContextPtr & context,
         const IQueryTreeNode * resolving_join_on_expression);
 
-    bool shouldSkipSide(JoinTableSide side) const;
+    [[nodiscard]] bool shouldSkipSide(JoinTableSide side) const;
 
     /// The side that stays visible when the compatibility settings hide the other one.
     /// Returns nullopt when both sides remain visible.
-    std::optional<JoinTableSide> preservedSideOrNone() const;
+    [[nodiscard]] std::optional<JoinTableSide> preservedSideOrNone() const;
 
     /// Throw if access to the given side of a SEMI/ANTI JOIN is denied.
     /// The caller is responsible for determining the correct side (e.g. via isFromJoinTree).
@@ -109,9 +114,11 @@ public:
         const IdentifierLookup & identifier_lookup,
         const IdentifierResolveScope & scope);
 
+    /// `replaced_storage` is the view source that the caller swaps into the query tree after the analysis.
     static std::shared_ptr<TableNode> tryResolveTableIdentifier(
         const Identifier & table_identifier,
-        const ContextPtr & context);
+        const ContextPtr & context,
+        const StoragePtr & replaced_storage = nullptr);
 
     /// Build a `nested(...)` FunctionNode for the given identifier prefix by combining
     /// per-field Array columns of the table expression (e.g. `loc.x`, `loc.y`).
@@ -123,6 +130,14 @@ public:
 
     static IdentifierResolveResult tryResolveTableIdentifierFromDatabaseCatalog(
         const Identifier & table_identifier,
+        const ContextPtr & context,
+        const StoragePtr & replaced_storage = nullptr);
+
+    /// Throw `ACCESS_DENIED` unless the user may see at least one column of the table.
+    static void checkAccessToTableMetadata(
+        const StoragePtr & storage,
+        const StorageID & storage_id,
+        const StorageSnapshotPtr & storage_snapshot,
         const ContextPtr & context);
 
     /// Suggest a same/similar-named table when a table identifier cannot be resolved,
@@ -131,6 +146,23 @@ public:
     static std::pair<String, String> tryGetTableNameHint(
         const Identifier & table_identifier,
         const ContextPtr & context);
+
+    /// E.g. "table with name item (an alias of store_sales)".
+    static String describeTableExpressionForErrorMessage(
+        const TableExpressionNodePtr & table_expression_node,
+        const AnalysisTableExpressionData & table_expression_data);
+
+    struct QualifyingTableExpression
+    {
+        TableExpressionNodePtr node;
+        const AnalysisTableExpressionData * data = nullptr;
+    };
+
+    /// The table expression of `scope` or its parent scopes that the qualifier of `identifier` names.
+    /// A database and table match is preferred over an alias, table name or materialized CTE name match.
+    static QualifyingTableExpression tryFindTableExpressionByQualifier(
+        const Identifier & identifier,
+        const IdentifierResolveScope & scope);
 
     QueryTreeNodePtr tryResolveIdentifierFromCompoundExpression(
         const Identifier & expression_identifier,
@@ -161,13 +193,13 @@ public:
 private:
     QueryTreeNodePtr tryResolveIdentifierFromTableColumns(const IdentifierLookup & identifier_lookup, IdentifierResolveScope & scope);
 
+    /// Returns an empty result when the table expression has no such column, subcolumn or Nested prefix.
     IdentifierResolveResult tryResolveIdentifierFromStorage(
         const IdentifierLookup & identifier_lookup,
         const TableExpressionNodePtr & table_expression_node,
         const AnalysisTableExpressionData & table_expression_data,
         IdentifierResolveScope & scope,
-        size_t identifier_column_qualifier_parts,
-        bool can_be_not_found = false);
+        size_t identifier_column_qualifier_parts);
 
     IdentifierResolveResult tryResolveIdentifierFromTableExpression(
         const IdentifierLookup & identifier_lookup,

@@ -49,6 +49,14 @@ SELECT 句の GROUP BY キーに対する min/max/any/anyLast 集約関数を削
 * 0 — 常に置き換える
 * 負の整数 - 置き換えない
 
+## optimize_constant_columns_after_filter {#optimize_constant_columns_after_filter}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "新しい設定: 等値比較の述語により、フィルタを通過したすべての値が定数と等しいことが保証される場合に、フィルタ後のカラムを `ColumnConst` に置換します。"}]}]} />
+
+等値比較の述語により、フィルタを通過したすべての値が定数と等しいことが保証される場合に、フィルタ後のカラムを `ColumnConst` に置換します。
+
 ## optimize_count_from_files {#optimize_count_from_files}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -270,6 +278,18 @@ SELECT * FROM test2;
 `PREWHERE` がすでにある場合、新しいフィルターは個別のフィルターステップとして残されず、
 `AND` でそこにマージされます。
 
+## optimize_projection_skip_index_ratio {#optimize_projection_skip_index_ratio}
+
+<SettingsInfoBlock type="Float" default_value="0.5" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0.5"},{"label": "プロジェクション選択時に、コストを比較する前に基となるテーブルの遅延スキップ索引を適用するタイミングを制御する新しい設定です。この追加処理は、最良のプロジェクション候補の読み取り量が、親の主キーのみによるマーク推定値に対してこの割合を超える場合にのみ実行されます。以前の値 1.0 を指定すると従来の動作に戻ります。ratio = 1 の場合、この絞り込みは一切実行されません。この処理が結果に影響しうるのは、主キーのみの比較でいずれにせよ除外される候補に限られるためです。"}]}]} />
+
+`use_skip_indexes_on_data_read` が有効な場合、基となるテーブルのスキップ索引はデータ読み取り時に適用されるため、通常のプロジェクションの候補との比較に使われるマーク数は主キーのみに基づいて推定されます。最良の通常のプロジェクション候補の読み取り量がこの推定値に対してこの割合を超え、かつ基となるテーブルにクエリで使用可能なスキップ索引がある場合は、プランニング時に基となるテーブルへスキップ索引が適用され、絞り込まれたマーク数が比較に使用されます。`0` の場合は常に適用され、`1` の場合は主キーのみによる比較が維持されます。集約プロジェクションには影響しません。
+
+設定可能な値:
+
+* 範囲 `[0, 1]` の浮動小数点数。
+
 ## optimize_qbit_distance_function_reads {#optimize_qbit_distance_function_reads}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -390,6 +410,14 @@ FROM default.fuse_tbl AS __table1
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "1"},{"label": "ORDER BY のプレフィックスですべての GROUP BY キーがカバーされている場合、末尾の ORDER BY 要素を削除します。"}]}]} />
 
 ORDER BY のプレフィックスですべての GROUP BY キーがカバーされている場合、末尾の ORDER BY 要素を削除します。
+
+## optimize_uniq_exact_radix_partitioning {#optimize_uniq_exact_radix_partitioning}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "スレッドごとのハッシュセットをマージする代わりに、値をハッシュでパーティション化することで、`GROUP BY` を伴わない単一の `uniqExact` または `count(DISTINCT)` を計算する新しい設定。"}]}]} />
+
+`GROUP BY` を伴わないクエリにおける単一の `uniqExact` (およびデフォルトでこれを使用する `count(DISTINCT)`) を、スレッドごとのハッシュセットをマージするのではなく、値をハッシュでパーティション化して計算します。各スレッドは自身の値を各パーティションに振り分けます。その後、各パーティションは CPU キャッシュに収まる小さなハッシュセット内で並列に重複が排除され、それらのサイズの合計が結果となります。この設定は、64 ビットまでの数値型、`Date`、`Date32`、`DateTime`、`Enum`、`IPv4`、`IPv6`、`UUID`、128 ビット整数、`String`、`FixedString`、またはこれらの `Nullable` である単一の引数に対し、結果が同一サーバー上で完了する場合に適用されます。各スレッドは、通常の集約と同様に、セットが CPU キャッシュのサイズを超えるまでは自身の小さなセットへの挿入を続けます。そのため、振り分けが行われるのは high-cardinality な入力の場合に限られます。また、値の大半が重複していると判明した場合、スレッドは自身のセットへの挿入に戻ります。
 
 ## optimize_uniq_to_count {#optimize_uniq_to_count}
 

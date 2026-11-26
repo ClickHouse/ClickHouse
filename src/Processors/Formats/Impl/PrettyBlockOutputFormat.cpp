@@ -83,19 +83,20 @@ namespace
     /// elements, and the hierarchy is kept aside to draw the nested header and footer.
     struct FlattenedColumns
     {
-        Block header;
+        /// Positional: names repeat across Tuples and the top level, possibly with different types.
+        ColumnsWithTypeAndName header;
         Columns columns;
 
         /// In DFS pre-order: parents before children, ordered by `begin` within a depth.
-        std::vector<SubcolumnsGroup> groups;
+        VectorWithMemoryTracking<SubcolumnsGroup> groups;
 
         /// Per flattened column: 0 for a top-level column, 1 for its Tuple elements, and so on.
-        std::vector<size_t> depths;
+        VectorWithMemoryTracking<size_t> depths;
 
         /// Per boundary between flattened columns (including both table edges): the topmost header
         /// level where the boundary appears. It is 0 for the table edges and the boundaries between
         /// top-level columns, and d + 1 for the boundaries between the elements of a Tuple at depth d.
-        std::vector<size_t> junction_levels;
+        VectorWithMemoryTracking<size_t> junction_levels;
 
         size_t max_depth = 0;
     };
@@ -118,7 +119,7 @@ namespace
         }
         else
         {
-            flattened.header.insert(ColumnWithTypeAndName(type, name));
+            flattened.header.emplace_back(type, name);
             flattened.columns.push_back(column);
             flattened.depths.push_back(depth);
             flattened.max_depth = std::max(flattened.max_depth, depth);
@@ -199,7 +200,7 @@ bool PrettyBlockOutputFormat::cutInTheMiddle(size_t row_num, size_t num_rows, si
 /// Evaluate the visible width of the values and column names.
 /// Note that number of code points is just a rough approximation of visible string width.
 void PrettyBlockOutputFormat::calculateWidths(
-    const Block & header, const Chunk & chunk, bool split_by_lines, size_t value_width_limit,
+    const ColumnsWithTypeAndName & header, const Chunk & chunk, bool split_by_lines, size_t value_width_limit,
     const Widths & min_widths, bool & out_has_newlines,
     WidthsPerColumn & widths, Widths & max_padded_widths, Widths & name_widths, Strings & names)
 {
@@ -231,7 +232,7 @@ void PrettyBlockOutputFormat::calculateWidths(
     size_t prefix = firstCellPrefix(); // Tab character adjustment
     for (size_t i = 0; i < num_columns; ++i)
     {
-        const auto & elem = header.getByPosition(i);
+        const auto & elem = header[i];
         const auto & column = columns[i];
 
         widths[i].resize_fill(num_displayed_rows);
@@ -374,8 +375,12 @@ void PrettyBlockOutputFormat::writingThread()
     {
         while (!finish)
         {
-            if (std::cv_status::timeout == mono_chunk_condvar.wait_for(lock, saturatedMilliseconds(format_settings.pretty.squash_consecutive_ms))
-                || watch.elapsedMilliseconds() > format_settings.pretty.squash_max_wait_ms)
+            bool timed_out = std::cv_status::timeout
+                == mono_chunk_condvar.wait_for(lock, saturatedMilliseconds(format_settings.pretty.squash_consecutive_ms));
+            /// After `stopThread` or `onCancel` the rest is written by `writeSuffix` or not at all.
+            if (finish)
+                break;
+            if (timed_out || watch.elapsedMilliseconds() > format_settings.pretty.squash_max_wait_ms)
             {
                 writeMonoChunkIfNeeded();
                 watch.restart();
@@ -429,11 +434,14 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
 
     /// Named Tuple columns can be displayed split into subcolumns, with extra header lines for the names of their elements.
     FlattenedColumns flattened = flattenNamedTuples(*original_header, chunk.getColumns(), format_settings.pretty.named_tuples_as_subcolumns);
-    const Block & header = flattened.header;
+    const ColumnsWithTypeAndName & header = flattened.header;
     const Chunk displayed_chunk(std::move(flattened.columns), num_rows);
     const auto & columns = displayed_chunk.getColumns();
     const auto num_columns = displayed_chunk.getNumColumns();
-    const Serializations serializations = header.getSerializations();
+    Serializations serializations;
+    serializations.reserve(header.size());
+    for (const auto & elem : header)
+        serializations.push_back(elem.type->getDefaultSerialization());
 
     size_t cut_to_width = format_settings.pretty.max_value_width;
     /// The single-value exemption is decided by the logical shape of the result (one row, one column),
@@ -717,7 +725,7 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
         vertical_filler_out << "\n";
     }
 
-    std::vector<std::vector<const SubcolumnsGroup *>> groups_by_level(flattened.max_depth + 1);
+    VectorWithMemoryTracking<VectorWithMemoryTracking<const SubcolumnsGroup *>> groups_by_level(flattened.max_depth + 1);
     for (const auto & group : flattened.groups)
         groups_by_level[group.depth].push_back(&group);
 
@@ -791,7 +799,7 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
             {
                 name = names[column];
                 name_width = name_widths[column];
-                align_right = header.getByPosition(column).type->shouldAlignRightInPrettyFormats();
+                align_right = header[column].type->shouldAlignRightInPrettyFormats();
             }
 
             auto write_value = [&]
@@ -915,8 +923,8 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
     bool vertical_filler_written = false;
     size_t displayed_row = 0;
 
-    std::vector<std::optional<String>> serialized_values(num_columns);
-    std::vector<size_t> offsets_inside_serialized_values(num_columns);
+    VectorWithMemoryTracking<std::optional<String>> serialized_values(num_columns);
+    VectorWithMemoryTracking<size_t> offsets_inside_serialized_values(num_columns);
 
     for (size_t i = 0; i < num_rows && displayed_rows < format_settings.pretty.max_rows; ++i)
     {
@@ -974,7 +982,7 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
                     else if (j != 0)
                         writePaddingSpace();
 
-                    const auto & type = header.getByPosition(j).type;
+                    const auto & type = header[j].type;
                     writeValueWithPadding(
                         *columns[j],
                         *serializations[j],
@@ -1131,6 +1139,8 @@ void PrettyBlockOutputFormat::writeValueWithPadding(
         is_cut = true;
         serialized_fragment.resize(UTF8::computeBytesBeforeWidth(
             reinterpret_cast<const UInt8 *>(serialized_fragment.data()), serialized_fragment.size(), prefix, format_settings.pretty.max_value_width));
+        /// Narrower than `max_value_width` when a wide character does not fit.
+        size_t kept_width = UTF8::computeWidth(reinterpret_cast<const UInt8 *>(serialized_fragment.data()), serialized_fragment.size(), prefix);
 
         if (color)
         {
@@ -1142,7 +1152,7 @@ void PrettyBlockOutputFormat::writeValueWithPadding(
         else
             serialized_fragment += ellipsis;
 
-        value_width = format_settings.pretty.max_value_width;
+        value_width = kept_width;
     }
 
     auto write_padding = [&]()
@@ -1173,7 +1183,8 @@ void PrettyBlockOutputFormat::writeValueWithPadding(
         write_padding();
     }
 
-    if (start_from_offset != serialized_value->size())
+    /// After a cut, the ellipsis takes the place of the line feed marker: the next line starts with `line_continuation`.
+    if (start_from_offset != serialized_value->size() && !is_cut)
     {
         if (color)
             out << "\033[90m";
@@ -1236,6 +1247,18 @@ void PrettyBlockOutputFormat::stopThread()
         finish = true;
         mono_chunk_condvar.notify_one();
     }
+}
+
+void PrettyBlockOutputFormat::onCancel() noexcept
+{
+    if (!format_settings.pretty.squash_consecutive_ms || mono_block)
+        return;
+
+    /// After this `writingThread` never writes `out` again, so the owner of `out` can cancel it.
+    /// Waits for any writing method holding `writing_mutex`, so it can take as long as one blocked write to `out`.
+    std::lock_guard lock(writing_mutex);
+    finish = true;
+    mono_chunk_condvar.notify_one();
 }
 
 PrettyBlockOutputFormat::~PrettyBlockOutputFormat()
@@ -1386,9 +1409,9 @@ SELECT 'String with a NUL \0 character' AS Escaping_test FORMAT PrettyCompact
 └───────────────────────────────┘
 ```
 
-`TAB`, the line feed and `ESC` are exceptions: they are always printed as is, because a terminal interprets them rather than swallowing them - a tab advances to the next tab stop, and an ANSI escape sequence is what lets the data carry a visualization. A line feed keeps breaking the line too: inside a table cell when [`output_format_pretty_multiline_fields`](/operations/settings/formats#output_format_pretty_multiline_fields) is enabled, and as is otherwise. A column name is the exception to that exception: the header and the footer are a single line, so a line feed in a name is replaced like any other control character.
+`TAB`, the line feed and `ESC` are exceptions: they are always printed as is, because a terminal interprets them rather than swallowing them - a tab advances to the next tab stop, and an ANSI escape sequence is what lets the data carry a visualization. A line feed keeps breaking the line too: inside a table cell when [`output_format_pretty_multiline_fields`](/reference/settings/formats#output_format_pretty_multiline_fields) is enabled, and as is otherwise. A column name is the exception to that exception: the header and the footer are a single line, so a line feed in a name is replaced like any other control character.
 
-To print control characters verbatim instead, disable [`output_format_pretty_display_control_characters`](/operations/settings/formats#output_format_pretty_display_control_characters):
+To print control characters verbatim instead, disable [`output_format_pretty_display_control_characters`](/reference/settings/formats#output_format_pretty_display_control_characters):
 
 ```sql title="Query"
 SELECT 'String with a NUL \0 character' AS Escaping_test FORMAT PrettyCompact

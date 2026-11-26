@@ -1,0 +1,96 @@
+---
+sidebarTitle: 'Быстрый старт'
+slug: /agents/quickstart
+title: 'Быстрый старт'
+description: 'Создайте и запустите свой первый ClickHouse Agent для работы с сервисом ClickHouse Cloud'
+keywords: ['AI', 'ClickHouse Cloud', 'агенты', 'быстрый старт', 'конструктор агентов']
+doc_type: 'guide'
+---
+
+import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge />
+
+Создайте пользовательского агента в консоли Cloud и выполните запрос к своему сервису на естественном языке.
+
+## Предварительные требования {#prerequisites}
+
+* Сервис ClickHouse Cloud, к которому у вас есть доступ для выполнения запросов.
+* Пункт **Создать агента** в Конструкторе агентов. Если его нет, попросите администратора организации предоставить право на создание агентов в разделе «Настройки администрирования», как описано в разделе [совместное использование и доступ](/ru/agents/sharing-and-access).
+
+## Создание агента {#build-the-agent}
+
+<Steps>
+  <Step title="Запустите ClickHouse Agents" id="launch-agents">
+    В вашем сервисе ClickHouse Cloud нажмите **ClickHouse agents** на левой боковой панели, чтобы открыть стартовую страницу агентов. Нажмите **Launch ClickHouse agents**, чтобы открыть Конструктор агентов.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Навигация сервиса ClickHouse Cloud с выбранным пунктом ClickHouse agents (Beta) и стартовой страницей с кнопкой Launch ClickHouse agents](/images/cloud/agent-builder/launch-ch-agents.webp)
+      </Frame>
+    </div>
+  </Step>
+
+  <Step title="Создайте агента" id="create-the-agent">
+    В Конструкторе агентов нажмите **Create New Agent** в верхней части левой панели. Заполните основные поля:
+
+    * **Name** — короткий идентификатор агента.
+    * **Description** — описание назначения агента; оно будет видно вашим коллегам.
+    * **Category** — категория агента. Можно оставить значение `General`, если в вашей организации нет собственных категорий.
+    * **Instructions** — системный промпт с описанием роли агента, вопросов, на которые он должен отвечать, и бизнес-правил, которым он должен следовать.
+    * **Model** — выберите модель из раскрывающегося списка.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Панель Конструктора агентов с раскрывающимся списком Create New Agent, полями формы (Name, Description, Category, Instructions, Model) и разделом Capabilities](/images/cloud/agent-builder/agent-builder.webp)
+      </Frame>
+    </div>
+  </Step>
+
+  <Step title="Подключите возможности и инструменты" id="attach-tools">
+    Возможности и инструменты агента настраиваются в двух местах.
+
+    **Capabilities** на основной панели — встроенные функции, такие как [Run Code](/ru/agents/builder/code-interpreter), [Web Search](/ru/agents/builder/web-search), File Context, Artifacts, [MCP Servers](/ru/agents/builder/mcp-servers) и [Skills](/ru/agents/builder/skills). Включите те из них, которые нужны агенту.
+
+    <div className="ch-image-sm">
+      <Frame>
+        ![Раздел Capabilities панели Конструктора агентов с переключателями Run Code, Web Search, File Context, Artifacts, MCP Servers и Skills](/images/cloud/agent-builder/capabilities.webp)
+      </Frame>
+    </div>
+
+    **Tools** открываются кнопкой **Add Tools** в нижней части панели — это сторонние интеграции, такие как [генерация изображений](/ru/agents/builder/image-generation), [Vision](/ru/agents/builder/vision), поисковые API и внешние сервисы.
+
+    <div className="ch-image-sm">
+      <Frame>
+        ![Нижняя часть панели Конструктора агентов с выделенной кнопкой Add Tools](/images/cloud/agent-builder/tools-button.webp)
+      </Frame>
+    </div>
+
+    Нажмите **Add Tools**, чтобы открыть каталог:
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Модальное окно Agent Tools с сеткой сторонних интеграций, включая Google, OpenAI Image Tools, Wolfram, DALL-E-3, Tavily Search, Calculator и Stable Diffusion](/images/cloud/agent-builder/tools-modal.webp)
+      </Frame>
+    </div>
+
+    [Субагенты](/ru/agents/builder/subagents) настраиваются в разделе **Advanced settings** — подробнее см. на странице о субагентах.
+
+    Подключённые возможности и инструменты можно изменить в любой момент.
+  </Step>
+
+  <Step title="Выполните запрос" id="run-a-query">
+    Сохраните агента, откройте новый диалог и выберите своего агента в списке агентов. Введите вопрос — например, *«Какие 10 моих таблиц были самыми большими по количеству строк на этой неделе?»* — и агент спланирует действия, при необходимости вызовет инструменты и вернёт ответ.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Обмен сообщениями в чате с вопросом 'What are my top 10 tables by row count this week?' и ответом агента — таблицей Markdown с рейтингом 10 крупнейших таблиц по количеству строк во всех сервисах и разделом Key Observations ниже](/images/cloud/agent-builder/chat-query.webp)
+      </Frame>
+    </div>
+  </Step>
+</Steps>
+
+## Дальнейшие шаги {#next-steps}
+
+* [Откройте коллегам общий доступ к агенту](/ru/agents/sharing-and-access).
+* Когда агент станет стабильным, опубликуйте его в [маркетплейсе](/ru/agents/marketplace).
