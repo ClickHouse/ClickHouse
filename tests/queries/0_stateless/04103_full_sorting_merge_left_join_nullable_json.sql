@@ -2,6 +2,7 @@
 -- and JSON/Array(JSON) columns in the right table.
 -- Crash: ColumnObject miscast as ColumnNullable during serialization for unmatched rows.
 
+SET allow_experimental_json_type = 1;
 SET max_threads = 16;
 SET join_algorithm = 'full_sorting_merge';
 SET join_use_nulls = 1;

@@ -1,3 +1,4 @@
+SET allow_experimental_dynamic_type=1;
 
 CREATE TABLE t (d Dynamic) ENGINE = Memory;
 

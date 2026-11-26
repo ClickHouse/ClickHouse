@@ -10,7 +10,9 @@ import SelfManaged from '/snippets/ko/_self_managed_only_automated.mdx';
 
 <SelfManaged />
 
-## CPU 스케일링 거버너 {#cpu-scaling-governor}
+<div id="cpu-scaling-governor">
+  ## CPU 스케일링 거버너
+</div>
 
 항상 `performance` 스케일링 거버너를 사용하십시오. `on-demand` 스케일링 거버너는 부하가 지속적으로 높은 환경에서는 성능이 훨씬 떨어집니다.
 
@@ -18,12 +20,16 @@ import SelfManaged from '/snippets/ko/_self_managed_only_automated.mdx';
 $ echo 'performance' | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor
 ```
 
-## CPU 제한 사항 {#cpu-limitations}
+<div id="cpu-limitations">
+  ## CPU 제한 사항
+</div>
 
 CPU는 과열될 수 있습니다. 과열로 인해 CPU의 클럭 속도가 제한되었는지 확인하려면 `dmesg`를 사용하십시오.
 이 제한은 데이터 센터 차원에서 외부적으로 설정될 수도 있습니다. 부하가 걸린 상태에서 이를 모니터링하려면 `turbostat`를 사용할 수 있습니다.
 
-## RAM {#ram}
+<div id="ram">
+  ## RAM
+</div>
 
 소량의 데이터(압축 기준 약 200 GB 이하)에는 데이터 용량에 최대한 맞춰 메모리를 사용하는 것이 가장 좋습니다.
 대용량 데이터를 다루고 대화형(온라인) 쿼리를 처리하는 경우에는 핫 데이터 부분 집합이 페이지 캐시에 들어갈 수 있도록 적절한 양의 RAM(128 GB 이상)을 사용해야 합니다.
@@ -38,7 +44,9 @@ $ echo 0 | sudo tee /proc/sys/vm/overcommit_memory
 메모리 관리에 커널 시간이 얼마나 소요되는지 확인하려면 `perf top`을 사용하세요.
 영구 huge pages는 할당할 필요도 없습니다.
 
-### 16GB 미만의 RAM 사용 {#using-less-than-16gb-of-ram}
+<div id="using-less-than-16gb-of-ram">
+  ### 16GB 미만의 RAM 사용
+</div>
 
 권장 RAM 용량은 32 GB 이상입니다.
 
@@ -59,7 +67,9 @@ $ echo 0 | sudo tee /proc/sys/vm/overcommit_memory
   명령을 실행할 수 있습니다.
 * 버퍼에 상당한 메모리가 필요하므로, 메모리가 적은 시스템에서는 S3 또는 Kafka 통합 사용을 권장하지 않습니다.
 
-## 스토리지 서브시스템 {#storage-subsystem}
+<div id="storage-subsystem">
+  ## 스토리지 서브시스템
+</div>
 
 예산상 SSD를 사용할 수 있다면 SSD를 사용하세요.
 그렇지 않다면 HDD를 사용하세요. SATA HDD 7200 RPM이면 충분합니다.
@@ -67,7 +77,9 @@ $ echo 0 | sudo tee /proc/sys/vm/overcommit_memory
 디스크 셸프가 연결된 소수의 서버보다 로컬 하드 드라이브가 있는 다수의 서버를 우선적으로 선택하세요.
 하지만 쿼리가 드문 아카이브를 저장하는 용도라면 디스크 셸프도 적합합니다.
 
-## RAID {#raid}
+<div id="raid">
+  ## RAID
+</div>
 
 HDD를 사용할 때는 RAID-10, RAID-5, RAID-6 또는 RAID-50으로 구성할 수 있습니다.
 Linux에서는 소프트웨어 RAID(`mdadm` 사용)를 사용하는 것이 더 낫습니다.
@@ -98,7 +110,9 @@ HDD에서는 쓰기 cache를 활성화하십시오.
 
 OS에서 NVME 및 SSD 디스크에 대해 [`fstrim`](https://en.wikipedia.org/wiki/Trim_\(computing\))이 활성화되어 있는지 확인하십시오(일반적으로 cronjob 또는 systemd service로 구현됩니다).
 
-## 파일 시스템 {#file-system}
+<div id="file-system">
+  ## 파일 시스템
+</div>
 
 Ext4가 가장 신뢰할 수 있는 선택지입니다. 마운트 옵션 `noatime`을 설정하십시오. XFS도 잘 작동합니다.
 대부분의 다른 파일 시스템도 대체로 무리 없이 사용할 수 있습니다.
@@ -110,18 +124,24 @@ Ext4가 가장 신뢰할 수 있는 선택지입니다. 마운트 옵션 `noatim
 
 ClickHouse는 NFS에서도 작동할 수 있지만, 최선의 선택은 아닙니다.
 
-## Linux 커널 {#linux-kernel}
+<div id="linux-kernel">
+  ## Linux 커널
+</div>
 
 구버전 Linux 커널은 사용하지 마십시오.
 
-## 네트워크 {#network}
+<div id="network">
+  ## 네트워크
+</div>
 
 IPv6를 사용하는 경우 라우팅 캐시 크기를 늘리십시오.
 Linux 커널 3.2 이전 버전에는 IPv6 구현과 관련된 여러 문제가 있었습니다.
 
 가능하면 최소 10 GB 네트워크를 사용하십시오. 1 Gb 네트워크도 사용할 수는 있지만, 수십 테라바이트 규모의 데이터를 가진 레플리카를 패치하거나 대량의 중간 데이터가 발생하는 분산 쿼리를 처리할 때는 성능이 훨씬 떨어집니다.
 
-## Huge Pages {#huge-pages}
+<div id="huge-pages">
+  ## Huge Pages
+</div>
 
 transparent huge pages는 항상 `madvise`로 설정하십시오. 구형 커널(5.9 미만)에서는 THP를 `always`로 설정하면 성능이 크게 저하될 수 있습니다. 특히 RAM이 64GB 이상인 시스템에서는 커널이 메모리 단편화 해소에 지나치게 많은 시간을 소모합니다. 커널 5.9에는 THP를 훨씬 더 효과적으로 처리하는 proactive compaction이 도입되었지만, THP가 `always`로 설정되어 있으면 ClickHouse는 시작 시 여전히 경고를 표시합니다. 따라서 커널 버전과 관계없이 권장 설정은 `madvise`입니다.
 
@@ -137,7 +157,9 @@ $ GRUB_CMDLINE_LINUX_DEFAULT="transparent_hugepage=madvise ..."
 
 그런 다음 `sudo update-grub` 명령을 실행한 후, 변경 사항을 적용하려면 재부팅하십시오.
 
-## 하이퍼바이저 구성 {#hypervisor-configuration}
+<div id="hypervisor-configuration">
+  ## 하이퍼바이저 구성
+</div>
 
 OpenStack을 사용하는 경우 다음을 설정하십시오
 
@@ -158,7 +180,9 @@ XML 구성에서 설정합니다.
 이는 ClickHouse가 `cpuid` 명령어로 올바른 정보를 가져오는 데 중요합니다.
 그렇지 않으면 하이퍼바이저가 오래된 CPU 모델에서 실행될 때 `Illegal instruction` 오류로 인해 충돌이 발생할 수 있습니다.
 
-## ClickHouse Keeper와 ZooKeeper {#zookeeper}
+<div id="zookeeper">
+  ## ClickHouse Keeper와 ZooKeeper
+</div>
 
 ClickHouse 클러스터에서는 ZooKeeper를 대체하는 용도로 ClickHouse Keeper 사용을 권장합니다. 자세한 내용은 [ClickHouse Keeper](/ko/guides/oss/deployment-and-scaling/keeper/index) 문서를 참조하십시오.
 
@@ -230,12 +254,12 @@ preAllocSize=131072
 # is started. The default snapCount is 100000.
 snapCount=3000000
 
-# If this option is defined, requests will be logged to a trace file named
+# If this option is defined, requests will be will logged to a trace file named
 # traceFile.year.month.day.
 #traceFile=
 
 # Leader accepts client connections. Default value is "yes". The leader machine
-# coordinates updates. For higher update throughput at the slight expense of
+# coordinates updates. For higher update throughput at thes slight expense of
 # read throughput the leader can be configured to not accept clients and focus
 # on coordination.
 leaderServes=yes
@@ -314,10 +338,14 @@ script
 end script
 ```
 
-## 바이러스 백신 소프트웨어 {#antivirus-software}
+<div id="antivirus-software">
+  ## 바이러스 백신 소프트웨어
+</div>
 
 바이러스 백신 소프트웨어를 사용하는 경우 ClickHouse 데이터 파일이 있는 폴더(`/var/lib/clickhouse`)는 검사 대상에서 제외하도록 구성하십시오. 그렇지 않으면 성능이 저하되거나 데이터 수집 및 백그라운드 머지 중 예기치 않은 오류가 발생할 수 있습니다.
 
-## 관련 콘텐츠 {#related-content}
+<div id="related-content">
+  ## 관련 콘텐츠
+</div>
 
 * [ClickHouse를 시작하시나요? 알아두어야 할 13가지 &quot;치명적인 실수&quot;와 이를 피하는 방법](https://clickhouse.com/blog/common-getting-started-issues-with-clickhouse)

@@ -10,7 +10,16 @@ integration:
    - category: 'clickpipes'
 ---
 
+import { BetaBadge } from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
+
+import { Image } from "/snippets/es/components/Image.jsx";
 import ChangingTLSSettings from '/snippets/es/clickpipes/_changing_tls_settings.mdx';
+
+<BetaBadge />
+
+<Info>
+  La ingesta de datos desde MongoDB a ClickHouse Cloud mediante ClickPipes está en beta pública.
+</Info>
 
 <Note>
   En la consola y la documentación de ClickHouse Cloud, &quot;tabla&quot; y &quot;colección&quot; se usan indistintamente para MongoDB.
@@ -20,7 +29,9 @@ Puede usar ClickPipes para ingerir datos desde su base de datos de MongoDB a Cli
 
 Los ClickPipes de MongoDB pueden implementarse y gestionarse manualmente mediante la UI de ClickPipes, así como mediante programación con [OpenAPI](/es/integrations/clickpipes/programmatic-access/openapi) y [Terraform](/es/integrations/clickpipes/programmatic-access/terraform).
 
-## Requisitos previos {#prerequisites}
+<div id="prerequisites">
+  ## Requisitos previos
+</div>
 
 Antes de empezar, debes asegurarte de que tu base de datos MongoDB esté correctamente configurada para la replicación. Los pasos de configuración dependen de cómo hayas desplegado MongoDB, así que sigue la guía correspondiente a continuación:
 
@@ -32,35 +43,27 @@ Antes de empezar, debes asegurarte de que tu base de datos MongoDB esté correct
 
 Una vez configurada tu base de datos MongoDB de origen, puedes continuar con la creación de tu ClickPipe.
 
-## Crea tu ClickPipe {#create-your-clickpipe}
+<div id="create-your-clickpipe">
+  ## Crea tu ClickPipe
+</div>
 
-Asegúrate de haber iniciado sesión en tu cuenta de ClickHouse Cloud. Si aún no tienes una cuenta, puedes registrarte [aquí](https://clickhouse.cloud/signUp?loc=docs-integrations-clickpipes-mongodb).
+Asegúrate de haber iniciado sesión en tu cuenta de ClickHouse Cloud. Si aún no tienes una cuenta, puedes registrarte [aquí](https://cloud.clickhouse.com/).
 
 1. En la consola de ClickHouse Cloud, ve a tu servicio de ClickHouse Cloud.
 
-<div className="ch-image-lg">
-  <Frame>
-    ![Servicio de ClickPipes](/images/integrations/data-ingestion/clickpipes/cp_service.webp)
-  </Frame>
-</div>
+<Image img="/images/integrations/data-ingestion/clickpipes/cp_service.webp" alt="Servicio de ClickPipes" size="lg" border />
 
 2. Selecciona el botón `Data Sources` en el menú lateral izquierdo y haz clic en &quot;Set up a ClickPipe&quot;.
 
-<div className="ch-image-lg">
-  <Frame>
-    ![Seleccionar importaciones](/images/integrations/data-ingestion/clickpipes/cp_step0.webp)
-  </Frame>
-</div>
+<Image img="/images/integrations/data-ingestion/clickpipes/cp_step0.webp" alt="Seleccionar importaciones" size="lg" border />
 
 3. Selecciona la tarjeta `MongoDB CDC`.
 
-<div className="ch-image-lg">
-  <Frame>
-    ![Seleccionar MongoDB](/images/integrations/data-ingestion/clickpipes/mongodb/mongodb-tile.webp)
-  </Frame>
-</div>
+<Image img="/images/integrations/data-ingestion/clickpipes/mongodb/mongodb-tile.webp" alt="Seleccionar MongoDB" size="lg" border />
 
-### Agrega la conexión a tu base de datos MongoDB de origen {#add-your-source-mongodb-database-connection}
+<div id="add-your-source-mongodb-database-connection">
+  ### Agrega la conexión a tu base de datos MongoDB de origen
+</div>
 
 4. Completa los datos de conexión de tu base de datos MongoDB de origen que configuraste en el paso de requisitos previos.
 
@@ -69,29 +72,25 @@ Asegúrate de haber iniciado sesión en tu cuenta de ClickHouse Cloud. Si aún n
   Para obtener más información, consulta las guías de configuración de MongoDB de origen enlazadas [al inicio de esta página](#prerequisites).
 </Info>
 
-<div className="ch-image-lg">
-  <Frame>
-    ![Completar los datos de conexión](/images/integrations/data-ingestion/clickpipes/mongodb/mongodb-connection-details.webp)
-  </Frame>
-</div>
+<Image img="/images/integrations/data-ingestion/clickpipes/mongodb/mongodb-connection-details.webp" alt="Completa los datos de conexión" size="lg" border />
 
-#### (Opcional) Cambiar los ajustes de TLS {#optional-changing-tls-settings}
+<div id="optional-changing-tls-settings">
+  #### (Opcional) Cambiar la configuración de TLS
+</div>
 
 <ChangingTLSSettings />
 
-#### (Opcional) Configurar la tunelización SSH {#optional-set-up-ssh-tunneling}
+<div id="optional-set-up-ssh-tunneling">
+  #### (Opcional) Configurar la tunelización SSH
+</div>
 
 Puede especificar los detalles de la tunelización SSH si su base de datos MongoDB de origen no es accesible públicamente.
 
 1. Active el interruptor &quot;Usar tunelización SSH&quot;.
 
-2. Complete los datos de conexión SSH.
+2. Complete los detalles de la conexión SSH.
 
-   <div className="ch-image-lg">
-     <Frame>
-       ![Tunelización SSH](/images/integrations/data-ingestion/clickpipes/postgres/ssh-tunnel.jpg)
-     </Frame>
-   </div>
+   <Image img="/images/integrations/data-ingestion/clickpipes/postgres/ssh-tunnel.jpg" alt="Tunelización SSH" size="lg" border />
 
 3. Para usar autenticación basada en claves, haga clic en &quot;Revocar y generar par de claves&quot; para generar un nuevo par de claves y copie la clave pública generada en su servidor SSH, en `~/.ssh/authorized_keys`.
 
@@ -101,9 +100,11 @@ Puede especificar los detalles de la tunelización SSH si su base de datos Mongo
   Asegúrese de permitir las [dirección IP de ClickPipes](/es/integrations/clickpipes/networking/static-ips) en las reglas de su firewall para el host bastión SSH, de modo que ClickPipes pueda establecer el túnel SSH.
 </Note>
 
-Una vez completados los datos de conexión, haga clic en `Siguiente`.
+Una vez completados los detalles de la conexión, haga clic en `Siguiente`.
 
-#### Configurar ajustes avanzados {#advanced-settings}
+<div id="advanced-settings">
+  #### Configurar ajustes avanzados
+</div>
 
 Puede configurar los ajustes avanzados si es necesario. A continuación, se ofrece una breve descripción de cada ajuste:
 
@@ -111,102 +112,33 @@ Puede configurar los ajustes avanzados si es necesario. A continuación, se ofre
 * **Tamaño del lote de extracción**: El número de filas que se recuperarán en un solo lote. Este ajuste es orientativo y puede que no se respete en todos los casos.
 * **Número de tablas de la instantánea en paralelo**: Es el número de tablas que se recuperarán en paralelo durante la instantánea inicial. Resulta útil cuando tiene un gran número de tablas y desea controlar cuántas se recuperan en paralelo.
 
-### Configure las tablas {#configure-the-tables}
-
-5. Aquí puede seleccionar la base de datos de destino para su ClickPipe. Puede seleccionar una base de datos existente o crear una nueva.
-
-   <div className="ch-image-lg">
-     <Frame>
-       ![Seleccione la base de datos de destino](/images/integrations/data-ingestion/clickpipes/mongodb/select-destination-db.webp)
-     </Frame>
-   </div>
-
-6. Puede seleccionar las tablas que desea replicar desde la base de datos MongoDB de origen. Al seleccionarlas, también puede cambiar el nombre que tendrán en la base de datos ClickHouse de destino.
-
-Las colecciones se pueden replicar en dos modos:
-
-* **Ingestión predeterminada**: Los documentos se ingestan sin modificaciones en ClickHouse con el Tipo JSON. En este caso, la tabla de destino tendrá una columna específica para `id` y otra, `doc`, que contendrá el documento completo.
-* **Ingestión estructurada**: Los documentos se ingestan como filas en una table siguiendo un esquema común para la colección. Este esquema se infiere a partir de una muestra al crear la canalización. Este modo se habilita activando **Asignar documento a columnas** para la colección.
-
-Cuando la ingestión estructurada está habilitada, la sección **Configuración de columnas** muestra los campos encontrados en la muestra junto con los tipos de ClickHouse inferidos. Puede seleccionar qué campos replicar como columnas; la clave `_id` del documento siempre se incluye con el tipo `String`.
-
-<div className="ch-image-md">
-  <Frame>
-    ![Configuración de ingestión estructurada para una colección](/images/integrations/data-ingestion/clickpipes/mongodb/mongodb-structured-ingestion.webp)
-  </Frame>
+<div id="configure-the-tables">
+  ### Configura las tablas
 </div>
 
-El hecho de que las colecciones de MongoDB sean polimórficas (es decir, que los documentos de una misma colección puedan tener esquemas diferentes) implica que la ingestión estructurada debe gestionar registros atípicos:
+5. Aquí puedes seleccionar la base de datos de destino para tu ClickPipe. Puedes seleccionar una base de datos existente o crear una nueva.
 
-* **Campos ausentes:** Todas las columnas estructuradas se ingestan como `Nullable`, por lo que, si a un documento le falta un campo, la columna correspondiente tendrá un valor `NULL`.
+   <Image img="/images/integrations/data-ingestion/clickpipes/mongodb/select-destination-db.webp" alt="Selecciona la base de datos de destino" size="lg" border />
 
-* **Campos adicionales:** Los campos que no forman parte del esquema inferido se almacenan como JSON en la columna `_peerdb_malformed_data`, con una clave por campo. Cada clave contiene `"unexpected_field": true` y el valor original en `value`:
+6. Puedes seleccionar las tablas que quieres replicar desde la base de datos MongoDB de origen. Al seleccionar las tablas, también puedes optar por cambiarles el nombre en la base de datos de destino de ClickHouse.
 
-  ```json
-  {
-    "rating": {
-      "unexpected_field": true,
-      "value": 4.5
-    }
-  }
-  ```
-
-  Estos datos se pueden consultar y analizar fácilmente. Por ejemplo, para enumerar los campos inesperados encontrados en una table:
-
-  ```sql
-  SELECT DISTINCT arrayJoin(JSONAllPaths(_peerdb_malformed_data)) AS malformed
-  FROM movies
-  WHERE malformed LIKE '%.unexpected_field';
-  ```
-
-  📝 Nota: Si no desea que los valores de los campos adicionales se incluyan en la columna `_peerdb_malformed_data`, puede habilitar la opción **Ocultar valores inesperados** para la colección.
-
-* **Tipo de campo incompatible:** Los valores cuyo tipo no coincide con el de la columna también se almacenan en la columna `_peerdb_malformed_data`, con una clave por campo. Cada clave contiene `"type_mismatch": true` y el valor original en `value`. La columna correspondiente se establece en `NULL`:
-
-  ```json
-  {
-    "year": {
-      "type_mismatch": true,
-      "value": "two thousand nineteen"
-    }
-  }
-  ```
-
-  Para leer un campo tanto si su valor coincide con el tipo esperado como si no, combine la columna con su valor alternativo:
-
-  ```sql
-  SELECT name, coalesce(year, _peerdb_malformed_data.year.value)
-  FROM movies;
-  ```
-
-📝 Nota: Puede considerar los campos incluidos en `_peerdb_malformed_data` como valores atípicos que se ingestan en una columna JSON como alternativa.
-
-Dado que la ingestión estructurada infiere el esquema antes de crear la table, habilitarla permite definir expresiones de particionamiento y claves de ordenación personalizadas basadas en las columnas estructuradas.
-Todas las columnas estructuradas se ingestan como `Nullable`. Téngalo en cuenta al escribir una expresión para la clave de particionamiento o al usar estas columnas en una clave de ordenación. En estos casos, la tabla de destino se crea con el parámetro de configuración `allow_nullable_key`.
-
-📝 En ambos modos de ingestión, puede activar la opción **Persistir documentos eliminados** si desea que los eventos de eliminación capturen los valores eliminados en la instancia de ClickHouse de destino. Para ello, la colección de origen debe tener habilitado `changeStreamPreAndPostImage`.
-
-<div className="ch-image-lg">
-  <Frame>
-    ![Opción Persistir documentos eliminados](/images/integrations/data-ingestion/clickpipes/mongodb/mongodb-persist-deleted-documents.webp)
-  </Frame>
+<div id="review-permissions-and-start-the-clickpipe">
+  ### Revisa los permisos e inicia el ClickPipe
 </div>
-
-### Revisa los permisos e inicia el ClickPipe {#review-permissions-and-start-the-clickpipe}
 
 7. Selecciona el rol &quot;Acceso completo&quot; en el menú desplegable de permisos y haz clic en &quot;Completar configuración&quot;.
 
-   <div className="ch-image-lg">
-     <Frame>
-       ![Revisar permisos](/images/integrations/data-ingestion/clickpipes/postgres/ch-permissions.jpg)
-     </Frame>
-   </div>
+   <Image img="/images/integrations/data-ingestion/clickpipes/postgres/ch-permissions.jpg" alt="Revisar permisos" size="lg" border />
 
-## Próximos pasos {#whats-next}
+<div id="whats-next">
+  ## ¿Qué sigue?
+</div>
 
-Una vez que haya configurado su ClickPipe para replicar datos de MongoDB a ClickHouse Cloud, puede centrarse en cómo consultar y modelar sus datos para obtener un rendimiento óptimo.
+Una vez que hayas configurado tu ClickPipe para replicar datos de MongoDB en ClickHouse Cloud, puedes centrarte en cómo consultar y modelar tus datos para obtener un rendimiento óptimo.
 
-## Consideraciones {#caveats}
+<div id="caveats">
+  ## Consideraciones
+</div>
 
 Estas son algunas consideraciones que debes tener en cuenta al usar este conector:
 

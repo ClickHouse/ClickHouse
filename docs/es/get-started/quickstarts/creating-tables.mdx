@@ -1,6 +1,5 @@
 ---
-sidebarTitle: 'Creación de tablas en ClickHouse'
-searchable: true
+sidebarTitle: 'Creación de tablas'
 title: 'Creación de tablas en ClickHouse'
 slug: /guides/creating-tables
 description: 'Aprende a crear tablas en ClickHouse'
@@ -38,15 +37,15 @@ base de datos `default`.
 La siguiente tabla, llamada `my_first_table`, se crea en la base de datos `helloworld`:
 
 ```sql
-CREATE TABLE helloworld.my_first_table
-(
-    user_id UInt32,
-    message String,
-    timestamp DateTime,
-    metric Float32
-)
-ENGINE = MergeTree()
-PRIMARY KEY (user_id, timestamp)
+  CREATE TABLE helloworld.my_first_table
+  (
+      user_id UInt32,
+      message String,
+      timestamp DateTime,
+      metric Float32
+  )
+  ENGINE = MergeTree()
+  PRIMARY KEY (user_id, timestamp)
 ```
 
 En el ejemplo anterior, `my_first_table` es una tabla `MergeTree` con cuatro columnas:
@@ -67,7 +66,7 @@ En el ejemplo anterior, `my_first_table` es una tabla `MergeTree` con cuatro col
 </Note>
 
 <div id="a-brief-intro-to-primary-keys">
-  ## Una breve introducción a las claves primarias {#a-brief-intro-to-primary-keys}
+  ## Una breve introducción a las claves primarias
 </div>
 
 Antes de continuar, es importante entender cómo funcionan las claves primarias en ClickHouse (¡la implementación
@@ -87,7 +86,7 @@ La clave primaria también es la clave de ordenación, que es una tupla de `(use
 archivo de columna se ordenarán por `user_id` y luego por `timestamp`.
 
 <Tip>
-  Para obtener más información, consulte el [módulo de formación Modeling Data](https://learn.clickhouse.com/real-time-analytics-with-clickhouse/550440) de ClickHouse Academy.
+  Para obtener más información, consulte el [módulo de formación Modeling Data](https://learn.clickhouse.com/visitor_catalog_class/show/1328860/?utm_source=clickhouse\&utm_medium=docs) de ClickHouse Academy.
 </Tip>
 
 <div className="mt-8">

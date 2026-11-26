@@ -2,26 +2,17 @@
 #include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
 
 #include <Processors/QueryPlan/AggregatingStep.h>
-#include <Processors/QueryPlan/ArrayJoinStep.h>
-#include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
-#include <Processors/QueryPlan/FillingStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
-#include <Processors/QueryPlan/ISourceStep.h>
-#include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/LimitByStep.h>
-#include <Processors/QueryPlan/LimitRangeStep.h>
-#include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/NegativeLimitByStep.h>
+#include <Processors/QueryPlan/MergingAggregatedStep.h>
+#include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SortingStep.h>
-#include <Processors/QueryPlan/UnionStep.h>
-#include <Storages/StorageMerge.h>
 
 #include <Functions/IFunction.h>
-#include <Interpreters/FullSortingMergeJoin.h>
-#include <Interpreters/TableJoin.h>
 
 
 namespace DB
@@ -48,215 +39,10 @@ struct SortingProperty
     SortScope sort_scope = SortScope::Stream;
 };
 
-/// Whether `step` is a join that emits the rows of its probe side (`children.front()`) in their
-/// original order, with the same conditions as `findReadingStep` in `optimizeReadInOrder`.
-static bool isOrderPreservingJoinStep(const IQueryPlanStep & step)
-{
-    const IJoin * join = nullptr;
-    if (const auto * join_step = typeid_cast<const JoinStep *>(&step))
-        join = join_step->getJoin().get();
-    else if (const auto * filled_join_step = typeid_cast<const FilledJoinStep *>(&step))
-        join = filled_join_step->getJoin().get();
-
-    if (!join)
-        return false;
-
-    const auto & table_join = join->getTableJoin();
-    auto strictness = table_join.strictness();
-    return (strictness == JoinStrictness::Any || strictness == JoinStrictness::All) && isInnerOrLeft(table_join.kind())
-        && !join->hasDelayedBlocks() && join->preservesLeftBlockOrder();
-}
-
-/// Marks the reading step below `node` as preferring multiple streams, so that per-stream work
-/// installed above it (the pre-distinct transforms of distinct-in-order, the per-stream `LIMIT BY`
-/// pre-filter of `pushLimitByIntoSort`) is not collapsed into a single stream and serialized by
-/// `PrefetchingConcatProcessor`.
-///
-/// Distinct-in-order can be installed either here (from plan sorting properties) or by
-/// `optimizeDistinctInOrder`. The latter sets `prefer_multiple_streams` on the underlying
-/// `ReadFromMergeTree` itself. When distinct order is applied from sorting properties instead, the
-/// reading step does not get that signal, so we propagate it here by descending through
-/// order-preserving steps (into every branch of a `UnionStep`, and into the probe side of an
-/// order-preserving join) to the reading steps.
-void preferMultipleStreamsForReadingBelow(QueryPlan::Node * node)
-{
-    while (node)
-    {
-        IQueryPlanStep * step = node->step.get();
-
-        if (auto * reading = typeid_cast<ReadFromMergeTree *>(step))
-        {
-            reading->setPreferMultipleStreams();
-            return;
-        }
-
-        /// A `Merge` table hides the actual reads inside child plans - forward the opt-out to them.
-        if (auto * merge = typeid_cast<ReadFromMerge *>(step))
-        {
-            merge->setPreferMultipleStreams();
-            return;
-        }
-
-        if (node->children.empty())
-            return;
-
-        /// A set-building step keeps the main pipeline in `children.front()` and adds one more child
-        /// per set subquery, so it usually has several children. Follow only the main child, the same
-        /// way `findReadingStep` in `optimizeReadInOrder` does.
-        if (typeid_cast<CreatingSetsStep *>(step) || typeid_cast<DelayedCreatingSetsStep *>(step))
-        {
-            node = node->children.front();
-            continue;
-        }
-
-        /// Each branch of a `UnionStep` has its own reading step, and `optimizeReadInOrder` reads every
-        /// branch in order, so each of them may choose `PrefetchingConcatProcessor` - forward the opt-out
-        /// to all branches.
-        if (typeid_cast<UnionStep *>(step))
-        {
-            for (auto * child : node->children)
-                preferMultipleStreamsForReadingBelow(child);
-            return;
-        }
-
-        /// A `JoinStep` or a `FilledJoinStep` that keeps the order of its probe side runs one
-        /// `JoiningTransform` per probe-side stream, and `optimizeReadInOrder` reads the probe side in
-        /// order through it (see `findReadingStep`), so the per-stream work above the join depends on
-        /// the probe-side read staying parallel. Follow the probe side, which is `children.front()`.
-        if (isOrderPreservingJoinStep(*step))
-        {
-            node = node->children.front();
-            continue;
-        }
-
-        if (node->children.size() != 1)
-            return;
-
-        /// Only descend through steps that keep a single underlying reading pipeline
-        /// and preserve its per-stream order, mirroring `findReadingStep` in `optimizeReadInOrder`.
-        if (!typeid_cast<ExpressionStep *>(step)
-            && !typeid_cast<FilterStep *>(step)
-            && !typeid_cast<ArrayJoinStep *>(step)
-            && !typeid_cast<DistinctStep *>(step))
-            return;
-
-        node = node->children.front();
-    }
-}
-
-/// A full sorting merge join emits its result in the order of one of its sorted inputs: `MergeJoinAlgorithm`
-/// walks both inputs with cursors that only move forward, so for an INNER or LEFT join the output rows follow
-/// the left input (an INNER join emits a subsequence of it, a LEFT join emits every left row, repeated for
-/// each match), and for a RIGHT join they follow the right input. A FULL join interleaves the non-matched rows
-/// of both sides, whose key columns of the other side are defaults, so neither side's keys stay sorted.
-///
-/// Only the leading run of join-key columns is advertised. Within one group of equal keys the rows of an ALL
-/// join are emitted as a cross product, which keeps the order of the keys but not of any other column.
-static SortingProperty applyOrderToJoin(const JoinStep & join_step, const SortingProperty * children_properties)
-{
-    const auto * merge_join = typeid_cast<const FullSortingMergeJoin *>(join_step.getJoin().get());
-    if (!merge_join)
-        return {};
-
-    /// `parallel_full_sorting_merge` is sharded by the hash of the join keys afterwards
-    /// (`optimizeParallelFullSortingMergeJoin`), and that pass only scatters a plain full sort. Advertising the
-    /// order would turn the merge-join sort above into `FinishSorting` and leave the next join in a chain
-    /// unsharded, trading its parallelism for a saved sort. Keep the parallel variant hash-sharded at every
-    /// level; its output is unordered by design.
-    if (merge_join->isParallel())
-        return {};
-
-    const auto & table_join = merge_join->getTableJoin();
-    const auto kind = table_join.kind();
-    if (!isInner(kind) && !isLeft(kind) && !isRight(kind))
-        return {};
-
-    /// With `swap_streams` the plan's right child feeds the algorithm's left input and vice versa.
-    const size_t algorithm_left_child = join_step.swap_streams ? 1 : 0;
-    const size_t ordered_child = isRight(kind) ? 1 - algorithm_left_child : algorithm_left_child;
-    const auto & clause = table_join.getOnlyClause();
-    const Names & key_names = isRight(kind) ? clause.key_names_right : clause.key_names_left;
-
-    const auto & ordered_input_header = *join_step.getInputHeaders()[ordered_child];
-    auto sort_description
-        = getCollationAwareSortPrefixInColumns(children_properties[ordered_child].sort_description, key_names, ordered_input_header);
-
-    /// Keep the key columns that reach the output under their own, unambiguous name. The legacy planner lets
-    /// both inputs carry a column of the same name - `JOIN ... USING (k)` is the common shape - and renames
-    /// the copy of the right side out of the way (`TableJoin::renamedRightColumnName`), so a name carried by
-    /// both inputs denotes the column of the left side in the output. That is the ordered column itself when
-    /// the left side is the ordered one, and a different column when the right side is: there the ordered key
-    /// reaches the output under its renamed name, which is not the name we are sorted by.
-    const bool ordered_side_is_left = ordered_child == algorithm_left_child;
-    const auto & output_header = *join_step.getOutputHeader();
-    const auto & other_input_header = *join_step.getInputHeaders()[1 - ordered_child];
-
-    /// A name carried by both inputs does denote the ordered column of the right side in one case: when the
-    /// renamed copy of the right key is not selected, the legacy planner merges the two key columns of a
-    /// `USING` clause into the single output column of the left side, and `MergeJoinAlgorithm` fills it from
-    /// the right key for the rows that have no match on the left (`TableJoin::leftToRightKeyRemap`). For a
-    /// RIGHT join the left key column then holds the value of the right key on every row, so the ordered key
-    /// does reach the output - only under the name of the left key, while the renamed right copy is the
-    /// column that carries defaults there.
-    NameToNameMap right_key_to_merged_output;
-    if (isRight(kind))
-    {
-        for (const auto & [left_key, right_key] : table_join.leftToRightKeyRemap())
-            right_key_to_merged_output.emplace(right_key, left_key);
-    }
-
-    /// Every row of an INNER join has equal keys on both sides, so a key of the other side carries the same
-    /// order as the ordered key it is compared with. That matters when the ordered key itself is not needed
-    /// above the join and only the other one is kept, as in `a JOIN b ON a.id = b.id JOIN c ON b.id = c.id`.
-    /// It does not hold for the last key of an ASOF join, which is not compared for equality.
-    NameToNameMap ordered_key_to_equal_key;
-    if (isInner(kind) && table_join.strictness() != JoinStrictness::Asof)
-    {
-        for (size_t i = 0; i < clause.key_names_left.size(); ++i)
-            ordered_key_to_equal_key.emplace(clause.key_names_left[i], clause.key_names_right[i]);
-    }
-
-    size_t num_columns_in_output = 0;
-    for (; num_columns_in_output < sort_description.size(); ++num_columns_in_output)
-    {
-        auto & name = sort_description[num_columns_in_output].column_name;
-
-        if (auto it = right_key_to_merged_output.find(name); it != right_key_to_merged_output.end())
-        {
-            /// The merged column is the ordered one under the name of the other side, so the check for a key
-            /// shadowed by that side does not apply to it.
-            if (!output_header.has(it->second))
-                break;
-            name = it->second;
-            continue;
-        }
-
-        if (!output_header.has(name))
-        {
-            /// The equal key comes from the other side, so it must not be shadowed by the ordered side.
-            auto it = ordered_key_to_equal_key.find(name);
-            if (it == ordered_key_to_equal_key.end() || !output_header.has(it->second) || ordered_input_header.has(it->second))
-                break;
-            name = it->second;
-            continue;
-        }
-        if (other_input_header.has(name) && (!ordered_side_is_left || table_join.renamedRightColumnName(name) == name))
-            break;
-    }
-    sort_description.resize(num_columns_in_output);
-
-    if (sort_description.empty())
-        return {};
-
-    /// A single merge join is resized to `max_streams` outputs, and a sharded one has one output per shard,
-    /// so the order holds within every stream rather than globally.
-    return {std::move(sort_description), SortingProperty::SortScope::Stream};
-}
-
 static SortingProperty applyOrder(QueryPlan::Node * parent, SortingProperty * properties, const QueryPlanOptimizationSettings & optimization_settings)
 {
-    if (const auto * source_step = dynamic_cast<const ISourceStep*>(parent->step.get()))
-        return {source_step->getSortDescription(), SortingProperty::SortScope::Stream};
+    if (const auto * read_from_merge_tree = typeid_cast<ReadFromMergeTree *>(parent->step.get()))
+        return {read_from_merge_tree->getSortDescription(), SortingProperty::SortScope::Stream};
 
     if (const auto * aggregating_step = typeid_cast<AggregatingStep *>(parent->step.get()))
     {
@@ -285,26 +71,12 @@ static SortingProperty applyOrder(QueryPlan::Node * parent, SortingProperty * pr
             (properties->sort_scope == SortingProperty::SortScope::Global
             || (distinct_step->isPreliminary() && properties->sort_scope == SortingProperty::SortScope::Stream)))
         {
-            distinct_step->applyOrder(getCollationAwareSortPrefixInColumns(
-                properties->sort_description, distinct_step->getColumnNames(), *distinct_step->getInputHeaders().front()));
-
-            /// Only preliminary distinct performs per-stream deduplication. A final distinct merges
-            /// its input into one stream, so keeping the read parallel would only disable the
-            /// `PrefetchingConcatProcessor` fast path without preserving parallel work.
-            if (distinct_step->isPreliminary())
-                preferMultipleStreamsForReadingBelow(parent);
+            distinct_step->applyOrder(getCollationAwareSortPrefixInColumns(properties->sort_description, distinct_step->getColumnNames()));
         }
 
-        /// Distinct never breaks global order: the steps above may rely on it, so the final `DISTINCT`,
-        /// which may spill, has to restore the order after the spill (see
-        /// `DistinctStep::preserveInputOrder`). The preliminary `DISTINCT` never spills, and an empty
-        /// description carries no order to preserve.
+        /// Distinct never breaks global order
         if (properties->sort_scope == SortingProperty::SortScope::Global)
-        {
-            if (!distinct_step->isPreliminary() && !properties->sort_description.empty())
-                distinct_step->preserveInputOrder();
             return *properties;
-        }
 
         /// Preliminary Distinct also does not break stream order
         if (distinct_step->isPreliminary() && properties->sort_scope == SortingProperty::SortScope::Stream)
@@ -347,14 +119,6 @@ static SortingProperty applyOrder(QueryPlan::Node * parent, SortingProperty * pr
                 sorting_step->convertToFinishSorting(common_prefix, /*use_buffering*/ false, false);
         }
 
-        /// A partitioned `FinishSorting` scatters its merged stream into the window partitions and streams the
-        /// rows out of every shard as soon as their prefix group is complete (see `SortingStep::transformPipeline`).
-        /// A `MergingSortedTransform` above it would pull from the shards selectively, while the scatter has to
-        /// push to all of them, which can deadlock. So do not advertise this order: the sorting above stays a full
-        /// sort, which consumes every shard independently.
-        if (sorting_step->hasPartitions() && sorting_step->getType() == SortingStep::Type::FinishSorting)
-            return {};
-
         auto scope = sorting_step->hasPartitions() ? SortingProperty::SortScope::Stream : SortingProperty::SortScope::Global;
         return {sorting_step->getSortDescription(), scope};
     }
@@ -364,8 +128,7 @@ static SortingProperty applyOrder(QueryPlan::Node * parent, SortingProperty * pr
         if (properties->sort_scope != SortingProperty::SortScope::Global)
             return {};
 
-        auto prefix = getCollationAwareSortPrefixInColumns(
-            properties->sort_description, limit_by_step->getColumns(), *limit_by_step->getInputHeaders().front());
+        auto prefix = getCollationAwareSortPrefixInColumns(properties->sort_description, limit_by_step->getColumns());
         if (prefix.size() == limit_by_step->getColumns().size())
             limit_by_step->applyOrder(prefix);
 
@@ -377,23 +140,9 @@ static SortingProperty applyOrder(QueryPlan::Node * parent, SortingProperty * pr
         if (properties->sort_scope != SortingProperty::SortScope::Global)
             return {};
 
-        auto prefix = getCollationAwareSortPrefixInColumns(
-            properties->sort_description, negative_limit_by_step->getColumns(), *negative_limit_by_step->getInputHeaders().front());
+        auto prefix = getCollationAwareSortPrefixInColumns(properties->sort_description, negative_limit_by_step->getColumns());
         if (prefix.size() == negative_limit_by_step->getColumns().size())
             negative_limit_by_step->applyOrder(prefix);
-
-        return std::move(*properties);
-    }
-
-    if (const auto * join_step = typeid_cast<const JoinStep *>(parent->step.get()); join_step && parent->children.size() == 2)
-        return applyOrderToJoin(*join_step, properties);
-
-    if (typeid_cast<LimitRangeStep *>(parent->step.get()))
-    {
-        /// The range is evaluated over a single stream, so several per-stream-sorted inputs are
-        /// concatenated without a merge and only a global order survives the step.
-        if (properties->sort_scope != SortingProperty::SortScope::Global)
-            return {};
 
         return std::move(*properties);
     }
@@ -402,25 +151,6 @@ static SortingProperty applyOrder(QueryPlan::Node * parent, SortingProperty * pr
     {
         if (transforming->getDataStreamTraits().preserves_sorting)
             return std::move(*properties);
-
-        /// Propagate the leading keys that `FillingStep` keeps sorted. Collated keys stay in: consumers that need
-        /// equal values to be adjacent (`DISTINCT`, `LIMIT BY`) drop them themselves.
-        if (const auto * filling_step = typeid_cast<const FillingStep *>(transforming))
-        {
-            const auto & filling_description = filling_step->getSortDescription();
-            const size_t preserved = std::min(filling_step->getPreservedSortPrefixSize(), properties->sort_description.size());
-
-            SortDescription prefix;
-            for (size_t i = 0; i < preserved; ++i)
-            {
-                if (properties->sort_description[i].column_name != filling_description[i].column_name)
-                    break;
-                prefix.push_back(properties->sort_description[i]);
-            }
-
-            if (!prefix.empty())
-                return {std::move(prefix), properties->sort_scope};
-        }
     }
 
     if (auto * union_step = typeid_cast<UnionStep *>(parent->step.get()))
@@ -453,7 +183,7 @@ void applyOrder(const QueryPlanOptimizationSettings & optimization_settings, Que
     Stack stack;
     stack.push_back({.node = &root});
 
-    using SortingPropertyStack = VectorWithMemoryTracking<SortingProperty>;
+    using SortingPropertyStack = std::vector<SortingProperty>;
     SortingPropertyStack properties;
 
     while (!stack.empty())

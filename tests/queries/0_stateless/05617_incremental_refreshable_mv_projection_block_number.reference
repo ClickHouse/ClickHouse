@@ -1,6 +1,5 @@
-round1	0
-round2	15	13	27
-round3	15
+range no projection	15	13	27
+range projection	15	13	27
 no projection	5	1	4
 no projection	15	2	4
 projection	5	1	4
@@ -17,6 +16,5 @@ minmax commit_order	1
 partial number read	15	2
 partial number filter	1
 partial offset filter	1
-stored round1	0
-stored round2	15	13	27
-stored round3	15
+stored range no projection	15	13	27
+stored range projection	15	13	27

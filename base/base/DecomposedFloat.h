@@ -68,41 +68,41 @@ struct DecomposedFloat
 
     typename Traits::UInt x_uint;
 
-    [[nodiscard]] bool isNegative() const
+    bool isNegative() const
     {
         return x_uint >> (Traits::bits - 1);
     }
 
     /// Returns 0 for both +0. and -0.
-    [[nodiscard]] int sign() const
+    int sign() const
     {
         if (exponent() == 0 && mantissa() == 0)
             return 0;
         return isNegative() ? -1 : 1;
     }
 
-    [[nodiscard]] uint16_t exponent() const
+    uint16_t exponent() const
     {
         return (x_uint >> Traits::mantissa_bits) & ((1ull << Traits::exponent_bits) - 1);
     }
 
-    [[nodiscard]] int16_t normalizedExponent() const
+    int16_t normalizedExponent() const
     {
-        return int16_t(int32_t(exponent()) - int32_t((1u << (Traits::exponent_bits - 1)) - 1));
+        return int16_t(exponent()) - ((1ull << (Traits::exponent_bits - 1)) - 1);
     }
 
-    [[nodiscard]] uint64_t mantissa() const
+    uint64_t mantissa() const
     {
         return x_uint & ((1ull << Traits::mantissa_bits) - 1);
     }
 
-    [[nodiscard]] int64_t mantissaWithSign() const
+    int64_t mantissaWithSign() const
     {
         return isNegative() ? -mantissa() : mantissa();
     }
 
     /// NOTE Probably floating point instructions can be better.
-    [[nodiscard]] bool isIntegerInRepresentableRange() const
+    bool isIntegerInRepresentableRange() const
     {
         return x_uint == 0
             || (normalizedExponent() >= 0  /// The number is not less than one
@@ -112,12 +112,12 @@ struct DecomposedFloat
                 && ((mantissa() & ((1ULL << (Traits::mantissa_bits - normalizedExponent())) - 1)) == 0));
     }
 
-    [[nodiscard]] bool isFinite() const
+    bool isFinite() const
     {
         return exponent() != ((1ull << Traits::exponent_bits) - 1);
     }
 
-    [[nodiscard]] bool isNaN() const
+    bool isNaN() const
     {
         return !isFinite() && (mantissa() != 0);
     }
@@ -128,7 +128,7 @@ struct DecomposedFloat
     /// (note that we need total order)
     /// Returns -1, 0 or 1.
     template <typename Int>
-    [[nodiscard]] int compare(Int rhs) const
+    int compare(Int rhs) const
     {
         if (rhs == 0)
             return sign();
@@ -214,7 +214,7 @@ struct DecomposedFloat
 
 
     template <typename Int>
-    [[nodiscard]] bool equals(Int rhs) const
+    bool equals(Int rhs) const
     {
         return compare(rhs) == 0;
     }
@@ -226,13 +226,13 @@ struct DecomposedFloat
     }
 
     template <typename Int>
-    [[nodiscard]] bool less(Int rhs) const
+    bool less(Int rhs) const
     {
         return compare(rhs) < 0;
     }
 
     template <typename Int>
-    [[nodiscard]] bool greater(Int rhs) const
+    bool greater(Int rhs) const
     {
         return compare(rhs) > 0;
     }

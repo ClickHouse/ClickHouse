@@ -11,7 +11,7 @@ import NetworkPricing from '/snippets/pt-BR/_network_transfer_rates.mdx';
 
 O ClickHouse Cloud mede os dados transferidos de entrada e saída.
 Isso inclui todos os dados que entram e saem do ClickHouse Cloud, bem como toda transferência de dados intra-região
-e cross-region. Esse uso é rastreado no nível do serviço. Com base
+e entre regiões. Esse uso é rastreado no nível do serviço. Com base
 nesse uso, os clientes incorrem em cobranças por transferência de dados, que são então adicionadas à sua
 fatura mensal.
 
@@ -32,14 +32,6 @@ As cobranças por transferência de dados variam por Cloud Service Provider (CSP
 A precificação de saída para a internet pública baseia-se apenas na região de origem.
 A precificação entre regiões (ou cross-region) depende tanto das regiões de origem quanto de destino.
 
-## Managed Postgres {#managed-postgres}
-
-A saída de dados do ClickHouse Managed Postgres para a internet pública e cross-region é cobrada pelas tarifas descritas nesta página. A transferência de dados é classificada pelo IP de destino com base nos intervalos de endereços IP publicados pelo provedor de nuvem. O tráfego para um destino cujo IP não esteja nos intervalos publicados da sua região é contabilizado como saída para a internet pública, mesmo quando esse destino está hospedado no mesmo provedor de nuvem — por exemplo, um par que usa seu próprio bloco de IPs (BYOIP). Se você se conectar a um par desse tipo, entre em contato com o [suporte](https://clickhouse.com/support/program) para que possamos revisar a classificação.
-
-A capacidade computacional do [ClickPipes](/pt-BR/products/managed-postgres/clickpipes) é gratuita quando usada para replicar dados do Managed Postgres para o ClickHouse Cloud. A saída do Managed Postgres para o ClickPipes é contabilizada como qualquer outra transferência de dados: não há cobrança quando ambos estão na mesma região; a replicação cross-region é cobrada de acordo com o tier entre regiões aplicável, e a replicação para um serviço do ClickHouse Cloud em outro provedor de nuvem, pela tarifa da internet pública.
-
-Para reduzir os custos de transferência de dados, sempre que possível, mantenha sua aplicação e o Managed Postgres na mesma região do mesmo provedor de nuvem.
-
 **Práticas recomendadas para minimizar os custos de transferência de dados**
 
 Há alguns padrões a ter em mente ao transferir dados para dentro e para fora
@@ -56,7 +48,7 @@ a fim de minimizar os custos de transferência de dados.
    embutir os dados com a sintaxe `VALUES` ou usar o protocolo HTTP.
 
 As tabelas abaixo mostram como as cobranças por transferência de dados de saída variam na
-internet pública ou cross-region, por provedor de nuvem e região.
+internet pública ou entre regiões, por provedor de nuvem e região.
 
 <Note>
   O ClickHouse Cloud mede o uso entre regiões em termos de tiers, do Tier 1 ao

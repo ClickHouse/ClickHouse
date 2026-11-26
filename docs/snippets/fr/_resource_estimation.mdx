@@ -2,7 +2,7 @@
 title: Estimation des ressources
 ---
 
-Ce qui suit propose un modèle pour estimer les ressources de calcul et de stockage nécessaires à un déploiement d’observability en fonction du volume d’ingestion prévu. Les valeurs obtenues sont **uniquement des estimations** et doivent servir de **référence initiale** - elles ne constituent pas une recommandation prescriptive. Les besoins réels dépendent de la complexité des requêtes, de la concurrence, des politiques de rétention et des variations du débit d’ingestion. Surveillez toujours l’utilisation des ressources et adaptez le dimensionnement selon les besoins.
+Ce qui suit propose un modèle pour estimer les ressources de calcul et de stockage nécessaires à un déploiement ClickStack en fonction du volume d’ingestion prévu. Les valeurs obtenues sont **uniquement des estimations** et doivent servir de **référence initiale** - elles ne constituent pas une recommandation prescriptive. Les besoins réels dépendent de la complexité des requêtes, de la concurrence, des politiques de rétention et des variations du débit d’ingestion. Surveillez toujours l’utilisation des ressources et adaptez le dimensionnement selon les besoins.
 
 <Warning>
   **Tous les chiffres sont basés sur l’ingestion brute non compressée**
@@ -12,7 +12,7 @@ Ce qui suit propose un modèle pour estimer les ressources de calcul et de stock
   C’est ce volume que vous devez estimer à partir de vos pipelines existants de logs, de traces et de métriques. Les chiffres de stockage du tableau ci-dessous intègrent déjà le **taux de compression de 10x** supposé appliqué à ce volume brut.
 </Warning>
 
-Provisionnez les ressources de calcul pour couvrir deux charges de travail indépendantes : **ingestion** et **requêtes**.
+Lors du déploiement de ClickStack, provisionnez les ressources de calcul pour couvrir deux charges de travail indépendantes : **ingestion** et **requêtes**.
 
 | Charge de travail | Ressources estimées                                         |
 | ----------------- | ----------------------------------------------------------- |
@@ -32,7 +32,7 @@ Provisionnez les ressources de calcul pour couvrir deux charges de travail indé
   * Bien que les ressources de calcul des requêtes puissent être dimensionnées indépendamment de celles de l’ingestion, elles restent intrinsèquement liées au volume d’ingestion. Nous partons du principe qu’à mesure que l’ingestion augmente, la densité des données croît, ce qui entraîne des volumes analysés plus importants au moment des requêtes et, par conséquent, des besoins plus élevés en ressources de calcul pour les requêtes.
 </Accordion>
 
-Le tableau suivant présente des exemples de dimensionnement basés sur un débit d’ingestion croissant en mégaoctets par seconde, ainsi que les volumes de données correspondants en téraoctets par mois. Il suppose une moyenne soutenue de **1 QPS** sur l’ensemble des types de requêtes (recherche, tableaux de bord, alertes).
+Le tableau suivant présente des exemples de dimensionnement basés sur un débit d’ingestion croissant en mégaoctets par seconde, ainsi que les volumes de données correspondants en téraoctets par mois. Il suppose une moyenne soutenue de **1 QPS** depuis ClickStack sur l’ensemble des types de requêtes (recherche, tableaux de bord, alertes).
 
 | MB/s | TB/mois | CPU d’ingestion | CPU de requête | CPU totaux | Stockage total (par mois) (GB) |
 | ---: | ------: | --------------: | -------------: | ---------: | -----------------------------: |

@@ -6,17 +6,19 @@ tags: ['Export de données']
 keywords: ['Export de données', 'INTO OUTFILE', 'Moteur de table File']
 ---
 
-## Utiliser la clause INTO OUTFILE {#using-into-outfile-clause}
+<div id="using-into-outfile-clause">
+  ## Utiliser la clause INTO OUTFILE
+</div>
 
 Ajoutez la clause [INTO OUTFILE](/fr/reference/statements/select/into-outfile) à votre requête.
 
-Par exemple :
+Par exemple :
 
 ```sql
 SELECT * FROM table INTO OUTFILE 'file'
 ```
 
-Par défaut, ClickHouse utilise l’extension du nom de fichier pour déterminer le format de sortie et la compression. Par exemple, toutes les lignes de `nyc_taxi` seront exportées dans `nyc_taxi.parquet` au format Parquet :
+Par défaut, ClickHouse utilise l’extension du nom de fichier pour déterminer le format de sortie et la compression. Par exemple, toutes les lignes de `nyc_taxi` seront exportées dans `nyc_taxi.parquet` au format Parquet :
 
 ```sql
 SELECT *
@@ -24,7 +26,7 @@ FROM nyc_taxi
 INTO OUTFILE 'taxi_rides.parquet'
 ```
 
-Et le fichier suivant sera un fichier compressé, avec des champs séparés par des tabulations :
+Et le fichier suivant sera un fichier compressé, avec des champs séparés par des tabulations :
 
 ```sql
 SELECT *
@@ -34,7 +36,7 @@ INTO OUTFILE 'taxi_rides.tsv.gz'
 
 Si ClickHouse ne peut pas déterminer le format à partir de l’extension du fichier, le format de sortie par défaut des données est [TabSeparated](/fr/reference/formats/index). Pour spécifier le [format de sortie](/fr/reference/formats/index), utilisez la [clause FORMAT](/fr/reference/statements/select/format).
 
-Par exemple :
+Par exemple :
 
 ```sql
 SELECT *
@@ -43,7 +45,9 @@ INTO OUTFILE 'taxi_rides.txt'
 FORMAT CSV
 ```
 
-## Utiliser le moteur de table File {#using-a-file-engine-table}
+<div id="using-a-file-engine-table">
+  ## Utiliser le moteur de table File
+</div>
 
 Une autre option consiste à utiliser le moteur de table [File](/fr/reference/engines/table-engines/special/file), qui permet à ClickHouse d&#39;utiliser un fichier pour stocker les données. Vous pouvez effectuer des requêtes et des insertions directement sur le fichier.
 
@@ -73,10 +77,12 @@ Le fichier est stocké dans le dossier `data` de votre serveur ClickHouse, plus 
   L’utilisation du moteur de table `File` est particulièrement pratique pour créer des fichiers sur votre système de fichiers et les interroger, mais gardez à l’esprit que les tables `File` ne sont pas des tables `MergeTree` : vous ne bénéficiez donc pas de tous les avantages de `MergeTree`. Utilisez `File` par souci de simplicité lorsque vous exportez des données depuis ClickHouse dans des formats pratiques.
 </Note>
 
-## Utilisation de la redirection en ligne de commande {#using-command-line-redirection}
+<div id="using-command-line-redirection">
+  ## Utilisation de la redirection en ligne de commande
+</div>
 
 ```bash
 $ clickhouse-client --query "SELECT * from table" --format FormatName > result.txt
 ```
 
-Voir [clickhouse-client](/fr/concepts/features/interfaces/client).
+Voir [clickhouse-client](/fr/concepts/features/interfaces/cli).

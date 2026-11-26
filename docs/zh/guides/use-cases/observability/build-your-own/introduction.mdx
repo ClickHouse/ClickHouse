@@ -7,17 +7,17 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-## 介绍 {#introduction}
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+<div id="introduction">
+  ## 介绍
+</div>
 
 如果你希望使用 ClickHouse 构建基于 SQL 的自建可观测性解决方案，并重点关注日志和链路追踪，那么本指南就是为你准备的。它涵盖了构建此类解决方案的各个方面，包括摄取方面的考量、根据你的访问模式优化 schema，以及从非结构化日志中提取结构。
 
 仅凭 ClickHouse 本身并不能构成开箱即用的可观测性解决方案。不过，它可以作为可观测性数据的高效存储引擎，具备无与伦比的压缩率和极快的查询响应速度。要在可观测性解决方案中使用 ClickHouse，还需要配备用户界面和数据采集框架。我们目前建议使用 **Grafana** 来可视化可观测性信号，并使用 **OpenTelemetry** 进行数据采集 (两者都是官方支持的集成) 。
 
-<div className="ch-image-md">
-  <Frame>
-    ![简单 OTel](/images/use-cases/observability/observability-1.webp)
-  </Frame>
-</div>
+<Image img="/images/use-cases/observability/observability-1.webp" alt="简单 OTel" size="md" />
 
 <br />
 
@@ -28,7 +28,7 @@ doc_type: 'guide'
 </Info>
 
 <div id="why-use-clickhouse">
-  ## 为什么使用 ClickHouse？ {#why-use-clickhouse}
+  ## 为什么使用 ClickHouse？
 </div>
 
 对于任何集中式可观测性存储而言，最重要的能力都是能够快速聚合、分析并搜索来自不同来源的海量日志数据。这种集中化能够简化故障排查，更容易定位服务中断的根本原因。
@@ -48,7 +48,7 @@ doc_type: 'guide'
 * **开源与开放标准** - 作为开源数据库，ClickHouse 拥抱 OpenTelemetry 等开放标准。既可以参与贡献并积极投身相关项目，也能避免供应商锁定带来的挑战，这一点颇具吸引力。
 
 <div id="when-should-you-use-clickhouse-for-observability">
-  ## 何时应使用 ClickHouse 做可观测性 {#when-should-you-use-clickhouse-for-observability}
+  ## 何时应使用 ClickHouse 做可观测性
 </div>
 
 将 ClickHouse 用于可观测性数据，意味着用户需要接受基于 SQL 的可观测性。想了解基于 SQL 的可观测性的发展历程，我们推荐阅读[这篇博文](https://clickhouse.com/blog/the-state-of-sql-based-observability)；不过简而言之：
@@ -71,7 +71,7 @@ doc_type: 'guide'
 * 你更愿意等待生态系统进一步成熟，以及基于 SQL 的可观测性变得更加开箱即用。
 
 <div id="logs-and-traces">
-  ## 日志和链路追踪 {#logs-and-traces}
+  ## 日志和链路追踪
 </div>
 
 可观测性有三大支柱：日志、链路追踪和指标。它们各自对应不同的数据类型和访问方式。
@@ -93,7 +93,9 @@ doc_type: 'guide'
   虽然 ClickHouse 可用于存储指标数据，但这一支柱在 ClickHouse 中的成熟度相对较低，对 Prometheus 数据格式和 PromQL 等功能的支持仍在完善中。
 </Info>
 
-### 分布式链路追踪 {#distributed-tracing}
+<div id="distributed-tracing">
+  ### 分布式链路追踪
+</div>
 
 分布式链路追踪是可观测性的关键能力之一。分布式 trace (通常简称为 trace) 用于描述一个请求在系统中的完整流转路径。请求通常来自终端用户或应用程序，并在系统中逐步扩散，通常体现为微服务之间一系列操作的传递。通过记录这一序列并将后续事件关联起来，即使架构十分复杂，或采用了无服务器架构，也能帮助可观测性用户或 SRE 诊断应用流程中的问题。
 
@@ -101,10 +103,6 @@ doc_type: 'guide'
 
 大多数可观测性厂商会将这些信息以瀑布图的形式可视化，并用按比例显示的水平条展示相对时序。例如，在 Grafana 中：
 
-<div className="ch-image-lg">
-  <Frame>
-    ![示例 trace](/images/use-cases/observability/observability-2.webp)
-  </Frame>
-</div>
+<Image img="/images/use-cases/observability/observability-2.webp" alt="示例 trace" size="lg" border />
 
 对于希望深入了解日志和链路追踪相关概念的用户，我们强烈推荐阅读 [OpenTelemetry 文档](https://opentelemetry.io/docs/concepts/).

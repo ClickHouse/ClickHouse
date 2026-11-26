@@ -2,35 +2,15 @@
 slug: /use-cases/observability/clickstack/faq
 title: 'ClickStack よくある質問'
 sidebarTitle: 'よくある質問'
-description: 'ClickStack Open Source、ClickHouse Observability、HyperDX、アラート、ダッシュボード、メトリクス検出に関するよくある質問。'
+description: 'ClickStack のアラート、ダッシュボード、ドリルダウン、メトリクス検出に関するよくある質問。'
 doc_type: 'guide'
 keywords: ['ClickStack', 'よくある質問', 'アラート', 'ダッシュボード', 'ドリルダウン', 'メトリクス検出']
 ---
 
-このページでは、ClickStack Open Source に関するよくある質問のうち、ClickHouse Observability や HyperDX との関係、オブザーバビリティ機能についての質問にお答えします。
-
-## ClickStack と ClickHouse Observability {#clickstack-and-clickhouse-observability}
-
-<Accordion title="ClickStack Open Source と ClickHouse Observability の違いは何ですか？">
-  [ClickStack Open Source](/ja/clickstack/overview) は、ユーザー自身がデプロイおよび運用するオブザーバビリティスタックで、ClickHouse、ClickStack UI、OpenTelemetry collector で構成されます。
-
-  ClickHouse Observability は、ClickStack のエクスペリエンスを ClickHouse Cloud 上で提供するものです。データベースと UI は ClickHouse がホストします。[完全マネージド型 ClickHouse Observability](/ja/clickstack/observability/overview) では、インジェスト用の collector とスキーマも ClickHouse が管理します。一方、[セルフマネージド ClickHouse Observability](/ja/clickstack/self-configured/overview) では、インジェストとスキーマをユーザー自身で管理します。
-</Accordion>
-
-<Accordion title="セルフマネージド ClickHouse Observability は ClickStack Open Source と同じものですか？">
-  いいえ。[セルフマネージド ClickHouse Observability](/ja/clickstack/self-configured/overview) は ClickHouse Cloud 上で動作し、ClickHouse と UI は ClickHouse Cloud がホストします。インジェストパイプライン、スキーマ、データベースの設定はユーザーが管理します。
-
-  ClickStack Open Source では、スタックをユーザー自身で運用します。ClickHouse はセルフホストすることも、ClickHouse Cloud に接続して利用することもできます。詳しくは[デプロイオプション](/ja/clickstack/deployment/oss)を参照してください。
-</Accordion>
-
-<Accordion title="HyperDX はどうなりましたか？">
-  HyperDX は ClickStack の UI コンポーネントとなり、ログ、トレース、メトリクス、セッションリプレイを検索・探索するためのインターフェイスを提供しています。本ドキュメントでは、これを **ClickStack UI** と呼びます。
-
-  UI は引き続き[オープンソース](https://github.com/hyperdxio/hyperdx)として公開されています。リポジトリ名や設定項目には、現在も HyperDX という名前が残っている場合があります。
-</Accordion>
+このページでは、アラート、ダッシュボードとドリルダウン、メトリクス検出など、ClickStack の機能に関するよくある質問にお答えします。
 
 <div id="alerting">
-  ## アラート {#alerting}
+  ## アラート
 </div>
 
 <Accordion title="ClickStack ではどの種類のアラートをサポートしていますか？">
@@ -39,7 +19,7 @@ keywords: ['ClickStack', 'よくある質問', 'アラート', 'ダッシュボ�
   * [検索アラート](/ja/clickstack/features/alerts#search-alerts): 一定時間内に一致したログまたはトレースの件数がしきい値を上回る、または下回ると通知を送信します。
   * [ダッシュボードチャートアラート](/ja/clickstack/features/alerts#dashboard-alerts): ダッシュボードタイルにプロットされたメトリクスが定義したしきい値を超えると通知を送信します。
 
-  どちらのアラートタイプも、デフォルトでは静的なしきい値条件を使用します。ClickHouse Observability では、代わりに[異常検知](/ja/clickstack/features/anomaly-detection)を使用でき、値が想定される範囲から外れたときにアラートが発報されます。詳細については、[アラート](/ja/clickstack/features/alerts) を参照してください。
+  どちらのアラートタイプも、静的なしきい値条件を使用します。詳細については、[アラート](/ja/clickstack/features/alerts) を参照してください。
 </Accordion>
 
 <Accordion title="比率、p95/p99、複数メトリクスの数式など、複雑なメトリクス条件に対してアラートを設定できますか？">
@@ -49,20 +29,23 @@ keywords: ['ClickStack', 'よくある質問', 'アラート', 'ダッシュボ�
 
   * メトリクス向けのカスタム SQL クエリに対するアラート。
   * 複数条件または複数メトリクスのアラートルールを 1 つのアラートにまとめること。
+  * 動的なアラート条件や異常検知ベースのアラート条件 (異常検知は今後対応予定です)。
 
-  複雑なメトリクスに対してアラートを設定する必要がある場合は、まず可視化をダッシュボードチャートとして作成し、そのチャートにしきい値アラートを追加する方法を推奨します。ClickHouse Observability では、代わりに[異常検知アラート](/ja/clickstack/features/anomaly-detection)をチャートに追加できます。この場合、固定のしきい値を超えたときではなく、値が想定される範囲から外れたときにアラートが発報されます。
+  複雑なメトリクスに対してアラートを設定する必要がある場合は、まず可視化をダッシュボードチャートとして作成し、そのチャートにしきい値アラートを追加する方法を推奨します。
 </Accordion>
 
 <Accordion title="アラート用途で materialized view を使用できますか？">
-  materialized view は、該当する場合、ClickStack のアラートで自動的に使用されます。ただし、現時点では OpenTelemetry のメトリクスデータソースで materialized view はサポートされていません。メトリクスについては、ClickStack はデフォルトの [ClickHouse OpenTelemetry metrics schema](/ja/clickstack/ingesting-data/schemas) で最も適切に動作します。materialized view の詳細については、[materialized view](/ja/clickstack/managing/materialized-views) を参照してください。
+  materialized view は、該当する場合、ClickStack のアラートで自動的に使用されます。ただし、現時点では OpenTelemetry のメトリクスデータソースで materialized view はサポートされていません。メトリクスについては、ClickStack はデフォルトの [ClickHouse OpenTelemetry metrics schema](/ja/clickstack/ingesting-data/schemas) で最も適切に動作します。materialized view の詳細については、[Materialized views](/ja/clickstack/managing/materialized-views) を参照してください。
 </Accordion>
 
 <div id="dashboards-and-drill-downs">
-  ## ダッシュボードとドリルダウン {#dashboards-and-drill-downs}
+  ## ダッシュボードとドリルダウン
 </div>
 
 <Accordion title="ClickStack はパラメータ化されたダッシュボードやダッシュボード変数をサポートしていますか？">
-  はい。ClickStack は、ClickHouse からクエリしたデータで値が設定される、カスタムフィルターおよび変数によってパラメータ化されたダッシュボードをサポートしています。これらのフィルターを使うと、ダッシュボード上の一部またはすべてのタイルを特定の値 (たとえば、サービス名、環境、ホスト) に動的に絞り込めます。
+  ClickStack は、ClickHouse からクエリしたデータで値が設定される、ダッシュボード上のカスタムドロップダウンフィルターをサポートしています。これらのフィルターを使うと、ダッシュボード上のすべてのタイルを特定の値 (たとえば、サービス名、環境、ホスト) に動的に絞り込めます。
+
+  ClickStack は現在、Grafana のテンプレート変数のような再利用可能なダッシュボード変数には対応していません。ClickStack はデータソースとして ClickHouse のみを使用するため、変数の抽象化レイヤーを用意しなくても、ドリルダウンやフィルタリングの機能をネイティブに提供できます。
 
   ダッシュボードの作成方法やフィルターの適用方法について詳しくは、[ダッシュボード](/ja/clickstack/features/dashboards/overview) を参照してください。
 </Accordion>
@@ -81,7 +64,9 @@ keywords: ['ClickStack', 'よくある質問', 'アラート', 'ダッシュボ�
   </Note>
 </Accordion>
 
-## メトリクス検出 {#metrics-discovery}
+<div id="metrics-discovery">
+  ## メトリクス検出
+</div>
 
 <Accordion title="メトリクスを閲覧・検索するためのUIはありますか？">
   ![メトリクス属性エクスプローラー](/images/clickstack/faq/metrics-explorer.webp)
@@ -95,7 +80,9 @@ keywords: ['ClickStack', 'よくある質問', 'アラート', 'ダッシュボ�
   いいえ。現時点では SQL クエリを使ってメトリクスを検出できますが、これは長期的に想定されている方法ではありません。より優れたメトリクス検出ツールの開発が積極的に進められています。
 </Accordion>
 
-## 参考資料 {#further-reading}
+<div id="further-reading">
+  ## 参考資料
+</div>
 
 * [アラート](/ja/clickstack/features/alerts): 検索アラート、ダッシュボードチャートアラート、webhook インテグレーション。
 * [ダッシュボード](/ja/clickstack/features/dashboards/overview): 可視化の作成、ダッシュボードの構築、フィルターの適用。

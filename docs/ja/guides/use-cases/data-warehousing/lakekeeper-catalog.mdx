@@ -9,9 +9,9 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
+import { ExperimentalBadge } from "/snippets/ja/components/ExperimentalBadge/ExperimentalBadge.jsx";
 
-<BetaBadge />
+<ExperimentalBadge />
 
 <Note>
   Lakekeeper カタログとのインテグレーションは、Iceberg テーブルでのみ利用できます。
@@ -27,22 +27,26 @@ Lakekeeper は、Apache Iceberg 向けのオープンソースの REST カタロ
 * S3-compatible ストレージと連携する **Cloud ストレージ** インテグレーション
 
 <Note>
-  この機能はベータ版です。次のコマンドで有効にしてください。
-  `SET allow_database_iceberg = 1;`
-
-  この機能が実験的機能だった 25.8 より前のバージョンでは、代わりに `SET allow_experimental_database_iceberg = 1;` を使用してください。
+  この機能は実験段階のため、次を使用して有効にする必要があります。
+  `SET allow_experimental_database_iceberg = 1;`
 </Note>
 
-## ローカル開発環境のセットアップ {#local-development-setup}
+<div id="local-development-setup">
+  ## ローカル開発環境のセットアップ
+</div>
 
 ローカルでの開発やテストには、コンテナー化された Lakekeeper 構成を使用できます。この方法は、学習、プロトタイピング、開発環境に適しています。
 
-### 前提条件 {#local-prerequisites}
+<div id="local-prerequisites">
+  ### 前提条件
+</div>
 
 1. **Docker と Docker Compose**: Docker がインストールされ、起動していることを確認してください
 2. **サンプルセットアップ**: Lakekeeper の docker-compose セットアップを使用できます
 
-### ローカルの Lakekeeper カタログをセットアップする {#setting-up-local-lakekeeper-catalog}
+<div id="setting-up-local-lakekeeper-catalog">
+  ### ローカルの Lakekeeper カタログをセットアップする
+</div>
 
 Lakekeeper、PostgreSQL のメタデータバックエンド、オブジェクトストレージ用の MinIO を含む一式の環境が用意されている、公式の [Lakekeeper docker-compose setup](https://github.com/lakekeeper/lakekeeper/tree/main/examples/minimal) を利用できます。
 
@@ -230,7 +234,9 @@ docker-compose logs -f
   Lakekeeper のセットアップでは、まず Iceberg テーブルにサンプルデータを読み込んでおく必要があります。ClickHouse 経由でそれらにクエリを実行する前に、環境側でテーブルが作成され、データが投入されていることを確認してください。利用可能なテーブルは、使用している docker-compose の構成とサンプルデータ読み込みスクリプトによって異なります。
 </Note>
 
-### ローカルの Lakekeeper カタログに接続する {#connecting-to-local-lakekeeper-catalog}
+<div id="connecting-to-local-lakekeeper-catalog">
+  ### ローカルの Lakekeeper カタログに接続する
+</div>
 
 ClickHouse コンテナーに接続します。
 
@@ -241,14 +247,16 @@ docker exec -it lakekeeper-clickhouse clickhouse-client
 次に、Lakekeeper カタログへのデータベース接続を作成します。
 
 ```sql
-SET allow_database_iceberg = 1;
+SET allow_experimental_database_iceberg = 1;
 
 CREATE DATABASE demo
 ENGINE = DataLakeCatalog('http://lakekeeper:8181/catalog', 'minio', 'ClickHouse_Minio_P@ssw0rd')
 SETTINGS catalog_type = 'rest', storage_endpoint = 'http://minio:9002/warehouse-rest', warehouse = 'demo'
 ```
 
-## ClickHouse を使用して Lakekeeper カタログのテーブルをクエリする {#querying-lakekeeper-catalog-tables-using-clickhouse}
+<div id="querying-lakekeeper-catalog-tables-using-clickhouse">
+  ## ClickHouse を使用して Lakekeeper カタログのテーブルをクエリする
+</div>
 
 接続の設定が完了したので、Lakekeeper カタログ経由でクエリを実行できます。たとえば、次のとおりです。
 
@@ -332,7 +340,9 @@ SHOW CREATE TABLE `default.taxis`;
 └───────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## データレイクから ClickHouse にデータを読み込む {#loading-data-from-your-data-lake-into-clickhouse}
+<div id="loading-data-from-your-data-lake-into-clickhouse">
+  ## データレイクから ClickHouse にデータを読み込む
+</div>
 
 Lakekeeper カタログから ClickHouse にデータを読み込む必要がある場合は、まずローカルの ClickHouse テーブルを作成します。
 

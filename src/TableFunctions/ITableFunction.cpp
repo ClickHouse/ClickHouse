@@ -1,9 +1,5 @@
 #include <Access/ContextAccess.h>
-#include <Analyzer/FunctionNode.h>
-#include <Analyzer/IdentifierNode.h>
-#include <Analyzer/TableFunctionNode.h>
 #include <TableFunctions/ITableFunction.h>
-#include <Storages/StorageAlias.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageTableFunction.h>
 #include <Access/Common/AccessFlags.h>
@@ -11,7 +7,6 @@
 #include <Common/StringUtils.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Interpreters/Context.h>
-#include <Poco/URI.h>
 
 #include <algorithm>
 
@@ -21,14 +16,13 @@ namespace ProfileEvents
     extern const Event TableFunctionExecute;
 }
 
-namespace DB
-{
-
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
-    extern const int ACCESS_DENIED;
+    extern const int LOGICAL_ERROR;;
 }
+
+namespace DB
+{
 
 const char * ITableFunction::getNonClusteredStorageEngineName() const
 {
@@ -50,13 +44,8 @@ void ITableFunction::checkSourceAccess(ContextPtr context, bool is_insert_query)
         if (is_insert_query)
             type_to_check = AccessType::WRITE;
 
-        checkSourceAccessForURI(context, type_to_check, *access_object, String(getFunctionURI()));
+        checkSourceAccessForURI(context, type_to_check, *access_object, getFunctionURI());
     }
-}
-
-void ITableFunction::checkSourceTableAccess(const ContextPtr & context, const StorageID & table_id, AccessType access_type) const
-{
-    context->checkAccess(access_type, table_id);
 }
 
 void ITableFunction::checkCreateTemporaryTableAccess(ContextPtr context, bool is_insert_query) const
@@ -66,29 +55,14 @@ void ITableFunction::checkCreateTemporaryTableAccess(ContextPtr context, bool is
         context->checkAccess(AccessType::CREATE_TEMPORARY_TABLE);
 }
 
-void ITableFunction::checkSourceStorageAccess(
-    const ContextPtr & context, const StoragePtr & storage, const StorageID & table_id, AccessType access_type) const
-{
-    if (const auto * alias = storage ? storage->as<StorageAlias>() : nullptr;
-        alias && !alias->isTargetTableGranted(context, access_type, {}))
-        throw Exception(
-            ErrorCodes::ACCESS_DENIED, "Not enough privileges to access the table that {} points to", table_id.getNameForLogs());
-}
-
 void ITableFunction::checkEngineAccess(ContextPtr context) const
 {
     if (!requiresTableEngineGrant())
         return;
 
-    if (const String engine = getEngineNameForAccessCheck(); !engine.empty())
-        context->checkAccess(AccessType::TABLE_ENGINE, engine);
-}
-
-String ITableFunction::getEngineNameForAccessCheck() const
-{
-    /// A cluster function is checked as its non-clustered engine. It is empty when the function has no engine.
     const char * engine = isClusterFunction() ? getNonClusteredStorageEngineName() : getStorageEngineName();
-    return engine ? engine : "";
+    if (engine && *engine)
+        context->checkAccess(AccessType::TABLE_ENGINE, engine);
 }
 
 ColumnsDescription ITableFunction::getActualTableStructureWithAccess(ContextPtr context, bool is_insert_query) const
@@ -96,7 +70,6 @@ ColumnsDescription ITableFunction::getActualTableStructureWithAccess(ContextPtr 
     /// Resolving table structure is always a read operation.
     checkSourceAccess(context, /*is_insert_query*/ false);
     checkEngineAccess(context);
-    checkSourceObjectAccess(context, /*for_structure=*/ true);
     /// Resolving the structure may access the source (e.g. schema inference fetches a URL), so it must be
     /// gated in the same way as `execute`: otherwise `DESCRIBE TABLE url(...)` would let a user who cannot
     /// run the table function (e.g. under `readonly = 1`) make the server request an endpoint.
@@ -112,61 +85,29 @@ StoragePtr ITableFunction::execute(const ASTPtr & ast_function, ContextPtr conte
     if (check_source_access)
         checkSourceAccess(context, is_insert_query);
 
-    /// Deliberately not under `check_source_access`: no caller takes over these checks.
+    /// Deliberately not under `check_source_access`: no caller takes over the engine check.
     checkEngineAccess(context);
-    checkSourceObjectAccess(context, /*for_structure=*/ false);
 
     if (check_create_temporary_table)
         checkCreateTemporaryTableAccess(context, is_insert_query);
 
     auto context_to_use = use_global_context ? context->getGlobalContext() : context;
 
-    StoragePtr storage;
-    if (!isTableDefinition(cached_columns))
-    {
-        storage = executeImpl(ast_function, context, table_name, std::move(cached_columns), is_insert_query);
-    }
-    else if (hasStaticStructure() && cached_columns == getActualTableStructure(context, is_insert_query))
-    {
-        storage = executeImpl(ast_function, context_to_use, table_name, std::move(cached_columns), is_insert_query);
-    }
-    else
-    {
-        auto this_table_function = shared_from_this();
-        auto get_storage = [=]() -> StoragePtr
-        {
-            return this_table_function->executeImpl(ast_function, context_to_use, table_name, cached_columns, is_insert_query);
-        };
+    if (cached_columns.empty())
+        return executeImpl(ast_function, context, table_name, std::move(cached_columns), is_insert_query);
 
-        /// It will request actual table structure and create underlying storage lazily
-        storage = std::make_shared<StorageTableFunctionProxy>(StorageID(getDatabaseName(), table_name), std::move(get_storage),
-                                                              std::move(cached_columns), needStructureConversion(),
-                                                              hasUnreplicatedTableDataOnDisk());
-    }
+    if (hasStaticStructure() && cached_columns == getActualTableStructure(context, is_insert_query))
+        return executeImpl(ast_function, context_to_use, table_name, std::move(cached_columns), is_insert_query);
 
-    /// The source access check covered only the URI as typed, but a write can go to a destination computed at write time:
-    /// each partition of `PARTITION BY`, or a key renamed by `s3_create_new_file_on_insert`. The storage checks those.
-    /// Without `check_source_access`, the caller does the checks, e.g. `url('s3://...')` for its delegate.
-    /// `INSERT` passes no cached columns, so the check is never set on a lazy `StorageTableFunctionProxy`, which would not pass it on.
-    /// Without a URI, only an unfiltered grant passed the source access check, and it allows every destination.
-    ///
-    /// A table created with `CREATE TABLE ... AS s3(...)` stays after the query and survives restarts (it uses the global context),
-    /// and is the same as one created with `ENGINE = S3`: users insert into it with `INSERT` on the table, not with source grants.
-    /// Its creator needed `TABLE ENGINE ON S3` instead, so the check is not set on it.
-    if (is_insert_query && check_source_access && !use_global_context)
+    auto this_table_function = shared_from_this();
+    auto get_storage = [=]() -> StoragePtr
     {
-        const auto access_object = getSourceAccessObject();
-        if (access_object && !getFunctionURI().empty())
-        {
-            /// The same check as for the typed URI, so that a destination is refused whenever typing it would be.
-            storage->setPartitionedWriteAccessCheck(
-                [source = *access_object](const ContextPtr & write_context, const String & uri)
-                { checkSourceAccessForURI(write_context, AccessType::WRITE, source, uri); },
-                IStorage::PartitionedWriteAccessKey{});
-        }
-    }
+        return this_table_function->executeImpl(ast_function, context_to_use, table_name, cached_columns, is_insert_query);
+    };
 
-    return storage;
+    /// It will request actual table structure and create underlying storage lazily
+    return std::make_shared<StorageTableFunctionProxy>(StorageID(getDatabaseName(), table_name), std::move(get_storage),
+                                                       std::move(cached_columns), needStructureConversion());
 }
 
 String ITableFunction::normalizeURIForAccessCheck(const String & uri)
@@ -284,8 +225,7 @@ std::pair<String, String> getSourceAccessSubjects(AccessTypeObjects::Source sour
         if (hasDotSegment(path) || path.contains("//"))
             return {};
         /// `url` expands `{}` and splits `|` failover across the whole URI, but the subject escapes them only in the path.
-        if ((decoded.getScheme() + decoded.getAuthority()).find_first_of("{}|") != String::npos
-            || decoded.getRawQuery().find_first_of("{}|") != std::string_view::npos)
+        if ((decoded.getScheme() + decoded.getAuthority() + decoded.getRawQuery()).find_first_of("{}|") != String::npos)
             return {};
         if (source == AccessTypeObjects::Source::S3)
         {
@@ -326,32 +266,6 @@ void ITableFunction::checkSourceAccessForURI(
     if (subject != escaped_subject && !access->isGrantedWithFilter(flags, source_name, escaped_subject))
         subject.clear();
     access->checkAccessWithFilter(flags, source_name, subject);
-}
-
-void ITableFunction::appendNamedArgumentIndexes(
-    const QueryTreeNodePtr & query_node_table_function, VectorWithMemoryTracking<size_t> & result, const Strings & wrapper_names)
-{
-    const auto & arguments = query_node_table_function->as<TableFunctionNode &>().getArguments().getNodes();
-    auto is_wrapper = [&](const FunctionNode * function_node)
-    { return function_node && std::ranges::find(wrapper_names, function_node->getFunctionName()) != wrapper_names.end(); };
-
-    for (size_t i = 0; i < arguments.size(); ++i)
-        if (is_wrapper(arguments[i]->as<FunctionNode>()))
-            result.push_back(i);
-
-    for (size_t i = arguments.size(); i > 0;)
-    {
-        --i;
-        const auto * function_node = arguments[i]->as<FunctionNode>();
-        if (!function_node)
-            break;
-        if (is_wrapper(function_node))
-            continue;
-        const auto & function_arguments = function_node->getArguments().getNodes();
-        if (function_node->getFunctionName() != "equals" || function_arguments.size() != 2 || !function_arguments[0]->as<IdentifierNode>())
-            break;
-        result.push_back(i);
-    }
 }
 
 }

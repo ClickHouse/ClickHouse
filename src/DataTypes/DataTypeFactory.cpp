@@ -16,7 +16,6 @@
 #include <Core/Defines.h>
 #include <Core/Settings.h>
 #include <Common/CurrentThread.h>
-#include <Common/MemoryTrackerBlockerInThread.h>
 #include <Interpreters/Context.h>
 
 
@@ -290,7 +289,7 @@ DataTypePtr DataTypeFactory::getCustom(const String & base_name, DataTypeCustomD
 void DataTypeFactory::registerDataType(const String & family_name, Value creator, Case case_sensitiveness, Documentation documentation)
 {
     if (creator == nullptr)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "DataTypeFactory: the data type family {} has been provided a null constructor", family_name);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "DataTypeFactory: the data type family {} has been provided  a null constructor", family_name);
 
     String family_name_lowercase = Poco::toLower(family_name);
 
@@ -311,7 +310,7 @@ void DataTypeFactory::registerDataType(const String & family_name, Value creator
 void DataTypeFactory::registerSimpleDataType(const String & name, SimpleCreator creator, Case case_sensitiveness, Documentation documentation)
 {
     if (creator == nullptr)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "DataTypeFactory: the data type {} has been provided a null constructor",
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "DataTypeFactory: the data type {} has been provided  a null constructor",
             name);
 
     registerDataType(name, [name, creator](const ASTPtr & ast)
@@ -382,9 +381,6 @@ const DataTypeFactory::Value * DataTypeFactory::findCreatorByName(const String &
 
 DataTypeFactory::DataTypeFactory()
 {
-    /// Lives as long as the process, not the query that first needs a data type.
-    MemoryTrackerBlockerInThread not_charged_to_the_query;
-
     registerDataTypeNumbers(*this);
     registerDataTypeDecimal(*this);
     registerDataTypeDate(*this);

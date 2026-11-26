@@ -7,12 +7,16 @@ keywords: ['facturation', 'seuils de paiement', 'facturation automatique', 'fact
 doc_type: 'guide'
 ---
 
-## Seuils de paiement {#threshholds}
+import { Image } from "/snippets/fr/components/Image.jsx";
 
-Si vous êtes un client en paiement à l’usage et que le montant dû pour une période de facturation sur ClickHouse Cloud atteint 1 000 USD, ou sa contre-valeur, le mode de paiement configuré pour votre organisation sera automatiquement débité.
+<div id="threshholds">
+  ## Seuils de paiement
+</div>
+
+Si vous êtes un client en paiement à l’usage et que le montant dû pour une période de facturation sur ClickHouse Cloud atteint 1 000 USD, ou sa contre-valeur, le mode de paiement configuré pour votre organisation sera automatiquement débité.
 
 <Tip>
-  Après le premier paiement de facture effectué avec succès, le seuil passe à 5 000 USD. Après un deuxième paiement de facture effectué avec succès, le seuil passe à 10 000 USD. Si vous souhaitez ajuster le montant de votre seuil de paiement, [contactez l’assistance](mailto:support@clickhouse.com).
+  Après le premier paiement de facture effectué avec succès, le seuil passe à 5 000 USD. Après un deuxième paiement de facture effectué avec succès, le seuil passe à 10 000 USD. Si vous souhaitez ajuster le montant de votre seuil de paiement, [contactez l’assistance](mailto:support@clickhouse.com).
 </Tip>
 
 En cas d’échec du prélèvement, vos services seront suspendus après un délai de grâce de 14 jours.
@@ -21,24 +25,16 @@ Si vous recevez plusieurs factures au cours d’une même période de facturatio
 Si votre paiement automatique a échoué, cela peut être dû à un problème avec la carte bancaire configurée, au fait que vous n’avez pas mis en place d’e-mandate sur votre carte bancaire, ou au fait que votre carte bancaire n’est pas conforme au cadre défini par la Reserve Bank of India (RBI) pour le traitement des e-mandates liés aux transactions récurrentes en ligne.
 Si vos cartes bancaires ne sont pas conformes aux exigences de la RBI, vous devez ajouter un nouveau mode de paiement conforme à la RBI ou continuer à effectuer des paiements manuels jusqu’à ce que vous puissiez mettre en place l’e-mandate sur votre carte.
 
-Dans l’exemple ci-dessous, l’UI de facturation dans la Cloud Console est affichée :
+Dans l’exemple ci-dessous, l’UI de facturation dans la Cloud Console est affichée :
 
-<div className="ch-image-sm">
-  <Frame>
-    ![Où trouver la facturation dans l’UI](/images/cloud/reference/billing_payment_threshhold.webp)
-  </Frame>
-</div>
+<Image img="/images/cloud/reference/billing_payment_threshhold.webp" size="sm" alt="Où trouver la facturation dans l’UI" />
 
-<div className="ch-image-lg">
-  <Frame>
-    ![Facture](/images/cloud/reference/billing_payment_threshhold_2.webp)
-  </Frame>
-</div>
+<Image img="/images/cloud/reference/billing_payment_threshhold_2.webp" size="lg" alt="Facture" />
 
-Comme vous pouvez le voir dans l’exemple ci-dessus, une facture de seuil a été envoyée pendant la période de facturation du 28 février au 31 mars, puis une autre facture a été envoyée au cours de cette même période pour l’utilisation restante au-delà de 1 000 USD.
+Comme vous pouvez le voir dans l’exemple ci-dessus, une facture de seuil a été envoyée pendant la période de facturation du 28 février au 31 mars, puis une autre facture a été envoyée au cours de cette même période pour l’utilisation restante au-delà de 1 000 USD.
 
 <div id="threshholds-notifications">
-  ## Notifications de seuil de paiement {#threshholds-notifications}
+  ## Notifications de seuil de paiement
 </div>
 
 Si votre organisation atteint 90 % du seuil de paiement et est en passe de le dépasser avant la fin de la période, l’adresse e-mail du contact de facturation associée à l’organisation recevra une notification par e-mail.

@@ -14,7 +14,9 @@ import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/Exp
 
 提供用于访问存储在 Amazon S3、Azure、HDFS 或本地的 Apache [Paimon](https://paimon.apache.org/) 表的只读类表接口。
 
-## 语法 {#syntax}
+<div id="syntax">
+  ## 语法
+</div>
 
 ```sql
 paimon(url [,access_key_id, secret_access_key] [,format] [,structure] [,compression] [,extra_credentials])
@@ -28,38 +30,24 @@ paimonHDFS(path_to_table, [,format] [,compression_method])
 paimonLocal(path_to_table, [,format] [,compression_method])
 ```
 
-## 参数 {#arguments}
+<div id="arguments">
+  ## 参数
+</div>
 
 这些参数的说明分别与表函数 `s3`、`azureBlobStorage`、`HDFS` 和 `file` 中对应参数的说明一致。
 `format` 表示 Paimon 表中数据文件的格式。
 
 对于 `paimonS3`，可使用可选参数 `extra_credentials` 传递 `role_arn`，以便在 ClickHouse Cloud 中实现基于角色的访问。有关配置步骤，请参见 [安全访问 S3](/zh/products/cloud/guides/data-sources/accessing-s3-data-securely)。
 
-### 返回值 {#returned-value}
+<div id="returned-value">
+  ### 返回值
+</div>
 
 一个具有指定结构的表，用于读取指定 Paimon 表中的数据。
 
-## 限制 {#limitations}
-
-尚未实现读取时合并，因此只有当 Paimon 本身无需合并即可读取主键表时，才能读取该表：仅当某个桶的所有数据文件都位于 level 0 以上、已知不含撤回行且处于同一级别时，才会读取该桶。启用
-`deletion-vectors.enabled` 或设置 `'merge-engine' = 'first-row'` 时，这些文件可以分布在多个级别；此外，除非将
-`batch-scan-mode` 设置为 `none` 以外的模式，否则 level-0 文件在合并整理完成之前不会被读取，这一点与 Paimon 的行为相同。
-读取其他任何桶都会抛出异常；在 Paimon 中执行一次完整合并整理 (`compact_strategy => 'full'`) 即可使其可读。
-
-目前不会应用删除向量，因此**无法读取包含删除向量的快照**：否则查询结果中仍会
-包含已被后续 `DELETE` 和 `UPDATE` 语句删除的行。因此，如果快照的索引清单中列出了
-删除向量，读取该快照会抛出异常，即使已关闭 `deletion-vectors.enabled` 也是如此。
-在 Paimon 中执行一次完整合并整理 (`compact_strategy => 'full'`) 会应用这些删除向量，此后创建的快照
-即可重新读取。
-
-每个数据文件都按其写入时的 schema 读取，其顶层列通过
-Paimon 字段 id 与当前 schema 匹配，因此对于已重命名的列，以及删除后又以相同名称重新添加的列，读取结果与 Spark 一致。
-
-`ROW` 列内部的字段按名称 (而非 Paimon 字段 id) 与数据文件匹配，因此**如果数据文件写入时间早于 `ROW` 内某个字段被重命名，或早于该字段被删除后又添加了另一个同名字段 (名称比较不区分大小写) ，则无法读取该数据文件**：否则结果中被重命名的字段将为 `NULL`，而重新添加的字段将包含已删除字段的值。因此，读取此类数据文件会抛出异常。添加和删除字段均受支持。
-在 Paimon 中使用当前 schema 重写该表 (例如执行 `INSERT OVERWRITE <table> SELECT * FROM <table>`) 后，
-此后创建的快照即可读取。
-
-## 定义命名集合 {#defining-a-named-collection}
+<div id="defining-a-named-collection">
+  ## 定义命名集合
+</div>
 
 下面是一个用于存储 URL 和凭据的命名集合配置示例：
 
@@ -82,11 +70,15 @@ SELECT * FROM paimonS3(paimon_conf, filename = 'test_table')
 DESCRIBE paimonS3(paimon_conf, filename = 'test_table')
 ```
 
-## 别名 {#aliases}
+<div id="aliases">
+  ## 别名
+</div>
 
 表函数 `paimon` 现为 `paimonS3` 的别名。
 
-## 虚拟列 {#virtual-columns}
+<div id="virtual-columns">
+  ## 虚拟列
+</div>
 
 * `_path` — 文件路径。类型：`LowCardinality(String)`。
 * `_file` — 文件名。类型：`LowCardinality(String)`。
@@ -94,11 +86,13 @@ DESCRIBE paimonS3(paimon_conf, filename = 'test_table')
 * `_time` — 文件的最后修改时间。类型：`Nullable(DateTime)`。如果时间未知，则值为 `NULL`。
 * `_etag` — 文件的 ETag。类型：`LowCardinality(String)`。如果 ETag 未知，则值为 `NULL`。
 
-## 支持的数据类型 {#data-types-supported}
+<div id="data-types-supported">
+  ## 支持的数据类型
+</div>
 
 | Paimon 数据类型                       | ClickHouse 数据类型           |
 | --------------------------------- | ------------------------- |
-| BOOLEAN                           | Bool                      |
+| BOOLEAN                           | Int8                      |
 | TINYINT                           | Int8                      |
 | SMALLINT                          | Int16                     |
 | INTEGER                           | Int32                     |
@@ -106,7 +100,7 @@ DESCRIBE paimonS3(paimon_conf, filename = 'test_table')
 | FLOAT                             | Float32                   |
 | DOUBLE                            | Float64                   |
 | STRING,VARCHAR,BYTES,VARBINARY    | String                    |
-| DATE                              | Date32                    |
+| DATE                              | Date                      |
 | TIME(p),TIME                      | Time(&#39;UTC&#39;)       |
 | TIMESTAMP(p) WITH LOCAL TIME ZONE | DateTime64                |
 | TIMESTAMP(p)                      | DateTime64(&#39;UTC&#39;) |
@@ -115,9 +109,10 @@ DESCRIBE paimonS3(paimon_conf, filename = 'test_table')
 | DECIMAL(P,S)                      | Decimal(P,S)              |
 | ARRAY                             | Array                     |
 | MAP                               | Map                       |
-| ROW                               | Tuple                     |
 
-## 支持的分区键 {#partition-supported}
+<div id="partition-supported">
+  ## 支持的分区键
+</div>
 
 Paimon 分区键支持的数据类型：
 
@@ -136,7 +131,9 @@ Paimon 分区键支持的数据类型：
 * `FLOAT`
 * `DOUBLE`
 
-## 另见 {#see-also}
+<div id="see-also">
+  ## 另见
+</div>
 
 * [Paimon cluster 表函数](/zh/reference/functions/table-functions/paimonCluster)
 

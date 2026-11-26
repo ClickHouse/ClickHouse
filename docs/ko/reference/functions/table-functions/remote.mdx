@@ -13,7 +13,9 @@ doc_type: 'reference'
 
 대상이 일반 `db`/`table`인 경우 두 함수 모두 `SELECT` 및 `INSERT` 쿼리에서 사용할 수 있습니다. 대상 자체가 테이블 함수인 경우(예: `remote('127.0.0.1', numbers(10))`) 해당 테이블은 읽기 전용입니다. 원격으로 삽입할 테이블이 없으므로 `INSERT`는 `NOT_IMPLEMENTED` 예외와 함께 거부됩니다.
 
-## 구문 {#syntax}
+<div id="syntax">
+  ## 구문
+</div>
 
 ```sql
 remote(addresses_expr, [db, table, user [, password], sharding_key][, SETTINGS name = value, ...])
@@ -24,12 +26,14 @@ remoteSecure(addresses_expr, [db.table, user [, password], sharding_key][, SETTI
 remoteSecure(named_collection[, option=value [,..]][, SETTINGS name = value, ...])
 ```
 
-## 매개변수 {#parameters}
+<div id="parameters">
+  ## 매개변수
+</div>
 
 | 인수                           | 설명                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `addresses_expr`             | 원격 서버 주소 또는 여러 원격 서버 주소를 생성하는 표현식입니다. 형식: `host` 또는 `host:port`.<br /><br />    `host`는 서버 이름이나 IPv4 또는 IPv6 주소로 지정할 수 있습니다. IPv6 주소는 `[]`로 지정해야 합니다.<br /><br />    `port`는 원격 서버의 TCP 포트입니다. 포트를 생략하면 테이블 함수 `remote`에는 서버 구성 파일의 [tcp&#95;port](/ko/reference/settings/server-settings/settings/tcp-port#tcp_port)(기본값 9000)를 사용하고, 테이블 함수 `remoteSecure`에는 [tcp&#95;port&#95;secure](/ko/reference/settings/server-settings/settings/tcp-port#tcp_port_secure)(기본값 9440)를 사용합니다.<br /><br />    IPv6 주소에는 포트 지정이 필요합니다.<br /><br />    `addresses_expr` 매개변수만 지정하면 `db`와 `table`에는 기본적으로 `system.one`이 사용됩니다.<br /><br />    유형: [String](/ko/reference/data-types/string). |
-| `db`                         | 데이터베이스 이름입니다. 유형: [String](/ko/reference/data-types/string).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `db`                         | DB 이름입니다. 유형: [String](/ko/reference/data-types/string).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | `table`                      | 테이블 이름입니다. 유형: [String](/ko/reference/data-types/string).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | `user`                       | 사용자 이름입니다. 지정하지 않으면 `default`가 사용됩니다. 유형: [String](/ko/reference/data-types/string).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | `password`                   | 사용자 비밀번호입니다. 지정하지 않으면 빈 비밀번호가 사용됩니다. 유형: [String](/ko/reference/data-types/string).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
@@ -38,11 +42,15 @@ remoteSecure(named_collection[, option=value [,..]][, SETTINGS name = value, ...
 
 인수는 [이름이 지정된 컬렉션](/ko/concepts/features/configuration/server-config/named-collections)을 사용해 전달할 수도 있습니다.
 
-## 반환 값 {#returned-value}
+<div id="returned-value">
+  ## 반환 값
+</div>
 
 원격 서버에 있는 테이블입니다.
 
-## 사용법 {#usage}
+<div id="usage">
+  ## 사용법
+</div>
 
 테이블 함수 `remote` 및 `remoteSecure`는 각 요청마다 연결을 다시 설정하므로, 대신 `분산` 테이블을 사용하는 것이 좋습니다. 또한 호스트명이 설정되어 있으면 이름 확인(name resolution)이 수행되며, 여러 레플리카로 작업할 때 발생하는 오류는 집계되지 않습니다. 많은 수의 쿼리를 처리할 때는 항상 `분산` 테이블을 미리 생성하고, `remote` 테이블 함수는 사용하지 마십시오.
 
@@ -56,7 +64,9 @@ remoteSecure(named_collection[, option=value [,..]][, SETTINGS name = value, ...
 
 동일한 매개변수를 `Remote` 및 `RemoteSecure` 테이블 엔진과 함께 사용하면 임시 테이블이 아닌 영속 테이블을 생성할 수 있습니다. 자세한 내용은 [Remote 및 RemoteSecure 엔진](/ko/reference/engines/table-engines/special/distributed#distributed-remote-engines)을 참조하십시오. 유일한 차이점은 `SETTINGS` 절입니다. 엔진에서는 이를 인수 사이가 아니라 엔진 정의 뒤에 지정합니다. `ENGINE = Remote(...) SETTINGS skip_unavailable_shards = 1`
 
-### 주소 {#addresses}
+<div id="addresses">
+  ### 주소
+</div>
 
 ```text
 example01-01-1
@@ -75,9 +85,13 @@ localhost
 example01-01-1,example01-02-1
 ```
 
-## 예시 {#examples}
+<div id="examples">
+  ## 예시
+</div>
 
-### 원격 서버에서 데이터 조회: {#selecting-data-from-a-remote-server}
+<div id="selecting-data-from-a-remote-server">
+  ### 원격 서버에서 데이터 조회:
+</div>
 
 ```sql
 SELECT * FROM remote('127.0.0.1', db.remote_engine_table) LIMIT 3;
@@ -92,7 +106,9 @@ CREATE NAMED COLLECTION creds AS
 SELECT * FROM remote(creds, table='remote_engine_table') LIMIT 3;
 ```
 
-### 원격 서버의 테이블에 데이터 삽입: {#inserting-data-into-a-table-on-a-remote-server}
+<div id="inserting-data-into-a-table-on-a-remote-server">
+  ### 원격 서버의 테이블에 데이터 삽입:
+</div>
 
 ```sql
 CREATE TABLE remote_table (name String, value UInt32) ENGINE=Memory;
@@ -100,13 +116,17 @@ INSERT INTO FUNCTION remote('127.0.0.1', currentDatabase(), 'remote_table') VALU
 SELECT * FROM remote_table;
 ```
 
-### 한 시스템에서 다른 시스템으로 테이블 이전: {#migration-of-tables-from-one-system-to-another}
+<div id="migration-of-tables-from-one-system-to-another">
+  ### 한 시스템에서 다른 시스템으로 테이블 이전:
+</div>
 
 이 예시에서는 샘플 데이터셋의 테이블 1개를 사용합니다. 데이터베이스는 `imdb`이고 테이블은 `actors`입니다.
 
-#### 소스 ClickHouse 시스템(현재 데이터가 저장된 시스템)에서 {#on-the-source-clickhouse-system-the-system-that-currently-hosts-the-data}
+<div id="on-the-source-clickhouse-system-the-system-that-currently-hosts-the-data">
+  #### 원본 ClickHouse 시스템(현재 데이터가 저장된 시스템)에서
+</div>
 
-* 소스 데이터베이스와 테이블 이름(`imdb.actors`)을 확인합니다.
+* 원본 데이터베이스와 테이블 이름(`imdb.actors`)을 확인합니다.
 
   ```sql
   show databases
@@ -116,7 +136,7 @@ SELECT * FROM remote_table;
   show tables in imdb
   ```
 
-* 소스 시스템에서 CREATE TABLE 문을 가져옵니다.
+* 원본 시스템에서 CREATE TABLE 문을 가져옵니다.
 
 ```sql
   SELECT create_table_query
@@ -127,15 +147,17 @@ SELECT * FROM remote_table;
 응답
 
 ```sql
-CREATE TABLE imdb.actors (`id` UInt32,
-                          `first_name` String,
-                          `last_name` String,
-                          `gender` FixedString(1))
-                ENGINE = MergeTree
-                ORDER BY (id, first_name, last_name, gender);
+  CREATE TABLE imdb.actors (`id` UInt32,
+                            `first_name` String,
+                            `last_name` String,
+                            `gender` FixedString(1))
+                  ENGINE = MergeTree
+                  ORDER BY (id, first_name, last_name, gender);
 ```
 
-#### 대상 ClickHouse 시스템에서 {#on-the-destination-clickhouse-system}
+<div id="on-the-destination-clickhouse-system">
+  #### 대상 ClickHouse 시스템에서
+</div>
 
 * 대상 DB를 생성합니다:
 
@@ -154,7 +176,9 @@ CREATE TABLE imdb.actors (`id` UInt32,
                   ORDER BY (id, first_name, last_name, gender);
   ```
 
-#### 소스 배포로 돌아가기 {#back-on-the-source-deployment}
+<div id="back-on-the-source-deployment">
+  #### 소스 배포로 돌아가기
+</div>
 
 원격 시스템에서 생성한 새 데이터베이스와 테이블에 데이터를 삽입합니다. 호스트, 포트, 사용자 이름, 비밀번호, 대상 데이터베이스, 대상 테이블이 필요합니다.
 
@@ -164,7 +188,9 @@ remoteSecure('remote.clickhouse.cloud:9440', 'imdb.actors', 'USER', 'PASSWORD')
 SELECT * from imdb.actors
 ```
 
-## 글로빙 {#globs-in-addresses}
+<div id="globs-in-addresses">
+  ## 글로빙
+</div>
 
 `{ }` 안의 패턴은 세그먼트 집합을 생성하고 레플리카를 지정하는 데 사용됩니다. `{ }` 쌍이 여러 개 있으면 해당 집합들의 데카르트 곱이 생성됩니다.
 

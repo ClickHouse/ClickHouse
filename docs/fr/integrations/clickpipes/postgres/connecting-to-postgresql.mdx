@@ -19,7 +19,9 @@ Cette page présente les options suivantes pour intégrer PostgreSQL à ClickHou
   Découvrez notre service [ClickHouse Managed Postgres](/fr/products/managed-postgres/overview). Reposant sur un stockage NVMe physiquement colocalisé avec la capacité de calcul, il offre des performances jusqu’à 10 fois supérieures pour les workloads limités par les E/S disque par rapport aux alternatives utilisant du stockage réseau comme EBS, et vous permet de répliquer vos données Postgres vers ClickHouse à l’aide du connecteur Postgres CDC dans ClickPipes.
 </Tip>
 
-## Utilisation du moteur de table PostgreSQL {#using-the-postgresql-table-engine}
+<div id="using-the-postgresql-table-engine">
+  ## Utilisation du moteur de table PostgreSQL
+</div>
 
 Le moteur de table `PostgreSQL` permet d&#39;effectuer des opérations **SELECT** et **INSERT** sur des données stockées sur un serveur PostgreSQL distant depuis ClickHouse.
 Cet article illustre les méthodes de base pour l&#39;intégration à l&#39;aide d&#39;une seule table.
@@ -203,7 +205,9 @@ Cet article illustre les méthodes de base pour l&#39;intégration à l&#39;aide
   </Step>
 </Steps>
 
-## Utilisation du moteur de base de données MaterializedPostgreSQL {#using-the-materializedpostgresql-database-engine}
+<div id="using-the-materializedpostgresql-database-engine">
+  ## Utilisation du moteur de base de données MaterializedPostgreSQL
+</div>
 
 <CloudNotSupportedBadge />
 
@@ -216,9 +220,9 @@ Cet article illustre les méthodes d’intégration de base à l’aide d’une 
 
 <Steps>
   <Step title="Dans PostgreSQL" id="1-in-postgresql">
-    1. Dans `postgresql.conf`, définissez les niveaux d’écoute minimaux, le `wal level` de réplication et les slots de réplication :
+    1. Dans `postgresql.conf`, définissez les niveaux d’écoute minimaux, le `wal level` de réplication et les slots de réplication :
 
-    ajoutez les entrées suivantes :
+    ajoutez les entrées suivantes :
 
     ```text
     listen_addresses = '*'
@@ -228,7 +232,7 @@ Cet article illustre les méthodes d’intégration de base à l’aide d’une 
 
     **ClickHouse nécessite au minimum un `wal level` défini sur `logical` et `2` slots de réplication*
 
-    2. À l’aide d’un compte administrateur, créez un utilisateur pour la connexion depuis ClickHouse :
+    2. À l’aide d’un compte administrateur, créez un utilisateur pour la connexion depuis ClickHouse :
 
     ```sql
     CREATE ROLE clickhouse_user SUPERUSER LOGIN PASSWORD 'ClickHouse_123';
@@ -236,19 +240,19 @@ Cet article illustre les méthodes d’intégration de base à l’aide d’une 
 
     **à des fins de démonstration, des privilèges complets de superutilisateur ont été accordés.*
 
-    3. créer une nouvelle base de données :
+    3. créer une nouvelle base de données :
 
     ```sql
     CREATE DATABASE db1;
     ```
 
-    4. connectez-vous à la nouvelle base de données avec `psql` :
+    4. connectez-vous à la nouvelle base de données avec `psql` :
 
     ```text
     \connect db1
     ```
 
-    5. créez une nouvelle table :
+    5. créez une nouvelle table :
 
     ```sql
     CREATE TABLE table1 (
@@ -257,7 +261,7 @@ Cet article illustre les méthodes d’intégration de base à l’aide d’une 
     );
     ```
 
-    6. insérez les lignes initiales :
+    6. insérez les lignes initiales :
 
     ```sql
     INSERT INTO table1
@@ -267,7 +271,7 @@ Cet article illustre les méthodes d’intégration de base à l’aide d’une 
     (2, 'def');
     ```
 
-    7. Configurez PostgreSQL pour autoriser le nouvel utilisateur de réplication à se connecter à la nouvelle base de données. Vous trouverez ci-dessous l’entrée minimale à ajouter au fichier `pg_hba.conf` :
+    7. Configurez PostgreSQL pour autoriser le nouvel utilisateur de réplication à se connecter à la nouvelle base de données. Vous trouverez ci-dessous l’entrée minimale à ajouter au fichier `pg_hba.conf` :
 
     ```text
     # TYPE  DATABASE        USER            ADDRESS                 METHOD
@@ -276,13 +280,13 @@ Cet article illustre les méthodes d’intégration de base à l’aide d’une 
 
     **à des fins de démonstration, cette méthode d’authentification par mot de passe en clair est utilisée. mettez à jour la ligne d’adresse avec le sous-réseau ou l’adresse du serveur, conformément à la documentation PostgreSQL*
 
-    8. rechargez la configuration `pg_hba.conf` avec une commande comme celle-ci (à adapter selon votre version) :
+    8. rechargez la configuration `pg_hba.conf` avec une commande comme celle-ci (à adapter selon votre version) :
 
     ```text
     /usr/pgsql-12/bin/pg_ctl reload
     ```
 
-    9. Testez la connexion avec le nouvel utilisateur `clickhouse_user` :
+    9. Testez la connexion avec le nouvel utilisateur `clickhouse_user` :
 
     ```text
      psql -U clickhouse_user -W -d db1 -h <your_postgresql_host>
@@ -296,13 +300,13 @@ Cet article illustre les méthodes d’intégration de base à l’aide d’une 
     clickhouse-client --user default --password ClickHouse123!
     ```
 
-    2. Activez la fonctionnalité expérimentale PostgreSQL du moteur de base de données :
+    2. Activez la fonctionnalité expérimentale PostgreSQL du moteur de base de données :
 
     ```sql
-    SET enable_database_materialized_postgresql=1
+    SET allow_experimental_database_materialized_postgresql=1
     ```
 
-    3. Créez la nouvelle base de données qui sera répliquée et définissez la table initiale :
+    3. Créez la nouvelle base de données qui sera répliquée et définissez la table initiale :
 
     ```sql
     CREATE DATABASE db1_postgres
@@ -310,7 +314,7 @@ Cet article illustre les méthodes d’intégration de base à l’aide d’une 
     SETTINGS materialized_postgresql_tables_list = 'table1';
     ```
 
-    options minimales :
+    options minimales :
 
     | parameter | Description                                    | example                                                            |
     | --------- | ---------------------------------------------- | ------------------------------------------------------------------ |
@@ -324,7 +328,7 @@ Cet article illustre les méthodes d’intégration de base à l’aide d’une 
       Pour un guide complet sur le moteur de base de données PostgreSQL, consultez https://clickhouse.com/docs/engines/database-engines/materialized-postgresql/#settings
     </Info>
 
-    4. Vérifiez que la table initiale contient des données :
+    4. Vérifiez que la table initiale contient des données :
 
     ```sql
     ch_env_2 :) select * from db1_postgres.table1;
@@ -346,7 +350,7 @@ Cet article illustre les méthodes d’intégration de base à l’aide d’une 
   </Step>
 
   <Step title="Tester la réplication de base" id="3-test-basic-replication">
-    1. Dans PostgreSQL, insérez de nouvelles lignes :
+    1. Dans PostgreSQL, insérez de nouvelles lignes :
 
     ```sql
     INSERT INTO table1
@@ -356,7 +360,7 @@ Cet article illustre les méthodes d’intégration de base à l’aide d’une 
     (4, 'jkl');
     ```
 
-    2. Dans ClickHouse, vérifiez que les nouvelles lignes sont bien visibles :
+    2. Dans ClickHouse, vérifiez que les nouvelles lignes sont bien visibles :
 
     ```sql
     ch_env_2 :) select * from db1_postgres.table1;

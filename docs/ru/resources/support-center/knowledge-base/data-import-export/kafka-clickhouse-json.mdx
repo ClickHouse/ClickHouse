@@ -5,12 +5,16 @@ date: 2024-11-06
 tags: ['Форматы данных', 'Ингестия данных']
 ---
 
-## Kafka и тип данных JSON {#kafka-and-the-json-data-type}
+<div id="kafka-and-the-json-data-type">
+  ## Kafka и тип данных JSON
+</div>
 
 С появлением нового типа данных [`JSON`](/ru/reference/data-types/newjson) ClickHouse стал отличным выбором для [анализа JSON-данных](https://clickhouse.com/engineering-resources/json-database).
 В этом руководстве мы разберём, как загружать JSON-сообщения из Apache Kafka напрямую в один столбец `JSON` в ClickHouse.
 
-## Настройка Kafka {#setup-kafka}
+<div id="setup-kafka">
+  ## Настройка Kafka
+</div>
 
 Давайте начнем с запуска брокера Kafka на нашей машине. Мы также пробросим порт 9092 на порт 9092 хостовой операционной системы, чтобы упростить взаимодействие с Kafka:
 
@@ -18,7 +22,9 @@ tags: ['Форматы данных', 'Ингестия данных']
 docker run --name broker -p 9092:9092 apache/kafka:3.8.1
 ```
 
-## Приём данных в Kafka {#ingest-data-into-kafka}
+<div id="ingest-data-into-kafka">
+  ## Приём данных в Kafka
+</div>
 
 После этого нужно выполнить приём данных.
 Лента недавних изменений Wikimedia — хороший источник потоковых данных, поэтому выполним приём в топик `wiki_events`:
@@ -43,13 +49,16 @@ kcat -C -b localhost:9092  -t wiki_events
 
 Пока всё хорошо.
 
-## Приём данных в ClickHouse {#ingest-data-into-clickhouse}
+<div id="ingest-data-into-clickhouse">
+  ## Приём данных в ClickHouse
+</div>
 
 Далее настроим приём данных в ClickHouse.
+Сначала включим тип JSON (который пока является экспериментальным), задав следующий параметр:
 
-<Note>
-  В версиях с 24.8 по 25.2 перед созданием приведённых ниже таблиц включите тип `JSON` командой `SET allow_experimental_json_type = 1;`.
-</Note>
+```sql
+SET allow_experimental_json_type = 1;
+```
 
 Теперь создадим таблицу `wiki_queue` на [движке таблицы `Kafka`](/ru/integrations/connectors/data-ingestion/kafka/kafka-table-engine).
 
@@ -89,7 +98,9 @@ SELECT json
 FROM wiki_queue;
 ```
 
-## Выполнение запросов к JSON-данным в ClickHouse {#querying-json-data-in-clickhouse}
+<div id="querying-json-data-in-clickhouse">
+  ## Выполнение запросов к JSON-данным в ClickHouse
+</div>
 
 Затем мы можем выполнять запросы к таблице `wiki`.
 Например, можно подсчитать количество ботов, которые внесли изменения:

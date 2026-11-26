@@ -3,7 +3,7 @@ title: 'Autres approches pour le JSON'
 slug: /integrations/data-formats/json/other-approaches
 description: 'Autres approches de modélisation du JSON'
 keywords: ['json', 'formats']
-doc_type: 'reference'
+doc_type: 'référence'
 ---
 
 **Voici d’autres approches de modélisation du JSON dans ClickHouse. Elles sont documentées par souci d’exhaustivité, car elles étaient pertinentes avant l’apparition du type JSON ; elles ne sont donc généralement ni recommandées ni adaptées à la plupart des cas d’utilisation.**
@@ -14,13 +14,15 @@ doc_type: 'reference'
   Il est possible d’appliquer différentes techniques à différents objets au sein d’un même schéma. Par exemple, certains objets se prêtent mieux au type `String`, tandis que d’autres sont mieux adaptés au type `Map`. Notez qu’une fois le type `String` choisi, aucune autre décision de schéma n’est nécessaire. À l’inverse, il est possible d’imbriquer des sous-objets dans une clé `Map` — y compris un `String` représentant du JSON — comme nous le montrons ci-dessous :
 </Info>
 
-## Utilisation du type String {#using-string}
+<div id="using-string">
+  ## Utilisation du type String
+</div>
 
 Si les objets sont très dynamiques, sans structure prévisible, et contiennent des objets imbriqués arbitraires, vous devez utiliser le type `String`. Les valeurs peuvent être extraites à l’exécution de la requête à l’aide de fonctions JSON, comme nous le montrons ci-dessous.
 
 Traiter les données à l’aide de l’approche structurée décrite ci-dessus n’est souvent pas envisageable pour les utilisateurs qui manipulent du JSON dynamique, soit susceptible d’évoluer, soit dont le schéma est mal défini. Pour une flexibilité totale, vous pouvez simplement stocker le JSON sous forme de `String`, puis utiliser des fonctions pour extraire les champs selon les besoins. Cela représente l’exact opposé du traitement du JSON comme objet structuré. Cette flexibilité a toutefois un coût, avec des inconvénients importants — principalement une syntaxe de requête plus complexe ainsi que des performances moindres.
 
-Comme indiqué précédemment, pour l’[objet person d’origine](/fr/guides/clickhouse/data-formats/json/schema#static-vs-dynamic-json), nous ne pouvons pas garantir la structure de la colonne `tags`. Nous insérons la ligne d’origine (y compris `company.labels`, que nous ignorons pour l’instant), en déclarant la colonne `Tags` en `String` :
+Comme indiqué précédemment, pour l’[objet person d’origine](/fr/guides/clickhouse/data-formats/json/schema#static-vs-dynamic-json), nous ne pouvons pas garantir la structure de la colonne `tags`. Nous insérons la ligne d’origine (y compris `company.labels`, que nous ignorons pour l’instant), en déclarant la colonne `Tags` en `String` :
 
 ```sql
 CREATE TABLE people
@@ -37,7 +39,7 @@ CREATE TABLE people
     `tags` String
 )
 ENGINE = MergeTree
-ORDER BY username;
+ORDER BY username
 
 INSERT INTO people FORMAT JSONEachRow
 {"id":1,"name":"Clicky McCliickHouse","username":"Clicky","email":"clicky@clickhouse.com","address":[{"street":"Victor Plains","suite":"Suite 879","city":"Wisokyburgh","zipcode":"90566-7771","geo":{"lat":-43.9509,"lng":-34.4618}}],"phone_numbers":["010-692-6593","020-192-3333"],"website":"clickhouse.com","company":{"name":"ClickHouse","catchPhrase":"The real-time data warehouse for analytics","labels":{"type":"database systems","founded":"2021"}},"dob":"2007-03-31","tags":{"hobby":"Databases","holidays":[{"year":2024,"location":"Azores, Portugal"}],"car":{"model":"Tesla","year":2023}}}
@@ -48,7 +50,7 @@ Ok.
 1 row in set. Elapsed: 0.002 sec.
 ```
 
-Nous pouvons sélectionner la colonne `tags` et constater que le JSON a été inséré comme une string :
+Nous pouvons sélectionner la colonne `tags` et constater que le JSON a été inséré comme une chaîne de caractères :
 
 ```sql
 SELECT tags
@@ -63,7 +65,7 @@ FROM people
 1 row in set. Elapsed: 0.001 sec.
 ```
 
-Les fonctions [`JSONExtract`](/fr/reference/functions/regular-functions/json-functions#jsonextract-functions) peuvent être utilisées pour extraire des valeurs de ce JSON. Prenons l&#39;exemple simple ci-dessous :
+Les fonctions [`JSONExtract`](/fr/reference/functions/regular-functions/json-functions#jsonextract-functions) peuvent être utilisées pour extraire des valeurs de ce JSON. Prenons l&#39;exemple simple ci-dessous :
 
 ```sql
 SELECT JSONExtractString(tags, 'holidays') AS holidays FROM people
@@ -88,11 +90,11 @@ CREATE TABLE arxiv (
 ENGINE = MergeTree ORDER BY ()
 ```
 
-Pour insérer des données dans ce schéma, nous devons utiliser le format `JSONAsString` :
+Pour insérer des données dans ce schéma, nous devons utiliser le format `JSONAsString` :
 
 ```sql
 INSERT INTO arxiv SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/arxiv/arxiv.json.gz', NOSIGN, 'JSONAsString')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/arxiv/arxiv.json.gz', 'JSONAsString')
 ```
 
 ```response
@@ -165,7 +167,9 @@ Les fonctions String sont nettement plus lentes (&gt; 10x) que les conversions d
 
 La flexibilité de cette approche a un coût évident en termes de performances et de syntaxe, et elle ne doit être utilisée que pour des objets très dynamiques dans le schéma.
 
-### Fonctions JSON simples {#simple-json-functions}
+<div id="simple-json-functions">
+  ### Fonctions JSON simples
+</div>
 
 Les exemples ci-dessus utilisent la famille de fonctions JSON*. Celles-ci s’appuient sur un parser JSON complet basé sur [simdjson](https://github.com/simdjson/simdjson), rigoureux dans son parsing et capable de distinguer un même champ imbriqué à différents niveaux. Ces fonctions peuvent traiter du JSON syntaxiquement correct mais mal formaté, par exemple avec des doubles espaces entre les clés.
 
@@ -578,7 +582,7 @@ Un exemple plus détaillé des données ci-dessus est disponible dans un bucket 
 
 ```sql
 SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/http/documents-01.ndjson.gz', NOSIGN, 'JSONEachRow')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/http/documents-01.ndjson.gz', 'JSONEachRow')
 LIMIT 1
 FORMAT PrettyJSONEachRow
 
@@ -606,7 +610,7 @@ L&#39;instruction suivante insère 10 millions de lignes ; son exécution peut 
 ```sql
 INSERT INTO http
 SELECT `@timestamp` AS `timestamp`, clientip, [request], status,
-size FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/http/documents-01.ndjson.gz', NOSIGN,
+size FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/http/documents-01.ndjson.gz',
 'JSONEachRow');
 ```
 
@@ -653,7 +657,7 @@ Pour insérer dans cette table, nous devons structurer le JSON sous la forme d�
 SELECT
     arrayMap(x -> (x.1), JSONExtractKeysAndValues(json, 'String')) AS keys,
     arrayMap(x -> (x.2), JSONExtractKeysAndValues(json, 'String')) AS values
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/http/documents-01.ndjson.gz', NOSIGN, 'JSONAsString')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/http/documents-01.ndjson.gz', 'JSONAsString')
 LIMIT 1
 FORMAT Vertical
 ```
@@ -674,7 +678,7 @@ INSERT INTO http_with_arrays
 SELECT
     arrayMap(x -> (x.1), JSONExtractKeysAndValues(json, 'String')) AS keys,
     arrayMap(x -> (x.2), JSONExtractKeysAndValues(json, 'String')) AS values
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/http/documents-01.ndjson.gz', NOSIGN, 'JSONAsString')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/http/documents-01.ndjson.gz', 'JSONAsString')
 ```
 
 ```response

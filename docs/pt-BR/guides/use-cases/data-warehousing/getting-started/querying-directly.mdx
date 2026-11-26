@@ -56,8 +56,8 @@ Os exemplos a seguir usam o conjunto de dados [hits](/pt-BR/get-started/sample-d
 
     ```response
     ┌─url────────────────────────────────────────────────┬─────cnt─┐
-    │ http://liver.ru/belgorod/page/1006.jки/доп_приборы │ 3288173 │ -- 3.29 million
-    │ http://kinopoisk.ru                                │ 1625250 │ -- 1.63 million
+    │ http://liver.ru/belgorod/page/1006.jки/доп_приборы │ 3288173 │ -- 3,29 milhões
+    │ http://kinopoisk.ru                                │ 1625250 │ -- 1,63 milhão
     │ http://bdsm_po_yers=0&with_video                   │  791465 │
     │ http://video.yandex                                │  582400 │
     │ http://smeshariki.ru/region                        │  514984 │
@@ -67,7 +67,7 @@ Os exemplos a seguir usam o conjunto de dados [hits](/pt-BR/get-started/sample-d
     Peak memory usage: 10.48 GiB.
     ```
 
-### Variante de cluster {#iceberg-cluster-variant}
+    ### Variante de cluster
 
     A função [`icebergS3Cluster`](/pt-BR/reference/functions/table-functions/icebergCluster) distribui leituras entre múltiplos nós em um cluster ClickHouse. O nó iniciador estabelece conexões com todos os nós e despacha os arquivos de dados dinamicamente. Cada nó worker solicita e processa tarefas até que todos os arquivos sejam lidos. `icebergCluster` é um alias para `icebergS3Cluster`. Também existem variantes para Azure ([`icebergAzureCluster`](/pt-BR/reference/functions/table-functions/icebergCluster)) e HDFS ([`icebergHDFSCluster`](/pt-BR/reference/functions/table-functions/icebergCluster)).
 
@@ -75,7 +75,7 @@ Os exemplos a seguir usam o conjunto de dados [hits](/pt-BR/get-started/sample-d
 
     ```sql
     icebergS3Cluster(cluster_name, url [, NOSIGN | access_key_id, secret_access_key, [session_token]] [,format] [,compression_method])
-    -- icebergCluster is an alias for icebergS3Cluster
+    -- icebergCluster é um alias para icebergS3Cluster
 
     icebergAzureCluster(cluster_name, connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
     ```
@@ -95,7 +95,7 @@ Os exemplos a seguir usam o conjunto de dados [hits](/pt-BR/get-started/sample-d
     LIMIT 5
     ```
 
-### Engine de tabela {#iceberg-table-engine}
+    ### Engine de tabela
 
     Como alternativa ao uso da table function em cada consulta, você pode criar uma tabela persistente utilizando o [motor de tabela `Iceberg`](/pt-BR/reference/engines/table-engines/integrations/iceberg). Os dados continuam residindo no armazenamento de objetos e são lidos sob demanda — nenhum dado é copiado para o ClickHouse. A vantagem é que a definição da tabela fica armazenada no ClickHouse e pode ser compartilhada entre usuários e sessões, sem que cada usuário precise especificar o caminho de armazenamento e as credenciais. Existem variantes do motor para cada backend de armazenamento: `IcebergS3` (ou o alias `Iceberg`), `IcebergAzure`, `IcebergHDFS` e `IcebergLocal`.
 
@@ -186,8 +186,8 @@ Os exemplos a seguir usam o conjunto de dados [hits](/pt-BR/get-started/sample-d
 
     ```response
     ┌─URL────────────────────────────────────────────────┬─────cnt─┐
-    │ http://liver.ru/belgorod/page/1006.jки/доп_приборы │ 3288173 │ -- 3.29 million
-    │ http://kinopoisk.ru                                │ 1625250 │ -- 1.63 million
+    │ http://liver.ru/belgorod/page/1006.jки/доп_приборы │ 3288173 │ -- 3,29 milhões
+    │ http://kinopoisk.ru                                │ 1625250 │ -- 1,63 milhões
     │ http://bdsm_po_yers=0&with_video                   │  791465 │
     │ http://video.yandex                                │  582400 │
     │ http://smeshariki.ru/region                        │  514984 │
@@ -197,15 +197,15 @@ Os exemplos a seguir usam o conjunto de dados [hits](/pt-BR/get-started/sample-d
     Peak memory usage: 9.16 GiB.
     ```
 
-### Variante de cluster {#delta-cluster-variant}
+    ### Variante de cluster
 
-    A função [`deltaLakeCluster`](/pt-BR/reference/functions/table-functions/deltalakeCluster) distribui leituras entre múltiplos nós em um cluster ClickHouse. O nó iniciador despacha arquivos de dados dinamicamente para os nós worker para processamento paralelo. `deltaLakeS3Cluster` é um alias para `deltaLakeCluster`. Uma variante para Azure ([`deltaLakeAzureCluster`](/pt-BR/reference/functions/table-functions/deltalakeCluster)) também está disponível.
+    A função [`deltaLakeCluster`](/pt-BR/reference/functions/table-functions/deltalakeCluster) distribui leituras entre múltiplos nós em um cluster ClickHouse. O nó iniciador despacha data files dinamicamente para os nós worker para processamento paralelo. `deltaLakeS3Cluster` é um alias para `deltaLakeCluster`. Uma variante para Azure ([`deltaLakeAzureCluster`](/pt-BR/reference/functions/table-functions/deltalakeCluster)) também está disponível.
 
     **Exemplo de sintaxe:**
 
     ```sql
     deltaLakeCluster(cluster_name, url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression])
-    -- deltaLakeS3Cluster is an alias for deltaLakeCluster
+    -- deltaLakeS3Cluster é um alias para deltaLakeCluster
 
     deltaLakeAzureCluster(cluster_name, connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
     ```
@@ -231,7 +231,7 @@ Os exemplos a seguir usam o conjunto de dados [hits](/pt-BR/get-started/sample-d
     LIMIT 5
     ```
 
-### Engine de tabela {#delta-table-engine}
+    ### Engine de tabela
 
     Como alternativa ao uso da table function em cada consulta, você pode criar uma tabela persistente utilizando o [motor de tabela `DeltaLake`](/pt-BR/reference/engines/table-engines/integrations/deltalake) ao usar armazenamento compatível com S3. Os dados continuam residindo no armazenamento de objetos e são lidos sob demanda — nenhum dado é copiado para o ClickHouse. A vantagem é que a definição da tabela fica armazenada no ClickHouse e pode ser compartilhada entre usuários e sessões, sem que cada usuário precise especificar o caminho de armazenamento e as credenciais.
 
@@ -290,7 +290,7 @@ Os exemplos a seguir usam o conjunto de dados [hits](/pt-BR/get-started/sample-d
     hudi(url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression])
     ```
 
-### Variante para cluster {#hudi-cluster-variant}
+    ### Variante para cluster
 
     A função [`hudiCluster`](/pt-BR/reference/functions/table-functions/hudiCluster) distribui as leituras entre vários nós em um cluster do ClickHouse. O nó iniciador encaminha os arquivos de dados dinamicamente para os nós workers para processamento paralelo.
 
@@ -298,7 +298,7 @@ Os exemplos a seguir usam o conjunto de dados [hits](/pt-BR/get-started/sample-d
     hudiCluster(cluster_name, url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression])
     ```
 
-### Mecanismo de tabela {#hudi-table-engine}
+    ### Mecanismo de tabela
 
     Como alternativa a usar a função de tabela em cada consulta, você pode criar uma tabela persistente usando o [mecanismo de tabela `Hudi`](/pt-BR/reference/engines/table-engines/integrations/hudi). Os dados continuam no armazenamento de objetos e são lidos sob demanda — nenhum dado é copiado para o ClickHouse. A vantagem é que a definição da tabela fica armazenada no ClickHouse e pode ser compartilhada entre usuários e sessões, sem que cada usuário precise especificar o caminho de armazenamento e as credenciais.
 
@@ -330,22 +330,22 @@ Os exemplos a seguir usam o conjunto de dados [hits](/pt-BR/get-started/sample-d
     paimonLocal(path_to_table, [,format] [,compression_method])
     ```
 
-### Variante de cluster {#paimon-cluster-variant}
+    ### Variante de cluster
 
     A função [`paimonS3Cluster`](/pt-BR/reference/functions/table-functions/paimonCluster) distribui as leituras entre vários nós em um cluster ClickHouse. O nó iniciador distribui os arquivos de dados dinamicamente para os nós workers para processamento em paralelo. `paimonCluster` é um alias de `paimonS3Cluster`. Também há variantes para Azure ([`paimonAzureCluster`](/pt-BR/reference/functions/table-functions/paimonCluster)) e HDFS ([`paimonHDFSCluster`](/pt-BR/reference/functions/table-functions/paimonCluster)).
 
     ```sql
     paimonS3Cluster(cluster_name, url [,access_key_id, secret_access_key] [,format] [,structure] [,compression])
-    -- paimonCluster is an alias for paimonS3Cluster
+    -- paimonCluster é um alias para paimonS3Cluster
 
     paimonAzureCluster(cluster_name, connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
 
     paimonHDFSCluster(cluster_name, path_to_table, [,format] [,compression_method])
     ```
 
-### Engine de tabela {#paimon-table-engine}
+    ### Engine de tabela
 
-    O ClickHouse fornece os [motores de tabela experimentais `PaimonS3`, `PaimonAzure`, `PaimonHDFS` e `PaimonLocal`](/pt-BR/reference/engines/table-engines/integrations/paimon). Habilite-os com `enable_paimon_storage_engine = 1`.
+    No momento, o Paimon não tem um engine de tabela dedicado no ClickHouse. Use as funções de tabela acima para consultar tabelas do Paimon.
 
     Para ver os recursos compatíveis, incluindo backends de armazenamento e outros detalhes, consulte a [matriz de suporte](/pt-BR/guides/use-cases/data-warehousing/support-matrix#format-support). Para a referência completa, consulte a documentação da [função de tabela `paimon`](/pt-BR/reference/functions/table-functions/paimon).
   </Tab>

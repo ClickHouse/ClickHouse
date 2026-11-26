@@ -7,6 +7,8 @@ title: 'Integrar ClickHouse con Databricks'
 doc_type: 'guide'
 ---
 
+import { Image } from "/snippets/es/components/Image.jsx";
+
 import { ClickHouseSupportedBadge } from "/snippets/es/components/ClickHouseSupported/ClickHouseSupported.jsx";
 
 <ClickHouseSupportedBadge />
@@ -14,7 +16,7 @@ import { ClickHouseSupportedBadge } from "/snippets/es/components/ClickHouseSupp
 El ClickHouse Spark Connector funciona perfectamente con Databricks. Esta guía abarca la configuración, la instalación y los patrones de uso específicos de Databricks.
 
 <div id="api-selection">
-  ## Selección de API para Databricks {#api-selection}
+  ## Selección de API para Databricks
 </div>
 
 De forma predeterminada, Databricks usa Unity Catalog, que bloquea el registro de catálogos de Spark. En este caso, **debe** usar la **TableProvider API** (acceso basado en formato).
@@ -27,10 +29,12 @@ Sin embargo, si desactiva Unity Catalog creando un clúster con el modo de acces
 | **Deshabilitado** (No isolation shared) | Catalog API                           | Requiere un clúster con el modo de acceso &quot;No isolation shared&quot; |
 
 <div id="installation">
-  ## Instalación en Databricks {#installation}
+  ## Instalación en Databricks
 </div>
 
-### Opción 1: Subir el JAR mediante la UI de Databricks {#installation-ui}
+<div id="installation-ui">
+  ### Opción 1: Subir el JAR mediante la UI de Databricks
+</div>
 
 1. Compila o [descarga](https://repo1.maven.org/maven2/com/clickhouse/spark/) el JAR de runtime:
    ```bash
@@ -49,22 +53,14 @@ Sin embargo, si desactiva Unity Catalog creando un clúster con el modo de acces
    * Selecciona **DBFS** o **Espacio de trabajo** → navega hasta el archivo JAR que subiste
    * Haz clic en **Install**
 
-<div className="ch-image-lg">
-  <Frame>
-    ![Pestaña Libraries de Databricks](/images/integrations/data-ingestion/apache-spark/databricks/databricks-libraries-tab.webp)
-  </Frame>
-</div>
+<Image img="/images/integrations/data-ingestion/apache-spark/databricks/databricks-libraries-tab.webp" alt="Pestaña Libraries de Databricks" />
 
-<div className="ch-image-lg">
-  <Frame>
-    ![Instalación de la biblioteca desde el volumen del espacio de trabajo](/images/integrations/data-ingestion/apache-spark/databricks/databricks-install-from-volume.webp)
-  </Frame>
-</div>
+<Image img="/images/integrations/data-ingestion/apache-spark/databricks/databricks-install-from-volume.webp" alt="Instalación de la biblioteca desde el volumen del espacio de trabajo" />
 
 4. Reinicia el clúster para cargar la biblioteca
 
 <div id="installation-cli">
-  ### Opción 2: Instalar con la CLI de Databricks {#installation-cli}
+  ### Opción 2: Instalar con la CLI de Databricks
 </div>
 
 ```bash
@@ -78,7 +74,9 @@ databricks libraries install \
   --jar dbfs:/FileStore/jars/clickhouse-spark-runtime-{{ spark_binary_version }}_{{ scala_binary_version }}-{{ stable_version }}.jar
 ```
 
-### Opción 3: Coordenadas de Maven (recomendada) {#installation-maven}
+<div id="installation-maven">
+  ### Opción 3: Coordenadas de Maven (recomendada)
+</div>
 
 1. Ve a tu espacio de trabajo de Databricks:
    * Ve a **Compute** → Selecciona tu clúster
@@ -92,22 +90,18 @@ databricks libraries install \
 com.clickhouse.spark:clickhouse-spark-runtime-{{ spark_binary_version }}_{{ scala_binary_version }}:{{ stable_version }}
 ```
 
-<div className="ch-image-lg">
-  <Frame>
-    ![Configuración de bibliotecas Maven en Databricks](/images/integrations/data-ingestion/apache-spark/databricks/databricks-maven-tab.webp)
-  </Frame>
-</div>
+<Image img="/images/integrations/data-ingestion/apache-spark/databricks/databricks-maven-tab.webp" alt="Configuración de bibliotecas Maven en Databricks" />
 
 3. Haz clic en **Install** y reinicia el clúster para cargar la biblioteca
 
 <div id="tableprovider-api">
-  ## Uso de la TableProvider API {#tableprovider-api}
+  ## Uso de la TableProvider API
 </div>
 
 Cuando Unity Catalog está habilitado (de forma predeterminada), **debe** usar la TableProvider API (acceso basado en formatos), ya que Unity Catalog bloquea el registro del catálogo de Spark. Si ha deshabilitado Unity Catalog usando un clúster con el modo de acceso &quot;No isolation shared&quot;, puede usar la [Catalog API](/es/integrations/connectors/data-ingestion/apache-spark/spark-native-connector#register-the-catalog-required) en su lugar.
 
 <div id="reading-data-table-provider">
-  ### Lectura de datos {#reading-data-table-provider}
+  ### Lectura de datos
 </div>
 
 <Tabs>
@@ -151,7 +145,7 @@ Cuando Unity Catalog está habilitado (de forma predeterminada), **debe** usar l
 </Tabs>
 
 <div id="writing-data-unity">
-  ### Escritura de datos {#writing-data-unity}
+  ### Escritura de datos
 </div>
 
 <Tabs>
@@ -200,11 +194,11 @@ Cuando Unity Catalog está habilitado (de forma predeterminada), **debe** usar l
 </Note>
 
 <div id="considerations">
-  ## Consideraciones específicas de Databricks {#considerations}
+  ## Consideraciones específicas de Databricks
 </div>
 
 <div id="access-mode">
-  ### Requisitos del modo de acceso {#access-mode}
+  ### Requisitos del modo de acceso
 </div>
 
 El ClickHouse Spark Connector requiere el modo de acceso **Dedicated** (antes Single User). El modo de acceso **Standard** (antes Shared) no es compatible cuando Unity Catalog está habilitado, ya que Databricks bloquea los conectores externos DataSource V2 en esa configuración.
@@ -217,7 +211,7 @@ El ClickHouse Spark Connector requiere el modo de acceso **Dedicated** (antes Si
 | Standard (Shared)       | Deshabilitado | ✅ Sí       |
 
 <div id="secret-management">
-  ### Gestión de secretos {#secret-management}
+  ### Gestión de secretos
 </div>
 
 Use los secret scopes de Databricks para guardar de forma segura las credenciales de ClickHouse:
@@ -232,7 +226,7 @@ Para obtener instrucciones de configuración, consulta la [documentación sobre 
 {/* TODO: Agregar una captura de pantalla de la configuración de secret scopes en Databricks */}
 
 <div id="clickhouse-cloud">
-  ### Conexión con ClickHouse Cloud {#clickhouse-cloud}
+  ### Conexión con ClickHouse Cloud
 </div>
 
 Al conectarse a ClickHouse Cloud desde Databricks:
@@ -241,11 +235,11 @@ Al conectarse a ClickHouse Cloud desde Databricks:
 2. Habilite **SSL** (`ssl: true`)
 
 <div id="examples">
-  ## Ejemplos {#examples}
+  ## Ejemplos
 </div>
 
 <div id="workflow-example">
-  ### Ejemplo completo de flujo de trabajo {#workflow-example}
+  ### Ejemplo completo de flujo de trabajo
 </div>
 
 <Tabs>
@@ -336,7 +330,9 @@ Al conectarse a ClickHouse Cloud desde Databricks:
   </Tab>
 </Tabs>
 
-## Documentación relacionada {#related}
+<div id="related">
+  ## Documentación relacionada
+</div>
 
 * [Guía del conector nativo de Spark](/es/integrations/connectors/data-ingestion/apache-spark/spark-native-connector) - Documentación completa del conector
 * [Documentación de TableProvider API](/es/integrations/connectors/data-ingestion/apache-spark/spark-native-connector#using-the-tableprovider-api) - Detalles sobre el acceso basado en formato

@@ -8,34 +8,32 @@ sidebarTitle: '移行ガイド'
 doc_type: 'guide'
 ---
 
-## なぜ BigQuery ではなく ClickHouse Cloud を使うのか？ {#why-use-clickhouse-cloud-over-bigquery}
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+<div id="why-use-clickhouse-cloud-over-bigquery">
+  ## なぜ BigQuery ではなく ClickHouse Cloud を使うのか？
+</div>
 
 要点: 最新のデータ分析では、ClickHouse のほうが BigQuery より高速で、低コストかつ高機能だからです。
 
-<div className="ch-image-md">
-  <Frame>
-    ![ClickHouse vs BigQuery](/images/migrations/bigquery-2.webp)
-  </Frame>
-</div>
+<Image img="/images/migrations/bigquery-2.webp" size="md" alt="ClickHouse と BigQuery の比較" />
 
 <div id="loading-data-from-bigquery-to-clickhouse-cloud">
-  ## BigQuery から ClickHouse Cloud へのデータの読み込み {#loading-data-from-bigquery-to-clickhouse-cloud}
+  ## BigQuery から ClickHouse Cloud へのデータの読み込み
 </div>
 
-### データセット {#dataset}
+<div id="dataset">
+  ### データセット
+</div>
 
 BigQuery から ClickHouse Cloud への一般的な移行例を示すサンプルデータセットとして、[こちら](/ja/get-started/sample-datasets/stackoverflow) で説明している Stack Overflow データセットを使用します。これには、2008 年から 2024 年 4 月までに Stack Overflow で作成されたすべての `post`、`vote`、`user`、`comment`、`badge` が含まれます。このデータの BigQuery スキーマを以下に示します。
 
-<div className="ch-image-lg">
-  <Frame>
-    ![スキーマ](/images/migrations/bigquery-3.webp)
-  </Frame>
-</div>
+<Image img="/images/migrations/bigquery-3.webp" size="lg" alt="スキーマ" />
 
 このデータセットを BigQuery インスタンスに取り込んで移行手順をテストしたい方向けに、これらのテーブルのデータを Parquet フォーマットで GCS バケットに用意しています。さらに、BigQuery でテーブルを作成してロードするための DDL コマンドは [こちら](https://pastila.nl/?003fd86b/2b93b1a2302cfee5ef79fd374e73f431#hVPC52YDsUfXg2eTLrBdbA==) で確認できます。
 
 <div id="migrating-data">
-  ### データの移行 {#migrating-data}
+  ### データの移行
 </div>
 
 BigQuery と ClickHouse Cloud 間のデータ移行は、主に次の 2 種類のワークロードに分類されます。
@@ -43,7 +41,9 @@ BigQuery と ClickHouse Cloud 間のデータ移行は、主に次の 2 種類�
 * **初回の一括ロードと定期更新** - 初期データセットを移行したうえで、一定間隔 (例: 毎日) で定期的に更新する必要があります。ここでの更新は、比較に使用できるカラム (例: 日付) で特定した変更済みの行を再送することで処理します。削除については、データセット全体を定期的に完全再ロードすることで対応します。
 * **リアルタイムレプリケーションまたは CDC** - 初期データセットを移行する必要があります。このデータセットへの変更は、数秒程度の遅延のみが許容される、ほぼリアルタイムで ClickHouse に反映されなければなりません。これは実質的に [変更データキャプチャ (CDC) プロセス](https://en.wikipedia.org/wiki/Change_data_capture) であり、BigQuery のテーブルを ClickHouse と同期する必要があります。つまり、BigQuery テーブルに対する挿入、更新、削除を、ClickHouse 内の対応するテーブルに適用する必要があります。
 
-#### Google Cloud Storage (GCS) 経由の一括ロード {#bulk-loading-via-google-cloud-storage-gcs}
+<div id="bulk-loading-via-google-cloud-storage-gcs">
+  #### Google Cloud Storage (GCS) 経由の一括ロード
+</div>
 
 BigQuery は、Google のオブジェクト ストレージ (GCS) へのデータのエクスポートをサポートしています。このサンプルデータセットでは、次のように進めます。
 
@@ -51,11 +51,7 @@ BigQuery は、Google のオブジェクト ストレージ (GCS) へのデー�
 
 2. データを ClickHouse Cloud にインポートします。これには [gcs table function](/ja/reference/functions/table-functions/gcs) を使用できます。DDL とインポート用クエリは[こちら](https://pastila.nl/?00531abf/f055a61cc96b1ba1383d618721059976#Wf4Tn43D3VCU5Hx7tbf1Qw==)で確認できます。なお、ClickHouse Cloud のインスタンスは複数のコンピュートノードで構成されるため、`gcs` table function ではなく、[s3Cluster table function](/ja/reference/functions/table-functions/s3Cluster) を使用しています。この関数は GCS バケットでも動作し、[ClickHouse Cloud service のすべてのノードを活用して](https://clickhouse.com/blog/supercharge-your-clickhouse-data-loads-part1#parallel-servers)データを並列にロードします。
 
-<div className="ch-image-md">
-  <Frame>
-    ![一括ロード](/images/migrations/bigquery-4.webp)
-  </Frame>
-</div>
+<Image img="/images/migrations/bigquery-4.webp" size="md" alt="一括ロード" />
 
 このアプローチには、いくつかの利点があります。
 
@@ -68,13 +64,13 @@ BigQuery は、Google のオブジェクト ストレージ (GCS) へのデー�
 以下の例を試す前に、エクスポートとインポートのパフォーマンスを最大化するため、[エクスポートに必要な権限](https://cloud.google.com/bigquery/docs/exporting-data#required_permissions) と [ローカリティに関する推奨事項](https://cloud.google.com/bigquery/docs/exporting-data#data-locations) を確認することを推奨します。
 
 <div id="real-time-replication-or-cdc-via-scheduled-queries">
-  ### 定期クエリによるリアルタイムレプリケーションまたは CDC {#real-time-replication-or-cdc-via-scheduled-queries}
+  ### 定期クエリによるリアルタイムレプリケーションまたは CDC
 </div>
 
 変更データキャプチャ (CDC) は、2 つのデータベース間でテーブルの同期を維持する仕組みです。更新や削除もほぼリアルタイムで扱う必要がある場合、これはかなり複雑になります。1 つの方法は、BigQuery の [scheduled query functionality](https://cloud.google.com/bigquery/docs/scheduling-queries) を使って、定期的なエクスポートをスケジュールすることです。データが ClickHouse に挿入されるまでに多少の遅延を許容できるのであれば、この方法は実装も保守も容易です。例については、[このブログ記事](https://clickhouse.com/blog/clickhouse-bigquery-migrating-data-for-realtime-queries#using-scheduled-queries)を参照してください。
 
 <div id="designing-schemas">
-  ## スキーマの設計 {#designing-schemas}
+  ## スキーマの設計
 </div>
 
 Stack Overflow データセットには、相互に関連する複数のテーブルが含まれています。まずは主要なテーブルの移行に注力することをお勧めします。これは必ずしも最大のテーブルとは限らず、むしろ分析クエリが最も多く実行されると見込まれるテーブルです。そうすることで、ClickHouse の基本的な概念に慣れることができます。さらにテーブルを追加して ClickHouse の機能を最大限に活用し、最適なパフォーマンスを得るためには、このテーブルの再モデリングが必要になる場合があります。このモデリングプロセスについては、[データモデリングのドキュメント](/ja/guides/clickhouse/data-modelling/schema-design#next-data-modeling-techniques) で詳しく説明しています。
@@ -109,7 +105,7 @@ CREATE TABLE stackoverflow.posts (
 ```
 
 <div id="optimizing-types">
-  ### 型の最適化 {#optimizing-types}
+  ### 型の最適化
 </div>
 
 [こちらで説明した](/ja/guides/clickhouse/data-modelling/schema-design)プロセスを適用すると、次のスキーマになります。
@@ -153,7 +149,9 @@ INSERT INTO stackoverflow.posts SELECT * FROM gcs( 'gs://clickhouse-public-datas
 
 新しいスキーマでは、NULL は保持されません。上記の insert では、これらは暗黙的にそれぞれの型のデフォルト値 (整数は 0、文字列は空値) に変換されます。ClickHouse はまた、数値を自動的に対象の精度へ変換します。
 
-## ClickHouseの主キーは何が違うのか？ {#how-are-clickhouse-primary-keys-different}
+<div id="how-are-clickhouse-primary-keys-different">
+  ## ClickHouseの主キーは何が違うのか？
+</div>
 
 [こちら](/ja/get-started/migrate/bigquery/overview)で説明しているように、BigQueryと同様、ClickHouseはテーブルの主キーカラム値の一意性を強制しません。
 
@@ -163,29 +161,27 @@ INSERT INTO stackoverflow.posts SELECT * FROM gcs( 'gs://clickhouse-public-datas
 * ClickHouseがよく使われる規模では、メモリ効率とディスク効率が極めて重要です。データはパーツと呼ばれるchunk単位でClickHouseテーブルに書き込まれ、これらのパーツにはバックグラウンドでマージするためのルールが適用されます。ClickHouseでは、各パーツがそれぞれ独自のプライマリインデックスを持ちます。パーツがマージされると、マージ後のパーツのプライマリインデックスもマージされます。なお、これらの索引は各行ごとに作成されるわけではありません。代わりに、パーツのプライマリインデックスには行のグループごとに1つの索引エントリがあります。この手法はスパース索引付けと呼ばれます。
 * ClickHouseでは、パーツ内の行が指定したキー順に並べられた状態でディスクに保存されるため、スパース索引付けが可能になります。スパースプライマリインデックスは、単一の行を直接特定するのではなく (B木ベースの索引のように) 、クエリに一致する可能性のある行グループをすばやく特定できます (索引エントリに対するbinary searchによって) 。見つかった一致候補の行グループは、その後、一致する行を見つけるために並列にClickHouse engineへストリーミングされます。この索引設計により、プライマリインデックスを小さく保てるため (全体がmain memoryに収まります) 、クエリ実行時間を大幅に短縮できます。特に、データ分析のユースケースで一般的な範囲クエリで効果を発揮します。詳しくは、[この詳細ガイド](/ja/guides/clickhouse/data-modelling/sparse-primary-indexes)を参照することをお勧めします。
 
-<div className="ch-image-md">
-  <Frame>
-    ![ClickHouseの主キー](/images/migrations/bigquery-5.webp)
-  </Frame>
-</div>
+<Image img="/images/migrations/bigquery-5.webp" size="md" alt="ClickHouseの主キー" />
 
 ClickHouseで選択した主キーは、索引だけでなく、データがディスクに書き込まれる順序も決定します。そのため、圧縮率に大きな影響を及ぼし、ひいてはクエリ性能にも影響する可能性があります。大半のカラムの値が連続した順序で書き込まれるような順序付けキーを選ぶと、選択した圧縮アルゴリズム (およびcodec) がデータをより効果的に圧縮できるようになります。
 
 > テーブル内のすべてのカラムは、そのカラム自体がキーに含まれているかどうかにかかわらず、指定された順序付けキーの値に基づいてソートされます。たとえば、`CreationDate`をキーとして使用する場合、他のすべてのカラムの値の並びも`CreationDate`カラムの値の並びに対応します。複数の順序付けキーを指定することもでき、この場合は`SELECT`クエリの`ORDER BY`句と同じ意味で順序付けされます。
 
 <div id="choosing-an-ordering-key">
-  ### 順序付けキーの選択 {#choosing-an-ordering-key}
+  ### 順序付けキーの選択
 </div>
 
 posts テーブルを例に、順序付けキーを選ぶ際の考慮事項と手順については、[こちら](/ja/guides/clickhouse/data-modelling/schema-design#choosing-an-ordering-key)を参照してください。
 
 <div id="data-modeling-techniques">
-  ## データモデリング手法 {#data-modeling-techniques}
+  ## データモデリング手法
 </div>
 
 BigQuery から移行するユーザーには、[ClickHouse でのデータモデリングに関するガイド](/ja/guides/clickhouse/data-modelling/schema-design)を参照することをお勧めします。このガイドでは、同じ Stack Overflow データセットを使って、ClickHouse の機能を活用した複数のアプローチを紹介しています。
 
-### パーティション {#partitions}
+<div id="partitions">
+  ### パーティション
+</div>
 
 BigQuery を使ったことがあれば、テーブルをパーティションと呼ばれる、より小さく扱いやすい単位に分割することで、大規模なデータベースのパフォーマンスと管理性を高めるテーブルのパーティション化という考え方に馴染みがあるでしょう。このパーティション化は、指定したカラムの範囲 (たとえば日付) 、定義済みのリスト、またはキーの hash を使って実現できます。これにより、管理者は日付範囲や地理的な位置などの特定の条件に基づいてデータを整理できます。
 
@@ -193,18 +189,14 @@ BigQuery を使ったことがあれば、テーブルをパーティション�
 
 ClickHouse では、テーブルを最初に定義するときに [`PARTITION BY`](/ja/reference/engines/table-engines/mergetree-family/custom-partitioning-key) 句でパーティション化を指定します。この句には任意のカラムに対する SQL 式を含めることができ、その結果によって行がどのパーティションに送られるかが決まります。
 
-<div className="ch-image-md">
-  <Frame>
-    ![パーティション](/images/migrations/bigquery-6.webp)
-  </Frame>
-</div>
+<Image img="/images/migrations/bigquery-6.webp" size="md" alt="パーティション" />
 
 データパーツは、ディスク上で各パーティションに論理的に関連付けられており、個別にクエリできます。以下の例では、[`toYear(CreationDate)`](/ja/reference/functions/regular-functions/date-time-functions#toYear) という式を使って posts テーブルを年ごとにパーティション化しています。行が ClickHouse に挿入されると、この式が各行に対して評価され、その後、行はそのパーティションに属する新しいデータパーツとして、対応するパーティションに振り分けられます。
 
 ```sql
 CREATE TABLE posts
 (
-        `Id` Int32 CODEC(Delta, Default),
+        `Id` Int32 CODEC(Delta(4), ZSTD(1)),
         `PostTypeId` Enum8('Question' = 1, 'Answer' = 2, 'Wiki' = 3, 'TagWikiExcerpt' = 4, 'TagWiki' = 5, 'ModeratorNomination' = 6, 'WikiPlaceholder' = 7, 'PrivilegeWiki' = 8),
         `AcceptedAnswerId` UInt32,
         `CreationDate` DateTime64(3, 'UTC'),
@@ -217,7 +209,7 @@ PARTITION BY toYear(CreationDate)
 ```
 
 <div id="applications">
-  #### 用途 {#applications}
+  #### 用途
 </div>
 
 ClickHouse のパーティション化は BigQuery と似た用途がありますが、いくつか微妙な違いがあります。具体的には次のとおりです。
@@ -268,7 +260,7 @@ Ok.
 * **クエリ最適化** - パーティションはクエリ性能の向上に役立つことがありますが、その効果はアクセスパターンに大きく左右されます。クエリの対象が少数のパーティション (理想的には 1 つ) に限られる場合は、性能が向上する可能性があります。通常、これが有効なのは、パーティション化キーが主キーに含まれておらず、そのキーで絞り込みを行う場合に限られます。一方、多数のパーティションをまたぐ必要があるクエリでは、パーティション化しない場合よりも性能が低下することがあります (パーティション化によってパーツ数が増える可能性があるためです) 。また、パーティション化キーがすでに主キーの先頭寄りのエントリに含まれている場合、単一パーティションを対象にする利点はさらに小さくなり、ほとんど、あるいはまったくなくなります。さらに、各パーティション内の値が一意であれば、パーティション化は [`GROUP BY` クエリの最適化](/ja/reference/engines/table-engines/mergetree-family/custom-partitioning-key#group-by-optimisation-using-partition-key) にも利用できます。ただし一般的には、まず主キーが適切に最適化されていることを確認し、パーティション化をクエリ最適化の手法として検討するのは、アクセスパターンがその日のうちの特定の予測可能な部分集合に集中する例外的なケース、たとえば日単位でパーティション化し、ほとんどのクエリが直近 1 日を対象とするような場合に限るべきです。
 
 <div id="recommendations">
-  #### 推奨事項 {#recommendations}
+  #### 推奨事項
 </div>
 
 パーティション化は、データ管理手法の 1 つとして検討すべきです。特に、時系列データを扱う際にクラスターから期限切れのデータを削除する必要がある場合に有効です。たとえば、最も古いパーティションは[単純にドロップできます](/ja/reference/statements/alter/partition#drop-partitionpart)。
@@ -278,7 +270,7 @@ Ok.
 > 内部的には、ClickHouse は挿入されたデータに対して[パーツを作成します](/ja/guides/clickhouse/data-modelling/sparse-primary-indexes#clickhouse-index-design)。データの挿入が増えるにつれて、パーツ数も増加します。パーツ数が過度に増えるのを防ぐため (読み込むファイル数が増え、クエリ性能が低下するため) 、パーツはバックグラウンドで非同期にマージされます。パーツ数が[事前設定された上限](/ja/reference/settings/merge-tree-settings/parts-to#parts_to_throw_insert)を超えると、ClickHouse は INSERT 時に[&quot;パーツが多すぎる&quot; エラー](/ja/resources/support-center/knowledge-base/troubleshooting/exception-too-many-parts)として例外をスローします。これは通常の運用では発生しないはずで、ClickHouse の設定が不適切であるか、たとえば小さな insert を大量に行うなど、誤った使い方をした場合にのみ発生します。パーツは各パーティションごとに独立して作成されるため、パーティション数が増えるとパーツ数も増加します。つまり、パーツ数はパーティション数に応じて増えます。したがって、高カーディナリティのパーティション化キーはこのエラーの原因になり得るため、避けるべきです。
 
 <div id="materialized-views-vs-projections">
-  ## materialized view と プロジェクション の比較 {#materialized-views-vs-projections}
+  ## materialized view と プロジェクション の比較
 </div>
 
 ClickHouse の プロジェクション では、1 つのテーブルに対して複数の `ORDER BY` 句を指定できます。
@@ -405,7 +397,9 @@ WHERE UserId = 8592047
 11 rows in set. Elapsed: 0.004 sec.
 ```
 
-### プロジェクションを使用する場面 {#when-to-use-projections}
+<div id="when-to-use-projections">
+  ### プロジェクションを使用する場面
+</div>
 
 プロジェクションは、データの挿入にあわせて自動的に
 維持されるため、新規ユーザーにとって魅力的な機能です。
@@ -413,11 +407,7 @@ WHERE UserId = 8592047
 テーブルに送るだけでよく、可能な場合はプロジェクションが利用されて応答
 時間の短縮につながります。
 
-<div className="ch-image-md">
-  <Frame>
-    ![プロジェクション](/images/migrations/bigquery-7.webp)
-  </Frame>
-</div>
+<Image img="/images/migrations/bigquery-7.webp" size="md" alt="プロジェクション" />
 
 これは materialized view とは対照的です。materialized view では、ユーザーは
 フィルターに応じて、適切に最適化されたターゲットテーブルを選択するか、
@@ -435,7 +425,9 @@ WHERE UserId = 8592047
 * データを完全に並べ替える必要がある場合。理論上、プロジェクション内の式では `GROUP BY,` も使用できますが、集計を維持する用途では materialized view のほうが効果的です。また、クエリオプティマイザ は、単純な並べ替え、つまり `SELECT * ORDER BY x` を使用するプロジェクションのほうを利用しやすい傾向があります。この式では、保存領域を減らすためにカラムの一部だけを選択することもできます。
 * 保存領域の増加と、データを 2 回書き込むオーバーヘッドをユーザーが許容できる場合。挿入速度への影響をテストし、[ストレージオーバーヘッドを評価](/ja/guides/clickhouse/data-modelling/compression/compression-in-clickhouse)してください。
 
-## BigQuery クエリを ClickHouse で書き換える {#rewriting-bigquery-queries-in-clickhouse}
+<div id="rewriting-bigquery-queries-in-clickhouse">
+  ## BigQuery クエリを ClickHouse で書き換える
+</div>
 
 以下では、BigQuery と ClickHouse を比較するクエリ例を示します。この一覧は、ClickHouse の機能を活用してクエリを大幅に簡潔化できることを示すことを目的としています。ここでの例では、Stack Overflow の完全なデータセット (2024 年 4 月時点まで) を使用しています。
 
@@ -443,11 +435,7 @@ WHERE UserId = 8592047
 
 *BigQuery*
 
-<div className="ch-image-sm">
-  <Frame>
-    ![BigQuery クエリの書き換え](/images/migrations/bigquery-8.webp)
-  </Frame>
-</div>
+<Image img="/images/migrations/bigquery-8.webp" size="sm" alt="BigQuery クエリの書き換え" border />
 
 *ClickHouse*
 
@@ -482,11 +470,7 @@ Peak memory usage: 323.37 MiB.
 
 <br />
 
-<div className="ch-image-sm">
-  <Frame>
-    ![BigQuery 1](/images/migrations/bigquery-9.webp)
-  </Frame>
-</div>
+<Image img="/images/migrations/bigquery-9.webp" size="sm" alt="BigQuery 1" border />
 
 *ClickHouse*
 
@@ -514,23 +498,17 @@ LIMIT 5
 Peak memory usage: 567.41 MiB.
 ```
 
-## 集約関数 {#aggregate-functions}
+<div id="aggregate-functions">
+  ## 集約関数
+</div>
 
 可能な限り、ClickHouse の集約関数を活用してください。以下では、[`argMax` 関数](/ja/reference/functions/aggregate-functions/argMax) を使って、各年で最も閲覧数の多い質問を求める例を示します。
 
 *BigQuery*
 
-<div className="ch-image-sm">
-  <Frame>
-    ![集約関数 1](/images/migrations/bigquery-10.webp)
-  </Frame>
-</div>
+<Image img="/images/migrations/bigquery-10.webp" border size="sm" alt="集約関数 1" />
 
-<div className="ch-image-sm">
-  <Frame>
-    ![集約関数 2](/images/migrations/bigquery-11.webp)
-  </Frame>
-</div>
+<Image img="/images/migrations/bigquery-11.webp" border size="sm" alt="集約関数 2" />
 
 *ClickHouse*
 
@@ -578,17 +556,15 @@ MaxViewCount:            66975
 Peak memory usage: 377.26 MiB.
 ```
 
-## 条件式と配列 {#conditionals-and-arrays}
+<div id="conditionals-and-arrays">
+  ## 条件式と配列
+</div>
 
 条件関数と配列関数を使うと、クエリを大幅に簡潔にできます。次のクエリは、2022年から2023年にかけて増加率が最も高いタグ (出現回数が10000回を超えるもの) を算出します。以下のClickHouseクエリが、条件式、配列関数、さらに `HAVING` 句と `SELECT` 句で別名を再利用できることによって、簡潔に記述できている点に注目してください。
 
 *BigQuery*
 
-<div className="ch-image-sm">
-  <Frame>
-    ![条件式と配列](/images/migrations/bigquery-12.webp)
-  </Frame>
-</div>
+<Image img="/images/migrations/bigquery-12.webp" size="sm" border alt="条件式と配列" />
 
 *ClickHouse*
 

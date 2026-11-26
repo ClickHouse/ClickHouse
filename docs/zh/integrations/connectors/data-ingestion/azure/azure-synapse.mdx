@@ -10,6 +10,8 @@ integration:
   - category: 'data_ingestion'
 ---
 
+import { Image } from "/snippets/zh/components/Image.jsx";
+
 import { ClickHouseSupportedBadge } from "/snippets/zh/components/ClickHouseSupported/ClickHouseSupported.jsx";
 
 <ClickHouseSupportedBadge />
@@ -20,7 +22,7 @@ import { ClickHouseSupportedBadge } from "/snippets/zh/components/ClickHouseSupp
 本文将介绍在 Azure Synapse 中使用 Apache Spark 时，如何集成 [ClickHouse Spark connector](/zh/integrations/connectors/data-ingestion/apache-spark/spark-native-connector)。
 
 <div id="add-connector-dependencies">
-  ## 添加连接器依赖项 {#add-connector-dependencies}
+  ## 添加连接器依赖项
 </div>
 
 Azure Synapse 支持三个级别的[包管理](https://learn.microsoft.com/en-us/azure/synapse-analytics/spark/apache-spark-azure-portal-add-libraries)：
@@ -38,7 +40,9 @@ Azure Synapse 支持三个级别的[包管理](https://learn.microsoft.com/en-us
 
 请参阅我们的 [Spark Connector Compatibility Matrix](/zh/integrations/connectors/data-ingestion/apache-spark/spark-native-connector#compatibility-matrix) 文档，了解哪些版本适合您的需求。
 
-## 将 ClickHouse 添加为 catalog {#add-clickhouse-as-catalog}
+<div id="add-clickhouse-as-catalog">
+  ## 将 ClickHouse 添加为 catalog
+</div>
 
 可通过多种方式将 Spark 配置添加到当前会话：
 
@@ -68,31 +72,25 @@ Azure Synapse 支持三个级别的[包管理](https://learn.microsoft.com/en-us
 
 请确保它位于第一个单元格中，如下所示：
 
-<div className="ch-image-lg">
-  <Frame>
-    ![通过笔记本设置 Spark 配置](/images/integrations/data-ingestion/azure-synapse/spark_notebook_conf.webp)
-  </Frame>
-</div>
+<Image img="/images/integrations/data-ingestion/azure-synapse/spark_notebook_conf.webp" size="xl" alt="通过笔记本设置 Spark 配置" border />
 
 如需更多设置，请访问 [ClickHouse Spark 配置页面](/zh/integrations/connectors/data-ingestion/apache-spark/spark-native-connector#configurations)。
 
 <Info>
-  使用 ClickHouse Cloud 时，请务必设置[所需的 Spark 设置](/zh/integrations/connectors/data-ingestion/apache-spark/spark-native-connector#clickhouse-cloud-settings)。
+  使用 ClickHouse Cloud 时，请务必设置[所需的 Spark 配置](/zh/integrations/connectors/data-ingestion/apache-spark/spark-native-connector#clickhouse-cloud-settings)。
 </Info>
 
-## 设置验证 {#setup-verification}
+<div id="setup-verification">
+  ## 设置验证
+</div>
 
 要验证依赖项和配置是否已成功完成设置，请访问当前 会话 的 Spark UI，并转到 `Environment` 选项卡。
 在这里，查找与你的 ClickHouse 相关的设置：
 
-<div className="ch-image-lg">
-  <Frame>
-    ![使用 Spark UI 验证 ClickHouse 设置](/images/integrations/data-ingestion/azure-synapse/spark_ui_ch_settings.webp)
-  </Frame>
-</div>
+<Image img="/images/integrations/data-ingestion/azure-synapse/spark_ui_ch_settings.webp" size="xl" alt="使用 Spark UI 验证 ClickHouse 设置" border />
 
 <div id="additional-resources">
-  ## 其他资源 {#additional-resources}
+  ## 其他资源
 </div>
 
 * [ClickHouse Spark Connector 文档](/zh/integrations/connectors/data-ingestion/apache-spark/index)

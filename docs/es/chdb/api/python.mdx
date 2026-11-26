@@ -7,14 +7,18 @@ keywords: ['chdb', 'integrado', 'clickhouse-lite', 'python', 'api', 'referencia'
 doc_type: 'reference'
 ---
 
-## Funciones principales de consulta {#core-query-functions}
+<div id="core-query-functions">
+  ## Funciones principales de consulta
+</div>
 
-### `chdb.query` {#chdb-query}
+<div id="chdb-query">
+  ### `chdb.query`
+</div>
 
 Ejecuta una consulta SQL con el motor de chDB.
 
 Esta es la función principal de consulta, que ejecuta sentencias SQL con el motor
-ClickHouse integrado. Admite varios formatos de salida y puede trabajar con bases de datos temporales
+ClickHouse integrado. Admite varios formatos de salida y puede trabajar con bases de datos en memoria
 o basadas en archivos.
 
 **Sintaxis**
@@ -25,12 +29,12 @@ chdb.query(sql, output_format='CSV', path='', udf_path='')
 
 **Parámetros**
 
-| Parámetro       | Tipo | Predeterminado | Descripción                                                                                                                                                                                                                                                                                                                                             |
-| --------------- | ---- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `sql`           | str  | *required*     | Cadena de consulta SQL que se va a ejecutar                                                                                                                                                                                                                                                                                                             |
+| Parámetro       | Tipo | Predeterminado | Descripción                                                                                                                                                                                                                                                                                                                                               |
+| --------------- | ---- | -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `sql`           | str  | *required*     | Cadena de consulta SQL que se va a ejecutar                                                                                                                                                                                                                                                                                                               |
 | `output_format` | str  | `"CSV"`        | Formato de salida de los resultados. Formatos compatibles:<br />• `"CSV"` - Valores separados por comas<br />• `"JSON"` - Formato JSON<br />• `"Arrow"` - formato Apache Arrow<br />• `"Parquet"` - Formato Parquet<br />• `"DataFrame"` - DataFrame de Pandas<br />• `"ArrowTable"` - Tabla de PyArrow<br />• `"Debug"` - Activa el registro detallado |
-| `path`          | str  | `""`           | Ruta del archivo de la base de datos. De forma predeterminada, se usa una base de datos temporal y no persistente (equivalente a `":memory:"`).<br />Proporcione una ruta de archivo para persistir los datos en disco                                                                                                                                  |
-| `udf_path`      | str  | `""`           | Ruta al directorio de UDF heredadas basadas en subprocesos. No es necesaria para las UDF nativas de Python ([`@func`](#func-decorator) / [`create_function`](#create-function))                                                                                                                                                                         |
+| `path`          | str  | `""`           | Ruta del archivo de la base de datos. De forma predeterminada, se usa una base de datos en memoria.<br />Puede ser una ruta de archivo o `":memory:"` para una base de datos en memoria                                                                                                                                                                   |
+| `udf_path`      | str  | `""`           | Ruta al directorio de UDF heredadas basadas en subprocesos. No es necesaria para las UDF nativas de Python ([`@func`](#func-decorator) / [`create_function`](#create-function))                                                                                                                                                                           |
 
 **Devuelve**
 
@@ -43,7 +47,7 @@ Devuelve el resultado de la consulta en el formato especificado:
 | `pa.Table`               | Cuando `output_format` es `"ArrowTable"` o `"arrowtable"` |
 | objeto de resultado chdb | Para otros formatos                                       |
 
-**Lanza**
+**Genera**
 
 | Excepción     | Condición                                                               |
 | ------------- | ----------------------------------------------------------------------- |
@@ -74,12 +78,14 @@ Devuelve el resultado de la consulta en el formato especificado:
 
 ***
 
-### `chdb.sql` {#chdb_sql}
+<div id="chdb_sql">
+  ### `chdb.sql`
+</div>
 
-Ejecuta una consulta SQL con el motor de chDB.
+Ejecuta una consulta SQL con el motor chDB.
 
 Esta es la función principal para consultas, que ejecuta sentencias SQL mediante el
-motor ClickHouse integrado. Admite varios formatos de salida y puede trabajar con bases de datos temporales
+motor ClickHouse integrado. Admite varios formatos de salida y puede trabajar con bases de datos en memoria
 o basadas en archivos.
 
 **Sintaxis**
@@ -94,7 +100,7 @@ chdb.sql(sql, output_format='CSV', path='', udf_path='')
 | --------------- | ---- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `sql`           | str  | *obligatorio*  | Cadena de consulta SQL que se ejecutará                                                                                                                                                                                                                                                                                                                 |
 | `output_format` | str  | `"CSV"`        | Formato de salida de los resultados. Formatos compatibles:<br />• `"CSV"` - Valores separados por comas<br />• `"JSON"` - Formato JSON<br />• `"Arrow"` - Formato Apache Arrow<br />• `"Parquet"` - Formato Parquet<br />• `"DataFrame"` - DataFrame de Pandas<br />• `"ArrowTable"` - Tabla de PyArrow<br />• `"Debug"` - Activa el registro detallado |
-| `path`          | str  | `""`           | Ruta del archivo de la base de datos. De forma predeterminada, usa una base de datos temporal no persistente (equivalente a `":memory:"`).<br />Proporcione una ruta de archivo para persistir en el disco                                                                                                                                              |
+| `path`          | str  | `""`           | Ruta del archivo de la base de datos. De forma predeterminada, usa una base de datos en memoria.<br />Puede ser una ruta de archivo o `":memory:"` para una base de datos en memoria                                                                                                                                                                    |
 | `udf_path`      | str  | `""`           | Ruta al directorio de UDF heredadas basadas en subprocesos. No es necesaria para las UDF nativas de Python ([`@func`](#func-decorator) / [`create_function`](#create-function))                                                                                                                                                                         |
 
 **Devuelve**
@@ -108,7 +114,7 @@ Devuelve el resultado de la consulta en el formato especificado:
 | `pa.Table`               | Cuando `output_format` es `"ArrowTable"` o `"arrowtable"` |
 | objeto de resultado chdb | Para otros formatos                                       |
 
-**Lanza**
+**Genera**
 
 | Excepción                 | Condición                                                               |
 | ------------------------- | ----------------------------------------------------------------------- |
@@ -139,7 +145,9 @@ Devuelve el resultado de la consulta en el formato especificado:
 
 ***
 
-### `chdb.to_arrowTable` {#chdb-state-sqlitelike-to_arrowtable}
+<div id="chdb-state-sqlitelike-to_arrowtable">
+  ### `chdb.to_arrowTable`
+</div>
 
 Convierte el resultado de la consulta en una tabla de PyArrow.
 
@@ -182,7 +190,9 @@ chdb.to_arrowTable(res)
 
 ***
 
-### `chdb.to_df` {#chdb_to_df}
+<div id="chdb_to_df">
+  ### `chdb.to_df`
+</div>
 
 Convierte el resultado de la consulta en un DataFrame de pandas.
 
@@ -222,16 +232,21 @@ chdb.to_df(r)
 0   1  hello
 ```
 
-## Gestión de conexiones y sesiones {#connection-session-management}
+<div id="connection-session-management">
+  ## Gestión de conexiones y sesiones
+</div>
 
 Las siguientes funciones de sesión están disponibles:
 
-### `chdb.connect` {#chdb-connect}
+<div id="chdb-connect">
+  ### `chdb.connect`
+</div>
 
 Crea una conexión con el servidor en segundo plano de chDB.
 
 Esta función establece una [conexión](#chdb-state-sqlitelike-connection) con el motor de base de datos chDB (ClickHouse).
-Cada llamada devuelve una conexión independiente, y puede haber abiertas al mismo tiempo cualquier cantidad de conexiones a la misma ruta de base de datos.
+Solo se permite una conexión abierta por proceso.
+Varias llamadas con la misma cadena de conexión devolverán el mismo objeto de conexión.
 
 ```python
 chdb.connect(connection_string: str = ':memory:') → Connection
@@ -247,7 +262,7 @@ chdb.connect(connection_string: str = ':memory:') → Connection
 
 | Formato                   | Descripción                                |
 | ------------------------- | ------------------------------------------ |
-| `":memory:"`              | Base de datos temporal (predeterminada)    |
+| `":memory:"`              | Base de datos en memoria (predeterminada)  |
 | `"test.db"`               | Archivo de base de datos con ruta relativa |
 | `"file:test.db"`          | Igual que una ruta relativa                |
 | `"/path/to/test.db"`      | Archivo de base de datos con ruta absoluta |
@@ -258,7 +273,7 @@ chdb.connect(connection_string: str = ':memory:') → Connection
 | Formato                                            | Descripción                  |
 | -------------------------------------------------- | ---------------------------- |
 | `"file:test.db?param1=value1&param2=value2"`       | Ruta relativa con parámetros |
-| `"file::memory:?verbose&log-level=test"`           | Temporal con parámetros      |
+| `"file::memory:?verbose&log-level=test"`           | En memoria con parámetros    |
 | `"///path/to/test.db?param1=value1&param2=value2"` | Ruta absoluta con parámetros |
 
 **Gestión de parámetros de consulta**
@@ -276,8 +291,8 @@ Para ver la lista completa de parámetros, consulta `clickhouse local --help --v
 
 **Devuelve**
 
-| Tipo de retorno | Descripción                                                                                                                                                                                                                                                                         |
-| --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Tipo de retorno | Descripción                                                                                                                                                                                                                                                                       |
+| --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `Connection`    | Objeto de conexión a la base de datos que admite:<br />• Crear cursores con `Connection.cursor()`<br />• Consultas directas con `Connection.query()`<br />• Consultas en streaming con `Connection.send_query()`<br />• Protocolo de gestor de contexto para la limpieza automática |
 
 **Lanza**
@@ -286,30 +301,31 @@ Para ver la lista completa de parámetros, consulta `clickhouse local --help --v
 | -------------- | --------------------------------------- |
 | `RuntimeError` | Si falla la conexión a la base de datos |
 
-<Note>
-  Un proceso ejecuta un motor integrado vinculado a una ruta de base de datos. Varias conexiones a la misma ruta pueden coexistir y ejecutar consultas simultáneamente. Abrir una ruta *diferente* mientras haya una conexión abierta genera un `RuntimeError`; primero cierra las conexiones abiertas.
-</Note>
+<Warning>
+  Solo se admite una conexión por proceso.
+  Al crear una nueva conexión, se cerrará cualquier conexión existente.
+</Warning>
 
 **Ejemplos**
 
 ```pycon
->>> # Temporary database
+>>> # Base de datos en memoria
 >>> conn = connect()
 >>> conn = connect(":memory:")
 >>>
->>> # File-based database
+>>> # Base de datos en archivo
 >>> conn = connect("my_data.db")
 >>> conn = connect("/path/to/data.db")
 >>>
->>> # With parameters
->>> conn = connect("data.db?mode=ro")  # Read-only mode
->>> conn = connect(":memory:?verbose&log-level=debug")  # Debug logging
+>>> # Con parámetros
+>>> conn = connect("data.db?mode=ro")  # Modo de solo lectura
+>>> conn = connect(":memory:?verbose&log-level=debug")  # Registro de depuración
 >>>
->>> # Using context manager for automatic cleanup
+>>> # Uso del gestor de contexto para limpieza automática
 >>> with connect("data.db") as conn:
 ...     result = conn.query("SELECT 1")
 ...     print(result)
->>> # Connection automatically closed
+>>> # Conexión cerrada automáticamente
 ```
 
 **Véase también**
@@ -317,9 +333,13 @@ Para ver la lista completa de parámetros, consulta `clickhouse local --help --v
 * [`Connection`](#chdb-state-sqlitelike-connection) - Clase de conexión a la base de datos
 * [`Cursor`](#chdb-state-sqlitelike-cursor) - Cursor de la base de datos para operaciones de DB-API 2.0
 
-## Gestión de excepciones {#chdb-exceptions}
+<div id="chdb-exceptions">
+  ## Gestión de excepciones
+</div>
 
-### **class** `chdb.ChdbError` {#chdb_chdbError}
+<div id="chdb_chdbError">
+  ### **class** `chdb.ChdbError`
+</div>
 
 Bases: `Exception`
 
@@ -331,12 +351,15 @@ proporciona información sobre errores del motor subyacente de ClickHouse.
 
 ***
 
-### **class** `chdb.session.Session` {#chdb_session_session}
+<div id="chdb_session_session">
+  ### **class** `chdb.session.Session`
+</div>
 
 Bases: `object`
 
 La sesión mantendrá el estado de la consulta.
-Si path es None, la sesión usa la base de datos temporal (`:memory:`) compartida por todo el proceso, por lo que todas las sesiones sin ruta pueden ver las tablas de las demás; su directorio temporal solo se elimina cuando se cierra la última sesión o conexión de este tipo.
+Si path es None, se creará un directorio temporal y se usará como ruta de la base de datos,
+y el directorio temporal se eliminará cuando se cierre la sesión.
 También puede pasar una ruta para crear una base de datos en esa ubicación, donde se conservarán sus datos.
 
 También puede usar una cadena de conexión para pasar la ruta y otros parámetros.
@@ -347,16 +370,16 @@ class chdb.session.Session(path=None)
 
 **Ejemplos**
 
-| Cadena de conexión                                 | Descripción                                       |
-| -------------------------------------------------- | ------------------------------------------------- |
-| `":memory:"`                                       | Base de datos temporal                            |
-| `"test.db"`                                        | Ruta relativa                                     |
-| `"file:test.db"`                                   | Igual que arriba                                  |
-| `"/path/to/test.db"`                               | Ruta absoluta                                     |
-| `"file:/path/to/test.db"`                          | Igual que arriba                                  |
-| `"file:test.db?param1=value1&param2=value2"`       | Ruta relativa con parámetros de consulta          |
-| `"file::memory:?verbose&log-level=test"`           | Base de datos temporal con parámetros de consulta |
-| `"///path/to/test.db?param1=value1&param2=value2"` | Ruta absoluta con parámetros de consulta          |
+| Cadena de conexión                                 | Descripción                                         |
+| -------------------------------------------------- | --------------------------------------------------- |
+| `":memory:"`                                       | Base de datos en memoria                            |
+| `"test.db"`                                        | Ruta relativa                                       |
+| `"file:test.db"`                                   | Igual que arriba                                    |
+| `"/path/to/test.db"`                               | Ruta absoluta                                       |
+| `"file:/path/to/test.db"`                          | Igual que arriba                                    |
+| `"file:test.db?param1=value1&param2=value2"`       | Ruta relativa con parámetros de consulta            |
+| `"file::memory:?verbose&log-level=test"`           | Base de datos en memoria con parámetros de consulta |
+| `"///path/to/test.db?param1=value1&param2=value2"` | Ruta absoluta con parámetros de consulta            |
 
 <Info>
   **Gestión de los argumentos de la cadena de conexión**
@@ -364,23 +387,25 @@ class chdb.session.Session(path=None)
   Las cadenas de conexión que contienen parámetros de consulta como “[file:test.db?param1=value1&amp;param2=value2](file:test.db?param1=value1\&param2=value2)”
   pasarán “param1=value1” al motor de ClickHouse como argumentos de inicio.
 
-  Para obtener más detalles, consulte `clickhouse local --help --verbose`
+  Para obtener más detalles, consulte `clickhouse local –help –verbose`
 
   Tratamiento de algunos argumentos especiales:
 
-  * “mode=ro” se convertiría en `--readonly=1` para ClickHouse (modo de solo lectura)
+  * “mode=ro” se convertiría en “–readonly=1” para ClickHouse (modo de solo lectura)
 </Info>
 
-<Note>
+<Warning>
   **Importante**
 
-  * Pueden coexistir varias sesiones, siempre que compartan la misma ruta de la base de datos.
-  * Para usar una ruta de base de datos diferente, cierre primero las sesiones abiertas.
-</Note>
+  * Solo puede haber una sesión a la vez. Si desea crear una nueva sesión, debe cerrar la existente.
+  * Crear una nueva sesión cerrará la existente.
+</Warning>
 
 ***
 
-#### `cleanup` {#cleanup}
+<div id="cleanup">
+  #### `cleanup`
+</div>
 
 Limpia los recursos de la sesión con control de excepciones.
 
@@ -416,7 +441,9 @@ cleanup()
 
 ***
 
-#### `close` {#close}
+<div id="close">
+  #### `close`
+</div>
 
 Cierra la sesión y libera los recursos.
 
@@ -451,7 +478,9 @@ close()
 
 ***
 
-#### `query` {#chdb-session-session-query}
+<div id="chdb-session-session-query">
+  #### `query`
+</div>
 
 Ejecuta una consulta SQL y devuelve los resultados.
 
@@ -539,7 +568,9 @@ id,name
 
 ***
 
-#### `send_query` {#chdb-session-session-send_query}
+<div id="chdb-session-session-send_query">
+  #### `send_query`
+</div>
 
 Ejecuta una consulta SQL y devuelve un iterador de resultados en streaming.
 
@@ -614,7 +645,9 @@ send_query(sql, fmt='CSV') → StreamingResult
 
 ***
 
-#### `sql` {#chdb-session-session-sql}
+<div id="chdb-session-session-sql">
+  #### `sql`
+</div>
 
 Ejecuta una consulta SQL y devuelve los resultados.
 
@@ -700,14 +733,19 @@ id,name
 * [`send_query()`](#chdb-session-session-send_query) - Para ejecutar consultas en streaming
 * [`sql`](#chdb-session-session-sql) - Alias para este método
 
-## Gestión del estado {#chdb-state-management}
+<div id="chdb-state-management">
+  ## Gestión del estado
+</div>
 
-### `chdb.state.connect` {#chdb_state_connect}
+<div id="chdb_state_connect">
+  ### `chdb.state.connect`
+</div>
 
 Crea una [Connection](#chdb-state-sqlitelike-connection) con el servidor en segundo plano de chDB.
 
 Esta función establece una conexión con el motor de base de datos de chDB (ClickHouse).
-Cada llamada devuelve una conexión independiente, y puede haber abiertas al mismo tiempo cualquier número de conexiones a la misma ruta de base de datos.
+Solo se permite una conexión abierta por proceso. Varias llamadas con la misma
+cadena de conexión devolverán el mismo objeto de conexión.
 
 **Sintaxis**
 
@@ -727,7 +765,7 @@ Formatos de cadena de conexión admitidos:
 
 | Formato                   | Descripción                                |
 | ------------------------- | ------------------------------------------ |
-| `":memory:"`              | Base de datos temporal (predeterminada)    |
+| `":memory:"`              | Base de datos en memoria (predeterminada)  |
 | `"test.db"`               | Archivo de base de datos con ruta relativa |
 | `"file:test.db"`          | Igual que la ruta relativa                 |
 | `"/path/to/test.db"`      | Archivo de base de datos con ruta absoluta |
@@ -738,7 +776,7 @@ Formatos de cadena de conexión admitidos:
 | Formato                                            | Descripción                  |
 | -------------------------------------------------- | ---------------------------- |
 | `"file:test.db?param1=value1&param2=value2"`       | Ruta relativa con parámetros |
-| `"file::memory:?verbose&log-level=test"`           | Temporal con parámetros      |
+| `"file::memory:?verbose&log-level=test"`           | En memoria con parámetros    |
 | `"///path/to/test.db?param1=value1&param2=value2"` | Ruta absoluta con parámetros |
 
 **Manejo de parámetros de consulta**
@@ -756,8 +794,8 @@ Para ver la lista completa de parámetros, consulte `clickhouse local --help --v
 
 **Devuelve**
 
-| Tipo de retorno | Descripción                                                                                                                                                                                                                                                                         |
-| --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Tipo de retorno | Descripción                                                                                                                                                                                                                                                                      |
+| --------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `Connection`    | Objeto de conexión a la base de datos que admite:<br />• Crear cursores con `Connection.cursor()`<br />• Consultas directas con `Connection.query()`<br />• Consultas en streaming con `Connection.send_query()`<br />• Protocolo de gestor de contexto para la limpieza automática |
 
 **Lanza**
@@ -766,30 +804,33 @@ Para ver la lista completa de parámetros, consulte `clickhouse local --help --v
 | -------------- | --------------------------------------- |
 | `RuntimeError` | Si falla la conexión a la base de datos |
 
-<Note>
-  Un proceso ejecuta un motor integrado vinculado a una ruta de base de datos. Pueden coexistir varias conexiones a la misma ruta y ejecutar consultas simultáneamente. Abrir una ruta *diferente* mientras haya alguna conexión abierta genera un `RuntimeError`; primero cierre las conexiones abiertas.
-</Note>
+<Warning>
+  **Advertencia**
+
+  Solo se admite una conexión por proceso.
+  Crear una nueva conexión cerrará cualquier conexión existente.
+</Warning>
 
 **Ejemplos**
 
 ```pycon
->>> # Temporary database
+>>> # Base de datos en memoria
 >>> conn = connect()
 >>> conn = connect(":memory:")
 >>>
->>> # File-based database
+>>> # Base de datos en archivo
 >>> conn = connect("my_data.db")
 >>> conn = connect("/path/to/data.db")
 >>>
->>> # With parameters
->>> conn = connect("data.db?mode=ro")  # Read-only mode
->>> conn = connect(":memory:?verbose&log-level=debug")  # Debug logging
+>>> # Con parámetros
+>>> conn = connect("data.db?mode=ro")  # Modo de solo lectura
+>>> conn = connect(":memory:?verbose&log-level=debug")  # Registro de depuración
 >>>
->>> # Using context manager for automatic cleanup
+>>> # Usando el gestor de contexto para limpieza automática
 >>> with connect("data.db") as conn:
 ...     result = conn.query("SELECT 1")
 ...     print(result)
->>> # Connection automatically closed
+>>> # Conexión cerrada automáticamente
 ```
 
 **Véase también**
@@ -797,7 +838,9 @@ Para ver la lista completa de parámetros, consulte `clickhouse local --help --v
 * `Connection` - Clase de conexión a la base de datos
 * `Cursor` - Cursor de base de datos para operaciones de DB-API 2.0
 
-### **clase** `chdb.state.sqlitelike.Connection` {#chdb-state-sqlitelike-connection}
+<div id="chdb-state-sqlitelike-connection">
+  ### **clase** `chdb.state.sqlitelike.Connection`
+</div>
 
 Bases: `object`
 
@@ -809,7 +852,9 @@ class chdb.state.sqlitelike.Connection(connection_string: str)
 
 ***
 
-#### `close` {#chdb-session-session-close}
+<div id="close">
+  #### `close`
+</div>
 
 Cierra la conexión y libera los recursos.
 
@@ -853,7 +898,9 @@ close() → None
 
 ***
 
-#### `cursor` {#chdb-state-sqlitelike-connection-cursor}
+<div id="chdb-state-sqlitelike-connection-cursor">
+  #### `cursor`
+</div>
 
 Crea un objeto [Cursor](#chdb-state-sqlitelike-cursor) para ejecutar consultas.
 
@@ -898,7 +945,9 @@ cursor() → Cursor
 
 ***
 
-#### `query` {#chdb-state-sqlitelike-connection-query}
+<div id="chdb-session-session-query">
+  #### `query`
+</div>
 
 Ejecuta una consulta SQL y devuelve todos los resultados.
 
@@ -970,7 +1019,9 @@ num,text
 
 ***
 
-#### `send_query` {#chdb-state-sqlitelike-connection-send_query}
+<div id="chdb-session-session-send_query">
+  #### `send_query`
+</div>
 
 Ejecuta una consulta SQL y devuelve un iterador de resultados en streaming.
 
@@ -1043,7 +1094,9 @@ send_query(query: str, format: str = 'CSV') → StreamingResult
 
 ***
 
-### **class** `chdb.state.sqlitelike.StreamingResult` {#chdb-state-sqlitelike-streamingresult}
+<div id="chdb-state-sqlitelike-streamingresult">
+  ### **class** `chdb.state.sqlitelike.StreamingResult`
+</div>
 
 Bases: `object`
 
@@ -1059,7 +1112,9 @@ class chdb.state.sqlitelike.StreamingResult
 
 ***
 
-#### `fetch` {#streamingresult-fetch}
+<div id="streamingresult-fetch">
+  #### `fetch`
+</div>
 
 Obtiene el siguiente fragmento de resultados en streaming.
 
@@ -1093,7 +1148,9 @@ fetch() → Any
 
 ***
 
-#### `cancel` {#streamingresult-cancel}
+<div id="streamingresult-cancel">
+  #### `cancel`
+</div>
 
 Cancela la consulta en streaming y libera los recursos.
 
@@ -1120,7 +1177,9 @@ cancel() → None
 
 ***
 
-#### `close` {#streamingresult-close}
+<div id="close">
+  #### `close`
+</div>
 
 Cierra el resultado en streaming y libera los recursos.
 
@@ -1135,7 +1194,9 @@ close() → None
 
 ***
 
-#### `record_batch` {#streamingresult-record_batch}
+<div id="streamingresult-record_batch">
+  #### `record_batch`
+</div>
 
 Crea un PyArrow RecordBatchReader para procesar lotes de forma eficiente.
 
@@ -1179,7 +1240,9 @@ record_batch(rows_per_batch: int = 1000000) → pa.RecordBatchReader
 
 ***
 
-#### Protocolo de iteración {#streamingresult-iterator}
+<div id="streamingresult-iterator">
+  #### Protocolo de iteración
+</div>
 
 StreamingResult es compatible con el protocolo de iteración de Python, lo que permite
 usarlo directamente en bucles for:
@@ -1192,7 +1255,9 @@ usarlo directamente en bucles for:
 
 ***
 
-#### Protocolo del gestor de contexto {#streamingresult-context-manager}
+<div id="streamingresult-context-manager">
+  #### Protocolo del gestor de contexto
+</div>
 
 StreamingResult admite el protocolo del gestor de contexto para la
 liberación automática de recursos:
@@ -1206,7 +1271,9 @@ liberación automática de recursos:
 
 ***
 
-### **clase** `chdb.state.sqlitelike.Cursor` {#chdb-state-sqlitelike-cursor}
+<div id="chdb-state-sqlitelike-cursor">
+  ### **clase** `chdb.state.sqlitelike.Cursor`
+</div>
 
 Bases: `object`
 
@@ -1216,7 +1283,9 @@ class chdb.state.sqlitelike.Cursor(connection)
 
 ***
 
-#### `close` {#cursor-close-none}
+<div id="close">
+  #### `close`
+</div>
 
 Cierra el cursor y libera los recursos.
 
@@ -1246,7 +1315,9 @@ close() → None
 
 ***
 
-#### `column_names` {#chdb-state-sqlitelike-cursor-column_names}
+<div id="chdb-state-sqlitelike-cursor-column_names">
+  #### `column_names`
+</div>
 
 Devuelve una lista de nombres de columnas de la última consulta ejecutada.
 
@@ -1282,7 +1353,9 @@ column_names() → list
 
 ***
 
-#### `column_types` {#chdb-state-sqlitelike-cursor-column_types}
+<div id="chdb-state-sqlitelike-cursor-column_types">
+  #### `column_types`
+</div>
 
 Devuelve una lista de los tipos de las columnas de la última consulta ejecutada.
 
@@ -1318,7 +1391,9 @@ column_types() → list
 
 ***
 
-#### `commit` {#commit}
+<div id="commit">
+  #### `commit`
+</div>
 
 Hace `commit` de cualquier transacción pendiente.
 
@@ -1348,7 +1423,9 @@ commit() → None
 
 ***
 
-#### `property description : list` {#chdb-state-sqlitelike-cursor-description}
+<div id="chdb-state-sqlitelike-cursor-description">
+  #### `property description : list`
+</div>
 
 Devuelve la descripción de las columnas según la especificación DB-API 2.0.
 
@@ -1388,7 +1465,9 @@ Column: name, Type: String
 
 ***
 
-#### `execute` {#execute}
+<div id="execute">
+  #### `execute`
+</div>
 
 Ejecuta una consulta SQL y prepara los resultados para su obtención.
 
@@ -1458,7 +1537,9 @@ execute(query: str) → None
 
 ***
 
-#### `fetchall` {#chdb-state-sqlitelike-cursor-fetchall}
+<div id="chdb-state-sqlitelike-cursor-fetchall">
+  #### `fetchall`
+</div>
 
 Obtiene todas las filas restantes del resultado de la consulta.
 
@@ -1503,7 +1584,9 @@ fetchall() → tuple
 
 ***
 
-#### `fetchmany` {#chdb-state-sqlitelike-cursor-fetchmany}
+<div id="chdb-state-sqlitelike-cursor-fetchmany">
+  #### `fetchmany`
+</div>
 
 Obtiene varias filas del resultado de la consulta.
 
@@ -1555,7 +1638,9 @@ fetchmany(size: int = 1) → tuple
 
 ***
 
-#### `fetchone` {#chdb-state-sqlitelike-cursor-fetchone}
+<div id="chdb-state-sqlitelike-cursor-fetchone">
+  #### `fetchone`
+</div>
 
 Obtiene la siguiente fila del resultado de la consulta.
 
@@ -1600,7 +1685,9 @@ fetchone() → tuple | None
 
 ***
 
-### `chdb.state.sqlitelike` {#state-sqlitelike-to_arrowtable}
+<div id="state-sqlitelike-to_arrowtable">
+  ### `chdb.state.sqlitelike`
+</div>
 
 Convierte el resultado de la consulta en una tabla de PyArrow.
 
@@ -1659,7 +1746,9 @@ text: string
 
 ***
 
-### `chdb.state.sqlitelike.to_df` {#state-sqlitelike-to_df}
+<div id="state-sqlitelike-to_df">
+  ### `chdb.state.sqlitelike.to_df`
+</div>
 
 Convierte el resultado de la consulta en un DataFrame de Pandas.
 
@@ -1715,9 +1804,13 @@ text    object
 dtype: object
 ```
 
-## Integración con DataFrame {#dataframe-integration}
+<div id="dataframe-integration">
+  ## Integración con DataFrame
+</div>
 
-### **clase** `chdb.dataframe.Table` {#chdb-dataframe-table}
+<div id="chdb-dataframe-table">
+  ### **clase** `chdb.dataframe.Table`
+</div>
 
 Bases:
 
@@ -1725,7 +1818,9 @@ Bases:
 class chdb.dataframe.Table(*args: Any, **kwargs: Any)
 ```
 
-## Interfaz de la API de bases de datos (DBAPI) 2.0 {#database-api-interface}
+<div id="database-api-interface">
+  ## Interfaz de la API de bases de datos (DBAPI) 2.0
+</div>
 
 chDB proporciona una interfaz compatible con Python DB-API 2.0 para conectarse a bases de datos, lo que le permite usar chDB con herramientas y frameworks que requieren interfaces de bases de datos estándar.
 
@@ -1739,13 +1834,17 @@ La interfaz DB-API 2.0 de chDB incluye:
 
 ***
 
-### Funciones principales {#core-functions}
+<div id="core-functions">
+  ### Funciones principales
+</div>
 
 La interfaz DBAPI 2.0 (API de bases de datos) implementa las siguientes funciones principales:
 
-#### `chdb.dbapi.connect` {#dbapi-connect}
+<div id="dbapi-connect">
+  #### `chdb.dbapi.connect`
+</div>
 
-Inicializa una nueva conexión a la base de datos.
+Inicializa una nueva conexión de base de datos.
 
 **Sintaxis**
 
@@ -1755,11 +1854,11 @@ chdb.dbapi.connect(*args, **kwargs)
 
 **Parámetros**
 
-| Parámetro | Tipo | Predeterminado | Descripción                                                                               |
-| --------- | ---- | -------------- | ----------------------------------------------------------------------------------------- |
-| `path`    | str  | `None`         | Ruta del archivo de la base de datos. None para una base de datos temporal no persistente |
+| Parámetro | Tipo | Predeterminado | Descripción                                                                  |
+| --------- | ---- | -------------- | ---------------------------------------------------------------------------- |
+| `path`    | str  | `None`         | Ruta del archivo de la base de datos. None para una base de datos en memoria |
 
-**Lanza**
+**Genera**
 
 | Excepción                            | Condición                             |
 | ------------------------------------ | ------------------------------------- |
@@ -1767,7 +1866,9 @@ chdb.dbapi.connect(*args, **kwargs)
 
 ***
 
-#### `chdb.dbapi.get_client_info()` {#dbapi-get-client-info}
+<div id="dbapi-get-client-info">
+  #### `chdb.dbapi.get_client_info()`
+</div>
 
 Obtiene información sobre la versión del cliente.
 
@@ -1787,9 +1888,13 @@ chdb.dbapi.get_client_info()
 
 ***
 
-### Constructores de tipos {#type-constructors}
+<div id="type-constructors">
+  ### Constructores de tipos
+</div>
 
-#### `chdb.dbapi.Binary(x)` {#dbapi-binary}
+<div id="dbapi-binary">
+  #### `chdb.dbapi.Binary(x)`
+</div>
 
 Devuelve x como tipo binario.
 
@@ -1815,18 +1920,21 @@ chdb.dbapi.Binary(x)
 
 ***
 
-### Clase Connection {#connection-class}
+<div id="connection-class">
+  ### Clase Connection
+</div>
 
-#### **class** `chdb.dbapi.connections.Connection(path=None)` {#chdb-dbapi-connections-connection}
+<div id="chdb-dbapi-connections-connection">
+  #### **class** `chdb.dbapi.connections.Connection(path=None)`
+</div>
 
 Bases: `object`
 
 Conexión compatible con DB-API 2.0 a la base de datos chDB.
 
-Esta clase proporciona una interfaz estándar de DB-API para conectarse a bases de datos chDB e interactuar con ellas. Admite tanto bases de datos temporales como bases de datos basadas en archivos.
+Esta clase proporciona una interfaz estándar de DB-API para conectarse a bases de datos chDB e interactuar con ellas. Admite tanto bases de datos en memoria como bases de datos basadas en archivos.
 
-La conexión administra el engine de chDB subyacente y proporciona métodos para
-ejecutar consultas, gestionar transacciones (sin efecto en ClickHouse) y crear cursores.
+La conexión administra el engine de chDB subyacente y proporciona métodos para ejecutar consultas, gestionar transacciones (sin efecto en ClickHouse) y crear cursores.
 
 ```python
 class chdb.dbapi.connections.Connection(path=None)
@@ -1834,9 +1942,9 @@ class chdb.dbapi.connections.Connection(path=None)
 
 **Parámetros**
 
-| Parámetro | Tipo | Predeterminado | Descripción                                                                                                                                                                                                                                        |
-| --------- | ---- | -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `path`    | str  | `None`         | Ruta del archivo de la base de datos. Si es `None` (el valor predeterminado), se usa una base de datos temporal y no persistente (equivalente a `':memory:'`). Proporcione una ruta de archivo como &#39;database.db&#39; para persistir en disco. |
+| Parámetro | Tipo | Predeterminado | Descripción                                                                                                                                                                        |
+| --------- | ---- | -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `path`    | str  | `None`         | Ruta del archivo de la base de datos. Si es `None`, se usa una base de datos en memoria. Puede ser una ruta de archivo como &#39;database.db&#39; o `None` para &#39;:memory:&#39; |
 
 **Variables**
 
@@ -1848,7 +1956,7 @@ class chdb.dbapi.connections.Connection(path=None)
 **Ejemplos**
 
 ```pycon
->>> # Temporary database
+>>> # Base de datos en memoria
 >>> conn = Connection()
 >>> cursor = conn.cursor()
 >>> cursor.execute("SELECT 1")
@@ -1857,7 +1965,7 @@ class chdb.dbapi.connections.Connection(path=None)
 ```
 
 ```pycon
->>> # File-based database
+>>> # Base de datos basada en fichero
 >>> conn = Connection('mydata.db')
 >>> with conn.cursor() as cur:
 ...     cur.execute("CREATE TABLE users (id INT, name STRING) ENGINE = MergeTree() order by id")
@@ -1866,7 +1974,7 @@ class chdb.dbapi.connections.Connection(path=None)
 ```
 
 ```pycon
->>> # Context manager usage
+>>> # Uso como administrador de contexto
 >>> with Connection() as cur:
 ...     cur.execute("SELECT version()")
 ...     version = cur.fetchone()
@@ -1879,7 +1987,9 @@ class chdb.dbapi.connections.Connection(path=None)
 
 ***
 
-#### `close` {#dbapi-connection-close}
+<div id="close">
+  #### `close`
+</div>
 
 Cierra la conexión a la base de datos.
 
@@ -1900,7 +2010,9 @@ close()
 
 ***
 
-#### `commit` {#dbapi-commit}
+<div id="commit">
+  #### `commit`
+</div>
 
 Realiza commit de la transacción actual.
 
@@ -1917,7 +2029,9 @@ commit()
 
 ***
 
-#### `cursor` {#dbapi-cursor}
+<div id="chdb-state-sqlitelike-connection-cursor">
+  #### `cursor`
+</div>
 
 Crea un nuevo cursor para ejecutar consultas.
 
@@ -1956,7 +2070,9 @@ cursor(cursor=None)
 
 ***
 
-#### `escape` {#escape}
+<div id="escape">
+  #### `escape`
+</div>
 
 Escapa un valor para incluirlo de forma segura en consultas SQL.
 
@@ -1989,7 +2105,9 @@ escape(obj, mapping=None)
 
 ***
 
-#### `escape_string` {#escape-string}
+<div id="escape-string">
+  #### `escape_string`
+</div>
 
 Escapa una cadena para consultas SQL.
 
@@ -2013,7 +2131,9 @@ escape_string(s)
 
 ***
 
-#### `property open` {#property-open}
+<div id="property-open">
+  #### `property open`
+</div>
 
 Comprueba si la conexión está abierta.
 
@@ -2025,7 +2145,9 @@ Comprueba si la conexión está abierta.
 
 ***
 
-#### `query` {#dbapi-query}
+<div id="chdb-session-session-query">
+  #### `query`
+</div>
 
 Ejecuta una consulta SQL directamente y devuelve resultados sin procesar.
 
@@ -2068,7 +2190,9 @@ query(sql, fmt='CSV')
 
 ***
 
-#### `property resp` {#property-resp}
+<div id="property-resp">
+  #### `property resp`
+</div>
 
 Obtiene la respuesta de la última consulta.
 
@@ -2085,7 +2209,9 @@ Obtiene la respuesta de la última consulta.
 
 ***
 
-#### `rollback` {#rollback}
+<div id="rollback">
+  #### `rollback`
+</div>
 
 Deshace la transacción actual.
 
@@ -2102,9 +2228,13 @@ rollback()
 
 ***
 
-### Clase Cursor {#cursor-class}
+<div id="cursor-class">
+  ### Clase Cursor
+</div>
 
-#### **class** `chdb.dbapi.cursors.Cursor` {#chdb-dbapi-cursors-cursor}
+<div id="chdb-dbapi-cursors-cursor">
+  #### **class** `chdb.dbapi.cursors.Cursor`
+</div>
 
 Bases: `object`
 
@@ -2146,7 +2276,9 @@ class chdb.dbapi.cursors.Cursor(connection)
 
 ***
 
-#### `callproc` {#callproc}
+<div id="callproc">
+  #### `callproc`
+</div>
 
 Ejecuta un procedimiento almacenado (implementación provisional).
 
@@ -2186,7 +2318,9 @@ callproc(procname, args=())
 
 ***
 
-#### `close` {#dbapi-cursor-close}
+<div id="close">
+  #### `close`
+</div>
 
 Cierra el cursor y libera los recursos asociados.
 
@@ -2201,7 +2335,9 @@ close()
 
 ***
 
-#### `execute` {#dbapi-execute}
+<div id="execute">
+  #### `execute`
+</div>
 
 Ejecuta una consulta SQL con enlace opcional de parámetros.
 
@@ -2257,7 +2393,9 @@ execute(query, args=None)
 
 ***
 
-#### `executemany(query, args)` {#chdb-dbapi-cursors-cursor-executemany}
+<div id="chdb-dbapi-cursors-cursor-executemany">
+  #### `executemany(query, args)`
+</div>
 
 Ejecuta una consulta varias veces con distintos conjuntos de parámetros.
 
@@ -2308,7 +2446,9 @@ executemany(query, args)
 
 ***
 
-#### `fetchall()` {#dbapi-fetchall}
+<div id="dbapi-fetchall">
+  #### `fetchall()`
+</div>
 
 Obtiene todas las filas restantes del resultado de la consulta.
 
@@ -2347,7 +2487,9 @@ fetchall()
 
 ***
 
-#### `fetchmany` {#dbapi-fetchmany}
+<div id="chdb-state-sqlitelike-cursor-fetchmany">
+  #### `fetchmany`
+</div>
 
 Devuelve varias filas del resultado de la consulta.
 
@@ -2385,7 +2527,9 @@ fetchmany(size=1)
 
 ***
 
-#### `fetchone` {#dbapi-fetchone}
+<div id="chdb-state-sqlitelike-cursor-fetchone">
+  #### `fetchone`
+</div>
 
 Obtiene la siguiente fila del resultado de la consulta.
 
@@ -2419,7 +2563,9 @@ fetchone()
 
 ***
 
-#### `max_stmt_length = 1024000` {#max-stmt-length}
+<div id="max-stmt-length">
+  #### `max_stmt_length = 1024000`
+</div>
 
 Tamaño máximo de la sentencia generada por [`executemany()`](#chdb-dbapi-cursors-cursor-executemany).
 
@@ -2427,7 +2573,9 @@ El valor predeterminado es 1024000.
 
 ***
 
-#### `mogrify` {#mogrify}
+<div id="mogrify">
+  #### `mogrify`
+</div>
 
 Devuelve la cadena de consulta exacta que se enviaría a la base de datos.
 
@@ -2466,7 +2614,9 @@ mogrify(query, args=None)
 
 ***
 
-#### `nextset` {#nextset}
+<div id="nextset">
+  #### `nextset`
+</div>
 
 Pasa al siguiente conjunto de resultados (no se admite).
 
@@ -2489,7 +2639,9 @@ nextset()
 
 ***
 
-#### `setinputsizes` {#setinputsizes}
+<div id="setinputsizes">
+  #### `setinputsizes`
+</div>
 
 Establece los tamaños de entrada de los parámetros (sin efecto).
 
@@ -2512,7 +2664,9 @@ setinputsizes(*args)
 
 ***
 
-#### `setoutputsizes` {#setoutputsizes}
+<div id="setoutputsizes">
+  #### `setoutputsizes`
+</div>
 
 Establece los tamaños de las columnas de salida (implementación sin efecto).
 
@@ -2535,7 +2689,9 @@ setoutputsizes(*args)
 
 ***
 
-### Clases de excepciones {#error-classes}
+<div id="error-classes">
+  ### Clases de excepciones
+</div>
 
 Clases de excepción para las operaciones de base de datos en chdb.
 
@@ -2605,7 +2761,9 @@ Constraint violation: Duplicate entry '1' for key 'PRIMARY'
 
 ***
 
-#### **excepción** `chdb.dbapi.err.DataError` {#chdb-dbapi-err-dataerror}
+<div id="chdb-dbapi-err-dataerror">
+  #### **excepción** `chdb.dbapi.err.DataError`
+</div>
 
 Bases: [`DatabaseError`](#chdb-dbapi-err-databaseerror)
 
@@ -2643,7 +2801,9 @@ DataError: Invalid date format
 
 ***
 
-#### **excepción** `chdb.dbapi.err.DatabaseError` {#chdb-dbapi-err-databaseerror}
+<div id="chdb-dbapi-err-databaseerror">
+  #### **excepción** `chdb.dbapi.err.DatabaseError`
+</div>
 
 Bases: [`Error`](#chdb-dbapi-err-error)
 
@@ -2667,7 +2827,9 @@ Los casos habituales incluyen:
 
 ***
 
-#### **excepción** `chdb.dbapi.err.Error` {#chdb-dbapi-err-error}
+<div id="chdb-dbapi-err-error">
+  #### **excepción** `chdb.dbapi.err.Error`
+</div>
 
 Bases: [`StandardError`](#chdb-dbapi-err-standarderror)
 
@@ -2685,7 +2847,9 @@ la correcta finalización de las operaciones.
 
 * [`Warning`](#chdb-dbapi-err-warning) - Para advertencias no fatales que no impiden la finalización de la operación
 
-#### **excepción** `chdb.dbapi.err.IntegrityError` {#chdb-dbapi-err-integrityerror}
+<div id="chdb-dbapi-err-integrityerror">
+  #### **excepción** `chdb.dbapi.err.IntegrityError`
+</div>
 
 Bases: [`DatabaseError`](#chdb-dbapi-err-databaseerror)
 
@@ -2723,7 +2887,9 @@ IntegrityError: Cannot add or update a child row: foreign key constraint fails
 
 ***
 
-#### **exception** `chdb.dbapi.err.InterfaceError` {#chdb-dbapi-err-interfaceerror}
+<div id="chdb-dbapi-err-interfaceerror">
+  #### **exception** `chdb.dbapi.err.InterfaceError`
+</div>
 
 Bases: [`Error`](#chdb-dbapi-err-error)
 
@@ -2750,7 +2916,9 @@ de la interfaz de la base de datos, como:
 
 ***
 
-#### **excepción** `chdb.dbapi.err.InternalError` {#chdb-dbapi-err-internalerror}
+<div id="chdb-dbapi-err-internalerror">
+  #### **excepción** `chdb.dbapi.err.InternalError`
+</div>
 
 Bases: [`DatabaseError`](#chdb-dbapi-err-databaseerror)
 
@@ -2786,7 +2954,9 @@ errores internos que no han sido causados por la aplicación, como por ejemplo:
 
 ***
 
-#### **excepción** `chdb.dbapi.err.NotSupportedError` {#chdb-dbapi-err-notsupportederror}
+<div id="chdb-dbapi-err-notsupportederror">
+  #### **excepción** `chdb.dbapi.err.NotSupportedError`
+</div>
 
 Bases: [`DatabaseError`](#chdb-dbapi-err-databaseerror)
 
@@ -2828,7 +2998,9 @@ NotSupportedError: WITH clause not supported in this database version
 
 ***
 
-#### **excepción** `chdb.dbapi.err.OperationalError` {#chdb-dbapi-err-operationalerror}
+<div id="chdb-dbapi-err-operationalerror">
+  #### **excepción** `chdb.dbapi.err.OperationalError`
+</div>
 
 Bases: [`DatabaseError`](#chdb-dbapi-err-databaseerror)
 
@@ -2865,7 +3037,9 @@ y que no están necesariamente bajo el control del programador, entre ellos:
 
 ***
 
-#### **exception** `chdb.dbapi.err.ProgrammingError` {#chdb-dbapi-err-programmingerror}
+<div id="chdb-dbapi-err-programmingerror">
+  #### **exception** `chdb.dbapi.err.ProgrammingError`
+</div>
 
 Bases: [`DatabaseError`](#chdb-dbapi-err-databaseerror)
 
@@ -2909,7 +3083,9 @@ ProgrammingError: Column count doesn't match value count
 
 ***
 
-#### **excepción** `chdb.dbapi.err.StandardError` {#chdb-dbapi-err-standarderror}
+<div id="chdb-dbapi-err-standarderror">
+  #### **excepción** `chdb.dbapi.err.StandardError`
+</div>
 
 Bases: `Exception`
 
@@ -2926,7 +3102,9 @@ para las operaciones de base de datos.
 
 ***
 
-#### **excepción** `chdb.dbapi.err.Warning` {#chdb-dbapi-err-warning}
+<div id="chdb-dbapi-err-warning">
+  #### **excepción** `chdb.dbapi.err.Warning`
+</div>
 
 Bases: [`StandardError`](#chdb-dbapi-err-standarderror)
 
@@ -2946,9 +3124,13 @@ Entre los casos más comunes se incluyen:
 
 ***
 
-### Constantes del módulo {#module-constants}
+<div id="module-constants">
+  ### Constantes del módulo
+</div>
 
-#### `chdb.dbapi.apilevel = '2.0'` {#apilevel}
+<div id="apilevel">
+  #### `chdb.dbapi.apilevel = '2.0'`
+</div>
 
 ```python
 str(object=’’) -> str
@@ -2966,7 +3148,9 @@ o de `repr(object)`.
 
 ***
 
-#### `chdb.dbapi.threadsafety = 1` {#threadsafety}
+<div id="threadsafety">
+  #### `chdb.dbapi.threadsafety = 1`
+</div>
 
 ```python
 int([x]) -> integer
@@ -2990,7 +3174,9 @@ La base 0 significa interpretar la base a partir de la cadena, como en un litera
 
 ***
 
-#### `chdb.dbapi.paramstyle = 'format'` {#paramstyle}
+<div id="paramstyle">
+  #### `chdb.dbapi.paramstyle = 'format'`
+</div>
 
 ```python
 str(object=’’) -> str
@@ -3007,9 +3193,13 @@ El valor predeterminado de errors es ‘strict’.
 
 ***
 
-### Constantes de tipo {#type-constants}
+<div id="type-constants">
+  ### Constantes de tipo
+</div>
 
-#### `chdb.dbapi.STRING = frozenset({247, 253, 254})` {#string-type}
+<div id="string-type">
+  #### `chdb.dbapi.STRING = frozenset({247, 253, 254})`
+</div>
 
 `frozenset` ampliado para la comparación de tipos de DB-API 2.0.
 
@@ -3031,7 +3221,9 @@ comparaciones como “field&#95;type == STRING”, donde field&#95;type es un ú
 
 ***
 
-#### `chdb.dbapi.BINARY = frozenset({249, 250, 251, 252})` {#binary-type}
+<div id="binary-type">
+  #### `chdb.dbapi.BINARY = frozenset({249, 250, 251, 252})`
+</div>
 
 `frozenset` ampliado para la comparación de tipos de DB-API 2.0.
 
@@ -3053,7 +3245,9 @@ comparaciones como “field&#95;type == STRING”, donde `field&#95;type` es un 
 
 ***
 
-#### `chdb.dbapi.NUMBER = frozenset({0, 1, 3, 4, 5, 8, 9, 13})` {#number-type}
+<div id="number-type">
+  #### `chdb.dbapi.NUMBER = frozenset({0, 1, 3, 4, 5, 8, 9, 13})`
+</div>
 
 `frozenset` ampliado para la comparación de tipos de DB-API 2.0.
 
@@ -3075,7 +3269,9 @@ comparaciones como “field&#95;type == STRING”, donde field&#95;type es un ú
 
 ***
 
-#### `chdb.dbapi.DATE = frozenset({10, 14})` {#date-type}
+<div id="date-type">
+  #### `chdb.dbapi.DATE = frozenset({10, 14})`
+</div>
 
 `frozenset` ampliado para la comparación de tipos de DB-API 2.0.
 
@@ -3097,7 +3293,9 @@ comparaciones como “field&#95;type == STRING”, donde field&#95;type es un ú
 
 ***
 
-#### `chdb.dbapi.TIME = frozenset({11})` {#time-type}
+<div id="time-type">
+  #### `chdb.dbapi.TIME = frozenset({11})`
+</div>
 
 `frozenset` ampliado para la comparación de tipos de DB-API 2.0.
 
@@ -3119,7 +3317,9 @@ comparaciones como “field&#95;type == STRING”, donde `field&#95;type` es un 
 
 ***
 
-#### `chdb.dbapi.TIMESTAMP = frozenset({7, 12})` {#timestamp-type}
+<div id="timestamp-type">
+  #### `chdb.dbapi.TIMESTAMP = frozenset({7, 12})`
+</div>
 
 `frozenset` ampliado para la comparación de tipos de DB-API 2.0.
 
@@ -3139,7 +3339,9 @@ comparaciones como “field&#95;type == STRING”, donde field&#95;type es un ú
 >>> FIELD_TYPE.BLOB in string_types    # Devuelve False
 ```
 
-#### `chdb.dbapi.DATETIME = frozenset({7, 12})` {#datetime-type}
+<div id="datetime-type">
+  #### `chdb.dbapi.DATETIME = frozenset({7, 12})`
+</div>
 
 frozenset ampliado para la comparación de tipos de DB-API 2.0.
 
@@ -3161,7 +3363,9 @@ comparaciones como “field&#95;type == STRING”, donde field&#95;type es un ú
 
 ***
 
-#### `chdb.dbapi.ROWID = frozenset({})` {#rowid-type}
+<div id="rowid-type">
+  #### `chdb.dbapi.ROWID = frozenset({})`
+</div>
 
 frozenset ampliado para la comparación de tipos en DB-API 2.0.
 
@@ -3176,9 +3380,9 @@ comparaciones como “field&#95;type == STRING”, donde field&#95;type es un ú
 
 ```pycon
 >>> string_types = DBAPISet([FIELD_TYPE.STRING, FIELD_TYPE.VAR_STRING])
->>> FIELD_TYPE.STRING == string_types  # Returns True
->>> FIELD_TYPE.INT != string_types     # Returns True
->>> FIELD_TYPE.BLOB in string_types    # Returns False
+>>> FIELD_TYPE.STRING == string_types  # Devuelve True
+>>> FIELD_TYPE.INT != string_types     # Devuelve True
+>>> FIELD_TYPE.BLOB in string_types    # Devuelve False
 ```
 
 **Ejemplos de uso**
@@ -3190,16 +3394,16 @@ import chdb.dbapi as dbapi
 
 print("chdb driver version: {0}".format(dbapi.get_client_info()))
 
-# Create connection and cursor
+# Crear conexión y cursor
 conn = dbapi.connect()
 cur = conn.cursor()
 
-# Execute query
+# Ejecutar consulta
 cur.execute('SELECT version()')
 print("description:", cur.description)
 print("data:", cur.fetchone())
 
-# Clean up
+# Limpiar recursos
 cur.close()
 conn.close()
 ```
@@ -3212,7 +3416,7 @@ import chdb.dbapi as dbapi
 conn = dbapi.connect()
 cur = conn.cursor()
 
-# Create table
+# Crear tabla
 cur.execute("""
     CREATE TABLE employees (
         id UInt32,
@@ -3222,7 +3426,7 @@ cur.execute("""
     ) ENGINE = Memory
 """)
 
-# Insert data
+# Insertar datos
 cur.execute("""
     INSERT INTO employees VALUES
     (1, 'Alice', 'Engineering', 75000.00),
@@ -3230,10 +3434,10 @@ cur.execute("""
     (3, 'Charlie', 'Engineering', 80000.00)
 """)
 
-# Query data
+# Consultar datos
 cur.execute("SELECT * FROM employees WHERE department = 'Engineering'")
 
-# Fetch results
+# Obtener resultados
 print("Column names:", [desc[0] for desc in cur.description])
 for row in cur.fetchall():
     print(row)
@@ -3246,19 +3450,19 @@ Gestión de conexiones:
 ```python
 import chdb.dbapi as dbapi
 
-# Temporary database (default)
+# Base de datos en memoria (predeterminado)
 conn1 = dbapi.connect()
 
-# Persistent database file
+# Archivo de base de datos persistente
 conn2 = dbapi.connect("./my_database.chdb")
 
-# Connection with parameters
+# Conexión con parámetros
 conn3 = dbapi.connect("./my_database.chdb?log-level=debug&verbose")
 
-# Read-only connection
+# Conexión de solo lectura
 conn4 = dbapi.connect("./my_database.chdb?mode=ro")
 
-# Automatic connection cleanup
+# Limpieza automática de la conexión
 with dbapi.connect("test.chdb") as conn:
     cur = conn.cursor()
     cur.execute("SELECT count() FROM numbers(1000)")
@@ -3291,13 +3495,17 @@ with dbapi.connect("test.chdb") as conn:
   * La sintaxis de vinculación de parámetros sigue el estilo de formato: `%s`
 </Warning>
 
-## Funciones definidas por el usuario (UDF) en Python {#user-defined-functions}
+<div id="user-defined-functions">
+  ## Funciones definidas por el usuario (UDF) en Python
+</div>
 
 chDB admite UDF nativas de Python que se ejecutan en el mismo proceso, con argumentos tipados, inferencia automática de tipos y manejo configurable de NULL y excepciones. Las funciones de Python registradas como UDF pueden invocarse directamente desde consultas SQL.
 
 Los ejemplos siguientes usan el formato de salida CSV predeterminado. Los comentarios en línea muestran los valores lógicos de los resultados; la salida sin procesar representa `NULL` como `\N` y aplica comillas de CSV a los valores de cadena y fecha.
 
-### `chdb.create_function` {#create-function}
+<div id="create-function">
+  ### `chdb.create_function`
+</div>
 
 Registra una función de Python como función SQL de chDB.
 
@@ -3340,7 +3548,9 @@ drop_function("strlen")
 
 ***
 
-### `chdb.drop_function` {#drop-function}
+<div id="drop-function">
+  ### `chdb.drop_function`
+</div>
 
 Elimina una UDF de Python registrada previamente. No hace nada si la función no está registrada, por lo que se puede llamar sin condiciones.
 
@@ -3358,7 +3568,9 @@ chdb.drop_function(name)
 
 ***
 
-### Decorador `@func` {#func-decorator}
+<div id="func-decorator">
+  ### Decorador `@func`
+</div>
 
 Decorador para registrar una función de Python como función SQL de chDB. La función sigue pudiendo llamarse como una función de Python normal y, al mismo tiempo, está disponible en consultas SQL con su `__name__`.
 
@@ -3404,9 +3616,13 @@ print(query("SELECT greet('world')"))    # Hello, world!
 
 ***
 
-### Sistema de tipos {#udf-type-system}
+<div id="udf-type-system">
+  ### Sistema de tipos
+</div>
 
-#### Tipos disponibles {#udf-available-types}
+<div id="udf-available-types">
+  #### Tipos disponibles
+</div>
 
 Importa los tipos desde `chdb.sqltypes`:
 
@@ -3421,7 +3637,9 @@ from chdb.sqltypes import (
 )
 ```
 
-#### Correspondencia automática de tipos {#udf-automatic-type-mapping}
+<div id="udf-automatic-type-mapping">
+  #### Correspondencia automática de tipos
+</div>
 
 Cuando los tipos se infieren a partir de anotaciones de Python, se utiliza la siguiente correspondencia:
 
@@ -3436,7 +3654,9 @@ Cuando los tipos se infieren a partir de anotaciones de Python, se utiliza la si
 | `datetime.date`     | `Date`             |
 | `datetime.datetime` | `DateTime64(6)`    |
 
-#### Métodos para especificar tipos {#udf-type-specification-methods}
+<div id="udf-type-specification-methods">
+  #### Métodos para especificar tipos
+</div>
 
 Los tipos se pueden especificar de varias formas:
 
@@ -3463,7 +3683,9 @@ def f5(x: int) -> int:
 
 ***
 
-### Manejo de NULL {#udf-null-handling}
+<div id="udf-null-handling">
+  ### Manejo de NULL
+</div>
 
 Controla cómo se tratan los valores NULL mediante el parámetro `on_null`.
 
@@ -3492,7 +3714,9 @@ print(query("SELECT null_safe(NULL)"))  # 0
 
 ***
 
-### Manejo de excepciones {#udf-exception-handling}
+<div id="udf-exception-handling">
+  ### Manejo de excepciones
+</div>
 
 Controla cómo se gestionan las excepciones con el parámetro `on_error`.
 
@@ -3522,7 +3746,9 @@ print(query("SELECT safe_divide(10, 2)"))  # 5
 
 ***
 
-### Compatibilidad con DateTime y zonas horarias {#udf-datetime}
+<div id="udf-datetime">
+  ### Compatibilidad con DateTime y zonas horarias
+</div>
 
 Las UDF admiten plenamente los tipos `Date`, `Date32`, `DateTime` y `DateTime64` con compatibilidad con zonas horarias.
 
@@ -3548,13 +3774,17 @@ print(query("SELECT get_year(toDate('2024-06-15'))"))  # 2024
 
 ***
 
-### API heredada {#legacy-udf}
+<div id="legacy-udf">
+  ### API heredada
+</div>
 
 <Warning>
   **Obsoleta:** El decorador `@chdb_udf` es el mecanismo heredado de UDF basado en subprocesos: ejecuta la función en un proceso de Python independiente y pasa todos los argumentos como cadenas. Sigue disponible, pero se recomienda la API nativa de UDF de Python ([`@func`](#func-decorator) / [`create_function`](#create-function)); las UDF nativas se ejecutan en el mismo proceso, con argumentos tipados, manejo de NULL y control de excepciones. Consulte la [guía de UDF de Python](/es/chdb/guides/python-udf) para ver una explicación completa.
 </Warning>
 
-#### `chdb.udf.chdb_udf` {#chdb-udf}
+<div id="chdb-udf">
+  #### `chdb.udf.chdb_udf`
+</div>
 
 Decorador para UDF (función definida por el usuario) de Python en chDB.
 
@@ -3594,7 +3824,9 @@ def func_use_json(arg):
 
 ***
 
-#### `chdb.udf.generate_udf` {#generate-udf}
+<div id="generate-udf">
+  #### `chdb.udf.generate_udf`
+</div>
 
 Genera archivos de configuración de UDF y scripts ejecutables.
 
@@ -3625,7 +3857,9 @@ chdb.udf.generate_udf(func_name, args, return_type, udf_body)
 
 ***
 
-## Utilidades {#utilities}
+<div id="utilities">
+  ## Utilidades
+</div>
 
 Funciones utilitarias y herramientas auxiliares para chDB.
 
@@ -3634,7 +3868,9 @@ la inferencia de tipos de datos, las herramientas de conversión de datos y las 
 
 ***
 
-### `chdb.utils.convert_to_columnar` {#convert-to-columnar}
+<div id="convert-to-columnar">
+  ### `chdb.utils.convert_to_columnar`
+</div>
 
 Convierte una lista de diccionarios a un formato columnar.
 
@@ -3678,7 +3914,9 @@ chdb.utils.convert_to_columnar(items: List[Dict[str, Any]]) → Dict[str, List[A
 
 ***
 
-### `chdb.utils.flatten_dict` {#flatten-dict}
+<div id="flatten-dict">
+  ### `chdb.utils.flatten_dict`
+</div>
 
 Aplana un diccionario anidado.
 
@@ -3733,7 +3971,9 @@ chdb.utils.flatten_dict(d: Dict[str, Any], parent_key: str = '', sep: str = '_')
 
 ***
 
-### `chdb.utils.infer_data_type` {#infer-data-type}
+<div id="infer-data-type">
+  ### `chdb.utils.infer_data_type`
+</div>
 
 Infiere el tipo de dato más adecuado para una lista de valores.
 
@@ -3769,7 +4009,9 @@ chdb.utils.infer_data_type(values: List[Any]) → str
 
 ***
 
-### `chdb.utils.infer_data_types` {#infer-data-types}
+<div id="infer-data-types">
+  ### `chdb.utils.infer_data_types`
+</div>
 
 Infiere los tipos de datos de cada columna en una estructura de datos columnar.
 
@@ -3795,9 +4037,13 @@ chdb.utils.infer_data_types`(column_data: Dict[str, List[Any]], n_rows: int = 10
 | --------------- | --------------------------------------------------------------------------------- |
 | `List[tuple]`   | Una lista de tuplas, cada una con un nombre de columna y su tipo de dato inferido |
 
-## Clases base abstractas {#abstract-base-classes}
+<div id="abstract-base-classes">
+  ## Clases base abstractas
+</div>
 
-### **class** `chdb.rwabc.PyReader`(data: Any)&#96; {#pyreader}
+<div id="pyreader">
+  ### **class** `chdb.rwabc.PyReader`(data: Any)&#96;
+</div>
 
 Bases: `ABC`
 
@@ -3807,7 +4053,9 @@ class chdb.rwabc.PyReader(data: Any)
 
 ***
 
-#### **abstractmethod** `read` {#read}
+<div id="read">
+  #### **abstractmethod** `read`
+</div>
 
 Lee un número determinado de filas de las columnas dadas y devuelve una lista de objetos,
 donde cada objeto es una secuencia de valores correspondiente a una columna.
@@ -3829,7 +4077,9 @@ abstractmethod (col_names: List[str], count: int) → List[Any]
 | --------------- | ----------------------------------------- |
 | `List[Any]`     | Lista de secuencias, una por cada columna |
 
-### **class** `chdb.rwabc.PyWriter` {#pywriter}
+<div id="pywriter">
+  ### **class** `chdb.rwabc.PyWriter`
+</div>
 
 Bases: `ABC`
 
@@ -3839,7 +4089,9 @@ class chdb.rwabc.PyWriter(col_names: List[str], types: List[type], data: Any)
 
 ***
 
-#### **abstractmethod** finalize {#finalize}
+<div id="finalize">
+  #### **abstractmethod** finalize
+</div>
 
 Reúne y devuelve los datos finales a partir de bloques. Debe ser implementado por las subclases.
 
@@ -3855,7 +4107,9 @@ abstractmethod finalize() → bytes
 
 ***
 
-#### **abstractmethod** `write` {#write}
+<div id="write">
+  #### **abstractmethod** `write`
+</div>
 
 Guarda columnas de datos en bloques. Las subclases deben implementarlo.
 
@@ -3870,9 +4124,13 @@ abstractmethod write(col_names: List[str], columns: List[List[Any]]) → None
 | `col_names` | `List[str]`       | Lista de nombres de las columnas que se están escribiendo             |
 | `columns`   | `List[List[Any]]` | Lista de datos de columnas; cada columna se representa como una lista |
 
-## Gestión de excepciones {#exception-handling}
+<div id="chdb-exceptions">
+  ## Gestión de excepciones
+</div>
 
-### **class** `chdb.ChdbError` {#chdberror}
+<div id="chdb_chdbError">
+  ### **class** `chdb.ChdbError`
+</div>
 
 Bases: `Exception`
 
@@ -3917,9 +4175,13 @@ Syntax error: Syntax error near 'FROM'
   para proporcionar un manejo de errores adecuado en su aplicación.
 </Note>
 
-## Información de la versión {#version-information}
+<div id="version-information">
+  ## Información de la versión
+</div>
 
-### `chdb.chdb_version = ('3', '6', '0')` {#chdb-version}
+<div id="chdb-version">
+  ### `chdb.chdb_version = ('3', '6', '0')`
+</div>
 
 Secuencia inmutable incorporada.
 
@@ -3930,7 +4192,9 @@ Si el argumento es una tupla, el valor devuelto es el mismo objeto.
 
 ***
 
-### `chdb.engine_version = '25.5.2.1'` {#engine-version}
+<div id="engine-version">
+  ### `chdb.engine_version = '25.5.2.1'`
+</div>
 
 ```python
 str(object=’’) -> str
@@ -3948,7 +4212,9 @@ o repr(object).
 
 ***
 
-### `chdb.__version__ = '3.6.0'` {#version}
+<div id="version">
+  ### `chdb.__version__ = '3.6.0'`
+</div>
 
 ```python
 str(object=’’) -> str

@@ -1,6 +1,6 @@
 ---
 slug: /use-cases/observability/clickstack/performance_tuning
-title: '性能调优'
+title: 'ClickStack - 性能调优'
 sidebarTitle: '性能调优'
 description: 'ClickStack 性能调优 - ClickHouse 可观测性技术栈'
 doc_type: 'guide'
@@ -10,23 +10,20 @@ keywords: ['ClickStack', '可观测性', '日志', '性能', '优化']
 import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 
 import OtelLogsSchema from '/snippets/zh/clickstack/_schema_otel_logs.mdx';
-
 import OtelTracesSchema from '/snippets/zh/clickstack/_schema_otel_traces.mdx';
 
+import { Image } from "/snippets/zh/components/Image.jsx";
+
 <div id="introduction">
-  ## 简介 {#introduction}
+  ## 简介
 </div>
 
 本指南重点介绍适用于 ClickStack 的最常见、最有效的性能优化方法，足以覆盖绝大多数实际可观测性工作负载的优化需求，通常适用于每日数据量高达数十 TB 的场景。
 
 这些优化按精心设计的顺序展开：先从最简单、收益最大的技术入手，再逐步过渡到更高级、更有针对性的调优方法。应优先采用前面的优化措施，而且仅靠这些措施通常就能带来可观的提升。随着数据量持续增长、工作负载要求不断提高，后面的技术也会越来越值得深入探索。
 
-<Tip>
-  借助 [ClickHouse Observability](/zh/clickstack/observability)，把更多时间花在排查问题上，而不是运维可观测性后端。[注册 ClickHouse Cloud](https://clickhouse.cloud/signUp?loc=docs-clickstack-performance-tuning-inline) 即可开始使用。
-</Tip>
-
 <div id="clickhouse-concepts">
-  ## ClickHouse 概念 {#clickhouse-concepts}
+  ## ClickHouse 概念
 </div>
 
 在应用本指南介绍的任何优化之前，务必先熟悉几个 ClickHouse 核心概念。
@@ -75,10 +72,10 @@ import OtelTracesSchema from '/snippets/zh/clickstack/_schema_otel_traces.mdx';
 * [ClickHouse 如何存储数据：parts 和 granules](/zh/guides/clickhouse/data-modelling/sparse-primary-indexes) - 更深入地介绍 ClickHouse 中数据如何组织和查询，并详细讲解 granules 和主键。
 * [MergeTree](/zh/reference/engines/table-engines/mergetree-family/mergetree)- 适合查阅命令和内部实现细节的高级 MergeTree 参考指南。
 
-下面介绍的所有优化都可以通过标准 ClickHouse SQL 直接应用于底层表，可在 [ClickHouse Cloud SQL 控制台](/zh/integrations/connectors/sql-clients/sql-console) 中执行，也可通过 [ClickHouse 客户端](/zh/concepts/features/interfaces/client) 执行。
+下面介绍的所有优化都可以通过标准 ClickHouse SQL 直接应用于底层表，可在 [ClickHouse Cloud SQL 控制台](/zh/integrations/connectors/sql-clients/sql-console) 中执行，也可通过 [ClickHouse 客户端](/zh/concepts/features/interfaces/cli) 执行。
 
 <div id="materialize-frequently-queried-attributes">
-  ## 优化 1. 将频繁查询的属性物化 {#materialize-frequently-queried-attributes}
+  ## 优化 1. 将频繁查询的属性物化
 </div>
 
 对于 ClickStack 用户来说，第一项也是最简单的优化，是找出 `LogAttributes`、`ScopeAttributes` 和 `ResourceAttributes` 中经常查询的属性，并通过物化列将它们提升为顶层列。
@@ -86,7 +83,7 @@ import OtelTracesSchema from '/snippets/zh/clickstack/_schema_otel_traces.mdx';
 仅这一项优化，通常就足以支撑 ClickStack 部署达到每天数十 TB 的规模，因此在考虑更高级的调优技术之前，应先应用这一优化。
 
 <div id="why-materialize-attributes">
-  ### 为什么要物化属性 {#why-materialize-attributes}
+  ### 为什么要物化属性
 </div>
 
 ClickStack 将 Kubernetes 标记、服务元数据和自定义属性等元数据存储在 `Map(String, String)` 列中。这样做虽然灵活，但查询 Map 子键会带来一个重要的性能问题。
@@ -108,7 +105,9 @@ ClickStack 将 Kubernetes 标记、服务元数据和自定义属性等元数据
   ClickStack 会自动检测从 Map 中提取出的物化列，并在查询执行时透明地使用它们，即使用户仍然查询原始属性路径也是如此。
 </Note>
 
-### 示例 {#materialize-column-example}
+<div id="materialize-column-example">
+  ### 示例
+</div>
 
 以用于链路追踪的默认 ClickStack schema 为例，其中 Kubernetes 元数据存储在 `ResourceAttributes` 中：
 
@@ -116,11 +115,7 @@ ClickStack 将 Kubernetes 标记、服务元数据和自定义属性等元数据
 
 用户可以使用 Lucene 语法过滤链路追踪，例如 `ResourceAttributes.k8s.pod.name:"checkout-675775c4cc-f2p9c"`：
 
-<div className="ch-image-lg">
-  <Frame>
-    ![链路追踪筛选](/images/clickstack/performance_guide/trace_filtering.webp)
-  </Frame>
-</div>
+<Image img="/images/clickstack/performance_guide/trace_filtering.webp" size="lg" alt="链路追踪过滤" />
 
 这会生成一个类似于以下内容的 SQL 谓词：
 
@@ -144,13 +139,9 @@ MATERIALIZED ResourceAttributes['k8s.pod.name']
 
 现在，用户可以使用 Lucene 语法高效查询 pod (容器组) 名称，例如 `PodName:"checkout-675775c4cc-f2p9c"`
 
-<div className="ch-image-lg">
-  <Frame>
-    ![链路追踪筛选 v2](/images/clickstack/performance_guide/trace_filtering_v2.webp)
-  </Frame>
-</div>
+<Image img="/images/clickstack/performance_guide/trace_filtering_v2.webp" size="lg" alt="Trace 过滤 v2" />
 
-对于新写入的数据，这样可以完全避免访问 Map，并显著减少 I/O。
+对于新写入的数据，这样可以完全避免访问 map，并显著减少 I/O。
 
 不过，即使用户继续查询原始属性路径，例如 `ResourceAttributes.k8s.pod.name:"checkout-675775c4cc-f2p9c"`，**ClickStack 也会在内部自动重写查询**，改为使用物化后的 `PodName` 列，即使用以下谓词：
 
@@ -165,7 +156,7 @@ PodName = 'checkout-675775c4cc-f2p9c'
 </Note>
 
 <div id="materializing-historical-data">
-  ### 物化历史数据 {#materializing-historical-data}
+  ### 物化历史数据
 </div>
 
 物化列只会自动应用于在该列创建之后插入的数据。对于已有数据，针对物化列的查询会透明地回退到从原始 map 中读取。
@@ -202,7 +193,7 @@ ORDER BY create_time DESC;
 </Warning>
 
 <div id="adding-skip-indexes">
-  ## 优化 2：添加跳过索引 {#adding-skip-indexes}
+  ## 优化 2：添加跳过索引
 </div>
 
 在将常用查询属性物化后，下一步优化是添加数据跳过索引，以进一步减少 ClickHouse 在查询执行过程中需要读取的数据量。
@@ -222,7 +213,7 @@ ORDER BY create_time DESC;
 日志表则统一使用 `text(tokenizer = 'array')` 索引，而不是布隆过滤器，并在 `lower(Body)` 上额外添加了一个用于全文搜索的 `text(tokenizer = 'splitByNonAlpha')` 索引。完整 DDL 请参见[“ClickStack 使用的表和 schema”](/zh/clickstack/ingesting-data/schemas#logs)。
 
 <div id="bloom-filters">
-  ### 布隆过滤器 {#bloom-filters}
+  ### 布隆过滤器
 </div>
 
 布隆过滤器索引是 ClickStack 中最常用的跳过索引类型。它们非常适合用于高基数的字符串列，通常至少包含数万个不同值。将误报率设为 0.01、粒度设为 1，是一个很好的默认起点，能够在存储开销和有效的剪枝之间取得平衡。
@@ -253,7 +244,7 @@ GRANULARITY 1
 与所有跳过索引一样，布隆过滤器应有选择地添加，并根据真实的查询模式进行验证，以确保它们能带来可衡量的收益——请参阅 [&quot;评估跳过索引的有效性。&quot;](#evaluating-skip-index-effectiveness)
 
 <div id="text-indexes">
-  ### 文本索引 {#text-indexes}
+  ### 文本索引
 </div>
 
 [文本索引](/zh/reference/engines/table-engines/mergetree-family/textindexes)可作为布隆过滤器的替代方案。布隆过滤器是一种概率型结构，能够明确排除某些粒度，但它存在误报率，因此凡是它未排除的粒度，仍需加载并根据 `WHERE` 条件进行判断。文本索引属于倒排索引，会将标记映射到分片内的精确偏移量。由于它们判断的是偏移量而非粒度，且不会产生误报，因此通常无需加载底层列就能满足 `WHERE` 条件。这种优化称为[直接读取](https://github.com/ClickHouse/clickhouse-docs/pull/6356/%E2%80%A6)。由于加载数据通常是查询耗时的最大来源，直接读取可以显著降低查询延迟。
@@ -268,7 +259,7 @@ GRANULARITY 1
 | `splitByNonAlpha` | 对自然语言字符串进行词级全文搜索               | `Body`, `lower(Body)`, `SpanName` |
 
 <div id="array-tokenizer">
-  #### 用于 Map 和数组列的 Array 分词器 {#array-tokenizer}
+  #### 用于 Map 和数组列的 Array 分词器
 </div>
 
 默认的日志 schema 会使用 `array` 分词器为 `mapKeys` 和 materialized 项数组建立索引：
@@ -283,7 +274,9 @@ attribute 键进行过滤时，无需扫描相应的
 Map 列，即可剪枝掉任何不包含该键的行。这正是让 [Map 直接读取优化](#map-direct-read-optimization)
 发挥作用的机制。
 
-#### 用于日志正文的 `splitByNonAlpha` {#text-index-body}
+<div id="text-index-body">
+  #### 用于日志正文的 `splitByNonAlpha`
+</div>
 
 对 `Body` 列执行全文搜索时，`splitByNonAlpha` 文本
 索引会更有效。ClickStack 在 `lower(Body)` 上定义了该索引，因此不区分大小写的
@@ -302,17 +295,15 @@ INDEX idx_lower_body lower(Body) TYPE text(tokenizer = 'splitByNonAlpha')
 <Info>
   **文本索引 vs `tokenbf_v1`**
 
-  当前默认的链路追踪 schema 使用
-  `text(tokenizer = 'splitByNonAlpha', preprocessor = lower(SpanName))` 来索引
-  归一化后的 `SpanName` 标记。较旧的链路追踪 schema 可能使用 `tokenbf_v1`，它
-  在功能上与之类似，但在 ClickHouse 26.2 及以上版本中已弃用。
+  较旧的 `tokenbf_v1` 索引类型 (默认链路追踪 schema 中的
+  `lower(SpanName)` 仍在使用) 在功能上与之类似，但在 ClickHouse 26.2 及以上版本中已弃用。
   新的文本搜索索引应使用 `text(tokenizer = ...)`。
 </Info>
 
 如需进一步了解分词器选项、预处理器和验证方法，请参阅[全文搜索文档](/zh/reference/engines/table-engines/mergetree-family/textindexes)。
 
 <div id="text-indexes-in-default-logs-schema">
-  #### 默认日志 schema 中的文本索引 {#text-indexes-in-default-logs-schema}
+  #### 默认日志 schema 中的文本索引
 </div>
 
 从上游同步的默认 `otel_logs` schema 预置了上文讨论的所有文本索引：在 `TraceId`、各个 `mapKeys(...)` 和 `*AttributeItems` 数组上使用 `text(tokenizer = 'array')`，并在 `lower(Body)` 上使用 `text(tokenizer = 'splitByNonAlpha')` 以支持全文搜索。标准 DDL 请参见[“ClickStack 使用的表和 schema”](/zh/clickstack/ingesting-data/schemas#logs)；下方也列出了相同的 schema。
@@ -320,7 +311,7 @@ INDEX idx_lower_body lower(Body) TYPE text(tokenizer = 'splitByNonAlpha')
 <OtelLogsSchema />
 
 <div id="min-max-indexes">
-  ### Min-max 索引 {#min-max-indexes}
+  ### Min-max 索引
 </div>
 
 Minmax 索引会为每个粒度存储最小值和最大值，并且非常轻量。它们对数值列和范围查询尤其有效。虽然不一定能加速每一次查询，但成本很低，几乎总是值得为数值字段添加。
@@ -353,7 +344,7 @@ ADD INDEX idx_kafka_offset KafkaOffset TYPE minmax GRANULARITY 1
 同样，索引必须先[物化](#materialize-skip-index)后才能生效。
 
 <div id="materialize-skip-index">
-  ### 物化跳过索引 {#materialize-skip-index}
+  ### 物化跳过索引
 </div>
 
 添加跳过索引后，它只会应用于新摄取的数据。历史数据只有在显式物化后才能从该索引中受益。
@@ -420,20 +411,21 @@ WHERE database = 'otel'
 
 有关跳过索引的更多信息，请参阅指南[&quot;了解 ClickHouse 数据跳过索引&quot;](/zh/concepts/features/performance/skip-indexes/skipping-indexes-examples)
 
-### 评估跳过索引的有效性 {#evaluating-skip-index-effectiveness}
+<div id="evaluating-skip-index-effectiveness">
+  ### 评估跳过索引的有效性
+</div>
 
-评估跳过索引裁剪效果最可靠的方法是使用 `EXPLAIN indexes = 1`，它会显示在查询计划的每个阶段中，有多少 [parts](/zh/concepts/core-concepts/parts) 和 [粒度](/zh/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-organized-into-granules-for-parallel-data-processing) 被排除。在大多数情况下，你会希望在 Skip 阶段看到粒度数量大幅减少，理想情况下，此时主键已经缩小了搜索范围。跳过索引是在分区裁剪和主键裁剪之后评估的，因此其影响最好相对于剩余的 parts 和粒度来衡量。
+评估跳过索引剪枝效果最可靠的方法是使用 `EXPLAIN indexes = 1`，它会显示在查询计划的每个阶段中，有多少 [parts](/zh/concepts/core-concepts/parts) 和 [粒度](/zh/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-organized-into-granules-for-parallel-data-processing) 被排除。在大多数情况下，你会希望在 Skip 阶段看到粒度数量大幅减少，理想情况下，此时主键已经缩小了搜索范围。跳过索引是在分区剪枝和主键剪枝之后评估的，因此其影响最好相对于剩余的 parts 和粒度来衡量。
 
-`EXPLAIN` 可以确认是否发生了裁剪，但并不能保证一定会带来净性能提升。评估跳过索引本身是有成本的，尤其是在索引较大时。务必在添加并物化索引前后都对查询进行基准测试，以确认真实性能提升。
+`EXPLAIN` 可以确认是否发生了剪枝，但并不能保证一定会带来净性能提升。评估跳过索引本身是有成本的，尤其是在索引较大时。务必在添加并物化索引前后都对查询进行基准测试，以确认真实性能提升。
 
-例如，默认链路追踪 schema 中包含一个针对 `TraceId` 的文本索引：
+例如，来看默认 Traces schema 中包含的、用于 TraceId 的默认布隆过滤器跳过索引：
 
 ```sql
-INDEX idx_trace_id TraceId TYPE text(tokenizer = 'array')
+INDEX idx_trace_id TraceId TYPE bloom_filter(0.001) GRANULARITY 1
 ```
 
-你可以使用 `EXPLAIN indexes = 1` 确认选择性查询是否使用了该
-索引：
+你可以使用 `EXPLAIN indexes = 1` 查看它对选择性查询的优化效果：
 
 ```sql
 EXPLAIN indexes = 1
@@ -444,14 +436,19 @@ WHERE (ServiceName = 'accounting')
 
 ReadFromMergeTree (otel_v2.otel_traces)
 Indexes:
+  PrimaryKey
+    Keys:
+      ServiceName
+    Parts: 6/18
+    Granules: 255/35898
   Skip
     Name: idx_trace_id
-    Description: text
+    Description: bloom_filter GRANULARITY 1
+    Parts: 1/6
+    Granules: 1/255
 ```
 
-报告的具体 parts 和粒度数量取决于数据。在选择性查询中，
-主键裁剪会先缩小搜索范围，文本索引则可以
-进一步减少需要读取的数据量。
+在这种情况下，主键过滤会先大幅缩小数据范围 (从 35898 个粒度减少到 255 个) ，然后 Bloom 过滤器再将其进一步剪枝到只剩 1 个粒度 (1/255) 。这正是跳过索引的理想模式：先通过主键剪枝缩小搜索范围，再由跳过索引剔除大部分剩余数据。
 
 为了验证实际效果，请在固定设置下对查询进行基准测试，并比较执行时间。使用 `FORMAT Null` 以避免结果序列化的开销，并禁用查询条件缓存以确保多次运行具有可重复性：
 
@@ -464,7 +461,7 @@ SETTINGS use_query_condition_cache = 0
 
 ```response
 2 rows in set. Elapsed: 0.025 sec. Processed 8.52 thousand rows, 299.78 KB (341.22 thousand rows/s., 12.00 MB/s.)
-Peak memory usage: 41.97 MiB.
+峰值内存占用: 41.97 MiB.
 ```
 
 现在禁用跳过索引后，再运行相同的查询：
@@ -482,14 +479,14 @@ SETTINGS use_query_condition_cache = 0, use_skip_indexes = 0;
 Peak memory usage: 198.39 MiB.
 ```
 
-禁用 `use_query_condition_cache` 可确保结果不受已缓存过滤决策的影响，而将 `use_skip_indexes = 0` 可提供一个干净的对比基线。如果裁剪有效且索引评估成本较低，那么带索引的查询应该会明显更快，就像上面的示例所示。
+禁用 `use_query_condition_cache` 可确保结果不受已缓存过滤决策的影响，而将 `use_skip_indexes = 0` 可提供一个干净的对比基线。如果剪枝有效且索引评估成本较低，那么带索引的查询应该会明显更快，就像上面的示例所示。
 
 <Tip>
-  如果 `EXPLAIN` 显示几乎没有粒度裁剪，或者跳过索引非常大，那么评估索引的成本可能会抵消其带来的收益。使用 `EXPLAIN indexes = 1` 确认是否发生了裁剪，然后进行基准测试，以验证端到端的性能是否确有提升。
+  如果 `EXPLAIN` 显示几乎没有粒度剪枝，或者跳过索引非常大，那么评估索引的成本可能会抵消其带来的收益。使用 `EXPLAIN indexes = 1` 确认是否发生了剪枝，然后进行基准测试，以验证端到端的性能是否确有提升。
 </Tip>
 
 <div id="when-to-add-skip-indexes">
-  ### 何时添加跳过索引 {#when-to-add-skip-indexes}
+  ### 何时添加跳过索引
 </div>
 
 应有选择地添加跳过索引，具体取决于用户最常使用的过滤条件类型，以及分片和粒度中的数据形态。目标是跳过足够多的粒度，以抵消评估索引本身的成本，因此必须在接近生产环境的数据上进行基准测试。
@@ -501,7 +498,7 @@ Peak memory usage: 198.39 MiB.
 布隆过滤器对高基数字符串列最为有效，即每个值的出现频率相对较低，这意味着大多数分片和粒度中都不包含要查找的值。经验上，当某一列至少有 10,000 个不同值时，布隆过滤器通常比较值得尝试；而当不同值达到 100,000+ 时，往往效果最佳。如果匹配值集中在少量连续的分片中，它们也会更有效，而这种情况通常发生在该列与排序键存在关联时。同样，这里的实际效果可能因场景而异——没有什么比真实环境测试更可靠。
 
 <div id="map-direct-read-optimization">
-  ## 优化 3. Map 直接读取 {#map-direct-read-optimization}
+  ## 优化 3. Map 直接读取
 </div>
 
 当你按 Map 子键进行过滤时，例如 `LogAttributes['k8s.pod.name'] =
@@ -515,7 +512,7 @@ Peak memory usage: 198.39 MiB.
 此优化是自动启用的。ClickStack 在默认的日志和 trace 表中提供了所需的列和索引，并且当连接的 ClickHouse server 支持底层基本类型时，会在运行时重写 Map 下标过滤条件。如果你的 schema 不包含这些列，或者除了默认列之外，你还想加速其他 Map 列，请继续阅读以启用它们。
 
 <div id="map-direct-read-schema">
-  ### Schema {#map-direct-read-schema}
+  ### Schema
 </div>
 
 对于要加速的每个 Map 列，ClickStack 都会定义一个
@@ -551,7 +548,7 @@ TYPE text(tokenizer = 'array')
 | `otel_traces` | `ResourceAttributeItems`, `SpanAttributeItems`                       | `idx_res_attr_items`, `idx_span_attr_items`                        |
 
 <div id="map-direct-read-rewrite">
-  ### 查询重写 {#map-direct-read-rewrite}
+  ### 查询重写
 </div>
 
 当用户通过 ClickStack UI 或 SDK 按 Map 的子键进行过滤时，ClickStack
@@ -575,40 +572,20 @@ has(LogAttributeItems, concat('k8s.pod.name', '=', 'checkout'))
 无需任何更改即可获得性能提升。
 
 <div id="map-direct-read-version">
-  ### ClickHouse 版本要求 {#map-direct-read-version}
+  ### ClickHouse 版本要求
 </div>
 
-查询重写要求使用支持对带文本索引的数组列进行直接
-标记级剪枝的 ClickHouse 版本。ClickStack 会检测已连接的
-server 版本 (`SELECT version()`，按 connection 缓存) ，并且只有在
-server 版本达到或高于下方相应阈值时才会生成重写后的形式。较旧版本会
-自动回退到原始的 Map 下标形式。
+查询重写要求使用支持对带文本索引的数组列进行直接标记级剪枝的 ClickHouse 版本。ClickStack 会检测已连接
+server 的版本 (`SELECT version()`，按 connection 缓存) ，并且只有在
+server 版本达到或高于该阈值时才会生成重写后的形式。较旧的
+server 会自动回退到原始的 Map 下标形式。
 
-<Tabs>
-  <Tab title="ClickHouse Cloud">
-    ClickHouse Cloud 构建和开源发行版采用独立的版本线。
-    请使用下方列出的 Cloud 最低版本。
-
-    | ClickHouse 分支 | 最低 Cloud 版本   |
-    | ------------- | ------------- |
-    | 26.2          | `26.2.1.307`  |
-    | 26.3          | `26.3.0.0`    |
-    | 26.4          | `26.4.1.1740` |
-    | 26.5+         | 所有版本          |
-
-    `26.3.0.0` 是该分支的起始版本，因此所有 `26.3` 构建均受
-    支持。
-  </Tab>
-
-  <Tab title="开源">
-    | ClickHouse 分支 | 最低开源版本       |
-    | ------------- | ------------ |
-    | 26.2          | `26.2.19.43` |
-    | 26.3          | `26.3.12.3`  |
-    | 26.4          | `26.4.3.37`  |
-    | 26.5+         | 所有版本         |
-  </Tab>
-</Tabs>
+| ClickHouse 分支 | 最低版本       |
+| ------------- | ---------- |
+| 26.2          | 26.2.19.43 |
+| 26.3          | 26.3.12.3  |
+| 26.4          | 26.4.3.37  |
+| 26.5+         | 所有版本       |
 
 <Info>
   **为什么使用 ALIAS，而不是 MATERIALIZED**
@@ -621,7 +598,7 @@ server 版本达到或高于下方相应阈值时才会生成重写后的形式�
 </Info>
 
 <div id="modifying-the-primary-key">
-  ## 优化 4. 修改主键 {#modifying-the-primary-key}
+  ## 优化 4. 修改主键
 </div>
 
 对于大多数工作负载来说，主键是 ClickHouse 性能调优中最关键的组成部分之一。要想有效调优主键，你必须理解它的工作原理，以及它如何与你的查询模式相互配合。归根结底，主键应当与用户访问数据的方式相匹配，尤其要贴合最常用于过滤的列。
@@ -654,7 +631,7 @@ server 版本达到或高于下方相应阈值时才会生成重写后的形式�
 **应按每张表分别独立调整主键。适用于日志的设置，未必也适用于链路追踪或指标。**
 
 <div id="choosing-a-primary-key">
-  ### 选择主键 {#choosing-a-primary-key}
+  ### 选择主键
 </div>
 
 首先，确定你的访问模式是否与某个特定表的默认设置存在明显差异。例如，如果你最常按 Kubernetes 节点而不是服务名称来过滤日志，并且这是一种主要工作流，那么就可能有理由调整主键。
@@ -677,7 +654,7 @@ server 版本达到或高于下方相应阈值时才会生成重写后的形式�
 确定排序键所包含的列子集后，必须按特定顺序声明它们。这个顺序会显著影响查询中过滤次级键列的效率，以及表的数据文件的压缩率。通常，最好按基数升序排列这些键。但这需要与另一个事实权衡：对排序键中靠后的列进行过滤，不如对 Tuple 中靠前的列过滤高效。请结合你的访问模式，在这些因素之间做好平衡。最重要的是，要测试不同方案。若想进一步了解排序键及其优化方法，建议阅读 [&quot;Choosing a Primary Key.&quot;](/zh/concepts/best-practices/choosing-a-primary-key)。若想更深入了解主键调优和内部数据结构，请参阅 [&quot;A practical introduction to primary indexes in ClickHouse.&quot;](/zh/guides/clickhouse/data-modelling/sparse-primary-indexes)
 
 <div id="changing-the-primary-key">
-  ### 更改主键 {#changing-the-primary-key}
+  ### 更改主键
 </div>
 
 如果你在数据摄取前就已经明确了访问模式，只需删除并重新创建相应数据类型的表即可。
@@ -752,11 +729,7 @@ server 版本达到或高于下方相应阈值时才会生成重写后的形式�
   <Step title="更新 ClickStack UI 以从 merge 表读取数据" id="update-clickstack-ui-to-read-from-merge-tree">
     将 ClickStack UI 配置为使用 `otel_logs_merge` 作为日志数据源对应的表。
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![选择 Merge 表](/images/clickstack/performance_guide/select_merge_table.webp)
-      </Frame>
-    </div>
+    <Image img="/images/clickstack/performance_guide/select_merge_table.webp" size="lg" alt="选择 Merge 表" />
 
     此时，写入仍会继续进入使用原始主键的 `otel_logs`，而读取则通过 merge 表进行。对用户没有可见变化，也不会影响摄取。
   </Step>
@@ -802,11 +775,11 @@ server 版本达到或高于下方相应阈值时才会生成重写后的形式�
 <Info>
   **冗余表**
 
-  如果已配置生存时间 (TTL) 策略 (这也是推荐做法) ，那些使用旧主键且不再接收写入的表会随着数据过期而逐渐清空。应监控这些表，并在其中不再包含数据后定期清理。目前，此清理过程仍需手动完成。
+  如果已配置 TTL 策略 (这也是推荐做法) ，那些使用旧主键且不再接收写入的表会随着数据过期而逐渐清空。应监控这些表，并在其中不再包含数据后定期清理。目前，此清理过程仍需手动完成。
 </Info>
 
 <div id="row-lookup-block-columns">
-  ### 利用块列加速行查找 {#row-lookup-block-columns}
+  ### 利用块列加速行查找
 </div>
 
 默认的 ClickStack 日志 schema 启用了两个 MergeTree settings，它们虽然不会直接影响查询性能，
@@ -840,7 +813,7 @@ MODIFY SETTING enable_block_number_column = 1, enable_block_offset_column = 1
 使用原先的逐行查找方式，直到在合并过程中被重写。
 
 <div id="exploiting-materialized-views">
-  ## 优化 5. 利用 Materialized Views {#exploiting-materialized-views}
+  ## 优化 5. 利用 Materialized Views
 </div>
 
 <BetaBadge />
@@ -849,21 +822,23 @@ ClickStack 可以利用[增量materialized view](/zh/concepts/features/materiali
 
 有关如何在 ClickStack 中使用此功能的详细信息，请参阅我们的专题指南[“ClickStack - Materialized Views.”](/zh/clickstack/managing/materialized-views)
 
-## 优化 6：利用投影 {#exploting-projections}
+<div id="exploting-projections">
+  ## 优化 6：利用 PROJECTION
+</div>
 
-投影是最后一种可考虑的高级优化手段，应在评估完物化列、跳过索引、主键和 materialized view 之后再使用。虽然投影和 materialized view 看起来有些相似，但在 ClickStack 中，它们用途不同，适用场景也不同。
+PROJECTION 是最后一种可考虑的高级优化手段，应在评估完物化列、跳过索引、主键和 materialized view 之后再使用。虽然 PROJECTION 和 materialized view 看起来有些相似，但在 ClickStack 中，它们用途不同，适用场景也不同。
 
 <Frame>
   <iframe src="https://www.youtube.com/embed/6CdnUdZSEG0?si=1zUyrP-tCvn9tXse" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
 </Frame>
 
-在实践中，**投影可以理解为表的一个额外隐藏副本**，它以**不同的物理顺序**存储相同的行。因此，投影拥有自己的主索引，与基表的 `ORDER BY` 键不同，这使 ClickHouse 能够针对那些不符合原始排序方式的访问模式，更高效地剪枝数据。
+在实践中，**PROJECTION 可以理解为表的一个额外隐藏副本**，它以**不同的物理顺序**存储相同的行。因此，PROJECTION 拥有自己的主索引，与基表的 `ORDER BY` 键不同，这使 ClickHouse 能够针对那些不符合原始排序方式的访问模式，更高效地剪枝数据。
 
-materialized view 也可以通过显式将行写入一个具有不同排序键的独立目标表来实现类似效果。关键区别在于，**投影由 ClickHouse 自动且透明地维护**，而 materialized view 是显式定义的表，必须由 ClickStack 有意识地注册和选择。
+materialized view 也可以通过显式将行写入一个具有不同排序键的独立目标表来实现类似效果。关键区别在于，**PROJECTION 由 ClickHouse 自动且透明地维护**，而 materialized view 是显式定义的表，必须由 ClickStack 有意识地注册和选择。
 
-当查询针对基表时，ClickHouse 会评估基础布局以及所有可用投影，对它们的主索引进行采样，并选择在读取最少粒度的前提下仍能返回正确结果的布局。这个决定由查询分析器自动作出。
+当查询针对基表时，ClickHouse 会评估基表布局以及所有可用 PROJECTION，对它们的主索引进行采样，并选择在读取最少粒度的前提下仍能返回正确结果的布局。这个决定由查询分析器自动作出。
 
-因此，在 ClickStack 中，投影最适合用于**纯粹的数据重排序**，即：
+因此，在 ClickStack 中，PROJECTION 最适合用于**纯粹的数据重排序**，即：
 
 * 访问模式与默认主键存在根本差异
 * 用单一排序键覆盖所有工作流并不现实
@@ -873,12 +848,12 @@ materialized view 也可以通过显式将行写入一个具有不同排序键�
 
 如需更多背景信息，请参阅：
 
-* [投影指南](/zh/concepts/features/projections/projections)
-* [何时使用投影](/zh/concepts/features/projections/projections#when-to-use-projections)
-* [materialized view 与投影的对比](/zh/concepts/features/projections/materialized-views-versus-projections)
+* [PROJECTION 指南](/zh/concepts/features/projections/projections)
+* [何时使用 PROJECTION](/zh/concepts/features/projections/projections#when-to-use-projections)
+* [materialized view 与PROJECTION的对比](/zh/concepts/features/projections/materialized-views-versus-projections)
 
 <div id="example-projections">
-  ### 示例 PROJECTION {#example-projections}
+  ### 示例 PROJECTION
 </div>
 
 假设你的链路追踪表已经针对 ClickStack 的默认访问模式进行了优化：
@@ -947,7 +922,7 @@ ORDER BY t;
 在实际使用中，PROJECTION 最适合这样的工作流：你经常需要从较宽泛的搜索切换到以 trace 为中心的逐层下钻 (例如，拉取某个特定 TraceId 的所有 spans) 。
 
 <div id="projection-costs-and-guidance">
-  ### 成本与使用建议 {#projection-costs-and-guidance}
+  ### 成本与使用建议
 </div>
 
 * **插入开销**：对于使用不同排序键的 `SELECT *` PROJECTION，本质上相当于将数据写入两次，这会增加写入 I/O，并且可能需要额外的 CPU 和磁盘吞吐量来维持摄取。
@@ -960,7 +935,7 @@ ORDER BY t;
 * [Materialized views 与投影的对比](/zh/concepts/features/projections/materialized-views-versus-projections)
 
 <div id="lightweight-projections">
-  ### 带有 `_part_offset` 的轻量级 PROJECTION {#lightweight-projections}
+  ### 带有 `_part_offset` 的轻量级 PROJECTION
 </div>
 
 <BetaBadge />
@@ -976,7 +951,9 @@ ORDER BY t;
 * [使用 &#95;part&#95;offset 实现更智能的存储](/zh/concepts/features/projections/projections#smarter_storage_with_part_offset)
 * [博客说明与示例](https://clickhouse.com/blog/projections-secondary-indices#example-combining-multiple-projection-indexes)
 
-### 替代方案 {#projection-alternatives}
+<div id="projection-alternatives">
+  ### 替代方案
+</div>
 
 如果你需要多个排序键，projection 并不是唯一的选择。请根据运维限制以及你希望 ClickStack 如何路由查询，考虑以下方案：
 

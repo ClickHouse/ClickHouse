@@ -2,29 +2,35 @@
 slug: /use-cases/observability/clickstack/config
 title: '配置选项'
 description: 'ClickStack（ClickHouse 可观测性栈）的配置选项'
-keywords: ['ClickStack 配置', '可观测性配置', 'ClickStack 用户界面设置', '采集器配置', '环境变量']
+keywords: ['ClickStack 配置', '可观测性配置', 'HyperDX 设置', '采集器配置', '环境变量']
 doc_type: 'reference'
 ---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
 
 ClickStack 的各个组件均提供以下配置选项：
 
 <div id="modifying-settings">
-  ## 开源发行版设置 {#modifying-settings}
+  ## 开源发行版设置
 </div>
 
-### Docker {#docker}
+<div id="docker">
+  ### Docker
+</div>
 
-如果使用 [All in One](/zh/clickstack/deployment/all-in-one)、[仅 ClickStack 用户界面](/zh/clickstack/deployment/hyperdx-only) 或 [Local Mode](/zh/clickstack/deployment/local-mode-only)，只需通过环境变量传入所需设置，例如：
+如果使用 [All in One](/zh/clickstack/deployment/all-in-one)、[HyperDX Only](/zh/clickstack/deployment/hyperdx-only) 或 [Local Mode](/zh/clickstack/deployment/local-mode-only)，只需通过环境变量传入所需设置，例如：
 
 ```shell
-docker run -e HYPERDX_APP_PORT=8081 -p 8081:8081 -p 4317:4317 -p 4318:4318 clickhouse/clickstack-all-in-one:latest
+docker run  -e HYPERDX_LOG_LEVEL='debug' -p 8080:8080 -p 4317:4317 -p 4318:4318 clickhouse/clickstack-all-in-one:latest
 ```
 
-### Docker Compose {#docker-compose}
+<div id="docker-compose">
+  ### Docker Compose
+</div>
 
-如果使用 [Docker Compose](/zh/clickstack/deployment/docker-compose) 部署指南，可以通过 [`.env`](https://github.com/ClickHouse/clickstack/blob/main/.env) 文件修改设置。
+如果使用 [Docker Compose](/zh/clickstack/deployment/docker-compose) 部署指南，可以通过 [`.env`](https://github.com/hyperdxio/hyperdx/blob/main/.env) 文件修改设置。
 
-或者，也可以直接在 [`docker-compose.yml`](https://github.com/ClickHouse/clickstack/blob/main/docker-compose.yml) 文件中显式覆盖这些设置，例如：
+或者，也可以直接在 [`docker-compose.yaml`](https://github.com/hyperdxio/hyperdx/blob/main/docker-compose.yml) 文件中显式覆盖这些设置，例如：
 
 示例：
 
@@ -34,43 +40,75 @@ services:
     environment:
       HYPERDX_API_KEY: ${HYPERDX_API_KEY}
       HYPERDX_LOG_LEVEL: ${HYPERDX_LOG_LEVEL}
-      # ... other settings
+      # ... 其他设置
 ```
 
-### Helm {#helm}
+<div id="helm">
+  ### Helm
+</div>
 
-请参考 [Helm 部署指南](/zh/clickstack/deployment/helm) 安装 Operator 和 ClickStack chart。自定义部署前，请先获取当前 chart 的配置值：
+<div id="customizing-values">
+  #### 自定义配置值 (可选)
+</div>
+
+你可以使用 `--set` 参数来自定义设置，例如：
 
 ```shell
-helm show values clickstack/clickstack > values.yaml
+helm install my-hyperdx hyperdx/hdx-oss-v2 \
+  --set replicaCount=2 \
+  --set resources.limits.cpu=500m \
+  --set resources.limits.memory=512Mi \
+  --set resources.requests.cpu=250m \
+  --set resources.requests.memory=256Mi \
+  --set ingress.enabled=true \
+  --set ingress.annotations."kubernetes\.io/ingress\.class"=nginx \
+  --set ingress.hosts[0].host=hyperdx.example.com \
+  --set ingress.hosts[0].paths[0].path=/ \
+  --set ingress.hosts[0].paths[0].pathType=ImplementationSpecific \
+  --set env[0].name=CLICKHOUSE_USER \
+  --set env[0].value=abc
 ```
 
-通过 chart 的配置值分别为应用程序和采集器设置环境变量，然后应用您的配置：
+也可以编辑 `values.yaml`。如需获取默认配置值：
 
 ```shell
-helm upgrade --install my-clickstack clickstack/clickstack -f values.yaml
+helm show values hyperdx/hdx-oss-v2 > values.yaml
 ```
 
-有关支持的配置值、入口、资源以及 Secret 的配置方法，请参阅 [Helm 配置](/zh/clickstack/deployment/helm-configuration)。旧版 `hyperdx/hdx-oss-v2` chart 的配置值结构与此不同。
+示例配置：
 
-## ClickStack 用户界面 应用 {#hyperdx}
+```yaml
+replicaCount: 2
+resources:
+  limits:
+    cpu: 500m
+    memory: 512Mi
+  requests:
+    cpu: 250m
+    memory: 256Mi
+ingress:
+  enabled: true
+  annotations:
+    kubernetes.io/ingress.class: nginx
+  hosts:
+    - host: hyperdx.example.com
+      paths:
+        - path: /
+          pathType: ImplementationSpecific
+  env:
+    - name: CLICKHOUSE_USER
+      value: abc
+```
 
-### 连接 {#connection-settings}
+<div id="hyperdx">
+  ## ClickStack UI (HyperDX) 应用
+</div>
 
-在团队设置中配置数据源所使用的数据库连接。
+<div id="datasource-settings">
+  ### 数据源设置
+</div>
 
-| 设置项                        | 描述                                                                                                          |
-| -------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| `Connection Name`          | 在数据源设置中用于标识此连接的名称。                                                                                          |
-| `Host`                     | ClickHouse HTTP(S) 端点，需包含端口。该端点与采集器的导出端点相互独立。                                                               |
-| `Username`                 | ClickHouse 用户名，默认为 `default`。                                                                               |
-| `Password`                 | ClickHouse 密码，默认为空。                                                                                         |
-| `Query Log Setting Prefix` | 可选的自定义 ClickHouse 设置前缀，用于在查询日志中记录当前用户的电子邮件。必须在 ClickHouse 的 `custom_settings_prefixes` 配置中加入相同的前缀，否则查询将被拒绝。 |
-| `Prometheus compatible`    | 该选项可用时，会将 Host 视为与 Prometheus 兼容的 API 端点，用于代理 PromQL 查询。此连接不能用于基于 ClickHouse 的日志、链路追踪或 OTel 指标数据源。          |
-
-### 数据源设置 {#datasource-settings}
-
-ClickStack 用户界面 依赖用户为每一种可观测性数据类型/支柱定义一个数据源：
+ClickStack UI 依赖用户为每一种可观测性数据类型/支柱定义一个数据源：
 
 * `Logs`
 * `Traces`
@@ -79,61 +117,54 @@ ClickStack 用户界面 依赖用户为每一种可观测性数据类型/支柱�
 
 此配置可在应用内的 `Team Settings -> Sources` 中完成，下面以日志为例：
 
-<div className="ch-image-md">
-  <Frame>
-    ![ClickStack 用户界面数据源配置](/images/use-cases/observability/hyperdx-25.webp)
-  </Frame>
-</div>
+<Image img="/images/use-cases/observability/hyperdx-25.webp" alt="HyperDX 数据源配置" size="md" />
 
-每个数据源都需要配置表和列的映射，ClickStack 用户界面才能查询其数据。指标数据源可以为不同的指标类型分别使用不同的表。编辑现有数据源时会显示 `Enabled` 开关；数据源级别的 `Query Settings` 最多支持十个名称/值对。
+创建这些数据源时，每个数据源都至少需要指定一张表，以及一组供 HyperDX 查询数据的列。
 
 如果使用 ClickStack 附带的[默认 OpenTelemetry (OTel) schema](/zh/guides/use-cases/observability/build-your-own/integrating-opentelemetry#out-of-the-box-schema)，则每个数据源所需的这些列都可以自动推断出来。如果[修改 schema](#clickhouse)或使用自定义 schema，则用户需要指定并更新这些映射。
 
 <Note>
-  采集器会根据其 [schema 配置](#collector-schema-and-retention)，通过模式迁移或旧版由导出器管理的 schema 创建方式来建表。列映射遵循 OpenTelemetry 规范，包括[日志数据模型](https://opentelemetry.io/docs/specs/otel/logs/data-model/)。
+  ClickStack 附带的默认 ClickHouse schema，是由 [OTel collector 的 ClickHouse exporter](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/clickhouseexporter) 创建的 schema。这些列名与 [此处](https://opentelemetry.io/docs/specs/otel/logs/data-model/) 文档中的 OTel 官方规范相对应。
 </Note>
 
 以下是每个数据源可用的设置：
 
 <div id="logs">
-  #### 日志 {#logs}
+  #### 日志
 </div>
 
-| 设置                       | 说明                                                                                                                                                                                                                                                      | 必填  | 在默认 schema 中推断 | 推断值                                                |
-| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --- | -------------- | -------------------------------------------------- |
-| `名称`                     | Source 名称。                                                                                                                                                                                                                                              | 是   | 否              | –                                                  |
-| `分组`                     | 用于在源选择器中对源进行分组的可选标签。属于同一分组的源会显示在一起；除源名称外，搜索还会匹配分组名称。                                                                                                                                                                                                    | No  | No             | –                                                  |
-| `Server Connection`      | 服务器连接名称。                                                                                                                                                                                                                                                | 是   | No             | `Default`                                          |
-| `数据库`                    | ClickHouse 数据库名称。                                                                                                                                                                                                                                       | Yes | Yes            | `default`                                          |
-| `表`                      | 目标表名称。使用默认 schema 时设为 `otel_logs`。                                                                                                                                                                                                                      | Yes | No             |                                                    |
-| `查询设置`                   | 查询级[会话设置](/zh/reference/settings/session-settings)，每项均由设置名称和值组成，并会应用于针对此 source 发出的每个查询。                                                                                                                                                                | No  | No             | –                                                  |
-| `启用`                     | 已禁用的数据源会被保留，但不会显示在数据源选择器中，也绝不会被自动选中。                                                                                                                                                                                                                    | 否   | 否              | 已启用                                                |
-| `时间戳列`                   | 主键中包含的日期时间列或表达式。                                                                                                                                                                                                                                        | 是   | 是              | `TimestampTime`                                    |
-| `默认选择列`                  | 默认搜索结果中显示的列。                                                                                                                                                                                                                                            | 是   | 是              | `Timestamp`, `ServiceName`, `SeverityText`, `Body` |
-| `服务名称表达式`                | 用于服务名称的表达式或列。                                                                                                                                                                                                                                           | 否   | 是              | `ServiceName`                                      |
-| `服务版本表达式`                | 标识服务当前运行发布版本的表达式或列，用于在仪表盘图表中绘制[发布标记](/zh/clickstack/features/dashboards/release-markers)。留空时，默认使用 OpenTelemetry `service.version` 资源属性。                                                                                                                    | 否   | 否              | `ResourceAttributes['service.version']`            |
-| `日志级别表达式`                | 用于日志级别的表达式或列。                                                                                                                                                                                                                                           | 否   | 是              | `SeverityText`                                     |
-| `正文表达式`                  | 用于日志消息的表达式或列。                                                                                                                                                                                                                                           | 否   | 是              | `Body`                                             |
-| `日志属性表达式`                | 自定义日志属性的表达式或列。                                                                                                                                                                                                                                          | 否   | 是              | `LogAttributes`                                    |
-| `资源属性表达式`                | 资源级属性的表达式或列。                                                                                                                                                                                                                                            | 否   | 是              | `ResourceAttributes`                               |
-| `显示时间戳列`                 | 用于 UI 显示的可选高精度时间戳列。未提供时，默认使用 Timestamp Column。                                                                                                                                                                                                          | 否   | 是              | `Timestamp`                                        |
-| `关联指标源`                  | 关联的指标源 (例如 ClickStack 用户界面指标) 。                                                                                                                                                                                                                         | 否   | No             | –                                                  |
-| `关联的链路追踪数据源`             | 关联的链路追踪数据源 (例如 ClickStack 用户界面链路追踪) 。                                                                                                                                                                                                                   | No  | No             | –                                                  |
-| `Trace ID 表达式`           | 用于提取 trace ID 的表达式或列。                                                                                                                                                                                                                                   | 否   | 是              | `TraceId`                                          |
-| `Span ID 表达式`            | 用于提取 span ID 的表达式或列。                                                                                                                                                                                                                                    | 否   | 是              | `SpanId`                                           |
-| `隐式列表达式`                 | 未指定字段时用于全文搜索 (Lucene 风格) 的列，通常为日志正文。                                                                                                                                                                                                                    | 否   | 是              | `Body`                                             |
+| 设置                       | 说明                                                                                                                                                                                                                                                | 必填  | 在默认 schema 中推断 | 推断值                                                |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --- | -------------- | -------------------------------------------------- |
+| `名称`                     | Source 名称。                                                                                                                                                                                                                                        | 是   | 否              | –                                                  |
+| `分组`                     | 用于在源选择器中对源进行分组的可选标签。属于同一分组的源会显示在一起；除源名称外，搜索还会匹配分组名称。                                                                                                                                                                                              | 否   | 否              | –                                                  |
+| `Server Connection`      | 服务器连接名称。                                                                                                                                                                                                                                          | 是   | No             | `Default`                                          |
+| `数据库`                    | ClickHouse 数据库名称。                                                                                                                                                                                                                                 | Yes | Yes            | `default`                                          |
+| `表`                      | 目标表名称。使用默认 schema 时设为 `otel_logs`。                                                                                                                                                                                                                | Yes | No             |                                                    |
+| `查询设置`                   | 查询级[会话设置](/zh/reference/settings/session-settings)，每项均由设置名称和值组成，并会应用于针对此 source 发出的每个查询。                                                                                                                                                             | No  | 否              | –                                                  |
+| `启用`                     | 已禁用的数据源会被保留，但不会显示在数据源选择器中，也绝不会被自动选中。                                                                                                                                                                                                              | 否   | 否              | 已启用                                                |
+| `时间戳列`                   | 主键中包含的日期时间列或表达式。                                                                                                                                                                                                                                  | 是   | 是              | `TimestampTime`                                    |
+| `默认选择列`                  | 默认搜索结果中显示的列。                                                                                                                                                                                                                                      | 是   | 是              | `Timestamp`, `ServiceName`, `SeverityText`, `Body` |
+| `服务名称表达式`                | 用于服务名称的表达式或列。                                                                                                                                                                                                                                     | 是   | 是              | `ServiceName`                                      |
+| `日志级别表达式`                | 用于日志级别的表达式或列。                                                                                                                                                                                                                                     | 是   | 是              | `SeverityText`                                     |
+| `正文表达式`                  | 用于日志消息的表达式或列。                                                                                                                                                                                                                                     | 是   | 是              | `Body`                                             |
+| `日志属性表达式`                | 自定义日志属性的表达式或列。                                                                                                                                                                                                                                    | 是   | 是              | `LogAttributes`                                    |
+| `资源属性表达式`                | 资源级属性的表达式或列。                                                                                                                                                                                                                                      | 是   | 是              | `ResourceAttributes`                               |
+| `显示时间戳列`                 | 用于 UI 显示的可选高精度时间戳列。未提供时，默认使用 Timestamp Column。                                                                                                                                                                                                    | 否   | 是              | `Timestamp`                                        |
+| `关联指标源`                  | 关联的指标源 (例如 HyperDX 指标) 。                                                                                                                                                                                                                          | 否   | No             | –                                                  |
+| `关联的链路追踪数据源`             | 关联的链路追踪数据源 (例如 HyperDX 链路追踪) 。                                                                                                                                                                                                                    | No  | No             | –                                                  |
+| `Trace ID 表达式`           | 用于提取 trace ID 的表达式或列。                                                                                                                                                                                                                             | 是   | 是              | `TraceId`                                          |
+| `Span ID 表达式`            | 用于提取 span ID 的表达式或列。                                                                                                                                                                                                                              | 是   | 是              | `SpanId`                                           |
+| `隐式列表达式`                 | 未指定字段时用于全文搜索 (Lucene 风格) 的列，通常为日志正文。                                                                                                                                                                                                              | 是   | 是              | `Body`                                             |
 | `已知列清单`                  | 适用于底层目标表列集合不一致的 [`Distributed`](/zh/reference/engines/table-engines/special/distributed) 或 [`Merge`](/zh/reference/engines/table-engines/special/merge) 表数据源。以逗号分隔的列名列表，包含所有目标端表中可用的列；获取完整行数据时 (例如在行侧边栏中) 将使用此列表代替 `SELECT *`。留空则选择所有列。仅支持列名，不支持表达式或别名。 | 否   | No             | –                                                  |
-| `使用文本索引`                 | 基于 Lucene 的搜索在查询隐式列时是否使用 `hasAllTokens`。                                                                                                                                                                                                                | 否   | 否              | `自动（根据 schema 检测）`                                 |
-| `突出显示的属性`                | 打开日志详情时显示的表达式或列。返回 URL 的表达式将显示为链接。                                                                                                                                                                                                                      | No  | No             | –                                                  |
-| `突出显示的 Trace 属性`         | 从 trace 中每条日志提取的表达式或列，显示在 trace 瀑布图上方。返回 URL 的表达式将显示为链接。                                                                                                                                                                                                | 否   | No             | –                                                  |
-| `Materialized Views`     | 为此 source 注册的预聚合 [materialized views](/zh/clickstack/managing/materialized-views)，会自动用于加速符合条件的查询。请参阅 [Materialized views](#materialized-views-settings)。                                                                                                | 否   | No             | –                                                  |
-| `元数据 materialized views` | 用于加快字段发现和值自动补全的 materialized views。请参阅[元数据 materialized views](#metadata-materialized-views-settings)。                                                                                                                                                  | No  | Yes            | `<table>_kv_rollup_15m`                            |
-| `默认 ORDER BY`            | 用于覆盖搜索结果默认排序的 `ORDER BY` 表达式。留空则使用自动检测到的默认值。之后可针对每次搜索单独自定义。                                                                                                                                                                                             | No  | No             | –                                                  |
-| `严重级别数值表达式`              | 以数值表示的 OpenTelemetry 严重级别 (1–24) ，适用于表中包含该字段的情况。                                                                                                                                                                                                        | 否   | 是 (存在时)        | `SeverityNumber`                                   |
-| `事件名称表达式`                | OpenTelemetry 事件名称，适用于表中包含该字段的情况。                                                                                                                                                                                                                       | 否   | 是 (存在时)        | `EventName`                                        |
+| `使用文本索引`                 | 使用 Lucene 的搜索在查询隐式列时是否调用 `hasAllTokens`。                                                                                                                                                                                                          | 否   | No             | `自动（根据 schema 检测）`                                 |
+| `突出显示的属性`                | 打开日志详情时显示的表达式或列。返回 URL 的表达式将显示为链接。                                                                                                                                                                                                                | No  | No             | –                                                  |
+| `突出显示的 Trace 属性`         | 从 trace 中每条日志提取的表达式或列，显示在 trace 瀑布图上方。返回 URL 的表达式将显示为链接。                                                                                                                                                                                          | 否   | 否              | –                                                  |
+| `Materialized Views`     | 为此 source 注册的预聚合 [materialized views](/zh/clickstack/managing/materialized-views)，会自动用于加速符合条件的查询。请参阅 [Materialized views](#materialized-views-settings)。                                                                                             | 否   | No             | –                                                  |
+| `元数据 materialized views` | 用于加快字段发现和值自动补全的 materialized views。请参阅[元数据 materialized views](#metadata-materialized-views-settings)。                                                                                                                                            | No  | Yes            | `<table>_kv_rollup_15m`                            |
+| `默认 ORDER BY`            | 用于覆盖搜索结果默认排序的 `ORDER BY` 表达式。留空则使用自动检测到的默认值。之后可针对每次搜索单独自定义。                                                                                                                                                                                       | No  | No             | –                                                  |
 
 <div id="traces">
-  #### 链路追踪 {#traces}
+  #### 链路追踪
 </div>
 
 | 设置                               | 描述                                                                                                                                                                                                                                            | 必填 | 在默认 schema 中推断 | 推断值                                                                                                   |
@@ -154,19 +185,18 @@ ClickStack 用户界面 依赖用户为每一种可观测性数据类型/支柱�
 | `Parent Span Id Expression`      | 父 span ID 对应的表达式或列。                                                                                                                                                                                                                           | 是  | 是              | `ParentSpanId`                                                                                        |
 | `Span Name Expression`           | span 名称对应的表达式或列。                                                                                                                                                                                                                              | 是  | 是              | `SpanName`                                                                                            |
 | `Span Kind Expression`           | span 类型对应的表达式或列 (例如 client、server) 。                                                                                                                                                                                                          | 是  | 是              | `SpanKind`                                                                                            |
-| `Correlated Log Source`          | 可选。关联的日志数据源 (例如 ClickStack 用户界面日志) 。                                                                                                                                                                                                          | 否  | 否              | –                                                                                                     |
+| `Correlated Log Source`          | 可选。关联的日志数据源 (例如 HyperDX logs) 。                                                                                                                                                                                                               | 否  | 否              | –                                                                                                     |
 | `Correlated Session Source`      | 可选。关联的会话数据源。                                                                                                                                                                                                                                  | 否  | 否              | –                                                                                                     |
-| `Correlated Metric Source`       | 可选。关联的指标数据源 (例如 ClickStack 用户界面指标) 。                                                                                                                                                                                                          | 否  | 否              | –                                                                                                     |
-| `Status Code Expression`         | span 状态码对应的表达式。                                                                                                                                                                                                                               | 否  | 是              | `StatusCode`                                                                                          |
-| `Status Message Expression`      | span 状态消息对应的表达式。                                                                                                                                                                                                                              | 否  | 是              | `StatusMessage`                                                                                       |
-| `Service Name Expression`        | 服务名称对应的表达式或列。                                                                                                                                                                                                                                 | 否  | 是              | `ServiceName`                                                                                         |
-| `Service Version Expression`     | 用于标识服务正在运行的发布版本的表达式或列，用于在仪表板图表上绘制[发布标记](/zh/clickstack/features/dashboards/release-markers)。留空时，默认使用 OpenTelemetry `service.version` 资源属性。                                                                                                       | 否  | 否              | `ResourceAttributes['service.version']`                                                               |
-| `Resource Attributes Expression` | 资源级属性对应的表达式或列。                                                                                                                                                                                                                                | 否  | 是              | `ResourceAttributes`                                                                                  |
-| `Event Attributes Expression`    | 事件属性对应的表达式或列。                                                                                                                                                                                                                                 | 否  | 是              | `SpanAttributes`                                                                                      |
+| `Correlated Metric Source`       | 可选。关联的指标数据源 (例如 HyperDX metrics) 。                                                                                                                                                                                                            | 否  | 否              | –                                                                                                     |
+| `Status Code Expression`         | span 状态码对应的表达式。                                                                                                                                                                                                                               | 是  | 是              | `StatusCode`                                                                                          |
+| `Status Message Expression`      | span 状态消息对应的表达式。                                                                                                                                                                                                                              | 是  | 是              | `StatusMessage`                                                                                       |
+| `Service Name Expression`        | 服务名称对应的表达式或列。                                                                                                                                                                                                                                 | 是  | 是              | `ServiceName`                                                                                         |
+| `Resource Attributes Expression` | 资源级属性对应的表达式或列。                                                                                                                                                                                                                                | 是  | 是              | `ResourceAttributes`                                                                                  |
+| `Event Attributes Expression`    | 事件属性对应的表达式或列。                                                                                                                                                                                                                                 | 是  | 是              | `SpanAttributes`                                                                                      |
 | `Sample Rate Expression`         | 包含上游采样权重 (`1/N`) 的列或表达式。设置后，聚合 (`count`、`avg`、`sum`、`quantile`) 会针对采样进行校正。百分位数将使用 `quantileTDigestWeighted`，这是一种近似算法，因此精确值可能略有差异。如果 spans 未采样，请留空。                                                                                            | 否  | 否              | –                                                                                                     |
-| `Span Events Expression`         | 用于提取 span 事件的表达式。通常为 `Nested` 类型的列。这使得可以在受支持的语言 SDK 中渲染异常堆栈跟踪。                                                                                                                                                                                | 否  | 是              | `Events`                                                                                              |
+| `Span Events Expression`         | 用于提取 span 事件的表达式。通常为 `Nested` 类型的列。这使得可以在受支持的语言 SDK 中渲染异常堆栈跟踪。                                                                                                                                                                                | 是  | 是              | `Events`                                                                                              |
 | `Span Links Expression`          | 用于提取 span 链接的表达式，以捕获从一个 span 指向其他 trace 中 spans 的链接。预期类型为 `Nested(TraceId String, SpanId String, TraceState String, Attributes Map(LowCardinality(String), String))`。                                                                         | 否  | 是              | `Links`                                                                                               |
-| `Implicit Column Expression`     | 未指定 field 时用于全文搜索的列 (Lucene 风格) 。通常为日志正文。                                                                                                                                                                                                     | 否  | 是              | `SpanName`                                                                                            |
+| `Implicit Column Expression`     | 未指定 field 时用于全文搜索的列 (Lucene 风格) 。通常为日志正文。                                                                                                                                                                                                     | 是  | 是              | `SpanName`                                                                                            |
 | `Known Columns List`             | 适用于 [`Distributed`](/zh/reference/engines/table-engines/special/distributed) 或 [`Merge`](/zh/reference/engines/table-engines/special/merge) 表上的数据源，其目标表的列集合不一致。以逗号分隔的列表，列出所有目标表中可用的列；获取完整行数据时 (例如在行侧边栏中) 会使用它代替 `SELECT *`。留空可选择所有列。仅限列名，不支持表达式或别名。 | 否  | 否              | –                                                                                                     |
 | `Use Text Index`                 | 在搜索隐式列时，是否让基于 Lucene 的搜索生成 `hasAllTokens`。                                                                                                                                                                                                    | 否  | 否              | `Auto (detect from schema)`                                                                           |
 | `Displayed Timestamp Column`     | 可选的高精度时间戳列，用于 UI 显示。未提供时默认使用 Timestamp Column。                                                                                                                                                                                                | 否  | 是              | `Timestamp`                                                                                           |
@@ -177,33 +207,25 @@ ClickStack 用户界面 依赖用户为每一种可观测性数据类型/支柱�
 | `Default Order By`               | 用于覆盖搜索结果默认排序的 `ORDER BY` 表达式。留空可使用自动检测到的默认值。之后可针对每次搜索进行自定义。                                                                                                                                                                                   | 否  | 否              | –                                                                                                     |
 
 <div id="metrics">
-  #### 指标 {#metrics}
+  #### 指标
 </div>
 
-| 设置项                           | 描述                                                                                            | 必填 | 在默认 schema 中推断 | 推断值                                  |
-| ----------------------------- | --------------------------------------------------------------------------------------------- | -- | -------------- | ------------------------------------ |
-| `Name`                        | 数据源名称。                                                                                        | 是  | 否              | –                                    |
-| `Section`                     | 可选。用于在数据源选择器中对数据源进行分组的标签。属于同一分组的数据源会显示在一起，搜索时除数据源名称外，也会匹配分组名称。                                | 否  | 否              | –                                    |
-| `Server Connection`           | 服务器连接名称。                                                                                      | 是  | 否              | `Default`                            |
-| `Database`                    | ClickHouse 数据库名称。                                                                             | 是  | 是              | `default`                            |
+| 设置项                           | 描述                                                                                         | 必填 | 在默认 schema 中推断 | 推断值                                  |
+| ----------------------------- | ------------------------------------------------------------------------------------------ | -- | -------------- | ------------------------------------ |
+| `Name`                        | 数据源名称。                                                                                     | 是  | 否              | –                                    |
+| `Section`                     | 可选。用于在数据源选择器中对数据源进行分组的标签。属于同一分组的数据源会显示在一起，搜索时除数据源名称外，也会匹配分组名称。                             | 否  | 否              | –                                    |
+| `Server Connection`           | 服务器连接名称。                                                                                   | 是  | 否              | `Default`                            |
+| `Database`                    | ClickHouse 数据库名称。                                                                          | 是  | 是              | `default`                            |
 | `Query Settings`              | 最多可配置十个查询级别的[会话设置](/zh/reference/settings/session-settings)，每项均由设置名称和值组成，并会添加到针对该数据源发出的每个查询中。 | 否  | 否              | –                                    |
-| `Enabled`                     | 数据源表单顶部的切换开关。禁用的数据源会被保留，但会在数据源选择器中隐藏，且绝不会被自动选择。仅在编辑现有数据源时显示。                                  | 否  | 否              | 已启用                                  |
-| `Gauge Table`                 | 存储 Gauge 类型指标的表。                                                                              | 否  | 是              | `otel_metrics_gauge`                 |
-| `Histogram Table`             | 存储 Histogram 类型指标的表。                                                                          | 否  | 是              | `otel_metrics_histogram`             |
-| `Sum Table`                   | 存储 Sum 类型 (Counter) 指标的表。                                                                     | 否  | 是              | `otel_metrics_sum`                   |
-| `Exponential Histogram Table` | 存储 Exponential Histogram 类型指标的表。                                                              | 否  | 是              | `otel_metrics_exponential_histogram` |
-| `Correlated Log Source`       | 可选。关联的日志数据源 (例如 ClickStack 用户界面日志) 。                                                          | 否  | 否              | –                                    |
-| `Summary Table`               | 存储 Summary 类型指标的表。对 Summary 和 Exponential Histogram 的支持尚不完善。                                  | 否  | 是              | `otel_metrics_summary`               |
-| `Minimum auto granularity`    | 自动选择图表粒度时的最小分桶大小。不会覆盖显式指定的图表粒度。                                                               | 否  | 否              | 无最小值                                 |
-
-指标数据源还会存储时间戳和资源属性的映射 (通常为 `TimeUnix` 和 `ResourceAttributes`) 。统一的 `series Table` 字段仅对已启用指标数据系列表支持的团队显示。
-
-#### PromQL {#promql-source-settings}
-
-启用 PromQL 后，即可创建 PromQL source。除了通用的名称、连接、数据库、表、查询设置和已启用等字段外，它还包含 **Minimum auto granularity** (最小自动粒度) 设置。对于 ClickHouse 连接，请选择使用 `TimeSeries` 引擎的表。时间戳表达式会自动设置。最小自动粒度还决定了计算 `$__rate_interval` 时所用的抓取时间间隔；如果未设置，则默认抓取时间间隔为 15 秒。
+| `Enabled`                     | 数据源表单顶部的切换开关。禁用的数据源会被保留，但会在数据源选择器中隐藏，且绝不会被自动选择。仅在编辑现有数据源时显示。                               | 否  | 否              | 已启用                                  |
+| `Gauge Table`                 | 存储 Gauge 类型指标的表。                                                                           | 否  | 是              | `otel_metrics_gauge`                 |
+| `Histogram Table`             | 存储 Histogram 类型指标的表。                                                                       | 否  | 是              | `otel_metrics_histogram`             |
+| `Sum Table`                   | 存储 Sum 类型 (Counter) 指标的表。                                                                  | 否  | 是              | `otel_metrics_sum`                   |
+| `Exponential Histogram Table` | 存储 Exponential Histogram 类型指标的表。                                                           | 否  | 是              | `otel_metrics_exponential_histogram` |
+| `Correlated Log Source`       | 可选。关联的日志数据源 (例如 HyperDX 日志) 。                                                              | 否  | 否              | –                                    |
 
 <div id="settings">
-  #### 会话 {#settings}
+  #### 会话
 </div>
 
 | 设置                               | 说明                                                                                     | 必填 | 在默认 schema 中推断 | 推断值                  |
@@ -220,7 +242,7 @@ ClickStack 用户界面 依赖用户为每一种可观测性数据类型/支柱�
 | `Resource Attributes Expression` | 用于提取资源级元数据的表达式。                                                                        | 否  | 是              | `ResourceAttributes` |
 
 <div id="materialized-views-settings">
-  #### Materialized views {#materialized-views-settings}
+  #### Materialized views
 </div>
 
 可以为日志和链路追踪数据源注册 materialized view，使符合条件的聚合查询从预聚合视图而非源表获取结果。有关创建和注册视图的说明，请参阅[“Materialized views”](/zh/clickstack/managing/materialized-views)。
@@ -240,7 +262,7 @@ ClickStack 用户界面 依赖用户为每一种可观测性数据类型/支柱�
 选择目标表后，大多数设置会根据视图的 schema 自动推断。
 
 <div id="metadata-materialized-views-settings">
-  #### 元数据 materialized views {#metadata-materialized-views-settings}
+  #### 元数据 materialized views
 </div>
 
 元数据 materialized views 可加速过滤器的字段发现和自动补全。可在日志和链路追踪数据源上配置。
@@ -251,7 +273,9 @@ ClickStack 用户界面 依赖用户为每一种可观测性数据类型/支柱�
 | `KV Rollup Table`  | 包含源表中键/值对的 rollup 表。                 |
 | `粒度`      | rollup 表使用的时间桶，例如 `15 minute`。 |
 
-#### 高亮属性 {#highlighted-attributes}
+<div id="highlighted-attributes">
+  #### 高亮属性
+</div>
 
 高亮属性和高亮 trace 属性都可以在日志和 trace 数据源上配置。
 
@@ -270,223 +294,237 @@ ClickStack 用户界面 依赖用户为每一种可观测性数据类型/支柱�
 
 例如，这个链路追踪数据源已配置了一个高亮属性和一个高亮 trace 属性：
 
-<div className="ch-image-md">
-  <Frame>
-    ![高亮属性配置](/images/use-cases/observability/hyperdx-highlighted-attributes-config.webp)
-  </Frame>
-</div>
+<Image img="/images/use-cases/observability/hyperdx-highlighted-attributes-config.webp" alt="高亮属性配置" size="md" />
 
 点击日志或 span 后，这些属性会显示在侧边面板中：
 
-<div className="ch-image-md">
-  <Frame>
-    ![高亮属性](/images/use-cases/observability/hyperdx-highlighted-attributes.webp)
-  </Frame>
-</div>
+<Image img="/images/use-cases/observability/hyperdx-highlighted-attributes.webp" alt="高亮属性" size="md" />
 
 点击某个属性后，可以选择将该属性用作搜索值。如果在属性配置中提供了可选的 Lucene 表达式，搜索时将使用 Lucene 表达式而不是 SQL 表达式。
 
-<div className="ch-image-md">
-  <Frame>
-    ![高亮属性搜索](/images/use-cases/observability/hyperdx-highlighted-attributes-search.webp)
-  </Frame>
+<Image img="/images/use-cases/observability/hyperdx-highlighted-attributes-search.webp" alt="高亮属性搜索" size="md" />
+
+<div id="correlated-sources">
+  ### 关联来源
 </div>
 
-### 关联来源 {#correlated-sources}
-
-要在 ClickStack 中启用完整的跨数据源关联，您必须为日志、链路追踪、指标和会话配置关联来源。这样，ClickStack 用户界面就能将相关数据关联起来，并在渲染事件时提供更丰富的上下文。
+要在 ClickStack 中启用完整的跨数据源关联，您必须为日志、链路追踪、指标和会话配置关联来源。这样，HyperDX 就能将相关数据关联起来，并在渲染事件时提供更丰富的上下文。
 
 * `Logs`：可与链路追踪和指标关联。
 * `Traces`：可与日志、会话和指标关联。
 * `Metrics`：可与日志关联。
 * `Sessions`：可与链路追踪关联。
 
-配置这些关联后，即可启用多项功能。例如，ClickStack 用户界面可以在显示 trace 的同时呈现相关日志，或突出显示与会话相关联的指标异常。
+配置这些关联后，即可启用多项功能。例如，HyperDX 可以在显示 trace 的同时呈现相关日志，或突出显示与会话相关联的指标异常。
 
 例如，下面是已配置关联来源的日志数据源：
 
-<div className="ch-image-md">
-  <Frame>
-    ![ClickStack 用户界面中已关联的 source](/images/use-cases/observability/hyperdx-26.webp)
-  </Frame>
+<Image img="/images/use-cases/observability/hyperdx-26.webp" alt="HyperDX 关联来源" size="md" />
+
+<div id="application-configuration-settings">
+  ### 应用配置设置
 </div>
 
-### ClickHouse 客户端设置 {#clickhouse-client-settings}
+<Info>
+  **ClickHouse Cloud 中的 HyperDX**
 
-团队设置中的 **ClickHouse 客户端设置** 部分用于控制该团队的查询行为。
+  当 HyperDX 由 ClickHouse Cloud 托管时，这些设置不可修改。
+</Info>
 
-| 设置项                                 | 默认值       | 描述                                    |
-| ----------------------------------- | --------- | ------------------------------------- |
-| `Search Row Limit`                  | `200`     | 搜索页面及搜索类仪表板面板中每次查询返回的行数。范围：1–100,000。 |
-| `Query Timeout (seconds)`           | `60`      | 查询执行时间上限；`0` 表示不限制。                   |
-| `Max Rows to Read (METADATA ONLY)`  | `3000000` | 元数据查询的读取行数上限；`0` 表示不限制。               |
-| `Filter Keys Fetch Limit`           | `100`     | 每个 Map 列拉取的过滤键数量。范围：1–1,000。          |
-| `Field Metadata Queries`            | 已启用       | 控制是否从 ClickHouse 拉取字段元数据。             |
-| `Parallelize Queries When Possible` | 已禁用       | 并行执行符合条件的窗口化查询，可能会提高数据库的峰值负载。         |
+* `HYPERDX_API_KEY`
+  * **默认值：** None (必填)
+  * **说明：** 用于 HyperDX API 的身份验证密钥。
+  * **指导：**
+  * 遥测和日志功能必需
+  * 在本地开发环境中，可使用任意非空值
+  * 在生产环境中，请使用安全且唯一的密钥
+  * 创建账户后，可从 Team Settings 页面获取
 
-有关权限和安全策略，请参阅[基于角色的访问控制](/zh/clickstack/managing/rbac)。有关通知目标端，请参阅[告警](/zh/clickstack/features/alerts)。
+* `HYPERDX_LOG_LEVEL`
+  * **默认值：** `info`
+  * **说明：** 设置日志详细程度。
+  * **可选项：** `debug`, `info`, `warn`, `error`
+  * **建议：**
+  * 使用 `debug` 进行详细故障排查
+  * 使用 `info` 用于正常运行
+  * 在生产环境中使用 `warn` 或 `error` 以减少日志量
 
-### 应用程序配置项 {#application-configuration-settings}
+* `HYPERDX_API_PORT`
+  * **默认值：** `8000`
+  * **说明：** HyperDX API 服务器使用的端口。
+  * **指导：**
+  * 确保该端口在主机上可用
+  * 如果存在端口冲突，请更改此端口
+  * 必须与 API 客户端配置中的端口保持一致
 
-以下环境变量用于配置自托管 ClickStack，不适用于 ClickHouse Cloud 中托管的 ClickStack 用户界面。除非另有说明，下文所列默认值均指官方容器入口点中的取值，Docker Compose 可以覆盖这些值。修改服务的环境变量后，请重启相应服务。
+* `HYPERDX_APP_PORT`
+  * **默认值：** `8000`
+  * **说明：** HyperDX 前端应用使用的端口。
+  * **指导：**
+  * 确保此端口在主机上可用
+  * 如果发生端口冲突，请更改该端口
+  * 必须可通过浏览器访问
 
-#### 网络与存储 {#network-and-storage}
+* `HYPERDX_APP_URL`
+  * **默认值：** `http://localhost`
+  * **说明：** 前端应用的基础 URL。
+  * **指导：**
+  * 在生产环境中将其设置为你的域名
+  * 包含协议 (http/https)
+  * 不要包含末尾斜杠
 
-| 变量                            | 默认值                                | 描述                                                                            |
-| ----------------------------- | ---------------------------------- | ----------------------------------------------------------------------------- |
-| `HYPERDX_API_PORT`            | `8000`                             | 应用程序容器内的 API 服务器端口。修改该值时，请同步更新 Docker 端口映射。                                   |
-| `HYPERDX_APP_PORT`            | `8080`                             | 应用程序容器内的前端端口。修改该值时，请同步更新 Docker 端口映射。                                         |
-| `HYPERDX_APP_URL`             | `http://localhost`                 | 不含端口的前端公网源地址 (origin) 。与 `HYPERDX_APP_PORT` 组合生成 `FRONTEND_URL`。              |
-| `FRONTEND_URL`                | `HYPERDX_APP_URL:HYPERDX_APP_PORT` | 完整的前端公网 URL，用于重定向。使用反向代理或 HTTPS 时，请显式设置该值。                                    |
-| `HYPERDX_APP_LISTEN_HOSTNAME` | `0.0.0.0`                          | 仅 UI 容器中的前端监听地址。                                                              |
-| `HYPERDX_OPAMP_PORT`          | `4320`                             | OpAMP 服务器端口，采集器通过该端口获取配置和摄取密钥。容器会将其映射到 `OPAMP_PORT`。                          |
-| `MONGO_URI`                   | 取决于部署方式                            | MongoDB 连接字符串。Compose 和一体化部署使用 `mongodb://db:27017/hyperdx`。一体化部署的入口点会自行设置该值。 |
-| `SERVER_URL`                  | 取决于部署方式                            | 前端服务器使用的内部 API URL。在 Compose 和一体化部署中，该值指向本地 API 端口。                           |
+* `MONGO_URI`
+  * **默认值：** `mongodb://db:27017/hyperdx`
+  * **说明：** MongoDB 连接字符串。
+  * **指导：**
+  * 在使用 Docker 的本地开发环境中，可使用默认值
+  * 在生产环境中，请使用安全的连接字符串
+  * 如果需要，请包含身份验证信息
+  * 示例：`mongodb://user:pass@host:port/db`
 
-如果直接运行 API 而不使用容器入口点，请设置 `PORT` 和 `OPAMP_PORT`，分别用于 API 监听器和 OpAMP 监听器。`HYPERDX_*_PORT` 变量只是为容器/部署场景提供的便捷配置。
+* `MINER_API_URL`
+  * **默认值：** `http://miner:5123`
+  * **说明：** 日志模式挖掘服务的 URL。
+  * **指导：**
+  * 在使用 Docker 的本地开发环境中使用默认值
+  * 在生产环境中，将其设置为你的 miner 服务 URL
+  * 必须可从 API 服务访问
 
-#### 身份验证与安全 {#authentication-and-security}
+* `FRONTEND_URL`
+  * **默认值：** `http://localhost:3000`
+  * **说明：** 前端应用的 URL。
+  * **建议：**
+  * 本地开发时使用默认值
+  * 在生产环境中设置为您的域名
+  * API 服务必须能够访问该地址
 
-| 变量                                | 默认值                | 描述                                                                                      |
-| --------------------------------- | ------------------ | --------------------------------------------------------------------------------------- |
-| `EXPRESS_SESSION_SECRET`          | 未设置时由每个 API 进程自动生成 | 用于会话签名的机密信息。请设置一个高强度、持久且由所有 API 副本共享的值，以确保会话在重启后依然有效。启用身份验证的部署会拒绝旧的公开演示机密信息，并改为生成一个随机值。 |
-| `INGESTION_API_KEY`               | 未设置                | 可选，为启用身份验证的 all-in-one 镜像额外配置的摄取 key。生产环境中仅含 UI 的镜像不支持此引导覆盖配置。其他情况下，请使用团队提供的摄取 key。     |
-| `WEBHOOK_HOSTNAME_ALLOWLIST`      | 空                  | 以逗号分隔的例外列表，允许 Webhook 发送到私网或预留的目标端。主机名条目同时匹配其子域名；IP 条目需精确匹配。除非这些目标端可信，否则请留空。            |
-| `TOKEN_ENCRYPTION_KEY`            | 未设置                | 以 base64 或 hex 编码的 32 字节密钥，用于加密已存储的第三方令牌。若未设置，这些令牌将以明文形式存储。请保持该密钥稳定不变，并将其作为机密信息妥善保管。    |
-| `EXTERNAL_API_RATE_LIMIT_MAX`     | `100`              | 正整数，用于限制每个 API key 每分钟可发起的外部 API v2 请求数。                                                |
-| `EXTERNAL_API_SEARCH_MAX_RESULTS` | `2000`             | 外部搜索 API 可接受的最大结果数。必须为不小于 `100` 的整数；若值无效，则使用默认值。                                        |
-| `ENABLE_SWAGGER`                  | `false`            | 仅当 `NODE_ENV` 不为 `production` 时启用 API 文档。在已发布的生产环境镜像中不生效。                               |
+* `OTEL_SERVICE_NAME`
+  * **默认值：** `hdx-oss-api`
+  * **说明：** OpenTelemetry 插桩的服务名称。
+  * **指导：**
+  * 为 HyperDX 服务使用便于识别的名称。适用于 HyperDX 自行插桩的场景。
+  * 有助于在遥测数据中识别 HyperDX 服务
 
-#### 引导与预配 {#bootstrap-and-provisioning}
+* `NEXT_PUBLIC_OTEL_EXPORTER_OTLP_ENDPOINT`
+  * **默认值：** `http://localhost:4318`
+  * **说明：** OpenTelemetry collector 端点。
+  * **指导：**
+  * 适用于 HyperDX 自行埋点。
+  * 本地开发时使用默认值
+  * 在生产环境中，将其设置为你的 collector URL
+  * 必须可从你的 HyperDX 服务访问
 
-| 变量                                    | 默认值     | 描述                                                                                                    |
-| ------------------------------------- | ------- | ----------------------------------------------------------------------------------------------------- |
-| `DEFAULT_CONNECTIONS`                 | 取决于部署方式 | 引导空实例时使用的连接 JSON 数组。Compose 和一体化部署会提供一个本地 ClickHouse 连接。该变量不能用于更新已有连接。                                |
-| `DEFAULT_SOURCES`                     | 取决于部署方式 | 引导空实例时使用的 source JSON 数组。Compose 和一体化部署会提供 Logs、Traces、Metrics 和 Sessions 四个 source。一体化部署的入口点会自行设置该值。 |
-| `DASHBOARD_PROVISIONER_DIR`           | 未设置     | 存放待预配仪表盘定义的目录。设置该变量后，仅含 UI 的容器中会启动仪表盘预配器。                                                             |
-| `DASHBOARD_PROVISIONER_TEAM_ID`       | 未设置     | 接收预配仪表盘的团队。除非设置了 `DASHBOARD_PROVISIONER_ALL_TEAMS=true`，否则为必填项。若两者同时设置，则以此变量为准。                       |
-| `DASHBOARD_PROVISIONER_ALL_TEAMS`     | `false` | 将仪表盘预配到所有团队，而非仅预配到某一个团队。                                                                              |
-| `ALERT_NOTIFICATION_FETCH_TIMEOUT_MS` | `30000` | Webhook 和 Slack 告警通知的超时时间，单位为毫秒。                                                                      |
-| `RUN_SCHEDULED_TASKS_EXTERNALLY`      | `false` | 仅运行一次定时任务，而不在任务进程内部对其进行调度。仅当由外部调度器负责调用这些任务时才应使用。                                                      |
+* `USAGE_STATS_ENABLED`
+  * **默认值：** `true`
+  * **说明：** 用于控制是否收集使用统计信息。
+  * **指导：**
+  * 设置为 `false` 可禁用使用情况跟踪
+  * 适用于对隐私较为敏感的部署
+  * 默认为 `true`，以便更好地改进产品
 
-对于本地模式部署，改由 `NEXT_PUBLIC_HDX_LOCAL_DEFAULT_CONNECTIONS` 和 `NEXT_PUBLIC_HDX_LOCAL_DEFAULT_SOURCES` 在浏览器中提供 JSON 默认值。这些配置值是公开的，请勿在其中放置生产环境凭证。
+* `IS_OSS`
+  * **默认值：** `true`
+  * **说明：** 表示是否以 OSS 模式运行。
+  * **指导：**
+  * 开源部署时，保持为 `true`
+  * Enterprise 部署时，设置为 `false`
+  * 会影响功能可用性
 
-#### AI 助手 {#ai-assistant-configuration}
+* `IS_LOCAL_MODE`
+  * **默认值：** `false`
+  * **说明：** 指示是否以本地模式运行。
+  * **建议：**
+  * 本地开发时设置为 `true`
+  * 会禁用某些生产环境功能
+  * 适用于测试和开发
 
-| 变量                   | 默认值                                      | 描述                                                                                       |
-| -------------------- | ---------------------------------------- | ---------------------------------------------------------------------------------------- |
-| `AI_PROVIDER`        | 未设置                                      | AI 服务提供商：`anthropic` 或 `openai`。兼容 OpenAI 的提供商使用 Responses API。                          |
-| `AI_API_KEY`         | 未设置                                      | 所选提供商的 API key。                                                                          |
-| `AI_BASE_URL`        | 提供商默认值                                   | 可选，自定义提供商端点。                                                                             |
-| `AI_MODEL_NAME`      | Anthropic 为 `claude-sonnet-4-5-20250929` | 模型标识符。使用兼容 OpenAI 的提供商时必填。                                                               |
-| `AI_REQUEST_HEADERS` | 未设置                                      | 兼容 OpenAI 的提供商所用的额外请求头，格式为 JSON 对象。                                                      |
-| `ANTHROPIC_API_KEY`  | 未设置                                      | 旧版 Anthropic API key。未配置 `AI_PROVIDER` 时使用，以保持向后兼容性。建议优先使用 `AI_PROVIDER` 和 `AI_API_KEY`。 |
+* `EXPRESS_SESSION_SECRET`
+  * **默认值：** `hyperdx is cool 👋`
+  * **说明：** 用于 Express 会话管理的密钥。
+  * **指南：**
+  * 请在生产环境中更改
+  * 使用高强度的随机字符串
+  * 妥善保密并安全存储
 
-#### 日志与自插桩 {#logging-and-self-instrumentation}
+* `ENABLE_SWAGGER`
+  * **默认值：** `false`
+  * **说明：** 用于启用或禁用 Swagger API 文档。
+  * **指导：**
+  * 设置为 `true` 以启用 API 文档
+  * 适用于开发和测试环境
+  * 在生产环境中禁用
 
-这些设置控制的是 ClickStack 自身发出的遥测数据，与用户身份验证或传入的应用程序遥测数据无关。
+* `BETA_CH_OTEL_JSON_SCHEMA_ENABLED`
+  * **默认值：** `false`
+  * **说明：** 在 HyperDX 中启用对 JSON type 的 Beta 支持。另请参阅 [`OTEL_AGENT_FEATURE_GATE_ARG`](#otel-collector)，以在 OTel collector 中启用 JSON 支持。
+  * **指导：**
+    * 这会启用一项 **Beta 功能**。对于典型的可观测性 workloads，**不建议**使用 JSON 类型的 schema。有关两者的对比及各自适用场景，请参阅 [Map vs JSON type](/zh/clickstack/ingesting-data/schema/map-vs-json)。
+    * 将其设置为 `true`，即可在 ClickStack UI 中启用 JSON 支持。
 
-| 变量                                                                                                                                                  | 默认值                                                       | 描述                                                                                                                               |
-| --------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| `HYPERDX_LOG_LEVEL`                                                                                                                                 | API 中为 `info`；Compose `.env` 中为 `debug`；一体化部署中强制为 `error` | 应用程序日志级别。                                                                                                                        |
-| `HYPERDX_API_KEY`                                                                                                                                   | 未设置                                                       | 可选，用于 ClickStack 自身遥测数据的摄取 key。它并非用于访问团队数据的 API 身份验证密钥。当 `HDX_EXPORTER_ENABLED=true` 时，前端会将此自遥测 key 暴露给浏览器，因此请勿使用可访问敏感遥测数据的 key。 |
-| `OTEL_SERVICE_NAME`                                                                                                                                 | 取决于部署方式                                                   | 服务端自插桩所用的服务名称。Compose 将其设为 `hdx-oss-app`。                                                                                        |
-| `NEXT_PUBLIC_OTEL_SERVICE_NAME`                                                                                                                     | `hdx-oss-dev-app`                                         | 前端自插桩所用的服务名称。                                                                                                                    |
-| `OTEL_EXPORTER_OTLP_ENDPOINT`                                                                                                                       | 取决于部署方式                                                   | 服务端 OTLP 端点。Compose 将其设为 `http://otel-collector:4318`。                                                                           |
-| `NEXT_PUBLIC_OTEL_EXPORTER_OTLP_ENDPOINT`                                                                                                           | 服务端端点；若未设置则为 `http://localhost:4318`                      | 前端 OTLP 端点。浏览器导出器需要使用浏览器可访问的地址。                                                                                                  |
-| `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`, `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT`, `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT`                                     | 未设置                                                       | 按信号类型分别指定的服务端 OTLP URL。                                                                                                          |
-| `NEXT_PUBLIC_OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`, `NEXT_PUBLIC_OTEL_EXPORTER_OTLP_METRICS_ENDPOINT`, `NEXT_PUBLIC_OTEL_EXPORTER_OTLP_LOGS_ENDPOINT` | 对应的服务端 URL                                                | 按信号类型分别指定的前端 URL，优先级高于对应的服务端值。                                                                                                   |
-| `NEXT_PUBLIC_OTEL_RESOURCE_ATTRIBUTES`                                                                                                              | 未设置                                                       | 浏览器自插桩所用的资源属性，格式为以逗号分隔的 `key=value`。                                                                                             |
-| `HDX_EXPORTER_ENABLED`                                                                                                                              | `true`                                                    | 启用前端应用程序的自插桩导出器。                                                                                                                 |
-| `USAGE_STATS_ENABLED`                                                                                                                               | `true`                                                    | 设为 `false` 可禁用用量统计数据收集。                                                                                                          |
+<div id="otel-collector">
+  ## OpenTelemetry collector
+</div>
 
-#### 可选功能和部署模式 {#optional-features-and-deployment-modes}
+更多详情，请参见 [&quot;ClickStack OpenTelemetry Collector&quot;](/zh/clickstack/ingesting-data/collector)。
 
-| 变量                                 | 默认值     | 描述                                                                                                      |
-| ---------------------------------- | ------- | ------------------------------------------------------------------------------------------------------- |
-| `ENABLE_PROMQL`                    | `false` | 启用 API 的 PromQL 支持。还需设置对应的前端标志，并配置采集器的 Prometheus 端点和 schema。                                           |
-| `NEXT_PUBLIC_ENABLE_PROMQL`        | `false` | 在 UI 中启用 PromQL。                                                                                        |
-| `NEXT_PUBLIC_ENABLE_ADHOC_FILTERS` | `false` | 在 UI 中启用临时筛选条件。                                                                                         |
-| `NEXT_PUBLIC_ENABLE_ALERT_DETAILS` | `false` | 启用告警详情页；该功能目前需手动开启。                                                                                     |
-| `NEXT_PUBLIC_IS_LLM_COST_ENABLED`  | `false` | 启用 LLM 成本估算，基于内置的模型价格目录计算。价格可能与您和提供商签订的合同价格不同。                                                          |
-| `NEXT_PUBLIC_INSTANCE_LABEL`       | 空       | 附加到浏览器标题并显示在侧边栏中的标签，便于区分不同实例。                                                                           |
-| `ENABLE_DATADOG_RECEIVER`          | `false` | 在 OpAMP 生成的采集器配置中启用 Datadog trace 接收器。当存在团队摄取密钥且强制启用采集器身份验证时，端口 `8126` 上的接收器会校验 `DD-API-KEY`；否则不进行身份验证。 |
-| `BETA_CH_OTEL_JSON_SCHEMA_ENABLED` | `false` | 在 一体化 入口点中选用兼容 JSON 的默认数据源映射。需与采集器上的 `HYPERDX_OTEL_EXPORTER_CLICKHOUSE_JSON_ENABLE` 配合使用。        |
+* `CLICKHOUSE_ENDPOINT`
+  * **默认值：** 独立镜像时为 *无 (必填)&#x20;*。如果是 All-in-one 或 Docker Compose 发行版，则会设置为集成的 ClickHouse 实例。
+  * **说明：** 用于将遥测数据导出到 ClickHouse 实例的 HTTPS URL。
+  * **指导：**
+    * 必须是包含端口的完整 HTTPS 端点 (例如：`https://clickhouse.example.com:8443`)
+    * collector 向 ClickHouse 发送数据时必需
 
-`NEXT_PUBLIC_IS_LOCAL_MODE` 是 [Local Mode 发行版](/zh/clickstack/deployment/local-mode-only) 的前端构建标志，并非通用的开发开关。请使用相应的发行版，而不要在现有部署上禁用身份验证。`IS_LOCAL_MODE` 和 `IS_OSS` 是应用程序中的常量名称，而不是需要设置的环境变量。`NEXT_PUBLIC_IS_OSS` 是构建设置，并非企业版开关。当前应用程序已不再使用 `MINER_API_URL`。
+* `CLICKHOUSE_USER`
+  * **默认值：** `default`
+  * **说明：** 用于向 ClickHouse 实例进行身份验证的用户名。
+  * **指导：**
+    * 确保该用户具有 `INSERT` 和 `CREATE TABLE` 权限
+    * 建议为摄取创建专用用户
 
-如果使用所提供的反向代理配置部署到子路径，请将 `HYPERDX_BASE_PATH` 和 `NEXT_PUBLIC_HYPERDX_BASE_PATH` 设置为相同的前缀 (例如 `/clickstack`) ，并在 `FRONTEND_URL` 中包含该前缀。
+* `CLICKHOUSE_PASSWORD`
+  * **默认值：** *无 (启用身份验证时必填)&#x20;*
+  * **说明：** 指定 ClickHouse 用户的密码。
+  * **指导：**
+    * 如果该用户账户设置了密码，则此项必填
+    * 在生产环境部署中通过 secrets 安全存储
 
-部分前端设置在构建时读取。具体来说，若要更改 `NEXT_PUBLIC_HYPERDX_BASE_PATH` (部署路径前缀) 、`NEXT_PUBLIC_NOINDEX` (搜索引擎索引) 或发行版的模式标志，需要使用新值重新构建前端。通过 `next-runtime-env` 读取的运行时设置 (例如 `NEXT_PUBLIC_INSTANCE_LABEL`) 则可以在容器启动时提供。
+* `HYPERDX_LOG_LEVEL`
+  * **默认值：** `info`
+  * **说明：** collector 的日志详细级别。
+  * **指导：**
+    * 可接受的值包括 `debug`、`info`、`warn`、`error`
+    * 在故障排查期间使用 `debug`
 
-## OpenTelemetry 采集器 {#otel-collector}
+* `OPAMP_SERVER_URL`
+  * **默认值：** 独立镜像时为 *无 (必填)&#x20;*。如果是 All-in-one 或 Docker Compose 发行版，则指向已部署的 HyperDX 实例。
+  * **说明：** 用于管理 collector 的 OpAMP server URL (例如 HyperDX 实例) 。默认端口为 `4320`。
+  * **指导：**
+    * 必须指向你的 HyperDX 实例
+    * 启用动态配置和安全摄取
+    * 如果省略，则会禁用安全摄取，除非指定了 `OTLP_AUTH_TOKEN` 值。
 
-有关部署说明，请参阅 [ClickStack OpenTelemetry 采集器](/zh/clickstack/ingesting-data/collector)。采集器变量应设置在采集器容器上，而不能只设置在 UI 容器上。在 Compose 中，`.env` 中声明的值只有在 `docker-compose.yml` 中被引用时，才会传递给容器。
+* `OTLP_AUTH_TOKEN`
+  * **默认值：** *无*。仅用于独立镜像。
+  * **说明：** 允许指定 OTLP 身份验证令牌。如果设置了该值，则所有通信都需要此 Bearer 令牌。
+  * **指导：**
+    * 如果在生产环境中使用独立 collector 镜像，建议设置此项。
 
-### 连接与身份验证 {#collector-connection-and-authentication}
+* `HYPERDX_OTEL_EXPORTER_CLICKHOUSE_DATABASE`
+  * **默认值：** `default`
+  * **说明：** collector 将遥测数据写入的 ClickHouse database。
+  * **指导：**
+    * 如果使用自定义 database 名称，请设置此项
+    * 确保指定用户对该 database 具有访问权限
 
-| 变量                                          | 默认值                  | 描述                                                                                                                                                             |
-| ------------------------------------------- | -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `CLICKHOUSE_ENDPOINT`                       | 取决于部署方式              | ClickHouse 导出器的连接 URL。Compose 和一体化部署使用 `tcp://ch-server:9000?dial_timeout=10s`。对于 ClickHouse Cloud，请使用安全的原生端点，例如 `tcp://<host>:9440?secure=true`。该值并不限于 HTTPS。 |
-| `CLICKHOUSE_USER`                           | 迁移工具中为 `default`     | ClickHouse 用户名。对于独立模式的采集器，请显式设置此项，以确保迁移和导出器都使用预期的账户。                                                                                                           |
-| `CLICKHOUSE_PASSWORD`                       | 空                    | ClickHouse 账户的密码。                                                                                                                                              |
-| `HYPERDX_OTEL_EXPORTER_CLICKHOUSE_DATABASE` | 在捆绑部署和迁移中为 `default` | 目标数据库。对于独立模式的采集器，请显式设置此项。                                                                                                                                      |
-| `OPAMP_SERVER_URL`                          | 独立模式下未设置             | ClickStack 用户界面的 OpAMP URL，通常为 `http://<app>:4320`。设置后，采集器会通过监督程序获取配置和团队摄取密钥；未设置时，采集器使用独立模式配置。                                                                 |
-| `OTLP_AUTH_TOKEN`                           | 未设置                  | 用于独立模式 OTLP 摄取的静态 bearer 令牌。选择 OIDC 身份验证时，此项将被忽略。                                                                                                              |
-| `OIDC_ISSUER_URL`                           | 未设置                  | 为独立模式 OTLP 摄取启用 OIDC 身份验证，优先级高于 `OTLP_AUTH_TOKEN`。                                                                                                             |
-| `OIDC_AUDIENCE`                             | 未设置                  | 设置 `OIDC_ISSUER_URL` 时必须指定的受众；若省略，将导致启动失败。                                                                                                                     |
-
-如果未使用 OpAMP、OIDC 或 `OTLP_AUTH_TOKEN`，独立模式的 OTLP 接收器将不进行任何身份验证。ClickHouse 账户需要具备插入遥测数据的权限；如果启用了 schema 创建或迁移，还需要具备创建或修改相关数据库对象的权限。
-
-### 导出、批处理和自定义配置 {#collector-export-and-batching}
-
-| 变量                                       | 默认值     | 描述                                                                                                                       |
-| ---------------------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------ |
-| `HYPERDX_OTEL_EXPORTER_TIMEOUT`          | `5s`    | ClickHouse 导出超时时间。                                                                                                       |
-| `HYPERDX_OTEL_BATCH_SEND_BATCH_SIZE`     | `10000` | 触发批次发送的条目数。                                                                                                              |
-| `HYPERDX_OTEL_BATCH_SEND_BATCH_MAX_SIZE` | `0`     | 最大批次大小；`0` 表示不限制大小。                                                                                                      |
-| `HYPERDX_OTEL_BATCH_TIMEOUT`             | `5s`    | 发送批次前的最长等待时间。                                                                                                            |
-| `CUSTOM_OTELCOL_CONFIG_FILE`             | 未设置     | 已挂载 YAML 文件的路径，无论在独立模式还是 OpAMP 模式下，该文件都会与采集器配置合并。参见[自定义采集器配置](/zh/clickstack/ingesting-data/collector)。                     |
-| `HYPERDX_LOG_LEVEL`                      | 因部署方式而异 | 采集器内部日志级别。独立模式的采集器需显式设置，例如 `info`。Compose 默认使用 `debug`；一体化版本强制使用 `error`。                                                |
-| `OTEL_SUPERVISOR_LOGS`                   | `false` | 设置为 `true` 时，将通过 OpAMP 监督程序转发采集器输出。仅适用于监督程序模式。                                                                           |
-| `OTEL_AGENT_FEATURE_GATE_ARG`            | 未设置     | 额外的采集器 feature-gate 参数。旧值 `--feature-gates=clickhouse.json` 已弃用；请改用 `HYPERDX_OTEL_EXPORTER_CLICKHOUSE_JSON_ENABLE=true`。 |
-
-### Schema 与保留期限 {#collector-schema-and-retention}
-
-| 变量                                             | 默认值                                | 描述                                                                                                                                 |
-| ---------------------------------------------- | ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| `HYPERDX_OTEL_EXPORTER_CREATE_LEGACY_SCHEMA`   | `false`；Compose 中覆盖为 `true`        | 使用由导出器管理的旧版 schema 创建方式，而非迁移工具。                                                                                                    |
-| `HYPERDX_OTEL_EXPORTER_CLICKHOUSE_JSON_ENABLE` | `false`                            | 启用 JSON 导出器模式，并采用旧版 schema 创建方式。对于典型的可观测性工作负载，不建议使用 JSON 类型模式；参见 [Map 与 JSON 类型对比](/zh/clickstack/ingesting-data/schema/map-vs-json)。 |
-| `HYPERDX_OTEL_EXPORTER_TABLES_TTL`             | `720h`                             | 由迁移以及 OpAMP 生成的旧版导出器所创建的表的默认保留期限 (可为 Go 时长格式，如 `720h`，或天数，如 `30d`) 。独立模式下的旧版导出器配置固定使用 `720h`。                                      |
-| `HYPERDX_OTEL_EXPORTER_LOGS_TTL`               | `HYPERDX_OTEL_EXPORTER_TABLES_TTL` | 迁移所管理的表中日志的保留期限。                                                                                                                   |
-| `HYPERDX_OTEL_EXPORTER_TRACES_TTL`             | `HYPERDX_OTEL_EXPORTER_TABLES_TTL` | 迁移所管理的表中链路追踪的保留期限。                                                                                                                 |
-| `HYPERDX_OTEL_EXPORTER_METRICS_TTL`            | `HYPERDX_OTEL_EXPORTER_TABLES_TTL` | 迁移所管理的表中指标的保留期限。                                                                                                                   |
-| `HYPERDX_OTEL_EXPORTER_SESSIONS_TTL`           | `HYPERDX_OTEL_EXPORTER_TABLES_TTL` | 迁移所管理的表中会话的保留期限。                                                                                                                   |
-| `HYPERDX_OTEL_EXPORTER_RECONCILE_TABLE_TTL`    | `false`                            | 可选项，启用后会将已配置的 生存时间 (TTL) 应用到迁移所管理的现有表。启用前请仔细核对保留期限的变更：缩短 生存时间 (TTL) 可能会删除现有数据。                                                                   |
-
-按信号类型设置的 生存时间 (TTL) 以及协调设置仅对迁移工具生效；启用旧版 schema 创建方式时，将跳过迁移工具。
-
-### 迁移 TLS {#collector-migration-tls}
-
-这些变量用于配置迁移工具的 ClickHouse 连接，不会自动配置导出器的 TLS；如果使用自定义证书，请另行配置采集器的导出器。
-
-| 变量                                    | 默认值     | 描述                               |
-| ------------------------------------- | ------- | -------------------------------- |
-| `CLICKHOUSE_TLS_CA_FILE`              | 未设置     | CA 证书文件的路径。                      |
-| `CLICKHOUSE_TLS_CERT_FILE`            | 未设置     | 用于双向 TLS 的客户端证书路径。               |
-| `CLICKHOUSE_TLS_KEY_FILE`             | 未设置     | 用于双向 TLS 的客户端私钥路径。               |
-| `CLICKHOUSE_TLS_SERVER_NAME_OVERRIDE` | 未设置     | 证书验证时使用的服务器名称。                   |
-| `CLICKHOUSE_TLS_INSECURE_SKIP_VERIFY` | `false` | 设置为 `true` 时禁用服务器证书验证。仅限故障排查时使用。 |
-
-### 兼容 Prometheus 的指标 {#collector-prometheus-metrics}
-
-| 变量                                       | 默认值                               | 描述                                                                                                                                                                                        |
-| ---------------------------------------- | --------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ENABLE_PROMQL`                          | `false`                           | 在迁移工具中启用 PromQL schema 的创建。如使用 OpAMP 模式，还需在 API 和前端启用 PromQL。                                                                                                                             |
-| `CLICKHOUSE_PROMETHEUS_METRICS_ENDPOINT` | 独立模式下未设置；一体化模式下为 `ch-server:9363` | 兼容 Prometheus 的端点。支持 `host:port`、`http://host:port` 或 `https://host:port` 格式，但不要包含路径。设置该变量后，独立模式下将启用远程写入。入口点会根据该 URL 推导出 `HYPERDX_PROMETHEUS_SCHEME` 和 `HYPERDX_PROMETHEUS_TLS_INSECURE`。 |
+* `OTEL_AGENT_FEATURE_GATE_ARG`
+  * **默认值：** `<empty string>`
+  * **说明：** 在 collector 中启用功能开关。如果设置为 `--feature-gates=clickhouse.json`，则会在 collector 中启用 JSON type 的 Beta 支持，并确保使用该类型创建 schema。另请参见 [`BETA_CH_OTEL_JSON_SCHEMA_ENABLED`](#hyperdx) 以在 HyperDX 中启用 JSON 支持。
+  * **指导：**
+    * 这会启用一项 **Beta 功能**。对于典型的可观测性 workload，**不建议**使用 JSON-typed schemas。有关对比以及各自适用场景，请参见 [Map vs JSON type](/zh/clickstack/ingesting-data/schema/map-vs-json)。
+    * 设置为 `--feature-gates=clickhouse.json`，以使用 JSON type 创建新表。
 
 <div id="clickhouse">
-  ## ClickHouse {#clickhouse}
+  ## ClickHouse
 </div>
 
 ClickStack 开源版附带了一个面向多 TB 规模的默认 ClickHouse 配置，但用户也可以根据自身工作负载自由修改和优化。

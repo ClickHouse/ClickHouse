@@ -10,7 +10,9 @@ doc_type: 'guide'
 
 В следующих примерах показано, как загружать структурированные и полуструктурированные данные JSON. Для более сложных случаев, включая вложенные структуры, см. руководство [**Проектирование схемы JSON**](/ru/guides/clickhouse/data-formats/json/schema).
 
-## Загрузка структурированного JSON {#loading-structured-json}
+<div id="loading-structured-json">
+  ## Загрузка структурированного JSON
+</div>
 
 В этом разделе предполагается, что данные JSON представлены в формате [`NDJSON`](https://github.com/ndjson/ndjson-spec) (Newline delimited JSON), известном в ClickHouse как [`JSONEachRow`](/ru/reference/formats/JSON/JSONEachRow), и имеют чёткую структуру, то есть имена столбцов и их типы фиксированы. `NDJSON` является предпочтительным форматом для загрузки JSON благодаря компактности и экономному использованию пространства, однако для [ввода и вывода](/ru/reference/formats/JSON/JSON) поддерживаются и другие форматы.
 
@@ -40,7 +42,7 @@ doc_type: 'guide'
 
   Если ваши столбцы имеют фиксированные имена и типы и появления новых столбцов не ожидается, в продакшене всегда предпочитайте статически определённую схему.
 
-  тип JSON предпочтителен для сильно динамичных данных, где имена и типы столбцов могут меняться. Этот тип также полезен на этапе прототипирования и исследования данных.
+  JSON type предпочтителен для сильно динамичных данных, где имена и типы столбцов могут меняться. Этот тип также полезен на этапе прототипирования и исследования данных.
 </Info>
 
 Простая схема для этого показана ниже, где **ключи JSON соответствуют именам столбцов**:
@@ -70,7 +72,7 @@ ClickHouse может загружать данные JSON в нескольки
 
 ```sql
 SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz', NOSIGN)
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz')
 LIMIT 1
 ```
 
@@ -85,7 +87,7 @@ LIMIT 1
 Обратите внимание, что указывать формат файла не обязательно. Вместо этого мы используем glob-шаблон для чтения всех файлов `*.json.gz` из бакета. ClickHouse автоматически определяет формат `JSONEachRow` (ndjson) по расширению и содержимому файла. Если ClickHouse не может определить формат автоматически, его можно указать вручную через параметры функций.
 
 ```sql
-SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz', NOSIGN, JSONEachRow)
+SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz', JSONEachRow)
 ```
 
 <Info>
@@ -97,7 +99,7 @@ SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi
 Для загрузки строк из этих файлов можно использовать [`INSERT INTO SELECT`](/ru/reference/statements/insert-into#inserting-the-results-of-select):
 
 ```sql
-INSERT INTO pypi SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz', NOSIGN)
+INSERT INTO pypi SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz')
 ```
 
 ```response
@@ -129,7 +131,9 @@ FORMAT JSONEachRow
 
 В этих примерах используется формат `JSONEachRow`. Также поддерживаются другие распространённые JSON-форматы; примеры их использования приведены [здесь](/ru/guides/clickhouse/data-formats/json/formats).
 
-## Загрузка полуструктурированного JSON {#loading-semi-structured-json}
+<div id="loading-semi-structured-json">
+  ## Загрузка полуструктурированного JSON
+</div>
 
 В предыдущем примере мы загружали статический JSON с заранее известными именами ключей и типами. Однако так бывает не всегда: ключи могут добавляться, а их типы — меняться. Это часто встречается, например, в данных обсервабилити.
 
@@ -158,6 +162,8 @@ ClickHouse решает эту задачу с помощью специальн
 Столбец tags здесь имеет непредсказуемую структуру, поэтому его невозможно описать схемой. Чтобы загрузить эти данные, мы можем использовать нашу предыдущую схему, но добавить дополнительный столбец `tags` типа [`JSON`](/ru/reference/data-types/newjson):
 
 ```sql
+SET enable_json_type = 1;
+
 CREATE TABLE pypi_with_tags
 (
     `date` Date,
@@ -174,19 +180,15 @@ ENGINE = MergeTree
 ORDER BY (project, date);
 ```
 
-<Note>
-  В версиях с 24.8 по 25.2 перед созданием таблицы включите тип `JSON` с помощью `SET allow_experimental_json_type = 1;`.
-</Note>
-
 Мы заполняем таблицу так же, как заполняли исходный набор данных:
 
 ```sql
-INSERT INTO pypi_with_tags SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/pypi_with_tags/sample.json.gz', NOSIGN)
+INSERT INTO pypi_with_tags SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/pypi_with_tags/sample.json.gz')
 ```
 
 ```sql
 INSERT INTO pypi_with_tags SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/pypi_with_tags/sample.json.gz', NOSIGN)
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/pypi_with_tags/sample.json.gz')
 ```
 
 ```response
@@ -213,7 +215,9 @@ LIMIT 2
 
 Обратите внимание на разницу в производительности при загрузке данных. Для JSON-столбца требуется вывод типов во время вставки, а также дополнительное место для хранения, если есть столбцы с более чем одним типом. Хотя тип JSON можно настроить (см. [Проектирование схемы JSON](/ru/guides/clickhouse/data-formats/json/schema)) так, чтобы его производительность была сопоставима с производительностью при явном объявлении столбцов, по умолчанию он намеренно остаётся гибким. Однако за эту гибкость приходится платить.
 
-### Когда использовать тип JSON {#when-to-use-the-json-type}
+<div id="when-to-use-the-json-type">
+  ### Когда использовать тип JSON
+</div>
 
 Используйте тип JSON, если ваши данные:
 

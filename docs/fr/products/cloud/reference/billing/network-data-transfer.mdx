@@ -2,43 +2,35 @@
 sidebarTitle: 'Transfert de données'
 slug: /cloud/manage/network-data-transfer
 title: 'Transfert de données'
-description: 'Comprendre comment ClickHouse Cloud mesure les volumes de données transférées en entrée et en trafic sortant'
+description: 'Comprendre comment ClickHouse Cloud mesure les volumes de données transférées en entrée et en sortie'
 doc_type: 'guide'
-keywords: ['facturation', 'transfert réseau', 'trafic sortant', 'coûts', 'tarification']
+keywords: ['facturation', 'transfert réseau', 'sortie de données', 'coûts', 'tarification']
 ---
 
 import NetworkPricing from '/snippets/fr/_network_transfer_rates.mdx';
 
-ClickHouse Cloud mesure les données transférées en entrée et en trafic sortant.
+ClickHouse Cloud mesure les données transférées en entrée et en sortie.
 Cela inclut toutes les données entrantes et sortantes de ClickHouse Cloud, ainsi que tous les transferts de données intra-région
-et interrégionaux. Cette utilisation est suivie au niveau du service. Sur la base
+et inter-région. Cette utilisation est suivie au niveau du service. Sur la base
 de cette utilisation, des frais de transfert de données sont facturés aux clients, puis ajoutés à leur
 facture mensuelle.
 
-ClickHouse Cloud facture :
+ClickHouse Cloud facture :
 
-* Le trafic sortant de ClickHouse Cloud vers l’Internet public, y compris vers d’autres
-  régions d’autres fournisseurs de services cloud.
-* Le trafic sortant vers une autre région chez le même fournisseur de services cloud.
+* Les données sortantes de ClickHouse Cloud vers l’Internet public, y compris vers d’autres
+  régions d’autres fournisseurs de cloud.
+* Les données sortantes vers une autre région chez le même fournisseur de cloud.
 
 Aucun frais ne s’applique aux transferts de données intra-région, ni à l’utilisation de Private Link/Private
 Service Connect et aux transferts de données associés. Toutefois, nous nous réservons le droit d’ajouter
 des dimensions tarifaires supplémentaires pour le transfert de données si nous constatons des schémas d’utilisation qui affectent
 notre capacité à facturer les utilisateurs de manière appropriée.
 
-Remarque : les frais du fournisseur de services cloud (CSP) s’appliquent à l’utilisation de Private Link/Private Service Connect. Veuillez consulter la page tarifaire du CSP pour obtenir les informations les plus récentes.
+Remarque : les frais du fournisseur de services cloud (CSP) s’appliquent à l’utilisation de Private Link/Private Service Connect. Veuillez consulter la page tarifaire du CSP pour obtenir les informations les plus récentes.
 
 Les frais de transfert de données varient selon le fournisseur de services cloud (CSP) et la région.
-La tarification du trafic sortant vers l’Internet public repose uniquement sur la région d’origine.
-La tarification inter-région (ou interrégionale) dépend à la fois des régions d’origine et de destination.
-
-## Managed Postgres {#managed-postgres}
-
-Le trafic sortant de ClickHouse Managed Postgres vers l’Internet public et en interrégional est facturé aux tarifs décrits sur cette page. Le transfert de données est classé selon l’adresse IP de destination, par rapport aux plages IP publiées par le fournisseur de services cloud. Le trafic vers une destination dont l’adresse IP ne figure pas dans les plages publiées de votre région est comptabilisé comme trafic sortant vers l’Internet public, même lorsque cette destination est hébergée chez le même fournisseur de services cloud — par exemple, un pair qui utilise son propre bloc d’adresses IP (BYOIP). Si vous vous connectez à un tel pair, contactez l’[assistance](https://clickhouse.com/support/program) afin que nous puissions examiner la classification.
-
-La capacité de calcul de [ClickPipes](/fr/products/managed-postgres/clickpipes) est gratuite lorsqu’elle sert à répliquer des données de Managed Postgres vers ClickHouse Cloud. Le trafic sortant de Managed Postgres vers ClickPipes est mesuré comme tout autre transfert de données : aucuns frais lorsque les deux se trouvent dans la même région ; la réplication interrégionale est facturée au niveau inter-région applicable, et la réplication vers un service ClickHouse Cloud hébergé chez un autre fournisseur de services cloud est facturée au tarif de l’Internet public.
-
-Pour réduire les coûts de transfert de données, placez autant que possible votre application et Managed Postgres dans la même région du même fournisseur de services cloud.
+La tarification des sorties vers l’Internet public repose uniquement sur la région d’origine.
+La tarification inter-région (ou cross-region) dépend à la fois des régions d’origine et de destination.
 
 **Bonnes pratiques pour minimiser les coûts de transfert de données**
 
@@ -51,18 +43,18 @@ afin de minimiser les coûts de transfert de données.
 2. Sachez que lors d’un `INSERT` via le protocole natif avec des
    valeurs non incluses en ligne (par ex. `INSERT INTO [TABLE] FROM INFILE [FILE] FORMAT NATIVE`), les clients ClickHouse
    récupèrent les métadonnées auprès des serveurs pour empaqueter les données. Si les métadonnées sont plus volumineuses
-   que la charge utile de l’`INSERT`, vous pourriez constater, de manière contre-intuitive, davantage de trafic sortant
+   que la charge utile de l’`INSERT`, vous pourriez constater, de manière contre-intuitive, davantage de données sortantes
    que de données entrantes du point de vue du serveur. Si cela est inacceptable, envisagez
    d’inclure les données en ligne avec la syntaxe `VALUES` ou d’utiliser le protocole HTTP.
 
-Les tableaux ci-dessous montrent comment les frais de transfert de trafic sortant varient sur l’Internet
-public ou en interrégional selon le fournisseur de services cloud et la région.
+Les tableaux ci-dessous montrent comment les frais de transfert de données sortantes varient sur l’Internet
+public ou en inter-région selon le fournisseur de cloud et la région.
 
 <Note>
-  ClickHouse Cloud mesure l’utilisation inter-région par niveaux, de Niveau 1 à
-  Niveau 4, selon les régions d’origine et de destination. Le tableau ci-dessous indique
-  le niveau pour chaque combinaison de transfert de données inter-région. Dans l’écran Billing usage
-  de ClickHouse Cloud, l’utilisation du transfert de données est ventilée par niveaux.
+  ClickHouse Cloud mesure l’utilisation inter-région par tiers, de Tier 1 à
+  Tier 4, selon les régions d’origine et de destination. Le tableau ci-dessous indique
+  le tier pour chaque combinaison de transfert de données inter-région. Dans l’écran Billing usage
+  de ClickHouse Cloud, l’utilisation du transfert de données est ventilée par tiers.
 </Note>
 
 <NetworkPricing />

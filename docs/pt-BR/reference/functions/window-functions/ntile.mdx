@@ -14,14 +14,15 @@ Divide as linhas ordenadas em uma partição em um número especificado de bucke
 
 ```sql
 ntile (buckets)
-  OVER ([[PARTITION BY grouping_column] ORDER BY sorting_column] | [window_name])
+  OVER ([[PARTITION BY grouping_column] [ORDER BY sorting_column]
+        ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING] | [window_name])
 FROM table_name
-WINDOW window_name as ([PARTITION BY grouping_column] ORDER BY sorting_column)
+WINDOW window_name as ([PARTITION BY grouping_column] [ORDER BY sorting_column] ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)
 ```
 
-Em cada partição, ntile usa a quantidade de buckets (um inteiro positivo) obtida da primeira linha na ordem da janela; os valores subsequentes são ignorados
+O argumento `buckets` deve ser um inteiro positivo constante.
 
-Uma cláusula `ORDER BY` é obrigatória. A função sempre lê a partição inteira; um frame da janela, se especificado, é ignorado.
+Uma cláusula `ORDER BY` é obrigatória. O frame da janela deve abranger a partição inteira (`ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING`), que também é o frame padrão usado quando nada é especificado explicitamente.
 
 Para mais detalhes sobre a sintaxe de funções de janela, consulte: [Window Functions - Syntax](/pt-BR/reference/functions/window-functions/index#syntax).
 

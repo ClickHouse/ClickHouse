@@ -14,7 +14,9 @@ doc_type: 'reference'
   Для разных объектов в рамках одной и той же схемы можно использовать разные методы. Например, для одних объектов лучше всего подходит тип `String`, а для других — тип `Map`. Обратите внимание: если используется тип `String`, принимать дальнейшие решения о схеме уже не нужно. Кроме того, внутри ключа `Map` можно вкладывать вложенные объекты, включая `String`, представляющий JSON, как показано ниже:
 </Info>
 
-## Использование типа String {#using-string}
+<div id="using-string">
+  ## Использование типа String
+</div>
 
 Если объекты очень динамичны, не имеют предсказуемой структуры и содержат произвольные вложенные объекты, следует использовать тип `String`. Значения можно извлекать на этапе выполнения запроса с помощью JSON-функций, как показано ниже.
 
@@ -37,7 +39,7 @@ CREATE TABLE people
     `tags` String
 )
 ENGINE = MergeTree
-ORDER BY username;
+ORDER BY username
 
 INSERT INTO people FORMAT JSONEachRow
 {"id":1,"name":"Clicky McCliickHouse","username":"Clicky","email":"clicky@clickhouse.com","address":[{"street":"Victor Plains","suite":"Suite 879","city":"Wisokyburgh","zipcode":"90566-7771","geo":{"lat":-43.9509,"lng":-34.4618}}],"phone_numbers":["010-692-6593","020-192-3333"],"website":"clickhouse.com","company":{"name":"ClickHouse","catchPhrase":"The real-time data warehouse for analytics","labels":{"type":"database systems","founded":"2021"}},"dob":"2007-03-31","tags":{"hobby":"Databases","holidays":[{"year":2024,"location":"Azores, Portugal"}],"car":{"model":"Tesla","year":2023}}}
@@ -45,7 +47,7 @@ INSERT INTO people FORMAT JSONEachRow
 
 ```response
 Ok.
-1 row in set. Elapsed: 0.002 sec.
+1 строка в наборе. Elapsed: 0.002 sec.
 ```
 
 Мы можем выбрать столбец `tags` и увидеть, что JSON вставлен как строка:
@@ -74,12 +76,12 @@ SELECT JSONExtractString(tags, 'holidays') AS holidays FROM people
 │ [{"year":2024,"location":"Azores, Portugal"}] │
 └───────────────────────────────────────────────┘
 
-1 row in set. Elapsed: 0.002 sec.
+1 строка в наборе. Elapsed: 0.002 sec.
 ```
 
 Обратите внимание, что этим функциям требуются и ссылка на столбец `tags` типа `String`, и путь в JSON, по которому нужно извлечь значение. Для вложенных путей функции также должны быть вложенными, например `JSONExtractUInt(JSONExtractString(tags, 'car'), 'year')`, что извлекает значение по пути `tags.car.year`. Извлечение вложенных путей можно упростить с помощью функций [`JSON_QUERY`](/ru/reference/functions/regular-functions/json-functions#JSON_QUERY) и [`JSON_VALUE`](/ru/reference/functions/regular-functions/json-functions#JSON_VALUE).
 
-Рассмотрим крайний случай с набором данных `arxiv`, где всё содержимое рассматривается как `String`.
+Рассмотрим крайний случай с `dataset` `arxiv`, где всё содержимое рассматривается как `String`.
 
 ```sql
 CREATE TABLE arxiv (
@@ -92,7 +94,7 @@ ENGINE = MergeTree ORDER BY ()
 
 ```sql
 INSERT INTO arxiv SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/arxiv/arxiv.json.gz', NOSIGN, 'JSONAsString')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/arxiv/arxiv.json.gz', 'JSONAsString')
 ```
 
 ```response
@@ -165,7 +167,9 @@ Peak memory usage: 205.98 MiB.
 
 Гибкость этого подхода достигается ценой заметных потерь в производительности и усложнения синтаксиса, поэтому его следует использовать только для очень динамичных объектов в схеме.
 
-### Простые JSON-функции {#simple-json-functions}
+<div id="simple-json-functions">
+  ### Простые JSON-функции
+</div>
 
 В приведённых выше примерах используется семейство функций JSON*. Они используют полноценный JSON-парсер на основе [simdjson](https://github.com/simdjson/simdjson), который выполняет строгий разбор и различает одно и то же поле, вложенное на разных уровнях. Эти функции способны работать с JSON, который синтаксически корректен, но плохо отформатирован, например с двойными пробелами между ключами.
 
@@ -578,7 +582,7 @@ SELECT clientip, status, size, `request.method` FROM http WHERE has(request.meth
 
 ```sql
 SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/http/documents-01.ndjson.gz', NOSIGN, 'JSONEachRow')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/http/documents-01.ndjson.gz', 'JSONEachRow')
 LIMIT 1
 FORMAT PrettyJSONEachRow
 
@@ -596,7 +600,7 @@ FORMAT PrettyJSONEachRow
 ```
 
 ```response
-1 row in set. Elapsed: 0.312 sec.
+1 строка в наборе. Elapsed: 0.312 sec.
 ```
 
 С учётом ограничений и входного формата JSON мы вставляем этот пример набора данных с помощью следующего запроса. Здесь мы устанавливаем `flatten_nested=0`.
@@ -606,7 +610,7 @@ FORMAT PrettyJSONEachRow
 ```sql
 INSERT INTO http
 SELECT `@timestamp` AS `timestamp`, clientip, [request], status,
-size FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/http/documents-01.ndjson.gz', NOSIGN,
+size FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/http/documents-01.ndjson.gz',
 'JSONEachRow');
 ```
 
@@ -653,7 +657,7 @@ ENGINE = MergeTree  ORDER BY tuple();
 SELECT
     arrayMap(x -> (x.1), JSONExtractKeysAndValues(json, 'String')) AS keys,
     arrayMap(x -> (x.2), JSONExtractKeysAndValues(json, 'String')) AS values
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/http/documents-01.ndjson.gz', NOSIGN, 'JSONAsString')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/http/documents-01.ndjson.gz', 'JSONAsString')
 LIMIT 1
 FORMAT Vertical
 ```
@@ -664,7 +668,7 @@ Row 1:
 keys:   ['@timestamp','clientip','request','status','size']
 values: ['893964617','40.135.0.0','{"method":"GET","path":"/images/hm_bg.jpg","version":"HTTP/1.0"}','200','24736']
 
-1 row in set. Elapsed: 0.416 sec.
+1 строка в наборе. Elapsed: 0.416 sec.
 ```
 
 Обратите внимание, что столбец request по-прежнему остаётся вложенной структурой, представленной в виде строки. Мы можем добавлять любые новые ключи в корневой объект. Также в самом JSON могут быть произвольные различия. Чтобы выполнить вставку в нашу локальную таблицу, выполните следующее:
@@ -674,7 +678,7 @@ INSERT INTO http_with_arrays
 SELECT
     arrayMap(x -> (x.1), JSONExtractKeysAndValues(json, 'String')) AS keys,
     arrayMap(x -> (x.2), JSONExtractKeysAndValues(json, 'String')) AS values
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/http/documents-01.ndjson.gz', NOSIGN, 'JSONAsString')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/http/documents-01.ndjson.gz', 'JSONAsString')
 ```
 
 ```response
@@ -703,5 +707,5 @@ GROUP BY method, status ORDER BY c DESC LIMIT 5;
 └────────┴────────┴───────┘
 
 5 rows in set. Elapsed: 0.383 sec. Processed 8.22 million rows, 1.97 GB (21.45 million rows/s., 5.15 GB/s.)
-Peak memory usage: 51.35 MiB.
+Пиковое потребление памяти: 51.35 MiB.
 ```

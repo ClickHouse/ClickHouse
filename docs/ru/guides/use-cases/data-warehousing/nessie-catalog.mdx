@@ -9,9 +9,9 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
+import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/ExperimentalBadge.jsx";
 
-<BetaBadge />
+<ExperimentalBadge />
 
 <Note>
   Интеграция с каталогом Nessie работает только с таблицами Iceberg.
@@ -29,22 +29,26 @@ Nessie — это транзакционный каталог с открыты�
 * **Готовность к промышленной эксплуатации** при развертывании в Docker или Kubernetes
 
 <Note>
-  Эта возможность находится в стадии бета-версии. Чтобы включить ее, выполните:
-  `SET allow_database_iceberg = 1;`
-
-  В версиях до 25.8, где эта возможность является экспериментальной, используйте вместо этого `SET allow_experimental_database_iceberg = 1;`.
+  Поскольку эта возможность является экспериментальной, ее нужно включить с помощью:
+  `SET allow_experimental_database_iceberg = 1;`
 </Note>
 
-## Локальная среда разработки {#local-development-setup}
+<div id="local-development-setup">
+  ## Локальная среда разработки
+</div>
 
 Для локальной разработки и тестирования можно использовать контейнеризированную установку Nessie. Такой подход хорошо подходит для обучения, прототипирования и работы в средах разработки.
 
-### Предварительные требования {#local-prerequisites}
+<div id="local-prerequisites">
+  ### Предварительные требования
+</div>
 
 1. **Docker и Docker Compose**: Убедитесь, что Docker установлен и запущен
 2. **Пример настройки**: Вы можете использовать официальную конфигурацию docker-compose для Nessie
 
-### Настройка локального каталога Nessie {#setting-up-local-nessie-catalog}
+<div id="setting-up-local-nessie-catalog">
+  ### Настройка локального каталога Nessie
+</div>
 
 Вы можете использовать официальную [конфигурацию docker-compose для Nessie](https://projectnessie.org/guides/), которая предоставляет полноценное окружение с Nessie, хранилищем версий в памяти и MinIO в качестве объектного хранилилища.
 
@@ -148,7 +152,9 @@ docker-compose logs -f
   В конфигурации Nessie используется хранилище версий в памяти, поэтому сначала необходимо загрузить тестовые данные в таблицы Iceberg. Прежде чем пытаться выполнять запросы к этим таблицам через ClickHouse, убедитесь, что в среде они уже созданы и заполнены данными.
 </Note>
 
-### Подключение к локальному каталогу Nessie {#connecting-to-local-nessie-catalog}
+<div id="connecting-to-local-nessie-catalog">
+  ### Подключение к локальному каталогу Nessie
+</div>
 
 Подключитесь к контейнеру ClickHouse:
 
@@ -159,14 +165,16 @@ docker exec -it nessie-clickhouse clickhouse-client
 Затем создайте в базе данных подключение к каталогу Nessie:
 
 ```sql
-SET allow_database_iceberg = 1;
+SET allow_experimental_database_iceberg = 1;
 
 CREATE DATABASE demo
 ENGINE = DataLakeCatalog('http://nessie:19120/iceberg', 'admin', 'password')
 SETTINGS catalog_type = 'rest', storage_endpoint = 'http://minio:9002/my-bucket', warehouse = 'warehouse'
 ```
 
-## Выполнение запросов к таблицам каталога Nessie в ClickHouse {#querying-nessie-catalog-tables-using-clickhouse}
+<div id="querying-nessie-catalog-tables-using-clickhouse">
+  ## Выполнение запросов к таблицам каталога Nessie в ClickHouse
+</div>
 
 Теперь, когда соединение установлено, вы можете выполнять запросы к таблицам через каталог Nessie. Например:
 
@@ -250,7 +258,9 @@ SHOW CREATE TABLE `default.taxis`;
 └───────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## Загрузка данных из озера данных в ClickHouse {#loading-data-from-your-data-lake-into-clickhouse}
+<div id="loading-data-from-your-data-lake-into-clickhouse">
+  ## Загрузка данных из озера данных в ClickHouse
+</div>
 
 Если вам нужно загрузить данные из каталога Nessie в ClickHouse, начните с создания локальной таблицы в ClickHouse:
 

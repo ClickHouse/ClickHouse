@@ -14,7 +14,9 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
 تتوفر هذه الإعدادات في [system.settings](/ar/reference/system-tables/settings)، وهي مُولَّدة تلقائيًا من [الشفرة المصدرية](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## iceberg_delete_data_on_drop {#iceberg_delete_data_on_drop}
+<div id="iceberg_delete_data_on_drop">
+  ## iceberg_delete_data_on_drop
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -22,32 +24,23 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
 تحديد ما إذا كان سيتم حذف جميع ملفات Iceberg عند تنفيذ عملية الحذف أم لا.
 
-## iceberg_list_only_v_prefixed_metadata_files {#iceberg_list_only_v_prefixed_metadata_files}
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "إعداد جديد لسرد بادئة المفتاح `metadata\/v` فقط عند البحث عن أحدث ملف بيانات وصفية لجدول Iceberg تتم قراءته عبر المسار."}]}]} />
-
-يبحث عن أحدث ملف بيانات وصفية لجدول Iceberg تتم قراءته عبر المسار على S3 أو Azure بسرد بادئة المفتاح `metadata/v` فقط، كي لا تُسرد ملفات البيان المخزَّنة في دليل `metadata` نفسه. إذا احتوت هذه البادئة على ملفات `.metadata.json`، فإنها وحدها تُعدّ مرشّحة؛ وإلا فيُسرد الدليل بأكمله. لا ينطبق هذا الإعداد عند استخدام `iceberg_use_version_hint` أو `iceberg_metadata_file_path` أو `iceberg_metadata_table_uuid` أو `iceberg_recent_metadata_file_by_last_updated_ms_field`، ولا على جداول قاعدة بيانات كتالوج بحيرة البيانات.
-
-لا تُمكّنه إلا للجداول التي تحمل جميع ملفات البيانات الوصفية فيها أسماءً بالصيغة `v<N>...` (وفق طريقة التسمية التي تتبعها كتالوجات ClickHouse وHadoop): ففي الدليل الذي يحتوي أيضًا على ملفات `<N>-<uuid>.metadata.json`، لا تكون هذه الملفات مرشّحة أبدًا، ومن ثَمّ لا تظهر عمليات التثبيت التي أجراها كاتبها.
-
-## iceberg_manifest_min_count_to_compact {#iceberg_manifest_min_count_to_compact}
+<div id="iceberg_manifest_min_count_to_compact">
+  ## iceberg_manifest_min_count_to_compact
+</div>
 
 <ExperimentalBadge />
 
-<SettingsInfoBlock type="UInt64" default_value="100" />
+<SettingsInfoBlock type="UInt64" default_value="30" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "100"},{"label": "مُوائَم مع القيمة الافتراضية الموثّقة لخاصية جدول Iceberg ‏`commit.manifest.min-count-to-merge` (100)، انظر https:\/\/iceberg.apache.org\/docs\/1.5.2\/configuration\/."}]}, {"id": "row-2","items": [{"label": "26.7"},{"label": "30"},{"label": "إعداد جديد للتحكم في دمج ملفات manifest لجداول Iceberg."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "30"},{"label": "إعداد جديد للتحكم في دمج ملفات manifest لجداول Iceberg."}]}]} />
 
 الحد الأدنى لعدد ملفات manifest المطلوب لبدء دمج يقتصر على ملفات manifest عبر OPTIMIZE TABLE ... MANIFEST.
 إذا كان العدد الحالي لملفات manifest أقل من هذه العتبة أو مساويًا لها، فسيتم تخطي الدمج.
 يتطلب تفعيل allow&#95;experimental&#95;iceberg&#95;compaction.
 
-القيمة الافتراضية تعكس القيمة الافتراضية الموثّقة لخاصية جدول Iceberg ‏`commit.manifest.min-count-to-merge` (100)،
-انظر https://iceberg.apache.org/docs/1.5.2/configuration/.
-
-## iceberg_max_number_datafiles_to_compact {#iceberg_max_number_datafiles_to_compact}
+<div id="iceberg_max_number_datafiles_to_compact">
+  ## iceberg_max_number_datafiles_to_compact
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
@@ -55,17 +48,9 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
 العتبة الخاصة بملفات بيانات الدمج في Iceberg.
 
-## iceberg_orphan_files_min_retention_seconds {#iceberg_orphan_files_min_retention_seconds}
-
-<ExperimentalBadge />
-
-<SettingsInfoBlock type="UInt64" default_value="86400" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "86400"},{"label": "إعداد جديد. يرفض `remove_orphan_files` أي قيمة `older_than` تقل عن هذا العدد من الثواني قبل اللحظة الحالية، وبذلك يُبقي على ملفات عملية الكتابة التي بدأت قبل مدة أقصر من ذلك ولم تُثبَّت بعد. يؤدي ضبط `compatibility` على إصدار أقدم من 26.10 إلى استعادة السلوك السابق (دون حد أدنى)."}]}]} />
-
-الحد الأدنى لعمر الملفات، بالثواني، التي يجوز للأمر `ALTER TABLE ... EXECUTE remove_orphan_files` حذفها من جدول Iceberg. تُرفض أي قيمة `older_than` (سواء حُدِّدت صراحةً أو اشتُقَّت من `iceberg_orphan_files_older_than_seconds`) تكون أقرب إلى اللحظة الحالية من هذه القيمة، لأن ملفات عملية الكتابة التي لم تُثبَّت بعد لا تشير إليها البيانات الوصفية للجدول، فستُحذف، مما يُتلف الجدول عند تثبيت عملية الكتابة. احرص على أن تبقى هذه القيمة أكبر من أطول مدة قد تستغرقها عملية الكتابة إلى الجدول حتى تُثبَّت. تؤدي القيمة 0 إلى تعطيل هذا الفحص.
-
-## iceberg_orphan_files_older_than_seconds {#iceberg_orphan_files_older_than_seconds}
+<div id="iceberg_orphan_files_older_than_seconds">
+  ## iceberg_orphan_files_older_than_seconds
+</div>
 
 <ExperimentalBadge />
 
@@ -75,7 +60,9 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
 عتبة العمر الافتراضية، بالثواني، لإزالة الملفات اليتيمة في جداول Iceberg. لا تُعدّ الملفات الأحدث من هذه العتبة ملفات يتيمة. يُستخدم هذا الإعداد عند عدم تمرير الوسيط `older_than` في استدعاء الإجراء `remove_orphan_files()`. القيمة الافتراضية هي 259200 (3 أيام).
 
-## iceberg_snapshot_id {#iceberg_snapshot_id}
+<div id="iceberg_snapshot_id">
+  ## iceberg_snapshot_id
+</div>
 
 <SettingsInfoBlock type="Int64" default_value="0" />
 
@@ -83,22 +70,14 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
 نفّذ استعلامًا على جدول Iceberg باستخدام معرّف اللقطة المحدّد.
 
-## iceberg_timestamp_ms {#iceberg_timestamp_ms}
+<div id="iceberg_timestamp_ms">
+  ## iceberg_timestamp_ms
+</div>
 
 <SettingsInfoBlock type="Int64" default_value="0" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.4"},{"label": "0"},{"label": "إعداد جديد."}]}]} />
 
-استعلام عن جدول Iceberg باستخدام اللقطة السارية عند طابع زمني محدد.
-
-## iceberg_tolerate_conflicting_manifest_schemas {#iceberg_tolerate_conflicting_manifest_schemas}
-
-<SettingsInfoBlock type="Bool" default_value="1" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "إعداد جديد: عندما تحمل ترويسة ملف manifest في Iceberg مخططًا يتعارض مع المخطط المسجَّل لنفس schema-id المأخوذ من metadata.json، يُعتمد مخطط metadata.json بدلًا من إفشال الاستعلام، بما يطابق سلوك محركات الاستعلام الأخرى. وضبط `compatibility` على إصدار أقل من 26.10 يُعيد السلوك الصارم السابق."}]}]} />
-
-عند التفعيل، إذا كان schema-id الخاص بملف manifest في Iceberg مسجَّلًا مسبقًا من metadata.json، فسيُعتمد مخطط metadata.json وتُتجاهَل النسخة الموجودة في المفتاح `schema` في ترويسة ملف manifest دون مقارنتها. أما عند التعطيل، فتُقارَن النسخة الموجودة في ترويسة manifest بمخطط metadata.json، ويؤدي أي تعارض إلى إفشال الاستعلام بخطأ ICEBERG&#95;SPECIFICATION&#95;VIOLATION.
-
-ليس مخطط ترويسة manifest سوى نسخة من مخطط الجدول وقت كتابة الـ manifest، وقد لوحظ أن بعض أدوات الكتابة (مثل مهام صيانة AWS S3 Tables) تخزّن فيها نسخًا منقوصة. وتستخرج محركات الاستعلام الأخرى المخططات من metadata.json وتتجاهل نسخ الترويسة المخالفة، لذا يسير السلوك الافتراضي على نهجها. أما التعارض بين تعريفَي مخطط داخل metadata.json فيظل دائمًا يؤدي إلى إفشال الاستعلام.
+استعلم عن جدول Iceberg باستخدام اللقطة السارية عند طابع زمني محدد.
 
 {/*AUTOGENERATED_END*/}

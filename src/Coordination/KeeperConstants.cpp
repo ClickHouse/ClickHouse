@@ -70,20 +70,6 @@
     M(RWLockReadersWaitMilliseconds) \
     M(RWLockWritersWaitMilliseconds) \
     M(DNSError) \
-    M(DNSRequests) \
-    M(DNSRequestMicroseconds) \
-    M(DNSRequestError) \
-    M(DNSReverseRequests) \
-    M(DNSReverseRequestMicroseconds) \
-    M(DNSReverseError) \
-\
-    M(TLSHandshakes) \
-    M(TLSHandshakeMicroseconds) \
-    M(TLSHandshakeErrors) \
-    M(TLSServerHandshakes) \
-    M(TLSServerHandshakeMicroseconds) \
-    M(TLSServerHandshakeErrors) \
-\
     M(RealTimeMicroseconds) \
     M(UserTimeMicroseconds) \
     M(SystemTimeMicroseconds) \
@@ -244,6 +230,7 @@
     M(AsynchronousRemoteReadWaitMicroseconds) \
     M(SynchronousRemoteReadWaitMicroseconds) \
 \
+    M(ExternalDataSourceLocalCacheReadBytes) \
 \
     M(MainConfigLoads) \
 \
@@ -263,10 +250,6 @@
     M(KeeperReadRequestQueueLockWaitMicroseconds) \
     M(KeeperProcessAndResponsesLockWaitMicroseconds) \
     M(KeeperCommitWaitElapsedMicroseconds) \
-    M(KeeperLogStoreAppend) \
-    M(KeeperLogStoreAppendMicroseconds) \
-    M(KeeperSnapshotWriteMicroseconds) \
-    M(KeeperSnapshotApplyMicroseconds) \
     M(KeeperBatchMaxCount) \
     M(KeeperBatchMaxTotalSize) \
     M(KeeperBatchMaxReadCount) \
@@ -285,7 +268,6 @@
     M(KeeperReadSnapshotObject) \
     M(KeeperReadSnapshotFailed) \
     M(KeeperReadSnapshotDeferred) \
-    M(KeeperReadSnapshotStreamingSeeks) \
     M(KeeperSaveSnapshotObject) \
     M(KeeperSaveSnapshotFailed) \
     M(KeeperSaveSnapshot) \
@@ -308,7 +290,6 @@
     M(KeeperWatchTriggeredNodeDeleted) \
     M(KeeperWatchTriggeredNodeDataChanged) \
     M(KeeperWatchTriggeredNodeChildrenChanged) \
-    M(KeeperRejectedCommittedLogRollback) \
     M(KeeperChangelogWrittenBytes) \
     M(KeeperChangelogFileSyncMicroseconds) \
     M(KeeperChangelogStartupReadMicroseconds) \
@@ -413,7 +394,7 @@ namespace ProfileEvents
 #undef M
 
 #define M(NAME) NAME,
-[[clang::no_destroy]] extern const std::vector<Event> keeper_profile_events
+extern const std::vector<Event> keeper_profile_events
 {
     APPLY_FOR_KEEPER_PROFILE_EVENTS(M)
 };
@@ -476,7 +457,6 @@ namespace ProfileEvents
     M(AsynchronousReadWait) \
     M(S3Requests) \
     M(KeeperAliveConnections) \
-    M(KeeperRaftThreadsWaitingForLogsPreprocessing) \
     M(KeeperOutstandingRequests) \
     M(KeeperTTLNodes) \
     M(KeeperChangelogReadAheadThreads) \
@@ -499,7 +479,7 @@ namespace CurrentMetrics
 #undef M
 
 #define M(NAME) NAME,
-[[clang::no_destroy]] extern const std::vector<Metric> keeper_metrics
+extern const std::vector<Metric> keeper_metrics
 {
     APPLY_FOR_KEEPER_METRICS(M)
 };

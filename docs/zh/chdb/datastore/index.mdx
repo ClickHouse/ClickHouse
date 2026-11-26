@@ -7,10 +7,12 @@ keywords: ['chdb', 'datastore', 'pandas', 'dataframe', 'sql', '惰性求值']
 doc_type: 'guide'
 ---
 
+import { Image } from "/snippets/zh/components/Image.jsx";
+
 DataStore 是 chDB 的与 pandas 兼容的 API，将熟悉的 pandas DataFrame 接口与 SQL 查询优化能力结合在一起，让你既能编写 pandas 风格的代码，又能获得 ClickHouse 级别的性能。
 
 <div id="key-features">
-  ## 主要特性 {#key-features}
+  ## 主要特性
 </div>
 
 * **Pandas 兼容性**：209 个 pandas DataFrame 方法、56 个 `.str` 方法和 42+ 个 `.dt` 方法
@@ -19,13 +21,11 @@ DataStore 是 chDB 的与 pandas 兼容的 API，将熟悉的 pandas DataFrame �
 * **630+ API 方法**：提供全面的数据处理 API
 * **ClickHouse 扩展**：提供 pandas 中没有的额外访问器 (`.arr`、`.json`、`.url`、`.ip`、`.geo`)
 
-## 架构 {#architecture}
-
-<div className="ch-image-md">
-  <Frame>
-    ![DataStore 架构](/images/chdb/datastore_architecture.png)
-  </Frame>
+<div id="architecture">
+  ## 架构
 </div>
+
+<Image size="md" img="/images/chdb/datastore_architecture.png" alt="DataStore 架构" />
 
 DataStore 采用 **惰性求值** 和 **双引擎执行**：
 
@@ -36,7 +36,7 @@ DataStore 采用 **惰性求值** 和 **双引擎执行**：
 详见[执行模型](/zh/chdb/datastore/execution-model)。
 
 <div id="migration">
-  ## 从 Pandas 一行代码迁移 {#migration}
+  ## 从 Pandas 一行代码迁移
 </div>
 
 ```python
@@ -54,7 +54,7 @@ result = df[df['age'] > 25].groupby('city')['salary'].mean()
 您现有的 pandas 代码无需改动，即可直接在 ClickHouse 引擎上运行。
 
 <div id="performance">
-  ## 性能对比 {#performance}
+  ## 性能对比
 </div>
 
 与 pandas 相比，DataStore 在性能上有显著提升，尤其是在聚合和复杂管道方面：
@@ -69,7 +69,7 @@ result = df[df['age'] > 25].groupby('city')['salary'].mean()
 *基于 1000 万行的基准测试。详见[基准测试脚本](https://github.com/chdb-io/chdb/blob/main/refs/benchmark_datastore_vs_pandas.py)和[性能指南](/zh/chdb/guides/pandas-performance)。*
 
 <div id="when-to-use">
-  ## 何时使用 DataStore {#when-to-use}
+  ## 何时使用 DataStore
 </div>
 
 **在以下情况下使用 DataStore：**
@@ -87,7 +87,7 @@ result = df[df['age'] > 25].groupby('city')['salary'].mean()
 * 需要使用 pandas API 未提供的 ClickHouse 特有功能
 
 <div id="comparison">
-  ## 功能对比 {#comparison}
+  ## 功能对比
 </div>
 
 | 功能                    | Pandas | Polars | DuckDB | DataStore    |
@@ -102,7 +102,7 @@ result = df[df['age'] > 25].groupby('city')['salary'].mean()
 | 支持云存储                 | 否      | 有限     | 是      | **是**        |
 
 <div id="api-stats">
-  ## API 统计 {#api-stats}
+  ## API 统计
 </div>
 
 | 类别              | 数量       | 覆盖率                         |
@@ -118,18 +118,18 @@ result = df[df['age'] > 25].groupby('city')['salary'].mean()
 | **API 方法总数**    | **630+** | -                           |
 
 <div id="navigation">
-  ## 文档导航 {#navigation}
+  ## 文档导航
 </div>
 
 <div id="getting-started">
-  ### 开始使用 {#getting-started}
+  ### 开始使用
 </div>
 
 * [快速入门](/zh/chdb/datastore/quickstart) - 安装和基本使用
 * [从 Pandas 迁移](/zh/chdb/guides/migration-from-pandas) - 迁移分步指南
 
 <div id="api-reference">
-  ### API 参考文档 {#api-reference}
+  ### API 参考文档
 </div>
 
 * [工厂方法](/zh/chdb/datastore/factory-methods) - 从各种来源创建 DataStore
@@ -140,14 +140,14 @@ result = df[df['age'] > 25].groupby('city')['salary'].mean()
 * [I/O 操作](/zh/chdb/datastore/io) - 读取和写入数据
 
 <div id="advanced-topics">
-  ### 高级主题 {#advanced-topics}
+  ### 高级主题
 </div>
 
 * [执行模型](/zh/chdb/datastore/execution-model) - 惰性求值与缓存
 * [类参考文档](/zh/chdb/datastore/class-reference) - 完整 API 参考文档
 
 <div id="configuration-debugging">
-  ### 配置与调试 {#configuration-debugging}
+  ### 配置与调试
 </div>
 
 * [配置](/zh/chdb/configuration/index) - 所有配置选项
@@ -155,7 +155,7 @@ result = df[df['age'] > 25].groupby('city')['salary'].mean()
 * [调试](/zh/chdb/debugging/index) - Explain、性能分析和日志
 
 <div id="pandas-user-guides">
-  ### Pandas 用户指南 {#pandas-user-guides}
+  ### Pandas 用户指南
 </div>
 
 * [Pandas Cookbook](/zh/chdb/guides/pandas-cookbook) - 常见用法
@@ -164,7 +164,7 @@ result = df[df['age'] > 25].groupby('city')['salary'].mean()
 * [面向 Pandas 用户的 SQL](/zh/chdb/guides/pandas-to-sql) - 理解 pandas 操作背后的 SQL
 
 <div id="quick-example">
-  ## 快速示例 {#quick-example}
+  ## 快速示例
 </div>
 
 ```python
@@ -191,8 +191,10 @@ print(result.to_sql())
 df = result.to_df()  # Returns pandas DataFrame
 ```
 
-## 后续步骤 {#next-steps}
+<div id="next-steps">
+  ## 后续步骤
+</div>
 
-* **初次使用 DataStore？** 请从[快速入门指南](/zh/chdb/datastore/quickstart)开始
-* **从 pandas 迁移而来？** 请阅读[迁移指南](/zh/chdb/guides/migration-from-pandas)
-* **想深入了解？** 请查阅 [API 参考](/zh/chdb/datastore/class-reference)
+* **刚开始使用 DataStore？** 从[快速入门指南](/zh/chdb/datastore/quickstart)开始
+* **正在从 pandas 迁移？** 阅读[迁移指南](/zh/chdb/guides/migration-from-pandas)
+* **想进一步了解？** 查看 [API 参考文档](/zh/chdb/datastore/class-reference)

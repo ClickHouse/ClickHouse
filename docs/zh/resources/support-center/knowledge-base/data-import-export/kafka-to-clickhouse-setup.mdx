@@ -6,7 +6,9 @@ tags: ['数据摄取']
 keywords: ['Kafka']
 ---
 
-## 概述 {#overview}
+<div id="overview">
+  ## 概述
+</div>
 
 本文将介绍如何将数据从 Kafka topic 发送到 ClickHouse 表。我们将使用 Wiki 的最近更改 feed，它提供了一个[事件流](https://stream.wikimedia.org/v2/stream/recentchange)，表示 Wikimedia 各个站点上的更改。步骤包括：
 
@@ -14,7 +16,9 @@ keywords: ['Kafka']
 2. 将数据流摄取到 Kafka topic 中
 3. 创建一个订阅该 topic 的 ClickHouse 表
 
-# 1. 如何在 Ubuntu 上部署 Kafka {#1-setup-kafka-on-ubuntu}
+<div id="1-setup-kafka-on-ubuntu">
+  # 1. 如何在 Ubuntu 上部署 Kafka
+</div>
 
 1. 创建一个 Ubuntu **ec2** 实例，并通过 SSH 登录该实例：
 
@@ -66,7 +70,9 @@ bin/kafka-topics.sh --create --topic wikimedia --bootstrap-server localhost:9092
 bin/kafka-topics.sh --list --bootstrap-server localhost:9092
 ```
 
-# 2. 将 Wikimedia Stream 摄取到 Kafka {#2-ingest-the-wikimedia-stream-into-kafka}
+<div id="2-ingest-the-wikimedia-stream-into-kafka">
+  # 2. 将 Wikimedia Stream 摄取到 Kafka
+</div>
 
 1. 首先需要准备一些工具：
 
@@ -95,7 +101,9 @@ bin/kafka-console-consumer.sh --topic wikimedia --from-beginning --bootstrap-ser
 
 5. 按 **Ctrl+c** 结束前一个命令。
 
-# 3. 将数据摄取到 ClickHouse {#3-ingest-the-data-into-clickhouse}
+<div id="3-ingest-the-data-into-clickhouse">
+  # 3. 将数据摄取到 ClickHouse
+</div>
 
 1. 传入的数据如下所示：
 

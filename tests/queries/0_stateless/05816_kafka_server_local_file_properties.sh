@@ -81,7 +81,10 @@ function alter_collection_of_existing_table()
     run "ATTACH TABLE ${table}"
     # The table is attached again when the collection does not have the property.
     # `ALTER NAMED COLLECTION ... DELETE` is not used: the formatted query cannot be parsed back if the key has a dot.
-    $CLICKHOUSE_CLIENT -q "CREATE OR REPLACE NAMED COLLECTION ${all_collections[-1]} AS ${required_keys}"
+    # The collection is created again instead: the detached table does not prevent `DROP NAMED COLLECTION`.
+    $CLICKHOUSE_CLIENT -q "
+        DROP NAMED COLLECTION ${all_collections[-1]};
+        CREATE NAMED COLLECTION ${all_collections[-1]} AS ${required_keys};"
     run "ATTACH TABLE ${table}"
 }
 

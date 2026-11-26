@@ -6,11 +6,15 @@ tags: ['Fonctions']
 keywords: ['arrayJoin']
 ---
 
-## Question {#question}
+<div id="question">
+  ## Question
+</div>
 
 Si j’ai des attributs variables dans une colonne qui utilise le type Map, comment puis-je les extraire et les utiliser dans des requêtes ?
 
-## Réponse {#answer}
+<div id="answer">
+  ## Réponse
+</div>
 
 Voici un exemple simple d’extraction de clés et de valeurs à partir d’un champ attribut variable.
 Cette méthode créera des doublons apparents pour chaque ligne de la table source/brute. Cependant, comme les clés et les valeurs sont extraites, elles peuvent être placées dans la clé primaire ou dans une structure secondaire avec un index, comme un bloom filter.
@@ -86,7 +90,7 @@ array join attributes
 where notEmpty(attributes.keys);
 ```
 
-La nouvelle table contiendra davantage de lignes, avec les clés extraites, comme ceci :
+La nouvelle table contiendra davantage de lignes, avec les clés extraites, comme ceci :
 
 ```
 SELECT *
@@ -104,7 +108,7 @@ Query id: b7384381-53af-4e3e-bc54-871f61c033a6
 └────┴─────────────────────┴─────────────┴──────────────┴──────────────────────┴────────────────┴──────────────────┘
 ```
 
-À partir de là, pour interroger les lignes ayant certains attributs, vous feriez quelque chose comme ceci :
+À partir de là, pour interroger les lignes ayant certains attributs, vous feriez quelque chose comme ceci :
 
 ```
 SELECT

@@ -13,7 +13,9 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 هذه الإعدادات متاحة في [system.settings](/ar/reference/system-tables/settings)، وقد جرى توليدها تلقائيًا من [المصدر](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## hdfs_create_new_file_on_insert {#hdfs_create_new_file_on_insert}
+<div id="hdfs_create_new_file_on_insert">
+  ## hdfs_create_new_file_on_insert
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -26,7 +28,9 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 * 0 — يُلحِق استعلام `INSERT` بيانات جديدة بنهاية الملف.
 * 1 — ينشئ استعلام `INSERT` ملفًا جديدًا.
 
-## hdfs_ignore_file_doesnt_exist {#hdfs_ignore_file_doesnt_exist}
+<div id="hdfs_ignore_file_doesnt_exist">
+  ## hdfs_ignore_file_doesnt_exist
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -39,13 +43,17 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 * 1 — يعيد `SELECT` نتيجة فارغ.
 * 0 — يطرح `SELECT` استثناءً.
 
-## hdfs_replication {#hdfs_replication}
+<div id="hdfs_replication">
+  ## hdfs_replication
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 يمكن تحديد العدد الفعلي للنسخ المتماثلة عند إنشاء ملف HDFS.
 
-## hdfs_skip_empty_files {#hdfs_skip_empty_files}
+<div id="hdfs_skip_empty_files">
+  ## hdfs_skip_empty_files
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -56,20 +64,9 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 * 0 — يطرح `SELECT` استثناءً إذا كان الملف الفارغ غير متوافق مع التنسيق المطلوب.
 * 1 — يُرجع `SELECT` نتيجة فارغ للملف الفارغ.
 
-## hdfs_skip_hidden_files {#hdfs_skip_hidden_files}
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "إعداد جديد: تخطي الملفات التي يتضمن مسارها مقطعًا يبدأ بـ `_` أو `.` أسفل البادئة الخالية من glob عند سرد الملفات باستخدام glob، على غرار ما تفعله القارئات الأخرى في منظومة Hive. أما الجداول التي تستخدم `partition_strategy = 'hive'` فتتخطى هذه المسارات دائمًا."}]}]} />
-
-يُفعّل أو يُعطّل تخطي المسارات المخفية عند سرد الملفات باستخدام glob في جداول محرك [HDFS](/ar/reference/engines/table-engines/integrations/hdfs)، أي الملفات التي يتضمن مسارها مقطعًا يبدأ بـ `_` أو `.` أسفل البادئة الخالية من glob في المسار. يُعدّ المقطع الذي يحتوي على `=` دليل تقسيم (مثل `_p=1` لعمود التقسيم `_p`)، ولذلك لا يُعتبر مخفيًا. إذ تستخدم أدوات الكتابة في منظومة Hive (Hive وSpark وTrino) هذه المسارات للتخزين المرحلي للإخراج الذي لم يكتمل بعد ولكتابة ملفات الوسم (`_temporary/` و`.spark-staging-<id>/` و`_SUCCESS`)، وقد تؤدي قراءتها إلى حالة تسابق مع عملية التثبيت التي تجريها أداة الكتابة. لا تُفحص المقاطع الواقعة ضمن البادئة الخالية من glob. أما الجداول التي تستخدم `partition_strategy = 'hive'` فتتخطى المسارات المخفية دائمًا بصرف النظر عن هذا الإعداد.
-
-القيم الممكنة:
-
-* 0 — يُقرأ كل ملف يطابق glob.
-* 1 — تُتخطى الملفات التي يتضمن مسارها مقطعًا مخفيًا أسفل البادئة الخالية من glob.
-
-## hdfs_throw_on_zero_files_match {#hdfs_throw_on_zero_files_match}
+<div id="hdfs_throw_on_zero_files_match">
+  ## hdfs_throw_on_zero_files_match
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -82,7 +79,9 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 * 1 — `SELECT` يطرح استثناءً.
 * 0 — `SELECT` يعيد نتيجة فارغ.
 
-## hdfs_truncate_on_insert {#hdfs_truncate_on_insert}
+<div id="hdfs_truncate_on_insert">
+  ## hdfs_truncate_on_insert
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 

@@ -9,43 +9,38 @@ doc_type: 'guide'
 keywords: ['كتالوج البيانات', 'بحيرة البيانات', 'iceberg', 'unity catalog', 'glue', 'delta lake', 'onelake', 'polaris', 'biglake', 'clickhouse cloud']
 ---
 
+import { Image } from "/snippets/ar/components/Image.jsx";
 import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 
 <BetaBadge />
 
 اربط ClickHouse Cloud بكتالوجات البيانات لديك للوصول إلى جداولك بتنسيق الجداول المفتوح. يمكنك إعداد الاتصالات من واجهة **مصادر البيانات**. وللإعداد باستخدام SQL، استخدم محرك قاعدة البيانات [`DataLakeCatalog`](/ar/reference/engines/database-engines/datalake) في محرر SQL الذي تفضّله.
 
-<div className="ch-image-md">
-  <Frame>
-    ![واجهة مستخدم ClickHouse Cloud مع تكاملات كتالوج البيانات](/images/cloud/features/data-catalogs-ui.png)
-  </Frame>
+<Image img="/images/cloud/features/data-catalogs-ui.png" size="md" alt="واجهة ClickHouse Cloud مع تكاملات كتالوجات البيانات" />
+
+بعد الاتصال، تظهر جداول الكتالوج في وحدة تحكم SQL ضمن اسم قاعدة البيانات الذي تختاره. يمكنك الاستعلام عنها باستخدام ClickHouse SQL القياسي، وربطها بجداول [MergeTree](/ar/reference/engines/table-engines/mergetree-family/mergetree)، واستخدامها كمصادر [للعروض المادية](/ar/concepts/features/materialized-views).
+
+<div id="prerequisites">
+  ## المتطلبات المسبقة
 </div>
 
-بعد إتمام الاتصال، تظهر جداول الكتالوج في وحدة تحكم SQL تحت اسم قاعدة البيانات الذي تختاره. ويمكنك الاستعلام عنها باستخدام ClickHouse SQL القياسية، وربطها بجداول [MergeTree](/ar/reference/engines/table-engines/mergetree-family/mergetree)، واستخدامها مصادرَ لـ[العروض المُجسَّدة](/ar/concepts/features/materialized-views).
+قبل ربط كتالوج، تأكد مما يلي:
 
-## المتطلبات المسبقة {#prerequisites}
-
-قبل ربط catalog، تأكد مما يلي:
-
-* **صلاحيات الخدمة.** تحتاج إلى صلاحية `control-plane:service:manage` للوصول إلى صفحة **مصادر البيانات** وإضافة الكتالوجات.
-* **خدمة قيد التشغيل.** إذا كانت الخدمة خاملة، فأعد تنشيطها من صفحة **مصادر البيانات** أو من صفحات إعدادات الخدمة قبل الاتصال بالكتالوجات المرتبطة أو عرضها.
-* **بيانات اعتماد الـ catalog.** اجمع بيانات الاتصال الخاصة بنوع الـ catalog لديك قبل فتح اللوحة المنبثقة الجانبية، إذ يستخدم كل catalog حقولًا وآلية مصادقة مختلفة. راجع [إضافة اتصال الـ catalog](#add-your-catalog-connection) أدناه.
+* **أذونات الخدمة.** تحتاج إلى الإذن `control-plane:service:manage` للوصول إلى صفحة **مصادر البيانات** وإضافة الكتالوجات.
+* **خدمة قيد التشغيل.** إذا كانت الخدمة خاملة، فأيقظها من صفحة **مصادر البيانات** أو صفحة إعدادات الخدمة قبل ربط الكتالوجات أو عرض الكتالوجات المرتبطة.
+* **بيانات اعتماد الكتالوج.** اجمع تفاصيل الاتصال الخاصة بنوع الكتالوج قبل فتح اللوحة المنبثقة. يستخدم كل كتالوج حقولًا وأساليب مصادقة مختلفة — راجع [إضافة اتصال الكتالوج](#add-your-catalog-connection) أدناه.
 
 <div id="connect-your-catalog">
-  ## الاتصال بالكتالوج {#connect-your-catalog}
+  ## الاتصال بالكتالوج
 </div>
 
 <Steps>
-  <Step title="افتح اللوحة المنبثقة الجانبية لكتالوج البيانات" id="open-data-catalog-flyout">
+  <Step title="افتح اللوحة المنبثقة لكتالوج البيانات" id="open-data-catalog-flyout">
     1. اختر **مصادر البيانات** من شريط التنقل الأيسر.
     2. انقر على **+ إضافة كتالوج** إذا لم تكن قد أعددت أي مصادر بيانات بعد. وإلا، فانقر على **إضافة مصدر بيانات** &gt; **إضافة كتالوج لبحيرة البيانات**.
     3. في اللوحة المنبثقة **ربط كتالوج البيانات**، اختر الكتالوج من القائمة المنسدلة **اختيار كتالوج**. إذا كان الكتالوج يدعم عدة تنسيقات جداول مفتوحة، فاختر التنسيق من **تنسيق الجدول المفتوح**.
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![اللوحة المنبثقة «ربط كتالوج البيانات» مع القائمة المنسدلة «اختيار كتالوج» التي تعرض AWS Glue وBigLake Metastore وMicrosoft OneLake وPolaris وREST Catalog وUnity Catalog](/images/integrations/data-catalogs/catalog-flyout-select.png)
-      </Frame>
-    </div>
+    <Image img="/images/integrations/data-catalogs/catalog-flyout-select.png" alt="اللوحة المنبثقة «ربط كتالوج البيانات» مع القائمة المنسدلة «اختيار كتالوج» التي تعرض AWS Glue وBigLake Metastore وMicrosoft OneLake وPolaris وREST Catalog وUnity Catalog" size="lg" />
   </Step>
 
   <Step title="أضف اتصالاً بالكتالوج الخاص بك" id="add-your-catalog-connection">
@@ -53,12 +48,12 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 
     <Tabs>
       <Tab title="AWS Glue" id="aws-glue">
-        [كتالوج AWS Glue](/ar/guides/use-cases/data-warehousing/glue-catalog) يعرض جداول [Iceberg](/ar/reference/engines/table-engines/integrations/iceberg) المسجَّلة في Glue Data Catalog.
+        [كتالوج AWS Glue](/ar/guides/use-cases/data-warehousing/glue-catalog) يعرض جداول [Iceberg](/ar/reference/engines/table-engines/integrations/iceberg) المسجَّلة في Glue Data Catalog.
 
         قبل الاتصال، تأكد مما يلي:
 
         * استخدام الإصدار 25.12 أو أحدث من ClickHouse.
-        * أن جداول Iceberg مسجَّلة في AWS Glue Data Catalog ضمن المنطقة الهدف.
+        * أن جداول Iceberg مسجَّلة في AWS Glue Data Catalog ضمن المنطقة الهدف.
         * للمصادقة بمفتاح الوصول، أن لديك مفتاح وصول لمستخدم IAM يمتلك أذونات لقراءة بيانات Glue الوصفية وكائنات S3 الأساسية.
         * للمصادقة بدور IAM ‏(26.2+)، أن لديك دور IAM يثق بدور خدمة ClickHouse لديك. أدرج ARN دور الخدمة من **Settings → Network security information** في سياسة الثقة للدور. راجع [الوصول الآمن إلى بيانات Iceberg](/ar/products/cloud/guides/data-sources/accessing-iceberg-data-securely) للاطلاع على أمثلة لسياسات IAM.
 
@@ -203,17 +198,15 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
   </Step>
 </Steps>
 
-## الاستعلام عن بياناتك {#query-data}
+<div id="query-data">
+  ## الاستعلام عن بياناتك
+</div>
 
 <Steps>
   <Step title="عرض جداول الكتالوج" id="view-tables">
     في صفحة **مصادر البيانات**، ابحث عن الكتالوج الخاص بك في جدول **الكتالوجات المرتبطة**، ثم انقر على **عرض الجداول**.
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![جدول الكتالوجات المرتبطة مع إجراء عرض الجداول](/images/integrations/data-catalogs/linked-catalogs-table.png)
-      </Frame>
-    </div>
+    <Image img="/images/integrations/data-catalogs/linked-catalogs-table.png" alt="جدول الكتالوجات المرتبطة مع إجراء عرض الجداول" size="lg" />
 
     يفتح ClickHouse وحدة تحكم SQL مع تحديد قاعدة بيانات الكتالوج، ويعرض الجداول المتاحة.
 
@@ -221,11 +214,7 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
       قد لا تظهر الجداول فورًا بعد الاتصال بكتالوج. وقد يستغرق إدراج جميع الجداول، حسب الكتالوج، ما يصل إلى 3 دقائق.
     </Note>
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![مستعرض الجداول في وحدة تحكم SQL يعرض جداول الكتالوج](/images/integrations/data-catalogs/catalog-tables-browser.png)
-      </Frame>
-    </div>
+    <Image img="/images/integrations/data-catalogs/catalog-tables-browser.png" alt="مستعرض الجداول في وحدة تحكم SQL يعرض جداول الكتالوج" size="lg" />
   </Step>
 
   <Step title="تشغيل استعلام" id="run-a-query">
@@ -235,21 +224,19 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
     SELECT * FROM `identity_profiles.identity_profiles_iceberg`
     ```
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![استعلام SQL مع نتائج يستخدم علامات الاقتباس العكسية لاسم جدول يحتوي على نقاط](/images/integrations/data-catalogs/catalog-sql-query.png)
-      </Frame>
-    </div>
+    <Image img="/images/integrations/data-catalogs/catalog-sql-query.png" alt="استعلام SQL مع نتائج يستخدم علامات الاقتباس العكسية لاسم جدول يحتوي على نقاط" size="lg" />
   </Step>
 </Steps>
 
 <div id="troubleshooting">
-  ## استكشاف الأخطاء وإصلاحها {#troubleshooting}
+  ## استكشاف الأخطاء وإصلاحها
 </div>
 
 * إذا لم تظهر جداولك في وحدة تحكم SQL، فتحقّق من بيانات الاعتماد وإمكانية الوصول إلى الشبكة وأنواع الجداول في الكتالوج. وتأكد من أن الجداول التي تتوقع ظهورها تستخدم تنسيقات الملفات والجداول المدعومة.
 
-## انظر أيضًا {#see-also}
+<div id="see-also">
+  ## راجع أيضًا
+</div>
 
-* [تسريع التحليلات على بيانات مستودع بحيرة البيانات](/ar/guides/use-cases/data-warehousing/getting-started/accelerating-analytics) — تحميل جداول الكتالوج إلى MergeTree لتنفيذ الاستعلامات المتكررة
-* [الوصول الآمن إلى بيانات Iceberg](/ar/products/cloud/guides/data-sources/accessing-iceberg-data-securely) — إعداد دور IAM للوصول إلى Iceberg وGlue على AWS
+* [تسريع التحليلات على بيانات lakehouse](/ar/guides/use-cases/data-warehousing/getting-started/accelerating-analytics) — تحميل جداول كتالوج إلى MergeTree للاستعلامات المتكررة
+* [الوصول الآمن إلى بيانات Iceberg](/ar/products/cloud/guides/data-sources/accessing-iceberg-data-securely) — إعداد IAM role للوصول إلى Iceberg وGlue على AWS

@@ -7,16 +7,18 @@ keywords: ['биллинг', 'оповещения о расходах', 'пор
 doc_type: 'guide'
 ---
 
+import { Image } from "/snippets/ru/components/Image.jsx";
+
 Оповещения о расходах уведомляют вас, когда использование вашей организации достигает настроенных пороговых значений в течение расчётного периода, чтобы вы могли избежать неожиданных списаний. Они лишь отправляют уведомления; о порогах, при достижении которых автоматически выставляются счета, см. в разделе [Платёжные пороги](/ru/products/cloud/reference/billing/payment-thresholds).
 
 <div id="prerequisites">
-  ## Предварительные требования {#prerequisites}
+  ## Предварительные требования
 </div>
 
 * Чтобы настраивать и просматривать оповещения о расходах, у вас должна быть роль **Organization Admin** или **Billing Admin**.
 
 <div id="how-spend-alerts-work">
-  ## Как работают оповещения о расходах {#how-spend-alerts-work}
+  ## Как работают оповещения о расходах
 </div>
 
 * Оповещения основаны на общем объёме использования за расчётный период и сбрасываются в начале каждого нового цикла.
@@ -28,18 +30,16 @@ doc_type: 'guide'
   Достижение 100% по оповещению о расходах не ограничивает объём использования и не устанавливает лимит — расходы продолжают накапливаться сверх порога в 100%.
 </Info>
 
-## Настройте оповещение о расходах {#set-up-spend-alert}
+<div id="set-up-spend-alert">
+  ## Настройте оповещение о расходах
+</div>
 
 <Steps>
   <Step title="Откройте диалоговое окно оповещений о расходах" id="open-spend-alerts-dialog">
     1. Перейдите в **Organization &gt; Billing** в консоли ClickHouse Cloud.
     2. Нажмите **Actions &gt; Add spend alerts**.
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![Страница Billing с открытым меню Actions и выделенным пунктом Add spend alerts](/images/cloud/reference/billing/spend-alerts-actions.webp)
-      </Frame>
-    </div>
+    <Image img="/images/cloud/reference/billing/spend-alerts-actions.webp" alt="Страница Billing с открытым меню Actions и выделенным пунктом Add spend alerts" size="lg" />
   </Step>
 
   <Step title="Настройте и сохраните оповещение" id="configure-and-save">
@@ -47,16 +47,12 @@ doc_type: 'guide'
     2. Выберите каналы уведомлений: **Email**, **интерфейс** и/или **Slack**.
     3. Нажмите **Save**.
 
-    <div className="ch-image-md">
-      <Frame>
-        ![Диалоговое окно оповещений о расходах организации с лимитом расходов, автоматическими пороговыми оповещениями и каналами уведомлений](/images/cloud/reference/billing/spend-alerts-config.png)
-      </Frame>
-    </div>
+    <Image img="/images/cloud/reference/billing/spend-alerts-config.png" alt="Диалоговое окно оповещений о расходах организации с лимитом расходов, автоматическими пороговыми оповещениями и каналами уведомлений" size="md" />
   </Step>
 </Steps>
 
 <div id="threshold-alerts">
-  ## Автоматические пороговые оповещения {#threshold-alerts}
+  ## Автоматические пороговые оповещения
 </div>
 
 Четыре оповещения создаются автоматически и срабатывают в зависимости от настроенной суммы оповещения о расходах:
@@ -69,7 +65,7 @@ doc_type: 'guide'
 | **100%** | Достигнут полный лимит расходов | $10                        |
 
 <div id="notification-channels">
-  ## Каналы уведомлений {#notification-channels}
+  ## Каналы уведомлений
 </div>
 
 | Канал         | Описание                                                                                                              |

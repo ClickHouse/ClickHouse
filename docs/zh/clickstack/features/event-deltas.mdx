@@ -7,28 +7,26 @@ doc_type: 'guide'
 keywords: ['ClickStack', 'Event deltas', '热力图', '属性分布', 'trace 分析', '可观测性']
 ---
 
+import { Image } from "/snippets/zh/components/Image.jsx";
+
 Event deltas 将延迟热力图与自动 属性 分析结合起来，让你无需编写查询，就能看清 trace 数据的形态，并找出慢 span 有何不同。它有三种使用方式：
 
 * **分布模式 (always on)**：当热力图中没有任何选区时，会显示当前 span 集合中每个 属性 的值分布。适合用来发现占主导地位或异常稀少的值 (基数离群值) 。
 * **比较模式**：在热力图上拖出一个矩形，将其中的 spans (Selection) 与其余所有 spans (Background) 进行比较。适合用于定位偏差。
 * **迭代式下钻**：点击任意条形即可按该值进行过滤 (或排除) 。热力图会基于过滤后的 span 集合重新渲染，因此你可以不断缩小范围，直到原因一目了然。
 
-<div className="ch-image-lg">
-  <Frame>
-    ![payment service 上的 Event deltas 概览：亮带在窗口中部向上攀升，且在窗口帧内未恢复](/images/clickstack/event-deltas/overview.webp)
-  </Frame>
-</div>
+<Image img="/images/clickstack/event-deltas/overview.webp" alt="payment service 上的 Event deltas 概览：亮带在窗口中部向上攀升，且在窗口帧内未恢复" size="lg" />
 
 在上面的截图中，热力图右侧边缘大约停留在 10 ms，而不是回到整个上午一直维持的 1 ms 基线。性能劣化仍在持续，因此我们是在事件处理中途捕捉到这一现象的。
 
 <div id="prerequisites">
-  ## 前置条件 {#prerequisites}
+  ## 前置条件
 </div>
 
 Event deltas 需要一个带有耗时表达式的 **trace** 数据源。任何能产生 span 数据、已接入 OpenTelemetry 的服务均可使用。在所有 ClickStack 部署方式中均可用 (Managed、开源、ClickHouse Cloud) 。
 
 <div id="getting-started">
-  ## 入门 {#getting-started}
+  ## 入门
 </div>
 
 1. 在 **数据源** 下拉菜单中，选择一个包含链路追踪数据的 source。source 的名称可以任意；关键是它必须配置为 Trace 类型。**Event Deltas** 选项卡仅对这类 source 启用。
@@ -37,7 +35,7 @@ Event deltas 需要一个带有耗时表达式的 **trace** 数据源。任何�
 Event deltas 是一种独立的分析模式，与 **结果表** 和 **Event Patterns** 并列。切换到该模式后，视图会变为热力图和 attribute 分析网格，但搜索过滤条件和时间范围会保留，你也可以随时切换回来。
 
 <div id="the-heatmap">
-  ## 热力图 {#the-heatmap}
+  ## 热力图
 </div>
 
 热力图在两个维度上展示 span 的分布：
@@ -50,7 +48,7 @@ Event deltas 是一种独立的分析模式，与 **结果表** 和 **Event Patt
 你可以直接从热力图中看出各种模式：双峰延迟、特定时刻出现的延迟尖峰、一条始终较慢的 span 带，或者一条随时间逐渐上移的慢速带 (逐步恶化的性能回退) 。要查看某个区域，请在其上点击并拖拽出一个矩形框。该区域会成为你的 **Selection**，并将下方的分析切换为比较模式。
 
 <div id="distribution-mode">
-  ## 分布模式：基数离群值 {#distribution-mode}
+  ## 分布模式：基数离群值
 </div>
 
 在热力图上未选中任何区域时，分析面板会为每个属性显示一个条形图，基于所有匹配的 span 计算。图例显示为 **所有 span** (可见于上方的概览截图) 。
@@ -65,36 +63,32 @@ Event deltas 是一种独立的分析模式，与 **结果表** 和 **Event Patt
 可结合搜索栏先缩小范围 (例如，仅查看 error spans、仅查看 client spans，或仅查看某一个端点) ，再查看该子集的分布。
 
 <div id="comparison-mode">
-  ## 比较模式：偏离正常情况之处 {#comparison-mode}
+  ## 比较模式：偏离正常情况之处
 </div>
 
 在热力图上单击并拖动一个矩形，即可进入比较模式。选中的 spans 会成为 **Selection** (橙色条) ；矩形外的其余部分则成为 **Background** (绿色条) 。随后，每个属性图表都会将这两组数据并排展示，并按差异最大的属性排序，使偏离最明显的属性排在最前面。某个值如果几乎只出现在其中一侧，或在其中一侧完全不存在，那么它很可能就是造成差异的关键因素。
 
 你绘制的矩形形态会改变你所要回答的问题。下面介绍两种常见形态。
 
-### 用例 1：回归问题前 vs 回归问题后 {#before-vs-after}
+<div id="before-vs-after">
+  ### 用例 1：回归前 vs 回归后
+</div>
 
 当热力图显示延迟随时间线逐渐升高时 (慢带变厚、亮带上移，或某个清晰的拐点将健康时段与退化时段分开) ，从开始上升的拐点拖出一个矩形，一直拉到窗口右边缘。为了让对比更清晰，应将矩形底边放在健康基线上，而不是坐标轴底部：这样就能只圈定退化窗口中那些确实比正常更慢的 span，而不会把恰好落在同一时间范围内、但其实仍然健康的快速 span 也一并带进来。
 
-<div className="ch-image-lg">
-  <Frame>
-    ![payment service 上的比较模式，矩形从上升拐点画到右边缘，底边落在 1 ms 基线上](/images/clickstack/event-deltas/before-after.webp)
-  </Frame>
-</div>
+<Image img="/images/clickstack/event-deltas/before-after.webp" alt="payment service 上的比较模式，矩形从上升拐点画到右边缘，底边落在 1 ms 基线上" size="lg" />
 
 热力图下方的属性条按差异幅度从大到小排序。在这个示例中，顶行图表呈现出最强的信号：`SpanKind`、`SpanName` 和 `ScopeName` 都显示出明显的橙绿分化，对应较慢的 Selection 和健康的 Background。结合来看，它们勾勒出了拐点处究竟发生了什么变化。
 
 当你想问“发生了什么变化？”时，这就是合适的形态。还有一种更紧凑的变体，流程相同：当一小团慢速 span 出现在原本平静的带状区域中时 (例如右边缘的短暂突发，或稳定时段中间的一簇) ，就只围绕那一簇画一个小框。形态不同，问题也随之变化：竖向长条是在问 *时间上发生了什么变化*；而聚焦的小框是在问 *这个簇有什么特别之处*。
 
-### 用例 2：慢与快 {#slow-vs-fast}
+<div id="slow-vs-fast">
+  ### 用例 2：慢与快
+</div>
 
 当热力图在耗时轴上清楚地显示出两组明显分离的延迟分布时，拖出一个覆盖整个时间范围、但只框住上方清晰分离带的宽矩形。较慢的那组会成为 Selection；较快的大部分则成为 Background。
 
-<div className="ch-image-lg">
-  <Frame>
-    ![frontend-proxy 上的慢与快对比，矩形仅覆盖清晰分离的上方带状区域，并与密集主体明显分开](/images/clickstack/event-deltas/slow-vs-fast.webp)
-  </Frame>
-</div>
+<Image img="/images/clickstack/event-deltas/slow-vs-fast.webp" alt="frontend-proxy 上的慢与快对比，矩形仅覆盖清晰分离的上方带状区域，并与密集主体明显分开" size="lg" />
 
 将矩形紧紧框住上方带状区域，并让它与下方密集主体之间保留清晰可见的水平间隔。如果矩形画得过松、渗入较快的那组，差异就会被冲淡。
 
@@ -102,7 +96,9 @@ Event deltas 是一种独立的分析模式，与 **结果表** 和 **Event Patt
 
 当你想问“慢 spans 和快 spans 到底有什么不同？”而不是追查某个特定异常时，这就是合适的形态。出现分歧的属性指向代码路径或输入层面的原因；对比平平则指向系统性原因。
 
-## 迭代式下钻 {#drill-down}
+<div id="drill-down">
+  ## 迭代式下钻
+</div>
 
 比较模式和分布模式串联使用时效果最强。点击任意条形，即可打开一个包含三项操作的弹出菜单：
 
@@ -110,11 +106,7 @@ Event deltas 是一种独立的分析模式，与 **结果表** 和 **Event Patt
 * **排除**：移除具有该值的 span
 * **复制**：将该值复制到剪贴板
 
-<div className="ch-image-lg">
-  <Frame>
-    ![点击 ScopeVersion 条形上的弹出菜单，显示 Selection 与 Background 的百分比，以及过滤、排除、复制操作](/images/clickstack/event-deltas/drill-down.webp)
-  </Frame>
-</div>
+<Image img="/images/clickstack/event-deltas/drill-down.webp" alt="点击 ScopeVersion 条形上的弹出菜单，显示 Selection 与 Background 的百分比，以及过滤、排除、复制操作" size="lg" />
 
 应用过滤或排除后，热力图中的选择会被清除，热力图会基于新的数据集重新渲染，分布模式也会继续针对这个过滤后的集合进行分析。注意观察热力图的变化：成功的过滤会明显去掉慢速带、让双峰分裂收敛，或抹平向上漂移。然后重复这一过程：找出下一个可疑值，进行过滤，查看新的热力图，再查看新的分布。通常经过几轮迭代，就能将回归问题缩小到一两个属性上。
 
@@ -124,15 +116,13 @@ Event deltas 是一种独立的分析模式，与 **结果表** 和 **Event Patt
 
 当数据集足够小时，切换到 **结果表** 选项卡即可检查单个链路追踪；你设置的过滤条件会保留。
 
-## 自定义热力图 {#customize}
+<div id="customize">
+  ## 自定义热力图
+</div>
 
 热力图右上角的齿轮图标会打开 **显示设置** 抽屉面板。
 
-<div className="ch-image-lg">
-  <Frame>
-    ![包含标度、值和计数字段的显示设置抽屉面板](/images/clickstack/event-deltas/settings-drawer.webp)
-  </Frame>
-</div>
+<Image img="/images/clickstack/event-deltas/settings-drawer.webp" alt="包含标度、值和计数字段的显示设置抽屉面板" size="lg" />
 
 | 参数     | 默认值              | 说明                                                                      |
 | ------ | ---------------- | ----------------------------------------------------------------------- |
@@ -155,7 +145,7 @@ Event deltas 是一种独立的分析模式，与 **结果表** 和 **Event Patt
 * **按计数以外的指标着色。** 将 **计数** 设为 `p95(Duration)` 后，每个分桶都会按尾部延迟着色，而不是按数量着色，从而凸显那些在基于计数的视图中容易被掩盖的少见但高延迟区域。`countDistinct(TraceId)` 则可在单个 trace 产生大量 spans 时，区分 trace 量与 span 量。
 
 <div id="tips">
-  ## 高效使用技巧 {#tips}
+  ## 高效使用技巧
 </div>
 
 以下做法能显著提升 Event deltas 的使用效果：
@@ -166,17 +156,17 @@ Event deltas 是一种独立的分析模式，与 **结果表** 和 **Event Patt
 * **在不做选择时使用分布模式**，适用于暂时还看不出明显对比的情况 (你知道存在问题，但热力图看起来很均匀) 。先应用一个假设性过滤器，比如只看错误 span、只看客户端 span，或只看某一个端点，然后让属性分布先帮你找出影响最大的值，再去绘制任何矩形。
 
 <div id="troubleshooting">
-  ## 故障排查 {#troubleshooting}
+  ## 故障排查
 </div>
 
 <div id="tab-not-visible">
-  ### Event Deltas 选项卡不可见 {#tab-not-visible}
+  ### Event Deltas 选项卡不可见
 </div>
 
 只有在选中了带有耗时表达式的 **Trace** 数据源时，**分析模式** 下才会显示 **Event Deltas** 选项卡。请确认你的数据源已配置为 Trace 类型，并且包含带有耗时信息的 span 数据。
 
 <div id="few-results">
-  ### 属性图表显示的结果很少或没有结果 {#few-results}
+  ### 属性图表显示的结果很少或没有结果
 </div>
 
 如果样本太小 (少于几十个 span) ，分布结果在统计上可能没有意义。请扩大时间范围或放宽搜索过滤条件。

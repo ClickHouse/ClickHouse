@@ -14,20 +14,26 @@ keywords: ['ClickStack 배포 옵션', '외부 ClickHouse', '외부 OTel', '최�
 
 이 가이드에서는 Helm을 사용한 ClickStack의 고급 배포 옵션을 다룹니다. 기본 설치는 [기본 Helm 배포 가이드](/ko/clickstack/deployment/helm-v1)를 참조하십시오.
 
-## 개요 {#overview}
+<div id="overview">
+  ## 개요
+</div>
 
 ClickStack의 Helm 차트는 여러 배포 구성을 지원합니다:
 
 * **전체 스택** (기본값) - 모든 구성 요소 포함
 * **외부 ClickHouse** - 기존 ClickHouse 클러스터 사용
 * **외부 OTel collector** - 기존 OTel 인프라 사용
-* **최소 배포** - ClickStack UI만 포함하고, 나머지 종속성은 외부 서비스 사용
+* **최소 배포** - HyperDX만 포함하고, 나머지 종속성은 외부 서비스 사용
 
-## 외부 ClickHouse {#external-clickhouse}
+<div id="external-clickhouse">
+  ## 외부 ClickHouse
+</div>
 
 기존 ClickHouse 클러스터(ClickHouse Cloud 포함)가 있으면 기본 제공 ClickHouse를 비활성화하고 외부 인스턴스에 연결할 수 있습니다.
 
-### 옵션 1: 인라인 구성(개발/테스트) {#external-clickhouse-inline}
+<div id="external-clickhouse-inline">
+  ### 옵션 1: 인라인 구성(개발/테스트)
+</div>
 
 빠른 테스트 또는 비프로덕션 환경에는 이 방식을 사용하세요:
 
@@ -59,11 +65,15 @@ hyperdx:
 helm install my-clickstack clickstack/clickstack -f values-external-clickhouse.yaml
 ```
 
-### 옵션 2: 외부 시크릿(프로덕션 권장) {#external-clickhouse-secret}
+<div id="external-clickhouse-secret">
+  ### 옵션 2: 외부 시크릿(프로덕션 권장)
+</div>
 
 프로덕션 배포에서 자격 증명을 Helm 구성과 분리해 관리하려는 경우:
 
-#### 설정 파일 만들기 {#create-configuration}
+<div id="create-configuration">
+  #### 설정 파일 만들기
+</div>
 
 ```bash
 # connections.json 생성
@@ -121,7 +131,9 @@ cat <<EOF > sources.json
 EOF
 ```
 
-#### Kubernetes 시크릿 생성 {#create-kubernetes-secret}
+<div id="create-kubernetes-secret">
+  #### Kubernetes 시크릿 생성
+</div>
 
 ```bash
 kubectl create secret generic hyperdx-external-config \
@@ -132,7 +144,9 @@ kubectl create secret generic hyperdx-external-config \
 rm connections.json sources.json
 ```
 
-#### Helm에서 시크릿을 사용하도록 구성하기 {#configure-helm-secret}
+<div id="configure-helm-secret">
+  #### Helm에서 시크릿을 사용하도록 구성하기
+</div>
 
 ```yaml
 # values-external-clickhouse-secret.yaml
@@ -154,7 +168,9 @@ hyperdx:
 helm install my-clickstack clickstack/clickstack -f values-external-clickhouse-secret.yaml
 ```
 
-### ClickHouse Cloud 사용 {#using-clickhouse-cloud}
+<div id="using-clickhouse-cloud">
+  ### ClickHouse Cloud 사용
+</div>
 
 ClickHouse Cloud에서는 다음과 같습니다:
 
@@ -175,7 +191,9 @@ hyperdx:
   existingConfigSourcesKey: "sources.json"
 ```
 
-## 외부 OTEL Collector {#external-otel-collector}
+<div id="external-otel-collector">
+  ## 외부 OTEL Collector
+</div>
 
 기존 OTEL collector 인프라를 사용 중인 경우:
 
@@ -194,9 +212,11 @@ helm install my-clickstack clickstack/clickstack -f values-external-otel.yaml
 
 인그레스를 통해 OTel collector 엔드포인트를 노출하는 방법은 [Ingress Configuration](/ko/clickstack/deployment/helm-configuration-v1#otel-collector-ingress)을 참조하십시오.
 
-## 최소 배포 {#minimal-deployment}
+<div id="minimal-deployment">
+  ## 최소 배포
+</div>
 
-기존 인프라를 갖춘 조직에서는 ClickStack UI만 배포하세요:
+기존 인프라를 갖춘 조직에서는 HyperDX만 배포하세요:
 
 ```yaml
 # values-minimal.yaml
@@ -209,7 +229,7 @@ otel:
 hyperdx:
   otelExporterEndpoint: "http://your-otel-collector:4318"
 
-  # Option 1: Inline (for testing)
+  # 옵션 1: 인라인 (테스트용)
   defaultConnections: |
     [
       {
@@ -221,7 +241,7 @@ hyperdx:
       }
     ]
 
-  # Option 2: External secret (production)
+  # 옵션 2: 외부 시크릿 (프로덕션)
   # useExistingConfigSecret: true
   # existingConfigSecret: "my-external-config"
   # existingConfigConnectionsKey: "connections.json"
@@ -232,7 +252,9 @@ hyperdx:
 helm install my-clickstack clickstack/clickstack -f values-minimal.yaml
 ```
 
-## 다음 단계 {#next-steps}
+<div id="next-steps">
+  ## 다음 단계
+</div>
 
 * [구성 가이드 (v1.x)](/ko/clickstack/deployment/helm-configuration-v1) - API Key, 시크릿, 인그레스 설정
 * [Cloud 배포 (v1.x)](/ko/clickstack/deployment/helm-cloud-v1) - GKE, EKS, AKS별 구성

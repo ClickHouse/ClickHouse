@@ -10,10 +10,12 @@ integration:
    - category: 'clickpipes'
 ---
 
+import { Image } from "/snippets/ja/components/Image.jsx";
+
 ClickPipes は Postgres バージョン 12 以降に対応しています。
 
 <div id="enable-logical-replication">
-  ## 論理レプリケーションを有効にする {#enable-logical-replication}
+  ## 論理レプリケーションを有効にする
 </div>
 
 Crunchy Bridge では、[デフォルト](https://docs.crunchybridge.com/how-to/logical-replication)で論理レプリケーションが有効になっています。以下の設定が正しく構成されていることを確認し、必要に応じて調整してください。
@@ -24,7 +26,9 @@ SHOW max_wal_senders; -- 10 である必要があります
 SHOW max_replication_slots; -- 10 である必要があります
 ```
 
-## ClickPipes ユーザーの作成と権限の付与 {#creating-clickpipes-user-and-granting-permissions}
+<div id="creating-clickpipes-user-and-granting-permissions">
+  ## ClickPipes ユーザーの作成と権限の付与
+</div>
 
 `postgres` ユーザーで Crunchy Bridge Postgres に接続し、以下のコマンドを実行します。
 
@@ -60,32 +64,26 @@ SHOW max_replication_slots; -- 10 である必要があります
   CREATE PUBLICATION clickpipes FOR TABLE table_to_replicate, table_to_replicate2;
   ```
 
-* 特定のスキーマ内のすべてのテーブルに対するパブリケーションを作成するには:
+  * 特定のスキーマ内のすべてのテーブルに対するパブリケーションを作成するには:
 
-  ```sql
-  CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
-  ```
+    ```sql
+    CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
+    ```
 
 `clickpipes` パブリケーションは、変更イベントが ClickPipes にストリーミングされる対象テーブルの集合を定義します。すべてのテーブルをレプリケーションする意図がある場合を除き、`FOR ALL TABLES` の使用は推奨しません。不要なテーブルを含めると、Postgres から ClickPipes への WAL トラフィックが増加し、レプリケーション全体の効率が低下するためです。
 
-## ClickPipes の IP を許可リストに登録 {#safe-list-clickpipes-ips}
-
-Crunchy Bridge でファイアウォールルールを追加し、[ClickPipes の IP](/ja/integrations/clickpipes/networking/static-ips) を許可リストに登録します。
-
-<div className="ch-image-lg">
-  <Frame>
-    ![Crunchy Bridge のファイアウォールルールの場所](/images/integrations/data-ingestion/clickpipes/postgres/source/setup/crunchy-postgres/firewall_rules_crunchy_bridge.webp)
-  </Frame>
+<div id="safe-list-clickpipes-ips">
+  ## ClickPipes の IP を許可リストに登録
 </div>
 
-<div className="ch-image-lg">
-  <Frame>
-    ![ClickPipes 用のファイアウォールルールを追加](/images/integrations/data-ingestion/clickpipes/postgres/source/setup/crunchy-postgres/add_firewall_rules_crunchy_bridge.webp)
-  </Frame>
-</div>
+Crunchy Bridge でファイアウォールルールを追加し、[ClickPipes IPs](/ja/integrations/clickpipes/networking/static-ips) を許可リストに登録します。
+
+<Image size="lg" img="/images/integrations/data-ingestion/clickpipes/postgres/source/setup/crunchy-postgres/firewall_rules_crunchy_bridge.webp" alt="Crunchy Bridge でファイアウォールルールはどこにありますか？" border />
+
+<Image size="lg" img="/images/integrations/data-ingestion/clickpipes/postgres/source/setup/crunchy-postgres/add_firewall_rules_crunchy_bridge.webp" alt="ClickPipes 用のファイアウォールルールを追加" border />
 
 <div id="whats-next">
-  ## 次に行うこと {#whats-next}
+  ## 次に行うこと
 </div>
 
 これで、[ClickPipe を作成](/ja/integrations/clickpipes/postgres/index)して、Postgres インスタンスから ClickHouse Cloud へのデータ取り込みを開始できます。

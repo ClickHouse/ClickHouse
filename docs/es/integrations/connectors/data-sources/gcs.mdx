@@ -4,10 +4,11 @@ slug: /integrations/gcs
 description: 'MergeTree con respaldo en Google Cloud Storage (GCS)'
 title: 'Integrar Google Cloud Storage con ClickHouse'
 doc_type: 'guide'
-keywords: ['Google Cloud Storage ClickHouse', 'integración entre GCS y ClickHouse', 'MergeTree con almacenamiento en GCS', 'almacenamiento en GCS para ClickHouse', 'Google Cloud ClickHouse']
+keywords: ['Google Cloud Storage ClickHouse', 'integración entre GCS y ClickHouse', 'MergeTree con respaldo en GCS', 'almacenamiento en GCS para ClickHouse', 'Google Cloud ClickHouse']
 ---
 
 import BucketDetails from '/snippets/es/_GCS_authentication_and_bucket.mdx';
+import { Image } from "/snippets/es/components/Image.jsx";
 
 <Note>
   Si usas ClickHouse Cloud en [Google Cloud](https://cloud.google.com), esta página no aplica, ya que tus servicios ya usarán [Google Cloud Storage](https://cloud.google.com/storage). Si buscas hacer `SELECT` o `INSERT` de datos desde GCS, consulta la [table function `gcs`](/es/reference/functions/table-functions/gcs).
@@ -16,17 +17,17 @@ import BucketDetails from '/snippets/es/_GCS_authentication_and_bucket.mdx';
 ClickHouse reconoce que GCS es una solución de almacenamiento atractiva si buscas separar almacenamiento y cómputo. Para facilitarlo, se ofrece compatibilidad para usar GCS como almacenamiento de un motor MergeTree. Esto te permitirá aprovechar la escalabilidad y las ventajas de costo de GCS, así como el rendimiento de inserción y consulta del motor MergeTree.
 
 <div id="gcs-backed-mergetree">
-  ## MergeTree respaldado por GCS {#gcs-backed-mergetree}
+  ## MergeTree respaldado por GCS
 </div>
 
 <div id="creating-a-disk">
-  ### Crear un disco {#creating-a-disk}
+  ### Crear un disco
 </div>
 
 Para utilizar un bucket de GCS como disco, primero debemos declararlo en la configuración de ClickHouse, en un archivo dentro de `conf.d`. A continuación se muestra un ejemplo de declaración de un disco de GCS. Esta configuración incluye varias secciones para configurar el &quot;disco&quot; de GCS, la caché y la política que se especifica en las consultas DDL cuando se crean tablas en el disco de GCS. A continuación se describe cada una de ellas.
 
 <div id="storage_configuration--disks--gcs">
-  #### Configuración de almacenamiento &gt; disks &gt; gcs {#storage_configuration--disks--gcs}
+  #### Configuración de almacenamiento &gt; disks &gt; gcs
 </div>
 
 Esta parte de la configuración se muestra en la sección resaltada y especifica lo siguiente:
@@ -63,7 +64,7 @@ Esta parte de la configuración se muestra en la sección resaltada y especifica
 ```
 
 <div id="storage_configuration--disks--cache">
-  #### Configuración de almacenamiento &gt; disks &gt; cache {#storage_configuration--disks--cache}
+  #### Configuración de almacenamiento &gt; disks &gt; cache
 </div>
 
 La configuración de ejemplo destacada a continuación habilita una caché en memoria de 10 Gi para el disco `gcs`.
@@ -101,7 +102,7 @@ La configuración de ejemplo destacada a continuación habilita una caché en me
 ```
 
 <div id="storage_configuration--policies--gcs_main">
-  #### Configuración de almacenamiento &gt; políticas &gt; gcs_main {#storage_configuration--policies--gcs_main}
+  #### Configuración de almacenamiento &gt; políticas &gt; gcs_main
 </div>
 
 Las políticas de configuración de almacenamiento permiten elegir dónde se almacenan los datos.  La política destacada a continuación permite almacenar datos en el disco `gcs` especificando la política `gcs_main`.  Por ejemplo, `CREATE TABLE ... SETTINGS storage_policy='gcs_main'`.
@@ -135,7 +136,7 @@ Las políticas de configuración de almacenamiento permiten elegir dónde se alm
 Puede encontrar una lista completa de los ajustes pertinentes para esta definición de disco [aquí](/es/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-s3).
 
 <div id="creating-a-table">
-  ### Crear una tabla {#creating-a-table}
+  ### Crear una tabla
 </div>
 
 Si ha configurado su disco para usar un bucket con acceso de escritura, debería poder crear una tabla como en el ejemplo siguiente. Para simplificar, usamos un subconjunto de las columnas de los taxis de NYC y enviamos los datos directamente a la tabla respaldada por GCS:
@@ -164,23 +165,23 @@ SETTINGS storage_policy='gcs_main'
 ```
 
 ```sql
-INSERT INTO trips_gcs SELECT trip_id, pickup_date, pickup_datetime, dropoff_datetime, pickup_longitude, pickup_latitude, dropoff_longitude, dropoff_latitude, passenger_count, trip_distance, tip_amount, total_amount, payment_type FROM s3('https://ch-nyc-taxi.s3.eu-west-3.amazonaws.com/tsv/trips_{0..9}.tsv.gz', NOSIGN, 'TabSeparatedWithNames') LIMIT 1000000;
+INSERT INTO trips_gcs SELECT trip_id, pickup_date, pickup_datetime, dropoff_datetime, pickup_longitude, pickup_latitude, dropoff_longitude, dropoff_latitude, passenger_count, trip_distance, tip_amount, total_amount, payment_type FROM s3('https://ch-nyc-taxi.s3.eu-west-3.amazonaws.com/tsv/trips_{0..9}.tsv.gz', 'TabSeparatedWithNames') LIMIT 1000000;
 ```
 
-Dependiendo del hardware, esta última inserción de 1m filas puede tardar unos minutos en ejecutarse. Puede confirmar el progreso en la tabla system.processes. Si quiere, puede ajustar el número de filas hasta el límite de 10m y probar algunas consultas de ejemplo.
+Dependiendo del hardware, este último insert de 1m filas puede tardar unos minutos en ejecutarse. Puede confirmar el progreso en la tabla system.processes. Si quiere, puede ajustar el número de filas hasta el límite de 10m y probar algunas consultas de ejemplo.
 
 ```sql
 SELECT passenger_count, avg(tip_amount) AS avg_tip, avg(total_amount) AS avg_amount FROM trips_gcs GROUP BY passenger_count;
 ```
 
 <div id="handling-replication">
-  ### Gestión de la replicación {#handling-replication}
+  ### Gestión de la replicación
 </div>
 
 La replicación con discos de GCS se puede lograr con el motor de tabla `ReplicatedMergeTree`. Consulta la guía [replicación de un único segmento en dos regiones de GCP mediante GCS](#gcs-multi-region) para obtener más información.
 
 <div id="learn-more">
-  ### Más información {#learn-more}
+  ### Más información
 </div>
 
 La [API XML de Cloud Storage](https://cloud.google.com/storage/docs/xml-api/overview) es compatible con algunas herramientas y bibliotecas que funcionan con servicios como Amazon Simple Storage Service (Amazon S3).
@@ -188,7 +189,7 @@ La [API XML de Cloud Storage](https://cloud.google.com/storage/docs/xml-api/over
 Para obtener más información sobre cómo ajustar los hilos, consulta [Optimización del rendimiento](/es/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse#s3-optimizing-performance).
 
 <div id="gcs-multi-region">
-  ## Uso de Google Cloud Storage (GCS) {#gcs-multi-region}
+  ## Uso de Google Cloud Storage (GCS)
 </div>
 
 <Tip>
@@ -196,7 +197,7 @@ Para obtener más información sobre cómo ajustar los hilos, consulta [Optimiza
 </Tip>
 
 <div id="plan-the-deployment">
-  ### Planificar la implementación {#plan-the-deployment}
+  ### Planificar la implementación
 </div>
 
 Este tutorial se ha escrito para describir una implementación replicada de ClickHouse que se ejecuta en Google Cloud y utiliza Google Cloud Storage (GCS) como &quot;tipo&quot; de disco de almacenamiento de ClickHouse.
@@ -212,7 +213,7 @@ Requisitos de ejemplo para alta disponibilidad:
 ClickHouse Keeper requiere dos nodos para funcionar; de ahí la necesidad de tres nodos para alta disponibilidad.
 
 <div id="prepare-vms">
-  ### Preparar máquinas virtuales {#prepare-vms}
+  ### Preparar máquinas virtuales
 </div>
 
 Implemente cinco VM en tres regiones:
@@ -226,7 +227,7 @@ Implemente cinco VM en tres regiones:
 `*` Puede ser una zona de disponibilidad distinta en la misma región que la 1 o la 2.
 
 <div id="deploy-clickhouse">
-  #### Desplegar ClickHouse {#deploy-clickhouse}
+  #### Desplegar ClickHouse
 </div>
 
 Despliegue ClickHouse en dos hosts; en las configuraciones de ejemplo, se llaman `chnode1` y `chnode2`.
@@ -240,7 +241,7 @@ Ubique `chnode1` en una región de GCP y `chnode2` en otra. En esta guía se uti
 Consulte las [instrucciones de instalación](/es/get-started/setup/install) al realizar los pasos de despliegue en los nodos del servidor de ClickHouse.
 
 <div id="deploy-clickhouse-keeper">
-  #### Implemente ClickHouse Keeper {#deploy-clickhouse-keeper}
+  #### Implemente ClickHouse Keeper
 </div>
 
 Implemente ClickHouse Keeper en tres hosts; en las configuraciones de ejemplo, estos se denominan `keepernode1`, `keepernode2` y `keepernode3`. `keepernode1` puede implementarse en la misma región que `chnode1`, `keepernode2` junto con `chnode2` y `keepernode3` en cualquiera de las dos regiones, pero en una zona de disponibilidad distinta a la del nodo de ClickHouse de esa región.
@@ -248,7 +249,7 @@ Implemente ClickHouse Keeper en tres hosts; en las configuraciones de ejemplo, e
 Consulte las [instrucciones de instalación](/es/get-started/setup/install) al realizar los pasos de implementación en los nodos de ClickHouse Keeper.
 
 <div id="create-two-buckets">
-  ### Crear dos buckets {#create-two-buckets}
+  ### Crear dos buckets
 </div>
 
 Los dos servidores de ClickHouse estarán ubicados en distintas regiones para garantizar alta disponibilidad. Cada uno tendrá un bucket de GCS en la misma región.
@@ -260,7 +261,7 @@ Si necesita instrucciones paso a paso para crear buckets y una clave HMAC, expan
 <BucketDetails />
 
 <div id="configure-clickhouse-keeper">
-  ### Configurar ClickHouse Keeper {#configure-clickhouse-keeper}
+  ### Configurar ClickHouse Keeper
 </div>
 
 Todos los nodos de ClickHouse Keeper tienen el mismo archivo de configuración, excepto la línea `server_id` (la primera línea resaltada a continuación). Modifique el archivo con los nombres de host de sus servidores de ClickHouse Keeper y, en cada uno de ellos, configure `server_id` para que coincida con la entrada `server` correspondiente en `raft_configuration`. Dado que en este ejemplo `server_id` está establecido en `3`, hemos resaltado las líneas correspondientes en `raft_configuration`.
@@ -313,7 +314,7 @@ Todos los nodos de ClickHouse Keeper tienen el mismo archivo de configuración, 
 ```
 
 <div id="configure-clickhouse-server">
-  ### Configurar el servidor de ClickHouse {#configure-clickhouse-server}
+  ### Configurar el servidor de ClickHouse
 </div>
 
 <Info>
@@ -323,7 +324,7 @@ Todos los nodos de ClickHouse Keeper tienen el mismo archivo de configuración, 
 </Info>
 
 <div id="networking">
-  #### Redes {#networking}
+  #### Redes
 </div>
 
 De forma predeterminada, ClickHouse escucha en la interfaz de bucle local; en una configuración replicada, es necesario disponer de conectividad de red entre las máquinas. Escuche en todas las interfaces:
@@ -335,7 +336,7 @@ De forma predeterminada, ClickHouse escucha en la interfaz de bucle local; en un
 ```
 
 <div id="remote-clickhouse-keeper-servers">
-  #### Servidores remotos de ClickHouse Keeper {#remote-clickhouse-keeper-servers}
+  #### Servidores remotos de ClickHouse Keeper
 </div>
 
 La replicación se coordina mediante ClickHouse Keeper. Este archivo de configuración identifica los nodos de ClickHouse Keeper por nombre de host y número de puerto.
@@ -362,7 +363,7 @@ La replicación se coordina mediante ClickHouse Keeper. Este archivo de configur
 ```
 
 <div id="remote-clickhouse-servers">
-  #### Servidores remotos de ClickHouse {#remote-clickhouse-servers}
+  #### Servidores remotos de ClickHouse
 </div>
 
 Este archivo configura el hostname y el puerto de cada servidor de ClickHouse en el clúster. El archivo de configuración predeterminado contiene definiciones de clúster de ejemplo; para mostrar solo los clústeres que estén completamente configurados, se añade el atributo `replace="true"` a la entrada `remote_servers` para que, cuando esta configuración se fusione con la predeterminada, reemplace la sección `remote_servers` en lugar de añadirse a ella.
@@ -389,7 +390,7 @@ Este archivo configura el hostname y el puerto de cada servidor de ClickHouse en
 ```
 
 <div id="replica-identification">
-  #### Identificación de la réplica {#replica-identification}
+  #### Identificación de la réplica
 </div>
 
 Este archivo configura ajustes relacionados con la ruta de ClickHouse Keeper. En concreto, las macros que se usan para identificar a qué réplica pertenecen los datos. En un servidor, la réplica debe especificarse como `replica_1`, y en el otro servidor como `replica_2`. Los nombres pueden cambiarse; siguiendo nuestro ejemplo de una réplica almacenada en Carolina del Sur y la otra en el norte de Virginia, los valores podrían ser `carolina` y `virginia`; solo asegúrese de que sean diferentes en cada máquina.
@@ -408,7 +409,7 @@ Este archivo configura ajustes relacionados con la ruta de ClickHouse Keeper. En
 ```
 
 <div id="storage-in-gcs">
-  #### Almacenamiento en GCS {#storage-in-gcs}
+  #### Almacenamiento en GCS
 </div>
 
 La configuración de almacenamiento de ClickHouse incluye `disks` y `policies`. El disco que se configura a continuación se llama `gcs` y es de `type` `s3`. El tipo es `s3` porque ClickHouse accede al bucket de GCS como si fuera un bucket de AWS S3. Se necesitarán dos copias de esta configuración, una para cada uno de los nodos del servidor de ClickHouse.
@@ -458,7 +459,7 @@ Estas sustituciones son comunes a ambos nodos:
 ```
 
 <div id="start-clickhouse-keeper">
-  ### Iniciar ClickHouse Keeper {#start-clickhouse-keeper}
+  ### Iniciar ClickHouse Keeper
 </div>
 
 Utilice los comandos correspondientes a su sistema operativo; por ejemplo:
@@ -470,7 +471,7 @@ sudo systemctl status clickhouse-keeper
 ```
 
 <div id="check-clickhouse-keeper-status">
-  #### Comprobar el estado de ClickHouse Keeper {#check-clickhouse-keeper-status}
+  #### Comprobar el estado de ClickHouse Keeper
 </div>
 
 Envíe comandos a ClickHouse Keeper con `netcat`.  Por ejemplo, `mntr` devuelve el estado del clúster de ClickHouse Keeper.  Si ejecuta el comando en cada uno de los nodos de ClickHouse Keeper, verá que uno es el líder y los otros dos son seguidores:
@@ -502,7 +503,7 @@ zk_synced_followers     2
 ```
 
 <div id="start-clickhouse-server">
-  ### Iniciar el servidor de ClickHouse {#start-clickhouse-server}
+  ### Iniciar el servidor de ClickHouse
 </div>
 
 En `chnode1` y `chnode`, ejecute:
@@ -516,11 +517,11 @@ sudo service clickhouse-server status
 ```
 
 <div id="verification">
-  ### Verificación {#verification}
+  ### Verificación
 </div>
 
 <div id="verify-disk-configuration">
-  #### Verifique la configuración del disco {#verify-disk-configuration}
+  #### Verifique la configuración del disco
 </div>
 
 `system.disks` debe contener registros para cada disco:
@@ -588,7 +589,7 @@ cache_path:
 ```
 
 <div id="verify-that-tables-created-on-the-cluster-are-created-on-both-nodes">
-  #### Verifique que las tablas creadas en el clúster se hayan creado en ambos nodos {#verify-that-tables-created-on-the-cluster-are-created-on-both-nodes}
+  #### Verifique que las tablas creadas en el clúster se hayan creado en ambos nodos
 </div>
 
 ```sql highlight={1,18}
@@ -624,7 +625,7 @@ SETTINGS storage_policy='gcs_main'
 ```
 
 <div id="verify-that-data-can-be-inserted">
-  #### Verifique que se puedan insertar datos {#verify-that-data-can-be-inserted}
+  #### Verifique que se puedan insertar datos
 </div>
 
 ```sql
@@ -642,12 +643,12 @@ INSERT INTO trips SELECT
     tip_amount,
     total_amount,
     payment_type
-FROM s3('https://ch-nyc-taxi.s3.eu-west-3.amazonaws.com/tsv/trips_{0..9}.tsv.gz', NOSIGN, 'TabSeparatedWithNames')
+FROM s3('https://ch-nyc-taxi.s3.eu-west-3.amazonaws.com/tsv/trips_{0..9}.tsv.gz', 'TabSeparatedWithNames')
 LIMIT 1000000
 ```
 
 <div id="verify-that-the-storage-policy-gcs_main-is-used-for-the-table">
-  #### Verifique que la política de almacenamiento `gcs_main` se utilice para la tabla. {#verify-that-the-storage-policy-gcs_main-is-used-for-the-table}
+  #### Verifique que la política de almacenamiento `gcs_main` se utilice para la tabla.
 </div>
 
 ```sql
@@ -675,23 +676,19 @@ formatReadableSize(total_bytes): 36.42 MiB
 ```
 
 <div id="verify-in-google-cloud-console">
-  #### Verificar en la Consola de Google Cloud {#verify-in-google-cloud-console}
+  #### Verificar en la Consola de Google Cloud
 </div>
 
 Al examinar los buckets, verá que se creó una carpeta en cada bucket con el nombre usado en el archivo de configuración `storage.xml`. Expanda las carpetas y verá muchos archivos que representan las particiones de datos.
 
-#### Bucket de la réplica 1 {#bucket-for-replica-one}
-
-<div className="ch-image-lg">
-  <Frame>
-    ![Bucket de la réplica 1 en Google Cloud Storage con la estructura de carpetas y las particiones de datos](/images/integrations/data-ingestion/s3/GCS-examine-bucket-1.webp)
-  </Frame>
+<div id="bucket-for-replica-one">
+  #### Bucket de la réplica 1
 </div>
 
-#### Bucket para la réplica dos {#bucket-for-replica-two}
+<Image img="/images/integrations/data-ingestion/s3/GCS-examine-bucket-1.webp" size="lg" border alt="Bucket de la réplica 1 en Google Cloud Storage con la estructura de carpetas y las particiones de datos" />
 
-<div className="ch-image-lg">
-  <Frame>
-    ![Bucket de la segunda réplica en Google Cloud Storage que muestra la estructura de carpetas con particiones de datos](/images/integrations/data-ingestion/s3/GCS-examine-bucket-2.webp)
-  </Frame>
+<div id="bucket-for-replica-two">
+  #### Bucket para la réplica dos
 </div>
+
+<Image img="/images/integrations/data-ingestion/s3/GCS-examine-bucket-2.webp" size="lg" border alt="Bucket de la segunda réplica en Google Cloud Storage que muestra la estructura de carpetas con particiones de datos" />

@@ -15,12 +15,12 @@ doc_type: 'reference'
 ```sql
 cume_dist ()
   OVER ([[PARTITION BY grouping_column] [ORDER BY sorting_column]
-        | [window_name])
+        [RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING]] | [window_name])
 FROM table_name
-WINDOW window_name as ([PARTITION BY grouping_column] [ORDER BY sorting_column])
+WINDOW window_name as ([PARTITION BY grouping_column] [ORDER BY sorting_column] RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)
 ```
 
-تقرأ الدالة دائمًا التقسيم بأكمله؛ ويتم تجاهل إطار النافذة إن تم تحديده.
+التعريف الافتراضي والإلزامي لـ `إطار النافذة` هو `RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING`.
 
 لمزيد من التفاصيل حول بنية `window function`، راجع: [دوال النافذة - البنية](/ar/reference/functions/window-functions/index#syntax).
 

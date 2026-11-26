@@ -9,30 +9,29 @@ doc_type: 'guide'
 keywords: ['catálogos de dados', 'lago de dados', 'iceberg', 'unity catalog', 'glue', 'delta lake', 'onelake', 'polaris', 'biglake', 'clickhouse cloud']
 ---
 
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
 import { BetaBadge } from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
 
 <BetaBadge />
 
 Conecte o ClickHouse Cloud aos seus catálogos de dados para acessar tabelas no formato de tabela aberto. Você pode configurar conexões na UI de **Fontes de dados**. Para configurar via SQL, use o motor de banco de dados [`DataLakeCatalog`](/pt-BR/reference/engines/database-engines/datalake) no editor SQL de sua preferência.
 
-<div className="ch-image-md">
-  <Frame>
-    ![Interface do ClickHouse Cloud com integrações de catálogos de dados](/images/cloud/features/data-catalogs-ui.png)
-  </Frame>
+<Image img="/images/cloud/features/data-catalogs-ui.png" size="md" alt="UI do ClickHouse Cloud com integrações de catálogos de dados" />
+
+Após a conexão, as tabelas do catálogo aparecem no console SQL sob o nome do banco de dados escolhido. Você pode consultá-las usando o ClickHouse SQL padrão, fazer join com tabelas [MergeTree](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree) e usá-las como fontes para [visões materializadas](/pt-BR/concepts/features/materialized-views).
+
+<div id="prerequisites">
+  ## Pré-requisitos
 </div>
 
-Depois de conectadas, as tabelas do catálogo aparecem no SQL Console sob o nome do banco de dados que você escolher. Você pode consultá-las com SQL padrão do ClickHouse, fazer junções com tabelas [MergeTree](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree) e usá-las como fontes para [visões materializadas](/pt-BR/concepts/features/materialized-views).
-
-## Pré-requisitos {#prerequisites}
-
-Antes de conectar um catálogo, verifique o seguinte:
+Antes de conectar um catálogo, confirme o seguinte:
 
 * **Permissões do serviço.** Você precisa da permissão `control-plane:service:manage` para acessar a página **Fontes de dados** e adicionar catálogos.
-* **Serviço em execução.** Se o serviço estiver ocioso (idle), reative-o na página **Fontes de dados** ou nas páginas de configurações do serviço antes de conectar ou visualizar catálogos vinculados.
-* **Credenciais do catálogo.** Reúna os detalhes de conexão referentes ao tipo do seu catálogo antes de abrir o painel lateral. Cada catálogo usa campos e métodos de autenticação diferentes — consulte [Adicione a conexão do seu catálogo](#add-your-catalog-connection) abaixo.
+* **Serviço em execução.** Se o serviço estiver inativo, reative-o nas páginas **Fontes de dados** ou de configurações do serviço antes de conectar ou visualizar catálogos vinculados.
+* **Credenciais do catálogo.** Reúna as informações de conexão do seu tipo de catálogo antes de abrir o painel lateral. Cada catálogo usa campos e métodos de autenticação diferentes — consulte [Adicionar a conexão do seu catálogo](#add-your-catalog-connection) abaixo.
 
 <div id="connect-your-catalog">
-  ## Conecte seu catálogo {#connect-your-catalog}
+  ## Conecte seu catálogo
 </div>
 
 <Steps>
@@ -41,11 +40,7 @@ Antes de conectar um catálogo, verifique o seguinte:
     2. Clique em **+ Adicionar catálogo** se ainda não tiver configurado nenhuma fonte de dados. Caso contrário, clique em **Adicionar fonte de dados** &gt; **Adicionar catálogo do lago de dados**.
     3. No painel lateral **Conectar seu catálogo de dados**, selecione o catálogo no menu suspenso **Selecionar catálogo**. Se o catálogo oferecer suporte a vários formatos de tabela abertos, escolha o formato em **Formato de tabela aberto**.
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![Painel lateral Conectar seu catálogo de dados com o menu suspenso Selecionar catálogo exibindo AWS Glue, BigLake Metastore, Microsoft OneLake, Polaris, REST Catalog e Unity Catalog](/images/integrations/data-catalogs/catalog-flyout-select.png)
-      </Frame>
-    </div>
+    <Image img="/images/integrations/data-catalogs/catalog-flyout-select.png" alt="Painel lateral Conectar seu catálogo de dados com o menu suspenso Selecionar catálogo exibindo AWS Glue, BigLake Metastore, Microsoft OneLake, Polaris, REST Catalog e Unity Catalog" size="lg" />
   </Step>
 
   <Step title="Adicione a conexão com seu catálogo" id="add-your-catalog-connection">
@@ -203,29 +198,23 @@ Antes de conectar um catálogo, verifique o seguinte:
   </Step>
 </Steps>
 
-## Consulte seus dados {#query-data}
+<div id="query-data">
+  ## Consulte seus dados
+</div>
 
 <Steps>
   <Step title="Visualize as tabelas do seu catálogo" id="view-tables">
     Na página **Fontes de dados**, localize seu catálogo na tabela **Catálogos vinculados** e clique em **Visualizar tabelas**.
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![Tabela de catálogos vinculados com a ação Visualizar tabelas](/images/integrations/data-catalogs/linked-catalogs-table.png)
-      </Frame>
-    </div>
+    <Image img="/images/integrations/data-catalogs/linked-catalogs-table.png" alt="Tabela de catálogos vinculados com a ação Visualizar tabelas" size="lg" />
 
-    O ClickHouse abre o SQL Console com o banco de dados do catálogo selecionado e lista as tabelas disponíveis.
+    O ClickHouse abre o console SQL com o banco de dados do catálogo selecionado e lista as tabelas disponíveis.
 
     <Note>
       As tabelas podem não aparecer imediatamente após a conexão de um catálogo. Dependendo do catálogo, pode levar até 3 minutos para que todas as tabelas sejam listadas.
     </Note>
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![Navegador de tabelas do SQL Console mostrando as tabelas do catálogo](/images/integrations/data-catalogs/catalog-tables-browser.png)
-      </Frame>
-    </div>
+    <Image img="/images/integrations/data-catalogs/catalog-tables-browser.png" alt="Navegador de tabelas do console SQL mostrando as tabelas do catálogo" size="lg" />
   </Step>
 
   <Step title="Execute uma consulta" id="run-a-query">
@@ -235,21 +224,19 @@ Antes de conectar um catálogo, verifique o seguinte:
     SELECT * FROM `identity_profiles.identity_profiles_iceberg`
     ```
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![Consulta SQL com resultados usando backticks para nomes de tabela com pontos](/images/integrations/data-catalogs/catalog-sql-query.png)
-      </Frame>
-    </div>
+    <Image img="/images/integrations/data-catalogs/catalog-sql-query.png" alt="Consulta SQL com resultados usando backticks para nomes de tabela com pontos" size="lg" />
   </Step>
 </Steps>
 
 <div id="troubleshooting">
-  ## Solução de problemas {#troubleshooting}
+  ## Solução de problemas
 </div>
 
 * Se suas tabelas não aparecerem no Console SQL: verifique as credenciais, o acesso à rede e os tipos de tabela no catálogo. Verifique se as tabelas que você espera encontrar estão em formatos de arquivo e de tabela compatíveis.
 
-## Veja também {#see-also}
+<div id="see-also">
+  ## Veja também
+</div>
 
 * [Acelerando analytics em dados de lakehouse](/pt-BR/guides/use-cases/data-warehousing/getting-started/accelerating-analytics) — carregue tabelas do catálogo no MergeTree para consultas recorrentes
-* [Como acessar dados Iceberg com segurança](/pt-BR/products/cloud/guides/data-sources/accessing-iceberg-data-securely) — configuração de IAM role para acesso ao Iceberg e ao Glue na AWS
+* [Acessando dados do Iceberg com segurança](/pt-BR/products/cloud/guides/data-sources/accessing-iceberg-data-securely) — configuração da IAM role para acessar o AWS Iceberg e o Glue

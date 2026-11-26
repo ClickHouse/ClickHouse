@@ -1,10 +1,9 @@
 ---
 slug: /use-cases/observability/clickstack/setting-up-your-opentelemetry-collector
-title: '设置 OpenTelemetry 采集器'
-sidebarTitle: '设置 OpenTelemetry 采集器'
-description: '为自管理版 ClickHouse Observability 设置 OpenTelemetry 采集器'
+title: '设置 OpenTelemetry Collector'
+description: '为托管 ClickStack 设置 OpenTelemetry Collector'
 doc_type: 'guide'
-keywords: ['clickstack', 'opentelemetry', 'collector', 'self-managed', 'ClickHouse Observability', 'gateway', 'telemetrygen']
+keywords: ['clickstack', 'opentelemetry', 'collector', 'managed', 'observability', 'gateway', 'telemetrygen']
 unlisted: true
 custom_edit_url: null
 hide_advert: true
@@ -15,15 +14,7 @@ import CreateIngestionUser from '/snippets/zh/clickstack/_create_ingestion_user.
 import ConfirmInUI from '/snippets/zh/clickstack/_confirm_in_ui.mdx';
 import { AgentPrompt } from '/snippets/zh/components/AgentPrompt/AgentPrompt.jsx';
 
-<Note>
-  **你正在使用自管理路线**
-
-  你已选择通过[自管理体验](/zh/clickstack/self-configured/overview)自行设置 ClickHouse Observability。在此路线中，你需要自行运行 OpenTelemetry 采集器、管理向 ClickHouse Cloud 服务的数据摄取、调优 schema，并借助仓库将摄取与查询工作负载相互隔离。请参阅 [OpenTelemetry 采集器](/zh/clickstack/self-configured/ingesting-data/collector)、[性能调优](/zh/clickstack/self-configured/managing/performance-tuning)以及[隔离读写工作负载](/zh/clickstack/self-configured/managing/isolating-read-write)。
-
-  更希望使用无服务器体验，由 ClickHouse 为你处理摄取、schema 和计算资源？请改用默认的 ClickHouse Observability 体验，并按照[入门指南](/zh/clickstack/observability/getting-started)操作。
-</Note>
-
-本指南将指导你针对现有的 ClickHouse Observability 服务部署 OpenTelemetry 采集器，或调整你现有的采集器配置，然后验证数据是否已开始流转。在自管理体验中，你需要自行运行此采集器：它接收来自应用程序和 agent 的 OTLP 数据，并将其写入你的 ClickHouse Cloud 服务。
+本指南将指导你针对现有的托管 ClickStack 服务部署 OpenTelemetry collector，或调整你现有的 collector 配置，然后验证数据是否已开始流转。
 
 在使用设置助手前，请先安装官方 ClickHouse agent skills：
 
@@ -31,34 +22,26 @@ import { AgentPrompt } from '/snippets/zh/components/AgentPrompt/AgentPrompt.jsx
 npx skills add clickhouse/agent-skills
 ```
 
-如果你已安装 [`clickhousectl`](/zh/concepts/features/interfaces/cli)，也可以改用它，将相同的技能安装到它检测到的编程智能体中：
-
-```bash
-clickhousectl skills --detected-only
-```
-
-如需仅针对某一个智能体安装，请传入 `--agent` (例如 `--agent claude`) 。添加 `--global` 可安装到你的主目录，而不是当前项目中。
-
 <AgentPrompt
-  prompt="使用 clickstack-otel-collector 技能将 OpenTelemetry collector 接入我的 Self-managed ClickHouse Observability 服务。"
+  prompt="使用 clickstack-otel-collector 技能将 OpenTelemetry collector 接入我的托管 ClickStack 服务。"
   description="你的智能体会为你设置 ClickStack OpenTelemetry collector。适用于 Claude Code、Cursor、Codex 及其他编程智能体。"
   repositoryUrl="https://github.com/ClickHouse/agent-skills"
   outline={[
-  "如果尚未安装 clickhousectl，则先进行安装，并检查其是否已使用 API key 完成身份验证（浏览器登录为只读模式，无法创建摄取用户）。如果尚未验证，会请你在单独的终端中、从同一项目目录下自行运行 clickhousectl cloud auth login --interactive（API key 会保存到该目录下的 .clickhouse/credentials.json）。切勿将 API key 密钥粘贴到聊天中。",
-  "询问目标 ClickHouse Cloud 服务的 ID 或名称，然后拉取其 HTTPS 端点。",
-  "在该服务上创建一个 hyperdx_ingest SQL 用户（生成一个高强度密码，或使用你提供的密码）。",
-  "在本地 Docker 中运行 ClickStack OpenTelemetry collector，并将其指向你的服务。",
-  "通过 collector 发送一小批模拟的 日志、traces 和 指标，以验证管道工作正常。",
-  "确认数据已写入 otel 数据库，并将可查看这些数据的 ClickStack UI URL 提供给你。"
-  ]}
+"如果尚未安装 clickhousectl，请先安装并完成身份验证（会提示你提供 ClickHouse Cloud API key——可直接粘贴到聊天中，或自行运行登录命令）。",
+"询问目标 ClickHouse Cloud 服务的 ID 或名称，然后拉取其 HTTPS 端点。",
+"在该服务上创建一个 hyperdx_ingest SQL 用户（生成一个高强度密码，或使用你提供的密码）。",
+"在本地 Docker 中运行 ClickStack OpenTelemetry collector，并将其指向你的服务。",
+"通过 collector 发送一小批模拟的 logs、traces 和 metrics，以验证管道工作正常。",
+"确认数据已写入 otel 数据库，并将可查看这些数据的 ClickStack UI URL 提供给你。"
+]}
 />
 
-该采集器以 **gateway** 角色运行：提供一个统一的 OTLP 端点，供应用程序、SDK 以及 agent 采集器将数据发送到这里。gateway 会将事件整理成批次，应用你已配置的处理逻辑，并通过 [ClickHouse exporter](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/clickhouseexporter) 将其写入 ClickHouse。这样可以将采集逻辑从应用程序代码中解耦出来，并让你能够独立于产生数据的工作负载单独扩展摄取能力。有关 gateway 与 agent 角色的更多背景信息，请参阅 [采集器 roles](/zh/clickstack/self-configured/ingesting-data/collector#collector-roles-self-configured)。
+该 collector 以 **gateway** 角色运行：提供一个统一的 OTLP 端点，供应用程序、SDK 以及 agent collector 将数据发送到这里。gateway 会将事件整理成批次，应用你已配置的处理逻辑，并通过 [ClickHouse exporter](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/clickhouseexporter) 将其写入 ClickHouse。这样可以将采集逻辑从应用程序代码中解耦出来，并让你能够独立于产生数据的 workloads 单独扩展摄取能力。有关 gateway 与 agent 角色的更多背景信息，请参阅 [Collector roles](/zh/clickstack/ingesting-data/collector#collector-roles)。
 
 <Info>
-  **现有采集器**
+  **现有 collector**
 
-  如果你使用的是现有 OpenTelemetry 采集器，我们假定它已经配置为 **gateway** 角色。我们不建议使用此流程重新配置承担 **agent** 角色的采集器。
+  如果你使用的是现有 OpenTelemetry collector，我们假定它已经配置为 **gateway** 角色。我们不建议使用此流程重新配置承担 **agent** 角色的 collector。
 </Info>
 
 请选择与你当前情况对应的选项卡：
@@ -75,7 +58,7 @@ clickhousectl skills --detected-only
       </Step>
 
       <Step title="部署 collector" id="deploy-the-collector">
-        部署**ClickStack 版 OpenTelemetry Collector**，它已预先针对 ClickHouse Observability 完成配置。在下面的示例中，为了简化操作，我们在本地运行 collector，并在同一台机器上生成人工遥测数据。
+        部署**ClickStack 版 OpenTelemetry Collector**，它已预先针对托管 ClickStack 完成配置。在下面的示例中，为了简化操作，我们在本地运行 collector，并在同一台机器上生成人工遥测数据。
 
         <Note>
           在生产环境中，通常会将 collector 部署在 Kubernetes 集群中，或部署在你的 OpenTelemetry SDKs、agent 以及其他 collector 可访问的虚拟机上。这样就可以集中收集整个环境中的遥测数据，并将其转发到 ClickStack。
@@ -109,7 +92,7 @@ clickhousectl skills --detected-only
         <Info>
           **生产部署**
 
-          在生产环境中，我们建议为 OTLP 端点启用 TLS。请参阅[保护 collector](/zh/clickstack/self-configured/ingesting-data/collector#securing-the-collector-self-configured)。
+          在生产环境中，我们建议为 OTLP 端点启用 TLS。请参阅[保护 collector](/zh/clickstack/ingesting-data/collector#securing-the-collector)。
         </Info>
       </Step>
 
@@ -200,7 +183,7 @@ clickhousectl skills --detected-only
           ```
         </Accordion>
 
-        如需完整的标志列表及更多用法变体，请参阅 [使用 telemetrygen 生成合成数据](/zh/clickstack/observability/example-datasets/telemetrygen#self-managed)。
+        如需完整的标志列表及更多用法变体，请参阅 [使用 telemetrygen 生成合成数据](/zh/clickstack/example-datasets/telemetrygen)。
       </Step>
 
       <Step title="在 ClickStack UI 中确认" id="confirm-in-ui">
@@ -215,12 +198,12 @@ clickhousectl skills --detected-only
         <GatherCredentials />
       </Step>
 
-      <Step title="创建一个摄取用户" id="create-ingestion-user-existing">
+      <Step title="创建摄取用户" id="create-ingestion-user-existing">
         <CreateIngestionUser />
       </Step>
 
       <Step title="调整 collector 配置" id="adapt-collector">
-        扩展现有的 collector 配置，使其通过 [ClickHouse exporter](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/clickhouseexporter) 将数据写入您的 ClickHouse Observability 服务。
+        扩展现有的 collector 配置，使其通过 [ClickHouse exporter](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/clickhouseexporter) 将数据写入托管 ClickStack。
 
         <Info>
           **需要 ClickHouse exporter**
@@ -320,7 +303,7 @@ clickhousectl skills --detected-only
 
         使用新配置重新加载 collector。之后，应用程序、SDK 和 agent collector 应将数据发送到 collector 暴露的 OTLP 端点，并携带你的配置所要求的身份验证请求头。
 
-        有关针对 ClickHouse Observability 配置 OpenTelemetry collectors 的更多详细信息，请参阅 [使用 OpenTelemetry 摄取数据](/zh/clickstack/observability/ingesting-data/opentelemetry#self-managed)。
+        有关针对托管 ClickStack 配置 OpenTelemetry collectors 的更多详细信息，请参阅 [使用 OpenTelemetry 进行摄取](/zh/clickstack/ingesting-data/opentelemetry)。
       </Step>
 
       <Step title="验证端点" id="verify-the-endpoint-existing">
@@ -410,7 +393,7 @@ clickhousectl skills --detected-only
           ```
         </Accordion>
 
-        如需完整的标志列表及更多用法变体，请参阅 [使用 telemetrygen 生成合成数据](/zh/clickstack/observability/example-datasets/telemetrygen#self-managed)。
+        如需完整的标志列表及更多用法变体，请参阅 [使用 telemetrygen 生成合成数据](/zh/clickstack/example-datasets/telemetrygen)。
       </Step>
 
       <Step title="在 ClickStack UI 中确认" id="confirm-in-ui-existing">
@@ -420,22 +403,26 @@ clickhousectl skills --detected-only
   </Tab>
 </Tabs>
 
-## 后续步骤：发送你自己的数据 {#next-steps}
+<div id="next-steps">
+  ## 后续步骤：发送你自己的数据
+</div>
 
-上面的模拟突发流量只能证明这条管道可以正常工作。要开始发送真实的遥测数据，请使用 [ClickStack SDKs](/zh/clickstack/observability/ingesting-data/sdks) 为你自己的服务添加监测埋点。它们为 Node.js、Python、Go、Java 以及其他语言提供 instrumentation，并将 OTLP 导出到你刚刚验证过的采集器端点。完整的实操作示例请参见 [为应用程序添加监测埋点](/zh/clickstack/self-configured/managed-onboarding/instrument-application)。
+上面的模拟突发流量只能证明这条管道可以正常工作。要开始发送真实的遥测数据，请使用 [ClickStack SDKs](/zh/clickstack/ingesting-data/sdks/index) 为你自己的服务添加监测埋点。它们为 Node.js、Python、Go、Java 以及其他语言提供 instrumentation，并将 OTLP 导出到你刚刚验证过的 collector 端点。完整的实操作示例请参见 [为应用程序添加监测埋点](/zh/clickstack/managed-onboarding/instrument-application)。
 
 如果要采集基础设施数据而不是应用程序代码中的数据：
 
-* [监控 Kubernetes](/zh/clickstack/self-configured/managed-onboarding/monitoring-kubernetes)：从集群中收集日志、基础设施指标和 Kubernetes 事件。
-* [监控 AWS CloudWatch 日志](/zh/clickstack/self-configured/managed-onboarding/monitoring-aws-cloudwatch-logs)：通过 OpenTelemetry CloudWatch 接收器转发 CloudWatch 日志。
+* [监控 Kubernetes](/zh/clickstack/managed-onboarding/monitoring-kubernetes)：从集群中收集日志、基础设施指标和 Kubernetes 事件。
+* [监控 AWS CloudWatch 日志](/zh/clickstack/managed-onboarding/monitoring-aws-cloudwatch-logs)：通过 OpenTelemetry CloudWatch receiver 转发 CloudWatch 日志。
 
-## 延伸阅读 {#further-reading}
+<div id="further-reading">
+  ## 延伸阅读
+</div>
 
-本指南仅介绍了最简形式下的单个采集器实例。后续步骤请参阅 [OpenTelemetry 采集器参考文档](/zh/clickstack/self-configured/ingesting-data/collector)：
+本指南介绍了最简单形式的单个 collector 实例。[OpenTelemetry collector 参考](/zh/clickstack/ingesting-data/collector)介绍了接下来可以做什么：
 
-* 使用上游 OpenTelemetry Helm 图表和 ClickStack 采集器镜像[在 Kubernetes 中部署采集器](/zh/clickstack/self-configured/ingesting-data/collector#configuring-the-collector-self-configured)。
-* 在 OTLP 端点上启用 TLS，并使用最小特权的摄取用户来[保护采集器](/zh/clickstack/self-configured/ingesting-data/collector#securing-the-collector-self-configured)。
-* 在 gateway 上对事件进行[处理、过滤和富化](/zh/clickstack/self-configured/ingesting-data/collector#processing-filtering-transforming-enriching-self-configured)。
-* 通过自定义接收器、处理器和流水线[修改采集器配置](/zh/clickstack/self-configured/ingesting-data/collector#modifying-otel-collector-configuration-managed-self-configured)。
-* 根据预期吞吐量为 gateway 和 agent 部署[估算资源](/zh/clickstack/self-configured/ingesting-data/collector#estimating-resources-self-configured)。
-* [投入生产环境](/zh/clickstack/self-configured/managing/production)
+* 使用上游 OpenTelemetry Helm 图表和 ClickStack collector 镜像，[在 Kubernetes 中部署 collector](/zh/clickstack/ingesting-data/collector#configuring-the-collector)。
+* 通过在 OTLP 端点上启用 TLS，并使用遵循最小权限原则的摄取用户，[保护 collector](/zh/clickstack/ingesting-data/collector#securing-the-collector)。
+* 在 gateway 处对事件进行[处理、过滤和富化](/zh/clickstack/ingesting-data/collector#processing-filtering-transforming-enriching)。
+* 使用自定义 receivers、处理器和管道，[扩展 collector 配置](/zh/clickstack/ingesting-data/collector#extending-collector-config)。
+* 根据预期吞吐量，为 gateway 和 agent 部署[估算资源](/zh/clickstack/ingesting-data/collector#estimating-resources)。
+* [投入生产环境](/zh/clickstack/managing/production)

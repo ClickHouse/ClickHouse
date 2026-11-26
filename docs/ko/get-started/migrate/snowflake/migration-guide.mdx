@@ -8,6 +8,8 @@ show_related_blogs: false
 doc_type: 'guide'
 ---
 
+import { Image } from "/snippets/ko/components/Image.jsx";
+
 > 이 가이드에서는 Snowflake에서 ClickHouse로 데이터를 마이그레이션하는 방법을 설명합니다.
 
 Snowflake와 ClickHouse 간 데이터 마이그레이션에는
@@ -17,11 +19,7 @@ Snowflake의 `COPY INTO` 명령과 ClickHouse의 `INSERT INTO SELECT`
 
 <Steps>
   <Step title="Snowflake에서 데이터 내보내기" id="1-exporting-data-from-snowflake">
-    <div className="ch-image-md">
-      <Frame>
-        ![Snowflake에서 ClickHouse로 마이그레이션](/images/migrations/migrate_snowflake_clickhouse.webp)
-      </Frame>
-    </div>
+    <Image img="/images/migrations/migrate_snowflake_clickhouse.webp" size="md" alt="Snowflake에서 ClickHouse로 마이그레이션" />
 
     Snowflake에서 데이터를 내보내려면 위 다이어그램에 표시된 것처럼 외부 스테이지를 사용해야 합니다.
 
@@ -101,7 +99,7 @@ Snowflake의 `COPY INTO` 명령과 ClickHouse의 `INSERT INTO SELECT`
 
       원래 Snowflake 테이블 스키마의 `VARIANT` 및 `OBJECT` 컬럼은 기본적으로 JSON 문자열로 출력되므로, 이를 ClickHouse에 삽입할 때 형 변환해야 합니다.
 
-      `some_file`과 같은 중첩 구조는 Snowflake에서 복사 시 JSON 문자열로 변환됩니다. 이 데이터를 가져오려면 위에 표시된 것처럼 [JSONExtract 함수](/ko/reference/functions/regular-functions/json-functions#JSONExtract)를 사용해 ClickHouse의 삽입 시점에 이러한 구조를 튜플로 변환해야 합니다.
+      `some_file`과 같은 중첩 구조는 Snowflake에서 복사 시 JSON 문자열로 변환됩니다. 이 데이터를 가져오려면 위에 표시된 것처럼 [JSONExtract function](/ko/reference/functions/regular-functions/json-functions#JSONExtract)을 사용해 ClickHouse의 삽입 시점에 이러한 구조를 튜플로 변환해야 합니다.
     </Info>
   </Step>
 

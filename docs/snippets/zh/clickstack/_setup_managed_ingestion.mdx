@@ -6,7 +6,7 @@ import ManagedIngestionExampleOtelConfig from '/snippets/zh/clickstack/_config_e
 
 <img src="/images/clickstack/getting-started/start_ingestion.webp" alt="" />
 
-选择“开始摄取”后，系统会提示你选择摄取源。该服务主要支持 OpenTelemetry 和 [Vector](https://vector.dev/) 作为摄取源。不过，用户也可以借助任意 [ClickHouse Cloud 支持的集成](/zh/integrations/home)，按自己的 schema 将数据直接发送到 ClickHouse。
+选择“开始摄取”后，系统会提示你选择摄取源。托管 ClickStack 主要支持 OpenTelemetry 和 [Vector](https://vector.dev/) 作为摄取源。不过，用户也可以借助任意 [ClickHouse Cloud 支持的集成](/zh/integrations/home)，按自己的 schema 将数据直接发送到 ClickHouse。
 
 <img src="/images/clickstack/getting-started/select_source.webp" alt="" />
 
@@ -19,11 +19,11 @@ import ManagedIngestionExampleOtelConfig from '/snippets/zh/clickstack/_config_e
 
 <Tabs>
   <Tab title="OpenTelemetry">
-    要将 OpenTelemetry 数据发送到该服务，建议使用 OpenTelemetry Collector。该 collector 充当网关，接收来自应用程序 (以及其他 collector) 的 OpenTelemetry 数据，并将其转发到 ClickHouse Cloud。
+    要将 OpenTelemetry 数据发送到托管 ClickStack，建议使用 OpenTelemetry Collector。该 collector 充当网关，接收来自应用程序 (以及其他 collector) 的 OpenTelemetry 数据，并将其转发到 ClickHouse Cloud。
 
     如果你还没有运行中的 collector，请按照以下步骤启动一个。如果你已有现成的 collector，也提供了一个配置示例。
 
-### 启动一个 collector {#start-a-collector}
+    ### 启动一个 collector
 
     以下内容假定你采用推荐方式，即使用 **ClickStack 发行版的 OpenTelemetry Collector**。它包含额外的处理能力，并专门针对 ClickHouse Cloud 进行了优化。如果你想使用自己的 OpenTelemetry Collector，请参阅[“配置现有 collector。”](#configure-existing-collectors)
 
@@ -36,12 +36,12 @@ import ManagedIngestionExampleOtelConfig from '/snippets/zh/clickstack/_config_e
     <Info>
       **部署到生产环境**
 
-      虽然此命令使用 `default` 用户连接到该服务，但在[进入生产环境](/zh/clickstack/self-configured/managing/production#create-a-database-ingestion-user-managed)并修改配置时，你应创建一个专用用户。
+      虽然此命令使用 `default` 用户连接到托管 ClickStack，但在[进入生产环境](/zh/clickstack/managing/production#create-a-database-ingestion-user-managed)并修改配置时，你应创建一个专用用户。
     </Info>
 
     运行这一条命令即可启动 ClickStack collector，并在 4317 (gRPC) 和 4318 (HTTP) 端口上开放 OTLP 端点。如果你已经有 OpenTelemetry 插桩和 agent，就可以立即开始将遥测数据发送到这些端点。
 
-### 配置现有 collector {#configure-existing-collectors}
+    ### 配置现有 collector
 
     你也可以配置自己现有的 OpenTelemetry Collectors，或使用你自己的 collector 发行版。
 
@@ -57,22 +57,22 @@ import ManagedIngestionExampleOtelConfig from '/snippets/zh/clickstack/_config_e
 
     <img src="/images/clickstack/getting-started/otel_collector_start.webp" alt="" />
 
-    有关配置 OpenTelemetry collector 的更多详细信息，请参阅[“使用 OpenTelemetry 进行摄取。”](/zh/clickstack/self-configured/ingesting-data/collector)
+    有关配置 OpenTelemetry collector 的更多详细信息，请参阅[“使用 OpenTelemetry 进行摄取。”](/zh/clickstack/ingesting-data/opentelemetry)
 
-### 开始摄取 (可选) {#start-ingestion-optional}
+    ### 开始摄取 (可选)
 
     如果你已有需要通过 OpenTelemetry 进行插桩的应用程序或基础设施，请前往 UI 中链接的相关指南。
 
-    要为应用程序添加插桩以收集链路追踪和日志，请按照[语言 SDK 指南](/zh/clickstack/observability/ingesting-data/sdks/index)中的自管理说明进行操作。这些 SDK 会将数据发送到充当网关的 OpenTelemetry Collector，以摄取到该服务中。
+    要为应用程序添加插桩以收集链路追踪和日志，请使用[受支持的语言 SDKs](/zh/clickstack/ingesting-data/sdks/index)。它们会将数据发送到充当网关的 OpenTelemetry Collector，以摄取到托管 ClickStack 中。
 
-    日志可以通过以 agent 模式运行的 [OpenTelemetry Collectors 进行收集](/zh/clickstack/observability/integration-examples/host-logs#self-managed)，并将数据转发到同一个 collector。对于 Kubernetes 监控，请遵循[专门指南](/zh/clickstack/observability/integration-examples/kubernetes#self-managed)。对于其他集成，请参阅我们的[快速入门指南](/zh/clickstack/observability/integration-examples/index)。
+    日志可以通过以 agent 模式运行的 [OpenTelemetry Collectors 进行收集](/zh/clickstack/integration-examples/host-logs)，并将数据转发到同一个 collector。对于 Kubernetes 监控，请遵循[专门指南](/zh/clickstack/integration-examples/kubernetes)。对于其他集成，请参阅我们的[快速入门指南](/zh/clickstack/integration-examples/index)。
 
-### 演示数据 {#demo-data}
+    ### 演示数据
 
     或者，如果你没有现成数据，可以试试我们的样本数据集之一。
 
-    * [示例数据集](/zh/clickstack/observability/example-datasets/sample-data#self-managed) - 从我们的公开演示中加载一个示例数据集，诊断一个简单问题。
-    * [本地文件和指标](/zh/clickstack/observability/example-datasets/local-data#self-managed) - 使用本地 OTel collector 加载本地文件，并在 OSX 或 Linux 上监控系统。
+    * [示例数据集](/zh/clickstack/example-datasets/sample-data) - 从我们的公开演示中加载一个示例数据集，诊断一个简单问题。
+    * [本地文件和指标](/zh/clickstack/example-datasets/local-data) - 使用本地 OTel collector 加载本地文件，并在 OSX 或 Linux 上监控系统。
 
     <br />
   </Tab>
@@ -85,12 +85,12 @@ import ManagedIngestionExampleOtelConfig from '/snippets/zh/clickstack/_config_e
     <Info>
       **必须提供时间戳**
 
-      对于该服务，唯一的硬性要求是数据中包含一个**时间戳列** (或等效的时间字段) ，这可以在 ClickStack UI 中配置数据源时声明。
+      对于托管 ClickStack，唯一的硬性要求是数据中包含一个**时间戳列** (或等效的时间字段) ，这可以在 ClickStack UI 中配置数据源时声明。
     </Info>
 
     以下内容假设你已经有一个正在运行的 Vector 实例，并且已预先配置好摄取管道来传送数据。
 
-### 创建数据库和表 {#create-a-database-and-table}
+    ### 创建数据库和表
 
     Vector 要求在摄取数据之前先定义好表和 schema。
 
@@ -126,13 +126,13 @@ import ManagedIngestionExampleOtelConfig from '/snippets/zh/clickstack/_config_e
 
     你的表必须与 Vector 生成的输出 schema 保持一致。请根据你的数据按需调整 schema，并遵循推荐的 [schema 最佳实践](/zh/concepts/best-practices/select-data-type)。
 
-    我们强烈建议你了解 [Primary keys](/zh/concepts/core-concepts/primary-indexes) 在 ClickHouse 中的工作原理，并根据你的访问模式选择排序键。有关如何选择主键，请参阅 [ClickStack-specific](/zh/clickstack/self-configured/managing/performance-tuning#choosing-a-primary-key) 指南。
+    我们强烈建议你了解 [Primary keys](/zh/concepts/core-concepts/primary-indexes) 在 ClickHouse 中的工作原理，并根据你的访问模式选择排序键。有关如何选择主键，请参阅 [ClickStack-specific](/zh/clickstack/managing/performance-tuning#choosing-a-primary-key) 指南。
 
     表创建完成后，复制所示的配置代码片段。按需调整输入以接入你现有的管道，并在需要时修改目标表和数据库。credentials 应已预先填充。
 
     <img src="/images/clickstack/getting-started/vector_config.webp" alt="" />
 
-    有关使用 Vector 摄取数据的更多示例，请参阅 [&quot;使用 Vector 摄取数据&quot;](/zh/clickstack/observability/ingesting-data/vector#self-managed)，或查看 [Vector ClickHouse sink documentation](https://vector.dev/docs/reference/configuration/sinks/clickhouse/) 了解高级选项。
+    有关使用 Vector 摄取数据的更多示例，请参阅 [&quot;使用 Vector 摄取数据&quot;](/zh/clickstack/ingesting-data/vector)，或查看 [Vector ClickHouse sink documentation](https://vector.dev/docs/reference/configuration/sinks/clickhouse/) 了解高级选项。
 
     <br />
   </Tab>

@@ -19,27 +19,33 @@ Ce guide intègre les éléments suivants :
 
 Le guide suivant suppose que vous avez déployé un [ClickStack OTel collector comme gateway](/fr/clickstack/ingesting-data/collector), sécurisé avec une clé API d’ingestion.
 
-## Création des fichiers de configuration du chart Helm OTel {#creating-the-otel-helm-chart-config-files}
+<div id="creating-the-otel-helm-chart-config-files">
+  ## Création des fichiers de configuration du chart Helm OTel
+</div>
 
 Pour collecter les logs et les métriques sur chaque nœud ainsi qu&#39;au niveau du cluster lui-même, il faudra déployer deux collecteurs OpenTelemetry distincts. L&#39;un sera déployé sous forme de DaemonSet pour collecter les logs et les métriques de chaque nœud, et l&#39;autre sous forme de déploiement pour collecter les logs et les métriques du cluster lui-même.
 
-### Création d’un secret de clé API {#create-api-key-secret}
+<div id="create-api-key-secret">
+  ### Création d’un secret de clé API
+</div>
 
-Créez un nouveau secret Kubernetes avec la [clé API d’ingestion](/fr/clickstack/ingesting-data/opentelemetry#sending-otel-data) depuis l’interface utilisateur de ClickStack. Elle sera utilisée par les composants installés ci-dessous pour ingérer des données en toute sécurité dans votre ClickStack OTel collector :
+Créez un nouveau secret Kubernetes avec la [clé API d’ingestion](/fr/clickstack/ingesting-data/opentelemetry#sending-otel-data) de HyperDX. Elle sera utilisée par les composants installés ci-dessous pour ingérer des données en toute sécurité dans votre ClickStack OTel collector :
 
 ```shell
 kubectl create secret generic hyperdx-secret \
 --from-literal=HYPERDX_API_KEY=<ingestion_api_key> \
 ```
 
-De plus, créez une ConfigMap contenant l’emplacement de votre ClickStack OTel collector :
+De plus, créez une ConfigMap contenant l’emplacement de votre ClickStack OTel collector :
 
 ```shell
 kubectl create configmap -n=otel-demo otel-config-vars --from-literal=YOUR_OTEL_COLLECTOR_ENDPOINT=<OTEL_COLLECTOR_ENDPOINT>
 # e.g. kubectl create configmap -n=otel-demo otel-config-vars --from-literal=YOUR_OTEL_COLLECTOR_ENDPOINT=http://my-hyperdx-hdx-oss-v2-otel-collector:4318
 ```
 
-### Création de la configuration du DaemonSet {#creating-the-daemonset-configuration}
+<div id="creating-the-daemonset-configuration">
+  ### Création de la configuration du DaemonSet
+</div>
 
 Le DaemonSet collectera les logs et les métriques de chaque nœud du cluster, mais pas les événements Kubernetes ni les métriques à l’échelle du cluster.
 
@@ -249,7 +255,9 @@ curl -O https://raw.githubusercontent.com/ClickHouse/clickhouse-docs/refs/heads/
   </Tab>
 </Tabs>
 
-### Création de la configuration du déploiement {#creating-the-deployment-configuration}
+<div id="creating-the-deployment-configuration">
+  ### Création de la configuration du déploiement
+</div>
 
 Pour collecter les événements Kubernetes et les métriques de l’ensemble du cluster, nous devrons déployer un collecteur OpenTelemetry distinct sous forme de déploiement.
 
@@ -383,17 +391,19 @@ curl -O https://raw.githubusercontent.com/ClickHouse/clickhouse-docs/refs/heads/
   </Tab>
 </Tabs>
 
-## Déployer le Collecteur OpenTelemetry {#deploying-the-otel-collector}
+<div id="deploying-the-otel-collector">
+  ## Déployer le collecteur OpenTelemetry
+</div>
 
-Le Collecteur OpenTelemetry peut désormais être déployé dans votre cluster Kubernetes à l’aide du [chart Helm OpenTelemetry](https://github.com/open-telemetry/opentelemetry-helm-charts/tree/main/charts/opentelemetry-collector).
+Le collecteur OpenTelemetry peut désormais être déployé dans votre cluster Kubernetes à l’aide du [chart Helm OpenTelemetry](https://github.com/open-telemetry/opentelemetry-helm-charts/tree/main/charts/opentelemetry-collector).
 
-Ajoutez le dépôt Helm OpenTelemetry :
+Ajoutez le dépôt Helm OpenTelemetry :
 
 ```shell
 helm repo add open-telemetry https://open-telemetry.github.io/opentelemetry-helm-charts # Add OTel Helm repo
 ```
 
-Installez le chart à l’aide de la configuration ci-dessus :
+Installez le chart à l’aide de la configuration ci-dessus :
 
 ```shell copy
 helm install my-opentelemetry-collector-deployment open-telemetry/opentelemetry-collector -f k8s_deployment.yaml
@@ -401,9 +411,11 @@ helm install my-opentelemetry-collector-daemonset open-telemetry/opentelemetry-c
 ```
 
 Désormais, les métriques, les logs et les événements Kubernetes de votre cluster Kubernetes devraient
-désormais apparaître dans l’interface utilisateur de ClickStack.
+désormais apparaître dans HyperDX.
 
-## Transmission des tags de ressource aux pods (recommandé) {#forwarding-resouce-tags-to-pods}
+<div id="forwarding-resouce-tags-to-pods">
+  ## Transmission des tags de ressource aux pods (recommandé)
+</div>
 
 Pour corréler les logs, les métriques et les traces au niveau de l’application avec les métadonnées Kubernetes
 (par ex. le nom du pod, l’espace de noms, etc.), vous devrez transmettre les métadonnées Kubernetes

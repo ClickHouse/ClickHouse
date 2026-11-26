@@ -8,7 +8,9 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-データスキッピングインデックスは、これまでのベストプラクティス、つまり型の最適化、適切な主キーの選定、materialized view の活用をすでに行ったうえで検討すべきです。スキッピングインデックスに不慣れな場合は、まずは[このガイド](/ja/concepts/features/performance/skip-indexes/skipping-indexes)から始めるとよいでしょう。
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+データスキッピングインデックスは、これまでのベストプラクティス、つまり型の最適化、適切な主キーの選定、materialized view の活用をすでに行ったうえで検討すべきです。スキップ索引に不慣れな場合は、まずは[このガイド](/ja/concepts/features/performance/skip-indexes/skipping-indexes)から始めるとよいでしょう。
 
 この種の索引は、仕組みを理解したうえで慎重に使えば、クエリパフォーマンスの向上に役立ちます。
 
@@ -46,29 +48,31 @@ ClickHouse には、**データスキッピングインデックス**と呼ば�
 
 データスキッピングインデックス のより詳しいガイドは[こちら](/ja/reference/statements/alter/skipping-index)を参照してください。
 
-## 例 {#example}
+<div id="example">
+  ## 例
+</div>
 
 次の最適化されたテーブルを見てみましょう。このテーブルにはStack Overflowのデータが格納されており、投稿ごとに1行のレコードが含まれています。
 
 ```sql
 CREATE TABLE stackoverflow.posts
 (
-  `Id` Int32 CODEC(Delta, Default),
+  `Id` Int32 CODEC(Delta(4), ZSTD(1)),
   `PostTypeId` Enum8('Question' = 1, 'Answer' = 2, 'Wiki' = 3, 'TagWikiExcerpt' = 4, 'TagWiki' = 5, 'ModeratorNomination' = 6, 'WikiPlaceholder' = 7, 'PrivilegeWiki' = 8),
   `AcceptedAnswerId` UInt32,
   `CreationDate` DateTime64(3, 'UTC'),
   `Score` Int32,
-  `ViewCount` UInt32 CODEC(Delta, Default),
+  `ViewCount` UInt32 CODEC(Delta(4), ZSTD(1)),
   `Body` String,
   `OwnerUserId` Int32,
   `OwnerDisplayName` String,
   `LastEditorUserId` Int32,
   `LastEditorDisplayName` String,
-  `LastEditDate` DateTime64(3, 'UTC') CODEC(Delta, Default),
+  `LastEditDate` DateTime64(3, 'UTC') CODEC(Delta(8), ZSTD(1)),
   `LastActivityDate` DateTime64(3, 'UTC'),
   `Title` String,
   `Tags` String,
-  `AnswerCount` UInt16 CODEC(Delta, Default),
+  `AnswerCount` UInt16 CODEC(Delta(2), ZSTD(1)),
   `CommentCount` UInt8,
   `FavoriteCount` UInt8,
   `ContentLicense` LowCardinality(String),
@@ -95,7 +99,7 @@ WHERE (CreationDate > '2009-01-01') AND (ViewCount > 10000000)
 1 row in set. Elapsed: 0.720 sec. Processed 59.55 million rows, 230.23 MB (82.66 million rows/s., 319.56 MB/s.)
 ```
 
-このクエリはプライマリインデックスを使用して一部の行 (およびグラニュール) を除外できます。ただし、上記のレスポンスと以下の `EXPLAIN indexes = 1` が示すとおり、大部分の行は依然として読み取る必要があります。
+このクエリはプライマリインデックスを使用して一部の行 (およびgranule) を除外できます。ただし、上記のレスポンスと以下の `EXPLAIN indexes = 1` が示すとおり、大部分の行は依然として読み取る必要があります。
 
 ```sql
 EXPLAIN indexes = 1
@@ -143,7 +147,7 @@ LIMIT 1
 SELECT toDate(CreationDate) AS day, avg(ViewCount) AS view_count FROM stackoverflow.posts WHERE day > '2009-01-01'  GROUP BY day
 ```
 
-したがって、これはデータスキッピングインデックスとして自然な選択です。数値型であることを踏まえると、minmax 索引が適しています。索引は次の `ALTER TABLE` コマンドで追加します。最初に追加し、その後「マテリアライズ」します。
+したがって、これはデータスキップ索引として自然な選択です。数値型であることを踏まえると、minmax 索引が適しています。索引は次の `ALTER TABLE` コマンドで追加します。最初に追加し、その後「マテリアライズ」します。
 
 ```sql
 ALTER TABLE stackoverflow.posts
@@ -157,22 +161,22 @@ ALTER TABLE stackoverflow.posts MATERIALIZE INDEX view_count_idx;
 ```sql
 CREATE TABLE stackoverflow.posts
 (
-  `Id` Int32 CODEC(Delta, Default),
+  `Id` Int32 CODEC(Delta(4), ZSTD(1)),
   `PostTypeId` Enum8('Question' = 1, 'Answer' = 2, 'Wiki' = 3, 'TagWikiExcerpt' = 4, 'TagWiki' = 5, 'ModeratorNomination' = 6, 'WikiPlaceholder' = 7, 'PrivilegeWiki' = 8),
   `AcceptedAnswerId` UInt32,
   `CreationDate` DateTime64(3, 'UTC'),
   `Score` Int32,
-  `ViewCount` UInt32 CODEC(Delta, Default),
+  `ViewCount` UInt32 CODEC(Delta(4), ZSTD(1)),
   `Body` String,
   `OwnerUserId` Int32,
   `OwnerDisplayName` String,
   `LastEditorUserId` Int32,
   `LastEditorDisplayName` String,
-  `LastEditDate` DateTime64(3, 'UTC') CODEC(Delta, Default),
+  `LastEditDate` DateTime64(3, 'UTC') CODEC(Delta(8), ZSTD(1)),
   `LastActivityDate` DateTime64(3, 'UTC'),
   `Title` String,
   `Tags` String,
-  `AnswerCount` UInt16 CODEC(Delta, Default),
+  `AnswerCount` UInt16 CODEC(Delta(2), ZSTD(1)),
   `CommentCount` UInt8,
   `FavoriteCount` UInt8,
   `ContentLicense` LowCardinality(String),
@@ -186,13 +190,9 @@ PARTITION BY toYear(CreationDate)
 ORDER BY (PostTypeId, toDate(CreationDate))
 ```
 
-次のアニメーションは、例のテーブルに対して minmax スキッピングインデックスがどのように構築されるかを示したもので、テーブル内の各行ブロック (グラニュール) ごとに `ViewCount` の最小値と最大値を追跡しています。
+次のアニメーションは、例のテーブルに対して minmax スキップ索引がどのように構築されるかを示したもので、テーブル内の各行ブロック (granule) ごとに `ViewCount` の最小値と最大値を追跡しています。
 
-<div className="ch-image-lg">
-  <Frame>
-    ![スキッピングインデックスの構築](/images/bestpractices/building_skipping_indices.webp)
-  </Frame>
-</div>
+<Image img="/images/bestpractices/building_skipping_indices.webp" size="lg" alt="スキップ索引の構築" />
 
 先ほどのクエリを再度実行すると、パフォーマンスが大幅に改善されていることがわかります。スキャンされた行数が減っている点に注目してください。
 
@@ -257,15 +257,13 @@ WHERE (CreationDate > '2009-01-01') AND (ViewCount > 10000000)
 
 この例のクエリにある `ViewCount` &gt; 10,000,000 という述語に一致し得ないすべての行ブロックを、minmaxスキップ索引がどのように除外するかを示すアニメーションも掲載しています。
 
-<div className="ch-image-lg">
-  <Frame>
-    ![スキッピングインデックスの使用](/images/bestpractices/using_skipping_indices.webp)
-  </Frame>
+<Image img="/images/bestpractices/using_skipping_indices.webp" size="lg" alt="スキップ索引の使用" />
+
+<div id="related-docs">
+  ## 関連ドキュメント
 </div>
 
-## 関連ドキュメント {#related-docs}
-
-* [データスキッピングインデックスガイド](/ja/concepts/features/performance/skip-indexes/skipping-indexes)
+* [データスキッピングインデックスのガイド](/ja/concepts/features/performance/skip-indexes/skipping-indexes)
 * [データスキッピングインデックスの例](/ja/concepts/features/performance/skip-indexes/skipping-indexes-examples)
 * [データスキッピングインデックスの操作](/ja/reference/statements/alter/skipping-index)
 * [システムテーブルの情報](/ja/reference/system-tables/data_skipping_indices)

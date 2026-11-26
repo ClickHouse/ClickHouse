@@ -1,7 +1,0 @@
----
-# The tests compare the peak of the tracked memory of a query with `max_server_memory_usage`,
-# so the global memory tracker has to stay a plain counter of allocations. A tracker corrected
-# from a measurement counts only the pages really touched, and the unspilled `ORDER BY` stayed
-# under the limit with it: the query tracked 11.92 GiB of allocations, most of the capacity
-# reserved by the growing columns, while the measured usage stayed below 10 GiB.
-memory_worker_correct_memory_tracker: 0

@@ -10,7 +10,9 @@ doc_type: 'guide'
 
 以下示例演示了如何简单加载结构化和半结构化 JSON 数据。对于更复杂的 JSON (包括嵌套结构) ，请参阅指南 [**设计 JSON schema**](/zh/guides/clickhouse/data-formats/json/schema)。
 
-## 加载结构化 JSON {#loading-structured-json}
+<div id="loading-structured-json">
+  ## 加载结构化 JSON
+</div>
 
 在本节中，我们假设 JSON 数据采用 [`NDJSON`](https://github.com/ndjson/ndjson-spec) (换行符分隔的 JSON) 格式，即 ClickHouse 中的 [`JSONEachRow`](/zh/reference/formats/JSON/JSONEachRow) 格式，且结构规整，即列名和类型固定不变。`NDJSON` 因其简洁性和高效的空间利用率，是加载 JSON 的首选格式，但系统同样支持其他格式用于[输入和输出](/zh/reference/formats/JSON/JSON)。
 
@@ -40,7 +42,7 @@ doc_type: 'guide'
 
   如果你的列名和类型都是固定的，且预计不会新增列，那么在生产环境中应始终优先使用静态定义的 schema。
 
-  对于动态性很高的数据，JSON 类型是首选，因为列名和类型可能会发生变化。这种类型在原型设计和数据探索中也很有用。
+  对于动态性很高的数据，JSON type 是首选，因为列名和类型可能会发生变化。这种类型在原型设计和数据探索中也很有用。
 </Info>
 
 下面展示了一个简单的 schema，其中 **JSON 键映射到列名**：
@@ -70,7 +72,7 @@ ClickHouse 支持以多种格式加载 JSON 数据，并根据文件扩展名和
 
 ```sql
 SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz', NOSIGN)
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz')
 LIMIT 1
 ```
 
@@ -85,7 +87,7 @@ LIMIT 1
 请注意，此处无需指定文件格式。我们使用 glob pattern 读取存储桶中所有 `*.json.gz` 文件，ClickHouse 会根据文件扩展名和内容自动推断格式为 `JSONEachRow` (ndjson) 。若 ClickHouse 无法自动检测格式，可通过参数函数手动指定。
 
 ```sql
-SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz', NOSIGN, JSONEachRow)
+SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz', JSONEachRow)
 ```
 
 <Info>
@@ -97,7 +99,7 @@ SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi
 要加载这些文件中的数据行，可以使用 [`INSERT INTO SELECT`](/zh/reference/statements/insert-into#inserting-the-results-of-select)：
 
 ```sql
-INSERT INTO pypi SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz', NOSIGN)
+INSERT INTO pypi SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz')
 ```
 
 ```response
@@ -129,7 +131,9 @@ FORMAT JSONEachRow
 
 这些示例假设使用 `JSONEachRow` 格式。也支持其他常见的 JSON 格式，相关加载示例见[此处](/zh/guides/clickhouse/data-formats/json/formats)。
 
-## 加载半结构化 JSON {#loading-semi-structured-json}
+<div id="loading-semi-structured-json">
+  ## 加载半结构化 JSON
+</div>
 
 在前面的示例中，我们加载的是静态 JSON，其中键名和类型都是已知且固定的。但实际情况往往并非如此——键可能会新增，类型也可能发生变化。这在可观测性数据等场景中很常见。
 
@@ -158,6 +162,8 @@ ClickHouse 通过专门的 [`JSON`](/zh/reference/data-types/newjson) 类型来�
 这里的 `tags` 列内容不固定，因此无法对其建模。要加载这些数据，我们可以沿用之前的 schema，但额外提供一个类型为 [`JSON`](/zh/reference/data-types/newjson) 的 `tags` 列：
 
 ```sql
+SET enable_json_type = 1;
+
 CREATE TABLE pypi_with_tags
 (
     `date` Date,
@@ -174,19 +180,15 @@ ENGINE = MergeTree
 ORDER BY (project, date);
 ```
 
-<Note>
-  在 24.8 至 25.2 版本中，请在创建表之前先执行 `SET allow_experimental_json_type = 1;` 以启用 `JSON` 类型。
-</Note>
-
 我们采用与原始数据集相同的方法来填充该表：
 
 ```sql
-INSERT INTO pypi_with_tags SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/pypi_with_tags/sample.json.gz', NOSIGN)
+INSERT INTO pypi_with_tags SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/pypi_with_tags/sample.json.gz')
 ```
 
 ```sql
 INSERT INTO pypi_with_tags SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/pypi_with_tags/sample.json.gz', NOSIGN)
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/pypi_with_tags/sample.json.gz')
 ```
 
 ```response
@@ -208,12 +210,14 @@ LIMIT 2
 │ 2022-05-26 │ CN           │ clickhouse-connect │ sdist │ bandersnatch │              │        │ 0.0.7 │ {"4zD5MYQz4JkP1QqsJIS":"0","name":"8881321089124243208"} │
 └────────────┴──────────────┴────────────────────┴───────┴──────────────┴──────────────┴────────┴─────────┴──────────────────────────────────────────────────────────┘
 
-2 rows in set. Elapsed: 0.149 sec.
+2 行。耗时：0.149 秒。
 ```
 
 请注意此处加载数据时的性能差异。JSON 列在写入时需要进行类型推断；如果某些列存在多种类型，还需要额外的存储空间。虽然 JSON 类型 可以通过配置 (参见[设计 JSON schema](/zh/guides/clickhouse/data-formats/json/schema)) 达到与显式声明列相当的性能，但它默认就是为灵活性而设计的。不过，这种灵活性也并非没有代价。
 
-### 何时使用 JSON 类型 {#when-to-use-the-json-type}
+<div id="when-to-use-the-json-type">
+  ### 何时使用 JSON 类型
+</div>
 
 当你的数据具有以下特征时，请使用 JSON 类型：
 

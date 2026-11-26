@@ -7,16 +7,22 @@ sidebarTitle: 'avgResample'
 doc_type: 'reference'
 ---
 
-## Descripción {#description}
+<div id="description">
+  ## Descripción
+</div>
 
 El [`Resample`](/es/reference/functions/aggregate-functions/combinators#-resample)
 combinador se puede aplicar a la función de agregación [`count`](/es/reference/functions/aggregate-functions/count)
 para contar los valores de una columna clave específica en un número fijo
 de intervalos (`N`).
 
-## Ejemplo de uso {#example-usage}
+<div id="example-usage">
+  ## Ejemplo de uso
+</div>
 
-### Ejemplo básico {#basic-example}
+<div id="basic-example">
+  ### Ejemplo básico
+</div>
 
 Veamos un ejemplo. Crearemos una tabla que contiene `name`, `age` y
 `wage` de los empleados, e insertaremos algunos datos en ella:
@@ -29,7 +35,7 @@ CREATE TABLE employee_data
     wage Float32
 ) 
 ENGINE = MergeTree()
-ORDER BY tuple();
+ORDER BY tuple()
 
 INSERT INTO employee_data (name, age, wage) VALUES
     ('John', 16, 10.0),
@@ -43,7 +49,7 @@ INSERT INTO employee_data (name, age, wage) VALUES
 Obtengamos el salario promedio de las personas cuya edad se encuentra en los intervalos `[30,60)`
 y `[60,75)` (`[` es exclusivo y `)` es inclusivo). Como usamos una
 representación entera para la edad, obtenemos edades en los intervalos `[30, 59]` y `[60,74]`.
-Para ello, aplicamos el Combinador `Resample` a la función de agregación `avg`.
+Para ello, aplicamos el combinador `Resample` a la función de agregación `avg`.
 
 ```sql
 WITH avg_wage AS
@@ -62,7 +68,9 @@ FROM avg_wage;
 └──────────────────┘
 ```
 
-## Véase también {#see-also}
+<div id="see-also">
+  ## Véase también
+</div>
 
 * [`count`](/es/reference/functions/aggregate-functions/count)
 * [`Resample combinador`](/es/reference/functions/aggregate-functions/combinators#-resample)

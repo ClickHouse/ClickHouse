@@ -12,23 +12,27 @@ import SettingsInfoBlock from "/snippets/zh/components/SettingsInfoBlock/Setting
 
 这些设置可在 [system.settings](/zh/reference/system-tables/settings) 中找到，并由 [源代码](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) 自动生成。
 
-## filesystem_prefetch_max_memory_usage {#filesystem_prefetch_max_memory_usage}
+<div id="filesystem_prefetch_max_memory_usage">
+  ## filesystem_prefetch_max_memory_usage
+</div>
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="1073741824" />
 
 预取的最大内存使用量。
 
-该设置同样适用于合并与变更。
-
 Cloud 默认值：总内存的 10%。
 
-## filesystem_prefetch_step_bytes {#filesystem_prefetch_step_bytes}
+<div id="filesystem_prefetch_step_bytes">
+  ## filesystem_prefetch_step_bytes
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 以字节为单位的预取步长。0 表示 `auto`——系统会自动推断出一个大致最优的预取步长，但不一定是 100% 最优。由于设置了 filesystem&#95;prefetch&#95;min&#95;bytes&#95;for&#95;single&#95;read&#95;task，实际值可能会有所不同。
 
-## filesystem_prefetch_step_marks {#filesystem_prefetch_step_marks}
+<div id="filesystem_prefetch_step_marks">
+  ## filesystem_prefetch_step_marks
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 

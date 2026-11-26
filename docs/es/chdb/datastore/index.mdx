@@ -7,10 +7,12 @@ keywords: ['chdb', 'datastore', 'pandas', 'dataframe', 'sql', 'lazy evaluation']
 doc_type: 'guide'
 ---
 
+import { Image } from "/snippets/es/components/Image.jsx";
+
 DataStore es la API compatible con pandas de chDB que combina la conocida interfaz de DataFrame de Pandas con la potencia de la optimización de consultas SQL y le permite escribir código al estilo de pandas mientras obtiene el rendimiento de ClickHouse.
 
 <div id="key-features">
-  ## Características principales {#key-features}
+  ## Características principales
 </div>
 
 * **Compatibilidad con Pandas**: 209 métodos de pandas DataFrame, 56 métodos `.str`, 42+ métodos `.dt`
@@ -19,24 +21,22 @@ DataStore es la API compatible con pandas de chDB que combina la conocida interf
 * **630+ métodos de API**: Amplia API para la manipulación de datos
 * **Extensiones de ClickHouse**: Accesores adicionales (`.arr`, `.json`, `.url`, `.ip`, `.geo`) no disponibles en pandas
 
-## Arquitectura {#architecture}
-
-<div className="ch-image-md">
-  <Frame>
-    ![Arquitectura de DataStore](/images/chdb/datastore_architecture.png)
-  </Frame>
+<div id="architecture">
+  ## Arquitectura
 </div>
+
+<Image size="md" img="/images/chdb/datastore_architecture.png" alt="Arquitectura de DataStore" />
 
 DataStore usa **evaluación diferida** con **ejecución con doble motor**:
 
 1. **Cadena de operaciones diferidas**: las operaciones se registran, no se ejecutan de inmediato
 2. **Selección inteligente de motor**: QueryPlanner dirige cada segmento al motor óptimo (chDB para SQL, Pandas para operaciones complejas)
-3. **Almacenamiento en caché intermedio**: los resultados se almacenan en caché en cada paso para agilizar la exploración iterativa
+3. **Caché intermedia**: los resultados se almacenan en caché en cada paso para agilizar la exploración iterativa
 
 Consulta [Modelo de ejecución](/es/chdb/datastore/execution-model) para obtener más detalles.
 
 <div id="migration">
-  ## Migración en una sola línea desde Pandas {#migration}
+  ## Migración en una sola línea desde Pandas
 </div>
 
 ```python
@@ -54,7 +54,7 @@ result = df[df['age'] > 25].groupby('city')['salary'].mean()
 Su código actual de pandas funciona sin cambios, pero ahora se ejecuta en el motor de ClickHouse.
 
 <div id="performance">
-  ## Comparación de rendimiento {#performance}
+  ## Comparación de rendimiento
 </div>
 
 DataStore ofrece mejoras significativas de rendimiento respecto a pandas, especialmente en agregaciones y canalizaciones complejas:
@@ -69,7 +69,7 @@ DataStore ofrece mejoras significativas de rendimiento respecto a pandas, especi
 *Benchmark con 10 M de filas. Consulta el [script de benchmark](https://github.com/chdb-io/chdb/blob/main/refs/benchmark_datastore_vs_pandas.py) y la [Guía de rendimiento](/es/chdb/guides/pandas-performance) para obtener más detalles.*
 
 <div id="when-to-use">
-  ## Cuándo usar DataStore {#when-to-use}
+  ## Cuándo usar DataStore
 </div>
 
 **Usa DataStore cuando:**
@@ -87,7 +87,7 @@ DataStore ofrece mejoras significativas de rendimiento respecto a pandas, especi
 * Trabajas con funciones específicas de ClickHouse que no están expuestas en la API de pandas
 
 <div id="comparison">
-  ## Comparación de características {#comparison}
+  ## Comparación de características
 </div>
 
 | Característica                       | Pandas | Polars   | DuckDB | DataStore       |
@@ -102,7 +102,7 @@ DataStore ofrece mejoras significativas de rendimiento respecto a pandas, especi
 | Soporte de almacenamiento en la nube | No     | Limitado | Sí     | **Sí**          |
 
 <div id="api-stats">
-  ## Estadísticas de la API {#api-stats}
+  ## Estadísticas de la API
 </div>
 
 | Categoría                      | Cantidad | Cobertura                            |
@@ -118,18 +118,18 @@ DataStore ofrece mejoras significativas de rendimiento respecto a pandas, especi
 | **Total de métodos de la API** | **630+** | -                                    |
 
 <div id="navigation">
-  ## Navegación por la documentación {#navigation}
+  ## Navegación por la documentación
 </div>
 
 <div id="getting-started">
-  ### Primeros pasos {#getting-started}
+  ### Primeros pasos
 </div>
 
 * [Inicio rápido](/es/chdb/datastore/quickstart) - Instalación y uso básico
 * [Migración desde Pandas](/es/chdb/guides/migration-from-pandas) - Guía de migración paso a paso
 
 <div id="api-reference">
-  ### Referencia de la API {#api-reference}
+  ### Referencia de la API
 </div>
 
 * [Métodos de fábrica](/es/chdb/datastore/factory-methods) - Creación de DataStore a partir de varias fuentes
@@ -140,14 +140,14 @@ DataStore ofrece mejoras significativas de rendimiento respecto a pandas, especi
 * [Operaciones de E/S](/es/chdb/datastore/io) - Lectura y escritura de datos
 
 <div id="advanced-topics">
-  ### Temas avanzados {#advanced-topics}
+  ### Temas avanzados
 </div>
 
 * [Modelo de ejecución](/es/chdb/datastore/execution-model) - evaluación diferida y almacenamiento en caché
 * [Referencia de class](/es/chdb/datastore/class-reference) - Referencia completa de la API
 
 <div id="configuration-debugging">
-  ### Configuración y depuración {#configuration-debugging}
+  ### Configuración y depuración
 </div>
 
 * [Configuración](/es/chdb/configuration/index) - Todas las opciones de configuración
@@ -155,7 +155,7 @@ DataStore ofrece mejoras significativas de rendimiento respecto a pandas, especi
 * [Depuración](/es/chdb/debugging/index) - Explain, perfilado y registro
 
 <div id="pandas-user-guides">
-  ### Guías para usuarios de Pandas {#pandas-user-guides}
+  ### Guías para usuarios de Pandas
 </div>
 
 * [Recetario de Pandas](/es/chdb/guides/pandas-cookbook) - Patrones comunes
@@ -164,7 +164,7 @@ DataStore ofrece mejoras significativas de rendimiento respecto a pandas, especi
 * [SQL para usuarios de Pandas](/es/chdb/guides/pandas-to-sql) - Comprender el SQL que hay detrás de las operaciones de pandas
 
 <div id="quick-example">
-  ## Ejemplo rápido {#quick-example}
+  ## Ejemplo rápido
 </div>
 
 ```python
@@ -191,8 +191,10 @@ print(result.to_sql())
 df = result.to_df()  # Returns DataFrame de Pandas
 ```
 
-## Próximos pasos {#next-steps}
+<div id="next-steps">
+  ## Próximos pasos
+</div>
 
-* **¿Es la primera vez que usa DataStore?** Empiece por la [Guía de inicio rápido](/es/chdb/datastore/quickstart)
-* **¿Viene de pandas?** Consulte la [Guía de migración](/es/chdb/guides/migration-from-pandas)
-* **¿Quiere saber más?** Consulte la [Referencia de la API](/es/chdb/datastore/class-reference)
+* **¿Es la primera vez que usas DataStore?** Empieza con la [Guía de inicio rápido](/es/chdb/datastore/quickstart)
+* **¿Vienes de pandas?** Lee la [Guía de migración](/es/chdb/guides/migration-from-pandas)
+* **¿Quieres saber más?** Consulta la [Referencia de la API](/es/chdb/datastore/class-reference)

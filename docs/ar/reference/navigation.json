@@ -1,17 +1,18 @@
 {
-  "item": "Reference",
+  "icon": "/images/icons/icon-reference.svg",
+  "item": "المرجع",
   "pages": [
     "ar/reference/home",
     {
       "expandable": true,
       "expanded": true,
-      "group": "SQL Reference",
+      "group": "مرجع SQL",
       "pages": [
         "ar/reference/syntax",
         {
           "expandable": true,
           "expanded": false,
-          "group": "Statements",
+          "group": "تعليمات SQL",
           "pages": [
             "ar/reference/statements/index",
             {
@@ -25,7 +26,6 @@
                 "ar/reference/statements/alter/comment",
                 "ar/reference/statements/alter/constraint",
                 "ar/reference/statements/alter/database-comment",
-                "ar/reference/statements/alter/database-setting",
                 "ar/reference/statements/alter/delete",
                 "ar/reference/statements/alter/named-collection",
                 "ar/reference/statements/alter/order-by",
@@ -78,7 +78,6 @@
                         "ar/reference/statements/create/dictionary/layouts/range-hashed",
                         "ar/reference/statements/create/dictionary/layouts/hierarchical",
                         "ar/reference/statements/create/dictionary/layouts/naive-bayes",
-                        "ar/reference/statements/create/dictionary/layouts/xgboost",
                         "ar/reference/statements/create/dictionary/layouts/polygon",
                         "ar/reference/statements/create/dictionary/layouts/ip-trie",
                         "ar/reference/statements/create/dictionary/layouts/regexp-tree"
@@ -86,7 +85,7 @@
                     },
                     {
                       "expanded": false,
-                      "group": "Sources",
+                      "group": "المصادر",
                       "pages": [
                         "ar/reference/statements/create/dictionary/sources/overview",
                         "ar/reference/statements/create/dictionary/sources/local-file",
@@ -109,7 +108,6 @@
                 },
                 "ar/reference/statements/create/masking-policy",
                 "ar/reference/statements/create/function",
-                "ar/reference/statements/create/handler",
                 "ar/reference/statements/create/named-collection",
                 "ar/reference/statements/create/quota",
                 "ar/reference/statements/create/role",
@@ -117,7 +115,7 @@
                 "ar/reference/statements/create/settings-profile",
                 {
                   "expanded": false,
-                  "group": "TABLE",
+                  "group": "جدول",
                   "pages": [
                     "ar/reference/statements/create/table",
                     "ar/reference/statements/create/table/codec",
@@ -125,7 +123,6 @@
                     "ar/reference/statements/create/table/replace-table"
                   ]
                 },
-                "ar/reference/statements/create/token",
                 "ar/reference/statements/create/user",
                 "ar/reference/statements/create/view"
               ]
@@ -141,7 +138,6 @@
             "ar/reference/statements/explain",
             "ar/reference/statements/grant",
             "ar/reference/statements/hypothetical-index",
-            "ar/reference/statements/hypothetical-projection",
             "ar/reference/statements/in",
             "ar/reference/statements/insert-into",
             "ar/reference/statements/kill",
@@ -177,7 +173,6 @@
                 "ar/reference/statements/select/qualify",
                 "ar/reference/statements/select/replace_modifier",
                 "ar/reference/statements/select/sample",
-                "ar/reference/statements/select/shuffle",
                 "ar/reference/statements/select/union",
                 "ar/reference/statements/select/where",
                 "ar/reference/statements/select/with"
@@ -187,19 +182,21 @@
             "ar/reference/statements/set",
             "ar/reference/statements/show",
             "ar/reference/statements/system",
-            "ar/reference/statements/transactions",
             "ar/reference/statements/truncate",
             "ar/reference/statements/undrop",
             "ar/reference/statements/update",
-            "ar/reference/statements/use"
+            "ar/reference/statements/use",
+            "ar/reference/statements/watch"
           ]
         },
         {
           "expandable": true,
           "expanded": false,
-          "group": "Operators",
+          "group": "العوامل",
           "pages": [
-            "ar/reference/operators/index"
+            "ar/reference/operators/index",
+            "ar/reference/operators/exists",
+            "ar/reference/operators/distributed-ddl"
           ]
         }
       ]
@@ -207,12 +204,12 @@
     {
       "expandable": true,
       "expanded": false,
-      "group": "Data Types",
+      "group": "أنواع البيانات",
       "pages": [
         "ar/reference/data-types/index",
         {
           "expanded": false,
-          "group": "Numeric types",
+          "group": "الأنواع الرقمية",
           "pages": [
             "ar/reference/data-types/int-uint",
             "ar/reference/data-types/float",
@@ -222,7 +219,7 @@
         },
         {
           "expanded": false,
-          "group": "String types",
+          "group": "أنواع String",
           "pages": [
             "ar/reference/data-types/string",
             "ar/reference/data-types/fixedstring"
@@ -230,7 +227,7 @@
         },
         {
           "expanded": false,
-          "group": "Date and time types",
+          "group": "أنواع التاريخ والوقت",
           "pages": [
             "ar/reference/data-types/date",
             "ar/reference/data-types/date32",
@@ -242,7 +239,7 @@
         },
         {
           "expanded": false,
-          "group": "Network types",
+          "group": "أنواع الشبكة",
           "pages": [
             "ar/reference/data-types/ipv4",
             "ar/reference/data-types/ipv6"
@@ -250,7 +247,7 @@
         },
         {
           "expanded": false,
-          "group": "Composite types",
+          "group": "الأنواع المركبة",
           "pages": [
             "ar/reference/data-types/array",
             "ar/reference/data-types/tuple",
@@ -260,7 +257,7 @@
         },
         {
           "expanded": false,
-          "group": "Semi-structured types",
+          "group": "الأنواع شبه المهيكلة",
           "pages": [
             "ar/reference/data-types/newjson",
             "ar/reference/data-types/dynamic",
@@ -269,7 +266,7 @@
         },
         {
           "expanded": false,
-          "group": "Nullable and optional types",
+          "group": "الأنواع القابلة لـ NULL والاختيارية",
           "pages": [
             "ar/reference/data-types/nullable",
             "ar/reference/data-types/lowcardinality"
@@ -277,7 +274,7 @@
         },
         {
           "expanded": false,
-          "group": "Specialized types",
+          "group": "الأنواع المتخصصة",
           "pages": [
             "ar/reference/data-types/uuid",
             "ar/reference/data-types/enum",
@@ -288,7 +285,7 @@
         },
         {
           "expanded": false,
-          "group": "Aggregate function types",
+          "group": "أنواع الدوال التجميعية",
           "pages": [
             "ar/reference/data-types/aggregatefunction",
             "ar/reference/data-types/simpleaggregatefunction"
@@ -296,7 +293,7 @@
         },
         {
           "expanded": false,
-          "group": "Special Data Types",
+          "group": "أنواع البيانات الخاصة",
           "pages": [
             "ar/reference/data-types/special-data-types/index",
             "ar/reference/data-types/special-data-types/expression",
@@ -306,7 +303,7 @@
           ]
         },
         {
-          "group": "Binary encoding",
+          "group": "الترميز الثنائي",
           "pages": [
             "ar/reference/data-types/data-types-binary-encoding"
           ]
@@ -316,17 +313,17 @@
     {
       "expandable": true,
       "expanded": false,
-      "group": "Engines",
+      "group": "المحركات",
       "pages": [
         "ar/reference/engines/engines",
         {
           "expanded": false,
-          "group": "Table Engines",
+          "group": "محركات الجداول",
           "pages": [
             "ar/reference/engines/table-engines/index",
             {
               "expanded": false,
-              "group": "Integrations",
+              "group": "التكاملات",
               "pages": [
                 "ar/reference/engines/table-engines/integrations/index",
                 "ar/reference/engines/table-engines/integrations/arrowflight",
@@ -334,7 +331,6 @@
                 "ar/reference/engines/table-engines/integrations/azureBlobStorage",
                 "ar/reference/engines/table-engines/integrations/bigquery",
                 "ar/reference/engines/table-engines/integrations/deltalake",
-                "ar/reference/engines/table-engines/integrations/elasticsearch",
                 "ar/reference/engines/table-engines/integrations/embedded-rocksdb",
                 "ar/reference/engines/table-engines/integrations/ExternalDistributed",
                 "ar/reference/engines/table-engines/integrations/hdfs",
@@ -361,7 +357,7 @@
             },
             {
               "expanded": false,
-              "group": "Log Family",
+              "group": "عائلة Log",
               "pages": [
                 "ar/reference/engines/table-engines/log-family/index",
                 "ar/reference/engines/table-engines/log-family/log",
@@ -371,7 +367,7 @@
             },
             {
               "expanded": false,
-              "group": "MergeTree Family",
+              "group": "عائلة MergeTree",
               "pages": [
                 "ar/reference/engines/table-engines/mergetree-family/index",
                 "ar/reference/engines/table-engines/mergetree-family/mergetree",
@@ -390,7 +386,7 @@
             },
             {
               "expanded": false,
-              "group": "Special",
+              "group": "خاص",
               "pages": [
                 "ar/reference/engines/table-engines/special/index",
                 "ar/reference/engines/table-engines/special/alias",
@@ -417,28 +413,19 @@
         },
         {
           "expanded": false,
-          "group": "Database Engines",
+          "group": "محركات قواعد البيانات",
           "pages": [
             "ar/reference/engines/database-engines/index",
             "ar/reference/engines/database-engines/atomic",
             "ar/reference/engines/database-engines/backup",
-            "ar/reference/engines/database-engines/cluster",
             "ar/reference/engines/database-engines/datalake",
-            "ar/reference/engines/database-engines/dictionary",
-            "ar/reference/engines/database-engines/filesystem",
-            "ar/reference/engines/database-engines/hdfs",
             "ar/reference/engines/database-engines/materialized-postgresql",
-            "ar/reference/engines/database-engines/memory",
             "ar/reference/engines/database-engines/mysql",
-            "ar/reference/engines/database-engines/ordinary",
-            "ar/reference/engines/database-engines/overlay",
             "ar/reference/engines/database-engines/postgresql",
             "ar/reference/engines/database-engines/remote",
             "ar/reference/engines/database-engines/replicated",
-            "ar/reference/engines/database-engines/s3",
             "ar/reference/engines/database-engines/shared",
-            "ar/reference/engines/database-engines/sqlite",
-            "ar/reference/engines/database-engines/url"
+            "ar/reference/engines/database-engines/sqlite"
           ]
         }
       ]
@@ -446,12 +433,12 @@
     {
       "expandable": true,
       "expanded": false,
-      "group": "Functions",
+      "group": "الدوال",
       "pages": [
         "ar/reference/functions/index",
         {
           "expanded": false,
-          "group": "Regular functions",
+          "group": "الدوال العادية",
           "pages": [
             "ar/reference/functions/regular-functions/overview",
             "ar/reference/functions/regular-functions/ai-functions",
@@ -517,7 +504,7 @@
         },
         {
           "expanded": false,
-          "group": "Aggregate Functions",
+          "group": "الدوال التجميعية",
           "pages": [
             "ar/reference/functions/aggregate-functions/index",
             "ar/reference/functions/aggregate-functions/combinators",
@@ -525,7 +512,7 @@
             "ar/reference/functions/aggregate-functions/parametric-functions",
             {
               "expanded": false,
-              "group": "Reference",
+              "group": "المرجع",
               "pages": [
                 "ar/reference/functions/aggregate-functions/reference-index",
                 "ar/reference/functions/aggregate-functions/aggThrow",
@@ -570,7 +557,6 @@
                 "ar/reference/functions/aggregate-functions/exponentialTimeDecayedSum",
                 "ar/reference/functions/aggregate-functions/first_value",
                 "ar/reference/functions/aggregate-functions/flame_graph",
-                "ar/reference/functions/aggregate-functions/gini",
                 "ar/reference/functions/aggregate-functions/groupArray",
                 "ar/reference/functions/aggregate-functions/groupArrayArray",
                 "ar/reference/functions/aggregate-functions/groupArrayInsertAt",
@@ -602,7 +588,6 @@
                 "ar/reference/functions/aggregate-functions/maxIntersectionsPosition",
                 "ar/reference/functions/aggregate-functions/maxMap",
                 "ar/reference/functions/aggregate-functions/meanZTest",
-                "ar/reference/functions/aggregate-functions/mergedJSONPatch",
                 "ar/reference/functions/aggregate-functions/median",
                 "ar/reference/functions/aggregate-functions/min",
                 "ar/reference/functions/aggregate-functions/minMap",
@@ -644,15 +629,6 @@
                 "ar/reference/functions/aggregate-functions/quantileTimingWeighted",
                 "ar/reference/functions/aggregate-functions/quantilesTimingWeighted",
                 "ar/reference/functions/aggregate-functions/rankCorr",
-                "ar/reference/functions/aggregate-functions/regr_avgx",
-                "ar/reference/functions/aggregate-functions/regr_avgy",
-                "ar/reference/functions/aggregate-functions/regr_count",
-                "ar/reference/functions/aggregate-functions/regr_intercept",
-                "ar/reference/functions/aggregate-functions/regr_r2",
-                "ar/reference/functions/aggregate-functions/regr_slope",
-                "ar/reference/functions/aggregate-functions/regr_sxx",
-                "ar/reference/functions/aggregate-functions/regr_sxy",
-                "ar/reference/functions/aggregate-functions/regr_syy",
                 "ar/reference/functions/aggregate-functions/simpleLinearRegression",
                 "ar/reference/functions/aggregate-functions/singleValueOrNull",
                 "ar/reference/functions/aggregate-functions/skewPop",
@@ -673,38 +649,17 @@
                 "ar/reference/functions/aggregate-functions/sumMapWithOverflow",
                 "ar/reference/functions/aggregate-functions/sumWithOverflow",
                 "ar/reference/functions/aggregate-functions/theilsU",
-                "ar/reference/functions/aggregate-functions/timeSeriesAvgToGrid",
-                "ar/reference/functions/aggregate-functions/timeSeriesBottomKMasks",
                 "ar/reference/functions/aggregate-functions/timeSeriesChangesToGrid",
-                "ar/reference/functions/aggregate-functions/timeSeriesCountToGrid",
                 "ar/reference/functions/aggregate-functions/timeSeriesDeltaToGrid",
                 "ar/reference/functions/aggregate-functions/timeSeriesDerivToGrid",
-                "ar/reference/functions/aggregate-functions/timeSeriesFirstToGrid",
                 "ar/reference/functions/aggregate-functions/timeSeriesGroupArray",
-                "ar/reference/functions/aggregate-functions/timeSeriesIncreaseToGrid",
                 "ar/reference/functions/aggregate-functions/timeSeriesInstantDeltaToGrid",
                 "ar/reference/functions/aggregate-functions/timeSeriesInstantRateToGrid",
-                "ar/reference/functions/aggregate-functions/timeSeriesLastToGrid",
                 "ar/reference/functions/aggregate-functions/timeSeriesLastTwoSamples",
-                "ar/reference/functions/aggregate-functions/timeSeriesLimitKMasks",
-                "ar/reference/functions/aggregate-functions/timeSeriesLinearRegressionToGrid",
-                "ar/reference/functions/aggregate-functions/timeSeriesMadToGrid",
-                "ar/reference/functions/aggregate-functions/timeSeriesMaxToGrid",
-                "ar/reference/functions/aggregate-functions/timeSeriesMinToGrid",
                 "ar/reference/functions/aggregate-functions/timeSeriesPredictLinearToGrid",
-                "ar/reference/functions/aggregate-functions/timeSeriesPresentToGrid",
-                "ar/reference/functions/aggregate-functions/timeSeriesQuantileToGrid",
                 "ar/reference/functions/aggregate-functions/timeSeriesRateToGrid",
                 "ar/reference/functions/aggregate-functions/timeSeriesResampleToGridWithStaleness",
                 "ar/reference/functions/aggregate-functions/timeSeriesResetsToGrid",
-                "ar/reference/functions/aggregate-functions/timeSeriesStddevToGrid",
-                "ar/reference/functions/aggregate-functions/timeSeriesStdvarToGrid",
-                "ar/reference/functions/aggregate-functions/timeSeriesSumToGrid",
-                "ar/reference/functions/aggregate-functions/timeSeriesTimestampOfFirstToGrid",
-                "ar/reference/functions/aggregate-functions/timeSeriesTimestampOfLastToGrid",
-                "ar/reference/functions/aggregate-functions/timeSeriesTimestampOfMaxToGrid",
-                "ar/reference/functions/aggregate-functions/timeSeriesTimestampOfMinToGrid",
-                "ar/reference/functions/aggregate-functions/timeSeriesTopKMasks",
                 "ar/reference/functions/aggregate-functions/topK",
                 "ar/reference/functions/aggregate-functions/topKWeighted",
                 "ar/reference/functions/aggregate-functions/uniq",
@@ -724,7 +679,7 @@
         },
         {
           "expanded": false,
-          "group": "Table functions",
+          "group": "دوال الجداول",
           "pages": [
             "ar/reference/functions/table-functions/index",
             "ar/reference/functions/table-functions/arrowflight",
@@ -735,7 +690,6 @@
             "ar/reference/functions/table-functions/deltalake",
             "ar/reference/functions/table-functions/deltalakeCluster",
             "ar/reference/functions/table-functions/dictionary",
-            "ar/reference/functions/table-functions/elasticsearch",
             "ar/reference/functions/table-functions/executable",
             "ar/reference/functions/table-functions/eval",
             "ar/reference/functions/table-functions/file",
@@ -778,11 +732,10 @@
             "ar/reference/functions/table-functions/s3Cluster",
             "ar/reference/functions/table-functions/sqlite",
             "ar/reference/functions/table-functions/timeSeriesData",
-            "ar/reference/functions/table-functions/timeSeriesMetricFamilies",
+            "ar/reference/functions/table-functions/timeSeriesMetrics",
             "ar/reference/functions/table-functions/timeSeriesSamples",
             "ar/reference/functions/table-functions/timeSeriesSelector",
             "ar/reference/functions/table-functions/timeSeriesTags",
-            "ar/reference/functions/table-functions/timeSeriesTimeRanges",
             "ar/reference/functions/table-functions/url",
             "ar/reference/functions/table-functions/urlCluster",
             "ar/reference/functions/table-functions/values",
@@ -793,7 +746,7 @@
         },
         {
           "expanded": false,
-          "group": "Window functions",
+          "group": "دوال النوافذ",
           "pages": [
             "ar/reference/functions/window-functions/index",
             "ar/reference/functions/window-functions/cume_dist",
@@ -813,7 +766,7 @@
           ]
         },
         {
-          "group": "User Defined Functions",
+          "group": "الدوال المعرّفة من قبل المستخدم",
           "pages": [
             "ar/reference/functions/regular-functions/udf",
             "ar/reference/functions/regular-functions/wasm_udf"
@@ -824,7 +777,7 @@
     {
       "expandable": true,
       "expanded": false,
-      "group": "Formats",
+      "group": "التنسيقات",
       "pages": [
         "ar/reference/formats/index",
         {
@@ -982,7 +935,6 @@
           ]
         },
         "ar/reference/formats/SQLInsert",
-        "ar/reference/formats/SQLite",
         {
           "expanded": false,
           "group": "TabSeparated",
@@ -1006,14 +958,22 @@
         },
         "ar/reference/formats/Values",
         "ar/reference/formats/Vertical",
-        "ar/reference/formats/Vortex",
         "ar/reference/formats/XML"
       ]
     },
     {
       "expandable": true,
       "expanded": false,
-      "group": "Settings",
+      "group": "الواجهات",
+      "pages": [
+        "ar/reference/interfaces/specs/NativeProtocol",
+        "ar/reference/interfaces/specs/NativeFormat"
+      ]
+    },
+    {
+      "expandable": true,
+      "expanded": false,
+      "group": "الإعدادات",
       "pages": [
         "ar/reference/settings/index",
         {
@@ -1034,7 +994,7 @@
     {
       "expandable": true,
       "expanded": false,
-      "group": "System Tables",
+      "group": "جداول النظام",
       "pages": [
         "ar/reference/system-tables/overview",
         "ar/reference/system-tables/aggregate_function_combinators",
@@ -1059,11 +1019,9 @@
         "ar/reference/system-tables/codecs",
         "ar/reference/system-tables/collations",
         "ar/reference/system-tables/columns",
-        "ar/reference/system-tables/columns_cache",
         "ar/reference/system-tables/completions",
         "ar/reference/system-tables/constraints",
         "ar/reference/system-tables/contributors",
-        "ar/reference/system-tables/connections",
         "ar/reference/system-tables/crash_log",
         "ar/reference/system-tables/current_roles",
         "ar/reference/system-tables/dashboards",
@@ -1107,18 +1065,14 @@
         "ar/reference/system-tables/histogram_metric_log",
         "ar/reference/system-tables/histogram_metrics",
         "ar/reference/system-tables/hypothetical_indexes",
-        "ar/reference/system-tables/hypothetical_projections",
         "ar/reference/system-tables/iceberg_files",
         "ar/reference/system-tables/iceberg_history",
         "ar/reference/system-tables/iceberg_metadata_log",
-        "ar/reference/system-tables/iceberg_metadata_log_entries",
         "ar/reference/system-tables/information_schema",
         "ar/reference/system-tables/instrumentation",
-        "ar/reference/system-tables/jemalloc_arena_bins",
         "ar/reference/system-tables/jemalloc_bins",
-        "ar/reference/system-tables/jemalloc_profile_text",
-        "ar/reference/system-tables/jemalloc_sampled_allocations",
         "ar/reference/system-tables/jemalloc_stats",
+        "ar/reference/system-tables/jemalloc_profile_text",
         "ar/reference/system-tables/kafka_consumers",
         "ar/reference/system-tables/keeper_changelogs",
         "ar/reference/system-tables/keeper_cluster",
@@ -1180,13 +1134,11 @@
         "ar/reference/system-tables/schema_inference_cache",
         "ar/reference/system-tables/server_settings",
         "ar/reference/system-tables/session_log",
-        "ar/reference/system-tables/session_query_ids",
         "ar/reference/system-tables/settings",
         "ar/reference/system-tables/settings_changes",
         "ar/reference/system-tables/settings_profile_elements",
         "ar/reference/system-tables/settings_profiles",
         "ar/reference/system-tables/stack_trace",
-        "ar/reference/system-tables/statements",
         "ar/reference/system-tables/stemmers",
         "ar/reference/system-tables/storage_policies",
         "ar/reference/system-tables/symbols",
@@ -1220,7 +1172,7 @@
       ]
     },
     {
-      "group": "Data Lakes",
+      "group": "بحيرات البيانات",
       "pages": [
         "ar/reference/datalakes"
       ]

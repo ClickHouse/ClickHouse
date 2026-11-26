@@ -12,15 +12,18 @@ import SettingsInfoBlock from "/snippets/ru/components/SettingsInfoBlock/Setting
 
 Эти настройки доступны в [system.merge&#95;tree&#95;settings](/ru/reference/system-tables/merge_tree_settings) и автоматически создаются на основе исходного кода ClickHouse.
 
-## fsync_after_insert {#fsync_after_insert}
+<div id="fsync_after_insert">
+  ## fsync_after_insert
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-Выполняет fsync для каждой вставленной части, чтобы к моменту подтверждения запроса `INSERT` данные были надёжно сохранены.
-Снижает производительность вставки, особенно при использовании частей Wide.
-См. также `group_fsync_before_insert_finish`.
+Выполняет fsync для каждой вставленной части. Существенно снижает производительность
+вставки, не рекомендуется использовать с частями Wide.
 
-## fsync_part_directory {#fsync_part_directory}
+<div id="fsync_part_directory">
+  ## fsync_part_directory
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 

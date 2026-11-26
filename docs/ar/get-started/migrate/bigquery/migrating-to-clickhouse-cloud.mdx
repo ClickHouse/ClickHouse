@@ -1,41 +1,39 @@
 ---
-title: 'الترحيل من BigQuery إلى ClickHouse Cloud'
+title: 'الانتقال من BigQuery إلى ClickHouse Cloud'
 slug: /migrations/bigquery/migrating-to-clickhouse-cloud
-description: 'كيفية ترحيل بياناتك من BigQuery إلى ClickHouse Cloud'
+description: 'كيفية نقل بياناتك من BigQuery إلى ClickHouse Cloud'
 keywords: ['BigQuery']
 show_related_blogs: true
-sidebarTitle: 'دليل الترحيل'
+sidebarTitle: 'دليل الانتقال'
 doc_type: 'guide'
 ---
 
-## لماذا تستخدم ClickHouse Cloud بدلًا من BigQuery؟ {#why-use-clickhouse-cloud-over-bigquery}
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+<div id="why-use-clickhouse-cloud-over-bigquery">
+  ## لماذا تستخدم ClickHouse Cloud بدلًا من BigQuery؟
+</div>
 
 باختصار: لأن ClickHouse أسرع وأقل تكلفة وأكثر كفاءة من BigQuery في تحليلات البيانات الحديثة:
 
-<div className="ch-image-md">
-  <Frame>
-    ![ClickHouse مقابل BigQuery](/images/migrations/bigquery-2.webp)
-  </Frame>
-</div>
+<Image img="/images/migrations/bigquery-2.webp" size="md" alt="ClickHouse مقابل BigQuery" />
 
 <div id="loading-data-from-bigquery-to-clickhouse-cloud">
-  ## تحميل البيانات من BigQuery إلى ClickHouse Cloud {#loading-data-from-bigquery-to-clickhouse-cloud}
+  ## تحميل البيانات من BigQuery إلى ClickHouse Cloud
 </div>
 
-### مجموعة البيانات {#dataset}
+<div id="dataset">
+  ### مجموعة البيانات
+</div>
 
 كمثال على مجموعة بيانات يوضّح عملية ترحيل نموذجية من BigQuery إلى ClickHouse Cloud، نستخدم مجموعة بيانات Stack Overflow الموثقة [هنا](/ar/get-started/sample-datasets/stackoverflow). تحتوي هذه المجموعة على كل `post` و`vote` و`user` و`comment` و`badge` على Stack Overflow من عام 2008 حتى أبريل 2024. يظهر المخطط الخاص بـ BigQuery لهذه البيانات أدناه:
 
-<div className="ch-image-lg">
-  <Frame>
-    ![Schema](/images/migrations/bigquery-3.webp)
-  </Frame>
-</div>
+<Image img="/images/migrations/bigquery-3.webp" size="lg" alt="Schema" />
 
 بالنسبة إلى المستخدمين الذين يرغبون في تعبئة مجموعة البيانات هذه في مثيل BigQuery لاختبار خطوات الترحيل، فقد وفرنا بيانات هذه الجداول بتنسيق Parquet في حاوية GCS، كما تتوفر أوامر DDL لإنشاء الجداول وتحميلها في BigQuery [هنا](https://pastila.nl/?003fd86b/2b93b1a2302cfee5ef79fd374e73f431#hVPC52YDsUfXg2eTLrBdbA==).
 
 <div id="migrating-data">
-  ### ترحيل البيانات {#migrating-data}
+  ### ترحيل البيانات
 </div>
 
 يندرج ترحيل البيانات بين BigQuery وClickHouse Cloud ضمن نوعين رئيسيين من أحمال العمل:
@@ -43,38 +41,36 @@ doc_type: 'guide'
 * **تحميل مجمّع أولي مع تحديثات دورية** - يجب ترحيل مجموعة بيانات أولية، إلى جانب تحديثات دورية على فترات زمنية محددة، مثل يوميًا. وتُعالَج التحديثات هنا بإعادة إرسال الصفوف التي تغيّرت، مع الاستدلال عليها من خلال عمود يمكن استخدامه للمقارنة (مثل التاريخ). أمّا عمليات الحذف فتُعالَج عبر إعادة تحميل كاملة ودورية لمجموعة البيانات.
 * **النسخ المتماثل في الوقت الفعلي أو CDC** - يجب ترحيل مجموعة بيانات أولية. ويجب أن تنعكس التغييرات التي تطرأ على هذه المجموعة في ClickHouse بزمن شبه فوري، بحيث لا يُقبل سوى تأخير لبضع ثوانٍ. وهذا يُعَدّ فعليًا [عملية التقاط بيانات التغيير (CDC)](https://en.wikipedia.org/wiki/Change_data_capture)، حيث يجب مزامنة الجداول في BigQuery مع ClickHouse؛ أي إن عمليات الإدراج والتحديث والحذف في جدول BigQuery يجب أن تُطبَّق على جدول مكافئ في ClickHouse.
 
-#### التحميل المجمّع عبر Google Cloud Storage (GCS) {#bulk-loading-via-google-cloud-storage-gcs}
+<div id="bulk-loading-via-google-cloud-storage-gcs">
+  #### التحميل المجمّع عبر Google Cloud Storage (GCS)
+</div>
 
 يدعم BigQuery تصدير البيانات إلى مخزن الكائنات من Google ‏(GCS). بالنسبة إلى مجموعة البيانات في مثالنا:
 
-1. صدِّر الجداول السبعة إلى GCS. الأوامر اللازمة لذلك متاحة [هنا](https://pastila.nl/?014e1ae9/cb9b07d89e9bb2c56954102fd0c37abd#0Pzj52uPYeu1jG35nmMqRQ==).
+1. صدِّر الجداول السبعة إلى GCS. الأوامر اللازمة لذلك متاحة [هنا](https://pastila.nl/?014e1ae9/cb9b07d89e9bb2c56954102fd0c37abd#0Pzj52uPYeu1jG35nmMqRQ==).
 
 2. استورد البيانات إلى ClickHouse Cloud. ويمكننا استخدام [دالة الجدول gcs](/ar/reference/functions/table-functions/gcs) لهذا الغرض. تتوفر أوامر DDL واستعلامات الاستيراد [هنا](https://pastila.nl/?00531abf/f055a61cc96b1ba1383d618721059976#Wf4Tn43D3VCU5Hx7tbf1Qw==). لاحظ أنه نظرًا لأن مثيل ClickHouse Cloud يتكوّن من عدة عُقد حوسبة، فإننا نستخدم [دالة الجدول s3Cluster](/ar/reference/functions/table-functions/s3Cluster) بدلًا من دالة الجدول `gcs`. وتعمل هذه الدالة أيضًا مع حاويات GCS، كما [تستفيد من جميع عُقد خدمة ClickHouse Cloud](https://clickhouse.com/blog/supercharge-your-clickhouse-data-loads-part1#parallel-servers) لتحميل البيانات على التوازي.
 
-<div className="ch-image-md">
-  <Frame>
-    ![التحميل المجمّع](/images/migrations/bigquery-4.webp)
-  </Frame>
-</div>
+<Image img="/images/migrations/bigquery-4.webp" size="md" alt="التحميل المجمّع" />
 
 يتميّز هذا النهج بعدد من المزايا:
 
 * تدعم وظيفة التصدير في BigQuery استخدام عامل تصفية لتصدير مجموعة فرعية من البيانات.
 * يدعم BigQuery التصدير بتنسيقات [Parquet وAvro وJSON وCSV](https://cloud.google.com/bigquery/docs/exporting-data) وبعدد من [أنواع الضغط](https://cloud.google.com/bigquery/docs/exporting-data) — وكلها مدعومة في ClickHouse.
 * يدعم GCS [إدارة دورة حياة الكائنات](https://cloud.google.com/storage/docs/lifecycle)، ما يتيح حذف البيانات التي تم تصديرها واستيرادها إلى ClickHouse بعد فترة زمنية محددة.
-* [تتيح Google تصدير ما يصل إلى 50TB يوميًا إلى GCS مجانًا](https://cloud.google.com/bigquery/quotas#export_jobs). ولا يدفع المستخدمون إلا مقابل تخزين GCS.
-* تنتج عمليات التصدير عدة ملفات تلقائيًا، مع حد أقصى قدره 1GB من بيانات الجدول لكل ملف. وهذا مفيد لـ ClickHouse لأنه يتيح تنفيذ عمليات الاستيراد على التوازي.
+* [تتيح Google تصدير ما يصل إلى 50 تيرابايت يوميًا إلى GCS مجانًا](https://cloud.google.com/bigquery/quotas#export_jobs). ولا يدفع المستخدمون إلا مقابل تخزين GCS.
+* تنتج عمليات التصدير عدة ملفات تلقائيًا، مع حد أقصى قدره 1 جيجابايت من بيانات الجدول لكل ملف. وهذا مفيد لـ ClickHouse لأنه يتيح تنفيذ عمليات الاستيراد على التوازي.
 
 قبل تجربة الأمثلة التالية، نوصي المستخدمين بمراجعة [الأذونات المطلوبة للتصدير](https://cloud.google.com/bigquery/docs/exporting-data#required_permissions) و[توصيات مواقع البيانات](https://cloud.google.com/bigquery/docs/exporting-data#data-locations) لتحقيق أفضل أداء لعمليتَي التصدير والاستيراد.
 
 <div id="real-time-replication-or-cdc-via-scheduled-queries">
-  ### النسخ المتماثل في الوقت الفعلي أو CDC عبر الاستعلامات المجدولة {#real-time-replication-or-cdc-via-scheduled-queries}
+  ### النسخ المتماثل في الوقت الفعلي أو CDC عبر الاستعلامات المجدولة
 </div>
 
 يُعد التقاط بيانات التغيير (CDC) العملية التي تُبقي الجداول متزامنة بين قاعدتي بيانات. ويزداد الأمر تعقيدًا بدرجة كبيرة إذا كان لا بد من التعامل مع التحديثات وعمليات الحذف بزمن قريب من الوقت الفعلي. ومن الأساليب الممكنة جدولة عملية تصدير دورية باستخدام [وظيفة الاستعلامات المجدولة](https://cloud.google.com/bigquery/docs/scheduling-queries) في BigQuery. وإذا كان بإمكانك تقبّل قدر من التأخير في إدراج البيانات في ClickHouse، فإن هذا الأسلوب سهل التنفيذ والصيانة. ويرد مثال على ذلك في [منشور المدونة هذا](https://clickhouse.com/blog/clickhouse-bigquery-migrating-data-for-realtime-queries#using-scheduled-queries).
 
 <div id="designing-schemas">
-  ## تصميم المخططات {#designing-schemas}
+  ## تصميم المخططات
 </div>
 
 تتضمن مجموعة بيانات Stack Overflow عددًا من الجداول المرتبطة. نوصي بالتركيز أولًا على ترحيل الجدول الأساسي. وليس بالضرورة أن يكون هذا أكبر الجداول، بل الجدول الذي تتوقع أن يستقبل أكبر عدد من الاستعلامات التحليلية. سيتيح لك ذلك التعرّف على مفاهيم ClickHouse الأساسية. وقد يتطلب هذا الجدول إعادة تصميم مع إضافة جداول أخرى للاستفادة الكاملة من إمكانات ClickHouse وتحقيق أفضل أداء. نستعرض عملية النمذجة هذه في [وثائق نمذجة البيانات](/ar/guides/clickhouse/data-modelling/schema-design#next-data-modeling-techniques) الخاصة بنا.
@@ -109,7 +105,7 @@ CREATE TABLE stackoverflow.posts (
 ```
 
 <div id="optimizing-types">
-  ### تحسين الأنواع {#optimizing-types}
+  ### تحسين الأنواع
 </div>
 
 ينتج عن تطبيق العملية [الموضحة هنا](/ar/guides/clickhouse/data-modelling/schema-design) المخطط التالي:
@@ -153,58 +149,54 @@ INSERT INTO stackoverflow.posts SELECT * FROM gcs( 'gs://clickhouse-public-datas
 
 لا نحتفظ بأي قيم nulls في المخطط الجديد. ويحوّل أمر insert أعلاه هذه القيم ضمنيًا إلى القيم الافتراضية لأنواعها المقابلة: 0 للأعداد الصحيحة وقيمة فارغة للسلاسل النصية. كما يحوّل ClickHouse تلقائيًا أي قيم رقمية إلى الدقة المستهدفة لها.
 
-## كيف تختلف المفاتيح الأساسية في ClickHouse؟ {#how-are-clickhouse-primary-keys-different}
+<div id="how-are-clickhouse-primary-keys-different">
+  ## كيف تختلف المفاتيح الأساسية في ClickHouse؟
+</div>
 
 كما هو موضح [هنا](/ar/get-started/migrate/bigquery/overview)، ومثل BigQuery، لا يفرض ClickHouse تفرّد قيم أعمدة المفتاح الأساسي في الجدول.
 
-وعلى غرار التجميع في BigQuery، تُخزَّن بيانات جدول ClickHouse على القرص مرتبةً حسب أعمدة المفتاح الأساسي. ويستفيد مُحسِّن الاستعلامات من ترتيب الفرز هذا لتجنّب إعادة الفرز، وتقليل استخدام الذاكرة في عمليات JOIN، وتمكين الإيقاف المبكر لعبارات LIMIT.
+وعلى غرار التجميع في BigQuery، تُخزَّن بيانات جدول ClickHouse على القرص مرتبةً حسب أعمدة المفتاح الأساسي. ويستفيد مُحسِّن الاستعلامات من ترتيب الفرز هذا لتجنّب إعادة الفرز، وتقليل استخدام الذاكرة في عمليات JOIN، وتمكين الإيقاف المبكر لعبارات LIMIT.
 وعلى خلاف BigQuery، ينشئ ClickHouse تلقائيًا [فهرسًا أساسيًا (متناثرًا)](/ar/guides/clickhouse/data-modelling/sparse-primary-indexes) استنادًا إلى قيم أعمدة المفتاح الأساسي. ويُستخدم هذا الفهرس لتسريع جميع الاستعلامات التي تتضمن عوامل تصفية على أعمدة المفتاح الأساسي. وتحديدًا:
 
-* تُعد كفاءة الذاكرة والقرص أمرًا بالغ الأهمية على النطاق الذي يُستخدم فيه ClickHouse عادةً. وتُكتب البيانات إلى جداول ClickHouse على هيئة أجزاء تُعرف باسم جزء بيانات، مع تطبيق قواعد لدمج أجزاء البيانات هذه في الخلفية. في ClickHouse، لكل جزء بيانات فهرسه الأساسي الخاص. وعند دمج أجزاء البيانات، تُدمج أيضًا الفهارس الأساسية الخاصة بجزء البيانات المدمج. لاحظ أن هذه الفهارس لا تُبنى لكل صف. وبدلًا من ذلك، يحتوي الفهرس الأساسي لكل جزء بيانات على مُدخل فهرسة واحد لكل مجموعة من الصفوف — وتُسمى هذه التقنية بالفهرسة المتناثرة.
-* تصبح الفهرسة المتناثرة ممكنة لأن ClickHouse يخزّن صفوف جزء بيانات على القرص مرتبةً حسب مفتاح محدد. وبدلًا من تحديد الصفوف المفردة مباشرةً (كما في فهرس يعتمد على B-Tree)، يتيح الفهرس الأساسي المتناثر تحديد مجموعات الصفوف التي قد تطابق الاستعلام بسرعة (عبر binary search على مُدخلات الفهرس). ثم تُمرَّر مجموعات الصفوف التي يُحتمل أن تكون مطابقة، بالتوازي، إلى ClickHouse engine للعثور على النتائج المطابقة. ويتيح تصميم الفهرس هذا أن يكون الفهرس الأساسي صغيرًا (بحيث يلائم الذاكرة الرئيسية بالكامل) مع تسريع أزمنة تنفيذ الاستعلامات بشكل ملحوظ، خاصةً في استعلامات النطاق الشائعة في حالات استخدام تحليلات البيانات. ولمزيد من التفاصيل، نوصي بهذا [الدليل المتعمق](/ar/guides/clickhouse/data-modelling/sparse-primary-indexes).
+* تُعد كفاءة الذاكرة والقرص أمرًا بالغ الأهمية على النطاق الذي يُستخدم فيه ClickHouse عادةً. وتُكتب البيانات إلى جداول ClickHouse على هيئة أجزاء تُعرف باسم جزء، مع تطبيق قواعد لدمج هذه الأجزاء في الخلفية. في ClickHouse، لكل جزء فهرسه الأساسي الخاص. وعند دمج الأجزاء، تُدمج أيضًا الفهارس الأساسية الخاصة بالجزء المدمج. لاحظ أن هذه الفهارس لا تُبنى لكل صف. وبدلًا من ذلك، يحتوي الفهرس الأساسي لكل جزء على مُدخل فهرسة واحد لكل مجموعة من الصفوف — وتُسمى هذه التقنية بالفهرسة المتناثرة.
+* تصبح الفهرسة المتناثرة ممكنة لأن ClickHouse يخزّن صفوف جزء على القرص مرتبةً حسب مفتاح محدد. وبدلًا من تحديد الصفوف المفردة مباشرةً (كما في فهرس يعتمد على B-Tree)، يتيح الفهرس الأساسي المتناثر تحديد مجموعات الصفوف التي قد تطابق الاستعلام بسرعة (عبر binary search على مُدخلات الفهرس). ثم تُمرَّر مجموعات الصفوف التي يُحتمل أن تكون مطابقة، بالتوازي، إلى ClickHouse engine للعثور على النتائج المطابقة. ويتيح تصميم الفهرس هذا أن يكون الفهرس الأساسي صغيرًا (بحيث يلائم الذاكرة الرئيسية بالكامل) مع تسريع أزمنة تنفيذ الاستعلامات بشكل ملحوظ، خاصةً في استعلامات النطاق الشائعة في حالات استخدام تحليلات البيانات. ولمزيد من التفاصيل، نوصي بهذا [الدليل المتعمق](/ar/guides/clickhouse/data-modelling/sparse-primary-indexes).
 
-<div className="ch-image-md">
-  <Frame>
-    ![المفاتيح الأساسية في ClickHouse](/images/migrations/bigquery-5.webp)
-  </Frame>
-</div>
+<Image img="/images/migrations/bigquery-5.webp" size="md" alt="المفاتيح الأساسية في ClickHouse" />
 
 لا يحدد المفتاح الأساسي المختار في ClickHouse الفهرس فقط، بل يحدد أيضًا ترتيب كتابة البيانات على القرص. ولذلك، يمكن أن يؤثر بشكل كبير في مستويات الضغط، مما قد ينعكس بدوره على أداء الاستعلامات. فمفتاح الترتيب الذي يجعل قيم معظم الأعمدة تُكتب بترتيب متجاور يسمح لخوارزمية الضغط المحددة (وترميزات الضغط) بضغط البيانات بفاعلية أكبر.
 
-> ستُرتَّب جميع الأعمدة في الجدول استنادًا إلى قيمة مفتاح الترتيب المحدد، بغض النظر عمّا إذا كانت مُضمَّنة في المفتاح نفسه أم لا. على سبيل المثال، إذا استُخدم `CreationDate` كمفتاح، فسيطابق ترتيب القيم في جميع الأعمدة الأخرى ترتيب القيم في العمود `CreationDate`. ويمكن تحديد عدة مفاتيح ترتيب — وسيؤدي ذلك إلى الترتيب بالدلالات نفسها لعبارة `ORDER BY` في استعلام `SELECT`.
+> ستُرتَّب جميع الأعمدة في الجدول استنادًا إلى قيمة مفتاح الترتيب المحدد، بغض النظر عمّا إذا كانت مُضمَّنة في المفتاح نفسه أم لا. على سبيل المثال، إذا استُخدم `CreationDate` كمفتاح، فسيطابق ترتيب القيم في جميع الأعمدة الأخرى ترتيب القيم في العمود `CreationDate`. ويمكن تحديد عدة مفاتيح ترتيب — وسيؤدي ذلك إلى الترتيب بالدلالات نفسها لعبارة `ORDER BY` في استعلام `SELECT`.
 
 <div id="choosing-an-ordering-key">
-  ### اختيار مفتاح الترتيب {#choosing-an-ordering-key}
+  ### اختيار مفتاح الترتيب
 </div>
 
 للاطلاع على الاعتبارات والخطوات المتعلقة باختيار مفتاح الترتيب، باستخدام جدول Posts كمثال، راجع [هنا](/ar/guides/clickhouse/data-modelling/schema-design#choosing-an-ordering-key).
 
 <div id="data-modeling-techniques">
-  ## تقنيات نمذجة البيانات {#data-modeling-techniques}
+  ## تقنيات نمذجة البيانات
 </div>
 
 نوصي المستخدمين الذين ينتقلون من BigQuery بقراءة [دليل نمذجة البيانات في ClickHouse](/ar/guides/clickhouse/data-modelling/schema-design). يستخدم هذا الدليل مجموعة بيانات Stack Overflow نفسها، ويستعرض عدة أساليب بالاستفادة من ميزات ClickHouse.
 
-### التقسيم {#partitions}
+<div id="partitions">
+  ### التقسيم
+</div>
 
 إذا كنت معتادًا على BigQuery، فستكون على دراية بمفهوم تقسيم الجداول لتحسين الأداء وسهولة الإدارة في قواعد البيانات الكبيرة، وذلك عبر تقسيم الجداول إلى أجزاء أصغر وأكثر قابلية للإدارة تُسمى أقسامًا. ويمكن تحقيق هذا التقسيم باستخدام نطاق على عمود محدد (مثل التواريخ)، أو قوائم محددة، أو باستخدام hash على مفتاح. ويتيح ذلك للمسؤولين تنظيم البيانات بناءً على معايير محددة مثل النطاقات الزمنية أو المواقع الجغرافية.
 
 يساعد التقسيم في تحسين أداء الاستعلامات من خلال تسريع الوصول إلى البيانات عبر استبعاد الأقسام غير اللازمة، إلى جانب فهرسة أكثر كفاءة. كما يدعم مهام الصيانة مثل النسخ الاحتياطية وحذف البيانات نهائيًا، إذ يتيح تنفيذ العمليات على أقسام منفردة بدلًا من الجدول بالكامل. بالإضافة إلى ذلك، يمكن أن يحسّن التقسيم قابلية التوسع في قواعد بيانات BigQuery بشكل كبير من خلال توزيع الحمل على عدة أقسام.
 
-في ClickHouse، يُحدَّد التقسيم للجدول عند تعريفه مبدئيًا عبر عبارة [`PARTITION BY`](/ar/reference/engines/table-engines/mergetree-family/custom-partitioning-key). ويمكن أن تحتوي هذه العبارة على تعبير SQL على أي عمود أو أعمدة، وتحدد نتيجته القسم الذي يُرسَل إليه الصف.
+في ClickHouse، يُحدَّد التقسيم للجدول عند تعريفه مبدئيًا عبر عبارة [`PARTITION BY`](/ar/reference/engines/table-engines/mergetree-family/custom-partitioning-key). ويمكن أن تحتوي هذه العبارة على تعبير SQL على أي عمود أو أعمدة، وتحدد نتيجته القسم الذي يُرسَل إليه الصف.
 
-<div className="ch-image-md">
-  <Frame>
-    ![التقسيم](/images/migrations/bigquery-6.webp)
-  </Frame>
-</div>
+<Image img="/images/migrations/bigquery-6.webp" size="md" alt="التقسيم" />
 
-ترتبط أجزاء البيانات منطقيًا بكل قسم على القرص، ويمكن الاستعلام عنها بصورة مستقلة. في المثال أدناه، نقسم جدول posts حسب السنة باستخدام التعبير [`toYear(CreationDate)`](/ar/reference/functions/regular-functions/date-time-functions#toYear). ومع إدراج الصفوف في ClickHouse، سيُقيَّم هذا التعبير على كل صف، ثم تُوجَّه الصفوف إلى القسم الناتج في صورة أجزاء بيانات جديدة تنتمي إلى ذلك القسم.
+ترتبط أجزاء البيانات منطقيًا بكل قسم على القرص، ويمكن الاستعلام عنها بصورة مستقلة. في المثال أدناه، نقسم جدول posts حسب السنة باستخدام التعبير [`toYear(CreationDate)`](/ar/reference/functions/regular-functions/date-time-functions#toYear). ومع إدراج الصفوف في ClickHouse، سيُقيَّم هذا التعبير على كل صف، ثم تُوجَّه الصفوف إلى القسم الناتج في صورة أجزاء بيانات جديدة تنتمي إلى ذلك القسم.
 
 ```sql
 CREATE TABLE posts
 (
-        `Id` Int32 CODEC(Delta, Default),
+        `Id` Int32 CODEC(Delta(4), ZSTD(1)),
         `PostTypeId` Enum8('Question' = 1, 'Answer' = 2, 'Wiki' = 3, 'TagWikiExcerpt' = 4, 'TagWiki' = 5, 'ModeratorNomination' = 6, 'WikiPlaceholder' = 7, 'PrivilegeWiki' = 8),
         `AcceptedAnswerId` UInt32,
         `CreationDate` DateTime64(3, 'UTC'),
@@ -217,7 +209,7 @@ PARTITION BY toYear(CreationDate)
 ```
 
 <div id="applications">
-  #### التطبيقات {#applications}
+  #### التطبيقات
 </div>
 
 للتقسيم في ClickHouse تطبيقات مشابهة لتلك الموجودة في BigQuery، ولكن مع بعض الفروق الدقيقة. وبشكل أكثر تحديدًا:
@@ -268,7 +260,7 @@ Ok.
 * **تحسين الاستعلامات** - رغم أن الأقسام قد تساعد في تحسين أداء الاستعلامات، فإن ذلك يعتمد بدرجة كبيرة على أنماط الوصول. فإذا كانت الاستعلامات تستهدف عددًا قليلًا فقط من الأقسام (ويُفضَّل قسم واحد)، فقد يتحسن الأداء. ويكون هذا مفيدًا عادةً فقط إذا لم يكن مفتاح التقسيم ضمن المفتاح الأساسي وكنت تُجري تصفيةً بناءً عليه. ومع ذلك، فإن الاستعلامات التي تحتاج إلى تغطية عدد كبير من الأقسام قد يكون أداؤها أسوأ مما لو لم يُستخدم أي تقسيم (إذ قد ينتج عن التقسيم عدد أكبر من الأجزاء). كما أن فائدة استهداف قسم واحد ستكون أقل وضوحًا، وقد تنعدم تمامًا، إذا كان مفتاح التقسيم يقع أصلًا ضمن الأعمدة الأولى للمفتاح الأساسي. ويمكن أيضًا استخدام التقسيم [لتحسين استعلامات `GROUP BY`](/ar/reference/engines/table-engines/mergetree-family/custom-partitioning-key#group-by-optimisation-using-partition-key) إذا كانت القيم داخل كل قسم فريدة. ومع ذلك، ينبغي عمومًا التأكد من تحسين المفتاح الأساسي، وعدم النظر إلى التقسيم كتقنية لتحسين الاستعلامات إلا في حالات استثنائية تكون فيها أنماط الوصول متركزة على مجموعة فرعية محددة ومتوقعة من البيانات الزمنية، مثل التقسيم حسب اليوم، مع تركّز معظم الاستعلامات على اليوم الأخير.
 
 <div id="recommendations">
-  #### التوصيات {#recommendations}
+  #### التوصيات
 </div>
 
 ينبغي النظر إلى التقسيم بوصفه أسلوبًا لإدارة البيانات. وهو مثالي عندما تكون هناك حاجة إلى إزالة البيانات من العنقود عند العمل مع بيانات السلاسل الزمنية؛ فعلى سبيل المثال، يمكن [ببساطة حذف](/ar/reference/statements/alter/partition#drop-partitionpart) أقدم قسم.
@@ -278,7 +270,7 @@ Ok.
 > داخليًا، يقوم ClickHouse [بإنشاء أجزاء](/ar/guides/clickhouse/data-modelling/sparse-primary-indexes#clickhouse-index-design) للبيانات المُدرجة. ومع إدراج المزيد من البيانات، يزداد عدد الأجزاء. ولمنع ارتفاع عدد الأجزاء إلى مستوى مفرط، بما يؤدي إلى تراجع أداء الاستعلامات (بسبب زيادة عدد الملفات التي يجب قراءتها)، تُدمج الأجزاء معًا في عملية غير متزامنة تعمل في الخلفية. وإذا تجاوز عدد الأجزاء [حدًا مُعدًا مسبقًا](/ar/reference/settings/merge-tree-settings/parts-to#parts_to_throw_insert)، فسيرمي ClickHouse استثناءً عند insert على شكل خطأ [&quot;too many parts&quot;](/ar/resources/support-center/knowledge-base/troubleshooting/exception-too-many-parts). لا ينبغي أن يحدث هذا في التشغيل العادي، ولا يحدث إلا إذا كان ClickHouse مُهيأً بشكل غير صحيح أو استُخدم بطريقة غير سليمة، مثل تنفيذ عدد كبير من عمليات insert الصغيرة. وبما أن الأجزاء تُنشأ لكل قسم بشكل مستقل، فإن زيادة عدد الأقسام تؤدي إلى زيادة عدد الأجزاء؛ أي إن عددها يكون مضاعفًا لعدد الأقسام. لذلك، قد تتسبب مفاتيح التقسيم عالية التفرّد في هذا الخطأ، وينبغي تجنّبها.
 
 <div id="materialized-views-vs-projections">
-  ## العروض المادية مقابل الإسقاطات {#materialized-views-vs-projections}
+  ## العروض المادية مقابل الإسقاطات
 </div>
 
 يتيح مفهوم الإسقاطات في ClickHouse تحديد عدة عبارات `ORDER BY` للجدول نفسه.
@@ -404,21 +396,19 @@ WHERE UserId = 8592047
 11 rows in set. Elapsed: 0.004 sec.
 ```
 
-### متى تستخدم الإسقاطات {#when-to-use-projections}
+<div id="when-to-use-projections">
+  ### متى تستخدم الإسقاطات
+</div>
 
 تُعد الإسقاطات ميزة جذابة للمستخدمين الجدد، إذ تُصان تلقائيًا
 عند إدراج البيانات. وعلاوة على ذلك، يمكن إرسال الاستعلامات ببساطة إلى جدول
 واحد، حيث تُستغل الإسقاطات متى أمكن لتسريع زمن
 الاستجابة.
 
-<div className="ch-image-md">
-  <Frame>
-    ![الإسقاطات](/images/migrations/bigquery-7.webp)
-  </Frame>
-</div>
+<Image img="/images/migrations/bigquery-7.webp" size="md" alt="الإسقاطات" />
 
 وهذا بخلاف العروض المادية، حيث يتعين على المستخدم اختيار
-جدول الهدف المُحسَّن المناسب أو إعادة كتابة الاستعلام، وفقًا لعوامل التصفية.
+الجدول الهدف المُحسَّن المناسب أو إعادة كتابة الاستعلام، وفقًا لعوامل التصفية.
 ويضع هذا عبئًا أكبر على تطبيقات المستخدم ويزيد من تعقيد
 جهة العميل.
 
@@ -428,22 +418,20 @@ WHERE UserId = 8592047
 
 نوصي باستخدام الإسقاطات عندما:
 
-* تكون هناك حاجة إلى إعادة ترتيب كاملة للبيانات. ومع أن التعبير في الإسقاط يمكنه، من الناحية النظرية، استخدام `GROUP BY,` فإن العروض المادية أكثر فاعلية في الاحتفاظ بالتجميعات. كما أن مُحسِّن الاستعلامات يكون أكثر ميلًا إلى استغلال الإسقاطات التي تستخدم إعادة ترتيب بسيطة، أي `SELECT * ORDER BY x`. ويمكنك تحديد مجموعة فرعية من الأعمدة في هذا التعبير لتقليل بصمة التخزين.
-* يكون المستخدمون متقبلين للزيادة المصاحبة في بصمة التخزين والعبء الإضافي الناتج عن كتابة البيانات مرتين. اختبر التأثير على سرعة الإدراج و[قيِّم عبء التخزين الإضافي](/ar/guides/clickhouse/data-modelling/compression/compression-in-clickhouse).
+* تكون هناك حاجة إلى إعادة ترتيب كاملة للبيانات. ومع أن التعبير في الإسقاط يمكنه، من الناحية النظرية، استخدام `GROUP BY,` فإن العروض المادية أكثر فاعلية في الاحتفاظ بالتجميعات. كما أن مُحسِّن الاستعلامات يكون أكثر ميلًا إلى استغلال الإسقاطات التي تستخدم إعادة ترتيب بسيطة، أي `SELECT * ORDER BY x`. ويمكنك تحديد مجموعة فرعية من الأعمدة في هذا التعبير لتقليل بصمة التخزين.
+* يكون المستخدمون متقبلين للزيادة المصاحبة في بصمة التخزين والعبء الإضافي الناتج عن كتابة البيانات مرتين. اختبر التأثير على سرعة الإدراج و[قيِّم عبء التخزين الإضافي](/ar/guides/clickhouse/data-modelling/compression/compression-in-clickhouse).
 
-## إعادة صياغة استعلامات BigQuery في ClickHouse {#rewriting-bigquery-queries-in-clickhouse}
+<div id="rewriting-bigquery-queries-in-clickhouse">
+  ## إعادة صياغة استعلامات BigQuery في ClickHouse
+</div>
 
-فيما يلي استعلامات نموذجية للمقارنة بين BigQuery وClickHouse. وتهدف هذه القائمة إلى توضيح كيفية الاستفادة من سمات ClickHouse لتبسيط الاستعلامات بشكل كبير. وتستخدم الأمثلة هنا مجموعة بيانات Stack Overflow الكاملة (حتى أبريل 2024).
+فيما يلي استعلامات نموذجية للمقارنة بين BigQuery وClickHouse. وتهدف هذه القائمة إلى توضيح كيفية الاستفادة من ميزات ClickHouse لتبسيط الاستعلامات بشكل كبير. وتستخدم الأمثلة هنا مجموعة بيانات Stack Overflow الكاملة (حتى أبريل 2024).
 
 **Users (الذين لديهم أكثر من 10 أسئلة) ويحصلون على أكبر عدد من المشاهدات:**
 
 *BigQuery*
 
-<div className="ch-image-sm">
-  <Frame>
-    ![إعادة صياغة استعلامات BigQuery](/images/migrations/bigquery-8.webp)
-  </Frame>
-</div>
+<Image img="/images/migrations/bigquery-8.webp" size="sm" alt="إعادة صياغة استعلامات BigQuery" border />
 
 *ClickHouse*
 
@@ -478,11 +466,7 @@ Peak memory usage: 323.37 MiB.
 
 <br />
 
-<div className="ch-image-sm">
-  <Frame>
-    ![BigQuery 1](/images/migrations/bigquery-9.webp)
-  </Frame>
-</div>
+<Image img="/images/migrations/bigquery-9.webp" size="sm" alt="BigQuery 1" border />
 
 *ClickHouse*
 
@@ -510,23 +494,17 @@ LIMIT 5
 Peak memory usage: 567.41 MiB.
 ```
 
-## الدوال التجميعية {#aggregate-functions}
+<div id="aggregate-functions">
+  ## الدوال التجميعية
+</div>
 
 حيثما أمكن، ينبغي الاستفادة من الدوال التجميعية في ClickHouse. نوضح أدناه استخدام [الدالة `argMax`](/ar/reference/functions/aggregate-functions/argMax) لحساب السؤال الأكثر مشاهدةً في كل عام.
 
 *BigQuery*
 
-<div className="ch-image-sm">
-  <Frame>
-    ![الدوال التجميعية 1](/images/migrations/bigquery-10.webp)
-  </Frame>
-</div>
+<Image img="/images/migrations/bigquery-10.webp" border size="sm" alt="الدوال التجميعية 1" />
 
-<div className="ch-image-sm">
-  <Frame>
-    ![الدوال التجميعية 2](/images/migrations/bigquery-11.webp)
-  </Frame>
-</div>
+<Image img="/images/migrations/bigquery-11.webp" border size="sm" alt="الدوال التجميعية 2" />
 
 *ClickHouse*
 
@@ -574,17 +552,15 @@ MaxViewCount:            66975
 Peak memory usage: 377.26 MiB.
 ```
 
-## الشروط والمصفوفات {#conditionals-and-arrays}
+<div id="conditionals-and-arrays">
+  ## الشروط والمصفوفات
+</div>
 
 تجعل الدوال الشرطية ودوال المصفوفات الاستعلامات أبسط بكثير. يحسب الاستعلام التالي الوسوم (التي يتجاوز عدد مرات ظهورها 10000) ذات أكبر زيادة مئوية من 2022 إلى 2023. لاحظ مدى إيجاز استعلام ClickHouse التالي بفضل الشروط ودوال المصفوفات وإمكانية إعادة استخدام الأسماء المستعارة في عبارتي `HAVING` و`SELECT`.
 
 *BigQuery*
 
-<div className="ch-image-sm">
-  <Frame>
-    ![الشروط والمصفوفات](/images/migrations/bigquery-12.webp)
-  </Frame>
-</div>
+<Image img="/images/migrations/bigquery-12.webp" size="sm" border alt="الشروط والمصفوفات" />
 
 *ClickHouse*
 
@@ -615,4 +591,4 @@ LIMIT 5
 Peak memory usage: 410.37 MiB.
 ```
 
-وبهذا نختتم دليلنا الأساسي للترحيل من BigQuery إلى ClickHouse. ننصحك بقراءة دليل [نمذجة البيانات في ClickHouse](/ar/guides/clickhouse/data-modelling/schema-design) للتعرّف أكثر إلى سمات ClickHouse المتقدمة.
+وبهذا نختتم دليلنا الأساسي للانتقال من BigQuery إلى ClickHouse. ننصحك بقراءة دليل [نمذجة البيانات في ClickHouse](/ar/guides/clickhouse/data-modelling/schema-design) للتعرّف أكثر إلى ميزات ClickHouse المتقدمة.

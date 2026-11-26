@@ -14,20 +14,26 @@ keywords: ['خيارات نشر ClickStack', 'ClickHouse خارجي', 'OTel خا
 
 يغطي هذا الدليل خيارات النشر المتقدمة لـ ClickStack باستخدام Helm. وللتثبيت الأساسي، راجع [دليل النشر الرئيسي باستخدام Helm](/ar/clickstack/deployment/helm-v1).
 
-## نظرة عامة {#overview}
+<div id="overview">
+  ## نظرة عامة
+</div>
 
-يدعم مخطط Helm الخاص بـ ClickStack عدة إعدادات للنشر:
+يدعم مخطط Helm الخاص بـ ClickStack عدة تكوينات للنشر:
 
 * **المكدس الكامل** (الافتراضي) - جميع المكونات متضمنة
 * **ClickHouse خارجي** - استخدام عنقود ClickHouse حالي
 * **OTel collector خارجي** - استخدام بنية OTel التحتية الحالية
-* **النشر بالحد الأدنى** - واجهة مستخدم ClickStack فقط، مع تبعيات خارجية
+* **النشر بالحد الأدنى** - HyperDX فقط، مع تبعيات خارجية
 
-## ClickHouse خارجي {#external-clickhouse}
+<div id="external-clickhouse">
+  ## ClickHouse خارجي
+</div>
 
 إذا كانت لديك مجموعة ClickHouse حالية (بما في ذلك ClickHouse Cloud)، فيمكنك تعطيل ClickHouse المضمَّن والاتصال بمثيلك الخارجي.
 
-### الخيار 1: التهيئة المضمّنة (للتطوير/الاختبار) {#external-clickhouse-inline}
+<div id="external-clickhouse-inline">
+  ### الخيار 1: التهيئة المضمّنة (للتطوير/الاختبار)
+</div>
 
 استخدم هذا الأسلوب للاختبار السريع أو في البيئات غير الإنتاجية:
 
@@ -59,11 +65,15 @@ hyperdx:
 helm install my-clickstack clickstack/clickstack -f values-external-clickhouse.yaml
 ```
 
-### الخيار 2: Secret خارجي (موصى به لبيئات الإنتاج) {#external-clickhouse-secret}
+<div id="external-clickhouse-secret">
+  ### الخيار 2: Secret خارجي (موصى به لبيئات الإنتاج)
+</div>
 
 في عمليات النشر الإنتاجية التي تريد فيها إبقاء بيانات الاعتماد منفصلة عن إعدادات Helm:
 
-#### أنشئ ملفات التهيئة الخاصة بك {#create-configuration}
+<div id="create-configuration">
+  #### أنشئ ملفات التهيئة الخاصة بك
+</div>
 
 ```bash
 # Create connections.json
@@ -121,7 +131,9 @@ cat <<EOF > sources.json
 EOF
 ```
 
-#### إنشاء Secret Kubernetes {#create-kubernetes-secret}
+<div id="create-kubernetes-secret">
+  #### إنشاء Secret Kubernetes
+</div>
 
 ```bash
 kubectl create secret generic hyperdx-external-config \
@@ -132,7 +144,9 @@ kubectl create secret generic hyperdx-external-config \
 rm connections.json sources.json
 ```
 
-#### هيّئ Helm لاستخدام الـ Secret {#configure-helm-secret}
+<div id="configure-helm-secret">
+  #### هيّئ Helm لاستخدام الـ Secret
+</div>
 
 ```yaml
 # values-external-clickhouse-secret.yaml
@@ -154,7 +168,9 @@ hyperdx:
 helm install my-clickstack clickstack/clickstack -f values-external-clickhouse-secret.yaml
 ```
 
-### Using ClickHouse Cloud {#using-clickhouse-cloud}
+<div id="using-clickhouse-cloud">
+  ### Using ClickHouse Cloud
+</div>
 
 أما بالنسبة إلى ClickHouse Cloud تحديدًا:
 
@@ -175,7 +191,9 @@ hyperdx:
   existingConfigSourcesKey: "sources.json"
 ```
 
-## OTel collector خارجي {#external-otel-collector}
+<div id="external-otel-collector">
+  ## OTel collector خارجي
+</div>
 
 إذا كانت لديك بالفعل بنية تحتية لـ OTel collector:
 
@@ -194,9 +212,11 @@ helm install my-clickstack clickstack/clickstack -f values-external-otel.yaml
 
 للاطلاع على إرشادات حول كشف نقاط نهاية OTel collector عبر مورد Ingress، راجع [تهيئة الإدخال](/ar/clickstack/deployment/helm-configuration-v1#otel-collector-ingress).
 
-## النشر بالحد الأدنى {#minimal-deployment}
+<div id="minimal-deployment">
+  ## النشر بالحد الأدنى
+</div>
 
-للمؤسسات التي لديها بنية تحتية قائمة، انشر واجهة مستخدم ClickStack فقط:
+للمؤسسات التي لديها بنية تحتية قائمة، انشر HyperDX فقط:
 
 ```yaml
 # values-minimal.yaml
@@ -232,7 +252,9 @@ hyperdx:
 helm install my-clickstack clickstack/clickstack -f values-minimal.yaml
 ```
 
-## الخطوات التالية {#next-steps}
+<div id="next-steps">
+  ## الخطوات التالية
+</div>
 
 * [دليل التهيئة (v1.x)](/ar/clickstack/deployment/helm-configuration-v1) - إعداد مفاتيح API وSecrets وIngress
 * [عمليات النشر على Cloud (v1.x)](/ar/clickstack/deployment/helm-cloud-v1) - إعدادات خاصة بـ GKE وEKS وAKS

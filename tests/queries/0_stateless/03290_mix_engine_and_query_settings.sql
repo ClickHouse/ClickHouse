@@ -1,4 +1,5 @@
 -- Tags: memory-engine
+SET enable_json_type = 0;
 
 DROP TABLE IF EXISTS example_mt;
 CREATE TABLE example_mt

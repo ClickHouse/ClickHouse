@@ -6,7 +6,9 @@ tags: ['تصدير البيانات']
 keywords: ['تصدير البيانات', 'INTO OUTFILE', 'محرك الجدول File']
 ---
 
-## استخدام عبارة INTO OUTFILE {#using-into-outfile-clause}
+<div id="using-into-outfile-clause">
+  ## استخدام عبارة INTO OUTFILE
+</div>
 
 أضِف عبارة [INTO OUTFILE](/ar/reference/statements/select/into-outfile) إلى استعلامك.
 
@@ -16,7 +18,7 @@ keywords: ['تصدير البيانات', 'INTO OUTFILE', 'محرك الجدول
 SELECT * FROM table INTO OUTFILE 'file'
 ```
 
-بشكل افتراضي، يعتمد ClickHouse على امتداد اسم الملف لتحديد صيغة الإخراج والضغط. على سبيل المثال، ستُصدَّر جميع الصفوف من `nyc_taxi` إلى `nyc_taxi.parquet` باستخدام صيغة Parquet:
+بشكل افتراضي، يعتمد ClickHouse على امتداد اسم الملف لتحديد تنسيق الإخراج والضغط. على سبيل المثال، ستُصدَّر جميع الصفوف من `nyc_taxi` إلى `nyc_taxi.parquet` باستخدام تنسيق Parquet:
 
 ```sql
 SELECT *
@@ -32,7 +34,7 @@ FROM nyc_taxi
 INTO OUTFILE 'taxi_rides.tsv.gz'
 ```
 
-إذا تعذّر على ClickHouse تحديد الصيغة من امتداد الملف، فستكون [صيغة الإخراج](/ar/reference/formats/index) الافتراضية لبيانات الإخراج هي [TabSeparated](/ar/reference/formats/index). ولتحديد [صيغة الإخراج](/ar/reference/formats/index)، استخدم [عبارة FORMAT](/ar/reference/statements/select/format).
+إذا تعذّر على ClickHouse تحديد التنسيق من امتداد الملف، فسيكون [تنسيق الإخراج](/ar/reference/formats/index) الافتراضي لبيانات الإخراج هو [TabSeparated](/ar/reference/formats/index). ولتحديد [تنسيق الإخراج](/ar/reference/formats/index)، استخدم [عبارة FORMAT](/ar/reference/statements/select/format).
 
 على سبيل المثال:
 
@@ -43,7 +45,9 @@ INTO OUTFILE 'taxi_rides.txt'
 FORMAT CSV
 ```
 
-## استخدام محرك الجدول File {#using-a-file-engine-table}
+<div id="using-a-file-engine-table">
+  ## استخدام محرك الجدول File
+</div>
 
 خيار آخر يتمثل في استخدام محرك الجدول [File](/ar/reference/engines/table-engines/special/file)، حيث يستخدم ClickHouse الملف لتخزين البيانات. ويمكنك تنفيذ الاستعلامات وعمليات الإدراج مباشرةً على الملف.
 
@@ -73,10 +77,12 @@ INSERT INTO my_table VALUES
   يُعد استخدام محرك الجدول `File` مفيدًا للغاية لإنشاء الملفات على نظام الملفات لديك والاستعلام عنها، ولكن تذكّر أن جداول `File` ليست من نوع `MergeTree`، لذلك لن تحصل على جميع المزايا التي يوفرها `MergeTree`. استخدم `File` لسهولة تصدير البيانات من ClickHouse بصيغ مناسبة.
 </Note>
 
-## استخدام إعادة التوجيه من سطر الأوامر {#using-command-line-redirection}
+<div id="using-command-line-redirection">
+  ## استخدام إعادة التوجيه من سطر الأوامر
+</div>
 
 ```bash
 $ clickhouse-client --query "SELECT * from table" --format FormatName > result.txt
 ```
 
-انظر [clickhouse-client](/ar/concepts/features/interfaces/client).
+انظر [clickhouse-client](/ar/concepts/features/interfaces/cli).

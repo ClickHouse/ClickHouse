@@ -11,7 +11,9 @@ keywords: ['示例数据集', 'laion', '图像嵌入向量', '样本数据', '�
 
 该数据集包含图片 URL、图片及其图像说明各自的嵌入向量、图片与图像说明之间的相似度评分，以及元数据，例如图片的宽度/高度、许可证和 NSFW 标记。我们可以使用该数据集来演示 ClickHouse 中的[近似最近邻搜索](/zh/reference/engines/table-engines/mergetree-family/annindexes)。
 
-## 数据准备 {#data-preparation}
+<div id="data-preparation">
+  ## 数据准备
+</div>
 
 原始数据中的嵌入向量和元数据分别存储在不同的文件中。数据准备这一步会下载数据、合并这些文件，
 将其转换为 CSV 并导入 ClickHouse。为此，你可以使用下面的 `download.sh` 脚本：
@@ -75,7 +77,9 @@ seq 0 409 | xargs -P1 -I{} bash -c './download.sh {}'
 
 (上面的 python 脚本非常慢 (每个文件约需 2–10 分钟) ，占用大量内存 (每个文件 41 GB) ，生成的 csv 文件也很大 (每个 10 GB) ，因此请务必谨慎。如果你有足够的 RAM，可以增大 `-P1` 的值以提高并行度。如果这样仍然太慢，可以考虑采用更好的摄取流程——例如先将 .npy 文件转换为 Parquet，然后再用 ClickHouse 完成其余处理。)
 
-## 创建表 {#create-table}
+<div id="create-table">
+  ## 创建表
+</div>
 
 如需先创建一个不带索引的表，请运行：
 
@@ -102,7 +106,9 @@ INSERT INTO laion FROM INFILE '{path_to_csv_files}/*.csv'
 
 请注意，`id` 列仅作示意，脚本会为其填入非唯一值。
 
-## 运行穷举向量相似度搜索 {#run-a-brute-force-vector-similarity-search}
+<div id="run-a-brute-force-vector-similarity-search">
+  ## 运行穷举向量相似度搜索
+</div>
 
 要执行穷举的近似向量搜索，请运行：
 
@@ -133,7 +139,9 @@ SELECT url, caption FROM laion ORDER BY cosineDistance(image_embedding, {target:
 10 rows in set. Elapsed: 4.605 sec. Processed 100.38 million rows, 309.98 GB (21.80 million rows/s., 67.31 GB/s.)
 ```
 
-## 使用向量相似度索引执行近似向量相似度搜索 {#run-an-approximate-vector-similarity-search-with-a-vector-similarity-index}
+<div id="run-an-approximate-vector-similarity-search-with-a-vector-similarity-index">
+  ## 使用向量相似度索引执行近似向量相似度搜索
+</div>
 
 现在，我们来在该表上定义两个向量相似度索引。
 
@@ -184,11 +192,15 @@ SELECT url, caption FROM laion ORDER BY cosineDistance(image_embedding, {target:
 使用向量相似度索引进行向量相似度搜索时，返回的结果可能与穷举搜索的结果略有差异。
 通过谨慎选择 HNSW 参数并评估索引质量，HNSW 索引有望实现接近 1 的召回率 (即达到与穷举搜索相同的准确性) 。
 
-## 使用 UDF 创建嵌入向量 {#creating-embeddings-with-udfs}
+<div id="creating-embeddings-with-udfs">
+  ## 使用 UDF 创建嵌入向量
+</div>
 
 通常需要为新图像或新的图像说明创建嵌入向量，并在数据中搜索相似的图像/图像说明对。我们可以使用 [UDF](/zh/reference/functions/regular-functions/udf) 直接在客户端内创建 `target` 向量，而无需离开客户端。务必使用同一个模型来生成数据以及用于搜索的新嵌入向量。以下脚本使用 `ViT-B/32` 模型，底层数据集也是基于该模型构建的。
 
-### 文本嵌入向量 {#text-embeddings}
+<div id="text-embeddings">
+  ### 文本嵌入向量
+</div>
 
 首先，将以下 Python 脚本保存到 ClickHouse 数据路径中的 `user_scripts/` 目录，并将其设为可执行文件 (`chmod +x encode_text.py`) 。
 
@@ -196,7 +208,7 @@ SELECT url, caption FROM laion ORDER BY cosineDistance(image_embedding, {target:
 
 ```python
 #!/usr/bin/python3
-#!Note: Change the above python3 executable location if a virtual env is being used.
+#!注意：如果使用虚拟环境，请修改上方 python3 可执行文件的路径。
 import clip
 import torch
 import numpy as np
@@ -249,7 +261,9 @@ LIMIT 10
 
 请注意，`encode_text()` UDF 本身可能需要几秒钟才能完成计算并生成嵌入向量。
 
-### 图像嵌入向量 {#image-embeddings}
+<div id="image-embeddings">
+  ### 图像嵌入向量
+</div>
 
 图像嵌入向量也可以用类似的方法创建。我们提供了一个 Python 脚本，可为本地文件中的图像生成嵌入向量。
 

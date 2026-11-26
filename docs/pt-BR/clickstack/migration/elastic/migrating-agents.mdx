@@ -8,8 +8,10 @@ keywords: ['ClickStack']
 doc_type: 'guide'
 ---
 
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
 <div id="migrating-agents-from-elastic">
-  ## Migrando agentes do Elastic {#migrating-agents-from-elastic}
+  ## Migrando agentes do Elastic
 </div>
 
 O Elastic Stack oferece vários agentes para coleta de dados de observabilidade. Especificamente:
@@ -21,7 +23,7 @@ O Elastic Stack oferece vários agentes para coleta de dados de observabilidade.
 O melhor caminho de migração depende dos agentes atualmente em uso. Nas seções a seguir, documentamos as opções de migração para cada tipo principal de agente. Nosso objetivo é reduzir o atrito e, sempre que possível, permitir que você continue usando seus agentes atuais durante a transição.
 
 <div id="prefered-migration-path">
-  ## Caminho de migração preferencial {#prefered-migration-path}
+  ## Caminho de migração preferencial
 </div>
 
 Sempre que possível, recomendamos migrar para o [OpenTelemetry (OTel) Collector](https://opentelemetry.io/docs/collector/) para toda a coleta de logs, métricas e traces, implantando o collector na [borda, no papel de agente](/pt-BR/clickstack/ingesting-data/collector#collector-roles). Essa é a forma mais eficiente de enviar dados e evita complexidade arquitetônica e transformações de dados.
@@ -33,16 +35,18 @@ Sempre que possível, recomendamos migrar para o [OpenTelemetry (OTel) Collector
 </Info>
 
 <div id="clickhouse-otel-endpoint">
-  ## Endpoint OpenTelemetry do ClickHouse {#clickhouse-otel-endpoint}
+  ## Endpoint OpenTelemetry do ClickHouse
 </div>
 
-Todos os dados são ingeridos no ClickStack por meio de uma instância do **coletor OTel (OpenTelemetry)**, que atua como o principal ponto de entrada para logs, métricas, traces e dados de sessão. Recomendamos usar a [distribuição oficial do ClickStack](/pt-BR/clickstack/ingesting-data/opentelemetry#installing-otel-collector) do coletor para essa instância, caso ela ainda não esteja [incluída no seu modelo de implantação do ClickStack](/pt-BR/clickstack/deployment/oss).
+Todos os dados são ingeridos no ClickStack por meio de uma instância do **OTel collector (OpenTelemetry)**, que atua como o principal ponto de entrada para logs, métricas, traces e dados de sessão. Recomendamos usar a [distribuição oficial do ClickStack](/pt-BR/clickstack/ingesting-data/opentelemetry#installing-otel-collector) do collector para essa instância, caso ela ainda não esteja [incluída no seu modelo de implantação do ClickStack](/pt-BR/clickstack/deployment/overview).
 
-Os usuários enviam dados para esse coletor a partir de [SDKs de linguagem](/pt-BR/clickstack/ingesting-data/sdks/index) ou por meio de agentes de coleta de dados que coletam métricas e logs de infraestrutura (como coletores OTel na função de [agente](/pt-BR/clickstack/ingesting-data/collector#collector-roles) ou outras tecnologias, como [Fluentd](https://www.fluentd.org/) ou [Vector](https://vector.dev/)). Para equipes que desejam um pipeline gerenciado do OpenTelemetry, [Bindplane](/pt-BR/clickstack/integration-partners/bindplane) oferece uma solução nativa de OpenTelemetry com um destino nativo do ClickStack, simplificando a coleta, o processamento e o roteamento de telemetria.
+Os usuários enviam dados para esse collector a partir de [SDKs de linguagem](/pt-BR/clickstack/ingesting-data/sdks/index) ou por meio de agentes de coleta de dados que coletam métricas e logs de infraestrutura (como OTel collectors na função de [agente](/pt-BR/clickstack/ingesting-data/collector#collector-roles) ou outras tecnologias, como [Fluentd](https://www.fluentd.org/) ou [Vector](https://vector.dev/)). Para equipes que desejam um pipeline gerenciado do OpenTelemetry, [Bindplane](/pt-BR/clickstack/integration-partners/bindplane) oferece uma solução nativa de OpenTelemetry com um destino nativo do ClickStack, simplificando a coleta, o processamento e o roteamento de telemetria.
 
-**Assumimos que esse coletor esteja disponível para todas as etapas de migração do agente**.
+**Assumimos que esse collector esteja disponível para todas as etapas de migração do agente**.
 
-## Migração de beats {#migrating-to-beats}
+<div id="migrating-to-beats">
+  ## Migração de beats
+</div>
 
 Usuários com implantações extensas de Beat talvez queiram mantê-las ao migrar para o ClickStack.
 
@@ -58,11 +62,7 @@ Como alternativa, o Vector também oferece suporte ao recebimento de eventos pel
 
 Ilustramos as duas arquiteturas abaixo.
 
-<div className="ch-image-lg">
-  <Frame>
-    ![Migração de agentes](/images/use-cases/observability/clickstack-migrating-agents-ui.png)
-  </Frame>
-</div>
+<Image img="/images/use-cases/observability/clickstack-migrating-agents.webp" alt="Migração de agentes" size="lg" background />
 
 No exemplo a seguir, apresentamos as etapas iniciais para configurar o Vector para receber eventos de log do Filebeat por meio do protocolo Lumberjack. Fornecemos o VRL para mapear os eventos ECS de entrada para a especificação OTel, antes de enviá-los ao ClickStack OpenTelemetry Collector via OTLP. Usuários que consomem eventos do Kafka podem substituir a origem Logstash do Vector pela [origem Kafka](https://vector.dev/docs/reference/configuration/sources/kafka/) — todas as outras etapas permanecem as mesmas.
 
@@ -249,13 +249,9 @@ No exemplo a seguir, apresentamos as etapas iniciais para configurar o Vector pa
             authorization: ${YOUR_INGESTION_API_KEY}
     ```
 
-    A `YOUR_INGESTION_API_KEY` aqui é gerada pelo ClickStack. Você pode encontrar a chave na UI do ClickStack em `Team Settings → API Keys`.
+    A `YOUR_INGESTION_API_KEY` aqui é gerada pelo ClickStack. Você pode encontrar a chave na UI do ClickStack (HyperDX) em `Team Settings → API Keys`.
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![Chaves de ingestão](/images/use-cases/observability/ingestion-keys.webp)
-      </Frame>
-    </div>
+    <Image img="/images/use-cases/observability/ingestion-keys.webp" alt="Chaves de ingestão" size="lg" />
 
     Nossa configuração completa final está exibida abaixo:
 
@@ -317,7 +313,7 @@ No exemplo a seguir, apresentamos as etapas iniciais para configurar o Vector pa
 </Steps>
 
 <div id="migrating-from-elastic-agent">
-  ## Migrando do Elastic Agent {#migrating-from-elastic-agent}
+  ## Migrando do Elastic Agent
 </div>
 
 O Elastic Agent consolida os diferentes Elastic Beats em um único pacote. Esse agente se integra ao [Elastic Fleet](https://www.elastic.co/docs/reference/fleet/fleet-server), permitindo que seja orquestrado e configurado de forma centralizada.
@@ -329,7 +325,9 @@ Os usuários com Elastic Agents implantados têm vários caminhos de migração:
 
 Demonstramos essas duas opções abaixo.
 
-### Envio de dados via Vector {#sending-data-via-vector}
+<div id="sending-data-via-vector">
+  ### Envio de dados via Vector
+</div>
 
 <Steps>
   <Step title="Instalar e configurar o Vector" id="install-configure-vector">
@@ -341,23 +339,15 @@ Demonstramos essas duas opções abaixo.
 
     A configuração central via Kibana pode ser feita adicionando [um Output ao Fleet](https://www.elastic.co/docs/reference/fleet/fleet-settings#output-settings).
 
-    <div className="ch-image-md">
-      <Frame>
-        ![Adicionar saída do Logstash](/images/use-cases/observability/add-logstash-output.webp)
-      </Frame>
-    </div>
+    <Image img="/images/use-cases/observability/add-logstash-output.webp" alt="Adicionar saída Logstash" size="md" />
 
-    Essa saída pode então ser usada em uma [política de agente](https://www.elastic.co/docs/reference/fleet/agent-policy). Com isso, todos os agentes que usarem essa política enviarão automaticamente seus dados para o Vector.
+    Essa saída pode então ser usada em uma [política de agente](https://www.elastic.co/docs/reference/fleet/agent-policy). Com isso, todos os agents que usarem essa política enviarão automaticamente seus dados para o Vector.
 
-    <div className="ch-image-md">
-      <Frame>
-        ![Configurações do agente](/images/use-cases/observability/agent-output-settings.webp)
-      </Frame>
-    </div>
+    <Image img="/images/use-cases/observability/agent-output-settings.webp" alt="Configurações do agente" size="md" />
 
-    Como isso exige a configuração de comunicação segura via TLS, recomendamos o guia [&quot;Configure SSL/TLS for the saída do Logstash&quot;](https://www.elastic.co/docs/reference/fleet/secure-logstash-connections#use-ls-output), que pode ser seguido considerando que a instância do Vector assume o papel do Logstash.
+    Como isso exige a configuração de comunicação segura via TLS, recomendamos o guia [&quot;Configure SSL/TLS for the Logstash output&quot;](https://www.elastic.co/docs/reference/fleet/secure-logstash-connections#use-ls-output), que pode ser seguido considerando que a instância do Vector assume o papel do Logstash.
 
-    Observe que isso também exige que os usuários configurem a origem Logstash no Vector com TLS mútuo. Use as chaves e os certificados [gerados no guia](https://www.elastic.co/docs/reference/fleet/secure-logstash-connections#generate-logstash-certs) para configurar a entrada adequadamente.
+    Observe que isso também exige que os usuários configurem a source Logstash no Vector com TLS mútuo. Use as chaves e os certificados [gerados no guia](https://www.elastic.co/docs/reference/fleet/secure-logstash-connections#generate-logstash-certs) para configurar a entrada adequadamente.
 
     ```yaml
     sources:
@@ -375,17 +365,19 @@ Demonstramos essas duas opções abaixo.
   </Step>
 </Steps>
 
-### Execute o Elastic Agent como coletor OpenTelemetry {#run-agent-as-otel}
+<div id="run-agent-as-otel">
+  ### Execute o Elastic Agent como OpenTelemetry Collector
+</div>
 
-O Elastic Agent inclui um coletor EDOT embutido que permite instrumentar seus aplicativos e sua infraestrutura uma única vez e enviar dados para vários fornecedores e backends.
+O Elastic Agent inclui um EDOT Collector integrado que permite instrumentar seus aplicativos e sua infraestrutura uma única vez e enviar dados para vários fornecedores e backends.
 
 <Info>
   **Integrações e orquestração do Agent**
 
-  Os usuários que executam o coletor EDOT distribuído com o Elastic Agent não poderão aproveitar as [integrações existentes oferecidas pelo Agent](https://www.elastic.co/docs/reference/fleet/manage-integrations). Além disso, o coletor não pode ser gerenciado centralmente pelo Fleet, o que obriga o usuário a executar o [Agent no modo standalone](https://www.elastic.co/docs/reference/fleet/configure-standalone-elastic-agents) e gerenciar a configuração por conta própria.
+  Os usuários que executam o EDOT Collector distribuído com o Elastic Agent não poderão aproveitar as [integrações existentes oferecidas pelo Agent](https://www.elastic.co/docs/reference/fleet/manage-integrations). Além disso, o coletor não pode ser gerenciado centralmente pelo Fleet, o que obriga o usuário a executar o [Agent no modo standalone](https://www.elastic.co/docs/reference/fleet/configure-standalone-elastic-agents) e gerenciar a configuração por conta própria.
 </Info>
 
-Para executar o Elastic Agent com o coletor EDOT, consulte o [guia oficial da Elastic](https://www.elastic.co/docs/reference/fleet/otel-agent-transform). Em vez de configurar o endpoint da Elastic, como indicado no guia, remova os `exporters` existentes e configure a saída OTLP para enviar dados ao coletor OpenTelemetry do ClickStack. Por exemplo, a configuração dos `exporters` passa a ser:
+Para executar o Elastic Agent com o EDOT Collector, consulte o [guia oficial da Elastic](https://www.elastic.co/docs/reference/fleet/otel-agent-transform). Em vez de configurar o endpoint da Elastic, como indicado no guia, remova os `exporters` existentes e configure a saída OTLP para enviar dados ao ClickStack OpenTelemetry Collector. Por exemplo, a configuração dos `exporters` passa a ser:
 
 ```yaml
 exporters:
@@ -401,16 +393,12 @@ exporters:
 <Info>
   **Managed ClickStack**
 
-  Por padrão, não é necessário uma chave de API de ingestão ao executar um coletor OpenTelemetry em modo standalone para o Managed ClickStack. No entanto, é possível proteger a ingestão especificando um token de autenticação OTLP. Consulte [&quot;Protegendo o coletor&quot;](/pt-BR/clickstack/ingesting-data/collector#securing-the-collector).
+  Por padrão, não é necessário uma chave de API de ingestão ao executar um OpenTelemetry Collector em modo standalone para o Managed ClickStack. No entanto, é possível proteger a ingestão especificando um token de autenticação OTLP. Consulte [&quot;Protegendo o collector&quot;](/pt-BR/clickstack/ingesting-data/collector#securing-the-collector).
 </Info>
 
 A `YOUR_INGESTION_API_KEY` aqui é gerada pelo ClickStack. Você pode encontrar essa chave na UI do ClickStack em `Team Settings → API Keys`.
 
-<div className="ch-image-lg">
-  <Frame>
-    ![Chaves de ingestão](/images/use-cases/observability/ingestion-keys.webp)
-  </Frame>
-</div>
+<Image img="/images/use-cases/observability/ingestion-keys.webp" alt="Chaves de ingestão" size="lg" />
 
 Se o Vector tiver sido configurado para usar TLS mútuo, com o certificado e as chaves gerados seguindo as etapas do guia [&quot;Configurar SSL/TLS para a saída do Logstash&quot;](https://www.elastic.co/docs/reference/fleet/secure-logstash-connections#use-ls-output), o exportador `otlp` precisará ser configurado adequadamente, por exemplo.
 
@@ -429,7 +417,7 @@ exporters:
 ```
 
 <div id="migrating-from-elastic-otel-collector">
-  ## Migração do Elastic OpenTelemetry Collector {#migrating-from-elastic-otel-collector}
+  ## Migração do Elastic OpenTelemetry Collector
 </div>
 
 Os usuários que já executam o [Elastic OpenTelemetry Collector (EDOT)](https://www.elastic.co/docs/reference/opentelemetry) podem simplesmente reconfigurar seus agents para enviar ao ClickStack OpenTelemetry Collector via OTLP. As etapas envolvidas são idênticas às descritas acima para executar o [Elastic Agent como um OpenTelemetry Collector](#run-agent-as-otel). Essa abordagem pode ser usada para todos os tipos de dados.

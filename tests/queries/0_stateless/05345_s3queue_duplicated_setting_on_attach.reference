@@ -1,3 +1,0 @@
-Setting polling_min_timeout_ms is defined multiple times
-has a duplicated setting polling_min_timeout_ms. Will use the last declared setting's value
-polling_min_timeout_ms	2222

@@ -2,7 +2,7 @@
 #include <Core/Field.h>
 #include <IO/Operators.h>
 #include <Interpreters/WindowDescription.h>
-#include <WindowFunctions/IGeneralWindowFunction.h>
+#include <Parsers/ASTFunction.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/FieldAccurateComparison.h>
 
@@ -20,33 +20,15 @@ std::string WindowFunctionDescription::dump() const
     WriteBufferFromOwnString ss;
 
     ss << "window function '" << column_name << "\n";
-    ss << "function '" << getFunctionName() << "'\n";
+    if (function_node)
+        ss << "function node " << function_node->dumpTree() << "\n";
+    ss << "aggregate function '" << aggregate_function->getName() << "'\n";
     if (!function_parameters.empty())
     {
         ss << "parameters " << toString(function_parameters) << "\n";
     }
 
     return ss.str();
-}
-
-String WindowFunctionDescription::getFunctionName() const
-{
-    return general_function ? general_function->getName() : aggregate_function->getName();
-}
-
-const DataTypePtr & WindowFunctionDescription::getResultType() const
-{
-    return general_function ? general_function->getResultType() : aggregate_function->getResultType();
-}
-
-void validateWindowFunctions(const WindowDescription & window)
-{
-    for (const auto & function : window.window_functions)
-    {
-        const auto & general = function.general_function;
-        if (general && general->getRequirements(window).order_by && window.order_by.empty())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Window function '{}' requires ORDER BY in its window definition", general->getName());
-    }
 }
 
 std::string WindowDescription::dump() const

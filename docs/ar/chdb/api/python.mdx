@@ -7,15 +7,19 @@ keywords: ['chdb', 'مضمن', 'clickhouse-lite', 'python', 'api', 'مرجع']
 doc_type: 'reference'
 ---
 
-## دوال الاستعلام الأساسية {#core-query-functions}
+<div id="core-query-functions">
+  ## دوال الاستعلام الأساسية
+</div>
 
-### `chdb.query` {#chdb-query}
+<div id="chdb-query">
+  ### `chdb.query`
+</div>
 
 تنفيذ استعلام SQL باستخدام محرك chDB.
 
 هذه هي دالة الاستعلام الرئيسية التي تنفّذ عبارات SQL باستخدام محرك
 ClickHouse المضمّن. وهي تدعم تنسيقات إخراج متعددة، ويمكنها العمل مع قواعد
-البيانات المؤقتة أو المستندة إلى الملفات.
+البيانات داخل الذاكرة أو المستندة إلى الملفات.
 
 **البنية**
 
@@ -29,12 +33,12 @@ chdb.query(sql, output_format='CSV', path='', udf_path='')
 | --------------- | ----- | ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `sql`           | str   | *required*        | سلسلة استعلام SQL المراد تنفيذها                                                                                                                                                                                                                                                                          |
 | `output_format` | str   | `"CSV"`           | تنسيق إخراج النتائج. التنسيقات المدعومة:<br />• `"CSV"` - قيم مفصولة بفواصل<br />• `"JSON"` - تنسيق JSON<br />• `"Arrow"` - تنسيق Apache Arrow<br />• `"Parquet"` - تنسيق Parquet<br />• `"DataFrame"` - Pandas DataFrame<br />• `"ArrowTable"` - PyArrow Table<br />• `"Debug"` - تمكين التسجيل التفصيلي |
-| `path`          | str   | `""`              | مسار ملف قاعدة البيانات. تكون القيمة الافتراضية قاعدة بيانات مؤقتة غير دائمة (تعادل `":memory:"`).<br />مرّر مسار ملف للاحتفاظ بالبيانات على القرص                                                                                                                                                        |
+| `path`          | str   | `""`              | مسار ملف قاعدة البيانات. تكون القيمة الافتراضية قاعدة بيانات داخل الذاكرة.<br />يمكن أن يكون مسار ملف أو `":memory:"` لقاعدة بيانات داخل الذاكرة                                                                                                                                                          |
 | `udf_path`      | str   | `""`              | مسار دليل UDF القديم المعتمد على العمليات الفرعية. غير مطلوب لدوال UDF الأصلية في بايثون ([`@func`](#func-decorator) / [`create_function`](#create-function))                                                                                                                                             |
 
 **القيم المعادة**
 
-يعيد نتيجة استعلام بالتنسيق المحدد:
+يعيد نتيجة الاستعلام بالتنسيق المحدد:
 
 | نوع القيمة المعادة | الحالة                                                              |
 | ------------------ | ------------------------------------------------------------------- |
@@ -74,13 +78,15 @@ chdb.query(sql, output_format='CSV', path='', udf_path='')
 
 ***
 
-### `chdb.sql` {#chdb_sql}
+<div id="chdb_sql">
+  ### `chdb.sql`
+</div>
 
 تنفيذ استعلام SQL باستخدام محرك chDB.
 
 هذه هي دالة الاستعلام الرئيسية التي تنفّذ عبارات SQL باستخدام محرك
 ClickHouse المضمّن. وهي تدعم تنسيقات إخراج متعددة، ويمكنها العمل مع قواعد بيانات
-مؤقتة أو مستندة إلى الملفات.
+داخل الذاكرة أو مستندة إلى الملفات.
 
 **البنية**
 
@@ -90,18 +96,18 @@ chdb.sql(sql, output_format='CSV', path='', udf_path='')
 
 **المعلمات**
 
-| معلمة           | Type | Default    | Description                                                                                                                                                                                                                                                                                                 |
+| معلمة       | Type | Default    | Description                                                                                                                                                                                                                                                                                                 |
 | --------------- | ---- | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `sql`           | str  | *required* | سلسلة استعلام SQL المطلوب تنفيذها                                                                                                                                                                                                                                                                           |
 | `output_format` | str  | `"CSV"`    | تنسيق الإخراج للنتائج. التنسيقات المدعومة:<br />• `"CSV"` - قيم مفصولة بفواصل<br />• `"JSON"` - تنسيق JSON<br />• `"Arrow"` - تنسيق Apache Arrow<br />• `"Parquet"` - تنسيق Parquet<br />• `"DataFrame"` - Pandas DataFrame<br />• `"ArrowTable"` - PyArrow Table<br />• `"Debug"` - تمكين التسجيل التفصيلي |
-| `path`          | str  | `""`       | مسار ملف قاعدة البيانات. القيمة الافتراضية هي قاعدة بيانات مؤقتة غير دائمة (تعادل `":memory:"`).<br />مرّر مسار ملف للاحتفاظ بالبيانات على القرص                                                                                                                                                            |
+| `path`          | str  | `""`       | مسار ملف قاعدة البيانات. القيمة الافتراضية هي قاعدة بيانات داخل الذاكرة.<br />يمكن أن يكون مسار ملف أو `":memory:"` لقاعدة بيانات داخل الذاكرة                                                                                                                                                              |
 | `udf_path`      | str  | `""`       | المسار إلى دليل UDF القديم المعتمد على العمليات الفرعية. لا يلزم لدوال UDF الأصلية في بايثون ([`@func`](#func-decorator) / [`create_function`](#create-function))                                                                                                                                           |
 
 **القيم المعادة**
 
-تعيد نتيجة استعلام بالتنسيق المحدد:
+تعيد نتيجة الاستعلام بالتنسيق المحدد:
 
-| نوع القيمة المعادة | Condition                                                           |
+| نوع القيمة المعادة        | Condition                                                           |
 | ------------------ | ------------------------------------------------------------------- |
 | `str`              | للتنسيقات النصية مثل CSV وJSON                                      |
 | `pd.DataFrame`     | عندما تكون قيمة `output_format` هي `"DataFrame"` أو `"dataframe"`   |
@@ -110,7 +116,7 @@ chdb.sql(sql, output_format='CSV', path='', udf_path='')
 
 **الاستثناءات**
 
-| استثناء                   | Condition                                                  |
+| استثناء                 | Condition                                                  |
 | ------------------------- | ---------------------------------------------------------- |
 | [`ChdbError`](#chdberror) | إذا فشل تنفيذ استعلام SQL                                  |
 | `ImportError`             | إذا كانت التبعيات المطلوبة لتنسيقات DataFrame/Arrow مفقودة |
@@ -139,7 +145,9 @@ chdb.sql(sql, output_format='CSV', path='', udf_path='')
 
 ***
 
-### `chdb.to_arrowTable` {#chdb-state-sqlitelike-to_arrowtable}
+<div id="chdb-state-sqlitelike-to_arrowtable">
+  ### `chdb.to_arrowTable`
+</div>
 
 حوّل نتيجة استعلام إلى PyArrow Table.
 
@@ -182,7 +190,9 @@ chdb.to_arrowTable(res)
 
 ***
 
-### `chdb.to_df` {#chdb_to_df}
+<div id="chdb_to_df">
+  ### `chdb.to_df`
+</div>
 
 حوِّل نتيجة الاستعلام إلى إطار بيانات Pandas.
 
@@ -223,16 +233,21 @@ chdb.to_df(r)
 0   1  hello
 ```
 
-## إدارة الاتصالات والجلسات {#connection-session-management}
+<div id="connection-session-management">
+  ## إدارة الاتصالات والجلسات
+</div>
 
 تتوفر دوال الجلسة التالية:
 
-### `chdb.connect` {#chdb-connect}
+<div id="chdb-connect">
+  ### `chdb.connect`
+</div>
 
 أنشئ اتصالًا بخادم chDB الذي يعمل في الخلفية.
 
 تنشئ هذه الدالة [اتصالًا](#chdb-state-sqlitelike-connection) بمحرك قاعدة البيانات chDB ‏(ClickHouse).
-يُرجع كل استدعاء اتصالًا مستقلًا، ويمكن فتح أي عدد من الاتصالات بمسار قاعدة البيانات نفسه في الوقت ذاته.
+يُسمح باتصال مفتوح واحد فقط لكل عملية.
+ستُرجع الاستدعاءات المتعددة باستخدام سلسلة الاتصال نفسها كائن الاتصال ذاته.
 
 ```python
 chdb.connect(connection_string: str = ':memory:') → Connection
@@ -246,21 +261,21 @@ chdb.connect(connection_string: str = ':memory:') → Connection
 
 **التنسيقات الأساسية**
 
-| التنسيق                   | الوصف                        |
-| ------------------------- | ---------------------------- |
-| `":memory:"`              | قاعدة بيانات مؤقتة (افتراضي) |
-| `"test.db"`               | ملف قاعدة بيانات بمسار نسبي  |
-| `"file:test.db"`          | مثل المسار النسبي            |
-| `"/path/to/test.db"`      | ملف قاعدة بيانات بمسار مطلق  |
-| `"file:/path/to/test.db"` | مثل المسار المطلق            |
+| التنسيق                   | الوصف                                |
+| ------------------------- | ------------------------------------ |
+| `":memory:"`              | قاعدة بيانات داخل الذاكرة (افتراضي) |
+| `"test.db"`               | ملف قاعدة بيانات بمسار نسبي          |
+| `"file:test.db"`          | مثل المسار النسبي                    |
+| `"/path/to/test.db"`      | ملف قاعدة بيانات بمسار مطلق          |
+| `"file:/path/to/test.db"` | مثل المسار المطلق                    |
 
 **مع معلمات الاستعلام**
 
-| التنسيق                                            | الوصف               |
-| -------------------------------------------------- | ------------------- |
-| `"file:test.db?param1=value1&param2=value2"`       | مسار نسبي مع معلمات |
-| `"file::memory:?verbose&log-level=test"`           | مؤقتة مع معلمات     |
-| `"///path/to/test.db?param1=value1&param2=value2"` | مسار مطلق مع معلمات |
+| التنسيق                                            | الوصف                   |
+| -------------------------------------------------- | ----------------------- |
+| `"file:test.db?param1=value1&param2=value2"`       | مسار نسبي مع معلمات     |
+| `"file::memory:?verbose&log-level=test"`           | داخل الذاكرة مع معلمات |
+| `"///path/to/test.db?param1=value1&param2=value2"` | مسار مطلق مع معلمات     |
 
 **التعامل مع معلمات الاستعلام**
 
@@ -287,14 +302,15 @@ chdb.connect(connection_string: str = ':memory:') → Connection
 | -------------- | ------------------------------- |
 | `RuntimeError` | إذا فشل الاتصال بقاعدة البيانات |
 
-<Note>
-  تشغّل العملية محركًا مضمنًا واحدًا مرتبطًا بمسار قاعدة بيانات واحد. يمكن لاتصالات متعددة بالمسار نفسه أن تتعايش وتنفّذ الاستعلامات بالتزامن. يؤدي فتح مسار *مختلف* أثناء وجود أي اتصال مفتوح إلى إثارة `RuntimeError`؛ أغلِق الاتصالات المفتوحة أولًا.
-</Note>
+<Warning>
+  لا يُدعم سوى اتصال واحد لكل عملية.
+  سيؤدي إنشاء اتصال جديد إلى إغلاق أي اتصال موجود.
+</Warning>
 
 **أمثلة**
 
 ```pycon
->>> # Temporary database
+>>> # In-memory database
 >>> conn = connect()
 >>> conn = connect(":memory:")
 >>>
@@ -318,9 +334,13 @@ chdb.connect(connection_string: str = ':memory:') → Connection
 * [`Connection`](#chdb-state-sqlitelike-connection) - فئة لاتصال قاعدة البيانات
 * [`Cursor`](#chdb-state-sqlitelike-cursor) - مؤشر قاعدة بيانات لعمليات DB-API 2.0
 
-## التعامل مع الاستثناءات {#chdb-exceptions}
+<div id="chdb-exceptions">
+  ## التعامل مع الاستثناءات
+</div>
 
-### **فئة** `chdb.ChdbError` {#chdb_chdbError}
+<div id="chdb_chdbError">
+  ### **فئة** `chdb.ChdbError`
+</div>
 
 الفئات الأساسية: `Exception`
 
@@ -332,12 +352,15 @@ chdb.connect(connection_string: str = ':memory:') → Connection
 
 ***
 
-### **الفئة** `chdb.session.Session` {#chdb_session_session}
+<div id="chdb_session_session">
+  ### **الفئة** `chdb.session.Session`
+</div>
 
 الفئات الأساسية: `object`
 
 ستحتفظ الجلسة بحالة الاستعلام.
-إذا كانت قيمة path هي None، فستستخدم الجلسة قاعدة البيانات المؤقتة (`:memory:`) المشتركة على مستوى العملية، بحيث تتمكن جميع الجلسات التي لا تحدد مسارًا من رؤية جداول بعضها بعضًا؛ ولا يُزال دليلها المؤقت إلا عند إغلاق آخر جلسة أو اتصال من هذا النوع.
+إذا كانت قيمة path هي None، فسيُنشئ دليلًا مؤقتًا ويستخدمه كمسار لقاعدة البيانات،
+وسيُزال الدليل المؤقت عند إغلاق الجلسة.
 يمكنك أيضًا تمرير مسار لإنشاء قاعدة بيانات في ذلك المسار للاحتفاظ ببياناتك.
 
 يمكنك أيضًا استخدام سلسلة اتصال لتمرير المسار ومعلمات أخرى.
@@ -348,16 +371,16 @@ class chdb.session.Session(path=None)
 
 **أمثلة**
 
-| سلسلة الاتصال                                      | الوصف                                |
-| -------------------------------------------------- | ------------------------------------ |
-| `":memory:"`                                       | قاعدة بيانات مؤقتة                   |
-| `"test.db"`                                        | مسار نسبي                            |
-| `"file:test.db"`                                   | مثل ما سبق                           |
-| `"/path/to/test.db"`                               | مسار مطلق                            |
-| `"file:/path/to/test.db"`                          | مثل ما سبق                           |
-| `"file:test.db?param1=value1&param2=value2"`       | مسار نسبي مع معلمات استعلام          |
-| `"file::memory:?verbose&log-level=test"`           | قاعدة بيانات مؤقتة مع معلمات استعلام |
-| `"///path/to/test.db?param1=value1&param2=value2"` | مسار مطلق مع معلمات استعلام          |
+| سلسلة الاتصال                                      | الوصف                                       |
+| -------------------------------------------------- | ------------------------------------------- |
+| `":memory:"`                                       | قاعدة بيانات داخل الذاكرة                   |
+| `"test.db"`                                        | مسار نسبي                                   |
+| `"file:test.db"`                                   | مثل ما سبق                                  |
+| `"/path/to/test.db"`                               | مسار مطلق                                   |
+| `"file:/path/to/test.db"`                          | مثل ما سبق                                  |
+| `"file:test.db?param1=value1&param2=value2"`       | مسار نسبي مع معلمات استعلام                 |
+| `"file::memory:?verbose&log-level=test"`           | قاعدة بيانات داخل الذاكرة مع معلمات استعلام |
+| `"///path/to/test.db?param1=value1&param2=value2"` | مسار مطلق مع معلمات استعلام                 |
 
 <Info>
   **معالجة وسائط سلسلة الاتصال**
@@ -365,23 +388,25 @@ class chdb.session.Session(path=None)
   سلاسل الاتصال التي تحتوي على معلمات استعلام مثل “[file:test.db?param1=value1&amp;param2=value2](file:test.db?param1=value1\&param2=value2)”
   سيتم تمرير “param1=value1” إلى محرك ClickHouse كوسائط بدء التشغيل.
 
-  لمزيد من التفاصيل، راجع `clickhouse local --help --verbose`
+  لمزيد من التفاصيل، راجع `clickhouse local –help –verbose`
 
   طريقة معالجة بعض الوسائط الخاصة:
 
-  * تتحول “mode=ro” إلى `--readonly=1` في clickhouse (وضع القراءة فقط)
+  * تتحول “mode=ro” إلى “–readonly=1” في clickhouse (وضع القراءة فقط)
 </Info>
 
-<Note>
+<Warning>
   **مهم**
 
-  * يمكن أن تتعايش عدة جلسات، ما دامت تشترك في مسار قاعدة البيانات نفسه.
-  * لاستخدام مسار مختلف لقاعدة البيانات، أغلق الجلسة أو الجلسات المفتوحة أولًا.
-</Note>
+  * لا يمكن أن توجد إلا جلسة واحدة في كل مرة. إذا أردت إنشاء جلسة جديدة، فعليك إغلاق الجلسة الحالية.
+  * سيؤدي إنشاء جلسة جديدة إلى إغلاق الجلسة الحالية.
+</Warning>
 
 ***
 
-#### `cleanup` {#cleanup}
+<div id="cleanup">
+  #### `cleanup`
+</div>
 
 نظِّف موارد الجلسة مع معالجة الاستثناءات.
 
@@ -417,7 +442,9 @@ cleanup()
 
 ***
 
-#### `close` {#close}
+<div id="close">
+  #### `close`
+</div>
 
 أغلق الجلسة وحرّر الموارد.
 
@@ -452,7 +479,9 @@ close()
 
 ***
 
-#### `query` {#chdb-session-session-query}
+<div id="chdb-session-session-query">
+  #### `query`
+</div>
 
 نفِّذ استعلام SQL وأعِد النتائج.
 
@@ -540,7 +569,9 @@ id,name
 
 ***
 
-#### `send_query` {#chdb-session-session-send_query}
+<div id="chdb-session-session-send_query">
+  #### `send_query`
+</div>
 
 نفّذ استعلام SQL وأعِد مكرّرًا لنتيجة متدفقة.
 
@@ -615,7 +646,9 @@ send_query(sql, fmt='CSV') → StreamingResult
 
 ***
 
-#### `sql` {#chdb-session-session-sql}
+<div id="chdb-session-session-sql">
+  #### `sql`
+</div>
 
 نفِّذ استعلام SQL وأعِد النتائج.
 
@@ -701,14 +734,19 @@ id,name
 * [`send_query()`](#chdb-session-session-send_query) - لتنفيذ الاستعلامات المتدفقة
 * [`sql`](#chdb-session-session-sql) - اسم مستعار لهذه الطريقة
 
-## إدارة الحالة {#chdb-state-management}
+<div id="chdb-state-management">
+  ## إدارة الحالة
+</div>
 
-### `chdb.state.connect` {#chdb_state_connect}
+<div id="chdb_state_connect">
+  ### `chdb.state.connect`
+</div>
 
 أنشئ [اتصالًا](#chdb-state-sqlitelike-connection) مع الخادم الخلفي لـ chDB.
 
 تنشئ هذه الدالة اتصالًا بمحرك قاعدة بيانات chDB ‏(ClickHouse).
-يعيد كل استدعاء اتصالًا مستقلًا، ويمكن فتح أي عدد من الاتصالات إلى مسار قاعدة البيانات نفسه في الوقت ذاته.
+يُسمح باتصال مفتوح واحد فقط لكل عملية. وستُعيد الاستدعاءات المتعددة باستخدام
+سلسلة الاتصال نفسها كائن الاتصال ذاته.
 
 **الصياغة**
 
@@ -767,14 +805,17 @@ chdb.state.connect(connection_string: str = ':memory:') → Connection
 | -------------- | ------------------------------- |
 | `RuntimeError` | إذا فشل الاتصال بقاعدة البيانات |
 
-<Note>
-  تشغّل العملية محركًا مضمنًا واحدًا مرتبطًا بمسار قاعدة بيانات واحد. يمكن لاتصالات متعددة بالمسار نفسه أن تتعايش وتنفّذ الاستعلامات بالتزامن. يؤدي فتح مسار *مختلف* في أثناء وجود أي اتصال مفتوح إلى ظهور `RuntimeError`؛ لذا أغلق الاتصالات المفتوحة أولًا.
-</Note>
+<Warning>
+  **تحذير**
+
+  لا يُدعم سوى اتصال واحد لكل عملية.
+  سيؤدي إنشاء اتصال جديد إلى إغلاق أي اتصال موجود.
+</Warning>
 
 **أمثلة**
 
 ```pycon
->>> # Temporary database
+>>> # In-memory database
 >>> conn = connect()
 >>> conn = connect(":memory:")
 >>>
@@ -798,7 +839,9 @@ chdb.state.connect(connection_string: str = ':memory:') → Connection
 * `Connection` - فئة اتصال بقاعدة البيانات
 * `Cursor` - مؤشر قاعدة البيانات لعمليات DB-API 2.0
 
-### **الفئة** `chdb.state.sqlitelike.Connection` {#chdb-state-sqlitelike-connection}
+<div id="chdb-state-sqlitelike-connection">
+  ### **الفئة** `chdb.state.sqlitelike.Connection`
+</div>
 
 الفئات الأساسية: `object`
 
@@ -810,7 +853,9 @@ class chdb.state.sqlitelike.Connection(connection_string: str)
 
 ***
 
-#### `close` {#chdb-session-session-close}
+<div id="close">
+  #### `close`
+</div>
 
 أغلق الاتصال ونظّف الموارد.
 
@@ -852,7 +897,9 @@ close() → None
 
 ***
 
-#### `cursor` {#chdb-state-sqlitelike-connection-cursor}
+<div id="chdb-state-sqlitelike-connection-cursor">
+  #### `cursor`
+</div>
 
 أنشئ كائن [Cursor](#chdb-state-sqlitelike-cursor) لتنفيذ الاستعلامات.
 
@@ -897,7 +944,9 @@ cursor() → Cursor
 
 ***
 
-#### `query` {#chdb-state-sqlitelike-connection-query}
+<div id="chdb-session-session-query">
+  #### `query`
+</div>
 
 نفّذ استعلام SQL وأعِد النتائج كاملةً.
 
@@ -971,7 +1020,9 @@ num,text
 
 ***
 
-#### `send_query` {#chdb-state-sqlitelike-connection-send_query}
+<div id="chdb-session-session-send_query">
+  #### `send_query`
+</div>
 
 نفّذ استعلام SQL وأعِد مكرّرًا لنتيجة متدفقة.
 
@@ -1044,7 +1095,9 @@ send_query(query: str, format: str = 'CSV') → StreamingResult
 
 ***
 
-### **فئة** `chdb.state.sqlitelike.StreamingResult` {#chdb-state-sqlitelike-streamingresult}
+<div id="chdb-state-sqlitelike-streamingresult">
+  ### **فئة** `chdb.state.sqlitelike.StreamingResult`
+</div>
 
 الفئات الأساسية: `object`
 
@@ -1060,7 +1113,9 @@ class chdb.state.sqlitelike.StreamingResult
 
 ***
 
-#### `fetch` {#streamingresult-fetch}
+<div id="streamingresult-fetch">
+  #### `fetch`
+</div>
 
 اجلب الجزء التالي من نتائج الاستعلام المتدفقة.
 
@@ -1094,7 +1149,9 @@ fetch() → Any
 
 ***
 
-#### `cancel` {#streamingresult-cancel}
+<div id="streamingresult-cancel">
+  #### `cancel`
+</div>
 
 ألغِ الاستعلام المتدفق وحرِّر الموارد.
 
@@ -1121,7 +1178,9 @@ cancel() → None
 
 ***
 
-#### `close` {#streamingresult-close}
+<div id="close">
+  #### `close`
+</div>
 
 أغلق النتيجة المتدفقة ونظّف الموارد.
 
@@ -1136,7 +1195,9 @@ close() → None
 
 ***
 
-#### `record_batch` {#streamingresult-record_batch}
+<div id="streamingresult-record_batch">
+  #### `record_batch`
+</div>
 
 أنشئ `PyArrow RecordBatchReader` لمعالجة الدُفعات بكفاءة.
 
@@ -1180,7 +1241,9 @@ record_batch(rows_per_batch: int = 1000000) → pa.RecordBatchReader
 
 ***
 
-#### بروتوكول المكرِّر {#streamingresult-iterator}
+<div id="streamingresult-iterator">
+  #### بروتوكول المكرِّر
+</div>
 
 يدعم StreamingResult بروتوكول المكرِّر في بايثون، مما يسمح
 باستخدامه مباشرةً في حلقات for:
@@ -1193,7 +1256,9 @@ record_batch(rows_per_batch: int = 1000000) → pa.RecordBatchReader
 
 ***
 
-#### بروتوكول مدير السياق {#streamingresult-context-manager}
+<div id="streamingresult-context-manager">
+  #### بروتوكول مدير السياق
+</div>
 
 يدعم StreamingResult بروتوكول مدير السياق للتنظيف
 التلقائي للموارد:
@@ -1207,7 +1272,9 @@ record_batch(rows_per_batch: int = 1000000) → pa.RecordBatchReader
 
 ***
 
-### **الصنف** `chdb.state.sqlitelike.Cursor` {#chdb-state-sqlitelike-cursor}
+<div id="chdb-state-sqlitelike-cursor">
+  ### **الصنف** `chdb.state.sqlitelike.Cursor`
+</div>
 
 الصنف الأساسي: `object`
 
@@ -1217,7 +1284,9 @@ class chdb.state.sqlitelike.Cursor(connection)
 
 ***
 
-#### `close` {#cursor-close-none}
+<div id="close">
+  #### `close`
+</div>
 
 أغلِق المؤشر ونظِّف الموارد.
 
@@ -1247,7 +1316,9 @@ close() → None
 
 ***
 
-#### `column_names` {#chdb-state-sqlitelike-cursor-column_names}
+<div id="chdb-state-sqlitelike-cursor-column_names">
+  #### `column_names`
+</div>
 
 أعِد قائمة بأسماء الأعمدة من آخر استعلام نُفِّذ.
 
@@ -1283,7 +1354,9 @@ column_names() → list
 
 ***
 
-#### `column_types` {#chdb-state-sqlitelike-cursor-column_types}
+<div id="chdb-state-sqlitelike-cursor-column_types">
+  #### `column_types`
+</div>
 
 أعِد قائمةً بأنواع الأعمدة من آخر استعلام تم تنفيذه.
 
@@ -1319,7 +1392,9 @@ column_types() → list
 
 ***
 
-#### `commit` {#commit}
+<div id="commit">
+  #### `commit`
+</div>
 
 ثبّت أي معاملة قيد الانتظار.
 
@@ -1349,7 +1424,9 @@ commit() → None
 
 ***
 
-#### `property description : list` {#chdb-state-sqlitelike-cursor-description}
+<div id="chdb-state-sqlitelike-cursor-description">
+  #### `property description : list`
+</div>
 
 يعيد وصف الأعمدة وفقًا لمواصفة DB-API 2.0.
 
@@ -1389,7 +1466,9 @@ Column: name, Type: String
 
 ***
 
-#### `execute` {#execute}
+<div id="execute">
+  #### `execute`
+</div>
 
 نفّذ استعلام SQL وجهّز النتائج للاسترداد.
 
@@ -1459,7 +1538,9 @@ execute(query: str) → None
 
 ***
 
-#### `fetchall` {#chdb-state-sqlitelike-cursor-fetchall}
+<div id="chdb-state-sqlitelike-cursor-fetchall">
+  #### `fetchall`
+</div>
 
 اجلب جميع الصفوف المتبقية من نتيجة الاستعلام.
 
@@ -1504,7 +1585,9 @@ fetchall() → tuple
 
 ***
 
-#### `fetchmany` {#chdb-state-sqlitelike-cursor-fetchmany}
+<div id="chdb-state-sqlitelike-cursor-fetchmany">
+  #### `fetchmany`
+</div>
 
 اجلب عدة صفوف من نتيجة الاستعلام.
 
@@ -1556,7 +1639,9 @@ fetchmany(size: int = 1) → tuple
 
 ***
 
-#### `fetchone` {#chdb-state-sqlitelike-cursor-fetchone}
+<div id="chdb-state-sqlitelike-cursor-fetchone">
+  #### `fetchone`
+</div>
 
 اجلب الصف التالي من نتيجة الاستعلام.
 
@@ -1601,7 +1686,9 @@ fetchone() → tuple | None
 
 ***
 
-### `chdb.state.sqlitelike` {#state-sqlitelike-to_arrowtable}
+<div id="state-sqlitelike-to_arrowtable">
+  ### `chdb.state.sqlitelike`
+</div>
 
 حوِّل نتيجة الاستعلام إلى PyArrow Table.
 
@@ -1660,7 +1747,9 @@ text: string
 
 ***
 
-### `chdb.state.sqlitelike.to_df` {#state-sqlitelike-to_df}
+<div id="state-sqlitelike-to_df">
+  ### `chdb.state.sqlitelike.to_df`
+</div>
 
 حوِّل نتيجة الاستعلام إلى Pandas DataFrame.
 
@@ -1716,9 +1805,13 @@ text    object
 dtype: object
 ```
 
-## تكامل DataFrame {#dataframe-integration}
+<div id="dataframe-integration">
+  ## تكامل DataFrame
+</div>
 
-### **الصنف** `chdb.dataframe.Table` {#chdb-dataframe-table}
+<div id="chdb-dataframe-table">
+  ### **الصنف** `chdb.dataframe.Table`
+</div>
 
 الأصناف الأساسية:
 
@@ -1726,7 +1819,9 @@ dtype: object
 class chdb.dataframe.Table(*args: Any, **kwargs: Any)
 ```
 
-## واجهة Database API ‏(DBAPI) 2.0 {#database-api-interface}
+<div id="database-api-interface">
+  ## واجهة Database API ‏(DBAPI) 2.0
+</div>
 
 يوفّر chDB واجهة متوافقة مع Python DB-API 2.0 للاتصال بقواعد البيانات، مما يتيح لك استخدام chDB مع الأدوات وأطر العمل التي تعتمد واجهات قواعد بيانات قياسية.
 
@@ -1740,11 +1835,15 @@ class chdb.dataframe.Table(*args: Any, **kwargs: Any)
 
 ***
 
-### الدوال الأساسية {#core-functions}
+<div id="core-functions">
+  ### الدوال الأساسية
+</div>
 
 تتضمن واجهة Database API ‏(DBAPI) 2.0 الدوال الأساسية التالية:
 
-#### `chdb.dbapi.connect` {#dbapi-connect}
+<div id="dbapi-connect">
+  #### `chdb.dbapi.connect`
+</div>
 
 أنشئ اتصالًا جديدًا بقاعدة البيانات.
 
@@ -1756,9 +1855,9 @@ chdb.dbapi.connect(*args, **kwargs)
 
 **المعلمات**
 
-| المعلمة | النوع | الافتراضي | الوصف                                                               |
-| ------- | ----- | --------- | ------------------------------------------------------------------- |
-| `path`  | str   | `None`    | مسار ملف قاعدة البيانات. تكون None لقاعدة بيانات مؤقتة غير دائمة |
+| المعلمة | النوع | الافتراضي | الوصف                                                       |
+| ------- | ----- | --------- | ----------------------------------------------------------- |
+| `path`  | str   | `None`    | مسار ملف قاعدة البيانات. تكون None لقاعدة بيانات في الذاكرة |
 
 **الاستثناءات**
 
@@ -1768,7 +1867,9 @@ chdb.dbapi.connect(*args, **kwargs)
 
 ***
 
-#### `chdb.dbapi.get_client_info()` {#dbapi-get-client-info}
+<div id="dbapi-get-client-info">
+  #### `chdb.dbapi.get_client_info()`
+</div>
 
 يسترجع معلومات إصدار العميل.
 
@@ -1788,9 +1889,13 @@ chdb.dbapi.get_client_info()
 
 ***
 
-### مُنشئات الأنواع {#type-constructors}
+<div id="type-constructors">
+  ### مُنشئات الأنواع
+</div>
 
-#### `chdb.dbapi.Binary(x)` {#dbapi-binary}
+<div id="dbapi-binary">
+  #### `chdb.dbapi.Binary(x)`
+</div>
 
 إرجاع x كنوع ثنائي.
 
@@ -1817,19 +1922,23 @@ chdb.dbapi.Binary(x)
 
 ***
 
-### الصنف Connection {#connection-class}
+<div id="connection-class">
+  ### الصنف Connection
+</div>
 
-#### **الصنف** `chdb.dbapi.connections.Connection(path=None)` {#chdb-dbapi-connections-connection}
+<div id="chdb-dbapi-connections-connection">
+  #### **الصنف** `chdb.dbapi.connections.Connection(path=None)`
+</div>
 
 الفئات الأساسية: `object`
 
 اتصال متوافق مع DB-API 2.0 بقاعدة بيانات chDB.
 
 يوفّر هذا الصنف واجهة DB-API قياسية للاتصال بقواعد بيانات chDB والتفاعل معها.
-ويدعم قواعد البيانات المؤقتة وقواعد البيانات القائمة على الملفات.
+ويدعم قواعد البيانات داخل الذاكرة وقواعد البيانات القائمة على الملفات.
 
 يدير الاتصال محرك chDB الأساسي ويوفّر أساليب
-لتنفيذ الاستعلامات وإدارة المعاملات (بلا تأثير في ClickHouse) وإنشاء المؤشرات.
+لتنفيذ الاستعلامات وإدارة المعاملات (من دون تأثير في ClickHouse) وإنشاء المؤشرات.
 
 ```python
 class chdb.dbapi.connections.Connection(path=None)
@@ -1837,9 +1946,9 @@ class chdb.dbapi.connections.Connection(path=None)
 
 **المعلمات**
 
-| المعلمة | النوع | الافتراضي | الوصف                                                                                                                                                                                            |
-| ------- | ----- | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `path`  | str   | `None`    | مسار ملف قاعدة البيانات. إذا كانت القيمة None (وهي الافتراضية)، تُستخدم قاعدة بيانات مؤقتة غير دائمة (تعادل `':memory:'`). مرّر مسار ملف مثل &#39;database.db&#39; للاحتفاظ بالبيانات على القرص. |
+| المعلمة | النوع | الافتراضي | الوصف                                                                                                                                                                |
+| ------- | ----- | --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `path`  | str   | `None`    | مسار ملف قاعدة البيانات. إذا كانت القيمة None، تُستخدم قاعدة بيانات في الذاكرة. يمكن أن يكون مسار ملف مثل &#39;database.db&#39;، أو None لاستخدام &#39;:memory:&#39; |
 
 **المتغيرات**
 
@@ -1851,7 +1960,7 @@ class chdb.dbapi.connections.Connection(path=None)
 **أمثلة**
 
 ```pycon
->>> # Temporary database
+>>> # In-memory database
 >>> conn = Connection()
 >>> cursor = conn.cursor()
 >>> cursor.execute("SELECT 1")
@@ -1882,7 +1991,9 @@ class chdb.dbapi.connections.Connection(path=None)
 
 ***
 
-#### `close` {#dbapi-connection-close}
+<div id="close">
+  #### `close`
+</div>
 
 أغلق اتصال قاعدة البيانات.
 
@@ -1903,7 +2014,9 @@ close()
 
 ***
 
-#### `commit` {#dbapi-commit}
+<div id="commit">
+  #### `commit`
+</div>
 
 اعتمد المعاملة الحالية.
 
@@ -1920,7 +2033,9 @@ commit()
 
 ***
 
-#### `cursor` {#dbapi-cursor}
+<div id="chdb-state-sqlitelike-connection-cursor">
+  #### `cursor`
+</div>
 
 أنشئ مؤشرًا جديدًا لتنفيذ الاستعلامات.
 
@@ -1959,7 +2074,9 @@ cursor(cursor=None)
 
 ***
 
-#### `escape` {#escape}
+<div id="escape">
+  #### `escape`
+</div>
 
 أفلِت قيمة بحيث يمكن تضمينها بأمان في استعلامات SQL.
 
@@ -1992,7 +2109,9 @@ escape(obj, mapping=None)
 
 ***
 
-#### `escape_string` {#escape-string}
+<div id="escape-string">
+  #### `escape_string`
+</div>
 
 قم بإفلات قيمة نصية لاستعلامات SQL.
 
@@ -2016,7 +2135,9 @@ escape_string(s)
 
 ***
 
-#### `property open` {#property-open}
+<div id="property-open">
+  #### `property open`
+</div>
 
 تحقّق مما إذا كان الاتصال مفتوحًا.
 
@@ -2028,7 +2149,9 @@ escape_string(s)
 
 ***
 
-#### `query` {#dbapi-query}
+<div id="chdb-session-session-query">
+  #### `query`
+</div>
 
 نفّذ استعلام SQL مباشرةً وأعِد النتائج الأولية.
 
@@ -2071,7 +2194,9 @@ query(sql, fmt='CSV')
 
 ***
 
-#### `property resp` {#property-resp}
+<div id="property-resp">
+  #### `property resp`
+</div>
 
 يعرض آخر استجابة للاستعلام.
 
@@ -2088,7 +2213,9 @@ query(sql, fmt='CSV')
 
 ***
 
-#### `rollback` {#rollback}
+<div id="rollback">
+  #### `rollback`
+</div>
 
 التراجع عن المعاملة الحالية.
 
@@ -2105,9 +2232,13 @@ rollback()
 
 ***
 
-### فئة المؤشر {#cursor-class}
+<div id="cursor-class">
+  ### فئة المؤشر
+</div>
 
-#### **فئة** `chdb.dbapi.cursors.Cursor` {#chdb-dbapi-cursors-cursor}
+<div id="chdb-dbapi-cursors-cursor">
+  #### **فئة** `chdb.dbapi.cursors.Cursor`
+</div>
 
 يرث من: `object`
 
@@ -2149,7 +2280,9 @@ class chdb.dbapi.cursors.Cursor(connection)
 
 ***
 
-#### `callproc` {#callproc}
+<div id="callproc">
+  #### `callproc`
+</div>
 
 نفّذ إجراءً مخزّنًا (تنفيذ مبدئي).
 
@@ -2188,7 +2321,9 @@ callproc(procname, args=())
 
 ***
 
-#### `close` {#dbapi-cursor-close}
+<div id="close">
+  #### `close`
+</div>
 
 أغلِق المؤشر وحرِّر الموارد المرتبطة به.
 
@@ -2203,7 +2338,9 @@ close()
 
 ***
 
-#### `execute` {#dbapi-execute}
+<div id="execute">
+  #### `execute`
+</div>
 
 نفّذ استعلام SQL مع ربط اختياري للمعلمات.
 
@@ -2259,7 +2396,9 @@ execute(query, args=None)
 
 ***
 
-#### `executemany(query, args)` {#chdb-dbapi-cursors-cursor-executemany}
+<div id="chdb-dbapi-cursors-cursor-executemany">
+  #### `executemany(query, args)`
+</div>
 
 نفِّذ استعلامًا عدة مرات باستخدام مجموعات مختلفة من المعلمات.
 
@@ -2310,7 +2449,9 @@ executemany(query, args)
 
 ***
 
-#### `fetchall()` {#dbapi-fetchall}
+<div id="dbapi-fetchall">
+  #### `fetchall()`
+</div>
 
 استرجع جميع الصفوف المتبقية من نتيجة الاستعلام.
 
@@ -2349,7 +2490,9 @@ fetchall()
 
 ***
 
-#### `fetchmany` {#dbapi-fetchmany}
+<div id="chdb-state-sqlitelike-cursor-fetchmany">
+  #### `fetchmany`
+</div>
 
 يجلب عدة صفوف من نتيجة الاستعلام.
 
@@ -2387,7 +2530,9 @@ fetchmany(size=1)
 
 ***
 
-#### `fetchone` {#dbapi-fetchone}
+<div id="chdb-state-sqlitelike-cursor-fetchone">
+  #### `fetchone`
+</div>
 
 يجلب الصف التالي من نتيجة الاستعلام.
 
@@ -2421,7 +2566,9 @@ fetchone()
 
 ***
 
-#### `max_stmt_length = 1024000` {#max-stmt-length}
+<div id="max-stmt-length">
+  #### `max_stmt_length = 1024000`
+</div>
 
 الحد الأقصى لحجم تعليمة `statement` التي تُنشئها [`executemany()`](#chdb-dbapi-cursors-cursor-executemany).
 
@@ -2429,7 +2576,9 @@ fetchone()
 
 ***
 
-#### `mogrify` {#mogrify}
+<div id="mogrify">
+  #### `mogrify`
+</div>
 
 يعيد سلسلة الاستعلام الدقيقة التي ستُرسَل إلى قاعدة البيانات.
 
@@ -2468,7 +2617,9 @@ mogrify(query, args=None)
 
 ***
 
-#### `nextset` {#nextset}
+<div id="nextset">
+  #### `nextset`
+</div>
 
 انتقل إلى مجموعة النتائج التالية (غير مدعوم).
 
@@ -2491,7 +2642,9 @@ nextset()
 
 ***
 
-#### `setinputsizes` {#setinputsizes}
+<div id="setinputsizes">
+  #### `setinputsizes`
+</div>
 
 يضبط أحجام الإدخال للمعلمات (تنفيذ شكلي لا يؤدي أي إجراء).
 
@@ -2514,7 +2667,9 @@ setinputsizes(*args)
 
 ***
 
-#### `setoutputsizes` {#setoutputsizes}
+<div id="setoutputsizes">
+  #### `setoutputsizes`
+</div>
 
 ضبط أحجام أعمدة الإخراج (تنفيذ شكلي بلا تأثير فعلي).
 
@@ -2537,7 +2692,9 @@ setoutputsizes(*args)
 
 ***
 
-### فئات الأخطاء {#error-classes}
+<div id="error-classes">
+  ### فئات الأخطاء
+</div>
 
 فئات الاستثناءات لعمليات قاعدة البيانات في chdb.
 
@@ -2607,7 +2764,9 @@ Constraint violation: Duplicate entry '1' for key 'PRIMARY'
 
 ***
 
-#### **الاستثناء** `chdb.dbapi.err.DataError` {#chdb-dbapi-err-dataerror}
+<div id="chdb-dbapi-err-dataerror">
+  #### **الاستثناء** `chdb.dbapi.err.DataError`
+</div>
 
 يرث من: [`DatabaseError`](#chdb-dbapi-err-databaseerror)
 
@@ -2645,7 +2804,9 @@ DataError: Invalid date format
 
 ***
 
-#### **استثناء** `chdb.dbapi.err.DatabaseError` {#chdb-dbapi-err-databaseerror}
+<div id="chdb-dbapi-err-databaseerror">
+  #### **استثناء** `chdb.dbapi.err.DatabaseError`
+</div>
 
 الفئات الأساسية: [`Error`](#chdb-dbapi-err-error)
 
@@ -2669,7 +2830,9 @@ DataError: Invalid date format
 
 ***
 
-#### **استثناء** `chdb.dbapi.err.Error` {#chdb-dbapi-err-error}
+<div id="chdb-dbapi-err-error">
+  #### **استثناء** `chdb.dbapi.err.Error`
+</div>
 
 الفئات الأساسية: [`StandardError`](#chdb-dbapi-err-standarderror)
 
@@ -2687,7 +2850,9 @@ DataError: Invalid date format
 
 * [`Warning`](#chdb-dbapi-err-warning) - للتحذيرات غير الجسيمة التي لا تمنع اكتمال العملية
 
-#### **الاستثناء** `chdb.dbapi.err.IntegrityError` {#chdb-dbapi-err-integrityerror}
+<div id="chdb-dbapi-err-integrityerror">
+  #### **الاستثناء** `chdb.dbapi.err.IntegrityError`
+</div>
 
 الفئات الأساسية: [`DatabaseError`](#chdb-dbapi-err-databaseerror)
 
@@ -2724,7 +2889,9 @@ IntegrityError: Cannot add or update a child row: foreign key constraint fails
 
 ***
 
-#### **استثناء** `chdb.dbapi.err.InterfaceError` {#chdb-dbapi-err-interfaceerror}
+<div id="chdb-dbapi-err-interfaceerror">
+  #### **استثناء** `chdb.dbapi.err.InterfaceError`
+</div>
 
 الفئات الأساسية: [`Error`](#chdb-dbapi-err-error)
 
@@ -2751,7 +2918,9 @@ IntegrityError: Cannot add or update a child row: foreign key constraint fails
 
 ***
 
-#### **الاستثناء** `chdb.dbapi.err.InternalError` {#chdb-dbapi-err-internalerror}
+<div id="chdb-dbapi-err-internalerror">
+  #### **الاستثناء** `chdb.dbapi.err.InternalError`
+</div>
 
 الفئات الأساسية: [`DatabaseError`](#chdb-dbapi-err-databaseerror)
 
@@ -2787,7 +2956,9 @@ IntegrityError: Cannot add or update a child row: foreign key constraint fails
 
 ***
 
-#### **استثناء** `chdb.dbapi.err.NotSupportedError` {#chdb-dbapi-err-notsupportederror}
+<div id="chdb-dbapi-err-notsupportederror">
+  #### **استثناء** `chdb.dbapi.err.NotSupportedError`
+</div>
 
 الفئات الأساسية: [`DatabaseError`](#chdb-dbapi-err-databaseerror)
 
@@ -2829,7 +3000,9 @@ NotSupportedError: WITH clause not supported in this database version
 
 ***
 
-#### **استثناء** `chdb.dbapi.err.OperationalError` {#chdb-dbapi-err-operationalerror}
+<div id="chdb-dbapi-err-operationalerror">
+  #### **استثناء** `chdb.dbapi.err.OperationalError`
+</div>
 
 الفئات الأساسية: [`DatabaseError`](#chdb-dbapi-err-databaseerror)
 
@@ -2866,7 +3039,9 @@ NotSupportedError: WITH clause not supported in this database version
 
 ***
 
-#### **استثناء** `chdb.dbapi.err.ProgrammingError` {#chdb-dbapi-err-programmingerror}
+<div id="chdb-dbapi-err-programmingerror">
+  #### **استثناء** `chdb.dbapi.err.ProgrammingError`
+</div>
 
 الفئات الأساسية: [`DatabaseError`](#chdb-dbapi-err-databaseerror)
 
@@ -2910,7 +3085,9 @@ ProgrammingError: Column count doesn't match value count
 
 ***
 
-#### **الاستثناء** `chdb.dbapi.err.StandardError` {#chdb-dbapi-err-standarderror}
+<div id="chdb-dbapi-err-standarderror">
+  #### **الاستثناء** `chdb.dbapi.err.StandardError`
+</div>
 
 الفئات الأساسية: `Exception`
 
@@ -2927,7 +3104,9 @@ ProgrammingError: Column count doesn't match value count
 
 ***
 
-#### **الاستثناء** `chdb.dbapi.err.Warning` {#chdb-dbapi-err-warning}
+<div id="chdb-dbapi-err-warning">
+  #### **الاستثناء** `chdb.dbapi.err.Warning`
+</div>
 
 الفئات الأساسية: [`StandardError`](#chdb-dbapi-err-standarderror)
 
@@ -2947,9 +3126,13 @@ ProgrammingError: Column count doesn't match value count
 
 ***
 
-### ثوابت الوحدة النمطية {#module-constants}
+<div id="module-constants">
+  ### ثوابت الوحدة النمطية
+</div>
 
-#### `chdb.dbapi.apilevel = '2.0'` {#apilevel}
+<div id="apilevel">
+  #### `chdb.dbapi.apilevel = '2.0'`
+</div>
 
 ```python
 str(object=’’) -> str
@@ -2967,7 +3150,9 @@ errors، فيجب أن يوفّر الكائن مخزنًا مؤقتًا للب�
 
 ***
 
-#### `chdb.dbapi.threadsafety = 1` {#threadsafety}
+<div id="threadsafety">
+  #### `chdb.dbapi.threadsafety = 1`
+</div>
 
 ```python
 int([x]) -> integer
@@ -2991,7 +3176,9 @@ int(x, base=10) -> integer
 
 ***
 
-#### `chdb.dbapi.paramstyle = 'format'` {#paramstyle}
+<div id="paramstyle">
+  #### `chdb.dbapi.paramstyle = 'format'`
+</div>
 
 ```python
 str(object=’’) -> str
@@ -3008,9 +3195,13 @@ errors، فيجب أن يوفّر الكائن مخزنًا مؤقتًا للب�
 
 ***
 
-### ثوابت الأنواع {#type-constants}
+<div id="type-constants">
+  ### ثوابت الأنواع
+</div>
 
-#### `chdb.dbapi.STRING = frozenset({247, 253, 254})` {#string-type}
+<div id="string-type">
+  #### `chdb.dbapi.STRING = frozenset({247, 253, 254})`
+</div>
 
 `frozenset موسع` لمقارنة الأنواع في DB-API 2.0.
 
@@ -3032,7 +3223,9 @@ errors، فيجب أن يوفّر الكائن مخزنًا مؤقتًا للب�
 
 ***
 
-#### `chdb.dbapi.BINARY = frozenset({249, 250, 251, 252})` {#binary-type}
+<div id="binary-type">
+  #### `chdb.dbapi.BINARY = frozenset({249, 250, 251, 252})`
+</div>
 
 frozenset موسع لمقارنة الأنواع وفقًا لـ DB-API 2.0.
 
@@ -3054,7 +3247,9 @@ frozenset موسع لمقارنة الأنواع وفقًا لـ DB-API 2.0.
 
 ***
 
-#### `chdb.dbapi.NUMBER = frozenset({0, 1, 3, 4, 5, 8, 9, 13})` {#number-type}
+<div id="number-type">
+  #### `chdb.dbapi.NUMBER = frozenset({0, 1, 3, 4, 5, 8, 9, 13})`
+</div>
 
 `frozenset موسع` لمقارنة الأنواع في DB-API 2.0.
 
@@ -3076,7 +3271,9 @@ frozenset موسع لمقارنة الأنواع وفقًا لـ DB-API 2.0.
 
 ***
 
-#### `chdb.dbapi.DATE = frozenset({10, 14})` {#date-type}
+<div id="date-type">
+  #### `chdb.dbapi.DATE = frozenset({10, 14})`
+</div>
 
 `frozenset موسع` لمقارنة الأنواع في DB-API 2.0.
 
@@ -3098,7 +3295,9 @@ frozenset موسع لمقارنة الأنواع وفقًا لـ DB-API 2.0.
 
 ***
 
-#### `chdb.dbapi.TIME = frozenset({11})` {#time-type}
+<div id="time-type">
+  #### `chdb.dbapi.TIME = frozenset({11})`
+</div>
 
 frozenset موسّعة لمقارنة الأنواع في DB-API 2.0.
 
@@ -3120,7 +3319,9 @@ frozenset موسّعة لمقارنة الأنواع في DB-API 2.0.
 
 ***
 
-#### `chdb.dbapi.TIMESTAMP = frozenset({7, 12})` {#timestamp-type}
+<div id="timestamp-type">
+  #### `chdb.dbapi.TIMESTAMP = frozenset({7, 12})`
+</div>
 
 frozenset موسّعة لمقارنة الأنواع في DB-API 2.0.
 
@@ -3140,7 +3341,9 @@ frozenset موسّعة لمقارنة الأنواع في DB-API 2.0.
 >>> FIELD_TYPE.BLOB in string_types    # Returns False
 ```
 
-#### `chdb.dbapi.DATETIME = frozenset({7, 12})` {#datetime-type}
+<div id="datetime-type">
+  #### `chdb.dbapi.DATETIME = frozenset({7, 12})`
+</div>
 
 `frozenset` موسَّعة لمقارنة الأنواع وفق DB-API 2.0.
 
@@ -3162,7 +3365,9 @@ frozenset موسّعة لمقارنة الأنواع في DB-API 2.0.
 
 ***
 
-#### `chdb.dbapi.ROWID = frozenset({})` {#rowid-type}
+<div id="rowid-type">
+  #### `chdb.dbapi.ROWID = frozenset({})`
+</div>
 
 `frozenset موسع` لمقارنة الأنواع في DB-API 2.0.
 
@@ -3247,7 +3452,7 @@ conn.close()
 ```python
 import chdb.dbapi as dbapi
 
-# Temporary database (default)
+# In-memory database (default)
 conn1 = dbapi.connect()
 
 # Persistent database file
@@ -3278,7 +3483,7 @@ with dbapi.connect("test.chdb") as conn:
 6. **إدارة الذاكرة**: تجنب `fetchall()` مع مجموعات البيانات الكبيرة جدًا
 
 <Note>
-  * واجهة DB-API 2.0 في chDB متوافقة مع معظم أدوات قواعد بيانات بايثون
+  * واجهة DB-API 2.0 في chDB متوافقة مع معظم أدوات قواعد بيانات Python
   * توفّر الواجهة أمان خيوط من المستوى 1 (يمكن لخيوط التنفيذ مشاركة الوحدات، ولكن ليس الاتصالات)
   * تدعم سلاسل الاتصال نفس المعلمات التي تدعمها جلسات chDB
   * جميع استثناءات DB-API 2.0 القياسية مدعومة
@@ -3292,13 +3497,17 @@ with dbapi.connect("test.chdb") as conn:
   * تتبع صياغة ربط المعلمات نمط format: `%s`
 </Warning>
 
-## الدوال التي يعرّفها المستخدم في بايثون (UDF) {#user-defined-functions}
+<div id="user-defined-functions">
+  ## الدوال التي يعرّفها المستخدم في بايثون (UDF)
+</div>
 
 يدعم chDB دوال UDF أصلية في بايثون تعمل ضمن العملية، مع وسائط محددة الأنواع، واستنتاج تلقائي للأنواع، ومعالجة قابلة للتهيئة لقيم NULL والتعامل مع الاستثناءات. يمكن استدعاء دوال بايثون المسجّلة كدوال UDF مباشرةً من استعلامات SQL.
 
 تستخدم الأمثلة أدناه تنسيق إخراج CSV الافتراضي. توضح التعليقات المضمنة قيم النتائج المنطقية؛ بينما يطبع الإخراج الخام `NULL` بالشكل `\N` ويطبّق اقتباس CSV على قيم السلاسل النصية والتواريخ.
 
-### `chdb.create_function` {#create-function}
+<div id="create-function">
+  ### `chdb.create_function`
+</div>
 
 سجّل دالة بايثون كدالة SQL في chDB.
 
@@ -3341,7 +3550,9 @@ drop_function("strlen")
 
 ***
 
-### `chdb.drop_function` {#drop-function}
+<div id="drop-function">
+  ### `chdb.drop_function`
+</div>
 
 أزِل دالة UDF مسجَّلة سابقًا بلغة بايثون. لا يحدث شيء إذا لم تكن الدالة مسجَّلة، لذا يمكن استدعاؤها بأمان دون شرط.
 
@@ -3359,7 +3570,9 @@ chdb.drop_function(name)
 
 ***
 
-### المُزيّن `@func` {#func-decorator}
+<div id="func-decorator">
+  ### المُزيّن `@func`
+</div>
 
 مُزيّن لتسجيل دالة بايثون كدالة SQL في chDB. تظل الدالة قابلة للاستدعاء كدالة بايثون عادية، وتصبح متاحة في الوقت نفسه ضمن استعلامات SQL باسمها `__name__`.
 
@@ -3405,9 +3618,13 @@ print(query("SELECT greet('world')"))    # Hello, world!
 
 ***
 
-### نظام الأنواع {#udf-type-system}
+<div id="udf-type-system">
+  ### نظام الأنواع
+</div>
 
-#### الأنواع المتاحة {#udf-available-types}
+<div id="udf-available-types">
+  #### الأنواع المتاحة
+</div>
 
 استورد الأنواع من `chdb.sqltypes`:
 
@@ -3422,7 +3639,9 @@ from chdb.sqltypes import (
 )
 ```
 
-#### تعيين الأنواع تلقائيًا {#udf-automatic-type-mapping}
+<div id="udf-automatic-type-mapping">
+  #### تعيين الأنواع تلقائيًا
+</div>
 
 عند استنتاج الأنواع من التعليقات التوضيحية في بايثون، يُستخدم التعيين التالي:
 
@@ -3437,7 +3656,9 @@ from chdb.sqltypes import (
 | `datetime.date`     | `Date`          |
 | `datetime.datetime` | `DateTime64(6)` |
 
-#### طرق تحديد الأنواع {#udf-type-specification-methods}
+<div id="udf-type-specification-methods">
+  #### طرق تحديد الأنواع
+</div>
 
 يمكن تحديد الأنواع بعدة طرق:
 
@@ -3464,7 +3685,9 @@ def f5(x: int) -> int:
 
 ***
 
-### التعامل مع NULL {#udf-null-handling}
+<div id="udf-null-handling">
+  ### التعامل مع NULL
+</div>
 
 تحكّم في كيفية التعامل مع قيم NULL باستخدام parameter `on_null`.
 
@@ -3493,7 +3716,9 @@ print(query("SELECT null_safe(NULL)"))  # 0
 
 ***
 
-### التعامل مع الاستثناءات {#udf-exception-handling}
+<div id="udf-exception-handling">
+  ### التعامل مع الاستثناءات
+</div>
 
 تحكّم في كيفية التعامل مع الاستثناءات باستخدام المعلمة `on_error`.
 
@@ -3523,7 +3748,9 @@ print(query("SELECT safe_divide(10, 2)"))  # 5
 
 ***
 
-### دعم DateTime والمناطق الزمنية {#udf-datetime}
+<div id="udf-datetime">
+  ### دعم DateTime والمناطق الزمنية
+</div>
 
 تدعم UDFs دعمًا كاملًا الأنواع `Date` و`Date32` و`DateTime` و`DateTime64` مع مراعاة المناطق الزمنية.
 
@@ -3549,13 +3776,17 @@ print(query("SELECT get_year(toDate('2024-06-15'))"))  # 2024
 
 ***
 
-### واجهة برمجة التطبيقات القديمة {#legacy-udf}
+<div id="legacy-udf">
+  ### واجهة برمجة التطبيقات القديمة
+</div>
 
 <Warning>
   **مهمل:** يُعدّ المزيّن `@chdb_udf` آلية UDF القديمة المعتمدة على العمليات الفرعية؛ إذ تشغّل دالتك في عملية بايثون منفصلة وتمرّر جميع الوسائط كسلاسل نصية. لا تزال متاحة، لكن يُوصى باستخدام واجهة برمجة تطبيقات UDF الأصلية في بايثون ([`@func`](#func-decorator) / [`create_function`](#create-function)) — إذ تعمل UDFs الأصلية ضمن العملية نفسها مع وسائط ذات أنواع محددة، ومعالجة NULL، والتحكم في الاستثناءات. راجع [دليل UDF لبايثون](/ar/chdb/guides/python-udf) للاطلاع على شرح شامل.
 </Warning>
 
-#### `chdb.udf.chdb_udf` {#chdb-udf}
+<div id="chdb-udf">
+  #### `chdb.udf.chdb_udf`
+</div>
 
 مُزيِّن لدوال بايثون من نوع UDF (دالة معرّفة من المستخدم) في chDB.
 
@@ -3595,7 +3826,9 @@ def func_use_json(arg):
 
 ***
 
-#### `chdb.udf.generate_udf` {#generate-udf}
+<div id="generate-udf">
+  #### `chdb.udf.generate_udf`
+</div>
 
 إنشاء ملفات تهيئة UDF وملفات البرامج النصية التنفيذية.
 
@@ -3626,7 +3859,9 @@ chdb.udf.generate_udf(func_name, args, return_type, udf_body)
 
 ***
 
-## الأدوات المساعدة {#utilities}
+<div id="utilities">
+  ## الأدوات المساعدة
+</div>
 
 الدوال والأدوات المساعدة لـ chDB.
 
@@ -3635,7 +3870,9 @@ chdb.udf.generate_udf(func_name, args, return_type, udf_body)
 
 ***
 
-### `chdb.utils.convert_to_columnar` {#convert-to-columnar}
+<div id="convert-to-columnar">
+  ### `chdb.utils.convert_to_columnar`
+</div>
 
 يحوّل قائمة من القواميس إلى تنسيق عمودي.
 
@@ -3679,7 +3916,9 @@ chdb.utils.convert_to_columnar(items: List[Dict[str, Any]]) → Dict[str, List[A
 
 ***
 
-### `chdb.utils.flatten_dict` {#flatten-dict}
+<div id="flatten-dict">
+  ### `chdb.utils.flatten_dict`
+</div>
 
 يُسطِّح قاموسًا متداخلًا.
 
@@ -3734,7 +3973,9 @@ chdb.utils.flatten_dict(d: Dict[str, Any], parent_key: str = '', sep: str = '_')
 
 ***
 
-### `chdb.utils.infer_data_type` {#infer-data-type}
+<div id="infer-data-type">
+  ### `chdb.utils.infer_data_type`
+</div>
 
 يستنتج أنسب نوع بيانات لقائمة من القيم.
 
@@ -3770,7 +4011,9 @@ chdb.utils.infer_data_type(values: List[Any]) → str
 
 ***
 
-### `chdb.utils.infer_data_types` {#infer-data-types}
+<div id="infer-data-types">
+  ### `chdb.utils.infer_data_types`
+</div>
 
 يستنتج أنواع البيانات لكل عمود في بنية بيانات عمودية.
 
@@ -3796,9 +4039,13 @@ chdb.utils.infer_data_types`(column_data: Dict[str, List[Any]], n_rows: int = 10
 | ------------------ | ----------------------------------------------------------------------------------- |
 | `List[tuple]`      | قائمة من عناصر `tuple`، يحتوي كل عنصر منها على اسم عمود ونوع البيانات المُستنتَج له |
 
-## الفئات الأساسية المجرّدة {#abstract-base-classes}
+<div id="abstract-base-classes">
+  ## الفئات الأساسية المجرّدة
+</div>
 
-### **فئة** `chdb.rwabc.PyReader`(data: Any)&#96; {#pyreader}
+<div id="pyreader">
+  ### **فئة** `chdb.rwabc.PyReader`(data: Any)&#96;
+</div>
 
 الفئات الأساسية: `ABC`
 
@@ -3808,7 +4055,9 @@ class chdb.rwabc.PyReader(data: Any)
 
 ***
 
-#### **abstractmethod** `read` {#read}
+<div id="read">
+  #### **abstractmethod** `read`
+</div>
 
 اقرأ عددًا محددًا من الصفوف من الأعمدة المحددة، وأعِد قائمة من الكائنات،
 بحيث يمثّل كل كائن تسلسلاً من القيم لعمود واحد.
@@ -3830,7 +4079,9 @@ abstractmethod (col_names: List[str], count: int) → List[Any]
 | ----------- | -------------------------------- |
 | `List[Any]` | قائمة بالتسلسلات، واحدة لكل عمود |
 
-### **الفئة** `chdb.rwabc.PyWriter` {#pywriter}
+<div id="pywriter">
+  ### **الفئة** `chdb.rwabc.PyWriter`
+</div>
 
 الفئات الأساسية: `ABC`
 
@@ -3840,7 +4091,9 @@ class chdb.rwabc.PyWriter(col_names: List[str], types: List[type], data: Any)
 
 ***
 
-#### **abstractmethod** finalize {#finalize}
+<div id="finalize">
+  #### **abstractmethod** finalize
+</div>
 
 جمِّع البيانات النهائية من الكتل وأعِدها. يجب أن تُنفِّذها الأصناف الفرعية.
 
@@ -3856,7 +4109,9 @@ abstractmethod finalize() → bytes
 
 ***
 
-#### **abstractmethod** `write` {#write}
+<div id="write">
+  #### **abstractmethod** `write`
+</div>
 
 يحفظ أعمدة البيانات في كتل. يجب أن تنفّذه الفئات الفرعية.
 
@@ -3871,9 +4126,13 @@ abstractmethod write(col_names: List[str], columns: List[List[Any]]) → None
 | `col_names` | `List[str]`       | قائمة بأسماء الأعمدة قيد الكتابة               |
 | `columns`   | `List[List[Any]]` | قائمة ببيانات الأعمدة، ويُمثَّل كل عمود بقائمة |
 
-## التعامل مع الاستثناءات {#exception-handling}
+<div id="chdb-exceptions">
+  ## التعامل مع الاستثناءات
+</div>
 
-### **الفئة** `chdb.ChdbError` {#chdberror}
+<div id="chdberror">
+  ### **الفئة** `chdb.ChdbError`
+</div>
 
 الفئات الأساسية: `Exception`
 
@@ -3918,9 +4177,13 @@ Syntax error: Syntax error near 'FROM'
   الاستعلامات المعرّضة للفشل لتوفير معالجة مناسبة للأخطاء في تطبيقك.
 </Note>
 
-## معلومات الإصدار {#version-information}
+<div id="version-information">
+  ## معلومات الإصدار
+</div>
 
-### `chdb.chdb_version = ('3', '6', '0')` {#chdb-version}
+<div id="chdb-version">
+  ### `chdb.chdb_version = ('3', '6', '0')`
+</div>
 
 تسلسل مضمّن غير قابل للتغيير.
 
@@ -3931,7 +4194,9 @@ Syntax error: Syntax error near 'FROM'
 
 ***
 
-### `chdb.engine_version = '25.5.2.1'` {#engine-version}
+<div id="engine-version">
+  ### `chdb.engine_version = '25.5.2.1'`
+</div>
 
 ```python
 str(object=’’) -> str
@@ -3949,7 +4214,9 @@ str(bytes_or_buffer[, encoding[, errors]]) -> str
 
 ***
 
-### `chdb.__version__ = '3.6.0'` {#version}
+<div id="version">
+  ### `chdb.__version__ = '3.6.0'`
+</div>
 
 ```python
 str(object=’’) -> str

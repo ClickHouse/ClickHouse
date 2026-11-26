@@ -21,7 +21,7 @@ CommittingBlocks getCommittingBlocks(zkutil::ZooKeeperPtr & zookeeper, const std
 template<typename VirtualPartsT, typename MutationsStateT>
 class DistributedMergePredicate : public IMergePredicate
 {
-    [[nodiscard]] std::expected<void, PreformattedMessage> checkCanMergePartsPreconditions(const std::string & name, const MergeTreePartInfo & info) const
+    std::expected<void, PreformattedMessage> checkCanMergePartsPreconditions(const std::string & name, const MergeTreePartInfo & info) const
     {
         if (prev_virtual_parts_ptr && prev_virtual_parts_ptr->getContainingPart(info).empty())
             return std::unexpected(PreformattedMessage::create("Part {} does not contain in snapshot of previous virtual parts", name));
@@ -38,7 +38,7 @@ public:
     {
     }
 
-    [[nodiscard]] std::expected<void, PreformattedMessage> canMergeParts(const PartProperties & left, const PartProperties & right) const override
+    std::expected<void, PreformattedMessage> canMergeParts(const PartProperties & left, const PartProperties & right) const override
     {
         /// A sketch of a proof of why this method actually works:
         ///
@@ -157,7 +157,7 @@ public:
         return {};
     }
 
-    [[nodiscard]] std::expected<void, PreformattedMessage> canUsePartInMerges(const std::string & name, const MergeTreePartInfo & info) const
+    std::expected<void, PreformattedMessage> canUsePartInMerges(const std::string & name, const MergeTreePartInfo & info) const
     {
         if (auto result = checkCanMergePartsPreconditions(name, info); !result)
             return result;
@@ -172,23 +172,18 @@ public:
             auto data_version = info.getDataVersion();
             auto it = committing_blocks_ptr->find(info.getOriginalPartitionId());
 
-            if (it != committing_blocks_ptr->end())
+            if (it != committing_blocks_ptr->end() && !it->second.empty() && data_version > it->second.begin()->number)
             {
-                auto min_update_block_number = getMinUpdateBlockNumber(it->second);
-
-                if (min_update_block_number && *min_update_block_number < data_version)
-                {
-                    return std::unexpected(PreformattedMessage::create(
-                        "Patch part {} with data version {} cannot be used in merges because patches with lower data version are still being processed",
-                        name, data_version));
-                }
+                return std::unexpected(PreformattedMessage::create(
+                    "Patch part {} with data version {} cannot be used in merges because patches with lower data version are still being processed",
+                    name, data_version));
             }
         }
 
         return {};
     }
 
-    [[nodiscard]] PartsRange getPatchesToApplyOnMerge(const PartsRange & range) const override
+    PartsRange getPatchesToApplyOnMerge(const PartsRange & range) const override
     {
         if (range.empty())
             return {};
