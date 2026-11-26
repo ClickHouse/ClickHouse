@@ -9,6 +9,8 @@ SELECT countIf(k = 0 AND JSONExtractString(s, 'k') = '0') FROM t_lazy
   SETTINGS max_threads = 1, short_circuit_function_evaluation = 'enable', max_memory_usage = '40Mi';
 SELECT sum(length(coalesce(if(k = 0, NULL, 'a'), JSONExtractString(s, 'k')))) FROM t_lazy
   SETTINGS max_threads = 1, short_circuit_function_evaluation = 'enable', max_memory_usage = '40Mi';
+SELECT countIf(k = 0 AND length(JSONExtractString(s, 'k')) = 1) FROM t_lazy
+  SETTINGS max_threads = 1, short_circuit_function_evaluation = 'enable', max_memory_usage = '40Mi';
 DROP TABLE t_lazy;
 
 DROP TABLE IF EXISTS t_lazy_fixed;

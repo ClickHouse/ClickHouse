@@ -368,7 +368,7 @@ static bool capturesNonNumericData(const ColumnFunction & column_function)
         const IColumn & column = *captured.column;
         if (const auto * nested = typeid_cast<const ColumnFunction *>(&column))
             return capturesNonNumericData(*nested);
-        /// These filter only their indexes, the data is shared.
+        /// Filtering these copies no data: a constant keeps its value, the others filter only their indexes.
         if (isColumnConst(column) || column.lowCardinality() || column.isReplicated())
             return false;
         return !removeNullable(captured.type)->isValueRepresentedByNumber();
