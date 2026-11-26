@@ -41,6 +41,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/extractStringValueFilters.h>
 #include <Interpreters/inplaceBlockConversions.h>
+#include <Interpreters/MaterializedColumnDependencies.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/PredicateStatisticsLog.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
@@ -5501,6 +5502,55 @@ static bool isFilledFromDefaultInSomePart(
         return column_in_table && isNullableOrLowCardinalityNullable(column_in_part->type)
             && !isNullableOrLowCardinalityNullable(column_in_table->type);
     });
+}
+
+bool ReadFromMergeTree::recomputesColumnsNonDeterministically() const
+{
+    if ((!mutations_snapshot || !mutations_snapshot->hasDataMutations()) && !data.hasEnabledMaskingPolicies(context))
+        return false;
+
+    const auto & metadata = storage_snapshot->metadata;
+    const auto & columns = metadata->getColumns();
+    const MaterializedColumnDependencies dependencies(columns, context);
+    for (const auto & part : getParts())
+    {
+        /// A projection part carries a fake data version, which makes every mutation look pending.
+        if (part.data_part->isProjectionPart())
+            continue;
+
+        const auto alter_conversions = MergeTreeData::getAlterConversionsForPart(part.data_part, mutations_snapshot, context
+#if CLICKHOUSE_CLOUD
+            , context->getAccess()->getEnabledMaskingPolicies()
+#endif
+        );
+        const auto & changed_columns = alter_conversions->getAllUpdatedColumns();
+        if (changed_columns.empty())
+            continue;
+
+        Names recomputed;
+        NameSet recomputed_set;
+        for (const auto & column : columns.getMaterialized())
+        {
+            if (!dependencies.findColumnsToRecalculate(column.name, changed_columns).empty())
+            {
+                recomputed.push_back(column.name);
+                recomputed_set.insert(column.name);
+            }
+        }
+        if (recomputed.empty())
+            continue;
+
+        /// A recomputed column reads the columns it is computed from as the read has them: a recomputed one, or one the read
+        /// fills from its default in this part.
+        const RangesInDataParts this_part{part};
+        const auto non_deterministic = getNonDeterministicDefaults(recomputed, columns, [&](const String & column)
+        {
+            return recomputed_set.contains(column) || isFilledFromDefaultInSomePart(column, this_part, metadata, mutations_snapshot, context);
+        }, context);
+        if (!non_deterministic.empty())
+            return true;
+    }
+    return false;
 }
 
 Names ReadFromMergeTree::getLazilyReadColumns(const NameSet & required_outputs) const

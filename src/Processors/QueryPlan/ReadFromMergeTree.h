@@ -728,8 +728,8 @@ public:
     /// storage columns that are not virtual, and that no part fills from a non-deterministic default. Some of them the
     /// main read reads as well - something below the `LIMIT` needs them, FINAL merges by them, PREWHERE or the row policy
     /// reads them - so a lazy read reads them a second time, with the same values: those are in `read_twice` as well. A read
-    /// that applies data mutations on the fly or masking policies has no lazy read (see `canReadLazily` of lazy
-    /// materialization over joins): those compute columns again in each read.
+    /// that computes columns again with a non-deterministic expression has no lazy read (see
+    /// `recomputesColumnsNonDeterministically` and `canReadLazily` of lazy materialization over joins).
     struct LazilyReadablePositions
     {
         VectorWithMemoryTracking<size_t> positions;
@@ -741,6 +741,12 @@ public:
     /// and does not drop as unneeded. Without them, it is `removeUnusedColumns`.
     std::pair<RemoveUnusedColumnsResult, std::unique_ptr<LazilyReadFromMergeTree>> removeUnusedColumnsAndCreateLazyReadStep(
         const VectorWithMemoryTracking<size_t> & unneeded_output_positions, const VectorWithMemoryTracking<size_t> & lazy_output_positions);
+
+    /// Whether the read computes a column again with a non-deterministic expression, so that two reads of the same rows
+    /// differ: a data mutation applied on the fly, or a masking policy, which is applied the same way, computes again the
+    /// `MATERIALIZED` columns computed from the columns it changes, also the ones the read needs only to compute others.
+    /// The expressions of the changes themselves are deterministic: `AlterConversions` does not apply others on the fly.
+    bool recomputesColumnsNonDeterministically() const;
 
     /// Whether some columns of this read were moved to a lazy read, which addresses the rows of this one by their part
     /// offsets. The read puts the parts it reads where the lazy read reads them from, when it builds its pipeline.

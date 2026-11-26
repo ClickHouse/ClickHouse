@@ -156,6 +156,23 @@ SELECT extract(explain, 'Lazily read columns: .*') FROM (EXPLAIN actions = 1
 WHERE explain LIKE '%Lazily read columns%';
 DROP TABLE mut2;
 
+SELECT '-- a deterministic data mutation applied on the fly keeps the lazy read';
+DROP TABLE IF EXISTS mut3;
+CREATE TABLE mut3 (k UInt64, a UInt64, x UInt64, m String MATERIALIZED toString(x * 2), heavy String)
+ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 64;
+INSERT INTO mut3 (k, a, x, heavy) SELECT number, number % 100, number, repeat('x', 100) FROM numbers(1000);
+SYSTEM STOP MERGES mut3;
+ALTER TABLE mut3 UPDATE x = x + 1 WHERE 1 SETTINGS mutations_sync = 0;
+SELECT mut3.k, mut3.m, r.rheavy = repeat('y', 100) FROM mut3 JOIN r ON mut3.k = r.k WHERE toUInt64(mut3.m) % 4 = 0 ORDER BY mut3.a DESC, mut3.k LIMIT 3
+SETTINGS apply_mutations_on_fly = 1;
+SELECT mut3.k, mut3.m, r.rheavy = repeat('y', 100) FROM mut3 JOIN r ON mut3.k = r.k WHERE toUInt64(mut3.m) % 4 = 0 ORDER BY mut3.a DESC, mut3.k LIMIT 3
+SETTINGS apply_mutations_on_fly = 1, query_plan_optimize_lazy_materialization = 0;
+SELECT extract(explain, 'Lazily read columns: .*') FROM (EXPLAIN actions = 1
+    SELECT mut3.k, mut3.m, mut3.heavy, r.rheavy FROM mut3 JOIN r ON mut3.k = r.k WHERE toUInt64(mut3.m) % 4 = 0 ORDER BY mut3.a DESC, mut3.k LIMIT 3
+    SETTINGS apply_mutations_on_fly = 1)
+WHERE explain LIKE '%Lazily read columns%';
+DROP TABLE mut3;
+
 DROP TABLE l;
 DROP TABLE r;
 DROP TABLE j;

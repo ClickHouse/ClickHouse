@@ -82,3 +82,12 @@ Lazily read columns: rheavy
 -- a column the main read computes only for another one, with a data mutation applied on the fly
 10	10
 Lazily read columns: rheavy
+-- a deterministic data mutation applied on the fly keeps the lazy read
+99	200	1
+199	400	1
+299	600	1
+99	200	1
+199	400	1
+299	600	1
+Lazily read columns: m, heavy
+Lazily read columns: rheavy
