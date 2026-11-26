@@ -6594,7 +6594,13 @@ Use three-valued SQL `NULL` semantics for scalar numeric `IN` and `NOT IN` lists
 When a non-`NULL` list member matches, the result is true for `IN`. Otherwise, a `NULL` operand or list member produces `NULL`. An empty list produces false for `IN` and true for `NOT IN`.
 
 This setting currently supports numeric list members that are losslessly comparable to the left operand in queries using the new analyzer. Other membership forms are not yet supported.
-)", 0) \
+
+Possible values:
+
+- 0 — Use the default ClickHouse `IN` handling for `NULL` values.
+- 1 — Use three-valued logic for supported scalar numeric lists.
+)", IMPORTANT, \
+        {"26.12", false, false, "New setting for three-valued `IN` semantics on scalar numeric lists."}) \
     DECLARE(Bool, allow_nondeterministic_mutations, false, R"(
 User-level setting that allows mutations on replicated tables to make use of non-deterministic functions such as `dictGet`, and of the virtual columns whose values may differ between replicas, such as `_table`, `_database` and `_disk_name`.
 

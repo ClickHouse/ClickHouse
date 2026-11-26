@@ -2158,6 +2158,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         (function_name == "in" || function_name == "notIn") &&
         scope.context->getSettingsRef()[Setting::rewrite_in_to_join] &&
         !scope.context->getSettingsRef()[Setting::transform_null_in] &&
+        !scope.context->getSettingsRef()[Setting::in_null_as_unknown] &&
         !scope.in_prewhere)
     {
         const bool is_function_not_in = function_name == "notIn";
