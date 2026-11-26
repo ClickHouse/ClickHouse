@@ -4,6 +4,7 @@ grant READ ON S3
 grant READ ON S3
 --- READ ON S3 only
 3
+3
 c1	Nullable(Int64)
 grant WRITE ON S3
 grant WRITE ON S3

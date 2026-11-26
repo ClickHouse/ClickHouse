@@ -50,6 +50,7 @@ ${CLICKHOUSE_CLIENT} --user "${WRITER}" -q "INSERT INTO ${TABLE} SETTINGS s3_tru
 
 echo '--- READ ON S3 only'
 ${CLICKHOUSE_CLIENT} --user "${READER}" -q "SELECT * FROM ${TABLE}"
+${CLICKHOUSE_CLIENT} --user "${READER}" -q "SELECT * FROM ${TABLE} SETTINGS enable_parallel_replicas = 1, max_parallel_replicas = 3, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost', parallel_replicas_for_cluster_engines = 1, automatic_parallel_replicas_mode = 0"
 ${CLICKHOUSE_CLIENT} --user "${READER}" -q "DESCRIBE TABLE ${TABLE}" | cut -f1,2
 ${CLICKHOUSE_CLIENT} --user "${READER}" -q "INSERT INTO ${TABLE} SETTINGS s3_truncate_on_insert = 1 VALUES (4)" 2>&1 | grep -o -m1 'grant WRITE ON S3'
 ${CLICKHOUSE_CLIENT} --user "${READER}" --async_insert 1 --wait_for_async_insert 0 -q "INSERT INTO ${TABLE} SETTINGS s3_truncate_on_insert = 1 VALUES (4)" 2>&1 | grep -o -m1 'grant WRITE ON S3'
