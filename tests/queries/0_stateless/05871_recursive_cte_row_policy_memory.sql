@@ -1,3 +1,5 @@
+-- Tags: no-parallel-replicas
+-- no-parallel-replicas: every read of `t` becomes a remote read, which needs far more memory than the limit.
 -- The row policy filter is rebuilt for every read of `t` on every step of a recursive CTE and must not retain memory per step.
 -- Sixteen reads per step keep the number of steps low: the flaky check runs many copies of the test under the thread fuzzer.
 
