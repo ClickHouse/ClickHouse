@@ -1,4 +1,5 @@
 #include <base/arithmeticOverflow.h>
+#include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnFixedString.h>
@@ -63,6 +64,17 @@ extern const int ZERO_ARRAY_OR_TUPLE_INDEX;
 
 namespace
 {
+
+/// `byteSize` of aggregate states counts only the pointers, and several rows can share one state.
+bool hasAggregateStates(const IColumn & column)
+{
+    bool found = typeid_cast<const ColumnAggregateFunction *>(&column) != nullptr;
+    column.forEachSubcolumnRecursively([&](const IColumn & subcolumn)
+    {
+        found = found || typeid_cast<const ColumnAggregateFunction *>(&subcolumn) != nullptr;
+    });
+    return found;
+}
 
 enum class ArrayElementExceptionMode : uint8_t
 {
@@ -1565,7 +1577,8 @@ ColumnPtr FunctionArrayElement<mode>::executeConst(
     if (rows == 0)
         return result_type->createColumn();
 
-    const bool copy_all_elements = array_elements.byteSize() <= rows * sizeof(UInt64);
+    /// Appending a default to a copy of shared aggregate states copies the states, so copy only the selected ones.
+    const bool copy_all_elements = array_elements.byteSize() <= rows * sizeof(UInt64) && !hasAggregateStates(array_elements);
 
     static constexpr UInt64 no_element = std::numeric_limits<UInt64>::max();
     const UInt64 default_marker = copy_all_elements ? array_size : no_element;
