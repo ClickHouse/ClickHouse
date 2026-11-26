@@ -1,5 +1,7 @@
 #include <Processors/QueryPlan/QueryPlanShapeHash.h>
 
+#include "config.h"
+
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/Collator.h>
 #include <Columns/ColumnConst.h>
@@ -10,8 +12,11 @@
 #include <Common/VectorWithMemoryTracking.h>
 #include <Core/Block.h>
 #include <Core/SortDescription.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeFunction.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Functions/FunctionsMiscellaneous.h>
@@ -21,10 +26,12 @@
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/WindowDescription.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
+#include <Processors/QueryPlan/BlockNestedLoopJoinStep.h>
 #include <Processors/QueryPlan/ArrayJoinStep.h>
 #include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
+#include <Processors/QueryPlan/InequalityJoinStep.h>
 #include <Processors/QueryPlan/IntersectOrExceptStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/LimitByStep.h>
@@ -32,6 +39,7 @@
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
+#include <Processors/QueryPlan/ReadFromRemote.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
@@ -44,6 +52,10 @@
 #include <Storages/StorageSnapshot.h>
 
 #include <fmt/format.h>
+
+#if USE_EMBEDDED_COMPILER
+#include <Interpreters/JIT/CompileDAG.h>
+#endif
 
 namespace DB
 {
@@ -111,6 +123,32 @@ void hashResultType(const IDataType & type, SipHash & hash)
         for (const auto & element : tuple->getElements())
             hashResultType(*element, hash);
     }
+    else if (const auto * map = typeid_cast<const DataTypeMap *>(&type))
+    {
+        hashString("Map", hash);
+        hashResultType(*map->getKeyType(), hash);
+        hashResultType(*map->getValueType(), hash);
+    }
+    else if (const auto * function = typeid_cast<const DataTypeFunction *>(&type))
+    {
+        hashString("Function", hash);
+        hash.update(function->getArgumentTypes().size());
+        for (const auto & argument : function->getArgumentTypes())
+            hashResultType(*argument, hash);
+        if (function->getReturnType())
+            hashResultType(*function->getReturnType(), hash);
+    }
+    else if (const auto * aggregate_function = typeid_cast<const DataTypeAggregateFunction *>(&type))
+    {
+        /// The state of an aggregate function, as a remote shard sends it: the function without its
+        /// parameters, which are literals, and the types of its arguments.
+        hashString("AggregateFunction", hash);
+        hashString(aggregate_function->getFunction()->getName(), hash);
+        const auto arguments = aggregate_function->getArgumentsDataTypes();
+        hash.update(arguments.size());
+        for (const auto & argument : arguments)
+            hashResultType(*argument, hash);
+    }
     else
     {
         hashString(type.getName(), hash);
@@ -157,79 +195,193 @@ void hashSortDescription(const SortDescription & description, const Block * head
 
 /// The shape of an expression: which operations, in what arrangement, over which input columns.
 ///
-/// Unlike `ActionsDAG::updateHash`, which has to tell two constants apart, this hashes no constant
-/// and no name:
-///  - a `COLUMN` node hashes as "a constant", without its value and without its type, since `5` and
-///    `500` are a `UInt8` and a `UInt16`;
+/// Each node hashes as its operation and the hashes of its children, so the hash does not depend on
+/// how the nodes are shared or on what they are named. Unlike `ActionsDAG::updateHash`, which has to
+/// tell two constants apart, this hashes no constant and no name:
+///  - a node holding a constant hashes as "a constant", without its value and without its type,
+///    since `5` and `500` are a `UInt8` and a `UInt16`; that includes a function the planner folded
+///    into a constant;
 ///  - no `result_name` is hashed, because a constant's name is its value and is part of the name of
-///    every node above it;
+///    every node above it, and an `ALIAS` hashes as the node it names;
 ///  - an `INPUT` is identified by its position in `input_header`.
 /// The result types of functions are kept, without the width of their numbers, see `hashResultType`.
-/// The body of a lambda is hashed as well, see `hashLambda`.
+/// The body of a lambda is hashed as well.
+///
+/// A part of the expression the JIT compiled into one function hashes as the nodes it was compiled
+/// from would, see `hashCompiledFunction`: an expression is compiled once it has been seen often
+/// enough, and the same query must not get another hash for that.
 void hashActionsDAG(const ActionsDAG & dag, const Block * input_header, SipHash & hash);
 
-/// The body of a lambda, which is not among the children of the node that holds it. Its inputs are
-/// the lambda's arguments and the columns it captures, identified by their position among the
-/// body's inputs, since the captured columns are named after their expressions.
-void hashLambda(const ActionsDAG & body, SipHash & hash)
+using NodeHashes = UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, UInt128>;
+
+UInt128 constantHash()
 {
+    SipHash hash;
+    hashString("constant", hash);
+    return hash.get128();
+}
+
+/// The body of a lambda, which is not among the children of the node that holds it, as it was
+/// before the JIT compiled any of it. Its inputs are the lambda's arguments and the columns it
+/// captures, identified by their position among the body's inputs, since the captured columns are
+/// named after their expressions.
+void hashLambda(const LambdaCapture & capture, const ActionsDAG & body, SipHash & hash)
+{
+    hashString("lambda", hash);
+    hash.update(capture.lambda_arguments.size());
+    for (const auto & argument : capture.lambda_arguments)
+        hashResultType(*argument.type, hash);
+    hashResultType(*capture.return_type, hash);
+
     Block body_header;
     for (const auto * input : body.getInputs())
         body_header.insert({nullptr, input->result_type, input->result_name});
     hashActionsDAG(body, &body_header, hash);
 }
 
+/// The lambda a node holds, if it is one: as a function with captured columns, whose children are
+/// those columns, or folded into a constant when it captures none.
+bool tryHashLambda(const ActionsDAG::Node & node, SipHash & hash)
+{
+    if (node.type == ActionsDAG::ActionType::FUNCTION)
+    {
+        if (const auto * function_capture = typeid_cast<const FunctionCapture *>(node.function_base.get()))
+        {
+            hashLambda(function_capture->getCapture(), function_capture->getActionsDAGForSemanticAnalysis(), hash);
+            return true;
+        }
+    }
+
+    if (node.column && node.result_type && WhichDataType(node.result_type).isFunction())
+    {
+        const IColumn * column = node.column.get();
+        if (const auto * column_const = typeid_cast<const ColumnConst *>(column))
+            column = &column_const->getDataColumn();
+        if (const auto * column_function = typeid_cast<const ColumnFunction *>(column))
+        {
+            if (const auto * function_expression = typeid_cast<const FunctionExpression *>(column_function->getFunction().get()))
+            {
+                hashLambda(function_expression->getCapture(), function_expression->getActionsDAGForSemanticAnalysis(), hash);
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
+
+UInt128 functionHash(const IFunctionBase & function, const DataTypePtr & result_type, const VectorWithMemoryTracking<UInt128> & children)
+{
+    SipHash hash;
+    hash.update(ActionsDAG::ActionType::FUNCTION);
+    hashString(function.getName(), hash);
+    hashResultType(*result_type, hash);
+    hash.update(children.size());
+    for (const auto & child : children)
+        hash.update(child);
+    return hash.get128();
+}
+
+#if USE_EMBEDDED_COMPILER
+/// A function the JIT compiled from a part of the expression hashes as the nodes it replaced: its
+/// `INPUT`s are its children, in order, its `CONSTANT`s are constants, and its `FUNCTION`s are the
+/// functions of the nodes it was compiled from (see `getCompilableDAG`).
+std::optional<UInt128> hashCompiledFunction(const ActionsDAG::Node & node, const NodeHashes & hashes)
+{
+    const auto * compile_dag = CompileDAG::tryGetFrom(*node.function_base);
+    if (!compile_dag)
+        return std::nullopt;
+
+    VectorWithMemoryTracking<UInt128> compiled_hashes;
+    compiled_hashes.reserve(compile_dag->getNodesCount());
+    size_t next_input = 0;
+    for (size_t i = 0; i < compile_dag->getNodesCount(); ++i)
+    {
+        const auto & compiled = (*compile_dag)[i];
+        switch (compiled.type)
+        {
+            case CompileDAG::CompileType::INPUT:
+                compiled_hashes.push_back(hashes.at(node.children.at(next_input++)));
+                break;
+            case CompileDAG::CompileType::CONSTANT:
+                compiled_hashes.push_back(constantHash());
+                break;
+            case CompileDAG::CompileType::FUNCTION:
+            {
+                VectorWithMemoryTracking<UInt128> arguments;
+                arguments.reserve(compiled.arguments.size());
+                for (size_t argument : compiled.arguments)
+                    arguments.push_back(compiled_hashes.at(argument));
+                compiled_hashes.push_back(functionHash(*compiled.function, compiled.result_type, arguments));
+                break;
+            }
+        }
+    }
+    return compiled_hashes.back();
+}
+#endif
+
+UInt128 hashNodeOfDAG(const ActionsDAG::Node & node, const Block * input_header, const NodeHashes & hashes)
+{
+    using ActionType = ActionsDAG::ActionType;
+
+    if (node.type == ActionType::ALIAS)
+        return hashes.at(node.children.front());
+
+    SipHash hash;
+    if (tryHashLambda(node, hash))
+    {
+        hash.update(node.children.size());
+        for (const auto * child : node.children)
+            hash.update(hashes.at(child));
+        return hash.get128();
+    }
+
+    if (node.column && isColumnConst(*node.column))
+        return constantHash();
+
+    switch (node.type)
+    {
+        case ActionType::INPUT:
+            hash.update(ActionType::INPUT);
+            hashColumn(node.result_name, input_header, hash);
+            return hash.get128();
+        case ActionType::COLUMN:
+            return constantHash();
+        case ActionType::FUNCTION:
+        {
+#if USE_EMBEDDED_COMPILER
+            if (node.is_function_compiled)
+            {
+                if (auto compiled = hashCompiledFunction(node, hashes))
+                    return *compiled;
+            }
+#endif
+            VectorWithMemoryTracking<UInt128> children;
+            children.reserve(node.children.size());
+            for (const auto * child : node.children)
+                children.push_back(hashes.at(child));
+            return functionHash(*node.function_base, node.result_type, children);
+        }
+        case ActionType::PLACEHOLDER:
+            hash.update(ActionType::PLACEHOLDER);
+            hashString(node.result_type->getName(), hash);
+            return hash.get128();
+        case ActionType::ARRAY_JOIN:
+            hash.update(ActionType::ARRAY_JOIN);
+            hash.update(hashes.at(node.children.front()));
+            return hash.get128();
+        case ActionType::ALIAS:
+            break;
+    }
+    return hash.get128();
+}
+
 void hashActionsDAG(const ActionsDAG & dag, const Block * input_header, SipHash & hash)
 {
     using Node = ActionsDAG::Node;
-    using ActionType = ActionsDAG::ActionType;
 
-    /// Nodes are numbered in the order they are first finished, which depends only on the shape, so
-    /// a node shared by several parents hashes as a reference to its number rather than again.
-    UnorderedMapWithMemoryTracking<const Node *, size_t> numbers;
-
-    const auto hash_node = [&](const Node & node)
-    {
-        hash.update(node.type);
-        switch (node.type)
-        {
-            case ActionType::INPUT:
-                hashColumn(node.result_name, input_header, hash);
-                break;
-            case ActionType::FUNCTION:
-                hashString(node.function_base->getName(), hash);
-                hashResultType(*node.result_type, hash);
-                /// A lambda with a captured column, whose children are the captured columns.
-                if (const auto * function_capture = typeid_cast<const FunctionCapture *>(node.function_base.get()))
-                    hashLambda(function_capture->getAcionsDAG(), hash);
-                break;
-            case ActionType::PLACEHOLDER:
-                hashString(node.result_type->getName(), hash);
-                break;
-            case ActionType::COLUMN:
-                /// A lambda that captures no column is folded into a constant, which holds the
-                /// lambda rather than a literal.
-                if (node.column && node.result_type && WhichDataType(node.result_type).isFunction())
-                {
-                    const IColumn * column = node.column.get();
-                    if (const auto * column_const = typeid_cast<const ColumnConst *>(column))
-                        column = &column_const->getDataColumn();
-                    if (const auto * column_function = typeid_cast<const ColumnFunction *>(column))
-                    {
-                        if (const auto * function_expression = typeid_cast<const FunctionExpression *>(column_function->getFunction().get()))
-                            hashLambda(function_expression->getAcionsDAG(), hash);
-                    }
-                }
-                break;
-            case ActionType::ALIAS:
-            case ActionType::ARRAY_JOIN:
-                break;
-        }
-
-        hash.update(node.children.size());
-        for (const auto * child : node.children)
-            hash.update(numbers.at(child));
-    };
+    NodeHashes hashes;
 
     struct Frame
     {
@@ -241,7 +393,7 @@ void hashActionsDAG(const ActionsDAG & dag, const Block * input_header, SipHash 
     for (const auto * output : dag.getOutputs())
     {
         StackWithMemoryTracking<Frame> stack;
-        if (!numbers.contains(output))
+        if (!hashes.contains(output))
             stack.push({.node = output});
 
         while (!stack.empty())
@@ -249,18 +401,36 @@ void hashActionsDAG(const ActionsDAG & dag, const Block * input_header, SipHash 
             auto & frame = stack.top();
             if (frame.next_child == frame.node->children.size())
             {
-                hash_node(*frame.node);
-                numbers.emplace(frame.node, numbers.size());
+                hashes.emplace(frame.node, hashNodeOfDAG(*frame.node, input_header, hashes));
                 stack.pop();
                 continue;
             }
 
             const auto * child = frame.node->children[frame.next_child++];
-            if (!numbers.contains(child))
+            if (!hashes.contains(child))
                 stack.push({.node = child});
         }
 
-        hash.update(numbers.at(output));
+        hash.update(hashes.at(output));
+    }
+}
+
+/// An expression a join evaluates over pairs of rows, such as the residual condition of an
+/// inequality join: its inputs by position among the columns it requires, and where each of those
+/// comes from, which side and which position in that side's header.
+template <typename Source>
+void hashExpressionOverBothSides(const ExpressionActions & actions, const VectorWithMemoryTracking<Source> & inputs, SipHash & hash)
+{
+    Block required;
+    for (const auto & column : actions.getRequiredColumnsWithTypes())
+        required.insert({nullptr, column.type, column.name});
+    hashActionsDAG(actions.getActionsDAG(), &required, hash);
+
+    hash.update(inputs.size());
+    for (const auto & input : inputs)
+    {
+        hash.update(input.side);
+        hash.update(input.position);
     }
 }
 
@@ -476,6 +646,28 @@ void hashReadFromMergeTree(const ReadFromMergeTree & read, SipHash & hash)
         hash.update(0);
 }
 
+void hashOutputNames(const IQueryPlanStep & step, SipHash & hash)
+{
+    const auto & output_header = step.getOutputHeader();
+    hash.update(output_header ? output_header->columns() : 0);
+    if (output_header)
+    {
+        for (const auto & column : *output_header)
+            hashString(column.name, hash);
+    }
+}
+
+void hashOutputTypes(const IQueryPlanStep & step, SipHash & hash)
+{
+    const auto & output_header = step.getOutputHeader();
+    hash.update(output_header ? output_header->columns() : 0);
+    if (output_header)
+    {
+        for (const auto & column : *output_header)
+            hashResultType(*column.type, hash);
+    }
+}
+
 /// The choices made for one step, apart from its children.
 void hashStep(const IQueryPlanStep & step, SipHash & hash)
 {
@@ -579,6 +771,32 @@ void hashStep(const IQueryPlanStep & step, SipHash & hash)
         hashJoin(*join->getJoin(), header, right_header, hash);
         hash.update(join->swap_streams);
     }
+    else if (const auto * inequality_join = typeid_cast<const InequalityJoinStep *>(&step))
+    {
+        hash.update(inequality_join->getQueryKind());
+        hash.update(inequality_join->getQueryStrictness());
+        hash.update(inequality_join->areInputsSortedByFirstKey());
+        for (const auto & condition : inequality_join->getConditions())
+        {
+            hash.update(condition.op);
+            hash.update(condition.left_key_position);
+            hash.update(condition.right_key_position);
+        }
+        if (const auto & residual = inequality_join->getResidual())
+        {
+            hash.update(1);
+            hashExpressionOverBothSides(*residual->actions, residual->inputs, hash);
+        }
+        else
+            hash.update(0);
+    }
+    else if (const auto * nested_loop_join = typeid_cast<const BlockNestedLoopJoinStep *>(&step))
+    {
+        hash.update(nested_loop_join->getKind());
+        hash.update(nested_loop_join->getStrictness());
+        const auto & predicate = nested_loop_join->getPredicate();
+        hashExpressionOverBothSides(*predicate.actions, predicate.inputs, hash);
+    }
     else if (const auto * filled_join = typeid_cast<const FilledJoinStep *>(&step))
     {
         /// The right side is a table that is already filled, such as a `Join` engine table, and
@@ -592,22 +810,35 @@ void hashStep(const IQueryPlanStep & step, SipHash & hash)
         if (const auto * read_from_merge_tree = typeid_cast<const ReadFromMergeTree *>(&step))
             hashReadFromMergeTree(*read_from_merge_tree, hash);
     }
+    else if (const auto * read_from_storage = typeid_cast<const ReadFromStorageStep *>(&step))
+    {
+        /// The columns it produces are columns of the table, which no literal names.
+        hashStorageID(read_from_storage->getStorage()->getStorageID(), hash);
+        hashOutputNames(step, hash);
+    }
+    else if (const auto * read_from_log = typeid_cast<const ReadFromStorageLogStep *>(&step))
+    {
+        hashStorageID(read_from_log->getStorageSnapshot()->storage.getStorageID(), hash);
+        hashOutputNames(step, hash);
+    }
+    else if (const auto * read_from_remote = typeid_cast<const ReadFromRemote *>(&step))
+    {
+        /// What the shards send can be computed columns or aggregate states, named after their
+        /// expressions, so only their types are hashed, along with the tables the shards read and
+        /// how far the shards run the query.
+        hash.update(read_from_remote->getStage());
+        hashStorageID(read_from_remote->getMainTable(), hash);
+        hash.update(read_from_remote->getShards().size());
+        for (const auto & shard : read_from_remote->getShards())
+            hashStorageID(shard.main_table, hash);
+        hashOutputTypes(step, hash);
+    }
     else if (input_headers.empty())
     {
-        /// Any other source: the columns it produces, which are storage columns that no literal
-        /// names, and the table, for the steps that know theirs.
-        const auto & output_header = step.getOutputHeader();
-        hash.update(output_header ? output_header->columns() : 0);
-        if (output_header)
-        {
-            for (const auto & column : *output_header)
-                hashString(column.name, hash);
-        }
-
-        if (const auto * read_from_storage = typeid_cast<const ReadFromStorageStep *>(&step))
-            hashStorageID(read_from_storage->getStorage()->getStorageID(), hash);
-        else if (const auto * read_from_log = typeid_cast<const ReadFromStorageLogStep *>(&step))
-            hashStorageID(read_from_log->getStorageSnapshot()->storage.getStorageID(), hash);
+        /// Any other source, such as the aggregates read from the statistics of the parts: the
+        /// columns it produces are what tells `sum(a)` from `sum(b)`, and they are named after
+        /// columns of the table.
+        hashOutputNames(step, hash);
     }
 }
 

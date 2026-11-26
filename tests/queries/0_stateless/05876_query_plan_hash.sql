@@ -13,6 +13,7 @@ DROP TABLE IF EXISTS t_plan_hash_right;
 DROP TABLE IF EXISTS t_plan_hash_memory;
 DROP TABLE IF EXISTS t_plan_hash_memory_other;
 DROP TABLE IF EXISTS t_plan_hash_names;
+DROP TABLE IF EXISTS t_plan_hash_sides;
 
 CREATE TABLE t_plan_hash (k UInt64, a UInt32, b UInt32, s String, n UInt8, INDEX idx_b b TYPE minmax GRANULARITY 1)
 ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 64;
@@ -30,6 +31,9 @@ INSERT INTO t_plan_hash_memory_other SELECT number, number * 3 FROM numbers(100)
 -- Column names that concatenate to the same string: `ab` and `c`, `a` and `bc`.
 CREATE TABLE t_plan_hash_names (k UInt64, ab UInt64, c UInt64, a UInt64, bc UInt64) ENGINE = MergeTree ORDER BY k;
 INSERT INTO t_plan_hash_names SELECT number, number, number, number, number FROM numbers(100);
+
+CREATE TABLE t_plan_hash_sides (k UInt64, x Int64, y Int64) ENGINE = MergeTree ORDER BY k;
+INSERT INTO t_plan_hash_sides SELECT number, number % 9, number % 5 FROM numbers(100);
 
 SET log_query_plans = 1;
 
@@ -83,6 +87,29 @@ SELECT max(n + 500) FROM t_plan_hash SETTINGS log_comment = 'same_arithmetic_2' 
 SELECT sum(arraySum(arrayMap(x -> x + 1, range(a % 5)))) FROM t_plan_hash SETTINGS log_comment = 'same_lambda_1' FORMAT Null;
 SELECT sum(arraySum(arrayMap(x -> x + 7, range(a % 5)))) FROM t_plan_hash SETTINGS log_comment = 'same_lambda_2' FORMAT Null;
 
+-- `Map(UInt8, UInt8)` and `Map(UInt8, UInt16)`.
+SELECT sum(length(mapValues(map(n, 5)))) FROM t_plan_hash SETTINGS log_comment = 'same_map_1' FORMAT Null;
+SELECT sum(length(mapValues(map(n, 500)))) FROM t_plan_hash SETTINGS log_comment = 'same_map_2' FORMAT Null;
+
+-- A lambda the JIT compiles: the compiled function is named after its literals. Without the
+-- embedded compiler nothing is compiled, and the pairs hold trivially.
+SELECT sum(arraySum(arrayMap(x -> x * x + 1, range(a % 5)))) FROM t_plan_hash
+SETTINGS compile_expressions = 1, min_count_to_compile_expression = 0, log_comment = 'same_compiled_lambda_1' FORMAT Null;
+SELECT sum(arraySum(arrayMap(x -> x * x + 7, range(a % 5)))) FROM t_plan_hash
+SETTINGS compile_expressions = 1, min_count_to_compile_expression = 0, log_comment = 'same_compiled_lambda_2' FORMAT Null;
+
+-- The same lambda, compiled and not.
+SELECT sum(arraySum(arrayMap(x -> x * x + 3, range(a % 5)))) FROM t_plan_hash
+SETTINGS compile_expressions = 1, min_count_to_compile_expression = 0, log_comment = 'same_compilation_1' FORMAT Null;
+SELECT sum(arraySum(arrayMap(x -> x * x + 3, range(a % 5)))) FROM t_plan_hash
+SETTINGS compile_expressions = 0, log_comment = 'same_compilation_2' FORMAT Null;
+
+-- What the shards send is named after its expressions.
+SELECT max(x + 1) FROM remote('127.0.0.{1,2}', currentDatabase(), t_plan_hash_memory)
+SETTINGS prefer_localhost_replica = 0, log_comment = 'same_remote_1' FORMAT Null;
+SELECT max(x + 7) FROM remote('127.0.0.{1,2}', currentDatabase(), t_plan_hash_memory)
+SETTINGS prefer_localhost_replica = 0, log_comment = 'same_remote_2' FORMAT Null;
+
 -- Different plans: two hashes per group.
 
 SELECT count() FROM t_plan_hash WHERE a > 5 SETTINGS log_comment = 'different_column_1' FORMAT Null;
@@ -123,6 +150,22 @@ SELECT sum(x) FROM t_plan_hash_memory_other SETTINGS log_comment = 'different_me
 SELECT sum(ab) + sum(c) FROM t_plan_hash_names SETTINGS log_comment = 'different_concatenated_names_1' FORMAT Null;
 SELECT sum(a) + sum(bc) FROM t_plan_hash_names SETTINGS log_comment = 'different_concatenated_names_2' FORMAT Null;
 
+-- The joins that evaluate their whole condition themselves.
+SELECT count() FROM t_plan_hash_sides AS l JOIN t_plan_hash_sides AS r ON l.x < r.x AND l.y > r.y
+SETTINGS join_algorithm = 'inequality', log_comment = 'different_inequality_join_1' FORMAT Null;
+SELECT count() FROM t_plan_hash_sides AS l JOIN t_plan_hash_sides AS r ON l.x <= r.x AND l.y > r.y
+SETTINGS join_algorithm = 'inequality', log_comment = 'different_inequality_join_2' FORMAT Null;
+SELECT count() FROM t_plan_hash_sides AS l LEFT JOIN t_plan_hash_sides AS r ON l.x < r.y
+SETTINGS join_algorithm = 'hash', log_comment = 'different_nested_loop_join_1' FORMAT Null;
+SELECT count() FROM t_plan_hash_sides AS l LEFT JOIN t_plan_hash_sides AS r ON l.x > r.y
+SETTINGS join_algorithm = 'hash', log_comment = 'different_nested_loop_join_2' FORMAT Null;
+
+-- Remote reads of two tables of the same schema.
+SELECT sum(x) FROM remote('127.0.0.{1,2}', currentDatabase(), t_plan_hash_memory)
+SETTINGS prefer_localhost_replica = 0, log_comment = 'different_remote_table_1' FORMAT Null;
+SELECT sum(x) FROM remote('127.0.0.{1,2}', currentDatabase(), t_plan_hash_memory_other)
+SETTINGS prefer_localhost_replica = 0, log_comment = 'different_remote_table_2' FORMAT Null;
+
 -- The same query, with the optimizer choosing differently.
 SELECT k FROM t_plan_hash ORDER BY k LIMIT 3 SETTINGS optimize_read_in_order = 1, log_comment = 'different_read_in_order_1' FORMAT Null;
 SELECT k FROM t_plan_hash ORDER BY k LIMIT 3 SETTINGS optimize_read_in_order = 0, log_comment = 'different_read_in_order_2' FORMAT Null;
@@ -144,7 +187,7 @@ SELECT
     uniqExact(JSONExtractString(toJSONString(query_plan), 'ShapeHash')) AS hashes,
     countIf(NOT match(JSONExtractString(toJSONString(query_plan), 'ShapeHash'), '^[0-9a-f]{16}$')) AS missing
 FROM system.query_log
-WHERE current_database = currentDatabase() AND type = 'QueryFinish'
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND is_initial_query
   AND match(log_comment, '^(same|different)')
 GROUP BY group_name
 ORDER BY group_name;
@@ -167,3 +210,4 @@ DROP TABLE t_plan_hash_right;
 DROP TABLE t_plan_hash_memory;
 DROP TABLE t_plan_hash_memory_other;
 DROP TABLE t_plan_hash_names;
+DROP TABLE t_plan_hash_sides;

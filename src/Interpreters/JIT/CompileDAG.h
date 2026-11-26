@@ -62,6 +62,10 @@ public:
 
     [[nodiscard]] std::string dump() const;
 
+    /// The DAG a function compiled by `ActionsDAG::compileFunctions` was compiled from, or `nullptr` for
+    /// any other function.
+    [[nodiscard]] static const CompileDAG * tryGetFrom(const IFunctionBase & function);
+
     [[nodiscard]] UInt128 hash() const;
 
     void addNode(Node node)
