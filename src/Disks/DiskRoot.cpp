@@ -15,13 +15,22 @@ namespace
 
 constexpr auto LOCAL_FILESYSTEM = "local";
 
-String normalizeRootPath(const std::filesystem::path & path)
+String removeLastSlash(String path)
 {
-    auto normalized = path.lexically_normal();
-    if (!normalized.has_filename() && normalized.has_relative_path())
-        normalized = normalized.parent_path();
+    if (path.size() > 1 && path.ends_with('/'))
+        path.pop_back();
 
-    return normalized.string();
+    return path;
+}
+
+String normalizeDirectory(const std::filesystem::path & path)
+{
+    return removeLastSlash(path.lexically_normal().string());
+}
+
+String normalizeKeyPrefix(const std::filesystem::path & prefix)
+{
+    return removeLastSlash(prefix.string());
 }
 
 /// The path that the `encrypted` layers of `disk` append to the path of the underlying disk.
@@ -43,7 +52,7 @@ std::optional<DiskRoot> getDiskRoot(const DiskPtr & disk)
     switch (description.type)
     {
         case DataSourceType::Local:
-            return DiskRoot{.filesystem = LOCAL_FILESYSTEM, .path = normalizeRootPath(disk->getPath())};
+            return DiskRoot{.filesystem = LOCAL_FILESYSTEM, .path = normalizeDirectory(disk->getPath())};
 
         case DataSourceType::RAM:
             return {};
@@ -53,7 +62,7 @@ std::optional<DiskRoot> getDiskRoot(const DiskPtr & disk)
             switch (description.metadata_type)
             {
                 case MetadataStorageType::Local:
-                    return DiskRoot{.filesystem = LOCAL_FILESYSTEM, .path = normalizeRootPath(disk->getPath())};
+                    return DiskRoot{.filesystem = LOCAL_FILESYSTEM, .path = normalizeDirectory(disk->getPath())};
 
                 case MetadataStorageType::Plain:
                 case MetadataStorageType::PlainRewritable:
@@ -62,16 +71,16 @@ std::optional<DiskRoot> getDiskRoot(const DiskPtr & disk)
                     const auto path = std::filesystem::path(object_storage->getCommonKeyPrefix()) / getPathAddedByLayers(disk);
 
                     if (description.object_storage_type == ObjectStorageType::Local)
-                        return DiskRoot{.filesystem = LOCAL_FILESYSTEM, .path = normalizeRootPath(path)};
+                        return DiskRoot{.filesystem = LOCAL_FILESYSTEM, .path = normalizeDirectory(path)};
                     else
-                        return DiskRoot{.filesystem = object_storage->getDescription() + "/" + object_storage->getObjectsNamespace(), .path = path.string()};
+                        return DiskRoot{.filesystem = object_storage->getDescription() + "/" + object_storage->getObjectsNamespace(), .path = normalizeKeyPrefix(path)};
                 }
 
                 case MetadataStorageType::Keeper:
                 case MetadataStorageType::StaticWeb:
                 case MetadataStorageType::WebIndex:
                 case MetadataStorageType::Memory:
-                    return DiskRoot{.filesystem = getUnderlyingDisk(disk)->getName(), .path = normalizeRootPath(disk->getPath())};
+                    return DiskRoot{.filesystem = getUnderlyingDisk(disk)->getName(), .path = normalizeDirectory(disk->getPath())};
 
                 case MetadataStorageType::None:
                     return {};
