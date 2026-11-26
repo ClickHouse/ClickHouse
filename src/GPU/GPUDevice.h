@@ -23,6 +23,7 @@ namespace DB::GPU
 {
 
 class GPUKernelCache;
+class GPUActivitySampler;
 
 
 inline void clearDeviceError()
@@ -62,6 +63,9 @@ struct GPUDeviceSettings
     size_t kernel_cache_max_size_in_bytes = 0;
     size_t kernel_cache_max_count = 0;
 
+    /// How often `GPUActivitySampler` reads the performance counters, 0 for never.
+    uint64_t activity_sampling_interval_ms = 0;
+
     static GPUDeviceSettings fromServerSettings(const ServerSettings & server_settings);
 };
 
@@ -94,6 +98,9 @@ private:
 
     /// Destroyed before the streams and the pool, after the destructor waits for the device.
     std::unique_ptr<GPUKernelCache> kernel_cache;
+
+    /// Null when the activity of the device is not sampled. Stopped first.
+    std::unique_ptr<GPUActivitySampler> activity_sampler;
 };
 
 }

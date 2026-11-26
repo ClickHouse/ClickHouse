@@ -20,6 +20,10 @@ namespace ProfileEvents
 constexpr size_t NAME_COLUMN_INDEX = 4;
 constexpr size_t VALUE_COLUMN_INDEX = 5;
 
+/// The gauges of the device memory of the GPU a query holds and the most it held.
+constexpr auto GPU_MEMORY_USAGE_EVENT_NAME = "GPUMemoryTrackerUsage";
+constexpr auto GPU_MEMORY_PEAK_USAGE_EVENT_NAME = "GPUMemoryTrackerPeakUsage";
+
 struct ProfileEventsSnapshot
 {
     UInt64 thread_id{};
@@ -27,6 +31,9 @@ struct ProfileEventsSnapshot
     Int64 memory_usage{};
     Int64 peak_memory_usage{};
     Int64 temp_data_on_disk_usage{};
+    /// The device memory of the GPU: sent only by a query that used the device.
+    Int64 gpu_memory_usage{};
+    Int64 gpu_peak_memory_usage{};
     time_t current_time{};
 };
 
