@@ -9,6 +9,7 @@ UInt8
 0	0
 exists_limit_zero_aliased_filter	1	1
 exists_limit_zero_constant_argument	1	1
+exists_limit_zero_distributed	1	1
 exists_limit_zero_exact_rows	1	1
 exists_limit_zero_having	0	0
 exists_limit_zero_issue	0	0
@@ -16,6 +17,7 @@ exists_limit_zero_issue_cross_join	0	0
 exists_limit_zero_join	0	0
 exists_limit_zero_no_limit_zero	1	1
 exists_limit_zero_own_limit_zero	1	1
+exists_limit_zero_parallel_replicas	1	1
 exists_limit_zero_prewhere	1	1
 exists_limit_zero_qualify	0	0
 exists_limit_zero_scalar_subquery	2	1
