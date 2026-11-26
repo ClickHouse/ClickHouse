@@ -1,0 +1,159 @@
+---
+slug: /clickstack/observability/getting-started
+title: 'ClickHouse Observability 入门指南'
+sidebarTitle: '入门指南'
+description: '全托管 ClickHouse Observability 入门指南'
+doc_type: 'guide'
+keywords: ['ClickHouse Observability', '入门指南', '全托管']
+---
+
+import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge label="Beta 版服务" />
+
+本指南介绍如何开始使用 ClickHouse Observability：发送一个测试事件，并确认该事件已显示在可观测性 UI 中。
+
+该服务提供一个托管遥测端点。您可以从应用程序、agent 或现有的 OpenTelemetry 收集器将数据发送到此端点。
+
+如果您自行管理摄取管道和 schema，请参阅[自管理入门指南](/zh/clickstack/self-configured/getting-started/managed)。
+
+## 开始之前 {#before-you-begin}
+
+您需要一个全托管的 ClickHouse Observability 服务，并且能够访问该服务的遥测数据端点和 API key。
+
+### 创建服务 {#create-a-service}
+
+如果您还没有服务，请先按照 ClickHouse Cloud 快速入门中的[创建 ClickHouse 服务](/zh/get-started/setup/cloud#1-create-a-clickhouse-service)一节进行操作。服务开始运行后，打开 ClickHouse Observability。如果该服务尚无数据，系统会自动打开**入门指南**页面。请从以下三种路径中任选其一来发送遥测数据。
+
+## 设置 ClickHouse Observability {#set-up-clickhouse-observability}
+
+请根据您的环境选择合适的方式。
+
+<Tabs>
+  <Tab title="使用现有的 OpenTelemetry 设置">
+    <div className="ch-image-md">
+      <Frame>
+        ![“设置 OpenTelemetry”对话框，包含 URL、Collector config 和 Env vars 选项以及已遮盖的连接详情](/images/clickstack/getting-started/observability-connection-details.png)
+      </Frame>
+    </div>
+
+    如果您的应用程序、agent 或采集器已经在生成 OpenTelemetry 数据，请采用此方式。
+
+    1. 在入门指南页面上选择 **View 连接详情**。
+
+    2. 复制适用于您的遥测数据发送端的配置。连接详情提供 **URL**、**Collector config** 和 **Env vars** 三种选项。
+
+    3. 使用所提供的认证信息，配置发送端将遥测数据导出到托管端点。
+
+    4. 在应用程序中执行一些常规操作，然后确认所产生的数据已显示在[搜索](/zh/clickstack/observability/features/search)中。
+
+    您也可以在 **Team Settings → Data → Managed Telemetry** 下找到这些连接详情。
+
+    <Tip>
+      如需快速检查 (可选) ，请在入门指南页面上选择 **send a test log**。该按钮会立即从 UI 发送一条测试日志，但不会验证您的应用程序或采集器的配置。
+    </Tip>
+  </Tab>
+
+  <Tab title="借助 AI 进行插桩">
+    <div className="ch-image-md">
+      <Frame>
+        ![“Set it up with an AI agent”对话框，显示插桩提示词以及已遮盖的端点和 API key 环境变量](/images/clickstack/getting-started/observability-ai-instrumentation.png)
+      </Frame>
+    </div>
+
+    如果您有应用程序代码，并希望借助编程助手添加 OpenTelemetry 插桩，请采用此方式。
+
+    1. 在 **借助 AI 进行插桩** 下，选择 **Copy prompt**，打开 **Set it up with an AI agent** 对话框。
+    2. 从对话框中复制提示词，并将其粘贴到能够访问您应用程序代码的编程助手中，例如 Cursor、Copilot 或 Claude Code。
+    3. 使用对话框中提供的值设置 `CLICKSTACK_OTLP_ENDPOINT` 和 `CLICKSTACK_API_KEY`。请将它们存储在不纳入版本控制的 `.env` 文件中，或存储在您的密钥管理系统中。
+    4. 检查并应用建议的插桩代码，然后运行应用程序并触发一个事件。
+
+    如需将此工作流应用于您自己的应用程序，请参阅[借助 AI 进行插桩](/zh/clickstack/observability/ingesting-data/sdks/instrument-with-ai)。
+
+    如需包含应用程序代码和插桩提示词的完整示例，请参阅 [HackerNews Analyzer 演示](/zh/clickstack/observability/example-datasets/instrument-application)。该示例将逐步演示如何将应用程序日志、链路追踪、指标和浏览器会话回放发送到您的 managed service。
+  </Tab>
+
+  <Tab title="参阅配置指南">
+    <div className="ch-image-md">
+      <Frame>
+        ![“Send data”对话框，提供可搜索的语言、框架、基础设施和采集器配置指南](/images/clickstack/getting-started/observability-setup-guides.png)
+      </Frame>
+    </div>
+
+    如果您需要针对特定应用程序或基础设施数据源的说明，请采用此方式。
+
+    1. 选择 **Browse 配置指南**。
+    2. 选择适用于您的语言、框架或基础设施的指南。
+    3. 按照其中的插桩和配置步骤操作，然后从该数据源生成遥测数据。
+
+    如需托管配置示例，可以从 [Kubernetes 监控](/zh/clickstack/observability/example-datasets/kubernetes)、[本地日志和指标](/zh/clickstack/observability/example-datasets/local-data)或 [HackerNews Analyzer 应用程序](/zh/clickstack/observability/example-datasets/instrument-application)入手。如果您希望在不对应用程序插桩的情况下试用数据摄取，请使用 [otelgen](/zh/clickstack/observability/example-datasets/otelgen) 或 [telemetrygen](/zh/clickstack/observability/example-datasets/telemetrygen)。
+  </Tab>
+</Tabs>
+
+## 验证摄取并开始探索 {#verify-ingestion}
+
+完成所选路径后，选择 **Start exploring** 以打开[搜索](/zh/clickstack/observability/features/search)页面。继续之前，请先找到您生成的事件，确认其已成功写入。
+
+查看日志时，请选择 **Logs** source，并将时间范围设置为涵盖事件发送时间。以下示例展示了一条通过 UI 中的 **send a test log** 按钮发送的日志，其服务名称为 `example-service`。展开事件即可查看其属性。
+
+<div className="ch-image-lg">
+  <Frame>
+    ![搜索页面中显示 example-service 的 UI 测试日志，其事件属性已展开](/images/clickstack/getting-started/observability-verify-ingestion.png)
+  </Frame>
+</div>
+
+## 后续步骤 {#next-steps}
+
+### 发送应用程序和基础设施数据 {#send-application-and-infrastructure-data}
+
+请根据要发送到 ClickHouse Observability 的数据选择相应的指南：
+
+<CardGroup cols={1}>
+  <Card title="摄取数据概览" icon="arrow-right-to-bracket" href="/zh/clickstack/observability/ingesting-data/overview">
+    了解各种摄取方式，以及适用于应用程序、采集器和集成的指南。
+  </Card>
+</CardGroup>
+
+<CardGroup cols={2}>
+  <Card title="为应用程序插桩" icon="code" href="/zh/clickstack/observability/example-datasets/instrument-application">
+    为 HackerNews Analyzer 应用插桩，并查看日志、链路追踪、指标和会话回放。
+  </Card>
+
+  <Card title="监控 Kubernetes" icon="cubes" href="/zh/clickstack/observability/example-datasets/kubernetes">
+    采集集群日志和指标，并查看 Kubernetes 仪表板。
+  </Card>
+</CardGroup>
+
+### 探索样本数据 {#explore-sample-data}
+
+使用样本数据集，借助更丰富的遥测数据体验 ClickHouse Observability：
+
+<CardGroup cols={2}>
+  <Card title="样本日志、链路追踪和指标" href="/zh/clickstack/observability/example-datasets/sample-data">
+    <img src="/images/clickstack/getting-started/observability-sample-data-payment-errors-chart.png" alt="" />
+
+    从公开演示环境加载数据并诊断问题。
+  </Card>
+
+  <Card title="本地日志和指标" href="/zh/clickstack/observability/example-datasets/local-data">
+    <img src="/images/clickstack/observability-local-memory-percentage.png" alt="" />
+
+    在 macOS 或 Linux 上采集本地文件和系统指标。
+  </Card>
+</CardGroup>
+
+### 生成合成数据 {#generate-synthetic-data}
+
+无需现有应用程序或数据集，即可使用生成器测试数据摄取：
+
+<CardGroup cols={2}>
+  <Card title="使用 otelgen 生成数据" icon="terminal" href="/zh/clickstack/observability/example-datasets/otelgen">
+    将合成的 OTLP 日志、链路追踪和指标发送到您的托管遥测端点。
+  </Card>
+
+  <Card title="使用 telemetrygen 生成数据" icon="terminal" href="/zh/clickstack/observability/example-datasets/telemetrygen">
+    生成可配置的 OpenTelemetry 信号，用于测试您的 managed service。
+  </Card>
+</CardGroup>
+
+查看[全部样本数据和演示](/zh/clickstack/observability/example-datasets)。

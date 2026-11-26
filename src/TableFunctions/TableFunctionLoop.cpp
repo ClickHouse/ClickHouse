@@ -13,6 +13,7 @@
 #include <Storages/StorageLoop.h>
 #include <Storages/StorageProxy.h>
 #include <TableFunctions/registerTableFunctions.h>
+#include <Databases/IDatabase.h>
 
 namespace DB
 {
@@ -30,6 +31,7 @@ namespace DB
         public:
             static constexpr auto name = "loop";
             std::string getName() const override { return name; }
+            bool canBeUsedToCreateTable() const override { return false; }
         private:
             StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const String & table_name, ColumnsDescription cached_columns, bool is_insert_query) const override;
             const char * getStorageEngineName() const override { return "Loop"; }
@@ -72,7 +74,7 @@ namespace DB
                 String id_name = id->name();
 
                 size_t dot_pos = id_name.find('.');
-                if (id_name.find('.', dot_pos + 1) != String::npos)
+                if (dot_pos != String::npos && id_name.find('.', dot_pos + 1) != String::npos)
                     throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "There are more than one dot");
                 if (dot_pos != String::npos)
                 {

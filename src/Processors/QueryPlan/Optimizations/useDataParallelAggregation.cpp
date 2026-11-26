@@ -247,24 +247,26 @@ void optimizeDistinctPerPartition(QueryPlan::Node & node, QueryPlan::Nodes &, co
     }
 }
 
-void optimizeWindowPerPartition(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings & /*optimization_settings*/)
+/// The reading whose partitions can each be processed by a separate window for the sorting at `node`, or nullptr.
+static ReadFromMergeTree * findReadingForWindowPerPartition(QueryPlan::Node & node)
 {
     if (node.children.size() != 1)
-        return;
+        return nullptr;
 
     auto * sorting_step = typeid_cast<SortingStep *>(node.step.get());
     if (!sorting_step)
-        return;
+        return nullptr;
 
     /// Trigger only on a window-function sorting: a full sort that scatters the input by the hash of the
     /// window `PARTITION BY` columns. A merge-join sorting may also scatter by the sort key
     /// (`convertToScatteredFullSort`), but there both join sides must be sharded by the same hash, so it
     /// must be left alone. This pass runs after `optimizeReadInOrder`, which may have converted the
     /// sorting to `FinishSorting` (see `query_plan_reuse_storage_ordering_for_window_functions`); such a
-    /// sorting merges to a single stream and is not matched here.
+    /// sorting merges the streams read in order and is not matched here. `optimizeReadInOrder` leaves the
+    /// sorting alone when `canOptimizeWindowPerPartition` holds, so the per-partition plan wins.
     if (sorting_step->getType() != SortingStep::Type::Full || !sorting_step->hasPartitions()
         || sorting_step->isSortingForMergeJoin())
-        return;
+        return nullptr;
 
     /// `max_rows_to_sort` / `max_bytes_to_sort` are enforced per stream by the checking transforms of
     /// `fullSortStreams`, so which rows land in which stream is user-visible. Skipping the scatter
@@ -272,24 +274,36 @@ void optimizeWindowPerPartition(QueryPlan::Node & node, QueryPlan::Nodes &, cons
     /// scatter, so the scatter is kept and per-partition reading has nothing to serve.
     const auto & size_limits = sorting_step->getSettings().size_limits;
     if (size_limits.max_rows != 0 || size_limits.max_bytes != 0)
-        return;
+        return nullptr;
 
     auto * reading = findReadingStep(*node.children.front());
     if (!reading)
-        return;
+        return nullptr;
 
     const Names key_names = sorting_step->getPartitionByColumnNames();
 
     std::optional<ActionsDAG> dag;
     buildKeyDAG(*node.children.front(), dag);
     if (!dag)
-        return;
+        return nullptr;
 
-    if (!reading->willOutputEachPartitionThroughSeparatePort()
-        && isPartitionKeyFunctionOfKeys(reading->getStorageMetadata()->getPartitionKey(), *dag, key_names))
-    {
+    if (reading->willOutputEachPartitionThroughSeparatePort()
+        || !isPartitionKeyFunctionOfKeys(reading->getStorageMetadata()->getPartitionKey(), *dag, key_names))
+        return nullptr;
+
+    return reading;
+}
+
+void optimizeWindowPerPartition(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings & /*optimization_settings*/)
+{
+    if (auto * reading = findReadingForWindowPerPartition(node))
         reading->requestOutputEachPartitionThroughSeparatePortForWindow();
-    }
+}
+
+bool canOptimizeWindowPerPartition(QueryPlan::Node & node)
+{
+    auto * reading = findReadingForWindowPerPartition(node);
+    return reading && reading->canOutputEachPartitionThroughSeparatePortForWindow();
 }
 
 void optimizeCreatingSetPerPartition(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings & /*optimization_settings*/)

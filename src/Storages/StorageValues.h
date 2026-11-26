@@ -60,8 +60,8 @@ public:
         access_checked = true;
         columns_allowed_to_select = std::move(columns);
     }
-    bool isAccessChecked() const { return access_checked; }
-    const NameSet & getColumnsAllowedToSelect() const { return columns_allowed_to_select; }
+    [[nodiscard]] bool isAccessChecked() const { return access_checked; }
+    [[nodiscard]] const NameSet & getColumnsAllowedToSelect() const { return columns_allowed_to_select; }
 
 private:
     Block res_block;
