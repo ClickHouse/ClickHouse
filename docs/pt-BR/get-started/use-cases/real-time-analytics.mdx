@@ -20,9 +20,7 @@ Em analytics, &quot;tempo real&quot; geralmente significa que a experiência do 
 Um cliente recarrega um dashboard, abre um ranking ou investiga um problema e espera que os dados reflitam o que acabou de acontecer.
 Tecnicamente, isso significa não apenas fornecer consultas analíticas de baixa latência, mas fazer isso enquanto os dados são continuamente inseridos em alto volume.
 
-<div id="system-properties">
-  ## Propriedades de um sistema de analytics em tempo real
-</div>
+## Propriedades de um sistema de analytics em tempo real {#system-properties}
 
 Quando os clientes avaliam uma plataforma de analytics em tempo real, eles costumam focar apenas na latência da consulta. &quot;Ela consegue retornar uma resposta em 50 ms?&quot; é uma pergunta razoável — e que a maioria dos motores analíticos consegue responder de forma convincente, se você aplicar recursos computacionais suficientes a um conjunto de dados estático.
 
@@ -35,29 +33,19 @@ A disponibilidade dos dados exige pensar no tempo total até o insight, que tem 
 * **Tempo de consulta**: Quanto tempo leva para planejar e executar a leitura depois que os dados estão disponíveis?
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Analytics em tempo real: tempo de ingestão, transformação e consulta](/images/use-cases/rta-considerations.webp)
-
-</Frame>
-
+  <Frame>
+    ![Analytics em tempo real: tempo de ingestão, transformação e consulta](/images/use-cases/rta-considerations.webp)
+  </Frame>
 </div>
 
-<div id="clickhouse-rta">
-  ## Como o ClickHouse viabiliza analytics em tempo real
-</div>
+## Como o ClickHouse viabiliza analytics em tempo real {#clickhouse-rta}
 
 <Columns cols={2}>
   <div>
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Como o ClickHouse viabiliza analytics em tempo real](/images/use-cases/real-time-analytics-architecture.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Como o ClickHouse viabiliza analytics em tempo real](/images/use-cases/real-time-analytics-architecture.webp)
+      </Frame>
     </div>
   </div>
 

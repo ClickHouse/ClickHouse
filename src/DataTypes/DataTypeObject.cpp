@@ -2163,8 +2163,11 @@ Currently, there are 4 different shared data structure serializations in MergeTr
 
 The serialization version is controlled by MergeTree
 settings [object_shared_data_serialization_version](/reference/settings/merge-tree-settings/object-shared#object_shared_data_serialization_version)
-and [object_shared_data_serialization_version_for_zero_level_parts](/reference/settings/merge-tree-settings/object-shared#object_shared_data_serialization_version_for_zero_level_parts)
-(zero level part is the part created during inserting data into the table, during merges parts have higher level).
+and [object_shared_data_serialization_version_for_small_parts](/reference/settings/merge-tree-settings/object-shared#object_shared_data_serialization_version_for_small_parts).
+The second one is used for small parts: parts created during inserts (unless
+[use_object_shared_data_serialization_version_for_small_parts_on_insert](/reference/settings/merge-tree-settings/use#use_object_shared_data_serialization_version_for_small_parts_on_insert)
+is disabled) and parts below the minimal size
+[min_bytes_for_object_shared_data_main_serialization_version](/reference/settings/merge-tree-settings/min-bytes#min_bytes_for_object_shared_data_main_serialization_version).
 
 Note: changing shared data structure serialization is supported only
 for `v3` [object serialization version](/reference/settings/merge-tree-settings/other#object_serialization_version)

@@ -11,6 +11,7 @@
                 <access_key_id>clickhouse</access_key_id>
                 <secret_access_key>clickhouse</secret_access_key>
                 <s3_max_single_part_upload_size>10000</s3_max_single_part_upload_size>
+                <persistent_removal_log>true</persistent_removal_log>
             </s3_disk_04070>
         </disks>
         <policies>

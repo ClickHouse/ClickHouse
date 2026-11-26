@@ -143,7 +143,7 @@ struct FunctionConvertSettings
     const bool cast_keep_nullable;
     const bool json_use_optimized_type_conversion;
     const FormatSettings::DateTimeInputFormat cast_string_to_date_time_mode;
-    const FormatSettings format_settings;
+    FormatSettings format_settings;
     /// `format_settings` has too many members to hash one by one; this hashes the session settings it
     /// was derived from instead (see `getFormatSettingsHash`).
     const UInt64 format_settings_hash;
@@ -3029,6 +3029,18 @@ struct ConvertImpl
                 scale = additions.scale;
             else
                 scale = additions;
+
+            /// With the same scale only the time zone can differ, which keeps the ticks.
+            if constexpr (std::is_same_v<FromDataType, DataTypeDateTime64> && std::is_same_v<ToDataType, DataTypeDateTime64>)
+            {
+                if (col_from->getScale() == scale)
+                {
+                    if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
+                        return ColumnNullable::create(named_from.column, ColumnUInt8::create(input_rows_count, false));
+                    else
+                        return named_from.column;
+                }
+            }
 
             auto col_to = ColVecTo::create(0, scale);
             const auto & vec_from = col_from->getData();
