@@ -6379,6 +6379,20 @@ Possible values:
 
 - true, false
 )", 0)                                                                                                                                         \
+    DECLARE(Bool, optimize_map_materialized_columns, false, R"(
+Enable substituting constant-key `Map` element lookups (`col['const_key']`) on plain `MergeTree`-family tables (such as `MergeTree`, `ReplicatedMergeTree`, and `SharedMergeTree`, excluding specialized merging engines like `ReplacingMergeTree`, `SummingMergeTree`, `AggregatingMergeTree`, `CollapsingMergeTree`, and queries with `FINAL`) with matching `MATERIALIZED` columns defined as `col['const_key']` of the exact same type and without a column `TTL`.
+
+When enabled, queries can use primary-key and skip-index pruning on the `MATERIALIZED` column instead of scanning the full `Map`. Assumes matching `MATERIALIZED` columns are kept in sync with the underlying `Map` column: `ALTER TABLE ... UPDATE` (or lightweight updates) on the `Map` column does not automatically recompute dependent `MATERIALIZED` columns unless `MATERIALIZE COLUMN` is also run, and writing a `MATERIALIZED` column directly with `insert_allow_materialized_columns` can also diverge.
+
+The optimization is automatically skipped for distributed parallel-replica queries, queries with `join_use_nulls = 1` over joins, `group_by_use_nulls = 1` with `ROLLUP`/`CUBE`/`GROUPING SETS`, queries grouping by the whole `Map` column, and non-primary-key `MATERIALIZED` columns when the whole `Map` is also read by the query. Direct lookups require `SELECT` privilege on the `MATERIALIZED` column.
+
+The default is `false`.
+
+Possible values:
+
+- true, false
+)", EXPERIMENTAL, \
+        {"26.12", false, false, "New experimental setting to rewrite constant-key Map element lookups into matching MATERIALIZED columns on plain MergeTree tables."}) \
     DECLARE(Bool, optimize_append_index, false, R"(
 Use [constraints](/reference/statements/create/table#constraints) in order to append index condition. The default is `false`.
 

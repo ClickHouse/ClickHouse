@@ -39,6 +39,7 @@
 #include <Analyzer/Passes/DistanceTransposedPartialReadsPass.h>
 #include <Analyzer/Passes/LikePerfectAffixRewritePass.h>
 #include <Analyzer/Passes/LogicalExpressionOptimizerPass.h>
+#include <Analyzer/Passes/MaterializedColumnSubstitutionPass.h>
 #include <Analyzer/Passes/MultiIfToIfPass.h>
 #include <Analyzer/Passes/NormalizeCountVariantsPass.h>
 #include <Analyzer/Passes/OptimizeDateOrDateTimeConverterWithPreimagePass.h>
@@ -298,6 +299,8 @@ void addQueryTreePasses(
     /// to ensure that the only required columns are read from VIEWs on the shards.
     manager.addPass(std::make_unique<RemoveUnusedProjectionColumnsPass>());
     manager.addPass(std::make_unique<PruneArrayJoinColumnsPass>());
+
+    manager.addPass(std::make_unique<MaterializedColumnSubstitutionPass>());
 
     manager.addPass(std::make_unique<DictGetTupleElementPass>());
     manager.addPass(std::make_unique<ConvertEmptyStringComparisonToFunctionPass>());
