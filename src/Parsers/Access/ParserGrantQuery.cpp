@@ -831,6 +831,8 @@ The current password is not required, and existing sessions are not disconnected
 
 A new authentication method cannot outlive the account. If every existing method of the account has a `VALID UNTIL` deadline, a new method without a deadline, or with a later one, gets the latest of those deadlines. A method-level `VALID UNTIL` or `VALID FOR` clause can set an earlier deadline.
 
+A session authenticated with a method which expires earlier than another authentication method of the account cannot use this privilege, so that a short-lived credential can neither add a longer-lived one nor remove one. Log in with the longest-lived authentication method of the account instead.
+
 With `ON CLUSTER`, accounts on other servers are matched by name, and the deadline is computed on the server which initiates the query.
 
 Older ClickHouse versions cannot load grants that list this privilege. Revoke it before downgrading.

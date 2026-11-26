@@ -82,6 +82,18 @@ namespace
         return deadline;
     }
 
+    /// `ALTER USER SELF AUTHENTICATION` is allowed only to a session whose credential lives at least as long as
+    /// the account, so that a short-lived credential can neither add a longer-lived one nor remove one.
+    void checkSessionOutlivesAccount(time_t session_deadline, time_t account_deadline)
+    {
+        if (session_deadline != 0 && (account_deadline == 0 || session_deadline < account_deadline))
+            throw Exception(ErrorCodes::ACCESS_DENIED,
+                "Not enough privileges. "
+                "The current session is authenticated with a method which expires earlier than other authentication methods "
+                "of the account, and such sessions cannot change authentication methods with `ALTER USER SELF AUTHENTICATION`. "
+                "Log in with the longest-lived authentication method of the account");
+    }
+
     /// Methods added with `ALTER USER SELF AUTHENTICATION` must not outlive the account.
     void capValidUntil(std::vector<AuthenticationData> & methods, time_t deadline)
     {
@@ -526,7 +538,11 @@ BlockIO InterpreterCreateUserQuery::execute()
 
         /// Replicas may execute the query without a user, so the cap is shipped as an explicit clause.
         if (authorized_by_self_authentication)
-            capValidUntil(authentication_methods, getAccountDeadline(*access_control.read<User>(*self_service_user_id)));
+        {
+            const time_t account_deadline = getAccountDeadline(*access_control.read<User>(*self_service_user_id));
+            checkSessionOutlivesAccount(getContext()->getAuthenticationValidUntil(), account_deadline);
+            capValidUntil(authentication_methods, account_deadline);
+        }
 
         auto rewrite_deadline = [](IAST & owner, ASTPtr & valid_until, bool & is_interval, time_t deadline)
         {
@@ -581,7 +597,11 @@ BlockIO InterpreterCreateUserQuery::execute()
             auto updated_user = typeid_cast<std::shared_ptr<User>>(entity->clone());
             auto new_authentication_methods = authentication_methods;
             if (authorized_by_self_authentication)
-                capValidUntil(new_authentication_methods, getAccountDeadline(*updated_user));
+            {
+                const time_t account_deadline = getAccountDeadline(*updated_user);
+                checkSessionOutlivesAccount(getContext()->getAuthenticationValidUntil(), account_deadline);
+                capValidUntil(new_authentication_methods, account_deadline);
+            }
             updateUserFromQueryImpl(
                 *updated_user, query, new_authentication_methods, {}, roles_from_query, default_roles_from_query, settings_from_query, grantees_from_query,
                 global_valid_until, query.reset_authentication_methods_to_new, query.replace_authentication_methods,
