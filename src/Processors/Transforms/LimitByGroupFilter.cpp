@@ -115,7 +115,7 @@ public:
         return {.keys = std::move(columns), .seen_rows = std::move(seen_rows)};
     }
 
-    size_t getTotalByteCount() const override
+    [[nodiscard]] size_t getTotalByteCount() const override
     {
         return fingerprints.capacity() * sizeof(UInt128) + counts.capacity() * sizeof(UInt64);
     }
@@ -324,7 +324,7 @@ public:
         return {.keys = std::move(columns), .seen_rows = std::move(seen_rows)};
     }
 
-    size_t getTotalByteCount() const override
+    [[nodiscard]] size_t getTotalByteCount() const override
     {
         return (data ? data->allocatedBytes() : 0) + group_counts.capacity() * sizeof(UInt64);
     }

@@ -30,7 +30,7 @@ public:
     {
     }
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
 protected:
     void onNewInput() override { algorithm.addInput(inputs.back().getSharedHeader()); }

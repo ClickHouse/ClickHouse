@@ -102,7 +102,7 @@ public:
 
     ~ExternalGroupLimitTransform() override;
 
-    String getName() const override { return String(Traits::transform_name); }
+    [[nodiscard]] String getName() const override { return String(Traits::transform_name); }
 
     Status prepare() override;
     void work() override;
@@ -111,9 +111,9 @@ public:
     void setRowsBeforeLimitCounter(RowsBeforeStepCounterPtr counter) override { rows_before_limit_at_least.swap(counter); }
 
     std::span<ISpillable * const> getSpillables() override { return {&spillable_ptr, 1}; }
-    ProcessorMemoryStats getMemoryStats() const;
+    [[nodiscard]] ProcessorMemoryStats getMemoryStats() const;
     size_t spill(size_t at_least_bytes);
-    const TemporaryDataOnDiskScope * getSpillScope() const { return tmp_data.get(); }
+    [[nodiscard]] const TemporaryDataOnDiskScope * getSpillScope() const { return tmp_data.get(); }
 
 private:
     SpillableAdapter<ExternalGroupLimitTransform> spillable{*this};
@@ -264,7 +264,7 @@ private:
 
     Status prepareInput();
     CollectingInput * getCollectingInput();
-    const CollectingInput * getCollectingInput() const;
+    [[nodiscard]] const CollectingInput * getCollectingInput() const;
     Status prepareCollectingInput(CollectingInput & collecting);
     Status prepareRunWrite(RunWriteProgress & progress, OutputPort & output);
     Status prepareSeenRunWrite(WritingSeenRun & writing);
@@ -279,14 +279,14 @@ private:
     void extractSeenRun(ExtractingSeenGroups & extracting);
     void collectInput(CollectingInput & collecting);
     void flushSortingUnit(CollectingInput & collecting);
-    bool canAppendToSortingUnit(const SortingUnit & unit, size_t rows, size_t bytes) const;
-    bool canStartCoalescing(size_t rows, size_t bytes) const;
-    bool fitsSortingBudget(size_t rows, size_t column_bytes, size_t additional_input_bytes = 0) const;
-    size_t maxRowsInSortingUnit() const;
+    [[nodiscard]] bool canAppendToSortingUnit(const SortingUnit & unit, size_t rows, size_t bytes) const;
+    [[nodiscard]] bool canStartCoalescing(size_t rows, size_t bytes) const;
+    [[nodiscard]] bool fitsSortingBudget(size_t rows, size_t column_bytes, size_t additional_input_bytes = 0) const;
+    [[nodiscard]] size_t maxRowsInSortingUnit() const;
     void readRun(RunWriteProgress & progress);
     void prepareTail(PreparingTail & tail);
-    size_t estimateRunWriteMemory(size_t rows, size_t allocated_bytes) const;
-    size_t selectTailSpillPrefix(const CollectingInput & collecting) const;
+    [[nodiscard]] size_t estimateRunWriteMemory(size_t rows, size_t allocated_bytes) const;
+    [[nodiscard]] size_t selectTailSpillPrefix(const CollectingInput & collecting) const;
     void consumeMerged(Merging & merging);
     /// Counts result rows toward the hint, the size limits, and `rows_before_limit_at_least`.
     void addResultRows(size_t rows);
@@ -300,15 +300,15 @@ private:
     /// Drain an unconnected run on the calling thread, transferring its finalized file to the reader.
     void spillRun(PreparedRun run);
     /// Returns the minimum run size, also used by the sort that restores input order and as the spill floor.
-    size_t minBytesInRun() const;
+    [[nodiscard]] size_t minBytesInRun() const;
     /// Whether a filter state of `state_bytes`, grown by `growth_bytes`, stays below this transform's share
     /// of the spill floor: `minBytesInRun`, divided among the transforms that split the groups of the
     /// operator. Spilling such a state frees almost nothing when other operators hold the query memory, but
     /// holds back the results until the input ends, which also defeats an early `LIMIT`.
-    bool isBelowSpillFloor(size_t state_bytes, size_t growth_bytes) const;
+    [[nodiscard]] bool isBelowSpillFloor(size_t state_bytes, size_t growth_bytes) const;
     /// Whether spilled rows carry arrival numbers, which restore the input order when they do not carry its
     /// columns.
-    bool attachesArrivalNumbers() const { return preserve_input_order && input_order_description.empty(); }
+    [[nodiscard]] bool attachesArrivalNumbers() const { return preserve_input_order && input_order_description.empty(); }
 
     const GroupLimitParams params;
     /// Outlives the state that owns the filter and its seen-group extractor.

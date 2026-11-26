@@ -546,7 +546,7 @@ public:
 
     /// Every cell is allocated when the table is constructed, so inserting keys needs no additional
     /// table memory.
-    size_t estimateGrowthMemory(size_t /*additional_keys*/) const noexcept
+    [[nodiscard]] size_t estimateGrowthMemory(size_t /*additional_keys*/) const noexcept
     {
         return 0;
     }

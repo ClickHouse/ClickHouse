@@ -60,25 +60,25 @@ public:
         bool keep_fingerprints_ = false);
 
     /// Positions of the non-constant grouping key columns in the header.
-    const ColumnNumbers & getKeyColumnsPositions() const { return grouping_key_positions; }
-    bool hasKeyColumns() const { return !grouping_key_positions.empty(); }
+    [[nodiscard]] const ColumnNumbers & getKeyColumnsPositions() const { return grouping_key_positions; }
+    [[nodiscard]] bool hasKeyColumns() const { return !grouping_key_positions.empty(); }
 
     /// Spilled groups compare their fingerprints when the filter keeps them, and their typed key columns
     /// otherwise.
-    SpillKeyRepresentation getKeyRepresentation() const
+    [[nodiscard]] SpillKeyRepresentation getKeyRepresentation() const
     {
         return retains_fingerprints ? SpillKeyRepresentation::Hash128 : SpillKeyRepresentation::Columns;
     }
 
     /// The number of groups seen so far.
-    size_t getTotalRowCount() const { return group_counts.size(); }
+    [[nodiscard]] size_t getTotalRowCount() const { return group_counts.size(); }
 
     /// The memory of the hash table, its key arena, the group counts, and the fingerprints.
-    size_t getTotalByteCount() const;
+    [[nodiscard]] size_t getTotalByteCount() const;
 
     /// Whether no later row can be kept: every key is constant, so all rows form one group, and its window is
     /// full.
-    bool isExhausted() const;
+    [[nodiscard]] bool isExhausted() const;
 
     /// Materializes the grouping key columns in place, so that estimates see their full size. The output
     /// keeps the materialized values.
@@ -87,10 +87,10 @@ public:
     /// Estimates peak additional memory assuming every row of the prepared chunk starts a new group:
     /// hash-table resize peaks, key-arena growth, and the growth of the group counts and fingerprints.
     /// Saturates at the maximum of `size_t`.
-    size_t estimateGrowthMemory(const Chunk & chunk) const;
+    [[nodiscard]] size_t estimateGrowthMemory(const Chunk & chunk) const;
 
     /// Estimates the workspace for run slices, packed keys, and an output copy of the prepared chunk.
-    size_t estimateFilteringMemory(const Chunk & chunk) const;
+    [[nodiscard]] size_t estimateFilteringMemory(const Chunk & chunk) const;
 
     /// Counts the rows of the chunk and returns those inside the window of their group, preserving chunk
     /// information. A chunk without kept rows is returned without columns.
@@ -155,12 +155,12 @@ private:
     std::unique_ptr<SeenGroupExtractor> createGroupExtractor(Method & method);
 
     template <typename Method>
-    size_t estimateGrowthMemoryImpl(const Method & hash_method, const ColumnRawPtrs & key_columns, size_t start_row, size_t num_rows) const;
+    [[nodiscard]] size_t estimateGrowthMemoryImpl(const Method & hash_method, const ColumnRawPtrs & key_columns, size_t start_row, size_t num_rows) const;
 
     /// The growth of the group counts and fingerprints after `new_groups` more groups.
-    size_t estimateGroupStateGrowth(size_t new_groups) const;
+    [[nodiscard]] size_t estimateGroupStateGrowth(size_t new_groups) const;
 
-    ColumnRawPtrs getKeyColumns(const Columns & columns) const;
+    [[nodiscard]] ColumnRawPtrs getKeyColumns(const Columns & columns) const;
     Chunk filterImpl(Chunk chunk, const InsertionCheck * can_insert, UInt64 & processed_rows);
 
     /// Positions of the non-constant grouping key columns in the chunk header.

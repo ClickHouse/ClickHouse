@@ -52,7 +52,7 @@ struct BuildQueryPipelineSettings
 
     /// Whether a memory scheduler can ask the processors of the query to spill: the query runs under a workload
     /// memory reservation or with `enable_adaptive_memory_spill_scheduler`, and it has temporary storage.
-    bool isSchedulerSpillingEnabled() const;
+    [[nodiscard]] bool isSchedulerSpillingEnabled() const;
 };
 
 }
