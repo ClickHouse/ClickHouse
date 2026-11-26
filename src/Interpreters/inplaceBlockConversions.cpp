@@ -71,16 +71,133 @@ namespace ErrorCodes
 
 namespace
 {
-/// Replace the identifiers `name` with `getSubcolumn(column_name, 'subcolumn_name')`.
-/// Only the free references are replaced: a parameter of a lambda stays an identifier, and the body of a lambda
-/// that binds `name` (`arrayMap(`a.x` -> `a.x` + 1, arr)`) refers to the parameter, not to the subcolumn.
-void replaceIdentifierWithSubcolumnExtraction(ASTPtr & ast, const String & name, const String & column_name, const String & subcolumn_name)
+/// The parameters of `lambda(tuple(x, y), body)`, see `RequiredSourceColumnsMatcher`.
+std::vector<ASTPtr *> getLambdaParameters(ASTFunction & lambda)
+{
+    std::vector<ASTPtr *> res;
+    auto & parameters = lambda.arguments->children[0];
+    if (auto * parameters_tuple = parameters->as<ASTFunction>(); parameters_tuple && parameters_tuple->arguments)
+    {
+        for (auto & parameter : parameters_tuple->arguments->children)
+            if (parameter->as<ASTIdentifier>())
+                res.push_back(&parameter);
+    }
+    else if (parameters->as<ASTIdentifier>())
+        res.push_back(&parameters);
+    return res;
+}
+
+ASTFunction * tryGetLambda(const ASTPtr & ast)
+{
+    auto * function = ast->as<ASTFunction>();
+    if (function && function->name == "lambda" && function->arguments && function->arguments->children.size() == 2)
+        return function;
+    return nullptr;
+}
+
+/// An identifier refers to a parameter of a lambda by its full name or by its first part (`p.1` is an element of
+/// the parameter `p`), see `IdentifierResolver::tryResolveIdentifierFromExpressionArguments`.
+/// The quoted `p.x` is one part, so it does not refer to the parameter `p`.
+bool isLambdaParameterReference(const ASTIdentifier & identifier, const NameSet & lambda_parameters)
+{
+    return lambda_parameters.contains(identifier.name())
+        || (identifier.compound() && lambda_parameters.contains(identifier.name_parts.front()));
+}
+
+void replaceIdentifier(ASTPtr & ast, std::vector<String> && name_parts)
+{
+    auto alias = ast->tryGetAlias();
+    ast = make_intrusive<ASTIdentifier>(std::move(name_parts));
+    if (!alias.empty())
+        ast->setAlias(alias);
+}
+
+bool hasFreeReference(const ASTPtr & ast, const String & name, const NameSet & lambda_parameters)
+{
+    checkStackSize();
+
+    if (const auto * identifier = ast->as<ASTIdentifier>())
+        return identifier->name() == name && !isLambdaParameterReference(*identifier, lambda_parameters);
+
+    if (auto * lambda = tryGetLambda(ast))
+    {
+        NameSet parameters = lambda_parameters;
+        for (const auto * parameter : getLambdaParameters(*lambda))
+            parameters.insert((*parameter)->as<ASTIdentifier &>().name());
+        return hasFreeReference(lambda->arguments->children[1], name, parameters);
+    }
+
+    return std::ranges::any_of(ast->children, [&](const ASTPtr & child) { return hasFreeReference(child, name, lambda_parameters); });
+}
+
+void collectIdentifierNames(const ASTPtr & ast, NameSet & names)
 {
     checkStackSize();
 
     if (const auto * identifier = ast->as<ASTIdentifier>())
     {
-        if (identifier->name() == name)
+        names.insert(identifier->name());
+        names.insert(identifier->name_parts.front());
+        return;
+    }
+
+    for (const auto & child : ast->children)
+        collectIdentifierNames(child, names);
+}
+
+/// Rename the references to the parameter `old_name` of a lambda in its body.
+/// `other_parameters` are the other parameters of this lambda and of the lambdas nested in it down to `ast`.
+void renameLambdaParameterReferences(ASTPtr & ast, const String & old_name, const String & new_name, const NameSet & other_parameters)
+{
+    checkStackSize();
+
+    if (const auto * identifier = ast->as<ASTIdentifier>())
+    {
+        if (identifier->name() == old_name)
+        {
+            replaceIdentifier(ast, {new_name});
+        }
+        else if (identifier->compound() && identifier->name_parts.front() == old_name && !isLambdaParameterReference(*identifier, other_parameters))
+        {
+            auto name_parts = identifier->name_parts;
+            name_parts.front() = new_name;
+            replaceIdentifier(ast, std::move(name_parts));
+        }
+        return;
+    }
+
+    if (auto * lambda = tryGetLambda(ast))
+    {
+        NameSet parameters = other_parameters;
+        for (const auto * parameter : getLambdaParameters(*lambda))
+        {
+            const auto & parameter_name = (*parameter)->as<ASTIdentifier &>().name();
+            /// The nested lambda has a parameter with the same name: its body refers to that one.
+            if (parameter_name == old_name)
+                return;
+            parameters.insert(parameter_name);
+        }
+        renameLambdaParameterReferences(lambda->arguments->children[1], old_name, new_name, parameters);
+        return;
+    }
+
+    for (auto & child : ast->children)
+        renameLambdaParameterReferences(child, old_name, new_name, other_parameters);
+}
+
+/// Replace the identifiers `name` with `getSubcolumn(column_name, 'subcolumn_name')`.
+/// Only the free references are replaced: a parameter of a lambda stays an identifier, and the body of a lambda
+/// that binds `name` (`arrayMap(`a.x` -> `a.x` + 1, arr)`) refers to the parameter, not to the subcolumn.
+/// The identifier `column_name` that the replacement brings must refer to the column as well: a parameter with
+/// this name of a lambda around the replacement (`arrayMap(a -> `a.x`, arr)`) is renamed, so it does not capture it.
+void replaceIdentifierWithSubcolumnExtraction(
+    ASTPtr & ast, const String & name, const String & column_name, const String & subcolumn_name, const NameSet & lambda_parameters = {})
+{
+    checkStackSize();
+
+    if (const auto * identifier = ast->as<ASTIdentifier>())
+    {
+        if (identifier->name() == name && !isLambdaParameterReference(*identifier, lambda_parameters))
         {
             auto alias = ast->tryGetAlias();
             ast = makeASTFunction("getSubcolumn", make_intrusive<ASTIdentifier>(column_name), make_intrusive<ASTLiteral>(subcolumn_name));
@@ -90,28 +207,41 @@ void replaceIdentifierWithSubcolumnExtraction(ASTPtr & ast, const String & name,
         return;
     }
 
-    if (const auto * function = ast->as<ASTFunction>(); function && function->name == "lambda" && function->arguments
-        && function->arguments->children.size() == 2)
+    if (auto * lambda = tryGetLambda(ast))
     {
-        /// The parameters are `tuple(x, y)`, see `RequiredSourceColumnsMatcher`.
-        const auto & parameters = function->arguments->children[0];
-        if (const auto * parameters_tuple = parameters->as<ASTFunction>(); parameters_tuple && parameters_tuple->arguments)
-        {
-            for (const auto & parameter : parameters_tuple->arguments->children)
-                if (const auto * parameter_identifier = parameter->as<ASTIdentifier>();
-                    parameter_identifier && parameter_identifier->name() == name)
-                    return;
-        }
-        else if (const auto * parameter_identifier = parameters->as<ASTIdentifier>();
-                 parameter_identifier && parameter_identifier->name() == name)
+        auto & body = lambda->arguments->children[1];
+        auto lambda_parameters_asts = getLambdaParameters(*lambda);
+
+        NameSet parameters = lambda_parameters;
+        for (const auto * parameter : lambda_parameters_asts)
+            parameters.insert((*parameter)->as<ASTIdentifier &>().name());
+
+        if (!hasFreeReference(body, name, parameters))
             return;
 
-        replaceIdentifierWithSubcolumnExtraction(function->arguments->children[1], name, column_name, subcolumn_name);
+        /// The lambdas are visited from the outer to the inner one, so `column_name` may only be a parameter of this one.
+        if (parameters.contains(column_name))
+        {
+            NameSet used_names;
+            collectIdentifierNames(ast, used_names);
+            String new_name = "__lambda_parameter_" + column_name;
+            while (used_names.contains(new_name))
+                new_name += "_";
+
+            parameters.erase(column_name);
+            renameLambdaParameterReferences(body, column_name, new_name, parameters);
+            for (auto * parameter : lambda_parameters_asts)
+                if ((*parameter)->as<ASTIdentifier &>().name() == column_name)
+                    replaceIdentifier(*parameter, {new_name});
+            parameters.insert(new_name);
+        }
+
+        replaceIdentifierWithSubcolumnExtraction(body, name, column_name, subcolumn_name, parameters);
         return;
     }
 
     for (auto & child : ast->children)
-        replaceIdentifierWithSubcolumnExtraction(child, name, column_name, subcolumn_name);
+        replaceIdentifierWithSubcolumnExtraction(child, name, column_name, subcolumn_name, lambda_parameters);
 }
 
 /// Add all required expressions for missing columns calculation
