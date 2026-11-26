@@ -4128,7 +4128,7 @@ the smaller is used. Set both settings to `0` to disable spilling.
 
 See [LIMIT BY in external memory](/reference/statements/select/limit-by#limit-by-in-external-memory).
 )", 0, \
-        {"26.11", 0, 0, "New setting to enable spilling of `LIMIT BY` to disk when memory usage exceeds the given threshold in bytes. If 0, only `max_bytes_ratio_before_external_limit_by` applies."}) \
+        {"26.12", 0, 0, "New setting to enable spilling of `LIMIT BY` to disk when memory usage exceeds the given threshold in bytes. If 0, only `max_bytes_ratio_before_external_limit_by` applies."}) \
     DECLARE(Double, max_bytes_ratio_before_external_limit_by, 0.5, R"(
 Fraction of the memory available under the query's `max_memory_usage` and the server or user memory limits,
 used to calculate the external `LIMIT BY` threshold at the start of execution. For example, `0.5` uses half
@@ -4137,7 +4137,7 @@ of the available memory. The userspace page cache above `page_cache_min_size` co
 Values must be at least `0` and less than `1`. `0` disables this threshold. Without an applicable
 query, server or user memory limit, the ratio has no effect.
 )", 0, \
-        {"26.11", 0., 0.5, "New setting to enable spilling of `LIMIT BY` to disk when memory usage exceeds the given ratio of available memory. If 0, only `max_bytes_before_external_limit_by` applies."}) \
+        {"26.12", 0., 0.5, "New setting to enable spilling of `LIMIT BY` to disk when memory usage exceeds the given ratio of available memory. If 0, only `max_bytes_before_external_limit_by` applies."}) \
     \
     DECLARE(UInt64, max_bytes_before_external_set, 0, R"(
 Query memory threshold, in bytes, for spilling the set of `IN` with a subquery to disk, while the set is
