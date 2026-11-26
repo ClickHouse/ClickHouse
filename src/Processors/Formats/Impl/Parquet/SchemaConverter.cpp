@@ -212,8 +212,7 @@ std::string_view SchemaConverter::useColumnMapperIfNeeded(
         /// the table schema, e.g. the v3 row-lineage fields `_row_id` (2147483540) and
         /// `_last_updated_sequence_number` (2147483539) that spec-compliant writers materialize
         /// into data files. Those are requested by their physical name, so they are matched by name.
-        static constexpr Int64 iceberg_max_user_field_id = 2147483447; /// Integer.MAX_VALUE - 200
-        if (element.field_id > iceberg_max_user_field_id)
+        if (ColumnMapper::isReservedIcebergFieldId(element.field_id))
             return element.name;
 
         /// A reader projects by field id, so a file column whose id is not in the read schema is

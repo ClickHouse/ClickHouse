@@ -141,6 +141,11 @@ void ColumnMapper::setStorageColumnEncoding(ColumnNameToFieldId && storage_encod
             throw Exception(ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "Duplicate field id {}", field_id);
 }
 
+bool ColumnMapper::isReservedIcebergFieldId(Int64 field_id)
+{
+    return field_id > 2147483447; /// Integer.MAX_VALUE - 200
+}
+
 String ColumnMapper::getIcebergParentPath(const String & path) const
 {
     if (const String * struct_path = getIcebergStructPath(path))

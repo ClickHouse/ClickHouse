@@ -75,6 +75,10 @@ public:
     [[nodiscard]] const ColumnNameToFieldId & getStorageColumnEncoding() const { return storage_encoding; }
     [[nodiscard]] const FieldIdToColumnName & getFieldIdToClickHouseName() const { return field_id_to_clickhouse_name; }
 
+    /// Reserved Iceberg field ids (https://iceberg.apache.org/spec/#reserved-field-ids) are in no schema: a data file field
+    /// with one is read under its own name.
+    static bool isReservedIcebergFieldId(Int64 field_id);
+
     /// Paths whose Iceberg logical type is `string` (not `binary`); both read as DataTypeString,
     /// so a writer preserving that distinction (ORC/Avro string vs binary) consults this.
     /// hasIcebergStringInfo() lets a field-id-only mapper fall back to the default, not force binary.
