@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-# A table's max_concurrent_queries counts every reader of one query as one query, and the readers of
-# one query are the secondary queries that carry its initial_query_id. A client chooses the query_id,
-# so two unrelated queries sent to two initiators can carry the same one to a server reading for both.
-# This script plays both initiators over the raw native protocol: each secondary query below carries the
-# same initial_query_id, and the initiator's start time tells the two queries apart.
+# A table's max_concurrent_queries must count two unrelated queries as two, whatever their secondary queries
+# carry. A client chooses the query_id, so two queries sent to two initiators can reach a server reading for
+# both with the same initial_query_id, and a client can also send such secondary queries itself. This script
+# does the latter over the raw native protocol: both queries below carry the same initial_query_id and the
+# same initial query start time.
 #
 # The ClientInfo layout is the one of revision 54484, as in 05061_query_log_interface_enum_unknown.
 
@@ -257,10 +257,8 @@ def main():
             "{}: the query holding the slot never read the table".format(label),
         )
 
-        check(label, fast, settings, shared_query_id, start_time_us, 0)
-        print("{}: a reader of the same query shares its slot".format(label))
-        check(label, fast, settings, shared_query_id, start_time_us + 1, TOO_MANY_SIMULTANEOUS_QUERIES)
-        print("{}: a query with the same query_id from another initiator is refused".format(label))
+        check(label, fast, settings, shared_query_id, start_time_us, TOO_MANY_SIMULTANEOUS_QUERIES)
+        print("{}: another query with the same initial_query_id and start time is refused".format(label))
 
         sql("KILL QUERY WHERE query_id = '{}' SYNC FORMAT Null".format(holder_id))
         holder.close()

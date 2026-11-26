@@ -1,4 +1,2 @@
-plain read: a reader of the same query shares its slot
-plain read: a query with the same query_id from another initiator is refused
-dispatched plan: a reader of the same query shares its slot
-dispatched plan: a query with the same query_id from another initiator is refused
+plain read: another query with the same initial_query_id and start time is refused
+dispatched plan: another query with the same initial_query_id and start time is refused

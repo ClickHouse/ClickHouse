@@ -38,7 +38,7 @@ HTTPHeaderEntries getTraceContextHeaders()
     return headers;
 }
 
-String doSendTask(const String & endpoint_uri, const String & task_id, std::function<void(WriteBuffer&)> task_serializer, const String & unique_temp_file_path, Int64 initial_query_start_time_microseconds, const TaskCollectors & collectors, const ContextPtr & context)
+String doSendTask(const String & endpoint_uri, const String & task_id, std::function<void(WriteBuffer&)> task_serializer, const String & unique_temp_file_path, const UUID & statement_id, const TaskCollectors & collectors, const ContextPtr & context)
 {
     auto credentials = context->getInterserverCredentials();
     Poco::Net::HTTPBasicCredentials creds{};
@@ -63,7 +63,7 @@ String doSendTask(const String & endpoint_uri, const String & task_id, std::func
     uri.addQueryParameter("compress",    "false");
     uri.addQueryParameter("task_id",     task_id);
     uri.addQueryParameter("temp_path",   unique_temp_file_path);
-    uri.addQueryParameter("initial_query_start_time_microseconds", std::to_string(initial_query_start_time_microseconds));
+    uri.addQueryParameter("statement_id", toString(statement_id));
     /// Absent when nothing is collected, so an older worker sees the request it has always seen.
     if (collectors.any())
         uri.addQueryParameter("collect", collectors.toString());
@@ -112,7 +112,7 @@ String sendTask(const String & endpoint_uri, const String & unique_task_id, cons
     try
     {
         return doSendTask(endpoint_uri, unique_task_id, task_serializer, unique_temp_file_path,
-            task_description.initial_query_start_time_microseconds, collectors, context);
+            task_description.statement_id, collectors, context);
     }
     catch (...)
     {

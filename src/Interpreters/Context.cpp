@@ -9606,6 +9606,11 @@ void Context::setInitialQueryStartTime(std::chrono::time_point<std::chrono::syst
     client_info.initial_query_start_time_microseconds = timeInMicroseconds(initial_query_start_time);
 }
 
+void Context::setStatementId(const UUID & statement_id)
+{
+    client_info.statement_id = statement_id;
+}
+
 void Context::setQuotaClientKey(const String & quota_key_)
 {
     client_info.quota_key = quota_key_;

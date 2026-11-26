@@ -2556,7 +2556,7 @@ private:
     std::atomic<size_t> total_uncompressed_bytes_in_patches = 0;
 
     // Query ids which access the table, each with the number of readers holding it: the last one frees the slot.
-    mutable std::map<String, size_t> query_id_set TSA_GUARDED_BY(query_id_set_mutex);
+    mutable UnorderedMapWithMemoryTracking<String, size_t> query_id_set TSA_GUARDED_BY(query_id_set_mutex);
     mutable std::mutex query_id_set_mutex;
 
     // Get partition matcher for FREEZE / UNFREEZE queries.
