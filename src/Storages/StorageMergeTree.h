@@ -169,6 +169,16 @@ private:
 
     std::map<UInt64, MergeTreeMutationEntry> current_mutations_by_version;
 
+    /// The greatest version among the finished mutations whose entries were removed by `clearOldMutations`.
+    /// It removes only a prefix of `current_mutations_by_version` consisting of finished mutations, so a mutation
+    /// that is missing from the map and is not greater than this version is considered finished rather than killed.
+    /// A query that waits for a mutation needs it, because the entry can be removed before the query takes a look
+    /// at it (if `finished_mutations_to_keep` is zero, the next run of the cleanup thread removes it).
+    /// A killed mutation can also get below this version, but only when later mutations are finished and removed,
+    /// while the queries waiting for the killed mutation are woken up at the moment it is killed.
+    /// This has to be used with `currently_processing_in_background_mutex`.
+    UInt64 max_cleared_finished_mutation_version = 0;
+
     /// Unfinished mutations that are required for AlterConversions.
     MutationCounters mutation_counters;
 
@@ -353,7 +363,8 @@ private:
     /// is_done. mutation_ids filled with mutations with the same errors,
     /// because we can execute several mutations at once. Order is important for
     /// better readability of exception message. If mutation was killed doesn't
-    /// return any ids.
+    /// return any ids. A finished mutation whose entry was already removed by
+    /// `clearOldMutations` is reported as done.
     std::optional<MergeTreeMutationStatus> getIncompleteMutationsStatus(Int64 mutation_version, std::set<String> * mutation_ids = nullptr,
                                                                         bool from_another_mutation = false) const;
 

@@ -275,6 +275,7 @@ namespace FailPoints
     extern const char rmt_mutation_prune_pause_before_analysis[];
     extern const char rmt_mutation_prune_pause_before_block_allocation[];
     extern const char rmt_mutation_prune_pause_before_zk_partition_list[];
+    extern const char rmt_mutate_pause_before_wait[];
     extern const char check_table_inject_retryable_zk_error[];
     extern const char check_table_inject_shutdown_abort[];
 }
@@ -783,6 +784,25 @@ void StorageReplicatedMergeTree::waitMutationToFinishOnReplicas(
             process_list_element = query_context->getProcessListElement();
     }
 
+    /// The entry of the mutation disappears from ZooKeeper when the mutation is killed (or the table is dropped),
+    /// and also when the cleanup thread of any replica removes it. The cleanup thread removes only the entries
+    /// that are not greater than the mutation pointers of all replicas, that is, the entries of the mutations
+    /// finished everywhere, and it can do it before this query notices that the mutation is finished
+    /// (it is the usual case if `finished_mutations_to_keep` is zero). So, when the entry is missing,
+    /// the mutation pointer of a replica tells whether the mutation has been finished on that replica.
+    auto check_mutation_without_entry_is_finished = [&](const String & replica)
+    {
+        String mutation_pointer_value;
+        bool is_finished = getZooKeeper()->tryGet(fs::path(zookeeper_path) / "replicas" / replica / "mutation_pointer", mutation_pointer_value)
+            && mutation_pointer_value >= mutation_id;
+
+        if (!is_finished)
+            throw Exception(ErrorCodes::UNFINISHED, "Mutation {} was killed, manually removed or table was dropped", mutation_id);
+
+        LOG_TRACE(log, "Mutation {} is done on replica {}: its entry is already removed and the mutation pointer is {}",
+            mutation_id, replica, mutation_pointer_value);
+    };
+
     std::set<String> inactive_replicas;
     for (const String & replica : *all_required_replicas)
     {
@@ -791,6 +811,9 @@ void StorageReplicatedMergeTree::waitMutationToFinishOnReplicas(
 
         constexpr size_t MAX_RETRIES_ON_FAILED_MUTATION = 30;
         size_t retries_on_failed_mutation = 0;
+
+        /// The mutation is finished on the replica and its entry is already removed.
+        bool is_finished_without_entry = false;
 
         while (!partial_shutdown_called)
         {
@@ -802,7 +825,9 @@ void StorageReplicatedMergeTree::waitMutationToFinishOnReplicas(
                     &exists_stat,
                     Coordination::WatchCallbackPtrOrEventPtr{wait_event, ProfileEvents::ZooKeeperWatchTriggeredReplicatedMergeTreeMutations}))
             {
-                throw Exception(ErrorCodes::UNFINISHED, "Mutation {} was killed, manually removed or table was dropped", mutation_id);
+                check_mutation_without_entry_is_finished(replica);
+                is_finished_without_entry = true;
+                break;
             }
 
             auto zookeeper = getZooKeeper();
@@ -893,10 +918,15 @@ void StorageReplicatedMergeTree::waitMutationToFinishOnReplicas(
 
         /// It maybe already removed from zk, but local in-memory mutations
         /// state was not updated.
-        if (!getZooKeeper()->exists(fs::path(zookeeper_path) / "mutations" / mutation_id))
+        if (!is_finished_without_entry && !getZooKeeper()->exists(fs::path(zookeeper_path) / "mutations" / mutation_id))
         {
-            throw Exception(ErrorCodes::UNFINISHED, "Mutation {} was killed, manually removed or table was dropped", mutation_id);
+            check_mutation_without_entry_is_finished(replica);
+            is_finished_without_entry = true;
         }
+
+        /// Nothing else to check: the local in-memory state of the mutation is removed along with the entry.
+        if (is_finished_without_entry)
+            continue;
 
         if (partial_shutdown_called)
             throw Exception(ErrorCodes::UNFINISHED,
@@ -910,6 +940,13 @@ void StorageReplicatedMergeTree::waitMutationToFinishOnReplicas(
         /// Here we check mutation for errors or kill on local replica. If they happen on this replica
         /// they will happen on each replica, so we can check only in-memory info.
         auto mutation_status = queue.getIncompleteMutationsStatus(mutation_id, &mutation_ids);
+        if (!mutation_status)
+        {
+            /// The entry was removed, and the local state has followed it, right after the check above.
+            check_mutation_without_entry_is_finished(replica);
+            continue;
+        }
+
         checkMutationStatus(mutation_status, mutation_ids);
         /// Mutation should be done or we should throw exception
         chassert(mutation_status->is_done);
@@ -9268,7 +9305,11 @@ void StorageReplicatedMergeTree::mutate(const MutationCommands & commands, Conte
 
     merge_selecting_task->schedule();
 
-    waitMutation(mutation_entry.znode_name, query_context->getSettingsRef()[Setting::mutations_sync]);
+    const UInt64 mutations_sync = query_context->getSettingsRef()[Setting::mutations_sync];
+    if (mutations_sync > 0)
+        FailPointInjection::pauseFailPoint(FailPoints::rmt_mutate_pause_before_wait);
+
+    waitMutation(mutation_entry.znode_name, mutations_sync);
 }
 
 void StorageReplicatedMergeTree::waitMutation(const String & znode_name, size_t mutations_sync) const
