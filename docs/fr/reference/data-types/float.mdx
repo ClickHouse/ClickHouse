@@ -54,13 +54,9 @@ Les types à virgule flottante dans ClickHouse ont les alias suivants :
 
 Lors de la création de tables, il est possible de spécifier des paramètres numériques pour les nombres à virgule flottante (par ex. `FLOAT(12)`, `FLOAT(15, 22)`, `DOUBLE(12)`, `DOUBLE(4, 18)`), mais ClickHouse les ignore.
 
-<div id="using-floating-point-numbers">
-  ## Utilisation des nombres à virgule flottante
-</div>
+## Utilisation des nombres à virgule flottante {#using-floating-point-numbers}
 
 * Les calculs avec des nombres à virgule flottante peuvent entraîner une erreur d’arrondi.
-
-{/* */}
 
 ```sql
 SELECT 1 - 0.9
@@ -74,15 +70,11 @@ SELECT 1 - 0.9
 * Les calculs à virgule flottante peuvent produire des valeurs telles que l’infini (`Inf`) et &quot;pas un nombre&quot; (`NaN`). Il faut en tenir compte lors du traitement des résultats.
 * Lors de l’analyse de nombres à virgule flottante à partir de texte, le résultat peut ne pas correspondre au nombre représentable par la machine le plus proche.
 
-<div id="nan-and-inf">
-  ## NaN et Inf
-</div>
+## NaN et Inf {#nan-and-inf}
 
-Contrairement au SQL standard, ClickHouse prend en charge les catégories suivantes de nombres à virgule flottante :
+Contrairement au SQL standard, ClickHouse prend en charge les catégories suivantes de nombres à virgule flottante :
 
 * `Inf` – l’infini.
-
-{/* */}
 
 ```sql
 SELECT 0.5 / 0
@@ -94,8 +86,6 @@ SELECT 0.5 / 0
 
 * `-Inf` — Moins l’infini.
 
-{/* */}
-
 ```sql
 SELECT -0.5 / 0
 
@@ -105,8 +95,6 @@ SELECT -0.5 / 0
 ```
 
 * `NaN` — n’est pas un nombre.
-
-{/* */}
 
 ```sql
 SELECT 0 / 0
@@ -118,9 +106,7 @@ SELECT 0 / 0
 
 Consultez les règles de tri des `NaN` dans la section [clause ORDER BY](/fr/reference/statements/select/order-by).
 
-<div id="nan-values-in-set-semantics">
-  ## Valeurs `NaN` dans la sémantique d’ensemble
-</div>
+## Valeurs `NaN` dans la sémantique d’ensemble {#nan-values-in-set-semantics}
 
 La norme IEEE 754 définit `NaN` de sorte que la comparaison scalaire `NaN = NaN` renvoie `false`.
 ClickHouse suit cette règle pour l’opérateur `=`.
@@ -161,9 +147,7 @@ FROM (SELECT arrayJoin([0./0., nan, log(-1.)]) AS x);
 
 La même approche fonctionne pour les clés de `DISTINCT`, `GROUP BY` et `JOIN`.
 
-<div id="bfloat16">
-  ## BFloat16
-</div>
+## BFloat16 {#bfloat16}
 
 `BFloat16` est un type de données à virgule flottante sur 16 bits, avec un exposant sur 8 bits, un signe et une mantisse sur 7 bits.
 Il est utile pour les applications de machine learning et d&#39;IA.

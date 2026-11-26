@@ -1,9 +1,9 @@
 [
   {
-    "group": "組織",
+    "group": "Organization",
     "pages": [
       {
-        "group": "組織",
+        "group": "Organization",
         "pages": [
           "GET /v1/organizations",
           "GET /v1/organizations/{organizationId}",
@@ -17,6 +17,7 @@
           "products/cloud/api-reference/organization/organization-private-endpoint-config-get-list",
           "POST /v1/organizations/{organizationId}/byocInfrastructure",
           "products/cloud/api-reference/organization/organization-byoc-infrastructure-validate",
+          "products/cloud/api-reference/organization/organization-byoc-infrastructure-enrollment-token-create",
           "products/cloud/api-reference/organization/organization-byoc-infrastructure-get",
           "DELETE /v1/organizations/{organizationId}/byocInfrastructure/{byocInfrastructureId}",
           "PATCH /v1/organizations/{organizationId}/byocInfrastructure/{byocInfrastructureId}",
@@ -37,15 +38,16 @@
         ]
       },
       {
-        "group": "請求",
+        "group": "Billing",
         "pages": [
           "GET /v1/organizations/{organizationId}/usageCost",
+          "products/cloud/api-reference/billing/inference-usage-cost-get",
           "products/cloud/api-reference/billing/active-balances-get",
           "products/cloud/api-reference/billing/credit-balances-get"
         ]
       },
       {
-        "group": "ユーザー管理",
+        "group": "User management",
         "pages": [
           "products/cloud/api-reference/user-management/whoami-get",
           "GET /v1/organizations/{organizationId}/members",
@@ -59,7 +61,7 @@
         ]
       },
       {
-        "group": "ロール管理",
+        "group": "Role Management",
         "pages": [
           "GET /v1/organizations/{organizationId}/roles",
           "POST /v1/organizations/{organizationId}/roles",
@@ -88,10 +90,10 @@
     ]
   },
   {
-    "group": "サービス",
+    "group": "Service",
     "pages": [
       {
-        "group": "サービス",
+        "group": "Service",
         "pages": [
           "GET /v1/organizations/{organizationId}/serviceProfiles",
           "GET /v1/organizations/{organizationId}/services",
@@ -129,7 +131,7 @@
         ]
       },
       {
-        "group": "バックアップ",
+        "group": "Backup",
         "pages": [
           "GET /v1/organizations/{organizationId}/services/{serviceId}/backups",
           "GET /v1/organizations/{organizationId}/services/{serviceId}/backups/{backupId}",
@@ -173,7 +175,7 @@
     ]
   },
   {
-    "group": "API キー",
+    "group": "API keys",
     "pages": [
       "GET /v1/organizations/{organizationId}/keys",
       "POST /v1/organizations/{organizationId}/keys",
@@ -234,6 +236,8 @@
       "products/cloud/api-reference/clickstack/click-stack-get-alert",
       "products/cloud/api-reference/clickstack/click-stack-update-alert",
       "products/cloud/api-reference/clickstack/click-stack-delete-alert",
+      "products/cloud/api-reference/clickstack/click-stack-silence-alert",
+      "products/cloud/api-reference/clickstack/click-stack-unsilence-alert",
       "products/cloud/api-reference/clickstack/click-stack-list-webhooks",
       "products/cloud/api-reference/clickstack/click-stack-create-webhook",
       "products/cloud/api-reference/clickstack/click-stack-validate-webhook",
@@ -275,6 +279,7 @@
       "GET /v1/organizations/{organizationId}/postgres/{postgresId}/backups",
       "GET /v1/organizations/{organizationId}/postgres/{postgresId}/slowQueryPatterns",
       "GET /v1/organizations/{organizationId}/postgres/{postgresId}/slowQueryPatterns/{queryId}",
+      "products/cloud/api-reference/postgres/postgres-blocking-queries-get-list",
       "GET /v1/organizations/{organizationId}/postgres/{postgresId}/logs"
     ]
   }

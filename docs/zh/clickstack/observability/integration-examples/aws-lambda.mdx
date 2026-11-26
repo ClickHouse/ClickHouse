@@ -1,0 +1,304 @@
+---
+slug: /clickstack/observability/integration-examples/aws-lambda
+title: '借助 Rotel 在 ClickHouse Observability 中监控 AWS Lambda 日志'
+sidebarTitle: 'AWS Lambda 日志'
+description: '使用社区维护的 Rotel Lambda Extension 采集 AWS Lambda 日志，并将其发送至 ClickHouse Observability。'
+doc_type: 'guide'
+keywords: ['AWS', 'Lambda', 'OTEL', 'ClickHouse Observability', '日志', 'CloudWatch']
+---
+
+import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
+
+import { CommunityMaintainedBadge } from "/snippets/zh/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+
+<CommunityMaintainedBadge />
+
+借助 Rotel Lambda Extension 采集函数日志和扩展日志，并通过 OTLP 将其直接发送至 ClickHouse Observability。该扩展与您的 Lambda 函数一同运行，因此无需另行部署采集器。您还可以添加 OpenTelemetry 插桩来采集链路追踪数据。
+
+## 前置条件 {#prerequisites}
+
+* 一个 ClickHouse Observability 服务
+* 一个采用 ZIP 部署包、且使用 [Rotel Lambda Extension](https://github.com/streamfold/rotel-lambda-extension) 所支持运行时的 AWS Lambda 函数
+* 如需使用命令行客户端示例，需安装 AWS CLI v2，并已针对函数所在区域完成配置
+* 具备更新该函数的层和环境变量的权限
+* Lambda 函数能够通过网络访问 OTLP 端点；对于位于 VPC 中的函数，还需具备出站访问能力
+
+### 连接详情 {#connection-details}
+
+<Tabs>
+  <Tab title="全托管">
+    <BetaBadge label="Beta 产品" />
+
+    打开 ClickHouse Observability，进入 **团队设置 → 数据 → Managed Telemetry**，复制您的 OTLP HTTP 端点和 API key。
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Managed Telemetry 连接详情](/images/clickstack/getting-started/observability-managed-telemetry.png)
+      </Frame>
+    </div>
+
+    请将该端点 (包括端口) 原样用作下文的 `ROTEL_OTLP_EXPORTER_ENDPOINT`。请使用基础 HTTP 端点，不要附加 `/v1/logs` 后缀，并将协议设置为 `http`。该 managed service 要求提供 `Authorization=Bearer YOUR_API_KEY` 请求头。
+  </Tab>
+
+  <Tab title="自管理">
+    请使用您的采集器的 OTLP HTTP 端点和身份验证设置。如果目标端不需要身份验证，可省略 `ROTEL_OTLP_EXPORTER_CUSTOM_HEADERS`。该端点必须可从 Lambda 访问；`localhost` 指的是 Lambda 执行环境本身。详见[自管理设置指南](/zh/clickstack/self-configured/getting-started/managed)。
+
+    在下文的 Lambda 环境变量和 `rotel.env` 示例中，请使用以下目标端配置值：
+
+    ```bash
+    ROTEL_OTLP_EXPORTER_ENDPOINT=https://YOUR_COLLECTOR_HOST:4318
+    ROTEL_OTLP_EXPORTER_PROTOCOL=http
+    ROTEL_OTLP_EXPORTER_CUSTOM_HEADERS="Authorization=YOUR_INGESTION_KEY"
+    ```
+  </Tab>
+</Tabs>
+
+## 与现有 Lambda 函数集成 {#existing-lambda}
+
+<Steps>
+  <Step title="选择合适的 Rotel Lambda Extension layer" id="choose-layer">
+    请根据函数的架构 (`amd64` 或 `arm64`) 、运行时和 AWS 区域选择相应的 layer。从 [Rotel 发行版](https://github.com/streamfold/rotel-lambda-extension/releases) 页面复制带版本号的完整 layer ARN，并在下面的示例中使用该 ARN；layer 版本及其可用性因区域而异。
+  </Step>
+
+  <Step title="将 Rotel layer 添加到您的 Lambda 函数中" id="add-layer">
+    将 `YOUR_ROTEL_LAYER_ARN` 替换为您选择的 ARN，并将 `my-function` 替换为您的函数名称。
+
+##### 方式 1：AWS 控制台 {#console}
+
+    1. 打开 AWS Lambda 控制台
+    2. 进入您的 Lambda 函数
+    3. 滚动到 **Layers** 部分，然后点击 **Add a layer**
+    4. 选择 **Specify an ARN**
+    5. 输入 Rotel layer ARN：
+       ```text
+       YOUR_ROTEL_LAYER_ARN
+       ```
+    6. 点击 **Add**
+
+##### 方式 2：AWS 命令行客户端 {#cli}
+
+    导出当前的层列表：
+
+    ```bash
+    aws lambda get-function-configuration \
+      --function-name my-function \
+      --query 'Layers[].Arn || `[]`' \
+      --output json > layers.json
+    ```
+
+    将 Rotel layer ARN 以字符串形式追加到 `layers.json` 数组中，并保留现有条目。然后应用完整列表：
+
+    ```bash
+    aws lambda update-function-configuration \
+      --function-name my-function \
+      --layers file://layers.json
+    aws lambda wait function-updated --function-name my-function
+    ```
+
+##### 选项 3：AWS SAM {#sam}
+
+    ```yaml
+    Resources:
+      MyFunction:
+        Type: AWS::Serverless::Function
+        Properties:
+          # ... other configuration ...
+          Layers:
+            # Keep any existing layer entries here.
+            - YOUR_ROTEL_LAYER_ARN
+    ```
+  </Step>
+
+  <Step title="配置扩展，将数据导出到 ClickHouse 可观测性平台" id="configure-extension">
+    在 Lambda 控制台中，打开 **Configuration → Environment variables**，添加以下设置，同时保留所有现有变量。这些是 Lambda 的配置值，而不是要在本地终端中运行的命令。在控制台中输入值时，请去掉示例中两侧的引号。
+
+##### 基础配置 (环境变量) {#basic-config}
+
+    将以下环境变量添加到您的 Lambda 函数中：
+
+    ```bash
+    # OTLP HTTP endpoint from Connection details
+    ROTEL_OTLP_EXPORTER_ENDPOINT=https://YOUR_OTEL_ENDPOINT:4318
+    ROTEL_OTLP_EXPORTER_PROTOCOL=http
+
+    # Required for managed ingestion
+    ROTEL_OTLP_EXPORTER_CUSTOM_HEADERS="Authorization=Bearer YOUR_API_KEY"
+
+    # Optional: Service name (defaults to Lambda function name)
+    ROTEL_OTEL_RESOURCE_ATTRIBUTES="service.name=my-lambda-api,service.version=1.0.0"
+    ```
+
+##### 高级配置 (使用 .env 文件) {#advanced-config}
+
+    如需进行更复杂的配置，请在 Lambda 函数部署包中创建 `rotel.env` 文件：
+
+    **rotel.env：**
+
+    ```bash
+    ROTEL_OTLP_EXPORTER_ENDPOINT=https://YOUR_OTEL_ENDPOINT:4318
+    ROTEL_OTLP_EXPORTER_PROTOCOL=http
+    ROTEL_OTLP_EXPORTER_CUSTOM_HEADERS="Authorization=Bearer YOUR_API_KEY"
+    ROTEL_OTEL_RESOURCE_ATTRIBUTES="service.name=my-lambda-api,deployment.environment=production"
+    ```
+
+    然后设置环境变量，使其指向该文件：
+
+    ```bash
+    ROTEL_ENV_FILE=/var/task/rotel.env
+    ```
+
+##### 使用 AWS Secrets Manager 或 Parameter Store {#secrets}
+
+    你可以将 API key 存储在 AWS Secrets Manager 或 Parameter Store 中，并在 `rotel.env` 中引用其 ARN。以下示例采用全托管身份验证，且假定该机密信息中仅包含 API key；Rotel 会根据配置自动添加 `Bearer` 前缀。如果使用的是带摄取 key 的自管理采集器，请省略 `Bearer ` 前缀。请将示例中的区域、账户和机密信息名称替换为你自己的值：
+
+    **AWS Secrets Manager 示例：**
+
+    ```bash
+    ROTEL_OTLP_EXPORTER_ENDPOINT=https://YOUR_OTEL_ENDPOINT:4318
+    ROTEL_OTLP_EXPORTER_PROTOCOL=http
+    ROTEL_OTLP_EXPORTER_CUSTOM_HEADERS="Authorization=Bearer ${arn:aws:secretsmanager:us-east-1:123456789012:secret:observability-api-key-abc123}"
+    ```
+
+    **AWS Parameter Store 示例：**
+
+    ```bash
+    ROTEL_OTLP_EXPORTER_ENDPOINT=https://YOUR_OTEL_ENDPOINT:4318
+    ROTEL_OTLP_EXPORTER_PROTOCOL=http
+    ROTEL_OTLP_EXPORTER_CUSTOM_HEADERS="Authorization=Bearer ${arn:aws:ssm:us-east-1:123456789012:parameter/observability-api-key}"
+    ```
+
+    **所需的 IAM 权限：**
+
+    请为 Lambda 执行角色添加以下权限：
+
+    使用 Secrets Manager 时：
+
+    ```json
+    {
+      "Version": "2012-10-17",
+      "Statement": [
+        {
+          "Effect": "Allow",
+          "Action": [
+            "secretsmanager:GetSecretValue",
+            "secretsmanager:BatchGetSecretValue"
+          ],
+          "Resource": "arn:aws:secretsmanager:us-east-1:123456789012:secret:observability-api-key-*"
+        }
+      ]
+    }
+    ```
+
+    如果使用 Parameter Store：
+
+    ```json
+    {
+      "Version": "2012-10-17",
+      "Statement": [
+        {
+          "Effect": "Allow",
+          "Action": [
+            "ssm:GetParameters"
+          ],
+          "Resource": "arn:aws:ssm:us-east-1:123456789012:parameter/observability-api-key"
+        }
+      ]
+    }
+    ```
+
+    <Note>
+      Secret 的获取在初始化期间进行，可能会增加冷启动延迟。有关支持的格式和所需权限，请参阅 [Rotel Secret 配置](https://github.com/streamfold/rotel-lambda-extension#secrets)。如使用客户管理的加密密钥，可能还需要 `kms:Decrypt` 权限。
+    </Note>
+  </Step>
+
+  <Step title="测试集成" id="test-integration">
+    使用 Lambda 函数可接受的事件调用该函数，并确保处理器会写入日志。如果你的函数需要其他格式的事件，请替换下面的示例载荷：
+
+    ```bash
+    aws lambda invoke \
+      --function-name my-function \
+      --cli-binary-format raw-in-base64-out \
+      --payload '{"test": "data"}' \
+      response.json
+    ```
+
+    检查 Lambda 日志中是否有错误：
+
+    ```bash
+    aws logs tail /aws/lambda/my-function --follow
+    ```
+  </Step>
+
+  <Step title="检查日志" id="verify-logs">
+    在 ClickHouse Observability 中打开 **搜索**，选择 **Logs** source，如果使用了示例服务名称，则按 `ServiceName:my-lambda-api` 进行过滤；否则请改用您的 Lambda 函数名称。将时间范围设为 **Last 15 minutes**。
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Lambda 日志视图](/images/clickstack/lambda/lambda-log-view.webp)
+      </Frame>
+    </div>
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Lambda 日志详情](/images/clickstack/lambda/lambda-log.webp)
+      </Frame>
+    </div>
+
+    在日志中查看以下关键属性：
+
+    * `service.name`：您配置的服务名称，未配置时默认为 Lambda 函数名称
+    * `faas.name`：AWS Lambda 函数名称
+    * `faas.invocation_id`：唯一调用 ID
+    * `cloud.provider`：&quot;aws&quot;
+    * `cloud.platform`：&quot;aws&#95;lambda&quot;
+  </Step>
+</Steps>
+
+## 禁用 CloudWatch 日志 (成本优化) {#disable-cloudwatch}
+
+默认情况下，AWS Lambda 会将所有日志发送到 CloudWatch 日志，规模较大时成本可能很高。确认日志已流入 ClickHouse Observability 后，即可禁用 CloudWatch 日志记录以降低成本。
+
+<Steps>
+  <Step title="从执行角色中移除 CloudWatch 权限" id="remove-permissions">
+    1. 打开 AWS 控制台，进入 **AWS Lambda**
+    2. 进入您的 Lambda 函数
+    3. 选择 **配置** → **权限**
+    4. 点击执行角色名称，打开 IAM 控制台
+    5. 移除此函数使用的 CloudWatch 日志写入权限。如果该角色由多个函数共享，请先改用专用角色，再进行此更改：
+       * 如果使用的是自定义策略，请编辑该策略，移除 `logs:CreateLogGroup`、`logs:CreateLogStream` 和 `logs:PutLogEvents`
+       * 如果使用的是 AWS 托管策略 `AWSLambdaBasicExecutionRole`，请将其从角色中移除
+    6. 保存该角色
+  </Step>
+
+  <Step title="验证 CloudWatch 日志记录已禁用" id="verify-disabled">
+    再次调用函数，并确认：
+
+    1. 函数的 CloudWatch 日志组中不再出现新事件
+    2. 日志仍持续出现在 ClickHouse Observability 中
+
+    ```bash
+    aws logs tail /aws/lambda/my-function --since 5m --follow
+    ```
+  </Step>
+</Steps>
+
+## 添加 OpenTelemetry 自动插桩 {#auto-instrumentation}
+
+Rotel 可以接收与其一同安装的语言插桩 layer 所发送的遥测数据。请按照 [Rotel 自动插桩说明](https://github.com/streamfold/rotel-lambda-extension#auto-instrumentation)及其中链接的各语言 layer 文档，选择兼容的 layer 并设置 `AWS_LAMBDA_EXEC_WRAPPER`。
+
+添加插桩时，请保留 Rotel layer 以及所有已有的层。调用函数后，在 ClickHouse Observability 中选择您的 **Traces** source，并按已配置的服务名称进行过滤。要实现日志与 trace 的关联，应用程序插桩需要在其日志中包含 trace ID 和跨度 ID。
+
+## 示例应用程序 {#examples}
+
+以下 Python 示例应用演示了 Rotel Lambda Extension 的用法：
+
+* **[Python + ClickHouse](https://github.com/streamfold/python-aws-lambda-clickhouse-example)**：采用手动 OpenTelemetry 插桩的 Python 应用程序，可将链路追踪和日志直接发送至 ClickHouse
+
+## 加入 Rotel 社区 {#join-rotel-community}
+
+如果您对 Rotel 有任何疑问，欢迎加入 [Rotel Discord 服务器](https://rotel.dev)，分享您的反馈或问题。如果您希望贡献改进，请前往 [Rotel Lambda Extension](https://github.com/streamfold/rotel-lambda-extension)。
+
+## 其他资源 {#resources}
+
+* **[Rotel Lambda Extension](https://github.com/streamfold/rotel-lambda-extension)**：源代码及详细文档
+* **[Rotel Core](https://github.com/streamfold/rotel)**：驱动该扩展的轻量级 OTEL 数据平面

@@ -8,18 +8,18 @@ doc_type: 'guide'
 
 下面将以集成 BLAKE3 哈希函数为例，介绍如何集成 Rust 库。
 
-集成的第一步是将该库添加到 /rust 文件夹中。为此，你需要创建一个空的 Rust 项目，并在 Cargo.toml 中加入所需的库。还需要在 Cargo.toml 中添加 `crate-type = ["staticlib"]`，将新库配置为编译为静态库。
+集成的第一步是在 `contrib/<library>-cmake` 中创建一个空的 Rust 项目，并在其 Cargo.toml 中加入所需的库。该项目是 `contrib/rust-contrib-workspace` 中 cargo 工作区的成员：在 `[package]` 下添加 `workspace = "../rust-contrib-workspace"`，并将该文件夹列入 `contrib/rust-contrib-workspace/Cargo.toml` 的 `members` 中。请将其保持为普通库，不要设置 `crate-type`。这些成员不会各自单独构建为库：工作区的根包 `_ch_rust_workspace` 会重新导出每个已启用的成员，它也是 ClickHouse 唯一链接的静态库。在 `contrib/rust-contrib-workspace/Cargo.toml` 中，为根包添加对应该成员的功能和可选依赖 (`blake3 = ["dep:_ch_rust_blake3"]` 和 `_ch_rust_blake3 = { path = "../blake3-cmake", optional = true }`) ，并在 `contrib/rust-contrib-workspace/src/lib.rs` 中将其重新导出 (`#[cfg(feature = "blake3")] pub use _ch_rust_blake3;`) 。
 
-接下来，你需要使用 Corrosion 库将该库链接到 CMake。第一步是在 /rust 文件夹内的 CMakeLists.txt 中添加该库所在的文件夹。之后，你应在该库目录中添加 CMakeLists.txt 文件。在该文件中，需要调用 Corrosion 的导入函数。导入 BLAKE3 时使用了以下几行代码：
+接下来，你需要使用 Corrosion 库将该库链接到 CMake。第一步是使用 `add_contrib` 将该库所在的文件夹添加到 `contrib/CMakeLists.txt` 中，与工作区的其他成员放在一起。之后，你应在该库目录中添加 CMakeLists.txt 文件。在该文件中，需要使用 `clickhouse_add_rust_member` 添加该成员：它会创建一个链接工作区静态库的 interface target，并启用根包中的相应功能；`contrib/rust-contrib-workspace/CMakeLists.txt` 会在处理完所有成员后，通过 Corrosion 导入该根包。对于 BLAKE3，相应代码如下：
 
 ```CMake
-corrosion_import_crate(MANIFEST_PATH Cargo.toml NO_STD)
+clickhouse_add_rust_member(_ch_rust_blake3 FEATURE blake3)
 
 target_include_directories(_ch_rust_blake3 INTERFACE include)
 add_library(ch_rust::blake3 ALIAS _ch_rust_blake3)
 ```
 
-因此，我们将使用 Corrosion 创建一个正确的 CMake target，然后将其重命名为一个更便于使用的名称。请注意，`_ch_rust_blake3` 这个名称来自 Cargo.toml，其中它被用作项目名称 (`name = "_ch_rust_blake3"`) 。
+因此，我们将为该成员创建一个 CMake target，然后为其指定一个更便于使用的名称。请注意，`_ch_rust_blake3` 这个名称来自 Cargo.toml，其中它被用作项目名称 (`name = "_ch_rust_blake3"`) 。
 
 由于 Rust 数据类型与 C/C++ 数据类型不兼容，我们将利用这个空库项目创建 shim 方法，用于转换从 C/C++ 接收的数据、调用库方法，以及将输出数据反向转换回来。例如，下面这个方法就是为 BLAKE3 编写的：
 
@@ -76,7 +76,19 @@ pub unsafe extern "C" fn blake3_apply_shim(
     }
 ```
 
-此外，对于每个与 C 兼容的属性，都应使用 `#[no&#95;mangle]` 属性和 `extern "C"`。否则，库可能会被错误编译，且 cbindgen 无法自动生成请求头。
+## 在本代码仓库中生成请求头 {#generating-the-header-in-this-repository}
+
+上面的构建脚本会在每次构建时将请求头写入源码树，这样一来就没有任何可检查的对象：已提交的请求头即使已与 Rust 端不一致，也只会在本地被直接覆盖，而对其他人来说依然是错的。因此，这里的各个 crate 改用以下两种方案之一：
+
+* 将请求头生成到构建目录中，并让 `target_include_directories` 指向该目录，即 `contrib/delta-kernel-rs` 的做法。由于不提交任何内容，也就不存在过时的问题；
+* 提交请求头，并让构建脚本将其与新生成的请求头进行比较，两者不一致时让构建失败，即 `contrib/vortex-cmake` 的做法。FFI 的两端是通过符号名链接的独立编译单元，因此只在一端修改函数签名会悄无声息地导致未定义行为，而不会产生编译错误——正是这种比较让忘记重新生成成为不可能。请保留一个用于重写已提交文件的环境变量，使更新始终只需一条命令。
+
+在向 `contrib/rust-contrib-workspace` 中的 crate 添加 `cbindgen` 之前，需要注意两点：
+
+* 精确锁定版本。其输出在补丁版本之间也会变化，因此如果版本约束较宽松，检查报告的将是生成器版本带来的差异，而非真正的差异。该版本还必须是 `contrib/rust_vendor` 中已包含的版本，否则需要重新运行 `contrib/rust-contrib-workspace/vendor.sh` 并更新子模块；
+* 使用 `Builder::with_src` 解析源文件，而不是用 `cbindgen::generate` 解析整个 crate。走 crate 路径时，cbindgen 会在嵌套进程中运行 `cargo metadata`，而该进程不会继承将 cargo 指向 vendored 源码的 `--config`。
+
+此外，对于每个兼容 C 的属性，都应使用属性 #[no&#95;mangle] 和 `extern "C"`。否则库可能会编译错误，并且 cbindgen 不会启动请求头自动生成。
 
 完成上述所有步骤后，你可以在一个小型项目中测试你的库，以找出兼容性或请求头生成方面的各种问题。如果在生成请求头时出现任何问题，可以尝试通过 `cbindgen.toml` 文件进行配置 (你可以在这里找到一个模板：[https://github.com/eqrion/cbindgen/blob/master/template.toml](https://github.com/eqrion/cbindgen/blob/master/template.toml)) 。
 
