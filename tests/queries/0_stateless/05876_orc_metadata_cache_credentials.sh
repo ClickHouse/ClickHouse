@@ -24,6 +24,7 @@ import pathlib
 import sys
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import parse_qs, urlsplit
 
 work_dir = pathlib.Path(sys.argv[1])
 deny_get = False
@@ -70,9 +71,17 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         length = int(self.headers.get('Content-Length', 0))
         self.rfile.read(length)
-        self.send_response(200)
-        self.send_header('Content-Length', '0')
-        self.end_headers()
+        query = parse_qs(urlsplit(self.path).query)
+        if query.get('query') == ['SELECT version()']:
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('X-ClickHouse-Summary', '{"read_rows":"0","read_bytes":"0"}')
+            self.send_header('Content-Length', '0')
+            self.end_headers()
+            (work_dir / 'requests.json').write_text(
+                f'{{"listing_gets": {server.listing_gets}, "data_gets": {server.data_gets}}}\n')
+        else:
+            self.send_error(400)
 
     def log_message(self, *args):
         pass
@@ -100,4 +109,12 @@ if ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM url('http://127.0.0.1:${por
     exit 1
 fi
 grep -qE '403|ACCESS_DENIED' "${work_dir}/denied.err"
+${CLICKHOUSE_CURL} -X POST --data-binary 'SELECT version()' "http://127.0.0.1:${port}/?query=SELECT%20version()" > /dev/null
+python3 - "${work_dir}/requests.json" <<'PY'
+import json
+import sys
+requests = json.load(open(sys.argv[1]))
+assert requests['listing_gets'] == 2, requests
+assert requests['data_gets'] >= 1, requests
+PY
 echo "denied"
