@@ -134,8 +134,9 @@ ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM url('http://127.0.0.1:${first_
 ${CLICKHOUSE_CLIENT} --query "SELECT count(), any(_headers['X-Method']) FROM url('http://127.0.0.1:${first_port}/headers/*.orc', 'ORC', 'id UInt64') SETTINGS use_orc_metadata_cache = 1, use_cache_for_count_from_files = 0, allow_url_wildcard_from_index_pages = 1, remote_filesystem_read_prefetch = 0"
 ${CLICKHOUSE_CLIENT} --query "SELECT count(), any(_headers['X-Method']) FROM url('http://127.0.0.1:${first_port}/headers/*.orc', 'ORC', 'id UInt64') SETTINGS use_orc_metadata_cache = 1, use_cache_for_count_from_files = 0, allow_url_wildcard_from_index_pages = 1, remote_filesystem_read_prefetch = 0"
 
+${CLICKHOUSE_CLIENT} --query "SELECT count() FROM url('http://127.0.0.1:${first_port}/redirect/*.orc', 'ORC', 'id UInt64') SETTINGS use_orc_metadata_cache = 1, use_cache_for_count_from_files = 0, use_page_cache_for_object_storage = 0, allow_url_wildcard_from_index_pages = 1, max_http_get_redirects = 1"
+
 failover_url="http://127.0.0.1:{${first_port}|${second_port}}/data/*.orc"
 ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM url('${failover_url}', 'ORC', 'id UInt64') SETTINGS use_orc_metadata_cache = 1, use_cache_for_count_from_files = 0, use_page_cache_for_object_storage = 0, allow_url_wildcard_from_index_pages = 1, http_max_tries = 1"
 ${CLICKHOUSE_CLIENT} --query "SELECT * FROM url('http://127.0.0.1:${first_port}/fail', 'RawBLOB')"
 ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM url('${failover_url}', 'ORC', 'id UInt64') SETTINGS use_orc_metadata_cache = 1, use_cache_for_count_from_files = 0, use_page_cache_for_object_storage = 0, allow_url_wildcard_from_index_pages = 1, http_max_tries = 1"
-${CLICKHOUSE_CLIENT} --query "SELECT count() FROM url('http://127.0.0.1:${first_port}/redirect/*.orc', 'ORC', 'id UInt64') SETTINGS use_orc_metadata_cache = 1, use_cache_for_count_from_files = 0, use_page_cache_for_object_storage = 0, allow_url_wildcard_from_index_pages = 1"

@@ -290,15 +290,21 @@ Map ReadBufferFromWebServer::getResponseHeaders() const
 
 std::optional<Field> ReadBufferFromWebServer::getMetadata(const String & name) const
 {
-    if (name != "headers" || !impl)
+    if (name != "headers")
         return std::nullopt;
+
+    auto * self = const_cast<ReadBufferFromWebServer *>(this);
+    if (!impl)
+    {
+        self->setReadUntilPosition(1);
+        self->impl = self->initialize();
+    }
 
     if (auto * http_buf = dynamic_cast<ReadWriteBufferFromHTTP *>(impl.get()))
         return Field(http_buf->getResponseHeaders());
 
     return std::nullopt;
 }
-
 
 off_t ReadBufferFromWebServer::seek(off_t offset_, int whence)
 {

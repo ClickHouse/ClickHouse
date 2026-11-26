@@ -2982,6 +2982,16 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
 
     auto impl = pipeline.build();
 
+    if (prepare_orc_metadata_cache && object_storage->getType() == ObjectStorageType::Web)
+    {
+        StoredObject authorization_object = stored_object;
+        authorization_object.bytes_size = StoredObject::UnknownSize;
+        auto authorization_read = object_storage->readObject(authorization_object, modified_read_settings);
+        authorization_read->setReadUntilPosition(1);
+        char authorization_byte = 0;
+        std::ignore = authorization_read->read(authorization_byte);
+    }
+
     /// For small objects prefetch the file ahead of consumption: when reading lots of tiny files
     /// this almost doubles throughput; bigger objects use parallel reading instead (`use_prefetch`
     /// already implies the object is small, see `object_too_small` above). This covers random-access

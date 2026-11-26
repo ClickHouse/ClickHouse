@@ -54,9 +54,21 @@ class Handler(BaseHTTPRequestHandler):
         else:
             self.send_error(404)
             return
-        self.send_response(200)
+        range_header = self.headers.get('Range')
+        content_range = None
+        status = 200
+        if range_header and self.path == '/data/f.orc':
+            begin_text, end_text = range_header.split('=')[1].split('-')
+            begin = int(begin_text)
+            end = min(int(end_text), len(data) - 1) if end_text else len(data) - 1
+            content_range = f'bytes {begin}-{end}/{len(data)}'
+            data = data[begin:end + 1]
+            status = 206
+        self.send_response(status)
         self.send_header('Content-Length', str(len(data)))
         self.send_header('Accept-Ranges', 'bytes')
+        if content_range:
+            self.send_header('Content-Range', content_range)
         self.send_header('ETag', '"same-etag"')
         self.end_headers()
         if include_body:
@@ -114,7 +126,7 @@ python3 - "${work_dir}/requests.json" <<'PY'
 import json
 import sys
 requests = json.load(open(sys.argv[1]))
-assert requests['listing_gets'] == 2, requests
+assert requests['listing_gets'] == 4, requests
 assert requests['data_gets'] >= 1, requests
 PY
 echo "denied"

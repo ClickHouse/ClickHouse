@@ -2235,6 +2235,18 @@ Chunk StorageFileSource::generate()
 
             chassert(file_num > 0);
 
+            /// Schema inference may hand us an already opened local file, so the usual
+            /// version initialization in the `!read_buf` branch has not happened yet.
+            if (!storage->use_table_fd && !storage->archive_info && !current_path.empty() && !current_file_cache_version)
+            {
+                const auto file_stat = getFileStat(current_path, false, -1, storage->getName());
+                current_file_size = file_stat.st_size;
+                current_file_last_modified = Poco::Timestamp::fromEpochTime(file_stat.st_mtime);
+                current_file_cache_version = computeFileCacheVersionToken(file_stat);
+                current_file_version_settled = isFileCacheVersionTokenSettled(file_stat)
+                    && fileCacheVersionTokenStillHolds(current_path, *current_file_cache_version);
+            }
+
             /// For real local files, build a synthetic RelativePathWithMetadata so the
             /// format-level metadata cache (e.g. Parquet footer cache) is reachable. The
             /// "etag" is just any version identifier the cache compares for equality — for
