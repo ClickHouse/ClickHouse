@@ -67,8 +67,10 @@ public:
 
     std::pair<ResourceRequest *, bool> dequeueRequest() override
     {
+        if (unlikely(limit_lowered))
         {
-            // The parent keeps this node active after `updateConstraints` lowers the limit below the in-flight amount
+            // The parent still counts this node active, but the lowered limit may be exceeded
+            limit_lowered = false;
             std::unique_lock lock(mutex);
             if (!satisfied())
                 return {nullptr, false};
@@ -142,6 +144,7 @@ public:
             // The parent drops this node on its next `dequeueRequest`, which returns nothing while the limit is exceeded.
             else if (was_active && !active())
             {
+                limit_lowered = true;
                 // Drop any activation a concurrent finishRequest queued under the old limit
                 cancelActivation();
                 flushThroughputOnDeactivation();
@@ -197,6 +200,9 @@ private:
     Int64 requests = 0;
     Int64 cost = 0;
     bool child_active = false;
+
+    /// Set by `updateConstraints` when it deactivates this node. Accessed only from the scheduler thread, so not under `mutex`.
+    bool limit_lowered = false;
 
     TimeSharedNodePtr child;
 };
