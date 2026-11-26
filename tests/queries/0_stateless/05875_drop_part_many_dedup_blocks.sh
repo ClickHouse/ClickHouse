@@ -12,13 +12,13 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-ZK_PATH="/clickhouse/tables/$CLICKHOUSE_DATABASE/test_05875"
+ZK_PATH="/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX"
 
 # A part with 120 deduplication blocks: 120 single-row inserts, merged.
 create_table()
 {
     $CLICKHOUSE_CLIENT --query "
-        CREATE TABLE $1 (k UInt64) ENGINE = ReplicatedMergeTree('$ZK_PATH/$1', 'r1') ORDER BY k
+        CREATE TABLE $1 (k UInt64) ENGINE = ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/$1', 'r1') ORDER BY k
         SETTINGS replicated_deduplication_window = 10000"
     insert_rows "$1"
     $CLICKHOUSE_CLIENT --query "OPTIMIZE TABLE $1 FINAL"
