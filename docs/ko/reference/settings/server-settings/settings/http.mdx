@@ -132,11 +132,11 @@ ClickHouse HTTP(s) 서버에 액세스할 때 기본으로 표시되는 페이�
 
 **예시**
 
-`http://localhost: http_port`에 액세스하면 `https://tabix.io/`가 열립니다.
+`http://localhost: http_port`에 액세스하면 내장 웹 UI(`/play`)가 열립니다.
 
 ```xml
 <http_server_default_response>
-  <![CDATA[<html ng-app="SMI2"><head><base href="http://ui.tabix.io/"></head><body><div ui-view="" class="content-ui"></div><script src="http://loader.tabix.io/master.js"></script></body></html>]]>
+  <![CDATA[<html><head><meta http-equiv="refresh" content="0; url=/play"></head><body><a href="/play">ClickHouse Web UI</a></body></html>]]>
 </http_server_default_response>
 ```
 

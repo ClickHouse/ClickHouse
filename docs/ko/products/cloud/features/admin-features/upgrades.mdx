@@ -7,8 +7,8 @@ doc_type: 'guide'
 keywords: ['업그레이드', '버전 관리', 'Cloud 기능', '유지 관리', '업데이트']
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
 import { EnterprisePlanFeatureBadge } from "/snippets/ko/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
+
 import { ScalePlanFeatureBadge } from "/snippets/ko/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
 
 ClickHouse Cloud를 사용하면 패치와 업그레이드를 따로 걱정할 필요가 없습니다. 수정 사항, 새로운 기능, 성능 개선이 포함된 업그레이드를 정기적으로 배포합니다.
@@ -29,7 +29,7 @@ ClickHouse Cloud를 사용하면 패치와 업그레이드를 따로 걱정할 �
 ClickHouse Cloud에서는 서비스 수준의 기본 `compatibility` 설정을 직접 관리할 수 없습니다. 서비스의 기본 `compatibility` 설정에 지정된 버전을 변경하려면 [ClickHouse 지원팀에 문의하십시오](https://clickhouse.com/support/program). 하지만 세션에서 `SET compatibility = '26.8'`를 사용하거나 쿼리에서 `SETTINGS [other settings,] compatibility = '26.8'`를 사용하는 등 표준 ClickHouse 설정 메커니즘을 통해 사용자, 역할, 프로필, 쿼리 또는 세션 수준에서 `compatibility` 설정을 재정의할 수 있습니다.
 
 <div id="maintenance-mode">
-  ## 유지 관리 모드
+  ## 유지 관리 모드 {#maintenance-mode}
 </div>
 
 경우에 따라 서비스를 업데이트해야 할 수 있으며, 이때 스케일링이나 유휴 상태 전환과 같은 일부 기능을 비활성화해야 할 수 있습니다. 드물게는 문제가 발생한 서비스를 정상 상태로 복구하기 위해 조치가 필요할 수도 있습니다. 이러한 유지 관리가 진행되는 동안 서비스 페이지에는 *&quot;유지 관리 진행 중&quot;* 이라는 배너가 표시됩니다. 이 시간 동안에도 서비스에서 쿼리를 사용할 수는 있습니다.
@@ -37,7 +37,7 @@ ClickHouse Cloud에서는 서비스 수준의 기본 `compatibility` 설정을 �
 서비스가 유지 관리 중인 시간에 대해서는 요금이 청구되지 않습니다. *유지 관리 모드* 는 드물게 발생하며, 일반적인 서비스 업그레이드와 혼동해서는 안 됩니다.
 
 <div id="release-channels-upgrade-schedule">
-  ## 릴리스 채널(업그레이드 일정)
+  ## 릴리스 채널(업그레이드 일정) {#release-channels-upgrade-schedule}
 </div>
 
 사용자는 특정 릴리스 채널을 구독하여 ClickHouse Cloud 서비스의 업그레이드 일정을 지정할 수 있습니다. 릴리스 채널은 3가지이며, **예약된 업그레이드** 기능을 사용해 업그레이드를 수행할 요일과 시간을 설정할 수 있습니다.
@@ -52,11 +52,11 @@ ClickHouse Cloud에서는 서비스 수준의 기본 `compatibility` 설정을 �
   Basic 티어 서비스는 자동으로 빠른 릴리스 채널에 등록됩니다
 </Note>
 
-### 빠른 릴리스 채널(조기 업그레이드) {#fast-release-channel-early-upgrades}
+### 신속 릴리스 채널(조기 업그레이드) {#fast-release-channel-early-upgrades}
 
 <ScalePlanFeatureBadge feature="The fast release channel" />
 
-일반 업그레이드 일정 외에도, 서비스가 일반 릴리스 일정에 앞서 업데이트를 받도록 하려는 경우 **빠른 릴리스 채널**을 제공합니다.
+일반 업그레이드 일정 외에도, 서비스가 일반 릴리스 일정에 앞서 업데이트를 받도록 하려는 경우 **신속 릴리스 채널**을 제공합니다.
 
 구체적으로 서비스는 다음과 같습니다:
 
@@ -66,15 +66,19 @@ ClickHouse Cloud에서는 서비스 수준의 기본 `compatibility` 설정을 �
 아래와 같이 Cloud Console에서 서비스의 릴리스 일정을 변경할 수 있습니다:
 
 <div class="eighty-percent">
-  <Image img="/images/cloud/manage/fast_release.webp" size="lg" alt="릴리스 채널 유형 선택" border />
+  <div className="ch-image-lg">
+    <Frame>
+      ![릴리스 채널 유형 선택](/images/cloud/manage/fast_release.webp)
+    </Frame>
+  </div>
 </div>
 
 <br />
 
-이 **빠른 릴리스 채널**은 중요하지 않은 환경에서 새로운 기능을 테스트하는 데 적합합니다. **엄격한 가동 시간과 안정성 요구 사항이 있는 프로덕션 워크로드에는 권장되지 않습니다.**
+이 **신속 릴리스 채널**은 중요하지 않은 환경에서 새로운 기능을 테스트하는 데 적합합니다. **엄격한 가동 시간과 안정성 요구 사항이 있는 프로덕션 워크로드에는 권장되지 않습니다.**
 
 <div id="regular-release-channel">
-  ### 정기 릴리스 채널
+  ### 정기 릴리스 채널 {#regular-release-channel}
 </div>
 
 릴리스 채널이나 업그레이드 일정이 구성되지 않은 모든 Scale 및 Enterprise 티어 서비스는 정기 릴리스 채널 릴리스의 일부로 업그레이드됩니다. 이 방식은 프로덕션 환경에 권장됩니다.
@@ -86,7 +90,7 @@ ClickHouse Cloud에서는 서비스 수준의 기본 `compatibility` 설정을 �
 </Note>
 
 <div id="slow-release-channel-deferred-upgrades">
-  ### 느린 릴리스 채널(업그레이드 지연)
+  ### 느린 릴리스 채널(업그레이드 지연) {#slow-release-channel-deferred-upgrades}
 </div>
 
 <EnterprisePlanFeatureBadge feature="느린 릴리스 채널" />
@@ -116,7 +120,11 @@ Enterprise 티어의 서비스에 대해 업그레이드 시간대를 구성할 
 업그레이드 일정을 지정할 서비스를 선택한 다음, 왼쪽 메뉴에서 `Settings`를 선택하십시오. 그런 다음 `Scheduled upgrades`까지 스크롤하십시오.
 
 <div class="eighty-percent">
-  <Image img="/images/cloud/manage/scheduled_upgrades.webp" size="lg" alt="예약된 업그레이드" border />
+  <div className="ch-image-lg">
+    <Frame>
+      ![예약된 업그레이드](/images/cloud/manage/scheduled_upgrades.webp)
+    </Frame>
+  </div>
 </div>
 
 <br />
@@ -124,7 +132,11 @@ Enterprise 티어의 서비스에 대해 업그레이드 시간대를 구성할 
 이 옵션을 선택하면 데이터베이스 및 Cloud 업그레이드에 적용할 요일과 시간대를 선택할 수 있습니다.
 
 <div class="eighty-percent">
-  <Image img="/images/cloud/manage/scheduled_upgrade_window.webp" size="lg" alt="예약된 업그레이드 시간대" border />
+  <div className="ch-image-lg">
+    <Frame>
+      ![예약된 업그레이드 시간대](/images/cloud/manage/scheduled_upgrade_window.webp)
+    </Frame>
+  </div>
 </div>
 
 <br />

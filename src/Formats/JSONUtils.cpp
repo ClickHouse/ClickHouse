@@ -40,7 +40,9 @@ namespace JSONUtils
         skipWhitespaceIfAny(in);
 
         char * pos = in.position();
-        size_t balance = 0;
+        /// Signed: a stray closing bracket in malformed input takes the depth below zero, and the
+        /// `balance == 0` test below then behaves as it did when this wrapped.
+        Int64 balance = 0;
         bool quotes = false;
         size_t number_of_rows = 0;
         bool need_more_data = true;
@@ -139,7 +141,9 @@ namespace JSONUtils
     template <const char opening_bracket, const char closing_bracket>
     void skipRowForJSONEachRowImpl(ReadBuffer & in)
     {
-        size_t balance = 0;
+        /// Signed: a stray closing bracket in malformed input takes the depth below zero, and the
+        /// `balance == 0` test below then behaves as it did when this wrapped.
+        Int64 balance = 0;
         bool quotes = false;
         while (!in.eof())
         {
@@ -216,13 +220,17 @@ namespace JSONUtils
         skipRowForJSONEachRowImpl<'[', ']'>(in);
     }
 
-    NamesAndTypesList readRowAndGetNamesAndDataTypesForJSONEachRow(ReadBuffer & in, const FormatSettings & settings, JSONInferenceInfo * inference_info)
+    NamesAndTypesList readRowAndGetNamesAndDataTypesForJSONEachRow(
+        ReadBuffer & in, const FormatSettings & settings, JSONInferenceInfo * inference_info, const String & name_read_before)
     {
         skipWhitespaceIfAny(in);
         assertChar('{', in);
         skipWhitespaceIfAny(in);
         bool first = true;
         NamesAndTypesList names_and_types;
+        NameSet row_field_names;
+        const String name_read_before_key
+            = settings.skip_duplicated_fields ? getColumnMatchingKeyForSchemaInference(name_read_before, settings) : String{};
         const size_t row_start_bytes = in.count();
         while (!in.eof() && *in.position() != '}')
         {
@@ -232,8 +240,20 @@ namespace JSONUtils
                 first = false;
 
             auto name = readFieldName(in, settings.json);
-            auto type = tryInferDataTypeForSingleJSONField(in, settings, inference_info);
-            names_and_types.emplace_back(name, type);
+            const String key = settings.skip_duplicated_fields ? getColumnMatchingKeyForSchemaInference(name, settings) : String{};
+            if (settings.skip_duplicated_fields && !row_field_names.insert(key).second)
+            {
+                skipJSONField(in, name, settings.json);
+            }
+            else if (settings.skip_duplicated_fields && !name_read_before.empty() && key == name_read_before_key)
+            {
+                skipJSONField(in, name, settings.json);
+                names_and_types.emplace_back(name, nullptr);
+            }
+            else
+            {
+                names_and_types.emplace_back(name, tryInferDataTypeForSingleJSONField(in, settings, inference_info));
+            }
             skipWhitespaceIfAny(in);
 
             if (settings.json.max_row_size_for_json_each_row
@@ -319,30 +339,33 @@ namespace JSONUtils
 
                 if (format_settings.json.empty_as_default && str.empty())
                 {
-                    column.insertDefault();
+                    if (type->isDefaultInsertTrivial())
+                        column.insertDefault();
+                    else
+                        type->insertDefaultInto(column);
                     return false;
                 }
 
                 ReadBufferFromString buf(str);
 
                 if (as_nullable)
-                    return SerializationNullable::deserializeNullAsDefaultOrNestedWholeText(column, buf, format_settings, serialization);
+                    return SerializationNullable::deserializeNullAsDefaultOrNestedWholeText(column, buf, format_settings, serialization, type.get());
 
                 serialization->deserializeWholeText(column, buf, format_settings);
                 return true;
             }
 
-            auto deserialize = [as_nullable, &format_settings, &serialization](IColumn & column_, ReadBuffer & buf) -> bool
+            auto deserialize = [as_nullable, &format_settings, &serialization, &type](IColumn & column_, ReadBuffer & buf) -> bool
             {
                 if (as_nullable)
-                    return SerializationNullable::deserializeNullAsDefaultOrNestedTextJSON(column_, buf, format_settings, serialization);
+                    return SerializationNullable::deserializeNullAsDefaultOrNestedTextJSON(column_, buf, format_settings, serialization, type.get());
 
                 serialization->deserializeTextJSON(column_, buf, format_settings);
                 return true;
             };
 
             if (format_settings.json.empty_as_default)
-                return JSONUtils::deserializeEmpyStringAsDefaultOrNested<bool, false>(column, in, deserialize);
+                return JSONUtils::deserializeEmpyStringAsDefaultOrNested<bool, false>(column, in, deserialize, type.get());
             return deserialize(column, in);
         }
         catch (Exception & e)
@@ -591,7 +614,7 @@ namespace JSONUtils
         writeJSONString(exception_message, out, settings);
     }
 
-    Strings makeNamesValidJSONStrings(const Strings & names, const FormatSettings & settings, bool validate_utf8)
+    Strings makeNamesValidJSONStrings(std::span<const String> names, const FormatSettings & settings, bool validate_utf8)
     {
         Strings result;
         result.reserve(names.size());
@@ -997,7 +1020,7 @@ namespace JSONUtils
     }
 
     template <typename ReturnType, bool default_column_return_value>
-    ReturnType deserializeEmpyStringAsDefaultOrNested(IColumn & column, ReadBuffer & istr, const NestedDeserialize<ReturnType> & deserialize_nested)
+    ReturnType deserializeEmpyStringAsDefaultOrNested(IColumn & column, ReadBuffer & istr, const NestedDeserialize<ReturnType> & deserialize_nested, const IDataType * type)
     {
         static constexpr auto throw_exception = std::is_same_v<ReturnType, void>;
 
@@ -1007,11 +1030,14 @@ namespace JSONUtils
         if (istr.eof() || *istr.position() != EMPTY_STRING[0])
             return deserialize_nested(column, istr);
 
-        auto do_deserialize = [](IColumn & column_, ReadBuffer & buf, auto && check_for_empty_string, auto && deserialize) -> ReturnType
+        auto do_deserialize = [type](IColumn & column_, ReadBuffer & buf, auto && check_for_empty_string, auto && deserialize) -> ReturnType
         {
             if (check_for_empty_string(buf))
             {
-                column_.insertDefault();
+                if (type && !type->isDefaultInsertTrivial())
+                    type->insertDefaultInto(column_);
+                else
+                    column_.insertDefault();
                 return ReturnType(default_column_return_value);
             }
             return deserialize(column_, buf);
@@ -1065,9 +1091,9 @@ namespace JSONUtils
         return do_deserialize(column, peekable_buf, check_for_empty_string, deserialize_nested_with_check);
     }
 
-    template void deserializeEmpyStringAsDefaultOrNested<void, true>(IColumn & column, ReadBuffer & istr, const NestedDeserialize<void> & deserialize_nested);
-    template bool deserializeEmpyStringAsDefaultOrNested<bool, true>(IColumn & column, ReadBuffer & istr, const NestedDeserialize<bool> & deserialize_nested);
-    template bool deserializeEmpyStringAsDefaultOrNested<bool, false>(IColumn & column, ReadBuffer & istr, const NestedDeserialize<bool> & deserialize_nested);
+    template void deserializeEmpyStringAsDefaultOrNested<void, true>(IColumn & column, ReadBuffer & istr, const NestedDeserialize<void> & deserialize_nested, const IDataType * type);
+    template bool deserializeEmpyStringAsDefaultOrNested<bool, true>(IColumn & column, ReadBuffer & istr, const NestedDeserialize<bool> & deserialize_nested, const IDataType * type);
+    template bool deserializeEmpyStringAsDefaultOrNested<bool, false>(IColumn & column, ReadBuffer & istr, const NestedDeserialize<bool> & deserialize_nested, const IDataType * type);
 }
 
 }

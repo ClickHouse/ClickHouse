@@ -1,0 +1,6 @@
+token: first
+config in /tmp: profile
+unrelated file in /tmp: hidden
+/tmp is writable: yes
+rotated token: second
+.aws in the home directory without HOME: visible

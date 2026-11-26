@@ -20,6 +20,7 @@
 #include <Interpreters/BlobStorageLog.h>
 #include <Interpreters/Context.h>
 #include <base/scope_guard.h>
+#include <base/sleep.h>
 #include <Common/BlobStorageLogWriter.h>
 #include <Common/ObjectStorageKeyGenerator.h>
 #include <Common/StackTrace.h>
@@ -39,6 +40,7 @@ namespace FailPoints
 {
     extern const char local_object_storage_network_error_during_remove[];
     extern const char local_object_storage_network_error_during_every_remove[];
+    extern const char local_object_storage_slow_response[];
 }
 
 namespace ErrorCodes
@@ -60,6 +62,9 @@ namespace ErrorCodes
 
 namespace
 {
+
+/// Delay each enabled local object-storage operation in the synthetic-IO performance tests.
+constexpr UInt64 simulated_io_latency_ms = 20;
 
 struct timespec getMTime(const struct stat & file_stat)
 {
@@ -180,6 +185,7 @@ String LocalObjectStorage::resolvePathRelativelyToKeyPrefix(const String & path)
 bool LocalObjectStorage::exists(const StoredObject & object) const
 {
     std::shared_lock lock(directories_mutex);
+    fiu_do_on(FailPoints::local_object_storage_slow_response, { sleepForMilliseconds(simulated_io_latency_ms); });
     auto resolved_path = resolvePathRelativelyToKeyPrefix(object.remote_path);
     return fs::exists(resolved_path);
 }
@@ -576,6 +582,9 @@ std::unique_ptr<ReadBufferFromFileBase> LocalObjectStorage::readObject( /// NOLI
     bool /* restrict_seek */) const
 {
     std::shared_lock lock(directories_mutex);
+    /// Simulated per-request latency of a slow store, the GET analogue.
+    fiu_do_on(FailPoints::local_object_storage_slow_response, { sleepForMilliseconds(simulated_io_latency_ms); });
+
     auto resolved_path = resolvePathRelativelyToKeyPrefix(object.remote_path);
     LOG_TEST(log, "Read object: {}", resolved_path);
     auto buf = createReadBufferFromFileBase(resolved_path, patchSettings(read_settings), read_hint);
@@ -608,6 +617,9 @@ std::unique_ptr<WriteBufferFromFileBase> LocalObjectStorage::writeObject( /// NO
 
     /// Held until the file is created below, so that `removeObject` cannot prune the directory in the meantime.
     std::shared_lock lock(directories_mutex);
+    /// Simulated per-request latency of a slow store, the PUT analogue (once at buffer creation = one upload).
+    fiu_do_on(FailPoints::local_object_storage_slow_response, { sleepForMilliseconds(simulated_io_latency_ms); });
+
     auto resolved_path = resolvePathRelativelyToKeyPrefix(object.remote_path);
     LOG_TEST(log, "Write object: {}", resolved_path);
 
@@ -673,6 +685,9 @@ std::unique_ptr<WriteBufferFromFileBase> LocalObjectStorage::writeObject( /// NO
 void LocalObjectStorage::removeObject(const StoredObject & object) const
 {
     throwIfReadonly();
+
+    /// Simulated per-request latency of a slow store, the DELETE analogue (one per object, before the exclusive lock).
+    fiu_do_on(FailPoints::local_object_storage_slow_response, { sleepForMilliseconds(simulated_io_latency_ms); });
 
     /// Exclusive: see `directories_mutex`.
     std::unique_lock lock(directories_mutex);
@@ -781,6 +796,9 @@ void LocalObjectStorage::removeObjectsIfExist( /// NOLINT
 
 std::optional<ObjectMetadata> LocalObjectStorage::tryGetObjectMetadata(const std::string & path, bool) const
 {
+    /// Simulated per-request latency of a slow store, the HEAD analogue (not in `tryStatResolvedPath`, so `listObjects` pays LIST once, not per entry).
+    fiu_do_on(FailPoints::local_object_storage_slow_response, { sleepForMilliseconds(simulated_io_latency_ms); });
+
     /// The same path resolution and the same metadata builder as `getObjectMetadata`:
     /// this method only differs from it in tolerating an object that does not exist,
     /// so a caller must not be able to observe a different file or a differently
@@ -799,6 +817,9 @@ SmallObjectDataWithMetadata LocalObjectStorage::readSmallObjectAndGetObjectMetad
     std::optional<size_t>) const
 {
     std::shared_lock lock(directories_mutex);
+    /// Simulated per-request latency of a slow store, a GET (the version-hint CAS read), same class as `readObject`.
+    fiu_do_on(FailPoints::local_object_storage_slow_response, { sleepForMilliseconds(simulated_io_latency_ms); });
+
     auto resolved_path = resolvePathRelativelyToKeyPrefix(object.remote_path);
     LOG_TEST(log, "Read small object: {}", resolved_path);
 
@@ -842,6 +863,9 @@ SmallObjectDataWithMetadata LocalObjectStorage::readSmallObjectAndGetObjectMetad
 ObjectMetadata LocalObjectStorage::getObjectMetadata(const std::string & path, bool) const
 {
     std::shared_lock lock(directories_mutex);
+    /// Simulated per-request latency of a slow store, the HEAD analogue.
+    fiu_do_on(FailPoints::local_object_storage_slow_response, { sleepForMilliseconds(simulated_io_latency_ms); });
+
     auto resolved_path = resolvePathRelativelyToKeyPrefix(path);
     LOG_TEST(log, "Getting metadata for path: {}", resolved_path);
 
@@ -867,6 +891,9 @@ ObjectMetadata LocalObjectStorage::getObjectMetadata(const std::string & path, b
 
 void LocalObjectStorage::listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t/* max_keys */) const
 {
+    /// Simulated per-request latency of a slow store, the LIST analogue (one sleep per call, not per listed entry).
+    fiu_do_on(FailPoints::local_object_storage_slow_response, { sleepForMilliseconds(simulated_io_latency_ms); });
+
     /// A path with an embedded NUL is malformed: libc truncates every syscall
     /// argument at the NUL while our `std::string`/`fs::path` keep the full
     /// value, so the traversal below would re-open the same truncated directory

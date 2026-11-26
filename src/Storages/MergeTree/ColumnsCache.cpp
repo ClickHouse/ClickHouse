@@ -48,13 +48,15 @@ String getColumnsCachePartName(const String & part_name, const String & parent_p
     return parent_part_name + ":" + part_name;
 }
 
-UInt128 getColumnsCacheColumnIdentity(const UUID & table_uuid, const String & part_name, const String & column_name, UInt64 schema_identity)
+UInt128 getColumnsCacheColumnIdentity(
+    const UUID & table_uuid, const String & part_name, const String & column_name, UInt64 schema_identity, const String & name_in_part)
 {
     SipHash hash;
     hash.update(table_uuid);
     hash.update(part_name);
     hash.update(column_name);
     hash.update(schema_identity);
+    hash.update(name_in_part);
     return hash.get128();
 }
 
@@ -62,7 +64,7 @@ namespace
 {
 
 /// The server-owned columns of entries that are gone while a query still holds the column: an entry
-/// served whole shares its column with the read, see `MergeTreeReaderWide::serveRowsFromColumnsCache`.
+/// served whole shares its column with the read, see `IMergeTreeReader::serveRowsFromColumnsCacheEntry`.
 /// The memory has to be released under `MemoryTrackerBlockerInThread`, and the query would release it
 /// unblocked when it drops its reference, so the column is kept here until the query is done with it.
 /// Never destroyed: an entry can outlive every static.
@@ -318,7 +320,7 @@ ColumnsCache::MappedPtr ColumnsCache::mergeEntries(const MappedPtr & existing, c
     /// The two runs can hold the same rows in different representations: the accumulated copy
     /// of a read is a clone of the column the read produced, and the same column of the same
     /// part is a `ColumnSparse` under one set of settings and a full column under another, which
-    /// is why `MergeTreeReaderWide::serveRowsFromColumnsCache` normalizes the serve path as well.
+    /// is why `IMergeTreeReader::serveRowsFromColumnsCacheEntry` normalizes the serve path as well.
     /// A sparse destination takes rows from a full source, but a full one cannot take them from
     /// a `ColumnSparse`, so make the source full when the destination is not sparse.
     ColumnPtr incoming_column = incoming->column;
@@ -687,8 +689,7 @@ void ColumnsCache::removePart(const UUID & table_uuid, const String & part_name)
     /// The memory of the cache is the server's, see `setMany`.
     MemoryTrackerBlockerInThread not_charged_to_query_or_user;
 
-    /// No invalidation stamp is advanced here, see the declaration: the part is removed from
-    /// the cache only once no reader can hold it, so there is no deferred write to reject.
+    /// No invalidation stamp is advanced here, see the declaration.
     std::vector<Key> keys_to_remove;
     {
         std::lock_guard lock(index_mutex);

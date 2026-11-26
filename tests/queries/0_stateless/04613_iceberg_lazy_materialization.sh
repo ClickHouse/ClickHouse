@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
+# Tags: no-fasttest, no-parallel-replicas
 # - no-fasttest: requires `IcebergLocal` (USE_AVRO build option)
+# - no-parallel-replicas: asserts on the query plan, which with parallel replicas reads the table with `ReadFromCluster`
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
