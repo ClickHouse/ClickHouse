@@ -1205,18 +1205,16 @@ void MergeTreeReaderWide::registerReadRanges()
         return;
 
     ProfileEventTimeIncrement<Time::Nanoseconds> watch(ProfileEvents::RuntimeDataflowStatisticsInputNanoseconds);
-    size_t bytes = 0;
     streams.forEachRangesRead([&](const String & stream_name, FileStreams::RangesRead & stream_ranges)
     {
         if (stream_ranges.ranges.empty())
             return;
         /// By the file the stream reads, as the other readers name theirs: a stream name can be that of another file.
         if (!stream_ranges.read_ranges)
-            stream_ranges.read_ranges = &read_ranges_registry->getReadRanges(
+            stream_ranges.read_ranges = read_ranges_registry->getReadRanges(
                 data_part_info_for_read->getDataPartStorage()->getFullPath() + "/" + stream_name + DATA_FILE_EXTENSION);
-        bytes += read_ranges_registry->registerRanges(*stream_ranges.read_ranges, stream_ranges.ranges);
+        read_ranges_registry->registerRanges(stream_ranges.read_ranges, stream_ranges.ranges);
     });
-    read_ranges_registry->commit(bytes);
 
     if (read_ranges_registry->stopped())
     {

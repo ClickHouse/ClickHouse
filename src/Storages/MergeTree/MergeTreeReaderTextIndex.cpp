@@ -698,19 +698,17 @@ void MergeTreeReaderTextIndex::registerReadRanges()
     if (positions_stream)
         positions_stream->recordBytesConsumed();
 
-    size_t bytes = 0;
     auto register_file = [&](FileRangesRead & file)
     {
         if (file.ranges.empty())
             return;
         if (!file.read_ranges)
-            file.read_ranges = &read_ranges_registry->getReadRanges(
+            file.read_ranges = read_ranges_registry->getReadRanges(
                 data_part_info_for_read->getDataPartStorage()->getFullPath() + "/" + file.file_name);
-        bytes += read_ranges_registry->registerRanges(*file.read_ranges, file.ranges);
+        read_ranges_registry->registerRanges(file.read_ranges, file.ranges);
     };
     register_file(postings_ranges_read);
     register_file(positions_ranges_read);
-    read_ranges_registry->commit(bytes);
 
     if (read_ranges_registry->stopped())
     {
