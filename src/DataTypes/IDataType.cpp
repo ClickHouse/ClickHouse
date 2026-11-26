@@ -121,15 +121,14 @@ MutableColumnPtr IDataType::createUninitializedColumnWithSize(size_t size) const
 
 MutableColumnPtr IDataType::createColumn(const ISerialization & serialization) const
 {
-    /// Let the serialization wrap the base column into the layout it deserializes into: ColumnSparse for the
-    /// Sparse kind, ColumnReplicated for Replicated, ColumnBLOB for Detached, and any custom wrapping such as
-    /// the ColumnConst produced by the quantized-vector codebook serialization.
-    return serialization.wrapColumnForDeserialization(createColumn());
+    return serialization.createColumnForDeserialization(*this);
 }
 
 MutableColumnConstPtr IDataType::createColumnConst(size_t size, const Field & field) const
 {
     auto column = createColumn();
+    /// The first push_back into an empty PODArray allocates 4 KiB; a constant needs one row.
+    column->reserve(1);
     column->insert(field);
     return ColumnConst::create(std::move(column), size);
 }
@@ -184,12 +183,12 @@ std::unique_ptr<IDataType::SubcolumnInfo> wrapDynamicSubcolumn(
                 creator = std::move(specialized);
         }
 
-        /// Build the serialization before the type is wrapped, so that a creator
+        /// Build the serialization and the column before the type is wrapped, so that a creator
         /// inspecting its prev_type argument sees the type the serialization
         /// actually serializes. Same order as in ISerialization::createFromPath.
         dynamic_subcolumn_info->data.serialization = creator->create(dynamic_subcolumn_info->data.serialization, dynamic_subcolumn_info->data.type);
+        dynamic_subcolumn_info->data.column = creator->create(dynamic_subcolumn_info->data.column, dynamic_subcolumn_info->data.type);
         dynamic_subcolumn_info->data.type = creator->create(dynamic_subcolumn_info->data.type);
-        dynamic_subcolumn_info->data.column = creator->create(dynamic_subcolumn_info->data.column);
     }
 
     path[i].data = dynamic_subcolumn_info->data;

@@ -1,3 +1,5 @@
+#include "config.h"
+
 #include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/QueryPlan/BuildRuntimeFilterStep.h>
 
@@ -8,16 +10,31 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionsMiscellaneous.h>
 #include <Functions/IFunction.h>
+#include <Interpreters/JoinUtils.h>
+#include <Processors/QueryPlan/AggregatingStep.h>
+#include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
+#include <Processors/QueryPlan/LazyReadReplacingFinalStep.h>
+#include <Processors/QueryPlan/LimitByStep.h>
+#include <Processors/QueryPlan/LimitStep.h>
+#include <Processors/QueryPlan/MergingAggregatedStep.h>
+#include <Processors/QueryPlan/OffsetStep.h>
+#include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
+#include <Processors/QueryPlan/ReadFromQueryResultCacheStep.h>
+#include <Processors/QueryPlan/ReadFromRemote.h>
+#include <Processors/QueryPlan/SortingStep.h>
+#include <Processors/QueryPlan/TotalsHavingStep.h>
+#include <Storages/StorageMerge.h>
 
 #include <algorithm>
 #include <optional>
-#include <unordered_set>
 #include <utility>
-#include <vector>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB::ErrorCodes
 {
@@ -79,6 +96,40 @@ FilterResult getFilterResult(const ColumnWithTypeAndName & column)
     return column.column->getBool(0) ? FilterResult::TRUE : FilterResult::FALSE;
 }
 
+bool canProduceTotals(QueryPlan::Node & root)
+{
+    VectorWithMemoryTracking<QueryPlan::Node *> stack{&root};
+    while (!stack.empty())
+    {
+        auto * node = stack.back();
+        stack.pop_back();
+        auto * step = node->step.get();
+
+        /// `ReadFromMerge` builds its nested plans when asked, so it is not asked and is assumed to produce totals.
+        if (typeid_cast<const TotalsHavingStep *>(step) || typeid_cast<const ReadFromMerge *>(step))
+            return true;
+        if (const auto * remote = typeid_cast<const ReadFromRemote *>(step); remote && remote->hasTotals())
+            return true;
+        if (const auto * cache = typeid_cast<const ReadFromQueryResultCacheStep *>(step); cache && cache->hasTotals())
+            return true;
+
+        /// An aggregation drops the totals of its input.
+        if (typeid_cast<const AggregatingStep *>(step) || typeid_cast<const MergingAggregatedStep *>(step))
+            continue;
+
+        for (auto * child : node->children)
+            stack.push_back(child);
+
+        /// `LazyReadReplacingFinalStep` builds its nested plan when asked; it reads one source without totals.
+        if (typeid_cast<const LazyReadReplacingFinalStep *>(step))
+            continue;
+        for (auto * child_plan : step->getChildPlans(/*for_explain=*/ false))
+            if (child_plan)
+                stack.push_back(child_plan->getRootNode());
+    }
+    return false;
+}
+
 static bool isNotReadySetColumn(const ActionsDAG::Node & node)
 {
     if (node.type != ActionsDAG::ActionType::COLUMN || !node.column)
@@ -136,6 +187,62 @@ bool dagContainsNonDeterministicFunction(const ActionsDAG & dag)
     return false;
 }
 
+namespace
+{
+
+/// True when the function does not read the value stored under a null map.
+bool valueUnderNullMapIsNotRead(const IFunctionBase & function)
+{
+    /// `allNodeFunctions` carries a predicate to a lambda's wrapper but not into its body.
+    if (const auto * expression = typeid_cast<const FunctionExpression *>(&function))
+        return !dagReadsUnspecifiedValueUnderNull(expression->getAcionsDAG());
+    if (const auto * capture = typeid_cast<const FunctionCapture *>(&function))
+        return !dagReadsUnspecifiedValueUnderNull(capture->getAcionsDAG());
+#if USE_EMBEDDED_COMPILER
+    /// A JIT-compiled expression is named after its dump, not after the functions compiled into it.
+    if (const auto * compiled = ActionsDAG::getCompiledFunctions(function))
+        return std::ranges::all_of(*compiled, [](const FunctionBasePtr & nested) { return valueUnderNullMapIsNotRead(*nested); });
+#endif
+
+    if (function.getName() != "assumeNotNull")
+        return true;
+
+    /// `LowCardinality(Nullable(T))` keeps every NULL at the dictionary entry holding the type default,
+    /// so there the value is the same one a constant fold produces; only plain `Nullable(T)` can differ.
+    const auto & argument_types = function.getArgumentTypes();
+    return argument_types.empty() || !argument_types.front()->isNullable();
+}
+
+}
+
+bool nodeReadsUnspecifiedValueUnderNull(const ActionsDAG::Node * root)
+{
+    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> visited;
+    VectorWithMemoryTracking<const ActionsDAG::Node *> stack{root};
+    while (!stack.empty())
+    {
+        const auto * node = stack.back();
+        stack.pop_back();
+        if (!visited.insert(node).second)
+            continue;
+        if (!allNodeFunctions(*node, valueUnderNullMapIsNotRead))
+            return true;
+        stack.insert(stack.end(), node->children.begin(), node->children.end());
+    }
+    return false;
+}
+
+bool dagReadsUnspecifiedValueUnderNull(const ActionsDAG & dag)
+{
+    /// `assumeNotNull` returns the value stored under the null map, and for a NULL that value is
+    /// unspecified: a constant fold leaves the nested type default there, while a per-row evaluation
+    /// leaves whatever the computation produced.
+    for (const auto & node : dag.getNodes())
+        if (!allNodeFunctions(node, valueUnderNullMapIsNotRead))
+            return true;
+    return false;
+}
+
 bool isSensitiveToEvaluationCount(const ActionsDAG & dag)
 {
     auto is_insensitive = [](const IFunctionBase & function)
@@ -162,8 +269,8 @@ namespace
 template <typename IsMarkedInput>
 NameSet outputsReadingMarkedInputs(const ActionsDAG & dag, IsMarkedInput && is_marked_input)
 {
-    std::unordered_map<const ActionsDAG::Node *, bool> marked;
-    std::vector<std::pair<const ActionsDAG::Node *, bool>> stack;
+    UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, bool> marked;
+    VectorWithMemoryTracking<std::pair<const ActionsDAG::Node *, bool>> stack;
     for (const auto * output : dag.getOutputs())
         stack.emplace_back(output, false);
 
@@ -212,8 +319,8 @@ ConstantColumns collectConstantColumns(const QueryPlan::Node & root)
         return it == result.end() ? no_columns : it->second;
     };
 
-    std::unordered_set<const QueryPlan::Node *> visited;
-    std::vector<std::pair<const QueryPlan::Node *, bool>> stack{{&root, false}};
+    UnorderedSetWithMemoryTracking<const QueryPlan::Node *> visited;
+    VectorWithMemoryTracking<std::pair<const QueryPlan::Node *, bool>> stack{{&root, false}};
     while (!stack.empty())
     {
         auto [node, expanded] = stack.back();
@@ -409,6 +516,14 @@ FilterResult filterResultForNotMatchedRows(
     if (conjunction_atoms.size() > 1)
         targets.insert(targets.end(), conjunction_atoms.begin(), conjunction_atoms.end());
 
+    /// The dry run below models this side's inputs as constants, so a subexpression that is per-row at
+    /// runtime becomes constant and takes `IFunction`'s constant-NULL short circuit, which never computes
+    /// the value under the null map that `assumeNotNull` goes on to return.
+    std::erase_if(targets, nodeReadsUnspecifiedValueUnderNull);
+    if (targets.empty())
+        return FilterResult::UNKNOWN;
+    const bool whole_filter_evaluated = targets.front() == filter_node;
+
     ColumnsWithTypeAndName filter_output;
     try
     {
@@ -425,14 +540,17 @@ FilterResult filterResultForNotMatchedRows(
         return FilterResult::UNKNOWN;
     }
 
-    if (auto result = getFilterResult(filter_output[0]); result != FilterResult::UNKNOWN)
-        return result;
+    if (whole_filter_evaluated)
+    {
+        if (auto result = getFilterResult(filter_output[0]); result != FilterResult::UNKNOWN)
+            return result;
+    }
 
     /// In filter context NULL is equivalent to false, but `and` with a constant NULL argument
     /// does not fold to a constant: the result is 0 or NULL depending on the other arguments
     /// (e.g. `NULL = 42 AND <unknown>`).
     /// Both are falsy, so if any conjunction atom is a falsy constant, the filter cannot pass.
-    for (size_t i = 1; i < filter_output.size(); ++i)
+    for (size_t i = whole_filter_evaluated ? 1 : 0; i < filter_output.size(); ++i)
     {
         if (getFilterResult(filter_output[i]) == FilterResult::FALSE)
             return FilterResult::FALSE;
@@ -452,6 +570,122 @@ const ReadFromMergeTree * findMergeTreeRead(const QueryPlan::Node * node)
         node = node->children.front();
     }
     return nullptr;
+}
+
+bool isPreparedJoinStorage(const QueryPlan::Node & side_node)
+{
+    /// Earlier passes, such as filter push-down, can put single-child steps above the lookup.
+    for (const auto * node = &side_node;; node = node->children.front())
+    {
+        if (auto * lookup = typeid_cast<JoinStepLogicalLookup *>(node->step.get()))
+            return static_cast<bool>(lookup->getPreparedJoinStorage());
+        if (node->children.size() != 1)
+            return false;
+    }
+}
+
+/// Adds the inputs that the value of `node` determines: those it is an alias or an injective function of.
+static void collectDeterminedInputs(const ActionsDAG::Node * node, NameSet & inputs)
+{
+    ActionsDAG::NodeRawConstPtrs stack{node};
+    while (!stack.empty())
+    {
+        node = stack.back();
+        stack.pop_back();
+
+        if (node->type == ActionsDAG::ActionType::INPUT)
+            inputs.insert(node->result_name);
+        else if (node->type == ActionsDAG::ActionType::ALIAS
+            || (node->type == ActionsDAG::ActionType::FUNCTION && node->function_base->isInjective(getFunctionArgumentColumns(*node))))
+            stack.insert(stack.end(), node->children.begin(), node->children.end());
+    }
+}
+
+bool isUniqueByColumns(const QueryPlan::Node & root, NameSet columns)
+{
+    const auto has_all = [&](const Names & names)
+    {
+        return std::ranges::all_of(names, [&](const auto & name) { return columns.contains(name); });
+    };
+
+    for (const auto * node = &root;; node = node->children.front())
+    {
+        const auto * step = node->step.get();
+
+        /// An aggregation outputs one row per value of its keys, unless it is to be finished by another step:
+        /// by the initiator of a distributed query, or by `ROLLUP`, `CUBE` and `WITH TOTALS`.
+        if (const auto * aggregating = typeid_cast<const AggregatingStep *>(step))
+            return aggregating->isFinal() && !aggregating->isGroupingSets() && has_all(aggregating->getParams().keys);
+
+        /// The other steps looked through only drop or reorder rows, some leaving them unique on the way.
+        const ActionsDAG * expression = nullptr;
+        if (const auto * distinct = typeid_cast<const DistinctStep *>(step))
+        {
+            if (!distinct->isPreliminary() && has_all(distinct->getColumnNames()))
+                return true;
+        }
+        else if (const auto * limit_by = typeid_cast<const LimitByStep *>(step))
+        {
+            if (limit_by->getGroupLength() <= 1 && has_all(limit_by->getColumns()))
+                return true;
+        }
+        else if (const auto * limit = typeid_cast<const LimitStep *>(step))
+        {
+            if (limit->getLimit() <= 1 && !limit->withTies())
+                return true;
+        }
+        else if (const auto * expression_step = typeid_cast<const ExpressionStep *>(step))
+            expression = &expression_step->getExpression();
+        else if (const auto * filter_step = typeid_cast<const FilterStep *>(step))
+            expression = &filter_step->getExpression();
+        else if (!typeid_cast<const SortingStep *>(step) && !typeid_cast<const OffsetStep *>(step))
+            return false;
+
+        if (!expression)
+            continue;
+
+        if (expression->hasArrayJoin())
+            return false;
+
+        /// Rows that differ in the inputs determined by `columns` differ in `columns`. A column that is not
+        /// an output of the expression passes through it.
+        NameSet determined_inputs;
+        for (const auto * output : expression->getOutputs())
+            if (columns.erase(output->result_name))
+                collectDeterminedInputs(output, determined_inputs);
+        determined_inputs.merge(columns);
+        columns = std::move(determined_inputs);
+    }
+}
+
+bool matchesAtMostOneRow(const JoinStepLogical & join, const QueryPlan::Node & side_node, JoinTableSide side)
+{
+    const auto is_from = [](const JoinActionRef & operand, JoinTableSide operand_side)
+    {
+        return operand_side == JoinTableSide::Left ? operand.fromLeft() : operand.fromRight();
+    };
+    const auto other_side = side == JoinTableSide::Left ? JoinTableSide::Right : JoinTableSide::Left;
+
+    /// Any other condition only rejects a match.
+    NameSet key_columns;
+    for (const auto & predicate : join.getJoinOperator().expression)
+    {
+        auto [op, lhs, rhs] = predicate.asBinaryPredicate();
+        if (op != JoinConditionOperator::Equals && op != JoinConditionOperator::NullSafeEquals)
+            continue;
+
+        if (is_from(rhs, side))
+            std::swap(lhs, rhs);
+        if (!is_from(lhs, side) || !is_from(rhs, other_side))
+            continue;
+
+        /// A key that the join does not compare exactly, such as a `FixedString` with a `String`, matches
+        /// several values that the side tells apart (`'a'` and `'a\0\0'`).
+        if (JoinCommon::isExactJoinKeyEquality(lhs.getType(), rhs.getType()))
+            collectDeterminedInputs(lhs.getNode(), key_columns);
+    }
+
+    return isUniqueByColumns(side_node, std::move(key_columns));
 }
 
 bool peelPassThroughExpressions(QueryPlan::Node *& node, SortDescription & description, size_t max_peel)

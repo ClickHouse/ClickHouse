@@ -6,19 +6,15 @@ tags: ['Ingestion de données']
 keywords: ['Kafka']
 ---
 
-<div id="overview">
-  ## Vue d’ensemble
-</div>
+## Vue d’ensemble {#overview}
 
-Cet article décrit le processus d’envoi de données d’un topic Kafka vers une table ClickHouse. Nous utiliserons le flux des modifications récentes de Wikimedia, qui fournit un [flux d’événements](https://stream.wikimedia.org/v2/stream/recentchange) représentant les changements apportés à différents projets Wikimedia. Les étapes sont les suivantes :
+Cet article décrit le processus d’envoi de données d’un topic Kafka vers une table ClickHouse. Nous utiliserons le flux des modifications récentes de Wikimedia, qui fournit un [flux d’événements](https://stream.wikimedia.org/v2/stream/recentchange) représentant les changements apportés à différents projets Wikimedia. Les étapes sont les suivantes :
 
 1. Comment configurer Kafka sur Ubuntu
 2. Ingérer un flux de données dans un topic Kafka
 3. Créer une table ClickHouse qui s’abonne au topic
 
-<div id="1-setup-kafka-on-ubuntu">
-  # 1. Configurer Kafka sur Ubuntu
-</div>
+# 1. Configurer Kafka sur Ubuntu {#1-setup-kafka-on-ubuntu}
 
 1. Créez une instance **ec2** sous Ubuntu et connectez-vous-y en SSH :
 
@@ -70,9 +66,7 @@ bin/kafka-topics.sh --create --topic wikimedia --bootstrap-server localhost:9092
 bin/kafka-topics.sh --list --bootstrap-server localhost:9092
 ```
 
-<div id="2-ingest-the-wikimedia-stream-into-kafka">
-  # 2. Ingérer le flux Wikimedia dans Kafka
-</div>
+# 2. Ingérer le flux Wikimedia dans Kafka {#2-ingest-the-wikimedia-stream-into-kafka}
 
 1. Nous avons d’abord besoin de quelques utilitaires :
 
@@ -101,9 +95,7 @@ bin/kafka-console-consumer.sh --topic wikimedia --from-beginning --bootstrap-ser
 
 5. Appuyez sur **Ctrl+c** pour interrompre la commande précédente.
 
-<div id="3-ingest-the-data-into-clickhouse">
-  # 3. Ingérez les données dans ClickHouse
-</div>
+# 3. Ingérez les données dans ClickHouse {#3-ingest-the-data-into-clickhouse}
 
 1. Voici à quoi ressemblent les données reçues :
 

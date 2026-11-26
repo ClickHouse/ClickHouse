@@ -17,12 +17,12 @@ doc_type: 'reference'
 ```sql
 percent_rank ()
   OVER ([[PARTITION BY grouping_column] [ORDER BY sorting_column]
-        [RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING]] | [window_name])
+        | [window_name])
 FROM table_name
-WINDOW window_name as ([PARTITION BY grouping_column] [ORDER BY sorting_column] RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)
+WINDOW window_name as ([PARTITION BY grouping_column] [ORDER BY sorting_column])
 ```
 
-デフォルトかつ必須のウィンドウフレーム定義は `RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING` です。
+この関数は常にパーティション全体を読み取ります。ウィンドウフレームが指定されていても無視されます。
 
 ウィンドウ関数の構文の詳細については、[Window Functions - 構文](/ja/reference/functions/window-functions/index#syntax) を参照してください。
 

@@ -20,6 +20,7 @@ public:
     TypeIndex getTypeId() const override { return TypeIndex::Nothing; }
 
     MutableColumnPtr createColumn() const override;
+    void insertDefaultInto(IColumn & column) const override;
 
     bool equals(const IDataType & rhs) const override;
 
