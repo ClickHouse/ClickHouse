@@ -193,7 +193,7 @@ DROP TABLE t_pmm_oracle_nullable;
 DROP TABLE IF EXISTS t_pmm_oracle_reverse;
 CREATE TABLE t_pmm_oracle_reverse (event_time UInt32, id UInt32)
 ENGINE = MergeTree PARTITION BY intDiv(event_time, 1000) ORDER BY (id, event_time DESC)
-SETTINGS index_granularity = 8, add_minmax_index_for_numeric_columns = 0, allow_experimental_reverse_key = 1, primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns = 1;
+SETTINGS index_granularity = 8, add_minmax_index_for_numeric_columns = 0, primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns = 1;
 INSERT INTO t_pmm_oracle_reverse SELECT number % 1200, number % 10 FROM numbers(1200);
 
 DROP VIEW IF EXISTS matrix_reverse;

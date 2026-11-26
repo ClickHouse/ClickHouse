@@ -14,7 +14,6 @@ SET query_plan_join_swap_table = false;
 SET use_hash_table_stats_for_join_reordering = 0;
 SET session_timezone = 'UTC';
 SET optimize_move_to_prewhere = 1;
-SET query_plan_optimize_prewhere = 1;
 
 DROP TABLE IF EXISTS t1;
 DROP TABLE IF EXISTS t2;

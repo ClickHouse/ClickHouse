@@ -1,7 +1,7 @@
 -- A condition that short-circuit `and` evaluates only on the rows passing the conditions written before it
 -- (here a parse that throws on the 'two' row) must not be moved to PREWHERE in front of them.
 
-SET optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1;
+SET optimize_move_to_prewhere = 1;
 SET allow_reorder_prewhere_conditions = 1;
 SET move_primary_key_columns_to_end_of_prewhere = 1; -- ranks the primary key guard `a = 'one'` last
 SET enable_multiple_prewhere_read_steps = 1; -- one read step is checked at the end

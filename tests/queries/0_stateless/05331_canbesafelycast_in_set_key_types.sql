@@ -6,8 +6,6 @@
 -- rows that `IN` must return, so the statements below assert the matched row, and the statements
 -- over a type pair without an accurate cast assert the error code name instead.
 
-SET enable_json_type = 1;
-
 DROP TABLE IF EXISTS t_str;
 CREATE TABLE t_str (k String) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 1;
 INSERT INTO t_str VALUES ('42'), ('61f0c404-5cb3-11e7-907b-a6006ad3dba0'), ('1.1.1.1'), ('{"a":1}'), ('z');

@@ -39,7 +39,7 @@ ${CLICKHOUSE_CLIENT} --query "
     DROP TABLE IF EXISTS t_returning_alias;
     DROP TABLE IF EXISTS t_returning_alias_target;
     CREATE TABLE t_returning_alias_target (x UInt64) ENGINE = Memory;
-    CREATE TABLE t_returning_alias ENGINE = Alias('t_returning_alias_target') SETTINGS allow_experimental_alias_table_engine = 1;
+    CREATE TABLE t_returning_alias ENGINE = Alias('t_returning_alias_target');
 "
 ${CLICKHOUSE_CLIENT} --query "INSERT INTO t_returning_alias RETURNING (SELECT x FROM t_returning_alias) SELECT 7" 2>&1 | grep -o -m1 "NOT_IMPLEMENTED"
 ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM t_returning_alias_target"

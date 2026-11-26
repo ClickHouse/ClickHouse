@@ -41,7 +41,7 @@ ${CLICKHOUSE_CLIENT} --query "
     CREATE TABLE lookup (v UInt64, val UInt64) ENGINE = Join(ANY, LEFT, v);"
 
 SETTINGS="max_threads = 1, use_query_condition_cache = 1, use_query_condition_cache_for_top_k = 1,
-    input_format_parquet_use_native_reader_v3 = 1, input_format_parquet_preserve_order = 1,
+    input_format_parquet_preserve_order = 1,
     enable_group_by_top_k_optimization = 1, enable_group_by_top_k_dynamic_filtering = 1,
     group_by_top_k_optimization_observation_rows = 0"
 

@@ -7,7 +7,6 @@ SET read_overflow_mode = 'break';
 SET query_plan_max_limit_for_top_k_optimization = 1000; -- pin to default so LIMIT 10 always qualifies
 -- The dynamic filter below joins the PREWHERE that the WHERE is moved to.
 SET optimize_move_to_prewhere = 1;
-SET query_plan_optimize_prewhere = 1;
 
 DROP TABLE IF EXISTS tab;
 

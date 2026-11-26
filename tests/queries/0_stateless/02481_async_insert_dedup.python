@@ -121,7 +121,7 @@ EventDate DateTime,
 KeyID     UInt32
 ) Engine = {table_engine}('/clickhouse/tables/{{shard}}/{{database}}/t_async_insert_dedup', '{{replica}}')
 PARTITION BY toYYYYMM(EventDate)
-ORDER BY (KeyID, EventDate) SETTINGS use_async_block_ids_cache = 1
+ORDER BY (KeyID, EventDate)
 """
 
 client.query(create_query)

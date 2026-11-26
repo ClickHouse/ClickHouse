@@ -3,7 +3,7 @@
 -- Descending (reverse) sorting key with a strict-monotonic function on the LIMIT BY column: reading in
 -- order yields descending `a`, and negate(a) is monotonic, so the streaming transform still applies.
 DROP TABLE IF EXISTS test_monotonic_desc;
-CREATE TABLE test_monotonic_desc (a Int32, v UInt32) ENGINE = MergeTree ORDER BY (a DESC) SETTINGS allow_experimental_reverse_key = 1;
+CREATE TABLE test_monotonic_desc (a Int32, v UInt32) ENGINE = MergeTree ORDER BY (a DESC);
 SYSTEM STOP MERGES test_monotonic_desc;
 INSERT INTO test_monotonic_desc SELECT number % 50, number      FROM numbers(1000);
 INSERT INTO test_monotonic_desc SELECT number % 50, number+1000 FROM numbers(1000);
@@ -17,7 +17,7 @@ SELECT (SELECT groupArray(na) FROM (SELECT na FROM (SELECT negate(a) AS na FROM 
 DROP TABLE test_monotonic_desc;
 -- Multi-column descending key (both columns DESC), LIMIT BY a monotonic function of the leading column.
 DROP TABLE IF EXISTS test_monotonic_desc_multi;
-CREATE TABLE test_monotonic_desc_multi (a Int32, b UInt32, v UInt32) ENGINE = MergeTree ORDER BY (a DESC, b DESC) SETTINGS allow_experimental_reverse_key = 1;
+CREATE TABLE test_monotonic_desc_multi (a Int32, b UInt32, v UInt32) ENGINE = MergeTree ORDER BY (a DESC, b DESC);
 SYSTEM STOP MERGES test_monotonic_desc_multi;
 INSERT INTO test_monotonic_desc_multi SELECT number % 50, number % 7, number      FROM numbers(1000);
 INSERT INTO test_monotonic_desc_multi SELECT number % 50, number % 7, number+1000 FROM numbers(1000);

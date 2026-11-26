@@ -2,7 +2,7 @@
 -- `apply_string_filters_during_scan` only if the reader can apply it as a string filter during the scan.
 -- It cannot, when the TopN dynamic filter `__topKFilter` will be added to PREWHERE on the same column.
 
-SET optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1, optimize_prewhere_after_pushdown = 1;
+SET optimize_move_to_prewhere = 1, optimize_prewhere_after_pushdown = 1;
 SET apply_string_filters_during_scan = 1;
 SET use_columns_cache = 0;
 SET query_plan_max_limit_for_top_k_optimization = 1000;

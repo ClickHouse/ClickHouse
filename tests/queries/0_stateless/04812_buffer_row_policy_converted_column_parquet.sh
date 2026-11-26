@@ -82,7 +82,7 @@ pushed_down() {
 
 # The implicit move is randomized away in about one run in ten, and either setting alone disables
 # it, so the arms that need it pin both. Without that they read like the control below them.
-moved="SETTINGS optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1"
+moved="SETTINGS optimize_move_to_prewhere = 1"
 
 # The mistyped column only has to be projected: it need not appear in the filter.
 echo "--- B policy on the converted column, WHERE moved to PREWHERE ---"
@@ -102,7 +102,7 @@ run "SELECT m FROM ${db}.t04812_pq_buf PREWHERE mapContains(m, 'b') ORDER BY k"
 
 # Controls: each holds without the fix, so a change here is a regression, not a repair.
 echo "--- C the same query with the move disabled ---"
-run "SELECT m FROM ${db}.t04812_pq_buf WHERE k > 0 ORDER BY k SETTINGS optimize_move_to_prewhere = 0, query_plan_optimize_prewhere = 0"
+run "SELECT m FROM ${db}.t04812_pq_buf WHERE k > 0 ORDER BY k SETTINGS optimize_move_to_prewhere = 0"
 
 echo "--- E no filter at all ---"
 run "SELECT m FROM ${db}.t04812_pq_buf ORDER BY k"

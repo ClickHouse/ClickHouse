@@ -29,9 +29,9 @@ ${CLICKHOUSE_CLIENT} --query "
 "
 
 # No Iceberg pruning by the manifests, which would skip the files of the second insert before the cache.
-SETTINGS="use_iceberg_partition_pruning = 0, use_query_condition_cache = 1, optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1,
+SETTINGS="use_iceberg_partition_pruning = 0, use_query_condition_cache = 1, optimize_move_to_prewhere = 1,
     use_top_k_dynamic_filtering = 1, query_plan_max_limit_for_top_k_optimization = 1000,
-    input_format_parquet_use_native_reader_v3 = 1, input_format_parquet_filter_push_down = 1,
+    input_format_parquet_filter_push_down = 1,
     max_threads = 1, max_parsing_threads = 1"
 
 ${CLICKHOUSE_CLIENT} --log_comment "05320_write" --query "

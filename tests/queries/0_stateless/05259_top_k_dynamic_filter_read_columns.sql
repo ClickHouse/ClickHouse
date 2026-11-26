@@ -9,7 +9,6 @@ SET use_skip_indexes_for_top_k = 0;
 SET query_plan_max_limit_for_top_k_optimization = 1000;
 SET optimize_use_projections = 1;
 SET optimize_move_to_prewhere = 1;
-SET query_plan_optimize_prewhere = 1;
 SET enable_multiple_prewhere_read_steps = 1;
 
 DROP TABLE IF EXISTS t_topk_part_offset;

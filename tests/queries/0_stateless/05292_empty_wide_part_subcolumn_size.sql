@@ -1,4 +1,4 @@
--- Random settings limits: optimize_functions_to_subcolumns=(1, 1); optimize_move_to_prewhere=(1, 1); query_plan_optimize_prewhere=(1, 1); allow_calculating_subcolumns_sizes_for_merge_tree_reading=(1, 1)
+-- Random settings limits: optimize_functions_to_subcolumns=(1, 1); optimize_move_to_prewhere=(1, 1); allow_calculating_subcolumns_sizes_for_merge_tree_reading=(1, 1)
 
 -- An active part without rows, left here by a mutation that deleted all its rows or by a TTL drop, must not break
 -- the subcolumn size estimate of the PREWHERE optimization, for Wide (full and packed storage) and Compact parts.

@@ -2,7 +2,7 @@
 
 DROP TABLE IF EXISTS desc_pk;
 
-CREATE TABLE desc_pk (`a` UInt32) ENGINE = MergeTree ORDER BY (a DESC) SETTINGS allow_experimental_reverse_key = 1;
+CREATE TABLE desc_pk (`a` UInt32) ENGINE = MergeTree ORDER BY (a DESC);
 
 INSERT INTO desc_pk SELECT * FROM numbers(10);
 

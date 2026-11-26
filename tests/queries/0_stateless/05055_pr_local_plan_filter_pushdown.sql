@@ -37,7 +37,6 @@ SET parallel_replicas_min_number_of_rows_per_replica = 0;
 -- What puts the view's read in the shipped fragment.
 SET parallel_replicas_allow_view_over_mergetree = 1;
 SET optimize_read_in_order = 1;
-SET query_plan_optimize_prewhere = 1;
 SET optimize_move_to_prewhere = 1;
 -- The splice writes the condition into the query the replicas are sent, so it needs this, and neither a
 -- plan-based fragment nor a serialized plan carries it.

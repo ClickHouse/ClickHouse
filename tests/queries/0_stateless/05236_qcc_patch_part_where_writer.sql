@@ -25,17 +25,17 @@ ALTER TABLE t_qcc_patch_where UPDATE v = 0 WHERE id >= 50 SETTINGS alter_update_
 SYSTEM DROP QUERY CONDITION CACHE;
 
 -- apply_patch_parts = 1 first: the patch sets v = 0 for ids >= 50, so no row has v >= 50 -> 0.
-SELECT count() FROM t_qcc_patch_where WHERE v >= 50 SETTINGS apply_patch_parts = 1, optimize_move_to_prewhere = 0, query_plan_optimize_prewhere = 0;
+SELECT count() FROM t_qcc_patch_where WHERE v >= 50 SETTINGS apply_patch_parts = 1, optimize_move_to_prewhere = 0;
 -- apply_patch_parts = 0 must ignore the patch -> ids 50..99 -> 50.
-SELECT count() FROM t_qcc_patch_where WHERE v >= 50 SETTINGS apply_patch_parts = 0, optimize_move_to_prewhere = 0, query_plan_optimize_prewhere = 0;
+SELECT count() FROM t_qcc_patch_where WHERE v >= 50 SETTINGS apply_patch_parts = 0, optimize_move_to_prewhere = 0;
 
 -- `v % 7 = 3000` matches no row and cannot be answered from the index, so every granule read is
 -- emptied by the filter: with the patch ignored that is recorded, with the patch applied it is not.
 SYSTEM DROP QUERY CONDITION CACHE;
-SELECT count() FROM t_qcc_patch_where WHERE v % 7 = 3000 SETTINGS apply_patch_parts = 1, optimize_move_to_prewhere = 0, query_plan_optimize_prewhere = 0;
+SELECT count() FROM t_qcc_patch_where WHERE v % 7 = 3000 SETTINGS apply_patch_parts = 1, optimize_move_to_prewhere = 0;
 SELECT count() FROM system.query_condition_cache;
 SYSTEM DROP QUERY CONDITION CACHE;
-SELECT count() FROM t_qcc_patch_where WHERE v % 7 = 3000 SETTINGS apply_patch_parts = 0, optimize_move_to_prewhere = 0, query_plan_optimize_prewhere = 0;
+SELECT count() FROM t_qcc_patch_where WHERE v % 7 = 3000 SETTINGS apply_patch_parts = 0, optimize_move_to_prewhere = 0;
 SELECT count() > 0 FROM system.query_condition_cache;
 
 DROP TABLE t_qcc_patch_where;

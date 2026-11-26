@@ -10,7 +10,7 @@
 SET explain_query_plan_default = 'legacy';
 SET enable_analyzer = 1;
 SET enable_parallel_replicas = 0;
-SET optimize_read_in_order = 1, query_plan_read_in_order = 1, query_plan_read_in_order_through_join = 1;
+SET optimize_read_in_order = 1, query_plan_read_in_order_through_join = 1;
 SET read_in_order_use_virtual_row = 1;
 SET query_plan_join_swap_table = 0;
 SET join_use_nulls = 0;

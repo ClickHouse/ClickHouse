@@ -1,7 +1,5 @@
 -- Bit-exact ALP roundtrip on random data. A failure prints the seed, replace rand64() with it to reproduce.
 
-SET enable_alp_codec = 1;
-
 DROP VIEW IF EXISTS alp_random_check;
 DROP TABLE IF EXISTS alp_random;
 DROP TABLE IF EXISTS alp_random_seed;

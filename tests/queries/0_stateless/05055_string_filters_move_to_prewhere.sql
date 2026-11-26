@@ -8,7 +8,7 @@ SET use_columns_cache = 0;
 
 -- The test is about the decision to move a condition to PREWHERE, so the optimization must be enabled
 -- (it is randomized in tests), and the queries below that turn it off do it explicitly.
-SET optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1;
+SET optimize_move_to_prewhere = 1;
 
 DROP TABLE IF EXISTS t_string_filter_move;
 

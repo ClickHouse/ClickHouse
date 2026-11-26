@@ -14,7 +14,7 @@ SELECT * FROM t0 ORDER BY c0 ASC NULLS LAST;
 SELECT '--- table asc, query asc, first';
 SELECT * FROM t0 ORDER BY c0 ASC NULLS FIRST;
 
-CREATE TABLE t1 (c0 Nullable(Int64)) ENGINE = MergeTree() ORDER BY c0 DESC SETTINGS allow_nullable_key=1, allow_experimental_reverse_key=1;
+CREATE TABLE t1 (c0 Nullable(Int64)) ENGINE = MergeTree() ORDER BY c0 DESC SETTINGS allow_nullable_key=1;
 INSERT INTO TABLE t1 VALUES (0);
 INSERT INTO TABLE t1 VALUES (NULL), (1);
 
@@ -40,7 +40,7 @@ SELECT * FROM f0 ORDER BY c0 ASC NULLS LAST;
 SELECT '--- table asc, query asc, first';
 SELECT * FROM f0 ORDER BY c0 ASC NULLS FIRST;
 
-CREATE TABLE f1 (c0 Float64) ENGINE = MergeTree() ORDER BY c0 DESC SETTINGS allow_experimental_reverse_key=1;
+CREATE TABLE f1 (c0 Float64) ENGINE = MergeTree() ORDER BY c0 DESC;
 INSERT INTO TABLE f1 VALUES (0);
 INSERT INTO TABLE f1 VALUES (0/0), (1);
 

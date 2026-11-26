@@ -39,7 +39,6 @@ SET parallel_replicas_min_number_of_rows_per_replica = 0;
 SET parallel_replicas_plan_based = 0;
 -- What puts both branches' reads in one fragment.
 SET parallel_replicas_allow_view_over_mergetree = 1;
-SET query_plan_optimize_prewhere = 1;
 SET optimize_move_to_prewhere = 1;
 SET optimize_read_in_order = 1;
 

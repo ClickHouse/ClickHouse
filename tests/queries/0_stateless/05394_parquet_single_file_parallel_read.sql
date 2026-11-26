@@ -8,7 +8,7 @@ SET engine_file_truncate_on_insert = 1;
 INSERT INTO FUNCTION file(currentDatabase() || '_05394.parquet')
 SELECT number AS id, toString(number % 1000) AS s, [number, number + 1] AS arr, (number, toString(number)) AS t
 FROM numbers(100000)
-SETTINGS output_format_parquet_row_group_size = 1000, output_format_parquet_use_custom_encoder = 1;
+SETTINGS output_format_parquet_row_group_size = 1000;
 
 -- The file is split between the streams, one source per stream.
 SELECT trimLeft(explain) FROM (
@@ -52,7 +52,7 @@ WHERE trimLeft(explain) LIKE 'File %';
 -- according to the available memory.
 INSERT INTO FUNCTION file(currentDatabase() || '_05394_small.parquet')
 SELECT number AS id FROM numbers(8000)
-SETTINGS output_format_parquet_row_group_size = 1000, output_format_parquet_use_custom_encoder = 1;
+SETTINGS output_format_parquet_row_group_size = 1000;
 
 SELECT trimLeft(explain) = 'File × ' || toString((SELECT num_row_groups FROM file(currentDatabase() || '_05394_small.parquet', ParquetMetadata))) || ' 0 → 1'
 FROM (

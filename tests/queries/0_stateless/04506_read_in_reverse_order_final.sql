@@ -92,8 +92,7 @@ DROP TABLE t_reverse_final;
 -- A descending sorting key and an ascending query cancel the physical direction.
 -- The parallel FINAL path must still use the reverse read and keep the newest version.
 CREATE TABLE t_reverse_final (x Int32, y Int32, ver Int32)
-ENGINE = ReplacingMergeTree(ver) ORDER BY (x DESC)
-SETTINGS allow_experimental_reverse_key = 1;
+ENGINE = ReplacingMergeTree(ver) ORDER BY (x DESC);
 
 INSERT INTO t_reverse_final SELECT number, 1, 1 FROM numbers(10000);
 INSERT INTO t_reverse_final SELECT number, 2, 2 FROM numbers(10000);

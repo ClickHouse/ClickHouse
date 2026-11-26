@@ -1,5 +1,4 @@
 -- Regression for #124877: Dynamic NULL parsing with both null_as_default settings.
-SET enable_dynamic_type = 1;
 SET input_format_null_as_default = 1;
 SET input_format_values_interpret_expressions = 1;
 SET input_format_values_accurate_types_of_literals = 1;

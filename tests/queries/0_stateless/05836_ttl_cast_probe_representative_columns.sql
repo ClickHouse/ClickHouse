@@ -6,8 +6,6 @@
 -- with `BAD_TTL_EXPRESSION` -- see the message of that limit and the escape hatch
 -- `allow_suspicious_ttl_expressions` described in src/Core/Settings.cpp.
 
-SET enable_variant_type = 1;
-SET enable_dynamic_type = 1;
 SET allow_suspicious_low_cardinality_types = 1;
 -- The escape hatch must stay off, it skips the TTL validator and with it the probe.
 SET allow_suspicious_ttl_expressions = 0;

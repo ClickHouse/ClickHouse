@@ -23,7 +23,6 @@ SET ast_fuzzer_runs = 0;
 -- PREWHERE moves the row-level write to MergeTreeSelectProcessor, which keys it on the PREWHERE
 -- expression instead of the WHERE one, so the two writers would use different predicates.
 SET optimize_move_to_prewhere = 0;
-SET query_plan_optimize_prewhere = 0;
 -- One block per granule, so the row-level writer can see an entirely filtered block.
 SET max_block_size = 8;
 

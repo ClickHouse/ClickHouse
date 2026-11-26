@@ -1,5 +1,3 @@
-SET enable_json_type = 1;
-SET allow_experimental_json_type = 1;
 
 CREATE TABLE t_skip_path
 (

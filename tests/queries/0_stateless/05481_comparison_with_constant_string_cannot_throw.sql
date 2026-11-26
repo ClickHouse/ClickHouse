@@ -25,7 +25,7 @@ DROP TABLE t_cmp_const_string;
 
 -- The rows a PREWHERE step rejects may reach the next step only if it cannot throw on them. A comparison of a tuple of
 -- a `Variant` is compared per row, even with a constant that converts.
-SET enable_multiple_prewhere_read_steps = 1, enable_variant_type = 1, use_variant_default_implementation_for_comparisons = 1;
+SET enable_multiple_prewhere_read_steps = 1, use_variant_default_implementation_for_comparisons = 1;
 
 DROP TABLE IF EXISTS t_cmp_const_string_prewhere;
 CREATE TABLE t_cmp_const_string_prewhere (k UInt64, g UInt8, tv Tuple(Variant(String, UInt64))) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 8192;

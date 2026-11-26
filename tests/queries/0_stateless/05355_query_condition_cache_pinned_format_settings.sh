@@ -16,7 +16,7 @@ DATA_DIR="${CLICKHOUSE_DATABASE}_05355"
 mkdir -p "${USER_FILES_PATH:?}/${DATA_DIR}"
 DB="${CLICKHOUSE_DATABASE}_ordinary"
 
-SETTINGS="use_query_condition_cache = 1, enable_analyzer = 1, optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1"
+SETTINGS="use_query_condition_cache = 1, enable_analyzer = 1, optimize_move_to_prewhere = 1"
 
 # All values are even, so the odd value 3 never matches.
 ${CLICKHOUSE_CLIENT} --query "

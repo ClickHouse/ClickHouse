@@ -55,7 +55,7 @@ SELECT trim(explain) FROM (
     WHERE l.k < 10 GROUP BY l.k ORDER BY l.k
     SETTINGS join_algorithm = 'partial_merge', query_plan_join_swap_table = 'false',
              optimize_aggregation_in_order = 1, max_threads = 1,
-             enable_analyzer = 1, optimize_read_in_order = 1, query_plan_read_in_order = 1,
+             enable_analyzer = 1, optimize_read_in_order = 1,
              query_plan_read_in_order_through_join = 1, enable_parallel_replicas = 0
 ) WHERE explain LIKE '%ReadType%';
 

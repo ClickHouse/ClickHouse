@@ -21,7 +21,6 @@ INSERT INTO transactional_count_duplicate VALUES (4);
 SET automatic_parallel_replicas_mode = 0;
 SET enable_parallel_replicas = 1, max_parallel_replicas = 3, cluster_for_parallel_replicas = 'parallel_replicas',
     parallel_replicas_for_non_replicated_merge_tree = 1, parallel_replicas_local_plan = 1;
-SET parallel_replicas_only_with_analyzer = 0;  -- necessary for CI runs with the old analyzer
 
 -- Guard against the test silently becoming vacuous: a read that cannot be served from metadata must be
 -- planned across the replicas.

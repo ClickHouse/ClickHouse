@@ -39,7 +39,7 @@ FROM
     SELECT x FROM t_filter_const_subquery_settings WHERE a = 1 AND x = repeat('x', 1000)
     SETTINGS optimize_constant_columns_after_filter = 0
 )
-SETTINGS optimize_constant_columns_after_filter = 1, optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1,
+SETTINGS optimize_constant_columns_after_filter = 1, optimize_move_to_prewhere = 1,
     move_all_conditions_to_prewhere = 0, query_plan_merge_filters = 0, query_plan_optimize_lazy_materialization = 0,
     query_plan_remove_unused_columns = 0;
 
@@ -50,7 +50,7 @@ FROM
     SELECT x FROM t_filter_const_subquery_settings WHERE a = 1 AND x = repeat('x', 1000)
     SETTINGS optimize_constant_columns_after_filter = 1
 )
-SETTINGS optimize_constant_columns_after_filter = 0, optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1,
+SETTINGS optimize_constant_columns_after_filter = 0, optimize_move_to_prewhere = 1,
     move_all_conditions_to_prewhere = 0, query_plan_merge_filters = 0, query_plan_optimize_lazy_materialization = 0,
     query_plan_remove_unused_columns = 0;
 
@@ -96,7 +96,7 @@ FROM
     ORDER BY s, a DESC LIMIT 2
     SETTINGS optimize_constant_columns_after_filter = 0
 )
-SETTINGS optimize_constant_columns_after_filter = 1, optimize_move_to_prewhere = 0, query_plan_optimize_prewhere = 0,
+SETTINGS optimize_constant_columns_after_filter = 1, optimize_move_to_prewhere = 0,
     query_plan_optimize_lazy_materialization = 1;
 
 SELECT 'lazy materialization, inner enabled, outer disabled';
@@ -109,7 +109,7 @@ FROM
     ORDER BY s, a DESC LIMIT 2
     SETTINGS optimize_constant_columns_after_filter = 1
 )
-SETTINGS optimize_constant_columns_after_filter = 0, optimize_move_to_prewhere = 0, query_plan_optimize_prewhere = 0,
+SETTINGS optimize_constant_columns_after_filter = 0, optimize_move_to_prewhere = 0,
     query_plan_optimize_lazy_materialization = 1;
 
 DROP TABLE t_filter_const_subquery_settings_lazy;
@@ -135,7 +135,7 @@ SELECT count() FROM
     SETTINGS optimize_constant_columns_after_filter = 0
 )
 SETTINGS optimize_constant_columns_after_filter = 1, force_optimize_projection = 1, optimize_move_to_prewhere = 0,
-    query_plan_optimize_prewhere = 0, query_plan_merge_filters = 0, query_plan_optimize_lazy_materialization = 0,
+    query_plan_merge_filters = 0, query_plan_optimize_lazy_materialization = 0,
     query_plan_remove_unused_columns = 0, log_processors_profiles = 1, log_comment = '05398_projection_inner_disabled';
 
 SELECT 'aggregate projection, inner enabled, outer disabled';
@@ -146,7 +146,7 @@ SELECT count() FROM
     SETTINGS optimize_constant_columns_after_filter = 1
 )
 SETTINGS optimize_constant_columns_after_filter = 0, force_optimize_projection = 1, optimize_move_to_prewhere = 0,
-    query_plan_optimize_prewhere = 0, query_plan_merge_filters = 0, query_plan_optimize_lazy_materialization = 0,
+    query_plan_merge_filters = 0, query_plan_optimize_lazy_materialization = 0,
     query_plan_remove_unused_columns = 0, log_processors_profiles = 1, log_comment = '05398_projection_inner_enabled';
 
 SYSTEM FLUSH LOGS query_log, processors_profile_log;

@@ -1,7 +1,5 @@
 -- The size columns of `system.projections` report the same values for a table and for an `Alias` of it.
 
-SET allow_experimental_alias_table_engine = 1;
-
 DROP TABLE IF EXISTS alias_of_base;
 DROP TABLE IF EXISTS base;
 

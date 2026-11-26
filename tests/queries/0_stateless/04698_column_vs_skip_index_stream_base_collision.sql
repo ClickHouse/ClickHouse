@@ -49,7 +49,6 @@ INSERT INTO t_tuple SELECT number, (0, ''), toString(number) FROM numbers(10); -
 DROP TABLE t_tuple;
 
 -- `Dynamic` emits `.variant_discr` only for variants actually present in the data.
-SET allow_experimental_dynamic_type = 1;
 CREATE TABLE t_dyn (k UInt64, `skp_idx_a` Dynamic, s String,
     INDEX `a.variant_discr`(s) TYPE set(100) GRANULARITY 1)
 ENGINE = MergeTree ORDER BY k

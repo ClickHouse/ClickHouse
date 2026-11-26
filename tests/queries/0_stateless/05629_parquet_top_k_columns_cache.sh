@@ -21,7 +21,7 @@ $CLICKHOUSE_CLIENT -q "
 # Only a file that has not been modified for a few seconds is cached: its version token identifies its content only then.
 touch -d '1 minute ago' "${FILE_PATH}"
 
-SETTINGS="max_threads = 16, max_parsing_threads = 16, use_top_k_dynamic_filtering = 1, input_format_parquet_use_native_reader_v3 = 1"
+SETTINGS="max_threads = 16, max_parsing_threads = 16, use_top_k_dynamic_filtering = 1"
 CACHE_SETTINGS="use_columns_cache = 1, enable_reads_from_columns_cache = 1, enable_writes_to_columns_cache = 1"
 
 function run()

@@ -22,7 +22,6 @@ FROM
     ORDER BY a
     SETTINGS optimize_distinct_in_order = 1,
         optimize_move_to_prewhere = 0,
-        query_plan_optimize_prewhere = 0,
         query_plan_optimize_lazy_materialization = 0,
         query_plan_remove_unused_columns = 0
 )
@@ -34,7 +33,6 @@ WHERE b = 7
 ORDER BY a
 SETTINGS optimize_distinct_in_order = 1,
     optimize_move_to_prewhere = 0,
-    query_plan_optimize_prewhere = 0,
     query_plan_optimize_lazy_materialization = 0,
     query_plan_remove_unused_columns = 0;
 

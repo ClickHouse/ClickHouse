@@ -1,6 +1,5 @@
 -- Aggregate functions that don't support Variant are applied to Nullable of the least common supertype of the alternatives.
 
-SET allow_experimental_variant_type = 1;
 SET allow_suspicious_variant_types = 1;
 
 DROP TABLE IF EXISTS t_variant_agg;

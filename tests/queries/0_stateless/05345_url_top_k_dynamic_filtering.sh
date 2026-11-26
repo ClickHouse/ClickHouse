@@ -15,7 +15,7 @@ S3_DIR="${CLICKHOUSE_DATABASE}_05345"
 # Single-threaded reading, so that the threshold is established from the first row groups of the
 # sorted data before the rest is read.
 SETTINGS="query_plan_max_limit_for_top_k_optimization = 1000, use_top_k_dynamic_filtering_for_variable_length_types = 0,
-    input_format_parquet_use_native_reader_v3 = 1, input_format_parquet_filter_push_down = 1,
+    input_format_parquet_filter_push_down = 1,
     max_threads = 1, max_parsing_threads = 1, use_query_condition_cache = 0"
 ON="use_top_k_dynamic_filtering = 1"
 OFF="use_top_k_dynamic_filtering = 0"

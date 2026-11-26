@@ -21,7 +21,7 @@ SET enable_parallel_replicas = 1, parallel_replicas_for_non_replicated_merge_tre
     -- parallel_replicas_plan_based = 0 - the plan-based path doubles the same analysis on its own (#118275).
     parallel_replicas_plan_based = 0,
     -- Prewhere is pinned on so the arms below are deterministic; one arm turns it off on purpose.
-    optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1;
+    optimize_move_to_prewhere = 1;
 
 -- One index analysis per MergeTree read: the outer read and the IN subquery's read.
 SELECT sum(key) FROM t_pr_in_set WHERE key IN (SELECT key FROM t_pr_in_set WHERE key > 50000)
@@ -36,7 +36,7 @@ SETTINGS parallel_replicas_min_number_of_rows_per_replica = 1, max_rows_to_read 
 -- The same with prewhere off, a combination the runner draws on its own.
 SELECT sum(key) FROM t_pr_in_set WHERE key IN (SELECT key FROM t_pr_in_set WHERE key > 50000)
 SETTINGS parallel_replicas_min_number_of_rows_per_replica = 1,
-         optimize_move_to_prewhere = 0, query_plan_optimize_prewhere = 0,
+         optimize_move_to_prewhere = 0,
          log_comment = 'pr_in_subquery_read_analyzed_once_estimate_no_prewhere';
 
 -- A GLOBAL IN subquery is planned for the collected filters the same way.

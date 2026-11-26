@@ -139,7 +139,7 @@ SELECT count() FROM values(
     (1, tuple(1), tuple('a')),
     (2, tuple(2), tuple(2))
 ) WHERE repeat(toString(k), 2) = '22' AND t1 = t2
-SETTINGS enable_variant_type = 1, use_variant_default_implementation_for_comparisons = 1, query_plan_merge_filters = 1,
+SETTINGS use_variant_default_implementation_for_comparisons = 1, query_plan_merge_filters = 1,
     short_circuit_function_evaluation = 'enable', short_circuit_function_evaluation_reorder_arguments = 1;
 
 SELECT count() FROM values(
@@ -147,7 +147,7 @@ SELECT count() FROM values(
     (1, tuple(1), tuple('a')),
     (2, tuple(2), tuple(2))
 ) WHERE repeat(toString(k), 2) = '22' AND t1 = t2
-SETTINGS enable_variant_type = 1, use_variant_default_implementation_for_comparisons = 1, query_plan_merge_filters = 1,
+SETTINGS use_variant_default_implementation_for_comparisons = 1, query_plan_merge_filters = 1,
     short_circuit_function_evaluation = 'enable', short_circuit_function_evaluation_reorder_arguments = 0;
 
 SELECT count() FROM values(
@@ -155,7 +155,7 @@ SELECT count() FROM values(
     (1, tuple(1), tuple('a')),
     (2, tuple(2), tuple(2))
 ) WHERE repeat(toString(k), 2) = '22' AND t1 = t2
-SETTINGS enable_dynamic_type = 1, query_plan_merge_filters = 1,
+SETTINGS query_plan_merge_filters = 1,
     short_circuit_function_evaluation = 'enable', short_circuit_function_evaluation_reorder_arguments = 1;
 
 SELECT count() FROM values(
@@ -163,7 +163,7 @@ SELECT count() FROM values(
     (1, tuple(tuple(1)), tuple(tuple('a'))),
     (2, tuple(tuple(2)), tuple(tuple(2)))
 ) WHERE repeat(toString(k), 2) = '22' AND t1 = t2
-SETTINGS enable_variant_type = 1, use_variant_default_implementation_for_comparisons = 1, query_plan_merge_filters = 1,
+SETTINGS use_variant_default_implementation_for_comparisons = 1, query_plan_merge_filters = 1,
     short_circuit_function_evaluation = 'enable', short_circuit_function_evaluation_reorder_arguments = 1;
 
 SELECT count() FROM values(
@@ -171,7 +171,7 @@ SELECT count() FROM values(
     (1, tuple(1), tuple('a')),
     (2, tuple(2), tuple(2))
 ) WHERE repeat(toString(k), 2) = '22' AND t1 != t2
-SETTINGS enable_variant_type = 1, use_variant_default_implementation_for_comparisons = 1, query_plan_merge_filters = 1,
+SETTINGS use_variant_default_implementation_for_comparisons = 1, query_plan_merge_filters = 1,
     short_circuit_function_evaluation = 'enable', short_circuit_function_evaluation_reorder_arguments = 1;
 
 SELECT count() FROM values(
@@ -179,7 +179,7 @@ SELECT count() FROM values(
     (1, tuple(1), tuple('a')),
     (2, tuple(1), tuple(2))
 ) WHERE repeat(toString(k), 2) = '22' AND t1 < t2
-SETTINGS enable_variant_type = 1, use_variant_default_implementation_for_comparisons = 1, query_plan_merge_filters = 1,
+SETTINGS use_variant_default_implementation_for_comparisons = 1, query_plan_merge_filters = 1,
     short_circuit_function_evaluation = 'enable', short_circuit_function_evaluation_reorder_arguments = 1;
 
 SELECT trim(explain) FROM (
@@ -196,5 +196,5 @@ SELECT trim(explain) FROM (
     WHERE isValidUTF8(repeat(toString(k), 10)) AND t1 = t2
 )
 WHERE explain LIKE '%AND column%'
-SETTINGS enable_variant_type = 1, use_variant_default_implementation_for_comparisons = 1,
+SETTINGS use_variant_default_implementation_for_comparisons = 1,
     short_circuit_function_evaluation = 'enable', short_circuit_function_evaluation_reorder_arguments = 1;

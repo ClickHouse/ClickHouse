@@ -193,12 +193,10 @@ for name in typed_ls typed_poly typed_mpoly typed_point; do
         "SELECT id, toTypeName(geom), geom FROM file('$TMP_DIR/$name.parquet', Parquet) ORDER BY id"
 done
 
-# Both Arrow readers decode WKT through the same function.
-for native in 1 0; do
-    echo "-- arrow native=$native"
-    $CLICKHOUSE_LOCAL --input_format_arrow_use_native_reader=$native -q \
-        "SELECT id, variantType(geom), geom FROM file('$TMP_DIR/arrow.arrow', Arrow) ORDER BY id"
-done
+# The Arrow reader decodes WKT through the same function.
+echo "-- arrow"
+$CLICKHOUSE_LOCAL -q \
+    "SELECT id, variantType(geom), geom FROM file('$TMP_DIR/arrow.arrow', Arrow) ORDER BY id"
 
 # wkt() emits the empty-parenthesis spelling, so its output must import back.
 echo "-- round trip"

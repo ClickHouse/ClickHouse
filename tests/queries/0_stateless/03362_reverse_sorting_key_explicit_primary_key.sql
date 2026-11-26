@@ -1,6 +1,6 @@
 drop table if exists x1;
 
-create table x1 (i Nullable(int)) engine MergeTree order by i desc primary key i settings allow_nullable_key = 1, index_granularity = 2, allow_experimental_reverse_key = 1;
+create table x1 (i Nullable(int)) engine MergeTree order by i desc primary key i settings allow_nullable_key = 1, index_granularity = 2;
 
 insert into x1 select * from numbers(100);
 

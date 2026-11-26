@@ -21,7 +21,7 @@ ${CLICKHOUSE_CLIENT} --query "
 touch -d '2020-01-01 00:00:00' "${USER_FILES_PATH}/${DATA_DIR}/key=1/data.parquet"
 
 SETTINGS="use_query_condition_cache = 1, use_query_condition_cache_for_top_k = 1, use_top_k_dynamic_filtering = 1,
-    query_plan_max_limit_for_top_k_optimization = 1000, input_format_parquet_use_native_reader_v3 = 1, max_threads = 1"
+    query_plan_max_limit_for_top_k_optimization = 1000, max_threads = 1"
 
 for hive in 1 0 1 0
 do

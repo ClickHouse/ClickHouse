@@ -37,8 +37,7 @@ PYEOF
 # instead of allocating ~1.6 GB outside the tracker.
 out=$(${CLICKHOUSE_LOCAL} --query "
     SELECT g FROM file('${WORK_DIR}/geo_bomb.parquet', Parquet) FORMAT Null
-    SETTINGS input_format_parquet_use_native_reader_v3 = 1,
-             input_format_parquet_allow_geoparquet_parser = 1,
+    SETTINGS input_format_parquet_allow_geoparquet_parser = 1,
              max_memory_usage = 104857600" 2>&1)
 if echo "$out" | grep -q "MEMORY_LIMIT_EXCEEDED"; then
     echo "geo_bomb: memory limit enforced"

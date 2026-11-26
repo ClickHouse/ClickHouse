@@ -16,7 +16,7 @@ mkdir -p "$DATA_DIR"
 
 ${CLICKHOUSE_CLIENT} --query "
     INSERT INTO FUNCTION file('${DIR}/data.parquet', Parquet, 'x UInt64') SELECT number * 2 FROM numbers(8000)
-    SETTINGS output_format_parquet_row_group_size = 1000, output_format_parquet_use_custom_encoder = 1"
+    SETTINGS output_format_parquet_row_group_size = 1000"
 # A settled version token: the query condition cache is used only for files modified a while ago.
 touch -d '2020-01-01 00:00:00' "$DATA_DIR/data.parquet"
 

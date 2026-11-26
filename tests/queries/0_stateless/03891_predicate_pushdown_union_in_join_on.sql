@@ -19,8 +19,6 @@ INSERT INTO t1 VALUES (1, 10), (2, 20);
 INSERT INTO t2 VALUES (1, 10), (2, 20);
 INSERT INTO t3 VALUES (10), (20);
 
-SET enable_optimize_predicate_expression = 1;
-
 SELECT t2.key, t2.a
 FROM t1 INNER JOIN t2
 ON (t2.a IN (SELECT v FROM t3 UNION DISTINCT SELECT v FROM t3)) AND (t2.key = t1.key)

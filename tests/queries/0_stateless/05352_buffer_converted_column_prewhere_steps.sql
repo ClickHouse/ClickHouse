@@ -2,7 +2,7 @@
 SET send_logs_level = 'error';
 -- Several conditions reach the per-condition split only with this on; it is randomized.
 SET enable_multiple_prewhere_read_steps = 1;
-SET optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1;
+SET optimize_move_to_prewhere = 1;
 
 DROP ROW POLICY IF EXISTS p05352 ON t05352_pq_pol_buf;
 DROP TABLE IF EXISTS t05352_alter_buf;

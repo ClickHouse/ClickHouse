@@ -18,7 +18,6 @@ OPTIMIZE TABLE t_nested FINAL;
 
 SET enable_analyzer = 1;
 SET use_statistics = 1;
-SET use_statistics_cache = 1;
 SET query_plan_remove_redundant_sorting = 1;
 -- With a single reading thread the cost model sees replicas as a win on a table of this size.
 SET max_threads = 1;

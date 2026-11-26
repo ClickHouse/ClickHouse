@@ -1,5 +1,5 @@
 -- The top-K granule skipping through the primary index reads granule bounds assuming the key column
--- ascends within a part. With a descending key column (`allow_experimental_reverse_key`) that is wrong,
+-- ascends within a part. With a descending key column that is wrong,
 -- so the column must be left out of the pruning; otherwise `ORDER BY A DESC LIMIT` skips granules that
 -- hold the top rows.
 
@@ -16,7 +16,7 @@ DROP TABLE IF EXISTS t_top_k_reverse_key;
 
 CREATE TABLE t_top_k_reverse_key (A Int64) ENGINE = MergeTree
 PARTITION BY (A % 8) ORDER BY A DESC
-SETTINGS allow_experimental_reverse_key = 1, index_granularity = 1024;
+SETTINGS index_granularity = 1024;
 
 INSERT INTO t_top_k_reverse_key SELECT intDiv(number, 1111) FROM numbers(7e4) UNION ALL SELECT number FROM numbers(7e4);
 

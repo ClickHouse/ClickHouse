@@ -10,7 +10,6 @@
 SET read_in_order_two_level_merge_threshold = 100;
 SET merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0;
 SET optimize_move_to_prewhere = 0;
-SET query_plan_optimize_prewhere = 0;
 SET parallel_replicas_local_plan = 1;
 SET enable_parallel_replicas = 0;
 SET max_threads = 4;

@@ -1,7 +1,5 @@
 -- Tags: no-fasttest
 
-SET enable_json_type = 1;
-
 DROP TABLE IF EXISTS t_json_dynamic_integer_widening;
 CREATE TABLE t_json_dynamic_integer_widening (j Array(JSON)) ENGINE = Memory;
 

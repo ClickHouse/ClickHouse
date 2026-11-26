@@ -38,7 +38,6 @@ SET query_plan_join_swap_table = false;
 SET optimize_read_in_order = 0;
 SET optimize_aggregation_in_order = 1;
 -- Pin what decides whether the filter is folded into the read, so the plan below is stable.
-SET query_plan_optimize_prewhere = 1;
 SET optimize_move_to_prewhere = 1;
 
 -- Pin what decides whether the condition reaches the replicas at all: the splice writes it into the

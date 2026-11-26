@@ -28,7 +28,7 @@ ${CLICKHOUSE_CLIENT} --allow_experimental_insert_into_iceberg 1 --max_insert_thr
     INSERT INTO t_05406_before SELECT number FROM numbers(10000)"
 
 SETTINGS="SETTINGS use_query_condition_cache = 1, use_top_k_dynamic_filtering = 1, query_plan_max_limit_for_top_k_optimization = 1000,
-    input_format_parquet_use_native_reader_v3 = 1, max_threads = 1"
+    max_threads = 1"
 
 ${CLICKHOUSE_CLIENT} --query "SELECT k FROM t_05406_before WHERE _table = 't_05406_before' OR k < 1000000 ORDER BY k DESC LIMIT 3 $SETTINGS"
 ${CLICKHOUSE_CLIENT} --query "RENAME TABLE t_05406_before TO t_05406_after"

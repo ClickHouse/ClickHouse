@@ -3,8 +3,6 @@
 -- describe that sample on its own, and a type-specific codec applied to a stream it was not resolved for
 -- used to fail the query: `ALP` rejects a byte count that is not a whole number of floats.
 
-SET enable_alp_codec = 1;
-
 SET enable_parallel_replicas = 1, automatic_parallel_replicas_mode = 2, parallel_replicas_local_plan = 1,
     parallel_replicas_for_non_replicated_merge_tree = 1, max_parallel_replicas = 3,
     cluster_for_parallel_replicas = 'parallel_replicas';

@@ -2,8 +2,6 @@
 -- from the column type has to be part of that hash. The defect needs a Compact part, so the part
 -- type is pinned on every table below instead of using a no-random-merge-tree-settings tag.
 
-SET enable_alp_codec = 1; -- required by ALP (beta), not needed for FPC and GCD
-
 -- 1. A Float64 and a Float32 column under the same codec name used to share one stream, so the
 -- second column was compressed with the first one's float width and a misaligned granule was
 -- rejected outright.

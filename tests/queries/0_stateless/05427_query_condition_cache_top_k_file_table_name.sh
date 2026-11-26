@@ -22,7 +22,7 @@ ${CLICKHOUSE_CLIENT} --query "
 touch -d '2020-01-01 00:00:00' "${USER_FILES_PATH}/${DATA_DIR}/rows.parquet"
 
 SETTINGS="use_query_condition_cache = 1, use_query_condition_cache_for_top_k = 1, use_top_k_dynamic_filtering = 1,
-    query_plan_max_limit_for_top_k_optimization = 1000, max_threads = 1, optimize_move_to_prewhere = 0, query_plan_optimize_prewhere = 0"
+    query_plan_max_limit_for_top_k_optimization = 1000, max_threads = 1, optimize_move_to_prewhere = 0"
 
 function run()
 {

@@ -57,7 +57,7 @@ query()
     local result
     result=$(${CLICKHOUSE_LOCAL} --print-profile-events -q "
         SELECT groupArray(n) FROM (SELECT $n AS n FROM file('$file', ORC) WHERE $condition ORDER BY n)
-        SETTINGS input_format_orc_filter_push_down = 1, input_format_orc_use_fast_decoder = 1" 2>"$WORK_DIR/events")
+        SETTINGS input_format_orc_filter_push_down = 1" 2>"$WORK_DIR/events")
     local expected
     expected=$(${CLICKHOUSE_LOCAL} -q "
         SELECT groupArray(n) FROM (SELECT $n AS n FROM file('$file', ORC) WHERE $condition ORDER BY n)

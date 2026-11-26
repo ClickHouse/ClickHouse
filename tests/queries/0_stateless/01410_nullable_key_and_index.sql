@@ -34,7 +34,7 @@ SELECT * FROM nullable_key WHERE k IN (10, 20) ORDER BY v, k SETTINGS transform_
 SET max_rows_to_read = 5;
 SELECT * FROM nullable_key WHERE k IN (3, NULL) ORDER BY v, k SETTINGS transform_null_in = 1;
 
-CREATE TABLE nullable_key_without_final_mark (s Nullable(String)) ENGINE MergeTree ORDER BY s SETTINGS allow_nullable_key = 1, write_final_mark = 0;
+CREATE TABLE nullable_key_without_final_mark (s Nullable(String)) ENGINE MergeTree ORDER BY s SETTINGS allow_nullable_key = 1;
 INSERT INTO nullable_key_without_final_mark VALUES ('123'), (NULL);
 SET max_rows_to_read = 0;
 SELECT * FROM nullable_key_without_final_mark WHERE s IS NULL;

@@ -25,7 +25,6 @@ ALTER TABLE t_first_applicable_lossy MODIFY SETTING default_compression_codec = 
 CREATE TABLE t_first_applicable_lossy_map (m Map(Float64, Float64) CODEC(FirstApplicable(SZ3, ZSTD))) ENGINE = MergeTree ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
 
 -- A `Map` nested in a `Variant`, or one that a `Dynamic` or `JSON` column may hold, is protected as well.
-SET allow_experimental_variant_type = 1, allow_experimental_dynamic_type = 1, enable_json_type = 1;
 CREATE TABLE t_first_applicable_lossy_map (v Variant(Map(Float64, Float64), String) CODEC(FirstApplicable(SZ3, ZSTD))) ENGINE = MergeTree ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
 CREATE TABLE t_first_applicable_lossy_map (d Dynamic CODEC(FirstApplicable(SZ3, ZSTD))) ENGINE = MergeTree ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
 CREATE TABLE t_first_applicable_lossy_map (j JSON CODEC(FirstApplicable(SZ3, ZSTD))) ENGINE = MergeTree ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }

@@ -1,5 +1,3 @@
-SET enable_json_type = 1;
-SET allow_experimental_json_type = 1;
 
 -- A typed path with a NULL literal but a non-empty sub-object must still be reported as
 -- present by JSONHas / JSONExtractRaw when type_json_skip_null_typed_paths is enabled.

@@ -17,7 +17,7 @@ ${CLICKHOUSE_CLIENT} --query "
     CREATE TABLE t_src (x UInt64) ENGINE = Memory;
     CREATE TABLE t_dst (x UInt64) ENGINE = Memory;
     CREATE MATERIALIZED VIEW t_mv TO t_dst AS SELECT x FROM t_src;
-    CREATE TABLE t_alias ENGINE = Alias('t_dst') SETTINGS allow_experimental_alias_table_engine = 1;
+    CREATE TABLE t_alias ENGINE = Alias('t_dst');
     CREATE TABLE t_secret (x UInt64) ENGINE = Memory;
 "
 

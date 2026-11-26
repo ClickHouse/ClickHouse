@@ -2,7 +2,6 @@
 -- sorting key column must not be filtered before FINAL: it can drop the row that wins the merge
 SET explain_query_plan_default = 'legacy';
 SET optimize_move_to_prewhere = 1;
-SET query_plan_optimize_prewhere = 1;
 SET optimize_move_to_prewhere_if_final = 1;
 
 DROP TABLE IF EXISTS t_prewhere_final_float;

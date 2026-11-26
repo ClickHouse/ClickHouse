@@ -28,10 +28,10 @@ DROP TABLE IF EXISTS stid_2635_r;
 -- Reverse primary key so the read goes through `ReadType::InReverseOrder`; `index_granularity = 1`
 -- maximises the number of PK-range layers.
 CREATE TABLE stid_2635_l (k Int) ENGINE = MergeTree() ORDER BY (k DESC)
-SETTINGS index_granularity = 1, allow_experimental_reverse_key = 1;
+SETTINGS index_granularity = 1;
 
 CREATE TABLE stid_2635_r (k Int) ENGINE = MergeTree() ORDER BY (k DESC)
-SETTINGS index_granularity = 1, allow_experimental_reverse_key = 1;
+SETTINGS index_granularity = 1;
 
 -- Left covers PK band [0, 50). Right covers the same [0, 50) plus a disjoint high band
 -- [1000, 1200). The disjoint high band yields a global layer with only right-side parts, hence

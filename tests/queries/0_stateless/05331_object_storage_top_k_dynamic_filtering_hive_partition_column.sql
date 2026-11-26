@@ -10,4 +10,4 @@ INSERT INTO FUNCTION s3(s3_conn, filename = currentDatabase() || '/05331/b=1/key
 SELECT key FROM s3(s3_conn, filename = currentDatabase() || '/05331/b=1/key={10,9}/data.parquet', format = Parquet, structure = 'key Int64')
 ORDER BY key LIMIT 3
 SETTINGS use_hive_partitioning = 1, max_threads = 1, max_parsing_threads = 1, optimize_count_from_files = 0, use_query_condition_cache = 0,
-    use_top_k_dynamic_filtering = 1, query_plan_max_limit_for_top_k_optimization = 1000, input_format_parquet_use_native_reader_v3 = 1;
+    use_top_k_dynamic_filtering = 1, query_plan_max_limit_for_top_k_optimization = 1000;

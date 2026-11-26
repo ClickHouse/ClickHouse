@@ -20,7 +20,7 @@ touch -d '2020-01-01 00:00:00' "${USER_FILES_PATH}/${DATA_DIR}/key=9/data.parque
 ${CLICKHOUSE_CLIENT} --query "CREATE TABLE t_05353 (key Int64, v Int64) ENGINE = File(Parquet, '${DATA_DIR}/key=9/data.parquet')"
 
 SETTINGS="use_hive_partitioning = 1, use_query_condition_cache = 1, use_query_condition_cache_for_top_k = 1, use_top_k_dynamic_filtering = 1,
-    query_plan_max_limit_for_top_k_optimization = 1000, input_format_parquet_use_native_reader_v3 = 1, input_format_parquet_filter_push_down = 1"
+    query_plan_max_limit_for_top_k_optimization = 1000, input_format_parquet_filter_push_down = 1"
 
 for condition in "key = 1 OR v > 180" "key = 1 OR v > 450" "_file = 'x' OR v > 600" "key = 9" "key = 9 AND v > 700"
 do

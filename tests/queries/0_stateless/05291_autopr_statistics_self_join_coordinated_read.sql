@@ -33,7 +33,6 @@ SET query_plan_optimize_join_order_randomize = 0;
 -- The swap below is applied as part of join-order optimization, so it needs that optimization enabled.
 SET query_plan_optimize_join_order_limit = 10;
 SET use_statistics = 1;
-SET use_statistics_cache = 1;
 SET max_threads = 1;
 SET merge_tree_min_bytes_per_task_for_remote_reading = 1024;
 SET automatic_parallel_replicas_min_bytes_per_replica = 0;

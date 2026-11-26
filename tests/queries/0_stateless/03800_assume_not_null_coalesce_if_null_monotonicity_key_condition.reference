@@ -348,7 +348,7 @@ CREATE TABLE test_null_rev
 )
 ENGINE = MergeTree()
 ORDER BY (ts DESC)
-SETTINGS index_granularity = 1, allow_nullable_key = 1, allow_experimental_reverse_key = 1, auto_statistics_types = '';
+SETTINGS index_granularity = 1, allow_nullable_key = 1, auto_statistics_types = '';
 INSERT INTO test_null_rev VALUES
     (toDateTime64('2026-01-01 00:00:00', 3)),
     (toDateTime64('2026-01-02 00:00:00', 3)),

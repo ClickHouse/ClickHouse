@@ -27,7 +27,6 @@ ${CLICKHOUSE_CLIENT} --query "
     SELECT count(), sum(length(ifNull(s, '')))
     FROM file('${CLICKHOUSE_TEST_UNIQUE_NAME}.parquet', Parquet, 's Nullable(String)')
     SETTINGS
-        input_format_parquet_use_native_reader_v3 = 1,
         max_memory_usage = '5G'
 "
 

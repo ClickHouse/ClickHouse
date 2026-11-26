@@ -6,7 +6,6 @@
 
 SET max_threads = 1;
 SET optimize_move_to_prewhere = 1;
-SET query_plan_optimize_prewhere = 1;
 
 DROP TABLE IF EXISTS t_memory_in_place_sets;
 DROP TABLE IF EXISTS t_memory_in_place_keys;

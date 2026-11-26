@@ -60,8 +60,7 @@ INSERT INTO aio_mono SELECT number % 4, number % 8 + 3 FROM numbers(40);
 
 -- NaN is a fixed point of negate(), so it keeps its physical position while the advertised
 -- direction flips, which is what nulls_direction has to describe.
-CREATE TABLE aio_mono_float (x Float64, v UInt64) ENGINE = MergeTree ORDER BY x DESC
-SETTINGS allow_experimental_reverse_key = 1;
+CREATE TABLE aio_mono_float (x Float64, v UInt64) ENGINE = MergeTree ORDER BY x DESC;
 SYSTEM STOP MERGES aio_mono_float;
 INSERT INTO aio_mono_float SELECT if(number % 7 = 0, nan, toFloat64(number % 5)), number FROM numbers(20);
 INSERT INTO aio_mono_float SELECT if(number % 3 = 0, nan, toFloat64(number % 5)), number + 7 FROM numbers(20);

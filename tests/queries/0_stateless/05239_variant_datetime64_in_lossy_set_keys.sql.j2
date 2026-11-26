@@ -3,7 +3,7 @@
 -- timestamp that the key type cannot hold exactly matches nothing, while the `UInt8` alternative and a NULL
 -- row keep their own semantics.
 
-SET enable_nullable_tuple_type = 1, allow_experimental_variant_type = 1;
+SET enable_nullable_tuple_type = 1;
 
 {% for mode in [0, 1] %}
 SELECT {{ mode }}, id, v,

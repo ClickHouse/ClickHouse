@@ -31,7 +31,7 @@ $CLICKHOUSE_CLIENT --send_logs_level=error -q "
 
 $CLICKHOUSE_CLIENT -q "
     SELECT x, _row_number FROM ${CLICKHOUSE_DATABASE}.queue ORDER BY x
-    SETTINGS stream_like_engine_allow_direct_select = 1, input_format_parquet_use_native_reader_v3 = 1
+    SETTINGS stream_like_engine_allow_direct_select = 1
 "
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE ${CLICKHOUSE_DATABASE}.queue SYNC"

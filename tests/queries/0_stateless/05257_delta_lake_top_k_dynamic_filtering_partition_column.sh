@@ -10,7 +10,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-SETTINGS="query_plan_max_limit_for_top_k_optimization = 1000, input_format_parquet_use_native_reader_v3 = 1,
+SETTINGS="query_plan_max_limit_for_top_k_optimization = 1000,
     input_format_parquet_filter_push_down = 1, max_threads = 1, max_parsing_threads = 1, use_query_condition_cache = 0"
 ON="use_top_k_dynamic_filtering = 1"
 OFF="use_top_k_dynamic_filtering = 0"

@@ -6,8 +6,6 @@
 -- while an explicit GRANULARITY is still honored (the explicit-granularity return precedes the vector
 -- branch, same as for the lowercase spelling).
 
-SET allow_experimental_vector_similarity_index = 1;
-
 DROP TABLE IF EXISTS tab_omitted;
 DROP TABLE IF EXISTS tab_explicit;
 

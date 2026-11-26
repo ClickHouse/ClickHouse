@@ -111,7 +111,7 @@ ${CLICKHOUSE_CLIENT} --query "SELECT k FROM t_05243 ORDER BY k DESC LIMIT 3 SETT
 # With `k >= 100000` the statistics already exclude every row group but the one of the result, so the
 # entries of the predicate alone and of the TopK exclude the same ones: the TopK entry changes nothing,
 # and the query must not fail for it.
-PRUNING_SETTINGS="input_format_parquet_filter_push_down = 1, optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1"
+PRUNING_SETTINGS="input_format_parquet_filter_push_down = 1, optimize_move_to_prewhere = 1"
 ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM t_05243 WHERE k >= 100000 SETTINGS ${SETTINGS}, ${PRUNING_SETTINGS}"
 ${CLICKHOUSE_CLIENT} --query "SELECT k FROM t_05243 WHERE k >= 100000 ORDER BY k DESC LIMIT 3 SETTINGS ${SETTINGS}, ${PRUNING_SETTINGS} FORMAT Null"
 ${CLICKHOUSE_CLIENT} --query "SYSTEM ENABLE FAILPOINT file_top_k_query_condition_cache_inject_file_change"
@@ -145,7 +145,7 @@ ${CLICKHOUSE_CLIENT} --query "SYSTEM DROP QUERY CONDITION CACHE"
 ${CLICKHOUSE_CLIENT} --query "
     SELECT k FROM t_05243_single WHERE k >= 997 ORDER BY k DESC LIMIT 4
     SETTINGS ${SETTINGS}, max_threads = 1, max_parsing_threads = 1, max_block_size = 65536,
-        optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1, input_format_parquet_filter_push_down = 1"
+        optimize_move_to_prewhere = 1, input_format_parquet_filter_push_down = 1"
 ${CLICKHOUSE_CLIENT} --query "SELECT matching_marks FROM system.query_condition_cache"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE t_05243_single"
 rm -rf "${USER_FILES_PATH:?}/${DATA_DIR}_single"

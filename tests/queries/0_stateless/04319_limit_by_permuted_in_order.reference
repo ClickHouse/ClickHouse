@@ -55,7 +55,7 @@ DROP TABLE test_permuted_order_by;
 -- Permuted keys on a reverse (descending) sorting key: streams arrive descending and are merged that way
 -- before the permuted LIMIT BY.
 DROP TABLE IF EXISTS test_permuted_reverse;
-CREATE TABLE test_permuted_reverse (a UInt32, c UInt32, v UInt32) ENGINE = MergeTree ORDER BY (a DESC, c DESC) SETTINGS allow_experimental_reverse_key = 1;
+CREATE TABLE test_permuted_reverse (a UInt32, c UInt32, v UInt32) ENGINE = MergeTree ORDER BY (a DESC, c DESC);
 SYSTEM STOP MERGES test_permuted_reverse;
 INSERT INTO test_permuted_reverse SELECT number % 50, number % 7, number      FROM numbers(1000);
 INSERT INTO test_permuted_reverse SELECT number % 50, number % 7, number+1000 FROM numbers(1000);

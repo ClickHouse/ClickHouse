@@ -14,8 +14,7 @@ RIGHT ANTI JOIN (
     SELECT toInt64(123) AS h
     FROM (SELECT 1 FROM numbers(1) ARRAY JOIN [0] AS a) AS l
     RIGHT JOIN (SELECT 1) AS r ON TRUE
-) AS r ON FALSE
-SETTINGS allow_experimental_join_condition = 1;
+) AS r ON FALSE;
 
 SELECT r.h FROM numbers(0) AS l RIGHT JOIN (SELECT toUInt64(123) AS h FROM (SELECT 1) AS a CROSS JOIN (SELECT 1) AS b) AS r ON l.number = r.h SETTINGS query_plan_join_swap_table = 'false';
 SELECT r.x, r.s, r.lc, r.n, r.arr, r.tup FROM numbers(0) AS l RIGHT JOIN (SELECT a.x AS x, 'abc' AS s, toLowCardinality('abc') AS lc, CAST(7 AS Nullable(Int64)) AS n, [1, 2] AS arr, (1, 'z') AS tup FROM (SELECT toUInt64(1) AS x) AS a CROSS JOIN (SELECT 1) AS b) AS r ON l.number = r.x SETTINGS query_plan_join_swap_table = 'false';

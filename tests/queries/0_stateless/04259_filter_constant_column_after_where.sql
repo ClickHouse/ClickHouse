@@ -19,7 +19,6 @@ INSERT INTO 04259_filter_constant_column_after_where VALUES
 SET query_plan_merge_filters = 0,
     query_plan_optimize_lazy_materialization = 0,
     query_plan_remove_unused_columns = 0,
-    query_plan_optimize_prewhere = 0,
     optimize_move_to_prewhere = 0;
 
 SELECT dumpColumnStructure(x), count(), sum(y)
@@ -280,7 +279,6 @@ FROM
 WHERE e = 'missing'
 SETTINGS validate_enum_literals_in_operators = 0;
 
-SET enable_json_type = 1;
 SET enable_analyzer = 1;
 
 SELECT reinterpretAsUInt64(json.a.:Float64)

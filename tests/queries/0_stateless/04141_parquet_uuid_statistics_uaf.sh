@@ -29,8 +29,7 @@ $CLICKHOUSE_LOCAL -q "
     INTO OUTFILE '${DATA_FILE}'
     SETTINGS output_format_parquet_data_page_size = 1024,
              output_format_parquet_batch_size = 1024,
-             output_format_parquet_max_dictionary_size = 0,
-             output_format_parquet_use_custom_encoder = 1
+             output_format_parquet_max_dictionary_size = 0
     FORMAT Parquet;
 "
 

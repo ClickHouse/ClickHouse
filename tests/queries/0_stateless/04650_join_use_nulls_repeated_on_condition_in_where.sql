@@ -5,7 +5,7 @@
 -- runnable on release branches that predate `explain_query_plan_default`.
 -- `WHERE` is not moved to `PREWHERE`, so the conditions under the join stay in the filter step
 -- whose split this file tests.
-SET optimize_move_to_prewhere = 0, query_plan_optimize_prewhere = 0;
+SET optimize_move_to_prewhere = 0;
 
 DROP TABLE IF EXISTS t1;
 DROP TABLE IF EXISTS t2;

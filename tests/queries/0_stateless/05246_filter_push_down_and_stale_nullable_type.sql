@@ -29,7 +29,7 @@ SET enable_parallel_replicas = 0;
 SET max_rows_to_group_by = 0;
 -- The single-table conjunct is pushed as far as PREWHERE; either of these off stops it earlier and
 -- does not exercise the split.
-SET optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1;
+SET optimize_move_to_prewhere = 1;
 
 SET make_distributed_plan = 1, distributed_plan_execute_locally = 1, query_plan_filter_push_down = 1;
 

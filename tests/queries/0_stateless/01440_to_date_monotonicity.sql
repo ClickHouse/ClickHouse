@@ -1,6 +1,6 @@
 DROP TABLE IF EXISTS tdm;
 DROP TABLE IF EXISTS tdm2;
-CREATE TABLE tdm (x DateTime('Asia/Istanbul')) ENGINE = MergeTree ORDER BY x SETTINGS write_final_mark = 0;
+CREATE TABLE tdm (x DateTime('Asia/Istanbul')) ENGINE = MergeTree ORDER BY x;
 INSERT INTO tdm VALUES (now());
 SELECT count(x) FROM tdm WHERE toDate(x) < toDate(now(), 'Asia/Istanbul') SETTINGS max_rows_to_read = 1;
 

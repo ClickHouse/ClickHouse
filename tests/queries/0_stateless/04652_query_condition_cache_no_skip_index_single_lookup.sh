@@ -36,15 +36,14 @@ $CLICKHOUSE_CLIENT -q "
 # Each setting is pinned in the query because the runner randomizes it and the wrong value would
 # make the counts describe a different path:
 #   use_query_condition_cache = 1        -- 0 never consults the cache at all
-#   optimize_move_to_prewhere = 0,
-#   query_plan_optimize_prewhere = 0     -- PREWHERE adds its own predicate, hence its own lookups
+#   optimize_move_to_prewhere = 0        -- PREWHERE adds its own predicate, hence its own lookups
 #   max_block_size = 8 (= index_granularity) -- lets the row-level writer fill the bare key too
 #   use_skip_indexes_for_disjunctions    -- part of the profiled key's salt
 #   enable_parallel_replicas = 0         -- 1 moves the lookups to the replica cluster
 # ast_fuzzer_runs = 0 keeps the stress profile's server-side fuzzer from re-running the query,
 # whose re-execution would add its own lookup lines.
 settings="use_query_condition_cache = 1, ast_fuzzer_runs = 0, optimize_move_to_prewhere = 0,
-    query_plan_optimize_prewhere = 0, max_block_size = 8,
+    max_block_size = 8,
     use_skip_indexes_for_disjunctions = 1, enable_parallel_replicas = 0"
 
 # `send_logs_level=test` makes the server evaluate the cache's TEST-level lookup logs and ship them

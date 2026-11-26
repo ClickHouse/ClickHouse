@@ -12,7 +12,6 @@ SET enable_analyzer = 1;
 SET enable_parallel_replicas = 0;
 SET use_query_condition_cache = 1;
 SET optimize_move_to_prewhere = 1;
-SET query_plan_optimize_prewhere = 1;
 SET query_plan_max_step_description_length = 1000;
 
 DROP TABLE IF EXISTS tab;

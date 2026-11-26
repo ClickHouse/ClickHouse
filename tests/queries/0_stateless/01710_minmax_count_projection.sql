@@ -24,7 +24,7 @@ drop table d;
 drop table if exists has_final_mark;
 drop table if exists mixed_final_mark;
 
-create table has_final_mark (i int, j int) engine MergeTree partition by i % 2 order by j settings index_granularity = 10, write_final_mark = 1;
+create table has_final_mark (i int, j int) engine MergeTree partition by i % 2 order by j settings index_granularity = 10;
 create table mixed_final_mark (i int, j int) engine MergeTree partition by i % 2 order by j settings index_granularity = 10;
 
 set max_rows_to_read = 100000;

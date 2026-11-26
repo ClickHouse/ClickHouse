@@ -28,7 +28,7 @@ FROM (
              query_plan_filter_push_down = 1, query_plan_merge_filters = 1,
              query_plan_remove_unused_columns = 1, query_plan_optimize_join_order_limit = 0,
              query_plan_optimize_join_order_randomize = 0, query_plan_join_swap_table = 'false',
-             optimize_move_to_prewhere = 0, query_plan_optimize_prewhere = 0
+             optimize_move_to_prewhere = 0
 );
 
 -- The conjuncts pushed into one side keep their order too. `(l.k + r.k) < 10` reaches the left side through
@@ -79,7 +79,7 @@ FROM (
              query_plan_filter_push_down = 1, query_plan_merge_filters = 1,
              query_plan_remove_unused_columns = 1, query_plan_optimize_join_order_limit = 0,
              query_plan_optimize_join_order_randomize = 0, query_plan_join_swap_table = 'false',
-             optimize_move_to_prewhere = 0, query_plan_optimize_prewhere = 0
+             optimize_move_to_prewhere = 0
 );
 
 -- The same shape with the guard written twice. Repeating a conjunct must not change which of the two
@@ -106,7 +106,7 @@ FROM (
              query_plan_filter_push_down = 1, query_plan_merge_filters = 1,
              query_plan_remove_unused_columns = 1, query_plan_optimize_join_order_limit = 0,
              query_plan_optimize_join_order_randomize = 0, query_plan_join_swap_table = 'false',
-             optimize_move_to_prewhere = 0, query_plan_optimize_prewhere = 0
+             optimize_move_to_prewhere = 0
 );
 
 -- The same shape again, with the guarded conjunct written twice instead of the guard. It shares the carrier,

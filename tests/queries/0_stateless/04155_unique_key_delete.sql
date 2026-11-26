@@ -7,7 +7,6 @@
 --   4. lazy table: a DELETE reaches a table whose database loads it lazily, directly and through an Alias
 
 SET enable_unique_key = 1;
-SET allow_experimental_alias_table_engine = 1;
 
 -- 1. explicit transaction: red if a UNIQUE KEY write stops refusing an explicit transaction (the
 -- DELETE then nests in the implicit transaction and aborts the debug server).

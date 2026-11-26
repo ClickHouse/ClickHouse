@@ -4,7 +4,6 @@
 SET allow_calculating_subcolumns_sizes_for_merge_tree_reading = 1;
 SET optimize_functions_to_subcolumns = 1;
 SET optimize_move_to_prewhere = 1;
-SET query_plan_optimize_prewhere = 1;
 SET use_query_cache = 0;
 -- Reading the statistics of the parts during planning is not what is measured.
 SET use_statistics = 0;
