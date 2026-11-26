@@ -41,6 +41,8 @@ WITH shapes AS
     SELECT log_comment, argMax(ProfileEvents['CompiledFunctionExecute'] > 0, event_time_microseconds) AS compiled
     FROM system.query_log
     WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment LIKE '05876\_%'
+        -- Not the runner's own `log_comment` (`<file>-<database>`) of the queries that do not set one.
+        AND log_comment NOT LIKE '%.sql-%'
     GROUP BY log_comment
 )
 SELECT log_comment, compiled = if(log_comment LIKE '%one\_row%', 0, (SELECT compiled FROM shapes WHERE log_comment = '05876_compiler'))
