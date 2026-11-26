@@ -133,7 +133,7 @@ public:
     {
     }
 
-    bool supportsExternalBufferMode() const override { return true; }
+    [[nodiscard]] bool supportsExternalBufferMode() const override { return true; }
 
     /// Like the body of a real response, reads straight into the memory of the caller: this
     /// buffer has no memory of its own, so the default `readBig` would see an empty buffer.
@@ -213,7 +213,7 @@ public:
     {
     }
 
-    bool supportsExternalBufferMode() const override { return true; }
+    [[nodiscard]] bool supportsExternalBufferMode() const override { return true; }
 
 private:
     bool nextImpl() override
@@ -250,7 +250,7 @@ struct ClientFake : DB::S3::Client
                   true,
                   true,
                   true,
-                  false,
+                  DB::HTTPConnectionGroupType::STORAGE,
                   {},
                   /* request_throttler = */ {},
                   "http"),
@@ -282,7 +282,7 @@ struct ClientFake : DB::S3::Client
                 std::make_unique<FakeResponseBody>(body, weak_session_ptr.lock()),
                 body.size()));
             Aws::AmazonWebServiceResult<Aws::Utils::Stream::ResponseStream> aws_result(
-                std::move(response_stream), Aws::Http::HeaderValueCollection{{"content-length", std::to_string(body.size())}});
+                std::move(response_stream), Aws::Http::HeaderValueCollection{{"content-length", Aws::Utils::StringUtils::to_string(body.size())}});
             DB::S3::Model::GetObjectResult result(std::move(aws_result));
             return DB::S3::Model::GetObjectOutcome(std::move(result));
         };
@@ -301,7 +301,7 @@ struct ClientFake : DB::S3::Client
             size_t end = body.size();
             if (request.RangeHasBeenSet())
             {
-                const std::string & range = request.GetRange();
+                const std::string range(request.GetRange());
                 const size_t prefix = std::string_view("bytes=").size();
                 const size_t dash = range.find('-');
                 begin = std::stoull(range.substr(prefix, dash - prefix));
@@ -319,9 +319,9 @@ struct ClientFake : DB::S3::Client
             end = std::min(std::max(begin, end), begin + std::min(max_response_size, body.size() - begin));
             const size_t size = end - begin;
 
-            Aws::Http::HeaderValueCollection headers{{"content-length", std::to_string(size)}};
+            Aws::Http::HeaderValueCollection headers{{"content-length", Aws::Utils::StringUtils::to_string(size)}};
             if (!ignore_range && request.RangeHasBeenSet())
-                headers.emplace("content-range", fmt::format("bytes {}-{}/{}", begin, end > begin ? end - 1 : begin, body.size()));
+                headers.emplace("content-range", Aws::String(fmt::format("bytes {}-{}/{}", begin, end > begin ? end - 1 : begin, body.size())));
 
             {
                 std::lock_guard lock(get_object_offsets_mutex);
@@ -336,7 +336,7 @@ struct ClientFake : DB::S3::Client
         };
     }
 
-    std::vector<size_t> getObjectOffsets() const
+    [[nodiscard]] std::vector<size_t> getObjectOffsets() const
     {
         std::lock_guard lock(get_object_offsets_mutex);
         return get_object_offsets;
@@ -364,8 +364,8 @@ struct ClientFake : DB::S3::Client
     {
         last_start_after = request.GetStartAfter().c_str();
         list_requests.emplace_back(ListRequest{
-            .start_after = request.GetStartAfter(),
-            .continuation_token = request.GetContinuationToken(),
+            .start_after = String(request.GetStartAfter()),
+            .continuation_token = String(request.GetContinuationToken()),
             .start_after_has_been_set = request.StartAfterHasBeenSet()});
 
         if (listObjectsV2Impl)
@@ -484,7 +484,7 @@ TEST_F(ReadBufferFromS3Test, ReadBigAtReleasesSessionBeforeRetryBackoff)
         auto response_stream = Aws::Utils::Stream::ResponseStream(
             Aws::New<DB::StdStreamFromReadBuffer>("test response stream", std::move(response_body), body.size()));
         Aws::AmazonWebServiceResult<Aws::Utils::Stream::ResponseStream> aws_result(
-            std::move(response_stream), Aws::Http::HeaderValueCollection{{"content-length", std::to_string(body.size())}});
+            std::move(response_stream), Aws::Http::HeaderValueCollection{{"content-length", Aws::Utils::StringUtils::to_string(body.size())}});
         return DB::S3::Model::GetObjectOutcome(DB::S3::Model::GetObjectResult(std::move(aws_result)));
     };
 
@@ -1079,7 +1079,8 @@ TEST_F(ReadBufferFromS3Test, ContentRangeHeaderIsParsed)
         client->getObjectImpl = [&](const Aws::S3::Model::GetObjectRequest &) -> Aws::S3::Model::GetObjectOutcome
         {
             std::string body = data.substr(body_begin, 16);
-            Aws::Http::HeaderValueCollection headers{{"content-length", std::to_string(body.size())}, {"content-range", content_range}};
+            Aws::Http::HeaderValueCollection headers{
+                {"content-length", Aws::Utils::StringUtils::to_string(body.size())}, {"content-range", Aws::String(content_range)}};
             const size_t size = body.size();
             auto response_stream = Aws::Utils::Stream::ResponseStream(Aws::New<DB::StdStreamFromReadBuffer>(
                 "test response stream", std::make_unique<FakeResponseBody>(std::move(body), std::make_shared<CountedSession>()), size));

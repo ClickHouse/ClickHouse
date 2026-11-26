@@ -94,7 +94,7 @@ struct TTLDescription
     NamesAndTypesList expression_source_columns;
 
     /// Expression actions evaluated from AST
-    ExpressionAndSets buildExpression(const ContextPtr & context) const;
+    [[nodiscard]] ExpressionAndSets buildExpression(const ContextPtr & context) const;
 
     /// Result column of this TTL expression
     String result_column;
@@ -108,7 +108,7 @@ struct TTLDescription
     NamesAndTypesList where_expression_columns;
     NamesAndTypesList where_expression_source_columns;
 
-    ExpressionAndSets buildWhereExpression(const ContextPtr & context) const;
+    [[nodiscard]] ExpressionAndSets buildWhereExpression(const ContextPtr & context) const;
 
     /// Name of result column from WHERE expression
     String where_result_column;
@@ -144,7 +144,8 @@ struct TTLDescription
         const ColumnsDescription & columns,
         ContextPtr context,
         const KeyDescription & primary_key,
-        TTLValidationMode validation_mode);
+        TTLValidationMode validation_mode,
+        bool trust_recompression_codec = false);
 
     TTLDescription() = default;
     TTLDescription(const TTLDescription & other);
@@ -180,12 +181,16 @@ struct TTLTableDescription
     TTLTableDescription(const TTLTableDescription & other);
     TTLTableDescription & operator=(const TTLTableDescription & other);
 
+    /// `trust_recompression_codec` keeps the checks of the expressions that `validation_mode` makes, but does not check the
+    /// codec of `RECOMPRESS` against the settings of the query, for a stored TTL that an `ALTER` rebuilds without defining it
+    /// again: the codec was accepted when the TTL was defined, as an unchanged column `CODEC` is not checked again.
     static TTLTableDescription getTTLForTableFromAST(
         const ASTPtr & definition_ast,
         const ColumnsDescription & columns,
         ContextPtr context,
         const KeyDescription & primary_key,
-        TTLValidationMode validation_mode);
+        TTLValidationMode validation_mode,
+        bool trust_recompression_codec = false);
 
     /// Parse description from string
     static TTLTableDescription parse(

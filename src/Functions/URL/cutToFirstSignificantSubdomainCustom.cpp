@@ -92,6 +92,7 @@ Returns the part of the domain that includes top-level subdomains up to the firs
     <public_suffix_list>public_suffix_list.dat</public_suffix_list>
     <!-- NOTE: path is under top_level_domains_path -->
 </top_level_domains_lists>
+```
     )";
     FunctionDocumentation::Syntax cutToFirstSignificantSubdomainCustomWithWWW_syntax = "cutToFirstSignificantSubdomainCustomWithWWW(url, tld_list_name)";
     FunctionDocumentation::Arguments cutToFirstSignificantSubdomainCustomWithWWW_arguments =
@@ -187,6 +188,7 @@ Similar to [cutToFirstSignificantSubdomainCustomWithWWW](#cutToFirstSignificantS
     <public_suffix_list>public_suffix_list.dat</public_suffix_list>
     <!-- NOTE: path is under top_level_domains_path -->
 </top_level_domains_lists>
+```
     )";
     FunctionDocumentation::Syntax cutToFirstSignificantSubdomainCustomWithWWWRFC_syntax = "cutToFirstSignificantSubdomainCustomWithWWWRFC(url, tld_list_name)";
     FunctionDocumentation::Arguments cutToFirstSignificantSubdomainCustomWithWWWRFC_arguments =

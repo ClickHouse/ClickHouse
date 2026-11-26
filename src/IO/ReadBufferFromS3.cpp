@@ -102,7 +102,7 @@ void assertWorkingBufferContainedIn(BufferBase::Buffer inner, BufferBase::Buffer
 void checkReturnedRangeStart(const Aws::S3::Model::GetObjectResult & result, size_t offset, const String & bucket, const String & key)
 {
     constexpr std::string_view unit = "bytes ";
-    const String & content_range = result.GetContentRange();
+    const auto & content_range = result.GetContentRange();
     std::optional<size_t> start;
     if (content_range.empty())
         start = 0;
@@ -735,13 +735,13 @@ Aws::S3::Model::GetObjectResult ReadBufferFromS3::sendRequest(size_t attempt, si
     {
         auto result = outcome.GetResultWithOwnership();
 
-        String response_etag = result.GetETag();
+        auto response_etag = result.GetETag();
         fiu_do_on(FailPoints::s3_read_inject_etag_mismatch, { response_etag = "<injected-etag-mismatch>"; });
 
         /// Defense-in-depth for backends that ignore If-Match and return the new bytes with 200: reject
         /// on ETag drift. Skip ?versionId= reads (pinned to an immutable version that expected_etag,
         /// taken from the current version, would falsely mismatch) and empty response ETags.
-        if (version_id.empty() && !expected_etag.empty() && !response_etag.empty() && response_etag != expected_etag)
+        if (version_id.empty() && !expected_etag.empty() && !response_etag.empty() && std::string_view(response_etag) != expected_etag)
             throw Exception(
                 ErrorCodes::S3_OBJECT_CHANGED_DURING_READ,
                 "S3 object {}/{} was replaced during read (etag changed from {} to {}); "
@@ -750,7 +750,7 @@ Aws::S3::Model::GetObjectResult ReadBufferFromS3::sendRequest(size_t attempt, si
 
         /// With only the hash there is no If-Match, so nothing else pins this GET: an empty response
         /// ETag fails too.
-        if (version_id.empty() && expected_etag_hash && getETagHash(response_etag) != expected_etag_hash)
+        if (version_id.empty() && expected_etag_hash && getCacheTokenHash(String(response_etag)) != expected_etag_hash)
             throw Exception(
                 ErrorCodes::S3_OBJECT_CHANGED_DURING_READ,
                 "S3 object {}/{} was replaced during read (expected etag hash {}, got etag {}); retry the query",
