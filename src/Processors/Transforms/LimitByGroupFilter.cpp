@@ -257,7 +257,7 @@ public:
             return {};
 
         MutableColumns columns;
-        std::vector<IColumn *> raw_columns;
+        std::vector<IColumn *> raw_columns; /// STYLE_CHECK_ALLOW_STD_CONTAINERS: the type that the hash methods take
         columns.reserve(key_types.size());
         raw_columns.reserve(key_types.size());
         for (const auto & key_type : key_types)

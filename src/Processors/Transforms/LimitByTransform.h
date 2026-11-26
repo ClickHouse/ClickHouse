@@ -99,7 +99,7 @@ private:
 
     /// Positions of the non-constant grouping key columns in the chunk header, in physical sort order so
     /// that every column probed by `getEqualRangeEndAssumeSorted` is contiguous within the range.
-    std::vector<size_t> grouping_key_positions;
+    ColumnNumbers grouping_key_positions;
 
     /// Kept per-group interval is `[group_offset, group_limit_end)`.
     const UInt64 group_offset;
