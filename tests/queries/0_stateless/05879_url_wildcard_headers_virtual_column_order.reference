@@ -1,0 +1,15 @@
+-- _headers before another virtual column
+hello	12	part1.tsv	hello
+hello	12	part1.tsv	world
+-- _headers between other virtual columns
+part1.tsv	hello	12	hello
+part1.tsv	hello	12	world
+-- _headers after the other virtual columns
+part1.tsv	12	hello	hello
+part1.tsv	12	hello	world
+-- _headers in SELECT, another virtual column in WHERE
+hello	hello
+hello	world
+-- the query of the AST fuzzer, with the condition negated to get rows
+1	hello
+1	world
