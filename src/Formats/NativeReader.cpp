@@ -207,7 +207,16 @@ Block NativeReader::read()
     }
 
     if (columns == 0 && header.empty() && rows != 0)
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Zero columns but {} rows in Native format.", rows);
+    {
+        /// The rows of such a block carry no values at all - it is what a shard sends for a query whose
+        /// intermediate result needs nothing from it. Only a sender that speaks a new enough protocol
+        /// revision can mean it, and only the reader of an intermediate result expects it; for any other
+        /// reader (of a `Native` file, for one) this is malformed data.
+        if (!allow_rows_without_columns || server_revision < DBMS_MIN_REVISION_WITH_COLUMN_LESS_BLOCK_ROW_COUNT)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Zero columns but {} rows in Native format.", rows);
+
+        res.setRowsWithoutColumns(rows);
+    }
 
     /// `rows` comes from the block header, and the limit it is checked against is deliberately
     /// generous, so it must not be used to preallocate the columns: a header declaring a huge row
