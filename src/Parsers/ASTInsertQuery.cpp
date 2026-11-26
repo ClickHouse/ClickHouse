@@ -12,6 +12,7 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
 #include <Common/quoteString.h>
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
@@ -355,28 +356,65 @@ void ASTInsertQuery::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliase
 }
 
 
-static void tryFindInputFunctionImpl(const ASTPtr & ast, ASTPtr & input_function)
+namespace
+{
+
+void tryFindInputTableFunction(const ASTPtr & ast, ASTPtr & input_function)
+{
+    const auto * function = ast->as<ASTFunction>();
+    if (!function)
+        return;
+
+    if (function->name == "input")
+    {
+        if (input_function)
+            throw Exception(ErrorCodes::INVALID_USAGE_OF_INPUT, "You can use the `input` function only once in a query.");
+        input_function = ast;
+    }
+    else if (function->arguments)
+    {
+        /// Nested table functions have no `ASTTableExpression`, but scalar arguments must not be treated as table functions.
+        const auto & arguments = function->arguments->children;
+        if (function->name == "loop" && arguments.size() == 1)
+            tryFindInputTableFunction(arguments[0], input_function);
+        else if (function->name == "viewIfPermitted" && arguments.size() == 2)
+            tryFindInputTableFunction(arguments[1], input_function);
+        else if (function->name == "remote" || function->name == "remoteSecure"
+            || function->name == "cluster" || function->name == "clusterAllReplicas")
+        {
+            if (arguments.size() > 1)
+                tryFindInputTableFunction(arguments[1], input_function);
+            for (size_t i = 1; i < arguments.size(); ++i)
+            {
+                const auto * argument = arguments[i]->as<ASTFunction>();
+                if (!argument || argument->name != "equals" || !argument->arguments || argument->arguments->children.size() != 2)
+                    continue;
+                const auto & key_value = argument->arguments->children;
+                const auto * key = key_value[0]->as<ASTIdentifier>();
+                if (key && (key->name() == "database" || key->name() == "db"))
+                    tryFindInputTableFunction(key_value[1], input_function);
+            }
+        }
+    }
+}
+
+}
+
+void ASTInsertQuery::tryFindInputFunction(const ASTPtr & ast, ASTPtr & input_function)
 {
     if (!ast)
         return;
     for (const auto & child : ast->children)
-        tryFindInputFunctionImpl(child, input_function);
+        tryFindInputFunction(child, input_function);
 
-    if (const auto * table_function_ast = ast->as<ASTFunction>())
-    {
-        if (table_function_ast->name == "input")
-        {
-            if (input_function)
-                throw Exception(ErrorCodes::INVALID_USAGE_OF_INPUT, "You can use the `input` function only once in a query.");
-            input_function = ast;
-        }
-    }
+    if (const auto * table_expression = ast->as<ASTTableExpression>(); table_expression && table_expression->table_function)
+        tryFindInputTableFunction(table_expression->table_function, input_function);
 }
 
 
 void ASTInsertQuery::tryFindInputFunction(ASTPtr & input_function) const
 {
-    tryFindInputFunctionImpl(select, input_function);
+    tryFindInputFunction(select, input_function);
 }
 
 }
