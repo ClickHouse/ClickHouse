@@ -5072,7 +5072,7 @@ FunctionCast::WrapperType FunctionCast::prepareRemoveNullable(
 
     /// The element conversions of a Tuple do not all read its null map, so they would convert the placeholders of its NULL rows.
     const bool exclude_source_nulls = source_is_nullable && !nested_types_equal
-        && (cast_type == CastType::accurate || isTuple(from_nested_type));
+        && (cast_type == CastType::accurate || isTuple(from_nested_type) || !from_nested_type->isDefaultInsertTrivial());
 
     /// A conversion asked to report its failures as NULL needs a nullable result even when `to_type` cannot
     /// hold NULL (see `prepareUnpackDictionaries`).
