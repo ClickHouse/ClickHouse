@@ -3,8 +3,6 @@
 -- of other variants (allow_nullable_tuple_in_extracted_subcolumns, on by default), so every element
 -- read through it - including the .null subcolumn of a Nullable element - is Nullable and NULL there.
 
-SET enable_variant_type = 1;
-
 DROP TABLE IF EXISTS t_dyn;
 DROP TABLE IF EXISTS t_dyn_wide;
 DROP TABLE IF EXISTS t_var;
