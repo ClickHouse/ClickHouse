@@ -109,7 +109,7 @@ StoragePtr createQueueStorage(const StorageFactory::Arguments & args)
     /// A stored definition is not validated again.
     const bool is_attach = !isFreshDefinition(args.mode);
 
-    if (args.mode == LoadingStrictnessLevel::CREATE && args.storage_def->settings)
+    if (isFreshDefinition(args.mode) && args.storage_def->settings)
     {
         if (auto * path_setting = args.storage_def->settings->changes.tryGetChange("keeper_path"))
         {
@@ -120,9 +120,10 @@ StoragePtr createQueueStorage(const StorageFactory::Arguments & args)
             bool is_replicated_database = args.getLocalContext()->isDDLOrOnClusterInternal() &&
                 database_engine == "Replicated";
 
-            /// Allow implicit {uuid} macros only for keeper_path in ON CLUSTER queries
-            /// and if UUID was explicitly passed in CREATE TABLE (like for ATTACH)
-            bool allow_uuid_macro = is_on_cluster || is_replicated_database || args.query.attach || args.query.has_uuid; // STYLE_CHECK_ALLOW_ATTACH_FLAG
+            /// Allow implicit {uuid} macros only for keeper_path in ON CLUSTER queries, if the UUID is explicit,
+            /// or on `RESTORE`, which assigns the UUID of the table itself.
+            bool allow_uuid_macro = is_on_cluster || is_replicated_database || args.query.has_uuid
+                || args.mode == LoadingStrictnessLevel::RESTORE;
 
             /// This value is read before the settings are applied to `ObjectStorageQueueSettings`, so the
             /// value-less form `SETTINGS keeper_path` has not been rejected yet, and `safeGet` would report
