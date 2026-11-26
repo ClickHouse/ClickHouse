@@ -1,6 +1,7 @@
 #include <Core/ProtocolDefines.h>
 #include <Access/AccessControl.h>
 #include <Columns/IColumn.h>
+#include <Common/CurrentMemoryTracker.h>
 #include <Common/Jemalloc.h>
 #include <Common/AsynchronousMetricsKeyValuesMode.h>
 #include <Common/FilesystemIsolation.h>
@@ -39,6 +40,7 @@
 #include <Storages/System/ServerSettingColumnsParams.h>
 #if ENABLE_DISTRIBUTED_CACHE
 #    include <Disks/IO/WriteBufferFromDistributedCache.h>
+#    include <Server/DistributedCache/DistributedCacheServerConnectionRegistry.h>
 #endif
 #include <base/sanitizer_defs.h>
 #include <base/sort.h>
@@ -550,38 +552,9 @@ A value of `0` means all cores.
 The delay during which a dropped table can be restored using the [`UNDROP`](/reference/statements/undrop) statement. If `DROP TABLE` ran with a `SYNC` modifier, the setting is ignored.
 The default for this setting is `480` (8 minutes).
 )", 0) \
-    DECLARE(UInt64, database_catalog_unused_dir_hide_timeout_sec, 60 * 60, R"(
-Parameter of a task that cleans up garbage from `store/` directory.
-If some subdirectory is not used by clickhouse-server and this directory was not modified for last
-[`database_catalog_unused_dir_hide_timeout_sec`](/reference/settings/server-settings/settings/database-catalog#database_catalog_unused_dir_hide_timeout_sec) seconds, the task will "hide" this directory by
-removing all access rights. It also works for directories that clickhouse-server does not
-expect to see inside `store/`.
-
-<Note>
-A value of `0` means "immediately".
-</Note>
-)", 0) \
-    DECLARE(UInt64, database_catalog_unused_dir_rm_timeout_sec, 30 * 24 * 60 * 60, R"(
-Parameter of a task that cleans up garbage from `store/` directory.
-If some subdirectory is not used by clickhouse-server and it was previously "hidden"
-(see [database_catalog_unused_dir_hide_timeout_sec](/reference/settings/server-settings/settings/database-catalog#database_catalog_unused_dir_hide_timeout_sec))
-and this directory was not modified for last
-[`database_catalog_unused_dir_rm_timeout_sec`](/reference/settings/server-settings/settings/database-catalog#database_catalog_unused_dir_rm_timeout_sec) seconds, the task will remove this directory.
-It also works for directories that clickhouse-server does not
-expect to see inside `store/`.
-
-<Note>
-A value of `0` means "never". The default value corresponds to 30 days.
-</Note>
-)", 0) \
-    DECLARE(UInt64, database_catalog_unused_dir_cleanup_period_sec, 24 * 60 * 60, R"(
-Parameter of a task that cleans up garbage from `store/` directory.
-Sets scheduling period of the task.
-
-<Note>
-A value of `0` means "never". The default value corresponds to 1 day.
-</Note>
-)", 0) \
+    DECLARE(UInt64, database_catalog_unused_dir_hide_timeout_sec, 60 * 60, R"(Parameter of the background task that cleaned up garbage from the `store/` directory: the time after which the task revoked all access rights from an unused directory. The setting is deprecated and has no effect: the task was removed, and ClickHouse never hides or removes unused directories in `store/` automatically.)", SettingsTierType::OBSOLETE) \
+    DECLARE(UInt64, database_catalog_unused_dir_rm_timeout_sec, 30 * 24 * 60 * 60, R"(Parameter of the background task that cleaned up garbage from the `store/` directory: the time after which the task removed an unused directory. The setting is deprecated and has no effect: the task was removed, and ClickHouse never hides or removes unused directories in `store/` automatically.)", SettingsTierType::OBSOLETE) \
+    DECLARE(UInt64, database_catalog_unused_dir_cleanup_period_sec, 24 * 60 * 60, R"(Parameter of the background task that cleaned up garbage from the `store/` directory: the scheduling period of the task. The setting is deprecated and has no effect: the task was removed, and ClickHouse never hides or removes unused directories in `store/` automatically.)", SettingsTierType::OBSOLETE) \
     DECLARE(UInt64, database_catalog_drop_error_cooldown_sec, 5, R"(In case of a failed table drop, ClickHouse will wait for this time-out before retrying the operation.)", 0) \
     DECLARE(UInt64, database_catalog_drop_table_concurrency, 16, R"(The size of the threadpool used for dropping tables.)", 0) \
     DECLARE(UInt64, database_catalog_shutdown_table_concurrency, 0, R"(The size of the threadpool used for shutting down tables when the server is stopping. Zero means the number of threads is equal to the number of cores.)", 0) \
@@ -699,6 +672,10 @@ This setting can be modified at runtime and will take effect immediately.
 
 <Note>
 This setting can be modified at runtime and will take effect immediately.
+</Note>
+
+<Note>
+In ClickHouse Cloud, the maximum cache size depends on the pod size. The exact size can be checked in `system.server_settings`. As server settings cannot be changed from SQL or the console, contact support to configure a bigger size.
 </Note>
 )", 0) \
     DECLARE(UInt64, vector_similarity_index_cache_max_entries, DEFAULT_VECTOR_SIMILARITY_INDEX_CACHE_MAX_ENTRIES, "Size of cache for vector similarity index in entries. Zero means disabled.", 0) \
@@ -1447,22 +1424,20 @@ Comma-separated list of users to ignore an early memory limit check. If user is 
 If true, ClickHouse creates all configured `system.*_log` tables before the startup. It can be helpful if some startup scripts depend on these tables.
 )", 0) \
     DECLARE(Bool, use_shared_merge_tree_log_pipeline, false, R"(
-Only available on ClickHouse Cloud. When enabled, `system.*_log` tables are backed by `SharedMergeTree` via an S3-based pipeline.
-For each log `<log>`, the following objects are created automatically on startup:
+Only available on ClickHouse Cloud. When enabled, the system logs are written through a `SharedMergeTree` pipeline
+and the `system` database becomes a Shared database, so every replica sees the same log tables.
 
-- `system.<log>_s3` — an `S3`-backed table that is the direct flush target; each
-  `SYSTEM FLUSH LOGS` call writes a new partitioned file here.
-- `system.<log>_s3queue` — an `S3Queue` table (ordered mode) that picks up files from
-  `<log>_s3` and streams rows downstream. Each node processes only its own files via
-  `partition_regex`-based partitioning.
-- `system.<log>_mv` — a `MATERIALIZED VIEW` that routes rows from `<log>_s3queue` into
-  the final `SharedMergeTree` table.
-- `system.<log>` — the final `SharedMergeTree` table where rows accumulate and are queried.
+Each flush of a log writes a `Native` file with the `s3` (or `azureBlobStorage`) table function into the folder of the
+log's generation, the hash of its columns and keys. Per generation the pipeline keeps the queue `system._<log>_s3queue_<hash>`
+reading that folder, the materialized view `system._<log>_mv_<hash>` and the `SharedMergeTree` table `system.<log>_<hash>`.
+`system.<log>` is a `Merge` table over the generations. A new schema creates a new generation; settings, TTL and indices
+come from the `smt_settings`, `smt_ttl` and `smt_indices` keys of the log's configuration and are changed in place.
+The objects are created on the first flush of a log, or at startup with `prepare_system_log_tables_on_startup`.
+The sorting key of a table is the key of the log with `hostname` in front, so that the rows of a replica are read by the key.
+The `smt_order_by` and `smt_partition_by` keys of the log's configuration replace the keys of the table.
 
-On schema or settings change, the affected table is renamed to `<log>_0`, `<log>_1`, etc.
-and recreated, consistent with the existing `SystemLog` rotation behavior.
-
-Requires `<shared_log_pipeline><endpoint>` to be set in the server configuration.
+The local `system` database is renamed to `system_local` while the setting is enabled. Requires `shared_database_catalog`
+and `<shared_log_pipeline><endpoint>` in the server configuration.
 See also: `shared_log_pipeline.enable_sync_flush`, `shared_log_pipeline.flush_timeout_seconds`.
 )", EXPERIMENTAL) \
     DECLARE(UInt64, config_reload_interval_ms, 2000, R"(
@@ -1532,11 +1507,14 @@ Threads for cleanup of shared merge tree parts killer threads. Only available in
     DECLARE(NonZeroUInt64, parts_killer_max_condemned_parts_per_batch, 100000, R"(
 Maximum number of condemned parts a SharedMergeTree table fetches from Keeper in a single cleanup cycle. Bounding the batch keeps the listing and multi-get within the Keeper operation timeout, so cleanup keeps making progress even when a table has accumulated a very large condemned-parts backlog. Must be greater than zero: a value of `0` would make Keeper return an empty listing every cycle, permanently stalling cleanup. Only available in ClickHouse Cloud
 )", 0) \
-    DECLARE(UInt64, snapshot_cleaner_period, 120, R"(
-Period to completely remove snapshot parts for SharedMergeTree. Only available in ClickHouse Cloud
+    DECLARE(UInt64, snapshot_cleaner_period, 3600, R"(
+Period in seconds to completely remove snapshot parts for SharedMergeTree. Only available in ClickHouse Cloud
 )", 0) \
     DECLARE(UInt64, snapshot_cleaner_pool_size, 128, R"(
 Threads for cleanup of shared merge tree snapshot cleaner threads. Only available in ClickHouse Cloud
+)", 0) \
+    DECLARE(UInt64, snapshot_cleaner_max_replicas, 3, R"(
+Maximum number of replicas that run the snapshot cleaner for each table under the snapshot registry. Every replica running a cleaner advertises it with the `snapshot_cleaner_enabled` replica flag; the replicas rank the advertising replicas by a rendezvous hash of the table and the replica name, and a replica processes a table only when it is among the top entries, so the cleanup of different tables spreads across the fleet while duplicated work stays bounded. Replicas whose cleaner is disabled (`snapshot_cleaner_period = 0`) never advertise and are never elected. `0` means no limit: every replica processes every table. Only available in ClickHouse Cloud
 )", 0) \
     DECLARE(UInt64, keeper_multiread_batch_size, 10'000, R"(
 Maximum size of batch for MultiRead request to [Zoo]Keeper that support batching. If set to 0, batching is disabled. Available only in ClickHouse Cloud.
@@ -1575,6 +1553,7 @@ Maximum size of batch for MultiRead request to [Zoo]Keeper that support batching
     DECLARE(NonZeroUInt64, distributed_cache_warmer_max_file_segment_size, 32_MiB, R"(Only has an effect in ClickHouse Cloud. The size of the ranges in which the cache warmer reads a fetched part into the distributed cache when the disk of the part has no local filesystem cache (with a local cache the warmer uses its `max_file_segment_size`).)", 0) \
     DECLARE(UInt64, distributed_cache_warmer_max_bytes_in_queue, 100_GiB, R"(Only has an effect in ClickHouse Cloud. The maximum total size of the ranges the cache warmer keeps queued for a disk without a local filesystem cache; the oldest ranges are discarded beyond it (with a local cache the warmer uses its `max_size`). Zero means unlimited.)", 0) \
     DECLARE(UInt64, distributed_cache_warmer_max_segments_in_queue, 100000, R"(Only has an effect in ClickHouse Cloud. The maximum number of ranges the cache warmer keeps queued for a disk without a local filesystem cache; the oldest ranges are discarded beyond it (with a local cache the warmer uses its `max_elements`). Zero means unlimited.)", 0) \
+    DECLARE(Bool, distributed_cache_warmer_skip_parts_produced_in_current_availability_zone, true, R"(Only has an effect in ClickHouse Cloud. When the cache warmer warms the distributed cache alone (the part's disk has no local filesystem cache, or the cache is disabled for reads), skip the parts that were produced by a replica in the current availability zone: written through the distributed cache, they are already in the cache of this zone. Parts of unknown origin are always warmed.)", 0) \
     DECLARE(Bool, enable_write_through_distributed_cache, false, R"(Only has an effect in ClickHouse Cloud. Allow writing to distributed cache (writing to s3 will also be done by distributed cache). This is a server-level switch, applied without a restart, so that background operations which do not have a query profile of their own (merges, mutations, `Buffer` table flushes) follow it as well. Individual queries can deviate from it with the `force_write_through_distributed_cache` setting.)", 0) \
     DECLARE(UInt32, allow_feature_tier, 0, R"(
 Controls if the user can change settings related to the different feature tiers.
@@ -1662,6 +1641,12 @@ Max ratio between OS CPU wait (OSCPUWaitMicroseconds metric) and busy (OSCPUVirt
 See [Controlling behavior on server CPU overload](/concepts/features/configuration/settings/server-overload) for more details.
 )", 0) \
     DECLARE(Float, distributed_cache_keep_up_free_connections_ratio, 0.1f, "Soft limit for number of active connection distributed cache will try to keep free. After the number of free connections goes below distributed_cache_keep_up_free_connections_ratio * max_connections, connections with oldest activity will be closed until the number goes above the limit.", 0) \
+    DECLARE(UInt64, distributed_cache_stuck_request_no_progress_timeout_ms, 10000, R"(Distributed cache server closes a connection whose request exchanged no data for this many milliseconds, not counting time spent waiting for the client. The value 0 disables this limit; the stuck-request scan stops only when `distributed_cache_max_request_processing_time_ms` is 0 as well.)", 0) \
+    DECLARE(UInt64, distributed_cache_max_request_processing_time_ms, 60000, R"(Distributed cache server ends a request it has been processing for this many milliseconds since the request's last `StartRequest` or `ContinueRequest`, not counting time spent waiting for the client; a new read range starts a new budget. The request is ended as soon as the server can report it, and a request that never gets there has its connection closed `distributed_cache_stuck_request_scan_interval_ms` later. The value 0 means unbounded.)", 0) \
+    DECLARE(NonZeroUInt64, distributed_cache_stuck_request_scan_interval_ms, 5000, R"(Interval of the distributed cache server's stuck-request scan, in milliseconds.)", 0) \
+    DECLARE(Double, distributed_cache_slow_down_stuck_requests_ratio, 0.2, R"(Distributed cache server asks a client to slow down once at least this share of its in-flight requests is stuck; idle connections do not count. The value 0 never asks.)", 0) \
+    DECLARE(UInt64, distributed_cache_slow_down_min_stuck_requests, 10, R"(Distributed cache server asks a client to slow down only once at least this many of its requests are stuck, so that a client with a couple of requests in flight is not asked over a single one. The values 0 and 1 leave the decision to `distributed_cache_slow_down_stuck_requests_ratio` alone.)", 0) \
+    DECLARE(UInt64, distributed_cache_slow_down_window_ms, 10000, R"(How long a distributed cache server asks a client to stay away once too many of its requests are stuck, in milliseconds. Must be at least twice `distributed_cache_stuck_request_scan_interval_ms`, so that a window lapses only when a scan does not renew it; the value 0 is rejected.)", 0) \
     DECLARE(UInt64, tcp_close_connection_after_queries_num, 0, R"(Maximum number of queries allowed per TCP connection before the connection is closed. Set to 0 for unlimited queries.)", 0) \
     DECLARE(UInt64, tcp_close_connection_after_queries_seconds, 0, R"(Maximum lifetime of a TCP connection in seconds before it is closed. Set to 0 for unlimited connection lifetime.)", 0) \
     DECLARE(Bool, tcp_with_proxy_allow_interserver_mode, true, R"(
@@ -2068,14 +2053,15 @@ The policy is only implemented for x86-64 and AArch64, since it is a list of arc
 ```
 )", 0) \
     DECLARE(FilesystemIsolationMode, filesystem_isolation, FilesystemIsolationMode::Disabled, R"(
-Whether the server isolates itself from the filesystem of the host at startup, keeping visible only the paths it needs, like a container does. An attacker who manages to run code inside the server process then finds no shell or other program to run, and cannot read or modify the files of the host outside the directories of the server.
+Whether the server isolates itself from the filesystem of the host at startup, keeping visible only the paths it needs, like a container does. An attacker who manages to run code inside the server process then finds no shell or other program to run, and cannot read or modify the files of the host outside the paths listed below, neither directly nor through the `/proc` entries of other processes.
 
-At startup, before it starts any thread, the server moves itself into a new [mount namespace](https://man7.org/linux/man-pages/man7/mount_namespaces.7.html) whose root is an empty read-only `tmpfs`, bind-mounts into it, at their usual locations, only the paths it needs, and removes the original root with `pivot_root`. What stays visible:
+At startup, before it starts any thread, the server moves into a new [mount namespace](https://man7.org/linux/man-pages/man7/mount_namespaces.7.html) whose root is an empty read-only `tmpfs`, bind-mounts into it, at their usual locations, only the paths it needs, and removes the original root with `pivot_root`. With `CAP_SYS_ADMIN`, it also runs in a new [PID namespace](https://man7.org/linux/man-pages/man7/pid_namespaces.7.html), with a new `/proc` (see below). What stays visible:
 
-- The paths from the configuration that the server writes: `path`, `tmp_path`, `user_files_path`, `format_schema_path`, `filesystem_caches_path`, the directories of the local disks and of the metadata of the other disks in `storage_configuration`, the directories of the log files, of the pid file and of `core_path`, the storage directories of the embedded Keeper, `access_control_path`, the paths of all the `local_directory` entries in `user_directories`, `user_defined_path`, `workload_path`, `named_collections_storage.path`, `backups.allowed_path`. They are mounted read-write, but with `noexec`, so that nothing written there can be executed.
-- The paths from the configuration that the server only reads, mounted read-only: the directory of the configuration file, the directories of the included files and of the targets of the symbolic links among the configuration files, `users_config`, `user_scripts_path` (programs in it can be executed), `top_level_domains_path`, `google_protos_path`, the directories of the TLS certificates and keys in `openSSL`, `grpc`, `ldap_servers`, the Kerberos keytab, and the `clickhouse-odbc-bridge` program next to the server's executable, with its dynamic loader and the shared libraries it needs, as the dynamic loader finds them. The locations of the logs of the bridge (`logger.odbc_bridge_log`, `logger.odbc_bridge_errlog`, `logger.odbc_bridge_stdout`, `logger.odbc_bridge_stderr`) are writable.
+- The paths from the configuration that the server writes: `path`, `tmp_path`, `user_files_path`, `format_schema_path`, `filesystem_caches_path`, the directories of the local disks and of the metadata of the other disks in `storage_configuration`, the directories of the log files, of `core_path` and, without `CAP_SYS_ADMIN`, of the pid file, the storage directories of the embedded Keeper, `access_control_path`, the paths of all the `local_directory` entries in `user_directories`, `user_defined_path`, `workload_path`, `named_collections_storage.path`, `backups.allowed_path`, the working directory of every `distributed_cache_server` section and the cache directory of each. They are mounted read-write, but with `noexec`, so that nothing written there can be executed.
+- The paths from the configuration that the server only reads, mounted read-only: the directory of the configuration file, the directories of the included files and of the targets of the symbolic links among the configuration files, `users_config`, `user_scripts_path` (programs in it can be executed), `top_level_domains_path`, `google_protos_path`, the directories of the TLS certificates and keys in `openSSL`, `grpc`, `ldap_servers`, of the certificate and the key of every `distributed_cache_server` section and of the certificate chain of `distributed_cache_client`, the Kerberos keytab, and the `clickhouse-odbc-bridge` program next to the server's executable, with its dynamic loader and the shared libraries it needs, as the dynamic loader finds them. The locations of the logs of the bridge (`logger.odbc_bridge_log`, `logger.odbc_bridge_errlog`, `logger.odbc_bridge_stdout`, `logger.odbc_bridge_stderr`) are writable.
 - The executable of the server and the shared libraries it is linked with, with the symbolic links next to them that name them (such as `libc.so.6`), and the directory of the heap profiles of jemalloc if its `prof_prefix` option is set.
-- What a program on Linux needs: `/proc` (with `/proc/sys`, `/proc/sysrq-trigger`, `/proc/bus`, `/proc/fs` and `/proc/irq` and the mounts inside them read-only, as in the containers of Docker), `/sys` (read-only), `/dev/null`, `/dev/zero`, `/dev/full`, `/dev/random`, `/dev/urandom`, a private instance of `devpts` at `/dev/pts` with `/dev/ptmx` for the pseudoterminals of the web terminal and the SSH server, the network configuration in `/etc` (`hosts`, `resolv.conf`, `nsswitch.conf`, `host.conf`, `gai.conf`, `services`, `protocols`), `/etc/passwd`, `/etc/group`, `/etc/localtime`, the time zone database and the CA certificates (`/etc/ssl`, `/etc/pki`, `/etc/ca-certificates`, `/usr/share/ca-certificates`, `/usr/local/share/ca-certificates`) with the targets of the links inside them, as in a CA directory given in `caConfig`, `/usr/lib/debug` for the symbols in stack traces, the socket of the service manager from the `NOTIFY_SOCKET` environment variable, and `/dev/log` if `logger.use_syslog` is enabled. If `/dev/log` is a symbolic link, as `/dev/log -> /run/systemd/journal/dev-log` with systemd, the directory of its target is visible, so that a socket recreated there by a restarted service is seen. A socket directly in `/dev` that the syslog daemon recreates when it restarts is not seen again until the server restarts, because the `/dev` of the host is not visible.
+- What a program on Linux needs: `/proc` (a new one of the PID namespace of the server with `CAP_SYS_ADMIN`, the original one otherwise, with `/proc/sys`, `/proc/sysrq-trigger`, `/proc/bus`, `/proc/fs` and `/proc/irq` and the mounts inside them read-only, as in the containers of Docker), `/sys` (read-only), `/dev/null`, `/dev/zero`, `/dev/full`, `/dev/random`, `/dev/urandom`, a private instance of `devpts` at `/dev/pts` with `/dev/ptmx` for the pseudoterminals of the web terminal and the SSH server, the network configuration in `/etc` (`hosts`, `resolv.conf`, `nsswitch.conf`, `host.conf`, `gai.conf`, `services`, `protocols`), `/etc/passwd`, `/etc/group`, `/etc/localtime`, the time zone database and the CA certificates (`/etc/ssl`, `/etc/pki`, `/etc/ca-certificates`, `/usr/share/ca-certificates`, `/usr/local/share/ca-certificates`) with the targets of the links inside them, as in a CA directory given in `caConfig`, `/usr/lib/debug` for the symbols in stack traces, without `CAP_SYS_ADMIN` the socket of the service manager from the `NOTIFY_SOCKET` environment variable, and `/dev/log` if `logger.use_syslog` is enabled. If `/dev/log` is a symbolic link, as `/dev/log -> /run/systemd/journal/dev-log` with systemd, the directory of its target is visible, so that a socket recreated there by a restarted service is seen. A socket directly in `/dev` that the syslog daemon recreates when it restarts is not seen again until the server restarts, because the `/dev` of the host is not visible.
+- The credentials of the clouds, read-only: the secrets that container runtimes mount in `/run/secrets` and `/var/run/secrets`, such as the tokens of the service accounts that Kubernetes projects into a pod, the files named by the environment variables `AWS_WEB_IDENTITY_TOKEN_FILE` (set by EKS for the IAM roles of service accounts), `AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE` (EKS Pod Identity), `AWS_CONFIG_FILE`, `AWS_SHARED_CREDENTIALS_FILE` and `AZURE_FEDERATED_TOKEN_FILE` (the workload identity of Azure), and `~/.aws` if it is an accessible directory. The directories of these files and of the targets of the links to them are visible, so that a token that the kubelet rotates is seen, except for a file directly in `/` or in `/tmp`, which is visible on its own.
 - A private empty `/tmp`.
 - The paths listed in the `filesystem_isolation_paths` section of the configuration, with `<read_only>` and `<read_write>` elements.
 
@@ -2095,18 +2081,26 @@ Nothing else is visible, in particular no shell: [executable user defined functi
 
 or disable the isolation. The same applies to a file that a table engine, a table function or a dictionary refers to by an absolute path outside of the visible paths. Drivers of executable user defined functions (`allow_experimental_executable_udf_drivers`) are not supported: `CREATE FUNCTION` with a driver is refused, because the programs that drivers generate are in `dynamic_user_defined_executable_functions_path`, which is writable and therefore not executable. The `clickhouse-odbc-bridge` runs inside the isolation too, so the ODBC drivers and their configuration (`/etc/odbc.ini`, `/etc/odbcinst.ini`) have to be made visible to use the `odbc` table function and dictionaries.
 
-If the process has `CAP_SYS_ADMIN`, it creates only a mount namespace and keeps the capabilities it uses, such as `CAP_NET_BIND_SERVICE`, `CAP_IPC_LOCK`, `CAP_SYS_NICE` and `CAP_NET_ADMIN`, dropping those that would let it undo the isolation (`CAP_SYS_ADMIN`, `CAP_SYS_CHROOT`, `CAP_SYS_PTRACE`, `CAP_DAC_READ_SEARCH`, `CAP_SETUID`, `CAP_SETGID`, `CAP_MKNOD`, `CAP_SYS_MODULE`, `CAP_SYS_RAWIO` and similar). Otherwise, it creates a user namespace as well, mapping only its own user and group to themselves, and loses all its capabilities, because they are not valid outside of the new user namespace: it can then no longer listen on a port below 1024, lock its executable in memory, raise the priority of threads, or collect the per-thread metrics of `taskstats`. A warning at startup names the lost capabilities. In both cases the server sets `PR_SET_NO_NEW_PRIVS`, and every mount is `nosuid`.
+If the process has `CAP_SYS_ADMIN`, it creates no user namespace, and the server keeps the capabilities it uses, such as `CAP_NET_BIND_SERVICE`, `CAP_IPC_LOCK`, `CAP_SYS_NICE` and `CAP_NET_ADMIN`, dropping those that would let it undo the isolation (`CAP_SYS_ADMIN`, `CAP_SYS_CHROOT`, `CAP_SYS_PTRACE`, `CAP_DAC_READ_SEARCH`, `CAP_SETUID`, `CAP_SETGID`, `CAP_MKNOD`, `CAP_SYS_MODULE`, `CAP_SYS_RAWIO` and similar). Otherwise, it creates a user namespace as well, mapping only its own user and group to themselves, and loses all its capabilities, because they are not valid outside of the new user namespace: it can then no longer listen on a port below 1024, lock its executable in memory, raise the priority of threads, or collect the per-thread metrics of `taskstats`. A warning at startup names the lost capabilities. In both cases the server sets `PR_SET_NO_NEW_PRIVS`, and every mount is `nosuid`.
 
-Creating a user namespace without privileges is not always allowed: it is disabled by the `kernel.unprivileged_userns_clone` and `user.max_user_namespaces` sysctls on some systems, and Ubuntu since 24.04 allows it only to the programs with an AppArmor profile permitting it (see the `kernel.apparmor_restrict_unprivileged_userns` sysctl). Container runtimes such as Docker refuse it as well, unless the container has `CAP_SYS_ADMIN`. The server checks in a child process whether it can isolate itself before doing it, so a failure does not leave it in a namespace without its capabilities.
+Creating a user namespace without privileges is not always allowed: it is disabled by the `kernel.unprivileged_userns_clone` and `user.max_user_namespaces` sysctls on some systems, and Ubuntu since 24.04 allows it only to the programs with an AppArmor profile permitting it (see the `kernel.apparmor_restrict_unprivileged_userns` sysctl). Container runtimes such as Docker refuse it as well, unless the container has `CAP_SYS_ADMIN`. The server checks in a child process whether it can create the namespaces and mount the filesystems it needs before doing it, so a failure does not leave it in a namespace without its capabilities.
 
-The `/proc` of the host is visible inside, because a new one requires a new PID namespace. The watchdog process (`clickhouse-watchdog`) is forked after the isolation and runs inside it too. But through `/proc/<pid>/root`, `/proc/<pid>/cwd` and `/proc/<pid>/fd`, the server can reach the filesystem of the host as seen by any other process of the same user that runs outside of the isolation, so run nothing else under the user of the server: a dedicated user, as the packages create, is enough.
+In a user namespace, the kernel does not let the server reach the files of any process outside of it through `/proc/<pid>/root`, `/proc/<pid>/cwd` and `/proc/<pid>/fd`, because the server has no capabilities over them. The `/proc` of the host (or of the container) stays visible inside, so the server sees the list of processes outside and their command lines, but not their files. With `CAP_SYS_ADMIN`, the server keeps capabilities that the kernel does not refuse it there for a process of the same user without capabilities, so the server runs in a new PID namespace, in which no process outside of it is visible, as follows.
+
+The original process creates a child in new PID and mount namespaces, which is the init of the PID namespace (`clickhouse-init`, PID 1 in it); the server runs in its child and mounts a new `/proc` of the PID namespace. A visible path that is in a mount of another `proc`, such as a `/host/proc` of a monitoring agent, or has one inside, would show the processes outside again: then `enforce` does not start, and `best_effort` runs without the isolation. The original process stays outside of the namespaces as a supervisor (`clickhouse-isol`). It keeps the original PID, which it writes to the pid file and which systemd knows as the main PID. The server inside does not see the pid file. Because the supervisor creates and removes it outside of the isolation, the pid file must not be writable inside, nor any directory on the way to it, under any name, and a symbolic link on its path is followed only to a directory, and only if the link and its directory are owned by root and the directory is not writable by the group or by others, as `/var/run -> /run` on many systems: otherwise `enforce` does not start, and `best_effort` runs without the isolation. The server finds a writable path by its name, through bind mounts and through the upper directory of an overlay, but not every way a storage can be visible under other names, such as the same network share mounted twice: keep the pid file on a storage that is not visible to the server at all, as `/run`. The supervisor drops all its capabilities, sets `PR_SET_NO_NEW_PRIVS` and runs under a narrow seccomp filter of its own, which is implemented for x86_64 and AArch64: on the other architectures the filesystem is not isolated. It sends `SIGHUP`, `SIGINT`, `SIGQUIT`, `SIGTERM`, `SIGTSTP` and `SIGABRT` that it gets, such as from `clickhouse stop` through the pid file, directly to the process that serves (the server, or the child of the watchdog), as when the pid file had its PID; one that arrives before that process has started is delivered when it has. The processes inside are in a process group of their own, so a signal to the process group of the supervisor, such as `SIGINT` on Ctrl+C in a terminal or `kill -TERM -<pgid>`, reaches the server once, through the supervisor. With `CLICKHOUSE_WATCHDOG_NO_FORWARD=1`, as set in the systemd unit, the supervisor does not send a signal of its parent, the service manager, which signals every process of the service. It holds the process that serves by a pidfd, which needs Linux 5.3 or newer: on an older kernel the filesystem is not isolated. It relays to systemd only the `READY=1` notification of the server, from its own PID, and the server fails if it cannot be relayed, as it does without the isolation. When the server exits, the init and the supervisor exit with the same code, or the supervisor is terminated by the same signal (without a core dump) if the server was. If the supervisor dies, the init and every process of the PID namespace are killed. The watchdog process (`clickhouse-watchdog`) is forked after the isolation and runs inside it too, as do the processes the server starts.
+
+Inside the PID namespace (with `CAP_SYS_ADMIN`), the processes have their own PIDs: the PIDs and thread IDs in the logs of the server, in `system.processes`, `system.stack_trace`, `system.trace_log` and other system tables are those of the PID namespace, not of the host. The startup log names the PID of the server inside and outside of the namespace, and the PID of the supervisor. On the host, the `NSpid` line of `/proc/<pid>/status` (of `/proc/<pid>/task/<tid>/status` for a thread) of a process of the namespace gives its PID outside and inside of it.
+
+`noexec` on the writable paths is not a boundary for an attacker who already runs code inside the server: `memfd_create`, `execveat` and `mprotect` remain allowed by the seccomp policy. The isolation limits what such code can reach on the filesystem, not what it can execute.
+
+The mounts are private: a filesystem mounted on the host under a visible path after the server has started is not visible inside, which sees the directory under it instead, until the server restarts.
 
 The isolation is applied once, at startup, before the server starts any thread, and cannot be changed afterwards: a changed value or `filesystem_isolation_paths` in a reloaded configuration takes effect after a restart, and a path that comes from ZooKeeper through `from_zk` is not seen by it. It is applied before the [`seccomp`](#seccomp) filter, which refuses the system calls that would undo it.
 
 Possible values:
 
 - `disabled` - the server does not isolate the filesystem.
-- `best_effort` - the server isolates the filesystem if it is allowed to create the namespaces and to mount filesystems in them, and otherwise logs a warning with the reason and runs without the isolation.
+- `best_effort` - the server isolates the filesystem, as with `enforce`, if it is allowed to create the namespaces and to mount the filesystems in them, and otherwise logs a warning with the reason and runs without any isolation, reported as `disabled`.
 - `enforce` - the server isolates the filesystem, or does not start.
 
 A failure after the server has entered the new namespace, such as a path that cannot be mounted, stops the startup in both `best_effort` and `enforce` modes.
@@ -2426,7 +2420,7 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
                     known_keys.insert(path);
             }
         }
-        for (const auto & [alias, _] : ServerSettingsTraits::aliases_to_settings)
+        for (const auto & [alias, _] : ServerSettingsTraits::aliasesToSettings())
             known_keys.insert(String(alias));
     }
 
@@ -2745,6 +2739,9 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
 
         /// Startup
         "startup_scripts",
+#if CLICKHOUSE_CLOUD
+        "predefined_system_tables",
+#endif
         "fail_points_active",
 
         /// SSL and security
@@ -2806,7 +2803,7 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
     /// imported tag as an exemption: otherwise a dotted section would be stored raw as `my.payload`
     /// while its top-level key is `my\.payload`, and the valid, in-use key would be wrongly rejected
     /// with `UNKNOWN_ELEMENT_IN_CONFIG`.
-    auto escape_dom_name_as_config_key = [](const String & name) -> String
+    auto escape_dom_name_as_config_key = [](std::string_view name) -> String
     {
         String escaped;
         escaped.reserve(name.size());
@@ -3000,7 +2997,7 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         /// name passes), never rejects a valid config, so it fails open; tightening it is intentionally
         /// left to a full merge replay rather than a partial one that could refuse to start a valid
         /// config.
-        std::unordered_set<std::string> top_level_include_refs;
+        std::unordered_set<Poco::XML::XMLString> top_level_include_refs;
 
         /// Whether a server-config file contains a *top-level* `<include from_zk="..."/>`. Such an
         /// element imports the children of a ZooKeeper node as top-level keys, but resolving it would
@@ -3110,7 +3107,7 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
                 auto * root = doc->documentElement();
                 if (!root)
                     return false;
-                const String root_name = root->nodeName();
+                const auto & root_name = root->nodeName();
                 if (root_name != "clickhouse" && root_name != "yandex")
                     return false;
                 /// Pick up a top-level `<include_from>` so we can later parse the source.
@@ -3157,7 +3154,7 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
                             std::vector<std::pair<String, String>> identity_attrs;
                             for (const auto * attr = attrs->item(0); attr; attr = attr->nextSibling())
                             {
-                                const String & attr_name = attr->nodeName();
+                                const auto & attr_name = attr->nodeName();
                                 if (attr_name == "remove" || attr_name == "replace"
                                     || std::find(
                                            ConfigProcessor::SUBSTITUTION_ATTRS.begin(),
@@ -3192,7 +3189,7 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
                         {
                             /// Resolved later against each `<include_from>` source (a lookup table),
                             /// exactly as `doIncludesRecursive` resolves an `incl` reference.
-                            String ref = elem->getAttribute("incl");
+                            auto ref = elem->getAttribute("incl");
                             if (!ref.empty())
                                 top_level_include_refs.insert(std::move(ref));
                         }
@@ -3201,7 +3198,7 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
                             /// `from_env` is fully resolvable here: the processor wraps the environment
                             /// variable's value as `<from_env>VALUE</from_env>` and imports its
                             /// children, so parse it the same way and exempt those imported keys.
-                            const String env_name = elem->getAttribute("from_env");
+                            const auto & env_name = elem->getAttribute("from_env");
                             if (const char * env_val = std::getenv(env_name.c_str())) // NOLINT(concurrency-mt-unsafe)
                             {
                                 try
@@ -3430,8 +3427,9 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
                 }
                 /// Drop the nodes this fragment removed, preserving the order of the survivors
                 /// (appended nodes sit past `matchable_count` and are never erased here).
-                for (size_t i = matchable_count; i-- > 0;)
+                for (size_t i = matchable_count; i > 0;)
                 {
+                    --i;
                     if (erased[i])
                         merged_include_from_nodes.erase(merged_include_from_nodes.begin() + i);
                 }
@@ -3969,10 +3967,16 @@ ChangeableSettingsMap collectChangeableServerSettings(ContextPtr context)
             {"statistics_cache_size", {std::to_string(context->getStatisticsCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
             {"columns_cache_size", {std::to_string(context->getColumnsCache() ? context->getColumnsCache()->configuredMaxSizeInBytes() : 0), ChangeableWithoutRestart::Yes}},
             {"vector_similarity_index_cache_size", {std::to_string(context->getVectorSimilarityIndexCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
+            {"vector_similarity_index_cache_max_entries", {std::to_string(context->getVectorSimilarityIndexCache()->maxCount()), ChangeableWithoutRestart::Yes}},
             {"text_index_tokens_cache_size", {std::to_string(context->getTextIndexTokensCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
+            {"text_index_tokens_cache_max_entries", {std::to_string(context->getTextIndexTokensCache()->maxCount()), ChangeableWithoutRestart::Yes}},
             {"text_index_header_cache_size", {std::to_string(context->getTextIndexHeaderCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
+            {"text_index_header_cache_max_entries", {std::to_string(context->getTextIndexHeaderCache()->maxCount()), ChangeableWithoutRestart::Yes}},
             {"text_index_postings_cache_size", {std::to_string(context->getTextIndexPostingsCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
+            {"text_index_postings_cache_max_entries", {std::to_string(context->getTextIndexPostingsCache()->maxCount()), ChangeableWithoutRestart::Yes}},
             {"query_cache_max_size_in_bytes", {std::to_string(context->getQueryResultCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
+            {"query_cache_max_entries", {std::to_string(context->getQueryResultCache()->maxCount()), ChangeableWithoutRestart::Yes}},
+            {"query_cache_max_entry_size_in_bytes", {std::to_string(context->getQueryResultCache()->maxEntrySizeInBytes()), ChangeableWithoutRestart::Yes}},
             {"point_in_polygon_cache_size", {std::to_string(CurrentMetrics::get(CurrentMetrics::PointInPolygonCacheSizeLimit)), ChangeableWithoutRestart::Yes}},
             {"unique_key_bitmap_cache_size_bytes",
                 {std::to_string(context->getDeleteBitmapCache() ? context->getDeleteBitmapCache()->maxSizeInBytes() : 0), ChangeableWithoutRestart::Yes}},
@@ -4132,9 +4136,33 @@ ChangeableSettingsMap collectChangeableServerSettings(ContextPtr context)
 #endif
 #if USE_PARQUET
     if (context->getParquetMetadataCache())
+    {
         changeable_settings.insert(
             {"parquet_metadata_cache_size",
              {std::to_string(context->getParquetMetadataCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}});
+        changeable_settings.insert(
+            {"parquet_metadata_cache_max_entries",
+             {std::to_string(context->getParquetMetadataCache()->maxCount()), ChangeableWithoutRestart::Yes}});
+    }
+#endif
+
+#if ENABLE_DISTRIBUTED_CACHE
+    /// Pushed to the connection registry at startup and on each reload whose values are valid.
+    if (const auto scan_settings = DistributedCacheServerConnectionRegistry::instance().getStuckRequestScanSettings())
+    {
+        changeable_settings.insert({"distributed_cache_stuck_request_no_progress_timeout_ms",
+            {std::to_string(scan_settings->no_progress_timeout_ms), ChangeableWithoutRestart::Yes}});
+        changeable_settings.insert({"distributed_cache_max_request_processing_time_ms",
+            {std::to_string(scan_settings->max_processing_time_ms), ChangeableWithoutRestart::Yes}});
+        changeable_settings.insert({"distributed_cache_stuck_request_scan_interval_ms",
+            {std::to_string(scan_settings->scan_interval_ms), ChangeableWithoutRestart::Yes}});
+        changeable_settings.insert({"distributed_cache_slow_down_stuck_requests_ratio",
+            {fmt::format("{}", scan_settings->slow_down_stuck_requests_ratio), ChangeableWithoutRestart::Yes}});
+        changeable_settings.insert({"distributed_cache_slow_down_min_stuck_requests",
+            {std::to_string(scan_settings->slow_down_min_stuck_requests), ChangeableWithoutRestart::Yes}});
+        changeable_settings.insert({"distributed_cache_slow_down_window_ms",
+            {std::to_string(scan_settings->slow_down_window_ms), ChangeableWithoutRestart::Yes}});
+    }
 #endif
 
     /// The seccomp filter is installed once at startup and cannot be changed afterwards, so a reloaded

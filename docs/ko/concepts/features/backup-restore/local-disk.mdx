@@ -9,19 +9,13 @@ doc_type: 'guide'
 import ExampleSetup from '/snippets/ko/_example_setup.mdx';
 import Syntax from '/snippets/ko/_syntax.mdx';
 
-<div id="syntax">
-  ## 구문
-</div>
+## 구문 {#syntax}
 
 <Syntax />
 
-<div id="configure-backup-destinations-for-disk">
-  ## 디스크용 백업 대상 구성
-</div>
+## 디스크용 백업 대상 구성 {#configure-backup-destinations-for-disk}
 
-<div id="configure-a-backup-destination">
-  ### 로컬 디스크용 백업 대상 구성
-</div>
+### 로컬 디스크용 백업 대상 구성 {#configure-a-backup-destination}
 
 아래 예시에서는 백업 대상이 `Disk('backups', '1.zip')`로 지정되어 있습니다.
 `Disk` 백업 엔진을 사용하려면 먼저 아래 경로에
@@ -51,9 +45,7 @@ import Syntax from '/snippets/ko/_syntax.mdx';
 </clickhouse>
 ```
 
-<div id="backuprestore-using-an-s3-disk">
-  ### S3 디스크용 백업 대상 구성
-</div>
+### S3 디스크용 백업 대상 구성 {#backuprestore-using-an-s3-disk}
 
 ClickHouse 스토리지 구성에서 S3 디스크를 설정하면 S3로 `BACKUP`/`RESTORE`를 수행할 수도 있습니다. 위의 로컬 디스크와 동일한 방식으로 `/etc/clickhouse-server/config.d`에 파일을 추가하여 디스크를 구성하십시오.
 
@@ -100,13 +92,9 @@ RESTORE TABLE data AS data_restored FROM Disk('s3_plain', 'cloud_backup');
     이 용도에는 `BACKUP ... TO S3(<endpoint>)` 구문을 사용하는 것이 좋습니다.
 </Note>
 
-<div id="usage-examples">
-  ## 로컬 디스크로 백업/복원하는 사용 예시
-</div>
+## 로컬 디스크로 백업/복원하는 사용 예시 {#usage-examples}
 
-<div id="backup-and-restore-a-table">
-  ### 테이블 백업 및 복원
-</div>
+### 테이블 백업 및 복원 {#backup-and-restore-a-table}
 
 <ExampleSetup />
 
@@ -170,9 +158,7 @@ RESTORE TABLE test_db.test_table AS test_db.test_table_renamed FROM Disk('backup
 
 zip 외의 포맷도 사용할 수 있습니다. 자세한 내용은 아래의 [&quot;tar 아카이브 형식의 백업&quot;](#backups-as-tar-archives)을 참조하십시오.
 
-<div id="incremental-backups">
-  ### 디스크로의 증분 백업
-</div>
+### 디스크로의 증분 백업 {#incremental-backups}
 
 ClickHouse에서 기준 백업은 이후의
 증분 백업을 생성하는 기준이 되는 최초의 전체 백업입니다. 증분 백업은
@@ -204,9 +190,7 @@ RESTORE TABLE test_db.test_table AS test_db.test_table2
 FROM Disk('backups', 'incremental-a.zip');
 ```
 
-<div id="assign-a-password-to-the-backup">
-  ### Backup 보안 설정
-</div>
+### Backup 보안 설정 {#assign-a-password-to-the-backup}
 
 디스크에 기록되는 Backup 파일에는 비밀번호를 설정할 수 있습니다.
 비밀번호는 `password` 설정을 사용하여 지정할 수 있습니다.
@@ -233,9 +217,7 @@ FROM Disk('backups', 'password-protected.zip')
 SETTINGS password='qwerty'
 ```
 
-<div id="backups-as-tar-archives">
-  ### tar 아카이브 형식의 백업
-</div>
+### tar 아카이브 형식의 백업 {#backups-as-tar-archives}
 
 백업은 zip 아카이브뿐만 아니라 tar 아카이브로도 저장할 수 있습니다.
 기능은 zip과 동일하지만, tar 아카이브에서는 비밀번호 보호가
@@ -271,9 +253,7 @@ BACKUP TABLE test_db.test_table TO Disk('backups', '1.tar.gz')
 * `.tzst`
 * `.tar.xz`
 
-<div id="compression-settings">
-  ### 압축 설정
-</div>
+### 압축 설정 {#compression-settings}
 
 압축 메서드와 압축 수준은 각각
 `compression_method` 및 `compression_level` 설정을 사용해 지정할 수 있습니다.
@@ -288,14 +268,12 @@ TO Disk('backups', 'filename.zip')
 SETTINGS compression_method='lzma', compression_level=3
 ```
 
-<div id="restore-specific-partitions">
-  ### 특정 파티션 복원
-</div>
+### 특정 파티션 복원 {#restore-specific-partitions}
 
 테이블에 속한 특정 파티션만 복원해야 하는 경우 해당 파티션을 지정할 수 있습니다.
 
 4개의 파티션으로 이루어진 간단한 테이블을 만들고 데이터를 삽입한 다음,
-첫 번째와 네 번째 파티션만 백업해 보겠습니다:
+첫 번째와 네 번째 파티션만 백업(backup)해 보겠습니다:
 
 <Accordion title="설정">
   ```sql
@@ -337,7 +315,7 @@ SETTINGS compression_method='lzma', compression_level=3
   ```
 </Accordion>
 
-다음 명령을 실행하여 파티션 1과 4를 백업합니다:
+다음 명령을 실행하여 파티션 1과 4를 백업(backup)합니다:
 
 ```sql
 BACKUP TABLE test_db.partitioned PARTITIONS '1', '4'

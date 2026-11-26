@@ -1,0 +1,170 @@
+---
+slug: /clickstack/observability/ingesting-data/opentelemetry
+toc_max_heading_level: 2
+description: '配置 OpenTelemetry SDK 和采集器，将日志、指标和链路追踪数据发送到全托管的 ClickHouse Observability。'
+title: '使用 OpenTelemetry 摄取数据'
+doc_type: 'guide'
+keywords: ['ClickHouse Observability', 'OpenTelemetry', 'OTLP', '摄取', '身份验证']
+sidebarTitle: 'OpenTelemetry'
+---
+
+import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
+
+<Tabs>
+  <Tab title="全托管">
+    <BetaBadge label="Beta 版服务" />
+
+    使用 OpenTelemetry SDK 或您环境中的采集器，将日志、指标和链路追踪发送到 ClickHouse Observability。该服务内置一个托管的摄取采集器，通过 OTLP 接收遥测数据并将其写入 ClickHouse Cloud。
+
+## 获取连接详情 {#sending-otel-data}
+
+    打开您的服务，导航至 **Team Settings → Data → Managed Telemetry**。复制 **OTLP HTTP endpoint** 和 **API key**。**Env vars** 和 **Collector config** 选项卡中提供了适用于您服务的配置。
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Managed Telemetry 页面，显示已脱敏的 OTLP HTTP 端点和 API key](/images/clickstack/getting-started/observability-managed-telemetry.png)
+      </Frame>
+    </div>
+
+    请使用完整的 HTTPS 端点，包括 Managed Telemetry 中显示的端口。如果使用基础 OTLP HTTP 端点，请省略 `/v1/logs`、`/v1/traces` 和 `/v1/metrics` 等信号路径，导出器会自动追加这些路径。
+
+## 直接从应用程序发送 {#sending-data-to-collector-managed}
+
+    根据应用程序所用的语言，安装并初始化 OpenTelemetry 插桩和 OTLP HTTP 导出器。如果 SDK 支持通过环境变量进行配置，请在启动应用程序之前，在其运行环境中设置以下值：
+
+    ```shell
+    export OTEL_SERVICE_NAME='my-service'
+    export OTEL_EXPORTER_OTLP_PROTOCOL='http/protobuf'
+    export OTEL_EXPORTER_OTLP_ENDPOINT='https://YOUR_OTEL_ENDPOINT:4318'
+    export OTEL_EXPORTER_OTLP_HEADERS='authorization=Bearer%20YOUR_API_KEY'
+    ```
+
+    将端点替换为 Managed Telemetry 中显示的确切值，并将 `YOUR_API_KEY` 替换为您服务的 API key。在请求头环境变量中，`%20` 表示 `Bearer` 与密钥之间的空格 (经过编码) 。
+
+    各 SDK 对环境变量的支持程度不尽相同。如果您的 SDK 需要在代码中进行配置，请提供相同的 HTTPS 端点、OTLP HTTP 协议，以及值为 `Bearer YOUR_API_KEY` 的 `authorization` 请求头。有关各语言的支持情况以及针对特定信号的覆盖配置，请参阅 [OpenTelemetry 导出器配置参考文档](https://opentelemetry.io/docs/languages/sdk-configuration/otlp-exporter/)。
+
+    这些设置仅用于配置导出；您的应用程序仍需进行插桩才能生成遥测数据。如需录制浏览器会话，请参阅[会话回放指南](/zh/clickstack/observability/features/session-replay)。
+
+## 从采集器转发数据 {#forward-from-a-collector}
+
+    如果您已在使用 OpenTelemetry 采集器收集遥测数据，请配置 OTLP HTTP 导出器，将数据转发到托管端点。现有的接收器和处理器可继续保留，用于收集和处理数据。
+
+    在采集器的运行时环境中设置以下环境变量：
+
+    ```shell
+    export OTEL_EXPORTER_OTLP_ENDPOINT='https://YOUR_OTEL_ENDPOINT:4318'
+    export OTEL_EXPORTER_OTLP_API_KEY='YOUR_API_KEY'
+    ```
+
+    将这两个占位符替换为 Managed Telemetry 中的对应值，然后将此导出器添加到采集器配置中：
+
+    ```yaml
+    exporters:
+      otlp_http/observability:
+        endpoint: ${env:OTEL_EXPORTER_OTLP_ENDPOINT}
+        headers:
+          authorization: "Bearer ${env:OTEL_EXPORTER_OTLP_API_KEY}"
+    ```
+
+    在 `service.pipelines` 下，将 `otlp_http/observability` 添加到每个需要转发的日志、指标或链路追踪管道的 `exporters` 列表中。将其合并到现有配置中，然后重启或重新部署采集器，使更改生效。
+
+    该示例使用当前的导出器名称 `otlp_http`。较早的采集器发行版可能使用 `otlphttp`，请使用您的发行版所支持的名称。有关配置选项，请参阅 [OTLP HTTP 导出器文档](https://github.com/open-telemetry/opentelemetry-collector/tree/main/exporter/otlphttpexporter)。
+
+    有关采集主机日志和指标的完整示例，请参阅[本地系统日志和指标](/zh/clickstack/observability/example-datasets/local-data)。
+
+## 验证摄取 {#verify-ingestion}
+
+    在应用程序中生成遥测数据，然后在 ClickHouse Observability 中打开[搜索](/zh/clickstack/observability/features/search)。选择 **Logs** 或 **Traces**，设置包含新事件的时间范围，然后搜索您的服务名称。
+
+    如果没有显示数据，请检查 SDK 或采集器日志中是否有导出错误。核对端点、身份验证请求头和协议，并确认应用程序或采集器能够连接到托管端点。此外，还应检查是否存在针对特定信号的导出器设置覆盖了基础端点或请求头。
+
+    您可以使用 Managed Telemetry 中的 **Send a Test Log** 向该服务发送一条样本日志。应用程序的遥测数据需要单独验证，以确认其插桩和导出配置正确无误。
+  </Tab>
+
+  <Tab title="自管理" id="self-managed">
+    在 Self-managed ClickHouse Observability 中，**OpenTelemetry (OTel) 采集器**负责接收日志、指标、链路追踪和会话数据，并将其写入 ClickHouse Cloud。我们推荐使用官方的 [ClickStack 采集器发行版](#installing-otel-collector-managed-self-configured)。
+
+    可以通过[语言 SDK](/zh/clickstack/observability/ingesting-data/sdks)或采集基础设施日志和指标的 agent，将数据发送到此采集器。这类 agent 包括以[代理角色](/zh/clickstack/self-configured/ingesting-data/collector#collector-roles-self-configured)运行的 OpenTelemetry 收集器、[Fluentd](https://www.fluentd.org/) 和 [Vector](https://vector.dev/) 等。如需集中管理采集器，可使用 [Bindplane](/zh/clickstack/observability/integration-partners/bindplane)，它提供 ClickHouse Observability 目标端，以及用于采集、处理和路由遥测数据的工具。
+
+## 发送 OpenTelemetry 数据 {#sending-otel-data-self-configured}
+
+### 将采集器连接到 ClickHouse Cloud {#installing-otel-collector-managed-self-configured}
+
+    将采集器配置为 [gateway 角色](/zh/clickstack/self-configured/ingesting-data/collector#collector-roles-self-configured)，通过 HTTP 或 gRPC 接收 OTLP 数据，并将其转发到 ClickHouse Cloud。
+
+    <Info>
+      **建议使用 ClickStack OpenTelemetry 采集器**
+
+      ClickStack 发行版提供与 ClickHouse Observability 兼容的处理逻辑和 schema。默认 schema 支持自动检测 source，并预置了列映射。
+    </Info>
+
+    在 ClickHouse Cloud 中打开您的服务，并[获取其连接详情](/zh/products/cloud/guides/sql-console/connection-details)。然后在 ClickStack 发行版采集器的运行环境中配置以下环境变量：
+
+    ```shell
+    CLICKHOUSE_ENDPOINT="https://<host>:8443"
+    CLICKHOUSE_USER="<ingestion-user>"
+    CLICKHOUSE_PASSWORD="<ingestion-password>"
+    ```
+
+    将 `CLICKHOUSE_ENDPOINT` 设置为您服务的 HTTPS 数据库端点，并使用[专用摄取用户](/zh/clickstack/self-configured/ingesting-data/collector#creating-an-ingestion-user-self-configured)的凭证。重启或重新部署采集器，使设置生效。采集器会通过 OTLP 接收遥测数据，并将其写入您的 ClickHouse Cloud 服务。
+
+    如果您使用其他采集器发行版，请为其 ClickHouse 导出器配置相同的端点和凭证。示例请参见[修改配置](/zh/clickstack/self-configured/ingesting-data/collector#modifying-otel-collector-configuration-managed-self-configured)。
+
+    有关安装说明，请参阅[部署采集器](/zh/clickstack/self-configured/ingesting-data/collector#configuring-the-collector-self-configured)。在接入生产环境流量之前，请先[为采集器配置安全防护](/zh/clickstack/self-configured/ingesting-data/collector#securing-the-collector-self-configured)。如果启用了 `OTLP_AUTH_TOKEN`，请配置您的 SDK 和转发采集器，使其通过 `authorization` 请求头发送该令牌。
+
+### 向采集器发送数据 {#sending-data-to-collector-managed-self-configured}
+
+    如果采集器在本地运行并使用默认 OTLP 端口，请将 OpenTelemetry 插桩指向以下端点。如果应用程序或 agent 运行在其他主机或其他容器中，请将 `localhost` 替换为可从该环境访问的采集器主机名：
+
+    * **HTTP (OTLP)：** `http://localhost:4318`
+    * **gRPC (OTLP)：** `localhost:4317`
+
+    对于支持通过环境变量进行配置的[语言 SDK](/zh/clickstack/observability/ingesting-data/sdks)，请在启动已插桩的应用程序前设置端点和协议：
+
+    ```shell
+    export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
+    export OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
+    ```
+
+    如果采集器需要身份验证，还需设置 `OTEL_EXPORTER_OTLP_HEADERS="authorization=<collector-token>"`，并将 `<collector-token>` 替换为其 `OTLP_AUTH_TOKEN` 值。请勿添加全托管端点所使用的 `Bearer` 前缀。这些设置仅用于配置导出；应用程序仍需进行插桩才能生成遥测数据。
+
+    使用 [OTel collector 的 contrib 发行版](https://github.com/open-telemetry/opentelemetry-collector-contrib)的 agent 可以通过 OTLP 转发日志。以下示例读取的是这个[结构化日志文件](https://datasets-documentation.s3.eu-west-3.amazonaws.com/http_logs/access-structured.log.gz)。启动 agent 之前，请先下载该文件，并将其解压缩到 `include` 中指定的路径。如果您的 gateway 需要身份验证，请在 agent 的导出器中添加 `authorization` 请求头，并在其中填入 gateway 的令牌。
+
+    ```yaml
+    # clickhouse-agent-config.yaml
+    receivers:
+      filelog:
+        include:
+          - /opt/data/logs/access-structured.log
+        start_at: beginning
+        operators:
+          - type: json_parser
+            timestamp:
+              parse_from: attributes.time_local
+              layout: '%Y-%m-%d %H:%M:%S'
+    exporters:
+      # HTTP setup
+      otlphttp/hdx:
+        endpoint: 'http://localhost:4318'
+        compression: gzip
+
+      # gRPC setup (alternative)
+      otlp/hdx:
+        endpoint: 'localhost:4317'
+        compression: gzip
+    processors:
+      batch:
+        timeout: 5s
+        send_batch_size: 10000
+    service:
+      telemetry:
+        metrics:
+          address: 0.0.0.0:9888 # Modified as 2 collectors running on same host
+      pipelines:
+        logs:
+          receivers: [filelog]
+          processors: [batch]
+          exporters: [otlphttp/hdx]
+    ```
+  </Tab>
+</Tabs>
