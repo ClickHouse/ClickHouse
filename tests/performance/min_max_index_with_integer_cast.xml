@@ -30,6 +30,7 @@
     <query><![CDATA[SELECT count() FROM index_test_integer_cast WHERE t_nullable >= '2024-01-01 00:00:00' AND t_nullable < '2024-01-01 00:10:00']]></query>
     <query><![CDATA[SELECT count() FROM index_test_integer_cast WHERE u32 >= 1704067200 AND u32 < 1704067800]]></query>
     <query><![CDATA[SELECT count() FROM index_test_integer_cast WHERE b = true]]></query>
+    <query><![CDATA[SELECT count() FROM index_test_integer_cast WHERE toDateTime32(ts_signed, 'UTC') >= '2024-01-01 00:00:00' AND toDateTime32(ts_signed, 'UTC') < '2024-01-01 00:10:00']]></query>
 
     <drop_query>DROP TABLE IF EXISTS index_test_integer_cast</drop_query>
 </test>
