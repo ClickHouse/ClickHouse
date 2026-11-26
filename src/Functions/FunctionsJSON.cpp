@@ -112,29 +112,36 @@ public:
     class Executor
     {
     public:
-        static ColumnPtr run(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count,
+        static ALWAYS_INLINE ColumnPtr run(const ColumnsWithTypeAndName & original_arguments, const DataTypePtr & result_type, size_t input_rows_count,
                             const FormatSettings & format_settings)
         {
+            if (original_arguments.empty())
+                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} requires at least one argument", String(Name::name));
+
+            bool is_object_input = isObject(original_arguments[0].type);
+
+            if (!isString(original_arguments[0].type) && !is_object_input)
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                                "The first argument of function {} should be a string containing JSON or a JSON object, illegal type: "
+                                "{}", String(Name::name), original_arguments[0].type->getName());
+
+            /// For JSON/Object type input: either the result is read from the column, or the arguments are replaced
+            /// with the JSON text, and the code for the `String` input below runs on it.
+            /// It is not a recursive call of `run`, so that `run` is inlined into the caller, and the code for the `String` input
+            /// is the same as without the support of the JSON type.
+            ColumnsWithTypeAndName text_arguments;
+            if (is_object_input)
+            {
+                if (auto result = prepareObjectColumn<Name, Impl>(original_arguments, result_type, input_rows_count, format_settings, text_arguments))
+                    return result;
+            }
+            const ColumnsWithTypeAndName & arguments = is_object_input ? text_arguments : original_arguments;
+
             MutableColumnPtr to{result_type->createColumn()};
             to->reserve(input_rows_count);
 
-            if (arguments.empty())
-                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} requires at least one argument", String(Name::name));
-
-            const auto & first_column = arguments[0];
-            bool is_object_input = isObject(first_column.type);
-
-            if (!isString(first_column.type) && !is_object_input)
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                                "The first argument of function {} should be a string containing JSON or a JSON object, illegal type: "
-                                "{}", String(Name::name), first_column.type->getName());
-
-            /// For JSON/Object type input: use subcolumn extraction (constant string keys only).
-            if (is_object_input)
-                return runForObjectColumn<Name, Impl>(arguments, result_type, input_rows_count, format_settings);
-
             /// String input: parse JSON and extract values.
-            const ColumnPtr & arg_json = first_column.column;
+            const ColumnPtr & arg_json = arguments[0].column;
             const auto * col_json_const = typeid_cast<const ColumnConst *>(arg_json.get());
             const auto * col_json_string
                 = typeid_cast<const ColumnString *>(col_json_const ? col_json_const->getDataColumnPtr().get() : arg_json.get());
@@ -212,13 +219,16 @@ public:
         }
 
     private:
-        /// Runs the `String` implementation on the JSON text of the column, or only of the value at a path of plain constant keys.
+        /// Prepares the arguments to run the `String` implementation on the JSON text of the column,
+        /// or only of the value at a path of plain constant keys.
+        /// Returns the result instead if it is read from the column without the text, otherwise returns nullptr and fills `text_arguments`.
         template <typename TName, template <typename> typename TImpl>
-        static ColumnPtr runForObjectColumn(
+        static NO_INLINE ColumnPtr prepareObjectColumn(
             const ColumnsWithTypeAndName & arguments,
             const DataTypePtr & result_type,
             size_t input_rows_count,
-            const FormatSettings & format_settings)
+            const FormatSettings & format_settings,
+            ColumnsWithTypeAndName & text_arguments)
         {
             const auto & first_column = arguments[0];
             const auto & data_type_object = assert_cast<const DataTypeObject &>(*first_column.type);
@@ -262,7 +272,6 @@ public:
             text_settings.json.write_float_type_markers = true;
 
             auto text_column = ColumnString::create();
-            ColumnsWithTypeAndName text_arguments;
             if (use_subcolumn)
             {
                 /// The literal at the path, else the sub-object, else NULL, read by path and not by subcolumn name.
@@ -370,7 +379,7 @@ public:
             if (col_const)
                 text = ColumnConst::create(text, input_rows_count);
             text_arguments[0] = {text, std::make_shared<DataTypeString>(), first_column.name};
-            return run(text_arguments, result_type, input_rows_count, format_settings);
+            return nullptr;
         }
     };
 
