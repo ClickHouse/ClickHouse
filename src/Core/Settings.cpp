@@ -1285,10 +1285,6 @@ Equality with a constant string is not moved for this reason: it is still applie
 Supported for reading from `MergeTree` tables and from the `Parquet` format. In `Parquet`, the filter is applied to pages with
 the `PLAIN`, `DELTA_LENGTH_BYTE_ARRAY`, `DELTA_BYTE_ARRAY`, and dictionary encodings.
 
-Note that the estimation of the input bytes collected for the automatic decision about parallel replicas
-(`RuntimeDataflowStatisticsInputBytes`) is based on the in-memory size of the read blocks, so it underestimates
-the amount of data read from disk when the values are replaced by empty strings.
-
 Possible values:
 
 - 0 — Disabled.
@@ -2839,6 +2835,8 @@ See also:
 
 - [`system.query_log`](/reference/system-tables/query_log)
 - [`EXPLAIN PLAN`](/reference/statements/explain#explain-plan)
+- [`log_query_plans_time`](/reference/settings/session-settings/log-query#log_query_plans_time)
+- [`log_query_plans_join_matches`](/reference/settings/session-settings/log-query#log_query_plans_join_matches)
 )", EXPERIMENTAL, \
         {"26.11", false, false, "New setting to capture the query plan actually executed, together with per-step runtime statistics."}) \
     DECLARE(Float, log_query_plans_probability, 1., R"(
@@ -2857,6 +2855,20 @@ Possible values:
 - 1 — The plan of every query is captured.
 )", EXPERIMENTAL, \
         {"26.12", 1., 1., "New setting to capture the query plan of only a random sample of queries when `log_query_plans` is enabled."}) \
+    DECLARE(Bool, log_query_plans_time, false, R"(
+When [`log_query_plans`](/reference/settings/session-settings/log-query#log_query_plans) captures a query, also collect the work intervals of its processors, the same as the `time` setting of [`EXPLAIN ANALYZE`](/reference/statements/explain#explain-analyze-concurrency). The plan stored in `system.query_log.query_plan` then has `Time` and `Concurrency` groups on its steps, with the wall-clock time and the concurrency level of each step and of its branch, and an `ExecutionTimeBreakdown` at its root, which splits the execution time into the time spent in the steps of the plan, outside them, and with no thread running anything.
+
+Collecting them costs memory and CPU in proportion to the number of processor tasks the query runs, so they grow with the length of the query, and processing them once the query has finished adds to its duration.
+
+Has no effect unless `log_query_plans` is enabled and the query is captured.
+)", EXPERIMENTAL, \
+        {"26.12", false, false, "New setting to collect per-step wall-clock time and concurrency levels for the query plan written to `system.query_log`."}) \
+    DECLARE(Bool, log_query_plans_join_matches, false, R"(
+When [`log_query_plans`](/reference/settings/session-settings/log-query#log_query_plans) captures a query, make its joins do the extra bookkeeping needed for the matched rows metrics in the cases where they cannot be derived from what the join produces anyway, the same as the `matches` setting of [`EXPLAIN ANALYZE`](/reference/statements/explain#explain-analyze-join-steps). Where the metrics can be derived, they are stored without this setting.
+
+Has no effect unless `log_query_plans` is enabled and the query is captured.
+)", EXPERIMENTAL, \
+        {"26.12", false, false, "New setting to collect exact matched rows metrics of joins for the query plan written to `system.query_log`."}) \
     DECLARE(DistributedProductMode, distributed_product_mode, DistributedProductMode::DENY, R"(
 Changes the behaviour of [distributed subqueries](/reference/statements/in).
 
@@ -8055,6 +8067,10 @@ Set default mode in INTERSECT query. Possible values: empty string, 'ALL', 'DIST
     DECLARE(SetOperationMode, except_default_mode, SetOperationMode::ALL, R"(
 Set default mode in EXCEPT query. Possible values: empty string, 'ALL', 'DISTINCT'. If empty, query without mode will throw exception.
 )", 0) \
+    DECLARE(Bool, rewrite_intersect_except_distinct_to_join, true, R"(
+Execute `INTERSECT DISTINCT` and `EXCEPT DISTINCT` as a hash join. `NULL` values compare equal, as in the set operation. The join always uses the `hash` algorithm and ignores `join_algorithm`, `max_rows_in_join` and `max_bytes_in_join`. Operations whose arms can produce totals, such as with `WITH TOTALS`, still run without a join.
+)", 0, \
+        {"26.12", false, true, "New setting to execute `INTERSECT DISTINCT` and `EXCEPT DISTINCT` as a join."}) \
     DECLARE(UInt64, max_streams_for_union_step, 0, R"(
 Limits the number of simultaneously active data streams in a `UNION` step (applies to `UNION ALL`, to `UNION DISTINCT`, because it is implemented via a `UNION ALL` step followed by a `DISTINCT` step, and to a `Merge` table read with plan-based parallel replicas, which is expanded into a union of the reads from its underlying tables). When a `UNION` query has many subqueries, all of them open their read buffers at the same time, leading to memory usage proportional to the number of subqueries. This setting inserts `Concat` processors to narrow the pipeline so that at most this many streams are active at once, drastically reducing peak memory. The actual limit is the minimum of this value and `max_threads * max_streams_for_union_step_to_max_threads_ratio` (either one being 0 means it is ignored). When both are 0, no narrowing is applied. The limit is also not applied when the query plan requires each output stream of the `UNION` to stay individually sorted (for example, when the read-in-order optimization is applied across the `UNION`); in that case correctness of the ordering takes precedence and narrowing is skipped.
 )", 0, \

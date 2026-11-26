@@ -39,9 +39,12 @@ bool CompressedReadBufferFromFile::nextImpl()
 
         size_t size_decompressed = 0;
         size_t size_compressed_without_checksum = 0;
+        const size_t block_offset = ranges_read ? file_in.getPosition() : 0;
         size_compressed = readCompressedData(size_decompressed, size_compressed_without_checksum, false);
         if (!size_compressed)
             return false;
+        if (ranges_read)
+            ranges_read->emplace_back(block_offset, block_offset + size_compressed);
 
         auto additional_size_at_the_end_of_buffer = codec->getAdditionalSizeAtTheEndOfBuffer();
 
@@ -118,9 +121,12 @@ const FSSTBlock * CompressedReadBufferFromFile::readFSSTBlock()
 
         size_t size_decompressed = 0;
         size_t size_compressed_without_checksum = 0;
+        const size_t block_offset = ranges_read ? file_in.getPosition() : 0;
         size_t new_size_compressed = readCompressedData(size_decompressed, size_compressed_without_checksum, false);
         if (!new_size_compressed)
             return nullptr;
+        if (ranges_read)
+            ranges_read->emplace_back(block_offset, block_offset + new_size_compressed);
 
         size_compressed = new_size_compressed;
 
@@ -268,10 +274,13 @@ size_t CompressedReadBufferFromFile::readBig(char * to, size_t n)
             bytes += offset();
             resetWorkingBuffer();
             size_compressed = 0;
+            const size_t block_offset = ranges_read ? file_in.getPosition() : 0;
             size_t new_size_compressed = readCompressedData(size_decompressed, size_compressed_without_checksum, false);
 
             if (!new_size_compressed)
                 return bytes_read;
+            if (ranges_read)
+                ranges_read->emplace_back(block_offset, block_offset + new_size_compressed);
 
             auto additional_size_at_the_end_of_buffer = codec->getAdditionalSizeAtTheEndOfBuffer();
 
