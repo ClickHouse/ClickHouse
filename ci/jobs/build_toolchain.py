@@ -304,8 +304,9 @@ def main():
                 results.append(download_and_extract(name, url, sha256))
                 res = results[-1].is_ok()
 
-        # The unwind tables (and `--enable-debug`, which makes musl preprocess its assembly to emit
-        # them) let exceptions and backtraces pass through musl, as in `clickhouse-configure`.
+        # The unwind tables let exceptions and backtraces pass through musl's C code. Not
+        # `--enable-debug`: its `add-cfi` scripts would add CFI to the assembly that the fork
+        # already annotates by hand (`__restore_rt`), and ClickHouse's own build does not run them.
         # The kernel (uapi) headers do not depend on the libc, so the distro's are reused.
         if res:
             results.append(
@@ -317,7 +318,7 @@ def main():
                         f' CC="clang-{LLVM_VERSION} --target={musl_triple}"'
                         f' CFLAGS="-funwind-tables -fasynchronous-unwind-tables"'
                         f" AR=llvm-ar-{LLVM_VERSION} RANLIB=llvm-ranlib-{LLVM_VERSION}"
-                        f" --prefix={MUSL_SYSROOT}/usr --disable-shared --disable-wrapper --enable-debug",
+                        f" --prefix={MUSL_SYSROOT}/usr --disable-shared --disable-wrapper",
                         f"make -C {MUSL_BUILD_DIR} -j$(nproc) install",
                         f"cp -r /usr/include/linux /usr/include/asm-generic {MUSL_SYSROOT}/usr/include/",
                         f"cp -r /usr/include/{arch}-linux-gnu/asm {MUSL_SYSROOT}/usr/include/asm",
@@ -422,7 +423,9 @@ def main():
                     name="Build libc++ for musl",
                     command=[
                         cxx_runtimes_cmake_cmd,
-                        f"ninja -C {MUSL_CXX_RUNTIMES_BUILD_DIR} install",
+                        # libc++'s header scripts import their modules from the script's directory,
+                        # which `PYTHONSAFEPATH` (set by praktika) keeps off `sys.path`
+                        f"env -u PYTHONSAFEPATH ninja -C {MUSL_CXX_RUNTIMES_BUILD_DIR} install",
                     ],
                 )
             )
