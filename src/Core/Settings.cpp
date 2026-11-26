@@ -3369,6 +3369,13 @@ Not applied to `FINAL`, `ASOF`, joins with several disjuncts in `ON`, or when re
         {"26.10", false, true, "Enabled by default. A `full_sorting_merge` or `parallel_full_sorting_merge` JOIN of two MergeTree tables whose keys contain a prefix of both primary keys now runs as independent merge joins over primary-key ranges in parallel, instead of a single-threaded merge join. Hash joins are affected only when neither join runtime filters nor spilling to disk are in effect."}, \
         {"25.4", false, false, "New setting"}) \
     \
+    DECLARE(Bool, query_plan_join_multiway_merge, false, R"(
+Execute a subtree of `full_sorting_merge` inner joins whose keys are equal to each other as one merge join of all its inputs instead of a tree of two-input joins. Every input is read once in the order of the key and every column is copied to the result once.
+
+Applies to `INNER` joins with `ALL` strictness and one condition. With `query_plan_join_shard_by_pk_ranges` the join is split by primary key ranges of all its tables.
+)", EXPERIMENTAL, \
+        {"26.12", false, false, "New setting"}) \
+    \
     DECLARE(Bool, query_plan_display_internal_aliases, false, R"(
 Show internal aliases (such as __table1) in EXPLAIN PLAN instead of those specified in the original query.
 )", 0, \
