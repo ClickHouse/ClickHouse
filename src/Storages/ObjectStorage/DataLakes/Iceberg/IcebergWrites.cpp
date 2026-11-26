@@ -1534,8 +1534,7 @@ void IcebergWriteSession::readLatestMetadata()
         }
     }
 
-    if (shouldWriteIcebergTableStatisticsNdv(context, catalog))
-        column_sketches.emplace(*sample_block, current_schema->getArray(Iceberg::f_fields));
+    write_column_sketches = shouldWriteIcebergTableStatisticsNdv(context, catalog);
 }
 
 IcebergWriteSession::~IcebergWriteSession()
@@ -1569,13 +1568,28 @@ SinkToStoragePtr IcebergWriteSession::createSink()
         object_storage->supportParallelWrite() ? context->getSettingsRef()[Setting::iceberg_insert_max_data_files_in_upload].value : 0);
 }
 
-void IcebergWriteSession::updateColumnSketches(const Columns & columns)
+std::unique_ptr<IcebergColumnSketches> IcebergWriteSession::createColumnSketches() const
 {
-    if (!column_sketches)
-        return;
+    if (!write_column_sketches)
+        return nullptr;
+    return std::make_unique<IcebergColumnSketches>(*sample_block, current_schema->getArray(Iceberg::f_fields));
+}
+
+void IcebergWriteSession::addColumnSketches(IcebergColumnSketches & sketches)
+{
+    /// A failure must not fail the write, so it only stops the statistics from being written.
+    IcebergColumnSketches::Finished finished;
+    try
+    {
+        finished = sketches.finish();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log, "Cannot finish the column sketches, no statistics will be written");
+    }
 
     std::lock_guard lock(column_sketches_mutex);
-    column_sketches->update(columns);
+    column_sketches.push_back(std::move(finished));
 }
 
 MultipleFileWriter & IcebergWriteSession::addWriter(const ChunkPartitioner::PartitionKey & partition_key, DataFileUploads & data_file_uploads)
@@ -1615,6 +1629,7 @@ IcebergStorageSink::IcebergStorageSink(
     , sort_order_description(sort_order_description_)
     , partitioner(std::move(partitioner_))
     , data_file_uploads(max_data_files_in_upload)
+    , column_sketches(session->createColumnSketches())
 {
 }
 
@@ -1629,7 +1644,8 @@ void IcebergStorageSink::consume(Chunk & chunk)
     if (isCancelled() || !chunk.hasRows())
         return;
 
-    session->updateColumnSketches(chunk.getColumns());
+    if (column_sketches)
+        column_sketches->update(chunk.getColumns());
 
     /// The partitions and the bounds must describe the stored values.
     if (Poco::toUpper(session->getWriteFormat()) == "ORC")
@@ -1750,6 +1766,9 @@ void IcebergStorageSink::finalizeBuffers()
         writer->finalize();
     /// The session commits only uploaded files.
     data_file_uploads.finalize();
+    /// A sink which got an error does not get here: neither its files nor its sketches are committed.
+    if (column_sketches)
+        session->addColumnSketches(*column_sketches);
     releaseBuffers();
     /// The writers are finished, and stay in the session to be committed.
     writer_per_partition_key.clear();
@@ -2090,9 +2109,9 @@ bool IcebergWriteSession::initializeMetadata()
             }
         }
 
-        if (column_sketches)
+        if (write_column_sketches)
             statistics_file_path = writeIcebergTableStatisticsNdv(
-                &*column_sketches, /*union_with_parent=*/ true, metadata, new_snapshot, filename_generator, resolver, object_storage,
+                column_sketches, /*union_with_parent=*/ true, metadata, new_snapshot, filename_generator, resolver, object_storage,
                 context);
 
         {

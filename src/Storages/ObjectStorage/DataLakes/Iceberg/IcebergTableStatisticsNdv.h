@@ -8,6 +8,7 @@
 #include <Core/Block_fwd.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Interpreters/Context_fwd.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergPath.h>
 
@@ -39,7 +40,8 @@ public:
     void update(const Columns & columns);
 
     /// The serialized compact sketch of each column by field id, or nothing if an update failed.
-    std::optional<std::map<Int32, String>> finish();
+    using Finished = std::optional<std::map<Int32, String>>;
+    Finished finish();
 
 private:
     struct ColumnSketch;
@@ -59,6 +61,18 @@ bool shouldWriteIcebergTableStatisticsNdv(const ContextPtr & context, const std:
 /// storage path of the written file, to remove if the commit fails.
 std::optional<String> writeIcebergTableStatisticsNdv(
     IcebergColumnSketches * column_sketches,
+    bool union_with_parent,
+    Poco::JSON::Object::Ptr metadata,
+    const Poco::JSON::Object::Ptr & snapshot,
+    FileNamesGenerator & generator,
+    const Iceberg::IcebergPathResolver & resolver,
+    const ObjectStoragePtr & object_storage,
+    const ContextPtr & context);
+
+/// The same for a commit of several writers with the sketches `column_sketches` each, unioned.
+/// Writes nothing if one of them is nothing.
+std::optional<String> writeIcebergTableStatisticsNdv(
+    const VectorWithMemoryTracking<IcebergColumnSketches::Finished> & column_sketches,
     bool union_with_parent,
     Poco::JSON::Object::Ptr metadata,
     const Poco::JSON::Object::Ptr & snapshot,

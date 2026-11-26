@@ -22,6 +22,8 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 #include <Storages/ObjectStorage/Utils.h>
 
+#include <functional>
+#include <string_view>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -94,7 +96,7 @@ void IcebergColumnSketches::update(const Columns & columns)
     }
 }
 
-std::optional<std::map<Int32, String>> IcebergColumnSketches::finish()
+IcebergColumnSketches::Finished IcebergColumnSketches::finish()
 {
     runner.waitForAllToFinishAndRethrowFirstError();
     if (failed)
@@ -327,8 +329,12 @@ private:
 
 }
 
-std::optional<String> writeIcebergTableStatisticsNdv(
-    IcebergColumnSketches * column_sketches,
+namespace
+{
+
+/// `finish_new_sketches` returns the sketches of the rows the commit writes; unset if it writes no rows.
+std::optional<String> writeStatisticsNdv(
+    const std::function<IcebergColumnSketches::Finished()> & finish_new_sketches,
     bool union_with_parent,
     Poco::JSON::Object::Ptr metadata,
     const Poco::JSON::Object::Ptr & snapshot,
@@ -337,7 +343,7 @@ std::optional<String> writeIcebergTableStatisticsNdv(
     const ObjectStoragePtr & object_storage,
     const ContextPtr & context)
 {
-    chassert(column_sketches || union_with_parent);
+    chassert(finish_new_sketches || union_with_parent);
     const auto log = getLogger("IcebergTableStatisticsNdv");
     const Int64 snapshot_id = snapshot->getValue<Int64>(Iceberg::f_metadata_snapshot_id);
     SnapshotStatisticsNdv snapshot_statistics(metadata, snapshot, resolver, object_storage, context);
@@ -358,14 +364,14 @@ std::optional<String> writeIcebergTableStatisticsNdv(
 
         SketchByFieldId sketches;
         /// Sketches cannot subtract, so once a commit removes rows the number of distinct values is an upper bound.
-        if (!column_sketches)
+        if (!finish_new_sketches)
         {
             for (const auto & [field_id, bytes] : parent.sketches)
                 sketches.emplace(field_id, unionThetaSketches({bytes}));
         }
         else
         {
-            const auto new_sketches = column_sketches->finish();
+            const auto new_sketches = finish_new_sketches();
             if (!new_sketches)
                 return {};
             for (const auto & [field_id, bytes] : *new_sketches)
@@ -405,6 +411,53 @@ std::optional<String> writeIcebergTableStatisticsNdv(
         }
         return {};
     }
+}
+
+}
+
+std::optional<String> writeIcebergTableStatisticsNdv(
+    IcebergColumnSketches * column_sketches,
+    bool union_with_parent,
+    Poco::JSON::Object::Ptr metadata,
+    const Poco::JSON::Object::Ptr & snapshot,
+    FileNamesGenerator & generator,
+    const Iceberg::IcebergPathResolver & resolver,
+    const ObjectStoragePtr & object_storage,
+    const ContextPtr & context)
+{
+    std::function<IcebergColumnSketches::Finished()> finish_new_sketches;
+    if (column_sketches)
+        finish_new_sketches = [&] { return column_sketches->finish(); };
+    return writeStatisticsNdv(finish_new_sketches, union_with_parent, metadata, snapshot, generator, resolver, object_storage, context);
+}
+
+std::optional<String> writeIcebergTableStatisticsNdv(
+    const VectorWithMemoryTracking<IcebergColumnSketches::Finished> & column_sketches,
+    bool union_with_parent,
+    Poco::JSON::Object::Ptr metadata,
+    const Poco::JSON::Object::Ptr & snapshot,
+    FileNamesGenerator & generator,
+    const Iceberg::IcebergPathResolver & resolver,
+    const ObjectStoragePtr & object_storage,
+    const ContextPtr & context)
+{
+    const auto union_sketches = [&]() -> IcebergColumnSketches::Finished
+    {
+        std::map<Int32, VectorWithMemoryTracking<std::string_view>> sketches_by_field;
+        for (const auto & writer_sketches : column_sketches)
+        {
+            if (!writer_sketches)
+                return {};
+            for (const auto & [field_id, bytes] : *writer_sketches)
+                sketches_by_field[field_id].push_back(bytes);
+        }
+
+        std::map<Int32, String> result;
+        for (const auto & [field_id, sketches] : sketches_by_field)
+            result.emplace(field_id, unionThetaSketches(sketches).bytes);
+        return result;
+    };
+    return writeStatisticsNdv(union_sketches, union_with_parent, metadata, snapshot, generator, resolver, object_storage, context);
 }
 
 bool shouldWriteIcebergTableStatisticsNdv(const ContextPtr & context, const std::shared_ptr<DataLake::ICatalog> & catalog)

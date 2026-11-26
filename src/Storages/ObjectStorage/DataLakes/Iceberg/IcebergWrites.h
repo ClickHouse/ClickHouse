@@ -198,8 +198,10 @@ public:
     /// The reference is valid while the session is alive. Thread-safe.
     MultipleFileWriter & addWriter(const ChunkPartitioner::PartitionKey & partition_key, DataFileUploads & data_file_uploads);
 
-    /// Adds the values a sink writes to the NDV statistics of the snapshot, if they are written. Thread-safe.
-    void updateColumnSketches(const Columns & columns);
+    /// The sketches of the values a sink writes, for the NDV statistics of the snapshot. Null if they are not written.
+    std::unique_ptr<IcebergColumnSketches> createColumnSketches() const;
+    /// Called by a sink which has finished without an error: only its values get into the statistics. Thread-safe.
+    void addColumnSketches(IcebergColumnSketches & sketches);
 
     const String & getWriteFormat() const { return write_format; }
 
@@ -224,9 +226,10 @@ private:
     std::optional<Int32> data_file_sort_order_id;
     Int64 total_rows = 0;
     Int64 total_chunks_size = 0;
-    /// Of all the sinks.
+    bool write_column_sketches = false;
+    /// Of the sinks which have finished without an error.
     std::mutex column_sketches_mutex;
-    std::optional<IcebergColumnSketches> column_sketches;
+    VectorWithMemoryTracking<IcebergColumnSketches::Finished> column_sketches;
 
     struct PartitionWriter
     {
@@ -321,6 +324,8 @@ private:
     std::optional<ChunkPartitioner> partitioner;
     /// The uploads of the finished data files of this sink.
     DataFileUploads data_file_uploads;
+    /// Of the values this sink writes; given to the session when the sink finishes.
+    std::unique_ptr<IcebergColumnSketches> column_sketches;
     std::unordered_map<ChunkPartitioner::PartitionKey, MultipleFileWriter *, ChunkPartitioner::PartitionKeyHasher> writer_per_partition_key;
     /// The sorted chunks of a partition's next data file, merged when it is written.
     struct SortedPendingFile
