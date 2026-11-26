@@ -195,16 +195,18 @@ Red and green. A timeout is `TIMEOUT_EXCEEDED` (for a shell query, its time limi
 
 | | tested side, alone or with the reference | reference side only |
 |---|---|---|
-| prewarm error or timeout | red (`run-error` line) | `partial`, measured on the tested side |
-| timed-run timeout | red | with `--long`: censored row, both sides keep running; otherwise red |
+| prewarm error or timeout | red (`run-error` line) | `partial`, measured on the tested side; without `--long`, a timeout of an SQL query that writes is red and stops the test |
+| timed-run timeout | red | with `--long`: censored row, both sides keep running; otherwise an SQL query that only reads is `partial`, measured on the tested side, and the runs the reference completed are dropped; a query that writes and a shell query are red and stop the test |
 | timed-run error | red | red |
 
-A censored row records the time of the completed statements plus the budget. With `--long`, regressions and `partial` queries are visible but do not turn the job red, and:
+A timeout on the reference side only of an SQL query that only reads (`SELECT`, `WITH` without `INSERT`, `EXPLAIN`, `SHOW`, `DESCRIBE`, `EXISTS`) is listed in the "Warnings" table of the report (a `reference-timeout` line of the raw output), so a test of a query that is too slow before the change it comes with does not fail the check. A query that writes and a shell query are not treated this way: cut by the time limit, they can leave the reference server in another state than the tested one, and the queries after them would compare different data. A censored row records the time of the completed statements plus the budget. With `--long`, regressions and `partial` queries are visible but do not turn the job red, and:
 
 * A settings or setup failure on the reference side (a feature the older binary lacks) runs the test on the tested side only, reported as `partial`, without `do_not_check_in_pr`. A setup failure on the tested side is red.
 * Every test runs under `timeout -k 60` with a 4-hour budget. A non-zero exit always leaves an error record (`124`: budget expired, `137`: killed), so the job is red. A failed upload of the required results (raw runs, query metrics, test times) is red too.
 * Teardown: on exit, including `SIGTERM`, `perf.py` runs the drop queries on every server that ran setup and prints `teardown-complete` only if all of them succeeded (a missing table is accepted on a reference whose setup failed). Without that line the harness records `teardown incomplete, stopping the batch` and runs no further tests on that host; what was measured is still reported.
 * Changes reported by the nightly are unconfirmed: `confirm_changes` is skipped, and the repetition from night to night is the confirmation.
+
+Without `--long` (the `master_head` jobs of pull requests and master), the tests and the log export end 10 minutes before `job_end` (`TESTS_END_RESERVE_SEC`), so that the report fits into the job timeout. Each test runs under `timeout -k 60` with the time left. A test cut by it, or not started, is an error record, so the job is red with its report. The log export gets the rest of that time, down to dropping the export without sending the logs. `perf.py` runs its teardown on `SIGTERM` in every mode.
 
 To get the text of a reported `query_index` (0-based, after substitutions), check out the tests of that run and use `tests/performance/scripts/perf.py --print-queries tests/performance/<test>.xml --queries-to-run <query_index>`.
 

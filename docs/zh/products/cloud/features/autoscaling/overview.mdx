@@ -19,25 +19,25 @@ import { ScalePlanFeatureBadge } from "/snippets/zh/components/ScalePlanFeatureB
 
 ## 选择计算方案 {#choosing-a-compute-option}
 
-请根据实际需求选择：是要调整现有 service 的容量、在专用 compute 上隔离某类 workload，还是为符合条件的查询临时追加 compute。
+请根据实际需求选择：是要调整现有 服务 的容量、在专用 compute 上隔离某类 工作负载，还是为符合条件的查询临时追加 compute。
 
 | 方案                                                                | 作用                                                | 适用场景                                             |
 | ----------------------------------------------------------------- | ------------------------------------------------- | ------------------------------------------------ |
-| 对现有 service 进行扩缩容                                                 | 垂直扩缩容调整 CPU 和内存；横向扩缩容调整副本数量，可手动进行，在受支持的情况下也可自动进行。 | 希望现有 service 随 workload 需求变化而扩容或缩容。              |
-| [仓库](/zh/products/cloud/features/infrastructure/warehouses)          | 创建拥有专用 compute 和端点、但共享同一份数据的独立 service。           | 需要为不同 workload 提供长期的 compute 隔离。                 |
-| [按需计算](/zh/products/cloud/features/infrastructure/on-demand-compute) | 通过现有的 service 和端点，从托管 pool 中临时分配 worker。          | 符合条件的 `SELECT` 查询需要额外 compute，但不希望调整 service 规格。 |
+| 对现有 服务 进行扩缩容                                                 | 垂直扩缩容调整 CPU 和内存；横向扩缩容调整副本数量，可手动进行，在受支持的情况下也可自动进行。 | 希望现有 服务 随 工作负载 需求变化而扩容或缩容。              |
+| [仓库](/zh/products/cloud/features/infrastructure/warehouses)          | 创建拥有专用 compute 和端点、但共享同一份数据的独立 服务。           | 需要为不同 工作负载 提供长期的 compute 隔离。                 |
+| [按需计算](/zh/products/cloud/features/infrastructure/on-demand-compute) | 通过现有的 服务 和端点，从托管 pool 中临时分配 worker。          | 符合条件的 `SELECT` 查询需要额外 compute，但不希望调整 服务 规格。 |
 
 <Note>
-  扩缩容的支持情况因 service 层级和 profile 而异。[横向自动扩缩容](/zh/products/cloud/features/autoscaling/horizontal-autoscaling)目前处于私有预览阶段。按需计算同样处于私有预览阶段，且仅支持符合条件的 `SELECT` 查询。
+  扩缩容的支持情况因 服务 层级和 profile 而异。[横向自动扩缩容](/zh/products/cloud/features/autoscaling/horizontal-autoscaling)目前处于 Beta 阶段。按需计算处于私有预览阶段，且仅支持符合条件的 `SELECT` 查询。
 </Note>
 
 ## ClickHouse Cloud 中扩缩容的工作方式 {#how-scaling-works-in-clickhouse-cloud}
 
-ClickHouse Cloud 为 Scale 和 Enterprise 层级服务提供手动水平扩缩容。Scale 层级服务还支持垂直自动扩缩容；Enterprise 层级服务是否支持垂直自动扩缩容取决于 profile，如下所述。[横向自动扩缩容](/zh/products/cloud/features/autoscaling/horizontal-autoscaling)已在私有预览中面向 Scale 和 Enterprise 层级服务提供。
+ClickHouse Cloud 为 Scale 和 Enterprise 层级服务提供手动横向扩缩容。Scale 层级服务还支持垂直自动扩缩容；Enterprise 层级服务是否支持垂直自动扩缩容取决于 profile，如下所述。[横向自动扩缩容](/zh/products/cloud/features/autoscaling/horizontal-autoscaling)目前以 Beta 形式面向 Scale 和 Enterprise 层级服务提供。
 
 对于 Enterprise 层级服务，扩缩容规则如下：
 
-* **水平扩缩容**：Enterprise 层级的所有标准和自定义 profile 均支持手动水平扩缩容。
+* **横向扩缩容**：Enterprise 层级的所有标准和自定义 profile 均支持手动横向扩缩容。
 * **垂直扩缩容**：
   * 标准 `1:4` profile 支持垂直自动扩缩容。
   * 自定义 profile (`highMemory` 和 `highCPU`) 不支持垂直自动扩缩容或手动垂直扩缩容。不过，可通过联系支持团队来对这些服务执行垂直扩缩容。

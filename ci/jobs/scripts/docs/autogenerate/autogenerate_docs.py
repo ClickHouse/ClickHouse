@@ -66,6 +66,11 @@ SETTINGS_MARKDOWN_DEFAULT_RE = re.compile(
 )
 SETTINGS_ALIASES_RE = re.compile(r"^\*\*Aliases\*\*:[^\n]*$", re.MULTILINE)
 SETTINGS_ALIAS_NAME_RE = re.compile(r"`(?P<alias>[A-Za-z0-9_.-]+)`")
+MERGE_TREE_SETTING_ALIAS_RE = re.compile(
+    r"DECLARE_WITH_ALIAS\(\s*[^,]+,\s*(?P<name>\w+),.*?R\"\((?:.*?)\)\"\s*,\s*"
+    r"[^,]+,\s*(?P<alias>\w+)(?=\s*(?:,|\)))",
+    re.DOTALL,
+)
 MARKDOWN_HEADING_RE = re.compile(
     r"^(?P<hashes>#{1,4})[ \t]+(?P<title>.+?)[ \t]*$")
 MARKDOWN_HEADING_ID_RE = re.compile(
@@ -195,6 +200,9 @@ SETTINGS_GENERATORS = [
         "dest": "reference/settings/merge-tree-settings.mdx",
         "method": "markers",  # preserves frontmatter + hand-written intro
         "fixups": True,        # backtick-wrap angle-bracket text so it is valid MDX
+        "deps": {
+            "MergeTreeSettings.cpp": "src/Storages/MergeTree/MergeTreeSettings.cpp",
+        },
     },
     {
         # Run after the split settings families so both `--write` and `--check`
@@ -226,6 +234,35 @@ MERGETREE_FIXUPS = [
 def apply_fixups(content):
     for old, new in MERGETREE_FIXUPS:
         content = content.replace(old, new)
+    return content
+
+
+def merge_tree_setting_aliases(source):
+    """Return aliases registered by `DECLARE_WITH_ALIAS` in `MergeTreeSettings.cpp`."""
+    aliases_by_name = {}
+    for match in MERGE_TREE_SETTING_ALIAS_RE.finditer(source):
+        aliases_by_name.setdefault(match.group("name"), []).append(
+            match.group("alias"))
+    return {
+        name: tuple(sorted(aliases))
+        for name, aliases in aliases_by_name.items()
+    }
+
+
+def add_merge_tree_setting_aliases(content, source):
+    """Add registered `MergeTree` aliases to their canonical generated sections."""
+    for name, aliases in merge_tree_setting_aliases(source).items():
+        aliases_markdown = "**Aliases**: " + ", ".join(
+            f"`{alias}`" for alias in aliases) + "\n\n"
+        heading_re = re.compile(
+            rf"^(## {re.escape(name)} \{{#{re.escape(name)}\}}\s*\n)",
+            re.MULTILINE,
+        )
+        content, replacements = heading_re.subn(
+            rf"\1\n{aliases_markdown}", content, count=1)
+        if replacements != 1:
+            raise ValueError(
+                f"missing generated MergeTree setting for aliases of {name!r}")
     return content
 
 
@@ -2181,6 +2218,10 @@ def generate(gen, binary, docs_dir, repo_root, generated_settings_routes=None):
 
     if gen.get("fixups"):
         content = apply_fixups(content)
+    if gen["name"] == "mergetree-settings":
+        aliases_source = Path(scratch, "MergeTreeSettings.cpp").read_text(
+            encoding="utf-8")
+        content = add_merge_tree_setting_aliases(content, aliases_source)
     title = None
     if gen.get("full_page"):
         with open(dest, encoding="utf-8") as f:
