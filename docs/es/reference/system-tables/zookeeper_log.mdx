@@ -37,7 +37,7 @@ Es seguro truncar o eliminar esta tabla en cualquier momento.
 * `path` ([String](/es/reference/data-types/string)) — La ruta del nodo de ZooKeeper especificado en la solicitud, o una cadena vacía si la solicitud no requiere especificar una ruta.
 * `data` ([String](/es/reference/data-types/string)) — Los datos escritos en el nodo de ZooKeeper (para las solicitudes SET y CREATE, lo que la solicitud quería escribir; para la respuesta a la solicitud GET, lo que se leyó) o una cadena vacía.
 * `is_ephemeral` ([UInt8](/es/reference/data-types/int-uint)) — Indica si el nodo de ZooKeeper se está creando como efímero.
-* `is_sequential` ([UInt8](/es/reference/data-types/int-uint)) — Indica si el nodo de ZooKeeper se crea como sequential.
+* `is_sequential` ([UInt8](/es/reference/data-types/int-uint)) — Indica si el nodo de ZooKeeper se crea como secuencial.
 * `version` ([Nullable(Int32)](/es/reference/data-types/nullable)) — La versión del nodo de ZooKeeper que la solicitud espera al ejecutarse. Esto es compatible con las solicitudes CHECK, SET y REMOVE (corresponde a -1 si la solicitud no comprueba la versión, o a NULL en otras solicitudes que no admiten la comprobación de versión).
 * `requests_size` ([UInt32](/es/reference/data-types/int-uint)) — El número de solicitudes incluidas en la solicitud múltiple (se trata de una solicitud especial que consta de varias solicitudes ordinarias consecutivas y las ejecuta de forma atómica). Todas las solicitudes incluidas en la solicitud múltiple tendrán el mismo xid.
 * `request_idx` ([UInt32](/es/reference/data-types/int-uint)) — El número de la solicitud incluida en una solicitud múltiple (para una solicitud múltiple: 0 y luego, en orden, a partir de 1).

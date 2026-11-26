@@ -1,7 +1,5 @@
 -- Tags: long
 
-SET allow_experimental_json_type = 1;
-
 -- Regression test for a bug where ColumnObject::index (and filter/replicate/scatter)
 -- did not propagate statistics, causing a mismatch between the number of shared data
 -- buckets chosen during stream creation vs serialization state creation for nested JSON
