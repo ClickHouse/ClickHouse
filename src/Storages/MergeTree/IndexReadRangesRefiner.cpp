@@ -27,7 +27,7 @@ MarkRanges IndexReadRangesRefiner::refine(const MergeTreeReadTaskInfo & info, Ma
     if (!has_projection_ranges && !index_build_context->index_reader_pool->hasSkipIndexReader())
         return ranges;
 
-    /// Built before the JOIN runtime filters are, the part's result would not be pruned by them for the whole part.
+    /// The part's result is built once, so building it before the JOIN runtime filters would lose their pruning for the whole part.
     if (!index_build_context->index_reader_pool->areRuntimeFiltersReady())
         return ranges;
 
