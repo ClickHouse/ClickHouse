@@ -155,7 +155,7 @@ void WriteBufferFromGCS::writeToStream(const char * data, size_t size)
         ProfileEvents::increment(ProfileEvents::WriteBufferFromGCSRequestsErrors);
         const auto & status = write_stream->last_status();
         logUploadResult(static_cast<Int32>(status.code()), status.message());
-        throwFromGCSStatus(write_stream->last_status(),
+        throwUploadError(write_stream->last_status(),
             fmt::format("while writing '{}' in bucket '{}'", key, bucket));
     }
 
@@ -207,7 +207,7 @@ void WriteBufferFromGCS::finalizeWriteStream()
     {
         logUploadResult(static_cast<Int32>(result.status().code()), result.status().message());
         ProfileEvents::increment(ProfileEvents::WriteBufferFromGCSRequestsErrors);
-        throwFromGCSStatus(result.status(),
+        throwUploadError(result.status(),
             fmt::format("while finalizing the upload of '{}' in bucket '{}'", key, bucket));
     }
 
@@ -260,11 +260,17 @@ void WriteBufferFromGCS::insertObject()
     if (!result)
     {
         ProfileEvents::increment(ProfileEvents::WriteBufferFromGCSRequestsErrors);
-        throwFromGCSStatus(result.status(),
+        throwUploadError(result.status(),
             fmt::format("while uploading '{}' in bucket '{}'", key, bucket));
     }
 
     StringWithMemoryTracking().swap(pending_data);
+}
+
+void WriteBufferFromGCS::throwUploadError(const google::cloud::Status & status, const String & context) const
+{
+    throwFromGCSWriteStatus(
+        status, precondition.has_value() ? std::optional<Int64>(precondition.value()) : std::nullopt, context);
 }
 
 void WriteBufferFromGCS::finalizeImpl()

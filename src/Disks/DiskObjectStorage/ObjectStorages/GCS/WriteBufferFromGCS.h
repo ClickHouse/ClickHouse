@@ -67,6 +67,8 @@ private:
     void finalizeWriteStream();
     void insertObject();
     void accountUploadedBytes(size_t size);
+    /// Throws for a failed upload. A lost conditional write keeps a code that tells it apart from other errors.
+    [[noreturn]] void throwUploadError(const google::cloud::Status & status, const String & context) const;
 
     std::shared_ptr<google::cloud::storage::Client> client;
     const String bucket;

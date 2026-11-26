@@ -562,7 +562,8 @@ void GCSObjectStorage::copyObjectToAnotherObjectStorage( /// NOLINT
         /// A failed precondition is the answer to the conditional write, not a transport problem: the
         /// buffer copy would only repeat the same conditional write against the same object.
         if (result.status().code() == google::cloud::StatusCode::kFailedPrecondition)
-            throwFromGCSStatus(result.status(),
+            throwFromGCSWriteStatus(result.status(),
+                precondition.has_value() ? std::optional<Int64>(precondition.value()) : std::nullopt,
                 fmt::format("while copying '{}' in bucket '{}' to '{}' in bucket '{}'",
                     object_from.remote_path, bucket, object_to.remote_path, dest_gcs->bucket));
         LOG_WARNING(log, "GCS server-side copy from bucket {} to bucket {} failed ({}), falling back to buffer copy",
