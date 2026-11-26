@@ -693,6 +693,8 @@ def _to_spark_compatible_arrow(arrow_table):
 def _to_spark_column(mapper: ClickHouseTypeMapper, val: dict, is_avro: bool):
     """The Spark column of the ClickHouse column `val` from BuzzHouse, None when Avro cannot hold it."""
     mapper.increment()
+    # A table created `AS` a lake table infers `Int64` where BuzzHouse has a wide integer
+    mapper.wide_ints_as_decimal = False
     _, nullable, spark_type = mapper.clickhouse_to_spark(
         val["type"], False, ClickHouseMapping.Spark
     )
