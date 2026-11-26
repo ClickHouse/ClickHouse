@@ -925,6 +925,8 @@ void MergeTreeReaderCompact::accumulateGranuleForColumnsCache(
         accumulation.stripe = stripe;
         accumulation.first_mark = mark;
         accumulation.column = column.cloneEmpty();
+        /// The copy must own its data, see `MergeTreeReaderWide::accumulateRowsForColumnsCache`.
+        accumulation.column->ensureOwnership();
         /// The rows of the block from this granule to the end of the stripe, not the whole stripe,
         /// see `MergeTreeReaderWide::accumulateRowsForColumnsCache`.
         const auto & index_granularity = data_part_info_for_read->getIndexGranularity();
