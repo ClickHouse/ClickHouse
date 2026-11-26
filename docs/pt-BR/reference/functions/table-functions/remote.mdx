@@ -14,9 +14,7 @@ A função de tabela `remote` permite acessar servidores remotos dinamicamente, 
 
 Ambas as funções podem ser usadas em consultas `SELECT` e `INSERT` quando o destino é um `db`/`table` comum. Quando o destino é, por si só, uma função de tabela (por exemplo, `remote('127.0.0.1', numbers(10))`), a tabela é somente leitura: não há tabela remota na qual inserir e, portanto, `INSERT` é rejeitado com uma exceção `NOT_IMPLEMENTED`.
 
-<div id="syntax">
-  ## Sintaxe
-</div>
+## Sintaxe {#syntax}
 
 ```sql
 remote(addresses_expr, [db, table, user [, password], sharding_key][, SETTINGS name = value, ...])
@@ -27,9 +25,7 @@ remoteSecure(addresses_expr, [db.table, user [, password], sharding_key][, SETTI
 remoteSecure(named_collection[, option=value [,..]][, SETTINGS name = value, ...])
 ```
 
-<div id="parameters">
-  ## Parâmetros
-</div>
+## Parâmetros {#parameters}
 
 | Argumento                    | Descrição                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -43,15 +39,11 @@ remoteSecure(named_collection[, option=value [,..]][, SETTINGS name = value, ...
 
 Os argumentos também podem ser passados por meio de [coleções nomeadas](/pt-BR/concepts/features/configuration/server-config/named-collections).
 
-<div id="returned-value">
-  ## Valor retornado
-</div>
+## Valor retornado {#returned-value}
 
 Uma tabela localizada em um servidor remoto.
 
-<div id="usage">
-  ## Uso
-</div>
+## Uso {#usage}
 
 Como as funções de tabela `remote` e `remoteSecure` restabelecem a conexão a cada solicitação, recomenda-se usar uma tabela `Distributed` em vez delas. Além disso, se os hostnames estiverem definidos, os nomes serão resolvidos, e os erros não serão contabilizados ao trabalhar com várias réplicas. Ao processar um grande número de consultas, sempre crie a tabela `Distributed` com antecedência e não use a função de tabela `remote`.
 
@@ -65,9 +57,7 @@ A função de tabela `remote` pode ser útil nos seguintes casos:
 
 Os mesmos parâmetros podem ser usados com os motores de tabela `Remote` e `RemoteSecure` para criar uma tabela persistente em vez de uma tabela ad hoc; consulte [motores Remote e RemoteSecure](/pt-BR/reference/engines/table-engines/special/distributed#distributed-remote-engines). A única diferença é a cláusula `SETTINGS`: os motores a aceitam após a definição do motor, `ENGINE = Remote(...) SETTINGS skip_unavailable_shards = 1`, e não entre os argumentos.
 
-<div id="addresses">
-  ### Endereços
-</div>
+### Endereços {#addresses}
 
 ```text
 example01-01-1
@@ -86,13 +76,9 @@ Vários endereços podem ser informados separados por vírgulas. Nesse caso, o C
 example01-01-1,example01-02-1
 ```
 
-<div id="examples">
-  ## Exemplos
-</div>
+## Exemplos {#examples}
 
-<div id="selecting-data-from-a-remote-server">
-  ### Selecionando dados de um servidor remoto:
-</div>
+### Selecionando dados de um servidor remoto: {#selecting-data-from-a-remote-server}
 
 ```sql
 SELECT * FROM remote('127.0.0.1', db.remote_engine_table) LIMIT 3;
@@ -107,9 +93,7 @@ CREATE NAMED COLLECTION creds AS
 SELECT * FROM remote(creds, table='remote_engine_table') LIMIT 3;
 ```
 
-<div id="inserting-data-into-a-table-on-a-remote-server">
-  ### Inserindo dados em uma tabela em um servidor remoto:
-</div>
+### Inserindo dados em uma tabela em um servidor remoto: {#inserting-data-into-a-table-on-a-remote-server}
 
 ```sql
 CREATE TABLE remote_table (name String, value UInt32) ENGINE=Memory;
@@ -117,15 +101,11 @@ INSERT INTO FUNCTION remote('127.0.0.1', currentDatabase(), 'remote_table') VALU
 SELECT * FROM remote_table;
 ```
 
-<div id="migration-of-tables-from-one-system-to-another">
-  ### Migração de tabelas de um sistema para outro:
-</div>
+### Migração de tabelas de um sistema para outro: {#migration-of-tables-from-one-system-to-another}
 
 Este exemplo usa uma tabela de um conjunto de dados de amostra. O banco de dados é `imdb`, e a tabela é `actors`.
 
-<div id="on-the-source-clickhouse-system-the-system-that-currently-hosts-the-data">
-  #### No sistema ClickHouse de origem (o sistema que hospeda os dados atualmente)
-</div>
+#### No sistema ClickHouse de origem (o sistema que hospeda os dados atualmente) {#on-the-source-clickhouse-system-the-system-that-currently-hosts-the-data}
 
 * Verifique o banco de dados de origem e o nome da tabela (`imdb.actors`)
 
@@ -148,17 +128,15 @@ Este exemplo usa uma tabela de um conjunto de dados de amostra. O banco de dados
 Resposta
 
 ```sql
-  CREATE TABLE imdb.actors (`id` UInt32,
-                            `first_name` String,
-                            `last_name` String,
-                            `gender` FixedString(1))
-                  ENGINE = MergeTree
-                  ORDER BY (id, first_name, last_name, gender);
+CREATE TABLE imdb.actors (`id` UInt32,
+                          `first_name` String,
+                          `last_name` String,
+                          `gender` FixedString(1))
+                ENGINE = MergeTree
+                ORDER BY (id, first_name, last_name, gender);
 ```
 
-<div id="on-the-destination-clickhouse-system">
-  #### No sistema de destino do ClickHouse
-</div>
+#### No sistema de destino do ClickHouse {#on-the-destination-clickhouse-system}
 
 * Crie o banco de dados de destino:
 
@@ -177,9 +155,7 @@ Resposta
                   ORDER BY (id, first_name, last_name, gender);
   ```
 
-<div id="back-on-the-source-deployment">
-  #### De volta à implantação de origem
-</div>
+#### De volta à implantação de origem {#back-on-the-source-deployment}
 
 Insira dados no novo banco de dados e na nova tabela criados no sistema remoto. Você precisará do host, da porta, do nome de usuário, da senha, do banco de dados de destino e da tabela de destino.
 
@@ -189,9 +165,7 @@ remoteSecure('remote.clickhouse.cloud:9440', 'imdb.actors', 'USER', 'PASSWORD')
 SELECT * from imdb.actors
 ```
 
-<div id="globs-in-addresses">
-  ## Globbing
-</div>
+## Globbing {#globs-in-addresses}
 
 Padrões em `{ }` são usados para gerar um conjunto de shards e para especificar réplicas. Se houver vários pares de `{ }`, o produto cartesiano dos conjuntos correspondentes será gerado.
 

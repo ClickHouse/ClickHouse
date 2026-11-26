@@ -19,17 +19,13 @@ Este guia integra o seguinte:
 
 O guia a seguir pressupõe que você implantou um [ClickStack OTel collector como gateway](/pt-BR/clickstack/ingesting-data/collector), protegido com uma API key de ingestão.
 
-<div id="creating-the-otel-helm-chart-config-files">
-  ## Criando os arquivos de configuração do Chart do Helm do OTel
-</div>
+## Criando os arquivos de configuração do Chart do Helm do OTel {#creating-the-otel-helm-chart-config-files}
 
 Para coletar logs e métricas de cada nó e também do próprio cluster, precisaremos implantar dois coletores OpenTelemetry separados. Um será implantado como um Conjunto de Daemon para coletar logs e métricas de cada nó, e o outro será implantado como uma Implantação para coletar logs e métricas do próprio cluster.
 
-<div id="create-api-key-secret">
-  ### Criando um Secret com a API key
-</div>
+### Criando um Secret com a API key {#create-api-key-secret}
 
-Crie um novo Secret do Kubernetes com a [API key de ingestão](/pt-BR/clickstack/ingesting-data/opentelemetry#sending-otel-data) do HyperDX. Ela será usada pelos componentes instalados abaixo para fazer a ingestão com segurança no seu ClickStack OTel collector:
+Crie um novo Secret do Kubernetes com a [API key de ingestão](/pt-BR/clickstack/ingesting-data/opentelemetry#sending-otel-data) da Interface do ClickStack. Ela será usada pelos componentes instalados abaixo para fazer a ingestão com segurança no seu ClickStack OTel collector:
 
 ```shell
 kubectl create secret generic hyperdx-secret \
@@ -40,12 +36,10 @@ Além disso, crie um ConfigMap com a localização do seu ClickStack OTel collec
 
 ```shell
 kubectl create configmap -n=otel-demo otel-config-vars --from-literal=YOUR_OTEL_COLLECTOR_ENDPOINT=<OTEL_COLLECTOR_ENDPOINT>
-# ex.: kubectl create configmap -n=otel-demo otel-config-vars --from-literal=YOUR_OTEL_COLLECTOR_ENDPOINT=http://my-hyperdx-hdx-oss-v2-otel-collector:4318
+# e.g. kubectl create configmap -n=otel-demo otel-config-vars --from-literal=YOUR_OTEL_COLLECTOR_ENDPOINT=http://my-hyperdx-hdx-oss-v2-otel-collector:4318
 ```
 
-<div id="creating-the-daemonset-configuration">
-  ### Criando a configuração do Conjunto de Daemon
-</div>
+### Criando a configuração do Conjunto de Daemon {#creating-the-daemonset-configuration}
 
 O Conjunto de Daemon coletará logs e métricas de cada nó do cluster, mas não coletará eventos do Kubernetes nem métricas de todo o cluster.
 
@@ -255,9 +249,7 @@ curl -O https://raw.githubusercontent.com/ClickHouse/clickhouse-docs/refs/heads/
   </Tab>
 </Tabs>
 
-<div id="creating-the-deployment-configuration">
-  ### Criando a configuração da implantação
-</div>
+### Criando a configuração da implantação {#creating-the-deployment-configuration}
 
 Para coletar eventos do Kubernetes e métricas em todo o cluster, precisaremos implantar um coletor OpenTelemetry separado na forma de uma implantação.
 
@@ -391,16 +383,14 @@ curl -O https://raw.githubusercontent.com/ClickHouse/clickhouse-docs/refs/heads/
   </Tab>
 </Tabs>
 
-<div id="deploying-the-otel-collector">
-  ## Implantando o coletor OpenTelemetry
-</div>
+## Implantando o coletor OpenTelemetry {#deploying-the-otel-collector}
 
 Agora, o coletor OpenTelemetry pode ser implantado no seu cluster do Kubernetes usando o [Chart do Helm do OpenTelemetry](https://github.com/open-telemetry/opentelemetry-helm-charts/tree/main/charts/opentelemetry-collector).
 
 Adicione o repositório Helm do OpenTelemetry:
 
 ```shell
-helm repo add open-telemetry https://open-telemetry.github.io/opentelemetry-helm-charts # Adicionar repositório Helm do OTel
+helm repo add open-telemetry https://open-telemetry.github.io/opentelemetry-helm-charts # Add OTel Helm repo
 ```
 
 Instale o chart usando a configuração acima:
@@ -411,11 +401,9 @@ helm install my-opentelemetry-collector-daemonset open-telemetry/opentelemetry-c
 ```
 
 Agora, as métricas, os logs e os eventos do Kubernetes do seu cluster já devem
-aparecer no HyperDX.
+aparecer na Interface do ClickStack.
 
-<div id="forwarding-resouce-tags-to-pods">
-  ## Encaminhando tags de recurso para pods do Kubernetes (Recomendado)
-</div>
+## Encaminhando tags de recurso para pods do Kubernetes (Recomendado) {#forwarding-resouce-tags-to-pods}
 
 Para correlacionar logs, métricas e traces da aplicação com metadados do Kubernetes
 (ex.: nome do pod do Kubernetes, espaço de nomes etc.), é recomendável encaminhar os metadados do Kubernetes

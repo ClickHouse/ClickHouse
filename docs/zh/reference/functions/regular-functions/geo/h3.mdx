@@ -66,7 +66,7 @@ h3GetResolution(h3index)
 **返回值**
 
 * 索引分辨率。取值范围：`[0, 15]`。[UInt8](/zh/reference/data-types/int-uint)。
-* 如果索引无效，函数会返回一个随机值。请使用 [h3IsValid](#h3isvalid) 验证索引。[UInt8](/zh/reference/data-types/int-uint)。
+* 如果索引无效，函数默认会抛出异常；若启用了 [`functions_h3_default_if_invalid`](/zh/reference/settings/session-settings/other#functions_h3_default_if_invalid)，则返回 `0`。请使用 [h3IsValid](#h3isvalid) 验证索引。[UInt8](/zh/reference/data-types/int-uint)。
 
 **示例**
 
@@ -651,6 +651,7 @@ h3GetResolution(index)
 **返回值**
 
 * 索引分辨率。取值范围：`[0, 15]`。[UInt8](/zh/reference/data-types/int-uint)。
+* 默认情况下，传入无效索引会抛出异常；若启用了 `functions_h3_default_if_invalid`，则返回 `0`。
 
 **示例**
 

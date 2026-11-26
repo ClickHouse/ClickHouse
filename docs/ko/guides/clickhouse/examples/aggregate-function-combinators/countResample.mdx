@@ -7,22 +7,16 @@ sidebarTitle: 'countResample'
 doc_type: 'reference'
 ---
 
-<div id="description">
-  ## 설명
-</div>
+## 설명 {#description}
 
 [`Resample`](/ko/reference/functions/aggregate-functions/combinators#-resample)
 조합자는 [`count`](/ko/reference/functions/aggregate-functions/count)
 집계 함수에 적용하여 지정된 키 컬럼의 값을 고정된 개수의
 인터벌(`N`)로 나누어 셀 수 있습니다.
 
-<div id="example-usage">
-  ## 사용 예시
-</div>
+## 사용 예시 {#example-usage}
 
-<div id="basic-example">
-  ### 기본 예시
-</div>
+### 기본 예시 {#basic-example}
 
 예시를 살펴보겠습니다. 직원의 `name`, `age`, `wage`를 포함하는 테이블을 만들고,
 여기에 몇 개의 데이터를 삽입해 보겠습니다:
@@ -35,7 +29,7 @@ CREATE TABLE employee_data
     wage Float32
 ) 
 ENGINE = MergeTree()
-ORDER BY tuple()
+ORDER BY tuple();
 
 INSERT INTO employee_data (name, age, wage) VALUES
     ('John', 16, 10.0),
@@ -61,9 +55,7 @@ SELECT countResample(30, 75, 30)(name, age) AS amount FROM employee_data
 └────────┘
 ```
 
-<div id="see-also">
-  ## 관련 항목
-</div>
+## 관련 항목 {#see-also}
 
 * [`count`](/ko/reference/functions/aggregate-functions/count)
 * [`Resample 조합자`](/ko/reference/functions/aggregate-functions/combinators#-resample)
