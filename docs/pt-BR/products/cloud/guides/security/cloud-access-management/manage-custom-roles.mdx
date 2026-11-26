@@ -7,15 +7,11 @@ doc_type: 'guide'
 keywords: ['funções personalizadas', 'segurança', 'permissões']
 ---
 
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
-
-Este guia é destinado a usuários com a Função Admin no ClickHouse Cloud.
+Este guia é destinado a usuários com a Função Administrador no ClickHouse Cloud.
 
 Os clientes do ClickHouse Cloud podem selecionar funções de sistema predefinidas ou criar funções personalizadas para atribuir aos usuários. Para mais informações sobre as funções de sistema e as permissões associadas, consulte [Console roles and permissions](/pt-BR/products/cloud/reference/security/console-roles). Este guia fornece detalhes sobre como gerenciar funções personalizadas.
 
-<div id="create-custom-role">
-  ## Criar funções personalizadas
-</div>
+## Criar funções personalizadas {#create-custom-role}
 
 As funções personalizadas podem incluir uma combinação de permissões de organização, serviço e banco de dados. As permissões podem ser aplicadas a todos os serviços e bancos de dados ou a um subconjunto deles.
 
@@ -23,25 +19,41 @@ As funções personalizadas podem incluir uma combinação de permissões de org
   <Step title="Acesse as configurações da organização e selecione `Users and roles`" id="users-and-roles-1">
     Na página de serviços, selecione o nome da sua organização. No menu pop-up, selecione o item de menu `Users and roles`.
 
-    <Image img="/images/cloud/guides/control_plane/1_users_and_roles.webp" size="lg" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![](/images/cloud/guides/control_plane/1_users_and_roles.webp)
+      </Frame>
+    </div>
   </Step>
 
   <Step title={<>Selecione a aba <code>Roles</code></>} id="roles-tab">
     Selecione a aba `Roles` na parte superior central da tela.
 
-    <Image img="/images/cloud/guides/control_plane/manage_custom_roles/2_custom_role.webp" size="lg" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![](/images/cloud/guides/control_plane/manage_custom_roles/2_custom_role.webp)
+      </Frame>
+    </div>
   </Step>
 
   <Step title={<>Selecione <code>Create new role</code> no canto superior direito</>} id="create-new-role">
     Selecione o botão `Create new role` no canto superior direito da tela.
 
-    <Image img="/images/cloud/guides/control_plane/manage_custom_roles/3_custom_role.webp" size="lg" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![](/images/cloud/guides/control_plane/manage_custom_roles/3_custom_role.webp)
+      </Frame>
+    </div>
   </Step>
 
   <Step title="Dê um nome à função" id="name-the-role">
     Digite um nome descritivo para a função. Esse será o nome exibido ao atribuir funções a usuários e chaves de API.
 
-    <Image img="/images/cloud/guides/control_plane/manage_custom_roles/4_custom_role.webp" size="md" />
+    <div className="ch-image-md">
+      <Frame>
+        ![](/images/cloud/guides/control_plane/manage_custom_roles/4_custom_role.webp)
+      </Frame>
+    </div>
   </Step>
 
   <Step title={<>Clique em <code>Allow</code> e selecione o escopo da permissão</>} id="scope-permissions">
@@ -54,27 +66,121 @@ As funções personalizadas podem incluir uma combinação de permissões de org
     <Info>
       **Acesso à aba Data Sources**
 
-      Para acessar a aba **Data Sources**, no momento a função exige a permissão `Manage and Delete Selected Services`.
+      Para acessar a aba **Data Sources**, no momento a função exige a permissão `Manage selected services`.
     </Info>
 
-    <Image img="/images/cloud/guides/control_plane/manage_custom_roles/5_custom_role.webp" size="md" />
+    <div className="ch-image-md">
+      <Frame>
+        ![](/images/cloud/guides/control_plane/manage_custom_roles/5_custom_role.webp)
+      </Frame>
+    </div>
   </Step>
 
   <Step title="Revise sua nova função" id="review-role">
     Revise as permissões atribuídas à sua nova função antes de concluir. Clique em `Create role` quando terminar.
 
-    <Image img="/images/cloud/guides/control_plane/manage_custom_roles/6_custom_role.webp" size="md" />
+    <div className="ch-image-md">
+      <Frame>
+        ![](/images/cloud/guides/control_plane/manage_custom_roles/6_custom_role.webp)
+      </Frame>
+    </div>
   </Step>
 </Steps>
 
-<div id="update-custom-role">
-  ## Atualizar funções personalizadas
+## Gerenciar papéis de banco de dados {#manage-database-roles}
+
+Além das permissões do console, as funções personalizadas podem incluir uma política `Data` que controla o acesso aos bancos de dados dos serviços selecionados. Isso permite gerenciar o acesso ao console e aos bancos de dados em um só lugar, em vez de manter funções separadas em cada banco de dados.
+
+<Note>
+  Este recurso está disponível para serviços que executam o ClickHouse versão 26.4 ou superior.
+</Note>
+
+Quando você adiciona uma política `Data` a uma função personalizada, o ClickHouse Cloud cria uma função correspondente em cada serviço selecionado, com o prefixo `cloud:`. Por exemplo, uma função personalizada chamada `readonly` aparece no banco de dados como `cloud:readonly`. Os membros da função personalizada recebem essas permissões de banco de dados ao se conectarem ao serviço por meio da autenticação sem senha do SQL Console.
+
+<Warning>
+  Os papéis de banco de dados gerenciados pelo Cloud substituem as funções [`sql-console-role:<email>`](/pt-BR/products/cloud/guides/security/cloud-access-management/manage-database-users#sql-console-users-and-roles) atribuídas manualmente, que não são compatíveis com sessões JWT no SQL Console.
+</Warning>
+
+<Warning>
+  Uma política `Data` com acesso `Custom` substitui, em vez de complementar, o acesso ao banco de dados que um membro recebe das funções integradas [administrador do console SQL ou somente leitura do console SQL](/pt-BR/products/cloud/reference/security/console-roles#sql-console-roles). Quando um membro pertence a qualquer função personalizada com acesso `Custom` em um serviço, suas sessões do SQL Console nesse serviço têm apenas os privilégios definidos em suas funções personalizadas. Isso também vale para os Administradores da organização. Os privilégios de várias funções personalizadas são combinados.
+
+  Inclua na política todos os privilégios de que os membros precisam. Não adicione membros que precisam de acesso de escrita a uma função personalizada que concede apenas acesso de leitura.
+</Warning>
+
+Os papéis de banco de dados gerenciados pelo Cloud contêm apenas privilégios. [Settings profiles](/pt-BR/concepts/features/configuration/settings/settings-profiles), cotas e row policies atribuídos a uma função `cloud:` não se aplicam às sessões do SQL Console, que usam as configurações padrão do serviço. Para limitar os recursos de uma única consulta, adicione uma cláusula `SETTINGS` à consulta, por exemplo, `SETTINGS max_memory_usage = 10000000000`.
+
+### Pré-requisitos {#manage-database-roles-prerequisites}
+
+Os papéis de banco de dados personalizados em um serviço dependem da [autenticação JWT](/pt-BR/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup) e não são aplicados enquanto ela estiver desabilitada. Antes de adicionar uma política `Data` a uma função, navegue até o serviço, abra `Settings` e localize o cartão `JWT authentication` na seção `Security`. Certifique-se de que o controle `SQL Console` esteja habilitado.
+
+<div className="ch-image-lg">
+  <Frame>
+    ![Cartão de autenticação JWT com o controle SQL Console habilitado](/images/cloud/security/jwt/jwt-sql-console-toggle.png)
+  </Frame>
 </div>
+
+<Steps>
+  <Step title="Abrir a caixa de diálogo da função" id="open-role-dialog">
+    [Crie uma função personalizada](#create-custom-role) ou edite uma existente.
+  </Step>
+
+  <Step title="Adicionar uma política de organização" id="add-organization-policy">
+    Na caixa de diálogo da função, clique em `Allow`, selecione `Organization` e habilite a permissão `Access organization`.
+  </Step>
+
+  <Step title="Adicionar uma política de serviço" id="add-service-policy">
+    Clique em `Allow permissions`, selecione `Service`, escolha os serviços aos quais a política de dados será aplicada e habilite a permissão `View selected services`.
+
+    Os membros da função precisam de ambas as permissões para entrar no console e abrir o serviço no SQL console, onde a política de dados se aplica.
+  </Step>
+
+  <Step title="Adicionar uma política de dados" id="add-data-permissions">
+    Clique em `Allow permissions` e selecione `Data`.
+  </Step>
+
+  <Step title="Selecionar o serviço" id="select-data-permissions-service">
+    Selecione o serviço ao qual a política se aplica. Adicione outros serviços para aplicar as mesmas permissões `Read-only` ou `Admin` a vários serviços.
+  </Step>
+
+  <Step title="Escolher o nível de acesso" id="choose-data-access-level">
+    Selecione o acesso `Read-only`, `Admin` ou `Custom`. Com o acesso `Custom`, defina permissões específicas de acesso a dados usando instruções [`GRANT`](/pt-BR/reference/statements/grant) do ClickHouse. O acesso `Custom` só pode ser selecionado quando a política se aplicar a um único serviço; para definir permissões personalizadas para vários serviços, adicione uma política `Data` separada para cada serviço. Para um serviço em um [warehouse](/pt-BR/products/cloud/features/infrastructure/warehouses), defina o acesso `Custom` no serviço primário do warehouse. Ele se aplica a todos os serviços do warehouse.
+
+    O acesso `Custom` aceita apenas concessões de privilégios, como `GRANT SELECT ON db.table`. Instruções que concedem uma função, como `GRANT my_role`, ou que incluem uma cláusula `TO` ou `FROM`, são rejeitadas.
+
+    <div className="ch-image-md">
+      <Frame>
+        ![Caixa de diálogo de criação de nova função com permissões de dados definidas por instruções GRANT personalizadas](/images/cloud/guides/control_plane/manage_custom_roles/create_role_data_permissions.webp)
+      </Frame>
+    </div>
+  </Step>
+
+  <Step title="Criar a função" id="create-role-with-data-permissions">
+    Clique em `Create role`. Os papéis de banco de dados são criados nos serviços selecionados. As funções podem levar até 10 minutos para serem propagadas para um serviço, mas os usuários aos quais a função foi atribuída recebem suas permissões imediatamente ao consultar o serviço.
+  </Step>
+</Steps>
+
+### Verificar papéis de banco de dados {#verify-database-roles}
+
+As funções gerenciadas pelo console são criadas no banco de dados com o prefixo `cloud:` e o tipo de armazenamento `cloud`, e podem levar até 10 minutos para aparecer após a criação. Para listá-las, consulte a tabela `system.roles` no serviço:
+
+```sql
+SELECT * FROM system.roles;
+```
+
+```response
+┌─name───────────┬─id───────────────────────────────────┬─storage─┐
+│ cloud:readonly │ 9a4910f4-abcf-4904-466a-717c8c75ac42 │ cloud   │
+└────────────────┴──────────────────────────────────────┴─────────┘
+```
+
+Para verificar os privilégios da sua própria sessão do SQL Console, execute `SHOW GRANTS` no SQL Console. A saída lista os privilégios combinados das suas funções personalizadas. As sessões do SQL Console não possuem as funções `cloud:` em si, portanto `currentRoles` retorna um array vazio.
+
+## Atualizar funções personalizadas {#update-custom-role}
 
 As funções personalizadas podem ser atualizadas após serem criadas. Os usuários perderão todas as permissões removidas da função e receberão todas as permissões adicionadas.
 
 <Tip>
-  As permissões do usuário são aditivas. Se um usuário tiver permissão para executar uma operação por meio de várias funções, talvez não perca o acesso imediatamente se a permissão for removida de apenas uma função.
+  As permissões do usuário são aditivas. Se um usuário tiver permissão para executar uma operação por meio de várias funções, talvez não perca o acesso imediatamente se a permissão for removida de apenas uma função. Há uma exceção no caso do acesso ao banco de dados: uma política `Data` com acesso `Custom` substitui o acesso integrado ao banco de dados do SQL Console. Consulte [Gerenciar papéis de banco de dados](#manage-database-roles).
 </Tip>
 
 1. Acesse as configurações da organização e selecione `Users and roles`
@@ -85,7 +191,7 @@ As funções personalizadas podem ser atualizadas após serem criadas. Os usuár
 6. Selecione `Edit role`
 
 <div id="delete-custom-role">
-  ## Excluir funções personalizadas
+  ## Excluir funções personalizadas {#delete-custom-role}
 </div>
 
 As funções personalizadas podem ser excluídas a qualquer momento.

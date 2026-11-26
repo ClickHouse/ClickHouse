@@ -1,3 +1,4 @@
+#include <base/arithmeticOverflow.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnString.h>
@@ -13,6 +14,7 @@
 #include <Functions/GatherUtils/Sources.h>
 #include <Functions/IFunction.h>
 #include <IO/WriteHelpers.h>
+#include <base/sanitizer_defs.h>
 
 
 namespace DB
@@ -23,8 +25,6 @@ using namespace GatherUtils;
 namespace ErrorCodes
 {
 extern const int ILLEGAL_COLUMN;
-extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 extern const int ZERO_ARRAY_OR_TUPLE_INDEX;
 }
 
@@ -38,56 +38,34 @@ public:
     FunctionSubstring(const char * name_, bool is_utf8_) : function_name(name_), is_utf8(is_utf8_) {}
 
     static FunctionPtr create(const char * name, bool is_utf8) { return std::make_shared<FunctionSubstring>(name, is_utf8); }
-    String getName() const override { return function_name; }
-    bool isVariadic() const override { return true; }
-    size_t getNumberOfArguments() const override { return 0; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-    bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] String getName() const override { return function_name; }
+    [[nodiscard]] bool isVariadic() const override { return true; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    /// A row whose result is NULL, or an unused dictionary entry of a `LowCardinality` argument, may hold a UInt64 that
+    /// does not fit Int64, and `executeImpl` would throw for it
+    [[nodiscard]] bool canBeExecutedOnDefaultArguments(const ColumnsWithTypeAndName & arguments) const override
     {
-        const size_t number_of_arguments = arguments.size();
-
-        if (number_of_arguments < 2 || number_of_arguments > 3)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Number of arguments for function {} doesn't match: "
-                            "passed {}, should be 2 or 3", getName(), number_of_arguments);
-
-        if (is_utf8)
-        {
-            /// UTF8 variant is not available for FixedString and Enum arguments.
-            if (!isString(arguments[0]))
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Illegal type {} of first argument of function {}, expected String",
-                    arguments[0]->getName(), getName());
-        }
-        else
-        {
-            if (!isStringOrFixedString(arguments[0]) && !isEnum(arguments[0]))
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Illegal type {} of first argument of function {}, expected String, FixedString or Enum",
-                    arguments[0]->getName(), getName());
-        }
-
-        if (!isNativeNumber(arguments[1]))
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of second argument of function {}, expected (U)Int*",
-                arguments[1]->getName(), getName());
-
-        if (number_of_arguments == 3 && !isNativeNumber(arguments[2]))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of second argument of function {}, expected (U)Int*",
-                arguments[2]->getName(), getName());
-
-        return std::make_shared<DataTypeString>();
+        return !uint64ArgumentMayHoldUnusedValues(arguments);
     }
 
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    [[nodiscard]] String getSignatureString() const override
+    {
+        if (is_utf8)
+            return "(String, NativeNumber, [NativeNumber]) -> String";
+        else
+            return "(StringOrFixedString | Enum, NativeNumber, [NativeNumber]) -> String";
+    }
+
+    [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {
         return std::make_shared<DataTypeString>();
     }
 
     template <typename Source>
+    NO_SANITIZE_UNSIGNED_OVERFLOW
     ColumnPtr executeForSource(const ColumnPtr & column_offset, const ColumnPtr & column_length,
                           bool column_offset_const, bool column_length_const,
                           Int64 offset, Int64 length,
@@ -102,7 +80,7 @@ public:
                 if (offset > 0)
                     sliceFromLeftConstantOffsetUnbounded(source, StringSink(*col_res, input_rows_count), static_cast<size_t>(offset - 1));
                 else if (offset < 0)
-                    sliceFromRightConstantOffsetUnbounded(source, StringSink(*col_res, input_rows_count), -static_cast<size_t>(offset));
+                    sliceFromRightConstantOffsetUnbounded(source, StringSink(*col_res, input_rows_count), common::negateIgnoreOverflow(static_cast<size_t>(offset)));
                 else
                     throw Exception(ErrorCodes::ZERO_ARRAY_OR_TUPLE_INDEX, "Indices in strings are 1-based");
             }
@@ -116,7 +94,7 @@ public:
                 if (offset > 0)
                     sliceFromLeftConstantOffsetBounded(source, StringSink(*col_res, input_rows_count), static_cast<size_t>(offset - 1), length);
                 else if (offset < 0)
-                    sliceFromRightConstantOffsetBounded(source, StringSink(*col_res, input_rows_count), -static_cast<size_t>(offset), length);
+                    sliceFromRightConstantOffsetBounded(source, StringSink(*col_res, input_rows_count), common::negateIgnoreOverflow(static_cast<size_t>(offset)), length);
                 else
                     throw Exception(ErrorCodes::ZERO_ARRAY_OR_TUPLE_INDEX, "Indices in strings are 1-based");
             }
@@ -127,7 +105,7 @@ public:
         return col_res;
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const size_t number_of_arguments = arguments.size();
 
@@ -136,6 +114,12 @@ public:
         ColumnPtr column_length;
         if (number_of_arguments == 3)
             column_length = arguments[2].column;
+
+        /// The offset and the length are read with IColumn::getInt() below, so a UInt64 value that
+        /// does not fit Int64 must be rejected here rather than read as a negative number.
+        checkIntegerArgumentFitsInt64(*column_offset, function_name, "offset");
+        if (column_length)
+            checkIntegerArgumentFitsInt64(*column_length, function_name, "length");
 
         const ColumnConst * column_offset_const = checkAndGetColumn<ColumnConst>(column_offset.get());
         const ColumnConst * column_length_const = nullptr;
@@ -149,6 +133,9 @@ public:
             offset = column_offset_const->getInt(0);
         if (column_length_const)
             length = column_length_const->getInt(0);
+
+        if (column_offset_const && offset == 1 && !column_length && isString(arguments[0].type))
+            return column_string;
 
         if (is_utf8)
         {
@@ -231,7 +218,7 @@ Byte counting starts from 1 with the following logic:
 
 An optional argument `length` specifies the maximum number of bytes the returned substring may have.
 
-See also the [`digits`](/sql-reference/functions/other-functions#digits) function, which performs the analogous operation on the digits of a number.
+See also the [`digits`](/reference/functions/regular-functions/other-functions#digits) function, which performs the analogous operation on the digits of a number.
 )";
     FunctionDocumentation::Syntax syntax = "substring(s, offset[, length])";
     FunctionDocumentation::Arguments arguments = {
@@ -245,9 +232,9 @@ See also the [`digits`](/sql-reference/functions/other-functions#digits) functio
         "Basic usage",
         "SELECT 'database' AS db, substr(db, 5), substr(db, 5, 1)",
         R"(
-┌─db───────┬─substring('database', 5)─┬─substring('database', 5, 1)─┐
-│ database │ base                     │ b                           │
-└──────────┴──────────────────────────┴─────────────────────────────┘
+┌─db───────┬─substr(db, 5)─┬─substr(db, 5, 1)─┐
+│ database │ base          │ b                │
+└──────────┴───────────────┴──────────────────┘
         )"
     }
     };
@@ -263,10 +250,10 @@ Code point counting starts from `1` with the following logic:
 
 An optional argument `length` specifies the maximum number of code points the returned substring may have.
 
-:::note
+<Note>
 This function assumes that the string contains valid UTF-8 encoded text.
 If this assumption is violated, no exception is thrown and the result is undefined.
-:::
+</Note>
 )";
     FunctionDocumentation::Syntax syntax_utf8 = "substringUTF8(s, offset[, length])";
     FunctionDocumentation::Arguments arguments_utf8 = {
@@ -279,7 +266,7 @@ If this assumption is violated, no exception is thrown and the result is undefin
     {
         "Usage example",
         "SELECT 'Täglich grüßt das Murmeltier.' AS str, substringUTF8(str, 9), substringUTF8(str, 9, 5)",
-        "Täglich grüßt das Murmeltier.    grüßt das Murmeltier.    grüßt"
+        "Täglich grüßt das Murmeltier.\tgrüßt das Murmeltier.\tgrüßt"
     }
     };
     FunctionDocumentation documentation_utf8 = {description_utf8, syntax_utf8, arguments_utf8, {}, returned_value_utf8, examples_utf8, introduced_in, category};

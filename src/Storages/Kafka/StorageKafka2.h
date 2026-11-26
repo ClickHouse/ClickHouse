@@ -47,7 +47,13 @@ class ThreadStatus;
 /// offsets, it also stores the number of messages (intent size) it tried to insert from
 /// each topic. By storing the intent sizes it is possible to retry the same batch of
 /// messages in case of any errors and giving deduplication a chance to deduplicate
-/// blocks.
+/// blocks. When an intent is replayed, exactly the intended number of messages is
+/// consumed: not more (the batch never grows past the intent, even if the usual stop
+/// conditions would allow it), and not less (a batch that ends short of the intent is
+/// discarded and replayed later instead of being inserted with a different hash).
+/// A commit updates the committed offset and removes the intent in a single Keeper
+/// transaction, so a stale intent, whose batch was already committed, cannot be left
+/// behind.
 ///
 /// To not complicate things too much, the current implementation makes sure to fetch
 /// messages only from a single topic-partition on a single thread at a time by
@@ -168,6 +174,10 @@ private:
     const size_t num_consumers; /// total number of consumers
     LoggerPtr log;
     const SettingsChanges settings_adjustments;
+
+    /// Partition affinity settings, enabled when both are > 0.
+    UInt64 partition_shard_num = 0;
+    UInt64 shard_count = 0;
     /// Can differ from num_consumers in case of exception in startup() (or if startup() hasn't been called).
     /// In this case we still need to be able to shutdown() properly.
     size_t num_created_consumers = 0; /// number of actually created consumers.
@@ -208,6 +218,8 @@ private:
     void activateAndReschedule();
     void partialShutdown();
 
+    void parsePartitionAffinitySettings();
+
     void assertActive() const;
     KafkaConsumer2Ptr createKafkaConsumer(size_t consumer_number);
     // Returns full consumer related configuration, also the configuration
@@ -222,6 +234,7 @@ private:
     size_t getPollMaxBatchSize() const;
     size_t getMaxBlockSize() const;
     size_t getPollTimeoutMillisecond() const;
+    UInt64 getLocksRefreshPolls() const;
     size_t getSchemaRegistrySkipBytes() const;
 
     enum class StallKind : uint8_t

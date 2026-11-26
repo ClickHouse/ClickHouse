@@ -21,7 +21,6 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int SUPPORT_IS_DISABLED;
 }
 
@@ -45,7 +44,7 @@ struct LemmatizeImpl
         for (UInt64 i = 0; i < offsets.size(); ++i)
         {
             /// `lemmatize` requires terminating zero
-            buffer.assign(reinterpret_cast<const char *>(data.data() + offsets[i - 1]), offsets[i] - offsets[i - 1]);
+            buffer.assign(reinterpret_cast<const char *>(data.data() + offsets[static_cast<ssize_t>(i) - 1]), offsets[i] - offsets[static_cast<ssize_t>(i) - 1]);
             auto result = lemmatizer->lemmatize(buffer.c_str());
             size_t new_size = strlen(result.get());
 
@@ -83,28 +82,22 @@ public:
     explicit FunctionLemmatize(Lemmatizers & lemmatizers_)
         : lemmatizers(lemmatizers_) {}
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    size_t getNumberOfArguments() const override { return 2; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] String getSignatureString() const override
     {
-        if (!isString(arguments[0]))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
-                arguments[0]->getName(), getName());
-        if (!isString(arguments[1]))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
-                arguments[1]->getName(), getName());
-        return arguments[1];
+        return "(const String, String) -> String";
     }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
+    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override
     {
         const auto & langcolumn = arguments[0].column;
         const auto & strcolumn = arguments[1].column;
@@ -133,14 +126,17 @@ public:
 REGISTER_FUNCTION(Lemmatize)
 {
     FunctionDocumentation::Description description = R"(
-Performs lemmatization on a given word.
-This function needs dictionaries to operate, which can be obtained from [github](https://github.com/vpodpecan/lemmagen3/tree/master/src/lemmagen3/models).
-For more details on loading a dictionary from a local file see page ["Defining Dictionaries"](/sql-reference/statements/create/dictionary/sources/local-file).
+<ExperimentalBadge/>
+<CloudNotSupportedBadge/>
 
-:::warning
+<Warning>
 This function is experimental and may change in unpredictable backwards-incompatible ways in future releases.
 Set `allow_experimental_nlp_functions = 1` to enable it.
-:::
+</Warning>
+
+Performs lemmatization on a given word.
+This function needs dictionaries to operate, which can be obtained from [github](https://github.com/vpodpecan/lemmagen3/tree/master/src/lemmagen3/models).
+For more details on loading a dictionary from a local file see page ["Defining Dictionaries"](/reference/statements/create/dictionary/sources/local-file).
 )";
     FunctionDocumentation::Syntax syntax = "lemmatize(lang, word)";
     FunctionDocumentation::Arguments arguments = {
@@ -149,7 +145,7 @@ Set `allow_experimental_nlp_functions = 1` to enable it.
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns the lemmatized form of the word", {"String"}};
     FunctionDocumentation::Examples examples = {
-        {"English lemmatization", "SELECT lemmatize('en', 'wolves')", "wolf"}
+        {"English lemmatization", "SET allow_experimental_nlp_functions = 1;\nSELECT lemmatize('en', 'wolves')", "wolf"}
     };
     FunctionDocumentation::IntroducedIn introduced_in = {21, 9};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::NLP;

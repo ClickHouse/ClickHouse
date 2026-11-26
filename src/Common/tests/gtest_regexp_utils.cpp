@@ -42,6 +42,13 @@ TEST(RegexpUtils, extractFixedPrefix)
     check("^abc\\\\", {.prefix = "abc\\", .is_perfect = true});
     check("^abc\\$", {.prefix = "abc$", .is_perfect = true});
 
+    /// A NUL is an ordinary literal character: the pattern is length-based and RE2 matches a NUL
+    /// literally, so the scan neither stops at it nor treats it as end-of-pattern.
+    check(std::string_view{"^abc\0def", 8}, {.prefix = String{"abc\0def", 7}, .is_perfect = true});
+    check(std::string_view{"^\0abc", 5}, {.prefix = String{"\0abc", 4}, .is_perfect = true});
+    check(std::string_view{"^a\0b$", 5}, {.prefix = String{"a\0b", 3}, .is_exact = true});
+    check(std::string_view{"^a\0b[12]", 8}, {.prefix = String{"a\0b", 3}});
+
     /// A trailing '$' makes the pattern an exact match.
     check("^abc$", {.prefix = "abc", .is_exact = true});
     check("^abc\\.$", {.prefix = "abc.", .is_exact = true});
@@ -56,7 +63,6 @@ TEST(RegexpUtils, extractFixedPrefix)
     check("^abc+", {.prefix = "abc"});
     check("^ab$cd", {.prefix = "ab"});
     check("^a^b", {.prefix = "a"});
-    check(std::string_view{"^abc\0def", 8}, {.prefix = "abc"});
 
     /// An invalid pattern must not be reported as exact, otherwise a point range could hide
     /// the exception the matcher throws.
@@ -69,6 +75,20 @@ TEST(RegexpUtils, extractFixedPrefix)
     check("^abc?", {.prefix = "ab"});
     check("^abc{2}", {.prefix = "ab"});
     check("^a*", {});
+
+    /// The optional literal is a whole UTF-8 code point, not the last byte of it: the truncated
+    /// prefix `0xC3` would prune granules holding `c`, which matches `^é*c`.
+    check("^é*c", {});
+    check("^aé*c", {.prefix = "a"});
+    check("^aé?", {.prefix = "a"});
+    check("^aé{0,2}", {.prefix = "a"});
+    check("^é", {.prefix = "é", .is_perfect = true});
+    check("^éa*", {.prefix = "é"});
+    check("^aé(?m)*c", {.prefix = "a"});
+    check("^aé\\Q\\E*c", {.prefix = "a"});
+    check("^aé(?i)\\Q\\E?c", {.prefix = "a"});
+    check("^é(?m)*c", {});
+    check("^é\\Q\\E*c", {});
 
     /// Groups are not analyzed, except a top-level alternation.
     check("^(abc)", {});
@@ -89,6 +109,12 @@ TEST(RegexpUtils, extractFixedPrefixFromAlternation)
     check("^(abc-xx-1|abc-xx-2|abc-yy-1)", {.prefix = "abc-"});
     check("^(abc\\(1|abc\\(2)", {.prefix = "abc("});
     check("^(abc|abc)", {.prefix = "abc"});
+
+    /// The group may be non-capturing, which is how `fullMatch` and PromQL matchers anchor a top-level alternation.
+    check("^(?:abc-xx|abc-yy)$", {.prefix = "abc-"});
+    check("^(?:abc|def)$", {});
+    check("^(?i:abc-xx|abc-yy)$", {});
+    check("^(?abc|abd)", {});
 
     /// Branches without a common prefix.
     check("^(abc|def)", {});

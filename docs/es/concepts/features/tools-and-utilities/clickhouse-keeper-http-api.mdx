@@ -9,9 +9,7 @@ doc_type: 'reference'
 ClickHouse Keeper proporciona una API HTTP y un dashboard web integrado para monitorización, comprobaciones de estado y gestión del almacenamiento.
 Esta interfaz permite a los operadores inspeccionar el estado del cluster, ejecutar comandos y gestionar el almacenamiento de Keeper desde un navegador web o mediante clientes HTTP.
 
-<div id="configuration">
-  ## Configuración
-</div>
+## Configuración {#configuration}
 
 Para habilitar la API HTTP, añade la sección `http_control` a la configuración de `keeper_server`:
 
@@ -26,9 +24,7 @@ Para habilitar la API HTTP, añade la sección `http_control` a la configuració
 </keeper_server>
 ```
 
-<div id="configuration-options">
-  ### Opciones de configuración
-</div>
+### Opciones de configuración {#configuration-options}
 
 | Ajuste                                    | Predeterminado | Descripción                                                                |
 | ----------------------------------------- | -------------- | -------------------------------------------------------------------------- |
@@ -37,13 +33,9 @@ Para habilitar la API HTTP, añade la sección `http_control` a la configuració
 | `http_control.readiness.endpoint`         | `/ready`       | Ruta personalizada para la sonda de disponibilidad                         |
 | `http_control.storage.session_timeout_ms` | `30000`        | Tiempo de espera de la sesión para operaciones de la API de almacenamiento |
 
-<div id="endpoints">
-  ## Endpoints
-</div>
+## Endpoints {#endpoints}
 
-<div id="dashboard">
-  ### Dashboard
-</div>
+### Dashboard {#dashboard}
 
 * **Ruta**: `/dashboard`
 * **Método**: GET
@@ -56,9 +48,18 @@ El dashboard proporciona:
 * Navegador de almacenamiento
 * Interfaz para ejecutar comandos
 
-<div id="readiness-probe">
-  ### Sonda de disponibilidad
-</div>
+#### Pestaña Cluster {#dashboard-cluster-tab}
+
+La pestaña **Cluster** muestra los miembros de Raft como un grafo de topología y una tabla. Cada miembro se muestra con un color que indica su estado:
+
+* **Verde** — activo y sincronizado con el líder
+* **Amarillo** — activo, pero con un retraso de más de `stale_log_gap` entradas de registro respecto al líder
+* **Rojo** — inaccesible (sin ninguna respuesta correcta de Raft dentro del intervalo de expiración del latido)
+* **Gris** — desconocido (el estado de los pares solo es visible desde el líder; los seguidores ven el estado de sus pares como desconocido)
+
+La tabla también muestra el rol de cada miembro (líder, seguidor u observador), la prioridad de Raft, el índice del último registro, el retraso de replicación respecto al líder y el tiempo transcurrido desde la última respuesta correcta de Raft. Cuando el nodo actual no es el líder, la pestaña ofrece un enlace directo que abre el dashboard del líder, donde está disponible el estado completo de los pares. La pestaña se puede abrir directamente con `/dashboard?tab=cluster`.
+
+### Sonda de disponibilidad {#readiness-probe}
 
 * **Ruta**: `/ready` (configurable)
 * **Método**: GET
@@ -76,9 +77,7 @@ Respuesta exitosa (HTTP 200):
 }
 ```
 
-<div id="commands-api">
-  ### API de comandos
-</div>
+### API de comandos {#commands-api}
 
 * **Ruta**: `/api/v1/commands/{command}`
 * **Métodos**: GET, POST
@@ -87,21 +86,19 @@ Respuesta exitosa (HTTP 200):
 Parámetros de consulta:
 
 * `command` - El comando que se va a ejecutar
-* `cwd` - Directorio de trabajo actual para comandos basados en rutas (predeterminado: `/`)
+* `cwd` - Directorio de trabajo actual para comandos basados en rutas; debe ser una ruta absoluta (predeterminado: `/`)
 
 Ejemplos:
 
 ```bash
-# Comando de cuatro letras
+# Four-Letter Word command
 curl http://localhost:9182/api/v1/commands/stat
 
-# Comando CLI de ZooKeeper
+# ZooKeeper CLI command
 curl "http://localhost:9182/api/v1/commands/ls?command=ls%20'/'&cwd=/"
 ```
 
-<div id="storage-api">
-  ### API de almacenamiento
-</div>
+### API de almacenamiento {#storage-api}
 
 * **Ruta base**: `/api/v1/storage`
 * **Descripción**: API REST para operaciones de almacenamiento en Keeper

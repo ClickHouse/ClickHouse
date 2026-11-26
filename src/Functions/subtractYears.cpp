@@ -42,9 +42,9 @@ SELECT
 SELECT dateSub('1998-06-16'::Date, INTERVAL 10 year)
         )",
         R"(
-┌─minus(CAST('⋯alYear(10))─┐
-│               1988-06-16 │
-└──────────────────────────┘
+┌─minus(CAST('1998-06-16', 'Date'), toIntervalYear(10))─┐
+│                                            1988-06-16 │
+└───────────────────────────────────────────────────────┘
         )"}
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};

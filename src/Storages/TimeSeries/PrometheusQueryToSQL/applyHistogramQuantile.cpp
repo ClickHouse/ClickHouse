@@ -6,6 +6,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/checkArguments.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/dropMetricName.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/toVectorGrid.h>
 
@@ -16,52 +17,11 @@
 namespace DB::ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
-    extern const int CANNOT_EXECUTE_PROMQL_QUERY;
 }
 
 
 namespace DB::PrometheusQueryToSQL
 {
-
-namespace
-{
-    /// Checks if the types of the specified arguments are valid for the `histogram_quantile` function.
-    void checkArgumentTypes(
-        const PQT::Function * function_node,
-        const std::vector<SQLQueryPiece> & arguments,
-        const ConverterContext & context)
-    {
-        const auto & function_name = function_node->function_name;
-
-        if (arguments.size() != 2)
-        {
-            throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
-                            "Function '{}' expects 2 arguments, but was called with {} arguments",
-                            function_name, arguments.size());
-        }
-
-        const auto & phi_arg = arguments[0];
-
-        if (phi_arg.type != ResultType::SCALAR)
-        {
-            throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
-                            "Function '{}' expects first argument of type {}, but expression {} has type {}",
-                            function_name, ResultType::SCALAR,
-                            getPromQLText(phi_arg, context), phi_arg.type);
-        }
-
-        const auto & vector_arg = arguments[1];
-
-        if (vector_arg.type != ResultType::INSTANT_VECTOR)
-        {
-            throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
-                            "Function '{}' expects second argument of type {}, but expression {} has type {}",
-                            function_name, ResultType::INSTANT_VECTOR,
-                            getPromQLText(vector_arg, context), vector_arg.type);
-        }
-    }
-}
-
 
 bool isHistogramQuantile(std::string_view function_name)
 {
@@ -69,11 +29,13 @@ bool isHistogramQuantile(std::string_view function_name)
 }
 
 SQLQueryPiece applyHistogramQuantile(
-    const PQT::Function * function_node,
+    const PrometheusQueryTree::Function * function_node,
     std::vector<SQLQueryPiece> && arguments,
     ConverterContext & context)
 {
-    checkArgumentTypes(function_node, arguments, context);
+    checkNumberOfArguments(function_node, arguments, 2);
+    checkArgumentType(function_node, arguments, 0, ResultType::SCALAR, context);
+    checkArgumentType(function_node, arguments, 1, ResultType::INSTANT_VECTOR, context);
 
     auto & phi_arg = arguments[0];
     auto & expression = arguments[1];
@@ -81,7 +43,7 @@ SQLQueryPiece applyHistogramQuantile(
     if (phi_arg.store_method != StoreMethod::CONST_SCALAR)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-            "Function 'histogram_quantile' currently requires a constant phi parameter");
+            "{} currently requires a constant phi parameter", function_node->getTypeAndName());
     }
 
     expression = toVectorGrid(std::move(expression), context);
@@ -99,6 +61,7 @@ SQLQueryPiece applyHistogramQuantile(
     ///                ifNull(toFloat64OrNull(timeSeriesExtractTag(group, 'le')), nan)),
     ///            values) AS values
     /// FROM <subquery>
+    /// WHERE isNotNull(toFloat64OrNull(timeSeriesExtractTag(group, 'le')))
     /// GROUP BY new_group
     ASTPtr aggregation_query;
     {
@@ -156,11 +119,10 @@ SQLQueryPiece applyHistogramQuantile(
             /// quantilePrometheusHistogramForEach(phi)(le_array, values)
             ///
             /// le_array is constructed for each row as an array of the same length as values,
-            /// filled with the extracted `le` tag value (or NaN if the tag is missing or cannot
-            /// be parsed as a float). Prometheus silently drops bucket series with unparseable
-            /// `le` from the histogram rather than failing the query, so we match that by mapping
-            /// any non-numeric `le` to NaN — `quantilePrometheusHistogramForEach` already treats
-            /// NaN `le` as "ignore this bucket".
+            /// filled with the extracted `le` tag value. Series without a parsable `le` are
+            /// excluded by the WHERE clause added below, so the NaN fallback here is just a
+            /// safety net — `quantilePrometheusHistogramForEach` treats NaN `le` as
+            /// "ignore this bucket".
             auto le_array_expr = makeASTFunction(
                 "arrayResize",
                 makeASTFunction("CAST",
@@ -186,6 +148,16 @@ SQLQueryPiece applyHistogramQuantile(
 
         context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(expression.select_query), SQLSubqueryType::TABLE});
         builder.from_table = context.subqueries.back().name;
+
+        /// Prometheus silently drops input series whose `le` label is missing or cannot be
+        /// parsed as a float, so for example a pure non-histogram input produces an empty
+        /// result. This filter applies before the out-of-range phi short-circuit above:
+        /// even for an out-of-range phi only series with a parsable `le` produce output.
+        builder.where = makeASTFunction("isNotNull",
+            makeASTFunction("toFloat64OrNull",
+                makeASTFunction("timeSeriesExtractTag",
+                    make_intrusive<ASTIdentifier>(ColumnNames::Group),
+                    make_intrusive<ASTLiteral>("le"))));
 
         builder.group_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::NewGroup));
 

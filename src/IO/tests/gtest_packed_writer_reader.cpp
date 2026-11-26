@@ -1,9 +1,13 @@
 #include <gtest/gtest.h>
+#include <Disks/tests/gtest_disk.h>
+#include <base/scope_guard.h>
 #include <IO/PackedFilesWriter.h>
 #include <IO/PackedFilesReader.h>
 #include <IO/ReadBufferFromFile.h>
+#include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadSettings.h>
+#include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Core/Defines.h>
 #include <Disks/DiskLocal.h>
@@ -32,8 +36,8 @@ TEST(PackedFilesWriter, Basics)
 {
     static constexpr auto data_filename = "data.packed";
 
-    fs::create_directory("tmp/");
-    DiskPtr disk = std::make_shared<DiskLocal>("local_disk", "tmp/");
+    DiskPtr disk = createDisk("packed_files");
+    SCOPE_EXIT({ destroyDisk(disk); });
 
     PackedFilesWriter writer;
 
@@ -95,8 +99,8 @@ TEST(PackedFilesWriter, Removes)
 {
     static constexpr auto data_filename = "data.packed";
 
-    fs::create_directory("tmp/");
-    DiskPtr disk = std::make_shared<DiskLocal>("local_disk", "tmp/");
+    DiskPtr disk = createDisk("packed_files");
+    SCOPE_EXIT({ destroyDisk(disk); });
 
     PackedFilesWriter writer1;
 
@@ -146,8 +150,8 @@ TEST(PackedFilesWriter, PrepareFinalizeDoesNotTouchDestination)
 {
     static constexpr auto data_filename = "data_prepare.packed";
 
-    fs::create_directory("tmp/");
-    DiskPtr disk = std::make_shared<DiskLocal>("local_disk", "tmp/");
+    DiskPtr disk = createDisk("packed_files");
+    SCOPE_EXIT({ destroyDisk(disk); });
 
     PackedFilesWriter writer1;
 
@@ -175,7 +179,7 @@ TEST(PackedFilesWriter, PrepareFinalizeDoesNotTouchDestination)
     writer2.applyMetadataChanges(old_index);
 
     ASSERT_THROW(
-        writer2.prepareFinalize({}, PackedFilesIO::VERSION_WITHOUT_UNCOMPRESSED_SIZE),
+        (void)writer2.prepareFinalize({}, PackedFilesIO::VERSION_WITHOUT_UNCOMPRESSED_SIZE),
         Exception);
 
     /// The old archive is intact: it was never opened for writing.
@@ -219,10 +223,10 @@ std::pair<String, String> writeViewSeekArchive(const DiskPtr & disk)
     return {big, tail};
 }
 
-std::unique_ptr<ReadBufferFromFile> openAligned()
+std::unique_ptr<ReadBufferFromFile> openAligned(const DiskPtr & disk)
 {
     return std::make_unique<ReadBufferFromFile>(
-        "tmp/" + String(VIEW_SEEK_ARCHIVE), /*buf_size=*/1024, -1, nullptr, ALIGNMENT);
+        disk->getPath() + VIEW_SEEK_ARCHIVE, /*buf_size=*/1024, -1, nullptr, ALIGNMENT);
 }
 
 }
@@ -231,8 +235,8 @@ std::unique_ptr<ReadBufferFromFile> openAligned()
 /// so a view that trusts it under-tracks its offset and reads past the member into "tail".
 TEST(PackedFilesReader, ViewSeekPastBlockBoundary)
 {
-    fs::create_directory("tmp/");
-    DiskPtr disk = std::make_shared<DiskLocal>("local_disk", "tmp/");
+    DiskPtr disk = createDisk("packed_files");
+    SCOPE_EXIT({ destroyDisk(disk); });
     const auto [big, tail] = writeViewSeekArchive(disk);
 
     PackedFilesReader reader(disk, VIEW_SEEK_ARCHIVE, getReadSettings());
@@ -243,7 +247,7 @@ TEST(PackedFilesReader, ViewSeekPastBlockBoundary)
     ASSERT_GT(offset_in_block, 0);
 
     const size_t seek_to = (ALIGNMENT - offset_in_block) + 2 * ALIGNMENT + 100;
-    auto view = PackedFilesReader::viewMember(openAligned(), "big", big_at.offset, big_at.size);
+    auto view = PackedFilesReader::viewMember(openAligned(disk), "big", big_at.offset, big_at.size);
 
     ASSERT_EQ(view->seek(seek_to, SEEK_SET), seek_to);
     ASSERT_EQ(view->getPosition(), seek_to);
@@ -258,8 +262,8 @@ TEST(PackedFilesReader, ViewSeekPastBlockBoundary)
 /// view that trusts it rejects as out of range.
 TEST(PackedFilesReader, ViewSeekWithinStartBlock)
 {
-    fs::create_directory("tmp/");
-    DiskPtr disk = std::make_shared<DiskLocal>("local_disk", "tmp/");
+    DiskPtr disk = createDisk("packed_files");
+    SCOPE_EXIT({ destroyDisk(disk); });
     const auto [big, tail] = writeViewSeekArchive(disk);
 
     PackedFilesReader reader(disk, VIEW_SEEK_ARCHIVE, getReadSettings());
@@ -271,7 +275,7 @@ TEST(PackedFilesReader, ViewSeekWithinStartBlock)
     ASSERT_LT(offset_in_block, ALIGNMENT - 100 - 1024);
 
     const size_t seek_to = ALIGNMENT - 100 - offset_in_block;
-    auto view = PackedFilesReader::viewMember(openAligned(), "big", big_at.offset, big_at.size);
+    auto view = PackedFilesReader::viewMember(openAligned(disk), "big", big_at.offset, big_at.size);
 
     ASSERT_EQ(view->seek(seek_to, SEEK_SET), seek_to);
     ASSERT_EQ(view->getPosition(), seek_to);
@@ -286,14 +290,14 @@ TEST(PackedFilesReader, ViewSeekWithinStartBlock)
 /// would leave the view reporting a position its impl never took).
 TEST(PackedFilesReader, ViewSeekPastReadUntil)
 {
-    fs::create_directory("tmp/");
-    DiskPtr disk = std::make_shared<DiskLocal>("local_disk", "tmp/");
+    DiskPtr disk = createDisk("packed_files");
+    SCOPE_EXIT({ destroyDisk(disk); });
     const auto [big, tail] = writeViewSeekArchive(disk);
 
     PackedFilesReader reader(disk, VIEW_SEEK_ARCHIVE, getReadSettings());
     const auto big_at = reader.getFileOffsetAndSize("big");
 
-    auto view = PackedFilesReader::viewMember(openAligned(), "big", big_at.offset, big_at.size);
+    auto view = PackedFilesReader::viewMember(openAligned(disk), "big", big_at.offset, big_at.size);
     view->setReadUntilPosition(2 * ALIGNMENT);
 
     /// Still inside the read-until: allowed, and the bytes are the member's own.
@@ -313,4 +317,46 @@ TEST(PackedFilesReader, ViewSeekPastReadUntil)
     /// The whole member is reachable again once the read-until is lifted.
     view->setReadUntilEnd();
     ASSERT_EQ(view->seek(VIEW_SEEK_BIG_SIZE - 10, SEEK_SET), VIEW_SEEK_BIG_SIZE - 10);
+}
+
+TEST(PackedFilesWriter, FilesOrderHint)
+{
+    PackedFilesWriter writer;
+
+    for (const auto & name : {"a%2Eb", "first", "second", "third"})
+        writer.writeFile(name)->finalize();
+
+    /// The hint names the files as they are stored, so `a.b` matches nothing. Repeated hints are
+    /// ignored too, and the files not in the hint keep their order.
+    const Strings hint = {"a.b", "third", "a%2Eb", "third", "first"};
+    auto plan = writer.prepareFinalize(hint, PackedFilesIO::VERSION_WITHOUT_UNCOMPRESSED_SIZE);
+
+    ASSERT_EQ(plan.ordered_file_names, (Strings{"third", "a%2Eb", "first", "second"}));
+}
+
+/// The names in the index of a packed archive are paths relative to the part directory.
+TEST(PackedFilesWriter, IndexFileNames)
+{
+    auto round_trip = [](const String & file_name)
+    {
+        PackedFilesIO::Index index;
+        index.emplace(file_name, PackedFilesIO::FileOffset{.offset = 0, .size = 1, .uncompressed_size = 1});
+
+        WriteBufferFromOwnString out;
+        PackedFilesWriter::writePackedIndex(out, index, PackedFilesIO::MAX_VERSION);
+        out.finalize();
+
+        ReadBufferFromString in(out.str());
+        return PackedFilesReader::readIndex(in);
+    };
+
+    for (const auto * file_name : {"data.bin", "skp_idx_x.idx2", "proj.proj/data.bin", "a..b"})
+    {
+        auto index = round_trip(file_name);
+        ASSERT_EQ(index.size(), 1);
+        ASSERT_TRUE(index.contains(file_name));
+    }
+
+    for (const auto & file_name : {String(""), String("/data.bin"), String("./data.bin"), String("proj/../data.bin"), String("da\0ta.bin", 9)})
+        ASSERT_THROW(round_trip(file_name), Exception) << file_name;
 }

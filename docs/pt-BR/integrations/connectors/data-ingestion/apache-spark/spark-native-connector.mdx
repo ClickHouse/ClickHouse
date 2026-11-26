@@ -3,7 +3,7 @@ sidebarTitle: 'conector nativo do Spark'
 slug: /integrations/apache-spark/spark-native-connector
 description: 'Introdução ao Apache Spark com ClickHouse'
 keywords: ['clickhouse', 'Apache Spark', 'migração', 'dados']
-title: conector do Spark
+title: 'conector do Spark'
 doc_type: 'guide'
 ---
 
@@ -25,15 +25,11 @@ plugins de catálogo.
 O catálogo padrão do Spark é `spark_catalog`, e as tabelas são identificadas por `{catalog name}.{database}.{table}`. Com o novo
 recurso de catálogo, agora é possível adicionar e trabalhar com vários catálogos em uma única aplicação Spark.
 
-<div id="choosing-between-apis">
-  ## Escolhendo entre a Catalog API e a TableProvider API
-</div>
+## Escolhendo entre a Catalog API e a TableProvider API {#choosing-between-apis}
 
 O ClickHouse Spark connector oferece suporte a dois padrões de acesso: a **Catalog API** e a **TableProvider API** (acesso baseado em formato). Entender as diferenças ajuda a escolher a abordagem certa para seu caso de uso.
 
-<div id="catalog-vs-tableprovider-comparison">
-  ### Catalog API vs TableProvider API
-</div>
+### Catalog API vs TableProvider API {#catalog-vs-tableprovider-comparison}
 
 | Funcionalidade               | Catalog API                                                    | TableProvider API                               |
 | ---------------------------- | -------------------------------------------------------------- | ----------------------------------------------- |
@@ -43,17 +39,13 @@ O ClickHouse Spark connector oferece suporte a dois padrões de acesso: a **Cata
 | **Integração com Spark SQL** | Nativa (`clickhouse.database.table`)                           | Requer especificação do formato                 |
 | **Caso de uso**              | Conexões estáveis de longo prazo com configuração centralizada | Acesso ad hoc, dinâmico ou temporário           |
 
-<div id="requirements">
-  ## Requisitos
-</div>
+## Requisitos {#requirements}
 
 * Java 8 ou 17 (Java 17+ é necessário para o Spark 4.0)
 * Scala 2.12 ou 2.13 (o Spark 4.0 oferece suporte somente ao Scala 2.13)
 * Apache Spark 3.3, 3.4, 3.5 ou 4.0
 
-<div id="compatibility-matrix">
-  ## Matriz de compatibilidade
-</div>
+## Matriz de compatibilidade {#compatibility-matrix}
 
 | Versão | Versões compatíveis do Spark | Versão do ClickHouse JDBC |
 | ------ | ---------------------------- | ------------------------- |
@@ -69,9 +61,7 @@ O ClickHouse Spark connector oferece suporte a dois padrões de acesso: a **Cata
 | 0.2.1  | Spark 3.2                    | Não depende               |
 | 0.1.2  | Spark 3.2                    | Não depende               |
 
-<div id="installation--setup">
-  ## Instalação e configuração
-</div>
+## Instalação e configuração {#installation--setup}
 
 Para integrar o ClickHouse ao Spark, há várias opções de instalação que se adaptam a diferentes configurações de projeto.
 Você pode adicionar o ClickHouse Spark connector como dependência diretamente no arquivo de build do seu projeto (como em `pom.xml`
@@ -80,9 +70,7 @@ Como alternativa, você pode colocar os arquivos JAR necessários na pasta `$SPA
 opção do Spark usando a flag `--jars` no comando `spark-submit`.
 Ambas as abordagens garantem que o conector do ClickHouse esteja disponível no seu ambiente Spark.
 
-<div id="import-as-a-dependency">
-  ### Importar como dependência
-</div>
+### Importar como dependência {#import-as-a-dependency}
 
 <Tabs>
   <Tab title="Maven">
@@ -148,9 +136,7 @@ Ambas as abordagens garantem que o conector do ClickHouse esteja disponível no 
   </Tab>
 </Tabs>
 
-<div id="download-the-library">
-  ### Baixe a biblioteca
-</div>
+### Baixe a biblioteca {#download-the-library}
 
 O padrão de nomenclatura do JAR binário é:
 
@@ -176,9 +162,7 @@ Os arquivos JAR SNAPSHOT de builds diárias estão disponíveis por meio do repo
   a [Compatibility Matrix](#compatibility-matrix).
 </Warning>
 
-<div id="register-the-catalog-required">
-  ## Registrar o catálogo (obrigatório)
-</div>
+## Registrar o catálogo (obrigatório) {#register-the-catalog-required}
 
 Para acessar suas tabelas do ClickHouse, você deve configurar um novo catálogo do Spark com as seguintes configurações:
 
@@ -227,15 +211,11 @@ Essas configurações podem ser definidas de uma das seguintes maneiras:
   `clickhouse1.<ck_db>.<ck_table>` e acessar a tabela clickhouse2 `<ck_db>.<ck_table>` por meio de `clickhouse2.<ck_db>.<ck_table>`.
 </Warning>
 
-<div id="using-the-tableprovider-api">
-  ## Usando a TableProvider API (Acesso baseado em formato)
-</div>
+## Usando a TableProvider API (Acesso baseado em formato) {#using-the-tableprovider-api}
 
 Além da abordagem baseada em catálogo, o ClickHouse Spark connector oferece suporte a um **padrão de acesso baseado em formato** por meio da TableProvider API.
 
-<div id="format-based-read">
-  ### Exemplo de leitura com base em formato
-</div>
+### Exemplo de leitura com base em formato {#format-based-read}
 
 <Tabs>
   <Tab title="Python">
@@ -298,9 +278,7 @@ Além da abordagem baseada em catálogo, o ClickHouse Spark connector oferece su
   </Tab>
 </Tabs>
 
-<div id="format-based-write">
-  ### Exemplo de gravação baseado em formato
-</div>
+### Exemplo de gravação baseado em formato {#format-based-write}
 
 <Tabs>
   <Tab title="Python">
@@ -356,15 +334,11 @@ Além da abordagem baseada em catálogo, o ClickHouse Spark connector oferece su
   </Tab>
 </Tabs>
 
-<div id="tableprovider-features">
-  ### Recursos do TableProvider
-</div>
+### Recursos do TableProvider {#tableprovider-features}
 
 A API TableProvider oferece vários recursos avançados:
 
-<div id="automatic-table-creation">
-  #### Criação automática de tabela
-</div>
+#### Criação automática de tabela {#automatic-table-creation}
 
 Ao gravar em uma tabela que não existe, o conector cria automaticamente a tabela com um esquema apropriado. O conector fornece valores padrão inteligentes:
 
@@ -458,15 +432,11 @@ Ao gravar em uma tabela que não existe, o conector cria automaticamente a tabel
   **Seleção de engine**: O engine padrão é `MergeTree()`, mas você pode especificar qualquer engine de tabela do ClickHouse usando a opção `engine` (por exemplo, `ReplacingMergeTree()`, `SummingMergeTree()`, `AggregatingMergeTree()`, etc.).
 </Warning>
 
-<div id="tableprovider-connection-options">
-  ### Opções de conexão do TableProvider
-</div>
+### Opções de conexão do TableProvider {#tableprovider-connection-options}
 
 Ao usar a API baseada em formatos, as seguintes opções de conexão estão disponíveis:
 
-<div id="connection-options">
-  #### Opções de conexão
-</div>
+#### Opções de conexão {#connection-options}
 
 | Opção       | Descrição                                | Valor padrão | Obrigatório |
 | ----------- | ---------------------------------------- | ------------ | ----------- |
@@ -481,9 +451,7 @@ Ao usar a API baseada em formatos, as seguintes opções de conexão estão disp
 | `ssl_mode`  | Modo SSL (`NONE`, `STRICT` etc.)         | `STRICT`     | Não         |
 | `timezone`  | Fuso horário para operações de data/hora | `server`     | Não         |
 
-<div id="table-creation-options">
-  #### Opções de criação de tabela
-</div>
+#### Opções de criação de tabela {#table-creation-options}
 
 Estas opções são usadas quando a tabela não existe e precisa ser criada:
 
@@ -503,9 +471,7 @@ Estas opções são usadas quando a tabela não existe e precisa ser criada:
   **Melhor prática**: no ClickHouse Cloud, defina explicitamente `settings.allow_nullable_key=1` se as colunas do ORDER BY puderem ser Nullable, pois o ClickHouse Cloud exige essa configuração.
 </Tip>
 
-<div id="writing-modes">
-  #### Modos de gravação
-</div>
+#### Modos de gravação {#writing-modes}
 
 O conector do Spark (tanto a TableProvider API quanto a Catalog API) oferece suporte aos seguintes modos de gravação do Spark:
 
@@ -557,17 +523,13 @@ O conector do Spark (tanto a TableProvider API quanto a Catalog API) oferece sup
   </Tab>
 </Tabs>
 
-<div id="configuring-clickhouse-options">
-  ## Configurando opções do ClickHouse
-</div>
+## Configurando opções do ClickHouse {#configuring-clickhouse-options}
 
 Tanto a Catalog API quanto a TableProvider API permitem configurar opções específicas do ClickHouse (não opções do conector). Essas opções são repassadas ao ClickHouse ao criar tabelas ou executar consultas.
 
 As opções do ClickHouse permitem configurar definições específicas, como `allow_nullable_key`, `index_granularity` e outras configurações no nível da tabela ou da consulta. Elas são diferentes das opções do conector (como `host`, `database`, `table`), que controlam como o conector se conecta ao ClickHouse.
 
-<div id="using-tableprovider-api-options">
-  ### Usando a TableProvider API
-</div>
+### Usando a TableProvider API {#using-tableprovider-api-options}
 
 Com a TableProvider API, use o formato de opção `settings.<key>`:
 
@@ -618,9 +580,7 @@ Com a TableProvider API, use o formato de opção `settings.<key>`:
   </Tab>
 </Tabs>
 
-<div id="using-catalog-api-options">
-  ### Usando a Catalog API
-</div>
+### Usando a Catalog API {#using-catalog-api-options}
 
 Com a Catalog API, use o formato `spark.sql.catalog.<catalog_name>.option.<key>` na configuração do Spark:
 
@@ -644,9 +604,7 @@ TBLPROPERTIES (
 )
 ```
 
-<div id="clickhouse-cloud-settings">
-  ## Configurações do ClickHouse Cloud
-</div>
+## Configurações do ClickHouse Cloud {#clickhouse-cloud-settings}
 
 Ao se conectar ao [ClickHouse Cloud](https://clickhouse.com), certifique-se de habilitar o SSL e definir o modo de SSL adequado. Por exemplo:
 
@@ -655,9 +613,7 @@ spark.sql.catalog.clickhouse.option.ssl        true
 spark.sql.catalog.clickhouse.option.ssl_mode   NONE
 ```
 
-<div id="read-data">
-  ## Ler dados
-</div>
+## Ler dados {#read-data}
 
 <Tabs>
   <Tab title="Java">
@@ -759,9 +715,7 @@ spark.sql.catalog.clickhouse.option.ssl_mode   NONE
   </Tab>
 </Tabs>
 
-<div id="write-data">
-  ## Gravar dados
-</div>
+## Gravar dados {#write-data}
 
 <Warning>
   **Sobrescrita de partição sem suporte**: Atualmente, a Catalog API não oferece suporte a operações de sobrescrita em nível de partição (por exemplo, o modo `overwrite` com `partitionBy`). Esse recurso está sendo desenvolvido. Consulte a [issue #34 no GitHub](https://github.com/ClickHouse/spark-clickhouse-connector/issues/34) para acompanhar o andamento desse recurso.
@@ -891,9 +845,7 @@ spark.sql.catalog.clickhouse.option.ssl_mode   NONE
   </Tab>
 </Tabs>
 
-<div id="ddl-operations">
-  ## Operações DDL
-</div>
+## Operações DDL {#ddl-operations}
 
 Você pode executar operações DDL na sua instância do ClickHouse usando o Spark SQL, com todas as alterações sendo persistidas imediatamente no
 ClickHouse.
@@ -927,12 +879,10 @@ TBLPROPERTIES (
 Os exemplos acima demonstram consultas em Spark SQL, que você pode executar no seu aplicativo usando qualquer API — Java, Scala,
 PySpark ou shell.
 
-<div id="working-with-varianttype">
-  ## Trabalhando com VariantType
-</div>
+## Trabalhando com VariantType {#working-with-varianttype}
 
 <Note>
-  O suporte a VariantType está disponível no Spark 4.0+ e requer o ClickHouse 25.3+ com os tipos JSON/Variant experimentais habilitados.
+  O suporte a VariantType está disponível no Spark 4.0+ e requer o ClickHouse 25.3+, versão em que os tipos `JSON` e `Variant` estão prontos para produção e habilitados por padrão.
 </Note>
 
 O conector oferece suporte ao `VariantType` do Spark para trabalhar com dados semiestruturados. O VariantType é mapeado para os tipos `JSON` e `Variant` do ClickHouse, permitindo armazenar e consultar com eficiência dados com esquema flexível.
@@ -941,18 +891,14 @@ O conector oferece suporte ao `VariantType` do Spark para trabalhar com dados se
   Esta seção se concentra especificamente no mapeamento e uso do VariantType. Para uma visão geral completa de todos os tipos de dados compatíveis, consulte a seção [Tipos de dados compatíveis](#supported-data-types).
 </Note>
 
-<div id="clickhouse-type-mapping">
-  ### Mapeamento de tipos do ClickHouse
-</div>
+### Mapeamento de tipos do ClickHouse {#clickhouse-type-mapping}
 
 | Tipo do ClickHouse     | Tipo do Spark | Descrição                                                        |
 | ---------------------- | ------------- | ---------------------------------------------------------------- |
 | `JSON`                 | `VariantType` | Armazena apenas objetos JSON (deve começar com `{`)              |
 | `Variant(T1, T2, ...)` | `VariantType` | Armazena vários tipos, incluindo tipos primitivos, arrays e JSON |
 
-<div id="reading-varianttype-data">
-  ### Lendo dados do VariantType
-</div>
+### Lendo dados do VariantType {#reading-varianttype-data}
 
 Ao ler do ClickHouse, as colunas `JSON` e `Variant` são mapeadas automaticamente para o `VariantType` do Spark:
 
@@ -1009,9 +955,7 @@ Ao ler do ClickHouse, as colunas `JSON` e `Variant` são mapeadas automaticament
   </Tab>
 </Tabs>
 
-<div id="writing-varianttype-data">
-  ### Gravando dados VariantType
-</div>
+### Gravando dados VariantType {#writing-varianttype-data}
 
 Você pode gravar dados VariantType no ClickHouse usando tipos de coluna JSON ou Variant:
 
@@ -1126,9 +1070,7 @@ Você pode gravar dados VariantType no ClickHouse usando tipos de coluna JSON ou
   </Tab>
 </Tabs>
 
-<div id="creating-varianttype-tables-spark-sql">
-  ### Criando tabelas do tipo VariantType com Spark SQL
-</div>
+### Criando tabelas do tipo VariantType com Spark SQL {#creating-varianttype-tables-spark-sql}
 
 Você pode criar tabelas do tipo VariantType usando DDL do Spark SQL:
 
@@ -1157,15 +1099,11 @@ TBLPROPERTIES (
 )
 ```
 
-<div id="configuring-variant-types">
-  ### Configurando os tipos Variant
-</div>
+### Configurando os tipos Variant {#configuring-variant-types}
 
 Ao criar tabelas com colunas `VariantType`, você pode especificar quais tipos do ClickHouse devem ser usados:
 
-<div id="json-type-default">
-  #### Tipo JSON (padrão)
-</div>
+#### Tipo JSON (padrão) {#json-type-default}
 
 Se nenhuma propriedade `variant_types` for especificada, a coluna usará, por padrão, o tipo `JSON` do ClickHouse, que aceita apenas objetos JSON:
 
@@ -1186,9 +1124,7 @@ Isso cria a seguinte consulta do ClickHouse:
 CREATE TABLE json_table (id Int32, data JSON) ENGINE = MergeTree() ORDER BY id
 ```
 
-<div id="variant-type-multiple-types">
-  #### Tipo Variant com múltiplos tipos
-</div>
+#### Tipo Variant com múltiplos tipos {#variant-type-multiple-types}
 
 Para dar suporte a primitivos, arrays e objetos JSON, especifique os tipos na propriedade `variant_types`:
 
@@ -1213,9 +1149,7 @@ CREATE TABLE flexible_data (
 ) ENGINE = MergeTree() ORDER BY id
 ```
 
-<div id="supported-variant-types">
-  ### Tipos de Variant compatíveis
-</div>
+### Tipos de Variant compatíveis {#supported-variant-types}
 
 Os seguintes tipos do ClickHouse podem ser usados em `Variant()`:
 
@@ -1223,9 +1157,7 @@ Os seguintes tipos do ClickHouse podem ser usados em `Variant()`:
 * **Arrays**: `Array(T)`, em que T é qualquer tipo compatível, incluindo arrays aninhados
 * **JSON**: `JSON` para armazenar objetos JSON
 
-<div id="read-format-configuration">
-  ### Configuração do formato de leitura
-</div>
+### Configuração do formato de leitura {#read-format-configuration}
 
 Por padrão, as colunas JSON e Variant são lidas como `VariantType`. Você pode alterar esse comportamento para lê-las como strings:
 
@@ -1261,9 +1193,7 @@ Por padrão, as colunas JSON e Variant são lidas como `VariantType`. Você pode
   </Tab>
 </Tabs>
 
-<div id="write-format-support">
-  ### Suporte ao formato de gravação
-</div>
+### Suporte ao formato de gravação {#write-format-support}
 
 O suporte à gravação para VariantType varia de acordo com o formato:
 
@@ -1282,30 +1212,22 @@ spark.conf.set("spark.clickhouse.write.format", "json")  // Recomendado para tip
   Se você precisar gravar em um tipo `Variant` do ClickHouse, use o formato JSON. O formato Arrow só oferece suporte à gravação apenas no tipo `JSON`.
 </Tip>
 
-<div id="varianttype-best-practices">
-  ### Melhores práticas
-</div>
+### Melhores práticas {#varianttype-best-practices}
 
 1. **Use o tipo JSON para dados exclusivamente em JSON**: Se você armazena apenas objetos JSON, use o tipo JSON padrão (sem a propriedade `variant_types`)
 2. **Especifique os tipos explicitamente**: Ao usar `Variant()`, liste explicitamente todos os tipos que você pretende armazenar
-3. **Habilite recursos experimentais**: Verifique se o ClickHouse está com `allow_experimental_json_type = 1` habilitado
-4. **Use o formato JSON para escritas**: O formato JSON é recomendado para dados do VariantType, por oferecer melhor compatibilidade
-5. **Considere os padrões de consulta**: Os tipos JSON/Variant oferecem suporte às consultas de caminho JSON do ClickHouse para uma filtragem eficiente
-6. **Column hints para desempenho**: Ao usar campos JSON no ClickHouse, adicionar column hints melhora o desempenho da consulta. No momento, não há suporte para adicionar column hints via Spark. Consulte a [GitHub issue #497](https://github.com/ClickHouse/spark-clickhouse-connector/issues/497) para acompanhar esse recurso.
+3. **Use o formato JSON para escritas**: O formato JSON é recomendado para dados do VariantType, por oferecer melhor compatibilidade
+4. **Considere os padrões de consulta**: Os tipos JSON/Variant oferecem suporte às consultas de caminho JSON do ClickHouse para uma filtragem eficiente
+5. **Column hints para desempenho**: Ao usar campos JSON no ClickHouse, adicionar column hints melhora o desempenho da consulta. No momento, não há suporte para adicionar column hints via Spark. Consulte a [GitHub issue #497](https://github.com/ClickHouse/spark-clickhouse-connector/issues/497) para acompanhar esse recurso.
 
-<div id="varianttype-example-workflow">
-  ### Exemplo: Fluxo de trabalho completo
-</div>
+### Exemplo: Fluxo de trabalho completo {#varianttype-example-workflow}
 
 <Tabs>
   <Tab title="Scala">
     ```scala
     import org.apache.spark.sql.functions._
 
-    // Habilitar o tipo JSON experimental no ClickHouse
-    spark.sql("SET allow_experimental_json_type = 1")
-
-    // Criar tabela com coluna Variant
+    // Create table with Variant column
     spark.sql("""
       CREATE TABLE clickhouse.default.events (
         event_id BIGINT,
@@ -1319,14 +1241,14 @@ spark.conf.set("spark.clickhouse.write.format", "json")  // Recomendado para tip
       )
     """)
 
-    // Preparar dados com tipos mistos
+    // Prepare data with mixed types
     val events = Seq(
       (1L, "2024-01-01 10:00:00", """{"action": "login", "user_id": 123}"""),
       (2L, "2024-01-01 10:05:00", """{"action": "purchase", "amount": 99.99}"""),
       (3L, "2024-01-01 10:10:00", """{"action": "logout", "duration": 600}""")
     ).toDF("event_id", "event_time", "json_data")
 
-    // Converter para VariantType e gravar
+    // Convert to VariantType and write
     val variantEvents = events.select(
       col("event_id"),
       to_timestamp(col("event_time")).as("event_time"),
@@ -1335,7 +1257,7 @@ spark.conf.set("spark.clickhouse.write.format", "json")  // Recomendado para tip
 
     variantEvents.writeTo("clickhouse.default.events").append()
 
-    // Ler e consultar
+    // Read and query
     val result = spark.sql("""
       SELECT event_id, event_time, event_data
       FROM clickhouse.default.events
@@ -1351,10 +1273,7 @@ spark.conf.set("spark.clickhouse.write.format", "json")  // Recomendado para tip
     ```python
     from pyspark.sql.functions import parse_json, to_timestamp
 
-    # Habilitar o tipo JSON experimental no ClickHouse
-    spark.sql("SET allow_experimental_json_type = 1")
-
-    # Criar tabela com coluna Variant
+    # Create table with Variant column
     spark.sql("""
       CREATE TABLE clickhouse.default.events (
         event_id BIGINT,
@@ -1368,7 +1287,7 @@ spark.conf.set("spark.clickhouse.write.format", "json")  // Recomendado para tip
       )
     """)
 
-    # Preparar dados com tipos mistos
+    # Prepare data with mixed types
     events = [
         (1, "2024-01-01 10:00:00", '{"action": "login", "user_id": 123}'),
         (2, "2024-01-01 10:05:00", '{"action": "purchase", "amount": 99.99}'),
@@ -1376,7 +1295,7 @@ spark.conf.set("spark.clickhouse.write.format", "json")  // Recomendado para tip
     ]
     df = spark.createDataFrame(events, ["event_id", "event_time", "json_data"])
 
-    # Converter para VariantType e gravar
+    # Convert to VariantType and write
     variant_events = df.select(
         "event_id",
         to_timestamp("event_time").alias("event_time"),
@@ -1385,7 +1304,7 @@ spark.conf.set("spark.clickhouse.write.format", "json")  // Recomendado para tip
 
     variant_events.writeTo("clickhouse.default.events").append()
 
-    # Ler e consultar
+    # Read and query
     result = spark.sql("""
       SELECT event_id, event_time, event_data
       FROM clickhouse.default.events
@@ -1401,10 +1320,7 @@ spark.conf.set("spark.clickhouse.write.format", "json")  // Recomendado para tip
     ```java
     import static org.apache.spark.sql.functions.*;
 
-    // Habilitar o tipo JSON experimental no ClickHouse
-    spark.sql("SET allow_experimental_json_type = 1");
-
-    // Criar tabela com coluna Variant
+    // Create table with Variant column
     spark.sql("CREATE TABLE clickhouse.default.events (" +
         "event_id BIGINT, " +
         "event_time TIMESTAMP, " +
@@ -1416,7 +1332,7 @@ spark.conf.set("spark.clickhouse.write.format", "json")  // Recomendado para tip
         "'order_by' = 'event_time'" +
         ")");
 
-    // Preparar dados com tipos mistos
+    // Prepare data with mixed types
     List<Row> events = Arrays.asList(
         RowFactory.create(1L, "2024-01-01 10:00:00", "{\"action\": \"login\", \"user_id\": 123}"),
         RowFactory.create(2L, "2024-01-01 10:05:00", "{\"action\": \"purchase\", \"amount\": 99.99}"),
@@ -1429,7 +1345,7 @@ spark.conf.set("spark.clickhouse.write.format", "json")  // Recomendado para tip
     });
     Dataset<Row> eventsDF = spark.createDataFrame(events, eventSchema);
 
-    // Converter para VariantType e gravar
+    // Convert to VariantType and write
     Dataset<Row> variantEvents = eventsDF.select(
         col("event_id"),
         to_timestamp(col("event_time")).as("event_time"),
@@ -1438,7 +1354,7 @@ spark.conf.set("spark.clickhouse.write.format", "json")  // Recomendado para tip
 
     variantEvents.writeTo("clickhouse.default.events").append();
 
-    // Ler e consultar
+    // Read and query
     Dataset<Row> result = spark.sql("SELECT event_id, event_time, event_data " +
         "FROM clickhouse.default.events " +
         "WHERE event_time >= '2024-01-01' " +
@@ -1449,9 +1365,7 @@ spark.conf.set("spark.clickhouse.write.format", "json")  // Recomendado para tip
   </Tab>
 </Tabs>
 
-<div id="configurations">
-  ## Configurações
-</div>
+## Configurações {#configurations}
 
 A seguir estão as configurações ajustáveis disponíveis no conector.
 
@@ -1507,16 +1421,12 @@ A seguir estão as configurações ajustáveis disponíveis no conector.
 | spark.clickhouse.write.retryInterval                                     | 10s                                                    | O intervalo, em segundos, entre tentativas de gravação.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | 0.1.0  |
 | spark.clickhouse.write.retryableErrorCodes                               | 241                                                    | Os códigos de erro retornados pelo servidor ClickHouse que permitem nova tentativa quando a gravação falha.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | 0.1.0  |
 
-<div id="supported-data-types">
-  ## Tipos de dados compatíveis
-</div>
+## Tipos de dados compatíveis {#supported-data-types}
 
 Esta seção apresenta o mapeamento dos tipos de dados entre o Spark e o ClickHouse. As tabelas abaixo servem como referência rápida
 para a conversão de tipos de dados ao ler dados do ClickHouse no Spark e ao inserir dados do Spark no ClickHouse.
 
-<div id="reading-data-from-clickhouse-into-spark">
-  ### Lendo dados do ClickHouse no Spark
-</div>
+### Lendo dados do ClickHouse no Spark {#reading-data-from-clickhouse-into-spark}
 
 | Tipo de dados do ClickHouse                                       | Tipo de dados do Spark         | Suportado | É primitivo | Observações                                                                                                                                                                               |
 | ----------------------------------------------------------------- | ------------------------------ | --------- | ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -1556,9 +1466,7 @@ para a conversão de tipos de dados ao ler dados do ClickHouse no Spark e ao ins
 | `AggregateFunction`                                               |                                | ❌         |             |                                                                                                                                                                                           |
 | `SimpleAggregateFunction`                                         |                                | ❌         |             |                                                                                                                                                                                           |
 
-<div id="inserting-data-from-spark-into-clickhouse">
-  ### Inserindo dados do Spark no ClickHouse
-</div>
+### Inserindo dados do Spark no ClickHouse {#inserting-data-from-spark-into-clickhouse}
 
 | Tipo de dado do Spark               | Tipo de dado do ClickHouse | Suportado | É primitivo | Observações                                                                                                                                                             |
 | ----------------------------------- | -------------------------- | --------- | ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -1582,9 +1490,7 @@ para a conversão de tipos de dados ao ler dados do ClickHouse no Spark e ao ins
 | `Object`                            |                            | ❌         |             |                                                                                                                                                                         |
 | `Nested`                            |                            | ❌         |             |                                                                                                                                                                         |
 
-<div id="contributing-and-support">
-  ## Contribuições e suporte
-</div>
+## Contribuições e suporte {#contributing-and-support}
 
 Se você quiser contribuir com o projeto ou relatar algum problema, ficaremos felizes com sua colaboração!
 Visite nosso [repositório no GitHub](https://github.com/ClickHouse/spark-clickhouse-connector) para abrir uma issue, sugerir

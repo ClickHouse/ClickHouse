@@ -1,0 +1,13 @@
+--- stdin with data
+a
+b
+--- single query
+"a"
+"b"
+--- queries file
+a
+b
+--- stdin pipe that stays open
+a
+b
+exit code 0

@@ -101,7 +101,7 @@ void TableFunctionRedis::parseArguments(const ASTPtr & ast_function, ContextPtr 
     if (args.size() > 4)
         configuration.password = checkAndGetLiteralArgument<String>(args[4], "password");
     else
-        configuration.password = DEFAULT_REDIS_PASSWORD;
+        configuration.password.clear();
     if (args.size() > 5)
         configuration.pool_size = static_cast<uint32_t>(checkAndGetLiteralArgument<UInt64>(args[5], "pool_size"));
     else
@@ -144,7 +144,7 @@ redis(host:port, key, structure[, db_index[, password[, pool_size]]])
 
 [Named collections](/concepts/features/configuration/server-config/named-collections) are not supported for `redis` table function at the moment.
 
-## Returned value {#returned_value}
+## Returned value {#returned-value}
 
 A table object with key as Redis key, other columns packaged together as Redis value.
 
@@ -173,7 +173,9 @@ INSERT INTO TABLE FUNCTION redis(
 
 - [The `Redis` table engine](/reference/engines/table-engines/integrations/redis)
 - [Using redis as a dictionary source](/reference/statements/create/dictionary/sources/redis)
-)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction});
+)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction},
+        /// redis('host:port', 'key', 'structure', 'db_index', 'password', 'pool_size')
+        SecretArgumentsSpec{.positional_secret_slots = {4}, .secret_keys = {"password"}});
 }
 
 }

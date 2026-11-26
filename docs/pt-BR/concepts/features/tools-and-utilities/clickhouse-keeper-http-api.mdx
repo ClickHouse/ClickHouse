@@ -9,9 +9,7 @@ doc_type: 'reference'
 O ClickHouse Keeper fornece uma API HTTP e um painel web incorporado para monitoramento, verificações de integridade e gerenciamento do armazenamento.
 Essa interface permite aos operadores inspecionar o status do cluster, executar comandos e gerenciar o armazenamento do Keeper por meio de um navegador web ou de clientes HTTP.
 
-<div id="configuration">
-  ## Configuração
-</div>
+## Configuração {#configuration}
 
 Para habilitar a API HTTP, adicione a seção `http_control` à configuração do `keeper_server`:
 
@@ -26,9 +24,7 @@ Para habilitar a API HTTP, adicione a seção `http_control` à configuração d
 </keeper_server>
 ```
 
-<div id="configuration-options">
-  ### Opções de configuração
-</div>
+### Opções de configuração {#configuration-options}
 
 | Configuração                              | Padrão   | Descrição                                                     |
 | ----------------------------------------- | -------- | ------------------------------------------------------------- |
@@ -37,13 +33,9 @@ Para habilitar a API HTTP, adicione a seção `http_control` à configuração d
 | `http_control.readiness.endpoint`         | `/ready` | Caminho personalizado para a probe de prontidão               |
 | `http_control.storage.session_timeout_ms` | `30000`  | Tempo limite da sessão para operações da API de armazenamento |
 
-<div id="endpoints">
-  ## Endpoints
-</div>
+## Endpoints {#endpoints}
 
-<div id="dashboard">
-  ### Painel
-</div>
+### Painel {#dashboard}
 
 * **Caminho**: `/dashboard`
 * **Método**: GET
@@ -56,9 +48,18 @@ O painel oferece:
 * Explorador de armazenamento
 * Interface para execução de comandos
 
-<div id="readiness-probe">
-  ### Sonda de prontidão
-</div>
+#### Aba Cluster {#dashboard-cluster-tab}
+
+A aba **Cluster** exibe os membros do Raft em um grafo de topologia e uma tabela. Cada membro é mostrado com uma cor que indica seu estado de integridade:
+
+* **Verde** — ativo e sincronizado com o líder
+* **Amarelo** — ativo, mas com defasagem de mais de `stale_log_gap` entradas de log em relação ao líder
+* **Vermelho** — inacessível (nenhuma resposta Raft bem-sucedida dentro da janela de expiração do heartbeat)
+* **Cinza** — desconhecido (o estado de integridade dos pares só é visível a partir do líder; os seguidores veem seus pares como desconhecidos)
+
+A tabela também mostra a função de cada membro (líder, seguidor ou observador), a prioridade do Raft, o último índice de log, a defasagem de replicação em relação ao líder e o tempo desde a última resposta Raft bem-sucedida. Quando o nó atual não é o líder, a aba oferece um link direto para abrir o painel do líder, onde é possível visualizar o estado de integridade completo dos pares. A aba pode ser aberta diretamente em `/dashboard?tab=cluster`.
+
+### Sonda de prontidão {#readiness-probe}
 
 * **Caminho**: `/ready` (configurável)
 * **Método**: GET
@@ -76,9 +77,7 @@ Resposta de sucesso (HTTP 200):
 }
 ```
 
-<div id="commands-api">
-  ### API de comandos
-</div>
+### API de comandos {#commands-api}
 
 * **Caminho**: `/api/v1/commands/{command}`
 * **Métodos**: GET, POST
@@ -87,21 +86,19 @@ Resposta de sucesso (HTTP 200):
 Parâmetros de consulta:
 
 * `command` - O comando a ser executado
-* `cwd` - Diretório de trabalho atual para comandos baseados em caminho (padrão: `/`)
+* `cwd` - Diretório de trabalho atual para comandos baseados em caminho; deve ser um caminho absoluto (padrão: `/`)
 
 Exemplos:
 
 ```bash
-# Comando Four-Letter Word
+# Four-Letter Word command
 curl http://localhost:9182/api/v1/commands/stat
 
-# Comando ZooKeeper CLI
+# ZooKeeper CLI command
 curl "http://localhost:9182/api/v1/commands/ls?command=ls%20'/'&cwd=/"
 ```
 
-<div id="storage-api">
-  ### API de armazenamento
-</div>
+### API de armazenamento {#storage-api}
 
 * **Caminho base**: `/api/v1/storage`
 * **Descrição**: API REST para operações de armazenamento do Keeper

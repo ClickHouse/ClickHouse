@@ -1,7 +1,7 @@
 ---
 slug: /changelogs/24.6
 title: 'Список изменений v24.6 для Cloud'
-description: 'Краткий список изменений v24.6'
+description: 'Список изменений для v24.6'
 keywords: ['список изменений', 'cloud']
 sidebarTitle: '24.6'
 doc_type: 'changelog'
@@ -9,16 +9,12 @@ doc_type: 'changelog'
 
 Изменения для сервисов ClickHouse Cloud в релизе v24.6.
 
-<div id="backward-incompatible-change">
-  ## Обратно несовместимое изменение
-</div>
+## Обратно несовместимое изменение {#backward-incompatible-change}
 
 * Переработана параллельная обработка в режиме `Ordered` для хранилища `S3Queue`. Это изменение обратно несовместимо для режима `Ordered`, если вы использовали настройки `s3queue_processing_threads_num` или `s3queue_total_shards_num`. Настройка `s3queue_total_shards_num` удалена; ранее её можно было использовать только с `s3queue_allow_experimental_sharded_mode`, который теперь помечен как устаревший. Добавлена новая настройка — `s3queue_buckets`. [#64349](https://github.com/ClickHouse/ClickHouse/pull/64349) ([Kseniia Sumarokova](https://github.com/kssenii)).
 * Добавлены новые функции `snowflakeIDToDateTime`, `snowflakeIDToDateTime64`, `dateTimeToSnowflakeID` и `dateTime64ToSnowflakeID`. В отличие от существующих функций `snowflakeToDateTime`, `snowflakeToDateTime64`, `dateTimeToSnowflake` и `dateTime64ToSnowflake`, новые функции совместимы с функцией `generateSnowflakeID`, то есть принимают Snowflake ID, сгенерированные функцией `generateSnowflakeID`, и возвращают Snowflake ID того же типа, что и `generateSnowflakeID` (то есть `UInt64`). Кроме того, новые функции по умолчанию используют эпоху UNIX (то есть 1970-01-01), как и `generateSnowflakeID`. При необходимости можно передать другую эпоху, например эпоху Twitter/X — 2010-11-04, то есть 1288834974657 мс с эпохи UNIX. Старые функции преобразования помечены как устаревшие и будут удалены после переходного периода; если вам всё же нужно их использовать, включите настройку `allow_deprecated_snowflake_conversion_functions`. [#64948](https://github.com/ClickHouse/ClickHouse/pull/64948) ([Robert Schulze](https://github.com/rschu1ze)).
 
-<div id="new-feature">
-  ## Новая возможность
-</div>
+## Новая возможность {#new-feature}
 
 * Добавлена поддержка пустых `Tuple`. [#55061](https://github.com/ClickHouse/ClickHouse/pull/55061) ([Amos Bird](https://github.com/amosbird)).
 * Добавлены функции кодирования и декодирования кривой Гильберта. [#60156](https://github.com/ClickHouse/ClickHouse/pull/60156) ([Artem Mustafin](https://github.com/Artemmm91)).
@@ -36,9 +32,7 @@ doc_type: 'changelog'
 * В `system.query_log` добавлены два дополнительных столбца: `used_privileges` и `missing_privileges`. `used_privileges` заполняется привилегиями, которые проверялись во время выполнения запроса, а `missing_privileges` содержит необходимые, но отсутствующие привилегии. [#64597](https://github.com/ClickHouse/ClickHouse/pull/64597) ([Alexey Katsman](https://github.com/alexkats)).
 * Добавлена настройка `output_format_pretty_display_footer_column_names`, которая во включенном состоянии отображает имена столбцов в конце таблицы для длинных таблиц (по умолчанию 50 строк), а пороговое минимальное число строк задается параметром `output_format_pretty_display_footer_column_names_min_rows`. [#65144](https://github.com/ClickHouse/ClickHouse/pull/65144) ([Shaun Struwig](https://github.com/Blargian)).
 
-<div id="performance-improvement">
-  ## Повышение производительности
-</div>
+## Повышение производительности {#performance-improvement}
 
 * Исправлена регрессия производительности в CROSS JOIN, появившаяся в #60459 (24.5). #65243 (Nikita Taranov).
 * Улучшена видимость повторных отправок в io&#95;uring. Событие профилирования IOUringSQEsResubmits переименовано в IOUringSQEsResubmitsAsync, а также добавлено новое — IOUringSQEsResubmitsSync. #63699 (Tomer Shafir).
@@ -68,9 +62,7 @@ doc_type: 'changelog'
 * Обновлено условие, чтобы для резервных копий в Azure Blob Storage использовалось копирование на стороне сервера. [#64518](https://github.com/ClickHouse/ClickHouse/pull/64518) ([SmitaRKulkarni](https://github.com/SmitaRKulkarni)).
 * Оптимизировано использование памяти при вертикальных слияниях в таблицах с большим количеством индексов пропуска данных. [#64580](https://github.com/ClickHouse/ClickHouse/pull/64580) ([Anton Popov](https://github.com/CurtizJ)).
 
-<div id="improvement">
-  ## Улучшения
-</div>
+## Улучшения {#improvement}
 
 * Возвращено прежнее поведение ClickHouse при работе с Tuple и их интерпретации в формате CSV. Это изменение фактически отменяет ClickHouse/ClickHouse#60994 и оставляет его доступным только через несколько настроек: output&#95;format&#95;csv&#95;serialize&#95;tuple&#95;into&#95;separate&#95;columns, input&#95;format&#95;csv&#95;deserialize&#95;separate&#95;columns&#95;into&#95;tuple и input&#95;format&#95;csv&#95;try&#95;infer&#95;strings&#95;from&#95;quoted&#95;tuples. #65170 (Nikita Mikhaylov).
 * `SHOW CREATE TABLE`, выполненная для системных таблиц, теперь будет показывать очень полезный уникальный для каждой таблицы комментарий, объясняющий, зачем нужна эта таблица. [#63788](https://github.com/ClickHouse/ClickHouse/pull/63788) ([Nikita Mikhaylov](https://github.com/nikitamikhaylov)).
@@ -96,9 +88,7 @@ doc_type: 'changelog'
 * Отключены транзакции для неподдерживаемых хранилищ, в том числе для materialized views. [#64918](https://github.com/ClickHouse/ClickHouse/pull/64918) ([alesapin](https://github.com/alesapin)).
 * Запретили предложение `QUALIFY` в старом анализаторе. Старый анализатор игнорировал `QUALIFY`, из-за чего при мутациях могло происходить непреднамеренное удаление данных. [#65356](https://github.com/ClickHouse/ClickHouse/pull/65356) ([Dmitry Novik](https://github.com/novikd)).
 
-<div id="bug-fix-user-visible-misbehavior-in-an-official-stable-release">
-  ## Исправление ошибки (некорректное поведение, заметное пользователю, в официальном стабильном релизе)
-</div>
+## Исправление ошибки (некорректное поведение, заметное пользователю, в официальном стабильном релизе) {#bug-fix-user-visible-misbehavior-in-an-official-stable-release}
 
 * Исправлена ошибка, из-за которой индекс пропуска данных &#39;set&#39; не работал с IN и indexHint(). #62083 (Michael Kolupaev).
 * Исправлена ошибка, из-за которой запросы с FINAL возвращали неверный результат, если таблица была без адаптивной гранулярности. #62432 (Duc Canh Le).
@@ -124,7 +114,7 @@ doc_type: 'changelog'
 * Исправлена ошибка Cannot find column при распределённых запросах с константным CTE в ключе GROUP BY. #64519 (Nikolai Kochetov).
 * Исправлен вывод функции formatDateTimeInJodaSyntax в случае, когда форматтер генерирует нечётное количество символов, а последний символ — 0. Например, SELECT formatDateTimeInJodaSyntax(toDate(&#39;2012-05-29&#39;), &#39;D&#39;) теперь корректно возвращает 150 вместо прежнего 15. #64614 (LiuNeng).
 * Не переписывать агрегацию, если уже используется комбинатор -If. #64638 (Dmitry Novik).
-* Исправлен вывод типов для float (при небольшом буфере, то есть --max&#95;read&#95;buffer&#95;size 1). #64641 (Azat Khuzhin).
+* Исправлен вывод типов для float (при небольшом буфере, то есть `--max_read_buffer_size` 1). #64641 (Azat Khuzhin).
 * Исправлена ошибка, из-за которой TTL с выражениями могли не работать. #64694 (alesapin).
 * Исправлено удаление выражений WHERE и PREWHERE, которые всегда истинны (в новом анализаторе). #64695 (Nikolai Kochetov).
 * Исправлено чрезмерное отсечение частей текстовыми индексами на основе токенов (ngrambf , full&#95;text) при фильтрации по результатам startsWith, endsWith, match, multiSearchAny. #64720 (Eduard Karacharov).

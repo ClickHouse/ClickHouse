@@ -10,9 +10,7 @@ doc_type: 'guide'
 
 Os exemplos a seguir mostram, de forma bem simples, como carregar dados JSON estruturados e semiestruturados. Para JSONs mais complexos, incluindo estruturas aninhadas, consulte o guia [**Projetando o schema JSON**](/pt-BR/guides/clickhouse/data-formats/json/schema).
 
-<div id="loading-structured-json">
-  ## Carregando JSON estruturado
-</div>
+## Carregando JSON estruturado {#loading-structured-json}
 
 Nesta seção, assumimos que os dados JSON estão no formato [`NDJSON`](https://github.com/ndjson/ndjson-spec) (JSON delimitado por nova linha), conhecido como [`JSONEachRow`](/pt-BR/reference/formats/JSON/JSONEachRow) no ClickHouse, e bem estruturados, ou seja, os nomes e tipos das colunas são fixos. O `NDJSON` é o formato preferido para carregamento de JSON devido à sua concisão e uso eficiente de espaço, mas outros formatos são suportados tanto para [entrada quanto para saída](/pt-BR/reference/formats/JSON/JSON).
 
@@ -31,21 +29,21 @@ Considere o seguinte exemplo de JSON, que representa uma linha do [Python PyPI d
 }
 ```
 
-Para carregar este objeto JSON no ClickHouse, é necessário definir um esquema de tabela.
+Para carregar este objeto JSON no ClickHouse, é necessário definir um schema de tabela.
 
 Neste caso simples, nossa estrutura é estática, os nomes das colunas são conhecidos e seus tipos são bem definidos.
 
 Embora o ClickHouse suporte dados semiestruturados por meio de um tipo JSON, onde os nomes das chaves e seus tipos podem ser dinâmicos, isso não é necessário neste caso.
 
 <Info>
-  **Prefira esquemas estáticos sempre que possível**
+  **Prefira schemas estáticos sempre que possível**
 
-  Nos casos em que suas colunas têm nomes e tipos fixos, e não se espera a criação de novas colunas, sempre prefira um esquema definido estaticamente em produção.
+  Nos casos em que suas colunas têm nomes e tipos fixos, e não se espera a criação de novas colunas, sempre prefira um schema definido estaticamente em produção.
 
   O tipo JSON é preferível para dados altamente dinâmicos, em que os nomes e tipos das colunas podem mudar. Esse tipo também é útil para prototipagem e exploração de dados.
 </Info>
 
-Um esquema simples para isso é mostrado abaixo, onde **as chaves JSON são mapeadas para os nomes das colunas**:
+Um schema simples para isso é mostrado abaixo, onde **as chaves JSON são mapeadas para os nomes das colunas**:
 
 ```sql
 CREATE TABLE pypi (
@@ -72,7 +70,7 @@ O ClickHouse pode carregar dados JSON em vários formatos, inferindo automaticam
 
 ```sql
 SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz', NOSIGN)
 LIMIT 1
 ```
 
@@ -81,13 +79,13 @@ LIMIT 1
 │ 2022-11-15 │ CN           │ clickhouse-connect │ bdist_wheel │ bandersnatch │              │        │ 0.2.8 │
 └────────────┴──────────────┴────────────────────┴─────────────┴──────────────┴──────────────┴────────┴─────────┘
 
-1 linha no conjunto. Elapsed: 1.232 sec.
+1 row in set. Elapsed: 1.232 sec.
 ```
 
 Observe que não é necessário especificar o formato do arquivo. Em vez disso, usamos um glob pattern para ler todos os arquivos `*.json.gz` no bucket. O ClickHouse infere automaticamente que o formato é `JSONEachRow` (ndjson) com base na extensão e no conteúdo do arquivo. Um formato pode ser especificado manualmente por meio de funções de parâmetro caso o ClickHouse não consiga detectá-lo automaticamente.
 
 ```sql
-SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz', JSONEachRow)
+SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz', NOSIGN, JSONEachRow)
 ```
 
 <Info>
@@ -99,7 +97,7 @@ SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi
 Para carregar as linhas nesses arquivos, podemos usar um [`INSERT INTO SELECT`](/pt-BR/reference/statements/insert-into#inserting-the-results-of-select):
 
 ```sql
-INSERT INTO pypi SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz')
+INSERT INTO pypi SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz', NOSIGN)
 ```
 
 ```response
@@ -131,9 +129,7 @@ FORMAT JSONEachRow
 
 Estes exemplos pressupõem o uso do formato `JSONEachRow`. Também há suporte a outros formatos JSON comuns, com exemplos de carregamento disponíveis [aqui](/pt-BR/guides/clickhouse/data-formats/json/formats).
 
-<div id="loading-semi-structured-json">
-  ## Carregando JSON semiestruturado
-</div>
+## Carregando JSON semiestruturado {#loading-semi-structured-json}
 
 No exemplo anterior, carregamos um JSON estático, com nomes de chaves e tipos bem conhecidos. Muitas vezes, não é assim: chaves podem ser adicionadas ou seus tipos podem mudar. Isso é comum em casos de uso como dados de observabilidade.
 
@@ -159,11 +155,9 @@ Considere o exemplo a seguir de uma versão estendida do [Python PyPI dataset](h
 
 ```
 
-A coluna `tags` aqui é imprevisível e, portanto, impossível de modelar. Para carregar esses dados, podemos usar nosso esquema anterior, mas incluir uma coluna adicional `tags` do tipo [`JSON`](/pt-BR/reference/data-types/newjson):
+A coluna `tags` aqui é imprevisível e, portanto, impossível de modelar. Para carregar esses dados, podemos usar nosso schema anterior, mas incluir uma coluna adicional `tags` do tipo [`JSON`](/pt-BR/reference/data-types/newjson):
 
 ```sql
-SET enable_json_type = 1;
-
 CREATE TABLE pypi_with_tags
 (
     `date` Date,
@@ -180,15 +174,19 @@ ENGINE = MergeTree
 ORDER BY (project, date);
 ```
 
+<Note>
+  Nas versões 24.8 a 25.2, habilite o tipo `JSON` com `SET allow_experimental_json_type = 1;` antes de criar a tabela.
+</Note>
+
 Preenchemos a tabela usando a mesma abordagem adotada para o conjunto de dados original:
 
 ```sql
-INSERT INTO pypi_with_tags SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/pypi_with_tags/sample.json.gz')
+INSERT INTO pypi_with_tags SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/pypi_with_tags/sample.json.gz', NOSIGN)
 ```
 
 ```sql
 INSERT INTO pypi_with_tags SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/pypi_with_tags/sample.json.gz')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/pypi_with_tags/sample.json.gz', NOSIGN)
 ```
 
 ```response
@@ -215,9 +213,7 @@ LIMIT 2
 
 Note a diferença de desempenho aqui no carregamento de dados. A coluna JSON exige inferência de tipos no momento da inserção, além de armazenamento adicional se houver colunas com mais de um tipo. Embora o tipo JSON possa ser configurado (consulte [Projetando o schema JSON](/pt-BR/guides/clickhouse/data-formats/json/schema)) para oferecer desempenho equivalente ao da declaração explícita de colunas, ele é intencionalmente flexível por padrão. Essa flexibilidade, no entanto, tem um custo.
 
-<div id="when-to-use-the-json-type">
-  ### Quando usar o tipo JSON
-</div>
+### Quando usar o tipo JSON {#when-to-use-the-json-type}
 
 Use o tipo JSON quando seus dados:
 

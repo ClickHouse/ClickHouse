@@ -94,6 +94,7 @@ def wait_zk_child_absent(zk, path, child, timeout=10):
 
 
 def check_encrypted(zk, collection):
+    zk.sync(ZK_PATH)
     content = zk.get(f"{ZK_PATH}/{collection}.sql")[0]
     assert content[:3] == b"ENC"
     return content
@@ -749,6 +750,7 @@ def test_new_replica_encrypted_data_integrity(stopped_node3):
         password='P@ssw0rd!Complex#123'
     """)
 
+    zk.sync(ZK_PATH)
     content = zk.get(f"{ZK_PATH}/encrypted_coll.sql")[0]
     assert content[:3] == b"ENC"
     assert b"super_secret_api_key_12345" not in content

@@ -4,15 +4,19 @@
 #include <Compression/ICompressionCodec.h>
 #include <Compression/registerCompressionCodecs.h>
 #include <DataTypes/IDataType.h>
-#include <IO/WriteHelpers.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/IAST.h>
 #include <base/unaligned.h>
+#include <base/sanitizer_defs.h>
+#include <Common/SipHash.h>
+#include <Common/StringUtils.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 
 #include <algorithm>
 #include <array>
 #include <bit>
+#include <cmath>
+#include <cstring>
 
 namespace DB
 {
@@ -137,18 +141,18 @@ public:
     };
 
     explicit CompressionCodecALP(UInt8 float_width_, Variant variant_);
-    uint8_t getMethodByte() const override;
+    [[nodiscard]] uint8_t getMethodByte() const override;
+    [[nodiscard]] ASTPtr getCodecDescription() const override;
     void updateHash(SipHash & hash) const override;
 
 protected:
     UInt32 doCompressData(const char * source, UInt32 source_size, char * dest) const override;
     UInt32 doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const override;
-    UInt32 getMaxCompressedDataSize(UInt32 uncompressed_size) const override;
-    bool isCompression() const override { return true; }
-    bool isGenericCompression() const override { return false; }
-    bool isFloatingPointTimeSeriesCodec() const override { return true; }
-    bool isExperimental() const override { return true; }
-    String getDescription() const override;
+    [[nodiscard]] UInt32 getMaxCompressedDataSize(UInt32 uncompressed_size) const override;
+    [[nodiscard]] bool isCompression() const override { return true; }
+    [[nodiscard]] bool isGenericCompression() const override { return false; }
+    [[nodiscard]] bool isFloatingPointTimeSeriesCodec() const override { return true; }
+    [[nodiscard]] String getDescription() const override;
 
 private:
     UInt8 float_width;
@@ -700,6 +704,7 @@ private:
         return total_size;
     }
 
+    NO_SANITIZE_UNSIGNED_OVERFLOW
     static UInt8 calculateEncodeBits(const Int64 min_value, const Int64 max_value)
     {
         if (unlikely(min_value > max_value))
@@ -1312,6 +1317,10 @@ CompressionCodecALP::CompressionCodecALP(UInt8 float_width_, Variant variant_)
     : float_width(float_width_)
     , variant(variant_)
 {
+}
+
+ASTPtr CompressionCodecALP::getCodecDescription() const
+{
     ASTs arguments;
     if (variant != Variant::DEFAULT)
     {
@@ -1327,7 +1336,7 @@ CompressionCodecALP::CompressionCodecALP(UInt8 float_width_, Variant variant_)
         arguments.push_back(make_intrusive<ASTIdentifier>(variant_str));
     }
 
-    setCodecDescription("ALP", arguments);
+    return makeCodecDescription("ALP", arguments);
 }
 
 uint8_t CompressionCodecALP::getMethodByte() const
@@ -1337,7 +1346,8 @@ uint8_t CompressionCodecALP::getMethodByte() const
 
 void CompressionCodecALP::updateHash(SipHash & hash) const
 {
-    getCodecDesc()->updateTreeHash(hash, /* ignore_aliases */ true);
+    getCodecDescription()->updateTreeHash(hash, /* ignore_aliases */ true);
+    hash.update(float_width);
 }
 
 String CompressionCodecALP::getDescription() const
@@ -1471,6 +1481,16 @@ UInt32 CompressionCodecALP::doDecompressData(const char * source, UInt32 source_
     return dest_size;
 }
 
+namespace
+{
+
+bool isApplicableToType(const IDataType & column_type)
+{
+    return WhichDataType(column_type).isNativeFloat();
+}
+
+}
+
 void registerCodecALP(CompressionCodecFactory & factory)
 {
     auto method_code = static_cast<UInt8>(CompressionMethodByte::ALP);
@@ -1485,7 +1505,7 @@ void registerCodecALP(CompressionCodecFactory & factory)
         UInt8 float_width = sizeof(Float64);
         if (column_type)
         {
-            if (!WhichDataType(column_type).isNativeFloat())
+            if (!isApplicableToType(*column_type))
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
                     "Codec ALP is not applicable for {} because the data type is not Float*",
@@ -1501,12 +1521,15 @@ void registerCodecALP(CompressionCodecFactory & factory)
             if (!variant_ident)
                 throw Exception(ErrorCodes::ILLEGAL_SYNTAX_FOR_CODEC_TYPE, "ALP codec variant must be an identifier: AUTO, STD or RD");
 
+            /// The variant is a keyword and is matched case-insensitively, like the codec name itself. A codec-valued
+            /// setting such as `default_compression_codec = 'ALP(std)'` used to be upper-cased before parsing, so every
+            /// spelling was accepted there; keep accepting them now that the setting is parsed as written.
             const String variant_str = variant_ident->shortName();
-            if (variant_str == "AUTO")
+            if (equalsCaseInsensitive(variant_str, "AUTO"))
                 variant = CompressionCodecALP::Variant::AUTO;
-            else if (variant_str == "STD")
+            else if (equalsCaseInsensitive(variant_str, "STD"))
                 variant = CompressionCodecALP::Variant::STD;
-            else if (variant_str == "RD")
+            else if (equalsCaseInsensitive(variant_str, "RD"))
                 variant = CompressionCodecALP::Variant::RD;
             else
                 throw Exception(
@@ -1515,6 +1538,12 @@ void registerCodecALP(CompressionCodecFactory & factory)
 
         return std::make_shared<CompressionCodecALP>(float_width, variant);
     };
-    factory.registerCompressionCodecWithType("ALP", method_code, codec_builder);
+    factory.registerCompressionCodecWithType("ALP", method_code, codec_builder, {.is_applicable_to_type = isApplicableToType});
 }
+
+CompressionCodecPtr getCompressionCodecALP(UInt8 float_width)
+{
+    return std::make_shared<CompressionCodecALP>(float_width, CompressionCodecALP::Variant::DEFAULT);
+}
+
 }

@@ -13,7 +13,7 @@ ClickHouse は、さまざまな方法で OLTP データベースのインフラ
   ## SQLダンプの作成
 </div>
 
-データは、[SQLInsert](/ja/reference/formats/SQLInsert) を使用してSQLフォーマットでダンプできます。ClickHouse はデータを `INSERT INTO <table name> VALUES(...` 形式で書き出し、[`output_format_sql_insert_table_name`](/ja/reference/settings/formats#output_format_sql_insert_table_name) 設定オプションで指定したテーブル名を使用します:
+データは、[SQLInsert](/ja/reference/formats/SQLInsert) を使用して SQLフォーマットでダンプできます。ClickHouse はデータを `INSERT INTO <table name> VALUES(...` 形式で書き出し、[`output_format_sql_insert_table_name`](/ja/reference/settings/formats/output-format#output_format_sql_insert_table_name) 設定オプションで指定したテーブル名を使用します:
 
 ```sql
 SET output_format_sql_insert_table_name = 'some_table';
@@ -22,7 +22,7 @@ INTO OUTFILE 'dump.sql'
 FORMAT SQLInsert
 ```
 
-[`output_format_sql_insert_include_column_names`](/ja/reference/settings/formats#output_format_sql_insert_include_column_names) オプションを無効にすることで、カラム名を省略できます。
+[`output_format_sql_insert_include_column_names`](/ja/reference/settings/formats/output-format#output_format_sql_insert_include_column_names) オプションを無効にすることで、カラム名を省略できます:
 
 ```sql
 SET output_format_sql_insert_include_column_names = 0
@@ -36,7 +36,7 @@ mysql some_db < dump.sql
 
 `some_db` MySQLデータベースに `some_table` テーブルが存在しているものとします。
 
-DBMS によっては、1 回のバッチで処理できる値の量に制限がある場合があります。デフォルトでは、ClickHouse は 65k 件の値からなるバッチを作成しますが、これは [`output_format_sql_insert_max_batch_size`](/ja/reference/settings/formats#output_format_sql_insert_max_batch_size) オプションで変更できます。
+DBMS によっては、1 回のバッチで処理できる値の量に制限がある場合があります。デフォルトでは、ClickHouse は 65k 件の値からなるバッチを作成しますが、これは [`output_format_sql_insert_max_batch_size`](/ja/reference/settings/formats/output-format#output_format_sql_insert_max_batch_size) オプションで変更できます:
 
 ```sql
 SET output_format_sql_insert_max_batch_size = 1000;
@@ -78,7 +78,7 @@ LIMIT 5
 └────────────────────────────────┴────────────┴──────┘
 ```
 
-デフォルトでは、ClickHouse は不明なカラムをスキップし ([input&#95;format&#95;skip&#95;unknown&#95;fields](/ja/reference/settings/formats#input_format_skip_unknown_fields) オプションで制御) 、ダンプ内で最初に見つかったテーブルのデータを処理します (複数のテーブルが 1 つのファイルにダンプされている場合) 。DDL ステートメントはスキップされます。MySQL ダンプからテーブルにデータを読み込むには ([mysql.sql](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/mysql.sql) ファイルを使用) :
+デフォルトでは、ClickHouse は不明なカラムをスキップし ([input&#95;format&#95;skip&#95;unknown&#95;fields](/ja/reference/settings/formats/input-format#input_format_skip_unknown_fields) オプションで制御) 、ダンプ内で最初に見つかったテーブルのデータを処理します (複数のテーブルが 1 つのファイルにダンプされている場合) 。DDL ステートメントはスキップされます。MySQL ダンプからテーブルにデータを読み込むには ([mysql.sql](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/mysql.sql) ファイルを使用) :
 
 ```sql
 INSERT INTO some_data

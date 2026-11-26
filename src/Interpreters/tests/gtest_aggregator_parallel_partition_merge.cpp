@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <map>
+#include <optional>
 #include <vector>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
@@ -21,7 +22,7 @@ using namespace DB;
 namespace
 {
 
-/// The parallel single-level merge (`Aggregator::mergeSingleLevelPartitionAndConvertToChunk`) combines
+/// The parallel single-level merge (`Aggregator::mergeSingleLevelPartitionsAndConvertToChunk`) combines
 /// the per-thread hash tables partition by partition, where a key's partition is its two-level bucket modulo the
 /// partition count. Each test builds several tables through `executeOnBlock`, merges every partition, and
 /// asserts that the partitions partition the keys and that their union equals a serial reference
@@ -56,6 +57,7 @@ Aggregator::Params makeParams(const Names & keys, const AggregateDescriptions & 
         /*group_by_two_level_threshold_=*/0,
         /*group_by_two_level_threshold_bytes_=*/0,
         /*max_bytes_before_external_group_by_=*/0,
+        /*min_bytes_before_external_group_by_=*/0,
         /*empty_result_for_aggregation_by_empty_set_=*/false,
         /*tmp_data_scope_=*/nullptr,
         /*max_threads_=*/2,
@@ -70,7 +72,15 @@ Aggregator::Params makeParams(const Names & keys, const AggregateDescriptions & 
         StatsCollectingParams{},
         /*enable_producing_buckets_out_of_order_in_aggregation_=*/false,
         /*serialize_string_with_zero_byte_=*/false,
-        /*enable_parallel_single_level_merge_=*/true);
+        /*enable_parallel_single_level_merge_=*/true,
+        /*enable_parallel_single_level_merge_by_index_=*/true,
+        /*enable_packed_string_keys_=*/true,
+        /*enable_fixed_and_packed_string_keys_=*/true,
+        /*enable_adaptive_aggregator_=*/false,
+        /*adaptive_aggregator_freeze_threshold_=*/0,
+        /*adaptive_aggregator_freeze_threshold_bytes_=*/0,
+        /*adaptive_aggregator_disable_thaw_=*/false,
+        /*use_aggregation_memory_tracker_=*/true);
 }
 
 /// Renders one finalized chunk as "key[,key]" -> "value[,value]" rows.
@@ -116,16 +126,19 @@ struct Scenario
         for (const auto & block : blocks)
         {
             const size_t rows = block.front()->size();
-            aggregator.executeOnBlock(block, 0, rows, *variants, key_columns, aggregate_columns, no_more_keys);
+            aggregator.executeOnBlock(block, 0, rows, *variants, key_columns, aggregate_columns, no_more_keys, /*adaptive=*/nullptr);
         }
         return variants;
     }
+
+    /// Hands out no partition after the first, so that a chunk holds one partition.
+    static std::optional<size_t> claimNothing(size_t /*rows*/) { return std::nullopt; }
 
     /// Merges `sources` partition by partition and returns the union, asserting the partitions are key-disjoint.
     std::map<String, String> mergePartitions(std::vector<AggregatedDataVariantsPtr> sources, size_t num_partitions) const
     {
         ManyAggregatedDataVariants many(sources.begin(), sources.end());
-        auto prepared = aggregator.prepareVariantsToMerge(std::move(many));
+        auto prepared = aggregator.prepareVariantsToMerge(std::move(many), /*adaptive_session=*/nullptr);
         EXPECT_FALSE(prepared.empty());
         EXPECT_FALSE(prepared.at(0)->isTwoLevel());
         EXPECT_TRUE(aggregator.canMergeSingleLevelInPartitions(*prepared.at(0)));
@@ -137,8 +150,9 @@ struct Scenario
         std::map<String, String> united;
         for (size_t partition = 0; partition < num_partitions; ++partition)
         {
-            auto agg_chunk = aggregator.mergeSingleLevelPartitionAndConvertToChunk(
-                prepared, /*final=*/true, partition, num_partitions, max_table_size, cancelled, /*updater=*/nullptr);
+            auto agg_chunk = aggregator.mergeSingleLevelPartitionsAndConvertToChunk(
+                prepared, /*final=*/true, num_partitions, partition, claimNothing, max_table_size / num_partitions,
+                aggregator.parallelMergeThreshold(/*session=*/nullptr, /*workers=*/1), cancelled, /*updater=*/nullptr);
             for (const auto & [key, value] : renderChunk(agg_chunk.chunk, params.keys_size))
             {
                 EXPECT_TRUE(united.emplace(key, value).second) << "key " << key << " produced by two partitions";
@@ -153,7 +167,7 @@ struct Scenario
     std::map<String, String> mergePartitionsNonFinal(std::vector<AggregatedDataVariantsPtr> sources, size_t num_partitions) const
     {
         ManyAggregatedDataVariants many(sources.begin(), sources.end());
-        auto prepared = aggregator.prepareVariantsToMerge(std::move(many));
+        auto prepared = aggregator.prepareVariantsToMerge(std::move(many), /*adaptive_session=*/nullptr);
 
         std::atomic<bool> cancelled{false};
         size_t max_table_size = 0;
@@ -162,8 +176,9 @@ struct Scenario
         std::map<String, String> united;
         for (size_t partition = 0; partition < num_partitions; ++partition)
         {
-            auto agg_chunk = aggregator.mergeSingleLevelPartitionAndConvertToChunk(
-                prepared, /*final=*/false, partition, num_partitions, max_table_size, cancelled, /*updater=*/nullptr);
+            auto agg_chunk = aggregator.mergeSingleLevelPartitionsAndConvertToChunk(
+                prepared, /*final=*/false, num_partitions, partition, claimNothing, max_table_size / num_partitions,
+                aggregator.parallelMergeThreshold(/*session=*/nullptr, /*workers=*/1), cancelled, /*updater=*/nullptr);
             const size_t rows = agg_chunk.chunk.getNumRows();
             auto columns = agg_chunk.chunk.detachColumns();
             for (size_t i = params.keys_size; i < columns.size(); ++i)
@@ -451,6 +466,94 @@ TEST_F(AggregatorParallelPartitionMerge, NonFinalMergeProducesAdoptedStates)
 
     auto expected = scenario.referenceOf({block_a.front(), block_b.front()});
     EXPECT_EQ(scenario.mergePartitionsNonFinal({scenario.aggregate(block_a), scenario.aggregate(block_b)}, 4), expected);
+}
+
+/// `GROUP BY` without aggregate functions uses the set (void-mapped) methods: the cells hold no state,
+/// so the merge of a partition is a plain key union.
+TEST_F(AggregatorParallelPartitionMerge, Key64Void)
+{
+    Scenario scenario(makeHeader(uint64_type), makeParams({"k"}, {}));
+
+    std::vector<UInt64> keys_a(200);
+    std::vector<UInt64> keys_b(200);
+    for (size_t i = 0; i < 200; ++i)
+    {
+        keys_a[i] = i;
+        keys_b[i] = 100 + i;
+    }
+    std::vector<Columns> block_a{makeUInt64Block(keys_a)};
+    std::vector<Columns> block_b{makeUInt64Block(keys_b)};
+
+    auto expected = scenario.referenceOf({block_a.front(), block_b.front()});
+    EXPECT_EQ(expected.size(), 300u);
+
+    EXPECT_EQ(scenario.mergePartitions({scenario.aggregate(block_a), scenario.aggregate(block_b)}, 4), expected);
+    EXPECT_EQ(scenario.mergePartitions({scenario.aggregate(block_a), scenario.aggregate(block_b)}, 1), expected);
+}
+
+/// A set method with a single nullable key: the NULL group carries no state either, so only its
+/// presence in the dedicated slot of partition 0 travels from the sources to the result.
+TEST_F(AggregatorParallelPartitionMerge, NullableKeyVoidNullSlot)
+{
+    const DataTypePtr nullable_type = std::make_shared<DataTypeNullable>(uint64_type);
+    Scenario scenario(makeHeader(nullable_type), makeParams({"k"}, {}));
+
+    auto make_block = [&](size_t offset)
+    {
+        std::vector<Field> keys;
+        std::vector<Field> values;
+        for (size_t i = 0; i < 100; ++i)
+        {
+            if (i % 10 == 0)
+                keys.emplace_back(Field());
+            else
+                keys.emplace_back(UInt64(offset + i));
+            values.emplace_back(UInt64(1));
+        }
+        return Columns{makeColumn(nullable_type, keys), makeColumn(uint64_type, values)};
+    };
+
+    std::vector<Columns> block_a{make_block(0)};
+    std::vector<Columns> block_b{make_block(50)};
+
+    auto expected = scenario.referenceOf({block_a.front(), block_b.front()});
+    auto united = scenario.mergePartitions({scenario.aggregate(block_a), scenario.aggregate(block_b)}, 4);
+    EXPECT_EQ(united, expected);
+    EXPECT_TRUE(united.contains("NULL"));
+}
+
+/// The serialized set method (`serialized_void`), whose keys live in the arena rather than in the cells.
+TEST_F(AggregatorParallelPartitionMerge, SerializedVoid)
+{
+    Block header(
+        {{uint64_type->createColumn(), uint64_type, "a"},
+         {string_type->createColumn(), string_type, "b"},
+         {uint64_type->createColumn(), uint64_type, "v"}});
+    Scenario scenario(header, makeParams({"a", "b"}, {}));
+
+    auto make_block = [](size_t offset)
+    {
+        std::vector<Field> a;
+        std::vector<Field> b;
+        std::vector<Field> v;
+        for (size_t i = 0; i < 200; ++i)
+        {
+            a.emplace_back(UInt64((offset + i) % 150));
+            /// Mixed lengths, so the serialized keys are not all of the same size.
+            String key = "s" + std::to_string((offset + i) % 90);
+            if (i % 3 == 0)
+                key += "_long_enough_to_span_several_cells";
+            b.emplace_back(key);
+            v.emplace_back(UInt64(1));
+        }
+        return Columns{makeColumn(uint64_type, a), makeColumn(string_type, b), makeColumn(uint64_type, v)};
+    };
+
+    std::vector<Columns> block_a{make_block(0)};
+    std::vector<Columns> block_b{make_block(60)};
+
+    auto expected = scenario.referenceOf({block_a.front(), block_b.front()});
+    EXPECT_EQ(scenario.mergePartitions({scenario.aggregate(block_a), scenario.aggregate(block_b)}, 4), expected);
 }
 
 /// A source that received no rows is filtered out by `prepareVariantsToMerge` and must not disturb

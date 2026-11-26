@@ -1,6 +1,6 @@
 ---
 description: 'ウィンドウ関数の概要ページ'
-sidebarTitle: 'ウィンドウ関数'
+sidebarTitle: '概要'
 slug: /sql-reference/window-functions/
 title: 'ウィンドウ関数'
 doc_type: 'reference'
@@ -9,9 +9,7 @@ doc_type: 'reference'
 ウィンドウ関数を使用すると、現在の行に関連する行の集合に対して計算を実行できます。
 集約関数で行う計算と似た計算にも使用できますが、ウィンドウ関数では行が単一の出力にグループ化されることはなく、個々の行はそのまま返されます。
 
-<div id="standard-window-functions">
-  ## 標準ウィンドウ関数
-</div>
+## 標準ウィンドウ関数 {#standard-window-functions}
 
 ClickHouse は、ウィンドウおよびウィンドウ関数に対する標準 SQL 構文をサポートしています。
 以下の表は、現在サポートされている機能を示しています。
@@ -24,7 +22,7 @@ ClickHouse は、ウィンドウおよびウィンドウ関数に対する標準
 | `ROWS` フレーム                                                          | ✅          |                                                                                                                                                                                                                                                                                                                         |
 | `RANGE` フレーム                                                         | ✅          | フレーム が明示的に指定されていない場合は、デフォルトで使用されます (`RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW`) 。                                                                                                                                                                                                                              |
 | `DateTime` `RANGE OFFSET` フレーム 用の `INTERVAL` 構文                      | ❌          | 代わりに秒数を指定してください (`RANGE` は任意の数値型で使用できます) 。                                                                                                                                                                                                                                                                              |
-| `GROUPS` フレーム                                                        | ❌          |                                                                                                                                                                                                                                                                                                                         |
+| `GROUPS` フレーム                                                        | ✅          | フレーム境界はピア グループ全体 (`ORDER BY` キーで等しい行) を数えます。`N PRECEDING` および `N FOLLOWING` は、現在の行のピア グループの前後にある `N` 個のピア グループを数えます。                                                                                                                                                                                                    |
 | フレーム に対する 集約関数 の計算 (`sum(value) OVER (ORDER BY time)`)               | ✅          | すべての 集約関数 がサポートされています。                                                                                                                                                                                                                                                                                                  |
 | `rank()`, `dense_rank()`/`denseRank()`, `row_number()`               | ✅          |                                                                                                                                                                                                                                                                                                                         |
 | `percent_rank()`/`percentRank()`                                     | ✅          | パーティション内での値の相対順位を効率的に計算します。これは、`ifNull((rank() OVER (PARTITION BY x ORDER BY y) - 1) / nullif(count(1) OVER (PARTITION BY x) - 1, 0), 0)` で表される、より冗長でコンピュート負荷の高い手動の SQL 計算を置き換えます。                                                                                                                                      |
@@ -32,25 +30,23 @@ ClickHouse は、ウィンドウおよびウィンドウ関数に対する標準
 | `lag/lead(value, offset)`                                            | ✅          | 次のいずれかの回避策も使用できます:<br /> 1) `any(value) OVER (... ROWS BETWEEN <offset> PRECEDING AND <offset> PRECEDING)`、または `lead` の場合は `PRECEDING` の代わりに `FOLLOWING` <br /> 2) `lagInFrame/leadInFrame`。これらは同様の関数ですが、ウィンドウ フレーム を考慮します。`lag/lead` と同一の動作を得るには、`ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING` を使用してください。 |
 | [`ntile(buckets)`](/ja/reference/functions/window-functions/ntile)      | ✅          | たとえば、ウィンドウは `(PARTITION BY x ORDER BY y ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)` のように指定してください。                                                                                                                                                                                                        |
 
-<div id="syntax">
-  ## 構文
-</div>
+## 構文 {#syntax}
 
 ```text
 aggregate_function (column_name)
   OVER ([[PARTITION BY grouping_column] [ORDER BY sorting_column] 
-        [ROWS or RANGE expression_to_bound_rows_within_the_group]] | [window_name])
+        [ROWS, RANGE, or GROUPS expression_to_bound_rows_within_the_group]] | [window_name])
 FROM table_name
 WINDOW window_name as ([
   [PARTITION BY grouping_column]
   [ORDER BY sorting_column]
-  [ROWS or RANGE expression_to_bound_rows_within_the_group]
+  [ROWS, RANGE, or GROUPS expression_to_bound_rows_within_the_group]
 ])
 ```
 
 * `PARTITION BY` - 結果セットをどのようにグループに分けるかを定義します。
 * `ORDER BY` - aggregate&#95;function の計算時に、グループ内の行をどのような順序で並べるかを定義します。
-* `ROWS or RANGE` - フレームの境界を定義し、aggregate&#95;function はそのフレーム内で計算されます。
+* `ROWS`、`RANGE`、または `GROUPS` - フレームの境界を定義し、aggregate&#95;function はそのフレーム内で計算されます。`ROWS` は物理行を数え、`RANGE` は `ORDER BY` の値を数え、`GROUPS` はピアグループ (`ORDER BY` キーが等しい行) を数えます。
 * `WINDOW` - 複数の式で同じウィンドウ定義を使えるようにします。
 
 ```text
@@ -70,9 +66,7 @@ WINDOW window_name as ([
 └─────────────────┘  <--- UNBOUNDED FOLLOWING (END of the PARTITION)
 ```
 
-<div id="functions">
-  ## ウィンドウ関数としてのみ使用できる関数
-</div>
+## ウィンドウ関数としてのみ使用できる関数 {#functions}
 
 以下の関数は、ウィンドウ関数としてのみ使用できます。ほとんどは標準 SQL 関数ですが、`lagInFrame`、`leadInFrame`、`nonNegativeDerivative` は ClickHouse の拡張機能です。
 
@@ -93,15 +87,11 @@ WINDOW window_name as ([
 | [`ntile(buckets)`](/ja/reference/functions/window-functions/ntile)                                                                             | パーティション内で順序付けされた行を指定した数のバケットに分割し、現在の行が属するバケット番号を返します。                  |
 | [`nonNegativeDerivative(metric_column, timestamp_column[, INTERVAL X UNITS])`](/ja/reference/functions/window-functions/nonNegativeDerivative) | `timestamp_column` に対する `metric_column` の非負の導関数を計算します。ClickHouse 固有です。 |
 
-<div id="examples">
-  ## 例
-</div>
+## 例 {#examples}
 
 ウィンドウ関数の使用例をいくつか見てみましょう。
 
-<div id="numbering-rows">
-  ### 行番号の付与
-</div>
+### 行番号の付与 {#numbering-rows}
 
 ```sql
 CREATE TABLE salaries
@@ -159,9 +149,7 @@ FROM salaries;
 └─────────────────┴────────┴─────┴──────┴───────────┘
 ```
 
-<div id="aggregation-functions">
-  ### 集計関数
-</div>
+### 集計関数 {#aggregation-functions}
 
 各選手の給与を所属チームの平均給与と比較します。
 
@@ -207,9 +195,7 @@ FROM salaries;
 └─────────────────┴────────┴───────────────────────────┴─────────┴────────┘
 ```
 
-<div id="partitioning-by-column">
-  ### カラムによるパーティション化
-</div>
+### カラムによるパーティション化 {#partitioning-by-column}
 
 ```sql
 CREATE TABLE wf_partition
@@ -242,9 +228,7 @@ ORDER BY
 └──────────┴───────┴───────┴──────────────┘
 ```
 
-<div id="frame-bounding">
-  ### フレームの境界
-</div>
+### フレームの境界 {#frame-bounding}
 
 ```sql
 CREATE TABLE wf_frame
@@ -286,7 +270,7 @@ ORDER BY
 
 ```sql
 -- short form - no bound expression, no order by,
--- an equalent of `ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING`
+-- an equivalent of `ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING`
 SELECT
     part_key,
     value,
@@ -335,7 +319,7 @@ ORDER BY
 
 ```sql
 -- short form (frame is bounded by the beginning of a partition and the current row)
--- an equalent of `ORDER BY order ASC ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW`
+-- an equivalent of `ORDER BY order ASC ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW`
 SELECT
     part_key,
     value,
@@ -527,15 +511,47 @@ ORDER BY
 └────────────────┴──────────────┘
 ```
 
-<div id="real-world-examples">
-  ## 実践的な例
-</div>
+### GROUPS フレーム {#groups-frame}
+
+`GROUPS` フレームは、物理的な行 (`ROWS`) や `ORDER BY` 値 (`RANGE`) ではなく、`ORDER BY` キーが等しい行の集合である *ピアグループ* 全体を数えます。`N PRECEDING` と `N FOLLOWING` は、現在の行のピアグループの前後にある `N` 個のピアグループを数え、範囲に含まれるピアグループは常にそのすべての行を含みます。
+
+以下のクエリでは、`ROWS`、`RANGE`、`GROUPS` フレームに同じ `1 PRECEDING AND 1 FOLLOWING` 境界を適用します。`order` カラムには重複した非連続の値が含まれるため、3 つのモードで対象となる行は異なります。
+
+```sql
+CREATE TABLE wf_frame_groups (`order` UInt64, value UInt64) ENGINE = Memory;
+INSERT INTO wf_frame_groups FORMAT Values (10, 1), (10, 2), (20, 3), (30, 4), (30, 5);
+
+SELECT
+    order,
+    value,
+    groupArray(value) OVER (ORDER BY order ROWS   BETWEEN 1 PRECEDING AND 1 FOLLOWING) AS rows_frame,
+    groupArray(value) OVER (ORDER BY order RANGE  BETWEEN 1 PRECEDING AND 1 FOLLOWING) AS range_frame,
+    groupArray(value) OVER (ORDER BY order GROUPS BETWEEN 1 PRECEDING AND 1 FOLLOWING) AS groups_frame
+FROM wf_frame_groups
+ORDER BY order, value;
+```
+
+```response
+┌─order─┬─value─┬─rows_frame─┬─range_frame─┬─groups_frame─┐
+│    10 │     1 │ [1,2]      │ [1,2]       │ [1,2,3]      │
+│    10 │     2 │ [1,2,3]    │ [1,2]       │ [1,2,3]      │
+│    20 │     3 │ [2,3,4]    │ [3]         │ [1,2,3,4,5]  │
+│    30 │     4 │ [3,4,5]    │ [4,5]       │ [3,4,5]      │
+│    30 │     5 │ [4,5]      │ [4,5]       │ [3,4,5]      │
+└───────┴───────┴────────────┴─────────────┴──────────────┘
+```
+
+各モードで境界の解釈は異なります。
+
+* `ROWS` は物理的な行数に基づくため、フレームは最大で連続する3行、つまり現在の行とその前後それぞれ1行になります。
+* `RANGE` は `order` 値に基づくため、`1 PRECEDING` と `1 FOLLOWING` には、現在の行の `order` 値との差が1以内の行が含まれます。間隔が10ある場合、隣接行は条件を満たさないため、フレームには現在の `order` を共有する行のみが含まれます。
+* `GROUPS` はピアグループに基づくため、`1 PRECEDING` と `1 FOLLOWING` には、`order` 値間のギャップにかかわらず、隣接するグループ全体が常に含まれます。
+
+## 実践的な例 {#real-world-examples}
 
 以下の例では、現実によくある問題を解決する方法を示します。
 
-<div id="maximumtotal-salary-per-department">
-  ### 部門ごとの最高給与／給与総額
-</div>
+### 部門ごとの最高給与／給与総額 {#maximumtotal-salary-per-department}
 
 ```sql
 CREATE TABLE employees
@@ -591,9 +607,7 @@ FROM
 └────────────┴──────┴────────┴────────────────────┴──────────────────────┴──────────────────┘
 ```
 
-<div id="cumulative-sum">
-  ### 累積和
-</div>
+### 累積和 {#cumulative-sum}
 
 ```sql
 CREATE TABLE warehouse
@@ -602,7 +616,7 @@ CREATE TABLE warehouse
     `ts` DateTime,
     `value` Float
 )
-ENGINE = Memory
+ENGINE = Memory;
 
 INSERT INTO warehouse VALUES
     ('sku38', '2020-01-01', 9),
@@ -634,9 +648,7 @@ ORDER BY
 └───────┴─────────────────────┴───────┴───────────────┘
 ```
 
-<div id="moving--sliding-average-per-3-rows">
-  ### 移動平均／スライディング平均 (3行ごと)
-</div>
+### 移動平均／スライディング平均 (3行ごと) {#moving--sliding-average-per-3-rows}
 
 ```sql
 CREATE TABLE sensors
@@ -684,9 +696,7 @@ ORDER BY
 └──────────┴─────────────────────┴───────┴───────────────────┘
 ```
 
-<div id="moving--sliding-average-per-10-seconds">
-  ### 移動平均／スライディング平均 (10秒ごと)
-</div>
+### 移動平均／スライディング平均 (10秒ごと) {#moving--sliding-average-per-10-seconds}
 
 ```sql
 SELECT
@@ -712,9 +722,7 @@ ORDER BY
 └──────────┴─────────────────────┴───────┴────────────────────────────┘
 ```
 
-<div id="moving--sliding-average-per-10-days">
-  ### 移動平均 / スライディング平均 (10日ごと)
-</div>
+### 移動平均 / スライディング平均 (10日ごと) {#moving--sliding-average-per-10-days}
 
 温度は秒精度で保存されていますが、`Range` と `ORDER BY toDate(ts)` を使用すると、サイズ 10 単位のフレームが形成され、`toDate(ts)` によってその単位は日になります。
 
@@ -769,21 +777,15 @@ ORDER BY
 └──────────────┴─────────────────────┴───────┴─────────────────────────┘
 ```
 
-<div id="references">
-  ## 参考資料
-</div>
+## 参考資料 {#references}
 
-<div id="github-issues">
-  ### GitHub Issues
-</div>
+### GitHub Issues {#github-issues}
 
 ウィンドウ関数 の初期サポートに向けたロードマップは、[この issue](https://github.com/ClickHouse/ClickHouse/issues/18097) にあります。
 
 ウィンドウ関数 に関連するすべての GitHub issue には、[comp-window-functions](https://github.com/ClickHouse/ClickHouse/labels/comp-window-functions) タグが付けられています。
 
-<div id="tests">
-  ### テスト
-</div>
+### テスト {#tests}
 
 これらのテストには、現在サポートされている構文の例が含まれています。
 
@@ -791,9 +793,7 @@ https://github.com/ClickHouse/ClickHouse/blob/master/tests/performance/window&#9
 
 https://github.com/ClickHouse/ClickHouse/blob/master/tests/queries/0&#95;stateless/01591&#95;window&#95;functions.sql
 
-<div id="postgres-docs">
-  ### Postgres Docs
-</div>
+### Postgres Docs {#postgres-docs}
 
 https://www.postgresql.org/docs/current/sql-select.html#SQL-WINDOW
 
@@ -803,9 +803,7 @@ https://www.postgresql.org/docs/devel/functions-window.html
 
 https://www.postgresql.org/docs/devel/tutorial-window.html
 
-<div id="mysql-docs">
-  ### MySQL Docs
-</div>
+### MySQL Docs {#mysql-docs}
 
 https://dev.mysql.com/doc/refman/8.0/en/window-function-descriptions.html
 
@@ -813,9 +811,7 @@ https://dev.mysql.com/doc/refman/8.0/en/window-functions-usage.html
 
 https://dev.mysql.com/doc/refman/8.0/en/window-functions-frames.html
 
-<div id="related-content">
-  ## 関連コンテンツ
-</div>
+## 関連コンテンツ {#related-content}
 
 * ブログ: [ClickHouseで時系列データを扱う](https://clickhouse.com/blog/working-with-time-series-data-and-functions-ClickHouse)
 * ブログ: [Gitコミットのシーケンスに対するウィンドウ関数と配列関数](https://clickhouse.com/blog/clickhouse-window-array-functions-git-commits)

@@ -2,6 +2,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/convertColumnToType.h>
+#include <Core/ConstantValue.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTFunction.h>
 #include <Storages/System/StorageSystemNumbers.h>
@@ -10,6 +11,7 @@
 #include <Common/FieldVisitorToString.h>
 #include <Common/typeid_cast.h>
 #include <TableFunctions/registerTableFunctions.h>
+#include <base/arithmeticOverflow.h>
 
 
 namespace DB
@@ -120,7 +122,9 @@ StoragePtr TableFunctionGenerateSeries<alias_num>::executeImpl(
 template <size_t alias_num>
 UInt64 TableFunctionGenerateSeries<alias_num>::evaluateArgument(ContextPtr context, ASTPtr & argument) const
 {
-    const auto [column, type] = evaluateConstantExpressionAsColumn(argument, context);
+    const auto constant = evaluateConstantExpressionAsColumn(argument, context);
+    const auto & column = constant.getColumn();
+    const auto & type = constant.getType();
 
     if (!isNativeNumber(type))
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} expression, must be numeric type", type->getName());
@@ -141,7 +145,9 @@ UInt64 TableFunctionGenerateSeries<alias_num>::evaluateArgument(ContextPtr conte
 template <size_t alias_num>
 StepWithSign TableFunctionGenerateSeries<alias_num>::parseStep(ContextPtr context, ASTPtr & argument) const
 {
-    const auto [column, type] = evaluateConstantExpressionAsColumn(argument, context);
+    const auto constant = evaluateConstantExpressionAsColumn(argument, context);
+    const auto & column = constant.getColumn();
+    const auto & type = constant.getType();
 
     if (!isNativeNumber(type))
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} expression, must be numeric type", type->getName());
@@ -159,7 +165,7 @@ StepWithSign TableFunctionGenerateSeries<alias_num>::parseStep(ContextPtr contex
             /// Avoid signed overflow during conversion (e.g. -INT64_MIN overflows Int64).
             /// Instead, cast to UInt64 first (preserving the bit pattern), then negate in
             /// unsigned arithmetic where overflow is well-defined.
-            return {UInt64(0) - static_cast<UInt64>(step_val), true};
+            return {common::negateIgnoreOverflow(static_cast<UInt64>(step_val)), true};
         }
         return {static_cast<UInt64>(step_val), false};
     }
@@ -183,7 +189,7 @@ StepWithSign TableFunctionGenerateSeries<alias_num>::parseStep(ContextPtr contex
 
 void registerTableFunctionGenerateSeries(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionGenerateSeries<0>>({.description = R"DOC(Returns a table with a single 'generate_series' column of integers from a start value to a stop value inclusive; an optional third argument sets the step (default 1). Same as generateSeries.)DOC", .category = FunctionDocumentation::Category::TableFunction}, {.allow_readonly = true});
+    factory.registerFunction<TableFunctionGenerateSeries<0>>({.description = R"DOC(Returns a table with a single 'generate_series' column of integers from a start value to a stop value inclusive; an optional third argument sets the step (default 1). Same as generateSeries.)DOC", .category = FunctionDocumentation::Category::TableFunction}, SecretArgumentsSpec{}, {.allow_readonly = true});
     factory.registerFunction<TableFunctionGenerateSeries<1>>({.description = R"DOCS_MD(
 Alias: `generateSeries`
 
@@ -283,7 +289,7 @@ SELECT * FROM generate_series(9, 0, -1);
 │               0 │
 └─────────────────┘
 ```
-)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, {.allow_readonly = true});
+)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, SecretArgumentsSpec{}, {.allow_readonly = true});
 }
 
 }

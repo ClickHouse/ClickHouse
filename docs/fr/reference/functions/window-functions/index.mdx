@@ -1,6 +1,6 @@
 ---
 description: "Page de présentation des fonctions de fenêtre"
-sidebarTitle: "Fonctions de fenêtre"
+sidebarTitle: "Vue d’ensemble"
 slug: /sql-reference/window-functions/
 title: "Fonctions de fenêtre"
 doc_type: "reference"
@@ -9,9 +9,7 @@ doc_type: "reference"
 Les fonctions de fenêtre vous permettent d’effectuer des calculs sur un ensemble de lignes liées à la ligne en cours.
 Elles peuvent être utilisées pour effectuer des calculs similaires à ceux réalisés avec des fonctions d’agrégation, mais s’en distinguent par le fait qu’une fonction de fenêtre ne regroupe pas les lignes en une seule sortie ; au contraire, les lignes individuelles sont toujours renvoyées.
 
-<div id="standard-window-functions">
-  ## Fonctions de fenêtre standard
-</div>
+## Fonctions de fenêtre standard {#standard-window-functions}
 
 ClickHouse prend en charge la syntaxe SQL standard pour les fenêtres et les fonctions de fenêtre.
 Le tableau ci-dessous indique les fonctionnalités actuellement prises en charge :
@@ -24,7 +22,7 @@ Le tableau ci-dessous indique les fonctionnalités actuellement prises en charge
 | Cadre `ROWS`                                                                              | ✅                |                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | Cadre `RANGE`                                                                             | ✅                | Utilisé par défaut lorsqu’un cadre n’est pas explicitement spécifié (`RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW`).                                                                                                                                                                                                                                                                                                                             |
 | Syntaxe `INTERVAL` pour un cadre `RANGE OFFSET` de type `DateTime`                        | ❌                | Indiquez plutôt le nombre de secondes (`RANGE` fonctionne avec n’importe quel type numérique).                                                                                                                                                                                                                                                                                                                                                         |
-| Cadre `GROUPS`                                                                            | ❌                |                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| Cadre `GROUPS`                                                                            | ✅                | Les limites du cadre comptent des groupes de pairs entiers (lignes égales selon la clé `ORDER BY`) ; `N PRECEDING` et `N FOLLOWING` comptent `N` groupes de pairs avant et après le groupe de pairs de la ligne en cours.                                                                                                                                                                                                                              |
 | Calcul de fonctions d’agrégation sur un cadre (`sum(value) OVER (ORDER BY time)`)         | ✅                | Toutes les fonctions d’agrégation sont prises en charge.                                                                                                                                                                                                                                                                                                                                                                                               |
 | `rank()`, `dense_rank()`/`denseRank()`, `row_number()`                                    | ✅                |                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | `percent_rank()`/`percentRank()`                                                          | ✅                | Calcule efficacement le rang relatif d’une valeur au sein d’une partition. Remplace le calcul SQL manuel, plus verbeux et plus coûteux en calcul, exprimé par `ifNull((rank() OVER (PARTITION BY x ORDER BY y) - 1) / nullif(count(1) OVER (PARTITION BY x) - 1, 0), 0)`.                                                                                                                                                                              |
@@ -32,25 +30,23 @@ Le tableau ci-dessous indique les fonctionnalités actuellement prises en charge
 | `lag/lead(value, offset)`                                                                 | ✅                | Vous pouvez également utiliser l’une des solutions de contournement suivantes :<br /> 1) `any(value) OVER (... ROWS BETWEEN <offset> PRECEDING AND <offset> PRECEDING)`, ou `FOLLOWING` à la place de `PRECEDING` pour `lead` <br /> 2) `lagInFrame/leadInFrame`, qui sont analogues mais respectent le cadre de la fenêtre. Pour obtenir un comportement identique à `lag/lead`, utilisez `ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING`. |
 | [`ntile(buckets)`](/fr/reference/functions/window-functions/ntile)                           | ✅                | Spécifiez la fenêtre, par exemple, ainsi : `(PARTITION BY x ORDER BY y ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)`.                                                                                                                                                                                                                                                                                                                     |
 
-<div id="syntax">
-  ## Syntaxe
-</div>
+## Syntaxe {#syntax}
 
 ```text
 aggregate_function (column_name)
   OVER ([[PARTITION BY grouping_column] [ORDER BY sorting_column] 
-        [ROWS or RANGE expression_to_bound_rows_within_the_group]] | [window_name])
+        [ROWS, RANGE, or GROUPS expression_to_bound_rows_within_the_group]] | [window_name])
 FROM table_name
 WINDOW window_name as ([
   [PARTITION BY grouping_column]
   [ORDER BY sorting_column]
-  [ROWS or RANGE expression_to_bound_rows_within_the_group]
+  [ROWS, RANGE, or GROUPS expression_to_bound_rows_within_the_group]
 ])
 ```
 
 * `PARTITION BY` - définit comment découper un jeu de résultats en groupes.
 * `ORDER BY` - définit comment ordonner les lignes à l’intérieur du groupe pendant le calcul de aggregate&#95;function.
-* `ROWS or RANGE` - définit les bornes d’un cadre, aggregate&#95;function étant calculée dans ce cadre.
+* `ROWS`, `RANGE` ou `GROUPS` - définit les bornes d’un cadre, aggregate&#95;function étant calculée dans ce cadre. `ROWS` compte les lignes physiques, `RANGE` compte les valeurs `ORDER BY` et `GROUPS` compte les groupes de pairs (lignes égales selon la clé `ORDER BY`).
 * `WINDOW` - permet à plusieurs expressions d’utiliser la même définition de fenêtre.
 
 ```text
@@ -70,9 +66,7 @@ WINDOW window_name as ([
 └─────────────────┘  <--- UNBOUNDED FOLLOWING (END of the PARTITION)
 ```
 
-<div id="functions">
-  ## Fonctions utilisables uniquement comme fonctions de fenêtre
-</div>
+## Fonctions utilisables uniquement comme fonctions de fenêtre {#functions}
 
 Les fonctions suivantes ne peuvent être utilisées que comme fonctions de fenêtre. La plupart sont des fonctions SQL standard ; `lagInFrame`, `leadInFrame` et `nonNegativeDerivative` sont des extensions de ClickHouse.
 
@@ -93,15 +87,11 @@ Les fonctions suivantes ne peuvent être utilisées que comme fonctions de fenê
 | [`ntile(buckets)`](/fr/reference/functions/window-functions/ntile)                                                                             | Divise les lignes ordonnées d’une partition dans le nombre de groupes donné et renvoie le numéro du groupe de la ligne en cours. |
 | [`nonNegativeDerivative(metric_column, timestamp_column[, INTERVAL X UNITS])`](/fr/reference/functions/window-functions/nonNegativeDerivative) | Calcule la dérivée non négative de `metric_column` par rapport à `timestamp_column`. Spécifique à ClickHouse.                    |
 
-<div id="examples">
-  ## Exemples
-</div>
+## Exemples {#examples}
 
 Voyons quelques exemples d’utilisation des fonctions de fenêtre.
 
-<div id="numbering-rows">
-  ### Numérotation des lignes
-</div>
+### Numérotation des lignes {#numbering-rows}
 
 ```sql
 CREATE TABLE salaries
@@ -159,9 +149,7 @@ FROM salaries;
 └─────────────────┴────────┴─────┴──────┴───────────┘
 ```
 
-<div id="aggregation-functions">
-  ### Fonctions d’agrégation
-</div>
+### Fonctions d’agrégation {#aggregation-functions}
 
 Comparez le salaire de chaque joueur à la moyenne de son équipe.
 
@@ -207,9 +195,7 @@ FROM salaries;
 └─────────────────┴────────┴───────────────────────────┴─────────┴────────┘
 ```
 
-<div id="partitioning-by-column">
-  ### Partitionnement par colonne
-</div>
+### Partitionnement par colonne {#partitioning-by-column}
 
 ```sql
 CREATE TABLE wf_partition
@@ -242,9 +228,7 @@ ORDER BY
 └──────────┴───────┴───────┴──────────────┘
 ```
 
-<div id="frame-bounding">
-  ### Délimitation de la fenêtre
-</div>
+### Délimitation du cadre {#frame-bounding}
 
 ```sql
 CREATE TABLE wf_frame
@@ -286,7 +270,7 @@ ORDER BY
 
 ```sql
 -- short form - no bound expression, no order by,
--- an equalent of `ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING`
+-- an equivalent of `ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING`
 SELECT
     part_key,
     value,
@@ -335,7 +319,7 @@ ORDER BY
 
 ```sql
 -- short form (frame is bounded by the beginning of a partition and the current row)
--- an equalent of `ORDER BY order ASC ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW`
+-- an equivalent of `ORDER BY order ASC ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW`
 SELECT
     part_key,
     value,
@@ -527,15 +511,47 @@ ORDER BY
 └────────────────┴──────────────┘
 ```
 
-<div id="real-world-examples">
-  ## Exemples concrets
-</div>
+### Frame GROUPS {#groups-frame}
+
+Une frame `GROUPS` compte des *groupes de pairs* entiers — des ensembles de lignes égales selon la clé `ORDER BY` — plutôt que des lignes physiques (`ROWS`) ou des valeurs `ORDER BY` (`RANGE`). `N PRECEDING` et `N FOLLOWING` comptent `N` groupes de pairs avant et après le groupe de pairs de la ligne en cours, et chaque groupe de pairs inclus apporte toujours l&#39;ensemble de ses lignes.
+
+La requête ci-dessous applique les mêmes limites `1 PRECEDING AND 1 FOLLOWING` à des frames `ROWS`, `RANGE` et `GROUPS`. La colonne `order` contient des valeurs dupliquées et non consécutives ; les trois modes couvrent donc des lignes différentes :
+
+```sql
+CREATE TABLE wf_frame_groups (`order` UInt64, value UInt64) ENGINE = Memory;
+INSERT INTO wf_frame_groups FORMAT Values (10, 1), (10, 2), (20, 3), (30, 4), (30, 5);
+
+SELECT
+    order,
+    value,
+    groupArray(value) OVER (ORDER BY order ROWS   BETWEEN 1 PRECEDING AND 1 FOLLOWING) AS rows_frame,
+    groupArray(value) OVER (ORDER BY order RANGE  BETWEEN 1 PRECEDING AND 1 FOLLOWING) AS range_frame,
+    groupArray(value) OVER (ORDER BY order GROUPS BETWEEN 1 PRECEDING AND 1 FOLLOWING) AS groups_frame
+FROM wf_frame_groups
+ORDER BY order, value;
+```
+
+```response
+┌─order─┬─value─┬─rows_frame─┬─range_frame─┬─groups_frame─┐
+│    10 │     1 │ [1,2]      │ [1,2]       │ [1,2,3]      │
+│    10 │     2 │ [1,2,3]    │ [1,2]       │ [1,2,3]      │
+│    20 │     3 │ [2,3,4]    │ [3]         │ [1,2,3,4,5]  │
+│    30 │     4 │ [3,4,5]    │ [4,5]       │ [3,4,5]      │
+│    30 │     5 │ [4,5]      │ [4,5]       │ [3,4,5]      │
+└───────┴───────┴────────────┴─────────────┴──────────────┘
+```
+
+Chaque mode interprète les limites différemment :
+
+* `ROWS` compte les lignes physiques ; la frame comporte donc au plus trois lignes adjacentes : la ligne en cours et une ligne de chaque côté.
+* `RANGE` compte les valeurs d’`order` ; `1 PRECEDING` et `1 FOLLOWING` couvrent donc les lignes dont l’`order` diffère d’au plus 1 de celui de la ligne en cours. Avec des écarts de 10, aucune ligne voisine n’est incluse ; la frame ne contient donc que les lignes ayant le même `order` que la ligne en cours.
+* `GROUPS` compte les groupes de pairs ; `1 PRECEDING` et `1 FOLLOWING` incluent donc toujours intégralement les groupes adjacents, quels que soient les écarts entre les valeurs d’`order`.
+
+## Exemples concrets {#real-world-examples}
 
 Les exemples suivants permettent de résoudre des problèmes courants rencontrés en situation réelle.
 
-<div id="maximumtotal-salary-per-department">
-  ### Salaire maximal/total par service
-</div>
+### Salaire maximal/total par service {#maximumtotal-salary-per-department}
 
 ```sql
 CREATE TABLE employees
@@ -591,9 +607,7 @@ FROM
 └────────────┴──────┴────────┴────────────────────┴──────────────────────┴──────────────────┘
 ```
 
-<div id="cumulative-sum">
-  ### Somme cumulée
-</div>
+### Somme cumulée {#cumulative-sum}
 
 ```sql
 CREATE TABLE warehouse
@@ -602,7 +616,7 @@ CREATE TABLE warehouse
     `ts` DateTime,
     `value` Float
 )
-ENGINE = Memory
+ENGINE = Memory;
 
 INSERT INTO warehouse VALUES
     ('sku38', '2020-01-01', 9),
@@ -634,9 +648,7 @@ ORDER BY
 └───────┴─────────────────────┴───────┴───────────────┘
 ```
 
-<div id="moving--sliding-average-per-3-rows">
-  ### Moyenne mobile / glissante (sur 3 lignes)
-</div>
+### Moyenne mobile / glissante (sur 3 lignes) {#moving--sliding-average-per-3-rows}
 
 ```sql
 CREATE TABLE sensors
@@ -684,9 +696,7 @@ ORDER BY
 └──────────┴─────────────────────┴───────┴───────────────────┘
 ```
 
-<div id="moving--sliding-average-per-10-seconds">
-  ### Moyenne mobile / glissante (par tranches de 10 secondes)
-</div>
+### Moyenne mobile / glissante (par tranches de 10 secondes) {#moving--sliding-average-per-10-seconds}
 
 ```sql
 SELECT
@@ -712,9 +722,7 @@ ORDER BY
 └──────────┴─────────────────────┴───────┴────────────────────────────┘
 ```
 
-<div id="moving--sliding-average-per-10-days">
-  ### Moyenne mobile / glissante (sur 10 jours)
-</div>
+### Moyenne mobile / glissante (sur 10 jours) {#moving--sliding-average-per-10-days}
 
 La température est stockée avec une précision à la seconde, mais en utilisant `Range` et `ORDER BY toDate(ts)`, nous formons un frame de 10 unités, et comme `toDate(ts)` est utilisé, l’unité est le jour.
 
@@ -769,21 +777,15 @@ ORDER BY
 └──────────────┴─────────────────────┴───────┴─────────────────────────┘
 ```
 
-<div id="references">
-  ## Références
-</div>
+## Références {#references}
 
-<div id="github-issues">
-  ### Issues GitHub
-</div>
+### Issues GitHub {#github-issues}
 
 La feuille de route concernant la prise en charge initiale des fonctions de fenêtre est décrite [dans cette issue](https://github.com/ClickHouse/ClickHouse/issues/18097).
 
 Toutes les issues GitHub liées aux fonctions de fenêtre portent le label [comp-window-functions](https://github.com/ClickHouse/ClickHouse/labels/comp-window-functions).
 
-<div id="tests">
-  ### Tests
-</div>
+### Tests {#tests}
 
 Ces tests contiennent des exemples de la grammaire actuellement prise en charge :
 
@@ -791,9 +793,7 @@ https://github.com/ClickHouse/ClickHouse/blob/master/tests/performance/window&#9
 
 https://github.com/ClickHouse/ClickHouse/blob/master/tests/queries/0&#95;stateless/01591&#95;window&#95;functions.sql
 
-<div id="postgres-docs">
-  ### Documentation de Postgres
-</div>
+### Documentation de Postgres {#postgres-docs}
 
 https://www.postgresql.org/docs/current/sql-select.html#SQL-WINDOW
 
@@ -803,9 +803,7 @@ https://www.postgresql.org/docs/devel/functions-window.html
 
 https://www.postgresql.org/docs/devel/tutorial-window.html
 
-<div id="mysql-docs">
-  ### Documentation de MySQL
-</div>
+### Documentation de MySQL {#mysql-docs}
 
 https://dev.mysql.com/doc/refman/8.0/en/window-function-descriptions.html
 
@@ -813,9 +811,7 @@ https://dev.mysql.com/doc/refman/8.0/en/window-functions-usage.html
 
 https://dev.mysql.com/doc/refman/8.0/en/window-functions-frames.html
 
-<div id="related-content">
-  ## Contenu connexe
-</div>
+## Contenu connexe {#related-content}
 
 * Blog : [Travailler avec des données de séries temporelles dans ClickHouse](https://clickhouse.com/blog/working-with-time-series-data-and-functions-ClickHouse)
 * Blog : [Fonctions de fenêtre et fonctions Array pour les séquences de commits Git](https://clickhouse.com/blog/clickhouse-window-array-functions-git-commits)

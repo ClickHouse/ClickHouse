@@ -6,7 +6,7 @@ tags: ['Performances et optimisations']
 keywords: ['Requêtes coûteuses', 'Utilisation de la mémoire']
 ---
 
-<div id="using-the-systemquery_log-table">
+<div id="using-the-systemquery-log-table">
   ## Utilisation de la table `system.query_log`
 </div>
 
@@ -29,6 +29,7 @@ FROM
     clusterAllReplicas(default, system.query_log)
 WHERE
     (event_time >= (now() - toIntervalDay(1)))
+    AND is_initial_query = 1
     AND query_kind = 'Select'
     AND type = 'QueryFinish'
     and user != 'monitoring-internal'
@@ -50,10 +51,16 @@ La réponse ressemble à ceci :
 ```
 
 <Note>
-  Si vous n’avez pas de table `system.query_log`, c’est probablement que la journalisation des requêtes n’est pas activée. Consultez les détails du paramètre [`query_log`](/fr/reference/settings/server-settings/settings#server_configuration_parameters-query-log) pour savoir comment l’activer.
+  Si vous n’avez pas de table `system.query_log`, c’est probablement que la journalisation des requêtes n’est pas activée. Consultez les détails du paramètre [`query_log`](/fr/reference/settings/server-settings/settings/query#query_log) pour savoir comment l’activer.
 </Note>
 
-Si vous n’avez pas de cluster, vous pouvez simplement interroger directement votre table `system.query_log` :
+<Note>
+  **`query_log` contient plus que les requêtes que vous avez soumises**
+
+  Une même requête soumise peut apparaître sur plusieurs lignes : la requête initiale (`is_initial_query = 1`) ainsi que des étapes dérivées ou internes (`is_initial_query = 0`), comme des requêtes secondaires pour une exécution distribuée ou des requêtes internes utilisées pour évaluer des vues. Ces lignes internes ont leurs propres valeurs `query_id` — attribuées par ClickHouse et incluant parfois un libellé tel que `queryView...` — ne partez donc pas du principe que chaque `query_id` correspond à ce que votre client a signalé. Pour attribuer l’utilisation à la requête telle que vous l’avez exécutée, filtrez sur `is_initial_query = 1` ou faites correspondre `query_id = initial_query_id`. Consultez [Comment identifier les requêtes les plus coûteuses](/fr/resources/support-center/knowledge-base/performance-optimization/find-expensive-queries#initial_query_id-vs-query_id) et la [référence `query_log`](/fr/reference/system-tables/query_log) pour plus de détails.
+</Note>
+
+Si vous n’avez pas de cluster, vous pouvez interroger directement votre unique table `system.query_log` :
 
 ```sql
 SELECT
@@ -66,6 +73,7 @@ FROM
     system.query_log
 WHERE
     (event_time >= (now() - toIntervalDay(1)))
+    AND is_initial_query = 1
     AND query_kind = 'Select'
     AND type = 'QueryFinish'
     and user != 'monitoring-internal'

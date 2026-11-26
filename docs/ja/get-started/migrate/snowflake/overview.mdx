@@ -8,8 +8,6 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 > このドキュメントでは、Snowflake から ClickHouse へのデータ移行の概要を紹介します。
 
 Snowflake は、主に従来のオンプレミスのデータウェアハウジングワークロードを
@@ -22,14 +20,12 @@ Snowflake は、主に従来のオンプレミスのデータウェアハウジ�
 最適化されたデータベースが必要だと気づきます。
 
 <div id="comparison">
-  ## 比較
+  ## 比較 {#comparison}
 </div>
 
 このセクションでは、ClickHouse と Snowflake の主な特長を比較します。
 
-<div id="similarities">
-  ### 類似点
-</div>
+### 類似点 {#similarities}
 
 Snowflake はクラウドベースのデータウェアハウジングプラットフォームであり、大量の
 データを保存、処理、分析するための、スケーラブルで効率的なソリューションを
@@ -52,7 +48,11 @@ S3 のようなオブジェクト
 以下の [docs.snowflake.com](https://docs.snowflake.com/en/user-guide/intro-key-concepts)
 の図は、このアーキテクチャを示しています。
 
-<Image img="/images/cloud/onboard/discover/use_cases/snowflake_architecture.webp" size="md" alt="Snowflake アーキテクチャ" />
+<div className="ch-image-md">
+  <Frame>
+    ![Snowflake アーキテクチャ](/images/cloud/onboard/discover/use_cases/snowflake_architecture.webp)
+  </Frame>
+</div>
 
 これに対して、オープンソースかつクラウドホスト型の製品である ClickHouse は、
 shared-disk と shared-nothing の両方のアーキテクチャでデプロイできます。後者は
@@ -73,10 +73,14 @@ S3 のスケーラビリティ特性は、shared-disk
 クラスターにノードを追加しても、既存ノードが利用できる I/O スループットが
 影響を受けないようにします。
 
-<Image img="/images/cloud/onboard/discover/use_cases/cloud_architecture.webp" size="md" alt="ClickHouse Cloud アーキテクチャ" />
+<div className="ch-image-md">
+  <Frame>
+    ![ClickHouse Cloud アーキテクチャ](/images/cloud/onboard/discover/use_cases/cloud_architecture.webp)
+  </Frame>
+</div>
 
 <div id="differences">
-  ### 違い
+  ### 違い {#differences}
 </div>
 
 基盤となるストレージフォーマットやクエリエンジン以外にも、これらのアーキテクチャには
@@ -136,7 +140,7 @@ S3 のスケーラビリティ特性は、shared-disk
   他のシステムに対する優位性となります。
 
 <div id="real-time-analytics">
-  ### リアルタイム分析
+  ### リアルタイム分析 {#real-time-analytics}
 </div>
 
 公開されている[ベンチマーク](https://benchmark.clickhouse.com/#system=+%E2%98%81w|%EF%B8%8Fr|C%20c|nfe\&type=-\&machine=-ca2|gl|6ax|6ale|3al\&cluster_size=-\&opensource=-\&tuned=+n\&metric=hot\&queries=-)データに基づくと、
@@ -158,9 +162,9 @@ S3 のスケーラビリティ特性は、shared-disk
   がないため、
   リアルタイム分析に[より適しています](https://clickhouse.com/blog/introduction-to-the-clickhouse-query-cache-and-design)。
   またユーザーは、その利用方法をきめ細かく制御でき、
-  [クエリごと](/ja/reference/settings/session-settings#use_query_cache)の利用制御、
-  [正確なサイズ](/ja/reference/settings/session-settings#query_cache_max_size_in_bytes)、
-  [クエリを cache するかどうか](/ja/reference/settings/session-settings#enable_writes_to_query_cache)
+  [クエリごと](/ja/reference/settings/session-settings/use-query#use_query_cache)の利用制御、
+  [正確なサイズ](/ja/reference/settings/session-settings/query-cache#query_cache_max_size_in_bytes)、
+  [クエリを cache するかどうか](/ja/reference/settings/session-settings/enable#enable_writes_to_query_cache)
   (有効期間や必要実行回数の制限) 、
   さらに[受動的にのみ使用する](https://clickhouse.com/blog/introduction-to-the-clickhouse-query-cache-and-design#using-logs-and-settings)
   かどうかも指定できます。

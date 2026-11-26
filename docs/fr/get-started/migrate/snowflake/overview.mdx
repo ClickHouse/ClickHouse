@@ -8,27 +8,23 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 > Ce document propose une introduction à la migration des données de Snowflake vers ClickHouse.
 
 Snowflake est un entrepôt de données dans le cloud principalement conçu pour migrer vers le cloud
 des charges de travail legacy d&#39;entreposage de données sur site. Il est bien optimisé pour exécuter
-des rapports de longue durée à grande échelle. À mesure que les datasets migrent vers le cloud, les responsables des données commencent
+des rapports de longue durée à grande échelle. À mesure que les jeux de données migrent vers le cloud, les responsables des données commencent
 à réfléchir à d&#39;autres façons d&#39;en extraire de la valeur, notamment en utilisant
-ces datasets pour alimenter des applications en temps réel pour des cas d&#39;utilisation internes et externes.
+ces jeux de données pour alimenter des applications en temps réel pour des cas d&#39;utilisation internes et externes.
 Quand cela se produit, ils se rendent souvent compte qu&#39;ils ont besoin d&#39;une base de données optimisée pour
 prendre en charge l&#39;analyse en temps réel, comme ClickHouse.
 
 <div id="comparison">
-  ## Comparaison
+  ## Comparaison {#comparison}
 </div>
 
 Dans cette section, nous comparons les principales caractéristiques de ClickHouse et de Snowflake.
 
-<div id="similarities">
-  ### Similarités
-</div>
+### Similarités {#similarities}
 
 Snowflake est une plateforme d’entreposage de données dans le cloud qui fournit une solution évolutive
 et efficace pour stocker, traiter et analyser de grands volumes de
@@ -38,10 +34,10 @@ sur son propre moteur de requêtes SQL et sur une architecture personnalisée.
 
 L’architecture de Snowflake est décrite comme un hybride entre une architecture à stockage partagé (disque partagé)
 et une architecture shared-nothing. Une architecture à stockage partagé est
-une architecture dans laquelle les données sont accessibles depuis tous les nœuds de calcul via des stockages objet
-tels que S3. Une architecture shared-nothing est une architecture dans laquelle chaque nœud de calcul
+une architecture dans laquelle les données sont accessibles depuis tous les nœuds de capacité de calcul via des stockages objet
+tels que S3. Une architecture shared-nothing est une architecture dans laquelle chaque nœud de capacité de calcul
 stocke localement une partie de l’ensemble des données afin de répondre aux requêtes. Cela, en
-théorie, offre le meilleur des deux modèles : la simplicité d’une architecture à disque partagé
+théorie, offre le meilleur des deux modèles : la simplicité d’une architecture à disque partagé
 et la scalabilité d’une architecture shared-nothing.
 
 Cette conception repose fondamentalement sur le stockage objet comme support de stockage principal,
@@ -49,9 +45,13 @@ qui passe presque à l’échelle de façon infinie en cas d’accès concurrent
 résilience et des garanties de débit évolutif.
 
 L’image ci-dessous, issue de [docs.snowflake.com](https://docs.snowflake.com/en/user-guide/intro-key-concepts),
-montre cette architecture :
+montre cette architecture :
 
-<Image img="/images/cloud/onboard/discover/use_cases/snowflake_architecture.webp" size="md" alt="Architecture de Snowflake" />
+<div className="ch-image-md">
+  <Frame>
+    ![Architecture de Snowflake](/images/cloud/onboard/discover/use_cases/snowflake_architecture.webp)
+  </Frame>
+</div>
 
 À l’inverse, en tant que produit open-source et hébergé dans le cloud, ClickHouse peut être déployé
 dans des architectures à disque partagé comme dans des architectures shared-nothing. Ces dernières sont typiques des
@@ -70,10 +70,14 @@ architectures à disque partagé (goulots d’étranglement d’E/S disque et r�
 disponible pour les nœuds actuels d’un cluster n’est pas affecté lorsque des nœuds supplémentaires sont
 ajoutés.
 
-<Image img="/images/cloud/onboard/discover/use_cases/cloud_architecture.webp" size="md" alt="Architecture de ClickHouse Cloud" />
+<div className="ch-image-md">
+  <Frame>
+    ![Architecture de ClickHouse Cloud](/images/cloud/onboard/discover/use_cases/cloud_architecture.webp)
+  </Frame>
+</div>
 
 <div id="differences">
-  ### Différences
+  ### Différences {#differences}
 </div>
 
 Outre les formats de stockage sous-jacents et les moteurs de requête, ces architectures
@@ -129,7 +133,7 @@ présentent quelques différences subtiles :
   avantage par rapport aux autres systèmes.
 
 <div id="real-time-analytics">
-  ### Analyse en temps réel
+  ### Analyse en temps réel {#real-time-analytics}
 </div>
 
 D&#39;après des données de [benchmark](https://benchmark.clickhouse.com/#system=+%E2%98%81w|%EF%B8%8Fr|C%20c|nfe\&type=-\&machine=-ca2|gl|6ax|6ale|3al\&cluster_size=-\&opensource=-\&tuned=+n\&metric=hot\&queries=-) publiques,
@@ -137,7 +141,7 @@ ClickHouse surpasse Snowflake pour les applications d&#39;analyse en temps réel
 
 * **Latence des requêtes** : les requêtes Snowflake présentent une latence plus élevée, même
   lorsque le clustering est appliqué aux tables pour optimiser les performances. Dans nos
-  tests, Snowflake nécessite plus du double de ressources de calcul pour obtenir des performances
+  tests, Snowflake nécessite plus du double de compute pour obtenir des performances
   équivalentes à celles de ClickHouse sur les requêtes auxquelles un filtre est appliqué lorsque celui-ci fait partie
   de la clé de clustering de Snowflake ou de la clé primaire de ClickHouse. Bien que
   le [cache de requêtes persistant](https://docs.snowflake.com/en/user-guide/querying-persisted-results) de Snowflake
@@ -150,9 +154,9 @@ ClickHouse surpasse Snowflake pour les applications d&#39;analyse en temps réel
   spécifique au nœud et n&#39;est pas [transactionnellement cohérent](https://clickhouse.com/blog/introduction-to-the-clickhouse-query-cache-and-design),
   ce qui le [rend plus adapté ](https://clickhouse.com/blog/introduction-to-the-clickhouse-query-cache-and-design)
   à l&#39;analyse en temps réel. Les utilisateurs disposent également d&#39;un contrôle granulaire sur son utilisation,
-  avec la possibilité d&#39;en définir l&#39;usage [requête par requête](/fr/reference/settings/session-settings#use_query_cache),
-  sa [taille précise](/fr/reference/settings/session-settings#query_cache_max_size_in_bytes),
-  de déterminer si une [requête est mise en cache](/fr/reference/settings/session-settings#enable_writes_to_query_cache)
+  avec la possibilité d&#39;en définir l&#39;usage [requête par requête](/fr/reference/settings/session-settings/use-query#use_query_cache),
+  sa [taille précise](/fr/reference/settings/session-settings/query-cache#query_cache_max_size_in_bytes),
+  de déterminer si une [requête est mise en cache](/fr/reference/settings/session-settings/enable#enable_writes_to_query_cache)
   (selon des limites de durée ou un nombre minimal d&#39;exécutions), et s&#39;il est
   uniquement [utilisé passivement](https://clickhouse.com/blog/introduction-to-the-clickhouse-query-cache-and-design#using-logs-and-settings).
 

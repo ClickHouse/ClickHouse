@@ -1,4 +1,5 @@
 #include <Common/SipHash.h>
+#include <Formats/FormatSettings.h>
 #include <DataTypes/Serializations/SerializationBool.h>
 
 #include <Columns/ColumnsNumber.h>
@@ -243,6 +244,14 @@ SerializationBool::SerializationBool(const SerializationPtr &nested_)
 {
 }
 
+void SerializationBool::serializeTextHive(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+{
+    /// Hive's LazySimpleSerDe boolean parser only accepts the fixed words `true`/`false`, so write them
+    /// unconditionally rather than delegating to serializeCustom, which honors bool_true_representation /
+    /// bool_false_representation and could emit tokens Hive reads as null/invalid.
+    serializeSimple(column, row_num, ostr, settings);
+}
+
 void SerializationBool::serializeText(const IColumn & column, size_t row_num, WriteBuffer &ostr, const FormatSettings & settings) const
 {
     serializeCustom(column, row_num, ostr, settings);
@@ -393,6 +402,13 @@ ReturnType deserializeTextQuotedImpl(IColumn & column, ReadBuffer & istr, const 
     auto * col = checkAndGetDeserializeColumnType(column);
 
     char symbol = toLowerIfAlphaASCII(*istr.position());
+    if ((symbol == '1' || symbol == '0') && !settings.allow_special_bool_values)
+    {
+        if constexpr (throw_exception)
+            throw Exception(ErrorCodes::CANNOT_PARSE_BOOL, "Cannot parse boolean value here: '{}', numeric 1/0 is not allowed", symbol);
+        return ReturnType(false);
+    }
+
     switch (symbol)
     {
         case 't':

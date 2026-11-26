@@ -10,12 +10,10 @@ integration:
    - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 يدعم ClickPipes ‏Postgres الإصدار 12 وما بعده.
 
 <div id="enable-logical-replication">
-  ## فعِّل النسخ المتماثل المنطقي
+  ## فعِّل النسخ المتماثل المنطقي {#enable-logical-replication}
 </div>
 
 يأتي Crunchy Bridge مع تفعيل [النسخ المتماثل المنطقي](https://docs.crunchybridge.com/how-to/logical-replication) [افتراضيًا](https://docs.crunchybridge.com/how-to/logical-replication). تأكد من ضبط الإعدادات أدناه بشكل صحيح. وإذا لم تكن كذلك، فعدّلها وفقًا لذلك.
@@ -26,9 +24,7 @@ SHOW max_wal_senders; -- should be 10
 SHOW max_replication_slots; -- should be 10
 ```
 
-<div id="creating-clickpipes-user-and-granting-permissions">
-  ## إنشاء مستخدم ClickPipes ومنح الأذونات
-</div>
+## إنشاء مستخدم ClickPipes ومنح الأذونات {#creating-clickpipes-user-and-granting-permissions}
 
 اتصل بـ Crunchy Bridge Postgres باستخدام المستخدم `postgres`، ثم شغّل الأوامر التالية:
 
@@ -64,26 +60,32 @@ SHOW max_replication_slots; -- should be 10
   CREATE PUBLICATION clickpipes FOR TABLE table_to_replicate, table_to_replicate2;
   ```
 
-  * لإنشاء منشور لجميع الجداول في مخطط محدد:
+* لإنشاء منشور لجميع الجداول في مخطط محدد:
 
-    ```sql
-    CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
-    ```
+  ```sql
+  CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
+  ```
 
 يحدّد المنشور `clickpipes` مجموعة الجداول التي ستُبثّ أحداث التغيير الخاصة بها إلى ClickPipes. نوصي بعدم استخدام `FOR ALL TABLES` ما لم تكن تنوي نسخ جميع الجداول متماثلًا، لأن تضمين جداول غير ضرورية يزيد من حركة WAL من Postgres إلى ClickPipes ويقلّل من الكفاءة الإجمالية للنسخ المتماثل.
 
-<div id="safe-list-clickpipes-ips">
-  ## إضافة عناوين IP الخاصة بـ ClickPipes إلى قائمة السماح
+## إضافة عناوين IP الخاصة بـ ClickPipes إلى قائمة السماح {#safe-list-clickpipes-ips}
+
+أضِف [عناوين IP الخاصة بـ ClickPipes](/ar/integrations/clickpipes/networking/static-ips) إلى قائمة السماح عبر إضافة قواعد جدار الحماية في Crunchy Bridge.
+
+<div className="ch-image-lg">
+  <Frame>
+    ![أين تجد قواعد جدار الحماية في Crunchy Bridge؟](/images/integrations/data-ingestion/clickpipes/postgres/source/setup/crunchy-postgres/firewall_rules_crunchy_bridge.webp)
+  </Frame>
 </div>
 
-أضِف [ClickPipes IPs](/ar/integrations/clickpipes/home#list-of-static-ips) إلى قائمة السماح عبر إضافة قواعد جدار الحماية في Crunchy Bridge.
-
-<Image size="lg" img="/images/integrations/data-ingestion/clickpipes/postgres/source/setup/crunchy-postgres/firewall_rules_crunchy_bridge.webp" alt="أين تجد قواعد جدار الحماية في Crunchy Bridge؟" border />
-
-<Image size="lg" img="/images/integrations/data-ingestion/clickpipes/postgres/source/setup/crunchy-postgres/add_firewall_rules_crunchy_bridge.webp" alt="أضف قواعد جدار الحماية الخاصة بـ ClickPipes" border />
+<div className="ch-image-lg">
+  <Frame>
+    ![إضافة قواعد جدار الحماية لـ ClickPipes](/images/integrations/data-ingestion/clickpipes/postgres/source/setup/crunchy-postgres/add_firewall_rules_crunchy_bridge.webp)
+  </Frame>
+</div>
 
 <div id="whats-next">
-  ## ما الخطوة التالية؟
+  ## ما الخطوة التالية؟ {#whats-next}
 </div>
 
 يمكنك الآن [إنشاء ClickPipe الخاص بك](/ar/integrations/clickpipes/postgres/index) وبدء إدخال البيانات من مثيل Postgres لديك إلى ClickHouse Cloud.

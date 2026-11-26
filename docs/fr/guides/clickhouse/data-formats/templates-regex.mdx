@@ -248,7 +248,7 @@ SELECT * FROM error_log LIMIT 5
 └─────────────────────┴─────────┴─────────────┴──────────────────────────────┴──────────┘
 ```
 
-Par défaut, ClickHouse renvoie une erreur en cas de lignes non reconnues. Si vous préférez ignorer les lignes non reconnues, activez ce comportement à l’aide de l’option [format&#95;regexp&#95;skip&#95;unmatched](/fr/reference/settings/formats#format_regexp_skip_unmatched) :
+Par défaut, ClickHouse renvoie une erreur en cas de lignes non reconnues. Si vous préférez ignorer les lignes non reconnues, activez ce comportement à l’aide de l’option [format&#95;regexp&#95;skip&#95;unmatched](/fr/reference/settings/formats/format-regexp#format_regexp_skip_unmatched) :
 
 ```sql
 SET format_regexp_skip_unmatched = 1;

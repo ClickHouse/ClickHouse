@@ -1,8 +1,6 @@
 -- Regression test for https://github.com/ClickHouse/ClickHouse/issues/103474
 -- NOT_FOUND_COLUMN_IN_BLOCK when combining WITH FILL INTERPOLATE and LIMIT N BY
 
-SET enable_analyzer = 1;
-
 CREATE TABLE t_interpolate_limit_by (a UInt8, h DateTime, s String) ENGINE = Memory;
 INSERT INTO t_interpolate_limit_by VALUES
     (1, '2024-01-01 00:00:00', 'v1'),

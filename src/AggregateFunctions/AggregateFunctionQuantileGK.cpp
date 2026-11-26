@@ -1,4 +1,5 @@
 #include <AggregateFunctions/AggregateFunctionQuantile.h>
+#include <base/arithmeticOverflow.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/Helpers.h>
 #include <DataTypes/DataTypeDate.h>
@@ -68,7 +69,7 @@ public:
     {
     }
 
-    bool isCompressed() const { return compressed; }
+    [[nodiscard]] bool isCompressed() const { return compressed; }
     void setCompressed() { compressed = true; }
 
     void insert(T x)
@@ -139,6 +140,10 @@ public:
     {
         if (other.count == 0)
             return;
+
+        /// Only deserialized states can come close to the bound, see `read`.
+        if (count + other.count > max_count)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Too large count {} of merged quantileGK states", count + other.count);
 
         /// NOLINTBEGIN(readability-else-after-return)
         if (count == 0)
@@ -258,6 +263,9 @@ public:
         }
     }
 
+    /// No real data comes close to this count, which bounds every rank by a small multiple of it.
+    static constexpr size_t max_count = size_t(1) << 60;
+
     void read(ReadBuffer & buf)
     {
         readBinaryLittleEndian(compress_threshold, buf);
@@ -270,27 +278,46 @@ public:
 
         readBinaryLittleEndian(relative_error, buf);
         readBinaryLittleEndian(count, buf);
+        /// The relative error is `1 / accuracy` for a positive accuracy, and the ranks below are sums of counts: keeping
+        /// them in these bounds keeps the rank arithmetic of `merge`, `compress` and `query` within `Int64`.
+        if (!(relative_error > 0 && relative_error <= 1))
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid relative error {} in quantileGK deserialization", relative_error);
+        if (count > max_count)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Too large count {} in quantileGK deserialization", count);
 
         size_t sampled_len = 0;
         readBinaryLittleEndian(sampled_len, buf);
-        /// Guard against allocation bombs: a crafted state can declare a huge
-        /// length and make resize_exact allocate gigabytes before any data is read.
+        /// The constant is arbitrary (matches `windowFunnel`).
         if (sampled_len > 100'000'000)
             throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
                 "Too large array size ({}) in quantileGK deserialization", sampled_len);
-        sampled.resize_exact(sampled_len);
 
+        static constexpr size_t serialized_stats_size = sizeof(T) + sizeof(Int64) + sizeof(Int64);
+        sampled.clear();
+        /// The loop appends, so reserving is only an optimization: derive it from payload that arrived.
+        sampled.reserve_exact(std::min(sampled_len, buf.available() / serialized_stats_size));
+
+        UInt64 sum_of_g = 0;
         for (size_t i = 0; i < sampled_len; ++i)
         {
-            auto & stats = sampled[i];
+            Stats stats;
             readBinaryLittleEndian(stats.value, buf);
             readBinaryLittleEndian(stats.g, buf);
             readBinaryLittleEndian(stats.delta, buf);
+            /// `g` of the samples sum to the count, and `delta` is at most `2 * relative_error` times the count.
+            if (stats.g < 0 || stats.delta < 0 || static_cast<UInt64>(stats.delta) > 2 * count
+                || common::addOverflow(sum_of_g, static_cast<UInt64>(stats.g), sum_of_g) || sum_of_g > count)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid ranks of a sample in quantileGK deserialization");
+            if (sampled.size() == sampled.capacity())
+                sampled.reserve_exact(std::min(sampled_len, std::max<size_t>(2 * sampled.capacity(), 1)));
+            sampled.push_back(stats);
         }
+        /// A valid state holds the capacity it serialized, whatever the payload arrived in.
+        chassert(sampled.capacity() <= sampled_len);
     }
 
 private:
-    QueryResult findApproxQuantile(size_t index, Int64 min_rank_at_index, double target_error, double percentile) const
+    [[nodiscard]] QueryResult findApproxQuantile(size_t index, Int64 min_rank_at_index, double target_error, double percentile) const
     {
         Stats curr_sample = sampled[index];
         Int64 rank = static_cast<Int64>(std::ceil(percentile * static_cast<Float64>(count)));
@@ -368,7 +395,7 @@ private:
         // Start for the last element, which is always part of the set.
         // The head contains the current new head, that may be merged with the current element.
         Stats head = sampled.back();
-        ssize_t i = sampled.size() - 2;
+        ssize_t i = static_cast<ssize_t>(sampled.size()) - 2;
 
         // Do not compress the last element
         while (i >= 1)
@@ -548,7 +575,7 @@ void registerAggregateFunctionsQuantileApprox(AggregateFunctionFactory & factory
 void registerAggregateFunctionsQuantileApprox(AggregateFunctionFactory & factory)
 {
     /// For aggregate functions returning array we cannot return NULL on empty set.
-    AggregateFunctionProperties properties = { .returns_default_when_only_null = true };
+    AggregateFunctionProperties properties = { .returns_default_when_only_null = true, .variant_arguments_conversion = VariantArgumentsConversion::All};
 
     FunctionDocumentation::Description description = R"(
 Computes the [`quantile`](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence using the [Greenwald-Khanna](http://infolab.stanford.edu/~datar/courses/cs361a/papers/quantiles.pdf) algorithm.
@@ -600,12 +627,12 @@ SELECT quantileGK(100, 0.25)(number + 1) FROM numbers(1000);
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction(NameQuantileGK::name, {createAggregateFunctionQuantile<FuncQuantileGK>, documentation});
+    factory.registerFunction(NameQuantileGK::name, {createAggregateFunctionQuantile<FuncQuantileGK>, documentation, {.variant_arguments_conversion = VariantArgumentsConversion::All}});
 
     FunctionDocumentation::Description description_quantiles = R"(
 Computes multiple [quantiles](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence at different levels simultaneously using the [Greenwald-Khanna](http://infolab.stanford.edu/~datar/courses/cs361a/papers/quantiles.pdf) algorithm.
 
-This function works similarly with [`quantileGK`](/sql-reference/aggregate-functions/reference/quantileGK) but allows computing multiple quantile levels in a single pass, which is more efficient than calling individual quantile functions.
+This function works similarly with [`quantileGK`](/reference/functions/aggregate-functions/quantileGK) but allows computing multiple quantile levels in a single pass, which is more efficient than calling individual quantile functions.
 
 The Greenwald-Khanna algorithm is an algorithm used to compute quantiles on a stream of data in a highly efficient manner.
 It was introduced by Michael Greenwald and Sanjeev Khanna in 2001.
@@ -631,7 +658,7 @@ SELECT quantilesGK(1, 0.25, 0.5, 0.75)(number + 1) FROM numbers(1000);
         )",
         R"(
 ┌─quantilesGK(1, 0.25, 0.5, 0.75)(plus(number, 1))─┐
-│ [1, 1, 1]                                        │
+│ [1,1,1]                                          │
 └──────────────────────────────────────────────────┘
         )"
     },
@@ -642,7 +669,7 @@ SELECT quantilesGK(100, 0.25, 0.5, 0.75)(number + 1) FROM numbers(1000);
         )",
         R"(
 ┌─quantilesGK(100, 0.25, 0.5, 0.75)(plus(number, 1))─┐
-│ [251, 498, 741]                                    │
+│ [251,498,741]                                      │
 └────────────────────────────────────────────────────┘
         )"
     }

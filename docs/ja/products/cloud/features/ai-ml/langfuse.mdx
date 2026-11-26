@@ -1,5 +1,5 @@
 ---
-sidebarTitle: 'Langfuse'
+sidebarTitle: 'Langfuse による AI エンジニアリング'
 slug: /cloud/features/ai-ml/langfuse
 title: 'Langfuse'
 description: 'Langfuse はオープンソースの LLM エンジニアリングプラットフォームであり、チームで協力しながら LLM アプリケーションのデバッグ、分析、改善の反復を行うのに役立ちます。'
@@ -7,7 +7,7 @@ doc_type: 'reference'
 ---
 
 <div id="what-is-langfuse">
-  ## Langfuse とは？
+  ## Langfuse とは？ {#what-is-langfuse}
 </div>
 
 [Langfuse](https://langfuse.com) は、チームが LLM アプリケーションを共同でデバッグ、分析し、継続的に改善していくことを支援する、オープンソースの LLM エンジニアリングプラットフォームです。ClickHouse エコシステムの一部であり、中核に **ClickHouse** を採用することで、スケーラブルで高性能なオブザーバビリティバックエンドを実現しています。
@@ -15,7 +15,7 @@ doc_type: 'reference'
 ClickHouse の列指向ストレージと高速な分析機能を活用することで、Langfuse は低レイテンシで数十億件のトレースやイベントを処理でき、高スループットの本番ワークロードにも適しています。
 
 <div id="why-langfuse">
-  ## なぜ Langfuse なのか？
+  ## なぜ Langfuse なのか？ {#why-langfuse}
 </div>
 
 * **オープンソース:** カスタムインテグレーション向けの公開 API を備えた、完全なオープンソース
@@ -26,7 +26,7 @@ ClickHouse の列指向ストレージと高速な分析機能を活用するこ
 * **包括的なプラットフォーム:** LLM アプリケーション開発ライフサイクル全体を支えるツール群
 
 <div id="deployment-options">
-  ## デプロイメントオプション
+  ## デプロイメントオプション {#deployment-options}
 </div>
 
 Langfuse は、さまざまなセキュリティ要件やインフラストラクチャの要件に対応できるよう、柔軟なデプロイメントオプションを提供しています。
@@ -36,7 +36,7 @@ Langfuse は、さまざまなセキュリティ要件やインフラストラ�
 **[セルフホスト](https://langfuse.com/self-hosting)** の Langfuse は、完全なオープンソース (MIT ライセンス) で、Docker または Kubernetes を使用して自社のインフラストラクチャに無料でデプロイできます。オブザーバビリティデータの保存には、自身で ClickHouse インスタンスを運用することも、ClickHouse Cloud を使用することもでき、データを完全に管理できます。 
 
 <div id="architecture">
-  ## アーキテクチャ
+  ## アーキテクチャ {#architecture}
 </div>
 
 Langfuse はオープンソースコンポーネントのみで構成されており、ローカル環境、クラウドインフラストラクチャ、またはオンプレミス環境にデプロイできます。
@@ -48,37 +48,37 @@ Langfuse はオープンソースコンポーネントのみで構成されて�
 
 ```mermaid
 flowchart TB
-    User["UI、API、SDKs"]
-    subgraph vpc ["VPC"]
-        Web["Webサーバー<br/>(langfuse/langfuse)"]
-        Worker["非同期ワーカー<br/>(langfuse/worker)"]
-        Postgres@{ img: "https://langfuse.com/images/logos/postgres_icon.svg", label: "Postgres - OLTP\n(トランザクションデータ)", pos: "b", w: 60, h: 60, constraint: "on" }
-        Cache@{ img: "https://langfuse.com/images/logos/redis_icon.png", label: "Redis\n(cache、キュー)", pos: "b", w: 60, h: 60, constraint: "on" }
-        Clickhouse@{ img: "https://langfuse.com/images/logos/clickhouse_icon.svg", label: "Clickhouse - OLAP\n(オブザーバビリティデータ)", pos: "b", w: 60, h: 60, constraint: "on" }
-        S3@{ img: "https://langfuse.com/images/logos/s3_icon.svg", label: "S3 / Blob Storage\n(生イベント、マルチモーダルな添付ファイル)", pos: "b", w: 60, h: 60, constraint: "on" }
+    User["UI, API, SDKs"]
+    subgraph vpc["VPC"]
+        Web["Web Server<br/>(langfuse/langfuse)"]
+        Worker["Async Worker<br/>(langfuse/worker)"]
+        Postgres@{ img: "https://langfuse.com/images/logos/postgres_icon.svg", label: "Postgres - OLTP\n(Transactional Data)", pos: "b", w: 60, h: 60, constraint: "on" }
+        Cache@{ img: "https://langfuse.com/images/logos/redis_icon.png", label: "Redis\n(Cache, Queue)", pos: "b", w: 60, h: 60, constraint: "on" }
+        ClickHouse@{ img: "https://langfuse.com/images/logos/clickhouse_icon.svg", label: "ClickHouse - OLAP\n(Observability Data)", pos: "b", w: 60, h: 60, constraint: "on" }
+        S3@{ img: "https://langfuse.com/images/logos/s3_icon.svg", label: "S3 / Blob Storage\n(Raw events, multi-modal attachments)", pos: "b", w: 60, h: 60, constraint: "on" }
     end
-    LLM["LLM API/ゲートウェイ<br/>(任意; BYO; 同一VPC内またはVPCピアリング時も可)"]
+    LLM["LLM API/Gateway<br/>(optional; BYO; can be same VPC or VPC-peered)"]
 
     User --> Web
     Web --> S3
     Web --> Postgres
     Web --> Cache
-    Web --> Clickhouse
-    Web -..->|"playground の場合は任意"| LLM
+    Web --> ClickHouse
+    Web -..->|"optional for playground"| LLM
 
     Cache --> Worker
-    Worker --> Clickhouse
+    Worker --> ClickHouse
     Worker --> Postgres
     Worker --> S3
-    Worker -..->|"evals の場合は任意"| LLM
+    Worker -..->|"optional for evals"| LLM
 ```
 
 <div id="features">
-  ## 機能
+  ## 機能 {#features}
 </div>
 
 <div id="observability">
-  ### オブザーバビリティ
+  ### オブザーバビリティ {#observability}
 </div>
 
 [オブザーバビリティ](https://langfuse.com/docs/observability/overview)は、LLMアプリケーションを理解し、デバッグするうえで不可欠です。従来のソフトウェアとは異なり、LLMアプリケーションでは複雑で非決定論的なやり取りが発生するため、監視やデバッグが難しくなります。Langfuseは包括的なトレーシング機能を提供しており、アプリケーション内で実際に何が起きているのかを正確に把握できます。
@@ -124,7 +124,7 @@ flowchart TB
 </Tabs>
 
 <div id="prompt-management">
-  ### プロンプト管理
+  ### プロンプト管理 {#prompt-management}
 </div>
 
 [プロンプト管理](https://langfuse.com/docs/prompt-management/overview)は、効果的なLLMアプリケーションを構築するうえで不可欠です。Langfuseは、開発ライフサイクル全体を通じて、プロンプトの管理、バージョン管理、最適化を行うためのツールを提供します。
@@ -176,7 +176,7 @@ flowchart TB
 </Tabs>
 
 <div id="evaluation">
-  ### 評価とデータセット
+  ### 評価とデータセット {#evaluation}
 </div>
 
 [評価](https://langfuse.com/docs/evaluation/overview)は、LLM アプリケーションの品質と信頼性を確保するうえで不可欠です。Langfuse は、開発時のテストから本番環境のパフォーマンス監視まで、用途に応じて使い分けられる柔軟な評価ツールを提供しています。
@@ -234,7 +234,7 @@ flowchart TB
 </Tabs>
 
 <div id="quickstarts">
-  ## クイックスタート
+  ## クイックスタート {#quickstarts}
 </div>
 
 数分でLangfuseを使い始められます。現在のニーズに最も合った方法を選んでください。
@@ -244,7 +244,7 @@ flowchart TB
 * [評価を設定する](https://langfuse.com/docs/evaluation/overview)
 
 <div id="learn-more">
-  ## 詳細はこちら
+  ## 詳細はこちら {#learn-more}
 </div>
 
 * [Langfuse ドキュメント](https://langfuse.com/docs)

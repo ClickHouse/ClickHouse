@@ -1,6 +1,6 @@
 ---
 description: 'صفحة لمحة عامة عن دوال النافذة'
-sidebarTitle: 'دوال النافذة'
+sidebarTitle: 'لمحة عامة'
 slug: /sql-reference/window-functions/
 title: 'دوال النافذة'
 doc_type: 'reference'
@@ -9,9 +9,7 @@ doc_type: 'reference'
 تتيح لك دوال النافذة إجراء عمليات حسابية عبر مجموعة من الصفوف المرتبطة بالصف الحالي.
 ويمكن استخدامها لإجراء عمليات حسابية مشابهة لتلك التي تُنفَّذ باستخدام الدوال التجميعية، لكنها تختلف في أن دالة النافذة لا تؤدي إلى تجميع الصفوف في ناتج واحد، بل تظل الصفوف الفردية مُعادة.
 
-<div id="standard-window-functions">
-  ## دوال النافذة القياسية
-</div>
+## دوال النافذة القياسية {#standard-window-functions}
 
 يدعم ClickHouse بنية SQL القياسية للنوافذ ودوال النافذة.
 يوضح الجدول أدناه الميزات المدعومة حاليًا:
@@ -24,7 +22,7 @@ doc_type: 'reference'
 | إطار `ROWS`                                                             | ✅       |                                                                                                                                                                                                                                                                                                                                                                                           |
 | إطار `RANGE`                                                            | ✅       | يُستخدم افتراضيًا عندما لا يُحدَّد إطار بشكل صريح (`RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW`).                                                                                                                                                                                                                                                                                  |
 | صياغة `INTERVAL` لإطار `DateTime` `RANGE OFFSET`                        | ❌       | حدِّد عدد الثواني بدلًا من ذلك (`RANGE` يعمل مع أي نوع رقمي).                                                                                                                                                                                                                                                                                                                             |
-| إطار `GROUPS`                                                           | ❌       |                                                                                                                                                                                                                                                                                                                                                                                           |
+| إطار `GROUPS`                                                           | ✅       | تحسب حدود الإطار مجموعات الصفوف المتكافئة كاملةً (الصفوف المتساوية في مفتاح `ORDER BY`)؛ ويحسب `N PRECEDING` و`N FOLLOWING` عدد `N` من مجموعات الصفوف المتكافئة قبل وبعد مجموعة الصفوف المتكافئة للصف الحالي.                                                                                                                                                                             |
 | حساب الدوال التجميعية على إطار (`sum(value) OVER (ORDER BY time)`)      | ✅       | جميع الدوال التجميعية مدعومة.                                                                                                                                                                                                                                                                                                                                                             |
 | `rank()`, `dense_rank()`/`denseRank()`, `row_number()`                  | ✅       |                                                                                                                                                                                                                                                                                                                                                                                           |
 | `percent_rank()`/`percentRank()`                                        | ✅       | يحسب بكفاءة الترتيب النسبي لقيمة داخل قسم. ويستبدل بذلك حساب SQL يدويًا أطول وأكثر كلفةً من ناحية المعالجة، والمعبَّر عنه كما يلي: `ifNull((rank() OVER (PARTITION BY x ORDER BY y) - 1) / nullif(count(1) OVER (PARTITION BY x) - 1, 0), 0)`.                                                                                                                                            |
@@ -32,25 +30,23 @@ doc_type: 'reference'
 | `lag/lead(value, offset)`                                               | ✅       | يمكنك أيضًا استخدام أحد الحلول البديلة التالية:<br /> 1) `any(value) OVER (... ROWS BETWEEN <offset> PRECEDING AND <offset> PRECEDING)`، أو `FOLLOWING` بدلًا من `PRECEDING` في حالة `lead` <br /> 2) `lagInFrame/leadInFrame`، وهما متشابهان لكنهما يراعيان إطار النافذة. للحصول على سلوك مطابق تمامًا لـ `lag/lead`، استخدم `ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING`. |
 | [`ntile(buckets)`](/ar/reference/functions/window-functions/ntile)         | ✅       | حدِّد النافذة، على سبيل المثال، على النحو التالي: `(PARTITION BY x ORDER BY y ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)`.                                                                                                                                                                                                                                                 |
 
-<div id="syntax">
-  ## الصيغة
-</div>
+## الصيغة {#syntax}
 
 ```text
 aggregate_function (column_name)
   OVER ([[PARTITION BY grouping_column] [ORDER BY sorting_column] 
-        [ROWS or RANGE expression_to_bound_rows_within_the_group]] | [window_name])
+        [ROWS, RANGE, or GROUPS expression_to_bound_rows_within_the_group]] | [window_name])
 FROM table_name
 WINDOW window_name as ([
   [PARTITION BY grouping_column]
   [ORDER BY sorting_column]
-  [ROWS or RANGE expression_to_bound_rows_within_the_group]
+  [ROWS, RANGE, or GROUPS expression_to_bound_rows_within_the_group]
 ])
 ```
 
 * `PARTITION BY` - يحدّد كيفية تقسيم مجموعة النتائج إلى مجموعات.
 * `ORDER BY` - يحدّد كيفية ترتيب الصفوف داخل المجموعة أثناء حساب aggregate&#95;function.
-* `ROWS or RANGE` - يحدّد حدود الإطار، ويُحسَب aggregate&#95;function ضمن هذا الإطار.
+* `ROWS` و`RANGE` و`GROUPS` - يحدّد حدود الإطار، ويُحسَب aggregate&#95;function ضمن هذا الإطار. يحسب `ROWS` الصفوف الفعلية، ويحسب `RANGE` قيم `ORDER BY`، ويحسب `GROUPS` مجموعات الأقران (الصفوف المتساوية في مفتاح `ORDER BY`).
 * `WINDOW` - يتيح لعدة تعبيرات استخدام تعريف النافذة نفسه.
 
 ```text
@@ -70,9 +66,7 @@ WINDOW window_name as ([
 └─────────────────┘  <--- UNBOUNDED FOLLOWING (END of the PARTITION)
 ```
 
-<div id="functions">
-  ## الدوال التي لا يمكن استخدامها إلا كدوال النافذة
-</div>
+## الدوال التي لا يمكن استخدامها إلا كدوال النافذة {#functions}
 
 لا يمكن استخدام الدوال التالية إلا كدوال النافذة. معظمها دوال SQL قياسية، بينما تُعد `lagInFrame` و`leadInFrame` و`nonNegativeDerivative` امتدادات خاصة بـ ClickHouse.
 
@@ -93,15 +87,11 @@ WINDOW window_name as ([
 | [`ntile(buckets)`](/ar/reference/functions/window-functions/ntile)                                                                             | قسِّم الصفوف المرتَّبة داخل القسم إلى العدد المحدد من المجموعات، وأرجِع رقم المجموعة الخاصة بالصف الحالي.  |
 | [`nonNegativeDerivative(metric_column, timestamp_column[, INTERVAL X UNITS])`](/ar/reference/functions/window-functions/nonNegativeDerivative) | احسب المشتقة غير السالبة لـ `metric_column` بالنسبة إلى `timestamp_column`. هذه الدالة خاصة بـ ClickHouse. |
 
-<div id="examples">
-  ## أمثلة
-</div>
+## أمثلة {#examples}
 
 لنلقِ نظرة على بعض الأمثلة لكيفية استخدام دوال النافذة.
 
-<div id="numbering-rows">
-  ### ترقيم الصفوف
-</div>
+### ترقيم الصفوف {#numbering-rows}
 
 ```sql
 CREATE TABLE salaries
@@ -159,9 +149,7 @@ FROM salaries;
 └─────────────────┴────────┴─────┴──────┴───────────┘
 ```
 
-<div id="aggregation-functions">
-  ### دوال التجميع
-</div>
+### دوال التجميع {#aggregation-functions}
 
 قارن راتب كل لاعب بمتوسط راتب فريقه.
 
@@ -207,9 +195,7 @@ FROM salaries;
 └─────────────────┴────────┴───────────────────────────┴─────────┴────────┘
 ```
 
-<div id="partitioning-by-column">
-  ### التقسيم حسب العمود
-</div>
+### التقسيم حسب العمود {#partitioning-by-column}
 
 ```sql
 CREATE TABLE wf_partition
@@ -242,9 +228,7 @@ ORDER BY
 └──────────┴───────┴───────┴──────────────┘
 ```
 
-<div id="frame-bounding">
-  ### تعيين حدود الإطار
-</div>
+### تعيين حدود الإطار {#frame-bounding}
 
 ```sql
 CREATE TABLE wf_frame
@@ -286,7 +270,7 @@ ORDER BY
 
 ```sql
 -- short form - no bound expression, no order by,
--- an equalent of `ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING`
+-- an equivalent of `ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING`
 SELECT
     part_key,
     value,
@@ -335,7 +319,7 @@ ORDER BY
 
 ```sql
 -- short form (frame is bounded by the beginning of a partition and the current row)
--- an equalent of `ORDER BY order ASC ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW`
+-- an equivalent of `ORDER BY order ASC ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW`
 SELECT
     part_key,
     value,
@@ -527,15 +511,47 @@ ORDER BY
 └────────────────┴──────────────┘
 ```
 
-<div id="real-world-examples">
-  ## أمثلة واقعية
-</div>
+### إطار GROUPS {#groups-frame}
+
+يحسب إطار `GROUPS` *مجموعات الأقران* كاملةً — وهي مجموعات من الصفوف المتساوية في مفتاح `ORDER BY` — بدلًا من الصفوف الفعلية (`ROWS`) أو قيم `ORDER BY` (`RANGE`). يحسب `N PRECEDING` و`N FOLLOWING` عدد `N` من مجموعات الأقران قبل مجموعة أقران الصف الحالي وبعدها، وتُحتسب جميع صفوف أي مجموعة أقران مُضمَّنة دائمًا.
+
+يطبّق الاستعلام أدناه الحدود نفسها، `1 PRECEDING AND 1 FOLLOWING`، كما في إطارات `ROWS` و`RANGE` و`GROUPS`. يحتوي العمود `order` على قيم مكررة وغير متتالية، لذا تشمل الأوضاع الثلاثة صفوفًا مختلفة:
+
+```sql
+CREATE TABLE wf_frame_groups (`order` UInt64, value UInt64) ENGINE = Memory;
+INSERT INTO wf_frame_groups FORMAT Values (10, 1), (10, 2), (20, 3), (30, 4), (30, 5);
+
+SELECT
+    order,
+    value,
+    groupArray(value) OVER (ORDER BY order ROWS   BETWEEN 1 PRECEDING AND 1 FOLLOWING) AS rows_frame,
+    groupArray(value) OVER (ORDER BY order RANGE  BETWEEN 1 PRECEDING AND 1 FOLLOWING) AS range_frame,
+    groupArray(value) OVER (ORDER BY order GROUPS BETWEEN 1 PRECEDING AND 1 FOLLOWING) AS groups_frame
+FROM wf_frame_groups
+ORDER BY order, value;
+```
+
+```response
+┌─order─┬─value─┬─rows_frame─┬─range_frame─┬─groups_frame─┐
+│    10 │     1 │ [1,2]      │ [1,2]       │ [1,2,3]      │
+│    10 │     2 │ [1,2,3]    │ [1,2]       │ [1,2,3]      │
+│    20 │     3 │ [2,3,4]    │ [3]         │ [1,2,3,4,5]  │
+│    30 │     4 │ [3,4,5]    │ [4,5]       │ [3,4,5]      │
+│    30 │     5 │ [4,5]      │ [4,5]       │ [3,4,5]      │
+└───────┴───────┴────────────┴─────────────┴──────────────┘
+```
+
+يفسّر كل وضع الحدود بصورة مختلفة:
+
+* يحسب `ROWS` الصفوف الفعلية، لذا يقتصر الإطار على ثلاثة صفوف متجاورة كحد أقصى: الصف الحالي وصف واحد على كل جانب.
+* يحسب `RANGE` قيم `order`، لذا يشمل `1 PRECEDING` و`1 FOLLOWING` الصفوف التي تقع قيمة `order` فيها ضمن مسافة 1 من قيمة الصف الحالي. وعند وجود فجوات بمقدار 10، لا يستوفي أي صف مجاور الشرط، لذلك لا يضم الإطار إلا الصفوف التي تشترك في قيمة `order` للصف الحالي.
+* يحسب `GROUPS` مجموعات النظائر، لذا يشمل `1 PRECEDING` و`1 FOLLOWING` دائمًا المجموعات المتجاورة كاملةً، بغض النظر عن الفجوات بين قيم `order`.
+
+## أمثلة واقعية {#real-world-examples}
 
 تتناول الأمثلة التالية مشكلات واقعية شائعة.
 
-<div id="maximumtotal-salary-per-department">
-  ### الحد الأقصى/إجمالي الرواتب لكل قسم
-</div>
+### الحد الأقصى/إجمالي الرواتب لكل قسم {#maximumtotal-salary-per-department}
 
 ```sql
 CREATE TABLE employees
@@ -591,9 +607,7 @@ FROM
 └────────────┴──────┴────────┴────────────────────┴──────────────────────┴──────────────────┘
 ```
 
-<div id="cumulative-sum">
-  ### المجموع التراكمي
-</div>
+### المجموع التراكمي {#cumulative-sum}
 
 ```sql
 CREATE TABLE warehouse
@@ -602,7 +616,7 @@ CREATE TABLE warehouse
     `ts` DateTime,
     `value` Float
 )
-ENGINE = Memory
+ENGINE = Memory;
 
 INSERT INTO warehouse VALUES
     ('sku38', '2020-01-01', 9),
@@ -634,9 +648,7 @@ ORDER BY
 └───────┴─────────────────────┴───────┴───────────────┘
 ```
 
-<div id="moving--sliding-average-per-3-rows">
-  ### المتوسط المتحرك / المتوسط الانزلاقي (لكل 3 صفوف)
-</div>
+### المتوسط المتحرك / المتوسط الانزلاقي (لكل 3 صفوف) {#moving--sliding-average-per-3-rows}
 
 ```sql
 CREATE TABLE sensors
@@ -684,9 +696,7 @@ ORDER BY
 └──────────┴─────────────────────┴───────┴───────────────────┘
 ```
 
-<div id="moving--sliding-average-per-10-seconds">
-  ### المتوسط المتحرك / المتوسط الانزلاقي (كل 10 ثوانٍ)
-</div>
+### المتوسط المتحرك / المتوسط الانزلاقي (كل 10 ثوانٍ) {#moving--sliding-average-per-10-seconds}
 
 ```sql
 SELECT
@@ -712,9 +722,7 @@ ORDER BY
 └──────────┴─────────────────────┴───────┴────────────────────────────┘
 ```
 
-<div id="moving--sliding-average-per-10-days">
-  ### المتوسط المتحرك / المتوسط الانزلاقي (لكل 10 أيام)
-</div>
+### المتوسط المتحرك / المتوسط الانزلاقي (لكل 10 أيام) {#moving--sliding-average-per-10-days}
 
 تُخزَّن درجة الحرارة بدقة الثانية، ولكن باستخدام `Range` و `ORDER BY toDate(ts)` نُكوِّن إطارًا بحجم 10 وحدات، وبما أن `toDate(ts)` مستخدَمة هنا، فالوحدة هي اليوم.
 
@@ -769,21 +777,15 @@ ORDER BY
 └──────────────┴─────────────────────┴───────┴─────────────────────────┘
 ```
 
-<div id="references">
-  ## المراجع
-</div>
+## المراجع {#references}
 
-<div id="github-issues">
-  ### مشكلات GitHub
-</div>
+### مشكلات GitHub {#github-issues}
 
 خطة الطريق للدعم الأولي لدوال النوافذ موجودة [في هذه المشكلة](https://github.com/ClickHouse/ClickHouse/issues/18097).
 
 جميع مشكلات GitHub المتعلقة بدوال النوافذ تحمل الوسم [comp-window-functions](https://github.com/ClickHouse/ClickHouse/labels/comp-window-functions).
 
-<div id="tests">
-  ### الاختبارات
-</div>
+### الاختبارات {#tests}
 
 تتضمن هذه الاختبارات أمثلة على البنية النحوية المدعومة حاليًا:
 
@@ -791,9 +793,7 @@ https://github.com/ClickHouse/ClickHouse/blob/master/tests/performance/window&#9
 
 https://github.com/ClickHouse/ClickHouse/blob/master/tests/queries/0&#95;stateless/01591&#95;window&#95;functions.sql
 
-<div id="postgres-docs">
-  ### وثائق Postgres
-</div>
+### وثائق Postgres {#postgres-docs}
 
 https://www.postgresql.org/docs/current/sql-select.html#SQL-WINDOW
 
@@ -803,9 +803,7 @@ https://www.postgresql.org/docs/devel/functions-window.html
 
 https://www.postgresql.org/docs/devel/tutorial-window.html
 
-<div id="mysql-docs">
-  ### وثائق MySQL
-</div>
+### وثائق MySQL {#mysql-docs}
 
 https://dev.mysql.com/doc/refman/8.0/en/window-function-descriptions.html
 
@@ -813,9 +811,7 @@ https://dev.mysql.com/doc/refman/8.0/en/window-functions-usage.html
 
 https://dev.mysql.com/doc/refman/8.0/en/window-functions-frames.html
 
-<div id="related-content">
-  ## محتوى ذو صلة
-</div>
+## محتوى ذو صلة {#related-content}
 
 * المدونة: [العمل مع بيانات السلاسل الزمنية في ClickHouse](https://clickhouse.com/blog/working-with-time-series-data-and-functions-ClickHouse)
 * المدونة: [دوال النافذة ودوال المصفوفات لتسلسلات commit في Git](https://clickhouse.com/blog/clickhouse-window-array-functions-git-commits)

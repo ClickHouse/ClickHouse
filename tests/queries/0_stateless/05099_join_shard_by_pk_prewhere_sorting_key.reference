@@ -1,0 +1,25 @@
+filter r.c	1
+filter r.b	1
+filter l.c	1
+filter both sides	1
+explicit PREWHERE	1
+bare PREWHERE key col	1
+bare PREWHERE key col mid	1
+control bare PREWHERE non-key	1
+LEFT JOIN	1
+RIGHT JOIN	1
+FULL JOIN	1
+output header
+d	String					
+plan shape	1
+control non-key col	1
+control join key	1
+control col in output	1
+control no filter	1
+row policy plan shape	1
+row policy	1
+bare row policy plan shape	1
+bare row policy col	1
+LowCardinality key	1
+expression sorting key	1
+correlated EXISTS under OR	1

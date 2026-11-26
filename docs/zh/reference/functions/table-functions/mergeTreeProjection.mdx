@@ -11,17 +11,13 @@ doc_type: 'reference'
 
 表示 MergeTree 表中某个投影的内容。可用于查看内部信息。
 
-<div id="syntax">
-  ## 语法
-</div>
+## 语法 {#syntax}
 
 ```sql
 mergeTreeProjection(database, table, projection)
 ```
 
-<div id="arguments">
-  ## 参数
-</div>
+## 参数 {#arguments}
 
 | 参数           | 描述            |
 | ------------ | ------------- |
@@ -29,15 +25,13 @@ mergeTreeProjection(database, table, projection)
 | `table`      | 要从中读取投影的表名。   |
 | `projection` | 要读取的投影。       |
 
-<div id="returned_value">
-  ## 返回值
-</div>
+解析结果的结构 (例如通过 `DESCRIBE`) 需要对源表具有 `SHOW COLUMNS` 特权，读取数据则需要对源表具有 `SELECT` 特权。
+
+## 返回值 {#returned-value}
 
 一个表对象，包含给定投影所提供的列。
 
-<div id="usage-example">
-  ## 用法示例
-</div>
+## 用法示例 {#usage-example}
 
 ```sql
 CREATE TABLE test

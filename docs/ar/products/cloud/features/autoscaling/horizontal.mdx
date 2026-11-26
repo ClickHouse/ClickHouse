@@ -1,56 +1,64 @@
 ---
-sidebarTitle: 'التوسيع الأفقي'
+sidebarTitle: 'توسيع النطاق الأفقي'
 slug: /cloud/features/autoscaling/horizontal
-description: 'التوسيع الأفقي اليدوي في ClickHouse Cloud'
-keywords: ['التوسيع الأفقي', 'التوسّع', 'النسخ المتماثلة', 'التوسّع اليدوي', 'الزيادات المفاجئة', 'الطفرات']
-title: 'التوسيع الأفقي'
+description: 'توسيع النطاق الأفقي اليدوي في ClickHouse Cloud'
+keywords: ['توسيع النطاق الأفقي', 'توسيع النطاق', 'النسخ المتماثلة', 'توسيع النطاق اليدوي', 'الزيادات المفاجئة', 'الطفرات']
+title: 'توسيع النطاق الأفقي'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 import { ScalePlanFeatureBadge } from "/snippets/ar/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
 
-<div id="manual-horizontal-scaling">
-  ## التوسيع الأفقي اليدوي
-</div>
+## التوسيع الأفقي اليدوي {#manual-horizontal-scaling}
 
 <ScalePlanFeatureBadge feature="التوسيع الأفقي اليدوي" />
 
-يمكنك استخدام [واجهات برمجة التطبيقات العامة](/ar/products/cloud/api-reference/service/instance-scaling-update) في ClickHouse Cloud لتوسيع خدمتك من خلال تحديث إعدادات التوسيع الخاصة بالخدمة، أو تعديل عدد النسخ المتماثلة من Cloud Console.
+يمكنك استخدام [واجهات برمجة التطبيقات العامة](/ar/products/cloud/api-reference/service/instance-scaling-update) في ClickHouse Cloud لتوسيع خدمتك من خلال تحديث إعدادات التوسيع الخاصة بالخدمة، أو تعديل عدد النسخ المتماثلة من وحدة تحكم ClickHouse Cloud.
 
 كما تدعم الفئتَان **Scale** و**Enterprise** الخدمات ذات النسخة المتماثلة الواحدة. وبعد توسيع الخدمات أفقيًا، يمكن تقليصها مجددًا إلى حد أدنى يبلغ نسخة متماثلة واحدة. لاحظ أن الخدمات ذات النسخة المتماثلة الواحدة تكون أقل توافراً، ولا يُنصح باستخدامها في بيئات الإنتاج.
 
 <Note>
-  يمكن توسيع الخدمات أفقيًا حتى حد أقصى يبلغ 20 نسخة متماثلة. إذا كنت بحاجة إلى نسخ متماثلة إضافية، يُرجى التواصل مع فريق الدعم لدينا.
+  للاطلاع على حدود النسخ المتماثلة التي تنطبق على خدمتك، راجع [حدود الاستخدام](/ar/cloud/bestpractices/usage-limits). تواصل مع فريق الدعم لدينا إذا كنت بحاجة إلى نسخ متماثلة إضافية.
 </Note>
 
-<div id="horizontal-scaling-via-api">
-  ### التوسيع الأفقي عبر API
+### توسيع النطاق الأفقي عبر API {#horizontal-scaling-via-api}
+
+لتوسيع نطاق عنقود أفقيًا، أرسل طلب `PATCH` عبر API لتعديل عدد النسخ المتماثلة. تُظهر لقطات الشاشة أدناه استدعاءً إلى API لتوسيع نطاق عنقود من `3` نسخ متماثلة إلى `6` نسخ متماثلة، بالإضافة إلى الاستجابة المقابلة.
+
+<div className="ch-image-lg">
+  <Frame>
+    ![طلب PATCH لتوسيع النطاق](/images/cloud/manage/scaling-patch-request.webp)
+  </Frame>
 </div>
-
-لتوسيع عنقود أفقيًا، أرسل طلب `PATCH` عبر API لتعديل عدد النسخ المتماثلة. تُظهر لقطات الشاشة أدناه استدعاءً إلى API لتوسيع عنقود من `3` نسخ متماثلة إلى `6` نسخ متماثلة، بالإضافة إلى الاستجابة المقابلة.
-
-<Image img="/images/cloud/manage/scaling-patch-request.webp" size="lg" alt="طلب PATCH للتوسع" border />
 
 *طلب `PATCH` لتحديث `numReplicas`*
 
-<Image img="/images/cloud/manage/scaling-patch-response.webp" size="md" alt="استجابة PATCH للتوسع" border />
+<div className="ch-image-md">
+  <Frame>
+    ![استجابة PATCH لتوسيع النطاق](/images/cloud/manage/scaling-patch-response.webp)
+  </Frame>
+</div>
 
 *الاستجابة لطلب `PATCH`*
 
-إذا أرسلت طلب توسع جديدًا، أو عدة طلبات متتالية، بينما يوجد طلب قيد التنفيذ بالفعل، فستتجاهل خدمة التوسع الحالات الوسيطة وتستقر على العدد النهائي للنسخ المتماثلة.
+إذا أرسلت طلب توسيع النطاق جديدًا، أو عدة طلبات متتالية، بينما يوجد طلب قيد التنفيذ بالفعل، فستتجاهل خدمة توسيع النطاق الحالات الوسيطة وتستقر على العدد النهائي للنسخ المتماثلة.
 
-<div id="horizontal-scaling-via-ui">
-  ### التوسيع الأفقي عبر UI
+### توسيع النطاق الأفقي عبر UI {#horizontal-scaling-via-ui}
+
+لتوسيع نطاق الخدمة أفقيًا من خلال UI، يمكنك تعديل عدد النُسخ المتماثلة للخدمة في صفحة **الإعدادات**.
+
+<div className="ch-image-md">
+  <Frame>
+    ![إعدادات تهيئة توسيع النطاق](/images/cloud/manage/scaling-configure.webp)
+  </Frame>
 </div>
 
-لتوسيع الخدمة أفقيًا من خلال UI، يمكنك تعديل عدد النُسخ المتماثلة للخدمة في صفحة **الإعدادات**.
+*إعدادات توسيع نطاق الخدمة من وحدة تحكم ClickHouse Cloud*
 
-<Image img="/images/cloud/manage/scaling-configure.webp" size="md" alt="إعدادات تهيئة التوسيع" border />
+بعد اكتمال توسيع نطاق الخدمة، ينبغي أن تعرض لوحة بيانات المقاييس في وحدة تحكم ClickHouse Cloud التخصيص الصحيح للخدمة. وتُظهر لقطة الشاشة أدناه أن العنقود قد توسّع نطاقه ليصل إجمالي الذاكرة إلى `96 GiB`، أي `6` نُسخ متماثلة، مع تخصيص ذاكرة قدره `16 GiB` لكل نسخة.
 
-*إعدادات توسيع الخدمة من وحدة تحكم ClickHouse Cloud*
-
-بعد اكتمال توسيع الخدمة، ينبغي أن تعرض لوحة بيانات المقاييس في وحدة تحكم ClickHouse Cloud التخصيص الصحيح للخدمة. وتُظهر لقطة الشاشة أدناه أن العنقود قد توسّع ليصل إجمالي الذاكرة إلى `96 GiB`، أي `6` نُسخ متماثلة، مع تخصيص ذاكرة قدره `16 GiB` لكل نسخة.
-
-<Image img="/images/cloud/manage/scaling-memory-allocation.webp" size="md" alt="تخصيص الذاكرة للتوسيع" border />
+<div className="ch-image-md">
+  <Frame>
+    ![تخصيص الذاكرة لتوسيع النطاق](/images/cloud/manage/scaling-memory-allocation.webp)
+  </Frame>
+</div>

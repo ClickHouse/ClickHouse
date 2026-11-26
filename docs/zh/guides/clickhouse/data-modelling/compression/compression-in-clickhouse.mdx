@@ -20,9 +20,7 @@ ClickHouse 中的压缩会受到 3 个主要因素的影响：
 
 所有这些都通过 schema 进行配置。
 
-<div id="choose-the-right-data-type-to-optimize-compression">
-  ## 选择合适的数据类型来优化压缩
-</div>
+## 选择合适的数据类型来优化压缩 {#choose-the-right-data-type-to-optimize-compression}
 
 我们以 Stack Overflow 数据集为例。下面比较 `posts` 表在以下 schema 下的压缩统计信息：
 
@@ -71,8 +69,8 @@ GROUP BY name
 <Accordion title="关于 compact 和 wide parts 的说明">
   如果你看到 `compressed_size` 或 `uncompressed_size` 的值为 `0`，这可能是因为
   parts 的类型是 `compact` 而不是 `wide` (请参阅 [`system.parts`](/zh/reference/system-tables/parts) 中 `part_type` 的说明) 。
-  part 格式由设置 [`min_bytes_for_wide_part`](/zh/reference/settings/merge-tree-settings#min_bytes_for_wide_part)
-  和 [`min_rows_for_wide_part`](/zh/reference/settings/merge-tree-settings#min_rows_for_wide_part) 控制。这意味着，如果插入的
+  part 格式由设置 [`min_bytes_for_wide_part`](/zh/reference/settings/merge-tree-settings/min-bytes#min_bytes_for_wide_part)
+  和 [`min_rows_for_wide_part`](/zh/reference/settings/merge-tree-settings/min-rows#min_rows_for_wide_part) 控制。这意味着，如果插入的
   数据生成的 part 没有超过上述设置的阈值，那么该 part 就会是 compact，
   而不是 wide，因此你将看不到 `compressed_size` 或 `uncompressed_size` 的值。
 
@@ -141,7 +139,7 @@ GROUP BY name
 
 > 上述查询依赖系统数据库中的 `columns` 表。该数据库由 ClickHouse 管理，堪称一个信息宝库，其中包含从查询性能指标到后台 cluster 日志等大量实用信息。对于想进一步了解的读者，我们推荐阅读 [&quot;System Tables and a Window into the Internals of ClickHouse&quot;](https://clickhouse.com/blog/clickhouse-debugging-issues-with-system-tables) 及其配套文章[[1]](https://clickhouse.com/blog/monitoring-troubleshooting-insert-queries-clickhouse)[[2]](https://clickhouse.com/blog/monitoring-troubleshooting-select-queries-clickhouse)。
 
-如果要汇总表的总大小，我们可以将上面的查询简化为：
+要汇总这张表的总大小，我们可以将上述查询简化为：
 
 ```sql
 SELECT formatReadableSize(sum(data_compressed_bytes)) AS compressed_size,
@@ -214,9 +212,7 @@ GROUP BY name
 └───────────────────────┴─────────────────┴───────────────────┴─────────┘
 ```
 
-<div id="choosing-the-right-column-compression-codec">
-  ## 选择合适的列压缩编解码器
-</div>
+## 选择合适的列压缩编解码器 {#choosing-the-right-column-compression-codec}
 
 借助列压缩编解码器，我们可以更改用于对每一列进行编码和压缩的算法 (及其设置) 。
 
@@ -226,17 +222,17 @@ GROUP BY name
 
 ClickHouse 支持大量编解码器和压缩算法。以下是一些按重要性排序的建议：
 
-| Recommendation                                | Reasoning                                                                                                                                                                      |
-| --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **`ZSTD` all the way**                        | `ZSTD` 压缩通常能提供最佳压缩率。对于大多数常见类型，`ZSTD(1)` 应作为默认选择。可以通过调整数值来尝试更高的压缩率。考虑到压缩成本会增加 (插入更慢) ，我们很少看到大于 3 的取值能带来足够明显的收益。                                                                 |
-| **`Delta` for date and integer sequences**    | 只要数据是单调序列，或相邻值之间的差值较小，基于 `Delta` 的编解码器通常就有不错的效果。更具体地说，只要差分后得到的数值较小，Delta 编解码器就会表现良好。否则，可以尝试 `DoubleDelta` (如果 `Delta` 的一级差分已经很小，通常额外收益不大) 。对于单调增量固定的序列，压缩效果会更好，例如 DateTime 字段。 |
-| **`Delta` improves `ZSTD`**                   | `ZSTD` 对 delta 数据是一种高效的编解码器；反过来，delta 编码也能提升 `ZSTD` 的压缩效果。在使用 `ZSTD` 时，其他编解码器很少能带来进一步改进。                                                                                       |
-| **`LZ4` over `ZSTD` if possible**             | 如果 `LZ4` 和 `ZSTD` 的压缩效果相近，优先选择前者，因为它解压更快且占用更少 CPU。不过，在大多数情况下，`ZSTD` 的表现会明显优于 `LZ4`。其中一些编解码器与 `LZ4` 搭配使用时，速度可能更快，同时能提供与未搭配编解码器的 `ZSTD` 接近的压缩效果。不过，这取决于具体数据，因此需要测试。              |
-| **`T64` for sparse or small ranges**          | `T64` 对稀疏数据，或块内取值范围较小的场景，可能非常有效。对于随机数，应避免使用 `T64`。                                                                                                                             |
-| **`Gorilla` and `T64` for unknown patterns?** | 如果数据模式未知，可能值得尝试 `Gorilla` 和 `T64`。                                                                                                                                             |
-| **`Gorilla` for gauge data**                  | `Gorilla` 对浮点数据可能很有效，尤其适合表示 Gauge 读数的数据，也就是存在随机尖峰的场景。                                                                                                                          |
+| Recommendation                                | Reasoning                                                                                                                                                                                                                                                                       |
+| --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **`ZSTD` all the way**                        | `ZSTD` 压缩算法通常能提供最佳压缩率。默认情况下，ClickHouse 对小于 100 MiB 的 parts 使用 `LZ4`，对更大的 parts 使用 `ZSTD(3)`。该默认选择适用于大多数常见类型，因此通常无需显式指定编解码器。如需始终使用 `ZSTD(3)`，可指定 `CODEC(ZSTD(3))`，或在表级别设置 `default_compression_codec = 'ZSTD(3)'`。可以通过调整数值来尝试更高的压缩率。考虑到压缩成本会增加 (插入更慢) ，我们很少看到大于 3 的取值能带来足够明显的收益。 |
+| **`Delta` for date and integer sequences**    | 只要数据是单调序列，或相邻值之间的差值较小，基于 `Delta` 的编解码器通常就有不错的效果。更具体地说，只要差分后得到的数值较小，Delta 编解码器就会表现良好。否则，可以尝试 `DoubleDelta` (如果 `Delta` 的一级差分已经很小，通常额外收益不大) 。对于单调增量固定的序列，压缩效果会更好，例如 DateTime 字段。                                                                                                  |
+| **`Delta` improves `ZSTD`**                   | `ZSTD` 对 delta 数据是一种高效的编解码器；反过来，delta 编码也能提升 `ZSTD` 的压缩效果。在使用 `ZSTD` 时，其他编解码器很少能带来进一步改进。                                                                                                                                                                                        |
+| **`LZ4` over `ZSTD` if possible**             | 如果 `LZ4` 和 `ZSTD` 的压缩效果相近，优先选择前者，因为它解压更快且占用更少 CPU。不过，在大多数情况下，`ZSTD` 的表现会明显优于 `LZ4`。其中一些编解码器与 `LZ4` 搭配使用时，速度可能更快，同时能提供与未搭配编解码器的 `ZSTD` 接近的压缩效果。不过，这取决于具体数据，因此需要测试。                                                                                                               |
+| **`T64` for sparse or small ranges**          | `T64` 对稀疏数据，或块内取值范围较小的场景，可能非常有效。对于随机数，应避免使用 `T64`。                                                                                                                                                                                                                              |
+| **`Gorilla` and `T64` for unknown patterns?** | 如果数据模式未知，可能值得尝试 `Gorilla` 和 `T64`。                                                                                                                                                                                                                                              |
+| **`Gorilla` for gauge data**                  | `Gorilla` 对浮点数据可能很有效，尤其适合表示 Gauge 读数的数据，也就是存在随机尖峰的场景。                                                                                                                                                                                                                           |
 
-更多选项请参见[这里](/zh/reference/statements/create/table#column_compression_codec)。
+更多选项请参见[这里](/zh/reference/statements/create/table/codec)。
 
 下面我们为 `Id`、`ViewCount` 和 `AnswerCount` 指定 `Delta` 编解码器，假设它们与排序键线性相关，因此应能从 Delta 编码中受益。
 
@@ -299,11 +295,9 @@ ORDER BY
 │ posts_v4 │ ViewCount   │ 52.72 MiB       │ 222.63 MiB        │  4.22 │
 └──────────┴─────────────┴─────────────────┴───────────────────┴───────┘
 
-6 行。Elapsed: 0.008 sec
+6 rows in set. Elapsed: 0.008 sec
 ```
 
-<div id="compression-in-clickhouse-cloud">
-  ### ClickHouse Cloud 中的压缩
-</div>
+### ClickHouse Cloud 中的压缩 {#compression-in-clickhouse-cloud}
 
 在 ClickHouse Cloud 中，我们默认使用 `ZSTD` 压缩算法 (默认值为 1) 。这种算法的压缩速度会随压缩级别而变化 (级别越高，速度越慢) ，但它的优势在于解压速度始终很快 (波动约 20%) ，并且还支持并行处理。我们过往的测试还表明，这种算法通常已经足够高效，甚至可能优于结合 codec 使用的 `LZ4`。它对大多数数据类型和数据分布都很有效，因此是一个合理的通用默认选择，这也是为什么即使不做优化，我们的初始压缩效果也已经非常出色。

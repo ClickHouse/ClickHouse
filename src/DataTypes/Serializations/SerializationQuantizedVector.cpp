@@ -1,15 +1,18 @@
 #include <DataTypes/Serializations/SerializationQuantizedVector.h>
 #include <DataTypes/Serializations/SerializationNamed.h>
 #include <DataTypes/DataTypeFixedString.h>
+#include <DataTypes/TypeTree.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnsNumber.h>
+#include <IO/ReadBuffer.h>
 #include <Common/ProductQuantizer.h>
 #include <Common/VectorQuantizer.h>
 #include <Common/Exception.h>
 #include <Common/SipHash.h>
 #include <Common/assert_cast.h>
+#include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
 
 #include <algorithm>
@@ -29,12 +32,13 @@ namespace ErrorCodes
 namespace
 {
 
-/// Read the float vector at `row` of an Array(Float32|Float64|BFloat16) column into `result`.
-void readVectorRow(const ColumnArray & col_arr, size_t row, std::vector<float> & result)
+/// Read the vector at `row` of an Array(Float32|Float64|BFloat16|Int8|UInt8) column into `result`. The elements of an
+/// Array(UInt8) column are shifted by `-uint8_shift`, see `quantizedCodecShiftsUInt8`.
+void readVectorRow(const ColumnArray & col_arr, size_t row, float uint8_shift, std::vector<float> & result)
 {
     const IColumn & arr_data = col_arr.getData();
     const auto & arr_offsets = col_arr.getOffsets();
-    const size_t begin = row == 0 ? 0 : arr_offsets[row - 1];
+    const size_t begin = row == 0 ? 0 : arr_offsets[static_cast<ssize_t>(row) - 1];
     const size_t size = arr_offsets[row] - begin;
     result.resize(size);
 
@@ -53,9 +57,19 @@ void readVectorRow(const ColumnArray & col_arr, size_t row, std::vector<float> &
         for (size_t i = 0; i < size; ++i)
             result[i] = static_cast<float>(bf16->getData()[begin + i]);
     }
+    else if (const auto * i8 = typeid_cast<const ColumnInt8 *>(&arr_data))
+    {
+        for (size_t i = 0; i < size; ++i)
+            result[i] = static_cast<float>(i8->getData()[begin + i]);
+    }
+    else if (const auto * u8 = typeid_cast<const ColumnUInt8 *>(&arr_data))
+    {
+        for (size_t i = 0; i < size; ++i)
+            result[i] = static_cast<float>(u8->getData()[begin + i]) - uint8_shift;
+    }
     else
         throw Exception(ErrorCodes::ILLEGAL_COLUMN,
-            "Column with a Quantize codec must be Array(Float32|Float64|BFloat16)");
+            "Column with a Quantize codec must be Array(Float32|Float64|BFloat16|Int8|UInt8)");
 }
 
 /// Maximum number of vectors used for training the per-part codebook (bounds the costs for k-means; assumes that the part's
@@ -78,15 +92,6 @@ struct SerializedStateProductQuantization : public ISerialization::SerializeBina
 struct DeserializedStateProductQuantization : public ISerialization::DeserializeBinaryBulkState
 {
     ColumnPtr codebook; /// a one-row column, or null until the first granule reads it
-
-    /// The result column is a `ColumnConst` wrapping this same one-row codebook, so the state and the result share
-    /// the column. Expose it so `ColumnsOwnershipValidator` accounts for the state-side reference too; otherwise the
-    /// validator would only see the result-side edge and could miss an under-counted state-held reference.
-    void forEachColumn(const std::function<void(const ColumnPtr &)> & callback) const override
-    {
-        if (codebook)
-            callback(codebook);
-    }
 };
 
 /// Read serialization for the codebook subcolumn. The codebook is stored as a SINGLE value per part (written
@@ -119,9 +124,17 @@ public:
         state = std::make_shared<DeserializedStateProductQuantization>();
     }
 
+    /// The codebook is a single per-part value broadcast to the whole range. Create it as an empty `ColumnConst`;
+    /// deserialize sets its value and grows its size, so the (large) codebook is never materialized per row.
+    MutableColumnPtr createColumnForDeserialization(const IDataType & type) const override
+    {
+        auto column = type.createColumn();
+        column->insertDefault(); /// placeholder single value; the real one is set during deserialization
+        return ColumnConst::create(std::move(column), 0);
+    }
+
     void deserializeBinaryBulkWithMultipleStreams(
-        ColumnPtr & column,
-        size_t /*rows_offset*/,
+        IColumn & column,
         size_t limit,
         DeserializeBinaryBulkSettings & settings,
         DeserializeBinaryBulkStatePtr & state,
@@ -136,7 +149,8 @@ public:
             state_pq = new_state.get();
             state = std::move(new_state);
         }
-        const size_t prev_size = column ? column->size() : 0;
+
+        auto & const_column = assert_cast<ColumnConst &>(column);
 
         /// Read the part's single codebook value exactly once (the stream holds one value for the whole part); every
         /// granule reuses it.
@@ -154,14 +168,17 @@ public:
                 return;
 
             auto value = value_type->createColumn();
-            nested_serialization->deserializeBinaryBulk(*value, *stream, /*rows_offset=*/0, /*limit=*/1, /*avg_value_size_hint=*/0.0);
+            nested_serialization->deserializeBinaryBulk(*value, *stream, /*limit=*/1, /*avg_value_size_hint=*/0.0);
             if (value->size() != 1)
                 throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH,
                     "Expected exactly one per-part PQ codebook value but read {}", value->size());
             state_pq->codebook = std::move(value);
         }
 
-        column = ColumnConst::create(state_pq->codebook, prev_size + limit);
+        /// Set the broadcast value (idempotent across granules and freshly-created result columns) and extend the
+        /// range by `limit` rows (O(1) for ColumnConst).
+        const_column.setValue(state_pq->codebook);
+        const_column.insertManyFrom(*state_pq->codebook, 0, limit);
     }
 
 private:
@@ -189,6 +206,11 @@ SerializationQuantizedVector::SerializationQuantizedVector(const SerializationPt
             SerializationProductQuantizationCodebook::create(codebook_type->getDefaultSerialization(), codebook_type),
             product_quantization_subcolumn_name, ISerialization::Substream::ProductQuantizationCodebook);
     }
+}
+
+String SerializationQuantizedVector::getCustomSerializationIdentity() const
+{
+    return fmt::format("QuantizedVector({},{},{},{})", params.method, params.dimensions, params.bits, params.m);
 }
 
 void SerializationQuantizedVector::enumerateStreams(
@@ -282,6 +304,53 @@ void SerializationQuantizedVector::serializeBinaryBulkWithMultipleStreams(
     codes_serialization->serializeBinaryBulkWithMultipleStreams(*codes_column, 0, codes_column->size(), settings, codes_state);
 }
 
+void SerializationQuantizedVector::deserializeBinaryBulkWithMultipleStreams(
+    IColumn & column,
+    size_t limit,
+    DeserializeBinaryBulkSettings & settings,
+    DeserializeBinaryBulkStatePtr & state,
+    SubstreamsCache * cache) const
+{
+    /// Only a Compact part interleaves the codes with this granule's array bytes, so only there can the array streams
+    /// be left mid-granule. Wide gives each substream its own file, and Native writes no codes at all.
+    if (settings.data_part_type != MergeTreeDataPartType::Compact)
+    {
+        nested_serialization->deserializeBinaryBulkWithMultipleStreams(column, limit, settings, state, cache);
+        return;
+    }
+
+    /// A Compact reader may skip the per-granule seek and inherit the stream position, which the unread codes make
+    /// wrong. Re-assert it absolutely from this granule's mark; a no-op when already positioned.
+    if (settings.seek_stream_to_current_mark_callback)
+    {
+        settings.path.push_back(Substream::ArraySizes);
+        settings.seek_stream_to_current_mark_callback(settings.path);
+        settings.path.pop_back();
+
+        nested_serialization->deserializeBinaryBulkWithMultipleStreams(column, limit, settings, state, cache);
+        return;
+    }
+
+    /// No marks to seek to, so consume this granule's codes instead. Only valid if the nested read actually advanced
+    /// the stream: served from the substreams cache it does not, and consuming then would itself desync it.
+    settings.path.push_back(Substream::ArraySizes);
+    const ReadBuffer * array_stream = settings.getter(settings.path);
+    settings.path.pop_back();
+    const size_t bytes_before = array_stream ? array_stream->count() : 0;
+
+    nested_serialization->deserializeBinaryBulkWithMultipleStreams(column, limit, settings, state, cache);
+
+    if (!array_stream || array_stream->count() == bytes_before)
+        return;
+
+    /// Consume this granule's codes through the codes serialization rather than by byte arithmetic;
+    /// a no-op if the getter has no codes stream.
+    auto codes = codes_type->createColumn();
+    DeserializeBinaryBulkStatePtr codes_state;
+    codes_serialization->deserializeBinaryBulkWithMultipleStreams(
+        *codes, limit, settings, codes_state, /*cache=*/nullptr);
+}
+
 void SerializationQuantizedVector::serializeBinaryBulkStateSuffix(
     SerializeBinaryBulkSettings & settings, SerializeBinaryBulkStatePtr & state) const
 {
@@ -321,9 +390,10 @@ std::vector<float> SerializationQuantizedVector::trainCodebook(const IColumn & c
     const size_t n = std::min({count, PRODUCT_QUANTIZATION_MAX_TRAINING_VECTORS, budget_vectors});
     std::vector<float> flat(n * params.dimensions);
     std::vector<float> buf;
+    const float uint8_shift = quantizedCodecShiftsUInt8(params.method) ? QUANTIZED_CODEC_UINT8_SHIFT : 0.0f;
     for (size_t i = 0; i < n; ++i)
     {
-        readVectorRow(*col_arr, offset + i, buf);
+        readVectorRow(*col_arr, offset + i, uint8_shift, buf);
         if (buf.size() != params.dimensions)
             throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH,
                 "Vector at row {} has {} elements but the Quantize codec was declared with {} dimensions",
@@ -356,9 +426,10 @@ ColumnPtr SerializationQuantizedVector::encodeCodes(const IColumn & column, size
         encoder_flat = VectorQuantizer::createEncoder(params.method, params.dimensions, params.bits);
 
     std::vector<float> buf;
+    const float uint8_shift = quantizedCodecShiftsUInt8(params.method) ? QUANTIZED_CODEC_UINT8_SHIFT : 0.0f;
     for (size_t i = 0; i < count; ++i)
     {
-        readVectorRow(*col_arr, offset + i, buf);
+        readVectorRow(*col_arr, offset + i, uint8_shift, buf);
         if (buf.size() != params.dimensions)
             throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH,
                 "Vector at row {} has {} elements but the Quantize codec was declared with {} dimensions",
@@ -372,6 +443,20 @@ ColumnPtr SerializationQuantizedVector::encodeCodes(const IColumn & column, size
     }
 
     return result;
+}
+
+void checkNoQuantizedCodec(const NamesAndTypesList & columns, const String & engine_name)
+{
+    for (const auto & column : columns)
+    {
+        const bool has_quantized_codec = anyInTypeTree(*column.type, [](const IDataType & type)
+        {
+            return typeid_cast<const SerializationQuantizedVector *>(type.getCustomSerialization()) != nullptr;
+        });
+        if (has_quantized_codec)
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Engine {} doesn't support the Quantized codec of column {}",
+                engine_name, backQuote(column.name));
+    }
 }
 
 }

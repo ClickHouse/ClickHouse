@@ -1,0 +1,73 @@
+---
+slug: /clickstack/observability/migration/elastic/migrating-sdks
+title: 'Elastic에서 SDK 마이그레이션하기'
+sidebarTitle: 'SDK 마이그레이션'
+description: 'Elastic SDK instrumentation을 완전 관리형 ClickHouse Observability로 마이그레이션합니다. 자가 관리형 배포에는 별도의 연결 설정을 사용합니다.'
+show_related_blogs: true
+keywords: ['ClickHouse Observability']
+doc_type: 'guide'
+---
+
+import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
+
+Elastic Stack은 애플리케이션 계측을 위해 두 가지 유형의 언어별 SDK를 제공합니다.
+
+1. **[Elastic 공식 APM 에이전트](https://www.elastic.co/docs/reference/apm-agents/)** – Elastic Stack 전용으로 개발된 에이전트입니다. 이 에이전트를 사용 중이라면 애플리케이션에서 사용하는 사용자 정의 스팬과 속성을 포함하여 해당 언어의 [OpenTelemetry instrumentation](https://opentelemetry.io/docs/languages/)으로 전환할 계획을 세우십시오.
+
+2. **[Elastic Distributions of OpenTelemetry (EDOT SDKs)](https://www.elastic.co/docs/reference/opentelemetry/edot-sdks/)** – 표준 OpenTelemetry SDK를 Elastic이 배포하는 버전으로, .NET, Java, Node.js, PHP, Python용으로 제공됩니다. 애플리케이션에서 이미 EDOT SDK를 사용하고 있다면 코드를 다시 계측할 필요가 없습니다. SDK 구성만 변경하여 텔레메트리 데이터를 ClickHouse Observability OTLP 엔드포인트로 내보내면 됩니다. 자세한 내용은 [&quot;EDOT SDK 마이그레이션&quot;](#migrating-edot-sdks-self-configured)을 참조하십시오.
+
+## EDOT SDK 마이그레이션 {#migrating-edot-sdks-self-configured}
+
+Elastic Distributions of the OpenTelemetry SDKs(EDOT SDKs)는 공식 OpenTelemetry SDK를 사용자 정의한 버전입니다. 예를 들어 [EDOT Python SDK](https://www.elastic.co/docs/reference/opentelemetry/edot-sdks/python/)는 Elastic Observability와 원활하게 연동되도록 벤더가 맞춤화한 [OpenTelemetry Python SDK](https://opentelemetry.io/docs/languages/python/) 배포판입니다.
+
+이러한 SDK는 표준 OpenTelemetry 라이브러리를 기반으로 하므로 ClickHouse Observability로 간단하게 마이그레이션(migration)할 수 있으며, 다시 계측할 필요가 없습니다. 텔레메트리 데이터가 ClickHouse Observability OTLP 엔드포인트로 전송되도록 구성만 조정하면 됩니다.
+
+구성은 표준 OpenTelemetry 메커니즘을 따릅니다. Python에서는 일반적으로 [OpenTelemetry Zero-Code Instrumentation 문서](https://opentelemetry.io/docs/zero-code/python/configuration/)에 설명된 대로 환경 변수를 사용하여 구성합니다.
+
+일반적인 EDOT SDK 구성 예시는 다음과 같습니다.
+
+```shell
+export OTEL_RESOURCE_ATTRIBUTES='service.name=YOUR_APP_NAME'
+export OTEL_EXPORTER_OTLP_ENDPOINT=https://my-deployment.ingest.us-west1.gcp.cloud.es.io
+export OTEL_EXPORTER_OTLP_HEADERS="Authorization=ApiKey P....l"
+```
+
+마이그레이션하려면 애플리케이션 환경의 OTLP 연결 설정을 업데이트한 후 애플리케이션을 재시작하십시오. 아래 예시는 protobuf 인코딩을 사용하는 OTLP HTTP를 기준으로 합니다.
+
+<Tabs>
+  <Tab title="완전 관리형">
+    <BetaBadge label="베타 제공" />
+
+    **팀 설정 → 데이터 → Managed Telemetry**에서 OTLP HTTP 엔드포인트와 API Key를 복사하십시오.
+
+    ```shell
+    export OTEL_RESOURCE_ATTRIBUTES='service.name=YOUR_APP_NAME'
+    export OTEL_EXPORTER_OTLP_PROTOCOL='http/protobuf'
+    export OTEL_EXPORTER_OTLP_ENDPOINT='https://YOUR_OTEL_ENDPOINT:4318'
+    export OTEL_EXPORTER_OTLP_HEADERS='authorization=Bearer%20YOUR_API_KEY'
+    ```
+
+    포트를 포함한 엔드포인트를 그대로 사용하되, `/v1/traces`와 같은 시그널 접미사는 붙이지 마십시오. 헤더 값에서는 `Bearer` 뒤의 공백을 `%20`으로 인코딩합니다. 연결 정보는 [OpenTelemetry 데이터 전송](/ko/clickstack/observability/ingesting-data/opentelemetry)을 참조하십시오.
+  </Tab>
+
+  <Tab title="자가 관리형">
+    SDK가 수신 collector의 OTLP HTTP 엔드포인트(애플리케이션에서 연결할 수 있는 주소)를 사용하도록 설정하십시오.
+
+    ```shell
+    export OTEL_RESOURCE_ATTRIBUTES='service.name=YOUR_APP_NAME'
+    export OTEL_EXPORTER_OTLP_PROTOCOL='http/protobuf'
+    export OTEL_EXPORTER_OTLP_ENDPOINT='http://YOUR_COLLECTOR_HOST:4318'
+    export OTEL_EXPORTER_OTLP_HEADERS='authorization=YOUR_COLLECTOR_TOKEN'
+    ```
+
+    수신 collector를 `OTLP_AUTH_TOKEN`으로 보호했다면 해당 토큰을 authorization 값으로 사용하십시오. `localhost`는 애플리케이션과 collector가 동일한 네트워크 네임스페이스를 공유하는 경우에만 사용하십시오. collector에 TLS가 활성화되어 있다면 HTTPS 엔드포인트를 사용하고, SDK가 해당 인증서를 신뢰하도록 구성하십시오. 자세한 내용은 [collector 보안 설정](/ko/clickstack/self-configured/ingesting-data/collector#securing-the-collector-self-configured)을 참조하십시오.
+
+    collector 인증이 비활성화되어 있다면 기존 Elastic 헤더를 제거하십시오.
+
+    ```shell
+    unset OTEL_EXPORTER_OTLP_HEADERS
+    ```
+  </Tab>
+</Tabs>
+
+애플리케이션에서 시그널별 OTLP 엔드포인트, 프로토콜 또는 헤더 변수를 설정하고 있다면 해당 변수도 함께 업데이트하십시오. 이러한 변수는 위의 일반 설정보다 우선 적용됩니다. 서비스 이름을 설정할 때는 기존 리소스 속성이 유지되도록 하십시오.

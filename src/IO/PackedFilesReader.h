@@ -31,24 +31,24 @@ public:
     explicit PackedFilesReader(PackedFilesIO::Index index_);
 
     /// Common read operations which return data from index.
-    bool exists(const std::string & file_name) const;
-    size_t getFileSize(const String & file_name) const;
+    [[nodiscard]] bool exists(const std::string & file_name) const;
+    [[nodiscard]] size_t getFileSize(const String & file_name) const;
     /// Recorded uncompressed size, or nullopt if not recorded (v0). Throws if file is absent.
-    std::optional<UInt64> getFileUncompressedSize(const String & file_name) const;
-    PackedFilesIO::FileOffset getFileOffsetAndSize(const String & file_name) const;
-    Names getFileNames() const;
+    [[nodiscard]] std::optional<UInt64> getFileUncompressedSize(const String & file_name) const;
+    [[nodiscard]] PackedFilesIO::FileOffset getFileOffsetAndSize(const String & file_name) const;
+    [[nodiscard]] Names getFileNames() const;
 
     /// Returns read buffer to read requested file as a part of the archive file. The archive's
     /// current location (disk + path) is supplied by the caller, so a relocated part reads from
     /// the right place without the reader caching a path.
-    std::unique_ptr<ReadBufferFromFileBase> readFile(
+    [[nodiscard]] std::unique_ptr<ReadBufferFromFileBase> readFile(
         const DiskPtr & disk,
         const String & data_file_name,
         const String & file_name,
         const ReadSettings & settings,
         std::optional<size_t> read_hint) const;
 
-    const PackedFilesIO::Index & getIndex() const { return index; }
+    [[nodiscard]] const PackedFilesIO::Index & getIndex() const { return index; }
 
     static PackedFilesIO::Index readIndex(ReadBuffer & in);
 

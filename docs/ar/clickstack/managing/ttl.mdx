@@ -7,33 +7,36 @@ doc_type: 'guide'
 keywords: ['clickstack', 'ttl', 'الاحتفاظ بالبيانات', 'دورة الحياة', 'إدارة التخزين']
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
 import OtelLogsSchema from '/snippets/ar/clickstack/_schema_otel_logs.mdx';
 
 <div id="ttl-clickstack">
-  ## TTL في ClickStack
+  ## TTL في ClickStack {#ttl-clickstack}
 </div>
 
 تُعد Time-to-Live (TTL) ميزة أساسية في ClickStack لإدارة البيانات والاحتفاظ بها بكفاءة، لا سيما مع التوليد المستمر لكميات هائلة من البيانات. تتيح TTL انتهاء صلاحية البيانات الأقدم وحذفها تلقائيًا، مما يضمن الاستخدام الأمثل للتخزين والحفاظ على الأداء دون تدخل يدوي. وتُعد هذه الإمكانية ضرورية للحفاظ على قاعدة البيانات خفيفة، وخفض تكاليف التخزين، وضمان بقاء الاستعلامات سريعة وفعّالة من خلال التركيز على البيانات الأحدث والأكثر صلة. إضافةً إلى ذلك، فهي تساعد على الامتثال لسياسات الاحتفاظ بالبيانات عبر إدارة دورة حياة البيانات بشكل منهجي، مما يعزّز الاستدامة وقابلية التوسع بشكل عام في حل observability.
 
-**بشكل افتراضي، يحتفظ ClickStack بالبيانات لمدة 3 أيام. لتعديل ذلك، راجع [&quot;تعديل TTL&quot;](#modifying-ttl).**
+**بشكل افتراضي، يحتفظ ClickStack بالبيانات لمدة 30 يومًا. لتعديل ذلك، راجع [&quot;تعديل TTL&quot;](#modifying-ttl).**
 
-يتم التحكم في TTL على مستوى الجدول في ClickHouse. على سبيل المثال، يظهر أدناه المخطط الافتراضي للسجلات؛ ويتم استبدال `${TABLES_TTL}` بفترة الاحتفاظ المُعدّة (3 أيام ما لم يتم تغييرها) عندما ينشئ الـ collector الجدول:
+يتم التحكم في TTL على مستوى الجدول في ClickHouse. على سبيل المثال، يظهر أدناه المخطط الافتراضي للسجلات؛ ويتم استبدال `${LOGS_TTL}` بفترة الاحتفاظ المُعدّة (30 يومًا ما لم يتم تغييرها) عندما ينشئ الـ collector الجدول. اضبط `HYPERDX_OTEL_EXPORTER_TABLES_TTL` لتهيئة فترة الاحتفاظ المشتركة لجميع الجداول، أو تجاوزها لإشارات بعينها باستخدام `HYPERDX_OTEL_EXPORTER_LOGS_TTL` و`HYPERDX_OTEL_EXPORTER_TRACES_TTL` و`HYPERDX_OTEL_EXPORTER_METRICS_TTL` و`HYPERDX_OTEL_EXPORTER_SESSIONS_TTL`. وعند عدم ضبط أي إعداد خاص بإشارة معينة، تُستخدم فترة الاحتفاظ المشتركة للجداول.
 
 <OtelLogsSchema />
 
 يتيح التقسيم في ClickHouse فصل البيانات منطقيًا على القرص وفقًا لعمود أو تعبير SQL. ومن خلال هذا الفصل المنطقي، يمكن التعامل مع كل partition بشكل مستقل، مثل حذفه عند انتهاء صلاحيته وفقًا لسياسة TTL.
 
-كما هو موضح في المثال أعلاه، يتم تحديد التقسيم للجدول عند تعريفه أول مرة عبر عبارة `PARTITION BY`. ويمكن أن تحتوي هذه العبارة على تعبير SQL يستند إلى أي عمود أو أعمدة، وتحدد نتيجته partition الذي سيُرسل إليه كل row. ويؤدي ذلك إلى ربط البيانات منطقيًا (عبر بادئة اسم مجلد مشتركة) بكل partition على القرص، بحيث يمكن بعد ذلك الاستعلام عنه بشكل مستقل. وفي المثال أعلاه، يستخدم المخطط الافتراضي لـ `otel_logs` التقسيم حسب اليوم باستخدام التعبير `toDate(Timestamp)`. وعند insert rows في ClickHouse، يُقيَّم هذا التعبير على كل row ويُوجَّه إلى partition الناتج إذا كان موجودًا (وإذا كان هذا row هو الأول لذلك اليوم، فسيتم إنشاء partition). لمزيد من التفاصيل حول التقسيم وتطبيقاته الأخرى، راجع [&quot;Table Partitions&quot;](/ar/concepts/core-concepts/partitions).
+كما هو موضح في المثال أعلاه، يتم تحديد التقسيم للجدول عند تعريفه أول مرة عبر عبارة `PARTITION BY`. ويمكن أن تحتوي هذه العبارة على تعبير SQL يستند إلى أي عمود أو أعمدة، وتحدد نتيجته partition الذي سيُرسل إليه كل row. ويؤدي ذلك إلى ربط البيانات منطقيًا (عبر بادئة اسم مجلد مشتركة) بكل partition على القرص، بحيث يمكن بعد ذلك الاستعلام عنه بشكل مستقل. وفي المثال أعلاه، يستخدم المخطط الافتراضي لـ `otel_logs` التقسيم حسب اليوم باستخدام التعبير `toDate(Timestamp)`. وعند insert rows في ClickHouse، يُقيَّم هذا التعبير على كل row ويُوجَّه إلى partition الناتج إذا كان موجودًا (وإذا كان هذا row هو الأول لذلك اليوم، فسيتم إنشاء partition). لمزيد من التفاصيل حول التقسيم وتطبيقاته الأخرى، راجع [&quot;Table Partitions&quot;](/ar/concepts/core-concepts/partitions).
 
-<Image img="/images/use-cases/observability/observability-14.webp" alt="الأقسام" size="lg" />
+<div className="ch-image-lg">
+  <Frame>
+    ![الأقسام](/images/use-cases/observability/observability-14.webp)
+  </Frame>
+</div>
 
-يتضمن مخطط الجدول أيضًا `TTL toDateTime(Timestamp) + ${TABLES_TTL}` والإعداد `ttl_only_drop_parts = 1`. تضمن العبارة الأولى حذف البيانات بمجرد أن تصبح أقدم من TTL المُعدّة (3 أيام افتراضيًا). أما الإعداد `ttl_only_drop_parts = 1` فيفرض انتهاء صلاحية أجزاء البيانات فقط عندما تكون كل البيانات فيها قد انتهت صلاحيتها (بدلًا من محاولة حذف rows جزئيًا). ومع ضمان التقسيم عدم &quot;دمج&quot; البيانات من أيام مختلفة مطلقًا، يمكن بالتالي حذف البيانات بكفاءة.
+يتضمن مخطط الجدول أيضًا `TTL toDateTime(Timestamp) + ${LOGS_TTL}` والإعداد `ttl_only_drop_parts = 1`. تضمن العبارة الأولى حذف البيانات بمجرد أن تصبح أقدم من TTL المُعدّة (30 يومًا افتراضيًا). أما الإعداد `ttl_only_drop_parts = 1` فيفرض انتهاء صلاحية أجزاء البيانات فقط عندما تكون كل البيانات فيها قد انتهت صلاحيتها (بدلًا من محاولة حذف rows جزئيًا). ومع ضمان التقسيم عدم &quot;دمج&quot; البيانات من أيام مختلفة مطلقًا، يمكن بالتالي حذف البيانات بكفاءة.
 
 <Warning>
   **`ttl_only_drop_parts`**
 
-  نوصي دائمًا باستخدام الإعداد [`ttl_only_drop_parts=1`](/ar/reference/settings/merge-tree-settings#ttl_only_drop_parts). عند تمكين هذا الإعداد، يحذف ClickHouse part كاملًا عندما تكون جميع rows الموجودة فيه منتهية الصلاحية. إن حذف parts كاملة بدلًا من تنظيف rows المنتهية صلاحيتها وفق TTL بشكل جزئي (وهو ما يتحقق عبر mutations كثيفة الموارد عندما يكون `ttl_only_drop_parts=0`) يتيح استخدام قيم `merge_with_ttl_timeout` أقصر وتأثيرًا أقل على أداء النظام. وإذا كانت البيانات مقسّمة وفق نفس الوحدة التي تُطبَّق عندها صلاحية TTL، مثل اليوم، فستحتوي parts بطبيعتها على بيانات من interval المحدد فقط. وهذا يضمن إمكانية تطبيق `ttl_only_drop_parts=1` بكفاءة.
+  نوصي دائمًا باستخدام الإعداد [`ttl_only_drop_parts=1`](/ar/reference/settings/merge-tree-settings/other#ttl_only_drop_parts). عند تمكين هذا الإعداد، يحذف ClickHouse part كاملًا عندما تكون جميع rows الموجودة فيه منتهية الصلاحية. إن حذف parts كاملة بدلًا من تنظيف rows المنتهية صلاحيتها وفق TTL بشكل جزئي (وهو ما يتحقق عبر mutations كثيفة الموارد عندما يكون `ttl_only_drop_parts=0`) يتيح استخدام قيم `merge_with_ttl_timeout` أقصر وتأثيرًا أقل على أداء النظام. وإذا كانت البيانات مقسّمة وفق نفس الوحدة التي تُطبَّق عندها صلاحية TTL، مثل اليوم، فستحتوي parts بطبيعتها على بيانات من interval المحدد فقط. وهذا يضمن إمكانية تطبيق `ttl_only_drop_parts=1` بكفاءة.
 </Warning>
 
 بشكل افتراضي، تُزال البيانات ذات TTL المنتهية عندما يقوم ClickHouse [بدمج أجزاء البيانات](/ar/reference/engines/table-engines/mergetree-family/mergetree#mergetree-data-storage). وعندما يكتشف ClickHouse أن البيانات منتهية الصلاحية، فإنه ينفّذ عملية دمج خارج الجدول الزمني.
@@ -45,12 +48,12 @@ import OtelLogsSchema from '/snippets/ar/clickstack/_schema_otel_logs.mdx';
 </Info>
 
 <div id="modifying-ttl">
-  ## تعديل TTL
+  ## تعديل TTL {#modifying-ttl}
 </div>
 
 لتعديل TTL، يمكنك اختيار أحد الخيارين التاليين:
 
-1. **تعديل مخططات الجداول (موصى به)**. يتطلب ذلك الاتصال بمثيل ClickHouse، على سبيل المثال باستخدام [clickhouse-client](/ar/concepts/features/interfaces/cli) أو [Cloud SQL Console](/ar/products/cloud/features/sql-console-features/sql-console). على سبيل المثال، يمكن تعديل TTL للجدول `otel_logs` باستخدام عبارة DDL التالية:
+1. **تعديل مخططات الجداول (موصى به)**. يتطلب ذلك الاتصال بمثيل ClickHouse، على سبيل المثال باستخدام [clickhouse-client](/ar/concepts/features/interfaces/client) أو [Cloud SQL Console](/ar/products/cloud/features/sql-console-features/sql-console). على سبيل المثال، يمكن تعديل TTL للجدول `otel_logs` باستخدام عبارة DDL التالية:
 
 ```sql
 ALTER TABLE default.otel_logs
@@ -67,7 +70,7 @@ exporters:
 ```
 
 <div id="column-level-ttl">
-  ### TTL على مستوى العمود
+  ### TTL على مستوى العمود {#column-level-ttl}
 </div>
 
 تُظهر الأمثلة أعلاه انتهاء صلاحية البيانات على مستوى الجدول. ويمكنك أيضًا تطبيق انتهاء الصلاحية على مستوى العمود. ومع تقادم البيانات، يمكن استخدام ذلك لحذف الأعمدة التي لا تبرر قيمتها في الاستقصاءات العبء الإضافي على الموارد المترتب على الاحتفاظ بها. على سبيل المثال، نوصي بالاحتفاظ بالعمود `Body` تحسبًا لإضافة بيانات وصفية ديناميكية جديدة لم تُستخرج عند وقت الإدراج، مثل label جديد في Kubernetes. وبعد فترة، مثل شهر واحد، قد يتضح أن هذه البيانات الوصفية الإضافية غير مفيدة، وبالتالي تقل جدوى الاحتفاظ بالعمود `Body`.

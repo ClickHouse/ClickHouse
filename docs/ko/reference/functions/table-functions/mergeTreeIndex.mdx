@@ -11,30 +11,26 @@ doc_type: 'reference'
 
 MergeTree 테이블의 인덱스 파일과 마크 파일의 내용을 나타냅니다. 내부 검사에 사용할 수 있습니다.
 
-<div id="syntax">
-  ## 구문
-</div>
+## 구문 {#syntax}
 
 ```sql
 mergeTreeIndex(database, table [, with_marks = true] [, with_minmax = true])
 ```
 
-<div id="arguments">
-  ## 인수
-</div>
+## 인수 {#arguments}
 
 | 인수            | 설명                          |
 | ------------- | --------------------------- |
 | `database`    | 인덱스와 마크를 읽어올 데이터베이스 이름입니다.  |
 | `table`       | 인덱스와 마크를 읽어올 테이블 이름입니다.     |
 | `with_marks`  | 결과에 마크가 포함된 컬럼을 포함할지 여부입니다. |
-| `with_minmax` | 결과에 MinMax 인덱스를 포함할지 여부입니다.  |
+| `with_minmax` | 결과에 MinMax 인덱스를 포함할지 여부입니다. |
 
-<div id="returned_value">
-  ## 반환 값
-</div>
+`DESCRIBE` 등으로 결과(result)의 structure를 확인하려면 원본 테이블에 대한 `SHOW COLUMNS` 권한(privilege)이 필요하며, 데이터를 읽으려면 읽으려는 컬럼에 대한 `SELECT` 권한이 필요합니다.
 
-프라이머리 인덱스와 min-max 인덱스(활성화된 경우)의 값을 담은 컬럼, 원본 테이블의 데이터 파트에 있는 가능한 모든 파일에 대한 마크(활성화된 경우) 값을 담은 컬럼, 그리고 가상 컬럼을 포함하는 테이블 객체입니다:
+## 반환 값 {#returned-value}
+
+프라이머리 인덱스와 MinMax 인덱스(활성화된 경우)의 값을 담은 컬럼, 원본 테이블의 데이터 파트에 있는 가능한 모든 파일에 대한 마크(활성화된 경우) 값을 담은 컬럼, 그리고 가상 컬럼을 포함하는 테이블 객체입니다:
 
 * `part_name` - 데이터 파트의 이름입니다.
 * `mark_number` - 데이터 파트의 현재 마크 번호입니다.
@@ -42,9 +38,7 @@ mergeTreeIndex(database, table [, with_marks = true] [, with_minmax = true])
 
 데이터 파트에 해당 컬럼이 없거나 하위 스트림 중 하나의 마크가 기록되지 않은 경우(예: compact 파트), 마크 컬럼에는 `(NULL, NULL)` 값이 들어갈 수 있습니다.
 
-<div id="usage-example">
-  ## 사용 예시
-</div>
+## 사용 예시 {#usage-example}
 
 ```sql
 CREATE TABLE test_table

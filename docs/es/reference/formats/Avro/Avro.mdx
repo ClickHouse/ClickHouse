@@ -17,38 +17,28 @@ import DataTypeMapping from '/snippets/es/data-types-matching.mdx';
 | ------- | ------ | ----- |
 | ✔       | ✔      |       |
 
-<div id="description">
-  ## Descripción
-</div>
+## Descripción {#description}
 
 [Apache Avro](https://avro.apache.org/) es un formato de serialización orientado a filas que utiliza codificación binaria para procesar datos de forma eficiente. El formato `Avro` permite leer y escribir [archivos de datos de Avro](https://avro.apache.org/docs/current/specification/#object-container-files). Este formato espera mensajes autodescriptivos con un esquema integrado. Si utiliza Avro con un registro de esquemas, consulte el formato [`AvroConfluent`](/es/reference/formats/Avro/AvroConfluent).
 
-<div id="data-type-mapping">
-  ## Correspondencia de tipos de datos
-</div>
+## Correspondencia de tipos de datos {#data-type-mapping}
 
 <DataTypeMapping />
 
-<div id="format-settings">
-  ## Configuración de formato
-</div>
+## Configuración de formato {#format-settings}
 
 | Configuración                              | Descripción                                                                                                                                                                                      | Predeterminado |
 | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------- |
 | `input_format_avro_allow_missing_fields`   | Si se debe usar un valor predeterminado en lugar de generar un error cuando no se encuentra un campo en el esquema.                                                                              | `0`            |
 | `input_format_avro_null_as_default`        | Si se debe usar un valor predeterminado en lugar de generar un error al insertar un valor `null` en una columna no `Nullable`.                                                                   | `0`            |
-| `output_format_avro_codec`                 | Algoritmo de compresión para archivos de salida Avro. Posibles valores: `null`, `deflate`, `snappy`, `zstd`.                                                                                     |                |
+| `output_format_avro_codec`                 | Algoritmo de compresión para archivos de salida Avro. Posibles valores: `null`, `deflate`, `snappy`, `zstd`, `bzip2`, `xz`.                                                                      |                |
 | `output_format_avro_sync_interval`         | Frecuencia del marcador de sincronización en archivos Avro (en bytes).                                                                                                                           | `16384`        |
-| `output_format_avro_string_column_pattern` | Expresión regular para identificar columnas `String` para el mapeo al tipo `string` de Avro. De forma predeterminada, las columnas `String` de ClickHouse se escriben como tipo `bytes` de Avro. |                |
+| `output_format_avro_string_column_pattern` | Expresión regular para identificar columnas `String` para el mapeo de tipos a `string` de Avro. De forma predeterminada, las columnas `String` de ClickHouse se escriben como tipo `bytes` de Avro. |                |
 | `output_format_avro_rows_in_file`          | Número máximo de filas por archivo de salida Avro. Cuando se alcanza este límite, se crea un archivo nuevo (si el sistema de almacenamiento admite la división de archivos).                     | `1`            |
 
-<div id="examples">
-  ## Ejemplos
-</div>
+## Ejemplos {#examples}
 
-<div id="reading-avro-data">
-  ### Lectura de datos en Avro
-</div>
+### Lectura de datos en Avro {#reading-avro-data}
 
 Para leer datos desde un archivo Avro en una tabla de ClickHouse:
 
@@ -63,11 +53,11 @@ Esta comparación distingue entre mayúsculas y minúsculas, y los campos no uti
 
 Los tipos de datos de las columnas de la tabla de ClickHouse pueden diferir de los de los campos correspondientes en los datos Avro insertados. Al insertar datos, ClickHouse interpreta los tipos de datos según la tabla anterior y luego [convierte](/es/reference/functions/regular-functions/type-conversion-functions#CAST) los datos al tipo de columna correspondiente.
 
-Al importar datos, si no se encuentra un campo en el esquema y la configuración [`input_format_avro_allow_missing_fields`](/es/reference/settings/formats#input_format_avro_allow_missing_fields) está habilitada, se utilizará el valor predeterminado en lugar de generar un error.
+Un registro formado exactamente por dos campos `bytes` llamados `metadata` y `value` (que es como Iceberg v3 almacena un `variant` en Avro) se lee en una columna [`Dynamic`](/es/reference/data-types/dynamic) o [`JSON`](/es/reference/data-types/newjson) mediante la [codificación binaria de variant](https://github.com/apache/parquet-format/blob/master/VariantEncoding.md), del mismo modo que una columna `VARIANT` del formato `Parquet`.
 
-<div id="writing-avro-data">
-  ### Escritura de datos en Avro
-</div>
+Al importar datos, si no se encuentra un campo en el esquema y la configuración [`input_format_avro_allow_missing_fields`](/es/reference/settings/formats/input-format#input_format_avro_allow_missing_fields) está habilitada, se utilizará el valor predeterminado en lugar de generar un error.
+
+### Escritura de datos en Avro {#writing-avro-data}
 
 Para escribir datos de una tabla de ClickHouse en un archivo Avro:
 
@@ -80,11 +70,9 @@ Los nombres de las columnas deben:
 * Comenzar con `[A-Za-z_]`
 * Estar seguidos únicamente de `[A-Za-z0-9_]`
 
-La compresión de salida y el intervalo de sincronización de los archivos Avro pueden configurarse mediante las opciones [`output_format_avro_codec`](/es/reference/settings/formats#output_format_avro_codec) y [`output_format_avro_sync_interval`](/es/reference/settings/formats#output_format_avro_sync_interval), respectivamente.
+La compresión de salida y el intervalo de sincronización de los archivos Avro pueden configurarse mediante las opciones [`output_format_avro_codec`](/es/reference/settings/formats/output-format#output_format_avro_codec) y [`output_format_avro_sync_interval`](/es/reference/settings/formats/output-format#output_format_avro_sync_interval), respectivamente.
 
-<div id="inferring-the-avro-schema">
-  ### Inferir el esquema de Avro
-</div>
+### Inferir el esquema de Avro {#inferring-the-avro-schema}
 
 Con la función [`DESCRIBE`](/es/reference/statements/describe-table) de ClickHouse, puede ver rápidamente el formato inferido de un archivo Avro, como en el siguiente ejemplo.
 Este ejemplo incluye la URL de un archivo Avro disponible públicamente en el bucket público de S3 de ClickHouse:

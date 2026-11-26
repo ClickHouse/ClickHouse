@@ -4,18 +4,14 @@ slug: /cloud/guides/security/manage-custom-roles
 title: 'Управление пользовательскими ролями'
 description: 'На этой странице описано, как администраторы могут создавать, изменять и удалять пользовательские роли'
 doc_type: 'guide'
-keywords: ['пользовательские роли', 'безопасность', 'разрешения']
+keywords: ['custom roles', 'security', 'permissions']
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
-Это руководство предназначено для пользователей с ролью Admin в ClickHouse Cloud.
+Это руководство предназначено для пользователей с ролью Администратор в ClickHouse Cloud.
 
 Клиенты ClickHouse Cloud могут выбирать из предопределённых системных ролей или создавать пользовательские роли и назначать их пользователям. Дополнительные сведения о системных ролях и связанных с ними разрешениях см. в разделе [Роли и разрешения в консоли](/ru/products/cloud/reference/security/console-roles). В этом руководстве описано управление пользовательскими ролями.
 
-<div id="create-custom-role">
-  ## Создание пользовательских ролей
-</div>
+## Создание пользовательских ролей {#create-custom-role}
 
 Пользовательские роли могут включать комбинацию разрешений на уровне организации, сервиса и базы данных. Разрешения можно применять ко всем сервисам и базам данных или только к их части.
 
@@ -23,25 +19,41 @@ import { Image } from "/snippets/ru/components/Image.jsx";
   <Step title="Откройте настройки организации и выберите Users and roles" id="users-and-roles-1">
     На странице сервисов выберите имя своей организации. Во всплывающем меню выберите пункт `Users and roles`.
 
-    <Image img="/images/cloud/guides/control_plane/1_users_and_roles.webp" size="lg" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![](/images/cloud/guides/control_plane/1_users_and_roles.webp)
+      </Frame>
+    </div>
   </Step>
 
   <Step title={<>Выберите вкладку <code>Roles</code></>} id="roles-tab">
     Выберите вкладку `Roles` в верхней части экрана по центру.
 
-    <Image img="/images/cloud/guides/control_plane/manage_custom_roles/2_custom_role.webp" size="lg" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![](/images/cloud/guides/control_plane/manage_custom_roles/2_custom_role.webp)
+      </Frame>
+    </div>
   </Step>
 
   <Step title={<>Выберите <code>Create new role</code> в правом верхнем углу</>} id="create-new-role">
     Нажмите кнопку `Create new role` в правом верхнем углу экрана.
 
-    <Image img="/images/cloud/guides/control_plane/manage_custom_roles/3_custom_role.webp" size="lg" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![](/images/cloud/guides/control_plane/manage_custom_roles/3_custom_role.webp)
+      </Frame>
+    </div>
   </Step>
 
   <Step title="Назовите роль" id="name-the-role">
     Введите понятное имя роли. Это имя будет отображаться при назначении ролей пользователям и ключам API.
 
-    <Image img="/images/cloud/guides/control_plane/manage_custom_roles/4_custom_role.webp" size="md" />
+    <div className="ch-image-md">
+      <Frame>
+        ![](/images/cloud/guides/control_plane/manage_custom_roles/4_custom_role.webp)
+      </Frame>
+    </div>
   </Step>
 
   <Step title={<>Нажмите <code>Allow</code> и выберите область действия разрешений</>} id="scope-permissions">
@@ -54,27 +66,123 @@ import { Image } from "/snippets/ru/components/Image.jsx";
     <Info>
       **Доступ к вкладке Data Sources**
 
-      Для доступа к вкладке **Data Sources** роль в настоящее время должна иметь разрешение `Manage and Delete Selected Services`.
+      Для доступа к вкладке **Data Sources** роль в настоящее время должна иметь разрешение `Manage selected services`.
     </Info>
 
-    <Image img="/images/cloud/guides/control_plane/manage_custom_roles/5_custom_role.webp" size="md" />
+    <div className="ch-image-md">
+      <Frame>
+        ![](/images/cloud/guides/control_plane/manage_custom_roles/5_custom_role.webp)
+      </Frame>
+    </div>
   </Step>
 
   <Step title="Проверьте новую роль" id="review-role">
     Перед завершением проверьте разрешения, назначенные новой роли. Когда всё будет готово, нажмите `Create role`.
 
-    <Image img="/images/cloud/guides/control_plane/manage_custom_roles/6_custom_role.webp" size="md" />
+    <div className="ch-image-md">
+      <Frame>
+        ![](/images/cloud/guides/control_plane/manage_custom_roles/6_custom_role.webp)
+      </Frame>
+    </div>
   </Step>
 </Steps>
 
+## Управление ролями базы данных {#manage-database-roles}
+
+Помимо разрешений консоли, пользовательские роли могут включать политику `Data`, определяющую доступ к базам данных выбранных сервисов. Это позволяет управлять доступом к консоли и базам данных в одном месте, не поддерживая отдельные роли в каждой базе данных.
+
+<Note>
+  Эта возможность доступна для сервисов с ClickHouse версии 26.4 и выше.
+</Note>
+
+Когда вы добавляете политику `Data` в пользовательскую роль, ClickHouse Cloud создает соответствующую роль в каждом выбранном сервисе с префиксом `cloud:`. Например, пользовательская роль с именем `readonly` отображается в базе данных как `cloud:readonly`. Участники пользовательской роли получают эти разрешения базы данных при подключении к сервису через беспарольную аутентификацию в консоли SQL.
+
+<Warning>
+  Роли баз данных, управляемые Cloud, заменяют вручную назначенные роли [`sql-console-role:<email>`](/ru/products/cloud/guides/security/cloud-access-management/manage-database-users#sql-console-users-and-roles), которые несовместимы с JWT-сеансами в консоли SQL.
+</Warning>
+
+<Warning>
+  Политика `Data` с доступом `Custom` не дополняет, а заменяет доступ к базе данных, который участник получает через встроенные роли [администратора консоли SQL или консоли SQL только для чтения](/ru/products/cloud/reference/security/console-roles#sql-console-roles). Если участник входит хотя бы в одну пользовательскую роль с доступом `Custom` к сервису, в его сеансах консоли SQL в этом сервисе действуют только привилегии, определённые в его пользовательских ролях. Это относится и к Администраторам организации. Привилегии из нескольких пользовательских ролей суммируются.
+
+  Включите в политику все привилегии, которые нужны участникам. Не добавляйте участников, которым требуется доступ на запись, в пользовательскую роль, предоставляющую доступ только на чтение.
+</Warning>
+
+Роли баз данных, управляемые Cloud, содержат только привилегии. [Профили настроек](/ru/concepts/features/configuration/settings/settings-profiles), квоты и ROW POLICY, назначенные роли `cloud:`, не применяются к сеансам консоли SQL: в них используются настройки сервиса по умолчанию. Чтобы ограничить ресурсы для отдельного запроса, добавьте в него предложение `SETTINGS`, например `SETTINGS max_memory_usage = 10000000000`.
+
+### Предварительные требования {#manage-database-roles-prerequisites}
+
+Пользовательские роли базы данных в сервисе зависят от [JWT-аутентификации](/ru/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup) и не применяются, пока она отключена. Прежде чем добавлять политику `Data` в роль, перейдите к сервису, откройте `Settings` и найдите карточку `JWT authentication` в разделе `Security`. Убедитесь, что переключатель `SQL Console` включен.
+
+<div className="ch-image-lg">
+  <Frame>
+    ![Карточка JWT-аутентификации с включенным переключателем консоли SQL](/images/cloud/security/jwt/jwt-sql-console-toggle.png)
+  </Frame>
+</div>
+
+<Steps>
+  <Step title="Откройте диалоговое окно роли" id="open-role-dialog">
+    [Создайте пользовательскую роль](#create-custom-role) или отредактируйте существующую.
+  </Step>
+
+  <Step title="Добавьте политику организации" id="add-organization-policy">
+    В диалоговом окне роли нажмите `Allow`, выберите `Organization` и включите разрешение `Access organization`.
+  </Step>
+
+  <Step title="Добавьте политику сервиса" id="add-service-policy">
+    Нажмите `Allow permissions`, выберите `Service`, укажите сервисы, к которым будет применяться политика `Data`, и включите разрешение `View selected services`.
+
+    Участникам роли нужны оба разрешения, чтобы войти в консоль и открыть сервис в консоли SQL, где применяется политика `Data`.
+  </Step>
+
+  <Step title="Добавьте политику `Data`" id="add-data-permissions">
+    Нажмите `Allow permissions` и выберите `Data`.
+  </Step>
+
+  <Step title="Выберите сервис" id="select-data-permissions-service">
+    Выберите сервис, к которому применяется политика. Чтобы применить одинаковые разрешения `Read-only` или `Admin` к нескольким сервисам, добавьте другие сервисы.
+  </Step>
+
+  <Step title="Выберите уровень доступа" id="choose-data-access-level">
+    Выберите уровень доступа `Read-only`, `Admin` или `Custom`. При выборе `Custom` задайте конкретные разрешения на доступ к данным с помощью операторов ClickHouse [`GRANT`](/ru/reference/statements/grant). Доступ `Custom` можно выбрать только тогда, когда политика распространяется на один сервис; чтобы задать пользовательские разрешения для нескольких сервисов, добавьте отдельную политику `Data` для каждого сервиса. Для сервиса в [хранилище](/ru/products/cloud/features/infrastructure/warehouses) задайте доступ `Custom` на основном сервисе хранилища — он применяется ко всем сервисам хранилища.
+
+    Доступ `Custom` допускает только выдачу привилегий, например `GRANT SELECT ON db.table`. Операторы, назначающие роль (например, `GRANT my_role`) или содержащие предложение `TO` или `FROM`, отклоняются.
+
+    <div className="ch-image-md">
+      <Frame>
+        ![Диалог создания новой роли с разрешениями на доступ к данным, заданными пользовательскими операторами GRANT](/images/cloud/guides/control_plane/manage_custom_roles/create_role_data_permissions.webp)
+      </Frame>
+    </div>
+  </Step>
+
+  <Step title="Создайте роль" id="create-role-with-data-permissions">
+    Нажмите `Create role`. Роли базы данных будут созданы в выбранных сервисах. Распространение ролей на сервис может занять до 10 минут, но пользователи, которым назначена эта роль, получают ее разрешения сразу при выполнении запросов к сервису.
+  </Step>
+</Steps>
+
+### Проверка ролей базы данных {#verify-database-roles}
+
+Роли, управляемые через консоль, создаются в базе данных с префиксом `cloud:` и типом хранения `cloud` и могут появиться в течение 10 минут после создания. Чтобы получить их список, выполните запрос к таблице `system.roles` в сервисе:
+
+```sql
+SELECT * FROM system.roles;
+```
+
+```response
+┌─name───────────┬─id───────────────────────────────────┬─storage─┐
+│ cloud:readonly │ 9a4910f4-abcf-4904-466a-717c8c75ac42 │ cloud   │
+└────────────────┴──────────────────────────────────────┴─────────┘
+```
+
+Чтобы проверить привилегии своего сеанса консоли SQL, выполните в ней `SHOW GRANTS`. В выводе будут перечислены объединённые привилегии ваших пользовательских ролей. Сами роли `cloud:` сеансам консоли SQL не назначаются, поэтому `currentRoles` возвращает пустой массив.
+
 <div id="update-custom-role">
-  ## Обновление пользовательских ролей
+  ## Обновление пользовательских ролей {#update-custom-role}
 </div>
 
 Пользовательские роли можно изменять после создания. Пользователи потеряют все разрешения, удалённые из роли, и получат все добавленные разрешения.
 
 <Tip>
-  Разрешения пользователей суммируются. Если у пользователя есть разрешение на выполнение операции в рамках нескольких ролей, он может не сразу потерять доступ, если разрешение удалено только из одной роли.
+  Разрешения пользователей суммируются. Если у пользователя есть разрешение на выполнение операции в рамках нескольких ролей, он может не сразу потерять доступ, если разрешение удалено только из одной роли. Исключение составляет доступ к базам данных: политика `Data` с доступом `Custom` заменяет встроенный доступ к базам данных через консоль SQL. См. раздел [Управление ролями базы данных](#manage-database-roles).
 </Tip>
 
 1. Откройте настройки организации и выберите `Users and roles`
@@ -85,7 +193,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 6. Выберите `Edit role`
 
 <div id="delete-custom-role">
-  ## Удаление пользовательских ролей
+  ## Удаление пользовательских ролей {#delete-custom-role}
 </div>
 
 Пользовательские роли можно удалить в любое время.

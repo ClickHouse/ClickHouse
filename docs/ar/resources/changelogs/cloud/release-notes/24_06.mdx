@@ -1,7 +1,7 @@
 ---
 slug: /changelogs/24.6
 title: 'سجل تغييرات v24.6 لـ Cloud'
-description: 'سجل تغييرات Fast release لـ v24.6'
+description: 'سجل التغييرات لـ v24.6'
 keywords: ['سجل التغييرات', 'Cloud']
 sidebarTitle: '24.6'
 doc_type: 'changelog'
@@ -9,16 +9,12 @@ doc_type: 'changelog'
 
 التغييرات ذات الصلة بخدمات ClickHouse Cloud استنادًا إلى الإصدار v24.6.
 
-<div id="backward-incompatible-change">
-  ## تغيير غير متوافق مع الإصدارات السابقة
-</div>
+## تغيير غير متوافق مع الإصدارات السابقة {#backward-incompatible-change}
 
 * أُعيدت هيكلة المعالجة المتوازية في وضع `Ordered` لمحرك التخزين `S3Queue`. هذا التغيير في طلب السحب غير متوافق مع الإصدارات السابقة لوضع `Ordered` إذا كنت تستخدم الإعدادين `s3queue_processing_threads_num` أو `s3queue_total_shards_num`. حُذف الإعداد `s3queue_total_shards_num`، وكان يُسمح سابقًا باستخدامه فقط مع `s3queue_allow_experimental_sharded_mode`، وهو الآن مهمل. أُضيف إعداد جديد هو `s3queue_buckets`. [#64349](https://github.com/ClickHouse/ClickHouse/pull/64349) ([Kseniia Sumarokova](https://github.com/kssenii)).
 * أُضيفت الدوال الجديدة `snowflakeIDToDateTime` و`snowflakeIDToDateTime64` و`dateTimeToSnowflakeID` و`dateTime64ToSnowflakeID`. وعلى خلاف الدوال الحالية `snowflakeToDateTime` و`snowflakeToDateTime64` و`dateTimeToSnowflake` و`dateTime64ToSnowflake`، تتوافق الدوال الجديدة مع الدالة `generateSnowflakeID`، أي إنها تقبل معرّفات Snowflake التي تُنشئها `generateSnowflakeID` وتنتج معرّفات Snowflake من النوع نفسه الذي تنتجه `generateSnowflakeID` (أي `UInt64`). بالإضافة إلى ذلك، تستخدم الدوال الجديدة افتراضيًا حقبة UNIX (المعروفة أيضًا باسم 1970-01-01)، تمامًا مثل `generateSnowflakeID`. وعند الحاجة، يمكن تمرير حقبة مختلفة، مثل حقبة Twitter/X بتاريخ 2010-11-04، المعروفة أيضًا بأنها 1288834974657 مللي ثانية منذ حقبة UNIX. دوال التحويل القديمة مهملة وستُزال بعد فترة انتقالية. وإذا أردت استخدامها رغم ذلك، ففعّل الإعداد `allow_deprecated_snowflake_conversion_functions`. [#64948](https://github.com/ClickHouse/ClickHouse/pull/64948) ([Robert Schulze](https://github.com/rschu1ze)).
 
-<div id="new-feature">
-  ## ميزة جديدة
-</div>
+## ميزة جديدة {#new-feature}
 
 * دعم tuples الفارغة. [#55061](https://github.com/ClickHouse/ClickHouse/pull/55061) ([Amos Bird](https://github.com/amosbird)).
 * إضافة دوال لترميز Hilbert Curve وفك ترميزها. [#60156](https://github.com/ClickHouse/ClickHouse/pull/60156) ([Artem Mustafin](https://github.com/Artemmm91)).
@@ -36,9 +32,7 @@ doc_type: 'changelog'
 * تقديم عمودين إضافيين في `system.query_log`: `used_privileges` و`missing_privileges`. تتم تعبئة `used_privileges` بالامتيازات التي جرى التحقق منها أثناء تنفيذ الاستعلام، بينما يحتوي `missing_privileges` على الامتيازات المطلوبة المفقودة. [#64597](https://github.com/ClickHouse/ClickHouse/pull/64597) ([Alexey Katsman](https://github.com/alexkats)).
 * إضافة الإعداد `output_format_pretty_display_footer_column_names` الذي يعرض، عند تمكينه، أسماء الأعمدة في نهاية الجدول للجداول الطويلة (50 صفًا افتراضيًا)، مع التحكم في قيمة الحد الأدنى لعدد الصفوف عبر `output_format_pretty_display_footer_column_names_min_rows`. [#65144](https://github.com/ClickHouse/ClickHouse/pull/65144) ([Shaun Struwig](https://github.com/Blargian)).
 
-<div id="performance-improvement">
-  ## تحسين الأداء
-</div>
+## تحسين الأداء {#performance-improvement}
 
 * إصلاح تراجع الأداء في cross join الذي أُدخل في #60459 ‏(24.5). #65243 (Nikita Taranov).
 * تحسين وضوح عمليات إعادة الإرسال في io&#95;uring. إعادة تسمية حدث profile ‏IOUringSQEsResubmits إلى IOUringSQEsResubmitsAsync، وإضافة حدث جديد باسم IOUringSQEsResubmitsSync. #63699 (Tomer Shafir).
@@ -68,9 +62,7 @@ doc_type: 'changelog'
 * تحديث الشرط لاستخدام النسخ من جهة الخادم للنسخ الاحتياطية إلى Azure blob storage. [#64518](https://github.com/ClickHouse/ClickHouse/pull/64518) ([SmitaRKulkarni](https://github.com/SmitaRKulkarni)).
 * تحسين استخدام الذاكرة في عمليات الدمج العمودي للجداول التي تحتوي على عدد كبير من فهارس التخطي. [#64580](https://github.com/ClickHouse/ClickHouse/pull/64580) ([Anton Popov](https://github.com/CurtizJ)).
 
-<div id="improvement">
-  ## تحسين
-</div>
+## تحسين {#improvement}
 
 * أُعيد العمل بالسلوك السابق لكيفية تعامل ClickHouse مع Tuples وتفسيرها في تنسيق CSV. ويؤدي هذا التغيير فعليًا إلى التراجع عن ClickHouse/ClickHouse#60994، مع إتاحته فقط عبر عدد محدود من الإعدادات: output&#95;format&#95;csv&#95;serialize&#95;tuple&#95;into&#95;separate&#95;columns, input&#95;format&#95;csv&#95;deserialize&#95;separate&#95;columns&#95;into&#95;tuple and input&#95;format&#95;csv&#95;try&#95;infer&#95;strings&#95;from&#95;quoted&#95;tuples. #65170 (Nikita Mikhaylov).
 * سيعرض `SHOW CREATE TABLE` عند تنفيذه على جداول النظام الآن التعليق الفريد والمفيد جدًا لكل جدول، والذي يوضح سبب الحاجة إلى هذا الجدول. [#63788](https://github.com/ClickHouse/ClickHouse/pull/63788) ([Nikita Mikhaylov](https://github.com/nikitamikhaylov)).
@@ -96,9 +88,7 @@ doc_type: 'changelog'
 * عطّل المعاملات لأنواع التخزين غير المدعومة، حتى في العروض المادية. [#64918](https://github.com/ClickHouse/ClickHouse/pull/64918) ([alesapin](https://github.com/alesapin)).
 * امنع عبارة `QUALIFY` في المحلل القديم. كان المحلل القديم يتجاهل `QUALIFY`، لذا كان ذلك قد يؤدي إلى إزالة بيانات غير متوقعة في mutations. [#65356](https://github.com/ClickHouse/ClickHouse/pull/65356) ([Dmitry Novik](https://github.com/novikd)).
 
-<div id="bug-fix-user-visible-misbehavior-in-an-official-stable-release">
-  ## إصلاح خلل (سلوك خاطئ يمكن للمستخدم ملاحظته في إصدار مستقر رسمي)
-</div>
+## إصلاح خلل (سلوك خاطئ يمكن للمستخدم ملاحظته في إصدار مستقر رسمي) {#bug-fix-user-visible-misbehavior-in-an-official-stable-release}
 
 * تم إصلاح عدم عمل skip index من نوع &#39;set&#39; مع IN و indexHint(). #62083 (Michael Kolupaev).
 * إصلاح الاستعلامات التي تستخدم FINAL وتعطي نتائج خاطئة عندما لا يستخدم الجدول adaptive granularity. #62432 (Duc Canh Le).
@@ -108,7 +98,7 @@ doc_type: 'changelog'
 * تم إصلاح قراءة الأعمدة من النوع Tuple(Map(LowCardinality(String), String), ...). #63956 (Anton Popov).
 * إصلاح resolve لمطابق COLUMNS غير المؤهل، مع الحفاظ على ترتيب الأعمدة المُدخلة ومنع استخدام المعرّفات غير المعروفة. #63962 (Dmitry Novik).
 * إصلاح خطأ Cyclic aliases في aliases الدورية ذات النوعين المختلفين (expression و function). #63993 (Nikolai Kochetov).
-* سيستخدم هذا الإصلاح context مُعاد تعريفه بشكل صحيح مع المُعرِّف المناسب لكل view على حدة ضمن query pipeline. #64079 (pufit).
+* سيستخدم هذا الإصلاح context مُعاد تعريفه بشكل صحيح مع المُعرِّف المناسب لكل view على حدة ضمن query pipeline. #64079 (pufit).
 * إصلاح analyzer: تم إصلاح الخطأ &quot;Not found column&quot; عند استخدام INTERPOLATE. #64096 (Yakov Olkhovskiy).
 * منع حدوث LOGICAL&#95;ERROR عند CREATE TABLE كـ MaterializedView. #64174 (Raúl Marín).
 * أصبح query cache الآن يتعامل مع استعلامين متطابقين على databases مختلفة باعتبارهما مختلفين. وكان السلوك السابق يتيح تجاوز privileges المفقودة لقراءة table. #64199 (Robert Schulze).
@@ -124,7 +114,7 @@ doc_type: 'changelog'
 * إصلاح الخطأ Cannot find column في distributed queries مع CTE ثابت في مفتاح GROUP BY. #64519 (Nikolai Kochetov).
 * إصلاح ناتج function ‏formatDateTimeInJodaSyntax عندما يُنتج formatter عددًا فرديًا من المحارف ويكون المحرف الأخير هو 0. على سبيل المثال، أصبح SELECT formatDateTimeInJodaSyntax(toDate(&#39;2012-05-29&#39;), &#39;D&#39;) يُرجع الآن 150 بشكل صحيح بدلًا من 15 سابقًا. #64614 (LiuNeng).
 * لا تُجرِ Rewrite لـ aggregation إذا كان combinator ‏-If مستخدمًا بالفعل. #64638 (Dmitry Novik).
-* إصلاح type inference للقيم Float (في حالة buffer صغير، مثل --max&#95;read&#95;buffer&#95;size 1). #64641 (Azat Khuzhin).
+* إصلاح type inference للقيم Float (في حالة buffer صغير، مثل `--max_read_buffer_size` 1). #64641 (Azat Khuzhin).
 * إصلاح خلل كان قد يؤدي إلى عدم عمل TTL مع التعبيرات. #64694 (alesapin).
 * إصلاح إزالة تعبيري WHERE وPREWHERE عندما تكون نتيجتهما true دائمًا (في المحلل الجديد). #64695 (Nikolai Kochetov).
 * إصلاح الاستبعاد المفرط للأجزاء بواسطة فهارس النص المعتمدة على الرموز (ngrambf , full&#95;text) عند التصفية بناءً على نتيجة startsWith وendsWith وmatch وmultiSearchAny. #64720 (Eduard Karacharov).
@@ -143,7 +133,7 @@ doc_type: 'changelog'
 * تجنّب الكتابة إلى المخزن المؤقت finalized في storages الشبيهة بـ File. #65063 (Kruglov Pavel).
 * إصلاح احتمال أن تصبح مدة query لا نهائية في حالة aliases الدورية. إصلاح #64849. #65081 (Nikolai Kochetov).
 * إصلاح الخطأ Unknown expression identifier في الاستعلامات البعيدة مع INTERPOLATE (alias) (المحلل الجديد). إصلاح #64636. #65090 (Nikolai Kochetov).
-* إصلاح إخراج العمليات الحسابية من aggregation. في المحلل الجديد، كان هذا التحسين يُطبَّق مرة واحدة فقط. #65104 (Dmitry Novik).
+* إصلاح إخراج العمليات الحسابية من aggregation. في المحلل الجديد، كان هذا التحسين يُطبَّق مرة واحدة فقط. #65104 (Dmitry Novik).
 * إصلاح إعادة كتابة اسم aggregate function في المحلل الجديد. #65110 (Dmitry Novik).
 * الاستجابة برمز 5xx بدلًا من 200 OK في حالة receive timeout أثناء قراءة (أجزاء من) request body من مقبس العميل. #65118 (Julian Maicher).
 * إصلاح احتمال حدوث انهيار في الطلبات الاحتياطية. #65206 (Azat Khuzhin).

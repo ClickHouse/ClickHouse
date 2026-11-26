@@ -22,9 +22,12 @@
 #include <Storages/SelectQueryInfo.h>
 
 #include <Interpreters/WindowDescription.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
+
+class ColumnsDescription;
 
 /// Dump query plan
 String dumpQueryPlan(const QueryPlan & query_plan);
@@ -37,7 +40,7 @@ Block buildCommonHeaderForUnion(const SharedHeaders & queries_headers, SelectUni
 
 /// Add converting to common header actions if needed for each plan
 void addConvertingToCommonHeaderActionsIfNeeded(
-    std::vector<std::unique_ptr<QueryPlan>> & query_plans,
+    VectorWithMemoryTracking<std::unique_ptr<QueryPlan>> & query_plans,
     const Block & union_common_header,
     SharedHeaders & query_plans_headers,
     ContextPtr context);
@@ -92,11 +95,45 @@ QueryTreeNodePtr replaceTableExpressionsWithDummyTables(
 
 SelectQueryInfo buildSelectQueryInfo(const QueryTreeNodePtr & query_tree, const PlannerContextPtr & planner_context);
 
+/// Names of `table_expression` columns referenced from `node`, with ALIAS columns under their own name:
+/// their expressions are not entered, because a grant on the alias name is sufficient to use it.
+NameSet collectReferencedColumnNames(const QueryTreeNodePtr & node, const QueryTreeNodePtr & table_expression);
+
+/// Names of the columns and subcolumns of a table that the current user can read with `SELECT`, for a trivial query like
+/// `SELECT count() FROM table`, which is allowed if at least one of them is readable. Besides the columns, it includes
+/// subcolumns with a grant on their exact name, on the table itself or on a table of its `Alias` chain (`storage` may be
+/// null). Each name is checked like a query that reads it, on the table and on every hop of the `Alias` chain.
+NameSet getColumnsSelectableByTrivialQuery(
+    const StoragePtr & storage,
+    const StorageID & storage_id,
+    const ColumnsDescription & columns,
+    const ContextPtr & query_context);
+
+/// Check if current user has privileges to SELECT columns from table
+/// Throws an exception if access to any column from `column_names` is not granted
+/// If `column_names` is empty, check access to any columns and return names of accessible columns
+NameSet checkAccessRights(
+    const StoragePtr & storage,
+    const StorageID & storage_id,
+    const StorageSnapshotPtr & storage_snapshot,
+    const Names & column_names,
+    const ContextPtr & query_context);
+
+/// Build and resolve a filter against the table expression; `check_access_rights` checks column-level SELECT for the columns it reads.
+/// `view_source_in_subqueries`: see `SelectQueryOptions`.
+QueryTreeNodePtr buildFilterQueryTree(ASTPtr filter_expression,
+        const TableExpressionNodePtr & table_expression,
+        const ContextPtr & query_context,
+        bool view_source_in_subqueries,
+        bool check_access_rights = false);
+
 /// Build filter for specific table_expression
+/// `check_access_rights`: check column-level SELECT for the columns the filter reads (for user-supplied filters).
 FilterDAGInfo buildFilterInfo(ASTPtr filter_expression,
         const TableExpressionNodePtr & table_expression,
         PlannerContextPtr & planner_context,
-        NameSet table_expression_required_names_without_filter = {});
+        NameSet table_expression_required_names_without_filter = {},
+        bool check_access_rights = false);
 
 FilterDAGInfo buildFilterInfo(QueryTreeNodePtr filter_query_tree,
         const TableExpressionNodePtr & table_expression,
@@ -108,16 +145,12 @@ ASTPtr parseAdditionalResultFilter(const Settings & settings);
 using UsefulSets = std::unordered_set<FutureSetPtr>;
 void appendSetsFromActionsDAG(const ActionsDAG & dag, UsefulSets & useful_sets);
 
-/// If the window frame is not set in sql, try to use the default frame from window function
-/// if it have any one. Otherwise return empty.
-/// If the window frame is set in sql, use it anyway.
-std::optional<WindowFrame> extractWindowFrame(const FunctionNode & node);
-
 ActionsDAG::NodeRawConstPtrs getConjunctsList(ActionsDAG::Node * predicate);
 
 /// Remove query plan steps that don't affect the number of rows in the result.
 /// Returns true if the query always returns at least 1 row.
-bool optimizePlanForExists(QueryPlan & query_plan);
+/// `is_correlated` means the remaining plan is decorrelated rather than executed as is.
+bool optimizePlanForExists(QueryPlan & query_plan, bool is_correlated);
 
 /// Create ExpressionStep that projects only used columns
 QueryPlanStepPtr projectOnlyUsedColumns(

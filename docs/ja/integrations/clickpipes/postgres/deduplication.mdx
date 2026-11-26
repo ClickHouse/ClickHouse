@@ -10,22 +10,20 @@ integration:
   - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
-Postgres から ClickHouse にレプリケートされた更新や削除は、ClickHouse のデータ保存構造とレプリケーションの仕組みにより、ClickHouse 内で重複した行を生じさせます。このページでは、その理由と、ClickHouse で重複を扱うための戦略について説明します。
+Postgres から ClickHouse に複製された更新や削除は、ClickHouse のデータ保存構造とレプリケーションの仕組みにより、ClickHouse 内で重複した行を生じさせます。このページでは、その理由と、ClickHouse で重複を扱うための戦略について説明します。
 
 <div id="how-does-data-get-replicated">
-  ## データはどのように複製されるのですか？
+  ## データはどのように複製されるのですか？ {#how-does-data-get-replicated}
 </div>
 
 <div id="PostgreSQL-logical-decoding">
-  ### PostgreSQL ロジカルデコード
+  ### PostgreSQL ロジカルデコード {#PostgreSQL-logical-decoding}
 </div>
 
 ClickPipes は、[Postgres Logical Decoding](https://www.pgedge.com/blog/logical-replication-evolution-in-chronological-order-clustering-solution-built-around-logical-replication) を使用して、Postgres で発生する変更をリアルタイムに取り込みます。Postgres のロジカルデコードの仕組みにより、ClickPipes のようなクライアントは、変更内容を人間が読める形式、つまり一連の INSERT、UPDATE、DELETE として受け取ることができます。
 
 <div id="replacingmergetree">
-  ### ReplacingMergeTree
+  ### ReplacingMergeTree {#replacingmergetree}
 </div>
 
 ClickPipes は [ReplacingMergeTree](/ja/reference/engines/table-engines/mergetree-family/replacingmergetree) エンジンを使用して、Postgres のテーブルを ClickHouse にマッピングします。ClickHouse は追記専用のワークロードで最も高い性能を発揮し、頻繁な UPDATE は推奨していません。ReplacingMergeTree が特に威力を発揮するのは、このようなケースです。
@@ -58,26 +56,28 @@ PRIMARY KEY id
 ORDER BY id;
 ```
 
-<div id="illustrative-example">
-  ### 図解例
-</div>
+### 図解例 {#illustrative-example}
 
 以下の図は、ClickPipes を使用して PostgreSQL と ClickHouse 間でテーブル `users` を同期する基本的な例を示しています。
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/postgres-cdc-initial-load.webp" alt="ClickPipes 初期ロード" size="lg" />
+<div className="ch-image-lg">
+  <Frame>
+    ![ClickPipes 初期ロード](/images/integrations/data-ingestion/clickpipes/postgres/postgres-cdc-initial-load.webp)
+  </Frame>
+</div>
 
 **Step 1** では、PostgreSQL 内の 2 行の初期スナップショットと、ClickPipes がその 2 行を ClickHouse に初期ロードする様子を示しています。ご覧のとおり、2 行ともそのまま ClickHouse にコピーされます。
 
 **Step 2** では、users テーブルに対する 3 つの操作、つまり新しい行の挿入、既存の行の更新、別の行の削除を示しています。
 
-**Step 3** では、ClickPipes が INSERT、UPDATE、DELETE の各操作を、バージョン付きの INSERT として ClickHouse にレプリケートする仕組みを示しています。UPDATE は ID 2 の行の新しいバージョンとして現れ、DELETE は `_is_deleted` が true に設定された ID 1 の新しいバージョンとして現れます。このため、ClickHouse には PostgreSQL より 3 行多く存在することになります。
+**Step 3** では、ClickPipes が INSERT、UPDATE、DELETE の各操作を、バージョン付き挿入として ClickHouse に複製する仕組みを示しています。UPDATE は ID 2 の行の新しいバージョンとして現れ、DELETE は `_is_deleted` が true に設定された ID 1 の新しいバージョンとして現れます。このため、ClickHouse には PostgreSQL より 3 行多く存在することになります。
 
 その結果、`SELECT count(*) FROM users;` のような単純なクエリを実行すると、ClickHouse と PostgreSQL で異なる結果になる場合があります。[ClickHouse のマージに関するドキュメント](/ja/concepts/core-concepts/merges#replacing-merges) によると、古い行バージョンは最終的にマージ処理の中で破棄されます。ただし、このマージがいつ行われるかは予測できないため、それまでは ClickHouse のクエリが一貫しない結果を返す可能性があります。
 
 ClickHouse と PostgreSQL の両方で同一のクエリ結果を確実に得るには、どうすればよいでしょうか？
 
 <div id="deduplicate-using-final-keyword">
-  ### FINALキーワードを使って重複排除する
+  ### FINALキーワードを使って重複排除する {#deduplicate-using-final-keyword}
 </div>
 
 ClickHouseのクエリでデータを重複排除する推奨方法は、[FINAL修飾子](/ja/reference/statements/select/from#final-modifier) を使用することです。これにより、重複排除後の行だけが返されます。
@@ -133,24 +133,24 @@ LIMIT 10
 ```
 
 <div id="final-setting">
-  #### FINAL 設定
+  #### FINAL 設定 {#final-setting}
 </div>
 
-クエリ内の各テーブル名に FINAL 修飾子を追加する代わりに、[FINAL 設定](/ja/reference/settings/session-settings#final) を使うと、クエリ内のすべてのテーブルに自動的に FINAL を適用できます。
+クエリ内の各テーブル名に FINAL 修飾子を追加する代わりに、[FINAL 設定](/ja/reference/settings/session-settings/other#final) を使うと、クエリ内のすべてのテーブルに自動的に FINAL を適用できます。
 
 この設定は、クエリごとにもセッション全体にも適用できます。
 
 ```sql
--- クエリごとのFINAL設定
+-- Per query FINAL setting
 SELECT count(*) FROM posts SETTINGS FINAL = 1;
 
--- セッションにFINALを設定する
+-- Set FINAL for the session
 SET final = 1;
 SELECT count(*) FROM posts; 
 ```
 
 <div id="row-policy">
-  #### ROW POLICY
+  #### ROW POLICY {#row-policy}
 </div>
 
 冗長な `_peerdb_is_deleted = 0` フィルタを隠す簡単な方法は、[ROW POLICY.](/ja/concepts/features/security/access-rights#row-policy-management) を使用することです。以下は、テーブル votes に対するすべてのクエリから削除済みの行を除外する ROW POLICY を作成する例です。
@@ -163,7 +163,7 @@ CREATE ROW POLICY cdc_policy ON votes FOR SELECT USING _peerdb_is_deleted = 0 TO
 > ROW POLICY は、ユーザーとロールの一覧に対して適用されます。この例では、すべてのユーザーとロールに適用されます。必要に応じて、特定のユーザーまたはロールのみに適用するよう調整できます。
 
 <div id="query-like-with-postgres">
-  ### Postgresと同じようにクエリする
+  ### Postgresと同じようにクエリする {#query-like-with-postgres}
 </div>
 
 分析用データセットを PostgreSQL から ClickHouse に移行する場合、データの扱いやクエリ実行の違いを考慮して、アプリケーションのクエリを修正する必要が生じることが少なくありません。
@@ -171,7 +171,7 @@ CREATE ROW POLICY cdc_policy ON votes FOR SELECT USING _peerdb_is_deleted = 0 TO
 このセクションでは、元のクエリを変更せずにデータを重複排除する手法を紹介します。
 
 <div id="views">
-  #### ビュー
+  #### ビュー {#views}
 </div>
 
 [ビュー](/ja/reference/statements/create/view#normal-view) は、データを保存せず、アクセスのたびに別のテーブルから読み取るだけなので、クエリから FINAL キーワードを隠すのに便利です。
@@ -200,7 +200,7 @@ LIMIT 10
 ```
 
 <div id="refreshable-material-view">
-  #### リフレッシャブルmaterialized view
+  #### リフレッシャブルmaterialized view {#refreshable-material-view}
 </div>
 
 別の方法として、[リフレッシャブルmaterialized view](/ja/concepts/features/materialized-views/refreshable-materialized-view)を使用できます。これにより、行の重複を排除して結果を宛先テーブルに保存するクエリの実行をスケジュールできます。スケジュールされたリフレッシュが実行されるたびに、宛先テーブルは最新のクエリ結果で置き換えられます。

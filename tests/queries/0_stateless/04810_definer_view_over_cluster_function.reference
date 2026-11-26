@@ -1,0 +1,22 @@
+--- DEFINER / s3Cluster ---
+cannot be nested inside another distributed query
+--- DEFINER / urlCluster ---
+cannot be nested inside another distributed query
+--- DEFINER / fileCluster ---
+cannot be nested inside another distributed query
+--- NONE / s3Cluster ---
+cannot be nested inside another distributed query
+--- NONE / urlCluster ---
+cannot be nested inside another distributed query
+--- NONE / fileCluster ---
+cannot be nested inside another distributed query
+--- INVOKER / s3Cluster ---
+cannot be nested inside another distributed query
+--- INVOKER / urlCluster ---
+cannot be nested inside another distributed query
+--- INVOKER / fileCluster ---
+cannot be nested inside another distributed query
+--- local read of a DEFINER view still works ---
+1
+--- server alive ---
+1

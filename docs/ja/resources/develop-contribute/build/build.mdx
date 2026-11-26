@@ -20,18 +20,14 @@ ClickHouse は以下のプラットフォームでビルドできます。
 * s390/x (実験的)
 * RISC-V 64 (実験的)
 
-<div id="assumptions">
-  ## 前提
-</div>
+## 前提 {#assumptions}
 
 以下のチュートリアルは Ubuntu Linux を前提としていますが、適宜変更を加えれば、他の Linux ディストリビューションでも動作します。
 開発用途として推奨される Ubuntu の最小バージョンは 24.04 LTS です。
 
 このチュートリアルでは、ClickHouse リポジトリとすべてのサブモジュールをローカルにチェックアウト済みであることを前提としています。
 
-<div id="install-prerequisites">
-  ## 前提条件をインストールする
-</div>
+## 前提条件をインストールする {#install-prerequisites}
 
 まず、一般的な[前提条件のドキュメント](/ja/resources/develop-contribute/introduction/developer-instruction)を参照してください。
 
@@ -44,26 +40,32 @@ sudo apt-get update
 sudo apt-get install build-essential git cmake ccache python3 ninja-build nasm yasm gawk lsb-release wget software-properties-common gnupg
 ```
 
-<div id="install-the-clang-compiler">
-  ## Clang コンパイラをインストールする
-</div>
+## Clang コンパイラをインストールする {#install-the-clang-compiler}
 
 Ubuntu/Debian に Clang をインストールするには、[こちら](https://apt.llvm.org/) にある LLVM の自動インストールスクリプトを使用してください。
 
 ```bash
 wget https://apt.llvm.org/llvm.sh
 chmod +x llvm.sh
-sudo ./llvm.sh 21
+sudo ./llvm.sh 23
 ```
+
+<Note>
+  `apt.llvm.org` は、Ubuntu 24.04 (Noble) 以降および Debian 12 (Bookworm) 以降向けに Clang 23 パッケージを提供しています。
+  Ubuntu 22.04 (Jammy) 向けの Clang 23 リポジトリはありません。Jammy では、代わりに `sudo ./llvm.sh 21` で Clang 21 をインストールしてください。
+</Note>
 
 その他の Linux ディストリビューションについては、LLVM の[ビルド済みパッケージ](https://releases.llvm.org/download.html)をインストールできるか確認してください。
 
 2026 年 2 月時点では、Clang 21 以上が必要です。
 GCC やその他のコンパイラはサポートされていません。
 
-<div id="install-the-rust-compiler-optional">
-  ## Rust コンパイラをインストールする (任意)
-</div>
+<Tip>
+  ClickHouse の CI では、同じ Clang リリースを PGO と BOLT で最適化したビルドを使用してコンパイルしています。このビルドを使うと、ClickHouse をより高速にコンパイルできます。
+  glibc 2.38 以降の Linux では、`eval "$(utils/download-ci-toolchain.sh)"` を実行すると、`curl` と `zstd` を使ってそのコンパイラがダウンロードされ、新しいビルドディレクトリの構成に使用されるよう `CC` と `CXX` にそのコンパイラが設定されます。
+</Tip>
+
+## Rust コンパイラをインストールする (任意) {#install-the-rust-compiler-optional}
 
 <Note>
   Rust は ClickHouse のオプションの依存関係です。
@@ -74,17 +76,20 @@ GCC やその他のコンパイラはサポートされていません。
 
 C++ の依存関係と同様に、ClickHouse では vendoring を使用して、インストールされる内容を厳密に管理し、サードパーティサービス (`crates.io` registry など) への依存を避けています。
 
-リリースモードでは、通常は比較的新しい rustup ツールチェーンであれば、どのバージョンでもこれらの依存関係で動作するはずです。ただし、サニタイザを有効にする予定がある場合は、CI で使われているものと完全に同じ `std` に対応するバージョンを使用する必要があります (そのために crate を vendoring しています) :
+リリースモードでは、通常は比較的新しい rustup ツールチェーンであれば、どのバージョンでもこれらの依存関係で動作するはずです。ただし、サニタイザを有効にする予定がある場合は、CI で使われているものと完全に同じ `std` に対応するバージョンを使用する必要があります (そのために クレート を vendoring しています) :
 
 ```bash
-rustup toolchain install nightly-2026-03-22
-rustup default nightly-2026-03-22
+rustup toolchain install nightly-2026-11-02
+rustup default nightly-2026-11-02
 rustup component add rust-src
 ```
 
-<div id="build-clickhouse">
-  ## ClickHouse をビルドする
-</div>
+<Tip>
+  ccache は Rust をキャッシュしないため、新しいビルドディレクトリではすべての Rust クレートが再度コンパイルされます。
+  `-DRUST_BUILD_CACHE_DIR=<path>` を指定すると、Cargo はコンパイル済みのクレートをそのディレクトリに保持し、同じチェックアウトおよび設定から作成した新しいビルドディレクトリでそれらが再利用されます (delta-kernel-rs を除く)。チェックアウトと設定の組み合わせごとに約 7 GB を使用します。サイズの上限はなく、いつでも削除できます。
+</Tip>
+
+## ClickHouse をビルドする {#build-clickhouse}
 
 ビルド成果物をすべて格納するため、`ClickHouse` 内に `build` という別のディレクトリを作成することを推奨します。
 
@@ -98,8 +103,8 @@ cd build
 任意: 複数バージョンのコンパイラがインストールされている場合は、使用するコンパイラを明示的に指定することもできます。
 
 ```sh
-export CC=clang-21
-export CXX=clang++-21
+export CC=clang-23
+export CXX=clang++-23
 ```
 
 開発用途では、デバッグビルドを推奨します。
@@ -120,7 +125,7 @@ cmake -D CMAKE_BUILD_TYPE=Debug ..
 ninja clickhouse
 ```
 
-すべてのバイナリ (ユーティリティとテストを含む) をビルドするには、パラメータを指定せずに `ninja` を実行します。
+すべてのバイナリ (ユーティリティとテストを含む) をビルドするには、パラメーターを指定せずに `ninja` を実行します。
 
 ```sh
 ninja
@@ -145,9 +150,7 @@ ninja -j 1 clickhouse
   ```
 </Tip>
 
-<div id="running-the-clickhouse-executable">
-  ## ClickHouse 実行可能ファイルの実行
-</div>
+## ClickHouse 実行可能ファイルの実行 {#running-the-clickhouse-executable}
 
 ビルドが正常に完了すると、実行可能ファイルは `ClickHouse/<build_dir>/programs/` にあります。
 
@@ -162,13 +165,9 @@ macOS または FreeBSD で `Connection refused` メッセージが表示され�
 clickhouse client --host 127.0.0.1
 ```
 
-<div id="advanced-options">
-  ## 詳細オプション
-</div>
+## 詳細オプション {#advanced-options}
 
-<div id="minimal-build">
-  ### 最小構成でのビルド
-</div>
+### 最小構成でのビルド {#minimal-build}
 
 サードパーティ製ライブラリが提供する機能が不要な場合は、ビルドをさらに高速化できます。
 
@@ -184,9 +183,7 @@ Rust にはインターネット接続が必要です。Rust サポートを無�
 cmake -DENABLE_RUST=OFF
 ```
 
-<div id="running-the-clickhouse-executable-1">
-  ### ClickHouse 実行可能ファイルの実行
-</div>
+### ClickHouse 実行可能ファイルの実行 {#running-the-clickhouse-executable-1}
 
 システムにインストールされている本番環境用のClickHouseバイナリを、コンパイル済みのClickHouseバイナリに置き換えることができます。
 そのためには、公式Webサイトの手順に従って、お使いのマシンにClickHouseをインストールしてください。
@@ -207,9 +204,7 @@ sudo service clickhouse-server stop
 sudo -u clickhouse ClickHouse/build/programs/clickhouse server --config-file /etc/clickhouse-server/config.xml
 ```
 
-<div id="building-on-any-linux">
-  ### 任意の Linux でのビルド
-</div>
+### 任意の Linux でのビルド {#building-on-any-linux}
 
 OpenSUSE Tumbleweed で必要な前提条件をインストールします:
 
@@ -232,9 +227,7 @@ cmake -S . -B build
 cmake --build build
 ```
 
-<div id="building-in-docker">
-  ### Docker でのビルド
-</div>
+### Docker でのビルド {#building-in-docker}
 
 CI に近い環境で任意のビルドをローカル実行するには、次を使用します。
 

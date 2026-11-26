@@ -14,26 +14,20 @@ keywords: ['opções de implantação do ClickStack', 'ClickHouse externo', 'OTe
 
 Este guia aborda opções avançadas de implantação do ClickStack com Helm. Para uma instalação básica, consulte o [guia principal de implantação com Helm](/pt-BR/clickstack/deployment/helm).
 
-<div id="overview">
-  ## Visão geral
-</div>
+## Visão geral {#overview}
 
 O chart do Helm do ClickStack oferece suporte a várias configurações de implantação:
 
 * **Stack completa** (padrão) — Todos os componentes incluídos, gerenciados por operadores
 * **ClickHouse externo** — Use um cluster ClickHouse existente
 * **OTel collector externo** — Use a infraestrutura OTel existente
-* **Implantação mínima** — Apenas o HyperDX, com dependências externas
+* **Implantação mínima** — Apenas a Interface do ClickStack, com dependências externas
 
-<div id="external-clickhouse">
-  ## ClickHouse externo
-</div>
+## ClickHouse externo {#external-clickhouse}
 
 Se você já tiver um cluster do ClickHouse (incluindo o ClickHouse Cloud), poderá desativar o ClickHouse integrado e se conectar à sua instância externa.
 
-<div id="external-clickhouse-inline">
-  ### Opção 1: Configuração inline (desenvolvimento/testes)
-</div>
+### Opção 1: Configuração inline (desenvolvimento/testes) {#external-clickhouse-inline}
 
 Use esta abordagem para testes rápidos ou ambientes não produtivos. Forneça os detalhes de conexão por meio de `hyperdx.config` e `hyperdx.secrets`:
 
@@ -65,15 +59,11 @@ Instale com esta configuração:
 helm install my-clickstack clickstack/clickstack -f values-external-clickhouse.yaml
 ```
 
-<div id="external-clickhouse-secret">
-  ### Opção 2: Secret externo (recomendado para produção)
-</div>
+### Opção 2: Secret externo (recomendado para produção) {#external-clickhouse-secret}
 
 Para implantações em produção em que você queira manter as credenciais separadas da configuração do Helm:
 
-<div id="create-configuration">
-  #### Crie seus arquivos de configuração
-</div>
+#### Crie seus arquivos de configuração {#create-configuration}
 
 ```bash
 # Criar connections.json
@@ -131,9 +121,7 @@ cat <<EOF > sources.json
 EOF
 ```
 
-<div id="create-kubernetes-secret">
-  #### Crie o Secret no Kubernetes
-</div>
+#### Crie o Secret no Kubernetes {#create-kubernetes-secret}
 
 ```bash
 kubectl create secret generic hyperdx-external-config \
@@ -144,9 +132,7 @@ kubectl create secret generic hyperdx-external-config \
 rm connections.json sources.json
 ```
 
-<div id="configure-helm-secret">
-  #### Configure o Helm para usar o Secret
-</div>
+#### Configure o Helm para usar o Secret {#configure-helm-secret}
 
 ```yaml
 # values-external-clickhouse-secret.yaml
@@ -164,9 +150,7 @@ hyperdx:
 helm install my-clickstack clickstack/clickstack -f values-external-clickhouse-secret.yaml
 ```
 
-<div id="using-clickhouse-cloud">
-  ### Como usar o ClickHouse Cloud
-</div>
+### Como usar o ClickHouse Cloud {#using-clickhouse-cloud}
 
 Especificamente no ClickHouse Cloud:
 
@@ -186,9 +170,7 @@ hyperdx:
   existingConfigSourcesKey: "sources.json"
 ```
 
-<div id="external-otel-collector">
-  ## OTel collector externo
-</div>
+## OTel collector externo {#external-otel-collector}
 
 Se você já tiver uma infraestrutura de OTel collector existente, desative o subchart:
 
@@ -207,11 +189,9 @@ helm install my-clickstack clickstack/clickstack -f values-external-otel.yaml
 
 Para obter instruções sobre como expor os endpoints do OTel collector por meio de uma Entrada, consulte [Configuração de Entrada](/pt-BR/clickstack/deployment/helm-configuration#otel-collector-ingress).
 
-<div id="minimal-deployment">
-  ## Implantação mínima
-</div>
+## Implantação mínima {#minimal-deployment}
 
-Para organizações com infraestrutura existente, implante apenas o HyperDX:
+Para organizações com infraestrutura existente, implante apenas a Interface do ClickStack:
 
 ```yaml
 # values-minimal.yaml
@@ -224,7 +204,7 @@ otel-collector:
 hyperdx:
   otelExporterEndpoint: "http://your-otel-collector:4318"
 
-  # Opção 1: Inline (para testes)
+  # Option 1: Inline (for testing)
   defaultConnections: |
     [
       {
@@ -236,7 +216,7 @@ hyperdx:
       }
     ]
 
-  # Opção 2: Secret externo (produção)
+  # Option 2: External secret (production)
   # useExistingConfigSecret: true
   # existingConfigSecret: "my-external-config"
   # existingConfigConnectionsKey: "connections.json"
@@ -247,9 +227,7 @@ hyperdx:
 helm install my-clickstack clickstack/clickstack -f values-minimal.yaml
 ```
 
-<div id="next-steps">
-  ## Próximos passos
-</div>
+## Próximos passos {#next-steps}
 
 * [Guia de configuração](/pt-BR/clickstack/deployment/helm-configuration) - Chaves de API, Secrets e configuração de Entrada
 * [Implantações na Cloud](/pt-BR/clickstack/deployment/helm-cloud) - Configurações específicas de GKE, EKS e AKS

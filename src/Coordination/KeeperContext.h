@@ -46,7 +46,14 @@ public:
 
     bool digestEnabled() const;
     void setDigestEnabled(bool digest_enabled_);
+
+    /// This server's id in the Raft cluster (keeper_server.server_id). -1 if not initialized
+    /// from config (e.g. in tools and tests).
+    int getServerID() const { return server_id; }
     bool digestEnabledOnCommit() const;
+
+    bool removeOrphanedNodesOnStartup() const;
+    void setRemoveOrphanedNodesOnStartup(bool remove_orphaned_nodes_on_startup_);
 
     DiskPtr getLatestLogDisk() const;
     DiskPtr getLogDisk() const;
@@ -63,6 +70,15 @@ public:
 
     DiskPtr getStateFileDisk() const;
     void setStateFileDisk(DiskPtr disk);
+
+    /// Disk for the on-disk node storage. Initialized only if coordination setting
+    /// `use_lsmt_storage` is enabled and `storage_memory_only` is disabled; throws otherwise.
+    DiskPtr getDataDisk() const;
+    void setDataDisk(DiskPtr disk);
+
+    /// Used by keeper-bench when it needs data disk but not the rest of `initialize`.
+    void initializeDiskSelector(const Poco::Util::AbstractConfiguration & config);
+    void initializeDataDisk(const String & config_elem, const Poco::Util::AbstractConfiguration & config);
 
     const std::unordered_map<std::string, std::string> & getSystemNodesWithData() const;
     const KeeperFeatureFlags & getFeatureFlags() const;
@@ -86,7 +102,8 @@ public:
     void setLocalLogsPreprocessed();
     bool localLogsPreprocessed() const;
 
-    void waitLocalLogsPreprocessedOrShutdown();
+    /// returns whether the local logs were preprocessed; false if the wait ended on its deadline or on shutdown
+    bool waitLocalLogsPreprocessedOrShutdown(uint64_t wait_timeout_ms);
 
     uint64_t lastCommittedIndex() const;
     void setLastCommitIndex(uint64_t commit_index);
@@ -122,9 +139,17 @@ private:
     void initializeFeatureFlags(const Poco::Util::AbstractConfiguration & config);
     void initializeDisks(const Poco::Util::AbstractConfiguration & config);
 
+    /// Check that write_snapshot_version is supported and not lower than the enabled
+    /// feature flags require. Throws BAD_ARGUMENTS otherwise. Used both on startup
+    /// and on hot reload, so that SYSTEM RELOAD CONFIG cannot put Keeper into a
+    /// configuration that would be rejected on startup.
+    void validateWriteSnapshotVersion(const CoordinationSettings & settings) const;
+    void validateWriteLogEntryVersion(const CoordinationSettings & settings) const;
+
     Storage getLogsPathFromConfig(const Poco::Util::AbstractConfiguration & config) const;
     Storage getSnapshotsPathFromConfig(const Poco::Util::AbstractConfiguration & config) const;
     Storage getStatePathFromConfig(const Poco::Util::AbstractConfiguration & config) const;
+    Storage getDataPathFromConfig(const String & config_elem, const Poco::Util::AbstractConfiguration & config) const;
 
     DiskPtr getDisk(const Storage & storage) const;
 
@@ -140,6 +165,9 @@ private:
 
     bool digest_enabled{true};
     bool digest_enabled_on_commit{false};
+    bool remove_orphaned_nodes_on_startup{false};
+
+    int server_id{-1};
 
     std::shared_ptr<DiskSelector> disk_selector;
 
@@ -148,6 +176,7 @@ private:
     Storage snapshot_storage;
     Storage latest_snapshot_storage;
     Storage state_file_storage;
+    Storage data_storage;
 
     std::vector<std::string> old_log_disk_names;
     std::vector<std::string> old_snapshot_disk_names;

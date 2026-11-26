@@ -14,7 +14,7 @@ doc_type: 'guide'
 
 [MergeTree 家族表](/zh/reference/engines/table-engines/mergetree-family/mergetree)支持分区，包括[复制表](/zh/reference/engines/table-engines/mergetree-family/replication)和 [materialized views](/zh/reference/statements/create/view#materialized-view)。
 
-分区是按指定条件对表中记录进行的逻辑划分。可以按任意条件设置分区，例如按月、按天或按事件类型。每个分区都会单独存储，以简化对这些数据的操作。访问数据时，ClickHouse 会尽可能只使用最小范围的分区子集。对于包含分区键的查询，分区可以提升性能，因为 ClickHouse 会先按该分区进行过滤，再选择该分区中的 parts 和粒度。
+分区是按指定条件对表中记录进行的逻辑划分。可以按任意条件设置分区，例如按月、按天或按事件类型。每个分区都会单独存储，以简化对这些数据的操作。访问数据时，ClickHouse 会尽可能只使用最小范围的分区子集。分区主要是一种数据管理手段。当查询按分区键进行过滤时，ClickHouse 可以在选择 parts 和粒度之前跳过其他分区，这在过滤列不属于主键时尤其有用。跨越大量分区的查询可能会更慢，因为需要读取更多的 parts。具体建议请参阅[选择分区键](/zh/best-practices/choosing-a-partitioning-key)。
 
 分区是在[创建表](/zh/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-creating-a-table)时通过 `PARTITION BY expr` 子句指定的。分区键可以是表列中的任意表达式。例如，要指定按月分区，可使用表达式 `toYYYYMM(date_column)`：
 
@@ -40,7 +40,7 @@ ORDER BY (CounterID, StartDate, intHash32(UserID));
 
 在此示例中，我们按当前周内发生的事件类型进行分区。
 
-默认情况下，不支持浮点型分区键。若要使用它，请启用设置 [allow&#95;floating&#95;point&#95;partition&#95;key](/zh/reference/settings/merge-tree-settings#allow_floating_point_partition_key)。
+默认情况下，不支持浮点型分区键。若要使用它，请启用设置 [allow&#95;floating&#95;point&#95;partition&#95;key](/zh/reference/settings/merge-tree-settings/allow#allow_floating_point_partition_key)。
 
 向表中插入新数据时，这些数据会作为单独的 part (chunk) 存储，并按主键排序。插入后的 10–15 分钟内，同一分区中的 parts 会合并为一个完整的 part。
 
@@ -87,7 +87,7 @@ WHERE table = 'visits'
   旧类型表的 part 名称为：`20190117_20190123_2_2_0` (最小日期 - 最大日期 - 最小块编号 - 最大块编号 - 层级) 。
 </Info>
 
-`active` 列显示 part 的状态。`1` 表示活跃；`0` 表示非活跃。例如，非活跃 part 可能是合并成更大 part 后保留下来的源 part。损坏的数据分区片段也会标记为非活跃。
+`active` 列显示 part 的状态。`1` 表示活跃；`0` 表示非活跃。例如，非活跃数据分片可能是合并成更大 part 后保留下来的源 part。损坏的数据分区片段也会标记为非活跃。
 
 如您在示例中所见，同一分区存在多个彼此独立的 part (例如 `201901_1_3_1` 和 `201901_1_9_2`) 。这意味着这些 part 尚未合并。ClickHouse 会定期合并已插入的数据 part，大约在插入后 15 分钟进行。此外，您还可以使用 [OPTIMIZE](/zh/reference/statements/optimize) 查询执行一次非计划合并。示例：
 
@@ -108,7 +108,7 @@ OPTIMIZE TABLE visits PARTITION 201902;
 └───────────┴──────────────────┴────────┘
 ```
 
-非活动 parts 会在合并后约 10 分钟被删除。
+非活跃数据分片会在合并后约 10 分钟被删除。
 
 查看一组 parts 和分区的另一种方法，是进入该表的目录：`/var/lib/clickhouse/data/<database>/<table>/`。例如：
 
@@ -134,9 +134,7 @@ drwxr-xr-x 2 clickhouse clickhouse 4096 Feb  1 16:48 detached
 
 ClickHouse 允许你对分区执行多种操作：删除分区、从一个表复制到另一个表，或创建备份。有关所有操作的列表，请参见 [Manipulations With Partitions and Parts](/zh/reference/statements/alter/partition) 一节。
 
-<div id="group-by-optimisation-using-partition-key">
-  ## 使用分区键进行 Group By 优化
-</div>
+## 使用分区键进行 Group By 优化 {#group-by-optimisation-using-partition-key}
 
 对于表的分区键与查询的 group by 键的某些组合，可以对每个分区分别独立执行聚合。
 这样一来，最终就不必合并所有执行线程产生的部分聚合数据，

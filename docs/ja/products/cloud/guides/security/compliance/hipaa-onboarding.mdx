@@ -10,8 +10,6 @@ keywords: ['HIPAA', 'コンプライアンス', '医療', 'セキュリティ', 
 import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
 import { EnterprisePlanFeatureBadge } from "/snippets/ja/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 <EnterprisePlanFeatureBadge feature="HIPAA" />
 
 ClickHouse は、1996 年の Health Insurance Portability and Accountability Act (HIPAA) の Security Rule に準拠したサービスを提供しています。お客様は、Business Associate Agreement (BAA) を締結し、準拠リージョンにサービスをデプロイした後、これらのサービス内で保護対象保健情報 (PHI) を処理できます。
@@ -20,9 +18,7 @@ ClickHouse のコンプライアンスプログラムおよび第三者監査レ
 
 このページでは、ClickHouse Cloud で HIPAA 準拠サービスのデプロイを有効にする手順について説明します。
 
-<div id="enable-hipaa-compliant-services">
-  ## HIPAA 準拠サービスを有効にしてデプロイする
-</div>
+## HIPAA 準拠サービスを有効にしてデプロイする {#enable-hipaa-compliant-services}
 
 <Steps>
   <Step title="Enterprise サービスに登録する" id="sign-up-for-enterprise">
@@ -35,12 +31,18 @@ ClickHouse のコンプライアンスプログラムおよび第三者監査レ
 
   <Step title="組織で HIPAA を有効にする" id="enable-hipaa">
     1. コンソールの左下にある組織名を選択します。
-    2. **Organization details** をクリックします。
+    2. **組織設定** をクリックします。
     3. **Enable HIPAA** をオンにします。
 
     <br />
 
-    <Image img="/images/cloud/security/compliance/hipaa_1.webp" size="md" alt="HIPAA の有効化をリクエスト" background="black" />
+    <div className="ch-image-md">
+      <Frame>
+        <img className="block dark:hidden" src="/images/cloud/security/compliance/hipaa_1-light.webp" alt="HIPAA の有効化をリクエスト（ライトモード）" />
+
+        <img className="hidden dark:block" src="/images/cloud/security/compliance/hipaa_1.webp" alt="HIPAA の有効化をリクエスト（ダークモード）" />
+      </Frame>
+    </div>
 
     <br />
 
@@ -48,7 +50,13 @@ ClickHouse のコンプライアンスプログラムおよび第三者監査レ
 
     <br />
 
-    <Image img="/images/cloud/security/compliance/hipaa_2.webp" size="md" alt="BAA リクエストを送信" background="black" />
+    <div className="ch-image-md">
+      <Frame>
+        <img className="block dark:hidden" src="/images/cloud/security/compliance/hipaa_2-light.webp" alt="BAA リクエストを送信（ライトモード）" />
+
+        <img className="hidden dark:block" src="/images/cloud/security/compliance/hipaa_2.webp" alt="BAA リクエストを送信（ダークモード）" />
+      </Frame>
+    </div>
 
     <br />
 
@@ -56,7 +64,13 @@ ClickHouse のコンプライアンスプログラムおよび第三者監査レ
 
     <br />
 
-    <Image img="/images/cloud/security/compliance/hipaa_3.webp" size="md" alt="HIPAA が有効化済み" background="black" />
+    <div className="ch-image-md">
+      <Frame>
+        <img className="block dark:hidden" src="/images/cloud/security/compliance/hipaa_3-light.webp" alt="HIPAA が有効化済み（ライトモード）" />
+
+        <img className="hidden dark:block" src="/images/cloud/security/compliance/hipaa_3.webp" alt="HIPAA が有効化済み（ダークモード）" />
+      </Frame>
+    </div>
 
     <br />
   </Step>
@@ -67,7 +81,13 @@ ClickHouse のコンプライアンスプログラムおよび第三者監査レ
 
     <br />
 
-    <Image img="/images/cloud/security/compliance/hipaa_4.webp" size="md" alt="HIPAA リージョンにデプロイ" background="black" />
+    <div className="ch-image-md">
+      <Frame>
+        <img className="block dark:hidden" src="/images/cloud/security/compliance/hipaa_4-light.webp" alt="HIPAA リージョンにデプロイ（ライトモード）" />
+
+        <img className="hidden dark:block" src="/images/cloud/security/compliance/hipaa_4.webp" alt="HIPAA リージョンにデプロイ（ダークモード）" />
+      </Frame>
+    </div>
 
     <br />
 
@@ -78,7 +98,7 @@ ClickHouse のコンプライアンスプログラムおよび第三者監査レ
 </Steps>
 
 <div id="migrate-to-hipaa">
-  ## 既存のサービスを移行する
+  ## 既存のサービスを移行する {#migrate-to-hipaa}
 </div>
 
 必要に応じて、サービスは準拠環境にデプロイすることを強く推奨します。サービスを標準リージョンから HIPAA 準拠リージョンに移行する場合は、バックアップから復元する必要があり、一定時間のダウンタイムが発生する可能性があります。
@@ -97,3 +117,9 @@ ClickHouse のコンプライアンスプログラムおよび第三者監査レ
 
   サービスは同じクラウドプロバイダーおよび同じ地理的リージョン内に維持する必要があります。このプロセスでは、同じクラウドプロバイダーおよびリージョン内の準拠環境にサービスを移行します。
 </Info>
+
+## HIPAA 準拠サービスのバックアップ {#backups}
+
+ClickHouse が管理するバックアップは、HIPAA 準拠サービスでも他のサービスと同様に機能します。バックアップはサービスと同じクラウドプロバイダーおよびリージョンに保存され、Enterpriseプランのお客様はバックアップの頻度と保持期間を設定できます。バックアップは、同一リージョン内の新しいサービス (別の HIPAA 準拠サービスを含む) に復元できます。
+
+HIPAA 準拠サービスでは、お客様自身のクラウドアカウントへのバックアップのエクスポートはご利用いただけません。規制対象の環境では環境外のストレージへの書き込みが許可されていないため、コンソールの **Set up external backup** オプションは無効化されており、これらのサービスには `BACKUP` 権限も付与されません。

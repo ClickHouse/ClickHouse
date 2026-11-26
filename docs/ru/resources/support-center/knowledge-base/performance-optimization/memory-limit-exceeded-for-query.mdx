@@ -6,10 +6,8 @@ tags: ['Ошибки и исключения']
 keywords: ['OOM', 'превышен лимит памяти']
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 <div id="troubleshooting-out-of-memory-issues">
-  ## Превышен лимит памяти при выполнении запроса
+  ## Превышен лимит памяти при выполнении запроса {#troubleshooting-out-of-memory-issues}
 </div>
 
 Новичку ClickHouse часто кажется почти магией: любой запрос выполняется очень быстро,
@@ -24,12 +22,12 @@ ClickHouse Cloud делает автоматически и без лишних 
 В этом случае у пользователей есть несколько вариантов.
 
 <div id="aggregations">
-  ### Агрегации
+  ### Агрегации {#aggregations}
 </div>
 
 Для ресурсоемких агрегаций или сортировок пользователи могут использовать настройки
-[`max_bytes_before_external_group_by`](/ru/reference/settings/session-settings#max_bytes_before_external_group_by)
-и [`max_bytes_before_external_sort`](/ru/reference/settings/session-settings#max_bytes_ratio_before_external_sort) соответственно.
+[`max_bytes_before_external_group_by`](/ru/reference/settings/session-settings/max-bytes#max_bytes_before_external_group_by)
+и [`max_bytes_before_external_sort`](/ru/reference/settings/session-settings/max-bytes#max_bytes_before_external_sort) соответственно.
 Первая из них подробно рассматривается [здесь](/ru/reference/statements/select/group-by#group-by-in-external-memory).
 
 Иными словами, эти настройки позволяют выполнять агрегации с выгрузкой на диск при
@@ -38,14 +36,12 @@ ClickHouse Cloud делает автоматически и без лишних 
 проблемы при ресурсоемкой сортировке. Это может быть особенно важно в
 распределенных окружениях, где координирующий узел получает отсортированные ответы
 от дочерних сегментов. В этом случае координирующему серверу может потребоваться отсортировать
-набор данных, размер которого превышает доступный ему объем памяти. С помощью [`max_bytes_before_external_sort`](/ru/reference/settings/session-settings#max_bytes_ratio_before_external_sort)
+набор данных, размер которого превышает доступный ему объем памяти. С помощью [`max_bytes_before_external_sort`](/ru/reference/settings/session-settings/max-bytes#max_bytes_before_external_sort)
 можно разрешить сортировке выгружаться на диск. Эта настройка также полезна в
 случаях, когда пользователь использует `ORDER BY` после `GROUP BY` с `LIMIT`,
 особенно если запрос распределенный.
 
-<div id="joins">
-  ### JOIN
-</div>
+### JOIN {#joins}
 
 Для JOIN пользователи могут выбирать разные алгоритмы `JOIN`, что позволяет
 снизить требуемый объем памяти. По умолчанию используется hash join, который
@@ -55,7 +51,7 @@ ClickHouse Cloud делает автоматически и без лишних 
 использования памяти меньшую таблицу следует размещать справа. Однако у этого подхода
 по-прежнему есть ограничения в сценариях, где объем памяти становится узким местом. В таких случаях
 можно включить алгоритм `partial_merge` через настройку
-[`join_algorithm`](/ru/reference/settings/session-settings#join_algorithm).
+[`join_algorithm`](/ru/reference/settings/session-settings/join#join_algorithm).
 Этот вариант [алгоритма sort-merge](https://en.wikipedia.org/wiki/Sort-merge_join)
 сначала сортирует правую таблицу по блокам и создает для них индекс min-max.
 Затем он сортирует части левой таблицы по ключу JOIN и выполняет JOIN с
@@ -67,7 +63,11 @@ ClickHouse Cloud делает автоматически и без лишних 
 сортируются на диске, если они не помещаются в памяти, что позволяет выполнять JOIN
 для больших таблиц.
 
-<Image img="/images/knowledgebase/memory-limit-exceeded-for-query.webp" size="md" alt="Алгоритмы JOIN" />
+<div className="ch-image-md">
+  <Frame>
+    ![Алгоритмы JOIN](/images/knowledgebase/memory-limit-exceeded-for-query.webp)
+  </Frame>
+</div>
 
 Начиная с версии 20.3, ClickHouse поддерживает значение auto для настройки `join_algorithm`.
 Оно указывает ClickHouse использовать адаптивный подход к JOIN: предпочтение

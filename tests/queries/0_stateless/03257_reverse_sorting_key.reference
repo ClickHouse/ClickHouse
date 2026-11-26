@@ -67,10 +67,11 @@ ExpressionTransform
     (Sorting)
     FinishSortingTransform
       PartialSortingTransform
-        (Expression)
-        ExpressionTransform
-          (ReadFromMergeTree)
-          MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1
+        RemoveVirtualRowTransform
+          (Expression)
+          ExpressionTransform
+            (ReadFromMergeTree)
+            MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1
 0	1000
 0	1010
 0	1020

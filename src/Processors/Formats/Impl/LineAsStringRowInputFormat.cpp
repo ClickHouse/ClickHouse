@@ -72,7 +72,7 @@ void registerInputFormatLineAsString(FormatFactory & factory)
         const FormatSettings &)
     {
         return std::make_shared<LineAsStringRowInputFormat>(std::make_shared<const Block>(sample), buf, params);
-    });
+    }, /*supports_reset_parser=*/ true);
 
     factory.setDocumentation("LineAsString", Documentation{
         .description = R"DOCS_MD(
@@ -83,8 +83,8 @@ void registerInputFormatLineAsString(FormatFactory & factory)
 ## Description {#description}
 
 The `LineAsString` format interprets every line of input data as a single string value. 
-This format can only be parsed for a table with a single field of type [String](/sql-reference/data-types/string.md). 
-The remaining columns must be set to [`DEFAULT`](/sql-reference/statements/create/table.md/#default), [`MATERIALIZED`](/sql-reference/statements/create/view#materialized-view), or omitted.
+This format can only be parsed for a table with a single field of type [String](/reference/data-types/string).
+The remaining columns must be set to [`DEFAULT`](/reference/statements/create/table#default), [`MATERIALIZED`](/reference/statements/create/view#materialized-view), or omitted.
 
 ## Example usage {#example-usage}
 

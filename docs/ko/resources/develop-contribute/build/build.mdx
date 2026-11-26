@@ -20,18 +20,14 @@ ClickHouse는 다음 플랫폼에서 빌드할 수 있습니다.
 * s390/x (실험적)
 * RISC-V 64 (실험적)
 
-<div id="assumptions">
-  ## 전제 조건
-</div>
+## 전제 조건 {#assumptions}
 
 다음 튜토리얼은 Ubuntu Linux를 기준으로 작성되었지만, 필요한 부분을 적절히 변경하면 다른 Linux 배포판에서도 사용할 수 있습니다.
 개발에 권장되는 최소 Ubuntu 버전은 24.04 LTS입니다.
 
 이 튜토리얼은 ClickHouse 리포지토리와 모든 서브모듈을 로컬에 체크아웃해 두었다고 가정합니다.
 
-<div id="install-prerequisites">
-  ## 필수 구성 요소 설치
-</div>
+## 필수 구성 요소 설치 {#install-prerequisites}
 
 먼저, 일반 [필수 구성 요소 문서](/ko/resources/develop-contribute/introduction/developer-instruction)를 확인하십시오.
 
@@ -44,26 +40,32 @@ sudo apt-get update
 sudo apt-get install build-essential git cmake ccache python3 ninja-build nasm yasm gawk lsb-release wget software-properties-common gnupg
 ```
 
-<div id="install-the-clang-compiler">
-  ## Clang 컴파일러 설치
-</div>
+## Clang 컴파일러 설치 {#install-the-clang-compiler}
 
 Ubuntu/Debian에 Clang을 설치하려면 [여기](https://apt.llvm.org/)에서 제공하는 LLVM의 자동 설치 스크립트를 사용하십시오.
 
 ```bash
 wget https://apt.llvm.org/llvm.sh
 chmod +x llvm.sh
-sudo ./llvm.sh 21
+sudo ./llvm.sh 23
 ```
+
+<Note>
+  `apt.llvm.org`는 Ubuntu 24.04 (Noble) 이상 및 Debian 12 (Bookworm) 이상용 Clang 23 패키지를 제공합니다.
+  Ubuntu 22.04 (Jammy)용 Clang 23 리포지토리는 없으므로, Jammy에서는 `sudo ./llvm.sh 21`을 실행하여 Clang 21을 대신 설치하십시오.
+</Note>
 
 다른 Linux 배포판에서는 LLVM의 [미리 빌드된 패키지](https://releases.llvm.org/download.html)를 설치할 수 있는지 확인하세요.
 
 2026년 2월 기준으로 Clang 21 이상이 필요합니다.
 GCC 및 기타 컴파일러는 지원되지 않습니다.
 
-<div id="install-the-rust-compiler-optional">
-  ## Rust 컴파일러 설치(선택 사항)
-</div>
+<Tip>
+  ClickHouse CI는 동일한 Clang 릴리스를 PGO와 BOLT로 최적화한 빌드로 컴파일하며, 이 컴파일러를 사용하면 ClickHouse를 더 빠르게 컴파일할 수 있습니다.
+  glibc 2.38 이상이 설치된 Linux에서 `eval "$(utils/download-ci-toolchain.sh)"`를 실행하면 `curl`과 `zstd`로 해당 컴파일러를 다운로드하고, 새 빌드 디렉터리를 구성할 때 이 컴파일러를 사용하도록 `CC`와 `CXX`를 설정합니다.
+</Tip>
+
+## Rust 컴파일러 설치(선택 사항) {#install-the-rust-compiler-optional}
 
 <Note>
   Rust는 ClickHouse의 선택적 의존성입니다.
@@ -77,14 +79,17 @@ C++ 의존성과 마찬가지로 ClickHouse는 정확히 어떤 항목이 설치
 릴리스 모드에서는 일반적으로 최신 rustup 툴체인 버전이면 이러한 의존성과 함께 동작하지만, 새니타이저를 활성화할 계획이라면 CI에서 사용하는 것과 정확히 동일한 `std`에 맞는 버전을 사용해야 합니다(이 경우 크레이트를 벤더링함):
 
 ```bash
-rustup toolchain install nightly-2026-03-22
-rustup default nightly-2026-03-22
+rustup toolchain install nightly-2026-11-02
+rustup default nightly-2026-11-02
 rustup component add rust-src
 ```
 
-<div id="build-clickhouse">
-  ## ClickHouse 빌드
-</div>
+<Tip>
+  ccache는 Rust를 캐시하지 않으므로, 새 빌드 디렉터리에서는 모든 Rust 크레이트를 다시 컴파일합니다.
+  `-DRUST_BUILD_CACHE_DIR=<path>`를 지정하면 Cargo가 컴파일된 크레이트를 해당 디렉터리에 보관하며, 동일한 체크아웃과 구성을 사용하는 새 빌드 디렉터리에서 이를 재사용합니다(delta-kernel-rs 제외). 이 디렉터리는 체크아웃 및 구성당 약 7 GB를 차지하며, 크기 제한이 없고 언제든지 삭제할 수 있습니다.
+</Tip>
+
+## ClickHouse 빌드 {#build-clickhouse}
 
 모든 빌드 아티팩트를 포함하는 별도의 디렉터리 `build`를 `ClickHouse` 내부에 생성하는 것을 권장합니다:
 
@@ -98,8 +103,8 @@ cd build
 선택 사항: 여러 컴파일러 버전이 설치되어 있다면 사용할 컴파일러를 정확히 지정할 수 있습니다.
 
 ```sh
-export CC=clang-21
-export CXX=clang++-21
+export CC=clang-23
+export CXX=clang++-23
 ```
 
 개발용으로는 디버그 빌드를 권장합니다.
@@ -145,9 +150,7 @@ ninja -j 1 clickhouse
   ```
 </Tip>
 
-<div id="running-the-clickhouse-executable">
-  ## ClickHouse 실행 파일 실행하기
-</div>
+## ClickHouse 실행 파일 실행하기 {#running-the-clickhouse-executable}
 
 빌드가 성공적으로 완료되면 실행 파일은 `ClickHouse/<build_dir>/programs/`에서 찾을 수 있습니다:
 
@@ -162,13 +165,9 @@ macOS 또는 FreeBSD에서 `Connection refused` 메시지가 표시되면 호스
 clickhouse client --host 127.0.0.1
 ```
 
-<div id="advanced-options">
-  ## 고급 옵션
-</div>
+## 고급 옵션 {#advanced-options}
 
-<div id="minimal-build">
-  ### 최소 빌드
-</div>
+### 최소 빌드 {#minimal-build}
 
 타사 라이브러리에서 제공하는 기능이 필요하지 않다면 빌드 속도를 더 높일 수 있습니다.
 
@@ -184,9 +183,7 @@ Rust는 인터넷 연결이 필요합니다. Rust 지원을 비활성화하려�
 cmake -DENABLE_RUST=OFF
 ```
 
-<div id="running-the-clickhouse-executable-1">
-  ### ClickHouse 실행 파일 실행하기
-</div>
+### ClickHouse 실행 파일 실행하기 {#running-the-clickhouse-executable-1}
 
 시스템에 설치된 운영 환경용 ClickHouse 바이너리를 컴파일한 ClickHouse 바이너리로 교체할 수 있습니다.
 이렇게 하려면 공식 웹사이트의 안내에 따라 시스템에 ClickHouse를 설치하십시오.
@@ -207,9 +204,7 @@ sudo service clickhouse-server stop
 sudo -u clickhouse ClickHouse/build/programs/clickhouse server --config-file /etc/clickhouse-server/config.xml
 ```
 
-<div id="building-on-any-linux">
-  ### 모든 Linux에서 빌드하기
-</div>
+### 모든 Linux에서 빌드하기 {#building-on-any-linux}
 
 OpenSUSE Tumbleweed에 필요한 패키지를 설치합니다:
 
@@ -232,9 +227,7 @@ cmake -S . -B build
 cmake --build build
 ```
 
-<div id="building-in-docker">
-  ### Docker에서 빌드하기
-</div>
+### Docker에서 빌드하기 {#building-in-docker}
 
 다음을 사용하면 CI와 유사한 환경에서 로컬에서 원하는 빌드를 실행할 수 있습니다:
 

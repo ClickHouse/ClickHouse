@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import random
 import sys
 import time
 import shutil
@@ -40,7 +41,7 @@ class RunnerConfig:
     """Configuration and runtime state for the GitHub Actions runner."""
 
     # Constants
-    version: int = 74
+    version: int = 82
     init_environment: str = Environment.TEST
     verbose = False
     script_path = os.path.abspath(__file__)
@@ -48,6 +49,8 @@ class RunnerConfig:
     # Runner defaults
     user: str = "ec2-user" if sys.platform == "darwin" else "ubuntu"
     runner_home: str = f"/Users/{user}/actions-runner" if sys.platform == "darwin" else f"/home/{user}/actions-runner"
+    log_file: str = f"/Users/{user}/runner-init.log"
+    work_dir: str = "_work"
     runner_org: str = "ClickHouse"
     runner_url: str = ""  # set in __post_init__
     max_total_errors: int = 5
@@ -56,6 +59,14 @@ class RunnerConfig:
     max_jobs: int = 1
     max_chill: int = 600
     max_life: int = 3600 * 24
+
+    # When true, the per-job _work wipe in run_job is skipped so the git checkout
+    # survives between jobs. Set for the incremental-sync runner type below, whose
+    # dedicated always-warm ASG reuses one instance to fetch into an existing
+    # checkout instead of re-cloning the full ClickHouse history every cron run.
+    keep_workspace: bool = False
+    # Runner type that reuses its checkout across jobs (see keep_workspace).
+    incremental_sync_runner_type: str = "private-incremental-sync"
 
     free_blocks_threshold: int = 3_000_000
     free_blocks_threshold_percent: int = 5
@@ -173,6 +184,8 @@ EC2.autodetect_region()
 
 class Runner:
     PROVISION_MARKER = Path.home() / ".clickhouse-ci-runner-init-version"
+    LOCAL_SSD_MOUNT = "/Volumes/ephemeral0"
+    LOCAL_SSD_INSTANCE_TYPES = ("mac-m4pro.metal",)
 
     def __init__(self, ec2: EC2):
         self.ec2 = ec2
@@ -202,9 +215,21 @@ class Runner:
             raise RuntimeError("github:runner-type tag is not set for the instance")
         self.labels = f"self-hosted,{sys.platform},{self.runner_type}"
 
-        if "style" in self.runner_type:
+        if "style" in self.runner_type or "tiny" in self.runner_type:
             config.max_chill = 7200
             config.max_jobs = 10
+
+        if self.runner_type == config.incremental_sync_runner_type:
+            # Serve many cron runs on one warm instance and keep its checkout;
+            # max_life still recycles the instance daily for a clean re-clone.
+            config.max_jobs = 1_000_000
+            config.keep_workspace = True
+
+        if config.init_environment == Environment.MACOS:
+            # Drop swap files and other accumulated state; the random offset staggers reboots across the fleet.
+            config.max_life = 3600 * 24 * 3 + 900 * random.randint(0, 24)
+            # 20 GiB in KiB; a Fast test job uses several GiB of the rootfs.
+            config.free_blocks_threshold = 20 * 1024 * 1024
 
         log(f"max jobs: {config.max_jobs}")
         log(f"max chill: {config.max_chill}")
@@ -224,20 +249,48 @@ class Runner:
             self.collect_logs("configure")
             raise Exception(f"Too many errors ({self.total_errors})")
 
-        # macOS runners run continuously without lifetime limits
+        # Checked before every job on all runners, including macOS: a host that
+        # boots still full has to refuse the next job, not just the one after it.
+        Runner.check_free_disk_space()
+
         if config.init_environment == Environment.MACOS:
-            return
+            self._exit_if_init_script_upgraded()
 
         runner_age = int(time.time()) - self.runner_start_time
         if config.max_life < runner_age:
             raise Exception(f"Runner lifetime exceeded: {runner_age}")
 
+    def _exit_if_init_script_upgraded(self) -> None:
+        """Exit when a newer runner-init script has been published to S3.
+
+        Called between jobs, so the runner is idle here. Raising unwinds through
+        `run`, which drops the provisioning marker; `user_data` then reboots and
+        re-provisions from the new script. A failure to read the remote version
+        is a safe skip, not an exit.
+        """
+        try:
+            remote_version = EC2.get_remote_init_version()
+        except Exception as e:
+            log(f"Cannot get remote init version: {e}, skipping upgrade check")
+            return
+        if remote_version <= config.version:
+            return
+        raise Exception(
+            f"Remote init version {remote_version} > running {config.version}, "
+            "exiting to re-provision"
+        )
+
     def _cleanup_workspace(self) -> None:
         """Remove _work directory to clean up workspace."""
-        work_dir = Path(config.runner_home) / "_work"
+        # Diagnostic logs are always rotated; the _work checkout is preserved
+        # for runner types that reuse it across jobs (see config.keep_workspace).
+        shutil.rmtree(config.log_dir, ignore_errors=True)
+        if config.keep_workspace:
+            log("keep_workspace is set: preserving _work checkout between jobs")
+            return
+        work_dir = Path(config.runner_home) / config.work_dir
         if work_dir.exists():
             shutil.rmtree(work_dir)
-        shutil.rmtree(config.log_dir, ignore_errors=True)
 
     def remove_if_not_running(self) -> bool:
         """Unregister the runner from GitHub.
@@ -280,7 +333,7 @@ class Runner:
             "--labels",
             self.labels,
             "--work",
-            "_work",
+            config.work_dir,
             "--name",
             self.ec2._instance_id,
         ]
@@ -304,7 +357,15 @@ class Runner:
     def run(self) -> None:
         """Main runner loop."""
         if config.init_environment == Environment.MACOS:
+            # runner-init starts once per boot; unified logs and `uuidtext` otherwise grow to several GB.
+            run_bash("log erase --all", sudo=True)
             Runner.configure_darwin()
+            self.configure_local_ssd()
+            # M2 Pro, M4 and M4 Pro test hosts; parking is off until the tests start, so they run jobs
+            if False and self.ec2._instance_id in ("i-04af1537ae54658c2", "i-026bcc3b5264aa319", "i-007ee22c1c365d7ef"):
+                log("Test host: the GitHub runner is not started")
+                while True:
+                    time.sleep(3600)
         else:
             Runner.configure_linux()
 
@@ -404,23 +465,31 @@ class Runner:
             return
 
     @staticmethod
+    def check_free_disk_space() -> None:
+        paths = ["/"]
+        if Path(config.work_dir).is_absolute():
+            paths.append(str(Path(config.work_dir).parent))
+        for path in paths:
+            usage = shutil.disk_usage(path)
+            free_blocks = usage.free // 1024
+            free_percent = usage.free * 100 // usage.total
+            if config.verbose:
+                log(f"{path}: {free_blocks} KiB free, {free_percent}%", "disk-space")
+
+            if free_blocks < config.free_blocks_threshold:
+                raise RuntimeError(f"Out of disk space: {free_blocks} KiB free on {path}")
+            if free_percent < config.free_blocks_threshold_percent:
+                raise RuntimeError(
+                    f"Out of disk space: {free_percent}% of free space on {path}"
+                )
+
+    @staticmethod
     def check_post_run() -> None:
+        Runner.check_free_disk_space()
+
+        # Docker is not installed on the macOS runners
         if config.init_environment == Environment.MACOS:
             return
-        result = subprocess.run(["df", "/"], capture_output=True, text=True, check=True)
-        if config.verbose:
-            log(f"df / output:\n{result.stdout}", "post-run")
-        last = result.stdout.splitlines()[-1].split()
-
-        free_blocks = int(last[3])
-        free_percent = int(last[3]) * 100 // int(last[1])
-
-        if free_blocks < config.free_blocks_threshold:
-            raise RuntimeError(f"Out of disk space: {free_blocks} blocks on rootfs")
-        if free_percent < config.free_blocks_threshold_percent:
-            raise RuntimeError(
-                f"Out of disk space: {free_percent}% of free space on rootfs"
-            )
 
         run_bash(
             """
@@ -495,6 +564,19 @@ timedatectl status | grep 'NTP service: active'
                 result.append(entry)
         return ":".join(result)
 
+    def configure_local_ssd(self) -> None:
+        # The instance store is empty after a stop, so this runs at every boot, not behind the provisioning marker.
+        if self.instance_type not in self.LOCAL_SSD_INSTANCE_TYPES:
+            return
+        deadline = time.time() + 120
+        while not os.path.ismount(self.LOCAL_SSD_MOUNT):
+            assert time.time() < deadline, f"{self.LOCAL_SSD_MOUNT} is not mounted on {self.instance_type}"
+            time.sleep(5)
+        parent = f"{self.LOCAL_SSD_MOUNT}/runner"
+        run_bash(f'mkdir -p "{parent}" && chown {config.user} "{parent}"', sudo=True)
+        config.work_dir = f"{parent}/_work"
+        log(f"Local SSD: the runner work directory is {config.work_dir}")
+
     @staticmethod
     def configure_darwin() -> None:
         # macOS EC2 instances cannot have their user_data updated after launch,
@@ -516,32 +598,56 @@ timedatectl status | grep 'NTP service: active'
 
         log(f"macOS provisioning version change: '{previous}' -> '{current}'")
 
-        # Fetch and rewrite the CloudWatch agent config in Python rather than
-        # piping through `jq` from bash — on a freshly bootstrapped macOS host
-        # `jq` is not yet installed (it lands later in the user-mode `brew
-        # install` block), so the privileged block cannot depend on it.
-        ssm = boto3.client("ssm", region_name="us-east-1")
-        cw_config = json.loads(
-            ssm.get_parameter(Name="AmazonCloudWatch-github-runners")["Parameter"]["Value"]
-        )
-
-        def _retarget_macos_log_path(node):
-            if isinstance(node, dict):
-                if node.get("file_path") == "/var/log/cloud-init-output.log":
-                    node["file_path"] = "/var/log/amazon/ec2/ec2-macos-init.log"
-                for v in node.values():
-                    _retarget_macos_log_path(v)
-            elif isinstance(node, list):
-                for v in node:
-                    _retarget_macos_log_path(v)
-
-        _retarget_macos_log_path(cw_config)
+        cw_config = {
+            "agent": {"metrics_collection_interval": 60, "run_as_user": "root"},
+            "metrics": {
+                "append_dimensions": {
+                    "AutoScalingGroupName": "${aws:AutoScalingGroupName}",
+                    "InstanceId": "${aws:InstanceId}",
+                    "InstanceType": "${aws:InstanceType}",
+                },
+                "metrics_collected": {
+                    "cpu": {
+                        "measurement": ["cpu_usage_idle", "cpu_usage_iowait", "cpu_usage_user", "cpu_usage_system"],
+                        "metrics_collection_interval": 60,
+                        "totalcpu": False,
+                    },
+                    "disk": {
+                        "measurement": ["free", "disk_used", "used_percent", "inodes_free"],
+                        "ignore_file_system_types": ["devtmpfs", "squashfs", "tmpfs", "overlay", "vfat"],
+                        "drop_device": True,
+                        "metrics_collection_interval": 60,
+                        "resources": ["*"],
+                    },
+                    "mem": {"measurement": ["mem_used_percent"], "metrics_collection_interval": 60},
+                },
+            },
+            "logs": {
+                "logs_collected": {
+                    "files": {
+                        "collect_list": [
+                            {
+                                "file_path": config.log_file,
+                                "log_group_name": "runners/cloud-init-output",
+                                "log_stream_name": "{instance_id}",
+                                "retention_in_days": 30,
+                            },
+                            {
+                                "file_path": "/var/log/amazon/ec2/ec2-macos-init.log",
+                                "log_group_name": "runners/cloud-init-output",
+                                "log_stream_name": "{instance_id}-ec2-macos-init",
+                                "retention_in_days": 30,
+                            },
+                        ]
+                    }
+                },
+                "log_stream_name": "runner-{instance_id}",
+                "force_flush_interval": 1,
+            },
+        }
         Path("/tmp/amazon-cloudwatch-agent.json").write_text(json.dumps(cw_config))
 
-        # Privileged steps (disable bluetooth, install CloudWatch agent into
-        # `/opt/aws/`, drop the SSM-fetched config under `/opt/aws/...`) run
-        # as root. CloudWatch is brought up first so it captures the brew
-        # install spam that follows.
+        # Privileged steps run as root; CloudWatch starts first so it captures the brew install output.
         run_bash(
             r"""
 # Disable greedy system service
@@ -553,6 +659,21 @@ launchctl disable system/com.apple.bluetoothd || true
 # (on recent macOS `mdutil` alone does not reliably free it).
 mdutil -a -i off || true
 rm -rf /.Spotlight-V100 || true
+
+# No backup destination exists, but enabled Time Machine can still take local APFS snapshots.
+tmutil disable || true
+
+# Photos analysis, Siri, iCloud and location services have no use on a runner.
+RUNNER_UID=$(id -u "$SUDO_USER")
+for agent in photoanalysisd mediaanalysisd Siri.agent assistantd cloudd bird cloudphotod; do
+    launchctl disable "gui/$RUNNER_UID/com.apple.$agent" || true
+done
+launchctl disable system/com.apple.locationd || true
+
+# Stop persisting file-change history; CI churn grows `/.fseventsd` to several GB. Takes effect after reboot.
+rm -rf /System/Volumes/Data/.fseventsd || true
+mkdir -p /System/Volumes/Data/.fseventsd
+touch /System/Volumes/Data/.fseventsd/no_log
 
 # CloudWatch agent
 case $(uname -m) in
@@ -612,6 +733,7 @@ brew install \
     bash \
     coreutils \
     llvm
+brew cleanup --prune=all -s
 
 # Python packages used by jobs. `boto3` is bootstrapped in `user_data_macos.txt`
 # because runner-init itself imports it; the rest are version-gated here.
@@ -625,7 +747,6 @@ brew install \
     pyjwt \
     numpy==2.3.2 \
     pandas==2.3.3 \
-    scipy==1.16.1 \
     Jinja2==3.1.6
 
 # GitHub Actions runner: wipe and re-extract so the next iteration of the
@@ -952,14 +1073,7 @@ def run(
 
 
 def run_bash(cmd: str, sudo: bool = False, verbose: bool = False) -> None:
-    # Default is fail-only logging: stdout/stderr are captured into pipes and
-    # only emitted on a non-zero exit. Successful output is dropped because
-    # `bash -x` traces every command substitution, and several Linux scripts
-    # (e.g. `setup_tailscale` in `init-network.sh`) expand SSM-fetched
-    # secrets — leaving them in plaintext in stderr would land them in
-    # CloudWatch. `verbose=True` opts back into emitting on success, used by
-    # `configure_macos` so the brew/install progress reaches the CloudWatch
-    # agent (which tails the runner-init process output).
+    # Without verbose, output is dropped on success: `bash -x` would leave SSM secrets in CloudWatch.
     argv = ["bash", "-euxo", "pipefail"]
     if sudo:
         argv = ["sudo"] + argv
@@ -967,15 +1081,21 @@ def run_bash(cmd: str, sudo: bool = False, verbose: bool = False) -> None:
         argv,
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        stderr=subprocess.STDOUT if verbose else subprocess.PIPE,
         text=True,
     )
-    stdout, stderr = proc.communicate(cmd)
-    if proc.returncode != 0:
-        log(f"\nstdout:\n {stdout}\nstderr:\n {stderr}")
-        raise RuntimeError("bash script failed")
     if verbose:
-        log(f"\nstdout:\n {stdout}\nstderr:\n {stderr}")
+        proc.stdin.write(cmd)
+        proc.stdin.close()
+        for line in proc.stdout:
+            print(line, end="", flush=True)
+        proc.wait()
+    else:
+        stdout, stderr = proc.communicate(cmd)
+        if proc.returncode != 0:
+            log(f"\nstdout:\n {stdout}\nstderr:\n {stderr}")
+    if proc.returncode != 0:
+        raise RuntimeError(f"bash script failed with exit code {proc.returncode}")
 
 
 if __name__ == "__main__":
@@ -1004,6 +1124,12 @@ if __name__ == "__main__":
                 sys.exit(1)
         EC2.upload_init_script()
         sys.exit(0)
+
+    if config.init_environment == Environment.MACOS:
+        # `ec2-macos-init` logs the user_data output only when the script exits
+        log_fd = os.open(config.log_file, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o644)
+        os.dup2(log_fd, 1)
+        os.dup2(log_fd, 2)
 
     try:
         ec2 = EC2()

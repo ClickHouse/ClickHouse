@@ -1,0 +1,255 @@
+{
+  "cases": [
+    {
+      "id": "boolean",
+      "valid": true,
+      "input": "boolean",
+      "decoded": { "type": "boolean" },
+      "canonical": "boolean",
+      "clause": "Primitive Types: boolean; Appendix C canonical string",
+      "spec_ref": "format/spec.md#appendix-c-json-serialization"
+    },
+    {
+      "id": "int",
+      "valid": true,
+      "input": "int",
+      "decoded": { "type": "int" },
+      "canonical": "int",
+      "clause": "Primitive Types: int; Appendix C canonical string",
+      "spec_ref": "format/spec.md#appendix-c-json-serialization"
+    },
+    {
+      "id": "long",
+      "valid": true,
+      "input": "long",
+      "decoded": { "type": "long" },
+      "canonical": "long",
+      "clause": "Primitive Types: long; Appendix C canonical string",
+      "spec_ref": "format/spec.md#appendix-c-json-serialization"
+    },
+    {
+      "id": "float",
+      "valid": true,
+      "input": "float",
+      "decoded": { "type": "float" },
+      "canonical": "float",
+      "clause": "Primitive Types: float; Appendix C canonical string",
+      "spec_ref": "format/spec.md#appendix-c-json-serialization"
+    },
+    {
+      "id": "double",
+      "valid": true,
+      "input": "double",
+      "decoded": { "type": "double" },
+      "canonical": "double",
+      "clause": "Primitive Types: double; Appendix C canonical string",
+      "spec_ref": "format/spec.md#appendix-c-json-serialization"
+    },
+    {
+      "id": "date",
+      "valid": true,
+      "input": "date",
+      "decoded": { "type": "date" },
+      "canonical": "date",
+      "clause": "Primitive Types: date; Appendix C canonical string",
+      "spec_ref": "format/spec.md#appendix-c-json-serialization"
+    },
+    {
+      "id": "time",
+      "valid": true,
+      "input": "time",
+      "decoded": { "type": "time" },
+      "canonical": "time",
+      "clause": "Primitive Types: time; Appendix C canonical string",
+      "spec_ref": "format/spec.md#appendix-c-json-serialization"
+    },
+    {
+      "id": "timestamp",
+      "valid": true,
+      "input": "timestamp",
+      "decoded": { "type": "timestamp" },
+      "canonical": "timestamp",
+      "clause": "Primitive Types: timestamp; Appendix C canonical string",
+      "spec_ref": "format/spec.md#appendix-c-json-serialization"
+    },
+    {
+      "id": "timestamptz",
+      "valid": true,
+      "input": "timestamptz",
+      "decoded": { "type": "timestamptz" },
+      "canonical": "timestamptz",
+      "clause": "Primitive Types: timestamptz; Appendix C canonical string",
+      "spec_ref": "format/spec.md#appendix-c-json-serialization"
+    },
+    {
+      "id": "timestamp_ns",
+      "valid": true,
+      "input": "timestamp_ns",
+      "decoded": { "type": "timestamp_ns" },
+      "canonical": "timestamp_ns",
+      "clause": "Primitive Types: timestamp_ns added in v3; Appendix C canonical string",
+      "spec_ref": "format/spec.md#appendix-c-json-serialization"
+    },
+    {
+      "id": "timestamptz_ns",
+      "valid": true,
+      "input": "timestamptz_ns",
+      "decoded": { "type": "timestamptz_ns" },
+      "canonical": "timestamptz_ns",
+      "clause": "Primitive Types: timestamptz_ns added in v3; Appendix C canonical string",
+      "spec_ref": "format/spec.md#appendix-c-json-serialization"
+    },
+    {
+      "id": "string",
+      "valid": true,
+      "input": "string",
+      "decoded": { "type": "string" },
+      "canonical": "string",
+      "clause": "Primitive Types: string; Appendix C canonical string",
+      "spec_ref": "format/spec.md#appendix-c-json-serialization"
+    },
+    {
+      "id": "uuid",
+      "valid": true,
+      "input": "uuid",
+      "decoded": { "type": "uuid" },
+      "canonical": "uuid",
+      "clause": "Primitive Types: uuid; Appendix C canonical string",
+      "spec_ref": "format/spec.md#appendix-c-json-serialization"
+    },
+    {
+      "id": "binary",
+      "valid": true,
+      "input": "binary",
+      "decoded": { "type": "binary" },
+      "canonical": "binary",
+      "clause": "Primitive Types: binary; Appendix C canonical string",
+      "spec_ref": "format/spec.md#appendix-c-json-serialization"
+    },
+    {
+      "id": "unknown",
+      "valid": true,
+      "input": "unknown",
+      "decoded": { "type": "unknown" },
+      "canonical": "unknown",
+      "clause": "Primitive Types: unknown added in v3; Appendix C canonical string",
+      "spec_ref": "format/spec.md#appendix-c-json-serialization"
+    },
+    {
+      "id": "fixed-1",
+      "valid": true,
+      "input": "fixed[1]",
+      "decoded": { "type": "fixed", "length": 1 },
+      "canonical": "fixed[1]",
+      "clause": "Appendix C: fixed canonical string is fixed[<L>]",
+      "spec_ref": "format/spec.md#appendix-c-json-serialization"
+    },
+    {
+      "id": "fixed-16",
+      "valid": true,
+      "input": "fixed[16]",
+      "decoded": { "type": "fixed", "length": 16 },
+      "canonical": "fixed[16]",
+      "clause": "Appendix C: fixed canonical string is fixed[<L>]",
+      "spec_ref": "format/spec.md#appendix-c-json-serialization"
+    },
+    {
+      "id": "decimal-9-2",
+      "valid": true,
+      "input": "decimal(9,2)",
+      "decoded": { "type": "decimal", "precision": 9, "scale": 2 },
+      "canonical": "decimal(9, 2)",
+      "clause": "Appendix C: the canonical serialized form is the spaced decimal(<P>, <S>); the no-space input re-serializes to it",
+      "spec_ref": "format/spec.md#appendix-c-json-serialization"
+    },
+    {
+      "id": "decimal-9-2-spaced",
+      "valid": true,
+      "input": "decimal(9, 2)",
+      "decoded": { "type": "decimal", "precision": 9, "scale": 2 },
+      "canonical": "decimal(9, 2)",
+      "clause": "Appendix C canonical form is the spaced decimal(9, 2); input is already canonical and re-serializes unchanged",
+      "spec_ref": "format/spec.md#appendix-c-json-serialization"
+    },
+    {
+      "id": "decimal-9-2-spaced-params",
+      "valid": true,
+      "normative_level": "should",
+      "input": "decimal( 9 , 2 )",
+      "decoded": { "type": "decimal", "precision": 9, "scale": 2 },
+      "clause": "Appendix C: readers should accept optional whitespace around parameters and separators; a reader that rejects decimal( 9 , 2 ) is still conformant",
+      "spec_ref": "format/spec.md#appendix-c-json-serialization"
+    },
+    {
+      "id": "decimal-38-0",
+      "valid": true,
+      "input": "decimal(38,0)",
+      "decoded": { "type": "decimal", "precision": 38, "scale": 0 },
+      "clause": "Primitive Types: decimal precision must be 38 or less (38 is the maximum)",
+      "spec_ref": "format/spec.md#primitive-types"
+    },
+    {
+      "id": "decimal-precision-over-38",
+      "valid": false,
+      "input": "decimal(39,0)",
+      "clause": "Primitive Types: decimal precision must be 38 or less",
+      "spec_ref": "format/spec.md#primitive-types"
+    },
+    {
+      "id": "decimal-missing-scale",
+      "valid": false,
+      "input": "decimal(9)",
+      "clause": "Appendix C: decimal is written decimal(P,S); scale is required",
+      "spec_ref": "format/spec.md#appendix-c-json-serialization"
+    },
+    {
+      "id": "decimal-empty-params",
+      "valid": false,
+      "input": "decimal()",
+      "clause": "Appendix C: decimal requires precision and scale",
+      "spec_ref": "format/spec.md#appendix-c-json-serialization"
+    },
+    {
+      "id": "decimal-non-numeric",
+      "valid": false,
+      "input": "decimal(a,b)",
+      "clause": "Appendix C: decimal precision and scale are integers",
+      "spec_ref": "format/spec.md#appendix-c-json-serialization"
+    },
+    {
+      "id": "fixed-empty-length",
+      "valid": false,
+      "input": "fixed[]",
+      "clause": "Appendix C: fixed is written fixed[<L>]; length is required",
+      "spec_ref": "format/spec.md#appendix-c-json-serialization"
+    },
+    {
+      "id": "fixed-unterminated",
+      "valid": false,
+      "input": "fixed[16",
+      "clause": "Appendix C: fixed[<L>] must be closed with a bracket",
+      "spec_ref": "format/spec.md#appendix-c-json-serialization"
+    },
+    {
+      "id": "fixed-non-numeric",
+      "valid": false,
+      "input": "fixed[abc]",
+      "clause": "Appendix C: fixed length is an integer",
+      "spec_ref": "format/spec.md#appendix-c-json-serialization"
+    },
+    {
+      "id": "empty-type",
+      "valid": false,
+      "input": "",
+      "clause": "Primitive Types: the empty string is not a type name",
+      "spec_ref": "format/spec.md#primitive-types"
+    },
+    {
+      "id": "unknown-type-name",
+      "valid": false,
+      "input": "notatype",
+      "clause": "Primitive Types: only the listed type names are valid",
+      "spec_ref": "format/spec.md#primitive-types"
+    }
+  ]
+}

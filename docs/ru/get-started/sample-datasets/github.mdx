@@ -1,5 +1,5 @@
 ---
-description: 'Датасет со всеми коммитами и изменениями в репозитории ClickHouse'
+description: 'Набор данных со всеми коммитами и изменениями в репозитории ClickHouse'
 sidebarTitle: 'Репозиторий GitHub'
 slug: /getting-started/example-datasets/github
 title: 'Запросы в ClickHouse с использованием данных GitHub'
@@ -7,8 +7,6 @@ keywords: ['Github']
 show_related_blogs: true
 doc_type: 'guide'
 ---
-
-import { Image } from "/snippets/ru/components/Image.jsx";
 
 Этот набор данных содержит все коммиты и изменения из репозитория ClickHouse. Его можно сгенерировать с помощью нативного инструмента `git-import`, который поставляется вместе с ClickHouse.
 
@@ -25,7 +23,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 * `line_changes` - 2.7G - 7,535,157 строк
 
 <div id="generating-the-data">
-  ## Генерация данных
+  ## Генерация данных {#generating-the-data}
 </div>
 
 Это необязательно. Данные доступны бесплатно — см. [Загрузка и вставка данных](#downloading-and-inserting-the-data).
@@ -70,7 +68,7 @@ CREATE TABLE git.commits
 * Linux - `~/clickhouse git-import` - 160 мин
 
 <div id="downloading-and-inserting-the-data">
-  ## Загрузка и вставка данных
+  ## Загрузка и вставка данных {#downloading-and-inserting-the-data}
 </div>
 
 Следующие данные можно использовать, чтобы воссоздать рабочее окружение. Кроме того, этот набор данных доступен на play.clickhouse.com — подробнее см. в разделе [Запросы](#queries).
@@ -186,7 +184,7 @@ CREATE TABLE git.line_changes
 
 ```sql
 INSERT INTO git.commits SELECT *
-FROM s3('https://datasets-documentation.s3.amazonaws.com/github/commits/clickhouse/commits.tsv.xz', 'TSV', 'hash String,author LowCardinality(String), time DateTime, message String, files_added UInt32, files_deleted UInt32, files_renamed UInt32, files_modified UInt32, lines_added UInt32, lines_deleted UInt32, hunks_added UInt32, hunks_removed UInt32, hunks_changed UInt32')
+FROM s3('https://datasets-documentation.s3.amazonaws.com/github/commits/clickhouse/commits.tsv.xz', NOSIGN, 'TSV', 'hash String,author LowCardinality(String), time DateTime, message String, files_added UInt32, files_deleted UInt32, files_renamed UInt32, files_modified UInt32, lines_added UInt32, lines_deleted UInt32, hunks_added UInt32, hunks_removed UInt32, hunks_changed UInt32')
 ```
 
 ```response
@@ -197,7 +195,7 @@ FROM s3('https://datasets-documentation.s3.amazonaws.com/github/commits/clickhou
 
 ```sql
 INSERT INTO git.file_changes SELECT *
-FROM s3('https://datasets-documentation.s3.amazonaws.com/github/commits/clickhouse/file_changes.tsv.xz', 'TSV', 'change_type Enum(\'Add\' = 1, \'Delete\' = 2, \'Modify\' = 3, \'Rename\' = 4, \'Copy\' = 5, \'Type\' = 6), path LowCardinality(String), old_path LowCardinality(String), file_extension LowCardinality(String), lines_added UInt32, lines_deleted UInt32, hunks_added UInt32, hunks_removed UInt32, hunks_changed UInt32, commit_hash String, author LowCardinality(String), time DateTime, commit_message String, commit_files_added UInt32, commit_files_deleted UInt32, commit_files_renamed UInt32, commit_files_modified UInt32, commit_lines_added UInt32, commit_lines_deleted UInt32, commit_hunks_added UInt32, commit_hunks_removed UInt32, commit_hunks_changed UInt32')
+FROM s3('https://datasets-documentation.s3.amazonaws.com/github/commits/clickhouse/file_changes.tsv.xz', NOSIGN, 'TSV', 'change_type Enum(\'Add\' = 1, \'Delete\' = 2, \'Modify\' = 3, \'Rename\' = 4, \'Copy\' = 5, \'Type\' = 6), path LowCardinality(String), old_path LowCardinality(String), file_extension LowCardinality(String), lines_added UInt32, lines_deleted UInt32, hunks_added UInt32, hunks_removed UInt32, hunks_changed UInt32, commit_hash String, author LowCardinality(String), time DateTime, commit_message String, commit_files_added UInt32, commit_files_deleted UInt32, commit_files_renamed UInt32, commit_files_modified UInt32, commit_lines_added UInt32, commit_lines_deleted UInt32, commit_hunks_added UInt32, commit_hunks_removed UInt32, commit_hunks_changed UInt32')
 ```
 
 ```response
@@ -208,7 +206,7 @@ FROM s3('https://datasets-documentation.s3.amazonaws.com/github/commits/clickhou
 
 ```sql
 INSERT INTO git.line_changes SELECT *
-FROM s3('https://datasets-documentation.s3.amazonaws.com/github/commits/clickhouse/line_changes.tsv.xz', 'TSV', '    sign Int8, line_number_old UInt32, line_number_new UInt32, hunk_num UInt32, hunk_start_line_number_old UInt32, hunk_start_line_number_new UInt32, hunk_lines_added UInt32,\n    hunk_lines_deleted UInt32, hunk_context LowCardinality(String), line LowCardinality(String), indent UInt8, line_type Enum(\'Empty\' = 0, \'Comment\' = 1, \'Punct\' = 2, \'Code\' = 3), prev_commit_hash String, prev_author LowCardinality(String), prev_time DateTime, file_change_type Enum(\'Add\' = 1, \'Delete\' = 2, \'Modify\' = 3, \'Rename\' = 4, \'Copy\' = 5, \'Type\' = 6),\n    path LowCardinality(String), old_path LowCardinality(String), file_extension LowCardinality(String), file_lines_added UInt32, file_lines_deleted UInt32, file_hunks_added UInt32, file_hunks_removed UInt32, file_hunks_changed UInt32, commit_hash String,\n    author LowCardinality(String), time DateTime, commit_message String, commit_files_added UInt32, commit_files_deleted UInt32, commit_files_renamed UInt32, commit_files_modified UInt32, commit_lines_added UInt32, commit_lines_deleted UInt32, commit_hunks_added UInt32, commit_hunks_removed UInt32, commit_hunks_changed UInt32')
+FROM s3('https://datasets-documentation.s3.amazonaws.com/github/commits/clickhouse/line_changes.tsv.xz', NOSIGN, 'TSV', '    sign Int8, line_number_old UInt32, line_number_new UInt32, hunk_num UInt32, hunk_start_line_number_old UInt32, hunk_start_line_number_new UInt32, hunk_lines_added UInt32,\n    hunk_lines_deleted UInt32, hunk_context LowCardinality(String), line LowCardinality(String), indent UInt8, line_type Enum(\'Empty\' = 0, \'Comment\' = 1, \'Punct\' = 2, \'Code\' = 3), prev_commit_hash String, prev_author LowCardinality(String), prev_time DateTime, file_change_type Enum(\'Add\' = 1, \'Delete\' = 2, \'Modify\' = 3, \'Rename\' = 4, \'Copy\' = 5, \'Type\' = 6),\n    path LowCardinality(String), old_path LowCardinality(String), file_extension LowCardinality(String), file_lines_added UInt32, file_lines_deleted UInt32, file_hunks_added UInt32, file_hunks_removed UInt32, file_hunks_changed UInt32, commit_hash String,\n    author LowCardinality(String), time DateTime, commit_message String, commit_files_added UInt32, commit_files_deleted UInt32, commit_files_renamed UInt32, commit_files_modified UInt32, commit_lines_added UInt32, commit_lines_deleted UInt32, commit_hunks_added UInt32, commit_hunks_removed UInt32, commit_hunks_changed UInt32')
 ```
 
 ```response
@@ -216,7 +214,7 @@ FROM s3('https://datasets-documentation.s3.amazonaws.com/github/commits/clickhou
 ```
 
 <div id="queries">
-  ## Запросы
+  ## Запросы {#queries}
 </div>
 
 Инструмент предлагает несколько запросов в выводе справки. Ниже мы разобрали их, а также несколько дополнительных вопросов, которые могут представлять интерес. Запросы расположены примерно по возрастанию сложности, а не в произвольном порядке, как у инструмента.
@@ -224,7 +222,7 @@ FROM s3('https://datasets-documentation.s3.amazonaws.com/github/commits/clickhou
 Этот набор данных доступен на [play.clickhouse.com](https://sql.clickhouse.com?query_id=DCQPNPAIMAQXRLHYURLKVJ) в базе данных `git_clickhouse`. Для всех запросов мы приводим ссылку на это окружение, при необходимости подставляя нужное имя базы данных. Обратите внимание, что результаты в play могут отличаться от приведённых здесь из-за разницы во времени сбора данных.
 
 <div id="history-of-a-single-file">
-  ### История одного файла
+  ### История одного файла {#history-of-a-single-file}
 </div>
 
 Самый простой запрос. Здесь мы смотрим все сообщения коммитов для `StorageReplicatedMergeTree.cpp`. Поскольку наиболее интересны, скорее всего, последние изменения, мы сортируем сообщения от новых к старым.
@@ -304,7 +302,7 @@ LIMIT 10
 Обратите внимание: существует и более сложный вариант этого запроса, в котором определяется [построчная история коммитов файла](#line-by-line-commit-history-of-a-file) с учётом переименований.
 
 <div id="find-the-current-active-files">
-  ### Найдите текущие активные файлы
+  ### Найдите текущие активные файлы {#find-the-current-active-files}
 </div>
 
 Это важно для дальнейшего анализа, когда нужно учитывать только текущие файлы в репозитории. Мы считаем, что в это множество входят файлы, которые не были переименованы или удалены (а затем повторно добавлены/переименованы).
@@ -442,7 +440,7 @@ git ls-files | grep -v -E 'generated\.cpp|^(contrib|docs?|website|libs/(libcityh
 Эти различия не должны существенно повлиять на наш анализ. **Мы приветствуем улучшенные версии этого запроса**.
 
 <div id="list-files-with-most-modifications">
-  ### Список файлов с наибольшим числом изменений
+  ### Список файлов с наибольшим числом изменений {#list-files-with-most-modifications}
 </div>
 
 Если учитывать только текущие файлы, количеством изменений считается сумма удалений и добавлений.
@@ -501,7 +499,7 @@ LIMIT 10
 ```
 
 <div id="what-day-of-the-week-do-commits-usually-occur">
-  ### На какой день недели обычно приходятся коммиты?
+  ### На какой день недели обычно приходятся коммиты? {#what-day-of-the-week-do-commits-usually-occur}
 </div>
 
 [play](https://sql.clickhouse.com?query_id=GED2STFSYJDRAA59H8RLIV)
@@ -529,9 +527,7 @@ GROUP BY dayOfWeek(time) AS day_of_week
 
 Это вполне ожидаемо, учитывая некоторое снижение продуктивности по пятницам. Здорово видеть, что люди коммитят код по выходным! Огромное спасибо нашим контрибьюторам!
 
-<div id="history-of-subdirectoryfile---number-of-lines-commits-and-contributors-over-time">
-  ### История подкаталога/файла — количество строк, коммитов и участников во времени
-</div>
+### История подкаталога/файла — количество строк, коммитов и участников проекта во времени {#history-of-subdirectoryfile---number-of-lines-commits-and-contributors-over-time}
 
 В результате получится большой набор данных, который без фильтрации непрактично ни показывать, ни визуализировать. Поэтому в следующем примере можно отфильтровать файл или подкаталог. Здесь используется группировка по неделям с помощью функции `toStartOfWeek` — при необходимости адаптируйте её.
 
@@ -571,14 +567,22 @@ LIMIT 10
 
 **Для добавленных и удалённых строк:**
 
-<Image img="/images/getting-started/example-datasets/superset-github-lines-added-deleted.webp" alt="Для добавленных и удалённых строк" size="md" />
+<div className="ch-image-md">
+  <Frame>
+    ![Для добавленных и удалённых строк](/images/getting-started/example-datasets/superset-github-lines-added-deleted.webp)
+  </Frame>
+</div>
 
 **Для коммитов и авторов:**
 
-<Image img="/images/getting-started/example-datasets/superset-commits-authors.webp" alt="Для коммитов и авторов" size="md" />
+<div className="ch-image-md">
+  <Frame>
+    ![Для коммитов и авторов](/images/getting-started/example-datasets/superset-commits-authors.webp)
+  </Frame>
+</div>
 
 <div id="list-files-with-maximum-number-of-authors">
-  ### Список файлов с наибольшим количеством авторов
+  ### Список файлов с наибольшим количеством авторов {#list-files-with-maximum-number-of-authors}
 </div>
 
 Ограничьтесь только текущими файлами.
@@ -637,7 +641,7 @@ LIMIT 10
 ```
 
 <div id="oldest-lines-of-code-in-the-repository">
-  ### Самые старые строки кода в репозитории
+  ### Самые старые строки кода в репозитории {#oldest-lines-of-code-in-the-repository}
 </div>
 
 Только в текущих файлах.
@@ -698,7 +702,7 @@ LIMIT 10
 ```
 
 <div id="files-with-longest-history">
-  ### Файлы с самой длинной историей
+  ### Файлы с самой длинной историей {#files-with-longest-history}
 </div>
 
 Только для текущих файлов.
@@ -760,7 +764,7 @@ LIMIT 10
 Наша основная структура данных — Merge Tree —, очевидно, постоянно развивается и имеет длинную историю правок!
 
 <div id="distribution-of-contributors-with-respect-to-docs-and-code-over-the-month">
-  ### Распределение контрибьюторов по документации и коду в течение месяца
+  ### Распределение контрибьюторов по документации и коду в течение месяца {#distribution-of-contributors-with-respect-to-docs-and-code-over-the-month}
 </div>
 
 **При сборе данных изменения в папке `docs/` были отфильтрованы из-за очень «грязной» истории коммитов. Поэтому результаты этого запроса не являются точными.**
@@ -827,7 +831,7 @@ FROM
 Возможно, ближе к концу месяца данных немного больше, но в целом распределение остается достаточно равномерным. Опять же, это ненадежный вывод, поскольку при вставке данных применяется фильтр docs.
 
 <div id="authors-with-the-most-diverse-impact">
-  ### Авторы с самым разносторонним вкладом
+  ### Авторы с самым разносторонним вкладом {#authors-with-the-most-diverse-impact}
 </div>
 
 Под разнообразием здесь понимается количество уникальных файлов, в которые внёс вклад автор.
@@ -910,7 +914,7 @@ LIMIT 10
 ```
 
 <div id="favorite-files-for-an-author">
-  ### Любимые файлы автора
+  ### Любимые файлы автора {#favorite-files-for-an-author}
 </div>
 
 Здесь мы берем нашего основателя [Alexey Milovidov](https://github.com/alexey-milovidov) и ограничиваем анализ только текущими файлами.
@@ -1002,7 +1006,7 @@ LIMIT 10
 Это, возможно, лучше отражает круг его интересов.
 
 <div id="largest-files-with-lowest-number-of-authors">
-  ### Самые большие файлы с наименьшим числом авторов
+  ### Самые большие файлы с наименьшим числом авторов {#largest-files-with-lowest-number-of-authors}
 </div>
 
 Для этого сначала нужно определить самые большие файлы. Оценка через полную реконструкцию каждого файла по истории коммитов будет очень затратной!
@@ -1180,7 +1184,7 @@ LIMIT 10
 ```
 
 <div id="commits-and-lines-of-code-distribution-by-time-by-weekday-by-author-for-specific-subdirectories">
-  ### Распределение коммитов и строк кода по времени: по дням недели, по авторам; для конкретных подкаталогов
+  ### Распределение коммитов и строк кода по времени: по дням недели, по авторам; для конкретных подкаталогов {#commits-and-lines-of-code-distribution-by-time-by-weekday-by-author-for-specific-subdirectories}
 </div>
 
 Здесь под этим понимается количество добавленных и удалённых строк в разбивке по дням недели. В данном случае мы сосредоточимся на [каталоге Functions](https://github.com/ClickHouse/ClickHouse/tree/master/src/Functions)
@@ -1312,9 +1316,7 @@ FROM
 24 rows in set. Elapsed: 0.038 sec. Processed 266.05 thousand rows, 14.66 MB (7.09 million rows/s., 390.69 MB/s.)
 ```
 
-<div id="matrix-of-authors-that-shows-what-authors-tends-to-rewrite-another-authors-code">
-  ### Матрица авторов, показывающая, какие авторы склонны переписывать код друг друга
-</div>
+### Матрица авторов, показывающая, какие авторы склонны переписывать код друг друга {#matrix-of-authors-that-shows-what-authors-tends-to-rewrite-another-authors-code}
 
 `sign = -1` указывает на удаление кода. Мы исключаем знаки пунктуации и вставку пустых строк.
 
@@ -1359,19 +1361,27 @@ LIMIT 100
 │ Anton Popov          │ Amos Bird        │  2127 │
 └──────────────────────┴──────────────────┴───────┘
 
-20 строка в наборе. прошлый: 0.098 sec. обработанный 7.54 million rows, 42.16 MB (76.67 million rows/s., 428.99 MB/s.)
+20 rows in set. Elapsed: 0.098 sec. Processed 7.54 million rows, 42.16 MB (76.67 million rows/s., 428.99 MB/s.)
 ```
 
 Диаграмма Санки (SuperSet) позволяет наглядно это показать. Обратите внимание: мы увеличиваем `LIMIT BY` до 3, чтобы получить трёх основных удаляющих код для каждого автора и сделать визуализацию более разнообразной.
 
-<Image img="/images/getting-started/example-datasets/superset-authors-matrix.webp" alt="Матрица авторов Superset" size="md" />
+<div className="ch-image-md">
+  <Frame>
+    ![Матрица авторов Superset](/images/getting-started/example-datasets/superset-authors-matrix.webp)
+  </Frame>
+</div>
 
 Алексею явно нравится удалять чужой код. Давайте исключим его, чтобы получить более сбалансированную картину удаления кода.
 
-<Image img="/images/getting-started/example-datasets/superset-authors-matrix_v2.webp" alt="Матрица авторов Superset v2" size="md" />
+<div className="ch-image-md">
+  <Frame>
+    ![Матрица авторов Superset v2](/images/getting-started/example-datasets/superset-authors-matrix_v2.webp)
+  </Frame>
+</div>
 
 <div id="who-is-the-highest-percentage-contributor-per-day-of-week">
-  ### Кто вносит наибольший вклад в процентах по дням недели?
+  ### Кто вносит наибольший вклад в процентах по дням недели? {#who-is-the-highest-percentage-contributor-per-day-of-week}
 </div>
 
 Если учитывать только количество коммитов:
@@ -1494,7 +1504,7 @@ INNER JOIN
 ```
 
 <div id="distribution-of-code-age-across-repository">
-  ### Распределение возраста кода по репозиторию
+  ### Распределение возраста кода по репозиторию {#distribution-of-code-age-across-repository}
 </div>
 
 Мы ограничиваем анализ только текущими файлами. Для краткости ограничим результаты глубиной 2 и пятью файлами на каждую корневую папку. При необходимости измените эти параметры.
@@ -1581,7 +1591,7 @@ LIMIT 5 BY root
 ```
 
 <div id="what-percentage-of-code-for-an-author-has-been-removed-by-other-authors">
-  ### Какой процент кода автора был удалён другими авторами?
+  ### Какой процент кода автора был удалён другими авторами? {#what-percentage-of-code-for-an-author-has-been-removed-by-other-authors}
 </div>
 
 Чтобы ответить на этот вопрос, нужно разделить количество строк, написанных автором, на общее количество его строк, удалённых другими участниками.
@@ -1635,7 +1645,7 @@ LIMIT 10
 ```
 
 <div id="list-files-that-were-rewritten-most-number-of-times">
-  ### Какие файлы переписывались чаще всего?
+  ### Какие файлы переписывались чаще всего? {#list-files-that-were-rewritten-most-number-of-times}
 </div>
 
 Самый простой способ ответить на этот вопрос — просто подсчитать максимальное число изменений строк для каждого пути (ограничившись текущими файлами), например:
@@ -1782,7 +1792,7 @@ LIMIT 10
 ```
 
 <div id="what-weekday-does-the-code-have-the-highest-chance-to-stay-in-the-repository">
-  ### В какой день недели код с наибольшей вероятностью остаётся в репозитории?
+  ### В какой день недели код с наибольшей вероятностью остаётся в репозитории? {#what-weekday-does-the-code-have-the-highest-chance-to-stay-in-the-repository}
 </div>
 
 Для этого нам нужно однозначно идентифицировать строку кода. Мы делаем это по пути и содержимому строки, поскольку одна и та же строка может встречаться в файле несколько раз.
@@ -1848,7 +1858,7 @@ GROUP BY dayOfWeek(added_day) AS day_of_week_added
 ```
 
 <div id="files-sorted-by-average-code-age">
-  ### Файлы, отсортированные по среднему возрасту кода
+  ### Файлы, отсортированные по среднему возрасту кода {#files-sorted-by-average-code-age}
 </div>
 
 В этом запросе используется тот же принцип, что и в [В какой день недели у кода самый высокий шанс остаться в репозитории](#what-weekday-does-the-code-have-the-highest-chance-to-stay-in-the-repository): строка кода однозначно определяется по пути и её содержимому.
@@ -1942,7 +1952,7 @@ LIMIT 10
 ```
 
 <div id="who-tends-to-write-more-tests--cpp-code--comments">
-  ### Кто обычно пишет больше тестов / кода на C++ / комментариев?
+  ### Кто обычно пишет больше тестов / кода на C++ / комментариев? {#who-tends-to-write-more-tests--cpp-code--comments}
 </div>
 
 На этот вопрос можно ответить несколькими способами. Если смотреть на соотношение тестов и кода, этот запрос довольно прост: нужно подсчитать количество изменений в каталогах, содержащих `tests`, и вычислить их долю от общего числа изменений.
@@ -2082,7 +2092,7 @@ LIMIT 10
 Обратите внимание: мы сортируем по вкладу в код. Удивительно, насколько высок этот процент у всех наших крупнейших участников, и отчасти именно поэтому наш код так легко читать.
 
 <div id="how-does-an-authors-commits-change-over-time-with-respect-to-codecomments-percentage">
-  ### Как со временем меняется соотношение кода и комментариев в коммитах автора?
+  ### Как со временем меняется соотношение кода и комментариев в коммитах автора? {#how-does-an-authors-commits-change-over-time-with-respect-to-codecomments-percentage}
 </div>
 
 Вычислить это для автора несложно,
@@ -2204,7 +2214,7 @@ LIMIT 20
 Что обнадёживает, доля комментариев у нас остаётся довольно стабильной и не снижается, даже если авторы вносят вклад на протяжении долгого времени.
 
 <div id="what-is-the-average-time-before-code-will-be-rewritten-and-the-median-half-life-of-code-decay">
-  ### Какой средний промежуток времени проходит до того, как код будет переписан, и какова медиана (период полураспада кода)?
+  ### Какой средний промежуток времени проходит до того, как код будет переписан, и какова медиана (период полураспада кода)? {#what-is-the-average-time-before-code-will-be-rewritten-and-the-median-half-life-of-code-decay}
 </div>
 
 Мы можем использовать тот же принцип, что и в разделе [список файлов, которые переписывались наибольшее число раз или наибольшим числом авторов](#list-files-that-were-rewritten-most-number-of-times), чтобы определить переписывания, но уже с учетом всех файлов. Оконная функция используется для вычисления времени между переписываниями для каждого файла. На основе этого можно рассчитать среднее значение и медиану по всем файлам.
@@ -2268,7 +2278,7 @@ FROM rewrites
 ```
 
 <div id="what-is-the-worst-time-to-write-code-in-sense-that-the-code-has-highest-chance-to-be-re-written">
-  ### В какое время хуже всего писать код — в том смысле, что вероятность его переписывания максимальна?
+  ### В какое время хуже всего писать код — в том смысле, что вероятность его переписывания максимальна? {#what-is-the-worst-time-to-write-code-in-sense-that-the-code-has-highest-chance-to-be-re-written}
 </div>
 
 Аналогично [Какой средний промежуток времени проходит до того, как код будет переписан, и какова медиана (период полураспада кода)?](#what-is-the-average-time-before-code-will-be-rewritten-and-the-median-half-life-of-code-decay) и [список файлов, которые переписывались наибольшее число раз или наибольшим числом авторов](#list-files-that-were-rewritten-most-number-of-times), но здесь агрегация выполняется по дням недели. При необходимости скорректируйте, например, на месяц года.
@@ -2336,7 +2346,7 @@ GROUP BY dayOfWeek
 ```
 
 <div id="which-authors-code-is-the-most-sticky">
-  ### Код каких авторов остаётся неизменным дольше всего?
+  ### Код каких авторов остаётся неизменным дольше всего? {#which-authors-code-is-the-most-sticky}
 </div>
 
 Под «стойкостью» мы понимаем, как долго код автора сохраняется, прежде чем будет переписан. Как и в предыдущем вопросе [Какой средний промежуток времени проходит до того, как код будет переписан, и какова медиана (период полураспада кода)?](#what-is-the-average-time-before-code-will-be-rewritten-and-the-median-half-life-of-code-decay), здесь используется та же метрика переписывания, то есть 50 % добавлений и 50 % удалений в файле. Мы вычисляем среднее время переписывания для каждого автора и учитываем только тех участников, у которых больше двух файлов.
@@ -2417,7 +2427,7 @@ LIMIT 10
 ```
 
 <div id="most-consecutive-days-of-commits-by-an-author">
-  ### Наибольшее число последовательных дней с коммитами у автора
+  ### Наибольшее число последовательных дней с коммитами у автора {#most-consecutive-days-of-commits-by-an-author}
 </div>
 
 В этом запросе сначала нужно определить дни, в которые автор делал коммиты. Используя оконную функцию с разбиением по автору, можно вычислить число дней между его коммитами. Для каждого коммита, если с момента предыдущего коммита прошёл 1 день, мы помечаем его как последовательный (1), иначе — 0, сохраняя результат в `consecutive_day`.
@@ -2476,7 +2486,7 @@ LIMIT 10
 ```
 
 <div id="line-by-line-commit-history-of-a-file">
-  ### Построчная история коммитов файла
+  ### Построчная история коммитов файла {#line-by-line-commit-history-of-a-file}
 </div>
 
 Файлы можно переименовывать. Когда это происходит, мы получаем событие переименования, в котором в столбце `path` указывается новый путь к файлу, а `old_path` — его предыдущее расположение, например.
@@ -2561,11 +2571,11 @@ FORMAT PrettyCompactMonoBlock
 ```
 
 <div id="unsolved-questions">
-  ## Нерешённые вопросы
+  ## Нерешённые вопросы {#unsolved-questions}
 </div>
 
 <div id="git-blame">
-  ### Git blame
+  ### Git blame {#git-blame}
 </div>
 
 Получить здесь точный результат особенно сложно, поскольку сейчас в функциях для работы с массивами нельзя сохранять состояние. Это станет возможным с помощью `arrayFold` или `arrayReduce`, которые позволяют сохранять состояние на каждой итерации.

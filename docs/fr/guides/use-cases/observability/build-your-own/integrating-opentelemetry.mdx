@@ -7,8 +7,6 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 Toute solution d’observability nécessite un moyen de collecter et d’exporter les logs et les traces. À cette fin, ClickHouse recommande [le projet OpenTelemetry (OTel)](https://opentelemetry.io/).
 
 &quot;OpenTelemetry est un framework et une boîte à outils d’observability conçus pour créer et gérer des données de télémétrie telles que les traces, les metrics et les logs.&quot;
@@ -16,7 +14,7 @@ Toute solution d’observability nécessite un moyen de collecter et d’exporte
 Contrairement à ClickHouse ou à Prometheus, OpenTelemetry n&#39;est pas un backend d’observability ; il se concentre plutôt sur la génération, la collecte, la gestion et l’export de données de télémétrie. Si l’objectif initial d’OpenTelemetry était de vous permettre d’instrumenter facilement vos applications ou vos systèmes à l’aide de SDKs propres à chaque langage, il s’est depuis étendu à la collecte de logs via l’OpenTelemetry collector, un agent ou proxy qui reçoit, traite et exporte des données de télémétrie.
 
 <div id="clickhouse-relevant-components">
-  ## Composants pertinents pour ClickHouse
+  ## Composants pertinents pour ClickHouse {#clickhouse-relevant-components}
 </div>
 
 OpenTelemetry comprend un certain nombre de composants. En plus de fournir une spécification des données et des API, un protocole normalisé et des conventions de nommage pour les champs/colonnes, OTel offre deux capacités essentielles à la création d&#39;une solution d&#39;observabilité avec ClickHouse :
@@ -27,7 +25,7 @@ OpenTelemetry comprend un certain nombre de composants. En plus de fournir une s
 Une solution d&#39;observabilité reposant sur ClickHouse tire parti de ces deux outils.
 
 <div id="distributions">
-  ## Distributions
+  ## Distributions {#distributions}
 </div>
 
 Le collecteur OpenTelemetry existe en [plusieurs distributions](https://github.com/open-telemetry/opentelemetry-collector-releases?tab=readme-ov-file). Le receiver filelog ainsi que l’exporter ClickHouse, nécessaires pour une solution ClickHouse, ne sont disponibles que dans la [distribution OpenTelemetry Collector Contrib](https://github.com/open-telemetry/opentelemetry-collector-releases/tree/main/distributions/otelcol-contrib).
@@ -40,11 +38,11 @@ Cette distribution contient de nombreux composants et permet d’expérimenter d
 Il est possible de créer un [collecteur personnalisé](https://opentelemetry.io/docs/collector/custom-collector/) à l’aide d’[OpenTelemetry Collector Builder](https://github.com/open-telemetry/opentelemetry-collector/tree/main/cmd/builder).
 
 <div id="ingesting-data-with-otel">
-  ## Ingestion de données avec OTel
+  ## Ingestion de données avec OTel {#ingesting-data-with-otel}
 </div>
 
 <div id="collector-deployment-roles">
-  ### Rôles de déploiement du collecteur
+  ### Rôles de déploiement du collecteur {#collector-deployment-roles}
 </div>
 
 Pour collecter les logs et les insérer dans ClickHouse, nous recommandons d&#39;utiliser l&#39;OpenTelemetry Collector. L&#39;OpenTelemetry Collector peut être déployé selon deux rôles principaux :
@@ -54,40 +52,50 @@ Pour collecter les logs et les insérer dans ClickHouse, nous recommandons d&#39
 
 Dans la suite, nous partons du principe qu&#39;un collecteur agent simple envoie directement ses événements à ClickHouse. Voir [Scaling with Gateways](#scaling-with-gateways) pour plus de détails sur l&#39;utilisation des passerelles et les cas où elles sont pertinentes.
 
-<div id="collecting-logs">
-  ### Collecte des logs
+### Collecte des logs {#collecting-logs}
+
+Le principal avantage de l’utilisation d’un collecteur est qu’il permet à vos services d’évacuer rapidement les données, en laissant au Collecteur le soin de gérer les traitements supplémentaires tels que les nouvelles tentatives, le batching, le chiffrement ou encore le filtrage des données sensibles.
+
+Le Collecteur utilise les termes [receiver](https://opentelemetry.io/docs/collector/configuration/#receivers), [processeur](https://opentelemetry.io/docs/collector/configuration/#processors) et [exporter](https://opentelemetry.io/docs/collector/configuration/#exporters) pour ses trois principales étapes de traitement. Les receivers servent à collecter les données et peuvent fonctionner en mode pull ou push. Les processeurs permettent d’effectuer des transformations et d’enrichir les messages. Les exporters se chargent d’envoyer les données vers un service en aval. Bien que ce service puisse, en théorie, être un autre collecteur, nous partons ici du principe que toutes les données sont envoyées directement à ClickHouse.
+
+<div className="ch-image-md">
+  <Frame>
+    ![Collecte des logs](/images/use-cases/observability/observability-3.webp)
+  </Frame>
 </div>
 
-Le principal avantage de l’utilisation d’un collecteur est qu’il permet à vos services d’évacuer rapidement les données, en laissant au Collector le soin de gérer les traitements supplémentaires tels que les nouvelles tentatives, le regroupement par lots, le chiffrement ou encore le filtrage des données sensibles.
+Nous recommandons aux utilisateurs de se familiariser avec l’ensemble des receivers, processeurs et exporters.
 
-Le Collector utilise les termes [receiver](https://opentelemetry.io/docs/collector/configuration/#receivers), [processor](https://opentelemetry.io/docs/collector/configuration/#processors) et [exporter](https://opentelemetry.io/docs/collector/configuration/#exporters) pour ses trois principales étapes de traitement. Les receivers servent à collecter les données et peuvent fonctionner en mode pull ou push. Les processors permettent d’effectuer des transformations et d’enrichir les messages. Les exporters se chargent d’envoyer les données vers un service en aval. Bien que ce service puisse, en théorie, être un autre collecteur, nous partons ici du principe que toutes les données sont envoyées directement à ClickHouse.
+Le collecteur fournit deux receivers principaux pour la collecte des logs :
 
-<Image img="/images/use-cases/observability/observability-3.webp" alt="Collecte des logs" size="md" />
+**Via OTLP** - Dans ce cas, les logs sont envoyés (push) directement au collecteur depuis les OpenTelemetry SDKs via le protocole OTLP. La [OpenTelemetry demo](https://opentelemetry.io/docs/demo/) utilise cette approche, les exporters OTLP de chaque langage supposant un endpoint local du collecteur. Le collecteur doit alors être configuré avec le récepteur OTLP — voir la [démo ci-dessus pour un exemple de configuration](https://github.com/ClickHouse/opentelemetry-demo/blob/main/src/otelcollector/otelcol-config.yml#L5-L12). L’avantage de cette approche est que les données de logs contiennent automatiquement des trace IDs, ce qui permet ensuite d’identifier les traces associées à un log donné, et inversement.
 
-Nous recommandons aux utilisateurs de se familiariser avec l’ensemble des receivers, processors et exporters.
-
-Le collecteur fournit deux receivers principaux pour la collecte des logs :
-
-**Via OTLP** - Dans ce cas, les logs sont envoyés (push) directement au collecteur depuis les OpenTelemetry SDKs via le protocole OTLP. La [OpenTelemetry demo](https://opentelemetry.io/docs/demo/) utilise cette approche, les exporters OTLP de chaque langage supposant un endpoint local du collecteur. Le collecteur doit alors être configuré avec l’OTLP receiver — voir la [démo ci-dessus pour un exemple de configuration](https://github.com/ClickHouse/opentelemetry-demo/blob/main/src/otelcollector/otelcol-config.yml#L5-L12). L’avantage de cette approche est que les données de logs contiennent automatiquement des trace IDs, ce qui permet ensuite d’identifier les traces associées à un log donné, et inversement.
-
-<Image img="/images/use-cases/observability/observability-4.webp" alt="Collecte des logs via otlp" size="md" />
+<div className="ch-image-md">
+  <Frame>
+    ![Collecte des logs via otlp](/images/use-cases/observability/observability-4.webp)
+  </Frame>
+</div>
 
 Cette approche exige que les utilisateurs instrumentent leur code avec le [SDK adapté à leur langage](https://opentelemetry.io/docs/languages/).
 
-* **Scraping via le receiver filelog** - Ce receiver lit les fichiers sur disque en continu, génère des messages de log, puis les envoie à ClickHouse. Il prend en charge des tâches complexes telles que la détection des messages multilignes, la gestion de la rotation des logs, les checkpoints pour une meilleure robustesse au redémarrage, ainsi que l’extraction de structure. Il peut également suivre les logs des conteneurs Docker et Kubernetes, et être déployé via un chart Helm, [en extrayant leur structure](https://opentelemetry.io/blog/2024/otel-collector-container-log-parser/) et en les enrichissant avec les détails du pod.
+* **Scraping via le récepteur filelog** - Ce receiver lit les fichiers sur disque en continu, génère des messages de log, puis les envoie à ClickHouse. Il prend en charge des tâches complexes telles que la détection des messages multilignes, la gestion de la rotation des logs, les checkpoints pour une meilleure robustesse au redémarrage, ainsi que l’extraction de structure. Il peut également suivre les logs des conteneurs Docker et Kubernetes, et être déployé via un chart Helm, [en extrayant leur structure](https://opentelemetry.io/blog/2024/otel-collector-container-log-parser/) et en les enrichissant avec les détails du pod.
 
-<Image img="/images/use-cases/observability/observability-5.webp" alt="Receiver filelog" size="md" />
+<div className="ch-image-md">
+  <Frame>
+    ![Récepteur filelog](/images/use-cases/observability/observability-5.webp)
+  </Frame>
+</div>
 
 **La plupart des déploiements utiliseront une combinaison des receivers ci-dessus. Nous recommandons aux utilisateurs de lire la [documentation du collecteur](https://opentelemetry.io/docs/collector/) et de se familiariser avec les concepts de base, ainsi qu’avec [la structure de configuration](https://opentelemetry.io/docs/collector/configuration/) et les [méthodes d’installation](https://opentelemetry.io/docs/collector/installation/).**
 
 <Info>
-  **Astuce : `otelbin.io`**
+  **Astuce : `otelbin.io`**
 
   [`otelbin.io`](https://www.otelbin.io/) est utile pour valider et visualiser les configurations.
 </Info>
 
 <div id="structured-vs-unstructured">
-  ## Structuré ou non structuré
+  ## Structuré ou non structuré {#structured-vs-unstructured}
 </div>
 
 Les logs peuvent être structurés ou non structurés.
@@ -116,7 +124,7 @@ Les logs non structurés, bien qu’ils présentent eux aussi généralement une
 Nous recommandons aux utilisateurs d’adopter une journalisation structurée et, dans la mesure du possible, d’émettre les logs au format JSON (c.-à-d. ndjson). Cela simplifiera le traitement des logs par la suite, soit avant leur envoi vers ClickHouse avec les [processors du collector](https://opentelemetry.io/docs/collector/configuration/#processors), soit au moment de l’insert à l’aide de vues matérialisées. À terme, les logs structurés permettent d’économiser des ressources de traitement et de réduire le CPU nécessaire à votre solution ClickHouse.
 
 <div id="example">
-  ### Exemple
+  ### Exemple {#example}
 </div>
 
 À titre d’exemple, nous fournissons un jeu de données de logs structuré (JSON) et un jeu de données de logs non structuré, contenant chacun environ 10 M de lignes, disponibles aux liens suivants :
@@ -214,13 +222,13 @@ Les messages ci-dessus n’ont pas de champ `TraceID` ni `SpanID`. S’ils étai
 Pour les utilisateurs qui doivent collecter des fichiers de log locaux ou des fichiers de log Kubernetes, nous recommandons de se familiariser avec les options de configuration disponibles pour le [filelog receiver](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/receiver/filelogreceiver/README.md#configuration), ainsi qu’avec la façon dont le suivi des [offsets](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/receiver/filelogreceiver#offset-tracking) et [l’analyse multiligne des logs sont gérés](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/receiver/filelogreceiver#example---multiline-logs-parsing).
 
 <div id="collecting-kubernetes-logs">
-  ## Collecte des logs Kubernetes
+  ## Collecte des logs Kubernetes {#collecting-kubernetes-logs}
 </div>
 
 Pour la collecte des logs Kubernetes, nous recommandons le [guide de la documentation OpenTelemetry](https://opentelemetry.io/docs/kubernetes/). Le [Kubernetes Attributes Processor](https://opentelemetry.io/docs/kubernetes/collector/components/#kubernetes-attributes-processor) est recommandé pour enrichir les logs et les métriques avec les métadonnées des pods. Cela peut générer des métadonnées dynamiques, par exemple des labels, qui sont stockées dans la colonne `ResourceAttributes`. ClickHouse utilise actuellement le type `Map(String, String)` pour cette colonne. Voir [Using Maps](/fr/guides/use-cases/observability/build-your-own/schema-design#using-maps) et [Extracting from maps](/fr/guides/use-cases/observability/build-your-own/schema-design#extracting-from-maps) pour plus de détails sur la gestion et l’optimisation de ce type.
 
 <div id="collecting-traces">
-  ## Collecte de traces
+  ## Collecte de traces {#collecting-traces}
 </div>
 
 Pour les utilisateurs qui souhaitent instrumenter leur code et collecter des traces, nous recommandons de suivre la [documentation officielle d’OTel](https://opentelemetry.io/docs/languages/).
@@ -228,7 +236,7 @@ Pour les utilisateurs qui souhaitent instrumenter leur code et collecter des tra
 Pour transmettre des événements à ClickHouse, vous devrez déployer un OTel collector afin de recevoir les événements de trace via le protocole OTLP à l’aide du receiver approprié. OpenTelemetry demo fournit un [exemple d’instrumentation pour chaque langage pris en charge](https://opentelemetry.io/docs/demo/) et d’envoi des événements à un collector. Un exemple de configuration de collector appropriée, qui envoie les événements vers stdout, est présenté ci-dessous :
 
 <div id="example">
-  ### Exemple
+  ### Exemple {#example-1}
 </div>
 
 Comme les traces doivent être reçues via OTLP, nous utilisons l’outil [`telemetrygen`](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/cmd/telemetrygen) pour générer des données de trace. Suivez les instructions d’installation [ici](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/cmd/telemetrygen).
@@ -292,7 +300,7 @@ Ce qui précède représente un seul message de trace tel que produit par l’OT
 Le schéma complet des messages de trace est documenté [ici](https://opentelemetry.io/docs/concepts/signals/traces/). Nous recommandons vivement aux utilisateurs de se familiariser avec ce schéma.
 
 <div id="processing---filtering-transforming-and-enriching">
-  ## Traitement - filtrage, transformation et enrichissement
+  ## Traitement - filtrage, transformation et enrichissement {#processing---filtering-transforming-and-enriching}
 </div>
 
 Comme l’a montré l’exemple précédent de définition du timestamp d’un événement de log, vous aurez presque toujours besoin de filtrer, transformer et enrichir les messages d’événement. Pour cela, OpenTelemetry offre plusieurs mécanismes :
@@ -312,7 +320,7 @@ Nous recommandons aux utilisateurs d’éviter un traitement excessif des évén
 Si le traitement est effectué à l’aide de l’OTel collector, nous recommandons d’exécuter les transformations sur les instances passerelle et de réduire au minimum le travail effectué sur les instances agent. Cela permet de limiter autant que possible les ressources requises par les agents en périphérie, exécutés sur les servers. En pratique, nous constatons que les utilisateurs n’effectuent généralement dans les agents que le filtrage (pour limiter l’utilisation réseau inutile), la définition des timestamps (via des opérateurs) et l’enrichissement lorsqu’il nécessite du contexte. Par exemple, si les instances passerelle se trouvent dans un Kubernetes cluster différent, l’enrichissement k8s devra être effectué dans l’agent.
 
 <div id="example">
-  ### Exemple
+  ### Exemple {#example-2}
 </div>
 
 La configuration suivante montre la collecte d’un fichier de logs non structuré. Notez l’utilisation d’opérateurs pour extraire une structure des lignes de log (`regex_parser`) et filtrer les événements, ainsi que d’un processeur pour traiter les événements par lot et limiter la consommation mémoire.
@@ -356,7 +364,7 @@ service:
 ```
 
 <div id="exporting-to-clickhouse">
-  ## Exportation vers ClickHouse
+  ## Exportation vers ClickHouse {#exporting-to-clickhouse}
 </div>
 
 Les exporters envoient des données vers un ou plusieurs backends ou destinations. Les exporters peuvent être de type pull ou push. Pour envoyer des événements à ClickHouse, vous devez utiliser le [ClickHouse exporter](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/exporter/clickhouseexporter/README.md), qui fonctionne en mode push.
@@ -511,7 +519,7 @@ Links.Attributes:   []
 ```
 
 <div id="out-of-the-box-schema">
-  ## Schéma prêt à l’emploi
+  ## Schéma prêt à l’emploi {#out-of-the-box-schema}
 </div>
 
 <Tip>
@@ -570,10 +578,10 @@ Les colonnes présentées ici correspondent à la spécification officielle d’
 Quelques remarques importantes concernant ce schéma :
 
 * Par défaut, la table est partitionnée par date via `PARTITION BY toDate(Timestamp)`. Cela permet de supprimer efficacement les données expirées.
-* Le TTL est défini via `TTL toDateTime(Timestamp) + toIntervalDay(3)` et correspond à la valeur définie dans la configuration du collector. [`ttl_only_drop_parts=1`](/fr/reference/settings/merge-tree-settings#ttl_only_drop_parts) signifie que seules des parts entières sont supprimées lorsque toutes les lignes qu&#39;elles contiennent ont expiré. C&#39;est plus efficace que de supprimer des lignes à l&#39;intérieur des parts, ce qui implique un `delete` coûteux. Nous recommandons de toujours définir ce paramètre. Consultez [Gestion des données avec TTL](/fr/guides/use-cases/observability/build-your-own/managing-data#data-management-with-ttl-time-to-live) pour plus de détails.
+* Le TTL est défini via `TTL toDateTime(Timestamp) + toIntervalDay(3)` et correspond à la valeur définie dans la configuration du collector. [`ttl_only_drop_parts=1`](/fr/reference/settings/merge-tree-settings/other#ttl_only_drop_parts) signifie que seules des parts entières sont supprimées lorsque toutes les lignes qu&#39;elles contiennent ont expiré. C&#39;est plus efficace que de supprimer des lignes à l&#39;intérieur des parts, ce qui implique un `delete` coûteux. Nous recommandons de toujours définir ce paramètre. Consultez [Gestion des données avec TTL](/fr/guides/use-cases/observability/build-your-own/managing-data#data-management-with-ttl-time-to-live) pour plus de détails.
 * La table utilise le moteur classique [`MergeTree`](/fr/reference/engines/table-engines/mergetree-family/mergetree). C&#39;est la recommandation pour les logs et les traces, et il ne devrait pas être nécessaire de le modifier.
 * La table est ordonnée par `ORDER BY (ServiceName, SeverityText, toUnixTimestamp(Timestamp), TraceId)`. Cela signifie que les requêtes seront optimisées pour les filtres sur `ServiceName`, `SeverityText`, `Timestamp` et `TraceId` : les colonnes placées plus tôt dans la liste seront filtrées plus rapidement que les suivantes ; par exemple, un filtrage sur `ServiceName` sera nettement plus rapide qu&#39;un filtrage sur `TraceId`. Vous devez modifier cet ordre en fonction des schémas d’accès attendus ; voir [Choisir une clé primaire](/fr/guides/use-cases/observability/build-your-own/schema-design#choosing-a-primary-ordering-key).
-* Le schéma ci-dessus applique `ZSTD(1)` aux colonnes. Cela offre la meilleure compression pour les logs. Vous pouvez augmenter le niveau de compression ZSTD (au-dessus de la valeur par défaut de 1) pour obtenir une meilleure compression, bien que cela soit rarement avantageux. Augmenter cette valeur entraînera une surcharge CPU plus importante au moment de l&#39;insert (pendant la compression), même si la décompression (et donc les requêtes) devrait rester comparable. Consultez [ce lien](https://clickhouse.com/blog/optimize-clickhouse-codecs-compression-schema) pour plus de détails. Un [encodage delta](/fr/reference/statements/create/table#delta) supplémentaire est appliqué à `Timestamp` afin de réduire sa taille sur disque.
+* Le schéma ci-dessus applique `ZSTD(1)` aux colonnes. Cela offre la meilleure compression pour les logs. Vous pouvez augmenter le niveau de compression ZSTD (au-dessus de la valeur par défaut de 1) pour obtenir une meilleure compression, bien que cela soit rarement avantageux. Augmenter cette valeur entraînera une surcharge CPU plus importante au moment de l&#39;insertion (pendant la compression), même si la décompression (et donc les requêtes) devrait rester comparable. Consultez [ce lien](https://clickhouse.com/blog/optimize-clickhouse-codecs-compression-schema) pour plus de détails. Un [encodage delta](/fr/reference/statements/create/table/codec#delta) supplémentaire est appliqué à `Timestamp` afin de réduire sa taille sur disque.
 * Notez que [`ResourceAttributes`](https://opentelemetry.io/docs/specs/otel/resource/sdk/), [`LogAttributes`](https://opentelemetry.io/docs/specs/otel/logs/data-model/#field-attributes) et [`ScopeAttributes`](https://opentelemetry.io/docs/specs/otel/logs/data-model/#field-instrumentationscope) sont des maps. Il est important de bien comprendre les différences entre ces éléments. Consultez [&quot;Utiliser les maps&quot;](/fr/guides/use-cases/observability/build-your-own/schema-design#using-maps) pour savoir comment accéder à ces maps et optimiser l&#39;accès aux clés qu&#39;elles contiennent.
 * La plupart des autres types ici, par exemple `ServiceName` en `LowCardinality`, sont optimisés. Notez que `Body`, qui est du JSON dans nos logs d&#39;exemple, est stocké sous forme de `String`.
 * Des bloom filters sont appliqués aux clés et valeurs des maps, ainsi qu&#39;à la colonne `Body`. Ils visent à améliorer le temps d&#39;exécution des requêtes qui accèdent à ces colonnes, mais ne sont généralement pas nécessaires. Consultez [Indices secondaires / data skipping indices](/fr/guides/use-cases/observability/build-your-own/schema-design#secondarydata-skipping-indices).
@@ -622,13 +630,13 @@ Là encore, cela s’alignera sur les colonnes correspondant à la spécificatio
 Nous recommandons aux utilisateurs de désactiver la création automatique du schéma et de créer leurs tables manuellement. Cela permet de modifier les clés primaire et secondaire, ainsi que d’ajouter des colonnes supplémentaires pour optimiser les performances des requêtes. Pour plus de détails, consultez [Schema design](/fr/guides/use-cases/observability/build-your-own/schema-design).
 
 <div id="optimizing-inserts">
-  ## Optimisation des insertions
+  ## Optimisation des insertions {#optimizing-inserts}
 </div>
 
 Pour obtenir de bonnes performances d’insertion tout en bénéficiant de fortes garanties de cohérence, respectez quelques règles simples lorsque vous insérez des données d’observabilité dans ClickHouse via le collector. Avec une configuration correcte de l’OTel collector, les règles suivantes sont faciles à appliquer. Cela permet également d’éviter les [problèmes courants](https://clickhouse.com/blog/common-getting-started-issues-with-clickhouse) que rencontrent les utilisateurs qui découvrent ClickHouse.
 
 <div id="batching">
-  ### Regroupement par lots
+  ### Regroupement par lots {#batching}
 </div>
 
 Par défaut, chaque insertion envoyée à ClickHouse amène ClickHouse à créer immédiatement une part de stockage contenant les données de l’insertion ainsi que les autres métadonnées à stocker. Par conséquent, envoyer moins d’insertions contenant chacune davantage de données, plutôt qu’un plus grand nombre d’insertions contenant chacune moins de données, réduit le nombre d’écritures nécessaires. Nous recommandons d’insérer les données par lots assez volumineux, d’au moins 1 000 lignes à la fois. Plus de détails [ici](https://clickhouse.com/blog/asynchronous-data-inserts-in-clickhouse#data-needs-to-be-batched-for-optimal-performance).
@@ -642,21 +650,23 @@ Du point de vue du collector, il peut être difficile de distinguer (1) de (2). 
 
 Nous recommandons aux utilisateurs d’utiliser le [batch processor](https://github.com/open-telemetry/opentelemetry-collector/blob/main/processor/batchprocessor/README.md) présenté dans les configurations précédentes pour répondre à ces exigences. Cela garantit que les insertions sont envoyées sous forme de lots cohérents de lignes respectant les conditions ci-dessus. Si un collector doit traiter un débit élevé (événements par seconde) et qu’au moins 10 000 événements peuvent être envoyés à chaque insertion, c’est généralement le seul regroupement par lots nécessaire dans le pipeline. Des valeurs allant jusqu’à 100 000 peuvent être utilisées si la mémoire le permet. Dans ce cas, le collector flush les lots avant que le `timeout` du batch processor ne soit atteint, ce qui garantit une faible latence de bout en bout du pipeline ainsi qu’une taille de lot cohérente.
 
-<div id="use-asynchronous-inserts">
-  ### Utiliser les insertions asynchrones
+### Utiliser les insertions asynchrones {#use-asynchronous-inserts}
+
+En règle générale, les utilisateurs sont contraints d’envoyer des batchs plus petits lorsque le débit d’un collecteur est faible, tout en s’attendant à ce que les données parviennent à ClickHouse avec une latence de bout en bout minimale. Dans ce cas, de petits batchs sont envoyés à l’expiration du `timeout` du batch processor. Cela peut poser problème, et c’est précisément dans ce type de situation que les insertions asynchrones deviennent nécessaires. Ce cas se présente généralement lorsque **des collecteurs dans le rôle d’agent sont configurés pour envoyer directement vers ClickHouse**. Les passerelles, en jouant un rôle d’agrégation, peuvent atténuer ce problème ; voir [Scaling with Gateways](#scaling-with-gateways).
+
+S’il n’est pas possible de garantir de gros batchs, vous pouvez déléguer le regroupement par lots à ClickHouse en utilisant les [insertions asynchrones](/fr/concepts/best-practices/selecting-an-insert-strategy#asynchronous-inserts). Avec les insertions asynchrones, les données sont d’abord insérées dans un tampon, puis écrites ultérieurement dans le stockage de la base de données, donc de manière asynchrone.
+
+<div className="ch-image-md">
+  <Frame>
+    ![Insertions asynchrones](/images/use-cases/observability/observability-6.webp)
+  </Frame>
 </div>
 
-En règle générale, les utilisateurs sont contraints d’envoyer des lots plus petits lorsque le débit d’un collector est faible, tout en s’attendant à ce que les données parviennent à ClickHouse avec une latence de bout en bout minimale. Dans ce cas, de petits lots sont envoyés à l’expiration du `timeout` du batch processor. Cela peut poser problème, et c’est précisément dans ce type de situation que les insertions asynchrones deviennent nécessaires. Ce cas se présente généralement lorsque **des collectors dans le rôle d’agent sont configurés pour envoyer directement vers ClickHouse**. Les passerelles, en jouant un rôle d’agrégation, peuvent atténuer ce problème ; voir [Scaling with Gateways](#scaling-with-gateways).
+Lorsque les [insertions asynchrones sont activées](/fr/concepts/features/operations/insert/asyncinserts#enabling-asynchronous-inserts), quand ClickHouse ① reçoit une requête d’insertion, les données de la requête sont ② immédiatement écrites dans un tampon en mémoire. Lors du ③ prochain flush du tampon, les données du tampon sont [triées](/fr/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-stored-on-disk-ordered-by-primary-key-columns) et écrites sous forme de part dans le stockage de la base de données. Notez que les données ne peuvent pas être interrogées avant d’avoir été flushées vers le stockage de la base de données ; le flush du tampon est [configurable](/fr/concepts/features/operations/insert/asyncinserts).
 
-S’il n’est pas possible de garantir de gros lots, vous pouvez déléguer le regroupement par lots à ClickHouse en utilisant les [insertions asynchrones](/fr/concepts/best-practices/selecting-an-insert-strategy#asynchronous-inserts). Avec les insertions asynchrones, les données sont d’abord insérées dans un buffer, puis écrites ultérieurement dans le stockage de la base de données, donc de manière asynchrone.
+Pour activer les insertions asynchrones pour le collecteur, ajoutez `async_insert=1` à la chaîne de connexion. Nous recommandons d’utiliser `wait_for_async_insert=1` (valeur par défaut) afin d’obtenir des garanties de livraison ; voir [ici](https://clickhouse.com/blog/asynchronous-data-inserts-in-clickhouse) pour plus de détails.
 
-<Image img="/images/use-cases/observability/observability-6.webp" alt="Insertions asynchrones" size="md" />
-
-Lorsque les [insertions asynchrones sont activées](/fr/concepts/features/operations/insert/asyncinserts#enabling-asynchronous-inserts), quand ClickHouse ① reçoit une insert query, les données de la requête sont ② immédiatement écrites dans un buffer en mémoire. Lors du ③ prochain flush du buffer, les données du buffer sont [triées](/fr/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-stored-on-disk-ordered-by-primary-key-columns) et écrites sous forme de part dans le stockage de la base de données. Notez que les données ne peuvent pas être interrogées avant d’avoir été flushées vers le stockage de la base de données ; le flush du buffer est [configurable](/fr/concepts/features/operations/insert/asyncinserts).
-
-Pour activer les insertions asynchrones pour le collector, ajoutez `async_insert=1` à la chaîne de connexion. Nous recommandons d’utiliser `wait_for_async_insert=1` (valeur par défaut) afin d’obtenir des garanties de livraison ; voir [ici](https://clickhouse.com/blog/asynchronous-data-inserts-in-clickhouse) pour plus de détails.
-
-Les données d’une async insert sont insérées une fois le buffer ClickHouse flushé. Cela se produit soit lorsque [`async_insert_max_data_size`](/fr/reference/settings/session-settings#async_insert_max_data_size) est dépassé, soit après [`async_insert_busy_timeout_ms`](/fr/reference/settings/session-settings#async_insert_max_data_size) millisecondes à partir de la première INSERT query. Si `async_insert_stale_timeout_ms` est défini sur une valeur non nulle, les données sont insérées après `async_insert_stale_timeout_ms milliseconds` depuis la dernière query. Vous pouvez ajuster ces settings pour contrôler la latence de bout en bout de votre pipeline. D’autres settings permettant d’ajuster le flush du buffer sont documentés [ici](/fr/reference/settings/session-settings#async_insert). En règle générale, les valeurs par défaut conviennent.
+Les données d’une async insert sont insérées une fois le tampon ClickHouse flushé. Cela se produit soit lorsque [`async_insert_max_data_size`](/fr/reference/settings/session-settings/async-insert#async_insert_max_data_size) est dépassé, soit après [`async_insert_busy_timeout_ms`](/fr/reference/settings/session-settings/async-insert#async_insert_busy_timeout_max_ms) millisecondes à partir de la première requête d’insertion. Si `async_insert_stale_timeout_ms` est défini sur une valeur non nulle, les données sont insérées après `async_insert_stale_timeout_ms milliseconds` depuis la dernière requête. Vous pouvez ajuster ces settings pour contrôler la latence de bout en bout de votre pipeline. D’autres settings permettant d’ajuster le flush du tampon sont documentés [ici](/fr/reference/settings/session-settings/async-insert#async_insert). En règle générale, les valeurs par défaut conviennent.
 
 <Info>
   **Envisagez les insertions asynchrones adaptatives**
@@ -664,41 +674,45 @@ Les données d’une async insert sont insérées une fois le buffer ClickHouse 
   Dans les cas où un petit nombre d’agents est utilisé, avec un débit faible mais des exigences strictes en matière de latence de bout en bout, les [insertions asynchrones adaptatives](https://clickhouse.com/blog/clickhouse-release-24-02#adaptive-asynchronous-inserts) peuvent être utiles. En règle générale, elles ne s’appliquent pas aux cas d’usage d’observability à haut débit, comme ceux observés avec ClickHouse.
 </Info>
 
-Enfin, le comportement précédent de déduplication associé aux insertions synchrones dans ClickHouse n’est pas activé par défaut lors de l’utilisation d’insertions asynchrones. Si nécessaire, consultez le paramètre [`async_insert_deduplicate`](/fr/reference/settings/session-settings#async_insert_deduplicate).
+Enfin, le comportement précédent de déduplication associé aux insertions synchrones dans ClickHouse n’est pas activé par défaut lors de l’utilisation d’insertions asynchrones. Si nécessaire, consultez le paramètre [`async_insert_deduplicate`](/fr/reference/settings/session-settings/async-insert#async_insert_deduplicate).
 
 Tous les détails sur la configuration de cette fonctionnalité sont disponibles [ici](/fr/concepts/features/operations/insert/asyncinserts#enabling-asynchronous-inserts), avec une analyse approfondie [ici](https://clickhouse.com/blog/asynchronous-data-inserts-in-clickhouse).
 
 <div id="deployment-architectures">
-  ## Architectures de déploiement
+  ## Architectures de déploiement {#deployment-architectures}
 </div>
 
 Plusieurs architectures de déploiement sont possibles lors de l’utilisation de l’OTel collector avec ClickHouse. Nous décrivons ci-dessous chacune d’elles et indiquons dans quels cas elle est la plus adaptée.
 
-<div id="agents-only">
-  ### Agents uniquement
+### Agents uniquement {#agents-only}
+
+Dans une architecture composée uniquement d’agents, les utilisateurs déploient le collecteur OTel à la périphérie sous forme d’agents. Ceux-ci reçoivent les traces des applications locales (par ex. via un conteneur sidecar) et collectent les logs des serveurs et des nœuds Kubernetes. Dans ce mode, les agents envoient leurs données directement à ClickHouse.
+
+<div className="ch-image-md">
+  <Frame>
+    ![Agents uniquement](/images/use-cases/observability/observability-7.webp)
+  </Frame>
 </div>
-
-Dans une architecture composée uniquement d’agents, les utilisateurs déploient l’OTel collector à la périphérie sous forme d’agents. Ceux-ci reçoivent les traces des applications locales (par ex. via un conteneur sidecar) et collectent les logs des serveurs et des nœuds Kubernetes. Dans ce mode, les agents envoient leurs données directement à ClickHouse.
-
-<Image img="/images/use-cases/observability/observability-7.webp" alt="Agents uniquement" size="md" />
 
 Cette architecture convient aux déploiements de petite à moyenne taille. Son principal avantage est qu’elle ne nécessite pas de matériel supplémentaire et qu’elle réduit au minimum l’empreinte globale en ressources de la solution d’observabilité ClickHouse, avec une correspondance simple entre applications et collecteurs.
 
-Vous devriez envisager de migrer vers une architecture basée sur des passerelles lorsque le nombre d’agents dépasse plusieurs centaines. Cette architecture présente plusieurs inconvénients qui compliquent sa mise à l’échelle :
+Vous devriez envisager de migrer vers une architecture basée sur des passerelles lorsque le nombre d’agents dépasse plusieurs centaines. Cette architecture présente plusieurs inconvénients qui compliquent sa mise à l’échelle :
 
-* **Mise à l’échelle des connexions** - Chaque agent établit une connexion à ClickHouse. Bien que ClickHouse puisse maintenir des centaines, voire des milliers, de connexions d’insertion concurrentes, cela finit par devenir un facteur limitant et par rendre les insertions moins efficaces : ClickHouse consacre alors davantage de ressources au maintien de ces connexions. L’utilisation de passerelles réduit le nombre de connexions et améliore l’efficacité des insertions.
+* **Mise à l’échelle des connexions** - Chaque agent établit une connexion à ClickHouse. Bien que ClickHouse puisse maintenir des centaines, voire des milliers, de connexions d’insertion concurrentes, cela finit par devenir un facteur limitant et par rendre les insertions moins efficaces : ClickHouse consacre alors davantage de ressources au maintien de ces connexions. L’utilisation de passerelles réduit le nombre de connexions et améliore l’efficacité des insertions.
 * **Traitement à la périphérie** - Dans cette architecture, toute transformation ou tout traitement des événements doit être effectué à la périphérie ou dans ClickHouse. En plus d’être contraignant, cela peut impliquer soit des vues matérialisées ClickHouse complexes, soit le déplacement d’une part importante du calcul vers la périphérie, où les ressources sont limitées et les services critiques peuvent être affectés.
-* **Petits lots et latences** - Les collectors agents peuvent, individuellement, collecter très peu d’événements. Cela signifie généralement qu’ils doivent être configurés pour envoyer leurs données à intervalle défini afin de respecter les SLA de livraison. Le collector peut alors envoyer de petits lots à ClickHouse. Bien que ce soit un inconvénient, il peut être atténué avec les insertions asynchrones - voir [Optimiser les insertions](#optimizing-inserts).
+* **Petits batchs et latences** - Les collecteurs agents peuvent, individuellement, collecter très peu d’événements. Cela signifie généralement qu’ils doivent être configurés pour envoyer leurs données à intervalle défini afin de respecter les SLA de livraison. Le collecteur peut alors envoyer de petits batchs à ClickHouse. Bien que ce soit un inconvénient, il peut être atténué avec les insertions asynchrones - voir [Optimiser les insertions](#optimizing-inserts).
 
-<div id="scaling-with-gateways">
-  ### Mise à l’échelle avec des passerelles
+### Mise à l’échelle avec des passerelles {#scaling-with-gateways}
+
+Les collecteurs OTel peuvent être déployés en tant qu’instances passerelle pour pallier les limitations décrites ci-dessus. Ils fournissent un service autonome, généralement par centre de données ou par région. Ils reçoivent les événements des applications (ou d’autres collecteurs jouant le rôle d’agent) via un unique point de terminaison OTLP. En général, un ensemble d’instances passerelle est déployé, avec un load balancer prêt à l’emploi pour répartir la charge entre elles.
+
+<div className="ch-image-md">
+  <Frame>
+    ![Mise à l’échelle avec des passerelles](/images/use-cases/observability/observability-8.webp)
+  </Frame>
 </div>
 
-Les OTel collectors peuvent être déployés en tant qu’instances passerelle pour pallier les limitations décrites ci-dessus. Ils fournissent un service autonome, généralement par centre de données ou par région. Ils reçoivent les événements des applications (ou d’autres collectors jouant le rôle d’agent) via un unique point de terminaison OTLP. En général, un ensemble d’instances passerelle est déployé, avec un load balancer prêt à l’emploi pour répartir la charge entre elles.
-
-<Image img="/images/use-cases/observability/observability-8.webp" alt="Mise à l’échelle avec des passerelles" size="md" />
-
-L’objectif de cette architecture est de décharger les agents des traitements intensifs en calcul, afin de réduire au minimum leur consommation de ressources. Ces passerelles peuvent effectuer des tâches de transformation qui, autrement, devraient être réalisées par les agents. En outre, en agrégeant les événements provenant de nombreux agents, les passerelles peuvent garantir l’envoi de batches volumineux vers ClickHouse, ce qui permet une insertion efficace. Ces passerelle collectors peuvent facilement passer à l’échelle à mesure que davantage d’agents sont ajoutés et que le débit des événements augmente. Un exemple de configuration passerelle, accompagné d’une configuration d’agent associée consommant le fichier journal structuré d’exemple, est présenté ci-dessous. Notez l’utilisation d’OTLP pour la communication entre l’agent et la passerelle.
+L’objectif de cette architecture est de décharger les agents des traitements intensifs en calcul, afin de réduire au minimum leur consommation de ressources. Ces passerelles peuvent effectuer des tâches de transformation qui, autrement, devraient être réalisées par les agents. En outre, en agrégeant les événements provenant de nombreux agents, les passerelles peuvent garantir l’envoi de batches volumineux vers ClickHouse, ce qui permet une insertion efficace. Ces collecteurs passerelles peuvent facilement passer à l’échelle à mesure que davantage d’agents sont ajoutés et que le débit des événements augmente. Un exemple de configuration passerelle, accompagné d’une configuration d’agent associée consommant le fichier de journal structuré d’exemple, est présenté ci-dessous. Notez l’utilisation d’OTLP pour la communication entre l’agent et la passerelle.
 
 [clickhouse-agent-config.yaml](https://www.otelbin.io/#config=receivers%3A*N_filelog%3A*N___include%3A*N_____-_%2Fopt%2Fdata%2Flogs%2Faccess-structured.log*N___start*_at%3A_beginning*N___operators%3A*N_____-_type%3A_json*_parser*N_______timestamp%3A*N_________parse*_from%3A_attributes.time*_local*N_________layout%3A_*%22*.Y-*.m-*.d_*.H%3A*.M%3A*.S*%22*N*Nprocessors%3A*N_batch%3A*N___timeout%3A_5s*N___send*_batch*_size%3A_10000*N*Nexporters%3A*N_otlp%3A*N___endpoint%3A_localhost%3A4317*N___tls%3A*N_____insecure%3A_true_*H_Set_to_false_if_you_are_using_a_secure_connection*N*Nservice%3A*N_telemetry%3A*N___metrics%3A*N_____address%3A_0.0.0.0%3A9888_*H_Modified_as_2_collectors_running_on_same_host*N_pipelines%3A*N___logs%3A*N_____receivers%3A_%5Bfilelog%5D*N_____processors%3A_%5Bbatch%5D*N_____exporters%3A_%5Botlp%5D%7E\&distro=otelcol-contrib%7E\&distroVersion=v0.103.1%7E)
 
@@ -780,24 +794,26 @@ Le principal inconvénient de cette architecture réside dans le coût et la cha
 
 Pour un exemple de gestion d’architectures de plus grande envergure basées sur des passerelles, ainsi que des enseignements qui en sont tirés, nous recommandons cet [article de blog](https://clickhouse.com/blog/building-a-logging-platform-with-clickhouse-and-saving-millions-over-datadog).
 
-<div id="adding-kafka">
-  ### Ajout de Kafka
-</div>
+### Ajout de Kafka {#adding-kafka}
 
 Les lecteurs remarqueront peut-être que les architectures ci-dessus n’utilisent pas Kafka comme file de messages.
 
-L’utilisation d’une file Kafka comme tampon de messages est un modèle de conception courant dans les architectures de logs, popularisé par la stack ELK. Elle offre plusieurs avantages : principalement, elle permet de meilleures garanties de livraison des messages et aide à gérer le backpressure. Les messages sont envoyés par les agents de collecte vers Kafka, puis écrits sur disque. En théorie, une instance Kafka en cluster devrait fournir un tampon de messages à haut débit, car écrire des données de façon séquentielle sur disque demande moins de surcharge de calcul que d’analyser et de traiter un message — dans Elastic, par exemple, la tokenisation et l’indexation entraînent une surcharge importante. En déplaçant les données hors des agents, vous réduisez aussi le risque de perdre des messages à cause de la rotation des logs à la source. Enfin, cela offre des capacités de rejeu des messages et de réplication inter-régions, ce qui peut être intéressant pour certains cas d’usage.
+L’utilisation d’une file Kafka comme tampon de messages est un modèle de conception courant dans les architectures de logs, popularisé par la stack ELK. Elle offre plusieurs avantages : principalement, elle permet de meilleures garanties de livraison des messages et aide à gérer le backpressure. Les messages sont envoyés par les agents de collecte vers Kafka, puis écrits sur disque. En théorie, une instance Kafka en cluster devrait fournir un tampon de messages à haut débit, car écrire des données de façon séquentielle sur disque demande moins de surcharge de calcul que d’analyser et de traiter un message — dans Elastic, par exemple, la tokenisation et l’indexation entraînent une surcharge importante. En déplaçant les données hors des agents, vous réduisez aussi le risque de perdre des messages à cause de la rotation des logs à la source. Enfin, cela offre des capacités de rejeu des messages et de réplication inter-régions, ce qui peut être intéressant pour certains cas d’usage.
 
 Cependant, ClickHouse peut insérer des données très rapidement — des millions de lignes par seconde sur un matériel modeste. Le backpressure venant de ClickHouse est **rare**. Bien souvent, s’appuyer sur une file Kafka ajoute de la complexité architecturale et des coûts. Si vous adhérez au principe selon lequel les logs n’ont pas besoin des mêmes garanties de livraison que des transactions bancaires et d’autres données critiques, nous vous recommandons d’éviter la complexité de Kafka.
 
 Cependant, si vous avez besoin de fortes garanties de livraison ou de la possibilité de rejouer les données (éventuellement vers plusieurs sources), Kafka peut être un ajout architectural utile.
 
-<Image img="/images/use-cases/observability/observability-9.webp" alt="Ajout de Kafka" size="md" />
+<div className="ch-image-md">
+  <Frame>
+    ![Ajout de Kafka](/images/use-cases/observability/observability-9.webp)
+  </Frame>
+</div>
 
-Dans ce cas, les agents OTel peuvent être configurés pour envoyer les données vers Kafka via le [Kafka exporter](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/exporter/kafkaexporter/README.md). Les instances passerelle, à leur tour, consomment les messages à l’aide du [Kafka receiver](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/receiver/kafkareceiver/README.md). Nous vous recommandons de consulter la documentation de Confluent et d’OTel pour plus de détails.
+Dans ce cas, les agents OTel peuvent être configurés pour envoyer les données vers Kafka via l’[exportateur Kafka](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/exporter/kafkaexporter/README.md). Les instances passerelle, à leur tour, consomment les messages à l’aide du [Kafka receiver](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/receiver/kafkareceiver/README.md). Nous vous recommandons de consulter la documentation de Confluent et d’OTel pour plus de détails.
 
 <div id="estimating-resources">
-  ### Estimation des ressources
+  ### Estimation des ressources {#estimating-resources}
 </div>
 
 Les besoins en ressources de l’OTel collector dépendent du débit d’événements, de la taille des messages et du niveau de traitement appliqué. Le projet OpenTelemetry publie des [benchmarks](https://opentelemetry.io/docs/collector/benchmarks/) que les utilisateurs peuvent consulter pour estimer ces besoins.

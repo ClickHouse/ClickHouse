@@ -1,6 +1,8 @@
 #pragma once
 
 #include <Client/Connection.h>
+#include <Core/Field.h>
+#include <Core/SettingsEnums.h>
 #include <Interpreters/Context_fwd.h>
 #include <QueryPipeline/BlockIO.h>
 #include <Interpreters/Session.h>
@@ -27,18 +29,30 @@ struct LocalQueryState
 
     /// Query text.
     String query;
-    /// Parser-affecting settings captured when the query was received, before any query-local `SETTINGS`
-    /// from the query itself are applied during execution. The `input()` initializer reparses `query` and
-    /// must use the dialect/gate the query was originally accepted with — a JSON
-    /// `INSERT ... FROM input(...) SETTINGS dialect = 'clickhouse'` (or `... allow_experimental_json_ast_dialect = 0`)
-    /// would otherwise be reparsed with the changed settings and fail.
-    bool parsed_as_json_dialect = false;
-    bool allow_experimental_json_ast_dialect = false;
-    /// AST-size limits captured at the same point. The JSON branch of the `input()` initializer reparses
-    /// `query` through `IAST::createFromJSON`; it must use the limits the original parse was accepted with,
-    /// so a JSON `INSERT ... FROM input(...) SETTINGS max_ast_depth = 1` (or `max_query_size` /
-    /// `max_ast_elements`) cannot make that second parse fail under limits the first parse never saw.
-    UInt64 json_ast_max_query_size = 0;
+    /// The dialect/gate the query text was sent in: the `input()` initializer reparses `query` and must
+    /// use the dialect the outbound text was pinned to (see `ClientBase::pinOutboundDialect`),
+    /// not the live session ones - a JSON `INSERT ... FROM input(...) SETTINGS dialect = 'clickhouse'`
+    /// (or `... enable_json_ast_dialect = 0`) would otherwise be reparsed with the changed settings and fail.
+    Dialect parsed_dialect = Dialect::clickhouse;
+    bool enable_json_ast_dialect = false;
+    /// Parser limits and parser flags captured when the query was received, before any query-local
+    /// `SETTINGS` from the query itself are applied. The `input()` initializer must reparse with the
+    /// settings that accepted the original query, not its query-local mutations.
+    UInt64 max_query_size = 0;
+    UInt64 max_parser_depth = 0;
+    UInt64 max_parser_backtracks = 0;
+    bool allow_settings_after_format_in_insert = false;
+    bool implicit_select = false;
+    bool enable_trino_dialect = false;
+    String promql_database;
+    String promql_table;
+    Field promql_evaluation_time;
+    String logsql_database;
+    String logsql_table;
+    String logsql_time_column;
+    String logsql_message_column;
+    bool enable_logsql_dialect = false;
+    /// AST-size limits used only by the JSON dialect.
     UInt64 json_ast_max_depth = 0;
     UInt64 json_ast_max_elements = 0;
     /// Streams of blocks, that are processing the query.
@@ -61,8 +75,8 @@ struct LocalQueryState
     std::shared_ptr<ColumnsDescription> columns_description;
     std::optional<ProfileInfo> profile_info;
 
-    /// Is request cancelled
-    bool is_cancelled = false;
+    /// Is request cancelled. Atomic: the interactive cancel callback may set it on a pipeline thread.
+    std::atomic_bool is_cancelled = false;
     bool is_finished = false;
 
     bool sent_totals = false;
@@ -78,6 +92,9 @@ struct LocalQueryState
     Stopwatch after_send_profile_events;
 
     QueryScope query_scope_holder;
+
+    /// The client created an output for the result, which the query allocates and the client releases after it ends.
+    bool client_output_created = false;
 };
 
 
@@ -121,6 +138,14 @@ public:
     void setDefaultDatabase(const String & database) override;
 
     void setCancelCallback(std::function<bool()> callback) override { is_cancelled_callback = std::move(callback); }
+
+    void onQueryOutputCreated() override
+    {
+        if (state)
+            state->client_output_created = true;
+    }
+
+    void onQueryOutputReleased() override { finished_query_scope = {}; }
 
     void getServerVersion(const ConnectionTimeouts & timeouts,
                           String & name,
@@ -180,6 +205,8 @@ public:
 
     bool checkConnected(const ConnectionTimeouts & /*timeouts*/) override { return true; }
 
+    bool checkConnectedWithoutRoundTrip() override { return true; }
+
     void disconnect() override {}
 
     void setThrottler(const ThrottlerPtr &) override {}
@@ -189,12 +216,20 @@ private:
 
     void finishQuery();
 
+    /// Resets `state` of the query that ended; keeps the query attached if the client created an output for it.
+    void resetEndedQueryState();
+
     void updateProgress(const Progress & value);
 
     void sendProfileEvents();
 
     /// Returns true on executor timeout, meaning a retryable error.
     bool pollImpl();
+
+    /// Store the in-flight exception in `state->exception` (preserving its type and message)
+    /// so that it is delivered to the client as a `Protocol::Server::Exception` packet.
+    /// Must be called from within a catch block.
+    void captureCurrentException();
 
     bool needSendProgressOrMetrics();
     bool needSendLogs();
@@ -211,6 +246,9 @@ private:
     String description = "clickhouse-local";
 
     std::optional<LocalQueryState> state;
+
+    /// Keeps the thread attached to the ended query until the client releases its output, which the query allocated.
+    QueryScope finished_query_scope;
 
     /// Last "server" packet.
     std::optional<UInt64> next_packet_type;

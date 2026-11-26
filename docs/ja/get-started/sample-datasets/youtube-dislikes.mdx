@@ -10,24 +10,26 @@ keywords: ['サンプルデータセット', 'youtube', 'サンプルデータ',
 2021年11月、YouTube はすべての動画の公&#x958B;***低評価***&#x6570;を非表示にしました。クリエイターは引き続き低評価数を確認できますが、視聴者が見られるのは動画が受け取っ&#x305F;***高評価***&#x6570;だけです。
 
 <Warning>
-  このデータセットには 45.5 億件を超えるレコードが含まれているため、使用するリソースでこの規模を処理できる場合を除き、以下のコマンドをそのままコピー＆ペーストする際は注意してください。以下のコマンドは [ClickHouse Cloud](https://clickhouse.cloud) の **本番** インスタンスで実行しました。
+  このデータセットには 45.5 億件を超えるレコードが含まれているため、使用するリソースでこの規模を処理できる場合を除き、以下のコマンドをそのままコピー＆ペーストする際は注意してください。これらのコマンドは、十分なサイズの [ClickHouse Cloud](/ja/products/cloud/getting-started/intro) サービスで実行しました。
 </Warning>
+
+<Tip>
+  これらのコマンドを実際に試すには、[ClickHouse Cloud の無料トライアル](https://clickhouse.cloud/signUp?loc=docs-get-started-sample-datasets-youtube-dislikes)に登録するか、[セルフホスト ClickHouse](/ja/get-started/setup/install) をセットアップしてください。
+</Tip>
 
 データは JSON フォーマットで、[archive.org](https://archive.org/download/dislikes_youtube_2021_12_video_json_files) からダウンロードできます。また、同じデータを S3 でも利用できるようにしているため、ClickHouse Cloud インスタンスへより効率的に取り込めます。
 
 以下では、ClickHouse Cloud でテーブルを作成し、データを挿入する手順を説明します。
 
 <Note>
-  以下の手順は ClickHouse のローカルインストールでも問題なく動作します。変更点は、`s3cluster` ではなく `s3` 関数を使用することだけです (クラスターを設定している場合を除きます。その場合は `default` をクラスター名に変更してください) 。
+  以下の手順は ClickHouse のローカルインストールでも動作します。
 </Note>
 
-<div id="step-by-step-instructions">
-  ## 手順
-</div>
+## 手順 {#step-by-step-instructions}
 
 <Steps>
   <Step title="データの探索" id="data-exploration">
-    データがどのようなものか見てみましょう。`s3cluster` テーブル関数はテーブルを返すため、その結果を `DESCRIBE` できます。
+    データがどのようなものか見てみましょう。`s3` テーブル関数はテーブルを返すため、その結果を `DESCRIBE` できます。
 
     ```sql
     DESCRIBE s3(
@@ -241,13 +243,9 @@ keywords: ['サンプルデータセット', 'youtube', 'サンプルデータ',
   </Step>
 </Steps>
 
-<div id="questions">
-  ## よくある質問
-</div>
+## よくある質問 {#questions}
 
-<div id="if-someone-disables-comments-does-it-lower-the-chance-someone-will-actually-click-like-or-dislike">
-  ### コメントを無効にすると、実際に高評価や低評価をクリックする可能性は低くなるのでしょうか？
-</div>
+### コメントを無効にすると、実際に高評価や低評価をクリックする可能性は低くなるのでしょうか？ {#if-someone-disables-comments-does-it-lower-the-chance-someone-will-actually-click-like-or-dislike}
 
 コメントが無効になっている場合、動画に対する気持ちを表すために、高評価や低評価を付ける可能性は高くなるのでしょうか？
 
@@ -302,9 +300,7 @@ ORDER BY
 
 コメントを有効にすると、エンゲージメント率が高くなる傾向があるようです。
 
-<div id="how-does-the-number-of-videos-change-over-time---notable-events">
-  ### 動画数は時間の経過とともにどう変化するか ― 注目すべき出来事は？
-</div>
+### 動画数は時間の経過とともにどう変化するか ― 注目すべき出来事は？ {#how-does-the-number-of-videos-change-over-time---notable-events}
 
 ```sql
 SELECT
@@ -342,9 +338,7 @@ ORDER BY month ASC;
 
 covid前後に投稿者が急増していることが[見て取れます](https://www.theverge.com/2020/3/27/21197642/youtube-with-me-style-videos-views-coronavirus-cook-workout-study-home-beauty)。
 
-<div id="more-subtitles-over-time-and-when">
-  ### 字幕は時間とともに増えたのか、増えたならいつか
-</div>
+### 字幕は時間とともに増えたのか、増えたならいつか {#more-subtitles-over-time-and-when}
 
 音声認識の進歩により、動画に字幕を付けることはかつてないほど簡単になりました。YouTube が 2009 年後半に自動字幕を導入しましたが、その時点で急増したのでしょうか？
 
@@ -381,9 +375,7 @@ ORDER BY month ASC;
 データ結果を見ると、2009年に急増が見られます。どうやらその頃、YouTube はコミュニティ キャプション機能を廃止し、他人の動画に字幕をアップロードできなくしたようです。
 これを受けて、難聴者やろう者の視聴者のために、クリエイターが自分の動画に字幕を追加するよう呼びかける非常に成功したキャンペーンが展開されました。
 
-<div id="top-uploaders-over-time">
-  ### 時系列で見た上位アップローダー
-</div>
+### 時系列で見た上位アップローダー {#top-uploaders-over-time}
 
 ```sql
 WITH uploaders AS
@@ -426,9 +418,7 @@ ORDER BY
 │ 2008-09-01 │ WWE                        │     3717092 │   0.07872802579349912 │
 ```
 
-<div id="how-do-like-ratio-changes-as-views-go-up">
-  ### 視聴回数が増えると、高評価率はどう変化しますか？
-</div>
+### 視聴回数が増えると、高評価率はどう変化しますか？ {#how-do-like-ratio-changes-as-views-go-up}
 
 ```sql
 SELECT
@@ -476,9 +466,7 @@ ORDER BY
 └───────────────────┴─────────────────────┴────────────┘
 ```
 
-<div id="how-are-views-distributed">
-  ### ビューはどのように分散されるのですか？
-</div>
+### ビューはどのように分散されるのですか？ {#how-are-views-distributed}
 
 ```sql
 SELECT

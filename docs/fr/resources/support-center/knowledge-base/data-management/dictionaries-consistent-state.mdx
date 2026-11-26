@@ -1,18 +1,16 @@
 ---
-title: Pourquoi mes données ne s’affichent-elles pas dans un dictionnaire dans ClickHouse Cloud ?
-description: Il existe un problème qui peut empêcher les données d’un dictionnaire d’être visibles immédiatement après sa création.
+title: Pourquoi mes données ne sont-elles pas visibles dans un dictionnaire dans ClickHouse Cloud ?
+description: Il peut arriver que les données d’un dictionnaire ne soient pas visibles immédiatement après sa création.
 date: 2024-04-12
 tags: ['Gestion du Cloud', 'Modélisation des données']
-keywords: ['dictionnaire']
+keywords: ['Dictionaries']
 ---
 
-<div id="dictionaries-in-clickhouse">
-  ## dictionnaires dans ClickHouse
-</div>
+## dictionnaires dans ClickHouse {#dictionaries-in-clickhouse}
 
 Les dictionnaires créés dans ClickHouse Cloud peuvent présenter des incohérences durant la phase de création initiale. Cela signifie qu’il se peut que vous ne voyiez aucune donnée dans le dictionnaire juste après sa création. Toutefois, après plusieurs tentatives, la requête de création peut aboutir sur différentes répliques, et les données deviennent alors visibles.
 
-Cela se produit parfois parce que le dictionnaire a été créé avant que la part n’atteigne le serveur. Par exemple :
+Cela se produit parfois parce que le dictionnaire a été créé avant que la part n’atteigne le serveur. Par exemple :
 
 ```
 2024-01-25 13:38:25.615837 - CREATE DICTIONARY received
@@ -24,26 +22,28 @@ Comme vous pouvez le constater, la part n&#39;est arrivée qu&#39;après la cré
 
 Pour résoudre ce problème, utilisez une requête `SELECT` au lieu de spécifier une table source lors de la création du dictionnaire, et activez le paramètre `select_sequential_consistency=1`.
 
-Au lieu de spécifier une table source :
+<Note title="ClickHouse Cloud">
+  Lorsque vous créez un dictionnaire qui lit les données d’une table ClickHouse, indiquez le nom d’utilisateur et le mot de passe d’un utilisateur dédié dans la clause `SOURCE`. Cet utilisateur doit disposer de la permission `SELECT` sur la table source. Consultez l’[exemple de source de dictionnaire ClickHouse](/fr/reference/statements/create/dictionary/sources/clickhouse).
+</Note>
+
+Au lieu de spécifier une table source :
 
 ```sql
 SOURCE(CLICKHOUSE(
     table 'test.temp_title_table_1706189903924'
-    user default password 'PASSWORD'))
+    user 'dict_reader' password 'dict_reader_password'))
 ```
 
-Utilisez une requête `SELECT` avec `select_sequential_consistency=1` :
+Utilisez une requête `SELECT` avec `select_sequential_consistency=1` :
 
 ```sql
 SOURCE(CLICKHOUSE(QUERY
     'SELECT songTitle, mappedTitle
     FROM test.temp_title_table_1706189903924
-    SETTINGS select_sequential_consistency=1' USER default PASSWORD ''))
+    SETTINGS select_sequential_consistency=1' USER 'dict_reader' PASSWORD 'dict_reader_password'))
 ```
 
-<div id="why-does-this-issue-occur">
-  ## Pourquoi ce problème se produit-il ?
-</div>
+## Pourquoi ce problème se produit-il ? {#why-does-this-issue-occur}
 
 Lorsque vous insérez des données puis créez ou rechargez un dictionnaire, l’instruction DDL peut parvenir à une réplique avant les données (ou les nouvelles données). Cela entraîne une incohérence entre les dictionnaires des différentes répliques. Ensuite, selon la réplique qui reçoit la requête, vous pouvez obtenir des résultats différents.
 

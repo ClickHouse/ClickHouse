@@ -1,6 +1,6 @@
 ---
 description: 'ClickHouse C++クライアントライブラリと u-server フレームワークとの統合に関するドキュメント'
-sidebarTitle: 'C++'
+sidebarTitle: '概要'
 slug: /interfaces/cpp
 title: 'C++クライアントライブラリ'
 doc_type: 'reference'
@@ -22,9 +22,7 @@ GitHub リポジトリで参照できます: [https://github.com/ClickHouse/clic
   [https://github.com/ClickHouse/clickhouse-cpp/issues](https://github.com/ClickHouse/clickhouse-cpp/issues)
 </Note>
 
-<div id="including-library-into-project">
-  ## ライブラリをプロジェクトに組み込む
-</div>
+## ライブラリをプロジェクトに組み込む {#including-library-into-project}
 
 ライブラリをプロジェクトに組み込む最も簡単な方法は、CMake の `FetchContent`
 モジュールを使用することです。この方法では、ライブラリの特定のバージョンを固定し、通常の
@@ -37,7 +35,7 @@ set(WITH_OPENSSL YES CACHE BOOL "Enable OpenSSL in clickhouse-cpp" FORCE)
 FetchContent_Declare(
     clickhouse-cpp
     GIT_REPOSITORY https://github.com/ClickHouse/clickhouse-cpp.git
-    GIT_TAG v2.6.0   # can also be `master` or other banch
+    GIT_TAG v2.6.0   # can also be `master` or other branch
 )
 FetchContent_MakeAvailable(clickhouse-cpp)
 ```
@@ -56,13 +54,9 @@ Homebrew を使用して `openssl` をインストールしてください。
 target_link_libraries(your-target PRIVATE clickhouse-cpp-lib)
 ```
 
-<div id="examples">
-  ## 例
-</div>
+## 例 {#examples}
 
-<div id="example-setup-client">
-  ### Client オブジェクトの設定
-</div>
+### Client オブジェクトの設定 {#example-setup-client}
 
 ClickHouse への接続を確立するには、`Client` インスタンスを作成します。次の例では、
 パスワード不要かつ SSL が有効になっていないローカルの ClickHouse インスタンスに接続する方法を
@@ -90,9 +84,7 @@ clickhouse::Client client{
     };
 ```
 
-<div id="example-create-table">
-  ### データを返さずにテーブルを作成し、クエリを実行する
-</div>
+### データを返さずにテーブルを作成し、クエリを実行する {#example-create-table}
 
 テーブルの作成のように、データを返さないクエリを実行するには、`Execute` メソッドを使用します。
 同じ方法は、`ALTER TABLE` や `DROP` などの他のステートメントにも適用できます。
@@ -106,9 +98,7 @@ client.Execute(R"(
     ENGINE = MergeTree ORDER BY id)");
 ```
 
-<div id="example-insert-data">
-  ### データの挿入
-</div>
+### データの挿入 {#example-insert-data}
 
 テーブルにデータを挿入するには、`Block` を作成し、テーブルスキーマに対応するカラムオブジェクトを格納します。
 データはカラムごとに追加され、その後、効率的なバッチ書き込み向けに最適化された `Insert` メソッドを使用して、
@@ -139,9 +129,7 @@ block.AppendColumn("language", language);
 client.Insert("greetings", block);
 ```
 
-<div id="example-select">
-  ### データの取得
-</div>
+### データの取得 {#example-select}
 
 データを返すクエリを実行するには、`Select` メソッドを使用し、結果を処理するコールバックを指定します。クエリ結果は `Block` オブジェクトとして返され、ClickHouse ネイティブのカラム指向データ表現を反映しています。
 
@@ -158,9 +146,7 @@ client.Select(
     });
 ```
 
-<div id="supported-data-types">
-  ## サポートされているデータ型
-</div>
+## サポートされているデータ型 {#supported-data-types}
 
 * `UInt8`, `UInt16`, `UInt32`, `UInt64`, `Int8`, `Int16`, `Int32`, `Int64`
 * `UInt128`, `Int128`

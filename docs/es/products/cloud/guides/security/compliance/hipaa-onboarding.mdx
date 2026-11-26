@@ -2,7 +2,7 @@
 sidebarTitle: 'Onboarding de HIPAA'
 slug: /cloud/security/compliance/hipaa-onboarding
 title: 'Onboarding de HIPAA'
-description: 'Aprende cómo completar el onboarding de servicios compatibles con HIPAA'
+description: 'Aprende cómo completar el onboarding de servicios conformes con HIPAA'
 doc_type: 'guide'
 keywords: ['hipaa', 'cumplimiento', 'atención médica', 'seguridad', 'protección de datos']
 ---
@@ -10,19 +10,15 @@ keywords: ['hipaa', 'cumplimiento', 'atención médica', 'seguridad', 'protecci�
 import { BetaBadge } from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
 import { EnterprisePlanFeatureBadge } from "/snippets/es/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
 
-import { Image } from "/snippets/es/components/Image.jsx";
-
 <EnterprisePlanFeatureBadge feature="HIPAA" />
 
-ClickHouse ofrece servicios que cumplen con la Regla de Seguridad de la Ley de Portabilidad y Responsabilidad del Seguro Médico (HIPAA) de 1996. Los clientes pueden procesar información médica protegida (PHI) en estos servicios después de firmar un Business Associate Agreement (BAA) e implementar servicios en una región compatible con HIPAA.
+ClickHouse ofrece servicios que cumplen con la Regla de Seguridad de la Ley de Portabilidad y Responsabilidad del Seguro Médico (HIPAA) de 1996. Los clientes pueden procesar información médica protegida (PHI) en estos servicios después de firmar un Business Associate Agreement (BAA) y desplegar servicios en una región conforme con HIPAA.
 
 Para obtener más información sobre el programa de cumplimiento de ClickHouse y la disponibilidad de informes de auditoría de terceros, consulte nuestro [resumen de cumplimiento](/es/products/cloud/reference/security/compliance-overview) y el [Trust Center](https://trust.clickhouse.com). Además, los clientes deben revisar nuestra página de [características de seguridad](/es/products/cloud/features/security) para seleccionar e implementar los controles de seguridad adecuados para sus cargas de trabajo.
 
-Esta página describe el proceso para habilitar la implementación de servicios compatibles con HIPAA en ClickHouse Cloud.
+Esta página describe el proceso para habilitar el despliegue de servicios conformes con HIPAA en ClickHouse Cloud.
 
-<div id="enable-hipaa-compliant-services">
-  ## Habilite e implemente servicios compatibles con HIPAA
-</div>
+## Habilite y despliegue servicios conformes con HIPAA {#enable-hipaa-compliant-services}
 
 <Steps>
   <Step title="Suscríbase a los servicios Enterprise" id="sign-up-for-enterprise">
@@ -35,12 +31,18 @@ Esta página describe el proceso para habilitar la implementación de servicios 
 
   <Step title="Habilite HIPAA para su organización" id="enable-hipaa">
     1. Seleccione el nombre de su organización en la esquina inferior izquierda de la consola.
-    2. Haga clic en **Detalles de la organización**.
+    2. Haga clic en **Configuración de la organización**.
     3. Active la opción **Habilitar HIPAA**.
 
     <br />
 
-    <Image img="/images/cloud/security/compliance/hipaa_1.webp" size="md" alt="Solicite la habilitación de HIPAA" background="black" />
+    <div className="ch-image-md">
+      <Frame>
+        <img className="block dark:hidden" src="/images/cloud/security/compliance/hipaa_1-light.webp" alt="Solicite la habilitación de HIPAA (modo claro)" />
+
+        <img className="hidden dark:block" src="/images/cloud/security/compliance/hipaa_1.webp" alt="Solicite la habilitación de HIPAA (modo oscuro)" />
+      </Frame>
+    </div>
 
     <br />
 
@@ -48,7 +50,13 @@ Esta página describe el proceso para habilitar la implementación de servicios 
 
     <br />
 
-    <Image img="/images/cloud/security/compliance/hipaa_2.webp" size="md" alt="Enviar una solicitud de BAA" background="black" />
+    <div className="ch-image-md">
+      <Frame>
+        <img className="block dark:hidden" src="/images/cloud/security/compliance/hipaa_2-light.webp" alt="Enviar una solicitud de BAA (modo claro)" />
+
+        <img className="hidden dark:block" src="/images/cloud/security/compliance/hipaa_2.webp" alt="Enviar una solicitud de BAA (modo oscuro)" />
+      </Frame>
+    </div>
 
     <br />
 
@@ -56,29 +64,41 @@ Esta página describe el proceso para habilitar la implementación de servicios 
 
     <br />
 
-    <Image img="/images/cloud/security/compliance/hipaa_3.webp" size="md" alt="HIPAA habilitado" background="black" />
+    <div className="ch-image-md">
+      <Frame>
+        <img className="block dark:hidden" src="/images/cloud/security/compliance/hipaa_3-light.webp" alt="HIPAA habilitado (modo claro)" />
+
+        <img className="hidden dark:block" src="/images/cloud/security/compliance/hipaa_3.webp" alt="HIPAA habilitado (modo oscuro)" />
+      </Frame>
+    </div>
 
     <br />
   </Step>
 
-  <Step title="Implemente servicios en regiones compatibles con HIPAA" id="deploy-hipaa-services">
+  <Step title="Despliegue servicios en regiones compatibles con HIPAA" id="deploy-hipaa-services">
     1. Seleccione **Nuevo servicio** en la esquina superior izquierda de la pantalla de inicio de la consola
-    2. Cambie el **Tipo de región** a **Compatible con HIPAA**
+    2. Cambie el **Tipo de región** a **Conforme con HIPAA**
 
     <br />
 
-    <Image img="/images/cloud/security/compliance/hipaa_4.webp" size="md" alt="Desplegar en una región compatible con HIPAA" background="black" />
+    <div className="ch-image-md">
+      <Frame>
+        <img className="block dark:hidden" src="/images/cloud/security/compliance/hipaa_4-light.webp" alt="Desplegar en una región compatible con HIPAA (modo claro)" />
+
+        <img className="hidden dark:block" src="/images/cloud/security/compliance/hipaa_4.webp" alt="Desplegar en una región compatible con HIPAA (modo oscuro)" />
+      </Frame>
+    </div>
 
     <br />
 
     3. Introduzca un nombre para el servicio y complete la información restante
 
-    Para obtener una lista completa de los proveedores cloud y servicios compatibles con HIPAA, consulte nuestra página de [regiones cloud compatibles](/es/products/cloud/reference/supported-regions).
+    Para obtener una lista completa de los proveedores de nube y servicios conformes con HIPAA, consulte nuestra página de [regiones cloud compatibles](/es/products/cloud/reference/supported-regions).
   </Step>
 </Steps>
 
 <div id="migrate-to-hipaa">
-  ## Migrar servicios existentes
+  ## Migrar servicios existentes {#migrate-to-hipaa}
 </div>
 
 Se recomienda encarecidamente a los clientes implementar servicios en entornos que cumplan la normativa cuando sea necesario. El proceso de migrar servicios de una región estándar a una región compatible con HIPAA implica restaurarlos a partir de una copia de seguridad y puede requerir cierto tiempo de inactividad.
@@ -97,3 +117,9 @@ Si necesita migrar de regiones estándar a regiones compatibles con HIPAA, siga 
 
   Los servicios deben permanecer en el mismo proveedor de nube y en la misma región geográfica. Este proceso migra el servicio a un entorno compatible en el mismo proveedor de nube y región.
 </Info>
+
+## Copias de seguridad para servicios conformes con HIPAA {#backups}
+
+Las copias de seguridad gestionadas por ClickHouse funcionan igual en los servicios conformes con HIPAA que en el resto de servicios. Las copias de seguridad se almacenan en el mismo proveedor de nube y en la misma región que el servicio, y los clientes del plan Enterprise pueden configurar la frecuencia y la retención de las copias de seguridad. Una copia de seguridad puede restaurarse en un servicio nuevo de la misma región, incluido otro servicio conforme con HIPAA.
+
+La exportación de copias de seguridad a su propia cuenta en la nube no está disponible para los servicios conformes con HIPAA. El entorno regulado no permite escrituras en almacenamiento situado fuera de él, por lo que la opción **Configurar copia de seguridad externa** está deshabilitada en la consola y el privilegio `BACKUP` no se concede en estos servicios.

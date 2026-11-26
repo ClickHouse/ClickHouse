@@ -2,22 +2,20 @@
 slug: /data-compression/compression-modes
 title: 'أوضاع الضغط'
 description: 'أوضاع ضغط الأعمدة في ClickHouse'
-keywords: ['الضغط', 'الترميز', 'الترميز', 'الأوضاع']
+keywords: ['الضغط', 'مرمِّز', 'الترميز', 'الأوضاع']
 doc_type: 'reference'
 ---
-
-import { Image } from "/snippets/ar/components/Image.jsx";
 
 يدعم بروتوكول ClickHouse ضغط **كتل البيانات** مع قيم التحقق من السلامة.
 استخدم `LZ4` إذا لم تكن متأكدًا من الوضع الذي ينبغي اختياره.
 &#96;&#96;
 
 <Tip>
-  تعرّف على المزيد حول [مرمِّزات ضغط الأعمدة](/ar/reference/statements/create/table#column_compression_codec) المتاحة، وعيّنها عند إنشاء جداولك أو لاحقًا.
+  تعرّف على المزيد حول [مرمِّزات ضغط الأعمدة](/ar/reference/statements/create/table/codec) المتاحة، وعيّنها عند إنشاء جداولك أو لاحقًا.
 </Tip>
 
 <div id="modes">
-  ## الأنماط
+  ## الأنماط {#modes}
 </div>
 
 | القيمة | الاسم              | الوصف                              |
@@ -35,7 +33,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 | **lz4** 1.9.2     | 2.1    | 740 MB/s | 4530 MB/s  |
 
 <div id="block">
-  ## كتلة
+  ## كتلة {#block}
 </div>
 
 | الحقل               | النوع   | الوصف                                                                                            |
@@ -46,14 +44,18 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 | وضع                 | byte    | وضع الضغط                                                                                        |
 | compressed&#95;data | binary  | كتلة بيانات مضغوطة                                                                               |
 
-<Image img="/images/data-compression/ch_compression_block.webp" size="md" alt="مخطط يوضح بنية كتلة الضغط في ClickHouse" />
+<div className="ch-image-md">
+  <Frame>
+    ![مخطط يوضح بنية كتلة الضغط في ClickHouse](/images/data-compression/ch_compression_block.webp)
+  </Frame>
+</div>
 
 الترويسة هي (raw&#95;size + data&#95;size + وضع)، والحجم الخام هو len(header + compressed&#95;data).
 
 قيمة التحقق هي `hash(header + compressed_data)`، باستخدام [ClickHouse CityHash](/ar/resources/develop-contribute/native-protocol/hash).
 
 <div id="none-mode">
-  ## وضع None
+  ## وضع None {#none-mode}
 </div>
 
 إذا استُخدم وضع *None*، فإن `compressed_data` تكون مساوية للبيانات الأصلية.

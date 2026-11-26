@@ -1,13 +1,13 @@
 ---
-sidebarTitle: 'Langfuse'
+sidebarTitle: 'هندسة الذكاء الاصطناعي بدعم من Langfuse'
 slug: /cloud/features/ai-ml/langfuse
 title: 'Langfuse'
 description: 'Langfuse منصة مفتوحة المصدر لهندسة نماذج اللغة الكبيرة (LLM)، تساعد الفرق على تصحيح الأخطاء في تطبيقات LLM الخاصة بها وتحليلها وتطويرها بشكل تعاوني.'
-doc_type: 'مرجع'
+doc_type: 'reference'
 ---
 
 <div id="what-is-langfuse">
-  ## ما هو Langfuse؟
+  ## ما هو Langfuse؟ {#what-is-langfuse}
 </div>
 
 يُعد [Langfuse](https://langfuse.com) منصة مفتوحة المصدر لهندسة نماذج اللغة الكبيرة (LLM)، تساعد الفرق على تصحيح أخطاء تطبيقات LLM الخاصة بها وتحليلها وتحسينها بصورة تعاونية وتكرارية. وهو جزء من منظومة ClickHouse، ويعتمد في جوهره على **ClickHouse** لتوفير بنية خلفية للرصد قابلة للتوسع وعالية الأداء.
@@ -15,7 +15,7 @@ doc_type: 'مرجع'
 ومن خلال الاستفادة من التخزين العمودي في ClickHouse وقدراته التحليلية السريعة، يستطيع Langfuse التعامل مع مليارات التتبعات والأحداث بزمن استجابة منخفض، مما يجعله مناسبًا لأحمال العمل الإنتاجية عالية المعدل.
 
 <div id="why-langfuse">
-  ## لماذا Langfuse؟
+  ## لماذا Langfuse؟ {#why-langfuse}
 </div>
 
 * **مفتوح المصدر:** مفتوح المصدر بالكامل مع واجهة API عامة لعمليات التكامل المخصصة
@@ -26,7 +26,7 @@ doc_type: 'مرجع'
 * **منصة متكاملة:** مجموعة أدوات تغطي دورة حياة تطوير تطبيقات LLM بالكامل
 
 <div id="deployment-options">
-  ## خيارات النشر
+  ## خيارات النشر {#deployment-options}
 </div>
 
 يقدّم Langfuse خيارات نشر مرنة لتلبية مختلف متطلبات الأمان والبنية التحتية.
@@ -36,12 +36,12 @@ doc_type: 'مرجع'
 **[مستضاف ذاتيًا](https://langfuse.com/self-hosting)** من Langfuse مفتوح المصدر بالكامل (بترخيص MIT) ومجاني للنشر على بنيتك التحتية باستخدام Docker أو Kubernetes. يمكنك تشغيل مثيل ClickHouse الخاص بك (أو استخدام ClickHouse Cloud) لتخزين بيانات الرصد، مما يضمن لك تحكمًا كاملًا في بياناتك. 
 
 <div id="architecture">
-  ## البنية المعمارية
+  ## البنية المعمارية {#architecture}
 </div>
 
 يعتمد Langfuse فقط على مكونات مفتوحة المصدر، ويمكن نشره محليًا أو على بنية تحتية سحابية أو في البيئات المحلية:
 
-* **ClickHouse**: يخزن بيانات الرصد عالية الحجم (traces وspans وgenerations وscores). ويتيح التجميع السريع والتحليلات للوحات المعلومات.
+* **ClickHouse**: يخزن بيانات الرصد عالية الحجم (تتبّعات وspans وgenerations ودرجات). ويتيح التجميع السريع والتحليلات للوحات المعلومات.
 * **Postgres**: يخزن البيانات المعاملاتية مثل حسابات المستخدمين، وإعدادات المشاريع، وتعريفات المطالبات.
 * **Redis**: يتولى وضع الأحداث في قوائم الانتظار والتخزين المؤقت.
 * **S3/Blob Storage**: يخزن حمولات البيانات الكبيرة وبيانات الأحداث الخام.
@@ -54,7 +54,7 @@ flowchart TB
         Worker["Async Worker<br/>(langfuse/worker)"]
         Postgres@{ img: "https://langfuse.com/images/logos/postgres_icon.svg", label: "Postgres - OLTP\n(Transactional Data)", pos: "b", w: 60, h: 60, constraint: "on" }
         Cache@{ img: "https://langfuse.com/images/logos/redis_icon.png", label: "Redis\n(Cache, Queue)", pos: "b", w: 60, h: 60, constraint: "on" }
-        Clickhouse@{ img: "https://langfuse.com/images/logos/clickhouse_icon.svg", label: "Clickhouse - OLAP\n(Observability Data)", pos: "b", w: 60, h: 60, constraint: "on" }
+        ClickHouse@{ img: "https://langfuse.com/images/logos/clickhouse_icon.svg", label: "ClickHouse - OLAP\n(Observability Data)", pos: "b", w: 60, h: 60, constraint: "on" }
         S3@{ img: "https://langfuse.com/images/logos/s3_icon.svg", label: "S3 / Blob Storage\n(Raw events, multi-modal attachments)", pos: "b", w: 60, h: 60, constraint: "on" }
     end
     LLM["LLM API/Gateway<br/>(optional; BYO; can be same VPC or VPC-peered)"]
@@ -63,22 +63,22 @@ flowchart TB
     Web --> S3
     Web --> Postgres
     Web --> Cache
-    Web --> Clickhouse
+    Web --> ClickHouse
     Web -..->|"optional for playground"| LLM
 
     Cache --> Worker
-    Worker --> Clickhouse
+    Worker --> ClickHouse
     Worker --> Postgres
     Worker --> S3
     Worker -..->|"optional for evals"| LLM
 ```
 
 <div id="features">
-  ## الميزات
+  ## الميزات {#features}
 </div>
 
 <div id="observability">
-  ### الرصد
+  ### الرصد {#observability}
 </div>
 
 تُعد [الرصد](https://langfuse.com/docs/observability/overview) ضرورية لفهم تطبيقات LLM واستكشاف أخطائها وإصلاحها. وعلى عكس البرمجيات التقليدية، تتضمن تطبيقات LLM تفاعلات معقدة وغير حتمية قد يصعب مراقبتها واستكشافها. يوفّر Langfuse إمكانات tracing شاملة تساعدك على فهم ما يحدث في تطبيقك بدقة.
@@ -124,7 +124,7 @@ flowchart TB
 </Tabs>
 
 <div id="prompt-management">
-  ### إدارة المطالبات
+  ### إدارة المطالبات {#prompt-management}
 </div>
 
 تُعد [إدارة المطالبات](https://langfuse.com/docs/prompt-management/overview) عنصرًا أساسيًا لبناء تطبيقات LLM فعّالة. ويوفّر Langfuse أدوات تساعدك على إدارة مطالباتك، وتعيين إصدارات لها، وتحسينها على امتداد دورة حياة التطوير.
@@ -176,7 +176,7 @@ flowchart TB
 </Tabs>
 
 <div id="evaluation">
-  ### التقييم ومجموعات البيانات
+  ### التقييم ومجموعات البيانات {#evaluation}
 </div>
 
 يُعد [التقييم](https://langfuse.com/docs/evaluation/overview) عنصرًا أساسيًا لضمان جودة تطبيقات LLM لديك وموثوقيتها. وتوفّر Langfuse أدوات تقييم مرنة تتكيّف مع احتياجاتك الخاصة، سواء كنت تختبر في بيئة التطوير أو تراقب الأداء في بيئة الإنتاج.
@@ -234,7 +234,7 @@ flowchart TB
 </Tabs>
 
 <div id="quickstarts">
-  ## البدء السريع
+  ## البدء السريع {#quickstarts}
 </div>
 
 ابدأ العمل باستخدام Langfuse في غضون دقائق. اختر المسار الأنسب لاحتياجاتك الحالية:
@@ -244,7 +244,7 @@ flowchart TB
 * [إعداد التقييمات](https://langfuse.com/docs/evaluation/overview)
 
 <div id="learn-more">
-  ## اطّلِع على المزيد
+  ## اطّلِع على المزيد {#learn-more}
 </div>
 
 * [وثائق Langfuse](https://langfuse.com/docs)

@@ -2,15 +2,13 @@
 sidebarTitle: 'HIPAA 开通指南'
 slug: /cloud/security/compliance/hipaa-onboarding
 title: 'HIPAA 开通指南'
-description: '了解如何开通符合 HIPAA 合规要求的服务'
+description: '了解如何开通 HIPAA 合规服务'
 doc_type: 'guide'
 keywords: ['hipaa', '合规', '医疗保健', '安全', '数据保护']
 ---
 
 import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 import { EnterprisePlanFeatureBadge } from "/snippets/zh/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
-
-import { Image } from "/snippets/zh/components/Image.jsx";
 
 <EnterprisePlanFeatureBadge feature="HIPAA" />
 
@@ -20,9 +18,7 @@ ClickHouse 提供符合 1996 年《健康保险可携性与责任法案》(HIPAA
 
 本页介绍如何在 ClickHouse Cloud 中启用 HIPAA 合规服务的部署。
 
-<div id="enable-hipaa-compliant-services">
-  ## 启用并部署 HIPAA 合规服务
-</div>
+## 启用并部署 HIPAA 合规服务 {#enable-hipaa-compliant-services}
 
 <Steps>
   <Step title="开通 Enterprise 服务" id="sign-up-for-enterprise">
@@ -35,12 +31,18 @@ ClickHouse 提供符合 1996 年《健康保险可携性与责任法案》(HIPAA
 
   <Step title="为你的组织启用 HIPAA" id="enable-hipaa">
     1. 在控制台左下角选择你的组织名称。
-    2. 点击 **组织详情**。
+    2. 点击 **组织设置**。
     3. 打开 **启用 HIPAA** 开关。
 
     <br />
 
-    <Image img="/images/cloud/security/compliance/hipaa_1.webp" size="md" alt="请求启用 HIPAA" background="black" />
+    <div className="ch-image-md">
+      <Frame>
+        <img className="block dark:hidden" src="/images/cloud/security/compliance/hipaa_1-light.webp" alt="请求启用 HIPAA（浅色模式）" />
+
+        <img className="hidden dark:block" src="/images/cloud/security/compliance/hipaa_1.webp" alt="请求启用 HIPAA（深色模式）" />
+      </Frame>
+    </div>
 
     <br />
 
@@ -48,7 +50,13 @@ ClickHouse 提供符合 1996 年《健康保险可携性与责任法案》(HIPAA
 
     <br />
 
-    <Image img="/images/cloud/security/compliance/hipaa_2.webp" size="md" alt="提交 BAA 请求" background="black" />
+    <div className="ch-image-md">
+      <Frame>
+        <img className="block dark:hidden" src="/images/cloud/security/compliance/hipaa_2-light.webp" alt="提交 BAA 请求（浅色模式）" />
+
+        <img className="hidden dark:block" src="/images/cloud/security/compliance/hipaa_2.webp" alt="提交 BAA 请求（深色模式）" />
+      </Frame>
+    </div>
 
     <br />
 
@@ -56,7 +64,13 @@ ClickHouse 提供符合 1996 年《健康保险可携性与责任法案》(HIPAA
 
     <br />
 
-    <Image img="/images/cloud/security/compliance/hipaa_3.webp" size="md" alt="HIPAA 已启用" background="black" />
+    <div className="ch-image-md">
+      <Frame>
+        <img className="block dark:hidden" src="/images/cloud/security/compliance/hipaa_3-light.webp" alt="HIPAA 已启用（浅色模式）" />
+
+        <img className="hidden dark:block" src="/images/cloud/security/compliance/hipaa_3.webp" alt="HIPAA 已启用（深色模式）" />
+      </Frame>
+    </div>
 
     <br />
   </Step>
@@ -67,18 +81,24 @@ ClickHouse 提供符合 1996 年《健康保险可携性与责任法案》(HIPAA
 
     <br />
 
-    <Image img="/images/cloud/security/compliance/hipaa_4.webp" size="md" alt="部署到 HIPAA 区域" background="black" />
+    <div className="ch-image-md">
+      <Frame>
+        <img className="block dark:hidden" src="/images/cloud/security/compliance/hipaa_4-light.webp" alt="部署到 HIPAA 区域（浅色模式）" />
+
+        <img className="hidden dark:block" src="/images/cloud/security/compliance/hipaa_4.webp" alt="部署到 HIPAA 区域（深色模式）" />
+      </Frame>
+    </div>
 
     <br />
 
     3. 输入服务名称并填写其余信息
 
-    有关 HIPAA 合规云提供商和服务的完整列表，请参阅我们的[支持的 Cloud 区域](/zh/products/cloud/reference/supported-regions)页面。
+    有关 HIPAA 合规云服务提供商和服务的完整列表，请参阅我们的[支持的 Cloud 区域](/zh/products/cloud/reference/supported-regions)页面。
   </Step>
 </Steps>
 
 <div id="migrate-to-hipaa">
-  ## 迁移现有服务
+  ## 迁移现有服务 {#migrate-to-hipaa}
 </div>
 
 强烈建议客户在需要时将服务部署到合规环境中。将服务从标准区域迁移到 HIPAA 合规区域的过程需要从备份恢复，并且可能需要一定的停机时间。
@@ -97,3 +117,9 @@ ClickHouse 提供符合 1996 年《健康保险可携性与责任法案》(HIPAA
 
   服务必须保留在同一个云提供商和地理区域内。此流程会将服务迁移到同一云提供商和区域中的合规环境。
 </Info>
+
+## HIPAA 合规服务的备份 {#backups}
+
+ClickHouse 托管备份在 HIPAA 合规服务上的工作方式与其他服务相同。备份存储在与服务相同的云服务提供商和区域中，Enterprise 计划客户可以配置备份频率和保留期限。备份可以恢复到同一区域内的新服务，包括另一个 HIPAA 合规服务。
+
+HIPAA 合规服务不支持将备份导出到您自己的云账户。受监管环境不允许向环境外部的存储执行写入操作，因此控制台中的 **Set up external backup** 选项处于禁用状态，这些服务也不会授予 `BACKUP` 特权。

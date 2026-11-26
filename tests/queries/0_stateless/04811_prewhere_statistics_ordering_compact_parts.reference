@@ -1,0 +1,5 @@
+-- compact part: selective condition ordered first despite zero column sizes
+1
+-- correctness: result is the same regardless of ordering
+10
+10

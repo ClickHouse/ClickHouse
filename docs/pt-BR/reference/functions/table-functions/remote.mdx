@@ -14,43 +14,36 @@ A função de tabela `remote` permite acessar servidores remotos dinamicamente, 
 
 Ambas as funções podem ser usadas em consultas `SELECT` e `INSERT` quando o destino é um `db`/`table` comum. Quando o destino é, por si só, uma função de tabela (por exemplo, `remote('127.0.0.1', numbers(10))`), a tabela é somente leitura: não há tabela remota na qual inserir e, portanto, `INSERT` é rejeitado com uma exceção `NOT_IMPLEMENTED`.
 
-<div id="syntax">
-  ## Sintaxe
-</div>
+## Sintaxe {#syntax}
 
 ```sql
-remote(addresses_expr, [db, table, user [, password], sharding_key])
-remote(addresses_expr, [db.table, user [, password], sharding_key])
-remote(named_collection[, option=value [,..]])
-remoteSecure(addresses_expr, [db, table, user [, password], sharding_key])
-remoteSecure(addresses_expr, [db.table, user [, password], sharding_key])
-remoteSecure(named_collection[, option=value [,..]])
+remote(addresses_expr, [db, table, user [, password], sharding_key][, SETTINGS name = value, ...])
+remote(addresses_expr, [db.table, user [, password], sharding_key][, SETTINGS name = value, ...])
+remote(named_collection[, option=value [,..]][, SETTINGS name = value, ...])
+remoteSecure(addresses_expr, [db, table, user [, password], sharding_key][, SETTINGS name = value, ...])
+remoteSecure(addresses_expr, [db.table, user [, password], sharding_key][, SETTINGS name = value, ...])
+remoteSecure(named_collection[, option=value [,..]][, SETTINGS name = value, ...])
 ```
 
-<div id="parameters">
-  ## Parâmetros
-</div>
+## Parâmetros {#parameters}
 
-| Argumento        | Descrição                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `addresses_expr` | Um endereço de servidor remoto ou uma expressão que gera vários endereços de servidores remotos. Formato: `host` ou `host:port`.<br /><br />    O `host` pode ser especificado como um nome de servidor ou como um endereço IPv4 ou IPv6. Um endereço IPv6 deve ser especificado entre `[]`.<br /><br />    A `port` é a porta TCP no servidor remoto. Se a porta for omitida, será usado [tcp&#95;port](/pt-BR/reference/settings/server-settings/settings#tcp_port) do arquivo de configuração do servidor para a função de tabela `remote` (por padrão, 9000) e [tcp&#95;port&#95;secure](/pt-BR/reference/settings/server-settings/settings#tcp_port_secure) para a função de tabela `remoteSecure` (por padrão, 9440).<br /><br />    Para endereços IPv6, a porta é obrigatória.<br /><br />    Se apenas o parâmetro `addresses_expr` for especificado, `db` e `table` usarão `system.one` por padrão.<br /><br />    Tipo: [String](/pt-BR/reference/data-types/string). |
-| `db`             | Nome do banco de dados. Tipo: [String](/pt-BR/reference/data-types/string).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| `table`          | Nome da tabela. Tipo: [String](/pt-BR/reference/data-types/string).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| `user`           | Nome de usuário. Se não for especificado, `default` será usado. Tipo: [String](/pt-BR/reference/data-types/string).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| `password`       | Senha do usuário. Se não for especificado, será usada uma senha vazia. Tipo: [String](/pt-BR/reference/data-types/string).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| `sharding_key`   | Chave de sharding para dar suporte à distribuição de dados entre nós. Por exemplo: `insert into remote('127.0.0.1:9000,127.0.0.2', db, table, 'default', rand())`. Tipo: [UInt32](/pt-BR/reference/data-types/int-uint).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| Argumento                    | Descrição                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `addresses_expr`             | Um endereço de servidor remoto ou uma expressão que gera vários endereços de servidores remotos. Formato: `host` ou `host:port`.<br /><br />    O `host` pode ser especificado como um nome de servidor ou como um endereço IPv4 ou IPv6. Um endereço IPv6 deve ser especificado entre `[]`.<br /><br />    A `port` é a porta TCP no servidor remoto. Se a porta for omitida, será usado [tcp&#95;port](/pt-BR/reference/settings/server-settings/settings/tcp-port#tcp_port) do arquivo de configuração do servidor para a função de tabela `remote` (por padrão, 9000) e [tcp&#95;port&#95;secure](/pt-BR/reference/settings/server-settings/settings/tcp-port#tcp_port_secure) para a função de tabela `remoteSecure` (por padrão, 9440).<br /><br />    Para endereços IPv6, a porta é obrigatória.<br /><br />    Se apenas o parâmetro `addresses_expr` for especificado, `db` e `table` usarão `system.one` por padrão.<br /><br />    Tipo: [String](/pt-BR/reference/data-types/string). |
+| `db`                         | Nome do banco de dados. Tipo: [String](/pt-BR/reference/data-types/string).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| `table`                      | Nome da tabela. Tipo: [String](/pt-BR/reference/data-types/string).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| `user`                       | Nome de usuário. Se não for especificado, `default` será usado. Tipo: [String](/pt-BR/reference/data-types/string).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| `password`                   | Senha do usuário. Se não for especificado, será usada uma senha vazia. Tipo: [String](/pt-BR/reference/data-types/string).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `sharding_key`               | Chave de sharding para dar suporte à distribuição de dados entre nós. Por exemplo: `insert into remote('127.0.0.1:9000,127.0.0.2', db, table, 'default', rand())`. Tipo: [UInt32](/pt-BR/reference/data-types/int-uint).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| `SETTINGS name = value, ...` | Configurações da tabela Distributed criada pela função, por exemplo `skip_unavailable_shards`. Opcional. Uma configuração especificada na consulta tem prioridade sobre ela. Esta cláusula é aceita apenas dentro da função de tabela; os motores de tabela `Remote` e `RemoteSecure` aceitam as mesmas configurações após a definição do motor, consulte [motores Remote e RemoteSecure](/pt-BR/reference/engines/table-engines/special/distributed#distributed-remote-engines).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 
 Os argumentos também podem ser passados por meio de [coleções nomeadas](/pt-BR/concepts/features/configuration/server-config/named-collections).
 
-<div id="returned-value">
-  ## Valor retornado
-</div>
+## Valor retornado {#returned-value}
 
 Uma tabela localizada em um servidor remoto.
 
-<div id="usage">
-  ## Uso
-</div>
+## Uso {#usage}
 
 Como as funções de tabela `remote` e `remoteSecure` restabelecem a conexão a cada solicitação, recomenda-se usar uma tabela `Distributed` em vez delas. Além disso, se os hostnames estiverem definidos, os nomes serão resolvidos, e os erros não serão contabilizados ao trabalhar com várias réplicas. Ao processar um grande número de consultas, sempre crie a tabela `Distributed` com antecedência e não use a função de tabela `remote`.
 
@@ -62,11 +55,9 @@ A função de tabela `remote` pode ser útil nos seguintes casos:
 * Solicitações distribuídas pouco frequentes feitas manualmente.
 * Solicitações distribuídas em que o conjunto de servidores é redefinido a cada vez.
 
-Os mesmos parâmetros podem ser usados com os motores de tabela `Remote` e `RemoteSecure` para criar uma tabela persistente em vez de uma tabela ad hoc; consulte [motores Remote e RemoteSecure](/pt-BR/reference/engines/table-engines/special/distributed#distributed-remote-engines).
+Os mesmos parâmetros podem ser usados com os motores de tabela `Remote` e `RemoteSecure` para criar uma tabela persistente em vez de uma tabela ad hoc; consulte [motores Remote e RemoteSecure](/pt-BR/reference/engines/table-engines/special/distributed#distributed-remote-engines). A única diferença é a cláusula `SETTINGS`: os motores a aceitam após a definição do motor, `ENGINE = Remote(...) SETTINGS skip_unavailable_shards = 1`, e não entre os argumentos.
 
-<div id="addresses">
-  ### Endereços
-</div>
+### Endereços {#addresses}
 
 ```text
 example01-01-1
@@ -85,13 +76,9 @@ Vários endereços podem ser informados separados por vírgulas. Nesse caso, o C
 example01-01-1,example01-02-1
 ```
 
-<div id="examples">
-  ## Exemplos
-</div>
+## Exemplos {#examples}
 
-<div id="selecting-data-from-a-remote-server">
-  ### Selecionando dados de um servidor remoto:
-</div>
+### Selecionando dados de um servidor remoto: {#selecting-data-from-a-remote-server}
 
 ```sql
 SELECT * FROM remote('127.0.0.1', db.remote_engine_table) LIMIT 3;
@@ -106,9 +93,7 @@ CREATE NAMED COLLECTION creds AS
 SELECT * FROM remote(creds, table='remote_engine_table') LIMIT 3;
 ```
 
-<div id="inserting-data-into-a-table-on-a-remote-server">
-  ### Inserindo dados em uma tabela em um servidor remoto:
-</div>
+### Inserindo dados em uma tabela em um servidor remoto: {#inserting-data-into-a-table-on-a-remote-server}
 
 ```sql
 CREATE TABLE remote_table (name String, value UInt32) ENGINE=Memory;
@@ -116,15 +101,11 @@ INSERT INTO FUNCTION remote('127.0.0.1', currentDatabase(), 'remote_table') VALU
 SELECT * FROM remote_table;
 ```
 
-<div id="migration-of-tables-from-one-system-to-another">
-  ### Migração de tabelas de um sistema para outro:
-</div>
+### Migração de tabelas de um sistema para outro: {#migration-of-tables-from-one-system-to-another}
 
 Este exemplo usa uma tabela de um conjunto de dados de amostra. O banco de dados é `imdb`, e a tabela é `actors`.
 
-<div id="on-the-source-clickhouse-system-the-system-that-currently-hosts-the-data">
-  #### No sistema ClickHouse de origem (o sistema que hospeda os dados atualmente)
-</div>
+#### No sistema ClickHouse de origem (o sistema que hospeda os dados atualmente) {#on-the-source-clickhouse-system-the-system-that-currently-hosts-the-data}
 
 * Verifique o banco de dados de origem e o nome da tabela (`imdb.actors`)
 
@@ -147,17 +128,15 @@ Este exemplo usa uma tabela de um conjunto de dados de amostra. O banco de dados
 Resposta
 
 ```sql
-  CREATE TABLE imdb.actors (`id` UInt32,
-                            `first_name` String,
-                            `last_name` String,
-                            `gender` FixedString(1))
-                  ENGINE = MergeTree
-                  ORDER BY (id, first_name, last_name, gender);
+CREATE TABLE imdb.actors (`id` UInt32,
+                          `first_name` String,
+                          `last_name` String,
+                          `gender` FixedString(1))
+                ENGINE = MergeTree
+                ORDER BY (id, first_name, last_name, gender);
 ```
 
-<div id="on-the-destination-clickhouse-system">
-  #### No sistema de destino do ClickHouse
-</div>
+#### No sistema de destino do ClickHouse {#on-the-destination-clickhouse-system}
 
 * Crie o banco de dados de destino:
 
@@ -176,9 +155,7 @@ Resposta
                   ORDER BY (id, first_name, last_name, gender);
   ```
 
-<div id="back-on-the-source-deployment">
-  #### De volta à implantação de origem
-</div>
+#### De volta à implantação de origem {#back-on-the-source-deployment}
 
 Insira dados no novo banco de dados e na nova tabela criados no sistema remoto. Você precisará do host, da porta, do nome de usuário, da senha, do banco de dados de destino e da tabela de destino.
 
@@ -188,9 +165,7 @@ remoteSecure('remote.clickhouse.cloud:9440', 'imdb.actors', 'USER', 'PASSWORD')
 SELECT * from imdb.actors
 ```
 
-<div id="globs-in-addresses">
-  ## Globbing
-</div>
+## Globbing {#globs-in-addresses}
 
 Padrões em `{ }` são usados para gerar um conjunto de shards e para especificar réplicas. Se houver vários pares de `{ }`, o produto cartesiano dos conjuntos correspondentes será gerado.
 
@@ -201,7 +176,7 @@ Os seguintes tipos de padrão são suportados.
 * `{0n..0m}` - Um intervalo de números com zeros à esquerda. Esse padrão preserva os zeros à esquerda nos índices. Por exemplo, `example{01..03}-1` gera `example01-1`, `example02-1` e `example03-1`.
 * `{a|b}` - Qualquer número de variantes separadas por `|`. O padrão especifica réplicas. Por exemplo, `example01-{1|2}` gera as réplicas `example01-1` e `example01-2`.
 
-A consulta será enviada para a primeira réplica saudável. No entanto, para `remote`, as réplicas são iteradas na ordem atualmente definida na configuração [load&#95;balancing](/pt-BR/reference/settings/session-settings#load_balancing).
-O número de endereços gerados é limitado pela configuração [table&#95;function&#95;remote&#95;max&#95;addresses](/pt-BR/reference/settings/session-settings#table_function_remote_max_addresses).
+A consulta será enviada para a primeira réplica saudável. No entanto, para `remote`, as réplicas são iteradas na ordem atualmente definida na configuração [load&#95;balancing](/pt-BR/reference/settings/session-settings/load-balancing#load_balancing).
+O número de endereços gerados é limitado pela configuração [table&#95;function&#95;remote&#95;max&#95;addresses](/pt-BR/reference/settings/session-settings/table#table_function_remote_max_addresses).
 
 {/*AUTOGENERATED_END*/}

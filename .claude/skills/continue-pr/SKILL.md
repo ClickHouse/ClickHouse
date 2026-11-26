@@ -22,6 +22,14 @@ Extract the PR number from `$0`. If not provided, use `AskUserQuestion` to ask f
 
 Validate that the PR number contains only digits. Reject any non-numeric input immediately — do not pass unvalidated input to shell commands or GraphQL queries.
 
+Determine which repository you are operating in — the public `ClickHouse/ClickHouse` or the private `ClickHouse/clickhouse-private`:
+
+```bash
+gh repo view --json nameWithOwner --jq .nameWithOwner   # or: git remote get-url origin
+```
+
+Remember it as `$REPO` and use it everywhere below instead of the literal `ClickHouse/ClickHouse` in `gh` commands, API URLs, and GraphQL `repository(owner:, name:)` arguments. The repository also decides whom to ask about unrelated CI failures (step 4, item 5): `@groeneai` in `ClickHouse/ClickHouse`, `@oranjeai` in `ClickHouse/clickhouse-private`.
+
 Fetch PR metadata using `gh` if available, otherwise use `WebFetch` on the GitHub API:
 
 ```bash
@@ -35,15 +43,47 @@ If `gh` is not available or not authenticated, use WebFetch to get the data. App
 
 Report the PR title, author, branch, and current state to the user.
 
+### 1a. Verify "already integrated" claims before closing
+
+Treat closing a PR as already integrated or obsolete as a high-confidence decision. Verify both of these independently against freshly fetched refs:
+
+1. **Historical ancestry:** Resolve and print the exact base and PR-head OIDs, then check the candidate commit in this direction only:
+   ```bash
+   HEAD_REMOTE=origin
+   if [ "$IS_CROSS_REPOSITORY" = "true" ]; then
+       HEAD_REMOTE="pr-$AUTHOR_LOGIN"
+       git remote add "$HEAD_REMOTE" "$FORK_URL" 2>/dev/null || git remote set-url "$HEAD_REMOTE" "$FORK_URL"
+   fi
+   git fetch origin "$BASE_BRANCH"
+   git fetch "$HEAD_REMOTE" "$HEAD_BRANCH"
+   git rev-parse "origin/$BASE_BRANCH" "$HEAD_REMOTE/$HEAD_BRANCH"
+   git merge-base --is-ancestor "$CANDIDATE_COMMIT" "origin/$BASE_BRANCH"
+   ```
+   Derive `$IS_CROSS_REPOSITORY`, `$AUTHOR_LOGIN`, and `$FORK_URL` from the PR metadata as in step 2. Exit status `0` means the base contains the commit; any other status means it does not. Never check against `HEAD`, the PR branch, `--all`, or a worktree and describe that result as containment by the base branch. If this check is nonzero, do not claim the commit is in the base and do not close the PR as integrated.
+2. **Current effective state:** An ancestor commit may have been reverted or backed out later. Ancestry, `git branch --contains`, `git cherry`, and patch-equivalence results are historical evidence only; none proves that the change remains effective. Inspect all later base-branch commits touching the changed paths, search for explicit and manual reverts/backouts, compare the current base tree with the PR's intended effect, and run the reproducer or regression test against the current base when feasible. If the change was fully or partially reverted, count it as **not integrated**. If the current effect cannot be established confidently, leave the PR open for human review.
+
+Before posting a closure comment, state the fetched base OID and the evidence for both ancestry and the current effective state. Do not close from a remembered ref, a stale local branch, a matching subject, or a commit merely visible somewhere in the repository.
+
 ### 2. Check out the PR branch locally
+
+Before checking out the PR, require a clean worktree. This interactive skill
+can run in a developer's normal checkout, so it must fail closed rather than
+discarding staged, unstaged, or untracked work:
+
+```bash
+test -z "$(git status --porcelain)" || {
+    echo "The worktree is dirty; use a clean worktree before continuing this PR" >&2
+    exit 1
+}
+```
 
 Determine whether the PR branch is in the main repository or in the author's fork.
 
 **If the branch is in the main repository (`ClickHouse/ClickHouse`):**
 ```bash
-git fetch origin "$HEAD_BRANCH"
-git checkout -b "$HEAD_BRANCH" "origin/$HEAD_BRANCH" 2>/dev/null || git checkout "$HEAD_BRANCH"
-git pull origin "$HEAD_BRANCH"
+HEAD_REMOTE=origin
+git fetch "$HEAD_REMOTE" "$HEAD_BRANCH"
+git checkout --detach "$HEAD_REMOTE/$HEAD_BRANCH"
 ```
 
 **If the branch is in the author's fork:**
@@ -54,10 +94,33 @@ Derive the fork clone URL from the PR metadata (`headRepository.url` or `headRep
 REMOTE_NAME="pr-$AUTHOR_LOGIN"
 FORK_URL="https://github.com/$FORK_OWNER/$FORK_REPO.git"  # from headRepository in PR metadata
 git remote add "$REMOTE_NAME" "$FORK_URL" 2>/dev/null || git remote set-url "$REMOTE_NAME" "$FORK_URL"
-git fetch "$REMOTE_NAME" "$HEAD_BRANCH"
-git checkout -b "$HEAD_BRANCH" "$REMOTE_NAME/$HEAD_BRANCH" 2>/dev/null || git checkout "$HEAD_BRANCH"
-git pull "$REMOTE_NAME" "$HEAD_BRANCH"
+HEAD_REMOTE="$REMOTE_NAME"
+git fetch "$HEAD_REMOTE" "$HEAD_BRANCH"
+git checkout --detach "$HEAD_REMOTE/$HEAD_BRANCH"
 ```
+
+After the clean checkout, record the immutable baseline; it is the only
+authoritative record of the PR surface that existed when the worker began:
+
+```bash
+git fetch origin "$BASE_BRANCH"
+mkdir -p tmp
+PR_BASELINE_DIR="$(pwd)/tmp/continue-pr-${PR_NUMBER}-baseline"
+rm -rf "$PR_BASELINE_DIR"
+mkdir -p "$PR_BASELINE_DIR"
+INITIAL_PR_HEAD=$(git rev-parse "$HEAD_REMOTE/$HEAD_BRANCH")
+test "$(git rev-parse HEAD)" = "$INITIAL_PR_HEAD"
+INITIAL_BASE_HEAD=$(git rev-parse "origin/$BASE_BRANCH")
+printf '%s\n%s\n' "$INITIAL_PR_HEAD" "$INITIAL_BASE_HEAD" > "$PR_BASELINE_DIR/state"
+git diff --name-status "origin/$BASE_BRANCH"...HEAD > "$PR_BASELINE_DIR/name-status"
+git diff --stat "origin/$BASE_BRANCH"...HEAD > "$PR_BASELINE_DIR/stat"
+git diff --binary "origin/$BASE_BRANCH"...HEAD > "$PR_BASELINE_DIR/diff"
+```
+
+Do not modify, stage, or delete this artifact during the session. It must remain
+available through the push safety gate in step 7. The deterministic path and
+`state` file are required because each resumed worker turn starts a fresh shell
+process.
 
 ### 3. Resolve conflicts with the base branch (if any)
 
@@ -70,7 +133,7 @@ git fetch origin "$BASE_BRANCH"
 git merge-base --is-ancestor "origin/$BASE_BRANCH" HEAD || echo "needs merge"
 ```
 
-If the branch is behind the base branch and is red (some checks didn't pass), or if it is behind the base branch for more than a week (regardless of checks success), or has conflicts, merge:
+If the branch is behind the base branch and is red (some checks didn't pass), or if it is behind the base branch for more than a week (regardless of checks success), or has conflicts, or the merge queue removed the PR after its last commit (see step 4), merge:
 
 ```bash
 git merge "origin/$BASE_BRANCH"
@@ -88,7 +151,37 @@ If there are merge conflicts:
 
 ### 4. Analyze CI status and fix failures
 
-Use the CI analysis tool to fetch reports:
+**First, check whether the merge queue rejected the PR.** The PR's own CI runs on its head commit, but the merge queue re-tests the PR merged with the latest base branch (a `gh-readonly-queue/<base>/pr-<N>-<base-sha>` ref, workflow `MergeQueueCI`). A PR can therefore be all green and `CLEAN` yet keep being rejected - typically a semantic conflict: a test added on the base branch that pins behaviour this PR changes, or an API the PR uses that was changed on the base branch. Look for the latest merge-queue event:
+
+```bash
+gh api graphql -f query="
+{
+  repository(owner: \"${REPO%%/*}\", name: \"${REPO#*/}\") {
+    pullRequest(number: $PR_NUMBER) {
+      mergeQueueEntry { state }
+      commits(last: 1) { nodes { commit { oid committedDate } } }
+      timelineItems(last: 1, itemTypes: [ADDED_TO_MERGE_QUEUE_EVENT, REMOVED_FROM_MERGE_QUEUE_EVENT]) {
+        nodes { __typename ... on RemovedFromMergeQueueEvent { createdAt reason beforeCommit { oid } } }
+      }
+    }
+  }
+}"
+```
+
+If the last event is a `RemovedFromMergeQueueEvent` (with a reason other than `merged`) newer than the last commit, and the PR is not back in the queue, the rejection is the first failure to fix. `beforeCommit.oid` is the merge-queue commit that was tested. `fetch_ci_report.js` with the PR URL detects this case and adds the failed jobs of that merge-queue run to its output (marked with a ⚠️ line and listed under `MergeQueueCI`). To look at the run directly, take its report links from the commit statuses (the check runs link to GitHub Actions jobs instead):
+
+```bash
+MQ_SHA=<beforeCommit.oid>
+gh api "repos/$REPO/commits/$MQ_SHA/statuses" --paginate \
+    --jq '.[] | select(.state != "success") | "\(.context)\t\(.state)\t\(.target_url)"'
+node .claude/tools/fetch_ci_report.js "<a praktika.html?REF=gh-readonly-queue/...&sha=$MQ_SHA&name_0=MergeQueueCI&name_1=<job> URL from above>" --failed
+```
+
+The per-job JSON is also directly at `https://s3.amazonaws.com/clickhouse-test-reports/REFs/gh-readonly-queue/<base>/pr-<N>-<base-sha>/$MQ_SHA/mergequeueci/result_<job>.json` (gzip-compressed). Do not construct artifact URLs such as log paths by hand: Praktika stores attached files under normalized sub-result directories (e.g. `.../mergequeueci/build_amd_binary/build_clickhouse/build_clickhouse.log`), so guessed paths return `AccessDenied`. Follow the `links` of the failed results in that JSON instead, as printed by `fetch_ci_report.js` (also with `--links`), or use `--download-logs`. To fix the rejection, merge the latest base branch (step 3) even if the PR is otherwise current, reproduce the failure on the merged tree, and fix it in the PR - adapt the code to the changed API, or update a newly added test when the PR intentionally changes the behaviour it pins (say so in the commit message and the PR comment). Do not re-add the PR to the merge queue yourself, and do not dismiss a merge-queue failure as flaky without the same evidence as for any other failure.
+
+If the PR comes from a fork and its workflow runs wait for a maintainer's approval, go through step 4a first: without approval there are no CI results to analyze.
+
+Then fetch the PR's own CI reports:
 
 ```bash
 node .claude/tools/fetch_ci_report.js "https://github.com/ClickHouse/ClickHouse/pull/$PR_NUMBER" --failed --cidb
@@ -113,10 +206,58 @@ For each CI failure:
 
 4. If the only failure is "CH Inc sync", fix it using the /fix-sync skill.
 
-5. If you are confident that the failure is unrelated to the changes, post a comment, asking @groeneai to investigate the failure:
-   @groeneai, investigate the failure: <link> and provide a fix in a separate PR. If the fix is already in progress, link it here. 
+5. If you are confident that the failure is unrelated to the changes, post a comment, asking the reviewer for `$REPO` (step 1) — `@groeneai` in `ClickHouse/ClickHouse`, `@oranjeai` in `ClickHouse/clickhouse-private` — to investigate the failure:
+   🕵 @<reviewer>, investigate the failure: <link> and provide a fix in a separate PR. If the fix is already in progress, link it here. 
 
 6. **Repeat** until all failures are addressed or confirmed as known issues with links to open issues/PRs.
+
+### 4a. Re-approve workflows for fork PRs
+
+Workflow runs of a PR from a fork wait in the `action_required` state until a maintainer clicks "Approve and run workflows" (`$REPO` requires approval for all external contributors). If a maintainer already approved CI for an earlier commit of this PR, and every commit added since then is provably from the current user, approve the waiting runs instead of leaving the PR without CI. Do this both here, before analyzing CI, and after every push in step 7 — a push to a fork PR creates new runs that wait for approval again. Every check below fails closed: if any of them cannot be established, do not approve; report why and leave the approval to a human.
+
+Skip this step for PRs from branches of `$REPO` itself (`headRepositoryOwner` is the owner of `$REPO`): their workflows never wait for approval.
+
+1. Find the runs waiting for approval on the current head commit:
+   ```bash
+   mkdir -p tmp
+   ME=$(gh api user --jq .login)
+   HEAD_REPO=$(gh pr view "$PR_NUMBER" --repo "$REPO" --json headRepositoryOwner,headRepository --jq '"\(.headRepositoryOwner.login)/\(.headRepository.name)"')
+   HEAD_SHA=$(gh pr view "$PR_NUMBER" --repo "$REPO" --json headRefOid --jq .headRefOid)
+   gh api "repos/$REPO/actions/runs?event=pull_request&head_sha=$HEAD_SHA&per_page=100" \
+       --jq ".workflow_runs[] | select(.head_repository.full_name == \"$HEAD_REPO\" and .conclusion == \"action_required\") | .id" > tmp/continue-pr-$PR_NUMBER-waiting-runs
+   ```
+   If the list is empty, there is nothing to approve.
+
+2. Find the newest earlier commit of this PR whose CI was approved. A conclusion other than `action_required` is not enough: GitHub marks runs that waited for approval for more than 30 days as `failure` without running anything. A run counts as approved only if at least one of its jobs was created — jobs are created only after approval:
+   ```bash
+   gh api "repos/$REPO/actions/runs?event=pull_request&branch=$HEAD_BRANCH&per_page=100" --paginate \
+       --jq ".workflow_runs[] | select(.head_repository.full_name == \"$HEAD_REPO\" and .head_sha != \"$HEAD_SHA\" and .conclusion != \"action_required\") | \"\(.created_at) \(.id) \(.head_sha)\"" \
+       | sort -r > tmp/continue-pr-$PR_NUMBER-candidate-runs
+   while read -r _ RUN_ID SHA; do
+       JOBS=$(gh api "repos/$REPO/actions/runs/$RUN_ID/jobs?per_page=1" --jq .total_count)
+       echo "$RUN_ID $SHA $JOBS"
+   done < tmp/continue-pr-$PR_NUMBER-candidate-runs
+   ```
+   Take the newest run with a nonzero job count whose SHA is an ancestor of the current head (the compare API in the next step reports `"status": "ahead"` for it); its SHA is `$APPROVED_SHA`. If there is none, CI was never approved for this PR — do not approve; report that a maintainer has to review and approve it.
+
+3. Verify that every commit added since the approved commit is from the current user. The `author` and `committer` logins that GitHub shows are derived from the e-mail addresses in the commit header, which anyone can forge, so they prove nothing. Accept a commit only by one of these:
+   - it is already in the base branch (`git merge-base --is-ancestor <sha> "origin/$BASE_BRANCH"` succeeds) — such commits arrive with merges of the base branch;
+   - its exact SHA is in the ledger of commits that this skill created itself and pushed (see step 7): `grep -qx <sha> "$PUSHED_LEDGER"`;
+   - it has a verified signature and `committer.login` is `$ME` — the signing key then belongs to the current user's account. Commits signed by `web-flow` do not count: they can be created through the API with an arbitrary author.
+   ```bash
+   PUSHED_LEDGER="$HOME/.local/state/continue-pr/$REPO/pr-$PR_NUMBER.pushed"
+   gh api "repos/$REPO/compare/$APPROVED_SHA...$HEAD_SHA" --paginate \
+       --jq '.status, (.commits[] | "\(.sha) \(.commit.verification.verified) \(.committer.login // "-")")'
+   ```
+   The `status` must be `ahead`. If any remaining commit fails all three checks, do not approve: it may contain code that no maintainer has seen. Report the offending commits and leave the approval to a human. Commits that the current user pushed outside of this skill without signing cannot be told apart from forged ones; they also need a human.
+
+4. Approve every waiting run:
+   ```bash
+   while read -r RUN_ID; do
+       gh api -X POST "repos/$REPO/actions/runs/$RUN_ID/approve"
+   done < tmp/continue-pr-$PR_NUMBER-waiting-runs
+   ```
+   Report which runs were approved, the approved base commit, and the commits that were checked.
 
 ### 5. Address reviewer feedback
 
@@ -232,13 +373,62 @@ Determine where to push based on step 2:
 
 **If the branch is in the main repository:**
 ```bash
-git push origin "$HEAD_BRANCH"
+PUSH_REMOTE=origin
 ```
 
 **If the branch is in the author's fork:**
 ```bash
-git push "$REMOTE_NAME" "$HEAD_BRANCH"
+PUSH_REMOTE="$REMOTE_NAME"
 ```
+
+Before every commit and push, run this safety gate. It is a hard stop:
+
+1. Restore and validate the recorded state before using it; resumed turns do not inherit shell variables:
+   ```bash
+   PR_BASELINE_DIR="$(pwd)/tmp/continue-pr-${PR_NUMBER}-baseline"
+   mapfile -t BASELINE_STATE < "$PR_BASELINE_DIR/state"
+   test "${#BASELINE_STATE[@]}" = 2
+   INITIAL_PR_HEAD=${BASELINE_STATE[0]}
+   INITIAL_BASE_HEAD=${BASELINE_STATE[1]}
+   git cat-file -e "$INITIAL_PR_HEAD^{commit}"
+   git cat-file -e "$INITIAL_BASE_HEAD^{commit}"
+   git merge-base --is-ancestor "$INITIAL_PR_HEAD" HEAD
+   ```
+   Preserve `INITIAL_PR_HEAD` as an ancestor: only add commits on top of the existing PR history. Never rebase, reset the branch onto another commit, amend published commits, delete the remote branch, use a `+` refspec, or pass `--force`, `--force-with-lease`, or `--no-verify` to `git push`.
+2. Stage only explicit paths with `git add <path>`. Never use `git add -A`, `git add .`, or `git commit -a` in this workflow. Before committing, inspect both `git diff --cached --name-status` and `git diff --cached --stat`. Every staged path must be explained by the requested fix or by a specific conflict resolution. Unstage unexpected paths and do not commit when the scope is unclear.
+3. Before pushing, fetch the remote PR branch again and require its current tip to be an ancestor of local `HEAD`:
+   ```bash
+   git fetch "$PUSH_REMOTE" "$HEAD_BRANCH"
+   REMOTE_HEAD=$(git rev-parse "$PUSH_REMOTE/$HEAD_BRANCH")
+   git merge-base --is-ancestor "$REMOTE_HEAD" HEAD
+   ```
+   If the check is nonzero, merge the remote branch normally or stop and report the lineage problem. Never replace its history.
+4. Inspect the complete proposed PR diff with `git diff --name-status "origin/$BASE_BRANCH"...HEAD` and `git diff --stat "origin/$BASE_BRANCH"...HEAD`, then compare both against the immutable checkout baseline:
+   ```bash
+   diff -u "$PR_BASELINE_DIR/name-status" <(git diff --name-status "origin/$BASE_BRANCH"...HEAD)
+   diff -u "$PR_BASELINE_DIR/stat" <(git diff --stat "origin/$BASE_BRANCH"...HEAD)
+   ```
+   Account explicitly for every added path and every removed path, including changes that disappeared because they were incorporated through a deliberately merged base branch. A sudden broad expansion, contraction, unrelated subtree change, mass deletion, or single-parent fix commit containing base-branch churn indicates a wrong checkout, stale-tree snapshot, contaminated worktree, or lost history; do not push it. If scope cannot be proven from the PR intent and work performed in this session, stop and report the exact diff anomaly.
+
+Step 4a trusts only commits that this skill created itself. Immediately after every `git commit` or `git merge` that creates a commit in this workflow (fixes, conflict resolutions, merges of the base or the remote PR branch), record it. Always merge with `git merge --no-ff`: a fast-forward creates no commit, and `HEAD` would then be someone else's commit.
+
+```bash
+git rev-parse HEAD >> "tmp/continue-pr-$PR_NUMBER-created"
+```
+
+Never record commits obtained any other way — checked out, fetched, or brought in by a merge — even if they look like yours: the remote branch can be rewritten at any time, so "not on the remote yet" does not mean "created here". A commit that was forgotten in this file is merely not trusted, and step 4a then leaves the approval to a human.
+
+After the gate succeeds, move the recorded commits that are part of this push into the ledger used by step 4a (it lives outside the repository, so it survives worktree removal), then push:
+
+```bash
+PUSHED_LEDGER="$HOME/.local/state/continue-pr/$REPO/pr-$PR_NUMBER.pushed"
+mkdir -p "$(dirname "$PUSHED_LEDGER")"
+touch "tmp/continue-pr-$PR_NUMBER-created"
+git rev-list "$REMOTE_HEAD..HEAD" | grep -Fxf "tmp/continue-pr-$PR_NUMBER-created" >> "$PUSHED_LEDGER"
+git push "$PUSH_REMOTE" HEAD:"$HEAD_BRANCH"
+```
+
+If the PR comes from a fork, the push creates workflow runs that wait for approval: go through step 4a again for the new head commit.
 
 Report the result and provide the PR URL.
 
@@ -251,6 +441,7 @@ Report the result and provide the PR URL.
 
 ## Notes
 
+- **Every GitHub comment you post — PR comments, issue comments, and review-thread replies — MUST begin with the 🕵 symbol** (followed by a space), so automated comments are identifiable.
 - Do not use rebase or amend - always add new commits (per project conventions)
 - Do not push to the master branch
 - Each fix should be a separate, well-described commit

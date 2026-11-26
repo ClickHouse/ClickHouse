@@ -1,6 +1,7 @@
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnCompressed.h>
+#include <Columns/ColumnConst.h>
 #include <Columns/findEqualRangeEndAssumeSorted.h>
 
 #include <IO/WriteHelpers.h>
@@ -11,10 +12,7 @@
 #include <Common/assert_cast.h>
 #include <base/memcmpSmall.h>
 #include <Common/memcpySmall.h>
-
-#if defined(__SSE2__)
-#    include <emmintrin.h>
-#endif
+#include <base/arithmeticOverflow.h>
 
 #if USE_EMBEDDED_COMPILER
 #    include <llvm/IR/Function.h>
@@ -31,8 +29,26 @@ namespace ErrorCodes
     extern const int TOO_LARGE_STRING_SIZE;
     extern const int SIZE_OF_FIXED_STRING_DOESNT_MATCH;
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
-    extern const int PARAMETER_OUT_OF_BOUND;
     extern const int LOGICAL_ERROR;
+}
+
+namespace
+{
+
+/// Returns `n * num_elements` - the number of bytes occupied by `num_elements` values of `FixedString(n)`.
+/// The number of elements may come from array sizes (e.g. in `replicate` for `ARRAY JOIN`), which can be
+/// arbitrarily large without allocating memory, so the multiplication must not silently wrap around.
+size_t fixedStringBytes(size_t n, size_t num_elements)
+{
+    size_t res = 0;
+    if (common::mulOverflow(n, num_elements, res))
+        throw Exception(
+            ErrorCodes::TOO_LARGE_STRING_SIZE,
+            "Too large size of FixedString column: {} elements of size {}",
+            num_elements, n);
+    return res;
+}
+
 }
 
 
@@ -43,7 +59,7 @@ MutableColumnPtr ColumnFixedString::cloneResized(size_t size) const
     if (size > 0)
     {
         auto & new_col = assert_cast<ColumnFixedString &>(*new_col_holder);
-        new_col.chars.resize_exact(size * n);
+        new_col.chars.resize_exact(fixedStringBytes(n, size));
 
         size_t count = std::min(this->size(), size);
         memcpy(new_col.chars.data(), chars.data(), count * n * sizeof(chars[0]));
@@ -112,7 +128,9 @@ void ColumnFixedString::doInsertManyFrom(const IColumn & src, size_t position, s
         throw Exception(ErrorCodes::SIZE_OF_FIXED_STRING_DOESNT_MATCH, "Size of FixedString doesn't match");
 
     const size_t old_size = chars.size();
-    const size_t new_size = old_size + n * length;
+    size_t new_size = 0;
+    if (common::addOverflow(old_size, fixedStringBytes(n, length), new_size))
+        throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Too large size of FixedString column");
     chars.resize(new_size);
 
     for (size_t offset = old_size; offset < new_size; offset += n)
@@ -135,11 +153,6 @@ void ColumnFixedString::deserializeAndInsertFromArena(ReadBuffer & in, const ICo
     size_t old_size = chars.size();
     chars.resize(old_size + n);
     in.readStrict(reinterpret_cast<char *>(chars.data() + old_size), n);
-}
-
-void ColumnFixedString::skipSerializedInArena(ReadBuffer & in) const
-{
-    in.ignore(n);
 }
 
 void ColumnFixedString::updateHashWithValue(size_t index, SipHash & hash) const
@@ -172,39 +185,6 @@ void ColumnFixedString::updateHashFast(SipHash & hash) const
 {
     hash.update(n);
     hash.update(reinterpret_cast<const char *>(chars.data()), size() * n);
-}
-
-Int64 ColumnFixedString::compareTrackAt(size_t p1, size_t p2, const IColumn & rhs_, int /*nan_direction_hint*/) const
-{
-    const ColumnFixedString & rhs = assert_cast<const ColumnFixedString &>(rhs_);
-    chassert(this->n == rhs.n);
-
-    const auto * lhs_data = chars.data() + p1 * n;
-    const auto * rhs_data = rhs.chars.data() + p2 * n;
-
-    Int64 res = memcmpSmallAllowOverflow15(lhs_data, rhs_data, n);
-
-    if (res < 0)
-    {
-        const auto * lhs_end = chars.data() + chars.size();
-        lhs_data += n;
-        while (lhs_data < lhs_end && (memcmpSmallAllowOverflow15(lhs_data, rhs_data, n) < 0))
-        {
-            --res;
-            lhs_data += n;
-        }
-    }
-    else if (res > 0)
-    {
-        const auto * rhs_end = rhs.chars.data() + rhs.chars.size();
-        rhs_data += n;
-        while (rhs_data < rhs_end && (memcmpSmallAllowOverflow15(lhs_data, rhs_data, n) > 0))
-        {
-            ++res;
-            rhs_data += n;
-        }
-    }
-    return res;
 }
 
 #if USE_EMBEDDED_COMPILER
@@ -244,7 +224,7 @@ struct ColumnFixedString::ComparatorBase
     {
     }
 
-    ALWAYS_INLINE int compare(size_t lhs, size_t rhs) const
+    [[nodiscard]] ALWAYS_INLINE int compare(size_t lhs, size_t rhs) const
     {
         int res = memcmpSmallAllowOverflow15(parent.chars.data() + lhs * parent.n, parent.chars.data() + rhs * parent.n, parent.n);
 
@@ -276,6 +256,24 @@ size_t ColumnFixedString::getEqualRangeEndAssumeSorted(size_t begin, size_t end,
     /// A fixed-size memcmp is cheap, so use a longer linear probe (the default is 8).
     static constexpr size_t linear_probe = 16;
     return findEqualRangeEndAssumeSorted(begin, end, linear_probe, equals);
+}
+
+Int64 ColumnFixedString::compareTrackAt(size_t p1, size_t p2, const IColumn & rhs_, int /*nan_direction_hint*/) const
+{
+    const ColumnFixedString & rhs = assert_cast<const ColumnFixedString &>(rhs_);
+    chassert(this->n == rhs.n);
+
+    const UInt8 * lhs_data = chars.data();
+    const UInt8 * rhs_data = rhs.chars.data();
+    const UInt8 * lhs_value = lhs_data + p1 * n;
+    const UInt8 * rhs_value = rhs_data + p2 * n;
+    static constexpr size_t linear_probe = 16;
+
+    return compareTrackAtImpl(
+        memcmpSmallAllowOverflow15(lhs_value, rhs_value, n),
+        p1, p2, size(), rhs.size(), linear_probe,
+        [&](size_t row) { return memcmpSmallAllowOverflow15(lhs_data + row * n, rhs_value, n) < 0; },
+        [&](size_t row) { return memcmpSmallAllowOverflow15(lhs_value, rhs_data + row * n, n) > 0; });
 }
 
 void ColumnFixedString::updatePermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
@@ -320,10 +318,8 @@ void ColumnFixedString::doInsertRangeFrom(const IColumn & src, size_t start, siz
     const ColumnFixedString & src_concrete = assert_cast<const ColumnFixedString &>(src);
     chassert(this->n == src_concrete.n);
 
-    if (start + length > src_concrete.size())
-        throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND, "Parameters start = {}, length = {} are out of bound "
-                        "in ColumnFixedString::insertRangeFrom method (size() = {}).",
-                        toString(start), toString(length), toString(src_concrete.size()));
+    if (start > src_concrete.size() || length > src_concrete.size() - start)
+        throwInsertRangeFromOutOfBound("ColumnFixedString", start, length, src_concrete.size());
 
     size_t old_size = chars.size();
     chars.resize(old_size + length * n);
@@ -371,11 +367,7 @@ ColumnPtr ColumnFixedString::filter(const IColumn::Filter & filt, ssize_t result
                 res->chars.resize(res_chars_size + n);
                 memcpySmallAllowReadWriteOverflow15(&res->chars[res_chars_size], data_pos + index * n, n);
                 res_chars_size += n;
-            #ifdef __BMI__
-                mask = _blsr_u64(mask);
-            #else
-                mask = mask & (mask-1);
-            #endif
+                mask = mask & (mask - 1);
             }
         }
         data_pos += chars_per_simd_elements;
@@ -436,11 +428,7 @@ void ColumnFixedString::filter(const IColumn::Filter & filt)
                 size_t index = std::countr_zero(mask);
                 memmove(res_data_pos + res_chars_size, data_pos + index * n, n);
                 res_chars_size += n;
-            #ifdef __BMI__
-                mask = _blsr_u64(mask);
-            #else
-                mask = mask & (mask-1);
-            #endif
+                mask = mask & (mask - 1);
             }
         }
         data_pos += chars_per_simd_elements;
@@ -467,8 +455,8 @@ void ColumnFixedString::expand(const IColumn::Filter & mask, bool inverted)
     if (mask.size() < size())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Mask size should be no less than data size.");
 
-    ssize_t index = mask.size() - 1;
-    ssize_t from = size() - 1;
+    ssize_t index = static_cast<ssize_t>(mask.size()) - 1;
+    ssize_t from = static_cast<ssize_t>(size()) - 1;
     chars.resize_fill(mask.size() * n);
     while (index >= 0)
     {
@@ -480,6 +468,8 @@ void ColumnFixedString::expand(const IColumn::Filter & mask, bool inverted)
             memcpy(&chars[index * n], &chars[from * n], n);
             --from;
         }
+        else
+            memset(&chars[index * n], 0, n);
 
         --index;
     }
@@ -532,7 +522,7 @@ ColumnPtr ColumnFixedString::replicate(const Offsets & offsets) const
         return res;
 
     Chars & res_chars = res->chars;
-    res_chars.resize(n * offsets.back());
+    res_chars.resize_exact(fixedStringBytes(n, offsets.back()));
 
     Offset curr_offset = 0;
     for (size_t i = 0; i < col_size; ++i)
@@ -607,6 +597,49 @@ std::span<char> ColumnFixedString::insertRawUninitialized(size_t count)
     size_t start = chars.size();
     chars.resize(start + count * n);
     return {reinterpret_cast<char *>(chars.data() + start), count * n};
+}
+
+bool ColumnFixedString::hasOnlyTypeDefaults() const
+{
+    return memoryIsZero(chars.data(), 0, chars.size());
+}
+
+ColumnPtr ColumnFixedString::createWithOffsets(const Offsets & offsets, const ColumnConst & column_with_default_value, size_t total_rows, size_t shift) const
+{
+    if (offsets.size() + shift != size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Incompatible sizes of offsets ({}), shift ({}) and size of column {}", offsets.size(), shift, size());
+
+    const auto & default_column = assert_cast<const ColumnFixedString &>(column_with_default_value.getDataColumn());
+    if (default_column.getN() != n)
+        throw Exception(ErrorCodes::SIZE_OF_FIXED_STRING_DOESNT_MATCH, "Size of FixedString doesn't match");
+
+    const size_t total_bytes = fixedStringBytes(n, total_rows);
+    auto res = ColumnFixedString::create(n);
+    auto & res_chars = res->getChars();
+    res_chars.reserve_exact(total_bytes);
+
+    if (default_column.isDefaultAt(0))
+    {
+        res_chars.resize_fill(total_bytes);
+    }
+    else
+    {
+        res_chars.resize(total_bytes);
+        for (size_t pos = 0; pos < res_chars.size(); pos += n)
+            memcpySmallAllowReadWriteOverflow15(&res_chars[pos], default_column.chars.data(), n);
+    }
+
+    /// Plain memcpy: an overflowing copy would overwrite the following rows.
+    for (size_t i = 0; i < offsets.size(); ++i)
+    {
+        const size_t position = offsets[i];
+        if (position >= total_rows) [[unlikely]]
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Offset of a non-default value {} is out of range [0, {})", position, total_rows);
+        memcpy(&res_chars[position * n], &chars[(i + shift) * n], n);
+    }
+
+    return res;
 }
 
 void ColumnFixedString::serializeAsComparable(size_t row, String & out) const

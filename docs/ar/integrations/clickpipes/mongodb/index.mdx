@@ -10,28 +10,17 @@ integration:
    - category: 'clickpipes'
 ---
 
-import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
-
-import { Image } from "/snippets/ar/components/Image.jsx";
 import ChangingTLSSettings from '/snippets/ar/clickpipes/_changing_tls_settings.mdx';
 
-<BetaBadge />
-
-<Info>
-  إدخال البيانات من MongoDB إلى ClickHouse Cloud عبر ClickPipes متاح حاليًا في النسخة التجريبية العامة.
-</Info>
-
 <Note>
-  في وحدة تحكم ClickHouse Cloud والوثائق، يُستخدم المصطلحان &quot;table&quot; و&quot;collection&quot; بالتبادل عند الإشارة إلى MongoDB.
+  في وحدة تحكم ClickHouse Cloud والوثائق، يُستخدم المصطلحان &quot;جدول&quot; و&quot;مجموعة&quot; بالتبادل عند الإشارة إلى MongoDB.
 </Note>
 
 يمكنك استخدام ClickPipes لإدخال البيانات من قاعدة بيانات MongoDB الخاصة بك إلى ClickHouse Cloud. ويمكن استضافة قاعدة بيانات MongoDB المصدر داخل بنيتك التحتية المحلية أو في السحابة باستخدام خدمات مثل MongoDB Atlas.
 
 يمكن نشر MongoDB ClickPipes وإدارته يدويًا باستخدام ClickPipes UI، وكذلك برمجيًا باستخدام [OpenAPI](/ar/integrations/clickpipes/programmatic-access/openapi) و[Terraform](/ar/integrations/clickpipes/programmatic-access/terraform).
 
-<div id="prerequisites">
-  ## المتطلبات الأساسية
-</div>
+## المتطلبات الأساسية {#prerequisites}
 
 للبدء، عليك أولًا التأكد من أن قاعدة بيانات MongoDB المصدر مُعَدّة بشكل صحيح للنسخ المتماثل. وتعتمد خطوات الإعداد على طريقة نشر MongoDB، لذا يُرجى اتباع الدليل المناسب أدناه:
 
@@ -43,68 +32,78 @@ import ChangingTLSSettings from '/snippets/ar/clickpipes/_changing_tls_settings.
 
 بعد إعداد قاعدة بيانات MongoDB المصدر، يمكنك متابعة إنشاء ClickPipe.
 
-<div id="create-your-clickpipe">
-  ## أنشئ ClickPipe الخاص بك
-</div>
+## أنشئ ClickPipe الخاص بك {#create-your-clickpipe}
 
-تأكد من أنك مسجّل الدخول إلى حساب ClickHouse Cloud الخاص بك. إذا لم يكن لديك حساب بعد، يمكنك التسجيل [هنا](https://cloud.clickhouse.com/).
+تأكد من أنك مسجّل الدخول إلى حساب ClickHouse Cloud الخاص بك. إذا لم يكن لديك حساب بعد، يمكنك التسجيل [هنا](https://clickhouse.cloud/signUp?loc=docs-integrations-clickpipes-mongodb).
 
 1. في وحدة تحكم ClickHouse Cloud، انتقل إلى خدمة ClickHouse Cloud الخاصة بك.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_service.webp" alt="خدمة ClickPipes" size="lg" border />
+<div className="ch-image-lg">
+  <Frame>
+    ![خدمة ClickPipes](/images/integrations/data-ingestion/clickpipes/cp_service.webp)
+  </Frame>
+</div>
 
 2. من القائمة الجانبية اليسرى، حدّد الزر `Data Sources` ثم انقر على &quot;Set up a ClickPipe&quot;.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_step0.webp" alt="اختيار الواردات" size="lg" border />
+<div className="ch-image-lg">
+  <Frame>
+    ![اختيار الواردات](/images/integrations/data-ingestion/clickpipes/cp_step0.webp)
+  </Frame>
+</div>
 
 3. حدّد بطاقة `MongoDB CDC`.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/mongodb/mongodb-tile.webp" alt="اختيار MongoDB" size="lg" border />
-
-<div id="add-your-source-mongodb-database-connection">
-  ### أضِف اتصال قاعدة بيانات MongoDB المصدر
+<div className="ch-image-lg">
+  <Frame>
+    ![اختيار MongoDB](/images/integrations/data-ingestion/clickpipes/mongodb/mongodb-tile.webp)
+  </Frame>
 </div>
+
+### أضِف اتصال قاعدة بيانات MongoDB المصدر {#add-your-source-mongodb-database-connection}
 
 4. املأ تفاصيل الاتصال لقاعدة بيانات MongoDB المصدر التي أعددتها في خطوة المتطلبات الأساسية.
 
 <Info>
-  قبل البدء بإضافة تفاصيل الاتصال، تأكد من إدراج عناوين IP الخاصة بـ ClickPipes في قائمة السماح ضمن قواعد جدار الحماية لديك. في الصفحة التالية، يمكنك العثور على [قائمة بعناوين IP الخاصة بـ ClickPipes](/ar/integrations/clickpipes/home#list-of-static-ips).
+  قبل البدء بإضافة تفاصيل الاتصال، تأكد من إدراج عناوين IP الخاصة بـ ClickPipes في قائمة السماح ضمن قواعد جدار الحماية لديك. في الصفحة التالية، يمكنك العثور على [قائمة بعناوين IP الخاصة بـ ClickPipes](/ar/integrations/clickpipes/networking/static-ips).
   لمزيد من المعلومات، راجع أدلة إعداد MongoDB المصدر المشار إليها في [أعلى هذه الصفحة](#prerequisites).
 </Info>
 
-<Image img="/images/integrations/data-ingestion/clickpipes/mongodb/mongodb-connection-details.webp" alt="املأ تفاصيل الاتصال" size="lg" border />
-
-<div id="optional-changing-tls-settings">
-  #### (اختياري) تعديل إعدادات TLS
+<div className="ch-image-lg">
+  <Frame>
+    ![املأ تفاصيل الاتصال](/images/integrations/data-ingestion/clickpipes/mongodb/mongodb-connection-details.webp)
+  </Frame>
 </div>
+
+#### (اختياري) تغيير إعدادات TLS {#optional-changing-tls-settings}
 
 <ChangingTLSSettings />
 
-<div id="optional-set-up-ssh-tunneling">
-  #### (اختياري) إعداد نفق SSH
-</div>
+#### (اختياري) إعداد نفق SSH {#optional-set-up-ssh-tunneling}
 
 يمكنك تحديد تفاصيل نفق SSH إذا كانت قاعدة بيانات MongoDB المصدر لديك غير متاحة عبر الإنترنت العام.
 
-1. فعِّل زر التبديل &quot;Use SSH Tunnelling&quot;.
+1. فعِّل زر التبديل &quot;Use SSH Tunnelling&quot;.
 
 2. املأ تفاصيل اتصال SSH.
 
-   <Image img="/images/integrations/data-ingestion/clickpipes/postgres/ssh-tunnel.jpg" alt="نفق SSH" size="lg" border />
+   <div className="ch-image-lg">
+     <Frame>
+       ![نفق SSH](/images/integrations/data-ingestion/clickpipes/postgres/ssh-tunnel.jpg)
+     </Frame>
+   </div>
 
 3. لاستخدام المصادقة المستندة إلى المفتاح، انقر على &quot;Revoke and generate key pair&quot; لإنشاء زوج مفاتيح جديد، ثم انسخ المفتاح العام الذي تم إنشاؤه إلى خادم SSH لديك ضمن `~/.ssh/authorized_keys`.
 
 4. انقر على &quot;Verify Connection&quot; للتحقق من الاتصال.
 
 <Note>
-  تأكد من السماح لعناوين IP الخاصة بـ [عناوين IP الخاصة بـ ClickPipes](/ar/integrations/clickpipes/home#list-of-static-ips) في قواعد جدار الحماية الخاصة بمضيف SSH bastion حتى يتمكن ClickPipes من إنشاء نفق SSH.
+  تأكد من السماح لعناوين IP الخاصة بـ [عناوين IP الخاصة بـ ClickPipes](/ar/integrations/clickpipes/networking/static-ips) في قواعد جدار الحماية الخاصة بمضيف SSH bastion حتى يتمكن ClickPipes من إنشاء نفق SSH.
 </Note>
 
 بعد إدخال تفاصيل الاتصال، انقر على `Next`.
 
-<div id="advanced-settings">
-  #### تكوين الإعدادات المتقدمة
-</div>
+#### تكوين الإعدادات المتقدمة {#advanced-settings}
 
 يمكنك تكوين الإعدادات المتقدمة عند الحاجة. يرد أدناه وصف موجز لكل إعداد:
 
@@ -112,37 +111,105 @@ import ChangingTLSSettings from '/snippets/ar/clickpipes/_changing_tls_settings.
 * **حجم دفعة السحب**: عدد الصفوف التي سيتم جلبها في دفعة واحدة. هذا إعداد يُطبَّق على أساس أفضل جهد، وقد لا يُلتزم به في جميع الحالات.
 * **عدد الجداول في اللقطة الأولية بالتوازي**: هذا هو عدد الجداول التي سيتم جلبها بالتوازي أثناء اللقطة الأولية. ويكون ذلك مفيدًا عندما يكون لديك عدد كبير من الجداول وتريد التحكم في عدد الجداول التي يتم جلبها بالتوازي.
 
-<div id="configure-the-tables">
-  ### إعداد الجداول
+### تهيئة الجداول {#configure-the-tables}
+
+5. يمكنك هنا اختيار قاعدة البيانات الهدف لـ ClickPipe الخاص بك، إما باختيار قاعدة بيانات موجودة أو بإنشاء قاعدة بيانات جديدة.
+
+   <div className="ch-image-lg">
+     <Frame>
+       ![اختيار قاعدة البيانات الهدف](/images/integrations/data-ingestion/clickpipes/mongodb/select-destination-db.webp)
+     </Frame>
+   </div>
+
+6. يمكنك اختيار الجداول التي تريد نسخها نسخًا متماثلًا من قاعدة بيانات MongoDB المصدر. ويمكنك أيضًا، أثناء اختيار الجداول، إعادة تسميتها في قاعدة بيانات ClickHouse الهدف.
+
+يمكن نسخ المجموعات نسخًا متماثلًا بأحد وضعين:
+
+* **الإدخال الافتراضي**: تُستوعَب المستندات كما هي في ClickHouse بنوع JSON. وفي هذه الحالة، يحتوي جدول الوجهة على column مخصص لـ `id` وآخر باسم `doc` يضم المستند كاملًا.
+* **الإدخال المهيكل**: تُستوعَب المستندات كصفوف في جدول وفق مخطط مشترك للمجموعة، ويُستنتج هذا المخطط من عينة عند إنشاء مسار استيعاب البيانات. يُفعَّل هذا الوضع عبر تشغيل مفتاح التبديل **Map document to columns** للمجموعة.
+
+عند تفعيل الإدخال المهيكل، يعرض قسم **Column settings** الحقول الموجودة في العينة مع أنواع ClickHouse المستنتجة لها. ويمكنك اختيار الحقول التي تريد نسخها نسخًا متماثلًا كـ columns، علمًا بأن مفتاح المستند `_id` يُضمَّن دائمًا بالنوع `String`.
+
+<div className="ch-image-md">
+  <Frame>
+    ![إعدادات الإدخال المهيكل لمجموعة](/images/integrations/data-ingestion/clickpipes/mongodb/mongodb-structured-ingestion.webp)
+  </Frame>
 </div>
 
-5. هنا يمكنك تحديد قاعدة البيانات الوجهة لـ ClickPipe. يمكنك إما تحديد قاعدة بيانات موجودة أو إنشاء قاعدة بيانات جديدة.
+نظرًا لأن مجموعات MongoDB متعددة الأشكال (أي أن المستندات داخل المجموعة نفسها قد تختلف مخططاتها)، يتعين على الإدخال المهيكل التعامل مع السجلات الشاذة:
 
-   <Image img="/images/integrations/data-ingestion/clickpipes/mongodb/select-destination-db.webp" alt="تحديد قاعدة البيانات الوجهة" size="lg" border />
+* **الحقول المفقودة:** تُستوعَب جميع الـ columns المهيكلة كـ `Nullable`، لذا إذا افتقد أحد المستندات حقلًا ما، فسيحمل الـ column المقابل القيمة `NULL`.
 
-6. يمكنك تحديد الجداول التي تريد نسخها من قاعدة بيانات MongoDB المصدر. وأثناء تحديد الجداول، يمكنك أيضًا اختيار إعادة تسمية الجداول في قاعدة بيانات ClickHouse الوجهة.
+* **الحقول الإضافية:** تُخزَّن الحقول التي لا تنتمي إلى المخطط المستنتج بصيغة JSON في الـ column `_peerdb_malformed_data`، بمفتاح واحد لكل حقل. ويحتوي كل مفتاح على `"unexpected_field": true` والقيمة الأصلية ضمن `value`:
 
-<div id="review-permissions-and-start-the-clickpipe">
-  ### راجع الأذونات وابدأ ClickPipe
+  ```json
+  {
+    "rating": {
+      "unexpected_field": true,
+      "value": 4.5
+    }
+  }
+  ```
+
+  يمكن الاستعلام عن هذه البيانات وتحليلها بسهولة. على سبيل المثال، لسرد الحقول غير المتوقعة الموجودة في جدول:
+
+  ```sql
+  SELECT DISTINCT arrayJoin(JSONAllPaths(_peerdb_malformed_data)) AS malformed
+  FROM movies
+  WHERE malformed LIKE '%.unexpected_field';
+  ```
+
+  📝 ملاحظة: إذا كنت لا تريد ظهور قيم الحقول الإضافية في الـ column `_peerdb_malformed_data`، فيمكنك تمكين الخيار **Hide unexpected values** للمجموعة.
+
+* **عدم تطابق نوع الحقل:** تُخزَّن القيم التي لا يتطابق نوعها مع نوع الـ column في الـ column `_peerdb_malformed_data` أيضًا، بمفتاح واحد لكل حقل. ويحتوي كل مفتاح على `"type_mismatch": true` والقيمة الأصلية ضمن `value`، بينما تُعيَّن قيمة الـ column المقابل إلى `NULL`:
+
+  ```json
+  {
+    "year": {
+      "type_mismatch": true,
+      "value": "two thousand nineteen"
+    }
+  }
+  ```
+
+  لقراءة حقل سواء تطابقت قيمته مع النوع المتوقع أم لا، ادمج الـ column مع قيمته الاحتياطية:
+
+  ```sql
+  SELECT name, coalesce(year, _peerdb_malformed_data.year.value)
+  FROM movies;
+  ```
+
+📝 ملاحظة: يمكنك اعتبار الحقول المضمَّنة في `_peerdb_malformed_data` قيمًا شاذة يُرجَع فيها إلى الإدخال في column بصيغة JSON.
+
+نظرًا لأن الإدخال المهيكل يستنتج المخطط قبل إنشاء الجدول، فإن تفعيله يتيح تعريف تعبيرات تقسيم مخصصة ومفاتيح فرز مخصصة استنادًا إلى الـ columns المهيكلة.
+تُستوعَب جميع الـ columns المهيكلة كـ `Nullable`، فضع ذلك في الحسبان عند كتابة تعبير مفتاح التقسيم أو عند استخدامها في مفتاح فرز. وفي هذه الحالات، يُنشأ جدول الوجهة مع الإعداد `allow_nullable_key`.
+
+📝 في كلا وضعي الإدخال، يمكنك تفعيل الخيار **Persist deleted documents** إذا أردت أن تلتقط أحداث الحذف القيم المحذوفة في ClickHouse الوجهة. لاحظ أن ذلك يتطلب تفعيل `changeStreamPreAndPostImage` في المجموعة المصدر.
+
+<div className="ch-image-lg">
+  <Frame>
+    ![خيار Persist deleted documents](/images/integrations/data-ingestion/clickpipes/mongodb/mongodb-persist-deleted-documents.webp)
+  </Frame>
 </div>
+
+### راجع الأذونات وابدأ ClickPipe {#review-permissions-and-start-the-clickpipe}
 
 7. اختر دور «الوصول الكامل» من القائمة المنسدلة للأذونات، ثم انقر على «إكمال الإعداد».
 
-   <Image img="/images/integrations/data-ingestion/clickpipes/postgres/ch-permissions.jpg" alt="مراجعة الأذونات" size="lg" border />
+   <div className="ch-image-lg">
+     <Frame>
+       ![مراجعة الأذونات](/images/integrations/data-ingestion/clickpipes/postgres/ch-permissions.jpg)
+     </Frame>
+   </div>
 
-<div id="whats-next">
-  ## ما التالي؟
-</div>
+## ما الخطوة التالية؟ {#whats-next}
 
-بعد إعداد ClickPipe لنسخ البيانات من MongoDB إلى ClickHouse Cloud، يمكنك التركيز على كيفية الاستعلام عن بياناتك ونمذجتها لتحقيق أفضل أداء.
+بعد إعداد ClickPipe لنسخ البيانات نسخًا متماثلًا من MongoDB إلى ClickHouse Cloud، يمكنك التركيز على كيفية الاستعلام عن بياناتك ونمذجتها لتحقيق أفضل أداء.
 
-<div id="caveats">
-  ## ملاحظات مهمة
-</div>
+## ملاحظات مهمة {#caveats}
 
 فيما يلي بعض الملاحظات المهمة التي ينبغي الانتباه إليها عند استخدام هذا الموصل:
 
 * نشترط استخدام MongoDB بالإصدار 5.1.0 أو أحدث.
 * نستخدم واجهة برمجة تطبيقات change stream الأصلية في MongoDB من أجل CDC، والتي تعتمد على oplog في MongoDB لالتقاط التغييرات في الوقت الفعلي.
 * تُنسخ المستندات من MongoDB إلى ClickHouse باستخدام JSON type افتراضيًا. يوفّر ذلك مرونة في إدارة الـ schema، ويتيح استخدام المجموعة الغنية من operators الخاصة بـ JSON في ClickHouse لأغراض الاستعلام والتحليلات. يمكنك معرفة المزيد عن الاستعلام عن بيانات JSON [هنا](/ar/reference/data-types/newjson).
-* لا يتوفر حاليًا إعداد PrivateLink بنمط self-serve. إذا كنت تستخدم AWS وتحتاج إلى PrivateLink، يُرجى التواصل عبر db-integrations-support@clickhouse.com أو إنشاء تذكرة دعم — وسنعمل معك على تفعيله.

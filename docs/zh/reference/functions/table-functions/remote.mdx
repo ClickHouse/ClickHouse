@@ -12,43 +12,36 @@ doc_type: 'reference'
 
 当目标是普通 `db`/`table` 时，这两个函数都可用于 `SELECT` 和 `INSERT` 查询。当目标本身是表函数时 (例如 `remote('127.0.0.1', numbers(10))`) ，该表为只读：没有可供插入的远程表，因此 `INSERT` 会因 `NOT_IMPLEMENTED` 异常而被拒绝。
 
-<div id="syntax">
-  ## 语法
-</div>
+## 语法 {#syntax}
 
 ```sql
-remote(addresses_expr, [db, table, user [, password], sharding_key])
-remote(addresses_expr, [db.table, user [, password], sharding_key])
-remote(named_collection[, option=value [,..]])
-remoteSecure(addresses_expr, [db, table, user [, password], sharding_key])
-remoteSecure(addresses_expr, [db.table, user [, password], sharding_key])
-remoteSecure(named_collection[, option=value [,..]])
+remote(addresses_expr, [db, table, user [, password], sharding_key][, SETTINGS name = value, ...])
+remote(addresses_expr, [db.table, user [, password], sharding_key][, SETTINGS name = value, ...])
+remote(named_collection[, option=value [,..]][, SETTINGS name = value, ...])
+remoteSecure(addresses_expr, [db, table, user [, password], sharding_key][, SETTINGS name = value, ...])
+remoteSecure(addresses_expr, [db.table, user [, password], sharding_key][, SETTINGS name = value, ...])
+remoteSecure(named_collection[, option=value [,..]][, SETTINGS name = value, ...])
 ```
 
-<div id="parameters">
-  ## 参数
-</div>
+## 参数 {#parameters}
 
-| 参数               | 描述                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `addresses_expr` | 远程服务器地址，或用于生成多个远程服务器地址的表达式。格式：`host` 或 `host:port`。<br /><br />    `host` 可以指定为服务器名称，也可以是 IPv4 或 IPv6 地址。IPv6 地址必须写在 `[]` 中。<br /><br />    `port` 是远程服务器的 TCP 端口。如果省略端口，则表函数 `remote` 使用服务器配置文件中的 [tcp&#95;port](/zh/reference/settings/server-settings/settings#tcp_port) (默认值为 9000) ，表函数 `remoteSecure` 使用 [tcp&#95;port&#95;secure](/zh/reference/settings/server-settings/settings#tcp_port_secure) (默认值为 9440) 。<br /><br />    对于 IPv6 地址，必须指定端口。<br /><br />    如果只指定了参数 `addresses_expr`，则 `db` 和 `table` 默认使用 `system.one`。<br /><br />    类型：[String](/zh/reference/data-types/string)。 |
-| `db`             | 数据库名称。类型：[String](/zh/reference/data-types/string)。                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| `table`          | 表名称。类型：[String](/zh/reference/data-types/string)。                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| `user`           | 用户名。如果未指定，则使用 `default`。类型：[String](/zh/reference/data-types/string)。                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| `password`       | 用户密码。如果未指定，则使用空密码。类型：[String](/zh/reference/data-types/string)。                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| `sharding_key`   | 分片键，用于支持将数据分布到各个节点。例如：`insert into remote('127.0.0.1:9000,127.0.0.2', db, table, 'default', rand())`。类型：[UInt32](/zh/reference/data-types/int-uint)。                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| 参数                           | 描述                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `addresses_expr`             | 远程服务器地址，或用于生成多个远程服务器地址的表达式。格式：`host` 或 `host:port`。<br /><br />    `host` 可以指定为服务器名称，也可以是 IPv4 或 IPv6 地址。IPv6 地址必须写在 `[]` 中。<br /><br />    `port` 是远程服务器的 TCP 端口。如果省略端口，则表函数 `remote` 使用服务器配置文件中的 [tcp&#95;port](/zh/reference/settings/server-settings/settings/tcp-port#tcp_port) (默认值为 9000) ，表函数 `remoteSecure` 使用 [tcp&#95;port&#95;secure](/zh/reference/settings/server-settings/settings/tcp-port#tcp_port_secure) (默认值为 9440) 。<br /><br />    对于 IPv6 地址，必须指定端口。<br /><br />    如果只指定了参数 `addresses_expr`，则 `db` 和 `table` 默认使用 `system.one`。<br /><br />    类型：[String](/zh/reference/data-types/string)。 |
+| `db`                         | 数据库名称。类型：[String](/zh/reference/data-types/string)。                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `table`                      | 表名。类型：[String](/zh/reference/data-types/string)。                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| `user`                       | 用户名。如果未指定，则使用 `default`。类型：[String](/zh/reference/data-types/string)。                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| `password`                   | 用户密码。如果未指定，则使用空密码。类型：[String](/zh/reference/data-types/string)。                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| `sharding_key`               | 分片键，用于支持将数据分布到各个节点。例如：`insert into remote('127.0.0.1:9000,127.0.0.2', db, table, 'default', rand())`。类型：[UInt32](/zh/reference/data-types/int-uint)。                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| `SETTINGS name = value, ...` | 该函数创建的 Distributed 表的设置，例如 `skip_unavailable_shards`。可选。查询中指定的设置优先于它。此子句仅可在表函数内使用；`Remote` 和 `RemoteSecure` 表引擎在引擎定义后接受相同的设置，参见 [Remote 和 RemoteSecure 引擎](/zh/reference/engines/table-engines/special/distributed#distributed-remote-engines)。                                                                                                                                                                                                                                                                                                                                                                 |
 
 参数也可以通过 [命名集合](/zh/concepts/features/configuration/server-config/named-collections) 传递。
 
-<div id="returned-value">
-  ## 返回值
-</div>
+## 返回值 {#returned-value}
 
 位于远程服务器上的表。
 
-<div id="usage">
-  ## 使用
-</div>
+## 使用 {#usage}
 
 由于表函数 `remote` 和 `remoteSecure` 会为每个请求重新建立连接，因此建议改用 `Distributed` 表。此外，如果设置了主机名，系统会解析这些名称；在使用不同副本时，错误也不会被计入统计。在处理大量查询时，务必提前创建 `Distributed` 表，不要使用 `remote` 表函数。
 
@@ -60,11 +53,9 @@ remoteSecure(named_collection[, option=value [,..]])
 * 手动发起的不频繁分布式请求。
 * 每次都会重新定义服务器集合的分布式请求。
 
-相同的参数也可用于 `Remote` 和 `RemoteSecure` 表引擎，以创建持久表而非临时表，参见 [Remote 和 RemoteSecure 引擎](/zh/reference/engines/table-engines/special/distributed#distributed-remote-engines)。
+相同的参数也可用于 `Remote` 和 `RemoteSecure` 表引擎，以创建持久表而非临时表，参见 [Remote 和 RemoteSecure 引擎](/zh/reference/engines/table-engines/special/distributed#distributed-remote-engines)。唯一的区别在于 `SETTINGS` 子句：引擎在引擎定义后指定该子句，即 `ENGINE = Remote(...) SETTINGS skip_unavailable_shards = 1`，而不是将其放在参数中。
 
-<div id="addresses">
-  ### 地址
-</div>
+### 地址 {#addresses}
 
 ```text
 example01-01-1
@@ -83,13 +74,9 @@ localhost
 example01-01-1,example01-02-1
 ```
 
-<div id="examples">
-  ## 示例
-</div>
+## 示例 {#examples}
 
-<div id="selecting-data-from-a-remote-server">
-  ### 从远程服务器查询数据：
-</div>
+### 从远程服务器查询数据： {#selecting-data-from-a-remote-server}
 
 ```sql
 SELECT * FROM remote('127.0.0.1', db.remote_engine_table) LIMIT 3;
@@ -104,9 +91,7 @@ CREATE NAMED COLLECTION creds AS
 SELECT * FROM remote(creds, table='remote_engine_table') LIMIT 3;
 ```
 
-<div id="inserting-data-into-a-table-on-a-remote-server">
-  ### 向远程服务器上的表中插入数据：
-</div>
+### 向远程服务器上的表中插入数据： {#inserting-data-into-a-table-on-a-remote-server}
 
 ```sql
 CREATE TABLE remote_table (name String, value UInt32) ENGINE=Memory;
@@ -114,15 +99,11 @@ INSERT INTO FUNCTION remote('127.0.0.1', currentDatabase(), 'remote_table') VALU
 SELECT * FROM remote_table;
 ```
 
-<div id="migration-of-tables-from-one-system-to-another">
-  ### 将表从一个系统迁移到另一个系统：
-</div>
+### 将表从一个系统迁移到另一个系统： {#migration-of-tables-from-one-system-to-another}
 
 本示例使用样本数据集中的一个表。数据库为 `imdb`，表为 `actors`。
 
-<div id="on-the-source-clickhouse-system-the-system-that-currently-hosts-the-data">
-  #### 在源端 ClickHouse 系统上 (即当前承载数据的系统)
-</div>
+#### 在源端 ClickHouse 系统上 (即当前承载数据的系统) {#on-the-source-clickhouse-system-the-system-that-currently-hosts-the-data}
 
 * 确认源端数据库和表名 (`imdb.actors`)
 
@@ -145,17 +126,15 @@ SELECT * FROM remote_table;
 响应
 
 ```sql
-  CREATE TABLE imdb.actors (`id` UInt32,
-                            `first_name` String,
-                            `last_name` String,
-                            `gender` FixedString(1))
-                  ENGINE = MergeTree
-                  ORDER BY (id, first_name, last_name, gender);
+CREATE TABLE imdb.actors (`id` UInt32,
+                          `first_name` String,
+                          `last_name` String,
+                          `gender` FixedString(1))
+                ENGINE = MergeTree
+                ORDER BY (id, first_name, last_name, gender);
 ```
 
-<div id="on-the-destination-clickhouse-system">
-  #### 在目标端 ClickHouse 系统上
-</div>
+#### 在目标端 ClickHouse 系统上 {#on-the-destination-clickhouse-system}
 
 * 创建目标数据库：
 
@@ -174,9 +153,7 @@ SELECT * FROM remote_table;
                   ORDER BY (id, first_name, last_name, gender);
   ```
 
-<div id="back-on-the-source-deployment">
-  #### 回到源端部署
-</div>
+#### 回到源端部署 {#back-on-the-source-deployment}
 
 将数据插入远程系统中新创建的数据库和表。您需要提供主机、端口、用户名、密码、目标端数据库和目标端表。
 
@@ -186,9 +163,7 @@ remoteSecure('remote.clickhouse.cloud:9440', 'imdb.actors', 'USER', 'PASSWORD')
 SELECT * from imdb.actors
 ```
 
-<div id="globs-in-addresses">
-  ## 通配符展开
-</div>
+## 通配符展开 {#globs-in-addresses}
 
 `{ }` 中的模式用于生成一组分片并指定副本。如果存在多对 `{ }`，则会生成相应集合的笛卡尔积。
 
@@ -199,7 +174,7 @@ SELECT * from imdb.actors
 * `{0n..0m}` - 带前导零的数字范围。该模式会保留索引中的前导零。例如，`example{01..03}-1` 会生成 `example01-1`、`example02-1` 和 `example03-1`。
 * `{a|b}` - 由 `|` 分隔的任意数量的变体。该模式用于指定副本。例如，`example01-{1|2}` 会生成副本 `example01-1` 和 `example01-2`。
 
-查询将发送到第一个健康的副本。不过，对于 `remote`，会按照当前 [load&#95;balancing](/zh/reference/settings/session-settings#load_balancing) 设置中指定的顺序依次遍历副本。
-生成的地址数量受 [table&#95;function&#95;remote&#95;max&#95;addresses](/zh/reference/settings/session-settings#table_function_remote_max_addresses) 设置的限制。
+查询将发送到第一个健康的副本。不过，对于 `remote`，会按照当前 [load&#95;balancing](/zh/reference/settings/session-settings/load-balancing#load_balancing) 设置中指定的顺序依次遍历副本。
+生成的地址数量受 [table&#95;function&#95;remote&#95;max&#95;addresses](/zh/reference/settings/session-settings/table#table_function_remote_max_addresses) 设置的限制。
 
 {/*AUTOGENERATED_END*/}

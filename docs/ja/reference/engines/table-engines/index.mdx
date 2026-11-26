@@ -5,6 +5,7 @@ toc_folder_title: 'テーブルエンジン'
 toc_priority: 26
 toc_title: '概要'
 title: 'テーブルエンジン'
+sidebarTitle: '概要'
 doc_type: 'reference'
 ---
 
@@ -17,13 +18,9 @@ doc_type: 'reference'
 * リクエストをマルチスレッドで実行できるかどうか。
 * データレプリケーションのパラメータ。
 
-<div id="engine-families">
-  ## エンジンファミリー
-</div>
+## エンジンファミリー {#engine-families}
 
-<div id="mergetree">
-  ### MergeTree
-</div>
+### MergeTree {#mergetree}
 
 高負荷のワークロード向けに、最も汎用的で高機能なテーブルエンジンです。これらのエンジンに共通する特徴は、高速にデータを挿入でき、その後のデータ処理がバックグラウンドで行われることです。`MergeTree` ファミリーのエンジンは、データのレプリケーション ([Replicated*](/ja/reference/engines/table-engines/mergetree-family/replication) バージョンのエンジン) 、パーティション化、セカンダリのデータスキッピング索引のほか、他のエンジンではサポートされない機能もサポートしています。
 
@@ -45,9 +42,7 @@ doc_type: 'reference'
 | [Replicated* テーブルエンジン](/ja/reference/engines/table-engines/mergetree-family/replication)                          |
 | [テキスト索引を使用した全文検索](/ja/reference/engines/table-engines/mergetree-family/textindexes)                               |
 
-<div id="log">
-  ### Log
-</div>
+### Log {#log}
 
 最小限の機能を備えた軽量な[エンジン](/ja/reference/engines/table-engines/log-family/index)です。多数の小さなテーブル (約 100 万行まで) にすばやく書き込み、後でまとめて読み取る必要がある場合に最適です。
 
@@ -60,9 +55,7 @@ doc_type: 'reference'
 | [StripeLog](/ja/reference/engines/table-engines/log-family/stripelog) |
 | [Log](/ja/reference/engines/table-engines/log-family/log)             |
 
-<div id="integration-engines">
-  ### インテグレーションエンジン
-</div>
+### インテグレーションエンジン {#integration-engines}
 
 他のデータストレージシステムやデータ処理システムと連携するためのエンジンです。
 
@@ -98,9 +91,7 @@ doc_type: 'reference'
 | [SQLite](/ja/reference/engines/table-engines/integrations/sqlite)                                  |
 | [YTsaurus](/ja/reference/engines/table-engines/integrations/ytsaurus)                              |
 
-<div id="special-engines">
-  ### 特殊エンジン
-</div>
+### 特殊エンジン {#special-engines}
 
 このファミリーに含まれるエンジン:
 
@@ -125,9 +116,7 @@ doc_type: 'reference'
 | [KeeperMap](/ja/reference/engines/table-engines/special/keepermap)         |
 | [FileLog](/ja/reference/engines/table-engines/special/filelog)             |
 
-<div id="table_engines-virtual_columns">
-  ## 仮想カラム
-</div>
+## 仮想カラム {#table_engines-virtual_columns}
 
 仮想カラムは、エンジンのソースコードで定義される、テーブルエンジンに組み込まれた属性です。
 
@@ -135,7 +124,7 @@ doc_type: 'reference'
 
 仮想カラムからデータを取得するには、`SELECT` クエリでその名前を明示的に指定する必要があります。`SELECT *` では仮想カラムの値は返されません。
 
-テーブルの仮想カラムのいずれかと同じ名前のカラムを持つテーブルを作成すると、その仮想カラムにはアクセスできなくなります。これは推奨されません。競合を避けるため、仮想カラム名には通常、先頭にアンダースコアが付いています。
+テーブルの仮想カラムのいずれかと同じ名前のカラムを持つテーブルを作成すると、その仮想カラムにはアクセスできなくなります。これは推奨されません。競合を避けるため、仮想カラム名には通常、先頭にアンダースコアが付いています。`MergeTree`ファミリーのテーブルでは、`allow_reserved_column_names` 設定が有効になっていない限り、このようなカラムは拒否されます。
 
 * `_table` — データの読み取り元であるテーブル名を格納します。Type: [String](/ja/reference/data-types/string).
 

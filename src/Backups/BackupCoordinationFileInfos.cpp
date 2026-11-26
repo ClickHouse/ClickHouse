@@ -88,7 +88,18 @@ void BackupCoordinationFileInfos::prepare() const
     total_size_of_files = 0;
 
     std::vector<BackupFileInfo *> unresolved_references;
+
+    /// A reference is resolved through the info of the file it points at, so only those files have to be looked up by
+    /// name. Collected first, because a reference can point at a file that comes later. Most backups have no references
+    /// at all, and then the map below stays empty instead of holding an entry per file of the backup.
+    std::unordered_set<std::string_view> reference_targets;
+    for (const auto * info : file_infos_for_all_hosts)
+    {
+        if (!info->reference_target.empty())
+            reference_targets.emplace(info->reference_target);
+    }
     std::unordered_map<std::string_view, BackupFileInfo *> file_name_to_info;
+    file_name_to_info.reserve(reference_targets.size());
 
     const auto handle_unresolved_references = [&](const auto & try_resolve_reference)
     {
@@ -130,7 +141,8 @@ void BackupCoordinationFileInfos::prepare() const
 
             if (info.reference_target.empty())
             {
-                file_name_to_info.emplace(info.file_name, &info);
+                if (reference_targets.contains(info.file_name))
+                    file_name_to_info.emplace(info.file_name, &info);
                 total_size_of_files += info.size;
             }
             else if (!try_resolve_reference(info))
@@ -201,7 +213,8 @@ void BackupCoordinationFileInfos::prepare() const
                 }
             }
 
-            file_name_to_info.emplace(info.file_name, &info);
+            if (reference_targets.contains(info.file_name))
+                file_name_to_info.emplace(info.file_name, &info);
         }
 
         handle_unresolved_references(try_resolve_reference);

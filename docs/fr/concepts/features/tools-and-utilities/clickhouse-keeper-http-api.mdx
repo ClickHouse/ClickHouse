@@ -9,9 +9,7 @@ doc_type: 'reference'
 ClickHouse Keeper fournit une API HTTP et un tableau de bord web intégré pour la surveillance, les contrôles d’état et la gestion du stockage.
 Cette interface permet aux opérateurs d’inspecter l’état du cluster, d’exécuter des commandes et de gérer le stockage de Keeper depuis un navigateur web ou via des clients HTTP.
 
-<div id="configuration">
-  ## Configuration
-</div>
+## Configuration {#configuration}
 
 Pour activer l’API HTTP, ajoutez la section `http_control` à la configuration `keeper_server` :
 
@@ -26,9 +24,7 @@ Pour activer l’API HTTP, ajoutez la section `http_control` à la configuration
 </keeper_server>
 ```
 
-<div id="configuration-options">
-  ### Options de configuration
-</div>
+### Options de configuration {#configuration-options}
 
 | Paramètre                                 | Par défaut | Description                                                               |
 | ----------------------------------------- | ---------- | ------------------------------------------------------------------------- |
@@ -37,13 +33,9 @@ Pour activer l’API HTTP, ajoutez la section `http_control` à la configuration
 | `http_control.readiness.endpoint`         | `/ready`   | Chemin personnalisé de la sonde de disponibilité                          |
 | `http_control.storage.session_timeout_ms` | `30000`    | Délai d’expiration de la session pour les opérations de l’API de stockage |
 
-<div id="endpoints">
-  ## Endpoints
-</div>
+## Endpoints {#endpoints}
 
-<div id="dashboard">
-  ### Tableau de bord
-</div>
+### Tableau de bord {#dashboard}
 
 * **Chemin**: `/dashboard`
 * **Méthode**: GET
@@ -56,9 +48,18 @@ Le tableau de bord comprend :
 * Explorateur de stockage
 * Interface d&#39;exécution des commandes
 
-<div id="readiness-probe">
-  ### Sonde de disponibilité
-</div>
+#### Onglet Cluster {#dashboard-cluster-tab}
+
+L’onglet **Cluster** représente les membres Raft sous la forme d’un graphe de topologie et d’un tableau. Chaque membre est affiché avec une couleur indiquant son état de santé :
+
+* **Vert** — actif et synchronisé avec le leader
+* **Jaune** — actif, mais en retard de plus de `stale_log_gap` entrées de journal sur le leader
+* **Rouge** — inaccessible (aucune réponse Raft réussie pendant la fenêtre d’expiration du signal de présence)
+* **Gris** — inconnu (l’état de santé des pairs n’est visible que depuis le leader ; les followers voient leurs pairs comme inconnus)
+
+Le tableau indique également le rôle de chaque membre (leader, follower ou observateur), la priorité Raft, le dernier index de journal, le retard de réplication par rapport au leader et le temps écoulé depuis la dernière réponse Raft réussie. Lorsque le nœud actuel n’est pas le leader, l’onglet propose un lien direct ouvrant le tableau de bord du leader, où l’état de santé complet des pairs est disponible. L’onglet peut être ouvert directement avec `/dashboard?tab=cluster`.
+
+### Sonde de disponibilité {#readiness-probe}
 
 * **Chemin** : `/ready` (configurable)
 * **Méthode** : GET
@@ -76,20 +77,18 @@ Réponse en cas de succès (HTTP 200) :
 }
 ```
 
-<div id="commands-api">
-  ### API des commandes
-</div>
+### API des commandes {#commands-api}
 
 * **Chemin**: `/api/v1/commands/{command}`
 * **Méthodes**: GET, POST
 * **Description**: Exécute des commandes Four-Letter Word ou des commandes de la CLI ClickHouse Keeper Client
 
-Paramètres de requête :
+Paramètres de requête :
 
 * `command` - La commande à exécuter
-* `cwd` - Répertoire de travail courant pour les commandes basées sur un chemin (par défaut : `/`)
+* `cwd` - Répertoire de travail courant pour les commandes basées sur un chemin ; doit être un chemin absolu (par défaut : `/`)
 
-Exemples :
+Exemples :
 
 ```bash
 # Four-Letter Word command
@@ -99,9 +98,7 @@ curl http://localhost:9182/api/v1/commands/stat
 curl "http://localhost:9182/api/v1/commands/ls?command=ls%20'/'&cwd=/"
 ```
 
-<div id="storage-api">
-  ### API de stockage
-</div>
+### API de stockage {#storage-api}
 
 * **Chemin de base**: `/api/v1/storage`
 * **Description**: API REST pour les opérations de stockage de Keeper

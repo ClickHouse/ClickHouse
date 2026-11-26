@@ -1,6 +1,6 @@
 ---
 sidebarTitle: 'Streamkap을 ClickHouse에 연결하기'
-keywords: ['clickhouse', 'Streamkap', 'CDC', '연결', '통합', 'etl', '데이터 통합', '변경 데이터 캡처']
+keywords: ['clickhouse', 'Streamkap', 'CDC', '연결', '통합', 'etl', '데이터 통합', '변경 데이터 캡처(Change Data Capture)']
 slug: /integrations/sttreamkap
 description: 'Airbyte 데이터 파이프라인을 사용해 데이터를 ClickHouse로 스트리밍합니다'
 
@@ -12,19 +12,18 @@ integration:
   - website: 'https://streamkap.com/'
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
 import { PartnerBadge } from "/snippets/ko/components/PartnerBadge/PartnerBadge.jsx";
 
 <PartnerBadge />
 
-<a href="https://streamkap.com/" target="_blank">Streamkap</a>은 스트리밍 CDC(변경 데이터 캡처)와 스트림 처리를 전문으로 하는 실시간 데이터 통합 플랫폼입니다. Apache Kafka, Apache Flink, Debezium을 사용하는 고처리량의 확장 가능한 스택을 기반으로 구축되었으며, SaaS 또는 BYOC(Bring Your Own Cloud) 배포 방식의 완전 관리형 서비스로 제공됩니다.
+<a href="https://streamkap.com/" target="_blank">Streamkap</a>은 스트리밍 CDC(변경 데이터 캡처(Change Data Capture))와 스트림 처리를 전문으로 하는 실시간 데이터 통합 플랫폼입니다. Apache Kafka, Apache Flink, Debezium을 사용하는 고처리량의 확장 가능한 스택을 기반으로 구축되었으며, SaaS 또는 BYOC(Bring Your Own Cloud) 배포 방식의 완전 관리형 서비스로 제공됩니다.
 
-Streamkap을 사용하면 PostgreSQL, MySQL, SQL Server, MongoDB 등과 <a href="https://streamkap.com/connectors" target="_blank">그 외 다양한 데이터 소스</a>의 모든 삽입, 업데이트, 삭제를 밀리초 단위의 지연 시간으로 ClickHouse에 직접 스트리밍할 수 있습니다.
+Streamkap을 사용하면 PostgreSQL, MySQL, SQL Server, MongoDB 등과 <a href="https://streamkap.com/connectors" target="_blank">그 외 다양한 원본 데이터베이스</a>의 모든 삽입, 업데이트, 삭제를 밀리초 단위의 지연 시간으로 ClickHouse에 직접 스트리밍할 수 있습니다.
 
 따라서 실시간 분석 대시보드 구축, 운영 분석, 머신 러닝 모델에 라이브 데이터 제공에 매우 적합합니다.
 
 <div id="key-features">
-  ## 주요 기능
+  ## 주요 기능 {#key-features}
 </div>
 
 * **실시간 스트리밍 CDC:** Streamkap은 데이터베이스 로그에서 변경 사항을 직접 캡처하여 ClickHouse의 데이터가 원본의 실시간 레플리카가 되도록 합니다.
@@ -39,13 +38,13 @@ Streamkap을 사용하면 PostgreSQL, MySQL, SQL Server, MongoDB 등과 <a href=
 * **안정적인 전달:** 이 플랫폼은 최소 1회(at-least-once) 전달 보장을 제공하여 원본과 ClickHouse 간의 데이터 일관성을 보장합니다. 업서트 작업의 경우 기본 키를 기준으로 중복 제거를 수행합니다.
 
 <div id="started">
-  ## 시작하기
+  ## 시작하기 {#started}
 </div>
 
 이 가이드는 Streamkap 파이프라인을 설정해 데이터를 ClickHouse에 적재하는 방법을 개괄적으로 설명합니다.
 
 <div id="prerequisites">
-  ### 사전 요구 사항
+  ### 사전 요구 사항 {#prerequisites}
 </div>
 
 * <a href="https://app.streamkap.com/account/sign-up" target="_blank">Streamkap 계정</a>.
@@ -91,13 +90,13 @@ Streamkap을 사용하면 PostgreSQL, MySQL, SQL Server, MongoDB 등과 <a href=
 </Steps>
 
 <div id="how-it-works-with-clickhouse">
-  ## ClickHouse에서의 작동 방식
+  ## ClickHouse에서의 작동 방식 {#how-it-works-with-clickhouse}
 </div>
 
 Streamkap의 통합은 ClickHouse에서 CDC 데이터를 효율적으로 관리할 수 있도록 설계되었습니다.
 
 <div id="table-engine-data-handling">
-  ### 테이블 엔진 및 데이터 처리
+  ### 테이블 엔진 및 데이터 처리 {#table-engine-data-handling}
 </div>
 
 기본적으로 Streamkap은 업서트 수집 모드를 사용합니다. ClickHouse에서 테이블을 생성할 때 ReplacingMergeTree 엔진을 사용합니다. 이 엔진은 CDC 이벤트 처리에 적합합니다.
@@ -110,7 +109,7 @@ Streamkap의 통합은 ClickHouse에서 CDC 데이터를 효율적으로 관리�
   * 필요에 따라 삭제된 레코드를 분석 목적으로 ClickHouse에 유지할 수 있습니다
 
 <div id="metadata-columns">
-  ### 메타데이터 컬럼
+  ### 메타데이터 컬럼 {#metadata-columns}
 </div>
 
 Streamkap은 데이터 상태를 관리할 수 있도록 각 테이블에 여러 메타데이터 컬럼을 추가합니다.
@@ -123,7 +122,7 @@ Streamkap은 데이터 상태를 관리할 수 있도록 각 테이블에 여러
 | `_STREAMKAP_OFFSET`       | Streamkap 내부 로그의 오프셋 값으로, 정렬 및 디버깅에 유용합니다.          |
 
 <div id="query-latest-data">
-  ### 최신 데이터 쿼리
+  ### 최신 데이터 쿼리 {#query-latest-data}
 </div>
 
 ReplacingMergeTree는 업데이트와 삭제를 백그라운드에서 처리하므로, 단순한 SELECT * 쿼리에서는 머지가 완료되기 전에 과거 데이터나 삭제된 행이 표시될 수 있습니다. 데이터의 최신 상태를 확인하려면 삭제된 레코드를 필터링하고 각 행의 최신 버전만 선택해야 합니다.
@@ -152,7 +151,7 @@ GROUP BY key;
 프로덕션 환경과 동시다발적이고 반복적인 최종 사용자 쿼리 워크로드에서는 구체화된 뷰(Materialized View)를 사용해 데이터를 후속 액세스 패턴에 더 잘 맞도록 모델링할 수 있습니다.
 
 <div id="further-reading">
-  ## 추가 자료
+  ## 추가 자료 {#further-reading}
 </div>
 
 * <a href="https://streamkap.com/" target="_blank">Streamkap 웹사이트</a>

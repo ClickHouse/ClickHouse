@@ -1,5 +1,5 @@
 ---
-description: 'Aprenda a adicionar uma chave de partição personalizada a tabelas MergeTree.'
+description: 'Aprenda a adicionar uma chave de particionamento personalizada a tabelas MergeTree.'
 sidebarTitle: 'Chave de particionamento personalizada'
 slug: /engines/table-engines/mergetree-family/custom-partitioning-key
 title: 'Chave de particionamento personalizada'
@@ -14,7 +14,7 @@ doc_type: 'guide'
 
 O particionamento está disponível para as [tabelas da família MergeTree](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree), incluindo [tabelas replicadas](/pt-BR/reference/engines/table-engines/mergetree-family/replication) e [visões materializadas](/pt-BR/reference/statements/create/view#materialized-view).
 
-Uma partição é um agrupamento lógico de registros em uma tabela com base em um critério especificado. Você pode definir uma partição com base em qualquer critério, como mês, dia ou tipo de evento. Cada partição é armazenada separadamente para simplificar a manipulação desses dados. Ao acessar os dados, o ClickHouse usa o menor subconjunto possível de partições. As partições melhoram o desempenho de consultas que incluem uma chave de partição, porque o ClickHouse filtra essa partição antes de selecionar as partes e os grânulos dentro dela.
+Uma partição é um agrupamento lógico de registros em uma tabela com base em um critério especificado. Você pode definir uma partição com base em qualquer critério, como mês, dia ou tipo de evento. Cada partição é armazenada separadamente para simplificar a manipulação desses dados. Ao acessar os dados, o ClickHouse usa o menor subconjunto possível de partições. O particionamento é, antes de tudo, uma técnica de gerenciamento de dados. Quando uma consulta filtra pela chave de particionamento, o ClickHouse pode descartar as demais partições antes de selecionar as partes e os grânulos, o que pode ajudar quando a coluna do filtro não faz parte da chave primária. Consultas que abrangem muitas partições podem ser mais lentas, pois leem mais partes. Consulte [Escolhendo uma chave de particionamento](/pt-BR/best-practices/choosing-a-partitioning-key) para obter orientações.
 
 A partição é especificada na cláusula `PARTITION BY expr` ao [criar uma tabela](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-creating-a-table). A chave de partição pode ser qualquer expressão baseada nas colunas da tabela. Por exemplo, para especificar o particionamento por mês, use a expressão `toYYYYMM(date_column)`:
 
@@ -40,7 +40,7 @@ ORDER BY (CounterID, StartDate, intHash32(UserID));
 
 Neste exemplo, definimos o particionamento pelos tipos de evento que ocorreram durante a semana atual.
 
-Por padrão, não há suporte para chave de partição de ponto flutuante. Para usá-la, habilite a configuração [allow&#95;floating&#95;point&#95;partition&#95;key](/pt-BR/reference/settings/merge-tree-settings#allow_floating_point_partition_key).
+Por padrão, não há suporte para chave de partição de ponto flutuante. Para usá-la, habilite a configuração [allow&#95;floating&#95;point&#95;partition&#95;key](/pt-BR/reference/settings/merge-tree-settings/allow#allow_floating_point_partition_key).
 
 Ao inserir novos dados em uma tabela, esses dados são armazenados como uma parte separada (fragmento), ordenada pela chave primária. Em 10 a 15 minutos após a inserção, as partes da mesma partição são mescladas em uma única parte.
 
@@ -134,9 +134,7 @@ Observe que, em um servidor em execução, você não pode alterar manualmente o
 
 O ClickHouse permite executar operações nas partições: excluí-las, copiá-las de uma tabela para outra ou criar um backup. Veja a lista de todas as operações na seção [Manipulação de partições e partes](/pt-BR/reference/statements/alter/partition).
 
-<div id="group-by-optimisation-using-partition-key">
-  ## Otimização do GROUP BY usando a chave de partição
-</div>
+## Otimização do GROUP BY usando a chave de partição {#group-by-optimisation-using-partition-key}
 
 Para algumas combinações da chave de partição da tabela e da chave de agrupamento da consulta, pode ser possível executar a agregação de cada partição de forma independente.
 Assim, não será necessário mesclar, ao final, os dados parcialmente agregados de todas as threads de execução,
