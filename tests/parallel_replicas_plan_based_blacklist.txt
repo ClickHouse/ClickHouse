@@ -65,7 +65,6 @@
 04908_group_by_top_k_max_k_cap
 05019_group_by_top_k_compatibility
 05175_autopr_keep_cluster_engines
-05768_parallel_replicas_projections_settings_in_subquery
 
     A plan-based parallel replica cannot find the tags collected by `timeSeriesStoreTags` (fix: https://github.com/ClickHouse/ClickHouse/pull/132565)
     https://github.com/ClickHouse/ClickHouse/issues/131138
