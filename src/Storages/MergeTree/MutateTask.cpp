@@ -1071,12 +1071,15 @@ static void splitAndModifyMutationCommands(
         {
             if (part_columns.has(rename_from))
             {
-                /// Actual rename
-                for_interpreter.push_back(
+                /// A formerly stored column may now be `EPHEMERAL` or `ALIAS`.
+                if (table_columns.hasPhysical(rename_to))
                 {
-                    .type = MutationCommand::Type::READ_COLUMN,
-                    .column_name = rename_to,
-                });
+                    for_interpreter.push_back(
+                    {
+                        .type = MutationCommand::Type::READ_COLUMN,
+                        .column_name = rename_to,
+                    });
+                }
 
                 /// Not needed for compact parts (not executed), added here only to produce correct
                 /// set of columns for new part and their serializations
@@ -1157,6 +1160,12 @@ static void splitAndModifyMutationCommands(
         {
             if (!mutated_columns.contains(column.name))
             {
+                /// Historical part columns that became `EPHEMERAL` or `ALIAS` are omitted from the rewrite.
+                ///   ALTER TABLE t MODIFY COLUMN a UInt64 EPHEMERAL;
+                //    ALTER TABLE t RENAME COLUMN a TO a_old;
+                if (table_columns.has(column.name) && !table_columns.hasPhysical(column.name))
+                    continue;
+
                 if (!metadata_snapshot->columns.has(column.name) && !metadata_snapshot->virtuals.has(column.name))
                 {
                     /// We cannot add the column because there's no such column in table.
@@ -1420,6 +1429,48 @@ static void splitAndModifyMutationCommands(
         for (const auto & [rename_to, rename_from] : alter_conversions->getRenameMap())
         {
             for_file_renames.push_back({.type = MutationCommand::Type::RENAME_COLUMN, .column_name = rename_from, .rename_to = rename_to});
+        }
+    }
+
+    /// After replaying an `ALTER`, a secondary replica's old part may store only columns now declared `EPHEMERAL` or `ALIAS`.
+    /// Before removing them, materialize a remaining physical column to preserve the rows. This applies to both full rewrites and partial `Wide` mutations.
+    auto is_removed = [&](const String & name)
+    {
+        auto removes_column = [&](const auto & command)
+        {
+            return command.type == MutationCommand::DROP_COLUMN && command.column_name == name;
+        };
+        return std::ranges::any_of(for_interpreter, removes_column)
+            || std::ranges::any_of(for_file_renames, removes_column);
+    };
+    bool has_stored_column = std::ranges::any_of(part->getColumns(), [&](const auto & column)
+    {
+        const auto name_in_table = alter_conversions->columnHasNewName(column.name)
+            ? alter_conversions->getColumnNewName(column.name) : column.name;
+        return !is_removed(name_in_table)
+            && (table_columns.hasPhysical(name_in_table) || metadata_snapshot->virtuals.has(name_in_table));
+    });
+    /// Will the part retain a stored column that can preserve its rows?
+    if (!has_stored_column)
+    {
+        for (const auto & column : table_columns.getAllPhysical())
+        {
+            if (is_removed(column.name))
+                continue;
+
+            bool already_read = std::ranges::any_of(for_interpreter, [&](const auto & command)
+            {
+                return command.type == MutationCommand::READ_COLUMN && command.column_name == column.name;
+            });
+            if (!already_read)
+                /// If not, materialize one
+                for_interpreter.push_back(
+                {
+                    .type = MutationCommand::READ_COLUMN,
+                    .column_name = column.name,
+                    .data_type = column.type,
+                });
+            break;
         }
     }
 

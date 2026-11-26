@@ -7334,7 +7334,9 @@ void StorageReplicatedMergeTree::alter(
         std::map<std::string, MutationCommands> unfinished_mutations;
         for (const auto & command : commands)
         {
-            if (command.isDropOrRename())
+            const bool makes_column_nonphysical = !isSecondaryDDLReplay(query_context)
+                && isColumnMadeNonPhysical(command, metadata_snapshot->columns, future_metadata.columns);
+            if (command.isDropOrRename() || makes_column_nonphysical)
             {
                 if (shutdown_called || partial_shutdown_called)
                     throw Exception(ErrorCodes::ABORTED, "Cannot assign alter because shutdown called");
@@ -7347,7 +7349,8 @@ void StorageReplicatedMergeTree::alter(
                     pulled_queue = true;
                 }
 
-                checkDropOrRenameCommandDoesntAffectInProgressMutations(command, unfinished_mutations, query_context);
+                checkAlterCommandDoesntAffectInProgressMutations(
+                    command, unfinished_mutations, query_context, makes_column_nonphysical);
             }
         }
 

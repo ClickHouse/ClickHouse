@@ -2158,6 +2158,214 @@ def test_ignore_cluster_name_setting(started_cluster):
         node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
 
 
+@pytest.mark.parametrize(
+    "materialized, part_type",
+    [(True, "Compact"), (False, "Wide")],
+    ids=["materialized-compact", "empty-wide"],
+)
+def test_nonphysical_column_alter_replay(started_cluster, materialized, part_type):
+    db_name = f"test_nonphysical_replay_{int(materialized)}_{part_type.lower()}"
+    wide_threshold = 0 if part_type == "Wide" else 1000000000
+    nodes = [main_node, dummy_node]
+    for node in nodes:
+        node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
+    try:
+        for node in nodes:
+            node.query(
+                f"CREATE DATABASE {db_name} ENGINE = Replicated('/clickhouse/databases/{db_name}', '{{shard}}', '{{replica}}')"
+            )
+
+        main_node.query(
+            f"CREATE TABLE {db_name}.t (a UInt64) ENGINE = MergeTree ORDER BY tuple() "
+            f"SETTINGS min_bytes_for_wide_part = {wide_threshold}, min_rows_for_wide_part = {wide_threshold}, "
+            "min_bytes_for_full_part_storage = 0, min_rows_for_full_part_storage = 0, min_level_for_full_part_storage = 0, "
+            "enable_block_number_column = 0, enable_block_offset_column = 0"
+        )
+        dummy_node.query(f"SYSTEM SYNC DATABASE REPLICA {db_name}")
+        dummy_node.query(f"INSERT INTO {db_name}.t VALUES (7), (9)")
+        main_node.query(f"ALTER TABLE {db_name}.t ADD COLUMN b UInt64 DEFAULT 42")
+        dummy_node.query(f"SYSTEM SYNC DATABASE REPLICA {db_name}")
+
+        # The initiator has either no parts or a part with stored `b`; the follower stores only `a`.
+        if materialized:
+            main_node.query(f"INSERT INTO {db_name}.t (a) VALUES (7), (9)")
+        columns_query = (
+            "SELECT arraySort(groupUniqArray(column)) FROM system.parts_columns "
+            f"WHERE database = '{db_name}' AND table = 't' AND active"
+        )
+        assert main_node.query(columns_query) == (
+            "['a','b']\n" if materialized else "[]\n"
+        )
+        assert dummy_node.query(columns_query) == "['a']\n"
+        assert dummy_node.query(
+            "SELECT groupUniqArray(part_type) FROM system.parts "
+            f"WHERE database = '{db_name}' AND table = 't' AND active"
+        ) == f"['{part_type}']\n"
+
+        main_node.query(f"ALTER TABLE {db_name}.t MODIFY COLUMN a UInt64 EPHEMERAL 0")
+        dummy_node.query(f"SYSTEM SYNC DATABASE REPLICA {db_name}")
+        for node in nodes:
+            assert node.query(
+                "SELECT default_kind FROM system.columns "
+                f"WHERE database = '{db_name}' AND table = 't' AND name = 'a'"
+            ) == "EPHEMERAL\n"
+        assert dummy_node.query(f"SELECT count(), sum(b) FROM {db_name}.t") == "2\t84\n"
+
+        # The historical `a` must remain readable under a pending rename until `b` is materialized.
+        dummy_node.query(f"SYSTEM STOP MERGES {db_name}.t")
+        main_node.query(f"ALTER TABLE {db_name}.t RENAME COLUMN a TO a_old SETTINGS mutations_sync = 0")
+        dummy_node.query(f"SYSTEM SYNC DATABASE REPLICA {db_name}")
+        assert dummy_node.query(f"SELECT count(), sum(b) FROM {db_name}.t") == "2\t84\n"
+        dummy_node.query(f"SYSTEM START MERGES {db_name}.t")
+        assert_eq_with_retry(
+            dummy_node,
+            f"SELECT count() FROM system.mutations WHERE database = '{db_name}' AND table = 't' AND NOT is_done",
+            "0",
+        )
+        assert dummy_node.query(columns_query) == "['b']\n"
+        assert dummy_node.query(f"SELECT count(), sum(b) FROM {db_name}.t") == "2\t84\n"
+
+        # A subsequent `ALTER` must also pass through the follower's metadata queue.
+        main_node.query(f"ALTER TABLE {db_name}.t ADD COLUMN c UInt64 DEFAULT 10")
+        dummy_node.query(f"SYSTEM SYNC DATABASE REPLICA {db_name}")
+        for node in nodes:
+            assert node.query(
+                "SELECT name FROM system.columns "
+                f"WHERE database = '{db_name}' AND table = 't' ORDER BY name"
+            ) == "a_old\nb\nc\n"
+        assert dummy_node.query(f"SELECT count(), sum(b), sum(c) FROM {db_name}.t") == "2\t84\t20\n"
+
+        main_node.query(
+            f"CREATE TABLE {db_name}.t_patch (a UInt64, c UInt64) "
+            "ENGINE = MergeTree ORDER BY tuple() "
+            f"SETTINGS min_bytes_for_wide_part = {wide_threshold}, min_rows_for_wide_part = {wide_threshold}, "
+            "min_bytes_for_full_part_storage = 0, min_rows_for_full_part_storage = 0, min_level_for_full_part_storage = 0, "
+            "enable_block_number_column = 0, enable_block_offset_column = 0"
+        )
+        dummy_node.query(f"SYSTEM SYNC DATABASE REPLICA {db_name}")
+        dummy_node.query(f"INSERT INTO {db_name}.t_patch VALUES (7, 8), (9, 10)")
+        main_node.query(f"ALTER TABLE {db_name}.t_patch ADD COLUMN b UInt64 DEFAULT 42")
+        main_node.query(
+            f"ALTER TABLE {db_name}.t_patch MODIFY COLUMN a UInt64 EPHEMERAL 0, "
+            "MODIFY COLUMN c UInt64 EPHEMERAL 0"
+        )
+        dummy_node.query(f"SYSTEM SYNC DATABASE REPLICA {db_name}")
+        assert dummy_node.query(f"SELECT count(), sum(b) FROM {db_name}.t_patch") == "2\t84\n"
+
+        # Keep the historical columns as the only stored row-count sources while reading the patch.
+        main_node.query(
+            f"ALTER TABLE {db_name}.t_patch MODIFY SETTING enable_block_number_column = 1, "
+            "enable_block_offset_column = 1, apply_patches_on_merge = 0"
+        )
+        dummy_node.query(f"SYSTEM SYNC DATABASE REPLICA {db_name}")
+        dummy_node.query(f"SYSTEM STOP MERGES {db_name}.t_patch")
+        dummy_node.query(
+            f"UPDATE {db_name}.t_patch SET b = 43 WHERE b = 42 "
+            "SETTINGS enable_lightweight_update = 1"
+        )
+        assert dummy_node.query(f"SELECT count(), sum(b) FROM {db_name}.t_patch") == "2\t86\n"
+
+        # `APPLY PATCHES` reads the same injected column through the sequential reader before rewriting it.
+        dummy_node.query(f"SYSTEM START MERGES {db_name}.t_patch")
+        dummy_node.query(f"ALTER TABLE {db_name}.t_patch APPLY PATCHES SETTINGS mutations_sync = 2")
+        assert dummy_node.query(f"SELECT count(), sum(b) FROM {db_name}.t_patch") == "2\t86\n"
+    finally:
+        for node in nodes:
+            node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
+
+
+@pytest.mark.parametrize("column_kind", ["EPHEMERAL 0", "ALIAS c"], ids=["ephemeral", "alias"])
+def test_nonphysical_column_pending_read_replay(started_cluster, column_kind):
+    db_name = "test_nonphysical_pending_read_replay"
+    nodes = [main_node, dummy_node]
+    merges_stopped = False
+    for node in nodes:
+        node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
+    try:
+        for node in nodes:
+            node.query(
+                f"CREATE DATABASE {db_name} ENGINE = Replicated('/clickhouse/databases/{db_name}', '{{shard}}', '{{replica}}')"
+            )
+        main_node.query(
+            f"CREATE TABLE {db_name}.t (a UInt64, c UInt64, d UInt8) "
+            "ENGINE = MergeTree ORDER BY tuple() "
+            "SETTINGS min_bytes_for_wide_part = 1000000000, min_rows_for_wide_part = 1000000000, "
+            "enable_block_number_column = 0, enable_block_offset_column = 0"
+        )
+        dummy_node.query(f"SYSTEM SYNC DATABASE REPLICA {db_name}")
+        for node in nodes:
+            node.query(f"INSERT INTO {db_name}.t VALUES (7, 8, 0), (9, 10, 0)")
+        dummy_node.query(f"SYSTEM STOP MERGES {db_name}.t")
+        merges_stopped = True
+
+        # `CLEAR COLUMN` forces a separate rewrite before the mutations that consume `a`.
+        main_node.query(
+            f"ALTER TABLE {db_name}.t CLEAR COLUMN d "
+            "SETTINGS alter_sync = 0, mutations_sync = 0"
+        )
+        main_node.query(
+            f"ALTER TABLE {db_name}.t MODIFY COLUMN a UInt32 "
+            "SETTINGS alter_sync = 0, mutations_sync = 0"
+        )
+        main_node.query(
+            f"ALTER TABLE {db_name}.t UPDATE c = a WHERE a > 7 "
+            "SETTINGS alter_sync = 0, mutations_sync = 0"
+        )
+        unfinished_query = (
+            "SELECT count() FROM system.mutations "
+            f"WHERE database = '{db_name}' AND table = 't' AND NOT is_done"
+        )
+        assert_eq_with_retry(main_node, unfinished_query, "0")
+        dummy_node.query(f"SYSTEM SYNC DATABASE REPLICA {db_name}")
+        assert dummy_node.query(unfinished_query) == "3\n"
+
+        main_node.query(
+            f"ALTER TABLE {db_name}.t MODIFY COLUMN a UInt32 {column_kind}",
+            settings={"distributed_ddl_task_timeout": 0},
+        )
+        # Replay must wait for the earlier data work instead of publishing an incompatible schema.
+        assert "TIMEOUT_EXCEEDED" in dummy_node.query_and_get_error(
+            f"SYSTEM SYNC DATABASE REPLICA {db_name}", settings={"receive_timeout": 1}
+        )
+        assert dummy_node.query(
+            "SELECT count() FROM system.columns "
+            f"WHERE database = '{db_name}' AND table = 't' AND name = 'a' "
+            "AND type = 'UInt32' AND default_kind = ''"
+        ) == "1\n"
+        assert dummy_node.query(f"SELECT c FROM {db_name}.t ORDER BY c") == "8\n10\n"
+        dummy_node.query(f"SYSTEM START MERGES {db_name}.t")
+        merges_stopped = False
+        dummy_node.query(f"SYSTEM SYNC DATABASE REPLICA {db_name}")
+        assert_eq_with_retry(dummy_node, unfinished_query, "0")
+        assert dummy_node.query(
+            "SELECT default_kind FROM system.columns "
+            f"WHERE database = '{db_name}' AND table = 't' AND name = 'a'"
+        ) == column_kind.split()[0] + "\n"
+        for node in nodes:
+            assert node.query(f"SELECT c, d FROM {db_name}.t ORDER BY c") == "8\t0\n9\t0\n"
+
+        assert dummy_node.query(
+            "SELECT groupUniqArray(type) FROM system.parts_columns "
+            f"WHERE database = '{db_name}' AND table = 't' AND active AND column = 'a'"
+        ) == "['UInt32']\n"
+
+        # After schema publication the next rewrite can omit historical `a`.
+        dummy_node.query(
+            f"ALTER TABLE {db_name}.t UPDATE c = c + 1 WHERE 1 SETTINGS mutations_sync = 2"
+        )
+        main_node.query(f"SYSTEM SYNC DATABASE REPLICA {db_name}")
+        assert dummy_node.query(f"SELECT c FROM {db_name}.t ORDER BY c") == "9\n10\n"
+        assert dummy_node.query(
+            "SELECT arraySort(groupUniqArray(column)) FROM system.parts_columns "
+            f"WHERE database = '{db_name}' AND table = 't' AND active"
+        ) == "['c']\n"
+    finally:
+        if merges_stopped:
+            dummy_node.query(f"SYSTEM START MERGES {db_name}.t")
+        for node in nodes:
+            node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
+
+
 def test_attach_from(started_cluster):
     db_name_replicated = "test_attach_from_replicated"
     db_name_atomic = "test_attach_from_atomic"

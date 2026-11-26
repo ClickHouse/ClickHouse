@@ -46,6 +46,15 @@ String MergeTreeReadTaskColumns::dump() const
     return s.str();
 }
 
+NamesAndTypesList MergeTreeReadTaskColumns::getAllColumns() const
+{
+    NamesAndTypesList res;
+    for (const auto & step_columns : pre_columns)
+        res.insert(res.end(), step_columns.begin(), step_columns.end());
+    res.insert(res.end(), columns.begin(), columns.end());
+    return res;
+}
+
 Names MergeTreeReadTaskColumns::getAllColumnNames() const
 {
     Names res;

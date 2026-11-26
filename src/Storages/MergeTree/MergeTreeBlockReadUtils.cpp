@@ -11,6 +11,7 @@
 #include <Core/NamesAndTypes.h>
 #include <Common/checkStackSize.h>
 #include <Common/FailPoint.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/typeid_cast.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/MergeTreeSelectProcessor.h>
@@ -21,6 +22,7 @@
 #include <Interpreters/ExpressionActions.h>
 
 #include <algorithm>
+#include <string_view>
 #include <unordered_set>
 
 
@@ -228,23 +230,40 @@ NameSet injectRequiredColumns(
         */
     if (!have_at_least_one_physical_column)
     {
-        /// Use the intersection of part columns and metadata columns to find the minimum size column.
-        /// The column must exist both physically in the part (to be readable) and in the current metadata
-        /// (to be resolvable by the StorageSnapshot). This handles cases where the table schema has changed
-        /// since the part was created: columns may have been added (not in the part) or dropped (not in metadata).
+        /// Resolve stored names through pending renames before checking the current metadata.
+        /// A historical column that became `EPHEMERAL` or `ALIAS` can still supply the row count:
+        /// it is read only as an injected column and is not returned as the column's current value.
         const auto & part_columns = data_part_info_for_reader.getColumns();
+        auto current_name = [&](const String & name)
+        {
+            return alter_conversions && alter_conversions->columnHasNewName(name)
+                ? alter_conversions->getColumnNewName(name) : name;
+        };
         NamesAndTypesList available_columns;
         for (const auto & column : part_columns)
         {
-            if (storage_snapshot->tryGetColumn(options, column.name))
+            if (storage_snapshot->tryGetColumn(options, current_name(column.name)))
                 available_columns.push_back(column);
         }
 
         if (available_columns.empty())
-            available_columns = part_columns;
+        {
+            auto row_count_options = GetColumnsOptions(GetColumnsOptions::All)
+                .withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::Reader);
+            for (const auto & column : part_columns)
+            {
+                if (storage_snapshot->tryGetColumn(row_count_options, current_name(column.name)))
+                    available_columns.push_back(column);
+            }
+        }
+
+        if (available_columns.empty())
+            throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE,
+                "Cannot read part {} because none of its stored columns exist in the current table schema",
+                data_part_info_for_reader.getPartName());
 
         const auto minimum_size_column_name = data_part_info_for_reader.getColumnNameWithMinimumCompressedSize(available_columns);
-        columns.push_back(minimum_size_column_name);
+        columns.push_back(current_name(minimum_size_column_name));
         /// correctly report added column
         injected_columns.insert(columns.back());
     }
@@ -444,11 +463,16 @@ void addPatchPartsColumns(
     const StorageSnapshotPtr & storage_snapshot,
     const GetColumnsOptions & options,
     const PatchPartsForReader & patch_parts,
-    const Names & all_columns_to_read,
+    const NamesAndTypesList & all_columns_to_read,
     bool has_lightweight_delete)
 {
     if (patch_parts.empty())
         return;
+
+    UnorderedMapWithMemoryTracking<std::string_view, const NameAndTypePair *> requested_columns;
+    requested_columns.reserve(all_columns_to_read.size());
+    for (const auto & column : all_columns_to_read)
+        requested_columns.emplace(column.name, &column);
 
     NameSet required_key_columns;
     result.patch_columns.resize(patch_parts.size());
@@ -460,10 +484,9 @@ void addPatchPartsColumns(
         const auto & patch_part_columns = patch_parts[i].part->getColumnsDescription();
         const auto & alter_conversions = patch_parts[i].part->getAlterConversions();
 
-        for (const auto & column_name : all_columns_to_read)
+        for (const auto & column : all_columns_to_read)
         {
-            auto column_in_storage = storage_snapshot->getColumn(options, column_name);
-            auto column_name_in_patch = column_in_storage.getNameInStorage();
+            auto column_name_in_patch = column.getNameInStorage();
 
             if (alter_conversions && alter_conversions->isColumnRenamed(column_name_in_patch))
                 column_name_in_patch = alter_conversions->getColumnOldName(column_name_in_patch);
@@ -473,7 +496,7 @@ void addPatchPartsColumns(
 
             /// Add requested column name, not the column name in patch, for correct query analysis and applying patches.
             /// This column name will be translated to the column name in patch in MergeTree reader.
-            patch_columns_to_read_set.insert(column_name);
+            patch_columns_to_read_set.insert(column.name);
         }
 
         if (has_lightweight_delete && patch_part_columns.has(RowExistsColumn::name))
@@ -497,7 +520,15 @@ void addPatchPartsColumns(
                 std::reverse(patch_columns_to_read_names.begin(), patch_columns_to_read_names.end());
         });
 
-        result.patch_columns[i] = storage_snapshot->getColumnsByNames(options, patch_columns_to_read_names);
+        /// Requested columns already carry the types resolved by read planning, including historical
+        /// nonphysical columns injected for the row count. Only patch keys and the deletion mask are new.
+        for (const auto & name : patch_columns_to_read_names)
+        {
+            if (auto it = requested_columns.find(name); it != requested_columns.end())
+                result.patch_columns[i].push_back(*it->second);
+            else
+                result.patch_columns[i].push_back(storage_snapshot->getColumn(options, name));
+        }
     }
 
     auto & first_step_columns = result.pre_columns.empty() ? result.columns : result.pre_columns.front();

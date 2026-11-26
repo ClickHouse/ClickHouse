@@ -23,6 +23,7 @@
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/DDLTask.h>
 #include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/PartLog.h>
@@ -64,6 +65,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
 #include <Common/ThreadStatus.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Common/saturatedDuration.h>
 #include <Common/ErrorCodes.h>
 #include <Common/Exception.h>
@@ -820,23 +822,35 @@ void StorageMergeTree::alter(
             }
         };
 
-        if (!maybe_mutation_commands.empty() && maybe_mutation_commands.containBarrierCommand())
+        const bool makes_columns_nonphysical = std::ranges::any_of(commands, [&](const auto & command)
+            {
+                return isColumnMadeNonPhysical(command, old_metadata.columns, new_metadata.columns);
+            });
+
+        const bool replay_makes_columns_nonphysical = makes_columns_nonphysical && isSecondaryDDLReplay(local_context);
+
+        if (replay_makes_columns_nonphysical
+            || (!maybe_mutation_commands.empty() && maybe_mutation_commands.containBarrierCommand()))
         {
-            int64_t prev_mutation = 0;
+            VectorWithMemoryTracking<Int64> mutations_to_wait;
             {
                 std::lock_guard lock(currently_processing_in_background_mutex);
-                auto it = current_mutations_by_version.rbegin();
-                if (it != current_mutations_by_version.rend())
-                    prev_mutation = it->first;
+                if (replay_makes_columns_nonphysical)
+                {
+                    for (const auto & [version, _] : current_mutations_by_version)
+                        mutations_to_wait.push_back(version);
+                }
+                else if (!current_mutations_by_version.empty())
+                    mutations_to_wait.push_back(current_mutations_by_version.rbegin()->first);
             }
 
-            /// Always wait previous mutations synchronously, because alters
-            /// should be executed in sequential order.
-            if (prev_mutation != 0)
+            /// Secondary replay must finish earlier consumers before publishing the nonphysical schema.
+            /// The `ALTER` lock guarantees earlier mutations are registered and excludes new preparation while execution can finish.
+            for (Int64 version : mutations_to_wait)
             {
-                LOG_DEBUG(log, "Cannot change metadata with barrier alter query, will wait for mutation {}", prev_mutation);
-                wait_for_mutation_unguarded(prev_mutation);
-                LOG_DEBUG(log, "Mutation {} finished", prev_mutation);
+                LOG_DEBUG(log, "Cannot change metadata with barrier alter query, will wait for mutation {}", version);
+                wait_for_mutation_unguarded(version);
+                LOG_DEBUG(log, "Mutation {} finished", version);
             }
         }
         else
@@ -1529,14 +1543,12 @@ void StorageMergeTree::mutate(const MutationCommands & commands, ContextPtr quer
         }
     }
 
-    std::optional<PreparedMutationEntry> prepared;
+    Int64 version = 0;
     {
         /// It's important to serialize order of mutations with alter queries because
         /// they can depend on each other.
-        /// The lock is held through `prepareMutationEntry`, which resolves the partitions of scoped
-        /// commands and allocates the mutation version. The registration of the prepared entry does
-        /// not need it: a mutation or `ALTER` that gets a higher version in the meantime handles a
-        /// version that is allocated but not registered yet.
+        /// Hold the lock through `prepareMutationEntry` and `startMutation` so that a later `ALTER`
+        /// sees every preceding mutation registered, including when checking column dependencies.
         auto alter_lock = tryLockForAlter(query_context->getSettingsRef()[Setting::lock_acquire_timeout]);
         if (alter_lock == std::nullopt)
         {
@@ -1546,9 +1558,9 @@ void StorageMergeTree::mutate(const MutationCommands & commands, ContextPtr quer
                 "You can change this timeout with `lock_acquire_timeout` setting",
                 query_context->getSettingsRef()[Setting::lock_acquire_timeout].totalMilliseconds());
         }
-        prepared.emplace(prepareMutationEntry(commands, query_context));
+        auto prepared = prepareMutationEntry(commands, query_context);
+        version = startMutation(std::move(prepared), query_context);
     }
-    Int64 version = startMutation(std::move(*prepared), query_context);
 
     if (query_context->getSettingsRef()[Setting::mutations_sync] > 0 || query_context->getCurrentTransaction())
     {

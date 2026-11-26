@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Tags: no-parallel, no-fasttest, no-replicated-database, no-shared-merge-tree
-# An UPDATE paused after taking its block number, before it is registered, is not skipped by a later mutation or by a merge.
-# Red if v stays 0. no-parallel: global fail points; plain MergeTree only, the replicated paths register differently.
+# An `UPDATE` paused before registration blocks a later `ALTER` and is not skipped by a merge.
+# no-parallel: global failpoints; plain `MergeTree` only, the replicated paths register differently.
+# `mutate` holds the `ALTER` lock until registration, so a later `ALTER` times out on the lock.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -18,9 +19,10 @@ function wait_for_mutation()
     echo "timed out waiting for: $1"
 }
 
-function mutation_first()
+function alter_times_out()
 {
-    wait_for_mutation "command LIKE '%DROP COLUMN%' AND (is_done OR notEmpty(parts_postpone_reasons))"
+    # The `ALTER` cannot acquire the lock while the paused `UPDATE` holds it.
+    $CLICKHOUSE_CLIENT --lock_acquire_timeout 1 -q "ALTER TABLE t DROP COLUMN d" 2>&1 | grep -m1 -o "DEADLOCK_AVOIDED" || echo "the ALTER did not wait for the alter lock"
 }
 
 function merge_first()
@@ -30,7 +32,7 @@ function merge_first()
     $CLICKHOUSE_CLIENT -q "SELECT 'active parts', count() FROM system.parts WHERE database = currentDatabase() AND table = 't' AND active"
 }
 
-# $1: number of parts; $2: what runs while the UPDATE is paused.
+# $1: number of parts; $2: what runs while the `UPDATE` is paused.
 function run_case()
 {
     $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t"
@@ -40,8 +42,6 @@ function run_case()
     $CLICKHOUSE_CLIENT -q "SYSTEM ENABLE FAILPOINT mt_pause_before_register_mutation"
     $CLICKHOUSE_CLIENT -q "ALTER TABLE t UPDATE v = 1 WHERE 1 SETTINGS mutations_sync = 0" &
     $CLICKHOUSE_CLIENT -q "SYSTEM WAIT FAILPOINT mt_pause_before_register_mutation PAUSE"
-    # Registered through the ALTER path, which does not pause, with a higher block number than the UPDATE.
-    $CLICKHOUSE_CLIENT -q "ALTER TABLE t DROP COLUMN d SETTINGS alter_sync = 0"
     $2
     $CLICKHOUSE_CLIENT -q "SYSTEM DISABLE FAILPOINT mt_pause_before_register_mutation"
     wait
@@ -50,9 +50,9 @@ function run_case()
     $CLICKHOUSE_CLIENT -q "SELECT k, v FROM t ORDER BY k"
 }
 
-echo "-- the DROP COLUMN mutation is selected first"
-run_case 1 mutation_first
-echo "-- a merge materializes the DROP COLUMN first"
+echo "-- the DROP COLUMN cannot register above the paused UPDATE"
+run_case 1 alter_times_out
+echo "-- a merge runs while the UPDATE is paused"
 run_case 2 merge_first
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE t"
