@@ -8,6 +8,8 @@
 #include <IO/ReadSettings.h>
 #include <IO/SwapHelper.h>
 #include <Interpreters/FilesystemCacheLog.h>
+#include <Interpreters/ProcessList.h>
+#include <Common/FailPoint.h>
 #include <Common/logger_useful.h>
 
 #include <cstdint>
@@ -22,6 +24,11 @@ namespace ErrorCodes
     extern const int CANNOT_SEEK_THROUGH_FILE;
     extern const int LOGICAL_ERROR;
 
+}
+
+namespace FailPoints
+{
+    extern const char remote_fs_gather_pause_in_read[];
 }
 
 namespace
@@ -45,6 +52,14 @@ void assertWorkingBufferContainedIn(BufferBase::Buffer inner, BufferBase::Buffer
     chassert(inner_end <= outer_end);
 }
 
+/// A 0-byte object adds no bytes to the file, and its key may be missing from the object storage:
+/// an empty append could record such an object without uploading anything.
+StoredObjects withoutEmptyObjects(StoredObjects objects)
+{
+    std::erase_if(objects, [](const StoredObject & object) { return object.bytes_size == 0; });
+    return objects;
+}
+
 }
 
 ReadBufferFromRemoteFSGather::ReadBufferFromRemoteFSGather(
@@ -52,12 +67,14 @@ ReadBufferFromRemoteFSGather::ReadBufferFromRemoteFSGather(
     const StoredObjects & blobs_to_read_,
     size_t min_bytes_for_seek_,
     bool use_external_buffer_,
-    size_t buffer_size)
+    size_t buffer_size,
+    QueryStatusPtr query_status_)
     : ReadBufferFromFileBase(use_external_buffer_ ? 0 : buffer_size, nullptr, 0)
     , min_bytes_for_seek(min_bytes_for_seek_)
-    , blobs_to_read(blobs_to_read_)
+    , blobs_to_read(withoutEmptyObjects(blobs_to_read_))
     , read_buffer_creator(std::move(read_buffer_creator_))
     , query_id(CurrentThread::getQueryId())
+    , query_status(std::move(query_status_))
     , use_external_buffer(use_external_buffer_)
     , log(getLogger("ReadBufferFromRemoteFSGather"))
 {
@@ -197,6 +214,19 @@ bool ReadBufferFromRemoteFSGather::moveToNextBuffer()
 
 bool ReadBufferFromRemoteFSGather::readImpl()
 {
+    /// Nothing below this frame is interruptible, and one fill can take minutes on object
+    /// storage under fault injection. Throw before the fill, while the buffer is untouched.
+    if (query_status)
+    {
+        FailPointInjection::pauseFailPoint(FailPoints::remote_fs_gather_pause_in_read);
+        query_status->throwIfKilled();
+    }
+
+    /// The reader adopts the filled bytes as its `internal_buffer` and the swap hands that back;
+    /// lend the whole own buffer every time.
+    if (!use_external_buffer)
+        setPaddedInternalBuffer(memory, 0, memory.size());
+
     SwapHelper swap(*this, *current_buf);
 
     bool result = current_buf->next();
@@ -269,6 +299,9 @@ off_t ReadBufferFromRemoteFSGather::seek(off_t offset, int whence)
 
     if (whence != SEEK_SET)
         throw Exception(ErrorCodes::CANNOT_SEEK_THROUGH_FILE, "Only SEEK_SET mode is allowed.");
+
+    if (offset < 0)
+        throw Exception(ErrorCodes::CANNOT_SEEK_THROUGH_FILE, "Seek position is out of bound: {}", offset);
 
     if (use_external_buffer)
     {

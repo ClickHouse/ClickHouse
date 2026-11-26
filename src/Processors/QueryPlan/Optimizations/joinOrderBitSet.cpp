@@ -1,4 +1,6 @@
 #include <Processors/QueryPlan/Optimizations/joinOrderBitSet.h>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 
 #include <algorithm>
 #include <unordered_set>
@@ -59,12 +61,12 @@ std::optional<JoinKind> isValidJoinOrder(
     return {};
 }
 
-std::vector<JoinActionRef *> getApplicableExpressions(
+VectorWithMemoryTracking<JoinActionRef *> getApplicableExpressions(
     QueryGraph & query_graph,
     const BitSet & left,
     const BitSet & right)
 {
-    std::vector<JoinActionRef *> applicable;
+    VectorWithMemoryTracking<JoinActionRef *> applicable;
 
     BitSet joined_rels = left | right;
     for (auto & edge : query_graph.edges)
@@ -82,7 +84,7 @@ std::vector<JoinActionRef *> getApplicableExpressions(
             /// null-supplying relation is joined. That relation appears as a singleton
             /// on one side of the join step (enforced by isValidJoinOrder), so the
             /// predicate becomes applicable exactly at that step.
-            if (!joined_rels.test(pin_it->second))
+            if (!isSubsetOf(pin_it->second, joined_rels))
                 continue;
         }
 
@@ -94,19 +96,19 @@ std::vector<JoinActionRef *> getApplicableExpressions(
 /// Compute selectivity combining direct edges and transitive equivalence classes.
 /// Direct edges and transitive equivalences may cover different columns between
 /// the two relation sets, so both contribute to the overall selectivity.
-double computeSelectivity(
+SelectivityEstimate computeSelectivity(
     const QueryGraph & query_graph,
     const PlanMemo & dp_table,
     SelectivityCache & expression_selectivity,
-    const std::vector<JoinActionRef *> & edges,
+    const VectorWithMemoryTracking<JoinActionRef *> & edges,
     const BitSet & left,
     const BitSet & right)
 {
-    double selectivity = DB::computeSelectivity(query_graph, dp_table, expression_selectivity, edges);
+    auto estimate = DB::computeSelectivity(query_graph, dp_table, expression_selectivity, edges);
 
     /// Also account for transitively-equivalent columns spanning both sides.
     using ConstClassPtr = EquivalenceClasses<JoinActionRef>::ConstClassPtr;
-    std::unordered_set<ConstClassPtr> visited;
+    UnorderedSetWithMemoryTracking<ConstClassPtr> visited;
 
     for (const auto & [member, _] : query_graph.column_equivalences.getMemberToClassMap())
     {
@@ -122,7 +124,8 @@ double computeSelectivity(
         /// to either side of the join. This is equivalent to evaluating all
         /// (left_member, right_member) pairs and taking the minimum selectivity,
         /// since min(1/max(l,r)) = 1/max(all l's and r's).
-        size_t max_ndv = 0;
+        UInt64 max_ndv = 0;
+        UInt64 max_ndv_upper_bound = 0;
         bool has_left = false;
         bool has_right = false;
         for (const auto & equiv_member : *equiv_class)
@@ -131,21 +134,20 @@ double computeSelectivity(
             if (!relation)
                 continue;
             if (left.test(*relation))
-            {
                 has_left = true;
-                max_ndv = std::max(max_ndv, getColumnStats(query_graph, dp_table, equiv_member.getSourceRelations(), equiv_member.getColumnName()));
-            }
             else if (right.test(*relation))
-            {
                 has_right = true;
-                max_ndv = std::max(max_ndv, getColumnStats(query_graph, dp_table, equiv_member.getSourceRelations(), equiv_member.getColumnName()));
-            }
+            else
+                continue;
+            auto ndv = getColumnStats(query_graph, dp_table, equiv_member.getSourceRelations(), equiv_member.getColumnName());
+            max_ndv = std::max(max_ndv, ndv.ndv.value_or(0));
+            max_ndv_upper_bound = std::max(max_ndv_upper_bound, ndv.upper_bound);
         }
-        if (has_left && has_right && max_ndv > 0)
-            selectivity = std::min(selectivity, 1.0 / static_cast<double>(max_ndv));
+        if (has_left && has_right)
+            applyEquiKeyDistinctValues(estimate, max_ndv, max_ndv_upper_bound);
     }
 
-    return selectivity;
+    return estimate;
 }
 
 }

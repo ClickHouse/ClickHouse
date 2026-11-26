@@ -28,6 +28,8 @@ public:
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context, bool async_insert) override;
 
     bool storesDataOnDisk() const override { return true; }
+    /// With `persistent = 0` the table keeps its data only in memory, like `Memory`.
+    bool hasUnreplicatedTableDataOnDisk() const override { return persistent; }
     Strings getDataPaths() const override { return {path}; }
 
 protected:
@@ -81,6 +83,10 @@ public:
 
     /// Access the insides.
     SetPtr getSet() const;
+
+    /// `IN` consumes the prebuilt set as a whole, so require `SELECT` on every column before checking
+    /// its row policy. The engine has no read path that could apply a non-trivial policy.
+    void checkNoRowPolicy(const ContextPtr & context) const;
 
     void truncate(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr, TableExclusiveLockHolder &) override;
 

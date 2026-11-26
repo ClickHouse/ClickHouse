@@ -7,17 +7,11 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyFunctionOverRange.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/checkArguments.h>
 #include <Storages/TimeSeries/timeSeriesTypesToAST.h>
-#include <Common/Exception.h>
 
 #include <map>
 #include <unordered_set>
-
-
-namespace DB::ErrorCodes
-{
-    extern const int CANNOT_EXECUTE_PROMQL_QUERY;
-}
 
 
 namespace DB::PrometheusQueryToSQL
@@ -98,26 +92,10 @@ SQLQueryPiece applyFunctionAbsent(const PrometheusQueryTree::Function * function
     const auto function_name = function_node->function_name;
     const auto expected_argument_type = (function_name == "absent_over_time") ? ResultType::RANGE_VECTOR : ResultType::INSTANT_VECTOR;
 
-    if (arguments.size() != 1)
-    {
-        throw Exception(
-            ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
-            "Function '{}' expects 1 argument, but was called with {} arguments",
-            function_name,
-            arguments.size());
-    }
+    checkNumberOfArguments(function_node, arguments, 1);
+    checkArgumentType(function_node, arguments, 0, expected_argument_type, context);
 
     const auto & argument = arguments[0];
-    if (argument.type != expected_argument_type)
-    {
-        throw Exception(
-            ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
-            "Function '{}' expects an argument of type {}, but expression {} has type {}",
-            function_name,
-            expected_argument_type,
-            getPromQLText(argument, context),
-            argument.type);
-    }
 
     const auto & node_range = context.node_range_getter.get(function_node);
     if (node_range.empty())
@@ -162,7 +140,8 @@ SQLQueryPiece applyFunctionAbsent(const PrometheusQueryTree::Function * function
             }
 
             case StoreMethod::CONST_STRING:
-            case StoreMethod::RAW_DATA:
+            case StoreMethod::SAMPLES:
+            case StoreMethod::TIMESTAMP_AND_VALUE:
             {
                 /// Can't get in here because these store methods are incompatible with an instant vector.
                 throwUnexpectedStoreMethod(argument, context);
@@ -192,7 +171,7 @@ SQLQueryPiece applyFunctionAbsent(const PrometheusQueryTree::Function * function
             "arrayResize",
             make_intrusive<ASTLiteral>(Array{}),
             make_intrusive<ASTLiteral>(num_steps),
-            timeSeriesScalarToAST(1, context.scalar_data_type)));
+            timeSeriesScalarToAST(1)));
         builder.select_list.back()->setAlias(ColumnNames::Values);
         res.select_query = builder.getSelectQuery();
         return res;
@@ -203,7 +182,7 @@ SQLQueryPiece applyFunctionAbsent(const PrometheusQueryTree::Function * function
     /// when the synthetic series must be produced, so a neutral row is added to the input: an array of NULLs with one
     /// element per step. It doesn't change any count but guarantees that the aggregation always has an input row.
     ///
-    /// SELECT arrayResize(CAST([], 'Array(Nullable(<scalar_data_type>))'), <num_steps>, NULL) AS values
+    /// SELECT arrayResize(CAST([], 'Array(Nullable(Float64))'), <num_steps>, NULL) AS values
     String neutral_row_subquery;
     {
         SelectQueryBuilder builder;
@@ -212,7 +191,7 @@ SQLQueryPiece applyFunctionAbsent(const PrometheusQueryTree::Function * function
             makeASTFunction(
                 "CAST",
                 make_intrusive<ASTLiteral>(Array{}),
-                make_intrusive<ASTLiteral>(fmt::format("Array(Nullable({}))", context.scalar_data_type->getName()))),
+                make_intrusive<ASTLiteral>("Array(Nullable(Float64))")),
             make_intrusive<ASTLiteral>(num_steps),
             make_intrusive<ASTLiteral>(Field{})));
         builder.select_list.back()->setAlias(ColumnNames::Values);
@@ -247,7 +226,7 @@ SQLQueryPiece applyFunctionAbsent(const PrometheusQueryTree::Function * function
             makeASTFunction(
                 "if",
                 makeASTFunction("equals", make_intrusive<ASTIdentifier>("x"), make_intrusive<ASTLiteral>(0u)),
-                timeSeriesScalarToAST(1, context.scalar_data_type),
+                timeSeriesScalarToAST(1),
                 make_intrusive<ASTLiteral>(Field{}))),
         makeASTFunction("countForEach", make_intrusive<ASTIdentifier>(ColumnNames::Values))));
     builder.select_list.back()->setAlias(ColumnNames::Values);

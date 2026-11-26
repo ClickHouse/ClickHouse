@@ -1,6 +1,7 @@
 #include <filesystem>
 #include <Core/Settings.h>
 #include <IO/FileEncryptionCommon.h>
+#include <IO/FileEncryptionKeys.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
@@ -10,8 +11,10 @@
 #include <Interpreters/Context.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
+#include <base/defines.h>
 #include <base/sort.h>
-#include <boost/algorithm/hex.hpp>
+
+#include <mutex>
 #include <Common/NamedCollections/NamedCollectionConfiguration.h>
 #include <Common/NamedCollections/NamedCollectionsMetadataStorage.h>
 #include <Common/ZooKeeper/IKeeper.h>
@@ -19,9 +22,14 @@
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/escapeForFileName.h>
+#include <Common/CurrentThread.h>
 #include <Common/logger_useful.h>
 #if CLICKHOUSE_CLOUD
 #include <Core/KMS.h>
+#endif
+#if USE_SSL
+#include <Common/OpenSSLHelpers.h>
+#include <openssl/crypto.h>
 #endif
 
 namespace fs = std::filesystem;
@@ -43,9 +51,10 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int DATA_ENCRYPTION_ERROR;
 }
 
-static const std::string named_collections_storage_config_path = "named_collections_storage";
+[[clang::no_destroy]] static const std::string named_collections_storage_config_path = "named_collections_storage";
 
 namespace
 {
@@ -60,11 +69,14 @@ class NamedCollectionsMetadataStorage::INamedCollectionsStorage
 public:
     virtual ~INamedCollectionsStorage() = default;
 
-    virtual bool exists(const std::string & path) const = 0;
+    [[nodiscard]] virtual bool exists(const std::string & path) const = 0;
 
-    virtual std::vector<std::string> list() const = 0;
+    [[nodiscard]] virtual std::vector<std::string> list() const = 0;
 
-    virtual std::string read(const std::string & path) const = 0;
+    [[nodiscard]] virtual std::string read(const std::string & path) const = 0;
+
+    /// The stored bytes as they are, without decryption (see `NamedCollectionsMetadataStorageEncrypted`).
+    [[nodiscard]] virtual std::string readRaw(const std::string & path) const = 0;
 
     virtual void write(const std::string & path, const std::string & data, bool replace) = 0;
 
@@ -72,7 +84,31 @@ public:
 
     virtual bool removeIfExists(const std::string & path) = 0;
 
-    virtual bool isReplicated() const = 0;
+    [[nodiscard]] virtual bool isReplicated() const = 0;
+
+    [[nodiscard]] virtual std::string getReplicationId() const
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The storage for named collections is not replicated");
+    }
+
+    [[nodiscard]] virtual bool isEncrypted() const { return false; }
+
+#if CLICKHOUSE_CLOUD && USE_SSL
+    [[nodiscard]] virtual std::optional<NamedCollectionsEncryptionKeyInfo> getEncryptionKeyInfo() const { return {}; }
+#endif
+
+    /// Only the encrypted storage types authenticate backup entries (see
+    /// `NamedCollectionsMetadataStorageEncrypted`): the entries of the other types are backed up
+    /// as plaintext SQL and these methods are never reached for them.
+    [[nodiscard]] virtual std::string authenticateStoredForBackup(const std::string & /* stored */) const
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The storage for named collections is not encrypted");
+    }
+
+    [[nodiscard]] virtual std::string decryptStoredFromBackup(const std::string & /* data */) const
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The storage for named collections is not encrypted");
+    }
 
     virtual bool waitUpdate(size_t /* timeout */) { return false; }
 };
@@ -94,9 +130,9 @@ public:
 
     ~LocalStorage() override = default;
 
-    bool isReplicated() const override { return false; }
+    [[nodiscard]] bool isReplicated() const override { return false; }
 
-    std::vector<std::string> list() const override
+    [[nodiscard]] std::vector<std::string> list() const override
     {
         if (!fs::exists(root_path))
             return {};
@@ -120,27 +156,32 @@ public:
         return elements;
     }
 
-    bool exists(const std::string & file_name) const override
+    [[nodiscard]] bool exists(const std::string & file_name) const override
     {
         return fs::exists(getPath(file_name));
     }
 
-    std::string read(const std::string & file_name) const override
+    [[nodiscard]] std::string read(const std::string & file_name) const override
+    {
+        return readHook(readRaw(file_name));
+    }
+
+    [[nodiscard]] std::string readRaw(const std::string & file_name) const override
     {
         ReadBufferFromFile in(getPath(file_name));
         std::string data;
         readStringUntilEOF(data, in);
-        return readHook(data);
+        return data;
     }
 
-    virtual std::string readHook(const std::string & data) const
+    [[nodiscard]] virtual std::string readHook(const std::string & data) const
     {
         return data;
     }
 
     void write(const std::string & file_name, const std::string & data, bool replace) override
     {
-        if (!replace && fs::exists(file_name))
+        if (!replace && fs::exists(getPath(file_name)))
         {
             throw Exception(
                 ErrorCodes::NAMED_COLLECTION_ALREADY_EXISTS,
@@ -163,7 +204,7 @@ public:
         fs::rename(tmp_path, getPath(file_name));
     }
 
-    virtual std::string writeHook(const std::string & data) const
+    [[nodiscard]] virtual std::string writeHook(const std::string & data) const
     {
         return data;
     }
@@ -184,7 +225,7 @@ public:
     }
 
 protected:
-    std::string getPath(const std::string & file_name) const
+    [[nodiscard]] std::string getPath(const std::string & file_name) const
     {
         const auto file_name_as_path = fs::path(file_name);
         if (file_name_as_path.is_absolute())
@@ -214,9 +255,10 @@ class NamedCollectionsMetadataStorage::ZooKeeperStorage : public INamedCollectio
 {
 private:
     std::string root_path;
-    mutable zkutil::ZooKeeperPtr zookeeper_client{nullptr};
-    mutable Coordination::EventPtr wait_event;
-    mutable Int32 collections_node_cversion = 0;
+    mutable std::mutex state_mutex;
+    mutable zkutil::ZooKeeperPtr zookeeper_client TSA_GUARDED_BY(state_mutex) {nullptr};
+    mutable Coordination::EventPtr wait_event TSA_GUARDED_BY(state_mutex);
+    mutable Int32 collections_node_cversion TSA_GUARDED_BY(state_mutex) = 0;
 
 public:
     ZooKeeperStorage(ContextPtr context_, const std::string & path_)
@@ -244,19 +286,27 @@ public:
 
     bool isReplicated() const override { return true; }
 
-    /// Return true if children changed.
+    std::string getReplicationId() const override { return root_path; }
+
+    /// Return true if the set of entries or an entry changed.
     bool waitUpdate(size_t timeout) override
     {
         auto component_guard = Coordination::setCurrentComponent("NamedCollectionsMetadataStorage::waitUpdate");
-        if (!wait_event)
+
+        Coordination::EventPtr event;
         {
-            /// We did not yet made any list() attempt, so do that.
-            return true;
+            std::lock_guard lock{state_mutex};
+            if (!wait_event)
+            {
+                /// We did not yet made any list() attempt, so do that.
+                return true;
+            }
+            event = wait_event;
         }
 
-        if (wait_event->tryWait(timeout))
+        if (event->tryWait(timeout))
         {
-            /// Children changed before timeout.
+            /// A watch set by `list` or `read` fired before timeout.
             return true;
         }
 
@@ -271,17 +321,21 @@ public:
             return false;
         }
 
+        std::lock_guard lock{state_mutex};
         return stat.cversion != collections_node_cversion;
     }
 
     std::vector<std::string> list() const override
     {
         auto component_guard = Coordination::setCurrentComponent("NamedCollectionsMetadataStorage::list");
+        auto client = getClient();
+
+        std::lock_guard lock{state_mutex};
         if (!wait_event)
             wait_event = std::make_shared<Poco::Event>();
 
         Coordination::Stat stat;
-        auto children = getClient()->getChildren(root_path, &stat, wait_event);
+        auto children = client->getChildren(root_path, &stat, wait_event);
         collections_node_cversion = stat.cversion;
         return children;
     }
@@ -292,11 +346,29 @@ public:
         return getClient()->exists(getPath(file_name));
     }
 
+    /// Leaves a watch on the entry, which makes `waitUpdate` return once the entry is written again
+    /// or removed: the watch set by `list` reports changes of the set of entries, not of their data.
+    /// A watch fires once; the reload it causes reads the entry again, which sets the next one.
     std::string read(const std::string & file_name) const override
     {
         auto component_guard = Coordination::setCurrentComponent("NamedCollectionsMetadataStorage::read");
-        auto data = getClient()->get(getPath(file_name));
-        return readHook(data);
+        auto client = getClient();
+
+        Coordination::EventPtr event;
+        {
+            std::lock_guard lock{state_mutex};
+            if (!wait_event)
+                wait_event = std::make_shared<Poco::Event>();
+            event = wait_event;
+        }
+
+        return readHook(client->get(getPath(file_name), nullptr, event));
+    }
+
+    std::string readRaw(const std::string & file_name) const override
+    {
+        auto component_guard = Coordination::setCurrentComponent("NamedCollectionsMetadataStorage::read");
+        return getClient()->get(getPath(file_name));
     }
 
     virtual std::string readHook(const std::string & data) const
@@ -351,6 +423,7 @@ public:
 private:
     zkutil::ZooKeeperPtr getClient() const
     {
+        std::lock_guard lock{state_mutex};
         if (!zookeeper_client || zookeeper_client->expired())
         {
             zookeeper_client = getContext()->getZooKeeper();
@@ -377,36 +450,116 @@ class NamedCollectionsMetadataStorageEncrypted : public BaseMetadataStorage
 public:
     NamedCollectionsMetadataStorageEncrypted(ContextPtr context_, const std::string & path_)
         : BaseMetadataStorage(context_, path_)
+        , keys(FileEncryption::parseKeysFromConfig(BaseMetadataStorage::getContext()->getConfigRef(), named_collections_storage_config_path))
     {
-        const auto & config = BaseMetadataStorage::getContext()->getConfigRef();
-        auto key_hex = config.getRawString("named_collections_storage.key_hex", "");
-        try
-        {
-            key = boost::algorithm::unhex(key_hex);
-            key_fingerprint = FileEncryption::calculateKeyFingerprint(key);
-        }
-        catch (const std::exception &)
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot read key_hex, check for valid characters [0-9a-fA-F] and length");
-        }
-
-        algorithm = FileEncryption::parseAlgorithmFromString(config.getString("named_collections_storage.algorithm", "aes_128_ctr"));
     }
 
-    std::string readHook(const std::string & data) const override
-    {
-        ReadBufferFromString in(data);
+    [[nodiscard]] bool isEncrypted() const override { return true; }
 
+#if CLICKHOUSE_CLOUD
+    [[nodiscard]] std::optional<NamedCollectionsEncryptionKeyInfo> getEncryptionKeyInfo() const override
+    {
+        loadIfNeeded();
+        return NamedCollectionsEncryptionKeyInfo{
+            .algorithm = FileEncryption::toString(keys.current_algorithm),
+            .key_fingerprint = keys.current_key_fingerprint,
+            .kms_key_info = kms_key_info};
+    }
+#endif
+
+    /// The CTR ciphertext is malleable: with known plaintext positions (the statement framing
+    /// around a value) it can be reshaped without the key, for example to move an unknown secret
+    /// value into a key name, which `SHOW NAMED COLLECTIONS` displays. Inside the server the
+    /// entries are covered by the trust in the metadata storage, but a backup is written to a
+    /// less trusted medium, so an exported entry carries an HMAC-SHA256 tag computed with a key
+    /// derived from the key the entry is encrypted with, and the restore rejects an entry whose
+    /// tag does not verify.
+    [[nodiscard]] std::string authenticateStoredForBackup(const std::string & stored) const override
+    {
+        const auto mac = calculateBackupMAC(findKeyForEntry(readHeader(stored)), stored);
+        return stored + std::string(reinterpret_cast<const char *>(mac.data()), mac.size());
+    }
+
+    [[nodiscard]] std::string decryptStoredFromBackup(const std::string & data) const override
+    {
+        if (data.size() <= backup_mac_size)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "The encrypted named collection entry is too short to hold its message authentication code, "
+                "the entry has been truncated or was written by an incompatible version");
+
+        const std::string stored = data.substr(0, data.size() - backup_mac_size);
+
+        /// The key is looked up first so that a restore on a server without the key reports the
+        /// missing key rather than a failed authentication (the tag never verifies across keys).
+        const SecretString key = findKeyForEntry(readHeader(stored));
+
+        const auto expected_mac = calculateBackupMAC(key, stored);
+        chassert(expected_mac.size() == backup_mac_size);
+        if (CRYPTO_memcmp(expected_mac.data(), data.data() + stored.size(), backup_mac_size) != 0)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "The encrypted named collection entry failed authentication: the entry was modified "
+                "or corrupted after the backup was written");
+
+        return decrypt(key, stored);
+    }
+
+    [[nodiscard]] std::string readHook(const std::string & data) const override
+    {
+        return decrypt(findKeyForEntry(readHeader(data)), data);
+    }
+
+    [[nodiscard]] std::string writeHook(const std::string & data) const override
+    {
+        FileEncryption::Header header{
+            .algorithm = keys.current_algorithm,
+            .key_fingerprint = keys.current_key_fingerprint,
+            .init_vector = FileEncryption::InitVector::random()
+        };
+
+        FileEncryption::Encryptor encryptor(header.algorithm, keys.current_key, header.init_vector);
+        WriteBufferFromOwnString out;
+        header.write(out);
+        encryptor.encrypt(data.data(), data.size(), out);
+        return std::string(out.str());
+    }
+
+private:
+    /// HMAC-SHA256.
+    static constexpr size_t backup_mac_size = 32;
+
+    static FileEncryption::Header readHeader(const std::string & data)
+    {
         FileEncryption::Header header;
         try
         {
+            ReadBufferFromString in(data);
             header.read(in);
         }
         catch (Exception & e)
         {
-            e.addMessage("While reading the header of encrypted data");
+            e.addMessage("While reading the header of an encrypted named collection entry");
             throw;
         }
+        return header;
+    }
+
+    /// The key named by the header of an entry. Any of the configured keys, so that an entry
+    /// written before a key rotation still decrypts (see `FileEncryption::Keys`). Decrypting
+    /// blindly with a different key would hand back garbage.
+    [[nodiscard]] SecretString findKeyForEntry(const FileEncryption::Header & header) const
+    {
+        return keys.findKeyByFingerprint(header.key_fingerprint, "the named collection entry");
+    }
+
+    static std::string decrypt(const SecretString & key, const std::string & data)
+    {
+        ReadBufferFromString in(data);
+
+        /// Validated by `readHeader` already; read again to position the buffer at the ciphertext.
+        FileEncryption::Header header;
+        header.read(in);
 
         Memory<> encrypted_buffer(in.available());
         size_t bytes_read = 0;
@@ -423,25 +576,15 @@ public:
         return decrypted_buffer;
     }
 
-    std::string writeHook(const std::string & data) const override
+    static std::vector<uint8_t, NoDumpAllocator<uint8_t>> calculateBackupMAC(const SecretString & key, const std::string & stored)
     {
-        FileEncryption::Header header{
-            .algorithm = algorithm,
-            .key_fingerprint = key_fingerprint,
-            .init_vector = FileEncryption::InitVector::random()
-        };
-
-        FileEncryption::Encryptor encryptor(header.algorithm, key, header.init_vector);
-        WriteBufferFromOwnString out;
-        header.write(out);
-        encryptor.encrypt(data.data(), data.size(), out);
-        return std::string(out.str());
+        /// Domain separation from the encryption use of the key.
+        const auto auth_key = hmacSHA256(
+            std::vector<uint8_t>(key.data(), key.data() + key.size()), "ClickHouse named collections backup entry v1");
+        return hmacSHA256(auth_key, stored);
     }
 
-private:
-    std::string key;
-    UInt128 key_fingerprint{};
-    FileEncryption::Algorithm algorithm;
+    const FileEncryption::Keys keys;
 };
 
 class NamedCollectionsMetadataStorage::LocalStorageEncrypted : public NamedCollectionsMetadataStorageEncrypted<NamedCollectionsMetadataStorage::LocalStorage>
@@ -498,6 +641,55 @@ NamedCollectionsMap NamedCollectionsMetadataStorage::getAll() const
             }
             throw;
         }
+        catch (const Exception & e)
+        {
+            /// The entry is encrypted with a key which is not configured, for example a key removed
+            /// after a rotation before every entry was rewritten. The other collections stay available;
+            /// the entry is kept in the storage and loads again once its key is configured, or once
+            /// another server rewrites it with a configured key (see `ZooKeeperStorage::read`).
+            if (e.code() == ErrorCodes::DATA_ENCRYPTION_ERROR)
+            {
+                /// The name is for the server log only: this may run in the thread of a query (a reload
+                /// during a restore) whose user has no right to see the names of the collections.
+                CurrentThread::HideLogsFromClientScope hide_logs_from_client;
+                LOG_ERROR(getLogger("NamedCollectionsMetadataStorage"),
+                    "Cannot read named collection '{}', skipping it: {}", collection_name, e.message());
+                continue;
+            }
+            throw;
+        }
+    }
+    return result;
+}
+
+std::map<std::string, std::string> NamedCollectionsMetadataStorage::getAllRaw() const
+{
+    std::map<std::string, std::string> result;
+    for (const auto & collection_name : listCollections())
+    {
+        if (result.contains(collection_name))
+        {
+            throw Exception(
+                ErrorCodes::NAMED_COLLECTION_ALREADY_EXISTS,
+                "Found duplicate named collection `{}`",
+                collection_name);
+        }
+        try
+        {
+            result.emplace(collection_name, readRaw(collection_name));
+        }
+        catch (const Coordination::Exception & e)
+        {
+            /// A concurrent DROP on a replicated storage may have removed the collection between
+            /// listing and reading; the result simply does not include the dropped collection.
+            if (e.code == Coordination::Error::ZNONODE)
+            {
+                LOG_DEBUG(getLogger("NamedCollectionsMetadataStorage"),
+                    "Collection '{}' was removed while reading, skipping", collection_name);
+                continue;
+            }
+            throw;
+        }
     }
     return result;
 }
@@ -509,6 +701,18 @@ MutableNamedCollectionPtr NamedCollectionsMetadataStorage::create(const ASTCreat
     return collection_ptr;
 }
 
+MutableNamedCollectionPtr NamedCollectionsMetadataStorage::createOrReplace(const ASTCreateNamedCollectionQuery & create_query)
+{
+    /// Persist a plain CREATE so that the stored statement stays parseable by older versions.
+    auto normalized_ast = create_query.clone();
+    auto & normalized_query = normalized_ast->as<ASTCreateNamedCollectionQuery &>();
+    normalized_query.or_replace = false;
+
+    auto collection_ptr = NamedCollectionFromSQL::create(normalized_query);
+    writeCreateQuery(create_query.collection_name, collection_ptr->getCreateStatement(true), /*replace=*/true);
+    return collection_ptr;
+}
+
 void NamedCollectionsMetadataStorage::remove(const std::string & collection_name)
 {
     storage->remove(getFileName(collection_name));
@@ -517,6 +721,11 @@ void NamedCollectionsMetadataStorage::remove(const std::string & collection_name
 bool NamedCollectionsMetadataStorage::removeIfExists(const std::string & collection_name)
 {
     return storage->removeIfExists(getFileName(collection_name));
+}
+
+bool NamedCollectionsMetadataStorage::exists(const std::string & collection_name) const
+{
+    return storage->exists(getFileName(collection_name));
 }
 
 MutableNamedCollectionPtr NamedCollectionsMetadataStorage::update(const ASTAlterNamedCollectionQuery & query)
@@ -559,6 +768,38 @@ void NamedCollectionsMetadataStorage::writeCreateQuery(const String & collection
 bool NamedCollectionsMetadataStorage::isReplicated() const
 {
     return storage->isReplicated();
+}
+
+std::string NamedCollectionsMetadataStorage::readRaw(const std::string & collection_name) const
+{
+    return storage->readRaw(getFileName(collection_name));
+}
+
+std::string NamedCollectionsMetadataStorage::getReplicationId() const
+{
+    return storage->getReplicationId();
+}
+
+bool NamedCollectionsMetadataStorage::isEncrypted() const
+{
+    return storage->isEncrypted();
+}
+
+#if CLICKHOUSE_CLOUD && USE_SSL
+std::optional<NamedCollectionsEncryptionKeyInfo> NamedCollectionsMetadataStorage::getEncryptionKeyInfo() const
+{
+    return storage->getEncryptionKeyInfo();
+}
+#endif
+
+std::string NamedCollectionsMetadataStorage::authenticateStoredForBackup(const std::string & stored) const
+{
+    return storage->authenticateStoredForBackup(stored);
+}
+
+std::string NamedCollectionsMetadataStorage::decryptStoredFromBackup(const std::string & data) const
+{
+    return storage->decryptStoredFromBackup(data);
 }
 
 bool NamedCollectionsMetadataStorage::waitUpdate()

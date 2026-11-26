@@ -119,7 +119,6 @@ void registerAggregateFunctionCombinatorMap(AggregateFunctionCombinatorFactory &
 void registerAggregateFunctionCombinatorTuple(AggregateFunctionCombinatorFactory & factory);
 void registerAggregateFunctionCombinatorsArgMinArgMax(AggregateFunctionCombinatorFactory & factory);
 
-void registerWindowFunctions(AggregateFunctionFactory & factory);
 
 void registerAggregateFunctions()
 {
@@ -219,8 +218,6 @@ void registerAggregateFunctions()
         registerAggregateFunctionDistinctJSONPathsAndTypes(factory);
         registerAggregateFunctionMergedJSONPatch(factory);
         registerAggregateFunctionTimeseries(factory);
-
-        registerWindowFunctions(factory);
     }
 
     {

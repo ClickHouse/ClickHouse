@@ -1,7 +1,7 @@
--- Inconsistency: hash-based grouping keys rows by their raw value bytes, while sort/in-order
--- grouping keys them by `compareAt`. For floats these disagree: `+0.0`/`-0.0` and distinct
--- `NaN` payloads have different bytes but compare equal, so in-order operators (`compareAt`) put such keys
--- in one group while hash operators keep them separate.
+-- Hash-based grouping keys rows by their raw value bytes, while grouping taken from the sort order
+-- keys them by `compareAt`. For floats these could disagree: `+0.0`/`-0.0` have different bytes but
+-- compare equal. Negative zeros are replaced with positive zeros before the keys are hashed, so every
+-- plan puts the two zeros in one group and answers 1. (Distinct `NaN` payloads still differ.)
 
 DROP TABLE IF EXISTS test;
 CREATE TABLE test (f Float64) ENGINE = MergeTree ORDER BY f;

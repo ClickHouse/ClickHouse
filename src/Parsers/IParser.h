@@ -17,6 +17,9 @@ namespace DB
 {
 
 struct LiteralTokenMap;
+struct FailedKeywordReadings;
+struct FailedSubqueryReadings;
+struct FailedLiteralReadings;
 
 namespace ErrorCodes
 {
@@ -26,7 +29,7 @@ namespace ErrorCodes
 
 /// Highlight types for syntax highlighting of parsed queries.
 /// APPLY_FOR_HIGHLIGHTS lists the publicly visible types (used in the output of `highlightQuery`).
-/// string_like and string_regexp are internal types used by the parser before expansion.
+/// string_like, string_similar_to, and string_regexp are internal types used by the parser before expansion.
 #define APPLY_FOR_HIGHLIGHTS(M) \
     M(none) \
     M(keyword) \
@@ -44,9 +47,10 @@ enum class Highlight : uint8_t
 #define M(NAME) NAME,
     APPLY_FOR_HIGHLIGHTS(M)
 #undef M
-    /// These two are used internally by the parser to mark LIKE/REGEXP string ranges.
+    /// These are used internally by the parser to mark LIKE/SIMILAR_TO/REGEXP string ranges.
     /// They are expanded into string/string_escape/string_metacharacter by `expandHighlights`.
     string_like,
+    string_similar_to,
     string_regexp,
 };
 
@@ -62,7 +66,7 @@ struct HighlightedRange
     }
 };
 
-/// Expand string_like and string_regexp ranges into character-level sub-ranges
+/// Expand string_like, string_similar_to, and string_regexp ranges into character-level sub-ranges
 /// with string, string_escape, and string_metacharacter highlight types.
 /// Other ranges are passed through unchanged.
 std::vector<HighlightedRange> expandHighlights(const std::set<HighlightedRange> & highlights);
@@ -82,9 +86,18 @@ struct Expected
 
     /// Optional map for capturing literal token positions during parsing.
     /// Used by ValuesBlockInputFormat for ConstantExpressionTemplate construction
-    /// and for LIKE/REGEXP syntax highlighting.
+    /// and for LIKE/SIMILAR_TO/REGEXP syntax highlighting.
     /// The caller must allocate and manage the map's lifetime.
     LiteralTokenMap * literal_token_map = nullptr;
+
+    /// Positions of CASE and INTERVAL tokens whose keyword reading failed in this parse; copies share it.
+    std::shared_ptr<FailedKeywordReadings> failed_keyword_readings;
+
+    /// Positions of opening brackets where `ParserSubquery` failed in this parse; copies share it.
+    std::shared_ptr<FailedSubqueryReadings> failed_subquery_readings;
+
+    /// Opening brackets where reading a literal failed in this parse; copies share it.
+    std::shared_ptr<FailedLiteralReadings> failed_literal_readings;
 
     /// 'description' should be statically allocated string.
     ALWAYS_INLINE void add(const char * current_pos, const char * description)
@@ -124,6 +137,9 @@ public:
         uint32_t backtracks = 0;
         uint32_t max_backtracks = 0;
 
+        /// Set while `parenthesesHoldExpressionOverColumnNamedFrom` parses the contents of parentheses.
+        bool in_column_named_from_lookahead = false;
+
         Pos(Tokens & tokens_, uint32_t max_depth_, uint32_t max_backtracks_)
             : TokenIterator(tokens_), max_depth(max_depth_), max_backtracks(max_backtracks_)
         {
@@ -143,6 +159,7 @@ public:
             , max_depth(inherit_from.max_depth)
             , backtracks(inherit_from.backtracks)
             , max_backtracks(inherit_from.max_backtracks)
+            , in_column_named_from_lookahead(inherit_from.in_column_named_from_lookahead)
         {
         }
 
@@ -182,7 +199,7 @@ public:
     };
 
     /** Get the text of this parser parses. */
-    virtual const char * getName() const = 0;
+    [[nodiscard]] virtual const char * getName() const = 0;
 
     /** Parse piece of text from position `pos`, but not beyond end of line (`end` - position after end of line),
       * move pointer `pos` to the maximum position to which it was possible to parse,
@@ -231,9 +248,16 @@ public:
     /** If the parsed fragment should be highlighted in the query editor,
       * which type of highlighting to use?
       */
-    virtual Highlight highlight() const
+    [[nodiscard]] virtual Highlight highlight() const
     {
         return Highlight::none;
+    }
+
+    /// True for dialect parsers that read the raw query text themselves and use the SQL tokens
+    /// only to find the end of the statement, so a token the SQL lexer rejects is not an error.
+    [[nodiscard]] virtual bool consumesRawText() const
+    {
+        return false;
     }
 
     virtual ~IParser() = default;

@@ -30,10 +30,10 @@ struct NodeRefCache
     };
 
     Entry * findEntry(NodePathHash path_hash); // nullptr if not found
-    const Entry * findEntry(NodePathHash path_hash) const; // nullptr if not found
+    [[nodiscard]] const Entry * findEntry(NodePathHash path_hash) const; // nullptr if not found
     Entry & getOrInsertEntry(NodePathHash path_hash);
     void eraseEntry(NodePathHash path_hash, Entry & entry);
-    size_t size() const { return map.size(); }
+    [[nodiscard]] size_t size() const { return map.size(); }
 
     bool tryGet(NodePathHash path_hash, NodeRef & out_node, const Entry ** out_entry = nullptr) const;
 

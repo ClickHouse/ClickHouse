@@ -1,106 +1,160 @@
 ---
-title: 'رفع الملفات إلى Cloud'
+title: 'تحميل الملفات إلى Cloud'
 slug: /cloud/migrate/upload-a-csv-file
-description: 'تعرّف على كيفية رفع الملفات إلى Cloud'
+description: 'تعرّف على كيفية تحميل الملفات إلى Cloud'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
+import UploadCsvCLI from "/snippets/ar/cloud/migration/_upload_csv_cli.mdx";
 
-يوفّر ClickHouse Cloud طريقة سهلة لاستيراد ملفاتك، ويدعم
-التنسيقات التالية:
+<Visibility for="agents">
+  <UploadCsvCLI />
+</Visibility>
 
-| التنسيق                         |
-| ------------------------------- |
-| `CSV`                           |
-| `CSVWithNamesAndTypes`          |
-| `CSVWithNames`                  |
-| `JSONEachRow`                   |
-| `TabSeparated`                  |
-| `TabSeparatedWithNames`         |
-| `TabSeparatedWithNamesAndTypes` |
+<Visibility for="humans">
+  <View title="واجهة Cloud">
+    توفر ClickHouse Cloud طريقة سهلة لاستيراد ملفاتك، وتدعم
+    الصيغ التالية:
 
-<Steps>
-  <Step title="رفع ملف" id="upload-file">
-    من الصفحة الرئيسية في Cloud، حدّد الخدمة الخاصة بك كما هو موضح أدناه:
+    | الصيغة                          |
+    | ------------------------------- |
+    | `CSV`                           |
+    | `CSVWithNamesAndTypes`          |
+    | `CSVWithNames`                  |
+    | `JSONEachRow`                   |
+    | `TabSeparated`                  |
+    | `TabSeparatedWithNames`         |
+    | `TabSeparatedWithNamesAndTypes` |
 
-    <Image img="/images/cloud/migrate/csv_01.webp" alt="upload_file_02" />
+    <Steps>
+      <Step title="تحميل ملف" id="upload-file">
+        من الصفحة الرئيسية لـ Cloud، اختر خدمتك كما هو موضح أدناه:
 
-    إذا كانت خدمتك في حالة خمول، فستحتاج إلى تشغيلها.
+        <div className="ch-image-lg">
+          <Frame>
+            ![upload_file_02](/images/cloud/migrate/csv_01.webp)
+          </Frame>
+        </div>
 
-    حدّد `Data sources` من علامة التبويب الموجودة على اليسار كما هو موضح أدناه:
+        إذا كانت خدمتك في وضع الخمول، فستحتاج إلى تنشيطها.
 
-    <Image img="/images/cloud/migrate/csv_02.webp" alt="upload_file_03" />
+        اختر `Data sources` من علامة التبويب الموجودة على اليسار كما هو موضح أدناه:
 
-    بعد ذلك، حدّد `Upload a file` في الجانب الأيمن من صفحة مصادر البيانات:
+        <div className="ch-image-lg">
+          <Frame>
+            ![upload_file_03](/images/cloud/migrate/csv_02.webp)
+          </Frame>
+        </div>
 
-    <Image img="/images/cloud/migrate/csv_03.webp" alt="upload_file_04" />
+        بعد ذلك، اختر `Upload a file` على الجانب الأيمن من صفحة مصادر البيانات:
 
-    ستظهر نافذة لاختيار ملف، تتيح لك تحديد الملف الذي تريد
-    استخدامه لإدراج البيانات في جدول على خدمة Cloud الخاصة بك.
+        <div className="ch-image-lg">
+          <Frame>
+            ![upload_file_04](/images/cloud/migrate/csv_03.webp)
+          </Frame>
+        </div>
 
-    <Image img="/images/cloud/migrate/csv_04.webp" alt="upload_file_05" />
-  </Step>
+        سيظهر مربع حوار يتيح لك اختيار الملف الذي تريد
+        إدراج بياناته في جدول على خدمتك السحابية.
 
-  <Step title="تهيئة الجدول" id="configure-table">
-    بعد اكتمال رفع الملف، ستتمكن من تهيئة الجدول الذي تريد
-    إدراج البيانات فيه. وستظهر معاينة للجدول تتضمن الصفوف الثلاثة الأولى.
+        <div className="ch-image-lg">
+          <Frame>
+            ![upload_file_05](/images/cloud/migrate/csv_04.webp)
+          </Frame>
+        </div>
+      </Step>
 
-    <Image img="/images/cloud/migrate/csv_08.webp" alt="upload_file_08" />
+      <Step title="تهيئة الجدول" id="configure-table">
+        بعد اكتمال تحميل الملف، يمكنك تهيئة الجدول الذي تريد
+        إدراج البيانات فيه، مع معاينة للجدول تعرض الصفوف الثلاثة الأولى.
 
-    يمكنك الآن تحديد جدول الوجهة. والخيارات هي:
+        <div className="ch-image-lg">
+          <Frame>
+            ![upload_file_08](/images/cloud/migrate/csv_08.webp)
+          </Frame>
+        </div>
 
-    * جدول جديد
-    * جدول موجود
+        يمكنك الآن اختيار جدول الوجهة، والخيارات المتاحة هي:
 
-    <br />
+        * جدول جديد
+        * جدول موجود
 
-    يمكنك تحديد قاعدة البيانات التي تريد رفع البيانات إليها، وفي حالة
-    الجدول الجديد، اسم الجدول الذي سيُنشأ. كما يمكنك أيضًا تحديد مفتاح الترتيب:
+        <br />
 
-    <Image img="/images/cloud/migrate/csv_05.webp" alt="upload_file_05" />
+        يمكنك تحديد قاعدة البيانات التي تريد تحميل البيانات إليها، وكذلك اسم الجدول الذي سيُنشأ
+        في حال اخترت جدولًا جديدًا. ويمكنك أيضًا اختيار مفتاح الفرز:
 
-    تُعرض الأعمدة المقروءة من الملف على أنها `Source field`، ولكل حقل
-    يمكنك تغيير ما يلي:
+        <div className="ch-image-lg">
+          <Frame>
+            ![upload_file_05](/images/cloud/migrate/csv_05.webp)
+          </Frame>
+        </div>
 
-    * النوع المستنتَج
-    * القيمة الافتراضية
-    * ما إذا كان يجب جعل العمود [Nullable](/ar/reference/data-types/nullable) أم لا
+        تُعرض الأعمدة المقروءة من الملف بوصفها حقول `Source field`، ويمكنك لكل حقل
+        تغيير ما يلي:
 
-    <Image img="/images/cloud/migrate/csv_06.webp" alt="upload_file_06" />
+        * النوع المستنتج
+        * القيمة الافتراضية
+        * جعل العمود [Nullable](/ar/reference/data-types/nullable) أو لا
 
-    <Info>
-      **استبعاد الحقول**
+        <div className="ch-image-lg">
+          <Frame>
+            ![upload_file_06](/images/cloud/migrate/csv_06.webp)
+          </Frame>
+        </div>
 
-      يمكنك أيضًا إزالة حقل إذا كنت لا تريد تضمينه في الاستيراد
-    </Info>
+        <Info>
+          **استبعاد الحقول**
 
-    يمكنك تحديد نوع محرك الجدول الذي تريد استخدامه:
+          يمكنك أيضًا إزالة أي حقل لا تريد تضمينه في عملية الاستيراد.
+        </Info>
 
-    * `MergeTree`
-    * `ReplacingMergeTree`
-    * `SummingMergeTree`
-    * `Null`
+        يمكنك تحديد نوع محرك الجدول الذي تريد استخدامه:
 
-    <br />
+        * `MergeTree`
+        * `ReplacingMergeTree`
+        * `SummingMergeTree`
+        * `Null`
 
-    يمكنك تحديد تعبير مفتاح التقسيم وتعبير
-    المفتاح الأساسي.
+        <br />
 
-    <Image img="/images/cloud/migrate/csv_07.webp" alt="upload_file_07" />
+        كما يمكنك تحديد تعبير مفتاح التقسيم وتعبير
+        المفتاح الأساسي.
 
-    انقر على `Import to ClickHouse` (الموضح أعلاه) لاستيراد البيانات. ستُدرَج عملية استيراد البيانات في قائمة الانتظار كما
-    تشير شارة الحالة `queued` في عمود `Status`، كما هو موضح أدناه. يمكنك أيضًا النقر على
-    `Open as query` (الموضح أعلاه) لفتح استعلام الإدراج في SQL Console. سيُدرِج الاستعلام
-    الملف الذي رُفع إلى S3 bucket باستخدام الدالة الجدولية `URL`.
+        <div className="ch-image-lg">
+          <Frame>
+            ![upload_file_07](/images/cloud/migrate/csv_07.webp)
+          </Frame>
+        </div>
 
-    <Image img="/images/cloud/migrate/csv_09.webp" alt="upload_file_09" />
+        انقر على `Import to ClickHouse` (الموضح أعلاه) لاستيراد البيانات. ستُضاف عملية الاستيراد إلى قائمة الانتظار، وهو ما
+        تشير إليه شارة الحالة `queued` في العمود `Status` كما هو موضح أدناه. يمكنك أيضًا النقر على
+        `Open as query` (الموضح أعلاه) لفتح استعلام الإدراج في وحدة تحكم SQL. يُدرج هذا الاستعلام
+        الملف الذي حُمّل إلى حاوية S3 باستخدام دالة الجدول `URL`.
 
-    إذا فشلت المهمة، فسترى شارة الحالة `failed` تحت عمود `Status` في
-    علامة التبويب `Data upload history`. يمكنك النقر على `View Details` للحصول على مزيد من المعلومات
-    حول سبب فشل الرفع. وقد تحتاج إلى تعديل تهيئة الجدول أو تنظيف
-    البيانات استنادًا إلى رسالة الخطأ الخاصة بعملية الإدراج الفاشلة.
+        <div className="ch-image-lg">
+          <Frame>
+            ![upload_file_09](/images/cloud/migrate/csv_09.webp)
+          </Frame>
+        </div>
 
-    <Image img="/images/cloud/migrate/csv_10.webp" alt="upload_file_11" />
-  </Step>
-</Steps>
+        إذا فشلت المهمة، فستظهر شارة الحالة `failed` ضمن العمود `Status` في
+        علامة التبويب `Data upload history`. يمكنك النقر على `View Details` لمعرفة المزيد
+        عن سبب فشل التحميل. وقد تحتاج، بحسب رسالة الخطأ الخاصة بعملية الإدراج الفاشلة، إلى تعديل تهيئة الجدول أو تنظيف
+        البيانات.
+
+        <div className="ch-image-lg">
+          <Frame>
+            ![upload_file_11](/images/cloud/migrate/csv_10.webp)
+          </Frame>
+        </div>
+      </Step>
+    </Steps>
+  </View>
+
+  <View title="واجهة سطر الأوامر">
+    يمكنك اتباع هذه الخطوات بنفسك، أو أتمتتها بسكربت، أو إسنادها إلى وكيل ذكاء اصطناعي. انتقل إلى عرض **واجهة Cloud** للاطلاع على طريقة التنفيذ عبر وحدة التحكم.
+
+    <UploadCsvCLI />
+  </View>
+</Visibility>

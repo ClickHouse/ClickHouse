@@ -14,7 +14,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 ${CLICKHOUSE_CLIENT} -m --query "
 drop table if exists ${CLICKHOUSE_DATABASE}.test;
 create table ${CLICKHOUSE_DATABASE}.test (a UInt64, b String) ENGINE = MergeTree() ORDER BY tuple()
-settings disk = disk(type = 'local_blob_storage', path = '${CLICKHOUSE_TEST_UNIQUE_NAME}/');
+settings disk = disk(type = 'local_blob_storage', path = '${CLICKHOUSE_DISKS_FILES}/${CLICKHOUSE_TEST_UNIQUE_NAME}/');
 insert into ${CLICKHOUSE_DATABASE}.test select number, toString(number) from numbers(100000);
 "
 

@@ -16,6 +16,8 @@
 #include <Common/setThreadName.h>
 #include <base/sleep.h>
 
+#include <chrono>
+#include <thread>
 #include <utility>
 
 namespace ProfileEvents
@@ -47,6 +49,7 @@ namespace ErrorCodes
 
 namespace FailPoints
 {
+    extern const char marks_loader_hold_task_until_canceled[];
     extern const char merge_tree_marks_load_sync_sleep[];
 }
 
@@ -299,6 +302,14 @@ MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksImpl()
     return res;
 }
 
+/// The directory a part occupies may differ from its name (`<name>.proj`); the key names the part.
+MarkCache::Key MergeTreeMarksLoader::getCacheKey() const
+{
+    auto data_part_storage = data_part_reader->getDataPartStorage();
+    auto path = fs::path(data_part_storage->getFullRootPath()) / data_part_reader->getPartName() / mrk_path;
+    return MarkCache::hash(data_part_storage->getDiskName() + ":" + path.string());
+}
+
 MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksSync()
 {
     fiu_do_on(FailPoints::merge_tree_marks_load_sync_sleep, { sleepForMilliseconds(100); });
@@ -309,7 +320,7 @@ MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksSync()
 
     if (mark_cache)
     {
-        auto key = MarkCache::hash(data_part_storage->getDiskName() + ":" + (fs::path(data_part_storage->getFullPath()) / mrk_path).string());
+        auto key = getCacheKey();
 
         if (save_marks_in_cache)
         {
@@ -342,9 +353,7 @@ std::future<MarkCache::MappedPtr> MergeTreeMarksLoader::loadMarksAsync()
     /// Avoid queueing jobs into thread pool if marks are in cache
     if (mark_cache)
     {
-        auto data_part_storage = data_part_reader->getDataPartStorage();
-        auto key = MarkCache::hash(data_part_storage->getDiskName() + ":" + (fs::path(data_part_storage->getFullPath()) / mrk_path).string());
-        if (MarkCache::MappedPtr loaded_marks = mark_cache->getForAsyncLoading(key))
+        if (MarkCache::MappedPtr loaded_marks = mark_cache->getForAsyncLoading(getCacheKey()))
         {
             ProfileEvents::increment(ProfileEvents::MarksTasksFromCache);
             auto promise = std::promise<MarkCache::MappedPtr>();
@@ -357,9 +366,27 @@ std::future<MarkCache::MappedPtr> MergeTreeMarksLoader::loadMarksAsync()
         [this]() -> MarkCache::MappedPtr
         {
             auto component_guard = Coordination::setCurrentComponent("MergeTreeMarksLoader::loadMarksAsync");
+
+            /// Test-only: hold the task until the loader is destroyed, so a test can make the destructor win
+            /// the race against the thread pool deterministically. The wait is bounded so that a query which
+            /// does need these marks (and blocks in `loadMarks` on the future) cannot hang forever if the
+            /// fail point is left enabled by mistake.
+            fiu_do_on(FailPoints::marks_loader_hold_task_until_canceled,
+            {
+                for (size_t i = 0; i < 600 && !is_canceled; ++i)
+                    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            });
+
             if (is_canceled)
             {
                 ProfileEvents::increment(ProfileEvents::LoadingMarksTasksCanceled);
+                /// `is_canceled` is set only by the destructor, which then waits for this task and drops the
+                /// future without reading it, so nothing ever observes this exception - it only stops the task
+                /// from doing work that has become useless. Keep it out of `system.errors`, where it would look
+                /// like a failure: since `load_marks_asynchronously` is enabled by default, this happens on any
+                /// server whenever a reader is dropped before its marks are needed. `LoadingMarksTasksCanceled`
+                /// above is the counter for this event.
+                Exception::SuppressErrorCodesScope suppress_error_codes;
                 throw Exception(ErrorCodes::ASYNC_LOAD_CANCELED, "Background task for loading marks was canceled");
             }
 

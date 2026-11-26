@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-random-settings, no-distributed-cache
+# Tags: no-fasttest, no-random-settings, no-distributed-cache, no-parallel-replicas
+# Tag no-parallel-replicas: asserts on `ProfileEvents` of the initial query, but with parallel replicas the read may run on a remote replica
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -18,7 +19,6 @@ INSERT INTO test_s3 SELECT number, number FROM numbers(1000000);
 "
 query="SELECT sum(b) FROM test_s3 WHERE a >= 100000 AND a <= 102000"
 query_id=$(${CLICKHOUSE_CLIENT} -nm --query "
-SET read_through_distributed_cache=0;
 SET remote_filesystem_read_method='threadpool';
 select queryID() from ($query) limit 1
 " 2>&1)

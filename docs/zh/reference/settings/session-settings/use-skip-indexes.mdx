@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 这些设置可在 [system.settings](/zh/reference/system-tables/settings) 中查看，并由 [源代码](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) 自动生成。
 
-<div id="use_skip_indexes">
-  ## use_skip_indexes
-</div>
+## use_skip_indexes {#use_skip_indexes}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -26,9 +24,7 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 * 0 — 禁用。
 * 1 — 启用。
 
-<div id="use_skip_indexes_for_disjunctions">
-  ## use_skip_indexes_for_disjunctions
-</div>
+## use_skip_indexes_for_disjunctions {#use_skip_indexes_for_disjunctions}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -42,9 +38,24 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 * 0 — 已禁用。
 * 1 — 已启用。
 
-<div id="use_skip_indexes_for_top_k">
-  ## use_skip_indexes_for_top_k
-</div>
+## use_skip_indexes_for_disjunctions_max_rpn_elements {#use_skip_indexes_for_disjunctions_max_rpn_elements}
+
+<SettingsInfoBlock type="UInt64" default_value="128" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "128"},{"label": "新增设置，此前该上限硬编码为 32"}]}]} />
+
+对 WHERE 过滤器应用 `use_skip_indexes_for_disjunctions` 时，其内部表示 (RPN) 所允许的最大元素数。
+粗略来说，每个条件以及每个 `AND`、`OR` 和 `NOT` 各计为一个元素：例如，`A = 5 OR B = 5 OR C = 5` 包含 5 个元素。
+元素数在过滤器为索引分析完成重写之后才统计：例如，`A = 1 OR A = 2 OR A = 3` 会被重写为 `A IN (1, 2, 3)`，只计为一个元素 (参见 `optimize_min_equality_disjunction_chain_length`) ；而 `coalesce(A, B) = 5` 则会展开为多个条件 (参见 `allow_key_condition_coalesce_rewrite`) 。
+对于元素数超过该值的过滤器，各跳过索引将分别独立评估，对于由 `OR` 连接、作用于不同列的条件，无法据此跳过粒度。
+在索引分析期间，中间结果在每个数据分区片段的每个粒度上为每个元素占用一个比特，而合并这些结果的耗时与每个粒度的元素数成正比。将其设置为 0 (无限制) 时请注意这一点。
+
+可选值：
+
+* 0 — 无限制。
+* 正整数 — 最大元素数。
+
+## use_skip_indexes_for_top_k {#use_skip_indexes_for_top_k}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -59,9 +70,7 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 * 0 — 已禁用。
 * 1 — 已启用。
 
-<div id="use_skip_indexes_if_final">
-  ## use_skip_indexes_if_final
-</div>
+## use_skip_indexes_if_final {#use_skip_indexes_if_final}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -76,9 +85,7 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 * 0 — 禁用。
 * 1 — 启用。
 
-<div id="use_skip_indexes_if_final_exact_mode">
-  ## use_skip_indexes_if_final_exact_mode
-</div>
+## use_skip_indexes_if_final_exact_mode {#use_skip_indexes_if_final_exact_mode}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -93,13 +100,11 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 * 0 — 已禁用。
 * 1 — 已启用。
 
-<div id="use_skip_indexes_on_data_read">
-  ## use_skip_indexes_on_data_read
-</div>
+## use_skip_indexes_on_data_read {#use_skip_indexes_on_data_read}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.2"},{"label": "1"},{"label": "文本索引现已 GA"}]}, {"id": "row-2","items": [{"label": "26.1"},{"label": "0"},{"label": "默认启用"}]}, {"id": "row-3","items": [{"label": "25.9"},{"label": "0"},{"label": "新设置"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.1"},{"label": "1"},{"label": "默认启用"}]}, {"id": "row-2","items": [{"label": "25.9"},{"label": "0"},{"label": "新增设置"}]}]} />
 
 启用在读取数据时使用数据跳过索引。
 

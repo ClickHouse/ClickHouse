@@ -7,17 +7,12 @@ keywords: ['Managed Postgres 升级', 'Postgres 版本', '次要版本升级', '
 doc_type: 'guide'
 ---
 
-import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 import { EnterprisePlanFeatureBadge } from "/snippets/zh/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
 import { ScalePlanFeatureBadge } from "/snippets/zh/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
 
-<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.upgrades-beta" />
-
 ClickHouse Managed Postgres 可处理 PostgreSQL 版本升级，帮助您的实例保持安全并及时更新。支持次要版本升级和主版本升级，且对业务影响降至最低。
 
-<div id="maintenance-updates">
-  ## 维护更新
-</div>
+## 维护更新 {#maintenance-updates}
 
 PostgreSQL 实例的常规维护包括以下内容：
 
@@ -29,9 +24,7 @@ PostgreSQL 实例的常规维护包括以下内容：
 
 对于启用了[standbys](/zh/products/managed-postgres/high-availability)的实例，升级会先应用到待机实例，然后再执行故障转移，以尽量减少停机时间。
 
-<div id="scheduled-upgrades">
-  ## 计划升级
-</div>
+## 计划升级 {#scheduled-upgrades}
 
 <ScalePlanFeatureBadge feature="计划升级" linking_verb_are="true" />
 
@@ -44,9 +37,7 @@ PostgreSQL 实例的常规维护包括以下内容：
 [星期几](#days-of-the-week)。在 Scale 计划中，您只能选择时间段，
 升级可能会在该时段内的任意一天执行。
 
-<div id="configure-a-schedule">
-  ### 配置计划
-</div>
+### 配置计划 {#configure-a-schedule}
 
 <Steps>
   <Step title="打开实例设置" id="open-settings">
@@ -79,9 +70,7 @@ PostgreSQL 实例的常规维护包括以下内容：
 您需要拥有该实例的 `control-plane:postgres-service:manage` 权限，才能更改
 其计划。实例处于停止状态或仍在预配时，相关控件也会被禁用。
 
-<div id="time-periods">
-  ### 时间段
-</div>
+### 时间段 {#time-periods}
 
 每个时间窗口均为两小时，且始终以 UTC 表示，不支持选择本地时区。
 可用时间窗口如下：
@@ -97,9 +86,7 @@ PostgreSQL 实例的常规维护包括以下内容：
 
 不支持自定义开始时间、自定义窗口时长，或为单个实例设置多个时间窗口。
 
-<div id="days-of-the-week">
-  ### 星期几
-</div>
+### 星期几 {#days-of-the-week}
 
 <EnterprisePlanFeatureBadge feature="将升级限制在一周中的特定日期" />
 
@@ -108,29 +95,23 @@ PostgreSQL 实例的常规维护包括以下内容：
 * **未选择日期** — 可在所选时间段内的任意一天执行升级。
 * **选择一个或多个日期** — 仅会在所选时间段内的这些日期执行升级。选择全部七天等同于不选择任何日期。
 
-<div id="schedule-scope">
-  ### 计划的适用范围
-</div>
+### 计划的适用范围 {#schedule-scope}
 
 计划仅适用于**平台维护**，即[维护更新](#maintenance-updates)中所述的次要版本升级、托管服务功能更新和操作系统补丁。
 
 您自行发起的变更不会延后到维护窗口，而会在您执行后立即生效。这包括对实例进行[扩缩容](/zh/products/managed-postgres/scaling)、调整存储容量，以及更改[配置参数](/zh/products/managed-postgres/settings)。
 
 <Note>
-  计划升级将尽力按计划执行。当维护对实例的健康状况至关重要时 (例如磁盘使用率达到 95%) ，或涉及关键安全补丁和漏洞修复时，可能会在您的维护窗口之外执行。我们会在必要时通知您此类例外情况。
+  计划升级将尽力按计划执行。当维护对实例的健康状况至关重要时，例如磁盘使用率达到 95%，或涉及关键安全补丁和漏洞修复时，可能会在您的维护窗口之外执行。我们会在必要时通知您此类例外情况。
 </Note>
 
-<div id="read-replicas">
-  ### 只读副本
-</div>
+### 只读副本 {#read-replicas}
 
 [只读副本](/zh/products/managed-postgres/read-replicas) 沿用其
 主节点的升级计划，无法单独设置计划，因此不会显示 **计划升级**
 部分。
 
-<div id="major-version-upgrades">
-  ## 主版本升级
-</div>
+## 主版本升级 {#major-version-upgrades}
 
 通过 UI 和 API 进行主版本升级 (例如从 17.x 升级到 18.x) 的功能即将推出。
 在此之前，如需升级您的 ClickHouse Managed Postgres 实例，请联系[support](https://clickhouse.com/support/program)。

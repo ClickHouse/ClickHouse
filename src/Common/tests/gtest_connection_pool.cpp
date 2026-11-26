@@ -1,8 +1,23 @@
+#include "config.h"
+
 #include <IO/ReadWriteBufferFromHTTP.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 #include <Common/CurrentThread.h>
+#include <Common/Exception.h>
+#include <Common/FailPoint.h>
+#include <Common/HTTPConnectionInfo.h>
 #include <Common/HTTPConnectionPool.h>
 #include <Common/HostResolvePool.h>
+#include <Common/ProxyConfigurationResolverProvider.h>
+#include <Common/RemoteProxyConfigurationResolver.h>
+#include <Common/Throttler.h>
+#include <Common/ThreadStatus.h>
+#include <Common/Silk/tests/gtest_silk_scheduler.h>
+#include <Common/tests/gtest_global_context.h>
 #include <base/scope_guard.h>
+#include <base/sleep.h>
+#include <base/unit.h>
 
 #include <Poco/URI.h>
 #include <Poco/Net/IPAddress.h>
@@ -15,10 +30,25 @@
 #include <Poco/Net/HTTPRequestHandlerFactory.h>
 #include <Poco/Net/ServerSocket.h>
 #include <Poco/Net/SocketAddress.h>
+#include <Poco/Util/MapConfiguration.h>
 
 #include <atomic>
+#include <chrono>
+#include <thread>
+#include <limits>
 
 #include <gtest/gtest.h>
+
+namespace DB::FailPoints
+{
+extern const char http_connection_socket_inode_unavailable[];
+}
+
+namespace DB::ErrorCodes
+{
+extern const int SUPPORT_IS_DISABLED;
+extern const int TIMEOUT_EXCEEDED;
+}
 
 namespace
 {
@@ -151,7 +181,7 @@ protected:
     void SetUp() override {
         timeouts = DB::ConnectionTimeouts();
         DB::HTTPConnectionPools::Limits def_limits{};
-        DB::HTTPConnectionPools::instance().setLimits(def_limits, def_limits, def_limits);
+        DB::HTTPConnectionPools::instance().setLimits(def_limits, def_limits, def_limits, def_limits);
 
         options->set(RequestOptions());
 
@@ -172,7 +202,7 @@ protected:
         return DB::HTTPConnectionPools::instance().getPool(DB::HTTPConnectionGroupType::HTTP, uri, DB::ProxyConfiguration{});
     }
 
-    std::string getServerUrl() const
+    [[nodiscard]] std::string getServerUrl() const
     {
         return "http://" + server_data.server->socket().address().toString();
     }
@@ -187,7 +217,7 @@ protected:
         server_data.server->start();
     }
 
-    Poco::Net::HTTPServer & getServer() const
+    [[nodiscard]] Poco::Net::HTTPServer & getServer() const
     {
         return *server_data.server;
     }
@@ -251,18 +281,19 @@ static void echoRequest(String data, HTTPSession & session)
     {
         Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_PUT, "/", "HTTP/1.1"); // HTTP/1.1 is required for keep alive
         request.setContentLength(data.size());
-        std::ostream & ostream = session.sendRequest(request);
-        ostream << data;
+        auto request_body = DB::sendHTTPRequest(session, request);
+        DB::writeString(data, *request_body);
+        request_body->finalize();
     }
 
     {
-        std::stringstream result;
         Poco::Net::HTTPResponse response;
-        std::istream & istream = session.receiveResponse(response);
+        auto response_body = DB::receiveHTTPResponse(session, response);
         ASSERT_EQ(response.getStatus(), Poco::Net::HTTPResponse::HTTP_OK);
 
-        stream_copy_n(istream, result);
-        ASSERT_EQ(data, result.str());
+        String result;
+        DB::readStringUntilEOF(result, *response_body);
+        ASSERT_EQ(data, result);
     }
 }
 
@@ -569,6 +600,424 @@ TEST_F(ConnectionPoolTest, CanReconnectAndReuse)
     ASSERT_EQ(count-2, CurrentMetrics::get(metrics.stored_count));
 }
 
+/// The code that logs a blob storage request (S3, Azure) opens an `HTTPConnectionInfoScope` around
+/// issuing the request and writing the row that describes it; nothing is published outside of one.
+/// This is that pattern in miniature: request, then take, inside one scope.
+static DB::HTTPConnectionInfo echoRequestAndTakeConnectionInfo(String data, HTTPSession & session)
+{
+    DB::HTTPConnectionInfoScope scope(true);
+    echoRequest(std::move(data), session);
+    return DB::takeCurrentHTTPConnectionInfo();
+}
+
+/// The connection info published for a request must describe the socket that actually carried it.
+/// The three tests below exercise `PooledConnection::reconnect`, which swaps the whole socket - and
+/// the bookkeeping that goes with it - out from under a session that is already in the middle of a
+/// request, or fails trying.
+
+TEST_F(ConnectionPoolTest, ConnectionInfoNewIdAfterReconnect)
+{
+    auto pool = getPool();
+
+    auto connection = pool->getConnection(timeouts, nullptr);
+
+    auto first = echoRequestAndTakeConnectionInfo("Hello", *connection);
+    ASSERT_TRUE(first.has_value);
+    ASSERT_NE(0, first.id);
+    ASSERT_EQ(0, first.requests_served);
+
+    connection->abort(); // further usage requires reconnect, the pool is empty so a new socket
+
+    auto second = echoRequestAndTakeConnectionInfo("Hello", *connection);
+    ASSERT_TRUE(second.has_value);
+
+    /// A different TCP connection, even though the kernel usually hands back the same file
+    /// descriptor number - and often the same socket inode - right after the previous one closed.
+    ASSERT_NE(first.id, second.id);
+    ASSERT_EQ(0, second.requests_served);
+}
+
+/// Some systems expose no inode for a socket: on macOS `fstat` succeeds with `st_ino` set to zero.
+/// The connection must get its identity all the same, keep it across reuse, and get a new one
+/// on reconnect.
+TEST_F(ConnectionPoolTest, ConnectionInfoWithoutSocketInode)
+{
+    DB::FailPointInjection::enableFailPoint(DB::FailPoints::http_connection_socket_inode_unavailable);
+    SCOPE_EXIT(DB::FailPointInjection::disableFailPoint(DB::FailPoints::http_connection_socket_inode_unavailable));
+
+    auto ka = Poco::Timespan(10, 0); // 10 seconds
+    timeouts.withHTTPKeepAliveTimeout(ka);
+
+    auto pool = getPool();
+
+    DB::HTTPConnectionInfo first;
+    {
+        auto connection = pool->getConnection(timeouts, nullptr);
+        first = echoRequestAndTakeConnectionInfo("Hello", *connection);
+    } // returned to the pool
+
+    ASSERT_TRUE(first.has_value);
+    ASSERT_NE(0, first.id);
+    ASSERT_EQ(0, first.socket_inode);
+    ASSERT_EQ(0, first.requests_served);
+
+    auto connection = pool->getConnection(timeouts, nullptr);
+    auto reused = echoRequestAndTakeConnectionInfo("Hello", *connection);
+
+    ASSERT_TRUE(reused.has_value);
+    ASSERT_EQ(first.id, reused.id);
+    ASSERT_EQ(0, reused.socket_inode);
+    ASSERT_EQ(1, reused.requests_served);
+
+    connection->abort(); // further usage requires reconnect, the pool is empty so a new socket
+
+    auto reconnected = echoRequestAndTakeConnectionInfo("Hello", *connection);
+
+    ASSERT_TRUE(reconnected.has_value);
+    ASSERT_NE(0, reconnected.id);
+    ASSERT_NE(first.id, reconnected.id);
+    ASSERT_EQ(0, reconnected.socket_inode);
+    ASSERT_EQ(0, reconnected.requests_served);
+}
+
+TEST_F(ConnectionPoolTest, ConnectionInfoIdleTimeAfterReconnect)
+{
+    auto ka = Poco::Timespan(10, 0); // 10 seconds
+    timeouts.withHTTPKeepAliveTimeout(ka);
+
+    auto pool = getPool();
+
+    auto first_connection = pool->getConnection(timeouts, nullptr);
+    echoRequestAndTakeConnectionInfo("Hello", *first_connection);
+
+    DB::HTTPConnectionInfo stored_info;
+    {
+        auto second_connection = pool->getConnection(timeouts, nullptr);
+        stored_info = echoRequestAndTakeConnectionInfo("Hello", *second_connection);
+    } // returned to the pool, and starts sitting there idle from now on
+
+    ASSERT_TRUE(stored_info.has_value);
+    ASSERT_EQ(0, stored_info.idle_microseconds); // its first and only request so far
+
+    const uint64_t idle_for_microseconds = 300 * 1000;
+    sleepForMicroseconds(idle_for_microseconds);
+
+    first_connection->abort(); // further usage requires reconnect, reuse the idle stored connection
+
+    auto reused = echoRequestAndTakeConnectionInfo("Hello", *first_connection);
+
+    ASSERT_TRUE(reused.has_value);
+    /// The very socket that was waiting in the pool, with its own history - not a fresh one, and
+    /// not the aborted one.
+    ASSERT_EQ(stored_info.id, reused.id);
+    ASSERT_EQ(1, reused.requests_served);
+    /// And the idle time is how long that socket really waited, not the sample taken for its
+    /// previous request.
+    ASSERT_GE(reused.idle_microseconds, idle_for_microseconds / 2);
+}
+
+/// The idle time is the time a connection spent in the pool, not the time since its previous
+/// request went out. The latter also covers the transfer of that request's response, so a warm
+/// connection that has just finished a slow exchange and is borrowed again right away would land
+/// among the stale ones this column exists to find.
+TEST_F(ConnectionPoolTest, ConnectionInfoIdleTimeExcludesTransfer)
+{
+    auto ka = Poco::Timespan(10, 0); // 10 seconds
+    timeouts.withHTTPKeepAliveTimeout(ka);
+
+    auto pool = getPool();
+
+    DB::HTTPConnectionInfo slow_info;
+    {
+        auto connection = pool->getConnection(timeouts, nullptr);
+        echoRequestAndTakeConnectionInfo("Hello", *connection);
+
+        setSlowDown(1);
+        slow_info = echoRequestAndTakeConnectionInfo("Hello", *connection);
+        setSlowDown(0);
+    } // returned to the pool right after the slow response has been read
+
+    ASSERT_TRUE(slow_info.has_value);
+    /// A second request over the same checkout: the connection was held by its user, not idle.
+    ASSERT_EQ(0, slow_info.idle_microseconds);
+
+    auto connection = pool->getConnection(timeouts, nullptr);
+    auto reused = echoRequestAndTakeConnectionInfo("Hello", *connection);
+
+    ASSERT_TRUE(reused.has_value);
+    ASSERT_EQ(slow_info.id, reused.id);
+    ASSERT_EQ(2, reused.requests_served);
+    /// Borrowed again immediately: the second the server spent on the previous response is not idle time.
+    ASSERT_LT(reused.idle_microseconds, 500 * 1000);
+}
+
+/// A reconnect can also fail, and then the request never reaches a socket at all. The caller learns
+/// that from the exception and writes its error row inside the same scope - failed requests being
+/// among the rows users inspect most closely - so the slot must not still be holding the identity of
+/// the socket that was discarded on the way.
+TEST_F(ConnectionPoolTest, ConnectionInfoClearedWhenReconnectFails)
+{
+    /// A hard limit of one, reached by the connection below, so its reconnect cannot obtain a
+    /// replacement: `PooledConnection::create` throws `HTTP_CONNECTION_LIMIT_REACHED` before any
+    /// connect attempt is made. The store limit of zero keeps the pool empty, so there is no stored
+    /// connection to be reused instead.
+    DB::HTTPConnectionPools::Limits limits {0, 0, 0, 1};
+    DB::HTTPConnectionPools::instance().setLimits(limits, limits, limits, limits);
+
+    auto pool = getPool();
+
+    auto connection = pool->getConnection(timeouts, nullptr);
+
+    auto first = echoRequestAndTakeConnectionInfo("Hello", *connection);
+    ASSERT_TRUE(first.has_value);
+    ASSERT_NE(0, first.id);
+
+    connection->abort(); // further usage requires a reconnect - the one that is going to fail
+
+    {
+        DB::HTTPConnectionInfoScope scope(true);
+
+        auto data = String("Hello");
+        Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_PUT, "/", "HTTP/1.1");
+        request.setContentLength(data.size());
+        ASSERT_ANY_THROW(connection->sendRequest(request));
+
+        /// This is where the caller logs the failure. No socket carried the request, so the row
+        /// reports zeroes - and in particular neither the id, nor the request count, nor the age of
+        /// the socket that was dropped.
+        auto info = DB::takeCurrentHTTPConnectionInfo();
+        ASSERT_FALSE(info.has_value);
+        ASSERT_NE(first.id, info.id);
+    }
+}
+
+/// The pool is shared with everything that speaks HTTP - `StorageURL`, dictionary sources, the
+/// proxy resolver, the REST catalogs, the SDKs' credential refreshes - and none of that logs to
+/// `system.blob_storage_log`. A request they make must not be left in the slot for the next blob
+/// storage row on this thread, which would otherwise report a socket it never used - including rows
+/// for local or HDFS object storage, which use no HTTP connection at all.
+TEST_F(ConnectionPoolTest, ConnectionInfoIsNotPublishedOutsideScope)
+{
+    auto pool = getPool();
+
+    auto connection = pool->getConnection(timeouts, nullptr);
+
+    echoRequest("Hello", *connection);
+    ASSERT_FALSE(DB::takeCurrentHTTPConnectionInfo().has_value);
+
+    /// A blob storage request in between is recorded as usual.
+    auto info = echoRequestAndTakeConnectionInfo("Hello", *connection);
+    ASSERT_TRUE(info.has_value);
+    ASSERT_NE(0, info.id);
+
+    /// And an unrelated request after it does not resurrect the slot.
+    echoRequest("Hello", *connection);
+    ASSERT_FALSE(DB::takeCurrentHTTPConnectionInfo().has_value);
+}
+
+/// Not every request made inside a scope ends up taken: the SDK may retry, refresh credentials on
+/// the way, or the code that opened the scope may skip writing its row. Whatever is left when the
+/// scope ends must go with it - otherwise a later row on this thread, possibly for a request that
+/// never reached the wire, would inherit it. This is the stale-slot case that a post-upload
+/// `HeadObject` existence check, which no row describes, used to produce when the scope was owned
+/// by the HTTP client rather than by the logging code.
+TEST_F(ConnectionPoolTest, ConnectionInfoIsClearedWhenScopeEnds)
+{
+    auto pool = getPool();
+
+    auto connection = pool->getConnection(timeouts, nullptr);
+
+    {
+        DB::HTTPConnectionInfoScope scope(true);
+        echoRequest("Hello", *connection);
+        /// Published, but deliberately not taken.
+    }
+    ASSERT_FALSE(DB::takeCurrentHTTPConnectionInfo().has_value);
+
+    /// The next scoped request starts from a clean slot and sees only itself.
+    {
+        DB::HTTPConnectionInfoScope scope(true);
+        auto before = DB::takeCurrentHTTPConnectionInfo();
+        ASSERT_FALSE(before.has_value);
+
+        echoRequest("Hello", *connection);
+        auto info = DB::takeCurrentHTTPConnectionInfo();
+        ASSERT_TRUE(info.has_value);
+        ASSERT_EQ(1, info.requests_served);
+
+        /// Taking is one-shot: the tail entries of a batch that shared one request see nothing.
+        ASSERT_FALSE(DB::takeCurrentHTTPConnectionInfo().has_value);
+    }
+    ASSERT_FALSE(DB::takeCurrentHTTPConnectionInfo().has_value);
+}
+
+/// A logging site whose `system.blob_storage_log` is turned off opens a disabled scope: nothing is
+/// published for its requests, but they still count towards the socket's request number.
+TEST_F(ConnectionPoolTest, ConnectionInfoIsNotPublishedInDisabledScope)
+{
+    auto pool = getPool();
+
+    auto connection = pool->getConnection(timeouts, nullptr);
+
+    {
+        DB::HTTPConnectionInfoScope scope(false);
+        ASSERT_FALSE(DB::isHTTPConnectionInfoCaptureEnabled());
+        echoRequest("Hello", *connection);
+        ASSERT_FALSE(DB::takeCurrentHTTPConnectionInfo().has_value);
+    }
+
+    auto info = echoRequestAndTakeConnectionInfo("Hello", *connection);
+    ASSERT_TRUE(info.has_value);
+    ASSERT_EQ(1, info.requests_served);
+}
+
+/// A row whose timing covers several requests - an SDK that retried a write, a credential refresh
+/// made on the way to it - cannot honestly name a connection: `elapsed_microseconds` describes the
+/// whole sequence, including the backoff sleeps, while at most one of the sockets could be named.
+/// The retrying Azure write paths log exactly one such row, so the columns must come out empty
+/// there rather than describing whichever attempt happened to be last.
+TEST_F(ConnectionPoolTest, ConnectionInfoIsEmptyWhenScopeSpansSeveralRequests)
+{
+    auto pool = getPool();
+
+    auto connection = pool->getConnection(timeouts, nullptr);
+
+    {
+        DB::HTTPConnectionInfoScope scope(true);
+        echoRequest("Hello", *connection);
+        echoRequest("Hello", *connection);
+        ASSERT_FALSE(DB::takeCurrentHTTPConnectionInfo().has_value);
+    }
+
+    /// And the ambiguity does not outlive the scope that had it: the next single request is
+    /// recorded as usual.
+    auto info = echoRequestAndTakeConnectionInfo("Hello", *connection);
+    ASSERT_TRUE(info.has_value);
+    ASSERT_EQ(2, info.requests_served);
+}
+
+/// The object storage transports count each attempt before setting up its connection, which can
+/// fail on its own - a connect timeout that the SDK then retries never reaches the pooled session.
+/// Such a retry still makes the entry span several attempts, while an attempt that does reach the
+/// pooled session must not be counted a second time there.
+TEST_F(ConnectionPoolTest, ConnectionInfoCountsAttemptsFailedBeforeSending)
+{
+    auto pool = getPool();
+
+    auto connection = pool->getConnection(timeouts, nullptr);
+
+    {
+        DB::HTTPConnectionInfoScope scope(true);
+        DB::beginHTTPConnectionInfoTransportAttempt(/* logged_request = */ true);
+        echoRequest("Hello", *connection);
+        auto info = DB::takeCurrentHTTPConnectionInfo();
+        ASSERT_TRUE(info.has_value);
+        ASSERT_EQ(0, info.requests_served);
+    }
+
+    {
+        DB::HTTPConnectionInfoScope scope(true);
+        DB::beginHTTPConnectionInfoTransportAttempt(/* logged_request = */ true); /// fails while connecting, then retried
+        DB::beginHTTPConnectionInfoTransportAttempt(/* logged_request = */ true);
+        echoRequest("Hello", *connection);
+        ASSERT_FALSE(DB::takeCurrentHTTPConnectionInfo().has_value);
+    }
+}
+
+/// A credential's token request can be the only request that reaches the wire inside the scope of a
+/// logged one: when the token endpoint rejects it, the SDK throws before the object request is sent,
+/// and the read path still writes an error row for the blob. That row must not carry the identity
+/// service's connection, whether the token request came through a helper transport or as a raw
+/// request made by a credentials provider. A helper request still counts towards the requests the
+/// entry spans, so a logged request that follows it is not attributed either.
+TEST_F(ConnectionPoolTest, ConnectionInfoIgnoresHelperRequests)
+{
+    auto pool = getPool();
+
+    auto connection = pool->getConnection(timeouts, nullptr);
+
+    {
+        DB::HTTPConnectionInfoScope scope(true);
+        DB::beginHTTPConnectionInfoTransportAttempt(/* logged_request = */ false);
+        echoRequest("Hello", *connection);
+        ASSERT_FALSE(DB::takeCurrentHTTPConnectionInfo().has_value);
+    }
+
+    {
+        DB::HTTPConnectionInfoScope scope(true);
+        {
+            DB::HTTPConnectionInfoHelperRequests helper_requests;
+            echoRequest("Hello", *connection);
+        }
+        ASSERT_FALSE(DB::takeCurrentHTTPConnectionInfo().has_value);
+    }
+
+    {
+        DB::HTTPConnectionInfoScope scope(true);
+        DB::beginHTTPConnectionInfoTransportAttempt(/* logged_request = */ false);
+        echoRequest("Hello", *connection);
+        DB::beginHTTPConnectionInfoTransportAttempt(/* logged_request = */ true);
+        echoRequest("Hello", *connection);
+        ASSERT_FALSE(DB::takeCurrentHTTPConnectionInfo().has_value);
+    }
+
+    /// The helper status ends with the guard: the next logged request is recorded as usual.
+    {
+        DB::HTTPConnectionInfoScope scope(true);
+        DB::beginHTTPConnectionInfoTransportAttempt(/* logged_request = */ true);
+        echoRequest("Hello", *connection);
+        auto info = DB::takeCurrentHTTPConnectionInfo();
+        ASSERT_TRUE(info.has_value);
+        ASSERT_EQ(4, info.requests_served);
+    }
+}
+
+/// The remote proxy resolver sends its own pooled request from inside the S3 client, before the
+/// object request's transport attempt is counted. When the lookup times out, the S3 call fails without
+/// sending the object request, and the read path still writes an error row for the blob. That row must
+/// not carry the resolver's connection - and neither must a row whose lookup succeeded.
+TEST_F(ConnectionPoolTest, ConnectionInfoIgnoresProxyResolverRequests)
+{
+    DB::RemoteProxyHostFetcherImpl fetcher;
+    auto uri = Poco::URI(getServerUrl() + "/proxy");
+
+    {
+        DB::HTTPConnectionInfoScope scope(true);
+        ASSERT_NO_THROW(fetcher.fetch(uri, timeouts));
+        ASSERT_FALSE(DB::takeCurrentHTTPConnectionInfo().has_value);
+    }
+
+    {
+        /// A connect attempt of the object request failed, and its retry looks the proxy up again.
+        DB::HTTPConnectionInfoScope scope(true);
+        DB::beginHTTPConnectionInfoTransportAttempt(/* logged_request = */ true);
+        ASSERT_NO_THROW(fetcher.fetch(uri, timeouts));
+        ASSERT_FALSE(DB::takeCurrentHTTPConnectionInfo().has_value);
+    }
+
+    {
+        /// The object request went out, failed with a retryable error, and its retry - counted before
+        /// the proxy is resolved - could not even reach the resolver. The row spans both attempts.
+        auto pool = getPool();
+        auto connection = pool->getConnection(timeouts, nullptr);
+        DB::HTTPConnectionInfoScope scope(true);
+        DB::beginHTTPConnectionInfoTransportAttempt(/* logged_request = */ true);
+        echoRequest("Hello", *connection);
+        DB::beginHTTPConnectionInfoTransportAttempt(/* logged_request = */ true);
+        ASSERT_ANY_THROW(fetcher.fetch(Poco::URI("http://127.0.0.1:1/proxy"), timeouts));
+        ASSERT_FALSE(DB::takeCurrentHTTPConnectionInfo().has_value);
+    }
+
+    setSlowDown(2);
+    timeouts.withReceiveTimeout(1);
+
+    {
+        DB::HTTPConnectionInfoScope scope(true);
+        ASSERT_ANY_THROW(fetcher.fetch(uri, timeouts));
+        ASSERT_FALSE(DB::takeCurrentHTTPConnectionInfo().has_value);
+    }
+}
+
 TEST_F(ConnectionPoolTest, ReceiveTimeout)
 {
     setSlowDown(2);
@@ -640,9 +1089,9 @@ TEST_F(ConnectionPoolTest, ReadWriteBufferFromHTTP)
                              .withBypassProxy(true)
                              .withConnectionGroup(DB::HTTPConnectionGroupType::HTTP)
                              .withOutCallback(
-                                 [&] (std::ostream & in)
+                                 [&] (DB::WriteBuffer & out)
                                  {
-                                     in << message;
+                                     DB::writeString(message, out);
                                  })
                              .withDelayInit(false)
                              .create(empty_creds);
@@ -667,6 +1116,235 @@ TEST_F(ConnectionPoolTest, ReadWriteBufferFromHTTP)
 
     ASSERT_EQ(1, CurrentMetrics::get(metrics.active_count));
     ASSERT_EQ(1, CurrentMetrics::get(metrics.stored_count));
+}
+
+/// The code of the `DB::Exception` a request with `deadline` fails with, 0 if it succeeds.
+static int requestWithDeadline(
+    const Poco::URI & uri,
+    std::chrono::steady_clock::time_point deadline,
+    bool bypass_proxy = true,
+    std::chrono::milliseconds body_delay = {},
+    std::chrono::steady_clock::time_point * body_written = nullptr)
+{
+    Poco::Net::HTTPBasicCredentials empty_creds;
+    try
+    {
+        DB::BuilderRWBufferFromHTTP(uri)
+            .withBypassProxy(bypass_proxy)
+            .withDeadline(deadline)
+            .withOutCallback([body_delay, body_written] (DB::WriteBuffer & out)
+            {
+                std::this_thread::sleep_for(body_delay);
+                DB::writeString("Hello", out);
+                if (body_written)
+                    *body_written = std::chrono::steady_clock::now();
+            })
+            .withDelayInit(false)
+            .create(empty_creds);
+    }
+    catch (const DB::Exception & e)
+    {
+        return e.code();
+    }
+    return 0;
+}
+
+TEST_F(ConnectionPoolTest, ReadWriteBufferFromHTTPEndsAtDeadline)
+{
+    setSlowDown(2);
+
+    const auto start = std::chrono::steady_clock::now();
+    ASSERT_EQ(DB::ErrorCodes::TIMEOUT_EXCEEDED, requestWithDeadline(Poco::URI(getServerUrl()), start + std::chrono::milliseconds(500)));
+
+    const auto elapsed = std::chrono::steady_clock::now() - start;
+    ASSERT_GE(elapsed, std::chrono::milliseconds(400));
+    ASSERT_LT(elapsed, std::chrono::milliseconds(1500));
+}
+
+TEST_F(ConnectionPoolTest, ReadWriteBufferFromHTTPSlowBodyLeavesLessTimeForResponse)
+{
+    setSlowDown(4);
+
+    /// Writing the request body takes 1200 ms of the 1500 ms. The response wait then gets the 300 ms left, not the
+    /// 1500 ms the try started with.
+    const auto start = std::chrono::steady_clock::now();
+    std::chrono::steady_clock::time_point body_written;
+    ASSERT_EQ(
+        DB::ErrorCodes::TIMEOUT_EXCEEDED,
+        requestWithDeadline(
+            Poco::URI(getServerUrl()),
+            start + std::chrono::milliseconds(1500),
+            /*bypass_proxy=*/ true,
+            std::chrono::milliseconds(1200),
+            &body_written));
+
+    ASSERT_LT(std::chrono::steady_clock::now() - body_written, std::chrono::milliseconds(1000));
+}
+
+TEST_F(ConnectionPoolTest, ReadWriteBufferFromHTTPNoBackoffAfterSlowRetryCleanup)
+{
+    /// A server that sends the headers of a chunked response and then nothing.
+    Poco::Net::ServerSocket server(Poco::Net::SocketAddress("127.0.0.1", 0));
+    std::atomic<bool> stop = false;
+    std::thread responder([&]
+    {
+        std::vector<Poco::Net::StreamSocket> open;
+        while (!stop)
+        {
+            if (!server.poll(Poco::Timespan(10'000), Poco::Net::Socket::SELECT_READ))
+                continue;
+            auto socket = server.acceptConnection();
+            char request[4096];
+            socket.receiveBytes(request, sizeof(request));
+            const std::string headers = "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n";
+            socket.sendBytes(headers.data(), static_cast<int>(headers.size()));
+            open.push_back(socket);
+        }
+    });
+    SCOPE_EXIT({
+        stop = true;
+        responder.join();
+    });
+
+    /// Reading the first chunk header times out at 500 ms, and a 1500 ms backoff would still end before the 2400 ms
+    /// deadline, with 400 ms to spare for a slow build. But dropping the response reads the chunk header once more,
+    /// until at least 1000 ms, and then the backoff no longer fits.
+    DB::ReadSettings settings;
+    settings.http_settings.retry_initial_backoff_ms = 1500;
+    settings.http_settings.retry_max_backoff_ms = 3000;
+    Poco::Net::HTTPBasicCredentials empty_creds;
+    auto request = [&](std::chrono::steady_clock::time_point start, const DB::ReadWriteBufferFromHTTP::CancellationPtr & cancellation)
+    {
+        DB::BuilderRWBufferFromHTTP(Poco::URI("http://" + server.address().toString() + "/"))
+            .withBypassProxy(true)
+            .withSettings(settings)
+            .withTimeouts(timeouts.withReceiveTimeout(Poco::Timespan(500'000)))
+            .withDeadline(start + std::chrono::milliseconds(2400))
+            .withCancellation(cancellation)
+            .withDelayInit(false)
+            .create(empty_creds);
+    };
+
+    {
+        const auto start = std::chrono::steady_clock::now();
+        try
+        {
+            request(start, nullptr);
+            FAIL() << "the request succeeded";
+        }
+        catch (const DB::Exception & e)
+        {
+            ASSERT_EQ(DB::ErrorCodes::TIMEOUT_EXCEEDED, e.code());
+        }
+        ASSERT_LT(std::chrono::steady_clock::now() - start, std::chrono::milliseconds(2400));
+    }
+
+    {
+        /// A read cancelled while the response is being dropped, or earlier, is reported as interrupted, not as a timeout.
+        auto cancellation = std::make_shared<DB::ReadWriteBufferFromHTTP::Cancellation>();
+        const auto start = std::chrono::steady_clock::now();
+        std::thread canceller([&]
+        {
+            std::this_thread::sleep_until(start + std::chrono::milliseconds(750));
+            cancellation->cancel(/*softly=*/ false);
+        });
+        SCOPE_EXIT({ canceller.join(); });
+        ASSERT_THROW(request(start, cancellation), DB::ReadInterruptedException);
+    }
+}
+
+TEST_F(ConnectionPoolTest, ReadWriteBufferFromHTTPCancelledOpenResponseAtDeadline)
+{
+    /// A server that sends the first 16 bytes of a longer response and then nothing.
+    Poco::Net::ServerSocket server(Poco::Net::SocketAddress("127.0.0.1", 0));
+    std::atomic<bool> stop = false;
+    std::thread responder([&]
+    {
+        std::vector<Poco::Net::StreamSocket> open;
+        while (!stop)
+        {
+            if (!server.poll(Poco::Timespan(10'000), Poco::Net::Socket::SELECT_READ))
+                continue;
+            auto socket = server.acceptConnection();
+            char request[4096];
+            socket.receiveBytes(request, sizeof(request));
+            const std::string response = "HTTP/1.1 200 OK\r\nContent-Length: 1000\r\n\r\n0123456789abcdef";
+            socket.sendBytes(response.data(), static_cast<int>(response.size()));
+            open.push_back(socket);
+        }
+    });
+    SCOPE_EXIT({
+        stop = true;
+        responder.join();
+    });
+
+    /// The first buffer is read before the deadline. The read is then cancelled, and the next buffer is asked for after
+    /// the deadline: it is reported as interrupted, not as a timeout.
+    auto cancellation = std::make_shared<DB::ReadWriteBufferFromHTTP::Cancellation>();
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(300);
+    Poco::Net::HTTPBasicCredentials empty_creds;
+    auto buf = DB::BuilderRWBufferFromHTTP(Poco::URI("http://" + server.address().toString() + "/"))
+        .withBypassProxy(true)
+        .withBufSize(16)
+        .withDeadline(deadline)
+        .withCancellation(cancellation)
+        .withDelayInit(false)
+        .create(empty_creds);
+    ASSERT_EQ(16, buf->available());
+
+    cancellation->cancel(/*softly=*/ false);
+    std::this_thread::sleep_until(deadline);
+    buf->position() = buf->buffer().end();
+    ASSERT_THROW(buf->next(), DB::ReadInterruptedException);
+}
+
+TEST_F(ConnectionPoolTest, ReadWriteBufferFromHTTPCancelledPastDeadlineIsInterrupted)
+{
+    auto cancellation = std::make_shared<DB::ReadWriteBufferFromHTTP::Cancellation>();
+    cancellation->cancel(/*softly=*/ false);
+    Poco::Net::HTTPBasicCredentials empty_creds;
+    ASSERT_THROW(
+        DB::BuilderRWBufferFromHTTP(Poco::URI(getServerUrl()))
+            .withBypassProxy(true)
+            .withDeadline(std::chrono::steady_clock::now())
+            .withCancellation(cancellation)
+            .withDelayInit(false)
+            .create(empty_creds),
+        DB::ReadInterruptedException);
+}
+
+TEST_F(ConnectionPoolTest, ReadWriteBufferFromHTTPPastDeadlineOpensNoConnection)
+{
+    auto metrics = getPool()->getMetrics();
+
+    ASSERT_EQ(DB::ErrorCodes::TIMEOUT_EXCEEDED, requestWithDeadline(Poco::URI(getServerUrl()), std::chrono::steady_clock::now()));
+
+    ASSERT_EQ(0, DB::CurrentThread::getProfileEvents()[metrics.created]);
+    ASSERT_EQ(0, DB::CurrentThread::getProfileEvents()[metrics.reused]);
+}
+
+TEST_F(ConnectionPoolTest, ReadWriteBufferFromHTTPPastDeadlineSkipsProxyDiscovery)
+{
+    /// A proxy resolver that accepts connections and never replies.
+    Poco::Net::ServerSocket resolver_server(Poco::Net::SocketAddress("127.0.0.1", 0));
+    Poco::AutoPtr<Poco::Util::MapConfiguration> config(new Poco::Util::MapConfiguration());
+    config->setString("proxy", "");
+    config->setString("proxy.http", "");
+    config->setString("proxy.http.resolver", "");
+    config->setString("proxy.http.resolver.endpoint", "http://" + resolver_server.address().toString() + "/hostname");
+    config->setString("proxy.http.resolver.proxy_scheme", "http");
+    config->setString("proxy.http.resolver.proxy_port", "3128");
+    auto context = getContext().context;
+    context->setConfig(config);
+    SCOPE_EXIT({ context->setConfig(Poco::AutoPtr<Poco::Util::MapConfiguration>(new Poco::Util::MapConfiguration())); });
+
+    const auto uri = Poco::URI(getServerUrl());
+    ASSERT_EQ(DB::ErrorCodes::TIMEOUT_EXCEEDED, requestWithDeadline(uri, std::chrono::steady_clock::now(), /*bypass_proxy=*/ false));
+    ASSERT_FALSE(resolver_server.poll(Poco::Timespan(0), Poco::Net::Socket::SELECT_READ));
+
+    /// The configuration does route proxy discovery to that resolver.
+    ASSERT_ANY_THROW(DB::ProxyConfigurationResolverProvider::get(DB::ProxyConfiguration::Protocol::HTTP)->resolve());
+    ASSERT_TRUE(resolver_server.poll(Poco::Timespan(0), Poco::Net::Socket::SELECT_READ));
 }
 
 TEST_F(ConnectionPoolTest, ProxyConnectFailureDoesNotPessimizeTarget)
@@ -750,6 +1428,105 @@ TEST_F(ConnectionPoolTest, ProxyConnectSkipsTargetResolution)
     }
     ASSERT_TRUE(reached_proxy_connect);
 }
+
+#if USE_SILK
+
+/// The transport is fixed for the lifetime of a connection: a connection stored by one transport is never reused by the
+/// other. Pools of both transports belong to the same group, so they share its metrics.
+TEST_F(ConnectionPoolTest, TransportsDoNotShareConnectionsButShareGroupMetrics)
+{
+    /// A fiber-aware connection used from a plain thread needs the scheduler.
+    initializeFiberSchedulerForTests();
+
+    timeouts.withHTTPKeepAliveTimeout(Poco::Timespan(10, 0));
+
+    auto uri = Poco::URI(getServerUrl());
+    auto fiber_unaware_pool = DB::HTTPConnectionPools::instance().getPool(
+        DB::HTTPConnectionGroupType::HTTP, uri, DB::ProxyConfiguration{}, DB::HTTPConnectionTransport::FiberUnaware);
+    auto fiber_aware_pool = DB::HTTPConnectionPools::instance().getPool(
+        DB::HTTPConnectionGroupType::HTTP, uri, DB::ProxyConfiguration{}, DB::HTTPConnectionTransport::FiberAware);
+    auto metrics = fiber_unaware_pool->getMetrics();
+
+    DB::HTTPConnectionInfo fiber_unaware_info;
+    {
+        auto connection = fiber_unaware_pool->getConnection(timeouts, nullptr);
+        fiber_unaware_info = echoRequestAndTakeConnectionInfo("Hello", *connection);
+    } // returned to the pool
+    ASSERT_TRUE(fiber_unaware_info.has_value);
+    ASSERT_EQ(1, CurrentMetrics::get(metrics.stored_count));
+
+    /// The stored fiber-unaware connection is not handed out to the fiber-aware pool.
+    DB::HTTPConnectionInfo fiber_aware_info;
+    {
+        auto connection = fiber_aware_pool->getConnection(timeouts, nullptr);
+        fiber_aware_info = echoRequestAndTakeConnectionInfo("Hello", *connection);
+    } // returned to the pool
+    ASSERT_TRUE(fiber_aware_info.has_value);
+    ASSERT_NE(fiber_unaware_info.id, fiber_aware_info.id);
+    ASSERT_EQ(0, fiber_aware_info.requests_served);
+
+    /// Each transport reuses its own connection.
+    {
+        auto connection = fiber_unaware_pool->getConnection(timeouts, nullptr);
+        auto reused = echoRequestAndTakeConnectionInfo("Hello", *connection);
+        ASSERT_EQ(fiber_unaware_info.id, reused.id);
+        ASSERT_EQ(1, reused.requests_served);
+    }
+    {
+        auto connection = fiber_aware_pool->getConnection(timeouts, nullptr);
+        auto reused = echoRequestAndTakeConnectionInfo("Hello", *connection);
+        ASSERT_EQ(fiber_aware_info.id, reused.id);
+        ASSERT_EQ(1, reused.requests_served);
+    }
+
+    /// Both connections are counted in the metrics of their group; `active_count` includes stored connections.
+    ASSERT_EQ(2, getServer().totalConnections());
+    ASSERT_EQ(2, CurrentMetrics::get(metrics.stored_count));
+    ASSERT_EQ(2, CurrentMetrics::get(metrics.active_count));
+    ASSERT_EQ(2, DB::CurrentThread::getProfileEvents()[metrics.created]);
+    ASSERT_EQ(2, DB::CurrentThread::getProfileEvents()[metrics.reused]);
+}
+
+#if USE_SSL
+
+/// `HTTPSClientSession` tunnels through the proxy with ordinary Poco sockets, so a fiber-aware HTTPS connection over a
+/// tunneling proxy is rejected before it connects anywhere instead of blocking the thread of a fiber.
+TEST_F(ConnectionPoolTest, FiberAwareHTTPSThroughTunnelingProxyIsRejected)
+{
+    initializeFiberSchedulerForTests();
+
+    auto uri = Poco::URI("https://127.0.0.1:9999");
+
+    DB::ProxyConfiguration proxy_config;
+    proxy_config.host = "127.0.0.1";
+    /// TCPMUX (port 1) is a reserved port that almost never has a listener, so a connect attempt would fail.
+    proxy_config.port = 1;
+    proxy_config.protocol = DB::ProxyConfiguration::Protocol::HTTP;
+    proxy_config.tunneling = true;
+    proxy_config.original_request_protocol = DB::ProxyConfiguration::Protocol::HTTPS;
+
+    auto pool = DB::HTTPConnectionPools::instance().getPool(
+        DB::HTTPConnectionGroupType::HTTP, uri, proxy_config, DB::HTTPConnectionTransport::FiberAware);
+    auto metrics = pool->getMetrics();
+
+    int error_code = 0;
+    try
+    {
+        auto connection = pool->getConnection(timeouts, nullptr);
+    }
+    catch (const DB::Exception & e)
+    {
+        error_code = e.code();
+    }
+    ASSERT_EQ(DB::ErrorCodes::SUPPORT_IS_DISABLED, error_code);
+    /// No connect attempt was made.
+    ASSERT_EQ(0, DB::CurrentThread::getProfileEvents()[metrics.created]);
+    ASSERT_EQ(0, DB::CurrentThread::getProfileEvents()[metrics.errors]);
+}
+
+#endif
+
+#endif
 
 TEST_F(ConnectionPoolTest, RetriesNextAddressOnConnectFailure)
 {
@@ -842,10 +1619,201 @@ TEST_F(ConnectionPoolTest, RetriesNextAddressOnConnectFailure)
     echoRequest("Hello", *connection);
 }
 
+/// Connects to `server` until its accept queue is full, so that it answers no further SYN and a connect to it waits
+/// until its timeout. Returns false if the queue does not fill up.
+static bool fillAcceptQueue(Poco::Net::ServerSocket & server, std::vector<Poco::Net::StreamSocket> & queued)
+{
+    while (queued.size() < 16)
+    {
+        Poco::Net::StreamSocket socket;
+        try
+        {
+            socket.connect(server.address(), Poco::Timespan(100'000));
+        }
+        catch (const Poco::TimeoutException &)
+        {
+            return true;
+        }
+        queued.push_back(socket);
+    }
+    return false;
+}
+
+TEST_F(ConnectionPoolTest, NoNextAddressAfterDeadline)
+{
+    /// The first address keeps the connect until the deadline: its accept queue is full, so it does not answer a SYN.
+    /// The second address accepts.
+    constexpr UInt16 port = 9873;
+    const String test_host = "deadline-test.invalid";
+    const Poco::Net::IPAddress slow_ip("127.0.0.98");
+    const Poco::Net::IPAddress good_ip("127.0.0.1");
+
+    Poco::Net::ServerSocket good_server(Poco::Net::SocketAddress(good_ip, port));
+    Poco::Net::ServerSocket slow_server(Poco::Net::SocketAddress(slow_ip, port), /*backlog=*/ 1);
+    std::vector<Poco::Net::StreamSocket> queued;
+    ASSERT_TRUE(fillAcceptQueue(slow_server, queued));
+
+    /// Resolving the host again would take 3 s. A failed connect asks for it, and so does `resolve` 400 ms after the last
+    /// resolution, which is sooner than the connect gives up.
+    auto resolve_calls = std::make_shared<std::atomic<size_t>>(0);
+    auto resolve_func = [resolve_calls, slow_ip, good_ip](const String &) -> std::vector<Poco::Net::IPAddress>
+    {
+        if (resolve_calls->fetch_add(1) > 0)
+            sleepForSeconds(3);
+        return {slow_ip, good_ip};
+    };
+
+    struct ResolveMock : public DB::HostResolver
+    {
+        using ResolveFunction = DB::HostResolver::ResolveFunction;
+        ResolveMock(String h, Poco::Timespan history_, ResolveFunction f)
+            : DB::HostResolver(std::move(f), std::move(h), history_)
+        {}
+    };
+
+    auto resolver = std::make_shared<ResolveMock>(test_host, Poco::Timespan(1200 * 1000), std::move(resolve_func));
+    DB::HostResolversPool::instance().injectResolverForTest(test_host, resolver);
+
+    /// Ban the good address, so that the pool tries the slow one first.
+    bool good_banned = false;
+    for (size_t i = 0; i < 64 && !good_banned; ++i)
+    {
+        auto entry = resolver->resolve();
+        good_banned = *entry == good_ip.toString();
+        if (good_banned)
+            entry.setFail(/*refresh=*/ false);
+        else
+            entry.setUnused();
+    }
+    ASSERT_TRUE(good_banned);
+
+    auto uri = Poco::URI("http://" + test_host + ":" + std::to_string(port));
+    auto pool = DB::HTTPConnectionPools::instance().getPool(DB::HTTPConnectionGroupType::HTTP, uri, DB::ProxyConfiguration{});
+    auto metrics = pool->getMetrics();
+
+    const auto start = std::chrono::steady_clock::now();
+    ASSERT_ANY_THROW(pool->getConnection(timeouts, nullptr, start + std::chrono::milliseconds(500)));
+    ASSERT_LT(std::chrono::steady_clock::now() - start, std::chrono::seconds(1));
+
+    /// Once the slow address fails, both are banned, so both are selectable again: the good one is not tried after the
+    /// deadline, and the host is not resolved again.
+    ASSERT_EQ(1, resolve_calls->load());
+    ASSERT_EQ(1, DB::CurrentThread::getProfileEvents()[metrics.errors]);
+    ASSERT_EQ(0, DB::CurrentThread::getProfileEvents()[metrics.created]);
+}
+
+TEST_F(ConnectionPoolTest, NoConnectAfterResolutionUsesUpDeadline)
+{
+    constexpr UInt16 port = 9874;
+    const String test_host = "slow-resolution-test.invalid";
+    const Poco::Net::IPAddress good_ip("127.0.0.1");
+    Poco::Net::ServerSocket good_server(Poco::Net::SocketAddress(good_ip, port));
+
+    /// The refresh due on the first `resolve` takes 600 ms, longer than the 300 ms deadline.
+    auto resolve_calls = std::make_shared<std::atomic<size_t>>(0);
+    auto resolve_func = [resolve_calls, good_ip](const String &) -> std::vector<Poco::Net::IPAddress>
+    {
+        if (resolve_calls->fetch_add(1) > 0)
+            sleepForMilliseconds(600);
+        return {good_ip};
+    };
+
+    struct ResolveMock : public DB::HostResolver
+    {
+        using ResolveFunction = DB::HostResolver::ResolveFunction;
+        ResolveMock(String h, Poco::Timespan history_, ResolveFunction f)
+            : DB::HostResolver(std::move(f), std::move(h), history_)
+        {}
+    };
+
+    /// History 3 us: a refresh is due 1 us after the first resolution.
+    DB::HostResolversPool::instance().injectResolverForTest(
+        test_host, std::make_shared<ResolveMock>(test_host, Poco::Timespan(3), std::move(resolve_func)));
+
+    auto uri = Poco::URI("http://" + test_host + ":" + std::to_string(port));
+    auto pool = DB::HTTPConnectionPools::instance().getPool(DB::HTTPConnectionGroupType::HTTP, uri, DB::ProxyConfiguration{});
+    auto metrics = pool->getMetrics();
+
+    try
+    {
+        pool->getConnection(timeouts, nullptr, std::chrono::steady_clock::now() + std::chrono::milliseconds(300));
+        FAIL() << "connected after the deadline";
+    }
+    catch (const DB::Exception & e)
+    {
+        ASSERT_EQ(DB::ErrorCodes::TIMEOUT_EXCEEDED, e.code());
+    }
+
+    ASSERT_EQ(2, resolve_calls->load());
+    ASSERT_EQ(0, DB::CurrentThread::getProfileEvents()[metrics.created]);
+    ASSERT_FALSE(good_server.poll(Poco::Timespan(0), Poco::Net::Socket::SELECT_READ));
+}
+
+TEST_F(ConnectionPoolTest, ProxyConnectKeepsToDeadline)
+{
+    /// A proxy that does not answer a SYN.
+    Poco::Net::ServerSocket proxy_server(Poco::Net::SocketAddress("127.0.0.97", 9875), /*backlog=*/ 1);
+    std::vector<Poco::Net::StreamSocket> queued;
+    ASSERT_TRUE(fillAcceptQueue(proxy_server, queued));
+
+    DB::ProxyConfiguration proxy_config;
+    proxy_config.host = "127.0.0.97";
+    proxy_config.port = 9875;
+    proxy_config.protocol = DB::ProxyConfiguration::Protocol::HTTP;
+    auto pool = DB::HTTPConnectionPools::instance().getPool(
+        DB::HTTPConnectionGroupType::HTTP, Poco::URI("http://proxy-deadline-target.invalid:9999"), proxy_config);
+    auto metrics = pool->getMetrics();
+
+    try
+    {
+        pool->getConnection(timeouts, nullptr, std::chrono::steady_clock::now());
+        FAIL() << "connected after the deadline";
+    }
+    catch (const DB::Exception & e)
+    {
+        ASSERT_EQ(DB::ErrorCodes::TIMEOUT_EXCEEDED, e.code());
+    }
+    ASSERT_EQ(0, DB::CurrentThread::getProfileEvents()[metrics.errors]);
+
+    const auto start = std::chrono::steady_clock::now();
+    ASSERT_ANY_THROW(pool->getConnection(timeouts, nullptr, start + std::chrono::milliseconds(300)));
+    ASSERT_LT(std::chrono::steady_clock::now() - start, std::chrono::seconds(1));
+    ASSERT_EQ(1, DB::CurrentThread::getProfileEvents()[metrics.errors]);
+    ASSERT_EQ(0, DB::CurrentThread::getProfileEvents()[metrics.created]);
+}
+
+TEST_F(ConnectionPoolTest, ReconnectWithoutPoolKeepsToDeadline)
+{
+    auto pool = getPool();
+    const auto metrics = pool->getMetrics();
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(200);
+    auto connection = pool->getConnection(timeouts, nullptr, deadline);
+    ASSERT_EQ(1, DB::CurrentThread::getProfileEvents()[metrics.created]);
+
+    /// The endpoint pool goes away while the connection is borrowed, and the connection loses its socket, so the next
+    /// request reconnects it directly.
+    pool.reset();
+    DB::HTTPConnectionPools::instance().dropCache();
+    (*connection).reset();
+    std::this_thread::sleep_until(deadline);
+
+    try
+    {
+        Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_GET, "/", "HTTP/1.1");
+        DB::sendHTTPRequest(*connection, request)->finalize();
+        FAIL() << "reconnected after the deadline";
+    }
+    catch (const DB::Exception & e)
+    {
+        ASSERT_EQ(DB::ErrorCodes::TIMEOUT_EXCEEDED, e.code());
+    }
+    ASSERT_EQ(1, DB::CurrentThread::getProfileEvents()[metrics.created]);
+}
+
 TEST_F(ConnectionPoolTest, StoreLimit)
 {
     DB::HTTPConnectionPools::Limits zero_limits {0, 0, 0};
-    DB::HTTPConnectionPools::instance().setLimits(zero_limits, zero_limits, zero_limits);
+    DB::HTTPConnectionPools::instance().setLimits(zero_limits, zero_limits, zero_limits, zero_limits);
 
     auto pool = getPool();
     auto metrics = pool->getMetrics();
@@ -869,7 +1837,7 @@ TEST_F(ConnectionPoolTest, StoreLimit)
 TEST_F(ConnectionPoolTest, StoreLimitCountsOnlyStoredConnections)
 {
     DB::HTTPConnectionPools::Limits limits {100, 1000, 2, 0};
-    DB::HTTPConnectionPools::instance().setLimits(limits, limits, limits);
+    DB::HTTPConnectionPools::instance().setLimits(limits, limits, limits, limits);
 
     auto pool = getPool();
     auto metrics = pool->getMetrics();
@@ -923,7 +1891,7 @@ TEST_F(ConnectionPoolTest, StoreLimitCountsOnlyStoredConnections)
 TEST_F(ConnectionPoolTest, HardLimit)
 {
     DB::HTTPConnectionPools::Limits limits {0, 0, 1, 1};
-    DB::HTTPConnectionPools::instance().setLimits(limits, limits, limits);
+    DB::HTTPConnectionPools::instance().setLimits(limits, limits, limits, limits);
 
     auto pool = getPool();
     auto metrics = pool->getMetrics();
@@ -943,6 +1911,39 @@ TEST_F(ConnectionPoolTest, HardLimit)
     ASSERT_EQ(1, CurrentMetrics::get(metrics.stored_count));
 }
 
+/// The soft limit counts the connections in use and the idle ones stored for reuse together.
+TEST_F(ConnectionPoolTest, SoftLimitReached)
+{
+    DB::HTTPConnectionPools::Limits limits {2, 1000, 10, 0};
+    DB::HTTPConnectionPools::instance().setLimits(limits, limits, limits, limits);
+
+    auto pool = getPool();
+    ASSERT_FALSE(DB::HTTPConnectionPools::instance().isSoftLimitReached(DB::HTTPConnectionGroupType::HTTP));
+
+    {
+        auto connection1 = pool->getConnection(timeouts, nullptr);
+        ASSERT_FALSE(DB::HTTPConnectionPools::instance().isSoftLimitReached(DB::HTTPConnectionGroupType::HTTP));
+
+        auto connection2 = pool->getConnection(timeouts, nullptr);
+        ASSERT_TRUE(DB::HTTPConnectionPools::instance().isSoftLimitReached(DB::HTTPConnectionGroupType::HTTP));
+
+        /// Other groups are not affected.
+        ASSERT_FALSE(DB::HTTPConnectionPools::instance().isSoftLimitReached(DB::HTTPConnectionGroupType::DISK));
+
+        echoRequest("Hello", *connection1);
+        echoRequest("Hello", *connection2);
+    }
+
+    /// Both connections are stored for reuse and still count.
+    ASSERT_EQ(2, CurrentMetrics::get(pool->getMetrics().stored_count));
+    ASSERT_TRUE(DB::HTTPConnectionPools::instance().isSoftLimitReached(DB::HTTPConnectionGroupType::HTTP));
+
+    /// Dropping the endpoint pool with its stored connections frees the group.
+    pool.reset();
+    DB::HTTPConnectionPools::instance().dropCache();
+    ASSERT_FALSE(DB::HTTPConnectionPools::instance().isSoftLimitReached(DB::HTTPConnectionGroupType::HTTP));
+}
+
 TEST_F(ConnectionPoolTest, NoReceiveCall)
 {
     auto pool = getPool();
@@ -955,8 +1956,9 @@ TEST_F(ConnectionPoolTest, NoReceiveCall)
             auto data = String("Hello");
             Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_PUT, "/", "HTTP/1.1"); // HTTP/1.1 is required for keep alive
             request.setContentLength(data.size());
-            std::ostream & ostream = connection->sendRequest(request);
-            ostream << data;
+            auto request_body = DB::sendHTTPRequest(*connection, request);
+            DB::writeString(data, *request_body);
+            request_body->finalize();
         }
 
         connection->flushRequest();
@@ -969,6 +1971,296 @@ TEST_F(ConnectionPoolTest, NoReceiveCall)
     ASSERT_EQ(0, DB::CurrentThread::getProfileEvents()[metrics.expired]);
 
     ASSERT_EQ(0, CurrentMetrics::get(metrics.active_count));
+    ASSERT_EQ(0, CurrentMetrics::get(metrics.stored_count));
+}
+
+/// A request body with `Content-Length` written through `sendHTTPRequest` with a buffer much smaller
+/// than the body, so that it leaves in many pieces. The server echoes the body back, and the second
+/// exchange on the reused connection checks that the first body ended exactly at its `Content-Length`.
+TEST_F(ConnectionPoolTest, FixedLengthRequestBodyInManyWrites)
+{
+    auto pool = getPool();
+    auto metrics = pool->getMetrics();
+
+    String data;
+    for (size_t i = 0; i < 10000; ++i)
+        data += std::to_string(i) + "\n";
+
+    for (size_t attempt = 0; attempt < 2; ++attempt)
+    {
+        auto connection = pool->getConnection(timeouts, nullptr);
+
+        Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_PUT, "/", "HTTP/1.1");
+        request.setContentLength(data.size());
+        auto request_body = DB::sendHTTPRequest(*connection, request, 137);
+        for (size_t pos = 0; pos < data.size(); pos += 1000)
+            DB::writeString(data.substr(pos, 1000), *request_body);
+        request_body->finalize();
+
+        Poco::Net::HTTPResponse response;
+        auto response_body = DB::receiveHTTPResponse(*connection, response);
+        ASSERT_EQ(response.getStatus(), Poco::Net::HTTPResponse::HTTP_OK);
+        ASSERT_EQ(response.getContentLength64(), static_cast<Int64>(data.size()));
+
+        String result;
+        DB::readStringUntilEOF(result, *response_body);
+        ASSERT_EQ(data, result);
+    }
+
+    ASSERT_EQ(1, getServer().totalConnections());
+    ASSERT_EQ(1, DB::CurrentThread::getProfileEvents()[metrics.created]);
+    ASSERT_EQ(2, DB::CurrentThread::getProfileEvents()[metrics.preserved]);
+    ASSERT_EQ(1, DB::CurrentThread::getProfileEvents()[metrics.reused]);
+    ASSERT_EQ(0, DB::CurrentThread::getProfileEvents()[metrics.reset]);
+}
+
+/// `getConnection` hands out the full `Poco::Net::HTTPClientSession` interface, so a caller may
+/// drive a pooled connection through the legacy `std::iostream` API instead of
+/// `sendRequestHeaders`/`receiveHTTPResponse`. The pool decides whether a connection can be reused
+/// from the completeness of the last request and response, and these tests pin that this decision
+/// stays correct for that API as well: a half-sent request or a half-read response must never let a
+/// connection back into the pool, because its leftover bytes would be taken for the beginning of
+/// the next exchange.
+TEST_F(ConnectionPoolTest, LegacyStreamApiCompleteExchangeIsPreserved)
+{
+    auto pool = getPool();
+    auto metrics = pool->getMetrics();
+
+    const auto data = String("Hello");
+
+    {
+        auto connection = pool->getConnection(timeouts, nullptr);
+
+        Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_PUT, "/", "HTTP/1.1"); // HTTP/1.1 is required for keep alive
+        request.setContentLength(data.size());
+        connection->sendRequest(request) << data;
+
+        Poco::Net::HTTPResponse response;
+        std::istream & response_body = connection->receiveResponse(response);
+        ASSERT_EQ(response.getStatus(), Poco::Net::HTTPResponse::HTTP_OK);
+
+        String result;
+        result.resize(data.size());
+        response_body.read(result.data(), static_cast<std::streamsize>(result.size()));
+        ASSERT_EQ(data, result);
+    }
+
+    ASSERT_EQ(1, DB::CurrentThread::getProfileEvents()[metrics.created]);
+    ASSERT_EQ(1, DB::CurrentThread::getProfileEvents()[metrics.preserved]);
+    ASSERT_EQ(0, DB::CurrentThread::getProfileEvents()[metrics.reused]);
+    ASSERT_EQ(0, DB::CurrentThread::getProfileEvents()[metrics.reset]);
+
+    ASSERT_EQ(1, CurrentMetrics::get(metrics.stored_count));
+}
+
+TEST_F(ConnectionPoolTest, LegacyStreamApiHalfReadResponseIsNotPreserved)
+{
+    auto pool = getPool();
+    auto metrics = pool->getMetrics();
+
+    /// The body has to be larger than the buffer of the response stream, so that a part of it is
+    /// left in the socket and not merely in the discarded buffer of the stream.
+    const auto data = String(1_MiB, 'x');
+
+    {
+        auto connection = pool->getConnection(timeouts, nullptr);
+
+        Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_PUT, "/", "HTTP/1.1");
+        request.setContentLength(data.size());
+        connection->sendRequest(request) << data;
+
+        Poco::Net::HTTPResponse response;
+        std::istream & response_body = connection->receiveResponse(response);
+        ASSERT_EQ(response.getStatus(), Poco::Net::HTTPResponse::HTTP_OK);
+
+        /// Read a part of the body and leave the rest of it in the socket.
+        char first = 0;
+        response_body.read(&first, 1);
+        ASSERT_EQ(data[0], first);
+    }
+
+    ASSERT_EQ(1, DB::CurrentThread::getProfileEvents()[metrics.created]);
+    ASSERT_EQ(0, DB::CurrentThread::getProfileEvents()[metrics.preserved]);
+    ASSERT_EQ(0, DB::CurrentThread::getProfileEvents()[metrics.reused]);
+    ASSERT_EQ(1, DB::CurrentThread::getProfileEvents()[metrics.reset]);
+
+    ASSERT_EQ(0, CurrentMetrics::get(metrics.stored_count));
+}
+
+TEST_F(ConnectionPoolTest, LegacyStreamApiHalfSentRequestIsNotPreserved)
+{
+    auto pool = getPool();
+    auto metrics = pool->getMetrics();
+
+    {
+        auto connection = pool->getConnection(timeouts, nullptr);
+
+        Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_PUT, "/", "HTTP/1.1");
+        request.setContentLength(10);
+        /// Announce ten bytes of body and send fewer of them.
+        connection->sendRequest(request) << "Hi";
+    }
+
+    ASSERT_EQ(1, DB::CurrentThread::getProfileEvents()[metrics.created]);
+    ASSERT_EQ(0, DB::CurrentThread::getProfileEvents()[metrics.preserved]);
+    ASSERT_EQ(0, DB::CurrentThread::getProfileEvents()[metrics.reused]);
+    ASSERT_EQ(1, DB::CurrentThread::getProfileEvents()[metrics.reset]);
+
+    ASSERT_EQ(0, CurrentMetrics::get(metrics.stored_count));
+}
+
+namespace
+{
+
+/// Records every throttling request so that a test can tell whether the transport consulted it.
+class CountingThrottler : public DB::IThrottler
+{
+public:
+    bool throttle(size_t amount, size_t) override
+    {
+        bytes += amount;
+        return false;
+    }
+
+    bool isThrottling() const override { return false; }
+    Int64 getAvailable() override { return std::numeric_limits<Int64>::max(); }
+    UInt64 getMaxSpeed() const override { return 0; }
+    UInt64 getMaxBurst() const override { return 0; }
+
+    std::atomic<size_t> bytes{0};
+};
+
+}
+
+/// IO scheduling hooks and the per-thread throttlers have to be installed before any socket I/O of
+/// the exchange starts. `getConnection` hands out the full `Poco::Net::HTTPClientSession`, so that
+/// has to happen on the legacy `sendRequest` entrypoint as well, not only on `sendRequestHeaders` -
+/// otherwise a caller of the legacy API would do its network I/O outside of the throttling.
+TEST_F(ConnectionPoolTest, LegacyStreamApiIsThrottled)
+{
+    auto pool = getPool();
+
+    auto read_throttler = std::make_shared<CountingThrottler>();
+    auto write_throttler = std::make_shared<CountingThrottler>();
+
+    const auto data = String("Hello");
+
+    {
+        /// The throttlers live in the `ThreadStatus`, which a unit test does not have by default.
+        /// Do not put a bare `ThreadStatus` on the stack: its destructor resets `current_thread` for good,
+        /// and later tests in the same process would fail with `Thread status was not initialized`.
+        DB::MainThreadStatus::getInstance();
+
+        DB::CurrentThread::ReadThrottlingScope read_scope(read_throttler);
+        DB::CurrentThread::WriteThrottlingScope write_scope(write_throttler);
+
+        auto connection = pool->getConnection(timeouts, nullptr);
+
+        Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_PUT, "/", "HTTP/1.1");
+        request.setContentLength(data.size());
+        connection->sendRequest(request) << data;
+
+        Poco::Net::HTTPResponse response;
+        std::istream & response_body = connection->receiveResponse(response);
+        ASSERT_EQ(response.getStatus(), Poco::Net::HTTPResponse::HTTP_OK);
+
+        String result;
+        result.resize(data.size());
+        response_body.read(result.data(), static_cast<std::streamsize>(result.size()));
+        ASSERT_EQ(data, result);
+    }
+
+    ASSERT_GT(write_throttler->bytes.load(), 0);
+    ASSERT_GT(read_throttler->bytes.load(), 0);
+}
+
+/// A `PUT`, `POST` or `PATCH` with neither `Content-Length` nor chunked encoding carries a body
+/// that is delimited by the end of the connection (`BodyEncoding::UntilEOF`). Writing its last byte
+/// therefore does not end it - the server goes on waiting for more - so the request can never be
+/// completed on a connection that is to be reused, and the pool has to drop that connection. None
+/// of the callers in the server sends such a request, they all set one framing or the other, but
+/// the transport must not promise reusability it cannot deliver: the next borrower would start its
+/// request inside the body of this one.
+TEST_F(ConnectionPoolTest, RequestBodyWithoutFramingIsNotPreserved)
+{
+    auto pool = getPool();
+    auto metrics = pool->getMetrics();
+
+    {
+        auto connection = pool->getConnection(timeouts, nullptr);
+
+        Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_PUT, "/", "HTTP/1.1");
+        auto request_body = DB::sendHTTPRequest(*connection, request);
+        DB::writeString("Hello", *request_body);
+        request_body->finalize();
+
+        /// Everything the caller had was written, and the request is still not complete.
+        ASSERT_FALSE(connection->isRequestBodyComplete());
+    }
+
+    /// No response is read here: the server cannot know that the body ended, which is the whole
+    /// reason this connection is not reusable. The pool resets it.
+    ASSERT_EQ(1, DB::CurrentThread::getProfileEvents()[metrics.created]);
+    ASSERT_EQ(0, DB::CurrentThread::getProfileEvents()[metrics.preserved]);
+    ASSERT_EQ(0, DB::CurrentThread::getProfileEvents()[metrics.reused]);
+    ASSERT_EQ(1, DB::CurrentThread::getProfileEvents()[metrics.reset]);
+
+    ASSERT_EQ(0, CurrentMetrics::get(metrics.stored_count));
+}
+
+/// A response with neither `Content-Length` nor chunked encoding carries a body that is delimited
+/// by the end of the connection (`BodyEncoding::UntilEOF`): the server closes its side to end it.
+/// Reading such a body to the end must not make the connection reusable - the pool only checks that
+/// the socket is still open, and the next borrower would write its request into a connection the
+/// server has already closed.
+TEST_F(ConnectionPoolTest, ResponseBodyUntilEOFIsNotPreserved)
+{
+    Poco::Net::ServerSocket server_socket(Poco::Net::SocketAddress("127.0.0.1", 0));
+    std::thread server_thread([&]
+    {
+        Poco::Net::StreamSocket socket = server_socket.acceptConnection();
+        std::string request;
+        char buf[1024];
+        while (!request.contains("\r\n\r\n"))
+        {
+            const int n = socket.receiveBytes(buf, sizeof(buf));
+            if (n <= 0)
+                return;
+            request.append(buf, n);
+        }
+        /// HTTP/1.1 without `Connection: close` is keep-alive, and the body has no framing.
+        const std::string response = "HTTP/1.1 200 OK\r\n\r\nHello";
+        socket.sendBytes(response.data(), static_cast<int>(response.size()));
+        socket.shutdownSend();
+    });
+    SCOPE_EXIT({ server_thread.join(); });
+
+    auto uri = Poco::URI("http://" + server_socket.address().toString());
+    auto pool = DB::HTTPConnectionPools::instance().getPool(DB::HTTPConnectionGroupType::HTTP, uri, DB::ProxyConfiguration{});
+    auto metrics = pool->getMetrics();
+
+    {
+        auto connection = pool->getConnection(timeouts, nullptr);
+
+        Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_GET, "/", "HTTP/1.1");
+        DB::sendHTTPRequest(*connection, request)->finalize();
+
+        Poco::Net::HTTPResponse response;
+        auto response_body = DB::receiveHTTPResponse(*connection, response);
+        ASSERT_EQ(response.getStatus(), Poco::Net::HTTPResponse::HTTP_OK);
+        ASSERT_TRUE(response.getKeepAlive());
+
+        String result;
+        DB::readStringUntilEOF(result, *response_body);
+        ASSERT_EQ("Hello", result);
+        ASSERT_TRUE(response_body->isResponseComplete());
+    }
+
+    ASSERT_EQ(1, DB::CurrentThread::getProfileEvents()[metrics.created]);
+    ASSERT_EQ(0, DB::CurrentThread::getProfileEvents()[metrics.preserved]);
+    ASSERT_EQ(0, DB::CurrentThread::getProfileEvents()[metrics.reused]);
+    ASSERT_EQ(1, DB::CurrentThread::getProfileEvents()[metrics.reset]);
+
     ASSERT_EQ(0, CurrentMetrics::get(metrics.stored_count));
 }
 

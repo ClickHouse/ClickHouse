@@ -1,0 +1,70 @@
+---
+sidebarTitle: '프롬프트'
+slug: /agents/prompts
+title: '프롬프트'
+description: 'ClickHouse Agents에서 사용하는 저장된 프롬프트 라이브러리'
+keywords: ['AI', 'ClickHouse Cloud', 'agents', 'prompts', 'templates']
+doc_type: 'reference'
+---
+
+import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge />
+
+프롬프트 라이브러리는 반복해서 입력하는 자연어 프롬프트를 저장해 두고 재사용할 수 있는 공간입니다. 채팅 컴포저에서 쓰는 스니펫이라고 생각하면 됩니다. 같은 분석 질문이나 서식 지정 지침을 여러 대화에서 반복해서 사용할 때 유용합니다.
+
+## 프롬프트 생성 {#create-a-prompt}
+
+왼쪽 탐색 메뉴에서 **프롬프트** 아이콘을 클릭하여 프롬프트 패널을 연 다음, **+** 버튼을 클릭하여 **Create Prompt** 양식을 엽니다. 다음 필드를 입력합니다.
+
+* **Prompt Name** (필수) - 선택기에 표시되는 이름입니다. 내용을 알 수 있도록 구체적으로 작성하십시오. *&quot;WAU&quot;*&#xBCF4;다는 *&quot;리전별 주간 활성 사용자&quot;*&#xAC00; 더 좋습니다.
+* **Text** (필수) - 컴포저에 실제로 삽입될 텍스트입니다.
+* **Special variables** - **Special variables** 버튼을 클릭하여 자리표시자를 삽입하거나, `{{name}}` 형식의 마커를 직접 입력합니다. 선택기에서 프롬프트를 삽입하기 전에 해당 값을 입력하라는 메시지가 표시됩니다.
+* **Category**, **Description**, **Command** (선택 사항) - 각각 라이브러리 정리, 선택기 미리보기 텍스트, 빠른 실행 단축 명령에 사용됩니다.
+
+그런 다음 오른쪽 하단의 **Create Prompt**를 클릭합니다.
+
+<div className="ch-image-lg">
+  <Frame>
+    ![왼쪽에는 + 버튼이 강조 표시된 프롬프트 패널, 오른쪽에는 Prompt Name, Text, Category, Special variables, Description, Command 필드와 Create Prompt 버튼이 있는 Create Prompt 양식이 열려 있는 화면](/images/cloud/agent-builder/prompts/create-prompt.webp)
+  </Frame>
+</div>
+
+## 프롬프트 사용하기 {#use-a-prompt}
+
+프롬프트 패널에서 프롬프트 카드의 **...** 메뉴를 열고 **Preview**를 선택하십시오.
+
+<div className="ch-image-lg">
+  <Frame>
+    ![프롬프트가 선택되어 오른쪽에 세부 정보가 표시되고, 컨텍스트 메뉴에 Preview 및 Edit 옵션이 표시된 프롬프트 패널](/images/cloud/agent-builder/prompts/preview.webp)
+  </Frame>
+</div>
+
+미리 보기에는 프롬프트 텍스트와 함께 작성자 및 날짜가 표시됩니다. **Use Prompt**를 클릭하면 본문이 컴포저에 삽입됩니다. 프롬프트에 변수가 있으면 먼저 변수 값을 입력하십시오.
+
+<div className="ch-image-md">
+  <Frame>
+    ![프롬프트 제목, 작성자, 날짜, 본문 텍스트 및 Use Prompt 버튼이 표시된 프롬프트 미리 보기 모달 대화 상자](/images/cloud/agent-builder/prompts/use-prompt-modal.webp)
+  </Frame>
+</div>
+
+## 프롬프트 공유 {#share-prompts}
+
+기본적으로 프롬프트는 이를 생성한 사람만 사용할 수 있습니다. 소유자는 프롬프트의 공개 범위를 다음과 같이 변경할 수 있습니다.
+
+* **특정 사용자 또는 그룹** - 지정된 사용자는 누구나 프롬프트를 찾아 사용할 수 있습니다.
+* **조직 전체** - ClickHouse Cloud 조직의 모든 구성원이 프롬프트를 찾아 사용할 수 있습니다.
+
+프롬프트는 에이전트와 동일한 권한(permission) 모델을 사용합니다. 역할별로 수행할 수 있는 작업을 정리한 전체 매트릭스는 [공유 및
+액세스](/ko/agents/sharing-and-access)를 참조하십시오.
+
+## 프롬프트, 스킬, 지침 비교 {#prompts-vs-skills-vs-instructions}
+
+프롬프트, 스킬, 에이전트 지침은 모두 모델에 텍스트를 추가하지만, 누가 트리거하는지와 얼마나 지속되는지가 다릅니다.
+
+* **프롬프트** - 사용자가 직접 컴포저에 삽입하는 텍스트로, 턴마다 편집합니다.
+* **[스킬](/ko/agents/builder/skills)** - 에이전트가 작업과 관련이 있다고 판단하면 스스로 로드하는 지침 세트입니다.
+* **에이전트 지침** - 에이전트의 영구적인 시스템 프롬프트로, 모든 대화에 적용됩니다.
+
+문구를 재사용하되 매번 표현을 직접 조정하려면 프롬프트를 사용하세요. 매번 입력하지 않고도 에이전트가 특정 유형의 작업 전반에 동일한 지침을 일관되게 적용하도록 하려면 스킬을 사용하세요. 에이전트의
+수명 내내 유지되어야 하는 동작이라면 에이전트 지침을 사용하세요.

@@ -1,3 +1,4 @@
+#include <Storages/MergeTree/ColumnsCache.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
 #include <Storages/MergeTree/MergeTreeReadTask.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
@@ -68,7 +69,47 @@ MergeTreeReadPool::MergeTreeReadPool(
     , backoff_settings{context_->getSettingsRef()}
     , backoff_state{pool_settings.threads}
 {
+    columns_cache_stripe_marks.assign(parts_ranges.size(), 0);
+    if (owned_columns_cache && (reader_settings.enable_columns_cache_reads || reader_settings.enable_columns_cache_writes))
+    {
+        /// An aligned cut moves to the nearest end of a stripe, so a stripe larger than the share of a thread
+        /// gives whole stripes to the first threads and nothing to the others: a table with wide rows has a
+        /// few rows per granule and stripes of up to `ColumnsCacheStripes::MAX_STRIPE_MARKS` granules, and a
+        /// small read has few marks to share. Such parts are cut without alignment: the cache still holds what
+        /// is read, as runs of granules of a stripe, which is less efficient than whole stripes but keeps the
+        /// read parallel.
+        const size_t threads = std::max<size_t>(1, pool_settings.threads);
+        const size_t marks_per_thread = (pool_settings.sum_marks + threads - 1) / threads;
+
+        for (size_t i = 0; i < parts_ranges.size(); ++i)
+        {
+            /// Only the parts the reader caches, see `IMergeTreeReader::initColumnsCache`: for the others an aligned
+            /// cut only moves the boundaries of the tasks.
+            const auto & part = parts_ranges[i].data_part;
+            if (!canUseColumnsCacheForPart(part->storage.getStorageID().uuid))
+                continue;
+
+            const size_t stripe_marks = ColumnsCacheStripes::forPart(*part->index_granularity).stripe_marks;
+            if (stripe_marks <= marks_per_thread)
+                columns_cache_stripe_marks[i] = stripe_marks;
+        }
+    }
+
     fillPerThreadInfo(pool_settings.threads, pool_settings.sum_marks);
+}
+
+/// The number of marks to take from the beginning of `range` to take about `marks` of them and
+/// end at the end of a stripe of the columns cache, so that the blocks read from the range are
+/// whole entries of the cache.
+static size_t alignMarksToColumnsCacheStripes(const MarkRange & range, size_t marks, size_t stripe_marks)
+{
+    const size_t marks_in_range = range.end - range.begin;
+    if (stripe_marks <= 1 || marks >= marks_in_range)
+        return std::min(marks, marks_in_range);
+    size_t end = (range.begin + marks + stripe_marks / 2) / stripe_marks * stripe_marks;
+    if (end <= range.begin)
+        end = (range.begin / stripe_marks + 1) * stripe_marks;
+    return std::min(end, range.end) - range.begin;
 }
 
 MergeTreeReadTaskPtr MergeTreeReadPool::getTask(size_t task_idx, MergeTreeReadTask * previous_task)
@@ -172,7 +213,7 @@ bool MergeTreeReadPool::cutRangesToRead(size_t task_idx, size_t & part_idx, size
     if (is_part_on_remote_disk[part_idx] && !pool_settings.use_const_size_tasks_for_remote_reading)
         need_marks = marks_in_part;
     else /// Get whole part to read if it is small enough.
-        need_marks = std::min(marks_in_part, min_marks_per_task);
+        need_marks = std::min(marks_in_part, adjustTaskSizeToReadEnd(min_marks_per_task));
 
     cutFromThreadTask(thread_tasks, thread_idx, need_marks, ranges_to_get_from_part);
     return true;
@@ -192,6 +233,14 @@ bool MergeTreeReadPool::cutMoreRangesToRead(size_t thread_idx, size_t part_idx, 
     return true;
 }
 
+size_t MergeTreeReadPool::adjustTaskSizeToReadEnd(size_t min_marks_per_task) const
+{
+    const bool is_end_of_read = remaining_marks <= backoff_state.current_threads * min_marks_per_task;
+    if (is_end_of_read && pool_settings.min_marks_per_task_at_read_end)
+        return pool_settings.min_marks_per_task_at_read_end;
+    return min_marks_per_task;
+}
+
 void MergeTreeReadPool::cutFromThreadTask(ThreadTask & thread_tasks, size_t thread_idx, size_t need_marks, MarkRanges & ranges_to_get_from_part)
 {
     auto & thread_task = thread_tasks.parts_and_ranges.back();
@@ -199,13 +248,14 @@ void MergeTreeReadPool::cutFromThreadTask(ThreadTask & thread_tasks, size_t thre
     const auto min_marks_per_task = per_part_infos[thread_task.part_idx]->min_marks_per_task;
 
     /// Do not leave too little rows in part for next time.
-    if (marks_in_part > need_marks && marks_in_part - need_marks < min_marks_per_task / 2)
+    if (marks_in_part > need_marks && marks_in_part - need_marks < adjustTaskSizeToReadEnd(min_marks_per_task) / 2)
         need_marks = marks_in_part;
 
     /// Get whole part to read if it is small enough.
     if (marks_in_part <= need_marks)
     {
         ranges_to_get_from_part = std::move(thread_task.ranges);
+        remaining_marks -= marks_in_part;
         marks_in_part = 0;
 
         thread_tasks.parts_and_ranges.pop_back();
@@ -221,8 +271,7 @@ void MergeTreeReadPool::cutFromThreadTask(ThreadTask & thread_tasks, size_t thre
         {
             auto & range = thread_task.ranges.front();
 
-            const size_t marks_in_range = range.end - range.begin;
-            const size_t marks_to_get_from_range = std::min(marks_in_range, need_marks);
+            const size_t marks_to_get_from_range = alignMarksToColumnsCacheStripes(range, need_marks, columns_cache_stripe_marks[thread_task.part_idx]);
 
             ranges_to_get_from_part.emplace_back(range.begin, range.begin + marks_to_get_from_range);
             range.begin += marks_to_get_from_range;
@@ -230,7 +279,18 @@ void MergeTreeReadPool::cutFromThreadTask(ThreadTask & thread_tasks, size_t thre
                 thread_task.ranges.pop_front();
 
             marks_in_part -= marks_to_get_from_range;
-            need_marks -= marks_to_get_from_range;
+            remaining_marks -= marks_to_get_from_range;
+            need_marks -= std::min(need_marks, marks_to_get_from_range);
+        }
+
+        /// The cut was moved to the end of the part.
+        if (marks_in_part == 0)
+        {
+            thread_tasks.parts_and_ranges.pop_back();
+            thread_tasks.sum_marks_in_parts.pop_back();
+
+            if (thread_tasks.sum_marks_in_parts.empty())
+                remaining_thread_tasks.erase(thread_idx);
         }
     }
 }
@@ -240,7 +300,9 @@ void MergeTreeReadPool::profileFeedback(ReadBufferFromFileBase::ProfileInfo info
     if (backoff_settings.min_read_latency_ms == 0 || pool_settings.do_not_steal_tasks)
         return;
 
-    if (info.nanoseconds < backoff_settings.min_read_latency_ms * 1000000)
+    /// Compared after the division (which is exact for this comparison): the settings are not bounded, so converting them
+    /// to nanoseconds could overflow.
+    if (info.nanoseconds / 1000000 < backoff_settings.min_read_latency_ms)
         return;
 
     std::lock_guard lock(mutex);
@@ -253,7 +315,7 @@ void MergeTreeReadPool::profileFeedback(ReadBufferFromFileBase::ProfileInfo info
     if (throughput >= backoff_settings.max_throughput)
         return;
 
-    if (backoff_state.time_since_prev_event.elapsed() < backoff_settings.min_interval_between_events_ms * 1000000)
+    if (backoff_state.time_since_prev_event.elapsed() / 1000000 < backoff_settings.min_interval_between_events_ms)
         return;
 
     backoff_state.time_since_prev_event.restart();
@@ -340,7 +402,7 @@ void MergeTreeReadPool::fillPerThreadInfo(size_t threads, size_t sum_marks)
                 need_marks = marks_in_part;
 
             MarkRanges ranges_to_get_from_part;
-            size_t marks_in_ranges = need_marks;
+            size_t marks_in_ranges = 0;
 
             /// Get whole part to read if it is small enough.
             if (marks_in_part <= need_marks)
@@ -363,20 +425,29 @@ void MergeTreeReadPool::fillPerThreadInfo(size_t threads, size_t sum_marks)
 
                     MarkRange & range = part_with_ranges.ranges.front();
 
-                    const size_t marks_in_range = range.end - range.begin;
-                    const size_t marks_to_get_from_range = std::min(marks_in_range, need_marks);
+                    const size_t marks_to_get_from_range = alignMarksToColumnsCacheStripes(range, need_marks, columns_cache_stripe_marks[part_idx]);
 
                     ranges_to_get_from_part.emplace_back(range.begin, range.begin + marks_to_get_from_range);
                     range.begin += marks_to_get_from_range;
                     marks_in_part -= marks_to_get_from_range;
-                    need_marks -= marks_to_get_from_range;
+                    marks_in_ranges += marks_to_get_from_range;
+                    need_marks -= std::min(need_marks, marks_to_get_from_range);
                     if (range.begin == range.end)
                         part_with_ranges.ranges.pop_front();
+                }
+
+                /// The cut was moved to the end of the part.
+                if (marks_in_part == 0)
+                {
+                    current_parts.pop_back();
+                    if (current_parts.empty())
+                        parts_queue.pop();
                 }
             }
 
             threads_tasks[i].parts_and_ranges.push_back({part_idx, ranges_to_get_from_part});
             threads_tasks[i].sum_marks_in_parts.push_back(marks_in_ranges);
+            remaining_marks += marks_in_ranges;
             if (marks_in_ranges != 0)
                 remaining_thread_tasks.insert(i);
         }
