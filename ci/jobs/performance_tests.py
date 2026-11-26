@@ -2144,9 +2144,10 @@ def dashboard_has_shard(run_id, arch, test, deadline):
 
 
 def dashboard_query_link(run_id, test, query_index):
+    """The dashboard page of a test, with one of its queries selected."""
     return (
         f"{PERF_DASHBOARD_URL}/runs/{urllib.parse.quote(run_id)}"
-        f"/tests/{urllib.parse.quote(test)}/queries/{query_index}"
+        f"/tests/{urllib.parse.quote(test)}?query_index={query_index}"
     )
 
 
