@@ -1,0 +1,78 @@
+---
+slug: /clickstack/observability/text-to-chart
+title: 'Text-to-Chart'
+sidebarTitle: 'Text-to-Chart'
+description: 'Générez des graphiques à partir de prompts en langage naturel dans ClickHouse Observability grâce à la fonctionnalité Text-to-Chart basée sur l’IA.'
+doc_type: 'guide'
+keywords: ['clickstack', 'text-to-chart', 'AI', 'visualization', 'Chart Explorer', 'natural language', 'observability']
+---
+
+La fonctionnalité Text-to-Chart de ClickHouse Observability vous permet de créer des visualisations en décrivant simplement, en langage courant, ce que vous souhaitez voir. Au lieu de sélectionner manuellement les métriques, les filtres et les champs de group-by, il vous suffit de saisir un prompt tel que « Nombre d’erreurs par service au cours des 3 derniers jours » : l’Assistant IA génère alors automatiquement le graphique correspondant.
+
+Cette fonctionnalité s’appuie sur un grand modèle de langage (LLM) pour convertir votre prompt en requête, puis génère la visualisation dans l’[Explorateur de graphiques](/fr/clickstack/observability/features/dashboards/overview#navigate-chart-explorer).
+
+## Prérequis {#prerequisites}
+
+Un administrateur d’équipe doit activer l’IA générative dans **Paramètres de l’équipe**, sous **Configurer l’IA générative**. Pour la marche à suivre, consultez [Activer l’IA générative](/fr/clickstack/observability/notebooks#enabling-generative-ai). Les modèles d’IA et les fournisseurs sont gérés automatiquement par la plateforme.
+
+## Utiliser Text-to-Chart {#using-text-to-chart}
+
+<Steps>
+  <Step title="Accéder à l'Explorateur de graphiques" id="navigate-chart-explorer">
+    Sélectionnez **Explorateur de graphiques** dans la barre latérale gauche.
+  </Step>
+
+  <Step title="Sélectionner une source de données" id="select-data-source">
+    Développez **Assistant IA** en haut de l&#39;Explorateur de graphiques s&#39;il est réduit. Choisissez la source de données à visualiser à l&#39;aide du sélecteur situé à côté du champ de prompt, par exemple **Logs** ou **Traces**.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Explorateur de graphiques avec l'Assistant IA développé, Logs sélectionné et le bouton Generate](/images/clickstack/observability-text-to-chart-explorer.png)
+      </Frame>
+    </div>
+  </Step>
+
+  <Step title="Saisir un prompt" id="enter-text-prompt">
+    Dans le champ de prompt de l&#39;**Assistant IA**, décrivez en langage naturel le graphique que vous souhaitez créer. Par exemple :
+
+    * `Error counts by service over the last 3 days`
+    * `Latency breakdown by endpoint`
+    * `Count of events over time grouped by severity`
+
+    Cliquez sur **Generate** pour créer le graphique à partir de votre prompt. Vérifiez la configuration générée dans le constructeur situé en dessous. Vous pouvez ajuster le type de graphique, les filtres et le regroupement, puis cliquer sur **Exécuter** pour mettre à jour la visualisation.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Graphique généré du nombre d'erreurs par service, avec le prompt de l'Assistant IA mis en évidence](/images/clickstack/observability-text-to-chart-result.png)
+      </Frame>
+    </div>
+  </Step>
+</Steps>
+
+## Exemples de prompts {#example-prompts}
+
+Les prompts suivants illustrent des cas d’utilisation courants pour l’exploitation des données d’observability :
+
+| Prompt                                            | Source de données | Description                                                   |
+| ------------------------------------------------- | ----------------- | ------------------------------------------------------------- |
+| `Error count by service over time`                | Logs              | Représente graphiquement la fréquence des erreurs par service |
+| `Average request duration grouped by endpoint`    | Traces            | Met en évidence les tendances de latence par endpoint         |
+| `P99 latency by service`                          | Traces            | Identifie la latence de queue de chaque service               |
+| `Count of 5xx status codes over the last 6 hours` | Logs              | Suit l’évolution des erreurs serveur                          |
+
+Les prompts peuvent faire référence à n’importe quelle colonne ou n’importe quel attribut disponible dans les sources de données que vous avez configurées. Précisez des noms de colonnes, des filtres et des intervalles de temps pour aider l’IA à générer le graphique souhaité.
+
+## Limitations {#limitations}
+
+* Seuls les logs et les traces sont pris en charge comme sources de données. Les métriques Prometheus ne sont pas encore prises en charge.
+* La précision des graphiques dépend de la clarté du prompt et de la structure des données sous-jacentes. Si un graphique généré ne correspond pas à vos attentes, essayez de reformuler le prompt ou d&#39;indiquer explicitement les noms de colonnes.
+
+## Pour aller plus loin {#further-reading}
+
+* [Text-to-Dashboard](/fr/clickstack/observability/text-to-dashboard) — générer, à partir d’un prompt, un tableau de bord enregistré comportant plusieurs tuiles
+
+* [From text to charts: a faster way to visualize with ClickStack](https://clickhouse.com/blog/text-to-charts-faster-way-to-visualize-clickstack) — article de blog présentant la fonctionnalité
+
+* [Tableaux de bord et visualisations](/fr/clickstack/observability/features/dashboards/overview) — création manuelle de graphiques avec l’Explorateur de graphiques
+
+* [Recherche](/fr/clickstack/observability/features/search) — syntaxe de recherche en texte intégral et par propriété

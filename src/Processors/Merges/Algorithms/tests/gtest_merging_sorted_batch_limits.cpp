@@ -84,7 +84,6 @@ size_t getFirstChunkSize(
         strategy,
         0,
         nullptr,
-        std::nullopt,
         use_average_block_size);
 
     IMergingAlgorithm::Inputs inputs(num_inputs);
@@ -131,7 +130,6 @@ size_t getFirstLowCardinalityChunkSize(SortingQueueStrategy strategy, size_t max
         strategy,
         0,
         nullptr,
-        std::nullopt,
         false);
 
     IMergingAlgorithm::Inputs inputs(2);
@@ -199,7 +197,6 @@ size_t getFirstAggregateFunctionChunkSize(SortingQueueStrategy strategy)
         strategy,
         0,
         nullptr,
-        std::nullopt,
         false);
 
     std::vector<UInt64> first_keys;
@@ -254,7 +251,7 @@ std::vector<size_t> getJsonChunkSizes(SortingQueueStrategy strategy, const Strin
     SortDescription description;
     description.emplace_back("key");
 
-    MergingSortedAlgorithm algorithm(header, 2, description, 1000, 2048, std::nullopt, strategy, 0, nullptr, std::nullopt, false);
+    MergingSortedAlgorithm algorithm(header, 2, description, 1000, 2048, std::nullopt, strategy, 0, nullptr, false);
 
     IMergingAlgorithm::Inputs inputs(2);
     inputs[0].chunk = makeJsonChunk(0, 3, "");

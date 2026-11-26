@@ -1,0 +1,339 @@
+---
+slug: /clickstack/managed-onboarding/monitoring-aws-cloudwatch-logs-serverless
+title: 'OpenTelemetry로 AWS CloudWatch 로그 수집하기'
+sidebarTitle: 'CloudWatch 로그 수집'
+description: 'CloudWatch 로그 그룹을 폴링하여 이벤트를 ClickHouse Observability로 바로 전송하는 소규모 OpenTelemetry Collector 하나를 실행한 다음, 로그 그룹과 스트림별로 로그를 검색합니다.'
+doc_type: 'guide'
+keywords: ['ClickHouse Observability', 'AWS', 'CloudWatch', 'CloudWatch Logs', 'OpenTelemetry collector', 'aws_cloudwatch', 'OTLP', 'Lambda 로그']
+unlisted: true
+custom_edit_url: null
+hide_advert: true
+---
+
+import { TrackedLink } from '/snippets/ko/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx';
+
+<Info>
+  **TL;DR**
+
+  원하는 CloudWatch 로그 그룹을 선택하고, 서비스의 **Collector config** 탭에 있는 익스포터 블록을 간단한 OpenTelemetry Collector 구성에 붙여넣은 다음 Docker Compose로 실행하십시오. collector가 로그 그룹을 폴링하여 모든 이벤트에 로그 그룹과 스트림 태그를 지정한 뒤 ClickHouse Observability로 바로 전송합니다.
+
+  소요 시간: 약 15분
+</Info>
+
+ClickHouse Observability 서비스 생성을 완료했다면, 이 가이드는 수집하려는 로그가 이미 CloudWatch에 있는 경우를 위한 것입니다. Lambda 함수, ECS 작업, RDS, VPC 흐름 로그 등 로그 그룹에 기록하는 모든 소스가 대상입니다.
+
+이 패턴은 표준 OpenTelemetry 방식을 따릅니다. [`aws_cloudwatch` 수신기](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/receiver/awscloudwatchreceiver)를 사용하는 collector 하나가 CloudWatch Logs API를 통해 로그 그룹을 폴링하고, 이벤트를 서비스의 OTLP 엔드포인트로 직접 전송합니다. Docker를 실행할 수 있고 AWS API에 액세스할 수 있는 환경이라면 어디서든 실행할 수 있습니다. 로그 그룹과 동일한 리전의 EC2 인스턴스에서 실행하면 API 지연 시간과 데이터 전송 비용을 줄일 수 있습니다.
+
+## 사전 요구 사항 {#prerequisites}
+
+* ClickHouse Observability 서비스가 필요합니다. 아직 서비스가 없다면 [시작 가이드](/ko/clickstack/observability/getting-started)를 참고하십시오.
+* 하나 이상의 CloudWatch 로그 그룹이 있는 AWS 계정과, 해당 로그 그룹을 읽을 수 있는 자격 증명을 생성하거나 사용할 수 있는 권한(permission)이 필요합니다.
+* Docker와 [AWS CLI](https://aws.amazon.com/cli/)가 설치되어 있고, 서비스의 텔레메트리 엔드포인트로 포트 `4318`을 통한 아웃바운드 HTTPS 액세스가 가능한 호스트가 필요합니다.
+
+AWS 및 Docker 명령어는 해당 호스트의 같은 셸에서 실행하십시오. collector는 이 셸의 환경 변수에서 AWS 자격 증명을 가져옵니다.
+
+## collector 설정 {#set-up-the-collector}
+
+<Steps>
+  <Step title="AWS 자격 증명 설정" id="set-up-aws-credentials">
+    수신기(receiver)는 표준 AWS SDK 자격 증명 체인을 사용하므로, AWS CLI에서 동작하는 인증 방식은 모두 collector에서도 그대로 동작합니다. 자격 증명에는 로그 그룹을 나열하고 해당 이벤트를 읽을 수 있는 권한이 있어야 합니다.
+
+    ```json
+    {
+      "Version": "2012-10-17",
+      "Statement": [
+        {
+          "Sid": "CloudWatchLogsList",
+          "Effect": "Allow",
+          "Action": "logs:DescribeLogGroups",
+          "Resource": "*"
+        },
+        {
+          "Sid": "CloudWatchLogsRead",
+          "Effect": "Allow",
+          "Action": "logs:FilterLogEvents",
+          "Resource": "arn:aws:logs:*:YOUR_ACCOUNT_ID:log-group:*"
+        }
+      ]
+    }
+    ```
+
+    `YOUR_ACCOUNT_ID`를 사용자의 AWS 계정 ID로 바꾸세요. 자격 증명을 내보낸 다음 정상적으로 동작하는지 확인하세요:
+
+    <Tabs>
+      <Tab title="AWS SSO" id="aws-sso">
+        ```shell
+        aws sso login --profile YOUR_PROFILE_NAME
+        eval $(aws configure export-credentials --profile YOUR_PROFILE_NAME --format env)
+        aws sts get-caller-identity
+        ```
+
+        SSO 자격 증명은 일반적으로 8~12시간이 지나면 만료됩니다. 이 명령어를 다시 실행하여 자격 증명을 갱신하고 내보낸 다음, Compose 디렉터리에서 `docker compose up -d --force-recreate otel-collector`를 실행하세요. 컨테이너를 재생성해야 새 환경 변수가 적용되며, 재시작만 하면 만료된 자격 증명이 그대로 유지됩니다. 액세스 키나 인스턴스 역할(role)을 사용하면 이러한 중단 없이 운영할 수 있습니다.
+      </Tab>
+
+      <Tab title="IAM 액세스 키" id="iam-access-keys">
+        ```shell
+        export AWS_ACCESS_KEY_ID="your-access-key-id"
+        export AWS_SECRET_ACCESS_KEY="your-secret-access-key"
+        export AWS_REGION="us-east-1"
+        aws sts get-caller-identity
+        ```
+      </Tab>
+    </Tabs>
+
+    <Info>
+      **운영 환경 자격 증명**
+
+      운영 환경에서는 키를 내보내는 대신 호스트에 정책(Policy)을 연결하세요. EC2에서는 IAM role, EKS에서는 IRSA, ECS에서는 작업 역할(task role)을 사용합니다. 이렇게 하면 collector가 인스턴스 메타데이터 서비스에서 자격 증명을 가져오므로, 아래 Compose 파일에는 AWS 변수를 설정할 필요가 전혀 없습니다.
+    </Info>
+  </Step>
+
+  <Step title="로그 그룹을 선택하십시오" id="pick-your-log-groups">
+    정확한 로그 그룹 이름을 사용하고 리전이 올바른지 확인할 수 있도록, 사용 중인 리전의 로그 그룹을 조회하십시오:
+
+    ```shell
+    aws logs describe-log-groups --region us-east-1 \
+      --query 'logGroups[].logGroupName' --output table
+    ```
+
+    필요한 로그 그룹 이름을 기록해 두십시오. `/aws/lambda/`처럼 접두사가 같은 그룹은 구성을 작성할 때 한꺼번에 지정할 수 있습니다.
+  </Step>
+
+  <Step title="연결 정보를 복사하십시오" id="copy-connection-details">
+    ClickHouse Observability 서비스를 엽니다. 데이터가 수신되기 전까지는 **Start sending telemetry** 페이지가 표시됩니다.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![아직 데이터가 없는 현재 서비스와 Use an existing OpenTelemetry setup, Instrument with AI, Follow setup guides의 세 가지 옵션을 보여 주는 Start sending telemetry 페이지](/images/clickstack/getting-started/observability-start-sending-telemetry.png)
+      </Frame>
+    </div>
+
+    **Use an existing OpenTelemetry setup** 아래에서 **View connection details**를 선택한 다음 **Collector config** 탭을 엽니다. 이 탭에는 해당 서비스용으로 미리 작성된 익스포터 블록이 표시되며, 여기에는 엔드포인트와 `authorization` 헤더가 포함되어 있습니다. 이 헤더에는 `Bearer` 접두사가 붙은 API Key가 이미 들어 있습니다. **Reveal key**를 선택하여 전체 키를 표시한 다음 복사 버튼을 사용하십시오.
+
+    <div className="ch-image-md">
+      <Frame>
+        ![Collector config 탭이 선택된 Set up OpenTelemetry 대화 상자로, 마스킹된 엔드포인트와 Bearer 인증 헤더가 포함된 otlphttp 익스포터를 보여 줌](/images/clickstack/getting-started/observability-collector-config.png)
+      </Frame>
+    </div>
+
+    블록은 다음과 같은 형태입니다. 다음 단계에서 복사한 내용을 그대로 수집기 설정에 붙여 넣습니다.
+
+    ```yaml
+    exporters:
+      otlphttp:
+        endpoint: https://YOUR_OTEL_ENDPOINT:4318
+        headers:
+          authorization: Bearer <your-api-key>
+    ```
+
+    이 값은 언제든지 **팀 설정 → Managed Telemetry**에서 다시 확인할 수 있습니다.
+  </Step>
+
+  <Step title="수집기 설정을 작성하십시오" id="write-the-configuration">
+    로그 그룹 선택 방식에 맞는 변형으로 `otel-collector-config.yaml`을 생성한 다음, 해당 파일의 `exporters` 블록을 앞서 복사한 블록으로 교체하세요. 두 변형 모두 시작 시 최근 1시간의 이벤트를 읽습니다.
+
+    <Tabs>
+      <Tab title="이름을 지정한 로그 그룹" id="named-log-groups">
+        ```yaml
+        receivers:
+          aws_cloudwatch:
+            region: us-east-1
+            logs:
+              poll_interval: 1m
+              initial_lookback: 1h
+              groups:
+                named:
+                  /aws/lambda/payment-processor:
+                  /aws/lambda/order-service:
+                  /ecs/api-gateway:
+
+        processors:
+          batch:
+            timeout: 10s
+
+        exporters:
+          otlphttp:
+            endpoint: https://YOUR_OTEL_ENDPOINT:4318
+            headers:
+              authorization: Bearer <your-api-key>
+
+        service:
+          pipelines:
+            logs:
+              receivers: [aws_cloudwatch]
+              processors: [batch]
+              exporters: [otlphttp]
+        ```
+
+        `named` 아래의 각 키는 하나의 로그 그룹을 나타냅니다. 그룹의 모든 스트림을 읽으려면 값을 비워 두고, 일부 스트림만 읽으려면 그 아래에 `names:` 또는 `prefixes:`를 추가하십시오.
+      </Tab>
+
+      <Tab title="접두사 기반 자동 검색" id="autodiscover-by-prefix">
+        ```yaml
+        receivers:
+          aws_cloudwatch:
+            region: us-east-1
+            logs:
+              poll_interval: 1m
+              initial_lookback: 1h
+              groups:
+                autodiscover:
+                  limit: 100
+                  prefix: /aws/lambda/
+
+        processors:
+          batch:
+            timeout: 10s
+
+        exporters:
+          otlphttp:
+            endpoint: https://YOUR_OTEL_ENDPOINT:4318
+            headers:
+              authorization: Bearer <your-api-key>
+
+        service:
+          pipelines:
+            logs:
+              receivers: [aws_cloudwatch]
+              processors: [batch]
+              exporters: [otlphttp]
+        ```
+
+        이 설정은 이름이 지정한 접두사로 시작하는 모든 로그 그룹을 `limit` 개수까지 읽으며, 나중에 생성되는 그룹도 포함됩니다. 이름의 어느 위치에서든 부분 문자열과 일치시키려면 `prefix` 대신 `pattern`을 사용하십시오.
+      </Tab>
+    </Tabs>
+
+    익스포터 이름 `otlphttp`는 탭에 표시되는 이름과 일치합니다. 최신 collector 릴리스에서는 이 익스포터의 이름이 `otlp_http`이며 `otlphttp`는 별칭으로 유지되므로 두 이름 모두 사용할 수 있습니다. 이 경우 collector는 시작 시 `"otlphttp" alias is deprecated` 로그를 한 번 출력하지만, 이 경고는 무시해도 됩니다. 익스포터 이름을 변경하는 경우 파이프라인에서도 동일하게 변경하십시오. 엔드포인트는 기준 URL 그대로 두십시오. 익스포터가 시그널 경로를 자동으로 추가하므로 `/v1/logs`를 덧붙이지 마십시오.
+
+    이제 이 파일에는 API Key가 들어 있으므로 버전 관리 대상에서 제외하십시오. collector 컨테이너는 UID/GID `10001:10001`로 실행됩니다. Linux에서는 호스트의 파일 소유자가 계속 편집할 수 있도록 유지하면서 해당 그룹에 읽기 권한을 부여하십시오.
+
+    ```shell
+    sudo chgrp 10001 otel-collector-config.yaml
+    chmod 640 otel-collector-config.yaml
+    ```
+
+    이를 통해 API Key를 모든 사용자가 읽을 수 있도록 노출하지 않고도 컨테이너가 바인드 마운트된 구성을 읽을 수 있습니다.
+
+    조정할 설정:
+
+    * `region`: 로그 그룹이 위치한 리전입니다.
+    * `initial_lookback`: collector가 시작될 때 과거 어느 시점까지 거슬러 올라가 읽을지 지정합니다. 이 값을 지정하지 않으면 수신기는 각 그룹에 보존된 이력 전체를 읽으므로, 대규모 일회성 백필과 그에 상응하는 API 호출이 발생할 수 있습니다. 특정 시점부터 백필하려면 이 값 대신 `start_from`과 RFC 3339 타임스탬프를 사용하십시오.
+    * `poll_interval`: 기본값은 `1m`입니다. 간격을 짧게 설정하면 더 최신 로그를 받을 수 있지만, 그만큼 API 호출이 늘어납니다.
+    * 재시작 시 lookback 윈도우를 다시 읽으므로, 재시작 후에는 최근 1시간 분량의 로그가 중복으로 나타납니다. 장기 실행 배포에서는 `file_storage` 확장 기능을 추가하고 수신기의 `storage` 옵션을 설정하여 중단된 지점부터 재개되도록 하십시오.
+
+    스트림 필터, 연결된 계정에서 데이터 읽기 등 나머지 옵션은 수신기의 [README](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/receiver/awscloudwatchreceiver)를 참조하십시오.
+
+    <Accordion title="선택 사항: 로그 그룹을 서비스 이름으로 사용">
+      CloudWatch 이벤트에는 서비스 이름이 포함되지 않으므로 검색 화면에서 `ServiceName`이 비어 있고 서비스 필터도 작동하지 않습니다. 로그 그룹을 기준으로 이 값을 채우려면 `transform` 프로세서를 추가하고 파이프라인에서 `batch` 앞에 배치하십시오.
+
+      ```yaml
+      processors:
+        transform:
+          log_statements:
+            - context: resource
+              statements:
+                - set(attributes["service.name"], attributes["cloudwatch.log.group.name"])
+        batch:
+          timeout: 10s
+
+      service:
+        pipelines:
+          logs:
+            receivers: [aws_cloudwatch]
+            processors: [transform, batch]
+            exporters: [otlphttp]
+      ```
+    </Accordion>
+  </Step>
+
+  <Step title="Docker Compose로 실행하십시오" id="start-with-docker-compose">
+    구성 파일과 같은 위치에 `docker-compose.yaml`을 생성하십시오. 이 파일은 구성 파일을 마운트하고, 셸의 AWS 자격 증명을 컨테이너에 전달합니다.
+
+    ```yaml
+    services:
+      otel-collector:
+        image: otel/opentelemetry-collector-contrib:0.162.0
+        command: ["--config=/etc/otel-config.yaml"]
+        volumes:
+          - type: bind
+            source: ./otel-collector-config.yaml
+            target: /etc/otel-config.yaml
+            read_only: true
+        environment:
+          - AWS_ACCESS_KEY_ID
+          - AWS_SECRET_ACCESS_KEY
+          - AWS_SESSION_TOKEN
+          - AWS_REGION
+        restart: unless-stopped
+    ```
+
+    컬렉터를 시작한 후 로그를 확인하십시오:
+
+    ```shell
+    docker compose up -d
+    docker compose logs -f otel-collector
+    ```
+
+    정상적으로 시작되면 `Everything is ready. Begin running and processing data.` 메시지가 마지막에 출력됩니다. 첫 번째 폴링은 시작 후 `poll_interval`이 지난 시점에 수행되므로 1~2분 정도 기다리십시오. 다음과 같은 오류가 발생할 수 있습니다.
+
+    * `ensureSession`에서 `panic: runtime error: invalid memory address or nil pointer dereference`가 발생한 뒤 컨테이너가 재시작되는 경우: collector가 AWS에 인증하지 못한 것입니다. 자격 증명이 없거나, 유효하지 않거나, 만료되었거나, STS 엔드포인트에 연결할 수 없는 상태입니다. Collector 0.162.0은 이 상황을 오류 메시지가 아닌 크래시로 보고하며, 이 문제는 업스트림의 [issue 50961](https://github.com/open-telemetry/opentelemetry-collector-contrib/issues/50961)에서 추적되고 있습니다. 호스트에서 `aws sts get-caller-identity`를 실행하고, 자격 증명을 갱신한 후 유효한 자격 증명을 내보낸 다음, Compose 디렉터리에서 `docker compose up -d --force-recreate otel-collector`를 실행하십시오.
+    * `AccessDeniedException`: 자격 증명에 `"Resource": "*"`가 지정된 `logs:DescribeLogGroups` 권한과 대상 로그 그룹에 대한 `logs:FilterLogEvents` 권한이 필요합니다.
+    * `ResourceNotFoundException`: 로그 그룹 이름의 철자가 잘못되었거나 해당 로그 그룹이 다른 리전에 있습니다.
+    * 익스포터에서 `401` 또는 `403`이 반환되는 경우: 구성의 `authorization` 값이 잘못되었습니다. 이 값은 Collector config 탭에 표시된 그대로 `Bearer` 뒤에 전체 키가 이어지는 형식이어야 합니다. 파일을 수정한 후 `docker compose restart otel-collector`를 실행하십시오.
+    * 익스포터에서 `404`가 반환되는 경우: `/v1/logs`와 같은 신호 경로가 엔드포인트 끝에 추가되어 있습니다.
+  </Step>
+</Steps>
+
+## 데이터 수신 확인 {#confirm-data-is-arriving}
+
+서비스의 **Start sending telemetry** 페이지로 돌아가 **Check for data**를 선택하십시오. 텔레메트리가 수신되면 서비스 상태가 **Data received**로 바뀌고 **Start exploring**을 사용할 수 있습니다.
+
+<div className="ch-image-lg">
+  <Frame>
+    ![서비스 상태가 Data received로 표시되고, 탐색 준비가 완료되었다는 확인 메시지와 함께 Start exploring 버튼이 활성화된 Start sending telemetry 페이지](/images/clickstack/getting-started/observability-data-received.png)
+  </Frame>
+</div>
+
+**Start exploring**을 선택하여 **검색**을 열고, **Logs** 소스를 선택한 다음 시간 범위를 **Last 15 minutes**로 설정하십시오. 폴링 주기가 두어 번 지나면 이벤트가 표시됩니다. 각 이벤트에는 출처 정보가 리소스 속성으로 포함되어 있습니다.
+
+* `aws.region`: 구성한 리전입니다.
+* `cloudwatch.log.group.name`: 소스 로그 그룹입니다.
+* `cloudwatch.log.stream`: 소스 로그 스트림입니다.
+* `cloud.account.id`: 이벤트가 발생한 AWS 계정입니다.
+
+이 속성을 컬럼으로 표시하려면 `SELECT`를 `Timestamp, SeverityText as level, ResourceAttributes['aws.region'], ResourceAttributes['cloudwatch.log.group.name'], ResourceAttributes['cloudwatch.log.stream'], Body`로 바꾸십시오.
+
+<div className="ch-image-lg">
+  <Frame>
+    ![리전, 로그 그룹, 로그 스트림 리소스 속성을 컬럼으로 표시한 CloudWatch 이벤트 검색 화면](/images/clickstack/cloudwatch/log-search-attributes-clickstack.webp)
+  </Frame>
+</div>
+
+이벤트를 선택하고 **Column Values**를 열어 속성을 확인하십시오.
+
+<div className="ch-image-lg">
+  <Frame>
+    ![CloudWatch 이벤트의 aws.region, cloudwatch.log.group.name, cloudwatch.log.stream 리소스 속성을 보여 주는 로그 상세 보기](/images/clickstack/cloudwatch/error-log-column-values-clickstack.webp)
+  </Frame>
+</div>
+
+## 아무것도 표시되지 않는 경우 {#if-nothing-shows-up}
+
+* 먼저 `docker compose logs -f otel-collector`로 collector 로그를 확인하십시오. AWS 관련 문제와 익스포터 문제는 모두 위에 나열된 메시지 형태로 이 로그에 기록됩니다.
+* 호스트에서 `aws sts get-caller-identity`를 실행하여 자격 증명이 아직 유효한지 확인하십시오. SSO 세션은 만료될 수 있으며, 세션이 만료되면 collector는 오류를 로깅하지 않고 크래시됩니다.
+* 수신기는 lookback 윈도우 안에서와 그 이후에 기록된 이벤트만 읽으므로, 로그 그룹에 최근 수신된 이벤트가 있는지 확인하십시오. 예: `aws logs filter-log-events --log-group-name /aws/lambda/order-service --region us-east-1 --limit 5`.
+* **검색**에서 시간 범위를 넓히고 필터를 모두 제거하십시오. 기본 소스가 **Logs**가 아닌 **Traces**로 설정되어 있을 수 있습니다.
+* 서비스 자체의 문제가 아닌지 확인하려면 **팀 설정 → Managed Telemetry**로 이동하여 **Send a Test Log**를 사용하십시오. 해당 로그가 **검색**에 표시되면 서비스는 데이터를 정상적으로 수신하고 있으며, 문제는 collector와 CloudWatch 또는 엔드포인트 사이에 있습니다.
+
+## CloudWatch 대시보드 가져오기 (선택 사항) {#import-the-cloudwatch-dashboard}
+
+미리 구성된 대시보드에서 로그 그룹별 로그 볼륨, 심각도별 분류, 오류 발생 위치를 확인할 수 있습니다. 먼저 <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/cloudwatch-logs-dashboard.json'} download="cloudwatch-logs-dashboard.json" eventName="docs.cloudwatch_logs_monitoring.dashboard_download">`cloudwatch-logs-dashboard.json` 다운로드</TrackedLink>를 진행합니다. 그런 다음 **대시보드**를 열고 **가져오기**를 선택한 후 파일을 업로드하고 **가져오기 완료**를 선택하십시오. 차트는 위에서 설명한 리소스 속성을 기준으로 필터링되므로 이벤트가 수신되는 즉시 데이터가 채워집니다.
+
+{/* TODO(dale): ClickHouse Observability로 가져온 CloudWatch Logs 대시보드 스크린샷. */}
+
+## 다음 단계 {#next-steps}
+
+* [알림](/ko/clickstack/observability/features/alerts): 로그 그룹의 오류 수가 증가하면 알림을 보냅니다.
+* [검색](/ko/clickstack/observability/features/search): Lucene 스타일 구문이나 SQL로 로그 그룹, 스트림, body를 기준으로 쿼리합니다.
+* [OpenTelemetry Collector 연결](/ko/clickstack/managed-onboarding/setting-up-your-opentelemetry-collector-serverless): 이 collector에 수신기를 더 추가합니다. 예를 들어 collector가 실행되는 인스턴스의 호스트 메트릭을 동일한 익스포터를 통해 수집할 수 있습니다.
+* [OpenTelemetry를 사용한 Kubernetes 모니터링](/ko/clickstack/managed-onboarding/monitoring-kubernetes-serverless): CloudWatch를 거치지 않고 EKS에서 컨테이너 로그와 메트릭을 직접 수집합니다.

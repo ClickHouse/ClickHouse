@@ -101,7 +101,7 @@ ORDER BY pickup_datetime;
 ```
 
 * clickhouse://default:***@localhost:8123/default
-  Hecho.
+  Listo.
 
 <table>
   <tr />
@@ -162,7 +162,7 @@ SELECT * FROM s3(
 ```
 
 * clickhouse://default:***@localhost:8123/default
-  Hecho.
+  Listo.
 
 <table>
   <tr />
@@ -173,7 +173,7 @@ SELECT * FROM s3(
 ```
 
 * clickhouse://default:***@localhost:8123/default
-  Hecho.
+  Listo.
 
 <table>
   <tr>
@@ -190,7 +190,7 @@ SELECT * FROM s3(
 ```
 
 * clickhouse://default:***@localhost:8123/default
-  Hecho.
+  Listo.
 
 <table>
   <tr>
@@ -384,13 +384,9 @@ WHERE trip_distance < 6.3
 ```
 
 <div className="ch-image-md">
-
-<Frame>
-
-![Histograma que muestra la distribución de las distancias de los viajes en 10 intervalos del conjunto de datos short-trips](/images/integrations/sql-clients/jupysql-plot-1.webp)
-
-</Frame>
-
+  <Frame>
+    ![Histograma que muestra la distribución de las distancias de los viajes en 10 intervalos del conjunto de datos short-trips](/images/integrations/sql-clients/jupysql-plot-1.webp)
+  </Frame>
 </div>
 
 ```python
@@ -401,11 +397,7 @@ _ = ax.set_xlabel("Trip distance")
 ```
 
 <div className="ch-image-md">
-
-<Frame>
-
-![Histograma que muestra la distribución de las distancias de viaje con 50 intervalos y cuadrícula, titulado 'Distancia de viaje en trayectos < 6.3'](/images/integrations/sql-clients/jupysql-plot-2.webp)
-
-</Frame>
-
+  <Frame>
+    ![Histograma que muestra la distribución de las distancias de viaje con 50 intervalos y cuadrícula, titulado 'Distancia de viaje en trayectos \< 6.3'](/images/integrations/sql-clients/jupysql-plot-2.webp)
+  </Frame>
 </div>

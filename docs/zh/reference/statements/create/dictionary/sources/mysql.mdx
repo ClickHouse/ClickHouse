@@ -81,6 +81,7 @@ doc_type: 'reference'
 | `ssl_ca_pem`                    | 用于验证 MySQL 服务器证书的 CA 证书内容。可选。                                                                                                                                                                  |
 | `ssl_cert_pem`                  | 用于基于证书的身份验证的客户端证书内容。可选。                                                                                                                                                                        |
 | `ssl_key_pem`                   | 属于 `ssl_cert_pem` 的私钥内容。可选。                                                                                                                                                                    |
+| `ssl_key_passphrase`            | 已加密的 `ssl_key` / `ssl_key_pem` 的密码短语。可选。                                                                                                                                                       |
 | `ssl_ca`, `ssl_cert`, `ssl_key` | 与上述相同的凭证，但以服务器上文件的路径形式指定。仅允许用于在服务器配置文件中定义的字典，或通过其中定义的命名集合定义的字典，见下文。可选。                                                                                                                         |
 
 <Note>
@@ -99,7 +100,11 @@ doc_type: 'reference'
   没有显式的 `secure` 参数。建立 SSL 连接时，安全性是强制的。
 </Note>
 
-可以通过套接字在本地主机上连接 MySQL。为此，请设置 `host` 和 `socket`。
+可以通过套接字连接本地主机上的 MySQL。为此，请将 `host` 设置为 `localhost`，并设置 `socket`。如果 `host` 为其他值，则会忽略 `socket`，并通过 TCP 建立连接。如果未设置 `socket`，即使 `host` 为 `localhost`，也会通过 TCP 连接到 `port`。
+
+<Note>
+  `remote_url_allow_hosts` 仅检查 `host` 和 `port`，不会检查 `socket` 中的路径。
+</Note>
 
 设置示例：
 

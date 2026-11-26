@@ -8,65 +8,55 @@ keywords: ['clickstack', 'implementación', 'instalación', 'configuración', 'o
 
 import JSONSupport from '/snippets/es/_json_support.mdx';
 
-Al igual que la [imagen todo en uno](/es/clickstack/deployment/docker-compose), esta imagen de Docker completa agrupa todos los componentes de ClickStack:
+Al igual que la [imagen todo en uno](/es/clickstack/deployment/all-in-one), esta imagen de Docker completa agrupa todos los componentes de ClickStack:
 
 * **ClickHouse**
-* **HyperDX**
+* **UI de ClickStack**
 * **colector de OpenTelemetry (OTel)** (expone OTLP en los puertos `4317` y `4318`)
 * **MongoDB** (para el estado persistente de la aplicación)
 
-**Sin embargo, la autenticación de usuarios está deshabilitada para esta distribución de HyperDX**
+**Sin embargo, la autenticación de usuarios está deshabilitada para esta distribución de la UI de ClickStack**
 
 <div id="suitable-for">
-  ### Adecuado para
+  ### Adecuado para {#suitable-for}
 </div>
 
 * Demos
 * Depuración
-* Desarrollo con HyperDX
+* Desarrollo con la UI de ClickStack
 
-<div id="deployment-steps">
-  ## Pasos de implementación
-</div>
+## Pasos de despliegue {#deployment-steps}
 
 <br />
 
 <Steps>
-  <Step title="Implementar con Docker" id="deploy-with-docker">
-    El modo local implementa la UI de HyperDX en el puerto 8080.
+  <Step title="Desplegar con Docker" id="deploy-with-docker">
+    El modo local despliega la UI de ClickStack en el puerto 8080.
 
     ```shell
     docker run -p 8080:8080 clickhouse/clickstack-local:latest
     ```
   </Step>
 
-  <Step title="Acceder a la UI de HyperDX" id="navigate-to-hyperdx-ui">
-    Visita [http://localhost:8080](http://localhost:8080) para acceder a la UI de HyperDX.
+  <Step title="Acceder a la UI de ClickStack" id="navigate-to-hyperdx-ui">
+    Visite [http://localhost:8080](http://localhost:8080) para acceder a la UI de ClickStack.
 
-    **No se solicitará crear un usuario, ya que la autenticación no está habilitada en este modo de implementación.**
+    **No se le pedirá que cree un usuario, ya que la autenticación no está habilitada en este modo de despliegue.**
 
-    Conéctate a tu propio clúster externo de ClickHouse, por ejemplo, ClickHouse Cloud.
+    Conéctese a su propio cluster externo de ClickHouse, por ejemplo, ClickHouse Cloud.
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![Crear acceso](/images/use-cases/observability/hyperdx-2.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Crear inicio de sesión](/images/use-cases/observability/hyperdx-2.webp)
+      </Frame>
     </div>
 
-    Crea una fuente, conserva todos los valores predeterminados y completa el campo `Table` con el valor `otel_logs`. El resto de la configuración debería detectarse automáticamente, lo que te permitirá hacer clic en `Save New Source`.
+    Cree una fuente, mantenga todos los valores predeterminados y rellene el campo `Table` con el valor `otel_logs`. El resto de los ajustes deberían detectarse automáticamente, por lo que podrá hacer clic en `Save New Source`.
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![Crear fuente de logs](/images/use-cases/observability/hyperdx-logs.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Crear fuente de registros](/images/use-cases/observability/hyperdx-logs.webp)
+      </Frame>
     </div>
   </Step>
 </Steps>
