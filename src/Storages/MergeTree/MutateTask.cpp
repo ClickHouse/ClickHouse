@@ -61,6 +61,7 @@
 #include <Common/FailPoint.h>
 #include <Common/Jemalloc.h>
 #include <Common/ThreadStatus.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/thread_local_rng.h>
 #include <base/sleep.h>
 #include <Common/JemallocMergeTreeArena.h>
@@ -1238,7 +1239,7 @@ static void splitAndModifyMutationCommands(
         NameSet mutated_columns;
         NameSet extra_columns_for_indices;
         /// A column renamed by an earlier command of the batch is stored in the part under its old name.
-        std::unordered_map<String, std::pair<String, size_t>> renamed_in_batch; /// name -> (stored name, its RENAME_COLUMN in `for_file_renames`)
+        UnorderedMapWithMemoryTracking<String, std::pair<String, size_t>> renamed_in_batch; /// name -> (stored name, its RENAME_COLUMN in `for_file_renames`)
 
 
         for (const auto & command : commands)
@@ -1620,7 +1621,7 @@ getColumnsForNewDataPart(
         auto new_name = it == renamed_columns_from_to.end() ? name : it->second;
 
         /// Column can be removed only in this data part by CLEAR COLUMN query.
-        if (!storage_columns_set.contains(new_name) || removed_columns.contains(new_name))
+        if (!storage_columns_set.contains(new_name) || removed_columns.contains(name))
             continue;
 
         /// In compact part we read all columns and all of them are in @updated_header.

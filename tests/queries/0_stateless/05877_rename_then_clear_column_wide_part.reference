@@ -9,5 +9,16 @@ Wide	Full
 2	0
 1
 0	1
+1
 [3,4]	[0,0]
+1	0	upd
+1	0
+s1-after	a	Sparse
+s1-after	k	Default
+s1-values	700	100	0	1000
+1
+s2-after	a	Sparse
+s2-after	k	Default
+s2-values	700	100	1000
+1
 0

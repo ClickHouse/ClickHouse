@@ -1,5 +1,6 @@
--- Tags: zookeeper
+-- Tags: zookeeper, no-replicated-database
 -- zookeeper: the ReplicatedMergeTree case.
+-- no-replicated-database: a Replicated database refuses an ALTER that combines RENAME with UPDATE or DELETE (QUERY_IS_PROHIBITED).
 
 -- A CLEAR COLUMN of a column renamed earlier in the same ALTER kept its data on a wide part.
 
@@ -30,6 +31,7 @@ SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_bytes_for_
 INSERT INTO t_rename_clear_index VALUES (1, 42);
 ALTER TABLE t_rename_clear_index RENAME COLUMN q TO r, CLEAR COLUMN r;
 SELECT r, (SELECT count() FROM t_rename_clear_index WHERE r = 0) FROM t_rename_clear_index;
+SELECT secondary_indices_uncompressed_bytes > 0 FROM system.parts WHERE database = currentDatabase() AND table = 't_rename_clear_index' AND active;
 DROP TABLE t_rename_clear_index;
 
 DROP TABLE IF EXISTS t_rename_clear_nested;
@@ -39,6 +41,42 @@ INSERT INTO t_rename_clear_nested VALUES (1, [1, 2], [3, 4]);
 ALTER TABLE t_rename_clear_nested RENAME COLUMN n.a TO n.c, CLEAR COLUMN n.c;
 SELECT n.b, n.c FROM t_rename_clear_nested;
 DROP TABLE t_rename_clear_nested;
+
+DROP TABLE IF EXISTS t_rename_clear_update;
+CREATE TABLE t_rename_clear_update (p UInt8, q UInt32, s String) ENGINE = MergeTree ORDER BY p
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_bytes_for_full_part_storage = 0;
+INSERT INTO t_rename_clear_update VALUES (1, 42, 'keep');
+ALTER TABLE t_rename_clear_update RENAME COLUMN q TO r, CLEAR COLUMN r, UPDATE s = 'upd' WHERE 1;
+SELECT * FROM t_rename_clear_update;
+DROP TABLE t_rename_clear_update;
+
+DROP TABLE IF EXISTS t_rename_clear_delete;
+CREATE TABLE t_rename_clear_delete (p UInt8, q UInt32) ENGINE = MergeTree ORDER BY p
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_bytes_for_full_part_storage = 0;
+INSERT INTO t_rename_clear_delete VALUES (1, 42), (2, 43);
+ALTER TABLE t_rename_clear_delete RENAME COLUMN q TO r, CLEAR COLUMN r, DELETE WHERE p = 2;
+SELECT * FROM t_rename_clear_delete;
+DROP TABLE t_rename_clear_delete;
+
+DROP TABLE IF EXISTS t_rename_swap_clear;
+CREATE TABLE t_rename_swap_clear (k UInt32, a UInt32, c UInt32) ENGINE = MergeTree ORDER BY k
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_bytes_for_full_part_storage = 0, ratio_of_defaults_for_sparse_serialization = 0.5;
+INSERT INTO t_rename_swap_clear SELECT number, number + 1, if(number % 10 = 0, 7, 0) FROM numbers(1000);
+ALTER TABLE t_rename_swap_clear RENAME COLUMN a TO b, RENAME COLUMN c TO a, CLEAR COLUMN b;
+SELECT 's1-after', column, serialization_kind FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_rename_swap_clear' AND active AND NOT startsWith(column, '_') ORDER BY column;
+SELECT 's1-values', sum(a), countIf(a = 7), sum(b), count() FROM t_rename_swap_clear;
+CHECK TABLE t_rename_swap_clear SETTINGS check_query_single_value_result = 1;
+DROP TABLE t_rename_swap_clear;
+
+DROP TABLE IF EXISTS t_drop_rename_into_sparse;
+CREATE TABLE t_drop_rename_into_sparse (k UInt32, a UInt32, c UInt32) ENGINE = MergeTree ORDER BY k
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_bytes_for_full_part_storage = 0, ratio_of_defaults_for_sparse_serialization = 0.5;
+INSERT INTO t_drop_rename_into_sparse SELECT number, number + 1, if(number % 10 = 0, 7, 0) FROM numbers(1000);
+ALTER TABLE t_drop_rename_into_sparse DROP COLUMN a, RENAME COLUMN c TO a;
+SELECT 's2-after', column, serialization_kind FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_drop_rename_into_sparse' AND active AND NOT startsWith(column, '_') ORDER BY column;
+SELECT 's2-values', sum(a), countIf(a = 7), count() FROM t_drop_rename_into_sparse;
+CHECK TABLE t_drop_rename_into_sparse SETTINGS check_query_single_value_result = 1;
+DROP TABLE t_drop_rename_into_sparse;
 
 DROP TABLE IF EXISTS t_rename_clear_rmt;
 CREATE TABLE t_rename_clear_rmt (k UInt8, q UInt32) ENGINE = ReplicatedMergeTree('/clickhouse/{database}/t_rename_clear_rmt', 'r1') ORDER BY k
