@@ -1473,10 +1473,7 @@ void ReadManager::clearRowSubgroup(RowSubgroup & row_subgroup, MemoryUsageDiff &
     row_subgroup.filter.clear(&diff);
     for (ColumnSubchunk & col : row_subgroup.columns)
         col.column_and_offsets_memory.reset(&diff);
-    /// The row subgroup stays in `RowGroup::subgroups` until the end of the read: free its storage, `clear` keeps it.
-    row_subgroup.output = decltype(row_subgroup.output)();
-    row_subgroup.columns = decltype(row_subgroup.columns)();
-    row_subgroup.block_missing_values = BlockMissingValues();
+    row_subgroup.freeStorage();
 }
 
 std::string ReadManager::collectDeadlockDiagnostics()

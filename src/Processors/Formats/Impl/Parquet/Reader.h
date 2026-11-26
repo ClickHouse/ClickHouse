@@ -508,6 +508,14 @@ struct Reader
 
         std::atomic<ReadStage> stage {ReadStage::NotStarted};
         std::atomic<size_t> stage_tasks_remaining {0};
+
+        /// A delivered subgroup stays in `RowGroup::subgroups` until the end of the read: free its storage, `clear` keeps it.
+        void freeStorage()
+        {
+            output = decltype(output)();
+            columns = decltype(columns)();
+            block_missing_values = BlockMissingValues();
+        }
     };
 
     struct RowGroup

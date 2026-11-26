@@ -730,9 +730,14 @@ Chunk ParquetFullyCachedInputFormat::read()
         {
             auto & row_subgroup = row_group.subgroups[next_row_subgroup++];
             if (row_subgroup.filter.rows_pass == 0)
+            {
+                row_subgroup.freeStorage();
                 continue;
+            }
             approx_bytes_read_for_chunk = reader.approxBytesRead(row_group, row_subgroup.filter.rows_total);
-            return reader.formChunk(row_group, row_subgroup);
+            Chunk chunk = reader.formChunk(row_group, row_subgroup);
+            row_subgroup.freeStorage();
+            return chunk;
         }
         /// The subgroups stay for `getMatchedBuckets`.
         row_group.cached_columns.clear();
