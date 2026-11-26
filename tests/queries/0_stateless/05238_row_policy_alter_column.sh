@@ -117,6 +117,17 @@ CREATE ROW POLICY ptl ON $DB.tl FOR SELECT USING tl.x = 1 TO CURRENT_USER;
 refused "ALTER TABLE tt DROP COLUMN tt" ALTER_OF_COLUMN_IS_FORBIDDEN
 refused "ALTER TABLE tl RENAME COLUMN \`tl.x\` TO \`tl.y\`" ALTER_OF_COLUMN_IS_FORBIDDEN
 
+echo "-- a column of its own with a dot in the name is not a subcolumn of the shorter name"
+$CLICKHOUSE_CLIENT --multiquery -q "
+CREATE TABLE td (id UInt32, a UInt32, \`a.b\` UInt32) ENGINE = MergeTree ORDER BY id;
+INSERT INTO td VALUES (1, 0, 1), (2, 0, 2);
+CREATE ROW POLICY pd ON $DB.td FOR SELECT USING \`a.b\` = 1 TO CURRENT_USER;
+"
+$CLICKHOUSE_CLIENT -q "ALTER TABLE td RENAME COLUMN a TO a2"
+$CLICKHOUSE_CLIENT -q "ALTER TABLE td DROP COLUMN a2"
+$CLICKHOUSE_CLIENT -q "SELECT 'dotted column policy after alters', arraySort(groupArray(id)) FROM td"
+refused "ALTER TABLE td DROP COLUMN \`a.b\`" ALTER_OF_COLUMN_IS_FORBIDDEN
+
 echo "-- a read through an Alias applies the policies of the alias and of its target"
 $CLICKHOUSE_CLIENT --multiquery -q "
 CREATE TABLE tal (id UInt32, tenant UInt32, note String) ENGINE = MergeTree ORDER BY id;
@@ -164,6 +175,7 @@ DROP ROW POLICY pf ON $DB.tf;
 DROP ROW POLICY plam ON $DB.tlam;
 DROP ROW POLICY ptt ON $DB.tt;
 DROP ROW POLICY ptl ON $DB.tl;
+DROP ROW POLICY pd ON $DB.td;
 DROP ROW POLICY ptal ON $DB.tal;
 DROP ROW POLICY pal ON $DB.al;
 DROP ROW POLICY pal2 ON $DB.al2;
@@ -180,6 +192,7 @@ DROP TABLE tf;
 DROP TABLE tlam;
 DROP TABLE tt;
 DROP TABLE tl;
+DROP TABLE td;
 DROP TABLE al;
 DROP TABLE tal;
 DROP TABLE al2;

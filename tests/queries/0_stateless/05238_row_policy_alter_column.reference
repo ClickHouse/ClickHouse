@@ -34,6 +34,9 @@ ALTER_OF_COLUMN_IS_FORBIDDEN
 -- a name that starts with the table name can also be a column of that name
 ALTER_OF_COLUMN_IS_FORBIDDEN
 ALTER_OF_COLUMN_IS_FORBIDDEN
+-- a column of its own with a dot in the name is not a subcolumn of the shorter name
+dotted column policy after alters	[1]
+ALTER_OF_COLUMN_IS_FORBIDDEN
 -- a read through an Alias applies the policies of the alias and of its target
 ALTER_OF_COLUMN_IS_FORBIDDEN
 ALTER_OF_COLUMN_IS_FORBIDDEN
