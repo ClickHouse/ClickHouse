@@ -126,7 +126,7 @@ int NonBlockingFilterBIO::write(BIO* bio, const char* data, int length)
 	if (filter.nonBlocking)
 		return filter.writeNonBlocking(data, length);
 
-	const int queued = filter.writeQueuedToNext(bio);
+	const int queued = filter.writeQueuedBlocking(bio);
 	if (queued <= 0)
 		return queued;
 	const int rc = BIO_write(BIO_next(bio), data, length);
@@ -175,7 +175,7 @@ long NonBlockingFilterBIO::ctrl(BIO* bio, int cmd, long num, void* ptr) // NOLIN
 		}
 		else
 		{
-			const int queued = filter.writeQueuedToNext(bio);
+			const int queued = filter.writeQueuedBlocking(bio);
 			if (queued <= 0)
 				return queued;
 		}
@@ -258,7 +258,7 @@ int NonBlockingFilterBIO::readNonBlocking(BIO* bio, char* data, int length)
 }
 
 
-int NonBlockingFilterBIO::writeQueuedToNext(BIO* bio)
+int NonBlockingFilterBIO::writeQueuedBlocking(BIO* bio)
 {
 	while (hasQueued())
 	{

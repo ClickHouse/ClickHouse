@@ -12,10 +12,14 @@
 #include <IO/WriteHelpers.h>
 
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 #include <Common/Stopwatch.h>
 #include <Common/Throttler.h>
 #include <Common/tests/gtest_ephemeral_certificate.h>
 #include <Common/Silk/tests/gtest_silk_scheduler.h>
+
+#include <base/errnoToString.h>
+#include <base/scope_guard.h>
 
 #include <silk/fibers/future.h>
 
@@ -39,13 +43,24 @@
 #include <openssl/err.h>
 #include <openssl/ssl.h>
 
+#include <linux/sockios.h>
+#include <sys/ioctl.h>
+
+#include <algorithm>
+#include <atomic>
 #include <cerrno>
 #include <cstdint>
 #include <latch>
 #include <string>
+#include <vector>
 
 #include <poll.h>
 
+
+namespace DB::FailPoints
+{
+    extern const char silk_fiber_socket_send_timeout_expires_after_write[];
+}
 
 namespace
 {
@@ -643,6 +658,76 @@ TYPED_TEST(SilkFiberSocketTest, SendNowWithAThrottler)
 
     client_future.wait();
     peer.close();
+}
+
+
+using SilkFiberPlainSocketTest = SilkFiberSocketTest<PlainPolicy>;
+
+
+/// When the send timeout runs out after a partial write, `sendBytes` throws before it submits another write: a write
+/// abandoned by the exception would complete into the stack of the finished call. The failpoint spends the timeout
+/// after the first write and pauses there, while the peer reads everything that write sent. So every byte the peer
+/// receives after the pause comes from a write submitted after the timeout.
+TEST_F(SilkFiberPlainSocketTest, SendTimeoutAfterPartialWriteSubmitsNoFurtherWrite)
+{
+    const char * fail_point = DB::FailPoints::silk_fiber_socket_send_timeout_expires_after_write;
+    auto listener = policy.makeListener();
+    const uint16_t port = listener.address().port();
+    /// Far more than the socket buffers of both sides hold while the peer does not read, so the first write is partial.
+    const std::string data(64 << 20, 'x');
+    std::atomic<int> client_fd = -1;
+
+    DB::FailPointInjection::enableFailPoint(fail_point);
+    silk::FiberFuture client_future;
+    const int run_result = Silk::spawn(
+        [port, impl = policy.makeClient(), &data, &client_fd, fail_point]() -> int
+        {
+            /// Lets the test go on if the fiber ends without reaching the failpoint.
+            SCOPE_EXIT({ DB::FailPointInjection::disableFailPoint(fail_point); });
+
+            Poco::Net::StreamSocket socket(impl);
+            socket.connect(Poco::Net::SocketAddress("127.0.0.1", port));
+            socket.setSendTimeout(Poco::Timespan(60, 0));
+            client_fd = impl->sockfd();
+            EXPECT_THROW(socket.sendBytes(data.data(), static_cast<int>(data.size())), Poco::TimeoutException);
+            socket.close();
+            return 0;
+        },
+        client_future);
+    ASSERT_EQ(run_result, 0);
+    /// The fiber uses the locals above, so it finishes before the test returns, also when an assertion fails.
+    SCOPE_EXIT({
+        DB::FailPointInjection::disableFailPoint(fail_point);
+        client_future.wait();
+    });
+
+    auto peer = listener.acceptConnection();
+    peer.setReceiveTimeout(Poco::Timespan(60, 0));
+    std::vector<char> buffer(1 << 20);
+    DB::FailPointInjection::waitForPause(fail_point);
+
+    /// The paused client sends nothing new, so its send queue empties once the peer has read everything it holds.
+    size_t received_before_resume = 0;
+    while (true)
+    {
+        int unacked = 0;
+        ASSERT_EQ(ioctl(client_fd, SIOCOUTQ, &unacked), 0) << errnoToString();
+        const int available = peer.available();
+        if (unacked == 0 && available == 0)
+            break;
+        if (available > 0)
+            received_before_resume += peer.receiveBytes(buffer.data(), std::min(available, static_cast<int>(buffer.size())));
+    }
+    EXPECT_GT(received_before_resume, 0);
+    EXPECT_LT(received_before_resume, data.size());
+
+    DB::FailPointInjection::disableFailPoint(fail_point);
+
+    /// Until the client closes the connection.
+    size_t received_after_resume = 0;
+    while (const int received = peer.receiveBytes(buffer.data(), static_cast<int>(buffer.size())))
+        received_after_resume += received;
+    EXPECT_EQ(received_after_resume, 0);
 }
 
 
