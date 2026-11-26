@@ -5,6 +5,7 @@
 #include <Compression/LZ4_decompress_faster.h>
 
 #include <utility>
+#include <IO/ByteRangeSet.h>
 
 
 namespace DB
@@ -31,6 +32,10 @@ void CachedCompressedReadBuffer::initInput()
 
 void CachedCompressedReadBuffer::prefetch(Priority priority)
 {
+    /// The next block is served from the cache without touching the file, see `nextImpl`.
+    if (!(read_until_position && file_pos >= *read_until_position) && cache->contains(UncompressedCache::hash(path, file_pos)))
+        return;
+
     initInput();
     file_in->prefetch(priority);
 }
@@ -84,6 +89,8 @@ bool CachedCompressedReadBuffer::nextImpl()
         throw Exception(ErrorCodes::SEEK_POSITION_OUT_OF_BOUND, "Seek position is beyond the decompressed block (pos: "
         "{}, block size: {})", nextimpl_working_buffer_offset, toString(working_buffer.size()));
 
+    if (ranges_read)
+        ranges_read->emplace_back(file_pos, file_pos + owned_cell->compressed_size);
     file_pos += owned_cell->compressed_size;
 
     return true;
@@ -103,8 +110,10 @@ void CachedCompressedReadBuffer::seek(size_t offset_in_compressed_file, size_t o
         && nextimpl_working_buffer_offset == offset_in_decompressed_block)
         return;
 
+    /// Guarded subtraction, so that a corrupt mark near `SIZE_MAX` cannot alias `file_pos` through a wrapped sum.
     if (owned_cell &&
-        offset_in_compressed_file == file_pos - owned_cell->compressed_size &&
+        offset_in_compressed_file <= file_pos &&
+        file_pos - offset_in_compressed_file == owned_cell->compressed_size &&
         offset_in_decompressed_block <= working_buffer.size())
     {
         pos = working_buffer.begin() + offset_in_decompressed_block;
@@ -123,6 +132,13 @@ void CachedCompressedReadBuffer::seek(size_t offset_in_compressed_file, size_t o
         /// the next ReadBuffer::next() call
         nextimpl_working_buffer_offset = offset_in_decompressed_block;
     }
+}
+
+
+void CachedCompressedReadBuffer::setRequestMap(ByteRangeSet ranges)
+{
+    initInput();
+    file_in->setRequestMap(std::move(ranges));
 }
 
 }

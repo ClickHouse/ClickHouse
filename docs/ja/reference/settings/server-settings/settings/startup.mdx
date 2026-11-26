@@ -12,15 +12,11 @@ import SettingsInfoBlock from "/snippets/ja/components/SettingsInfoBlock/Setting
 
 これらの設定は ClickHouse server を構成するものであり、ClickHouse のソースコードから自動生成されています。
 
-<div id="startup_mv_delay_ms">
-  ## startup_mv_delay_ms
-</div>
+## startup_mv_delay_ms {#startup_mv_delay_ms}
 
-<SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="No" />マテリアライズドビューの作成遅延をシミュレートするためのデバッグ用パラメーター
+<SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="No" />materialized view の作成遅延をシミュレートするためのデバッグ用パラメーター
 
-<div id="startup_scripts.throw_on_error">
-  ## startup_scripts.throw_on_error
-</div>
+## startup_scripts.throw_on_error {#startup_scripts.throw_on_error}
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />true に設定すると、スクリプトの実行中にエラーが発生した場合、サーバーは起動しません。
 

@@ -786,7 +786,7 @@ bool FreeformRowInputFormat::readField(unsigned index, MutableColumns & columns)
             /// reader would stop at a tab, and an `Escaped` one would decode escape sequences that
             /// were never meant as such.
             if (format_settings.null_as_default && !isNullableOrLowCardinalityNullable(type))
-                read = SerializationNullable::deserializeNullAsDefaultOrNestedWholeText(*columns[target], field_buf, format_settings, serializations[target]);
+                read = SerializationNullable::deserializeNullAsDefaultOrNestedWholeText(*columns[target], field_buf, format_settings, serializations[target], type.get());
             else
                 serializations[target]->deserializeWholeText(*columns[target], field_buf, format_settings);
         }
@@ -916,7 +916,8 @@ void registerInputFormatFreeform(FormatFactory & factory)
     factory.registerInputFormat(
         "Freeform",
         [](ReadBuffer & buf, const Block & header, const RowInputFormatParams & params, const FormatSettings & settings)
-        { return std::make_shared<FreeformRowInputFormat>(buf, std::make_shared<const Block>(header), params, settings); });
+        { return std::make_shared<FreeformRowInputFormat>(buf, std::make_shared<const Block>(header), params, settings); },
+        /*supports_reset_parser=*/ true);
 
     factory.setDocumentation("Freeform", Documentation{
         .description = R"DOCS_MD(
@@ -972,11 +973,11 @@ An inferred type is `Nullable` only where a null was seen in the sample, as with
 [`schema_inference_make_columns_nullable`](/operations/settings/formats#schema_inference_make_columns_nullable)
 set to `auto`; the values `0` (never `Nullable`) and `1` (always `Nullable`) are honored.
 
-:::note
+<Note>
 This format expects the input to be *tabular*: every row has to have the same structure. A file
 mixing many differently-shaped messages - the general log-parsing problem solved by algorithms such
 as Drain and Brain - has no single solution, and no schema is inferred for it.
-:::
+</Note>
 )DOCS_MD",
     });
 }

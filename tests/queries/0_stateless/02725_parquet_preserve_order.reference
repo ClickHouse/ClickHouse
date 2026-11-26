@@ -8,7 +8,5 @@ ExpressionTransform
 (Expression)
 ExpressionTransform × 2
   (ReadFromFile)
-  Concat × 2 2 → 1
-    StickyResize 2 → 2
-      Overflow × 2 1 → 2
-        File × 2 0 → 1
+  Resize 2 → 2
+    File × 2 0 → 1

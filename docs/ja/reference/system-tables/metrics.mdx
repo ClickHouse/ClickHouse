@@ -30,6 +30,14 @@ import SystemTableCloud from '/snippets/ja/_system_table_cloud.mdx';
 
 接続プールで接続を作成する際に、障害があるとして使用禁止になったアドレスの総数
 
+### AddressToLineCacheBytes {#addresstolinecachebytes}
+
+スタックトレースのシンボル化に使用される、解決済みのソースコード内の位置 (file:line:column) のキャッシュによるメモリ使用量の近似値 (バイト単位) 。
+
+### AddressToLineCacheEntries {#addresstolinecacheentries}
+
+system.trace&#95;log、system.errors、system.error&#95;log のスタックトレースのシンボル化に使用される、解決済みのソースコード内の位置 (file:line:column) のキャッシュに格納されているコードアドレスの数。
+
 ### AggregatorThreads {#aggregatorthreads}
 
 Aggregator スレッドプール内のスレッド数。
@@ -41,6 +49,26 @@ Aggregator スレッドプール内のスレッド数。
 ### AggregatorThreadsScheduled {#aggregatorthreadsscheduled}
 
 Aggregator スレッドプール内でキューに入っている、または実行中のジョブ数。
+
+### AIRequestThreads {#airequestthreads}
+
+AI リクエスト用スレッドプール内のスレッド数。
+
+### AIRequestThreadsActive {#airequestthreadsactive}
+
+タスクを実行中の AI リクエスト用スレッドプール内のスレッド数。
+
+### AIRequestThreadsScheduled {#airequestthreadsscheduled}
+
+AI リクエスト用のスレッドプールで、キューに入っているジョブまたは実行中のジョブの数。
+
+### AmberConnectionsStored {#amberconnectionsstored}
+
+Amber の セッションプール に保存されているセッションの総数
+
+### AmberConnectionsTotal {#amberconnectionstotal}
+
+Amber のすべてのセッションの合計数 (pool に保存済みのセッションと、現在使用中のセッションの合計)
 
 ### ASTFuzzerAccumulatedFragments {#astfuzzeraccumulatedfragments}
 
@@ -358,6 +386,10 @@ JIT コンパイル済みマシンコードの cache 内のエントリ総数
 
 競合中とは見なされない取得済み CPU スロットの総数 (`fair_round_robin` スケジューラ使用時の最初のスレッド)
 
+### ConcurrencyControlParked {#concurrencycontrolparked}
+
+ブロッキング I/O や実行するタスクがない場合など、CPU 以外の要因で待機するために CPU スロットをパーク (解放) しているスレッドの現在の数
+
 ### ConcurrencyControlPreempted {#concurrencycontrolpreempted}
 
 CPUスロット待機中のプリエンプトされたスレッドの総数
@@ -369,18 +401,6 @@ CPUスロット待機中のプリエンプトされたスレッドの総数
 ### ConcurrencyControlSoftLimit {#concurrencycontrolsoftlimit}
 
 CPU slots 数のソフト制限値
-
-### ConcurrentHashJoinPoolThreads {#concurrenthashjoinpoolthreads}
-
-同時実行ハッシュ結合用スレッドプール内のスレッド数。
-
-### ConcurrentHashJoinPoolThreadsActive {#concurrenthashjoinpoolthreadsactive}
-
-タスクを実行中の同時実行ハッシュ結合用スレッドプール内のスレッド数。
-
-### ConcurrentHashJoinPoolThreadsScheduled {#concurrenthashjoinpoolthreadsscheduled}
-
-同時実行ハッシュ結合用のスレッドプールで、キューに入っているジョブまたは実行中のジョブの数。
 
 ### ConcurrentQueryAcquired {#concurrentqueryacquired}
 
@@ -594,6 +614,14 @@ ClickHouse のディスク経由で S3 の cloud storage からデータを読�
 
 現在のAZに登録されている分散キャッシュサーバーの数
 
+### DistrCacheServerCommittedTemporaryFiles {#distrcacheservercommittedtemporaryfiles}
+
+この分散キャッシュサーバープロセスが所有するコミット済み一時ファイルの数
+
+### DistrCacheServerCommittedTemporaryFilesBytes {#distrcacheservercommittedtemporaryfilesbytes}
+
+この分散キャッシュサーバープロセスが所有する、コミット済み一時ファイルの合計サイズ (バイト単位)
+
 ### DistrCacheServerConnections {#distrcacheserverconnections}
 
 分散キャッシュ から ClickHouse server への確立済み接続数
@@ -609,6 +637,18 @@ ClickHouse のディスク経由で S3 の cloud storage からデータを読�
 ### DistrCacheSharedLimitCount {#distrcachesharedlimitcount}
 
 DistributedCache::ConnectionPool::SharedLimit に基づく、オープン中の接続数
+
+### DistrCacheTemporaryDataActiveIds {#distrcachetemporarydataactiveids}
+
+有効なコミット済み一時データ ID の数
+
+### DistrCacheTemporaryDataConnectionsBypassingPool {#distrcachetemporarydataconnectionsbypassingpool}
+
+分散キャッシュ クライアントのメトリクス。一時データ用に接続プールを経由せずに開かれた接続の数
+
+### DistrCacheTemporaryDataServers {#distrcachetemporarydataservers}
+
+コミット済みの一時データを保持しているサーバー数
 
 ### DistrCacheUsedConnections {#distrcacheusedconnections}
 
@@ -709,6 +749,14 @@ distributed exchange server の handshake 用スレッドプールでタスク�
 ### ExchangeServerThreadsScheduled {#exchangeserverthreadsscheduled}
 
 distributed exchange server のハンドシェイク用スレッドプールで、キューに入っている、または実行中のジョブ数。
+
+### ExternalSetCacheBytes {#externalsetcachebytes}
+
+外部メモリ上にある `IN` 集合のキャッシュに保持されているブロックの合計サイズ (バイト単位)
+
+### ExternalSetCacheCells {#externalsetcachecells}
+
+外部メモリ上にある `IN` 集合のキャッシュに保持されているブロックの総数
 
 ### FiberStackBytes {#fiberstackbytes}
 
@@ -834,6 +882,14 @@ cache 内の領域確保を試みているスレッド数
 
 グローバルスレッドプールでキューに入っている、または実行中のジョブ数。
 
+### GPUExpressionKernelCacheBytes {#gpuexpressionkernelcachebytes}
+
+GPU エンジンが式用にコンパイルし、デバイス上に読み込んだまま保持しているカーネルの PTX のサイズ (バイト単位)。
+
+### GPUExpressionKernelCacheCount {#gpuexpressionkernelcachecount}
+
+GPU エンジンが式向けにコンパイルし、デバイス上に読み込んだまま保持しているカーネルの数。
+
 ### HashedDictionaryThreads {#hasheddictionarythreads}
 
 HashedDictionary のスレッドプールに含まれるスレッド数。
@@ -845,6 +901,18 @@ HashedDictionary のスレッドプールでタスクを実行中のスレッド
 ### HashedDictionaryThreadsScheduled {#hasheddictionarythreadsscheduled}
 
 HashedDictionary の thread pool でキューに入っている、または実行中のジョブ数。
+
+### HashJoinDestroyThreads {#hashjoindestroythreads}
+
+ハッシュ結合の右テーブル破棄用スレッドプール内のスレッド数。
+
+### HashJoinDestroyThreadsActive {#hashjoindestroythreadsactive}
+
+タスクを実行中の、ハッシュ結合の右テーブル破棄用スレッドプール内のスレッド数。
+
+### HashJoinDestroyThreadsScheduled {#hashjoindestroythreadsscheduled}
+
+ハッシュ結合の右テーブルを破棄するためのスレッドプールで、キューに入っているジョブまたは実行中のジョブの数。
 
 ### HiveFilesCacheBytes {#hivefilescachebytes}
 
@@ -914,18 +982,6 @@ IcebergCompaction スレッドプールでタスクを実行しているスレ�
 
 IcebergCompaction スレッドプール内でキューに入っている、または実行中のジョブ数。
 
-### IcebergManifestDecodeThreads {#icebergmanifestdecodethreads}
-
-Iceberg のデータマニフェストファイルのデコードに使用されるスレッドプール内のスレッド数。
-
-### IcebergManifestDecodeThreadsActive {#icebergmanifestdecodethreadsactive}
-
-Iceberg のデータマニフェストファイルのデコードに使用されるスレッドプールで、タスクを実行中のスレッド数。
-
-### IcebergManifestDecodeThreadsScheduled {#icebergmanifestdecodethreadsscheduled}
-
-Iceberg のデータマニフェストファイルのデコードに使用されるスレッドプールにおいて、キューに入っている、または実行中の job の数。
-
 ### IcebergMetadataFilesCacheBytes {#icebergmetadatafilescachebytes}
 
 Iceberg メタデータキャッシュのサイズ (バイト単位)
@@ -933,6 +989,14 @@ Iceberg メタデータキャッシュのサイズ (バイト単位)
 ### IcebergMetadataFilesCacheFiles {#icebergmetadatafilescachefiles}
 
 Iceberg のメタデータキャッシュに保存されているファイル数
+
+### IcebergRESTCatalogWarehouseCacheEntries {#icebergrestcatalogwarehousecacheentries}
+
+Iceberg REST カタログサーバーのウェアハウスキャッシュ内にあるウェアハウスの数
+
+### IcebergRESTCatalogWarehouseCacheSize {#icebergrestcatalogwarehousecachesize}
+
+Iceberg REST カタログサーバーの warehouse キャッシュのサイズ。warehouse 1 つにつき 1 としてカウントされます
 
 ### IcebergSchedulePoolSize {#icebergschedulepoolsize}
 
@@ -1098,6 +1162,10 @@ Keeper の changelog の起動時並列 reads 用 スレッドプール にお�
 
 処理待ちのリクエスト数
 
+### KeeperRaftThreadsWaitingForLogsPreprocessing {#keeperraftthreadswaitingforlogspreprocessing}
+
+起動後、ローカルのログエントリの前処理が完了するのを待機している Raft イベントループのスレッド数です。Raft イベントループはリスナー、リーダー選出およびハートビートのタイマー、さらにすべての RPC の完了処理も実行するため、この値は通常 0 または 1 にとどまるはずです。
+
 ### KeeperReadThreads {#keeperreadthreads}
 
 Keeper サーバーの読み取りを処理するスレッドプール内のスレッド数。
@@ -1169,6 +1237,10 @@ DDLWorker が ZooKeeper にプッシュした DDL エントリの最大 ID。
 ### MemoryReservationDemand {#memoryreservationdemand}
 
 メモリ予約に対する保留中の増加リクエストの総バイト数
+
+### MemoryReservationReclaimable {#memoryreservationreclaimable}
+
+回収可能なメモリの合計量
 
 ### MemoryTracking {#memorytracking}
 
@@ -1290,6 +1362,18 @@ MergeTree パーツローダー用スレッドプールで、キュー待ちま�
 
 スナップショットのコミットに使用される、スケジュールされているスレッド数
 
+### MergeTreeStatisticsLoaderThreads {#mergetreestatisticsloaderthreads}
+
+パーツの統計情報を読み込むためのスレッドプール内のスレッド数。
+
+### MergeTreeStatisticsLoaderThreadsActive {#mergetreestatisticsloaderthreadsactive}
+
+タスクを実行中の、パーツの統計情報読み込み用スレッドプール内のスレッド数。
+
+### MergeTreeStatisticsLoaderThreadsScheduled {#mergetreestatisticsloaderthreadsscheduled}
+
+パーツの統計情報を読み込むためのスレッドプールで、キューに入っているジョブまたは実行中のジョブの数。
+
 ### MergeTreeSubcolumnsReaderThreads {#mergetreesubcolumnsreaderthreads}
 
 MergeTree でサブカラムの読み取りに使用されるスレッドプール内のスレッド数。
@@ -1362,6 +1446,10 @@ AzureObjectStorage のスレッドプールでタスクを実行しているス�
 
 AzureObjectStorage のスレッドプールでキューに入っている、または実行中のジョブ数。
 
+### ObjectStorageExclusiveLeases {#objectstorageexclusiveleases}
+
+このサーバーがオブジェクトストレージ上で現在保持している排他リース (Icebergテーブルのコンパクションなど) の数。
+
 ### ObjectStorageQueueMetadataCacheSizeBytes {#objectstoragequeuemetadatacachesizebytes}
 
 ObjectStorageQueue のメタデータキャッシュのサイズ (バイト単位) 。
@@ -1398,6 +1486,10 @@ S3ObjectStorage のスレッドプールでタスクを実行中のスレッド�
 
 S3ObjectStorage スレッドプール内でキューに入っている、または実行中のジョブ数。
 
+### ObjectStorageSharedLeases {#objectstoragesharedleases}
+
+このサーバーのクエリが現在オブジェクトストレージ内でリースしているキー (読み取り中の Iceberg スナップショットなど) の数。
+
 ### OpenFileForRead {#openfileforread}
 
 読み取り用に開いているファイル数
@@ -1429,6 +1521,10 @@ Outdated data partsを読み込むためのスレッドプールでアクティ�
 ### OutdatedPartsLoadingThreadsScheduled {#outdatedpartsloadingthreadsscheduled}
 
 Outdated data parts の読み込み用スレッドプールで、キューに入っている、または実行中のジョブ数。
+
+### PackedPartsBufferedBytes {#packedpartsbufferedbytes}
+
+書き込み中の packed データパーツでバッファリングされたデータに割り当てられているメモリ量 (バイト) 。一時ファイルに移動されたデータは含まれません。
 
 ### PageCacheBytes {#pagecachebytes}
 
@@ -1962,6 +2058,14 @@ StartupSystemTables のスレッドプール内でキューに入っている、
 
 ステートレス ワーカースレッドプールでキュー待ちまたは実行中のジョブ数。
 
+### StatisticsCacheBytes {#statisticscachebytes}
+
+統計キャッシュの合計サイズ (バイト単位) 。MergeTree テーブルのパーツのカラム統計を保持し、パーツとカラムの組み合わせごとに 1 つのエントリを持ちます。
+
+### StatisticsCacheCells {#statisticscachecells}
+
+統計キャッシュ内のエントリの総数 (データパーツとカラムの組み合わせごとに1エントリ)
+
 ### StorageBufferBytes {#storagebufferbytes}
 
 Buffer テーブルのバッファ内のバイト数
@@ -2126,6 +2230,14 @@ JOIN 用に作成された一時ファイル数
 
 垂直マージ用の一時ファイル数
 
+### TemporaryFilesForPackedParts {#temporaryfilesforpackedparts}
+
+書き込み中の packed データパーツについて、バッファリングされたデータを保持している一時ファイルの数
+
+### TemporaryFilesForSet {#temporaryfilesforset}
+
+外部メモリ上の `IN` 集合のために作成された一時ファイルの数
+
 ### TemporaryFilesForSort {#temporaryfilesforsort}
 
 外部ソートのために作成された一時ファイル数
@@ -2206,6 +2318,18 @@ TimeSeries テーブルの tags テーブルが持つ重複排除キャッシュ
 
 作成された一時ファイル数
 
+### TransactionLogEntries {#transactionlogentries}
+
+最後に一覧表示した時点でのトランザクションログ (`/log`) 内のエントリ数
+
+### TransactionsRunning {#transactionsrunning}
+
+このレプリカで開始され、現在実行中のトランザクションの数
+
+### TransactionWatermarkLag {#transactionwatermarklag}
+
+最新のトランザクションスナップショットからグローバルウォーターマークを差し引いた値です。新しいトランザクションは、この値の分だけ CSN が遅れた状態で読み取りを行います
+
 ### UDFDriverInvokerThreads {#udfdriverinvokerthreads}
 
 実行可能なUDFドライバーコマンドのパイプを処理するスレッドプール内のスレッド数。
@@ -2245,6 +2369,10 @@ UNIQUE KEY 索引キャッシュの総サイズ (バイト)
 ### VersionInteger {#versioninteger}
 
 1000進数の単一の整数で表したサーバーのバージョンです。たとえば、バージョン 11.22.33 は 11022033 に変換されます。
+
+### WaitingQuery {#waitingquery}
+
+非同期読み込みまたは起動の完了を待機しているクエリの数。上限は &#39;max&#95;waiting&#95;queries&#39; サーバー設定で指定します
 
 ### 書き込み {#write}
 

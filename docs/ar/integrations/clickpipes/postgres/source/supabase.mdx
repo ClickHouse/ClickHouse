@@ -10,17 +10,13 @@ integration:
   - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 هذا دليل يوضح كيفية إعداد Supabase Postgres لاستخدامه مع ClickPipes.
 
 <Note>
   يدعم ClickPipes ‏Supabase عبر IPv6 بشكل أصلي لتوفير نسخ متماثل سلس.
 </Note>
 
-<div id="creating-a-user-with-permissions-and-replication-slot">
-  ## إنشاء مستخدم مع أذونات وفتحة نسخ متماثل
-</div>
+## إنشاء مستخدم مع أذونات وفتحة نسخ متماثل {#creating-a-user-with-permissions-and-replication-slot}
 
 اتصل بمثيل Supabase الخاص بك كمستخدم Admin ونفّذ الأوامر التالية:
 
@@ -56,16 +52,16 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   CREATE PUBLICATION clickpipes FOR TABLE table_to_replicate, table_to_replicate2;
   ```
 
-  * لإنشاء publication لجميع الجداول ضمن مخطط محدد:
+* لإنشاء publication لجميع الجداول ضمن مخطط محدد:
 
-    ```sql
-    CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
-    ```
+  ```sql
+  CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
+  ```
 
 يحدّد `clickpipes` publication مجموعة الجداول التي سيتم بث أحداث التغيير الخاصة بها إلى ClickPipes. نوصي بعدم استخدام `FOR ALL TABLES` إلا إذا كنت تنوي نسخ كل جدول متماثلًا، لأن تضمين جداول غير ضرورية يزيد من حركة WAL من Postgres إلى ClickPipes ويقلّل الكفاءة الإجمالية للنسخ المتماثل.
 
 <div id="increase-max_slot_wal_keep_size">
-  ## زِد قيمة `max_slot_wal_keep_size`
+  ## زِد قيمة `max_slot_wal_keep_size` {#increase-max_slot_wal_keep_size}
 </div>
 
 <Warning>
@@ -76,22 +72,24 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   للحصول على توصية أدق بشأن هذه القيمة، يمكنك التواصل مع فريق ClickPipes.
 </Warning>
 
-<div id="connection-details-to-use-for-supabase">
-  ## تفاصيل الاتصال التي يجب استخدامها مع Supabase
-</div>
+## تفاصيل الاتصال التي يجب استخدامها مع Supabase {#connection-details-to-use-for-supabase}
 
 انتقل إلى `Project Settings` -&gt; `Database` في مشروع Supabase الخاص بك (ضمن `Configuration`).
 
 **مهم**: عطّل `Display connection pooler` في هذه الصفحة، ثم انتقل إلى قسم `Connection parameters` ودوّن/انسخ المعلمات.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/setup/supabase/supabase-connection-details.jpg" size="lg" border alt="العثور على تفاصيل اتصال Supabase" border />
+<div className="ch-image-lg">
+  <Frame>
+    ![العثور على تفاصيل اتصال Supabase](/images/integrations/data-ingestion/clickpipes/postgres/source/setup/supabase/supabase-connection-details.jpg)
+  </Frame>
+</div>
 
 <Info>
-  مُجمِّع الاتصالات غير مدعوم في النسخ المتماثل المستند إلى CDC، لذا يجب تعطيله.
+  مُجمِّع الاتصالات غير مدعوم في النسخ المتماثل المستند إلى CDC، لذا يجب تعطيله.
 </Info>
 
 <div id="note-on-rls">
-  ## ملاحظة حول RLS
+  ## ملاحظة حول RLS {#note-on-rls}
 </div>
 
 يجب ألا يكون مستخدم ClickPipes في Postgres خاضعًا لقيود سياسات RLS، لأن ذلك قد يؤدي إلى ظهور بيانات ناقصة. يمكنك تعطيل سياسات RLS لهذا المستخدم بتشغيل الأمر أدناه:
@@ -101,7 +99,7 @@ ALTER USER clickpipes_user BYPASSRLS;
 ```
 
 <div id="whats-next">
-  ## ما الخطوة التالية؟
+  ## ما الخطوة التالية؟ {#whats-next}
 </div>
 
 يمكنك الآن [إنشاء ClickPipe الخاص بك](/ar/integrations/clickpipes/postgres/index) والبدء في إدخال البيانات من مثيل Postgres الخاص بك إلى ClickHouse Cloud.

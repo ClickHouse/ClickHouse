@@ -60,6 +60,8 @@ public:
     /// threshold of the TopN filter, so the read must neither consult nor write the TopK cache entries.
     void disableTopKQueryConditionCache() { allow_top_k_query_condition_cache = false; }
 
+    bool canSkipDataByFilterOn(const ColumnWithTypeAndName & column) const override;
+
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
     QueryPlanStepPtr clone() const override;
 #if CLICKHOUSE_CLOUD
@@ -72,7 +74,9 @@ public:
     static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);
 #endif
 
-    bool requestReadingInOrder() const;
+    /// Returns true only if the pipeline will deliver one sorted run per output port. Decides
+    /// everything here: it runs during optimization, and the caller drops the sorting step on true.
+    bool requestReadingInOrder(int direction, const QueryPlanOptimizationSettings & optimization_settings);
 
     void setParallelizeOutputAfterReading(bool value) { parallelize_output_after_reading = value; }
 
@@ -94,8 +98,8 @@ public:
 
     LazyObjectStorageFileRegistryPtr getLazyRowIndexRegistry() const { return lazy_row_index_registry; }
 
-    /// Registers a JOIN runtime filter on `column_name` that every row of this read passes.
-    void addJoinRuntimeFilterIndexAnalysisOnDataRead(const String & filter_id, const String & column_name, const DataTypePtr & column_type);
+    /// Registers a JOIN runtime filter on `descriptor.key_column_name` that every row of this read passes.
+    void addJoinRuntimeFilterIndexAnalysisOnDataRead(const RuntimeFilterIndexAnalysisDescriptor & descriptor);
 
 private:
     /// What the main read keeps besides `required_names` when columns are split off.
@@ -110,6 +114,10 @@ private:
     StorageMetadataPtr iterator_metadata;
 
     RuntimeFilterIndexAnalysisDescriptors join_runtime_filters_for_file_pruning;
+    /// Built from `join_runtime_filters_for_file_pruning` by `createIterator`, for the file iterator.
+    std::shared_ptr<const RuntimeFilterPruningPredicate> join_runtime_filter_predicate;
+    /// Its subset on the keys the format returns unchanged, for the format.
+    std::shared_ptr<const RuntimeFilterPruningPredicate> format_join_runtime_filter_predicate;
 
     /// Memoized `getOrCreateDataLakeReadEstimate`, which walks the manifests; reset when the filter changes.
     /// A storage without an estimate returns nullptr without any work, so nullptr is not memoized.
@@ -120,7 +128,9 @@ private:
 
     ReadFromFormatInfo info;
     const NamesAndTypesList virtual_columns;
-    const std::optional<DB::FormatSettings> format_settings;
+    /// Not const: the in-order path pins Parquet's preserve_order, which is what makes a single
+    /// file a sorted run at all.
+    std::optional<DB::FormatSettings> format_settings;
     const bool need_only_count;
     const size_t max_block_size;
     size_t num_streams;
@@ -130,6 +140,13 @@ private:
     bool allow_top_k_query_condition_cache = true;
     /// The table's answer, from its own format settings: `format_settings` may be changed for the data lake reader.
     bool parallelize_output_after_reading = true;
+
+    /// Set by a successful requestReadingInOrder. `read_in_order_files` is the file list
+    /// enumerated there, so initializePipeline consumes it instead of re-deciding.
+    /// `read_in_order_attempted` keeps the enumeration, which consumes the iterator, single-shot.
+    bool read_in_order_attempted = false;
+    bool read_in_order = false;
+    ObjectInfos read_in_order_files;
 #if CLICKHOUSE_CLOUD
     /// This is set when this step is part of a distributed query plan and it will be executed in a distributed manner.
     /// "bucket_id" task parameter will be used to determine what part of the data to read.
@@ -145,6 +162,12 @@ private:
 
     /// Whether every read of an object is pinned to the generation (`ETag`) the object had when it was listed.
     bool isReadPinnedToListedGeneration() const;
+
+    [[nodiscard]] bool sortingKeyIsComputableFromSourceHeader() const;
+    Pipe buildInOrderPipe(
+        const ContextPtr & local_context,
+        const FormatFilterInfoPtr & format_filter_info,
+        const std::shared_ptr<const ObjectStorageTopKQueryConditionCacheKey> & top_k_query_condition_cache_key);
 };
 
 }

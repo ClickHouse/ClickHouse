@@ -53,15 +53,15 @@ public:
 
     BlockIO loadKeys(const Columns & key_columns, const VectorWithMemoryTracking<size_t> & requested_rows) override;
 
-    bool isModified() const override;
+    [[nodiscard]] bool isModified() const override;
 
-    bool supportsSelectiveLoad() const override;
+    [[nodiscard]] bool supportsSelectiveLoad() const override;
 
-    bool hasUpdateField() const override;
+    [[nodiscard]] bool hasUpdateField() const override;
 
-    DictionarySourcePtr clone() const override;
+    [[nodiscard]] DictionarySourcePtr clone() const override;
 
-    std::string toString() const override;
+    [[nodiscard]] std::string toString() const override;
 
     QueryPipeline getStreamForBlock(const Block & block);
 

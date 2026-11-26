@@ -7,25 +7,27 @@ title: 'Opérations « Make before break » (MBB) dans ClickHouse Cloud'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 ClickHouse Cloud effectue les mises à niveau et la mise à l’échelle des clusters selon une approche **Make Before Break** (MBB).
 Dans cette approche, de nouvelles répliques sont ajoutées au cluster avant d’en retirer les anciennes.
 Cela s’oppose à l’approche break-first, dans laquelle les anciennes répliques seraient d’abord supprimées avant d’ajouter les nouvelles.
 
-L’approche MBB présente plusieurs avantages :
+L’approche MBB présente plusieurs avantages :
 
 * Comme de la capacité est ajoutée au cluster avant d’en retirer, la **capacité globale du cluster ne diminue pas**, contrairement à l’approche break-first. Bien sûr, des événements imprévus, tels que des pannes de nœud ou de disque, peuvent toujours se produire dans un environnement cloud.
 * Cette approche est particulièrement utile lorsque le cluster est fortement sollicité, car elle **évite de surcharger les répliques existantes**, comme ce serait le cas avec une approche break-first.
 * Comme les répliques peuvent être ajoutées rapidement sans devoir attendre la suppression préalable d’autres répliques, cette approche offre une expérience de mise à l’échelle **plus rapide et plus réactive**.
 
-L’image ci-dessous montre comment cela peut se produire pour un cluster de 3 répliques lorsque le service fait l’objet d’une mise à l’échelle verticale :
+L’image ci-dessous montre comment cela peut se produire pour un cluster de 3 répliques lorsque le service fait l’objet d’une mise à l’échelle verticale :
 
-<Image img="/images/cloud/features/mbb/vertical_scaling.webp" size="lg" alt="Schéma d’exemple pour un cluster de 3 répliques faisant l’objet d’une mise à l’échelle verticale" />
+<div className="ch-image-lg">
+  <Frame>
+    ![Schéma d’exemple pour un cluster de 3 répliques faisant l’objet d’une mise à l’échelle verticale](/images/cloud/features/mbb/vertical_scaling.webp)
+  </Frame>
+</div>
 
 Dans l’ensemble, MBB offre une expérience de mise à l’échelle et de mise à niveau fluide et moins perturbatrice que l’approche break-first utilisée auparavant.
 
-Avec MBB, vous devez connaître certains comportements importants :
+Avec MBB, vous devez connaître certains comportements importants :
 
 1. Les opérations MBB attendent que les charges de travail en cours se terminent sur les répliques actuelles avant leur arrêt.
    Cette période est actuellement fixée à 1 heure, ce qui signifie que les opérations de mise à l’échelle ou de mise à niveau peuvent attendre jusqu’à une heure qu’une requête de longue durée sur une réplique se termine avant que cette réplique ne soit supprimée.

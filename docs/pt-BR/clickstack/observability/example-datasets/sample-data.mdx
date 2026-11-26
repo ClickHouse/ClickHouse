@@ -1,0 +1,214 @@
+---
+slug: /clickstack/observability/example-datasets/sample-data
+title: 'Logs, rastros e métricas de exemplo'
+description: 'Explore o ClickHouse Observability com um conjunto de dados de exemplo de logs, sessões, rastros e métricas'
+doc_type: 'guide'
+toc_max_heading_level: 2
+keywords: ['clickstack', 'example data', 'sample dataset', 'logs', 'observability']
+sidebarTitle: 'Logs, rastros e métricas de exemplo'
+---
+
+import { BetaBadge } from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
+
+Explore o ClickHouse Observability com logs, sessões, rastros e métricas de amostra de uma loja de e-commerce. Os dois modos de implantação usam o mesmo dataset e o mesmo fluxo de trabalho de investigação.
+
+Antes de começar, conclua o [guia de primeiros passos da versão totalmente gerenciada](/pt-BR/clickstack/observability/getting-started) ou o [guia de primeiros passos da versão autogerenciada](/pt-BR/clickstack/self-configured/getting-started/managed).
+
+<Steps>
+  <Step title="Configure sua conexão" id="configure-your-connection">
+    Escolha o tipo de implantação e defina as seguintes variáveis no terminal em que você carregará os dados de amostra.
+
+    <Tabs>
+      <Tab title="Totalmente gerenciado">
+        <BetaBadge label="Oferta Beta" />
+
+        Abra **Team Settings → Data** e localize **Managed Telemetry**. Em **OpenTelemetry Collector**, use a opção **URL** para copiar o endpoint OTLP HTTP e a chave de API. Selecione **Reveal key** para ver os valores completos.
+
+        Defina o endpoint base sem um caminho de sinal, como `/v1/logs`. Inclua o prefixo `Bearer` no valor de autorização:
+
+        ```shell
+        export CLICKSTACK_OTLP_ENDPOINT='<your-managed-otlp-http-endpoint>'
+        export CLICKSTACK_AUTHORIZATION='Bearer <your-api-key>'
+        ```
+
+        Não é necessário implantar um coletor para este exemplo.
+      </Tab>
+
+      <Tab title="Autogerenciado" id="self-managed">
+        É necessário ter um Coletor OpenTelemetry do ClickStack em execução e conectado ao seu Serviço do ClickHouse Cloud. Siga o [guia de ingestão com OpenTelemetry](/pt-BR/clickstack/observability/ingesting-data/opentelemetry#self-managed) para configurar a conexão ou o [guia de implantação](/pt-BR/clickstack/self-configured/deployment/managed) para iniciar um coletor.
+
+        Defina o endpoint OTLP HTTP do coletor, que deve estar acessível a partir da máquina em que o comando de envio será executado. Use a URL base sem um caminho de sinal, como `/v1/logs`:
+
+        ```shell
+        export CLICKSTACK_OTLP_ENDPOINT='http://<collector-host>:4318'
+        export CLICKSTACK_AUTHORIZATION=''
+        ```
+
+        Se o coletor exigir autenticação, defina `CLICKSTACK_AUTHORIZATION` com o token do receptor. Para um Coletor do ClickStack protegido com `OTLP_AUTH_TOKEN`, use esse valor sem o prefixo `Bearer`. Para um receptor que não exige autenticação, deixe o valor vazio. Não use aqui a senha do seu banco de dados ClickHouse.
+      </Tab>
+    </Tabs>
+  </Step>
+
+  <Step title="Baixar dados de amostra" id="download-sample-data">
+    Para popular a UI com dados de amostra, baixe o seguinte arquivo:
+
+    [Dados de amostra](https://storage.googleapis.com/hyperdx/sample.tar.gz)
+
+    ```shell
+    # curl
+    curl -O https://storage.googleapis.com/hyperdx/sample.tar.gz
+    # or
+    # wget https://storage.googleapis.com/hyperdx/sample.tar.gz
+    ```
+
+    Este arquivo contém exemplos de logs, métricas e rastros do nosso [OpenTelemetry demo](https://github.com/ClickHouse/opentelemetry-demo) público, uma loja de e-commerce simples baseada em microsserviços. Copie este arquivo para um diretório de sua preferência.
+  </Step>
+
+  <Step title="Carregar dados de amostra" id="load-sample-data">
+    Execute os comandos a seguir no **Bash**, a partir do diretório que contém `sample.tar.gz`. Eles enviam os dados de amostra para o endpoint configurado acima e só adicionam um cabeçalho de autorização quando necessário.
+
+    ```bash
+    set -eo pipefail
+
+    auth_headers=()
+    if [ -n "${CLICKSTACK_AUTHORIZATION:-}" ]; then
+      auth_headers=(-H "Authorization: ${CLICKSTACK_AUTHORIZATION}")
+    fi
+
+    for filename in $(tar -tf sample.tar.gz); do
+      endpoint="${CLICKSTACK_OTLP_ENDPOINT%/}/v1/${filename%.json}"
+      echo "loading ${filename%.json}"
+      tar -xOf sample.tar.gz "$filename" | while read -r line; do
+        printf '%s\n' "$line" | curl --fail-with-body -sS -X POST "$endpoint" \
+          -H "Content-Type: application/json" \
+          "${auth_headers[@]}" \
+          --data-binary @-
+      done
+    done
+    ```
+
+    Isso simula fontes de dados OTLP de logs, traces e métricas enviando dados. Em produção, essas fontes de dados podem ser SDKs de aplicações, agentes ou Coletores OpenTelemetry.
+
+    No console do ClickHouse Cloud, selecione seu serviço e abra o ClickHouse Observability.
+
+    Volte para [Busca](/pt-BR/clickstack/observability/features/search) para visualizar os dados carregados. Selecione a fonte de dados **Logs** e um intervalo de tempo que inclua os timestamps dos eventos de exemplo. A captura de tela abaixo mostra logs de exemplo chegando em **Live Tail**:
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Busca exibindo logs de exemplo carregados dos serviços da demonstração de e-commerce](/images/clickstack/getting-started/observability-sample-data-search.png)
+      </Frame>
+    </div>
+
+    O carregamento dos dados levará alguns minutos. Aguarde a conclusão do carregamento antes de prosseguir para as próximas etapas.
+  </Step>
+
+  <Step title="Explorar sessões" id="explore-sessions">
+    Suponha que recebemos relatos de que nossos usuários estão com problemas para pagar pelas compras. Podemos acompanhar a experiência deles usando a reprodução de sessão.
+
+    Selecione **Sessões de Cliente** no menu à esquerda e defina um intervalo de tempo que inclua as sessões de amostra carregadas.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Sessões de Cliente exibindo sessões de amostra com uma contagem de erros destacada](/images/clickstack/getting-started/observability-sample-data-sessions.png)
+      </Frame>
+    </div>
+
+    Esta visualização lista as sessões da loja de demonstração, incluindo sessões anônimas e sessões identificadas por um endereço de e-mail.
+
+    Algumas sessões têm uma contagem de erros diferente de zero. Neste exemplo, a sessão destacada tem um erro.
+
+    Selecione a sessão destacada para abrir a reprodução. Use o botão de reprodução na parte inferior do player para assistir à sessão.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Reprodução de sessão exibindo a loja do OpenTelemetry demo e os eventos de navegação](/images/clickstack/getting-started/observability-sample-data-replay.png)
+      </Frame>
+    </div>
+
+    A reprodução mostra o usuário navegando pelo site e adicionando itens ao carrinho. Se preferir, avance até o momento da sessão em que ele tenta concluir um pagamento.
+
+    <Tip>
+      Eventos de erro são marcados em vermelho na lista de eventos.
+    </Tip>
+
+    Role até o final da lista de eventos à esquerda. A requisição `POST /api/checkout` destacada retornou HTTP `500`, e um erro de console foi registrado no mesmo momento.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Reprodução de sessão destacando a requisição POST com falha para /api/checkout e o erro de console associado](/images/clickstack/getting-started/observability-sample-data-checkout-error.png)
+      </Frame>
+    </div>
+
+    Selecione o evento `POST /api/checkout` com falha para inspecionar a requisição e o respectivo trace.
+  </Step>
+
+  <Step title="Explorar rastros" id="explore-traces">
+    Abra a aba **Trace** para ver o trace distribuído, incluindo os spans relacionados e os logs correlacionados.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Visualização de trace em cascata mostrando a requisição de checkout com seus spans, logs correlacionados e erros](/images/clickstack/getting-started/observability-sample-data-trace.png)
+      </Frame>
+    </div>
+
+    Role o trace para baixo e selecione o span `oteldemo.PaymentService/Charge` no serviço `checkout`.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Span da requisição de pagamento selecionado, mostrando um erro de cartão expirado em seus atributos](/images/clickstack/getting-started/observability-sample-data-payment-span.png)
+      </Frame>
+    </div>
+
+    Na aba **Overview**, examine **Top Level Attributes**. O `StatusCode` é `Error`, e o `StatusMessage` indica que o cartão de crédito expirou.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Atributos da visão geral mostrando um status Error e uma mensagem informando que o cartão de crédito expirou](/images/clickstack/getting-started/observability-sample-data-span-attributes.png)
+      </Frame>
+    </div>
+
+    No trace, selecione o log de erro `payment` abaixo do span do serviço de pagamento. A linha dele tem um ícone de log, que a diferencia do evento de erro do span. Em **Overview**, o **Body** do log confirma que o cartão de crédito expirou. Os atributos identificam o serviço `payment` e a severidade `error`, complementando o trace com mais contexto.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Log de erro de pagamento correlacionado mostrando a mensagem de cartão expirado e os atributos do log](/images/clickstack/getting-started/observability-sample-data-correlated-log.png)
+      </Frame>
+    </div>
+
+    Rastreamos a origem dessa falha no checkout: uma requisição de pagamento rejeitada porque o cartão de crédito havia expirado.
+  </Step>
+
+  <Step title="Explorar logs" id="explore-logs">
+    Para investigar outras falhas de pagamento, volte para [Busca](/pt-BR/clickstack/observability/features/search).
+
+    Selecione **Logs** como fonte de dados e escolha `payment` no filtro **ServiceName**. Use um intervalo de tempo que inclua a sessão investigada.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Busca filtrada pelo serviço payment mostrando erros de cartão expirado e de cache cheio da Visa junto com transações bem-sucedidas](/images/clickstack/getting-started/observability-sample-data-payment-logs.png)
+      </Frame>
+    </div>
+
+    Os resultados incluem o erro de cartão expirado da sessão que investigamos, além de repetidos erros `Visa cache full: cannot add new item.`. Para ver quando os erros ocorrem no serviço payment, crie um gráfico desses logs de erro ao longo do tempo.
+  </Step>
+
+  <Step title="Crie um gráfico dos erros de pagamento" id="chart-payment-errors">
+    Abra o **Chart Explorer**, selecione **Time Series** e escolha **Logs** como fonte de dados. Selecione **Count of Events** como agregação.
+
+    Em **Where**, selecione **Lucene** e insira o seguinte filtro:
+
+    ```text
+    SeverityText:"error" ServiceName:"payment"
+    ```
+
+    Defina um intervalo de tempo que abranja os dados de amostra e selecione **Executar**.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Chart Explorer contando logs de erro do serviço de pagamento ao longo do tempo com um filtro Lucene](/images/clickstack/getting-started/observability-sample-data-payment-errors-chart.png)
+      </Frame>
+    </div>
+
+    O gráfico mostra o número de logs de erro correspondentes em cada intervalo de tempo. Ele abrange todos os erros do serviço `payment`, inclusive erros de cartão expirado e de cache cheio. Trata-se de contagens de eventos de log, e não de uma contagem de pagamentos únicos que falharam.
+  </Step>
+</Steps>
