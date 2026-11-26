@@ -1,0 +1,29 @@
+---
+slug: /clickstack/observability/managing/overview
+title: '管理 ClickHouse Observability'
+sidebarTitle: '概览'
+description: '在全托管的 ClickHouse Observability 中管理遥测数据访问、API 与 agent 连接、查询设置以及团队权限。'
+doc_type: 'guide'
+keywords: ['ClickHouse Observability', '管理', '数据源', '查询设置', '角色', '权限']
+---
+
+import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge label="Beta 版服务" />
+
+<Note>
+  本指南介绍全托管的 ClickHouse Observability。如需了解 Self-managed ClickHouse Observability 的资源规模规划、保留期限、schema 调优及生产环境部署建议，请参阅[数据库管理](/zh/clickstack/self-configured/managing/overview)；如需了解数据源设置，请参阅[配置选项](/zh/clickstack/self-configured/managing/config)。
+</Note>
+
+在 ClickHouse Observability 中，您可以通过 **团队设置** 管理遥测数据访问权限、数据源、API 和 agent 连接、集成、查询设置以及团队权限。
+
+## 管理指南 {#admin-guides}
+
+| 指南                                                   | 可执行的操作                                                    |
+| ---------------------------------------------------- | --------------------------------------------------------- |
+| [配置选项](/zh/clickstack/observability/managing/config)    | 管理 数据源 和采集器访问权限、查找遥测数据连接详情、配置 API 和 agent 访问，以及调整查询设置。 |
+| [基于角色的访问控制](/zh/clickstack/observability/managing/rbac) | 查看内置角色、创建自定义角色，以及为仪表盘、保存的搜索、数据源及其他资源配置权限。                 |
+
+## 发送遥测数据 {#sending-telemetry}
+
+如需连接应用程序和采集器，请先获取 **团队设置 → 数据 → Managed Telemetry** 下的连接详情，然后参阅[摄取指南](/zh/clickstack/observability/ingesting-data/overview)进行配置。

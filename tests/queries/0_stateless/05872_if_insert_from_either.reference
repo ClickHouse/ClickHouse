@@ -1,0 +1,26 @@
+vector	DateTime	5000	1229209842954515001
+vector, then const	DateTime	5000	10675680063019479173
+vector, else const	DateTime	5000	15482867130280412396
+vector, both const	DateTime	5000	596328841891016404
+vector, nullable	Nullable(DateTime)	5000	928718477100379605
+decimal	DateTime64(6)	5000	7612855990369554813
+decimal, then const	DateTime64(6)	5000	15381580977862598863
+string	String	5000	14382947046009152091
+string, then const	String	5000	6857017395717114131
+string, else const	String	5000	13281521277427893420
+array, short	Array(DateTime)	5000	10334411497895240509
+array, long	Array(DateTime)	5000	11206357506227568776
+array, then const	Array(DateTime)	5000	15828687013721186157
+array, both const	Array(DateTime)	5000	14458731447623538824
+array of strings	Array(String)	5000	4749685527850566997
+array of arrays	Array(Array(DateTime))	5000	15251654041901644597
+variant	Variant(String, UInt64)	5000	532754728783750312
+a	
+b	b
+c	
+aaa	\0\0\0
+bbb	bbb
+ccc	\0\0\0
+[]	[]
+['a']	[]
+['b','b']	['b','b']
