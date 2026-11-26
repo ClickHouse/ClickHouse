@@ -87,6 +87,7 @@ void BlockIO::onFinish(std::chrono::system_clock::time_point finish_time)
     /// in `PipelineExecutor`) and read it until the pipeline is finalized below, so releasing it here would
     /// be a data race. It is released a bit later instead — the extra hold is brief and harmless.
     releaseQuerySlot();
+    cancel_callbacks.clear();
 
     /// The teardown below releases the table locks the interpreter moved into the pipeline's
     /// resources, and a patch sink's lightweight update lock: after it, neither is held.
@@ -110,6 +111,7 @@ void BlockIO::onFinish(std::chrono::system_clock::time_point finish_time)
 void BlockIO::onException(bool log_as_error)
 {
     setAllDataSent();
+    cancel_callbacks.clear();
 
     for (const auto & callback : exception_callbacks)
         callback(log_as_error, pipeline);
@@ -122,13 +124,17 @@ void BlockIO::onException(bool log_as_error)
 
 void BlockIO::onCancelOrConnectionLoss()
 {
+    /// Taken out first, so the callbacks run at most once even if this is called again.
+    auto callbacks = std::move(cancel_callbacks);
+    cancel_callbacks.clear();
+
     /// Stop the pipeline before releasing workload resources: pipeline threads hold raw
     /// pointers to `MemoryReservation` and call `syncWithMemoryTracker` between processors.
     resetPipeline(/*cancel=*/true);
     releaseWorkloadResources();
 
     /// After the pipeline has been stopped, so that its threads have flushed their counters.
-    for (const auto & callback : cancel_callbacks)
+    for (const auto & callback : callbacks)
         callback();
 }
 

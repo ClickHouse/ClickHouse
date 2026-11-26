@@ -1,0 +1,11 @@
+<clickhouse>
+    <allow_experimental_audit_log>true</allow_experimental_audit_log>
+    <logger>
+        <level>warning</level>
+        <auditlog>/var/log/clickhouse-server/clickhouse-server.audit.log</auditlog>
+        <auditlog_types>DML,MISC</auditlog_types>
+    </logger>
+    <!-- Queued asynchronous inserts are discarded by a graceful shutdown, which must be audited. -->
+    <async_insert_queue_flush_on_shutdown>false</async_insert_queue_flush_on_shutdown>
+</clickhouse>
+

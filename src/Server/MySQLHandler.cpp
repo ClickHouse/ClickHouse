@@ -611,14 +611,22 @@ void MySQLHandler::run()
             handshake_response.database,
             handshake_response.auth_plugin_name);
 
+        /// The connection attempts rejected below have already named a user, but never reach `authenticate`,
+        /// so record them in the audit log here.
         if (!(client_capabilities & CLIENT_PROTOCOL_41))
+        {
+            session->recordAuditLoginFailure(handshake_response.username, socket().peerAddress());
             throw Exception(ErrorCodes::MYSQL_CLIENT_INSUFFICIENT_CAPABILITIES, "Required capability: CLIENT_PROTOCOL_41.");
+        }
 
         /// Check the actual state of the transport, not the capability bit advertised by the client:
         /// a client can set `CLIENT_SSL` in a plaintext `HandshakeResponse` without ever sending an
         /// `SSLRequest`, and then the connection stays unencrypted.
         if (secure_required && !secure_connection)
+        {
+            session->recordAuditLoginFailure(handshake_response.username, socket().peerAddress());
             throw Exception(ErrorCodes::OPENSSL_ERROR, "SSL connection required.");
+        }
 
         /// An empty user name means the default session user: the `default_session_user`
         /// server setting, possibly overridden for this listener in the `protocols` section.
@@ -819,7 +827,7 @@ void MySQLHandler::authenticate(const String & user_name, const String & auth_pl
     try
     {
         /// Logs a login failure and throws if there is no such user.
-        session->getAuthenticationTypesOrLogInFailure(user_name);
+        session->getAuthenticationTypesOrLogInFailure(user_name, socket().peerAddress());
 
         /// For compatibility with the JavaScript MySQL client, the `mysql_native_password` plugin (Native41) is used
         /// when it can fully authenticate the user. Otherwise the `sha256_password` plugin is used: it transmits the
@@ -838,6 +846,11 @@ void MySQLHandler::authenticate(const String & user_name, const String & auth_pl
     }
     catch (const Exception & exc)
     {
+        /// Audit failures that happen during MySQL authentication negotiation before
+        /// Session::authenticate is reached (for example an auth-switch/capability error in the
+        /// selected plugin). recordAuditLoginFailure is idempotent, so failures already audited
+        /// by getAuthenticationTypesOrLogInFailure or Session::authenticate are not logged twice.
+        session->recordAuditLoginFailure(user_name, socket().peerAddress());
         LOG_ERROR(log, "Authentication for user {} failed.", user_name);
         packet_endpoint->sendPacket(ERRPacket(exc.code(), mysql_error_code, exc.message()));
         throw;
