@@ -170,11 +170,11 @@ CREATE [OR REPLACE] WORKLOAD [IF NOT EXISTS] name [ON CLUSTER cluster] [IN paren
 ```
 
 - `OR REPLACE` - replaces the definition of an existing workload. It cannot be combined with `IF NOT EXISTS`.
-- `IF NOT EXISTS` - if a workload or a resource named `name` exists, the query does nothing.
+- `IF NOT EXISTS` - if a workload named `name` exists, the query does nothing.
 - `IN parent_name` - creates the workload as a child of the workload `parent_name`. A workload without `IN` is a root workload. A cycle of workloads is rejected.
 - `SETTINGS` - scheduling settings of the workload, for example `weight`, `priority`, `max_concurrent_threads` or `max_bytes_per_second`, described in [Workload hierarchy](/concepts/features/configuration/server-config/workload-scheduling#workloads). A setting with `FOR resource_name` applies only to that resource, otherwise to every resource. An unknown setting is an error.
 
-Workloads and resources share one namespace. A query runs in the workload named by its [`workload`](/reference/settings/session-settings/other#workload) setting, see [Workload markup](/concepts/features/configuration/server-config/workload-scheduling#workload-markup).
+Workloads and resources have separate namespaces, so a workload and a resource can have the same name. A query runs in the workload named by its [`workload`](/reference/settings/session-settings/other#workload) setting, see [Workload markup](/concepts/features/configuration/server-config/workload-scheduling#workload-markup).
 
 <Note>
 Memory reservation scheduling is experimental: the `MEMORY RESERVATION` resource and the workload settings `max_memory`, `max_memory_ratio`, `max_memory_before_spill` and `max_memory_to_spill_ratio`. See [Memory reservations](/concepts/features/configuration/server-config/workload-scheduling#memory-reservations).
