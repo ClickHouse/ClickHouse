@@ -590,3 +590,45 @@ timeout 20 clickhouse local --query 'SELECT fqdn() = hostName()'
         unshare + ["bash", "-c", script], privileged=True, user="root"
     )
     assert result == "1\n"
+
+
+@pytest.mark.parametrize("unreachable_first", [True, False])
+def test_unreachable_nameserver_does_not_hide_reachable_one(cluster_ready, unreachable_first):
+    """
+    An unreachable nameserver next to one that answers must not make the lookup
+    fail. The ICMP error of a query to the unreachable nameserver must not be
+    taken for an error of the answering one. Here `clickhouse local` resolves
+    the name of the container (A and AAAA queries) through the embedded DNS of
+    Docker and a nameserver on a loopback port where nothing listens, in both
+    orders.
+    https://github.com/ClickHouse/ClickHouse/issues/134703
+    """
+    script = r"""
+set -e
+dir=$(mktemp -d)
+reachable=$(awk '$1 == "nameserver" { print $2; exit }' /etc/resolv.conf)
+if [ "$UNREACHABLE_FIRST" = 1 ]; then
+    printf 'nameserver 127.0.0.2\nnameserver %s\n' "$reachable" > "$dir/resolv.conf"
+else
+    printf 'nameserver %s\nnameserver 127.0.0.2\n' "$reachable" > "$dir/resolv.conf"
+fi
+printf 'options timeout:30 attempts:1\n' >> "$dir/resolv.conf"
+printf '127.0.0.1 localhost\n' > "$dir/hosts"
+mount --bind "$dir/resolv.conf" /etc/resolv.conf
+mount --bind "$dir/hosts" /etc/hosts
+timeout 20 clickhouse local --query "SELECT * FROM url('http://node9:8123/ping', 'RawBLOB')"
+"""
+    result = node9.exec_in_container(
+        [
+            "env",
+            f"UNREACHABLE_FIRST={int(unreachable_first)}",
+            "unshare",
+            "--mount",
+            "bash",
+            "-c",
+            script,
+        ],
+        privileged=True,
+        user="root",
+    )
+    assert result == "Ok.\n"
