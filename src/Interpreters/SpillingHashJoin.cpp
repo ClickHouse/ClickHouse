@@ -292,35 +292,31 @@ void SpillingHashJoin::switchToExternalJoin(JoinBuildContext context, bool spill
         if (grace_join)
             grace_join->setHeldElsewhere(hash_join);
 
-        /// `spill` has no build-stream identity. Replay under the exclusive lock before publishing
-        /// the new join, so its `serial` context cannot overlap another insert into that join.
-        if (spill_immediately)
+        /// The maps go before the new state is published, so that no insert into the external join counts them.
+        try
         {
-            try
+            hash_join->releaseJoinMaps();
+            /// `spill` has no build-stream identity. Replay under the exclusive lock before publishing
+            /// the new join, so its `serial` context cannot overlap another insert into that join.
+            if (spill_immediately)
             {
-                hash_join->releaseJoinMaps();
                 fiu_do_on(FailPoints::spilling_hash_join_throw_after_maps_release,
                 {
                     throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure after the in-memory maps were released");
                 });
                 tryConvertBuildStreams(context);
             }
-            catch (...)
-            {
-                /// The maps are freed and some blocks may be gone too, so neither join can take another block.
-                /// A retry would build the external join from what is left. Threads waiting on the lock must see
-                /// the failure, not `COLLECTING`.
-                switch_error_code = getCurrentExceptionCode();
-                switch_error_message = getCurrentExceptionMessage(/*with_stacktrace=*/ false);
-                state.store(State::FAILED, std::memory_order_release);
-                throw;
-            }
         }
-
-        /// Every insert into the in-memory join holds `switch_mutex` shared, so none runs any more. The maps go before
-        /// the new state is published, so that no insert into the external join counts them.
-        if (!spill_immediately)
-            hash_join->releaseJoinMaps();
+        catch (...)
+        {
+            /// The maps are freed and some blocks may be gone too, so neither join can take another block.
+            /// A retry would build the external join from what is left. Threads waiting on the lock must see
+            /// the failure, not `COLLECTING`.
+            switch_error_code = getCurrentExceptionCode();
+            switch_error_message = getCurrentExceptionMessage(/*with_stacktrace=*/ false);
+            state.store(State::FAILED, std::memory_order_release);
+            throw;
+        }
 
         state.store(target_state, std::memory_order_release);
         QueryExecutionCounters::addUsedJoinAlgorithm(target_algorithm);
