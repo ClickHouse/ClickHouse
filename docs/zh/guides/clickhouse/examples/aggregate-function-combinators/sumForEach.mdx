@@ -1,0 +1,59 @@
+---
+slug: '/examples/aggregate-function-combinators/sumForEach'
+title: 'sumForEach'
+description: 'sumForEach 聚合函数使用示例'
+keywords: ['sum', 'ForEach', '组合器', '示例', 'sumForEach']
+sidebarTitle: 'sumForEach'
+doc_type: 'reference'
+---
+
+import { RunnableCode } from "/snippets/zh/components/RunnableCode/RunnableCode.jsx";
+
+<div id="description">
+  ## 描述
+</div>
+
+[`ForEach`](/zh/reference/functions/aggregate-functions/combinators#-foreach) 组合器
+可应用于 [`sum`](/zh/reference/functions/aggregate-functions/sum) 聚合函数，将其从一个处理行值的聚合
+函数转换为一个处理数组列的聚合函数，对跨多行的数组中每个元素分别进行聚合。
+
+<div id="example-usage">
+  ## 示例用法
+</div>
+
+在本示例中，我们将使用 [SQL playground](https://sql.clickhouse.com/) 中提供的 `hits` 数据集。
+
+`hits` 表包含一个名为 `isMobile`、类型为 UInt8 的列，其值可以为
+桌面端的 `0`，或移动端的 `1`：
+
+<RunnableCode>
+  ```sql
+  SELECT EventTime, IsMobile FROM metrica.hits ORDER BY rand() LIMIT 10
+  ```
+</RunnableCode>
+
+我们将使用 `sumForEach` aggregate 组合器 函数来分析
+桌面端和移动端流量在一天中不同时段的变化情况。点击下方的 play 按钮，
+即可交互式运行该查询：
+
+<RunnableCode>
+  ```sql
+  SELECT
+      toHour(EventTime) AS hour_of_day,
+      -- 使用 sumForEach 一次统计桌面端和移动端访问量
+      sumForEach([
+          IsMobile = 0, -- 桌面端访问量（IsMobile = 0）
+          IsMobile = 1  -- 移动端访问量（IsMobile = 1）
+      ]) AS device_counts
+  FROM metrica.hits
+  GROUP BY hour_of_day
+  ORDER BY hour_of_day;
+  ```
+</RunnableCode>
+
+<div id="see-also">
+  ## 另请参见
+</div>
+
+* [`sum`](/zh/reference/functions/aggregate-functions/sum)
+* [`ForEach` 组合器](/zh/reference/functions/aggregate-functions/combinators#-foreach)

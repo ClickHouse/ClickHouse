@@ -1,0 +1,107 @@
+---
+slug: /use-cases/observability/clickstack/overview
+title: 'ClickStack - o stack de observabilidade do ClickHouse'
+sidebarTitle: 'Visão geral'
+description: 'Visão geral do ClickStack - o stack de observabilidade do ClickHouse'
+doc_type: 'guide'
+keywords: ['clickstack', 'observabilidade', 'logs', 'monitoramento', 'plataforma']
+---
+
+import { LogoCard } from "/snippets/pt-BR/components/ClickStackLogoCard.jsx";
+
+<div className="ch-image-lg">
+  <Frame>
+    ![Página inicial](/images/use-cases/observability/hyperdx-landing.webp)
+  </Frame>
+</div>
+
+<div className="grid grid-cols-1" style={{ gap: '16px', margin: '20px 0 28px' }}>
+  <LogoCard title="ClickHouse/ClickStack" img="/images/clickstack/clickstack-mark.svg" imgAlt="Logo do ClickStack" href="https://github.com/ClickHouse/ClickStack" external>
+    Explore o código e contribua no GitHub. <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', verticalAlign: 'middle', whiteSpace: 'nowrap' }}><svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">     <path fillRule="evenodd" clipRule="evenodd" d="M8 1.75C4.27 1.75 1.25 4.77 1.25 8.5c0 2.99 1.93 5.51 4.62 6.4.34.06.46-.14.46-.32 0-.16-.01-.69-.01-1.26-1.7.32-2.14-.6-2.27-.98-.08-.19-.41-.79-.7-.95-.24-.13-.58-.44-.01-.45.53-.01.91.49 1.04.69.61 1.02 1.58.73 1.97.56.06-.44.24-.74.43-.91-1.5-.17-3.07-.75-3.07-3.33 0-.73.26-1.34.69-1.81-.07-.17-.3-.86.07-1.79 0 0 .57-.18 1.86.69.54-.15 1.11-.23 1.69-.23.57 0 1.14.08 1.68.23 1.29-.88 1.86-.69 1.86-.69.37.93.14 1.62.07 1.79.43.47.69 1.07.69 1.81 0 2.59-1.58 3.16-3.08 3.33.25.21.46.62.46 1.25 0 .9-.01 1.63-.01 1.86 0 .18.13.39.47.32 2.67-.9 4.58-3.41 4.58-6.4 0-3.73-3.02-6.75-6.75-6.75Z" fill="currentColor" />   </svg>10k</span>
+  </LogoCard>
+</div>
+
+O **ClickStack** é uma plataforma de observabilidade Open Source para SREs, desenvolvedores e seus agentes de IA, construída sobre o ClickHouse. Pesquise, consulte e correlacione logs, rastros e métricas, além de reproduções de sessão, em um só lugar.
+
+Investigue pela **Interface do ClickStack** ou conecte seus próprios agentes por meio do [servidor MCP](/pt-BR/clickstack/mcp). Os agentes podem pesquisar telemetria, acompanhar rastros e executar SQL sobre os mesmos dados que você explora na UI, usando as ferramentas de desenvolvimento que sua equipe já utiliza.
+
+Logs detalhados e spans de rastreamento preservam detalhes das requisições, atributos personalizados e contexto de negócio na forma de eventos amplos. O ClickHouse armazena esses dados junto com métricas e dados de sessão, para que engenheiros e agentes possam correlacionar evidências entre serviços e identificar quais requisições e clientes foram afetados.
+
+<Tip>
+  Concentre-se em investigar problemas enquanto o [ClickHouse Observability](/pt-BR/clickstack/observability) gerencia a infraestrutura. [Cadastre-se no ClickHouse Cloud](https://clickhouse.cloud/signUp?loc=docs-clickstack-overview-inline) para começar.
+</Tip>
+
+## Recursos {#features}
+
+* Conecte seus próprios agentes por meio de [MCP](/pt-BR/clickstack/mcp) para pesquisar telemetria, investigar falhas e gerenciar dashboards e alertas
+* Pesquise e correlacione logs, métricas, reproduções de sessão e rastros na Interface do ClickStack
+* Independente do schema, funciona com o schema existente do seu ClickHouse
+* Execute buscas e agregações rápidas em telemetria high-cardinality
+* Use busca de texto completo e filtros no estilo Lucene, como `level:err`, ou SQL para análises mais aprofundadas
+* Configure alertas em apenas alguns cliques
+* Crie dashboards de eventos high-cardinality sem uma linguagem de consulta complexa
+* Consultas nativas em strings JSON
+* Acompanhe logs e rastros em tempo real para sempre obter os eventos mais recentes
+* OpenTelemetry (OTel) com suporte nativo
+* Monitore a integridade e o desempenho, de requisições HTTP a consultas de DB (APM)
+* Event deltas para identificar anomalias e regressões de desempenho
+* Reconhecimento de padrões em logs
+* Abra páginas do ClickStack diretamente com [links diretos](/pt-BR/clickstack/url-parameters) usando parâmetros de consulta de URL
+
+## Componentes {#components}
+
+O ClickStack é composto por três componentes principais:
+
+<div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '24px', margin: '24px 0' }}>
+  <img src="/images/clickstack/clickstack-stack.webp" alt="As três camadas do ClickStack: a Interface do ClickStack no topo, o ClickHouse para armazenamento e execução de consultas no meio e o OpenTelemetry para coleta na base." width="720" height="957" style={{ width: '260px', maxWidth: '100%', height: 'auto', margin: 0 }} />
+
+  <div style={{ flex: '1 1 240px' }}>
+    1. **Interface do ClickStack** – um frontend projetado para uma finalidade específica para explorar e visualizar dados de observabilidade
+    2. **ClickHouse** – o banco de dados analítico de alto desempenho no coração da stack
+    3. **Coletor OpenTelemetry** – um coletor personalizado e pré-configurado, com um schema opinativo para logs, rastros e métricas
+  </div>
+</div>
+
+Esses componentes podem ser implantados em conjunto em uma configuração totalmente **autogerenciada do ClickStack Open Source**. Consulte o [guia de arquitetura](/pt-BR/clickstack/architecture) para entender como eles se integram e como o estado da aplicação é armazenado.
+
+Também há uma versão da Interface do ClickStack hospedada no navegador, que permite se conectar diretamente a implantações existentes do ClickHouse sem precisar implantar infraestrutura de UI adicional.
+
+Para começar, consulte o [Guia de primeiros passos](/pt-BR/clickstack/getting-started/oss) antes de carregar um [conjunto de dados de exemplo](/pt-BR/clickstack/example-datasets/index). Você também pode explorar a documentação sobre [opções de implantação](/pt-BR/clickstack/deployment/oss) e [boas práticas para produção](/pt-BR/clickstack/managing/production).
+
+## Princípios {#clickstack-principles}
+
+### Traga seus próprios agentes {#bring-your-own-agents}
+
+A investigação assistida por IA é um fluxo de trabalho central no ClickStack. Conecte seus agentes preferidos por meio do [servidor MCP](/pt-BR/clickstack/mcp) para buscar logs, acompanhar rastros e explorar sua telemetria sem sair do seu ambiente de desenvolvimento.
+
+As ferramentas de investigação atendem a tarefas comuns, enquanto o SQL permite que os agentes correlacionem evidências e explorem questões que vão além dos dashboards predefinidos. Você escolhe os agentes e os modelos; o ClickStack oferece acesso à mesma telemetria e às mesmas ferramentas de investigação disponíveis para sua equipe.
+
+<div id="clickstack-easy-to-setup">
+  ### Fácil de configurar em minutos {#clickstack-easy-to-setup}
+</div>
+
+O ClickStack funciona de imediato com qualquer instância e esquema do ClickHouse, exigindo configuração mínima. Seja para começar do zero ou integrar com uma configuração existente, você pode colocá-lo em funcionamento em poucos minutos.
+
+### Fácil de usar e projetado para uma finalidade específica {#user-friendly-purpose-built}
+
+A Interface do ClickStack reúne busca, exploração de traces, gráficos, dashboards e alertas. Use filtros no estilo Lucene e construtores visuais de consultas para as perguntas do dia a dia e recorra ao SQL quando precisar de mais controle sobre a análise. Engenheiros e agentes trabalham com os mesmos dados, o que permite inspecionar as evidências por trás de uma investigação.
+
+### Observabilidade de ponta a ponta {#end-to-end-observability}
+
+Conecte as reproduções de sessão do frontend aos logs de aplicação, rastros distribuídos e métricas para rastrear falhas em todo o seu sistema. Os eventos amplos reúnem detalhes das requisições, atributos personalizados e contexto de negócio em logs e spans de rastreamento, ajudando você a identificar quais requisições, serviços e clientes foram afetados.
+
+### Feito para o ClickHouse {#built-for-clickhouse}
+
+O armazenamento colunar, a compressão e a execução de consultas em paralelo do ClickHouse viabilizam buscas e agregações rápidas em grandes volumes de telemetria high-cardinality. Com consultas concorrentes, engenheiros e agentes podem investigar os mesmos dados em paralelo.
+
+<div id="open-telemetry-native">
+  ### Nativo do OpenTelemetry {#open-telemetry-native}
+</div>
+
+O ClickStack tem integração nativa com o OpenTelemetry e faz a ingestão de todos os dados por meio de um endpoint do OpenTelemetry Collector. Para usuários avançados, ele também oferece suporte à ingestão direta no ClickHouse usando formatos de arquivo nativos, pipelines personalizadas ou ferramentas de terceiros, como o Vector.
+
+<div id="open-source-and-customizable">
+  ### Open source e totalmente personalizável {#open-source-and-customizable}
+</div>
+
+O ClickStack é totalmente open source e pode ser implantado em qualquer lugar. O esquema é flexível e pode ser modificado pelo usuário, e a UI foi projetada para se adaptar a esquemas personalizados sem exigir alterações. Todos os componentes — incluindo coletores, ClickHouse e a UI — podem ser escalados de forma independente para atender às demandas de ingestão, consulta ou armazenamento.

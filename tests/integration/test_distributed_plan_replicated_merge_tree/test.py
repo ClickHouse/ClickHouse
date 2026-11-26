@@ -26,6 +26,7 @@ import pytest
 
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
+from helpers.test_tools import assert_eq_with_retry, wait_condition
 
 pytestmark = pytest.mark.timeout(300)
 
@@ -78,11 +79,10 @@ DISTRIBUTED_SETTINGS = ", ".join([
     "distributed_plan_optimize_exchanges = 1",
     "query_plan_join_swap_table = 'false'",
     "query_plan_optimize_join_order_limit = 0",
-    "query_plan_use_new_logical_join_step = 1",
     "query_plan_convert_join_to_in = 0",
     "query_plan_convert_outer_join_to_inner_join = 0",
     "query_plan_convert_any_join_to_semi_or_anti_join = 0",
-    # Runtime filters are not yet implemented for distributed queries.
+    # Off by default here; `test_join_runtime_filters` turns them on.
     "enable_join_runtime_filters = 0",
     # To support old explain format
     "explain_query_plan_default = 'legacy'",
@@ -167,6 +167,25 @@ def _create_tables_and_load_data():
             f"expected >= 2 active parts on {node.name}, got {parts_count}"
         )
 
+    # ReplacingMergeTree table for the parallel FINAL path: two overlapping batches (same ids, higher
+    # version wins) leave duplicate keys across two parts, so FINAL must deduplicate and the distributed
+    # read must split into primary-key-range layers across the workers.
+    for node in NODES:
+        node.query(
+            """
+            CREATE TABLE final_rep (id UInt64, v UInt64, ver UInt64)
+            ENGINE = ReplicatedReplacingMergeTree('/clickhouse/tables/{shard}/final_rep', '{replica}', ver)
+            ORDER BY id SETTINGS index_granularity = 256
+            """
+        )
+        node.query("SYSTEM STOP MERGES final_rep")
+
+    INITIATOR.query("INSERT INTO final_rep SELECT number, number, 1 FROM numbers(60000)")
+    INITIATOR.query("INSERT INTO final_rep SELECT number, number + 7, 2 FROM numbers(60000)")
+    for node in NODES:
+        node.query("SYSTEM SYNC REPLICA final_rep")
+        assert int(node.query("SELECT count() FROM final_rep").strip()) == 120_000
+
 
 def _explain_and_check(query: str, settings: str, expected_plan: str):
     """Run EXPLAIN PLAN on the query and compare its output to the expected
@@ -207,6 +226,11 @@ def _run_both_ways(
 
 
 EXCHANGE_KINDS = pytest.mark.parametrize("exchange_kind", ["Streaming", "Persisted"])
+
+
+# The distributed read-in-order path is off by default (distributed_plan_read_in_order); the tests below
+# that are about it have to turn it on, or they would pass against an ordinary full sort.
+READ_IN_ORDER = "distributed_plan_read_in_order = 1"
 
 
 def _override(exchange_kind: str, *extra: str) -> str:
@@ -284,6 +308,78 @@ def test_parallel_read_missing_part_on_worker_errors(started_cluster):
         with pytest.raises(QueryRuntimeException) as exc:
             INITIATOR.query(f"SELECT count(), sum(id) FROM {table} SETTINGS {settings}")
         assert "is not available on this replica" in str(exc.value)
+    finally:
+        node2.query(f"SYSTEM START FETCHES {table}")
+        node3.query(f"SYSTEM START FETCHES {table}")
+        for node in NODES:
+            node.query(f"SYSTEM SYNC REPLICA {table}")
+            node.query(f"DROP TABLE IF EXISTS {table} SYNC")
+
+
+@EXCHANGE_KINDS
+def test_final_parallel_read(started_cluster, exchange_kind):
+    """A FINAL scan of a ReplacingMergeTree splits into primary-key-range layers (one per worker bucket),
+    each deduplicated independently on its replica, then gathered on the initiator. The result must equal
+    local FINAL, and the read must distribute rather than fall back to a serial read."""
+    distributed, baseline = _run_both_ways(
+        "SELECT count(), sum(v) FROM final_rep FINAL",
+        settings_override=_override(exchange_kind),
+    )
+    assert distributed == baseline
+
+    pipeline = INITIATOR.query(
+        "EXPLAIN PIPELINE SELECT id, v FROM final_rep FINAL "
+        f"SETTINGS {DISTRIBUTED_SETTINGS}, {_override(exchange_kind)}"
+    )
+    assert "ReadFromDistributedPlanSource" in pipeline
+
+
+def test_final_missing_part_on_worker_errors(started_cluster):
+    """The parallel FINAL read ships each worker the marks (by part name) of its primary-key-range layer.
+    A layer spans every part, so a worker replica missing a coordinator-selected part (replication lag)
+    cannot read its layer and the query must fail closed instead of silently dropping rows.
+
+    Stop fetches on node2/node3 and add a new overlapping part only on the coordinator (node1). Every layer
+    references the new part, so both lagging workers raise NO_SUCH_DATA_PART at once; the initiator surfaces
+    either that error directly or a cancellation triggered by it -- both prove no rows were dropped."""
+    table = "final_lagging"
+    for node in NODES:
+        node.query(f"DROP TABLE IF EXISTS {table} SYNC")
+        node.query(
+            f"""
+            CREATE TABLE {table} (id UInt64, v UInt64, ver UInt64)
+            ENGINE = ReplicatedReplacingMergeTree('/clickhouse/tables/{{shard}}/{table}', '{{replica}}', ver)
+            ORDER BY id SETTINGS index_granularity = 256
+            """
+        )
+        node.query(f"SYSTEM STOP MERGES {table}")
+
+    for batch in range(2):
+        offset = batch * 25_000
+        INITIATOR.query(
+            f"INSERT INTO {table} SELECT number + {offset}, number + {offset}, 1 FROM numbers(25000)"
+        )
+    for node in NODES:
+        node.query(f"SYSTEM SYNC REPLICA {table}")
+
+    node2.query(f"SYSTEM STOP FETCHES {table}")
+    node3.query(f"SYSTEM STOP FETCHES {table}")
+    try:
+        # A new overlapping part (higher version) lands only on the coordinator; node2/node3 stay behind.
+        INITIATOR.query(
+            f"INSERT INTO {table} SELECT number, number + 7, 2 FROM numbers(50000)"
+        )
+        settings = (
+            DISTRIBUTED_SETTINGS
+            + ", distributed_plan_force_exchange_kind = 'Persisted'"
+            + ", distributed_plan_prefer_replicas_over_workers = 1"
+        )
+        with pytest.raises(QueryRuntimeException) as exc:
+            INITIATOR.query(f"SELECT count(), sum(v) FROM {table} FINAL SETTINGS {settings}")
+        # Fail-closed: the missing part surfaces directly, or as a cancellation when another worker's
+        # identical failure reaches the initiator first. Both mean the read did not return a short result.
+        message = str(exc.value)
+        assert "is not available on this replica" in message or "QUERY_WAS_CANCELLED" in message
     finally:
         node2.query(f"SYSTEM START FETCHES {table}")
         node3.query(f"SYSTEM START FETCHES {table}")
@@ -401,10 +497,11 @@ def test_distributed_sort(started_cluster, exchange_kind):
             Expression (Project names)
               Limit (preliminary LIMIT)
                 GatherExchange (sorted by (__table1.id DESC, __table1.group_key ASC))
-                  Sorting (Sorting for ORDER BY)
-                    Expression ((Before ORDER BY + Projection))
-                      Expression ((WHERE + Change column names to column identifiers))
-                        ReadFromMergeTree (default.big)
+                  Limit (local top-N)
+                    Sorting (Sorting for ORDER BY)
+                      Expression ((Before ORDER BY + Projection))
+                        Expression ((WHERE + Change column names to column identifiers))
+                          ReadFromMergeTree (default.big)
         """,
     )
     assert distributed == baseline
@@ -506,6 +603,58 @@ def test_profile_events_local_execution(started_cluster):
 
 
 @EXCHANGE_KINDS
+def test_join_runtime_filters(started_cluster, exchange_kind):
+    """A shuffle join sends the runtime filter states of its build tasks through one `rf_merge_*`
+    task to the probe tasks. The result must match the non-distributed query, and no worker task
+    may keep running after the query ends."""
+    buckets = 3
+    query = "SELECT count(), sum(b.id) FROM big AS b INNER JOIN small AS s ON b.id = s.id"
+    query_id = f"dist_join_rf_{uuid.uuid4().hex}"
+    distributed = INITIATOR.query(
+        f"{query} SETTINGS {DISTRIBUTED_SETTINGS}, " + _override(
+            exchange_kind,
+            "enable_join_runtime_filters = 1",
+            "distributed_plan_join_runtime_filters = 1",
+            "join_runtime_filter_min_probe_rows = 0",
+        ),
+        query_id=query_id,
+    )
+    assert distributed == INITIATOR.query(f"{query} SETTINGS make_distributed_plan = 0")
+
+    # Worker tasks carry the initiator query id as `initial_query_id` and the task id as `query`.
+    tasks = []
+    for node in NODES:
+        node.query("SYSTEM FLUSH LOGS query_log")
+        result = node.query(
+            f"""
+            SELECT query, ProfileEvents['RuntimeFilterStatesSent'],
+                ProfileEvents['StreamingExchangeSendBytes'] + ProfileEvents['StreamingExchangeReceiveBytes'],
+                ProfileEvents['WriteBufferFromS3Bytes'], ProfileEvents['ReadBufferFromS3Bytes']
+            FROM system.query_log
+            WHERE type = 'QueryFinish' AND initial_query_id = '{query_id}' AND query_id != initial_query_id
+            """
+        )
+        tasks += [line.split("\t") for line in result.strip().splitlines()]
+
+    merge_tasks = [task for task in tasks if task[0].startswith("rf_merge_")]
+    assert len(merge_tasks) == 1, tasks
+    # Each build task sends its partial state once, to the merge task.
+    assert sum(int(task[1]) for task in tasks if task not in merge_tasks) == buckets, tasks
+    if exchange_kind == "Persisted":
+        # On a persisted chain the merge task reads and writes the states as files in MinIO.
+        streaming_bytes, s3_written, s3_read = (int(field) for field in merge_tasks[0][2:])
+        assert streaming_bytes == 0 and s3_read > 0 and s3_written > 0, merge_tasks
+
+    for node in NODES:
+        assert_eq_with_retry(
+            node,
+            f"SELECT count() FROM system.processes WHERE initial_query_id = '{query_id}'",
+            "0",
+            retry_count=120,
+        )
+
+
+@EXCHANGE_KINDS
 def test_join_with_aggregation(started_cluster, exchange_kind):
     """Combined shuffle: aggregate one side, broadcast the small side, then
     join. Verifies that exchanges around aggregation and join compose."""
@@ -540,3 +689,214 @@ def test_join_with_aggregation(started_cluster, exchange_kind):
         """,
     )
     assert distributed == baseline
+
+
+def _read_rows_all_nodes(query_id: str) -> int:
+    """Rows read by a query across the whole cluster. The fragments run as secondary queries on the
+    nodes that own the buckets and their reads are not accounted on the initiator, so the initial
+    query alone only shows the rows it received - every node has to be summed by initial_query_id."""
+    for node in NODES:
+        node.query("SYSTEM FLUSH LOGS query_log")
+    total = 0
+    for node in NODES:
+        total += int(
+            node.query(
+                f"""
+                SELECT sum(read_rows) FROM system.query_log
+                WHERE initial_query_id = '{query_id}' AND type = 'QueryFinish'
+                """
+            ).strip()
+            or "0"
+        )
+    return total
+
+
+@EXCHANGE_KINDS
+def test_read_in_order(started_cluster, exchange_kind):
+    """ORDER BY the table's sorting key reads each part in key order instead of scanning and sorting.
+    A bucketed read is pinned to the coordinator's marks and cannot re-derive that, so the contract
+    travels with the read; before it did, such a query was rejected outright."""
+    for order in ("ASC", "DESC"):
+        distributed, baseline = _run_both_ways(
+            f"""
+            SELECT id, group_key
+            FROM big
+            ORDER BY id {order}
+            LIMIT 50
+            """,
+            settings_override=_override(exchange_kind, READ_IN_ORDER),
+        )
+        assert distributed == baseline
+
+    # A window straddling a part boundary: every part holds a disjoint id range, so a stream ordered
+    # only within its own part is wrong here even when the head of the stream is right.
+    distributed, baseline = _run_both_ways(
+        """
+        SELECT id
+        FROM big
+        ORDER BY id
+        LIMIT 20 OFFSET 24990
+        """,
+        settings_override=_override(exchange_kind, READ_IN_ORDER),
+    )
+    assert distributed == baseline
+
+
+def test_distributed_order_by_without_distributed_read(started_cluster):
+    """With the table under distributed_plan_max_rows_to_broadcast the read is never made distributed, so
+    the scatter under the sorting has no gather to cancel it and survives. Nothing may rely on the read's
+    order across it, so this shape keeps its full sort - the point of the case is that the rows are right
+    anyway, since an ordered read wrongly assumed here returned rows from elsewhere in the table."""
+    # Above the 100k rows of `big`, so tryMakeDistributedRead leaves the read alone. Last value wins over
+    # the 0 in DISTRIBUTED_SETTINGS.
+    no_distributed_read = "distributed_plan_max_rows_to_broadcast = 1000000, " + READ_IN_ORDER
+
+    # A ScatterExchange (rather than the ShuffleExchange a bucketed read's gather collapses into) is what
+    # says the read was left non-distributed, so the case cannot quietly go back to testing the bucketed
+    # path if that threshold ever stops applying.
+    plan = INITIATOR.query(
+        f"EXPLAIN PLAN SELECT id FROM big ORDER BY id LIMIT 5 "
+        f"SETTINGS {DISTRIBUTED_SETTINGS}, {no_distributed_read}"
+    )
+    assert "ScatterExchange" in plan and "ShuffleExchange" not in plan, plan
+
+    for order in ("ASC", "DESC"):
+        # OFFSET lands the window across a part boundary, where a stream ordered only within its own
+        # part is wrong even though the head of the stream looks right.
+        distributed, baseline = _run_both_ways(
+            f"""
+            SELECT id
+            FROM big
+            ORDER BY id {order}
+            LIMIT 20 OFFSET 24990
+            """,
+            settings_override=no_distributed_read,
+        )
+        assert distributed == baseline
+
+
+def test_read_in_order_with_reader_buckets_unlike_scatter(started_cluster):
+    """The scatter under the sorting takes the bucket count of the distributed read below it, not
+    `distributed_plan_default_shuffle_join_bucket_count`, so even with the two settings different the pair
+    collapses and the ordered read feeds the sorting directly. The window straddles a part boundary, where
+    a stream ordered only within its own part would be wrong; the repeats catch an intermittent order."""
+    query = "SELECT id FROM big ORDER BY id ASC LIMIT 20 OFFSET 24990"
+    baseline = INITIATOR.query(f"{query} SETTINGS make_distributed_plan = 0")
+
+    # 2 reader buckets against the 3 of `distributed_plan_default_shuffle_join_bucket_count`.
+    reader_buckets = "distributed_plan_default_reader_bucket_count = 2, " + READ_IN_ORDER
+    plan = INITIATOR.query(
+        f"EXPLAIN PLAN {query} SETTINGS {DISTRIBUTED_SETTINGS}, {reader_buckets}"
+    )
+    assert "ShuffleExchange" not in plan and "ScatterExchange" not in plan, plan
+
+    for _ in range(5):
+        distributed = INITIATOR.query(
+            f"{query} SETTINGS {DISTRIBUTED_SETTINGS}, {reader_buckets}"
+        )
+        assert distributed == baseline
+
+
+def test_read_in_order_stops_early(started_cluster):
+    """The optimization must actually engage in a distributed plan, not merely return correct rows:
+    reading in key order lets the read stop once the limit is met, so it touches far fewer rows than
+    the same distributed query with the optimization switched off."""
+    query = """
+        SELECT id
+        FROM big
+        ORDER BY id
+        LIMIT 50
+        """
+
+    in_order_id = f"read_in_order_on_{uuid.uuid4().hex}"
+    scan_id = f"read_in_order_off_{uuid.uuid4().hex}"
+
+    # Pin the optimization on rather than relying on its default, so the comparison keeps its meaning
+    # if that default ever changes; the second run turns exactly that one setting off.
+    in_order = INITIATOR.query(
+        f"{query} SETTINGS {DISTRIBUTED_SETTINGS}, {READ_IN_ORDER}, optimize_read_in_order = 1", query_id=in_order_id
+    )
+    scan = INITIATOR.query(
+        f"{query} SETTINGS {DISTRIBUTED_SETTINGS}, {READ_IN_ORDER}, optimize_read_in_order = 0", query_id=scan_id
+    )
+
+    # Same answer either way; only the amount of data read differs.
+    assert in_order == scan
+    assert in_order == INITIATOR.query(f"{query} SETTINGS make_distributed_plan = 0")
+
+    in_order_rows = _read_rows_all_nodes(in_order_id)
+    scan_rows = _read_rows_all_nodes(scan_id)
+    logging.info("read_rows in order: %s, scanning: %s", in_order_rows, scan_rows)
+
+    # The table holds 100_000 rows, so a scan must account for far more than the 50 returned. A value
+    # near the result size means the fragments' reads were not captured and the comparison is void.
+    assert scan_rows > 10_000, (
+        f"only {scan_rows} rows accounted for a full scan, so the measurement is not capturing the "
+        f"fragment reads and the comparison below would be meaningless"
+    )
+    assert in_order_rows < scan_rows, (
+        f"read-in-order did not reduce the rows read in a distributed plan "
+        f"(in order {in_order_rows}, scanning {scan_rows})"
+    )
+
+
+def test_stopped_replica_is_not_a_worker(started_cluster):
+    """The cluster of a `Replicated` database knows which of its replicas are active. When it is the
+    worker cluster, a replica that is stopped but still registered must not get tasks: the query runs
+    on the other replicas. After its restart the replica gets tasks again."""
+    for node in NODES:
+        node.query(
+            "CREATE DATABASE workers_db "
+            "ENGINE = Replicated('/clickhouse/databases/workers_db', '{shard}', '{replica}')"
+        )
+
+    query = "SELECT count(), sum(id), sum(group_key) FROM big"
+    settings = f"{DISTRIBUTED_SETTINGS}, distributed_plan_worker_cluster = 'replicated_database'"
+    expected = INITIATOR.query(f"{query} SETTINGS make_distributed_plan = 0")
+    try:
+        assert INITIATOR.query(f"{query} SETTINGS {settings}") == expected
+
+        # The shutdown of `node3` waits for the idle keep-alive connections from the other nodes
+        # (up to `keep_alive_timeout`), so close them first.
+        for node in (node1, node2):
+            node.query("SYSTEM DROP CONNECTIONS CACHE")
+        node3.stop_clickhouse()
+        assert_eq_with_retry(
+            INITIATOR,
+            "SELECT count() FROM system.clusters WHERE cluster = 'workers_db' AND is_active = 0",
+            "1",
+        )
+
+        # A task sent to the stopped replica would fail the query. The initiator can use the
+        # liveness that it read before for a short time, so retry.
+        assert_eq_with_retry(
+            INITIATOR,
+            f"{query} SETTINGS {settings}",
+            expected,
+            retry_count=10,
+            ignore_error=True,
+        )
+
+        # The replica gets tasks again when it is active again.
+        node3.start_clickhouse()
+        assert_eq_with_retry(
+            INITIATOR,
+            "SELECT count() FROM system.clusters WHERE cluster = 'workers_db' AND is_active = 0",
+            "0",
+        )
+
+        def count_tasks_on_restarted_replica():
+            query_id = f"workers_after_restart_{uuid.uuid4().hex}"
+            assert INITIATOR.query(f"{query} SETTINGS {settings}", query_id=query_id) == expected
+            node3.query("SYSTEM FLUSH LOGS query_log")
+            return int(
+                node3.query(
+                    f"SELECT count() FROM system.query_log WHERE initial_query_id = '{query_id}' AND type = 'QueryFinish'"
+                )
+            )
+
+        wait_condition(count_tasks_on_restarted_replica, lambda count: count > 0, max_attempts=10, delay=0.5)
+    finally:
+        node3.start_clickhouse()
+        for node in NODES:
+            node.query("DROP DATABASE IF EXISTS workers_db SYNC")

@@ -1,0 +1,32 @@
+---
+slug: /guides/sre/network-ports
+sidebarTitle: 'Portas de rede'
+title: 'Portas de rede'
+description: 'Descrição das portas de rede disponíveis e para que são usadas'
+doc_type: 'reference'
+keywords: ['network', 'ports', 'configuration', 'security', 'firewall']
+---
+
+<Note>
+  Portas descritas como **padrão** significam que o número da porta está configurado em `/etc/clickhouse-server/config.xml`. Para personalizar sua configuração, adicione um arquivo em `/etc/clickhouse-server/config.d/`. Consulte a documentação do [arquivo de configuração](/pt-BR/concepts/features/configuration/server-config/configuration-files).
+</Note>
+
+| Porta | Descrição                                                                                                                                                                                                                                                                         | Cloud | OSS |
+| ----- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----- | --- |
+| 2181  | Porta de serviço padrão do ZooKeeper. **Observação: consulte `9181` para o ClickHouse Keeper**                                                                                                                                                                                    |       | ✓   |
+| 8123  | Porta HTTP padrão                                                                                                                                                                                                                                                                 |       | ✓   |
+| 8443  | Porta HTTP padrão com SSL/TLS                                                                                                                                                                                                                                                     | ✓     | ✓   |
+| 9000  | Porta do protocolo nativo (também chamada de protocolo TCP do ClickHouse). Usada por aplicativos e processos do ClickHouse, como `clickhouse-server`, `clickhouse-client` e ferramentas nativas do ClickHouse. Usada na comunicação entre servidores para consultas distribuídas. |       | ✓   |
+| 9004  | Porta de emulação MySQL                                                                                                                                                                                                                                                           |       | ✓   |
+| 9005  | Porta de emulação PostgreSQL (também usada para comunicação segura se o SSL estiver habilitado para o ClickHouse).                                                                                                                                                                |       | ✓   |
+| 9009  | Porta de comunicação entre servidores para acesso a dados de baixo nível. Usada para troca de dados, replicação e comunicação entre servidores.                                                                                                                                   |       | ✓   |
+| 9010  | SSL/TLS para comunicações entre servidores                                                                                                                                                                                                                                        |       | ✓   |
+| 9011  | Porta PROXYv1 do protocolo nativo                                                                                                                                                                                                                                                 |       | ✓   |
+| 9019  | Bridge JDBC                                                                                                                                                                                                                                                                       |       | ✓   |
+| 9100  | Porta gRPC                                                                                                                                                                                                                                                                        |       | ✓   |
+| 9181  | Porta recomendada do ClickHouse Keeper                                                                                                                                                                                                                                            |       | ✓   |
+| 9234  | Porta Raft recomendada do ClickHouse Keeper (também usada para comunicação segura se `<secure>1</secure>` estiver habilitado)                                                                                                                                                     |       | ✓   |
+| 9363  | Porta padrão de métricas do Prometheus                                                                                                                                                                                                                                            |       | ✓   |
+| 9281  | Porta SSL segura recomendada para o ClickHouse Keeper                                                                                                                                                                                                                             |       | ✓   |
+| 9440  | Porta SSL/TLS do protocolo nativo                                                                                                                                                                                                                                                 | ✓     | ✓   |
+| 42000 | Porta padrão do Graphite                                                                                                                                                                                                                                                          |       | ✓   |

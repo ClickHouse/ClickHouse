@@ -35,23 +35,23 @@ public:
     FunctionInitializeAggregation(ContextPtr context_, AggregateFunctionPtr aggregate_function_)
         : WithContext(context_), aggregate_function(std::move(aggregate_function_)) {}
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    bool isVariadic() const override { return true; }
-    size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] bool isVariadic() const override { return true; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
-    bool useDefaultImplementationForNulls() const override { return false; }
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
+    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & /*arguments*/) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & /*arguments*/) const override
     {
         return aggregate_function->getResultType();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         const IAggregateFunction & agg_func = *aggregate_function;
         std::unique_ptr<Arena> arena = std::make_unique<Arena>();
@@ -136,6 +136,15 @@ public:
     bool useDefaultImplementationForNulls() const override { return false; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
 
+    /// Documentation-only — the result type is the aggregate function's result
+    /// type, derived dynamically from the const-string first argument and the
+    /// trailing data-column types. The DSL doesn't resolve aggregate functions,
+    /// so the override below is authoritative.
+    String getSignatureString() const override
+    {
+        return "(const String, Any, ...) -> Any";
+    }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (arguments.size() < 2)
@@ -202,8 +211,8 @@ REGISTER_FUNCTION(InitializeAggregation)
 {
     FunctionDocumentation::Description description = R"(
 Calculates the result of an aggregate function based on a single value.
-This function can be used to initialize aggregate functions with combinator [-State](../../sql-reference/aggregate-functions/combinators.md#-state).
-You can create states of aggregate functions and insert them to columns of type [`AggregateFunction`](../../sql-reference/data-types/aggregatefunction.md) or use initialized aggregates as default values.
+This function can be used to initialize aggregate functions with combinator [-State](/reference/functions/aggregate-functions/combinators#-state).
+You can create states of aggregate functions and insert them to columns of type [`AggregateFunction`](/reference/data-types/aggregatefunction) or use initialized aggregates as default values.
     )";
     FunctionDocumentation::Syntax syntax = "initializeAggregation(aggregate_function, arg1[, arg2, ...])";
     FunctionDocumentation::Arguments arguments = {

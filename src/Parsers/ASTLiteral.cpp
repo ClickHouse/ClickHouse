@@ -4,6 +4,9 @@
 #include <Common/FieldVisitorToString.h>
 #include <Common/FieldVisitorHash.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTFormatting.h>
+#include <Parsers/ASTJSONHelpers.h>
+#include <Parsers/ASTJSONReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
@@ -11,6 +14,11 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
 
 void ASTLiteral::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
 {
@@ -21,6 +29,25 @@ void ASTLiteral::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) c
         ASTWithAlias::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
+void ASTLiteral::writeJSON(WriteBuffer & out) const
+{
+    JSONObjectWriter w(out, "Literal");
+    w.writeFieldValue("value", value);
+    w.writeAlias(*this);
+}
+
+void ASTLiteral::readJSON(const Poco::JSON::Object & json)
+{
+    JSONObjectReader r(json);
+    /// A `Literal` always requires an explicit `value` key (a NULL literal is written
+    /// with an explicit `value`), so reject input that omits it instead of silently
+    /// deserializing as a NULL literal, which the SQL parser cannot produce.
+    if (!r.has("value"))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing required 'value' key for Literal during AST JSON deserialization");
+    value = r.readField("value");
+    r.readAlias(*this);
+}
+
 String ASTLiteral::getID(char delim) const
 {
     return "Literal" + (delim + applyVisitor(FieldVisitorDump(), value));
@@ -28,6 +55,7 @@ String ASTLiteral::getID(char delim) const
 
 ASTPtr ASTLiteral::clone() const
 {
+    /// The copy constructor clears the token-info bit - see `ASTLiteral(const ASTLiteral &)`.
     auto res = make_intrusive<ASTLiteral>(*this);
     res->unique_column_name = {};
     return res;
@@ -140,31 +168,219 @@ void ASTLiteral::appendColumnNameImplLegacy(WriteBuffer & ostr) const
     }
 }
 
-/// Use different rules for escaping backslashes and quotes
-class FieldVisitorToStringPostgreSQL : public StaticVisitor<String>
+/// Base for the visitors that print a `Field` as a literal of a particular external dialect.
+///
+/// Everything except strings and containers is printed exactly like `FieldVisitorToString` does.
+/// Container literals (`Tuple` / `Object`) are handled here so that the visitor recurses into
+/// itself instead of falling back to `FieldVisitorToString`: once a target dialect is selected,
+/// nested strings (e.g. the elements of an `IN` tuple) have to stay in that dialect all the way
+/// down. Literals that only have a ClickHouse-specific text form (`Array` / `Map`, and tuples with
+/// fewer than two elements, which can only be written as `tuple(...)`) are rejected: the external
+/// database would fail to parse them, or worse, parse them into something else. Normally such
+/// literals never reach the formatting stage (`isCompatible` keeps the predicates that carry them
+/// out of the pushed-down query), so throwing here fails a query that would otherwise be sent to
+/// the external database as broken SQL - e.g. a user-provided `(SELECT ...)` table argument, which
+/// is formatted from the raw AST. `Derived` only has to provide `operator()` for `String` and
+/// a `dialect_name` constant.
+template <typename Derived>
+class FieldVisitorToStringForDialect : public StaticVisitor<String>
 {
 public:
-    template<typename T>
+    template <typename T>
     String operator() (const T & x) const { return visitor(x); }
+
+    [[noreturn]] String operator() (const Array &) const
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Cannot format an Array literal for {}: it has no syntax for such literals; "
+            "the predicate can only be evaluated by ClickHouse", Derived::dialect_name);
+    }
+
+    [[noreturn]] String operator() (const Map &) const
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Cannot format a Map literal for {}: it has no syntax for such literals; "
+            "the predicate can only be evaluated by ClickHouse", Derived::dialect_name);
+    }
+
+    String operator() (const Tuple & x) const
+    {
+        /// A tuple with fewer than two elements has no plain parenthesized form: it could only be
+        /// written back with the explicit `tuple` function, which is ClickHouse syntax that the
+        /// external database does not understand.
+        if (x.size() < 2)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Cannot format a tuple with fewer than two elements for {}: it can only be written "
+                "in ClickHouse-specific syntax; the predicate can only be evaluated by ClickHouse",
+                Derived::dialect_name);
+        return formatContainer(x, "(", ")");
+    }
+
+    String operator() (const Object & x) const
+    {
+        checkStackSize();
+        /// Like `FieldVisitorToString`: an Object is written as a string containing valid JSON,
+        /// but the string itself has to be quoted with the rules of the target dialect.
+        return derived()(convertObjectToString(x));
+    }
 
 private:
     FieldVisitorToString visitor;
+
+    [[nodiscard]] const Derived & derived() const { return static_cast<const Derived &>(*this); }
+
+    template <typename Container>
+    String formatContainer(const Container & x, const char * prefix, const char * suffix) const
+    {
+        checkStackSize();
+
+        WriteBufferFromOwnString wb;
+        wb << prefix;
+        for (auto it = x.begin(); it != x.end(); ++it)
+        {
+            if (it != x.begin())
+                wb << ", ";
+            wb << applyVisitor(derived(), *it);
+        }
+        wb << suffix;
+        return wb.str();
+    }
 };
 
-template<>
-String FieldVisitorToStringPostgreSQL::operator() (const String & x) const
+/// Like `FieldVisitorToString`, but strings are escaped so that PostgreSQL reads back exactly the
+/// original bytes (`writeQuotedStringPostgreSQLLossless`).
+class FieldVisitorToStringPostgreSQL : public FieldVisitorToStringForDialect<FieldVisitorToStringPostgreSQL>
 {
-    WriteBufferFromOwnString wb;
-    writeQuotedStringPostgreSQL(x, wb);
-    return wb.str();
+public:
+    static constexpr const char * dialect_name = "PostgreSQL";
+
+    using FieldVisitorToStringForDialect<FieldVisitorToStringPostgreSQL>::operator();
+
+    String operator() (const String & x) const
+    {
+        /// A NUL byte cannot appear in a PostgreSQL string value (see `writeQuotedStringPostgreSQLLossless`).
+        /// Predicates with such literals are normally not pushed down (`isCompatible` rejects them), so
+        /// reaching here means we are about to emit a literal that cannot match: fail explicitly rather
+        /// than silently produce wrong results.
+        if (x.contains('\0'))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Cannot push down a predicate to PostgreSQL: a string literal contains a NUL byte, "
+                "which cannot be represented in a PostgreSQL string value");
+
+        WriteBufferFromOwnString wb;
+        writeQuotedStringPostgreSQLLossless(x, wb);
+        return wb.str();
+    }
+};
+
+/// Like `FieldVisitorToString`, but strings are escaped with SQLite rules (`writeQuotedStringSQLite`).
+class FieldVisitorToStringSQLite : public FieldVisitorToStringForDialect<FieldVisitorToStringSQLite>
+{
+public:
+    static constexpr const char * dialect_name = "SQLite";
+
+    using FieldVisitorToStringForDialect<FieldVisitorToStringSQLite>::operator();
+
+    String operator() (const String & x) const
+    {
+        /// A NUL byte cannot be represented in a SQLite string literal (see `writeQuotedStringSQLite`).
+        /// Predicates with such literals are normally not pushed down (`isCompatible` rejects them), so
+        /// reaching here means we are about to emit a literal that cannot match: fail explicitly rather
+        /// than silently produce wrong results.
+        if (x.contains('\0'))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Cannot push down a predicate to SQLite: a string literal contains a NUL byte, "
+                "which cannot be represented in a SQLite string literal");
+
+        WriteBufferFromOwnString wb;
+        writeQuotedStringSQLite(x, wb);
+        return wb.str();
+    }
+};
+
+namespace
+{
+
+/// Writes the same text as FieldVisitorToString. If an array, tuple or map followed by `suffix` does not fit
+/// on the current line, its elements start on new lines (see ASTFormatting.h).
+void formatWrappedField(
+    const Field & value, WriteBuffer & ostr, IAST::FormatState & state, IAST::FormatStateStacked frame, std::string_view suffix = {})
+{
+    const FieldVector * elements = nullptr;
+    std::string_view open = "[";
+    char close = ']';
+    switch (value.getType())
+    {
+        case Field::Types::Array:
+            elements = &value.safeGet<Array>();
+            break;
+        case Field::Types::Map:
+            elements = &value.safeGet<Map>();
+            break;
+        case Field::Types::Tuple:
+            elements = &value.safeGet<Tuple>();
+            /// A tuple of one element needs the explicit function, otherwise it is parsed back as a plain value.
+            open = elements->size() > 1 ? "(" : "tuple(";
+            close = ')';
+            break;
+        default:
+            break;
+    }
+
+    String text = applyVisitor(FieldVisitorToString(), value);
+    if (!elements || elements->empty() || !shouldWrapAST(ostr, state, frame, [&] { return text + String(suffix); }))
+    {
+        ostr << text;
+        return;
+    }
+
+    checkStackSize();
+    const bool pack = std::ranges::none_of(*elements, [](const Field & element)
+    {
+        const auto type = element.getType();
+        return type == Field::Types::Array || type == Field::Types::Tuple || type == Field::Types::Map;
+    });
+    ++frame.indent;
+    ostr << open;
+    writeASTNewLine(ostr, frame.indent);
+    for (size_t i = 0; i < elements->size(); ++i)
+    {
+        if (i != 0)
+        {
+            ostr << ',';
+            String next_item = pack ? applyVisitor(FieldVisitorToString(), (*elements)[i]) : "";
+            if (pack && i + 1 < elements->size())
+                next_item += ',';
+            writeASTListSpace(ostr, state, frame.indent, /*wrap=*/ true, next_item);
+        }
+        formatWrappedField((*elements)[i], ostr, state, frame);
+    }
+    writeASTNewLine(ostr, frame.indent - 1);
+    ostr << close;
 }
 
-void ASTLiteral::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSettings & settings, IAST::FormatState &, IAST::FormatStateStacked) const
+}
+
+void ASTLiteral::formatImplWithoutAlias(
+    WriteBuffer & ostr, const FormatSettings & settings, IAST::FormatState & state, IAST::FormatStateStacked frame) const
 {
     if (settings.literal_escaping_style == LiteralEscapingStyle::Regular)
-        ostr << applyVisitor(FieldVisitorToString(), value);
-    else
+    {
+        /// The alias is written right after the literal, so it has to fit on the line too.
+        String alias_text;
+        if (state.formatting && !alias.empty())
+        {
+            WriteBufferFromOwnString out;
+            out << " AS ";
+            settings.writeIdentifier(out, alias, /*ambiguous=*/false);
+            alias_text = std::move(out.str());
+        }
+        formatWrappedField(value, ostr, state, frame, alias_text);
+    }
+    else if (settings.literal_escaping_style == LiteralEscapingStyle::PostgreSQL)
         ostr << applyVisitor(FieldVisitorToStringPostgreSQL(), value);
+    else
+        ostr << applyVisitor(FieldVisitorToStringSQLite(), value);
 }
 
 }

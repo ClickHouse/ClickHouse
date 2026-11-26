@@ -2,7 +2,9 @@
 """Focused tests for perf_api.py artifact parsing."""
 from __future__ import annotations
 
+import gzip
 import shutil
+import subprocess
 from pathlib import Path
 
 import perf_api
@@ -71,6 +73,28 @@ def test_raw_all_query_metrics_classification() -> None:
         shutil.rmtree(root, ignore_errors=True)
 
 
+def test_reads_compressed_all_query_metrics() -> None:
+    """iter_tsv_dicts must parse zstd/gzip artifacts identically to plain (CI compresses
+    text artifacts over a size threshold, see ci/praktika/s3.py)."""
+    root = Path.cwd() / "tmp" / "perf-comparison-compressed-test"
+    shutil.rmtree(root, ignore_errors=True)
+    root.mkdir(parents=True)
+    try:
+        plain = root / "all-query-metrics.tsv"
+        write_raw_fixture(plain)
+        expected_rows = perf_api.iter_tsv_dicts(str(plain))
+
+        raw = plain.read_bytes()
+        (root / "gz.tsv").write_bytes(gzip.compress(raw))
+        subprocess.run(["zstd", "-q", "-f", str(plain), "-o", str(root / "zst.tsv")], check=True)
+
+        for variant in ("gz.tsv", "zst.tsv"):
+            assert perf_api.iter_tsv_dicts(str(root / variant)) == expected_rows, variant
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
+
 if __name__ == "__main__":
     test_raw_all_query_metrics_classification()
+    test_reads_compressed_all_query_metrics()
     print("ok")

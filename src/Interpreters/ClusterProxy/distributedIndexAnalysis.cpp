@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Common/CurrentThread.h>
 #include <unordered_map>
 #include <Columns/ColumnArray.h>
@@ -14,7 +15,7 @@
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Client/ConnectionPool.h>
 #include <Client/ConnectionPoolWithFailover.h>
-#if defined(OS_LINUX)
+#if defined(OS_LINUX) || defined(OS_DARWIN)
 #include <Client/HedgedConnectionsFactory.h>
 #include <Common/Epoll.h>
 #endif
@@ -102,7 +103,7 @@ ShuffledPool extractLocalReplica(std::vector<ShuffledPool> & pools, const Cluste
 {
     for (size_t i = 0, s = pools.size(); i < s; ++i)
     {
-        const auto & pool = dynamic_cast<ConnectionPool &>(*pools[i].pool);
+        const auto & pool = *pools[i].pool;
         const auto & hostname = pool.getHost();
         const auto & port = pool.getPort();
         const auto found = std::find_if(begin(local_addresses), end(local_addresses), [&hostname, &port](const auto & local_addr)
@@ -126,15 +127,32 @@ GetPriorityForLoadBalancing::Func replicaIndexPriorityFunc()
     return [](size_t i) { return Priority{static_cast<Int64>(i)}; };
 }
 
-std::string buildAnalyzeIndexQuery(const StorageID & storage_id, const std::optional<std::string> & filter,
-                                   const OptionalVectorSearchParameters & vector_search_parameters,
-                                   const std::vector<std::string_view> & parts)
+Scalars buildPartsScalars(const PartNameViews & parts)
 {
-    std::string query = fmt::format("SELECT * FROM mergeTreeAnalyzeIndexesUUID('{}', {}, ['{}']",
-        storage_id.uuid,
-        filter.value_or("true"),
-        fmt::join(parts, "','"));
+    auto column_string = ColumnString::create();
+    for (const auto & part : parts)
+        column_string->insertData(part.data(), part.length());
+    auto column_offsets = ColumnUInt64::create(1, parts.size());
+    auto column_array = ColumnArray::create(std::move(column_string), std::move(column_offsets));
 
+    Block block{
+        {std::move(column_array), std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "parts"},
+    };
+    return Scalars{{"parts", std::move(block)}};
+}
+
+std::pair<Scalars, std::string> buildAnalyzeIndexQuery(const StorageID & storage_id, const std::optional<std::string> & filter,
+    const OptionalVectorSearchParameters & vector_search_parameters,
+    const PartNameViews & parts)
+{
+    static constexpr size_t DISTRIBUTED_INDEX_ANALYSIS_INLINE_PARTS_LIMIT = 30;
+    bool inline_parts = parts.size() < DISTRIBUTED_INDEX_ANALYSIS_INLINE_PARTS_LIMIT;
+
+    std::string query = fmt::format("SELECT * FROM mergeTreeAnalyzeIndexesUUID('{}', {}", storage_id.uuid, filter.value_or("true"));
+    if (inline_parts)
+        query += fmt::format(", ['{}']", fmt::join(parts, "','"));
+    else
+        query += fmt::format(", __getScalar('parts')");
     if (vector_search_parameters)
     {
         query += fmt::format(", 'vector_search_index_analysis', array('{}', '{}', {}, {}, {}, {})",
@@ -142,55 +160,23 @@ std::string buildAnalyzeIndexQuery(const StorageID & storage_id, const std::opti
                         vector_search_parameters->limit, vector_search_parameters->reference_vector,
                         vector_search_parameters->additional_filters_present, vector_search_parameters->return_distances);
     }
-
     query += ")";
-    return query;
-}
 
-SharedHeader indexAnalysisSampleBlock()
-{
-    return std::make_shared<const Block>(Block
-    {
-        { ColumnString::create(), std::make_shared<DataTypeString>(), "part_name" },
-        { ColumnArray::create(ColumnTuple::create(Columns{
-              ColumnUInt64::create(), // begin
-              ColumnUInt64::create(), // end
-          })),
-          std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(DataTypes{
-              std::make_shared<DataTypeUInt64>(), // begin
-              std::make_shared<DataTypeUInt64>(), // end
-          })),
-          "ranges" },
-    });
-}
+    Scalars scalars;
+    if (!inline_parts)
+        scalars = buildPartsScalars(parts);
 
-void parseIndexAnalysisBlock(Block block, IndexAnalysisPartsRanges & result)
-{
-    block = convertBLOBColumns(block);
-
-    const auto & col_part_name = assert_cast<const ColumnString &>(*block.getByName("part_name").column);
-    const auto & col_ranges_array = assert_cast<const ColumnArray &>(*block.getByName("ranges").column);
-    const auto & col_ranges_array_offsets = col_ranges_array.getOffsets();
-    const auto & col_ranges_tuple = assert_cast<const ColumnTuple &>(col_ranges_array.getData());
-    const auto & col_range_start = assert_cast<const ColumnUInt64 &>(col_ranges_tuple.getColumn(0)).getData();
-    const auto & col_range_end = assert_cast<const ColumnUInt64 &>(col_ranges_tuple.getColumn(1)).getData();
-
-    for (size_t i = 0; i < col_part_name.size(); ++i)
-    {
-        auto & ranges_dst = result[std::string(col_part_name.getDataAt(i))];
-        for (size_t range_i = col_ranges_array_offsets[i - 1]; range_i < col_ranges_array_offsets[i]; ++range_i)
-            ranges_dst.push_back(MarkRange{col_range_start[range_i], col_range_end[range_i]});
-    }
+    return std::make_pair(std::move(scalars), std::move(query));
 }
 
 IndexAnalysisPartsRanges getIndexAnalysisFromReplicaSync(const LoggerPtr & logger, const StorageID & storage_id, const std::optional<std::string> & filter,
                                                      const OptionalVectorSearchParameters & vector_search_parameters, ContextPtr context, const Tables & external_tables,
-                                                     const std::vector<std::string_view> & parts, Connection & connection)
+                                                     const PartNameViews & parts, Connection & connection)
 {
-    auto query = buildAnalyzeIndexQuery(storage_id, filter, vector_search_parameters, parts);
+    auto [scalars, query] = buildAnalyzeIndexQuery(storage_id, filter, vector_search_parameters, parts);
     auto sample_block = indexAnalysisSampleBlock();
 
-    auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(connection, query, sample_block, context, ThrottlerPtr{}, Scalars{}, external_tables);
+    auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(connection, query, sample_block, context, ThrottlerPtr{}, scalars, external_tables);
     remote_query_executor->setLogger(logger);
     auto remote_source = std::make_shared<RemoteSource>(std::move(remote_query_executor), false, false, false);
     QueryPipeline pipeline(std::move(remote_source));
@@ -199,7 +185,7 @@ IndexAnalysisPartsRanges getIndexAnalysisFromReplicaSync(const LoggerPtr & logge
     IndexAnalysisPartsRanges res;
     Block block;
     while (executor.pull(block))
-        parseIndexAnalysisBlock(std::move(block), res);
+        parseIndexAnalysisBlock(std::move(block), res); // NOLINT(clang-analyzer-cplusplus.Move)
 
     return res;
 }
@@ -237,7 +223,7 @@ public:
         , context(std::move(context_))
         , logger(getLogger("DistributedIndexAnalysis"))
         , settings(context->getSettingsRef())
-#if defined(OS_LINUX)
+#if defined(OS_LINUX) || defined(OS_DARWIN)
         , use_hedged_requests(settings[Setting::use_hedged_requests])
         , use_async_reading(settings[Setting::async_socket_for_remote])
 #endif
@@ -247,7 +233,7 @@ public:
         original_pool = shard.pool;
         remote_pools = shard.pool->getShuffledPools(settings, replicaIndexPriorityFunc());
         auto local_pool = extractLocalReplica(remote_pools, shard.local_addresses);
-        local_address = dynamic_cast<ConnectionPool &>(*local_pool.pool).getAddress();
+        local_address = local_pool.pool->getAddress();
         local_original_index = local_pool.index;
         total_replicas = shard.getAllNodeCount();
         remote_replicas = remote_pools.size();
@@ -255,7 +241,7 @@ public:
 
         replica_addresses.resize(remote_replicas);
         for (size_t i = 0; i < remote_replicas; ++i)
-            replica_addresses[i] = dynamic_cast<ConnectionPool &>(*remote_pools[i].pool).getAddress();
+            replica_addresses[i] = remote_pools[i].pool->getAddress();
 
         execution_context = Context::createCopy(context);
         external_tables = execution_context->getExternalTables();
@@ -324,7 +310,7 @@ private:
     /// so that subsequent queries can deprioritize replicas that failed during this analysis.
     void propagateErrorCounts()
     {
-#if defined(OS_LINUX)
+#if defined(OS_LINUX) || defined(OS_DARWIN)
         if (hedged_factory.has_value())
         {
             /// Reset the factory so its destructor propagates error counts into remote_pool via updateSharedError.
@@ -351,7 +337,7 @@ private:
         return establishConnectionsSync(timeouts);
     }
 
-#if defined(OS_LINUX)
+#if defined(OS_LINUX) || defined(OS_DARWIN)
     std::vector<Connection *> establishConnectionsAsync(const ConnectionTimeouts & timeouts)
     {
         std::vector<Connection *> connections(remote_replicas, nullptr);
@@ -372,6 +358,7 @@ private:
             /// Exclude local replica
             max_active_replicas - 1,
             /*skip_unavailable_shards_=*/ true,
+            /*fail_if_replica_unprobed_=*/ false,
             /// FIXME: we can pass db.table, but, we use UUIDs internally, so we need first to add support of checking UUIDs
             /*table_to_check=*/ nullptr,
             replicaIndexPriorityFunc());
@@ -384,7 +371,7 @@ private:
 
         std::unordered_map<std::string, size_t> address_to_replica;
         for (size_t i = 0; i < remote_replicas; ++i)
-            address_to_replica[host_port(dynamic_cast<ConnectionPool &>(*remote_pools[i].pool))] = i;
+            address_to_replica[host_port(*remote_pools[i].pool)] = i;
         for (auto * conn : ready_connections)
         {
             if (auto it = address_to_replica.find(host_port(*conn)); it != address_to_replica.end())
@@ -468,10 +455,10 @@ private:
 
     struct DistributedParts
     {
-        std::vector<std::string_view> local_parts;
+        PartNameViews local_parts;
         size_t local_marks = 0;
         size_t local_rows = 0;
-        std::vector<std::vector<std::string_view>> remote_parts;
+        std::vector<PartNameViews> remote_parts;
         std::vector<size_t> remote_marks;
         std::vector<size_t> remote_rows;
     };
@@ -529,7 +516,7 @@ private:
     };
 
     LocalAnalysisResult executeLocalAnalysis(
-        const std::vector<std::string_view> & local_parts,
+        const PartNameViews & local_parts,
         size_t local_marks,
         size_t local_rows,
         std::pair<std::string, IndexAnalysisPartsRanges> & local_result)
@@ -563,7 +550,7 @@ private:
     void executeRemoteAnalysis(
         const std::vector<size_t> & active_remote_indexes,
         const std::vector<Connection *> & connections,
-        const std::vector<std::vector<std::string_view>> & remote_parts,
+        const std::vector<PartNameViews> & remote_parts,
         const std::vector<size_t> & remote_marks,
         const std::vector<size_t> & remote_rows,
         DistributedIndexAnalysisPartsRanges & res)
@@ -574,11 +561,11 @@ private:
             executeRemoteAnalysisSync(active_remote_indexes, connections, remote_parts, remote_marks, remote_rows, res);
     }
 
-#if defined(OS_LINUX)
+#if defined(OS_LINUX) || defined(OS_DARWIN)
     void executeRemoteAnalysisAsync(
         const std::vector<size_t> & active_remote_indexes,
         const std::vector<Connection *> & connections,
-        const std::vector<std::vector<std::string_view>> & remote_parts,
+        const std::vector<PartNameViews> & remote_parts,
         const std::vector<size_t> & remote_marks,
         const std::vector<size_t> & remote_rows,
         DistributedIndexAnalysisPartsRanges & res)
@@ -591,7 +578,7 @@ private:
         };
 
         auto sample_block = indexAnalysisSampleBlock();
-        Epoll readers_epoll;
+        Epoll readers_epoll{EpollNesting::PipelinePoller};
         std::vector<ReplicaReader> readers;
         std::unordered_map<int, size_t> fd_to_reader;
 
@@ -602,8 +589,8 @@ private:
                 continue;
 
             ProfileEvents::increment(ProfileEvents::DistributedIndexAnalysisScheduledReplicas);
-            auto query = buildAnalyzeIndexQuery(storage_id, filter_query, vector_search_parameters, remote_parts[i]);
-            auto executor = std::make_shared<RemoteQueryExecutor>(*connection, query, sample_block, execution_context, ThrottlerPtr{}, Scalars{}, external_tables);
+            auto [scalars, query] = buildAnalyzeIndexQuery(storage_id, filter_query, vector_search_parameters, remote_parts[i]);
+            auto executor = std::make_shared<RemoteQueryExecutor>(*connection, query, sample_block, execution_context, ThrottlerPtr{}, scalars, external_tables);
             executor->setLogger(logger);
 
             LOG_TRACE(logger, "Sending {} parts ({} marks, {} rows) to {}: {}",
@@ -717,7 +704,7 @@ private:
     void executeRemoteAnalysisAsync(
         const std::vector<size_t> &,
         const std::vector<Connection *> &,
-        const std::vector<std::vector<std::string_view>> &,
+        const std::vector<PartNameViews> &,
         const std::vector<size_t> &,
         const std::vector<size_t> &,
         DistributedIndexAnalysisPartsRanges &)
@@ -729,7 +716,7 @@ private:
     void executeRemoteAnalysisSync(
         const std::vector<size_t> & active_remote_indexes,
         const std::vector<Connection *> & connections,
-        const std::vector<std::vector<std::string_view>> & remote_parts,
+        const std::vector<PartNameViews> & remote_parts,
         const std::vector<size_t> & remote_marks,
         const std::vector<size_t> & remote_rows,
         DistributedIndexAnalysisPartsRanges & res)
@@ -781,7 +768,7 @@ private:
             for (const auto & [part, replica_ranges] : parts_ranges)
                 resolved_parts.insert(part);
         }
-        std::vector<std::string_view> missing_parts;
+        PartNameViews missing_parts;
         size_t missing_parts_marks = 0;
         size_t missing_parts_rows = 0;
         for (const auto & part_ranges : parts_with_ranges)
@@ -839,7 +826,7 @@ private:
     /// Keep `ConnectionPool::Entry` objects alive for the sync path.
     std::vector<ConnectionPool::Entry> connection_entries;
 
-#if defined(OS_LINUX)
+#if defined(OS_LINUX) || defined(OS_DARWIN)
     /// Keep `HedgedConnectionsFactory` alive for the async path.
     std::optional<HedgedConnectionsFactory> hedged_factory;
 #endif
@@ -849,6 +836,42 @@ private:
 
 namespace DB
 {
+
+SharedHeader indexAnalysisSampleBlock()
+{
+    return std::make_shared<const Block>(Block
+    {
+        { ColumnString::create(), std::make_shared<DataTypeString>(), "part_name" },
+        { ColumnArray::create(ColumnTuple::create(Columns{
+              ColumnUInt64::create(), // begin
+              ColumnUInt64::create(), // end
+          })),
+          std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(DataTypes{
+              std::make_shared<DataTypeUInt64>(), // begin
+              std::make_shared<DataTypeUInt64>(), // end
+          })),
+          "ranges" },
+    });
+}
+
+void parseIndexAnalysisBlock(Block block, IndexAnalysisPartsRanges & result)
+{
+    block = convertBLOBColumns(block);
+
+    const auto & col_part_name = assert_cast<const ColumnString &>(*block.getByName("part_name").column);
+    const auto & col_ranges_array = assert_cast<const ColumnArray &>(*block.getByName("ranges").column);
+    const auto & col_ranges_array_offsets = col_ranges_array.getOffsets();
+    const auto & col_ranges_tuple = assert_cast<const ColumnTuple &>(col_ranges_array.getData());
+    const auto & col_range_start = assert_cast<const ColumnUInt64 &>(col_ranges_tuple.getColumn(0)).getData();
+    const auto & col_range_end = assert_cast<const ColumnUInt64 &>(col_ranges_tuple.getColumn(1)).getData();
+
+    for (size_t i = 0; i < col_part_name.size(); ++i)
+    {
+        auto & ranges_dst = result[std::string(col_part_name.getDataAt(i))];
+        for (size_t range_i = col_ranges_array_offsets[static_cast<ssize_t>(i) - 1]; range_i < col_ranges_array_offsets[i]; ++range_i)
+            ranges_dst.push_back(MarkRange{col_range_start[range_i], col_range_end[range_i]});
+    }
+}
 
 DistributedIndexAnalysisPartsRanges distributedIndexAnalysisOnReplicas(
     const StorageID & storage_id,

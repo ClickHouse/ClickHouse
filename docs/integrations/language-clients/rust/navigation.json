@@ -1,0 +1,6 @@
+{
+  "group": "Rust",
+  "icon": "/images/integrations/logos/rust.webp",
+  "pages": [],
+  "root": "integrations/language-clients/rust/index"
+}

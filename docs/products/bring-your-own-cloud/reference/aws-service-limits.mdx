@@ -1,0 +1,48 @@
+---
+title: 'Managing AWS service limits and quotas'
+slug: /cloud/reference/byoc/aws-service-limits
+sidebarTitle: 'AWS service limits and quotas'
+keywords: ['BYOC', 'bring your own cloud', 'AWS', 'service quotas', 'service limits', 'EC2', 'EKS', 'VPC', 'EBS']
+description: 'AWS service quotas to verify before BYOC onboarding, how to request increases, and what to monitor as services scale'
+doc_type: 'reference'
+---
+
+A successful BYOC deployment depends on having sufficient AWS service quotas (formerly called *service limits*) in your AWS account. AWS applies default per-Region quotas to most services. Many of these defaults are below what a production BYOC deployment needs, especially in newly created or lightly used AWS accounts.
+
+This page provides a pre-deployment quota checklist. Please monitor your usage and work directly with the cloud service provider to request quota increases.
+
+## Pre-deployment quota checklist {#pre-deployment-quota-checklist}
+
+Before initiating BYOC onboarding, verify the following quotas in the AWS Region where you plan to deploy. Quotas are per Region and per account.
+
+### Required quotas {#required-quotas}
+
+| Service | Quota name | BYOC requirement | Default | Action |
+|---------|------------|------------------|---------|--------|
+| **EC2** | Running On-Demand Standard (A, C, D, H, I, M, R, T, Z) instances | ≥ peak vCPU of your service tier × 1.5 (headroom for autoscaling and MBB upgrades) + 100 vCPU cores for system and Keeper workload | Often 32–256 vCPU on new accounts | **Request increase** to match the BYOC requirement |
+| **EC2 (VPC)** | VPCs per Region | ≥ 1 (BYOC creates 1 dedicated VPC) | 5 | Verify available |
+| **EC2 (VPC)** | Elastic IPs per Region | ≥ 3 (one per AZ for NAT Gateway) | 5 | Verify available. Request increase if running multiple BYOC deployments in the same Region. |
+| **EC2 (VPC)** | NAT Gateways per AZ | ≥ 1 | 5 | Verify available |
+| **EC2 (VPC)** | Internet Gateways per Region | ≥ 1 | 5 | Verify available |
+| **EC2 (VPC)** | Subnets per VPC | ≥ 6 (3 public + 3 private) | 200 | No action |
+| **EC2 (VPC)** | Security groups per VPC | ≥ 10 | 2,500 | No action |
+| **EKS** | Clusters per Region | ≥ 1 | 100 | No action |
+| **EKS** | Managed node groups per cluster | ≥ 4 | 30 | No action |
+| **EKS** | Nodes per managed node group | ≥ peak node count for your service tier | 450 | No action |
+| **S3** | Buckets per account | ≥ 4 (data, backup, billing, monitoring) | 100 (increases supported up to 1,000) | Verify headroom for other workloads |
+| **EBS** | Storage for General Purpose SSD (gp3) | ≥ peak ClickHouse log + OS volume × node count | 50 TiB | Verify available |
+| **Elastic Load Balancing** | Network Load Balancers per Region | ≥ 1 per ClickHouse service | 50 | Verify available |
+| **CloudWatch Logs** | Log groups per Region | ≥ 5 | 1,000,000 | No action |
+
+### Quotas to verify if optional features are enabled {#optional-feature-quotas}
+
+| Feature enabled | Service | Quota |
+|-----------------|---------|-------|
+| AWS PrivateLink | EC2 (VPC) | VPC endpoint services per Region (default 20) — request an increase per concurrent PrivateLink-enabled service. |
+| VPC Peering | EC2 (VPC) | Active VPC peering connections per VPC (default 50). |
+
+## Related {#related}
+
+- [Billable AWS services](/products/bring-your-own-cloud/reference/billable-aws-services) — full inventory of AWS services BYOC provisions
+- [BYOC cost model (AWS)](/products/bring-your-own-cloud/reference/cost-model-aws) — how ClickHouse Cloud and AWS charges combine
+- [BYOC architecture](/products/bring-your-own-cloud/overview/architecture) — components ClickHouse Cloud deploys in your account

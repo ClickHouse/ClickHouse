@@ -1,0 +1,243 @@
+---
+description: 'Документация по функциям для работы с Geometry'
+sidebarTitle: 'Geometry'
+slug: /sql-reference/functions/geo/geometry
+title: 'Функции для работы с Geometry'
+doc_type: 'reference'
+---
+
+## Geometry {#geometry}
+
+Функции Geometry позволяют вычислять периметр, площадь и длину для геометрических типов, таких как POLYGON, LINESTRING, MULTIPOLYGON, MULTILINESTRING, RING и POINT. Используйте геометрические объекты в типе Geometry. Если входное значение — `NULL`, все перечисленные ниже функции вернут 0.
+
+## perimeterCartesian {#perimetercartesian}
+
+Вычисляет периметр заданного объекта Geometry в декартовой (плоской) системе координат.
+
+**Синтаксис**
+
+```sql
+perimeterCartesian(geom)
+```
+
+**Аргументы**
+
+* `geom` — объект типа Geometry. [Geometry](/ru/reference/data-types/geo).
+
+**Возвращаемые значения**
+
+* Число — периметр объекта в единицах системы координат. [Float64](/ru/reference/data-types/float).
+
+**Пример**
+
+```sql title="Query"
+CREATE TABLE IF NOT EXISTS geo_dst (geom Geometry) ENGINE = Memory();
+INSERT INTO geo_dst SELECT readWKT('POLYGON((0 0,1 0,1 1,0 1,0 0))');
+SELECT perimeterCartesian(geom) FROM geo_dst;
+```
+
+```response title="Response"
+┌─perimeterCartesian(geom)─┐
+│ 4.0                      │
+└──────────────────────────┘
+```
+
+## areaCartesian {#areacartesian}
+
+Вычисляет площадь указанного объекта Geometry в декартовой системе координат.
+
+**Синтаксис**
+
+```sql
+areaCartesian(geom)
+```
+
+**Аргументы**
+
+* `geom` — объект типа Geometry. [Geometry](/ru/reference/data-types/geo).
+
+**Возвращаемые значения**
+
+* Число — площадь объекта в единицах системы координат. [Float64](/ru/reference/data-types/float).
+
+**Пример**
+
+```sql title="Query"
+CREATE TABLE IF NOT EXISTS geo_dst (geom Geometry) ENGINE = Memory();
+INSERT INTO geo_dst SELECT readWKT('POLYGON((0 0,1 0,1 1,0 1,0 0))');
+SELECT areaCartesian(geom) FROM geo_dst;
+```
+
+```response title="Response"
+┌─areaCartesian(geom)─┐
+│ -1                  │
+└─────────────────────┘
+```
+
+## perimeterSpherical {#perimeterspherical}
+
+Вычисляет периметр объекта Geometry на сфере.
+
+**Синтаксис**
+
+```sql
+perimeterSpherical(geom)
+```
+
+**Аргументы**
+
+* `geom` — объект типа Geometry. [Geometry](/ru/reference/data-types/geo).
+
+**Возвращаемые значения**
+
+* Число — периметр на сфере радиусом 1 в радианах (координаты задаются как долгота и широта в градусах). Чтобы получить длину, умножьте результат на радиус сферы, например на 6371, чтобы получить значение в километрах для Земли. [Float64](/ru/reference/data-types/float).
+
+**Пример**
+
+```sql title="Query"
+CREATE TABLE IF NOT EXISTS geo_dst (geom Geometry) ENGINE = Memory();
+INSERT INTO geo_dst SELECT readWKT('LINESTRING(0 0,1 0,1 1,0 1,0 0)');
+SELECT perimeterSpherical(geom) FROM geo_dst;
+```
+
+```response title="Response"
+┌─perimeterSpherical(geom)─┐
+│      0.06981051179132045 │
+└──────────────────────────┘
+```
+
+## areaSpherical {#areaspherical}
+
+Вычисляет площадь объекта типа Geometry на поверхности сферы.
+
+**Синтаксис**
+
+```sql
+areaSpherical(geom)
+```
+
+**Аргументы**
+
+* `geom` — Geometry. [Geometry](/ru/reference/data-types/geo).
+
+**Возвращаемые значения**
+
+* Число — площадь на сфере радиуса 1 в стерадианах (координаты — долгота и широта в градусах). Чтобы получить площадь, умножьте результат на квадрат радиуса сферы. [Float64](/ru/reference/data-types/float).
+
+**Пример**
+
+```sql title="Query"
+CREATE TABLE IF NOT EXISTS geo_dst (geom Geometry) ENGINE = Memory();
+INSERT INTO geo_dst SELECT readWKT('POLYGON((0 0,1 0,1 1,0 1,0 0))');
+SELECT areaSpherical(geom) FROM geo_dst;
+```
+
+```response title="Response"
+┌─areaSpherical(geom)────┐
+│ -0.0003046096848622019 │
+└────────────────────────┘
+```
+
+## lengthCartesian {#lengthcartesian}
+
+Вычисляет длину линий объекта Geometry в декартовой (плоской) системе координат как сумму расстояний между последовательными точками.
+Для `MultiLineString` возвращается суммарная длина всех её линий, а `Ring` измеряется как линия, проходящая через его точки. Так же измеряется и массив точек без имени типа: он имеет тип `Ring`.
+Точки, многоугольники и значения Multipolygon не имеют длины, поэтому для них функция возвращает 0. Для вычисления периметра многоугольника используйте [perimeterCartesian](#perimetercartesian).
+Чтобы измерить массив массивов точек, приведите его к типу `MultiLineString`: без имени типа он имеет тип `Polygon`.
+
+Псевдоним: `ST_Length`.
+
+**Синтаксис**
+
+```sql
+lengthCartesian(geom)
+```
+
+**Аргументы**
+
+* `geom` — объект Geometry. [Geometry](/ru/reference/data-types/geo).
+
+**Возвращаемые значения**
+
+* Число — длина линий в единицах системы координат. [Float64](/ru/reference/data-types/float).
+
+**Пример**
+
+```sql title="Query"
+SELECT lengthCartesian(readWKT('LINESTRING(0 0,3 4,3 10)')) AS length;
+```
+
+```response title="Response"
+┌─length─┐
+│     11 │
+└────────┘
+```
+
+## lengthSpherical {#lengthspherical}
+
+Вычисляет длину линий объекта Geometry на поверхности сферы; точки задаются в виде (долгота, широта) в градусах.
+Результатом является угол в радианах, то есть длина на сфере радиусом 1, — так же, как в случае [perimeterSpherical](#perimeterspherical).
+Чтобы получить приблизительную длину в метрах, умножьте результат на средний радиус Земли (6371008.8 метра); для точного значения используйте [lengthSpheroid](#lengthspheroid).
+Как и [lengthCartesian](#lengthcartesian), функция возвращает 0 для точек, многоугольников и значений Multipolygon.
+
+**Синтаксис**
+
+```sql
+lengthSpherical(geom)
+```
+
+**Аргументы**
+
+* `geom` — объект Geometry. [Geometry](/ru/reference/data-types/geo).
+
+**Возвращаемые значения**
+
+* Число — длина линий в радианах. [Float64](/ru/reference/data-types/float).
+
+**Пример**
+
+```sql title="Query"
+SELECT lengthSpherical(readWKT('LINESTRING(0 0,1 0)')) AS length;
+```
+
+```response title="Response"
+┌───────────────length─┐
+│ 0.017453292519943292 │
+└──────────────────────┘
+```
+
+## lengthSpheroid {#lengthspheroid}
+
+Вычисляет длину линий объекта Geometry в метрах на сфероиде WGS84 (модели Земли, используемой в GPS); точки задаются в виде (долгота, широта) в градусах.
+Каждый сегмент — это кратчайший путь между его точками на сфероиде (геодезическая линия), вычисляемый по алгоритму Карни, как в GeographicLib.
+Как и [lengthCartesian](#lengthcartesian), функция возвращает 0 для точек, многоугольников и Multipolygon.
+Если координаты хранятся в виде (широта, долгота), как, например, во входных данных `ST_Length_Spheroid` в DuckDB, сначала поменяйте их местами с помощью [flipCoordinates](/ru/reference/functions/regular-functions/geo/flipCoordinates): иначе будет вычислена длина другой линии.
+Если какая-либо координата равна NaN или бесконечна либо широта выходит за пределы диапазона [-90, 90], результат равен NaN.
+
+**Синтаксис**
+
+```sql
+lengthSpheroid(geom)
+```
+
+**Аргументы**
+
+* `geom` — объект Geometry. [Geometry](/ru/reference/data-types/geo).
+
+**Возвращаемые значения**
+
+* Число — длина линий в метрах. [Float64](/ru/reference/data-types/float).
+
+**Пример**
+
+Длина линии из Лондона через Париж в Берлин:
+
+```sql title="Query"
+SELECT lengthSpheroid(readWKT('LINESTRING(-0.1276 51.5072,2.3522 48.8566,13.405 52.52)')) AS length;
+```
+
+```response title="Response"
+┌─────────────length─┐
+│ 1223596.2073957825 │
+└────────────────────┘
+```

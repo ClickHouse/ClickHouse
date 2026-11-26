@@ -1,3 +1,4 @@
+#include <Access/Common/AccessFlags.h>
 #include <Functions/FunctionBaseAI.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
@@ -26,38 +27,44 @@ public:
 
     explicit FunctionAiExtract(ContextPtr context_) : FunctionBaseAI(context_) {}
 
-    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionAiExtract>(context_); }
+    static FunctionPtr create(ContextPtr context_)
+    {
+        context_->checkAccess(AccessType::aiExtract);
+        return std::make_shared<FunctionAiExtract>(context_);
+    }
 
-    String getName() const override { return name; }
-    bool isVariadic() const override { return true; }
-    size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] String getName() const override { return name; }
+    [[nodiscard]] bool isVariadic() const override { return true; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] String getSignatureString() const override
+    {
+        return
+            "(const String, Nullable(String), const String, [const Number]) -> Nullable(String)"
+            " OR (const String, String, const String, [const Number]) -> String";
+    }
+
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors mandatory_args{
-            {"collection", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), &isColumnConst, "const String"},
-            {"text", static_cast<FunctionArgumentDescriptor::TypeValidator>(&FunctionBaseAI::isStringOrNullableString), nullptr, "String or Nullable(String)"},
+            {"text", static_cast<FunctionArgumentDescriptor::TypeValidator>(&FunctionBaseAI::isStringOrNullableString), nullptr, "String"},
             {"instruction_or_schema", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), &isColumnConst, "const String"},
         };
         FunctionArgumentDescriptors optional_args{
-            {"temperature", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNumber), &isColumnConst, "const Number"},
+            {"params", static_cast<FunctionArgumentDescriptor::TypeValidator>(&FunctionBaseAI::isStringToStringMap), &isColumnConst, "const Map(String, String)"},
         };
         validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
-
-        return wrapReturnTypeForNullablePrompt(arguments, prompt_arg_index, std::make_shared<DataTypeString>());
+        return wrapReturnTypeForNullablePrompt(arguments, 0, std::make_shared<DataTypeString>());
     }
 
 private:
     static constexpr float default_temp = 0.0f;
-    static constexpr size_t prompt_arg_index = 1;
-    static constexpr size_t instruction_arg_index = 2;
-    static constexpr size_t temp_arg_idx = 3;
+    static constexpr size_t instruction_arg_index = 1;
 
-    String functionName() const override { return name; }
-
-    float defaultTemperature() const override { return default_temp; }
-    size_t promptArgumentIndex() const override { return prompt_arg_index; }
-    size_t temperatureArgumentIndex() const override { return temp_arg_idx; }
+    [[nodiscard]] AIParamSpecs functionParams() const override
+    {
+        return {{"temperature", AIParamKind::Float, Field(static_cast<Float64>(default_temp))}};
+    }
 
     static bool isJSONSchema(const String & instruction)
     {
@@ -65,12 +72,12 @@ private:
         return (pos != String::npos && instruction[pos] == '{');
     }
 
-    String getInstruction(const ColumnsWithTypeAndName & arguments) const
+    [[nodiscard]] String getInstruction(const ColumnsWithTypeAndName & arguments) const
     {
         return String(arguments[instruction_arg_index].column->getDataAt(0));
     }
 
-    String buildSystemPrompt(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] String buildSystemPrompt(const ColumnsWithTypeAndName & arguments, const AIParams &) const override
     {
         auto instruction = getInstruction(arguments);
         if (isJSONSchema(instruction))
@@ -81,9 +88,9 @@ private:
                 + ". Return only the extracted value, nothing else. If not found, return null.";
     }
 
-    String buildUserMessage(const ColumnsWithTypeAndName & arguments, size_t row) const override
+    [[nodiscard]] String buildUserMessage(const ColumnsWithTypeAndName & arguments, size_t row) const override
     {
-        return String(arguments[prompt_arg_index].column->getDataAt(row));
+        return String(arguments[0].column->getDataAt(row));
     }
 
     /// Builds the OpenAI `response_format` schema object. Two shapes depending on `instruction_or_schema`:
@@ -120,7 +127,7 @@ private:
     ///       }
     ///     }
     ///   }
-    Poco::JSON::Object::Ptr buildResponseFormat(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] Poco::JSON::Object::Ptr buildResponseFormat(const ColumnsWithTypeAndName & arguments) const override
     {
         auto instruction = getInstruction(arguments);
 
@@ -190,11 +197,14 @@ private:
         return root;
     }
 
-    /// Unwrap a single-key `{"result": "..."}` response; in free-text mode the model is constrained to this shape
-    /// and we return just the string value. If the object has multiple fields (schema mode), return the raw JSON.
+    /// In instruction mode the reply is constrained to `{"result": "..."}`: return the value, or an empty string for `null`.
+    /// In schema mode, return the JSON object as is.
     /// Parse errors are swallowed on purpose — the user will see the output anyway.
-    String postProcessResponse(const String & raw) const override
+    [[nodiscard]] String postProcessResponse(const ColumnsWithTypeAndName & arguments, const String & raw) const override
     {
+        if (isJSONSchema(getInstruction(arguments)))
+            return raw;
+
         if (raw.empty() || raw.front() != '{')
             return raw;
 
@@ -232,19 +242,22 @@ JSON-encoded schema of the form `'{"field_a": "description of field a", "field_b
 In instruction mode, the function returns the extracted value as a plain string, or an empty string if nothing was found.
 In schema mode, the function returns a JSON object string whose keys match the requested schema; missing fields are `null`.
 
-The first argument is a named collection that specifies the provider, model, endpoint, and optionally an API key.
+Credentials (a named collection specifying the provider, model, endpoint, and optionally an API key)
+are taken from the `credentials` key of the optional parameter map, or from the
+`ai_function_text_default_credentials` setting when the map omits it.
 )",
-        .syntax = "aiExtract(collection, text, instruction_or_schema[, temperature])",
+        .syntax = "aiExtract(text, instruction_or_schema[, params])",
         .arguments = {
-            {"collection", "Name of a named collection containing provider credentials and configuration.", {"String"}},
             {"text", "Text to extract information from.", {"String"}},
             {"instruction_or_schema", "Free-form extraction instruction, or a constant JSON object describing the fields to extract.", {"const String"}},
-            {"temperature", "Sampling temperature controlling randomness. Default: `0.0`.", {"const Float64"}},
+            {"params", "Optional constant `Map(String, String)` of parameters. Function-specific keys: `temperature` (sampling temperature controlling randomness; default `0.0`), `max_tokens` (maximum output tokens per call; default `1024`). The common parameters `credentials` and `model` also apply (see [AI Functions](/reference/functions/regular-functions/ai-functions)).", {"Map(String, String)"}},
         },
         .returned_value = {"A single extracted value (instruction mode) or a JSON object string (schema mode). Returns the default value for the column type (empty string) if the request failed and `ai_function_throw_on_error` is disabled.", {"String"}},
         .examples = {
-            {"Free-form instruction", "SELECT aiExtract('ai_credentials', 'The package arrived late and was damaged.', 'the main complaint')", "late and damaged package"},
-            {"Schema extraction", R"(SELECT aiExtract('ai_credentials', review, '{"sentiment": "positive, negative or neutral", "topic": "main topic of the review"}') FROM reviews LIMIT 5)", ""},
+            {"Free-form instruction", "SELECT aiExtract('The package arrived late and was damaged.', 'the main complaint')", "late and damaged package"},
+            {"Schema extraction", R"(CREATE TABLE reviews (review String) ENGINE = Memory;
+INSERT INTO reviews VALUES ('The screen is bright, but the battery lasts only two hours.');
+SELECT aiExtract(review, '{"sentiment": "positive, negative or neutral", "topic": "main topic of the review"}') FROM reviews LIMIT 5)", ""},
         },
         .introduced_in = {26, 4},
         .category = FunctionDocumentation::Category::AI});

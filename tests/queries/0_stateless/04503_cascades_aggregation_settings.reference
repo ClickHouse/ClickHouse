@@ -1,0 +1,17 @@
+-- 1. default: the optimizer picks partial aggregation + merge
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Expression ((Before GROUP BY + Change column names to column identifiers))
+          ReadFromMergeTree (ParallelRead default.t_agg_settings)
+-- 2. forced shuffle: single aggregation over a shuffle exchange
+GatherExchange
+  Expression ((Project names + Projection))
+    Aggregating
+      Expression ((Before GROUP BY + Change column names to column identifiers))
+        ShuffleExchange
+          ReadFromMergeTree (ParallelRead default.t_agg_settings)
+-- 3. memory-efficient merge is planned as a bucket-ordered merge, plain merge is not
+memory_efficient=1:	1
+memory_efficient=0:	0

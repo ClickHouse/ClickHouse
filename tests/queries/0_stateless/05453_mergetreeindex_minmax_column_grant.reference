@@ -1,0 +1,9 @@
+-- a grant on another column does not cover the min-max of the partition key
+ACCESS_DENIED
+ACCESS_DENIED
+-- a source column with the same name as the min-max output does not cover it
+ACCESS_DENIED
+-- a grant on the partition key column covers its min-max, also when the key is a subcolumn
+OK: (3,3)
+OK: (5,5)
+OK: (12345,12345)

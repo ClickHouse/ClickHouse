@@ -1,0 +1,18 @@
+S1: no injection
+14
+S1: with injection
+14
+S2: ReplacingMergeTree FINAL
+14
+S3: composite PK with injection
+14
+S4: composite PK + FINAL
+14
+S5: Tuple(Map, UInt32) PK with injection
+14
+S6: Tuple(Map, UInt32) PK + FINAL
+14
+S7: mapKeys PK with injection
+20
+S8: m.keys PK with injection
+20

@@ -1,29 +1,36 @@
 #include <Interpreters/FileCache/FileSegment.h>
 
 #include <filesystem>
+#include <fcntl.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/FileCache/FileCache.h>
 #include <Interpreters/FileCache/FileCacheUtils.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/ProcessList.h>
 #include <base/EnumReflection.h>
 #include <base/getThreadId.h>
-#include <base/hex.h>
+#include <Common/Hex.h>
 #include <Common/CurrentThread.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
+#include <Common/LockMemoryExceptionInThread.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/logger_useful.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/setThreadName.h>
 #include <Common/ErrnoException.h>
 #include <Common/FailPoint.h>
+#include <Common/Scheduler/ResourceSchedulingContext.h>
 
 namespace fs = std::filesystem;
 
 namespace ProfileEvents
 {
     extern const Event FileSegmentWaitMicroseconds;
+    extern const Event FileSegmentWaitTimeouts;
+    extern const Event FileSegmentWaitWithoutData;
+    extern const Event FileSegmentWaitWithoutDataMicroseconds;
     extern const Event FileSegmentCompleteMicroseconds;
-    extern const Event FileSegmentLockMicroseconds;
     extern const Event FileSegmentWriteMicroseconds;
     extern const Event FileSegmentIncreasePriorityMicroseconds;
     extern const Event FileSegmentHolderCompleteMicroseconds;
@@ -31,6 +38,7 @@ namespace ProfileEvents
     extern const Event FilesystemCacheHoldFileSegments;
     extern const Event FilesystemCacheUnusedHoldFileSegments;
     extern const Event FilesystemCacheBackgroundDownloadQueuePush;
+    extern const Event FilesystemCacheReserveAheadRetries;
 }
 
 namespace CurrentMetrics
@@ -45,16 +53,68 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int MEMORY_LIMIT_EXCEEDED;
 }
 
 namespace FailPoints
 {
     extern const char cache_filesystem_failure[];
+    extern const char cache_filesystem_failure_non_errno[];
+    extern const char file_segment_pause_before_write[];
 }
 
 String toString(FileSegmentKind kind)
 {
     return String(magic_enum::enum_name(kind));
+}
+
+namespace
+{
+
+/// Not `ResourceLink::operator==`, which ignores `scheduling_context`.
+bool sameLinks(const IOSchedulingSettings & lhs, const IOSchedulingSettings & rhs)
+{
+    auto same = [](const ResourceLink & a, const ResourceLink & b)
+    {
+        return a.queue == b.queue && a.allocation_queue == b.allocation_queue && a.scheduling_context == b.scheduling_context;
+    };
+    return same(lhs.read_resource_link, rhs.read_resource_link) && same(lhs.write_resource_link, rhs.write_resource_link);
+}
+
+bool hasLinks(const IOSchedulingSettings & io_scheduling)
+{
+    return io_scheduling.read_resource_link || io_scheduling.write_resource_link;
+}
+
+void countBoundCachedReader([[maybe_unused]] const IOSchedulingSettings & io_scheduling, [[maybe_unused]] bool bind)
+{
+#ifdef DEBUG_OR_SANITIZER_BUILD
+    for (const auto * link : {&io_scheduling.read_resource_link, &io_scheduling.write_resource_link})
+    {
+        if (!link->scheduling_context)
+            continue;
+        if (bind)
+            link->scheduling_context->bound_cached_readers.fetch_add(1);
+        else
+            link->scheduling_context->bound_cached_readers.fetch_sub(1);
+    }
+#endif
+}
+
+}
+
+FileSegment::DownloadState::~DownloadState()
+{
+    countBoundCachedReader(reader_io_scheduling, /* bind */ false);
+}
+
+void FileSegment::setReaderIOSchedulingUnlocked(DownloadState & download, const IOSchedulingSettings & io_scheduling)
+{
+    if (download.remote_file_reader && !sameLinks(download.reader_io_scheduling, io_scheduling))
+        download.remote_file_reader->setIOSchedulingSettings(io_scheduling);
+    countBoundCachedReader(io_scheduling, /* bind */ true);
+    countBoundCachedReader(download.reader_io_scheduling, /* bind */ false);
+    download.reader_io_scheduling = io_scheduling;
 }
 
 FileSegment::FileSegment(
@@ -66,12 +126,15 @@ FileSegment::FileSegment(
         bool background_download_enabled_,
         FileCache * cache_,
         std::weak_ptr<KeyMetadata> key_metadata_,
-        Priority::IteratorPtr queue_iterator_)
+        Priority::IteratorPtr queue_iterator_,
+        bool size_in_filename_)
     : file_key(key_)
     , segment_range(offset_, offset_ + size_ - 1)
     , segment_kind(settings.kind)
     , is_unbound(settings.unbounded)
     , background_download_enabled(background_download_enabled_)
+    , is_temporary(settings.temporary)
+    , size_in_filename(size_in_filename_)
     , download_state(download_state_)
     , key_metadata(key_metadata_)
     , queue_iterator(queue_iterator_)
@@ -80,26 +143,38 @@ FileSegment::FileSegment(
     , log(getLogger(fmt::format("FileSegment({}) : {}", key_.toString(), range().toString())))
 #endif
 {
+    /// The size is encoded into the file name only for fully downloaded regular segments
+    /// (see `renameToIncludeSizeInNameUnlocked`), so on creation it can be set only together
+    /// with the `DOWNLOADED` state (used when loading cache metadata on startup).
+    chassert(!size_in_filename || download_state == State::DOWNLOADED);
+
     /// On creation, file segment state can be EMPTY, DOWNLOADED, DOWNLOADING.
     switch (download_state)
     {
         /// EMPTY is used when file segment is not in cache and
         /// someone will _potentially_ want to download it (after calling getOrSetDownloader()).
-        case (State::EMPTY):
+        case State::EMPTY:
         {
             chassert(key_metadata.lock());
             break;
         }
         /// DOWNLOADED is used either on initial cache metadata load into memory on server startup
-        case (State::DOWNLOADED):
+        case State::DOWNLOADED:
         {
             reserved_size = downloaded_size = size_;
-            chassert(fs::file_size(getPath()) == size_);
+            /// When the size was read from the file name (`<offset>_<size>`), we deliberately trust it
+            /// without a `stat` — that is the whole point of the optimization (see `loadMetadataForKey`).
+            /// An externally truncated or corrupted `<offset>_<size>` file is handled lazily on read:
+            /// `getCacheReadBuffer` already has the file open, so it compares the on-disk size against
+            /// the recorded one and discards the broken entry (re-fetching from the source) rather than
+            /// raising a server-bug-class error. Asserting the on-disk size here would both re-introduce
+            /// the `stat` and turn that discardable inconsistency into an abort in debug/sanitizer builds.
+            chassert(size_in_filename || fs::file_size(getPath()) == size_);
             chassert(queue_iterator);
             chassert(key_metadata.lock());
             break;
         }
-        case (State::DETACHED):
+        case State::DETACHED:
         {
             break;
         }
@@ -132,8 +207,12 @@ const LoggerPtr & FileSegment::getLog() const
 
 FileSegment::State FileSegment::state() const
 {
-    auto lk = lock();
-    return download_state;
+    /// Read without lock. This is safe because every terminal state is published as the last write
+    /// of its transition: in particular DOWNLOADED is set only after the segment is fully
+    /// finalized (writer flushed and closed, reader released, range/size settled - see
+    /// `setDownloadedUnlocked` and `shrinkFileSegmentToDownloadedSize`). So an observer of a state
+    /// here is guaranteed to also see all the state that belongs to it.
+    return download_state.load();
 }
 
 String FileSegment::getPath() const
@@ -151,7 +230,6 @@ String FileSegment::tryGetPath() const
 
 FileSegmentGuard::Lock FileSegment::lock() const
 {
-    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FileSegmentLockMicroseconds);
     return segment_guard.lock();
 }
 
@@ -171,8 +249,27 @@ void FileSegment::setDownloadState(State state, const FileSegmentGuard::Lock & l
 
 size_t FileSegment::getReservedSize() const
 {
-    auto lk = lock();
-    return reserved_size;
+    return reserved_size.load();
+}
+
+size_t FileSegment::getDiskAccountedSize() const
+{
+    const auto km = tryGetKeyMetadata();
+    const size_t raw = reserved_size.load();
+    if (km && km->useRealDiskSize())
+        return km->alignFileSize(raw);
+    return raw;
+}
+
+size_t FileSegment::computeDiskAccountedDelta(size_t raw_delta) const
+{
+    const auto km = tryGetKeyMetadata();
+    if (km && km->useRealDiskSize())
+    {
+        const size_t prev_raw = reserved_size.load();
+        return km->alignFileSize(prev_raw + raw_delta) - km->alignFileSize(prev_raw);
+    }
+    return raw_delta;
 }
 
 FileSegment::Priority::IteratorPtr FileSegment::getQueueIterator() const
@@ -220,8 +317,9 @@ size_t FileSegment::getDownloadedSize() const
 
 bool FileSegment::isDownloaded() const
 {
-    auto lk = lock();
-    return download_state == State::DOWNLOADED;
+    /// Read without lock, see the comment in `state`: DOWNLOADED is published last, so observing it here
+    /// implies a fully-downloaded, consistent segment.
+    return download_state.load() == State::DOWNLOADED;
 }
 
 time_t FileSegment::getFinishedDownloadTime() const
@@ -260,7 +358,7 @@ void FileSegment::resetDownloadDataUnlocked(const FileSegmentGuard::Lock &)
     download_data.reset();
 }
 
-String FileSegment::getOrSetDownloader()
+String FileSegment::getOrSetDownloader(const IOSchedulingSettings & io_scheduling)
 {
     auto lk = lock();
 
@@ -275,12 +373,43 @@ String FileSegment::getOrSetDownloader()
         if (!allow_new_downloader)
             return "notAllowed:" + stateToString(download_state);
 
-        current_downloader = getOrCreateDownloadDataUnlocked(lk).downloader_id = caller_id;
+        auto & download = getOrCreateDownloadDataUnlocked(lk);
+        setReaderIOSchedulingUnlocked(download, io_scheduling);
+        current_downloader = download.downloader_id = caller_id;
         setDownloadState(State::DOWNLOADING, lk);
         chassert(key_metadata.lock());
     }
 
     return current_downloader;
+}
+
+scope_guard FileSegment::tryTakeDownloaderOfPartiallyDownloaded()
+{
+    /// Most calls are for downloaded segments: skip the lock for them.
+    if (download_state != State::PARTIALLY_DOWNLOADED)
+        return {};
+
+    auto lk = lock();
+
+    if (download_state != State::PARTIALLY_DOWNLOADED)
+        return {};
+
+    /// Every transition to `PARTIALLY_DOWNLOADED` resets the downloader under the same lock.
+    chassert(getDownloaderUnlocked(lk).empty());
+
+    auto & download = getOrCreateDownloadDataUnlocked(lk);
+    /// The idle reader may still be bound to the I/O scheduling links of a previous downloader's query.
+    /// Unbind it like `getOrSetDownloader` does, because `complete` keeps the links while there is a downloader
+    /// and they would outlive the holder they belong to.
+    setReaderIOSchedulingUnlocked(download, {});
+    download.downloader_id = getCallerId();
+    setDownloadState(State::DOWNLOADING, lk);
+    return [this]
+    {
+        /// The guard runs in a destructor, and `resetDownloader` does small allocations.
+        LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
+        resetDownloader();
+    };
 }
 
 void FileSegment::resetDownloadingStateUnlocked(const FileSegmentGuard::Lock & lock)
@@ -367,14 +496,17 @@ void FileSegment::resetRemoteFileReader()
         download_data->remote_file_reader.reset();
 }
 
-FileSegment::RemoteFileReaderPtr FileSegment::extractRemoteFileReader()
+FileSegment::RemoteFileReaderPtr FileSegment::extractRemoteFileReader(const IOSchedulingSettings & io_scheduling)
 {
     auto lk = lock();
     if (download_data && download_data->remote_file_reader
         && (download_state == State::DOWNLOADED
             || download_state == State::PARTIALLY_DOWNLOADED_NO_CONTINUATION))
     {
-        return std::move(download_data->remote_file_reader);
+        setReaderIOSchedulingUnlocked(*download_data, io_scheduling);
+        auto reader = std::move(download_data->remote_file_reader);
+        setReaderIOSchedulingUnlocked(*download_data, {});
+        return reader;
     }
     return nullptr;
 }
@@ -391,8 +523,14 @@ void FileSegment::setRemoteFileReader(RemoteFileReaderPtr remote_file_reader_)
     download.remote_file_reader = remote_file_reader_;
 }
 
-void FileSegment::write(char * from, size_t size, size_t offset_in_file)
+void FileSegment::write(char * from, size_t size, size_t offset_in_file, bool keep_temporary)
 {
+    if (!keep_temporary)
+        is_temporary.store(false, std::memory_order_relaxed);
+
+    /// Keeps the segment in DOWNLOADING state, for testing the concurrent download wait timeout.
+    FailPointInjection::pauseFailPoint(FailPoints::file_segment_pause_before_write);
+
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FileSegmentWriteMicroseconds);
     auto file_segment_path = getPath();
     DownloadState * download = nullptr;
@@ -467,6 +605,13 @@ void FileSegment::write(char * from, size_t size, size_t offset_in_file)
             throw ErrnoException(EIO, "Failpoint: simulated cache disk IO failure");
         });
 
+        fiu_do_on(FailPoints::cache_filesystem_failure_non_errno,
+        {
+            /// A non-ErrnoException failure (e.g. a generic Exception thrown by the
+            /// underlying object-storage read) after the cache file was created.
+            throw Exception(ErrorCodes::MEMORY_LIMIT_EXCEEDED, "Failpoint: simulated cache non-errno failure");
+        });
+
         /// Size is equal to offset as offset for write buffer points to data end.
         download->cache_writer->set(from, /* size */size, /* offset */size);
         /// Reset the buffer when finished.
@@ -514,12 +659,28 @@ void FileSegment::write(char * from, size_t size, size_t offset_in_file)
         auto lk = lock();
         e.addMessage(fmt::format("{}, current cache state: {}", e.what(), getInfoForLogUnlocked(lk)));
         setDownloadFailedUnlocked(lk);
+
+        /// The writer created the file before any byte was accounted; drop the empty
+        /// orphan (noexcept overload to not mask `e`), same as the ErrnoException path.
+        if (downloaded_size == 0)
+        {
+            std::error_code ec;
+            fs::remove(file_segment_path, ec);
+        }
+
         throw;
     }
     catch (const fs::filesystem_error & e)
     {
         auto lk = lock();
         setDownloadFailedUnlocked(lk);
+
+        if (downloaded_size == 0)
+        {
+            std::error_code ec;
+            fs::remove(file_segment_path, ec);
+        }
+
         throw ErrnoException(e.code().value(),
             "Filesystem error in cache write ({}), current cache state: {}",
             e.what(), getInfoForLogUnlocked(lk));
@@ -528,7 +689,7 @@ void FileSegment::write(char * from, size_t size, size_t offset_in_file)
     chassert(getCurrentWriteOffset() == offset_in_file + size);
 }
 
-FileSegment::State FileSegment::wait(size_t offset)
+FileSegment::State FileSegment::wait(size_t offset, size_t timeout_ms)
 {
     OpenTelemetry::SpanHolder span("FileSegment::wait");
     span.addAttribute("clickhouse.key", key().toString());
@@ -550,11 +711,45 @@ FileSegment::State FileSegment::wait(size_t offset)
         chassert(!getDownloaderUnlocked(lk).empty());
         chassert(!isDownloaderUnlocked(lk));
 
-        [[maybe_unused]] const auto ok = cv.wait_for(lk, std::chrono::seconds(60), [&, this]()
+        std::unique_lock<std::mutex> cv_lk(*lk.mutex(), std::adopt_lock);
+        SCOPE_EXIT({ cv_lk.release(); });
+
+        /// Wait for the download in short slices so that cancellation of the waiting query
+        /// (KILL QUERY, max_execution_time, a dropped/stopped refreshable materialized view, ...)
+        /// is observed promptly. The condition variable is only notified on download progress, so a
+        /// stalled or dead downloader would otherwise pin this thread — and anything blocked on it,
+        /// e.g. RefreshTask::shutdown() -> deactivate() — until the full timeout. throwIfKilled()
+        /// re-raises the query's original cancellation reason rather than a generic one.
+        QueryStatusPtr query_status;
+        if (auto query_context = CurrentThread::tryGetQueryContext())
+            query_status = query_context->getProcessListElementSafe();
+
+        auto downloaded = [&, this]()
         {
             return download_state != State::DOWNLOADING || offset < getCurrentWriteOffset();
-        });
-        /// chassert(ok);
+        };
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeout_ms);
+        while (true)
+        {
+            if (query_status)
+                query_status->throwIfKilled();
+            const auto now = std::chrono::steady_clock::now();
+            if (now >= deadline)
+            {
+                ProfileEvents::increment(ProfileEvents::FileSegmentWaitTimeouts);
+                break;
+            }
+            const auto slice = std::min<std::chrono::steady_clock::duration>(std::chrono::seconds(1), deadline - now);
+            if (cv.wait_for(cv_lk, slice, downloaded))
+                break;
+        }
+
+        /// The downloader released the segment before it downloaded the awaited offset.
+        if (download_state != State::DOWNLOADING && offset >= getCurrentWriteOffset())
+        {
+            ProfileEvents::increment(ProfileEvents::FileSegmentWaitWithoutData);
+            ProfileEvents::increment(ProfileEvents::FileSegmentWaitWithoutDataMicroseconds, watch.elapsed());
+        }
     }
 
     return download_state;
@@ -592,7 +787,8 @@ bool FileSegment::reserve(
     size_t lock_wait_timeout_milliseconds,
     std::string & failure_reason,
     FileCacheReserveStat * reserve_stat,
-    size_t reserve_hint)
+    std::optional<size_t> reserve_hint,
+    FileCacheReserveAhead * reserve_ahead)
 {
     if (!size_to_reserve)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Zero space reservation is not allowed");
@@ -632,29 +828,18 @@ bool FileSegment::reserve(
 
     const size_t minimum_reserve_size = size_to_reserve;
 
-    if (!is_unbound)
+    if (!is_unbound && reserve_ahead)
     {
-        const auto reserve_granularity = cache->getReserveGranularity();
-        if (reserve_granularity && reserve_granularity > size_to_reserve)
+        /// Don't reserve ahead past the segment end or the end of the read.
+        size_t segment_reserve_limit = range().size() - reserved_size;
+        if (reserve_hint)
         {
-            size_to_reserve = reserved_size + reserve_granularity > range().size()
-                ? range().size() - reserved_size
-                : reserve_granularity;
-
-            /// `reserve_hint` is measured from the current download offset, so the read ends at
-            /// `read_horizon` in segment-relative terms. Don't reserve ahead past it.
-            const size_t read_horizon = current_downloaded_size + reserve_hint;
-            if (reserve_hint
-                && read_horizon > reserved_size
-                && read_horizon < reserved_size + size_to_reserve)
-                size_to_reserve = read_horizon - reserved_size;
+            const size_t read_horizon = current_downloaded_size + *reserve_hint;
+            segment_reserve_limit = std::min(segment_reserve_limit, read_horizon > reserved_size ? read_horizon - reserved_size : 0);
         }
-    }
 
-    /// The reserve-ahead caps above (segment range, read horizon) are only an upper bound; they
-    /// must never reserve less than the current write needs, otherwise the write would exceed the
-    /// reservation. A bare assert would not protect release builds, so clamp explicitly.
-    size_to_reserve = std::max(size_to_reserve, minimum_reserve_size);
+        size_to_reserve = reserve_ahead->getReserveSize(size_to_reserve, segment_reserve_limit, cache->getReserveGranularity());
+    }
 
     /// This (resizable file segments) is allowed only for single threaded use of file segment.
     /// Currently it is used only for temporary files through cache.
@@ -666,9 +851,22 @@ bool FileSegment::reserve(
     FileCacheReserveStat dummy_stat;
     if (!reserve_stat)
         reserve_stat = &dummy_stat;
+    reserve_stat->not_enough_space = false;
 
     bool reserved = cache->tryReserve(
         *this, size_to_reserve, *reserve_stat, *getKeyMetadata()->origin, lock_wait_timeout_milliseconds, failure_reason);
+
+    if (!reserved && reserve_ahead)
+        reserve_ahead->reset();
+
+    /// Reserve-ahead is best-effort: retry with the exact size if it did not fit.
+    if (!reserved && size_to_reserve > minimum_reserve_size && reserve_stat->not_enough_space)
+    {
+        ProfileEvents::increment(ProfileEvents::FilesystemCacheReserveAheadRetries);
+        *reserve_stat = FileCacheReserveStat{};
+        reserved = cache->tryReserve(
+            *this, minimum_reserve_size, *reserve_stat, *getKeyMetadata()->origin, lock_wait_timeout_milliseconds, failure_reason);
+    }
 
     if (!reserved)
         setDownloadFailedUnlocked(lock());
@@ -681,16 +879,92 @@ void FileSegment::setDownloadedUnlocked(const FileSegmentGuard::Lock & lock)
     if (download_state == State::DOWNLOADED)
         return;
 
-    download_state = State::DOWNLOADED;
-    download_finished_time = timeInSeconds(std::chrono::system_clock::now());
-
     if (download_data && download_data->cache_writer)
-        download_data->cache_writer->finalize();
+    {
+        try
+        {
+            download_data->cache_writer->finalize();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(getLog(), "Failed to finalize cache writer while marking file segment as downloaded");
+            setDownloadFailedUnlocked(lock);
+            return;
+        }
+    }
 
     resetDownloadDataUnlocked(lock);
 
+    /// The file is now fully written and closed; encode its size into the file name so that
+    /// startup metadata loading can avoid a `stat` per file. This is best-effort: the segment is
+    /// already fully downloaded and valid under its legacy `<offset>` name, so a rename failure must
+    /// not abort completion. `renameToIncludeSizeInNameUnlocked` therefore never throws — on failure
+    /// it keeps the legacy name (the loader falls back to a `stat`). Doing it here, before publishing
+    /// the `DOWNLOADED` state, also keeps `getPath` (which depends on `size_in_filename`) consistent
+    /// with the file's actual on-disk name for the assertions below.
+    renameToIncludeSizeInNameUnlocked(lock);
+
+    download_state = State::DOWNLOADED;
+    download_finished_time = timeInSeconds(std::chrono::system_clock::now());
+
     chassert(downloaded_size > 0);
     chassert(fs::file_size(getPath()) == downloaded_size);
+}
+
+void FileSegment::renameToIncludeSizeInNameUnlocked(const FileSegmentGuard::Lock &)
+{
+    /// Only regular segments encode their size in the name; ephemeral (temporary) segments
+    /// keep the "_temporary" marker and are removed on startup anyway.
+    if (segment_kind != FileSegmentKind::Regular || size_in_filename)
+        return;
+
+    chassert(!download_data);
+
+    auto key_metadata_ptr = getKeyMetadata();
+    /// Current (on-disk) name has no size suffix yet; the new name encodes the final size.
+    const auto old_path = key_metadata_ptr->getFileSegmentPath(offset(), segment_kind, /* size */std::nullopt);
+    const auto new_path = key_metadata_ptr->getFileSegmentPath(offset(), segment_kind, range().size());
+
+    if (old_path == new_path)
+    {
+        size_in_filename = true;
+        return;
+    }
+
+    /// Encoding the size in the name is only a startup optimization, so the rename is best-effort.
+    /// The segment is already fully downloaded and valid under its legacy `<offset>` name; if the
+    /// rename fails we keep that name (`size_in_filename` stays false and the loader falls back to a
+    /// `stat`) and do not propagate the error. Letting it escape would be unsafe: this runs from
+    /// `setDownloadedUnlocked` while the segment is still `DOWNLOADING` (the `DOWNLOADED` state is
+    /// published only after this returns), so a throw would leave the segment owned by the unwinding
+    /// query (no other reader could acquire it to retry), and `FileSegmentsHolder::reset` would hit
+    /// its `chassert(false)` on the way out.
+    /// `rename` is atomic, so a crash leaves either the old (`<offset>`) or the new
+    /// (`<offset>_<size>`) name, both of which the loader handles correctly.
+    try
+    {
+        fs::rename(old_path, new_path);
+        size_in_filename = true;
+
+        /// A reader that opened this segment while it was still named `old_path` left an entry in
+        /// `OpenedFileCache` keyed by `old_path`. When this segment is later removed,
+        /// `removeFileSegmentImpl` invalidates only the current (`new_path`) name, so without this the
+        /// `old_path` entry would survive. A future segment created at the same key and offset is again
+        /// named `old_path` while it downloads, so opening it could reuse the stale descriptor of this —
+        /// by then removed — segment and read its old bytes. Drop the `old_path` entry now; existing
+        /// readers keep their own shared descriptors (the inode is unchanged across the rename), so this
+        /// only prevents future opens from reusing the pre-rename descriptor. Mirror the flag handling in
+        /// `removeFileSegmentImpl`: the file may have been opened with or without `O_DIRECT`.
+        const int flags = getFlagsForLocalRead();
+        OpenedFileCache::instance().remove(old_path, flags);
+        OpenedFileCache::instance().remove(old_path, flags | O_DIRECT);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(
+            getLog(),
+            fmt::format("Failed to rename cache file '{}' to encode its size in the name; keeping the legacy name", old_path));
+    }
 }
 
 void FileSegment::setDownloadFailed()
@@ -703,6 +977,13 @@ void FileSegment::setDownloadFinishedWithoutContinuation()
 {
     auto lk = lock();
     assertIsDownloaderUnlocked("setDownloadFinishedWithoutContinuation", lk);
+    /// This publishes `PARTIALLY_DOWNLOADED_NO_CONTINUATION` and wakes up the waiters, and from that
+    /// moment the segment's remote reader is up for grabs: `extractRemoteFileReader` is gated only on
+    /// the state, not on being the downloader. The caller must withdraw the reader
+    /// (`resetRemoteFileReader`) beforehand, while still owning it exclusively as the downloader;
+    /// otherwise the caller's own references to the reader (e.g. diagnostics on its unwind path)
+    /// would race with the reader's new owner.
+    chassert(!download_data || !download_data->remote_file_reader);
     setDownloadState(State::PARTIALLY_DOWNLOADED_NO_CONTINUATION, lk);
     cv.notify_all();
 }
@@ -725,6 +1006,16 @@ void FileSegment::setDownloadFailedUnlocked(const FileSegmentGuard::Lock & lock)
         }
         download_data->remote_file_reader.reset();
     }
+}
+
+void FileSegment::notifyDownloadProgress()
+{
+    /// Keep the downloader role and the DOWNLOADING state; only wake waiters so a reader
+    /// streaming the committed prefix re-checks `offset < getCurrentWriteOffset()` and proceeds.
+    auto lk = lock();
+    assertNotDetachedUnlocked(lk);
+    assertIsDownloaderUnlocked("notifyDownloadProgress", lk);
+    cv.notify_all();
 }
 
 void FileSegment::completePartAndResetDownloader()
@@ -784,7 +1075,12 @@ void FileSegment::shrinkFileSegmentToDownloadedSize(const LockedKey & locked_key
     chassert(reserved_size >= downloaded_size);
     if (reserved_size > downloaded_size)
     {
-        queue_iterator->decrementSize(reserved_size - downloaded_size);
+        const auto km = tryGetKeyMetadata();
+        const size_t aligned_delta = (km && km->useRealDiskSize())
+            ? km->alignFileSize(reserved_size) - km->alignFileSize(downloaded_size)
+            : reserved_size - downloaded_size;
+        if (aligned_delta)
+            queue_iterator->decrementSize(aligned_delta);
         reserved_size = downloaded_size.load();
     }
 
@@ -797,17 +1093,22 @@ void FileSegment::shrinkFileSegmentToDownloadedSize(const LockedKey & locked_key
     LOG_TEST(getLog(),"Shrinking file segment {} -> {} (downloaded size: {})",
              range().size(), result_size, downloaded_size.load());
 
+    segment_range.right = segment_range.left + result_size - 1;
+
     if (downloaded_size == result_size)
     {
-        setDownloadState(State::DOWNLOADED, lock);
         /// Terminal state: free the download-only state so it is not leaked on an
         /// already-cached segment (and to uphold the `!download_data` invariant).
         resetDownloadDataUnlocked(lock);
+        setDownloadState(State::DOWNLOADED, lock);
     }
     else
         setDownloadState(State::PARTIALLY_DOWNLOADED, lock);
 
-    segment_range.right = segment_range.left + result_size - 1;
+    /// If shrinking finished the download (downloaded size == final segment size), the file
+    /// reached its final size, so encode it into the name (see `setDownloadedUnlocked`).
+    if (download_state == State::DOWNLOADED)
+        renameToIncludeSizeInNameUnlocked(lock);
 }
 
 size_t FileSegment::getSizeForBackgroundDownload() const
@@ -841,12 +1142,16 @@ size_t FileSegment::getSizeForBackgroundDownloadUnlocked(const FileSegmentGuard:
     return desired_size - downloaded_size;
 }
 
-void FileSegment::complete(FileSegmentPtr && file_segment, bool allow_background_download, bool force_shrink_to_downloaded_size)
+void FileSegment::complete(
+    FileSegmentPtr && file_segment,
+    bool allow_background_download,
+    bool force_shrink_to_downloaded_size,
+    const IOSchedulingSettings & holder_io_scheduling)
 {
     if (!file_segment)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "File segment is nullptr");
 
-    if (file_segment->isCompleted())
+    if (file_segment->isCompleted() && !file_segment->is_temporary)
         return;
 
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FileSegmentCompleteMicroseconds);
@@ -865,15 +1170,24 @@ void FileSegment::complete(FileSegmentPtr && file_segment, bool allow_background
         file_segment.reset();
     );
 
-    file_segment->complete(locked_key, allow_background_download, force_shrink_to_downloaded_size);
+    file_segment->complete(locked_key, allow_background_download, force_shrink_to_downloaded_size, holder_io_scheduling);
 }
 
-void FileSegment::complete(const LockedKeyPtr & locked_key, bool allow_background_download, bool force_shrink_to_downloaded_size)
+void FileSegment::complete(
+    const LockedKeyPtr & locked_key,
+    bool allow_background_download,
+    bool force_shrink_to_downloaded_size,
+    const IOSchedulingSettings & holder_io_scheduling)
 {
     auto segment_lock = lock();
 
     if (isCompleted(false))
+    {
+        /// A completed temporary segment also leaves the cache at its last release.
+        if (is_temporary && download_state == State::DOWNLOADED && locked_key->isLastOwnerOfFileSegment(offset()))
+            locked_key->removeFileSegment(offset(), segment_lock);
         return;
+    }
 
     const bool is_downloader = isDownloaderUnlocked(segment_lock);
     const bool is_last_holder = locked_key->isLastOwnerOfFileSegment(offset());
@@ -895,7 +1209,12 @@ void FileSegment::complete(const LockedKeyPtr & locked_key, bool allow_backgroun
         resetDownloaderUnlocked(segment_lock);
     }
 
-    if (segment_kind == FileSegmentKind::Ephemeral && is_last_holder)
+    /// The idle reader must not keep the links of a holder that leaves.
+    if (download_data && download_data->downloader_id.empty() && hasLinks(download_data->reader_io_scheduling)
+        && sameLinks(download_data->reader_io_scheduling, holder_io_scheduling))
+        setReaderIOSchedulingUnlocked(*download_data, {});
+
+    if ((segment_kind == FileSegmentKind::Ephemeral || is_temporary) && is_last_holder)
     {
         LOG_TEST(getLog(),"Removing temporary file segment: {}", getInfoForLogUnlocked(segment_lock));
         locked_key->removeFileSegment(offset(), segment_lock);
@@ -947,7 +1266,14 @@ void FileSegment::complete(const LockedKeyPtr & locked_key, bool allow_backgroun
                     {
                         if (download_data->cache_writer)
                         {
-                            download_data->cache_writer->finalize();
+                            try
+                            {
+                                download_data->cache_writer->finalize();
+                            }
+                            catch (...)
+                            {
+                                tryLogCurrentException(getLog(), "Failed to finalize cache writer on complete");
+                            }
                             download_data->cache_writer.reset();
                         }
                         download_data->remote_file_reader.reset();
@@ -979,7 +1305,14 @@ void FileSegment::complete(const LockedKeyPtr & locked_key, bool allow_backgroun
                     {
                         if (download_data->cache_writer)
                         {
-                            download_data->cache_writer->finalize();
+                            try
+                            {
+                                download_data->cache_writer->finalize();
+                            }
+                            catch (...)
+                            {
+                                tryLogCurrentException(getLog(), "Failed to finalize cache writer on complete");
+                            }
                             download_data->cache_writer.reset();
                         }
                         download_data->remote_file_reader.reset();
@@ -1073,10 +1406,14 @@ bool FileSegment::assertCorrectnessUnlocked(const FileSegmentGuard::Lock & lock)
             entry = it->getEntry();
             entry_size = entry->size;
         }
-        if (download_state != State::DOWNLOADING && entry_size != reserved_size)
+        const auto km = tryGetKeyMetadata();
+        const size_t expected_entry_size = (km && km->useRealDiskSize())
+            ? km->alignFileSize(reserved_size)
+            : reserved_size.load();
+        if (download_state != State::DOWNLOADING && entry_size != expected_entry_size)
             throw_logical(
                 fmt::format("Expected entry.size == reserved_size ({} == {}, entry: {})",
-                            entry_size, reserved_size.load(), entry->toString()));
+                            entry_size, expected_entry_size, entry->toString()));
 
         chassert(entry->key == key());
         chassert(entry->offset == offset());
@@ -1122,10 +1459,20 @@ bool FileSegment::assertCorrectnessUnlocked(const FileSegmentGuard::Lock & lock)
             chassert(downloaded_size == range().size());
             chassert(downloaded_size > 0);
 
-            auto file_size = fs::file_size(getPath());
-            UNUSED(file_size);
+            /// When the size was read from the file name (`<offset>_<size>`), we deliberately trust it
+            /// without a `stat` — that is the whole point of the optimization (see `loadMetadataForKey`).
+            /// An externally truncated or corrupted `<offset>_<size>` file is handled lazily on read:
+            /// `getCacheReadBuffer` compares the on-disk size against the recorded one and discards the
+            /// broken entry (re-fetching from the source). Asserting the on-disk size here would both
+            /// re-introduce the `stat` and turn that discardable inconsistency into a startup abort in
+            /// debug/sanitizer builds (`FileCache::assertCacheCorrectness` runs right after metadata load).
+            if (!size_in_filename)
+            {
+                auto file_size = fs::file_size(getPath());
+                UNUSED(file_size);
 
-            chassert(file_size == range().size());
+                chassert(file_size == range().size());
+            }
             chassert(downloaded_size == range().size());
 
             chassert(queue_iterator || on_delayed_removal);
@@ -1218,6 +1565,10 @@ FileSegment::Info FileSegment::getInfo(const FileSegmentPtr & file_segment)
 
 bool FileSegment::isDetached() const
 {
+    /// Keep the lock: `complete` uses `isDetached` to confirm a benign concurrent detach when
+    /// `lockKeyMetadata` fails. `setDetachedState` sets DETACHED and resets `key_metadata` under
+    /// the segment lock, so only taking the lock here guarantees we observe DETACHED once the key
+    /// metadata is gone - a bare atomic load could race and turn the detach into a `LOGICAL_ERROR`.
     auto lk = lock();
     return download_state == State::DETACHED;
 }
@@ -1248,6 +1599,8 @@ void FileSegment::setDetachedState(const FileSegmentGuard::Lock & lock)
     queue_iterator = nullptr;
     if (download_data && download_data->cache_writer)
         download_data->cache_writer->cancel();
+    if (download_data)
+        setReaderIOSchedulingUnlocked(*download_data, {});
     resetDownloadDataUnlocked(lock);
 }
 
@@ -1263,6 +1616,8 @@ void FileSegment::detach(const FileSegmentGuard::Lock & lock, const LockedKey &)
 
 void FileSegment::increasePriority()
 {
+    is_temporary.store(false, std::memory_order_relaxed);
+
     if (!cache)
     {
         chassert(isDetached());
@@ -1282,7 +1637,12 @@ void FileSegment::increasePriority()
         auto it = getQueueIterator();
         if (it)
         {
-            if (!cache->tryIncreasePriority(*this))
+            /// A move between priority queues must not run concurrently with a space reservation for
+            /// this segment. A completed segment never reserves again. A partially downloaded one is
+            /// safe while we hold its downloader role, because only the downloader reserves.
+            const auto downloader_guard = tryTakeDownloaderOfPartiallyDownloaded();
+
+            if (!cache->tryIncreasePriority(*it, downloader_guard || isCompleted()))
                 ProfileEvents::increment(ProfileEvents::FileSegmentFailToIncreasePriority);
 
             /// Used only for system.filesystem_cache.
@@ -1353,6 +1713,19 @@ void FileSegmentsHolder::reset()
     file_segments.clear();
 }
 
+FileSegmentsHolderSharedPtr FileSegmentsHolder::popHolder()
+{
+    chassert(!file_segments.empty());
+    /// Move the first segment into its own holder WITHOUT touching the hold gauge: this holder
+    /// already counts it, so the splice just transfers ownership. The new holder completes the
+    /// segment (and decrements the gauge) on destruction.
+    auto result = std::make_shared<FileSegmentsHolder>();
+    result->io_scheduling = io_scheduling;
+    result->file_segments.splice(result->file_segments.begin(), file_segments, file_segments.begin());
+    chassert(result->file_segments.size() == 1);
+    return result;
+}
+
 FileSegmentsHolder::~FileSegmentsHolder()
 {
     reset();
@@ -1361,7 +1734,7 @@ FileSegmentsHolder::~FileSegmentsHolder()
 FileSegments::iterator FileSegmentsHolder::completeAndPopFrontImpl(bool allow_background_download, bool force_shrink_to_downloaded_size)
 {
     auto file_segment_it = file_segments.begin();
-    FileSegment::complete(std::move(*file_segment_it), allow_background_download, force_shrink_to_downloaded_size);
+    FileSegment::complete(std::move(*file_segment_it), allow_background_download, force_shrink_to_downloaded_size, io_scheduling);
     CurrentMetrics::sub(CurrentMetrics::FilesystemCacheHoldFileSegments);
     return file_segments.erase(file_segment_it);
 }

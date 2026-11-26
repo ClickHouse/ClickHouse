@@ -1,5 +1,5 @@
 SET explain_query_plan_default = 'legacy';
-SET enable_analyzer = 1;
+SET query_plan_optimize_join_order_randomize = 0; -- Pinned because the test asserts on join plan/order
 SET enable_materialized_cte = 1;
 
 SET enable_parallel_replicas = 1, parallel_replicas_for_non_replicated_merge_tree = 1, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost', max_parallel_replicas = 3;
@@ -11,9 +11,12 @@ MergeTree ORDER BY uid;
 INSERT INTO users_04041 VALUES (1231, 'John', 33), (6666, 'Ksenia', 48),
 (8888, 'Alice', 50);
 
+-- Pinned to the query-based implementation: this asserts the exact plan text, which
+-- `parallel_replicas_plan_based` shapes differently. The queries below, which check that the
+-- materialized CTE is read correctly, run on the default implementation.
 EXPLAIN WITH a AS MATERIALIZED (SELECT * FROM users_04041)
 SELECT count() FROM a as l JOIN a as r ON l.uid = r.uid
-SETTINGS enable_join_runtime_filters = 1;
+SETTINGS enable_join_runtime_filters = 1, join_runtime_filter_min_probe_rows = 0, parallel_replicas_plan_based = 0;
 
 -- Materialized CTE referenced twice (prevents inlining).
 -- CTE subquery reads from MergeTree table → parallel replicas kicks in.

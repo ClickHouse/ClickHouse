@@ -42,7 +42,7 @@ public:
     {
         if (scheduler.joinable())
         {
-            stop_flag.store(true);
+            stop_flag.store(true, std::memory_order_relaxed);
             events.enqueue([]{}); // just to wake up thread
             scheduler.join();
             if (graceful)
@@ -64,12 +64,6 @@ public:
     }
 
     std::string_view getTypeName() const override { return "scheduler"; }
-
-    bool equals(ISchedulerNode *) override
-    {
-        chassert(false);
-        return false;
-    }
 
     void attachChild(const std::shared_ptr<ISchedulerNode> & child_) override
     {
@@ -136,6 +130,13 @@ public:
         return nullptr;
     }
 
+    ResourceAllocation * selectAllocationToSpill(ResourceCost, String &) override
+    {
+        // Spill selection is initiated by `AllocationLimit`, never at the root.
+        chassert(false);
+        return nullptr;
+    }
+
     void updateMinMaxAllocated(ResourceCost new_value) override
     {
         min_max_allocated = new_value;
@@ -148,7 +149,7 @@ private:
     {
         setThreadName(name);
         EventQueue::SchedulerThread scheduler_thread(&events);
-        while (!stop_flag.load())
+        while (!stop_flag.load(std::memory_order_relaxed))
         {
             if (events.tryProcess()) // Priority 0: process events
                 continue;

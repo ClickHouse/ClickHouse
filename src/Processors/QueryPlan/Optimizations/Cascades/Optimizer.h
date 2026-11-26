@@ -1,0 +1,82 @@
+#pragma once
+
+#include <Processors/QueryPlan/Optimizations/Cascades/Cost.h>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Processors/QueryPlan/Optimizations/Cascades/Group.h>
+#include <Processors/QueryPlan/Optimizations/Cascades/Memo.h>
+#include <Processors/QueryPlan/Optimizations/Cascades/Properties.h>
+#include <Processors/QueryPlan/Optimizations/Cascades/StatisticsDerivation.h>
+#include <Processors/QueryPlan/Optimizations/Cascades/Task.h>
+#include <Processors/QueryPlan/QueryPlan.h>
+#include <Common/Logger.h>
+#include <stack>
+#include <utility>
+#include <Common/StackWithMemoryTracking.h>
+
+namespace DB
+{
+
+struct QueryPlanOptimizationSettings;
+
+class CascadesOptimizer
+{
+public:
+    CascadesOptimizer(QueryPlan & query_plan_, const QueryPlanOptimizationSettings & optimization_settings_);
+
+    /// Runs the search and replaces the plan with the best alternative. Single use: the memo,
+    /// the task stack and the best-plan state belong to this run, so a second call throws.
+    void optimize();
+
+    std::pair<GroupId, ExpressionProperties> addGroup(QueryPlan::Node & node);
+    void pushTask(OptimizationTaskPtr task);
+    GroupPtr getGroup(GroupId group_id);
+
+    void deriveStatistics(GroupId group_id);
+
+    /// Costs the expression (local operator cost plus inputs' best subtree costs), stores the cost
+    /// on it and offers it to the group as a best-implementation candidate. Statistics must be
+    /// derived first. An expression with an input that has no implementation gets no cost.
+    void costAndUpdateBest(GroupExpressionPtr expression);
+
+    /// Fast-path costing: if all inputs already have best implementations,
+    /// compute the expression's cost directly and update the group's best plan.
+    /// Returns true if the expression was handled (all inputs ready), false otherwise.
+    bool tryUpdateBestPlanDirectly(GroupExpressionPtr expression);
+
+    /// Cost the expression now when every input already has a best implementation (avoids the
+    /// whole `OptimizeInputsTask` chain), otherwise schedule input optimization.
+    void scheduleCosting(GroupExpressionPtr expression);
+
+    LoggerPtr log = getLogger("CascadesOptimizer");
+
+    [[nodiscard]] const VectorWithMemoryTracking<OptimizationRulePtr> & getTransformationRules() const { return transformation_rules; }
+    [[nodiscard]] const VectorWithMemoryTracking<OptimizationRulePtr> & getImplementationRules() const { return implementation_rules; }
+    [[nodiscard]] const VectorWithMemoryTracking<OptimizationRulePtr> & getEnforcerRules() const { return enforcer_rules; }
+
+    Memo & getMemo() { return memo; }
+    [[nodiscard]] const Memo & getMemo() const { return memo; }
+
+private:
+    void addRule(OptimizationRulePtr rule);
+    void addEnforcerRule(OptimizationRulePtr rule);
+
+    QueryPlanPtr buildBestPlan(GroupId subtree_root_group_id, ExpressionProperties required_properties);
+
+    QueryPlan & query_plan;
+    const QueryPlanOptimizationSettings & optimization_settings;
+    bool optimize_was_called = false;
+
+    VectorWithMemoryTracking<OptimizationRulePtr> transformation_rules;
+    VectorWithMemoryTracking<OptimizationRulePtr> implementation_rules;
+    VectorWithMemoryTracking<OptimizationRulePtr> enforcer_rules;
+
+    /// The table statistics that the derivation reads. Owned here because
+    /// `statistics_derivation` keeps a reference to it.
+    OptimizerStatisticsPtr statistics;
+    Memo memo{log};
+    StackWithMemoryTracking<OptimizationTaskPtr> tasks;
+    CostEstimator cost_estimator;
+    StatisticsDerivation statistics_derivation;
+};
+
+}

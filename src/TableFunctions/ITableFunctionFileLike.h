@@ -89,6 +89,10 @@ protected:
     virtual void parseFirstArguments(const ASTPtr & arg, const ContextPtr & context);
     virtual std::optional<String> tryGetFormatFromFirstArgument();
 
+    /// Protected (rather than private) so that wrappers like TableFunctionURL can fall back to the
+    /// default file-like behavior when they do not dispatch to another engine.
+    StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns, bool is_insert_query) const override;
+
     String filename;
     String format = "auto";
     String structure = "auto";
@@ -96,11 +100,11 @@ protected:
     ColumnsDescription structure_hint;
 
 private:
-    StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns, bool is_insert_query) const override;
-
+    /// `is_table_definition` is set for `CREATE TABLE ... AS f(...)`: the table is read under the grants on the
+    /// table instead of the grants on the source, which only an ad-hoc call of the function is checked against.
     virtual StoragePtr getStorage(
         const String & source, const String & format, const ColumnsDescription & columns, ContextPtr global_context,
-        const std::string & table_name, const String & compression_method, bool is_insert_query) const = 0;
+        const std::string & table_name, const String & compression_method, bool is_insert_query, bool is_table_definition) const = 0;
 
     bool hasStaticStructure() const override { return structure != "auto"; }
 };

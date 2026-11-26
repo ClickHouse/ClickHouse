@@ -461,8 +461,19 @@ void HashedArrayDictionary<dictionary_key_type, sharded>::createAttributes()
             using ValueType = DictionaryValueType<AttributeType>;
 
             auto is_index_null = dictionary_attribute.is_nullable ? std::make_optional<VectorWithMemoryTracking<typename Attribute::RowsMask>>(configuration.shards) : std::nullopt;
+
+            AttributeContainerShardsType<ValueType> containers;
+            if constexpr (is_column_attribute_value<ValueType>)
+            {
+                containers.reserve(configuration.shards);
+                for (size_t shard = 0; shard < configuration.shards; ++shard)
+                    containers.emplace_back(dictionary_attribute);
+            }
+            else
+                containers.resize(configuration.shards);
+
             Attribute attribute{
-                .containers = AttributeContainerShardsType<ValueType>(configuration.shards),
+                .containers = std::move(containers),
                 .is_index_null = std::move(is_index_null),
                 .type = dictionary_attribute.underlying_type};
             attributes.emplace_back(std::move(attribute));
@@ -582,29 +593,26 @@ void HashedArrayDictionary<dictionary_key_type, sharded>::blockToAttributes(cons
                 using AttributeValueType = DictionaryValueType<AttributeType>;
 
                 auto & attribute_container = std::get<AttributeContainerShardsType<AttributeValueType>>(attribute.containers)[shard];
-                attribute_container.emplace_back();
 
+                bool value_is_null = column_value_to_insert.isNull();
                 if (attribute_is_nullable)
-                {
-                    (*attribute.is_index_null)[shard].emplace_back();
+                    (*attribute.is_index_null)[shard].emplace_back(value_is_null);
 
-                    if (column_value_to_insert.isNull())
-                    {
-                        (*attribute.is_index_null)[shard].back() = true;
-                        return;
-                    }
-                }
-
-                if constexpr (std::is_same_v<AttributeValueType, std::string_view>)
+                if constexpr (is_column_attribute_value<AttributeValueType>)
                 {
-                    String & value_to_insert = column_value_to_insert.safeGet<String>();
-                    std::string_view string_in_arena_reference = copyStringInArena(*string_arenas[shard], value_to_insert);
-                    attribute_container.back() = string_in_arena_reference;
+                    attribute_container.insert(column_value_to_insert);
                 }
                 else
                 {
-                    auto value_to_insert = static_cast<AttributeValueType>(column_value_to_insert.safeGet<AttributeValueType>());
-                    attribute_container.back() = value_to_insert;
+                    attribute_container.emplace_back();
+
+                    if (value_is_null)
+                        return;
+
+                    if constexpr (std::is_same_v<AttributeValueType, std::string_view>)
+                        attribute_container.back() = copyStringInArena(*string_arenas[shard], column_value_to_insert.safeGet<String>());
+                    else
+                        attribute_container.back() = static_cast<AttributeValueType>(column_value_to_insert.safeGet<AttributeValueType>());
                 }
             };
 
@@ -668,21 +676,7 @@ ColumnPtr HashedArrayDictionary<dictionary_key_type, sharded>::getAttributeColum
         {
             IColumn::Filter & default_mask = std::get<RefFilter>(default_or_filter).get();
 
-            if constexpr (std::is_same_v<ValueType, Array>)
-            {
-                auto * out = column.get();
-
-                getItemsShortCircuitImpl<ValueType, false>(
-                    attribute, keys_object, [&](const size_t, const Array & value, bool) { out->insert(value); }, default_mask);
-            }
-            else if constexpr (std::is_same_v<ValueType, Map>)
-            {
-                auto * out = column.get();
-
-                getItemsShortCircuitImpl<ValueType, false>(
-                    attribute, keys_object, [&](const size_t, const Map & value, bool) { out->insert(value); }, default_mask);
-            }
-            else if constexpr (std::is_same_v<ValueType, Object>)
+            if constexpr (is_column_attribute_value<ValueType>)
             {
                 auto * out = column.get();
 
@@ -690,15 +684,15 @@ ColumnPtr HashedArrayDictionary<dictionary_key_type, sharded>::getAttributeColum
                     getItemsShortCircuitImpl<ValueType, true>(
                         attribute,
                         keys_object,
-                        [&](size_t row, const Object & value, bool is_null)
+                        [&](size_t row, const ColumnAttributeValue<ValueType> & value, bool is_null)
                         {
                             (*vec_null_map_to)[row] = is_null;
-                            out->insert(value);
+                            value.insertInto(*out);
                         },
                         default_mask);
                 else
                     getItemsShortCircuitImpl<ValueType, false>(
-                        attribute, keys_object, [&](const size_t, const Object & value, bool) { out->insert(value); }, default_mask);
+                        attribute, keys_object, [&](const size_t, const ColumnAttributeValue<ValueType> & value, bool) { value.insertInto(*out); }, default_mask);
             }
             else if constexpr (std::is_same_v<ValueType, std::string_view>)
             {
@@ -747,27 +741,7 @@ ColumnPtr HashedArrayDictionary<dictionary_key_type, sharded>::getAttributeColum
             DictionaryDefaultValueExtractor<AttributeType> default_value_extractor(
                 dictionary_attribute.null_value, default_values_column);
 
-            if constexpr (std::is_same_v<ValueType, Array>)
-            {
-                auto * out = column.get();
-
-                getItemsImpl<ValueType, false>(
-                    attribute,
-                    keys_object,
-                    [&](const size_t, const Array & value, bool) { out->insert(value); },
-                    default_value_extractor);
-            }
-            else if constexpr (std::is_same_v<ValueType, Map>)
-            {
-                auto * out = column.get();
-
-                getItemsImpl<ValueType, false>(
-                    attribute,
-                    keys_object,
-                    [&](const size_t, const Map & value, bool) { out->insert(value); },
-                    default_value_extractor);
-            }
-            else if constexpr (std::is_same_v<ValueType, Object>)
+            if constexpr (is_column_attribute_value<ValueType>)
             {
                 auto * out = column.get();
 
@@ -775,17 +749,17 @@ ColumnPtr HashedArrayDictionary<dictionary_key_type, sharded>::getAttributeColum
                     getItemsImpl<ValueType, true>(
                         attribute,
                         keys_object,
-                        [&](size_t row, const Object & value, bool is_null)
+                        [&](size_t row, const ColumnAttributeValue<ValueType> & value, bool is_null)
                         {
                             (*vec_null_map_to)[row] = is_null;
-                            out->insert(value);
+                            value.insertInto(*out);
                         },
                         default_value_extractor);
                 else
                     getItemsImpl<ValueType, false>(
                         attribute,
                         keys_object,
-                        [&](const size_t, const Object & value, bool) { out->insert(value); },
+                        [&](const size_t, const ColumnAttributeValue<ValueType> & value, bool) { value.insertInto(*out); },
                         default_value_extractor);
             }
             else if constexpr (std::is_same_v<ValueType, std::string_view>)
@@ -851,7 +825,9 @@ void HashedArrayDictionary<dictionary_key_type, sharded>::getItemsImpl(
     ValueSetter && set_value,
     DefaultValueExtractor & default_value_extractor) const
 {
-    const auto & attribute_containers = std::get<AttributeContainerShardsType<AttributeType>>(attribute.containers);
+    /// `getShard` returns an index below the number of shards, which is the size of both vectors.
+    const auto * attribute_containers = std::get<AttributeContainerShardsType<AttributeType>>(attribute.containers).data();
+    const auto * key_attribute_containers = key_attribute.containers.data();
     const size_t keys_size = keys_extractor.getKeysSize();
 
     size_t keys_found = 0;
@@ -860,7 +836,7 @@ void HashedArrayDictionary<dictionary_key_type, sharded>::getItemsImpl(
     {
         auto key = keys_extractor.extractCurrentKey();
         auto shard = getShard(key);
-        const auto & key_attribute_container = key_attribute.containers[shard];
+        const auto & key_attribute_container = key_attribute_containers[shard];
         const auto & attribute_container = attribute_containers[shard];
 
         const auto it = key_attribute_container.find(key);
@@ -901,7 +877,9 @@ void HashedArrayDictionary<dictionary_key_type, sharded>::getItemsShortCircuitIm
     ValueSetter && set_value,
     IColumn::Filter & default_mask) const
 {
-    const auto & attribute_containers = std::get<AttributeContainerShardsType<AttributeType>>(attribute.containers);
+    /// `getShard` returns an index below the number of shards, which is the size of both vectors.
+    const auto * attribute_containers = std::get<AttributeContainerShardsType<AttributeType>>(attribute.containers).data();
+    const auto * key_attribute_containers = key_attribute.containers.data();
     const size_t keys_size = keys_extractor.getKeysSize();
     default_mask.resize(keys_size);
     size_t keys_found = 0;
@@ -910,7 +888,7 @@ void HashedArrayDictionary<dictionary_key_type, sharded>::getItemsShortCircuitIm
     {
         auto key = keys_extractor.extractCurrentKey();
         auto shard = getShard(key);
-        const auto & key_attribute_container = key_attribute.containers[shard];
+        const auto & key_attribute_container = key_attribute_containers[shard];
         const auto & attribute_container = attribute_containers[shard];
 
         const auto it = key_attribute_container.find(key);
@@ -1068,7 +1046,7 @@ void HashedArrayDictionary<dictionary_key_type, sharded>::loadData()
                     break;
 
                 ++total_blocks;
-                total_rows += block.rows();
+                total_rows += block.rows(); // NOLINT(clang-analyzer-cplusplus.Move)
 
                 Stopwatch watch_process;
                 resize(total_rows);
@@ -1127,7 +1105,7 @@ void HashedArrayDictionary<dictionary_key_type, sharded>::calculateBytesAllocate
     bytes_allocated += attributes.size() * sizeof(attributes.front());
 
     for (const auto & container : key_attribute.containers)
-        bytes_allocated += container.size();
+        bytes_allocated += container.getBufferSizeInBytes();
 
     for (auto & attribute : attributes)
     {
@@ -1141,25 +1119,10 @@ void HashedArrayDictionary<dictionary_key_type, sharded>::calculateBytesAllocate
             {
                 bytes_allocated += sizeof(AttributeContainerType<ValueType>);
 
-                if constexpr (std::is_same_v<ValueType, Array>)
-                {
-                    /// It is not accurate calculations
-                    bytes_allocated += sizeof(Array) * container.size();
-                }
-                else if constexpr (std::is_same_v<ValueType, Map>)
-                {
-                    /// It is not accurate calculations
-                    bytes_allocated += sizeof(Map) * container.size();
-                }
-                else if constexpr (std::is_same_v<ValueType, Object>)
-                {
-                    /// It is not accurate calculations
-                    bytes_allocated += sizeof(Object) * container.size();
-                }
+                if constexpr (is_column_attribute_value<ValueType>)
+                    bytes_allocated += container.allocatedBytes();
                 else
-                {
                     bytes_allocated += container.allocated_bytes();
-                }
 
                 bucket_count += container.capacity();
             }
@@ -1169,7 +1132,9 @@ void HashedArrayDictionary<dictionary_key_type, sharded>::calculateBytesAllocate
 
         if (attribute.is_index_null.has_value())
             for (const auto & container : attribute.is_index_null.value())
-                bytes_allocated += container.size();
+                /// `RowsMask` is `std::vector<bool>`, which packs elements into bits, so `capacity()`
+                /// is a number of flags rather than a number of bytes.
+                bytes_allocated += (container.capacity() + 7) / 8;
     }
 
     /// `bucket_count` should be a sum over all shards,
@@ -1208,13 +1173,11 @@ Pipe HashedArrayDictionary<dictionary_key_type, sharded>::read(const Names & col
         auto keys_column = getColumnFromPODArray(std::move(keys));
         key_columns = {ColumnWithTypeAndName(std::move(keys_column), std::make_shared<DataTypeUInt64>(), dict_struct.id->name)};
     }
-    else
-    {
-        key_columns = deserializeColumnsWithTypeAndNameFromKeys(dict_struct, keys, 0, keys.size());
-    }
 
     std::shared_ptr<const IDictionary> dictionary = shared_from_this();
     auto coordinator = std::make_shared<DictionarySourceCoordinator>(dictionary, column_names, std::move(key_columns), max_block_size);
+    if constexpr (dictionary_key_type == DictionaryKeyType::Complex)
+        coordinator->setSerializedKeys(std::move(keys));
     auto result = coordinator->read(num_streams);
 
     return result;
@@ -1295,7 +1258,66 @@ void registerDictionaryArrayHashed(DictionaryFactory & factory)
         {
             return create_layout(a, b, c, d, global_context, std::move(e), DictionaryKeyType::Simple);
         }, false, true, Documentation{
-        .description = "Stores the dictionary in memory using hashed arrays. This is more memory-efficient than `hashed` for dictionaries that have many attributes.",
+        .description = R"DOCS_MD(
+# hashed_array dictionary layout types
+
+## hashed_array {#hashed_array}
+
+The dictionary is completely stored in memory. Each attribute is stored in an array. The key attribute is stored in the form of a hashed table where value is an index in the attributes array. The dictionary can contain any number of elements with any identifiers. In practice, the number of keys can reach tens of millions of items.
+
+The dictionary key has the [UInt64](/reference/data-types/int-uint) type.
+
+All types of sources are supported. When updating, data (from a file or from a table) is read in its entirety.
+
+Configuration example:
+
+<Tabs>
+<Tab title="DDL">
+
+```sql
+LAYOUT(HASHED_ARRAY([SHARDS 1]))
+```
+
+</Tab>
+<Tab title="Configuration file">
+
+```xml
+<layout>
+  <hashed_array>
+  </hashed_array>
+</layout>
+```
+
+</Tab>
+</Tabs>
+<br/>
+
+## complex_key_hashed_array {#complex_key_hashed_array}
+
+This type of storage is for use with composite [keys](/reference/statements/create/dictionary/attributes#composite-key). Similar to [hashed_array](#hashed_array).
+
+Configuration example:
+
+<Tabs>
+<Tab title="DDL">
+
+```sql
+LAYOUT(COMPLEX_KEY_HASHED_ARRAY([SHARDS 1]))
+```
+
+</Tab>
+<Tab title="Configuration file">
+
+```xml
+<layout>
+  <complex_key_hashed_array />
+</layout>
+```
+
+</Tab>
+</Tabs>
+<br/>
+)DOCS_MD",
         .syntax = "LAYOUT(HASHED_ARRAY())",
         .related = {"hashed"}});
     factory.registerLayout("complex_key_hashed_array",

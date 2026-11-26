@@ -13,12 +13,17 @@
 #include <sys/resource.h>
 #include <sys/types.h>
 #include <sys/wait.h>
-#include <dlfcn.h>
 #include <unistd.h>
 
+#if defined(OS_DARWIN)
+#    include <dlfcn.h>
+#endif
+
+#include <algorithm>
 #include <csignal>
 #include <limits>
 
+#include <base/sleep.h>
 #include <Common/logger_useful.h>
 #include <base/errnoToString.h>
 #include <Common/Exception.h>
@@ -29,6 +34,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 #include <Common/waitForPid.h>
+#include <Common/Stopwatch.h>
 
 
 namespace
@@ -55,19 +61,18 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int CANNOT_DLSYM;
     extern const int CANNOT_FORK;
+    extern const int CANNOT_DLSYM;
     extern const int CANNOT_WAITPID;
     extern const int CHILD_WAS_NOT_EXITED_NORMALLY;
     extern const int CANNOT_CREATE_CHILD_PROCESS;
     extern const int BAD_ARGUMENTS;
 }
 
-ShellCommand::ShellCommand(pid_t pid_, int & in_fd_, int & out_fd_, int & err_fd_, const ShellCommand::Config & config_)
+ShellCommand::ShellCommand(int & in_fd_, int & out_fd_, int & err_fd_, const ShellCommand::Config & config_)
     : in(in_fd_)
     , out(out_fd_)
     , err(err_fd_)
-    , pid(pid_)
     , config(config_)
 {
 }
@@ -77,8 +82,28 @@ LoggerPtr ShellCommand::getLogger()
     return ::getLogger("ShellCommand");
 }
 
+UInt64 ShellCommand::remainingTerminationTimeoutMs()
+{
+    const UInt64 now_ns = clock_gettime_ns();
+
+    /// Arm the shared deadline once, on the first waiter (cleanup, or the destructor when
+    /// cleanup never ran). Every later waiter subtracts the time already spent so both the
+    /// cleanup poll and the destructor wait draw from one `command_termination_timeout`.
+    if (termination_deadline_ns == 0)
+        termination_deadline_ns
+            = now_ns + config.terminate_in_destructor_strategy.wait_for_normal_exit_before_termination_seconds * 1000000000ULL;
+
+    if (now_ns >= termination_deadline_ns)
+        return 0;
+
+    return (termination_deadline_ns - now_ns) / 1000000ULL;
+}
+
 ShellCommand::~ShellCommand()
 {
+    if (pid == -1)
+        return;
+
     if (do_not_terminate)
         return;
 
@@ -87,7 +112,12 @@ ShellCommand::~ShellCommand()
 
     if (config.terminate_in_destructor_strategy.terminate_in_destructor)
     {
-        size_t try_wait_timeout = config.terminate_in_destructor_strategy.wait_for_normal_exit_before_termination_seconds;
+        /// Draw from the shared deadline: the cleanup-side wait may have already spent
+        /// most of `command_termination_timeout`, so this wait gets only what remains and
+        /// the configured grace period is honored once, not doubled. `waitForPid` is
+        /// second-granular, so round the remainder up to keep at least one poll when any
+        /// budget is left.
+        size_t try_wait_timeout = (remainingTerminationTimeoutMs() + 999) / 1000;
         bool process_terminated_normally = tryWaitProcessWithTimeout(try_wait_timeout);
 
         if (process_terminated_normally)
@@ -158,21 +188,6 @@ std::unique_ptr<ShellCommand> ShellCommand::executeImpl(
     logCommand(filename, argv);
     ProfileEvents::increment(ProfileEvents::ExecuteShellCommand);
 
-#if !defined(USE_MUSL)
-    /** Here it is written that with a normal call `vfork`, there is a chance of deadlock in multithreaded programs,
-      *  because of the resolving of symbols in the shared library
-      * http://www.oracle.com/technetwork/server-storage/solaris10/subprocess-136439.html
-      * Therefore, separate the resolving of the symbol from the call.
-      */
-    static void * real_vfork = dlsym(RTLD_DEFAULT, "vfork");
-#else
-    /// If we use Musl with static linking, there is no dlsym and no issue with vfork.
-    static void * real_vfork = reinterpret_cast<void *>(&vfork);
-#endif
-
-    if (!real_vfork)
-        throw ErrnoException(ErrorCodes::CANNOT_DLSYM, "Cannot find symbol vfork in myself");
-
     PipeFDs pipe_stdin;
     PipeFDs pipe_stdout;
     PipeFDs pipe_stderr;
@@ -215,11 +230,42 @@ std::unique_ptr<ShellCommand> ShellCommand::executeImpl(
             fds->tryIncreaseSize(pipe_capacity);
     }
 
-    pid_t pid = reinterpret_cast<pid_t(*)()>(real_vfork)();
+    std::unique_ptr<ShellCommand> res(new ShellCommand(
+        pipe_stdin.fds_rw[1],
+        pipe_stdout.fds_rw[0],
+        pipe_stderr.fds_rw[0],
+        config));
+
+    for (size_t i = 0; i < config.read_fds.size(); ++i)
+    {
+        auto & fds = *read_pipe_fds[i];
+        auto fd = config.read_fds[i];
+        res->read_fds.emplace(fd, fds.fds_rw[0]);
+    }
+
+    for (size_t i = 0; i < config.write_fds.size(); ++i)
+    {
+        auto & fds = *write_pipe_fds[i];
+        auto fd = config.write_fds[i];
+        res->write_fds.emplace(fd, fds.fds_rw[1]);
+    }
+
+#if defined(OS_DARWIN)
+    /// x86_64 macOS binds library symbols lazily (there is no `-z now` there), and binding `vfork` in the call itself
+    /// can deadlock in a multithreaded program. So resolve it before the call. Elsewhere everything is bound at startup.
+    static void * real_vfork = dlsym(RTLD_DEFAULT, "vfork");
+    if (!real_vfork)
+        throw ErrnoException(ErrorCodes::CANNOT_DLSYM, "Cannot find symbol vfork in myself");
+    pid_t pid = reinterpret_cast<pid_t (*)()>(real_vfork)();
+#else
+    pid_t pid = vfork(); // NOLINT(bugprone-unsafe-functions,cert-msc24-c,cert-msc33-c,clang-analyzer-security.insecureAPI.vfork)
+#endif
 
     if (pid == -1)
         throw ErrnoException(ErrorCodes::CANNOT_FORK, "Cannot vfork");
 
+    /// The child only calls async-signal-safe functions before `exec`.
+    // NOLINTBEGIN(clang-analyzer-unix.Vfork)
     if (0 == pid)
     {
         /// We are in the freshly created process.
@@ -270,30 +316,12 @@ std::unique_ptr<ShellCommand> ShellCommand::executeImpl(
 
         _exit(static_cast<int>(ReturnCodes::CANNOT_EXEC));
     }
+    // NOLINTEND(clang-analyzer-unix.Vfork)
 
-    std::unique_ptr<ShellCommand> res(new ShellCommand(
-        pid,
-        pipe_stdin.fds_rw[1],
-        pipe_stdout.fds_rw[0],
-        pipe_stderr.fds_rw[0],
-        config));
+    res->pid = pid;
 
     if (config.register_in_udf_process_registry)
         res->udf_registry_generation = UDFProcessRegistry::instance().add(pid);
-
-    for (size_t i = 0; i < config.read_fds.size(); ++i)
-    {
-        auto & fds = *read_pipe_fds[i];
-        auto fd = config.read_fds[i];
-        res->read_fds.emplace(fd, fds.fds_rw[0]);
-    }
-
-    for (size_t i = 0; i < config.write_fds.size(); ++i)
-    {
-        auto & fds = *write_pipe_fds[i];
-        auto fd = config.write_fds[i];
-        res->write_fds.emplace(fd, fds.fds_rw[1]);
-    }
 
     LOG_TRACE(
         getLogger(),
@@ -478,9 +506,29 @@ bool ShellCommand::waitIfProccesTerminated()
 }
 
 
-bool ShellCommand::tryReapWithoutStatusCheck()
+bool ShellCommand::tryWaitWithoutStatusCheck()
 {
-    return tryWaitImpl(/*blocking=*/false, /*check_exit_status=*/false).is_process_terminated;
+    /// A child that closed stdout but has only just called `_exit` is not yet a
+    /// zombie, so a single `wait4(WNOHANG)` can miss it and lose its `rusage`. Poll
+    /// until the shared termination deadline (`remainingTerminationTimeoutMs`), collecting the
+    /// child's usage here via `wait4` instead of leaving it to the destructor's
+    /// `waitForPid`, which collects none. The deadline is shared with the destructor,
+    /// so a child that lingers past it is not double-charged: the destructor's own wait
+    /// gets only the time remaining. A configured timeout of 0 means a single
+    /// non-blocking attempt, so this never stalls a query beyond the configuration.
+    static constexpr UInt64 poll_step_ms = 5;
+
+    while (true)
+    {
+        if (tryWaitImpl(/*blocking=*/false, /*check_exit_status=*/false).is_process_terminated)
+            return true;
+
+        const UInt64 remaining_ms = remainingTerminationTimeoutMs();
+        if (remaining_ms == 0)
+            return false;
+
+        sleepForMilliseconds(std::min(poll_step_ms, remaining_ms));
+    }
 }
 
 

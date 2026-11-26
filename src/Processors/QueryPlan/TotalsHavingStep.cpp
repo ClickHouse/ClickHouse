@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/TotalsHavingStep.h>
+#include <Formats/FormatSettings.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
@@ -165,7 +166,7 @@ void TotalsHavingStep::updateOutputHeader()
             getAggregatesMask(*input_headers.front(), aggregates)));
 }
 
-void TotalsHavingStep::serializeSettings(QueryPlanSerializationSettings & settings) const
+void TotalsHavingStep::serializeSettings(QueryPlanSerializationSettings & settings, UInt64 /*version*/) const
 {
     settings[QueryPlanSerializationSetting::totals_mode] = totals_mode;
     settings[QueryPlanSerializationSetting::totals_auto_threshold] = auto_include_threshold;
@@ -185,12 +186,12 @@ void TotalsHavingStep::serialize(Serialization & ctx) const
 
     writeIntBinary(flags, ctx.out);
 
-    serializeAggregateDescriptions(aggregates, ctx.out);
+    serializeAggregateDescriptions(aggregates, ctx.out, ctx.for_cache_key, ctx.input_header);
 
     if (actions_dag)
     {
-        writeStringBinary(filter_column_name, ctx.out);
-        actions_dag->serialize(ctx.out, ctx.registry);
+        ctx.writeColumnName(filter_column_name);
+        actions_dag->serialize(ctx.out, ctx.registry, ctx.input_header);
     }
 }
 
@@ -208,7 +209,8 @@ QueryPlanStepPtr TotalsHavingStep::deserialize(Deserialization & ctx)
     bool remove_filter_column = bool(flags & 8);
 
     AggregateDescriptions aggregates;
-    deserializeAggregateDescriptions(aggregates, ctx.in);
+    deserializeAggregateDescriptions(aggregates, ctx.in, ctx.max_type_complexity);
+    checkDeserializedFinalizedAggregates(aggregates, *ctx.input_headers.front());
 
     std::optional<ActionsDAG> actions_dag;
     String filter_column_name;
@@ -216,7 +218,7 @@ QueryPlanStepPtr TotalsHavingStep::deserialize(Deserialization & ctx)
     {
         readStringBinary(filter_column_name, ctx.in);
 
-        actions_dag = ActionsDAG::deserialize(ctx.in, ctx.registry, ctx.context);
+        actions_dag = ActionsDAG::deserialize(ctx.in, ctx.registry, ctx.context, ctx.max_type_complexity);
     }
 
     return std::make_unique<TotalsHavingStep>(
@@ -229,6 +231,11 @@ QueryPlanStepPtr TotalsHavingStep::deserialize(Deserialization & ctx)
         ctx.settings[QueryPlanSerializationSetting::totals_mode],
         ctx.settings[QueryPlanSerializationSetting::totals_auto_threshold],
         final);
+}
+
+QueryPlanStepPtr TotalsHavingStep::clone() const
+{
+    return std::make_unique<TotalsHavingStep>(*this);
 }
 
 void registerTotalsHavingStep(QueryPlanStepRegistry & registry);

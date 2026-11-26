@@ -1,0 +1,37 @@
+---
+title: شرح Keeper
+---
+
+سيحتوي كل ملف تهيئة على التكوين الفريد التالي (كما هو موضح أدناه).
+يجب أن يكون `server_id` المستخدم فريدًا لتلك العقدة المحددة من ClickHouse Keeper
+ضمن العنقود، وأن يطابق `<id>` الخاص بالخادم المعرّف في قسم `<raft_configuration>`.
+يمثل `tcp_port` المنفذ الذي يستخدمه *عملاء* ClickHouse Keeper.
+
+```xml
+<tcp_port>9181</tcp_port>
+<server_id>{id}</server_id>
+```
+
+يُستخدم القسم التالي لتكوين الخوادم المشاركة في
+النصاب ضمن [خوارزمية إجماع Raft](https://en.wikipedia.org/wiki/Raft_\(algorithm\)):
+
+```xml highlight={6}
+<raft_configuration>
+    <server>
+        <id>1</id>
+        <hostname>clickhouse-keeper-01</hostname>
+        <!-- TCP port used for communication between ClickHouse Keeper nodes -->
+        <port>9234</port>
+    </server>
+    <server>
+        <id>2</id>
+        <hostname>clickhouse-keeper-02</hostname>
+        <port>9234</port>
+    </server>
+    <server>
+        <id>3</id>
+        <hostname>clickhouse-keeper-03</hostname>
+        <port>9234</port>
+    </server>
+</raft_configuration>
+```

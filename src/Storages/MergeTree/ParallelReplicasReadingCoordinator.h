@@ -1,6 +1,8 @@
 #pragma once
 
 #include <Storages/MergeTree/RequestResponse.h>
+#include <Common/SetWithMemoryTracking.h>
+#include <Common/OpenTelemetryTraceContext.h>
 
 #include <memory>
 #include <mutex>
@@ -12,7 +14,7 @@ namespace DB
 {
 struct Progress;
 using ProgressCallback = std::function<void(const Progress & progress)>;
-using ReadCompletedCallback = std::function<void(const std::set<size_t> & used_replicas)>;
+using ReadCompletedCallback = std::function<void(const SetWithMemoryTracking<size_t> & used_replicas)>;
 
 /// The main class to spread mark ranges across replicas dynamically
 class ParallelReplicasReadingCoordinator
@@ -37,6 +39,10 @@ public:
 
     std::optional<size_t> getSnapshotReplicaNum() const { return snapshot_replica_num; }
 
+    /// The fixed number of replicas the coordinator was sized for. Replica numbers in announcements
+    /// must stay below it, so a reused coordinator must keep being fed the same set of replicas.
+    size_t getReplicasCount() const { return replicas_count; }
+
     /// Pin the snapshot replica to a specific replica_num before any announcement arrives.
     /// Called by the initiator-local replica during pipeline build (synchronously, before any
     /// follower announcement can reach the coordinator).
@@ -52,7 +58,7 @@ private:
     std::mutex mutex;
     const size_t replicas_count{0};
     ProgressCallback progress_callback; // store the callback only to bypass it to coordinator implementation
-    std::set<size_t> replicas_used;
+    SetWithMemoryTracking<size_t> replicas_used;
     std::optional<size_t> snapshot_replica_num;
     std::optional<ReadCompletedCallback> read_completed_callback;
     std::atomic_bool is_reading_completed{false};
@@ -66,6 +72,9 @@ private:
 
     /// Authoritative parts for each stream, captured from the snapshot replica's announcement.
     std::unordered_map<String, RangesInDataPartsDescription> stream_to_registered_parts;
+
+    /// Summarizes the whole coordination when the coordinator is destroyed
+    OpenTelemetry::ManualSpan summary_span{"ParallelReplicasReadingCoordinator"};
 };
 
 using ParallelReplicasReadingCoordinatorPtr = std::shared_ptr<ParallelReplicasReadingCoordinator>;

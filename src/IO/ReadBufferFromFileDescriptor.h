@@ -4,6 +4,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <Common/IThrottler.h>
 
+#include <atomic>
 #include <unistd.h>
 
 
@@ -23,6 +24,18 @@ protected:
     int fd;
 
     ThrottlerPtr throttler;
+
+    /// Try to read the data from the OS page cache first to tell such reads apart for the `throttler`.
+    /// See `enableOSPageCacheReadsDetection`.
+    /// It is turned off on the first read that shows that the file does not support it
+    /// (e.g. `tmpfs` rejects `RWF_NOWAIT` with `EOPNOTSUPP`), to avoid the extra failing system call on every read.
+    /// Atomic, because `readBigAt` can be called concurrently.
+    mutable std::atomic<bool> detect_os_page_cache_reads = false;
+
+    /// To be called by the descendants that know the flags the file was opened with.
+    /// Has an effect only for `pread` and when the `throttler` ignores the OS page cache reads,
+    /// and is a no-op for `O_DIRECT`, where every read reaches the device.
+    void enableOSPageCacheReadsDetection(int flags);
 
     bool nextImpl() override;
     void prefetch(Priority priority) override;
@@ -74,6 +87,11 @@ public:
     std::optional<size_t> tryGetFileSize() override;
 
     bool checkIfActuallySeekable() override;
+
+    /// O_DIRECT requires the user buffer to be sector-aligned, so an aligned descriptor cannot
+    /// accept an arbitrary external buffer - callers must read into its own aligned internal
+    /// buffer instead.
+    bool supportsExternalBufferMode() const override { return required_alignment == 0; }
 
     size_t readBigAt(char * to, size_t n, size_t offset, const std::function<bool(size_t)> &) const override;
     bool supportsReadAt() override { return use_pread; }

@@ -12,6 +12,11 @@ MutableColumnPtr DataTypeNothing::createColumn() const
     return ColumnNothing::create(0);
 }
 
+void DataTypeNothing::insertDefaultInto(IColumn & column) const
+{
+    column.insertDefault();
+}
+
 bool DataTypeNothing::equals(const IDataType & rhs) const
 {
     return typeid(rhs) == typeid(*this);
@@ -29,7 +34,7 @@ void registerDataTypeNothing(DataTypeFactory & factory)
             .description = R"DOCS_MD(
 The only purpose of this data type is to represent cases where a value is not expected. So you can't create a `Nothing` type value.
 
-For example, literal [NULL](/sql-reference/syntax#null) has type of `Nullable(Nothing)`. See more about [Nullable](../../../sql-reference/data-types/nullable.md).
+For example, literal [NULL](/reference/syntax#null) has type of `Nullable(Nothing)`. See more about [Nullable](/reference/data-types/nullable).
 
 The `Nothing` type can also used to denote empty arrays:
 

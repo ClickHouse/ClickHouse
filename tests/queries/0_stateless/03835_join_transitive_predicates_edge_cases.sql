@@ -1,7 +1,7 @@
 -- Edge case tests for transitive predicate inference.
 SET explain_query_plan_default = 'legacy';
 
-SET allow_experimental_analyzer = 1;
+SET query_plan_optimize_join_order_randomize = 0; -- Pinned because the test asserts on join plan/order
 SET query_plan_optimize_join_order_limit = 10;
 SET enable_join_runtime_filters = 0;
 SET enable_parallel_replicas = 0;

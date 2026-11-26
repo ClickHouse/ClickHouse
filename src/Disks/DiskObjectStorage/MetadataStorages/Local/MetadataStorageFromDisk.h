@@ -66,6 +66,8 @@ public:
 
     MetadataTransactionPtr createTransaction() override;
 
+    ObjectStorageKeyGeneratorPtr getKeyGenerator() const override { return key_generator; }
+
     bool supportWritingWithAppend() const override;
 
     const std::string & getPath() const override;
@@ -85,8 +87,6 @@ public:
     Poco::Timestamp getLastModified(const std::string & path) const override;
 
     time_t getLastChanged(const std::string & path) const override;
-
-    bool supportsChmod() const override { return disk->supportsChmod(); }
 
     bool supportsStat() const override { return disk->supportsStat(); }
 
@@ -114,12 +114,17 @@ public:
     DiskObjectStorageMetadataPtr readMetadataUnlocked(const std::string & path, std::shared_lock<SharedMutex> & lock) const;
 
     bool isReadOnly() const override { return disk->isReadOnly(); }
+    bool isRemote() const override { return disk->isRemote(); }
 
     void startup() override;
 
     BlobsToRemove getBlobsToRemove(const ClusterConfigurationPtr & cluster, int64_t max_count) override;
     int64_t recordAsRemoved(const StoredObjects & blobs) override;
     bool hasPendingRemovalBlobs(const StoredObjects & blobs) const override;
+    int64_t getDeadBlobsQueueEstimate() override;
+
+    /// The storage has a single location, so there is never anything to replicate.
+    bool hasMissingBlobsQueue() const override { return false; }
 };
 
 class MetadataStorageFromDiskTransaction final : public IMetadataTransaction
@@ -147,10 +152,6 @@ public:
     void addBlobToMetadata(const std::string & path, const StoredObject & object) override;
 
     void setLastModified(const std::string & path, const Poco::Timestamp & timestamp) override;
-
-    bool supportsChmod() const override { return metadata_storage.supportsChmod(); }
-
-    void chmod(const String & path, mode_t mode) override;
 
     void setReadOnly(const std::string & path) override;
 

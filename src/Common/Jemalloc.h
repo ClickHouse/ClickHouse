@@ -3,6 +3,7 @@
 #include "config.h"
 
 #include <cstddef>
+#include <utility>
 
 namespace DB::Jemalloc
 {
@@ -104,7 +105,7 @@ struct MibCache
         valid = (je_mallctlnametomib(name, mib, &mib_length) == 0);
     }
 
-    bool isValid() const { return valid; }
+    [[nodiscard]] bool isValid() const { return valid; }
 
     void setValue(T value) const
     {
@@ -125,7 +126,7 @@ struct MibCache
 
     /// Strict variant: asserts that the read succeeded. Mirrors `Jemalloc::getValue`.
     /// Use `tryGetValue` when the mallctl may be absent.
-    T getValue() const
+    [[nodiscard]] T getValue() const
     {
         T value{};
         [[maybe_unused]] const bool ok = tryGetValue(value);
@@ -203,3 +204,20 @@ public:
 }
 
 #endif
+
+namespace DB
+{
+
+/// Replace `value` with a fresh copy of itself and drop the original. Because the copy is a new
+/// allocation, its storage is served by whatever arena the calling thread is currently bound to.
+/// This does not select an arena itself: enter a `ScopedJemallocThreadArena` scope first, then call
+/// this to re-home an already-built object into that arena. Pure copy + move, so it is harmless and
+/// works whether or not jemalloc is compiled in.
+template <typename T>
+void reallocateByCopy(T & value)
+{
+    auto copy = value;
+    value = std::move(copy);
+}
+
+}

@@ -1,0 +1,111 @@
+---
+slug: /use-cases/observability/clickstack/overview
+title: 'ClickStack - ClickHouse 관측 가능성 스택'
+sidebarTitle: '개요'
+description: 'ClickStack - ClickHouse 관측 가능성 스택 개요'
+doc_type: 'guide'
+keywords: ['clickstack', 'observability', 'logs', 'monitoring', 'platform']
+---
+
+import { LogoCard } from "/snippets/ko/components/ClickStackLogoCard.jsx";
+
+<div className="ch-image-lg">
+  <Frame>
+    ![랜딩 페이지](/images/use-cases/observability/hyperdx-landing.webp)
+  </Frame>
+</div>
+
+<div className="grid grid-cols-1" style={{ gap: '16px', margin: '20px 0 28px' }}>
+  <LogoCard title="ClickHouse/ClickStack" img="/images/clickstack/clickstack-mark.svg" imgAlt="ClickStack 로고" href="https://github.com/ClickHouse/ClickStack" external>
+    GitHub에서 코드를 살펴보고 기여해 보세요. <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', verticalAlign: 'middle', whiteSpace: 'nowrap' }}><svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">     <path fillRule="evenodd" clipRule="evenodd" d="M8 1.75C4.27 1.75 1.25 4.77 1.25 8.5c0 2.99 1.93 5.51 4.62 6.4.34.06.46-.14.46-.32 0-.16-.01-.69-.01-1.26-1.7.32-2.14-.6-2.27-.98-.08-.19-.41-.79-.7-.95-.24-.13-.58-.44-.01-.45.53-.01.91.49 1.04.69.61 1.02 1.58.73 1.97.56.06-.44.24-.74.43-.91-1.5-.17-3.07-.75-3.07-3.33 0-.73.26-1.34.69-1.81-.07-.17-.3-.86.07-1.79 0 0 .57-.18 1.86.69.54-.15 1.11-.23 1.69-.23.57 0 1.14.08 1.68.23 1.29-.88 1.86-.69 1.86-.69.37.93.14 1.62.07 1.79.43.47.69 1.07.69 1.81 0 2.59-1.58 3.16-3.08 3.33.25.21.46.62.46 1.25 0 .9-.01 1.63-.01 1.86 0 .18.13.39.47.32 2.67-.9 4.58-3.41 4.58-6.4 0-3.73-3.02-6.75-6.75-6.75Z" fill="currentColor" />   </svg>10k</span>
+  </LogoCard>
+</div>
+
+**ClickStack**은 ClickHouse를 기반으로 구축된 오픈 소스 관측성 플랫폼으로, SRE와 개발자, 그리고 이들의 AI 에이전트를 위해 설계되었습니다. 로그, trace, 메트릭은 물론 세션 다시 보기까지 한곳에서 검색하고, 쿼리하고, 연관시킬 수 있습니다.
+
+**ClickStack UI**에서 직접 조사하거나 [MCP 서버](/ko/clickstack/mcp)를 통해 자체 에이전트를 연결할 수 있습니다. 에이전트는 팀이 이미 사용 중인 개발 도구를 그대로 활용하여 텔레메트리를 검색하고, trace를 추적하고, UI에서 탐색하는 것과 동일한 데이터에 SQL을 실행할 수 있습니다.
+
+풍부한 로그와 추적 스팬은 요청 세부 정보, 사용자 정의 속성, 비즈니스 컨텍스트를 와이드 이벤트로 보존합니다. ClickHouse는 이를 메트릭 및 세션 데이터와 함께 저장하므로, 엔지니어와 에이전트는 여러 서비스에 걸쳐 근거를 연관시키고 어떤 요청과 고객이 영향을 받았는지 파악할 수 있습니다.
+
+<Tip>
+  인프라 관리는 [ClickHouse Observability](/ko/clickstack/observability)에 맡기고 이슈 조사에만 집중하세요. [ClickHouse Cloud에 가입](https://clickhouse.cloud/signUp?loc=docs-clickstack-overview-inline)하여 지금 바로 시작하세요.
+</Tip>
+
+<div id="features">
+  ## 기능 {#features}
+</div>
+
+* [MCP](/ko/clickstack/mcp)를 통해 자체 에이전트를 연결하여 텔레메트리 검색, 장애 조사, 대시보드 및 알림 관리
+* ClickStack UI에서 로그, 메트릭, 세션 다시 보기, trace를 연관시키고 검색
+* 스키마에 구애받지 않으며 기존 ClickHouse 스키마에서 그대로 작동
+* high-cardinality 텔레메트리를 대상으로 빠른 검색과 집계(aggregations) 실행
+* 전문 검색과 `level:err` 같은 Lucene 스타일 필터를 사용하거나, 심층 분석에는 SQL 활용
+* 몇 번의 클릭만으로 알림 설정
+* 복잡한 쿼리 언어 없이 고카디널리티의 이벤트를 대시보드에서 확인
+* 네이티브 JSON 문자열 쿼리
+* 항상 최신 이벤트를 확인할 수 있도록 로그와 trace를 라이브 테일링
+* OpenTelemetry (OTel) 기본 지원
+* HTTP 요청부터 DB 쿼리까지 상태와 성능을 모니터링(APM)
+* Event deltas로 이상 징후와 성능 회귀 식별
+* 로그 패턴 인식
+* URL 쿼리 매개변수를 사용해 [딥 링크](/ko/clickstack/url-parameters)로 ClickStack 페이지를 직접 열기
+
+## 구성 요소 {#components}
+
+ClickStack은 세 가지 핵심 구성 요소로 이루어져 있습니다.
+
+<div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '24px', margin: '24px 0' }}>
+  <img src="/images/clickstack/clickstack-stack.webp" alt="ClickStack의 세 가지 계층: 최상단의 ClickStack UI, 중간의 저장 및 쿼리 실행을 담당하는 ClickHouse, 최하단의 수집을 담당하는 OpenTelemetry." width="720" height="957" style={{ width: '260px', maxWidth: '100%', height: 'auto', margin: 0 }} />
+
+  <div style={{ flex: '1 1 240px' }}>
+    1. **ClickStack UI** – 관측성 데이터를 탐색하고 시각화하기 위해 특정 목적에 맞게 설계된 프론트엔드
+    2. **ClickHouse** – 스택의 핵심을 이루는 고성능 분석용 데이터베이스(analytical database)
+    3. **OpenTelemetry collector** – 로그, trace, 메트릭을 위한 정형화된 스키마(schema)를 갖추고 사전 구성된 사용자 정의 collector
+  </div>
+</div>
+
+이러한 구성 요소를 함께 배포하여 완전한 **자가 관리형 ClickStack Open Source** 환경을 구성할 수 있습니다. 각 구성 요소가 서로 어떻게 연동되고 애플리케이션 상태가 어떻게 저장되는지는 [아키텍처 가이드](/ko/clickstack/architecture)를 참조하십시오.
+
+브라우저에서 호스팅되는 ClickStack UI 버전도 제공되므로, 별도의 UI 인프라를 배포하지 않고도 기존 ClickHouse 배포에 직접 연결할 수 있습니다.
+
+먼저 [시작 가이드](/ko/clickstack/getting-started/oss)를 확인한 후 [샘플 데이터셋](/ko/clickstack/example-datasets/index)을 로딩하십시오. [배포 옵션](/ko/clickstack/deployment/oss) 및 [운영 환경 권장 사항](/ko/clickstack/managing/production)에 관한 문서도 참고하십시오.
+
+<div id="clickstack-principles">
+  ## 원칙 {#clickstack-principles}
+</div>
+
+### 원하는 에이전트 사용하기 {#bring-your-own-agents}
+
+AI 기반 조사는 ClickStack의 핵심 워크플로입니다. [MCP 서버](/ko/clickstack/mcp)를 통해 원하는 에이전트를 연결하면 개발 환경을 벗어나지 않고도 로그를 검색하고, trace를 추적하고, 텔레메트리를 탐색할 수 있습니다.
+
+조사 도구는 일반적인 작업을 지원하며, 에이전트는 SQL을 사용해 근거를 연관시키고 미리 정의된 대시보드로는 답할 수 없는 질문까지 탐색할 수 있습니다. 에이전트와 모델은 사용자가 직접 선택하며, ClickStack은 팀이 사용하는 것과 동일한 텔레메트리와 조사 도구에 액세스할 수 있도록 지원합니다.
+
+<div id="clickstack-easy-to-setup">
+  ### 몇 분 만에 손쉽게 설정 가능 {#clickstack-easy-to-setup}
+</div>
+
+ClickStack은 최소한의 구성만으로 어떤 ClickHouse 인스턴스와 스키마에서도 바로 사용할 수 있습니다. 새로 시작하는 경우에도 기존 환경에 통합하는 경우에도 몇 분 안에 바로 실행할 수 있습니다.
+
+### 사용자 친화적이며 특정 목적에 맞게 설계된 UI {#user-friendly-purpose-built}
+
+ClickStack UI는 검색, 트레이스 탐색, 차트, 대시보드, 알림을 하나로 통합합니다. 일상적인 질문은 Lucene 스타일 필터와 시각적 쿼리 빌더(query builder)로 해결하고, 분석을 더 세밀하게 제어해야 할 때는 SQL을 활용하십시오. 엔지니어와 에이전트가 동일한 데이터를 기반으로 작업하므로 조사의 근거가 되는 증거를 직접 확인할 수 있습니다.
+
+### 엔드투엔드 관측성 {#end-to-end-observability}
+
+프론트엔드 세션 다시 보기를 애플리케이션 로그, 분산 trace, 메트릭과 연결하여 시스템 전반에 걸쳐 장애를 추적할 수 있습니다. 와이드 이벤트는 요청 세부 정보, 사용자 정의 속성, 비즈니스 컨텍스트를 로그와 추적 스팬에 함께 담아 두므로, 영향을 받는 요청, 서비스, 고객을 쉽게 파악할 수 있습니다.
+
+### ClickHouse 기반 설계 {#built-for-clickhouse}
+
+ClickHouse의 열 지향 저장소, 압축, 병렬 쿼리 실행(Query Execution) 덕분에 대량의 high-cardinality 텔레메트리에서도 빠른 검색과 집계(aggregations)가 가능합니다. 또한 동시 쿼리를 지원하므로 엔지니어와 에이전트가 동일한 데이터를 병렬로 조사할 수 있습니다.
+
+<div id="open-telemetry-native">
+  ### OpenTelemetry 네이티브 {#open-telemetry-native}
+</div>
+
+ClickStack은 OpenTelemetry와 기본적으로 통합되어 있으며, 모든 데이터는 OpenTelemetry collector 엔드포인트를 통해 수집됩니다. 또한 고급 사용자를 위해 네이티브 파일 포맷, 사용자 지정 파이프라인, 또는 Vector와 같은 서드파티 도구를 사용해 ClickHouse로 직접 수집하는 방식도 지원합니다.
+
+<div id="open-source-and-customizable">
+  ### 오픈 소스이며 완전히 사용자 지정 가능합니다 {#open-source-and-customizable}
+</div>
+
+ClickStack은 완전히 오픈 소스이며 어디에나 배포할 수 있습니다. 스키마(schema)는 유연하고 사용자가 수정할 수 있으며, UI는 변경 없이도 사용자 정의 스키마에 맞게 구성할 수 있도록 설계되었습니다. collector, ClickHouse, UI를 포함한 모든 구성 요소는 수집, 쿼리 또는 저장 요구 사항을 충족할 수 있도록 각각 독립적으로 확장할 수 있습니다.

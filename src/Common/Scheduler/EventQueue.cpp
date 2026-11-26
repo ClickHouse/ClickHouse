@@ -6,6 +6,8 @@
 namespace DB
 {
 
+thread_local EventQueue * EventQueue::current_thread_queue = nullptr;
+
 EventId EventQueue::postpone(TimePoint until, Task && task)
 {
     std::unique_lock lock{mutex};
@@ -132,23 +134,23 @@ void EventQueue::process()
 
 EventQueue::TimePoint EventQueue::now()
 {
-    auto result = manual_time.load();
+    auto result = manual_time.load(std::memory_order_relaxed);
     if (likely(result == TimePoint()))
-        return std::chrono::system_clock::now();
+        return Clock::now();
     return result;
 }
 
 void EventQueue::setManualTime(TimePoint value)
 {
     std::unique_lock lock{mutex};
-    manual_time.store(value);
+    manual_time.store(value, std::memory_order_relaxed);
     pending.notify_one();
 }
 
 void EventQueue::advanceManualTime(Duration elapsed)
 {
     std::unique_lock lock{mutex};
-    manual_time.store(manual_time.load() + elapsed);
+    manual_time.store(manual_time.load(std::memory_order_relaxed) + elapsed, std::memory_order_relaxed);
     pending.notify_one();
 }
 
@@ -159,7 +161,7 @@ void EventQueue::wait(std::unique_lock<std::mutex> & lock)
 
 void EventQueue::waitUntil(std::unique_lock<std::mutex> & lock, TimePoint t)
 {
-    if (likely(manual_time.load() == TimePoint()))
+    if (likely(manual_time.load(std::memory_order_relaxed) == TimePoint()))
         pending.wait_until(lock, t);
     else
         pending.wait(lock);

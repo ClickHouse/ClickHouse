@@ -1,0 +1,98 @@
+---
+slug: /use-cases/observability/clickstack/sdks/aws_lambda
+description: 'AWS Lambda para ClickStack - El stack de observabilidad de ClickHouse'
+title: 'AWS Lambda'
+doc_type: 'guide'
+keywords: ['ClickStack', 'observabilidad', 'aws-lambda', 'lambda-layers']
+---
+
+import { ClickStackIntegrates } from '/snippets/es/components/ClickStackIntegrates/ClickStackIntegrates.jsx'
+
+Para funciones de Node.js con handlers async, utilice el SDK de Node.js de ClickStack. Para otros entornos de tiempo de ejecución o handlers basados en callbacks, utilice las capas de Lambda de OpenTelemetry que se describen a continuación.
+
+<ClickStackIntegrates signals={['logs', 'metrics', 'traces']} />
+
+## Handlers async de Node.js {#nodejs-async-handlers}
+
+Use un tiempo de ejecución de Node.js en Lambda que cumpla con la versión mínima de Node.js 22.15 que requiere el SDK. Instale el SDK e inclúyalo en su paquete de despliegue:
+
+```shell
+npm install @clickhouse/clickstack-node
+```
+
+Configure estas variables de entorno de Lambda para inicializar el SDK antes de que se cargue su handler y para asignar un nombre a su servicio:
+
+```text
+NODE_OPTIONS=--import @clickhouse/clickstack-node/register
+OTEL_SERVICE_NAME=my-lambda-function
+```
+
+Envuelva su handler async con `withFlush` para que la telemetría almacenada temporalmente en el búfer se exporte antes de que finalice la invocación:
+
+```javascript
+// index.mjs
+import { withFlush } from '@clickhouse/clickstack-node';
+
+export const handler = withFlush(async (event) => {
+  console.log('request received');
+  return { statusCode: 200, body: 'OK' };
+});
+```
+
+Establezca el handler de la función en `index.handler`. Si empaqueta la función, mantenga el SDK y las dependencias instrumentadas como externas e inclúyalas en el paquete de despliegue. No habilite además una capa de Lambda de autoinstrumentación en esta configuración.
+
+Defina las siguientes variables de destino en la configuración del entorno de la función Lambda. El endpoint debe ser accesible desde su función. El SDK completa el vaciado antes del plazo límite de la invocación; `withFlush` no es compatible con los handlers basados en callbacks.
+
+### Configure el destino {#configure-destination}
+
+Configure el endpoint HTTP de OTLP y la clave de ingestión de su recopilador de ClickStack. Use `http://` si el recolector no tiene TLS configurado. Para configurar el recolector, consulte [Ingesta con OpenTelemetry](/es/clickstack/ingesting-data/opentelemetry).
+
+```shell
+export OTEL_EXPORTER_OTLP_ENDPOINT='https://YOUR_COLLECTOR_HOST:4318'
+export OTEL_EXPORTER_OTLP_HEADERS='authorization=YOUR_INGESTION_API_KEY'
+export OTEL_EXPORTER_OTLP_PROTOCOL='http/protobuf'
+```
+
+## Otros tiempos de ejecución y handlers {#other-runtimes-and-handlers}
+
+Siga las [instrucciones oficiales de autoinstrumentación para Lambda](https://opentelemetry.io/docs/platforms/faas/lambda-auto-instrument/) para seleccionar las capas correspondientes a su tiempo de ejecución, arquitectura y región de AWS, y para configurar el envoltorio de instrumentación.
+
+Agregue y configure la [capa de Lambda del Colector de OpenTelemetry](https://opentelemetry.io/docs/platforms/faas/lambda-collector/). Mantenga los exportadores del SDK de la aplicación apuntando al recolector local, tal como se indica en la documentación upstream. A continuación, configure la conexión saliente del recolector.
+
+### Configurar el destino del recolector de Lambda {#configure-lambda-collector-destination}
+
+Defina `CLICKHOUSE_OTLP_ENDPOINT` y `CLICKHOUSE_INGESTION_API_KEY` en las variables de entorno de su función Lambda. Agregue el siguiente exportador a la configuración de su recolector.
+
+Asigne a `CLICKHOUSE_OTLP_ENDPOINT` el endpoint OTLP HTTP de su recopilador de ClickStack y a `CLICKHOUSE_INGESTION_API_KEY` su clave de ingestión. El endpoint debe ser accesible desde su función Lambda.
+
+```yaml
+exporters:
+  otlphttp/clickhouse:
+    endpoint: ${env:CLICKHOUSE_OTLP_ENDPOINT}
+    headers:
+      Authorization: "${env:CLICKHOUSE_INGESTION_API_KEY}"
+```
+
+Añada `otlphttp/clickhouse` a la lista `exporters` de cada canalización de señales que quiera enviar. Por ejemplo, con el receptor `otlp` de upstream:
+
+```yaml
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      exporters: [otlphttp/clickhouse]
+    metrics:
+      receivers: [otlp]
+      exporters: [otlphttp/clickhouse]
+    logs:
+      receivers: [otlp]
+      exporters: [otlphttp/clickhouse]
+```
+
+Incorpore estos ajustes a la configuración de su recolector, conservando los ajustes de su receptor y de su procesador. Empaquete la configuración con su función y establezca `OPENTELEMETRY_COLLECTOR_CONFIG_URI` en su ubicación, por ejemplo, `/var/task/collector.yaml`, siguiendo las instrucciones de configuración del recolector de la documentación upstream.
+
+## Verificar la ingestión {#verify-ingestion}
+
+Despliegue e invoque su función. En ClickStack, seleccione un intervalo de tiempo reciente y busque el nombre del servicio de su función en Traces. Consulte también Logs y Metrics si su instrumentación emite esas señales; añadir una canalización no activa automáticamente su recopilación.
+
+Para obtener información sobre la configuración de la capa y la resolución de problemas, consulte la [documentación de OpenTelemetry Lambda](https://github.com/open-telemetry/opentelemetry-lambda).

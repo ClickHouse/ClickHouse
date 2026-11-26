@@ -7,6 +7,7 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/castColumn.h>
+#include <base/sanitizer_defs.h>
 
 namespace DB
 {
@@ -45,7 +46,7 @@ public:
         if (!context->getSettingsRef()[Setting::allow_deprecated_error_prone_window_functions])
             throw Exception(
                 ErrorCodes::DEPRECATED_FUNCTION,
-                "Function {} is deprecated since its usage is error-prone (see docs)."
+                "Function {} is deprecated since its usage is error-prone (see docs). "
                 "Please use proper window function or set `allow_deprecated_error_prone_window_functions` setting to enable it",
                 name);
 
@@ -53,29 +54,34 @@ public:
     }
 
     /// Get the name of the function.
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
 
-    bool isVariadic() const override { return true; }
+    [[nodiscard]] bool isVariadic() const override { return true; }
 
-    bool isStateful() const override { return true; }
+    [[nodiscard]] bool isStateful() const override { return true; }
 
-    bool isDeterministic() const override { return false; }
+    [[nodiscard]] bool isDeterministic() const override { return false; }
 
-    bool isDeterministicInScopeOfQuery() const override { return false; }
+    [[nodiscard]] bool isDeterministicInScopeOfQuery() const override { return false; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    bool useDefaultImplementationForNulls() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
 
-    bool useDefaultImplementationForConstants() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return false; }
 
     /// We do not use default implementation for LowCardinality because this is not a pure function.
     /// If used, optimization for LC may execute function only for dictionary, which gives wrong result.
-    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] String getSignatureString() const override
+    {
+        return "(T, Integer) -> T OR (T, Integer, D) -> leastSupertype(T, D)";
+    }
+
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         size_t number_of_arguments = arguments.size();
 
@@ -102,6 +108,7 @@ public:
         return arguments[0];
     }
 
+    [[nodiscard]] NO_SANITIZE_UNSIGNED_OVERFLOW
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         const ColumnWithTypeAndName & source_elem = arguments[0];
@@ -159,8 +166,7 @@ public:
 
                 if (!src)
                 {
-                    for (Int64 i = 0; i < size; ++i)
-                        result_column->insertDefault();
+                    result_type->insertManyDefaultsInto(*result_column, static_cast<size_t>(size));
                 }
                 else if (is_const)
                 {
@@ -209,7 +215,7 @@ public:
             else if (has_defaults)
                 result_column->insertFrom(*default_column_cast, default_is_constant ? 0 : row);
             else
-                result_column->insertDefault();
+                result_type->insertDefaultInto(*result_column);
         }
 
         return result_column;

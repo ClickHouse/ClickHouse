@@ -19,6 +19,9 @@ public:
     /** Get the text that identifies this element. */
     String getID(char) const override { return "Subquery"; }
 
+    void writeJSON(WriteBuffer & out) const override;
+    void readJSON(const Poco::JSON::Object & json) override;
+
     ASTPtr clone() const override
     {
         auto clone = make_intrusive<ASTSubquery>(*this);

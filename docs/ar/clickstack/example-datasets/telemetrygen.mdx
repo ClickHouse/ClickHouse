@@ -1,0 +1,105 @@
+---
+slug: /use-cases/observability/clickstack/getting-started/telemetrygen
+title: 'ولّد بيانات OpenTelemetry اصطناعية باستخدام telemetrygen'
+sidebarTitle: 'بيانات اصطناعية باستخدام telemetrygen'
+description: 'استخدم telemetrygen لإرسال logs وtraces وmetrics اصطناعية متنوعة إلى ClickStack OpenTelemetry collector'
+doc_type: 'guide'
+toc_max_heading_level: 2
+keywords: ['clickstack', 'telemetrygen', 'بيانات اصطناعية', 'OpenTelemetry', 'اختبار', 'logs', 'traces', 'metrics', 'observability']
+---
+
+[`telemetrygen`](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/cmd/telemetrygen) هو مولّد البيانات التابع لـ OpenTelemetry Collector Contrib. ينشئ logs وtraces وmetrics اصطناعية عبر OTLP، ويوفّر flags تتيح لك تشكيل البيانات: خدمات متعددة، ومستويات شدة السجل، وحالات span وspans فرعية، وأنواع metrics مختلفة. استخدمه للتأكد من أن ClickStack OpenTelemetry collector يقبل البيانات، وأن أحداثًا متنوعة وواقعية تظهر في ClickStack UI.
+
+يفترض هذا الدليل أن الـ collector يعمل بالفعل مع نقاط نهاية OTLP على `4317` ‏(gRPC) و`4318` ‏(HTTP).
+
+<Steps>
+  <Step title="المتطلبات المسبقة" id="prerequisites-oss">
+    يفترض هذا الدليل أنك شغّلت ClickStack مفتوح المصدر باتباع [تعليمات صورة الكل في واحد](/ar/clickstack/getting-started/oss)، وأنه يمكن الوصول إلى نقاط نهاية OTLP (`4317` لـ gRPC و`4318` لـ HTTP). ستحتاج أيضًا إلى API key لاستيعاب البيانات من واجهة مستخدم ClickStack ضمن `Team Settings > API Keys`.
+  </Step>
+
+  <Step title="ثبّت telemetrygen" id="install-telemetrygen-oss">
+    شغّل `telemetrygen` من صورة Docker الخاصة به (دون الحاجة إلى تثبيته). وعرّف غلافًا صغيرًا لتبقى الأوامر أدناه سهلة القراءة؛ إذ يتيح الخيار `--add-host` للحاوية الوصول إلى جامع بيانات يستمع على المضيف:
+
+    ```shell
+    telemetrygen() {
+      docker run --rm --add-host=host.docker.internal:host-gateway \
+        ghcr.io/open-telemetry/opentelemetry-collector-contrib/telemetrygen:latest "$@"
+    }
+    export OTEL_ENDPOINT=host.docker.internal:4317
+    ```
+
+    أو ثبّت الملف التنفيذي باستخدام Go ووجّهه إلى `localhost` بدلاً من ذلك:
+
+    ```shell
+    go install github.com/open-telemetry/opentelemetry-collector-contrib/cmd/telemetrygen@latest
+    export OTEL_ENDPOINT=localhost:4317
+    ```
+  </Step>
+
+  <Step title="ضبط متغيرات البيئة" id="set-env-vars-oss">
+    صدّر API key لاستيعاب البيانات:
+
+    ```shell
+    export CLICKSTACK_API_KEY=<your_ingestion_api_key>
+    ```
+
+    عرّف دالة مساعدة صغيرة باسم `tg` بحيث لا يحدد كل أمر سوى ما يتغيّر (الخدمة، ودرجة الخطورة، والحالة، والسمات):
+
+    ```shell
+    tg() { local signal=$1; shift; telemetrygen "$signal" \
+      --otlp-endpoint ${OTEL_ENDPOINT} --otlp-insecure \
+      --otlp-header "authorization=\"${CLICKSTACK_API_KEY}\"" \
+      --rate 5 --duration 30s "$@"; }
+    ```
+  </Step>
+
+  <Step title="إنشاء سجلات" id="generate-logs-oss">
+    أرسل السجلات بمزيج واقعي من مستويات الخطورة عبر الخدمات، أغلبها معلوماتية مع سجل تحذير واحد وسجل error واحد، بدلاً من دفق واحد متجانس:
+
+    ```shell
+    tg logs --service frontend --severity-text Info  --severity-number 9  --body "GET /api/products 200" \
+      --otlp-attributes 'deployment.environment="production"' \
+      --telemetry-attributes 'http.method="GET"' --telemetry-attributes 'http.status_code="200"'
+    tg logs --service checkout --severity-text Warn  --severity-number 13 --body "retrying payment authorization" \
+      --otlp-attributes 'deployment.environment="production"' \
+      --telemetry-attributes 'http.method="POST"'
+    tg logs --service payment  --severity-text Error --severity-number 17 --body "payment gateway timeout" \
+      --otlp-attributes 'deployment.environment="production"' \
+      --telemetry-attributes 'http.status_code="500"'
+    ```
+  </Step>
+
+  <Step title="توليد بيانات تتبّع" id="generate-traces-oss">
+    أرسل بيانات تتبّع متعددة الـ span من عدة خدمات سليمة إضافةً إلى تبعية واحدة متعطلة. يمنح ذلك خريطة الخدمات (Service Map) شكلًا واقعيًا، إذ تبدو معظم الخدمات سليمة باستثناء خدمة واحدة تُصدر أخطاء، كما يملأ طرق عرض الأخطاء بالبيانات:
+
+    ```shell
+    # Healthy services: the bulk of the traffic, all spans Ok
+    for svc in frontend checkout cart; do
+      tg traces --service "$svc" --child-spans 3 --span-duration 80ms --status-code Ok \
+        --otlp-attributes 'deployment.environment="production"' \
+        --telemetry-attributes "http.route=\"/$svc\""
+    done
+
+    # One slow dependency returning errors
+    tg traces --service payment --child-spans 3 --span-duration 450ms --span-links 1 --status-code Error \
+      --otlp-attributes 'deployment.environment="production"' \
+      --telemetry-attributes 'http.route="/charge"'
+    ```
+  </Step>
+
+  <Step title="توليد المقاييس" id="generate-metrics-oss">
+    أرسل أنواع المقاييس الثلاثة الشائعة لكي تتضمن الرسوم البيانية عدادًا (counter) ومقياسًا لحظيًا (gauge) وتوزيعًا (distribution):
+
+    ```shell
+    tg metrics --service frontend --metric-type Sum       --otlp-metric-name http.server.requests --aggregation-temporality cumulative
+    tg metrics --service frontend --metric-type Gauge     --otlp-metric-name system.memory.usage
+    tg metrics --service payment  --metric-type Histogram --otlp-metric-name http.server.duration
+    ```
+
+    يقبل الخيار `--metric-type` إحدى القيم التالية: `Gauge` أو `Sum` أو `Histogram` أو `ExponentialHistogram`.
+  </Step>
+
+  <Step title="تحقّق في ClickStack" id="verify-oss">
+    انتقل إلى [http://localhost:8080](http://localhost:8080) لفتح واجهة مستخدم ClickStack. في عرض `Search`، اضبط النطاق الزمني على `Last 15 minutes` وبدّل المصدر بين `Logs` و`Traces`. طبّق عامل تصفية على `ServiceName` لعرض الخدمات `frontend` و`checkout` و`cart` و`payment`، وعلى `SeverityText` للعثور على أسطر السجل ذات مستوى التحذير والخطأ. افتح تتبّعًا لخدمة `payment` لعرض مقاطع التتبع الفرعية وحالة الخطأ. افتح `Chart Explorer`، واختر `Metrics`، ثم أنشئ مخططًا لأحد أسماء المقاييس التي عيّنتها سابقًا (مثل `http.server.requests`) للتحقق من إدخال المقاييس.
+  </Step>
+</Steps>

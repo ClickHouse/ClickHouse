@@ -1,8 +1,6 @@
 -- Matryoshka-style partial-dimension search on a strided QBit via the optional 4th `dims` argument.
 -- A strided search over the first D dims must equal a non-strided search over a QBit holding only those D dims.
 
-SET enable_analyzer = 1;
-
 DROP TABLE IF EXISTS qbit_strided;
 DROP TABLE IF EXISTS qbit_plain;
 CREATE TABLE qbit_strided (id UInt32, vec QBit(Float32, 16, 8)) ENGINE = Memory;
@@ -61,8 +59,8 @@ SELECT 'Validation errors';
 WITH [toFloat32(0), 1, 2, 3] AS ref SELECT L2DistanceTransposed(vec, ref, 32, 4) FROM qbit_strided; -- { serverError BAD_ARGUMENTS }
 -- dims must not exceed the dimension (16)
 WITH arrayMap(i -> toFloat32(i), range(24)) AS ref SELECT L2DistanceTransposed(vec, ref, 32, 24) FROM qbit_strided; -- { serverError BAD_ARGUMENTS }
--- the reference vector length must equal dims
-WITH arrayMap(i -> toFloat32(i), range(16)) AS ref SELECT L2DistanceTransposed(vec, ref, 32, 8) FROM qbit_strided; -- { serverError BAD_ARGUMENTS }
+-- the reference vector must have at least `dims` elements (a longer one is truncated, see 04501_qbit_distance_transposed_truncate_reference)
+WITH [toFloat32(0), 1, 2] AS ref SELECT L2DistanceTransposed(vec, ref, 32, 8) FROM qbit_strided; -- { serverError BAD_ARGUMENTS }
 
 DROP TABLE qbit_strided;
 DROP TABLE qbit_plain;

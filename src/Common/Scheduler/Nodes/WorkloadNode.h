@@ -14,8 +14,8 @@
 #include <Common/Scheduler/Nodes/SpaceShared/FairAllocation.h>
 #include <Common/Scheduler/Nodes/SpaceShared/PrecedenceAllocation.h>
 #include <Common/Scheduler/Nodes/TimeShared/FairPolicy.h>
-#include <Common/Scheduler/Nodes/TimeShared/FifoQueue.h>
 #include <Common/Scheduler/Nodes/TimeShared/PriorityPolicy.h>
+#include <Common/Scheduler/Nodes/TimeShared/RequestQueue.h>
 #include <Common/Scheduler/Nodes/TimeShared/SemaphoreConstraint.h>
 #include <Common/Scheduler/Nodes/TimeShared/ThrottlerConstraint.h>
 #include <Common/Scheduler/WorkloadSettings.h>
@@ -30,7 +30,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INVALID_SCHEDULER_NODE;
-    extern const int LOGICAL_ERROR;
 }
 
 /// Traits to unify creation and management of scheduler nodes for both time-shared and space-shared resources
@@ -42,30 +41,50 @@ struct WorkloadNodeTraits<ITimeSharedNode>
 {
     using NodePtr = TimeSharedNodePtr;
 
+    // The `scheduler` setting reorders requests by per-query identity, which is only meaningful for
+    // `IOByte` and `CPUNanosecond` leaves; other time-shared leaves (e.g. `QuerySlot` admission)
+    // always run `fifo` regardless of the workload `scheduler` setting.
+    static SchedulerAlgorithm schedulerFor(const WorkloadSettings & settings_, CostUnit unit)
+    {
+        if (unit == CostUnit::IOByte || unit == CostUnit::CPUNanosecond)
+            return parseSchedulerAlgorithm(settings_.scheduler);
+        return SchedulerAlgorithm::Fifo;
+    }
+
     static NodePtr makeQueue(IWorkloadNode * workload, EventQueue & event_queue_, const WorkloadSettings & settings_, CostUnit unit)
     {
-        NodePtr result = std::make_shared<FifoQueue>(
+        // The time-shared leaf is always a `RequestQueue`; the workload `scheduler` setting selects
+        // the scheduling algorithm it runs (default `fifo` reproduces the historical behaviour).
+        NodePtr result = std::make_shared<RequestQueue>(
             event_queue_,
             SchedulerNodeInfo{},
+            schedulerFor(settings_, unit),
+            unit,
             settings_.getQueueLimit(unit));
-        result->basename = "fifo";
+        result->basename = "queue";
         result->workload = workload;
         return result;
     }
 
     static ResourceLink getLink(const NodePtr & node)
     {
-        return ResourceLink{.queue = &static_cast<FifoQueue &>(*node)};
+        // Expose the queue through the `ISchedulerQueue` interface (independent of the algorithm).
+        return ResourceLink{.queue = &static_cast<ISchedulerQueue &>(*node)};
     }
 
     static void updateQueue(const NodePtr & node, const WorkloadSettings & settings_, CostUnit unit)
     {
-        static_cast<FifoQueue &>(*node).updateQueueLimit(settings_.getQueueLimit(unit));
+        // In-place update: the leaf node stays; its queue limit is updated and, if the `scheduler`
+        // setting changed, `setScheduler` swaps the algorithm and migrates pending requests. No
+        // hierarchy rebuild, `ResourceLink` unchanged.
+        auto & queue = static_cast<RequestQueue &>(*node);
+        queue.updateQueueLimit(settings_.getQueueLimit(unit));
+        queue.setScheduler(schedulerFor(settings_, unit));
     }
 
     static void purgeQueue(const NodePtr & node)
     {
-        static_cast<FifoQueue &>(*node).purgeQueue();
+        static_cast<ISchedulerQueue &>(*node).purgeQueue();
     }
 
     static NodePtr makeFairPolicy(IWorkloadNode * workload, EventQueue & event_queue_, Priority priority)
@@ -141,7 +160,7 @@ struct WorkloadNodeTraits<ITimeSharedNode>
 
     static constexpr bool addRawPointerThrottler = false; // ThrottlerConstraint does not call `request->addConstraint()`
     static constexpr bool addRawPointerSemaphore = true; // SemaphoreConstraint may be stored as a raw pointer in ResourceRequest
-    static constexpr bool addRawPointerQueue = true; // ResourceLink holds raw pointer to FifoQueue - so we need to enforce destruction order here
+    static constexpr bool addRawPointerQueue = true; // ResourceLink holds raw pointer to the leaf queue - so we need to enforce destruction order here
 };
 
 template <>
@@ -207,7 +226,8 @@ struct WorkloadNodeTraits<ISpaceSharedNode>
         NodePtr result = std::make_shared<AllocationLimit>(
             event_queue_,
             SchedulerNodeInfo{},
-            settings_.getAllocationLimit(unit));
+            settings_.getAllocationLimit(unit),
+            settings_.getSoftAllocationLimit(unit));
         result->basename = "limit";
         result->workload = workload;
         return result;
@@ -216,6 +236,7 @@ struct WorkloadNodeTraits<ISpaceSharedNode>
     static void updateSemaphore(const NodePtr & node, const WorkloadSettings & settings_, CostUnit unit)
     {
         static_cast<AllocationLimit &>(*node).updateLimit(settings_.getAllocationLimit(unit));
+        static_cast<AllocationLimit &>(*node).updateSoftLimit(settings_.getSoftAllocationLimit(unit));
     }
 
     static bool hasThrottler(const WorkloadSettings &, CostUnit)
@@ -279,7 +300,7 @@ protected:
         NodePtr root; /// FairPolicy node is used if multiple children with the same priority are attached
         std::unordered_map<String, SelfPtr> children; // basename -> child
 
-        bool empty() const { return children.empty(); }
+        [[nodiscard]] bool empty() const { return children.empty(); }
 
         NodePtr getRoot()
         {
@@ -351,7 +372,7 @@ protected:
         std::unordered_map<Priority::Value, FairnessBranch> branches; /// Branches for different priority values
 
         // Returns true iff there are no workload children attached
-        bool empty() const { return branches.empty(); }
+        [[nodiscard]] bool empty() const { return branches.empty(); }
 
         NodePtr getRoot()
         {
@@ -442,7 +463,8 @@ protected:
     /// Handles degenerate case of zero children (a fifo queue) or delegate to `ChildrenBranch`.
     struct QueueOrChildrenBranch
     {
-        NodePtr queue; /// FifoQueue or AllocationQueue node is used if there are no children
+        NodePtr queue; /// RequestQueue or AllocationQueue node is used if there are no children
+        bool queue_dropped = false; /// `queue` has been purged by `purgeDroppedQueue`
         ChildrenBranch branch; /// Used if there is at least one child
         WorkloadSettings settings;
         CostUnit unit = CostUnit::IOByte;
@@ -494,6 +516,17 @@ protected:
             settings = new_settings;
             if (queue)
                 Traits::updateQueue(queue, settings, unit);
+        }
+
+        /// Fails the requests and allocations of a dropped workload, the same way `removeQueue` does
+        /// when the workload gets its first child. The queue itself stays alive while older hierarchy
+        /// versions reference it.
+        void purgeDroppedQueue()
+        {
+            if (!queue || std::exchange(queue_dropped, true))
+                return;
+            detach(queue);
+            Traits::purgeQueue(queue);
         }
 
     private:
@@ -640,6 +673,18 @@ public:
         : BaseNode(event_queue_, SchedulerNodeInfo(settings))
     {}
 
+    ~WorkloadNodeCommon() override
+    {
+        /// Queues and constraints outlive this node while older versions are still referenced by classifiers.
+        /// The queue clears its own pointer in `purgeQueue` under its mutex, because query threads read it there.
+        purgeQueue(); // No-op if the workload was dropped through `purgeQueue` already
+        forEachSchedulerNode([this](ISchedulerNode * node)
+        {
+            if (node != impl.branch.queue.get())
+                node->workload = nullptr;
+        });
+    }
+
     void attachWorkloadChild(const WorkloadNodePtr & child) final
     {
         SCHED_DBG("{} -- attachWorkloadChild(child={})", this->getPath(), child->getWorkload());
@@ -665,27 +710,27 @@ public:
     /// Sharing-mode specific implementation of scheduling settings propagation
     virtual void propagateUpdateSchedulingSettings() = 0;
 
-    CostUnit getCostUnit() const final
+    [[nodiscard]] CostUnit getCostUnit() const final
     {
         return impl.unit;
     }
 
-    const String & getWorkload() const final
+    [[nodiscard]] const String & getWorkload() const final
     {
         return this->basename;
     }
 
-    const String & getResource() const final
+    [[nodiscard]] const String & getResource() const final
     {
         return impl.resource;
     }
 
-    const WorkloadSettings & getSettings() const final
+    [[nodiscard]] const WorkloadSettings & getSettings() const final
     {
         return impl.settings;
     }
 
-    ResourceLink getLink() const final
+    [[nodiscard]] ResourceLink getLink() const final
     {
         if (impl.branch.queue)
             return Traits::getLink(impl.branch.queue);
@@ -717,7 +762,12 @@ public:
         }
     }
 
-    bool hasWorkloadChildren() const final
+    void purgeQueue() final
+    {
+        impl.branch.purgeDroppedQueue();
+    }
+
+    [[nodiscard]] bool hasWorkloadChildren() const final
     {
         return impl.branch.queue == nullptr;
     }
@@ -741,12 +791,7 @@ public:
     }
 
 protected: // Hide all the ISchedulerNode interface methods as an implementation details
-    std::string_view getTypeName() const override { return "workload"; }
-
-    bool equals(ISchedulerNode *) override
-    {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "WorkloadNode should not be used with CustomResourceManager");
-    }
+    [[nodiscard]] std::string_view getTypeName() const override { return "workload"; }
 
     ConstraintsBranch impl;
 };
@@ -785,6 +830,7 @@ private:
         if (child.get() == child_)
         {
             child_active = false; // deactivate
+            flushThroughputOnDeactivation();
             child->setParentNode(nullptr); // detach
             child.reset();
         }
@@ -806,13 +852,15 @@ private:
         // Deactivate if necessary
         child_active = child_now_active;
         if (!child_active)
-            this->busy_periods++;
+            incrementCounter(this->busy_periods);
 
         if (request)
         {
             SCHED_DBG("{} -- dequeue(cost={})", this->getPath(), request->cost);
-            incrementDequeued(request->cost);
+            incrementDequeued(request->cost, child_active);
         }
+        else if (!child_active)
+            flushThroughputOnDeactivation();
 
         return {request, child_active};
     }
@@ -934,6 +982,13 @@ private:
     {
         chassert(child);
         return child->selectAllocationToKill(killer, limit, details);
+    }
+
+    ResourceAllocation * selectAllocationToSpill(ResourceCost at_least, String & details) override
+    {
+        chassert(child);
+        // Single-child passthrough: the child returns nullptr if nothing in its subtree is reclaimable.
+        return child->selectAllocationToSpill(at_least, details);
     }
 
     void propagateUpdateSchedulingSettings() override

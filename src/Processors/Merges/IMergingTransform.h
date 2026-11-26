@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/Merges/Algorithms/IMergingAlgorithm.h>
 
 #include <Core/Block_fwd.h>
@@ -34,12 +35,14 @@ public:
 
     OutputPort & getOutputPort();
 
-    /// Methods to add additional input port. It is possible to do only before the first call of `prepare`.
-    void addInput();
-    /// Need to be called after all inputs are added. (only if have_all_inputs was not specified).
+    /// Adds an input before registration is closed with `setHaveAllInputs`. Its header may differ
+    /// from the output header when the algorithm changes the column layout.
+    void addInput(const Block & input_header);
+    /// Closes input registration when constructed with `have_all_inputs_` set to false.
     void setHaveAllInputs();
 
     Status prepare() override;
+    Status prepare(const UpdatedInputPorts & updated_inputs, const UpdatedOutputPorts & updated_outputs) override;
 
 protected:
     virtual void onNewInput(); /// Is called when new input is added. Only if have_all_inputs = false.
@@ -56,6 +59,10 @@ protected:
         bool no_data = false;
         size_t next_input_to_read = 0;
 
+        /// Inputs to ask for data without waiting for it (read-ahead for sources
+        /// deferred behind virtual rows). See `IMergingAlgorithm::Status::sources_to_prefetch`.
+        VectorWithMemoryTracking<size_t> inputs_to_prefetch;
+
         IMergingAlgorithm::Inputs init_chunks;
     };
 
@@ -70,13 +77,21 @@ private:
         bool is_initialized = false;
     };
 
-    std::vector<InputState> input_states;
+    VectorWithMemoryTracking<InputState> input_states;
+    /// Input ports sorted by address with their indices, to find an updated port while waiting for the first chunks.
+    VectorWithMemoryTracking<std::pair<const InputPort *, size_t>> input_port_to_num;
+    size_t num_uninitialized_inputs = 0;
     std::atomic<bool> have_all_inputs;
     bool is_initialized = false;
     UInt64 limit_hint = 0;
     bool always_read_till_end = false;
 
-    IProcessor::Status prepareInitializeInputs();
+    /// `updated_inputs` is nullptr when the caller does not know which inputs changed.
+    Status prepareImpl(const UpdatedInputPorts * updated_inputs);
+    Status prepareInitializeInputs(const UpdatedInputPorts * updated_inputs);
+    /// Called for an input that is not initialized yet. Returns true when it no longer has to be waited for:
+    /// it delivered its first chunk or finished.
+    bool tryInitializeInput(size_t input_num);
 };
 
 /// Implementation of MergingTransform using IMergingAlgorithm.
@@ -127,10 +142,19 @@ public:
             algorithm.consume(state.input_chunk, state.next_input_to_read);
             state.has_input = false;
         }
-        else if (state.no_data && empty_chunk_on_finish)
+        else if (state.no_data)
         {
-            IMergingAlgorithm::Input current_input;
-            algorithm.consume(current_input, state.next_input_to_read);
+            if (empty_chunk_on_finish)
+            {
+                IMergingAlgorithm::Input current_input;
+                algorithm.consume(current_input, state.next_input_to_read);
+            }
+            else
+            {
+                /// The required source finished without data. Let the algorithm release any
+                /// per-source bookkeeping (e.g. a read-ahead slot held for a deferred source).
+                algorithm.onSourceExhausted(state.next_input_to_read);
+            }
             state.no_data = false;
         }
 
@@ -140,6 +164,7 @@ public:
         {
             // std::cerr << "Got chunk with " << status.chunk.getNumRows() << " rows" << std::endl;
             state.output_chunk = std::move(status.chunk);
+            onOutputChunk(state.output_chunk);
         }
 
         if (status.required_source >= 0)
@@ -148,6 +173,10 @@ public:
             state.next_input_to_read = status.required_source;
             state.need_data = true;
         }
+
+        if (!status.sources_to_prefetch.empty())
+            state.inputs_to_prefetch.insert(
+                state.inputs_to_prefetch.end(), status.sources_to_prefetch.begin(), status.sources_to_prefetch.end());
 
         if (status.is_finished)
         {
@@ -159,6 +188,9 @@ public:
     }
 
 protected:
+    /// Is called for every chunk the merge produces, before it is pushed to the output.
+    virtual void onOutputChunk(const Chunk & /*chunk*/) {}
+
     /// Call `consume` with empty chunk when there is no more data.
     bool empty_chunk_on_finish = false;
 
@@ -187,7 +219,7 @@ protected:
         }
         else
         {
-            LOG_DEBUG(log, "{}, {} blocks, {} rows, {} bytes in {} sec., {} rows/sec., {}/sec.",
+            LOG_DEBUG(log, "{}, {} blocks, {} rows, {} bytes in {:.3f} sec., {:.3f} rows/sec., {}/sec.",
                 transform_message, stats.blocks, stats.rows, stats.bytes,
                 seconds, static_cast<double>(stats.rows) / seconds, ReadableSize(static_cast<double>(stats.bytes) / seconds));
         }

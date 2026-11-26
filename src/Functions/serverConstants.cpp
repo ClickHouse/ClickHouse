@@ -33,7 +33,7 @@ namespace
     {
     public:
         using FunctionConstantBase<Derived, T, ColumnT>::FunctionConstantBase;
-        bool isServerConstant() const override { return true; }
+        [[nodiscard]] bool isServerConstant() const override { return true; }
     };
 
 #if (defined(__ELF__) && !defined(OS_FREEBSD)) || defined(OS_DARWIN)
@@ -55,6 +55,16 @@ namespace
         static constexpr auto name = "hostName";
         static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionHostName>(context); }
         explicit FunctionHostName(ContextPtr context) : FunctionServerConstantBase(DNSResolver::instance().getHostName(), context->isDistributed()) {}
+    };
+
+
+    /// Get the fully qualified domain name. Like `hostName`, it is constant on a single server, but not in distributed queries.
+    class FunctionFQDN final : public FunctionServerConstantBase<FunctionFQDN, String, DataTypeString>
+    {
+    public:
+        static constexpr auto name = "FQDN";
+        static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionFQDN>(context); }
+        explicit FunctionFQDN(ContextPtr context) : FunctionServerConstantBase(getFQDNOrHostName(), context->isDistributed()) {}
     };
 
 
@@ -177,7 +187,7 @@ SELECT buildId()
         )",
         R"(
 ┌─buildId()────────────────────────────────┐
-│ AB668BEF095FAA6BD26537F197AC2AF48A927FB4 │
+│ B49BA4BC500E5E850F832BEC918885516B22FC0E │
 └──────────────────────────────────────────┘
         )"
     }
@@ -222,6 +232,37 @@ SELECT hostName()
     factory.registerAlias("hostname", "hostName");
 }
 
+REGISTER_FUNCTION(FQDN)
+{
+    FunctionDocumentation::Description description = R"(
+Returns the fully qualified domain name of the ClickHouse server.
+If the function executes in the context of a distributed table, it generates a normal column with values relevant to each shard.
+Otherwise it produces a constant value.
+    )";
+    FunctionDocumentation::Syntax syntax = "FQDN()";
+    FunctionDocumentation::Arguments arguments = {};
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the fully qualified domain name of the ClickHouse server.", {"String"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Usage example",
+        R"(
+SELECT fqdn()
+        )",
+        R"(
+┌─FQDN()────────────────────────┐
+│ clickhouse.us-east-2.internal │
+└───────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionFQDN>(documentation, FunctionFactory::Case::Insensitive);
+    factory.registerAlias("fullHostName", "FQDN");
+}
+
 REGISTER_FUNCTION(ServerUUID)
 {
     FunctionDocumentation::Description description_serverUUID = R"(
@@ -254,7 +295,7 @@ SELECT serverUUID();
 REGISTER_FUNCTION(TCPPort)
 {
     FunctionDocumentation::Description description = R"(
-Returns the [native interface](/interfaces/tcp) TCP port number listened to by the server.
+Returns the [native interface](/concepts/features/interfaces/tcp) TCP port number listened to by the server.
 If executed in the context of a distributed table, this function generates a normal column with values relevant to each shard.
 Otherwise it produces a constant value.
     )";
@@ -311,12 +352,13 @@ SELECT timezone()
 
     factory.registerFunction<FunctionTimezone>(documentation, FunctionFactory::Case::Insensitive);
     factory.registerAlias("timeZone", "timezone");
+    factory.registerAlias("current_timezone", "timezone", FunctionFactory::Case::Insensitive);
 }
 
 REGISTER_FUNCTION(ServerTimezone)
 {
     FunctionDocumentation::Description description = R"(
-Returns the timezone of the server, i.e. the value of the [`timezone`](/operations/server-configuration-parameters/settings#timezone) setting.
+Returns the timezone of the server, i.e. the value of the [`timezone`](/reference/settings/server-settings/settings/other#timezone) setting.
 If the function is executed in the context of a distributed table, then it generates a normal column with values relevant to each shard. Otherwise, it produces a constant value.
     )";
     FunctionDocumentation::Syntax syntax = "serverTimezone()";
@@ -329,7 +371,7 @@ SELECT serverTimeZone()
         )",
         R"(
 ┌─serverTimeZone()─┐
-│ UTC              │
+│ Etc/UTC          │
 └──────────────────┘
         )"
     }
@@ -446,7 +488,7 @@ SELECT zookeeperSessionUptime();
         )",
         R"(
 ┌─zookeeperSessionUptime()─┐
-│                      286 │
+│                        3 │
 └──────────────────────────┘
         )"
     }
@@ -491,7 +533,7 @@ SELECT getOSKernelVersion();
 REGISTER_FUNCTION(DisplayName)
 {
     FunctionDocumentation::Description description = R"(
-Returns the value of `display_name` from [config](/operations/configuration-files) or the server's Fully Qualified Domain Name (FQDN) if not set.
+Returns the value of `display_name` from [config](/concepts/features/configuration/server-config/configuration-files) or the server's Fully Qualified Domain Name (FQDN) if not set.
 )";
     FunctionDocumentation::Syntax syntax = "displayName()";
     FunctionDocumentation::Arguments arguments = {};

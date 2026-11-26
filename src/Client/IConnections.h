@@ -29,6 +29,10 @@ public:
 
     virtual void sendQueryPlan(const QueryPlan & query_plan) = 0;
 
+    /// All currently connected replicas must support this version before the caller sends a
+    /// query-plan packet serialized at it.
+    [[nodiscard]] virtual bool supportsQueryPlanSerializationVersion(UInt64 version) const = 0;
+
     virtual void sendClusterFunctionReadTaskResponse(const ClusterFunctionReadTaskResponse &) = 0;
     virtual void sendMergeTreeReadTaskResponse(const ParallelReadResponse & response) = 0;
     virtual void sendMergeTreeAllRangesAnnouncementResponse(const InitialAllRangesAnnouncementResponse & response) = 0;
@@ -54,7 +58,7 @@ public:
     virtual Packet drain() = 0;
 
     /// Get the replica addresses as a string.
-    virtual std::string dumpAddresses() const = 0;
+    [[nodiscard]] virtual std::string dumpAddresses() const = 0;
 
     struct ReplicaInfo
     {
@@ -71,10 +75,10 @@ public:
 
 
     /// Returns the number of replicas.
-    virtual size_t size() const = 0;
+    [[nodiscard]] virtual size_t size() const = 0;
 
     /// Check if there are any valid replicas.
-    virtual bool hasActiveConnections() const = 0;
+    [[nodiscard]] virtual bool hasActiveConnections() const = 0;
 
     virtual ~IConnections() = default;
 

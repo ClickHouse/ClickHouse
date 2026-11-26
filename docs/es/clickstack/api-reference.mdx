@@ -1,0 +1,127 @@
+---
+slug: /use-cases/observability/clickstack/api-reference
+title: 'Referencia de la API'
+sidebarTitle: 'Referencia de la API'
+description: 'Referencia de la API de ClickStack para gestionar dashboard, alertas y fuentes de datos de forma programática'
+doc_type: 'guide'
+keywords: ['ClickStack', 'observabilidad', 'API', 'REST API', 'dashboard', 'alertas', 'UI de ClickStack']
+---
+
+ClickStack expone una API REST para gestionar de forma programática dashboard, alertas y fuentes de datos.
+
+## Documentación de referencia de la API {#api-docs}
+
+Para ClickStack Open Source, la especificación completa de la API se mantiene en el [repositorio de la UI de ClickStack](https://github.com/hyperdxio/hyperdx) y puede consultarse de forma interactiva o descargarse como una especificación OpenAPI:
+
+* [Referencia interactiva de la API](https://www.clickhouse.com/docs/clickstack/api-reference)
+* [Descargar la especificación OpenAPI (JSON)](https://raw.githubusercontent.com/hyperdxio/hyperdx/refs/heads/main/packages/api/openapi.json)
+
+Los siguientes endpoints están disponibles:
+
+| Recurso        | Operaciones                                              |
+| -------------- | -------------------------------------------------------- |
+| **Dashboards** | Crear, listar, obtener, actualizar y eliminar dashboards |
+| **Alertas**     | Crear, listar, obtener, actualizar y eliminar alertas    |
+| **Gráficos**     | Consultar datos de series temporales (solo POST)         |
+| **Sources**    | Listar fuentes de datos                                  |
+| **Webhooks**   | Listar webhooks                                          |
+
+## Autenticación {#authentication}
+
+ClickStack Open Source usa un **token Bearer** para la autenticación mediante una **Personal API Access Key**.
+
+Para obtener una API key:
+
+1. Abre la UI de ClickStack en la URL de tu ClickStack (por ejemplo, http://localhost:8080)
+2. Crea una cuenta o inicia sesión si es necesario
+3. Ve a **Team Settings → API Keys**
+4. Copia tu **Personal API Access Key**
+
+<div className="ch-image-lg">
+  <Frame>
+    ![API key de ClickStack](/images/clickstack/api-key-personal.webp)
+  </Frame>
+</div>
+
+<Note>
+  Esta es distinta de la **API key de ingesta** que se encuentra en Team Settings y se usa para autenticar los datos de telemetría enviados al collector de OpenTelemetry.
+</Note>
+
+El servidor de la API se ejecuta en el puerto `8000` de forma predeterminada (separado de la UI en el puerto `8080`). Si usas la imagen todo en uno de Docker, asegúrate de asignar este puerto explícitamente:
+
+```bash
+docker run -p 8080:8080 -p 8000:8000 -p 4317:4317 -p 4318:4318 clickhouse/clickstack-all-in-one
+```
+
+Incluye la clave en el encabezado `Authorization`:
+
+```bash
+curl -H "Authorization: Bearer <YOUR_API_KEY>" \
+  http://localhost:8000/api/v2/dashboards
+```
+
+## URL base y formato de solicitud {#base-url}
+
+Todas las solicitudes a la API de Open Source ClickStack se envían al servidor de la API de la UI de ClickStack en el puerto `8000`:
+
+```bash
+http://<YOUR_HYPERDX_HOST>:8000/api/v2/<resource>
+```
+
+Por ejemplo, con una implementación local predeterminada:
+
+```bash
+http://localhost:8000/api/v2/dashboards
+```
+
+### Ejemplo: Listar dashboards {#list-dashboards-oss}
+
+```bash
+curl -H "Authorization: Bearer <YOUR_API_KEY>" \
+  http://localhost:8000/api/v2/dashboards
+```
+
+### Ejemplo: Crear una alerta {#create-alert-oss}
+
+```bash
+curl -X POST \
+  -H "Authorization: Bearer <YOUR_API_KEY>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "dashboardId": "<DASHBOARD_ID>",
+    "tileId": "<TILE_ID>",
+    "threshold": 100,
+    "interval": "1h",
+    "source": "tile",
+    "thresholdType": "above",
+    "channel": {
+      "type": "webhook",
+      "webhookId": "<WEBHOOK_ID>"
+    },
+    "name": "Error Spike Alert",
+    "message": "Error rate exceeded 100 in the last hour"
+  }' \
+  http://localhost:8000/api/v2/alerts
+```
+
+### Ejemplo: Consultar datos de series de un gráfico {#query-series-data}
+
+```bash
+curl -X POST \
+  -H "Authorization: Bearer <YOUR_API_KEY>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "startTime": 1647014400000,
+    "endTime": 1647100800000,
+    "granularity": "1h",
+    "series": [
+      {
+        "sourceId": "<SOURCE_ID>",
+        "aggFn": "count",
+        "where": "SeverityText:error",
+        "groupBy": []
+      }
+    ]
+  }' \
+  http://localhost:8000/api/v2/charts/series
+```

@@ -2,6 +2,8 @@
 
 #include <algorithm>
 #include <string>
+#include <string_view>
+#include <span>
 #include <cstring>
 #include <cstddef>
 #include <cstdint>
@@ -28,7 +30,7 @@ inline bool endsWith(const std::string & s, const std::string & suffix)
 }
 
 
-/// With GCC, strlen is evaluated compile time if we pass it a constant
+/// strlen is evaluated at compile time if we pass it a constant
 /// string that is known at compile time.
 inline bool startsWith(const std::string & s, const char * prefix)
 {
@@ -65,31 +67,28 @@ std::string getOrdinalSuffix(T n)
 
 /// More efficient than libc, because doesn't respect locale. But for some functions table implementation could be better.
 
-inline bool isASCII(char c)
+constexpr bool isASCII(char c)
 {
     return static_cast<unsigned char>(c) < 0x80;
 }
 
-inline bool isLowerAlphaASCII(char c)
+constexpr bool isLowerAlphaASCII(char c)
 {
     return (c >= 'a' && c <= 'z');
 }
 
-inline bool isUpperAlphaASCII(char c)
+constexpr bool isUpperAlphaASCII(char c)
 {
     return (c >= 'A' && c <= 'Z');
 }
 
-inline bool isAlphaASCII(char c)
+constexpr bool isAlphaASCII(char c)
 {
     return isLowerAlphaASCII(c) || isUpperAlphaASCII(c);
 }
 
-inline bool isNumericASCII(char c)
+constexpr bool isNumericASCII(char c)
 {
-    /// This is faster than
-    /// return UInt8(UInt8(c) - UInt8('0')) < UInt8(10);
-    /// on Intel CPUs when compiled by gcc 8.
     return (c >= '0' && c <= '9');
 }
 
@@ -100,7 +99,7 @@ inline bool isHexDigit(char c)
         || (c >= 'A' && c <= 'F');
 }
 
-inline bool isAlphaNumericASCII(char c)
+constexpr bool isAlphaNumericASCII(char c)
 {
     return isAlphaASCII(c)
         || isNumericASCII(c);
@@ -135,9 +134,36 @@ inline bool isWhitespaceASCIIOneLine(char c)
     return c == ' ' || c == '\t' || c == '\f' || c == '\v';
 }
 
+/// Remove the leading and trailing ASCII whitespace.
+inline std::string_view trimWhitespace(std::string_view str)
+{
+    while (!str.empty() && isWhitespaceASCII(str.front()))
+        str.remove_prefix(1);
+    while (!str.empty() && isWhitespaceASCII(str.back()))
+        str.remove_suffix(1);
+    return str;
+}
+
+/// The part of a URL before its query string or fragment, i.e. before the first '?' or '#'.
+inline std::string_view stripQueryAndFragment(std::string_view url)
+{
+    return url.substr(0, url.find_first_of("?#"));
+}
+
 inline bool isControlASCII(char c)
 {
     return static_cast<unsigned char>(c) <= 31;
+}
+
+inline bool isControlOrDeleteASCII(char c)
+{
+    return isControlASCII(c) || c == 0x7F;
+}
+
+/// A character allowed in an HTTP token, such as a header name (RFC 9110, section 5.6.2).
+inline bool isHTTPTokenChar(char c)
+{
+    return isAlphaNumericASCII(c) || std::string_view("!#$%&'*+-.^_`|~").contains(c);
 }
 
 inline bool isPrintableASCII(char c)
@@ -271,6 +297,88 @@ inline bool equalsCaseInsensitive(char a, char b)
     return a == b || (isAlphaASCII(a) && alternateCaseIfAlphaASCII(a) == b);
 }
 
+inline bool equalsCaseInsensitive(std::string_view a, std::string_view b)
+{
+    return a.size() == b.size()
+        && std::equal(a.begin(), a.end(), b.begin(), [](char x, char y) { return equalsCaseInsensitive(x, y); });
+}
+
+/// Equality for secret-derived byte sequences such as passwords and one-time codes. Unlike `memcmp`
+/// and `operator==`, the runtime does not depend on the position of the first mismatch, so timing does
+/// not reveal how many leading bytes were right. The lengths are treated as public, as in OpenSSL's
+/// `CRYPTO_memcmp`. The `volatile` reads keep the compiler from turning the loop into an early-exit compare.
+inline bool constantTimeEquals(std::span<const uint8_t> lhs, std::span<const uint8_t> rhs)
+{
+    if (lhs.size() != rhs.size())
+        return false;
+
+    const volatile uint8_t * a = lhs.data();
+    const volatile uint8_t * b = rhs.data();
+    uint8_t diff = 0;
+    for (size_t i = 0; i < lhs.size(); ++i)
+        diff |= a[i] ^ b[i];
+    return diff == 0;
+}
+
+inline bool constantTimeEquals(std::string_view lhs, std::string_view rhs)
+{
+    return constantTimeEquals(
+        std::span(reinterpret_cast<const uint8_t *>(lhs.data()), lhs.size()),
+        std::span(reinterpret_cast<const uint8_t *>(rhs.data()), rhs.size()));
+}
+
+/// ASCII-only case conversion. Keywords, identifiers and function names are ASCII, and applying
+/// the locale to them would be wrong, so these deliberately leave every other byte alone.
+
+inline char toLowerASCII(char c)
+{
+    return isUpperAlphaASCII(c) ? toLowerIfAlphaASCII(c) : c;
+}
+
+inline char toUpperASCII(char c)
+{
+    return isLowerAlphaASCII(c) ? toUpperIfAlphaASCII(c) : c;
+}
+
+inline void toLowerASCII(std::string & str)
+{
+    for (char & c : str)
+        c = toLowerASCII(c);
+}
+
+inline void toUpperASCII(std::string & str)
+{
+    for (char & c : str)
+        c = toUpperASCII(c);
+}
+
+inline std::string toLowerCopyASCII(std::string_view str)
+{
+    std::string res{str};
+    toLowerASCII(res);
+    return res;
+}
+
+inline std::string toUpperCopyASCII(std::string_view str)
+{
+    std::string res{str};
+    toUpperASCII(res);
+    return res;
+}
+
+/// Replace every occurrence of `what` with `with`, in place. Does nothing if `what` is empty.
+inline void replaceAll(std::string & str, std::string_view what, std::string_view with)
+{
+    if (what.empty())
+        return;
+
+    for (size_t position = str.find(what); position != std::string::npos; position = str.find(what, position))
+    {
+        str.replace(position, what.length(), with);
+        position += with.length();
+    }
+}
+
 
 template <typename F>
 std::string trim(const std::string & str, F && predicate)
@@ -320,7 +428,10 @@ inline void trimRight(std::string_view & str, char c = ' ')
 
 inline void trimRight(std::string & str, char c = ' ')
 {
-    str.erase(str.find_last_not_of(c) + 1);
+    /// `find_last_not_of` answers `npos` for a string that is entirely `c`, and `npos + 1` only
+    /// lands on the 0 this wants by wrapping.
+    const size_t last_kept = str.find_last_not_of(c);
+    str.erase(last_kept == std::string::npos ? 0 : last_kept + 1);
 }
 
 inline void trim(std::string_view & str, char c = ' ')
@@ -337,6 +448,9 @@ inline void trim(std::string & str, char c = ' ')
 
 /// If all characters in the string are ASCII, return true
 bool isAllASCII(const UInt8 * data, size_t size);
+
+/// Position of the first byte >= 0x80, or `size` if there is none.
+size_t findFirstNonASCII(const UInt8 * data, size_t size);
 
 constexpr bool containsGlobs(const std::string & str)
 {
@@ -356,9 +470,25 @@ inline bool isValidIdentifier(std::string_view str)
             && toLowerIfAlphaASCII(str[3]) == 'l');
 }
 
-/// Returns {fixed_prefix, is_perfect_prefix, is_exact}.
-/// `is_exact` is true when the pattern has no wildcard at all and is therefore equivalent to an exact match
-/// of `fixed_prefix` (e.g. 'a\%b' is exact and matches only 'a%b'); in that case the prefix is always returned.
-std::tuple<String, bool, bool> extractFixedPrefixFromLikePattern(std::string_view like_pattern, bool requires_perfect_prefix);
+/// A fixed literal prefix extracted from a LIKE pattern: every matching string starts with `prefix`.
+struct LikePatternFixedPrefix
+{
+    String prefix;
+
+    /// The pattern matches every string starting with `prefix`, so it is equivalent to
+    /// `startsWith(haystack, prefix)`, e.g. 'test%'.
+    bool is_perfect = false;
+
+    /// The pattern has no wildcard at all, so it is equivalent to an exact match of `prefix`,
+    /// e.g. 'a\%b' matches only 'a%b'. Such a prefix is not perfect (a perfect prefix requires
+    /// a trailing '%'), but it describes the matching strings even more precisely, so it is
+    /// always returned regardless of `requires_perfect_prefix`.
+    bool is_exact = false;
+};
+
+/// Extracts the prefix of a LIKE pattern before the first wildcard, e.g. 'Hello\_World%' -> 'Hello_World'.
+/// Escapes are folded exactly as `likePatternToRegexp` does, so the prefix equals the string LIKE matches:
+/// '\%', '\_' and '\\' drop the backslash, but an unknown escape keeps it ('\w' matches the literal "\w").
+LikePatternFixedPrefix extractFixedPrefixFromLikePattern(std::string_view like_pattern, bool requires_perfect_prefix);
 
 String firstStringThatIsGreaterThanAllStringsWithPrefix(const String & prefix);

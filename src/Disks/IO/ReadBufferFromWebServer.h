@@ -28,7 +28,8 @@ public:
         const ReadSettings & settings_ = {},
         bool use_external_buffer_ = false,
         size_t read_until_position = 0,
-        HTTPHeaderEntries headers_ = {});
+        HTTPHeaderEntries headers_ = {},
+        String expected_etag_ = {});
 
     explicit ReadBufferFromWebServer(
         std::vector<String> urls_,
@@ -37,7 +38,8 @@ public:
         const ReadSettings & settings_ = {},
         bool use_external_buffer_ = false,
         size_t read_until_position = 0,
-        HTTPHeaderEntries headers_ = {});
+        HTTPHeaderEntries headers_ = {},
+        String expected_etag_ = {});
 
     bool nextImpl() override;
 
@@ -52,6 +54,10 @@ public:
     size_t getFileOffsetOfBufferEnd() const override { return offset.load(std::memory_order_relaxed); }
 
     bool supportsRightBoundedReads() const override { return true; }
+
+    /// Report the capability from the same flag that drives the `nextImpl` external branch,
+    /// as `ReadBufferFromS3` does, so it can't diverge from the buffer's actual behaviour.
+    bool supportsExternalBufferMode() const override { return use_external_buffer; }
 
     Map getResponseHeaders() const;
     std::optional<Field> getMetadata(const String & name) const override;
@@ -75,6 +81,8 @@ private:
 
     ReadSettings read_settings;
     HTTPHeaderEntries headers;
+    /// If not empty, every response must carry this `ETag` (see `BuilderRWBufferFromHTTP::withExpectedETag`).
+    String expected_etag;
 
     bool use_external_buffer;
     bool has_pending_first_read_result = false;

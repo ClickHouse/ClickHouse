@@ -1,0 +1,26 @@
+-- five tables, cap 4
+pinned	5	0.800000011920929
+fl_t01	2
+fl_t02	2
+fl_t03	2
+fl_t04	2
+fl_t05	2
+-- five tables, cap 5 (discriminator)
+pinned	5	1
+fl_t01	2
+fl_t02	2
+fl_t03	2
+fl_t04	2
+fl_t05	2
+-- ten tables, cap 8
+pinned	10	0.800000011920929
+fl_t01	2
+fl_t02	2
+fl_t03	2
+fl_t04	2
+fl_t05	2
+fl_t06	2
+fl_t07	2
+fl_t08	2
+fl_t09	2
+fl_t10	2

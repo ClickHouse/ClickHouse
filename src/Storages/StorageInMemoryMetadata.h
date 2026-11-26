@@ -15,6 +15,9 @@
 #include <Storages/TTLDescription.h>
 
 #include <Common/MultiVersion.h>
+#include <Common/SecretString.h>
+
+#include <optional>
 
 namespace DB
 {
@@ -62,8 +65,10 @@ struct StorageInMemoryMetadata
     TTLColumnsDescription column_ttls_by_name;
     /// TTL expressions for table (Move and Rows)
     TTLTableDescription table_ttl;
-    /// SETTINGS expression. Supported for MergeTree, Buffer, Kafka, RabbitMQ.
-    ASTPtr settings_changes;
+    /// SETTINGS expression. Used by MergeTree, Buffer, Kafka, RabbitMQ.
+    /// SecretString instead of an AST, so that credentials in settings do not rest in core-dumpable memory.
+    std::optional<SecretString> settings_changes;
+    Names settings_changes_names;
     /// SELECT QUERY. Supported for MaterializedView and View.
     SelectQueryDescription select;
     /// Materialized view REFRESH parameters.
@@ -177,31 +182,31 @@ struct StorageInMemoryMetadata
     bool hasOnlyRowsTTL() const;
 
     /// Common tables TTLs (for rows and moves).
-    TTLTableDescription getTableTTLs() const;
+    const TTLTableDescription & getTableTTLs() const;
     bool hasAnyTableTTL() const;
 
     /// Separate TTLs for columns.
-    TTLColumnsDescription getColumnTTLs() const;
+    const TTLColumnsDescription & getColumnTTLs() const;
     bool hasAnyColumnTTL() const;
 
     /// Just wrapper for table TTLs, return rows part of table TTLs.
-    TTLDescription getRowsTTL() const;
+    const TTLDescription & getRowsTTL() const;
     bool hasRowsTTL() const;
 
-    TTLDescriptions getRowsWhereTTLs() const;
+    const TTLDescriptions & getRowsWhereTTLs() const;
     bool hasAnyRowsWhereTTL() const;
 
     /// Just wrapper for table TTLs, return moves (to disks or volumes) parts of
     /// table TTL.
-    TTLDescriptions getMoveTTLs() const;
+    const TTLDescriptions & getMoveTTLs() const;
     bool hasAnyMoveTTL() const;
 
     // Just wrapper for table TTLs, return info about recompression ttl
-    TTLDescriptions getRecompressionTTLs() const;
+    const TTLDescriptions & getRecompressionTTLs() const;
     bool hasAnyRecompressionTTL() const;
 
     // Just wrapper for table TTLs, return info about recompression ttl
-    TTLDescriptions getGroupByTTLs() const;
+    const TTLDescriptions & getGroupByTTLs() const;
     bool hasAnyGroupByTTL() const;
 
     using HasDependencyCallback = std::function<bool(const String &, ColumnDependency::Kind)>;
@@ -227,6 +232,10 @@ struct StorageInMemoryMetadata
 
     /// Block with ordinary + materialized + virtuals.
     Block getSampleBlockWithVirtuals(VirtualsKind kind, VirtualsMaterializationPlace place) const;
+
+    /// All columns (incl. alias/ephemeral) plus virtual columns, a physical column shadowing a
+    /// virtual of the same name. Used to resolve implicit indices over virtual columns.
+    ColumnsDescription getColumnsWithVirtuals() const;
 
     /// Returns whether the column is virtual and not shadowed by a real column.
     bool isVirtualColumn(const String & column_name) const;
@@ -288,6 +297,9 @@ struct StorageInMemoryMetadata
     /// * y', 'toStartOfMonth(date)', etc.
     Names getPrimaryKeyColumns() const;
 
+    /// Columns of the partition, sorting and primary keys, with a subcolumn replaced by the column it is stored in.
+    NameSet getStorageColumnsRequiredForKeys() const;
+
     /// Returns structure with unique key (UNIQUE KEY clause).
     const KeyDescription & getUniqueKey() const;
     /// Returns AST of unique key expression for storage or nullptr if there is none.
@@ -302,7 +314,11 @@ struct StorageInMemoryMetadata
     /// Storage settings
     ASTPtr getSettingsChanges() const;
     Field getSettingChange(const String & setting_name) const;
-    bool hasSettingsChanges() const { return settings_changes != nullptr; }
+
+    /// Whether the table `SETTINGS` clause contains an explicit override of `setting_name`.
+    /// Unlike `getSettingsChanges`, it does not clone the AST, so it is cheap enough for hot paths.
+    bool hasSettingChange(const String & setting_name) const;
+    bool hasSettingsChanges() const { return settings_changes.has_value(); }
 
     /// Select query for *View storages.
     const SelectQueryDescription & getSelectQuery() const;

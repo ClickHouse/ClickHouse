@@ -1,17 +1,21 @@
 #pragma once
 
 #include <Analyzer/IQueryTreeNode.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Analyzer/TableExpressionModifiers.h>
 #include <Core/SortDescription.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
-#include <Processors/QueryPlan/Serialization.h>
 #include <QueryPipeline/StreamLocalLimits.h>
 
 #include <memory>
 
 namespace DB
 {
+
+struct QueryPlanStepSerialization;
+struct QueryPlanStepDeserialization;
 
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
@@ -27,9 +31,6 @@ using InputOrderInfoPtr = std::shared_ptr<const InputOrderInfo>;
 
 struct TreeRewriterResult;
 using TreeRewriterResultPtr = std::shared_ptr<const TreeRewriterResult>;
-
-class ReadInOrderOptimizer;
-using ReadInOrderOptimizerPtr = std::shared_ptr<const ReadInOrderOptimizer>;
 
 class Cluster;
 using ClusterPtr = std::shared_ptr<Cluster>;
@@ -52,12 +53,12 @@ struct PrewhereInfo
     explicit PrewhereInfo(ActionsDAG prewhere_actions_, String prewhere_column_name_)
             : prewhere_actions(std::move(prewhere_actions_)), prewhere_column_name(std::move(prewhere_column_name_)) {}
 
-    std::string dump() const;
+    [[nodiscard]] std::string dump() const;
 
-    PrewhereInfo clone() const;
+    [[nodiscard]] PrewhereInfo clone() const;
 
-    void serialize(IQueryPlanStep::Serialization & ctx) const;
-    static PrewhereInfo deserialize(IQueryPlanStep::Deserialization & ctx);
+    void serialize(QueryPlanStepSerialization & ctx) const;
+    static PrewhereInfo deserialize(QueryPlanStepDeserialization & ctx);
 };
 
 /// Same as FilterInfo, but with ActionsDAG.
@@ -67,10 +68,10 @@ struct FilterDAGInfo
     String column_name;
     bool do_remove_column = false;
 
-    std::string dump() const;
+    [[nodiscard]] std::string dump() const;
 
-    void serialize(IQueryPlanStep::Serialization & ctx) const;
-    static FilterDAGInfo deserialize(IQueryPlanStep::Deserialization & ctx);
+    void serialize(QueryPlanStepSerialization & ctx) const;
+    static FilterDAGInfo deserialize(QueryPlanStepDeserialization & ctx);
 };
 
 struct InputOrderInfo
@@ -135,10 +136,21 @@ struct SelectQueryInfo
 
     /// Storage table expression
     /// It's guaranteed to be present in JOIN TREE of `query_tree`
-    QueryTreeNodePtr table_expression;
+    TableExpressionNodePtr table_expression;
+
+    /// A parallel-replicas read through a table function is coordinated under the name of the storage the call
+    /// resolved to, not under the identity of the call: set for a read shipped in a plan fragment, which a replica
+    /// rebuilds from the storage alone. Kept here so that every step rebuilt from this read inherits it.
+    bool parallel_replicas_coordinated_under_storage_name = false;
 
     /// Table expression modifiers for storage
     std::optional<TableExpressionModifiers> table_expression_modifiers;
+
+    /// Value of the `analyzer_compatibility_apply_final_to_all_joined_tables` setting.
+    /// When true, `isFinal` falls back to the query-level FINAL (the left-most table's modifier)
+    /// for table expressions without their own modifiers, restoring the pre-26.6 behavior
+    /// where FINAL on one table of a JOIN leaked onto the other joined tables.
+    bool apply_query_level_final_if_no_modifiers = false;
 
     std::shared_ptr<const StorageLimitsList> storage_limits;
 
@@ -175,8 +187,8 @@ struct SelectQueryInfo
     /// (See comment in ReadFromMergeTree::applyFilters.)
     std::shared_ptr<const ActionsDAG> filter_actions_dag;
 
-    ReadInOrderOptimizerPtr order_optimizer;
-    /// Can be modified while reading from storage
+    /// Set by `ReadFromMergeTree::requestReadingInOrder` / `ReadFromMerge::requestReadingInOrder`
+    /// when the query plan optimizer decides to read in the order of the sorting key.
     InputOrderInfoPtr input_order_info;
 
     /// Prepared sets are used for indices by storage engine.
@@ -197,31 +209,35 @@ struct SelectQueryInfo
     /// If query has aggregate functions
     bool has_aggregates = false;
 
-    ClusterPtr getCluster() const { return !optimized_cluster ? cluster : optimized_cluster; }
+    [[nodiscard]] ClusterPtr getCluster() const { return !optimized_cluster ? cluster : optimized_cluster; }
 
     bool settings_limit_offset_done = false;
     bool is_internal = false;
+    bool is_secondary_query_root = false;
     bool is_parameterized_view = false;
     bool optimize_trivial_count = false;
 
     // If not 0, that means it's a trivial limit query.
     UInt64 trivial_limit = 0;
+    /// A trivial limit query whose rows `arrayJoin` expands: the source must not stop at the limit, but should read small.
+    bool small_limit_above_array_join = false;
 
     /// For IStorageSystemOneBlock
     std::vector<UInt8> columns_mask;
 
-    /// During read from MergeTree parts will be removed from snapshot after they are not needed
-    bool merge_tree_enable_remove_parts_from_snapshot_optimization = true;
-
-    bool isFinal() const;
+    [[nodiscard]] bool isFinal() const;
 
     /// Whether the table expression has the STREAM modifier.
-    bool isStream() const;
+    [[nodiscard]] bool isStream() const;
+
+    /// The `SAMPLE` and `SAMPLE ... OFFSET` ratios of the table expression.
+    [[nodiscard]] std::optional<TableExpressionModifiers::Rational> getSampleSizeRatio() const;
+    [[nodiscard]] std::optional<TableExpressionModifiers::Rational> getSampleOffsetRatio() const;
 
     /// Analyzer generates unique ColumnIdentifiers like __table1.__partition_id in filter nodes,
     /// while key analysis still requires unqualified column names.
     /// This function generates a map that maps the unique names to table column names,
     /// for the current table (`table_expression`).
-    std::unordered_map<std::string, ColumnWithTypeAndName> buildNodeNameToInputNodeColumn() const;
+    [[nodiscard]] UnorderedMapWithMemoryTracking<std::string, ColumnWithTypeAndName> buildNodeNameToInputNodeColumn() const;
 };
 }

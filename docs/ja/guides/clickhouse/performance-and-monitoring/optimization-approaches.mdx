@@ -1,0 +1,304 @@
+---
+slug: /optimize/optimization-approaches
+sidebarTitle: '最適化アプローチを選択する'
+sidebar_label: '最適化アプローチを選択する'
+sidebar_position: 4
+title: '最適化アプローチを選択する'
+description: '低速なClickHouseクエリの分析結果に基づいて、適切な最適化アプローチを検討する'
+doc_type: 'guide'
+keywords: ['クエリ最適化', 'データ型', 'ordering key', 'materialized view', 'projections']
+---
+
+import NYCTaxiExampleDataset from '/snippets/ja/_nyc_taxi_example_dataset.mdx';
+
+[クエリログ](/ja/reference/system-tables/query_log)、比較検証、[クエリプラン](/ja/reference/statements/explain)に基づき、特定したボトルネックの解消に向けた最適化アプローチを評価します。
+
+<div id="before-you-begin">
+  ## 始める前に
+</div>
+
+再現可能なベースラインを定め、ボトルネックについて仮説を立てます。まだボトルネックを特定していない場合は、まず[低速クエリを診断する](/ja/guides/clickhouse/performance-and-monitoring/diagnose-slow-queries)と[クエリのボトルネックを切り分ける](/ja/guides/clickhouse/performance-and-monitoring/isolate-query-bottlenecks)を参照してください。
+
+このガイドの例では、`nyc_taxi.trips_small_inferred` テーブルを使用します。記載どおりに実行するには、まだ作成・ロードしていない場合は、テーブルを作成してロードしてください。
+
+<Accordion title="サンプルデータセットを設定する">
+  <NYCTaxiExampleDataset />
+</Accordion>
+
+<div id="choose-an-approach">
+  ## アプローチを選ぶ
+</div>
+
+収集した証拠に基づいて、どこから着手するかを決めます。問題に対処できる変更のうち、最も特化度の低いものを優先してください。
+
+| 証拠                                             | まず行うこと                                                     | 期待される効果              |
+| ---------------------------------------------- | ---------------------------------------------------------- | -------------------- |
+| クエリが wide カラムや不要なカラムを読み取っている                   | [読み取るデータを減らす](#reduce-the-data-read)                       | 読み取りバイト数、メモリ使用量、処理負荷 |
+| 選択性の高いフィルターでも多数の[パーツまたはグラニュール](/ja/parts)を読み取っている | [データレイアウトをクエリに合わせる](#align-the-data-layout-with-the-query) | 読み取る行数とグラニュール数       |
+| 繰り返し変換や集計がクエリの大部分を占めている                        | [繰り返し実行する処理を事前計算する](#precompute-repeatable-work)           | クエリ時に行われる計算          |
+
+証拠がこれらのカテゴリのいずれにも当てはまらない場合は、クエリを無理にいずれかのアプローチに当てはめるのではなく、クエリプランに戻ってください。
+
+<div id="reduce-the-data-read">
+  ## 読み取るデータを減らす
+</div>
+
+* **使用する場合:** クエリがwide パーツのカラムや不要なカラムを読み取っている場合。
+* **変更:** クエリが読み取るカラムのサイズまたは数を減らします。
+* **検証:** 同じ条件で`read_bytes`、メモリ使用量、実行時間を比較します。
+
+ClickHouseはクエリに必要なカラムだけを読み取りますが、選択したデータは依然として読み取り、圧縮解除、処理する必要があります。選択したカラムとその型の両方を確認してください。[スキーマ推論](/ja/concepts/features/interfaces/schema-inference)は実用的な始点となりますが、推論された型は、本番データに必要なものよりも広範だったり、制約が緩かったりする場合があります。
+
+<div id="review-column-types">
+  ### カラム型を見直す
+</div>
+
+<span id="choose-precise-types" />
+
+**適切な型を選択する**
+
+必要以上のデータを保存せず、ワークロードに必要な範囲と精度を維持できる型を選択します。これらの値には汎用的な [`String`](/ja/reference/data-types/string) ではなく数値型や日付型を使用し、想定される範囲を安全に表現できる最小の[符号付きまたは符号なし数値型](/ja/reference/data-types/int-uint)を選択します。時系列カラムには、[`Date32`](/ja/reference/data-types/date32) または [`DateTime64`](/ja/reference/data-types/datetime64) が提供するより広い範囲や小数秒精度が必要な場合を除き、[`Date`](/ja/reference/data-types/date) または [`DateTime`](/ja/reference/data-types/datetime) を使用します。
+
+<span id="use-nullable-columns-deliberately" />
+
+**nullable カラムは慎重に使用する**
+
+[`Nullable`](/ja/reference/data-types/nullable) カラムは、値に加えて個別の null マスクも保存するため、ClickHouse はこれも読み取り、処理する必要があります。null 値と型のデフォルト値を区別することに意味がある場合に使用します。カラムに必ず値が含まれる場合は、非 nullable 型を使用することでこの追加処理を回避できます。
+
+カラムを変更する前に、現在観測されている非 null データが今後も常に非 null であると想定せず、ログソースデータとインジェストパスを確認してください。[最適化の実例](/ja/guides/clickhouse/performance-and-monitoring/query-optimization-example#nullable)では、null 値を含むカラムを特定し、スキーマ変更の効果を測定する方法を示しています。
+
+<span id="use-dictionary-encoding-for-repeated-values" />
+
+**繰り返し出現する値には dictionary encoding を使用する**
+
+[`LowCardinality`](/ja/reference/data-types/lowcardinality) は dictionary encoding を使用しており、ステータス値、国コード、行数に比べて一意の値が大幅に少ないその他の次元など、String 型のカラムで効果を発揮することがよくあります。候補を特定する際の目安として、一意の値が約 10,000 個であることは有用ですが、固定の上限ではありません。識別子や、ほとんどの値が一意であるカラムは避け、型の変更前後で測定結果を比較してください。
+
+より詳しいガイダンスについては、[データ型の選択](/ja/best-practices/select-data-types)を参照してください。
+
+<div id="read-only-the-required-columns">
+  ### 必要なカラムだけを読み取る
+</div>
+
+ClickHouse はカラム単位でデータを保存するため、選択するカラムを減らすほど、読み取るデータ量を直接削減できます。特に列数の多いテーブルや、各行のごく一部だけを返すクエリでは、`SELECT *` ではなく必要なカラムを明示的に指定してください。
+
+[`system.query_log`](/ja/reference/system-tables/query_log) の `read_bytes` を使用して、選択するカラムを絞り込む前後の読み取りデータ量を比較します。`read_bytes` が依然として高い場合は、追加のカラムを必要とする式、フィルター、結合、ネストされたクエリがないか、クエリプランを確認してください。
+
+たとえば、ダッシュボードで乗車時刻、支払いタイプ、合計金額だけが必要な場合は、行全体ではなく、それらのカラムを選択します。
+
+```sql
+SELECT
+    pickup_datetime,
+    payment_type,
+    total_amount
+FROM nyc_taxi.trips_small_inferred
+WHERE pickup_datetime >= '2009-01-01'
+  AND pickup_datetime < '2009-04-01'
+LIMIT 1000;
+```
+
+同じフィルターと上限を指定した `SELECT *` とこのクエリを比較してください。返される行数は変わりませんが、`read_bytes` には読み取るカラム数が少ないことが反映されるはずです。
+
+<div id="align-the-data-layout-with-the-query">
+  ## データレイアウトをクエリに合わせる
+</div>
+
+* **使用する場面:** 選択性の高いフィルターでも多数のパーツまたはグラニュールが読み取られる場合。
+* **変更:** 繰り返し実行されるクエリで使用するフィルターに合わせて、物理レイアウトを調整します。
+* **検証:** [`EXPLAIN indexes = 1`](/ja/reference/statements/explain) で選択されるパーツとグラニュールを比較し、`read_rows`、`read_bytes`、実行時間を確認します。
+
+<div id="start-with-the-ordering-key">
+  ### ソートキーから始める
+</div>
+
+[`MergeTree` ファミリーのテーブル](/ja/reference/engines/table-engines/mergetree-family/)では、ソートキーによって行のディスク上での配置が決まります。デフォルトでは、ソートキーは[スパースプライマリインデックス](/ja/primary-indexes)を定義する主キーも兼ねます。OLTP データベースの主キーとは異なり、ClickHouse の主キーは一意性を保証しません。ClickHouse は、クエリのフィルター条件を満たし得ないグラニュールをスキップできるため、パフォーマンスが向上します。
+
+選択性の高いフィルターで頻繁に使用されるカラムを優先し、キー内での順序も考慮します。関連する値をまとめることで、圧縮率も向上する場合があります。クエリのグループ化またはソート順がキーと一致する場合、ClickHouse は `GROUP BY` または `ORDER BY` に対して順序を活用した最適化を使用できることがあります。
+
+異なるソートキーをテストする前後で、`EXPLAIN indexes = 1` で選択されるパーツとグラニュールを比較します。また、同じ条件下で `read_rows`、`read_bytes`、および所要時間も比較します。選択に関する詳細なガイダンスについては、[主キーの選択](/ja/best-practices/choosing-a-primary-key)を参照してください。
+
+この例のテーブルでは `ORDER BY ()` を使用しているため、次の選択性の高い日付フィルターでグラニュールを除外できるソートキーがありません。
+
+```sql
+EXPLAIN indexes = 1
+SELECT
+    payment_type,
+    count()
+FROM nyc_taxi.trips_small_inferred
+WHERE pickup_datetime >= '2009-01-01'
+  AND pickup_datetime < '2009-04-01'
+GROUP BY payment_type
+SETTINGS
+    use_query_condition_cache = 0,
+    use_skip_indexes_on_data_read = 0;
+```
+
+<Note>
+  ClickHouse 25.9 以降では、これらの設定により、`EXPLAIN` に使用された索引と、それらによって除外されたパーツおよびグラニュールが報告されます。
+</Note>
+
+この出力をベースラインとして使用します。比較を完了するには、実践例の[ordering-key の変更を適用する](/ja/guides/clickhouse/performance-and-monitoring/query-optimization-example#apply-the-ordering-key-change)に従って、`pickup_datetime` を含む順序キーを持つテーブルを作成し、それに対して同じ `EXPLAIN` を実行します。変更全体を所要時間やメモリの測定で評価する前に、プランのプライマリキーセクションで選択されるグラニュール数が減少しているはずです。
+
+<Tip>
+  [`PREWHERE`](/ja/optimize/prewhere) を使用すると、処理される行数を変えずに読み取るカラム値を削減できます。デフォルトで有効な `optimize_move_to_prewhere` により、ClickHouse は対象となる条件を `WHERE` から `PREWHERE` へ自動的に移動します。手動で `PREWHERE` を追加する前にプランを確認し、その効果を測定する際は `read_rows` に加えて `read_bytes` も使用してください。
+</Tip>
+
+<div id="evaluate-additional-indexing-and-data-layout-options">
+  ### 追加の索引とデータレイアウトの選択肢を評価する
+</div>
+
+順序キーで重要なアクセスパターンを効率的にサポートできない場合は、以下のより特化した選択肢を検討してください。
+
+<span id="partition-for-data-management-and-pruning" />
+
+**データ管理とプルーニングのためのパーティション化**
+
+[パーティション化](/ja/best-practices/choosing-a-partitioning-key)は、主に保持、移動、削除といった操作のためのデータ管理メカニズムです。フィルターによってClickHouseがパーティション全体を除外できる場合はクエリの処理量を削減できますが、クエリ高速化のための最初の手段にすべきではありません。
+
+たとえば、保持も月単位で管理する場合、月次パーティションにより月全体を削除できます。パーティションキーがデータライフサイクル要件や十分に把握されたアクセスパターンに適合する場合にのみ、パーティション化を検討してください。カーディナリティは低く保ちます。高カーディナリティのキーでは、パーティション間でマージできない多数のパーツが作成され、パフォーマンスが低下する可能性があります。`EXPLAIN indexes = 1`を使用して、クエリが実際にパーティションをプルーニングしていることを確認してください。
+
+<span id="add-a-data-skipping-index-for-a-localized-filter" />
+
+**局所的なフィルターにデータスキップ索引を追加する**
+
+[データスキップ索引](/ja/best-practices/use-data-skipping-indices-where-appropriate)は、フィルターに一致しないブロックの読み取りをClickHouseが回避できるようにするメタデータを保存します。順序キーが重要なフィルターをサポートしておらず、一致する値がブロック内で十分に局在している場合に特に有用です。
+
+たとえば、ほとんどのブロックに検索対象の値が含まれていない場合、ブルームフィルター索引は等価検索に役立ちます。スキップ索引は、データ型と順序キーを確認したうえで使用してください。ブロックをほとんど除外できない索引は、処理量を大幅に削減しないまま、ストレージと評価のオーバーヘッドを増やします。代表的なデータで索引タイプと粒度をテストし、`EXPLAIN indexes = 1`を使用して選択されたグラニュールを比較し、`read_rows`、`read_bytes`、および所要時間を確認してください。
+
+<span id="use-projections-selectively" />
+
+**プロジェクションを選択的に使用する**
+
+[プロジェクション](/ja/data-modeling/projections)は、テーブルとともに代替のデータレイアウトを保存します。別の順序キーや事前計算済みの結果を提供でき、クエリから直接参照しなくても、ClickHouseは適用可能なプロジェクションを選択できます。
+
+たとえば、`payment_type`で順序付けたプロジェクションは、基となるテーブル&#39;の順序付けでは対応できない、繰り返し使用されるフィルターをサポートできます。基となる順序付けで効率的に対応できない重要なアクセスパターンには、少数のプロジェクションを使用してください。
+
+プロジェクションは追加の索引やカラムデータを保存するため、挿入時とマージ時の処理量が増加します。全カラムプロジェクションでは、保存するカラムが複製されます。プロジェクションを多用すると、クエリ時に最適なプロジェクションを選択するための処理量も増える可能性があります。異なるアクセスパターンが多数ある大規模なデプロイメントでは、プロジェクションを減らすか、用途に特化した個別のテーブルを使用する方が、多くの場合運用しやすくなります。これらのメカニズムの選択については、[materialized view とプロジェクションの比較](/ja/managing-data/materialized-views-versus-projections)を参照してください。
+
+ソーステーブルへのクエリを継続しながら、支払いタイプと乗車時刻でフィルターするクエリ用に代替の順序付けを追加します。
+
+```sql
+ALTER TABLE nyc_taxi.trips_small_inferred
+ADD PROJECTION trips_by_payment_type
+(
+    SELECT
+        payment_type,
+        pickup_datetime,
+        trip_distance,
+        total_amount
+    ORDER BY (payment_type, pickup_datetime)
+);
+
+ALTER TABLE nyc_taxi.trips_small_inferred
+MATERIALIZE PROJECTION trips_by_payment_type;
+```
+
+projection をマテリアライズすると、既存データに対してもデータが投入され、以降の insert では自動的に維持されます。元のテーブルに対して代表的なクエリを再実行し、`EXPLAIN projections = 1` を使用して、ClickHouse が projection を選択し、読み取り行数またはバイト数が減るかを確認します。このパターンを広く適用する前に、insert 時のオーバーヘッドとストレージオーバーヘッドも測定してください。
+
+<div id="precompute-repeatable-work">
+  ## 繰り返し実行する処理を事前計算する
+</div>
+
+* **使用する場面:** 同じ変換や集計がクエリ時間の大部分を繰り返し占める場合。
+* **変更:** 繰り返し実行する計算を、インジェスト時、定期的なリフレッシュ、または用途に特化したデータレイアウトに移します。
+* **検証:** インジェストまたはリフレッシュの負荷が許容範囲内に収まっていること、およびクエリがより小さい結果セットを読み取り、クエリ時の計算量が減っていることを確認します。
+
+結果をどのように維持・アクセスするかに応じて選択します。これらの選択肢は相互排他的ではありません。
+
+| 必要なもの                            | まず使用するもの                                                    |
+| -------------------------------- | ----------------------------------------------------------- |
+| データ到着時に更新される結果                   | [インクリメンタルmaterialized view](#incremental-materialized-view) |
+| ある程度の古さを許容できる定期的な再計算             | [リフレッシャブルmaterialized view](#refreshable-materialized-view) |
+| 独立したスキーマ、ordering key、またはライフサイクル | [用途に特化したテーブル](#purpose-built-table)                         |
+
+各セクションでは、基本的な実装方法、主な運用上のトレードオフ、結果の検証方法を説明します。
+
+<div id="incremental-materialized-view">
+  ### インクリメンタルmaterialized view
+</div>
+
+繰り返し行うフィルター、変換、集約を、データの到着に合わせて最新の状態に保つ必要がある場合は、[インクリメンタルmaterialized view](/ja/materialized-view/incremental-materialized-view) を使用します。新たに挿入される各ブロックを処理し、変換結果をターゲットテーブルに書き込みます。その代わり、追加のインジェスト処理が必要になり、ターゲットテーブルを明示的に指定する必要があります。
+
+たとえば、日ごとの乗車記録数を繰り返しカウントするdashboardでは、リクエストごとにソースデータをグループ化する代わりに、小さな集計テーブルから読み取ることができます。
+
+```sql
+CREATE TABLE nyc_taxi.trips_by_day
+(
+    pickup_date Date,
+    trip_count UInt64
+)
+ENGINE = SummingMergeTree
+ORDER BY pickup_date;
+
+CREATE MATERIALIZED VIEW nyc_taxi.trips_by_day_mv
+TO nyc_taxi.trips_by_day
+AS SELECT
+    toDate(assumeNotNull(pickup_datetime)) AS pickup_date,
+    count() AS trip_count
+FROM nyc_taxi.trips_small_inferred
+WHERE pickup_datetime IS NOT NULL
+GROUP BY pickup_date;
+```
+
+ターゲットテーブルに対し、`pickup_date` でグループ化した `sum(trip_count)` をクエリして、バックグラウンドマージ待ちの行をクエリ時に結合します。ビューは新規挿入のみを処理するため、既存のソースデータは別途バックフィルしてください。実行時間と読み取り行数を元の集約と比較して変更を検証し、追加の挿入処理が許容範囲内であることを確認します。
+
+<div id="refreshable-materialized-view">
+  ### リフレッシャブルmaterialized view
+</div>
+
+結果が多少古くても許容でき、実用的な間隔で結果全体を再計算できる場合は、[リフレッシャブルmaterialized view](/ja/materialized-view/refreshable-materialized-view)を使用します。スケジュールに従ってクエリを再実行します。トレードオフは、結果の鮮度と各更新にかかるコストです。
+
+たとえば、レポートでは支払いタイプ別の乗車合計を1時間ごとに再構築できます。
+
+```sql
+CREATE TABLE nyc_taxi.trips_by_payment_type
+(
+    payment_type Int64,
+    trip_count UInt64
+)
+ENGINE = MergeTree
+ORDER BY payment_type;
+
+CREATE MATERIALIZED VIEW nyc_taxi.trips_by_payment_type_mv
+REFRESH EVERY 1 HOUR
+TO nyc_taxi.trips_by_payment_type
+AS SELECT
+    assumeNotNull(source.payment_type) AS payment_type,
+    count() AS trip_count
+FROM nyc_taxi.trips_small_inferred AS source
+WHERE source.payment_type IS NOT NULL
+GROUP BY payment_type;
+```
+
+レポートは事前計算済みのターゲットを読み取り、ClickHouse はスケジュールに従って完全な結果を更新します。元の集約とのクエリ実行時間の比較により変更を検証し、[`system.view_refreshes`](/ja/reference/system-tables/view_refreshes) を確認して、更新の所要時間、ステータス、頻度がワークロードに適していることを確認します。
+
+<div id="purpose-built-table">
+  ### 用途別テーブル
+</div>
+
+別のワークロードで大きく異なるスキーマ、順序キー、またはライフサイクルが必要な場合は、用途別テーブルを使用します。これにより物理設計を明示的に制御でき、多数のプロジェクションを維持するよりも明確になる場合があります。トレードオフとして、追加のストレージとパイプライン管理が必要になります。ソースデータと鮮度要件の点で実用的な場合は、繰り返し行う結合や変換をインジェストパイプラインに移すこともできます。詳細な設計ガイダンスについては、[materialized view の使用](/ja/best-practices/use-materialized-views)および[データの非正規化](/ja/data-modeling/denormalization)を参照してください。
+
+たとえば、支払いタイプと乗車開始時刻で乗車記録をフィルタリングするdashboard向けに、より少ない列で構成され、その用途に合わせて順序付けされたテーブルを作成します。
+
+```sql
+CREATE TABLE nyc_taxi.trips_for_payment_dashboard
+ENGINE = MergeTree
+ORDER BY (payment_type, pickup_datetime)
+AS SELECT
+    assumeNotNull(source.payment_type) AS payment_type,
+    assumeNotNull(source.pickup_datetime) AS pickup_datetime,
+    trip_distance,
+    total_amount
+FROM nyc_taxi.trips_small_inferred AS source
+WHERE source.payment_type IS NOT NULL
+  AND source.pickup_datetime IS NOT NULL;
+```
+
+この例では、順序キーが NULL の値を除外し、対象となる 2 つのカラムから `Nullable` を削除します。この方法がワークロードのデータ要件に適していることを確認してください。ダッシュボードではこのテーブルを明示的にクエリする必要があり、インジェストパイプラインで最新の状態に維持する必要があります。ソーステーブルへのクエリと、読み取り行数・バイト数、メモリ使用量、所要時間を比較して、変更を検証してください。追加で必要となるストレージとパイプラインの保守も、判断材料に含めてください。
+
+<div id="next-steps">
+  ## 次のステップ
+</div>
+
+変更を評価する際は、同等の条件下で元の測定を繰り返します。ボトルネックを別の箇所に移すことなく、意図した処理量が削減されていることを確認してください。
+
+元のベースラインを基準に測定したスキーマと並び順キーの変更については、[最適化の実例](/ja/guides/clickhouse/performance-and-monitoring/query-optimization-example)を参照してください。

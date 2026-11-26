@@ -1,0 +1,37 @@
+---
+slug: /use-cases/observability/clickstack/sdks/deno
+description: 'SDK Deno pour ClickStack - La stack d’observabilité ClickHouse'
+title: 'Deno'
+doc_type: 'guide'
+keywords: ['SDK Deno ClickStack', 'Deno OpenTelemetry', 'intégration Deno à ClickStack', 'observabilité Deno', 'SDK de journalisation Deno']
+---
+
+import { ClickStackIntegrates } from '/snippets/fr/components/ClickStackIntegrates/ClickStackIntegrates.jsx'
+
+Utilisez la prise en charge native d&#39;OpenTelemetry dans Deno pour envoyer les logs, les metrics et les traces vers ClickStack. Vous n&#39;avez besoin ni du SDK Node.js de ClickStack, ni de l&#39;ancien paquet de journalisation pour Deno.
+
+<ClickStackIntegrates signals={['logs', 'metrics', 'traces']} />
+
+## Configurer OpenTelemetry {#set-up-opentelemetry}
+
+Suivez les [instructions officielles de configuration d&#39;OpenTelemetry pour Deno](https://docs.deno.com/runtime/fundamentals/open_telemetry/) afin d&#39;instrumenter votre application. Configurez la destination ci-dessous, puis activez l&#39;intégration native de Deno au démarrage de votre application :
+
+```shell
+OTEL_DENO=true OTEL_SERVICE_NAME='my-deno-app' deno run app.ts
+```
+
+Ajoutez les autorisations dont votre application a besoin. Remplacez les destinations d&#39;exemple ou les paramètres de l&#39;exportateur console issus des instructions amont, y compris les surcharges d&#39;endpoint propres à chaque signal.
+
+## Configurer votre destination {#configure-destination}
+
+Définissez l&#39;endpoint HTTP OTLP et la clé d&#39;ingestion de votre collecteur ClickStack. Utilisez `http://` si TLS n&#39;est pas configuré sur votre collecteur. Pour configurer le collecteur, consultez [Ingestion avec OpenTelemetry](/fr/clickstack/ingesting-data/opentelemetry).
+
+```shell
+export OTEL_EXPORTER_OTLP_ENDPOINT='https://YOUR_COLLECTOR_HOST:4318'
+export OTEL_EXPORTER_OTLP_HEADERS='authorization=YOUR_INGESTION_API_KEY'
+export OTEL_EXPORTER_OTLP_PROTOCOL='http/protobuf'
+```
+
+## Vérifier l&#39;ingestion {#verify-ingestion}
+
+Démarrez votre application et générez de l&#39;activité. Dans ClickStack, sélectionnez un intervalle de temps récent, puis recherchez le nom du service de votre application dans Logs ou Traces. Consultez ensuite Metrics, en laissant le temps à l&#39;export de s&#39;effectuer.

@@ -1,0 +1,159 @@
+---
+slug: /use-cases/observability/clickstack/sdks/browser
+description: 'Collectez les logs, les traces et les données de relecture de session du navigateur avec le SDK navigateur ClickStack.'
+title: 'JS Browser'
+doc_type: 'guide'
+keywords: ['ClickStack', 'SDK', 'browser', 'session replay']
+sidebarTitle: 'JS Browser'
+---
+
+import { ClickStackIntegrates } from '/snippets/fr/components/ClickStackIntegrates/ClickStackIntegrates.jsx'
+
+Le SDK navigateur ClickStack s’appuie sur OpenTelemetry pour collecter les requêtes du navigateur, les erreurs et les données de relecture de session. Utilisez-le pour analyser les événements du frontend en parallèle de la télémétrie de votre backend dans ClickStack.
+
+<ClickStackIntegrates signals={['logs', 'traces']} />
+
+## Installation {#install}
+
+Installez le paquet dans votre application frontend :
+
+```shell
+npm install @clickhouse/clickstack-browser
+```
+
+Le paquet utilise des modules ES. npm installe automatiquement ses dépendances pairs (peer dependencies) OpenTelemetry. Si votre application installe également `@opentelemetry/api` directement, utilisez la version `~1.9.1` et veillez à n&#39;en conserver qu&#39;une seule copie ; la version 1.10 ne fait pas partie de la plage de versions prise en charge par ce SDK.
+
+## Configurer votre destination {#configure-destination}
+
+Utilisez l&#39;endpoint OTLP HTTP de votre collecteur ainsi que la clé d&#39;ingestion configurée pour celui-ci. L&#39;endpoint doit être joignable depuis les navigateurs de vos utilisateurs. Pour configurer le collecteur, consultez [Ingestion avec OpenTelemetry](/fr/clickstack/ingesting-data/opentelemetry).
+
+```javascript
+import { init } from '@clickhouse/clickstack-browser';
+
+init({
+  endpoint: 'https://YOUR_COLLECTOR_HOST:4318',
+  apiKey: 'YOUR_INGESTION_API_KEY',
+  serviceName: 'my-frontend-app',
+});
+```
+
+Utilisez la clé configurée pour le récepteur OTLP de votre collecteur. Votre collecteur doit autoriser l&#39;origine de votre application dans la configuration CORS de son récepteur HTTP.
+
+Appelez `init` une seule fois par chargement de page, au niveau supérieur de votre module d&#39;entrée, par exemple `src/main.ts` avec Vite ou `instrumentation-client.ts` avec Next.js. L&#39;initialisation s&#39;exécute de manière asynchrone ; les requêtes émises immédiatement, dans le même tick de la boucle d&#39;événements, risquent de ne pas être capturées. N&#39;effectuez pas l&#39;initialisation dans un effet React : une fonction de nettoyage qui appelle `shutdown` arrête définitivement la télémétrie pour ce chargement de page.
+
+<Note>
+  La configuration côté navigateur, y compris la clé d&#39;ingestion, est visible par toute personne qui charge la page. Pour conserver la clé sur votre serveur, utilisez un endpoint de même origine tel que `/otel`, omettez `apiKey` et configurez votre serveur pour qu&#39;il transfère les requêtes OTLP avec l&#39;en-tête d&#39;autorisation approprié.
+</Note>
+
+## Vérifier l’ingestion {#verify-ingestion}
+
+Chargez votre application, interagissez avec la page, effectuez une requête et déclenchez une erreur dans la console. Dans ClickStack, sélectionnez un intervalle de temps récent et recherchez `my-frontend-app` dans Logs ou Traces. Ouvrez Relecture de session pour examiner la session enregistrée.
+
+S’il manque des données, examinez la console du navigateur ainsi que les requêtes réseau vers `/v1/traces` et `/v1/logs`. Vérifiez l’endpoint, l’en-tête d’autorisation, la configuration CORS et la Content Security Policy (CSP). Assurez-vous que votre version de ClickStack prend en charge la relecture de session ainsi que l’attribut standard `session.id` du SDK : la seule réception des enregistrements ne garantit pas que les sessions apparaissent dans l’UI.
+
+## Options d&#39;initialisation {#initialization-options}
+
+Passez ces options à `init`. Utilisez `endpoint` pour un collecteur partagé, ou indiquez les deux endpoints de signal lorsque les traces et les logs ont des destinations distinctes.
+
+| Option               | Valeur par défaut                                              | Rôle                                                                                                                                                                     |
+| -------------------- | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `endpoint`           | Obligatoire, sauf si les deux endpoints de signal sont définis | URL HTTP OTLP de base ou chemin de proxy de même origine ; le SDK ajoute les chemins propres à chaque signal                                                             |
+| `tracesEndpoint`     | Non défini                                                     | URL complète des traces, utilisée telle quelle à la place de l&#39;URL dérivée de `endpoint`                                                                             |
+| `logsEndpoint`       | Non défini                                                     | URL complète des logs et de la relecture, utilisée telle quelle à la place de l&#39;URL dérivée de `endpoint`                                                            |
+| `serviceName`        | Obligatoire                                                    | Définit `service.name` sur l&#39;ensemble de la télémétrie                                                                                                               |
+| `apiKey`             | Non défini                                                     | Valeur de l&#39;en-tête `authorization` ; utilisez le format correspondant à votre destination (voir ci-dessus)                                                          |
+| `traceOrigins`       | Non défini                                                     | Origines backend ou expressions régulières auxquelles le contexte de trace est transmis                                                                                  |
+| `replay`             | `true`                                                         | Active l&#39;enregistrement de la relecture de session ; `false` conserve la télémétrie du navigateur mais désactive la relecture                                        |
+| `resourceAttributes` | Non défini                                                     | Attributs de ressource supplémentaires, y compris pour la relecture ; `serviceName`, `serviceVersion` et `environment` prévalent sur les clés correspondantes            |
+| `maskAllText`        | `true`                                                         | Masque le texte dans la relecture                                                                                                                                        |
+| `maskAllInputs`      | `true`                                                         | Masque les valeurs des champs input, textarea et select                                                                                                                  |
+| `console`            | `'error'`                                                      | Capture le niveau `'error'`, `'warn'`, `'info'` (y compris `console.log`) ou `'debug'`, ainsi que les niveaux plus sévères ; utilisez `false` pour désactiver la capture |
+| `serviceVersion`     | Non défini                                                     | Identifie la version de votre application                                                                                                                                |
+| `environment`        | Non défini                                                     | Définit `deployment.environment.name`                                                                                                                                    |
+| `sanitizeUrl`        | Non défini                                                     | Réécrit les URL enregistrées, par exemple pour supprimer les paramètres de requête                                                                                       |
+
+Pour l&#39;API complète, consultez la [référence du SDK pour navigateur](https://github.com/ClickHouse/clickstack-browser#quick-start).
+
+## Relecture de session et confidentialité {#session-replay-and-privacy}
+
+La relecture de session est activée par défaut. Le texte et les valeurs d’entrée sont masqués par défaut.
+
+Le masquage ne dissimule ni l’état des cases à cocher, ni celui des boutons radio, ni les attributs tels que les URL des liens et les textes indicatifs (placeholders). Utilisez la classe `rr-block` pour exclure les éléments sensibles. Le nettoyage des URL ne s’applique pas aux URL présentes dans le contenu des pages rejouées, les traces de pile ou les messages de la console. Ne collectez que les informations utilisateur autorisées par votre politique de confidentialité.
+
+Pour mettre en pause la relecture sans interrompre la télémétrie du navigateur :
+
+```javascript
+import { pauseReplay } from '@clickhouse/clickstack-browser';
+
+pauseReplay();
+```
+
+Lorsque vous êtes prêt à reprendre l&#39;enregistrement :
+
+```javascript
+import { resumeReplay } from '@clickhouse/clickstack-browser';
+
+resumeReplay();
+```
+
+## Lier les traces frontend et backend {#trace-propagation}
+
+Pour relier les requêtes du navigateur aux traces backend, ajoutez `traceOrigins` aux options de `init`, en remplaçant l&#39;exemple par l&#39;origine de votre backend :
+
+```javascript
+traceOrigins: ['https://api.example.com'],
+```
+
+Les requêtes envoyées vers l&#39;origine de la page et vers les backends correspondants incluent les en-têtes `traceparent`, `tracestate` et `baggage`. Votre backend doit être instrumenté pour propager ce contexte.
+
+Les backends cross-origin doivent autoriser ces en-têtes via CORS. Le collecteur de télémétrie doit également autoriser l&#39;origine du frontend. Si votre application utilise une Content Security Policy (CSP), autorisez l&#39;endpoint du collecteur dans `connect-src`.
+
+## Identifier les utilisateurs et enregistrer les erreurs {#users-and-errors}
+
+À la connexion, utilisez `setUser` pour associer les informations de l&#39;utilisateur aux spans et aux logs suivants :
+
+```javascript
+import { setUser } from '@clickhouse/clickstack-browser';
+
+setUser({ id: 'user-123', email: 'user@example.com' });
+```
+
+Lors de la déconnexion, effacez les informations de l&#39;utilisateur et démarrez une nouvelle session :
+
+```javascript
+import { setUser, startNewSession } from '@clickhouse/clickstack-browser';
+
+setUser(null);
+startNewSession();
+```
+
+Pour associer des métadonnées applicatives aux spans et aux logs suivants, utilisez `setAttributes`. Chaque appel remplace l&#39;ensemble précédent ; passez `null` pour le supprimer :
+
+```javascript
+import { setAttributes } from '@clickhouse/clickstack-browser';
+
+setAttributes({ 'app.team.name': 'checkout' });
+```
+
+Les erreurs non interceptées et les rejets de promesses non gérés sont capturés automatiquement. Les error boundaries React qui remontent les erreurs via `console.error` sont également capturées par défaut. Utilisez `recordException` pour les erreurs interceptées qui ne sont pas déjà journalisées ; enregistrer et journaliser la même erreur produit des événements en double :
+
+```javascript
+import { recordException } from '@clickhouse/clickstack-browser';
+
+try {
+  await submitCheckout();
+} catch (error) {
+  recordException(error, { 'app.operation': 'checkout' });
+  // Handle the error in your application.
+}
+```
+
+Remplacez `submitCheckout` par l&#39;opération applicative que vous souhaitez surveiller.
+
+## Migration depuis le SDK pour navigateur HyperDX {#migration}
+
+Il ne suffit pas de changer le nom du paquet. `url` devient `endpoint`, `service` devient `serviceName` et `tracePropagationTargets` devient `traceOrigins`. Le masquage du texte et des champs de saisie est désormais défini sur `true` par défaut. Remplacez `setGlobalAttributes` par `setUser` pour l&#39;identité de l&#39;utilisateur et par `setAttributes` pour les métadonnées de l&#39;application. Les error boundaries React qui signalent les erreurs via `console.error` ne nécessitent aucun hook supplémentaire ; utilisez `recordException` lorsqu&#39;une erreur n&#39;est pas déjà journalisée.
+
+Consultez le [guide de migration du SDK](https://github.com/ClickHouse/clickstack-browser/blob/main/docs/migration.md) pour connaître les options supprimées et les modifications apportées aux attributs. Pour une installation via une balise script ou pour une application qui initialise déjà OpenTelemetry, consultez le [README du SDK](https://github.com/ClickHouse/clickstack-browser#readme).
+
+Si le SDK navigateur ClickStack provoque un problème de compatibilité dans votre application, vous pouvez utiliser le [SDK pour navigateur HyperDX legacy](https://github.com/hyperdxio/hyperdx-js/tree/main/packages/browser) le temps d&#39;en identifier la cause. Rétablissez sa configuration et ses appels à l&#39;API à l&#39;aide du guide de migration ci-dessus ; les deux SDK ne sont pas interchangeables et ne doivent pas être exécutés en même temps.

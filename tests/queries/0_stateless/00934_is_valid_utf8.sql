@@ -125,3 +125,50 @@ select 0 = isValidUTF8(toFixedString('123456789012345\xed', 16)) from system.num
 select 0 = isValidUTF8(toFixedString('123456789012345\xf1', 16)) from system.numbers limit 10;
 select 0 = isValidUTF8(toFixedString('123456789012345\xc2', 16)) from system.numbers limit 10;
 select 0 = isValidUTF8(toFixedString('\xC2\x7F', 2)) from system.numbers limit 10;
+
+-- Lengths around the boundaries the dispatch introduces: 64, at and above which simdutf validates the
+-- input whatever its content, 8, the word the ASCII pre-pass consumes below that, and 16, the length at
+-- and above which what the pre-pass leaves goes to simdutf too.
+select n, 1 = isValidUTF8(repeat('a', n)) from (select arrayJoin([0, 1, 7, 8, 9, 63, 64, 65]) as n) order by n;
+
+-- A multibyte sequence, well-formed and truncated, at offsets that straddle the 64-byte block simdutf
+-- validates in. Every payload here is longer than 64 bytes, so all of them take that arm.
+select off, 1 = isValidUTF8(repeat('x', off) || '\xE2\x82\xA1' || repeat('y', 100)), 0 = isValidUTF8(repeat('x', off) || '\xE2\x82' || repeat('y', 100)) from (select arrayJoin([0, 7, 8, 9, 15, 16, 55, 62, 63, 64, 65, 71, 72]) as off) order by off;
+
+-- A truncated lead byte immediately after an ASCII run. A pre-pass that ran past the lead byte, or
+-- that dropped the carried state at an 8-byte word boundary, accepts these.
+select 0 = isValidUTF8(repeat('x', 8) || '\xC2' || repeat('y', 8));
+select 0 = isValidUTF8(repeat('x', 15) || '\xC2' || repeat('y', 16));
+select 0 = isValidUTF8(repeat('x', 16) || '\xC2' || repeat('y', 8));
+select 0 = isValidUTF8(repeat('x', 63) || '\xC2' || repeat('y', 64));
+
+-- The same boundaries through FixedString, an unpadded caller that arrives by a different path.
+select 1 = isValidUTF8(toFixedString(repeat('a', 63) || '\xE2\x82\xAC' || repeat('a', 64), 130));
+select 0 = isValidUTF8(toFixedString(repeat('x', 15) || '\xC2' || repeat('y', 48), 64));
+
+-- A well-formed multibyte sequence after a leading ASCII run, under 64 bytes, so the ASCII pre-pass
+-- runs and the scalar loop validates what it leaves. A pre-pass whose length stops matching its
+-- cursor rejects these while still accepting a pure-ASCII string of the same length.
+select 1 = isValidUTF8(repeat('a', 8) || '\xD0\xB0');
+select 1 = isValidUTF8(repeat('a', 13) || '\xE6\x97\xA5');
+select 1 = isValidUTF8(repeat('a', 16) || '\xF0\x9F\x98\x80' || 'aa');
+
+-- Multibyte input from 8 to 62 bytes, well-formed and truncated at the end, so both arms below one block
+-- are exercised wherever their boundary sits.
+select n, 1 = isValidUTF8(repeat('\xD0\xB0', n)), 0 = isValidUTF8(repeat('\xD0\xB0', n) || '\xD0') from (select arrayJoin([4, 6, 7, 8, 10, 16, 24, 31]) as n) order by n;
+
+-- Rows before, at and after the column's first invalid byte, and code points split across rows, as String and FixedString.
+select groupArray(isValidUTF8(s)) from (select arrayJoin(['ab', '', 'cd', 'e\xC3\xA9', 'fg', '\xC3', 'hi', '']) as s);
+select groupArray(isValidUTF8(s)) from (select arrayJoin(['ab', 'c\xC3', 'd']) as s);
+select groupArray(isValidUTF8(s)) from (select arrayJoin(['ab', '\xC3\xA9', 'x']) as s);
+select groupArray(isValidUTF8(s)) from (select arrayJoin(['a\xC3', '\xA9b']) as s);
+select groupArray(isValidUTF8(toFixedString(s, 2))) from (select arrayJoin(['ab', 'c\xC3', '\xC3\xA9', 'de']) as s);
+select groupArray(isValidUTF8(s)) from (select arrayJoin([repeat('a', 100), repeat('b', 70) || '\xC3', 'z']) as s);
+select groupArray(isValidUTF8(s)) from (select arrayJoin(['ab', 'cd\xA9', 'e']) as s);
+select groupArray(isValidUTF8(s)) from (select arrayJoin([repeat('a', 70) || '\xD0\xB0' || repeat('a', 70), 'x']) as s);
+select groupArray(isValidUTF8(s)) from (select arrayJoin(['\xD0\xB0', 'a\xE6', '\x97\xA5b', '\xD0\xB0', '']) as s);
+select groupArray(isValidUTF8(toFixedString(s, 3))) from (select arrayJoin(['\xD0\xB0a', 'b\xE6\x97', '\xA5cd', 'efg']) as s);
+
+-- Invalid rows and a code point split across rows in one long column, so validation restarts after each invalid row.
+select countIf(v), arraySort(groupArrayIf(number, not v)) from (select number, isValidUTF8(multiIf(number = 1023, 'a\xC3', number = 1024, '\xA9b', number = 1500, '\xE6\x97', number = 2047, '\xFF', number = 2048, '\xC3\xA9', 'x\xD0\xB0')) as v from numbers(3000)) settings max_block_size = 65536;
+select countIf(v), arraySort(groupArrayIf(number, not v)) from (select number, isValidUTF8(toFixedString(multiIf(number = 1023, 'ab\xC3', number = 1024, '\xA9cd', number = 1500, 'a\xE6\x97', number = 2047, '\xFFab', number = 2048, '\xC3\xA9a', 'x\xD0\xB0'), 3)) as v from numbers(3000)) settings max_block_size = 65536;

@@ -2,7 +2,7 @@
 -- lambda with captured constants must be usable in queries.
 --
 -- The lambda body materializes captured constants as a constant `ColumnFunction`
--- (e.g. `arrayMap((k, v) -> concat(k, '=', v), ...)` captures `'='`). The new
+-- (e.g. `arrayMap((k, v) -> concat(k, '=', v), ...)` captures `'='`). The
 -- analyzer's column name for that constant carries an `_String` suffix and the
 -- whole lambda is rendered as `k String, v String -> ...`, while the index
 -- `sample_block` (built via the old analyzer) uses the AST form

@@ -3,137 +3,6 @@
 namespace BuzzHouse
 {
 
-const std::vector<std::vector<OutFormat>> outFormats
-    = {{OutFormat::OUT_Arrow, OutFormat::OUT_ArrowStream},
-       {OutFormat::OUT_Avro, OutFormat::OUT_AvroConfluent},
-       {OutFormat::OUT_BSONEachRow},
-       {OutFormat::OUT_Buffers},
-       {OutFormat::OUT_CSV, OutFormat::OUT_CSVWithNames, OutFormat::OUT_CSVWithNamesAndTypes},
-       {OutFormat::OUT_CustomSeparated, OutFormat::OUT_CustomSeparatedWithNames, OutFormat::OUT_CustomSeparatedWithNamesAndTypes},
-       {OutFormat::OUT_JSON,
-        OutFormat::OUT_JSONColumns,
-        OutFormat::OUT_JSONColumnsWithMetadata,
-        OutFormat::OUT_JSONCompact,
-        OutFormat::OUT_JSONCompactColumns,
-        OutFormat::OUT_JSONCompactEachRow,
-        OutFormat::OUT_JSONCompactEachRowWithNames,
-        OutFormat::OUT_JSONCompactEachRowWithNamesAndTypes,
-        OutFormat::OUT_JSONCompactEachRowWithProgress,
-        OutFormat::OUT_JSONCompactStringsEachRow,
-        OutFormat::OUT_JSONCompactStringsEachRowWithNames,
-        OutFormat::OUT_JSONCompactStringsEachRowWithNamesAndTypes,
-        OutFormat::OUT_JSONCompactStringsEachRowWithProgress,
-        OutFormat::OUT_JSONEachRow,
-        OutFormat::OUT_JSONLines,
-        OutFormat::OUT_JSONObjectEachRow,
-        OutFormat::OUT_JSONStringsEachRow},
-       {OutFormat::OUT_MsgPack},
-       {OutFormat::OUT_Native},
-       {OutFormat::OUT_ORC},
-       {OutFormat::OUT_Parquet},
-       {OutFormat::OUT_Protobuf, OutFormat::OUT_ProtobufList, OutFormat::OUT_ProtobufSingle},
-       {OutFormat::OUT_RawBLOB},
-       {OutFormat::OUT_RowBinary, OutFormat::OUT_RowBinaryWithNames, OutFormat::OUT_RowBinaryWithNamesAndTypes},
-       {OutFormat::OUT_TabSeparated,
-        OutFormat::OUT_TabSeparatedRaw,
-        OutFormat::OUT_TabSeparatedRawWithNames,
-        OutFormat::OUT_TabSeparatedRawWithNamesAndTypes,
-        OutFormat::OUT_TabSeparatedWithNames,
-        OutFormat::OUT_TabSeparatedWithNamesAndTypes},
-       {OutFormat::OUT_TSKV},
-       {OutFormat::OUT_Values}};
-
-const std::unordered_map<OutFormat, InFormat> outIn
-    = {{OutFormat::OUT_Arrow, InFormat::IN_Arrow},
-       {OutFormat::OUT_ArrowStream, InFormat::IN_ArrowStream},
-       {OutFormat::OUT_Avro, InFormat::IN_Avro},
-       {OutFormat::OUT_AvroConfluent, InFormat::IN_AvroConfluent},
-       {OutFormat::OUT_BSONEachRow, InFormat::IN_BSONEachRow},
-       {OutFormat::OUT_Buffers, InFormat::IN_Buffers},
-       {OutFormat::OUT_CSV, InFormat::IN_CSV},
-       {OutFormat::OUT_CSVWithNames, InFormat::IN_CSVWithNames},
-       {OutFormat::OUT_CSVWithNamesAndTypes, InFormat::IN_CSVWithNamesAndTypes},
-       {OutFormat::OUT_CustomSeparated, InFormat::IN_CustomSeparated},
-       {OutFormat::OUT_CustomSeparatedWithNames, InFormat::IN_CustomSeparatedWithNames},
-       {OutFormat::OUT_CustomSeparatedWithNamesAndTypes, InFormat::IN_CustomSeparatedWithNamesAndTypes},
-       {OutFormat::OUT_JSON, InFormat::IN_JSON},
-       {OutFormat::OUT_JSONColumns, InFormat::IN_JSONColumns},
-       {OutFormat::OUT_JSONColumnsWithMetadata, InFormat::IN_JSONColumnsWithMetadata},
-       {OutFormat::OUT_JSONCompact, InFormat::IN_JSONCompact},
-       {OutFormat::OUT_JSONCompactColumns, InFormat::IN_JSONCompactColumns},
-       {OutFormat::OUT_JSONCompactEachRow, InFormat::IN_JSONCompactEachRow},
-       {OutFormat::OUT_JSONCompactEachRowWithNames, InFormat::IN_JSONCompactEachRowWithNames},
-       {OutFormat::OUT_JSONCompactEachRowWithNamesAndTypes, InFormat::IN_JSONCompactEachRowWithNamesAndTypes},
-       {OutFormat::OUT_JSONCompactEachRowWithProgress, InFormat::IN_JSONCompactEachRow},
-       {OutFormat::OUT_JSONCompactStringsEachRow, InFormat::IN_JSONCompactStringsEachRow},
-       {OutFormat::OUT_JSONCompactStringsEachRowWithNames, InFormat::IN_JSONCompactStringsEachRowWithNames},
-       {OutFormat::OUT_JSONCompactStringsEachRowWithNamesAndTypes, InFormat::IN_JSONCompactStringsEachRowWithNamesAndTypes},
-       {OutFormat::OUT_JSONCompactStringsEachRowWithProgress, InFormat::IN_JSONCompactStringsEachRow},
-       {OutFormat::OUT_JSONEachRow, InFormat::IN_JSONEachRow},
-       {OutFormat::OUT_JSONLines, InFormat::IN_JSONLines},
-       {OutFormat::OUT_JSONObjectEachRow, InFormat::IN_JSONObjectEachRow},
-       {OutFormat::OUT_JSONStringsEachRow, InFormat::IN_JSONStringsEachRow},
-       {OutFormat::OUT_MsgPack, InFormat::IN_MsgPack},
-       {OutFormat::OUT_Native, InFormat::IN_Native},
-       {OutFormat::OUT_ORC, InFormat::IN_ORC},
-       {OutFormat::OUT_Parquet, InFormat::IN_Parquet},
-       {OutFormat::OUT_Protobuf, InFormat::IN_Protobuf},
-       {OutFormat::OUT_ProtobufList, InFormat::IN_ProtobufList},
-       {OutFormat::OUT_ProtobufSingle, InFormat::IN_ProtobufSingle},
-       {OutFormat::OUT_RawBLOB, InFormat::IN_RawBLOB},
-       {OutFormat::OUT_RowBinary, InFormat::IN_RowBinary},
-       {OutFormat::OUT_RowBinaryWithNames, InFormat::IN_RowBinaryWithNames},
-       {OutFormat::OUT_RowBinaryWithNamesAndTypes, InFormat::IN_RowBinaryWithNamesAndTypes},
-       {OutFormat::OUT_TabSeparated, InFormat::IN_TabSeparated},
-       {OutFormat::OUT_TabSeparatedRaw, InFormat::IN_TabSeparatedRaw},
-       {OutFormat::OUT_TabSeparatedRawWithNames, InFormat::IN_TabSeparatedRawWithNames},
-       {OutFormat::OUT_TabSeparatedRawWithNamesAndTypes, InFormat::IN_TabSeparatedRawWithNamesAndTypes},
-       {OutFormat::OUT_TabSeparatedWithNames, InFormat::IN_TabSeparatedWithNames},
-       {OutFormat::OUT_TabSeparatedWithNamesAndTypes, InFormat::IN_TabSeparatedWithNamesAndTypes},
-       {OutFormat::OUT_TSKV, InFormat::IN_TSKV},
-       {OutFormat::OUT_Values, InFormat::IN_Values}};
-
-const std::vector<std::vector<InOutFormat>> inOutFormats = {
-    {InOutFormat::INOUT_Arrow, InOutFormat::INOUT_ArrowStream},
-    {InOutFormat::INOUT_Avro, InOutFormat::INOUT_AvroConfluent},
-    {InOutFormat::INOUT_BSONEachRow},
-    {InOutFormat::INOUT_Buffers},
-    {InOutFormat::INOUT_CSV, InOutFormat::INOUT_CSVWithNames, InOutFormat::INOUT_CSVWithNamesAndTypes},
-    {InOutFormat::INOUT_CustomSeparated, InOutFormat::INOUT_CustomSeparatedWithNames, InOutFormat::INOUT_CustomSeparatedWithNamesAndTypes},
-    {InOutFormat::INOUT_JSON,
-     InOutFormat::INOUT_JSONColumns,
-     InOutFormat::INOUT_JSONColumnsWithMetadata,
-     InOutFormat::INOUT_JSONCompact,
-     InOutFormat::INOUT_JSONCompactColumns,
-     InOutFormat::INOUT_JSONCompactEachRow,
-     InOutFormat::INOUT_JSONCompactEachRowWithNames,
-     InOutFormat::INOUT_JSONCompactEachRowWithNamesAndTypes,
-     InOutFormat::INOUT_JSONCompactStringsEachRow,
-     InOutFormat::INOUT_JSONCompactStringsEachRowWithNames,
-     InOutFormat::INOUT_JSONCompactStringsEachRowWithNamesAndTypes,
-     InOutFormat::INOUT_JSONEachRow,
-     InOutFormat::INOUT_JSONLines,
-     InOutFormat::INOUT_JSONObjectEachRow,
-     InOutFormat::INOUT_JSONStringsEachRow},
-    {InOutFormat::INOUT_CapnProto},
-    {InOutFormat::INOUT_MsgPack},
-    {InOutFormat::INOUT_Native},
-    {InOutFormat::INOUT_Npy},
-    {InOutFormat::INOUT_ORC},
-    {InOutFormat::INOUT_Parquet},
-    {InOutFormat::INOUT_Protobuf, InOutFormat::INOUT_ProtobufList, InOutFormat::INOUT_ProtobufSingle},
-    {InOutFormat::INOUT_RawBLOB},
-    {InOutFormat::INOUT_RowBinary, InOutFormat::INOUT_RowBinaryWithNames, InOutFormat::INOUT_RowBinaryWithNamesAndTypes},
-    {InOutFormat::INOUT_TabSeparated,
-     InOutFormat::INOUT_TabSeparatedRaw,
-     InOutFormat::INOUT_TabSeparatedRawWithNames,
-     InOutFormat::INOUT_TabSeparatedRawWithNamesAndTypes,
-     InOutFormat::INOUT_TabSeparatedWithNames,
-     InOutFormat::INOUT_TabSeparatedWithNamesAndTypes},
-    {InOutFormat::INOUT_Template},
-    {InOutFormat::INOUT_TSKV},
-    {InOutFormat::INOUT_Values}};
-
 bool SQLColumn::canBeInserted() const
 {
     return !dmod.has_value() || dmod.value() == DModifier::DEF_DEFAULT;
@@ -152,16 +21,6 @@ void SQLDatabase::setRandomDatabase(RandomGenerator & rg, SQLDatabase & d)
 void SQLDatabase::setName(SQLIdentifier * db, const String & n)
 {
     db->set_value(n);
-}
-
-bool SQLDatabase::isAtomicDatabase() const
-{
-    return deng == DatabaseEngineValues::DAtomic;
-}
-
-bool SQLDatabase::isMemoryDatabase() const
-{
-    return deng == DatabaseEngineValues::DMemory;
 }
 
 bool SQLDatabase::isReplicatedDatabase() const
@@ -187,6 +46,26 @@ bool SQLDatabase::isOrdinaryDatabase() const
 bool SQLDatabase::isDataLakeCatalogDatabase() const
 {
     return deng == DatabaseEngineValues::DDataLakeCatalog;
+}
+
+bool SQLDatabase::isClusterDatabase() const
+{
+    return deng == DatabaseEngineValues::DCluster;
+}
+
+bool SQLDatabase::isRemoteDatabase() const
+{
+    return deng == DatabaseEngineValues::DRemote || deng == DatabaseEngineValues::DRemoteSecure;
+}
+
+bool SQLDatabase::isOverlayDatabase() const
+{
+    return deng == DatabaseEngineValues::DOverlay;
+}
+
+bool SQLDatabase::isProxyDatabase() const
+{
+    return isClusterDatabase() || isRemoteDatabase() || isOverlayDatabase();
 }
 
 bool SQLDatabase::isReplicatedOrSharedDatabase() const
@@ -291,12 +170,13 @@ bool TableEngineDescriptor::hasVersionColumn() const
 
 bool TableEngineDescriptor::areInsertsAppends() const
 {
-    return value == TableEngineValues::MergeTree || isLogFamily() || value == TableEngineValues::Memory || value == TableEngineValues::MySQL
-        || value == TableEngineValues::PostgreSQL || value == TableEngineValues::MaterializedPostgreSQL
-        || value == TableEngineValues::SQLite || value == TableEngineValues::MongoDB || value == TableEngineValues::Redis
-        || value == TableEngineValues::Hudi || (value >= TableEngineValues::DeltaLakeS3 && value <= TableEngineValues::DeltaLakeLocal)
+    /// Not Redis: its sink writes with MSET, which overwrites an existing key.
+    /// Not Hudi, Dictionary or MaterializedPostgreSQL: they are read-only, so the insert always fails
+    return (value == TableEngineValues::MergeTree && !has_unique_key) || isLogFamily() || value == TableEngineValues::Memory || value == TableEngineValues::MySQL
+        || value == TableEngineValues::PostgreSQL || value == TableEngineValues::SQLite || value == TableEngineValues::MongoDB
+        || (value >= TableEngineValues::DeltaLakeS3 && value <= TableEngineValues::DeltaLakeLocal)
         || (value >= TableEngineValues::IcebergS3 && value <= TableEngineValues::IcebergLocal)
-        || (value >= TableEngineValues::PaimonS3 && value <= TableEngineValues::PaimonLocal) || value == TableEngineValues::Dictionary;
+        || (value >= TableEngineValues::PaimonS3 && value <= TableEngineValues::PaimonLocal);
 }
 
 void SQLBase::setDeterministic(const FuzzConfig & fc, RandomGenerator & rg, SQLBase & b)
@@ -342,109 +222,22 @@ bool SQLBase::isShared(const bool as_alias) const
     return engine.isShared() || (as_alias && isAliasEngine() && subengine.has_value() && subengine->isShared());
 }
 
-bool SQLBase::isFileEngine(const bool as_alias) const
-{
-    return engine.value == TableEngineValues::File
-        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->value == TableEngineValues::File);
-}
-
-bool SQLBase::isJoinEngine(const bool as_alias) const
-{
-    return engine.value == TableEngineValues::Join
-        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->value == TableEngineValues::Join);
-}
-
-bool SQLBase::isNullEngine(const bool as_alias) const
-{
-    return engine.value == TableEngineValues::Null
-        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->value == TableEngineValues::Null);
-}
-
-bool SQLBase::isSetEngine(const bool as_alias) const
-{
-    return engine.value == TableEngineValues::Set
-        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->value == TableEngineValues::Set);
-}
-
-bool SQLBase::isBufferEngine(const bool as_alias) const
-{
-    return engine.value == TableEngineValues::Buffer
-        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->value == TableEngineValues::Buffer);
-}
-
-bool SQLBase::isRocksEngine(const bool as_alias) const
-{
-    return engine.value == TableEngineValues::EmbeddedRocksDB
-        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->value == TableEngineValues::EmbeddedRocksDB);
-}
-
-bool SQLBase::isMemoryEngine(const bool as_alias) const
-{
-    return engine.value == TableEngineValues::Memory
-        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->value == TableEngineValues::Memory);
-}
-
 bool SQLBase::isMySQLEngine(const bool as_alias) const
 {
-    return engine.value == TableEngineValues::MySQL
-        || (isExternalDistributedEngine() && subengine.has_value() && subengine->value == TableEngineValues::MySQL)
-        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->value == TableEngineValues::MySQL);
+    return hasEngine(TableEngineValues::MySQL, as_alias)
+        || (isExternalDistributedEngine() && subengine.has_value() && subengine->value == TableEngineValues::MySQL);
 }
 
 bool SQLBase::isPostgreSQLEngine(const bool as_alias) const
 {
-    return engine.value == TableEngineValues::PostgreSQL || engine.value == TableEngineValues::MaterializedPostgreSQL
+    return hasEngine(TableEngineValues::PostgreSQL, as_alias) || hasEngine(TableEngineValues::MaterializedPostgreSQL, as_alias)
         || (isExternalDistributedEngine() && subengine.has_value()
-            && (subengine->value == TableEngineValues::PostgreSQL || subengine->value == TableEngineValues::MaterializedPostgreSQL))
-        || (as_alias && isAliasEngine() && subengine.has_value()
             && (subengine->value == TableEngineValues::PostgreSQL || subengine->value == TableEngineValues::MaterializedPostgreSQL));
-}
-
-bool SQLBase::isSQLiteEngine(const bool as_alias) const
-{
-    return engine.value == TableEngineValues::SQLite
-        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->value == TableEngineValues::SQLite);
-}
-
-bool SQLBase::isMongoDBEngine(const bool as_alias) const
-{
-    return engine.value == TableEngineValues::MongoDB
-        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->value == TableEngineValues::MongoDB);
-}
-
-bool SQLBase::isRedisEngine(const bool as_alias) const
-{
-    return engine.value == TableEngineValues::Redis
-        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->value == TableEngineValues::Redis);
-}
-
-bool SQLBase::isS3Engine(const bool as_alias) const
-{
-    return engine.value == TableEngineValues::S3
-        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->value == TableEngineValues::S3);
-}
-
-bool SQLBase::isS3QueueEngine(const bool as_alias) const
-{
-    return engine.value == TableEngineValues::S3Queue
-        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->value == TableEngineValues::S3Queue);
 }
 
 bool SQLBase::isAnyS3Engine(const bool as_alias) const
 {
     return isS3Engine(as_alias) || isS3QueueEngine(as_alias);
-}
-
-bool SQLBase::isAzureEngine(const bool as_alias) const
-{
-    return engine.value == TableEngineValues::AzureBlobStorage
-        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->value == TableEngineValues::AzureBlobStorage);
-}
-
-bool SQLBase::isAzureQueueEngine(const bool as_alias) const
-{
-    return engine.value == TableEngineValues::AzureQueue
-        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->value == TableEngineValues::AzureQueue);
 }
 
 bool SQLBase::isAnyAzureEngine(const bool as_alias) const
@@ -457,74 +250,14 @@ bool SQLBase::isAnyQueueEngine(const bool as_alias) const
     return isS3QueueEngine(as_alias) || isAzureQueueEngine(as_alias);
 }
 
-bool SQLBase::isHudiEngine(const bool as_alias) const
-{
-    return engine.value == TableEngineValues::Hudi
-        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->value == TableEngineValues::Hudi);
-}
-
-bool SQLBase::isDeltaLakeS3Engine(const bool as_alias) const
-{
-    return engine.value == TableEngineValues::DeltaLakeS3
-        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->value == TableEngineValues::DeltaLakeS3);
-}
-
-bool SQLBase::isDeltaLakeAzureEngine(const bool as_alias) const
-{
-    return engine.value == TableEngineValues::DeltaLakeAzure
-        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->value == TableEngineValues::DeltaLakeAzure);
-}
-
-bool SQLBase::isDeltaLakeLocalEngine(const bool as_alias) const
-{
-    return engine.value == TableEngineValues::DeltaLakeLocal
-        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->value == TableEngineValues::DeltaLakeLocal);
-}
-
 bool SQLBase::isAnyDeltaLakeEngine(const bool as_alias) const
 {
     return isDeltaLakeS3Engine(as_alias) || isDeltaLakeAzureEngine(as_alias) || isDeltaLakeLocalEngine(as_alias);
 }
 
-bool SQLBase::isIcebergS3Engine(const bool as_alias) const
-{
-    return engine.value == TableEngineValues::IcebergS3
-        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->value == TableEngineValues::IcebergS3);
-}
-
-bool SQLBase::isIcebergAzureEngine(const bool as_alias) const
-{
-    return engine.value == TableEngineValues::IcebergAzure
-        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->value == TableEngineValues::IcebergAzure);
-}
-
-bool SQLBase::isIcebergLocalEngine(const bool as_alias) const
-{
-    return engine.value == TableEngineValues::IcebergLocal
-        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->value == TableEngineValues::IcebergLocal);
-}
-
 bool SQLBase::isAnyIcebergEngine(const bool as_alias) const
 {
     return isIcebergS3Engine(as_alias) || isIcebergAzureEngine(as_alias) || isIcebergLocalEngine(as_alias);
-}
-
-bool SQLBase::isPaimonS3Engine(const bool as_alias) const
-{
-    return engine.value == TableEngineValues::PaimonS3
-        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->value == TableEngineValues::PaimonS3);
-}
-
-bool SQLBase::isPaimonAzureEngine(const bool as_alias) const
-{
-    return engine.value == TableEngineValues::PaimonAzure
-        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->value == TableEngineValues::PaimonAzure);
-}
-
-bool SQLBase::isPaimonLocalEngine(const bool as_alias) const
-{
-    return engine.value == TableEngineValues::PaimonLocal
-        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->value == TableEngineValues::PaimonLocal);
 }
 
 bool SQLBase::isAnyPaimonEngine(const bool as_alias) const
@@ -552,77 +285,54 @@ bool SQLBase::isOnLocal() const
     return isIcebergLocalEngine() || isDeltaLakeLocalEngine() || isPaimonLocalEngine();
 }
 
-bool SQLBase::isMergeEngine(const bool as_alias) const
+bool SQLBase::isAnyRemoteEngine(const bool as_alias) const
 {
-    return engine.value == TableEngineValues::Merge
-        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->value == TableEngineValues::Merge);
+    return hasEngine(TableEngineValues::Remote, as_alias) || hasEngine(TableEngineValues::RemoteSecure, as_alias);
 }
 
-bool SQLBase::isDistributedEngine(const bool as_alias) const
+bool SQLBase::isAnyStreamingEngine(const bool as_alias) const
 {
-    return engine.value == TableEngineValues::Distributed
-        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->value == TableEngineValues::Distributed);
+    return isKafkaEngine(as_alias) || isNATSEngine(as_alias) || isRabbitMQEngine(as_alias);
 }
 
-bool SQLBase::isDictionaryEngine(const bool as_alias) const
+String SQLBase::getDolorEngineName() const
 {
-    return engine.value == TableEngineValues::Dictionary
-        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->value == TableEngineValues::Dictionary);
-}
-
-bool SQLBase::isGenerateRandomEngine(const bool as_alias) const
-{
-    return engine.value == TableEngineValues::GenerateRandom
-        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->value == TableEngineValues::GenerateRandom);
-}
-
-bool SQLBase::isURLEngine(const bool as_alias) const
-{
-    return engine.value == TableEngineValues::URL
-        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->value == TableEngineValues::URL);
-}
-
-bool SQLBase::isKeeperMapEngine(const bool as_alias) const
-{
-    return engine.value == TableEngineValues::KeeperMap
-        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->value == TableEngineValues::KeeperMap);
-}
-
-bool SQLBase::isExternalDistributedEngine(const bool as_alias) const
-{
-    return engine.value == TableEngineValues::ExternalDistributed
-        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->value == TableEngineValues::ExternalDistributed);
-}
-
-bool SQLBase::isMaterializedPostgreSQLEngine(const bool as_alias) const
-{
-    return engine.value == TableEngineValues::MaterializedPostgreSQL
-        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->value == TableEngineValues::MaterializedPostgreSQL);
-}
-
-bool SQLBase::isArrowFlightEngine(const bool as_alias) const
-{
-    return engine.value == TableEngineValues::ArrowFlight
-        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->value == TableEngineValues::ArrowFlight);
-}
-
-bool SQLBase::isAliasEngine(const bool as_alias) const
-{
-    return engine.value == TableEngineValues::Alias
-        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->value == TableEngineValues::Alias);
-}
-
-bool SQLBase::isKafkaEngine(const bool as_alias) const
-{
-    return engine.value == TableEngineValues::Kafka
-        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->value == TableEngineValues::Kafka);
+    if (isAnyIcebergEngine())
+    {
+        return "iceberg";
+    }
+    if (isAnyDeltaLakeEngine())
+    {
+        return "deltalake";
+    }
+    if (isAnyPaimonEngine())
+    {
+        return "paimon";
+    }
+    if (isFileEngine())
+    {
+        return "file";
+    }
+    if (isKafkaEngine())
+    {
+        return "kafka";
+    }
+    if (isNATSEngine())
+    {
+        return "nats";
+    }
+    if (isRabbitMQEngine())
+    {
+        return "rabbitmq";
+    }
+    UNREACHABLE();
 }
 
 bool SQLBase::isNotTruncableEngine() const
 {
     return isNullEngine() || isSetEngine() || isMySQLEngine() || isPostgreSQLEngine() || isSQLiteEngine() || isRedisEngine()
-        || isMongoDBEngine() || isHudiEngine() || isMergeEngine() || isDistributedEngine() || isDictionaryEngine()
-        || isGenerateRandomEngine() || isMaterializedPostgreSQLEngine();
+        || isMongoDBEngine() || isHudiEngine() || isMergeEngine() || isDistributedEngine() || isAnyRemoteEngine() || isDictionaryEngine()
+        || isGenerateRandomEngine() || isMaterializedPostgreSQLEngine() || isFileLogEngine();
 }
 
 bool SQLBase::isEngineReplaceable() const
@@ -713,7 +423,6 @@ String SQLBase::getSparkCatalogName() const
     return db->getSparkCatalogName();
 }
 
-static const constexpr String PARTITION_STR = "{_partition_id}";
 static const constexpr String SCHEMA_HASH_STR = "{_schema_hash}";
 
 /// Returns the placeholder suffix to append to an S3/Azure path component.
@@ -745,7 +454,7 @@ void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bo
         const String bname = rg.nextSmallNumber() < 4 ? name : ("t" + std::to_string(counter));
 
         /// Set integration call to use, sometimes create tables in ClickHouse, others also in Spark
-        if (has_dolor && isAnyLakeEngine() && rg.nextBool())
+        if (has_dolor && fc.dolor_spark_tables && isAnyLakeEngine() && rg.nextBool())
         {
             integration = IntegrationCall::Dolor;
         }
@@ -858,6 +567,11 @@ void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bo
         }
         else if (isFileEngine())
         {
+            /// Sometimes let Spark (dolor) write the data file, so ClickHouse only reads it
+            if (has_dolor && fc.dolor_spark_tables && rg.nextBool())
+            {
+                integration = IntegrationCall::Dolor;
+            }
             bucket_path = fmt::format("{}/{}", fc.server_file_path.generic_string(), bname);
         }
         else if (isURLEngine() && fc.http_server.has_value())
@@ -867,32 +581,78 @@ void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bo
             bucket_path = fmt::format("http://{}:{}/{}", sc.server_hostname, sc.port, bname);
         }
     }
+    else if (isFileLogEngine())
+    {
+        /// The directory must exist at CREATE, so glob over the files `File` tables write there
+        bucket_path = fmt::format(
+            "{}/{}",
+            fc.server_file_path.generic_string(),
+            rg.nextBool() ? "*" : ("t" + std::to_string(rg.randomInt<uint32_t>(0, 20)) + "*"));
+    }
 
     if (isAnyIcebergEngine() && rg.nextMediumNumber() < 91)
     {
         /// Iceberg supports 3 formats
-        static const std::vector<InOutFormat> formats = {InOutFormat::INOUT_ORC, InOutFormat::INOUT_Avro, InOutFormat::INOUT_Parquet};
+        static const DB::Strings formats = {"ORC", "Avro", "Parquet"};
 
-        file_format = rg.nextMediumNumber() < 91 ? rg.pickRandomly(formats) : rg.pickRandomly(rg.pickRandomly(inOutFormats));
+        file_format = rg.nextMediumNumber() < 91 ? rg.pickRandomly(formats) : rg.pickRandomly(fc.in_out_formats);
     }
     else if (isAnyDeltaLakeEngine() && rg.nextMediumNumber() < 91)
     {
         /// What Delta Lake supports
-        file_format = rg.nextMediumNumber() < 91 ? INOUT_Parquet : rg.pickRandomly(rg.pickRandomly(inOutFormats));
+        file_format = rg.nextMediumNumber() < 91 ? "Parquet" : rg.pickRandomly(fc.in_out_formats);
     }
     else if (isAnyPaimonEngine() && rg.nextMediumNumber() < 91)
     {
-        static const std::vector<InOutFormat> formats = {InOutFormat::INOUT_ORC, InOutFormat::INOUT_Parquet};
-        file_format = rg.nextMediumNumber() < 91 ? rg.pickRandomly(formats) : rg.pickRandomly(rg.pickRandomly(inOutFormats));
+        static const DB::Strings formats = {"ORC", "Parquet"};
+        file_format = rg.nextMediumNumber() < 91 ? rg.pickRandomly(formats) : rg.pickRandomly(fc.in_out_formats);
     }
-    else if (isFileEngine() || ((isAnyS3Engine() || isAnyAzureEngine() || isURLEngine() || isKafkaEngine()) && rg.nextMediumNumber() < 91))
+    else if (isFileEngine() && integration == IntegrationCall::Dolor)
     {
-        /// At the moment give more preference for Parquet
-        file_format = rg.nextMediumNumber() < 26 ? INOUT_Parquet : rg.pickRandomly(rg.pickRandomly(inOutFormats));
+        /// Spark/pyarrow-written data files: mostly the Arrow formats, sometimes Parquet, Avro or ORC
+        const uint32_t nopt = rg.nextMediumNumber();
+
+        if (nopt < 31)
+        {
+            file_format = "Arrow";
+        }
+        else if (nopt < 61)
+        {
+            file_format = "ArrowStream";
+        }
+        else if (nopt < 81)
+        {
+            file_format = "Parquet";
+        }
+        else if (nopt < 91)
+        {
+            file_format = "Avro";
+        }
+        else
+        {
+            file_format = "ORC";
+        }
+    }
+    else if (
+        isFileEngine() || isFileLogEngine()
+        || ((isAnyS3Engine() || isAnyAzureEngine() || isURLEngine() || isAnyStreamingEngine()) && rg.nextMediumNumber() < 91))
+    {
+        file_format = fc.pickFormat(rg, fc.in_out_formats);
     }
     if ((isAnyLakeEngine() || isAnyS3Engine() || isAnyAzureEngine() || isFileEngine() || isURLEngine()) && rg.nextMediumNumber() < 41)
     {
-        file_comp = rg.pickRandomly(compressionMethods);
+        if (isFileEngine() && integration == IntegrationCall::Dolor)
+        {
+            /// Whole-file wrappers the dolor side can write with Python codecs (no lz4/brotli packages there)
+            static const DB::Strings dolorFileCompressions
+                = {"none", "gz", "gzip", "deflate", "xz", "lzma", "zst", "zstd", "bz2", "snappy"};
+
+            file_comp = rg.pickRandomly(dolorFileCompressions);
+        }
+        else
+        {
+            file_comp = rg.pickRandomly(compressionMethods);
+        }
     }
     if ((isS3Engine() || isAzureEngine()) && rg.nextMediumNumber() < 21)
     {
@@ -930,11 +690,16 @@ void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bo
     {
         integration = IntegrationCall::HTTP;
     }
-    else if (has_dolor && isKafkaEngine())
+    else if (has_dolor && isAnyStreamingEngine())
     {
+        /// The topic is a NATS subject or a RabbitMQ exchange, and the group a RabbitMQ queue base.
+        /// A NATS table has a group only to read from the JetStream stream of that name
         integration = IntegrationCall::Dolor;
         topic = "t" + std::to_string(rg.randomInt<uint32_t>(0, 19));
-        group = "g" + std::to_string(rg.randomInt<uint32_t>(0, 19));
+        if (!isNATSEngine() || rg.nextSmallNumber() < 4)
+        {
+            group = (isNATSEngine() ? "s" : "g") + std::to_string(rg.randomInt<uint32_t>(0, 19));
+        }
     }
 }
 
@@ -944,12 +709,91 @@ String SQLBase::getTablePath() const
     /// (S3Queue, AzureQueue) are covered by isAnyS3Engine()/isAnyAzureEngine().
     chassert(
         isAnyLakeEngine() || isAnyS3Engine() || isAnyAzureEngine() || isKeeperMapEngine() || isArrowFlightEngine() || isFileEngine()
-        || isURLEngine());
+        || isURLEngine() || isFileLogEngine());
     return bucket_path.has_value() ? bucket_path.value() : "test";
 }
 
 String SQLBase::getTablePath(RandomGenerator & rg, const bool allow_not_deterministic) const
 {
+    if (allow_not_deterministic && (isAnyS3Engine() || isAnyAzureEngine() || isFileEngine() || isURLEngine()) && rg.nextMediumNumber() < 16)
+    {
+        /// A hive-style path `{table path}_hive/k0=v/k1=v/...`, with stable keys per level so writes and reads meet,
+        /// and extreme or random values, duplicated keys, column-like keys and levels that are not `key=value`.
+        /// Reads end with a glob or a file name, writes with a file name, both keeping the table path extension.
+        static const DB::Strings odd_keys = {"", "k=", "a b", "k%3D", "K0", "c0", "c1", "_path", "_file"};
+        String base = getTablePath();
+        String ext;
+        std::vector<String> keys;
+
+        for (const auto & placeholder : {PARTITION_STR, SCHEMA_HASH_STR})
+        {
+            for (size_t pos = base.find(placeholder); pos != String::npos; pos = base.find(placeholder))
+                base.erase(pos, placeholder.length());
+        }
+        std::erase(base, '*');
+        if (const size_t dot = base.rfind('.'); dot != String::npos && dot > base.rfind('/'))
+        {
+            ext = base.substr(dot);
+            base.erase(dot);
+        }
+        while (!base.empty() && base.back() == '/')
+            base.pop_back();
+
+        String res = base + "_hive";
+        const uint32_t nlevels = rg.randomInt<uint32_t>(0, 3);
+        for (uint32_t i = 0; i < nlevels; i++)
+        {
+            const uint32_t next = rg.nextMediumNumber();
+            String key = "k" + std::to_string(i);
+            String value;
+
+            if (next < 6 && !keys.empty())
+            {
+                /// Duplicated key, usually with another value, which the server rejects
+                key = rg.pickRandomly(keys);
+            }
+            else if (next < 16)
+            {
+                key = rg.pickRandomly(odd_keys);
+            }
+            if (rg.nextBool())
+            {
+                /// One of the extreme values, string ones print as quoted SQL literals
+                Expr expr;
+                std::uniform_int_distribution<uint32_t> special_range(1, static_cast<uint32_t>(SpecialVal::SpecialValEnum_MAX));
+
+                expr.mutable_lit_val()->mutable_special_val()->set_val(static_cast<SpecialVal_SpecialValEnum>(special_range(rg.generator)));
+                SQLExprToString(value, expr);
+                if (value.size() >= 2 && value.front() == '\'' && value.back() == '\'')
+                    value = value.substr(1, value.size() - 2);
+            }
+            else
+            {
+                value = rg.nextString("", true, rg.nextStrlen());
+            }
+            res += "/" + key + "=" + value;
+            keys.emplace_back(key);
+        }
+        if (rg.nextMediumNumber() < 6)
+        {
+            /// A level that is not `key=value`
+            res += "/plain";
+        }
+        if (rg.nextMediumNumber() < 31)
+        {
+            static const DB::Strings globs = {"/**", "/**", "/*", "/*/*", "/f*", "/{f0,f1}", "/f0"};
+            const String & glob = rg.pickRandomly(globs);
+
+            res += glob;
+            if (!glob.ends_with('*'))
+                res += ext;
+        }
+        else
+        {
+            res += "/f" + std::to_string(rg.randomInt<uint32_t>(0, 2)) + ext;
+        }
+        return res;
+    }
     if ((isAnyS3Engine() || isAnyAzureEngine()) && allow_not_deterministic && rg.nextSmallNumber() < 8)
     {
         String res = bucket_path.has_value() ? bucket_path.value() : "test";
@@ -1065,7 +909,8 @@ size_t SQLTable::numberOfInsertableColumns(const bool all) const
 
 bool SQLTable::supportsFinal(const bool as_alias) const
 {
-    return engine.supportsFinal() || isBufferEngine() || (isDistributedEngine() && subengine.has_value() && subengine->supportsFinal())
+    return engine.supportsFinal() || isBufferEngine()
+        || ((isDistributedEngine() || isAnyRemoteEngine()) && subengine.has_value() && subengine->supportsFinal())
         || (as_alias && isAliasEngine() && subengine.has_value() && subengine->supportsFinal());
 }
 
@@ -1127,7 +972,7 @@ String ColumnPathChain::columnPathRef(const String & quote) const
         {
             res += ".";
         }
-        res += path[i].cname;
+        res += quote.empty() ? path[i].cname : escapeSQLString(path[i].cname, quote[0]);
     }
     res += quote;
     return res;

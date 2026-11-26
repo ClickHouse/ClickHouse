@@ -11,6 +11,8 @@
 #include <Parsers/ASTConstraintDeclaration.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/ConstraintsDescription.h>
+#include <Functions/IFunction.h>
+#include <Interpreters/ExpressionActions.h>
 
 
 namespace DB
@@ -21,7 +23,6 @@ namespace ErrorCodes
     extern const int VIOLATED_CONSTRAINT;
     extern const int UNSUPPORTED_METHOD;
 }
-
 
 CheckConstraintsTransform::CheckConstraintsTransform(
     const StorageID & table_id_,
@@ -37,10 +38,31 @@ CheckConstraintsTransform::CheckConstraintsTransform(
 }
 
 
+void CheckConstraintsTransform::onCancel() noexcept
+{
+    ExceptionKeepingTransform::onCancel();
+
+    /// A `CHECK` constraint can contain an arbitrarily long-running function, so cancellation has
+    /// to reach the function that is being evaluated right now.
+    for (const auto & expression : expressions)
+        for (const auto & node : expression->getNodes())
+            if (node.type == ActionsDAG::ActionType::FUNCTION && node.function)
+                node.function->cancelExecution();
+}
+
+
 void CheckConstraintsTransform::onConsume(Chunk chunk)
 {
     if (chunk.getNumRows() > 0)
     {
+        /// The task could have been dispatched before the cancellation and picked up after it.
+        /// There is nothing to check for a query that is not going to write anything.
+        if (isCancelled())
+        {
+            cur_chunk.setColumns(getOutputPort().getHeader().cloneEmptyColumns(), 0);
+            return;
+        }
+
         if (rows_written == 0)
             for (const auto & expression : expressions)
                 VirtualColumnUtils::buildSetsForDAG(expression->getActionsDAG(), context);
@@ -48,8 +70,26 @@ void CheckConstraintsTransform::onConsume(Chunk chunk)
         Block block_to_calculate = getInputPort().getHeader().cloneWithColumns(chunk.getColumns());
         for (size_t i = 0; i < expressions.size(); ++i)
         {
+            /// A cancellation could have landed while the previous constraint was being validated.
+            /// `ExpressionActions::execute` polls the cancellation flag only after its first action,
+            /// so without this guard the next constraint would still evaluate one whole action, and
+            /// that action can be an arbitrarily long-running function.
+            if (isCancelled())
+            {
+                cur_chunk.setColumns(getOutputPort().getHeader().cloneEmptyColumns(), 0);
+                return;
+            }
+
             auto constraint_expr = expressions[i];
-            constraint_expr->execute(block_to_calculate);
+            constraint_expr->execute(block_to_calculate, false, false, &getCancellationFlag());
+
+            /// `execute` stops between actions when cancelled, so the result column of the
+            /// constraint is not necessarily there any more.
+            if (isCancelled())
+            {
+                cur_chunk.setColumns(getOutputPort().getHeader().cloneEmptyColumns(), 0);
+                return;
+            }
 
             auto * constraint_ptr = constraints_to_check[i]->as<ASTConstraintDeclaration>();
 
@@ -61,7 +101,25 @@ void CheckConstraintsTransform::onConsume(Chunk chunk)
                 throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Constraint {} does not return a value of type UInt8",
                     backQuote(constraint_ptr->name));
 
-            auto result_column = res_column.column->convertToFullIfNeeded();
+            auto result_column = res_column.column->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();
+
+            /// A constraint is checked row by row: the result is scanned for the first value that is not
+            /// 1, and the block's own columns are then read at that index to report the offending row. So
+            /// the result has to have exactly as many values as the block has rows. `arrayJoin` is the one
+            /// thing that breaks this, and it is rejected when a constraint is declared - but a constraint
+            /// stored before that check existed still loads, so the size is verified here rather than
+            /// trusted, and a read past the end of a block column is reported instead of performed.
+            if (result_column->size() != chunk.getNumRows())
+                throw Exception(
+                    ErrorCodes::UNSUPPORTED_METHOD,
+                    "Constraint {} for table {} returned {} values for a block of {} rows. Expression: ({}). "
+                    "An expression that changes the number of rows, such as `arrayJoin`, cannot be checked "
+                    "as a constraint; drop the constraint to be able to insert into the table",
+                    backQuote(constraint_ptr->name),
+                    table_id.getNameForLogs(),
+                    result_column->size(),
+                    chunk.getNumRows(),
+                    constraint_ptr->expr->formatForErrorMessage());
 
             if (const auto * column_nullable = checkAndGetColumn<ColumnNullable>(&*result_column))
             {

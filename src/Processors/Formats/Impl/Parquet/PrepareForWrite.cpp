@@ -1,6 +1,10 @@
 #include <DataTypes/DataTypeString.h>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Formats/ColumnNameMaps.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Processors/Formats/Impl/Parquet/Write.h>
+#include <Processors/Formats/Impl/Parquet/FileLogicalType.h>
+#include <Interpreters/castColumn.h>
 
 #include <Columns/MaskOperations.h>
 #include <Columns/ColumnFixedString.h>
@@ -10,7 +14,10 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnMap.h>
+#include <Columns/ColumnSparse.h>
 #include <Core/Block.h>
+#include <DataTypes/NestedUtils.h>
+#include <Formats/FormatFilterInfo.h>
 #include <Common/Exception.h>
 #include <Common/WKB.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -24,6 +31,8 @@
 #include <DataTypes/DataTypeCustom.h>
 #include <Columns/ColumnVariant.h>
 #include <DataTypes/DataTypeVariant.h>
+#include <Processors/Formats/Impl/Parquet/VariantEncoding.h>
+#include <base/sanitizer_defs.h>
 
 /// This file deals with schema conversion and with repetition and definition levels.
 
@@ -62,7 +71,6 @@ namespace DB::ErrorCodes
     extern const int UNKNOWN_COMPRESSION_METHOD;
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
-    extern const int INCORRECT_DATA;
 }
 
 namespace DB::Parquet
@@ -75,11 +83,12 @@ void assertNoDefOverflow(ColumnChunkWriteState & s)
 {
     if (s.max_def == UINT8_MAX)
         throw Exception(ErrorCodes::TOO_DEEP_RECURSION,
-            "Column has more than 255 levels of nested Array/Nullable. Impressive! Unfortunately, "
-            "this is not supported by this Parquet encoder (but is supported by Parquet, if you "
+            "Column has more than 255 levels of nested Array/Nullable. "
+            "This is not supported by this Parquet encoder (but is supported by Parquet, if you "
             "really need this for some reason).");
 }
 
+NO_SANITIZE_UNSIGNED_OVERFLOW
 void updateRepDefLevelsAndFilterColumnForNullable(ColumnChunkWriteState & s, const NullMap & null_map)
 {
     /// Increment definition levels for non-nulls.
@@ -122,6 +131,29 @@ void updateRepDefLevelsAndFilterColumnForNullable(ColumnChunkWriteState & s, con
         s.def[i] += !null_map[row_idx];
     }
     s.primitive_column = s.primitive_column->filter(filter, /*result_size_hint*/ -1);
+}
+
+/// Adds the definition level of a container group that is OPTIONAL in the Parquet schema but whose
+/// ClickHouse column cannot be null, so every value below it is present.
+///
+/// Must run AFTER updateRepDefLevelsForArray for array/map groups: that function encodes an empty
+/// container as definition level 0, and level 0 under an OPTIONAL ancestor means "container is null"
+/// to a reader. Incrementing afterwards shifts empty-but-present to 1 and leaves 0 free for null.
+void updateDefLevelsForAlwaysPresentOptionalGroup(ColumnChunkWriteState & s)
+{
+    assertNoDefOverflow(s);
+    ++s.max_def;
+
+    /// def is empty iff max_def was 0, so the 0 -> 1 transition has to materialize it.
+    if (s.max_def == 1)
+    {
+        chassert(s.def.empty());
+        s.def.resize_fill(s.primitive_column->size(), 1);
+        return;
+    }
+
+    for (auto & x : s.def)
+        ++x;
 }
 
 void updateRepDefLevelsForArray(ColumnChunkWriteState & s, const IColumn::Offsets & offsets)
@@ -228,13 +260,29 @@ parq::CompressionCodec::type compressionMethodToParquet(CompressionMethod c)
 }
 
 /// Depth-first traversal of the schema tree for this column.
+/// `column_path` is the dotted Iceberg field path of this node (t.x / arr.element / m.value), built
+/// with the same convention as ColumnMapper's producer; only the ColumnMapper lookups use it.
 void prepareColumnRecursive(
     ColumnPtr column, DataTypePtr type, const std::string & name, const WriteOptions & options,
-    ColumnChunkWriteStates & states, SchemaElements & schemas, const std::optional<std::unordered_map<String, Int64>> & column_field_ids);
+    ColumnChunkWriteStates & states, SchemaElements & schemas, const std::optional<ColumnNameToFieldId> & column_field_ids,
+    const String & column_path, const IcebergOptionality & iceberg_optionality);
+
+void prepareColumnVariant(
+    ColumnPtr column, DataTypePtr type, const std::string & name, const WriteOptions & options,
+    ColumnChunkWriteStates & states, SchemaElements & schemas, const std::optional<ColumnNameToFieldId> & column_field_ids,
+    const String & column_path, const IcebergOptionality & iceberg_optionality, bool force_required);
+
+bool isVariantGroupType(const DataTypePtr & type)
+{
+    return isDynamic(type) || (isVariant(type) && !type->getCustomName());
+}
 
 void preparePrimitiveColumn(ColumnPtr column, DataTypePtr type, const std::string & name,
-    const WriteOptions & options, ColumnChunkWriteStates & states, SchemaElements & schemas, std::optional<Int64> field_id)
+    const WriteOptions & options, ColumnChunkWriteStates & states, SchemaElements & schemas, std::optional<Int64> field_id,
+    const String & column_path, const IcebergOptionality & iceberg_optionality)
 {
+    const bool adjusted_to_utc = !iceberg_optionality.isLocalTimestamp(column_path);
+
     /// Add physical column info.
     auto & state = states.emplace_back();
     state.primitive_column = column;
@@ -379,7 +427,7 @@ void preparePrimitiveColumn(ColumnPtr column, DataTypePtr type, const std::strin
                 parq::TimeUnit unit;
                 unit.__set_MILLIS({});
                 parq::TimestampType tt;
-                tt.__set_isAdjustedToUTC(true);
+                tt.__set_isAdjustedToUTC(adjusted_to_utc);
                 tt.__set_unit(unit);
                 parq::LogicalType t;
                 t.__set_TIMESTAMP(tt);
@@ -420,7 +468,7 @@ void preparePrimitiveColumn(ColumnPtr column, DataTypePtr type, const std::strin
             parq::TimestampType tt;
             /// (Shouldn't we check the DateTime64's timezone parameter here? No, the actual number
             /// in DateTime64 column is always in UTC, regardless of the timezone parameter.)
-            tt.__set_isAdjustedToUTC(true);
+            tt.__set_isAdjustedToUTC(adjusted_to_utc);
             tt.__set_unit(unit);
             parq::LogicalType t;
             t.__set_TIMESTAMP(tt);
@@ -466,11 +514,31 @@ void preparePrimitiveColumn(ColumnPtr column, DataTypePtr type, const std::strin
             break;
         }
 
-        /// Parquet doesn't have logical types for these.
-        case TypeIndex::UInt128: fixed_string(16); break;
-        case TypeIndex::UInt256: fixed_string(32); break;
-        case TypeIndex::Int128:  fixed_string(16); break;
-        case TypeIndex::Int256:  fixed_string(32); break;
+        case TypeIndex::UInt128:
+            if (options.output_wide_integer_as_decimal)
+                decimal(17, 39, 0);
+            else
+                fixed_string(16);
+            break;
+        case TypeIndex::UInt256:
+            if (options.output_wide_integer_as_decimal)
+                decimal(33, 78, 0);
+            else
+                fixed_string(32);
+            break;
+        case TypeIndex::Int128:
+            if (options.output_wide_integer_as_decimal)
+                decimal(17, 39, 0);
+            else
+                fixed_string(16);
+            break;
+        case TypeIndex::Int256:
+            if (options.output_wide_integer_as_decimal)
+                decimal(33, 77, 0);
+            else
+                fixed_string(32);
+            break;
+        /// Parquet doesn't have a logical type for `IPv6`.
         case TypeIndex::IPv6:    fixed_string(16); break;
 
         case TypeIndex::Decimal32:  decimal(4, getDecimalPrecision(*type), getDecimalScale(*type)); break;
@@ -485,7 +553,8 @@ void preparePrimitiveColumn(ColumnPtr column, DataTypePtr type, const std::strin
 
 void prepareColumnNullable(
     ColumnPtr column, DataTypePtr type, const std::string & name, const WriteOptions & options,
-    ColumnChunkWriteStates & states, SchemaElements & schemas, const std::optional<std::unordered_map<String, Int64>> & field_ids)
+    ColumnChunkWriteStates & states, SchemaElements & schemas, const std::optional<ColumnNameToFieldId> & field_ids,
+    const String & column_path, const IcebergOptionality & iceberg_optionality)
 {
     const ColumnNullable * column_nullable = assert_cast<const ColumnNullable *>(column.get());
     ColumnPtr nested_column = column_nullable->getNestedColumnPtr();
@@ -495,7 +564,13 @@ void prepareColumnNullable(
     size_t child_states_begin = states.size();
     size_t child_schema_idx = schemas.size();
 
-    prepareColumnRecursive(nested_column, nested_type, name, options, states, schemas, field_ids);
+    /// Nullable is transparent in Iceberg field naming, so the nested node keeps the same dotted
+    /// path. Tell it that this Nullable already owns the OPTIONAL level for that path, so a container
+    /// below does not add a second one (which would also push us into the "nullable" wrapper branch
+    /// below and rewrite path_in_schema).
+    IcebergOptionality nested_optionality = iceberg_optionality;
+    nested_optionality.owned_by_enclosing_nullable = true;
+    prepareColumnRecursive(nested_column, nested_type, name, options, states, schemas, field_ids, column_path, nested_optionality);
 
     if (schemas[child_schema_idx].repetition_type == parq::FieldRepetitionType::REQUIRED)
     {
@@ -527,14 +602,57 @@ void prepareColumnNullable(
     }
 }
 
-std::optional<std::unordered_map<String, Int64>> buildSubFieldIds(
-    const std::optional<std::unordered_map<String, Int64>> & column_field_ids,
+/// With `output_format_parquet_write_file_logical_type`, a named `Tuple` whose element names are all
+/// fields of the `FILE` logical type is written as a `FILE`-annotated group. Returns the types into
+/// which the elements are converted for that: the specification requires every field to be
+/// OPTIONAL, so the types are `Nullable`. Returns nullopt for a tuple of another kind.
+std::optional<DataTypes> getFileLogicalTypeElementTypes(const DataTypeTuple & type, const std::string & name, const WriteOptions & options)
+{
+    if (!options.write_file_logical_type || !type.hasExplicitNames() || type.getElements().empty())
+        return std::nullopt;
+    for (const auto & element_name : type.getElementNames())
+        if (!getFileLogicalTypeFieldKind(element_name).has_value())
+            return std::nullopt;
+
+    DataTypes result;
+    for (size_t i = 0; i < type.getElements().size(); ++i)
+    {
+        const String & element_name = type.getNameByPosition(i + 1);
+        const DataTypePtr & element_type = type.getElement(i);
+        const DataTypePtr nested_type = removeLowCardinalityAndNullable(element_type);
+        WhichDataType which(nested_type);
+        if (getFileLogicalTypeFieldKind(element_name) == FileLogicalTypeFieldKind::Int64)
+        {
+            /// `UInt64` is allowed, because it is the natural type of a size (e.g. of the `_size`
+            /// virtual column); a value that does not fit into `Int64` throws during the conversion.
+            if (!which.isNativeInteger() || isBool(nested_type))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Cannot write column {} as Parquet `FILE` logical type: element `{}` must be an integer, got {}. "
+                    "Disable the setting `output_format_parquet_write_file_logical_type` to write it as an ordinary group",
+                    name, element_name, element_type->getName());
+            result.push_back(makeNullable(std::make_shared<DataTypeInt64>()));
+        }
+        else
+        {
+            if (!which.isStringOrFixedString())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Cannot write column {} as Parquet `FILE` logical type: element `{}` must be a `String` or `FixedString`, got {}. "
+                    "Disable the setting `output_format_parquet_write_file_logical_type` to write it as an ordinary group",
+                    name, element_name, element_type->getName());
+            result.push_back(makeNullable(std::make_shared<DataTypeString>()));
+        }
+    }
+    return result;
+}
+
+std::optional<ColumnNameToFieldId> buildSubFieldIds(
+    const std::optional<ColumnNameToFieldId> & column_field_ids,
     const String & prefix)
 {
     if (!column_field_ids)
         return std::nullopt;
 
-    std::unordered_map<String, Int64> result;
+    ColumnNameToFieldId result;
     const String prefix_dot = prefix + ".";
     for (const auto & [key, value] : *column_field_ids)
     {
@@ -546,11 +664,34 @@ std::optional<std::unordered_map<String, Int64>> buildSubFieldIds(
 
 void prepareColumnTuple(
     ColumnPtr column, DataTypePtr type, const std::string & name, const WriteOptions & options,
-    ColumnChunkWriteStates & states, SchemaElements & schemas, const std::optional<std::unordered_map<String, Int64>> & column_field_ids = std::nullopt)
+    ColumnChunkWriteStates & states, SchemaElements & schemas, const std::optional<ColumnNameToFieldId> & column_field_ids,
+    const String & column_path, const IcebergOptionality & iceberg_optionality)
 {
     const auto * column_tuple = assert_cast<const ColumnTuple *>(column.get());
     const auto * type_tuple = assert_cast<const DataTypeTuple *>(type.get());
     size_t num_elements = type_tuple->getElements().size();
+
+    Columns element_columns = column_tuple->getColumnsCopy();
+    DataTypes element_types = type_tuple->getElements();
+    /// For a `FILE` group, the string fields must be annotated with STRING and `inline` must not be
+    /// annotated, regardless of `output_format_parquet_string_as_string`.
+    std::optional<WriteOptions> file_string_field_options;
+    std::optional<WriteOptions> file_binary_field_options;
+    const std::optional<DataTypes> file_element_types = getFileLogicalTypeElementTypes(*type_tuple, name, options);
+    if (file_element_types)
+    {
+        for (size_t i = 0; i < num_elements; ++i)
+        {
+            ColumnWithTypeAndName element{element_columns[i], element_types[i], type_tuple->getNameByPosition(i + 1)};
+            const DataTypePtr & file_type = (*file_element_types)[i];
+            element_columns[i] = isInteger(removeNullable(file_type)) ? castColumnAccurate(element, file_type) : castColumn(element, file_type);
+            element_types[i] = file_type;
+        }
+        file_string_field_options.emplace(options);
+        file_string_field_options->output_string_as_string = true;
+        file_binary_field_options.emplace(options);
+        file_binary_field_options->output_string_as_string = false;
+    }
 
     /// We artificially disallow empty tuples because they're not widely supported.
     /// But they're supported in clickhouse; if we remove this check, nothing breaks, and clickhouse
@@ -558,8 +699,10 @@ void prepareColumnTuple(
     if (num_elements == 0)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parquet doesn't support empty tuples");
 
+    const bool optional = iceberg_optionality.isOptional(column_path);
+
     auto & tuple_schema = schemas.emplace_back();
-    tuple_schema.__set_repetition_type(parq::FieldRepetitionType::REQUIRED);
+    tuple_schema.__set_repetition_type(optional ? parq::FieldRepetitionType::OPTIONAL : parq::FieldRepetitionType::REQUIRED);
     tuple_schema.__set_name(name);
     tuple_schema.__set_num_children(static_cast<Int32>(num_elements));
     if (column_field_ids)
@@ -568,24 +711,46 @@ void prepareColumnTuple(
         if (it != column_field_ids->end())
             tuple_schema.__set_field_id(static_cast<Int32>(it->second));
     }
+    if (file_element_types)
+    {
+        parq::LogicalType logical_type;
+        logical_type.__set_FILE({});
+        tuple_schema.__set_logicalType(logical_type);
+    }
 
     size_t child_states_begin = states.size();
 
     auto sub_field_ids = buildSubFieldIds(column_field_ids, name);
+    /// Children sit at their own dotted paths, which no enclosing Nullable owns.
+    IcebergOptionality child_optionality = iceberg_optionality;
+    child_optionality.owned_by_enclosing_nullable = false;
     for (size_t i = 0; i < num_elements; ++i)
-        prepareColumnRecursive(column_tuple->getColumnPtr(i), type_tuple->getElement(i), type_tuple->getNameByPosition(i + 1), options, states, schemas, sub_field_ids);
+    {
+        const auto & element_name = type_tuple->getNameByPosition(i + 1);
+        const WriteOptions * element_options = &options;
+        if (file_element_types)
+            element_options = getFileLogicalTypeFieldKind(element_name) == FileLogicalTypeFieldKind::Binary
+                ? &*file_binary_field_options : &*file_string_field_options;
+        prepareColumnRecursive(
+            element_columns[i], element_types[i], element_name, *element_options, states, schemas, sub_field_ids,
+            Nested::concatenateName(column_path, element_name), child_optionality);
+    }
 
     for (size_t i = child_states_begin; i < states.size(); ++i)
     {
         Strings & path = states[i].column_chunk.meta_data.path_in_schema;
         /// O(nesting_depth^2), but who cares.
         path.insert(path.begin(), name);
+
+        if (optional)
+            updateDefLevelsForAlwaysPresentOptionalGroup(states[i]);
     }
 }
 
 void prepareColumnArray(
     ColumnPtr column, DataTypePtr type, const std::string & name, const WriteOptions & options,
-    ColumnChunkWriteStates & states, SchemaElements & schemas, const std::optional<std::unordered_map<String, Int64>> & column_field_ids = std::nullopt)
+    ColumnChunkWriteStates & states, SchemaElements & schemas, const std::optional<ColumnNameToFieldId> & column_field_ids,
+    const String & column_path, const IcebergOptionality & iceberg_optionality)
 {
     const auto * column_array = assert_cast<const ColumnArray *>(column.get());
     ColumnPtr nested_column = column_array->getDataPtr();
@@ -605,7 +770,9 @@ void prepareColumnArray(
     auto & list_schema = schemas[schemas.size() - 2];
     auto & item_schema = schemas[schemas.size() - 1];
 
-    list_schema.__set_repetition_type(parq::FieldRepetitionType::REQUIRED);
+    const bool optional = iceberg_optionality.isOptional(column_path);
+
+    list_schema.__set_repetition_type(optional ? parq::FieldRepetitionType::OPTIONAL : parq::FieldRepetitionType::REQUIRED);
     list_schema.__set_name(name);
     list_schema.__set_num_children(1);
     list_schema.__set_converted_type(parq::ConvertedType::LIST);
@@ -625,8 +792,12 @@ void prepareColumnArray(
     std::array<std::string, 2> path_prefix = {list_schema.name, item_schema.name};
     size_t child_states_begin = states.size();
 
-    /// Recurse.
-    prepareColumnRecursive(nested_column, nested_type, "element", options, states, schemas, buildSubFieldIds(column_field_ids, name));
+    /// Recurse. The element sits at its own dotted path, which no enclosing Nullable owns.
+    IcebergOptionality child_optionality = iceberg_optionality;
+    child_optionality.owned_by_enclosing_nullable = false;
+    prepareColumnRecursive(
+        nested_column, nested_type, "element", options, states, schemas, buildSubFieldIds(column_field_ids, name),
+        Nested::concatenateName(column_path, "element"), child_optionality);
 
     /// Update repetition+definition levels and fully-qualified column names (x -> myarray.list.x).
     for (size_t i = child_states_begin; i < states.size(); ++i)
@@ -635,12 +806,18 @@ void prepareColumnArray(
         path.insert(path.begin(), path_prefix.begin(), path_prefix.end());
 
         updateRepDefLevelsForArray(states[i], offsets);
+
+        /// Strictly after updateRepDefLevelsForArray: it encodes an empty array as level 0, which
+        /// under an OPTIONAL group would read back as a null array instead of an empty one.
+        if (optional)
+            updateDefLevelsForAlwaysPresentOptionalGroup(states[i]);
     }
 }
 
 void prepareColumnMap(
     ColumnPtr column, DataTypePtr type, const std::string & name, const WriteOptions & options,
-    ColumnChunkWriteStates & states, SchemaElements & schemas, const std::optional<std::unordered_map<String, Int64>> & column_field_ids = std::nullopt)
+    ColumnChunkWriteStates & states, SchemaElements & schemas, const std::optional<ColumnNameToFieldId> & column_field_ids,
+    const String & column_path, const IcebergOptionality & iceberg_optionality)
 {
     const auto * column_map = assert_cast<const ColumnMap *>(column.get());
     const auto * column_array = &column_map->getNestedColumn();
@@ -657,8 +834,10 @@ void prepareColumnMap(
     ///     reqiured <...> "key"
     ///     <...> "value"
 
+    const bool optional = iceberg_optionality.isOptional(column_path);
+
     auto & map_schema = schemas.emplace_back();
-    map_schema.__set_repetition_type(parq::FieldRepetitionType::REQUIRED);
+    map_schema.__set_repetition_type(optional ? parq::FieldRepetitionType::OPTIONAL : parq::FieldRepetitionType::REQUIRED);
     map_schema.__set_name(name);
     map_schema.__set_num_children(1);
     map_schema.__set_converted_type(parq::ConvertedType::MAP);
@@ -680,8 +859,22 @@ void prepareColumnMap(
     size_t child_states_begin = states.size();
     auto child_field_ids = buildSubFieldIds(column_field_ids, name);
     const auto * column_tuple_typed = assert_cast<const ColumnTuple *>(column_tuple.get());
-    prepareColumnRecursive(column_tuple_typed->getColumnPtr(0), map_type->getKeyType(), "key", options, states, schemas, child_field_ids);
-    prepareColumnRecursive(column_tuple_typed->getColumnPtr(1), map_type->getValueType(), "value", options, states, schemas, child_field_ids);
+    /// Key/value sit at their own dotted paths, which no enclosing Nullable owns. A map key is
+    /// always required per the Iceberg spec, and the producer forces that, so the lookup declines it.
+    IcebergOptionality child_optionality = iceberg_optionality;
+    child_optionality.owned_by_enclosing_nullable = false;
+    if (isVariantGroupType(map_type->getKeyType()))
+        prepareColumnVariant(
+            removeSpecialRepresentations(column_tuple_typed->getColumnPtr(0))->convertToFullColumnIfConst(), map_type->getKeyType(),
+            "key", options, states, schemas, child_field_ids, Nested::concatenateName(column_path, "key"), child_optionality,
+            /*force_required=*/ true);
+    else
+        prepareColumnRecursive(
+            column_tuple_typed->getColumnPtr(0), map_type->getKeyType(), "key", options, states, schemas, child_field_ids,
+            Nested::concatenateName(column_path, "key"), child_optionality);
+    prepareColumnRecursive(
+        column_tuple_typed->getColumnPtr(1), map_type->getValueType(), "value", options, states, schemas, child_field_ids,
+        Nested::concatenateName(column_path, "value"), child_optionality);
 
     for (size_t i = child_states_begin; i < states.size(); ++i)
     {
@@ -690,6 +883,10 @@ void prepareColumnMap(
         path.insert(path.begin(), name);
 
         updateRepDefLevelsForArray(states[i], offsets);
+
+        /// Strictly after updateRepDefLevelsForArray, for the same reason as in prepareColumnArray.
+        if (optional)
+            updateDefLevelsForAlwaysPresentOptionalGroup(states[i]);
     }
 }
 
@@ -698,7 +895,7 @@ void prepareColumnMap(
 /// may legitimately omit some leaves. Must NOT use unordered_map::at(), which throws
 /// std::out_of_range (not a DB::Exception) and escalates to a fatal abort.
 std::optional<Int64> lookupLeafFieldId(
-    const std::optional<std::unordered_map<String, Int64>> & column_field_ids, const String & name)
+    const std::optional<ColumnNameToFieldId> & column_field_ids, const String & name)
 {
     if (!column_field_ids)
         return std::nullopt;
@@ -708,92 +905,122 @@ std::optional<Int64> lookupLeafFieldId(
     return it->second;
 }
 
-void validateIcebergFieldIds(
-    const DataTypePtr & type, const String & path, const std::unordered_map<String, Int64> & field_ids)
+void prepareColumnVariant(
+    ColumnPtr column, DataTypePtr type, const std::string & name, const WriteOptions & options,
+    ColumnChunkWriteStates & states, SchemaElements & schemas, const std::optional<ColumnNameToFieldId> & column_field_ids,
+    const String & column_path, const IcebergOptionality & iceberg_optionality, bool force_required)
 {
-    /// Nullable/LowCardinality are transparent in Iceberg field naming: the field id sits on
-    /// the inner type and the path is unchanged. Strip them and keep the same path, mirroring
-    /// prepareColumnNullable/the LowCardinality branch of prepareColumnRecursive.
-    switch (type->getTypeId())
-    {
-        case TypeIndex::Nullable:
-            validateIcebergFieldIds(assert_cast<const DataTypeNullable &>(*type).getNestedType(), path, field_ids);
-            return;
-        case TypeIndex::LowCardinality:
-            validateIcebergFieldIds(assert_cast<const DataTypeLowCardinality &>(*type).getDictionaryType(), path, field_ids);
-            return;
-        default:
-            break;
-    }
+    const bool required = force_required
+        || (iceberg_optionality.mapper && iceberg_optionality.mapper->hasIcebergRequiredInfo()
+            && !iceberg_optionality.isOptional(column_path));
 
-    if (!field_ids.contains(path))
-        throw Exception(
-            ErrorCodes::INCORRECT_DATA,
-            "Column '{}' has no field id in the Iceberg schema being written. The table schema "
-            "likely changed concurrently (e.g. a column was renamed); retry the INSERT.",
-            path);
+    auto metadata = ColumnString::create();
+    auto value = ColumnString::create();
+    NullMap null_map;
+    encodeVariantColumn(
+        *column, type, name, options.variant_settings, *metadata, *value,
+        required ? nullptr : &null_map);
 
-    /// Recurse into composites, building the same dotted paths that buildSubFieldIds() and the
-    /// composite branches use, so every nested logical field is validated against the latest schema.
-    switch (type->getTypeId())
+    auto & variant_schema = schemas.emplace_back();
+    variant_schema.__set_repetition_type(required ? parq::FieldRepetitionType::REQUIRED : parq::FieldRepetitionType::OPTIONAL);
+    variant_schema.__set_name(name);
+    variant_schema.__set_num_children(2);
+    parq::VariantType variant_type;
+    variant_type.__set_specification_version(1);
+    parq::LogicalType logical_type;
+    logical_type.__set_VARIANT(variant_type);
+    variant_schema.__set_logicalType(logical_type);
+    if (auto field_id = lookupLeafFieldId(column_field_ids, name))
+        variant_schema.__set_field_id(static_cast<Int32>(*field_id));
+
+    WriteOptions blob_options = options;
+    blob_options.output_string_as_string = false;
+    blob_options.output_fixed_string_as_fixed_byte_array = false;
+
+    const size_t child_states_begin = states.size();
+    preparePrimitiveColumn(
+        std::move(metadata), std::make_shared<DataTypeString>(), "metadata", blob_options, states, schemas, std::nullopt,
+        Nested::concatenateName(column_path, "metadata"), iceberg_optionality);
+    preparePrimitiveColumn(
+        std::move(value), std::make_shared<DataTypeString>(), "value", blob_options, states, schemas, std::nullopt,
+        Nested::concatenateName(column_path, "value"), iceberg_optionality);
+
+    for (size_t i = child_states_begin; i < states.size(); ++i)
     {
-        case TypeIndex::Tuple:
-        {
-            const auto & tuple = assert_cast<const DataTypeTuple &>(*type);
-            size_t num_elements = tuple.getElements().size();
-            for (size_t i = 0; i < num_elements; ++i)
-                validateIcebergFieldIds(tuple.getElement(i), path + "." + tuple.getNameByPosition(i + 1), field_ids);
-            break;
-        }
-        case TypeIndex::Array:
-            validateIcebergFieldIds(assert_cast<const DataTypeArray &>(*type).getNestedType(), path + ".element", field_ids);
-            break;
-        case TypeIndex::Map:
-        {
-            const auto & map = assert_cast<const DataTypeMap &>(*type);
-            validateIcebergFieldIds(map.getKeyType(), path + ".key", field_ids);
-            validateIcebergFieldIds(map.getValueType(), path + ".value", field_ids);
-            break;
-        }
-        default:
-            break;
+        states[i].column_chunk.meta_data.path_in_schema.insert(states[i].column_chunk.meta_data.path_in_schema.begin(), name);
+        if (!required)
+            updateRepDefLevelsAndFilterColumnForNullable(states[i], null_map);
     }
 }
 
 void prepareColumnRecursive(
     ColumnPtr column, DataTypePtr type, const std::string & name, const WriteOptions & options,
-    ColumnChunkWriteStates & states, SchemaElements & schemas, const std::optional<std::unordered_map<String, Int64>> & column_field_ids)
+    ColumnChunkWriteStates & states, SchemaElements & schemas, const std::optional<ColumnNameToFieldId> & column_field_ids,
+    const String & column_path, const IcebergOptionality & iceberg_optionality)
 {
     /// Remove const and sparse but leave LowCardinality as the encoder can directly use it for
     /// parquet dictionary-encoding.
-    column = column->convertToFullColumnIfReplicated()->convertToFullColumnIfSparse()->convertToFullColumnIfConst();
+    column = removeSpecialRepresentations(column)->convertToFullColumnIfConst();
 
     switch (type->getTypeId())
     {
-        case TypeIndex::Nullable: prepareColumnNullable(column, type, name, options, states, schemas, column_field_ids); break;
-        case TypeIndex::Array: prepareColumnArray(column, type, name, options, states, schemas, column_field_ids); break;
-        case TypeIndex::Tuple: prepareColumnTuple(column, type, name, options, states, schemas, column_field_ids); break;
-        case TypeIndex::Map: prepareColumnMap(column, type, name, options, states, schemas, column_field_ids); break;
+        case TypeIndex::Nullable: prepareColumnNullable(column, type, name, options, states, schemas, column_field_ids, column_path, iceberg_optionality); break;
+        case TypeIndex::Array: prepareColumnArray(column, type, name, options, states, schemas, column_field_ids, column_path, iceberg_optionality); break;
+        case TypeIndex::Tuple: prepareColumnTuple(column, type, name, options, states, schemas, column_field_ids, column_path, iceberg_optionality); break;
+        case TypeIndex::Map: prepareColumnMap(column, type, name, options, states, schemas, column_field_ids, column_path, iceberg_optionality); break;
+        case TypeIndex::Dynamic:
+            prepareColumnVariant(column, type, name, options, states, schemas, column_field_ids, column_path, iceberg_optionality, false);
+            break;
+        case TypeIndex::Variant:
+            if (type->getCustomName())
+                preparePrimitiveColumn(
+                    column, type, name, options, states, schemas, lookupLeafFieldId(column_field_ids, name), column_path,
+                    iceberg_optionality);
+            else
+                prepareColumnVariant(column, type, name, options, states, schemas, column_field_ids, column_path, iceberg_optionality, false);
+            break;
         case TypeIndex::LowCardinality:
         {
             auto nested_type = assert_cast<const DataTypeLowCardinality &>(*type).getDictionaryType();
             if (nested_type->isNullable())
                 prepareColumnNullable(
-                    column->convertToFullColumnIfLowCardinality(), nested_type, name, options, states, schemas, column_field_ids);
+                    column->convertToFullColumnIfLowCardinality(), nested_type, name, options, states, schemas, column_field_ids, column_path, iceberg_optionality);
             else
                 /// Use nested data type, but keep ColumnLowCardinality. The encoder can deal with it.
-                preparePrimitiveColumn(column, nested_type, name, options, states, schemas, lookupLeafFieldId(column_field_ids, name));
+                preparePrimitiveColumn(
+                    column, nested_type, name, options, states, schemas, lookupLeafFieldId(column_field_ids, name), column_path,
+                    iceberg_optionality);
             break;
         }
         default:
-            preparePrimitiveColumn(column, type, name, options, states, schemas, lookupLeafFieldId(column_field_ids, name));
+            preparePrimitiveColumn(
+                column, type, name, options, states, schemas, lookupLeafFieldId(column_field_ids, name), column_path,
+                iceberg_optionality);
             break;
     }
 }
 
 }
 
-SchemaElements convertSchema(const Block & sample, const WriteOptions & options, const std::optional<std::unordered_map<String, Int64>> & column_field_ids)
+bool IcebergOptionality::isLocalTimestamp(const String & path) const
+{
+    return mapper && mapper->isLocalTimestampPath(path);
+}
+
+bool IcebergOptionality::isOptional(const String & path) const
+{
+    /// No mapper, or a mapper that carries only field ids / string paths: keep today's behavior.
+    /// This fallback is load-bearing, not defensive: Iceberg position-delete writes build such a
+    /// mapper (Mutations.cpp) and must keep emitting required containers.
+    if (!mapper || !mapper->hasIcebergRequiredInfo())
+        return false;
+    /// An enclosing Nullable already supplies the OPTIONAL level for this same path.
+    if (owned_by_enclosing_nullable)
+        return false;
+    return mapper->isIcebergOptionalPath(path);
+}
+
+SchemaElements convertSchema(const Block & sample, const WriteOptions & options, const std::optional<ColumnNameToFieldId> & column_field_ids, const IcebergOptionality & iceberg_optionality)
 {
     SchemaElements schema;
     auto & root = schema.emplace_back();
@@ -808,16 +1035,21 @@ SchemaElements convertSchema(const Block & sample, const WriteOptions & options,
         if (column_field_ids)
             validateIcebergFieldIds(c.type, c.name, *column_field_ids);
 
-        prepareColumnForWrite(c.column, c.type, c.name, options, nullptr, &schema, column_field_ids);
+        prepareColumnForWrite(c.column, c.type, c.name, options, nullptr, &schema, column_field_ids, iceberg_optionality);
     }
 
     return schema;
 }
 
-static void prepareGeoColumn(ColumnPtr & column, DataTypePtr & type)
+/// Returns true if the column is a geo column and was converted to WKB.
+static bool prepareGeoColumn(ColumnPtr & column, DataTypePtr & type)
 {
     if (!type->getCustomName())
-        return;
+        return false;
+
+    /// The conversions below cast the column to its concrete type, which a constant column is not
+    /// (e.g. `SELECT readWKT(...) FORMAT Parquet`). Materialize it.
+    column = removeSpecialRepresentations(column)->convertToFullColumnIfConst();
 
     if (type->getCustomName()->getName() == "Geometry")
     {
@@ -825,12 +1057,14 @@ static void prepareGeoColumn(ColumnPtr & column, DataTypePtr & type)
         const auto & variant_type = assert_cast<const DataTypeVariant &>(*type);
         const auto & variants = variant_type.getVariants();
 
-        std::vector<std::shared_ptr<IWKBTransform>> transforms(variants.size());
+        VectorWithMemoryTracking<std::shared_ptr<IWKBTransform>> transforms(variants.size());
         for (size_t i = 0; i < variants.size(); ++i)
         {
             const auto & variant_name = variants[i]->getCustomName() ? variants[i]->getCustomName()->getName() : variants[i]->getName();
             if (variant_name == WKBPointTransform::name)
                 transforms[i] = std::make_shared<WKBPointTransform>();
+            else if (variant_name == WKBMultiPointTransform::name)
+                transforms[i] = std::make_shared<WKBMultiPointTransform>();
             else if (variant_name == WKBLineStringTransform::name || variant_name == "Ring")
                 transforms[i] = std::make_shared<WKBLineStringTransform>();
             else if (variant_name == WKBPolygonTransform::name)
@@ -868,12 +1102,14 @@ static void prepareGeoColumn(ColumnPtr & column, DataTypePtr & type)
         }
         column = ColumnNullable::create(std::move(result), std::move(null_map));
         type = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>());
-        return;
+        return true;
     }
 
     std::shared_ptr<IWKBTransform> transform;
     if (type->getCustomName()->getName() == WKBPointTransform::name)
         transform = std::make_shared<WKBPointTransform>();
+    if (type->getCustomName()->getName() == WKBMultiPointTransform::name)
+        transform = std::make_shared<WKBMultiPointTransform>();
     if (type->getCustomName()->getName() == WKBLineStringTransform::name)
         transform = std::make_shared<WKBLineStringTransform>();
     if (type->getCustomName()->getName() == WKBPolygonTransform::name)
@@ -884,7 +1120,7 @@ static void prepareGeoColumn(ColumnPtr & column, DataTypePtr & type)
         transform = std::make_shared<WKBMultiPolygonTransform>();
 
     if (!transform)
-        return;
+        return false;
 
     auto transformed_column = ColumnString::create();
     for (size_t i = 0; i < column->size(); ++i)
@@ -896,20 +1132,39 @@ static void prepareGeoColumn(ColumnPtr & column, DataTypePtr & type)
     }
     column = std::move(transformed_column);
     type = std::make_shared<DataTypeString>();
+    return true;
 }
 
 void prepareColumnForWrite(
     ColumnPtr column, DataTypePtr type, const std::string & name, const WriteOptions & options,
-    ColumnChunkWriteStates * out_columns_to_write, SchemaElements * out_schema, const std::optional<std::unordered_map<String, Int64>> & column_field_ids)
+    ColumnChunkWriteStates * out_columns_to_write, SchemaElements * out_schema, const std::optional<ColumnNameToFieldId> & column_field_ids,
+    const IcebergOptionality & iceberg_optionality)
 {
     if (column->empty() && out_columns_to_write != nullptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty column passed to Parquet encoder");
 
     ColumnChunkWriteStates states;
     SchemaElements schemas;
+    bool is_geometry = false;
     if (options.write_geometadata)
-        prepareGeoColumn(column, type);
-    prepareColumnRecursive(column, type, name, options, states, schemas, column_field_ids);
+        is_geometry = prepareGeoColumn(column, type) && options.write_geometry_logical_type;
+    prepareColumnRecursive(column, type, name, options, states, schemas, column_field_ids, name, iceberg_optionality);
+
+    if (is_geometry)
+    {
+        /// The WKB column is a single `BYTE_ARRAY` leaf (`String` or `Nullable(String)`). Replace the
+        /// `STRING` annotation that `output_format_parquet_string_as_string` may have put on it by
+        /// `GEOMETRY` with the default CRS (`OGC:CRS84`, i.e. longitude/latitude), which has no
+        /// `ConvertedType` counterpart.
+        if (schemas.size() != 1 || schemas[0].type != parq::Type::BYTE_ARRAY)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected Parquet schema for geo column '{}'", name);
+        parq::LogicalType logical_type;
+        logical_type.__set_GEOMETRY({});
+        schemas[0].__set_logicalType(logical_type);
+        schemas[0].__isset.converted_type = false;
+        for (auto & s : states)
+            s.is_geometry = true;
+    }
 
     if (out_columns_to_write)
         for (auto & s : states)

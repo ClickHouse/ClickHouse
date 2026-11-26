@@ -1,15 +1,20 @@
 #include <Storages/Statistics/Statistics.h>
 
-#include <Common/Exception.h>
-#include <Common/FieldVisitorConvertToNumber.h>
-#include <Common/logger_useful.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <Functions/FunctionFactory.h>
-#include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
+#include <AggregateFunctions/IAggregateFunction.h>
+#include <Core/Field.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/Serializations/ISerialization.h>
+#include <Formats/FormatSettings.h>
 #include <IO/ReadBufferFromString.h>
+#include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
 #include <Interpreters/convertFieldToType.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ExpressionElementParsers.h>
+#include <Parsers/parseQuery.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
 #include <Storages/Statistics/StatisticsBasic.h>
@@ -17,11 +22,12 @@
 #include <Storages/Statistics/StatisticsMinMax.h>
 #include <Storages/Statistics/StatisticsTDigest.h>
 #include <Storages/Statistics/StatisticsUniq.h>
+#include <Storages/Statistics/StatisticsUniqV2.h>
 #include <Storages/StatisticsDescription.h>
-#include <Parsers/ASTFunction.h>
-#include <Parsers/ExpressionElementParsers.h>
-#include <Parsers/parseQuery.h>
-#include <Parsers/ASTIdentifier.h>
+#include <Common/Exception.h>
+#include <Common/assert_cast.h>
+#include <Common/FieldVisitorConvertToNumber.h>
+#include <Common/logger_useful.h>
 
 #include "config.h" /// USE_DATASKETCHES
 
@@ -30,13 +36,128 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int BAD_ARGUMENTS;
-    extern const int ILLEGAL_STATISTICS;
-    extern const int INCORRECT_QUERY;
-    extern const int NOT_IMPLEMENTED;
-    extern const int LOGICAL_ERROR;
+extern const int BAD_ARGUMENTS;
+extern const int ILLEGAL_STATISTICS;
+extern const int INCORRECT_QUERY;
+extern const int NOT_IMPLEMENTED;
+extern const int LOGICAL_ERROR;
 }
 
+
+bool StatisticsUtils::isSame(const IAggregateFunction & a, const IAggregateFunction & b)
+{
+    if (a.sizeOfData() != b.sizeOfData())
+        return false;
+    const auto & a_types = a.getArgumentTypes();
+    const auto & b_types = b.getArgumentTypes();
+    if (a_types.size() != b_types.size())
+        return false;
+    for (size_t i = 0; i < a_types.size(); ++i)
+        if (!a_types[i]->equals(*b_types[i]))
+            return false;
+    return true;
+}
+
+void StatisticsUtils::updateMin(Field & accumulator, const Field & value)
+{
+    if (value.isNull())
+        return;
+
+    if (accumulator.isNull() || isNaNField(accumulator))
+        accumulator = value;
+    else if (!isNaNField(value) && value < accumulator)
+        accumulator = value;
+}
+
+void StatisticsUtils::updateMax(Field & accumulator, const Field & value)
+{
+    if (value.isNull())
+        return;
+
+    if (accumulator.isNull() || isNaNField(accumulator))
+        accumulator = value;
+    else if (!isNaNField(value) && accumulator < value)
+        accumulator = value;
+}
+
+namespace
+{
+
+enum BoundsMask : UInt8
+{
+    HasMin = 1,
+    HasMax = 2,
+};
+
+FormatSettings getBoundsFormatSettings()
+{
+    FormatSettings settings;
+    /// `IColumn::getExtremes` gives a `UInt64` for a `Bool` column, and the bounds of statistics read from a
+    /// part are compared with the ones built from the blocks of another part when they are merged.
+    settings.binary.read_bool_field_as_int = true;
+    return settings;
+}
+
+}
+
+void StatisticsUtils::serializeBounds(const Field & min, const Field & max, const IDataType & data_type, WriteBuffer & buf)
+{
+    UInt8 mask = 0;
+    if (!min.isNull())
+        mask |= BoundsMask::HasMin;
+    if (!max.isNull())
+        mask |= BoundsMask::HasMax;
+    writeIntBinary(mask, buf);
+
+    const auto serialization = data_type.getDefaultSerialization();
+    const auto settings = getBoundsFormatSettings();
+    if (mask & BoundsMask::HasMin)
+        serialization->serializeBinary(min, buf, settings);
+    if (mask & BoundsMask::HasMax)
+        serialization->serializeBinary(max, buf, settings);
+}
+
+void StatisticsUtils::deserializeBounds(Field & min, Field & max, const IDataType & data_type, ReadBuffer & buf)
+{
+    UInt8 mask = 0;
+    readIntBinary(mask, buf);
+    if (mask & ~(BoundsMask::HasMin | BoundsMask::HasMax))
+        throw Exception(
+            ErrorCodes::ILLEGAL_STATISTICS,
+            "Unknown flags {} of the bounds of statistics. The statistics file may be corrupted. "
+            "Please run `ALTER TABLE [db.]table MATERIALIZE STATISTICS ALL` to regenerate the statistics.",
+            static_cast<UInt32>(mask));
+
+    const auto serialization = data_type.getDefaultSerialization();
+    const auto settings = getBoundsFormatSettings();
+    min = Field();
+    max = Field();
+    if (mask & BoundsMask::HasMin)
+        serialization->deserializeBinary(min, buf, settings);
+    if (mask & BoundsMask::HasMax)
+        serialization->deserializeBinary(max, buf, settings);
+}
+
+UInt64 StatisticsUtils::getSerializedBoundsSize(const Field & min, const Field & max, const IDataType & data_type)
+{
+    const UInt64 value_size = data_type.getSizeOfValueInMemory();
+    return sizeof(UInt8) + (min.isNull() ? 0 : value_size) + (max.isNull() ? 0 : value_size);
+}
+
+bool StatisticsUtils::isBoundOfType(const Field & bound, const IDataType & data_type)
+{
+    if (bound.isNull())
+        return true;
+
+    /// The same as `Field::safeGet` used by the serialization: `Bool`, `UInt64` and `Int64` are interchangeable.
+    auto is_integer = [](Field::Types::Which which)
+    {
+        return which == Field::Types::Bool || which == Field::Types::UInt64 || which == Field::Types::Int64;
+    };
+    const auto expected = data_type.getDefault().getType();
+    const auto actual = bound.getType();
+    return actual == expected || (is_integer(actual) && is_integer(expected));
+}
 
 std::optional<Float64> StatisticsUtils::tryConvertToFloat64(const Field & value, const DataTypePtr & data_type)
 {
@@ -45,14 +166,16 @@ std::optional<Float64> StatisticsUtils::tryConvertToFloat64(const Field & value,
 
     try
     {
-        auto column = data_type->createColumn();
-        column->insert(value);
-        ColumnsWithTypeAndName arguments({ColumnWithTypeAndName(std::move(column), data_type, "stats_const")});
+        if (value.getType() == Field::Types::String)
+        {
+            ReadBufferFromString buffer(value.safeGet<String>());
+            Float64 result = 0;
+            readFloatTextPrecise(result, buffer);
+            assertEOF(buffer);
+            return result;
+        }
 
-        auto cast_resolver = FunctionFactory::instance().get("toFloat64", nullptr);
-        auto cast_function = cast_resolver->build(arguments);
-        ColumnPtr result = cast_function->execute(arguments, std::make_shared<DataTypeFloat64>(), 1, false);
-        return result->getFloat64(0);
+        return applyVisitor(FieldVisitorConvertToNumber<Float64>(), value);
     }
     catch (...)
     {
@@ -68,11 +191,31 @@ namespace
 /// before the result is converted to Float64.
 /// Int256/UInt256 have no wider type, so they are intentionally omitted here and
 /// fall back to the Float64 path in `interpolateLessLinear` instead.
-template <typename T> struct WiderIntType { using type = T; };
-template <> struct WiderIntType<UInt64>  { using type = UInt128; };
-template <> struct WiderIntType<Int64>   { using type = Int128; };
-template <> struct WiderIntType<UInt128> { using type = UInt256; };
-template <> struct WiderIntType<Int128>  { using type = Int256; };
+template <typename T>
+struct WiderIntType
+{
+    using type = T;
+};
+template <>
+struct WiderIntType<UInt64>
+{
+    using type = UInt128;
+};
+template <>
+struct WiderIntType<Int64>
+{
+    using type = Int128;
+};
+template <>
+struct WiderIntType<UInt128>
+{
+    using type = UInt256;
+};
+template <>
+struct WiderIntType<Int128>
+{
+    using type = Int256;
+};
 
 /// Computes (v - mn) / (mx - mn) * row_count as Float64. Widens to a larger type before
 /// subtracting so that values near 2^53 are not collapsed by the eventual Float64 conversion
@@ -83,13 +226,15 @@ Float64 interpolateLessLinearTyped(const Field & val, const Field & min, const F
     T v = val.safeGet<T>();
     T mn = min.safeGet<T>();
     T mx = max.safeGet<T>();
-    if (v < mn) return 0.0;
-    if (v > mx) return static_cast<Float64>(row_count);
-    if (mn == mx) return (v == mx) ? static_cast<Float64>(row_count) : 0.0;
+    if (v < mn)
+        return 0.0;
+    if (v > mx)
+        return static_cast<Float64>(row_count);
+    if (mn == mx)
+        return (v == mx) ? static_cast<Float64>(row_count) : 0.0;
     using W = typename WiderIntType<T>::type;
-    return static_cast<Float64>(static_cast<W>(v) - static_cast<W>(mn))
-         / static_cast<Float64>(static_cast<W>(mx) - static_cast<W>(mn))
-         * static_cast<Float64>(row_count);
+    return static_cast<Float64>(static_cast<W>(v) - static_cast<W>(mn)) / static_cast<Float64>(static_cast<W>(mx) - static_cast<W>(mn))
+        * static_cast<Float64>(row_count);
 }
 
 }
@@ -102,10 +247,10 @@ std::optional<Float64> StatisticsUtils::interpolateLessLinear(
     {
         switch (val.getType())
         {
-            case Field::Types::UInt64:  return interpolateLessLinearTyped<UInt64>(val, min, max, row_count);
-            case Field::Types::Int64:   return interpolateLessLinearTyped<Int64>(val, min, max, row_count);
+            case Field::Types::UInt64: return interpolateLessLinearTyped<UInt64>(val, min, max, row_count);
+            case Field::Types::Int64: return interpolateLessLinearTyped<Int64>(val, min, max, row_count);
             case Field::Types::UInt128: return interpolateLessLinearTyped<UInt128>(val, min, max, row_count);
-            case Field::Types::Int128:  return interpolateLessLinearTyped<Int128>(val, min, max, row_count);
+            case Field::Types::Int128: return interpolateLessLinearTyped<Int128>(val, min, max, row_count);
             /// Int256/UInt256 have no wider type, so `(v - mn)` and `(mx - mn)` can overflow
             /// inside `interpolateLessLinearTyped`. Fall through to the Float64 fallback below.
             case Field::Types::Float64: return interpolateLessLinearTyped<Float64>(val, min, max, row_count);
@@ -122,12 +267,63 @@ std::optional<Float64> StatisticsUtils::interpolateLessLinear(
     return interpolateLessLinearTyped<Float64>(Field(*val_as_float), Field(*min_as_float), Field(*max_as_float), row_count);
 }
 
+/// Returns the first available uniq-style cardinality estimator (prefers Uniq over UniqV2 because Uniq has better precision).
+static const IStatistics * findUniqStats(const ColumnStatistics::StatsMap & m)
+{
+    if (auto it = m.find(StatisticsType::Uniq); it != m.end())
+        return it->second.get();
+    if (auto it = m.find(StatisticsType::UniqV2); it != m.end())
+        return it->second.get();
+    return nullptr;
+}
+
 IStatistics::IStatistics(const SingleStatisticsDescription & stat_)
     : stat(stat_)
 {
 }
 
-ColumnStatistics::ColumnStatistics(const ColumnStatisticsDescription & stats_desc_) : stats_desc(stats_desc_)
+size_t IStatistics::fieldAllocatedBytes(const Field & field)
+{
+    /// A node of `std::map` holds the value and three pointers and a color.
+    static constexpr size_t map_node_overhead = 4 * sizeof(void *);
+
+    auto vector_allocated_bytes = [](const FieldVector & vector)
+    {
+        size_t res = vector.capacity() * sizeof(Field);
+        for (const auto & element : vector)
+            res += fieldAllocatedBytes(element);
+        return res;
+    };
+
+    switch (field.getType())
+    {
+        case Field::Types::String:
+            return field.safeGet<String>().capacity();
+        case Field::Types::Array:
+            return vector_allocated_bytes(field.safeGet<Array>());
+        case Field::Types::Tuple:
+            return vector_allocated_bytes(field.safeGet<Tuple>());
+        case Field::Types::Map:
+            return vector_allocated_bytes(field.safeGet<Map>());
+        case Field::Types::Object:
+        {
+            size_t res = 0;
+            for (const auto & [key, value] : field.safeGet<Object>())
+                res += sizeof(Object::value_type) + map_node_overhead + key.capacity() + fieldAllocatedBytes(value);
+            return res;
+        }
+        case Field::Types::AggregateFunctionState:
+        {
+            const auto & state = field.safeGet<AggregateFunctionStateData>();
+            return state.name.capacity() + state.data.capacity();
+        }
+        default:
+            return 0;
+    }
+}
+
+ColumnStatistics::ColumnStatistics(const ColumnStatisticsDescription & stats_desc_)
+    : stats_desc(stats_desc_)
 {
 }
 
@@ -180,6 +376,8 @@ bool ColumnStatistics::structureEquals(const ColumnStatistics & other) const
     {
         if (i->first != j->first)
             return false;
+        if (!i->second->isCompatibleWith(*j->second))
+            return false;
     }
 
     return true;
@@ -187,7 +385,16 @@ bool ColumnStatistics::structureEquals(const ColumnStatistics & other) const
 
 std::shared_ptr<ColumnStatistics> ColumnStatistics::cloneEmpty() const
 {
-    return MergeTreeStatisticsFactory::instance().get(stats_desc);
+    /// The statistics are recreated from their descriptions, which does not reproduce the structure of
+    /// statistics deserialized from an older format (e.g. `basic` without a default-value count), so
+    /// copy it explicitly: the clone must be compatible with the original (see `structureEquals`).
+    auto result = MergeTreeStatisticsFactory::instance().get(stats_desc);
+    for (const auto & [type, single_stats] : result->stats)
+    {
+        if (auto it = stats.find(type); it != stats.end())
+            single_stats->copyStructureFrom(*it->second);
+    }
+    return result;
 }
 
 UInt64 IStatistics::estimateCardinality() const
@@ -195,9 +402,9 @@ UInt64 IStatistics::estimateCardinality() const
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cardinality estimation is not implemented for this type of statistics");
 }
 
-Float64 IStatistics::estimateEqual(const Field & /*val*/) const
+std::optional<Float64> IStatistics::estimateEqual(const Field & /*val*/) const
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Equality estimation is not implemented for this type of statistics");
+    return std::nullopt;
 }
 
 std::optional<Float64> IStatistics::estimateLess(const Field & /*val*/) const
@@ -257,10 +464,15 @@ std::optional<Float64> ColumnStatistics::estimateEqual(const Field & val) const
     if (val.isNaN())
         return 0;
 
-    if (stats_desc.data_type->isValueRepresentedByNumber() && stats.contains(StatisticsType::Uniq) && stats.contains(StatisticsType::TDigest))
+    if (auto it = stats.find(StatisticsType::Basic); it != stats.end())
+        if (auto estimate = it->second->estimateEqual(val))
+            return estimate;
+
+    const IStatistics * uniq_stats = findUniqStats(stats);
+    if (stats_desc.data_type->isValueRepresentedByNumber() && uniq_stats != nullptr && stats.contains(StatisticsType::TDigest))
     {
         /// 2048 is the default number of buckets in TDigest. In this case, TDigest stores exactly one value (with many rows) for every bucket.
-        if (stats.at(StatisticsType::Uniq)->estimateCardinality() < 2048)
+        if (uniq_stats->estimateCardinality() < 2048)
         {
             return stats.at(StatisticsType::TDigest)->estimateEqual(val);
         }
@@ -271,14 +483,14 @@ std::optional<Float64> ColumnStatistics::estimateEqual(const Field & val) const
         return stats.at(StatisticsType::CountMinSketch)->estimateEqual(val);
     }
 #endif
-    if (stats.contains(StatisticsType::Uniq))
+    if (hasCardinality())
     {
-        UInt64 cardinality = stats.at(StatisticsType::Uniq)->estimateCardinality();
-        if (cardinality == 0 || rows == 0)
+        UInt64 distinct_values = estimateCardinality();
+        if (distinct_values == 0 || rows == 0)
             return 0;
         /// Uniq ignores NULLs, so divide non-NULL row count by distinct values.
         /// `getNonNullRowCount` returns `rows` when null-count tracking is absent.
-        return static_cast<Float64>(getNonNullRowCount()) / static_cast<Float64>(cardinality);
+        return static_cast<Float64>(getNonNullRowCount()) / static_cast<Float64>(distinct_values);
     }
 
     return std::nullopt;
@@ -308,11 +520,18 @@ std::optional<Float64> ColumnStatistics::estimateRange(const Range & range) cons
     return *right_count - *left_count;
 }
 
+bool ColumnStatistics::hasCardinality() const
+{
+    return external_cardinality || findUniqStats(stats) != nullptr;
+}
+
 UInt64 ColumnStatistics::estimateCardinality() const
 {
-    if (stats.contains(StatisticsType::Uniq))
+    if (external_cardinality)
+        return *external_cardinality;
+    if (const IStatistics * uniq_stats = findUniqStats(stats))
     {
-        return stats.at(StatisticsType::Uniq)->estimateCardinality();
+        return uniq_stats->estimateCardinality();
     }
     /// if we don't have uniq statistics, we use a mock one, assuming there are 90% different unique values.
     return UInt64(static_cast<Float64>(rows) * ConditionSelectivityEstimator::default_cardinality_ratio);
@@ -323,6 +542,21 @@ bool ColumnStatistics::hasNullCount() const
     if (auto it = stats.find(StatisticsType::Basic); it != stats.end())
         return assert_cast<const StatisticsBasic &>(*it->second).hasNullCount();
     return false;
+}
+
+bool ColumnStatistics::hasMinMax() const
+{
+    if (stats.contains(StatisticsType::MinMax))
+        return true;
+    if (auto it = stats.find(StatisticsType::Basic); it != stats.end())
+        return assert_cast<const StatisticsBasic &>(*it->second).hasNumericMinMax();
+    return false;
+}
+
+bool ColumnStatistics::hasSum() const
+{
+    auto it = stats.find(StatisticsType::Basic);
+    return it != stats.end() && assert_cast<const StatisticsBasic &>(*it->second).hasSum();
 }
 
 UInt64 ColumnStatistics::getNullCount() const
@@ -336,6 +570,17 @@ UInt64 ColumnStatistics::getNullCount() const
     return 0;
 }
 
+std::optional<Float64> ColumnStatistics::getAvgStringBytes() const
+{
+    if (auto it = stats.find(StatisticsType::Basic); it != stats.end())
+    {
+        const auto & basic = assert_cast<const StatisticsBasic &>(*it->second);
+        if (basic.hasStringLengthAvg())
+            return static_cast<Float64>(basic.getStringLengthAvg());
+    }
+    return std::nullopt;
+}
+
 UInt64 ColumnStatistics::getNonNullRowCount() const
 {
     if (hasNullCount())
@@ -344,6 +589,17 @@ UInt64 ColumnStatistics::getNonNullRowCount() const
         return null_count <= rows ? rows - null_count : 0;
     }
     return rows;
+}
+
+UInt64 ColumnStatistics::estimateDefaults() const
+{
+    if (auto it = stats.find(StatisticsType::Basic); it != stats.end())
+    {
+        const auto & basic = assert_cast<const StatisticsBasic &>(*it->second);
+        if (basic.hasDefaultCount())
+            return basic.getDefaultCount();
+    }
+    return 0;
 }
 
 Float64 ColumnStatistics::estimateIsNull() const
@@ -372,8 +628,8 @@ Estimate ColumnStatistics::getEstimate() const
     for (const auto & [type, _] : stats)
         info.types.insert(type);
 
-    if (stats.contains(StatisticsType::Uniq))
-        info.estimated_cardinality = stats.at(StatisticsType::Uniq)->estimateCardinality();
+    if (const IStatistics * uniq_stats = findUniqStats(stats))
+        info.estimated_cardinality = uniq_stats->estimateCardinality();
 
     if (auto it = stats.find(StatisticsType::Basic); it != stats.end())
     {
@@ -384,9 +640,17 @@ Estimate ColumnStatistics::getEstimate() const
                 info.estimated_min = basic_stats.getMin();
             if (!basic_stats.getMax().isNull())
                 info.estimated_max = basic_stats.getMax();
+            info.min_max_covers_all_values = basic_stats.minMaxCoversAllValues();
         }
         if (basic_stats.hasNullCount())
+        {
             info.estimated_null_count = basic_stats.getNullCount();
+            info.null_count_covers_all_rows = basic_stats.nullCountCoversAllRows();
+        }
+        if (basic_stats.hasDefaultCount())
+            info.estimated_default_count = basic_stats.getDefaultCount();
+        if (basic_stats.hasSum())
+            info.estimated_sum = basic_stats.getSum();
     }
     else if (auto minmax_it = stats.find(StatisticsType::MinMax); minmax_it != stats.end())
     {
@@ -400,10 +664,37 @@ Estimate ColumnStatistics::getEstimate() const
     return info;
 }
 
-void ColumnStatistics::serialize(WriteBuffer & buf) const
+namespace
 {
-    /// Layout (V4):
-    ///   UInt16  version (= V4)
+
+/// Drop the statistics that were read but cannot be used, see `IStatistics::isUnusable`.
+void dropUnusableStatistics(ColumnStatistics::StatsMap & stats, ColumnStatisticsDescription & stats_desc)
+{
+    for (auto it = stats.begin(); it != stats.end();)
+    {
+        if (it->second->isUnusable())
+        {
+            LOG_TRACE(
+                getLogger("ColumnStatistics"),
+                "Dropping {} statistics read from a file, they will be built again by a merge",
+                statisticsTypeToString(it->first));
+            stats_desc.types_to_desc.erase(it->first);
+            it = stats.erase(it);
+        }
+        else
+            ++it;
+    }
+}
+
+}
+
+void ColumnStatistics::serialize(WriteBuffer & buf, StatisticsFileVersion version) const
+{
+    if (version != StatisticsFileVersion::V4 && version != StatisticsFileVersion::V5)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot write statistics file of version {}", static_cast<UInt16>(version));
+
+    /// Layout (V4 and V5, which differ only in the payload of `minmax` and `basic`):
+    ///   UInt16  version
     ///   UInt64  stat_types_mask
     ///   String  stored_type_name   — column type at write time; deserialization returns nullptr on mismatch
     ///   UInt64  rows
@@ -411,10 +702,10 @@ void ColumnStatistics::serialize(WriteBuffer & buf) const
     ///       UInt64  stat_size
     ///       <stat_size> bytes of per-statistics payload
     /// The per-stat size prefix lets a reader skip statistics types it doesn't recognize.
-    writeIntBinary(StatisticsFileVersion::V4, buf);
+    writeIntBinary(version, buf);
 
     UInt64 stat_types_mask = 0;
-    for (const auto & [type, _]: stats)
+    for (const auto & [type, _] : stats)
         stat_types_mask |= 1ULL << static_cast<UInt8>(type);
 
     writeIntBinary(stat_types_mask, buf);
@@ -423,17 +714,52 @@ void ColumnStatistics::serialize(WriteBuffer & buf) const
     /// As the column row count is always useful, save it in any case
     writeIntBinary(rows, buf);
 
-    /// Write each statistics blob with a length prefix, by serializing into a temp buffer first.
+    /// Write each statistics blob with a length prefix. Statistics that can compute their exact
+    /// serialized size can stream directly to the destination; the others keep the temp-buffer
+    /// fallback needed for the V4 prefix.
     for (const auto & [type, stat_ptr] : stats)
     {
+        if (std::optional<UInt64> serialized_size = stat_ptr->getSerializedSize(version))
+        {
+            writeIntBinary(*serialized_size, buf);
+
+            const auto count_before = buf.count();
+            stat_ptr->serialize(buf, version);
+            const auto written = static_cast<UInt64>(buf.count() - count_before);
+            if (written != *serialized_size)
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Statistics serialization for type {} wrote {} bytes but declared {} bytes",
+                    statisticsTypeToString(type), written, *serialized_size);
+
+            continue;
+        }
+
         String temp_data;
         WriteBufferFromString temp_buf(temp_data);
-        stat_ptr->serialize(temp_buf);
+        stat_ptr->serialize(temp_buf, version);
         temp_buf.finalize();
 
         writeIntBinary(static_cast<UInt64>(temp_data.size()), buf);
         buf.write(temp_data.data(), temp_data.size());
     }
+}
+
+std::shared_ptr<ColumnStatistics> ColumnStatistics::createBasicFromSummary(
+    const DataTypePtr & data_type, UInt64 rows, const Field & min_value, const Field & max_value, std::optional<UInt64> null_count)
+{
+    SingleStatisticsDescription basic_desc(StatisticsType::Basic, nullptr, /*is_implicit_=*/ true);
+    ColumnStatisticsDescription stats_desc;
+    stats_desc.data_type = data_type;
+    stats_desc.types_to_desc.emplace(StatisticsType::Basic, basic_desc);
+
+    auto basic = std::make_shared<StatisticsBasic>(basic_desc, data_type);
+    basic->build(rows, min_value, max_value, null_count);
+
+    auto column_stats = std::make_shared<ColumnStatistics>(stats_desc);
+    column_stats->stats.emplace(StatisticsType::Basic, std::move(basic));
+    column_stats->rows = rows;
+    return column_stats;
 }
 
 std::shared_ptr<ColumnStatistics> ColumnStatistics::deserialize(ReadBuffer & buf, const DataTypePtr & data_type)
@@ -442,17 +768,9 @@ std::shared_ptr<ColumnStatistics> ColumnStatistics::deserialize(ReadBuffer & buf
     readIntBinary(version_raw, buf);
     auto version = static_cast<StatisticsFileVersion>(version_raw);
 
-    /// `V3` was briefly written by reverted PR #102356 and is permanently reserved. Refuse to read it
-    /// rather than silently misinterpret a `V3` payload as `V4`.
-    if (version == StatisticsFileVersion::V3)
-        throw Exception(
-            ErrorCodes::ILLEGAL_STATISTICS,
-            "Statistics file version V3 is reserved and is never produced by any released build. "
-            "Please run `ALTER TABLE [db.]table MATERIALIZE STATISTICS ALL` to regenerate the statistics.");
-
-    if (version != StatisticsFileVersion::V1
-        && version != StatisticsFileVersion::V2
-        && version != StatisticsFileVersion::V4)
+    if (version != StatisticsFileVersion::V1 && version != StatisticsFileVersion::V2
+        && version != StatisticsFileVersion::V3 && version != StatisticsFileVersion::V4
+        && version != StatisticsFileVersion::V5)
         throw Exception(
             ErrorCodes::ILLEGAL_STATISTICS,
             "Tried to read statistics file with unsupported format version {}. "
@@ -466,20 +784,31 @@ std::shared_ptr<ColumnStatistics> ColumnStatistics::deserialize(ReadBuffer & buf
     ColumnStatisticsDescription stats_desc;
     stats_desc.data_type = data_type;
 
-    if (version == StatisticsFileVersion::V4)
+    /// V4 / V5 layout: stored_type_name, then per-stat size prefix. Return nullptr if the stored
+    /// column type differs from the current type — statistics built on a different type are
+    /// stale (e.g. a MODIFY COLUMN mutation is in progress) and must not be used.
+    /// V3 is the same layout without `stored_type_name`, so it has no such guard, exactly like
+    /// V1 / V2.
+    ///
+    /// V3 layout: same layout as V4 but without the `stored_type_name` field, and the only
+    /// conflict is bit 4 of `stat_types_mask`, which meant the reverted `NullCount` in V3
+    /// and means `Basic` in V4 — the deserializer skips it.
+    if (version == StatisticsFileVersion::V3 || version == StatisticsFileVersion::V4 || version == StatisticsFileVersion::V5)
     {
-        /// V4 layout: stored_type_name, then per-stat size prefix. Return nullptr if the stored
-        /// column type differs from the current type — statistics built on a different type are
-        /// stale (e.g. a MODIFY COLUMN mutation is in progress) and must not be used.
-        String stored_type_name;
-        readStringBinary(stored_type_name, buf);
-        if (stored_type_name != data_type->getName())
+        if (version != StatisticsFileVersion::V3)
         {
-            LOG_TRACE(getLogger("ColumnStatistics"),
-                "Skipping statistics: stored type {} does not match current column type {}. "
-                "Statistics will be ignored until rematerialized after the MODIFY COLUMN mutation completes.",
-                stored_type_name, data_type->getName());
-            return nullptr;
+            String stored_type_name;
+            readStringBinary(stored_type_name, buf);
+            if (stored_type_name != data_type->getName())
+            {
+                LOG_TRACE(
+                    getLogger("ColumnStatistics"),
+                    "Skipping statistics: stored type {} does not match current column type {}. "
+                    "Statistics will be ignored until rematerialized after the MODIFY COLUMN mutation completes.",
+                    stored_type_name,
+                    data_type->getName());
+                return nullptr;
+            }
         }
 
         UInt64 rows_value = 0;
@@ -497,6 +826,14 @@ std::shared_ptr<ColumnStatistics> ColumnStatistics::deserialize(ReadBuffer & buf
             readIntBinary(stat_size, buf);
 
             auto type = static_cast<StatisticsType>(i);
+
+            if (version == StatisticsFileVersion::V3 && type == StatisticsType::Basic)
+            {
+                /// In V3, this was the NullCount statistics -> ignore
+                buf.ignore(stat_size);
+                continue;
+            }
+
             if (auto stat_ptr = factory.tryCreateSingle(type, data_type))
             {
                 /// Track bytes consumed so we can detect a per-stat parser drift and either pad the
@@ -511,7 +848,9 @@ std::shared_ptr<ColumnStatistics> ColumnStatistics::deserialize(ReadBuffer & buf
                         ErrorCodes::ILLEGAL_STATISTICS,
                         "Statistics deserialization for type {} consumed {} bytes but stat_size was {}. "
                         "The statistics file may be corrupted.",
-                        statisticsTypeToString(type), consumed, stat_size);
+                        statisticsTypeToString(type),
+                        consumed,
+                        stat_size);
 
                 auto ast = make_intrusive<ASTIdentifier>(statisticsTypeToString(type));
                 result->stats_desc.types_to_desc.emplace(type, SingleStatisticsDescription(type, ast, false));
@@ -524,6 +863,7 @@ std::shared_ptr<ColumnStatistics> ColumnStatistics::deserialize(ReadBuffer & buf
             }
         }
 
+        dropUnusableStatistics(result->stats, result->stats_desc);
         return result;
     }
 
@@ -542,7 +882,21 @@ std::shared_ptr<ColumnStatistics> ColumnStatistics::deserialize(ReadBuffer & buf
     for (const auto & [_, desc] : result->stats)
         desc->deserialize(buf, version);
 
+    dropUnusableStatistics(result->stats, result->stats_desc);
     return result;
+}
+
+size_t ColumnStatistics::allocatedBytes() const
+{
+    /// A node of `std::map` holds the value and three pointers and a color.
+    static constexpr size_t map_node_overhead = 4 * sizeof(void *);
+
+    size_t res = sizeof(*this);
+    for (const auto & [type, desc] : stats_desc.types_to_desc)
+        res += sizeof(ColumnStatisticsDescription::StatisticsTypeDescMap::value_type) + map_node_overhead + desc.allocatedBytes();
+    for (const auto & [type, single_stats] : stats)
+        res += sizeof(StatsMap::value_type) + map_node_overhead + single_stats->allocatedBytes() + single_stats->descriptionAllocatedBytes();
+    return res;
 }
 
 String ColumnStatistics::getNameForLogs() const
@@ -590,7 +944,9 @@ void checkColumnTypeMatchesStatistics(const String & column_name, const ColumnSt
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "Type mismatch when building statistics for column '{}': statistics expect type {} but block has type {}",
-            column_name, stats_data_type->getName(), column_type->getName());
+            column_name,
+            stats_data_type->getName(),
+            column_type->getName());
 }
 
 }
@@ -646,7 +1002,8 @@ void MergeTreeStatisticsFactory::registerCreator(StatisticsType stats_type, Crea
 void MergeTreeStatisticsFactory::registerValidator(StatisticsType stats_type, Validator validator)
 {
     if (!validators.emplace(stats_type, std::move(validator)).second)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "MergeTreeStatisticsFactory: the statistics validator type {} is not unique", stats_type);
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR, "MergeTreeStatisticsFactory: the statistics validator type {} is not unique", stats_type);
 }
 
 MergeTreeStatisticsFactory::MergeTreeStatisticsFactory()
@@ -663,6 +1020,9 @@ MergeTreeStatisticsFactory::MergeTreeStatisticsFactory()
     registerValidator(StatisticsType::Uniq, uniqStatisticsValidator);
     registerCreator(StatisticsType::Uniq, uniqStatisticsCreator);
 
+    registerValidator(StatisticsType::UniqV2, uniqV2StatisticsValidator);
+    registerCreator(StatisticsType::UniqV2, uniqV2StatisticsCreator);
+
 #if USE_DATASKETCHES
     registerValidator(StatisticsType::CountMinSketch, countMinSketchStatisticsValidator);
     registerCreator(StatisticsType::CountMinSketch, countMinSketchStatisticsCreator);
@@ -675,20 +1035,28 @@ MergeTreeStatisticsFactory & MergeTreeStatisticsFactory::instance()
     return instance;
 }
 
-void MergeTreeStatisticsFactory::validate(const ColumnStatisticsDescription & stats, const DataTypePtr & data_type) const
+void MergeTreeStatisticsFactory::validate(
+    const ColumnStatisticsDescription & stats, const DataTypePtr & data_type, bool allow_deprecated_minmax) const
 {
     for (const auto & [type, desc] : stats.types_to_desc)
     {
+        if (type == StatisticsType::MinMax && !desc.is_implicit && !allow_deprecated_minmax)
+            LOG_WARNING(
+                getLogger("MergeTreeStatisticsFactory"),
+                "Statistics type 'minmax' is deprecated. Use 'basic' instead, which is a superset of 'minmax'.");
+
         auto it = validators.find(type);
         if (it == validators.end())
             throw Exception(ErrorCodes::INCORRECT_QUERY, "Unknown statistic type '{}'", type);
 
         if (!it->second(desc, data_type))
-            throw Exception(ErrorCodes::ILLEGAL_STATISTICS, "Statistics of type '{}' does not support data type type {}", type, data_type->getName());
+            throw Exception(
+                ErrorCodes::ILLEGAL_STATISTICS, "Statistics of type '{}' does not support data type type {}", type, data_type->getName());
     }
 }
 
-ColumnStatisticsDescription MergeTreeStatisticsFactory::cloneWithSupportedStatistics(const ColumnStatisticsDescription & stats, const DataTypePtr & data_type) const
+ColumnStatisticsDescription
+MergeTreeStatisticsFactory::cloneWithSupportedStatistics(const ColumnStatisticsDescription & stats, const DataTypePtr & data_type) const
 {
     ColumnStatisticsDescription result;
     result.data_type = data_type;
@@ -719,7 +1087,10 @@ ColumnStatisticsPtr MergeTreeStatisticsFactory::get(const ColumnStatisticsDescri
     {
         auto it = creators.find(type);
         if (it == creators.end())
-            throw Exception(ErrorCodes::INCORRECT_QUERY, "Unknown statistic type '{}'. Available types: 'basic', 'countmin', 'minmax', 'tdigest' and 'uniq'", type);
+            throw Exception(
+                ErrorCodes::INCORRECT_QUERY,
+                "Unknown statistic type '{}'. Available types: 'basic', 'countmin', 'minmax', 'tdigest', 'uniq' and 'uniq_v2'",
+                type);
 
         auto stat_ptr = (it->second)(desc, stats_desc.data_type);
         column_stat->stats[type] = stat_ptr;
@@ -728,20 +1099,25 @@ ColumnStatisticsPtr MergeTreeStatisticsFactory::get(const ColumnStatisticsDescri
     return column_stat;
 }
 
-ColumnStatisticsDescription::StatisticsTypeDescMap MergeTreeStatisticsFactory::get(const std::vector<StatisticsType> & stat_types, const DataTypePtr & data_type) const
+ColumnStatisticsDescription::StatisticsTypeDescMap
+MergeTreeStatisticsFactory::get(const std::vector<StatisticsType> & stat_types, const DataTypePtr & data_type) const
 {
     ColumnStatisticsDescription::StatisticsTypeDescMap result;
     for (const auto & type : stat_types)
     {
         auto it = validators.find(type);
         if (it == validators.end())
-            throw Exception(ErrorCodes::INCORRECT_QUERY, "Unknown statistic type '{}'. Available types: 'basic', 'countmin', 'minmax', 'tdigest' and 'uniq'", type);
+            throw Exception(
+                ErrorCodes::INCORRECT_QUERY,
+                "Unknown statistic type '{}'. Available types: 'basic', 'countmin', 'minmax', 'tdigest', 'uniq' and 'uniq_v2'",
+                type);
 
         auto ast = make_intrusive<ASTIdentifier>(statisticsTypeToString(type));
         SingleStatisticsDescription desc(type, ast, false);
 
         if (!it->second(desc, data_type))
-            throw Exception(ErrorCodes::ILLEGAL_STATISTICS, "Statistics of type '{}' does not support data type {}", type, data_type->getName());
+            throw Exception(
+                ErrorCodes::ILLEGAL_STATISTICS, "Statistics of type '{}' does not support data type {}", type, data_type->getName());
 
         result.emplace(type, desc);
     }
@@ -795,19 +1171,22 @@ void removeImplicitStatistics(ColumnsDescription & columns)
         if (default_kind == ColumnDefaultKind::Alias || default_kind == ColumnDefaultKind::Ephemeral)
             continue;
 
-        columns.modify(column.name, [&](ColumnDescription & column_desc)
-        {
-            auto & stats = column_desc.statistics.types_to_desc;
-            for (auto it = stats.begin(); it != stats.end();)
+        columns.modify(
+            column.name,
+            [&](ColumnDescription & column_desc)
             {
-                if (it->second.is_implicit)
-                    it = stats.erase(it);
-                else
-                    ++it;
-            }
-        });
+                auto & stats = column_desc.statistics.types_to_desc;
+                for (auto it = stats.begin(); it != stats.end();)
+                {
+                    if (it->second.is_implicit)
+                        it = stats.erase(it);
+                    else
+                        ++it;
+                }
+            });
     }
 }
+
 
 void addImplicitStatistics(ColumnsDescription & columns, const String & statistics_types_str)
 {
@@ -830,12 +1209,23 @@ void addImplicitStatistics(ColumnsDescription & columns, const String & statisti
 
         if (!stats_desc.empty())
         {
-            columns.modify(column.name, [&](ColumnDescription & column_desc)
-            {
-                column_desc.statistics.merge(stats_desc, column.name, column.type, /*if_not_exists=*/ true);
-            });
+            columns.modify(
+                column.name,
+                [&](ColumnDescription & column_desc)
+                { column_desc.statistics.merge(stats_desc, column.name, column.type, /*if_not_exists=*/true); });
         }
     }
+}
+
+bool canStatisticsTrackMinMax(const DataTypePtr & data_type)
+{
+    return removeLowCardinalityAndNullable(removeNullable(data_type))->isValueRepresentedByNumber();
+}
+
+bool canStatisticsTrackSum(const DataTypePtr & data_type)
+{
+    /// `Nullable` is summed over the non-NULL values; `LowCardinality` is not supported.
+    return WhichDataType(removeNullable(data_type)).isIntegerOrDecimal();
 }
 
 }

@@ -1,0 +1,180 @@
+---
+slug: /cloud/billing/marketplace/azure-marketplace-payg
+title: 'Azure Marketplace 按使用量付费'
+description: '通过 Azure Marketplace 按使用量付费 (PAYG) 订阅 ClickHouse Cloud。'
+keywords: ['azure', 'marketplace', '计费', 'PAYG']
+doc_type: 'guide'
+---
+
+通过 [Azure Marketplace](https://azuremarketplace.microsoft.com/en-us/marketplace/apps) 中的按使用量付费 (PAYG) 公开报价，开始使用 ClickHouse Cloud。
+
+## 前置条件 {#prerequisites}
+
+* 一个已由计费管理员开通购买权限的 Azure 项目。
+* 要在 Azure Marketplace 上订阅 ClickHouse Cloud,你必须使用具有购买权限的账户登录,并选择相应的项目。
+
+1. 前往 [Azure Marketplace](https://azuremarketplace.microsoft.com/en-us/marketplace/apps) 并搜索 ClickHouse Cloud。请确保已登录,以便在云市场中购买产品。
+
+<br />
+
+<div className="ch-image-md">
+  <Frame>
+    ![ClickHouse Cloud 注册信息表单](/images/cloud/manage/billing/marketplace/azure-marketplace-payg-1.webp)
+  </Frame>
+</div>
+
+<br />
+
+2. 在产品详情页上,点击 **Get It Now**。
+
+<br />
+
+<div className="ch-image-md">
+  <Frame>
+    ![ClickHouse Cloud 注册信息表单](/images/cloud/manage/billing/marketplace/azure-marketplace-payg-2.webp)
+  </Frame>
+</div>
+
+<br />
+
+3. 在下一个页面中,你需要提供姓名、电子邮件和地理位置信息。
+
+<br />
+
+<div className="ch-image-md">
+  <Frame>
+    ![ClickHouse Cloud 注册信息表单](/images/cloud/manage/billing/marketplace/azure-marketplace-payg-3.webp)
+  </Frame>
+</div>
+
+<br />
+
+4. 在下一个页面中,点击 **Subscribe**。
+
+<br />
+
+<div className="ch-image-md">
+  <Frame>
+    ![ClickHouse Cloud 注册信息表单](/images/cloud/manage/billing/marketplace/azure-marketplace-payg-4.webp)
+  </Frame>
+</div>
+
+<br />
+
+5. 在下一个页面中,选择订阅、资源组以及资源组位置。资源组位置无需与你计划在 ClickHouse Cloud 上启动服务的位置一致。
+
+<br />
+
+<div className="ch-image-md">
+  <Frame>
+    ![ClickHouse Cloud 注册信息表单](/images/cloud/manage/billing/marketplace/azure-marketplace-payg-5.webp)
+  </Frame>
+</div>
+
+<br />
+
+6. 你还需要为订阅命名,并从可用选项中选择计费周期。你可以选择开启或关闭 **Recurring billing**。如果将其设为“off”,合约将在计费周期结束时终止,你的资源也将被停用。
+
+<br />
+
+<div className="ch-image-md">
+  <Frame>
+    ![ClickHouse Cloud 注册信息表单](/images/cloud/manage/billing/marketplace/azure-marketplace-payg-6.webp)
+  </Frame>
+</div>
+
+<br />
+
+7. 点击 **&quot;Review + subscribe&quot;**。
+
+8. 在下一个页面中,确认所有信息无误后点击 **Subscribe**。
+
+<br />
+
+<div className="ch-image-md">
+  <Frame>
+    ![ClickHouse Cloud 注册信息表单](/images/cloud/manage/billing/marketplace/azure-marketplace-payg-7.webp)
+  </Frame>
+</div>
+
+<br />
+
+9. 请注意,此时你已订阅 ClickHouse Cloud 的 Azure 订阅,但尚未在 ClickHouse Cloud 上设置账户。接下来的步骤必不可少,只有完成这些步骤,ClickHouse Cloud 才能绑定到你的 Azure 订阅,从而通过 Azure Marketplace 正确计费。
+
+<br />
+
+<div className="ch-image-md">
+  <Frame>
+    ![ClickHouse Cloud 注册信息表单](/images/cloud/manage/billing/marketplace/azure-marketplace-payg-8.webp)
+  </Frame>
+</div>
+
+<br />
+
+10. Azure 设置完成后,**Configure account now** 按钮将变为可用状态。
+
+<br />
+
+<div className="ch-image-md">
+  <Frame>
+    ![ClickHouse Cloud 注册信息表单](/images/cloud/manage/billing/marketplace/azure-marketplace-payg-9.webp)
+  </Frame>
+</div>
+
+<br />
+
+11. 点击 **Configure account now**。
+
+<br />
+
+你将收到一封类似下图的电子邮件,其中包含配置账户的详细说明:
+
+<br />
+
+<div className="ch-image-md">
+  <Frame>
+    ![ClickHouse Cloud 注册信息表单](/images/cloud/manage/billing/marketplace/azure-marketplace-payg-10.webp)
+  </Frame>
+</div>
+
+<br />
+
+12. 页面将跳转到 ClickHouse Cloud 的注册或登录页面。跳转到 ClickHouse Cloud 后,你可以使用现有账户登录,也可以注册新账户。此步骤非常重要,我们需要借此将你的 ClickHouse Cloud 组织绑定到 Azure Marketplace 计费。
+
+13. 请注意,如果你是新用户,还需要提供一些有关你公司业务的基本信息,如下方截图所示。
+
+<br />
+
+<div className="ch-image-md">
+  <Frame>
+    ![ClickHouse Cloud 注册信息表单](/images/cloud/manage/billing/marketplace/aws-marketplace-payg-8.webp)
+  </Frame>
+</div>
+
+<br />
+
+点击 **Complete sign up** 后，您将进入 ClickHouse Cloud 中的组织，届时可以查看计费页面，确认当前是通过 Azure Marketplace 计费，并创建服务。
+
+<br />
+
+<br />
+
+<div className="ch-image-md">
+  <Frame>
+    ![ClickHouse Cloud 注册信息表单](/images/cloud/manage/billing/marketplace/azure-marketplace-payg-11.webp)
+  </Frame>
+</div>
+
+<br />
+
+<br />
+
+<div className="ch-image-md">
+  <Frame>
+    ![ClickHouse Cloud 注册信息表单](/images/cloud/manage/billing/marketplace/azure-marketplace-payg-12.webp)
+  </Frame>
+</div>
+
+<br />
+
+14. 如果遇到任何问题，请随时联系[我们的支持团队](https://clickhouse.com/support/program)。

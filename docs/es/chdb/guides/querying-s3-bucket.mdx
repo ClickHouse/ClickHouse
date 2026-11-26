@@ -1,0 +1,206 @@
+---
+title: 'Cómo consultar datos en un bucket de S3'
+sidebarTitle: 'Consultar datos en S3'
+slug: /chdb/guides/querying-s3
+description: 'Aprende a consultar datos en un bucket de S3 con chDB.'
+keywords: ['chdb', 's3']
+doc_type: 'guide'
+---
+
+Gran parte de los datos del mundo se encuentra en buckets de Amazon S3.
+En esta guía, aprenderemos a consultar esos datos con chDB.
+
+<div id="setup">
+  ## Configuración
+</div>
+
+Primero, creemos un entorno virtual:
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+```
+
+Y ahora instalaremos chDB.
+Asegúrate de tener la versión 2.0.2 o posterior:
+
+```bash
+pip install "chdb>=2.0.2"
+```
+
+Y ahora vamos a instalar IPython:
+
+```bash
+pip install ipython
+```
+
+Vamos a usar `ipython` para ejecutar los comandos del resto de la guía, que puedes abrir ejecutando:
+
+```bash
+ipython
+```
+
+También puedes usar el código en un script en Python o en tu notebook favorito.
+
+<div id="listing-files-in-an-s3-bucket">
+  ## Listar archivos de un bucket de S3
+</div>
+
+Empecemos por listar todos los archivos de [un bucket de S3 que contiene reseñas de Amazon](/es/get-started/sample-datasets/amazon-reviews).
+Para ello, podemos usar la [función de tabla `s3`](/es/reference/functions/table-functions/s3) y pasar la ruta de un archivo o un comodín para un conjunto de archivos.
+
+<Tip>
+  Si pasas solo el nombre del bucket, se producirá una excepción.
+</Tip>
+
+También vamos a usar el formato de entrada [`One`](/es/reference/formats/One) para que el archivo no se analice; en su lugar, se devuelve una sola fila por archivo y podemos acceder al archivo mediante la columna virtual `_file` y a la ruta mediante la columna virtual `_path`.
+
+```python
+import chdb
+
+chdb.query("""
+SELECT
+    _file,
+    _path
+FROM s3('s3://datasets-documentation/amazon_reviews/*.parquet', One)
+SETTINGS output_format_pretty_row_numbers=0
+""", 'PrettyCompact')
+```
+
+```text
+┌─_file───────────────────────────────┬─_path─────────────────────────────────────────────────────────────────────┐
+│ amazon_reviews_2010.snappy.parquet  │ datasets-documentation/amazon_reviews/amazon_reviews_2010.snappy.parquet  │
+│ amazon_reviews_1990s.snappy.parquet │ datasets-documentation/amazon_reviews/amazon_reviews_1990s.snappy.parquet │
+│ amazon_reviews_2013.snappy.parquet  │ datasets-documentation/amazon_reviews/amazon_reviews_2013.snappy.parquet  │
+│ amazon_reviews_2015.snappy.parquet  │ datasets-documentation/amazon_reviews/amazon_reviews_2015.snappy.parquet  │
+│ amazon_reviews_2014.snappy.parquet  │ datasets-documentation/amazon_reviews/amazon_reviews_2014.snappy.parquet  │
+│ amazon_reviews_2012.snappy.parquet  │ datasets-documentation/amazon_reviews/amazon_reviews_2012.snappy.parquet  │
+│ amazon_reviews_2000s.snappy.parquet │ datasets-documentation/amazon_reviews/amazon_reviews_2000s.snappy.parquet │
+│ amazon_reviews_2011.snappy.parquet  │ datasets-documentation/amazon_reviews/amazon_reviews_2011.snappy.parquet  │
+└─────────────────────────────────────┴───────────────────────────────────────────────────────────────────────────┘
+```
+
+Este bucket solo contiene archivos Parquet.
+
+<div id="querying-files-in-an-s3-bucket">
+  ## Consultar archivos en un bucket de S3
+</div>
+
+A continuación, veremos cómo consultar esos archivos.
+Si queremos contar el número de filas en cada uno de esos archivos, podemos ejecutar la siguiente consulta:
+
+```python
+chdb.query("""
+SELECT
+    _file,
+    count() AS count,
+    formatReadableQuantity(count) AS readableCount    
+FROM s3('s3://datasets-documentation/amazon_reviews/*.parquet')
+GROUP BY ALL
+SETTINGS output_format_pretty_row_numbers=0
+""", 'PrettyCompact')
+```
+
+```text
+┌─_file───────────────────────────────┬────count─┬─readableCount───┐
+│ amazon_reviews_2013.snappy.parquet  │ 28034255 │ 28.03 million   │
+│ amazon_reviews_1990s.snappy.parquet │   639532 │ 639.53 thousand │
+│ amazon_reviews_2011.snappy.parquet  │  6112495 │ 6.11 million    │
+│ amazon_reviews_2015.snappy.parquet  │ 41905631 │ 41.91 million   │
+│ amazon_reviews_2012.snappy.parquet  │ 11541011 │ 11.54 million   │
+│ amazon_reviews_2000s.snappy.parquet │ 14728295 │ 14.73 million   │
+│ amazon_reviews_2014.snappy.parquet  │ 44127569 │ 44.13 million   │
+│ amazon_reviews_2010.snappy.parquet  │  3868472 │ 3.87 million    │
+└─────────────────────────────────────┴──────────┴─────────────────┘
+```
+
+También podemos proporcionar la URI HTTP de un bucket de S3 y obtendremos los mismos resultados:
+
+```python
+chdb.query("""
+SELECT
+    _file,
+    count() AS count,
+    formatReadableQuantity(count) AS readableCount    
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/amazon_reviews/*.parquet')
+GROUP BY ALL
+SETTINGS output_format_pretty_row_numbers=0
+""", 'PrettyCompact')
+```
+
+Veamos el esquema de estos archivos Parquet con la cláusula `DESCRIBE`:
+
+```python
+chdb.query("""
+DESCRIBE s3('s3://datasets-documentation/amazon_reviews/*.parquet')
+SETTINGS describe_compact_output=1
+""", 'PrettyCompact')
+```
+
+```text
+    ┌─name──────────────┬─type─────────────┐
+ 1. │ review_date       │ Nullable(UInt16) │
+ 2. │ marketplace       │ Nullable(String) │
+ 3. │ customer_id       │ Nullable(UInt64) │
+ 4. │ review_id         │ Nullable(String) │
+ 5. │ product_id        │ Nullable(String) │
+ 6. │ product_parent    │ Nullable(UInt64) │
+ 7. │ product_title     │ Nullable(String) │
+ 8. │ product_category  │ Nullable(String) │
+ 9. │ star_rating       │ Nullable(UInt8)  │
+10. │ helpful_votes     │ Nullable(UInt32) │
+11. │ total_votes       │ Nullable(UInt32) │
+12. │ vine              │ Nullable(Bool)   │
+13. │ verified_purchase │ Nullable(Bool)   │
+14. │ review_headline   │ Nullable(String) │
+15. │ review_body       │ Nullable(String) │
+    └───────────────────┴──────────────────┘
+```
+
+Ahora calculemos las categorías de productos con más reseñas, así como la valoración media en estrellas:
+
+```python
+chdb.query("""
+SELECT product_category, count() AS reviews, round(avg(star_rating), 2) as avg
+FROM s3('s3://datasets-documentation/amazon_reviews/*.parquet')
+GROUP BY ALL
+LIMIT 10
+""", 'PrettyCompact')
+```
+
+```text
+    ┌─product_category─┬──reviews─┬──avg─┐
+ 1. │ Toys             │  4864056 │ 4.21 │
+ 2. │ Apparel          │  5906085 │ 4.11 │
+ 3. │ Luggage          │   348644 │ 4.22 │
+ 4. │ Kitchen          │  4880297 │ 4.21 │
+ 5. │ Books            │ 19530930 │ 4.34 │
+ 6. │ Outdoors         │  2302327 │ 4.24 │
+ 7. │ Video            │   380596 │ 4.19 │
+ 8. │ Grocery          │  2402365 │ 4.31 │
+ 9. │ Shoes            │  4366757 │ 4.24 │
+10. │ Jewelry          │  1767667 │ 4.14 │
+    └──────────────────┴──────────┴──────┘
+```
+
+<div id="querying-files-in-a-private-s3-bucket">
+  ## Consultar archivos en un bucket privado de S3
+</div>
+
+Si vamos a consultar archivos en un bucket privado de S3, debemos proporcionar una clave de acceso y una clave secreta.
+Podemos pasar esas credenciales a la función de tabla `s3`:
+
+```python
+chdb.query("""
+SELECT product_category, count() AS reviews, round(avg(star_rating), 2) as avg
+FROM s3('s3://datasets-documentation/amazon_reviews/*.parquet', 'access-key', 'secret')
+GROUP BY ALL
+LIMIT 10
+""", 'PrettyCompact')
+```
+
+<Note>
+  ¡Esta consulta no funcionará porque se trata de un bucket público!
+</Note>
+
+Una alternativa es usar [named collections](/es/concepts/features/configuration/server-config/named-collections), pero este enfoque aún no es compatible con chDB.

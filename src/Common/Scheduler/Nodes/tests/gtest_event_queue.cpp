@@ -9,8 +9,8 @@ using namespace DB;
 class FakeSchedulerNode : public ITimeSharedNode
 {
 public:
-    explicit FakeSchedulerNode(String & log_, EventQueue & event_queue_, const Poco::Util::AbstractConfiguration & config = emptyConfig(), const String & config_prefix = {})
-        : ITimeSharedNode(event_queue_, config, config_prefix)
+    explicit FakeSchedulerNode(String & log_, EventQueue & event_queue_, const SchedulerNodeInfo & info_ = {})
+        : ITimeSharedNode(event_queue_, info_)
         , log(log_)
     {}
 
@@ -118,7 +118,7 @@ TEST(SchedulerEventQueue, Smoke)
 
     using namespace std::chrono_literals;
 
-    EventQueue::TimePoint start = std::chrono::system_clock::now();
+    EventQueue::TimePoint start = EventQueue::Clock::now();
     t.process(start, "", 0);
 
     // Activations

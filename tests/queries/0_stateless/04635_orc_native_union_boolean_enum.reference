@@ -1,0 +1,8 @@
+false	Variant(Enum8(\'false\' = 0, \'true\' = 1), String)
+true	Variant(Enum8(\'false\' = 0, \'true\' = 1), String)
+x	Variant(Enum8(\'false\' = 0, \'true\' = 1), String)
+\N	Variant(Enum8(\'false\' = 0, \'true\' = 1), Int8)
+-6	Variant(Enum8(\'false\' = 0, \'true\' = 1), Int8)
+5	Variant(Enum8(\'false\' = 0, \'true\' = 1), Int8)
+false	Variant(Enum8(\'false\' = 0, \'true\' = 1), Int8)
+true	Variant(Enum8(\'false\' = 0, \'true\' = 1), Int8)

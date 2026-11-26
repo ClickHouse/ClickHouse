@@ -3,7 +3,15 @@
 #include <Storages/MergeTree/MergeTreeIndexGranularityConstant.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularityInfo.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Columns/ColumnAggregateFunction.h>
+#include <Core/Block.h>
+#include <Common/typeid_cast.h>
+#include <IO/Operators.h>
 #include <IO/WriteHelpers.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteBuffer.h>
+#include <IO/ReadBuffer.h>
+
 
 namespace DB
 {
@@ -75,6 +83,40 @@ void MergeTreeIndexGranularity::addRowsToLastMark(size_t rows_count)
     }
 }
 
+/// Granularity size of one (possibly composite) column. byteSize() already sums nested children,
+/// but under-reports ColumnAggregateFunction leaves (pointer-only), so for every such leaf at any
+/// depth we add the serializedSizeEstimate()-vs-byteSize() delta. forEachSubcolumnRecursively does
+/// not visit the column itself, hence the explicit top-level call. Saturating: guard underflow.
+static size_t getColumnSizeForGranularity(const IColumn & column)
+{
+    size_t res = column.byteSize();
+
+    auto add_agg_correction = [&](const IColumn & sub)
+    {
+        if (const auto * agg = typeid_cast<const ColumnAggregateFunction *>(&sub))
+        {
+            const size_t serialized = agg->serializedSizeEstimate();
+            const size_t counted = agg->byteSize();
+            if (serialized > counted)
+                res += serialized - counted;
+        }
+    };
+
+    add_agg_correction(column);
+    column.forEachSubcolumnRecursively(add_agg_correction);
+
+    return res;
+}
+
+size_t getBlockSizeForGranularity(const Block & block)
+{
+    size_t res = 0;
+    for (const auto & elem : block)
+        if (elem.column)
+            res += getColumnSizeForGranularity(*elem.column);
+    return res;
+}
+
 size_t computeIndexGranularity(
     size_t rows,
     size_t bytes_uncompressed,
@@ -95,8 +137,10 @@ size_t computeIndexGranularity(
         {
             index_granularity_for_block = rows;
         }
-        else if (bytes_uncompressed >= index_granularity_bytes)
+        else if (index_granularity_bytes != 0 && bytes_uncompressed >= index_granularity_bytes)
         {
+            /// index_granularity_bytes == 0 disables adaptive sizing upstream, so this branch is
+            /// unreachable with a zero divisor; the explicit check makes that visible to static analysis.
             size_t granules_in_block = bytes_uncompressed / index_granularity_bytes;
             index_granularity_for_block = rows / granules_in_block;
         }
@@ -120,9 +164,46 @@ size_t computeIndexGranularity(
     return index_granularity_for_block;
 }
 
-MergeTreeIndexGranularityPtr createMergeTreeIndexGranularity(
+void fillIndexGranularityForWidePart(
+    MergeTreeIndexGranularity & index_granularity, size_t index_offset, size_t index_granularity_for_block, size_t rows_in_block)
+{
+    for (size_t current_row = index_offset; current_row < rows_in_block; current_row += index_granularity_for_block)
+        index_granularity.appendMark(index_granularity_for_block);
+}
+
+void fillIndexGranularityForCompactPart(
+    MergeTreeIndexGranularity & index_granularity, size_t index_offset, size_t index_granularity_for_block, size_t rows_in_block)
+{
+    for (size_t current_row = index_offset; current_row < rows_in_block; current_row += index_granularity_for_block)
+    {
+        size_t rows_left_in_block = rows_in_block - current_row;
+
+        /// Try to extend last granule if block is large enough
+        ///  or it isn't first in granule (index_offset != 0).
+        if (rows_left_in_block < index_granularity_for_block &&
+            (rows_in_block >= index_granularity_for_block || index_offset != 0))
+        {
+            // If enough rows are left, create a new granule. Otherwise, extend previous granule.
+            // So, real size of granule differs from index_granularity_for_block not more than 50%.
+            if (rows_left_in_block * 2 >= index_granularity_for_block)
+                index_granularity.appendMark(rows_left_in_block);
+            else
+                index_granularity.addRowsToLastMark(rows_left_in_block);
+        }
+        else
+        {
+            index_granularity.appendMark(index_granularity_for_block);
+        }
+    }
+}
+
+/// Whether the block-uncompressed-bytes figure is actually used to pick the granularity.
+/// It is ignored (a plain adaptive object is returned) for empty/blocks-as-granules/compact
+/// parts and for the non-const adaptive path. Callers use this to avoid computing an
+/// expensive size (getBlockSizeForGranularity serializes AggregateFunction states) that
+/// would be thrown away.
+static bool constantGranularityUsesBytes(
     size_t rows,
-    size_t bytes_uncompressed,
     const MergeTreeSettings & settings,
     const MergeTreeIndexGranularityInfo & info,
     bool blocks_are_granules)
@@ -133,8 +214,22 @@ MergeTreeIndexGranularityPtr createMergeTreeIndexGranularity(
 
     /// Compact parts cannot work without adaptive granularity.
     /// If part is empty create adaptive granularity because constant granularity doesn't support this corner case.
-    if (rows == 0 || blocks_are_granules || is_compact_part || (use_adaptive_granularity && !use_const_adaptive_granularity))
+    return !(rows == 0 || blocks_are_granules || is_compact_part || (use_adaptive_granularity && !use_const_adaptive_granularity));
+}
+
+MergeTreeIndexGranularityPtr createMergeTreeIndexGranularity(
+    size_t rows,
+    const std::function<size_t()> & get_bytes_uncompressed,
+    const MergeTreeSettings & settings,
+    const MergeTreeIndexGranularityInfo & info,
+    bool blocks_are_granules)
+{
+    if (!constantGranularityUsesBytes(rows, settings, info, blocks_are_granules))
         return std::make_shared<MergeTreeIndexGranularityAdaptive>();
+
+    /// computeIndexGranularity uses the byte count only on the adaptive path; a non-adaptive part gets the fixed
+    /// row granularity, so do not pay for get_bytes_uncompressed (which may read a part's prefixes) there.
+    const size_t bytes_uncompressed = info.mark_type.adaptive ? get_bytes_uncompressed() : 0;
 
     size_t computed_granularity = computeIndexGranularity(
         rows,
@@ -142,15 +237,49 @@ MergeTreeIndexGranularityPtr createMergeTreeIndexGranularity(
         settings[MergeTreeSetting::index_granularity_bytes],
         settings[MergeTreeSetting::index_granularity],
         blocks_are_granules,
-        use_adaptive_granularity);
+        info.mark_type.adaptive);
 
     return std::make_shared<MergeTreeIndexGranularityConstant>(computed_granularity);
+}
+
+MergeTreeIndexGranularityPtr createMergeTreeIndexGranularity(
+    const Block & block,
+    const MergeTreeSettings & settings,
+    const MergeTreeIndexGranularityInfo & info,
+    bool blocks_are_granules)
+{
+    return createMergeTreeIndexGranularity(block.rows(), [&] { return getBlockSizeForGranularity(block); }, settings, info, blocks_are_granules);
 }
 
 size_t MergeTreeIndexGranularity::getMarksCountForSkipIndex(size_t skip_index_granularity) const
 {
     size_t marks_count = getMarksCountWithoutFinal();
-    return (marks_count + skip_index_granularity - 1) / skip_index_granularity;
+    /// Round up without forming the sum, which wraps when the granularity is close to the maximum of size_t.
+    return marks_count / skip_index_granularity + (marks_count % skip_index_granularity != 0);
+}
+
+MergeTreeIndexGranularityPtr readIndexGranularity(ReadBuffer & in)
+{
+    std::string enum_name;
+    in >> "index granularity type: " >> enum_name >> "\n";
+    MergeTreeIndexGranularityType type = magic_enum::enum_cast<MergeTreeIndexGranularityType>(enum_name).value();
+
+    MergeTreeIndexGranularityPtr index_granularity;
+    if (type == MergeTreeIndexGranularityType::ADAPTIVE)
+        index_granularity = std::make_shared<MergeTreeIndexGranularityAdaptive>();
+    else if (type == MergeTreeIndexGranularityType::CONSTANT)
+        index_granularity = std::make_shared<MergeTreeIndexGranularityConstant>();
+    else
+        UNREACHABLE();
+
+    index_granularity->readDataImpl(in);
+    return index_granularity;
+}
+
+void writeIndexGranularity(MergeTreeIndexGranularityPtr index_granularity, WriteBuffer & out)
+{
+    out << "index granularity type: " << magic_enum::enum_name(index_granularity->getType()) << "\n";
+    index_granularity->writeDataImpl(out);
 }
 
 }
