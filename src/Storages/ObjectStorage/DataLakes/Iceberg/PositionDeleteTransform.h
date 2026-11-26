@@ -8,11 +8,74 @@
 #include <AggregateFunctions/AggregateFunctionGroupBitmapData.h>
 #include <Processors/ISimpleTransform.h>
 #include <roaring/roaring64map.hh>
-#include <functional>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergDataObjectInfo.h>
 
 namespace DB::Iceberg
 {
+
+class IcebergPositionDeletesReader
+{
+public:
+    IcebergPositionDeletesReader(
+        IcebergDataObjectInfoPtr iceberg_object_info_,
+        ObjectStoragePtr object_storage_,
+        const std::optional<FormatSettings> & format_settings,
+        FormatParserSharedResourcesPtr parser_shared_resources,
+        ContextPtr context_);
+
+    size_t numPositionDeleteFiles() const { return position_delete_files.size(); }
+
+    /// The next chunk of the position delete file `file_index` with at least one row of the current data file and no rows of
+    /// other data files, or a chunk without rows at the end of the file.
+    Chunk readPositionDeleteChunk(size_t file_index);
+
+    size_t positionColumnIndex(size_t file_index) const { return position_delete_files[file_index].position_index; }
+
+    std::unique_ptr<roaring::Roaring64Map> readDeletionVector() const;
+
+    template <typename Callback>
+    void forEachDeletedPosition(Callback && callback)
+    {
+        if (auto deletion_vector = readDeletionVector())
+            for (const auto position : *deletion_vector)
+                callback(position);
+
+        for (size_t file_index = 0; file_index < position_delete_files.size(); ++file_index)
+        {
+            const size_t position_index = positionColumnIndex(file_index);
+            while (auto chunk = readPositionDeleteChunk(file_index))
+            {
+                const auto & positions = *chunk.getColumns()[position_index];
+                for (size_t row = 0; row < chunk.getNumRows(); ++row)
+                    callback(positions.get64(row));
+            }
+        }
+    }
+
+private:
+    struct PositionDeleteFile
+    {
+        std::shared_ptr<IInputFormat> format;
+        size_t filename_index;
+        size_t position_index;
+    };
+
+    /// Drops rows whose `file_path` column does not match the current data file path.
+    /// The WHERE filter on `position_delete_files` only drives row-group/page pruning at the
+    /// Parquet reader; rows inside surviving row groups still need to be filtered explicitly.
+    /// Returns the number of rows kept (0 if the chunk has no matching rows).
+    size_t filterChunkToCurrentDataFile(Chunk & chunk, size_t filename_column_index) const;
+
+    IcebergDataObjectInfoPtr iceberg_object_info;
+    const ObjectStoragePtr object_storage;
+    ContextPtr context;
+    LoggerPtr log = getLogger("IcebergPositionDeletesReader");
+
+    /// We need to keep the read buffers alive since the position_delete_files depend on them.
+    std::vector<std::unique_ptr<ReadBuffer>> delete_read_buffers;
+    std::vector<PositionDeleteFile> position_delete_files;
+};
+
 class IcebergPositionDeleteTransform : public ISimpleTransform
 {
 public:
@@ -32,43 +95,16 @@ public:
         FormatParserSharedResourcesPtr parser_shared_resources_,
         ContextPtr context_)
         : ISimpleTransform(header_, header_, false)
-        , header(header_)
         , iceberg_object_info(iceberg_object_info_)
-        , object_storage(object_storage_)
-        , format_settings(format_settings_)
-        , context(context_)
-        , parser_shared_resources(parser_shared_resources_)
+        , reader(iceberg_object_info_, object_storage_, format_settings_, parser_shared_resources_, context_)
     {
-        initializeDeleteSources();
     }
 
     String getName() const override { return "IcebergPositionDeleteTransform"; }
 
-private:
-    void initializeDeleteSources();
-
 protected:
-    LoggerPtr log = getLogger("IcebergPositionDeleteTransform");
-    static size_t getColumnIndex(const std::shared_ptr<IInputFormat> & delete_source, const String & column_name);
-
-    /// Drops rows whose `file_path` column does not match the current data file path.
-    /// The WHERE filter on `position_delete_files` only drives row-group/page pruning at the
-    /// Parquet reader; rows inside surviving row groups still need to be filtered explicitly.
-    /// Returns the number of rows kept (0 if the chunk has no matching rows).
-    size_t filterChunkToCurrentDataFile(Chunk & chunk, size_t filename_column_index) const;
-
-    void forEachDeletedPosition(const std::function<void(UInt64)> & callback);
-
-    SharedHeader header;
     IcebergDataObjectInfoPtr iceberg_object_info;
-    const ObjectStoragePtr object_storage;
-    const std::optional<FormatSettings> format_settings;
-    ContextPtr context;
-    FormatParserSharedResourcesPtr parser_shared_resources;
-
-    /// We need to keep the read buffers alive since the position_delete_files depend on them.
-    std::vector<std::unique_ptr<ReadBuffer>> delete_read_buffers;
-    std::vector<std::shared_ptr<IInputFormat>> position_delete_files;
+    IcebergPositionDeletesReader reader;
 };
 
 class IcebergBitmapPositionDeleteTransform final : public IcebergPositionDeleteTransform
@@ -127,15 +163,8 @@ public:
 private:
     void initialize();
 
-    struct PositionDeleteFileIndexes
-    {
-        size_t filename_index;
-        size_t position_index;
-    };
-
     void fetchNewChunkFromSource(size_t position_delete_file_index);
 
-    std::vector<PositionDeleteFileIndexes> position_delete_file_column_indices;
     std::vector<Chunk> latest_chunks;
     std::vector<size_t> iterator_at_latest_chunks;
     std::set<std::pair<size_t, size_t>> latest_positions;
