@@ -1,7 +1,0 @@
--- before the ALTER: tenant of allowed of the test database, then tenant of t from the second database
-[1,2]
-NOT_IMPLEMENTED
--- the ALTER from the second database counts tenant of t
-ALTER_OF_COLUMN_IS_FORBIDDEN
--- the ALTER from the test database
-[1,2]

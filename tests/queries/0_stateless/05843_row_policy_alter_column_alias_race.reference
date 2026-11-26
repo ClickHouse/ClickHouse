@@ -1,8 +1,0 @@
--- the ALTER of the target checks the policies under its own lock, so it cannot move a policy column under the drop
-ALTER_OF_COLUMN_IS_FORBIDDEN
-id,c2
-1
--- the commands prepared again under the lock of the target keep a skipped drop skipped
-id,c2,c3
-1
-2

@@ -1,8 +1,0 @@
-before alias	[1,3]
--- a type change of a column read in a subquery
-ALTER_OF_COLUMN_IS_FORBIDDEN
-after refused	[1,3]
--- a modify that keeps the type
-after default	[1,3]
--- an alias column keeps its type when its base column changes
-after base	UInt32	[1,3]

@@ -7,7 +7,6 @@
 #include <Access/Common/SQLSecurityDefs.h>
 #include <Access/EnabledRowPolicies.h>
 #include <Access/User.h>
-#include <Interpreters/Access/RowPolicyAlterColumns.h>
 #include <Backups/BackupsWorker.h>
 #include <Common/typeid_cast.h>
 #include <Core/Settings.h>
@@ -19,6 +18,7 @@
 #include <Databases/DatabaseReplicated.h>
 #include <Databases/IDatabase.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
+#include <Interpreters/Access/RowPolicyAlterColumns.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExpandedASTBudget.h>
@@ -504,7 +504,7 @@ BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table,
 
             alter_commands->prepare(*metadata_snapshot, share_nested);
             table->checkAlterIsPossible(*alter_commands, context);
-            checkRowPoliciesBeforeAlter(table, metadata_snapshot, *alter_commands, share_nested, context);
+            checkRowPoliciesBeforeAlter(table->getStorageID(), *alter_commands, context);
             context->onQueryExecutionStarted();
             table->alter(*alter_commands, context, alter_lock, ddl_guard);
             /// The following segments must see the metadata this ALTER committed.
@@ -724,10 +724,6 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
         }
         else if (command.type == ASTAlterCommand::MODIFY_SETTING && command.settings_changes
             && !StorageFactory::instance().getExportAccessOfAnyEngine(command.settings_changes->as<ASTSetQuery &>().changes).empty())
-            run_as_submitting_user = true;
-        /// the row policy check of these commands analyzes the policies with the grants of the user
-        else if (command.type == ASTAlterCommand::DROP_COLUMN || command.type == ASTAlterCommand::RENAME_COLUMN
-            || command.type == ASTAlterCommand::MODIFY_COLUMN)
             run_as_submitting_user = true;
     }
 

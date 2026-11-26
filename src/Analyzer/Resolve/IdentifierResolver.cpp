@@ -440,7 +440,7 @@ void IdentifierResolver::checkAccessToTableMetadata(
     if (!storage_id.hasDatabase())
         return;
 
-    if (isInsertedDataOfTableFunction(storage, storage_id, context) || context->analyzeTablesWithoutGrants())
+    if (isInsertedDataOfTableFunction(storage, storage_id, context))
         return;
 
     /// Probe the raw rights so that probing does not pollute `used_privileges` of the query log.
