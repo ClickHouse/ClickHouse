@@ -2,14 +2,14 @@
 
 SCOPE
 - This applies only to the CI `Code Review` job. Local reviews, including a local codex review, use the binaries their user provides and do not download CI binaries.
-- A finding is stronger with a reproducer that was actually run. These binaries are available without building. Every finding that used one names the binary: the job, the commit, and the URL.
+- A finding is stronger with a reproducer that was actually run. These binaries are available without building. Every finding that used one names the binary in its Evidence line: the job and the short commit.
+- The checkout is a shallow clone of the merge of the PR into its base (`refs/remotes/pull/<N>/merge`): it has no `master`, no other branch, and none of the PR's own commits, so `git log` and `git diff` cannot reach them. Get history from GitHub with `gh api`, as in the commands below.
 - Pick a binary for the machine's architecture (`uname -m`). The CI `Code Review` job runs on aarch64, so only `arm_*` binaries and the Fast test binary run there.
 
 DISK SPACE
-- The disk of the runner is small. The Fast test binary is about 100 MB; full builds are 1.4 to 2.1 GB, and a self-extracting binary needs more space when it unpacks next to itself.
+- The runner had 49 GB free when the job started (2026-11-26). The Fast test binary is about 100 MB; full builds are 1.4 to 2.1 GB, and a self-extracting binary needs more space when it unpacks next to itself.
 - Use the Fast test binary unless the finding needs a library, a sanitizer, or an assertion it lacks.
 - Before a download, compare `df -h ./ci/tmp` with the `Content-Length` from `curl -sI <url>`. Skip the download and say so in the finding when there is not enough room for it unpacked.
-- Keep one binary at a time: delete it, and the data directories its runs created, before the next.
 
 PR HEAD: THE FAST TEST BINARY
 
@@ -33,7 +33,7 @@ PR HEAD: THE FAST TEST BINARY
 **Reused from an earlier commit**
 - When nothing that the Fast test depends on changed since an earlier run, CI does not run it again. It reuses that run, and the workflow report lists `Fast test` as `SKIPPED` with the info `reused from cache` and a link to the earlier report. The earlier commit can belong to another PR.
 - `fetch_ci_report.js` follows the link, so `--binary` at the head sha prints the earlier run's binary, and its log shows `reused from cache, following <url>`.
-- That binary was built from the same sources, so it is valid for the PR head, but its URL names the other commit. Write "Fast test binary reused from `<sha>`" in the finding, so readers do not take it for a stale build.
+- That binary was built from the same sources, so it is valid for the PR head, but its URL names the other commit. Name the commit the binary comes from in the Evidence line (`Fast test` of `<earlier sha>`), so readers do not take it for a stale build.
 
 **PRs without a Fast test**
 - When a PR changes only documentation or CI scripts, `Fast test` is `SKIPPED` with `Not affected by the changed files and not required`, and there is no PR binary. Its effect is the same as on master, so use the master binary (see MASTER).
@@ -49,7 +49,7 @@ FULL BUILDS: EARLIER COMMITS OF THE PR
 - `amd_*` builds of the same jobs exist for x86-64 machines.
 
 **Getting one**
-1. List the PR's commits, newest first: `gh pr view <N> --repo <repo> --json commits --jq '.commits[].oid'`.
+1. List the PR's commits, oldest first: `gh api repos/<repo>/pulls/<N>/commits --paginate --jq '.[].sha'`.
 2. For each commit, ask for the binary of the job:
    ```bash
    node .claude/tools/fetch_ci_report.js \
@@ -57,16 +57,16 @@ FULL BUILDS: EARLIER COMMITS OF THE PR
      --binary
    ```
    The binary is `.../build_<job>/clickhouse`; ignore the packages (`.deb`, `.rpm`, `.tgz`) and `clickhouse-examples`. A job `reused from cache` prints the binary of the run it reuses, as for the Fast test.
-3. Check what changed between that commit and the head: `git diff --stat <sha> <head sha>`. When the change touches the code of the finding, the binary does not show the head's behavior: use it only for parts that did not change, and say so.
-- The finding names the job and the commit, for example "reproduced with `Build (arm_asan_ubsan)` of `<sha>`, which differs from the head only in tests".
+3. Check what changed between that commit and the head: `gh api repos/<repo>/compare/<sha>...<head sha> --jq '.files[].filename'`. When the change touches the code of the finding, the binary does not show the head's behavior: use it only for parts that did not change, and say so.
+- The Evidence line names the job and the commit, for example `✅ Reproduced with Build (arm_asan_ubsan) of 1a2b3c4d (differs from the head only in tests)`.
 
 MASTER
-- To show behavior before the PR, or when the PR has no binary (documentation and CI only), use a master build. Only commits on the first-parent history of master have them, and not all of them:
+- To show behavior before the PR, or when the PR has no binary (documentation and CI only), use a master build. Only merge commits of master have them, and not all of them:
   ```bash
-  for sha in $(git log --first-parent --format=%H -20 origin/master)
+  for sha in $(gh api 'repos/ClickHouse/ClickHouse/commits?sha=master&per_page=30' --jq '.[].sha')
   do
     url="https://clickhouse-builds.s3.amazonaws.com/REFs/master/$sha/masterci/build_arm_release/clickhouse"
     curl -sfI "$url" > /dev/null && { echo "$url"; break; }
   done
   ```
-- Replace `build_arm_release` with another job (`build_arm_debug`, `build_arm_asan_ubsan`, ...) for other build types. A `403` means that commit has no build; go to the previous one.
+- Replace `build_arm_release` with another job (`build_arm_debug`, `build_arm_asan_ubsan`, ...) for other build types. A `403` means that commit has no build; the loop goes on to the previous one.

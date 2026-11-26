@@ -210,12 +210,12 @@ Write a self-contained summary of ALL findings, regardless of previous summaries
 to {REVIEW_FILE} using the REQUESTED OUTPUT FORMAT from .claude/skills/review/SKILL.md:
 start with `---
 {REVIEW_HEADER}`, then use ##### for section headers.
-Every finding that has a review thread starts with a link to that thread, placed before its
-`[<path>:<line>]`, for example:
-`- [thread]({pr_url}#discussion_r<databaseId>) [<path>:<line>] <impact> ...`
+In the summary, every finding that has a review thread starts with a link to that thread, before its
+location, as in this line:
+    - [Link to the thread]({pr_url}#discussion_r<databaseId>) `<path>:<line>` <Impact>
 `<databaseId>` is the one of the first comment of the thread. After posting the batched review,
 fetch the threads again to get the ids of the new ones. A finding without a thread starts with its
-`[<path>:<line>]`.
+`<path>:<line>`.
 Do NOT post the summary yourself: the job script will post it after you finish.
 The first line of the Final Verdict section must be exactly one of these lines, copied verbatim with no
 bold, list marker or other text on it: `{STATUS_PREFIX} {VERDICT_APPROVE}`, `{STATUS_PREFIX} {VERDICT_REQUEST_CHANGES}`,

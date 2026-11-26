@@ -244,18 +244,23 @@ Focus on problems — do not describe what was checked and found to be fine. Use
 
 **Findings** (omit if no findings)
 - Each finding must name the violated behavior/invariant/contract and its impact. Do not frame findings as checklist matches.
-- Each Blocker and Major, in the summary and in an inline comment, has these parts in this order. An inline comment is self-contained, because the author may read only it.
-  - **Impact**: the first sentence (after the severity tag, if any) says what a user or operator sees and when: a wrong result, an exception, a crash, data loss, a stuck job, a slowdown. The mechanism comes later.
-  - **Repro**: the smallest query, command, or sequence of steps that shows it, with the expected and the actual result. When no runnable repro exists (a race, a failure path, an environment the review cannot set up), give the concrete input and the sequence of events that reach the defect.
-  - **Evidence**: exactly one of `Reproduced with <binary>`, with the relevant output, or `From code reading, not run: <reason>`. Name the binary exactly: in CI, the job and the commit (`Fast test` of `<sha>`, `Build (arm_asan_ubsan)` of `<sha>`, `Fast test` reused from `<sha>`); in a local review, the path and the build type of the binary the user provided.
-  - **Cause**: the defect in the code, with `File:Line(s)`.
-  - **Fix** (optional): only when the defect and its fix are both clear and simple, such as a missing check or a wrong bound. Otherwise describe the problem and leave the fix to the author: a partial fix proposed with confidence is taken as complete.
-- **❌ Blockers**
-  - `[File:Line(s)]` Impact, Repro, Evidence, Cause, and Fix if simple.
-- **⚠️ Majors**
-  - `[File:Line(s)]` Impact, Repro, Evidence, Cause, and Fix if simple.
+- Each Blocker and Major, in the summary and in an inline comment, has the layout below. An inline comment is self-contained, because the author may read only it.
+  ```
+  - `File:Line(s)` <Impact>
+    - **Repro:** <```sql``` block>
+    - **Evidence:** <one line>
+    - **Cause:** <defect>
+    - **Fix:** <optional>
+  ```
+  - **Impact**: one sentence (after the severity tag, if any) saying what a user or operator sees and when: a wrong result, an exception, a crash, data loss, a stuck job, a slowdown. The mechanism belongs in Cause.
+  - **Repro**: the smallest code block that shows it, with the expected and the actual result: a ```sql``` block whenever SQL can show it, otherwise a ```bash``` block with the commands. Prose steps only when neither can. When no runnable repro exists (a race, a failure path, an environment the review cannot set up), give the concrete input and the sequence of events that reach the defect.
+  - **Evidence**: one short line, exactly one of `✅ Reproduced with <binary>` or `📖 Code reading: <reason it was not run>`. Name the binary by job and short commit in CI (`Fast test` of `b92c716f`, `Build (arm_asan_ubsan)` of `b92c716f`), or by path and build type in a local review. Outputs belong in Repro, not here.
+  - **Cause**: the defect in the code, in a few sentences.
+  - **Fix** (optional): only when the defect and its fix are both clear and simple, such as a missing check or a wrong bound. Otherwise omit the line and leave the fix to the author: a partial fix proposed with confidence is taken as complete.
+- **❌ Blockers**: findings in the layout above.
+- **⚠️ Majors**: findings in the layout above.
 - **💡 Nits**
-  - `[File:Line(s)]` Issue + quick fix.
+  - `File:Line(s)` Issue + quick fix.
   - Use this section for changelog-template quality issues (`Changelog category` mismatch, missing/unclear required `Changelog entry`, or low-quality user-facing `Changelog entry` that is too vague).
 
 

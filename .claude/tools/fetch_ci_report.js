@@ -989,8 +989,9 @@ async function fetchReport(inputUrl, options = {}) {
           // produced the result and the artifacts, possibly of another commit or PR.
           const reusedFrom = found.info === 'reused from cache' && (found.links || []).find(l => l.includes('praktika.html'));
           if (reusedFrom && !options.followedReuse) {
+            const deeper = nameParams.slice(2).map((n, i) => `&name_${i + 2}=${encodeURIComponent(n)}`).join('');
             console.log(`'${nameParams[1]}' is reused from cache, following ${reusedFrom}\n`);
-            return await fetchReport(reusedFrom, { ...options, followedReuse: true });
+            return await fetchReport(reusedFrom + deeper, { ...options, followedReuse: true });
           }
           targetData = found;
         }
