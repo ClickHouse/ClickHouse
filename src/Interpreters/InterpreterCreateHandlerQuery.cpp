@@ -16,6 +16,8 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Core/QualifiedTableName.h>
+#include <Core/UUID.h>
+#include <IO/WriteHelpers.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTSQLSecurity.h>
 #include <Parsers/ASTSelectQuery.h>
@@ -232,6 +234,33 @@ void checkSelectAccess(const ASTPtr & statement, const ContextPtr & context)
     InterpreterSelectQueryAnalyzer::getSampleBlock(statement->clone(), context, SelectQueryOptions{}.analyze().checkSubqueryTableAccess());
 }
 
+/// The table names of a query checked against the user who stores the handler are qualified, but a query can name objects
+/// in other ways, which are resolved in the current database only when the query runs: a parameterized view `v(p = 1)`,
+/// `dictionary('d')`, the query of `view(SELECT ...)`, a table argument of `loop` or `remote`. A request chooses the current
+/// database of a handler with SQL SECURITY INVOKER, and a handler with a definer runs in the default database of the
+/// server, so such a name could resolve to another object than the one the query was checked against. The query is
+/// therefore analyzed in a current database that does not exist: a name that depends on the current database fails to
+/// resolve, and the handler is refused.
+void checkSelectAccessWithoutCurrentDatabase(const ASTPtr & statement, const ContextPtr & context, const String & handler_name)
+{
+    auto analysis_context = Context::createCopy(context);
+    analysis_context->makeQueryContext();
+    analysis_context->setCurrentDatabaseUnchecked("_no_current_database_" + toString(UUIDHelpers::generateV4()));
+    try
+    {
+        checkSelectAccess(statement, analysis_context);
+    }
+    catch (Exception & e)
+    {
+        e.addMessage(
+            "While checking the query of handler `{}` against the privileges of the user `{}`. The query is checked without "
+            "a current database: qualify with the database every name the query resolves in the current database, "
+            "such as a parameterized view, a dictionary or a table in the arguments of a table function",
+            handler_name, context->getUserName());
+        throw;
+    }
+}
+
 /// The context the query of a handler with `DEFINER = <the current user>` runs in, see `HTTPHandler::makeSQLSecurityQueryContext`:
 /// the default roles and the settings profiles of the user, without the roles, the external roles and the settings of this session.
 ContextPtr makeSelfDefinerContext(const ContextPtr & context)
@@ -371,7 +400,7 @@ void validateHandlerQuery(ASTCreateHandlerQuery & handler, const ContextPtr & co
                 handler.handler_name, context->getUserName(), way_out);
 
         qualifyStatement(statement, visitor, database, context);
-        checkSelectAccess(statement, context);
+        checkSelectAccessWithoutCurrentDatabase(statement, context, handler.handler_name);
     }
 }
 
