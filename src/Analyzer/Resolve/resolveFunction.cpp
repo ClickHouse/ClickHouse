@@ -3143,9 +3143,13 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     {
         user_defined_function = UserDefinedSQLFunctionFactory::instance().tryGet(function_name);
 
+        bool is_sql_user_defined_function = false;
         if (!lambda_expression_untyped && user_defined_function)
+        {
             /// Try to substitute user defined SQL expression
             lambda_expression_untyped = tryGetLambdaFromUserDefinedSQLFunctions(user_defined_function, scope.context);
+            is_sql_user_defined_function = lambda_expression_untyped != nullptr;
+        }
 
         /** If function is resolved as lambda.
           * Clone lambda before resolve.
@@ -3175,6 +3179,9 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             auto lambda_expression_clone = lambda_expression_untyped->clone();
 
             IdentifierResolveScope & lambda_scope = createIdentifierResolveScope(lambda_expression_clone, &scope /*parent_scope*/);
+            /// The body of a SQL function is stored SQL: read table names in it as written.
+            if (is_sql_user_defined_function)
+                lambda_scope.allow_compound_table_identifier_qualification = false;
             ProjectionNames lambda_projection_names = resolveLambda(lambda_expression_untyped, lambda_expression_clone, function_arguments, lambda_scope);
 
             auto & resolved_lambda = lambda_expression_clone->as<LambdaNode &>();

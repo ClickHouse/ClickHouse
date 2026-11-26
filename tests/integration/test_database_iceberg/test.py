@@ -2846,13 +2846,14 @@ def test_namespace_two_part_name_resolution(started_cluster):
     supports table namespaces and `X` is not `system`. Database `X` must exist, and both
     existing is an error unless the user can access only one of them. SQL stored in
     definitions (views, materialized views, row policies, mutations, `ALIAS` columns, projections,
-    constraints, `TTL` expressions) always reads `X.T` as table `T` of database `X`, except in the
-    query argument of a table function such as `view` or `eval`.
+    constraints, `TTL` expressions, SQL function bodies) always reads `X.T` as table `T` of database `X`,
+    except in the query argument of a table function such as `view` or `eval`.
     """
     node = started_cluster.instances["node1"]
     on = {"allow_experimental_table_namespaces": 1}
 
     test_ref = f"test_ns_two_part_{uuid.uuid4().hex[:8]}"
+    F, F_IN, F_ID, F_MAP = (f"{name}_{test_ref}" for name in ("f", "f_in", "f_id", "f_map"))
     X = f"ns_{test_ref}"
     T = "priority_table"
     P = "policy_table"
@@ -2935,6 +2936,11 @@ def test_namespace_two_part_name_resolution(started_cluster):
         result = int(node.query(f"SELECT count() FROM default.{V2}", settings=on))
         assert result == 5, f"quoted name in a view body must be the catalog table (5 rows), got {result}"
 
+        # the body of a SQL function is stored SQL too
+        node.query(f"CREATE FUNCTION {F} AS () -> (SELECT count() FROM {X}.{T})")
+        _, err = node.query_and_get_answer_with_error(f"USE {CATALOG_NAME}; SELECT {F}()", settings=on)
+        assert "UNKNOWN_TABLE" in err, f"SQL function body must not read the catalog table: {err}"
+
         # the query argument of a table function in a view body is a part of the reading query, so it keeps the current-database reading
         on_eval = {**on, "enable_eval_table_function": 1}
         node.query(
@@ -2969,6 +2975,25 @@ def test_namespace_two_part_name_resolution(started_cluster):
         assert "AMBIGUOUS_IDENTIFIER" in err, f"both readings exist, setting on: {err}"
         result = int(node.query(query))
         assert result == 3, f"row 3, setting off: expected the database table (3 rows), got {result}"
+
+        # a SQL function body reads the database table, also on the right of `IN`
+        result = int(node.query(f"USE {CATALOG_NAME}; SELECT {F}()", settings=on))
+        assert result == 3, f"SQL function body: expected the database table (3 rows), got {result}"
+        node.query(f"CREATE FUNCTION {F_IN} AS (y) -> y IN {X}.{T}")
+        result = int(node.query(f"USE {CATALOG_NAME}; SELECT {F_IN}(1)", settings=on))
+        assert result == 1, f"IN table in a SQL function body: expected the database table, got {result}"
+        # an ordinary argument is a part of the calling query and keeps its reading
+        node.query(f"CREATE FUNCTION {F_ID} AS (v) -> v")
+        _, err = node.query_and_get_answer_with_error(
+            f"USE {CATALOG_NAME}; SELECT {F_ID}((SELECT count() FROM {X}.{T}))", settings=on
+        )
+        assert "AMBIGUOUS_IDENTIFIER" in err, f"argument of a SQL function, setting on: {err}"
+        # a lambda argument is expanded inside the body, so it is read as written
+        node.query(f"CREATE FUNCTION {F_MAP} AS (g, arr) -> arrayMap(g, arr)")
+        result = node.query(
+            f"USE {CATALOG_NAME}; SELECT {F_MAP}(y -> y IN {X}.{T}, [1, 100])", settings=on
+        ).strip()
+        assert result == "[1,0]", f"lambda argument of a SQL function: expected the database table, got {result}"
 
         # the ambiguity is reported only to a user who can see both candidates
         other = f"{CATALOG_NAME}.`system.one`"
@@ -3127,6 +3152,8 @@ def test_namespace_two_part_name_resolution(started_cluster):
             result = node.query(f"USE {CATALOG_NAME}; SELECT v, v2 FROM default.{A}", settings=outer).strip()
             assert result == "7\t7", f"ALIAS column, outer {outer}: expected the database table, got {result}"
     finally:
+        for name in (F, F_IN, F_ID, F_MAP):
+            node.query(f"DROP FUNCTION IF EXISTS {name}")
         for name in (PR, C, TT):
             node.query(f"DROP TABLE IF EXISTS default.{name}")
         node.query(f"DROP TABLE IF EXISTS default.{A}")
