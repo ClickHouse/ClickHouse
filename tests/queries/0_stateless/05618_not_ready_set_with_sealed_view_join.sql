@@ -13,6 +13,10 @@
 -- (the failpoint does not fire there) and the subquery runs once, so the rows read by the query tell
 -- which path was taken.
 
+-- Disable force_primary_key_reverse_order: with a descending key the range of marks selected for the set covers one more row of `t_outer_sv`
+-- (the main query reads 11 rows instead of 10).
+SET force_primary_key_reverse_order = 0;
+
 DROP VIEW IF EXISTS v_sealed_join;
 DROP TABLE IF EXISTS t_outer_sv;
 DROP TABLE IF EXISTS t_small_sv;
