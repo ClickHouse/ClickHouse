@@ -12,6 +12,7 @@ SELECT active, id FROM t_mt ORDER BY id SETTINGS additional_result_filter = 'act
 SELECT active FROM t_mem ORDER BY id SETTINGS additional_result_filter = 'active';
 SELECT DISTINCT active, id FROM t_mem ORDER BY id SETTINGS additional_result_filter = 'active';
 SELECT any(active) AS active, id FROM t_mem GROUP BY id ORDER BY id SETTINGS additional_result_filter = 'active';
+SELECT active, id, count() OVER (PARTITION BY active) AS w FROM t_mem ORDER BY id SETTINGS additional_result_filter = 'active';
 SELECT t1.active AS active, t1.id AS id FROM t_mem AS t1 INNER JOIN t_mem AS t2 ON t1.id = t2.id ORDER BY id SETTINGS additional_result_filter = 'active';
 SELECT toUInt8(number * 2) AS c, number AS a FROM numbers(3) ORDER BY a SETTINGS additional_result_filter = 'c';
 SELECT toLowCardinality(toUInt8(number % 2)) AS c, number AS a FROM numbers(4) ORDER BY a SETTINGS additional_result_filter = 'c';
