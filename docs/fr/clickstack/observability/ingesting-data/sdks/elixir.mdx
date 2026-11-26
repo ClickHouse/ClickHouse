@@ -1,0 +1,54 @@
+---
+slug: /clickstack/observability/ingesting-data/sdks/elixir
+description: 'Mise en place et configuration d’Elixir pour ClickHouse Observability et les déploiements autogérés.'
+title: 'Elixir'
+doc_type: 'guide'
+keywords: ['ClickHouse Observability', 'SDK', 'instrumentation']
+sidebarTitle: 'Elixir'
+---
+
+import { BetaBadge } from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
+
+import { ClickStackIntegrates } from '/snippets/fr/components/ClickStackIntegrates/ClickStackIntegrates.jsx'
+
+Utilisez le SDK OpenTelemetry pour Erlang/Elixir afin d&#39;envoyer des traces à ClickHouse Observability.
+
+<ClickStackIntegrates signals={['traces']} />
+
+## Configurer OpenTelemetry {#set-up-opentelemetry}
+
+Suivez les [instructions officielles de mise en route d&#39;OpenTelemetry pour Erlang/Elixir](https://opentelemetry.io/docs/languages/erlang/getting-started/) pour initialiser le SDK et instrumenter votre application.
+
+Configurez l&#39;[export OTLP via HTTP](https://opentelemetry.io/docs/languages/erlang/exporters/) pour les traces à l&#39;aide des paramètres de connexion ci-dessous. Remplacez toutes les destinations d&#39;exemple figurant dans les instructions amont, y compris les surcharges d&#39;endpoint propres à chaque signal.
+
+## Configurer votre destination {#configure-destination}
+
+<Tabs>
+  <Tab title="Entièrement géré">
+    <BetaBadge label="Offre bêta" />
+
+    Dans votre service, ouvrez **Paramètres de l’équipe → Données → Télémétrie gérée**, puis copiez l’**endpoint OTLP HTTP** et l’**API key**. Utilisez l’endpoint HTTPS complet, port compris :
+
+    ```shell
+    export OTEL_EXPORTER_OTLP_ENDPOINT='https://YOUR_OTEL_ENDPOINT:4318'
+    export OTEL_EXPORTER_OTLP_HEADERS='authorization=Bearer YOUR_INGESTION_API_KEY'
+    export OTEL_EXPORTER_OTLP_PROTOCOL='http/protobuf'
+    ```
+  </Tab>
+
+  <Tab title="Autogéré">
+    Utilisez l’endpoint OTLP HTTP et la clé d’ingestion de votre collecteur. Si TLS n’est pas configuré sur votre collecteur, utilisez `http://` au lieu de `https://`. Pour configurer le collecteur, consultez [Ingestion avec OpenTelemetry](/fr/clickstack/observability/ingesting-data/opentelemetry#sending-otel-data-self-configured).
+
+    ```shell
+    export OTEL_EXPORTER_OTLP_ENDPOINT='https://YOUR_COLLECTOR_HOST:4318'
+    export OTEL_EXPORTER_OTLP_HEADERS='authorization=YOUR_INGESTION_API_KEY'
+    export OTEL_EXPORTER_OTLP_PROTOCOL='http/protobuf'
+    ```
+  </Tab>
+</Tabs>
+
+## Vérifier l&#39;ingestion {#verify-ingestion}
+
+Démarrez votre application instrumentée et générez de l&#39;activité. Dans ClickHouse Observability, sélectionnez un intervalle de temps récent et recherchez le nom du service de votre application dans Traces.
+
+Pour le dépannage de l&#39;instrumentation et de l&#39;exportateur, consultez la [documentation OpenTelemetry pour Erlang/Elixir](https://opentelemetry.io/docs/languages/erlang/).

@@ -3,7 +3,7 @@ description: '데이터베이스 객체의 메타데이터에 대해 거의 표�
 keywords: ['system 데이터베이스', 'information_schema']
 slug: /operations/system-tables/information_schema
 title: 'INFORMATION_SCHEMA'
-doc_type: '참고'
+doc_type: 'reference'
 ---
 
 `INFORMATION_SCHEMA`(또는 `information_schema`)는 데이터베이스 객체의 메타데이터에 대해 (어느 정도) 표준화된 [DBMS 비종속적 뷰(view)](https://en.wikipedia.org/wiki/Information_schema)를 제공하는 system 데이터베이스입니다. `INFORMATION_SCHEMA`의 뷰(view)는 일반적으로 일반 시스템 테이블보다 기능이 다소 제한적이지만, 도구에서 DBMS 전반에 걸쳐 기본 정보를 얻는 데 사용할 수 있습니다. `INFORMATION_SCHEMA`의 뷰(view) 구조와 내용은 하위 호환성을 유지하는 방식으로 발전하도록 설계되어 있습니다. 즉, 새로운 기능만 추가되고 기존 기능은 변경되거나 제거되지 않습니다. 내부 구현 측면에서 `INFORMATION_SCHEMA`의 뷰(view)는 일반적으로 [system.columns](/ko/reference/system-tables/columns), [system.databases](/ko/reference/system-tables/databases), [system.tables](/ko/reference/system-tables/tables)와 같은 일반 시스템 테이블에 매핑됩니다.
