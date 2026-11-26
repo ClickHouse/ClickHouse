@@ -7,8 +7,9 @@ DROP TABLE IF EXISTS data_truncate_60031;
 DROP TABLE IF EXISTS data_drop_part_60031;
 
 -- Part 1: TRUNCATE TABLE must clear finished mutations.
+-- The entry of the finished mutation is within the limit, so the cleanup thread keeps it and only TRUNCATE can remove it.
 CREATE TABLE data_truncate_60031 (key Int) ENGINE = MergeTree ORDER BY tuple()
-    SETTINGS finished_mutations_to_keep = 0;
+    SETTINGS finished_mutations_to_keep = 100;
 INSERT INTO data_truncate_60031 VALUES (1);
 ALTER TABLE data_truncate_60031 DELETE WHERE 1 SETTINGS mutations_sync = 1;
 SELECT 'mutations before TRUNCATE', count() FROM system.mutations
