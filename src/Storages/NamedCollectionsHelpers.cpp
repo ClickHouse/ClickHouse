@@ -236,10 +236,11 @@ namespace
         return false;
     }
 
-    /// An attribute/id/range `EXPRESSION`, or a source `WHERE` / `QUERY`, is raw SQL that the server runs on the
-    /// dictionary source verbatim (see `ExternalQueryBuilder`). Unlike a column name or the source `table`, it is
-    /// neither quoted nor confined to the pinned table, so a subquery in it reads whatever the source credentials
-    /// can reach. Returns a description of the first such element, or an empty string if there is none.
+    /// An attribute/id/range `EXPRESSION`, or a source `WHERE` / `QUERY` / `UPDATE_FIELD` / `INVALIDATE_QUERY`, is
+    /// raw SQL that the server runs on the dictionary source verbatim (see `ExternalQueryBuilder`). Unlike a column
+    /// name or the source `table`, it is neither quoted nor confined to the pinned table, so a subquery in it reads
+    /// whatever the source credentials can reach. Returns a description of the first such element, or an empty string
+    /// if there is none.
     std::string findRawSourceSQLInDictionary(
         const Poco::Util::AbstractConfiguration & config, const std::string & dict_root, const std::string & source_prefix)
     {
@@ -272,6 +273,12 @@ namespace
             return "source WHERE";
         if (has_non_empty(source_prefix + ".query"))
             return "source QUERY";
+        /// `composeUpdateCondition` writes `update_field` into the remote `WHERE` verbatim, and `invalidate_query`
+        /// is a whole query the server runs on the source as is, so both carry arbitrary SQL just like `where`.
+        if (has_non_empty(source_prefix + ".update_field"))
+            return "source UPDATE_FIELD";
+        if (has_non_empty(source_prefix + ".invalidate_query"))
+            return "source INVALIDATE_QUERY";
 
         return {};
     }

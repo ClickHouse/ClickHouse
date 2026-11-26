@@ -2,7 +2,7 @@
 # Tags: no-replicated-database
 # Tag no-replicated-database: named collections are server-global, and `DETACH TABLE` is not allowed in a `Replicated` database.
 
-# An attribute `EXPRESSION` (and the source `WHERE` / `QUERY`) is raw SQL executed on the dictionary source.
+# An attribute `EXPRESSION` (and the source `WHERE` / `QUERY` / `UPDATE_FIELD` / `INVALIDATE_QUERY`) is raw SQL executed on the dictionary source.
 # When the source resolves a named collection that confines the data with a `NOT OVERRIDABLE` `table` / `database`,
 # such raw SQL must not be allowed to read outside the confined scope, otherwise it bypasses the lock.
 
@@ -23,6 +23,8 @@ function cleanup()
         DROP DICTIONARY IF EXISTS dict_base;
         DROP DICTIONARY IF EXISTS dict_leak;
         DROP DICTIONARY IF EXISTS dict_leak_where;
+        DROP DICTIONARY IF EXISTS dict_leak_update_field;
+        DROP DICTIONARY IF EXISTS dict_leak_invalidate;
         DROP DICTIONARY IF EXISTS dict_open_expr;
         DROP TABLE IF EXISTS safe_table;
         DROP TABLE IF EXISTS secret_table;
@@ -74,6 +76,19 @@ echo 'A source WHERE subquery is rejected under the lock'
 ${CLICKHOUSE_CLIENT} --user "$user" --multiquery --query "
     CREATE DICTIONARY dict_leak_where (id UInt64, value UInt64) PRIMARY KEY id
     SOURCE(CLICKHOUSE(NAME $nc_locked WHERE 'id = $secret')) LAYOUT(FLAT()) LIFETIME(0); -- { serverError BAD_ARGUMENTS }
+"
+
+echo 'A source UPDATE_FIELD subquery is rejected under the lock'
+${CLICKHOUSE_CLIENT} --user "$user" --multiquery --query "
+    CREATE DICTIONARY dict_leak_update_field (id UInt64, value UInt64) PRIMARY KEY id
+    SOURCE(CLICKHOUSE(NAME $nc_locked UPDATE_FIELD 'id = $secret OR id')) LAYOUT(FLAT()) LIFETIME(MIN 1 MAX 2); -- { serverError BAD_ARGUMENTS }
+"
+
+echo 'A source INVALIDATE_QUERY is rejected under the lock'
+${CLICKHOUSE_CLIENT} --user "$user" --multiquery --query "
+    CREATE DICTIONARY dict_leak_invalidate (id UInt64, value UInt64) PRIMARY KEY id
+    SOURCE(CLICKHOUSE(NAME $nc_locked INVALIDATE_QUERY 'SELECT value FROM ${CLICKHOUSE_DATABASE}.secret_table'))
+    LAYOUT(FLAT()) LIFETIME(MIN 1 MAX 2); -- { serverError BAD_ARGUMENTS }
 "
 
 echo 'The same EXPRESSION is allowed when the collection does not lock the confining keys'
