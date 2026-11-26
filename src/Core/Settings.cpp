@@ -8950,6 +8950,10 @@ Timeout for polling data from asynchronous insert queue
 If it is set to true, use adaptive busy timeout for asynchronous inserts
 )", 0, \
         {"24.2", false, true, "Use adaptive asynchronous insert timeout"}) \
+    DECLARE(Bool, async_insert_use_deduplication_cache, true, R"(
+If true, an asynchronous insert into a table first checks the deduplication hashes of the inserted block against the in-memory cache of the hashes stored in ClickHouse Keeper. The cache of a replica can be stale after `TRUNCATE` or a partition drop on another replica, so the block can be wrongly treated as a duplicate and not inserted. If false, the cache is not used and duplicates are detected only by ClickHouse Keeper.
+)", 0, \
+        {"26.12", true, true, "New setting to disable the deduplication cache for asynchronous inserts."}) \
     DECLARE(Milliseconds, async_insert_busy_timeout_min_ms, 50, R"(
 If auto-adjusting is enabled through async_insert_use_adaptive_busy_timeout, minimum time to wait before dumping collected data per query since the first data appeared. It also serves as the initial value for the adaptive algorithm
 )", 0, \
