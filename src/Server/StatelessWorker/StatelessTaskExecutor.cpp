@@ -112,6 +112,8 @@ StatelessTaskExecutor::Result StatelessTaskExecutor::startTask(const String & un
         client_info.query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
         client_info.distributed_depth = 1;
         client_info.initial_query_id = task_description.initial_query_id;
+        client_info.initial_query_start_time_microseconds = task_description.initial_query_start_time_microseconds;
+        client_info.initial_query_start_time = task_description.initial_query_start_time_microseconds / 1000000;
         /// The start request's trace context becomes the task's trace context.
         client_info.client_trace_context = OpenTelemetry::CurrentContext();
         query_context->setClientInfo(client_info);

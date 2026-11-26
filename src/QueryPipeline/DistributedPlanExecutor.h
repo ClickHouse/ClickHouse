@@ -213,6 +213,8 @@ struct ExchangeStreamSources
 struct DistributedQueryTaskDescription
 {
     String initial_query_id;
+    /// Sent as a parameter of the start request, not in the serialized task, so a worker of any version accepts it.
+    Int64 initial_query_start_time_microseconds = 0;
     DistributedQueryTask task;
     String serialized_query_plan;
     ExchangeDescriptions exchanges;

@@ -577,11 +577,13 @@ std::shared_ptr<QueryIdHolder> ReadFromMergeTree::AnalysisResult::checkLimits(
     {
         /// The limit counts whole queries: `initial_query_id` is shared by every fragment and secondary
         /// query of one client query, and is empty only when the client itself sent a secondary query.
-        auto query_id = context_.getInitialQueryId();
-        if (query_id.empty())
-            query_id = context_.getCurrentQueryId();
+        /// A client may send one `query_id` to two initiators, so the initiator's start time is part of the key.
+        const auto & client_info = context_.getClientInfo();
+        const auto & query_id = client_info.initial_query_id.empty() ? client_info.current_query_id : client_info.initial_query_id;
         if (!query_id.empty())
-            return data_.getQueryIdHolder(query_id, data_settings_[MergeTreeSetting::max_concurrent_queries]);
+            return data_.getQueryIdHolder(
+                fmt::format("{}:{}", client_info.initial_query_start_time_microseconds.value, query_id),
+                data_settings_[MergeTreeSetting::max_concurrent_queries]);
     }
 
     return nullptr;
