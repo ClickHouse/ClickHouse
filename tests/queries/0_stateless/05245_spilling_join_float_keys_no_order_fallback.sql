@@ -1,7 +1,7 @@
 -- Tags: no-parallel-replicas
 
--- Hash-key equality differs from the merge comparison for floating-point join keys: `+0.0` and
--- `-0.0` (and NaNs with different payloads) hash as distinct keys but compare equal, so the
+-- Hash-key equality differs from the merge comparison for floating-point join keys: NaNs with
+-- different payloads hash as distinct keys but compare equal, so the
 -- order-preserving MergeJoin spill fallback must be rejected for such keys (nested ones
 -- included) - otherwise crossing the spill threshold would change the result.
 
@@ -39,8 +39,8 @@ SELECT groupArray(trim(explain)) FROM (
 
 SELECT '-- The spilled result keeps the hash-key equality (signed zeros, NaN payloads)';
 
--- Bitwise matching: 4 rows (each zero pairs only with its own sign, `nan` only with the
--- same-bits 'nan' row, `-nan` with nothing). The merge comparison would produce 9.
+-- Hash matching: 6 rows (the two zeros match each other, `nan` only with the same-bits 'nan' row,
+-- `-nan` with nothing). The merge comparison would produce 9.
 SELECT count() FROM (
     SELECT fl_events.t AS t FROM fl_events
     INNER JOIN fl_payloads ON fl_events.id = fl_payloads.id

@@ -157,6 +157,7 @@ namespace ErrorCodes
     extern const int CANNOT_TRUNCATE_FILE;
     extern const int DATABASE_ACCESS_DENIED;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int READONLY;
     extern const int UNKNOWN_IDENTIFIER;
     extern const int INCORRECT_FILE_NAME;
     extern const int FILE_DOESNT_EXIST;
@@ -1475,16 +1476,18 @@ size_t StorageFile::getMaxReadStreams(size_t num_streams, ContextPtr)
 StorageFile::StorageFile(int table_fd_, CommonArguments args)
     : StorageFile(args)
 {
+    /// This check goes before any use of the descriptor: otherwise the error would depend on whether
+    /// the descriptor is open, and a query could find out which descriptor numbers the server uses.
+    if (args.getContext()->getApplicationType() == Context::ApplicationType::SERVER)
+        throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED, "Using file descriptor as source of storage isn't allowed for server daemons");
+    if (args.format_name == "Distributed")
+        throw Exception(ErrorCodes::INCORRECT_FILE_NAME, "Distributed format is allowed only with explicit file path");
+
     struct stat buf{};
     int res = fstat(table_fd_, &buf);
     if (-1 == res)
         throw ErrnoException(ErrorCodes::CANNOT_FSTAT, "Cannot execute fstat");
     total_bytes_to_read = buf.st_size;
-
-    if (args.getContext()->getApplicationType() == Context::ApplicationType::SERVER)
-        throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED, "Using file descriptor as source of storage isn't allowed for server daemons");
-    if (args.format_name == "Distributed")
-        throw Exception(ErrorCodes::INCORRECT_FILE_NAME, "Distributed format is allowed only with explicit file path");
 
     is_db_table = false;
     use_table_fd = true;
@@ -1782,6 +1785,8 @@ StorageFileSource::StorageFileSource(
     , requested_virtual_columns(info.requested_virtual_columns)
     , block_for_format(info.format_header)
     , serialization_hints(info.serialization_hints)
+    , map_columns_read_by_keys(info.map_columns_read_by_keys)
+    , map_columns_read_by_values(info.map_columns_read_by_values)
     , hive_partition_columns_to_read_from_file_path(info.hive_partition_columns_to_read_from_file_path)
     , max_block_size(max_block_size_)
     , need_only_count(need_only_count_)
@@ -1966,6 +1971,15 @@ Chunk StorageFileSource::generate()
 {
     const bool is_one_format = Poco::toLower(storage->format_name) == "one";
 
+    /// Fills `_size` and `_time` of the current file.
+    auto stat_current_file = [&]
+    {
+        struct stat file_stat = getFileStat(current_path, storage->use_table_fd, storage->table_fd, storage->getName());
+        current_file_size = file_stat.st_size;
+        current_file_last_modified = Poco::Timestamp::fromEpochTime(file_stat.st_mtime);
+        return file_stat;
+    };
+
     while (!finished_generate)
     {
         /// Open file lazily on first read. This is needed to avoid too many open files from different streams.
@@ -2138,7 +2152,16 @@ Chunk StorageFileSource::generate()
                 /// Special case for distributed format. Defaults are not needed here.
                 if (storage->format_name == "Distributed")
                 {
-                    pipeline = std::make_unique<QueryPipeline>(std::make_shared<DistributedAsyncInsertSource>(current_path));
+                    stat_current_file();
+
+                    QueryPipelineBuilder builder;
+                    builder.init(Pipe(std::make_shared<DistributedAsyncInsertSource>(current_path)));
+                    builder.addSimpleTransform([&](const SharedHeader & header)
+                    {
+                        return std::make_shared<ExtractColumnsTransform>(header, requested_columns);
+                    });
+
+                    pipeline = std::make_unique<QueryPipeline>(QueryPipelineBuilder::getPipeline(std::move(builder)));
                     pipeline->disableProfileEventUpdate();
                     reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
                     continue;
@@ -2148,10 +2171,7 @@ Chunk StorageFileSource::generate()
             /// The source of a split file keeps its buffer between buckets but checks the file version for each.
             if (!read_buf || split_file)
             {
-                struct stat file_stat{};
-                file_stat = getFileStat(current_path, storage->use_table_fd, storage->table_fd, storage->getName());
-                current_file_size = file_stat.st_size;
-                current_file_last_modified = Poco::Timestamp::fromEpochTime(file_stat.st_mtime);
+                struct stat file_stat = stat_current_file();
 
                 /// Build a sub-second-precision version token for the format metadata cache key.
                 /// `st_mtime` alone is second-resolution, so an in-place rewrite within the same
@@ -2419,6 +2439,7 @@ Chunk StorageFileSource::generate()
 
             input_format->setBucketsToRead(split_file ? split_file->buckets.at(split_file_bucket) : buckets_to_read);
             input_format->setSerializationHints(serialization_hints);
+            input_format->setMapColumnsReadByOneSide(map_columns_read_by_keys, map_columns_read_by_values);
 
             if (need_only_count)
                 input_format->needOnlyCount();
@@ -2811,7 +2832,13 @@ bool ReadFromFile::supportsTopKDynamicFilter(const ColumnWithTypeAndName & sort_
     /// recomputed values while the reader compares its own placeholders against it, which can drop
     /// rows that belong to the top-K. A column with no default expression is never rewritten above
     /// the reader, so for it the two values always agree.
-    return !info.columns_description.hasDefault(sort_column.name);
+    return !info.columns_description.hasDefault(sort_column.name) && !info.defaultsDependOnTheirBlock(getContext());
+}
+
+bool ReadFromFile::canSkipDataByFilterOn(const ColumnWithTypeAndName & column) const
+{
+    const auto settings = storage->format_settings ? *storage->format_settings : getFormatSettings(getContext());
+    return formatSkipsDataByStatistics(storage->format_name, settings) && info.canSkipDataByStatisticsOf(column);
 }
 
 bool ReadFromFile::supportsMinMaxFromStatistics() const
@@ -2943,6 +2970,23 @@ std::unique_ptr<LazilyReadFromFile> ReadFromFile::keepOnlyRequiredColumnsAndCrea
     return lazy_step;
 }
 
+void StorageFile::checkAccessForRenamingFiles(const ContextPtr & context)
+{
+    const auto access = context->getAccess();
+    access->checkAccessWithFilter(AccessType::WRITE, toStringSource(AccessTypeObjects::Source::FILE), /* filter */ "");
+
+    /// The readonly gate does not refuse `WRITE` on a source, which also authorizes `BACKUP` destinations.
+    const auto & params = access->getParams();
+    if (!params.readonly || params.full_access)
+        return;
+    if (params.interface == ClientInfo::Interface::HTTP && params.http_method == ClientInfo::HTTPMethod::GET)
+        throw Exception(ErrorCodes::READONLY,
+            "{}: Cannot execute query in readonly mode. "
+            "For queries over HTTP, method GET implies readonly. "
+            "You should use method POST for modifying queries", access->getUserName());
+    throw Exception(ErrorCodes::READONLY, "{}: Cannot execute query in readonly mode", access->getUserName());
+}
+
 void StorageFile::read(
     QueryPlan & query_plan,
     const Names & column_names,
@@ -2957,8 +3001,7 @@ void StorageFile::read(
     /// (`StorageFileSource::beforeDestroy`), so reading it needs `WRITE` on the source besides `READ`.
     /// This context is the reading query's, not that of the query which built the storage.
     if (!file_renamer.isEmpty())
-        context->getAccess()->checkAccessWithFilter(
-            AccessType::WRITE, toStringSource(AccessTypeObjects::Source::FILE), /* filter */ "");
+        checkAccessForRenamingFiles(context);
 
     if (distributed_processing && context->getSettingsRef()[Setting::max_streams_for_files_processing_in_cluster_functions])
         num_streams = clampClusterFunctionNumStreams(
@@ -3041,6 +3084,9 @@ StorageFileSource::TopKQueryConditionCacheKeyPtr ReadFromFile::makeTopKQueryCond
     /// pushed into the format (without the conjuncts on virtual and hive partition columns).
     /// Without any of them nothing else drops rows. A row policy is covered by neither.
     if (query_info.row_level_filter)
+        return {};
+
+    if (std::ranges::any_of(top_k_filter->columns_deciding_threshold, [&](const String & name) { return info.hasDefaultOfColumnOrParent(name); }))
         return {};
 
     auto key = std::make_shared<StorageFileSource::TopKQueryConditionCacheKey>();
@@ -3483,6 +3529,7 @@ public:
                         /*need_only_count=*/ false);
                 }
                 input_format->setSerializationHints(info.serialization_hints);
+                input_format->setMapColumnsReadByOneSide(info.map_columns_read_by_keys, info.map_columns_read_by_values);
 
                 QueryPipelineBuilder builder;
                 builder.init(Pipe(input_format));

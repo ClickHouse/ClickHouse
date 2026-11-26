@@ -7,8 +7,6 @@
 -- it stays identical to the materializing implementation, and guards that `ORDER BY` over a
 -- shared-data-heavy JSON column completes quickly instead of spending minutes in the compare storm.
 
-SET enable_json_type = 1;
-
 -- 1. All paths in shared data (max_dynamic_paths = 0): the optimized both-SHARED_DATA path.
 DROP TABLE IF EXISTS t_json_shared;
 CREATE TABLE t_json_shared (id UInt32, json JSON(max_dynamic_paths = 0)) ENGINE = MergeTree ORDER BY id;
