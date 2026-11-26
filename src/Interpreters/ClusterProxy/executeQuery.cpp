@@ -1590,10 +1590,11 @@ bool isSuitableForInsertSelectWithParallelReplicas(const ASTPtr & select, const 
 
     InterpreterSelectQueryAnalyzer interpreter(select, context, select_query_options);
 
-    /// Each replica runs the whole SELECT, so its FROM must be a table the replicas read in coordination.
+    /// Each replica runs the whole SELECT on its share of the rows of a table the replicas read in coordination.
     const auto * query_node = interpreter.getQueryTree()->as<QueryNode>();
     const auto * table_node = query_node ? query_node->getJoinTreeNode()->as<TableNode>() : nullptr;
-    if (!table_node || !canUseTableForParallelReplicas(*table_node, query_node->getContext()))
+    if (!table_node || !canRunQueryOnEachReplicaShare(*query_node)
+        || !canUseTableForParallelReplicas(*table_node, query_node->getContext()))
         return false;
 
     auto & plan = interpreter.getQueryPlan();

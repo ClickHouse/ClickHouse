@@ -57,14 +57,12 @@
 #include <Parsers/QueryParameterVisitor.h>
 #include <Storages/StorageWithCommonVirtualColumns.h>
 
-#include <Analyzer/AggregationUtils.h>
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/QueryTreePassManager.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/UnionNode.h>
 #include <Analyzer/Utils.h>
-#include <Analyzer/WindowFunctionsUtils.h>
 #include <Planner/findQueryForParallelReplicas.h>
 #include <Databases/IDatabase.h>
 
@@ -621,15 +619,7 @@ StoragePtr StorageView::getUnderlyingMergeTreeStorageForParallelReplicas(const C
                     const auto & query_node = node->as<QueryNode &>();
                     /// Only simple pass-through views are eligible. Any clause that changes
                     /// result semantics when evaluated per-replica must disqualify the view.
-                    if (query_node.hasGroupBy() || query_node.hasHaving()
-                        || query_node.hasWindow() || query_node.hasQualify()
-                        || query_node.hasOrderBy() || query_node.isShuffle() || query_node.isDistinct()
-                        || query_node.hasLimitByLimit() || query_node.hasLimitByOffset()
-                        || query_node.hasLimitBy()
-                        || query_node.hasLimit() || query_node.hasOffset()
-                        || query_node.hasLimitAfter() || query_node.hasLimitUntil()
-                        || hasWindowFunctionNodes(query_node.getProjectionNode())
-                        || hasAggregateFunctionNodes(query_node.getProjectionNode()))
+                    if (!canRunQueryOnEachReplicaShare(query_node))
                         return nullptr;
 
                     current_context = query_node.getContext();

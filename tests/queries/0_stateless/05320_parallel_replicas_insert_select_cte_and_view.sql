@@ -72,6 +72,23 @@ SELECT count(), sum(x) FROM dst;
 INSERT INTO dst_mem WITH c AS (SELECT DISTINCT x % 7 AS y FROM src) SELECT y FROM c SETTINGS log_comment = 'arm_from_cte';
 SELECT count(), sum(x) FROM dst_mem;
 
+SELECT '-- a SELECT that aggregates, numbers or skips rows is inserted once';
+TRUNCATE TABLE dst_mem;
+INSERT INTO dst_mem SELECT * APPLY sum FROM src SETTINGS log_comment = 'arm_apply_aggregate';
+SELECT count(), sum(x) FROM dst_mem;
+TRUNCATE TABLE dst_mem;
+INSERT INTO dst_mem SELECT row_number() OVER (ORDER BY x) FROM src SETTINGS log_comment = 'arm_window_function';
+SELECT count(), sum(x), uniqExact(x) FROM dst_mem;
+TRUNCATE TABLE dst_mem;
+INSERT INTO dst_mem SELECT x FROM src QUALIFY row_number() OVER (ORDER BY x) <= 3 SETTINGS log_comment = 'arm_qualify';
+SELECT count(), sum(x) FROM dst_mem;
+TRUNCATE TABLE dst_mem;
+INSERT INTO dst_mem SELECT x FROM src OFFSET 1 SETTINGS log_comment = 'arm_offset';
+SELECT count() FROM dst_mem;
+TRUNCATE TABLE dst_mem;
+INSERT INTO dst_mem SELECT x FROM src OFFSET 1 SETTINGS log_comment = 'arm_offset_no_local_plan', parallel_replicas_local_plan = 0;
+SELECT count() FROM dst_mem;
+
 SELECT '-- a materialized view is read through its target table, so the replicas insert it';
 TRUNCATE TABLE dst;
 INSERT INTO dst SELECT x FROM mv SETTINGS log_comment = 'arm_materialized_view';
