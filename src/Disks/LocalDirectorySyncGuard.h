@@ -69,7 +69,7 @@ void createDirectoriesAndSync(const String & dir, bool fsync, const String & exi
 
 /// Renames `from` to `to`, replacing an existing `to` only if `replace` is set. When `fsync` is set,
 /// the directory holding `to` is synced after the rename and a failed sync throws, after removing
-/// the file if the rename created it, so that a create reported as failed is not loaded later.
+/// the file the rename created or putting back the one it replaced, so a failed write is not loaded later.
 void renameAndSync(const String & from, const String & to, bool replace, bool fsync);
 
 }

@@ -420,6 +420,43 @@ def test_create_whose_commit_sync_fails_leaves_nothing_behind():
         root_node.query("SYSTEM DISABLE FAILPOINT directory_sync_fail")
 
 
+def test_replace_whose_commit_sync_fails_keeps_the_previous_definition():
+    """
+    A replace whose directory sync fails after its rename is reported as failed and the previous
+    definition stays loaded, so the previous file must be back in place: otherwise later DDL is
+    checked against a definition the disk no longer holds. Here `DROP WORKLOAD rp_b` would succeed
+    while the file of `rp_a` names it as the parent, and the next start would load `rp_a` under a
+    workload that does not exist.
+    """
+    try:
+        root_node.query("CREATE FUNCTION rp_f AS (x) -> x + 101", settings={"fsync_metadata": 1})
+        for workload in ("rp_root", "rp_a IN rp_root", "rp_b IN rp_root"):
+            root_node.query(f"CREATE WORKLOAD {workload}", settings={"fsync_metadata": 1})
+
+        root_node.query("SYSTEM ENABLE FAILPOINT directory_sync_fail")
+        for replace, file, previous in (
+            ("CREATE OR REPLACE FUNCTION rp_f AS (x) -> x + 202", "/var/lib/clickhouse/function_rp_f.sql", "101"),
+            ("CREATE OR REPLACE WORKLOAD rp_a IN rp_b", "/var/lib/clickhouse/workload_rp_a.sql", "IN rp_root"),
+        ):
+            query_id = str(uuid.uuid4())
+            with pytest.raises(QueryRuntimeException, match="Cannot fsync directory"):
+                root_node.query(replace, query_id=query_id, settings={"fsync_metadata": 1})
+            assert _root_directory_syncs(query_id, "ExceptionBeforeStart") == 1, (
+                f"{file}: the replace did not fail at the sync after its rename"
+            )
+            content = root_node.exec_in_container(["bash", "-c", f"cat {file}"])
+            assert previous in content, f"{file}: the failed replace left its new definition: {content}"
+            assert not _exists(file + ".tmp", root_node), f"{file}: a temporary file was left"
+        root_node.query("SYSTEM DISABLE FAILPOINT directory_sync_fail")
+
+        root_node.query("DROP WORKLOAD rp_b", settings={"fsync_metadata": 1})
+        root_node.restart_clickhouse()
+        assert root_node.query("SELECT rp_f(1)").strip() == "102"
+        assert root_node.query("SELECT parent FROM system.workloads WHERE name = 'rp_a'").strip() == "rp_root"
+    finally:
+        root_node.query("SYSTEM DISABLE FAILPOINT directory_sync_fail")
+
+
 def test_failed_store_directory_creation_is_rolled_back():
     """
     A store directory is created lazily on first use, and its own entry in its parent has to

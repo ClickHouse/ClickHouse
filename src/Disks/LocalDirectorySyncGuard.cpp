@@ -304,10 +304,15 @@ void renameAndSync(const String & from, const String & to, bool replace, bool fs
         dir_sync.emplace(fs::path(to).parent_path().string());
 
     const bool overwrites = dir_sync && replace && fs::exists(to);
-    if (replace)
-        fs::rename(from, to);
-    else
-        renameNoReplace(from, to);
+    /// An exchange keeps the replaced file at `from` until the sync has succeeded.
+    const bool exchanged = overwrites && renameExchangeIfSupported(from, to);
+    if (!exchanged)
+    {
+        if (replace)
+            fs::rename(from, to);
+        else
+            renameNoReplace(from, to);
+    }
 
     if (!dir_sync)
         return;
@@ -318,13 +323,24 @@ void renameAndSync(const String & from, const String & to, bool replace, bool fs
     }
     catch (...)
     {
-        /// A file this rename created is not left for the next start to load.
-        if (!overwrites)
+        try
         {
-            std::error_code remove_ec;
-            fs::remove(to, remove_ec);
+            if (exchanged)
+                renameExchange(from, to);
+            else if (!overwrites)
+                fs::remove(to);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__, "Cannot undo the rename of " + to);
         }
         throw;
+    }
+
+    if (exchanged)
+    {
+        std::error_code remove_ec;
+        fs::remove(from, remove_ec);
     }
 }
 }
