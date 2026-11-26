@@ -9991,7 +9991,7 @@ Allow parsing Iceberg `geometry` and `geography` field types as ClickHouse `Geom
 Read the Iceberg `time` type as `Int64` (microseconds since midnight) instead of `Time64(6)`.
 The setting is applied when the metadata of a table is loaded.
 )", 0, \
-        {"26.11", true, false, "Iceberg `time` is read as `Time64(6)` instead of `Int64`."}) \
+        {"26.12", true, false, "Iceberg `time` is read as `Time64(6)` instead of `Int64`."}) \
     DECLARE(Bool, show_data_lake_catalogs_in_system_tables, false, R"(
 Enables showing data lake catalogs in system tables.
 )", 0, \
