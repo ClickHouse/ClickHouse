@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Tags: no-parallel
+# Tags: no-parallel, no-fasttest
 # Tag no-parallel: the failpoint is global for the server
+# Tag no-fasttest: tests that run alone are kept out of the fast test
 
 # The server writes all the blocks of an external table with one pipeline,
 # and the time it spends receiving external tables is limited by `max_execution_time`.
