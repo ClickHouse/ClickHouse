@@ -253,7 +253,7 @@ public:
     /// outside this join against the same budget. Call before the first insert.
     void setSpillBudget(JoinSpillBudget * budget, std::function<size_t()> held_elsewhere = {});
 
-    /// What the join holds: `getTotalByteCount` plus the bytes it holds without counting them there.
+    /// `getTotalByteCount` without the debug checks, which walk the block lists that other threads may be changing.
     size_t getRawByteCount() const;
 
     void checkTypesOfKeys(const Block & block) const override;
@@ -666,12 +666,6 @@ public:
         /// build threads update them can under-count `max_bytes_in_join`. Size-limit checks and `peak_build_bytes` read only this.
         std::atomic<size_t> total_bytes = 0;
 
-        /// With a spill budget, what the join holds or will allocate in `onBuildPhaseFinish` but `total_bytes` does not count,
-        /// so that `max_bytes_in_join` stays as it was: used flags, the list nodes of the stored blocks, `stored_columns_index`.
-        std::atomic<size_t> untracked_bytes = 0;
-        /// The part of `untracked_bytes` that `releaseJoinMaps` frees.
-        std::atomic<size_t> untracked_maps_bytes = 0;
-
         /// Add `total_bytes` first so a concurrent size-limit check cannot under-count.
         void addBytes(std::atomic<size_t> & part, size_t n)
         {
@@ -736,24 +730,14 @@ public:
     /// The hand-over of the stored blocks, one at a time, after `releaseJoinMaps`: `takeBuildStreamBlock` moves the first
     /// block of a build stream out (empty when there is none) and keeps counting its bytes until `releaseTakenBlock`.
     StoredBlocksList takeBuildStreamBlock(size_t stream);
-    /// The bytes of a taken block that `releaseTakenBlock` releases: in `total_bytes`, and in `untracked_bytes`.
-    struct TakenBlockBytes
-    {
-        size_t stored = 0;
-        size_t overhead = 0;
-    };
-    TakenBlockBytes takenBlockBytes(const StoredBlocksList & taken) const;
+    /// The bytes of a taken block that `releaseTakenBlock` releases.
+    static size_t takenBlockBytes(const StoredBlocksList & taken);
     /// The block with the columns of `savedBlockSample`. Frees the row store as it rebuilds the columns.
     Block materializeTakenBlock(StoredBlocksList && taken) const;
-    void releaseTakenBlock(TakenBlockBytes bytes);
-    /// The most `materializeTakenBlock` allocates.
-    size_t estimateMaterializeBytes(const StoredBlocksList & taken) const;
+    void releaseTakenBlock(size_t stored_bytes);
 
     /// All the stored blocks, with the maps freed. The join can only materialize them after that.
     StoredBlocksList takeStoredBlocks();
-
-    /// What an insert of `block` copies into a row store, which the source columns outlive while the insert runs.
-    size_t rowStoreSourceBytes(const Block & block) const;
 
     /// Modify right block (update structure according to sample block) to save it in block list
     static Block prepareRightBlock(const Block & block, const Block & saved_block_sample_);
@@ -854,21 +838,9 @@ private:
     /// Not owned. Null when the join does not spill, see `setSpillBudget`.
     JoinSpillBudget * spill_budget = nullptr;
     std::function<size_t()> spill_held_elsewhere;
-    /// The used flags that `onBuildPhaseFinish` allocates count against the budget: one per cell, or one per row.
-    bool spill_counts_cell_flags = false;
-    bool spill_counts_row_flags = false;
 
     /// What the join holds against the spill budget.
     size_t spillHeldBytes() const;
-    void addUntrackedBytes(size_t bytes, bool freed_with_maps);
-    /// The bytes `untracked_bytes` counts for a stored block: its list node, `columns` and `replicated_columns`.
-    static size_t storedBlockOverheadBytes(const StoredBlock & block);
-    static size_t estimateStoredBlockOverheadBytes(size_t num_columns);
-    /// What `onBuildPhaseFinish` allocates for a stored block of `rows` rows.
-    size_t postBuildBytes(size_t rows) const;
-    /// The reservation of the spill budget before a block is inserted.
-    struct BlockReservation;
-    size_t estimateBlockInsertBytes(const Block & source_block, size_t stream, BlockReservation & parts) const;
 
     void updatePeakBuildBytes(size_t bytes)
     {

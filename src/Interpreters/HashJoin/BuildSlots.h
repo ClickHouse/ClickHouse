@@ -45,17 +45,6 @@ public:
         return res;
     }
 
-    /// The cells of the buckets of `map` in `slot`, zero for a `PartitionedFixedHashTable`, whose cells never change.
-    template <typename Map>
-    [[nodiscard]] size_t slotCells(const Map & map, size_t slot) const
-    {
-        size_t res = 0;
-        if constexpr (!is_partitioned_fixed_table<Map>)
-            for (size_t bucket = slot; bucket < Map::NUM_BUCKETS; bucket += slots.size())
-                res += map.impls[bucket].getBufferSizeInCells();
-        return res;
-    }
-
     /// Reserving every bucket up front would be serial work before the build. So each slot reserves its
     /// share of `reserve_keys_` keys at its first insert, under its own lock.
     void setReserve(size_t reserve_keys_) { reserve_keys = reserve_keys_; }

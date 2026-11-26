@@ -547,10 +547,6 @@ public:
         JoinSpillBudget & budget;
         /// What the join holds, see `JoinSpillBudget::tryReserve`.
         absl::FunctionRef<size_t()> held_bytes;
-        /// Adds to what the join holds outside the bytes of `add_bytes`.
-        absl::FunctionRef<void(size_t)> add_untracked;
-        /// The map gets a used flag per cell after the build, so the cells count too.
-        bool count_cells;
         /// Otherwise the budget only counts the rows and never refuses them.
         bool checked;
 
@@ -577,14 +573,6 @@ public:
         const InsertBudget * budget = nullptr)
     {
         return dispatchType([&]<Type TYPE>() { return insertTyped<TYPE, Maps>(settings, rows, arena(stream), add_bytes, budget); });
-    }
-
-    /// An upper bound of what an insert of `rows` rows of `key_columns` allocates outside the maps and the arena: the slot
-    /// scatter and the key getters.
-    template <typename Maps>
-    size_t estimateInsertScratch(size_t rows, const ColumnRawPtrs & key_columns) const
-    {
-        return dispatchType([&]<Type TYPE>() { return estimateInsertScratchTyped<TYPE, Maps>(rows, key_columns); });
     }
 
     /// Whether an insert copies the keys into the arena of its build stream.
@@ -810,64 +798,10 @@ private:
 
     [[noreturn]] static void throwKeysNotRecoverable(Type type);
 
-    /// Kept out of line: with the libc++ 23 headers the inliner folds every instantiation into `insertFromBlockImpl`
-    /// (5 KB to 43 KB), and the build loop then overlaps fewer of its independent cache misses with join software
-    /// prefetch on (TPC-H Q9 1.3x slower at 4 to 16 threads on aarch64). The call runs once per block.
-    /// What the key getters of an insert allocate for `rows` rows of `key_columns`.
-    template <typename KeyGetter>
-    size_t estimateKeyGetterMemory(size_t rows, const ColumnRawPtrs & key_columns) const
-    {
-        size_t bytes = 0;
-        if constexpr (requires(KeyGetter & getter) { getter.visit_cache; getter.mapped_cache; getter.offset_cache; })
-        {
-            if (const auto * low_cardinality = typeid_cast<const ColumnLowCardinality *>(key_columns.at(0)))
-            {
-                const size_t dictionary_size = low_cardinality->getDictionary().getNestedNotNullableColumn()->size();
-                bytes = JoinSpillBudget::add(bytes, JoinSpillBudget::paddedPodArrayBytes<UInt8>(dictionary_size));
-                bytes = JoinSpillBudget::add(bytes, JoinSpillBudget::paddedPodArrayBytes<void *>(dictionary_size));
-                bytes = JoinSpillBudget::add(bytes, JoinSpillBudget::paddedPodArrayBytes<size_t>(dictionary_size));
-            }
-        }
-        else if constexpr (PreparedKeyGetter<KeyGetter>)
-        {
-            /// The keys built ahead and the prepared keys, and the skip bytes of the block.
-            bytes = JoinSpillBudget::mul(2, JoinSpillBudget::paddedPodArrayBytes<UInt128>(rows));
-            bytes = JoinSpillBudget::add(bytes, JoinSpillBudget::mul(3, JoinSpillBudget::paddedPodArrayBytes<UInt8>(rows)));
-        }
-        else if constexpr (requires { KeyGetter::estimatePreparedKeysMemory(rows, key_sizes); })
-            bytes = KeyGetter::estimatePreparedKeysMemory(rows, key_sizes);
-        return bytes;
-    }
-
-    template <Type TYPE, typename Maps>
-    size_t estimateInsertScratchTyped(size_t rows, const ColumnRawPtrs & key_columns) const
-    {
-        using HashMap = JoinMapOf<TYPE, Maps>;
-        using KeyGetter = typename KeyGetterForType<TYPE, HashMap>::Type;
-
-        size_t bytes = 0;
-        size_t key_getters = 1;
-        if constexpr (HashMap::NUM_BUCKETS > 1)
-        {
-            /// `scatterBySlot`, which a two-level map behind one slot runs too when its worst case does not fit: the slot of
-            /// each row, the selectors of the slots before their row counts are known, the rows per slot and per bucket.
-            const size_t num_slots = slots.size();
-            using Indexes = ScatteredBlock::Selector::Indexes;
-            bytes = JoinSpillBudget::podArrayBytes(rows, sizeof(UInt32));
-            const size_t selectors = JoinSpillBudget::add(
-                JoinSpillBudget::mul(rows, sizeof(UInt64)), JoinSpillBudget::mul(num_slots, 2 * PADDING_FOR_SIMD - 1));
-            bytes = JoinSpillBudget::add(bytes, JoinSpillBudget::mul(2, selectors));
-            bytes = JoinSpillBudget::add(bytes, JoinSpillBudget::mul(num_slots, sizeof(Indexes) + sizeof(ScatteredBlock::Selector) + sizeof(size_t)));
-            bytes = JoinSpillBudget::add(bytes, HashMap::NUM_BUCKETS * sizeof(UInt32));
-            key_getters = 2;
-        }
-        return JoinSpillBudget::add(bytes, JoinSpillBudget::mul(key_getters, estimateKeyGetterMemory<KeyGetter>(rows, key_columns)));
-    }
-
     /// The most the buckets of `slot` allocate while `slot_rows` rows are inserted, `bucket_rows[b]` of them into bucket `b`
     /// (all of them into each bucket if `bucket_rows` is empty), including the first-insert reserve of the slot.
     template <typename Map>
-    size_t estimateSlotGrowth(const Map & map, size_t slot, size_t slot_rows, const std::vector<UInt32> & bucket_rows, bool count_cells) const
+    size_t estimateSlotGrowth(const Map & map, size_t slot, size_t slot_rows, const std::vector<UInt32> & bucket_rows) const
     {
         if constexpr (is_partitioned_fixed_table<Map>)
             return 0;
@@ -878,18 +812,16 @@ private:
             for (size_t bucket = slot; bucket < Map::NUM_BUCKETS; bucket += slots.size())
             {
                 const size_t bucket_keys = bucket_rows.empty() ? slot_rows : bucket_rows[bucket];
-                if (!bucket_keys && !reserve)
-                    continue;
-                const auto & impl = map.impls[bucket];
-                size_t cells = 0;
-                growth = JoinSpillBudget::add(growth, impl.estimateGrowthMemory(bucket_keys, reserve, &cells));
-                if (count_cells)
-                    growth = JoinSpillBudget::add(growth, cells - std::min(cells, impl.getBufferSizeInCells()));
+                if (bucket_keys || reserve)
+                    growth = JoinSpillBudget::add(growth, map.impls[bucket].estimateGrowthMemory(bucket_keys, reserve));
             }
             return growth;
         }
     }
 
+    /// Kept out of line: with the libc++ 23 headers the inliner folds every instantiation into `insertFromBlockImpl`
+    /// (5 KB to 43 KB), and the build loop then overlaps fewer of its independent cache misses with join software
+    /// prefetch on (TPC-H Q9 1.3x slower at 4 to 16 threads on aarch64). The call runs once per block.
     template <Type TYPE, typename Maps>
     NO_INLINE BuildResult insertTyped(
         const InsertSettings & settings,
@@ -929,7 +861,7 @@ private:
             }
             else if (budget)
             {
-                const size_t worst_case = estimateSlotGrowth(map, 0, rows.selector.size(), {}, budget->count_cells);
+                const size_t worst_case = estimateSlotGrowth(map, 0, rows.selector.size(), {});
                 worst_case_reserved = budget->reserve(worst_case);
                 if (!worst_case_reserved)
                 {
@@ -981,24 +913,19 @@ private:
                 }
                 else
                 {
-                    const auto reserved = budget->reserve(estimateSlotGrowth(map, slot, selector.size(), bucket_rows, budget->count_cells));
+                    const auto reserved = budget->reserve(estimateSlotGrowth(map, slot, selector.size(), bucket_rows));
                     if (!reserved)
                         return false;
                     growth_reserved = *reserved;
                 }
             }
             const size_t bytes_before = slots.slotBytes(map, slot);
-            const size_t cells_before = budget && budget->count_cells ? slots.slotCells(map, slot) : 0;
             /// Under the slot lock so a concurrent limit check cannot miss this slot. Also when an insert throws: the
             /// rows before it stay in the map, and `StorageJoin` keeps serving them. The reservation goes after the bytes.
             SCOPE_EXIT({
                 add_bytes(slots.slotBytes(map, slot) - bytes_before);
                 if (budget)
-                {
-                    if (budget->count_cells)
-                        budget->add_untracked(slots.slotCells(map, slot) - cells_before);
                     budget->budget.release(growth_reserved);
-                }
             });
 
             if (const size_t reserved = slots.reserveOnFirstInsert(map, slot))

@@ -36,13 +36,7 @@ BuildResult HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::insertFromBlockImpl
         return table.insert<MapsTemplate>(settings, rows, stream, add_bytes);
 
     const auto held_bytes = [&] { return join.spillHeldBytes(); };
-    const auto add_untracked = [&](size_t bytes) { join.addUntrackedBytes(bytes, /*freed_with_maps=*/true); };
-    const HashJoinTable::InsertBudget budget{
-        .budget = *join.spill_budget,
-        .held_bytes = held_bytes,
-        .add_untracked = add_untracked,
-        .count_cells = join.spill_counts_cell_flags,
-        .checked = checked};
+    const HashJoinTable::InsertBudget budget{.budget = *join.spill_budget, .held_bytes = held_bytes, .checked = checked};
     return table.insert<MapsTemplate>(settings, rows, stream, add_bytes, &budget);
 }
 

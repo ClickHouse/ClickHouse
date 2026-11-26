@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Columns/IColumn.h>
 #include <Core/Defines.h>
 #include <Common/BitHelpers.h>
 #include <base/arithmeticOverflow.h>
@@ -67,48 +66,16 @@ public:
         return common::mulOverflow(a, b, res) ? std::numeric_limits<size_t>::max() : res;
     }
 
-    /// The most a `PODArray` of `elements` elements allocates: the requested size with padding, rounded up to a power of two.
-    static size_t podArrayBytes(size_t elements, size_t element_size, size_t pad_left = 0, size_t pad_right = 0)
-    {
-        if (!elements)
-            return 0;
-        const size_t bytes = add(mul(elements, element_size), add(pad_left, pad_right));
-        if (bytes > std::numeric_limits<size_t>::max() / 2)
-            return std::numeric_limits<size_t>::max();
-        return roundUpToPowerOfTwoOrZero(bytes);
-    }
-
+    /// The most a `PaddedPODArray<T>` of `elements` elements allocates: the size with padding, rounded up to a power of two.
     template <typename T>
     static size_t paddedPodArrayBytes(size_t elements)
     {
-        return podArrayBytes(elements, sizeof(T), /*pad_left=*/PADDING_FOR_SIMD, /*pad_right=*/PADDING_FOR_SIMD - 1);
-    }
-
-    /// The most a copy of columns of `bytes` bytes allocates when it grows by appending into `destinations` new columns:
-    /// appends end at no more than twice the elements, the array being reallocated also holds its old buffer, and a first
-    /// append allocates 4096 bytes for each of the `arrays` arrays of each destination.
-    static size_t appendCopyBytes(size_t bytes, size_t largest_column_bytes, size_t arrays, size_t destinations)
-    {
-        static constexpr size_t initial_bytes = 4096;
-        return add(add(mul(bytes, 2), largest_column_bytes), mul(mul(destinations, arrays), initial_bytes));
-    }
-
-    /// `appendCopyBytes` of columns, whose sizes are `byteSize`. Two arrays per column and subcolumn.
-    template <typename ColumnsRange>
-    static size_t columnsCopyBytes(const ColumnsRange & columns, size_t destinations)
-    {
-        size_t bytes = 0;
-        size_t largest = 0;
-        size_t arrays = 0;
-        for (const auto & column : columns)
-        {
-            const size_t column_bytes = column->byteSize();
-            bytes = add(bytes, column_bytes);
-            largest = std::max(largest, column_bytes);
-            arrays += 2;
-            column->forEachSubcolumnRecursively([&](const IColumn &) { arrays += 2; });
-        }
-        return appendCopyBytes(bytes, largest, arrays, destinations);
+        if (!elements)
+            return 0;
+        const size_t bytes = add(mul(elements, sizeof(T)), PADDING_FOR_SIMD + PADDING_FOR_SIMD - 1);
+        if (bytes > std::numeric_limits<size_t>::max() / 2)
+            return std::numeric_limits<size_t>::max();
+        return roundUpToPowerOfTwoOrZero(bytes);
     }
 
 private:

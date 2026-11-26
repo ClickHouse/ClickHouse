@@ -146,9 +146,7 @@ private:
 
     /// Add right table block to the @join. Calls @rehash on overflow. An `owned` block is freed as it is scattered.
     void addBlockToJoinImpl(Block block, JoinBuildContext context, bool owned = false, HandedOver * handed_over = nullptr);
-    /// The most the scatter of `block` into `num_buckets` buckets allocates.
-    size_t estimateScatterBytes(const Block & block, size_t num_buckets, bool owned) const;
-    /// What is held against the spill threshold besides the inner join. Caller holds `hash_join_mutex`.
+    /// What is held against the spill threshold besides the inner join.
     size_t heldBytes() const;
 
     /// Split the bucket held in memory in two, half of it onto disk. Caller holds `hash_join_mutex`.
