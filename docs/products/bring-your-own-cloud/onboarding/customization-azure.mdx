@@ -1,0 +1,74 @@
+---
+title: 'Azure customized setup'
+slug: /cloud/reference/byoc/onboarding/customization-azure
+sidebarTitle: 'Azure customized setup'
+keywords: ['BYOC', 'cloud', 'bring your own cloud', 'onboarding', 'Azure', 'VNet', 'virtual network']
+description: 'Deploy ClickHouse BYOC into your existing Azure virtual network'
+doc_type: 'reference'
+---
+
+## Customer-managed virtual network (BYO-VNet) for Azure {#customer-managed-vnet-azure}
+
+If you prefer to deploy ClickHouse BYOC into an existing Azure virtual network instead of having ClickHouse Cloud provision a new one, follow the steps below. ClickHouse then observes your network and joins its subnets rather than creating network resources, giving you control over your network topology, egress path, and address space.
+
+<Steps>
+<Step title="Configure your existing virtual network" id="configure-existing-vnet">
+
+In a [region supported by ClickHouse BYOC](/products/cloud/reference/supported-regions), create one virtual network with the subnets below. Every subnet must belong to that virtual network.
+
+| Subnet | Minimum size | Delegation | Also required |
+|--------|--------------|------------|---------------|
+| **Node** | `/27` (larger is recommended, e.g. `/24`) | None | The egress path for your chosen `outboundType` — see the next step. |
+| **Pod** | `/25` | `Microsoft.ContainerService/managedClusters` | Azure CNI assigns every pod a real virtual-network IP, so size this for your target pod count. |
+| **API server** (optional, for a private API server) | `/28` | `Microsoft.ContainerService/managedClusters` | Used only for [API Server VNet Integration](https://learn.microsoft.com/en-us/azure/aks/api-server-vnet-integration). |
+| **Private Link** (optional, for private link) | `/28` | None | `privateLinkServiceNetworkPolicies` set to `Disabled`, so the ingress Private Link Service can be created. |
+
+Sizes are minimums. Larger ranges are fine and recommended for the node and pod subnets, because every replica consumes IP addresses.
+
+</Step>
+<Step title="Ensure egress and connectivity" id="ensure-network-connectivity">
+
+**Egress (`outboundType`)**
+
+Unlike EKS and GKE, Azure Kubernetes Service (AKS) requires you to state how cluster nodes reach the internet, so you choose an `outboundType` and prepare the node subnet to match:
+
+- **`userAssignedNATGateway`** (the default): attach a NAT gateway to the node subnet. Create a Standard public IP and a zone-redundant NAT gateway, and associate it with the node subnet.
+- **`userDefinedRouting`**: attach a route table to the node subnet with a `0.0.0.0/0` route to your firewall or network virtual appliance. Use this when all egress must flow through your own inspection point.
+
+Outbound access is required either way, and two things depend on it:
+
+- **Tailscale.** ClickHouse BYOC components register with the Tailscale control plane, which provides secure, zero-trust networking for private management operations without requiring inbound public access.
+- **Container images.** Some images the deployment runs are not mirrored into the BYOC registry, including community images, and are pulled from their upstream registries.
+
+A node subnet with no outbound path will not finish provisioning; pre-flight validation checks that the node subnet has the egress path for your `outboundType`.
+
+**AKS service CIDR**
+
+The AKS service CIDR (the in-cluster service IP range, default `10.0.0.0/16`) must not overlap your virtual network or any of its subnets, or in-cluster service IPs collide with pod and node IPs. If your network uses `10.0.0.0/16`, choose a non-overlapping service CIDR when you set up the infrastructure.
+
+**DNS resolution**
+
+Ensure your virtual network has working DNS resolution and doesn't block, interfere with, or overwrite standard DNS names. ClickHouse BYOC relies on DNS to resolve Tailscale control servers and ClickHouse service endpoints. If DNS is unavailable or misconfigured, BYOC services may fail to connect or operate properly.
+
+</Step>
+<Step title="Grant ClickHouse access to your network" id="grant-access">
+
+Onboard your subscription with the [ClickHouse BYOC Azure onboarding Terraform module](https://github.com/ClickHouse/terraform-byoc-onboarding/tree/main/modules/azure) and set `include_vpc_write_permissions = false`. ClickHouse then receives read and subnet-join access to your virtual network but cannot create, modify, or delete network resources (the virtual network, its subnets, or the NAT egress path). It still creates and manages the resources it owns inside your network — the AKS cluster, and the Private Link Service that fronts it. See the module's **Bring your own virtual network (BYO-VNet)** section for details.
+
+</Step>
+<Step title="Set up BYOC infrastructure" id="set-up-byoc-infrastructure">
+<Note>
+When you set up the infrastructure, ClickHouse Cloud automatically runs [pre-flight validation](/products/bring-your-own-cloud/onboarding/standard#preflight-validation) before provisioning. It checks that the provisioner has the required permissions, and it validates the virtual network you bring: that the network and subnets resolve and belong to the network, that each subnet is large enough and has the correct delegation, that the Private Link subnet disables network policies, that the AKS service CIDR does not overlap the network, and that the node subnet has the egress path for your `outboundType`. If anything is missing, setup halts with the specific issues to fix.
+</Note>
+
+When setting up new infrastructure, select the option to use an existing virtual network and provide:
+
+1. The **virtual network resource ID**.
+2. The **node** and **pod** subnet resource IDs (and the **API server** and **Private Link** subnet IDs if you created them).
+3. Your **`outboundType`** (`userAssignedNATGateway` or `userDefinedRouting`).
+4. A **service CIDR** that does not overlap your network.
+
+ClickHouse observes the network at those IDs and provisions the ClickHouse Kubernetes (AKS) cluster into your subnets.
+
+</Step>
+</Steps>
