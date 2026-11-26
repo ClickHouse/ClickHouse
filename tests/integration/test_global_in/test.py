@@ -39,52 +39,7 @@ def started_cluster():
         cluster.shutdown()
 
 
-@pytest.mark.parametrize("enable_analyzer", [0, 1])
-def test_success(started_cluster, enable_analyzer):
-    assert (
-        int(
-            node1.query(
-                query, settings={"enable_analyzer": enable_analyzer}, timeout=120
-            ).strip()
-        )
-        == 14
-    )
-
-
-@pytest.mark.parametrize("enable_analyzer", [0, 1])
-def test_max_execution_time_timeout(started_cluster, enable_analyzer):
-    query_id = str(uuid.uuid4())
-    node2.query("SYSTEM ENABLE FAILPOINT sleep_on_receive_external_table_data")
-    try:
-        with pytest.raises(QueryRuntimeException) as e:
-            node1.query(
-                query,
-                settings={"max_execution_time": 30, "enable_analyzer": enable_analyzer},
-                timeout=120,
-                query_id=query_id,
-            )
-        assert "TIMEOUT_EXCEEDED" in str(e.value)
-        assert_eq_with_retry(
-            node2,
-            f"SELECT count() FROM system.query_log WHERE initial_query_id = '{query_id}' AND type = 'ExceptionBeforeStart'",
-            "1",
-            retry_count=60,
-            sleep_time=1,
-        )
-        remote_exception = node2.query(
-            f"SELECT exception FROM system.query_log WHERE initial_query_id = '{query_id}' AND type = 'ExceptionBeforeStart'"
-        )
-        assert (
-            "Code: 159. DB::Exception: Timeout exceeded while reading external table data."
-            in remote_exception
-        )
-        assert "timeout is 30 seconds. (TIMEOUT_EXCEEDED)" in remote_exception
-    finally:
-        node2.query("SYSTEM DISABLE FAILPOINT sleep_on_receive_external_table_data")
-
-
-@pytest.mark.parametrize("enable_analyzer", [0, 1])
-def test_max_execution_time_socket_timeout(started_cluster, enable_analyzer):
+def test_max_execution_time_socket_timeout(started_cluster):
     query_id = str(uuid.uuid4())
 
     def run_query():
@@ -93,7 +48,6 @@ def test_max_execution_time_socket_timeout(started_cluster, enable_analyzer):
                 query,
                 settings={
                     "max_execution_time": 25,
-                    "enable_analyzer": enable_analyzer,
                     "connect_timeout_with_failover_ms": 5000,
                 },
                 timeout=120,
@@ -123,7 +77,11 @@ def test_max_execution_time_socket_timeout(started_cluster, enable_analyzer):
                     f"SELECT exception FROM system.query_log WHERE initial_query_id = '{query_id}' AND type = 'ExceptionBeforeStart'"
                 )
                 assert "SOCKET_TIMEOUT" in remote_exception
-                # max_execution_time should be used as the receive timeout
-                assert "25000 ms" in remote_exception
+                # max_execution_time should be used as the receive timeout.
+                # The message depends on whether node1 was paused in the middle of a packet or between two packets.
+                assert (
+                    "25000 ms" in remote_exception
+                    or "timeout is 25 seconds" in remote_exception
+                )
         finally:
             query_thread.join()

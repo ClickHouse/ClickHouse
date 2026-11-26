@@ -22,9 +22,11 @@
 #include <QueryPipeline/BlockIO.h>
 #include <base/getFQDNOrHostName.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 #include <Common/StringWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 
 #include <IO/WriteBuffer.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
@@ -152,37 +154,43 @@ struct QueryState
     bool query_duration_already_logged = false;
     bool run_query_in_background = false;
 
-    /// Cached pipelines and executors for external tables to avoid O(n^2) complexity
-    /// when inserting many blocks into temporary Memory tables.
+    /// The pipelines writing the data of external tables, by the name of the table.
+    /// A pipeline is created by the first block of its table and finished once all the external data is received:
+    /// finishing a pipeline for every block makes a `Memory` table copy its list of blocks each time,
+    /// which is quadratic in the number of blocks.
     struct ExternalTablePipeline
     {
         /// The structure of the table, which every block received for it must match.
         Block header;
         QueryPipeline pipeline;
+        /// Refers to `pipeline`, so it is declared after it.
         std::unique_ptr<PushingPipelineExecutor> executor;
     };
-    std::unordered_map<String, ExternalTablePipeline> external_table_pipelines;
+    UnorderedMapWithMemoryTracking<String, std::unique_ptr<ExternalTablePipeline>> external_table_pipelines;
 
-    void resetExternalTablePipelines(bool cancel)
+    /// Makes the received data visible in the tables.
+    void finishExternalTablePipelines()
     {
         for (auto & [name, pipeline_holder] : external_table_pipelines)
-        {
-            if (pipeline_holder.executor)
-            {
-                if (cancel)
-                    pipeline_holder.executor->cancel();
-                else
-                    pipeline_holder.executor->finish();
-            }
-        }
+            pipeline_holder->executor->finish();
         external_table_pipelines.clear();
     }
 
     ~QueryState()
     {
-        /// Cancel any pending external table executors before destruction
-        /// PushingPipelineExecutor destructor asserts that it is finished
-        resetExternalTablePipelines(/*cancel=*/true);
+        /// `PushingPipelineExecutor` has to be finished or cancelled explicitly before it is destroyed.
+        /// The pipelines that are still here belong to a query that failed or was cancelled while receiving external data.
+        for (auto & [name, pipeline_holder] : external_table_pipelines)
+        {
+            try
+            {
+                pipeline_holder->executor->cancel();
+            }
+            catch (...)
+            {
+                tryLogCurrentException(__PRETTY_FUNCTION__);
+            }
+        }
     }
 
     ProfileEvents::ThreadIdToCountersSnapshot last_sent_snapshots;

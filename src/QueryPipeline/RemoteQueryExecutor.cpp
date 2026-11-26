@@ -9,6 +9,7 @@
 #include <Common/FailPoint.h>
 #include <Common/Logger.h>
 #include <Common/OpenTelemetryTraceContext.h>
+#include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
 #include <Core/Protocol.h>
 #include <Core/Settings.h>

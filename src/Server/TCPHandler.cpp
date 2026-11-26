@@ -1379,10 +1379,12 @@ void TCPHandler::extractConnectionSettingsFromContext(const ContextPtr & context
     const auto & settings = context->getSettingsRef();
     send_exception_with_stack_trace = settings[Setting::calculate_text_stack_trace];
     max_execution_time = settings[Setting::max_execution_time];
+    /// A query cannot wait for its peer longer than it is allowed to run, so `max_execution_time` also limits the socket timeouts.
+    /// `receivePacketsExpectData` waits for at most `receive_timeout` at a time, so `poll_interval` needs no limit of its own.
     auto saturate_timeout = [&](const Poco::Timespan & t) { return max_execution_time.totalSeconds() > 0 && t > max_execution_time ? max_execution_time : t; };
     send_timeout = saturate_timeout(settings[Setting::send_timeout]);
     receive_timeout = saturate_timeout(settings[Setting::receive_timeout]);
-    poll_interval = max_execution_time.totalSeconds() > 0 ? std::min<UInt64>(settings[Setting::poll_interval], max_execution_time.totalSeconds()) : settings[Setting::poll_interval];
+    poll_interval = settings[Setting::poll_interval];
     idle_connection_timeout = settings[Setting::idle_connection_timeout];
     interactive_delay = settings[Setting::interactive_delay];
     sleep_in_send_tables_status = settings[Setting::sleep_in_send_tables_status_ms];
@@ -1551,7 +1553,7 @@ void TCPHandler::readTemporaryTables(QueryState & state)
 
     while (receivePacketsExpectData(state))
     {
-        if (max_execution_time.totalSeconds() > 0 && watch.elapsedSeconds() > max_execution_time.totalSeconds())
+        if (max_execution_time.totalSeconds() > 0 && watch.elapsedMicroseconds() > static_cast<UInt64>(max_execution_time.totalMicroseconds()))
             throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded while reading external table data. Spent {} seconds, timeout is {} seconds.", watch.elapsedSeconds(), max_execution_time.totalSeconds());
 
         /// Data upload can take a long time, so send logs and profile events without waiting for it to finish.
@@ -3159,7 +3161,7 @@ bool TCPHandler::processData(QueryState & state, bool scalar)
 
     if (block.empty())
     {
-        state.resetExternalTablePipelines(/*cancel=*/false);
+        state.finishExternalTablePipelines();
         return false;
     }
 
@@ -3192,11 +3194,10 @@ bool TCPHandler::processData(QueryState & state, bool scalar)
 
         /// Data for external tables
 
-        /// Check if we already have an executor for this external table
         auto it = state.external_table_pipelines.find(temporary_id.table_name);
         if (it == state.external_table_pipelines.end())
         {
-            /// First block for this table - create storage if needed and set up executor
+            /// The first block of this table: find or create the table and the pipeline writing to it.
             auto resolved = state.query_context->tryResolveStorageID(temporary_id, Context::ResolveExternal);
             StoragePtr storage;
             /// If such a table does not exist, create it.
@@ -3217,22 +3218,22 @@ bool TCPHandler::processData(QueryState & state, bool scalar)
             if (resolved)
                 check_structure(metadata_snapshot->getSampleBlock());
 
-            /// Create and cache the pipeline and executor
-            auto & pipeline_holder = state.external_table_pipelines[temporary_id.table_name];
-            pipeline_holder.header = metadata_snapshot->getSampleBlock();
-            pipeline_holder.pipeline = QueryPipeline(storage->write(ASTPtr(), metadata_snapshot, state.query_context, /*async_insert=*/false));
-            pipeline_holder.executor = std::make_unique<PushingPipelineExecutor>(pipeline_holder.pipeline);
-            pipeline_holder.executor->start();
+            /// The pipeline is kept in `state` only after it has started, so a failure here leaves nothing half-made behind.
+            auto pipeline_holder = std::make_unique<QueryState::ExternalTablePipeline>();
+            pipeline_holder->header = metadata_snapshot->getSampleBlock();
+            pipeline_holder->pipeline = QueryPipeline(storage->write(ASTPtr(), metadata_snapshot, state.query_context, /*async_insert=*/false));
+            pipeline_holder->executor = std::make_unique<PushingPipelineExecutor>(pipeline_holder->pipeline);
+            pipeline_holder->executor->start();
 
-            it = state.external_table_pipelines.find(temporary_id.table_name);
+            it = state.external_table_pipelines.emplace(temporary_id.table_name, std::move(pipeline_holder)).first;
         }
         else
         {
-            check_structure(it->second.header);
+            check_structure(it->second->header);
         }
 
-        /// Push block to the cached executor
-        it->second.executor->push(block);
+        /// The data becomes visible in the table when the pipeline is finished, see `finishExternalTablePipelines`.
+        it->second->executor->push(block);
 
         fiu_do_on(FailPoints::sleep_on_receive_external_table_data, {
             sleepForSeconds(1);
