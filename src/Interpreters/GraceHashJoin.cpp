@@ -311,7 +311,7 @@ GraceHashJoin::GraceHashJoin(
     , max_num_buckets(max_num_buckets_)
     , external_join_threshold(external_join_threshold_)
     , max_threads(std::max<size_t>(1, max_threads_))
-    , spill_budget(external_join_threshold_ ? std::make_unique<JoinSpillBudget>([threshold = external_join_threshold_] { return threshold; }) : nullptr)
+    , spill_budget(external_join_threshold_ ? std::make_unique<JoinSpillBudget>(external_join_threshold_) : nullptr)
     , left_key_names(table_join->getOnlyClause().key_names_left)
     , right_key_names(table_join->getOnlyClause().key_names_right)
     , tmp_data(tmp_data_->childScope({

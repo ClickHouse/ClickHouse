@@ -6,7 +6,6 @@
 
 #include <algorithm>
 #include <atomic>
-#include <functional>
 #include <limits>
 
 namespace DB
@@ -19,20 +18,17 @@ namespace DB
 class JoinSpillBudget
 {
 public:
-    using Limit = std::function<size_t()>;
-
-    explicit JoinSpillBudget(Limit limit_) : limit(std::move(limit_)) {}
+    explicit JoinSpillBudget(size_t limit_) : limit(limit_) {}
 
     template <typename LoadHeld>
     bool tryReserve(size_t bytes, LoadHeld && load_held)
     {
-        const size_t current_limit = limit();
-        if (bytes >= current_limit)
+        if (bytes >= limit)
             return false;
 
         const size_t prev = reserved.fetch_add(bytes, std::memory_order_acq_rel);
         const size_t held = load_held();
-        if (add(add(held, prev), bytes) >= current_limit)
+        if (add(add(held, prev), bytes) >= limit)
         {
             reserved.fetch_sub(bytes, std::memory_order_release);
             return false;
@@ -43,7 +39,7 @@ public:
     /// For an insert that goes ahead whatever the limit says. Returns the bytes reserved, to pass to `release`.
     size_t reserveUnchecked(size_t bytes)
     {
-        bytes = std::min(bytes, limit());
+        bytes = std::min(bytes, limit);
         reserved.fetch_add(bytes, std::memory_order_acq_rel);
         return bytes;
     }
@@ -52,7 +48,7 @@ public:
     void release(size_t bytes) { reserved.fetch_sub(bytes, std::memory_order_release); }
 
     size_t getReserved() const { return reserved.load(std::memory_order_acquire); }
-    size_t getLimit() const { return limit(); }
+    size_t getLimit() const { return limit; }
 
     static size_t add(size_t a, size_t b)
     {
@@ -79,7 +75,7 @@ public:
     }
 
 private:
-    Limit limit;
+    const size_t limit;
     std::atomic<size_t> reserved{0};
 };
 
