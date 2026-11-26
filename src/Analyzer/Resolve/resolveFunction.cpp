@@ -95,6 +95,7 @@ namespace Setting
     extern const SettingsBool enable_function_early_short_circuit;
     extern const SettingsShortCircuitFunctionEvaluation short_circuit_function_evaluation;
     extern const SettingsBool execute_exists_as_scalar_subquery;
+    extern const SettingsBool exact_rows_before_limit;
     extern const SettingsBool transform_null_in;
     extern const SettingsBool force_grouping_standard_compatibility;
     extern const SettingsBool validate_enum_literals_in_operators;
@@ -148,6 +149,100 @@ std::optional<size_t> getGroupConcatArgumentsCountWithSeparator(const String & f
 
         nested_name.resize(nested_name.size() - suffix.size());
     }
+}
+
+/// Whether `exists_node` is reached from the WHERE, HAVING or QUALIFY of the scope's query through unaliased builtin `and`, `or`, `not` only.
+bool isOnlyRowFilter(
+    const IdentifierResolveScope & scope, const IQueryTreeNode * exists_node, const std::function<bool(const String &)> & is_builtin_function)
+{
+    const auto * query_node = scope.scope_node->as<QueryNode>();
+    if (!query_node)
+        return false;
+
+    const auto & stack = scope.expressions_in_resolve_process_stack;
+    if (stack.empty() || stack.getTop().get() != exists_node)
+        return false;
+
+    const auto * root = stack.getRoot().get();
+    if (root != query_node->getWhere().get() && root != query_node->getHaving().get() && root != query_node->getQualify().get())
+        return false;
+
+    for (size_t i = 0; i < stack.size(); ++i)
+    {
+        const auto & node = stack[static_cast<int32_t>(i)];
+        if (node->hasAlias())
+            return false;
+
+        if (i + 1 == stack.size())
+            break;
+
+        const auto * function_node = node->as<FunctionNode>();
+        if (!function_node)
+            return false;
+
+        const auto & name = function_node->getFunctionName();
+        if ((name != "and" && name != "or" && name != "not") || !is_builtin_function(name))
+            return false;
+    }
+
+    return true;
+}
+
+bool hasLimitZero(const QueryNode & query_node)
+{
+    if (!query_node.hasLimit())
+        return false;
+
+    const auto * limit_node = query_node.getLimit()->as<ConstantNode>();
+    if (!limit_node)
+        return false;
+
+    const auto value = limit_node->getValue();
+    return (value.getType() == Field::Types::UInt64 && value.safeGet<UInt64>() == 0)
+        || (value.getType() == Field::Types::Int64 && value.safeGet<Int64>() == 0);
+}
+
+bool readsRowsTillEnd(const IdentifierResolveScope & scope)
+{
+    const auto * query_node = scope.scope_node->as<QueryNode>();
+    return (query_node && query_node->isGroupByWithTotals()) || scope.context->getSettingsRef()[Setting::exact_rows_before_limit];
+}
+
+/// Whether the rows the `exists_node` filter selects reach no output: its query is a table expression, at any depth, of a `LIMIT 0` query.
+bool isExistsResultDiscardedByLimitZero(
+    const IdentifierResolveScope & scope, const IQueryTreeNode * exists_node, const std::function<bool(const String &)> & is_builtin_function)
+{
+    if (!isOnlyRowFilter(scope, exists_node, is_builtin_function))
+        return false;
+
+    for (const auto * current = &scope; current->parent_scope; current = current->parent_scope)
+    {
+        if (readsRowsTillEnd(*current))
+            return false;
+
+        const auto & parent = *current->parent_scope;
+        const auto * child = current->scope_node.get();
+        if (const auto * union_node = parent.scope_node->as<UnionNode>())
+        {
+            const auto & branches = union_node->getQueries().getNodes();
+            if (std::ranges::none_of(branches, [child](const auto & branch) { return branch.get() == child; }))
+                return false;
+        }
+        else if (const auto * parent_query_node = parent.scope_node->as<QueryNode>())
+        {
+            if (!parent.table_expressions_in_resolve_process.contains(child))
+                return false;
+
+            if (hasLimitZero(*parent_query_node))
+                return !readsRowsTillEnd(parent);
+        }
+        else
+        {
+            return false;
+        }
+    }
+
+    return false;
 }
 
 }
@@ -2287,7 +2382,16 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         }
         else
         {
-            if (only_analyze || !scope.context->getSettingsRef()[Setting::execute_exists_as_scalar_subquery])
+            auto is_builtin_function = [&](const String & name)
+            {
+                return !tryResolveIdentifier({Identifier{name}, IdentifierLookupContext::FUNCTION}, scope).resolved_identifier
+                    && !UserDefinedSQLFunctionFactory::instance().tryGet(name)
+                    && !UserDefinedExecutableFunctionFactory::tryGet(name, scope.context);
+            };
+
+            /// A row filter of rows an outer `LIMIT 0` discards is never needed: keep it a set, which that `LIMIT` never builds.
+            if (only_analyze || !scope.context->getSettingsRef()[Setting::execute_exists_as_scalar_subquery]
+                || isExistsResultDiscardedByLimitZero(scope, function_node_ptr.get(), is_builtin_function))
             {
                 /// Rewrite EXISTS (subquery) into 1 IN (SELECT 1 FROM (subquery) LIMIT 1).
                 QueryTreeNodePtr constant = std::make_shared<ConstantNode>(1UL, constant_data_type);

@@ -1,0 +1,21 @@
+<test>
+    <create_query>CREATE TABLE exists_limit_zero (c1 UInt64, c2 UInt64) ENGINE = MergeTree ORDER BY c1</create_query>
+
+    <fill_query>INSERT INTO exists_limit_zero SELECT number, number % 3000000 FROM numbers(15000000)</fill_query>
+    <fill_query>OPTIMIZE TABLE exists_limit_zero FINAL</fill_query>
+
+    <query>
+        SELECT * FROM (WITH s AS (SELECT c2 AS k, count() AS c FROM exists_limit_zero GROUP BY k HAVING c > 1)
+        SELECT k, c FROM s UNION ALL SELECT 0 AS k, 0 AS c WHERE NOT exists((SELECT 1 FROM s))) LIMIT 0
+        SETTINGS execute_exists_as_scalar_subquery = 1
+    </query>
+    <query>
+        SELECT * FROM (WITH p AS (SELECT toDate('2026-01-01') AS c9),
+        s AS (SELECT c2 AS k, count() AS c FROM exists_limit_zero GROUP BY k HAVING c > 1),
+        u AS (SELECT k, c FROM s UNION ALL SELECT k, c FROM s WHERE k &lt; 10)
+        SELECT p.c9 AS d, k, c FROM u CROSS JOIN p UNION ALL SELECT p.c9 AS d, 0 AS k, 0 AS c FROM p WHERE NOT exists((SELECT 1 FROM u))) LIMIT 0
+        SETTINGS execute_exists_as_scalar_subquery = 1
+    </query>
+
+    <drop_query>DROP TABLE IF EXISTS exists_limit_zero</drop_query>
+</test>
