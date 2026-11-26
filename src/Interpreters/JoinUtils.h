@@ -207,6 +207,8 @@ Blocks scatterBlockByHash(const Strings & key_columns_names, const Block & block
 Blocks scatterBlockByHash(const Strings & key_columns_names, Block && block, size_t num_shards);
 Blocks scatterBlockByHash(const Strings & key_columns_names, const Blocks & blocks, size_t num_shards);
 Blocks scatterBlockByHash(const Strings & key_columns_names, const BlocksList & blocks, size_t num_shards);
+/// The hash `scatterBlockByHash` gives every row of `block`, if they all have one: no number of shards splits them.
+std::optional<UInt32> oneScatterHash(const Strings & key_columns_names, const Block & block);
 
 constexpr bool hasNonJoinedBlocks(JoinKind kind, JoinStrictness strictness)
 {

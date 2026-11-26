@@ -15,6 +15,7 @@
 
 #include <list>
 #include <mutex>
+#include <optional>
 
 namespace DB
 {
@@ -76,7 +77,7 @@ public:
     using Buckets = std::vector<BucketPtr>;
 
     /// `external_join_threshold_` comes from `max_bytes_before_external_join` (or the ratio): we rehash the
-    /// buckets before the in-memory table would reach it. Only legacy mode passes 0.
+    /// buckets before the in-memory table would reach it, unless a split cannot separate its rows. Only legacy mode passes 0.
     GraceHashJoin(
         size_t initial_num_buckets_,
         size_t max_num_buckets_,
@@ -146,6 +147,10 @@ private:
     void addBlockToJoinImpl(Block block, JoinBuildContext context, bool owned = false, HandedOver * handed_over = nullptr);
     size_t heldBytes() const;
 
+    /// After `block` went into `hash_join`, which stored `rows_before` rows then. Caller holds `hash_join_mutex`.
+    void addResidentRows(const Block & block, size_t rows_before);
+    void resetResidentRows();
+
     /// Split the bucket held in memory in two, half of it onto disk. Caller holds `hash_join_mutex`.
     void repartitionCurrentBucket(size_t prev_keys_num, Block leftover, JoinBuildContext context);
     bool canForceRepartition() const;
@@ -210,6 +215,9 @@ private:
     mutable std::mutex current_bucket_mutex;
 
     InMemoryJoinPtr hash_join;
+    /// `resident_hash` is set while every row of `hash_join` has that scatter hash: no split can separate them.
+    bool has_resident_rows = false;
+    std::optional<UInt32> resident_hash;
     Block hash_join_sample_block;
     mutable std::mutex hash_join_mutex;
 

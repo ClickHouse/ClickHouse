@@ -13,6 +13,11 @@ full, right condition, spills	1500000	1499998500000	499999500000
 full, mixed condition, fits	1000001	1499998500000	499999500000
 full, mixed condition, spills	1000001	1499998500000	499999500000
 duplicate keys spill	1000000	499999500000
+one key, any left	1	0
+one key, left semi	1	0
+one key, grace_hash	1000000	499999500000
+one key, then NULL keys	1000000	499999500000	65409
+NULL keys, then one key	1000000	499999500000	934591
 serial_fits	0	0
 serial_spills	1	1
 parallel_fits	0	0
@@ -28,5 +33,7 @@ full_right_cond_spills	1	1
 full_mixed_cond_fits	0	0
 full_mixed_cond_spills	1	1
 duplicate_keys_spills	1	1
+one_key_then_nulls	0	1
+nulls_then_one_key	0	1
 serial_spills	1
 grace_spills	1

@@ -813,24 +813,33 @@ void splitAdditionalColumns(const Names & key_names, const Block & sample_block,
     }
 }
 
+static PaddedPODArray<UInt32> hashKeysForScatter(const Strings & key_columns_names, const Block & block)
+{
+    PaddedPODArray<UInt32> hash(block.rows(), WEAK_HASH32_INITIAL_VALUE);
+    for (const auto & key_name : key_columns_names)
+    {
+        /// `-0.` and `0.` are equal keys, so they have to land in the same bucket.
+        ColumnPtr key_col = replaceNegativeZeros(materializeColumn(block, key_name));
+        key_col->computeHashInto(0, block.rows(), hash.data(), false);
+    }
+    return hash;
+}
+
+std::optional<UInt32> oneScatterHash(const Strings & key_columns_names, const Block & block)
+{
+    const auto hash = hashKeysForScatter(key_columns_names, block);
+    if (hash.empty() || !std::ranges::all_of(hash, [&](UInt32 value) { return value == hash[0]; }))
+        return {};
+    return hash[0];
+}
+
 template <bool owned, Fn<size_t(size_t)> Sharder>
 static Blocks scatterBlockByHashImpl(
     const Strings & key_columns_names, std::conditional_t<owned, Block &, const Block &> block, size_t num_shards, Sharder sharder)
 {
-    size_t num_rows = block.rows();
     size_t num_cols = block.columns();
 
-    IColumn::Selector selector;
-    {
-        PaddedPODArray<UInt32> hash(num_rows, WEAK_HASH32_INITIAL_VALUE);
-        for (const auto & key_name : key_columns_names)
-        {
-            /// `-0.` and `0.` are equal keys, so they have to land in the same bucket.
-            ColumnPtr key_col = replaceNegativeZeros(materializeColumn(block, key_name));
-            key_col->computeHashInto(0, num_rows, hash.data(), false);
-        }
-        selector = hashToSelector(hash, sharder);
-    }
+    IColumn::Selector selector = hashToSelector(hashKeysForScatter(key_columns_names, block), sharder);
 
     Blocks result;
     result.reserve(num_shards);
