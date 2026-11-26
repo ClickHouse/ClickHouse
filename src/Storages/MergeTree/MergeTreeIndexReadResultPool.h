@@ -298,9 +298,6 @@ public:
     /// Whether index read results may include a skip index part (for any part of the query).
     bool hasSkipIndexReader() const { return skip_index_reader != nullptr; }
 
-    /// Whether index read results depend on JOIN runtime filters (see MergeTreeSkipIndexReader::hasRuntimeFilters).
-    bool hasRuntimeFilters() const { return skip_index_reader && skip_index_reader->hasRuntimeFilters(); }
-
     /// See MergeTreeSkipIndexReader::areRuntimeFiltersReady.
     bool areRuntimeFiltersReady() const { return !skip_index_reader || skip_index_reader->areRuntimeFiltersReady(); }
 

@@ -111,12 +111,12 @@ bool MergeTreeSkipIndexReader::hasRuntimeFilters() const
 
 bool MergeTreeSkipIndexReader::areRuntimeFiltersReady() const
 {
-    if (!hasRuntimeFilters() || runtime_filters_ready.load(std::memory_order_relaxed))
+    if (!hasRuntimeFilters() || runtime_filters_ready.load(std::memory_order_acquire))
         return true;
     /// A built filter stays built, so the answer is kept once it is true.
     if (!runtime_filters_ready_check || !runtime_filters_ready_check())
         return false;
-    runtime_filters_ready.store(true, std::memory_order_relaxed);
+    runtime_filters_ready.store(true, std::memory_order_release);
     return true;
 }
 
