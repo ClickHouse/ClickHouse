@@ -659,8 +659,11 @@ void AggregateFunctionTuple::insertMergeResultInto(AggregateDataPtr __restrict p
 void AggregateFunctionTuple::rollbackInsertResult(ConstAggregateDataPtr __restrict place, IColumn & to) const noexcept
 {
     auto & tuple_to = assert_cast<ColumnTuple &>(to);
-    for (size_t i = nested_functions.size(); i-- > 0;)
+    for (size_t j = nested_functions.size(); j > 0; --j)
+    {
+        const size_t i = j - 1;
         nested_functions[i]->rollbackInsertResult(place + state_offsets[i], tuple_to.getColumn(i));
+    }
 }
 
 bool AggregateFunctionTuple::allocatesMemoryInArena() const
@@ -727,11 +730,6 @@ DataTypePtr AggregateFunctionTuple::getNormalizedStateType() const
     auto normalized_function = std::make_shared<AggregateFunctionTuple>(
         normalized_nested_name, std::move(normalized_nested_functions), argument_types, Array{});
     return std::make_shared<DataTypeAggregateFunction>(std::move(normalized_function), nested_normalized_state_types, Array{});
-}
-
-bool AggregateFunctionTuple::isOnlyWindowFunction() const
-{
-    return std::ranges::any_of(nested_functions, [](const auto & nested) { return nested->isOnlyWindowFunction(); });
 }
 
 AggregateFunctionStateVariant AggregateFunctionTuple::getStateVariant() const

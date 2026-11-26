@@ -89,7 +89,9 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.1"},{"label": "0"},{"label": "Разделены max_execution_time и max_estimated_execution_time"}]}]} />
 
 Максимальное оценочное время выполнения запроса в секундах. Проверяется для каждого блока данных
-после истечения [`timeout_before_checking_execution_speed`](/ru/reference/settings/session-settings/other#timeout_before_checking_execution_speed).
+после истечения [`timeout_before_checking_execution_speed`](/ru/reference/settings/session-settings/other#timeout_before_checking_execution_speed). Оценка основана на экстраполяции текущей скорости выполнения
+запроса. Если задать `timeout_before_checking_execution_speed` равным 0, эта настройка
+проверяться не будет.
 
 ## max_expanded_ast_elements {#max_expanded_ast_elements}
 
@@ -155,6 +157,8 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 **Дополнительная информация**
 
 Этот параметр может давать разные результаты в зависимости от используемых настроек.
+
+При `parallel_replicas_mode` `sampling_key` или в режиме пользовательского ключа на кластере, где больше одного сегмента, каждая реплика возвращает свою часть результата сегмента. Реплики сегмента используются совместно, только если initiator сам агрегирует или полностью сортирует эти части (например, при aggregation без ключей `GROUP BY`). В остальных случаях, например для `GROUP BY` с `distributed_aggregation_memory_efficient` или для `ORDER BY`, сегмент читается с одной реплики.
 
 ### Параллельная обработка с использованием ключа `SAMPLE` {#parallel-processing-using-sample-key}
 

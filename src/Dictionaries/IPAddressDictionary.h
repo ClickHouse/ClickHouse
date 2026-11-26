@@ -88,7 +88,7 @@ public:
 private:
 
     template <typename Value>
-    using ContainerType = VectorWithMemoryTracking<Value>;
+    using ContainerType = std::conditional_t<is_column_attribute_value<Value>, ColumnAttributeContainer<Value>, VectorWithMemoryTracking<Value>>;
 
     using IPAddress = Poco::Net::IPAddress;
 
@@ -169,9 +169,9 @@ private:
     void calculateBytesAllocated();
 
     template <typename T>
-    static void createAttributeImpl(Attribute & attribute, const Field & null_value);
+    static void createAttributeImpl(Attribute & attribute, const DictionaryAttribute & dictionary_attribute);
 
-    static Attribute createAttributeWithType(const AttributeUnderlyingType type, const Field & null_value); /// NOLINT
+    static Attribute createAttributeWithType(const DictionaryAttribute & dictionary_attribute);
 
     template <typename AttributeType, typename ValueSetter, typename DefaultValueExtractor>
     void getItemsByTwoKeyColumnsImpl(

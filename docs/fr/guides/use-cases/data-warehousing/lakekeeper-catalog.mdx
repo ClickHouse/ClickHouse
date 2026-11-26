@@ -9,9 +9,9 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { ExperimentalBadge } from "/snippets/fr/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import { BetaBadge } from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
 
-<ExperimentalBadge />
+<BetaBadge />
 
 <Note>
   L’intégration avec le catalogue Lakekeeper fonctionne uniquement avec les tables Iceberg.
@@ -20,33 +20,29 @@ import { ExperimentalBadge } from "/snippets/fr/components/ExperimentalBadge/Exp
 
 ClickHouse prend en charge l’intégration avec plusieurs catalogues (Unity, Glue, REST, Polaris, etc.). Ce guide vous explique les étapes à suivre pour interroger vos données à l’aide de ClickHouse et du catalogue [Lakekeeper](https://docs.lakekeeper.io/).
 
-Lakekeeper est une implémentation open source de REST catalog pour Apache Iceberg qui fournit :
+Lakekeeper est une implémentation open source de REST catalog pour Apache Iceberg qui fournit :
 
 * une implémentation **native en Rust** offrant de hautes performances et une grande fiabilité
 * la conformité de l’**API REST** avec la spécification REST catalog d’Iceberg
 * l’intégration au **stockage cloud** avec un stockage compatible S3
 
 <Note>
-  Cette fonctionnalité étant expérimentale, vous devrez l’activer avec :
-  `SET allow_experimental_database_iceberg = 1;`
+  Cette fonctionnalité est en bêta. Activez-la avec :
+  `SET allow_database_iceberg = 1;`
+
+  Pour les versions antérieures à 25.8, où la fonctionnalité est expérimentale, utilisez plutôt `SET allow_experimental_database_iceberg = 1;`.
 </Note>
 
-<div id="local-development-setup">
-  ## Configuration de développement en local
-</div>
+## Configuration de développement en local {#local-development-setup}
 
 Pour le développement et les tests en local, vous pouvez utiliser une configuration Lakekeeper conteneurisée. Cette approche est idéale pour l’apprentissage, le prototypage et les environnements de développement.
 
-<div id="local-prerequisites">
-  ### Prérequis
-</div>
+### Prérequis {#local-prerequisites}
 
 1. **Docker et Docker Compose** : Assurez-vous que Docker est installé et en cours d’exécution
 2. **Configuration d’exemple** : Vous pouvez utiliser la configuration Docker Compose de Lakekeeper
 
-<div id="setting-up-local-lakekeeper-catalog">
-  ### Configuration d’un catalogue Lakekeeper local
-</div>
+### Configuration d’un catalogue Lakekeeper local {#setting-up-local-lakekeeper-catalog}
 
 Vous pouvez utiliser la [configuration docker-compose officielle de Lakekeeper](https://github.com/lakekeeper/lakekeeper/tree/main/examples/minimal), qui fournit un environnement complet avec Lakekeeper, un backend PostgreSQL pour les métadonnées et MinIO pour le stockage objet.
 
@@ -234,29 +230,25 @@ docker-compose logs -f
   La configuration de Lakekeeper nécessite que les données d’exemple soient d’abord chargées dans les tables Iceberg. Assurez-vous que l’environnement a bien créé et alimenté les tables avant d’essayer de les interroger via ClickHouse. La disponibilité des tables dépend de la configuration `docker-compose` utilisée ainsi que des scripts de chargement des données d’exemple.
 </Note>
 
-<div id="connecting-to-local-lakekeeper-catalog">
-  ### Se connecter au catalogue Lakekeeper local
-</div>
+### Se connecter au catalogue Lakekeeper local {#connecting-to-local-lakekeeper-catalog}
 
-Connectez-vous à votre conteneur ClickHouse :
+Connectez-vous à votre conteneur ClickHouse :
 
 ```bash
 docker exec -it lakekeeper-clickhouse clickhouse-client
 ```
 
-Créez ensuite la connexion de base de données au catalogue Lakekeeper :
+Créez ensuite la connexion de base de données au catalogue Lakekeeper :
 
 ```sql
-SET allow_experimental_database_iceberg = 1;
+SET allow_database_iceberg = 1;
 
 CREATE DATABASE demo
 ENGINE = DataLakeCatalog('http://lakekeeper:8181/catalog', 'minio', 'ClickHouse_Minio_P@ssw0rd')
 SETTINGS catalog_type = 'rest', storage_endpoint = 'http://minio:9002/warehouse-rest', warehouse = 'demo'
 ```
 
-<div id="querying-lakekeeper-catalog-tables-using-clickhouse">
-  ## Interroger les tables du catalogue Lakekeeper avec ClickHouse
-</div>
+## Interroger les tables du catalogue Lakekeeper avec ClickHouse {#querying-lakekeeper-catalog-tables-using-clickhouse}
 
 Maintenant que la connexion est établie, vous pouvez commencer à interroger le catalogue Lakekeeper. Par exemple :
 
@@ -340,9 +332,7 @@ SHOW CREATE TABLE `default.taxis`;
 └───────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-<div id="loading-data-from-your-data-lake-into-clickhouse">
-  ## Chargement des données de votre lac de données vers ClickHouse
-</div>
+## Chargement des données de votre lac de données vers ClickHouse {#loading-data-from-your-data-lake-into-clickhouse}
 
 Si vous devez charger des données depuis le catalogue Lakekeeper dans ClickHouse, commencez par créer une table ClickHouse locale :
 
