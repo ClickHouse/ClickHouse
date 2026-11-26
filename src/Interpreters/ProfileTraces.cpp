@@ -260,64 +260,58 @@ Block InternalProfileTracesQueue::getBlock()
 {
     /// Formatting samples must not add the delivery path to this subscription.
     ProfileTracesBlocker blocker;
-    /// A local sample does not store the query ID, but every row of the block repeats it,
-    /// so bound the expanded size of a batch, not only its row count.
+    /// A local sample stores neither the query ID nor the symbol names, but every row of the block
+    /// has them, so bound the expanded size of a batch, not only its row count. The size of a row
+    /// is known only after its symbolization, so the batch is closed by the first row that reaches
+    /// the bound, and it exceeds the bound by less than one row.
     static constexpr size_t max_block_bytes = 1024 * 1024;
+    static constexpr size_t max_block_rows = 1024;
     std::vector<Sample> batch;
-    {
-        std::lock_guard lock(mutex);
-        /// The transport has destroyed the previous block before requesting this one.
-        registry->release(std::exchange(materialized_bytes, 0));
-        const size_t metadata_rows = (pending_dropped != 0) + pending_incomplete;
-        size_t rows = std::min(samples.size(), size_t{1024} - metadata_rows);
-        batch.reserve(rows + metadata_rows);
-        size_t released_bytes = 0;
-        size_t expanded_bytes = 0;
-        while (batch.size() < rows)
-        {
-            const auto & sample = samples.front();
-            const size_t sample_bytes = sample.byteSize();
-            size_t row_bytes = sample_bytes;
-            if (!sample.symbolized)
-                row_bytes += host_name.size() + query_id.size();
-            if (!batch.empty() && expanded_bytes + row_bytes > max_block_bytes)
-                break;
-            expanded_bytes += row_bytes;
-            released_bytes += sample_bytes;
-            batch.emplace_back(std::move(samples.front()));
-            samples.pop_front();
-        }
-        buffered_bytes -= released_bytes;
-        registry->release(released_bytes);
-        if (pending_dropped)
-        {
-            Sample status;
-            status.trace_type = "Dropped";
-            status.size = std::exchange(pending_dropped, 0);
-            batch.emplace_back(std::move(status));
-        }
-        if (std::exchange(pending_incomplete, false))
-        {
-            Sample status;
-            status.trace_type = "Incomplete";
-            batch.emplace_back(std::move(status));
-        }
-    }
-
-    Block block = getSampleBlock();
-    if (batch.empty())
-        return block;
-
-    auto columns = block.cloneEmptyColumns();
+    size_t expanded_bytes = 0;
     /// Symbolization belongs to the consumer, so a client cannot stall the shared collector.
     /// Cache only this batch to bound memory independently of query duration.
     /// A local sample holds runtime addresses. Only an offset in the main executable is published,
     /// any other address becomes 0, so the stream does not disclose the address space layout.
     std::unordered_map<UInt64, std::pair<UInt64, String>> frame_cache;
-    for (auto & sample : batch)
     {
-        bool local = !sample.symbolized;
-        if (local)
+        std::lock_guard lock(mutex);
+        /// The transport has destroyed the previous block before requesting this one.
+        registry->release(std::exchange(materialized_bytes, 0));
+    }
+    while (true)
+    {
+        Sample sample;
+        size_t sample_bytes = 0;
+        {
+            std::lock_guard lock(mutex);
+            const size_t metadata_rows = (pending_dropped != 0) + pending_incomplete;
+            if (samples.empty() || batch.size() + metadata_rows >= max_block_rows || expanded_bytes >= max_block_bytes)
+            {
+                if (pending_dropped)
+                {
+                    Sample status;
+                    status.trace_type = "Dropped";
+                    status.size = std::exchange(pending_dropped, 0);
+                    batch.emplace_back(std::move(status));
+                }
+                if (std::exchange(pending_incomplete, false))
+                {
+                    Sample status;
+                    status.trace_type = "Incomplete";
+                    batch.emplace_back(std::move(status));
+                }
+                break;
+            }
+            sample = std::move(samples.front());
+            samples.pop_front();
+            /// The sample leaves the queue but stays reserved in the registry as a part of the batch.
+            sample_bytes = sample.byteSize();
+            buffered_bytes -= sample_bytes;
+            materialized_bytes += sample_bytes;
+        }
+
+        size_t row_bytes = sample_bytes;
+        if (!sample.symbolized)
         {
             sample.symbols.reserve(sample.trace.size());
             for (UInt64 & address : sample.trace)
@@ -337,8 +331,27 @@ Block InternalProfileTracesQueue::getBlock()
                 address = it->second.first;
                 sample.symbols.push_back(it->second.second);
             }
-        }
 
+            /// The symbol names and the repeated host name and query ID are allocated with memory
+            /// tracking blocked. Count them in the shared byte bound as soon as they exist, so deep
+            /// stacks with long demangled names cannot grow the batch past the bound unnoticed.
+            row_bytes = sample.byteSize() + host_name.size() + query_id.size();
+            std::lock_guard lock(mutex);
+            materialized_bytes += row_bytes - sample_bytes;
+            registry->forceReserve(row_bytes - sample_bytes);
+        }
+        expanded_bytes += row_bytes;
+        batch.emplace_back(std::move(sample));
+    }
+
+    Block block = getSampleBlock();
+    if (batch.empty())
+        return block;
+
+    auto columns = block.cloneEmptyColumns();
+    for (auto & sample : batch)
+    {
+        bool local = !sample.symbolized;
         columns[0]->insert(local ? host_name : sample.host_name);
         columns[1]->insert(local ? query_id : sample.query_id);
         columns[2]->insert(sample.trace_type);
@@ -358,13 +371,16 @@ Block InternalProfileTracesQueue::getBlock()
     }
     block = block.cloneWithColumns(std::move(columns));
 
-    /// The block, including the repeated query IDs and the symbols, is allocated with memory tracking
-    /// blocked and lives until the transport has written it. Keep it in the shared byte bound until then.
+    /// The block is allocated with memory tracking blocked and lives until the transport has written it.
+    /// It replaces the batch, so keep its actual size in the shared byte bound until then.
     {
         std::lock_guard lock(mutex);
-        chassert(materialized_bytes == 0);
-        materialized_bytes = block.allocatedBytes();
-        registry->forceReserve(materialized_bytes);
+        const size_t block_bytes = block.allocatedBytes();
+        if (block_bytes > materialized_bytes)
+            registry->forceReserve(block_bytes - materialized_bytes);
+        else
+            registry->release(materialized_bytes - block_bytes);
+        materialized_bytes = block_bytes;
     }
     return block;
 }
