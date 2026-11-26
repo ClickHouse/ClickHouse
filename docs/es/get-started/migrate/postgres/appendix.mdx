@@ -7,13 +7,13 @@ doc_type: 'reference'
 ---
 
 <div id="postgres-vs-clickhouse-equivalent-and-different-concepts">
-  ## Postgres vs ClickHouse: Conceptos equivalentes y diferentes
+  ## Postgres vs ClickHouse: Conceptos equivalentes y diferentes {#postgres-vs-clickhouse-equivalent-and-different-concepts}
 </div>
 
 Los usuarios que provienen de sistemas OLTP y están acostumbrados a las transacciones ACID deben tener en cuenta que ClickHouse hace concesiones deliberadas al no ofrecerlas por completo a cambio de rendimiento. La semántica de ClickHouse puede ofrecer sólidas garantías de durabilidad y un alto rendimiento de escritura si se entiende bien. A continuación, destacamos algunos conceptos clave con los que debería estar familiarizado antes de trabajar con ClickHouse si viene de Postgres.
 
 <div id="shards-vs-replicas">
-  ### Segmentos vs réplicas
+  ### Segmentos vs réplicas {#shards-vs-replicas}
 </div>
 
 El sharding y la replicación son dos estrategias que se utilizan para escalar más allá de una sola instancia de Postgres cuando el almacenamiento y/o la capacidad de cómputo se convierten en un cuello de botella para el rendimiento. El sharding en Postgres consiste en dividir una base de datos grande en partes más pequeñas y manejables repartidas entre varios nodos. Sin embargo, Postgres no admite sharding de forma nativa. En su lugar, puede lograrse mediante extensiones como [Citus](https://www.citusdata.com/), con las que Postgres pasa a ser una base de datos distribuida capaz de escalar horizontalmente. Este enfoque permite que Postgres maneje tasas de transacción más altas y conjuntos de datos más grandes al distribuir la carga entre varias máquinas. Los segmentos pueden basarse en filas o en esquemas para ofrecer flexibilidad según el tipo de carga de trabajo, como transaccional o analítica. El sharding puede introducir una complejidad considerable en la gestión de datos y la ejecución de consultas, ya que requiere coordinación entre varias máquinas y garantías de consistencia.
@@ -30,30 +30,24 @@ En resumen, una réplica es una copia de los datos que aporta redundancia y fiab
 
 > ClickHouse Cloud usa una única copia de los datos respaldada en S3 con varias réplicas de cómputo. Los datos están disponibles para cada nodo réplica, cada uno de los cuales tiene una caché local en SSD. Esto depende únicamente de la replicación de metadatos a través de ClickHouse Keeper.
 
-<div id="eventual-consistency">
-  ## Consistencia eventual
-</div>
+## Consistencia eventual {#eventual-consistency}
 
 ClickHouse usa ClickHouse Keeper (una implementación de ZooKeeper en C++; también puede usarse ZooKeeper) para gestionar su mecanismo interno de replicación, centrándose principalmente en el almacenamiento de metadatos y en garantizar la consistencia eventual. Keeper se utiliza para asignar números secuenciales únicos a cada inserción dentro de un entorno distribuido. Esto es fundamental para mantener el orden y la consistencia entre operaciones. Este marco también gestiona operaciones en segundo plano, como merges y mutations, asegurando que el trabajo correspondiente se distribuya y garantizando que se ejecuten en el mismo orden en todas las réplicas. Además de los metadatos, Keeper actúa como un centro de control integral para la replicación, incluido el seguimiento de las sumas de verificación de las partes de datos almacenadas, y funciona como un sistema distribuido de notificaciones entre réplicas.
 
 El proceso de replicación en ClickHouse (1) comienza cuando se insertan datos en cualquier réplica. Estos datos, en su formato de inserción sin procesar, se (2) escriben en disco junto con sus sumas de verificación. Una vez escritos, la réplica (3) intenta registrar esta nueva parte de datos en Keeper asignándole un número de bloque único y registrando los detalles de la nueva parte. Las demás réplicas, al (4) detectar nuevas entradas en el registro de replicación, (5) descargan la parte de datos correspondiente mediante un protocolo HTTP interno y la verifican con las sumas de verificación registradas en ZooKeeper. Este método garantiza que todas las réplicas acaben teniendo datos consistentes y actualizados, a pesar de las diferencias en la velocidad de procesamiento o de posibles retrasos. Además, el sistema puede gestionar múltiples operaciones de forma concurrente, lo que optimiza los procesos de gestión de datos y permite escalar el sistema y hacerlo más robusto frente a diferencias de hardware.
 
 <div className="ch-image-md">
-
-<Frame>
-
-![Consistencia eventual](/images/integrations/data-ingestion/dbms/postgres-replicas.webp)
-
-</Frame>
-
+  <Frame>
+    ![Consistencia eventual](/images/integrations/data-ingestion/dbms/postgres-replicas.webp)
+  </Frame>
 </div>
 
-Ten en cuenta que ClickHouse Cloud utiliza un [mecanismo de replicación optimizado para Cloud](https://clickhouse.com/blog/clickhouse-cloud-boosts-performance-with-sharedmergetree-and-lightweight-updates) adaptado a su arquitectura de separación entre almacenamiento y compute. Al almacenar los datos en object storage compartido, estos quedan disponibles automáticamente para todos los nodos de compute sin necesidad de replicarlos físicamente entre nodos. En su lugar, Keeper se usa únicamente para compartir metadatos (qué datos existen y dónde están en el object storage) entre los nodos de compute.
+Ten en cuenta que ClickHouse Cloud utiliza un [mecanismo de replicación optimizado para Cloud](https://clickhouse.com/blog/clickhouse-cloud-boosts-performance-with-sharedmergetree-and-lightweight-updates) adaptado a su arquitectura de separación entre almacenamiento y capacidad de cómputo. Al almacenar los datos en object storage compartido, estos quedan disponibles automáticamente para todos los nodos de capacidad de cómputo sin necesidad de replicarlos físicamente entre nodos. En su lugar, Keeper se usa únicamente para compartir metadatos (qué datos existen y dónde están en el object storage) entre los nodos de capacidad de cómputo.
 
 PostgreSQL emplea una estrategia de replicación diferente a la de ClickHouse, basada principalmente en replicación en streaming, que implica un modelo primario-réplica en el que los datos se transmiten continuamente desde el primario a uno o más nodos réplica. Este tipo de replicación garantiza una consistencia casi en tiempo real y puede ser síncrona o asíncrona, lo que da a los administradores control sobre el equilibrio entre disponibilidad y consistencia. A diferencia de ClickHouse, PostgreSQL se basa en WAL (Write-Ahead Logging), junto con replicación lógica y decodificación, para transmitir objetos de datos y cambios entre nodos. Este enfoque en PostgreSQL es más sencillo, pero puede que no ofrezca el mismo nivel de escalabilidad y tolerancia a fallos en entornos muy distribuidos que ClickHouse logra mediante su uso más complejo de Keeper para coordinar operaciones distribuidas y mantener la consistencia eventual.
 
 <div id="user-implications">
-  ## Implicaciones para el usuario
+  ## Implicaciones para el usuario {#user-implications}
 </div>
 
 En ClickHouse, la posibilidad de lecturas sucias —es decir, escribir datos en una réplica y luego leer datos posiblemente aún no replicados desde otra— se deriva de su modelo de replicación con consistencia eventual, gestionado mediante Keeper. Este modelo prioriza el rendimiento y la escalabilidad en sistemas distribuidos, lo que permite que las réplicas funcionen de forma independiente y se sincronicen de manera asíncrona. Como resultado, es posible que los datos recién insertados no sean visibles de inmediato en todas las réplicas, en función del retraso de replicación y del tiempo que tarden los cambios en propagarse por el sistema.
@@ -61,7 +55,7 @@ En ClickHouse, la posibilidad de lecturas sucias —es decir, escribir datos en 
 Por el contrario, el modelo de replicación en streaming de PostgreSQL normalmente puede evitar las lecturas sucias mediante opciones de replicación síncrona, en las que el primario espera a que al menos una réplica confirme la recepción de los datos antes de confirmar las transacciones. Esto garantiza que, una vez confirmada una transacción, los datos estén disponibles en otra réplica. En caso de fallo del primario, la réplica garantizará que las consultas vean los datos confirmados, manteniendo así un nivel de consistencia más estricto.
 
 <div id="recommendations">
-  ## Recomendaciones
+  ## Recomendaciones {#recommendations}
 </div>
 
 Los usuarios que se inician en ClickHouse deben tener en cuenta estas diferencias, que se harán patentes en entornos con replicación. Por lo general, la consistencia eventual es suficiente para análisis sobre miles de millones, si no billones, de puntos de datos, donde las métricas suelen ser más estables o una estimación resulta suficiente, ya que se insertan continuamente nuevos datos a gran velocidad.
@@ -69,7 +63,7 @@ Los usuarios que se inician en ClickHouse deben tener en cuenta estas diferencia
 Existen varias opciones para aumentar la consistencia de las lecturas si fuera necesario. Ambos ejemplos implican una mayor complejidad o sobrecarga, lo que reduce el rendimiento de las consultas y dificulta la escalabilidad de ClickHouse. **Recomendamos estos enfoques solo si son absolutamente necesarios.**
 
 <div id="consistent-routing">
-  ## Enrutamiento coherente
+  ## Enrutamiento coherente {#consistent-routing}
 </div>
 
 Para superar algunas de las limitaciones de la consistencia eventual, puede asegurarse de que los clientes se dirijan siempre a las mismas réplicas. Esto resulta útil cuando varios usuarios consultan ClickHouse y los resultados deben ser deterministas entre solicitudes. Aunque los resultados pueden variar a medida que se insertan nuevos datos, consultar siempre las mismas réplicas garantiza una vista coherente.
@@ -77,7 +71,7 @@ Para superar algunas de las limitaciones de la consistencia eventual, puede aseg
 Esto puede lograrse de varias maneras, según su arquitectura y si utiliza ClickHouse OSS o ClickHouse Cloud.
 
 <div id="clickhouse-cloud">
-  ## ClickHouse Cloud
+  ## ClickHouse Cloud {#clickhouse-cloud}
 </div>
 
 ClickHouse Cloud utiliza una única copia de los datos respaldada en S3 con múltiples réplicas de cómputo. Los datos están disponibles para cada nodo réplica, que cuenta con una caché SSD local. Por tanto, para garantizar resultados coherentes, los usuarios solo deben asegurarse de que el enrutamiento se mantenga siempre hacia el mismo nodo.
@@ -89,7 +83,7 @@ Para garantizar un enrutamiento coherente entre conexiones, por ejemplo, si util
 > Contacte con soporte para obtener acceso a sticky endpoints.
 
 <div id="clickhouse-oss">
-  ## ClickHouse OSS
+  ## ClickHouse OSS {#clickhouse-oss}
 </div>
 
 Lograr este comportamiento en OSS depende de la topología de tus segmentos y réplicas, y de si estás usando una [tabla distribuida](/es/reference/engines/table-engines/special/distributed) para ejecutar consultas.
@@ -103,7 +97,7 @@ En este caso, debes asegurarte de que el enrutamiento coherente de nodos se real
 > Al crear una tabla distribuida, especificarás un cluster. Esta definición del cluster, especificada en config.xml, enumerará los segmentos (y sus réplicas), lo que permite a los usuarios controlar el orden en que se usan desde cada nodo. Con ello, puedes asegurarte de que la selección sea determinista.
 
 <div id="sequential-consistency">
-  ## Consistencia secuencial
+  ## Consistencia secuencial {#sequential-consistency}
 </div>
 
 En casos excepcionales, puede que necesites consistencia secuencial.
@@ -125,7 +119,7 @@ Consulta [aquí](/es/products/cloud/features/infrastructure/shared-merge-tree#co
 > puede haber inserciones y lecturas más lentas. SharedMergeTree, que se usa en ClickHouse Cloud como principal motor de tablas, hace que la consistencia secuencial [genere menos sobrecarga y escale mejor](/es/products/cloud/features/infrastructure/shared-merge-tree#consistency). En OSS, debes usar este enfoque con precaución y medir la carga de Keeper.
 
 <div id="transactional-acid-support">
-  ## Compatibilidad transaccional (ACID)
+  ## Compatibilidad transaccional (ACID) {#transactional-acid-support}
 </div>
 
 Los usuarios que migran desde PostgreSQL pueden estar acostumbrados a su sólido soporte de las propiedades ACID (Atomicity, Consistency, Isolation, Durability), lo que lo convierte en una opción fiable para las bases de datos transaccionales. La atomicidad en PostgreSQL garantiza que cada transacción se trate como una única unidad, que o bien se completa por completo o se revierte íntegramente, evitando actualizaciones parciales. La consistencia se mantiene mediante la aplicación de restricciones, triggers y reglas que garantizan que todas las transacciones de la base de datos den lugar a un estado válido. PostgreSQL admite niveles de aislamiento, desde Read Committed hasta Serializable, lo que permite un control preciso sobre la visibilidad de los cambios realizados por transacciones concurrentes. Por último, la durabilidad se logra mediante write-ahead logging (WAL), lo que garantiza que, una vez confirmada una transacción, siga siéndolo incluso en caso de fallo del sistema.
@@ -137,7 +131,7 @@ Aunque es potente, esto conlleva limitaciones inherentes y hace que escalar a ni
 ClickHouse ofrece propiedades ACID en [configuraciones limitadas](/es/concepts/features/operations/insert/transactions), de la forma más sencilla al utilizar una instancia no replicada del motor de tablas MergeTree con una partición. No debe esperar estas propiedades fuera de estos casos y debe asegurarse de que no sean un requisito.
 
 <div id="compression">
-  ## Compresión
+  ## Compresión {#compression}
 </div>
 
 El almacenamiento orientado a columnas de ClickHouse hace que la compresión suela ser significativamente mejor que en Postgres. Esto se aprecia al comparar los requisitos de almacenamiento de todas las tablas de Stack Overflow en ambas bases de datos:
@@ -177,9 +171,7 @@ GROUP BY `table`
 
 Puede encontrar más detalles sobre cómo optimizar y medir la compresión [aquí](/es/guides/clickhouse/data-modelling/compression/compression-in-clickhouse).
 
-<div id="data-type-mappings">
-  ## Correspondencia de tipos de datos
-</div>
+## Correspondencia de tipos de datos {#data-type-mappings}
 
 La siguiente tabla muestra los tipos de datos de ClickHouse equivalentes para Postgres.
 

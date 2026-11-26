@@ -19,5 +19,6 @@ struct WindowBounds
 };
 
 void clearBounds(WindowBounds & bounds);
+Int64 findNextFrameChange(const WindowBounds & bounds, Int64 from, bool account_start, bool account_end);
 
 }

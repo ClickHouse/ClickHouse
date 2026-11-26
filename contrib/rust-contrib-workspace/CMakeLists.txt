@@ -37,7 +37,9 @@ endif()
 # ___asan_globals_registered) that the partial link + strip process breaks.
 # Skip on Darwin where objects are Mach-O (ld.lld -r only handles ELF).
 # Skip on ppc64le where ld.lld -r produces broken .eh_frame relocations.
-if (NOT CMAKE_AR MATCHES "dummy_compiler_linker" AND NOT SANITIZE AND NOT OS_DARWIN
+# Skip with ENABLE_CFI, where the library is LLVM bitcode: the partial link would run LTO and lower the CFI checks of
+# these objects on their own, apart from the rest of the program.
+if (NOT CMAKE_AR MATCHES "dummy_compiler_linker" AND NOT SANITIZE AND NOT ENABLE_CFI AND NOT OS_DARWIN
     AND NOT CMAKE_SYSTEM_PROCESSOR STREQUAL "ppc64le")
     # Use ld.lld for partial linking — it's a cross-linker that handles all ELF architectures,
     # unlike the host ld which may not support the target architecture.
