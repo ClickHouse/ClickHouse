@@ -847,20 +847,27 @@ void AsynchronousMetrics::ProcStatValuesCPU::read(ReadBuffer & in)
     skipToNextLineOrEOF(in);
 }
 
+/// The CPU time counters of `/proc/stat` are not strictly monotonic: the kernel documents that `iowait` can decrease,
+/// and `steal` and `guest` do so on some hypervisors. A counter that went back gives a zero delta instead of a wrapped one.
+static uint64_t cpuTimeDelta(uint64_t current, uint64_t previous)
+{
+    return current >= previous ? current - previous : 0;
+}
+
 AsynchronousMetrics::ProcStatValuesCPU
 AsynchronousMetrics::ProcStatValuesCPU::operator-(const AsynchronousMetrics::ProcStatValuesCPU & other) const
 {
     ProcStatValuesCPU res{};
-    res.user = user - other.user;
-    res.nice = nice - other.nice;
-    res.system = system - other.system;
-    res.idle = idle - other.idle;
-    res.iowait = iowait - other.iowait;
-    res.irq = irq - other.irq;
-    res.softirq = softirq - other.softirq;
-    res.steal = steal - other.steal;
-    res.guest = guest - other.guest;
-    res.guest_nice = guest_nice - other.guest_nice;
+    res.user = cpuTimeDelta(user, other.user);
+    res.nice = cpuTimeDelta(nice, other.nice);
+    res.system = cpuTimeDelta(system, other.system);
+    res.idle = cpuTimeDelta(idle, other.idle);
+    res.iowait = cpuTimeDelta(iowait, other.iowait);
+    res.irq = cpuTimeDelta(irq, other.irq);
+    res.softirq = cpuTimeDelta(softirq, other.softirq);
+    res.steal = cpuTimeDelta(steal, other.steal);
+    res.guest = cpuTimeDelta(guest, other.guest);
+    res.guest_nice = cpuTimeDelta(guest_nice, other.guest_nice);
     return res;
 }
 
