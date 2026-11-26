@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <cstdlib>
 #include <stdexcept>
+#include <unordered_map>
 #include <unordered_set>
 #include <chrono>
 #include <cerrno>
@@ -33,6 +34,7 @@
 #include <fmt/format.h>
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
+#include <Common/UTF8Helpers.h>
 
 namespace
 {
@@ -319,6 +321,103 @@ void convertHistoryFile(const std::string & path, replxx::Replxx & rx)
         out << "### " << timestamp << "\n" << out_line << std::endl;
     }
     out.close();
+}
+
+/// The escape sequences (without the ESC) that replxx decodes to keys when it reads them from the terminal (see its
+/// `escape.cxx`), except the bracketed paste markers.
+const std::unordered_map<std::string, char32_t> & escapeSequenceKeys()
+{
+    using Key = replxx::Replxx::KEY;
+    /// `modifiers`: the modifier parameters that replxx accepts in `[n;m~`.
+    struct Code
+    {
+        std::string_view code;
+        char32_t key;
+        std::string_view modifiers = {};
+    };
+    static const auto keys = []
+    {
+        std::unordered_map<std::string, char32_t> res{{"[Z", Key::BASE_SHIFT | Key::TAB}};
+        const Code modifiers[] = {{"2", Key::BASE_SHIFT}, {"3", Key::BASE_META}, {"5", Key::BASE_CONTROL}};
+        const Code letters[] = {
+            {"A", Key::UP}, {"B", Key::DOWN}, {"C", Key::RIGHT}, {"D", Key::LEFT}, {"H", Key::HOME},
+            {"F", Key::END}, {"P", Key::F1}, {"Q", Key::F2}, {"R", Key::F3}, {"S", Key::F4}};
+        for (const auto & letter : letters)
+        {
+            res[fmt::format("O{}", letter.code)] = letter.key;
+            if (letter.code < "P")
+                res[fmt::format("[{}", letter.code)] = letter.key;
+            for (const auto & modifier : modifiers)
+                res[fmt::format("[1;{}{}", modifier.code, letter.code)] = modifier.key | letter.key;
+        }
+        for (size_t i = 0; i < 4; ++i)
+            res[fmt::format("O{}", static_cast<char>('a' + i))] = Key::BASE_CONTROL | letters[i].key;
+        const Code numbers[] = {
+            {"1", Key::HOME}, {"2", Key::INSERT}, {"3", Key::DELETE}, {"4", Key::END},
+            {"5", Key::PAGE_UP, "5"}, {"6", Key::PAGE_DOWN, "5"}, {"7", Key::HOME}, {"8", Key::END},
+            {"15", Key::F5, "25"}, {"17", Key::F6, "25"}, {"18", Key::F7, "25"}, {"19", Key::F8, "25"},
+            {"20", Key::F9, "25"}, {"21", Key::F10, "25"}, {"23", Key::F11, "25"}, {"24", Key::F12, "25"}};
+        for (const auto & number : numbers)
+        {
+            res[fmt::format("[{}~", number.code)] = number.key;
+            for (const auto & modifier : modifiers)
+                if (number.modifiers.contains(modifier.code))
+                    res[fmt::format("[{};{}~", number.code, modifier.code)] = modifier.key | number.key;
+        }
+        return res;
+    }();
+    return keys;
+}
+
+/// Decodes the key at `pos` of the input typed into the terminal, like replxx decodes the keys that it reads (see its
+/// `Terminal::read_char`), and moves `pos` past it. Returns 0 for input that replxx does not decode to a key.
+char32_t decodeKey(std::string_view input, size_t & pos, bool vim)
+{
+    using Key = replxx::Replxx::KEY;
+    char32_t meta = 0;
+    if (input[pos] == '\x1B')
+    {
+        ++pos;
+        /// In the vim mode replxx tells the ESC key from the start of a sequence by the delay after it, which the
+        /// typed input does not keep. Take it for the key, unless a sequence follows.
+        if (vim && (pos == input.size() || (input[pos] != '[' && input[pos] != 'O')))
+            return Key::ESCAPE;
+        /// An ESC before a key, or before an escape sequence, is the meta modifier.
+        for (; pos < input.size() && input[pos] == '\x1B'; ++pos)
+            meta = Key::BASE_META;
+        if (pos == input.size())
+            return 0;
+        if (input[pos] == '[' || input[pos] == 'O')
+        {
+            /// A CSI sequence ends with its first byte that is not a parameter or an intermediate byte.
+            size_t end = pos + 1;
+            if (input[pos] == '[')
+                while (end < input.size() && input[end] >= 0x20 && input[end] <= 0x3F)
+                    ++end;
+            const auto & keys = escapeSequenceKeys();
+            const auto it = end < input.size() ? keys.find(std::string(input.substr(pos, end + 1 - pos))) : keys.end();
+            pos = std::min(end + 1, input.size());
+            if (it == keys.end())
+                return 0;
+            /// replxx does not add the meta modifier to Shift+Tab.
+            return it->second == (Key::BASE_SHIFT | Key::TAB) ? it->second : meta | it->second;
+        }
+        meta = Key::BASE_META;
+    }
+    if (input[pos] == '\x7F')
+    {
+        ++pos;
+        return meta | Key::BACKSPACE;
+    }
+    const size_t length = std::min(DB::UTF8::seqLength(static_cast<UInt8>(input[pos])), input.size() - pos);
+    const auto code_point = DB::UTF8::convertUTF8ToCodePoint(input.data() + pos, length);
+    pos += length;
+    if (!code_point)
+        return 0;
+    /// replxx maps the control characters to Ctrl and a letter (or a digit).
+    if (!meta && (*code_point < 0x20 || (*code_point >= 0x7F && *code_point <= 0x9F)))
+        return Key::control(*code_point < 27 ? *code_point + 0x40 : *code_point + 0x18);
+    return meta | *code_point;
 }
 
 }
@@ -646,6 +745,10 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
     /// bind C-j to ENTER action.
     rx.bind_key(Replxx::KEY::control('J'), commit_action);
     rx.bind_key(Replxx::KEY::ENTER, commit_action);
+    /// A newline inside of the input that `addTypedInput` replays: it must stay in the edit buffer. `commit_action`
+    /// tells a pasted newline from a typed one by the bytes that are still queued in the TTY, and replayed bytes
+    /// have already been read from it.
+    rx.bind_key(Replxx::KEY::meta('J'), [this](char32_t code) { return rx.invoke(Replxx::ACTION::NEW_LINE, code); });
 
     /// By default COMPLETE_NEXT/COMPLETE_PREV was bound to C-p/C-n, re-bind
     /// to M-P/M-N (that was used for HISTORY_COMMON_PREFIX_SEARCH before, but
@@ -730,6 +833,7 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
     {
         rx.bind_key(Replxx::KEY::meta('E'), [this](char32_t) { openEditor(/*format_query=*/ false); return Replxx::ACTION_RESULT::CONTINUE; });
         rx.bind_key(Replxx::KEY::meta('F'), [this](char32_t) { openEditor(/*format_query=*/ true); return Replxx::ACTION_RESULT::CONTINUE; });
+        keys_reading_terminal.insert({Replxx::KEY::meta('E'), Replxx::KEY::meta('F')});
     }
 
     /// readline insert-comment
@@ -821,6 +925,7 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
         };
 
         bind_non_editing_key(Replxx::KEY::control(key_fuzzy), interactive_history_search);
+        keys_reading_terminal.insert(Replxx::KEY::control(key_fuzzy));
     }
 
     /// Rebind regular incremental search.
@@ -1070,6 +1175,44 @@ void ReplxxLineReader::setInitialText(const String & text)
         suppress_hints_once = true;
         suppress_hints_for_text = text;
     }
+}
+
+void ReplxxLineReader::addTypedInput(const String & bytes)
+{
+    using Key = replxx::Replxx::KEY;
+    std::vector<char32_t> keys;
+    /// Whether the keys edit the statement exactly as the typed input would in the line reader.
+    bool exact = true;
+    for (size_t i = 0; i < bytes.size();)
+    {
+        const char c = bytes[i];
+        if ((c == '\n' || c == '\r')
+            && std::any_of(bytes.begin() + i + 1, bytes.end(), [](char next) { return next != '\n' && next != '\r'; }))
+        {
+            /// More input follows the newline, so it is a line of a pasted (or typed ahead) multi-line statement, not
+            /// the end of the input: keep it in the edit buffer, and commit at the last newline.
+            keys.push_back(Key::meta('J'));
+            /// A CRLF is one newline.
+            if (c == '\r' && bytes[i + 1] == '\n')
+                ++i;
+            ++i;
+            continue;
+        }
+        /// The vim mode tells an ESC key from a sequence by its timing, which is lost (see `decodeKey`).
+        if (vim && c == '\x1B')
+            exact = false;
+        const char32_t key = decodeKey(bytes, i, vim);
+        if (!key || keys_reading_terminal.contains(key))
+            exact = false;
+        else
+            keys.push_back(key);
+    }
+    /// Without the exact edits, the statement may differ from the typed one: leave it to the user instead of running it.
+    if (!exact)
+        while (!keys.empty() && (keys.back() == Key::ENTER || keys.back() == Key::control('J')))
+            keys.pop_back();
+    for (const auto key : keys)
+        rx.emulate_key_press(key);
 }
 
 }

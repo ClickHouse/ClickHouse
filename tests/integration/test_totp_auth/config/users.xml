@@ -49,6 +49,33 @@
                 <algorithm>SHA256</algorithm>
             </time_based_one_time_password>
         </totuser_interactive_2>
+        <totuser_background_0>
+            <password>aa+bb</password>
+            <time_based_one_time_password>
+                <secret>AL4V2===</secret>
+                <period>60</period>
+                <digits>9</digits>
+                <algorithm>SHA256</algorithm>
+            </time_based_one_time_password>
+        </totuser_background_0>
+        <totuser_background_1>
+            <password>aa+bb</password>
+            <time_based_one_time_password>
+                <secret>XODSLCLKMZD44NXE</secret>
+                <period>60</period>
+                <digits>9</digits>
+                <algorithm>SHA256</algorithm>
+            </time_based_one_time_password>
+        </totuser_background_1>
+        <totuser_background_2>
+            <password>aa+bb</password>
+            <time_based_one_time_password>
+                <secret>5EU6KPEL7TILTB3R</secret>
+                <period>60</period>
+                <digits>9</digits>
+                <algorithm>SHA256</algorithm>
+            </time_based_one_time_password>
+        </totuser_background_2>
 
         <totuser_no_password_0>
             <no_password></no_password>

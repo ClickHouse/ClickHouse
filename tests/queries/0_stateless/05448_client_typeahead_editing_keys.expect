@@ -1,0 +1,68 @@
+#!/usr/bin/expect -f
+
+# Keys typed while a query runs are replayed at the next prompt with the edits they make in the line reader: the
+# Enter after Delete must not run the statement as it was before the Delete. A key the line reader does not decode
+# leaves the statement in the prompt, so it runs only on the next Enter.
+
+set basedir [file dirname $argv0]
+set basename [file tail $argv0]
+if {[info exists env(CLICKHOUSE_TMP)]} {
+    set CLICKHOUSE_TMP $env(CLICKHOUSE_TMP)
+} else {
+    set CLICKHOUSE_TMP "."
+}
+exp_internal -f $CLICKHOUSE_TMP/$basename.debuglog 0
+
+log_user 0
+set timeout 60
+match_max -d 100000
+expect_after {
+    -i $any_spawn_id eof     { exp_continue }
+    -i $any_spawn_id timeout { exit 1 }
+}
+
+proc submit {text} {
+    send -- $text
+    expect -ex $text
+    send -- "\r"
+}
+
+# Waits for the line break of the Enter, so the next keys are typed into the running query.
+proc run_slow_query {} {
+    submit {SELECT sleep(2) FORMAT Null}
+    expect -ex "\r\n"
+    sleep 0.5
+}
+
+set history_file $CLICKHOUSE_TMP/$basename.history
+spawn bash -c {
+    source "$1/../shell_config.sh"
+    ${CLICKHOUSE_CLIENT_BINARY} ${CLICKHOUSE_CLIENT_EXPECT_OPT} --history_file="$2"
+} bash $basedir $history_file
+expect ":) "
+
+# Left, Left and Delete (`ESC [ 3 ~`) turn `1000 + 12` into `1000 + 1`.
+run_slow_query
+send -- "SELECT 1000 + 12;\033\[D\033\[D\033\[3~\r"
+expect {
+    -ex "1012" { exit 1 }
+    -ex "1001" { }
+}
+expect ":) "
+
+# Ctrl+Delete (`ESC [ 3 ; 5 ~`) is not a key of the line reader: the statement waits in the prompt for an Enter.
+run_slow_query
+send -- "SELECT 2000 + 34;\033\[D\033\[D\033\[3;5~\r"
+expect ":) "
+expect -ex "SELECT 2000 + 34;"
+expect {
+    -timeout 3
+    -ex "2034" { exit 1 }
+    timeout { }
+}
+send -- "\r"
+expect -ex "2034"
+expect ":) "
+
+send -- "\4"
+expect eof

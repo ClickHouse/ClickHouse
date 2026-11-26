@@ -1,0 +1,123 @@
+#!/usr/bin/expect -f
+# Tags: no-fasttest, no-openssl-fips
+# no-openssl-fips: authenticates with an ssh-ed25519 key, which is not FIPS-approved and is rejected on FIPS builds.
+
+# A background job authenticates on a thread of its own. When the ssh-agent refuses to sign (here: the key was added
+# with `ssh-add -c` and there is nobody to confirm), the client falls back to the key file, which is encrypted.
+# The main thread asks for the passphrase at login, but a background job must not read the terminal of the prompt:
+# it has to fail with an explicit error and leave the prompt alone.
+
+set basedir [file dirname $argv0]
+set basename [file tail $argv0]
+if {[info exists env(CLICKHOUSE_TMP)]} {
+    set CLICKHOUSE_TMP $env(CLICKHOUSE_TMP)
+} else {
+    set CLICKHOUSE_TMP "."
+}
+exp_internal -f $CLICKHOUSE_TMP/$basename.debuglog 0
+
+log_user 0
+set timeout 60
+match_max -d 100000
+expect_after {
+    -i $any_spawn_id eof     { exp_continue }
+    -i $any_spawn_id timeout { exit 1 }
+}
+
+set history_file $CLICKHOUSE_TMP/$basename.history
+set work_dir $CLICKHOUSE_TMP/$basename.dir
+set passphrase "correct-horse-05398"
+
+# The paths come from the arguments of the test runner and may contain anything, so they are never put into the
+# text of a shell script: files are handled here, and the scripts get the paths as arguments and quote them.
+
+file delete -force -- $work_dir
+file mkdir $work_dir/.ssh
+file attributes $work_dir/.ssh -permissions 0700
+# `2>@1`: whatever the tools write to stderr is not an error for `exec`, a non-zero exit status still is.
+exec ssh-keygen -q -t ed25519 -N $passphrase -C key-05398 -f $work_dir/.ssh/id_ed25519 2>@1
+
+# The user that accepts the key, and an ssh-agent that holds the key but cannot ask for the confirmation.
+exec bash -c {
+    source "$1/../shell_config.sh"
+    work_dir="$2"
+    passphrase="$3"
+    USER_NAME="ssh_user_${CLICKHOUSE_TEST_UNIQUE_NAME}"
+    ${CLICKHOUSE_CLIENT} --query "DROP USER IF EXISTS ${USER_NAME}"
+    ${CLICKHOUSE_CLIENT} --query "CREATE USER ${USER_NAME} IDENTIFIED WITH ssh_key BY KEY '$(awk '{print $2}' "$work_dir/.ssh/id_ed25519.pub")' TYPE 'ssh-ed25519'"
+    echo "${USER_NAME}" > "$work_dir/user"
+    env -u SSH_ASKPASS -u DISPLAY ssh-agent -s > "$work_dir/agent.env"
+    . "$work_dir/agent.env" > /dev/null
+    printf '#!/bin/sh\necho %s\n' "$passphrase" > "$work_dir/askpass"
+    chmod +x "$work_dir/askpass"
+    SSH_ASKPASS="$work_dir/askpass" SSH_ASKPASS_REQUIRE=force ssh-add -q -c "$work_dir/.ssh/id_ed25519" < /dev/null
+} bash $basedir $work_dir $passphrase 2>@1
+
+proc cleanup {basedir work_dir} {
+    catch {
+        exec bash -c {
+            source "$1/../shell_config.sh"
+            . "$2/agent.env" > /dev/null
+            ssh-agent -k > /dev/null 2>&1
+            ${CLICKHOUSE_CLIENT} --query "DROP USER IF EXISTS $(cat "$2/user")"
+        } bash $basedir $work_dir
+    }
+    file delete -force -- $work_dir
+}
+
+proc submit {text} {
+    send -- $text
+    expect -ex $text
+    send -- "\r"
+}
+
+# Replay a job only after it is over: `\fg` of a job that still runs returns at once and leaves its output spooled.
+proc wait_for_job {job_id} {
+    set waiting_re [format {(?i)\[%s\][^\r\n]*(starting|running)} $job_id]
+    set terminal_re [format {(?i)\[%s\][^\r\n]*(succeeded|completed|failed|cancel+ed)} $job_id]
+    for {set attempt 0} {$attempt < 200} {incr attempt} {
+        submit {\jobs}
+        expect {
+            -re $terminal_re {
+                expect ":) "
+                return
+            }
+            -re $waiting_re {
+                expect ":) "
+                after 100
+            }
+        }
+    }
+    exit 1
+}
+
+spawn bash -c {
+    source "$1/../shell_config.sh"
+    . "$2/agent.env" > /dev/null
+    HOME="$2" ${CLICKHOUSE_CLIENT_BINARY} ${CLICKHOUSE_CLIENT_EXPECT_OPT} --user "$(cat "$2/user")" --ssh-key-file "$2/.ssh/id_ed25519" --history_file="$3"
+} bash $basedir $work_dir $history_file
+
+# The agent refuses, so the main thread falls back to the key file and asks for its passphrase.
+expect -re {Enter the passphrase for the SSH key}
+send -- "$passphrase\r"
+expect ":) "
+
+# The background job has to ask for the same passphrase, and must not do it on the terminal of the prompt.
+submit {\bg SELECT 1}
+expect -ex {Background job 1 started}
+expect ":) "
+wait_for_job 1
+
+# The job failed with an explicit error.
+submit {\fg 1}
+expect -re {(?i)cannot ask for it}
+expect ":) "
+
+# The prompt still gets its input: nothing of what is typed here was taken by the job.
+submit {SELECT 'prompt-alive-05398'}
+expect -ex {prompt-alive-05398}
+expect ":) "
+
+send -- "\4"
+expect eof
+cleanup $basedir $work_dir

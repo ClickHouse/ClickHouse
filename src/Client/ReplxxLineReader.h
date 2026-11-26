@@ -2,6 +2,7 @@
 
 #include <functional>
 #include <span>
+#include <unordered_set>
 
 #include <Client/LineReader.h>
 #include <base/strong_typedef.h>
@@ -57,6 +58,8 @@ public:
 
     /// Set text to be prepopulated in the next readLine call
     void setInitialText(const String & text) override;
+
+    void addTypedInput(const String & bytes) override;
 
 private:
     InputStatus readOneLine(const String & prompt) override;
@@ -146,6 +149,10 @@ private:
 
     std::string editor;
     bool overwrite_mode = false;
+
+    /// The keys whose actions read the terminal themselves (verbatim insert, the history picker, the editor):
+    /// `addTypedInput` cannot replay them, because the keys typed after them were meant for those actions.
+    std::unordered_set<char32_t> keys_reading_terminal{replxx::Replxx::KEY::control('V')};
 
     /// As-you-type hint state (input-thread only). `hints_visible` is whether a hint with
     /// something to complete is currently shown. `hint_count` is how many hints are shown and
