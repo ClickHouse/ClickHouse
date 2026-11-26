@@ -756,6 +756,53 @@ void checkRandomOperations(size_t num_operations, UInt64 max_key, bool with_eras
 
 using RobinHoodTestGrower = HashTableGrowerWithPrecalculationAndRobinHood<4, 23, 8>;
 
+template <typename Grower>
+void checkKeysBeforeResize()
+{
+    using Table = HashTableWithInvariantsCheck<HashSet<UInt64, DefaultHash<UInt64>, Grower>>;
+    Table table;
+    UInt64 next_key = 1;
+    auto insert_keys = [&](size_t count)
+    {
+        for (size_t i = 0; i < count; ++i)
+            table.insert(next_key++);
+    };
+
+    while (table.size() < 200000)
+    {
+        const size_t keys = table.keysBeforeResize();
+        EXPECT_EQ(table.estimateGrowthMemory(keys), 0);
+        const size_t cells = table.getBufferSizeInCells();
+        const bool robin_hood = table.isRobinHoodMode();
+        insert_keys(keys);
+        ASSERT_EQ(table.getBufferSizeInCells(), cells);
+        ASSERT_EQ(table.isRobinHoodMode(), robin_hood);
+        insert_keys(1);
+        ASSERT_TRUE(table.getBufferSizeInCells() != cells || table.isRobinHoodMode() != robin_hood);
+        ASSERT_LT(table.keysBeforeResize(), table.getBufferSizeInCells());
+    }
+    if constexpr (GrowerWithRobinHood<Grower>)
+        ASSERT_TRUE(table.isRobinHoodMode());
+
+    /// The zero key does not check the fill limit.
+    Table with_zero;
+    for (size_t keys = with_zero.keysBeforeResize(); keys; --keys)
+        with_zero.insert(next_key++);
+    const size_t cells = with_zero.getBufferSizeInCells();
+    with_zero.insert(0);
+    ASSERT_EQ(with_zero.getBufferSizeInCells(), cells);
+    ASSERT_EQ(with_zero.keysBeforeResize(), 0);
+    with_zero.insert(next_key++);
+    ASSERT_NE(with_zero.getBufferSizeInCells(), cells);
+}
+
+}
+
+TEST(HashTableGrowth, KeysBeforeResize)
+{
+    checkKeysBeforeResize<HashTableGrower<2>>();
+    checkKeysBeforeResize<HashTableGrowerWithPrecalculation<2>>();
+    checkKeysBeforeResize<TwoLevelHashTableGrower<1>>();
 }
 
 TEST(HashTableRobinHood, RandomOperations)
