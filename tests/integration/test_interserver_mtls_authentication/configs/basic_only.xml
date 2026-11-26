@@ -1,0 +1,6 @@
+<clickhouse>
+    <interserver_http_credentials>
+        <user>replica</user>
+        <password>secret</password>
+    </interserver_http_credentials>
+</clickhouse>

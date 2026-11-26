@@ -2,6 +2,7 @@
 
 #include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Interpreters/InterserverIOHandler.h>
+#include <Interpreters/InterserverCredentials.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/IStorage_fwd.h>
 #include <IO/HashingWriteBuffer.h>
@@ -74,8 +75,7 @@ public:
         const String & host,
         int port,
         const ConnectionTimeouts & timeouts,
-        const String & user,
-        const SecretString & password,
+        InterserverCredentialsPtr credentials,
         const String & interserver_scheme,
         ThrottlerPtr throttler,
         bool to_detached = false,

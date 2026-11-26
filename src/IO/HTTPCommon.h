@@ -71,6 +71,9 @@ HTTPSessionPtr makeHTTPSession(
     const ProxyConfiguration & proxy_config = {},
     UInt64 * connect_time = nullptr,
     HTTPConnectionTransport transport = HTTPConnectionTransport::FiberUnaware
+#if USE_SSL
+    , Poco::Net::Context::Ptr client_tls_context = nullptr
+#endif
 );
 
 bool isRedirect(Poco::Net::HTTPResponse::HTTPStatus status);

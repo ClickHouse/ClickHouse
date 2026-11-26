@@ -292,9 +292,9 @@ const X509Certificate::Subjects::container & X509Certificate::Subjects::at(Type 
     return subjects[static_cast<size_t>(type_)];
 }
 
-bool X509Certificate::Subjects::empty()
+bool X509Certificate::Subjects::empty() const
 {
-    for (auto & subject_list : subjects)
+    for (const auto & subject_list : subjects)
     {
         if (!subject_list.empty())
             return false;

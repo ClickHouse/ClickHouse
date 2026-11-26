@@ -59,9 +59,17 @@ HTTPSessionPtr makeHTTPSession(
     const ConnectionTimeouts & timeouts,
     const ProxyConfiguration & proxy_configuration,
     UInt64 * connect_time,
-    HTTPConnectionTransport transport)
+    HTTPConnectionTransport transport
+#if USE_SSL
+    , Poco::Net::Context::Ptr client_tls_context
+#endif
+    )
 {
-    auto connection_pool = HTTPConnectionPools::instance().getPool(group, uri, proxy_configuration, transport);
+    auto connection_pool = HTTPConnectionPools::instance().getPool(group, uri, proxy_configuration, transport
+#if USE_SSL
+        , client_tls_context
+#endif
+    );
     return connection_pool->getConnection(timeouts, connect_time);
 }
 

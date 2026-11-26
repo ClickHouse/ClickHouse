@@ -11,6 +11,11 @@
 
 #include <Poco/Timespan.h>
 #include <Poco/Net/HTTPClientSession.h>
+#include "config.h"
+
+#if USE_SSL
+#    include <Poco/Net/Context.h>
+#endif
 
 #include <cstdint>
 #include <mutex>
@@ -124,7 +129,11 @@ public:
         HTTPConnectionGroupType type,
         const Poco::URI & uri,
         const ProxyConfiguration & proxy_configuration,
-        HTTPConnectionTransport transport = HTTPConnectionTransport::FiberUnaware);
+        HTTPConnectionTransport transport = HTTPConnectionTransport::FiberUnaware
+#if USE_SSL
+        , Poco::Net::Context::Ptr client_tls_context = nullptr
+#endif
+    );
 
     /// Collect socket inodes of all tracked HTTP connections, grouped by pool type.
     /// Inodes are cached snapshots updated on connect, reconnect, and keep-alive store.

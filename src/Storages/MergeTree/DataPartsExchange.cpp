@@ -26,6 +26,7 @@
 #include <boost/algorithm/string/join.hpp>
 #include <Poco/Net/HTTPRequest.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/ProfileEvents.h>
 #include <Common/FailPoint.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/Jemalloc.h>
@@ -41,6 +42,11 @@ namespace CurrentMetrics
 {
     extern const Metric ReplicatedSend;
     extern const Metric ReplicatedFetch;
+}
+
+namespace ProfileEvents
+{
+    extern const Event ReplicatedPartFailedFetches;
 }
 
 namespace DB
@@ -63,6 +69,7 @@ namespace ErrorCodes
 {
     extern const int NO_SUCH_DATA_PART;
     extern const int ABORTED;
+    extern const int BAD_ARGUMENTS;
     extern const int BAD_SIZE_OF_FILE_IN_DATA_PART;
     extern const int CHECKSUM_DOESNT_MATCH;
     extern const int INSECURE_PATH;
@@ -441,8 +448,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> Fetcher::fetchSelected
     const String & host,
     int port,
     const ConnectionTimeouts & timeouts,
-    const String & user,
-    const SecretString & password,
+    InterserverCredentialsPtr credentials,
     const String & interserver_scheme,
     ThrottlerPtr throttler,
     bool to_detached,
@@ -529,17 +535,21 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> Fetcher::fetchSelected
     }
 
     Poco::Net::HTTPBasicCredentials creds{};
-    if (!user.empty())
+#if USE_SSL
+    if (credentials->usesClientCertificateAuthentication() && interserver_scheme != "https")
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Interserver client certificate authentication requires HTTPS");
+#endif
+    if (!credentials->getUser().empty())
     {
-        creds.setUsername(user);
-        creds.setPassword(String(password));
+        creds.setUsername(credentials->getUser());
+        creds.setPassword(String(credentials->getPassword()));
     }
 
     ReadSettings read_settings = context->getReadSettings();
     /// Disable retries for fetches, this will be done by the engine itself.
     read_settings.http_settings.max_tries = 1;
 
-    auto in = BuilderRWBufferFromHTTP(uri)
+    auto builder = BuilderRWBufferFromHTTP(uri)
                   .withConnectionGroup(HTTPConnectionGroupType::HTTP)
                   .withBypassProxy(true)
                   .withMethod(Poco::Net::HTTPRequest::HTTP_POST)
@@ -552,8 +562,11 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> Fetcher::fetchSelected
                   /// Delay the request until the shutdown cancellation callback below is installed:
                   /// with eager initialization the constructor would perform the first blocking read
                   /// before `setNextCallback` can run.
-                  .withDelayInit(true)
-                  .create(creds);
+                  .withDelayInit(true);
+#if USE_SSL
+    builder.withClientTLSContext(credentials->getClientTLSContext());
+#endif
+    auto in = builder.create(creds);
 
     /// Make the shutdown cancellation (`ReplicatedFetchList::cancelAll`) effective from the very
     /// first read of the response body: the part header (sizes, TTL infos, part type, UUID,
@@ -570,7 +583,15 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> Fetcher::fetchSelected
     /// Send the request and read the first chunk of the response body. `nextImpl` runs the callback
     /// before the connection and each blocking refill, so the whole transfer is cancellable.
     /// The response is needed just below for the cookies.
-    in->next();
+    try
+    {
+        in->next();
+    }
+    catch (const HTTPException &)
+    {
+        ProfileEvents::increment(ProfileEvents::ReplicatedPartFailedFetches);
+        throw;
+    }
 
     int server_protocol_version = parse<int>(in->getResponseCookie("server_protocol_version", "0"));
     String remote_fs_metadata = parse<String>(in->getResponseCookie("remote_fs_metadata", ""));
@@ -733,7 +754,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> Fetcher::fetchSelected
                 host,
                 port,
                 timeouts,
-                user, password, interserver_scheme, throttler, to_detached, tmp_prefix, nullptr, false, disk);
+                credentials, interserver_scheme, throttler, to_detached, tmp_prefix, nullptr, false, disk);
         }
     }
 

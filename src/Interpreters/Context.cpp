@@ -7829,7 +7829,11 @@ InterserverCredentialsPtr Context::getInterserverCredentials() const
 
 void Context::updateInterserverCredentials(const Poco::Util::AbstractConfiguration & config)
 {
-    auto credentials = InterserverCredentials::make(config, "interserver_http_credentials");
+    constexpr auto root_tag = "interserver_http_credentials";
+    auto credentials = InterserverCredentials::make(config, root_tag);
+#if USE_SSL
+    credentials->initializeClientTLSContext(config, root_tag);
+#endif
     shared->interserver_io_credentials.set(std::move(credentials));
 }
 

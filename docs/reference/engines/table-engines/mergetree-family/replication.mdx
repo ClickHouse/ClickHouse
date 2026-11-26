@@ -50,6 +50,47 @@ ClickHouse uses [ClickHouse Keeper](/guides/oss/deployment-and-scaling/keeper/in
 
 To use replication, set parameters in the [zookeeper](/reference/settings/server-settings/settings/zookeeper#zookeeper) server configuration section.
 
+## Authenticate replica data exchange with mTLS {#authenticate-replica-data-exchange-with-mtls}
+
+Replicas can authenticate each other when exchanging parts over HTTPS. Configure `interserver_https_port` and a server certificate on each replica. Set `openSSL.server.verificationMode` to `relaxed` or `strict`, configure `openSSL.server.caConfig` with the CA that signs replica client certificates, and use `RejectCertificateHandler` for invalid certificates.
+
+The following example accepts a peer whose certificate has the specified subject alternative name. The dedicated client certificate is sent only for interserver requests. Configure the same accepted subjects on every replica, and give each replica its own client certificate and key.
+
+```xml
+<interserver_https_port>9010</interserver_https_port>
+<interserver_http_port remove="1"/>
+<openSSL>
+    <server>
+        <certificateFile>/etc/clickhouse-server/server.pem</certificateFile>
+        <privateKeyFile>/etc/clickhouse-server/server-key.pem</privateKeyFile>
+        <caConfig>/etc/clickhouse-server/replica-ca.pem</caConfig>
+        <verificationMode>strict</verificationMode>
+        <invalidCertificateHandler>
+            <name>RejectCertificateHandler</name>
+        </invalidCertificateHandler>
+    </server>
+    <client>
+        <caConfig>/etc/clickhouse-server/replica-ca.pem</caConfig>
+        <verificationMode>strict</verificationMode>
+    </client>
+</openSSL>
+<interserver_http_credentials>
+    <openSSL>
+        <client>
+            <certificateFile>/etc/clickhouse-server/replica-client.pem</certificateFile>
+            <privateKeyFile>/etc/clickhouse-server/replica-client-key.pem</privateKeyFile>
+        </client>
+    </openSSL>
+    <ssl_certificates>
+        <subject_alt_name>URI:spiffe://example.org/clickhouse/replica</subject_alt_name>
+    </ssl_certificates>
+</interserver_http_credentials>
+```
+
+`ssl_certificates` accepts repeated `subject_alt_name` and `common_name` entries. A peer certificate must have an exact match in one of the configured entries. With no `user` and `password`, only a matching certificate authenticates a replica. If Basic credentials are also configured, either a matching certificate or valid Basic credentials authenticate it. A matching certificate takes precedence when both are presented. During a mixed rollout, use `openSSL.server.verificationMode=relaxed` with `RejectCertificateHandler`: `strict` rejects a peer without a certificate during the TLS handshake, before Basic authentication or `allow_empty` can apply. Keep Basic credentials or temporarily set `allow_empty` for older replicas, then remove the fallback and use `strict` when all replicas present certificates.
+
+Client certificate, key, and CA files configured at startup are watched for changes. `SYSTEM RELOAD CONFIG` also reloads the dedicated client identity. If a file path is introduced or changed after startup, use `SYSTEM RELOAD CONFIG` for later file-only updates until the next server restart. An invalid replacement leaves the previously loaded credentials active. The receiver still needs TLS certificate verification configured; an accepted subject alone does not establish trust.
+
 <Note>
 Don't neglect the security setting. ClickHouse supports the `digest` [ACL scheme](https://zookeeper.apache.org/doc/current/zookeeperProgrammers.html#sc_ZooKeeperAccessControl) of the ZooKeeper security subsystem.
 </Note>

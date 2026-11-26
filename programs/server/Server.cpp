@@ -2677,6 +2677,9 @@ try
     watch_path(server_settings[ServerSetting::openssl_client_certificate_file]);
     watch_path(server_settings[ServerSetting::openssl_client_private_key_file]);
     watch_path(server_settings[ServerSetting::openssl_client_ca_config]);
+    watch_path(config().getString("interserver_http_credentials.openSSL.client.certificateFile", ""));
+    watch_path(config().getString("interserver_http_credentials.openSSL.client.privateKeyFile", ""));
+    watch_path(config().getString("interserver_http_credentials.openSSL.client.caConfig", ""));
 
     Poco::Util::AbstractConfiguration::Keys protocols;
     config().keys("protocols", protocols);

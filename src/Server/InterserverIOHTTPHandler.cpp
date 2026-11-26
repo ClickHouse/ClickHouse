@@ -12,6 +12,7 @@
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/logger_useful.h>
 #include <Common/maskSensitiveQueryParameters.h>
+#include <Common/quoteString.h>
 #include <Common/setThreadName.h>
 #include <base/scope_guard.h>
 
@@ -21,6 +22,7 @@
 #include <Poco/Util/LayeredConfiguration.h>
 
 #include <shared_mutex>
+#include <string_view>
 
 namespace DB
 {
@@ -48,6 +50,42 @@ String getEndpointNameFromURI(const HTTPServerRequest & request)
 
 std::pair<String, bool> InterserverIOHTTPHandler::checkAuthentication(HTTPServerRequest & request) const
 {
+    const auto server_credentials = server.context()->getInterserverCredentials();
+    String certificate_status = "not_configured";
+#if USE_SSL
+    if (server_credentials && !server_credentials->getAllowedCertificateSubjects().empty())
+    {
+        certificate_status = "missing_certificate";
+        if (request.havePeerCertificate())
+        {
+            const auto & allowed = server_credentials->getAllowedCertificateSubjects();
+            const auto presented = request.peerCertificate().extractAllSubjects();
+            certificate_status = presented.empty() ? "no_supported_subjects" : "subject_not_allowed";
+            for (auto type : {X509Certificate::Subjects::Type::CN, X509Certificate::Subjects::Type::SAN})
+            {
+                for (const auto & subject : presented.at(type))
+                {
+                    if (allowed.at(type).contains(subject))
+                    {
+                        LOG_TRACE(log, "Interserver authentication succeeded: method=certificate, subject={}", quoteString(subject));
+                        return {"", true};
+                    }
+                }
+            }
+        }
+    }
+#endif
+
+    const auto log_result = [&](InterserverCredentials::CheckResult result, std::string_view method, std::string_view principal)
+    {
+        if (result.second)
+            LOG_TRACE(log, "Interserver authentication succeeded: method={}, principal={}", method, quoteString(principal));
+        else
+            LOG_DEBUG(log, "Interserver authentication failed: method={}, principal={}, reason={}, certificate_status={}",
+                method, quoteString(principal), result.first, certificate_status);
+        return result;
+    };
+
     /// Defer a `Bearer` credential to the target endpoint only if it opts in via `acceptsBearerAuth`.
     /// Otherwise fall through to the shared check and reject it before the endpoint is resolved, so
     /// an unauthenticated caller cannot probe endpoint existence through the response.
@@ -61,32 +99,31 @@ std::pair<String, bool> InterserverIOHTTPHandler::checkAuthentication(HTTPServer
             const String endpoint_name = getEndpointNameFromURI(request);
             const auto endpoint = server.context()->getInterserverIOHandler().tryGetEndpoint(endpoint_name);
             if (endpoint && endpoint->acceptsBearerAuth())
-                return {"", true};
+                return log_result({"", true}, "bearer", "");
         }
     }
 
-    auto server_credentials = server.context()->getInterserverCredentials();
     if (server_credentials)
     {
         if (!request.hasCredentials())
-            return server_credentials->isValidUser("", "");
+            return log_result(server_credentials->isValidUser("", ""), "anonymous", "");
 
         String scheme;
         String info;
         request.getCredentials(scheme, info);
 
         if (scheme != "Basic")
-            return {"Server requires HTTP Basic authentication but client provides another method", false};
+            return log_result({"Server requires HTTP Basic authentication but client provides another method", false}, "other", "");
 
         Poco::Net::HTTPBasicCredentials credentials(info);
-        return server_credentials->isValidUser(credentials.getUsername(), credentials.getPassword());
+        return log_result(server_credentials->isValidUser(credentials.getUsername(), credentials.getPassword()), "basic", credentials.getUsername());
     }
     if (request.hasCredentials())
     {
-        return {"Client requires HTTP Basic authentication, but server doesn't provide it", false};
+        return log_result({"Client requires HTTP Basic authentication, but server doesn't provide it", false}, "other", "");
     }
 
-    return {"", true};
+    return log_result({"", true}, "anonymous", "");
 }
 
 OpenTelemetry::TracingContextHolderPtr InterserverIOHTTPHandler::startTracingContext(const HTTPServerRequest & request) const

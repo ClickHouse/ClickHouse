@@ -598,7 +598,7 @@ Default:
 
 ## interserver_http_credentials {#interserver_http_credentials}
 A username and a password used to connect to other servers during [replication](/reference/engines/table-engines/mergetree-family/replication). Additionally, the server authenticates other replicas using these credentials.
-`interserver_http_credentials` must therefore be the same for all replicas in a cluster.
+The accepted credentials must be compatible across replicas. Each replica can use its own client certificate and key.
 
 <Note>
 - By default, if `interserver_http_credentials` section is omitted, authentication is not used during replication.
@@ -612,6 +612,12 @@ The following settings can be configured by sub-tags:
 - `password` — Password.
 - `allow_empty` — If `true`, then other replicas are allowed to connect without authentication even if credentials are set. If `false`, then connections without authentication are refused. Default: `false`.
 - `old` — Contains old `user` and `password` used during credential rotation. Several `old` sections can be specified.
+- `ssl_certificates` — Accepted peer certificate subjects. Each `common_name` or `subject_alt_name` entry is matched exactly. Configure the server CA and certificate verification under `openSSL.server`.
+- `openSSL.client.certificateFile` and `openSSL.client.privateKeyFile` — The client identity sent on interserver HTTPS requests. Both paths are required together. The dedicated context uses nested values for `caConfig`, verification, ciphers, protocols, and session caching when present, and otherwise uses the corresponding top-level `openSSL.client` values. Certificate and passphrase handlers remain configured at the top level.
+
+If `ssl_certificates` is set without `user` and `password`, a matching peer certificate is required. If both methods are configured, either a matching certificate or valid Basic credentials are accepted. A matching certificate takes precedence. The server must verify peer certificates with `openSSL.server.caConfig` and an appropriate `openSSL.server.verificationMode`. Use `relaxed` with `RejectCertificateHandler` while older replicas still use Basic authentication: `strict` rejects clients without certificates during the TLS handshake.
+
+Without `ssl_certificates` or a dedicated client certificate and key, existing interserver authentication behavior is unchanged. Configuring the client certificate and key alone changes only the outgoing TLS identity; it does not enable certificate authentication on the receiving replica.
 
 **Credentials Rotation**
 

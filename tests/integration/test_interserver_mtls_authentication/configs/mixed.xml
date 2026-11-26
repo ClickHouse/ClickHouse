@@ -1,0 +1,17 @@
+<clickhouse>
+    <interserver_http_credentials>
+        <user>replica</user>
+        <password>secret</password>
+        <openSSL>
+            <client>
+                <certificateFile>/etc/clickhouse-server/config.d/valid-b-cert.pem</certificateFile>
+                <privateKeyFile>/etc/clickhouse-server/config.d/valid-b-key.pem</privateKeyFile>
+            </client>
+        </openSSL>
+        <ssl_certificates>
+            <subject_alt_name>URI:spiffe://example.org/clickhouse/replica-a</subject_alt_name>
+            <subject_alt_name>URI:spiffe://example.org/clickhouse/replica-b</subject_alt_name>
+            <common_name>legacy-replica</common_name>
+        </ssl_certificates>
+    </interserver_http_credentials>
+</clickhouse>
