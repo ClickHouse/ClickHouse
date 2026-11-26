@@ -811,11 +811,16 @@ public:
     /// The captured settings decide how a JSON value is parsed into the result, see `IFunctionBase::updateHash`.
     void updateHashImpl(SipHash & hash) const override { hash.update(settings_hash); }
 
-    /// The JSON (text or a `JSON` value) is converted into the result type.
+    /// The JSON (text or a `JSON` value) is converted into the result type. Only text is parsed, by the parser that `allow_simdjson`
+    /// selects, and the parsers differ, e.g. on an integer too large for `UInt64`.
     [[nodiscard]] bool resultDependsOnSetting(const FunctionResultSetting & setting) const override
     {
         const auto & arguments = getArgumentTypes();
-        return arguments.empty() || conversionResultDependsOnSetting(setting, arguments[0], getResultType());
+        if (arguments.empty())
+            return true;
+        if (setting == FunctionResultSetting(Setting::allow_simdjson))
+            return !functionIgnoresAllowSimdjson<Impl>() && isStringOrFixedString(removeNullable(removeLowCardinality(arguments[0])));
+        return conversionResultDependsOnSetting(setting, arguments[0], getResultType());
     }
 
     const DataTypes & getArgumentTypes() const override
@@ -1825,16 +1830,17 @@ namespace
 {
 
 constexpr FunctionResultSetting json_type_settings[] = {
-    Setting::json_type_escape_dots_in_keys, Setting::type_json_skip_null_typed_paths};
+    Setting::json_type_escape_dots_in_keys, Setting::type_json_skip_null_typed_paths, Setting::allow_simdjson};
 
 /// A number in quotes is parsed with `precise_float_parsing`.
 constexpr FunctionResultSetting json_numeric_settings[] = {
-    Setting::json_type_escape_dots_in_keys, Setting::type_json_skip_null_typed_paths, Setting::precise_float_parsing};
+    Setting::json_type_escape_dots_in_keys, Setting::type_json_skip_null_typed_paths, Setting::precise_float_parsing,
+    Setting::allow_simdjson};
 
 /// A path of a `JSON` value is written as text.
 constexpr FunctionResultSetting json_raw_settings[] = {
     Setting::json_type_escape_dots_in_keys, Setting::type_json_skip_null_typed_paths, Setting::input_format_json_max_depth,
-    JSON_WRITING_RESULT_SETTINGS(LIST_JSON_WRITING_RESULT_SETTING)};
+    Setting::allow_simdjson, JSON_WRITING_RESULT_SETTINGS(LIST_JSON_WRITING_RESULT_SETTING)};
 
 constexpr FunctionResultSetting json_typed_settings[] = {
     Setting::json_type_escape_dots_in_keys, Setting::type_json_skip_null_typed_paths, Setting::input_format_json_max_depth,
@@ -1844,7 +1850,7 @@ constexpr FunctionResultSetting json_typed_settings[] = {
     Setting::input_format_try_infer_datetimes_only_datetime64, Setting::schema_inference_make_columns_nullable,
     Setting::precise_float_parsing, Setting::date_time_input_format, Setting::cast_string_to_date_time_mode,
     Setting::json_extract_use_cast_string_to_date_time_mode, Setting::json_extract_named_tuples_as_objects,
-    Setting::session_timezone, Setting::date_time_overflow_behavior};
+    Setting::session_timezone, Setting::date_time_overflow_behavior, Setting::allow_simdjson};
 
 template <typename Function>
 void registerWithResultSettings(FunctionFactory & factory, FunctionDocumentation documentation, FunctionResultSettings result_settings)

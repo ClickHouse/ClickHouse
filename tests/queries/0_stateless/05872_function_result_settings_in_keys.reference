@@ -42,6 +42,8 @@ json raw quote expected	1
 json raw quote	1
 json text quote expected	1
 json text quote	1
+json parser expected	1
+json parser	1
 json has expected	1
 json has	1
 time zone expected	1

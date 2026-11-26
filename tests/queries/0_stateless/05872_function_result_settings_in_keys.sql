@@ -36,6 +36,7 @@ DROP TABLE IF EXISTS t_shared_prefix;
 DROP TABLE IF EXISTS t_lambda_text;
 DROP TABLE IF EXISTS t_plus_int;
 DROP TABLE IF EXISTS t_start_of_day;
+DROP TABLE IF EXISTS t_json_parser;
 DROP TABLE IF EXISTS t_json_raw_quote;
 DROP TABLE IF EXISTS t_json_text_quote;
 DROP TABLE IF EXISTS t_dynamic_time_text;
@@ -137,6 +138,8 @@ CREATE TABLE t_plus_int (x UInt64) ENGINE = MergeTree ORDER BY x + 1 SETTINGS in
 INSERT INTO t_plus_int SELECT number FROM numbers(100);
 CREATE TABLE t_start_of_day (d Date) ENGINE = MergeTree ORDER BY toStartOfDay(d) SETTINGS index_granularity = 1;
 INSERT INTO t_start_of_day SELECT toDate('2024-01-01') + number FROM numbers(10);
+CREATE TABLE t_json_parser (j String) ENGINE = MergeTree ORDER BY JSONType(j, 'a') SETTINGS index_granularity = 1;
+INSERT INTO t_json_parser SELECT if(number = 0, '{"a":18446744073709551616}', '{"a":"x"}') FROM numbers(20);
 CREATE TABLE t_json_raw_quote (j JSON(a UInt64)) ENGINE = MergeTree ORDER BY JSONExtractRaw(j, 'a') SETTINGS index_granularity = 1;
 INSERT INTO t_json_raw_quote SELECT concat('{"a":', toString(number), '}') FROM numbers(20);
 CREATE TABLE t_json_text_quote (j JSON(a UInt64)) ENGINE = MergeTree ORDER BY toString(j) SETTINGS index_granularity = 1;
@@ -221,6 +224,9 @@ SELECT 'json text quote expected', count() FROM t_json_text_quote WHERE toString
 SETTINGS output_format_json_quote_64bit_integers = 1, use_primary_key = 0;
 SELECT 'json text quote', count() FROM t_json_text_quote WHERE toString(j) = '{"a":"1"}'
 SETTINGS output_format_json_quote_64bit_integers = 1, type_json_skip_null_typed_paths = 0;
+SELECT 'json parser expected', count() FROM t_json_parser WHERE JSONType(j, 'a') = 'Double'
+SETTINGS allow_simdjson = 0, type_json_skip_null_typed_paths = 0, use_primary_key = 0;
+SELECT 'json parser', count() FROM t_json_parser WHERE JSONType(j, 'a') = 'Double' SETTINGS allow_simdjson = 0, type_json_skip_null_typed_paths = 0;
 SELECT 'json has expected', count() FROM t_json_has WHERE JSONHas(j, 'a') = 0 SETTINGS use_primary_key = 0;
 SELECT 'json has', count() FROM t_json_has WHERE JSONHas(j, 'a') = 0;
 SET session_timezone = 'Pacific/Kiritimati';
@@ -301,6 +307,7 @@ DROP TABLE t_shared_prefix;
 DROP TABLE t_lambda_text;
 DROP TABLE t_plus_int;
 DROP TABLE t_start_of_day;
+DROP TABLE t_json_parser;
 DROP TABLE t_json_raw_quote;
 DROP TABLE t_json_text_quote;
 DROP TABLE t_dynamic_time_text;
