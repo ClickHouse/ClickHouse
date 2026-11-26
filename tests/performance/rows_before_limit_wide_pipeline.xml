@@ -1,0 +1,15 @@
+<test>
+    <settings>
+        <max_threads>8</max_threads>
+    </settings>
+
+    <create_query>CREATE TABLE rows_before_limit_wide (p UInt32, k UInt32, v UInt64) ENGINE = ReplacingMergeTree PARTITION BY p ORDER BY (p, k)</create_query>
+    <fill_query>SYSTEM STOP MERGES rows_before_limit_wide</fill_query>
+    <fill_query>INSERT INTO rows_before_limit_wide SELECT number, number, 1 FROM numbers(300) SETTINGS max_partitions_per_insert_block = 1000</fill_query>
+    <fill_query>INSERT INTO rows_before_limit_wide SELECT number, number, 2 FROM numbers(300) SETTINGS max_partitions_per_insert_block = 1000</fill_query>
+
+    <query>SELECT * FROM (SELECT a.k AS k, b.v AS v1, c.v AS v2, d.v AS v3, e.v AS v4 FROM rows_before_limit_wide AS a FINAL INNER JOIN rows_before_limit_wide AS b FINAL USING (p, k) INNER JOIN rows_before_limit_wide AS c FINAL USING (p, k) INNER JOIN rows_before_limit_wide AS d FINAL USING (p, k) INNER JOIN rows_before_limit_wide AS e FINAL USING (p, k)) LIMIT 0</query>
+    <query>SELECT * FROM (SELECT a.k AS k, b.v AS v1, c.v AS v2, d.v AS v3, e.v AS v4 FROM rows_before_limit_wide AS a FINAL INNER JOIN rows_before_limit_wide AS b FINAL USING (p, k) INNER JOIN rows_before_limit_wide AS c FINAL USING (p, k) INNER JOIN rows_before_limit_wide AS d FINAL USING (p, k) INNER JOIN rows_before_limit_wide AS e FINAL USING (p, k)) LIMIT 1 FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS rows_before_limit_wide</drop_query>
+</test>
