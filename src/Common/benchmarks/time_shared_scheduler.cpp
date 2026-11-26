@@ -1,7 +1,8 @@
 /// Throughput of the time-shared scheduler runtime: enqueue, dequeue on the scheduler thread, finish.
 ///
 /// Every case builds one hierarchy under a `TimeSharedScheduler` and reports `requests_per_second`. Requests
-/// cost 1, and each consumer or pending request is a query of its own (`ResourceSchedulingContext`).
+/// cost 1, and each pending request or consumer is a query of its own (`ResourceSchedulingContext`) unless
+/// `shared_query:1`.
 /// Limits do not bind, so the rate is the cost of the nodes, except in `semaphore_saturated` and
 /// `production_development`, which measure a saturated semaphore.
 ///
@@ -11,8 +12,10 @@
 ///     finishes it, enqueues it again into its leaf and processes the events. With `depth:1` every
 ///     request empties its leaf, so the deactivation and activation of the nodes above it run every time.
 ///   - `Threads`: the scheduler runs its own thread, and `consumers` threads loop on a `ResourceGuard`
-///     (enqueue, wait for the grant, finish). Consumer `i` uses leaf `i % leaves`. All consumers run
-///     through a 0.2 s warm-up and a 1 s measured window; the rate is the requests completed in the window.
+///     (enqueue, wait for the grant, finish). Consumer `i` uses leaf `i % leaves`, so with more leaves
+///     than consumers the other leaves stay empty. With `shared_query:1` all consumers are one query.
+///     All consumers run through a 0.2 s warm-up and a 1 s measured window; the rate is the requests
+///     completed in the window.
 ///
 /// Hierarchies (`leaves` is the number of leaf queues):
 ///   - `queue_fifo`, `queue_fair`, `queue_las`, `queue_priority`: one `RequestQueue` with this algorithm.
@@ -29,9 +32,11 @@
 ///   - `workload_limits`: `workload_fair` with `max_io_requests` and `max_bytes_per_second` on `all`.
 ///   - `production_development`: `all` with `max_io_requests = 100` over `production` with `weight = 3`
 ///     and `development` with `max_io_requests = 10`, which binds with more than 10 development consumers.
+///   The workload trees, `workload*` and `production_development`, sit under the implicit anonymous root
+///   workload, as in `WorkloadResourceManager`.
 ///
 /// For example:
-///   benchmark_time_shared_scheduler --benchmark_filter='^Threads/workload_fair/leaves:16/consumers:16/'
+///   benchmark_time_shared_scheduler --benchmark_filter='^Threads/workload_fair/leaves:16/consumers:16/shared_query:0/'
 
 #include <Common/Scheduler/Nodes/TimeShared/FairPolicy.h>
 #include <Common/Scheduler/Nodes/TimeShared/PriorityPolicy.h>
@@ -151,10 +156,14 @@ Leaves throttlerConstraint(TimeSharedScheduler & scheduler, size_t)
 
 using WorkloadChildren = std::vector<std::pair<String, WorkloadSettings>>;
 
-/// Workload `all` with the given children, as `WorkloadResourceManager` builds it for an IO resource.
+/// Workload `all` with the given children under the implicit anonymous root workload, as
+/// `WorkloadResourceManager` builds it for an IO resource.
 Leaves workloads(TimeSharedScheduler & scheduler, const WorkloadSettings & all_settings, const WorkloadChildren & children)
 {
+    auto root = makeNode<TimeSharedWorkloadNode>(scheduler.event_queue, "", WorkloadSettings{}, CostUnit::IOByte, "io");
+    scheduler.attachChild(root);
     auto all = makeNode<TimeSharedWorkloadNode>(scheduler.event_queue, "all", all_settings, CostUnit::IOByte, "io");
+    root->attachWorkloadChild(all);
     Leaves result;
     for (const auto & [name, settings] : children)
     {
@@ -164,7 +173,6 @@ Leaves workloads(TimeSharedScheduler & scheduler, const WorkloadSettings & all_s
     }
     if (children.empty())
         result.push_back(all->getLink().queue);
-    scheduler.attachChild(all);
     return result;
 }
 
@@ -290,17 +298,18 @@ void Dequeue(benchmark::State & state, Build build)
     state.counters["requests_per_second"] = benchmark::Counter(static_cast<double>(state.iterations()), benchmark::Counter::kIsRate);
 }
 
-/// Args: leaves, consumers.
+/// Args: leaves, consumers, shared_query.
 void Threads(benchmark::State & state, Build build)
 {
     const auto leaves = static_cast<size_t>(state.range(0));
     const auto consumers = static_cast<size_t>(state.range(1));
+    const bool shared_query = state.range(2) != 0;
 
     static std::once_flag global_pool_initialized;
     std::call_once(global_pool_initialized, [] { GlobalThreadPool::initialize(); });
 
     std::vector<std::unique_ptr<ResourceSchedulingContext>> queries;
-    for (size_t i = 0; i < consumers; ++i)
+    for (size_t i = 0; i < (shared_query ? 1 : consumers); ++i)
         queries.push_back(makeQuery());
 
     TimeSharedScheduler scheduler;
@@ -331,7 +340,7 @@ void Threads(benchmark::State & state, Build build)
         std::vector<std::thread> threads;
         for (size_t i = 0; i < consumers; ++i)
         {
-            threads.emplace_back([&, link = makeLink(leaf_queues[i % leaf_queues.size()], *queries[i])]
+            threads.emplace_back([&, link = makeLink(leaf_queues[i % leaf_queues.size()], *queries[i % queries.size()])]
             {
                 UInt64 measured = 0;
                 while (!stop.load(std::memory_order_relaxed))
@@ -369,15 +378,16 @@ struct Hierarchy
     std::string name;
     Build build;
     std::vector<int64_t> leaves;
+    std::vector<int64_t> shared_query = {0};
 };
 
 [[maybe_unused]] const bool registered = []
 {
     const std::vector<Hierarchy> hierarchies{
-        {"queue_fifo", singleQueue<SchedulerAlgorithm::Fifo>, {1}},
-        {"queue_fair", singleQueue<SchedulerAlgorithm::Fair>, {1}},
-        {"queue_las", singleQueue<SchedulerAlgorithm::Las>, {1}},
-        {"queue_priority", singleQueue<SchedulerAlgorithm::Priority>, {1}},
+        {"queue_fifo", singleQueue<SchedulerAlgorithm::Fifo>, {1}, {0, 1}},
+        {"queue_fair", singleQueue<SchedulerAlgorithm::Fair>, {1}, {0, 1}},
+        {"queue_las", singleQueue<SchedulerAlgorithm::Las>, {1}, {0, 1}},
+        {"queue_priority", singleQueue<SchedulerAlgorithm::Priority>, {1}, {0, 1}},
         {"resources", resources, {2, 16}},
         {"fair", fairPolicy, {2, 16, 256}},
         {"priority", priorityPolicy, {2, 16}},
@@ -397,8 +407,8 @@ struct Hierarchy
             ->ArgsProduct({hierarchy.leaves, {1, 16}})
             ->UseRealTime();
         benchmark::RegisterBenchmark("Threads/" + hierarchy.name, &Threads, hierarchy.build)
-            ->ArgNames({"leaves", "consumers"})
-            ->ArgsProduct({hierarchy.leaves, {1, 4, 16, 64}})
+            ->ArgNames({"leaves", "consumers", "shared_query"})
+            ->ArgsProduct({hierarchy.leaves, {1, 4, 16, 64}, hierarchy.shared_query})
             ->Iterations(1)
             ->UseManualTime();
     }

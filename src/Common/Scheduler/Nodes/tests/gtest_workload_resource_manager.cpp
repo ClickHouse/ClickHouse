@@ -378,6 +378,40 @@ TEST(SchedulerWorkloadResourceManager, Smoke)
     }
 }
 
+// Requests from several threads of one query pass through every `scheduler` algorithm of a leaf, switched
+// by `CREATE OR REPLACE WORKLOAD`. The real cost differs from the estimate, so `finish` corrects the query state.
+TEST(SchedulerWorkloadResourceManager, SchedulerAlgorithms)
+{
+    constexpr size_t threads = 4;
+    constexpr size_t requests_per_thread = 1000;
+
+    ResourceTest t;
+    t.query("CREATE RESOURCE res1 (WRITE DISK disk, READ DISK disk)");
+    t.query("CREATE WORKLOAD all");
+
+    for (const char * scheduler : {"fair", "las", "priority", "fifo"})
+    {
+        t.query(fmt::format("CREATE OR REPLACE WORKLOAD all SETTINGS scheduler = '{}'", scheduler));
+        ClassifierPtr classifier = t.manager->acquire("all");
+        ResourceLink link = classifier->get("res1");
+        std::atomic<size_t> finished{0};
+        for (size_t thread = 0; thread < threads; ++thread)
+        {
+            t.async([&]
+            {
+                for (size_t i = 0; i < requests_per_thread; ++i)
+                {
+                    ResourceGuard guard(ResourceGuard::Metrics::getIOWrite(), link, 1 + i % 3);
+                    guard.unlock(2);
+                    ++finished;
+                }
+            });
+        }
+        t.wait();
+        EXPECT_EQ(finished, threads * requests_per_thread);
+    }
+}
+
 // Multiple root workloads (workloads created without a parent): each becomes a child of the
 // resource's implicit anonymous root workload, so several SQL roots coexist and are scheduled
 // among each other.
