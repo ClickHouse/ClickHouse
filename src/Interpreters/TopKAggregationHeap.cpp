@@ -290,6 +290,9 @@ void TopKAggregationHeapBase::exchangeSharedBoundary()
         {
             auto key = heap_column->cloneEmpty();
             key->insertFrom(*heap_column, boundary_row);
+            /// An aggregate state column copies a row by referencing the source column. The heap appends to its column in
+            /// place, which needs it unshared, so the key takes its own copy of the row.
+            key->ensureOwnership();
             shared_boundary->key = std::move(key);
             shared_boundary->version.fetch_add(1, std::memory_order_release);
         }
