@@ -80,8 +80,10 @@ private:
     /// Reserves `units` of the limit; past it, stops the counting instead.
     bool reserve(size_t units);
 
-    /// Frees the ranges of all the files, once the counting stopped. The files stay, as the readers refer to them.
+    /// Frees the ranges of all the files of every registry of the statistics, once the counting stopped: a registry whose
+    /// reads are done would not register again to free its own. The files stay, as the readers refer to them.
     void releaseAll();
+    void releaseOwn();
 
     const std::shared_ptr<RuntimeDataflowStatisticsBlock> block;
     const bool duplicated;
@@ -95,7 +97,6 @@ private:
         std::equal_to<>,
         AllocatorWithMemoryTracking<std::pair<const UInt128, std::unique_ptr<ReadRanges>>>>
         read_ranges_by_path TSA_GUARDED_BY(mutex);
-    std::atomic_bool all_released{false};
     /// Given out for the files looked up once the counting stopped, which then keep nothing.
     static ReadRanges not_registered;
 };

@@ -356,10 +356,17 @@ ReadRangesRegistry::ReadRangesRegistry(std::shared_ptr<RuntimeDataflowStatistics
     : block(std::move(block_))
     , duplicated(duplicated_)
 {
+    std::lock_guard lock(block->read_ranges_registries_mutex);
+    block->read_ranges_registries.push_back(this);
 }
 
 ReadRangesRegistry::~ReadRangesRegistry()
 {
+    {
+        std::lock_guard lock(block->read_ranges_registries_mutex);
+        std::erase(block->read_ranges_registries, this);
+    }
+
     if (stopped())
         return;
 
@@ -509,8 +516,15 @@ void ReadRangesRegistry::ReadRanges::release() noexcept
 
 void ReadRangesRegistry::releaseAll()
 {
-    if (all_released.exchange(true))
+    if (block->read_ranges_released.exchange(true))
         return;
+    std::lock_guard lock(block->read_ranges_registries_mutex);
+    for (auto * registry : block->read_ranges_registries)
+        registry->releaseOwn();
+}
+
+void ReadRangesRegistry::releaseOwn()
+{
     std::lock_guard lock(mutex);
     for (auto & [_, read_ranges] : read_ranges_by_path)
         read_ranges->release();
