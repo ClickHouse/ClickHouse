@@ -2,18 +2,18 @@
 title: كيفية إعداد ClickHouse على Docker باستخدام ODBC للاتصال بقاعدة بيانات Microsoft SQL Server (MSSQL)
 description: "كيفية إعداد ClickHouse على Docker باستخدام ODBC للاتصال بقاعدة بيانات Microsoft SQL Server (MSSQL)"
 date: 2024-05-29
-tags: ['العملاء الأصليون والواجهات']
+tags: ['Native Clients and Interfaces']
 keywords: ['Docker', 'ODBC', 'Microsoft SQL Server', 'MSSQL']
 ---
 
 <div id="question">
-  ## السؤال
+  ## السؤال {#question}
 </div>
 
 كيف أُعِدّ ClickHouse باستخدام صورة Docker للاتصال بـ Microsoft SQL Server؟
 
 <div id="answer">
-  ## الإجابة
+  ## الإجابة {#answer}
 </div>
 
 ***ملاحظات حول هذا المثال***
@@ -25,60 +25,42 @@ keywords: ['Docker', 'ODBC', 'Microsoft SQL Server', 'MSSQL']
 * اسم مثيل MSSQL هو `MARSDB2`
 * اسم تسجيل الدخول في MSSQL ومستخدمو قاعدة البيانات هم `sql_user`
 
-<div id="example-setup-in-mssql-for-testing-">
-  ### إعداد مثال في MSSQL للاختبار
-</div>
+### مثال على إعداد MSSQL للاختبار {#example-setup-in-mssql-for-testing-}
 
-تم إنشاء قاعدة بيانات وجدول في MSSQL:
+قاعدة البيانات والجدول المُنشآن في MSSQL:
 
 <div className="ch-image-md">
-
-<Frame>
-
-![بنية قاعدة البيانات والجدول في MSSQL](/images/knowledgebase/ikb273/c8a5492f-5910-4454-bfbc-5c6ceda15ccd.webp)
-
-</Frame>
-
+  <Frame>
+    ![قاعدة بيانات MSSQL وبنية الجدول](/images/knowledgebase/ikb273/c8a5492f-5910-4454-bfbc-5c6ceda15ccd.webp)
+  </Frame>
 </div>
 
-مستخدم تسجيل الدخول في MSSQL، `sql_user`:
+مستخدم اسم تسجيل الدخول في MSSQL، `sql_user`:
 
 <div className="ch-image-md">
-
-<Frame>
-
-![إعداد مستخدم تسجيل الدخول في MSSQL](/images/knowledgebase/ikb273/568f1143-475e-422f-a26a-2c23ac324771.webp)
-
-</Frame>
-
+  <Frame>
+    ![إعدادات مستخدم اسم تسجيل الدخول في MSSQL](/images/knowledgebase/ikb273/568f1143-475e-422f-a26a-2c23ac324771.webp)
+  </Frame>
 </div>
 
-أدوار عضوية قاعدة البيانات لـ `sql_user`:
+أدوار العضوية في قاعدة البيانات للمستخدم `sql_user`:
 
 <div className="ch-image-md">
-
-<Frame>
-
-![أدوار عضوية قاعدة البيانات في MSSQL](/images/knowledgebase/ikb273/63992978-7078-4985-b661-a3c095099ea7.webp)
-
-</Frame>
-
+  <Frame>
+    ![أدوار العضوية في قاعدة بيانات MSSQL](/images/knowledgebase/ikb273/63992978-7078-4985-b661-a3c095099ea7.webp)
+  </Frame>
 </div>
 
-مستخدم قاعدة بيانات مرتبط بتسجيل دخول:
+مستخدم قاعدة البيانات المرتبط باسم تسجيل الدخول:
 
 <div className="ch-image-md">
-
-<Frame>
-
-![مستخدم قاعدة بيانات في MSSQL مرتبط بتسجيل دخول](/images/knowledgebase/ikb273/15a407ca-53c1-45b1-9beb-ddd8eedde64a.webp)
-
-</Frame>
-
+  <Frame>
+    ![مستخدم قاعدة بيانات MSSQL المرتبط باسم تسجيل الدخول](/images/knowledgebase/ikb273/15a407ca-53c1-45b1-9beb-ddd8eedde64a.webp)
+  </Frame>
 </div>
 
 <div id="configuring-clickhouse-with-odbc">
-  ### تهيئة ClickHouse باستخدام ODBC
+  ### تهيئة ClickHouse باستخدام ODBC {#configuring-clickhouse-with-odbc}
 </div>
 
 أنشئ مجلد عمل:
@@ -123,7 +105,7 @@ UsageCount = 1
 ```
 
 <div id="configure-a-dockerfile-to-download-the-image-and-add-the-tds-and-required-odbc-libraries">
-  ### تهيئة ملف Dockerfile لتنزيل الصورة وإضافة مكتبات TDS وODBC المطلوبة
+  ### تهيئة ملف Dockerfile لتنزيل الصورة وإضافة مكتبات TDS وODBC المطلوبة {#configure-a-dockerfile-to-download-the-image-and-add-the-tds-and-required-odbc-libraries}
 </div>
 
 أنشئ ملف Dockerfile:
@@ -209,7 +191,7 @@ CONTAINER ID   IMAGE                           COMMAND            CREATED       
 ```
 
 <div id="test-odbc-connection">
-  ### اختبار اتصال ODBC
+  ### اختبار اتصال ODBC {#test-odbc-connection}
 </div>
 
 سجّل الدخول باستخدام clickhouse client:

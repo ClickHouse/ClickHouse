@@ -82,12 +82,12 @@ rows, err := conn.Query(ctx, "SELECT ...")
 
 ### 認証 {#authentication}
 
-| Option          | Type                        | Default               | DSN param                          | Description                                                                           | Best practice                                                   | When misconfigured                                                                                              |
-| --------------- | --------------------------- | --------------------- | ---------------------------------- | ------------------------------------------------------------------------------------- | --------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| `Auth.Username` | `string`                    | `"default"`           | `username` or URL user portion     | ClickHouse 認証に使用するユーザー名                                                               | 本番環境では `default` を決して使用しないでください。最小権限の専用ユーザーを作成してください。           | ユーザー名が誤っている場合: `"Code: 516. DB::Exception: Authentication failed"`。空文字列の場合: 暗黙的に `"default"` が使用されます。           |
-| `Auth.Password` | `string`                    | `""`                  | `password` or URL password portion | ClickHouse 認証に使用するパスワード                                                               | 本番環境では環境変数またはシークレットマネージャーを使用してください。DSN 内の特殊文字は URL エンコードしてください。 | パスワードが誤っている場合: `"Code: 516. DB::Exception: Authentication failed"`。特殊文字が URL エンコードされていない場合: パースエラー。             |
-| `Auth.Database` | `string`                    | `""` (server default) | `database` or URL path (`/mydb`)   | connection に使用するデフォルトの database                                                       | 必ず明示的に指定してください。本番環境ではアプリケーションごとに専用の database を使用してください。         | 存在しない場合: `"Code: 81. DB::Exception: Database xyz doesn't exist"`。マルチテナント構成で空の場合: クエリが誤った database に送られます。       |
-| `GetJWT`        | `func(ctx) (string, error)` | `nil`                 | (programmatic only)                | ClickHouse Cloud 認証用の JWT を返すコールバック。`WithJWT(token)` によりクエリごとに上書きできます。 *(v2.35.0 以降)* | トークンのキャッシュ/更新を実装してください。connection/request ごとに呼び出されます。           | トークンの有効期限切れ: 認証エラー。コールバックがブロックする場合: タイムアウト。JWT はユーザー名/パスワードより優先されます。TLS が必要で、これがない場合は黙ってユーザー名/パスワードにフォールバックします。 |
+| Option          | Type                        | Default               | DSN param                          | Description                                                                           | Best practice                                                   | When misconfigured                                                                                                                                                       |
+| --------------- | --------------------------- | --------------------- | ---------------------------------- | ------------------------------------------------------------------------------------- | --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `Auth.Username` | `string`                    | `"default"`           | `username` or URL user portion     | ClickHouse 認証に使用するユーザー名                                                               | 本番環境では `default` を決して使用しないでください。最小権限の専用ユーザーを作成してください。           | ユーザー名が誤っている場合: `"Code: 516. DB::Exception: Authentication failed"`。空文字列の場合: 暗黙的に `"default"` が使用されます。                                                                    |
+| `Auth.Password` | `string`                    | `""`                  | `password` or URL password portion | ClickHouse 認証に使用するパスワード                                                               | 本番環境では環境変数またはシークレットマネージャーを使用してください。DSN 内の特殊文字は URL エンコードしてください。 | パスワードが誤っている場合: `"Code: 516. DB::Exception: Authentication failed"`。特殊文字が URL エンコードされていない場合: DSN のパースエラーとなり、パスワードは `xxxxx` と表示されます ([DSN パースエラー](#dsn-parse-errors)を参照) 。 |
+| `Auth.Database` | `string`                    | `""` (サーバー default) | `database` or URL path (`/mydb`)   | 接続 に使用するデフォルトの データベース                                                       | 必ず明示的に指定してください。本番環境ではアプリケーションごとに専用の データベース を使用してください。         | 存在しない場合: `"Code: 81. DB::Exception: Database xyz doesn't exist"`。マルチテナント構成で空の場合: クエリが誤った データベース に送られます。                                                                |
+| `GetJWT`        | `func(ctx) (string, error)` | `nil`                 | (programmatic only)                | ClickHouse Cloud 認証用の JWT を返すコールバック。`WithJWT(token)` によりクエリごとに上書きできます。 *(v2.35.0 以降)* | トークンのキャッシュ/更新を実装してください。接続/request ごとに呼び出されます。           | トークンの有効期限切れ: 認証エラー。コールバックがブロックする場合: タイムアウト。JWT はユーザー名/パスワードより優先されます。TLS が必要で、これがない場合は黙ってユーザー名/パスワードにフォールバックします。                                                          |
 
 ```go
 GetJWT: func(ctx context.Context) (string, error) {
@@ -455,6 +455,28 @@ batch, err := conn.PrepareBatch(ctx, "INSERT INTO table",
 * `system.users` table で認証情報を確認する
 * DSN の password に含まれる特殊文字の URL エンコードに問題がないか確認する
 * ユーザーに、指定した database へのアクセス権があることを確認する
+
+### DSN のパースエラー {#dsn-parse-errors}
+
+**原因:** DSN が有効な URL ではありません。よくあるのは、パスワードに URL エンコードされていない特殊文字 (例: `/`、`?`、`#`、`@`、`:`、`&`) が含まれているケースです。
+
+DSN のパースエラーには認証情報は表示されません。エラーメッセージでは、userinfo 内のパスワード、`password` クエリパラメータ、および `http_proxy` クエリパラメータ内のパスワードが `xxxxx` に置き換えられます。
+
+```text
+parse "clickhouse://user:xxxxx@127.0.0.1:abc/db": invalid port ":abc" after host
+```
+
+パーサーエラーに認証情報の一部が含まれる可能性がある場合、ドライバーはエラーの詳細を表示しません：
+
+```text
+parse "clickhouse://user:xxxxx@127.0.0.1:9000/db": invalid URL (details hidden because they may contain credentials; URL-encode the username, password and http_proxy values)
+```
+
+**対処法:**
+
+* DSN 内のユーザー名とパスワードを URL エンコードします。たとえば、`url.UserPassword("user", password).String()` を使用するか、`password` クエリパラメータの場合は `url.QueryEscape(password)` を使用します。
+* `http_proxy` クエリパラメータに指定するプロキシ URL は、全体を URL エンコードします。
+* それでもエラーに `details hidden` と表示される場合は、DSN を使用せず、`clickhouse.Open` を使ってコード内で `Options` を設定してください。
 
 ### TLS 証明書エラー {#tls-errors}
 

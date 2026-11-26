@@ -92,6 +92,9 @@ struct LocalQueryState
     Stopwatch after_send_profile_events;
 
     QueryScope query_scope_holder;
+
+    /// The client created an output for the result, which the query allocates and the client releases after it ends.
+    bool client_output_created = false;
 };
 
 
@@ -135,6 +138,14 @@ public:
     void setDefaultDatabase(const String & database) override;
 
     void setCancelCallback(std::function<bool()> callback) override { is_cancelled_callback = std::move(callback); }
+
+    void onQueryOutputCreated() override
+    {
+        if (state)
+            state->client_output_created = true;
+    }
+
+    void onQueryOutputReleased() override { finished_query_scope = {}; }
 
     void getServerVersion(const ConnectionTimeouts & timeouts,
                           String & name,
@@ -205,6 +216,9 @@ private:
 
     void finishQuery();
 
+    /// Resets `state` of the query that ended; keeps the query attached if the client created an output for it.
+    void resetEndedQueryState();
+
     void updateProgress(const Progress & value);
 
     void sendProfileEvents();
@@ -232,6 +246,9 @@ private:
     String description = "clickhouse-local";
 
     std::optional<LocalQueryState> state;
+
+    /// Keeps the thread attached to the ended query until the client releases its output, which the query allocated.
+    QueryScope finished_query_scope;
 
     /// Last "server" packet.
     std::optional<UInt64> next_packet_type;
