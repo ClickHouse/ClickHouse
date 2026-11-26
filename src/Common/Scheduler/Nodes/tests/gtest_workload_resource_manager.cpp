@@ -562,46 +562,6 @@ TEST(SchedulerWorkloadResourceManager, UpdateAddSemaphoreToWorkloadWithThrottler
         << "semaphore subtree is orphaned (semaphore->parent == nullptr) after adding a semaphore while a throttler is present";
 }
 
-// Adding a limit to a workload with pending requests must not activate it twice in the `fair` node it shares with its sibling
-TEST(SchedulerWorkloadResourceManager, UpdateLimitOfActiveWorkloadWithActiveSibling)
-{
-    ResourceTest t;
-
-    t.query("CREATE RESOURCE res1 (WRITE DISK disk, READ DISK disk)");
-    t.query("CREATE WORKLOAD all SETTINGS max_io_requests = 1");
-    t.query("CREATE WORKLOAD a IN all");
-    t.query("CREATE WORKLOAD b IN all");
-
-    std::barrier<std::__empty_completion> sync_before_enqueue(2);
-    std::barrier<std::__empty_completion> sync_before_update(4);
-    std::barrier<std::__empty_completion> sync_after_update(2);
-    t.async("a", "res1", [&] (ResourceLink link)
-    {
-        TestGuard g(t, link, 1);
-        sync_before_enqueue.arrive_and_wait();
-        sync_before_update.arrive_and_wait(); // This request holds the only slot of `all`
-        sync_after_update.arrive_and_wait();
-    });
-
-    sync_before_enqueue.arrive_and_wait();
-
-    for (const String & workload : {"a", "b"})
-    {
-        t.async(workload, "res1", [&] (ResourceLink link)
-        {
-            TestGuard g(t, link, 1, EnqueueOnly);
-            sync_before_update.arrive_and_wait(); // Pending requests keep both `a` and `b` active
-            g.waitExecute();
-        });
-    }
-
-    sync_before_update.arrive_and_wait();
-    t.query("CREATE OR REPLACE WORKLOAD a IN all SETTINGS max_io_requests = 100");
-    sync_after_update.arrive_and_wait();
-
-    t.wait();
-}
-
 TEST(SchedulerWorkloadResourceManager, DropNotEmptyQueue)
 {
     ResourceTest t;

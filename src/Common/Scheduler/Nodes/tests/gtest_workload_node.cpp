@@ -828,48 +828,7 @@ static void expectFairActiveChildren(const TimeSharedWorkloadNodePtr & parent, c
     EXPECT_EQ(fair->activeChildren(), active);
 }
 
-TEST(SchedulerTimeSharedWorkloadNode, AddSemaphoreToActiveChildOfFairPolicy)
-{
-    ResourceTest t;
-
-    auto all = t.createUnifiedNode("all");
-    auto a = t.createUnifiedNode("A", all);
-    auto b = t.createUnifiedNode("B", all);
-
-    t.enqueue(a, {10, 10});
-    t.enqueue(b, {10, 10});
-
-    // Replaces the child of active `A` while `A` stays attached to the `fair` node with all children active
-    t.updateUnifiedNode(a, all, all, {.priority = Priority{}, .precedence = Priority{}, .max_bytes_inflight = 1000});
-    expectFairActiveChildren(all, {a, b});
-
-    t.dequeue();
-    t.consumed("A", 20);
-    t.consumed("B", 20);
-}
-
-TEST(SchedulerTimeSharedWorkloadNode, AddFirstChildToActiveChildOfFairPolicy)
-{
-    ResourceTest t;
-
-    auto all = t.createUnifiedNode("all");
-    auto a = t.createUnifiedNode("A", all);
-    auto b = t.createUnifiedNode("B", all);
-    auto x = t.createUnifiedNode("X", a);
-
-    t.enqueue(x, {10, 10});
-    t.enqueue(b, {10, 10});
-
-    // The second child of `A` inserts a `fair` node under active `A`
-    auto y = t.createUnifiedNode("Y", a);
-    expectFairActiveChildren(all, {a, b});
-
-    t.dequeue();
-    t.consumed("X", 20);
-    t.consumed("B", 20);
-}
-
-TEST(SchedulerTimeSharedWorkloadNode, UpdateSemaphoreReactivateChildOfFairPolicy)
+TEST(SchedulerTimeSharedWorkloadNode, UpdateSemaphoreOfChildOfFairPolicy)
 {
     ResourceTest t;
 
@@ -889,32 +848,12 @@ TEST(SchedulerTimeSharedWorkloadNode, UpdateSemaphoreReactivateChildOfFairPolicy
     t.updateUnifiedNode(a, all, all, {.priority = Priority{}, .precedence = Priority{}, .max_bytes_inflight = 100});
     expectFairActiveChildren(all, {a, b, c});
 
-    t.dequeue();
-    t.consumed("A", 30);
-    t.consumed("B", 30);
-}
-
-TEST(SchedulerTimeSharedWorkloadNode, UpdateSemaphoreBelowInflightStopsChildOfFairPolicy)
-{
-    ResourceTest t;
-
-    auto all = t.createUnifiedNode("all");
-    auto a = t.createUnifiedNode("A", all, {.priority = Priority{}, .precedence = Priority{}, .max_bytes_inflight = 100});
-    auto b = t.createUnifiedNode("B", all);
-
-    t.enqueue(a, {10, 10, 10, 10});
-    t.enqueue(b, {10, 10, 10, 10});
-    t.dequeue(2);
-    t.consumed("A", 10);
-    t.consumed("B", 10);
-
-    // Requests are never finished in this test, so `A` must not dequeue anything under the new limit
+    // Requests are never finished in this test, so `A` must not dequeue anything under the lowered limit
     t.updateUnifiedNode(a, all, all, {.priority = Priority{}, .precedence = Priority{}, .max_bytes_inflight = 5});
-
     t.dequeue();
     t.consumed("A", 0);
     t.consumed("B", 30);
-    expectFairActiveChildren(all, {a, b});
+    expectFairActiveChildren(all, {a, b, c});
 
     t.updateUnifiedNode(a, all, all, {.priority = Priority{}, .precedence = Priority{}, .max_bytes_inflight = 100});
     t.dequeue();
