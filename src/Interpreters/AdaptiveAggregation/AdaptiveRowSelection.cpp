@@ -3,7 +3,6 @@
 #include <optional>
 #include <type_traits>
 
-#include <AggregateFunctions/AggregateFunctionCount.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnSparse.h>
@@ -82,55 +81,43 @@ Int64 ALWAYS_INLINE orderedImage(T value)
 
 }
 
-/// A `Nullable` argument skips its own `NULL` rows, which can make the calls select different rows, and the
-/// combinators change what is selected, so both keep one record per missed row.
+/// Every aggregate states which rows of its group its result depends on (see
+/// `IAggregateFunction::getRowSelection`). A combinator, such as the `-Null` of a `Nullable` argument, keeps
+/// the default, every row, so its aggregation keeps one record per missed row.
 std::unique_ptr<const AdaptiveRowSelection> adaptiveRowSelectionOf(const AggregateDescriptions & aggregates)
 {
     std::optional<AdaptiveRowSelection> selection;
     std::vector<size_t> count_aggregates;
     for (size_t i = 0; i < aggregates.size(); ++i)
     {
-        const auto & function = *aggregates[i].function;
-        for (const auto & type : function.getArgumentTypes())
-            if (isNullableOrLowCardinalityNullable(type))
+        const AggregateFunctionRowSelection function_selection = aggregates[i].function->getRowSelection();
+        switch (function_selection.kind)
+        {
+            case AggregateFunctionRowSelection::Kind::AllRows:
                 return {};
-
-        if (typeid_cast<const AggregateFunctionCount *>(&function))
-        {
-            count_aggregates.push_back(i);
-            continue;
+            case AggregateFunctionRowSelection::Kind::RowCount:
+                count_aggregates.push_back(i);
+                continue;
+            case AggregateFunctionRowSelection::Kind::AnyRow:
+                /// Any row of the group serves, the best one too.
+                continue;
+            case AggregateFunctionRowSelection::Kind::BestRow:
+                break;
         }
 
-        const String name = function.getName();
-        size_t argument = 0;
-        bool largest = true;
-        if (name == "argMax" || name == "argMin")
-        {
-            argument = 1;
-            largest = name == "argMax";
-        }
-        else if (name == "max" || name == "min")
-        {
-            largest = name == "max";
-        }
-        else if (name == "any")
-        {
-            /// Any row of the group serves `any`, the best one too.
-            continue;
-        }
-        else
-        {
-            return {};
-        }
-
+        const size_t argument = function_selection.ordering_argument;
         if (!selection)
         {
             selection = AdaptiveRowSelection{
-                .ordering_aggregate = i, .ordering_argument = argument, .largest = largest, .count_aggregates = {}};
+                .ordering_aggregate = i,
+                .ordering_argument = argument,
+                .largest = function_selection.largest,
+                .count_aggregates = {}};
             continue;
         }
-        const auto & ordering_name = aggregates[selection->ordering_aggregate].argument_names[selection->ordering_argument];
-        if (largest != selection->largest || aggregates[i].argument_names[argument] != ordering_name)
+        const auto & ordering_name
+            = aggregates[selection->ordering_aggregate].argument_names[selection->ordering_argument];
+        if (function_selection.largest != selection->largest || aggregates[i].argument_names[argument] != ordering_name)
             return {};
     }
 

@@ -26,5 +26,6 @@ two counts next to argMin	results match: 1	fewer records: 1
 argMax alone	results match: 1	fewer records: 1
 max before argMax	results match: 1	fewer records: 1
 min alone	results match: 1	fewer records: 1
+argAndMax alone	results match: 1	fewer records: 1
 probing bypassed	results match: 1	fewer records: 1
 probing bypassed	1

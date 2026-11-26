@@ -40,7 +40,9 @@ struct AdaptiveRowSelection
 
 /// The row selection of `aggregates`, or null when they do not all select one row by the same ordering column
 /// of a type stored as an integer of up to 64 bits: an integer, `Enum`, `IPv4`, date, time, interval,
-/// `Decimal32` or `Decimal64`. The caller guarantees that every aggregate carries its argument names.
+/// `Decimal32` or `Decimal64`. Each aggregate function states which rows its result depends on (see
+/// `IAggregateFunction::getRowSelection`), so another function joins by stating it. The caller guarantees
+/// that every aggregate carries its argument names.
 std::unique_ptr<const AdaptiveRowSelection> adaptiveRowSelectionOf(const AggregateDescriptions & aggregates);
 
 /// Fills `ranks[row_begin, row_end)` with the rank of each row: its value of `column`, the ordering argument

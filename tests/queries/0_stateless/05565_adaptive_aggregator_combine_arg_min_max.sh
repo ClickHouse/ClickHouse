@@ -79,6 +79,8 @@ add_shape "two counts next to argMin" "argMin(x, o), count(), count(x)"
 add_shape "argMax alone" "argMax(x, o)"
 add_shape "max before argMax" "max(o), argMax(x, o)"
 add_shape "min alone" "min(o)"
+# `argAndMax` returns the value of the best row together with its ordering value.
+add_shape "argAndMax alone" "argAndMax(x, o)"
 
 # A producer stops probing its frozen table once a sample of 65536 rows has almost no hits, and stages the
 # remaining misses through the loop without the probe. The lanes of this shape are long enough for that.
