@@ -27,7 +27,6 @@ namespace ErrorCodes
 
 using namespace Parquet;
 
-/// Size of the column once `recursiveRemoveSparse` converts it; row groups are closed by it.
 static size_t allocatedBytesOfFullColumn(const IColumn & column)
 {
     if (const auto * sparse = typeid_cast<const ColumnSparse *>(&column))
@@ -46,8 +45,7 @@ static size_t allocatedBytesOfFullColumn(const IColumn & column)
     return column.allocatedBytes();
 }
 
-/// Keeps sparse columns, shrinking their mostly empty arrays, and converts the other special columns
-/// (whose full size the compact column does not tell) as `MaterializingTransform` did.
+/// Keeps sparse columns (shrunk) and converts the other special columns, whose compact size does not tell the full one.
 static void prepareChunkForStaging(Chunk & chunk)
 {
     size_t num_rows = chunk.getNumRows();
