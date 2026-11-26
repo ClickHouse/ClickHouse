@@ -1,5 +1,5 @@
 {
-  "group": "MergeTree 表设置",
+  "group": "MergeTree tables settings",
   "root": "zh/reference/settings/merge-tree-settings",
   "directory": "none",
   "pages": [

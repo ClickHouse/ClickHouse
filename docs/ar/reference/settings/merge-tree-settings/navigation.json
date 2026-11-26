@@ -1,5 +1,5 @@
 {
-  "group": "إعدادات جداول MergeTree",
+  "group": "MergeTree tables settings",
   "root": "ar/reference/settings/merge-tree-settings",
   "directory": "none",
   "pages": [

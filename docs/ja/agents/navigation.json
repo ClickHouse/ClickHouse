@@ -1,8 +1,8 @@
 {
-  "item": "エージェント",
+  "item": "Agents",
   "pages": [
     {
-      "group": "はじめる",
+      "group": "Get started",
       "pages": [
         "ja/agents/index",
         "ja/agents/quickstart",
@@ -10,7 +10,7 @@
       ]
     },
     {
-      "group": "エージェントビルダー",
+      "group": "Agent Builder",
       "pages": [
         "ja/agents/builder/index",
         "ja/agents/builder/model-parameters",
@@ -24,7 +24,7 @@
       ]
     },
     {
-      "group": "エージェントの管理",
+      "group": "Manage agents",
       "pages": [
         "ja/agents/prompts",
         "ja/agents/memory",
@@ -33,7 +33,7 @@
       ]
     },
     {
-      "group": "アシスタント",
+      "group": "Assistant",
       "pages": [
         "ja/agents/assistant/using-ai-chat",
         "ja/agents/assistant/customizing-semantic-layer"

@@ -1,10 +1,10 @@
 {
-  "item": "Conceptos",
+  "item": "Concepts",
   "pages": [
     "es/concepts/index",
     {
       "expanded": true,
-      "group": "Fundamentos",
+      "group": "Fundamentals",
       "pages": [
         "es/concepts/core-concepts/index",
         "es/concepts/core-concepts/glossary",
@@ -18,11 +18,11 @@
     },
     {
       "expanded": true,
-      "group": "Conceptos de ClickHouse",
+      "group": "ClickHouse concepts",
       "pages": [
         "es/concepts/features/index",
         {
-          "group": "Vistas materializadas",
+          "group": "Materialized views",
           "pages": [
             "es/concepts/features/materialized-views/index",
             "es/concepts/features/materialized-views/incremental-materialized-view",
@@ -31,28 +31,28 @@
           ]
         },
         {
-          "group": "Diccionarios",
+          "group": "Dictionaries",
           "pages": [
             "es/concepts/features/dictionaries/index",
             "es/concepts/features/dictionaries/best-practices"
           ]
         },
         {
-          "group": "Proyecciones",
+          "group": "Projections",
           "pages": [
             "es/concepts/features/projections/projections",
             "es/concepts/features/projections/materialized-views-versus-projections"
           ]
         },
         {
-          "group": "Rendimiento",
+          "group": "Performance",
           "pages": [
             "es/concepts/features/performance/index",
             "es/concepts/features/performance/prewhere",
             "es/concepts/features/performance/allocation-profiling",
             "es/concepts/features/performance/allocation-profiling-old",
             {
-              "group": "Cachés",
+              "group": "Caches",
               "pages": [
                 "es/concepts/features/performance/caches/caches",
                 "es/concepts/features/performance/caches/query-cache",
@@ -61,7 +61,7 @@
               ]
             },
             {
-              "group": "Índices de omisión de datos",
+              "group": "Skipping-indexes",
               "pages": [
                 "es/concepts/features/performance/skip-indexes/skipping-indexes",
                 "es/concepts/features/performance/skip-indexes/skipping-indexes-examples"
@@ -69,7 +69,7 @@
             },
             "es/concepts/features/performance/lazy-materialization",
             {
-              "group": "Resolución de problemas",
+              "group": "Troubleshooting",
               "pages": [
                 "es/concepts/features/performance/troubleshoot/debugging-memory-issues",
                 "es/concepts/features/performance/troubleshoot/oom-canary",
@@ -80,11 +80,11 @@
           ]
         },
         {
-          "group": "Operaciones",
+          "group": "Operations",
           "pages": [
             "es/concepts/features/operations/background-queries",
             {
-              "group": "Inserción",
+              "group": "Insert",
               "pages": [
                 "es/concepts/features/operations/insert/inserting-data",
                 "es/concepts/features/operations/insert/schema-inference",
@@ -97,7 +97,7 @@
               ]
             },
             {
-              "group": "Selección",
+              "group": "Select",
               "pages": [
                 {
                   "group": "JOINs",
@@ -112,7 +112,7 @@
               ]
             },
             {
-              "group": "Actualización",
+              "group": "Update",
               "pages": [
                 "es/concepts/features/operations/update/index",
                 "es/concepts/features/operations/update/overview",
@@ -120,7 +120,7 @@
               ]
             },
             {
-              "group": "Eliminación",
+              "group": "Delete",
               "pages": [
                 "es/concepts/features/operations/delete/index",
                 "es/concepts/features/operations/delete/overview",
@@ -133,10 +133,10 @@
           ]
         },
         {
-          "group": "Configuración",
+          "group": "Configuration",
           "pages": [
             {
-              "group": "Configuración",
+              "group": "Settings",
               "pages": [
                 "es/concepts/features/configuration/settings/overview",
                 "es/concepts/features/configuration/settings/settings-query-level",
@@ -152,7 +152,7 @@
               ]
             },
             {
-              "group": "Configuración del servidor",
+              "group": "Server config",
               "pages": [
                 "es/concepts/features/configuration/server-config/configuration-files",
                 "es/concepts/features/configuration/server-config/storing-data",
@@ -167,7 +167,7 @@
           ]
         },
         {
-          "group": "Seguridad y autenticación",
+          "group": "Security and auth",
           "pages": [
             "es/concepts/features/security/index",
             "es/concepts/features/security/access-rights",
@@ -181,7 +181,7 @@
               ]
             },
             {
-              "group": "Autenticadores externos",
+              "group": "External authenticators",
               "pages": [
                 "es/concepts/features/security/external-authenticators/index",
                 {
@@ -206,7 +206,7 @@
           ]
         },
         {
-          "group": "Copias de seguridad y restauración",
+          "group": "Backup and restore",
           "pages": [
             "es/concepts/features/backup-restore/overview",
             "es/concepts/features/backup-restore/restore-settings",
@@ -219,11 +219,11 @@
           ]
         },
         {
-          "group": "Conectarse a ClickHouse",
+          "group": "Connect to ClickHouse",
           "pages": [
             "es/concepts/features/connect-to-clickhouse/index",
             {
-              "group": "Herramientas nativas",
+              "group": "Native tools",
               "pages": [
                 "es/concepts/features/connect-to-clickhouse/native-tools/clickhousectl",
                 "es/concepts/features/connect-to-clickhouse/native-tools/clickhouse-client",
@@ -232,7 +232,7 @@
               ]
             },
             {
-              "group": "Controladores y clientes para lenguajes de programación",
+              "group": "Drivers and language clients",
               "pages": [
                 "es/concepts/features/connect-to-clickhouse/drivers/adbc",
                 {
@@ -241,7 +241,7 @@
               ]
             },
             {
-              "group": "Protocolos",
+              "group": "Protocols",
               "pages": [
                 "es/concepts/features/connect-to-clickhouse/protocols/http/index",
                 "es/concepts/features/connect-to-clickhouse/protocols/http/framing-formats",
@@ -249,7 +249,7 @@
                 "es/concepts/features/connect-to-clickhouse/protocols/grpc",
                 "es/concepts/features/connect-to-clickhouse/protocols/arrow-flight",
                 {
-                  "group": "Protocolos de compatibilidad",
+                  "group": "Compatibility protocols",
                   "pages": [
                     "es/concepts/features/connect-to-clickhouse/protocols/compatibility/mysql",
                     "es/concepts/features/connect-to-clickhouse/protocols/compatibility/postgresql"
@@ -266,11 +266,11 @@
               ]
             },
             {
-              "group": "Interfaces web integradas",
+              "group": "Built-in web interfaces",
               "pages": [
                 "es/concepts/features/connect-to-clickhouse/built-in-web-interfaces/documentation-search",
                 {
-                  "group": "Interfaz de usuario web para SQL (Play)",
+                  "group": "Web SQL UI (Play)",
                   "pages": [
                     "es/concepts/features/connect-to-clickhouse/built-in-web-interfaces/web-sql/index",
                     "es/concepts/features/connect-to-clickhouse/built-in-web-interfaces/web-sql/notebook",
@@ -285,7 +285,7 @@
           ]
         },
         {
-          "group": "Herramientas y utilidades",
+          "group": "Tools and utilities",
           "pages": [
             "es/concepts/features/tools-and-utilities/index",
             "es/concepts/features/tools-and-utilities/backupview",
@@ -305,7 +305,7 @@
     },
     {
       "expanded": true,
-      "group": "Prácticas recomendadas",
+      "group": "Best practices",
       "pages": [
         "es/concepts/best-practices/index",
         "es/concepts/best-practices/choosing-a-primary-key",

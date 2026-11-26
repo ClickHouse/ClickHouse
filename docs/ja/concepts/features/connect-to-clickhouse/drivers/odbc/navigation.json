@@ -1,5 +1,5 @@
 {
-  "group": "ODBCドライバー",
+  "group": "ODBC driver",
   "pages": [
     "ja/concepts/features/connect-to-clickhouse/drivers/odbc/index"
   ]
