@@ -7,42 +7,42 @@
       "versionId": "62b5cc6dd5c2a83b9d1c3a0b913cf70ed9e42e8bfb940c180bf45390ed9e0dc1",
       "translations": {
         "ja": {
-          "updatedAt": "2026-11-26T08:50:03.973Z",
+          "updatedAt": "2026-11-26T08:52:14.137Z",
           "fileName": "docs.json",
           "postProcessHash": "14964d5670797f49c26865e3304f0456fba9d85ecb56fcea592f5048ee6c4916"
         },
         "pt-BR": {
-          "updatedAt": "2026-11-26T08:50:04.130Z",
+          "updatedAt": "2026-11-26T08:52:14.291Z",
           "fileName": "docs.json",
           "postProcessHash": "14964d5670797f49c26865e3304f0456fba9d85ecb56fcea592f5048ee6c4916"
         },
         "fr": {
-          "updatedAt": "2026-11-26T08:50:04.432Z",
+          "updatedAt": "2026-11-26T08:52:14.595Z",
           "fileName": "docs.json",
           "postProcessHash": "14964d5670797f49c26865e3304f0456fba9d85ecb56fcea592f5048ee6c4916"
         },
         "zh": {
-          "updatedAt": "2026-11-26T08:50:04.282Z",
+          "updatedAt": "2026-11-26T08:52:14.444Z",
           "fileName": "docs.json",
           "postProcessHash": "14964d5670797f49c26865e3304f0456fba9d85ecb56fcea592f5048ee6c4916"
         },
         "ar": {
-          "updatedAt": "2026-11-26T08:50:04.357Z",
+          "updatedAt": "2026-11-26T08:52:14.518Z",
           "fileName": "docs.json",
           "postProcessHash": "14964d5670797f49c26865e3304f0456fba9d85ecb56fcea592f5048ee6c4916"
         },
         "ko": {
-          "updatedAt": "2026-11-26T08:50:04.052Z",
+          "updatedAt": "2026-11-26T08:52:14.215Z",
           "fileName": "docs.json",
           "postProcessHash": "14964d5670797f49c26865e3304f0456fba9d85ecb56fcea592f5048ee6c4916"
         },
         "es": {
-          "updatedAt": "2026-11-26T08:50:03.894Z",
+          "updatedAt": "2026-11-26T08:52:14.058Z",
           "fileName": "docs.json",
           "postProcessHash": "14964d5670797f49c26865e3304f0456fba9d85ecb56fcea592f5048ee6c4916"
         },
         "ru": {
-          "updatedAt": "2026-11-26T08:50:04.206Z",
+          "updatedAt": "2026-11-26T08:52:14.368Z",
           "fileName": "docs.json",
           "postProcessHash": "14964d5670797f49c26865e3304f0456fba9d85ecb56fcea592f5048ee6c4916"
         }
@@ -152302,47 +152302,47 @@
     },
     {
       "fileId": "6823ea76e3f814e87a53f731b0225431e907554dc2acdb542d2710915f4b2cd9",
-      "versionId": "c884ad7b3cc3ebce66e078489f0071576a162cda4e1cd1436700a7d44fbe6e2b",
+      "versionId": "3cbaff967089468f197ecac86b1e107af7757371a5020d50f39cda2e360447d7",
       "translations": {
-        "pt-BR": {
-          "updatedAt": "2026-11-25T16:59:39.174Z",
-          "fileName": "pt-BR/guides/use-cases/ai-ml/loom.mdx",
-          "postProcessHash": "3a0813f2b88e29a4ff0d8a3ac3dc504a9a792005483d4ffb7f801c3518bcadc8"
-        },
-        "ja": {
-          "updatedAt": "2026-11-25T16:59:39.287Z",
-          "fileName": "ja/guides/use-cases/ai-ml/loom.mdx",
-          "postProcessHash": "77793fa058b4253eda2955957ea7863a609a9801bceb67c556eb3746ee2d0874"
-        },
         "ar": {
-          "updatedAt": "2026-11-25T16:59:39.523Z",
+          "updatedAt": "2026-11-26T08:52:16.737Z",
           "fileName": "ar/guides/use-cases/ai-ml/loom.mdx",
-          "postProcessHash": "4ad6aa03f48c0dfdf3fcd515d3cd08669903c3becdceedfe17f70c642323cb08"
+          "postProcessHash": "0e45e51d1c36e081caa0f4107b2569da13eb9d0a22ba739be6fa2770a5c52c6c"
         },
-        "ko": {
-          "updatedAt": "2026-11-25T16:59:39.604Z",
-          "fileName": "ko/guides/use-cases/ai-ml/loom.mdx",
-          "postProcessHash": "3f266c47fb2e20d4fa7af432a8cd3a04a7a12b6f90205a2c0cac0c2453c3f0ea"
-        },
-        "ru": {
-          "updatedAt": "2026-11-25T16:59:39.616Z",
-          "fileName": "ru/guides/use-cases/ai-ml/loom.mdx",
-          "postProcessHash": "98f1aa4ef4cfd8179c9d4f3288461e9e972f567ace60075150945b49ac6e073e"
-        },
-        "zh": {
-          "updatedAt": "2026-11-25T16:59:39.725Z",
-          "fileName": "zh/guides/use-cases/ai-ml/loom.mdx",
-          "postProcessHash": "71c6c2bb079252dd7509c756aa11363a21a4b21b7b17202d3837636b233f8117"
+        "pt-BR": {
+          "updatedAt": "2026-11-26T08:52:16.737Z",
+          "fileName": "pt-BR/guides/use-cases/ai-ml/loom.mdx",
+          "postProcessHash": "ad4d27a9e5f7debb89114477bb5826d6dd266880b497569363098b6891cfcab7"
         },
         "es": {
-          "updatedAt": "2026-11-25T16:59:39.811Z",
+          "updatedAt": "2026-11-26T08:52:16.738Z",
           "fileName": "es/guides/use-cases/ai-ml/loom.mdx",
-          "postProcessHash": "700107e85cfb221c3354916c33dea69d5f2fec8b39aca75b2a95f9cc86b5b8a5"
+          "postProcessHash": "e22a53e7bdc5868c9cdcbf829341d7a33659948636f850bdaa04dd87eb46a6b5"
+        },
+        "ru": {
+          "updatedAt": "2026-11-26T08:52:16.738Z",
+          "fileName": "ru/guides/use-cases/ai-ml/loom.mdx",
+          "postProcessHash": "5ad9516ca662d8bf45e3afe8a8fd97ff4d6b8d1bab22105048907f79fc5320dc"
+        },
+        "ko": {
+          "updatedAt": "2026-11-26T08:52:16.739Z",
+          "fileName": "ko/guides/use-cases/ai-ml/loom.mdx",
+          "postProcessHash": "b82d1033d703be4c04fa3e9d575611c96d14c86c7b40fd103b5f74c3bd632137"
+        },
+        "ja": {
+          "updatedAt": "2026-11-26T08:52:16.739Z",
+          "fileName": "ja/guides/use-cases/ai-ml/loom.mdx",
+          "postProcessHash": "6f14de00bdce886153f96a09f99db748ab6f49b7a98c17ed6fbec4654efb7639"
         },
         "fr": {
-          "updatedAt": "2026-11-25T16:59:39.835Z",
+          "updatedAt": "2026-11-26T08:52:16.740Z",
           "fileName": "fr/guides/use-cases/ai-ml/loom.mdx",
-          "postProcessHash": "20dc28f577713a90c8f7b7321800b6ff7072aaa1b9a952eff81e45e26fbfddcd"
+          "postProcessHash": "a69e32ca192ac7440bf6e12b5583ab8ed551459640cf3ab0087e881b63f55bc2"
+        },
+        "zh": {
+          "updatedAt": "2026-11-26T08:52:16.740Z",
+          "fileName": "zh/guides/use-cases/ai-ml/loom.mdx",
+          "postProcessHash": "786d27e94cf7c2b2035e0d4103446c0ee2e842f160941e8304dd8ebdff370836"
         }
       },
       "fileName": "guides/use-cases/ai-ml/loom.mdx"
