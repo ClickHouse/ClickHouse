@@ -43,13 +43,7 @@ def read_table(started_cluster, storage_type, table_name, query):
         table_function=True,
     )
     instance = started_cluster.instances["node1"]
-    return [
-        instance.query(
-            query.format(table=table_expression),
-            settings={"input_format_parquet_use_native_reader_v3": use_v3},
-        )
-        for use_v3 in [1, 0]
-    ]
+    return instance.query(query.format(table=table_expression))
 
 
 @pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
@@ -63,13 +57,13 @@ def test_dropped_column_in_data_file(started_cluster_iceberg_with_spark, storage
     spark.sql(f"INSERT INTO {TABLE_NAME} VALUES (2);")
     expire_all_snapshots_but_current(spark, TABLE_NAME)
 
-    for result in read_table(
+    result = read_table(
         started_cluster_iceberg_with_spark,
         storage_type,
         TABLE_NAME,
         "SELECT id FROM {table} ORDER BY id",
-    ):
-        assert result == "1\n2\n"
+    )
+    assert result == "1\n2\n"
 
 
 @pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
@@ -83,10 +77,10 @@ def test_dropped_subcolumn_in_data_file(started_cluster_iceberg_with_spark, stor
     spark.sql(f"INSERT INTO {TABLE_NAME} VALUES (2, named_struct('a', 20));")
     expire_all_snapshots_but_current(spark, TABLE_NAME)
 
-    for result in read_table(
+    result = read_table(
         started_cluster_iceberg_with_spark,
         storage_type,
         TABLE_NAME,
         "SELECT id, s.a FROM {table} ORDER BY id",
-    ):
-        assert result == "1\t10\n2\t20\n"
+    )
+    assert result == "1\t10\n2\t20\n"

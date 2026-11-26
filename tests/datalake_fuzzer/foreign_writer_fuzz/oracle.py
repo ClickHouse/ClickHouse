@@ -29,10 +29,8 @@ READ_SETTINGS_COMMON = {
     "input_format_parquet_filter_push_down": [0, 1],
     "input_format_parquet_bloom_filter_push_down": [0, 1],
     "input_format_parquet_page_filter_push_down": [0, 1],
-    "input_format_parquet_use_native_reader_v3": [0, 1],
     "use_query_condition_cache": [0, 1],
     "optimize_move_to_prewhere": [0, 1],
-    "query_plan_optimize_prewhere": [0, 1],
 }
 
 READ_SETTINGS_FAMILY = {
@@ -57,7 +55,6 @@ SAFE_SETTINGS = {
     "input_format_parquet_page_filter_push_down": 0,
     "use_query_condition_cache": 0,
     "optimize_move_to_prewhere": 0,
-    "query_plan_optimize_prewhere": 0,
     "optimize_trivial_count_query": 0,
     "use_iceberg_partition_pruning": 0,
     "use_iceberg_manifest_list_partition_pruning": 0,
