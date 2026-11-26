@@ -105,6 +105,21 @@ public:
     /// `fillMissingColumns` runs and must not be consumed as regular columns before that.
     [[nodiscard]] const NameSet & getPartiallyReadColumns() const { return partially_read_columns; }
 
+    /// Registers the ranges of the compressed blocks loaded since the previous call (from the uncompressed cache too) in the
+    /// `ReadRangesRegistry` of `setReadRangesRegistry`.
+    virtual void registerReadRanges() = 0;
+
+    /// Enables `registerReadRanges`. The readers of a read share `registry`, so a block several of them load is counted
+    /// once. A reader is reused only for the tasks of its read, so `registry` doesn't change.
+    /// A granule served from the columns cache loads nothing from the part and could not be measured, so the reader stops
+    /// reading from the cache; it still writes to it.
+    virtual void setReadRangesRegistry(ReadRangesRegistryPtr registry)
+    {
+        chassert(!read_ranges_registry || read_ranges_registry == registry);
+        read_ranges_registry = std::move(registry);
+        columns_cache_reads_possible = false;
+    }
+
     [[nodiscard]] size_t getFirstMarkToRead() const { return all_mark_ranges.front().begin; }
 
     MergeTreeDataPartInfoForReaderPtr data_part_info_for_read;
@@ -165,6 +180,9 @@ protected:
     [[nodiscard]] StringValueFilterPtr getStringValueFilter(const NameAndTypePair & column_in_part) const;
 
     void checkNumberOfColumns(size_t num_columns_to_read) const;
+
+    /// See `setReadRangesRegistry`.
+    ReadRangesRegistryPtr read_ranges_registry;
 
     [[nodiscard]] String getMessageForDiagnosticOfBrokenPart(size_t from_mark, size_t max_rows_to_read) const;
 
@@ -270,6 +288,13 @@ protected:
     /// spelled the same way is a regular column, and not caching it costs nothing but the caching.
     static bool isColumnNotCacheable(const NameAndTypePair & column);
 
+    /// The distinct-paths subcolumn of a `JSON` column, see `isColumnNotCacheable`.
+    static bool isDistinctPathsSubcolumn(const NameAndTypePair & column);
+
+    /// Whether the subcolumn holds the value of a block in its first row and nothing in the other rows, as the
+    /// distinct-paths subcolumn does: a frozen default of it is padded with empty rows instead of being replicated.
+    static bool isOncePerBlockSubcolumn(const NameAndTypePair & column);
+
     bool columns_cache_reads_possible = false;
     bool columns_cache_writes_possible = false;
 
@@ -314,6 +339,7 @@ private:
     {
         NameAndTypePair column;
         SerializationPtr serialization;
+        bool frozen = false; /// absent from the part, with a marker of the type whose default the values are
     };
 
     /// Resolves both at once: they share the lookup of the column in the part and, for a subcolumn, the
@@ -338,6 +364,19 @@ private:
 
     /// The same as above but with converted Arrays to subcolumns of Nested.
     NamesAndTypesList converted_requested_columns;
+
+    /// A requested column that the part omits with a frozen default (see `SerializationInfoByName::MissingColumnInfo`).
+    struct FrozenColumn
+    {
+        size_t index; /// position in `converted_requested_columns`
+        String name_in_storage; /// the current name of the column
+        ColumnPtr default_row; /// one row of the default of the requested column or subcolumn
+        bool once_per_block; /// the row is the value of a whole block, the other rows stay empty (see `isOncePerBlockSubcolumn`)
+    };
+
+    /// Resolved once per reader, from the lookup of the columns in the part: `fillMissingColumns` only replicates the
+    /// one-row defaults on every read step.
+    VectorWithMemoryTracking<FrozenColumn> frozen_columns;
 
     mutable std::optional<bool> may_evaluate_missing_defaults;
 

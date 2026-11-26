@@ -855,7 +855,7 @@ ORC 行读取器使用的时区名称，默认时区为 GMT。
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "1"},{"label": "用于在 Parquet 文件中启用 geo 列的新设置"}]}]} />
 
-读取 Parquet 文件时，将几何列解码为 ClickHouse 地理空间类型 (`Point`、`MultiPoint`、`LineString`、`Polygon`、`MultiLineString`、`MultiPolygon` 或 `Geometry`) 。该设置适用于由 GeoParquet `geo` 元数据描述的列，以及标注了 Parquet `GEOMETRY` 或 `GEOGRAPHY` 逻辑类型的列。若禁用此设置，则除非显式指定地理数据类型，否则此类列将以 `String` 类型读取，内容为原始 WKB (或 WKT) 字节。
+读取 Parquet 文件时，将几何列解码为 ClickHouse 地理空间类型 (`Point`、`MultiPoint`、`LineString`、`Polygon`、`MultiLineString`、`MultiPolygon` 或 `Geometry`) 。该设置适用于由 GeoParquet `geo` 元数据描述的列，以及标注了 Parquet `GEOMETRY` 或 `GEOGRAPHY` 逻辑类型的列。若禁用此设置，则除非显式指定地理数据类型，否则此类列将以 `String` 类型读取，内容为原始 WKB (或 WKT) 字节。此时，采用 GeoParquet 1.1 原生 (GeoArrow) 编码的列将按其底层的嵌套 `Array` 和 `Tuple` 类型读取。
 
 ## input_format_parquet_allow_missing_columns {#input_format_parquet_allow_missing_columns}
 
@@ -1218,6 +1218,22 @@ Parquet 读取器 输出的平均块字节数
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 对于 Values format，如果字段无法通过流式解析器解析，则运行 SQL 解析器，并尝试将其作为 SQL 表达式进行解释。
+
+## input_format_vortex_filter_push_down {#input_format_vortex_filter_push_down}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "新增设置：将 WHERE 条件中作用于顶层整数、浮点、字符串\/二进制、`Bool`、`Date`、`Date32` 和 `DateTime64` 列的可转换部分下推到 Vortex 格式扫描中，从而可能减少需解码的行数；仅部分可转换的条件会被放宽为至少保留所有匹配行的条件，ClickHouse 会在扫描后重新应用完整的过滤器。"}]}]} />
+
+读取 Vortex 文件时，将 WHERE 条件中作用于顶层整数、浮点、字符串/二进制、`Bool`、`Date`、`Date32` 和 `DateTime64` 列的可转换部分下推到扫描中，使选择性较高的查询读取和解码更少的数据。扫描中仅执行条件中已转换的部分：仅部分可转换的条件会被放宽为至少保留所有匹配行的条件，因此不匹配的行仍可能被读取和解码。ClickHouse 会在扫描后重新应用完整的过滤器。
+
+## input_format_vortex_preserve_order {#input_format_vortex_preserve_order}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "新增设置，用于按文件顺序返回 Vortex 文件中的行；默认情况下，文件会被并行解码，不保证行的顺序。"}]}]} />
+
+按文件顺序返回 Vortex 文件中的行。默认情况下，文件的各个行拆分块会被并行解码 (参见 `max_parsing_threads`) ，并在就绪后立即返回，因此不保证行的顺序；启用此设置后，较慢的拆分块会阻塞其后的拆分块。不建议启用此设置，因为行的顺序通常本就无法保证，且查询管道的其他环节也可能打乱该顺序。
 
 ## input_format_with_names_use_header {#input_format_with_names_use_header}
 

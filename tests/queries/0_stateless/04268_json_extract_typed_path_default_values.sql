@@ -3,8 +3,6 @@
 -- when the value equals the type's default (0 for UInt32, '' for String).
 -- https://github.com/ClickHouse/ClickHouse/issues/101721
 
-SET enable_json_type = 1;
-
 DROP TABLE IF EXISTS test_json_typed_defaults;
 CREATE TABLE test_json_typed_defaults (json JSON(a UInt32, b String)) ENGINE = Memory;
 INSERT INTO test_json_typed_defaults VALUES ('{"a": 0, "b": ""}'), ('{"a": 42, "b": "hello"}'), ('{"a": 0, "b": ""}');

@@ -38,18 +38,24 @@ destinos.
 Carregue o chdb&#95;hook de uma das seguintes maneiras como super user. Use a que
 fizer mais sentido para o seu caso de uso:
 
+<Note>
+  No ClickHouse Managed Postgres:
+
+  * O SQL Console do ClickHouse Cloud ainda não oferece suporte ao comando
+    `LOAD 'chdb_hook'`, mas ele pode ser executado via psql ou qualquer outra database connection.
+  * `ALTER SYSTEM` não é permitido e o `postgresql.conf` não pode ser editado; portanto, os
+    exemplos abaixo que dependem deles não se aplicam. Nesse caso, use `ALTER DATABASE` ou
+    `ALTER ROLE`.
+  * Como alternativa, entre em contato com o [suporte](https://clickhouse.com/support/program) para
+    adicionar o `chdb_hook` à configuration do seu service Postgres. Depois disso, ele
+    também poderá ser usado no SQL Console.
+</Note>
+
 * Explicitamente, via comando [LOAD]; permanece ativo pelo tempo de duração de uma session:
 
   ```sql
   LOAD 'chdb_hook';
   ```
-
-  <Note>
-    O SQL Console do ClickHouse Cloud ainda não oferece suporte ao comando
-    `LOAD 'chdb_hook'`, mas ele pode ser executado via psql ou qualquer outra database connection.
-    Caso contrário, entre em contato com seu representante de Support para adicioná-lo à
-    configuration do seu service Postgres, e depois disso ele poderá ser usado no SQL Console.
-  </Note>
 
 * Para todas as sessions, pela configuração [session&#95;preload&#95;libraries], no
   `postgresql.conf`:
@@ -780,7 +786,7 @@ O chdb&#95;hook segue o [Semantic Versioning] em seus lançamentos públicos.
 * A minor version é incrementada em mudanças de SQL compatíveis com versões anteriores
 * A versão de patch é incrementada em mudanças apenas no binary
 
-Uma vez instalado, o PostgreSQL a versão por meio da função
+Uma vez instalado, o PostgreSQL informa a versão por meio da função
 [`pg_get_loaded_modules()`] do Postgres 18.
 
 ```sql
