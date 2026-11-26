@@ -358,7 +358,7 @@ public:
     }
 
     /// Whether `rewrite` met a read of a column whose value defines an expression alias, and left it as it is.
-    bool metValueWithAlias() const { return met_value_with_alias; }
+    [[nodiscard]] bool metValueWithAlias() const { return met_value_with_alias; }
 
     /// Returns whether `ast` changed. Identifiers whose head is in `lambda_arguments` are lambda arguments.
     bool rewrite(ASTPtr & ast, ExpandedASTBudget & budget, const NameSet & lambda_arguments)
