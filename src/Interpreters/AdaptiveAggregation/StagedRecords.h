@@ -173,6 +173,27 @@ inline size_t ALWAYS_INLINE readStagedUInt(const char *& from)
     return value;
 }
 
+/// Adds `delta` to the staged `UInt` at `pos` when the sum keeps the stored width: below `staged_uint_escape`
+/// in one byte, at most the `UInt32` maximum after the escape. Returns whether it did. A written record
+/// cannot widen a field, because its other fields follow it. For example, a count of 250 in one byte takes 4
+/// more rows but not 5.
+inline bool ALWAYS_INLINE addToStagedUInt(char * pos, size_t delta)
+{
+    const auto first = static_cast<UInt8>(*pos);
+    if (first < staged_uint_escape)
+    {
+        if (delta >= staged_uint_escape - first)
+            return false;
+        *pos = static_cast<char>(first + delta);
+        return true;
+    }
+    const size_t value = unalignedLoad<UInt32>(pos + 1);
+    if (delta > std::numeric_limits<UInt32>::max() - value)
+        return false;
+    unalignedStore<UInt32>(pos + 1, static_cast<UInt32>(value + delta));
+    return true;
+}
+
 /// A staged `String` argument: its length as a staged `UInt` and the bytes, copied straight from and to the column
 /// without its serialization's virtual calls.
 inline size_t ALWAYS_INLINE stagedStringBytes(std::string_view value)
@@ -340,25 +361,28 @@ size_t stagedFixedKeyBytes(size_t packed_key_bytes)
 /// `AdaptiveStagedHash`) and the size of the key as a staged `UInt`. A record of a key of fixed-width values and a
 /// string stores the 32-bit hash only with a non-empty string, and the size of the string instead of that of the key.
 ///
-/// Every format offers the readers the same interface: `bytes(record)`, the size of the record; `key(record)`, the
-/// position and the size of its stored key; `readKey(record, hash)`, the key as the table takes it; and
-/// `hash(table, record)`, the routing hash of the key, which `table` hashes as the producer's table did. A count format
-/// also has `count(record)`, and `max_count`, the largest count of one record. The writer reserves the size that
-/// `bytesForKey(key_size, count)` (key formats) or `bytesFor` (argument formats) gives and fills the record from
-/// `writeHeader(record, hash, key_size, ...)`, whose last argument is the count of a count record or the size of an
-/// argument record. It returns the position where the writer stores the `keyBytes(key_size)` bytes of the key. The
-/// formats of a fixed-width key ignore `key_size`: they know the stored width. The formats of a key of fixed-width
-/// values and a string take as `key_size` the size that the producer counts, `sizeof(Keys)` plus the size of the
-/// string. They write the key themselves, with `writeKey(to, keys, str)`, because they keep only the filled bytes of
-/// the packed values, and tell the prefetch of the merge the sub-table of a key with `hasString(record)` (see
-/// `StagedKeysAndPackedStringKey`). An argument format with
-/// `with_variable_arguments` may hold variable-size arguments after the key; the others hold none, so the writer
-/// compiles their loop without the code for them. An argument format with `fixed_width_key` stores the key's
-/// `fixed_key.bytes` at `key_offset` in every record, from which the drain rebuilds a key that is also an argument (see
-/// `AdaptiveArgumentLayout::key_field`).
+/// Every format offers the readers the same interface: `bytes(record)`, the size of the record;
+/// `key(record)`, the position and the size of its stored key; `readKey(record, hash)`, the key as the table
+/// takes it; and `hash(table, record)`, the routing hash of the key, which `table` hashes as the producer's
+/// table did. A count format also has `count(record)`; `max_count`, the largest count of one record; and
+/// `addToCount(record, rows)`, which grows the count of a written record while the count keeps its stored
+/// width (see `AdaptivePartitionTails`), and returns whether it did. The writer reserves the size that
+/// `bytesForKey(key_size, count)` (key formats) or `bytesFor` (argument formats) gives and fills the record
+/// from `writeHeader(record, hash, key_size, ...)`, whose last argument is the count of a count record or the
+/// size of an argument record. It returns the position where the writer stores the `keyBytes(key_size)` bytes
+/// of the key. The formats of a fixed-width key ignore `key_size`: they know the stored width. The formats of
+/// a key of fixed-width values and a string take as `key_size` the size that the producer counts,
+/// `sizeof(Keys)` plus the size of the string. They write the key themselves, with `writeKey(to, keys, str)`,
+/// because they keep only the filled bytes of the packed values, and tell the prefetch of the merge the
+/// sub-table of a key with `hasString(record)` (see `StagedKeysAndPackedStringKey`). An argument format with
+/// `with_variable_arguments` may hold variable-size arguments after the key; the others hold none, so the
+/// writer compiles their loop without the code for them. An argument format with `fixed_width_key` stores the
+/// key's `fixed_key.bytes` at `key_offset` in every record, from which the drain rebuilds a key that is also
+/// an argument (see `AdaptiveArgumentLayout::key_field`).
 
-/// Count and key-only records of a byte-staged key: {hash, [count,] key size, key}. The count is a contribution within
-/// one block, stored as a staged `UInt`, so a key that repeats in a block takes one record whatever its count:
+/// Count and key-only records of a byte-staged key: {hash, [count,] key size, key}. The count is the rows of
+/// one producer that combined into the record (see `AdaptivePartitionTails`), stored as a staged `UInt`, so
+/// the misses of a key that combine before the record is written take one record whatever their count:
 /// splitting a large count into several records would copy a key of any length into each of them.
 template <typename Key, typename Hash, bool with_count_>
 struct StagedByteKeyRecord
@@ -421,20 +445,24 @@ struct StagedByteKeyRecord
         const char * pos = record + count_offset;
         return static_cast<UInt32>(readStagedUInt(pos));
     }
+
+    static bool addToCount(char * record, UInt32 rows) requires with_count
+    {
+        return addToStagedUInt(record + count_offset, rows);
+    }
 };
 
-/// The staged form of a key of fixed-width values and a string (`KeysAndPackedString`, the key of `Table`), at
-/// the record's `offset`: {lead, [hash,] [string size,] packed values, string}. The lead is a
-/// staged `UInt`. In a count record it holds the count, a contribution within one block as in
-/// `StagedByteKeyRecord`, above a low bit that tells whether the string is non-empty, and the size of a
-/// non-empty string follows the hash as a staged `UInt`. In any other record the lead is the size of the
-/// string. Only a non-empty string has the 32-bit hash that the key stores. A key with an empty string, the
-/// common form of a missing value, is hashed by its packed values alone (see
-/// `KeysAndPackedStringHashTable::hash`), which the readers hash again in a few instructions. The packed
-/// values take the bytes that the key columns fill (see `StagedFixedKey`), followed by the string. So a count
-/// record with an empty string and a count below 128 takes one byte more than its key columns. The writer
-/// passes `key_size`, the size of the key as the producer counts it: `sizeof(Keys)` plus the size of the
-/// string.
+/// The staged form of a key of fixed-width values and a string (`KeysAndPackedString`, the key of `Table`),
+/// at the record's `offset`: {lead, [hash,] [string size,] packed values, string}. The lead is a staged
+/// `UInt`. In a count record it holds the count, as in `StagedByteKeyRecord`, above a low bit that tells
+/// whether the string is non-empty, and the size of a non-empty string follows the hash as a staged `UInt`.
+/// In any other record the lead is the size of the string. Only a non-empty string has the 32-bit hash that
+/// the key stores. A key with an empty string, the common form of a missing value, is hashed by its packed
+/// values alone (see `KeysAndPackedStringHashTable::hash`), which the readers hash again in a few
+/// instructions. The packed values take the bytes that the key columns fill (see `StagedFixedKey`), followed
+/// by the string. So a count record with an empty string and a count below 128 takes one byte more than its
+/// key columns. The writer passes `key_size`, the size of the key as the producer counts it: `sizeof(Keys)`
+/// plus the size of the string.
 template <typename Table, bool with_count>
 struct StagedKeysAndPackedStringKey
 {
@@ -629,6 +657,13 @@ struct StagedKeysAndPackedStringRecord
 
     UInt32 count(const char * record) const requires with_count { return key_layout.read(record).count; }
 
+    /// The key opens the record, so the lead, which holds the count above the flag of the string, is its
+    /// first field.
+    static bool addToCount(char * record, UInt32 rows) requires with_count
+    {
+        return addToStagedUInt(record, size_t{rows} << 1);
+    }
+
     const StagedKeysAndPackedStringKey<Table, with_count> key_layout;
 };
 
@@ -703,9 +738,10 @@ struct StagedKeysAndPackedStringArgumentRecord
     const size_t strings;
 };
 
-/// Count and key-only records of a fixed-width key: {[UInt8 count,] key}, of one size for the query. The count is a
-/// contribution within one block; the staging splits a larger one into several records, which the merge adds up. A
-/// further record repeats the key, which is a few bytes wide.
+/// Count and key-only records of a fixed-width key: {[UInt8 count,] key}, of one size for the query. The
+/// count is the rows of one producer that combined into the record (see `AdaptivePartitionTails`); the
+/// staging splits a count above `max_count` into several records, which the merge adds up. A further record
+/// repeats the key, which is a few bytes wide.
 template <typename Key, bool with_count_>
 struct StagedFixedKeyRecord
 {
@@ -744,6 +780,15 @@ struct StagedFixedKeyRecord
     UInt64 hash(const Table & table, const char * record) const { return table.hash(readKey(record, 0)); }
 
     static UInt32 count(const char * record) requires with_count { return static_cast<UInt8>(record[0]); }
+
+    static bool addToCount(char * record, UInt32 rows) requires with_count
+    {
+        const UInt32 stored = count(record);
+        if (rows > max_count - stored)
+            return false;
+        record[0] = static_cast<char>(stored + rows);
+        return true;
+    }
 
     const StagedFixedKey<Key> fixed_key;
     /// The size of every record of the query.

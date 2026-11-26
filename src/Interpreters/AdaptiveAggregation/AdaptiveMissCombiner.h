@@ -43,14 +43,14 @@ enum class AdaptiveMissCombine
 ///
 /// - A key-only miss adds nothing to the tail.
 /// - A count miss adds its rows to the tail's count: the descriptor's multiplicity while the tail is pending,
-///   the record's count once it is written.
+///   the record's count once it is written, while that count keeps its stored width (see `addToStagedUInt`).
 /// - A row-selection miss whose row is not better adds its rows to the tail's multiplicity when the selection
 ///   counts rows. A row is better by a strictly larger rank, so the earlier row stays on a tie, as in
 ///   `argMax`. A better row takes a pending tail over by moving its descriptor's source row. A written record
 ///   cannot take another row, so a better row rolls the record back, which is its partition's last, and
 ///   stages a descriptor of its own that carries the record's multiplicity.
-/// - A count or multiplicity never passes the `UInt32` maximum: a miss that would take it past stages a
-///   record of its own.
+/// - A count or multiplicity never passes the `UInt32` maximum, and the count of a written record never
+///   passes what its stored width holds: a miss that would take either past stages a record of its own.
 ///
 /// For example, under `argMax(x, t), count()` the misses A(t=5), A(t=9) of a block stage one descriptor, of
 /// A(t=9) with multiplicity 2. A miss A(t=4) of the next block makes the written record count 3, and a miss
@@ -224,7 +224,7 @@ private:
     }
 
     /// Adds `rows` rows to the count or the multiplicity of `tail`, which is pending when `pending`, unless
-    /// they would take it past the maximum.
+    /// they would take it past the `UInt32` maximum or the count of a written record past its stored width.
     bool ALWAYS_INLINE addRows(Tail & tail, bool pending, [[maybe_unused]] UInt64 hash, UInt32 rows)
     {
         if (pending)
@@ -241,16 +241,21 @@ private:
             multiplicity += rows;
             return true;
         }
-        const UInt32 multiplicity = unalignedLoad<UInt32>(tail.counter);
-        if (multiplicity > max_rows - rows)
-            return false;
-        unalignedStore<UInt32>(tail.counter, multiplicity + rows);
-        /// The rows of a descriptor reach the count bins with its multiplicity when its batch is accounted,
-        /// and the rows combined into a written record reach them here.
         if constexpr (kind == AdaptiveMissCombine::counts)
         {
+            if (!tails.addToCount(tail, rows))
+                return false;
+            /// The rows of a descriptor reach the count bins with its multiplicity when its batch is
+            /// accounted, and the rows combined into a written record reach them here.
             if (adaptive.count_bins.isAllocated())
                 adaptive.count_bins.add(hash, rows);
+        }
+        else
+        {
+            const UInt32 multiplicity = unalignedLoad<UInt32>(tail.counter);
+            if (multiplicity > max_rows - rows)
+                return false;
+            unalignedStore<UInt32>(tail.counter, multiplicity + rows);
         }
         return true;
     }

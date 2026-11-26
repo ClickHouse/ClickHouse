@@ -53,8 +53,9 @@ public:
         {
             /// The descriptor of a pending tail in the batch.
             UInt32 descriptor;
-            /// Where the record of a written tail keeps the number of rows it stands for, as a `UInt32`, or
-            /// null for a record without one.
+            /// Where the record of a written tail keeps the number of rows it stands for, or null for a
+            /// record without one: the start of a count record, whose format grows its count (see
+            /// `addToCount`), or the `UInt32` multiplicity of the record of a row selection that counts rows.
             char * counter = nullptr;
         };
         /// The rank of the record's row under a row selection (see `fillRowSelectionRanks`).
@@ -87,6 +88,13 @@ public:
 
     bool ALWAYS_INLINE isPending(size_t partition) const { return states[partition] == State::pending; }
 
+    /// Adds `rows` to the count of `tail`, a written count record, while the count keeps its stored width,
+    /// and returns whether it did.
+    [[nodiscard]] bool ALWAYS_INLINE addToCount(const Tail & tail, UInt32 rows) const
+    {
+        return add_to_count(tail.counter, rows);
+    }
+
     /// The tail of the partition. The caller guarantees that it holds a record.
     Tail & ALWAYS_INLINE at(size_t partition) { return tails[partition]; }
 
@@ -111,13 +119,16 @@ public:
     }
 
     /// Turns every pending tail into the record that the writer appended for its descriptor in `format`, at
-    /// the position it put into `recordPositions`. A count record keeps its rows in its count, and the record
-    /// of a row selection that counts rows in its multiplicity (see
-    /// `AdaptiveArgumentLayout::multiplicity_offset`). The states take a byte per partition, so a pass over
-    /// all of them costs less than keeping a list of the pending ones in the kernel.
+    /// the position it put into `recordPositions`. A count record keeps its rows in its count, which the
+    /// format grows (see `addToCount`), and the record of a row selection that counts rows in its
+    /// multiplicity (see `AdaptiveArgumentLayout::multiplicity_offset`). The states take a byte per
+    /// partition, so a pass over all of them costs less than keeping a list of the pending ones in the
+    /// kernel.
     template <typename Format>
     void recordsWritten(const Format & format, const AdaptiveArgumentLayout * layout)
     {
+        if constexpr (Format::with_count)
+            add_to_count = &Format::addToCount;
         for (size_t partition = 0; partition < num_partitions; ++partition)
         {
             if (states[partition] != State::pending)
@@ -126,17 +137,14 @@ public:
             chassert(tail.descriptor < positions.size());
             char * record = positions[tail.descriptor];
             if constexpr (adaptive_key_stages_bytes<RecordKey>)
-            {
-                const auto [key_pos, key_size] = format.key(record);
-                tail.key = readStagedKey<RecordKey>(key_pos, key_size, hashes[partition]);
-            }
+                tail.key = format.readKey(record, hashes[partition]);
             tail.counter = nullptr;
             if constexpr (Format::with_count)
-                tail.counter = Format::countPosition(record);
+                tail.counter = record;
             else if constexpr (Format::with_arguments)
             {
                 if (layout->multiplicity_offset)
-                    tail.counter = layout->multiplicityPosition(record + Format::fixed_arguments_offset);
+                    tail.counter = layout->multiplicityPosition(record);
             }
             tail.bytes = static_cast<UInt32>(format.bytes(record));
             states[partition] = State::written;
@@ -158,6 +166,8 @@ private:
     std::unique_ptr<State[]> states;
     std::unique_ptr<Tail[]> tails;
     PaddedPODArray<char *> positions;
+    /// The `addToCount` of the format of count records, which `recordsWritten` takes from the format.
+    bool (*add_to_count)(char * record, UInt32 rows) = nullptr;
 };
 
 }
