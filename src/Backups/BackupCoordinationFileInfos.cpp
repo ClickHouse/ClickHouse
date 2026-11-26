@@ -84,8 +84,8 @@ void BackupCoordinationFileInfos::prepare() const
             ErrorCodes::BACKUP_ENTRY_ALREADY_EXISTS, "Entry {} added multiple times to backup", quoteString((*adjacent_it)->file_name));
     }
 
-    num_files = 0;
-    total_size_of_files = 0;
+    num_entries = 0;
+    size_of_entries = 0;
 
     std::vector<BackupFileInfo *> unresolved_references;
 
@@ -126,7 +126,7 @@ void BackupCoordinationFileInfos::prepare() const
             auto & target_info = it->second;
             target_info->data_file_copies.push_back(reference.file_name);
             copyFileInfoToReference(*target_info, reference);
-            total_size_of_files += reference.size;
+            size_of_entries += reference.size;
             return true;
         };
 
@@ -143,7 +143,7 @@ void BackupCoordinationFileInfos::prepare() const
             {
                 if (reference_targets.contains(info.file_name))
                     file_name_to_info.emplace(info.file_name, &info);
-                total_size_of_files += info.size;
+                size_of_entries += info.size;
             }
             else if (!try_resolve_reference(info))
             {
@@ -153,7 +153,7 @@ void BackupCoordinationFileInfos::prepare() const
 
         handle_unresolved_references(try_resolve_reference);
 
-        num_files = file_infos_for_all_hosts.size();
+        num_entries = file_infos_for_all_hosts.size();
     }
     else
     {
@@ -202,8 +202,8 @@ void BackupCoordinationFileInfos::prepare() const
                     /// Found a new file.
                     info.data_file_name = getBackupDataFileName(info, config.data_file_name_generator, config.data_file_name_prefix_length);
                     info.data_file_index = i;
-                    ++num_files;
-                    total_size_of_files += info.size - info.base_size;
+                    ++num_entries;
+                    size_of_entries += info.size - info.base_size;
                 }
                 else
                 {
@@ -218,23 +218,21 @@ void BackupCoordinationFileInfos::prepare() const
         }
 
         handle_unresolved_references(try_resolve_reference);
-
-        num_files = file_infos_for_all_hosts.size();
     }
 
     prepared = true;
 }
 
-size_t BackupCoordinationFileInfos::getNumFiles() const
+size_t BackupCoordinationFileInfos::getNumEntries() const
 {
     prepare();
-    return num_files;
+    return num_entries;
 }
 
-size_t BackupCoordinationFileInfos::getTotalSizeOfFiles() const
+UInt64 BackupCoordinationFileInfos::getSizeOfEntries() const
 {
     prepare();
-    return total_size_of_files;
+    return size_of_entries;
 }
 
 }

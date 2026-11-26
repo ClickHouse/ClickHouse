@@ -44,11 +44,15 @@ public:
     /// Iterates the file infos of all hosts in place, without copying them into a vector.
     void forEachFileInfoForAllHosts(const std::function<void(const BackupFileInfo &)> & callback) const;
 
-    /// Returns the number of files after deduplication and excluding empty files.
-    size_t getNumFiles() const;
+    /// Returns the number of data files written to the backup, see `IBackup::getNumEntries`.
+    /// For a normal backup that's one data file per distinct size and checksum, excluding empty files and files
+    /// taken from the base backup as a whole. For a plain backup every file is written as is, so that's the number
+    /// of all files, including empty files and the copies written for references.
+    size_t getNumEntries() const;
 
-    /// Returns the total size of files after deduplication and excluding empty files.
-    size_t getTotalSizeOfFiles() const;
+    /// Returns the total size of the data files counted by `getNumEntries`, without the parts taken from
+    /// the base backup, see `IBackup::getSizeOfEntries`.
+    UInt64 getSizeOfEntries() const;
 
 private:
     void prepare() const;
@@ -61,8 +65,8 @@ private:
     /// after preparation
     mutable bool prepared = false;
     mutable std::vector<BackupFileInfo *> file_infos_for_all_hosts;
-    mutable size_t num_files{};
-    mutable size_t total_size_of_files{};
+    mutable size_t num_entries{};
+    mutable UInt64 size_of_entries{};
 };
 
 }

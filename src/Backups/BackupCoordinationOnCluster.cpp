@@ -1043,6 +1043,22 @@ void BackupCoordinationOnCluster::forEachFileInfoForAllHosts(const std::function
     file_infos->forEachFileInfoForAllHosts(callback);
 }
 
+size_t BackupCoordinationOnCluster::getNumEntries() const
+{
+    auto component_guard = Coordination::setCurrentComponent("BackupCoordinationOnCluster::getNumEntries");
+    std::lock_guard lock{file_infos_mutex};
+    prepareFileInfos();
+    return file_infos->getNumEntries();
+}
+
+UInt64 BackupCoordinationOnCluster::getSizeOfEntries() const
+{
+    auto component_guard = Coordination::setCurrentComponent("BackupCoordinationOnCluster::getSizeOfEntries");
+    std::lock_guard lock{file_infos_mutex};
+    prepareFileInfos();
+    return file_infos->getSizeOfEntries();
+}
+
 void BackupCoordinationOnCluster::prepareFileInfos() const
 {
     if (file_infos)

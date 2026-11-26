@@ -164,6 +164,18 @@ void BackupCoordinationLocal::forEachFileInfoForAllHosts(const std::function<voi
     file_infos.forEachFileInfoForAllHosts(callback);
 }
 
+size_t BackupCoordinationLocal::getNumEntries() const
+{
+    std::lock_guard lock{file_infos_mutex};
+    return file_infos.getNumEntries();
+}
+
+UInt64 BackupCoordinationLocal::getSizeOfEntries() const
+{
+    std::lock_guard lock{file_infos_mutex};
+    return file_infos.getSizeOfEntries();
+}
+
 bool BackupCoordinationLocal::startWritingFile(size_t data_file_index)
 {
     std::lock_guard lock{writing_files_mutex};

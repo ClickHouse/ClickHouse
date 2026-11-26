@@ -150,6 +150,11 @@ public:
     /// into IBackupCoordination (risk of deadlocks). Prefer keeping the callback lightweight to avoid long critical sections.
     virtual void forEachFileInfoForAllHosts(const std::function<void(const BackupFileInfo &)> & callback) const = 0;
 
+    /// Returns the number and the total size of the data files written by all hosts, see `IBackup::getNumEntries`
+    /// and `IBackup::getSizeOfEntries`. Must only be called after file collection has finished, like `getFileInfos`.
+    [[nodiscard]] virtual size_t getNumEntries() const = 0;
+    [[nodiscard]] virtual UInt64 getSizeOfEntries() const = 0;
+
     /// Starts writing a specified file, the function returns false if that file is already being written concurrently.
     virtual bool startWritingFile(size_t data_file_index) = 0;
 
