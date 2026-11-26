@@ -53,6 +53,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int INCORRECT_DATA;
     extern const int THERE_IS_NO_COLUMN;
 }
@@ -644,19 +645,25 @@ void ArrowIPC::collectRequestedTypes(
         /// decoding. The type that decoding depends on the most is kept (`T Tuple(s IPv6)` keeps the null map
         /// of the struct for `t String`, `T Int32` reads a `date32` as the day number for `t Int64` too), recursively
         /// for the elements of composites (see `mergeDecodingRequirements`).
+        ///
+        /// Every distinct type requested for the name is recorded, whether or not it equals the type kept so
+        /// far: the merge of `Tuple(a Int128, b String)` and `Tuple(a String, b Int128)` is
+        /// `Tuple(a Int128, b Int128)`, and a third column that requests exactly that type is one more
+        /// representation for a key lookup (see `RequestedType::shared_types`).
         auto [it, inserted] = requested_types.try_emplace(std::move(name), RequestedType{.type = header_column.type, .shared = false, .shared_types = {}});
-        if (!inserted && !it->second.type->equals(*header_column.type))
+        auto & header_types = shared_header_types[it->first];
+        if (std::ranges::any_of(header_types, [&](const auto & type) { return type->equals(*header_column.type); }))
+            continue;
+        header_types.push_back(header_column.type);
+        if (header_types.size() > 1)
         {
-            auto & header_types = shared_header_types[it->first];
-            if (header_types.empty())
-                header_types.push_back(it->second.type);
-            if (std::ranges::none_of(header_types, [&](const auto & type) { return type->equals(*header_column.type); }))
-                header_types.push_back(header_column.type);
             it->second.shared = true;
             it->second.shared_types = header_types;
             it->second.type = mergeDecodingRequirements(it->second.type, header_column.type, case_insensitive);
         }
     }
+    /// Only the names with several types are shared.
+    std::erase_if(shared_header_types, [](const auto & name_and_types) { return name_and_types.second.size() < 2; });
 }
 
 void ArrowIPC::resolveSharedRequestedTypes(
@@ -2010,12 +2017,26 @@ Chunk ArrowIPC::buildChunk(
                     return shared_types[choice->index];
                 };
                 /// The next combination, as an odometer: the names found with the current one are the last digits.
+                /// Each shared name multiplies the number of combinations (every element of a tuple key of a map
+                /// can be requested through its own shared subcolumn), so it is bounded: resolving a lookup must
+                /// not take time exponential in the number of the requested columns.
+                static constexpr size_t max_shared_combinations = 256;
+                size_t shared_combinations = 1;
                 auto next_shared_choices = [&]
                 {
                     for (auto & choice : shared_choices | std::views::reverse)
                     {
                         if (++choice.index < choice.count)
+                        {
+                            if (++shared_combinations > max_shared_combinations)
+                                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                    "Cannot resolve the map key lookup {}: the columns requested with the same "
+                                    "case-insensitive names and different types make more than {} combinations of types "
+                                    "for the keys of the map. Request these columns with one type each, "
+                                    "or disable case-insensitive column matching",
+                                    backQuote(header_column.name), max_shared_combinations);
                             return true;
+                        }
                         choice.index = 0;
                     }
                     return false;
