@@ -1559,12 +1559,12 @@ static std::optional<const ORC::Type *> resolveORCFieldByIcebergId(
 void NativeORCBlockInputFormat::prepareFileReader()
 {
     if (metadata_cache && object_with_metadata && object_with_metadata->metadata
-        && (object_with_metadata->path_for_format_metadata_cache || object_with_metadata->getPath().starts_with('/')))
+        && object_with_metadata->path_for_format_metadata_cache)
     {
-        /// A local absolute path identifies the file on the server. Object-storage paths need
-        /// the qualified identity, including the credentials and request inputs of the read.
-        const String & file_name = object_with_metadata->path_for_format_metadata_cache
-            ? *object_with_metadata->path_for_format_metadata_cache : object_with_metadata->getPath();
+        /// The source has authorized the read and established a content identity, including
+        /// the credentials and request inputs for object-storage reads. In particular, do not
+        /// use a local file's pre-open version after its post-open validation has failed.
+        const String & file_name = *object_with_metadata->path_for_format_metadata_cache;
         const String & etag = object_with_metadata->metadata->etag;
         const ORCMetadataCacheKey cache_key = ORCMetadataCache::createKey(file_name, etag);
 

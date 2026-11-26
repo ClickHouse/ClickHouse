@@ -2775,9 +2775,22 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
         use_page_cache = false;
     }
 
-    if (prepare_orc_metadata_cache && object_storage->getType() == ObjectStorageType::Web
-        && webObjectHasSeveralURLs(object_info, assert_cast<const WebObjectStorage &>(*object_storage)))
-        LOG_DEBUG(log, "Cannot use ORC metadata cache, the object can be read from several URLs (failover)");
+    if (prepare_orc_metadata_cache && !reads_explicit_object_version)
+    {
+        if (object_storage->getType() == ObjectStorageType::Web
+            && (webObjectHasSeveralURLs(object_info, assert_cast<const WebObjectStorage &>(*object_storage))
+                || !object_info.metadata->isEtagUsableAsCacheKey()))
+        {
+            prepare_orc_metadata_cache = false;
+        }
+        else if (object_info.metadata->isEtagUsableAsCacheKey() || !object_info.metadata->immutable_content_id.empty())
+        {
+            /// Pin only an eligible ETag-keyed read. Redirected Web responses and failover origins
+            /// do not have such an identity; their normal reads must remain usable without the cache.
+            object_info.path_for_format_metadata_cache
+                = getPageCachePathForObjectStorage(object_info, object_storage, page_cache_credentials_identity);
+        }
+    }
 
     /// The page cache keeps the bytes under the ETag seen by this read, so the bytes must be checked to be of that
     /// generation of the object. Otherwise an object changed between the `HEAD` and the `GET` and then restored is
@@ -2876,7 +2889,8 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     /// Pin the read to the object generation seen here (etag from the LIST/HEAD): a GET with a
     /// different ETag means an in-place overwrite, reported as S3_OBJECT_CHANGED_DURING_READ or
     /// AZURE_OBJECT_CHANGED_DURING_READ instead of torn cross-generation data.
-    if ((validate_etag_on_read || pin_read_to_etag_for_page_cache || prepare_orc_metadata_cache) && object_info.metadata.has_value())
+    if ((validate_etag_on_read || pin_read_to_etag_for_page_cache
+        || (prepare_orc_metadata_cache && object_info.path_for_format_metadata_cache)) && object_info.metadata.has_value())
         stored_object.etag = object_info.metadata->etag;
     /// The distributed cache keys on the content cache token whether or not this read validates the etag. The cache
     /// server also checks the etag of its own `GET` against the token if it is an etag, so it needs to know the kind.
@@ -2967,12 +2981,6 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
         pipeline.needLongConnectionLimit(context_->getLongConnectionLimit());
 
     auto impl = pipeline.build();
-
-    if (prepare_orc_metadata_cache
-        && !(object_storage->getType() == ObjectStorageType::Web
-            && webObjectHasSeveralURLs(object_info, assert_cast<const WebObjectStorage &>(*object_storage))))
-        object_info.path_for_format_metadata_cache
-            = getPageCachePathForObjectStorage(object_info, object_storage, page_cache_credentials_identity);
 
     /// For small objects prefetch the file ahead of consumption: when reading lots of tiny files
     /// this almost doubles throughput; bigger objects use parallel reading instead (`use_prefetch`

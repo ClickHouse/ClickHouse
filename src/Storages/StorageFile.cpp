@@ -2252,11 +2252,15 @@ Chunk StorageFileSource::generate()
                 md.size_bytes = *current_file_size;
                 md.last_modified = *current_file_last_modified;
                 md.etag = *current_file_cache_version;
-                /// The token identifies the content only once it has settled. The format metadata
-                /// cache uses it regardless (see above), but the content caches, such as the columns
-                /// cache, check `isEtagUsableAsCacheKey`.
+                /// The token identifies the content only once it has settled. The content caches,
+                /// such as the columns cache, check `isEtagUsableAsCacheKey`.
                 md.etag_is_strong = current_file_version_settled;
                 object_with_metadata.emplace(current_path, std::move(md));
+                /// The version is not an identity for the ORC tail cache before it has settled:
+                /// a rewrite within the same filesystem timestamp tick could keep the same token.
+                /// It also fails close after a replacement was detected between `stat` and `open`.
+                if (current_file_version_settled)
+                    object_with_metadata->path_for_format_metadata_cache = current_path;
                 /// The path of a local file is absolute, so it identifies the file on the server.
                 if (auto table_uuid = getColumnsCacheTableUUIDOfExternalFile(storage->getStorageID()))
                 {

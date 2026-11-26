@@ -192,7 +192,7 @@ struct RelativePathWithMetadata
     /// for an object without them.
     std::optional<String> path_for_content_cache;
     /// For format metadata caches: the identity of the object and the credentials used to read it,
-    /// set only after the read has been authorized and pinned to the metadata's ETag.
+    /// set only after the read has been authorized and a usable content identity has been established.
     std::optional<String> path_for_format_metadata_cache;
     ObjectStorageType storage_type_for_content_cache = ObjectStorageType::None;
     /// The table the object is read by, which decides who may see the cached entries, or the nil

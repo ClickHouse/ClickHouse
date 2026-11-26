@@ -9,6 +9,9 @@
 
 SET log_queries = 1;
 SET engine_file_truncate_on_insert = 1;
+-- A fresh local file's version token cannot prove its contents yet. Let the
+-- fixture settle before expecting metadata-cache hits.
+SELECT sleepEachRow(4) FROM numbers(1) FORMAT Null;
 -- Pin parallelism so the hit/miss counts are deterministic.
 SET max_threads = 1;
 -- `StorageFile` keeps a per-path row-count schema cache; with `count()` the
@@ -39,6 +42,8 @@ SELECT count() FROM file(currentDatabase() || '_04402_local.orc')
 -- the same wall-clock second.
 INSERT INTO FUNCTION file(currentDatabase() || '_04402_local.orc', ORC, 'id UInt64, name String')
 SELECT number + 1000, toString(number) FROM numbers(100);
+
+SELECT sleepEachRow(4) FROM numbers(1) FORMAT Null;
 
 SELECT count() FROM file(currentDatabase() || '_04402_local.orc')
     SETTINGS log_comment = '04402-q3', use_orc_metadata_cache = 1

@@ -22,6 +22,7 @@ ${CLICKHOUSE_CLIENT} --query "SELECT number AS id FROM numbers(10) FORMAT ORC" >
 python3 -u - "${work_dir}" <<'PY' &
 import pathlib
 import sys
+import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 work_dir = pathlib.Path(sys.argv[1])
@@ -36,12 +37,18 @@ class Handler(BaseHTTPRequestHandler):
             if include_body:
                 deny_get = True
             data = b'ok'
-        elif include_body and deny_get:
+        elif include_body and deny_get and self.path == '/data/f.orc':
             self.send_error(403)
             return
         elif self.path == '/data/':
+            if include_body:
+                self.server.listing_gets += 1
             data = b'<a href="f.orc">f.orc</a>'
         elif self.path == '/data/f.orc':
+            if include_body and deny_get:
+                self.send_error(403)
+                return
+            self.server.data_gets += 1
             data = (work_dir / 'small.orc').read_bytes()
         else:
             self.send_error(404)
@@ -60,10 +67,19 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.respond(True)
 
+    def do_POST(self):
+        length = int(self.headers.get('Content-Length', 0))
+        self.rfile.read(length)
+        self.send_response(200)
+        self.send_header('Content-Length', '0')
+        self.end_headers()
+
     def log_message(self, *args):
         pass
 
 server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+server.listing_gets = 0
+server.data_gets = 0
 (work_dir / 'port').write_text(str(server.server_port) + '\n')
 server.serve_forever()
 PY
