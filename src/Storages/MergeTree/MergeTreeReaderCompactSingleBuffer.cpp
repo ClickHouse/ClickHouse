@@ -135,6 +135,17 @@ try
         marks_loader, profile_callback, clock_type);
     stream->updateReadRequestMap(read_request_map);
 
+    /// The columns share one stream: read them in storage order, since a seek back may cost a new request to a remote disk.
+    read_order.resize(columns_to_read.size());
+    std::iota(read_order.begin(), read_order.end(), 0);
+    auto position_in_stream = [&](size_t pos) -> size_t
+    {
+        if (!column_positions[pos] || (columns_to_read[pos].isSubcolumn() && has_substream_marks))
+            return std::numeric_limits<size_t>::max();
+        return has_substream_marks ? columns_substreams.getFirstSubstreamPosition(*column_positions[pos]) : *column_positions[pos];
+    };
+    std::ranges::stable_sort(read_order, {}, position_in_stream);
+
     initialized = true;
 }
 catch (...)
