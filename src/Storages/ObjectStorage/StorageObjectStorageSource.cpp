@@ -1819,7 +1819,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
         /// Before the shortcuts below that answer from a cache without reading the object (the query condition cache,
         /// the row-count cache), see `authorizeObjectRead`.
-        if (!object_read_authorized)
+        if (!object_read_authorized && object_storage->getType() == ObjectStorageType::GCS)
         {
             auto metadata_object = object_info->relative_path_with_metadata;
             metadata_object.relative_path = object_info->isArchive() ? object_info->getPathToArchive() : object_info->getPath();
@@ -2774,13 +2774,12 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
         {
             page_cache_credentials_identity = std::move(*credentials_identity);
         }
-        else if (!metadata_is_fetched_by_this_read)
+        else if (!metadata_is_fetched_by_this_read && !read_is_authorized)
         {
-            /// This `HEAD` only authorizes the read. Keep the tags of the previous metadata: they are read for the
-            /// `_tags` virtual column, and a `HEAD` without tags would replace them with an empty map.
-            ObjectAttributes tags = std::move(object_info.metadata->tags);
-            object_info.metadata = getObjectMetadataForRead(*object_storage, object_info, /*with_tags=*/ false);
-            object_info.metadata->tags = std::move(tags);
+            /// This `HEAD` only authorizes the read, so its result is discarded: the read stays pinned to the generation in
+            /// the metadata it already has (the deferred pass of lazy materialization must read the generation the main
+            /// pass has read), and the page cache key uses that generation too.
+            (void)getObjectMetadataForRead(*object_storage, object_info, /*with_tags=*/ false);
         }
     }
 

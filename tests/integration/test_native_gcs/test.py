@@ -1053,6 +1053,12 @@ def test_parquet_cache_hits_are_authorized(started_cluster):
             f"{settings}, use_query_condition_cache = 1",
             "0",
         ),
+        # Served from the page cache: its key has no identity of the native GCS credentials either.
+        (
+            f"SELECT sum(a) FROM gcs('{glob}', NOSIGN, 'Parquet', 'a UInt64') "
+            "SETTINGS use_native_gcs = 1, enable_filesystem_cache = 0, use_page_cache_for_object_storage = 1",
+            str(sum(range(1000))),
+        ),
     ]:
         assert node.query(query).strip() == expected  # warms the caches
         query_id = f"gcs_parquet_cache_auth_{uuid.uuid4()}"
