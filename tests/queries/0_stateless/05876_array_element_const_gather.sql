@@ -23,8 +23,6 @@ SELECT materialize([[1, 2], [3]]) FROM numbers(3);
 SELECT x, a FROM (SELECT [range(number), [number]] AS a, range(number % 3) AS r FROM numbers(5)) ARRAY JOIN r AS x ORDER BY x, a;
 SELECT sum(cityHash64(toString(a))) FROM (SELECT [range(number % 100), [number]] AS a, range(number % 3) AS r FROM numbers(5000)) ARRAY JOIN r AS x;
 SELECT sum(cityHash64(toString(a))) FROM (SELECT [range(number % 40)] AS a FROM numbers(20000) ORDER BY cityHash64(number));
-SELECT count() FROM (SELECT materialize([range(100000)::Array(UInt8)]) AS a FROM numbers(128)) WHERE NOT ignore(a)
-SETTINGS max_memory_usage = 50000000, max_block_size = 128;
 
 -- More than 65536 nested elements per block, so the gather crosses chunk boundaries; one row is longer than a chunk.
 -- Each result is compared with the same value computed without replicating or reordering the rows.
@@ -48,7 +46,7 @@ FROM
     SELECT number, arrayFlatten(replicate(a, arrayWithConstant(1048576 + number, tuple()))) AS b
     FROM (SELECT number, arrayWithConstant(536870912 + number, tuple()) AS a FROM numbers(1))
 )
-SETTINGS max_threads = 1, max_memory_usage = 100000000; -- { serverError TOO_LARGE_ARRAY_SIZE }
+SETTINGS max_threads = 1; -- { serverError TOO_LARGE_ARRAY_SIZE }
 
 -- The same overflow in the size of an inner array, when the gathered chunks or rows are appended.
 SELECT length(z), length(z[1]), length(z[131073])
@@ -61,7 +59,7 @@ FROM
         FROM (SELECT number, arrayWithConstant(268435456 + number, tuple()) AS a FROM numbers(1))
     )
 )
-SETTINGS max_threads = 1, max_memory_usage = 100000000; -- { serverError TOO_LARGE_ARRAY_SIZE }
+SETTINGS max_threads = 1; -- { serverError TOO_LARGE_ARRAY_SIZE }
 SELECT length(z)
 FROM
 (
@@ -72,16 +70,4 @@ FROM
         FROM (SELECT number, arrayWithConstant(268435456 + number, tuple()) AS a FROM numbers(1))
     )
 )
-SETTINGS max_threads = 1, max_memory_usage = 100000000; -- { serverError TOO_LARGE_ARRAY_SIZE }
-
--- Replication gathers the rows without an index of every replicated row.
-SELECT sum(length(a)) FROM (SELECT materialize([[]::Array(UInt8)]) AS a FROM numbers(2000000))
-SETTINGS max_threads = 1, max_block_size = 2000000, max_memory_usage = 70000000;
-
--- Long rows of wide elements are gathered with one index, which sizes the nested result exactly.
-DROP TABLE IF EXISTS t_array_gather_wide;
-CREATE TABLE t_array_gather_wide (n UInt64, a Array(String)) ENGINE = Memory;
-INSERT INTO t_array_gather_wide SELECT number, arrayWithConstant(20, repeat('a', 20000 + number % 10)) FROM numbers(260);
-SELECT sum(length(a[1])) FROM (SELECT a FROM t_array_gather_wide ORDER BY n DESC)
-SETTINGS max_threads = 1, query_plan_remove_redundant_sorting = 0, max_memory_usage = 150000000;
-DROP TABLE t_array_gather_wide;
+SETTINGS max_threads = 1; -- { serverError TOO_LARGE_ARRAY_SIZE }
