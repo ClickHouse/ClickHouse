@@ -1200,8 +1200,15 @@ def test_request_payer(started_cluster):
         )
         == "1\n"
     )
+    # `DROP TABLE ... SYNC` does not wait for the removal of the blobs (`disk_transaction_wait_for_blob_removal` is
+    # disabled in the tests): the disk removes them in background, with requests through the mock. Wait for them,
+    # otherwise the mock records them during `test_request_payer_does_not_send_endpoint_headers`.
+    disk_name = node.query(
+        "SELECT DISTINCT disk_name FROM system.parts WHERE table IN ('t_request_payer_src', 't_request_payer_restored')"
+    ).strip()
     node.query("DROP TABLE t_request_payer_src SYNC")
     node.query("DROP TABLE t_request_payer_restored SYNC")
+    node.query(f"SYSTEM WAIT BLOBS CLEANUP '{disk_name}'")
 
     # `<http_forbid_headers>` refuses the header before any request is sent.
     other = started_cluster.instances["s3_non_default"]
