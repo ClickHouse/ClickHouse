@@ -586,7 +586,7 @@ private:
         LowCardinalityOfKnownValues known_values(*low_cardinality_type, *values);
 
         /// The rows where no condition holds get the default value.
-        std::array<UInt8, std::numeric_limits<UInt8>::max() + 1> dictionary_index_of_branch;
+        std::array<UInt8, std::numeric_limits<UInt8>::max() + 1> dictionary_index_of_branch{};
         dictionary_index_of_branch.fill(static_cast<UInt8>(known_values.dictionary->getDefaultValueIndex()));
         size_t num_taken = 0;
         for (size_t i = 0; i < instructions.size(); ++i)
