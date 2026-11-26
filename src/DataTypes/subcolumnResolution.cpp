@@ -150,12 +150,12 @@ std::unique_ptr<IDataType::SubcolumnInfo> wrapDynamicSubcolumn(
                 creator = std::move(specialized);
         }
 
-        /// Build the serialization before the type is wrapped, so that a creator inspecting its
-        /// prev_type argument sees the type the serialization actually serializes. Same order as in
+        /// Build the serialization and the column before the type is wrapped, so that a creator inspecting
+        /// its prev_type argument sees the type the serialization actually serializes. Same order as in
         /// ISerialization::createFromPath.
         dynamic_subcolumn->data.serialization = creator->create(dynamic_subcolumn->data.serialization, dynamic_subcolumn->data.type);
+        dynamic_subcolumn->data.column = creator->create(dynamic_subcolumn->data.column, dynamic_subcolumn->data.type);
         dynamic_subcolumn->data.type = creator->create(dynamic_subcolumn->data.type);
-        dynamic_subcolumn->data.column = creator->create(dynamic_subcolumn->data.column);
     }
 
     resolved_path[parent].data = dynamic_subcolumn->data;
