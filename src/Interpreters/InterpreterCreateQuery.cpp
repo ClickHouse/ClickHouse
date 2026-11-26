@@ -3048,6 +3048,8 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
     }
 
     validateStorage(*res, create, mode, getContext(), create.isTemporary());
+    if (auto parent_table = getContext()->getParentTable())
+        res->parent_table_uuid = *parent_table;
 
     if (only_replicated_engine_allowed && res->hasUnreplicatedTableDataOnDisk())
         throwUnreplicatedTableDataNotAllowed();
@@ -3170,6 +3172,8 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
         txn->setIsCreateOrReplaceQuery();
     ContextMutablePtr create_context = Context::createCopy(current_context);
     create_context->setQueryContext(std::const_pointer_cast<Context>(current_context));
+    if (auto parent_table = current_context->getParentTable())
+        create_context->setParentTable(*parent_table);
 
     /// Before actually creating/replacing the table, check if it will lead to cyclic dependencies.
     /// For a plain create this check runs later, after the existence fast path below: a

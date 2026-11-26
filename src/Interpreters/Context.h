@@ -2207,6 +2207,7 @@ public:
     /// Tells DatabaseReplicated to make this query conditional: it'll only succeed if table with the given UUID exists.
     /// Used by refreshable materialized views to prevent creating inner tables after the MV is dropped.
     /// A CREATE with a parent table re-creates the view's inner table from its stored definition.
+    /// A RENAME moves only a table created with the same parent.
     void setParentTable(UUID uuid);
     std::optional<UUID> getParentTable() const;
     /// Allows cancelling DDL query in DatabaseReplicated. Usage:
