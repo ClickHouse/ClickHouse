@@ -66,7 +66,7 @@ auto attachedJob(ThreadName thread_name, F && f)
     {
         ThreadGroupPtr thread_group;
         std::optional<std::decay_t<F>> f;
-        ThreadName thread_name;
+        ThreadName thread_name{};
 
         ~State()
         {

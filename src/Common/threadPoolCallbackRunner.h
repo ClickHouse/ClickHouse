@@ -219,7 +219,7 @@ private:
         std::shared_ptr<Task> task;
         ThreadGroupPtr thread_group;
         Callback callback;
-        ThreadName thread_name;
+        ThreadName thread_name{};
         std::promise<Result> promise{std::allocator_arg, ServerOwnedAllocator<char>{}};
         bool was_run = false;
 
