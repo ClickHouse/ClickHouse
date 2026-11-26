@@ -156,3 +156,48 @@ for locally in 1 0; do
     echo "client-sent secondary query, execute locally = $locally: served through several fragments"
     ${CLICKHOUSE_CLIENT} --query "DROP TABLE $table"
 done
+
+# A refresh of a refreshable materialized view is a statement that does not go through `executeQuery`,
+# and the fragments of its plan must share its slot all the same.
+for locally in 1 0; do
+    table="t_dp_refresh_$locally"
+    view="mv_dp_refresh_${locally}_${RANDOM}_$$"
+    ${CLICKHOUSE_CLIENT} --multiline --query "
+    DROP TABLE IF EXISTS $table;
+    DROP TABLE IF EXISTS ${table}_dst;
+
+    CREATE TABLE $table (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k
+    SETTINGS index_granularity = 1024, max_concurrent_queries = 1, min_marks_to_honor_max_concurrent_queries = 1;
+
+    SYSTEM STOP MERGES $table;
+    INSERT INTO $table SELECT number, number FROM numbers(100000) SETTINGS max_insert_threads = 1;
+    INSERT INTO $table SELECT number + 100000, number FROM numbers(100000) SETTINGS max_insert_threads = 1;
+
+    CREATE TABLE ${table}_dst (c UInt64) ENGINE = Memory;
+    CREATE MATERIALIZED VIEW $view REFRESH EVERY 1 YEAR SETTINGS refresh_retries = 0 APPEND TO ${table}_dst EMPTY AS
+        SELECT count() AS c FROM $table WHERE k < 150000
+        SETTINGS make_distributed_plan = 1, distributed_plan_execute_locally = $locally,
+            enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0, max_rows_to_group_by = 0,
+            distributed_plan_max_rows_to_broadcast = 0, distributed_plan_default_reader_bucket_count = 2,
+            use_query_condition_cache = 0;
+
+    SYSTEM REFRESH VIEW $view;
+    SYSTEM WAIT VIEW $view;
+    "
+
+    echo "refresh, execute locally = $locally:"
+    ${CLICKHOUSE_CLIENT} --query "SELECT c FROM ${table}_dst"
+
+    ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS query_log"
+    fragments=$(${CLICKHOUSE_CLIENT} --query "
+        SELECT countIf(ProfileEvents['SelectedParts'] > 0)
+        FROM system.query_log
+        WHERE event_date >= yesterday() AND type = 'QueryFinish' AND is_initial_query = 0
+          AND log_comment = 'refresh of ${CLICKHOUSE_DATABASE}.$view'
+        SETTINGS enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0")
+    [ "$fragments" -lt 2 ] && echo "fewer than two fragments of the refresh read the table" && exit 1
+
+    ${CLICKHOUSE_CLIENT} --query "DROP TABLE $view"
+    ${CLICKHOUSE_CLIENT} --query "DROP TABLE ${table}_dst"
+    ${CLICKHOUSE_CLIENT} --query "DROP TABLE $table"
+done

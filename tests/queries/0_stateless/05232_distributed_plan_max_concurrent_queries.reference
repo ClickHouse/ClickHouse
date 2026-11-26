@@ -12,3 +12,7 @@ two sets built through plans of their own, execute locally = 0:
 3000	6000
 client-sent secondary query, execute locally = 1: served through several fragments
 client-sent secondary query, execute locally = 0: served through several fragments
+refresh, execute locally = 1:
+150000
+refresh, execute locally = 0:
+150000

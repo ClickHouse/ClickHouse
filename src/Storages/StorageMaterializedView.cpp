@@ -797,6 +797,8 @@ ContextMutablePtr StorageMaterializedView::createRefreshContext(const String & l
     refresh_context->setInitiatorVersionIfUnset();
     /// Generate a random query id.
     refresh_context->setCurrentQueryId("");
+    /// A refresh does not go through `executeQuery`, which sets the statement id of other statements.
+    refresh_context->setStatementId(UUIDHelpers::generateV4());
     /// Use the database where the materialized view is created to run the select query in the refresh task
     refresh_context->setCurrentDatabase(getStorageID().database_name);
     return refresh_context;
