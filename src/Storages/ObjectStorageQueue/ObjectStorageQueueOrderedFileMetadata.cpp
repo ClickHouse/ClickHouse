@@ -67,8 +67,7 @@ namespace
         return !hive_part.contains("_/") && !hive_part.contains("/_") && !hive_part.contains("//");
     }
 
-    /// Without `_/`, `/_` and `//` the normalized name maps back to the hive part and its underscore runs
-    /// have length 1 or an even length, so it never equals a `___<hash>` name.
+    /// A kept old name decodes back to its hive part and never equals a `___<hash>` name (its underscore runs are 1 or even).
     std::string getHivePartNodeName(std::string_view hive_part)
     {
         if (!keepsOldHivePartNodeName(hive_part))
@@ -101,7 +100,6 @@ namespace
         }
     }
 
-    /// Name of the partition node in `processed`.
     std::string getPartitionNodeName(
         const std::string & file_path,
         ObjectStorageQueuePartitioningMode partitioning_mode,
@@ -123,7 +121,6 @@ namespace
         return getHivePart(file_path);
     }
 
-    /// A partition node value is the position of a file only if it is a file of the same hive partition.
     bool isSameHivePartition(const std::string & file_path, const std::string & stored_path)
     {
         return !stored_path.empty()
@@ -614,7 +611,6 @@ ObjectStorageQueueOrderedFileMetadata::getProcessingStateFromKeeper(
     if (partition_node_path.has_value())
         paths.push_back(*partition_node_path);
 
-    /// The node older versions used for this partition, if its name changed.
     if (partition_node_path.has_value() && old_partition_node_path.has_value())
         paths.push_back(*old_partition_node_path);
 
