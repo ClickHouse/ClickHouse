@@ -62,6 +62,7 @@ from docker.models.containers import Container
 from kazoo.exceptions import KazooException
 from minio import Minio
 
+from . import docker_memory_admission
 from . import pytest_xdist_logging_to_separate_files
 from .client import Client, QueryRuntimeException, set_transport_error_describer
 from .hdfs_api import HDFSApi
@@ -4045,6 +4046,10 @@ class ClickHouseCluster:
                 instance.env_variables.update(coverage_env)
 
         try:
+            docker_memory_admission.reserve(
+                self.project_name,
+                len(self.instances) + (3 if self.with_zookeeper or self.with_zookeeper_secure else 0),
+            )
             for instance in list(self.instances.values()):
                 logging.debug(f"Setup directory for instance: {instance.name}")
                 instance.create_dir()
@@ -4692,10 +4697,12 @@ class ClickHouseCluster:
                 instance.arm_per_test_coverage()
 
             self.is_up = True
+            docker_memory_admission.settle(self.project_name)
             started_clusters.append(self)
             self.save_logs()
 
         except BaseException as e:
+            docker_memory_admission.release(self.project_name)
             logging.debug("Failed to start cluster: ")
             logging.debug(str(e))
             logging.debug(traceback.format_exc())
@@ -4853,6 +4860,7 @@ class ClickHouseCluster:
             )
 
         self.cleanup()
+        docker_memory_admission.release(self.project_name)
 
         if self.with_net_trics:
             try:
