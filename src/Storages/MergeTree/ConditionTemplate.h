@@ -55,7 +55,7 @@ public:
     /// Maps already generated condition using provided lambda.
     void addTransformation(Transformer transformer_);
 
-    size_t getNumTransformations() const;
+    [[nodiscard]] size_t getNumTransformations() const;
 
 private:
     const std::shared_ptr<ActionsDAGWithInversionPushDown> dag;

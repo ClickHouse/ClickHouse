@@ -1,4 +1,3 @@
-set enable_dynamic_type=1;
 
 select coalesce(number % 2 ? NULL : number::Dynamic, 42) as res from numbers(5);
 select coalesce(number % 2 ? NULL : number::Dynamic, number % 3 ? NULL : 42) as res from numbers(5);

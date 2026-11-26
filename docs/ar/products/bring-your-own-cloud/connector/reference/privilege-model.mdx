@@ -7,7 +7,6 @@ doc_type: 'reference'
 ---
 
 import { PrivatePreviewBadge } from '/snippets/ar/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
-import { Image } from "/snippets/ar/components/Image.jsx";
 
 <PrivatePreviewBadge />
 
@@ -15,10 +14,14 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 ## الهويات {#identities}
 
-<Image img="/images/cloud/reference/byoc-connector-identity-model.svg" size="lg" alt="نموذج هوية ClickHouse Connector" />
+<div className="ch-image-lg">
+  <Frame>
+    ![نموذج هوية ClickHouse Connector](/images/cloud/reference/byoc-connector-identity-model.svg)
+  </Frame>
+</div>
 
 * **شهادة عميل mTLS الخاصة بالموصّل**، والتي يكون Organization ID الخاص بك هو الاسم الشائع (common name) فيها، تُصادق كل برنامج خفي لدى نقطة نهاية الموصّل الخاصة بك. ويستخدم `clicklink clctl instances create` الشهادة نفسها ومفتاح HMAC نفسه عند استدعائه لنقطة النهاية.
-* **`pcm_scraper` و`pcm_troubleshooter`** هما مستخدما ClickHouse للقراءة فقط اللذان يتصل بهما scraper ومستكشف الأخطاء ومصلحها. أما المنفّذ فليس له مستخدم ClickHouse.
+* **`pcm_scraper` و`pcm_troubleshooter`** هما مستخدما ClickHouse للقراءة فقط اللذان يتصل بهما جامع البيانات ومستكشف الأخطاء ومصلحها. أما المنفّذ فليس له مستخدم ClickHouse.
 * **حسابات ServiceAccount الخاصة بمستكشف الأخطاء ومصلحها**، بواقع حساب لكل نشر مُجهّز، تحمل صلاحيات العرض للقراءة فقط في Kubernetes التي يمكن لجلسة الدعم استخدامها.
 * **`pcm-executor`** هو حساب ServiceAccount في Kubernetes الخاص بالمنفّذ لإدارة دورة حياة الخدمات المُدارة. وتقيّد سياسة ValidatingAdmissionPolicy عمليات الكتابة الخاصة به ضمن مساحات أسماء الخدمات.
 * **`pcm-platform`** هي هوية المنفّذ لتحديثات المنصة. ويُصدر أمر `clicklink clctl platform approve` لديك رمزها المميز لمدة ساعتين دون تجديده أبدًا؛ وبين عمليات الموافقة لا يملك المنفّذ أي صلاحية كتابة على طبقة المنصة.

@@ -7,18 +7,16 @@ doc_type: 'guide'
 keywords: ['systemd', 'journald', 'journal', 'OTEL', 'ClickStack', 'logs del sistema', 'systemctl']
 ---
 
-import { Image } from "/snippets/es/components/Image.jsx";
-
 import { TrackedLink } from "/snippets/es/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
 <Info>
   **Resumen**
 
-  Recopila y visualiza logs del journal de systemd en ClickStack mediante el `journald receiver` de OpenTelemetry Collector. Incluye un conjunto de datos de demostración y un dashboard preconfigurado.
+  Recopila y visualiza logs del journal de systemd en ClickStack mediante el `receptor de journald` de OpenTelemetry Collector. Incluye un conjunto de datos de demostración y un dashboard preconfigurado.
 </Info>
 
 <div id="existing-systems">
-  ## Integración con sistemas existentes
+  ## Integración con sistemas existentes {#existing-systems}
 </div>
 
 Supervise los logs de journald de su sistema Linux ejecutando el OpenTelemetry Collector con el receiver journald para recopilar los logs del sistema y enviarlos a ClickStack a través de OTLP.
@@ -26,7 +24,7 @@ Supervise los logs de journald de su sistema Linux ejecutando el OpenTelemetry C
 Si quiere probar primero esta integración sin modificar su configuración actual, vaya a la [sección del conjunto de datos de demostración](#demo-dataset).
 
 <div id="prerequisites">
-  ##### Requisitos previos
+  ##### Requisitos previos {#prerequisites}
 </div>
 
 * Instancia de ClickStack en ejecución
@@ -37,12 +35,16 @@ Si quiere probar primero esta integración sin modificar su configuración actua
   <Step title="Obtén la API key de ClickStack" id="get-api-key">
     El OpenTelemetry Collector envía datos al endpoint OTLP de ClickStack, que requiere autenticación.
 
-    1. Abre HyperDX en la URL de tu instancia de ClickStack (p. ej., http://localhost:8080)
+    1. Abre la UI de ClickStack en la URL de tu instancia de ClickStack (p. ej., http://localhost:8080)
     2. Crea una cuenta o inicia sesión si es necesario
     3. Ve a **Team Settings → API Keys**
     4. Copia tu **API key de ingesta**
 
-    <Image img="/images/clickstack/api-key.webp" alt="API key de ClickStack" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![API key de ClickStack](/images/clickstack/api-key.webp)
+      </Frame>
+    </div>
 
     5. Configúrala como variable de entorno:
 
@@ -51,17 +53,17 @@ Si quiere probar primero esta integración sin modificar su configuración actua
     ```
   </Step>
 
-  <Step title="Verifica que el journal de systemd esté en ejecución" id="verify-systemd">
+  <Step title="Verifica que el registro de systemd esté en ejecución" id="verify-systemd">
     Asegúrate de que tu sistema use systemd y tenga logs del journal:
 
     ```bash
-    # Comprobar la versión de systemd
+    # Check systemd version
     systemctl --version
 
-    # Ver entradas recientes del journal
+    # View recent journal entries
     journalctl -n 20
 
-    # Comprobar el uso de disco del journal
+    # Check journal disk usage
     journalctl --disk-usage
     ```
 
@@ -177,22 +179,30 @@ Si quiere probar primero esta integración sin modificar su configuración actua
     ```
   </Step>
 
-  <Step title="Verifica los logs en HyperDX" id="verifying-logs">
-    Una vez configurado, inicia sesión en HyperDX y verifica que los logs se estén enviando:
+  <Step title="Verifica los logs en la UI de ClickStack" id="verifying-logs">
+    Una vez configurado, inicia sesión en la UI de ClickStack y verifica que los logs se estén enviando:
 
     1. Ve a la Búsqueda view
     2. Establece source en Logs
     3. Filtra por `service.name:systemd-logs`
     4. Deberías ver entradas de log estructuradas con campos como `unit`, `priority`, `MESSAGE`, `_HOSTNAME`
 
-    <Image img="/images/clickstack/systemd/systemd-search-view.webp" alt="Vista Búsqueda de logs" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![Vista Búsqueda de logs](/images/clickstack/systemd/systemd-search-view.webp)
+      </Frame>
+    </div>
 
-    <Image img="/images/clickstack/systemd/systemd-log-view.webp" alt="Vista de logs" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![Vista de logs](/images/clickstack/systemd/systemd-log-view.webp)
+      </Frame>
+    </div>
   </Step>
 </Steps>
 
 <div id="demo-dataset">
-  ## Conjunto de datos de demostración
+  ## Conjunto de datos de demostración {#demo-dataset}
 </div>
 
 Para quienes quieran probar la integración de logs de systemd antes de configurar sus sistemas de producción, proporcionamos un conjunto de datos de ejemplo con logs de systemd pregenerados y patrones realistas.
@@ -259,28 +269,34 @@ Para quienes quieran probar la integración de logs de systemd antes de configur
     </Note>
   </Step>
 
-  <Step title="Verificar los logs en HyperDX" id="verify-demo-logs">
+  <Step title="Verificar los logs en la UI de ClickStack" id="verify-demo-logs">
     Una vez que ClickStack esté en ejecución:
 
-    1. Abre [HyperDX](http://localhost:8080/) e inicia sesión en tu cuenta
+    1. Abre la [UI de ClickStack](http://localhost:8080/) e inicia sesión en tu cuenta
     2. Ve a la Búsqueda view y selecciona `Logs` como source
-    3. Establece el rango de tiempo en **2025-11-14 00:00:00 - 2025-11-17 00:00:00**
+    3. Establece el intervalo de tiempo en **2025-11-14 00:00:00 - 2025-11-17 00:00:00**
 
-    <Image img="/images/clickstack/systemd/systemd-search-view.webp" alt="Vista de búsqueda de logs" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![Vista de búsqueda de logs](/images/clickstack/systemd/systemd-search-view.webp)
+      </Frame>
+    </div>
 
-    <Image img="/images/clickstack/systemd/systemd-log-view.webp" alt="Vista de logs" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![Vista de logs](/images/clickstack/systemd/systemd-log-view.webp)
+      </Frame>
+    </div>
 
     <Info>
       **Visualización de la zona horaria**
 
-      HyperDX muestra los timestamps en la zona horaria local de tu navegador. Los datos de demostración abarcan **2025-11-15 00:00:00 - 2025-11-16 00:00:00 (UTC)**. El rango de tiempo amplio garantiza que verás los logs de demostración independientemente de tu ubicación.
+      La UI de ClickStack muestra los timestamps en la zona horaria local de tu navegador. Los datos de demostración abarcan **2025-11-15 00:00:00 - 2025-11-16 00:00:00 (UTC)**. El intervalo de tiempo amplio garantiza que verás los logs de demostración independientemente de tu ubicación.
     </Info>
   </Step>
 </Steps>
 
-<div id="dashboards">
-  ## Dashboards y visualización
-</div>
+## Dashboards y visualización {#dashboards}
 
 Para ayudarte a empezar a monitorizar los logs de systemd con ClickStack, proporcionamos visualizaciones esenciales para los datos del journal de systemd.
 
@@ -290,14 +306,22 @@ Para ayudarte a empezar a monitorizar los logs de systemd con ClickStack, propor
   </Step>
 
   <Step title="Importar el dashboard preconfigurado" id="import-dashboard">
-    1. Abre HyperDX y ve a la sección Dashboards
+    1. Abre la UI de ClickStack y ve a la sección Dashboards
     2. Haz clic en **Import Dashboard** en la esquina superior derecha, dentro del menú de puntos suspensivos
 
-    <Image img="/images/clickstack/import-dashboard.webp" alt="Botón Import dashboard" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![Botón Import dashboard](/images/clickstack/import-dashboard.webp)
+      </Frame>
+    </div>
 
-    3. Sube el archivo `systemd-logs-dashboard.json` y haz clic en **Finish Import**
+    3. Sube el archivo `systemd-logs-dashboard.json` y haz clic en **Finalizar Importación**
 
-    <Image img="/images/clickstack/systemd/finish-import-systemd.webp" alt="Finalizar importación" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![Finalizar importación](/images/clickstack/systemd/finish-import-systemd.webp)
+      </Frame>
+    </div>
   </Step>
 
   <Step title="Ver el dashboard" id="created-dashboard">
@@ -309,7 +333,11 @@ Para ayudarte a empezar a monitorizar los logs de systemd con ClickStack, propor
     * Fallos de servicios
     * Tasas de error
 
-    <Image img="/images/clickstack/systemd/systemd-logs-dashboard.webp" alt="Dashboard de ejemplo" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![Dashboard de ejemplo](/images/clickstack/systemd/systemd-logs-dashboard.webp)
+      </Frame>
+    </div>
 
     <Note>
       Para el conjunto de datos de demostración, establece el intervalo de tiempo en **2025-11-15 00:00:00 - 2025-11-16 00:00:00 (UTC)** (ajústalo según tu zona horaria local).
@@ -318,12 +346,10 @@ Para ayudarte a empezar a monitorizar los logs de systemd con ClickStack, propor
 </Steps>
 
 <div id="troubleshooting">
-  ## Solución de problemas
+  ## Solución de problemas {#troubleshooting}
 </div>
 
-<div id="no-logs">
-  ### No aparecen logs en HyperDX
-</div>
+### No aparecen logs en la UI de ClickStack {#no-logs}
 
 Comprueba si los logs están llegando a ClickHouse:
 
@@ -342,7 +368,7 @@ docker logs otel-collector | grep -i "error\|journald" | tail -20
 ```
 
 <div id="journalctl-not-found">
-  ### error: no se encontró journalctl
+  ### error: no se encontró journalctl {#journalctl-not-found}
 </div>
 
 Si ves `exec: "journalctl": executable file not found in $PATH`:
@@ -361,16 +387,14 @@ otelcol-contrib --config=otel-config.yaml
 2. **Usa el enfoque de exportación de texto** (como en la demo) con el receiver `filelog` para leer exportaciones de journald
 
 <div id="next-steps">
-  ## Próximos pasos
+  ## Próximos pasos {#next-steps}
 </div>
 
 * Configura [alertas](/es/clickstack/features/alerts) para eventos críticos del sistema (fallos del servicio, errores de autenticación, cierres por OOM)
 * Crea [dashboards](/es/clickstack/features/dashboards/overview) adicionales para casos de uso concretos (monitorización de la seguridad de SSH, estado del servicio)
 * Filtra por unidades específicas de systemd para reducir el ruido y centrarte en los servicios que más importan
 
-<div id="going-to-production">
-  ## Llevar a producción
-</div>
+## Llevar a producción {#going-to-production}
 
 Esta guía usa un OpenTelemetry Collector independiente para leer logs de systemd y enviarlos al endpoint OTLP de ClickStack, que es el enfoque recomendado para producción.
 

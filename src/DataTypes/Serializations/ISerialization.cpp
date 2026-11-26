@@ -5,6 +5,7 @@
 #include <Columns/IColumn.h>
 #include <Compression/CompressionFactory.h>
 #include <Common/Exception.h>
+#include <DataTypes/IDataType.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/Serializations/ISerialization.h>
 #include <DataTypes/Serializations/SerializationObjectPool.h>
@@ -72,6 +73,11 @@ SerializationPtr ISerialization::pooled(UInt128 hash, absl::FunctionRef<ISeriali
     });
 }
 
+MutableColumnPtr ISerialization::createColumnForDeserialization(const IDataType & type) const
+{
+    return type.createColumn();
+}
+
 ISerialization::KindStack ISerialization::getKindStack(const IColumn & column)
 {
     if (const auto * column_sparse = typeid_cast<const ColumnSparse *>(&column))
@@ -123,7 +129,7 @@ String ISerialization::kindStackToString(const KindStack & kind_stack)
     if (kind_stack.size() == 1)
         return kindToString(kind_stack.front());
 
-    for (ssize_t i = kind_stack.size() - 1; i >= 1; i--)
+    for (ssize_t i = static_cast<ssize_t>(kind_stack.size()) - 1; i >= 1; i--)
     {
         if (!result.empty())
             result += "Over";
@@ -167,7 +173,7 @@ bool ISerialization::hasKind(const KindStack & kind_stack, Kind kind)
     return std::find(kind_stack.begin(), kind_stack.end(), kind) != kind_stack.end();
 }
 
-const std::set<SubstreamType> ISerialization::Substream::named_types
+[[clang::no_destroy]] const std::set<SubstreamType> ISerialization::Substream::named_types
 {
     StringSizes,
     InlinedStringSizes,
@@ -282,13 +288,16 @@ void ISerialization::deserializeBinaryBulkWithMultipleStreams(
     else if (ReadBuffer * stream = settings.getter(settings.path))
     {
         size_t prev_size = column.size();
+        /// The hint is the expected size of a value, so it is of no use for values of a fixed size. The callbacks
+        /// look the hint up by the name of the stream, which is too much work to do for every granule for nothing.
+        const bool use_avg_value_size_hint = !column.valuesHaveFixedSize();
         double avg_value_size_hint = 0.0;
-        if (settings.get_avg_value_size_hint_callback)
+        if (use_avg_value_size_hint && settings.get_avg_value_size_hint_callback)
             avg_value_size_hint = settings.get_avg_value_size_hint_callback(settings.path);
         deserializeBinaryBulk(column, *stream, limit, avg_value_size_hint);
         size_t num_read_rows = column.size() - prev_size;
         addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, column.getPtr(), num_read_rows);
-        if (settings.update_avg_value_size_hint_callback)
+        if (use_avg_value_size_hint && settings.update_avg_value_size_hint_callback)
             settings.update_avg_value_size_hint_callback(settings.path, column);
     }
 
@@ -319,7 +328,10 @@ String getNameForSubstreamPath(
         if (it->type == Substream::NullMap || it->type == Substream::SparseNullMap || it->type == Substream::NullMapHidden)
             stream_name += ".null";
         else if (it->type == Substream::ArraySizes)
-            stream_name += ".size" + toString(array_level);
+        {
+            stream_name += ".size";
+            stream_name += toString(array_level);
+        }
         else if (it->type == Substream::ArrayElements)
             ++array_level;
         else if (it->type == Substream::StringSizes || it->type == Substream::InlinedStringSizes)
@@ -338,16 +350,21 @@ String getNameForSubstreamPath(
             stream_name += ".repl.idx";
         else if (Substream::named_types.contains(it->type))
         {
-            auto substream_name = "." + it->name_of_substream;
-
             /// For compatibility reasons, we use %2E (escaped dot) instead of dot.
             /// Because nested data may be represented not by Array of Tuple,
             /// but by separate Array columns with names in a form of a.b,
-            /// and name is encoded as a whole.
+            /// and name is encoded as a whole. Appended in place: this runs for every substream of every
+            /// granule read, and a temporary per element was most of its cost.
             if (it->type == Substream::TupleElement && escape_for_file_name)
-                stream_name += escapeForFileName(substream_name);
+            {
+                stream_name += "%2E";
+                stream_name += escapeForFileName(it->name_of_substream);
+            }
             else
-                stream_name += substream_name;
+            {
+                stream_name += '.';
+                stream_name += it->name_of_substream;
+            }
         }
         else if (it->type == Substream::VariantDiscriminators)
             stream_name += ".variant_discr";
@@ -855,7 +872,7 @@ ISerialization::createFromPath(const SubstreamPath & path, size_t prefix_len, co
     if (prefix_len == 0)
         return {};
 
-    ssize_t last_elem = prefix_len - 1;
+    ssize_t last_elem = static_cast<ssize_t>(prefix_len) - 1;
     auto res = path[last_elem].data;
 
     /// Materialize the column on demand via a lazy creator if one is attached.

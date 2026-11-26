@@ -17,9 +17,6 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="10485760" />
 
-* النوع: عدد صحيح غير موقّع
-* القيمة الافتراضية: 1 MiB
-
 الحد الأدنى لحجم الجزء، بالبايت، الذي سيحلّله كل خيط تنفيذ بالتوازي.
 
 ## min_compress_block_size {#min_compress_block_size}
@@ -53,6 +50,23 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 <SettingsInfoBlock type="Float" default_value="0.5" />
 
 الحد الأدنى لمعدل الإصابة لذاكرة التخزين المؤقت المستخدمة في تحسين المفاتيح المتتالية في التجميع للإبقاء عليه مفعّلًا
+
+## min_marks_per_part_to_load_statistics {#min_marks_per_part_to_load_statistics}
+
+<SettingsInfoBlock type="UInt64" default_value="64" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "64"},{"label": "إعداد جديد لتخطي تحميل الإحصاءات عندما لا يُبقي المفتاح الأساسي سوى قدر صغير من البيانات للقراءة."}]}]} />
+
+الحد الأدنى لعدد العلامات المتبقية للقراءة بعد تحليل المفتاح الأساسي، لكل جزء بيانات لم تُحمَّل إحصاءاته في الذاكرة بعد، اللازم لتحميل إحصاءات الأعمدة بغرض استبعاد أجزاء البيانات وترتيب شروط `PREWHERE`.
+
+يتطلب تحميل الإحصاءات بضع عمليات قراءة لكل جزء بيانات، وقد يستغرق عند البدء البارد وقتًا أطول من قراءة البيانات نفسها إذا كان المفتاح الأساسي قد حصر القراءة بالفعل في عدد قليل من حبيبات البيانات. فإذا كان عدد العلامات المتبقية للقراءة أقل من قيمة هذا الإعداد مضروبةً في عدد أجزاء البيانات التي ستُحمَّل إحصاءاتها، فلن تُحمَّل الإحصاءات لأجل هذه التحسينات: أي لا تُستبعد أجزاء البيانات بناءً على الإحصاءات، وتُرتَّب شروط `PREWHERE` حسب أحجام أعمدتها، كما هو الحال في الجداول التي لا تحتوي على إحصاءات. أما الإحصاءات الموجودة مسبقًا في الذاكرة فتُستخدم بصرف النظر عن حجم القراءة.
+
+أما حساب `min` و`max` و`count` مباشرةً من الإحصاءات (راجع `use_statistics_for_min_max_aggregation`) فيُغني عن القراءة ولا يتأثر بهذا الإعداد.
+
+القيم الممكنة:
+
+* 0 — تحميل الإحصاءات بصرف النظر عن حجم القراءة.
+* عدد صحيح موجب — عدد العلامات لكل جزء بيانات.
 
 ## min_os_cpu_wait_time_ratio_to_throw {#min_os_cpu_wait_time_ratio_to_throw}
 
@@ -102,6 +116,18 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 لتعطيل تقسيم عُقد `Resize`، اضبط هذا الإعداد على 0. سيؤدي ذلك إلى منع تقسيم عُقد `Resize` أثناء إنشاء خط المعالجة، مما يسمح لها بالاحتفاظ ببنيتها الأصلية من دون تجزئتها إلى عُقد أصغر.
 
+## min_rows_for_packed_string_keys_in_hash_join {#min_rows_for_packed_string_keys_in_hash_join}
+
+<SettingsInfoBlock type="UInt64" default_value="100000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "100000"},{"label": "إعداد جديد: لا يُطبَّق `enable_packed_string_keys_in_hash_join` إلا عندما يُقدَّر الجانب الأيمن من عملية الربط بـ 100000 صف أو أكثر، أو عندما لا يتوفر له تقدير."}]}]} />
+
+الحد الأدنى للعدد المقدَّر من الصفوف في الجانب الأيمن من عملية الربط لكي يُطبَّق `enable_packed_string_keys_in_hash_join`. فعمليات الربط الأصغر لا تستفيد منه كثيرًا، وقد تصبح أبطأ مع المفاتيح الطويلة.
+
+يمثّل التقدير عدد صفوف الجانب الأيمن في تنفيذ سابق لعملية الربط نفسها، إذا كان `collect_hash_table_stats_during_joins` مفعّلًا، وإلا فهو التقدير الذي يحدده مُحسِّن الاستعلامات. ويعتمد `parallel_hash_join_threshold` على التقدير نفسه. أما عملية الربط التي لا يتوفر لها تقدير فتستخدم `enable_packed_string_keys_in_hash_join` دائمًا.
+
+تعني القيمة 0 عدم وجود حد أدنى.
+
 ## min_rows_ratio_for_hash_join_row_store {#min_rows_ratio_for_hash_join_row_store}
 
 <SettingsInfoBlock type="Double" default_value="3" />
@@ -109,6 +135,14 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "5"},{"label": "إعداد جديد للتحكم في الحد الأدنى المقدّر لنسبة صفوف مخرجات الربط بالتجزئة إلى صفوف جانب البناء، للسماح بتحويل payload الربط بالتجزئة إلى تنسيق قائم على الصفوف. تعني القيمة 0 أن التحويل مسموح به دائمًا."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "3"},{"label": "تم خفض الحد الأدنى المقدّر لنسبة صفوف مخرجات الربط إلى صفوف جانب البناء الذي يُفعِّل تخزين الربط بالتجزئة القائم على الصفوف."}]}]} />
 
 الحد الأدنى المقدّر لنسبة صفوف مخرجات الربط بالتجزئة إلى صفوف جانب البناء، للسماح بتحويل payload الربط بالتجزئة إلى تنسيق قائم على الصفوف. تعني القيمة 0 أن التحويل مسموح به دائمًا.
+
+## min_string_column_bytes_for_hash_join_row_store {#min_string_column_bytes_for_hash_join_row_store}
+
+<SettingsInfoBlock type="UInt64" default_value="8388608" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "8388608"},{"label": "إعداد جديد يتحكم في الحد الأدنى للحجم التقديري لعمود `String` في جانب البناء (build side) اللازم لتخزينه في التخزين القائم على الصفوف الخاص بالربط بالتجزئة."}]}]} />
+
+الحد الأدنى للحجم التقديري لعمود `String` في جانب البناء (build side) اللازم لتخزينه في التخزين القائم على الصفوف الخاص بالربط بالتجزئة، ويُحسب هذا الحجم بضرب العدد التقديري للصفوف في متوسط حجم القيمة المستمد من الإحصاءات. تعني القيمة 0 عدم تخزين أعمدة `String` في التخزين القائم على الصفوف.
 
 ## min_table_rows_to_use_projection_index {#min_table_rows_to_use_projection_index}
 

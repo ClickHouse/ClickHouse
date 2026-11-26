@@ -8,6 +8,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Interpreters/castColumn.h>
 #include <base/int8_to_string.h>
+#include <base/sanitizer_defs.h>
 
 #include <Common/DateLUT.h>
 
@@ -46,17 +47,17 @@ public:
 
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionFromDaysSinceYearZero>(); }
 
-    String getName() const override { return name; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-    bool useDefaultImplementationForConstants() const override { return true; }
-    size_t getNumberOfArguments() const override { return 1; }
+    [[nodiscard]] String getName() const override { return name; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(NativeInteger) -> " + typename Traits::ReturnDataType{}.getName();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         auto res_column = Traits::ReturnDataType::ColumnType::create(input_rows_count);
         const auto & src_column = arguments[0];
@@ -83,6 +84,7 @@ public:
     }
 
     template <typename T, typename ColVecType, typename ResCol>
+    NO_SANITIZE_UNSIGNED_OVERFLOW
     void execute(const ColVecType & col, ResCol & result_column, size_t rows_count) const
     {
         const auto & src_data = col.getData();
