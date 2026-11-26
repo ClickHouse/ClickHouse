@@ -23,45 +23,37 @@ prend en charge de nombreux formats de fichiers couramment utilisés, notamment 
 Dans cette section, nous vous proposons un guide de démarrage simple pour transférer des
 données d&#39;Azure Blob Storage vers ClickHouse, ainsi que les points importants à prendre en compte
 pour utiliser cette fonction efficacement. Pour plus de détails et d&#39;options avancées,
-consultez la documentation officielle :
+consultez la documentation officielle :
 [documentation de la fonction de table `azureBlobStorage`](/fr/reference/functions/table-functions/azureBlobStorage)
 
-<div id="acquiring-azure-blob-storage-access-keys">
-  ## Récupération des clés d’accès à Azure Blob Storage
-</div>
+## Récupération des clés d’accès à Azure Blob Storage {#acquiring-azure-blob-storage-access-keys}
 
-Pour permettre à ClickHouse d’accéder à votre Azure Blob Storage, vous aurez besoin d’une chaîne de connexion avec une clé d’accès.
+Pour permettre à ClickHouse d’accéder à votre Azure Blob Storage, vous aurez besoin d’une Chaîne de connexion avec une clé d’accès.
 
-1. Dans le portail Azure, accédez à votre **Storage Account**.
+1. Dans le portail Azure, accédez à votre **compte de stockage**.
 
-2. Dans le menu de gauche, sélectionnez **Access keys** dans la section **Security +
+2. Dans le menu de gauche, sélectionnez **clés d’accès** dans la section **Security +
    networking**.
+
    <div className="ch-image-lg">
-
-   <Frame>
-
-   ![Paramètres d’Azure Data Store](/images/integrations/data-ingestion/azure-data-factory/azure-data-store-settings.webp)
-
-   </Frame>
-
+     <Frame>
+       ![Paramètres d’Azure Data Store](/images/integrations/data-ingestion/azure-data-factory/azure-data-store-settings.webp)
+     </Frame>
    </div>
 
 3. Choisissez **key1** ou **key2**, puis cliquez sur le bouton **Show** à côté
-   du champ **Connection string**.
+   du champ **Chaîne de connexion**.
+
    <div className="ch-image-lg">
-
-   <Frame>
-
-   ![Clés d’accès d’Azure Data Store](/images/integrations/data-ingestion/azure-data-factory/azure-data-store-access-keys.webp)
-
-   </Frame>
-
+     <Frame>
+       ![Clés d’accès d’Azure Data Store](/images/integrations/data-ingestion/azure-data-factory/azure-data-store-access-keys.webp)
+     </Frame>
    </div>
 
-4. Copiez la chaîne de connexion — vous l’utiliserez comme paramètre dans la fonction de table azureBlobStorage.
+4. Copiez la Chaîne de connexion — vous l’utiliserez comme paramètre dans la fonction de table azureBlobStorage.
 
 <div id="querying-the-data-from-azure-blob-storage">
-  ## Interroger les données d’Azure Blob Storage
+  ## Interroger les données d’Azure Blob Storage {#querying-the-data-from-azure-blob-storage}
 </div>
 
 Ouvrez la console de requête ClickHouse de votre choix — il peut s’agir de l’interface
@@ -95,9 +87,7 @@ SELECT * FROM azureBlobStorage(
 Cela vous permet d’importer efficacement des données externes dans ClickHouse sans
 nécessiter d’étapes ETL intermédiaires.
 
-<div id="simple-example-using-the-environmental-sensors-dataset">
-  ## Un exemple simple utilisant le jeu de données Environmental Sensors
-</div>
+## Un exemple simple utilisant le jeu de données Environmental Sensors {#simple-example-using-the-environmental-sensors-dataset}
 
 À titre d’exemple, nous allons télécharger un seul fichier du jeu de données Environmental Sensors.
 
@@ -118,24 +108,24 @@ nécessiter d’étapes ETL intermédiaires.
 4. Téléversez le fichier `2019-06_bmp180.csv.zst` précédemment téléchargé dans le
    conteneur.
 
-5. Suivez les étapes décrites précédemment pour obtenir la chaîne de connexion
+5. Suivez les étapes décrites précédemment pour obtenir la Chaîne de connexion
    à Azure Blob Storage.
 
-Maintenant que tout est configuré, vous pouvez interroger directement les données dans Azure Blob Storage :
+Maintenant que tout est configuré, vous pouvez interroger directement les données dans Azure Blob Storage :
 
 ```sql
-    SELECT *
-    FROM azureBlobStorage(
-        '<YOUR CONNECTION STRING>', 
-        'sensors',
-        '2019-06_bmp180.csv.zst', 
-        'CSVWithNames')
-    LIMIT 10
-    SETTINGS format_csv_delimiter = ';'
+SELECT *
+FROM azureBlobStorage(
+    '<YOUR CONNECTION STRING>', 
+    'sensors',
+    '2019-06_bmp180.csv.zst', 
+    'CSVWithNames')
+LIMIT 10
+SETTINGS format_csv_delimiter = ';'
 ```
 
 7. Pour charger les données dans une table, créez une version simplifiée du
-   schéma utilisé dans le jeu de données d’origine :
+   schéma utilisé dans le jeu de données d’origine :
    ```sql
    CREATE TABLE sensors
    (
@@ -155,7 +145,7 @@ Maintenant que tout est configuré, vous pouvez interroger directement les donn�
   consultez [Inférence automatique du schéma à partir des données d’entrée](/fr/concepts/features/interfaces/schema-inference)
 </Info>
 
-8. Insérez maintenant les données depuis Azure Blob Storage dans la table sensors :
+8. Insérez maintenant les données depuis Azure Blob Storage dans la table sensors :
    ```sql
    INSERT INTO sensors
    SELECT sensor_id, lat, lon, timestamp, temperature
@@ -170,13 +160,11 @@ Maintenant que tout est configuré, vous pouvez interroger directement les donn�
 Votre table sensors contient désormais les données du fichier `2019-06_bmp180.csv.zst`
 stocké dans Azure Blob Storage.
 
-<div id="additional-resources">
-  ## Ressources supplémentaires
-</div>
+## Ressources supplémentaires {#additional-resources}
 
-Il s’agit simplement d’une introduction à l’utilisation de la fonction azureBlobStorage. Pour
-des options plus avancées et des détails de configuration, veuillez consulter la
-documentation officielle :
+Ceci n’est qu’une introduction à l’utilisation de la fonction azureBlobStorage. Pour
+des options plus avancées et davantage de détails sur la configuration, consultez la
+documentation officielle :
 
 * [Fonction de table azureBlobStorage](/fr/reference/functions/table-functions/azureBlobStorage)
 * [Formats des données d’entrée et de sortie](/fr/reference/formats/index)

@@ -10710,10 +10710,10 @@ const ServerSettings & Context::getServerSettings() const
     return shared->server_settings;
 }
 
-void Context::enablePlanLogCapture()
+void Context::enablePlanLogCapture(const CollectedStatistics & collected)
 {
-    query_plan_log_capture = std::make_shared<QueryPlanLogCapture>();
-    setJoinAnalyzeMode(JoinAnalyzeMode::Derived);
+    query_plan_log_capture = std::make_shared<QueryPlanLogCapture>(collected);
+    setJoinAnalyzeMode(collected.join_matches ? JoinAnalyzeMode::Exact : JoinAnalyzeMode::Derived);
 }
 
 QueryPlanLogCapturePtr Context::getPlanLogCapture() const

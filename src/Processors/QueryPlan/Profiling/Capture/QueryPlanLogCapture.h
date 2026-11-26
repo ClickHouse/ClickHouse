@@ -9,15 +9,24 @@ namespace DB
 {
 
 class QueryPipeline;
+struct Settings;
 class StepProfiler;
 using StepProfilerPtr = std::shared_ptr<StepProfiler>;
 
 class QueryPlanLogCapture
 {
 public:
+    explicit QueryPlanLogCapture(CollectedStatistics collected_)
+        : collected(collected_)
+    {
+    }
+
     /// Whether this query should have its plan captured. `query` is the text of the query as the
     /// client sent it, before `query_masking_rules` were applied.
     static bool canCapturePlan(const ContextPtr & context, const ASTPtr & ast, std::string_view query, bool internal);
+
+    /// What the settings of a logged query ask its plan to collect beyond the default statistics.
+    static CollectedStatistics collectedStatisticsFromSettings(const Settings & settings);
 
     /// Reports why a query that asked for its plan is not going to get one.
     static void declineCapture(const ContextPtr & context, const char * reason);
@@ -48,7 +57,12 @@ public:
     /// and only the places that write a plan out decide in what form.
     [[nodiscard]] const std::optional<CapturedPlan> & getCapturedPlan() const { return captured; }
 
+    /// What the query was asked to collect beyond the default statistics.
+    [[nodiscard]] const CollectedStatistics & getCollected() const { return collected; }
+
 private:
+    const CollectedStatistics collected;
+
     /// The plan, as values. Taken when the structure is captured and valid from then on, so the
     /// plan itself is not kept: it belongs to the interpreter and dies whenever that does.
     std::optional<CapturedPlan> captured;
