@@ -245,7 +245,7 @@ Lista de tags disponíveis:
 | `replica`                      | Igual a `zookeeper`. Prefira `zookeeper`                                         |                                                                                                          |
 | `no-fasttest`                  | O teste não é executado no [teste rápido](#test-types)                           | O teste usa o table engine `MySQL`, que é desabilitado no teste rápido                                   |
 | `fasttest-only`                | O teste é executado apenas no [teste rápido](#test-types)                        |                                                                                                          |
-| `no-[asan, tsan, msan, ubsan]` | Desabilita testes em builds com [sanitizers](#sanitizers)                        | O teste é executado no QEMU, que não funciona com sanitizers                                             |
+| `no-[asan, tsan, msan, ubsan]` | Desabilita testes em builds com [sanitizadores](#sanitizers)                        | O teste é executado no QEMU, que não funciona com sanitizadores                                             |
 | `no-replicated-database`       | Desabilita o teste quando o banco de dados padrão usa `ReplicatedDatabaseEngine` |                                                                                                          |
 | `no-ordinary-database`         | Desabilita o teste quando o database engine padrão é `Ordinary`                  |                                                                                                          |
 | `no-parallel`                  | Desabilita a execução de outros testes em paralelo com este                      | O teste lê tabelas `system`, e os invariantes podem ser violados                                         |
@@ -254,7 +254,7 @@ Lista de tags disponíveis:
 | `no-release`                   | Desabilita testes em builds Release                                              |                                                                                                          |
 | `no-darwin`                    | Desabilita o teste no macOS (Darwin)                                             | O teste depende de recursos específicos do Linux, como consultas distribuídas, `procfs` ou servidor HTTP |
 
-As opções a seguir também são compatíveis: `no-polymorphic-parts`, `no-random-settings`, `no-random-merge-tree-settings`, `no-backward-compatibility-check`, `no-cpu-x86_64`, `no-cpu-aarch64`, `no-cpu-ppc64le`, `no-s3-storage`.
+As opções a seguir também são compatíveis: `no-polymorphic-parts`, `no-random-settings`, `no-random-merge-tree-settings`, `no-cpu-x86_64`, `no-cpu-aarch64`, `no-cpu-ppc64le`, `no-s3-storage`.
 
 Além das configurações acima, você pode usar flags `USE_*` de `system.build_options` para definir o uso de recursos específicos do ClickHouse.
 Por exemplo, se seu teste usa uma tabela MySQL, você deve adicionar a tag `use-mysql`.

@@ -1,10 +1,10 @@
 ---
-title: 'Compute a demanda de ClickHouse'
-sidebarTitle: 'Compute a demanda'
-sidebar_label: 'Compute a demanda'
+title: 'On-Demand Compute de ClickHouse'
+sidebarTitle: 'On-Demand Compute'
+sidebar_label: 'On-Demand Compute'
 slug: /cloud/features/on-demand-compute
-description: 'Añade compute para cargas de trabajo de ClickHouse Cloud sin redimensionar tu primary service. El soporte en private preview se limita a determinadas queries.'
-keywords: ['on-demand compute', 'workload isolation', 'stateless workers', 'private preview']
+description: 'Añade compute para cargas de trabajo de ClickHouse Cloud sin redimensionar tu servicio primary. El soporte en vista previa privada se limita a determinadas consultas.'
+keywords: ['On-Demand Compute', 'workload isolation', 'stateless workers', 'vista previa privada']
 doc_type: 'guide'
 ---
 
@@ -13,22 +13,22 @@ import { PrivatePreviewBadge } from "/snippets/es/components/PrivatePreviewBadge
 <PrivatePreviewBadge />
 
 <Note>
-  On-Demand Compute se encuentra en private preview. No está cubierto por los SLO ni los SLA de ClickHouse Cloud, y pueden aplicarse limitaciones conocidas y desconocidas. Consulte [Limitaciones](#limitations).
+  On-Demand Compute se encuentra en vista previa privada. No está cubierto por los SLO ni los SLA de ClickHouse Cloud, y pueden aplicarse limitaciones conocidas y desconocidas. Consulte [Limitaciones](#limitations).
 
   [Únase a la lista de espera](https://clickhouse.com/cloud/on-demand-compute-waitlist).
 </Note>
 
-On-Demand Compute es una capability de ClickHouse Cloud que proporciona a su cloud service (un tenant) capacidad adicional e instantánea para las cargas de trabajo compatibles, sin necesidad de redimensionar ni aprovisionar otro service. Este trabajo se ejecuta en workers de ClickHouse ajenos al compute propio de su service. Los workers provienen de un grupo gestionado que se comparte entre tenants de la misma región, pero cada worker se asigna a un único tenant a la vez.
+On-Demand Compute es una capability de ClickHouse Cloud que proporciona a su servicio cloud (un tenant) capacidad adicional e instantánea para las cargas de trabajo compatibles, sin necesidad de redimensionar ni aprovisionar otro servicio. Este trabajo se ejecuta en workers de ClickHouse ajenos al compute propio de su servicio. Los workers provienen de un grupo gestionado que se comparte entre tenants de la misma región, pero cada worker se asigna a un único tenant a la vez.
 
-Durante el private preview, On-Demand Compute solo admite consultas `SELECT`. Usted habilita una consulta mediante settings a nivel de consulta, session o usuario, y ClickHouse asigna workers del grupo para ejecutarla a través de su service y su endpoint existentes.
+Durante la vista previa privada, On-Demand Compute solo admite consultas `SELECT`. Usted habilita una consulta mediante settings a nivel de consulta, session o usuario, y ClickHouse asigna workers del grupo para ejecutarla a través de su servicio y su endpoint existentes.
 
-Esto se diferencia de la [separación de cómputo-cómputo](/es/products/cloud/features/infrastructure/warehouses). Un warehouse proporciona compute dedicado y de larga duración mediante varios services que comparten datos. On-Demand Compute proporciona workers temporales de un grupo compartido a través de su service existente.
+Esto se diferencia de la [separación de cómputo-cómputo](/es/products/cloud/features/infrastructure/warehouses). Un warehouse proporciona compute dedicado y de larga duración mediante varios servicios que comparten datos. On-Demand Compute proporciona workers temporales de un grupo compartido a través de su servicio existente.
 
 On-Demand Compute aprovecha capabilities completamente nuevas:
 
-* Ejecución de consultas stateless con on-demand compute
+* Ejecución de consultas stateless con On-Demand Compute
 * Un nuevo [CBO](https://github.com/ClickHouse/ClickHouse/pull/86353) (cost-based optimizer)
-* Una nueva [distributed query execution](https://clickhouse.com/blog/multi-stage-distributed-query-execution-clickhouse-cloud)
+* Una nueva [distributed consulta execution](https://clickhouse.com/blog/multi-stage-distributed-query-execution-clickhouse-cloud)
 
 ## Cuándo usar On-Demand Compute {#when-to-use-on-demand-compute}
 
@@ -247,23 +247,19 @@ La forma de acceder a ClickHouse no cambia en absoluto. Los clients siguen conec
 
 ### Aislamiento de red {#network-isolation}
 
-Mientras un worker está arrendado a tu service, la plataforma permite el tráfico de red entre ese worker y tu service, y bloquea todo lo demás. La restricción se aplica en la capa de red y no en el query engine, por lo que no depende de la consulta, de sus settings ni del plan que genere el optimizer.
+Mientras un worker está arrendado a tu servicio, la plataforma permite el tráfico de red entre ese worker y tu servicio, y bloquea todo lo demás. La restricción se aplica en la capa de red y no en el query engine, por lo que no depende de la consulta, de sus settings ni del plan que genere el optimizer.
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Network isolation explanation diagram](/images/cloud/reference/on-demand-compute-worker-isolation.svg)
-
-</Frame>
-
+  <Frame>
+    ![Diagrama explicativo del aislamiento de red](/images/cloud/reference/on-demand-compute-worker-isolation.svg)
+  </Frame>
 </div>
 
-* **Solo tu service puede alcanzar tus workers.** El path existe para el lease actual del worker y únicamente para ese service.
-* **Los workers sin asignar son inalcanzables.** Un worker que espera en el grupo no tiene ninguna ruta de red hacia o desde ningún service hasta que se arrienda.
-* **Los workers arrendados a distintos services no pueden comunicarse entre sí.** Los workers de un mismo lease intercambian entre ellos plan stages y resultados intermedios. Los workers de leases distintos permanecen aislados entre sí, aunque compartan un grupo.
+* **Solo tu servicio puede alcanzar tus workers.** El path existe para el lease actual del worker y únicamente para ese servicio.
+* **Los workers sin asignar son inalcanzables.** Un worker que espera en el grupo no tiene ninguna ruta de red hacia o desde ningún servicio hasta que se arrienda.
+* **Los workers arrendados a distintos servicios no pueden comunicarse entre sí.** Los workers de un mismo lease intercambian entre ellos etapas del plan y resultados intermedios. Los workers de leases distintos permanecen aislados entre sí, aunque compartan un grupo.
 * **El path se elimina junto con el worker.** Finalizar un lease destruye el worker, con lo que desaparece lo único que el tráfico tenía permitido alcanzar.
-* **El path de las requests se mantiene acotado.** Tu service se comunica con el servicio de asignación de workers para arrendar y renovar workers. Ese path no transporta datos de consultas y se limita a la assignment API.
+* **El path de las requests se mantiene acotado.** Tu servicio se comunica con el servicio de asignación de workers para arrendar y renovar workers. Ese path no transporta datos de consultas y se limita a la assignment API.
 
 ### Autenticación y autorización internas {#authentication-and-authorization}
 

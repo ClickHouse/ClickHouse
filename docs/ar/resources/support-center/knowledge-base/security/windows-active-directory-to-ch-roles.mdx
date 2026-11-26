@@ -6,9 +6,7 @@ tags: ['الأدوات والبرامج المساعدة']
 keywords: ['Windows']
 ---
 
-<div id="example">
-  ## مثال
-</div>
+## مثال {#example}
 
 يوضح هذا المثال كيف يمكن منح مستخدمي AD الذين ينتمون إلى مجموعات أمان AD مختلفة إمكانية الوصول إلى الأدوار في ClickHouse. كما يوضح أيضًا كيف يمكن إضافة مستخدم إلى عدة مجموعات مستخدمين في AD، بحيث يحصل على صلاحيات الوصول التي توفرها أدوار متعددة.
 
@@ -36,42 +34,30 @@ keywords: ['Windows']
 * مثال على بيئة AD وبنية UO:
 
 <div className="ch-image-md">
-
-<Frame>
-
-![مثال على بيئة AD وبنية UO](/images/knowledgebase/windows-ad-ch-roles/AD_Env_and_UO_structure.webp)
-
-</Frame>
-
+  <Frame>
+    ![مثال على بيئة AD وبنية UO](/images/knowledgebase/windows-ad-ch-roles/AD_Env_and_UO_structure.webp)
+  </Frame>
 </div>
 
 * مثال على تهيئة مجموعة أمان AD:
 
 <div className="ch-image-md">
-
-<Frame>
-
-![مثال على تهيئة مجموعة أمان AD](/images/knowledgebase/windows-ad-ch-roles/AD_Group_clickhouse_ad_db1_users.webp)
-
-</Frame>
-
+  <Frame>
+    ![مثال على تهيئة مجموعة أمان AD](/images/knowledgebase/windows-ad-ch-roles/AD_Group_clickhouse_ad_db1_users.webp)
+  </Frame>
 </div>
 
 * مثال على تهيئة مستخدم AD:
 
 <div className="ch-image-md">
-
-<Frame>
-
-![مثال على تهيئة مستخدم AD](/images/knowledgebase/windows-ad-ch-roles/AD_user_clickhouse_db1_user.webp)
-
-</Frame>
-
+  <Frame>
+    ![مثال على تهيئة مستخدم AD](/images/knowledgebase/windows-ad-ch-roles/AD_user_clickhouse_db1_user.webp)
+  </Frame>
 </div>
 
 1. في Windows AD Users and Groups، أضف كل مستخدم إلى مجموعته المناسبة (أو مجموعاته المناسبة)، وسيتم ربطه بأدوار ClickHouse (كما في المثال في الخطوة التالية).
 
-| AD Security Group           | ClickHouse Role                                                             |
+| مجموعة أمان AD           | دور ClickHouse                                                             |
 | --------------------------- | --------------------------------------------------------------------------- |
 | clickhouse&#95;ad&#95;admin | clickhouse&#95;ad&#95;admins                                                |
 | clickhouse&#95;db1&#95;user | clickhouse&#95;ad&#95;db1&#95;users                                         |
@@ -81,13 +67,9 @@ keywords: ['Windows']
 * مثال على عضوية مجموعات المستخدمين:
 
 <div className="ch-image-md">
-
-<Frame>
-
-![مثال على عضوية مجموعات المستخدمين](/images/knowledgebase/windows-ad-ch-roles/AD_user_to_group.webp)
-
-</Frame>
-
+  <Frame>
+    ![مثال على عضوية مجموعات المستخدمين](/images/knowledgebase/windows-ad-ch-roles/AD_user_to_group.webp)
+  </Frame>
 </div>
 
 2. في `config.xml` الخاص بـ ClickHouse، أضف تهيئة `ldap_servers` إلى كل عقدة من عُقد ClickHouse.
@@ -107,7 +89,7 @@ keywords: ['Windows']
 </ldap_servers>
 ```
 
-| xml tag                   | الوصف                                                                                                                | قيمة المثال                                         |
+| وسم xml                   | الوصف                                                                                                                | قيمة المثال                                         |
 | ------------------------- | -------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
 | ldap&#95;servers          | وسم يُستخدم لتعريف خوادم LDAP التي سيستخدمها ClickHouse                                                              | غير متوفر                                           |
 | marsnet&#95;ad            | هذا الوسم اعتباطي، وهو مجرد تسمية تُستخدم لتمييز الخادم في قسم `<user_directories>`                                  | غير متوفر                                           |
@@ -121,7 +103,7 @@ keywords: ['Windows']
 راجع الوثائق للاطلاع على المجموعة الكاملة من الخيارات:
 [https://clickhouse.com/docs/operations/external-authenticators/ldap#ldap-server-definition](https://clickhouse.com/docs/operations/external-authenticators/ldap#ldap-server-definition)
 
-3. في `config.xml` الخاص بـ ClickHouse، أضف configuration `<user_directories>` مع إدخالات `<ldap>` إلى كل عقدة ClickHouse.
+3. في ملف `config.xml` الخاص بـ ClickHouse، أضِف التهيئة `<user_directories>` مع عناصر `<ldap>` إلى كل عقدة في ClickHouse.
 
 ```
 <user_directories>
@@ -144,7 +126,7 @@ keywords: ['Windows']
 </user_directories>
 ```
 
-| وسم XML              | الوصف                                                                                               | قيمة مثال                                    |
+| وسم xml              | الوصف                                                                                               | قيمة مثال                                    |
 | -------------------- | --------------------------------------------------------------------------------------------------- | -------------------------------------------- |
 | user&#95;directories | يحدّد أدوات المصادقة التي ستُستخدم                                                                  | NA                                           |
 | ldap                 | يحتوي هذا على إعدادات خوادم LDAP، وفي هذا المثال سيكون المقصود بها خوادم Active Directory المستخدمة | NA                                           |

@@ -186,8 +186,11 @@ public:
         cell.size = cell.value ? weight_function(*cell.value) : 0;
         current_size_in_bytes += cell.size;
 
-        CurrentMetrics::add(current_size_in_bytes_metric, static_cast<Int64>(current_size_in_bytes) - old_size_in_bytes);
-        CurrentMetrics::add(count_metric, static_cast<Int64>(cells.size()) - old_size);
+        /// Both operands have to be cast, as in `TTLCachePolicy`: with an unsigned right-hand side
+        /// the subtraction happens in `size_t` and a shrinking cache only reports a negative delta
+        /// because the wrapped result is converted back afterwards.
+        CurrentMetrics::add(current_size_in_bytes_metric, static_cast<Int64>(current_size_in_bytes) - static_cast<Int64>(old_size_in_bytes));
+        CurrentMetrics::add(count_metric, static_cast<Int64>(cells.size()) - static_cast<Int64>(old_size));
 
         removeOverflow();
     }
