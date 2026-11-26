@@ -340,7 +340,7 @@ constexpr size_t RECENT_KEYS_BITS = 6;
 
 #if defined(__SSSE3__) || (defined(__aarch64__) && defined(__ARM_NEON))
 /// Appends to `keys` the values (zero-extended to `Key`) of the rows from `row` (> 0) that differ from their previous rows,
-/// 128 bytes of keys at a time, and advances `row` past them. Stores whole vectors, so `keys` needs room for all the rows.
+/// four vectors at a time, and advances `row` past them. Stores whole vectors, so `keys` needs room for all the rows.
 template <typename T, typename Key>
 ALWAYS_INLINE size_t appendDistinctFromPrevious(const char * bytes, size_t & row, size_t end, Key * keys, size_t num_keys)
 {
@@ -352,7 +352,7 @@ ALWAYS_INLINE size_t appendDistinctFromPrevious(const char * bytes, size_t & row
     using Unit = std::conditional_t<COMPRESS_DWORDS<sizeof(Key)>, UInt32, UInt8>;
     using Units = Unit __attribute__((vector_size(vector_bytes)));
     using Control = UInt8 __attribute__((vector_size(vector_bytes / sizeof(Unit))));
-    constexpr size_t vectors = 128 / vector_bytes;
+    constexpr size_t vectors = 4;
     constexpr size_t rows_per_step = vectors * lanes;
     using Values = T __attribute__((ext_vector_type(lanes)));
     using Keys = Key __attribute__((ext_vector_type(lanes)));
@@ -367,12 +367,13 @@ ALWAYS_INLINE size_t appendDistinctFromPrevious(const char * bytes, size_t & row
         {
             using StepValues = T __attribute__((ext_vector_type(rows_per_step)));
             using StepRows = bool __attribute__((ext_vector_type(rows_per_step)));
-            static_assert(sizeof(StepRows) == sizeof(any));
+            using StepMask = std::conditional_t<rows_per_step <= 16, UInt16, UInt32>;
+            static_assert(sizeof(StepRows) == sizeof(StepMask));
             StepValues current;
             StepValues previous;
             memcpy(&current, position, sizeof(current));
             memcpy(&previous, position - sizeof(T), sizeof(previous));
-            any = __builtin_bit_cast(UInt32, __builtin_convertvector(current != previous, StepRows));
+            any = __builtin_bit_cast(StepMask, __builtin_convertvector(current != previous, StepRows));
             for (size_t i = 0; i < vectors; ++i)
                 masks[i] = (any >> (i * lanes)) & ((1U << lanes) - 1);
         }
