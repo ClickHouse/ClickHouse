@@ -167,6 +167,9 @@ public:
 
     [[nodiscard]] const ColumnDependencies & getColumnDependencies() const;
 
+    /// Columns whose values the commands change, including the `MATERIALIZED` columns recomputed from them.
+    [[nodiscard]] const NameSet & getColumnsChangedByCommands() const { return columns_changed_by_commands; }
+
     /// Latest mutation stage affects all columns in storage
     [[nodiscard]] bool isAffectingAllColumns() const;
 
@@ -339,6 +342,8 @@ private:
 
     /// Columns, that we need to read for calculation of skip indices, projections or TTL expressions.
     ColumnDependencies dependencies;
+
+    NameSet columns_changed_by_commands;
 };
 
 }

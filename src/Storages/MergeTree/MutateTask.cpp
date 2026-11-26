@@ -1867,6 +1867,35 @@ static ExecuteTTLType shouldExecuteTTL(const StorageMetadataPtr & metadata_snaps
     return has_ttl_expression ? ExecuteTTLType::RECALCULATE : ExecuteTTLType::NONE;
 }
 
+/// The source bound of a rule reading a changed column is stale, and `TTLTransform` would act on it without evaluating
+/// the rows. `GROUP BY` bounds are kept, because `TTLAggregationAlgorithm::finalize` writes the inherited bound back.
+static void dropTTLInfosOfChangedInputs(
+    MergeTreeDataPartTTLInfos & ttl_infos, const StorageInMemoryMetadata & metadata, const NameSet & changed_columns)
+{
+    const auto & columns = metadata.getColumns();
+    auto reads_changed_column = [&](const NamesAndTypesList & required_columns)
+    {
+        for (const auto & required : required_columns)
+        {
+            auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, required.name);
+            if (changed_columns.contains(column ? column->getNameInStorage() : required.name))
+                return true;
+        }
+        return false;
+    };
+
+    if (metadata.hasRowsTTL() && reads_changed_column(metadata.getRowsTTL().expression_columns))
+        ttl_infos.table_ttl = {};
+
+    for (const auto & ttl : metadata.getRowsWhereTTLs())
+        if (reads_changed_column(ttl.expression_columns) || reads_changed_column(ttl.where_expression_columns))
+            ttl_infos.rows_where_ttl.erase(ttl.result_column);
+
+    for (const auto & [name, ttl] : metadata.getColumnTTLs())
+        if (reads_changed_column(ttl.expression_columns))
+            ttl_infos.columns_ttl.erase(name);
+}
+
 static ColumnsStatistics getStatisticsToRecalculate(const StorageMetadataPtr & metadata_snapshot, const NameSet & materialized_stats)
 {
     ColumnsStatistics stats_to_recalc;
@@ -5625,6 +5654,10 @@ bool MutateTask::prepare()
 
     if (ctx->mutating_pipeline_builder.initialized())
         ctx->execute_ttl_type = MutationHelpers::shouldExecuteTTL(ctx->metadata_snapshot, ctx->interpreter->getColumnDependencies());
+
+    if (ctx->execute_ttl_type == ExecuteTTLType::NORMAL)
+        MutationHelpers::dropTTLInfosOfChangedInputs(
+            ctx->new_data_part->ttl_infos, *ctx->metadata_snapshot, ctx->interpreter->getColumnsChangedByCommands());
 
     if ((*ctx->data->getSettings())[MergeTreeSetting::exclude_deleted_rows_for_part_size_in_merge] && lightweight_delete_mode)
     {

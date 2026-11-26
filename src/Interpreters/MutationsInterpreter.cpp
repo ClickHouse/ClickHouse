@@ -1137,14 +1137,13 @@ void MutationsInterpreter::prepare(bool dry_run)
     all_affected_materialized.insert(patch_affected_materialized.begin(), patch_affected_materialized.end());
     all_affected_materialized.insert(clear_affected_materialized.begin(), clear_affected_materialized.end());
 
+    columns_changed_by_commands = updated_columns;
+    columns_changed_by_commands.insert(patch_updated_columns.begin(), patch_updated_columns.end());
+    columns_changed_by_commands.insert(clear_column_names.begin(), clear_column_names.end());
+    columns_changed_by_commands.insert(all_affected_materialized.begin(), all_affected_materialized.end());
+
     if (settings.recalculate_dependencies_of_updated_columns)
-    {
-        NameSet columns_for_dependencies = updated_columns;
-        columns_for_dependencies.insert(patch_updated_columns.begin(), patch_updated_columns.end());
-        columns_for_dependencies.insert(clear_column_names.begin(), clear_column_names.end());
-        columns_for_dependencies.insert(all_affected_materialized.begin(), all_affected_materialized.end());
-        dependencies = getAllColumnDependencies(metadata_snapshot, columns_for_dependencies, has_dependency);
-    }
+        dependencies = getAllColumnDependencies(metadata_snapshot, columns_changed_by_commands, has_dependency);
 
     bool need_rebuild_indexes = false;
     bool need_rebuild_indexes_for_update_delete = false;
