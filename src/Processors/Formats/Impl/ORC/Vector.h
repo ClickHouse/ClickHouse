@@ -25,11 +25,12 @@ struct ColumnVectorBatch
     ColumnVectorBatch(const ColumnVectorBatch &) = delete;
     ColumnVectorBatch & operator=(const ColumnVectorBatch &) = delete;
 
-    /// Prepares the batch for `num_values` values.
-    void reset(size_t num_values)
+    /// Empties the batch before reading the next values into it. The readers append the values to
+    /// the batch in chunks, so that the memory grows only as the data is decoded.
+    void clear()
     {
-        numElements = num_values;
-        notNull.resize(num_values);
+        numElements = 0;
+        hasNulls = false;
     }
 
     size_t numElements = 0;
@@ -46,12 +47,19 @@ struct NumericVectorBatch : public ColumnVectorBatch
 {
     using Container = PaddedPODArray<T>;
 
-    /// Creates a new column for the next values: the previous column can be still referenced.
-    Container & prepareColumn(size_t num_values)
+    /// Makes room for `num_values` values after the first `offset` ones. With `offset` zero, creates a new
+    /// column: the previous column can be still referenced.
+    Container & growColumn(size_t offset, size_t num_values)
     {
-        auto new_column = ColumnVector<T>::create(num_values);
-        auto & data = new_column->getData();
-        column = std::move(new_column);
+        if (offset == 0)
+        {
+            auto new_column = ColumnVector<T>::create(num_values);
+            auto & data = new_column->getData();
+            column = std::move(new_column);
+            return data;
+        }
+        auto & data = assert_cast<ColumnVector<T> &>(column->assumeMutableRef()).getData();
+        data.resize(offset + num_values);
         return data;
     }
 
@@ -89,8 +97,11 @@ struct EncodedStringVectorBatch : public StringVectorBatch
     PaddedPODArray<Int64> index;
 };
 
-/// Builds a `ColumnString` from the dictionary entries by the indices (the null values are empty strings).
+/// Appends the dictionary entries by the indices to `result` (the null values are empty strings).
 /// Throws `INCORRECT_DATA` if an index is out of range.
+void appendFromDictionary(ColumnString & result, const ColumnString & dictionary, const Int64 * index, const char * not_null, size_t num_values);
+
+/// Same, into a new `ColumnString`.
 ColumnPtr decodeDictionary(const ColumnString & dictionary, const Int64 * index, const char * not_null, size_t num_values);
 
 /// Returns the values of a string batch as a `ColumnString`, decoding the dictionary for an encoded batch.

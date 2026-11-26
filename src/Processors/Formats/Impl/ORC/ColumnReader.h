@@ -41,13 +41,18 @@ public:
 
     /// Reads the next `num_values` values into `batch`. `incoming_mask` is the mask of the
     /// non-null values of the parent (or nullptr).
-    virtual void next(ColumnVectorBatch & batch, size_t num_values, const char * incoming_mask);
+    void next(ColumnVectorBatch & batch, size_t num_values, const char * incoming_mask)
+    {
+        batch.clear();
+        append(batch, num_values, incoming_mask, false);
+    }
 
     /// Same, but the string columns with dictionary encoding fill `EncodedStringVectorBatch`
     /// without decoding the dictionary.
-    virtual void nextEncoded(ColumnVectorBatch & batch, size_t num_values, const char * incoming_mask)
+    void nextEncoded(ColumnVectorBatch & batch, size_t num_values, const char * incoming_mask)
     {
-        next(batch, num_values, incoming_mask);
+        batch.clear();
+        append(batch, num_values, incoming_mask, true);
     }
 
     /// Skips `num_values` values, returns the number of the skipped non-null values.
@@ -57,6 +62,26 @@ public:
     virtual void seekToRowGroup(RowGroupPositions & positions);
 
 protected:
+    /// Appends the next `num_values` values to `batch`. The values are read in chunks of at most
+    /// `max(MIN_CHUNK_SIZE, batch.numElements)` values: the number of values comes from the file
+    /// (the lengths of lists and maps can be arbitrary), so the memory for the values must grow only
+    /// as the streams prove to contain them.
+    void append(ColumnVectorBatch & batch, size_t num_values, const char * incoming_mask, bool encoded);
+
+    /// Reads `num_values` values to the positions from `offset` in `batch` (`batch.numElements` is
+    /// already `offset + num_values`, and its null mask is filled). With `offset` zero, the batch is
+    /// filled anew, and the batches of the children must be cleared. `not_null` is the null mask of
+    /// these values (or nullptr).
+    virtual void appendValues(ColumnVectorBatch & batch, size_t offset, size_t num_values, const char * not_null, bool encoded) = 0;
+
+    /// For the readers of the compound types.
+    static void appendChild(ColumnReader & child, ColumnVectorBatch & batch, size_t num_values, const char * incoming_mask, bool encoded)
+    {
+        child.append(batch, num_values, incoming_mask, encoded);
+    }
+
+    static constexpr size_t MIN_CHUNK_SIZE = 1024 * 1024;
+
     const UInt64 column_id;
     std::unique_ptr<BooleanRleDecoder> not_null_decoder;
 };

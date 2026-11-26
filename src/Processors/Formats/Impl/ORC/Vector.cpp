@@ -17,32 +17,33 @@ namespace ErrorCodes
 namespace DB::ORC
 {
 
-ColumnPtr decodeDictionary(const ColumnString & dictionary, const Int64 * index, const char * not_null, size_t num_values)
+void appendFromDictionary(ColumnString & result, const ColumnString & dictionary, const Int64 * index, const char * not_null, size_t num_values)
 {
     const size_t dictionary_size = dictionary.size();
     const auto & dictionary_offsets = dictionary.getOffsets();
     const auto & dictionary_chars = dictionary.getChars();
 
-    auto result = ColumnString::create();
-    auto & chars = result->getChars();
-    auto & offsets = result->getOffsets();
-    offsets.resize(num_values);
+    auto & chars = result.getChars();
+    auto & offsets = result.getOffsets();
+    const size_t old_size = offsets.size();
+    const size_t old_chars_size = chars.size();
+    offsets.resize(old_size + num_values);
 
-    size_t total = 0;
+    size_t total = old_chars_size;
     for (size_t i = 0; i < num_values; ++i)
     {
         if (!not_null || not_null[i])
         {
             Int64 entry = index[i];
             if (entry < 0 || static_cast<size_t>(entry) >= dictionary_size)
-                throw Exception(ErrorCodes::INCORRECT_DATA, "ORC dictionary index {} at row {} is out of range [0, {})", entry, i, dictionary_size);
+                throw Exception(ErrorCodes::INCORRECT_DATA, "ORC dictionary index {} at row {} is out of range [0, {})", entry, old_size + i, dictionary_size);
             total += dictionary_offsets[entry] - dictionary_offsets[entry - 1];
         }
-        offsets[i] = total;
+        offsets[old_size + i] = total;
     }
 
     chars.resize(total);
-    UInt8 * out = chars.data();
+    UInt8 * out = chars.data() + old_chars_size;
     for (size_t i = 0; i < num_values; ++i)
     {
         if (!not_null || not_null[i])
@@ -53,6 +54,12 @@ ColumnPtr decodeDictionary(const ColumnString & dictionary, const Int64 * index,
             out += size;
         }
     }
+}
+
+ColumnPtr decodeDictionary(const ColumnString & dictionary, const Int64 * index, const char * not_null, size_t num_values)
+{
+    auto result = ColumnString::create();
+    appendFromDictionary(*result, dictionary, index, not_null, num_values);
     return result;
 }
 
