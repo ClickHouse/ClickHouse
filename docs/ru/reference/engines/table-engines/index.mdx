@@ -18,13 +18,9 @@ doc_type: 'reference'
 * Возможно ли многопоточное выполнение запросов.
 * Параметры репликации данных.
 
-<div id="engine-families">
-  ## Семейства движков
-</div>
+## Семейства движков {#engine-families}
 
-<div id="mergetree">
-  ### MergeTree
-</div>
+### MergeTree {#mergetree}
 
 Наиболее универсальные и функциональные движки таблиц для высоконагруженных задач. Общее свойство этих движков — быстрая вставка данных и их последующая фоновая обработка. Движки семейства `MergeTree` поддерживают репликацию данных (в версиях движков [Replicated*](/ru/reference/engines/table-engines/mergetree-family/replication)), партиционирование, вторичные индексы пропуска данных и другие возможности, недоступные в других движках.
 
@@ -46,9 +42,7 @@ doc_type: 'reference'
 | [Движки таблиц Replicated*](/ru/reference/engines/table-engines/mergetree-family/replication)                           |
 | [Полнотекстовый поиск с текстовыми индексами](/ru/reference/engines/table-engines/mergetree-family/textindexes)         |
 
-<div id="log">
-  ### Log
-</div>
+### Log {#log}
 
 Легковесные [движки](/ru/reference/engines/table-engines/log-family/index) с минимальной функциональностью. Они наиболее эффективны, когда нужно быстро записывать данные во множество небольших таблиц (примерно до 1 миллиона строк), а затем читать их целиком.
 
@@ -61,9 +55,7 @@ doc_type: 'reference'
 | [StripeLog](/ru/reference/engines/table-engines/log-family/stripelog)         |
 | [Log](/ru/reference/engines/table-engines/log-family/log)                     |
 
-<div id="integration-engines">
-  ### Интеграционные движки
-</div>
+### Интеграционные движки {#integration-engines}
 
 Движки для взаимодействия с другими системами хранения и обработки данных.
 
@@ -99,9 +91,7 @@ doc_type: 'reference'
 | [SQLite](/ru/reference/engines/table-engines/integrations/sqlite)                                  |
 | [YTsaurus](/ru/reference/engines/table-engines/integrations/ytsaurus)                              |
 
-<div id="special-engines">
-  ### Специальные движки
-</div>
+### Специальные движки {#special-engines}
 
 Движки этого семейства:
 
@@ -126,9 +116,7 @@ doc_type: 'reference'
 | [KeeperMap](/ru/reference/engines/table-engines/special/keepermap)             |
 | [FileLog](/ru/reference/engines/table-engines/special/filelog)                 |
 
-<div id="table_engines-virtual_columns">
-  ## Виртуальные столбцы
-</div>
+## Виртуальные столбцы {#table_engines-virtual_columns}
 
 Виртуальный столбец — это неотъемлемый атрибут движка таблицы, определяемый в исходном коде движка.
 
@@ -136,7 +124,7 @@ doc_type: 'reference'
 
 Чтобы выбрать данные из виртуального столбца, необходимо указать его имя в запросе `SELECT`. `SELECT *` не возвращает значения виртуальных столбцов.
 
-Если создать таблицу со столбцом, имеющим то же имя, что и один из виртуальных столбцов таблицы, виртуальный столбец станет недоступен. Мы не рекомендуем этого делать. Чтобы избежать конфликтов, имена виртуальных столбцов обычно начинаются с символа подчёркивания.
+Если создать таблицу со столбцом, имеющим то же имя, что и один из виртуальных столбцов таблицы, виртуальный столбец станет недоступен. Мы не рекомендуем этого делать. Чтобы избежать конфликтов, имена виртуальных столбцов обычно начинаются с символа подчёркивания. Для таблиц семейства `MergeTree` создать такой столбец не удастся, если не включена настройка `allow_reserved_column_names`.
 
 * `_table` — содержит имя таблицы, из которой были прочитаны данные. Тип: [String](/ru/reference/data-types/string).
 

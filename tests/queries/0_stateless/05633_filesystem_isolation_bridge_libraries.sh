@@ -137,10 +137,14 @@ if ! grep -q 'Ready for connections' "$DIR/log/server.log" 2>/dev/null || ! grep
     cat "$DIR/server.out" "$DIR/log/server.err.log" >&2
     exit 1
 fi
+# With `CAP_SYS_ADMIN`, the supervisor stays outside of the namespaces, and its child, the init of the PID
+# namespace, is inside. Otherwise that process is inside.
+INSIDE=$PID
+[ "$(cat "/proc/$PID/comm")" = clickhouse-isol ] && INSIDE=$(cut -d' ' -f1 "/proc/$PID/task/$PID/children")
 
 MISSING=
 for library in $LIBRARIES; do
-    [ -e "/proc/$PID/root$library" ] || MISSING="$MISSING $library"
+    [ -e "/proc/$INSIDE/root$library" ] || MISSING="$MISSING $library"
 done
 if [ -z "$MISSING" ]; then
     echo "libraries of the bridge: visible"
@@ -157,4 +161,4 @@ done
 echo "result of the bridge: $(cat "$DIR/data/user_files/bridge_result.tsv" 2>/dev/null || grep -m1 'test_filesystem_isolation_bridge' "$DIR/log/server.err.log")"
 
 # The directory of the logs of the bridge is outside of every other mount, so it is a writable mount of its own.
-echo "logs of the bridge: $(awk -v dir="$DIR/bridge_logs" '$2 == dir && $4 ~ /^rw(,|$)/' "/proc/$PID/mounts" | grep -q . && echo writable || echo absent)"
+echo "logs of the bridge: $(awk -v dir="$DIR/bridge_logs" '$2 == dir && $4 ~ /^rw(,|$)/' "/proc/$INSIDE/mounts" | grep -q . && echo writable || echo absent)"
