@@ -783,7 +783,7 @@ static bool writeMetadataFiles(
         if (write_statistics)
             statistics_file_path = writeIcebergTableStatisticsNdv(
                 updated_rows_sketches, /*union_with_parent=*/ true, metadata, new_snapshot, filename_generator, path_resolver,
-                object_storage, context);
+                object_storage, external_storages, context);
 
         std::string json_representation = stringifyJSON(metadata, 4);
 

@@ -25,6 +25,7 @@ namespace DB
 {
 
 class FileNamesGenerator;
+struct ExternalStorageCache;
 
 /// Theta sketches of the distinct values of the written columns, published per snapshot as the
 /// `apache-datasketches-theta-v1` blobs of an Iceberg Puffin statistics file.
@@ -65,6 +66,7 @@ std::optional<String> writeIcebergTableStatisticsNdv(
     FileNamesGenerator & generator,
     const Iceberg::IcebergPathResolver & resolver,
     const ObjectStoragePtr & object_storage,
+    ExternalStorageCache & external_storages,
     const ContextPtr & context);
 
 }

@@ -2017,7 +2017,7 @@ bool IcebergStorageSink::initializeMetadata()
         if (column_sketches)
             statistics_file_path = writeIcebergTableStatisticsNdv(
                 &*column_sketches, /*union_with_parent=*/ true, metadata, new_snapshot, filename_generator, resolver, object_storage,
-                context);
+                *external_storages, context);
 
         {
             fiu_do_on(FailPoints::iceberg_writes_cleanup,

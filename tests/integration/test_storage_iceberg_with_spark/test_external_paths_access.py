@@ -1,5 +1,7 @@
+import io
 import json
 import os
+import re
 import shutil
 
 import pytest
@@ -640,3 +642,85 @@ def test_cached_external_manifest_requires_same_credentials_policy(started_clust
 
     error = instance.query_and_get_error(query)
     assert "Access Denied" in error, error
+
+
+def _latest_metadata(cluster, base_path):
+    """The key, the version and the content of the latest metadata file of the table at `base_path`."""
+    client = cluster.minio_client
+    keys = [
+        obj.object_name
+        for obj in client.list_objects(cluster.minio_bucket, prefix=f"{base_path}/metadata/", recursive=True)
+        if obj.object_name.endswith(".metadata.json")
+    ]
+    key = max(keys, key=lambda k: int(re.search(r"v(\d+)", os.path.basename(k)).group(1)))
+    version = int(re.search(r"v(\d+)", os.path.basename(key)).group(1))
+    return key, version, json.loads(client.get_object(cluster.minio_bucket, key).read())
+
+
+def _current_statistics_entry(metadata):
+    return next(
+        (e for e in metadata.get("statistics", []) if e["snapshot-id"] == metadata["current-snapshot-id"]), None)
+
+
+def _relocate_current_statistics(cluster, base_path, bucket, prefix):
+    """Moves the statistics file of the current snapshot to `s3a://{bucket}/{prefix}/` in a new metadata version."""
+    client = cluster.minio_client
+    _, version, metadata = _latest_metadata(cluster, base_path)
+    entry = _current_statistics_entry(metadata)
+    assert entry, metadata
+    name = os.path.basename(entry["statistics-path"])
+    old_key = next(
+        obj.object_name
+        for obj in client.list_objects(cluster.minio_bucket, prefix=f"{base_path}/", recursive=True)
+        if obj.object_name.endswith(f"/{name}"))
+    data = client.get_object(cluster.minio_bucket, old_key).read()
+    client.put_object(bucket, f"{prefix}/{name}", io.BytesIO(data), len(data))
+    client.remove_object(cluster.minio_bucket, old_key)
+
+    entry["statistics-path"] = f"s3a://{bucket}/{prefix}/{name}"
+    content = json.dumps(metadata).encode()
+    client.put_object(
+        cluster.minio_bucket, f"{base_path}/metadata/v{version + 1}.metadata.json", io.BytesIO(content), len(content))
+    hint = str(version + 1).encode()
+    client.put_object(cluster.minio_bucket, f"{base_path}/metadata/version-hint.text", io.BytesIO(hint), len(hint))
+
+
+def test_insert_statistics_ndv_requires_parent_statistics_grant(started_cluster_iceberg_with_spark):
+    cluster = started_cluster_iceberg_with_spark
+    instance = cluster.instances["node1"]
+
+    TABLE_NAME = f"test_statistics_ndv_grant_{get_uuid_str()}"
+    base_bucket = cluster.minio_bucket
+    other_bucket = external_bucket(cluster)
+    base_path = f"var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}"
+    external_prefix = f"external_statistics/{TABLE_NAME}"
+    user = f"user_{TABLE_NAME}"
+    settings = {"allow_insert_into_iceberg": 1, "iceberg_write_table_statistics_ndv": 1}
+
+    # An empty table, so the first insert writes statistics without a parent snapshot.
+    cluster.spark_session.sql(
+        f"CREATE TABLE {TABLE_NAME} (id INT, value STRING) USING iceberg OPTIONS('format-version'='2')")
+    default_upload_directory(cluster, "s3", f"/iceberg_data/default/{TABLE_NAME}/", f"/iceberg_data/default/{TABLE_NAME}/")
+    _create_iceberg_s3_table(cluster, TABLE_NAME, base_path)
+    instance.query(f"INSERT INTO {TABLE_NAME} VALUES (1, 'alpha'), (2, 'beta')", settings=settings)
+
+    instance.query(f"DROP USER IF EXISTS {user}")
+    instance.query(f"CREATE USER {user}")
+    instance.query(f"GRANT INSERT ON {TABLE_NAME} TO {user}")
+
+    # Parent statistics in another bucket are read from that bucket with the source grant.
+    _relocate_current_statistics(cluster, base_path, other_bucket, external_prefix)
+    instance.query(f"GRANT READ ON S3('s3a://{other_bucket}/{external_prefix}/.*') TO {user}")
+    instance.query(f"INSERT INTO {TABLE_NAME} VALUES (3, 'gamma')", user=user, settings=settings)
+    entry = _current_statistics_entry(_latest_metadata(cluster, base_path)[2])
+    assert entry, "no statistics for the insert with the grant on the parent statistics"
+    assert {blob["fields"][0]: blob["properties"]["ndv"] for blob in entry["blob-metadata"]} == {1: "3", 2: "3"}, entry
+
+    # Parent statistics outside the table location in the same bucket are not read without the source grant.
+    _relocate_current_statistics(cluster, base_path, base_bucket, external_prefix)
+    instance.query(f"INSERT INTO {TABLE_NAME} VALUES (4, 'delta')", user=user, settings=settings)
+    assert _current_statistics_entry(_latest_metadata(cluster, base_path)[2]) is None
+    assert instance.query(f"SELECT count() FROM {TABLE_NAME}") == "4\n"
+
+    instance.query(f"DROP USER {user}")
+    instance.query(f"DROP TABLE {TABLE_NAME}")

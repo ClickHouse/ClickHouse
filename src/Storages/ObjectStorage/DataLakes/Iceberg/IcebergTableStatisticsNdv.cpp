@@ -10,6 +10,7 @@
 #include <Interpreters/Context.h>
 #include <Processors/Formats/Impl/Puffin/PuffinThetaSketch.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/ExternalPathResolver.h>
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
@@ -140,11 +141,13 @@ public:
         const Poco::JSON::Object::Ptr & snapshot_,
         const Iceberg::IcebergPathResolver & resolver_,
         ObjectStoragePtr object_storage_,
+        ExternalStorageCache & external_storages_,
         ContextPtr context_)
         : metadata(metadata_)
         , snapshot(snapshot_)
         , resolver(resolver_)
         , object_storage(std::move(object_storage_))
+        , external_storages(external_storages_)
         , context(std::move(context_))
     {
     }
@@ -164,10 +167,11 @@ public:
         const auto parent_entry = findStatisticsEntry(parent_snapshot_id);
         if (!parent_entry)
             return {};
-        const auto parent_path
-            = resolver.resolve(Iceberg::IcebergPathFromMetadata::deserialize(parent_entry->getValue<String>(Iceberg::f_statistics_path)));
+        const auto [parent_storage, parent_path] = resolveObjectStorageForPath(
+            resolver.getTableLocation(), parent_entry->getValue<String>(Iceberg::f_statistics_path), object_storage, external_storages,
+            context, resolver);
         RelativePathWithMetadata object_info(parent_path);
-        auto buf = createReadBuffer(object_info, object_storage, context, getLogger("IcebergTableStatisticsNdv"));
+        auto buf = createReadBuffer(object_info, parent_storage, context, getLogger("IcebergTableStatisticsNdv"));
         PuffinReader reader(*buf);
         auto changes = schemaChanges(parent_snapshot);
         const auto listed_fields = listedSketchFields(parent_entry, parent_snapshot_id);
@@ -322,6 +326,7 @@ private:
     Poco::JSON::Object::Ptr snapshot;
     const Iceberg::IcebergPathResolver & resolver;
     ObjectStoragePtr object_storage;
+    ExternalStorageCache & external_storages;
     ContextPtr context;
 };
 
@@ -335,12 +340,13 @@ std::optional<String> writeIcebergTableStatisticsNdv(
     FileNamesGenerator & generator,
     const Iceberg::IcebergPathResolver & resolver,
     const ObjectStoragePtr & object_storage,
+    ExternalStorageCache & external_storages,
     const ContextPtr & context)
 {
     chassert(column_sketches || union_with_parent);
     const auto log = getLogger("IcebergTableStatisticsNdv");
     const Int64 snapshot_id = snapshot->getValue<Int64>(Iceberg::f_metadata_snapshot_id);
-    SnapshotStatisticsNdv snapshot_statistics(metadata, snapshot, resolver, object_storage, context);
+    SnapshotStatisticsNdv snapshot_statistics(metadata, snapshot, resolver, object_storage, external_storages, context);
     String statistics_file_path;
     try
     {

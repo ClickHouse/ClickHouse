@@ -1109,7 +1109,7 @@ static bool writeConsolidatedManifestFile(
         if (write_statistics)
             statistics_file_path = writeIcebergTableStatisticsNdv(
                 /*column_sketches=*/ nullptr, /*union_with_parent=*/ true, metadata_object, new_snapshot.snapshot, generator,
-                path_resolver, object_storage, context);
+                path_resolver, object_storage, external_storages, context);
 
         // Commit: write metadata file with If-None-Match + ETag-based CAS version hint; returns false if another writer claimed this version, so the caller retries.
         {
@@ -1585,7 +1585,7 @@ static bool writeMetadataFiles(
             current != snapshot_id_to_snapshot.end())
             statistics_file_path = writeIcebergTableStatisticsNdv(
                 column_sketches, /*union_with_parent=*/ false, metadata_object, current->second, plan.generator, path_resolver,
-                object_storage, context);
+                object_storage, external_storages, context);
 
     {
         std::string json_representation = stringifyJSON(metadata_object, 4);

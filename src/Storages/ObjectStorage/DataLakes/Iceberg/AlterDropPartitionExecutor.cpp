@@ -715,7 +715,7 @@ bool AlterDropPartitionExecutor::tryCommit(SnapshotState & state, const DropPlan
     if (write_statistics)
         if (auto statistics_file_path = writeIcebergTableStatisticsNdv(
                 /*column_sketches=*/ nullptr, /*union_with_parent=*/ true, state.metadata_object, new_snapshot, filename_generator,
-                components.path_resolver, object_storage, context))
+                components.path_resolver, object_storage, external_storages, context))
             files_for_cleanup.push_back(*statistics_file_path);
 
     committed = commitMetadataJSON(state, filename_generator, metadata_info, new_snapshot);
