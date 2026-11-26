@@ -44,6 +44,7 @@
 #define CITY_HASH_H_
 
 #include <stdlib.h>  // for size_t.
+#include <string.h>  // for memcpy.
 #include <stdint.h>
 #include <utility>
 
@@ -80,8 +81,9 @@ struct uint128
 inline uint64 Uint128Low64(const uint128 & x) { return x.low64; }
 inline uint64 Uint128High64(const uint128 & x) { return x.high64; }
 
-// Hash function for a byte array.
-uint64 CityHash64(const char *buf, size_t len);
+// Hash function for a byte array, defined below: inputs of up to 16 bytes are hashed inline.
+// CityHash64Over16 is the out-of-line implementation for longer inputs.
+uint64 CityHash64Over16(const char *buf, size_t len);
 
 // Hash function for a byte array.  For convenience, a 64-bit seed is also
 // hashed into the result.
@@ -110,6 +112,47 @@ inline uint64 Hash128to64(const uint128& x) {
   b ^= (b >> 47);
   b *= kMul;
   return b;
+}
+
+// The same as HashLen0to16 in city.cc. Inline because hashing up to 16 bytes costs less than calling a function
+// for every value (UUIDs, short strings), more so when the call goes through a linker thunk, an indirect branch.
+inline uint64 CityHash64UpTo16(const char *s, size_t len) {
+#if defined(__s390x__) && defined(__BIG_ENDIAN__)  // WORDS_BIGENDIAN in config.h
+  auto fetch64 = [](const char *p) { uint64 r; memcpy(&r, p, sizeof(r)); return __builtin_bswap64(r); };
+  auto fetch32 = [](const char *p) { uint32 r; memcpy(&r, p, sizeof(r)); return __builtin_bswap32(r); };
+#else
+  auto fetch64 = [](const char *p) { uint64 r; memcpy(&r, p, sizeof(r)); return r; };
+  auto fetch32 = [](const char *p) { uint32 r; memcpy(&r, p, sizeof(r)); return r; };
+#endif
+  const uint64 k2 = 0x9ae16a3b2f90404fULL;
+  const uint64 k3 = 0xc949d7c7509e6557ULL;
+  if (len > 8) {
+    uint64 a = fetch64(s);
+    uint64 b = fetch64(s + len - 8);
+    const int shift = static_cast<int>(len);  // RotateByAtLeast1(b + len, len)
+    const uint64 r = ((b + len) >> shift) | ((b + len) << (64 - shift));
+    return Hash128to64(uint128(a, r)) ^ b;
+  }
+  if (len >= 4) {
+    uint64 a = fetch32(s);
+    return Hash128to64(uint128(len + (a << 3), fetch32(s + len - 4)));
+  }
+  if (len > 0) {
+    uint8 a = s[0];
+    uint8 b = s[len >> 1];
+    uint8 c = s[len - 1];
+    uint32 y = static_cast<uint32>(a) + (static_cast<uint32>(b) << 8);
+    uint32 z = len + (static_cast<uint32>(c) << 2);
+    uint64 m = y * k2 ^ z * k3;
+    return (m ^ (m >> 47)) * k2;  // ShiftMix(y * k2 ^ z * k3) * k2
+  }
+  return k2;
+}
+
+inline uint64 CityHash64(const char *s, size_t len) {
+  if (len <= 16)
+    return CityHash64UpTo16(s, len);
+  return CityHash64Over16(s, len);
 }
 
 }
