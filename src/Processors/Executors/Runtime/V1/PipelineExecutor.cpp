@@ -215,6 +215,39 @@ void PipelineExecutor::cancel(IProcessor::CancelReason reason)
     graph->cancel(reason);
 }
 
+void PipelineExecutor::accountReadProgressOfCancelledQuery()
+{
+    const auto reason = cancel_reason.load();
+    if (reason == IProcessor::CancelReason::NotCancelled || !read_progress_callback)
+        return;
+
+    /// A source can report progress while it is being cancelled. For example, `RemoteSource` reports the
+    /// progress that `RemoteQueryExecutor` deferred while a retry of the query was still possible. Scheduling
+    /// was stopped before the processors were cancelled, so no job of that source picks this progress up,
+    /// and `finalizeExecution` does not get to its sweep for a cancelled or failed query. Without this, the
+    /// rows and bytes read by the remote servers would be missing from `system.query_log` and from the quota.
+    ///
+    /// The query can be cancelled from another thread, which may still be cancelling the processors.
+    /// Cancelling them again is a no-op for the ones already cancelled, and it waits for that thread,
+    /// so everything the sources report on cancellation is visible below.
+    graph->cancel(reason);
+
+    for (const auto & processor : graph->getProcessors())
+    {
+        if (auto read_progress = processor->getReadProgress())
+        {
+            if (read_progress->counters.total_rows_approx)
+                read_progress_callback->addTotalRowsApprox(read_progress->counters.total_rows_approx);
+
+            if (read_progress->counters.total_bytes)
+                read_progress_callback->addTotalBytes(read_progress->counters.total_bytes);
+
+            if (read_progress->counters.read_rows || read_progress->counters.read_bytes)
+                read_progress_callback->accountProgressOfCancelledQuery(read_progress->counters.read_rows, read_progress->counters.read_bytes);
+        }
+    }
+}
+
 void PipelineExecutor::cancelWithException(std::exception_ptr cause)
 {
     /// Recorded before the callback, which can make the other threads throw because of the cancellation.
@@ -252,6 +285,8 @@ void PipelineExecutor::execute(size_t num_threads, bool concurrency_control)
 {
     /// `QueryStatus` may release its reservation before this executor is destroyed.
     SCOPE_EXIT({ detachSpillables(); });
+    /// All the threads have finished by now, whether the execution returns or throws.
+    SCOPE_EXIT_SAFE({ accountReadProgressOfCancelledQuery(); });
     if (process_list_element && !process_list_element->checkTimeLimit())
         cancel(IProcessor::CancelReason::CancelledByTimeout);
 
@@ -284,6 +319,10 @@ bool PipelineExecutor::executeUntil(std::atomic_bool * yield_flag)
     SCOPE_EXIT({
         if (tasks.isFinished() || std::uncaught_exceptions() > uncaught_exceptions)
             detachSpillables();
+    });
+    SCOPE_EXIT_SAFE({
+        if (tasks.isFinished() || std::uncaught_exceptions() > uncaught_exceptions)
+            accountReadProgressOfCancelledQuery();
     });
     if (!is_execution_initialized)
     {

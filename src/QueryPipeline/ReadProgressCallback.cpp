@@ -123,4 +123,26 @@ bool ReadProgressCallback::onProgress(uint64_t read_rows, uint64_t read_bytes, c
     return true;
 }
 
+void ReadProgressCallback::accountProgressOfCancelledQuery(uint64_t read_rows, uint64_t read_bytes)
+{
+    Progress value {read_rows, read_bytes, total_rows_approx.exchange(0), total_bytes.exchange(0)};
+
+    if (process_list_elem)
+    {
+        process_list_elem->accountProgressIn(value);
+
+        if (quota)
+            quota->usedForQuery(
+                normalized_query_hash,
+                {{QuotaType::READ_ROWS, value.read_rows}, {QuotaType::READ_BYTES, value.read_bytes}},
+                /* check_exceeded = */ false);
+    }
+
+    if (update_profile_events)
+    {
+        ProfileEvents::increment(ProfileEvents::SelectedRows, value.read_rows);
+        ProfileEvents::increment(ProfileEvents::SelectedBytes, value.read_bytes);
+    }
+}
+
 }
