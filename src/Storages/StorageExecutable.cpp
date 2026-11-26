@@ -30,6 +30,7 @@
 #include <Storages/ExecutableSettings.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/checkAndGetLiteralArgument.h>
+#include <TableFunctions/ITableFunction.h>
 
 
 namespace DB
@@ -198,11 +199,16 @@ void StorageExecutable::readImpl(
     QueryPlanResourceHolder resources;
     inputs.reserve(input_queries.size());
 
+    /// Input queries of a stored table read table names as written; those of the `executable` table function do not.
+    SelectQueryOptions input_query_options;
+    if (getStorageID().database_name != ITableFunction::getDatabaseName())
+        input_query_options.allowCompoundTableIdentifierQualification(false);
+
     /// The analyzer substitutes the inserted block of a materialized view for its source table only when given it.
     for (auto & input_query : input_queries)
     {
         QueryPipelineBuilder builder = InterpreterSelectQueryAnalyzer(
-            input_query, context, {}, context->isViewInnerQuery() ? nullptr : context->getViewSource()).buildQueryPipeline();
+            input_query, context, input_query_options, context->isViewInnerQuery() ? nullptr : context->getViewSource()).buildQueryPipeline();
         inputs.emplace_back(QueryPipelineBuilder::getPipe(std::move(builder), resources));
     }
 

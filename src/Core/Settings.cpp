@@ -10392,9 +10392,10 @@ When the setting is enabled, the analyzer additionally:
   when it does not, the query fails with `UNKNOWN_DATABASE` even if the table `a.b` exists.
   The current-database reading is not applied to SQL stored in definitions (view and materialized view
   bodies, row policy conditions, mutations, column `DEFAULT` / `MATERIALIZED` / `ALIAS` expressions,
-  `ClickHouse` dictionary source queries executed on the same server, SQL function bodies), where `a.b`
-  is always table `b` of database `a`, except in the query argument of table functions `view`,
-  `viewIfPermitted`, `eval`, `obfuscate` and `explain`. Nor is it applied to a table that an engine reads
+  `ClickHouse` dictionary source queries executed on the same server, SQL function bodies, the input
+  queries of an `Executable` or `ExecutablePool` table), where `a.b` is always table `b` of database `a`,
+  except in the query argument of table functions `view`, `viewIfPermitted`, `eval`, `obfuscate`,
+  `explain` and `executable`. Nor is it applied to a table that an engine reads
   by its stored name: a table of a `Merge` table or of the `merge` table function, and the table that
   a `Distributed` table or the `remote` / `cluster` table functions read from a shard that the initiator
   plans itself (its local replica with `prefer_localhost_replica`, or a shard that gets a serialized
