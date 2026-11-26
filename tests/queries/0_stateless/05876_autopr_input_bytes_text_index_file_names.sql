@@ -11,25 +11,25 @@ CREATE TABLE t_collide (k UInt64, message String, skp_idx_idx JSON(postings UInt
     INDEX idx(message) TYPE text(tokenizer = splitByNonAlpha, support_phrase_search = 1))
 ENGINE = MergeTree ORDER BY k
 -- Without a posting list codec the phrase is not matched by the positions.
-SETTINGS allow_experimental_text_index_phrase_search = 1, text_index_posting_list_codec = 'pfor', index_granularity = 8192,
+SETTINGS allow_experimental_text_index_phrase_search = 1, text_index_posting_list_codec = 'pfor', index_granularity = 1024,
     index_granularity_bytes = '10Mi', min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
 CREATE TABLE t_apart (k UInt64, message String, other JSON(postings UInt64, positions UInt64),
     INDEX idx(message) TYPE text(tokenizer = splitByNonAlpha, support_phrase_search = 1))
 ENGINE = MergeTree ORDER BY k
-SETTINGS allow_experimental_text_index_phrase_search = 1, text_index_posting_list_codec = 'pfor', index_granularity = 8192,
+SETTINGS allow_experimental_text_index_phrase_search = 1, text_index_posting_list_codec = 'pfor', index_granularity = 1024,
     index_granularity_bytes = '10Mi', min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
 
 -- Each table is one part written from the same rows, so that the files of the two tables are the same. Every granule
 -- holds the phrase, so the column is read from the start of its files to their end, over the offsets the index reads.
-SET max_insert_block_size = 2000000, min_insert_block_size_rows = 2000000, min_insert_block_size_bytes = 0, max_insert_threads = 1;
-INSERT INTO t_collide SELECT intDiv(number, 100000),
-    if(number % 1000 = 0, 'w1 w2', concat('w', toString(cityHash64(number) % 200), ' w', toString(cityHash64(number, 1) % 200), ' w', toString(cityHash64(number, 2) % 200))),
+SET max_insert_block_size = 200000, min_insert_block_size_rows = 200000, min_insert_block_size_bytes = 0, max_insert_threads = 1;
+INSERT INTO t_collide SELECT intDiv(number, 10000),
+    if(number % 500 = 0, 'w1 w2', concat('w', toString(cityHash64(number) % 200), ' w', toString(cityHash64(number, 1) % 200), ' w', toString(cityHash64(number, 2) % 200))),
     toJSONString(map('postings', cityHash64(number, 3), 'positions', cityHash64(number, 4)))
-FROM numbers(1000000);
-INSERT INTO t_apart SELECT intDiv(number, 100000),
-    if(number % 1000 = 0, 'w1 w2', concat('w', toString(cityHash64(number) % 200), ' w', toString(cityHash64(number, 1) % 200), ' w', toString(cityHash64(number, 2) % 200))),
+FROM numbers(100000);
+INSERT INTO t_apart SELECT intDiv(number, 10000),
+    if(number % 500 = 0, 'w1 w2', concat('w', toString(cityHash64(number) % 200), ' w', toString(cityHash64(number, 1) % 200), ' w', toString(cityHash64(number, 2) % 200))),
     toJSONString(map('postings', cityHash64(number, 3), 'positions', cityHash64(number, 4)))
-FROM numbers(1000000);
+FROM numbers(100000);
 
 SET enable_parallel_replicas = 1, automatic_parallel_replicas_mode = 2, parallel_replicas_local_plan = 1,
     parallel_replicas_for_non_replicated_merge_tree = 1, max_parallel_replicas = 3,
