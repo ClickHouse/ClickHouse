@@ -26,6 +26,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergTableStatisticsNdv.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFileIterator.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/MetadataGenerator.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Mutations.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PersistentTableComponents.h>
@@ -880,16 +881,20 @@ void validateSnapshotForMutation(
     if (!current_snapshot || !current_snapshot->has(f_manifest_list))
         return;
 
-    auto was_int_in_some_schema = [&](Int64 source_id)
+    /// Whether `truncate[width]` in `long` arithmetic gives `value` for both bounds of the data file's column.
+    auto bounds_truncate_to = [](const ProcessedManifestFileEntry & entry, Int32 column_id, Int64 width, Int64 value)
     {
-        const auto schemas = metadata->getArray(f_schemas);
-        for (UInt32 i = 0; schemas && i < schemas->size(); ++i)
+        const auto manifest_path = IcebergPathFromMetadata::deserialize(entry.manifest_file_path);
+        /// A bound written before an `int` -> `long` promotion keeps 4 bytes.
+        auto bounds = getDataFileColumnBounds(entry, column_id, std::make_shared<DataTypeInt64>(), manifest_path);
+        if (!bounds)
+            bounds = getDataFileColumnBounds(entry, column_id, std::make_shared<DataTypeInt32>(), manifest_path);
+        auto truncate = [&](const Field & bound)
         {
-            const auto types = IcebergSchemaProcessor::collectIcebergPrimitiveTypesById(schemas->getObject(i)->getArray(f_fields));
-            if (const auto it = types.find(source_id); it != types.end() && it->second == "int")
-                return true;
-        }
-        return false;
+            const Int128 x = bound.safeGet<Int64>();
+            return x - ((x % width) + width) % width;
+        };
+        return bounds && truncate(bounds->first) == value && truncate(bounds->second) == value;
     };
 
     auto manifest_list_path = IcebergPathFromMetadata::deserialize(current_snapshot->getValue<String>(f_manifest_list));
@@ -950,7 +955,9 @@ void validateSnapshotForMutation(
                 const size_t width = *transform->argument;
                 if (source_type.isInt64() && fits_int && width != 0 && width <= static_cast<size_t>(std::numeric_limits<Int32>::max())
                     && (recorded_value % static_cast<Int64>(width) != 0
-                        || (width > (1ULL << 30) && was_int_in_some_schema(partition_field.source_id))))
+                        || (width > (1ULL << 30)
+                            && !bounds_truncate_to(
+                                *file_entry, static_cast<Int32>(partition_field.source_id), static_cast<Int64>(width), recorded_value))))
                     throw Exception(
                         ErrorCodes::NOT_IMPLEMENTED,
                         "Iceberg DELETE and UPDATE are not supported for this table: data file `{}` has `{}` partition value {}, "

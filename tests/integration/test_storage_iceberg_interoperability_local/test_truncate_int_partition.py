@@ -1,6 +1,8 @@
 import glob
+import json
 import os
 
+import pytest
 from pyiceberg.table import StaticTable
 
 from helpers.iceberg_utils import get_uuid_str, iceberg_local_interop_dir
@@ -83,36 +85,65 @@ def test_ch_write_truncate_int_partition_spark_pyiceberg_read(started_cluster_ic
     assert table.scan(row_filter="x == 5").to_arrow().num_rows == 2
 
 
-def test_mutations_refused_after_promoting_wide_truncate_int(started_cluster_iceberg):
+@pytest.mark.parametrize("expire_int_schema", [False, True])
+def test_mutations_refused_after_promoting_wide_truncate_int(started_cluster_iceberg, expire_int_schema):
     """
     Iceberg Java computes `truncate[1500000000](1400000000)` of an `int` with a 32-bit overflow as -1500000000, a
     multiple of the width that the same value of a `long` truncates to 0. After the column is promoted to `long`,
-    ClickHouse refuses DELETE and UPDATE instead of writing position deletes that never pair with the data file.
+    ClickHouse refuses DELETE and UPDATE instead of writing position deletes that never pair with the data file,
+    also when snapshot expiry has removed every `int` schema from the table metadata.
     """
     node1 = started_cluster_iceberg.instances["node1"]
     spark = started_cluster_iceberg.spark_session
 
-    TABLE_NAME = "test_truncate_wide_int_promoted_" + get_uuid_str()
-    table_dir = f"{ICEBERG_DIR_NODE1}/default/{TABLE_NAME}"
+    def create_promoted_table(values):
+        table_name = "test_truncate_wide_int_promoted_" + get_uuid_str()
+        table_dir = f"{ICEBERG_DIR_NODE1}/default/{table_name}"
+        spark.sql(
+            f"""
+                CREATE TABLE node1_catalog.default.{table_name} (id INT, x INT)
+                USING iceberg
+                PARTITIONED BY (truncate(1500000000, x))
+                OPTIONS('format-version'='2');
+            """
+        )
+        spark.sql(f"INSERT INTO node1_catalog.default.{table_name} VALUES {values}")
+        keys = spark.sql(f"SELECT partition.x_trunc FROM node1_catalog.default.{table_name}.files").collect()
 
-    spark.sql(
-        f"""
-            CREATE TABLE node1_catalog.default.{TABLE_NAME} (id INT, x INT)
-            USING iceberg
-            PARTITIONED BY (truncate(1500000000, x))
-            OPTIONS('format-version'='2');
-        """
-    )
-    spark.sql(f"INSERT INTO node1_catalog.default.{TABLE_NAME} VALUES (1, 1400000000), (2, 5)")
-    keys = spark.sql(f"SELECT partition.x_trunc FROM node1_catalog.default.{TABLE_NAME}.files").collect()
-    assert sorted(row.x_trunc for row in keys) == [-1500000000, 0]
+        if expire_int_schema:
+            spark.sql(f"ALTER TABLE node1_catalog.default.{table_name} ALTER COLUMN x TYPE BIGINT")
+            spark.sql(f"INSERT INTO node1_catalog.default.{table_name} VALUES (3, 7)")
+            spark.sql(
+                f"""
+                    CALL node1_catalog.system.expire_snapshots(
+                        table => 'default.{table_name}',
+                        older_than => TIMESTAMP '2100-01-01 00:00:00',
+                        retain_last => 1,
+                        clean_expired_metadata => true)
+                """
+            )
+            with open(latest_metadata_file(table_dir)) as f:
+                schemas = json.load(f)["schemas"]
+            assert [field["type"] for schema in schemas for field in schema["fields"] if field["name"] == "x"] == ["long"]
 
-    node1.query(
-        f"CREATE TABLE {TABLE_NAME} ENGINE=IcebergLocal(local, path = '{table_dir}')"
-    )
-    node1.query(f"ALTER TABLE {TABLE_NAME} MODIFY COLUMN x Nullable(Int64)", settings=CH_SETTINGS)
+        node1.query(
+            f"CREATE TABLE {table_name} ENGINE=IcebergLocal(local, path = '{table_dir}')"
+        )
+        if not expire_int_schema:
+            node1.query(f"ALTER TABLE {table_name} MODIFY COLUMN x Nullable(Int64)", settings=CH_SETTINGS)
+        return table_name, sorted(row.x_trunc for row in keys)
 
+    appended_row = "3\t7\n" if expire_int_schema else ""
+
+    table_name, keys = create_promoted_table("(1, 1400000000), (2, 5)")
+    assert keys == [-1500000000, 0]
     for mutation in ["DELETE WHERE id = 1", "UPDATE id = 3 WHERE id = 1"]:
-        error = node1.query_and_get_error(f"ALTER TABLE {TABLE_NAME} {mutation}", settings=CH_SETTINGS)
+        error = node1.query_and_get_error(f"ALTER TABLE {table_name} {mutation}", settings=CH_SETTINGS)
         assert "NOT_IMPLEMENTED" in error
-    assert node1.query(f"SELECT id, x FROM {TABLE_NAME} ORDER BY id") == "1\t1400000000\n2\t5\n"
+    assert node1.query(f"SELECT id, x FROM {table_name} ORDER BY id") == "1\t1400000000\n2\t5\n" + appended_row
+
+    # The `long` transform gives the recorded key for every value between the bounds of this file.
+    table_name, keys = create_promoted_table("(2, 5)")
+    assert keys == [0]
+    node1.query(f"ALTER TABLE {table_name} DELETE WHERE id = 2", settings=CH_SETTINGS)
+    assert node1.query(f"SELECT id, x FROM {table_name} ORDER BY id") == appended_row
