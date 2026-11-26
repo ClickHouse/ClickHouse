@@ -50,7 +50,7 @@ private:
 
     /// Keeps a data command attached to a query: its thread group and its entry in the process list,
     /// which install the memory limits of the user and make the command visible in `system.processes`.
-    /// Keep it alive for the whole command, and declare it before everything the command allocates.
+    /// It is kept until the reply of the command has been sent (see `finishCommand`).
     struct CommandScope
     {
         QueryScope query_scope;
@@ -61,7 +61,7 @@ private:
     /// try to authenticate as the `default` user with an empty password; if that fails,
     /// the client has to authenticate explicitly.
     /// Then creates a fresh query context for the command and attaches the command to it.
-    [[nodiscard]] CommandScope prepareQueryContext(const String & command_name);
+    void prepareQueryContext(const String & command_name);
 
     void checkDBSet() const;
 
@@ -73,15 +73,17 @@ private:
     /// `execution_time` quotas of the user.
     void accountResult(const Block & result_block);
 
-    /// Accounts a failed data command against the `errors` quota of the user.
+    /// Accounts a failed data command against the `errors` quota of the user, and as a failed query in the profile events.
     void accountError();
 
-    /// Accounts the profile events of a finished data command against the quotas of the user over profile events.
-    void accountProfileEvents();
+    /// Finishes a data command once its reply has been sent (or could not be sent): accounts its profile
+    /// events against the quotas of the user over profile events, and detaches it from its query.
+    /// Does nothing for the commands that do not read data.
+    void finishCommand();
 
     /// Reads the binding of the selected Redis database from the live server configuration. It is read
     /// for every request, so that `SYSTEM RELOAD CONFIG` is visible to already connected clients.
-    RedisProtocol::MapDescription getMapDescription(UInt32 db_) const;
+    [[nodiscard]] RedisProtocol::MapDescription getMapDescription(UInt32 db_) const;
 
     /// A resolved table together with a share lock that prevents a concurrent DROP or DETACH
     /// from committing while a command reads the table. Keep it alive for the whole command.
@@ -94,7 +96,7 @@ private:
     /// Resolves the table configured for a Redis database, takes a share lock on it, and
     /// validates that it can serve lookups.
     /// The table is resolved for every request, so DDL on it is visible immediately.
-    ResolvedTable resolveTable(UInt32 db_, const RedisProtocol::MapDescription & mapping) const;
+    [[nodiscard]] ResolvedTable resolveTable(UInt32 db_, const RedisProtocol::MapDescription & mapping) const;
 
     /// Checks that the table matches the configuration of the Redis database and supports lookups.
     void validateTable(UInt32 db_, const RedisProtocol::MapDescription & mapping, const StoragePtr & table) const;
@@ -109,6 +111,9 @@ private:
     std::shared_ptr<WriteBufferFromPocoSocket> out;
     std::unique_ptr<Session> session;
     ContextMutablePtr query_context;
+
+    /// The query the current data command is attached to. Unset for the commands that do not read data.
+    std::optional<CommandScope> command_scope;
 
     /// The quota of the current data command and the time it has been running for. The quota is unset
     /// for the commands that do not read data (and are not accounted, as `PING`).

@@ -76,6 +76,14 @@ def started_cluster():
             """
         )
         node.query("INSERT INTO lc_value_map VALUES ('Alice', 'Smith'), ('Frank', '')")
+        # A `LowCardinality(Nullable(String))` key is a string key as well.
+        node.query(
+            """
+            CREATE TABLE IF NOT EXISTS lc_nullable_key_map (name LowCardinality(Nullable(String)), surname String)
+            ENGINE = Join(ANY, LEFT, name)
+            """
+        )
+        node.query("INSERT INTO lc_nullable_key_map VALUES ('Alice', 'Smith'), ('Frank', '')")
         node.query("CREATE USER IF NOT EXISTS policy_user IDENTIFIED WITH plaintext_password BY 'secret'")
         node.query("GRANT SELECT ON default.name_surname_map TO policy_user")
         yield cluster
@@ -418,6 +426,15 @@ def test_low_cardinality_value_column(redis_client):
     assert redis_client.mget("Alice", "Mark", "Frank") == [b"Smith", None, b""]
 
 
+def test_low_cardinality_nullable_key_column(redis_client):
+    # The key is unwrapped from both `LowCardinality` and `Nullable` when it is checked to be a string.
+    assert redis_client.select(8)
+    assert redis_client.get("Alice") == b"Smith"
+    assert redis_client.get("Frank") == b""
+    assert redis_client.get("Mark") is None
+    assert redis_client.mget("Alice", "Mark", "Frank") == [b"Smith", None, b""]
+
+
 def test_row_policy_is_rejected(started_cluster):
     # A lookup goes straight to the storage and does not evaluate the row policy filter,
     # so a table the user has a row policy on must not be served at all.
@@ -657,6 +674,46 @@ def test_quota_applies_to_commands(started_cluster):
         assert "QUOTA_EXCEEDED" in node.query_and_get_error(
             "SELECT count() FROM default.name_surname_map", user="quota_user", password="secret"
         )
+        node.query("DROP QUOTA redis_quota")
+
+        # The events of a finished command are charged too, not only `Query`: its time, ...
+        node.query("CREATE QUOTA redis_quota FOR INTERVAL 1 hour MAX QueryTimeMicroseconds = 1 TO quota_user")
+        client = Redis(host=started_cluster.get_instance_ip("node"), port=server_port, username="quota_user", password="secret")
+        try:
+            # A command that crosses the limit still finishes, and it takes a few commands to spend
+            # more than a microsecond for sure.
+            with pytest.raises(exceptions.ResponseError, match="Quota .* has been exceeded"):
+                for _ in range(10):
+                    client.select(1)
+        finally:
+            client.close()
+        node.query("DROP QUOTA redis_quota")
+
+        # ... its failure, ...
+        node.query("CREATE QUOTA redis_quota FOR INTERVAL 1 hour MAX FailedQuery = 1 TO quota_user")
+        client = Redis(host=started_cluster.get_instance_ip("node"), port=server_port, username="quota_user", password="secret")
+        try:
+            assert client.select(0)
+            for _ in range(2):
+                with pytest.raises(exceptions.ResponseError, match="There is no column"):
+                    client.hget("Alice", "no_such_column")
+            with pytest.raises(exceptions.ResponseError, match="Quota .* has been exceeded"):
+                client.hget("Alice", "surname")
+        finally:
+            client.close()
+        node.query("DROP QUOTA redis_quota")
+
+        # ... and the bytes of its reply, which is sent after the command has been executed.
+        node.query("CREATE QUOTA redis_quota FOR INTERVAL 1 hour MAX NetworkSendBytes = 20 TO quota_user")
+        client = Redis(host=started_cluster.get_instance_ip("node"), port=server_port, username="quota_user", password="secret")
+        try:
+            assert client.select(1)
+            assert client.get("Alice") == b"Smith"
+            assert client.get("Bob") == b"Johnson"
+            with pytest.raises(exceptions.ResponseError, match="Quota .* has been exceeded"):
+                client.get("Charlie")
+        finally:
+            client.close()
     finally:
         node.query("DROP QUOTA IF EXISTS redis_quota")
         node.query("DROP USER IF EXISTS quota_user")

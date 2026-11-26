@@ -57,6 +57,13 @@
                 <key_column>name</key_column>
                 <value_column>name</value_column>
             </_7>
+            <_8>
+                <db_type>string</db_type>
+                <clickhouse_db>default</clickhouse_db>
+                <clickhouse_table>lc_nullable_key_map</clickhouse_table>
+                <key_column>name</key_column>
+                <value_column>surname</value_column>
+            </_8>
         </db>
     </redis>
 </clickhouse>

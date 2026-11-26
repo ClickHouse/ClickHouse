@@ -45,6 +45,10 @@ namespace ProfileEvents
 {
     extern const Event Query;
     extern const Event SelectQuery;
+    extern const Event FailedQuery;
+    extern const Event FailedSelectQuery;
+    extern const Event QueryTimeMicroseconds;
+    extern const Event SelectQueryTimeMicroseconds;
 }
 
 namespace DB
@@ -155,31 +159,39 @@ void RedisHandler::serveConnection()
         }
 
         bool keep_connection = true;
-        command_quota.reset();
-        command_status.reset();
         try
         {
-            keep_connection = processRequest(req);
-            accountProfileEvents();
+            try
+            {
+                keep_connection = processRequest(req);
+            }
+            catch (const Poco::Exception & exc)
+            {
+                accountError();
+
+                /// Sending (a part of) the reply has failed, so the connection is unusable: let `run` close it.
+                if (out->isCanceled())
+                    throw;
+
+                /// The whole command has been read, so the connection stays usable.
+                log->log(exc);
+                RedisProtocol::ErrorResponse resp(exc.message());
+                resp.serialize(*out);
+            }
+
+            /// Send the reply in the normal control flow (not from a destructor), so that a failure to
+            /// write it propagates to `run`, which closes the connection.
+            /// The command is still attached to its query here, so that the bytes of the reply
+            /// (`NetworkSendBytes`) are among its profile events.
+            out->next();
         }
-        catch (const Poco::Exception & exc)
+        catch (...)
         {
-            accountError();
-            accountProfileEvents();
-
-            /// Sending (a part of) the reply has failed, so the connection is unusable: let `run` close it.
-            if (out->isCanceled())
-                throw;
-
-            /// The whole command has been read, so the connection stays usable.
-            log->log(exc);
-            RedisProtocol::ErrorResponse resp(exc.message());
-            resp.serialize(*out);
+            finishCommand();
+            throw;
         }
 
-        /// Send the reply in the normal control flow (not from a destructor), so that a failure to
-        /// write it propagates to `run`, which closes the connection.
-        out->next();
+        finishCommand();
         if (!keep_connection)
             break;
     }
@@ -211,7 +223,7 @@ void RedisHandler::authenticate(const String & user_name, const String & passwor
     }
 }
 
-RedisHandler::CommandScope RedisHandler::prepareQueryContext(const String & command_name)
+void RedisHandler::prepareQueryContext(const String & command_name)
 {
     if (!authenticated)
     {
@@ -242,7 +254,9 @@ RedisHandler::CommandScope RedisHandler::prepareQueryContext(const String & comm
     const String query_text = "Redis " + command_name;
     command_normalized_query_hash = sipHash64(query_text);
 
-    CommandScope scope;
+    /// The scope is kept until the reply has been sent (see `finishCommand`), also if the rest of this
+    /// method throws: a command rejected by a quota is accounted as a failed one.
+    auto & scope = command_scope.emplace();
     scope.query_scope = QueryScope::create(query_context);
     scope.process_list_entry = query_context->getProcessList().insert(
         query_text, command_normalized_query_hash, /*ast=*/ nullptr, query_context,
@@ -250,7 +264,7 @@ RedisHandler::CommandScope RedisHandler::prepareQueryContext(const String & comm
     query_context->setProcessListElement(scope.process_list_entry->getQueryStatus());
 
     /// As `InterpreterFactory` does for a `SELECT`, in the thread group of the command, so that they are
-    /// charged against the quotas over profile events of the user (see `accountProfileEvents`).
+    /// charged against the quotas over profile events of the user (see `finishCommand`).
     ProfileEvents::increment(ProfileEvents::Query);
     ProfileEvents::increment(ProfileEvents::SelectQuery);
 
@@ -259,7 +273,7 @@ RedisHandler::CommandScope RedisHandler::prepareQueryContext(const String & comm
 
     /// Account the command against the quota of the user, as `executeQuery` does for a `SELECT`.
     /// From here on, a failure of the command is accounted as an error (see `accountError`).
-    /// From here on, the profile events of the command are charged when it finishes (see `accountProfileEvents`).
+    /// From here on, the profile events of the command are charged when it finishes (see `finishCommand`).
     command_quota = query_context->getQuota();
     command_status = scope.process_list_entry->getQueryStatus();
     if (command_quota)
@@ -270,8 +284,6 @@ RedisHandler::CommandScope RedisHandler::prepareQueryContext(const String & comm
         command_quota->checkExceededProfileEvents(command_normalized_query_hash);
         command_quota->usedPerNormalizedHash(command_normalized_query_hash);
     }
-
-    return scope;
 }
 
 void RedisHandler::checkCancelled() const
@@ -310,18 +322,39 @@ void RedisHandler::accountError()
     /// failed `AUTH` does not touch the quota.
     if (command_quota)
         command_quota->usedForQuery(command_normalized_query_hash, QuotaType::ERRORS, 1, /*check_exceeded=*/ false);
+
+    /// In the thread group of the command, so that the quotas over these profile events are charged.
+    if (command_scope)
+    {
+        ProfileEvents::increment(ProfileEvents::FailedQuery);
+        ProfileEvents::increment(ProfileEvents::FailedSelectQuery);
+    }
 }
 
-void RedisHandler::accountProfileEvents()
+void RedisHandler::finishCommand()
 {
-    /// As `executeQuery` does when a query finishes, successfully or not. The command has already done
-    /// its work, so it is not rejected: the quota, if now exhausted, rejects the following commands.
+    if (!command_scope)
+        return;
+
+    /// Detach the command from its query in any case, also if the accounting below throws.
+    SCOPE_EXIT({
+        command_status.reset();
+        command_quota.reset();
+        command_scope.reset();
+    });
+
+    /// As `executeQuery` does when a query finishes, successfully or not. The time includes sending the reply.
+    const UInt64 elapsed_microseconds = command_watch.elapsedMicroseconds();
+    ProfileEvents::increment(ProfileEvents::QueryTimeMicroseconds, elapsed_microseconds);
+    ProfileEvents::increment(ProfileEvents::SelectQueryTimeMicroseconds, elapsed_microseconds);
+
+    /// Charge the profile events of the command, as `executeQuery` does when a query finishes. The command
+    /// has already done its work, so it is not rejected: the quota, if now exhausted, rejects the following commands.
     if (command_quota && command_status && command_quota->hasProfileEventLimits())
     {
         auto info = command_status->getInfo(/*get_thread_list=*/ false, /*get_profile_events=*/ true);
         command_quota->usedProfileEvents(command_normalized_query_hash, {info.profile_counters.get()}, /*check_exceeded=*/ false);
     }
-    command_status.reset();
 }
 
 bool RedisHandler::processRequest(RedisProtocol::RedisRequest & req)
@@ -394,7 +427,7 @@ bool RedisHandler::processRequest(RedisProtocol::RedisRequest & req)
             RedisProtocol::SelectRequest select_request(req);
             select_request.parse();
 
-            auto command_scope = prepareQueryContext("SELECT");
+            prepareQueryContext("SELECT");
 
             auto selected_db = select_request.getDB();
             auto mapping = RedisProtocol::parseDBDescription(server.config(), selected_db);
@@ -428,7 +461,7 @@ bool RedisHandler::processRequest(RedisProtocol::RedisRequest & req)
             RedisProtocol::GetRequest get_request(req);
             get_request.parse();
 
-            auto command_scope = prepareQueryContext("GET");
+            prepareQueryContext("GET");
             checkDBSet();
 
             auto mapping = getMapDescription(db);
@@ -451,7 +484,7 @@ bool RedisHandler::processRequest(RedisProtocol::RedisRequest & req)
             RedisProtocol::MGetRequest mget_request(req);
             mget_request.parse();
 
-            auto command_scope = prepareQueryContext("MGET");
+            prepareQueryContext("MGET");
             checkDBSet();
 
             auto mapping = getMapDescription(db);
@@ -489,7 +522,7 @@ bool RedisHandler::processRequest(RedisProtocol::RedisRequest & req)
             RedisProtocol::HGetRequest hget_request(req);
             hget_request.parse();
 
-            auto command_scope = prepareQueryContext("HGET");
+            prepareQueryContext("HGET");
             checkDBSet();
 
             auto mapping = getMapDescription(db);
@@ -513,7 +546,7 @@ bool RedisHandler::processRequest(RedisProtocol::RedisRequest & req)
             RedisProtocol::HMGetRequest hmget_request(req);
             hmget_request.parse();
 
-            auto command_scope = prepareQueryContext("HMGET");
+            prepareQueryContext("HMGET");
             checkDBSet();
 
             auto mapping = getMapDescription(db);
@@ -639,7 +672,7 @@ void RedisHandler::validateTable(UInt32 db_, const RedisProtocol::MapDescription
     auto sample_block = metadata_snapshot->getSampleBlock();
 
     /// Redis keys are strings.
-    auto key_type = removeLowCardinality(removeNullable(sample_block.getByName(mapping.key_column).type));
+    auto key_type = removeLowCardinalityAndNullable(sample_block.getByName(mapping.key_column).type);
     if (!isStringOrFixedString(key_type))
         throw Exception(
             ErrorCodes::INVALID_CONFIG_PARAMETER,
