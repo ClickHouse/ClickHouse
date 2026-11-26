@@ -81,3 +81,38 @@ def test_ch_write_truncate_int_partition_spark_pyiceberg_read(started_cluster_ic
 
     table = StaticTable.from_metadata(latest_metadata_file(table_dir))
     assert table.scan(row_filter="x == 5").to_arrow().num_rows == 2
+
+
+def test_mutations_refused_after_promoting_wide_truncate_int(started_cluster_iceberg):
+    """
+    Iceberg Java computes `truncate[1500000000](1400000000)` of an `int` with a 32-bit overflow as -1500000000, a
+    multiple of the width that the same value of a `long` truncates to 0. After the column is promoted to `long`,
+    ClickHouse refuses DELETE and UPDATE instead of writing position deletes that never pair with the data file.
+    """
+    node1 = started_cluster_iceberg.instances["node1"]
+    spark = started_cluster_iceberg.spark_session
+
+    TABLE_NAME = "test_truncate_wide_int_promoted_" + get_uuid_str()
+    table_dir = f"{ICEBERG_DIR_NODE1}/default/{TABLE_NAME}"
+
+    spark.sql(
+        f"""
+            CREATE TABLE node1_catalog.default.{TABLE_NAME} (id INT, x INT)
+            USING iceberg
+            PARTITIONED BY (truncate(1500000000, x))
+            OPTIONS('format-version'='2');
+        """
+    )
+    spark.sql(f"INSERT INTO node1_catalog.default.{TABLE_NAME} VALUES (1, 1400000000), (2, 5)")
+    keys = spark.sql(f"SELECT partition.x_trunc FROM node1_catalog.default.{TABLE_NAME}.files").collect()
+    assert sorted(row.x_trunc for row in keys) == [-1500000000, 0]
+
+    node1.query(
+        f"CREATE TABLE {TABLE_NAME} ENGINE=IcebergLocal(local, path = '{table_dir}')"
+    )
+    node1.query(f"ALTER TABLE {TABLE_NAME} MODIFY COLUMN x Nullable(Int64)", settings=CH_SETTINGS)
+
+    for mutation in ["DELETE WHERE id = 1", "UPDATE id = 3 WHERE id = 1"]:
+        error = node1.query_and_get_error(f"ALTER TABLE {TABLE_NAME} {mutation}", settings=CH_SETTINGS)
+        assert "NOT_IMPLEMENTED" in error
+    assert node1.query(f"SELECT id, x FROM {TABLE_NAME} ORDER BY id") == "1\t1400000000\n2\t5\n"

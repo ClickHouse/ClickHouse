@@ -880,6 +880,18 @@ void validateSnapshotForMutation(
     if (!current_snapshot || !current_snapshot->has(f_manifest_list))
         return;
 
+    auto was_int_in_some_schema = [&](Int64 source_id)
+    {
+        const auto schemas = metadata->getArray(f_schemas);
+        for (UInt32 i = 0; schemas && i < schemas->size(); ++i)
+        {
+            const auto types = IcebergSchemaProcessor::collectIcebergPrimitiveTypesById(schemas->getObject(i)->getArray(f_fields));
+            if (const auto it = types.find(source_id); it != types.end() && it->second == "int")
+                return true;
+        }
+        return false;
+    };
+
     auto manifest_list_path = IcebergPathFromMetadata::deserialize(current_snapshot->getValue<String>(f_manifest_list));
     auto manifest_list_entries = getManifestList(object_storage, persistent_table_components, context, manifest_list_path, log);
     for (const auto & manifest_list_entry : manifest_list_entries)
@@ -933,10 +945,12 @@ void validateSnapshotForMutation(
                         partition_field.partition_name,
                         recorded_value);
 
-                /// Only the 32-bit wraparound of an `int` value gives a key in `int` range that is not a multiple of the width.
+                /// Only the 32-bit wraparound of an `int` value gives a key in `int` range that is not a multiple of the width,
+                /// except for widths above 2^30, where it can also give a different multiple.
                 const size_t width = *transform->argument;
                 if (source_type.isInt64() && fits_int && width != 0 && width <= static_cast<size_t>(std::numeric_limits<Int32>::max())
-                    && recorded_value % static_cast<Int64>(width) != 0)
+                    && (recorded_value % static_cast<Int64>(width) != 0
+                        || (width > (1ULL << 30) && was_int_in_some_schema(partition_field.source_id))))
                     throw Exception(
                         ErrorCodes::NOT_IMPLEMENTED,
                         "Iceberg DELETE and UPDATE are not supported for this table: data file `{}` has `{}` partition value {}, "
