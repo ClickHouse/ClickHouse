@@ -10,7 +10,6 @@
 #include <Backups/SettingsFieldOptionalBool.h>
 #include <Backups/SettingsFieldOptionalUUID.h>
 #include <Backups/SettingsFieldOptionalString.h>
-#include <Backups/SettingsFieldOptionalUInt64.h>
 
 
 namespace DB
