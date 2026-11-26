@@ -918,7 +918,7 @@ typename ExternalGroupLimitTransform<Traits>::PreparedRun ExternalGroupLimitTran
         formatReadableSizeWithBinarySuffix(max_bytes_before_external));
 
     /// Reserving the run's space also preserves the configured amount of free disk space.
-    TemporaryBlockStreamHolder tmp_stream(run_header, tmp_data, bytes + min_free_disk_space);
+    TemporaryBlockStreamHolder tmp_stream(run_header, tmp_data, getTemporaryFileReserveSize(bytes, min_free_disk_space));
     /// The final merge applies the hint after the seen rows, which can remove rows of input runs.
     auto merger = std::make_unique<MergeSorter>(
         run_header, std::move(chunks), description, max_block_size_rows, /*limit=*/ 0, mode, preferred_block_bytes,

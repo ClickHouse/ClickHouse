@@ -28,6 +28,7 @@
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/IAST.h>
 #include <Storages/IStorage.h>
+#include <base/getThreadId.h>
 #include <Common/config_version.h>
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Common/CurrentThread.h>
@@ -267,6 +268,9 @@ void LocalConnection::sendQuery(
     const std::vector<String> & /*external_roles*/,
     std::function<void(const Progress &)> process_progress_callback)
 {
+    /// In case the client did not report releasing the output of the previous query.
+    finished_query_scope = {};
+
     /// Last query may not have been finished or cancelled due to exception on client side.
     if (state && !state->is_finished && !state->is_cancelled)
         sendCancel();
@@ -327,10 +331,14 @@ void LocalConnection::sendQuery(
     if (is_cancelled_callback)
     {
         query_context->setInteractiveCancelCallback(
-            [this, check_cancelled = is_cancelled_callback, progress_callback = process_progress_callback]() -> bool
+            [this,
+             check_cancelled = is_cancelled_callback,
+             progress_callback = process_progress_callback,
+             client_thread_id = getThreadId()]() -> bool
         {
             /// Send accumulated progress to the client so the progress bar updates during analysis.
-            if (progress_callback)
+            /// Only from the client's thread: the client is not thread-safe, and this callback also runs on pipeline threads.
+            if (progress_callback && getThreadId() == client_thread_id)
             {
                 auto progress = state->progress.fetchAndResetPiecewiseAtomically();
                 if (progress.read_rows || progress.read_bytes)
@@ -744,8 +752,18 @@ void LocalConnection::finishQuery()
     }
 
     state->io.onFinish();
-    state.reset();
+    resetEndedQueryState();
     last_sent_snapshots.clear();
+}
+
+void LocalConnection::resetEndedQueryState()
+{
+    /// The state of the query is freed while the thread is still attached to it.
+    QueryScope query_scope = std::move(state->query_scope_holder);
+    const bool client_output_created = state->client_output_created;
+    state.reset();
+    if (client_output_created)
+        finished_query_scope = std::move(query_scope);
 }
 
 bool LocalConnection::poll(size_t)
@@ -1051,6 +1069,9 @@ Packet LocalConnection::receivePacket()
         {
             packet.exception.reset(state->exception->clone());
             next_packet_type.reset();
+            /// An exception is the last packet of the query, as `EndOfStream` is.
+            resetEndedQueryState();
+            last_sent_snapshots.clear();
             break;
         }
         case Protocol::Server::Progress:

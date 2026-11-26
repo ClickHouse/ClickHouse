@@ -36,7 +36,7 @@ public:
     virtual SeenGroups next(size_t max_rows, size_t max_bytes) = 0;
 
     /// The memory of the grouping state that the extractor retains.
-    virtual size_t getTotalByteCount() const = 0;
+    [[nodiscard]] virtual size_t getTotalByteCount() const = 0;
 };
 
 }

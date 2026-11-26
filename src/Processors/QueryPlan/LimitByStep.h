@@ -42,27 +42,27 @@ public:
             Settings settings_,
             size_t group_length_, size_t group_offset_, Names columns_, bool always_read_till_end_ = false);
 
-    String getName() const override { return "LimitBy"; }
+    [[nodiscard]] String getName() const override { return "LimitBy"; }
 
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
     void describeActions(JSONBuilder::JSONMap & map) const override;
     void describeActions(FormatSettings & settings) const override;
 
-    bool hasCorrelatedExpressions() const override { return false; }
+    [[nodiscard]] bool hasCorrelatedExpressions() const override { return false; }
 
     void serializeSettings(QueryPlanSerializationSettings & plan_settings, UInt64 version) const override;
     void serialize(Serialization & ctx) const override;
-    bool isSerializable() const override { return true; }
+    [[nodiscard]] bool isSerializable() const override { return true; }
 
     static QueryPlanStepPtr deserialize(Deserialization & ctx);
 
-    QueryPlanStepPtr clone() const override;
+    [[nodiscard]] QueryPlanStepPtr clone() const override;
 
-    size_t getGroupLength() const { return group_length; }
-    size_t getGroupOffset() const { return group_offset; }
-    const Names & getColumns() const { return columns; }
-    bool alwaysReadTillEnd() const { return always_read_till_end; }
+    [[nodiscard]] size_t getGroupLength() const { return group_length; }
+    [[nodiscard]] size_t getGroupOffset() const { return group_offset; }
+    [[nodiscard]] const Names & getColumns() const { return columns; }
+    [[nodiscard]] bool alwaysReadTillEnd() const { return always_read_till_end; }
 
     void applyOrder(const SortDescription & sort_description);
 

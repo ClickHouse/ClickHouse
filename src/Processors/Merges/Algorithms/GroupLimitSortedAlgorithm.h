@@ -39,12 +39,12 @@ public:
     /// of a group, whose counts are positive, before its input rows independently of input registration.
     static SortDescription inputSortDescription(SortDescription key_description, const std::optional<String> & seen_rows_column);
 
-    const char * getName() const override { return "GroupLimitSortedAlgorithm"; }
+    [[nodiscard]] const char * getName() const override { return "GroupLimitSortedAlgorithm"; }
     void addInput(SharedHeader header);
     void initialize(Inputs inputs) override;
     void consume(Input & input, size_t source_num) override;
     Status merge() override;
-    MergedStats getMergedStats() const override { return merged_data.getMergedStats(); }
+    [[nodiscard]] MergedStats getMergedStats() const override { return merged_data.getMergedStats(); }
 
 private:
     /// The window `[0, 1)`: input-row chunks are unique, so batches are merged without comparing their rows.
@@ -58,10 +58,10 @@ private:
     Chunk pull();
     /// The rows seen before spilling that `row` of `cursor` stands for: zero for an input row, and for every row
     /// without the seen-rows column.
-    UInt64 seenRows(const SortCursorImpl & cursor, size_t row) const;
+    [[nodiscard]] UInt64 seenRows(const SortCursorImpl & cursor, size_t row) const;
 
     /// Selects output columns while retaining chunk information and ownership of their values.
-    Chunk projectOutput(Chunk chunk, size_t source_num) const;
+    [[nodiscard]] Chunk projectOutput(Chunk chunk, size_t source_num) const;
 
     /// Appends zero seen counts to a chunk of an input-row input that omits them.
     void addZeroSeenRows(Chunk & chunk) const;

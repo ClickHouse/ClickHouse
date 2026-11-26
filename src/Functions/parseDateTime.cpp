@@ -25,6 +25,7 @@
 #include <boost/algorithm/string/case_conv.hpp>
 
 #include <expected>
+#include <base/sanitizer_defs.h>
 
 
 namespace DB
@@ -68,30 +69,40 @@ namespace
         DateTime64
     };
 
-    const UnorderedMapWithMemoryTracking<String, std::pair<String, Int32>> dayOfWeekMap{
-        {"mon", {"day", 1}},
-        {"tue", {"sday", 2}},
-        {"wed", {"nesday", 3}},
-        {"thu", {"rsday", 4}},
-        {"fri", {"day", 5}},
-        {"sat", {"urday", 6}},
-        {"sun", {"day", 7}},
-    };
+    /// Built on first use rather than by a static initializer.
+    const UnorderedMapWithMemoryTracking<String, std::pair<String, Int32>> & dayOfWeekMap()
+    {
+        static const UnorderedMapWithMemoryTracking<String, std::pair<String, Int32>> map{
+            {"mon", {"day", 1}},
+            {"tue", {"sday", 2}},
+            {"wed", {"nesday", 3}},
+            {"thu", {"rsday", 4}},
+            {"fri", {"day", 5}},
+            {"sat", {"urday", 6}},
+            {"sun", {"day", 7}},
+        };
+        return map;
+    }
 
-    const UnorderedMapWithMemoryTracking<String, std::pair<String, Int32>> monthMap{
-        {"jan", {"uary", 1}},
-        {"feb", {"ruary", 2}},
-        {"mar", {"ch", 3}},
-        {"apr", {"il", 4}},
-        {"may", {"", 5}},
-        {"jun", {"e", 6}},
-        {"jul", {"y", 7}},
-        {"aug", {"ust", 8}},
-        {"sep", {"tember", 9}},
-        {"oct", {"ober", 10}},
-        {"nov", {"ember", 11}},
-        {"dec", {"ember", 12}},
-    };
+    /// Built on first use rather than by a static initializer.
+    const UnorderedMapWithMemoryTracking<String, std::pair<String, Int32>> & monthMap()
+    {
+        static const UnorderedMapWithMemoryTracking<String, std::pair<String, Int32>> map{
+            {"jan", {"uary", 1}},
+            {"feb", {"ruary", 2}},
+            {"mar", {"ch", 3}},
+            {"apr", {"il", 4}},
+            {"may", {"", 5}},
+            {"jun", {"e", 6}},
+            {"jul", {"y", 7}},
+            {"aug", {"ust", 8}},
+            {"sep", {"tember", 9}},
+            {"oct", {"ober", 10}},
+            {"nov", {"ember", 11}},
+            {"dec", {"ember", 12}},
+        };
+        return map;
+    }
 
     /// key: month, value: total days of current month if current year is leap year.
     constexpr Int32 leapDays[] = {0, 31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
@@ -465,7 +476,7 @@ namespace
         }
 
         /// For debug
-        [[maybe_unused]] String toString() const
+        [[nodiscard]] [[maybe_unused]] String toString() const
         {
             String res;
             res += "year:" + std::to_string(year);
@@ -569,6 +580,7 @@ namespace
         }
 
         [[nodiscard]]
+        NO_SANITIZE_UNSIGNED_OVERFLOW
         Int64OrError buildDateTime(const DateLUTImpl & time_zone)
         {
             /// The hour of a half-day clock is stored in [0, 11], and PM adds 12 hours to it. They are added to a copy: for a
@@ -642,22 +654,22 @@ namespace
         {
         }
 
-        String getName() const override { return name; }
+        [[nodiscard]] String getName() const override { return name; }
 
-        bool useDefaultImplementationForConstants() const override { return true; }
+        [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
         /// A `LowCardinality` dictionary always holds the type's default value at index 0, even when no
         /// row references it, so the throwing variant must not be executed on the whole dictionary -
         /// the empty string is not a date and it would fail on entirely valid data.
-        bool canBeExecutedOnDefaultArguments() const override { return error_handling != ErrorHandling::Exception; }
-        bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-        ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2}; }
-        bool isVariadic() const override { return true; }
-        size_t getNumberOfArguments() const override { return 0; }
+        [[nodiscard]] bool canBeExecutedOnDefaultArguments() const override { return error_handling != ErrorHandling::Exception; }
+        [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+        [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2}; }
+        [[nodiscard]] bool isVariadic() const override { return true; }
+        [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
 
         /// Documentation-only — the override below is authoritative (it computes
         /// the DateTime64 scale from the number of `S` placeholders in the
         /// format string, and attaches the timezone from the optional third arg).
-        String getSignatureString() const override
+        [[nodiscard]] String getSignatureString() const override
         {
             String result;
             if constexpr (return_type == ReturnType::DateTime)
@@ -674,7 +686,7 @@ namespace
         /// non-MySQL syntax, the scale is the number of `S` placeholders in the format string.
         /// Decline this entry point instead of letting the documentation-only signature above
         /// answer with a timezone-less `DateTime`/scale-0 `DateTime64`.
-        DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
+        [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
         {
             throw Exception(
                 ErrorCodes::NOT_IMPLEMENTED,
@@ -683,7 +695,7 @@ namespace
                 getName());
         }
 
-        DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+        [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
         {
             FunctionArgumentDescriptors mandatory_args{
                 {"time", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"}
@@ -734,7 +746,7 @@ namespace
             return data_type;
         }
 
-        ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+        [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
         {
             DataTypePtr result_type_without_nullable;
             if constexpr (error_handling == ErrorHandling::Null)
@@ -906,10 +918,10 @@ namespace
             explicit Instruction(const String & literal_) : literal(literal_), fragment("LITERAL") { }
             explicit Instruction(String && literal_) : literal(std::move(literal_)), fragment("LITERAL") { }
 
-            const String & getFragment() const { return fragment; }
+            [[nodiscard]] const String & getFragment() const { return fragment; }
 
             /// For debug
-            [[maybe_unused]] String toString() const
+            [[nodiscard]] [[maybe_unused]] String toString() const
             {
                 if (func)
                     return "func:" + func_name + ",fragment:" + fragment;
@@ -1056,8 +1068,8 @@ namespace
 
                 String text(cur, 3);
                 boost::to_lower(text);
-                auto it = dayOfWeekMap.find(text);
-                if (it == dayOfWeekMap.end())
+                auto it = dayOfWeekMap().find(text);
+                if (it == dayOfWeekMap().end())
                     RETURN_ERROR(
                         ErrorCodes::CANNOT_PARSE_DATETIME,
                         "Unable to parse fragment {} from {} because of unknown day of week short text {} ",
@@ -1076,8 +1088,8 @@ namespace
 
                 String text(cur, 3);
                 boost::to_lower(text);
-                auto it = monthMap.find(text);
-                if (it == monthMap.end())
+                auto it = monthMap().find(text);
+                if (it == monthMap().end())
                     RETURN_ERROR(
                         ErrorCodes::CANNOT_PARSE_DATETIME,
                         "Unable to parse fragment {} from {} because of unknown month of year short text {}",
@@ -1096,8 +1108,8 @@ namespace
                 RETURN_ERROR_IF_FAILED(checkSpace(cur, end, 3, "mysqlMonthOfYearTextLong requires size >= 3", fragment))
                 String text1(cur, 3);
                 boost::to_lower(text1);
-                auto it = monthMap.find(text1);
-                if (it == monthMap.end())
+                auto it = monthMap().find(text1);
+                if (it == monthMap().end())
                     RETURN_ERROR(
                         ErrorCodes::CANNOT_PARSE_DATETIME,
                         "Unable to parse first part of fragment {} from {} because of unknown month of year text: {}",
@@ -1293,8 +1305,8 @@ namespace
                 RETURN_ERROR_IF_FAILED(checkSpace(cur, end, 6, "mysqlDayOfWeekTextLong requires size >= 6", fragment))
                 String text1(cur, 3);
                 boost::to_lower(text1);
-                auto it = dayOfWeekMap.find(text1);
-                if (it == dayOfWeekMap.end())
+                auto it = dayOfWeekMap().find(text1);
+                if (it == dayOfWeekMap().end())
                     RETURN_ERROR(
                         ErrorCodes::CANNOT_PARSE_DATETIME,
                         "Unable to parse first part of fragment {} from {} because of unknown day of week text: {}",
@@ -1691,8 +1703,8 @@ namespace
 
                 String text1(cur, 3);
                 boost::to_lower(text1);
-                auto it = dayOfWeekMap.find(text1);
-                if (it == dayOfWeekMap.end())
+                auto it = dayOfWeekMap().find(text1);
+                if (it == dayOfWeekMap().end())
                     RETURN_ERROR(
                         ErrorCodes::CANNOT_PARSE_DATETIME,
                         "Unable to parse fragment {} from {} because of unknown day of week text: {}",
@@ -1750,8 +1762,8 @@ namespace
                 RETURN_ERROR_IF_FAILED(checkSpace(cur, end, 3, "jodaMonthOfYearText requires size >= 3", fragment))
                 String text1(cur, 3);
                 boost::to_lower(text1);
-                auto it = monthMap.find(text1);
-                if (it == monthMap.end())
+                auto it = monthMap().find(text1);
+                if (it == monthMap().end())
                     RETURN_ERROR(
                         ErrorCodes::CANNOT_PARSE_DATETIME,
                         "Unable to parse fragment {} from {} because of unknown month of year text: {}",
@@ -1927,7 +1939,7 @@ namespace
         };
         /// NOLINTEND(readability-else-after-return)
 
-        VectorWithMemoryTracking<Instruction> parseFormat(const String & format) const
+        [[nodiscard]] VectorWithMemoryTracking<Instruction> parseFormat(const String & format) const
         {
             static_assert(
                 parse_syntax == ParseSyntax::MySQL || parse_syntax == ParseSyntax::Joda,
@@ -1939,7 +1951,7 @@ namespace
                 return parseJodaFormat(format);
         }
 
-        VectorWithMemoryTracking<Instruction> parseMysqlFormat(const String & format) const
+        [[nodiscard]] VectorWithMemoryTracking<Instruction> parseMysqlFormat(const String & format) const
         {
 #define ACTION_ARGS(func) &(func), #func, std::string_view(pos - 1, 2)
 
@@ -2046,7 +2058,7 @@ namespace
                             instructions.emplace_back(ACTION_ARGS(Instruction::mysqlISO8601Week));
                             break;
 
-                        // Weekday as a integer number with Sunday as 0 (0-6)  4
+                        // Weekday as an integer number with Sunday as 0 (0-6)  4
                         case 'w':
                             instructions.emplace_back(ACTION_ARGS(Instruction::mysqlDayOfWeek0To6));
                             break;
@@ -2203,7 +2215,7 @@ namespace
 #undef ACTION_ARGS
         }
 
-        VectorWithMemoryTracking<Instruction> parseJodaFormat(const String & format) const
+        [[nodiscard]] VectorWithMemoryTracking<Instruction> parseJodaFormat(const String & format) const
         {
 #define ACTION_ARGS_WITH_BIND(func, arg) std::bind_front(&(func), (arg)), #func, std::string_view(cur_token, repetitions)
 
@@ -2332,7 +2344,7 @@ namespace
         }
 
 
-        String getFormat(const ColumnsWithTypeAndName & arguments) const
+        [[nodiscard]] String getFormat(const ColumnsWithTypeAndName & arguments) const
         {
             if (arguments.size() == 1)
             {
@@ -2358,7 +2370,7 @@ namespace
             }
         }
 
-        const DateLUTImpl & getTimeZone(const ColumnsWithTypeAndName & arguments) const
+        [[nodiscard]] const DateLUTImpl & getTimeZone(const ColumnsWithTypeAndName & arguments) const
         {
             if (arguments.size() < 3)
                 return DateLUT::instance();

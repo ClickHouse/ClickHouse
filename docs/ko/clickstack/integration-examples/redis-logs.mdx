@@ -6,8 +6,6 @@ description: 'ClickStack으로 Redis 로그 모니터링'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
 <Info>
@@ -17,14 +15,14 @@ import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTra
 </Info>
 
 <div id="existing-redis">
-  ## 기존 Redis와의 통합
+  ## 기존 Redis와의 통합 {#existing-redis}
 </div>
 
 이 섹션에서는 ClickStack OTel collector 구성을 수정해, 기존 Redis 설치에서 로그를 ClickStack으로 전송하도록 설정하는 방법을 설명합니다.
 기존 환경에 직접 구성하기 전에 Redis 통합을 테스트하려면 [&quot;데모 데이터세트&quot;](/ko/clickstack/integration-examples/redis-logs#demo-dataset) 섹션의 사전 구성된 설정과 샘플 데이터를 사용해 테스트할 수 있습니다.
 
 <div id="prerequisites">
-  ### 사전 요구 사항
+  ### 사전 요구 사항 {#prerequisites}
 </div>
 
 * 실행 중인 ClickStack 인스턴스
@@ -67,7 +65,7 @@ import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTra
   </Step>
 
   <Step title="사용자 지정 OTel collector 구성 생성" id="custom-otel">
-    ClickStack에서는 사용자 지정 설정 파일을 마운트하고 환경 변수를 설정하여 기본 OpenTelemetry Collector 구성을 확장할 수 있습니다. 사용자 지정 구성은 OpAMP를 통해 HyperDX가 관리하는 기본 구성과 머지됩니다.
+    ClickStack에서는 사용자 지정 설정 파일을 마운트하고 환경 변수를 설정하여 기본 OpenTelemetry Collector 구성을 확장할 수 있습니다. 사용자 지정 구성은 OpAMP를 통해 ClickStack UI가 관리하는 기본 구성과 머지됩니다.
 
     다음 구성으로 `redis-monitoring.yaml` 파일을 생성하세요:
 
@@ -111,7 +109,7 @@ import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTra
 
     * Redis 로그를 표준 위치에서 읽습니다
     * regex를 사용해 Redis 로그 포맷을 파싱하고 구조화된 필드(`pid`, `role`, `timestamp`, `log_level`, `message`)를 추출합니다
-    * HyperDX에서 필터링할 수 있도록 `source: redis` 속성을 추가합니다
+    * ClickStack UI에서 필터링할 수 있도록 `source: redis` 속성을 추가합니다
     * 전용 파이프라인을 통해 로그를 ClickHouse exporter로 전달합니다
 
     <Note>
@@ -129,7 +127,7 @@ import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTra
     2. 환경 변수 `CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml`를 설정합니다
     3. collector가 읽을 수 있도록 Redis 로그 디렉터리를 마운트합니다
 
-    ##### 옵션 1: Docker Compose
+##### 옵션 1: Docker Compose {#docker-compose}
 
     ClickStack 배포 구성을 업데이트합니다:
 
@@ -146,7 +144,7 @@ import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTra
           # ... other volumes ...
     ```
 
-    ##### 옵션 2: Docker Run(올인원 이미지)
+##### 옵션 2: Docker Run(올인원 이미지) {#all-in-one}
 
     docker로 올인원 이미지를 사용하는 경우 다음을 실행하세요:
 
@@ -164,20 +162,26 @@ import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTra
     </Note>
   </Step>
 
-  <Step title="HyperDX에서 logs 확인하기" id="verifying-logs">
-    구성이 완료되면 HyperDX에 로그인한 후 logs가 정상적으로 유입되는지 확인합니다:
+  <Step title="ClickStack UI에서 logs 확인하기" id="verifying-logs">
+    구성이 완료되면 ClickStack UI에 로그인한 후 logs가 정상적으로 유입되는지 확인합니다:
 
-    <Image img="/images/clickstack/redis/redis-log-view.webp" alt="Log view" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![Log view](/images/clickstack/redis/redis-log-view.webp)
+      </Frame>
+    </div>
 
-    <Image img="/images/clickstack/redis/redis-log.webp" alt="Log" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![Log](/images/clickstack/redis/redis-log.webp)
+      </Frame>
+    </div>
   </Step>
 </Steps>
 
-<div id="demo-dataset">
-  ## 데모 데이터세트
-</div>
+## 데모 데이터세트 {#demo-dataset}
 
-프로덕션 시스템을 구성하기 전에 Redis 통합을 테스트하려는 사용자를 위해, 실제와 유사한 패턴의 사전 생성된 Redis 로그 샘플 데이터세트를 제공합니다.
+운영 환경 시스템을 구성하기 전에 Redis 통합을 테스트하려는 사용자를 위해, 실제와 유사한 패턴의 사전 생성된 Redis 로그 샘플 데이터세트를 제공합니다.
 
 <Steps>
   <Step title="샘플 데이터세트 다운로드" id="download-sample">
@@ -188,7 +192,7 @@ import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step title="테스트용 collector 구성 생성" id="test-config">
+  <Step title="테스트용 수집기 설정 생성" id="test-config">
     다음 구성으로 `redis-demo.yaml` 파일을 만드세요:
 
     ```yaml
@@ -246,29 +250,35 @@ import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTra
       **이 방식은 로그 파일을 컨테이너에 직접 마운트합니다. 이는 정적인 데모 데이터를 테스트하기 위한 것입니다.**
     </Note>
 
-    ## HyperDX에서 로그 확인
+## ClickStack UI에서 로그 확인 {#verify-demo-logs}
 
     ClickStack이 실행되면 다음을 수행하세요:
 
-    1. [HyperDX](http://localhost:8080/)를 열고 계정에 로그인하세요(먼저 계정을 만들어야 할 수 있습니다)
+    1. [ClickStack UI](http://localhost:8080/)를 열고 계정에 로그인하세요(먼저 계정을 만들어야 할 수 있습니다)
     2. Search view로 이동하여 source를 `Logs`로 설정하세요
     3. 시간 범위를 **2025-10-26 10:00:00 - 2025-10-29 10:00:00**로 설정하세요
 
     <Info>
       **시간대 표시**
 
-      HyperDX는 브라우저의 로컬 시간대로 타임스탬프를 표시합니다. 데모 데이터의 범위는 **2025-10-27 10:00:00 - 2025-10-28 10:00:00 (UTC)**입니다. 넓은 시간 범위를 설정하면 위치와 관계없이 데모 로그를 확인할 수 있습니다. 로그가 표시되면 더 명확한 시각화를 위해 범위를 24시간으로 좁힐 수 있습니다.
+      ClickStack UI는 브라우저의 로컬 시간대로 타임스탬프를 표시합니다. 데모 데이터의 범위는 **2025-10-27 10:00:00 - 2025-10-28 10:00:00 (UTC)**&#xC785;니다. 넓은 시간 범위를 설정하면 위치와 관계없이 데모 로그를 확인할 수 있습니다. 로그가 표시되면 더 명확한 시각화를 위해 범위를 24시간으로 좁힐 수 있습니다.
     </Info>
 
-    <Image img="/images/clickstack/redis/redis-log-view.webp" alt="Log view" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![Log view](/images/clickstack/redis/redis-log-view.webp)
+      </Frame>
+    </div>
 
-    <Image img="/images/clickstack/redis/redis-log.webp" alt="Log" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![Log](/images/clickstack/redis/redis-log.webp)
+      </Frame>
+    </div>
   </Step>
 </Steps>
 
-<div id="dashboards">
-  ## 대시보드 및 시각화
-</div>
+## 대시보드 및 시각화 {#dashboards}
 
 ClickStack으로 Redis 모니터링을 시작할 수 있도록 Redis 로그용 핵심 시각화를 제공합니다.
 
@@ -278,31 +288,43 @@ ClickStack으로 Redis 모니터링을 시작할 수 있도록 Redis 로그용 �
   </Step>
 
   <Step title="사전 구축된 대시보드 가져오기" id="import-dashboard">
-    1. HyperDX를 열고 대시보드 섹션으로 이동합니다.
+    1. ClickStack UI를 열고 대시보드 섹션으로 이동합니다.
     2. 오른쪽 상단의 줄임표 메뉴에서 &quot;Import Dashboard&quot;를 클릭합니다.
 
-    <Image img="/images/clickstack/import-dashboard.webp" alt="Import Dashboard" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![Import Dashboard](/images/clickstack/import-dashboard.webp)
+      </Frame>
+    </div>
 
     3. redis-logs-dashboard.json 파일을 업로드한 다음 finish import를 클릭합니다.
 
-    <Image img="/images/clickstack/redis/redis-import-dashboard.webp" alt="Finish Import" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![Finish Import](/images/clickstack/redis/redis-import-dashboard.webp)
+      </Frame>
+    </div>
   </Step>
 
   <Step title="모든 시각화가 사전 구성된 상태로 대시보드가 생성됩니다" id="created-dashboard">
     <Note>
-      데모 데이터세트의 경우 시간 범위를 **2025-10-27 10:00:00 - 2025-10-28 10:00:00 (UTC)**로 설정하십시오(로컬 시간대에 맞게 조정). 가져온 대시보드에는 기본적으로 시간 범위가 지정되어 있지 않습니다.
+      데모 데이터세트의 경우 시간 범위를 **2025-10-27 10:00:00 - 2025-10-28 10:00:00 (UTC)**&#xB85C; 설정하십시오(로컬 시간대에 맞게 조정). 가져온 대시보드에는 기본적으로 시간 범위가 지정되어 있지 않습니다.
     </Note>
 
-    <Image img="/images/clickstack/redis/redis-logs-dashboard.webp" alt="Example Dashboard" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![Example Dashboard](/images/clickstack/redis/redis-logs-dashboard.webp)
+      </Frame>
+    </div>
   </Step>
 </Steps>
 
 <div id="troubleshooting">
-  ## 문제 해결
+  ## 문제 해결 {#troubleshooting}
 </div>
 
 <div id="troubleshooting-not-loading">
-  ### 사용자 지정 구성이 로드되지 않는 경우
+  ### 사용자 지정 구성이 로드되지 않는 경우 {#troubleshooting-not-loading}
 </div>
 
 **환경 변수가 올바르게 설정되었는지 확인하세요:**
@@ -333,49 +355,47 @@ docker exec <container> cat /etc/otel/supervisor-data/effective.yaml | grep -A 1
 # filelog/redis 수신기 구성이 표시됩니다
 ```
 
-<div id="no-logs">
-  ### HyperDX에 로그가 표시되지 않는 경우
-</div>
+### ClickStack UI에 로그가 표시되지 않는 경우 {#no-logs}
 
 **Redis가 로그를 파일에 기록하는지 확인하세요:**
 
 ```bash
 redis-cli CONFIG GET logfile
-# 예상 출력: 빈 문자열이 아닌 파일 경로가 표시되어야 합니다
-# 예시: 1) "logfile" 2) "/var/log/redis/redis-server.log"
+# Expected output: Should show a file path, not empty string
+# Example: 1) "logfile" 2) "/var/log/redis/redis-server.log"
 ```
 
 **Redis가 정상적으로 로그를 기록하고 있는지 확인하세요:**
 
 ```bash
 tail -f /var/log/redis/redis-server.log
-# Redis 형식의 최근 로그 항목이 표시되어야 합니다
+# Should show recent log entries in Redis format
 ```
 
-**collector가 logs를 읽을 수 있는지 확인하세요:**
+**collector가 로그를 읽을 수 있는지 확인하세요:**
 
 ```bash
 docker exec <container> cat /var/log/redis/redis-server.log
-# Redis 로그 항목이 표시되어야 합니다
+# Should display Redis log entries
 ```
 
 **collector 로그에 오류가 있는지 확인하세요:**
 
 ```bash
 docker exec <container> cat /etc/otel/supervisor-data/agent.log
-# filelog 또는 Redis 관련 오류 메시지를 확인하세요
+# Look for any error messages related to filelog or Redis
 ```
 
 **docker-compose를 사용하는 경우, 공유 볼륨을 확인하세요:**
 
 ```bash
-# 두 컨테이너가 동일한 볼륨을 사용하는지 확인
+# Check both containers are using the same volume
 docker volume inspect <volume-name>
-# 두 컨테이너 모두 볼륨이 마운트되어 있는지 확인
+# Verify both containers have the volume mounted
 ```
 
 <div id="logs-not-parsing">
-  ### 로그가 올바르게 파싱되지 않는 경우
+  ### 로그가 올바르게 파싱되지 않는 경우 {#logs-not-parsing}
 </div>
 
 **Redis 로그 포맷이 예상 패턴과 일치하는지 확인하세요:**
@@ -392,14 +412,12 @@ Redis 로그 포맷이 다르면 `regex_parser` 연산자의 정규식 패턴을
 * 예시: `12345:M 28 Oct 2024 14:23:45.123 * Server started`
 
 <div id="next-steps">
-  ## 다음 단계
+  ## 다음 단계 {#next-steps}
 </div>
 
 * 중요한 메트릭(오류율, 지연 시간 임계값)에 대한 [알림](/ko/clickstack/features/alerts)을 구성하세요
 * 특정 사용 사례(API 모니터링, 보안 이벤트)에 맞는 추가 [대시보드](/ko/clickstack/features/dashboards/overview)를 만드세요
 
-<div id="going-to-production">
-  ## 운영 환경으로 전환
-</div>
+## 운영 환경으로 전환 {#going-to-production}
 
 이 가이드는 빠르게 설정할 수 있도록 ClickStack에 기본 제공되는 OpenTelemetry Collector를 확장한 것입니다. 운영 환경에서는 자체 OTel Collector를 실행하고 데이터를 ClickStack의 OTLP endpoint로 전송하는 구성을 권장합니다. 운영 환경 구성은 [OpenTelemetry 데이터 전송](/ko/clickstack/ingesting-data/opentelemetry)를 참조하십시오.

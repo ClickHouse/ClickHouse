@@ -158,6 +158,13 @@ void CreatingSetStep::updateOutputHeader()
     output_header = std::make_shared<const Block>(Block{});
 }
 
+StepAnalyzer CreatingSetStep::makeAnalyzer() const
+{
+    StepAnalyzer analyzer = IQueryPlanStep::makeAnalyzer();
+    analyzer.is_creating_set = true;
+    return analyzer;
+}
+
 void CreatingSetStep::describeActions(FormatSettings & settings) const
 {
     if (!set_and_key->set)
@@ -235,7 +242,7 @@ void addCreatingSetsStep(QueryPlan & query_plan, PreparedSets::Subqueries subque
     SharedHeaders input_headers;
     input_headers.emplace_back(query_plan.getCurrentHeader());
 
-    std::vector<std::unique_ptr<QueryPlan>> plans;
+    VectorWithMemoryTracking<std::unique_ptr<QueryPlan>> plans;
     plans.emplace_back(std::make_unique<QueryPlan>(std::move(query_plan)));
     query_plan = QueryPlan();
 
@@ -298,11 +305,11 @@ QueryPipelineBuilderPtr addCreatingSetsTransform(QueryPipelineBuilderPtr pipelin
     return CreatingSetsStep(input_headers).updatePipeline(std::move(pipelines), pipeline_settings);
 }
 
-std::vector<std::unique_ptr<QueryPlan>> DelayedCreatingSetsStep::makePlansForSets(
+VectorWithMemoryTracking<std::unique_ptr<QueryPlan>> DelayedCreatingSetsStep::makePlansForSets(
     DelayedCreatingSetsStep && step,
     const QueryPlanOptimizationSettings & optimization_settings)
 {
-    std::vector<std::unique_ptr<QueryPlan>> plans;
+    VectorWithMemoryTracking<std::unique_ptr<QueryPlan>> plans;
 
     for (auto & future_set : step.subqueries)
     {
@@ -394,7 +401,7 @@ void forEachSubquerySet(const QueryPlan * root, const std::function<bool(FutureS
     if (!root || !root->getRootNode())
         return;
 
-    std::vector<QueryPlan::Node *> stack{root->getRootNode()};
+    VectorWithMemoryTracking<QueryPlan::Node *> stack{root->getRootNode()};
     while (!stack.empty())
     {
         auto * node = stack.back();

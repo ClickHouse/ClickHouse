@@ -2,17 +2,15 @@
 slug: /cloud/data-sources/secure-iceberg
 sidebarTitle: 'Iceberg データへの安全なアクセス'
 title: 'Iceberg データへの安全なアクセス'
-description: 'この記事では、ClickHouse Cloud のお客様がロールベースのアクセス制御を使用して、オブジェクトストレージ内の Apache Iceberg データに安全にアクセスする方法を説明します。'
+description: 'この記事では、ClickHouse Cloud のお客様がロールベースのアクセスを使用して、オブジェクトストレージ内の Apache Iceberg データに安全にアクセスする方法を説明します。'
 keywords: ['Iceberg', 'RBAC', 'Amazon S3', '認証']
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
-ClickHouse Cloud は、ARN ベースの AWS IAM 信頼関係を利用して、オブジェクトストレージ (通常は S3) に保存された Iceberg データへの安全なロールベースアクセスをサポートしています。このガイドでは、[S3 データへの安全なアクセス](/ja/products/cloud/guides/data-sources/accessing-s3-data-securely)と同じ安全なセットアップのパターンに沿って、ClickHouse に Iceberg 固有の設定を追加します。
+ClickHouse Cloud は、ARN ベースの AWS IAM 信頼関係を利用して、オブジェクトストレージ (通常は S3) に保存された Iceberg データへの安全なロールベースのアクセスをサポートしています。このガイドでは、[S3 データへの安全なアクセス](/ja/products/cloud/guides/data-sources/accessing-s3-data-securely)と同じ安全なセットアップのパターンに沿って、ClickHouse に Iceberg 固有の設定を追加します。
 
 <div id="overview">
-  ## 概要
+  ## 概要 {#overview}
 </div>
 
 * ClickHouse Cloud サービスロール ID (IAM) を取得します。
@@ -20,28 +18,30 @@ ClickHouse Cloud は、ARN ベースの AWS IAM 信頼関係を利用して、�
 * Iceberg 固有のオブジェクトポリシーとカタログポリシーをロールにアタッチします。
 * ロールベースの認証情報を使用して、Iceberg テーブル関数または IcebergS3 テーブルエンジンを使用します。
 
-<div id="obtaining-the-clickhouse-service-iam-role-arn">
-  ## ClickHouseサービスのロール ID (ARN) を取得する
-</div>
+## ClickHouseサービスのロール ID (ARN) を取得する {#obtaining-the-clickhouse-service-iam-role-arn}
 
 <Steps>
   <Step title="1. ClickHouse Cloud アカウントにログインします。" id="login" />
 
   <Step title="2. Iceberg データをクエリする ClickHouseサービスを選択します。" id="select-service" />
 
-  <Step title={<>3. <strong>Settings</strong> タブに移動します。</>} id="settings-tab" />
+  <Step title={<>3. <strong>設定</strong> タブに移動します。</>} id="settings-tab" />
 
   <Step title={<>4. <strong>Network security information</strong> までスクロールします。</>} id="network-security-information" />
 
   <Step title={<>5. <strong>サービスロール ID (IAM)</strong> の値をコピーします。</>} id="service-role-iam-value">
     この ARN は、Iceberg データにアクセスする AWS IAM ロールの信頼ポリシーで必要になります。
 
-    <Image img="/images/cloud/security/secures3_arn.webp" size="lg" alt="ClickHouseサービスの IAM ロール ARN を取得する" border />
+    <div className="ch-image-lg">
+      <Frame>
+        ![ClickHouseサービスの IAM ロール ARN を取得する](/images/cloud/security/secures3_arn.webp)
+      </Frame>
+    </div>
   </Step>
 </Steps>
 
 <div id="setting-up-iam-assume-role">
-  ## IAM AssumeRole を設定する
+  ## IAM AssumeRole を設定する {#setting-up-iam-assume-role}
 </div>
 
 <Steps>
@@ -122,11 +122,11 @@ ClickHouse Cloud は、ARN ベースの AWS IAM 信頼関係を利用して、�
 </Steps>
 
 <div id="configure-iceberg-access">
-  ## ClickHouse Cloud で Iceberg へのアクセスを設定する
+  ## ClickHouse Cloud で Iceberg へのアクセスを設定する {#configure-iceberg-access}
 </div>
 
 <div id="iceberg-table-function-with-role-arn">
-  ### オプション A: ロール ARN を使用する Iceberg テーブル関数
+  ### オプション A: ロール ARN を使用する Iceberg テーブル関数 {#iceberg-table-function-with-role-arn}
 </div>
 
 `NOSIGN` オプションとロールベースの認証情報を指定して、`icebergS3` テーブル関数を使用します。ClickHouse Cloud はロールを引き受けるために STS を呼び出します。
@@ -141,7 +141,7 @@ FROM icebergS3(
 ```
 
 <div id="persistent-iceberg-table-engine">
-  ### オプション B: 永続型 Iceberg テーブルエンジン
+  ### オプション B: 永続型 Iceberg テーブルエンジン {#persistent-iceberg-table-engine}
 </div>
 
 ```sql
@@ -158,7 +158,7 @@ ENGINE = IcebergS3(
 ```
 
 <div id="glue-catalog-plus-icebergs3">
-  ### オプション C: Glue カタログ + IcebergS3
+  ### オプション C: Glue カタログ + IcebergS3 {#glue-catalog-plus-icebergs3}
 </div>
 
 ```sql
@@ -179,7 +179,7 @@ SETTINGS
 > 注: Glue カタログを使用する場合は、IAM ロールに S3 と Glue の両方の読み取り/一覧表示権限があることを確認してください。
 
 <div id="datalake-catalog-for-glue">
-  ### オプション D: Glue 向け DataLake Catalog
+  ### オプション D: Glue 向け DataLake Catalog {#datalake-catalog-for-glue}
 </div>
 
 <Note>
@@ -199,7 +199,7 @@ SETTINGS
 ```
 
 <div id="validate-access">
-  ## アクセスを確認する
+  ## アクセスを確認する {#validate-access}
 </div>
 
 1. 簡単なクエリを実行します:
@@ -212,7 +212,7 @@ LIMIT 5;
 2. `AccessDenied` や `InvalidAccessKeyId` などの IAM エラーがないか確認します。
 
 <div id="troubelshooting">
-  ## トラブルシューティング
+  ## トラブルシューティング {#troubelshooting}
 </div>
 
 * ClickHouse Cloud サービスの設定でロール ARN を確認します。

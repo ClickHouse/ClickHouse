@@ -3,6 +3,7 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnsNumber.h>
+#include <Columns/replaceNegativeZeros.h>
 #include <Core/Block.h>
 #include <Processors/IProcessor.h>
 #include <base/PackedStringRef.h>
@@ -62,7 +63,7 @@ size_t estimateTableGrowth(const Data & data, size_t keys)
 /// The buffer that `items` allocates to hold `new_items` more items, or zero when its capacity suffices. The vector
 /// grows by doubling, and the last reallocation holds the old and the new buffer at once.
 template <typename T>
-size_t estimateVectorGrowth(const std::vector<T> & items, size_t new_items)
+size_t estimateVectorGrowth(const VectorWithMemoryTracking<T> & items, size_t new_items)
 {
     const size_t required = items.size() + new_items;
     size_t capacity = items.capacity();
@@ -79,7 +80,7 @@ size_t estimateVectorGrowth(const std::vector<T> & items, size_t new_items)
 class FingerprintExtractorImpl final : public SeenGroupExtractor
 {
 public:
-    FingerprintExtractorImpl(std::vector<UInt128> fingerprints_, std::vector<UInt64> counts_)
+    FingerprintExtractorImpl(VectorWithMemoryTracking<UInt128> fingerprints_, VectorWithMemoryTracking<UInt64> counts_)
         : fingerprints(std::move(fingerprints_))
         , counts(std::move(counts_))
     {
@@ -118,8 +119,8 @@ public:
     }
 
 private:
-    const std::vector<UInt128> fingerprints;
-    const std::vector<UInt64> counts;
+    const VectorWithMemoryTracking<UInt128> fingerprints;
+    const VectorWithMemoryTracking<UInt64> counts;
     size_t position = 0;
 };
 
@@ -235,7 +236,7 @@ class GroupExtractorImpl final : public SeenGroupExtractor
 {
 public:
     GroupExtractorImpl(
-        Method & method_, std::unique_ptr<AggregatedDataVariants> data_, std::vector<UInt64> group_counts_,
+        Method & method_, std::unique_ptr<AggregatedDataVariants> data_, VectorWithMemoryTracking<UInt64> group_counts_,
         DataTypes key_types_, Sizes key_sizes_)
         : method(method_)
         , data(std::move(data_))
@@ -329,7 +330,7 @@ public:
 private:
     Method & method;
     std::unique_ptr<AggregatedDataVariants> data;
-    const std::vector<UInt64> group_counts;
+    const VectorWithMemoryTracking<UInt64> group_counts;
     const DataTypes key_types;
     const Sizes key_sizes;
     /// `LIMIT BY` serializes keys with default settings, so the extracted keys are deserialized the same way.
@@ -421,17 +422,39 @@ void LimitByGroupFilter::processRunInsideWindow(
     UInt64 run_start_row, UInt64 run_row_count, size_t group_idx, UInt64 group_rows_seen_before_run)
 {
     const auto slice = shrinkRunToLimitWindow(run_start_row, run_row_count, group_rows_seen_before_run, group_offset, group_limit_end);
+    const UInt64 group_rows_seen_after_run = group_rows_seen_before_run + run_row_count;
 
+    /// Growing `output_slices` is a call, and a function that makes a call saves the callee-saved
+    /// registers it uses. The row loop of `consumeImpl` keeps its state in those registers, and the
+    /// saving `stp` pairs and restoring `ldp` pairs make a register that waits for the hash-table
+    /// lookup of this row delay the one it is paired with, which can be the address of the next key.
+    /// So the growth goes to a separate function called as a tail call, and this one saves nothing.
     if (slice.length > 0)
-        output_slices.push_back(slice);
+    {
+        if (unlikely(output_slices.size() == output_slices.capacity()))
+        {
+            appendOutputSliceWithGrowth(slice, group_idx, group_rows_seen_after_run);
+            return;
+        }
 
-    group_counts[group_idx] = group_rows_seen_before_run + run_row_count;
+        output_slices.resize_assume_reserved(output_slices.size() + 1);
+        output_slices.back() = slice;
+    }
+
+    group_counts[group_idx] = group_rows_seen_after_run;
+}
+
+void LimitByGroupFilter::appendOutputSliceWithGrowth(ChunkRowRange slice, size_t group_idx, UInt64 group_rows_seen_after_run)
+{
+    output_slices.push_back(slice);
+    group_counts[group_idx] = group_rows_seen_after_run;
 }
 
 void LimitByGroupFilter::addGroupFingerprint(size_t row, const ColumnRawPtrs & key_columns)
 {
-    /// The fingerprint is computed from the original row, like the fingerprints of later input rows;
-    /// rebuilding the row from the serialized key could change the bytes of aggregate states.
+    /// The fingerprint is computed from the row as the table hashes it, with negative zeros replaced, like the
+    /// fingerprints of later input rows; rebuilding the row from the serialized key could change the bytes of
+    /// aggregate states.
     group_fingerprints.push_back(ColumnsHashing::hash128(row, key_columns.size(), key_columns));
 }
 
@@ -539,6 +562,9 @@ size_t LimitByGroupFilter::estimateFilteringMemory(const Chunk & chunk) const
     return chunk.allocatedBytes() + slices_bytes + mask_bytes + prepared_keys_bytes;
 }
 
+/// `isCancelled` is polled every this many rows of the row loop below.
+constexpr UInt64 cancellation_check_batch_rows = 1024;
+
 template <bool checked_insertion, typename Method>
 bool LimitByGroupFilter::consumeImpl(
     Method & hash_method, const ColumnRawPtrs & grouping_key_columns, UInt64 row_count,
@@ -575,54 +601,68 @@ bool LimitByGroupFilter::consumeImpl(
 
         FailPointInjection::pauseFailPoint(FailPoints::limit_by_transform_pause);
 
-        for (UInt64 row_idx = 0; row_idx < row_count; ++row_idx)
+        /// Checking for cancellation on every row costs an atomic load per row and, with clang-23, the registers
+        /// the row loop needs for its hash lookup; a batch of rows is processed in microseconds, so checking once
+        /// per batch loses nothing noticeable. The check sits in an outer loop rather than behind a mask test on
+        /// the row index: on AArch64 clang-23 keeps even that test and its branch in the row loop, which costs 20%.
+        for (UInt64 batch_start_row = 0; batch_start_row < row_count; batch_start_row += cancellation_check_batch_rows)
         {
             if (processor.isCancelled())
                 return false;
 
-            if (row_idx == 5)
-                FailPointInjection::pauseFailPoint(FailPoints::limit_by_transform_mid_loop_pause);
-
-            size_t row_group_idx = 0;
-            if constexpr (checked_insertion)
+            const UInt64 batch_end_row = std::min(batch_start_row + cancellation_check_batch_rows, row_count);
+            for (UInt64 row_idx = batch_start_row; row_idx < batch_end_row; ++row_idx)
             {
-                auto find_result = state.findKey(hash_method.data, row_idx, pool);
-                if (find_result.isFound())
-                    row_group_idx = groupIndexFromMapped(find_result.getMapped());
-                else if ((*can_insert)(estimateGrowthMemoryImpl(hash_method, grouping_key_columns, row_idx, 1)))
+                if (row_idx == 5)
+                    FailPointInjection::pauseFailPoint(FailPoints::limit_by_transform_mid_loop_pause);
+
+                size_t row_group_idx = 0;
+                if constexpr (checked_insertion)
                 {
-                    auto key_emplace_result = state.emplaceKey(hash_method.data, row_idx, pool);
-                    chassert(key_emplace_result.isInserted());
-                    row_group_idx = insert_group(key_emplace_result, row_idx);
+                    auto find_result = state.findKey(hash_method.data, row_idx, pool);
+                    if (find_result.isFound())
+                        row_group_idx = groupIndexFromMapped(find_result.getMapped());
+                    else if ((*can_insert)(estimateGrowthMemoryImpl(hash_method, grouping_key_columns, row_idx, 1)))
+                    {
+                        auto key_emplace_result = state.emplaceKey(hash_method.data, row_idx, pool);
+                        chassert(key_emplace_result.isInserted());
+                        row_group_idx = insert_group(key_emplace_result, row_idx);
+                    }
+                    else
+                    {
+                        /// The rejected row is not counted; the runs before it are complete.
+                        if (row_idx > 0)
+                            processRun(current_run_start_row, row_idx - current_run_start_row, current_run_group_idx);
+                        processed_rows = row_idx;
+                        return true;
+                    }
                 }
                 else
                 {
-                    /// The rejected row is not counted; the runs before it are complete.
-                    if (row_idx > 0)
-                        processRun(current_run_start_row, row_idx - current_run_start_row, current_run_group_idx);
-                    processed_rows = row_idx;
-                    return true;
-                }
-            }
-            else
-            {
-                auto key_emplace_result = state.emplaceKey(hash_method.data, row_idx, pool);
-                if (key_emplace_result.isInserted()) /// New grouping key
-                    row_group_idx = insert_group(key_emplace_result, row_idx);
-                else /// Existing grouping key
-                {
-                    row_group_idx = groupIndexFromMapped(key_emplace_result.getMapped());
-                    chassert(row_group_idx < group_counts.size());
-                }
-            }
+                    auto key_emplace_result = state.emplaceKey(hash_method.data, row_idx, pool);
+                    /// A key is given its group index only after `push_back` succeeds. If it throws, the key stays in
+                    /// the hash table with a null mapped value, and since `ISimpleTransform::work` may pass later chunks
+                    /// to `LimitByTransform`, the key gets its group the next time it is seen.
+                    if (key_emplace_result.isInserted())
+                        key_emplace_result.setMapped(nullptr);
 
-            if (row_idx == 0)
-                current_run_group_idx = row_group_idx;
-            else if (row_group_idx != current_run_group_idx) /// Local run ended
-            {
-                processRun(current_run_start_row, row_idx - current_run_start_row, current_run_group_idx);
-                current_run_group_idx = row_group_idx;
-                current_run_start_row = row_idx;
+                    if (!key_emplace_result.getMapped()) /// New grouping key
+                        row_group_idx = insert_group(key_emplace_result, row_idx);
+                    else /// Existing grouping key
+                    {
+                        row_group_idx = groupIndexFromMapped(key_emplace_result.getMapped());
+                        chassert(row_group_idx < group_counts.size());
+                    }
+                }
+
+                if (row_idx == 0)
+                    current_run_group_idx = row_group_idx;
+                else if (row_group_idx != current_run_group_idx) /// Local run ended
+                {
+                    processRun(current_run_start_row, row_idx - current_run_start_row, current_run_group_idx);
+                    current_run_group_idx = row_group_idx;
+                    current_run_start_row = row_idx;
+                }
             }
         }
 
@@ -665,6 +705,9 @@ Chunk LimitByGroupFilter::filterImpl(Chunk chunk, const InsertionCheck * can_ins
             normalized_grouping_key_columns.push_back(removeSpecialRepresentations(chunk_columns[position]->convertToFullColumnIfConst()));
             grouping_key_columns.push_back(normalized_grouping_key_columns.back().get());
         }
+
+        /// Hash tables compare floating point keys bitwise, but `-0.` is equal to `0.`.
+        replaceNegativeZeros(grouping_key_columns, normalized_grouping_key_columns);
 
         /// `consumeImpl` maps rows to groups and splits the chunk into runs.
         bool completed = true;

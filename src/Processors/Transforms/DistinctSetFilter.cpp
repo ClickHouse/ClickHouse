@@ -1,9 +1,12 @@
 #include <Processors/Transforms/DistinctSetFilter.h>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnsNumber.h>
+#include <Columns/replaceNegativeZeros.h>
 #include <Core/Block.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/NullableUtils.h>
@@ -84,7 +87,7 @@ struct DistinctLowCardinalityFilter::DictionariesState
     };
 
     /// Per-dictionary state which may cover multiple `IColumn` instances.
-    std::unordered_map<LCDictionaryKey, LCDictState, LCDictionaryKeyHash> lc_dict_states;
+    UnorderedMapWithMemoryTracking<LCDictionaryKey, LCDictState, LCDictionaryKeyHash> lc_dict_states;
 };
 
 DistinctLowCardinalityFilter::DistinctLowCardinalityFilter()
@@ -230,7 +233,7 @@ void buildDistinctFilter(
     SetVariants & variants,
     const IColumn::Filter * mask)
 {
-    typename Method::State state(key_columns, key_sizes, /*context=*/ nullptr);
+    typename Method::State state(key_columns, key_sizes, /*context=*/ nullptr, {.skips_rows = mask != nullptr});
 
     if (mask)
     {
@@ -395,7 +398,7 @@ public:
         return {.keys = std::move(columns), .seen_rows = std::move(seen_rows)};
     }
 
-    size_t getTotalByteCount() const override
+    [[nodiscard]] size_t getTotalByteCount() const override
     {
         return data ? data->getTotalByteCount() : 0;
     }
@@ -436,6 +439,9 @@ DistinctSetFilter::HashedKeyColumns DistinctSetFilter::getHashedKeyColumns(const
     keys.columns.reserve(key_columns_pos.size());
     for (const auto pos : key_columns_pos)
         keys.columns.push_back(columns[pos].get());
+
+    /// Hash tables compare floating point keys bitwise, but `-0.` is equal to `0.`.
+    replaceNegativeZeros(keys.columns, keys.holder);
 
     if (skip_null_keys)
         keys.null_map_holder = extractNestedColumnsAndNullMap(keys.columns, keys.null_map);

@@ -8,10 +8,10 @@
 #include <Processors/Transforms/ChunkRowRange.h>
 #include <Processors/Transforms/SeenGroupExtractor.h>
 #include <Common/PODArray.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <functional>
 #include <memory>
-#include <vector>
 
 namespace DB
 {
@@ -121,8 +121,11 @@ public:
 
 private:
     /// Once a group has filled its window every later run for it is a no-op, so keep that test at the
-    /// call site: the call costs more than the work.
-    void processRun(UInt64 run_start_row, UInt64 run_row_count, size_t group_idx)
+    /// call site: the call costs more than the work. It must be inlined into the row loop of `consumeImpl`:
+    /// as an out-of-line call, clang 23 on AArch64 pairs the callee-saved register that holds the
+    /// loop-invariant hash-table pointer with the one that holds the group index just loaded from the table
+    /// in a single `stp`, which makes the next row's bucket address depend on the previous row's lookup.
+    ALWAYS_INLINE void processRun(UInt64 run_start_row, UInt64 run_row_count, size_t group_idx)
     {
         chassert(group_idx < group_counts.size());
         const UInt64 group_rows_seen_before_run = group_counts[group_idx];
@@ -132,6 +135,8 @@ private:
 
     NO_INLINE void
     processRunInsideWindow(UInt64 run_start_row, UInt64 run_row_count, size_t group_idx, UInt64 group_rows_seen_before_run);
+
+    NO_INLINE void appendOutputSliceWithGrowth(ChunkRowRange slice, size_t group_idx, UInt64 group_rows_seen_after_run);
 
     /// Appends the fingerprint of the key at `row` to `group_fingerprints`. Only a spilling filter with a key
     /// of a type without an order keeps fingerprints, so the call stays out of the row loop.
@@ -174,13 +179,13 @@ private:
     /// The number of input rows counted for each group, which decides whether the next row of that group is
     /// returned. A group stops counting once its window is full, so its count is exact below the window end
     /// and at least the window end otherwise.
-    std::vector<UInt64> group_counts;
+    VectorWithMemoryTracking<UInt64> group_counts;
 
     /// Whether every group keeps the fingerprint of its key columns: set for a filter that keeps fingerprints
     /// and a key of a type without an order.
     bool retains_fingerprints = false;
     /// Fingerprints of the groups, indexed like `group_counts`.
-    std::vector<UInt128> group_fingerprints;
+    VectorWithMemoryTracking<UInt128> group_fingerprints;
 
     /// Slices from the current chunk that will be returned.
     PODArray<ChunkRowRange> output_slices;

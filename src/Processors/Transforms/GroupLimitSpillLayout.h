@@ -31,14 +31,14 @@ public:
         SharedHeader input_header_, const ColumnNumbers & input_key_columns_pos,
         SpillKeyRepresentation key_representation_, bool attach_arrival_numbers, UInt64 group_limit_end_);
 
-    const SharedHeader & getInputRunHeader() const { return input_run_header; }
-    const SharedHeader & getSeenRunHeader() const { return seen_run_header; }
-    const SharedHeader & getMergedHeader() const { return merged_header; }
-    const SortDescription & getKeySortDescription() const { return key_sort_description; }
-    const SortDescription & getRunSortDescription() const { return run_sort_description; }
-    NameAndTypePair getSeenRowsColumn() const { return {seen_rows_column_name, seen_rows_type}; }
-    size_t getSeenRowsBytes() const { return seen_rows_type->getSizeOfValueInMemory(); }
-    const SortDescription & getArrivalNumberSortDescription() const { return arrival_number_sort_description; }
+    [[nodiscard]] const SharedHeader & getInputRunHeader() const { return input_run_header; }
+    [[nodiscard]] const SharedHeader & getSeenRunHeader() const { return seen_run_header; }
+    [[nodiscard]] const SharedHeader & getMergedHeader() const { return merged_header; }
+    [[nodiscard]] const SortDescription & getKeySortDescription() const { return key_sort_description; }
+    [[nodiscard]] const SortDescription & getRunSortDescription() const { return run_sort_description; }
+    [[nodiscard]] NameAndTypePair getSeenRowsColumn() const { return {seen_rows_column_name, seen_rows_type}; }
+    [[nodiscard]] size_t getSeenRowsBytes() const { return seen_rows_type->getSizeOfValueInMemory(); }
+    [[nodiscard]] const SortDescription & getArrivalNumberSortDescription() const { return arrival_number_sort_description; }
 
     /// Whether spilled input rows carry every column of `description`, so that they can be sorted by it. They
     /// carry the non-constant columns of `input_header`. Available before constructing the layout.
@@ -50,14 +50,14 @@ public:
         size_t num_rows, SpillKeyRepresentation key_representation, bool attach_arrival_numbers);
 
     /// Normalizes input rows, adding fingerprints for generic keys and optional arrival numbers.
-    Chunk prepareInputChunk(Chunk chunk, UInt64 first_arrival_number) const;
+    [[nodiscard]] Chunk prepareInputChunk(Chunk chunk, UInt64 first_arrival_number) const;
 
     /// Combines the owning comparison-key columns returned by a `SeenGroupExtractor` with their seen counts,
     /// clamped and narrowed to the seen-count type of the layout.
-    Chunk prepareSeenChunk(SeenGroups seen) const;
+    [[nodiscard]] Chunk prepareSeenChunk(SeenGroups seen) const;
 
     /// Restores constant columns and removes arrival numbers after merging and optional order restoration.
-    Chunk restoreOutputChunk(Chunk chunk) const;
+    [[nodiscard]] Chunk restoreOutputChunk(Chunk chunk) const;
 
 private:
     const SharedHeader input_header;
