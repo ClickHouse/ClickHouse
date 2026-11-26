@@ -41,7 +41,6 @@
 01045_order_by_pk_special_storages
 01283_max_threads_simple_query_optimization
 02784_parallel_replicas_automatic_decision_join
-04836_merge_table_parallel_replicas_duplicate_announcement
 05399_autopr_plan_without_parallel_replicas
 
     Automatic parallel replicas collects no statistics: the shipped plan has no matching step in the single-node plan
