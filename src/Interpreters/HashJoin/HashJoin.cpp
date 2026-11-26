@@ -10,6 +10,7 @@
 #include <base/sanitizer_defs.h>
 
 #include <Columns/ColumnConst.h>
+#include <Columns/replaceNegativeZeros.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnReplicated.h>
@@ -636,9 +637,14 @@ static std::optional<HashJoin::Type> tryGetLowCardinalityMethod(const ColumnPtr 
 
 bool HashJoin::preferUseMapsAll() const
 {
+    /// RIGHT ANTI emits every row of an unmatched key, except for `EXCEPT DISTINCT`, which emits one.
+    const bool right_anti_emits_all_rows = kind == JoinKind::Right && strictness == JoinStrictness::Anti
+        && table_join->setOperation() != JoinSetOperation::ExceptDistinct;
+
     return all_join_was_promoted_to_right_any // It means that we built hash tables for ALL strictness, but upon finishing found out that we can switch to RIGHT ANY.
                                               // In this case we still have to use ALL maps.
-        || table_join->getMixedJoinExpression() != nullptr;
+        || table_join->getMixedJoinExpression() != nullptr
+        || right_anti_emits_all_rows;
 }
 
 /// A set map answers whether a key is present and nothing else, so it fits exactly those joins whose
@@ -656,6 +662,11 @@ bool HashJoin::canUseSetMaps() const
     /// `joinGet`.
     if (table_join->isSpecialStorage())
         return false;
+
+    /// INNER ANY emits one left row per key, so it needs only the keys when no right column is selected. With several
+    /// disjuncts two left rows can reach the same right row through different keys, so the join marks the row itself.
+    if (kind == JoinKind::Inner && strictness == JoinStrictness::Any)
+        return table_join->oneDisjunct() && sample_block_with_columns_to_add.columns() == 0;
 
     if (kind != JoinKind::Left)
         return false;
@@ -1014,7 +1025,8 @@ bool HashJoin::addBlockToJoin(const Block & source_block, size_t /* num_rows */,
         /// Keep the dictionary for the single-LowCardinality-column maps; their key getter needs it.
         if (!isLowCardinalityType(keyType()))
             prepared_key_column = prepared_key_column->convertToFullColumnIfLowCardinality();
-        all_key_columns[column_name] = prepared_key_column;
+        /// Hash tables compare floating point keys bitwise, but `-0.` is equal to `0.`.
+        all_key_columns[column_name] = replaceNegativeZeros(prepared_key_column);
     }
 
     if (strictness == JoinStrictness::Asof)

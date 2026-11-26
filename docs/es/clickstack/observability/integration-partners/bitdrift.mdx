@@ -1,0 +1,105 @@
+---
+slug: /clickstack/observability/integration-partners/bitdrift
+title: 'Correlación de sesiones móviles de bitdrift con trazas de ClickStack'
+sidebarTitle: 'bitdrift'
+description: 'Correlacione sesiones móviles de bitdrift con trazas del backend en ClickStack mediante el contexto de traza de OpenTelemetry, sin exportar la telemetría móvil'
+doc_type: 'guide'
+keywords: ['bitdrift', 'ClickStack', 'ClickHouse', 'OpenTelemetry', 'observabilidad móvil', 'tracing']
+---
+
+import { PartnerBadge } from "/snippets/es/components/PartnerBadge/PartnerBadge.jsx";
+
+<PartnerBadge />
+
+<Info>
+  **Resumen**
+
+  Esta guía muestra cómo correlacionar las sesiones móviles de bitdrift con las trazas del backend ya almacenadas en ClickStack mediante el contexto de traza de OpenTelemetry. La telemetría móvil en sí permanece en bitdrift: no se exporta nada a ClickStack. Aprenderá a:
+
+  * Activar las integraciones de red y de tracing de bitdrift en aplicaciones móviles
+  * Activar el tracing en su inquilino de bitdrift y configurar sus enlaces profundos para que apunten a su instancia de ClickStack
+  * Seguir un ID de traza desde una sesión móvil en bitdrift hasta la UI de ClickStack
+
+  bitdrift captura telemetría detallada y sin muestreo en el dispositivo móvil; ClickStack almacena y consulta la traza del backend una vez que la solicitud llega a sus servicios instrumentados con OpenTelemetry.
+
+  Tiempo necesario: 10-15 minutos
+</Info>
+
+## ¿Qué es bitdrift? {#what-is-bitdrift}
+
+[bitdrift](https://bitdrift.io/) es una plataforma de observabilidad dinámica diseñada específicamente para aplicaciones móviles. Consta de tres componentes principales:
+
+* **El [SDK de Capture](https://bitdrift.io/feature/performance-centric)**, una biblioteca ligera y multiplataforma desarrollada en Rust con delgadas envolturas específicas para cada plataforma, que escribe la telemetría en un búfer circular de tamaño fijo en el dispositivo en lugar de enviarla de inmediato en streaming.
+* **El plano de control**, que mantiene una conexión bidireccional persistente con cada cliente y envía nuevas configuraciones en tiempo real para decidir qué se recopila y qué se carga.
+* **La plataforma bitdrift**, donde los flujos de trabajo, las líneas de tiempo de sesiones, los gráficos, los issues y las alertas convierten la telemetría móvil en respuestas, y a la que se puede acceder mediante la interfaz de usuario web, la CLI, agentes de IA y una API pública.
+
+bitdrift conserva la telemetría móvil en el edge hasta que se solicita, de modo que los equipos pueden obtener la sesión completa y sin muestrear que condujo a una terminación inesperada o a un problema de rendimiento, en lugar de trabajar con un conjunto fijo de señales muestreadas previamente. La plataforma bitdrift Capture está disponible como SaaS alojado por bitdrift o como implementación *bring-your-own-cloud* (o *bucket*) en su cuenta de AWS.
+
+<div className="ch-image-lg">
+  <Frame>
+    ![Un panel de control User Journey de bitdrift que muestra las rutas hacia un ANR](/images/clickstack/bitdrift/bitdrift-user-journey-dashboard.png)
+  </Frame>
+</div>
+
+*Un panel de control User Journey de bitdrift que muestra las rutas que siguen los usuarios hasta llegar a un ANR.*
+
+## ¿Por qué bitdrift + ClickStack? {#why-bitdrift-clickstack}
+
+ClickStack ofrece a los equipos de ingeniería una solución de observabilidad basada en ClickHouse que recopila, almacena y consulta datos de servicios de backend, frontends web e infraestructura. bitdrift amplía esa base hasta el dispositivo móvil, donde se originan muchos de los problemas más complejos en producción.
+
+* **bitdrift muestra lo que ocurrió en el dispositivo**: acciones del usuario, estado de la aplicación, solicitudes de red, logs, errores, terminaciones inesperadas, señales de rendimiento y el contexto de la sesión en la que se produjeron.
+* **ClickStack muestra lo que ocurrió una vez que la solicitud llegó al backend**: trazas distribuidas, dependencias entre servicios, logs, métricas, operaciones de base de datos y comportamiento de la infraestructura.
+* **El contexto de traza de OpenTelemetry conecta ambos mundos.**
+
+Una investigación puede comenzar en bitdrift con un checkout fallido, una pantalla que tarda en cargar, un error de autenticación o una terminación inesperada. A partir de la solicitud de red, un ingeniero sigue el ID de traza hasta la UI de ClickStack y observa cómo la solicitud recorre los servicios de backend, sin tener que reconstruir manualmente lo ocurrido a partir de marcas de tiempo dispersas.
+
+<Tip>
+  **Puntos clave**
+
+  * **bitdrift** captura telemetría nativa de móvil y sin muestreo en las aplicaciones móviles, y vincula los ID de traza capturados con su traza del backend.
+  * **ClickStack** almacena y consulta en ClickHouse la traza distribuida resultante y la muestra en la UI de ClickStack.
+</Tip>
+
+## Requisitos previos {#prerequisites}
+
+* Un servicio de **ClickHouse Observability** que reciba trazas del backend. Consulte [Primeros pasos con ClickHouse Observability totalmente gestionado](/es/clickstack/observability/getting-started) o siga la [guía de primeros pasos para la versión autogestionada](/es/clickstack/self-configured/getting-started/managed) si utiliza su propio recolector de ingestión.
+* Sus servicios de backend instrumentados con **OpenTelemetry** y enviando trazas a ClickStack. Consulte [Ingesta con OpenTelemetry](/es/clickstack/observability/ingesting-data/opentelemetry).
+* El **SDK de Capture de bitdrift** integrado en su aplicación móvil. Consulte la [documentación del SDK de bitdrift](https://docs.bitdrift.io/) para ver las instrucciones de instalación.
+* Una **cuenta de bitdrift** y acceso a [Soporte](https://bitdrift.io/contact-us) para que habiliten el tracing en su inquilino (el tracing es una funcionalidad experimental que bitdrift habilita por inquilino).
+
+## Configurar el tracing {#configure-tracing}
+
+La configuración se realiza íntegramente en bitdrift, en tres pasos:
+
+1. Solicite al [Soporte de bitdrift](https://bitdrift.io/contact-us) que **active el tracing para su inquilino y configure el enlace profundo de trazas hacia su instancia de la UI de ClickStack**. La configuración del enlace profundo es lo que hace que los enlaces **Ver traza** apunten a su UI de ClickStack; sin ella, el tracing se captura, pero no aparece ningún enlace **Ver traza**.
+2. **Active la integración de red de bitdrift** para su plataforma, de modo que los encabezados de tracing se propaguen en las solicitudes salientes.
+3. **Agregue una acción de flujo de trabajo Start Tracing** para activar el tracing en las sesiones que le interesen.
+
+Para conocer los detalles de cada paso según la plataforma, consulte [How bitdrift and ClickStack work together](https://docs.bitdrift.io/product/integration-partners/clickhouse#how-bitdrift-and-clickstack-work-together) en la documentación de bitdrift.
+
+Una vez completada la configuración, las filas de log de la línea de tiempo y las vistas de span de bitdrift muestran un enlace **Ver traza** que lleva el ID de traza capturado a la UI de ClickStack.
+
+<div className="ch-image-lg">
+  <Frame>
+    ![Una traza de bitdrift enlazada a una traza distribuida en la UI de ClickStack](/images/clickstack/bitdrift/bitdrift-view-trace.jpg)
+  </Frame>
+</div>
+
+*Navegación desde una sesión de bitdrift, a través de un enlace Ver traza, hasta una traza distribuida en la UI de ClickStack.*
+
+## Flexibilidad de implementación {#deployment-flexibility}
+
+La integración funciona tanto si ClickStack es autogestionado como si se ejecuta como servicio gestionado en ClickHouse Cloud, ya que no modifica la forma en que los datos llegan a ClickStack. bitdrift no exporta telemetría móvil a ClickStack: captura en el dispositivo el contexto de traza de OpenTelemetry de una solicitud y lo vincula a la traza del backend que sus propios servicios instrumentados con OpenTelemetry ya envían a ClickStack. bitdrift solo necesita la dirección de su UI de ClickStack para generar el enlace **Ver traza**, por lo que no es necesario modificar su implementación de ClickStack ni su canalización de ingestión.
+
+## Próximos pasos {#next-steps}
+
+* **Siga una investigación real**, desde una terminación inesperada de una aplicación móvil o una solicitud lenta en bitdrift hasta la traza del backend en ClickStack
+* **Cree dashboards** en la UI de ClickStack para los servicios de backend de los que depende su aplicación móvil
+* **Explore el [sandbox de bitdrift](https://bitdrift.io/sandbox)** para descubrir cómo es trabajar con Capture
+* **Comience un [período de prueba gratuito](https://bitdrift.io/signup)** para añadir bitdrift a su aplicación móvil
+
+## Más información {#read-more}
+
+* [Documentación de bitdrift: Integración de ClickHouse](https://docs.bitdrift.io/product/integration-partners/clickhouse)
+* [Primeros pasos con ClickHouse Observability](/es/clickstack/observability/getting-started)
+* [Ingesta con OpenTelemetry](/es/clickstack/observability/ingesting-data/opentelemetry)
