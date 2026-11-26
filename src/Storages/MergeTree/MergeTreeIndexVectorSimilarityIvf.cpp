@@ -208,7 +208,7 @@ void rotateRow(const std::vector<float> & rotation, const float * x, size_t dime
 }
 
 /// The records of `n` rows, as `GPU::IvfTreeRouter::assignAndEncode` makes them on the device.
-void assignAndEncodeOnCpu(const IvfTree & tree, const std::vector<float> & rotation, const std::vector<float> & rotated_centroids,
+void assignAndEncodeOnCPU(const IvfTree & tree, const std::vector<float> & rotation, const std::vector<float> & rotated_centroids,
     const float * vectors, size_t n, size_t dimensions, size_t beam, UInt32 first_row, char * records)
 {
     const size_t code_bytes = GPU::IvfQuantization::codeBytes(dimensions);
@@ -240,10 +240,10 @@ void assignAndEncodeOnCpu(const IvfTree & tree, const std::vector<float> & rotat
 
 /// The scan of lists of `IvfQuantization` codes on the CPU, as `GPU::IvfListScan` does it on the device: the `select` rows
 /// nearest to the query by their codes.
-class CpuListScan
+class CPUListScan
 {
 public:
-    CpuListScan(const float * query, size_t dimensions_, size_t select_, const std::vector<float> & rotation)
+    CPUListScan(const float * query, size_t dimensions_, size_t select_, const std::vector<float> & rotation)
         : dimensions(dimensions_)
         , words(GPU::IvfQuantization::codeWords(dimensions_))
         , select(select_)
@@ -552,7 +552,7 @@ NearestNeighbours MergeTreeIndexGranuleIvf::search(const std::vector<float> & qu
     };
 
     std::optional<GPU::IvfListScan> scan;
-    std::optional<CpuListScan> cpu_scan;
+    std::optional<CPUListScan> cpu_scan;
     if (on_gpu)
         scan.emplace(query.data(), 1, dimensions, select, rotation.data());
     else
@@ -787,7 +787,7 @@ MergeTreeIndexGranulePtr MergeTreeIndexAggregatorIvf::getGranuleAndReset()
             if (router)
                 router->assignAndEncode(block.data(), n, beam, static_cast<UInt32>(first), records.data());
             else
-                assignAndEncodeOnCpu(tree, granule->rotation, granule->rotated_centroids, block.data(), n, dimensions, beam,
+                assignAndEncodeOnCPU(tree, granule->rotation, granule->rotated_centroids, block.data(), n, dimensions, beam,
                     static_cast<UInt32>(first), records.data());
             assign_seconds += assign_watch.elapsedSeconds();
             ProfileEvents::increment(ProfileEvents::IvfIndexAssignMicroseconds, assign_watch.elapsedMicroseconds());
