@@ -209,6 +209,11 @@ bool readsRowsTillEnd(const IdentifierResolveScope & scope)
     return (query_node && query_node->isGroupByWithTotals()) || scope.context->getSettingsRef()[Setting::exact_rows_before_limit];
 }
 
+bool usesParallelReplicas(const IdentifierResolveScope & scope)
+{
+    return scope.context->getSettingsRef()[Setting::allow_experimental_parallel_reading_from_replicas] != 0;
+}
+
 bool readsRemoteSource(const IQueryTreeNode & node)
 {
     if (const auto * table_node = node.as<TableNode>())
@@ -223,7 +228,7 @@ bool readsRemoteSource(const IQueryTreeNode & node)
     return false;
 }
 
-/// Whether the rows the `exists_node` filter selects reach no output: its query is a table expression, at any depth, of a `LIMIT 0` query that reads no remote table.
+/// Whether the rows the `exists_node` filter selects reach no output: its query is a table expression, at any depth, of a `LIMIT 0` query that reads no remote table, with parallel replicas off on the way.
 bool isExistsResultDiscardedByLimitZero(
     const IdentifierResolveScope & scope, const IQueryTreeNode * exists_node, const std::function<bool(const String &)> & is_builtin_function)
 {
@@ -232,7 +237,7 @@ bool isExistsResultDiscardedByLimitZero(
 
     for (const auto * current = &scope; current->parent_scope; current = current->parent_scope)
     {
-        if (readsRowsTillEnd(*current))
+        if (readsRowsTillEnd(*current) || usesParallelReplicas(*current))
             return false;
 
         const auto & parent = *current->parent_scope;
@@ -251,7 +256,7 @@ bool isExistsResultDiscardedByLimitZero(
             if (hasLimitZero(*parent_query_node))
             {
                 const auto & join_tree = parent_query_node->getJoinTreeNode();
-                return !readsRowsTillEnd(parent) && !(join_tree && readsRemoteSource(*join_tree));
+                return !readsRowsTillEnd(parent) && !usesParallelReplicas(parent) && !(join_tree && readsRemoteSource(*join_tree));
             }
         }
         else
@@ -2410,8 +2415,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             /// A row filter of rows an outer `LIMIT 0` discards is never needed: keep it a set, which that `LIMIT` never builds.
             /// Parallel replicas or a remote table under that `LIMIT 0` query would build the set on other servers: keep the scalar path.
             if (only_analyze || !scope.context->getSettingsRef()[Setting::execute_exists_as_scalar_subquery]
-                || (!scope.context->getSettingsRef()[Setting::allow_experimental_parallel_reading_from_replicas]
-                    && isExistsResultDiscardedByLimitZero(scope, function_node_ptr.get(), is_builtin_function)))
+                || isExistsResultDiscardedByLimitZero(scope, function_node_ptr.get(), is_builtin_function))
             {
                 /// Rewrite EXISTS (subquery) into 1 IN (SELECT 1 FROM (subquery) LIMIT 1).
                 QueryTreeNodePtr constant = std::make_shared<ConstantNode>(1UL, constant_data_type);

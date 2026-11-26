@@ -72,6 +72,11 @@ SETTINGS log_comment = 'exists_limit_zero_parallel_replicas_allow_in', enable_pa
 max_parallel_replicas = 3, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost',
 parallel_replicas_for_non_replicated_merge_tree = 1, automatic_parallel_replicas_mode = 0;
 
+SELECT * FROM (SELECT c1 FROM t WHERE NOT exists((SELECT 1 FROM (SELECT c2 AS k, count() AS c FROM t GROUP BY k HAVING c > 1))) SETTINGS enable_parallel_replicas = 0) LIMIT 0
+SETTINGS log_comment = 'exists_limit_zero_parallel_replicas_outer', enable_parallel_replicas = 1,
+max_parallel_replicas = 3, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost',
+parallel_replicas_for_non_replicated_merge_tree = 1, automatic_parallel_replicas_mode = 0;
+
 SYSTEM FLUSH LOGS query_log;
 
 SELECT log_comment, ProfileEvents['ScalarSubqueriesCacheMiss'], read_rows > 0

@@ -21,6 +21,7 @@ exists_limit_zero_no_limit_zero	1	1
 exists_limit_zero_own_limit_zero	1	1
 exists_limit_zero_parallel_replicas	1	1
 exists_limit_zero_parallel_replicas_allow_in	1	1
+exists_limit_zero_parallel_replicas_outer	1	1
 exists_limit_zero_prewhere	1	1
 exists_limit_zero_qualify	0	0
 exists_limit_zero_scalar_subquery	2	1
