@@ -865,7 +865,11 @@ void ColumnAggregateFunction::getExtremes(Field & min, Field & max, size_t /*sta
 ColumnAggregateFunction::MutablePtr ColumnAggregateFunction::createView() const
 {
     auto res = create(func, concatArenas(foreign_arenas, my_arena), version);
-    res->src = getPtr();
+    /// A view of a view refers to the owner of the states, so all views of the same states have the same `src`.
+    if (src)
+        res->src = src;
+    else
+        res->src = getPtr();
     /// The view refers to the same states, so it must keep the state version:
     /// the version affects how the states are serialized (e.g. in `groupArray` over a state column).
     res->version = version;

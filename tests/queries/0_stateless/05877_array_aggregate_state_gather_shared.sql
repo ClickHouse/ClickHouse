@@ -15,3 +15,9 @@ WITH arrayReduce('groupArrayState', range(toUInt64(1000))) AS st
 SELECT sum(arraySum(arrayMap(x -> length(x[1]), z)))
 FROM (SELECT replicate([replicate(st, range(number))], range(if(number = 0, 65536, 131072))) AS z FROM numbers(2))
 SETTINGS max_block_size = 200000;
+
+-- A row longer than a chunk is copied directly, and the following rows are gathered from views of the same states.
+WITH arrayReduce('groupArrayState', range(toUInt64(1000))) AS st
+SELECT sum(length(arrayFlatten(z)))
+FROM (SELECT replicate(replicate(st, range(if(number = 0, 65537, 1))), range(if(number = 0, 1, 65536))) AS z FROM numbers(2))
+SETTINGS max_block_size = 100000, max_memory_usage = 100000000;
