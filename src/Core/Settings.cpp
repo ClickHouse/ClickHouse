@@ -10871,7 +10871,7 @@ In some cases, where the inputs/outputs are indivisible by the number of split `
 The `min_outstreams_per_resize_after_split` setting ensures that the splitting of `Resize` nodes is meaningful and avoids creating too few streams, which could lead to inefficient parallel processing. By enforcing a minimum number of output streams, this setting helps maintain a balance between parallelism and overhead, optimizing query execution in scenarios involving stream splitting and merging.
 
 ### Disabling the Setting
-To disable the split of `Resize` and `StickyResize` nodes, set this setting to 0. This will prevent the splitting of these nodes during pipeline generation, allowing them to retain their original structure without division into smaller nodes.
+To disable the split of `Resize`, `StrictResize` and `StickyResize` nodes, set this setting to 0. This will prevent the splitting of these nodes during pipeline generation, allowing them to retain their original structure without division into smaller nodes.
 )", 0, \
         {"25.6", 0, 24, "New setting."}) \
     DECLARE(Bool, enable_add_distinct_to_in_subqueries, false, R"(
