@@ -417,8 +417,8 @@ public:
         replaced.key_bytes += staged.key_bytes;
         replaced.record_bytes += staged.record_bytes;
     }
-    size_t replacedRecords() const { return replaced_records; }
-    const AdaptiveStagedBytes & replacedBytes() const { return replaced; }
+    [[nodiscard]] size_t replacedRecords() const { return replaced_records; }
+    [[nodiscard]] const AdaptiveStagedBytes & replacedBytes() const { return replaced; }
 
     /// Marks the block's keys as constant, before the misses are added: their columns hold a single row, from which every
     /// key is read, while the arguments of each record stay at its source row. The records then share the kept bytes of

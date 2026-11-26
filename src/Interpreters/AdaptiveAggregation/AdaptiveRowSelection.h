@@ -35,7 +35,7 @@ struct AdaptiveRowSelection
     std::vector<size_t> count_aggregates;
 
     /// Whether a record carries the number of rows it stands for, which a `count` needs.
-    bool countsRows() const { return !count_aggregates.empty(); }
+    [[nodiscard]] bool countsRows() const { return !count_aggregates.empty(); }
 };
 
 /// The row selection of `aggregates`, or null when they do not all select one row by the same ordering column
