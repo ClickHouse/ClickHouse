@@ -716,14 +716,15 @@ TEST(Statistics, LikeSelectivity)
     UInt64 notilike_direct_rows = estimate("a not ilike '%pattern%'");
     EXPECT_EQ(notilike_direct_rows, 9000u);
 
-    /// Patterns estimated from statistics: `s` has 10000 distinct values, `f` the same as `FixedString(4)`, and `n` is
-    /// NULL in 99% of the rows.
+    /// Patterns estimated from statistics: `s` has 10000 distinct values, `f` the same as `FixedString(4)`, `n` is NULL in
+    /// 99% of the rows and `h` in half of them.
     tryRegisterAggregateFunctions();
     const DataTypePtr nullable_type = std::make_shared<DataTypeNullable>(data_type);
     const DataTypePtr fixed_type = std::make_shared<DataTypeFixedString>(4);
     MutableColumnPtr s_col = data_type->createColumn();
     MutableColumnPtr n_col = nullable_type->createColumn();
     MutableColumnPtr f_col = fixed_type->createColumn();
+    MutableColumnPtr h_col = nullable_type->createColumn();
     for (Int32 i = 0; i < 10000; ++i)
     {
         s_col->insert(toString(i));
@@ -732,6 +733,10 @@ TEST(Statistics, LikeSelectivity)
             n_col->insert(toString(i));
         else
             n_col->insertDefault();
+        if (i % 2 == 0)
+            h_col->insert(toString(i));
+        else
+            h_col->insertDefault();
     }
 
     ConditionSelectivityEstimatorBuilder pattern_builder(getContext().context);
@@ -744,19 +749,22 @@ TEST(Statistics, LikeSelectivity)
     add_statistics("s", data_type, std::move(s_col));
     add_statistics("n", nullable_type, std::move(n_col));
     add_statistics("f", fixed_type, std::move(f_col));
+    add_statistics("h", nullable_type, std::move(h_col));
     pattern_builder.incrementRowCount(10000);
     auto pattern_estimator = pattern_builder.getEstimator();
-    NamesAndTypesList pattern_columns{{"s", data_type}, {"n", nullable_type}, {"f", fixed_type}};
+    NamesAndTypesList pattern_columns{{"s", data_type}, {"n", nullable_type}, {"f", fixed_type}, {"h", nullable_type}};
     auto estimate_pattern = [&](const String & expression) { return estimateRowsFor(pattern_estimator, expression, pattern_columns); };
 
-    /// A pattern without wildcards is an equality: for `ILIKE` only when empty, for a `FixedString` only at its length.
+    /// A pattern without wildcards is an equality: for `ILIKE` only when empty, for a `FixedString` only at its length
+    /// (at another, it matches nothing).
     EXPECT_EQ(estimate_pattern("s like '1234'"), estimate_pattern("s = '1234'"));
     EXPECT_EQ(estimate_pattern("s like '12#%' escape '#'"), estimate_pattern("s = '12%'"));
     EXPECT_EQ(estimate_pattern("s not like '1234'"), estimate_pattern("s != '1234'"));
     EXPECT_EQ(estimate_pattern("s ilike ''"), estimate_pattern("s = ''"));
     EXPECT_EQ(estimate_pattern("s ilike 'abc'"), 1000u);
     EXPECT_EQ(estimate_pattern("f like '1234'"), estimate_pattern("f = '1234'"));
-    EXPECT_EQ(estimate_pattern("f like '12'"), 1000u);
+    EXPECT_EQ(estimate_pattern("f like '12'"), 0u);
+    EXPECT_EQ(estimate_pattern("f not like '12'"), 10000u);
 
     /// `%` matches every non-NULL value.
     EXPECT_EQ(estimate_pattern("n like '%'"), estimate_pattern("n is not null"));
@@ -768,12 +776,24 @@ TEST(Statistics, LikeSelectivity)
     EXPECT_EQ(estimate_pattern("n not like '%12%'"), 90u);
     EXPECT_EQ(estimate_pattern("not (n like '%12%')"), 90u);
 
+    /// They keep that share once, whatever else is on the column.
+    EXPECT_EQ(estimate_pattern("h like '%1%'"), 500u);
+    EXPECT_EQ(estimate_pattern("h is not null and h like '%1%'"), 500u);
+    EXPECT_EQ(estimate_pattern("h like '%1%' and h != 'c'"), 500u);
+    EXPECT_EQ(estimate_pattern("h like '%1%' and h like '%2%'"), 50u);
+    EXPECT_EQ(estimate_pattern("not (h like '%1%' and h like '%2%')"), 4950u);
+    EXPECT_EQ(estimate_pattern("h not like '%1%' and h not like '%2%'"), 4050u);
+    EXPECT_EQ(estimate_pattern("h not like '%1%' and h not like '%2%' and h not like '%3%'"), 3645u);
+    EXPECT_EQ(estimate_pattern("not (h like '%1%') and h is not null"), 4500u);
+    EXPECT_EQ(estimate_pattern("h like '%1%' and h is null"), 0u);
+
     for (const char * name : {"startsWith", "startsWithUTF8", "startsWithCaseInsensitive", "startsWithCaseInsensitiveUTF8",
                               "endsWith", "endsWithUTF8", "endsWithCaseInsensitive", "endsWithCaseInsensitiveUTF8"})
     {
         EXPECT_EQ(estimate_pattern(String(name) + "(s, '12')"), 1000u) << name;
         EXPECT_EQ(estimate_pattern(String(name) + "(n, '12')"), 10u) << name;
         EXPECT_EQ(estimate_pattern(String(name) + "(n, '')"), 100u) << name;
+        EXPECT_EQ(estimate_pattern(String(name) + "(s, s)"), estimate_pattern("s like s")) << name;
     }
 }
 

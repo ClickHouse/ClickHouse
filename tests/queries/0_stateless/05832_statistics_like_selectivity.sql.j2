@@ -39,6 +39,8 @@ INSERT INTO tab SELECT number, toString(number), if(number % 100 = 0, toString(n
     ("prefix LIKE on NULLs", "n LIKE '12%' AND x < 50", "startsWith(", "less("),
     ("prefix LIKE on NULLs lower bound", "n LIKE '12%' AND x < 5", "less(", "startsWith("),
     ("NOT LIKE on NULLs", "n NOT LIKE '%12%' AND x < 500", "notLike(", "less("),
+    ("NOT LIKE chain on NULLs", "n NOT LIKE '%1%' AND n NOT LIKE '%2%' AND x < 500", "notLike(", "less("),
+    ("NOT LIKE chain on NULLs lower bound", "n NOT LIKE '%1%' AND n NOT LIKE '%2%' AND x < 50", "less(", "notLike("),
     ("startsWithUTF8", "startsWithUTF8(s, '12') AND x < 2000", "startsWithUTF8(", "less("),
     ("startsWith empty", "startsWith(n, '') AND x < 500", "startsWith(", "less("),
     ("startsWith empty lower bound", "startsWith(n, '') AND x < 50", "less(", "startsWith("),

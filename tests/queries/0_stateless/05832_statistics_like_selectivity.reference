@@ -15,6 +15,8 @@ suffix LIKE lower bound	1
 prefix LIKE on NULLs	1
 prefix LIKE on NULLs lower bound	1
 NOT LIKE on NULLs	1
+NOT LIKE chain on NULLs	1
+NOT LIKE chain on NULLs lower bound	1
 startsWithUTF8	1
 startsWith empty	1
 startsWith empty lower bound	1

@@ -89,13 +89,23 @@ public:
         /// the same column still merge with the earlier ones. `finalize` applies it at the end.
         /// Only meaningful under `FUNCTION_AND`: `P(a OR unknown)` is not `P(a) * f`.
         Selectivity absorbed_and_selectivity{1.0, 0.0};
+        /// Share of a column's non-NULL rows kept by conditions no range describes, e.g. a `LIKE` estimated by a default.
+        /// Such a condition is NULL exactly on the NULL rows, so its factor scales the column's TRUE share only.
+        std::unordered_map<String, Float64> column_factors;
 
         [[nodiscard]] bool hasAbsorbed() const { return absorbed_and_selectivity.true_sel != 1.0 || absorbed_and_selectivity.null_sel != 0.0; }
 
+        /// Only the factor of one column: `NOT` turns it from `f` into `1 - f`.
+        [[nodiscard]] bool isSingleColumnFactor() const
+        {
+            return !finalized && column_factors.size() == 1 && !hasAbsorbed() && column_ranges.empty() && column_not_ranges.empty()
+                && null_check_columns.empty() && not_null_check_columns.empty();
+        }
+
         /// Carries no ranges and no null checks, so it contributes a bare number and nothing a merge
-        /// could represent: an unknown atom, a `LIKE` estimated by a default, or a clause already
-        /// reduced to a selectivity. Under `AND` such a factor is absorbed rather than forcing both
-        /// sides to be finalized, which is what keeps the ranges around it mergeable.
+        /// could represent: an unknown atom or a clause already reduced to a selectivity. Under `AND`
+        /// such a factor is absorbed rather than forcing both sides to be finalized, which is what
+        /// keeps the ranges around it mergeable.
         ///
         /// `ALWAYS_TRUE` and `ALWAYS_FALSE` are deliberately excluded although they carry no ranges
         /// either. They are read back as a `function` - the `AND`/`OR` folding drops or propagates a
@@ -108,7 +118,7 @@ public:
                 return false;
 
             return column_ranges.empty() && column_not_ranges.empty()
-                && null_check_columns.empty() && not_null_check_columns.empty();
+                && null_check_columns.empty() && not_null_check_columns.empty() && column_factors.empty();
         }
 
         bool tryToMergeClauses(RPNElement & lhs, RPNElement & rhs);
