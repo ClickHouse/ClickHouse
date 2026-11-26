@@ -225,10 +225,6 @@ struct FunctionResultSetting;
 bool conversionResultDependsOnSetting(
     const FunctionResultSetting & setting, const DataTypePtr & from, const DataTypePtr & to, bool creates_result_type = true);
 
-/// For `resultDependsOnSetting` of `if`, `multiIf` and `transform`: `optimize_if_transform_const_strings_to_lowcardinality` and
-/// `optimize_if_transform_strings_to_enum` change only a result of text, any other setting always applies.
-bool stringBranchesResultDependsOnSetting(const FunctionResultSetting & setting, const DataTypePtr & result_type);
-
 bool isDecimalOrNullableDecimal(const DataTypePtr & type);
 bool isLowCardinalityType(const IDataType & type);
 /// Returns true if any of the argument types is or contains LowCardinality

@@ -1,6 +1,5 @@
 #include <Functions/multiIf.h>
 #include <Functions/FunctionFactory.h>
-#include <Functions/FunctionResultSetting.h>
 #include <Functions/FunctionIfBase.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Columns/ColumnNullable.h>
@@ -65,7 +64,6 @@ namespace
 class FunctionMultiIf final : public FunctionIfBase
 {
 public:
-    static constexpr FunctionResultSetting result_settings[] = {Setting::optimize_if_transform_const_strings_to_lowcardinality, Setting::optimize_if_transform_strings_to_enum};
     static constexpr auto name = "multiIf";
     static FunctionPtr create(ContextPtr context_)
     {

@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Common/VectorWithMemoryTracking.h>
@@ -129,13 +128,6 @@ private:
         return result.getSizeOfValueInMemory() == sizeof(Int32) && lifted < std::numeric_limits<Int32>::lowest();
     }
 #endif
-
-public:
-    [[nodiscard]] bool resultDependsOnSetting(
-        const FunctionResultSetting & setting, const DataTypes & /*arguments*/, const DataTypePtr & result_type) const override
-    {
-        return stringBranchesResultDependsOnSetting(setting, result_type);
-    }
 };
 
 }

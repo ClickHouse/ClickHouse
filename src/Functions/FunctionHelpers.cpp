@@ -57,8 +57,6 @@ namespace Setting
     extern const SettingsBool input_format_try_infer_variants;
     extern const SettingsBool input_format_tsv_use_best_effort_in_schema_inference;
     extern const SettingsUInt64Auto schema_inference_make_columns_nullable;
-    extern const SettingsBool optimize_if_transform_const_strings_to_lowcardinality;
-    extern const SettingsBool optimize_if_transform_strings_to_enum;
     extern const SettingsTimezone session_timezone;
 }
 
@@ -598,16 +596,6 @@ bool conversionResultDependsOnSetting(
     /// Text, and values without a time zone of their own, are placed in the time zone of the result.
     return has_type(from, [&](const IDataType & type)
         { return is_text(type) || may_hold_any(type) || isDateOrDate32(type) || isTime(type) || isTime64(type); });
-}
-
-bool stringBranchesResultDependsOnSetting(const FunctionResultSetting & setting, const DataTypePtr & result_type)
-{
-    if (!(setting == FunctionResultSetting(Setting::optimize_if_transform_const_strings_to_lowcardinality))
-        && !(setting == FunctionResultSetting(Setting::optimize_if_transform_strings_to_enum)))
-        return true;
-
-    WhichDataType which(removeNullable(removeLowCardinality(result_type)));
-    return which.isStringOrFixedString() || which.isEnum();
 }
 
 bool isDecimalOrNullableDecimal(const DataTypePtr & type)

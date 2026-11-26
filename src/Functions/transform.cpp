@@ -16,7 +16,6 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Functions/FunctionFactory.h>
-#include <Functions/FunctionResultSetting.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Functions/IFunctionAdaptors.h>
@@ -100,12 +99,6 @@ namespace
         FunctionTransform() = default;
 
         String getName() const override { return name; }
-
-        [[nodiscard]] bool resultDependsOnSetting(
-            const FunctionResultSetting & setting, const DataTypes & /*arguments*/, const DataTypePtr & result_type) const override
-        {
-            return stringBranchesResultDependsOnSetting(setting, result_type);
-        }
 
         bool isVariadic() const override { return true; }
         bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
@@ -867,7 +860,6 @@ namespace
     class FunctionTransformOverloadResolver final : public IFunctionOverloadResolver
     {
     public:
-        static constexpr FunctionResultSetting result_settings[] = {Setting::optimize_if_transform_const_strings_to_lowcardinality, Setting::optimize_if_transform_strings_to_enum};
         static constexpr auto name = "transform";
         static FunctionOverloadResolverPtr create(ContextPtr context)
         {
