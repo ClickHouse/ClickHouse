@@ -156,6 +156,7 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 /// `IMPORTANT`, so a peer at this version that does not know the name yet rejects the plan instead of
 /// skipping the name and aggregating with another method.
 /// Version 21 also adds `min_string_column_bytes_for_hash_join_row_store` to the join step settings.
+/// Version 22 writes version 1 of the `Union` step, see `DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_UNION_RESIZE_TO_MAX_THREADS`.
 ///
 /// Rules for this version:
 /// - Bump it at most once per release: the first change in a release that needs it bumps it, later changes
@@ -167,8 +168,8 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 ///   bumps its own serialization version instead, with the value of the current release as `since_plan_version`
 ///   (see `QueryPlanStepRegistry::StepVersions`).
 ///
-/// Last bumped for release 26.11.
-static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 21;
+/// Last bumped for release 26.12.
+static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 22;
 /// The oldest query-plan serialization version that can be written or read. Below it, the step settings were
 /// encoded in a binary form that is not supported anymore. A plan is not serialized for such a peer, and a plan
 /// from such a peer is not deserialized.
@@ -255,7 +256,7 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_DISTINCT_LI
 /// First global query-plan version that writes version 1 of `Union`, adding the flag that resizes its output to
 /// `max_threads` streams. Towards an older peer the flag is omitted: the peer keeps the wider pipeline, which is
 /// slower but returns the same result.
-static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_UNION_RESIZE_TO_MAX_THREADS = 21;
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_UNION_RESIZE_TO_MAX_THREADS = 22;
 /// First global query-plan version that writes version 1 of `ReadFromMergeTree`, which carries the
 /// `allow_query_condition_cache` flag bit. A read whose query-condition cache was disabled for
 /// correctness cannot be shipped to a peer below this version: the peer would ignore the bit and
