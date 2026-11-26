@@ -38,5 +38,19 @@ OPTIMIZE TABLE t_shadow_minmax_replacing FINAL;
 SELECT count() FROM t_shadow_minmax_replacing WHERE `a.key_x.y` = 8;
 SELECT countIf(`a.key_x.y` = 8) FROM t_shadow_minmax_replacing;
 
+SELECT '-- a vertical merge that may reduce rows';
+DROP TABLE IF EXISTS t_shadow_minmax_replacing_vertical;
+CREATE TABLE t_shadow_minmax_replacing_vertical (id UInt64, a Map(String, UInt64), `a.key_x` Tuple(y UInt64))
+ENGINE = ReplacingMergeTree ORDER BY id PARTITION BY `a.key_x.y` % 2
+SETTINGS share_nested_offsets = 0, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+    vertical_merge_algorithm_min_rows_to_activate = 1, vertical_merge_algorithm_min_columns_to_activate = 1,
+    vertical_merge_algorithm_min_bytes_to_activate = 0;
+INSERT INTO t_shadow_minmax_replacing_vertical VALUES (1, map('x.y', 11), tuple(6));
+INSERT INTO t_shadow_minmax_replacing_vertical VALUES (1, map('x.y', 13), tuple(8));
+OPTIMIZE TABLE t_shadow_minmax_replacing_vertical FINAL;
+SELECT count() FROM t_shadow_minmax_replacing_vertical WHERE `a.key_x.y` = 8;
+SELECT countIf(`a.key_x.y` = 8) FROM t_shadow_minmax_replacing_vertical;
+
 DROP TABLE t_shadow_minmax;
 DROP TABLE t_shadow_minmax_replacing;
+DROP TABLE t_shadow_minmax_replacing_vertical;

@@ -13,3 +13,6 @@
 -- a merge that may reduce rows
 1
 1
+-- a vertical merge that may reduce rows
+1
+1

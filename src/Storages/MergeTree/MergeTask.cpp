@@ -380,8 +380,10 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColu
         key_columns.emplace(global_ctx->storage_columns.front().name);
 
     /// Recalculate the min-max index for partition columns if the merge might reduce rows.
+    /// The partition key may be calculated from a subcolumn (`PARTITION BY t.y`), which is taken from its column.
     if (global_ctx->merge_may_reduce_rows)
-        key_columns.insert_range(global_ctx->minmax_idx_columns.getNames());
+        for (const auto & name : global_ctx->minmax_idx_columns.getNames())
+            key_columns.insert(getColumnNameInStorage(name, storage_columns, virtual_columns, global_ctx->metadata_snapshot->getColumns()));
 
     key_columns.insert(global_ctx->deduplicate_by_columns.begin(), global_ctx->deduplicate_by_columns.end());
 
