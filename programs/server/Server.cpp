@@ -886,7 +886,12 @@ void Server::beforeStartingThreads()
     /// right after this, starts them again.
     Jemalloc::setBackgroundThreads(false);
 #endif
-    isolateFilesystem(mode, [&] { return collectFilesystemIsolationPaths(config(), config_path, original_working_directory, fs::current_path().string()); });
+    const std::string startup_directory = fs::current_path().string();
+    isolateFilesystem(
+        mode,
+        [&](bool with_supervisor)
+        { return collectFilesystemIsolationPaths(config(), config_path, original_working_directory, startup_directory, with_supervisor); },
+        getFilesystemIsolationPidFile(config(), config_path, original_working_directory, startup_directory));
 }
 
 void Server::uninitialize()
@@ -1952,11 +1957,23 @@ try
     {
         if (filesystem_isolation->isolated)
         {
-            LOG_INFO(
-                log,
-                "Isolated the filesystem of this process{}. Only these paths are visible: {}",
-                filesystem_isolation->created_user_namespace ? " in a new user and mount namespace" : " in a new mount namespace",
-                fmt::join(filesystem_isolation->visible_paths, ", "));
+            if (filesystem_isolation->created_pid_namespace)
+            {
+                LOG_INFO(
+                    log,
+                    "Isolated the filesystem of this process in new PID and mount namespaces. This process has the PID {} in its "
+                    "PID namespace and {} outside of it, and the supervisor outside, which owns the pid file, has the PID {}. "
+                    "Only these paths are visible: {}",
+                    getpid(),
+                    filesystem_isolation->serving_host_pid,
+                    filesystem_isolation->supervisor_pid,
+                    fmt::join(filesystem_isolation->visible_paths, ", "));
+            }
+            else
+                LOG_INFO(
+                    log,
+                    "Isolated the filesystem of this process in new user and mount namespaces. Only these paths are visible: {}",
+                    fmt::join(filesystem_isolation->visible_paths, ", "));
             if (!filesystem_isolation->lost_capabilities.empty())
                 LOG_WARNING(
                     log,
@@ -3298,6 +3315,7 @@ try
             return global_context->getConfigRef();
         };
 
+        /// `updateServers` does not recreate Keeper listeners, so a config reload must not stop them.
         for (const auto & listen_host : listen_hosts)
         {
             /// TCP Keeper
@@ -3324,7 +3342,8 @@ try
                                 global_context->getSettingsRef()[Setting::send_timeout].totalSeconds(),
                                 false),
                             server_pool,
-                            socket));
+                            socket),
+                        /* supports_runtime_reconfiguration = */ false);
                 });
 
             const char * secure_port_name = "keeper_server.tcp_port_secure";
@@ -3351,7 +3370,8 @@ try
                                 global_context->getSettingsRef()[Setting::send_timeout].totalSeconds(),
                                 true),
                             server_pool,
-                            socket));
+                            socket),
+                        /* supports_runtime_reconfiguration = */ false);
 #else
                     UNUSED(port);
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSL support for TCP protocol is disabled because Poco library was built without NetSSL support.");
@@ -3388,7 +3408,8 @@ try
                             handler_factory,
                             server_pool,
                             socket,
-                            http_params));
+                            http_params),
+                        /* supports_runtime_reconfiguration = */ false);
                 });
             }
 
@@ -3425,7 +3446,8 @@ try
                             handler_factory,
                             server_pool,
                             socket,
-                            http_params));
+                            http_params),
+                        /* supports_runtime_reconfiguration = */ false);
 #else
                     UNUSED(port);
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "HTTPS control protocol is disabled because Poco library was built without NetSSL support.");

@@ -16,126 +16,98 @@ doc_type: 'guide'
 * 稼働中の ClickHouse Cloud サービス
 
 <Steps>
-  <Step title="データソースに移動" id="navigate-to-data-sources">
-    サービスのホームページで、左側のメニューから **Data sources** をクリックします。
-    **ClickPipes** のドロップダウンを展開し、**Create ClickPipe** をクリックします
+  <Step title="データソースに移動する" id="navigate-to-data-sources">
+    サービスのホームページで、左側のメニューから **データソース** をクリックします。
+    **ClickPipes** ドロップダウンを展開し、**ClickPipeを作成** をクリックします。
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![データソースに移動](/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/01-navigate-to-datasources.webp)
-
-    </Frame>
-
+      <Frame>
+        ![データソースに移動する](/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/01-navigate-to-datasources.webp)
+      </Frame>
     </div>
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![ClickPipe を作成](/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/02-create-clickpipe.webp)
-
-    </Frame>
-
+      <Frame>
+        ![ClickPipeを作成](/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/02-create-clickpipe.webp)
+      </Frame>
     </div>
   </Step>
 
-  <Step title="データソースを選択" id="select-data-source">
-    データタイプとして **Azure Blob Storage** を選択します
+  <Step title="データソースを選択する" id="select-data-source">
+    データタイプとして **Azure Blob Storage** を選択します。
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![Azure Blob Storage を選択](/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/03-select-blob-storage.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Azure Blob Storage を選択する](/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/03-select-blob-storage.webp)
+      </Frame>
     </div>
   </Step>
 
-  <Step title="ClickPipe 接続を設定" id="setup-connection">
+  <Step title="ClickPipe の接続を設定する" id="setup-connection">
     1. ClickPipe にわかりやすい名前を付けます
-    2. 認証方法のドロップダウンで **Connection String** を選択します
-    3. **Connection string** のフィールドに Azure 接続文字列を貼り付けます
+    2. 認証方式のドロップダウンから **接続文字列** を選択します
+    3. **接続文字列** フィールドに Azure の接続文字列を貼り付けます
     4. コンテナー名を入力します
-    5. Azure Blob Storage のファイルパスを入力します。複数のファイルを取り込む場合は、ワイルドカードを使用します
+    5. Azure Blob Storage のファイルパスを入力します。複数のファイルを取り込む場合は、ワイルドカードを使用できます
 
-    必要に応じて、継続的インジェストを有効にします。詳しくは[&quot;Continuous Ingestion&quot;](/ja/integrations/clickpipes/object-storage/azure-blob-storage/overview#continuous-ingestion)を参照してください。
+    必要に応じて、継続的インジェストを有効にできます。詳細は[「継続的インジェスト」](/ja/integrations/clickpipes/object-storage/azure-blob-storage/overview#continuous-ingestion)を参照してください。
 
-    最後に、**Incoming data** をクリックします
+    最後に、**Incoming data** をクリックします。
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![設定の詳細](/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/04-configuration-details.webp)
-
-    </Frame>
-
+      <Frame>
+        ![設定の詳細](/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/04-configuration-details.webp)
+      </Frame>
     </div>
   </Step>
 
-  <Step title="データフォーマットを選択" id="select-data-format">
+  <Step title="データ形式を選択する" id="select-data-format">
     1. ファイルタイプを選択します
-    2. ファイルの圧縮を選択します (`detect automatically`、`none`、`gzip`、`brotli`、`xz`、`zstd`)
-    3. カンマ区切りフォーマットで使用する区切り文字など、フォーマット固有の追加設定を行います
+    2. ファイルの圧縮方式 (`detect automatically`、`none`、`gzip`、`brotli`、`xz`、`zstd`) を選択します
+    3. カンマ区切り形式の区切り文字など、フォーマット固有の追加設定を行います
     4. **Parse information** をクリックします
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![データフォーマットを選択](/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/05-choose-data-format.webp)
-
-    </Frame>
-
+      <Frame>
+        ![データ形式を選択する](/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/05-choose-data-format.webp)
+      </Frame>
     </div>
   </Step>
 
-  <Step title="テーブル、スキーマ、設定を構成" id="configure-table-schema">
-    次に、受信データの保存先となる新しいテーブルを作成するか、既存のテーブルを選択する必要があります。
+  <Step title="テーブル、スキーマ、設定を構成する" id="configure-table-schema">
+    次に、受信データを格納するテーブルを新規作成するか、既存のテーブルを選択します。
 
-    1. データのアップロード先として、新しいテーブルか既存のテーブルかを選択します
+    1. データを新しいテーブルにアップロードするか、既存のテーブルにアップロードするかを選択します
     2. 使用するデータベースを選択し、新しいテーブルの場合はテーブル名を指定します
     3. ソートキーを 1 つ以上選択します
-    4. カラム名、カラム型、デフォルト値、NULL 許容性について、ソースファイルから宛先テーブルへのマッピングを定義します
-    5. 最後に、使用するエンジンタイプ、パーティション分割に使う式、主キーなどの高度な設定を指定します
+    4. ソースファイルから書き込み先テーブルへのマッピング (カラム名、カラム型、デフォルト値、NULL 許容) を定義します
+    5. 最後に、使用するエンジンタイプ、パーティション式、プライマリキーなどの詳細設定を指定します
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![情報を解析](/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/06-parse-information.webp)
-
-    </Frame>
-
+      <Frame>
+        ![パース情報](/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/06-parse-information.webp)
+      </Frame>
     </div>
 
-    テーブル、スキーマ、設定の構成が完了したら、**Details and settings** をクリックします
+    テーブル、スキーマ、設定の構成が完了したら、**Details and settings** をクリックします。
   </Step>
 
-  <Step title="権限を設定" id="configure-permissions">
-    ClickPipes は、データ書き込み専用のデータベースユーザーを設定します。
-    このユーザーに割り当てるロールを選択できます。
-    materialized view または宛先テーブルからの Dictionary アクセスが必要な場合は、&quot;Full access&quot; を選択してください。
+  <Step title="アクセス許可を設定する" id="configure-permissions">
+    ClickPipes は、データ書き込み用の専用データベースユーザーを作成します。
+    このユーザーにはロールを選択できます。
+    書き込み先テーブルからマテリアライズドビューやディクショナリにアクセスする場合は、「Full access」を選択してください。
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![権限を設定](/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/07-permissions.webp)
-
-    </Frame>
-
+      <Frame>
+        ![アクセス許可を設定する](/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/07-permissions.webp)
+      </Frame>
     </div>
   </Step>
 
-  <Step title="セットアップを完了" id="complete-setup">
-    セットアップを完了するには、**Create ClickPipe** をクリックします
+  <Step title="セットアップを完了する" id="complete-setup">
+    **ClickPipeを作成** をクリックしてセットアップを完了します。
 
-    ClickPipe が provisioning ステータスで表示されます。
-    しばらくすると、**provisioning** から **completed** に変わります。
+    ClickPipe がプロビジョニング中のステータスで表示されます。
+    しばらくすると、ステータスが **provisioning** から **completed** に変わります。
   </Step>
 </Steps>

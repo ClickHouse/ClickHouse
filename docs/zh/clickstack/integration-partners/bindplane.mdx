@@ -27,13 +27,13 @@ import { PartnerBadge } from "/snippets/zh/components/PartnerBadge/PartnerBadge.
 </Info>
 
 <div id="what-is-bindplane">
-  ## 什么是 Bindplane？
+  ## 什么是 Bindplane？ {#what-is-bindplane}
 </div>
 
 Bindplane 是一个 OpenTelemetry 原生遥测管道，可为 OpenTelemetry Collectors 提供集中式管理。它通过提供可视化配置编辑、安全滚动发布和管道智能分析，简化了大规模 collector 集群的运维。
 
 <div id="why-bindplane-clickstack">
-  ## 为什么选择 Bindplane + ClickStack？
+  ## 为什么选择 Bindplane + ClickStack？ {#why-bindplane-clickstack}
 </div>
 
 在大规模环境中，管理大批 OpenTelemetry Collectors 往往会成为运维瓶颈。ClickStack 已经证明自己能够承受极高的摄取量——客户正以每秒数 GB 的速度摄取遥测数据，并存储数百 PB 的数据。此时，挑战的重点不再是查询性能，而是如何可靠地运维为 ClickHouse 提供数据的 collector 基础设施。
@@ -54,7 +54,7 @@ Bindplane 通过以下能力解决这一问题：
 </Tip>
 
 <div id="prerequisites">
-  ## 前置条件
+  ## 前置条件 {#prerequisites}
 </div>
 
 * 正在运行的 ClickStack 实例 (本地、Server 或 ClickHouse Cloud)
@@ -64,9 +64,7 @@ Bindplane 通过以下能力解决这一问题：
 * ClickStack API 摄取密钥 (可在 ClickStack Team Settings &gt; API Keys 中找到，[参考此文档](/zh/clickstack/ingesting-data/opentelemetry#sending-otel-data))
 * 已开放相应的网络端口 (HTTP/s 使用 `4318`，gRPC 使用 `4317`)
 
-<div id="integrate-bindplane-clickstack">
-  ## 将 ClickStack 与 Bindplane 集成
-</div>
+## 将 ClickStack 与 Bindplane 集成 {#integrate-bindplane-clickstack}
 
 <Steps>
   <Step title="将 ClickStack 配置为目标端" id="configure-destination">
@@ -95,14 +93,14 @@ Bindplane 通过以下能力解决这一问题：
     1. 进入 **Configurations** → **Create Configuration**
     2. 为配置命名 (例如“ClickStack Pipeline”)
     3. 为你的部署选择 **Collector Type** 和 **Platform**
-    4. 添加源：
-       * 点击 **Add Source**，从 80 多个可用源中选择
-       * 如需测试，你可以添加一个遥测生成器源来模拟流量
-       * 在生产环境中，请为实际遥测数据 (日志、指标、链路追踪) 添加源
+    4. 添加数据源：
+       * 点击 **Add Source**，从 80 多个可用数据源中选择
+       * 如需测试，你可以添加一个遥测生成器数据源来模拟流量
+       * 在生产环境中，请为实际遥测数据 (日志、指标、链路追踪) 添加数据源
     5. 添加 ClickStack 目标端：
        * 点击 **Add Destination**
        * 选择你在上一步创建的 ClickStack 目标端
-       * 选择要发送的遥测类型 (Logs、Metrics、Traces 或全部)
+       * 选择要发送的遥测类型 (日志、指标、链路追踪 或全部)
 
     <Tip>
       **关键要点**
@@ -145,42 +143,34 @@ Bindplane 通过以下能力解决这一问题：
     </Tip>
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![通过 Bindplane 在 ClickStack 中查看遥测信号](/images/clickstack/bindplane/bindplane-configuration.webp)
-
-    </Frame>
-
+      <Frame>
+        ![通过 Bindplane 在 ClickStack 中查看遥测信号](/images/clickstack/bindplane/bindplane-configuration.webp)
+      </Frame>
     </div>
   </Step>
 
   <Step title="在 ClickStack 中验证遥测数据" id="verify-telemetry">
     配置完成滚动发布后，遥测数据会从你管理的 collector 集群流入 ClickStack：
 
-    1. 登录你的 ClickStack 实例 (HyperDX UI)
-    2. 进入 **Logs**、**Metrics** 或 **Traces** 浏览页面
+    1. 登录你的 ClickStack 实例 (ClickStack 用户界面)
+    2. 进入 **日志**、**指标** 或 **链路追踪** 浏览页面
     3. 你应该能看到来自 Bindplane 管理的 collectors 的遥测数据开始出现
     4. 到达 ClickStack 的数据已由 Bindplane 处理器完成富集和结构化
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![通过 Bindplane 在 ClickStack 中查看遥测信号](/images/clickstack/bindplane/bindplane-hyperdx.webp)
-
-    </Frame>
-
+      <Frame>
+        ![通过 Bindplane 在 ClickStack 中查看遥测信号](/images/clickstack/bindplane/bindplane-hyperdx.webp)
+      </Frame>
     </div>
   </Step>
 </Steps>
 
 <div id="advanced-configuration">
-  ## 高级配置
+  ## 高级配置 {#advanced-configuration}
 </div>
 
 <div id="fan-out-routing">
-  ### 扇出路由
+  ### 扇出路由 {#fan-out-routing}
 </div>
 
 Bindplane 支持扇出路由，让您能够同时将相同的遥测数据流发送到多个目标端。您可以：
@@ -192,7 +182,7 @@ Bindplane 支持扇出路由，让您能够同时将相同的遥测数据流发�
 这可以通过在 Bindplane 配置中添加多个目标端来实现。
 
 <div id="compression">
-  ### 压缩与性能
+  ### 压缩与性能 {#compression}
 </div>
 
 对于高流量场景，请在 ClickStack 目标端中配置压缩：
@@ -203,18 +193,18 @@ Bindplane 支持扇出路由，让您能够同时将相同的遥测数据流发�
 将遥测数据发送到 ClickStack 时，压缩可减少带宽占用，在大规模场景下尤为重要。
 
 <div id="next-steps">
-  ## 后续步骤
+  ## 后续步骤 {#next-steps}
 </div>
 
 现在，既然来自 Bindplane 的遥测数据已经流入 ClickStack，你可以：
 
-* **构建仪表盘**：在 ClickStack (HyperDX) 中为日志、指标和链路追踪创建可视化
+* **构建仪表盘**：在 ClickStack 用户界面中为日志、指标和链路追踪创建可视化
 * **设置告警**：在 ClickStack 中为关键情况配置告警
 * **扩展部署规模**：随着可观测性需求增长，添加更多 collector 和数据源
-* **优化管道**：使用 Bindplane 的管道智能功能识别优化机会
+* **优化管道**：使用 Bindplane 的管道智能分析功能识别优化机会
 
 <div id="read-more">
-  ## 延伸阅读
+  ## 延伸阅读 {#read-more}
 </div>
 
 * [Bindplane 文档中的 ClickStack 集成](https://docs.bindplane.com/integrations/destinations/clickstack)

@@ -839,11 +839,18 @@ bool BSONEachRowRowInputFormat::readRow(MutableColumns & columns, RowReadExtensi
             current_key_name.assign(name.data(), name.size());
             skipUnknownField(BSONType(type), current_key_name);
         }
+        else if (seen_columns[index])
+        {
+            if (!format_settings.skip_duplicated_fields)
+                throw Exception(
+                    ErrorCodes::INCORRECT_DATA,
+                    "Duplicate field found while parsing BSONEachRow format: {}. You can enable setting input_format_skip_duplicated_fields to keep the first value of a repeated field",
+                    name);
+
+            skipBSONField(*in, BSONType(type));
+        }
         else
         {
-            if (seen_columns[index])
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Duplicate field found while parsing BSONEachRow format: {}", name);
-
             seen_columns[index] = true;
             read_columns[index] = readField(*columns[index], types[index], BSONType(type));
         }
@@ -1039,11 +1046,18 @@ NamesAndTypesList BSONEachRowSchemaReader::getDataTypesFromBSONDocument(bool all
     BSONSizeT document_size = 0;
     readBinaryLittleEndian(document_size, in);
     NamesAndTypesList names_and_types;
+    NameSet row_field_names;
     while (in.count() - document_start + sizeof(BSON_DOCUMENT_END) != document_size)
     {
         auto bson_type = getBSONType(readBSONType(in));
         String name;
         readNullTerminated(name, in);
+        if (depth == 1 && format_settings.skip_duplicated_fields
+            && !row_field_names.insert(getColumnMatchingKeyForSchemaInference(name, format_settings)).second)
+        {
+            skipBSONField(in, bson_type);
+            continue;
+        }
         bool skip = false;
         auto type = getDataTypeFromBSONField(bson_type, allow_to_skip_unsupported_types, skip, depth);
         if (!skip)

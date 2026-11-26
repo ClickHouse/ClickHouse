@@ -1,0 +1,225 @@
+---
+title: 'Guía práctica de optimización del rendimiento de ClickHouse Cloud'
+sidebarTitle: 'Guía práctica de optimización del rendimiento'
+slug: /cloud/bestpractices/performance-optimization-playbook
+description: 'Mida, diagnostique y mejore el rendimiento de ClickHouse Cloud mediante el diseño del esquema, la ingestión, el almacenamiento en caché, pruebas de rendimiento reproducibles y la planificación de la implementación.'
+doc_type: 'guide'
+keywords: ['rendimiento', 'optimización', 'Cloud', 'pruebas comparativas de rendimiento', 'buenas prácticas']
+---
+
+Utilice esta guía práctica para diseñar una nueva implementación de ClickHouse Cloud o mejorar una carga de trabajo existente. La guía vincula las decisiones sobre el esquema, las consultas, la ingestión y la infraestructura con mediciones que usted puede validar. La mayoría de las recomendaciones sobre el esquema y las consultas también son aplicables a ClickHouse autogestionado.
+
+## Elija un punto de partida {#choose-a-starting-point}
+
+| Su tarea                       | Empiece aquí                                                                                                                                                                    |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Diseñar un nuevo despliegue    | [Analice el perfil del workload](#profile-the-workload) y, a continuación, [diseñe el esquema](#design-the-schema) y [planifique los recursos de Cloud](#plan-cloud-resources). |
+| Mejorar un workload existente  | [Diagnostique el cuello de botella](#diagnose-the-bottleneck), cambie un factor y [ejecute un benchmark sobre el resultado](#benchmark-the-result).                             |
+| Investigar una consulta lenta  | Examine su historial y su plan de ejecución con las [guías de optimización de consultas](/es/guides/clickhouse/performance-and-monitoring/query-optimization).                     |
+| Prepararse para el lanzamiento | Complete la [lista de comprobación del despliegue](#deployment-checklist) y la [guía de preparación para producción](/es/products/cloud/guides/production-readiness).              |
+
+## Perfilado de la carga de trabajo {#profile-the-workload}
+
+Registre la latencia, el caudal y el uso de recursos actuales y, a continuación, defina un objetivo medible. Distinga la latencia de las consultas de la latencia de ingestión y de la actualidad de los datos: mejorar una de ellas puede generar más trabajo en otra.
+
+Recopile consultas representativas y valores de filtro, la frecuencia de ejecución, la concurrencia, la tasa de ingestión, el volumen de datos, el crecimiento y la retención. Tenga en cuenta las diferencias entre inquilinos y los picos de carga. Si se trata de una regresión, registre los cambios en los datos, el esquema, la versión, el tamaño del servicio o el comportamiento del cliente.
+
+En Cloud, [Query insights](/es/products/cloud/features/sql-console-features/query-insights) ofrece una visión general de los patrones de consulta y del consumo de recursos. Para un análisis personalizado, consulte [`system.query_log`](/es/reference/system-tables/query_log) en todas las réplicas:
+
+```sql
+SELECT
+    normalized_query_hash,
+    count() AS executions,
+    round(avg(query_duration_ms)) AS avg_ms,
+    quantile(0.95)(query_duration_ms) AS p95_ms,
+    sum(query_duration_ms) AS total_duration_ms,
+    avg(read_rows) AS avg_read_rows,
+    max(memory_usage) AS max_memory_bytes,
+    any(query) AS example_query
+FROM clusterAllReplicas('default', merge('system', '^query_log'))
+WHERE event_time >= now() - INTERVAL 1 DAY
+    AND type = 'QueryFinish'
+    AND is_initial_query = 1
+    AND query_kind = 'Select'
+GROUP BY normalized_query_hash
+ORDER BY total_duration_ms DESC
+LIMIT 20;
+```
+
+Esta consulta clasifica los patrones de consulta ejecutados correctamente según su duración acumulada. Revise también las consultas fallidas en Query insights, ya que las ejecuciones correctas por sí solas pueden ocultar tiempos de espera agotados y excepciones por superar el límite de memoria. La consulta requiere acceso a las tablas del sistema en cada réplica. Los logs se vacían de forma asíncrona, por lo que es posible que las ejecuciones recientes no aparezcan de inmediato.
+
+El cluster `default` está disponible en ClickHouse Cloud. En una implementación de un solo nodo, reemplace la expresión `FROM` por `system.query_log`. Consulte [Diagnosticar consultas lentas](/es/guides/clickhouse/performance-and-monitoring/diagnose-slow-queries) para obtener un análisis detallado.
+
+## Diagnosticar el cuello de botella {#diagnose-the-bottleneck}
+
+ClickHouse almacena los datos de `MergeTree` en partes ordenadas y comprimidas. Las fusiones en segundo plano consolidan estas partes. Un índice primario disperso permite que las consultas omitan gránulos dentro de cada parte. Una optimización eficaz reduce la cantidad de datos leídos o el trabajo que se realiza sobre ellos.
+
+Empiece por la definición de la tabla y el plan de consulta. Sustituya la tabla y la consulta siguientes por las suyas:
+
+```sql
+SHOW CREATE TABLE database_name.table_name;
+
+EXPLAIN indexes = 1
+SELECT column_name
+FROM database_name.table_name
+WHERE filter_column = 'value';
+```
+
+Inspeccione las partes y los gránulos seleccionados en relación con los totales. Compárelos con las filas leídas, los bytes leídos, la duración y el uso de memoria reales que figuran en el registro de consultas. Un escaneo amplio puede ser adecuado para una agregación sobre toda la tabla; valórelo en función de los requisitos de la consulta.
+
+| Observación                                        | Qué investigar                                                                                              | Posible siguiente paso                                                                                                       |
+| -------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| Un filtro selectivo lee la mayoría de los gránulos | Poda por clave primaria en `EXPLAIN`                                                                        | Alinee la clave de ordenación con los filtros o evalúe una proyección o un índice de omisión de datos.                       |
+| El número de partes activas no deja de aumentar    | Tamaño de las inserciones, fan-out de particiones y actividad de fusión en `system.parts` y `system.merges` | Use inserciones por lotes o inserciones asíncronas, o reduzca la fragmentación de particiones.                               |
+| Las ejecuciones repetidas son mucho más rápidas    | Actividad de la caché y ciclo de vida del servicio                                                          | Compare por separado las ejecuciones en frío y en caliente; reduzca el conjunto de trabajo o precalcule el trabajo repetido. |
+| Los joins consumen demasiada memoria               | Cardinalidad, entradas y algoritmo del join                                                                 | Reduzca las entradas, evalúe un diccionario o pruebe un algoritmo con memoria limitada.                                      |
+| La latencia aumenta con la concurrencia            | CPU, memoria, ingestión y consultas que compiten por recursos                                               | Reduzca el trabajo por consulta y, después, evalúe el escalado o el aislamiento.                                             |
+
+Use [Aislar cuellos de botella en consultas](/es/guides/clickhouse/performance-and-monitoring/isolate-query-bottlenecks) para comprobar una hipótesis antes de modificar el esquema o los ajustes.
+
+## Diseño del esquema {#design-the-schema}
+
+### Elegir un motor que garantice la corrección {#choose-an-engine-for-correctness}
+
+Seleccione un motor en función de cómo cambian los registros y de cómo deben interpretarlos las consultas.
+
+| Motor                                                  | Uso típico                                                                                                                                                                           |
+| ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `MergeTree`                                            | Analítica general de solo inserción (append-only).                                                                                                                                   |
+| `ReplacingMergeTree`                                   | Varias versiones de un mismo registro, con deduplicación eventual por clave de ordenación. Aplique la deduplicación adecuada en tiempo de consulta cuando la corrección lo requiera. |
+| `AggregatingMergeTree`                                 | Estados de agregación, normalmente poblados mediante una vista materializada incremental.                                                                                            |
+| `SummingMergeTree`                                     | Contadores aditivos y agregaciones. Es posible que las consultas aún tengan que agregar filas que todavía no se han fusionado.                                                       |
+| `CollapsingMergeTree` o `VersionedCollapsingMergeTree` | Registros explícitos de estado y de cancelación, con requisitos de consulta propios de cada motor.                                                                                   |
+
+Las fusiones en segundo plano no garantizan que todas las versiones o filas agregadas estén consolidadas antes de ejecutar una consulta. Consulte la semántica de cada motor en la [referencia de la familia `MergeTree`](/es/reference/engines/table-engines/mergetree-family).
+
+### Alinear la clave de ordenación con las consultas {#align-the-ordering-key-with-queries}
+
+El `ORDER BY` de la tabla define el orden físico de los datos. La clave primaria, que de forma predeterminada coincide con la clave de ordenación, determina el índice disperso. Ninguna de las dos garantiza la unicidad.
+
+Priorice las columnas que se usan en filtros frecuentes y selectivos. Entre las columnas útiles para filtrar, colocar al principio de la clave las de menor cardinalidad puede mejorar la localidad y la compresión. La cardinalidad por sí sola no justifica incluir una columna.
+
+Por ejemplo, las consultas que filtran sistemáticamente por inquilino y por tiempo pueden beneficiarse de `(tenant_id, event_time)`. Las consultas que abarcan todos los inquilinos pueden requerir un orden distinto. Una marca de tiempo o un identificador pueden ser una columna inicial adecuada cuando el patrón de acceso lo justifique.
+
+Mantenga la clave acotada y pruebe las claves candidatas con consultas representativas. `ORDER BY tuple()` no ofrece poda mediante el índice primario, por lo que solo debe usarse cuando se asuma esa contrapartida de forma deliberada. Consulte [Elegir una clave primaria](/es/concepts/best-practices/choosing-a-primary-key).
+
+### Use tipos que preserven el significado {#use-types-that-preserve-meaning}
+
+Las representaciones más compactas pueden reducir los costos de almacenamiento, memoria y escaneo. Elíjalas sin perder información:
+
+* Use tipos enteros con un ancho que cubra el rango esperado, incluido el crecimiento previsto, y `Decimal` cuando se requiera aritmética decimal exacta.
+* Considere `LowCardinality(String)` para cadenas repetidas y `Enum` para un conjunto de valores controlado.
+* Use `DateTime64` cuando se requiera precisión inferior al segundo; de lo contrario, considere `DateTime` o `Date`.
+* Use `Nullable` cuando la ausencia de un valor tenga un significado propio. Sustituya los valores ausentes por cero o por una cadena vacía solo cuando estos sean valores predeterminados válidos en el dominio.
+* Use columnas tipadas explícitamente para campos estables y consultados con frecuencia. Evalúe `JSON` para estructuras cambiantes y `Map` para datos clave-valor que se ajusten a este tipo.
+
+Mida el tamaño comprimido y el rendimiento de las consultas después de aplicar los cambios. Consulte [Selección de tipos de datos](/es/concepts/best-practices/select-data-type), [Uso de JSON](/es/concepts/best-practices/json-type) y [Compresión en ClickHouse](/es/guides/clickhouse/data-modelling/compression/compression-in-clickhouse).
+
+### Particionar para la administración de datos {#partition-for-data-management}
+
+Defina las particiones en función de la retención y de las operaciones de administración de datos. Las partes de particiones distintas nunca se fusionan, por lo que una cardinalidad de particiones excesiva puede generar muchas partes pequeñas y aumentar la sobrecarga.
+
+No particionar, o bien particionar por mes o por año, pueden ser buenos puntos de partida. Las particiones diarias también pueden ser adecuadas cuando el volumen y la retención las justifican. Evalúe la cantidad y el tamaño de las partes antes de particionar por identificadores high-cardinality.
+
+La poda de particiones resulta útil cuando las consultas filtran por la expresión de partición, pero no sustituye a una clave de ordenación adecuada. Consulte [Elegir una clave de particionamiento](/es/concepts/best-practices/partitioning-keys).
+
+### Precalcular el trabajo repetitivo {#precompute-repeated-work}
+
+| Enfoque                         | Cuándo usarlo                                                                                                      | Qué tener en cuenta                                                                                                                                                                                                                              |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Vista materializada incremental | Las agregaciones o transformaciones repetidas pueden trasladarse al momento de inserción.                          | El almacenamiento de la tabla de destino, el trabajo adicional en la inserción y la carga de datos históricos ya existentes. Procesa los bloques recién insertados, en lugar de reflejar automáticamente cualquier cambio en la tabla de origen. |
+| Proyección                      | Otro patrón de acceso requiere un orden de clasificación alternativo o una representación precalculada compatible. | La sobrecarga de almacenamiento e inserción, la materialización de los datos existentes y la compatibilidad con la consulta y con la versión de ClickHouse.                                                                                      |
+
+Compruebe que las consultas utilicen la proyección prevista. Valide la semántica de agregación y de actualización de las vistas materializadas. Consulte [Vistas materializadas frente a proyecciones](/es/concepts/features/projections/materialized-views-versus-projections) y [Carga de datos históricos](/es/guides/clickhouse/data-modelling/backfilling).
+
+### Reducir el trabajo de joins y escaneo {#reduce-join-and-scan-work}
+
+Desnormalice los atributos a los que se accede con frecuencia cuando el modelo de actualización lo permita. Considere el uso de diccionarios para búsquedas clave-valor, manteniendo el comportamiento necesario ante claves duplicadas y dimensiones cambiantes.
+
+Para los joins que se mantengan, examine el plan y las cardinalidades de entrada. Las versiones modernas de ClickHouse pueden reordenar los joins, así que compruebe el lado de construcción real en lugar de basarse únicamente en el orden del SQL. Empiece con el algoritmo predeterminado. Pruebe alternativas cuando la memoria o el tiempo de ejecución pongan de manifiesto un problema concreto; los tipos de unión compatibles varían según el algoritmo.
+
+Seleccione solo las columnas necesarias. Aplique filtros selectivos y compruebe si `PREWHERE` y la poda mediante el índice principal reducen las lecturas. Añada índices de omisión de datos cuando la distribución y los predicados les permitan omitir suficientes gránulos como para compensar los costes de almacenamiento y evaluación.
+
+Consulte [Minimizar y optimizar joins](/es/concepts/best-practices/minimize-optimize-joins), [Índices de omisión de datos](/es/concepts/best-practices/using-data-skipping-indices) y [Optimización de consultas](/es/guides/clickhouse/performance-and-monitoring/query-optimization).
+
+## Optimizar la ingestión y la retención {#optimize-ingestion-and-retention}
+
+Las inserciones pequeñas y frecuentes pueden crear partes más rápido de lo que la fusión es capaz de consolidarlas. Es preferible agrupar en lotes en el lado del cliente (client-side) o usar [inserciones asíncronas](/es/concepts/features/operations/insert/asyncinserts). Elija el tamaño del lote en función del tamaño de fila, el caudal y los requisitos de actualidad de los datos y, a continuación, supervise las partes activas y la actividad de fusión.
+
+Compruebe los ajustes efectivos en lugar de dar por sentados los valores predeterminados:
+
+```sql
+SELECT name, value, changed
+FROM system.settings
+WHERE name IN
+(
+    'async_insert',
+    'wait_for_async_insert',
+    'async_insert_max_data_size',
+    'async_insert_busy_timeout_ms'
+);
+```
+
+Mantenga `wait_for_async_insert = 1` al usar inserciones asíncronas, de modo que la confirmación espere al vaciado y el client reciba los errores que se produzcan durante este. Con `0`, la confirmación solo indica que los datos se almacenaron en el búfer, por lo que pueden producirse errores después de que el client haya recibido una respuesta correcta.
+
+En las herramientas de ingestión de terceros, valide de extremo a extremo la agrupación por lotes, los reintentos, la deduplicación, el manejo de errores y la contrapresión. Compruebe las garantías de entrega del connector en lugar de dar por hecho que los reintentos no pueden generar duplicados. Consulte [Selección de una estrategia de inserción](/es/concepts/best-practices/selecting-an-insert-strategy).
+
+Evite las mutaciones grandes y frecuentes, así como el uso rutinario de `OPTIMIZE TABLE ... FINAL`, ya que pueden generar una cantidad considerable de trabajo de reescritura y fusión. Elija una estrategia de actualización que cumpla los requisitos de corrección de las consultas. Use `TTL` para las políticas de retención compatibles y la eliminación por partición cuando deba eliminarse una partición completa. Cloud no utiliza `TTL ... TO VOLUME` para el almacenamiento por niveles.
+
+Consulte [Evitar mutaciones](/es/concepts/best-practices/avoid-mutations), [Evitar OPTIMIZE FINAL](/es/concepts/best-practices/avoid-optimize-final) y [Gestionar datos con TTL](/es/concepts/features/operations/delete/ttl).
+
+## Planificar los recursos de Cloud {#plan-cloud-resources}
+
+### Tener en cuenta el estado de la caché {#account-for-cache-state}
+
+ClickHouse Cloud separa la capacidad de cómputo del almacenamiento de objetos. El estado de la caché puede afectar considerablemente a la latencia. Una consulta repetida puede leer datos almacenados en caché aunque la caché de resultados de consultas esté deshabilitada.
+
+Mida por separado el comportamiento de la primera ejecución y el de las ejecuciones posteriores. Registre la entrada en estado de inactividad del servicio, los cambios de tamaño, el enrutamiento y la actividad en segundo plano que puedan afectar a la comparación. Evalúe la [suspensión automática por inactividad](/es/products/cloud/features/autoscaling/idling) en función de la latencia de inicio requerida.
+
+Antes de aumentar los recursos, reduzca el conjunto de trabajo mediante la poda y la preagregación. Si es necesario precalentar la caché, utilice consultas representativas e incluya su consumo de recursos en la evaluación de costes.
+
+La caché de resultados de consultas es distinta de las cachés de datos. Actívela solo cuando los requisitos de actualidad de los datos de la aplicación admitan resultados almacenados en caché. Consulte [Cachés](/es/concepts/features/performance/caches/caches) y [Caché de consultas](/es/concepts/features/performance/caches/query-cache).
+
+### Dimensionamiento según la carga de trabajo medida {#size-for-the-measured-workload}
+
+Evalúe de forma conjunta la CPU, la memoria, la concurrencia y la ingestión. Pruebe tanto la carga máxima como consultas aisladas. Un servicio que alcanza un objetivo con una sola consulta puede no alcanzarlo cuando se ejecutan consultas concurrentes y hay ingestión simultánea.
+
+El escalado vertical modifica los recursos de cada réplica; el escalado horizontal modifica el número de réplicas. La disponibilidad y la automatización dependen del nivel y del perfil. Consulte la [descripción general del escalado](/es/products/cloud/features/autoscaling/overview) y los [límites del servicio](/es/products/cloud/guides/best-practices/usagelimits) en lugar de dimensionar a partir de una proporción fija de la memoria de un sistema anterior.
+
+Establezca límites de escalado acordes con la carga de trabajo y el presupuesto. Mida el consumo total de recursos: una consulta más rápida puede resultar más cara si utiliza considerablemente más capacidad de cómputo.
+
+### Aislar workloads que compiten entre sí {#isolate-competing-workloads}
+
+Utilice [almacenes](/es/products/cloud/features/infrastructure/warehouses) cuando la ingestión, las consultas interactivas y la analítica por lotes requieran capacidad de cómputo dedicada. Los servicios de un almacén comparten los datos, pero cada uno dispone de sus propios recursos de cómputo y puntos de conexión.
+
+Dirija las aplicaciones y las herramientas de terceros al servicio correspondiente. Valide la concurrencia, la agrupación de conexiones, los tiempos de espera y los reintentos bajo carga. Mida tanto el workload aislado como el workload de producción para confirmar que el aislamiento cumple el objetivo.
+
+## Realizar un benchmark del resultado {#benchmark-the-result}
+
+1. **Guarde el valor de referencia.** Registre la versión de ClickHouse, la configuración del servicio, las definiciones de las tablas, los ajustes, el volumen de datos y el texto de la consulta con parámetros representativos.
+2. **Controle el workload.** Mantenga comparables los datos y la concurrencia. Registre la ingestión, los merges y la actividad en segundo plano. Incluya el cliente y la ruta de red al medir la latencia de la aplicación.
+3. **Separe los escenarios de caché.** Presente por separado los resultados de la primera ejecución y de las ejecuciones repetidas. Desactive la caché de resultados de consultas al medir mejoras en la ejecución, pero tenga en cuenta igualmente las cachés de datos. No vacíe las cachés compartidas de producción para hacer un benchmark.
+4. **Cambie un solo factor.** Formule la hipótesis; por ejemplo, reducir los gránulos leídos modificando la clave de ordenación.
+5. **Repita las mediciones.** Realice suficientes ejecuciones para caracterizar la variabilidad. Presente distribuciones o percentiles junto con el número de ejecuciones, no solo la ejecución más rápida.
+6. **Compruebe la corrección y las contrapartidas.** Compare los resultados, la actualidad de los datos, el caudal de inserción, la memoria, el almacenamiento y el consumo de recursos. Incluya los costes de carga de datos históricos y de materialización cuando corresponda.
+7. **Valide con una carga representativa.** Vuelva a probar la concurrencia y la ingestión antes del despliegue y tenga preparado un plan de reversión.
+
+Al compartir los resultados con clientes o socios, incluya el conjunto de datos o un método reproducible para generarlo, las consultas exactas, la configuración y el procedimiento de medición. Delimite el alcance: una mejora de velocidad en un workload concreto no garantiza un mejor rendimiento en general.
+
+Como punto de partida reproducible, consulte el [ejemplo práctico de optimización de consultas](/es/guides/clickhouse/performance-and-monitoring/query-optimization-example).
+
+## Lista de comprobación para la implementación {#deployment-checklist}
+
+* Defina los objetivos de latencia, caudal, actualidad de los datos y disponibilidad.
+* Valide la semántica del motor y la corrección ante actualizaciones y duplicados.
+* Pruebe la clave de ordenación con filtros representativos y examine la poda.
+* Revise los tipos de datos, el número de particiones, el tamaño de las partes y la retención.
+* Mida la agrupación por lotes de las inserciones, el comportamiento de los reintentos y la presión de fusión.
+* Compruebe el beneficio y el coste de mantenimiento de las vistas, las proyecciones y los índices.
+* Pruebe el comportamiento de la caché, la concurrencia máxima y los workload que compiten entre sí.
+* Configure los límites de escalado y dirija las integraciones a los puntos de conexión adecuados.
+* Registre un valor de referencia reproducible, los criterios de monitorización y un procedimiento de reversión.
+
+## Obtener ayuda {#get-help}
+
+Póngase en contacto con el [soporte de ClickHouse](https://clickhouse.cloud/support) si no logra identificar el cuello de botella. Incluya la consulta y su ID de consulta, las definiciones de las tablas, la salida de `EXPLAIN indexes = 1`, el intervalo de tiempo, la configuración del servicio y un objetivo concreto. Siempre que sea posible, proporcione una muestra representativa o un caso reproducible, sin datos confidenciales.

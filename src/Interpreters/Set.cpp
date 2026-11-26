@@ -6,6 +6,7 @@
 
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnsNumber.h>
+#include <Columns/replaceNegativeZeros.h>
 
 #include <Common/Logger.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
@@ -345,26 +346,30 @@ size_t NO_INLINE Set::insertFromBlockImpl(
     SetVariants & variants,
     ConstNullMapPtr null_map,
     ColumnUInt8::Container * out_filter,
+    ColumnUInt64::Container * out_new_rows,
     size_t max_keys)
 {
+    auto insert = [&]<bool has_null_map>() -> size_t
+    {
+        if (out_filter)
+            return insertFromBlockImplCase<Method, has_null_map, true, false>(
+                method, key_columns, rows, variants, null_map, out_filter, out_new_rows, max_keys);
+        else if (out_new_rows)
+            return insertFromBlockImplCase<Method, has_null_map, false, true>(
+                method, key_columns, rows, variants, null_map, out_filter, out_new_rows, max_keys);
+        else
+            return insertFromBlockImplCase<Method, has_null_map, false, false>(
+                method, key_columns, rows, variants, null_map, out_filter, out_new_rows, max_keys);
+    };
+
     if (null_map)
-    {
-        if (out_filter)
-            return insertFromBlockImplCase<Method, true, true>(method, key_columns, rows, variants, null_map, out_filter, max_keys);
-        else
-            return insertFromBlockImplCase<Method, true, false>(method, key_columns, rows, variants, null_map, out_filter, max_keys);
-    }
+        return insert.template operator()<true>();
     else
-    {
-        if (out_filter)
-            return insertFromBlockImplCase<Method, false, true>(method, key_columns, rows, variants, null_map, out_filter, max_keys);
-        else
-            return insertFromBlockImplCase<Method, false, false>(method, key_columns, rows, variants, null_map, out_filter, max_keys);
-    }
+        return insert.template operator()<false>();
 }
 
 
-template <typename Method, bool has_null_map, bool build_filter>
+template <typename Method, bool has_null_map, bool build_filter, bool collect_new_rows>
 size_t NO_INLINE Set::insertFromBlockImplCase(
     Method & method,
     const ColumnRawPtrs & key_columns,
@@ -372,8 +377,11 @@ size_t NO_INLINE Set::insertFromBlockImplCase(
     SetVariants & variants,
     [[maybe_unused]] ConstNullMapPtr null_map,
     [[maybe_unused]] ColumnUInt8::Container * out_filter,
+    [[maybe_unused]] ColumnUInt64::Container * out_new_rows,
     size_t max_keys)
 {
+    static_assert(!(build_filter && collect_new_rows));
+
     typename Method::State state(key_columns, key_sizes, nullptr, {.skips_rows = has_null_map});
 
     /// For all rows
@@ -395,6 +403,12 @@ size_t NO_INLINE Set::insertFromBlockImplCase(
 
         if constexpr (build_filter)
             (*out_filter)[i] = emplace_result.isInserted();
+
+        if constexpr (collect_new_rows)
+        {
+            if (emplace_result.isInserted())
+                out_new_rows->push_back(i);
+        }
 
         if (emplace_result.isInserted() && method.data.size() > max_keys)
         {
@@ -509,9 +523,16 @@ bool Set::insertFromColumns(const Columns & columns, size_t max_keys, size_t & r
     size_t rows = columns.at(0)->size();
 
     SetKeyColumns holder;
-    /// Filter to extract distinct values from the block.
+    /// The rows whose keys are new to the set, to add them to the explicit elements.
+    size_t keys_before = 0;
     if (fill_set_elements)
-        holder.filter = ColumnUInt8::create(rows);
+    {
+        if (find_new_set_elements_by_filter)
+            holder.filter = ColumnUInt8::create(rows);
+        else
+            holder.new_rows = ColumnUInt64::create();
+        keys_before = data->getTotalRowCount();
+    }
 
     bool inserted = insertFromColumnsImpl(columns, holder, max_keys, rows_taken);
     if (inserted && fill_set_elements)
@@ -523,7 +544,10 @@ bool Set::insertFromColumns(const Columns & columns, size_t max_keys, size_t & r
             set_elements.clear();
         }
         else
+        {
             appendSetElements(holder);
+            find_new_set_elements_by_filter = (data->getTotalRowCount() - keys_before) * 8 >= rows;
+        }
     }
 
     return inserted;
@@ -551,6 +575,9 @@ bool Set::insertFromColumnsImpl(const Columns & columns, SetKeyColumns & holder,
         holder.key_columns.emplace_back(holder.materialized_columns.back().get());
     }
 
+    /// Hash tables compare floating point keys bitwise, but `-0.` is equal to `0.`.
+    replaceNegativeZeros(holder.key_columns, holder.materialized_columns);
+
     size_t rows = columns.at(0)->size();
     rows_taken = rows;
 
@@ -574,7 +601,14 @@ bool Set::insertFromColumnsImpl(const Columns & columns, SetKeyColumns & holder,
     data->callOnMethod([&](auto & method)
     {
         rows_taken = insertFromBlockImpl(
-            method, holder.key_columns, rows, *data, null_map, holder.filter ? &holder.filter->getData() : nullptr, max_keys);
+            method,
+            holder.key_columns,
+            rows,
+            *data,
+            null_map,
+            holder.filter ? &holder.filter->getData() : nullptr,
+            holder.new_rows ? &holder.new_rows->getData() : nullptr,
+            max_keys);
     });
 
     bool within_limits = limits.check(data->getTotalRowCount(), data->getTotalByteCount(), "IN-set", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
@@ -595,7 +629,8 @@ void Set::appendSetElements(SetKeyColumns & holder)
     size_t rows = holder.key_columns.at(0)->size();
     for (size_t i = 0; i < keys_size; ++i)
     {
-        auto filtered_column = holder.key_columns[i]->filter(holder.filter->getData(), rows);
+        auto filtered_column = holder.new_rows ? holder.key_columns[i]->index(*holder.new_rows, 0)
+                                               : holder.key_columns[i]->filter(holder.filter->getData(), rows);
         if (set_elements[i]->empty())
             set_elements[i] = IColumn::mutate(std::move(filtered_column));
         else
@@ -802,6 +837,9 @@ ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) co
     }
 
     const auto * null_map = non_member_rows ? &assert_cast<const ColumnUInt8 &>(*non_member_rows).getData() : nullptr;
+
+    /// Hash tables compare floating point keys bitwise, but `-0.` is equal to `0.`.
+    replaceNegativeZeros(key_columns, materialized_columns);
 
     if (disk_set)
     {

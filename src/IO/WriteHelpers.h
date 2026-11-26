@@ -205,9 +205,19 @@ ALWAYS_INLINE inline size_t writeFloatTextFastPath(T x, char * buffer, bool forc
         ///   exp < 0:    |value| < 1, not an integer.
         ///   exp > 62:   |value| >= 2^63, overflows Int64.
         if (decomposed.isIntegerInRepresentableRange() || exp == 53)
+        {
             result = detail::writeIntegerFloatText(Int64(x), buffer) - buffer;
+            if (force_decimal_point)
+                buffer[result++] = '.';
+            return result;
+        }
         else if (exp > 53 && exp <= 62)
+        {
             result = detail::writeFloatTextFastPathFloat64Rounded(x, exp, buffer);
+            if (force_decimal_point)
+                buffer[result++] = '.';
+            return result;
+        }
         else
             result = detail::writeShortestFloatText(x, buffer) - buffer;
     }
@@ -241,10 +251,20 @@ ALWAYS_INLINE inline size_t writeFloatTextFastPath(T x, char * buffer, bool forc
 
         /// Most common fast path first: exp 0..24, exact integers.
         if (decomposed.isIntegerInRepresentableRange() || exp == 24)
+        {
             result = detail::writeIntegerFloatText(Int32(f32), buffer) - buffer;
+            if (force_decimal_point)
+                buffer[result++] = '.';
+            return result;
+        }
         /// Extended fast path: exp 25..30, round to "roundest" decimal then itoa.
         else if (exp > 24 && exp <= 30)
+        {
             result = detail::writeFloatTextFastPathFloat32Rounded(f32, exp, buffer);
+            if (force_decimal_point)
+                buffer[result++] = '.';
+            return result;
+        }
         /// Not an integer, or exp out of range: use zmij.
         else
             result = detail::writeShortestFloatText(f32, buffer) - buffer;
@@ -252,11 +272,10 @@ ALWAYS_INLINE inline size_t writeFloatTextFastPath(T x, char * buffer, bool forc
     else
         static_assert(false, "`writeFloatTextFastPath` supports only `Float64`, `Float32` and `BFloat16`");
 
-    /// Append a trailing decimal point for finite values whose representation is a bare integer
-    /// (no '.', exponent, or inf/nan). The byte-scan predicate covers both the itoa fast paths
-    /// and the zmij path, which can also emit a bare integer for large magnitudes
-    /// (e.g. `toFloat32(1.23e20)` -> `123000000000000000000`). The `isFinite` guard keeps
-    /// `inf`/`nan` untouched. The caller guarantees at least
+    /// The integer paths have already handled `force_decimal_point`. The `zmij` path can also
+    /// emit a bare integer for large magnitudes (e.g. `toFloat32(1.23e20)` ->
+    /// `123000000000000000000`). Append a point if there is no point or exponent in its output.
+    /// The `isFinite` guard keeps `inf`/`nan` untouched. The caller guarantees at least
     /// `DoubleConverter<false>::MAX_REPRESENTATION_LENGTH` bytes, which leaves room for the extra '.'.
     if (force_decimal_point && isFinite(x)
         && find_first_symbols<'.', 'e', 'E'>(buffer, buffer + result) == buffer + result)
