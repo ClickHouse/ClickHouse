@@ -13,6 +13,7 @@ INSERT INTO t_05441 SELECT number, if(number % 2 = 0, 'a', 'b'), toString(number
 CREATE ROW POLICY rp_05441 ON t_05441 FOR SELECT USING tenant = 'a' TO CURRENT_USER;
 
 SET query_plan_optimize_lazy_materialization = 1, query_plan_max_limit_for_lazy_materialization = 10;
+SET enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0;
 
 SELECT 'table';
 SELECT count() FROM (EXPLAIN SELECT * FROM t_05441 ORDER BY id LIMIT 3 OFFSET 100) WHERE explain LIKE '%LazilyReadFromMergeTree%';
