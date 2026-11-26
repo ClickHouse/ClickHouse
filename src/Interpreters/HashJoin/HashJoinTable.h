@@ -871,8 +871,8 @@ private:
         PaddedPODArray<UInt128> prebuilt_keys;
         /// The rows of the block per bucket, with a budget only.
         std::vector<UInt32> bucket_rows;
-        /// A two-level map behind one slot reserves a bound over any split of the rows, and counts the rows per bucket only if
-        /// that does not fit.
+        /// A two-level map has one slot only with one build stream, so its bound over any split of the rows is reserved before
+        /// the slot lock; the rows are counted per bucket only if that bound does not fit.
         std::optional<size_t> worst_case_reserved;
         SCOPE_EXIT({
             if (worst_case_reserved)

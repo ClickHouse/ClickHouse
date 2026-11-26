@@ -49,7 +49,8 @@ public:
     /// share of `reserve_keys_` keys at its first insert, under its own lock.
     void setReserve(size_t reserve_keys_) { reserve_keys = reserve_keys_; }
 
-    /// The keys that `reserveOnFirstInsert` reserves in each bucket of `slot`, zero once it has. Call under the lock of `slot`.
+    /// The keys that `reserveOnFirstInsert` reserves in each bucket of `slot`, zero once it has.
+    /// Call under the lock of `slot`, or where nothing else inserts into it.
     template <typename Map>
     [[nodiscard]] size_t keysToReservePerBucket(size_t slot) const
     {
