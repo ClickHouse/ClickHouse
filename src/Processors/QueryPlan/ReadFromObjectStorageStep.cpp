@@ -139,27 +139,7 @@ bool ReadFromObjectStorageStep::supportsTopKDynamicFilter(const ColumnWithTypeAn
     if (!boost::iequals(configuration->format, "Parquet"))
         return false;
 
-    /// With a structure of only Hive partition columns the format reads them from the file, while the
-    /// query takes their values from the path, so the reader would compare other values than the
-    /// ones the threshold is made from.
-    if (info.formatReadsHivePartitionColumns())
-        return false;
-
-    /// A column of `format_header` with the name of a column read under another name is another column.
-    if (info.columns_read_under_other_names.contains(sort_column.name))
-        return false;
-
-    /// The output header is broader than what the format reads: Hive partition columns (from the
-    /// path) and virtual columns (`_path`, `_file`, `_row_id`, ...) are added after the format has
-    /// produced its chunk, so the reader could never compare them against the threshold.
-    const auto * format_column = info.format_header.findByName(sort_column.name);
-    if (!format_column || !format_column->type->equals(*sort_column.type))
-        return false;
-
-    /// A column with a `DEFAULT` / `MATERIALIZED` / `ALIAS` expression is recomputed above the format
-    /// by `AddingDefaultsTransform` for the values the reader reported as missing, so the threshold
-    /// would come from other values than the ones the reader compares against it.
-    return !info.columns_description.hasDefault(sort_column.name) && !info.defaultsDependOnTheirBlock(getContext());
+    return info.formatReturnsColumnUnchanged(sort_column.name, sort_column.type) && !info.defaultsDependOnTheirBlock(getContext());
 }
 
 bool ReadFromObjectStorageStep::canSkipDataByFilterOn(const ColumnWithTypeAndName & column) const
@@ -374,12 +354,19 @@ void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
     }
 
     const auto & settings = context->getSettingsRef();
-    if (join_runtime_filter_predicate && configuration->isIcebergConfiguration()
+    if (format_join_runtime_filter_predicate
         && settings[Setting::use_join_runtime_filters_for_iceberg_pruning] && settings[Setting::enable_join_runtime_filters_index_analysis])
     {
-        format_filter_info->join_runtime_filter_predicate = join_runtime_filter_predicate;
+        format_filter_info->join_runtime_filter_predicate = format_join_runtime_filter_predicate;
+        /// Outside Iceberg a runtime filter that skips nothing must not add a read to every read of a file.
+        format_filter_info->join_runtime_filter_reads_uncached_column_index = configuration->isIcebergConfiguration();
         if (top_k_query_condition_cache_key && top_k_query_condition_cache_key->format_filter_info_tracking_best_values)
-            top_k_query_condition_cache_key->format_filter_info_tracking_best_values->join_runtime_filter_predicate = join_runtime_filter_predicate;
+        {
+            auto & tracking_best_values = *top_k_query_condition_cache_key->format_filter_info_tracking_best_values;
+            tracking_best_values.join_runtime_filter_predicate = format_join_runtime_filter_predicate;
+            tracking_best_values.join_runtime_filter_reads_uncached_column_index
+                = format_filter_info->join_runtime_filter_reads_uncached_column_index;
+        }
     }
 
     auto file_iterator = iterator_wrapper;
@@ -474,8 +461,20 @@ void ReadFromObjectStorageStep::createIterator()
             if (auto lookup = query_context->getRuntimeFilterLookup())
             {
                 join_runtime_filter_predicate
-                    = std::make_shared<const RuntimeFilterPruningPredicate>(join_runtime_filters_for_file_pruning, std::move(lookup), context);
+                    = std::make_shared<const RuntimeFilterPruningPredicate>(join_runtime_filters_for_file_pruning, lookup, context);
                 iterator_wrapper->setJoinRuntimeFilters(join_runtime_filter_predicate);
+
+                RuntimeFilterIndexAnalysisDescriptors format_descriptors;
+                for (const auto & descriptor : join_runtime_filters_for_file_pruning)
+                    if (info.formatReturnsColumnUnchanged(descriptor.key_column_name, descriptor.key_column_type))
+                        format_descriptors.push_back(descriptor);
+                if (format_descriptors.size() == join_runtime_filters_for_file_pruning.size())
+                    format_join_runtime_filter_predicate = join_runtime_filter_predicate;
+                else if (format_descriptors.empty())
+                    format_join_runtime_filter_predicate = nullptr;
+                else
+                    format_join_runtime_filter_predicate
+                        = std::make_shared<const RuntimeFilterPruningPredicate>(std::move(format_descriptors), std::move(lookup), context);
             }
 }
 
