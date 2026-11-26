@@ -2,9 +2,9 @@
 sidebarTitle: 'QuickSight'
 slug: /integrations/quicksight
 keywords: ['clickhouse', 'aws', 'amazon', 'QuickSight', 'mysql', '连接', '集成', 'UI']
-description: 'Amazon QuickSight 通过统一的商业智能（BI）为数据驱动型组织提供支持。'
+description: '亚马逊 QuickSight 通过统一的商业智能（BI）为数据驱动型组织提供支持。'
 title: 'QuickSight'
-doc_type: '指南'
+doc_type: 'guide'
 integration:
   - support_level: 'core'
   - category: 'data_visualization'
@@ -17,7 +17,7 @@ import { ClickHouseSupportedBadge } from "/snippets/zh/components/ClickHouseSupp
 QuickSight 可通过 MySQL 接口，使用官方 MySQL 数据源和 Direct Query 模式连接到本地部署的 ClickHouse (23.11+) 。
 
 <div id="on-premise-clickhouse-server-setup">
-  ## 本地部署 ClickHouse 服务器设置
+  ## 本地部署 ClickHouse 服务器设置 {#on-premise-clickhouse-server-setup}
 </div>
 
 有关如何配置启用 MySQL 接口的 ClickHouse 服务器，请参阅[官方文档](/zh/concepts/features/interfaces/mysql)。
@@ -110,113 +110,83 @@ mysql> show databases;
 Read 4 rows, 603.00 B in 0.00156 sec., 2564 rows/sec., 377.48 KiB/sec.
 ```
 
-<div id="connecting-quicksight-to-clickhouse">
-  ## 将 QuickSight 连接到 ClickHouse
-</div>
+## 将 QuickSight 连接到 ClickHouse {#connecting-quicksight-to-clickhouse}
 
-首先，前往 [https://quicksight.aws.amazon.com](https://quicksight.aws.amazon.com)，进入 Datasets，然后点击“New dataset”：
+首先，访问 [https://quicksight.aws.amazon.com](https://quicksight.aws.amazon.com)，进入 Datasets 页面，然后点击“New dataset”：
 
 <div className="ch-image-md">
-
-<Frame>
-
-![Amazon QuickSight 仪表板，显示 Datasets 部分中的 New dataset 按钮](/images/integrations/data-visualization/quicksight_01.webp)
-
-</Frame>
-
+  <Frame>
+    ![亚马逊 QuickSight 仪表盘，显示 Datasets 部分中的 New dataset 按钮](/images/integrations/data-visualization/quicksight_01.webp)
+  </Frame>
 </div>
 
 <br />
 
-搜索 QuickSight 内置的官方 MySQL 连接器 (名称就是 **MySQL**) ：
+搜索 QuickSight 自带的官方 MySQL 连接器 (名称就叫 **MySQL**) ：
 
 <div className="ch-image-md">
-
-<Frame>
-
-![QuickSight 数据源选择界面，搜索结果中高亮显示 MySQL](/images/integrations/data-visualization/quicksight_02.webp)
-
-</Frame>
-
+  <Frame>
+    ![QuickSight 数据源选择界面，搜索结果中突出显示了 MySQL](/images/integrations/data-visualization/quicksight_02.webp)
+  </Frame>
 </div>
 
 <br />
 
-填写连接信息。请注意，MySQL 接口的默认端口是 9004，
-具体端口也可能因服务器配置而异。
+填写连接详情。请注意，MySQL 接口端口默认为 9004，
+具体可能因您的服务器配置而异。
 
 <div className="ch-image-md">
-
-<Frame>
-
-![QuickSight MySQL 连接配置表单，包含 hostname、端口、database 和凭据字段](/images/integrations/data-visualization/quicksight_03.webp)
-
-</Frame>
-
+  <Frame>
+    ![QuickSight MySQL 连接配置表单，包含主机名、端口、数据库和凭证字段](/images/integrations/data-visualization/quicksight_03.webp)
+  </Frame>
 </div>
 
 <br />
 
-现在，你有两种从 ClickHouse 拉取数据的方式。首先，你可以从列表中选择一张表：
+接下来，您可以通过两种方式从 ClickHouse 拉取数据。第一种是从列表中选择一个表：
 
 <div className="ch-image-md">
-
-<Frame>
-
-![QuickSight 表选择界面，显示来自 ClickHouse 的可用数据库表](/images/integrations/data-visualization/quicksight_04.webp)
-
-</Frame>
-
+  <Frame>
+    ![QuickSight 表选择界面，显示 ClickHouse 中可用的数据库表](/images/integrations/data-visualization/quicksight_04.webp)
+  </Frame>
 </div>
 
 <br />
 
-或者，你也可以指定自定义 SQL 来拉取数据：
+或者，也可以编写自定义 SQL 来拉取数据：
 
 <div className="ch-image-md">
-
-<Frame>
-
-![QuickSight 自定义 SQL 查询编辑器，用于从 ClickHouse 拉取数据](/images/integrations/data-visualization/quicksight_05.webp)
-
-</Frame>
-
+  <Frame>
+    ![用于从 ClickHouse 拉取数据的 QuickSight 自定义 SQL 查询编辑器](/images/integrations/data-visualization/quicksight_05.webp)
+  </Frame>
 </div>
 
 <br />
 
-点击“Edit/Preview data”后，你应该可以查看自动识别出的表结构；如果你选择的是这种方式，也可以调整自定义 SQL：
+点击“Edit/Preview data”后，即可查看内省得到的表结构；如果您选择通过自定义 SQL 访问数据，也可以在此调整该 SQL：
 
 <div className="ch-image-md">
-
-<Frame>
-
-![QuickSight 数据预览，显示包含列和样本数据的表结构](/images/integrations/data-visualization/quicksight_06.webp)
-
-</Frame>
-
+  <Frame>
+    ![QuickSight 数据预览，显示包含列和样本数据的表结构](/images/integrations/data-visualization/quicksight_06.webp)
+  </Frame>
 </div>
 
 <br />
 
-请确保在 UI 左下角选中了“Direct Query 模式”：
+请确保在 UI 左下角选中了“Direct Query”模式：
 
 <div className="ch-image-md">
-
-<Frame>
-
-![QuickSight 界面，左下角高亮显示 Direct Query 模式选项](/images/integrations/data-visualization/quicksight_07.webp)
-
-</Frame>
-
+  <Frame>
+    ![QuickSight 界面，底部角落突出显示了 Direct Query 模式选项](/images/integrations/data-visualization/quicksight_07.webp)
+  </Frame>
 </div>
 
 <br />
 
-现在，你可以继续发布数据集并创建新的可视化了！
+现在，您可以发布数据集并创建新的可视化了！
 
 <div id="known-limitations">
-  ## 已知限制
+  ## 已知限制 {#known-limitations}
 </div>
 
 * SPICE 导入未能如预期正常工作；请改用 Direct Query 模式。参见 [#58553](https://github.com/ClickHouse/ClickHouse/issues/58553)。

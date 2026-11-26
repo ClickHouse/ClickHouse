@@ -8,10 +8,10 @@ doc_type: 'reference'
 
 `eval` テーブル関数は、引数をクエリ文字列として評価し、その文字列を単一の `SELECT` クエリとして実行します。
 
-このテーブル関数は実験的機能であり、デフォルトでは無効になっています。使用するには、`allow_experimental_eval_table_function` 設定を有効にします。
+このテーブル関数は実験的機能であり、デフォルトでは無効になっています。使用するには、`enable_eval_table_function` 設定を有効にします。
 
 ```sql
-SET allow_experimental_eval_table_function = 1;
+SET enable_eval_table_function = 1;
 ```
 
 ## 構文 {#syntax}
@@ -112,4 +112,4 @@ SELECT x + 1 FROM eval('SELECT 4 AS x');
 ## 関連 {#related}
 
 * [`view` テーブル関数](/ja/reference/functions/table-functions/view)
-* `allow_experimental_eval_table_function` 設定
+* `enable_eval_table_function` 設定

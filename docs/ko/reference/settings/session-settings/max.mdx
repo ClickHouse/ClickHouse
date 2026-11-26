@@ -89,7 +89,9 @@ ClickHouse에서는 데이터를 블록 단위로 처리하며, 블록은 컬럼
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.1"},{"label": "0"},{"label": "max_execution_time과 max_estimated_execution_time 분리"}]}]} />
 
 초 단위의 최대 쿼리 예상 실행 시간입니다. [`timeout_before_checking_execution_speed`](/ko/reference/settings/session-settings/other#timeout_before_checking_execution_speed)
-만료 시마다 각 데이터 블록에서 확인합니다.
+만료 시마다 각 데이터 블록에서 확인합니다. 현재 쿼리 실행 속도를 기준으로 외삽(extrapolation)하여 동작합니다.
+`timeout_before_checking_execution_speed`를 0으로 설정하면 이 설정은
+확인하지 않습니다.
 
 ## max_expanded_ast_elements {#max_expanded_ast_elements}
 
@@ -155,6 +157,8 @@ Cloud 기본값: `10`.
 **추가 정보**
 
 이 옵션은 사용된 설정에 따라 결과가 달라질 수 있습니다.
+
+`parallel_replicas_mode`가 `sampling_key`이거나, 세그먼트가 2개 이상인 클러스터에서 사용자 지정 키 모드를 사용하면 각 레플리카는 해당 세그먼트 결과 중 자신이 담당하는 부분을 반환합니다. 세그먼트의 레플리카들은 initiator가 이 부분들을 직접 집계하거나 완전히 정렬하는 경우(예: `GROUP BY` 키가 없는 집계)에만 함께 사용됩니다. 그 밖의 경우, 예를 들어 `distributed_aggregation_memory_efficient`를 사용하는 `GROUP BY`나 `ORDER BY`에서는 세그먼트를 하나의 레플리카에서만 읽습니다.
 
 ### `SAMPLE` 키를 사용한 병렬 처리 {#parallel-processing-using-sample-key}
 

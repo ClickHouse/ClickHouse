@@ -24,6 +24,9 @@
 #include <set>
 #include <string_view>
 
+#include <pwd.h>
+#include <unistd.h>
+
 namespace fs = std::filesystem;
 
 namespace DB
@@ -74,6 +77,13 @@ constexpr std::array system_paths = {
     "/usr/local/share/ca-certificates",
     /// The separate debug info of the executable, for the symbols in stack traces.
     "/usr/lib/debug",
+    /// The secrets that container runtimes mount: Kubernetes projects the tokens of the service accounts into
+    /// `/var/run/secrets`, as `/var/run/secrets/eks.amazonaws.com/serviceaccount/token` for the IAM roles of EKS, which
+    /// an AWS profile can name in `web_identity_token_file`, and Docker mounts its secrets into `/run/secrets`. Each of
+    /// them is a mount of its own, and the directories rather than the files are visible, because the kubelet rotates
+    /// the tokens by replacing the files.
+    "/run/secrets",
+    "/var/run/secrets",
 };
 
 /// The directories of the CA certificates of the system, which can be links to certificates elsewhere.
@@ -122,7 +132,8 @@ public:
         const Poco::Util::AbstractConfiguration & config_,
         const std::string & config_path,
         const std::string & working_directory_,
-        const std::string & startup_directory_)
+        const std::string & startup_directory_,
+        bool with_supervisor_ = false)
         : config(config_)
         , working_directory(working_directory_)
         , startup_directory(startup_directory_)
@@ -131,6 +142,7 @@ public:
         , config_directory(config_file.parent_path())
         , data_path(getDataPath(config, working_directory))
         , runtime_directory(is_daemon ? coreDirectory() : working_directory)
+        , with_supervisor(with_supervisor_)
     {
     }
 
@@ -144,10 +156,10 @@ public:
         for (const auto * path : system_certificate_directories)
             addLinkTargetsInside(path, "the CA certificates of the system");
 
-        /// The socket of the service manager, which the server notifies when it is ready (`systemdNotify`). Only the
-        /// socket is visible, not its directory. A socket on a read-only mount can still be sent to. A name starting
-        /// with `@` is an abstract socket, which is not in the filesystem.
-        if (const char * notify_socket = std::getenv("NOTIFY_SOCKET"); notify_socket && *notify_socket == '/') // NOLINT(concurrency-mt-unsafe)
+        /// The socket of the service manager, which the server notifies when it is ready (`systemdNotify`), unless the
+        /// supervisor does. Only the socket is visible, not its directory. A socket on a read-only mount can still be
+        /// sent to. A name starting with `@` is an abstract socket, which is not in the filesystem.
+        if (const char * notify_socket = std::getenv("NOTIFY_SOCKET"); !with_supervisor && notify_socket && *notify_socket == '/') // NOLINT(concurrency-mt-unsafe)
             add(notify_socket, Access::ReadOnly, "the environment variable NOTIFY_SOCKET");
 
         /// If it is a link, as `/dev/log -> /run/systemd/journal/dev-log` with systemd, the directory of its target, so
@@ -163,14 +175,23 @@ public:
         addDataPaths();
         addDisks();
         addKeeper();
+        addDistributedCache();
         addLogs();
         addCertificates();
         addKerberosProfiles();
+        addCloudCredentials();
         addBridge();
         addJemallocProfiles();
         addExtraPaths();
 
         return std::move(paths);
+    }
+
+    /// The pid file, where `BaseDaemon::initialize` would create it, or empty if there is none.
+    [[nodiscard]] std::string pidFile() const
+    {
+        const std::string value = config.getString("pid", "");
+        return value.empty() ? std::string{} : absolute(value, logDirectory()).string();
     }
 
 private:
@@ -187,6 +208,7 @@ private:
     /// with `--daemon`, the directory of the core dumps, where `BaseDaemon::initialize` changes to at its end. Only
     /// `path` is resolved against `working_directory`, the original working directory, in any case.
     const fs::path runtime_directory;
+    const bool with_supervisor;
     std::vector<FilesystemIsolationPath> paths;
 
     /// Without `.` and empty components, so that equal paths compare equal, but with `..`: after a symbolic link it
@@ -215,7 +237,11 @@ private:
     /// If the file is a symbolic link, the directories of the targets of the links in the chain as well: a
     /// certificate of Let's Encrypt in `live/<domain>` is a link to `../../archive/<domain>/fullchain<N>.pem`, and a
     /// renewal adds a new file next to the target and points the link at it.
-    void addLocation(const fs::path & path, Access access, const std::string & source)
+    ///
+    /// With `only_file_in_shared_directory`, a file directly in `/` or in `/tmp` is visible on its own instead of its
+    /// directory: the root directory cannot be visible, and the directory `/tmp` of the host would cover the private
+    /// writable `/tmp` and expose the temporary files of everything else on the host.
+    void addLocation(const fs::path & path, Access access, const std::string & source, bool only_file_in_shared_directory = false)
     {
         std::error_code error;
         /// The same limit on the number of links as in the kernel, against a loop.
@@ -240,7 +266,10 @@ private:
                     add(current, access, source);
                 return;
             }
-            add(current.parent_path(), access, source);
+            if (only_file_in_shared_directory && isSharedDirectory(current.parent_path()))
+                add(current, access, source);
+            else
+                add(current.parent_path(), access, source);
 
             if (i == max_links || !FS::isSymlinkNoThrow(current))
                 return;
@@ -253,6 +282,16 @@ private:
             /// it means the parent of the target of that link, which `resolvePath` follows as the kernel does.
             current = absolute(target.string(), "/");
         }
+    }
+
+    /// The root directory or `/tmp`, also through links, as `/var/tmp -> /tmp`.
+    static bool isSharedDirectory(const fs::path & directory)
+    {
+        std::error_code error;
+        const fs::path real_directory = fs::weakly_canonical(directory, error);
+        if (error)
+            return false;
+        return real_directory == "/" || real_directory == "/tmp";
     }
 
     /// For a system file that is a symbolic link, the directories of the targets of the links in the chain outside
@@ -708,6 +747,38 @@ private:
         }
     }
 
+    /// The working directory of every `<distributed_cache_server>` section, which the instance of the server creates
+    /// at startup, and the cache inside it. The certificates are read again when the configuration is reloaded, which
+    /// happens after the filesystem is isolated, and the client registry is initialized after it as well. The
+    /// distributed cache is only in ClickHouse Cloud, but its configuration is respected in every build, so that the
+    /// collector is the same everywhere.
+    void addDistributedCache()
+    {
+        /// The default of the `path` setting of the distributed cache server, for a section that does not name one.
+        constexpr auto default_path = "/var/lib/clickhouse-distributed-cache/";
+
+        for (const auto & section : getMultipleKeys("", "distributed_cache_server"))
+        {
+            /// As the settings of the distributed cache server read it, rather than with `getPathSetting`: this setting
+            /// keeps the whitespace around the value, and the directory is created with exactly this string.
+            const fs::path server_path = absolute(config.getString(section + ".path", default_path), runtime_directory);
+            add(server_path, Access::ReadWrite, fmt::format("`{}.path`", section));
+
+            /// The cache of the section, as `FileCacheSettings::loadFromConfig` resolves it: a relative path is joined
+            /// to the working directory as it is written, so it can leave it, and the default one can be a link
+            /// elsewhere. `planMounts` drops it when a mount of the working directory covers it already.
+            const std::string cache_key = section + ".cache.path";
+            add(config.has(cache_key) ? absolute(config.getString(cache_key), server_path) : server_path / "cache",
+                Access::ReadWrite, fmt::format("`{}`", cache_key));
+
+            for (const auto * name : {"tls_certificate_path", "tls_key_path"})
+                addKeyLocation(fmt::format("{}.{}", section, name), Access::ReadOnly, runtime_directory);
+        }
+
+        /// A single section, as the registry of the clients takes it, rather than one per server.
+        addKeyLocation("distributed_cache_client.certificate_chain_path", Access::ReadOnly, runtime_directory);
+    }
+
     /// With the targets of the links, as a log file can be a link to another directory.
     /// The paths of the logs are relative to the directories that `BaseDaemon::initialize` opens them in: `stderr` and
     /// `stdout` in `startup_directory`, and the logs and the pid file after it has changed to `logDirectory`.
@@ -715,8 +786,11 @@ private:
     {
         for (const auto * key : {"logger.stderr", "logger.stdout"})
             addKeyLocation(key, Access::ReadWrite, startup_directory);
-        for (const auto * key : {"logger.log", "logger.errorlog", "pid"})
+        for (const auto * key : {"logger.log", "logger.errorlog"})
             addKeyLocation(key, Access::ReadWrite, logDirectory());
+        /// Unless the supervisor outside of the isolation owns it.
+        if (!with_supervisor)
+            addKeyLocation("pid", Access::ReadWrite, logDirectory());
         /// With `--daemon`, `stderr.log` and `stdout.log` are created in the directory of the log by default.
         if (is_daemon && !config.getString("logger.log", "").empty())
             add(logDirectory(), Access::ReadWrite, "the directory of `logger.log`");
@@ -732,13 +806,13 @@ private:
     }
 
     /// The working directory after `BaseDaemon::initialize` has created the directory of the log: with `--daemon`, it
-    /// changes to that directory, or to `/tmp` without a log.
+    /// changes to that directory, or to `/tmp` without a log or with a log without a directory, as `server.log`.
     [[nodiscard]] fs::path logDirectory() const
     {
         if (!is_daemon)
             return startup_directory;
         const std::string log = config.getString("logger.log", "");
-        return log.empty() ? fs::path("/tmp") : absolute(log, startup_directory).parent_path();
+        return fs::path(log).parent_path().empty() ? fs::path("/tmp") : absolute(log, startup_directory).parent_path();
     }
 
     /// The directory of the core dumps that `BaseDaemon::initialize` changes to at its end with `--daemon`: `core_path`
@@ -825,6 +899,68 @@ private:
                 addKeyLocation(fmt::format("ldap_servers.{}.{}", server, name), Access::ReadOnly, runtime_directory);
             addCertificateAuthorityKey(fmt::format("ldap_servers.{}.tls_ca_cert_dir", server));
         }
+    }
+
+    /// The credentials of the clouds that the clients of S3 and Azure read from files named by environment variables,
+    /// as the token of the service account that Kubernetes projects into a pod for `AssumeRoleWithWebIdentity`
+    /// (`AWS_WEB_IDENTITY_TOKEN_FILE`, set by EKS, as `/var/run/secrets/eks.amazonaws.com/serviceaccount/token`),
+    /// for EKS Pod Identity and for the workload identity of Azure. The kubelet rotates such a token: the file is a
+    /// link to `..data/token`, and it points `..data` at a new directory, so the directories of the file and of the
+    /// targets of the links are visible rather than the file. A relative path is relative to the working directory.
+    void addCloudCredentials()
+    {
+        for (const char * name : {
+                 "AWS_WEB_IDENTITY_TOKEN_FILE",
+                 "AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE",
+                 "AWS_CONFIG_FILE",
+                 "AWS_SHARED_CREDENTIALS_FILE",
+                 "AZURE_FEDERATED_TOKEN_FILE"})
+        {
+            const char * value = std::getenv(name); // NOLINT(concurrency-mt-unsafe)
+            if (value && *value)
+                addLocation(absolute(value, runtime_directory), Access::ReadOnly, fmt::format("the environment variable {}", name),
+                    /* only_file_in_shared_directory = */ true);
+        }
+
+        /// The default location of the configuration and the credentials of the AWS SDK, `~/.aws/config` and
+        /// `~/.aws/credentials`, as `Aws::FileSystem::GetHomeDirectory` finds it: `HOME`, and if it is not set or is
+        /// empty, the home directory of the user in the passwd database. Only if it is a directory that can
+        /// be accessed: the server can inherit the home directory of another user, as `HOME=/root` after
+        /// `clickhouse su` in the entrypoint of the Docker image, and it does not need it unless it uses S3.
+        if (const std::string home = getHomeDirectory(); home.starts_with('/'))
+        {
+            const fs::path aws_directory = absolute(home, "/") / ".aws";
+            std::error_code error;
+            if (fs::is_directory(aws_directory, error))
+            {
+                const std::string source = "the configuration of the AWS SDK in the home directory";
+                add(aws_directory, Access::ReadOnly, source);
+                /// The files can be links to a place that is not visible otherwise, as a mounted secret:
+                /// `~/.aws/credentials -> /mnt/cloud-credentials/credentials`.
+                for (const char * name : {"config", "credentials"})
+                    if (const fs::path file = aws_directory / name; FS::isSymlinkNoThrow(file))
+                        addLocation(file, Access::ReadOnly, source, /* only_file_in_shared_directory = */ true);
+            }
+        }
+    }
+
+    /// The home directory as the AWS SDK resolves it, see `Aws::FileSystem::GetHomeDirectory`.
+    static std::string getHomeDirectory()
+    {
+        std::string home;
+        if (const char * value = std::getenv("HOME")) // NOLINT(concurrency-mt-unsafe)
+            home = value;
+
+        if (home.empty())
+        {
+            passwd entry{};
+            passwd * result = nullptr;
+            std::array<char, 4096> buffer{};
+            if (getpwuid_r(getuid(), &entry, buffer.data(), buffer.size(), &result) == 0 && result && result->pw_dir)
+                home = result->pw_dir;
+        }
+
+        return Poco::trim(home);
     }
 
     /// The profiles of Kerberos at the default paths of the bundled MIT Kerberos (`DEFAULT_PROFILE_PATH`), with the
@@ -924,9 +1060,19 @@ std::vector<FilesystemIsolationPath> collectFilesystemIsolationPaths(
     const Poco::Util::AbstractConfiguration & config,
     const std::string & config_path,
     const std::string & working_directory,
+    const std::string & startup_directory,
+    bool with_supervisor)
+{
+    return Collector(config, config_path, working_directory, startup_directory, with_supervisor).collect();
+}
+
+std::string getFilesystemIsolationPidFile(
+    const Poco::Util::AbstractConfiguration & config,
+    const std::string & config_path,
+    const std::string & working_directory,
     const std::string & startup_directory)
 {
-    return Collector(config, config_path, working_directory, startup_directory).collect();
+    return Collector(config, config_path, working_directory, startup_directory).pidFile();
 }
 
 }

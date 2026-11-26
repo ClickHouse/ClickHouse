@@ -21,6 +21,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/TypeTree.h>
 #include <Functions/ComparisonOrderDomain.h>
@@ -30,6 +31,7 @@
 #include <Interpreters/convertFieldToType.h>
 
 #include <algorithm>
+#include <base/sanitizer_defs.h>
 
 
 namespace DB
@@ -285,7 +287,7 @@ static bool hasNonDeterministicFunction(const QueryTreeNodePtr & node)
         {
             /// Only ordinary functions can be non-deterministic here (e.g. `rand`); aggregate and
             /// window functions are deterministic within the scope of the query.
-            if (function_node->isOrdinaryFunction() && !function_node->getFunctionOrThrow()->isDeterministicInScopeOfQuery())
+            if (function_node->isOrdinaryCall() && !function_node->getFunctionOrThrow()->isDeterministicInScopeOfQuery())
                 return true;
         }
 
@@ -430,7 +432,7 @@ static bool isEqualExceptTypes(const IQueryTreeNode & lhs, const IQueryTreeNode 
         {
             const auto & rhs_function = rhs_node->as<const FunctionNode &>();
             if (lhs_function->getFunctionName() != rhs_function.getFunctionName()
-                || lhs_function->isOrdinaryFunction() != rhs_function.isOrdinaryFunction())
+                || lhs_function->isOrdinaryCall() != rhs_function.isOrdinaryCall())
                 return false;
         }
         else if (node_type != QueryTreeNodeType::LIST && node_type != QueryTreeNodeType::LAMBDA)
@@ -1193,6 +1195,7 @@ static const QueryTreeNodePtr & getComparisonFilterExpressionNode(const QueryTre
 /// for the column type or is implied by existing filters, or ADDED otherwise.
 /// `expression` is a precomputed key, or a node that is hashed only when `filter_map` is accessed.
 template <typename Expression>
+NO_SANITIZE_UNSIGNED_OVERFLOW
 static AddComparisonFilterResult addComparisonFilter(
     ComparisonFilterMap & filter_map,
     const Expression & expression,
@@ -1508,6 +1511,8 @@ struct CommonExpressionExtractionResult
     //   Result: new_node = nullptr, common_expressions = {A, B}
     QueryTreeNodePtr new_node;
     QueryTreeNodes common_expressions;
+    // The first `leading_common_expressions` of `common_expressions` start every disjunct, in this order.
+    size_t leading_common_expressions = 0;
 };
 
 /// True if an element of `nodes` absent from `kept` contains `arrayJoin`.
@@ -1734,10 +1739,39 @@ static std::optional<CommonExpressionExtractionResult> tryExtractCommonExpressio
     // The complete elimination is handled above, so at this point we can be sure there are at least 2 arguments.
     chassert(new_or_arguments.size() >= 2);
 
+    /// The longest sequence of conditions that every disjunct starts with.
+    auto get_and_arguments = [&flattened_ands](const QueryTreeNodePtr & original_or_argument) -> const QueryTreeNodes &
+    {
+        auto it = flattened_ands.find(original_or_argument);
+        const auto & or_argument = it != flattened_ands.end() ? it->second : original_or_argument;
+        return or_argument->as<FunctionNode &>().getArguments().getNodes();
+    };
+    const auto & first_and_arguments = get_and_arguments(or_argument_nodes.front());
+    QueryTreeNodePtrWithHashSet leading_exprs_set;
+    for (size_t i = 0; i < first_and_arguments.size(); ++i)
+    {
+        const auto & leading_expr = keys(first_and_arguments[i]);
+        bool starts_every_disjunct = std::ranges::all_of(or_argument_nodes, [&](const QueryTreeNodePtr & or_argument)
+        {
+            const auto & and_arguments = get_and_arguments(or_argument);
+            return i < and_arguments.size() && keys(and_arguments[i]) == leading_expr;
+        });
+        if (!starts_every_disjunct)
+            break;
+        leading_exprs_set.insert(leading_expr);
+    }
+
+    auto leading_exprs_end = std::stable_partition(
+        common_exprs.begin(), common_exprs.end(), [&](const QueryTreeNodePtr & expr) { return leading_exprs_set.contains(keys(expr)); });
+    size_t leading_common_expressions = leading_exprs_end - common_exprs.begin();
+
     if (auto optimized_disjunction =  tryExtractCommonExpressionsInDisjunction(new_or_arguments, keys, context))
     {
         auto new_disjunction_node = optimized_disjunction->new_node ? optimized_disjunction->new_node : optimized_disjunction->common_expressions[0];
-        return CommonExpressionExtractionResult{ .new_node = std::move(new_disjunction_node), .common_expressions = std::move(common_exprs) };
+        return CommonExpressionExtractionResult{
+            .new_node = std::move(new_disjunction_node),
+            .common_expressions = std::move(common_exprs),
+            .leading_common_expressions = leading_common_expressions};
     }
 
     auto new_or_node = std::make_shared<FunctionNode>("or");
@@ -1746,7 +1780,7 @@ static std::optional<CommonExpressionExtractionResult> tryExtractCommonExpressio
 
     resolveOrdinaryFunctionNodeByName(*new_or_node, "or", context);
 
-    return CommonExpressionExtractionResult{new_or_node, common_exprs};
+    return CommonExpressionExtractionResult{new_or_node, common_exprs, leading_common_expressions};
 }
 
 /// Rebuild the root of a logical operator as an `and` over `arguments`, converted to `result_type`.
@@ -1813,10 +1847,13 @@ static void tryOptimizeCommonExpressionsInAnd(QueryTreeNodePtr & node, const Con
         {
             extracted_something = true;
             auto & result = *maybe_result;
+            auto & common_expressions = result.common_expressions;
+            for (size_t i = 0; i < result.leading_common_expressions; ++i)
+                insert_possible_new_top_level_arg(std::move(common_expressions[i]));
             if (result.new_node != nullptr)
                 insert_possible_new_top_level_arg(std::move(result.new_node));
-            for (auto& common_expr: result.common_expressions)
-                insert_possible_new_top_level_arg(std::move(common_expr));
+            for (size_t i = result.leading_common_expressions; i < common_expressions.size(); ++i)
+                insert_possible_new_top_level_arg(std::move(common_expressions[i]));
         }
         else
         {
@@ -3200,6 +3237,13 @@ private:
 
             bool is_any_nullable = false;
             bool all_constants_convert_losslessly = true;
+            /// A `Field` does not keep the type of a `Dynamic` value or a `Variant` alternative, so the set may
+            /// put such a constant into a different type than the one `equals` compares.
+            const auto loses_type_in_field = [](const IDataType & type)
+            {
+                const auto * variant = typeid_cast<const DataTypeVariant *>(&type);
+                return isDynamic(type) || (variant && variant->getVariants().size() > 1);
+            };
             Tuple args;
             args.reserve(equals_functions.size());
             DataTypes tuple_element_types;
@@ -3226,6 +3270,9 @@ private:
                 /// replaces is evaluated in the wider of the two: a lossy conversion makes them disagree.
                 /// A NULL constant is excluded above, so it never reaches this check.
                 if (!tryConvertToColumnType(literal, expr_type))
+                    all_constants_convert_losslessly = false;
+
+                if (anyInTypeTree(*literal->getResultType(), loses_type_in_field))
                     all_constants_convert_losslessly = false;
             }
 
