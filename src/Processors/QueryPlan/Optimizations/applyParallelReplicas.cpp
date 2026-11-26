@@ -613,6 +613,10 @@ public:
             partial_aggregation_node.step = aggregating_step->clone();
             auto * partial_aggregation_step = typeid_cast<AggregatingStep *>(partial_aggregation_node.step.get());
             partial_aggregation_step->setFinal(false);
+            /// The remote replicas get the step without the kept-keys cutoff (see `AggregatingStep::serializeSettings`), but
+            /// the local replica runs this copy as is: with the cutoff it would drop its rows of the keys it did not keep,
+            /// which the merge could still return.
+            partial_aggregation_step->disableKeptKeysCutoff();
             /// Keep the bucket order when the original step already promised it to its consumer.
             partial_aggregation_step->setProduceResultsInBucketOrder(
                 should_produce_results_in_order_of_bucket_number || memory_efficient_aggregation);
