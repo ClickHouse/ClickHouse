@@ -16,6 +16,9 @@ SELECT '' FROM t_pr_rows_before_limit WHERE id < 30 ORDER BY id LIMIT 1 OFFSET 3
 SETTINGS parallel_replicas_local_plan = 0;
 SELECT '' FROM t_pr_rows_before_limit WHERE id < 30 ORDER BY id LIMIT 1 OFFSET 3 FORMAT Template
 SETTINGS parallel_replicas_local_plan = 1;
+-- A full sort without the local plan: the replicas send only their top-N, but count all their rows.
+SELECT '' FROM t_pr_rows_before_limit WHERE id < 10000 ORDER BY id LIMIT 1 OFFSET 3 FORMAT Template
+SETTINGS parallel_replicas_local_plan = 0, optimize_read_in_order = 0;
 SELECT '' FROM t_pr_rows_before_limit WHERE id < 30 ORDER BY id DESC LIMIT 1 OFFSET 3 FORMAT Template
 SETTINGS parallel_replicas_local_plan = 1;
 SELECT '' FROM t_pr_rows_before_limit WHERE id < 30 ORDER BY id LIMIT 1 WITH TIES FORMAT Template

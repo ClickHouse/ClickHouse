@@ -110,8 +110,8 @@ SELECT '--- explain pipeline: in-order read pool for ORDER BY a DESC ---';
 SELECT countIf(explain LIKE '%ReadPoolParallelReplicasInOrder%') > 0
 FROM (EXPLAIN PIPELINE SELECT a FROM t_pr_read_in_order ORDER BY a DESC LIMIT 5);
 
--- A top-N is restated as a `LimitStep` inside the fragment, because `SortingStep::serialize` drops the sort's
--- own limit. With `exact_rows_before_limit` it reads till the end, so `rows_before_limit_at_least` still counts all rows.
+-- A top-N is restated as a `LimitStep` inside the fragment, because the sort's own limit is not applied to an in-order
+-- read with one stream. With `exact_rows_before_limit` it reads till the end, so `rows_before_limit_at_least` still counts all rows.
 SELECT '--- explain: local top-N shipped, exact_rows_before_limit = 0 ---';
 SELECT countIf(explain LIKE '%local top-N%') > 0
 FROM (EXPLAIN pretty = 0 SELECT a FROM t_pr_read_in_order ORDER BY a LIMIT 5 SETTINGS exact_rows_before_limit = 0);

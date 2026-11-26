@@ -668,10 +668,9 @@ public:
 
             QueryPlan::Node * fragment_root = &partial_sorting_node;
 
-            /// `SortingStep::serialize` drops the limit and `deserialize` rebuilds an unbounded sort, so a
-            /// top-N has to be restated as a step to survive the wire. The offset is deliberately not shipped:
-            /// it applies once, globally, above the merge. As a shard limit, it lets `rows_before_limit_at_least`
-            /// count the rows of the local replica, all of them with `exact_rows_before_limit`.
+            /// The top-N is restated as a step: the sort's own limit is not applied to an in-order read with one stream.
+            /// The offset is deliberately not shipped: it applies once, globally, above the merge. As a shard limit, it
+            /// lets `rows_before_limit_at_least` count the rows of the local replica, all of them with `exact_rows_before_limit`.
             if (limit)
             {
                 auto & limit_node = nodes.emplace_back();
