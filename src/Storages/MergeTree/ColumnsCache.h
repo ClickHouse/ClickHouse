@@ -217,7 +217,7 @@ public:
     ColumnsCacheFillClaims & operator=(ColumnsCacheFillClaims &&) = delete;
     ~ColumnsCacheFillClaims();
 
-    bool empty() const { return keys.empty(); }
+    [[nodiscard]] bool empty() const { return keys.empty(); }
 
 private:
     friend class ColumnsCache;
@@ -311,8 +311,8 @@ public:
     ColumnsCacheFillClaims claimFills(const std::vector<Key> & needed, const std::vector<Key> & to_claim, std::vector<ColumnsCacheFillPtr> & in_progress);
 
     /// Unchanged since a lookup: no fill has written anything since.
-    UInt64 releasedFills() const { return released_fills.load(); }
-    bool anyFillsInProgress() const { return claimed_keys.load() != 0; }
+    [[nodiscard]] UInt64 releasedFills() const { return released_fills.load(); }
+    [[nodiscard]] bool anyFillsInProgress() const { return claimed_keys.load() != 0; }
 
     /// Waits until the fills are released, at most `max_wait_ns` if given, and not after the query is cancelled.
     ///
@@ -325,7 +325,7 @@ public:
 
     /// Average over all readers, for a reader that has not measured its own reads yet.
     static constexpr double DEFAULT_READ_NANOSECONDS_PER_VALUE = 1.0;
-    double readNanosecondsPerValue() const;
+    [[nodiscard]] double readNanosecondsPerValue() const;
     void recordRead(double nanoseconds_per_value);
 
     /// Whether a stripe that is not in the cache should be written to it. Nothing is written
