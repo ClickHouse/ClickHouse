@@ -68,15 +68,27 @@ Poco::JSON::Object::Ptr IcebergRESTCatalogWarehouseCredential::toJSON(bool hide_
 IcebergRESTCatalogWarehouseDefinition IcebergRESTCatalogWarehouseDefinition::fromJSON(const Poco::JSON::Object & json)
 {
     IcebergRESTCatalogWarehouseDefinition definition;
-    definition.base_location = stripTrailingSlashes(getRequiredString(json, "base_location"));
-    if (!definition.base_location.starts_with("s3://"))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "'base_location' must be an s3:// URI");
+    definition.base_location = getRequiredString(json, "base_location");
 
     const auto credential = json.getObject("credential");
     if (!credential)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "'credential' must be an object");
     definition.credential = IcebergRESTCatalogWarehouseCredential::fromJSON(*credential);
+
+    definition.validate();
     return definition;
+}
+
+void IcebergRESTCatalogWarehouseDefinition::validate()
+{
+    if (base_location.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "'base_location' is required");
+    base_location = stripTrailingSlashes(base_location);
+    if (!base_location.starts_with("s3://"))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "'base_location' must be an s3:// URI");
+
+    if (credential.role_arn.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "'role_arn' is required");
 }
 
 Poco::JSON::Object::Ptr IcebergRESTCatalogWarehouseDefinition::toJSON(const String & name) const

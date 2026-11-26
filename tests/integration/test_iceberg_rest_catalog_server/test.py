@@ -1640,6 +1640,10 @@ def test_warehouse_sql(started_cluster):
     assert "already exists" in node.query_and_get_error(f"CREATE ICEBERG WAREHOUSE {warehouse} SETTINGS {settings}")
     node.query(f"CREATE ICEBERG WAREHOUSE IF NOT EXISTS {warehouse} SETTINGS {settings}")
     assert "Unknown setting" in node.query_and_get_error(f"CREATE ICEBERG WAREHOUSE {warehouse}_2 SETTINGS {settings}, foo = 'bar'")
+    assert "'role_arn' is required" in node.query_and_get_error(f"CREATE ICEBERG WAREHOUSE {warehouse}_2 SETTINGS base_location = '{base_location}'")
+    assert "must be an s3:// URI" in node.query_and_get_error(
+        f"CREATE ICEBERG WAREHOUSE {warehouse}_2 SETTINGS base_location = 'http://{BUCKET}/x', role_arn = '{CREDENTIAL['role_arn']}'"
+    )
 
     # A warehouse with namespaces is not dropped.
     catalog_request("POST", f"/v1/{warehouse}/namespaces", json={"namespace": ["ns"]})

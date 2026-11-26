@@ -34,6 +34,8 @@ struct IcebergRESTCatalogWarehouseDefinition
 
     /// Parses `{"base_location": "s3://...", "credential": {...}}`. Other keys, such as `name`, are ignored.
     static IcebergRESTCatalogWarehouseDefinition fromJSON(const Poco::JSON::Object & json);
+    /// Rules shared by management API and `CREATE ICEBERG WAREHOUSE`. Removes trailing slashes from `base_location`.
+    void validate();
     /// Response of the management API: `{"name": ..., "base_location": ..., "credential": {...}}` with secrets hidden.
     [[nodiscard]] Poco::JSON::Object::Ptr toJSON(const String & name) const;
 

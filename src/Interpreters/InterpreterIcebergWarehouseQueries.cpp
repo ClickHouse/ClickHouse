@@ -40,16 +40,6 @@ IcebergRESTCatalogWarehouseRegistry createRegistry(const ContextPtr & context)
     return IcebergRESTCatalogWarehouseRegistry(context->getGlobalContext());
 }
 
-constexpr auto BASE_LOCATION = "base_location";
-constexpr auto ROLE_ARN = "role_arn";
-constexpr auto EXTERNAL_ID = "external_id";
-constexpr auto ROLE_SESSION_NAME = "role_session_name";
-
-bool isCredentialSetting(std::string_view name)
-{
-    return name == ROLE_ARN || name == EXTERNAL_ID || name == ROLE_SESSION_NAME;
-}
-
 String getStringValue(const SettingChange & change)
 {
     if (change.value.getType() != Field::Types::String)
@@ -57,27 +47,26 @@ String getStringValue(const SettingChange & change)
     return change.value.safeGet<String>();
 }
 
-/// The settings are the fields of the management API request with the `credential` object flattened.
-/// Building that request keeps one validation path for SQL and REST.
+/// Each setting is one field of the definition.
 IcebergRESTCatalogWarehouseDefinition definitionFromSettings(const SettingsChanges & changes)
 {
-    Poco::JSON::Object::Ptr credential = new Poco::JSON::Object;
-    /// `role_arn` implies the credential type.
-    credential->set("type", IcebergRESTCatalogWarehouseCredential::TYPE_AWS_ROLE);
-
-    Poco::JSON::Object json;
+    IcebergRESTCatalogWarehouseDefinition definition;
     for (const auto & change : changes)
     {
-        if (change.name == BASE_LOCATION)
-            json.set(change.name, getStringValue(change));
-        else if (isCredentialSetting(change.name))
-            credential->set(change.name, getStringValue(change));
+        if (change.name == "base_location")
+            definition.base_location = getStringValue(change);
+        else if (change.name == "role_arn")
+            definition.credential.role_arn = getStringValue(change);
+        else if (change.name == "external_id")
+            definition.credential.external_id = getStringValue(change);
+        else if (change.name == "role_session_name")
+            definition.credential.role_session_name = getStringValue(change);
         else
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown setting `{}` of an Iceberg warehouse", change.name);
     }
-    json.set("credential", credential);
 
-    return IcebergRESTCatalogWarehouseDefinition::fromJSON(json);
+    definition.validate();
+    return definition;
 }
 
 }
