@@ -1,5 +1,6 @@
 #include <Databases/DatabaseBackup.h>
 
+#include <algorithm>
 #include <filesystem>
 
 #include <boost/algorithm/string.hpp>
@@ -21,6 +22,7 @@
 
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserCreateQuery.h>
@@ -561,6 +563,16 @@ DatabaseBackup::Configuration parseArguments(ASTs engine_args, ContextPtr, bool 
 /// The database reads its backup with no user, so whoever introduces it must be allowed to read every backup of the chain.
 void authorizeBackupChain(BackupInfo backup_info, const ContextPtr & context)
 {
+    /// The database evaluates the overrides again in its own context, so only literals name the backup authorized here.
+    auto is_expression = [](const ASTPtr & arg) { return !arg->as<ASTLiteral>() && !arg->as<ASTIdentifier>(); };
+    for (const auto & kv_arg : backup_info.kv_args)
+    {
+        const auto & arguments = kv_arg->as<const ASTFunction &>().arguments;
+        if (arguments && std::ranges::any_of(arguments->children, is_expression))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "The named collection overrides in the backup destination of a `Backup` database must be literals");
+    }
+
     BackupFactory::CreateParams params;
     params.open_mode = IBackup::OpenMode::READ;
     params.for_authorization_only = true;
