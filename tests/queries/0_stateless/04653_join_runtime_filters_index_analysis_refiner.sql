@@ -1,7 +1,8 @@
 -- JOIN runtime-filter pruning combined with the index ranges refiner
--- (use_indexes_refiner_in_read_pools). The refiner is not used when runtime filters drive
--- index pruning (its eager per-part build could snapshot a not-yet-published filter), so
--- the pruning events and the amount of read data must not depend on the setting.
+-- (use_indexes_refiner_in_read_pools). When runtime filters drive index pruning, the refiner
+-- only reuses the result a reader has built (an eager per-part build could snapshot a
+-- not-yet-published filter), so the pruning events and the amount of read data must not
+-- depend on the setting.
 
 SET enable_join_runtime_filters = 1;
 -- The probe side has 2000 rows, so the randomized threshold must not skip the filter.

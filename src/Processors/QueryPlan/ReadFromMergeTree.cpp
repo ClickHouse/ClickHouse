@@ -742,10 +742,9 @@ static MergeTreeReadRangesRefinerPtr createIndexReadRangesRefiner(
     if (!settings[Setting::use_indexes_refiner_in_read_pools])
         return nullptr;
 
-    /// Refining at task-cut time could snapshot JOIN runtime filters before they are published.
-    /// Keep the build at reader initialization instead.
+    /// An eager build could snapshot JOIN runtime filters before they are published, so reuse what a reader built.
     if (index_build_context->index_reader_pool->hasRuntimeFilters())
-        return nullptr;
+        return std::make_shared<IndexReadRangesRefiner>(index_build_context, metadata_snapshot, /*only_built_results=*/ true);
 
     return std::make_shared<IndexReadRangesRefiner>(index_build_context, metadata_snapshot);
 }

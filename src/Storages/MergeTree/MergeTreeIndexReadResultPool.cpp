@@ -17,6 +17,8 @@
 #include <Common/FailPoint.h>
 #include <base/sleep.h>
 
+#include <shared_mutex>
+
 namespace CurrentMetrics
 {
     extern const Metric FilteringMarksWithSecondaryKeys;
@@ -862,6 +864,22 @@ MergeTreeIndexReadResultPool::getOrBuildIndexReadResult(
         lock.unlock();
         return future.get();
     }
+}
+
+MergeTreeIndexReadResultPtr MergeTreeIndexReadResultPool::tryGetBuiltIndexReadResult(size_t part_index)
+{
+    std::shared_future<MergeTreeIndexReadResultPtr> future;
+    {
+        std::shared_lock lock(index_read_result_registry_mutex);
+        auto it = index_read_result_registry.find(part_index);
+        if (it == index_read_result_registry.end())
+            return nullptr;
+        future = it->second.future;
+    }
+
+    if (future.wait_for(std::chrono::seconds(0)) != std::future_status::ready)
+        return nullptr;
+    return future.get();
 }
 
 void MergeTreeIndexReadResultPool::clear(size_t part_index)

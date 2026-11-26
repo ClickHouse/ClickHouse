@@ -282,6 +282,9 @@ public:
         const NameSet & all_updated_columns,
         const NameSet & value_updated_columns);
 
+    /// Returns the part's MergeTreeIndexReadResult only if its build has already finished; never builds or waits.
+    MergeTreeIndexReadResultPtr tryGetBuiltIndexReadResult(size_t part_index);
+
     /// Cleans up the cached MergeTreeIndexReadResult for a given part if it exists.
     /// Should be called when the last task for the part has finished.
     void clear(size_t part_index);
