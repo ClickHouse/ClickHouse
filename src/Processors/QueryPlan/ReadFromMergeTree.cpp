@@ -2172,7 +2172,9 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreams(
         !query_info.row_level_filter &&
         !query_info.prewhere_info &&
         !reader_settings.use_query_condition_cache && /// the query condition cache produces incorrect results with intersecting ranges
-        !isVectorColumnReplaced()) /// Vector search optimization needs ranges & offsets to be stable
+        !isVectorColumnReplaced() && /// Vector search optimization needs ranges & offsets to be stable
+        /// The ranges are filtered by the sorting key computed by the query, which must match the stored one.
+        storage_snapshot->metadata->getSortingKey().getExpressionsWithChangedResultSettings(settings).empty())
     {
         NameSet column_names_set(column_names.begin(), column_names.end());
         Names in_order_column_names_to_read(column_names);

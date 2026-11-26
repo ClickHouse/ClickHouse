@@ -36,6 +36,7 @@ DROP TABLE IF EXISTS t_shared_prefix;
 DROP TABLE IF EXISTS t_lambda_text;
 DROP TABLE IF EXISTS t_plus_int;
 DROP TABLE IF EXISTS t_start_of_day;
+DROP TABLE IF EXISTS t_split_ranges;
 DROP TABLE IF EXISTS t_json_parser;
 DROP TABLE IF EXISTS t_json_raw_quote;
 DROP TABLE IF EXISTS t_json_text_quote;
@@ -138,6 +139,10 @@ CREATE TABLE t_plus_int (x UInt64) ENGINE = MergeTree ORDER BY x + 1 SETTINGS in
 INSERT INTO t_plus_int SELECT number FROM numbers(100);
 CREATE TABLE t_start_of_day (d Date) ENGINE = MergeTree ORDER BY toStartOfDay(d) SETTINGS index_granularity = 1;
 INSERT INTO t_start_of_day SELECT toDate('2024-01-01') + number FROM numbers(10);
+CREATE TABLE t_split_ranges (dt DateTime) ENGINE = MergeTree ORDER BY toString([dt]) SETTINGS index_granularity = 1;
+SYSTEM STOP MERGES t_split_ranges;
+INSERT INTO t_split_ranges SELECT toDateTime('2024-01-01 00:00:00', 'UTC') + number * 3600 FROM numbers(24) SETTINGS session_timezone = 'UTC';
+INSERT INTO t_split_ranges SELECT toDateTime('2024-01-01 00:00:00', 'UTC') + number * 3600 FROM numbers(24) SETTINGS session_timezone = 'UTC';
 CREATE TABLE t_json_parser (j String) ENGINE = MergeTree ORDER BY JSONType(j, 'a') SETTINGS index_granularity = 1;
 INSERT INTO t_json_parser SELECT if(number = 0, '{"a":18446744073709551616}', '{"a":"x"}') FROM numbers(20);
 CREATE TABLE t_json_raw_quote (j JSON(a UInt64)) ENGINE = MergeTree ORDER BY JSONExtractRaw(j, 'a') SETTINGS index_granularity = 1;
@@ -257,6 +262,10 @@ SELECT 'time array text', count() FROM t_time_array_text WHERE toString([dt]) = 
 SELECT 'time array column expected', count() FROM t_time_array_text WHERE dt = toDateTime(1704067200) SETTINGS use_primary_key = 0;
 SELECT 'time array column', count() FROM t_time_array_text WHERE dt = toDateTime(1704067200);
 SELECT 'time array column in', count() FROM t_time_array_text WHERE dt IN (toDateTime(1704067200), toDateTime(1704070800));
+-- Splitting the ranges of the parts by the sorting key filters them by the key computed with the time zone of the session.
+SELECT 'split ranges', count() FROM t_split_ranges WHERE dt = toDateTime(1704067200)
+SETTINGS use_primary_key = 0, merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 1,
+    use_query_condition_cache = 0, max_threads = 4;
 SELECT 'json string time expected', count() FROM t_json_string_time WHERE toJSONString(dt) = '"2024-01-01 19:00:00"' SETTINGS use_primary_key = 0;
 SELECT 'json string time', count() FROM t_json_string_time WHERE toJSONString(dt) = '"2024-01-01 19:00:00"';
 SELECT 'format row time expected', count() FROM t_format_row_time WHERE formatRowNoNewline('TSV', dt) = '2024-01-01 19:00:00'
@@ -307,6 +316,7 @@ DROP TABLE t_shared_prefix;
 DROP TABLE t_lambda_text;
 DROP TABLE t_plus_int;
 DROP TABLE t_start_of_day;
+DROP TABLE t_split_ranges;
 DROP TABLE t_json_parser;
 DROP TABLE t_json_raw_quote;
 DROP TABLE t_json_text_quote;
