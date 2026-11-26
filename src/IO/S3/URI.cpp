@@ -85,7 +85,7 @@ URI::URI(std::string_view uri_, bool allow_archive_path_syntax, bool keep_presig
     /// Keep a copy of how Poco parsed the original string before any mapping
     Poco::URI original_uri{String(uri_str)};
     bool looks_like_presigned = false;
-    for (const auto & [qk, qv] : original_uri.getQueryParameters())
+    for (const auto & [qk, qv] : getURIQueryParameters(original_uri))
     {
         if (qk == "versionId" || isPresignedURLParameterName(qk))
         {
@@ -131,7 +131,7 @@ URI::URI(std::string_view uri_, bool allow_archive_path_syntax, bool keep_presig
 
     /// Extract object version ID from query string.
     bool has_version_id = false;
-    for (const auto & [query_key, query_value] : uri.getQueryParameters())
+    for (const auto & [query_key, query_value] : getURIQueryParameters(uri))
     {
         if (query_key == "versionId")
         {

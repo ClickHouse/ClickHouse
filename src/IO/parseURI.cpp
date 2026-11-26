@@ -21,4 +21,16 @@ Poco::URI parseURI(const String & uri, bool enable_url_encoding)
     }
 }
 
+Poco::URI::QueryParameters getURIQueryParameters(const Poco::URI & uri)
+{
+    try
+    {
+        return uri.getQueryParameters();
+    }
+    catch (const Poco::SyntaxException & e)
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse URI: {}", e.displayText());
+    }
+}
+
 }
