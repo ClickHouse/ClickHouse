@@ -1,10 +1,9 @@
 {
-  "icon": "/images/icons/icon-clickstack.svg",
   "item": "ClickHouse Observability",
   "dropdowns": [
     {
       "dropdown": "ClickHouse Observability",
-      "icon": "/images/icons/icon-clickhouse-cloud.svg",
+      "icon": "/images/icons/icon-clickhouse-observability.svg",
       "pages": [
         "clickstack/observability/index",
         {
@@ -64,18 +63,24 @@
                   "group": "2026",
                   "pages": [
                     {
+                      "group": "November",
+                      "pages": [
+                        "clickstack/observability/demo-days/2026/2026-11-12"
+                      ]
+                    },
+                    {
                       "group": "October",
                       "pages": [
-                        "clickstack/demo-days/2026/2026-10-22",
-                        "clickstack/demo-days/2026/2026-10-15",
-                        "clickstack/demo-days/2026/2026-10-08",
-                        "clickstack/demo-days/2026/2026-10-01"
+                        "clickstack/observability/demo-days/2026/2026-10-22",
+                        "clickstack/observability/demo-days/2026/2026-10-15",
+                        "clickstack/observability/demo-days/2026/2026-10-08",
+                        "clickstack/observability/demo-days/2026/2026-10-01"
                       ]
                     },
                     {
                       "group": "September",
                       "pages": [
-                        "clickstack/demo-days/2026/2026-09-24",
+                        "clickstack/observability/demo-days/2026/2026-09-24",
                         "clickstack/observability/demo-days/2026/2026-09-17",
                         "clickstack/observability/demo-days/2026/2026-09-10",
                         "clickstack/observability/demo-days/2026/2026-09-04"
@@ -381,7 +386,7 @@
     },
     {
       "dropdown": "ClickStack (OSS)",
-      "icon": "/images/clickstack/clickstack-mark.svg",
+      "icon": "/images/clickstack/clickstack-icon-dark.svg",
       "pages": [
         "clickstack",
         {
@@ -474,6 +479,12 @@
                 {
                   "group": "2026",
                   "pages": [
+                    {
+                      "group": "November",
+                      "pages": [
+                        "clickstack/demo-days/2026/2026-11-12"
+                      ]
+                    },
                     {
                       "group": "October",
                       "pages": [
@@ -590,6 +601,7 @@
                     "clickstack/integration-examples/jvm-metrics",
                     "clickstack/integration-examples/kafka-metrics",
                     "clickstack/integration-examples/kubernetes",
+                    "clickstack/integration-examples/loom",
                     "clickstack/integration-examples/mysql",
                     "clickstack/integration-examples/nodejs-traces",
                     "clickstack/integration-examples/postgres-logs",

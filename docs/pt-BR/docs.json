@@ -4,64 +4,104 @@
       "pages": [
         "pt-BR/index"
       ],
-      "tab": "Início"
+      "tab": "Home"
     },
     {
       "menu": [
         {
-          "$ref": "./get-started/navigation.json"
+          "href": "#",
+          "icon": "/images/icons/icon-clickhouse.svg",
+          "item": "ClickHouse"
         },
         {
-          "$ref": "./concepts/navigation.json"
+          "$ref": "./get-started/navigation.json"
         },
         {
           "$ref": "./guides/navigation.json"
         },
         {
+          "$ref": "./concepts/navigation.json"
+        },
+        {
           "$ref": "./reference/navigation.json"
+        },
+        {
+          "$ref": "./products/managed-postgres/navigation.json"
         }
       ],
-      "tab": "Banco de dados"
+      "tab": "Databases"
     },
     {
       "menu": [
         {
           "href": "#",
           "icon": "/images/icons/section-header.svg",
-          "item": "ClickHouse Cloud"
+          "item": "Deployments"
         },
         {
           "$ref": "./products/cloud/navigation.json"
         },
         {
-          "$ref": "./products/managed-postgres/navigation.json"
+          "item": "BYOC",
+          "pages": [
+            "pt-BR/products/cloud/guides/infrastructure/deployment-options/byoc/overview"
+          ]
         },
         {
-          "href": "https://langfuse.com/docs",
-          "icon": "/images/icons/logo-langfuse.svg",
-          "item": "Langfuse"
+          "item": "Private",
+          "pages": [
+            "pt-BR/products/cloud/guides/infrastructure/deployment-options/clickhouse-private"
+          ]
         },
         {
           "href": "#",
           "icon": "/images/icons/section-header.svg",
-          "item": "Código aberto"
+          "item": "Applications"
         },
         {
           "$ref": "./clickstack/navigation.json"
+        },
+        {
+          "$ref": "./agents/navigation.json"
+        },
+        {
+          "href": "https://langfuse.com/docs",
+          "icon": "/images/icons/logo-langfuse.svg",
+          "item": "AI Engineering"
+        },
+        {
+          "href": "https://docs.runreveal.com/",
+          "icon": "/images/integrations/logos/runreveal.webp",
+          "item": "Security"
+        },
+        {
+          "href": "#",
+          "icon": "/images/icons/section-header.svg",
+          "item": "Open source"
+        },
+        {
+          "item": "ClickStack",
+          "pages": [
+            "pt-BR/clickstack"
+          ]
         },
         {
           "$ref": "./chdb/navigation.json"
         },
         {
           "$ref": "./products/kubernetes-operator/navigation.json"
+        },
+        {
+          "href": "https://www.librechat.ai/docs",
+          "item": "LibreChat"
         }
       ],
-      "tab": "Soluções"
+      "tab": "Products"
     },
     {
       "menu": [
         {
-          "item": "Ecossistema",
+          "item": "Ecosystem",
           "pages": [
             "pt-BR/integrations/home",
             "pt-BR/integrations/data-catalogs"
@@ -77,7 +117,7 @@
           "$ref": "./integrations/connectors/navigation.json"
         }
       ],
-      "tab": "Integrações"
+      "tab": "Integrations"
     },
     {
       "menu": [
@@ -94,7 +134,7 @@
           "$ref": "./resources/about/navigation.json"
         }
       ],
-      "tab": "Recursos"
+      "tab": "Resources"
     }
   ]
 }

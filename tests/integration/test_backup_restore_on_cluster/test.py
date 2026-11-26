@@ -865,6 +865,8 @@ def test_async_backups_to_same_destination(interface, on_cluster):
 
     nodes = [node1, node2]
     node1.query("INSERT INTO tbl VALUES (1)")
+    # A backup without ON CLUSTER on node2 contains only the parts node2 has.
+    node1.query("SYSTEM SYNC REPLICA ON CLUSTER 'cluster' tbl")
 
     backup_name = new_backup_name()
     on_cluster_part = "ON CLUSTER 'cluster'" if on_cluster else ""
@@ -1392,6 +1394,40 @@ def test_backup_required_privileges_address_default_database():
     node1.query("DROP DATABASE addrdb ON CLUSTER 'cluster' SYNC")
 
 
+def test_backup_restore_mixed_address_default_database():
+    # Some addresses of 'cluster_mixed_default_db' set `default_database` and some do not, so one
+    # dispatched query cannot resolve an unqualified table name the same way on every host.
+    node1.query("CREATE DATABASE addrdb ON CLUSTER 'cluster'")
+    node1.query("CREATE TABLE addrdb.tbl ON CLUSTER 'cluster' (x UInt8) ENGINE=MergeTree ORDER BY x")
+    node1.query("CREATE TABLE default.tbl ON CLUSTER 'cluster' (x UInt8) ENGINE=MergeTree ORDER BY x")
+
+    backup_name = new_backup_name()
+    error = "Mixed local default DB and shard default DB"
+    assert error in node1.query_and_get_error(
+        f"BACKUP TABLE tbl ON CLUSTER 'cluster_mixed_default_db' TO {backup_name}"
+    )
+    node1.query(f"BACKUP TABLE addrdb.tbl ON CLUSTER 'cluster_mixed_default_db' TO {backup_name}")
+    assert error in node1.query_and_get_error(
+        f"RESTORE TABLE tbl ON CLUSTER 'cluster_mixed_default_db' FROM {backup_name}"
+    )
+
+
+def test_except_data_from_qualified_table_on_cluster():
+    # The clause names the database that the unqualified element only gets from the current database.
+    node1.query("CREATE TABLE tbl ON CLUSTER 'cluster' (x UInt8) ENGINE=MergeTree ORDER BY x")
+    node1.query("INSERT INTO tbl VALUES (1)")
+    node2.query("INSERT INTO tbl VALUES (2)")
+
+    settings = "SETTINGS backup_restore_failure_after_host_disconnected_for_seconds = 30"
+    backup_name = new_backup_name()
+    node1.query(
+        f"BACKUP TABLE tbl EXCEPT DATA FROM TABLE default.tbl ON CLUSTER 'cluster' TO {backup_name} {settings}"
+    )
+    node1.query(f"RESTORE TABLE tbl AS tbl2 ON CLUSTER 'cluster' FROM {backup_name}")
+    assert node1.query("SELECT count() FROM tbl2") == "0\n"
+    assert node2.query("SELECT count() FROM tbl2") == "0\n"
+
+
 def test_system_named_collections_key_mismatch():
     node1.query("CREATE NAMED COLLECTION backup_nc_mismatch AS key1 = 'value1'")
 
@@ -1400,7 +1436,7 @@ def test_system_named_collections_key_mismatch():
     node1.query("DROP NAMED COLLECTION backup_nc_mismatch")
 
     # node3 does not hold the key the collections were encrypted with: the restore must fail
-    # before anything is restored, with both key fingerprints in the message.
+    # before anything is restored, naming the fingerprint of the missing key in the message.
     expected_error = "encrypted with a key with fingerprint"
     assert expected_error in node3.query_and_get_error(
         f"RESTORE TABLE system.named_collections FROM {backup_name}"
