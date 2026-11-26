@@ -1553,6 +1553,12 @@ getColumnsForNewDataPart(
             removed_columns.insert(command.column_name);
     }
 
+    /// `removed_columns` has names of the source part. In the new part, a removed name that a column is renamed to is that column.
+    auto is_removed_from_new_part = [&](const String & name)
+    {
+        return removed_columns.contains(name) && !renamed_columns_to_from.contains(name);
+    };
+
     for (const auto & [name, type] : persistent_virtuals)
     {
         if (storage_columns_set.contains(name))
@@ -1713,7 +1719,7 @@ getColumnsForNewDataPart(
     {
         for (const auto & column : updated_header.getNamesAndTypesList())
         {
-            if (!storage_columns_set.contains(column.name) || removed_columns.contains(column.name) || new_serialization_infos.contains(column.name))
+            if (!storage_columns_set.contains(column.name) || is_removed_from_new_part(column.name) || new_serialization_infos.contains(column.name))
                 continue;
 
             new_serialization_infos.emplace(column.name, column.type->createSerializationInfo(settings));
@@ -1741,7 +1747,7 @@ getColumnsForNewDataPart(
             /// a default value for projection rebuild) yet still be removed from the
             /// part by CLEAR COLUMN. In that case we must drop it from the column list
             /// so that the part does not claim to contain data it no longer has.
-            if (removed_columns.contains(it->name))
+            if (is_removed_from_new_part(it->name))
             {
                 it = storage_columns.erase(it);
                 continue;
@@ -1868,10 +1874,6 @@ getColumnsForNewDataPart(
             }
         }
     }
-
-    /// `serialization.json` must not name a column the part does not have.
-    const auto new_part_column_names = storage_columns.getNameSet();
-    std::erase_if(new_serialization_infos, [&](const auto & info) { return !new_part_column_names.contains(info.first); });
 
     return {storage_columns, new_serialization_infos, new_columns_substreams};
 }
@@ -2174,6 +2176,7 @@ static NameToNameVector collectFilesForRenames(
     StorageMetadataPtr metadata_snapshot,
     MergeTreeData::DataPartPtr source_part,
     MergeTreeData::DataPartPtr new_part,
+    const Block & updated_header,
     const MutationCommands & commands_for_renames,
     const NameSet & updated_columns_in_patches,
     const String & mrk_extension,
@@ -2335,7 +2338,8 @@ static NameToNameVector collectFilesForRenames(
             }
             else if (command.type == MutationCommand::Type::RENAME_COLUMN)
             {
-                if (!new_part_column_names.contains(command.rename_to))
+                /// A rewritten target gets new files: writing through a hardlink would modify the source part.
+                if (!new_part_column_names.contains(command.rename_to) || updated_header.has(command.rename_to))
                 {
                     if (columns_renamed_to_not_stored.insert(command.column_name).second)
                         remove_column_streams(command.column_name);
@@ -5769,6 +5773,7 @@ bool MutateTask::prepare()
             ctx->metadata_snapshot,
             ctx->source_part,
             ctx->new_data_part,
+            ctx->updated_header,
             ctx->for_file_renames,
             updated_columns_in_patches,
             ctx->mrk_extension,
