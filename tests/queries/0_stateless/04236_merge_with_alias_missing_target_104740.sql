@@ -11,8 +11,6 @@
 -- The fix turns the assertion into a user-facing `UNKNOWN_TABLE` exception
 -- that names the dangling alias.
 
-SET allow_experimental_alias_table_engine = 1;
-
 DROP TABLE IF EXISTS source_target_104740;
 DROP TABLE IF EXISTS alias_with_missing_target_104740;
 DROP TABLE IF EXISTS m_merge_104740;

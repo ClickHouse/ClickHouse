@@ -7,9 +7,7 @@ keywords: ['búsqueda semántica', 'similitud vectorial', 'vecinos más cercanos
 doc_type: 'guide'
 ---
 
-<div id="introduction">
-  ## Introducción
-</div>
+## Introducción {#introduction}
 
 El [conjunto de datos de Hacker News](https://news.ycombinator.com/) contiene 28.74 millones de
 publicaciones y sus embeddings vectoriales. Los embeddings se generaron con el modelo [all-MiniLM-L6-v2](https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2) de [SentenceTransformers](https://sbert.net/). La dimensión de cada vector de embedding es `384`.
@@ -17,17 +15,13 @@ publicaciones y sus embeddings vectoriales. Los embeddings se generaron con el m
 Este conjunto de datos puede usarse para analizar los aspectos de diseño, dimensionamiento y rendimiento de una aplicación de búsqueda vectorial a gran escala,
 en un entorno real, construida sobre datos textuales generados por los usuarios.
 
-<div id="dataset-details">
-  ## Detalles del conjunto de datos
-</div>
+## Detalles del conjunto de datos {#dataset-details}
 
 ClickHouse pone a disposición el conjunto de datos completo con embeddings vectoriales como un único archivo `Parquet` en un [bucket de S3](https://clickhouse-datasets.s3.amazonaws.com/hackernews-miniLM/hackernews_part_1_of_1.parquet)
 
 Recomendamos a los usuarios realizar primero un ejercicio de dimensionamiento para estimar los requisitos de almacenamiento y memoria de este conjunto de datos consultando la [documentación](/es/reference/engines/table-engines/mergetree-family/annindexes).
 
-<div id="steps">
-  ## Pasos
-</div>
+## Pasos {#steps}
 
 <Steps>
   <Step title="Crear la tabla" id="create-table">
@@ -105,11 +99,11 @@ Recomendamos a los usuarios realizar primero un ejercicio de dimensionamiento pa
   <Step title="Generar embeddings para la consulta de búsqueda" id="generating-embeddings-for-search-query">
     [Sentence Transformers](https://www.sbert.net/) ofrece modelos de embeddings locales y fáciles de usar para capturar el significado semántico de oraciones y párrafos.
 
-    El conjunto de datos de HackerNews contiene embeddings vectoriales generados con el modelo
+    El conjunto de datos de HackerNews contiene representaciones vectoriales generadas con el modelo
     [all-MiniLM-L6-v2](https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2).
 
     A continuación se incluye un script de Python de ejemplo para mostrar cómo generar
-    vectores de incrustación de forma programática usando el paquete de Python `sentence_transformers`. El vector de incrustación de búsqueda se pasa luego como argumento a la función [`cosineDistance()`](/es/reference/functions/regular-functions/distance-functions#cosineDistance) en la consulta `SELECT`.
+    vectores de incrustación de forma programática usando el paquete de Python `sentence_transformers1. El vector de incrustación de búsqueda se pasa luego como argumento a la función [`cosineDistance()`](/reference/functions/regular-functions/distance-functions#cosineDistance) en la consulta `SELECT&#96;.
 
     ```python
     from sentence_transformers import SentenceTransformer
@@ -212,7 +206,7 @@ Recomendamos a los usuarios realizar primero un ejercicio de dimensionamiento pa
     ---------
     ```
 
-    ## Aplicación de demostración de resumen
+## Aplicación de demostración de resumen {#summarization-demo-application}
 
     El ejemplo anterior ilustró la búsqueda semántica y la recuperación de documentos con ClickHouse.
 

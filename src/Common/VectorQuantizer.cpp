@@ -280,56 +280,74 @@ float raBitQNumeratorFromCounts(const RaBitQQuery & q, UInt64 pc, UInt64 weighte
     return 2.0f * sum_set - q.q_total; /// sum_i s_i * q_i
 }
 
-#if defined(__aarch64__)
-/// `RABITQ_TAIL_MASK + n` is 16 bytes: 16 - n zeros, then n bytes 0xFF that keep the last n bytes of a 16-byte step.
-alignas(32) constexpr UInt8 RABITQ_TAIL_MASK[32] = {
+#if defined(__aarch64__) || USE_X86_64_MULTITARGET_CODE
+/// `RABITQ_TAIL_MASK + 32 - w + n` is w bytes: w - n zeros, then n bytes 0xFF that keep the last n bytes of a w-byte step.
+alignas(64) constexpr UInt8 RABITQ_TAIL_MASK[64] = {
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
     0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
+
+/// `raBitQNumerator` counting `sizeof(Words)` bytes per step in vector registers; requires `q.code_bytes >= sizeof(Words)`.
+template <typename Words>
+ALWAYS_INLINE float raBitQNumeratorVector(const RaBitQQuery & q, const char * code)
+{
+    const size_t code_bytes = q.code_bytes;
+    const UInt8 * planes = q.planes.data();
+    Words pc_lanes = {};
+    Words plane_lanes[RABITQ_QUERY_BITS] = {};
+    auto count_step = [&](size_t pos, Words keep) ALWAYS_INLINE
+    {
+        Words code_words;
+        std::memcpy(&code_words, code + pos, sizeof(code_words));
+        code_words &= keep;
+        pc_lanes += __builtin_elementwise_popcount(code_words);
+        for (int j = 0; j < RABITQ_QUERY_BITS; ++j)
+        {
+            Words plane_words;
+            std::memcpy(&plane_words, planes + static_cast<size_t>(j) * code_bytes + pos, sizeof(plane_words));
+            plane_lanes[j] += __builtin_elementwise_popcount(code_words & plane_words);
+        }
+    };
+    const size_t full_bytes = code_bytes / sizeof(Words) * sizeof(Words);
+    for (size_t b = 0; b < full_bytes; b += sizeof(Words))
+        count_step(b, ~Words{});
+    if (const size_t rest = code_bytes - full_bytes)
+    {
+        /// The last `sizeof(Words)` bytes, with the bytes already counted masked out: cheaper than scalar loops for the rest.
+        Words keep;
+        std::memcpy(&keep, RABITQ_TAIL_MASK + sizeof(RABITQ_TAIL_MASK) / 2 - sizeof(Words) + rest, sizeof(keep));
+        count_step(code_bytes - sizeof(Words), keep);
+    }
+    Words weighted_lanes = plane_lanes[0];
+    for (int j = 1; j < RABITQ_QUERY_BITS; ++j)
+        weighted_lanes += plane_lanes[j] << j;
+    return raBitQNumeratorFromCounts(q, __builtin_reduce_add(pc_lanes), __builtin_reduce_add(weighted_lanes));
+}
+#endif
+
+#if USE_X86_64_MULTITARGET_CODE
+/// AVX-512 VPOPCNTDQ counts the bits of each 32-bit lane of a 32-byte word with one instruction.
+X86_64_ICELAKE_FUNCTION_SPECIFIC_ATTRIBUTE float raBitQNumeratorIcelake(const RaBitQQuery & q, const char * code)
+{
+    return raBitQNumeratorVector<UInt32 __attribute__((ext_vector_type(8)))>(q, code);
+}
 #endif
 
 /// Bit-sliced dot: AND+popcount the +-1 sign code against each query bit-plane and return `sum_i s_i * q_i`. `code`
 /// points at `q.code_bytes` packed sign bits (no trailing factor is read here).
 float raBitQNumerator(const RaBitQQuery & q, const char * code)
 {
-    const size_t code_bytes = q.code_bytes;
-    const UInt8 * planes = q.planes.data();
 #if defined(__aarch64__)
     /// AArch64 has no scalar popcount instruction, so count 16 bytes at a time in vector registers.
-    using Words = UInt32 __attribute__((ext_vector_type(4)));
-    if (code_bytes >= sizeof(Words))
-    {
-        Words pc_lanes = {};
-        Words plane_lanes[RABITQ_QUERY_BITS] = {};
-        auto count_step = [&](size_t pos, Words keep)
-        {
-            Words code_words;
-            std::memcpy(&code_words, code + pos, sizeof(code_words));
-            code_words &= keep;
-            pc_lanes += __builtin_elementwise_popcount(code_words);
-            for (int j = 0; j < RABITQ_QUERY_BITS; ++j)
-            {
-                Words plane_words;
-                std::memcpy(&plane_words, planes + static_cast<size_t>(j) * code_bytes + pos, sizeof(plane_words));
-                plane_lanes[j] += __builtin_elementwise_popcount(code_words & plane_words);
-            }
-        };
-        const size_t full_bytes = code_bytes / sizeof(Words) * sizeof(Words);
-        for (size_t b = 0; b < full_bytes; b += sizeof(Words))
-            count_step(b, ~Words{});
-        if (const size_t rest = code_bytes - full_bytes)
-        {
-            /// The last 16 bytes of the code, with the bytes the loop has already counted masked out. Scalar loops
-            /// for the rest would cost more than a 16-byte step (no scalar popcount instruction).
-            Words keep;
-            std::memcpy(&keep, RABITQ_TAIL_MASK + rest, sizeof(keep));
-            count_step(code_bytes - sizeof(Words), keep);
-        }
-        Words weighted_lanes = plane_lanes[0];
-        for (int j = 1; j < RABITQ_QUERY_BITS; ++j)
-            weighted_lanes += plane_lanes[j] << j;
-        return raBitQNumeratorFromCounts(q, __builtin_reduce_add(pc_lanes), __builtin_reduce_add(weighted_lanes));
-    }
+    if (q.code_bytes >= 16)
+        return raBitQNumeratorVector<UInt32 __attribute__((ext_vector_type(4)))>(q, code);
+#elif USE_X86_64_MULTITARGET_CODE
+    if (q.code_bytes >= 32 && isArchSupported(TargetArch::x86_64_icelake))
+        return raBitQNumeratorIcelake(q, code);
 #endif
+    const size_t code_bytes = q.code_bytes;
+    const UInt8 * planes = q.planes.data();
     UInt64 pc = 0;
     UInt64 plane_pc[RABITQ_QUERY_BITS] = {};
     size_t b = 0;
