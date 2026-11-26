@@ -2,5 +2,7 @@
     <backups>
         <allowed_disk>backups</allowed_disk>
         <allowed_disk>disk_s3_plain_rewritable_03517</allowed_disk>
+        <allow_concurrent_backups>true</allow_concurrent_backups>
+        <allow_concurrent_restores>true</allow_concurrent_restores>
     </backups>
 </clickhouse>

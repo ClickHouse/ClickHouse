@@ -1151,7 +1151,7 @@ void WorkloadEntityStorageBase::restore(
     /// WORKLOADs and RESOURCEs are backed up (and restored) via two separate system tables (system.workloads and
     /// system.resources), so their restore tasks are scheduled independently. We accumulate the parsed entities of
     /// both types and create them all together, in an order that keeps every reference valid (resources first, then
-    /// workloads parent-first). Concurrent restores are allowed (backups.allow_concurrent_restores), so the
+    /// workloads parent-first). Concurrent restores can be allowed (`backups.allow_concurrent_restores`), so the
     /// accumulator is keyed by the unique restore UUID instead of being kept as shared storage state; otherwise two
     /// concurrent restores would mix their entities.
     const auto & restore_settings = restorer.getRestoreSettings();

@@ -49,8 +49,8 @@ The following settings can be configured by sub-tags:
 {/* SQL
 WITH settings AS (
   SELECT arrayJoin([
-    ('allow_concurrent_backups', 'Bool','Determines whether multiple backup operations can run concurrently on the same host.', 'true'),
-    ('allow_concurrent_restores', 'Bool', 'Determines whether multiple restore operations can run concurrently on the same host.', 'true'),
+    ('allow_concurrent_backups', 'Bool','Determines whether multiple backup operations can run concurrently on the same host.', 'false'),
+    ('allow_concurrent_restores', 'Bool', 'Determines whether multiple restore operations can run concurrently on the same host.', 'false'),
     ('allowed_disk', 'String', 'Disk to backup to when using `File()`. This setting must be set in order to use `File`.', ''),
     ('allowed_path', 'String', 'Path to backup to when using `File()`. This setting must be set in order to use `File`.', ''),
     ('attempts_to_collect_metadata_before_sleep', 'UInt', 'Number of attempts to collect metadata before sleeping in case of inconsistency after comparing collected metadata.', '2'),
@@ -70,8 +70,8 @@ SELECT concat('`', t.1, '`') AS Setting, t.2 AS Type, t.3 AS Description, concat
 */}
 | Setting | Type | Description | Default |
 |:-|:-|:-|:-|
-| `allow_concurrent_backups` | Bool | Determines whether multiple backup operations can run concurrently on the same host. | `true` |
-| `allow_concurrent_restores` | Bool | Determines whether multiple restore operations can run concurrently on the same host. | `true` |
+| `allow_concurrent_backups` | Bool | Determines whether multiple backup operations can run concurrently on the same host. | `false` |
+| `allow_concurrent_restores` | Bool | Determines whether multiple restore operations can run concurrently on the same host. | `false` |
 | `allowed_disk` | String | Disk to backup to when using `File()`. This setting must be set in order to use `File`. | `` |
 | `allowed_path` | String | Path to backup to when using `File()`. This setting must be set in order to use `File`. | `` |
 | `attempts_to_collect_metadata_before_sleep` | UInt | Number of attempts to collect metadata before sleeping in case of inconsistency after comparing collected metadata. | `2` |

@@ -19,7 +19,7 @@ script_dir = os.path.dirname(os.path.realpath(__file__))
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(
     "instance",
-    main_configs=["configs/backups_disk.xml"],
+    main_configs=["configs/backups_disk.xml", "configs/allow_concurrent_backups.xml"],
     user_configs=["configs/zookeeper_retries.xml"],
     external_dirs=["/backups/"],
 )

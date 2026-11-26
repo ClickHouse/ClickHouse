@@ -18,6 +18,7 @@ main_configs = [
     # The assertions below leave a backup that can never complete, and the server waits for
     # unfinished backups on shutdown by default.
     "configs/shutdown_cancel_backups.xml",
+    "configs/allow_concurrent_backups.xml",
 ]
 
 user_configs = [
