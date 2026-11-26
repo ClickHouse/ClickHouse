@@ -1,0 +1,5 @@
+5020	4010
+block_larger_than_dim	1000	10
+block_larger_than_dim_again	1000	10
+block_smaller_than_dim	20	1
+block_smaller_than_dim_no_index_analysis	20	10

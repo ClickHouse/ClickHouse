@@ -47,6 +47,27 @@
                 <path>encrypted/./</path>
                 <key>1234567812345678</key>
             </encrypted_subdir_dot>
+            <local_1>
+                <type>local</type>
+                <path>/var/lib/clickhouse/local_1/</path>
+            </local_1>
+            <local_encrypted_1>
+                <type>encrypted</type>
+                <disk>local_1</disk>
+                <path>encrypted/</path>
+                <key>1234567812345678</key>
+            </local_encrypted_1>
+            <local_encrypted_2>
+                <type>encrypted</type>
+                <disk>local_1</disk>
+                <path>encrypted/</path>
+                <key>1234567812345678</key>
+            </local_encrypted_2>
+            <local_encrypted_no_path>
+                <type>encrypted</type>
+                <disk>local_1</disk>
+                <key>1234567812345678</key>
+            </local_encrypted_no_path>
         </disks>
         <policies>
             <cache_1_only>
@@ -71,6 +92,20 @@
                     </main>
                 </volumes>
             </blob_and_encrypted_subdir>
+            <local_encrypted_1_only>
+                <volumes>
+                    <main>
+                        <disk>local_encrypted_1</disk>
+                    </main>
+                </volumes>
+            </local_encrypted_1_only>
+            <local_encrypted_2_only>
+                <volumes>
+                    <main>
+                        <disk>local_encrypted_2</disk>
+                    </main>
+                </volumes>
+            </local_encrypted_2_only>
         </policies>
     </storage_configuration>
 </clickhouse>
