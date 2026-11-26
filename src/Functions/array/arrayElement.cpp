@@ -36,7 +36,6 @@
 #include <Interpreters/castColumn.h>
 #include <IO/ReadHelpers.h>
 #include <Core/Settings.h>
-#include <Common/HashTable/HashMap.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
 #include <Common/VectorWithMemoryTracking.h>
@@ -1579,7 +1578,7 @@ ColumnPtr FunctionArrayElement<mode>::executeConst(
 
     static constexpr UInt64 no_element = std::numeric_limits<UInt64>::max();
 
-    /// Appending a default to a copy of shared aggregate states copies the states, so copy only the selected ones.
+    /// Appending a default to a copy of shared aggregate states copies the states, so insert the rows one by one.
     /// The default after all elements needs a position, which an array of the maximum size of empty tuples has not.
     const bool copy_all_elements = array_elements.byteSize() <= rows * sizeof(UInt64) && !hasAggregateStates(array_elements)
         && array_size < no_element;
@@ -1621,45 +1620,24 @@ ColumnPtr FunctionArrayElement<mode>::executeConst(
         return res;
     }
 
-    MutableColumnPtr source;
     if (copy_all_elements)
     {
-        source = result_type->createColumn();
+        auto source = result_type->createColumn();
         source->insertRangeFrom(array_elements, 0, array_size);
+        source->insertDefault();
+        return source->index(*positions_column, rows);
     }
-    else
+
+    /// A copy of the selected elements can be as large as the result, so insert the rows one by one.
+    auto res = result_type->createColumn();
+    for (const auto position : positions)
     {
-        /// Gather each selected element once, so the copy takes no more memory than the constant array or the result.
-        auto selected_column = ColumnUInt64::create();
-        auto & selected = selected_column->getData();
-        HashMap<UInt64, UInt64> position_in_selected;
-        for (auto & position : positions)
-        {
-            if (position == no_element)
-                continue;
-
-            HashMap<UInt64, UInt64>::LookupResult it;
-            bool inserted;
-            position_in_selected.emplace(position, it, inserted);
-            if (inserted)
-            {
-                it->getMapped() = selected.size();
-                selected.push_back(position);
-            }
-            position = it->getMapped();
-        }
-
-        const UInt64 default_position = selected.size();
-        for (auto & position : positions)
-        {
-            if (position == no_element)
-                position = default_position;
-        }
-        source = IColumn::mutate(array_elements.index(*selected_column, selected.size()));
+        if (position == no_element)
+            res->insertDefault();
+        else
+            res->insertFrom(array_elements, position);
     }
-
-    source->insertDefault();
-    return source->index(*positions_column, rows);
+    return res;
 }
 
 template <ArrayElementExceptionMode mode>

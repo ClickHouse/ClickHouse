@@ -1,6 +1,6 @@
--- `arrayElement` of a large constant array with some indices out of range gathers each selected element once, so an
--- element repeated in many rows is not copied once for every row before the result is built.
-SET max_block_size = 64, max_memory_usage = 100000000;
+-- `arrayElement` of a large constant array with some indices out of range inserts the rows one by one, so the selected
+-- elements are not copied before the result is built.
+SET max_block_size = 64, max_memory_usage = 110000000;
 
 SELECT sum(length([repeat('x', 1000000)][if(number = 0, 2, 1)])) FROM numbers(64);
 SELECT sum(length(arrayElementOrNull([repeat('x', 1000000)], if(number = 0, 2, 1)))) FROM numbers(64);
@@ -24,3 +24,7 @@ WITH toUInt64(ignore(number)) AS z,
      arrayFlatten(replicate(a, arrayWithConstant(65537 + z, tuple()))) AS b,
      arrayFlatten(replicate(b, arrayWithConstant(6700417 + z, tuple()))) AS c
 SELECT c[number] FROM numbers(2) SETTINGS max_memory_usage = 300000000;
+
+-- Distinct positions of large elements with a default: no copy of the selected elements is made before the result.
+SELECT sum(length(arrayWithConstant(63, repeat('x', 900000))[number])) FROM numbers(64)
+SETTINGS max_threads = 1, max_block_size = 64, max_memory_usage = 160000000;
