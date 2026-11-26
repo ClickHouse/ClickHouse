@@ -3,6 +3,7 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnVariant.h>
 #include <Columns/ColumnsNumber.h>
@@ -12,7 +13,6 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <Common/WKB.h>
 
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -27,7 +27,6 @@
 #include <iomanip>
 #include <limits>
 #include <sstream>
-#include <base/EnumReflection.h>
 
 namespace DB
 {
@@ -35,6 +34,8 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
+extern const int LOGICAL_ERROR;
+extern const int INCORRECT_DATA;
 }
 
 template <typename Point>
@@ -45,17 +46,14 @@ struct AggregateFunctionGroupConvexHullData
     size_t add_count = 0;
 };
 
-/// WKBGeometry extension constants for types not in the WKB standard.
-static constexpr WKBGeometry WKB_RING = static_cast<WKBGeometry>(100);
-static constexpr WKBGeometry WKB_GEOMETRY = static_cast<WKBGeometry>(101);
-
 template <typename Point>
 class AggregateFunctionGroupConvexHull final
     : public IAggregateFunctionDataHelper<AggregateFunctionGroupConvexHullData<Point>, AggregateFunctionGroupConvexHull<Point>>
 {
 private:
     using Data = AggregateFunctionGroupConvexHullData<Point>;
-    WKBGeometry input_type;
+    /// `std::nullopt` means `Geometry`.
+    std::optional<GeometryColumnType> input_type;
     bool correct_geometry = true;
     size_t prune_interval;
 
@@ -76,41 +74,21 @@ private:
         state.add_count = 0;
     }
 
-    static WKBGeometry resolveInputType(const DataTypePtr & type)
+    /// Returns `std::nullopt` for `Geometry`, whose rows are dispatched by their variant discriminator.
+    /// The custom geo type name takes precedence; only a type without a custom name (e.g. a computed
+    /// `Array(Array(Tuple(Float64, Float64)))`) is resolved structurally, the same way as for the other geo functions.
+    static std::optional<GeometryColumnType> resolveInputType(const DataTypePtr & type)
     {
-        const auto & factory = DataTypeFactory::instance();
+        if (type->getName() == "Geometry")
+            return std::nullopt;
 
-        if (factory.get(WKBPointTransform::name)->equals(*type))
-            return WKBGeometry::Point;
-
-        /// LineString and Ring share the same underlying structure Array(Tuple(Float64, Float64)).
-        /// Disambiguate by checking the custom type name.
-        if (factory.get(WKBLineStringTransform::name)->equals(*type) && type->getCustomName()
-            && type->getCustomName()->getName() == WKBLineStringTransform::name)
-            return WKBGeometry::LineString;
-
-        /// MultiLineString and Polygon share the same underlying structure Array(Array(Tuple(Float64, Float64))).
-        /// Disambiguate by checking the custom type name.
-        if (factory.get(WKBMultiLineStringTransform::name)->equals(*type) && type->getCustomName()
-            && type->getCustomName()->getName() == WKBMultiLineStringTransform::name)
-            return WKBGeometry::MultiLineString;
-
-        static const DataTypePtr RING = factory.get("Ring");
-        if (RING->equals(*type))
-            return WKB_RING;
-
-        if (factory.get(WKBPolygonTransform::name)->equals(*type))
-            return WKBGeometry::Polygon;
-
-        if (factory.get(WKBMultiPolygonTransform::name)->equals(*type))
-            return WKBGeometry::MultiPolygon;
-
-        if (type->getCustomName() && type->getCustomName()->getName() == "Geometry")
-            return WKB_GEOMETRY;
+        if (auto geometry_type = getGeometryColumnTypeFromDataType(type))
+            return *geometry_type;
 
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
-            "Unsupported geometry type for {}: {}. Expected Point, Ring, Polygon, MultiPolygon, LineString, MultiLineString, or Geometry",
+            "Unsupported geometry type for {}: {}. Expected Point, MultiPoint, Ring, Polygon, MultiPolygon, LineString, MultiLineString, "
+            "or Geometry",
             "groupConvexHull",
             type->getName());
     }
@@ -135,6 +113,18 @@ public:
     {
         Polygon<Point> polygon;
         polygon.outer().push_back(std::move(point));
+        if (should_correct)
+            boost::geometry::correct(polygon);
+        state.accumulated.emplace_back(std::move(polygon));
+        state.has_value = true;
+    }
+
+    static void accumulateMultiPoint(Data & state, MultiPoint<Point> && multipoint, bool should_correct)
+    {
+        if (multipoint.empty())
+            return;
+        Polygon<Point> polygon;
+        polygon.outer().assign(multipoint.begin(), multipoint.end());
         if (should_correct)
             boost::geometry::correct(polygon);
         state.accumulated.emplace_back(std::move(polygon));
@@ -205,62 +195,51 @@ public:
             should_correct = col.getData()[row_num] != 0;
         }
 
-        if (input_type == WKB_GEOMETRY)
+        /// Extract via Field which works for any column type including ColumnConst.
+        Field field;
+        columns[0]->get(row_num, field);
+
+        GeometryColumnType geometry_type;
+        if (input_type)
         {
-            /// Geometry (Variant) columns need special discriminator-based handling.
-            const auto & variant_col = assert_cast<const ColumnVariant &>(*columns[0]);
-
-            auto local_discr = variant_col.localDiscriminatorAt(row_num);
-            if (local_discr == ColumnVariant::NULL_DISCRIMINATOR)
-                return; /// NULL row, skip
-
-            Field field;
-            variant_col.get(row_num, field);
-
-            auto geo_type = magic_enum::enum_cast<GeometryColumnType>(static_cast<int>(variant_col.globalDiscriminatorAt(row_num)));
-            if (!geo_type)
-                return;
-
-            switch (*geo_type)
-            {
-                case GeometryColumnType::Point: accumulatePoint(state, getPointFromField<Point>(field), should_correct); break;
-                case GeometryColumnType::Ring: accumulateRing(state, getRingFromField<Point>(field), should_correct); break;
-                case GeometryColumnType::Polygon: accumulatePolygon(state, getPolygonFromField<Point>(field), should_correct); break;
-                case GeometryColumnType::MultiPolygon:
-                    accumulateMultiPolygon(state, getMultiPolygonFromField<Point>(field), should_correct);
-                    break;
-                case GeometryColumnType::Linestring:
-                    accumulateLineString(state, getLineStringFromField<Point>(field), should_correct);
-                    break;
-                case GeometryColumnType::MultiLinestring:
-                    accumulateMultiLineString(state, getMultiLineStringFromField<Point>(field), should_correct);
-                    break;
-                case GeometryColumnType::MultiPoint:
-                case GeometryColumnType::Null: break;
-            }
+            geometry_type = *input_type;
         }
         else
         {
-            /// For concrete geometry types, extract via Field which works for any column
-            /// type including ColumnConst (unlike cut + bulk converters which crash on ColumnConst).
-            Field field;
-            columns[0]->get(row_num, field);
-
-            switch (input_type)
+            /// Geometry (Variant) column: `GeometryColumnType` matches the global discriminators of `Geometry`.
+            const IColumn * column = columns[0];
+            size_t variant_row = row_num;
+            if (const auto * column_const = typeid_cast<const ColumnConst *>(column))
             {
-                case WKBGeometry::Point: accumulatePoint(state, getPointFromField<Point>(field), should_correct); break;
-                case WKB_RING: accumulateRing(state, getRingFromField<Point>(field), should_correct); break;
-                case WKBGeometry::Polygon: accumulatePolygon(state, getPolygonFromField<Point>(field), should_correct); break;
-                case WKBGeometry::MultiPolygon:
-                    accumulateMultiPolygon(state, getMultiPolygonFromField<Point>(field), should_correct);
-                    break;
-                case WKBGeometry::LineString: accumulateLineString(state, getLineStringFromField<Point>(field), should_correct); break;
-                case WKBGeometry::MultiLineString:
-                    accumulateMultiLineString(state, getMultiLineStringFromField<Point>(field), should_correct);
-                    break;
-                case WKB_GEOMETRY: break; /// Already handled above
-                default: break; /// MultiPoint and other unsupported types are ignored
+                column = &column_const->getDataColumn();
+                variant_row = 0;
             }
+            const auto & variant_col = assert_cast<const ColumnVariant &>(*column);
+            auto global_discr = variant_col.globalDiscriminatorAt(variant_row);
+            if (global_discr == ColumnVariant::NULL_DISCRIMINATOR)
+                return; /// NULL row, skip
+            geometry_type = static_cast<GeometryColumnType>(global_discr);
+        }
+
+        switch (geometry_type)
+        {
+            case GeometryColumnType::Point: accumulatePoint(state, getPointFromField<Point>(field), should_correct); break;
+            case GeometryColumnType::MultiPoint:
+                accumulateMultiPoint(state, getMultiPointFromField<Point>(field), should_correct);
+                break;
+            case GeometryColumnType::Ring: accumulateRing(state, getRingFromField<Point>(field), should_correct); break;
+            case GeometryColumnType::Polygon: accumulatePolygon(state, getPolygonFromField<Point>(field), should_correct); break;
+            case GeometryColumnType::MultiPolygon:
+                accumulateMultiPolygon(state, getMultiPolygonFromField<Point>(field), should_correct);
+                break;
+            case GeometryColumnType::Linestring:
+                accumulateLineString(state, getLineStringFromField<Point>(field), should_correct);
+                break;
+            case GeometryColumnType::MultiLinestring:
+                accumulateMultiLineString(state, getMultiLineStringFromField<Point>(field), should_correct);
+                break;
+            case GeometryColumnType::Null:
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected geometry type in {}", getName());
         }
 
         /// Periodically prune interior points to bound memory.
@@ -324,13 +303,18 @@ public:
         if (!state.has_value)
             return;
 
-        size_t wkt_size = 0;
-        readVarUInt(wkt_size, buf);
+        /// The same layout as `writeVarUInt` + raw bytes in `serialize`, but with a check of the size.
+        String wkt_str;
+        readStringBinary(wkt_str, buf);
 
-        std::string wkt_str(wkt_size, '\0');
-        buf.readStrict(wkt_str.data(), wkt_size);
-
-        boost::geometry::read_wkt(wkt_str, state.accumulated);
+        try
+        {
+            boost::geometry::read_wkt(wkt_str, state.accumulated);
+        }
+        catch (const boost::geometry::read_wkt_exception & e)
+        {
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot deserialize the state of aggregate function {}: {}", getName(), e.what());
+        }
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override

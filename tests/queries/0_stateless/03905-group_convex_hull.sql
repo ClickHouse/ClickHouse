@@ -146,7 +146,7 @@ INSERT INTO geo SELECT readWKTMultiLineString(s) FROM (
 SELECT 'MultiLineString two rows:',
     polygonsEqualsCartesian(
         [groupConvexHull(mls)],
-        readWKTPolygon('POLYGON((0 0,5 15,10 0,5 -5,0 0))'))
+        readWKTPolygon('POLYGON((0 0,0 10,5 15,10 10,10 0,5 -5,0 0))'))
 FROM geo;
 DROP TABLE geo;
 

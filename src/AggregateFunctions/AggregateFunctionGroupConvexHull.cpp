@@ -22,6 +22,7 @@ Computes the [convex hull](https://en.wikipedia.org/wiki/Convex_hull) of all geo
 
 All input geometry types are internally converted to polygons before the hull is computed. Specifically:
 - `Point` values become degenerate single-vertex polygons.
+- `MultiPoint` values become a polygon whose vertices are the points.
 - `Ring` and `LineString` values become the outer ring of a polygon.
 - `Polygon` values contribute only their outer ring (holes are ignored, as they do not affect the convex hull).
 - `MultiPolygon` and `MultiLineString` values are decomposed into individual polygons.
@@ -37,7 +38,7 @@ See also:
     FunctionDocumentation::Arguments arguments
         = {{"geometry",
             "Column to compute the convex hull of.",
-            {"Point", "Ring", "Polygon", "MultiPolygon", "LineString", "MultiLineString", "Geometry"}},
+            {"Point", "MultiPoint", "Ring", "Polygon", "MultiPolygon", "LineString", "MultiLineString", "Geometry"}},
            {"correct_geometry",
             "Optional. A [UInt8](/sql-reference/data-types/int-uint) value that controls whether `boost::geometry::correct` is applied to "
             "input geometries (e.g. ensuring correct ring orientation and closure). `1` (default) enables correction, `0` disables it.",
@@ -100,7 +101,7 @@ SELECT wkt(groupConvexHull(polygon)) AS hull FROM geo_polygons;
 │ POLYGON((0 0,0 10,10 10,10 0,0 0)) │
 └────────────────────────────────────┘
                )"}};
-    FunctionDocumentation::IntroducedIn introduced_in = {26, 3};
+    FunctionDocumentation::IntroducedIn introduced_in = {26, 12};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation
         = {description, syntax, arguments, doc_parameters, returned_value, examples, introduced_in, category};

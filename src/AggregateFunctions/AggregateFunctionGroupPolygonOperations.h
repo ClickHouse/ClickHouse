@@ -16,7 +16,6 @@
 
 #include <Functions/geometry.h>
 #include <Functions/geometryConverters.h>
-#include <Common/WKB.h>
 
 #include <boost/geometry.hpp>
 #include <boost/geometry/geometries/point_xy.hpp>
@@ -33,9 +32,8 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
+extern const int INCORRECT_DATA;
 }
-
-static constexpr WKBGeometry WKB_RING = static_cast<WKBGeometry>(100);
 
 template <typename Point>
 struct AggregateFunctionGroupPolygonData
@@ -50,18 +48,21 @@ class AggregateFunctionGroupPolygonOp final
 {
 private:
     using Data = AggregateFunctionGroupPolygonData<Point>;
-    WKBGeometry input_type;
+    GeometryColumnType input_type;
     bool correct_geometry = true;
 
-    static WKBGeometry resolveInputType(const DataTypePtr & type)
+    /// The custom geo type name (e.g. `LineString`) takes precedence; only a type without a custom name
+    /// (e.g. a computed `Array(Tuple(Float64, Float64))`) is resolved structurally, the same way as for the
+    /// other geo functions. Named non-areal types (`Point`, `LineString`, `MultiLineString`, `MultiPoint`)
+    /// share the storage layout with areal ones, but must not be reinterpreted as polygons.
+    static GeometryColumnType resolveInputType(const DataTypePtr & type)
     {
-        const auto & factory = DataTypeFactory::instance();
-        if (factory.get("Ring")->equals(*type))
-            return WKB_RING;
-        if (factory.get("Polygon")->equals(*type))
-            return WKBGeometry::Polygon;
-        if (factory.get("MultiPolygon")->equals(*type))
-            return WKBGeometry::MultiPolygon;
+        auto geometry_type = getGeometryColumnTypeFromDataType(type);
+        if (geometry_type
+            && (*geometry_type == GeometryColumnType::Ring || *geometry_type == GeometryColumnType::Polygon
+                || *geometry_type == GeometryColumnType::MultiPolygon))
+            return *geometry_type;
+
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "Unsupported geometry type for {}: {}. Expected Ring, Polygon, or MultiPolygon",
@@ -69,12 +70,12 @@ private:
             type->getName());
     }
 
-    static std::optional<MultiPolygon<Point>> extractMultiPolygon(const Field & field, WKBGeometry type, bool should_correct)
+    static std::optional<MultiPolygon<Point>> extractMultiPolygon(const Field & field, GeometryColumnType type, bool should_correct)
     {
         MultiPolygon<Point> result;
         switch (type)
         {
-            case WKB_RING: {
+            case GeometryColumnType::Ring: {
                 auto ring = getRingFromField<Point>(field);
                 if (ring.empty())
                     return std::nullopt;
@@ -85,7 +86,7 @@ private:
                 result.emplace_back(std::move(polygon));
                 break;
             }
-            case WKBGeometry::Polygon: {
+            case GeometryColumnType::Polygon: {
                 auto polygon = getPolygonFromField<Point>(field);
                 if (polygon.outer().empty())
                     return std::nullopt;
@@ -94,7 +95,7 @@ private:
                 result.emplace_back(std::move(polygon));
                 break;
             }
-            case WKBGeometry::MultiPolygon: {
+            case GeometryColumnType::MultiPolygon: {
                 result = getMultiPolygonFromField<Point>(field);
                 if (result.empty())
                     return std::nullopt;
@@ -202,13 +203,18 @@ public:
         if (!state.has_value)
             return;
 
-        size_t wkt_size = 0;
-        readVarUInt(wkt_size, buf);
+        /// The same layout as `writeVarUInt` + raw bytes in `serialize`, but with a check of the size.
+        String wkt_str;
+        readStringBinary(wkt_str, buf);
 
-        std::string wkt_str(wkt_size, '\0');
-        buf.readStrict(wkt_str.data(), wkt_size);
-
-        boost::geometry::read_wkt(wkt_str, state.accumulated);
+        try
+        {
+            boost::geometry::read_wkt(wkt_str, state.accumulated);
+        }
+        catch (const boost::geometry::read_wkt_exception & e)
+        {
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot deserialize the state of aggregate function {}: {}", getName(), e.what());
+        }
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
