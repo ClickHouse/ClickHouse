@@ -252,7 +252,8 @@ private:
     const std::vector<GPUElementType> keys;
     const std::vector<GPUElementType> values;
     const std::vector<GPUGroupByAggregate> aggregates;
-    /// Declared before `lane_stream`, which is synchronized on destruction: their kernels must outlive it.
+    /// Declared before `lane_stream`, which is synchronized on destruction, and `row_filter`, which points into `where`:
+    /// their kernels must outlive them.
     const std::vector<GPUComputedArgument> computed;
     const std::optional<CompiledGPUExpression> where;
 

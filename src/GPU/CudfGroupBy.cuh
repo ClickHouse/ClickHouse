@@ -53,7 +53,8 @@ private:
     cudf_group_by::GroupBy * impl = nullptr;
 };
 
-/// The rows of a batch that `where`, a predicate, keeps, rather than groups of them.
+/// The rows of a batch that `where`, a predicate, keeps, rather than groups of them. `where` points into the
+/// `CompiledGPUExpression` that owns its kernel, which this side of the libraries cannot hold: it must outlive the filter.
 class CudfRowFilter
 {
 public:

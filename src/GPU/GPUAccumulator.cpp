@@ -654,8 +654,8 @@ std::optional<GPUDeviceBatch> GPUBatchUploader::expand(const GPUStagedBatch & st
         const size_t fresh = sizes[o] - carried_rows[o];
         if (fresh == 0)
             continue;
-        /// The sizes are untrusted: bounded as on the CPU before they become offsets.
-        if (sumOfSizesUpTo(offsets + carried_rows[o] + 1, fresh, max_total_string_bytes, own) > max_total_string_bytes)
+        /// The sizes are untrusted: bounded as on the CPU, from the carried offset, before they become offsets.
+        if (endOfSizesUpTo(offsets + carried_rows[o], offsets + carried_rows[o] + 1, fresh, max_total_string_bytes, own) > max_total_string_bytes)
             throw Exception(
                 ErrorCodes::INCORRECT_DATA,
                 "The sizes of a String column read on the GPU declare more than {} bytes, most likely the data is corrupted",

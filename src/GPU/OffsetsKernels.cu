@@ -72,14 +72,18 @@ __host__ void offsetsFromSizes(const uint64_t * sizes, size_t count, uint64_t * 
     });
 }
 
-__host__ uint64_t sumOfSizesUpTo(const uint64_t * sizes, size_t count, uint64_t limit, cuda::stream_ref stream)
+__host__ uint64_t endOfSizesUpTo(const uint64_t * start, const uint64_t * sizes, size_t count, uint64_t limit, cuda::stream_ref stream)
 {
-    if (count == 0)
-        return 0;
-
     return guarded("summing " + std::to_string(count) + " string sizes", [&]
     {
-        return thrust::transform_reduce(rmm::exec_policy(stream), sizes, sizes + count, ClampTo{limit}, uint64_t{0}, SaturatingAdd{limit});
+        uint64_t base = 0;
+        checkCuda(cudaMemcpyAsync(&base, start, sizeof(uint64_t), cudaMemcpyDeviceToHost, stream.get()), "Cannot copy an offset back");
+        checkCuda(cudaStreamSynchronize(stream.get()), "Cannot wait for an offset to come back");
+        if (base > limit)
+            return limit + 1;
+        if (count == 0)
+            return base;
+        return thrust::transform_reduce(rmm::exec_policy(stream), sizes, sizes + count, ClampTo{limit}, base, SaturatingAdd{limit});
     });
 }
 
