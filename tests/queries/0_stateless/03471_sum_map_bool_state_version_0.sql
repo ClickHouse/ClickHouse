@@ -2,6 +2,8 @@
 -- Version-0 sumMap-family state used to deserialize Bool values into bool-tagged Fields,
 -- which threw in FieldVisitorSum on merge when two states shared a map key.
 
+SET allow_suspicious_aggregate_function_version_0 = 1;
+
 DROP TABLE IF EXISTS t_sum_map_bool_v0;
 CREATE TABLE t_sum_map_bool_v0 (s AggregateFunction(0, sumMap, Array(UInt8), Array(Bool))) ENGINE = TinyLog;
 INSERT INTO t_sum_map_bool_v0 SELECT sumMapState([1], [true]);

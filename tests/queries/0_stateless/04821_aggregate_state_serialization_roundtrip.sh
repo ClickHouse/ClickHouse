@@ -133,6 +133,7 @@ run_checks
 # The batch path must respect the requested state version, not just the default.
 for version in 0 1; do
     $CLICKHOUSE_CLIENT --query "
+        SET allow_suspicious_aggregate_function_version_0 = 1;
         DROP TABLE IF EXISTS versioned;
         CREATE TABLE versioned (k UInt8, s AggregateFunction(${version}, sumMap, Array(UInt64), Array(UInt64)))
         ENGINE = MergeTree ORDER BY k;
