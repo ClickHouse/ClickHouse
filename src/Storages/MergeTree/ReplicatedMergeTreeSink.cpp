@@ -1152,6 +1152,17 @@ ReplicatedMergeTreeSink::CommitPartResult ReplicatedMergeTreeSink::commitPart(
             zkutil::KeeperMultiException::check(multi_code, ops, responses);
         }
 
+        if (!Coordination::isUserError(multi_code))
+        {
+            transaction.rollback();
+            throw Exception(
+                    ErrorCodes::UNEXPECTED_ZOOKEEPER_ERROR,
+                    "Unexpected ZooKeeper error while adding block {} with ID '{}': {}",
+                    block_number,
+                    fmt::join(deduplication_block_ids, ", "),
+                    multi_code);
+        }
+
         auto failed_op_idx = zkutil::getFailedOpIndex(multi_code, responses);
         std::filesystem::path failed_op_path = ops[failed_op_idx]->getPath();
 
@@ -1183,14 +1194,6 @@ ReplicatedMergeTreeSink::CommitPartResult ReplicatedMergeTreeSink::commitPart(
         }
 
         transaction.rollback();
-
-        if (!Coordination::isUserError(multi_code))
-            throw Exception(
-                    ErrorCodes::UNEXPECTED_ZOOKEEPER_ERROR,
-                    "Unexpected ZooKeeper error while adding block {} with ID '{}': {}",
-                    block_number,
-                    fmt::join(deduplication_block_ids, ", "),
-                    multi_code);
 
         if (multi_code == Coordination::Error::ZNONODE && failed_op_idx == block_unlock_op_idx)
             throw Exception(ErrorCodes::QUERY_WAS_CANCELLED,
