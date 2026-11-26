@@ -154,26 +154,6 @@ BackupSettings BackupSettings::fromBackupQuery(const ASTBackupQuery & query)
     return res;
 }
 
-bool BackupSettings::isAsync(const ASTBackupQuery & query)
-{
-    /// Runs before `fromBackupQuery` and must agree with it: a reset wins, else the last change, converted
-    /// as the field converts it.
-    if (query.settings)
-    {
-        const auto & settings = query.settings->as<const ASTSetQuery &>();
-        if (std::ranges::find(settings.default_settings, "async") == settings.default_settings.end())
-        {
-            auto it = std::find_if(
-                settings.changes.rbegin(),
-                settings.changes.rend(),
-                [](const SettingChange & change) { return change.name == "async"; });
-            if (it != settings.changes.rend())
-                return SettingFieldBool{it->value}.value;
-        }
-    }
-    return false; /// `async` is false by default.
-}
-
 CoreSettingsFromQuery BackupSettings::extractCoreSettingsFromQuery(const ASTBackupQuery & query)
 {
     return extractCoreSettings(query, BACKUP_SPECIFIC_SETTING_NAMES, canonicalBackupSettingName);

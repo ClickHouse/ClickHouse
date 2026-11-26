@@ -186,8 +186,6 @@ struct BackupSettings
     /// Returns the backup-specific settings as a string map for observability (see `system.backups`).
     [[nodiscard]] std::map<String, String> getSerializedSettings() const;
 
-    static bool isAsync(const ASTBackupQuery & query);
-
     /// Returns only the non-backup-specific settings from a `BACKUP` query.
     /// In contrast to `fromBackupQuery`, this helper does not touch the
     /// `base_backup_name` AST node, so it is safe to call before

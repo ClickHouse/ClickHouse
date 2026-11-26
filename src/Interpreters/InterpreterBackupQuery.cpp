@@ -3,6 +3,7 @@
 
 #include <Backups/BackupsWorker.h>
 #include <Backups/BackupSettings.h>
+#include <Backups/RestoreSettings.h>
 #include <Parsers/ASTBackupQuery.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
@@ -41,10 +42,14 @@ BlockIO InterpreterBackupQuery::execute()
     const ASTBackupQuery & backup_query = query_ptr->as<const ASTBackupQuery &>();
     auto & backups_worker = context->getBackupsWorker();
 
+    /// Read before `start`, which parses the same settings first: invalid ones throw the same exception, and parsing them
+    /// cannot fail once the operation runs.
+    const bool async = backup_query.kind == ASTBackupQuery::Kind::BACKUP ? BackupSettings::fromBackupQuery(backup_query).async
+                                                                         : RestoreSettings::fromRestoreQuery(backup_query).async;
+
     auto [id, status] = backups_worker.start(query_ptr, context);
 
     /// Wait if it's a synchronous operation.
-    bool async = BackupSettings::isAsync(backup_query);
     if (!async)
         status = backups_worker.wait(id);
 

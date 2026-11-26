@@ -250,9 +250,9 @@ TEST(BackupSettingsDefault, RestoreCopySettingsToQueryForwardsCreationModesAsStr
     }
 }
 
-/// `isAsync` decides whether the client waits and `fromBackupQuery` the effective `async`, so they must
-/// agree on every spelling.
-TEST(BackupSettingsDefault, IsAsyncAgreesWithFromBackupQuery)
+/// The parsed `async`, which decides whether the client waits: the last value wins, as in `SET`; a string converts as the
+/// Bool field does; `= DEFAULT` gives the default, false.
+TEST(BackupSettingsDefault, AsyncIsTheLastValueUnlessReset)
 {
     struct Case
     {
@@ -260,8 +260,6 @@ TEST(BackupSettingsDefault, IsAsyncAgreesWithFromBackupQuery)
         bool expected;
     };
 
-    /// The last value wins, as in `SET`; a string converts as the Bool field does; `= DEFAULT` gives the
-    /// default, false.
     const Case cases[] = {
         {"async = 0, async = 1", true},
         {"async = 1, async = 0", false},
@@ -278,13 +276,18 @@ TEST(BackupSettingsDefault, IsAsyncAgreesWithFromBackupQuery)
 
     for (const auto & test_case : cases)
     {
-        const String query = String("BACKUP TABLE t TO Disk('d', 'b') SETTINGS ") + test_case.settings;
-        ASTPtr holder;
-        ASTBackupQuery * backup_query = parseBackupQuery(holder, query);
-        ASSERT_NE(nullptr, backup_query) << "query: " << query;
+        SCOPED_TRACE(test_case.settings);
 
-        EXPECT_EQ(test_case.expected, BackupSettings::isAsync(*backup_query)) << "query: " << query;
-        EXPECT_EQ(BackupSettings::fromBackupQuery(*backup_query).async, BackupSettings::isAsync(*backup_query))
-            << "the wait decision disagrees with the effective setting, query: " << query;
+        ASTPtr backup_holder;
+        ASTBackupQuery * backup_query
+            = parseBackupQuery(backup_holder, String("BACKUP TABLE t TO Disk('d', 'b') SETTINGS ") + test_case.settings);
+        ASSERT_NE(nullptr, backup_query);
+        EXPECT_EQ(test_case.expected, BackupSettings::fromBackupQuery(*backup_query).async);
+
+        ASTPtr restore_holder;
+        ASTBackupQuery * restore_query
+            = parseBackupQuery(restore_holder, String("RESTORE TABLE t FROM Disk('d', 'b') SETTINGS ") + test_case.settings);
+        ASSERT_NE(nullptr, restore_query);
+        EXPECT_EQ(test_case.expected, RestoreSettings::fromRestoreQuery(*restore_query).async);
     }
 }
