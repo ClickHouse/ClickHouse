@@ -90,6 +90,7 @@
 
 #include <Common/Exception.h>
 #include <Common/FieldVisitors.h>
+#include <Common/ListWithMemoryTracking.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/logger_useful.h>
@@ -2128,6 +2129,28 @@ void addAdditionalFilterStepIfNeeded(QueryPlan & query_plan,
     auto filter_info = buildFilterInfo(additional_result_filter_ast, fake_table_expression, planner_context, std::move(fake_name_set));
     if (!query_plan.isInitialized())
         return;
+
+    /// List every result column in its place: `FilterStep` would put the columns the filter reads first.
+    auto & filter_dag = filter_info.actions;
+    UnorderedMapWithMemoryTracking<std::string_view, ListWithMemoryTracking<const ActionsDAG::Node *>> unbound_inputs;
+    for (const auto * input : filter_dag.getInputs())
+        unbound_inputs[input->result_name].push_back(input);
+
+    ActionsDAG::NodeRawConstPtrs outputs{filter_dag.getOutputs().front()};
+    for (const auto & column : *query_plan.getCurrentHeader())
+    {
+        auto & inputs = unbound_inputs[column.name];
+        if (inputs.empty())
+        {
+            outputs.push_back(&filter_dag.addInput(column));
+        }
+        else
+        {
+            outputs.push_back(inputs.front());
+            inputs.pop_front();
+        }
+    }
+    filter_dag.getOutputs() = std::move(outputs);
 
     auto filter_step = std::make_unique<FilterStep>(query_plan.getCurrentHeader(),
         std::move(filter_info.actions),

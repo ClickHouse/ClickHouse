@@ -40,6 +40,11 @@ SELECT number, number FROM remote('127.0.0.1', numbers(10)) ORDER BY number SETT
 SELECT number, number FROM remote('127.0.0.{1,2}', numbers(10)) ORDER BY number SETTINGS additional_result_filter = 'number < 2';
 SELECT *, number + 10 AS number FROM numbers(3) SETTINGS additional_result_filter = 'number < 2'; -- { serverError ILLEGAL_COLUMN }
 
+-- Filtering by a column that is not the first one keeps the result columns in their order.
+SELECT number AS a, number + 10 AS b FROM numbers(3) ORDER BY a SETTINGS additional_result_filter = 'b > 10';
+SELECT number AS a, number + 10 AS b FROM remote('127.0.0.1', numbers(3)) ORDER BY a SETTINGS additional_result_filter = 'b > 10';
+SELECT number AS a, number + 10 AS b, a FROM remote('127.0.0.{1,2}', numbers(3)) ORDER BY a SETTINGS additional_result_filter = 'b > 10';
+
 -- A `Merge` child plan united into the outer plan must not apply the filter a second time.
 CREATE TABLE t_m1 AS t_local ENGINE = Merge(currentDatabase(), '^t_d1$');
 CREATE TABLE t_mm1 AS t_local ENGINE = Merge(currentDatabase(), '^t_m1$');
