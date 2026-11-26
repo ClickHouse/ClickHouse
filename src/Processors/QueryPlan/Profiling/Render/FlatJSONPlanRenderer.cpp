@@ -5,6 +5,7 @@
 #include <IO/WriteBuffer.h>
 #include <Processors/QueryPlan/Profiling/Capture/PlanIndexStats.h>
 #include <Processors/QueryPlan/Profiling/Metrics/StepAnalyzeInfo.h>
+#include <Processors/QueryPlan/QueryPlanShapeHash.h>
 #include <base/types.h>
 
 #include <memory>
@@ -230,6 +231,9 @@ JSONBuilder::ItemPtr capturedStepToJSON(const CapturedStep & step)
 
     map->add("NodeType", step.type);
     map->add("NodeId", step.id);
+
+    if (step.shape_hash)
+        map->add("ShapeHash", formatQueryPlanShapeHash(*step.shape_hash));
 
     if (!step.description.empty())
         map->add("Description", step.description);

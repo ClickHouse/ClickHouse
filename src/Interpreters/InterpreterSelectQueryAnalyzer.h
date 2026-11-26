@@ -87,6 +87,10 @@ public:
 
     void setPlanLogCapture(QueryPlanLogCapturePtr log_capture) override { plan_log_capture = std::move(log_capture); }
 
+    void enableQueryPlanHash() override { query_plan_hash_enabled = true; }
+
+    UInt64 getQueryPlanHash() const override { return query_plan_hash; }
+
     bool supportsTransactions() const override { return true; }
 
     bool ignoreLimits() const override { return select_query_options.ignore_limits; }
@@ -117,6 +121,9 @@ private:
     QueryTreeNodePtr query_tree;
     Planner planner;
     QueryPlanLogCapturePtr plan_log_capture;
+
+    bool query_plan_hash_enabled = false;
+    UInt64 query_plan_hash = 0;
 
     QueryPlanWithParallelReplicasBuilder query_plan_with_parallel_replicas_builder;
 };

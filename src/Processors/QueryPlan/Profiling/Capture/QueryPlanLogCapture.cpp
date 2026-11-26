@@ -171,6 +171,15 @@ void QueryPlanLogCapture::capturePlanStructure(const PlanWalk & walk, const Pret
 
     /// Without statistics: the query has not run yet. They are filled in by `captureStatistics`.
     captured = CapturedPlan::capture(walk, planExplainOptions(), max_description_length, /*steps_to_stats=*/ nullptr, &pretty_names);
+
+    if (shape_hashes)
+    {
+        for (auto & node : captured->nodes)
+        {
+            if (auto it = shape_hashes->steps.find(node.id); it != shape_hashes->steps.end())
+                node.shape_hash = it->second;
+        }
+    }
 }
 
 void QueryPlanLogCapture::captureStatistics(QueryPipeline & pipeline)

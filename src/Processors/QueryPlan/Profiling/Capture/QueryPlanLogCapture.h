@@ -4,6 +4,7 @@
 #include <Parsers/IAST_fwd.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
+#include <Processors/QueryPlan/QueryPlanShapeHash.h>
 #include <Processors/QueryPlan/Profiling/Capture/CapturedPlan.h>
 namespace DB
 {
@@ -21,6 +22,10 @@ public:
 
     /// Reports why a query that asked for its plan is not going to get one.
     static void declineCapture(const ContextPtr & context, const char * reason);
+
+    /// Hashes of the shape of the plan, which must have been computed from the plan the structure is
+    /// captured from, before its pipeline was built. Each captured step gets its own.
+    void setShapeHashes(QueryPlanShapeHashes shape_hashes_) { shape_hashes = std::move(shape_hashes_); }
 
     /// Records the shape of the plan as values. Called once the pipeline has been built, which is
     /// both the first moment the index analysis and the lazily built child plans exist, and the
@@ -46,5 +51,7 @@ private:
     /// The plan, as values. Taken when the structure is captured and valid from then on, so the
     /// plan itself is not kept: it belongs to the interpreter and dies whenever that does.
     std::optional<CapturedPlan> captured;
+
+    std::optional<QueryPlanShapeHashes> shape_hashes;
 };
 }

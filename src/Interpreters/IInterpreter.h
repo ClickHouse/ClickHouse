@@ -26,6 +26,14 @@ public:
 
     virtual void setPlanLogCapture(QueryPlanLogCapturePtr) {}
 
+    /// Asks for the hash of the shape of the plan this interpreter runs, see `hashQueryPlanShape`.
+    /// Like `setPlanLogCapture`, only asked of the interpreter `executeQuery` built, so the interpreters
+    /// it builds in turn do not pay for it.
+    virtual void enableQueryPlanHash() {}
+
+    /// 0 when it was not computed: not asked for, not a query with a plan, or the plan was never built.
+    virtual UInt64 getQueryPlanHash() const { return 0; }
+
     // Fill query log element with query kind, query databases, query tables and query columns.
     void extendQueryLogElem(
         QueryLogElement & elem,

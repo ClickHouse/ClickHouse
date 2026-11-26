@@ -136,6 +136,9 @@ struct QueryLogElement
     /// Only filled when `log_query_plans` is enabled.
     String query_plan;
 
+    /// Hash of the shape of the executed plan, see `hashQueryPlanShape`. 0 when it was not computed.
+    UInt64 query_plan_hash = 0;
+
     static std::string name() { return "QueryLog"; }
 
     static ColumnsDescription getColumnsDescription();
