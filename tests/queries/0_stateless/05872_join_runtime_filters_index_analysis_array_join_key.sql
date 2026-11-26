@@ -66,6 +66,19 @@ SELECT count(), sum(id) FROM t_rf_aj ARRAY JOIN ids AS x JOIN t_rf_aj_lookup AS 
 SELECT count(), sum(id) FROM t_rf_aj ARRAY JOIN ids AS x JOIN t_rf_aj_lookup AS l ON x = l.v SETTINGS log_comment = 'rf_aj_14_bloom_many_values', join_runtime_filter_exact_values_limit = 100;
 SELECT count(), sum(id) FROM t_rf_aj ARRAY JOIN txt AS x JOIN t_rf_aj_lookup AS l ON x = l.v SETTINGS log_comment = 'rf_aj_15_text_many_values', join_runtime_filter_exact_values_limit = 100;
 
+SELECT '-- a filter or a second key below ARRAY JOIN keeps the index of the array in use';
+SELECT count(), sum(id) FROM t_rf_aj ARRAY JOIN ids AS x JOIN t_rf_aj_lookup AS l ON x = l.v WHERE id != 1999 SETTINGS log_comment = 'rf_aj_16_probe_filter';
+SELECT count(), sum(id) FROM t_rf_aj ARRAY JOIN ids AS x JOIN t_rf_aj_lookup AS l ON x = l.v AND id % 10 = l.n SETTINGS log_comment = 'rf_aj_17_second_key';
+
+SELECT '-- a key column with the name of the element expression is not taken for the element';
+DROP TABLE IF EXISTS t_rf_aj_named;
+CREATE TABLE t_rf_aj_named (ids Array(String), `arrayJoin(ids)` String, k UInt32, INDEX idx_ids ids TYPE bloom_filter(0.001) GRANULARITY 1)
+ENGINE = MergeTree ORDER BY (`arrayJoin(ids)`, k) SETTINGS index_granularity = 1;
+INSERT INTO t_rf_aj_named SELECT [toString(number)], 'other' || toString(number), number FROM numbers(200);
+SELECT count(), sum(k) FROM t_rf_aj_named ARRAY JOIN ids AS x JOIN t_rf_aj_lookup AS l ON x = l.v AND k = l.n SETTINGS enable_join_runtime_filters = 0;
+SELECT count(), sum(k) FROM t_rf_aj_named ARRAY JOIN ids AS x JOIN t_rf_aj_lookup AS l ON x = l.v AND k = l.n SETTINGS log_comment = 'rf_aj_18_named_key_column';
+DROP TABLE t_rf_aj_named;
+
 SYSTEM FLUSH LOGS query_log;
 
 SELECT '-- granules skipped by the runtime filter';

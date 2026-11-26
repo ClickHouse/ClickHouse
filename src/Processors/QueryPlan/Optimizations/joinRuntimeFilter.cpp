@@ -733,6 +733,8 @@ void collectAppliedJoinRuntimeFilters(const Stack & stack)
                 else if (object_storage_read_step && !descr.is_global_row_index && !descr.is_array_element)
                     object_storage_read_step->addJoinRuntimeFilterIndexAnalysisOnDataRead(descr);
             }
+            /// the filters above read the columns of this step
+            expression_dags.push_back(&filter_step->getExpression());
         }
         else if (const auto * expression_step = typeid_cast<ExpressionStep *>(iter->node->step.get()))
         {
