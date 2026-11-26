@@ -138,6 +138,7 @@ public:
 
 private:
     std::unique_ptr<ReadBuffer> readFile(const String & file_name, size_t expected_file_size) override;
+    std::unique_ptr<WriteBuffer> writeFileImpl(const String & file_name, const WriteSettings & file_write_settings);
 
     const S3::URI s3_uri;
     const DataSourceDescription data_source_description;

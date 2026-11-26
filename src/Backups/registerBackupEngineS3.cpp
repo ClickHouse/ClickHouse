@@ -1,7 +1,6 @@
 #include "config.h"
 
 #include <Backups/BackupFactory.h>
-#include <Core/Settings.h>
 #include <Common/Exception.h>
 #include <Storages/ObjectStorage/S3/S3SecretArguments.h>
 
@@ -9,6 +8,7 @@
 #include <Backups/BackupIO_S3.h>
 #include <Backups/BackupImpl.h>
 #include <Backups/BackupInfo.h>
+#include <Backups/BackupLocatorArchive.h>
 #include <Backups/BackupSourceAccess.h>
 #include <Common/NamedCollections/NamedCollections.h>
 #include <IO/Archives/ArchiveUtils.h>
@@ -49,11 +49,6 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
 }
 
-namespace Setting
-{
-extern const SettingsUInt64 archive_adaptive_buffer_max_size_bytes;
-}
-
 #if USE_AWS_S3
 namespace
 {
@@ -66,18 +61,6 @@ namespace
         /// table function authorizes.
         String uri_with_archive;
     };
-
-    String removeFileNameFromURL(String & url)
-    {
-        Poco::URI url2{url};
-        String path = url2.getPath();
-        size_t slash_pos = path.find_last_of('/');
-        String file_name = path.substr(slash_pos + 1);
-        path.resize(slash_pos + 1);
-        url2.setPath(path);
-        url = url2.toString();
-        return file_name;
-    }
 
     String stripTrailingSlashes(String str)
     {
@@ -327,44 +310,45 @@ void registerBackupEngineS3(BackupFactory & factory)
             }
         }
 
-        BackupImpl::ArchiveParams archive_params;
-        if (!location.archive_name.empty())
-        {
-            if (hasSupportedZipExtension(location.archive_name))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Zip archive format is not supported for S3 backups because zip requires seeking which S3 does not support efficiently. "
-                    "Use tar.gz or other tar-based formats instead");
+        if (hasSupportedZipExtension(location.archive_name))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Zip archive format is not supported for S3 backups because zip requires seeking which S3 does not support efficiently. "
+                "Use tar.gz or other tar-based formats instead");
 
-            if (params.is_internal_backup)
-                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Using archives with backups on clusters is disabled");
+        auto archive_params = makeBackupArchiveParams(params, location.archive_name);
 
-            archive_params.archive_name = location.archive_name;
-            archive_params.compression_method = params.compression_method;
-            archive_params.compression_level = params.compression_level;
-            archive_params.password = params.password;
-            archive_params.adaptive_buffer_max_size = params.context->getSettingsRef()[Setting::archive_adaptive_buffer_max_size_bytes];
-        }
-        else
+        /// Everything is captured by value: `snapshot_reader_creator` keeps a copy of this lambda in `BackupImpl`
+        /// after this function returns.
+        auto make_reader = [access_key_id,
+                            secret_access_key,
+                            role_arn,
+                            role_session_name,
+                            external_id,
+                            named_collection_auth,
+                            allow_s3_native_copy = params.allow_s3_native_copy,
+                            read_settings = params.read_settings,
+                            write_settings = params.write_settings,
+                            context = params.context,
+                            is_internal_backup = params.is_internal_backup](const S3::URI & uri)
         {
-            if (!params.password.empty())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Password is not applicable, backup cannot be encrypted");
-        }
-
-        if (params.open_mode == IBackup::OpenMode::UNLOCK)
-        {
-            auto reader = std::make_shared<BackupReaderS3>(
-                S3::URI{s3_uri},
+            return std::make_shared<BackupReaderS3>(
+                uri,
                 access_key_id,
                 secret_access_key,
                 role_arn,
                 role_session_name,
                 external_id,
                 named_collection_auth,
-                params.allow_s3_native_copy,
-                params.read_settings,
-                params.write_settings,
-                params.context,
-                params.is_internal_backup);
+                allow_s3_native_copy,
+                read_settings,
+                write_settings,
+                context,
+                is_internal_backup);
+        };
+
+        if (params.open_mode == IBackup::OpenMode::UNLOCK)
+        {
+            auto reader = make_reader(S3::URI{s3_uri});
 
             return std::make_unique<BackupImpl>(
                 params.backup_info,
@@ -373,40 +357,15 @@ void registerBackupEngineS3(BackupFactory & factory)
         }
         else if (params.open_mode == IBackup::OpenMode::READ)
         {
-            auto reader = std::make_shared<BackupReaderS3>(
-                S3::URI{s3_uri},
-                access_key_id,
-                secret_access_key,
-                role_arn,
-                role_session_name,
-                external_id,
-                named_collection_auth,
-                params.allow_s3_native_copy,
-                params.read_settings,
-                params.write_settings,
-                params.context,
-                params.is_internal_backup);
+            auto reader = make_reader(S3::URI{s3_uri});
 
-
-            auto snapshot_reader_creator = [&](const String & s3_uri_, const String & s3_bucket_)
+            auto snapshot_reader_creator = [make_reader](const String & s3_uri_, const String & s3_bucket_)
             {
                 String full_uri = std::filesystem::path(s3_uri_) / s3_bucket_;
                 auto uri_for_lightweight = S3::URI{full_uri};
                 /// We set the prefix to "" because in meta file, object key is absolute path.
                 uri_for_lightweight.key = "";
-                return std::make_shared<BackupReaderS3>(
-                    uri_for_lightweight,
-                    access_key_id,
-                    secret_access_key,
-                    role_arn,
-                    role_session_name,
-                    external_id,
-                    named_collection_auth,
-                    params.allow_s3_native_copy,
-                    params.read_settings,
-                    params.write_settings,
-                    params.context,
-                    params.is_internal_backup);
+                return make_reader(uri_for_lightweight);
             };
 
             return std::make_unique<BackupImpl>(params, archive_params, reader, snapshot_reader_creator);
