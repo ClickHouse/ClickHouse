@@ -19,6 +19,8 @@
 #include <Storages/IStorage.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/filesystemHelpers.h>
+#include <Common/parseGlobs.h>
+#include <Common/StringUtils.h>
 #include <Formats/FormatFactory.h>
 
 #include <filesystem>
@@ -56,6 +58,26 @@ std::pair<String, String> splitToArchiveParts(const String & table_path, const C
         return {{}, table_path};
 
     return splitToArchivePathAndPathInArchive(table_path);
+}
+
+/// Whether `table_path`, already normalized, stays inside `directory`. The `file` table function
+/// expands `{a,b}` groups before it walks the filesystem and does not normalize the result, so an
+/// alternative carrying a `..` is refused instead of being resolved against a possible symlink.
+bool isInsideDirectory(const String & table_path, const String & directory)
+{
+    if (!containsGlobs(table_path))
+        return fileOrSymlinkPathStartsWith(table_path, directory);
+
+    for (const auto & expanded_path : expandSelectionGlob(table_path))
+    {
+        for (const auto & component : fs::path(expanded_path))
+            if (component == "..")
+                return false;
+
+        if (!fileOrSymlinkPathStartsWith(expanded_path, directory))
+            return false;
+    }
+    return true;
 }
 
 /// The path to the archive a name resolves to through the archive path syntax, or an empty string
@@ -142,6 +164,10 @@ bool DatabaseFilesystem::checkTableFilePath(const std::string & table_path, Cont
         /// Access denied is thrown regardless of 'throw_on_error'
         throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "File is not inside {}", user_files_path);
     }
+
+    /// A table of this database is a file under its own directory, not anywhere in `user_files`.
+    if (check_path && !isInsideDirectory(path_to_probe, path))
+        throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "File is not inside the database directory {}", path);
 
     if (!containsGlobs(path_to_probe))
     {
@@ -425,7 +451,7 @@ The database owns no table definitions: tables are created when their files are 
 
 ## Access control {#access-control}
 
-On ClickHouse server, the database directory and every resolved file must be inside [`user_files_path`](/reference/settings/server-settings/settings#user_files_path); this restriction also applies after following symlinks. `clickhouse-local` is not restricted to `user_files_path`.
+On ClickHouse server, the database directory and every resolved file must be inside [`user_files_path`](/reference/settings/server-settings/settings#user_files_path); this restriction also applies after following symlinks. Every resolved file must also be inside the database directory, so a table name cannot point outside it with `..` or an absolute path. `clickhouse-local` is not restricted to `user_files_path`.
 
 Creating this database requires `READ` and `WRITE` source grants on `FILE`, regardless of [`table_engines_require_grant`](/reference/settings/server-settings/settings/other#table_engines_require_grant). Grant them with, for example:
 
