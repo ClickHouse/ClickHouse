@@ -1,11 +1,33 @@
+t	INT32	Time(isAdjustedToUTC=false, timeUnit=milliseconds)
+t0	INT32	Time(isAdjustedToUTC=false, timeUnit=milliseconds)
+t1	INT32	Time(isAdjustedToUTC=false, timeUnit=milliseconds)
+t2	INT32	Time(isAdjustedToUTC=false, timeUnit=milliseconds)
+t3	INT32	Time(isAdjustedToUTC=false, timeUnit=milliseconds)
+t4	INT64	Time(isAdjustedToUTC=false, timeUnit=microseconds)
+t5	INT64	Time(isAdjustedToUTC=false, timeUnit=microseconds)
+t6	INT64	Time(isAdjustedToUTC=false, timeUnit=microseconds)
+t7	INT64	Time(isAdjustedToUTC=false, timeUnit=nanoseconds)
+t8	INT64	Time(isAdjustedToUTC=false, timeUnit=nanoseconds)
+t9	INT64	Time(isAdjustedToUTC=false, timeUnit=nanoseconds)
 t	Time64(3)					
-01:02:03.000
-t9	Time64(9)					
-t6	Time64(6)					
-t3	Time64(3)					
 t0	Time64(3)					
+t1	Time64(3)					
+t2	Time64(3)					
+t3	Time64(3)					
+t4	Time64(6)					
 t5	Time64(6)					
-01:02:03.456789012	01:02:03.456789	01:02:03.456	01:02:03.000	01:02:03.456780
+t6	Time64(6)					
+t7	Time64(9)					
+t8	Time64(9)					
+t9	Time64(9)					
+23:59:59	23:59:59	23:59:59.1	23:59:59.12	23:59:59.123	23:59:59.1234	23:59:59.12345	23:59:59.123456	23:59:59.1234567	23:59:59.12345678	23:59:59.123456789
+4444	00:20:34.000	01:34:37.000000000
+4444	00:20:34.000	01:34:37.000000000
+4444	00:20:34.000	01:34:37.000000000
+4444	00:20:34.000	01:34:37.000000000
+2	1	12:30:00.123
+['00:00:00.000001',NULL,'23:59:59.999999']
+00:00:00	23:59:59.999	23:59:59.999999	23:59:59.999999999
 t	Nullable(Time64(3))					
 t64	Nullable(Time64(3))					
 23:59:59.000	23:59:59.999
