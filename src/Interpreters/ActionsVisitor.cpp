@@ -81,6 +81,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool in_null_as_unknown;
     extern const SettingsBool force_grouping_standard_compatibility;
     extern const SettingsUInt64 max_ast_elements;
     extern const SettingsBool transform_null_in;
@@ -90,6 +91,7 @@ namespace Setting
 
 namespace ErrorCodes
 {
+    extern const int NOT_IMPLEMENTED;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int UNKNOWN_IDENTIFIER;
     extern const int NOT_AN_AGGREGATE;
@@ -1080,6 +1082,10 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
     if (checkFunctionIsInOrGlobalInOperator(node))
     {
         checkFunctionHasEmptyNullsAction(node);
+        if (data.getContext()->getSettingsRef()[Setting::in_null_as_unknown]
+            && (node.name == "in" || node.name == "notIn" || node.name == "globalIn" || node.name == "globalNotIn"))
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "Setting 'in_null_as_unknown' currently requires the new analyzer");
         /// Let's find the type of the first argument (then getActionsImpl will be called again and will not affect anything).
         visit(node.arguments->children.at(0), data);
 

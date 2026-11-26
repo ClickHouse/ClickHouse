@@ -92,6 +92,7 @@ namespace ErrorCodes
 
 namespace Setting
 {
+    extern const SettingsBool in_null_as_unknown;
     extern const SettingsBool enable_function_early_short_circuit;
     extern const SettingsShortCircuitFunctionEvaluation short_circuit_function_evaluation;
     extern const SettingsBool execute_exists_as_scalar_subquery;
@@ -1412,6 +1413,115 @@ static QueryTreeNodePtr buildScalarInComparison(
     return raw_if;
 }
 
+/// The first opt-in form is a list of scalar numeric expressions. Express its
+/// three-valued result with ordinary functions so it can also run on older shards.
+static QueryTreeNodePtr buildNullAwareNumericInList(
+    const QueryTreeNodePtr & left,
+    const QueryTreeNodePtr & right,
+    bool is_not_in)
+{
+    QueryTreeNodes members;
+    if (const auto * tuple_function = right->as<FunctionNode>(); tuple_function && tuple_function->getFunctionName() == "tuple")
+    {
+        members = tuple_function->getArguments().getNodes();
+    }
+    else if (const auto * constant = right->as<ConstantNode>(); constant && isTuple(constant->getResultType()))
+    {
+        const auto * tuple_type = typeid_cast<const DataTypeTuple *>(constant->getResultType().get());
+        chassert(tuple_type);
+        const auto values = constant->getValue().safeGet<Tuple>();
+        const auto & types = tuple_type->getElements();
+        chassert(values.size() == types.size());
+        members.reserve(values.size());
+        for (size_t i = 0; i < values.size(); ++i)
+            members.push_back(std::make_shared<ConstantNode>(values[i], types[i]));
+    }
+    else
+    {
+        members.push_back(right);
+    }
+
+    const auto bare_left = removeNullable(removeLowCardinality(left->getResultType()));
+    const auto supported_numeric_type = [](const DataTypePtr & type)
+    {
+        return (isNumber(type) || isDecimal(type)) && !isBool(type) && !isEnum(type);
+    };
+    if (!bare_left->onlyNull() && !supported_numeric_type(bare_left))
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Setting 'in_null_as_unknown' currently supports only scalar numeric lists, got {}",
+            left->getResultType()->getName());
+
+    for (const auto & member : members)
+    {
+        const auto bare_member = removeNullable(removeLowCardinality(member->getResultType()));
+        if (!bare_member->onlyNull() && !supported_numeric_type(bare_member))
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "Setting 'in_null_as_unknown' currently supports only scalar numeric lists, got {}",
+                member->getResultType()->getName());
+        if (!bare_left->onlyNull() && !bare_member->onlyNull()
+            && !tryGetLeastSupertype(DataTypes{bare_left, bare_member}))
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "Setting 'in_null_as_unknown' requires losslessly comparable numeric types, got {} and {}",
+                left->getResultType()->getName(), member->getResultType()->getName());
+    }
+
+    if (members.empty())
+    {
+        auto result = std::make_shared<FunctionNode>("toNullable");
+        result->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(Field{is_not_in ? 1u : 0u}));
+        return result;
+    }
+
+    const bool bind_left = members.size() > 1;
+    const String bound_name = "__in_null_list_left";
+    auto make_left = [&]() -> QueryTreeNodePtr
+    {
+        return bind_left ? std::make_shared<IdentifierNode>(Identifier{bound_name}) : left;
+    };
+
+    QueryTreeNodes comparisons;
+    comparisons.reserve(members.size());
+    for (const auto & member : members)
+    {
+        auto equals = std::make_shared<FunctionNode>("equals");
+        equals->getArguments().getNodes() = {make_left(), member};
+        comparisons.push_back(std::move(equals));
+    }
+
+    QueryTreeNodePtr result;
+    if (comparisons.size() == 1)
+        result = std::move(comparisons.front());
+    else
+    {
+        auto any_match = std::make_shared<FunctionNode>("or");
+        any_match->getArguments().getNodes() = std::move(comparisons);
+        result = std::move(any_match);
+    }
+    if (is_not_in)
+    {
+        auto negate = std::make_shared<FunctionNode>("not");
+        negate->getArguments().getNodes().push_back(std::move(result));
+        result = std::move(negate);
+    }
+    auto nullable = std::make_shared<FunctionNode>("toNullable");
+    nullable->getArguments().getNodes().push_back(std::move(result));
+    result = std::move(nullable);
+
+    if (bind_left)
+    {
+        auto input = std::make_shared<FunctionNode>("array");
+        input->getArguments().getNodes().push_back(left);
+        auto lambda = std::make_shared<LambdaNode>(
+            std::make_shared<LambdaArgumentsNode>(Names{bound_name}), std::move(result), false /*is_operator*/);
+        auto mapped = std::make_shared<FunctionNode>("arrayMap");
+        mapped->getArguments().getNodes() = {std::move(lambda), std::move(input)};
+        auto first = std::make_shared<FunctionNode>("arrayElement");
+        first->getArguments().getNodes() = {std::move(mapped), std::make_shared<ConstantNode>(Field{1u})};
+        result = std::move(first);
+    }
+    return result;
+}
+
 /// converts tuple to array with proper type handling
 QueryTreeNodePtr QueryAnalyzer::convertTupleToArray(
     const QueryTreeNodes & tuple_args,
@@ -2658,7 +2768,9 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     if (is_special_function_in)
     {
         checkFunctionNodeHasEmptyNullsAction(function_node);
-        if (scope.context->getSettingsRef()[Setting::transform_null_in])
+        const bool use_null_as_unknown = scope.context->getSettingsRef()[Setting::in_null_as_unknown]
+            && (function_name == "in" || function_name == "notIn");
+        if (scope.context->getSettingsRef()[Setting::transform_null_in] && !use_null_as_unknown)
             function_name = getNullInFunctionName(function_name);
 
         auto & function_in_arguments_nodes = function_node.getArguments().getNodes();
@@ -2671,6 +2783,29 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                 "Correlated subqueries are not supported as IN function arguments yet, but found in expression: {}",
                 node->formatASTForErrorMessage());
+
+        if (scope.context->getSettingsRef()[Setting::in_null_as_unknown]
+            && (function_name == "globalIn" || function_name == "globalNotIn"))
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "Setting 'in_null_as_unknown' does not yet support global set membership");
+
+        if (use_null_as_unknown)
+        {
+            if (in_first_argument->getNodeType() == QueryTreeNodeType::QUERY
+                || in_first_argument->getNodeType() == QueryTreeNodeType::UNION
+                || in_first_argument->getNodeType() == QueryTreeNodeType::LAMBDA
+                || in_second_argument->getNodeType() == QueryTreeNodeType::QUERY
+                || in_second_argument->getNodeType() == QueryTreeNodeType::UNION
+                || in_second_argument->getNodeType() == QueryTreeNodeType::TABLE
+                || in_second_argument->getNodeType() == QueryTreeNodeType::TABLE_FUNCTION)
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "Setting 'in_null_as_unknown' currently supports only scalar numeric expression lists");
+
+            auto projection_name = calculateFunctionProjectionName(node, parameters_projection_names, arguments_projection_names);
+            node = buildNullAwareNumericInList(in_first_argument, in_second_argument, function_name == "notIn");
+            resolveFunction(node, scope);
+            return ProjectionNames{projection_name};
+        }
 
         /// Table expressions are only allowed as the second (right) argument of IN.
         /// A table on the left side is not a value expression, so reject it with a clear
