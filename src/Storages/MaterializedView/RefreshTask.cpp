@@ -375,6 +375,9 @@ bool RefreshTask::canCreateOrDropOtherTables() const
 
 void RefreshTask::startup(bool target_keeps_data_only_in_memory)
 {
+    /// The schedule of an uncoordinated view is kept on the database disk, whose metadata may be in Keeper.
+    auto component_guard = Coordination::setCurrentComponent("RefreshTask::startup");
+
     ContextMutablePtr context;
     StorageID view_id = StorageID::createEmpty();
     {
