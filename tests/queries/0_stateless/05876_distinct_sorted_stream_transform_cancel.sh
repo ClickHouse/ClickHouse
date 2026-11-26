@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-random-merge-tree-settings
+# Tags: no-parallel, no-fasttest, no-random-merge-tree-settings
 # Tag no-parallel: the test parks a query on a server-global PAUSEABLE failpoint, so a concurrent
 #   instance would consume this one's pause and release the query early.
+# Tag no-fasttest: a fail point is server-global state that fires in every concurrently running
+#   query, so this test must not run in the fast test together with others.
 # Tag no-random-merge-tree-settings: the fixtures pin wide parts on purpose, so that a background
 #   merge cannot change how the data is split into chunks.
 
