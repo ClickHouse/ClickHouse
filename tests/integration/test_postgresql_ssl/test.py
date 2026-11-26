@@ -31,9 +31,9 @@ node = cluster.add_instance(
     with_postgres=True,
     stay_alive=True,
     # Pin HOME so libpq's default client-certificate directory (`$HOME/.postgresql`) is deterministic,
-    # which the ambient-default-credential test relies on.
+    # which the ambient-default-credential test relies on. Shared cluster env (the default), so the
+    # node keeps the cluster `.env` that also carries `MINIO_CERTS_DIR`.
     env_variables={"HOME": "/var/lib/clickhouse"},
-    instance_env_variables=True,
 )
 
 # The docker service/alias name the ClickHouse node uses to reach PostgreSQL.
