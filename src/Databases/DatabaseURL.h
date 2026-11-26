@@ -38,6 +38,11 @@ public:
 
     StoragePtr tryGetTable(const String & name, ContextPtr context) const override;
 
+    /// A name that resolves to a `file://` URL and contains `.` or `/` is written as a path to a file,
+    /// for example `'data.json'` or `'dir/data.csv'`: an unquoted identifier contains neither.
+    /// `getTable` then reports the missing file with its resolved path.
+    bool canExplainMissingTable(const String & name, ContextPtr context) const override;
+
     bool shouldBeEmptyOnDetach() const override { return false; }
 
     bool empty() const override { return true; }
