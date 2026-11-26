@@ -18,7 +18,7 @@ import SettingsInfoBlock from "/snippets/ja/components/SettingsInfoBlock/Setting
 
 ## text_index_header_cache_policy {#text_index_header_cache_policy}
 
-<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />テキスト索引ヘッダーキャッシュのエビクションポリシー名。設定可能な値: `LRU`、`SLRU`、`SIEVE`。
+<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />テキスト索引ヘッダーcacheのエビクションポリシー。設定可能な値: `LRU`、`SLRU`、`SIEVE`。cache容量については [`text_index_header_cache_size`](/ja/reference/settings/server-settings/settings/text-index#text_index_header_cache_size) および [`text_index_header_cache_max_entries`](/ja/reference/settings/server-settings/settings/text-index#text_index_header_cache_max_entries) を、SLRUポリシーにおける保護キューのサイズについては [`text_index_header_cache_size_ratio`](/ja/reference/settings/server-settings/settings/text-index#text_index_header_cache_size_ratio) を参照してください。
 
 ## text_index_header_cache_size {#text_index_header_cache_size}
 

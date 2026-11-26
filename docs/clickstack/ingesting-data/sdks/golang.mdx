@@ -223,27 +223,11 @@ func main() {
 
 Afterwards you'll need to configure the following environment variables in your shell to ship telemetry to ClickStack via the OpenTelemetry collector:
 
-<Tabs>
-<Tab title="Managed ClickStack">
-
-```shell
-export OTEL_EXPORTER_OTLP_ENDPOINT=<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT> \
-OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf \
-OTEL_SERVICE_NAME='<YOUR_SERVICE_NAME>' \
-```
-
-</Tab>
-
-<Tab title="ClickStack Open Source">
-
 ```shell
 export OTEL_EXPORTER_OTLP_ENDPOINT=<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT> \
 OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf \
 OTEL_SERVICE_NAME='<YOUR_SERVICE_NAME>' \
 OTEL_EXPORTER_OTLP_HEADERS='authorization=<YOUR_INGESTION_API_KEY>'
 ```
-
-</Tab>
-</Tabs>
 
 The `OTEL_EXPORTER_OTLP_HEADERS` environment variable contains the API Key available via ClickStack UI in `Team Settings → API Keys`.

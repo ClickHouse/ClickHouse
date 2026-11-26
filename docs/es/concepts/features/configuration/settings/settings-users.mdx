@@ -130,6 +130,9 @@ Si no se proporciona ningún código para una cuenta con TOTP, el servidor respo
 Cada código se acepta como máximo una vez, tal como exige [RFC 6238](https://datatracker.ietf.org/doc/html/rfc6238#section-5.2), de modo que un usuario puede autenticarse correctamente como máximo una vez por `period`.
 Tenga esto en cuenta con los clients que se autentican en cada solicitud o conexión (por ejemplo, scripts que usan la interfaz HTTP): cada autenticación necesita un código nuevo.
 
+De forma predeterminada, cada servidor lleva su propio registro de los códigos aceptados, por lo que, en un cluster, un código aceptado por un servidor puede volver a aceptarse una vez en cada uno de los demás servidores.
+Active el ajuste del servidor `totp_track_used_codes_in_keeper` para registrar los códigos aceptados en ZooKeeper o ClickHouse Keeper: de este modo, cada código se acepta como máximo una vez en el conjunto de servidores que comparten el mismo Keeper, y los registros se conservan aunque se reinicie el servidor.
+
 Para habilitar la autenticación TOTP para un usuario, configure la sección `time_based_one_time_password` en `users.xml`. Esta sección define la configuración de TOTP, como el secreto, el período de validez, la cantidad de dígitos y el algoritmo hash.
 
 **Ejemplo**
