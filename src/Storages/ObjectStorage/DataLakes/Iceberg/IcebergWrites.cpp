@@ -50,6 +50,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 #include <Storages/ObjectStorage/Utils.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ExternalPathResolver.h>
+#include <Common/maskSensitiveQueryParameters.h>
 #include <base/Decimal.h>
 #include <base/arithmeticOverflow.h>
 #include <base/defines.h>
@@ -1203,7 +1204,7 @@ void generateManifestList(
                                         ErrorCodes::NOT_IMPLEMENTED,
                                         "Cannot carry manifest {} of manifest list {} over into a format-version {} manifest list: it has "
                                         "no '{}', and recomputing it from the manifest is not supported",
-                                        old_manifest_path.value<std::string>(),
+                                        maskCredentialsInURI(old_manifest_path.value<std::string>()),
                                         resolved_manifest_list_path,
                                         version,
                                         field);
