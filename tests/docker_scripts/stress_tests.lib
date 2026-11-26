@@ -372,7 +372,8 @@ function kill_server()
             kill -s KILL "$watchdog" ||:
         fi
     fi
-    clickhouse stop --force
+    # The filesystem isolation supervisor removes the pid file once the server is gone, maybe before `clickhouse stop` reads it.
+    clickhouse stop --force || { [ ! -e /var/run/clickhouse-server/clickhouse-server.pid ] && ! kill -s 0 "$pid" 2>/dev/null; }
 }
 
 function wait_server_ports_free()
