@@ -1,4 +1,3 @@
-SET enable_json_type = 1;
 
 DROP TABLE IF EXISTS test_json_type;
 CREATE TABLE test_json_type(id UInt32, data JSON, version UInt64) ENGINE=ReplacingMergeTree(version) ORDER BY id;

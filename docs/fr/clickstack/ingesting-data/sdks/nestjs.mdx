@@ -8,115 +8,41 @@ keywords: ['clickstack', 'sdk', 'logging', 'intégration', 'supervision des appl
 
 import { ClickStackIntegrates } from '/snippets/fr/components/ClickStackIntegrates/ClickStackIntegrates.jsx'
 
-L’intégration NestJS de ClickStack vous permet de créer un logger ou d’utiliser le
-logger par défaut pour envoyer des logs vers ClickStack (basé sur [nest-winston](https://www.npmjs.com/package/nest-winston?activeTab=readme)).
+Utilisez le SDK Node.js de ClickStack pour collecter la télémétrie de votre application NestJS et l’envoyer vers ClickStack. Il prend en charge l’instrumentation des requêtes NestJS et capture la sortie de la console.
 
-<ClickStackIntegrates signals={['logs']} />
+<ClickStackIntegrates signals={['logs', 'metrics', 'traces']} />
 
-*Pour envoyer également des métriques ou des traces/APM, vous devrez aussi ajouter
-à votre application l’intégration de langage correspondante.*
+## Installer le SDK {#install-sdk}
 
-## Prise en main {#getting-started}
+Utilisez Node.js 22.15 ou une version ultérieure :
 
-Importez `HyperDXNestLoggerModule` dans l’`AppModule` racine et utilisez la méthode `forRoot()`
-pour le configurer.
-
-```javascript
-import { Module } from '@nestjs/common';
-import { HyperDXNestLoggerModule } from '@hyperdx/node-logger';
-
-@Module({
-  imports: [
-    HyperDXNestLoggerModule.forRoot({
-      url: '<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT>',
-      apiKey: '<YOUR_INGESTION_API_KEY>', // Omit for Managed ClickStack
-      maxLevel: 'info',
-      service: 'my-app',
-    }),
-  ],
-})
-export class AppModule {}
+```shell
+npm install @clickhouse/clickstack-node
 ```
 
-Par la suite, l’instance winston pourra être injectée dans tout le
-projet à l’aide du jeton d’injection `HDX_LOGGER_MODULE_PROVIDER` :
+## Configurer votre destination {#configure-destination}
 
-```javascript
-import { Controller, Inject } from '@nestjs/common';
-import { HyperDXNestLoggerModule, HyperDXNestLogger } from '@hyperdx/node-logger';
+Définissez l&#39;endpoint HTTP OTLP et la clé d&#39;ingestion de votre collecteur ClickStack. Utilisez `http://` si TLS n&#39;est pas configuré sur votre collecteur. Pour configurer le collecteur, consultez [Ingestion avec OpenTelemetry](/fr/clickstack/ingesting-data/opentelemetry).
 
-@Controller('cats')
-export class CatsController {
-  constructor(
-    @Inject(HyperDXNestLoggerModule.HDX_LOGGER_MODULE_PROVIDER)
-    private readonly logger: HyperDXNestLogger,
-  ) { }
-
-  meow() {
-    this.logger.info({ message: '🐱' });
-  }
-}
+```shell
+export OTEL_EXPORTER_OTLP_ENDPOINT='https://YOUR_COLLECTOR_HOST:4318'
+export OTEL_EXPORTER_OTLP_HEADERS='authorization=YOUR_INGESTION_API_KEY'
+export OTEL_EXPORTER_OTLP_PROTOCOL='http/protobuf'
 ```
 
-### Remplacer le logger de Nest (y compris pour l’amorçage) {#replacing-the-nest-logger}
+## Démarrer votre application {#start-application}
 
-<Info>
-  **Important**
+Définissez `OTEL_SERVICE_NAME` pour identifier votre application. Compilez votre application NestJS, puis préchargez le SDK avant le point d’entrée compilé :
 
-  En procédant ainsi, vous renoncez à l’injection de dépendances, ce qui signifie que `forRoot` et `forRootAsync` ne sont pas nécessaires et ne doivent pas être utilisés. Supprimez-les de votre module principal.
-</Info>
-
-L’utilisation de l’injection de dépendances présente un léger inconvénient. Nest doit d’abord amorcer l’application
-(instancier les modules et les providers, injecter les dépendances,
-etc.) et, pendant ce processus, l’instance de `HyperDXNestLogger` n’est pas encore
-disponible, ce qui signifie que Nest se rabat sur le logger interne.
-
-Une solution consiste à créer le logger en dehors du cycle de vie de l’application, à l’aide de
-la fonction `createLogger`, puis à le passer à `NestFactory.create`. Nest va alors
-encapsuler notre logger personnalisé (la même instance renvoyée par la méthode `createLogger`)
-dans la classe Logger, en lui redirigeant tous les appels :
-
-Créez le logger dans le fichier `main.ts`
-
-```javascript
-import { HyperDXNestLoggerModule } from '@hyperdx/node-logger';
-
-async function bootstrap() {
-  const app = await NestFactory.create(AppModule, {
-    logger: HyperDXNestLoggerModule.createLogger({
-      url: '<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT>',
-      apiKey: '<YOUR_INGESTION_API_KEY>', // Omit for Managed ClickStack
-      maxLevel: 'info',
-      service: 'my-app',
-    })
-  });
-  await app.listen(3000);
-}
-bootstrap();
+```shell
+npm run build
+OTEL_SERVICE_NAME='my-nestjs-app' node --import @clickhouse/clickstack-node/register dist/main.js
 ```
 
-Modifiez votre module principal pour qu’il fournisse le service Logger :
+Adaptez `dist/main.js` en fonction de la sortie de votre construction. Si vous utilisez `ts-node` ou un autre transpileur qui intercepte `require`, utilisez plutôt `--require @clickhouse/clickstack-node/register`. Si vous empaquetez votre application, conservez le SDK et les dépendances instrumentées en tant que dépendances externes.
 
-```javascript
-import { Logger, Module } from '@nestjs/common';
+Vous pouvez continuer à utiliser le journaliseur de console par défaut de NestJS. Pour un journaliseur personnalisé, utilisez une intégration prise en charge, comme Winston ou Pino. Pour en savoir plus sur la configuration et la compatibilité, consultez le [guide Node.js](/fr/clickstack/ingesting-data/sdks/nodejs).
 
-@Module({
-  providers: [Logger],
-})
-export class AppModule {}
-```
+## Vérifier l&#39;ingestion {#verify-ingestion}
 
-Injectez ensuite simplement le logger en le typant avec le Logger de `@nestjs/common` :
-
-```javascript
-import { Controller, Logger } from '@nestjs/common';
-
-@Controller('cats')
-export class CatsController {
-  constructor(private readonly logger: Logger) {}
-
-  meow() {
-    this.logger.log({ message: '🐱' });
-  }
-}
-```
+Envoyez une requête à un contrôleur et émettez un message de journal. Dans ClickStack, sélectionnez un intervalle de temps récent, puis recherchez le nom du service de votre application dans Logs et Traces. Consultez Metrics après avoir laissé à l&#39;export le temps de s&#39;effectuer.
