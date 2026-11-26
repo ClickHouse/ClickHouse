@@ -2,11 +2,11 @@
 title: マネージド版のナビゲーション
 ---
 
-ClickStack UI (HyperDX) にアクセスするには、[Launch ClickStack] を選択します。自動的に認証され、リダイレクトされます。
+ClickStack UI にアクセスするには、[Launch ClickStack] を選択します。自動的に認証され、リダイレクトされます。
 
 <Tabs>
   <Tab title="OpenTelemetry">
-    OpenTelemetry データ用のデータソースはあらかじめ作成されています。
+    ClickStack は標準の OpenTelemetry スキーマを使用するテーブルを自動的に検出し、対応するデータソースを作成します。確認ダイアログや手動でのソース作成は不要です。
 
     <img src="/images/clickstack/getting-started/clickstack_managed_ui.webp" alt="" />
   </Tab>
@@ -22,7 +22,7 @@ ClickStack UI (HyperDX) にアクセスするには、[Launch ClickStack] を選
 
     上記の例では、データに `Body` カラムは存在しません。その代わり、利用可能なフィールドから Nginx のログ行を再構築する SQL expression を使って定義しています。
 
-    その他のオプションについては、[configuration reference](/ja/clickstack/managing/config) を参照してください。
+    その他のオプションについては、[configuration reference](/ja/clickstack/self-configured/managing/config) を参照してください。
 
     作成が完了すると、Search view に移動し、すぐにデータの確認を開始できます。
 

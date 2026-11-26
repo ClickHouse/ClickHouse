@@ -13,9 +13,7 @@ doc_type: 'reference'
 ИИ-приложению достаточно один раз реализовать MCP, чтобы подключаться к любому совместимому серверу.
 Аналогично, MCP-сервер может предоставлять свои возможности любому совместимому клиенту.
 
-<div id="architecture">
-  ## Архитектура
-</div>
+## Архитектура {#architecture}
 
 MCP использует клиент-серверную архитектуру:
 
@@ -24,19 +22,15 @@ MCP использует клиент-серверную архитектуру:
 * ИИ-модели при необходимости используют эти инструменты для доступа к внешним данным и функциям.
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Клиент-серверная архитектура MCP](/images/use-cases/AI_ML/MCP/mcp_overview.webp)
-
-</Frame>
-
+  <Frame>
+    ![Клиент-серверная архитектура MCP](/images/use-cases/AI_ML/MCP/mcp_overview.webp)
+  </Frame>
 </div>
 
 На GitHub доступны поддерживаемые сообществом подборки [MCP-клиентов](https://github.com/punkpeye/awesome-mcp-clients) и [MCP-серверов](https://github.com/punkpeye/awesome-mcp-servers).
 
 <div id="clickhouse-mcp-server">
-  ## MCP-сервер ClickHouse
+  ## MCP-сервер ClickHouse {#clickhouse-mcp-server}
 </div>
 
 [MCP-сервер ClickHouse](https://github.com/ClickHouse/mcp-clickhouse) позволяет ИИ-ассистенту обнаруживать базы данных и таблицы, просматривать схемы и выполнять SQL-запросы к кластеру ClickHouse.

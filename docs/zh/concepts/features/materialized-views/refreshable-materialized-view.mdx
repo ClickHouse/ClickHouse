@@ -11,13 +11,9 @@ doc_type: 'guide'
 下图说明了可刷新materialized view的工作方式：
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![可刷新materialized view示意图](/images/materialized-view/refreshable-materialized-view-diagram.webp)
-
-</Frame>
-
+  <Frame>
+    ![可刷新materialized view示意图](/images/materialized-view/refreshable-materialized-view-diagram.webp)
+  </Frame>
 </div>
 
 你也可以观看以下视频：
@@ -27,7 +23,7 @@ doc_type: 'guide'
 </Frame>
 
 <div id="when-should-refreshable-materialized-views-be-used">
-  ## 何时应使用可刷新materialized view？
+  ## 何时应使用可刷新materialized view？ {#when-should-refreshable-materialized-views-be-used}
 </div>
 
 ClickHouse 增量materialized view 非常强大，而且通常比可刷新materialized view 采用的方法更具扩展性，尤其是在需要对单个表执行聚合的场景中。由于它只会在数据插入时对每个数据块进行聚合，并在最终表中合并这些增量状态，因此查询始终只需处理部分数据。这种方法可扩展到潜在的 PB 级数据，通常也是首选方案。
@@ -61,7 +57,7 @@ SYSTEM REFRESH VIEW table_name_mv;
 </Warning>
 
 <div id="when-was-a-refreshable-materialized-view-last-refreshed">
-  ## 可刷新materialized view 最近一次刷新是在什么时候？
+  ## 可刷新materialized view 最近一次刷新是在什么时候？ {#when-was-a-refreshable-materialized-view-last-refreshed}
 </div>
 
 要查看可刷新materialized view 最近一次刷新的时间，可以查询下方所示的 [`system.view_refreshes`](/zh/reference/system-tables/view_refreshes) 系统表：
@@ -80,7 +76,7 @@ FROM system.view_refreshes;
 ```
 
 <div id="how-can-i-change-the-refresh-rate">
-  ## 如何更改刷新频率？
+  ## 如何更改刷新频率？ {#how-can-i-change-the-refresh-rate}
 </div>
 
 要更改可刷新materialized view的刷新频率，请使用 [`ALTER TABLE...MODIFY REFRESH`](/zh/reference/statements/alter/view#alter-table--modify-refresh-statement) 语法。
@@ -99,7 +95,7 @@ MODIFY REFRESH EVERY 30 SECONDS;
 ```
 
 <div id="using-append-to-add-new-rows">
-  ## 使用 `APPEND` 添加新行
+  ## 使用 `APPEND` 添加新行 {#using-append-to-add-new-rows}
 </div>
 
 `APPEND` 功能可让你将新行追加到表末尾，而不是替换整个视图。
@@ -205,13 +201,13 @@ FORMAT PrettyCompactMonoBlock
 ```
 
 <div id="examples">
-  ## 示例
+  ## 示例 {#examples}
 </div>
 
 下面通过一些示例数据集，来看看如何使用可刷新materialized view。
 
 <div id="stack-overflow">
-  ### Stack Overflow
+  ### Stack Overflow {#stack-overflow}
 </div>
 
 [数据反规范化指南](/zh/guides/clickhouse/data-modelling/denormalization) 介绍了使用 Stack Overflow 数据集进行数据反规范化的多种方法。我们将数据写入以下表：`votes`、`users`、`badges`、`posts` 和 `postlinks`。
@@ -263,7 +259,7 @@ LEFT JOIN (
 </Note>
 
 <div id="imdb">
-  ### IMDb
+  ### IMDb {#imdb}
 </div>
 
 在 [dbt 和 ClickHouse 集成指南](/zh/integrations/connectors/data-ingestion/etl-tools/dbt/index) 中，我们用以下表填充了一个 IMDb 数据集：`actors`、`directors`、`genres`、`movie_directors`、`movies` 和 `roles`。

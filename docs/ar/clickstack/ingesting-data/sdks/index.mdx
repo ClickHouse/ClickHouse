@@ -24,33 +24,28 @@ keywords: ['حِزم SDK لـ ClickStack', 'حِزم SDK الخاصة باللغ
 <Info>
   **التوافق مع OpenTelemetry**
 
-  في حين يوفّر ClickStack حِزم SDK خاصة به للغات المختلفة مع إمكانات وبيانات القياس عن بُعد محسّنة، يمكنك أيضًا استخدام OpenTelemetry SDKs الحالية لديك بسلاسة.
+  في حين يوفّر ClickStack حزم SDK خاصة به للغات البرمجة مع إمكانات وبيانات القياس عن بُعد محسّنة، يمكنك أيضًا استخدام حزم SDK لـ OpenTelemetry الحالية لديك بسلاسة.
 </Info>
 
 <br />
 
-| اللغة        | الوصف                                         | الرابط                                                  |
-| ------------ | --------------------------------------------- | ------------------------------------------------------- |
-| AWS Lambda   | أضف أدوات الرصد إلى AWS Lambda functions لديك | [الوثائق](/ar/clickstack/ingesting-data/sdks/aws-lambda)   |
-| Browser      | JavaScript SDK للتطبيقات المستندة إلى المتصفح | [الوثائق](/ar/clickstack/ingesting-data/sdks/browser)      |
-| Elixir       | تطبيقات Elixir                                | [الوثائق](/ar/clickstack/ingesting-data/sdks/elixir)       |
-| Go           | تطبيقات Go والخدمات المصغّرة                  | [الوثائق](/ar/clickstack/ingesting-data/sdks/golang)       |
-| Java         | تطبيقات Java                                  | [الوثائق](/ar/clickstack/ingesting-data/sdks/java)         |
-| NestJS       | تطبيقات NestJS                                | [الوثائق](/ar/clickstack/ingesting-data/sdks/nestjs)       |
-| Next.js      | تطبيقات Next.js                               | [الوثائق](/ar/clickstack/ingesting-data/sdks/nextjs)       |
-| Node.js      | بيئة تشغيل JavaScript للتطبيقات من جهة الخادم | [الوثائق](/ar/clickstack/ingesting-data/sdks/nodejs)       |
-| Deno         | تطبيقات Deno                                  | [الوثائق](/ar/clickstack/ingesting-data/sdks/deno)         |
-| Python       | تطبيقات بايثون وخدمات الويب                   | [الوثائق](/ar/clickstack/ingesting-data/sdks/python)       |
-| React Native | تطبيقات React Native للأجهزة المحمولة         | [الوثائق](/ar/clickstack/ingesting-data/sdks/react-native) |
-| Ruby         | تطبيقات Ruby on Rails وخدمات الويب            | [الوثائق](/ar/clickstack/ingesting-data/sdks/ruby)         |
+| اللغة                           | الوصف                                                                         | الرابط                                                               |
+| ------------------------------- | ----------------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| AWS Lambda                      | ClickStack Node.js SDK لمعالجات الطلبات غير المتزامنة، أو طبقات OpenTelemetry | [الوثائق](/ar/clickstack/ingesting-data/sdks/aws-lambda)                |
+| Browser                         | JavaScript SDK للتطبيقات المستندة إلى المتصفح                                 | [الوثائق](/ar/clickstack/ingesting-data/sdks/browser)                   |
+| Elixir                          | تطبيقات Elixir                                                                | [الوثائق](/ar/clickstack/ingesting-data/sdks/elixir)                    |
+| Go                              | تطبيقات Go والخدمات المصغّرة                                                  | [الوثائق](/ar/clickstack/ingesting-data/sdks/golang)                    |
+| Java                            | تطبيقات Java                                                                  | [الوثائق](/ar/clickstack/ingesting-data/sdks/java)                      |
+| NestJS                          | ClickStack Node.js SDK لـ NestJS                                              | [الوثائق](/ar/clickstack/ingesting-data/sdks/nestjs)                    |
+| Next.js (Node.js مستضاف ذاتيًا) | ClickStack Node.js SDK                                                        | [الوثائق](/ar/clickstack/ingesting-data/sdks/nextjs#self-hosted-nextjs) |
+| Next.js (Vercel أو Edge)        | `@vercel/otel`                                                                | [الوثائق](/ar/clickstack/ingesting-data/sdks/nextjs#vercel-or-edge)     |
+| Node.js                         | ClickStack Node.js SDK                                                        | [الوثائق](/ar/clickstack/ingesting-data/sdks/nodejs)                    |
+| Deno                            | دعم مدمج لـ OpenTelemetry                                                     | [الوثائق](/ar/clickstack/ingesting-data/sdks/deno)                      |
+| بايثون                          | تطبيقات بايثون وخدمات الويب                                                   | [الوثائق](/ar/clickstack/ingesting-data/sdks/python)                    |
+| React Native                    | تطبيقات React Native للأجهزة المحمولة                                         | [الوثائق](/ar/clickstack/ingesting-data/sdks/react-native)              |
+| Ruby                            | تطبيقات Ruby on Rails وخدمات الويب                                            | [الوثائق](/ar/clickstack/ingesting-data/sdks/ruby)                      |
 
 ## التأمين باستخدام مفتاح API {#securing-api-key}
-
-<Info>
-  **غير مطلوب لـ Managed ClickStack**
-
-  لا يلزم مفتاح API في Managed ClickStack.
-</Info>
 
 لإرسال البيانات إلى ClickStack عبر OTel collector، ستحتاج SDKs إلى تحديد مفتاح API للإدخال. ويمكن ضبط ذلك إما باستخدام دالة `init` في SDK أو عبر متغير البيئة `OTEL_EXPORTER_OTLP_HEADERS`:
 
@@ -58,9 +53,9 @@ keywords: ['حِزم SDK لـ ClickStack', 'حِزم SDK الخاصة باللغ
 OTEL_EXPORTER_OTLP_HEADERS='authorization=<YOUR_INGESTION_API_KEY>'
 ```
 
-يُنشأ مفتاح API هذا بواسطة تطبيق ClickStack UI ‏(HyperDX)، وهو متاح من خلال التطبيق ضمن `Team Settings → API Keys`.
+يُنشأ مفتاح API هذا بواسطة تطبيق ClickStack UI، وهو متاح من خلال التطبيق ضمن `Team Settings → API Keys`.
 
-بالنسبة إلى معظم [حِزم SDK الخاصة باللغات](/ar/clickstack/ingesting-data/sdks/index) ومكتبات القياس عن بُعد التي تدعم OpenTelemetry، يمكنك ببساطة تعيين متغير البيئة `OTEL_EXPORTER_OTLP_ENDPOINT` في تطبيقك أو تحديده أثناء تهيئة الـ SDK:
+بالنسبة إلى معظم [حزم SDK للغات البرمجة](/ar/clickstack/ingesting-data/sdks/index) ومكتبات بيانات القياس عن بُعد التي تدعم OpenTelemetry، يمكنك ببساطة تعيين متغير البيئة `OTEL_EXPORTER_OTLP_ENDPOINT` في تطبيقك أو تحديده أثناء تهيئة الـ SDK:
 
 ```shell
 export OTEL_EXPORTER_OTLP_ENDPOINT=<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT>
