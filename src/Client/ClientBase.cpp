@@ -3703,7 +3703,7 @@ MultiQueryProcessingStage ClientBase::analyzeMultiQueryText(
             skipBOMIfExists(data_in);
             do
             {
-                skipWhitespaceIfAny(data_in);
+                skipWhitespaceAndSQLComments(data_in);
                 if (data_in.eof() || *data_in.position() == ';')
                     break;
             }

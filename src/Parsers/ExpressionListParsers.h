@@ -192,7 +192,8 @@ protected:
 class ParserExpression : public IParserBase
 {
 public:
-    explicit ParserExpression(bool allow_trailing_commas_ = false) : allow_trailing_commas(allow_trailing_commas_) {}
+    explicit ParserExpression(bool allow_trailing_commas_ = false, bool stop_at_and_insert_ = false)
+        : allow_trailing_commas(allow_trailing_commas_), stop_at_and_insert(stop_at_and_insert_) {}
 
     std::map<String, Documentation> getDocumentation() const override;
 
@@ -202,6 +203,7 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 
     bool allow_trailing_commas;
+    bool stop_at_and_insert;
 };
 
 
@@ -218,7 +220,8 @@ protected:
 class ParserExpressionWithOptionalAlias : public IParserBase
 {
 public:
-    explicit ParserExpressionWithOptionalAlias(bool allow_alias_without_as_keyword_, bool is_table_function_ = false, bool allow_trailing_commas_ = false);
+    explicit ParserExpressionWithOptionalAlias(
+        bool allow_alias_without_as_keyword_, bool is_table_function_ = false, bool allow_trailing_commas_ = false, bool stop_at_and_insert_ = false);
 protected:
     ParserPtr impl;
 
@@ -235,15 +238,18 @@ protected:
 class ParserExpressionList : public IParserBase
 {
 public:
-    explicit ParserExpressionList(bool allow_alias_without_as_keyword_, bool is_table_function_ = false, bool allow_trailing_commas_ = false)
+    explicit ParserExpressionList(
+        bool allow_alias_without_as_keyword_, bool is_table_function_ = false, bool allow_trailing_commas_ = false, bool stop_at_and_insert_ = false)
         : allow_alias_without_as_keyword(allow_alias_without_as_keyword_)
         , is_table_function(is_table_function_)
-        , allow_trailing_commas(allow_trailing_commas_) {}
+        , allow_trailing_commas(allow_trailing_commas_)
+        , stop_at_and_insert(stop_at_and_insert_) {}
 
 protected:
     bool allow_alias_without_as_keyword;
     bool is_table_function; // This expression list is used by a table function
     bool allow_trailing_commas;
+    bool stop_at_and_insert;
 
     const char * getName() const override { return "list of expressions"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
@@ -331,9 +337,13 @@ protected:
 
 class ParserTTLExpressionList : public IParserBase
 {
+public:
+    explicit ParserTTLExpressionList(bool stop_at_and_insert_ = false) : stop_at_and_insert(stop_at_and_insert_) {}
+
 protected:
     const char * getName() const override { return "ttl expression list"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+    bool stop_at_and_insert;
 };
 
 /// Whether the parentheses that `pos` points at hold an expression over a column named `from`, rather

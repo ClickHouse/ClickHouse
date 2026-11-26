@@ -112,3 +112,57 @@ SELECT formatQueryFromJSON(parseQueryToJSON('CREATE TABLE IF NOT EXISTS t (a UIn
 
 -- Test 2: inline data cannot be represented in the JSON AST, so it is rejected instead of being silently dropped.
 SELECT parseQueryToJSON('CREATE TABLE t (a UInt8) ENGINE = Memory AS INSERT VALUES (1), (2)'); -- { serverError BAD_ARGUMENTS }
+
+DROP TABLE IF EXISTS t_raw_settings;
+CREATE TABLE t_raw_settings (x String) ENGINE = Memory AS INSERT FORMAT CSV
+SETTINGS made_up_setting = 1
+
+CREATE TABLE IF NOT EXISTS t_raw_settings (x String) ENGINE = Memory AND INSERT FORMAT CSV
+SETTINGS made_up_setting = 1
+
+INSERT INTO t_raw_settings FORMAT CSV
+SETTINGS made_up_setting = 1
+
+SELECT x, count() FROM t_raw_settings GROUP BY x;
+DROP TABLE t_raw_settings;
+
+DROP TABLE IF EXISTS t_raw_input;
+CREATE TABLE t_raw_input (x String) ENGINE = Memory AS INSERT SELECT * FROM input('x String') FORMAT CSV
+SETTINGS made_up_setting = 1
+
+SELECT x FROM t_raw_input;
+DROP TABLE t_raw_input;
+
+SELECT formatQuerySingleLine(concat('CREATE TABLE t (x String) ENGINE = Memory AS INSERT FORMAT CSV', '\nCOMMENT ''payload'''))
+    = formatQuerySingleLine('CREATE TABLE t (x String) ENGINE = Memory AS INSERT FORMAT CSV');
+SELECT formatQuerySingleLine(concat('CREATE TABLE t (x String) ENGINE = Memory AS INSERT FORMAT CSV', '\nPARALLEL WITH SELECT 1'))
+    = formatQuerySingleLine('CREATE TABLE t (x String) ENGINE = Memory AS INSERT FORMAT CSV');
+
+SELECT 1 AND insert FROM (SELECT 1 AS insert);
+
+DROP TABLE IF EXISTS t_noop_followed_by_insert;
+CREATE TABLE t_noop_followed_by_insert (x UInt8) ENGINE = Memory;
+CREATE TABLE IF NOT EXISTS t_noop_followed_by_insert AS INSERT VALUES (1) -- comment after data
+;
+INSERT INTO t_noop_followed_by_insert VALUES (2);
+SELECT x FROM t_noop_followed_by_insert;
+DROP TABLE t_noop_followed_by_insert;
+
+DROP TABLE IF EXISTS t_population_metadata;
+CREATE TABLE t_population_metadata (x UInt64) ENGINE = MergeTree ORDER BY x
+    AS INSERT SELECT number FROM numbers(3) SETTINGS limit = 1;
+CREATE TABLE IF NOT EXISTS t_population_metadata (x UInt64) ENGINE = MergeTree ORDER BY x
+    AND INSERT SELECT number + 10 FROM numbers(3) SETTINGS limit = 1;
+SELECT count(), sum(x) FROM t_population_metadata;
+SELECT positionCaseInsensitive(create_table_query, ' AS INSERT ') = 0
+    AND positionCaseInsensitive(create_table_query, ' AND INSERT ') = 0
+    FROM system.tables WHERE database = currentDatabase() AND name = 't_population_metadata';
+DETACH TABLE t_population_metadata SYNC;
+ATTACH TABLE t_population_metadata;
+SELECT count(), sum(x) FROM t_population_metadata;
+DROP TABLE t_population_metadata;
+
+CREATE TEMPORARY TABLE IF NOT EXISTS t_temporary_population (x UInt8) AND INSERT VALUES (1);
+CREATE TEMPORARY TABLE IF NOT EXISTS t_temporary_population AND INSERT VALUES (2);
+SELECT count(), sum(x) FROM t_temporary_population;
+DROP TEMPORARY TABLE t_temporary_population;

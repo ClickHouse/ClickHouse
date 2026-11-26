@@ -484,13 +484,15 @@ protected:
 class ParserStorageOrderByElement : public IParserBase
 {
 public:
-    explicit ParserStorageOrderByElement(bool allow_order_)
+    explicit ParserStorageOrderByElement(bool allow_order_, bool stop_at_and_insert_ = false)
         : allow_order(allow_order_)
+        , stop_at_and_insert(stop_at_and_insert_)
     {
     }
 
 protected:
     bool allow_order;
+    bool stop_at_and_insert;
 
     const char * getName() const override { return "element of storage ORDER BY expression"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
@@ -551,17 +553,25 @@ protected:
   */
 class ParserTTLElement : public IParserBase
 {
+public:
+    explicit ParserTTLElement(bool stop_at_and_insert_ = false) : stop_at_and_insert(stop_at_and_insert_) {}
+
 protected:
     const char * getName() const override { return "element of TTL expression"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+    bool stop_at_and_insert;
 };
 
 /// Part of the UPDATE command or TTL with GROUP BY of the form: col_name = expr
 class ParserAssignment : public IParserBase
 {
+public:
+    explicit ParserAssignment(bool stop_at_and_insert_ = false) : stop_at_and_insert(stop_at_and_insert_) {}
+
 protected:
     const char * getName() const override { return "column assignment"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+    bool stop_at_and_insert;
 };
 
 /** Parses a data type and returns its text - see `astText` - or nothing if there is no data type at

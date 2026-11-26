@@ -1930,13 +1930,20 @@ void wrapNestedConstructionSettings(
         /// a view's source `SELECT` here: a `POPULATE` materialized view is an immediate-insert `CREATE`,
         /// so without the `!isView()` guard its `SETTINGS` would be materialized and removed here, and the
         /// rejection (which checks the stored `SELECT`) would no longer fire. Only a non-view
-        /// immediate-insert `CREATE` (`CREATE TABLE … AS SELECT`) is wrapped.
+        /// immediate-insert `CREATE` is wrapped.
         if (create_query->select && create_query->isCreateQueryWithImmediateInsertSelect() && !create_query->isView())
         {
             ASTPtr select_ptr = create_query->select->ptr();
             wrapNestedConstructionSettings(select_ptr, max_query_size, max_parser_depth, max_parser_backtracks);
             if (select_ptr.get() != create_query->select)
                 create_query->replace(create_query->select, select_ptr);
+        }
+        if (create_query->insert_select && create_query->isCreateQueryWithImmediateInsertSelect() && !create_query->isView())
+        {
+            ASTPtr select_ptr = create_query->insert_select->ptr();
+            wrapNestedConstructionSettings(select_ptr, max_query_size, max_parser_depth, max_parser_backtracks);
+            if (select_ptr.get() != create_query->insert_select)
+                create_query->replace(create_query->insert_select, select_ptr);
         }
         return;
     }
@@ -2031,6 +2038,13 @@ static void wrapPerArmConstructionSettingsImpl(
             wrapPerArmConstructionSettingsImpl(select_ptr, max_query_size, max_parser_depth, max_parser_backtracks);
             if (select_ptr.get() != create_query->select)
                 create_query->replace(create_query->select, select_ptr);
+        }
+        if (create_query->insert_select && create_query->isCreateQueryWithImmediateInsertSelect() && !create_query->isView())
+        {
+            ASTPtr select_ptr = create_query->insert_select->ptr();
+            wrapPerArmConstructionSettingsImpl(select_ptr, max_query_size, max_parser_depth, max_parser_backtracks);
+            if (select_ptr.get() != create_query->insert_select)
+                create_query->replace(create_query->insert_select, select_ptr);
         }
         return;
     }
@@ -3296,46 +3310,13 @@ static BlockIO executeQueryImpl(
 
             insert_query->tail.reset();
         }
-        else if (auto * create_query = out_ast ? out_ast->as<ASTCreateQuery>() : nullptr;
-                create_query && create_query->insert_select && (create_query->insert_data || create_query->insert_tail))
-        {
-            ASTPtr input_function;
-
-            auto synthetic_insert = make_intrusive<ASTInsertQuery>();
-            synthetic_insert->select = create_query->insert_select;
-            synthetic_insert->format = create_query->insert_format;
-            synthetic_insert->data = create_query->insert_data;
-            synthetic_insert->end = create_query->insert_data_end;
-
-            synthetic_insert->tryFindInputFunction(input_function);
-            if (input_function)
-            {
-                synthetic_insert->tail = std::move(create_query->insert_tail);
-
-                const ASTSelectQuery * select_query_hint = synthetic_insert->select->as<ASTSelectQuery>();
-                if (!select_query_hint)
-                {
-                    if (const auto * union_query = synthetic_insert->select->as<ASTSelectWithUnionQuery>();
-                        union_query && union_query->list_of_selects->children.size() == 1)
-                        select_query_hint = union_query->list_of_selects->children.front()->as<ASTSelectQuery>();
-                }
-
-                StoragePtr storage = context->executeTableFunction(input_function, select_query_hint);
-                auto & input_storage = dynamic_cast<StorageInput &>(*storage);
-                auto input_metadata_snapshot = input_storage.getInMemoryMetadataPtr(context, false);
-                auto pipe = getSourceFromASTInsertQuery(
-                    synthetic_insert, true, input_metadata_snapshot->getSampleBlock(), context, input_function);
-
-                input_storage.setPipe(std::move(pipe));
-                create_query->insert_data = nullptr;
-                create_query->insert_data_end = nullptr;
-            }
-        }
         else if (!insert_query || !insert_query->returning)
         {
-            /// reset Input callbacks if query is not INSERT SELECT,
-            /// and not INSERT ... RETURNING, which reads the data sent by the client with these callbacks.
-            context->resetInputCallbacks();
+            ASTPtr input_function;
+            if (auto * create_query = out_ast ? out_ast->as<ASTCreateQuery>() : nullptr; create_query && create_query->insert_select)
+                create_query->tryFindInputFunction(input_function);
+            if (!input_function)
+                context->resetInputCallbacks();
         }
 
         StreamLocalLimits limits;

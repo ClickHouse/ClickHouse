@@ -2779,7 +2779,7 @@ bool ParserWithOptionalAlias::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
 
 bool ParserStorageOrderByElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    ParserExpression elem_p;
+    ParserExpression elem_p(false, stop_at_and_insert);
     ParserKeyword ascending(Keyword::ASCENDING);
     ParserKeyword descending(Keyword::DESCENDING);
     ParserKeyword asc(Keyword::ASC);
@@ -3004,8 +3004,8 @@ bool ParserTTLElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     ParserIdentifier parser_identifier;
     ParserStringLiteral parser_string_literal;
-    ParserExpression parser_exp;
-    ParserExpressionList parser_keys_list(false);
+    ParserExpression parser_exp(false, stop_at_and_insert);
+    ParserExpressionList parser_keys_list(false, false, false, stop_at_and_insert);
     ParserCodec parser_codec;
 
     /// Disambiguation for the parser between
@@ -3077,7 +3077,7 @@ bool ParserTTLElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         if (s_set.ignore(pos, expected))
         {
             ParserList parser_assignment_list(
-                std::make_unique<ParserAssignment>(), std::make_unique<ParserToken>(TokenType::Comma));
+                std::make_unique<ParserAssignment>(stop_at_and_insert), std::make_unique<ParserToken>(TokenType::Comma));
 
             if (!parser_assignment_list.parse(pos, group_by_assignments, expected))
                 return false;
@@ -3148,7 +3148,7 @@ bool ParserAssignment::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     ParserIdentifier p_identifier;
     ParserToken s_equals(TokenType::Equals);
-    ParserExpression p_expression;
+    ParserExpression p_expression(false, stop_at_and_insert);
 
     ASTPtr column;
     if (!p_identifier.parse(pos, column, expected))

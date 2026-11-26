@@ -28,6 +28,7 @@
 #include <Parsers/ParserUpdateQuery.h>
 #include <Parsers/ParserSelectQuery.h>
 #include <Parsers/ParserCopyQuery.h>
+#include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 
@@ -165,6 +166,12 @@ bool ParserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         res = execute_as_p.parse(pos, node, expected);
     }
 #endif
+
+    if (res)
+    {
+        if (const auto * create = node->as<ASTCreateQuery>(); create && create->insert_data)
+            return true;
+    }
 
     if (res && allow_in_parallel_with)
     {

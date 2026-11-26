@@ -1,3 +1,4 @@
+#include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTExplainQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
@@ -134,6 +135,12 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
     if (!parsed)
         return false;
+
+    if (const auto * create = query->as<ASTCreateQuery>(); create && create->insert_data)
+    {
+        node = std::move(query);
+        return true;
+    }
 
     /// FIXME: try to prettify this cast using `as<>()`
     auto & query_with_output = dynamic_cast<ASTQueryWithOutput &>(*query);

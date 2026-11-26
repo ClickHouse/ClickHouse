@@ -363,9 +363,10 @@ static ASTPtr makeTruthValuePredicateOperator(std::string_view predicate_name, c
     return {};
 }
 
-ParserExpressionWithOptionalAlias::ParserExpressionWithOptionalAlias(bool allow_alias_without_as_keyword, bool is_table_function, bool allow_trailing_commas)
+ParserExpressionWithOptionalAlias::ParserExpressionWithOptionalAlias(
+    bool allow_alias_without_as_keyword, bool is_table_function, bool allow_trailing_commas, bool stop_at_and_insert)
     : impl(std::make_unique<ParserWithOptionalAlias>(
-        is_table_function ? ParserPtr(std::make_unique<ParserTableFunctionExpression>()) : ParserPtr(std::make_unique<ParserExpression>(allow_trailing_commas)),
+        is_table_function ? ParserPtr(std::make_unique<ParserTableFunctionExpression>()) : ParserPtr(std::make_unique<ParserExpression>(allow_trailing_commas, stop_at_and_insert)),
         allow_alias_without_as_keyword))
 {
 }
@@ -374,7 +375,7 @@ ParserExpressionWithOptionalAlias::ParserExpressionWithOptionalAlias(bool allow_
 bool ParserExpressionList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     return ParserList(
-        std::make_unique<ParserExpressionWithOptionalAlias>(allow_alias_without_as_keyword, is_table_function, allow_trailing_commas),
+        std::make_unique<ParserExpressionWithOptionalAlias>(allow_alias_without_as_keyword, is_table_function, allow_trailing_commas, stop_at_and_insert),
         std::make_unique<ParserToken>(TokenType::Comma))
         .parse(pos, node, expected);
 }
@@ -461,7 +462,7 @@ bool ParserInterpolateExpressionList::parseImpl(Pos & pos, ASTPtr & node, Expect
 
 bool ParserTTLExpressionList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    return ParserList(std::make_unique<ParserTTLElement>(), std::make_unique<ParserToken>(TokenType::Comma), /* allow_empty_ = */ false)
+    return ParserList(std::make_unique<ParserTTLElement>(stop_at_and_insert), std::make_unique<ParserToken>(TokenType::Comma), /* allow_empty_ = */ false)
         .parse(pos, node, expected);
 }
 
@@ -984,6 +985,8 @@ static void highlightRegexps(const ASTPtr & node, Expected & expected, size_t de
 
 struct ParserExpressionImpl
 {
+    explicit ParserExpressionImpl(bool stop_at_and_insert_ = false) : stop_at_and_insert(stop_at_and_insert_) {}
+
     static const std::vector<std::pair<std::string_view, Operator>> operators_table;
     static const std::vector<std::pair<std::string_view, Operator>> unary_operators_table;
 
@@ -1008,6 +1011,7 @@ struct ParserExpressionImpl
     ParserColumnsMatcher columns_matcher_parser;
     ParserQualifiedColumnsMatcher qualified_columns_matcher_parser;
     ParserSubquery subquery_parser;
+    bool stop_at_and_insert;
 
     bool parse(std::unique_ptr<Layer> start, IParser::Pos & pos, ASTPtr & node, Expected & expected);
 
@@ -3413,7 +3417,7 @@ bool ParserExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         expected.literal_token_map = &local_token_map;
 
     auto start = std::make_unique<ExpressionLayer>(false, allow_trailing_commas);
-    if (ParserExpressionImpl().parse(std::move(start), pos, node, expected))
+    if (ParserExpressionImpl(stop_at_and_insert).parse(std::move(start), pos, node, expected))
     {
         highlightRegexps(node, expected, 0);
         return true;
@@ -4201,8 +4205,21 @@ Action ParserExpressionImpl::tryParseOperator(Layers & layers, IParser::Pos & po
         }
     }
 
-    if (ParserKeyword(Keyword::AND_INSERT).checkWithoutMoving(pos, stub))
-        return Action::NONE;
+    /// Only the outer storage expression can be followed by the CREATE TABLE clause.
+    /// Otherwise `insert` remains an ordinary identifier, including inside BETWEEN and nested expressions.
+    if (stop_at_and_insert && layers.size() == 1 && !layers.back()->between_counter)
+    {
+        auto lookahead = pos;
+        if (ParserKeyword(Keyword::AND_INSERT).ignore(lookahead, stub))
+        {
+            ASTPtr ignored;
+            auto format_pos = lookahead;
+            if (ParserKeyword(Keyword::VALUES).checkWithoutMoving(lookahead, stub)
+                || (ParserKeyword(Keyword::FORMAT).ignore(format_pos, stub) && ParserIdentifier().parse(format_pos, ignored, stub))
+                || ParserSelectWithUnionQuery().parse(lookahead, ignored, stub))
+                return Action::NONE;
+        }
+    }
     /// Try to find operators from 'operators_table'
     auto saved_pos = pos;
     auto cur_op = operators_table.begin();

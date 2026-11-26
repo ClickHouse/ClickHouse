@@ -29,3 +29,13 @@
 1	new_via_input
 10	existing
 CREATE TABLE IF NOT EXISTS t (`a` UInt8) ENGINE = Memory AS INSERT SELECT 1
+SETTINGS made_up_setting = 1	3
+SETTINGS made_up_setting = 1
+1
+1
+1
+2
+2	10
+1
+2	10
+2	3

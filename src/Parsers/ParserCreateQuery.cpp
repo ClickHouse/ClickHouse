@@ -603,7 +603,7 @@ bool ParserTablePropertiesDeclarationList::parseImpl(Pos & pos, ASTPtr & node, E
 bool ParserStorageOrderByClause::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserStorageOrderByExpressionList order_list_p(allow_order);
-    ParserStorageOrderByElement order_elem_p(allow_order);
+    ParserStorageOrderByElement order_elem_p(allow_order, stop_at_and_insert);
     ParserToken s_lparen(TokenType::OpeningRoundBracket);
     ParserToken s_rparen(TokenType::ClosingRoundBracket);
 
@@ -677,10 +677,10 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_unique_key(Keyword::UNIQUE_KEY);
 
     ParserIdentifierWithOptionalParameters ident_with_optional_params_p;
-    ParserExpression expression_p;
-    ParserStorageOrderByClause order_by_p(/*allow_order_*/ true);
+    ParserExpression expression_p(false, stop_at_and_insert);
+    ParserStorageOrderByClause order_by_p(/*allow_order_*/ true, stop_at_and_insert);
     ParserSetQuery settings_p(/* parse_only_internals_ = */ true);
-    ParserTTLExpressionList parser_ttl_list;
+    ParserTTLExpressionList parser_ttl_list(stop_at_and_insert);
     ParserStringLiteral string_literal_parser;
 
     ASTPtr engine;
@@ -920,7 +920,6 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     ParserToken s_comma(TokenType::Comma);
     ParserToken s_lparen(TokenType::OpeningRoundBracket);
     ParserToken s_rparen(TokenType::ClosingRoundBracket);
-    ParserStorage storage_p{ParserStorage::TABLE_ENGINE};
     ParserIdentifier name_p;
     ParserTablePropertiesDeclarationList table_properties_p;
     ParserSelectWithUnionQuery select_p;
@@ -1058,6 +1057,7 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     auto parse_storage = [&]
     {
         chassert(!storage);
+        ParserStorage storage_p{ParserStorage::TABLE_ENGINE, if_not_exists};
         ASTPtr ast;
         if (!storage_p.parse(pos, ast, expected))
             return false;
@@ -1212,7 +1212,7 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         }
     }
 
-    if (select || as_table || as_table_function)
+    if (!insert_data && (select || as_table || as_table_function))
     {
         auto select_comment = parseComment(pos, expected);
         if (comment && select_comment)
@@ -1222,7 +1222,7 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         if (!comment)
             comment = select_comment;
     }
-    else if (!comment)
+    else if (!comment && !insert_data)
         comment = parseComment(pos, expected);
 
     /// `AS table` and `AS table_function` are formatted before the SQL SECURITY clause position,

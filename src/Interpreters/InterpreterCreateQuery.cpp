@@ -2382,8 +2382,8 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     if (!UserDefinedSQLFunctionFactory::instance().empty())
         UserDefinedSQLFunctionVisitor::visit(query_ptr, getContext());
 
-    /// `IF NOT EXISTS ... AS INSERT / AND INSERT` on an existing table must not analyse or validate the insert payload:
-    /// that only matters when the table is actually created.
+    /// An existing destination does not need its CREATE definition normalized. `AS INSERT` is a no-op;
+    /// `AND INSERT` still executes and validates its payload against the existing table.
     if (create.if_not_exists && !create.attach && create.cluster.empty()
         && (create.has_as_insert || create.has_and_insert)
         && !create.replace_table && !create.create_or_replace && !create.replace_view
@@ -2391,9 +2391,15 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     {
         if (create.isTemporary())
         {
-            /// `AND INSERT` into an existing temporary table keeps going through the regular flow.
-            if (!create.has_and_insert && getContext()->tryResolveStorageID({"", create.getTable()}, Context::ResolveExternal))
-                return {};
+            if (getContext()->tryResolveStorageID({"", create.getTable()}, Context::ResolveExternal))
+            {
+                if (!create.has_and_insert)
+                    return {};
+
+                /// Resolve the session table by name rather than using a UUID from the CREATE definition.
+                create.uuid = UUIDHelpers::Nil;
+                return fillTableIfNeeded(create);
+            }
         }
         /// Replicated databases keep going through the regular flow (checks and DDL replication).
         else if (auto existing_database = DatabaseCatalog::instance().tryGetDatabase(database_name);
@@ -2689,6 +2695,12 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         ddl_guard.reset();
         if (create.has_and_insert)
         {
+            if (create.isTemporary())
+            {
+                create.uuid = UUIDHelpers::Nil;
+                return fillTableIfNeeded(create);
+            }
+
             auto existing_table = DatabaseCatalog::instance().getTable(
                 {create.getDatabase(), create.getTable()}, getContext());
             create.uuid = existing_table->getStorageID().uuid;
@@ -3742,6 +3754,13 @@ BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create,
             insert->tryFindInputFunction(input_function);
             if (input_function)
             {
+                insert->table_id = getContext()->resolveStorageID(insert->table_id);
+                if (!getContext()->hasInsertionTableColumnsDescription())
+                {
+                    auto table = DatabaseCatalog::instance().getTable(insert->table_id, getContext());
+                    InterpreterInsertQuery::setInsertContextValues(getContext(), *insert, table);
+                }
+
                 const auto * select_query_hint = insert->select->as<ASTSelectQuery>();
                 if (!select_query_hint)
                 {

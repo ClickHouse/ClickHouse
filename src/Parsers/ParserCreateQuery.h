@@ -102,10 +102,12 @@ protected:
 class ParserStorageOrderByClause : public IParserBase
 {
 public:
-    explicit ParserStorageOrderByClause(bool allow_order_) : allow_order(allow_order_) {}
+    explicit ParserStorageOrderByClause(bool allow_order_, bool stop_at_and_insert_ = false)
+        : allow_order(allow_order_), stop_at_and_insert(stop_at_and_insert_) {}
 
 protected:
     bool allow_order;
+    bool stop_at_and_insert;
 
     const char * getName() const override { return "storage order by clause"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
@@ -619,12 +621,14 @@ public:
         DATABASE_ENGINE,
     };
 
-    explicit ParserStorage(EngineKind engine_kind_) : engine_kind(engine_kind_) {}
+    explicit ParserStorage(EngineKind engine_kind_, bool stop_at_and_insert_ = false)
+        : engine_kind(engine_kind_), stop_at_and_insert(stop_at_and_insert_) {}
 
 protected:
     const char * getName() const override { return "storage definition"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
     EngineKind engine_kind;
+    bool stop_at_and_insert;
 };
 
 /** Query like this:
