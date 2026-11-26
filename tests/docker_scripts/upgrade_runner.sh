@@ -219,6 +219,53 @@ timeout 10m clickhouse-client --query="SELECT 'Tables count:', count() FROM syst
 # endpoint retries for tens of minutes). The replica restarts below need their tables exclusively, so cancel them.
 timeout 2m clickhouse-client --query "KILL QUERY WHERE 1 SYNC" ||:
 
+# A detached database or table is not in `system.mutations`, so the kill below does not see its mutations,
+# while the upgraded server loads it from its metadata and resumes them. The stress runner leaves such objects
+# behind: `01254_dict_load_after_detach_attach` detaches and attaches its database, which several test files
+# share under `--upgrade-check`, and `ATTACH DATABASE` fails when another test left a table there that cannot
+# be attached by a query (an experimental engine without its setting). The database then stays detached with
+# a broken mutation of an interrupted test in it, and the `<Error>` scan at the end reports that mutation.
+#
+# Restarting the old server loads the same set of objects that the upgraded server is going to load, which
+# attaching them one by one does not: the server tolerates at startup a table that it refuses in a query.
+# Restart only when something is detached, so the other runs still upgrade a server exactly as the stress
+# phase left it.
+#
+# The metadata files of the databases are listed from the default metadata disk, because a detached database
+# is not known to the server. Their names are the database names escaped for the file system, which
+# `decodeURLComponent` reverses. Not finding the `default` database there means that the listing is wrong,
+# and it is reported instead of being read as "nothing is detached".
+echo "Restart the server if the stress phase left detached databases or tables"
+
+detached_objects=unknown
+if database_metadata_files=$(find /var/lib/clickhouse/metadata -maxdepth 1 -name '*.sql' -printf '%f ' 2> /test_output/detached_objects_error.txt)
+then
+    detached_objects=$(timeout 1m clickhouse-client --param_metadata_files="$database_metadata_files" --query "
+        SELECT
+            (
+                SELECT throwIf(NOT has(groupArray(name), 'default'), 'No metadata file of the default database')
+                    + countIf(name NOT IN (SELECT name FROM system.databases))
+                FROM
+                (
+                    SELECT decodeURLComponent(replaceRegexpOne(arrayJoin(splitByChar(' ', {metadata_files:String})), '\\\\.sql\$', '')) AS name
+                )
+                WHERE name != ''
+            )
+            + (SELECT count() FROM system.detached_tables WHERE NOT is_permanently)" \
+        2> /test_output/detached_objects_error.txt) || detached_objects=unknown
+fi
+[ -s /test_output/detached_objects_error.txt ] || rm -f /test_output/detached_objects_error.txt
+
+if [ "$detached_objects" = unknown ]
+then
+    echo -e "Cannot count the databases and tables left detached by the stress phase (see detached_objects_error.txt)$FAIL" >> /test_output/test_results.tsv
+elif [ "$detached_objects" != 0 ]
+then
+    echo "The stress phase left $detached_objects detached databases and tables, restarting the server"
+    stop_server 300 false || (echo "Failed to stop server" && exit 1)
+    start_server || (echo "Failed to start server" && exit 1)
+fi
+
 # Kill the mutations that the stress phase left unfinished, before the server is upgraded.
 #
 # Several tests deliberately start a mutation that can never succeed - `toUInt32` of a non-numeric
