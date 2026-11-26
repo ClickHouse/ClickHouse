@@ -1249,6 +1249,27 @@ FunctionCast::WrapperType FunctionCast::createTupleWrapper(
     const auto & to_element_types = to_type->getElements();
 
     const auto source_positions = getTupleCastElementPositions(*from_type, *to_type);
+
+    /// When `allow_named_tuple_conversion_with_extra_source_fields` is disabled, a named tuple conversion throws
+    /// an exception if any source field is lost, helping prevent silent data loss. Otherwise, named tuple
+    /// conversions allow different sets of elements, filling missing elements with default values.
+    /// (Only the by-name mapping can consume fewer source fields than the source has: the positional mapping
+    /// requires the same number of elements and consumes all of them.)
+    if (!settings.allow_named_tuple_conversion_with_extra_source_fields)
+    {
+        size_t consumed_source_fields = 0;
+        for (const auto & position : source_positions)
+            consumed_source_fields += position.has_value();
+
+        if (consumed_source_fields < from_element_types.size())
+            throw Exception(
+                ErrorCodes::CANNOT_CONVERT_TYPE,
+                "Some fields from source tuple are lost when casting {} to {} (allow_named_tuple_conversion_with_extra_source_fields "
+                "is disabled)",
+                from_type->getName(),
+                to_type->getName());
+    }
+
     ElementWrappers element_wrappers;
     element_wrappers.reserve(to_element_types.size());
     for (size_t i = 0; i < to_element_types.size(); ++i)

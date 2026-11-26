@@ -19,6 +19,7 @@
 
 #include <Columns/ColumnNullable.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeTuple.h>
 
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
@@ -726,9 +727,15 @@ ColumnPtr Set::castToKeyType(const ColumnWithTypeAndName & column, size_t key, C
     /// `LowCardinality(Nullable)` probe are those of a `Nullable` one.
     const ColumnWithTypeAndName probe = {
         column.column->convertToFullColumnIfConst()->convertToFullColumnIfLowCardinality(),
-        removeLowCardinality(column.type),
+        recursiveRemoveTupleElementNames(removeLowCardinality(column.type)),
         column.name};
-    const DataTypePtr & key_type = data_types[key];
+    /// The elements of tuples are compared positionally, regardless of element names (consistent with the
+    /// comparison functions, e.g. `equals`). Remove explicit tuple element names from the cast target, so that
+    /// the cast between two named tuples (e.g. the left hand side `(a, b)` and a set built from
+    /// `SELECT tuple(x, y) ...`, which can both be named tuples) converts the elements positionally instead of
+    /// matching them by name and filling the absent ones with default values. The names are removed from the
+    /// probe type too, so that a probe of exactly the key type still takes the cheap no-op path below.
+    const DataTypePtr key_type = recursiveRemoveTupleElementNames(data_types[key]);
 
     ColumnPtr result;
     if (canContainNull(*key_type) && !key_type->isNullable() && !probe.type->isNullable())

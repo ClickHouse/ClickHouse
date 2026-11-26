@@ -5,6 +5,9 @@
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/castColumn.h>
 #include <Interpreters/Context.h>
+#include <Functions/CastOverloadResolver.h>
+#include <Functions/IFunction.h>
+#include <DataTypes/DataTypeString.h>
 #include <Parsers/TokenIterator.h>
 #include <Processors/Formats/Impl/ValuesBlockInputFormat.h>
 #include <Formats/FormatFactory.h>
@@ -32,6 +35,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool allow_named_tuple_conversion_with_extra_source_fields;
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
 }
@@ -44,6 +48,7 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int CANNOT_READ_ALL_DATA;
+    extern const int CANNOT_CONVERT_TYPE;
 }
 
 
@@ -469,6 +474,206 @@ namespace
     }
 }
 
+/// Whether the conversion between two tuple types matches the elements by name rather than by position:
+/// both sides are explicitly named and have at least one name in common (see `getTupleCastElementPositions`).
+static bool areTupleElementsMatchedByName(const DataTypeTuple & src_type, const DataTypeTuple & dst_type)
+{
+    if (!src_type.hasExplicitNames() || !dst_type.hasExplicitNames())
+        return false;
+
+    const auto & dst_names = dst_type.getElementNames();
+    for (const auto & src_name : src_type.getElementNames())
+        if (std::find(dst_names.begin(), dst_names.end(), src_name) != dst_names.end())
+            return true;
+    return false;
+}
+
+/// With the explicit named tuple syntax (e.g. `tuple('b', 'a')(1, 2)`), the evaluated expression
+/// carries the element names in its type, but the interpreted `VALUES` path converts a `Field` with
+/// `convertFieldToType`, which matches tuple elements positionally. Bring the named tuples of the value
+/// to the layout of the destination type first, with exactly the mapping `CAST` uses
+/// (`tryGetTupleCastElementPositions`), so that this path stores the same value as `INSERT ... SELECT`
+/// and as the expression template path: elements are matched by name when both sides are named and
+/// have a name in common (source elements without a counterpart are dropped, destination elements
+/// without a counterpart get default values) and by position otherwise. The tuples nested in tuples,
+/// in `Array`, in `Map` and in `Nullable` are processed too, e.g. `[tuple('b', 'a')(1, 2)]` inserted into
+/// `Array(Tuple(a Int32, b Int32))`. Returns the type of the converted value; the positional
+/// `convertFieldToType` does the rest.
+static DataTypePtr convertNamedTuplesToDestinationLayout(Field & value, const DataTypePtr & src_type, const IDataType & dst_type)
+{
+    checkStackSize();
+
+    if (value.isNull())
+        return src_type;
+
+    const DataTypePtr src_type_not_nullable = removeNullable(src_type);
+    const DataTypePtr dst_type_not_nullable = removeNullable(removeLowCardinality(dst_type.getPtr()));
+
+    auto with_source_nullability = [&](DataTypePtr type)
+    {
+        return src_type->isNullable() ? makeNullable(type) : type;
+    };
+
+    if (value.getType() == Field::Types::Tuple)
+    {
+        const auto * src_tuple_type = typeid_cast<const DataTypeTuple *>(src_type_not_nullable.get());
+        const auto * dst_tuple_type = typeid_cast<const DataTypeTuple *>(dst_type_not_nullable.get());
+        if (!src_tuple_type || !dst_tuple_type)
+            return src_type;
+
+        auto & src_value = value.safeGet<Tuple>();
+        const auto & src_element_types = src_tuple_type->getElements();
+        const auto & dst_element_types = dst_tuple_type->getElements();
+        if (src_value.size() != src_element_types.size())
+            return src_type;
+
+        /// No mapping: the tuples are matched by position and have different sizes.
+        /// Leave the value as is, `convertFieldToType` reports the mismatch.
+        const auto source_positions = tryGetTupleCastElementPositions(*src_tuple_type, *dst_tuple_type);
+        if (!source_positions)
+            return src_type;
+
+        Tuple converted_value;
+        converted_value.reserve(dst_element_types.size());
+        DataTypes converted_types;
+        converted_types.reserve(dst_element_types.size());
+
+        for (size_t i = 0; i < dst_element_types.size(); ++i)
+        {
+            if (const auto & source_position = (*source_positions)[i])
+            {
+                /// A source element is used at most once: the element names of a tuple are unique.
+                converted_value.push_back(std::move(src_value[*source_position]));
+                converted_types.push_back(convertNamedTuplesToDestinationLayout(
+                    converted_value.back(), src_element_types[*source_position], *dst_element_types[i]));
+            }
+            else
+            {
+                converted_value.push_back(dst_element_types[i]->getDefault());
+                converted_types.push_back(dst_element_types[i]);
+            }
+        }
+
+        value = std::move(converted_value);
+
+        if (areTupleElementsMatchedByName(*src_tuple_type, *dst_tuple_type))
+            return with_source_nullability(std::make_shared<DataTypeTuple>(converted_types, dst_tuple_type->getElementNames()));
+        if (src_tuple_type->hasExplicitNames())
+            return with_source_nullability(std::make_shared<DataTypeTuple>(converted_types, src_tuple_type->getElementNames()));
+        return with_source_nullability(std::make_shared<DataTypeTuple>(converted_types));
+    }
+
+    if (value.getType() == Field::Types::Array)
+    {
+        const auto * src_array_type = typeid_cast<const DataTypeArray *>(src_type_not_nullable.get());
+        const auto * dst_array_type = typeid_cast<const DataTypeArray *>(dst_type_not_nullable.get());
+        if (!src_array_type || !dst_array_type)
+            return src_type;
+
+        DataTypePtr converted_nested_type = src_array_type->getNestedType();
+        for (auto & element : value.safeGet<Array>())
+        {
+            auto converted_type = convertNamedTuplesToDestinationLayout(element, src_array_type->getNestedType(), *dst_array_type->getNestedType());
+            if (!element.isNull())
+                converted_nested_type = std::move(converted_type);
+        }
+
+        return with_source_nullability(std::make_shared<DataTypeArray>(converted_nested_type));
+    }
+
+    if (value.getType() == Field::Types::Map)
+    {
+        const auto * src_map_type = typeid_cast<const DataTypeMap *>(src_type_not_nullable.get());
+        const auto * dst_map_type = typeid_cast<const DataTypeMap *>(dst_type_not_nullable.get());
+        if (!src_map_type || !dst_map_type)
+            return src_type;
+
+        DataTypePtr converted_key_type = src_map_type->getKeyType();
+        DataTypePtr converted_value_type = src_map_type->getValueType();
+        for (auto & entry : value.safeGet<Map>())
+        {
+            if (entry.getType() != Field::Types::Tuple)
+                continue;
+
+            auto & key_and_value = entry.safeGet<Tuple>();
+            if (key_and_value.size() != 2)
+                continue;
+
+            auto key_type = convertNamedTuplesToDestinationLayout(key_and_value[0], src_map_type->getKeyType(), *dst_map_type->getKeyType());
+            if (!key_and_value[0].isNull())
+                converted_key_type = std::move(key_type);
+
+            auto value_type = convertNamedTuplesToDestinationLayout(key_and_value[1], src_map_type->getValueType(), *dst_map_type->getValueType());
+            if (!key_and_value[1].isNull())
+                converted_value_type = std::move(value_type);
+        }
+
+        return with_source_nullability(std::make_shared<DataTypeMap>(converted_key_type, converted_value_type));
+    }
+
+    return src_type;
+}
+
+/// `convertFieldToType` cannot reject a conversion that drops source fields. Mirror the guard of
+/// `createTupleWrapper` (used by `INSERT ... SELECT` and by the expression template path) for the
+/// interpreted `VALUES` path: when the elements of two named tuples are matched by name and a source
+/// element has no destination counterpart, the conversion would silently lose it. The tuples nested in
+/// tuples, in `Array`, in `Map` and in `Nullable` are checked too, as `CAST` does. Tuples matched by
+/// position lose nothing. It works on the types of the value before
+/// `convertNamedTuplesToDestinationLayout`, which drops such elements.
+static void checkNamedTupleConversionDoesNotLoseFields(const DataTypePtr & src_type, const IDataType & dst_type)
+{
+    checkStackSize();
+
+    const DataTypePtr src_type_not_nullable = removeNullable(removeLowCardinality(src_type));
+    const DataTypePtr dst_type_not_nullable = removeNullable(removeLowCardinality(dst_type.getPtr()));
+
+    if (const auto * src_tuple_type = typeid_cast<const DataTypeTuple *>(src_type_not_nullable.get()))
+    {
+        const auto * dst_tuple_type = typeid_cast<const DataTypeTuple *>(dst_type_not_nullable.get());
+        if (!dst_tuple_type)
+            return;
+
+        const auto source_positions = tryGetTupleCastElementPositions(*src_tuple_type, *dst_tuple_type);
+        if (!source_positions)
+            return;
+
+        const auto & src_element_types = src_tuple_type->getElements();
+        const auto & dst_element_types = dst_tuple_type->getElements();
+
+        /// The positional mapping consumes every source element, so fewer means the by-name mapping.
+        size_t consumed_source_fields = 0;
+        for (const auto & source_position : *source_positions)
+            consumed_source_fields += source_position.has_value();
+
+        if (consumed_source_fields < src_element_types.size())
+            throw Exception(
+                ErrorCodes::CANNOT_CONVERT_TYPE,
+                "Some fields from source tuple are lost when casting {} to {} (allow_named_tuple_conversion_with_extra_source_fields "
+                "is disabled)",
+                src_tuple_type->getName(),
+                dst_tuple_type->getName());
+
+        for (size_t i = 0; i < dst_element_types.size(); ++i)
+            if (const auto & source_position = (*source_positions)[i])
+                checkNamedTupleConversionDoesNotLoseFields(src_element_types[*source_position], *dst_element_types[i]);
+    }
+    else if (const auto * src_array_type = typeid_cast<const DataTypeArray *>(src_type_not_nullable.get()))
+    {
+        if (const auto * dst_array_type = typeid_cast<const DataTypeArray *>(dst_type_not_nullable.get()))
+            checkNamedTupleConversionDoesNotLoseFields(src_array_type->getNestedType(), *dst_array_type->getNestedType());
+    }
+    else if (const auto * src_map_type = typeid_cast<const DataTypeMap *>(src_type_not_nullable.get()))
+    {
+        if (const auto * dst_map_type = typeid_cast<const DataTypeMap *>(dst_type_not_nullable.get()))
+        {
+            checkNamedTupleConversionDoesNotLoseFields(src_map_type->getKeyType(), *dst_map_type->getKeyType());
+            checkNamedTupleConversionDoesNotLoseFields(src_map_type->getValueType(), *dst_map_type->getValueType());
+        }
+    }
+}
+
+
 bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx)
 {
     const Block & header = getPort().getHeader();
@@ -675,6 +880,14 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
 
     Field & expression_value = value_raw.first;
 
+    if (!settings[Setting::allow_named_tuple_conversion_with_extra_source_fields])
+        checkNamedTupleConversionDoesNotLoseFields(value_raw.second, type);
+
+    /// Bring named tuples to the destination layout first, so that `null_as_default` below fills
+    /// defaults against the right destination elements (e.g. `tuple('b', 'a')(NULL, NULL)` into
+    /// `Tuple(a UInt8, b String)` must default `a` to `0` and `b` to `''`, not the other way round).
+    value_raw.second = convertNamedTuplesToDestinationLayout(expression_value, value_raw.second, type);
+
     if (format_settings.null_as_default)
         tryToReplaceNullFieldsInComplexTypesWithDefaultValues(expression_value, type);
 
@@ -703,8 +916,19 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
     /// Instead try to create a column with single element and cast it to the destination type.
     if (type.hasDynamicStructure())
     {
-        ColumnPtr const_column = value_raw.second->createColumnConst(1, expression_value);
-        auto casted_column = castColumn(ColumnWithTypeAndName(const_column, value_raw.second, ""), type.getPtr(), nullptr);
+        ColumnWithTypeAndName from_argument(value_raw.second->createColumnConst(1, expression_value), value_raw.second, "");
+        /// Cast with the insert context so that the named-tuple insert guard
+        /// (`allow_named_tuple_conversion_with_extra_source_fields`) applies here too, consistently
+        /// with `INSERT ... SELECT`. `castColumn` would build the cast with a null context, falling
+        /// back to the permissive default and silently dropping differently named source tuple fields
+        /// (e.g. `Tuple(json JSON)` into `Tuple(data JSON)`).
+        auto cast_function = createInternalCast(from_argument, type.getPtr(), CastType::nonAccurate, {}, context);
+        ColumnsWithTypeAndName cast_arguments
+        {
+            from_argument,
+            {DataTypeString().createColumnConst(1, type.getName()), std::make_shared<DataTypeString>(), ""}
+        };
+        auto casted_column = cast_function->execute(cast_arguments, type.getPtr(), 1, /* dry_run = */ false);
         column.insertFrom(*casted_column->convertToFullColumnIfConst(), 0);
     }
     else

@@ -114,6 +114,8 @@ namespace Setting
     extern const SettingsBool async_socket_for_remote;
     extern const SettingsUInt64 max_distributed_depth;
     extern const SettingsBool enable_global_with_statement;
+    extern const SettingsBool allow_named_tuple_conversion_with_extra_source_fields;
+    extern const SettingsBool allow_named_tuple_conversion_with_extra_source_fields_on_insert;
     extern const SettingsUInt64 async_insert_max_data_size;
     extern const SettingsBool wait_for_async_insert;
     extern const SettingsSeconds wait_for_async_insert_timeout;
@@ -170,6 +172,9 @@ InterpreterInsertQuery::InterpreterInsertQuery(
     }
 
     const Settings & settings = getContext()->getSettingsRef();
+    if (!settings[Setting::allow_named_tuple_conversion_with_extra_source_fields_on_insert])
+        getContext()->setSetting("allow_named_tuple_conversion_with_extra_source_fields", false);
+
     max_threads = getEffectiveMaxThreads(*getContext());
     max_insert_threads = limitThreadsByFreeMemory(
         *getContext(),

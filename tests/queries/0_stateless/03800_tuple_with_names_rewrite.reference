@@ -1,0 +1,10 @@
+{"('a', 'b', 'c')(a, b, c)":{"a":1,"b":2,"c":3}}
+{"('greeting', 'place')(greeting, place)":{"greeting":"hello","place":"world"}}
+{"('id', 'name', 'value')(id, name, value)":{"id":1,"name":"test","value":3.14}}
+{"('nested', 'outer')(nested, outer)":{"nested":{"inner1":1,"inner2":2},"outer":3}}
+{"(x, y)":[1,2]}
+{"(number, number)":[0,0]}
+{"(@123invalid, y)":[1,2]}
+{"('x', 'y', 'z')":["x","y","z"]}
+{"('x', 'y', 'z')(a, b, c)":{"x":1,"y":2,"z":3}}
+{"t":{"a":1,"b":2,"c":3},"toTypeName(t)":"Tuple(\n    a UInt8,\n    b UInt8,\n    c UInt8)","t.a":1,"t.b":2,"t.c":3}
