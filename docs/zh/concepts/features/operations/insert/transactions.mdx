@@ -73,6 +73,8 @@ import { CloudNotSupportedBadge } from "/snippets/zh/components/CloudNotSupporte
 
 对于应用类工作负载，可以考虑使用 [ClickHouse Managed Postgres](/zh/products/managed-postgres/overview#transactions-and-analytics)。
 
+有关控制事务的语句，请参阅 [`BEGIN TRANSACTION`](/zh/reference/statements/transactions) 参考文档页面。
+
 ### 要求 {#requirements}
 
 * 部署 ClickHouse Keeper 或 ZooKeeper 以跟踪事务
@@ -87,8 +89,8 @@ import { CloudNotSupportedBadge } from "/snippets/zh/components/CloudNotSupporte
 
 ### 说明 {#notes-1}
 
-* 这是一项 Experimental 功能，后续可能会有所变动。
-* 如果在事务期间发生异常，则无法提交该事务。这包括所有异常，也包括因拼写错误导致的 `UNKNOWN_FUNCTION` 异常。
+* 这是一项实验性功能，后续可能会有所变动。
+* 如果在事务期间发生异常，则无法提交该事务。这包括所有异常，也包括因拼写错误导致的 `UNKNOWN_FUNCTION` 异常；但无法解析的查询，或查询参数缺失或无效的查询除外：此类查询不会被执行，事务也仍保持运行状态。
 * 不支持嵌套事务；请先完成当前事务，再开始新事务
 
 ### 配置 {#configuration}
@@ -209,6 +211,16 @@ Ok.
 ```
 
 #### 开启事务并插入一行 {#begin-a-transaction-and-insert-a-row}
+
+事务中不支持异步插入，而 [`async_insert`](/zh/reference/settings/session-settings/async-insert#async_insert) 默认处于启用状态，因此请先在会话中将其禁用：
+
+```sql
+SET async_insert = 0
+```
+
+```response
+Ok.
+```
 
 ```sql
 BEGIN TRANSACTION

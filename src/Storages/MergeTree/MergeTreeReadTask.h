@@ -228,11 +228,11 @@ public:
     void initializeIndexReader(const MergeTreeIndexBuildContextPtr & index_build_context, const LazyMaterializingRowsPtr & lazy_materializing_rows);
 
     BlockAndProgress read();
-    bool isFinished() const { return mark_ranges.empty() && readers_chain.isCurrentRangeFinished(); }
+    [[nodiscard]] bool isFinished() const { return mark_ranges.empty() && readers_chain.isCurrentRangeFinished(); }
 
-    const MergeTreeReadTaskInfo & getInfo() const { return *info; }
-    const MergeTreeReadersChain & getReadersChain() const { return readers_chain; }
-    const IMergeTreeReader & getMainReader() const { return *readers.main; }
+    [[nodiscard]] const MergeTreeReadTaskInfo & getInfo() const { return *info; }
+    [[nodiscard]] const MergeTreeReadersChain & getReadersChain() const { return readers_chain; }
+    [[nodiscard]] const IMergeTreeReader & getMainReader() const { return *readers.main; }
 
     void addPrewhereUnmatchedMarks(const MarkRanges & mark_ranges_);
     const MarkRanges & getPrewhereUnmatchedMarks() { return prewhere_unmatched_marks; }
@@ -244,17 +244,17 @@ public:
     /// See Issue #104781.
     /// With `prewhere_filters_by_top_k_threshold`, the PREWHERE holds the `__topKFilter` of the read as a conjunct, and
     /// the marks skipped by the primary key against the same top-K threshold do not count.
-    bool readersChainCanSkipMarksBeforePrewhere(bool prewhere_filters_by_top_k_threshold) const;
+    [[nodiscard]] bool readersChainCanSkipMarksBeforePrewhere(bool prewhere_filters_by_top_k_threshold) const;
 
     /// Returns true if on-fly mutations or patch parts are applied earlier in the readers chain
     /// than PREWHERE (and therefore than the downstream WHERE filter too). When true, a mark may be
     /// fully filtered by the mutation rather than by the predicate, so it must not be attributed to
     /// the PREWHERE or WHERE predicate in the QueryConditionCache.
-    bool appliesMutationsBeforePrewhere() const;
+    [[nodiscard]] bool appliesMutationsBeforePrewhere() const;
 
     Readers releaseReaders() { return std::move(readers); }
 
-    size_t getNumMarksToRead() const { return mark_ranges.getNumberOfMarks(); }
+    [[nodiscard]] size_t getNumMarksToRead() const { return mark_ranges.getNumberOfMarks(); }
 
     /// `read_request_map` narrows the part's map; `patch_read_request_maps` then holds the matching patch maps.
     static Readers createReaders(
@@ -272,13 +272,7 @@ public:
         bool collect_predicate_statistics);
 
 private:
-    using DataflowCacheUpdateCallback = std::function<void(
-        const ColumnsWithTypeAndName & columns,
-        const NameSet & partially_read_columns,
-        size_t read_bytes,
-        std::optional<bool> & should_continue_sampling)>;
-
-    UInt64 estimateNumRows(bool scale_by_filtration_ratio) const;
+    [[nodiscard]] UInt64 estimateNumRows(bool scale_by_filtration_ratio) const;
 
     /// Shared information required for reading.
     MergeTreeReadTaskInfoPtr info;
@@ -305,7 +299,6 @@ private:
     MergeTreeBlockSizePredictorPtr size_predictor;
 
     RuntimeDataflowStatisticsCacheUpdaterPtr updater;
-    DataflowCacheUpdateCallback dataflow_cache_update_cb;
 };
 
 using MergeTreeReadTaskPtr = std::unique_ptr<MergeTreeReadTask>;

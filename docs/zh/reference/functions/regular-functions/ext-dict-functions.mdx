@@ -411,7 +411,7 @@ dictGetAll(dict_name, attr_names, id_expr[, limit])
 * `dict_name` — 字典名称。 [`String`](/zh/reference/data-types/string)
 * `attr_names` — 字典中列的名称，或列名元组。 [`String`](/zh/reference/data-types/string) 或 [`Tuple(String)`](/zh/reference/data-types/tuple)
 * `id_expr` — 键值。返回字典键类型值或元组值的表达式 (取决于字典配置) 。 [`Expression`](/zh/reference/data-types/special-data-types/expression) 或 [`Tuple(T)`](/zh/reference/data-types/tuple)
-* `limit` — 可选。每个返回值数组的最大长度。截断时，子节点优先于父节点；除此之外，遵循 regexp tree 字典定义的列表顺序。如果未指定，则数组长度不受限制。 [`UInt*`](/zh/reference/data-types/int-uint)
+* `limit` — 可选。每个返回值数组的最大长度。截断时，子节点优先于父节点；除此之外，遵循正则表达式树字典定义的列表顺序。如果未指定，则数组长度不受限制。 [`UInt*`](/zh/reference/data-types/int-uint)
 
 **返回值**
 
@@ -426,7 +426,7 @@ dictGetAll(dict_name, attr_names, id_expr[, limit])
 
 **示例**
 
-**用法示例**
+**使用示例**
 
 ```sql title=Query
 CREATE TABLE regexp_os (id UInt64, parent_id UInt64, regexp String, keys Array(String), values Array(String)) ENGINE = Memory;
@@ -2217,7 +2217,7 @@ CREATE DICTIONARY all_types_dict (id UInt32, UInt64_value UInt64) PRIMARY KEY id
 -- for key which exists
 SELECT dictGetUInt64('all_types_dict', 'UInt64_value', 1);
 
--- for key which does not exist, returns the provideddefault value (0)
+-- for key which does not exist, returns the provided default value (0)
 SELECT dictGetUInt64OrDefault('all_types_dict', 'UInt64_value', 999, 0);
 ```
 

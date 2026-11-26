@@ -8,7 +8,7 @@ keywords: ['ClickStack', 'Demo days']
 ---
 
 <div id="dashboard-variables">
-  ## Variáveis de dashboard
+  ## Variáveis de dashboard {#dashboard-variables}
 </div>
 
 *Demonstração de [@pulpdrew](https://github.com/pulpdrew)*
@@ -36,7 +36,7 @@ A configuração de variáveis continua protegida por `NEXT_PUBLIC_ENABLE_DASHBO
 **PRs relacionados:** [#2836](https://github.com/hyperdxio/hyperdx/pull/2836) adiciona configuração de variáveis de filtro, [#2873](https://github.com/hyperdxio/hyperdx/pull/2873) substitui variáveis em gráficos de SQL bruto, [#2874](https://github.com/hyperdxio/hyperdx/pull/2874) adiciona preenchimento automático e validações para variáveis SQL de dashboard, [#2901](https://github.com/hyperdxio/hyperdx/pull/2901) oferece suporte a variáveis de dashboard em blocos do chart builder, [#2910](https://github.com/hyperdxio/hyperdx/pull/2910) expande variáveis como vazias em consultas de alerta, [#2923](https://github.com/hyperdxio/hyperdx/pull/2923) oferece suporte a consultas de valores de variáveis dependentes, [#2937](https://github.com/hyperdxio/hyperdx/pull/2937) oferece suporte a macros aninhadas e referências a variáveis em macros, [#2944](https://github.com/hyperdxio/hyperdx/pull/2944) adiciona variáveis de dashboard à API externa
 
 <div id="alert-detail-page-with-evaluation-history">
-  ## Página de detalhes do alerta com histórico de avaliações
+  ## Página de detalhes do alerta com histórico de avaliações {#alert-detail-page-with-evaluation-history}
 </div>
 
 *Demonstração de [@wrn14897](https://github.com/wrn14897)*
@@ -58,14 +58,14 @@ A página continua disponível somente com `NEXT_PUBLIC_ENABLE_ALERT_DETAILS`.
 **PRs relacionados:** [#2833](https://github.com/hyperdxio/hyperdx/pull/2833) modelo de leitura das avaliações de alerta e `GET /alerts/:id/evaluations`, [#2834](https://github.com/hyperdxio/hyperdx/pull/2834) persistir erros de avaliação de alerta e analytics em AlertHistory, [#2835](https://github.com/hyperdxio/hyperdx/pull/2835) página de detalhes do alerta com histórico de avaliações, [#2928](https://github.com/hyperdxio/hyperdx/pull/2928) alinhar os marcadores do gráfico de alerta ao início do bucket avaliado, [#2931](https://github.com/hyperdxio/hyperdx/pull/2931) permitir editar e excluir alertas na página de detalhes do alerta
 
 <div id="investigating-alerts-and-mcp-tool-annotations">
-  ## Investigando alertas e anotações de ferramentas MCP
+  ## Investigando alertas e anotações de ferramentas MCP {#investigating-alerts-and-mcp-tool-annotations}
 </div>
 
 *Demonstração por [@brandon-pereira](https://github.com/brandon-pereira)*
 
 <iframe width="768" height="432" src="https://www.youtube.com/embed/942yeJitK4Q" title="Reprodutor de vídeo do YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
 
-Os alertas disparados agora têm um botão Investigar. Ao clicar nele, uma investigação em um notebook é iniciada pela página de alertas ou pela página de detalhes do alerta.
+**Somente no ClickHouse Observability:** os alertas disparados agora têm um botão Investigar. Ao clicar nele, uma investigação em um notebook é iniciada pela página de alertas ou pela página de detalhes do alerta.
 
 O objetivo final é iniciar essas investigações automaticamente quando um alerta for disparado. O botão é uma etapa intermediária útil, não a forma final pretendida.
 
@@ -82,7 +82,7 @@ O MCP agora direciona os agentes primeiro para essas ferramentas de builder e re
 **PRs relacionados:** [#2838](https://github.com/hyperdxio/hyperdx/pull/2838) adiciona anotações de ferramentas MCP (`readOnlyHint` etc.) a todas as ferramentas, [#2840](https://github.com/hyperdxio/hyperdx/pull/2840) direciona agentes para ferramentas de builder de consultas em vez de SQL bruto, [#2870](https://github.com/hyperdxio/hyperdx/pull/2870) direciona agentes de dashboard para filtros de blocos por série. O próprio botão Investigar não tem um PR público para vincular.
 
 <div id="multi-series-metric-charts-in-a-single-query">
-  ## Gráficos de métricas com várias séries em uma única consulta
+  ## Gráficos de métricas com várias séries em uma única consulta {#multi-series-metric-charts-in-a-single-query}
 </div>
 
 *Demonstração por [@wrn14897](https://github.com/wrn14897)*
@@ -102,7 +102,7 @@ O `UNION ALL` composto e o pivô enviavam todas as séries pela mesma coluna, fa
 **PRs relacionados:** [#2858](https://github.com/hyperdxio/hyperdx/pull/2858) ampliar a cobertura de testes de inteiros para a mesclagem de métricas com várias séries, [#2859](https://github.com/hyperdxio/hyperdx/pull/2859) mover o cálculo de mesclagem de métricas com várias séries para o ClickHouse, [#2907](https://github.com/hyperdxio/hyperdx/pull/2907) cobertura de tarefas de alerta para blocos de métricas com várias séries, [#2916](https://github.com/hyperdxio/hyperdx/pull/2916) corrigir gráficos de métricas com várias séries que combinam agregações de números de ponto flutuante e inteiros, [#2872](https://github.com/hyperdxio/hyperdx/pull/2872) modelo de expressão de fórmula, [#2908](https://github.com/hyperdxio/hyperdx/pull/2908) renderizar fórmulas na consulta de métricas composta, [#2909](https://github.com/hyperdxio/hyperdx/pull/2909) interface do editor de gráficos para fórmulas de métricas
 
 <div id="lucene-autocomplete-and-password-requirement-fixes">
-  ## Correções no preenchimento automático do Lucene e nos requisitos de senha
+  ## Correções no preenchimento automático do Lucene e nos requisitos de senha {#lucene-autocomplete-and-password-requirement-fixes}
 </div>
 
 *Demo por [@pulpdrew](https://github.com/pulpdrew)*
