@@ -45,6 +45,11 @@ public:
         return size;
     }
 
+    [[nodiscard]] bool hasHalfFullBufferApprox() const
+    {
+        return std::ranges::any_of(buffers, [](const auto & buffer) { return buffer.isHalfFullApprox(); });
+    }
+
     bool tryAdd(PendingPriorityIncrease & increase, const std::function<void()> & on_half_full)
     {
         return getBufferOfCurrentThread().tryAdd(increase, on_half_full);
@@ -157,6 +162,8 @@ private:
             return write > read ? write - read : 0;
         }
 
+        [[nodiscard]] bool isHalfFullApprox() const { return getSizeApprox() >= (slots.size() + 1) / 2; }
+
     private:
         std::vector<Slot> slots;
         alignas(CH_CACHE_LINE_SIZE) std::atomic<size_t> write_position = 0;
@@ -220,6 +227,12 @@ size_t PendingPriorityIncreases::getSizeApprox() const
 {
     const auto * current_buffers = buffers.load(std::memory_order_acquire);
     return current_buffers ? current_buffers->getSizeApprox() : 0;
+}
+
+bool PendingPriorityIncreases::hasHalfFullBufferApprox() const
+{
+    const auto * current_buffers = buffers.load(std::memory_order_acquire);
+    return current_buffers && current_buffers->hasHalfFullBufferApprox();
 }
 
 }

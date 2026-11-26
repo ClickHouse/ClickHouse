@@ -367,6 +367,8 @@ void LRUFileCachePriority::setBatchPriorityIncreaseSettings(const BatchPriorityI
 
 void LRUFileCachePriority::applyAllPendingPriorityIncreases()
 {
+    maintenance_task_woken_since_last_apply.store(false, std::memory_order_relaxed);
+
     /// Only what is pending now, so that the task ends while hits keep adding.
     size_t increases_to_apply_count = pending_priority_increases.getSizeApprox();
     if (!increases_to_apply_count)
@@ -424,7 +426,7 @@ LRUFileCachePriority::iterateImpl(
                 }
                 case Entry::State::Invalidated:
                 {
-                    /// Skip invalidated entries; the background cleanup task removes them.
+                    /// Skip invalidated entries; the background maintenance task removes them.
                     stat.update(entry.size, FileSegmentKind::Regular, FileCacheReserveStat::State::Invalidated);
                     return false;
                 }
@@ -860,9 +862,17 @@ bool LRUFileCachePriority::tryIncreasePriority(
 
     PendingPriorityIncrease increase{entry, lru_iterator.get()};
     if (pending_priority_increases.tryAdd(increase, apply_priority_increases_notifier))
+    {
+        /// So that the task applies within its maximum delay even if no buffer becomes half full. Checked before exchanging,
+        /// so that hits do not write a shared cache line. A hit which misses the reset is caught up by the next one.
+        if (!maintenance_task_woken_since_last_apply.load(std::memory_order_relaxed)
+            && !maintenance_task_woken_since_last_apply.exchange(true, std::memory_order_relaxed)
+            && apply_priority_increases_notifier)
+            apply_priority_increases_notifier();
         return true;
+    }
 
-    /// The buffer is full because the cleanup task did not keep up. Apply it if the queue is not locked, otherwise
+    /// The buffer is full because the maintenance task did not keep up. Apply it if the queue is not locked, otherwise
     /// lose this increase rather than wait, as without batching.
     ProfileEvents::increment(ProfileEvents::FilesystemCachePriorityIncreaseBufferFull);
     PriorityIncreases increases;
@@ -870,7 +880,7 @@ bool LRUFileCachePriority::tryIncreasePriority(
     if (!lock.owns_lock())
     {
         ProfileEvents::increment(ProfileEvents::FileSegmentFailToIncreasePriority);
-        /// Only a buffer reaching half wakes the cleanup task, and a run of the task may leave this buffer above half.
+        /// Only a buffer reaching half wakes the maintenance task, and a run of the task may leave this buffer above half.
         if (apply_priority_increases_notifier)
             apply_priority_increases_notifier();
         return false;
@@ -959,7 +969,7 @@ void LRUFileCachePriority::LRUIterator::invalidate() noexcept
 {
     invalidateImpl();
 
-    /// Only the `Main` priority drains `invalidated_refs` via the background cleanup task.
+    /// Only the `Main` priority drains `invalidated_refs` via the background maintenance task.
     if (cache_priority->getQueueType() == QueueType::Main)
         cache_priority->addInvalidatedRef(entry, iterator);
 }

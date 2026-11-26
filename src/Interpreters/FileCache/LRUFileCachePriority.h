@@ -222,6 +222,10 @@ private:
 
     size_t getPendingPriorityIncreasesApprox() const override { return pending_priority_increases.getSizeApprox(); }
 
+    bool hasHalfFullPriorityIncreasesBufferApprox() const override { return pending_priority_increases.hasHalfFullBufferApprox(); }
+
+    size_t getInvalidatedEntriesCountApprox() const override { return invalidated_count.load(std::memory_order_relaxed); }
+
     /// Throws if `sealStructure` was called. Called from every operation which mutates or reads
     /// `queue`, so a wrapper missing an override throws instead of silently using the sealed, unused base queue.
     void assertNotSealed(std::string_view method) const;
@@ -253,6 +257,8 @@ private:
     std::atomic<size_t> invalidated_count = 0;
 
     PendingPriorityIncreases pending_priority_increases;
+    /// Whether an increase woke the maintenance task since the last `applyAllPendingPriorityIncreases`.
+    std::atomic<bool> maintenance_task_woken_since_last_apply = false;
 
     /// Id of the current priority queue.
     /// Used to find its eviction info in collected eviction info map

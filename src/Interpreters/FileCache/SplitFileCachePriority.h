@@ -164,6 +164,18 @@ protected:
             + getPriority(SegmentType::System).getPendingPriorityIncreasesApprox();
     }
 
+    bool hasHalfFullPriorityIncreasesBufferApprox() const override
+    {
+        return getPriority(SegmentType::Data).hasHalfFullPriorityIncreasesBufferApprox()
+            || getPriority(SegmentType::System).hasHalfFullPriorityIncreasesBufferApprox();
+    }
+
+    size_t getInvalidatedEntriesCountApprox() const override
+    {
+        return getPriority(SegmentType::Data).getInvalidatedEntriesCountApprox()
+            + getPriority(SegmentType::System).getInvalidatedEntriesCountApprox();
+    }
+
     size_t removeInvalidatedEntries(size_t max_batch) override
     {
         size_t removed = getPriority(SegmentType::Data).removeInvalidatedEntries(max_batch);

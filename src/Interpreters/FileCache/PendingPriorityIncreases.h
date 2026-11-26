@@ -34,6 +34,9 @@ public:
     /// Current number of pending priority increases taken lock-free, e.g. does not account concurrent changes.
     [[nodiscard]] size_t getSizeApprox() const;
 
+    /// Whether any buffer is at least half full, taken lock-free as `getSizeApprox`.
+    [[nodiscard]] bool hasHalfFullBufferApprox() const;
+
     /// Allocates the buffers, of `buffer_size` increases each, unless they are allocated already.
     /// Must be called before other methods of this class.
     void allocateBuffers(size_t buffer_size);

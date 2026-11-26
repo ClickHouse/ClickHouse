@@ -405,7 +405,7 @@ public:
     virtual void resetEvictionPos(EvictionCursor cursor) = 0;
 
     /// Hook fired from invalidate() once pending invalidated entries reach
-    /// `threshold` (FileCache wakes its cleanup task). Wrappers propagate it down.
+    /// `threshold` (FileCache wakes its maintenance task). Wrappers propagate it down.
     virtual void setInvalidateNotifier(size_t threshold, std::function<void()> on_invalidate)
     {
         invalidated_threshold.store(threshold, std::memory_order_relaxed);
@@ -426,10 +426,12 @@ public:
         batch_priority_increase_max_batch_size.store(settings.max_batch_size, std::memory_order_relaxed);
     }
 
-    /// Called when a buffer of pending priority increases becomes half full. Set once on startup. Wrappers propagate it down.
+    /// Wakes the background maintenance task, which then decides from `getPendingPriorityIncreasesApprox` and
+    /// `hasHalfFullPriorityIncreasesBufferApprox` whether to apply. Called when a buffer becomes half full, and for the first
+    /// increase recorded since the last `applyAllPendingPriorityIncreases`. Set once on startup. Wrappers propagate it down.
     virtual void setApplyPriorityIncreasesNotifier(std::function<void()> notifier) { apply_priority_increases_notifier = notifier; }
 
-    /// Remove up to `max_batch` invalidated entries (driven by `FileCache`'s cleanup task), each
+    /// Remove up to `max_batch` invalidated entries (driven by `FileCache`'s maintenance task), each
     /// under its owning queue's write lock so cleanup serializes with foreground operations.
     /// Returns the number removed.
     virtual size_t removeInvalidatedEntries(size_t max_batch) = 0;
@@ -438,6 +440,12 @@ public:
 
     /// The number of priority increases recorded and not applied yet.
     virtual size_t getPendingPriorityIncreasesApprox() const = 0;
+
+    /// Whether a buffer of pending priority increases is at least half full, so that they are worth applying now.
+    virtual bool hasHalfFullPriorityIncreasesBufferApprox() const = 0;
+
+    /// The number of invalidated entries which `removeInvalidatedEntries` has not removed yet.
+    virtual size_t getInvalidatedEntriesCountApprox() const = 0;
 
     struct UsageStat
     {

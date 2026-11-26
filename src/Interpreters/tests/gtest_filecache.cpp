@@ -4949,7 +4949,7 @@ namespace ProfileEvents
 
 TEST_F(FileCacheTest, LRUPendingPriorityIncreasesBuffer)
 {
-    /// A queue without a cache, so that no cleanup task applies the increases while the test checks them.
+    /// A queue without a cache, so that no maintenance task applies the increases while the test checks them.
     ServerUUID::setRandomForUnitTests();
     LRUFileCachePriority priority(IFileCachePriority::QueueType::Main, /* max_size */100, /* max_elements */10);
     priority.setBatchPriorityIncreaseSettings({.enabled = true, .buffer_size = 2, .max_batch_size = 64});
@@ -4984,10 +4984,10 @@ TEST_F(FileCacheTest, LRUPendingPriorityIncreasesBuffer)
     const auto buffer_full_before = events[ProfileEvents::FilesystemCachePriorityIncreaseBufferFull];
     const auto applied_before = events[ProfileEvents::FilesystemCacheAppliedPriorityIncreases];
 
-    /// The first record fills the ring of two slots to half, which asks for the records to be applied.
+    /// The first record fills the ring of two slots to half, and is the first since an apply: each wakes the task.
     hit(0);
     hit(1);
-    ASSERT_EQ(notifications, 1u);
+    ASSERT_EQ(notifications, 2u);
     ASSERT_EQ(priority.getPendingPriorityIncreasesApprox(), 2u);
     ASSERT_EQ(queue_offsets(), (std::vector<size_t>{0, 10, 20, 30}));
 
@@ -5000,13 +5000,13 @@ TEST_F(FileCacheTest, LRUPendingPriorityIncreasesBuffer)
 
     /// The emptied ring fills to half again.
     hit(3);
-    ASSERT_EQ(notifications, 2u);
+    ASSERT_EQ(notifications, 3u);
     priority.applyAllPendingPriorityIncreases();
     ASSERT_EQ(priority.getPendingPriorityIncreasesApprox(), 0u);
     ASSERT_EQ(queue_offsets(), (std::vector<size_t>{0, 10, 20, 30}));
 
     hit(0);
-    ASSERT_EQ(notifications, 3u);
+    ASSERT_EQ(notifications, 5u);
 
     /// A hit which finds its buffer full while the queue is locked loses its increase instead of waiting.
     hit(1);

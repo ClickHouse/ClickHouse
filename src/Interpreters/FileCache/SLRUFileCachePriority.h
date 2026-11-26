@@ -161,6 +161,16 @@ protected:
         return protected_queue.getPendingPriorityIncreasesApprox() + probationary_queue.getPendingPriorityIncreasesApprox();
     }
 
+    bool hasHalfFullPriorityIncreasesBufferApprox() const override
+    {
+        return protected_queue.hasHalfFullPriorityIncreasesBufferApprox() || probationary_queue.hasHalfFullPriorityIncreasesBufferApprox();
+    }
+
+    size_t getInvalidatedEntriesCountApprox() const override
+    {
+        return protected_queue.getInvalidatedEntriesCountApprox() + probationary_queue.getInvalidatedEntriesCountApprox();
+    }
+
     size_t removeInvalidatedEntries(size_t max_batch) override
     {
         size_t removed = protected_queue.removeInvalidatedEntries(max_batch);
