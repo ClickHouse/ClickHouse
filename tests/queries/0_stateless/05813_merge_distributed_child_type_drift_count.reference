@@ -1,0 +1,71 @@
+-- { echoOn }
+
+SELECT count() FROM m;
+5
+SELECT count(*) FROM m;
+5
+SELECT count(1) FROM m;
+5
+SELECT sum(1) FROM m;
+5
+SELECT count(id) FROM m;
+5
+SELECT count(t) FROM m;
+5
+SELECT count() FROM m WHERE t != '';
+5
+SELECT count() FROM (SELECT 1 FROM m);
+5
+SELECT count() FROM m SETTINGS prefer_localhost_replica = 0;
+5
+SELECT count() FROM m SETTINGS prefer_localhost_replica = 1;
+5
+SELECT count() FROM m SETTINGS optimize_trivial_count_query = 0;
+5
+SELECT count() FROM m SETTINGS serialize_query_plan = 1;
+5
+SELECT count() FROM merge(currentDatabase(), '^(t_u|d_i)$');
+5
+SELECT count(*) FROM merge(currentDatabase(), '^(t_u|d_i)$');
+5
+SELECT count(1) FROM merge(currentDatabase(), '^(t_u|d_i)$');
+5
+SELECT sum(1) FROM merge(currentDatabase(), '^(t_u|d_i)$');
+5
+SELECT count(id) FROM merge(currentDatabase(), '^(t_u|d_i)$');
+5
+SELECT count(t) FROM merge(currentDatabase(), '^(t_u|d_i)$');
+5
+SELECT count() FROM merge(currentDatabase(), '^(t_u|d_i)$') WHERE t != '';
+5
+SELECT count() FROM (SELECT 1 FROM merge(currentDatabase(), '^(t_u|d_i)$'));
+5
+SELECT count() FROM merge(currentDatabase(), '^(t_u|d_i)$') SETTINGS prefer_localhost_replica = 0;
+5
+SELECT count() FROM merge(currentDatabase(), '^(t_u|d_i)$') SETTINGS prefer_localhost_replica = 1;
+5
+SELECT count() FROM merge(currentDatabase(), '^(t_u|d_i)$') SETTINGS optimize_trivial_count_query = 0;
+5
+SELECT count() FROM merge(currentDatabase(), '^(t_u|d_i)$') SETTINGS serialize_query_plan = 1;
+5
+SELECT count() FROM merge(currentDatabase(), '^(t_u|d_i2)$');
+8
+SELECT count() FROM m_out;
+5
+SELECT arraySort(groupArray(id)) FROM merge(currentDatabase(), '^(t_l|v_alias)$') ARRAY JOIN [1] AS x;
+[11,12,13,21]
+SELECT count() FROM merge(currentDatabase(), '^(t_u|t_l|v_alias)$');
+6
+SELECT count() > 0 FROM (EXPLAIN PIPELINE SELECT count() FROM m);
+1
+SELECT arraySort(groupArray(id)) FROM m;
+[1,2,11,12,13]
+SELECT id FROM m ORDER BY id;
+1
+2
+11
+12
+13
+SELECT t, count() FROM m GROUP BY t ORDER BY t;
+a	2
+b	3

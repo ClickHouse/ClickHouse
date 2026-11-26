@@ -141,7 +141,10 @@ BACKUP TABLE test.table
 
 更多详情请参见[&quot;命名集合&quot;](/zh/concepts/features/configuration/server-config/named-collections)。
 
-## 备份系统表、日志表或访问管理相关表 {#system-backups}
+通过 SQL 创建的命名集合本身也可以借助 `system.named_collections` 表导出到备份中，并从备份中恢复；详见
+[&quot;备份和恢复命名集合&quot;](/zh/concepts/features/backup-restore/named-collections)。
+
+## 备份系统表、日志表或访问管理表 {#system-backups}
 
 系统表也可以纳入备份和恢复工作流中，但是否纳入取决于你的具体使用场景。
 
@@ -164,6 +167,13 @@ settings&#95;profiles 和 quotas，在备份和恢复操作期间会进行特殊
 (即[“SQL 驱动的访问控制与账户管理”](/zh/concepts/features/security/access-rights#enabling-access-control)) 。
 在 ClickHouse server 配置文件 (如 `users.xml`)
 中定义的访问配置不会包含在备份中，也无法通过此方法恢复。
+
+<Note>
+  在 26.10 之前的 ClickHouse 版本中，通过 `RESTORE` 恢复的行策略、设置 profile 和配额虽然会
+  出现在 `system.row_policies`、`system.settings_profiles` 和 `system.quotas` 中，但不会立即对查询生效。
+  请在恢复完成后运行 [`SYSTEM RELOAD USERS`](/zh/reference/statements/system#reload-users)
+  使其生效。
+</Note>
 
 ## 常规语法 {#syntax}
 

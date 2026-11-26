@@ -253,49 +253,33 @@ PrivateLink لديك توفر بالفعل أسماء DNS خاصة، فلست ب
 1. انتقل إلى SQL Console لخدمة ClickHouse Cloud الخاصة بك.
 
 <div className="ch-image-md">
-
-<Frame>
-
-![خدمة ClickPipes](/images/integrations/data-ingestion/clickpipes/cp_service.webp)
-
-</Frame>
-
+  <Frame>
+    ![خدمة ClickPipes](/images/integrations/data-ingestion/clickpipes/cp_service.webp)
+  </Frame>
 </div>
 
 2. اختر زر `Data Sources` من القائمة الجانبية اليسرى، ثم انقر على «Set up a ClickPipe».
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![اختيار عمليات الاستيراد](/images/integrations/data-ingestion/clickpipes/cp_step0.webp)
-
-</Frame>
-
+  <Frame>
+    ![اختيار عمليات الاستيراد](/images/integrations/data-ingestion/clickpipes/cp_step0.webp)
+  </Frame>
 </div>
 
 3. اختر Kafka أو Postgres مصدرًا للبيانات.
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![اختيار مصدر البيانات](/images/integrations/data-ingestion/clickpipes/cp_rpe_select.webp)
-
-</Frame>
-
+  <Frame>
+    ![اختيار مصدر البيانات](/images/integrations/data-ingestion/clickpipes/cp_rpe_select.webp)
+  </Frame>
 </div>
 
 4. اختر الخيار `Reverse private endpoint`.
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![اختيار نقطة النهاية الخاصة العكسية](/images/integrations/data-ingestion/clickpipes/cp_rpe_step0.webp)
-
-</Frame>
-
+  <Frame>
+    ![اختيار نقطة النهاية الخاصة العكسية](/images/integrations/data-ingestion/clickpipes/cp_rpe_step0.webp)
+  </Frame>
 </div>
 
 5. اختر إحدى نقاط النهاية الخاصة العكسية الموجودة أو أنشئ نقطة نهاية جديدة.
@@ -308,28 +292,20 @@ PrivateLink لديك توفر بالفعل أسماء DNS خاصة، فلست ب
 </Info>
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![اختيار نقطة النهاية الخاصة العكسية](/images/integrations/data-ingestion/clickpipes/cp_rpe_step1.webp)
-
-</Frame>
-
+  <Frame>
+    ![اختيار نقطة النهاية الخاصة العكسية](/images/integrations/data-ingestion/clickpipes/cp_rpe_step1.webp)
+  </Frame>
 </div>
 
 6. أدخل المعلمات المطلوبة لنوع نقطة النهاية المحدد.
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![اختيار نقطة النهاية الخاصة العكسية](/images/integrations/data-ingestion/clickpipes/cp_rpe_step2.webp)
-
-</Frame>
-
+  <Frame>
+    ![اختيار نقطة النهاية الخاصة العكسية](/images/integrations/data-ingestion/clickpipes/cp_rpe_step2.webp)
+  </Frame>
 </div>
 
-* بالنسبة إلى مورد VPC، أدخل ARN لمشاركة التكوين ومعرّف التكوين.
+* بالنسبة إلى مورد VPC، أدخل ARN لمشاركة الإعدادات ومعرّف الإعدادات.
 * بالنسبة إلى MSK multi-VPC، أدخل ARN للعنقود وطريقة المصادقة المستخدمة مع نقطة النهاية المنشأة.
 * بالنسبة إلى خدمة نقطة نهاية VPC، أدخل اسم الخدمة.
 * اختياريًا، أدخل اسم [DNS خاص مخصص](#custom-private-dns).
@@ -341,13 +317,9 @@ PrivateLink لديك توفر بالفعل أسماء DNS خاصة، فلست ب
    قد تتطلب خدمة نقطة نهاية VPC قبول طلب الاتصال من وحدة تحكم AWS الخاصة بك.
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![اختيار نقطة النهاية الخاصة العكسية](/images/integrations/data-ingestion/clickpipes/cp_rpe_step3.webp)
-
-</Frame>
-
+  <Frame>
+    ![اختيار نقطة النهاية الخاصة العكسية](/images/integrations/data-ingestion/clickpipes/cp_rpe_step3.webp)
+  </Frame>
 </div>
 
 8. بعد أن تصبح نقطة النهاية جاهزة، يمكنك استخدام اسم DNS للاتصال بمصدر البيانات.
@@ -369,25 +341,17 @@ PrivateLink لديك توفر بالفعل أسماء DNS خاصة، فلست ب
 1. في الشريط الجانبي، ابحث عن زر `Settings` وانقر عليه.
 
    <div className="ch-image-lg">
-
-   <Frame>
-
-   ![إعدادات ClickHouse Cloud](/images/integrations/data-ingestion/clickpipes/cp_rpe_settings0.webp)
-
-   </Frame>
-
+     <Frame>
+       ![إعدادات ClickHouse Cloud](/images/integrations/data-ingestion/clickpipes/cp_rpe_settings0.webp)
+     </Frame>
    </div>
 
 2. انقر على `Reverse private endpoints` ضمن قسم `ClickPipe reverse private endpoints`.
 
    <div className="ch-image-md">
-
-   <Frame>
-
-   ![إعدادات ClickHouse Cloud](/images/integrations/data-ingestion/clickpipes/cp_rpe_settings1.webp)
-
-   </Frame>
-
+     <Frame>
+       ![إعدادات ClickHouse Cloud](/images/integrations/data-ingestion/clickpipes/cp_rpe_settings1.webp)
+     </Frame>
    </div>
 
    تُعرض المعلومات التفصيلية لنقطة النهاية الخاصة العكسية في اللوحة المنبثقة.

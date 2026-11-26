@@ -269,7 +269,8 @@ AnalyzeStepsStats::AnalyzeStepsStats(
     computeDistribution(elapsed_per_step_group);
     computeJoinBranchCosts();
 
-    /// Work intervals are collected only when `EXPLAIN ANALYZE` requests the `time` setting.
+    /// Work intervals are collected only when asked for: the `time` setting of `EXPLAIN ANALYZE`, or
+    /// `log_query_plans_time` for a logged plan.
     if (const auto work_intervals = step_profiler.extractWorkIntervals(execution_start_ns); !work_intervals.empty())
         interval_timings.emplace(work_intervals, plan_snapshot);
 }
