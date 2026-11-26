@@ -24,7 +24,7 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `thread_name` ([String](/zh/reference/data-types/string)) — 线程名称。
 * `thread_id` ([UInt64](/zh/reference/data-types/int-uint)) — 线程标识符
 * `query_id` ([String](/zh/reference/data-types/string)) — 此线程所属查询的 ID。
-* `trace` ([Array(UInt64)](/zh/reference/data-types/array)) — 此线程的 堆栈跟踪。在除 FreeBSD 以外的 ELF 平台上，位于 ClickHouse 主 binary 内的地址以物理文件 offsets 的形式存储，而位于其外部的栈帧 (共享库、JIT 代码) 则存储为 0。
+* `trace` ([Array(UInt64)](/zh/reference/data-types/array)) — 此线程的堆栈跟踪。除 FreeBSD 外，位于 ClickHouse 主二进制文件内的地址以物理文件偏移量的形式存储，而位于其外部的栈帧 (共享库、JIT 代码) 则存储为 0。
 * `untracked_memory` ([Int64](/zh/reference/data-types/int-uint)) — 线程级内存分配计数器，尚未传播到上级 MemoryTracker。若自上次 flush 以来释放的内存多于分配的内存，其值可能为负。
 
 ## 示例 {#example}
