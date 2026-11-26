@@ -5,7 +5,7 @@
 #include <DataTypes/IDataType.h>
 #include <DataTypes/Serializations/SerializationSparse.h>
 #include <DataTypes/Serializations/SerializationWrapper.h>
-#include <IO/WriteBufferFromString.h>
+#include <IO/WriteBufferFromStringWithMemoryTracking.h>
 #include <Common/PODArray.h>
 #include <Common/assert_cast.h>
 #include <Common/memcpySmall.h>
@@ -106,8 +106,8 @@ private:
         if (defaults[slot].settings != &settings) [[unlikely]]
             cacheDefault(serialize, slot, settings);
 
-        const String & bytes = defaults[slot].bytes;
-        /// Inline: a `memcpy` call costs more than copying the few bytes of a default value. A closed buffer goes to `write`.
+        const auto & bytes = defaults[slot].bytes;
+        /// `memcpySmall` instead of `write`: a `memcpy` call costs more than the few bytes of a default value. A closed buffer goes to `write`.
         if (!ostr.isFinalized() && !ostr.isCanceled() && bytes.size() <= MAX_INLINE_WRITE_SIZE && bytes.size() <= ostr.available())
         {
             memcpySmall(ostr.position(), bytes.data(), bytes.size());
@@ -119,13 +119,16 @@ private:
         }
     }
 
-    /// Out of line, so that its `WriteBufferFromOwnString` does not put a stack protector canary on every row.
+    /// Out of line, so that its write buffer does not put a stack protector canary on every row.
     NO_INLINE void cacheDefault(SerializeRow serialize, size_t slot, const FormatSettings & settings) const
     {
-        WriteBufferFromOwnString buf;
+        auto & cached = defaults[slot];
+        cached.settings = nullptr;
+        cached.bytes.clear();
+        WriteBufferFromStringWithMemoryTracking buf(cached.bytes);
         (values_serialization.get()->*serialize)(*values, 0, buf, settings);
-        defaults[slot].bytes = buf.str();
-        defaults[slot].settings = &settings;
+        buf.finalize();
+        cached.settings = &settings;
     }
 
     const SerializationPtr values_serialization;
@@ -138,7 +141,7 @@ private:
     struct CachedDefault
     {
         const FormatSettings * settings = nullptr;
-        String bytes;
+        StringWithMemoryTracking bytes;
     };
     mutable std::array<CachedDefault, 8> defaults;
 };
