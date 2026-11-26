@@ -192,11 +192,14 @@ def test_sorted_stream_kill_query_other_columns_continuation(started_cluster):
         CREATE TABLE test_other_cont (k UInt32, v UInt32)
         ENGINE = MergeTree() ORDER BY k
     """)
-    # Runs of 2000. Chunk 1 (3000 rows, below the first i=4096 poll) hits no
-    # failpoint, so chunk 2 genuinely reaches continueWithPrevRange: the boundary
-    # at row 2999 splits run k=1 and the continuation (range_end=2000) fires the
-    # other_columns pause, proving the second-chunk path is reached.
-    node1.query("INSERT INTO test_other_cont SELECT intDiv(number, 2000), number FROM numbers(6000)")
+    # Two parts of 3000 rows: the reader yields one block per part, so the transform
+    # gets two chunks even though the table is small. Chunk 1 (rows 0..2999) stays
+    # below the first `i & 0xFFF` poll (4096) and ends inside run k=1, so it reaches
+    # no failpoint. Chunk 2 therefore really goes through continueWithPrevRange: its
+    # first 1000 rows continue run k=1 from the previous chunk, and the failpoint
+    # right after hashing that carried-over prefix is the first one the query can hit.
+    node1.query("INSERT INTO test_other_cont SELECT intDiv(number, 2000), number FROM numbers(3000)")
+    node1.query("INSERT INTO test_other_cont SELECT intDiv(number + 3000, 2000), number + 3000 FROM numbers(3000)")
     try:
         query = (
             "SELECT DISTINCT k, v "
@@ -205,11 +208,13 @@ def test_sorted_stream_kill_query_other_columns_continuation(started_cluster):
             "FORMAT Null "
             "SETTINGS max_block_size=3000, max_threads=1, max_rows_to_read=0"
         )
-        # Chunk 2's in-loop hashed-range poll is the one that observes the cancel.
+        # Only continueWithPrevRange's other_columns branch logs this marker, so it
+        # proves the cancellation was observed in the carried-over prefix of chunk 2,
+        # not by a later in-loop poll or the final bail-out.
         run_kill_query_failpoint_test(
             query,
             "distinct_sorted_stream_transform_pause",
-            "Cancelled while hashing a range at a poll site",
+            "Cancelled while hashing the carried-over prefix",
         )
     finally:
         node1.query("DROP TABLE IF EXISTS test_other_cont")
