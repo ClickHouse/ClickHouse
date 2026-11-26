@@ -68,8 +68,9 @@ std::set<std::string> getCalculatedProjectionNames(const MergeTreeDataPartPtr & 
 {
     std::set<std::string> projection_names;
 
+    /// A broken projection that may hold lightweight-deleted rows still counts: its part has `_row_exists`, so a merge rebuilds or drops it.
     for (auto && [name, projection_part] : part->getProjectionParts())
-        if (!projection_part->is_broken)
+        if (!projection_part->is_broken || !part->getProjectionPartDeletedRowsReason(*projection_part).empty())
             projection_names.insert(name);
 
     return projection_names;
