@@ -2410,7 +2410,6 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveQualifiedMatcher(Qu
     chassert(matcher_node_typed.isQualified());
 
     auto expression_identifier_lookup = IdentifierLookup{matcher_node_typed.getQualifiedIdentifier(), IdentifierLookupContext::EXPRESSION};
-    expression_identifier_lookup.is_matcher_qualifier = true;
     auto expression_identifier_resolve_result = tryResolveIdentifier(expression_identifier_lookup, scope);
     auto expression_query_tree_node = expression_identifier_resolve_result.resolved_identifier;
 
@@ -4145,6 +4144,17 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
                         if (falls_back_to_system_one)
                             from_clause_hint = "Note: the query does not have the FROM clause. Did you forget to add it?";
                     }
+                }
+
+                /// A qualifier that matches a table expression names it, see `tryResolveIdentifierFromTableExpression`.
+                if (from_clause_hint.empty())
+                {
+                    if (auto qualifying = IdentifierResolver::tryFindTableExpressionByQualifier(unresolved_identifier, scope); qualifying.node)
+                        throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER, "Identifier '{}' cannot be resolved from {}{}. In scope {}",
+                            unresolved_identifier.getFullName(),
+                            IdentifierResolver::describeTableExpressionForErrorMessage(qualifying.node, *qualifying.data),
+                            getHintsErrorMessageSuffix(hints),
+                            scope.scope_node->formatASTForErrorMessage());
                 }
 
                 /// The typo hint goes before the formatted query, which can be many kilobytes long, so that
