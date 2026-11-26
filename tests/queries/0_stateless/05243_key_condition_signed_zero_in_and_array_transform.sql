@@ -4,8 +4,10 @@
 -- The `marks` estimates are compared against 4, the number of granules in the table, so that a value
 -- below it means the index still prunes and 4 means a full scan.
 
+-- Without the implicit min-max index of `f`: it prunes the granules by the values of `f` themselves,
+-- so the `marks` estimates below would not show what the primary key does.
 DROP TABLE IF EXISTS t_signed_zero_in;
-CREATE TABLE t_signed_zero_in (f Float64) ENGINE = MergeTree ORDER BY toString(f) SETTINGS index_granularity = 1;
+CREATE TABLE t_signed_zero_in (f Float64) ENGINE = MergeTree ORDER BY toString(f) SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
 INSERT INTO t_signed_zero_in VALUES (-0.0), (0.5), (0.0), (2.0);
 
 SELECT count(), (SELECT count() FROM t_signed_zero_in WHERE f IN (0.0) SETTINGS use_primary_key = 0) FROM t_signed_zero_in WHERE f IN (0.0);
