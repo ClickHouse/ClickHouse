@@ -1604,6 +1604,66 @@ def test_insert_cleans_files_after_glue_rejection(started_cluster, operation, ac
         node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
 
 
+@pytest.mark.parametrize("operation", ["mutation", "compaction"])
+def test_preserves_files_after_truncated_glue_response(started_cluster, operation):
+    node = started_cluster.instances["node1"]
+    proxy = started_cluster.get_container_id("sts.us-east-1.amazonaws.com")
+    suffix = uuid.uuid4().hex
+    db_name = f"glue_truncated_{suffix}"
+    namespace = f"truncated_{suffix}"
+    table_name = f"t_{suffix}"
+    table_ref = f"{db_name}.`{namespace}.{table_name}`"
+    settings = {
+        "allow_insert_into_iceberg": 1,
+        "write_full_path_in_iceberg_metadata": 1,
+        "iceberg_write_table_statistics_ndv": 1,
+    }
+    catalog = load_catalog_impl(started_cluster)
+
+    create_clickhouse_glue_database(started_cluster, node, db_name, url=GLUE_FAULT_PROXY_URL)
+    try:
+        create_clickhouse_glue_table(
+            started_cluster, node, namespace, table_name, "(x Int64)", catalog_name=db_name
+        )
+        node.query(f"INSERT INTO {table_ref} VALUES (1)", settings=settings)
+        node.query(f"INSERT INTO {table_ref} VALUES (2)", settings=settings)
+        baseline = catalog.load_table((namespace, table_name)).metadata.current_snapshot_id
+
+        started_cluster.exec_in_container(
+            proxy,
+            ["curl", "--fail", "-s", "-X", "POST", f"http://localhost:8081/truncate_update_table/{namespace}"],
+        )
+        queries = {
+            "mutation": f"ALTER TABLE {table_ref} DELETE WHERE x = 2",
+            "compaction": (
+                f"OPTIMIZE TABLE {table_ref} MANIFEST SETTINGS "
+                "allow_experimental_iceberg_compaction = 1, iceberg_manifest_min_count_to_compact = 1"
+            ),
+        }
+        _, error = node.get_query_request(queries[operation], settings=settings, timeout=120).get_answer_and_error()
+        assert "ICEBERG_COMMIT_STATE_UNKNOWN" in error, error
+        injected = started_cluster.exec_in_container(
+            proxy, ["curl", "--fail", "-s", f"http://localhost:8081/injected/{namespace}"]
+        )
+        assert int(injected) == 1
+
+        # The commit landed despite the exception while reading its response body.
+        table = catalog.load_table((namespace, table_name))
+        assert table.metadata.current_snapshot_id != baseline
+        snapshot = table.current_snapshot()
+        referenced = {table.metadata_location, snapshot.manifest_list}
+        referenced.update(manifest.manifest_path for manifest in snapshot.manifests(table.io))
+        for task in table.scan().plan_files():
+            referenced.add(task.file.file_path)
+            referenced.update(file.file_path for file in task.delete_files)
+        assert all(table.io.new_input(path).exists() for path in referenced), referenced
+        expected = [1, 2] if operation == "compaction" else [1]
+        assert node.query(f"SELECT x FROM {table_ref} ORDER BY x") == "".join(f"{x}\n" for x in expected)
+        assert sorted(table.scan().to_arrow()["x"].to_pylist()) == expected
+    finally:
+        node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
+
+
 def test_alternating_commits_with_pyiceberg(started_cluster):
     # Iceberg Java and pyiceberg parse the table version only from `<N>-<uuid>.metadata.json`. When ClickHouse named
     # its files `v<N>.metadata.json`, pyiceberg restarted the version at 0 and a later ClickHouse commit wanted a name

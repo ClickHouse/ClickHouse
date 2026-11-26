@@ -24,6 +24,7 @@ DROPPED_HEADERS = {"connection", "keep-alive", "transfer-encoding", "content-len
 injected = {}
 rejected_get_tables = set()
 rejected_update_tables = set()
+truncated_update_tables = set()
 lock = threading.Lock()
 update_lock = threading.Lock()
 
@@ -67,6 +68,12 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
 
     def do_POST(self):
         body = self.rfile.read(int(self.headers.get("Content-Length", 0)))
+        if self.path.startswith("/truncate_update_table/"):
+            database = self.path[len("/truncate_update_table/") :]
+            with lock:
+                truncated_update_tables.add(database)
+            self.reply(200, b"{}", [("Content-Type", "application/json")])
+            return
         if self.path.startswith(("/reject_get_table/", "/reject_update_table/")):
             _, action, database = self.path.split("/", 2)
             with lock:
@@ -141,6 +148,23 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
     def forward(self, body):
         status, content, headers = self.upstream(body, self.forwarded_headers())
         kept = [(k, v) for k, v in headers if k.lower() not in DROPPED_HEADERS]
+        if self.headers.get("X-Amz-Target") == "AWSGlue.UpdateTable" and status == 200:
+            database = json.loads(body).get("DatabaseName", "")
+            with lock:
+                truncate = database in truncated_update_tables
+                truncated_update_tables.discard(database)
+            if truncate:
+                count_fault(database)
+                # Commit first, then end the response before its declared body length.
+                self.send_response(200)
+                for name, value in kept:
+                    self.send_header(name, value)
+                self.send_header("Content-Length", "2")
+                self.end_headers()
+                self.wfile.write(b"{")
+                self.wfile.flush()
+                self.close_connection = True
+                return
         self.reply(status, content, kept)
 
 

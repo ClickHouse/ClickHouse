@@ -987,7 +987,22 @@ bool GlueCatalog::updateMetadata(
     Poco::JSON::Object::Ptr /*new_snapshot*/,
     Poco::JSON::Object::Ptr new_metadata) const
 {
-    return commitTableUpdate(namespace_name, table_name, new_metadata_path, base_catalog_metadata_location, nullptr, new_metadata);
+    try
+    {
+        return commitTableUpdate(namespace_name, table_name, new_metadata_path, base_catalog_metadata_location, nullptr, new_metadata);
+    }
+    catch (...)
+    {
+        const int code = DB::getCurrentExceptionCode();
+        if (code == DB::ErrorCodes::ICEBERG_COMMIT_REJECTED || code == DB::ErrorCodes::ICEBERG_COMMIT_STATE_UNKNOWN)
+            throw;
+
+        /// The SDK may throw while reading a response after `UpdateTable` committed.
+        throw DB::Exception(
+            DB::ErrorCodes::ICEBERG_COMMIT_STATE_UNKNOWN,
+            "Iceberg Glue commit outcome is unknown for table {}.{}, the data may have been committed: {}",
+            namespace_name, table_name, DB::getCurrentExceptionMessage(/* with_stacktrace */ false));
+    }
 }
 
 bool GlueCatalog::updateSchema(
