@@ -934,7 +934,7 @@ SELECT dateAdd('1998-06-16'::Date, INTERVAL 10 year)
 
 ## age {#age}
 
-Introduit dans : v23.1.0
+Introduit dans : v23.1.0
 
 Renvoyer le composant d’unité de la différence entre `startdate` et `enddate`.
 La différence est calculée avec une précision de 1 nanoseconde.
@@ -969,7 +969,7 @@ age('unit', startdate, enddate[, timezone])
 | year        | `year`, `years`, `yyyy`, `yy`            |
 
 * `startdate` — Première valeur temporelle à soustraire (le terme soustrait). [`Date`](/fr/reference/data-types/date) ou [`Date32`](/fr/reference/data-types/date32) ou [`DateTime`](/fr/reference/data-types/datetime) ou [`DateTime64`](/fr/reference/data-types/datetime64)
-* `enddate` — Deuxième valeur temporelle à partir de laquelle soustraire (le terme duquel on soustrait). [`Date`](/fr/reference/data-types/date) ou [`Date32`](/fr/reference/data-types/date32) ou [`DateTime`](/fr/reference/data-types/datetime) ou [`DateTime64`](/fr/reference/data-types/datetime64)
+* `enddate` — Deuxième valeur temporelle à partir de laquelle soustraire (le terme diminué). [`Date`](/fr/reference/data-types/date) ou [`Date32`](/fr/reference/data-types/date32) ou [`DateTime`](/fr/reference/data-types/datetime) ou [`DateTime64`](/fr/reference/data-types/datetime64)
 * `timezone` — Facultatif. Nom du fuseau horaire. S’il est spécifié, il s’applique à `startdate` et à `enddate`. S’il n’est pas spécifié, les fuseaux horaires de `startdate` et `enddate` sont utilisés. S’ils ne sont pas identiques, le résultat n’est pas défini. [`String`](/fr/reference/data-types/string)
 
 **Valeur renvoyée**
@@ -1207,7 +1207,7 @@ SELECT changeYear('2024-01-01'::DateTime, 2023)
 
 ## dateDiff {#dateDiff}
 
-Introduit dans : v23.4.0
+Introduit dans : v23.4.0
 
 Renvoyer le nombre de limites de `unit` spécifié franchies entre `startdate` et `enddate`.
 La différence est calculée à l’aide d’unités relatives. Par exemple, la différence entre 2021-12-29 et 2022-01-01 est de 3 jours pour l’unité day
@@ -1225,7 +1225,7 @@ Pour une alternative à `dateDiff`, voir la fonction [`age`](#age).
 dateDiff(unit, startdate, enddate[, timezone])
 ```
 
-**Alias** : `timestampDiff`, `TIMESTAMP_DIFF`, `DATE_DIFF`, `date_diff`, `timestamp_diff`
+**Alias** : `timestampDiff`, `TIMESTAMP_DIFF`, `DATE_DIFF`, `timestamp_diff`, `date_diff`
 
 **Arguments**
 
@@ -1255,7 +1255,7 @@ Renvoie la différence entre `enddate` et `startdate`, exprimée en `unit`. [`In
 
 **Exemples**
 
-**Calculer la différence entre deux dates en heures**
+**Calculer la différence entre dates en heures**
 
 ```sql title=Query
 SELECT dateDiff('hour', toDateTime('2018-01-01 22:00:00'), toDateTime('2018-01-02 23:00:00')) AS res
@@ -1267,7 +1267,7 @@ SELECT dateDiff('hour', toDateTime('2018-01-01 22:00:00'), toDateTime('2018-01-0
 └─────┘
 ```
 
-**Calculer l’écart entre deux dates dans différentes unités**
+**Calculer la différence entre dates dans différentes unités**
 
 ```sql title=Query
 SELECT
@@ -1398,9 +1398,9 @@ SELECT now(), dateTrunc('hour', now(), 'Asia/Istanbul');
 
 ## formatDateTime {#formatDateTime}
 
-Introduit dans : v1.1.0
+Introduit dans : v1.1.0
 
-Formate une date ou une date avec heure selon la chaîne de format spécifiée. `format` est une expression constante ; vous ne pouvez donc pas utiliser plusieurs formats pour une seule colonne de résultat.
+Formate une date ou une date avec heure selon la chaîne de format spécifiée. `format` est une expression constante ; vous ne pouvez donc pas utiliser plusieurs formats pour une seule colonne de résultat.
 
 `formatDateTime` utilise le style de format de date et d&#39;heure de MySQL. Consultez la [documentation MySQL](https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_date-format).
 
@@ -1409,7 +1409,7 @@ L&#39;opération inverse de cette fonction est [`parseDateTime`](/fr/reference/f
 À l&#39;aide de champs de remplacement, vous pouvez définir un motif pour la chaîne résultante.
 La colonne d&#39;exemple du tableau ci-dessous montre le résultat du formatage pour `2018-01-02 22:33:44`.
 
-**Champs de remplacement :**
+**Champs de remplacement :**
 
 | Espace réservé | Description                                                             | Exemple    |
 | -------------- | ----------------------------------------------------------------------- | ---------- |
@@ -1461,7 +1461,7 @@ La colonne d&#39;exemple du tableau ci-dessous montre le résultat du formatage 
 formatDateTime(datetime, format[, timezone])
 ```
 
-**Alias** : `DATE_FORMAT`
+**Alias** : `DATE_FORMAT`
 
 **Arguments**
 
@@ -1528,15 +1528,15 @@ LIMIT 10
 
 ## formatDateTimeInJodaSyntax {#formatDateTimeInJodaSyntax}
 
-Introduit dans : v20.1.0
+Introduit dans : v23.1.0
 
-Semblable à `formatDateTime`, sauf qu&#39;il met en forme les valeurs datetime au format Joda plutôt qu&#39;au format MySQL. Consultez la [documentation Joda Time](https://joda-time.sourceforge.net/apidocs/org/joda/time/format/DateTimeFormat.html).
+Semblable à `formatDateTime`, sauf qu&#39;il met en forme les valeurs date-heure au format Joda plutôt qu&#39;au format MySQL. Consultez la [documentation Joda Time](https://joda-time.sourceforge.net/apidocs/org/joda/time/format/DateTimeFormat.html).
 
 L&#39;opération inverse de cette fonction est [`parseDateTimeInJodaSyntax`](/fr/reference/functions/regular-functions/type-conversion-functions#parseDateTimeInJodaSyntax).
 
-À l&#39;aide de champs de remplacement, vous pouvez définir un modèle pour la chaîne résultante.
+À l&#39;aide de champs de remplacement, vous pouvez définir un motif pour la chaîne résultante.
 
-**Champs de remplacement :**
+**Champs de remplacement :**
 
 | Espace réservé | Description                                                    | Présentation | Exemples                   |
 | -------------- | -------------------------------------------------------------- | ------------ | -------------------------- |
@@ -1570,9 +1570,11 @@ L&#39;opération inverse de cette fonction est [`parseDateTimeInJodaSyntax`](/fr
 formatDateTimeInJodaSyntax(datetime, format[, timezone])
 ```
 
+**Alias** : `FORMAT_DATETIME`
+
 **Arguments**
 
-* `datetime` — Une date ou une date et une heure à formater. [`DateTime`](/fr/reference/data-types/datetime) ou [`Date`](/fr/reference/data-types/date) ou [`Date32`](/fr/reference/data-types/date32) ou [`DateTime64`](/fr/reference/data-types/datetime64)
+* `datetime` — Une date ou une date et heure à formater. [`DateTime`](/fr/reference/data-types/datetime) ou [`Date`](/fr/reference/data-types/date) ou [`Date32`](/fr/reference/data-types/date32) ou [`DateTime64`](/fr/reference/data-types/datetime64)
 * `format` — Chaîne de format avec des champs de remplacement de style Joda. [`String`](/fr/reference/data-types/string)
 * `timezone` — Facultatif. Nom du fuseau horaire pour la date et l&#39;heure formatées. [`String`](/fr/reference/data-types/string)
 
@@ -1582,7 +1584,7 @@ Renvoie une valeur de date et d&#39;heure selon le format déterminé. [`String`
 
 **Exemples**
 
-**Formater une date et une heure avec la syntaxe Joda**
+**Formater une date-heure avec la syntaxe Joda**
 
 ```sql title=Query
 SELECT formatDateTimeInJodaSyntax(toDateTime('2010-01-04 12:34:56'), 'yyyy-MM-dd HH:mm:ss')
@@ -2158,7 +2160,7 @@ Renvoie la date et l’heure actuelles au moment de l’analyse de la requête. 
 now([timezone])
 ```
 
-**Alias** : `current_timestamp`, `localtimestamp`
+**Alias** : `localtimestamp`, `current_timestamp`
 
 **Arguments**
 
@@ -3292,12 +3294,12 @@ SELECT timestamp('2023-12-31 12:00:00', '12:00:00.11') AS ts;
 
 ## timezone {#timezone}
 
-Introduit dans : v21.4.0
+Introduit dans : v21.4.0
 
 Renvoie le nom du fuseau horaire de la session en cours ou convertit un décalage ou un nom de fuseau horaire en nom de fuseau horaire canonique.
 
 <Note>
-  Cette fonction est non déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+  Cette fonction est non déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
 </Note>
 
 **Syntaxe**
@@ -3306,7 +3308,7 @@ Renvoie le nom du fuseau horaire de la session en cours ou convertit un décalag
 timezone()
 ```
 
-**Alias** : `timeZone`
+**Alias** : `current_timezone`, `timeZone`
 
 **Arguments**
 
@@ -3419,7 +3421,7 @@ Renvoie le jour du mois (1-31) d’une `Date` ou d’un `DateTime`.
 toDayOfMonth(datetime)
 ```
 
-**Alias** : `DAYOFMONTH`, `DAY`
+**Alias** : `DAYOFMONTH`, `DAY`, `DAY_OF_MONTH`
 
 **Arguments**
 
@@ -3445,7 +3447,7 @@ SELECT toDayOfMonth(toDateTime('2023-04-21 10:20:30'))
 
 ## toDayOfWeek {#toDayOfWeek}
 
-Introduit dans : v1.1.0
+Introduit dans : v1.1.0
 
 Renvoie le numéro du jour de la semaine pour une valeur `Date` ou `DateTime`.
 
@@ -3454,10 +3456,10 @@ et si la valeur renvoyée doit être comprise dans l’intervalle de 0 à 6 ou d
 
 | Mode | Premier jour de la semaine | Intervalle                                     |
 | ---- | -------------------------- | ---------------------------------------------- |
-| 0    | Lundi                      | 1-7 : lundi = 1, mardi = 2, ..., dimanche = 7  |
-| 1    | Lundi                      | 0-6 : lundi = 0, mardi = 1, ..., dimanche = 6  |
-| 2    | Dimanche                   | 0-6 : dimanche = 0, lundi = 1, ..., samedi = 6 |
-| 3    | Dimanche                   | 1-7 : dimanche = 1, lundi = 2, ..., samedi = 7 |
+| 0    | Lundi                      | 1-7 : lundi = 1, mardi = 2, ..., dimanche = 7  |
+| 1    | Lundi                      | 0-6 : lundi = 0, mardi = 1, ..., dimanche = 6  |
+| 2    | Dimanche                   | 0-6 : dimanche = 0, lundi = 1, ..., samedi = 6 |
+| 3    | Dimanche                   | 1-7 : dimanche = 1, lundi = 2, ..., samedi = 7 |
 
 **Syntaxe**
 
@@ -3465,7 +3467,7 @@ et si la valeur renvoyée doit être comprise dans l’intervalle de 0 à 6 ou d
 toDayOfWeek(datetime[, mode[, timezone]])
 ```
 
-**Alias** : `DAYOFWEEK`
+**Alias** : `DAYOFWEEK`, `DAY_OF_WEEK`
 
 **Arguments**
 
@@ -3496,7 +3498,7 @@ SELECT
 
 ## toDayOfYear {#toDayOfYear}
 
-Introduite dans : v18.4.0
+Introduite dans : v18.4.0
 
 Renvoie le numéro du jour dans l’année (1-366) pour une valeur `Date` ou `DateTime`.
 
@@ -3506,7 +3508,7 @@ Renvoie le numéro du jour dans l’année (1-366) pour une valeur `Date` ou `Da
 toDayOfYear(datetime)
 ```
 
-**Alias** : `DAYOFYEAR`
+**Alias** : `DAYOFYEAR`, `DAY_OF_YEAR`
 
 **Arguments**
 
@@ -3644,9 +3646,9 @@ SELECT toHour(toDateTime('2023-04-21 10:20:30'))
 
 ## toISOWeek {#toISOWeek}
 
-Introduite dans : v20.1.0
+Introduite dans : v20.1.0
 
-Renvoie le numéro de semaine ISO d&#39;une date ou d&#39;une date et heure.
+Renvoie le numéro de semaine ISO d&#39;une date ou d&#39;une date avec heure.
 
 Il s&#39;agit d&#39;une fonction de compatibilité équivalente à `toWeek(date, 3)`.
 Les semaines ISO commencent le lundi, et la première semaine de l&#39;année contient le 4 janvier.
@@ -3660,6 +3662,8 @@ le 29 décembre 2025 renvoie la semaine 1, car cette date appartient à la premi
 ```sql
 toISOWeek(datetime[, timezone])
 ```
+
+**Alias** : `WEEK_OF_YEAR`
 
 **Arguments**
 
@@ -3698,7 +3702,7 @@ SELECT toDate('2025-12-29') AS date, toISOWeek(date) AS isoWeek, toYear(date) AS
 
 ## toISOYear {#toISOYear}
 
-Introduit dans : v18.4.0
+Introduit dans : v18.4.0
 
 Convertit une date ou une date avec heure en numéro de l’année ISO.
 
@@ -3707,6 +3711,8 @@ Convertit une date ou une date avec heure en numéro de l’année ISO.
 ```sql
 toISOYear(datetime)
 ```
+
+**Alias** : `YEAR_OF_WEEK`
 
 **Arguments**
 
@@ -3734,7 +3740,7 @@ toISOYear(toDateTime('2024-10-02 01:30:00')) as year2
 
 ## toLastDayOfMonth {#toLastDayOfMonth}
 
-Introduit dans : v1.1.0
+Introduit dans : v1.1.0
 
 Arrondit une date ou une date avec heure au dernier jour du mois.
 
@@ -3748,7 +3754,7 @@ Arrondit une date ou une date avec heure au dernier jour du mois.
 toLastDayOfMonth(value)
 ```
 
-**Alias** : `LAST_DAY`
+**Alias** : `LAST_DAY_OF_MONTH`, `LAST_DAY`
 
 **Arguments**
 
@@ -4711,18 +4717,20 @@ SELECT toStartOfISOYear(toDateTime('2023-04-21 10:20:30'))
 
 ## toStartOfInterval {#toStartOfInterval}
 
-Introduit dans : v20.1.0
+Introduit dans : v20.1.0
 
 Cette fonction généralise les autres fonctions `toStartOf*()` selon la syntaxe `toStartOfInterval(date_or_date_with_time, INTERVAL x unit [, time_zone])`.
 
-Par exemple :
+Par exemple :
 
-* `toStartOfInterval(t, INTERVAL 1 YEAR)` renvoie le même résultat que `toStartOfYear(t)`,
-* `toStartOfInterval(t, INTERVAL 1 MONTH)` renvoie le même résultat que `toStartOfMonth(t)`,
-* `toStartOfInterval(t, INTERVAL 1 DAY)` renvoie le même résultat que `toStartOfDay(t)`,
-* `toStartOfInterval(t, INTERVAL 15 MINUTE)` renvoie le même résultat que `toStartOfFifteenMinutes(t)`.
+* `toStartOfInterval(t, INTERVAL 1 YEAR)` arrondit à la même borne que `toStartOfYear(t)`,
+* `toStartOfInterval(t, INTERVAL 1 MONTH)` arrondit à la même borne que `toStartOfMonth(t)`,
+* `toStartOfInterval(t, INTERVAL 1 DAY)` arrondit à la même borne que `toStartOfDay(t)`,
+* `toStartOfInterval(t, INTERVAL 15 MINUTE)` arrondit à la même borne que `toStartOfFifteenMinutes(t)`.
 
-Le calcul est effectué par rapport à des points de référence temporels précis :
+Le type de résultat peut différer de celui de ces fonctions (voir ci-dessous).
+
+Le calcul est effectué par rapport à des points de référence temporels précis :
 
 | Interval                                                                                                                                                   | Début                     |
 | ---------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------- |
@@ -4737,12 +4745,19 @@ Le calcul est effectué par rapport à des points de référence temporels préc
 | MILLISECOND                                                                                                                                                | 1970-01-01 00:00:00       |
 | MICROSECOND                                                                                                                                                | 1970-01-01 00:00:00       |
 | NANOSECOND                                                                                                                                                 | 1970-01-01 00:00:00       |
-| (*) les intervalles en heures sont particuliers : le calcul est toujours effectué par rapport à 00:00:00 (minuit) du jour en cours. Par conséquent, seules |                           |
+| (*) les intervalles en heures sont particuliers : le calcul est toujours effectué par rapport à 00:00:00 (minuit) du jour en cours. Par conséquent, seules |                           |
 | les valeurs d’heure comprises entre 1 et 23 sont utiles.                                                                                                   |                           |
 
 Si l’unité `WEEK` est spécifiée, `toStartOfInterval` considère que les semaines commencent le lundi. Notez que ce comportement diffère de celui de la fonction `toStartOfWeek`, dans laquelle les semaines commencent par défaut le dimanche.
 
 La seconde surcharge émule la fonction `time_bucket()` de TimescaleDB, ou, dans PostgreSQL, la fonction `date_bin()`.
+
+Le résultat est du même type que l’argument `value` : `Date` pour `Date`, `Date32` pour `Date32`, `DateTime` pour `DateTime`, et `DateTime64` de même scale pour `DateTime64`.
+La seule exception concerne une unité inférieure à la seconde dont la précision dépasse la scale d’un argument `DateTime64` (par exemple, `INTERVAL 1500 MILLISECOND` pour un `DateTime64(0)`) : le résultat prend alors la scale de l’unité, qui permet de représenter les bornes des buckets.
+Un résultat inférieur à la plage de `Date` ou `DateTime` (par exemple, l’arrondi de `1970-01-01` à la semaine inférieure) est ramené à sa valeur minimale.
+Lorsque le paramètre [`to_start_of_interval_preserves_argument_type`](/fr/reference/settings/session-settings#to_start_of_interval_preserves_argument_type) est désactivé, le type de résultat dépend plutôt de l’unité d’intervalle,
+comme dans les versions antérieures à 26.11 : `Date` pour `WEEK` et les unités plus longues, `DateTime` de `DAY` à `SECOND`, et `DateTime64` avec la scale de l’unité pour les unités inférieures à la seconde.
+Cela s’applique à la surcharge sans `origin` : la surcharge avec `origin` conserve également le type de l’argument dans ce cas, sauf que pour un argument `DateTime64` et une unité inférieure à la seconde, le résultat prend la scale de l’unité.
 
 **Syntaxe**
 
@@ -4751,16 +4766,16 @@ toStartOfInterval(value, INTERVAL x unit[, time_zone])
 toStartOfInterval(value, INTERVAL x unit[, origin[, time_zone]])
 ```
 
-**Alias** : `date_bin`, `time_bucket`
+**Alias** : `date_bin`, `time_bucket`
 
 **Arguments**
 
-* `value` — Valeur de type Date ou date avec heure à arrondir à l’unité inférieure. [`Date`](/fr/reference/data-types/date) ou [`DateTime`](/fr/reference/data-types/datetime) ou [`DateTime64`](/fr/reference/data-types/datetime64)
-* `x` — Nombre représentant la longueur de l’intervalle. - `unit` — Unité d’intervalle : YEAR, QUARTER, MONTH, WEEK, DAY, HOUR, MINUTE, SECOND, MILLISECOND, MICROSECOND, NANOSECOND. - `time_zone` — Facultatif. Nom du fuseau horaire sous forme de chaîne. - `origin` — Facultatif. Point d’origine du calcul (deuxième surcharge uniquement).
+* `value` — Valeur de type Date ou date avec heure à arrondir à l’unité inférieure. [`Date`](/fr/reference/data-types/date) ou [`Date32`](/fr/reference/data-types/date32) ou [`DateTime`](/fr/reference/data-types/datetime) ou [`DateTime64`](/fr/reference/data-types/datetime64)
+* `x` — Nombre représentant la longueur de l’intervalle. - `unit` — Unité d’intervalle : YEAR, QUARTER, MONTH, WEEK, DAY, HOUR, MINUTE, SECOND, MILLISECOND, MICROSECOND, NANOSECOND. - `time_zone` — Facultatif. Nom du fuseau horaire sous forme de chaîne. - `origin` — Facultatif. Point d’origine du calcul (deuxième surcharge uniquement).
 
 **Valeur renvoyée**
 
-Renvoie le début de l’intervalle contenant la valeur en entrée. [`DateTime`](/fr/reference/data-types/datetime)
+Renvoie le début de l’intervalle contenant la valeur d’entrée, du même type que la valeur d’entrée. [`Date`](/fr/reference/data-types/date) ou [`Date32`](/fr/reference/data-types/date32) ou [`DateTime`](/fr/reference/data-types/datetime) ou [`DateTime64`](/fr/reference/data-types/datetime64)
 
 **Exemples**
 
@@ -4772,7 +4787,7 @@ SELECT toStartOfInterval(toDateTime('2023-01-15 14:30:00'), INTERVAL 1 MONTH)
 
 ```response title=Response
 ┌─toStartOfInterval(toDateTime('2023-01-15 14:30:00'), toIntervalMonth(1))─┐
-│                                                               2023-01-01 │
+│                                                      2023-01-01 00:00:00 │
 └──────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -5363,9 +5378,10 @@ int32samoa: 1546300800
 
 ## toUTCTimestamp {#toUTCTimestamp}
 
-Introduit dans : v23.8.0
+Introduit dans : v23.8.0
 
 Convertit une valeur de date ou de date avec heure d&#39;un fuseau horaire vers un timestamp UTC. Cette fonction est principalement incluse pour la compatibilité avec Apache Spark et des frameworks similaires.
+Une heure locale qui apparaît deux fois ou qui n&#39;existe pas en raison d&#39;un passage à l&#39;heure d&#39;été ou à l&#39;heure d&#39;hiver est convertie de la même manière que le fait `toDateTime`.
 
 **Syntaxe**
 
@@ -5373,7 +5389,7 @@ Convertit une valeur de date ou de date avec heure d&#39;un fuseau horaire vers 
 toUTCTimestamp(datetime, time_zone)
 ```
 
-**Alias** : `to_utc_timestamp`
+**Alias** : `to_utc_timestamp`
 
 **Arguments**
 
@@ -5735,12 +5751,12 @@ SELECT toDate('2016-12-27') AS date, toYearWeek(date) AS yearWeek0, toYearWeek(d
 
 ## today {#today}
 
-Introduit dans : v1.1.0
+Introduit dans : v1.1.0
 
 Renvoie la date du jour au moment de l’analyse de la requête. Équivalent à `toDate(now())`.
 
 <Note>
-  Cette fonction est non-déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+  Cette fonction est non-déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
 </Note>
 
 **Syntaxe**
@@ -5749,7 +5765,7 @@ Renvoie la date du jour au moment de l’analyse de la requête. Équivalent à 
 today()
 ```
 
-**Alias** : `current_date`, `curdate`
+**Alias** : `curdate`, `current_date`
 
 **Arguments**
 

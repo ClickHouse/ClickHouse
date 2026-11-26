@@ -24,6 +24,7 @@ namespace Setting
 
 namespace ErrorCodes
 {
+    extern const int DATABASE_ACCESS_DENIED;
     extern const int LOGICAL_ERROR;
     extern const int TABLE_ALREADY_EXISTS;
     extern const int SUPPORT_IS_DISABLED;
@@ -37,15 +38,20 @@ InterpreterUndropQuery::InterpreterUndropQuery(const ASTPtr & query_ptr_, Contex
 
 BlockIO InterpreterUndropQuery::execute()
 {
-    getContext()->checkAccess(AccessType::UNDROP_TABLE);
-
     auto component_guard = Coordination::setCurrentComponent("InterpreterUndropQuery::execute");
     auto & undrop = query_ptr->as<ASTUndropQuery &>();
-    if (!undrop.cluster.empty() && !maybeRemoveOnCluster(query_ptr, getContext()))
+    if (!undrop.cluster.empty())
     {
-        DDLQueryOnClusterParams params;
-        params.access_to_check = getRequiredAccessForDDLOnCluster();
-        return executeDDLQueryOnCluster(query_ptr, getContext(), params);
+        /// Check the grant before `maybeRemoveOnCluster` looks at the database, so its existence and engine are not revealed.
+        /// An unqualified name is checked by `executeDDLQueryOnCluster`, which knows the default databases of the shards.
+        if (undrop.database)
+            getContext()->checkAccess(AccessType::UNDROP_TABLE, undrop.getDatabase(), undrop.getTable());
+        if (!maybeRemoveOnCluster(query_ptr, getContext()))
+        {
+            DDLQueryOnClusterParams params;
+            params.access_to_check = getRequiredAccessForDDLOnCluster();
+            return executeDDLQueryOnCluster(query_ptr, getContext(), params);
+        }
     }
 
     if (undrop.table)
@@ -63,6 +69,13 @@ BlockIO InterpreterUndropQuery::executeToTable(ASTUndropQuery & query)
         table_id.database_name = context->getCurrentDatabase();
         query.setDatabase(table_id.database_name);
     }
+
+    /// Every grant is considered given on this database, and it holds the temporary tables of all sessions.
+    if (table_id.database_name == DatabaseCatalog::TEMPORARY_DATABASE)
+        throw Exception(
+            ErrorCodes::DATABASE_ACCESS_DENIED, "Direct access to `{}` database is not allowed", DatabaseCatalog::TEMPORARY_DATABASE);
+
+    context->checkAccess(AccessType::UNDROP_TABLE, table_id);
 
     auto guard = DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name, nullptr);
 
@@ -109,6 +122,9 @@ AccessRightsElements InterpreterUndropQuery::getRequiredAccessForDDLOnCluster() 
     const auto & undrop = query_ptr->as<const ASTUndropQuery &>();
 
     required_access.emplace_back(AccessType::UNDROP_TABLE, undrop.getDatabase(), undrop.getTable());
+    /// Older replicas restore a table found by `UUID` under its original name, so a scoped grant is not enough there.
+    if (undrop.uuid != UUIDHelpers::Nil)
+        required_access.emplace_back(AccessType::UNDROP_TABLE);
     return required_access;
 }
 

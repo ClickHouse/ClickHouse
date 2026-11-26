@@ -1,0 +1,412 @@
+---
+slug: /clickstack/managed-onboarding/monitoring-kubernetes-serverless
+title: 'OpenTelemetry로 Kubernetes 모니터링'
+sidebarTitle: 'Kubernetes 모니터링'
+description: 'Helm으로 OpenTelemetry 수집기 2개를 설치하여 컨테이너 로그, 노드 및 클러스터 메트릭, Kubernetes 이벤트를 ClickHouse Observability로 직접 전송한 후 Kubernetes 대시보드에서 탐색합니다.'
+doc_type: 'guide'
+keywords: ['ClickHouse Observability', 'Kubernetes', 'k8s', 'OpenTelemetry collector', 'Helm', '데몬셋', 'kubeletstats', '컨테이너 로그', 'Kubernetes 이벤트', 'Kubernetes 대시보드']
+unlisted: true
+custom_edit_url: null
+hide_advert: true
+---
+
+<Info>
+  **요약**
+
+  서비스의 엔드포인트와 API Key를 클러스터에 저장하고, 아래 값 파일을 사용해 공식 Helm 차트로 OpenTelemetry 수집기 2개를 설치한 다음 Kubernetes 대시보드를 여십시오. 컨테이너 로그, 노드 및 클러스터 메트릭, Kubernetes 이벤트가 ClickHouse Observability로 바로 전송됩니다. 클러스터에서 그 외에 추가로 실행되는 구성 요소는 없습니다.
+
+  소요 시간: 약 15분
+</Info>
+
+ClickHouse Observability 서비스 생성을 마쳤다면 이제 클러스터를 모니터링할 차례입니다. 이 가이드는 워크로드를 Kubernetes에서 실행하면서 클러스터 자체를 관측하려는 경우를 대상으로 합니다. 컨테이너 로그, 파드 및 노드의 CPU와 메모리, Kubernetes 이벤트를 수집하며, 각 데이터에는 출처가 되는 네임스페이스, 파드, 노드 정보가 태그로 붙어 내장 Kubernetes 대시보드에서 서로 연계되어 표시됩니다.
+
+구성 방식은 표준 OpenTelemetry 패턴을 따릅니다. [OpenTelemetry Helm 차트](https://github.com/open-telemetry/opentelemetry-helm-charts/tree/main/charts/opentelemetry-collector)로 collector 2개를 배포합니다. 하나는 모든 노드에서 실행되며 컨테이너 로그와 노드 메트릭을 수집하는 **데몬셋**이고, 다른 하나는 Kubernetes 이벤트와 클러스터 메트릭을 수집하는 단일 레플리카 **배포**입니다. 두 collector 모두 서비스의 OTLP 엔드포인트로 데이터를 직접 전송합니다.
+
+<Note>
+  **클러스터에서 이미 OpenTelemetry collector를 실행하고 있습니까?**
+
+  기존 collector는 그대로 두고, [OpenTelemetry Collector 연결](/ko/clickstack/managed-onboarding/setting-up-your-opentelemetry-collector-serverless)에 설명된 대로 익스포터만 추가하십시오.
+</Note>
+
+## 사전 요구 사항 {#prerequisites}
+
+* ClickHouse Observability 서비스가 필요합니다. 아직 서비스가 없다면 [시작 가이드](/ko/clickstack/observability/getting-started)를 참고하십시오.
+* 모니터링할 워크로드가 실행 중인 Kubernetes 클러스터가 필요하며, 이 클러스터에 연결되도록 구성된 `kubectl`에는 네임스페이스, Secret, ConfigMap, 클러스터 역할을 생성할 수 있는 권한(permission)이 있어야 합니다.
+* [Helm](https://helm.sh/)이 필요합니다. 차트의 README에는 Helm 4.0 이상이 사전 요구 사항으로 명시되어 있습니다.
+* collector 파드에서 서비스의 텔레메트리 엔드포인트로 포트 `4318`을 통한 아웃바운드 HTTPS 액세스가 허용되어야 합니다.
+
+## collector 배포 {#deploy-the-collectors}
+
+<Steps>
+  <Step title="연결 정보를 복사하세요" id="copy-connection-details">
+    ClickHouse Observability 서비스를 엽니다. 데이터가 수신되기 전까지는 **Start sending telemetry** 페이지가 표시됩니다.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![아직 데이터가 없는 현재 서비스와 Use an existing OpenTelemetry setup, AI로 계측하기, Follow setup guides의 세 가지 옵션을 보여 주는 Start sending telemetry 페이지](/images/clickstack/getting-started/observability-start-sending-telemetry.png)
+      </Frame>
+    </div>
+
+    **Use an existing OpenTelemetry setup**에서 **View connection details**를 선택한 다음 **Collector config** 탭을 엽니다. 이 탭에는 해당 서비스의 익스포터 블록이 표시되며, 여기에는 엔드포인트 URL과 API Key를 담은 `authorization` 헤더가 포함되어 있습니다. 전체 키를 확인하려면 **Reveal key**를 선택하십시오.
+
+    <div className="ch-image-md">
+      <Frame>
+        ![Collector config 탭이 선택된 Set up OpenTelemetry 대화 상자로, 마스킹된 엔드포인트와 Bearer 인증 헤더가 포함된 otlphttp 익스포터를 보여 줌](/images/clickstack/getting-started/observability-collector-config.png)
+      </Frame>
+    </div>
+
+    다음 단계에서는 두 값을 각각 따로 사용합니다. 하나는 `https://` 스킴과 포트를 포함한 엔드포인트이고, 다른 하나는 `Bearer` 접두사를 뺀 API Key 값입니다. 접두사는 아래 값 파일에서 추가됩니다.
+
+    동일한 값은 언제든지 **팀 설정 → Managed Telemetry**에서 확인할 수 있습니다.
+  </Step>
+
+  <Step title="클러스터에 저장하십시오" id="store-connection-details">
+    collector용 네임스페이스, API Key를 담은 Secret, 엔드포인트를 담은 ConfigMap을 생성하십시오. 두 collector 모두 `extraEnvs`를 통해 이 리소스를 읽으므로 키가 값 파일에 노출되지 않습니다. 두 자리표시자를 실제 값으로 바꾸십시오.
+
+    ```shell
+    kubectl create namespace otel-collectors
+
+    kubectl create secret generic hyperdx-secret \
+      --namespace otel-collectors \
+      --from-literal=HYPERDX_API_KEY='<your-api-key>'
+
+    kubectl create configmap otel-config-vars \
+      --namespace otel-collectors \
+      --from-literal=YOUR_OTEL_COLLECTOR_ENDPOINT='https://YOUR_OTEL_ENDPOINT:4318'
+    ```
+
+    엔드포인트는 기준 URL 그대로 두십시오. 익스포터가 신호 경로를 직접 추가하므로 `/v1/logs`, `/v1/traces`, `/v1/metrics`를 덧붙이지 마십시오. 다른 네임스페이스를 사용하려면 아래의 모든 명령에서 같은 네임스페이스를 일관되게 사용하십시오. Secret과 ConfigMap은 Helm 릴리스와 동일한 네임스페이스에 있어야 합니다.
+  </Step>
+
+  <Step title="OpenTelemetry Helm 리포지토리를 추가하십시오" id="add-helm-repository">
+    ```shell
+    helm repo add open-telemetry https://open-telemetry.github.io/opentelemetry-helm-charts
+    helm repo update open-telemetry
+    ```
+  </Step>
+
+  <Step title="클러스터 collector 배포" id="deploy-cluster-collector">
+    이 단일 레플리카 배포(Deployment)는 **Kubernetes 이벤트**와 **클러스터 전체 메트릭**(노드 상태 조건, 파드 단계, 배포 및 레플리카 상태)을 수집합니다. 레플리카는 1개면 충분하며, 레플리카를 하나 더 두면 데이터가 중복으로 수집됩니다.
+
+    값 파일을 다운로드한 후 설치하세요:
+
+    ```shell
+    curl -fSL -o k8s_deployment.yaml \
+      https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/docs/clickstack/observability/example-datasets/_snippets/k8s_deployment.yaml
+
+    helm install --namespace otel-collectors k8s-otel-deployment open-telemetry/opentelemetry-collector \
+      --version 0.175.0 -f k8s_deployment.yaml
+    ```
+
+    <Accordion title="k8s_deployment.yaml">
+      ```yaml
+      # k8s_deployment.yaml
+      mode: deployment
+
+      image:
+        repository: otel/opentelemetry-collector-contrib
+        tag: 0.161.0
+
+      # 이 collector는 하나만 실행해야 합니다. 둘 이상이면 데이터가 중복 수집됩니다.
+      replicaCount: 1
+
+      presets:
+        kubernetesAttributes:
+          enabled: true
+          # 활성화하면 프로세서가 연결된 파드의 모든 레이블을 추출하여 리소스 속성으로 추가합니다.
+          # 레이블 이름이 그대로 키가 됩니다.
+          extractAllPodLabels: true
+          # 활성화하면 프로세서가 연결된 파드의 모든 어노테이션을 추출하여 리소스 속성으로 추가합니다.
+          # 어노테이션 이름이 그대로 키가 됩니다.
+          extractAllPodAnnotations: true
+        # Kubernetes 이벤트를 수집하도록 collector를 구성합니다.
+        # 로그 파이프라인에 k8sobject receiver를 추가하고 기본적으로 Kubernetes 이벤트를 수집합니다.
+        # 자세한 정보: https://opentelemetry.io/docs/kubernetes/collector/components/#kubernetes-objects-receiver
+        kubernetesEvents:
+          enabled: true
+        # 클러스터 수준 메트릭을 수집하도록 Kubernetes Cluster Receiver를 구성합니다.
+        # 메트릭 파이프라인에 k8s_cluster receiver를 추가하고 클러스터 역할(ClusterRole)에 필요한 규칙을 추가합니다.
+        # 자세한 정보: https://opentelemetry.io/docs/kubernetes/collector/components/#kubernetes-cluster-receiver
+        clusterMetrics:
+          enabled: true
+
+      extraEnvs:
+        - name: HYPERDX_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: hyperdx-secret
+              key: HYPERDX_API_KEY
+        - name: YOUR_OTEL_COLLECTOR_ENDPOINT
+          valueFrom:
+            configMapKeyRef:
+              name: otel-config-vars
+              key: YOUR_OTEL_COLLECTOR_ENDPOINT
+
+      config:
+        exporters:
+          otlp_http:
+            endpoint: "${env:YOUR_OTEL_COLLECTOR_ENDPOINT}"
+            compression: gzip
+            headers:
+              authorization: "Bearer ${env:HYPERDX_API_KEY}"
+        service:
+          pipelines:
+            logs:
+              exporters:
+                - otlp_http
+            metrics:
+              exporters:
+                - otlp_http
+
+      resources:
+        requests:
+          cpu: 100m
+          memory: 128Mi
+        limits:
+          memory: 512Mi
+      ```
+    </Accordion>
+
+    `presets`는 차트에 내장된 수신기와 해당 수신기에 필요한 RBAC 규칙을 함께 활성화합니다. `config` 블록은 환경 변수에서 엔드포인트와 키를 읽어 오는 `otlp_http` 익스포터 하나를 추가하고, 이를 `logs` 및 `metrics` 파이프라인의 익스포터로 지정합니다. `memory_limiter` 및 `batch` 프로세서를 비롯한 나머지 설정은 모두 차트 기본값을 따릅니다.
+  </Step>
+
+  <Step title="노드 collector 배포" id="deploy-node-collector">
+    이 데몬셋(DaemonSet)은 노드마다 collector를 하나씩 실행하여 `/var/log/pods`의 **컨테이너 로그**, 노드의 **호스트 메트릭**, **큐블릿(kubelet) 메트릭**을 수집합니다. 큐블릿 메트릭에는 모든 파드와 컨테이너의 CPU 및 메모리 정보가 포함되며, 요청(requests) 및 제한(limits) 대비 사용률도 함께 수집됩니다.
+
+    ```shell
+    curl -fSL -o k8s_daemonset.yaml \
+      https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/docs/clickstack/observability/example-datasets/_snippets/k8s_daemonset.yaml
+
+    helm install --namespace otel-collectors k8s-otel-daemonset open-telemetry/opentelemetry-collector \
+      --version 0.175.0 -f k8s_daemonset.yaml
+    ```
+
+    <Accordion title="k8s_daemonset.yaml">
+      ```yaml
+      # k8s_daemonset.yaml
+      mode: daemonset
+
+      image:
+        repository: otel/opentelemetry-collector-contrib
+        tag: 0.161.0
+
+      # Required to use the kubeletstats cpu/memory utilization metrics
+      clusterRole:
+        create: true
+        rules:
+          - apiGroups:
+              - ''
+            resources:
+              - nodes/proxy
+            verbs:
+              - get
+
+      presets:
+        logsCollection:
+          enabled: true
+        hostMetrics:
+          enabled: true
+        # Configures the Kubernetes Processor to add Kubernetes metadata.
+        # Adds the k8sattributes processor to all the pipelines and adds the necessary rules to ClusterRole.
+        # More Info: https://opentelemetry.io/docs/kubernetes/collector/components/#kubernetes-attributes-processor
+        kubernetesAttributes:
+          enabled: true
+          # When enabled, the processor will extract all labels for an associated pod and add them as resource attributes.
+          # The label's exact name will be the key.
+          extractAllPodLabels: true
+          # When enabled, the processor will extract all annotations for an associated pod and add them as resource attributes.
+          # The annotation's exact name will be the key.
+          extractAllPodAnnotations: true
+        # Configures the collector to collect node, pod, and container metrics from the kubelet API.
+        # Adds the kubeletstats receiver to the metrics pipeline and adds the necessary rules to ClusterRole.
+        # More Info: https://opentelemetry.io/docs/kubernetes/collector/components/#kubeletstats-receiver
+        kubeletMetrics:
+          enabled: true
+
+      extraEnvs:
+        - name: HYPERDX_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: hyperdx-secret
+              key: HYPERDX_API_KEY
+        - name: YOUR_OTEL_COLLECTOR_ENDPOINT
+          valueFrom:
+            configMapKeyRef:
+              name: otel-config-vars
+              key: YOUR_OTEL_COLLECTOR_ENDPOINT
+
+      config:
+        receivers:
+          kubeletstats:
+            insecure_skip_verify: true
+        exporters:
+          otlp_http:
+            endpoint: "${env:YOUR_OTEL_COLLECTOR_ENDPOINT}"
+            compression: gzip
+            headers:
+              authorization: "Bearer ${env:HYPERDX_API_KEY}"
+
+        service:
+          pipelines:
+            logs:
+              exporters:
+                - otlp_http
+            metrics:
+              exporters:
+                - otlp_http
+
+      resources:
+        requests:
+          cpu: 100m
+          memory: 128Mi
+        limits:
+          memory: 512Mi
+      ```
+    </Accordion>
+
+    `kubernetesAttributes` 사전 설정은 모든 로그 행과 메트릭에 해당 데이터가 발생한 파드, 네임스페이스, 노드, 워크로드와 함께 파드의 레이블 및 어노테이션을 태그로 추가합니다. Kubernetes 대시보드는 이러한 속성을 기준으로 필터링합니다.
+
+    많은 클러스터에서 노드 주소를 포함하지 않는 큐블릿(kubelet) 인증서를 발급하므로, 이 파일은 collector와 로컬 큐블릿 간 연결에 `insecure_skip_verify: true`를 설정합니다. 이 설정은 서비스 엔드포인트에 대한 TLS 검증에는 영향을 주지 않습니다. 운영 환경에서는 신뢰할 수 있는 큐블릿 인증서를 구성하고 이 설정을 제거하십시오.
+
+    collector가 실행 중인지 확인한 다음 로그를 살펴보십시오:
+
+    ```shell
+    kubectl get pods --namespace otel-collectors -l app.kubernetes.io/name=opentelemetry-collector
+    kubectl logs --namespace otel-collectors -l app.kubernetes.io/name=opentelemetry-collector --prefix --tail=50
+    ```
+
+    배포(Deployment) 파드 1개와 노드당 데몬셋(DaemonSet) 파드 1개가 모두 `Running` 상태여야 합니다. 파드가 실행 중이라고 해서 데이터가 실제로 전송되고 있다는 의미는 아니므로, 로그에서 내보내기 오류가 있는지 확인하십시오:
+
+    * `401` 또는 `403` 응답은 Secret에 저장된 API Key가 잘못되었거나, API Key가 `Bearer` 접두사와 함께 저장되어 값 파일에서 접두사가 중복으로 붙었다는 의미입니다.
+    * `404` 응답은 대개 ConfigMap의 엔드포인트 끝에 `/v1/logs`와 같은 시그널 경로가 추가되었다는 의미입니다.
+    * `no such host` 또는 TLS 오류는 엔드포인트에 오타가 있거나 포트 `4318`에 대한 아웃바운드 액세스가 차단되었음을 나타냅니다.
+  </Step>
+</Steps>
+
+## 데이터 수신 확인 {#confirm-data-is-arriving}
+
+서비스의 **Start sending telemetry** 페이지로 돌아가 **Check for data**를 선택하십시오. 텔레메트리가 수신되면 서비스 상태가 **Data received**로 바뀌고 **Start exploring** 버튼이 활성화됩니다.
+
+<div className="ch-image-lg">
+  <Frame>
+    ![서비스 상태가 Data received로 표시되고, 탐색 준비가 완료되었다는 확인 메시지와 함께 Start exploring 버튼이 활성화된 Start sending telemetry 페이지](/images/clickstack/getting-started/observability-data-received.png)
+  </Frame>
+</div>
+
+**Start exploring**을 선택하여 **검색**을 열고, **로그** 소스를 선택한 다음 시간 범위를 **Last 15 minutes**로 설정하십시오. 몇 초 안에 클러스터 전체의 컨테이너 로그가 표시되며, `kube-proxy`, `coredns`와 같은 클러스터 구성 요소가 사용자의 워크로드와 함께 `ServiceName` 아래에 나열됩니다. 행을 펼치면 **ResourceAttributes**에서 `k8s.namespace.name`, `k8s.pod.name`, `k8s.node.name` 및 파드의 레이블을 확인할 수 있습니다.
+
+<div className="ch-image-lg">
+  <Frame>
+    ![ServiceName 필터에 kindnet, kube-proxy, sample-logs 서비스가 나열된 Kubernetes 클러스터의 컨테이너 로그를 보여 주는 검색 화면](/images/clickstack/getting-started/observability-kubernetes-logs.png)
+  </Frame>
+</div>
+
+메트릭을 확인하려면 **차트 탐색기**를 열고 **Time Series**와 **메트릭** 소스를 선택한 다음, `ResourceAttributes['k8s.pod.name']`으로 그룹화한 `k8s.pod.memory.usage`의 **Average**를 차트로 표시하십시오. **Delta**는 선택하지 않은 상태로 두고 **Run**을 선택하면 파드별 메모리 사용량(memory usage)을 비교할 수 있습니다. 차트에 빈 구간이 있으면 수집 인터벌 이상의 세분화 수준을 선택하십시오.
+
+<div className="ch-image-lg">
+  <Frame>
+    ![파드 이름으로 그룹화된 Kubernetes 파드의 평균 메모리 사용량을 보여 주는 차트 탐색기](/images/clickstack/getting-started/observability-kubernetes-metrics.png)
+  </Frame>
+</div>
+
+그런 다음 사이드바에서 **대시보드**를 열고 **Preset 대시보드** 아래의 **Kubernetes**를 선택하십시오. 상단에서 **로그** 및 **메트릭** 소스를 선택하십시오. **파드**, **노드**, **네임스페이스** 탭에는 CPU 및 메모리 사용량, 재시작 횟수를 포함한 파드 상태, 최신 Kubernetes 경고 이벤트가 표시됩니다. 파드, 배포, 노드, 네임스페이스, 클러스터 필터로 표시 범위를 좁힐 수 있습니다.
+
+<div className="ch-image-lg">
+  <Frame>
+    ![파드 CPU 및 메모리 사용량, 상태와 재시작 횟수가 포함된 파드 테이블, 최신 Kubernetes 경고 이벤트를 보여 주는 Kubernetes 대시보드](/images/clickstack/getting-started/observability-kubernetes-dashboard.png)
+  </Frame>
+</div>
+
+## 아무것도 표시되지 않는 경우 {#if-nothing-shows-up}
+
+* 먼저 위의 `kubectl logs` 명령으로 collector 로그를 확인하십시오. 인증, 엔드포인트, TLS 문제는 모두 위에 나열된 오류 코드와 함께 이 로그에 기록됩니다.
+* 파드가 `CreateContainerConfigError` 상태에서 멈춰 있다면 Secret 또는 ConfigMap이 없거나 Helm 릴리스와 다른 네임스페이스에 있는 것입니다. `kubectl describe pod`를 실행하면 누락된 객체를 확인할 수 있습니다.
+* 데몬셋 파드가 `path "/" is mounted on "/" but it is not a shared or slave mount` 메시지와 함께 `CreateContainerError` 상태에서 멈춰 있다면, 노드의 루트 파일 시스템이 공유 마운트가 아니기 때문입니다. 호스트 메트릭 사전 설정을 사용하려면 공유 마운트가 필요합니다. 이 문제는 노드가 컨테이너 내부에서 실행되는 로컬 클러스터에서 발생합니다. 노드에서 `mount --make-rshared /`를 실행한 다음, 파드를 삭제하여 다시 생성되도록 하십시오.
+* 로그는 수신되지만 메트릭이 수신되지 않는다면 데몬셋 로그에서 `kubeletstats` 오류를 확인하십시오. 이 수신기가 동작하려면 값 파일에 정의된 `nodes/proxy` 클러스터 역할 규칙과 포트 `10250`에서 큐블릿에 액세스할 수 있는 권한이 필요합니다.
+* 메트릭은 수신되지만 로그가 수신되지 않는다면 1분 정도 기다리십시오. 로그 수신기는 각 파일의 끝부분부터 읽기 시작하므로 collector가 시작된 이후에 기록된 줄만 표시되며, 로그를 출력하지 않는 파드에서는 수집되는 데이터가 없습니다.
+* **검색**에서 시간 범위를 넓히고 필터를 모두 제거하십시오. 기본 소스가 **로그**가 아닌 **trace**로 설정되어 있을 수 있습니다.
+* 서비스 자체의 문제인지 확인하려면 **팀 설정 → Managed Telemetry**로 이동하여 **Send a Test Log**를 사용하십시오. 이 로그가 **검색**에 표시되면 서비스는 데이터를 정상적으로 수신하고 있으므로, 문제는 클러스터와 엔드포인트 사이에 있습니다.
+
+## 애플리케이션 텔레메트리 추가 {#add-application-telemetry}
+
+두 collector는 클러스터 수준의 데이터를 수집합니다. 트레이스, 그리고 애플리케이션이 OpenTelemetry SDK를 통해 생성하는 로그나 메트릭은 애플리케이션에서 직접 내보내야 합니다. 방법은 두 가지입니다.
+
+<Tabs>
+  <Tab title="서비스로 직접 전송" id="directly-to-your-service">
+    [OpenTelemetry로 애플리케이션 계측하기](/ko/clickstack/managed-onboarding/instrument-application-serverless)에 설명된 대로 애플리케이션을 계측하고 관리형 엔드포인트로 직접 내보내십시오. **Env vars** 탭의 `OTEL_EXPORTER_OTLP_ENDPOINT` 및 `OTEL_EXPORTER_OTLP_HEADERS` 값을 Secret에 저장한 다음, 파드에 환경 변수로 노출하십시오.
+
+    downward API를 사용해 Kubernetes 속성을 추가하면 텔레메트리를 Kubernetes 대시보드의 인프라 데이터와 연관시킬 수 있습니다:
+
+    ```yaml
+    env:
+      - name: POD_NAME
+        valueFrom:
+          fieldRef:
+            fieldPath: metadata.name
+      - name: POD_UID
+        valueFrom:
+          fieldRef:
+            fieldPath: metadata.uid
+      - name: POD_NAMESPACE
+        valueFrom:
+          fieldRef:
+            fieldPath: metadata.namespace
+      - name: NODE_NAME
+        valueFrom:
+          fieldRef:
+            fieldPath: spec.nodeName
+      - name: OTEL_RESOURCE_ATTRIBUTES
+        value: k8s.pod.name=$(POD_NAME),k8s.pod.uid=$(POD_UID),k8s.namespace.name=$(POD_NAMESPACE),k8s.node.name=$(NODE_NAME)
+    ```
+  </Tab>
+
+  <Tab title="노드 collector를 통해 전송" id="through-the-node-collector">
+    또는 데몬셋을 통해 전송할 수도 있습니다. 데몬셋은 이미 모든 노드에서 호스트 포트 `4317`(gRPC)과 `4318`(HTTP)로 OTLP를 수신하고 있습니다. 이 방식에는 두 가지 장점이 있습니다. 첫째, collector가 API Key를 추가하므로 파드에 API Key를 둘 필요가 없습니다. 둘째, collector의 `k8s_attributes` 프로세서가 각 스팬과 로그 레코드에 전송한 파드의 네임스페이스, 노드, 워크로드, 레이블을 태그로 붙이므로 애플리케이션 트레이스를 인프라 데이터와 맞춰 볼 수 있습니다.
+
+    다운로드한 값 파일은 로그와 메트릭만 라우팅합니다. `traces` 파이프라인에도 익스포터를 추가한 다음 릴리스를 업그레이드하십시오:
+
+    ```yaml
+    # k8s_daemonset.yaml의 service.pipelines 섹션에 추가합니다
+          traces:
+            exporters:
+              - otlp_http
+    ```
+
+    ```shell
+    helm upgrade --namespace otel-collectors k8s-otel-daemonset open-telemetry/opentelemetry-collector \
+      --version 0.175.0 -f k8s_daemonset.yaml
+    ```
+
+    그런 다음 각 애플리케이션이 자신이 실행 중인 노드의 collector로 데이터를 보내도록 설정하십시오. 노드 주소와 파드의 UID는 downward API로 가져옵니다:
+
+    ```yaml
+    env:
+      - name: HOST_IP
+        valueFrom:
+          fieldRef:
+            fieldPath: status.hostIP
+      - name: POD_UID
+        valueFrom:
+          fieldRef:
+            fieldPath: metadata.uid
+      - name: OTEL_EXPORTER_OTLP_ENDPOINT
+        value: http://$(HOST_IP):4318
+      - name: OTEL_EXPORTER_OTLP_PROTOCOL
+        value: http/protobuf
+      - name: OTEL_SERVICE_NAME
+        value: <your-service-name>
+      - name: OTEL_RESOURCE_ATTRIBUTES
+        value: k8s.pod.uid=$(POD_UID)
+    ```
+
+    클러스터 내부에서는 API Key가 필요하지 않습니다. collector가 `OTEL_RESOURCE_ATTRIBUTES`의 UID로 파드를 조회하여 `k8s.pod.name`, `k8s.namespace.name`, `k8s.node.name`, 소유 워크로드, 파드의 레이블을 자동으로 추가합니다. 연결의 소스 주소로 파드를 매칭할 수도 있지만, 이는 클러스터 네트워크가 호스트 포트 경로에서 파드 IP를 보존하는지에 따라 달라지므로 UID를 전달하는 것이 좋습니다.
+  </Tab>
+</Tabs>
+
+## 다음 단계 {#next-steps}
+
+* [알림](/ko/clickstack/observability/features/alerts): 현재 수집 중인 데이터에서 파드 재시작, 실패한 파드, 오류 급증이 발생할 때 알림을 받을 수 있습니다.
+* [대시보드](/ko/clickstack/observability/features/dashboards/overview): Kubernetes 사전 설정을 바탕으로 대시보드를 확장하거나, 차트 탐색기 쿼리를 직접 만든 대시보드에 저장할 수 있습니다.
+* [검색](/ko/clickstack/observability/features/search): Lucene 스타일 구문이나 SQL을 사용해 `k8s.namespace.name` 및 `k8s.pod.name` 기준으로 로그를 쿼리할 수 있습니다.
+* [로컬 로그 및 메트릭](/ko/clickstack/observability/example-datasets/local-data): Kubernetes 외부의 머신에서도 동일한 호스트 메트릭과 로그 파일을 수집할 수 있습니다.
+* [Kubernetes용 OpenTelemetry Collector 구성 요소](https://opentelemetry.io/docs/platforms/kubernetes/collector/components/): 각 사전 설정을 구성하는 수신기와 프로세서, 그리고 사용 가능한 모든 옵션을 확인할 수 있습니다.

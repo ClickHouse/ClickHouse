@@ -51,17 +51,17 @@ bool BinaryRowInputFormat<with_defaults>::readRow(DB::MutableColumns & columns, 
         {
             const auto & column_index = this->column_mapping->column_indexes_for_input_fields[file_column];
             if (column_index)
-                ext.read_columns[*column_index] = this->format_reader->readFieldImpl(*columns[*column_index], this->serializations[*column_index]);
+                ext.read_columns[*column_index] = this->format_reader->readFieldImpl(*columns[*column_index], this->data_types[*column_index], this->serializations[*column_index]);
             else
                 this->format_reader->skipField(file_column);
         }
 
-        this->column_mapping->insertDefaultsForNotSeenColumns(columns, ext.read_columns);
+        this->column_mapping->insertDefaultsForNotSeenColumns(columns, this->data_types, ext.read_columns);
     }
     else
     {
         for (size_t file_column = 0; file_column < columns.size(); ++file_column)
-            ext.read_columns[file_column] = this->format_reader->readFieldImpl(*columns[file_column], this->serializations[file_column]);
+            ext.read_columns[file_column] = this->format_reader->readFieldImpl(*columns[file_column], this->data_types[file_column], this->serializations[file_column]);
     }
 
     /// If defaults_for_omitted_fields is set to 0, we should leave already inserted defaults.
@@ -101,6 +101,7 @@ VectorWithMemoryTracking<String> BinaryFormatReader<with_defaults>::readNames()
 template <bool with_defaults>
 VectorWithMemoryTracking<String> BinaryFormatReader<with_defaults>::readTypes()
 {
+    read_data_types.clear();
     read_data_types.reserve(read_columns);
     VectorWithMemoryTracking<String> type_names;
     if (format_settings.binary.decode_types_in_binary_format)
@@ -123,13 +124,13 @@ VectorWithMemoryTracking<String> BinaryFormatReader<with_defaults>::readTypes()
 }
 
 template <bool with_defaults>
-bool BinaryFormatReader<with_defaults>::readField(IColumn & column, const DataTypePtr & /*type*/, const SerializationPtr & serialization, bool /*is_last_file_column*/, const String & /*column_name*/, size_t /*column_index*/)
+bool BinaryFormatReader<with_defaults>::readField(IColumn & column, const DataTypePtr & type, const SerializationPtr & serialization, bool /*is_last_file_column*/, const String & /*column_name*/, size_t /*column_index*/)
 {
-    return readFieldImpl(column, serialization);
+    return readFieldImpl(column, type, serialization);
 }
 
 template <bool with_defaults>
-bool BinaryFormatReader<with_defaults>::readFieldImpl(IColumn & column, const SerializationPtr & serialization)
+bool BinaryFormatReader<with_defaults>::readFieldImpl(IColumn & column, const DataTypePtr & type, const SerializationPtr & serialization)
 {
     if constexpr (with_defaults)
     {
@@ -137,7 +138,10 @@ bool BinaryFormatReader<with_defaults>::readFieldImpl(IColumn & column, const Se
         readBinary(is_default, *in);
         if (is_default)
         {
-            column.insertDefault();
+            if (type->isDefaultInsertTrivial())
+                column.insertDefault();
+            else
+                type->insertDefaultInto(column);
             return false;
         }
     }
@@ -212,7 +216,7 @@ void registerInputFormatRowBinary(FormatFactory & factory)
             const FormatSettings & settings)
         {
             return std::make_shared<BinaryRowInputFormat<false>>(buf, std::make_shared<const Block>(sample), params, with_names, with_types, settings);
-        });
+        }, /*supports_reset_parser=*/ true);
     };
 
     registerWithNamesAndTypes("RowBinary", register_func);
@@ -225,7 +229,7 @@ void registerInputFormatRowBinary(FormatFactory & factory)
          const FormatSettings & settings)
     {
         return std::make_shared<BinaryRowInputFormat<true>>(buf, std::make_shared<const Block>(sample), params, false, false, settings);
-    });
+    }, /*supports_reset_parser=*/ true);
 
     factory.registerInputFormat("RowBinaryWithNamesAndTypesAndDefaults", [](
          ReadBuffer & buf,
@@ -234,7 +238,7 @@ void registerInputFormatRowBinary(FormatFactory & factory)
          const FormatSettings & settings)
     {
         return std::make_shared<BinaryRowInputFormat<true>>(buf, std::make_shared<const Block>(sample), params, /*with_names=*/true, /*with_types=*/true, settings);
-    });
+    }, /*supports_reset_parser=*/ true);
 
     factory.setDocumentation("RowBinary", Documentation{
         .description = R"DOCS_MD(
@@ -523,7 +527,7 @@ Stored as `Int32` representing a time value in seconds. Negative values are vali
 Supported range of values: `[-999:59:59, 999:59:59]` (i.e., `[-3599999, 3599999]` seconds).
 
 <Note>
-At the moment, the setting `enable_time_time64_type` must be set to `1` to use `Time` or `Time64`.
+`Time` and `Time64` are enabled by default since version 25.12. On versions 25.6 to 25.11, set `enable_time_time64_type = 1` to use them.
 </Note>
 
 Sample underlying values for `Time`:
@@ -552,7 +556,7 @@ Where `precision` is an integer from `0` to `9`. Common values: `3` (millisecond
 Supported range of values: `[-999:59:59.xxxxxxxxx, 999:59:59.xxxxxxxxx]`.
 
 <Note>
-At the moment, the setting `enable_time_time64_type` must be set to `1` to use `Time` or `Time64`.
+`Time` and `Time64` are enabled by default since version 25.12. On versions 25.6 to 25.11, set `enable_time_time64_type = 1` to use them.
 </Note>
 
 The underlying `Int64` value represents fractional seconds scaled by `10^precision`.
@@ -1621,7 +1625,7 @@ The per-cell default marker and `Nullable`'s built-in null byte are independent.
 | Case                                                                             | Behavior                                                                                                                                                                                |
 |----------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | Column missing from the file's header entirely                                   | Filled in the target via `insertDefaultsForNotSeenColumns`; gated by `defaults_for_omitted_fields`.                                                                                     |
-| Column present in the header, cell marker `0x01`                                 | `insertDefault` per row.                                                                                                                                                                |
+| Column present in the header, cell marker `0x01`                                 | The target column's `DEFAULT` expression, gated by `defaults_for_omitted_fields`; otherwise the default of the column type.                                                             |
 | Column present in the header, cell marker `0x00`                                 | Value is parsed normally.                                                                                                                                                               |
 | Extra column in the header, not in the target table                              | Silently dropped when `input_format_skip_unknown_fields = 1` (the marker is consumed first; if `0x01`, nothing else; if `0x00`, the typed value is parsed and discarded).               |
 
