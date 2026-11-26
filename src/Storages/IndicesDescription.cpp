@@ -1,5 +1,10 @@
+#include <Common/DateLUT.h>
+#include <Common/SipHash.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/Cache/QueryConditionCache.h>
 #include <Interpreters/DDLTask.h>
 #include <Interpreters/ExpressionAnalyzer.h>
+#include <Functions/IFunction.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/misc.h>
@@ -12,6 +17,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTWithAlias.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSubquery.h>
@@ -22,6 +28,9 @@
 #include <Storages/ReplaceAliasByExpressionVisitor.h>
 
 #include <Core/Defines.h>
+#include <unordered_set>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Common/Exception.h>
 
 namespace DB
@@ -31,10 +40,33 @@ namespace ErrorCodes
     extern const int INCORRECT_QUERY;
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
+    extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
+    extern const int NOT_IMPLEMENTED;
 }
 
 namespace
 {
+
+/// True if the expression calls only comparisons and logical functions, whose captured state `updateHash` records.
+bool callsOnlyStatelessFunctions(const IAST & ast)
+{
+    static const std::unordered_set<std::string_view> functions = {
+        "and", "or", "not", "xor", "equals", "notEquals", "less", "greater", "lessOrEquals", "greaterOrEquals", "isNull", "isNotNull"};
+    if (const auto * function = ast.as<ASTFunction>(); function && !functions.contains(function->name))
+        return false;
+    for (const auto & child : ast.children)
+        if (!callsOnlyStatelessFunctions(*child))
+            return false;
+    return true;
+}
+
+/// True for types whose values and comparisons do not depend on a time zone.
+bool isTimeZoneFreeType(const DataTypePtr & type)
+{
+    const WhichDataType which(removeNullable(removeLowCardinality(type)));
+    return which.isNativeUInt() || which.isNativeInt() || which.isFloat() || which.isDecimal() || which.isStringOrFixedString()
+        || which.isEnum() || which.isUUID() || which.isIPv4() || which.isIPv6() || which.isNothing();
+}
 
 /// Calls `fn` with the value of each `preprocessor` / `postprocessor` argument of a text index.
 template <typename F>
@@ -112,6 +144,59 @@ void checkTransformPermissions(const ASTPtr & arguments, const ContextPtr & cont
     });
 }
 
+/// The global context resolves `currentDatabase`, `hasColumnInTable`, `dictGet` and the like to other objects than the user's
+/// context does. All of them are non-deterministic. Refused by name: analysis evaluates some arguments apart, e.g. the set of `IN`.
+void rejectNonDeterministicFunctions(const IAST & ast, const ContextPtr & context, const String & index_name)
+{
+    /// `arrayJoin` depends on no context, and `MergeTreeIndexFactory::validate` refuses it as an array join.
+    if (const auto * function = ast.as<ASTFunction>(); function && function->name != "arrayJoin")
+        if (auto resolver = FunctionFactory::instance().tryGet(function->name, context); resolver && !resolver->isDeterministic())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Secondary index '{}' with WHERE cannot contain non-deterministic function `{}`", index_name, function->name);
+
+    for (const auto & child : ast.children)
+        rejectNonDeterministicFunctions(*child, context, index_name);
+}
+
+/// On the definition as the analysis expands it: a later `MODIFY COLUMN` of an alias changes what a stored definition calls.
+void rejectNonDeterministicFunctions(const ASTIndexDeclaration & declaration, const ColumnsDescription & columns, const ContextPtr & context)
+{
+    using ReplaceAliasToExprVisitor = InDepthNodeVisitor<ReplaceAliasByExpressionMatcher, true>;
+    for (const auto & ast : {declaration.getExpression(), declaration.getWhere()})
+    {
+        ASTPtr expanded = ast->clone();
+        ReplaceAliasToExprVisitor::Data data{columns, {}};
+        ReplaceAliasToExprVisitor{data}.visit(expanded);
+        /// Inlines SQL UDF bodies, as `TreeRewriter` does, so a function used only inside one is seen.
+        if (!UserDefinedSQLFunctionFactory::instance().empty())
+            UserDefinedSQLFunctionVisitor::visit(expanded, context);
+        rejectNonDeterministicFunctions(*expanded, context, declaration.name);
+    }
+}
+
+}
+
+void checkPartialIndexConditionAsUser(const ASTPtr & definition_ast, const ColumnsDescription & columns, const ContextPtr & context)
+{
+    const auto * index_definition = definition_ast->as<ASTIndexDeclaration>();
+    if (!index_definition || !index_definition->getWhere())
+        return;
+
+    /// `getIndexFromAST` analyses the indexed expression of a partial index with the global context too.
+    IndexDescription().initExpressionInfo(index_definition->getExpression()->clone(), columns, context);
+
+    ASTPtr where_ast = index_definition->getWhere()->clone();
+    if (auto * where_with_alias = dynamic_cast<ASTWithAlias *>(where_ast.get()))
+        where_with_alias->setAlias("");
+    using ReplaceAliasToExprVisitor = InDepthNodeVisitor<ReplaceAliasByExpressionMatcher, true>;
+    ReplaceAliasToExprVisitor::Data data{columns, {}};
+    ReplaceAliasToExprVisitor{data}.visit(where_ast);
+
+    auto syntax = TreeRewriter(context).analyze(where_ast, columns.get(GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns()));
+    ExpressionAnalyzer(where_ast, syntax, context).getActions(true);
+
+    /// After the analysis as the user, which reports what they may not access, before the one with the global context.
+    rejectNonDeterministicFunctions(*index_definition, columns, context);
 }
 
 void checkTextIndexPreAndPostProcessorPermissions(const IndexDescription & index, const ContextPtr & context)
@@ -153,6 +238,19 @@ void rejectTextIndexTransformWithoutInitiatorUser(const IndexDescription & index
         throwTransformNeedsInitiatorUser();
 }
 
+void rejectPartialIndexConditionWithoutInitiatorUser(const ASTPtr & definition_ast)
+{
+    const auto * declaration = definition_ast ? definition_ast->as<ASTIndexDeclaration>() : nullptr;
+    if (declaration && declaration->getWhere())
+        throw Exception(
+            ErrorCodes::INCORRECT_QUERY,
+            "The WHERE condition of a skip index would be resolved by each host against its own schema without the "
+            "user who submitted the query. Let every host run the query as the initiating user instead: enable the "
+            "server setting distributed_ddl_use_initial_user_and_roles on every host, and set "
+            "distributed_ddl_entry_format_version to at least {}",
+            DDLLogEntry::INITIATOR_USER_VERSION);
+}
+
 bool hasTextIndexPreOrPostProcessor(const ASTIndexDeclaration & declaration)
 {
     const auto * type = declaration.getType() ? declaration.getType()->as<ASTFunction>() : nullptr;
@@ -174,11 +272,21 @@ IndexDescription::IndexDescription(const IndexDescription & other)
     , data_types(other.data_types)
     , sample_block(other.sample_block)
     , granularity(other.granularity)
+    , where_ast(other.where_ast ? other.where_ast->clone() : nullptr)
+    , where_column_name(other.where_column_name)
+    , where_settings_salt(other.where_settings_salt)
+    , where_identity(other.where_identity)
+    , where_timezone(other.where_timezone)
+    , where_is_session_independent(other.where_is_session_independent)
     , is_implicitly_created(other.is_implicitly_created)
     , escape_filenames(other.escape_filenames)
 {
     if (other.expression)
         expression = other.expression->clone();
+    if (other.where_expression)
+        where_expression = other.where_expression->clone();
+    if (other.selected_rows_expression)
+        selected_rows_expression = other.selected_rows_expression->clone();
 }
 
 
@@ -214,6 +322,27 @@ IndexDescription & IndexDescription::operator=(const IndexDescription & other)
     data_types = other.data_types;
     sample_block = other.sample_block;
     granularity = other.granularity;
+
+    if (other.where_ast)
+        where_ast = other.where_ast->clone();
+    else
+        where_ast.reset();
+
+    if (other.where_expression)
+        where_expression = other.where_expression->clone();
+    else
+        where_expression.reset();
+
+    if (other.selected_rows_expression)
+        selected_rows_expression = other.selected_rows_expression->clone();
+    else
+        selected_rows_expression.reset();
+
+    where_column_name = other.where_column_name;
+    where_settings_salt = other.where_settings_salt;
+    where_identity = other.where_identity;
+    where_timezone = other.where_timezone;
+    where_is_session_independent = other.where_is_session_independent;
     is_implicitly_created = other.is_implicitly_created;
     escape_filenames = other.escape_filenames;
     return *this;
@@ -257,7 +386,14 @@ IndexDescription IndexDescription::getIndexFromAST(
     result.escape_filenames = escape_filenames;
 
     checkExpressionDoesntContainSubqueries(*index_definition->getExpression());
-    result.initExpressionInfo(index_definition->getExpression(), columns, context);
+    /// Before every analysis with the global context, see `rejectNonDeterministicFunctions`: `ALTER` also rebuilds a stored
+    /// partial index with it, after a `MODIFY COLUMN` changed an alias that the index expands.
+    if (index_definition->getWhere())
+        rejectNonDeterministicFunctions(*index_definition, columns, context->getGlobalContext());
+    /// The part writer of a partial index runs the indexed expression analysed with the global context,
+    /// see `selected_rows_expression` below, so the types of the index are taken from the same analysis.
+    result.initExpressionInfo(
+        index_definition->getExpression(), columns, index_definition->getWhere() ? context->getGlobalContext() : context);
 
     for (auto & elem : result.sample_block)
     {
@@ -271,12 +407,87 @@ IndexDescription IndexDescription::getIndexFromAST(
     if (result.column_names.empty())
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Skip index '{}' must have at least one column in its expression", result.name);
 
+    if (auto where = index_definition->getWhere())
+    {
+        /// Text and vector similarity indexes address rows by their position in the index granule.
+        static const std::unordered_set<String> types_with_where = {"minmax", "set", "bloom_filter", "tokenbf_v1", "ngrambf_v1", "sparse_grams"};
+        if (!types_with_where.contains(result.type))
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Skip index of type '{}' does not support WHERE", result.type);
+
+        checkExpressionDoesntContainSubqueries(*where);
+
+        using ReplaceAliasToExprVisitor = InDepthNodeVisitor<ReplaceAliasByExpressionMatcher, true>;
+        result.where_ast = where->clone();
+        /// Without its own alias the condition column is named the same in the combined index expressions.
+        if (auto * where_with_alias = dynamic_cast<ASTWithAlias *>(result.where_ast.get()))
+            where_with_alias->setAlias("");
+        ReplaceAliasToExprVisitor::Data data{columns, {}};
+        ReplaceAliasToExprVisitor{data}.visit(result.where_ast);
+
+        /// The part writer runs the condition analysed here, with the settings of the server (global) context.
+        /// Its constants are folded in the current time zone, which is recorded.
+        const ContextPtr analysis_context = context->getGlobalContext();
+        result.where_timezone = DateLUT::instance().getTimeZone();
+
+        ASTPtr where_ast = result.where_ast->clone();
+        auto syntax = TreeRewriter(analysis_context).analyze(
+            where_ast, columns.get(GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns()));
+        result.where_expression = ExpressionAnalyzer(where_ast, syntax, analysis_context).getActions(true);
+
+        const auto & where_column = result.where_expression->getSampleBlock().getByPosition(0);
+        if (!isUInt8(removeNullable(removeLowCardinality(where_column.type))))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER,
+                "WHERE condition of skip index '{}' must be of type UInt8 or Bool, got {}", result.name, where_column.type->getName());
+        result.where_column_name = where_column.name;
+
+        ASTPtr expression_ast = result.expression_list_ast->clone();
+        auto expression_syntax = TreeRewriter(analysis_context).analyze(
+            expression_ast, columns.get(GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns()));
+        result.selected_rows_expression = ExpressionAnalyzer(expression_ast, expression_syntax, analysis_context).getActions(true);
+
+        /// The functions of the condition capture the global settings, not the ones of the session that defines the index.
+        result.where_settings_salt = queryConditionCacheSettingsSalt(context->getGlobalContext()->getSettingsRef());
+
+        result.where_is_session_independent = callsOnlyStatelessFunctions(*result.where_ast)
+            && callsOnlyStatelessFunctions(*result.expression_list_ast);
+        for (const auto * actions : {&result.where_expression->getActionsDAG(), &result.selected_rows_expression->getActionsDAG()})
+            for (const auto & node : actions->getNodes())
+                result.where_is_session_independent = result.where_is_session_independent && isTimeZoneFreeType(node.result_type);
+    }
+
     if (index_type && index_type->arguments)
     {
         result.arguments = index_type->arguments->clone();
 
         if (result.type == TEXT_INDEX_NAME)
             expandTextIndexTransformAliases(result.arguments, columns);
+    }
+
+    if (result.where_expression)
+    {
+        /// What the granules of a partial index mean: the condition, the settings it was built with, and how they
+        /// are encoded. A partial index of every type is written to the same kind of file, so a part written for
+        /// another type, parameters, indexed expression or granularity must not pass for this index.
+        SipHash identity;
+        const auto where_hash = result.where_ast->getTreeHash(/*ignore_aliases=*/ true);
+        identity.update(where_hash.low64);
+        identity.update(where_hash.high64);
+        identity.update(result.where_settings_salt);
+        /// The analysed condition the writer runs: each step with its result type and the state its function captured.
+        result.where_expression->getActionsDAG().updateHash(identity);
+        identity.update(result.type);
+        if (result.arguments)
+        {
+            const auto arguments_hash = result.arguments->getTreeHash(/*ignore_aliases=*/ true);
+            identity.update(arguments_hash.low64);
+            identity.update(arguments_hash.high64);
+        }
+        const auto expression_hash = result.expression_list_ast->getTreeHash(/*ignore_aliases=*/ true);
+        identity.update(expression_hash.low64);
+        identity.update(expression_hash.high64);
+        result.selected_rows_expression->getActionsDAG().updateHash(identity);
+        identity.update(result.granularity);
+        result.where_identity = identity.get128();
     }
 
     return result;
@@ -338,6 +549,19 @@ FieldVector getFieldsFromIndexArgumentsAST(const ASTPtr & arguments)
 bool IndexDescription::isSimpleSingleColumnIndex() const
 {
     return expression_list_ast && expression_list_ast->children.size() == 1 && expression_list_ast->children[0]->as<ASTIdentifier>();
+}
+
+Names IndexDescription::getRequiredColumns() const
+{
+    Names result = expression->getRequiredColumns();
+    if (where_expression)
+    {
+        for (const auto & actions : {where_expression, selected_rows_expression})
+            for (const auto & column : actions->getRequiredColumns())
+                if (std::find(result.begin(), result.end(), column) == result.end())
+                    result.push_back(column);
+    }
+    return result;
 }
 
 
@@ -415,8 +639,17 @@ ExpressionActionsPtr IndicesDescription::getSingleExpressionForIndices(const Col
 {
     ASTPtr combined_expr_list = make_intrusive<ASTExpressionList>();
     for (const auto & index : *this)
+    {
+        /// The writer calculates a partial index from its columns, for the rows its condition selects only.
+        if (index.where_expression)
+        {
+            for (const auto & column : index.getRequiredColumns())
+                combined_expr_list->children.push_back(make_intrusive<ASTIdentifier>(column));
+            continue;
+        }
         for (const auto & index_expr : index.expression_list_ast->children)
             combined_expr_list->children.push_back(index_expr->clone());
+    }
 
     auto syntax_result = TreeRewriter(context).analyze(combined_expr_list, columns.get(GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns()));
     return ExpressionAnalyzer(combined_expr_list, syntax_result, context).getActions(false);

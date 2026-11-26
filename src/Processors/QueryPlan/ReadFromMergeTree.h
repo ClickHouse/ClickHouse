@@ -611,6 +611,9 @@ public:
     {
         std::shared_ptr<ActionsDAGWithInversionPushDown> dag;
         bool skip_constant_folding = true;
+        /// The filter `dag` was built from, null without one. `narrowed_source` owns it for `Graphite` FINAL.
+        const ActionsDAG * source = nullptr;
+        std::shared_ptr<const ActionsDAG> narrowed_source;
     };
 
     /// Builds the filter for the phases below, narrowed for `Graphite` FINAL.

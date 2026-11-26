@@ -1,0 +1,15 @@
+1. A condition the user may run is accepted with a declared column list, refused on an existing table.
+refused
+refused
+ok
+dst	i
+2. An index copied by CREATE AS is checked on the initiator, which sends the hosts the copied definition.
+ok
+copy	i
+3. A condition the user may not run is refused.
+refused
+refused
+(ACCESS_DENIED)
+4. A table this host does not have is refused.
+refused
+0
