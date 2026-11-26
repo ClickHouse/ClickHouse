@@ -12,6 +12,9 @@ optimize table data_01513 final;
 set max_memory_usage='500M';
 -- The adaptive spill scheduler would spill the aggregation instead of letting it hit the limit.
 set enable_adaptive_memory_spill_scheduler = 0;
+-- CI may inject low adaptive aggregator freeze thresholds with `adaptive_aggregator_disable_thaw`: the frozen tables stage
+-- the keys in partitions instead of one arena, so the query fits in the limit (same result).
+set adaptive_aggregator_freeze_threshold = 16384, adaptive_aggregator_freeze_threshold_bytes = 4194304, adaptive_aggregator_disable_thaw = 0;
 set max_threads=1;
 set max_block_size=500;
 set max_bytes_before_external_group_by=0;
