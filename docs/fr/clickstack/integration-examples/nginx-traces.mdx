@@ -12,19 +12,17 @@ import { TrackedLink } from "/snippets/fr/components/GalaxyTrackedLink/GalaxyTra
 <Info>
   **TL;DR**
 
-  Capturez les traces distribuées de Nginx dans ClickStack à l’aide du module OpenTelemetry Nginx. Comprend un jeu de données de démonstration et un tableau de bord préconfiguré.
+  Capturez les traces distribuées de Nginx dans ClickStack à l’aide du module OpenTelemetry pour Nginx. Comprend un jeu de données de démonstration et un tableau de bord préconfiguré.
 </Info>
 
 <div id="existing-nginx">
-  ## Intégration à une installation Nginx existante
+  ## Intégration à une installation Nginx existante {#existing-nginx}
 </div>
 
 Cette section explique comment ajouter le traçage distribué à votre installation Nginx existante en installant le module OpenTelemetry et en le configurant pour envoyer les traces à ClickStack.
 Si vous souhaitez tester l’intégration avant de configurer votre propre installation, vous pouvez utiliser notre configuration préconfigurée et nos données d’exemple dans la [section suivante](/fr/clickstack/integration-examples/nginx-traces#demo-dataset).
 
-<div id="prerequisites">
-  ##### Prérequis
-</div>
+##### Prérequis {#prerequisites}
 
 * Instance ClickStack en cours d’exécution avec des endpoints OTLP accessibles (ports 4317/4318)
 * Installation Nginx existante (version 1.18 ou ultérieure)
@@ -32,12 +30,12 @@ Si vous souhaitez tester l’intégration avant de configurer votre propre insta
 * Nom d’hôte ou adresse IP de votre instance ClickStack
 
 <Steps>
-  <Step title="Installer le module Nginx OpenTelemetry" id="install-module">
+  <Step title="Installer le module OpenTelemetry pour Nginx" id="install-module">
     Le moyen le plus simple d’ajouter le traçage à Nginx consiste à utiliser l’image Nginx officielle avec la prise en charge d’OpenTelemetry intégrée.
 
-    ##### Utilisation de l’image nginx:otel
+##### Utilisation de l’image nginx:otel {#using-otel-image}
 
-    Remplacez votre image Nginx actuelle par la version compatible OpenTelemetry :
+    Remplacez votre image Nginx actuelle par la version compatible OpenTelemetry :
 
     ```yaml
     # Dans votre docker-compose.yml ou Dockerfile
@@ -54,14 +52,14 @@ Si vous souhaitez tester l’intégration avant de configurer votre propre insta
   <Step title="Configurer Nginx pour envoyer des traces à ClickStack" id="configure-nginx">
     Ajoutez la configuration OpenTelemetry à votre fichier `nginx.conf`. Cette configuration charge le module et envoie les traces vers l’endpoint OTLP de ClickStack.
 
-    Commencez par récupérer votre clé API :
+    Commencez par récupérer votre clé API :
 
-    1. Ouvrez HyperDX à l’URL de votre instance ClickStack
+    1. Ouvrez l’interface utilisateur de ClickStack à l’URL de votre instance ClickStack
     2. Accédez à Settings → API Keys
     3. Copiez votre **clé API d’ingestion**
-    4. Définissez-la comme variable d’environnement : `export CLICKSTACK_API_KEY=your-api-key-here`
+    4. Définissez-la comme variable d’environnement : `export CLICKSTACK_API_KEY=your-api-key-here`
 
-    Ajoutez ceci à votre `nginx.conf` :
+    Ajoutez ceci à votre `nginx.conf` :
 
     ```yaml
     load_module modules/ngx_otel_module.so;
@@ -103,7 +101,7 @@ Si vous souhaitez tester l’intégration avant de configurer votre propre insta
     }
     ```
 
-    Si vous exécutez Nginx dans Docker, transmettez la variable d’environnement au conteneur :
+    Si vous exécutez Nginx dans Docker, transmettez la variable d’environnement au conteneur :
 
     ```yaml
     services:
@@ -119,30 +117,30 @@ Si vous souhaitez tester l’intégration avant de configurer votre propre insta
 
     <Note>
       * **Le port 4317** est l’endpoint gRPC utilisé par le module Nginx
-      * **otel&#95;service&#95;name** doit décrire clairement votre instance Nginx (par ex. : &quot;api-gateway&quot;, &quot;frontend-proxy&quot;)
-      * Modifiez **otel&#95;service&#95;name** pour qu’il corresponde à votre environnement afin de faciliter l’identification dans HyperDX
+      * **otel&#95;service&#95;name** doit décrire clairement votre instance Nginx (par ex. : &quot;api-gateway&quot;, &quot;frontend-proxy&quot;)
+      * Modifiez **otel&#95;service&#95;name** pour qu’il corresponde à votre environnement afin de faciliter l’identification dans l’interface utilisateur de ClickStack
     </Note>
 
-    ##### Comprendre la configuration
+##### Comprendre la configuration {#understanding-configuration}
 
-    **Ce qui est tracé :**
-    Chaque requête vers Nginx crée un span de trace affichant :
+    **Ce qui est tracé :**
+    Chaque requête vers Nginx crée un span de trace affichant :
 
     * la méthode et le chemin de la requête
     * le code d’état HTTP
     * la durée de la requête
     * l’horodatage
 
-    **Attributs de span :**
-    Les directives `otel_span_attr` ajoutent des métadonnées à chaque trace, ce qui vous permet de filtrer et d’analyser les requêtes dans HyperDX par code d’état, méthode, route, etc.
+    **Attributs de span :**
+    Les directives `otel_span_attr` ajoutent des métadonnées à chaque trace, ce qui vous permet de filtrer et d’analyser les requêtes dans l’interface utilisateur de ClickStack par code d’état, méthode, route, etc.
 
-    Après avoir effectué ces modifications, testez votre configuration Nginx :
+    Après avoir effectué ces modifications, testez votre configuration Nginx :
 
     ```bash
     nginx -t
     ```
 
-    Si le test réussit, rechargez Nginx :
+    Si le test réussit, rechargez Nginx :
 
     ```bash
     # Pour Docker
@@ -153,30 +151,26 @@ Si vous souhaitez tester l’intégration avant de configurer votre propre insta
     ```
   </Step>
 
-  <Step title="Vérifier les traces dans HyperDX" id="verifying-traces">
-    Une fois la configuration en place, connectez-vous à HyperDX et vérifiez que les traces arrivent bien. Vous devriez voir quelque chose comme ceci ; si vous ne voyez pas de traces, essayez d’ajuster l’intervalle de temps :
+  <Step title="Vérifier les traces dans l’interface utilisateur de ClickStack" id="verifying-traces">
+    Une fois la configuration en place, connectez-vous à l’interface utilisateur de ClickStack et vérifiez que les traces arrivent bien. Vous devriez voir quelque chose comme ceci ; si vous ne voyez pas de traces, essayez d’ajuster l’intervalle de temps :
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Afficher les traces](/images/clickstack/nginx-traces-search-view.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Afficher les traces](/images/clickstack/nginx-traces-search-view.webp)
+      </Frame>
     </div>
   </Step>
 </Steps>
 
 <div id="demo-dataset">
-  ## Jeu de données de démonstration
+  ## Jeu de données de démonstration {#demo-dataset}
 </div>
 
 Pour les utilisateurs qui souhaitent tester l’intégration des traces nginx avant de configurer leurs systèmes de production, nous fournissons un jeu de données d’exemple contenant des traces Nginx pré-générées avec des profils de trafic réalistes.
 
 <Steps>
   <Step title="Démarrer ClickStack" id="start-clickstack">
-    Si ClickStack n’est pas encore en cours d’exécution, démarrez-le avec :
+    Si ClickStack n’est pas encore en cours d’exécution, démarrez-le avec :
 
     ```bash
     docker run --name clickstack-demo \
@@ -186,42 +180,42 @@ Pour les utilisateurs qui souhaitent tester l’intégration des traces nginx av
 
     Attendez environ 30 secondes que ClickStack soit complètement initialisé avant de continuer.
 
-    * Port 8080 : interface web HyperDX
-    * Port 4317 : endpoint OTLP gRPC (utilisé par le module nginx)
-    * Port 4318 : endpoint OTLP HTTP (utilisé pour les traces de démonstration)
+    * Port 8080 : interface utilisateur web de ClickStack
+    * Port 4317 : point de terminaison OTLP gRPC (utilisé par le module nginx)
+    * Port 4318 : endpoint OTLP HTTP (utilisé pour les traces de démonstration)
   </Step>
 
   <Step title="Télécharger le jeu de données d’exemple" id="download-sample">
-    Téléchargez le fichier d’exemple de traces et mettez les horodatages à l’heure actuelle :
+    Téléchargez le fichier d’exemple de traces et mettez les horodatages à l’heure actuelle :
 
     ```bash
     # Télécharger les traces
     curl -O https://datasets-documentation.s3.eu-west-3.amazonaws.com/clickstack-integrations/nginx-traces-sample.json
     ```
 
-    Le jeu de données comprend :
+    Le jeu de données comprend :
 
-    * 1 000 spans de trace avec une chronologie réaliste
+    * 1 000 spans de trace avec une chronologie réaliste
     * 9 endpoints différents avec des profils de trafic variés
-    * ~93 % de réussite (200), ~3 % d’erreurs client (404), ~4 % d’erreurs serveur (500)
+    * ~93 % de réussite (200), ~3 % d’erreurs client (404), ~4 % d’erreurs serveur (500)
     * Des latences allant de 10ms à 800ms
     * Les profils de trafic d’origine sont conservés, mais décalés à l’heure actuelle
   </Step>
 
   <Step title="Envoyer les traces à ClickStack" id="send-traces">
-    Définissez votre clé API comme variable d’environnement (si ce n’est pas déjà fait) :
+    Définissez votre clé API comme variable d’environnement (si ce n’est pas déjà fait) :
 
     ```bash
     export CLICKSTACK_API_KEY=your-api-key-here
     ```
 
-    **Obtenir votre clé API :**
+    **Obtenir votre clé API :**
 
-    1. Ouvrez HyperDX à l’URL de votre ClickStack
+    1. Ouvrez l’interface utilisateur de ClickStack à l’URL de votre ClickStack
     2. Accédez à Settings → API Keys
     3. Copiez votre **clé API d’ingestion**
 
-    Envoyez ensuite les traces à ClickStack :
+    Envoyez ensuite les traces à ClickStack :
 
     ```bash
     curl -X POST http://localhost:4318/v1/traces \
@@ -236,37 +230,31 @@ Pour les utilisateurs qui souhaitent tester l’intégration des traces nginx av
       Cette démonstration suppose que ClickStack s’exécute localement sur `localhost:4318`. Pour les instances distantes, remplacez `localhost` par le nom d’hôte de votre ClickStack.
     </Info>
 
-    Vous devriez voir une réponse comme `{"partialSuccess":{}}`, indiquant que les traces ont bien été envoyées. Les 1 000 traces seront toutes ingérées dans ClickStack.
+    Vous devriez voir une réponse comme `{"partialSuccess":{}}`, indiquant que les traces ont bien été envoyées. Les 1 000 traces seront toutes ingérées dans ClickStack.
   </Step>
 
-  <Step title="Vérifier les traces dans HyperDX" id="verify-demo-traces">
-    1. Ouvrez [HyperDX](http://localhost:8080/) et connectez-vous à votre compte (vous devrez peut-être d’abord en créer un)
+  <Step title="Vérifier les traces dans l’interface utilisateur de ClickStack" id="verify-demo-traces">
+    1. Ouvrez l’[interface utilisateur de ClickStack](http://localhost:8080/) et connectez-vous à votre compte (vous devrez peut-être d’abord en créer un)
     2. Accédez à la vue Search et définissez la source sur `Traces`
     3. Réglez l’intervalle de temps sur **2025-10-25 13:00:00 - 2025-10-28 13:00:00**
 
-    Voici ce que vous devriez voir dans votre vue Search :
+    Voici ce que vous devriez voir dans votre vue Search :
 
     <Info>
       **Affichage du fuseau horaire**
 
-      HyperDX affiche les horodatages dans le fuseau horaire local de votre navigateur. Les données de démonstration couvrent **2025-10-26 13:00:00 - 2025-10-27 13:00:00 (UTC)**. Ce large intervalle de temps garantit que vous verrez les traces de démonstration quel que soit votre emplacement. Une fois les traces visibles, vous pourrez réduire la plage à une période de 24 heures pour obtenir des visualisations plus claires.
+      L’interface utilisateur de ClickStack affiche les horodatages dans le fuseau horaire local de votre navigateur. Les données de démonstration couvrent **2025-10-26 13:00:00 - 2025-10-27 13:00:00 (UTC)**. Ce large intervalle de temps garantit que vous verrez les traces de démonstration quel que soit votre emplacement. Une fois les traces visibles, vous pourrez réduire la plage à une période de 24 heures pour obtenir des visualisations plus claires.
     </Info>
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Voir les traces](/images/clickstack/nginx-traces-search-view.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Voir les traces](/images/clickstack/nginx-traces-search-view.webp)
+      </Frame>
     </div>
   </Step>
 </Steps>
 
-<div id="dashboards">
-  ## Tableaux de bord et visualisations
-</div>
+## Tableaux de bord et visualisations {#dashboards}
 
 Pour vous aider à commencer à surveiller les traces avec ClickStack, nous fournissons les visualisations essentielles pour les données de traces.
 
@@ -276,29 +264,21 @@ Pour vous aider à commencer à surveiller les traces avec ClickStack, nous four
   </Step>
 
   <Step title="Importez le tableau de bord préconfiguré" id="import-dashboard">
-    1. Ouvrez HyperDX et accédez à la section Dashboards.
-    2. Cliquez sur &quot;Import Dashboard&quot; dans le coin supérieur droit, sous les points de suspension.
+    1. Ouvrez l’interface utilisateur de ClickStack et accédez à la section Tableaux de bord.
+    2. Cliquez sur &quot;Importer un tableau de bord&quot; dans le coin supérieur droit, sous les points de suspension.
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Importer le tableau de bord](/images/clickstack/import-dashboard.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Importer le tableau de bord](/images/clickstack/import-dashboard.webp)
+      </Frame>
     </div>
 
-    3. Téléversez le fichier nginx-trace-dashboard.json, puis cliquez sur Finish Import.
+    3. Téléversez le fichier nginx-trace-dashboard.json, puis cliquez sur Terminer l’Import.
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Terminer l’importation](/images/clickstack/finish-nginx-traces-dashboard.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Terminer l’importation](/images/clickstack/finish-nginx-traces-dashboard.webp)
+      </Frame>
     </div>
   </Step>
 
@@ -308,26 +288,20 @@ Pour vous aider à commencer à surveiller les traces avec ClickStack, nous four
     </Note>
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Exemple de tableau de bord](/images/clickstack/nginx-traces-dashboard.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Exemple de tableau de bord](/images/clickstack/nginx-traces-dashboard.webp)
+      </Frame>
     </div>
   </Step>
 </Steps>
 
 <div id="troubleshooting">
-  ## Dépannage
+  ## Dépannage {#troubleshooting}
 </div>
 
-<div id="no-traces">
-  ### Aucune trace n’apparaît dans HyperDX
-</div>
+### Aucune trace n’apparaît dans l’interface utilisateur de ClickStack {#no-traces}
 
-**Vérifiez que le module nginx est chargé :**
+**Vérifiez que le module nginx est chargé :**
 
 ```bash
 nginx -V 2>&1 | grep otel
@@ -335,15 +309,15 @@ nginx -V 2>&1 | grep otel
 
 Vous devriez voir des mentions du module OpenTelemetry.
 
-**Vérifiez la connectivité réseau :**
+**Vérifiez la connectivité réseau :**
 
 ```bash
 telnet <clickstack-host> 4317
 ```
 
-La connexion à l’endpoint gRPC OTLP devrait réussir.
+La connexion au point de terminaison OTLP gRPC devrait réussir.
 
-**Vérifiez que la clé API est définie :**
+**Vérifiez que la clé API est définie :**
 
 ```bash
 echo $CLICKSTACK_API_KEY
@@ -351,7 +325,7 @@ echo $CLICKSTACK_API_KEY
 
 Doit afficher votre clé API (non vide).
 
-**Vérifiez les journaux d’erreurs de Nginx :**
+**Vérifiez les journaux d’erreurs de Nginx :**
 
 ```bash
 # For Docker
@@ -363,7 +337,7 @@ sudo tail -f /var/log/nginx/error.log | grep -i otel
 
 Recherchez les erreurs liées à OpenTelemetry.
 
-**Vérifiez que nginx reçoit des requêtes :**
+**Vérifiez que nginx reçoit des requêtes :**
 
 ```bash
 # Check access logs to confirm traffic
@@ -371,14 +345,12 @@ tail -f /var/log/nginx/access.log
 ```
 
 <div id="next-steps">
-  ## Étapes suivantes
+  ## Étapes suivantes {#next-steps}
 </div>
 
 * Configurez des [alertes](/fr/clickstack/features/alerts) pour les métriques critiques (taux d’erreur, seuils de latence)
 * Créez des [tableaux de bord](/fr/clickstack/features/dashboards/overview) supplémentaires pour des cas d’usage spécifiques (supervision des API, événements de sécurité)
 
-<div id="going-to-production">
-  ## Passage en production
-</div>
+## Passage en production {#going-to-production}
 
 Ce guide envoie les traces directement du module OpenTelemetry de Nginx vers l’endpoint OTLP de ClickStack. Pour les déploiements en production, nous recommandons d’exécuter votre propre OTel collector en tant que passerelle afin d’apporter le traitement par lots et la résilience. Consultez [Envoi de données OpenTelemetry](/fr/clickstack/ingesting-data/opentelemetry) pour la configuration de production.

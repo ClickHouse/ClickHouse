@@ -115,7 +115,7 @@ Time in seconds spend in write operations requested from every block device, sum
 
 ### CGroupMaxCPU {#cgroupmaxcpu}
 
-The maximum number of CPU cores according to CGroups.
+The maximum number of CPU cores according to CGroups: the minimum of the CPU quota divided by its period and the number of CPUs in the effective cpuset.
 
 ### CGroupMemoryInactiveFile {#cgroupmemoryinactivefile}
 

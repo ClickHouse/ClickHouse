@@ -1,6 +1,7 @@
 #include <Formats/FormatFactory.h>
 
 #include <unistd.h>
+#include <Common/DateLUT.h>
 #include <Formats/FormatSettings.h>
 #include <Formats/FormatParserSharedResources.h>
 #include <Formats/FormatFilterInfo.h>
@@ -59,6 +60,7 @@ FORMAT_FACTORY_SETTINGS(DECLARE_FORMAT_EXTERN, INITIALIZE_SETTING_EXTERN)
     extern const SettingsAggregateFunctionInputFormat aggregate_function_input_format;
     extern const SettingsBool allow_special_serialization_kinds_in_output_formats;
     extern const SettingsBool enable_nullable_tuple_type;
+    extern const SettingsTimezone session_timezone;
 }
 
 namespace ErrorCodes
@@ -118,6 +120,12 @@ FormatSettings::ArrowUnsupportedTypes getArrowUnsupportedTypesMode(const Setting
 FormatSettings getFormatSettings(const ContextPtr & context, const Settings & settings)
 {
     FormatSettings format_settings;
+
+    /// From the supplied settings rather than the ambient context, because storage engines build
+    /// persistent format settings from a copied `Settings`. An empty value means the server's zone.
+    const String & session_timezone = settings[Setting::session_timezone].value;
+    format_settings.session_time_zone
+        = session_timezone.empty() ? &DateLUT::serverTimezoneInstance() : &DateLUT::instance(session_timezone);
 
     format_settings.avro.allow_missing_fields = settings[Setting::input_format_avro_allow_missing_fields];
     format_settings.avro.output_codec = settings[Setting::output_format_avro_codec];
@@ -560,6 +568,8 @@ FormatSettings getJSONRoundTripFormatSettings(const FormatSettings & format_sett
     result.trim_fixed_string = false;
     result.bool_true_representation = "true";
     result.bool_false_representation = "false";
+    /// The text holds stored values, not user input, so a date/time is read back in its type's zone.
+    result.session_time_zone = nullptr;
     return result;
 }
 

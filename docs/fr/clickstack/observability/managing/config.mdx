@@ -1,0 +1,112 @@
+---
+slug: /clickstack/observability/managing/config
+title: 'Options de configuration'
+description: "Gérez l'accès au service, les sources de télémétrie ainsi que les connexions API et des agents dans ClickHouse Observability, entièrement géré."
+keywords: ['ClickHouse Observability', 'configuration gérée', 'sources', 'télémétrie gérée']
+doc_type: 'guide'
+sidebarTitle: 'Options de configuration'
+---
+
+import { BetaBadge } from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge label="Offre en version bêta" />
+
+Ouvrez **Paramètres de l’équipe** dans ClickHouse Observability pour gérer l’accès aux données, les connexions d’API et d’agents, les intégrations et les paramètres de requête. Les sections ci-dessous reprennent l’ordre des onglets de l’application. ClickHouse prend en charge l’ingestion, les schémas, l’infrastructure et la mise à l’échelle.
+
+## Données {#data}
+
+Ouvrez **Paramètres de l’équipe → Données** pour consulter vos sources ainsi que les informations de connexion nécessaires à l’envoi des données de télémétrie.
+
+### Sources {#datasource-settings}
+
+La section **Sources** répertorie les sources fournies par votre service managé :
+
+| Source       | Données                                       |
+| ------------ | --------------------------------------------- |
+| **Logs**     | Événements de log                             |
+| **Traces**   | Spans de traçage distribué                    |
+| **Metrics**  | Données de métriques                          |
+| **Sessions** | Données de relecture de session du navigateur |
+
+Chaque source affiche sa connexion de lecture associée et, le cas échéant, son nom de table. Utilisez le commutateur situé à droite d&#39;une source pour l&#39;activer ou la désactiver. Une source désactivée conserve sa configuration, mais elle n&#39;apparaît plus dans les sélecteurs de sources et ne peut plus être sélectionnée automatiquement. La désactivation n&#39;interrompt pas l&#39;ingestion de la télémétrie et ne supprime pas les données stockées. Réactivez la source pour la rendre de nouveau disponible dans les sélecteurs.
+
+### Télémétrie gérée {#managed-telemetry}
+
+Sous **Sources**, la section **Télémétrie gérée** affiche l’état du stockage et du collecteur OpenTelemetry, ainsi que les informations de connexion nécessaires pour envoyer des données à votre service.
+
+* Sélectionnez **URL**, **Collector config** ou **Env vars** pour afficher les informations de connexion au format souhaité.
+* Cliquez sur **Copier les informations de connexion** pour copier la configuration. Sélectionnez **Afficher la clé** pour afficher les identifiants masqués.
+* Cliquez sur **Send a Test Log** pour envoyer un journal de test au service.
+
+Pour savoir comment configurer vos applications et vos collecteurs, consultez [Ingestion de données](/fr/clickstack/observability/ingesting-data/overview).
+
+### Liste d’accès IP {#ip-access-list}
+
+Dans **Télémétrie gérée**, utilisez **Liste d’accès IP → Modifier** pour définir les adresses IP ou plages CIDR autorisées à accéder aux endpoints de votre collecteur.
+
+### Points de terminaison privés {#private-endpoints}
+
+Utilisez **Configurer un point de terminaison privé** pour mettre en place une connectivité privée vers votre collecteur. Pour les déploiements AWS, cette fonctionnalité repose sur AWS PrivateLink. Le lien **points de terminaison privés** affiche les points de terminaison privés de l&#39;organisation dans la Console Cloud.
+
+### Zone dangereuse {#service-settings}
+
+**Delete warehouse** supprime l&#39;entrepôt Observability ainsi que tous ses services. Les services en lecture sont supprimés en premier, puis le service principal. N&#39;utilisez cette option que si vous n&#39;avez plus besoin de l&#39;entrepôt ni de ses données.
+
+## Membres et rôles {#members-and-roles}
+
+Ouvrez **Paramètres de l’équipe → Membres et rôles** pour consulter les rôles RBAC ainsi que le rôle par défaut attribué aux nouveaux utilisateurs. Cliquez sur **Gérer dans la console** pour gérer les membres de l’équipe dans ClickHouse Cloud. Pour en savoir plus, consultez [Contrôle d’accès basé sur les rôles](/fr/clickstack/observability/managing/rbac).
+
+## API et agents {#api-and-agents}
+
+Ouvrez **Paramètres de l’équipe → API et agents** pour gérer les clés d’ingestion, retrouver les identifiants de service, connecter des agents et configurer les fonctionnalités d’IA.
+
+### Clés API d’ingestion {#ingestion-api-keys}
+
+La section **Clés API** affiche votre **ID d’équipe**, votre **Identifiant de service** et vos clés d’ingestion. Les clés d’ingestion authentifient la télémétrie envoyée au collecteur OpenTelemetry.
+
+Saisissez un nom, puis sélectionnez **Créer une clé** pour générer une clé destinée à une source ou à un environnement. Chaque clé existante propose les commandes **Afficher la clé**, **Copier la clé**, **Geler** et **Révoquer**. Les modifications prennent effet en une minute environ.
+
+Le lien **Gérer les Clés API**, distinct, ouvre les paramètres de l’organisation dans ClickHouse Cloud, où sont gérées les clés utilisées avec l’API d’administration.
+
+### Connecter un agent {#connect-an-agent}
+
+Dans la section **Connectez vos agents d’IA**, utilisez **Activer MCP pour ce service** pour activer ou désactiver le serveur MCP distant. Sélectionnez votre client et copiez la configuration générée, qui inclut l’identifiant du service afin que les requêtes de l’agent ciblent bien votre service. **Gérer les sessions** ouvre la Console Cloud, où vous pouvez consulter les sessions MCP. Le point de terminaison MCP dans le cloud utilise OAuth : connectez-vous avec votre compte ClickHouse Cloud lorsque le client vous y invite. Consultez [Connecter un client MCP](/fr/clickstack/observability/mcp#managed-connecting-a-client) pour les instructions de configuration et la liste des clients pris en charge.
+
+### Utiliser l’API {#use-the-api}
+
+Utilisez l’[API ClickHouse Observability](/fr/clickstack/observability/api-reference) pour gérer par programmation les tableaux de bord, les alertes et d’autres ressources. Les requêtes d’API s’authentifient au moyen de l’ID et du secret d’une clé API ClickHouse Cloud, via l’authentification de base HTTP. Consultez [Authentification de l’API](/fr/clickstack/observability/api-reference#authentication) pour connaître les autorisations requises et la configuration de la clé.
+
+Ces identifiants API sont distincts de l’API key d’ingestion disponible dans **Données → Télémétrie gérée**. Les clients MCP utilisent OAuth, et non l’une ou l’autre de ces clés API.
+
+### Exporter vers Terraform {#export-to-terraform}
+
+La fonctionnalité **Exporter vers Terraform** porte le label **Expérimental**. Sélectionnez les types de ressources à inclure, puis utilisez **Download import file** pour les ajouter à un projet Terraform. L&#39;UI fournit la commande permettant de générer la configuration des ressources avec le fournisseur ClickHouse. Les connexions gérées par la plateforme sont exportées sous forme de locals servant uniquement de référence.
+
+### Configurer l&#39;IA générative {#generative-ai}
+
+Utilisez **Configurer l&#39;IA générative** pour activer ou désactiver les fonctionnalités d&#39;IA générative du service, notamment l&#39;Assistant IA de graphiques dans l&#39;Explorateur de graphiques et les [Notebooks IA](/fr/clickstack/observability/notebooks).
+
+## Intégrations {#integrations}
+
+Ouvrez **Paramètres de l’équipe → Intégrations** pour gérer les webhooks. Cliquez sur **Add Webhook** pour ajouter une intégration destinée aux notifications d’alerte. Pour configurer les alertes, consultez [Alertes](/fr/clickstack/observability/features/alerts).
+
+## Paramètres de requête {#query-settings}
+
+Ouvrez **Paramètres de l’équipe → Paramètres de requête** pour ajuster la façon dont l’application interroge ClickHouse. Sélectionnez **Modifier** à côté d’un paramètre pour le modifier. L’onglet est signalé comme **Expérimental** dans l’UI.
+
+| Paramètre                             | Rôle                                                                                                                         |
+| ------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| **Search Row Limit**                  | Limite le nombre de lignes renvoyées par requête sur la page Recherche et dans les tuiles de tableau de bord de recherche.   |
+| **Query Timeout (seconds)**           | Définit le temps d’exécution maximal d’une requête.                                                                          |
+| **Max Rows to Read (METADATA ONLY)**  | Limite le nombre de lignes de table parcourues par les requêtes de métadonnées.                                              |
+| **Filter Keys Fetch Limit**           | Détermine le nombre de clés de filtre récupérées lorsque vous sélectionnez **More filters** sur la page Recherche.           |
+| **Field Metadata Queries**            | Détermine si l’application récupère les métadonnées des champs depuis ClickHouse.                                            |
+| **Parallelize Queries When Possible** | Permet aux requêtes fenêtrées éligibles de s’exécuter en parallèle, ce qui peut augmenter la charge maximale sur ClickHouse. |
+
+L’onglet propose également des réglages pour le seuil de blocage souple de l’histogramme de recherche et pour les durées des fenêtres de recherche. Utilisez **Reset to default** pour rétablir les valeurs par défaut des paramètres de requête.
+
+## Migrations de schémas {#schema-migrations}
+
+Ouvrez **Paramètres de l’équipe → Migrations de schémas** pour consulter l’historique des migrations.
+
+Pour les paramètres de source et de schéma en mode autogéré, consultez [Paramètres de source et de schéma en mode autogéré](/fr/clickstack/self-configured/managing/config).

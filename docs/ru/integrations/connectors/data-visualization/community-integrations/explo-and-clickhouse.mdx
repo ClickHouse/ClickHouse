@@ -18,20 +18,14 @@ import { CommunityMaintainedBadge } from "/snippets/ru/components/CommunityMaint
 
 Клиентская аналитика для любой платформы. Создано для наглядной визуализации. Разработано с упором на простоту.
 
-<div id="goal">
-  ## Цель
-</div>
+## Цель {#goal}
 
-В этом руководстве вы подключите данные из ClickHouse к Explo и визуализируете результаты. Диаграмма будет выглядеть так:
+В этом руководстве вы подключите данные из ClickHouse к Explo и визуализируете результаты. Чарт будет выглядеть так:
 
 <div className="ch-image-md">
-
-<Frame>
-
-![панель мониторинга Explo](/images/integrations/data-visualization/explo_15.webp)
-
-</Frame>
-
+  <Frame>
+    ![панель мониторинга Explo](/images/integrations/data-visualization/explo_15.webp)
+  </Frame>
 </div>
 
 <p />
@@ -50,213 +44,149 @@ import { CommunityMaintainedBadge } from "/snippets/ru/components/CommunityMaint
   <Step title="Подключите Explo к ClickHouse" id="2--connect-explo-to-clickhouse">
     1. Зарегистрируйте аккаунт Explo.
 
-    2. На левой боковой панели нажмите вкладку **Data** в Explo.
+    2. Перейдите на вкладку **data** на левой боковой панели Explo.
 
     <div className="ch-image-sm">
-
-    <Frame>
-
-    ![Вкладка Data](/images/integrations/data-visualization/explo_01.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Вкладка Data](/images/integrations/data-visualization/explo_01.webp)
+      </Frame>
     </div>
 
-    3. В правом верхнем углу нажмите **Connect Data Source**.
+    3. Нажмите **Подключить источник данных** в правом верхнем углу.
 
     <div className="ch-image-sm">
-
-    <Frame>
-
-    ![Connect Data Source](/images/integrations/data-visualization/explo_02.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Подключить источник данных](/images/integrations/data-visualization/explo_02.webp)
+      </Frame>
     </div>
 
-    4. Заполните информацию на странице **Getting Started**
+    4. Заполните сведения на странице **Начало работы**.
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![Getting Started](/images/integrations/data-visualization/explo_03.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Начало работы](/images/integrations/data-visualization/explo_03.webp)
+      </Frame>
     </div>
 
-    5. Выберите **ClickHouse**
+    5. Выберите **ClickHouse**.
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![ClickHouse](/images/integrations/data-visualization/explo_04.webp)
-
-    </Frame>
-
+      <Frame>
+        ![ClickHouse](/images/integrations/data-visualization/explo_04.webp)
+      </Frame>
     </div>
 
     6. Введите **учётные данные ClickHouse**.
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![Учётные данные](/images/integrations/data-visualization/explo_05.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Учётные данные](/images/integrations/data-visualization/explo_05.webp)
+      </Frame>
     </div>
 
-    7. Настройте **Security**
+    7. Настройте параметры в разделе **Безопасность**.
 
-    <div className="ch-image-md">
-
-    <Frame>
-
-    ![Security](/images/integrations/data-visualization/explo_06.webp)
-
-    </Frame>
-
+    <div className="ch-image-sm">
+      <Frame>
+        ![Безопасность](/images/integrations/data-visualization/explo_06.webp)
+      </Frame>
     </div>
 
-    8. В ClickHouse **добавьте IP-адреса Explo в список разрешённых**.
-       `54.211.43.19, 52.55.98.121, 3.214.169.94 и 54.156.141.148`
+    8. В ClickHouse **добавьте IP-адреса Explo в список разрешённых**:
+       `54.211.43.19, 52.55.98.121, 3.214.169.94, and 54.156.141.148`
   </Step>
 
   <Step title="Создайте панель мониторинга" id="3-create-a-dashboard">
-    1. Перейдите на вкладку **панель мониторинга** на левой панели навигации.
+    1. Перейдите на вкладку **Панель мониторинга** на левой панели навигации.
 
     <div className="ch-image-sm">
-
-    <Frame>
-
-    ![Панель мониторинга](/images/integrations/data-visualization/explo_07.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Панель мониторинга](/images/integrations/data-visualization/explo_07.webp)
+      </Frame>
     </div>
 
-    2. В правом верхнем углу нажмите **Create Dashboard** и задайте имя панели мониторинга. Теперь панель мониторинга создана!
+    2. Нажмите **Создать дашборд** в правом верхнем углу и задайте имя панели мониторинга. Панель мониторинга создана!
 
     <div className="ch-image-sm">
-
-    <Frame>
-
-    ![Create Dashboard](/images/integrations/data-visualization/explo_08.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Создать дашборд](/images/integrations/data-visualization/explo_08.webp)
+      </Frame>
     </div>
 
-    3. Теперь вы должны увидеть экран, похожий на этот:
+    3. Должен открыться экран примерно такого вида:
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![панель мониторинга Explo](/images/integrations/data-visualization/explo_09.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Панель мониторинга Explo](/images/integrations/data-visualization/explo_09.webp)
+      </Frame>
     </div>
   </Step>
 
   <Step title="Выполните SQL-запрос" id="4-run-a-sql-query">
-    1. Найдите имя таблицы на правой боковой панели под заголовком схемы. Затем введите следующую команду в редактор набора данных:
+    1. Найдите имя таблицы на правой боковой панели под названием вашей схемы. Затем введите в редакторе набора данных следующую команду:
        `SELECT * FROM YOUR_TABLE_NAME
        LIMIT 100`
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![панель мониторинга Explo](/images/integrations/data-visualization/explo_10.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Панель мониторинга Explo](/images/integrations/data-visualization/explo_10.webp)
+      </Frame>
     </div>
 
-    2. Теперь нажмите **Run** и перейдите на вкладку preview, чтобы увидеть свои данные.
+    2. Нажмите **run** и перейдите на вкладку **preview**, чтобы просмотреть данные.
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![панель мониторинга Explo](/images/integrations/data-visualization/explo_11.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Панель мониторинга Explo](/images/integrations/data-visualization/explo_11.webp)
+      </Frame>
     </div>
   </Step>
 
-  <Step title="Создайте диаграмму" id="5-build-a-chart">
-    1. Слева перетащите значок столбчатой диаграммы на экран.
+  <Step title="Постройте чарт" id="5-build-a-chart">
+    1. Перетащите значок столбчатой диаграммы с левой панели на экран.
 
     <div className="ch-image-sm">
-
-    <Frame>
-
-    ![панель мониторинга Explo](/images/integrations/data-visualization/explo_16.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Панель мониторинга Explo](/images/integrations/data-visualization/explo_16.webp)
+      </Frame>
     </div>
 
-    2. Выберите набор данных. Теперь вы должны увидеть экран, похожий на следующий:
+    2. Выберите набор данных. Должен открыться экран примерно такого вида:
 
     <div className="ch-image-sm">
-
-    <Frame>
-
-    ![панель мониторинга Explo](/images/integrations/data-visualization/explo_12.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Панель мониторинга Explo](/images/integrations/data-visualization/explo_12.webp)
+      </Frame>
     </div>
 
-    3. Укажите **графство** для оси X, а **Price** — в разделе оси Y, как показано ниже:
+    3. Укажите **county** в разделе X Axis и **Price** в разделе Y Axis, как показано ниже:
 
     <div className="ch-image-sm">
-
-    <Frame>
-
-    ![панель мониторинга Explo](/images/integrations/data-visualization/explo_13.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Панель мониторинга Explo](/images/integrations/data-visualization/explo_13.webp)
+      </Frame>
     </div>
 
-    4. Теперь измените aggregation на **AVG**.
+    4. Измените тип агрегации на **AVG**.
 
     <div className="ch-image-sm">
-
-    <Frame>
-
-    ![панель мониторинга Explo](/images/integrations/data-visualization/explo_14.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Панель мониторинга Explo](/images/integrations/data-visualization/explo_14.webp)
+      </Frame>
     </div>
 
-    5. Теперь у нас есть средняя цена домов с разбивкой по графствам!
+    5. Готово: мы получили среднюю цену домов в разбивке по цене!
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![панель мониторинга Explo](/images/integrations/data-visualization/explo_15.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Панель мониторинга Explo](/images/integrations/data-visualization/explo_15.webp)
+      </Frame>
     </div>
   </Step>
 </Steps>
 
 <div id="learn-more">
-  ## Узнайте больше
+  ## Узнайте больше {#learn-more}
 </div>
 
 Подробнее об Explo и создании панелей мониторинга можно узнать, <a href="https://docs.explo.co/" target="_blank">обратившись к документации Explo</a>.

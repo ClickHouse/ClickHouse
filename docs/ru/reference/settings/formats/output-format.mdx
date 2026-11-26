@@ -53,6 +53,18 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Включает вывод типа LowCardinality как типа Dictionary Arrow
 
+## output_format_arrow_max_record_batch_size_bytes {#output_format_arrow_max_record_batch_size_bytes}
+
+<SettingsInfoBlock type="UInt64" default_value="2147483646" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "2147483646"},{"label": "Новая настройка, ограничивающая размер одного батча записей в выводе `Arrow` и `ArrowStream`. Значение по умолчанию совпадает с собственным пределом адресации Arrow, поэтому поведение не меняется."}]}]} />
+
+Верхняя граница размера буферов `Utf8`, `Binary` и `List` одного батча записей в форматах вывода `Arrow` и `ArrowStream`, а также в батчах записей Arrow, на основе которых записывается формат вывода `Vortex`. Блок, в котором строки, двоичные значения или элементы списков превышают этот предел, записывается в виде нескольких батчей записей.
+
+В отличие от [output&#95;format&#95;arrow&#95;record&#95;batch&#95;size&#95;bytes](/ru/reference/settings/formats/output-format#output_format_arrow_record_batch_size_bytes), которая задаёт целевой размер для объединения небольших блоков, эта настройка задаёт предел для разделения крупных блоков. Значение по умолчанию — максимальное значение, которое может адресовать Arrow, поскольку смещения в этих буферах хранятся как 32-битные целые числа; большее значение ни на что не влияет.
+
+Ограничиваются только перечисленные выше буферы: у столбца типа фиксированной ширины нет смещений, которые могли бы переполниться, поэтому он остаётся в одном батче. Отдельная строка тоже никогда не разделяется, поэтому строка, превышающая предел, всё равно даёт батч, размер которого больше этого предела.
+
 ## output_format_arrow_record_batch_size {#output_format_arrow_record_batch_size}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
@@ -141,9 +153,18 @@ ClickHouse читает такой столбец обратно в тип, ук
 
 Использовать знаковые целые числа для индексов словарей в формате Arrow
 
+## output_format_arrow_uuid_as_fixed_byte_array {#output_format_arrow_uuid_as_fixed_byte_array}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "Новая настройка для записи UUID как обычного FixedSizeBinary(16) без типа расширения `arrow.uuid`."}]}]} />
+
+Записывает значения `UUID` как обычный тип Arrow `FixedSizeBinary(16)` без указания типа расширения `arrow.uuid` в метаданных поля.
+Используйте эту настройку для считывателей Arrow, которые не поддерживают тип расширения `arrow.uuid`.
+
 ## output_format_avro_codec {#output_format_avro_codec}
 
-Кодек сжатия, используемый для вывода данных. Возможные значения: &#39;null&#39;, &#39;deflate&#39;, &#39;snappy&#39;, &#39;zstd&#39;.
+Кодек сжатия, используемый для вывода данных. Возможные значения: &#39;null&#39;, &#39;deflate&#39;, &#39;snappy&#39;, &#39;zstd&#39;, &#39;bzip2&#39;, &#39;xz&#39;.
 
 ## output_format_avro_confluent_subject {#output_format_avro_confluent_subject}
 
@@ -1201,6 +1222,14 @@ SELECT *, toTypeName(*) FROM (SELECT * FROM system.numbers LIMIT 1000);
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.2"},{"label": "0"},{"label": "Если true, экранировать ' как '', иначе использовать \\'"}]}]} />
 
 Если true, экранировать &#39; как &#39;&#39;, иначе использовать \&#39;
+
+## output_format_vortex_string_as_string {#output_format_vortex_string_as_string}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "Новая настройка для записи столбцов `String` в формате `Vortex` как `Utf8`, который Vortex сжимает эффективнее, чем `Binary`."}]}]} />
+
+Записывать столбцы `String` в формате `Vortex` как `Utf8` вместо `Binary`. Vortex сжимает `Utf8` эффективнее. Значение `Utf8` должно быть корректным UTF-8, а модуль записи Vortex это не проверяет, поэтому ClickHouse проверяет каждое значение и генерирует исключение, если оно не является корректным UTF-8. Чтобы записывать такие данные как `Binary`, отключите эту настройку. Столбцы `FixedString` всегда записываются как `Binary`. При чтении оба типа возвращаются как `String`.
 
 ## output_format_write_statistics {#output_format_write_statistics}
 
