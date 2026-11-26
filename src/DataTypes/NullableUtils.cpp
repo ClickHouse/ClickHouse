@@ -4,6 +4,7 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnVariant.h>
 #include <Columns/ColumnsCommon.h>
+#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/NullableUtils.h>
@@ -59,7 +60,8 @@ DataTypePtr makeExtractedSubcolumnsNullableOrLowCardinalityNullableSafe(const Da
     if (!canExtractedSubcolumnsBeInsideNullableOrLowCardinalityNullable(type))
         return type;
 
-    return makeNullableOrLowCardinalityNullableSafe(type);
+    /// `Nullable` cannot wrap a `SimpleAggregateFunction`, so the subcolumn of one has its storage type.
+    return makeNullableOrLowCardinalityNullableSafe(getSimpleAggregateFunctionStorageType(type));
 }
 
 ColumnPtr mergeNullMaps(ColumnPtr lhs, const ColumnPtr & rhs)

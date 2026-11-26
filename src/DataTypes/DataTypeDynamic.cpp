@@ -5,6 +5,7 @@
 #include <DataTypes/Serializations/SerializationVariantElement.h>
 #include <DataTypes/Serializations/SerializationVariantElementNullMap.h>
 #include <DataTypes/Serializations/SerializationNamed.h>
+#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -1017,7 +1018,7 @@ std::unique_ptr<IDataType::SubcolumnInfo> DataTypeDynamic::getDynamicSubcolumnIn
     bool make_subcolumn_nullable = canExtractedSubcolumnsBeInsideNullableOrLowCardinalityNullable(subcolumn_type);
     auto subcolumn_type_before_wrap = res->data.type;
     if (!is_null_map_subcolumn && make_subcolumn_nullable)
-        res->data.type = makeNullableOrLowCardinalityNullableSafe(res->data.type);
+        res->data.type = makeNullableOrLowCardinalityNullableSafe(getSimpleAggregateFunctionStorageType(res->data.type));
     /// res->data.serialization serializes the type before the wrap above, so it must know whether the
     /// nullability it will be handed at read time is that wrapper or the requested type's own.
     bool nullable_added_by_extraction

@@ -52,7 +52,7 @@ namespace Setting
 extern const SettingsUInt64 input_format_binary_max_type_complexity;
 }
 
-static DataTypePtr decodeDataTypeImpl(ReadBuffer & buf, size_t & complexity, size_t max_complexity);
+static DataTypePtr decodeDataTypeImpl(ReadBuffer & buf, size_t & complexity, size_t max_complexity, bool stored_definition);
 
 namespace
 {
@@ -284,7 +284,7 @@ void encodeAggregateFunction(const String & function_name, const Array & paramet
         encodeDataTypeImpl<encode_for_hash_calculation>(argument_type, buf);
 }
 
-std::tuple<AggregateFunctionPtr, Array, DataTypes> decodeAggregateFunction(ReadBuffer & buf, size_t & complexity, size_t max_complexity)
+std::tuple<AggregateFunctionPtr, Array, DataTypes> decodeAggregateFunction(ReadBuffer & buf, size_t & complexity, size_t max_complexity, bool stored_definition)
 {
     String function_name;
     readStringBinaryGrowing(function_name, buf);
@@ -305,7 +305,7 @@ std::tuple<AggregateFunctionPtr, Array, DataTypes> decodeAggregateFunction(ReadB
     DataTypes arguments_types;
     arguments_types.reserve(num_arguments);
     for (size_t i = 0; i != num_arguments; ++i)
-        arguments_types.push_back(decodeDataTypeImpl(buf, complexity, max_complexity));
+        arguments_types.push_back(decodeDataTypeImpl(buf, complexity, max_complexity, stored_definition));
     AggregateFunctionProperties properties;
     auto action = NullsAction::EMPTY;
     auto function = AggregateFunctionFactory::instance().get(function_name, action, arguments_types, parameters, properties);
@@ -571,7 +571,7 @@ String encodeDataType(const DataTypePtr & type)
     return buf.str();
 }
 
-static DataTypePtr decodeDataTypeImpl(ReadBuffer & buf, size_t & complexity, size_t max_complexity)
+static DataTypePtr decodeDataTypeImpl(ReadBuffer & buf, size_t & complexity, size_t max_complexity, bool stored_definition)
 {
     ++complexity;
     if (max_complexity > 0 && complexity > max_complexity)
@@ -658,7 +658,7 @@ static DataTypePtr decodeDataTypeImpl(ReadBuffer & buf, size_t & complexity, siz
         case BinaryTypeIndex::Decimal256:
             return decodeDecimal<Decimal256>(buf);
         case BinaryTypeIndex::Array:
-            return std::make_shared<DataTypeArray>(decodeDataTypeImpl(buf, complexity, max_complexity));
+            return std::make_shared<DataTypeArray>(decodeDataTypeImpl(buf, complexity, max_complexity, stored_definition));
         case BinaryTypeIndex::NamedTuple:
         {
             size_t size = 0;
@@ -674,7 +674,7 @@ static DataTypePtr decodeDataTypeImpl(ReadBuffer & buf, size_t & complexity, siz
             {
                 names.emplace_back();
                 readStringBinaryGrowing(names.back(), buf);
-                elements.push_back(decodeDataTypeImpl(buf, complexity, max_complexity));
+                elements.push_back(decodeDataTypeImpl(buf, complexity, max_complexity, stored_definition));
             }
 
             return std::make_shared<DataTypeTuple>(elements, names);
@@ -689,12 +689,12 @@ static DataTypePtr decodeDataTypeImpl(ReadBuffer & buf, size_t & complexity, siz
             DataTypes elements;
             elements.reserve(size);
             for (size_t i = 0; i != size; ++i)
-                elements.push_back(decodeDataTypeImpl(buf, complexity, max_complexity));
+                elements.push_back(decodeDataTypeImpl(buf, complexity, max_complexity, stored_definition));
             return std::make_shared<DataTypeTuple>(elements);
         }
         case BinaryTypeIndex::QBit:
         {
-            auto element_type = decodeDataTypeImpl(buf, complexity, max_complexity);
+            auto element_type = decodeDataTypeImpl(buf, complexity, max_complexity, stored_definition);
             size_t dimension = 0;
             readVarUInt(dimension, buf);
             /// Non-strided QBit: the stride defaults to the dimension.
@@ -702,7 +702,7 @@ static DataTypePtr decodeDataTypeImpl(ReadBuffer & buf, size_t & complexity, siz
         }
         case BinaryTypeIndex::QBitWithStride:
         {
-            auto element_type = decodeDataTypeImpl(buf, complexity, max_complexity);
+            auto element_type = decodeDataTypeImpl(buf, complexity, max_complexity, stored_definition);
             size_t dimension = 0;
             readVarUInt(dimension, buf);
             size_t stride = 0;
@@ -734,8 +734,8 @@ static DataTypePtr decodeDataTypeImpl(ReadBuffer & buf, size_t & complexity, siz
         }
         case BinaryTypeIndex::Nullable:
         {
-            auto nested_type = decodeDataTypeImpl(buf, complexity, max_complexity);
-            if (typeid_cast<const DataTypeCustomSimpleAggregateFunction *>(nested_type->getCustomName()))
+            auto nested_type = decodeDataTypeImpl(buf, complexity, max_complexity, stored_definition);
+            if (stored_definition && typeid_cast<const DataTypeCustomSimpleAggregateFunction *>(nested_type->getCustomName()))
                 return getStoredDataType("Nullable(" + nested_type->getName() + ")");
             return std::make_shared<DataTypeNullable>(nested_type);
         }
@@ -749,21 +749,21 @@ static DataTypePtr decodeDataTypeImpl(ReadBuffer & buf, size_t & complexity, siz
             DataTypes arguments;
             arguments.reserve(arguments_size);
             for (size_t i = 0; i != arguments_size; ++i)
-                arguments.push_back(decodeDataTypeImpl(buf, complexity, max_complexity));
-            auto return_type = decodeDataTypeImpl(buf, complexity, max_complexity);
+                arguments.push_back(decodeDataTypeImpl(buf, complexity, max_complexity, stored_definition));
+            auto return_type = decodeDataTypeImpl(buf, complexity, max_complexity, stored_definition);
             return std::make_shared<DataTypeFunction>(arguments, return_type);
         }
         case BinaryTypeIndex::LowCardinality:
         {
-            auto dictionary_type = decodeDataTypeImpl(buf, complexity, max_complexity);
-            if (typeid_cast<const DataTypeCustomSimpleAggregateFunction *>(dictionary_type->getCustomName()))
+            auto dictionary_type = decodeDataTypeImpl(buf, complexity, max_complexity, stored_definition);
+            if (stored_definition && typeid_cast<const DataTypeCustomSimpleAggregateFunction *>(dictionary_type->getCustomName()))
                 return getStoredDataType("LowCardinality(" + dictionary_type->getName() + ")");
             return std::make_shared<DataTypeLowCardinality>(dictionary_type);
         }
         case BinaryTypeIndex::Map:
         {
-            auto key_type = decodeDataTypeImpl(buf, complexity, max_complexity);
-            auto value_type = decodeDataTypeImpl(buf, complexity, max_complexity);
+            auto key_type = decodeDataTypeImpl(buf, complexity, max_complexity, stored_definition);
+            auto value_type = decodeDataTypeImpl(buf, complexity, max_complexity, stored_definition);
             return std::make_shared<DataTypeMap>(key_type, value_type);
         }
         case BinaryTypeIndex::Variant:
@@ -776,7 +776,7 @@ static DataTypePtr decodeDataTypeImpl(ReadBuffer & buf, size_t & complexity, siz
             DataTypes variants;
             variants.reserve(size);
             for (size_t i = 0; i != size; ++i)
-                variants.push_back(decodeDataTypeImpl(buf, complexity, max_complexity));
+                variants.push_back(decodeDataTypeImpl(buf, complexity, max_complexity, /*stored_definition=*/false));
             return std::make_shared<DataTypeVariant>(variants);
         }
         case BinaryTypeIndex::Dynamic:
@@ -789,12 +789,12 @@ static DataTypePtr decodeDataTypeImpl(ReadBuffer & buf, size_t & complexity, siz
         {
             size_t version = 0;
             readVarUInt(version, buf);
-            const auto & [function, parameters, arguments_types] = decodeAggregateFunction(buf, complexity, max_complexity);
+            const auto & [function, parameters, arguments_types] = decodeAggregateFunction(buf, complexity, max_complexity, stored_definition);
             return std::make_shared<DataTypeAggregateFunction>(function, arguments_types, parameters, version);
         }
         case BinaryTypeIndex::SimpleAggregateFunction:
         {
-            const auto & [function, parameters, arguments_types] = decodeAggregateFunction(buf, complexity, max_complexity);
+            const auto & [function, parameters, arguments_types] = decodeAggregateFunction(buf, complexity, max_complexity, stored_definition);
             return createSimpleAggregateFunctionType(function, arguments_types, parameters);
         }
         case BinaryTypeIndex::Nested:
@@ -812,7 +812,7 @@ static DataTypePtr decodeDataTypeImpl(ReadBuffer & buf, size_t & complexity, siz
             {
                 names.emplace_back();
                 readStringBinaryGrowing(names.back(), buf);
-                elements.push_back(decodeDataTypeImpl(buf, complexity, max_complexity));
+                elements.push_back(decodeDataTypeImpl(buf, complexity, max_complexity, stored_definition));
             }
 
             return createNested(elements, names);
@@ -859,7 +859,7 @@ static DataTypePtr decodeDataTypeImpl(ReadBuffer & buf, size_t & complexity, siz
                     if (flags & TYPED_PATH_FLAG_SHARED)
                         shared_typed_paths.insert(path);
                 }
-                typed_paths[path] = decodeDataTypeImpl(buf, complexity, max_complexity);
+                typed_paths[path] = decodeDataTypeImpl(buf, complexity, max_complexity, stored_definition);
             }
             size_t paths_to_skip_size = 0;
             readVarUInt(paths_to_skip_size, buf);
@@ -905,7 +905,13 @@ static DataTypePtr decodeDataTypeImpl(ReadBuffer & buf, size_t & complexity, siz
 DataTypePtr decodeDataType(ReadBuffer & buf, size_t max_complexity)
 {
     size_t complexity = 0;
-    return decodeDataTypeImpl(buf, complexity, max_complexity);
+    return decodeDataTypeImpl(buf, complexity, max_complexity, /*stored_definition=*/false);
+}
+
+DataTypePtr decodeStoredDataType(ReadBuffer & buf, size_t max_complexity)
+{
+    size_t complexity = 0;
+    return decodeDataTypeImpl(buf, complexity, max_complexity, /*stored_definition=*/true);
 }
 
 size_t getBinaryTypeDecodingComplexityLimit(const ContextPtr & context)

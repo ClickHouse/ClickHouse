@@ -2,6 +2,7 @@
 #include <DataTypes/Serializations/SerializationVariantElement.h>
 #include <DataTypes/Serializations/SerializationNumber.h>
 #include <DataTypes/Serializations/SerializationVariant.h>
+#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnNullable.h>
@@ -468,7 +469,7 @@ SerializationVariantElement::VariantSubcolumnCreator::specializeForSelectedSubco
 
 DataTypePtr SerializationVariantElement::VariantSubcolumnCreator::create(const DataTypePtr & prev) const
 {
-    return make_nullable ? makeNullableOrLowCardinalityNullableSafe(prev) : prev;
+    return make_nullable ? makeNullableOrLowCardinalityNullableSafe(getSimpleAggregateFunctionStorageType(prev)) : prev;
 }
 
 SerializationPtr SerializationVariantElement::VariantSubcolumnCreator::create(const SerializationPtr & prev, const DataTypePtr & prev_type) const

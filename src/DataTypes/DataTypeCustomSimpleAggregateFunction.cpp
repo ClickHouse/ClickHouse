@@ -253,10 +253,19 @@ ASTDataType * getWrappedSimpleAggregateFunction(const IAST & ast)
     return arguments->children[0]->as<ASTDataType>();
 }
 
+/// The name of a `Variant` alternative names its streams and orders its discriminators.
+bool isVariantAST(const IAST & ast)
+{
+    const auto * type = ast.as<ASTDataType>();
+    return type && type->name == "Variant";
+}
+
 bool hasWrappedSimpleAggregateFunction(const IAST & ast)
 {
     if (getWrappedSimpleAggregateFunction(ast))
         return true;
+    if (isVariantAST(ast))
+        return false;
     for (const auto & child : ast.children)
         if (hasWrappedSimpleAggregateFunction(*child))
             return true;
@@ -265,6 +274,9 @@ bool hasWrappedSimpleAggregateFunction(const IAST & ast)
 
 void moveWrappersIntoSimpleAggregateFunction(ASTPtr & ast)
 {
+    if (isVariantAST(*ast))
+        return;
+
     for (auto & child : ast->children)
         moveWrappersIntoSimpleAggregateFunction(child);
 

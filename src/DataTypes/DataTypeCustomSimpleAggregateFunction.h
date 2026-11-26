@@ -65,7 +65,7 @@ bool isSimpleAggregateFunctionOfBool(const IDataType & type);
 
 /// The type of a stored definition (table metadata, `columns.txt` of a part, ZooKeeper, a kept mutation, a `Native` header).
 /// `Nullable(SimpleAggregateFunction(f, T))`, which older versions allowed, is read as `SimpleAggregateFunction(f, Nullable(T))`,
-/// with the same columns, and likewise for `LowCardinality`.
+/// with the same columns, and likewise for `LowCardinality`, except inside a `Variant`, whose data is located by its names.
 DataTypePtr getStoredDataType(const ASTPtr & ast);
 DataTypePtr getStoredDataType(const String & name);
 /// The AST of a stored type as `getStoredDataType` reads it: `ast` itself, or a rewritten copy.

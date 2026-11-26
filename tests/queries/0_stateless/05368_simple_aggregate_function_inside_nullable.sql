@@ -83,3 +83,7 @@ SELECT x, toTypeName(x) FROM (SELECT m AS x FROM t UNION ALL SELECT NULL) ORDER 
 SELECT count(), toTypeName(any(m)) FROM t JOIN (SELECT x AS m FROM jn) AS r USING (m);
 WITH CAST(toDateTime('2024-01-01 00:00:00'), 'SimpleAggregateFunction(max, DateTime)') AS hit, CAST(toDateTime('2024-01-01 00:00:01'), 'SimpleAggregateFunction(max, DateTime)') AS miss, materialize(CAST([toDate('2024-01-01')], 'Array(LowCardinality(Date))')) AS lc, materialize([toDate('2024-01-01')]) AS plain
 SELECT has(lc, hit), indexOf(lc, hit), countEqual(lc, hit), has(plain, hit), has(lc, miss), indexOf(lc, miss), countEqual(lc, miss), has(plain, miss) SETTINGS allow_suspicious_low_cardinality_types = 1, session_timezone = 'UTC';
+CREATE TABLE c (k UInt32, v Variant(SimpleAggregateFunction(any, UInt64), String), t Nullable(Tuple(x SimpleAggregateFunction(sum, UInt64)))) ENGINE = MergeTree ORDER BY k;
+INSERT INTO c SELECT 1, CAST(5, 'SimpleAggregateFunction(any, UInt64)'), tuple(42);
+INSERT INTO c VALUES (2, 'x', NULL);
+SELECT k, v.`SimpleAggregateFunction(any, UInt64)` AS e, toTypeName(e), t.x AS x, toTypeName(x), variantElement(v, 'SimpleAggregateFunction(any, UInt64)'), tupleElement(t, 'x') FROM c ORDER BY k;

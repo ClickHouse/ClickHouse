@@ -45,6 +45,35 @@ def test_stored_nullable_simple_aggregate_function(start_cluster):
     node.query(
         "ALTER TABLE mut MODIFY COLUMN m Nullable(SimpleAggregateFunction(sum, UInt64)) SETTINGS mutations_sync = 2"
     )
+    variant = {"allow_experimental_variant_type": 1, "allow_experimental_dynamic_type": 1}
+    node.query(
+        "CREATE TABLE v (k UInt32, v Variant(SimpleAggregateFunction(any, UInt64), String)) ENGINE = MergeTree ORDER BY k",
+        settings=variant,
+    )
+    node.query(
+        "INSERT INTO v SELECT 1, CAST(5, 'SimpleAggregateFunction(any, UInt64)')",
+        settings=variant,
+    )
+    node.query("INSERT INTO v VALUES (2, 'x')", settings=variant)
+    # A `Variant` alternative or a `Dynamic` value keeps its stored name, which locates its data.
+    node.query("CREATE DATABASE bad")
+    node.query(
+        "CREATE TABLE bad.v (v Variant(LowCardinality(SimpleAggregateFunction(any, String)), UInt64)) "
+        "ENGINE = MergeTree ORDER BY tuple() SETTINGS min_bytes_for_wide_part = 0",
+        settings=variant,
+    )
+    node.query(
+        "INSERT INTO bad.v SELECT CAST('a', 'LowCardinality(SimpleAggregateFunction(any, String))')",
+        settings=variant,
+    )
+    node.query(
+        "CREATE TABLE bad.d (d Dynamic) ENGINE = MergeTree ORDER BY tuple() SETTINGS min_bytes_for_wide_part = 0",
+        settings=variant,
+    )
+    node.query(
+        "INSERT INTO bad.d SELECT CAST([CAST(1, 'Nullable(SimpleAggregateFunction(sum, UInt64))')], 'Dynamic')",
+        settings=variant,
+    )
 
     node.restart_with_latest_version()
 
@@ -68,6 +97,12 @@ def test_stored_nullable_simple_aggregate_function(start_cluster):
     node.query("OPTIMIZE TABLE t FINAL")
     assert node.query("SELECT k, m, s, n FROM t") == "1\t30\ta\t20\n"
     assert node.query("SELECT k, m FROM mut") == "1\t10\n"
+    assert (
+        node.query("SELECT k, v, v.`SimpleAggregateFunction(any, UInt64)` FROM v ORDER BY k")
+        == "1\t5\t5\n2\tx\t\\N\n"
+    )
+    assert "DataTypeLowCardinality is supported only" in node.query_and_get_error("SELECT * FROM bad.v")
+    assert "cannot be inside Nullable type" in node.query_and_get_error("SELECT * FROM bad.d")
     assert (
         node.query(
             "SELECT count() FROM system.detached_parts WHERE database = 'default'"
