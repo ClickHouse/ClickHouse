@@ -1,0 +1,41 @@
+---
+sidebarTitle: 'セルフサービスプレビュー'
+title: 'セルフサービスプレビュー'
+description: 'ClickHouse Cloud でパブリックプレビュー機能を有効化し、プライベートプレビュー機能へのアクセスをリクエストする方法を説明します。'
+keywords: ['ClickHouse Cloud プレビュー機能', 'パブリックプレビュー', 'プライベートプレビュー', 'アーリーアクセス']
+doc_type: 'guide'
+mode: 'wide'
+---
+
+import { PreviewFeatures } from "/snippets/ja/components/PreviewFeatures/PreviewFeatures.jsx";
+
+ClickHouse Cloud の **Preview features** ページでは、利用可能なパブリックプレビュー機能を有効化したり、利用可能なプライベートプレビュー機能へのアクセスをリクエストしたりできます。
+
+<Warning>
+  プレビュー機能は現在開発中です。仕様が変更される可能性があり、ClickHouse Cloud の標準 SLA の対象外となります。
+</Warning>
+
+## 利用可能なプレビュー機能 {#available-preview-features}
+
+この一覧は ClickHouse Cloud から取得しているため、プレビューの追加・変更・削除に応じて常に最新の状態に保たれます。
+
+<PreviewFeatures />
+
+<Note>
+  一覧に掲載されているプレビューの中には、組織によっては利用できないものもあります。ClickHouse Cloud でプレビューが表示されない場合は、[Cloud サポート](https://clickhouse.com/support/program)までお問い合わせください。
+</Note>
+
+## パブリックプレビューを有効化する {#enable-public-preview}
+
+1. クラウドコンソールにサインインし、対象の組織を選択します。
+2. 組織メニューを開き、**Preview features** を選択します。組織のサイドバーからもアクセスできます。
+3. 対象の機能を探し、**Learn more** を選択して要件と制限事項を確認したうえで、スイッチをオンにします。スイッチが無効になっている場合は、組織の管理者に機能の有効化を依頼してください。
+4. 利用可能な場合は、**Go to...** または **View in...** のサービスリンクから機能の利用を開始できます。
+5. フィードバックを送信するには、機能の横にある **Give feedback** を選択し、その機能を利用したい場合は **Thumbs up** を、利用しない場合は **Thumbs down** を選択します。必要に応じて、テキストフォームに詳細を入力したり、フィードバックに関する連絡を受け取ることに同意したりしたうえで、**Send feedback** を選択します。
+
+## プライベートプレビューを有効化する {#enable-private-preview}
+
+1. 対象のプライベートプレビュー機能を探し、**Learn more** を選択して要件と制限事項を確認します。
+2. **Request access** を選択します。これによりアクセス要求が送信されますが、機能がすぐに有効になるわけではありません。リクエストを受け付けると、ClickHouse Cloud から受付確認が届きます。
+3. リクエストが承認されてアクセスが有効になったら、**Go to...** または **View in...** のサービスリンク (表示されている場合) から機能の利用を開始します。
+4. フィードバックを送るには、機能の横にある **Give feedback** を選択し、その機能を使用したい場合は **Thumbs up**、使用しない場合は **Thumbs down** を選びます。必要に応じてテキスト欄に詳細を入力したり、フィードバックに関する連絡を受け取ることに同意したりしてから、**Send feedback** を選択します。

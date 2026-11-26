@@ -100,7 +100,9 @@ size_t MergeTreeReadersChain::numRowsInCurrentGranule() const
 
 size_t MergeTreeReadersChain::currentMark() const
 {
-    return range_readers.empty() ? 0 : range_readers.back().currentMark();
+    /// The first reader drives the reading of the chain: take its mark, as `numReadRowsInCurrentGranule` takes its offset.
+    /// The stream of a later reader may not move at all: a PREWHERE step that reads no columns stays at mark 0.
+    return range_readers.empty() ? 0 : range_readers.front().currentMark();
 }
 
 const Block & MergeTreeReadersChain::getSampleBlock() const
@@ -351,7 +353,7 @@ MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(
     MarkRanges & ranges,
     std::vector<MarkRanges> & patch_ranges,
     const DataflowCacheUpdateCallback & dataflow_cache_update_cb,
-    size_t max_block_size_rows)
+    size_t max_stripe_block_rows)
 {
     if (max_rows == 0)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected at least 1 row to read, got 0.");
@@ -363,15 +365,9 @@ MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(
 
     auto & first_reader = range_readers.front();
 
-    size_t num_attributed_readers = 0;
-    if (first_reader.getReader()->getMergeTreeReaderSettings().use_query_condition_cache)
-        for (size_t i = 0; i < range_readers.size(); ++i)
-            if (const auto * step = range_readers[i].getPrewhereInfo(); step && step->query_condition_cache_attribution_boundary)
-                num_attributed_readers = i + 1;
-
     try
     {
-        read_result = first_reader.startReadingChain(max_rows, ranges, max_block_size_rows, columns_cache_readers);
+        read_result = first_reader.startReadingChain(max_rows, ranges, max_stripe_block_rows, columns_cache_readers);
         LOG_TEST(log, "First reader returned: {}, requested columns: {}", read_result.dumpInfo(), first_reader.getSampleBlock().dumpNames());
     }
     catch (Exception & e)
@@ -448,9 +444,6 @@ MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(
         addPatchVirtuals(read_result, first_reader.getSampleBlock());
 
         track_prewhere_granules(0);
-
-        if (num_attributed_readers != 0)
-            read_result.query_condition_cache_attributable_marks = read_result.computeUnmatchedMarkRanges();
     }
 
     for (size_t i = 1; i < range_readers.size(); ++i)
@@ -496,9 +489,6 @@ MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(
         executePrewhereActions(range_readers[i], read_result, previous_header, i + 1 == range_readers.size(), i < last_reader_evaluating_defaults);
 
         track_prewhere_granules(i);
-
-        if (i < num_attributed_readers)
-            read_result.query_condition_cache_attributable_marks = read_result.computeUnmatchedMarkRanges();
     }
 
     applyPatchesAfterReader(read_result, range_readers.size() - 1);
@@ -514,8 +504,15 @@ MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(
     /// but `contaminated` true): they carry the contamination to the mark without being counted as read, which
     /// matters when another fragment of the same granule was cleanly emptied by the user predicate. Feeding is
     /// in mark order; `feedPrewhereGranuleMark` OR-s the flags of a granule split across blocks.
+    /// A granule whose rest was skipped unread (see below) is `contaminated` too.
     if (prewhere_granule_stats_enabled)
     {
+        /// The rest of the pending granule was skipped unread (`canSkipMark`, e.g. by the top-K threshold), so the
+        /// user predicate did not reject the whole granule. This block may read no rows at all, so check it here.
+        if (prewhere_pending_mark && read_result.in_progress_start_mark == prewhere_pending_mark
+            && !read_result.raw_rows_per_granule.empty() && read_result.raw_rows_per_granule.front() == 0)
+            prewhere_pending_contaminated = true;
+
         /// Feed this block's granules only when tracking ran (it does whenever any row reached PREWHERE in this
         /// block). When it did not, the per-granule vectors are empty; a pending mark from an earlier block is
         /// still finalized below once the cursor passes it.

@@ -30,7 +30,7 @@ inline bool endsWith(const std::string & s, const std::string & suffix)
 }
 
 
-/// With GCC, strlen is evaluated compile time if we pass it a constant
+/// strlen is evaluated at compile time if we pass it a constant
 /// string that is known at compile time.
 inline bool startsWith(const std::string & s, const char * prefix)
 {
@@ -89,9 +89,6 @@ constexpr bool isAlphaASCII(char c)
 
 constexpr bool isNumericASCII(char c)
 {
-    /// This is faster than
-    /// return UInt8(UInt8(c) - UInt8('0')) < UInt8(10);
-    /// on Intel CPUs when compiled by gcc 8.
     return (c >= '0' && c <= '9');
 }
 

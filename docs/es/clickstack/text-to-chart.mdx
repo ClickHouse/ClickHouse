@@ -11,9 +11,7 @@ La función Text-to-Chart de ClickStack te permite crear visualizaciones describ
 
 Esta función utiliza un modelo de lenguaje grande (LLM) para convertir tu prompt de texto en una consulta y luego crear la visualización en el [Chart Explorer](/es/clickstack/features/dashboards/overview#navigate-chart-explorer). Funciona con cualquier fuente de datos configurada.
 
-<div id="prerequisites">
-  ## Requisitos previos
-</div>
+## Requisitos previos {#prerequisites}
 
 Text-to-Chart requiere una [clave de API de Anthropic](https://console.anthropic.com/). Define la variable de entorno `ANTHROPIC_API_KEY` al iniciar ClickStack.
 
@@ -26,9 +24,9 @@ Para despliegues de código abierto, pasa la clave como variable de entorno. El 
     ```
   </Tab>
 
-  <Tab title="Docker (solo HyperDX)">
+  <Tab title="Docker (solo UI de ClickStack)">
     ```bash
-    docker run -e ANTHROPIC_API_KEY='<YOUR_KEY>' -p 8080:8080 docker.hyperdx.io/hyperdx/hyperdx-local
+    docker run -e ANTHROPIC_API_KEY='<YOUR_KEY>' -p 8080:8080 clickhouse/clickstack-local
     ```
   </Tab>
 
@@ -54,26 +52,20 @@ Para despliegues de código abierto, pasa la clave como variable de entorno. El 
   </Tab>
 </Tabs>
 
-<div id="using-text-to-chart">
-  ## Cómo usar Text-to-Chart
-</div>
+## Cómo usar Text-to-Chart {#using-text-to-chart}
 
 <Steps>
   <Step title="Vaya a Chart Explorer" id="navigate-chart-explorer">
-    Seleccione **Chart Explorer** en el menú izquierdo de HyperDX.
+    Seleccione **Chart Explorer** en el menú izquierdo de la UI de ClickStack.
   </Step>
 
   <Step title="Seleccione una fuente de datos" id="select-data-source">
-    Elija la fuente de datos que desea visualizar; por ejemplo, **Logs**, **Traces** o **Metrics**.
+    Elija la fuente de datos que desea visualizar; por ejemplo, **Logs**, **Trazas** o **Métricas**.
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Chart Explorer](/images/clickstack/text-to-chart/chart-explorer.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Chart Explorer](/images/clickstack/text-to-chart/chart-explorer.webp)
+      </Frame>
     </div>
   </Step>
 
@@ -87,22 +79,16 @@ Para despliegues de código abierto, pasa la clave como variable de entorno. El 
     ClickStack convierte el prompt en una consulta y muestra la visualización automáticamente.
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Text-to-Chart](/images/clickstack/text-to-chart/text-to-chart.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Text-to-Chart](/images/clickstack/text-to-chart/text-to-chart.webp)
+      </Frame>
     </div>
   </Step>
 </Steps>
 
-<div id="demo-data">
-  ## Probarlo con datos de demostración
-</div>
+## Probarlo con datos de demostración {#demo-data}
 
-La forma más rápida de probar Text-to-Chart es con la imagen de Docker de [Modo local](/es/clickstack/deployment/local-mode-only) y el [dataset de demostración remoto](/es/clickstack/example-datasets/remote-demo-data):
+La forma más rápida de probar Text-to-Chart es con la imagen de Docker de [Modo local](/es/clickstack/deployment/local-mode-only) y el [conjunto de datos de demostración remoto](/es/clickstack/example-datasets/remote-demo-data):
 
 ```bash
 docker run -e ANTHROPIC_API_KEY='<YOUR_KEY>' -p 8080:8080 clickhouse/clickstack-local:latest
@@ -116,21 +102,17 @@ Ve a `localhost:8080`. Para conectarte a los datos de demostración, ve a **Conf
 * **Contraseña**: Déjala en blanco
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Crear conexión](/images/clickstack/text-to-chart/create-connection.webp)
-
-</Frame>
-
+  <Frame>
+    ![Crear conexión](/images/clickstack/text-to-chart/create-connection.webp)
+  </Frame>
 </div>
 
-Luego, modifica cada una de las fuentes — **Logs**, **Traces**, **Metrics** y **Sessions** — para que usen la base de datos `otel_v2`. Para obtener todos los detalles sobre cómo configurar las fuentes, consulta la [guía remota del conjunto de datos de demostración](/es/clickstack/example-datasets/remote-demo-data).
+Luego, modifica cada una de las fuentes — **Logs**, **Trazas**, **Métricas** y **Sessions** — para que usen la base de datos `otel_v2`. Para obtener todos los detalles sobre cómo configurar las fuentes, consulta la [guía remota del conjunto de datos de demostración](/es/clickstack/example-datasets/remote-demo-data).
 
 Una vez conectado, abre el **Chart Explorer** y prueba prompts con los logs, las trazas y las métricas disponibles.
 
 <div id="example-prompts">
-  ## Prompts de ejemplo
+  ## Prompts de ejemplo {#example-prompts}
 </div>
 
 Los siguientes prompts muestran casos de uso habituales al trabajar con datos de observabilidad:
@@ -145,16 +127,14 @@ Los siguientes prompts muestran casos de uso habituales al trabajar con datos de
 Los prompts pueden hacer referencia a cualquier columna o atributo disponible en las fuentes de datos configuradas. Cuanto más específico sea el prompt, más preciso será el gráfico generado.
 
 <div id="limitations">
-  ## Limitaciones
+  ## Limitaciones {#limitations}
 </div>
 
 * Text-to-Chart actualmente admite Anthropic como proveedor de LLM. Está previsto incorporar compatibilidad con proveedores adicionales, incluido OpenAI, en futuras versiones.
 * Solo se admiten logs y trazas como fuentes de datos. Las métricas de Prometheus aún no son compatibles.
 * La precisión del gráfico depende de la claridad del prompt y de la estructura de los datos subyacentes. Si un gráfico generado no coincide con lo esperado, prueba a reformular el prompt o a especificar explícitamente los nombres de columna.
 
-<div id="further-reading">
-  ## Más información
-</div>
+## Más información {#further-reading}
 
 * [Del texto a los gráficos: una forma más rápida de visualizar con ClickStack](https://clickhouse.com/blog/text-to-charts-faster-way-to-visualize-clickstack) — entrada de blog que presenta la función
 * [Dashboards y visualizaciones](/es/clickstack/features/dashboards/overview) — creación manual de gráficos con Chart Explorer

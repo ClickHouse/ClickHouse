@@ -187,10 +187,10 @@ ClickHouse は、x 秒ごとに組み込みDictionaryを再読み込みします
 
 **`<case>` フィールド**:
 
-* `min_part_size` – データパートの最小サイズ。
-* `min_part_size_ratio` – テーブルサイズに対するデータパートサイズの比率。
+* `min_part_size` – データパーツの最小サイズ。
+* `min_part_size_ratio` – テーブルサイズに対するデータパーツサイズの比率。
 * `method` – 圧縮方式。有効な値: `lz4`, `lz4hc`, `zstd`,`deflate_qpl`。
-* `level` – 圧縮レベル。[Codecs](/ja/reference/statements/create/table/codec#general-purpose-codecs)を参照してください。
+* `level` – 圧縮レベル。[コーデック](/ja/reference/statements/create/table/codec#general-purpose-codecs)を参照してください。
 
 <Note>
   複数の `<case>` セクションを設定できます。
@@ -198,11 +198,11 @@ ClickHouse は、x 秒ごとに組み込みDictionaryを再読み込みします
 
 **条件を満たした場合の動作**:
 
-* データパートが条件セットに一致した場合、ClickHouse は指定された圧縮方式を使用します。
-* データパートが複数の条件セットに一致した場合、ClickHouse は最後に一致した条件セットを使用します (`<case>` セクションは順に評価され、一致するたびに直前の選択が上書きされます) 。
+* データパーツが条件セットに一致した場合、ClickHouse は指定された圧縮方式を使用します。
+* データパーツが複数の条件セットに一致した場合、ClickHouse は最後に一致した条件セットを使用します (`<case>` セクションは順に評価され、一致するたびに直前の選択が上書きされます) 。
 
 <Note>
-  データパートがどの条件も満たさない場合、ClickHouse はサイズに応じた組み込みのデフォルト、すなわち 100 MB 未満では `LZ4`、それ以上では `ZSTD(3)` を使用します。上記の `min_part_size` 条件と同様に、ここでのサイズはデータが書き込まれる前、コーデックを選択する時点で判明しているサイズです。新規に挿入されたパートでは `0`、マージやミューテーションではソースパーツのサイズになります。したがって、`TTL DELETE` や折りたたみマージのように入力を縮小する書き換えでは、入力サイズに基づいて分類されるため、しきい値を下回るパートであっても `ZSTD(3)` になることがあります。
+  データパーツがどの条件も満たさない場合、ClickHouse はサイズに応じた組み込みのデフォルト、すなわち 100 MB 未満では `LZ4`、それ以上では `ZSTD(3)` を使用します。上記の `min_part_size` 条件と同様に、ここでのサイズはデータが書き込まれる前、コーデックを選択する時点で判明しているサイズです。新規に挿入されたパートでは挿入されるブロックの非圧縮サイズ、マージやミューテーションではソースパーツのサイズになります。つまり、小さな挿入は `LZ4` で書き込まれ、大きな挿入は最初から `ZSTD(3)` で書き込まれます。したがって、`TTL DELETE` や折りたたみマージのように入力を縮小する書き換えでは、入力サイズに基づいて分類されるため、しきい値を下回るパートであっても `ZSTD(3)` になることがあります。
 </Note>
 
 **例**
@@ -545,18 +545,18 @@ Graphiteデータを間引くための設定です。
 
 ## http_server_default_response {#http_server_default_response}
 
-ClickHouse HTTP(s) server にアクセスしたときに、デフォルトで表示されるページです。
+ClickHouse HTTP(s) サーバー にアクセスしたときに、デフォルトで表示されるページです。
 デフォルト値は &quot;Ok.&quot; です (末尾に改行があります) 。
 
 * **デフォルト:** `"Ok.\n"`
 
 **例**
 
-`http://localhost: http_port` にアクセスしたときに、`https://tabix.io/` を開きます。
+`http://localhost: http_port` にアクセスしたときに、組み込みのウェブUI (`/play`) を開きます。
 
 ```xml
 <http_server_default_response>
-  <![CDATA[<html ng-app="SMI2"><head><base href="http://ui.tabix.io/"></head><body><div ui-view="" class="content-ui"></div><script src="http://loader.tabix.io/master.js"></script></body></html>]]>
+  <![CDATA[<html><head><meta http-equiv="refresh" content="0; url=/play"></head><body><a href="/play">ClickHouse Web UI</a></body></html>]]>
 </http_server_default_response>
 ```
 
@@ -769,17 +769,17 @@ ClickHouse は、設定を更新するためにすべてのレプリカを同時
 | `async_queue_max_size`       | 非同期ログを使用する場合、flush を待ってキュー内に保持されるメッセージの最大数です。超過したメッセージは破棄されます                                                                                                                                |
 | `console`                    | コンソールへのログ出力を有効にします。有効にするには `1` または `true` を設定します。デフォルトは、ClickHouse がデーモンモードで実行されていない場合は `1`、それ以外は `0` です。                                                                                    |
 | `console_log_level`          | コンソール出力のログレベルです。デフォルトは `level` です。                                                                                                                                                           |
-| `console_shutdown_log_level` | Shutdown level は、server の Shutdown 時のコンソールログレベルを設定するために使用されます。                                                                                                                               |
-| `console_startup_log_level`  | Startup level は、server の起動時のコンソールログレベルを設定するために使用されます。起動後、ログレベルは `console_log_level` 設定に戻ります                                                                                                  |
+| `console_shutdown_log_level` | Shutdown level は、サーバー の Shutdown 時のコンソールログレベルを設定するために使用されます。                                                                                                                               |
+| `console_startup_log_level`  | Startup level は、サーバー の起動時のコンソールログレベルを設定するために使用されます。起動後、ログレベルは `console_log_level` 設定に戻ります                                                                                                  |
 | `count`                      | ローテーションポリシー: 保持する履歴ログファイルの最大数です。                                                                                                                                                             |
-| `errorlog`                   | error log file のパスです。                                                                                                                                                                        |
+| `errorlog`                   | error ログファイル のパスです。                                                                                                                                                                        |
 | `formatting.type`            | コンソール出力のログフォーマットです。現在サポートされているのは `json` のみです                                                                                                                                                 |
 | `level`                      | ログレベルです。有効な値: `none` (ログを無効化) 、`fatal`、`critical`、`error`、`warning`、`notice`、`information`,`debug`、`trace`、`test`                                                                            |
-| `log`                        | log file のパスです。                                                                                                                                                                              |
+| `log`                        | ログファイル のパスです。                                                                                                                                                                              |
 | `rotation`                   | ローテーションポリシー: ログファイルをローテーションするタイミングを制御します。ローテーションは、サイズ、時間、またはその両方の組み合わせに基づいて実行できます。例: 100M, daily, 100M,daily。ログファイルが指定したサイズを超えた場合、または指定した時間間隔に達した場合、そのファイルは名前が変更されてアーカイブされ、新しいログファイルが作成されます。 |
-| `shutdown_level`             | Shutdown level は、server の Shutdown 時にルートロガーのレベルを設定するために使用されます。                                                                                                                               |
+| `shutdown_level`             | Shutdown level は、サーバー の Shutdown 時にルートロガーのレベルを設定するために使用されます。                                                                                                                               |
 | `size`                       | ローテーションポリシー: ログファイルの最大サイズ (バイト単位) です。ログファイルのサイズがこのしきい値を超えると、そのファイルは名前が変更されてアーカイブされ、新しいログファイルが作成されます。                                                                                         |
-| `startup_level`              | Startup level は、server の起動時にルートロガーのレベルを設定するために使用されます。起動後、ログレベルは `level` 設定に戻ります                                                                                                              |
+| `startup_level`              | Startup level は、サーバー の起動時にルートロガーのレベルを設定するために使用されます。起動後、ログレベルは `level` 設定に戻ります                                                                                                              |
 | `stream_compress`            | LZ4 を使用してログメッセージを圧縮します。有効にするには `1` または `true` を設定します。                                                                                                                                        |
 | `syslog_level`               | syslog に記録する際のログレベルです。                                                                                                                                                                       |
 | `use_syslog`                 | ログ出力を syslog にも転送します。                                                                                                                                                                        |
@@ -1531,9 +1531,9 @@ curl 127.0.0.1:9363/metrics
 
 さらに:
 
-| 設定      | 説明                                         | デフォルト値  |
-| ------- | ------------------------------------------ | ------- |
-| `level` | テーブルに保存されるメッセージの最大レベル (デフォルトは `Trace`) です。 | `Trace` |
+| 設定      | 説明                                                                                                                                                                                                                                                    | デフォルト値                                 |
+| ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------- |
+| `level` | テーブルに保存されるメッセージの最大レベルです。明示的に設定した場合、ルートロガーのログレベルが少なくともこの値まで引き上げられるため、`text_log` にはサーバーのログファイル (`logger.level`) よりも詳細なメッセージを記録できます。設定しない場合は、設定済みの各ログ出力 (`logger.level`、`console_log_level`、`errorlog_level`、`syslog_level`) のうち最も詳細なレベルまでのメッセージが保存されます。 | `Trace` (設定しない場合は他のログ出力のレベルによって制限されます) |
 
 **例**
 

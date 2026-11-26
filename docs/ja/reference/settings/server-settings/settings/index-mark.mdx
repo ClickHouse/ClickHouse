@@ -14,7 +14,7 @@ import SettingsInfoBlock from "/snippets/ja/components/SettingsInfoBlock/Setting
 
 ## index_mark_cache_policy {#index_mark_cache_policy}
 
-<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />セカンダリ索引マークキャッシュのエビクションポリシー名。設定可能な値: `LRU`、`SLRU`、`SIEVE`。
+<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />セカンダリ索引マークcacheのcacheエビクションポリシー。設定可能な値: `LRU`、`SLRU`、`SIEVE`。cache容量については [`index_mark_cache_size`](/ja/reference/settings/server-settings/settings/index-mark#index_mark_cache_size) を、SLRUポリシーにおける保護キューのサイズについては [`index_mark_cache_size_ratio`](/ja/reference/settings/server-settings/settings/index-mark#index_mark_cache_size_ratio) を参照してください。
 
 ## index_mark_cache_prewarm_ratio {#index_mark_cache_prewarm_ratio}
 
