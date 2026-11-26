@@ -164,14 +164,17 @@ TEST(ColumnInsertFrom, ArraySingletonPreservesSharedLowCardinalityDictionary)
             keys->insertDefault();
             for (size_t i = 1; i <= 300; ++i)
                 keys->insert(Field(i == 300 ? String(8192, 'x') : std::to_string(i)));
-            auto dictionary = DataTypeLowCardinality::createColumnUnique(DataTypeString(), std::move(keys));
+            MutableColumnPtr dictionary = DataTypeLowCardinality::createColumnUnique(DataTypeString(), std::move(keys));
             auto indexes = ColumnUInt16::create();
             for (UInt16 index : {UInt16(300), UInt16(1), UInt16(300)})
                 indexes->insertValue(index);
-            auto source_lc = ColumnLowCardinality::create(std::move(dictionary), std::move(indexes), shared);
+            MutableColumnPtr source_indexes = std::move(indexes);
+            auto source_lc = ColumnLowCardinality::create(std::move(dictionary), std::move(source_indexes), shared);
             const auto * source_lc_ptr = source_lc.get();
+            MutableColumnPtr destination_dictionary = DataTypeLowCardinality::createColumnUnique(DataTypeString());
+            MutableColumnPtr destination_indexes = ColumnUInt8::create();
             auto destination_lc = ColumnLowCardinality::create(
-                DataTypeLowCardinality::createColumnUnique(DataTypeString()), ColumnUInt8::create(), false);
+                std::move(destination_dictionary), std::move(destination_indexes), false);
             const auto * destination_lc_ptr = destination_lc.get();
 
             auto wrap = [tuple](MutableColumnPtr column) -> MutableColumnPtr
