@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['ClickHouse Cloud', 'JWT', 'JWKS', 'Entra ID', 'Azure AD', 'Microsoft', 'OAuth', 'OIDC', 'роли приложения', 'аутентификация', 'провайдер идентификации']
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 import { EnterprisePlanFeatureBadge } from "/snippets/ru/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
 
 import { VersionBadge } from "/snippets/ru/components/VersionBadge/VersionBadge.jsx";
@@ -56,7 +54,11 @@ import { VersionBadge } from "/snippets/ru/components/VersionBadge/VersionBadge.
     * **Supported account types**: один тенант. В зависимости от версии портала этот вариант называется **Single tenant only** или **Accounts in this organizational directory only**.
     * **Redirect URI**: оставьте пустым. Пользователи входят в систему через device code flow, в котором URI перенаправления не используется.
 
-    <Image img="/images/cloud/security/jwt/entra-register-application.webp" size="lg" alt="Форма регистрации приложения в центре администрирования Microsoft Entra с типом учетных записей для одного тенанта и без URI перенаправления" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![Форма регистрации приложения в центре администрирования Microsoft Entra с типом учетных записей для одного тенанта и без URI перенаправления](/images/cloud/security/jwt/entra-register-application.webp)
+      </Frame>
+    </div>
 
     Нажмите **Register**. На странице **Overview** скопируйте следующие значения:
 
@@ -72,7 +74,11 @@ import { VersionBadge } from "/snippets/ru/components/VersionBadge/VersionBadge.
     * Формат Microsoft Graph: `requestedAccessTokenVersion` в разделе `api`.
     * Формат Azure AD Graph: `accessTokenAcceptedVersion` на верхнем уровне, как показано на снимке экрана ниже.
 
-    <Image img="/images/cloud/security/jwt/entra-manifest-token-version.webp" size="lg" alt="Редактор манифеста приложения, в котором для accessTokenAcceptedVersion задано значение 2" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![Редактор манифеста приложения, в котором для accessTokenAcceptedVersion задано значение 2](/images/cloud/security/jwt/entra-manifest-token-version.webp)
+      </Frame>
+    </div>
   </Step>
 
   <Step title="Предоставление API" id="expose-an-api">
@@ -80,7 +86,11 @@ import { VersionBadge } from "/snippets/ru/components/VersionBadge/VersionBadge.
 
     1. Рядом с **Application ID URI** нажмите **Add**, оставьте значение по умолчанию `api://<CLIENT_ID>` и сохраните изменения. Клиенты используют этот URI для запроса токенов к ClickHouse. Он не влияет на утверждение `aud` в токенах v2.0 — в нём по-прежнему указывается ID клиента.
 
-       <Image img="/images/cloud/security/jwt/entra-application-id-uri.webp" size="lg" alt="Страница Expose an API с панелью Application ID URI, на которой отображается значение api:// по умолчанию" />
+       <div className="ch-image-lg">
+         <Frame>
+           ![Страница Expose an API с панелью Application ID URI, на которой отображается значение api:// по умолчанию](/images/cloud/security/jwt/entra-application-id-uri.webp)
+         </Frame>
+       </div>
 
     2. Нажмите **Add a scope** и заполните форму. Пользователи запрашивают эту область при входе в систему. Приложения, которые проходят аутентификацию от собственного имени, её не используют.
 
@@ -92,7 +102,11 @@ import { VersionBadge } from "/snippets/ru/components/VersionBadge/VersionBadge.
        | **Admin consent description**  | Любое описание                                      |
        | **State**                      | **Enabled**                                         |
 
-       <Image img="/images/cloud/security/jwt/entra-add-scope.webp" size="lg" alt="Панель Add a scope с областью access_as_application, согласием только для администраторов и состоянием Enabled" />
+       <div className="ch-image-lg">
+         <Frame>
+           ![Панель Add a scope с областью access_as_application, согласием только для администраторов и состоянием Enabled](/images/cloud/security/jwt/entra-add-scope.webp)
+         </Frame>
+       </div>
   </Step>
 
   <Step title="Предоставьте клиентскому приложению разрешение на вход пользователей" id="authorize-client-application">
@@ -100,7 +114,11 @@ import { VersionBadge } from "/snippets/ru/components/VersionBadge/VersionBadge.
 
     В разделе **Expose an API** в блоке **Authorized client applications** выберите **Add a client application**. Введите `04b07795-8ddb-461a-bbee-02f9e1bf7b46`, выберите область `api://<CLIENT_ID>/access_as_application` и нажмите **Add application**.
 
-    <Image img="/images/cloud/security/jwt/entra-authorize-client-application.webp" size="lg" alt="Панель Add a client application с идентификатором клиента Azure CLI и выбранной областью access_as_application" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![Панель Add a client application с идентификатором клиента Azure CLI и выбранной областью access_as_application](/images/cloud/security/jwt/entra-authorize-client-application.webp)
+      </Frame>
+    </div>
 
     <Note>
       Чтобы использовать вместо Azure CLI собственное клиентское приложение, зарегистрируйте отдельное приложение, в разделе **Authentication** установите для **Allow public client flows** значение **Yes** и заранее авторизуйте здесь его идентификатор клиента. Затем передайте этот идентификатор клиента в параметре `--oauth-client-id` при [входе с помощью clickhouse-client](#sign-in-with-clickhouse-client). Если в вашем тенанте пользователям запрещено давать согласие, администратор также должен предоставить согласие на разрешения `openid`, `profile` и `offline_access` для этого приложения.
@@ -122,19 +140,31 @@ import { VersionBadge } from "/snippets/ru/components/VersionBadge/VersionBadge.
 
     В следующем примере определены три роли приложения, значениями которых служат имена ролей ClickHouse:
 
-    <Image img="/images/cloud/security/jwt/entra-app-roles.webp" size="lg" alt="Страница App roles со списком ролей ClickHouse Admin, ClickHouse Analyst DB и ClickHouse Read Only со значениями ch_admin, ch_analyst и ch_readonly" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![Страница App roles со списком ролей ClickHouse Admin, ClickHouse Analyst DB и ClickHouse Read Only со значениями ch_admin, ch_analyst и ch_readonly](/images/cloud/security/jwt/entra-app-roles.webp)
+      </Frame>
+    </div>
   </Step>
 
   <Step title="Требовать назначения" id="require-assignment">
     По умолчанию токен для приложения может получить любой пользователь вашего тенанта. Чтобы выдавать токены только пользователям, группам и приложениям, которым назначена роль приложения, откройте **Enterprise applications**, выберите приложение с тем же именем, что и у регистрации вашего приложения, откройте **Properties**, задайте для параметра **Assignment required?** значение **Yes** и нажмите **Save**.
 
-    <Image img="/images/cloud/security/jwt/entra-assignment-required.webp" size="lg" alt="Свойства корпоративного приложения: для параметра Assignment required задано значение Yes" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![Свойства корпоративного приложения: для параметра Assignment required задано значение Yes](/images/cloud/security/jwt/entra-assignment-required.webp)
+      </Frame>
+    </div>
   </Step>
 
   <Step title="Назначьте пользователям и группам роли приложения" id="assign-users-and-groups">
     В том же корпоративном приложении откройте **Users and groups** и нажмите **Add user/group**. Выберите пользователя или группу, укажите роль приложения и нажмите **Assign**. Повторите эти действия для каждого пользователя или группы.
 
-    <Image img="/images/cloud/security/jwt/entra-assign-users-and-groups.webp" size="lg" alt="Страница Users and groups корпоративного приложения, на которой пользователю назначена роль приложения ClickHouse Read Only" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![Страница Users and groups корпоративного приложения, на которой пользователю назначена роль приложения ClickHouse Read Only](/images/cloud/security/jwt/entra-assign-users-and-groups.webp)
+      </Frame>
+    </div>
 
     Если пользователю назначено несколько ролей приложения (напрямую или через группы), в утверждении `roles` он получает их все.
 

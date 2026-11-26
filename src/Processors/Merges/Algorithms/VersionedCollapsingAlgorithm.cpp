@@ -53,15 +53,11 @@ void VersionedCollapsingAlgorithm::insertRow(size_t skip_rows, const RowRef & ro
 {
     insertGap(skip_rows);
 
-    const bool filtered = isRowFiltered(row);
-
-    if (!filtered)
-        merged_data->insertRow(*row.all_columns, row.row_num, row.owned_chunk->getNumRows());
+    merged_data->insertRow(*row.all_columns, row.row_num, row.owned_chunk->getNumRows());
 
     if (out_row_sources_buf)
     {
-        if (!filtered)
-            current_row_sources.front().setSkipFlag(false);
+        current_row_sources.front().setSkipFlag(false);
         writeRowSourcePart(*out_row_sources_buf, current_row_sources.front());
         current_row_sources.pop();
     }
@@ -161,14 +157,14 @@ IMergingAlgorithm::Status VersionedCollapsingAlgorithm::merge()
         }
 
         const bool valid_sign = sign == 1 || sign == -1;
-        const bool keep_invalid_sign_row = !valid_sign && !isRowFiltered(current_row);
+        const bool keep_invalid_sign_row = !valid_sign;
 
         if (!valid_sign)
         {
             /// Only 1 and -1 cancel each other: a row with another sign is kept as is.
-            if (keep_invalid_sign_row && out_row_sources_buf)
+            if (out_row_sources_buf)
                 bufferInvalidSignRow(current_row);
-            else if (keep_invalid_sign_row)
+            else
             {
                 merged_data->insertRow(*current_row.all_columns, current_row.row_num, current_row.owned_chunk->getNumRows());
                 inserted_rows = true;

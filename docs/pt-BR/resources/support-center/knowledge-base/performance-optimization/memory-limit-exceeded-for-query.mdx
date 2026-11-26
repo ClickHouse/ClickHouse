@@ -1,13 +1,13 @@
 ---
-title: 'Limite de memória excedido na consulta'
+title: 'Limite de memória excedido em consulta'
 description: 'Solução de problemas de erros de limite de memória excedido em uma consulta'
 date: 2025-07-25
-tags: ['Erros e Exceções']
+tags: ['Errors and Exceptions']
 keywords: ['OOM', 'limite de memória excedido']
 ---
 
 <div id="troubleshooting-out-of-memory-issues">
-  ## limite de memória excedido em consulta
+  ## limite de memória excedido em consulta {#troubleshooting-out-of-memory-issues}
 </div>
 
 Para novos usuários, o ClickHouse muitas vezes pode parecer mágico — toda consulta é super-rápida,
@@ -22,7 +22,7 @@ isso às vezes não é trivial, e talvez o desempenho ideal nem seja necessário
 Nesse caso, os usuários têm algumas opções.
 
 <div id="aggregations">
-  ### Agregações
+  ### Agregações {#aggregations}
 </div>
 
 Para cenários de agregação ou ordenação com uso intenso de memória, é possível usar as configurações
@@ -41,9 +41,7 @@ conjunto de dados maior do que a memória disponível. Com [`max_bytes_before_ex
 casos em que o usuário tem um `ORDER BY` após um `GROUP BY` com um `LIMIT`,
 especialmente quando a consulta é distribuída.
 
-<div id="joins">
-  ### Junções
-</div>
+### Junções {#joins}
 
 Para junções, os usuários podem selecionar diferentes algoritmos de `JOIN`, o que pode ajudar a
 reduzir a memória necessária. Por padrão, as junções usam o hash join, que oferece
@@ -65,13 +63,9 @@ são ordenados em disco se não couberem na memória, permitindo que tabelas gra
 unidas.
 
 <div className="ch-image-md">
-
-<Frame>
-
-![Algoritmos de junção](/images/knowledgebase/memory-limit-exceeded-for-query.webp)
-
-</Frame>
-
+  <Frame>
+    ![Algoritmos de junção](/images/knowledgebase/memory-limit-exceeded-for-query.webp)
+  </Frame>
 </div>
 
 Desde a versão 20.3, o ClickHouse oferece suporte ao valor auto para a configuração `join_algorithm`.

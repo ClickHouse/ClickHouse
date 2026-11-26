@@ -7,7 +7,7 @@ doc_type: 'reference'
 ---
 
 <div id="overview">
-  ## Descripción general
+  ## Descripción general {#overview}
 </div>
 
 ClickHouse Private es un paquete de implementación propia que consta de la misma versión propietaria de ClickHouse que se ejecuta en ClickHouse Cloud y de nuestro ClickHouse Operator, configurado para la separación entre cómputo y almacenamiento.
@@ -19,7 +19,7 @@ ClickHouse Private es un paquete de implementación propia que consta de la mism
 </Info>
 
 <div id="benefits-over-os">
-  ## Ventajas frente a la versión open source
+  ## Ventajas frente a la versión open source {#benefits-over-os}
 </div>
 
 Las siguientes características diferencian a ClickHouse Private de las implementaciones open source autogestionadas:
@@ -31,18 +31,14 @@ Las siguientes características diferencian a ClickHouse Private de las implemen
 
 ## Arquitectura {#architecture}
 
-ClickHouse Private se ejecuta por completo dentro de su entorno de despliegue y ofrece nuestra arquitectura nativa de Cloud con separación de cómputo y almacenamiento.
+ClickHouse Private se ejecuta por completo dentro de su entorno de despliegue y ofrece nuestra arquitectura nativa de Cloud con separación del cómputo y el almacenamiento.
 
 <br />
 
 <div className="ch-image-md ch-image-background-black">
-
-<Frame>
-
-![Arquitectura de ClickHouse Private](/images/cloud/reference/private-gov-architecture.webp)
-
-</Frame>
-
+  <Frame>
+    ![Arquitectura de ClickHouse Private](/images/cloud/reference/private-gov-architecture.webp)
+  </Frame>
 </div>
 
 <br />
@@ -59,7 +55,7 @@ ClickHouse Private está disponible en las siguientes configuraciones, con indic
 | Azure                  | Azure Kubernetes Service (AKS)   | Azure Blob Storage          | Versión preliminar |
 
 <div id="onboarding-process">
-  ## Proceso de incorporación
+  ## Proceso de incorporación {#onboarding-process}
 </div>
 
 Los clientes interesados en ClickHouse Private pueden [contactarnos](https://clickhouse.com/company/contact) para programar una llamada de revisión de su caso de uso. Se considerarán las solicitudes que cumplan los requisitos mínimos de tamaño y se ajusten a las configuraciones admitidas; tenga en cuenta que la capacidad para este proceso es limitada. La puesta en marcha requiere seguir una guía de instalación específica del entorno, con imágenes y gráficos de Helm obtenidos de AWS ECR.
