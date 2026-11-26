@@ -72,7 +72,7 @@ SelectStreamFactory::SelectStreamFactory(
 
 void SelectStreamFactory::createForShard(
     const Cluster::ShardInfo & shard_info,
-    const ASTPtr & query_ast,
+    const QueryTreeNodePtr & query_tree,
     const StorageID & main_table,
     const ASTPtr & table_func_ptr,
     ContextPtr context,
@@ -83,35 +83,18 @@ void SelectStreamFactory::createForShard(
     AdditionalShardFilterGenerator shard_filter_generator,
     const UnavailableShardTrackerPtr & unavailable_shard_tracker)
 {
-    createForShardImpl(
-        shard_info,
-        query_ast,
-        {},
-        main_table,
-        table_func_ptr,
-        std::move(context),
-        local_plans,
-        remote_shards,
-        shard_count,
-        parallel_replicas_enabled,
-        std::move(shard_filter_generator),
-        unavailable_shard_tracker);
-}
+    if (query.tree != query_tree)
+    {
+        /// Convert grouping function specializations (e.g. __groupingForGroupingSets -> grouping)
+        /// so the AST contains the generic function name that the shard's analyzer can re-resolve.
+        /// Use a clone to keep the original query_tree with specialized functions intact,
+        /// since it is reused later for getSampleBlock / plan building.
+        auto query_tree_for_ast = query_tree->clone();
+        removeGroupingFunctionSpecializations(query_tree_for_ast);
 
-void SelectStreamFactory::createForShardImpl(
-    const Cluster::ShardInfo & shard_info,
-    const ASTPtr & query_ast,
-    const QueryTreeNodePtr & query_tree,
-    const StorageID & main_table,
-    const ASTPtr & table_func_ptr,
-    ContextPtr context,
-    QueryPlanPtrs & local_plans,
-    Shards & remote_shards,
-    UInt32 shard_count,
-    bool parallel_replicas_enabled,
-    AdditionalShardFilterGenerator shard_filter_generator,
-    const UnavailableShardTrackerPtr & unavailable_shard_tracker) const
-{
+        query = {.tree = query_tree, .ast = queryNodeToDistributedSelectQuery(query_tree_for_ast), .header = {}, .planner_context = {}};
+    }
+
     ContextPtr context_without_parallel_replicas;
 
     /// `local_storage` is the table the local plan will read, null when it is not resolved.
@@ -137,7 +120,7 @@ void SelectStreamFactory::createForShardImpl(
         }
 
         local_plans.emplace_back(createLocalPlan(
-            query_ast, *header, local_context, processed_stage, shard_info.shard_num, shard_count));
+            query.ast->clone(), *header, local_context, processed_stage, shard_info.shard_num, shard_count));
     };
 
     // If lazy is true, a lazy pipe will be created. It will try to use the local replica and, if not possible, will use DelayedSource for reading from remote replica.
@@ -152,8 +135,8 @@ void SelectStreamFactory::createForShardImpl(
         /// which `queryNodeToDistributedSelectQuery` (`QueryNode::toAST`) materializes into the SELECT's
         /// `SETTINGS`. They are irrelevant to the remote query and can trip `UNKNOWN_SETTING` on an older
         /// shard during a rolling upgrade; the inter-server settings packet is stripped separately in
-        /// `updateSettings`. The local plan (`emplace_local_stream`) keeps the unstripped `query_ast`.
-        auto forwarded_query = query_ast->clone();
+        /// `updateSettings`. The local plan (`emplace_local_stream`) keeps the unstripped query.
+        auto forwarded_query = query.ast->clone();
         prepareSecondaryQueryAST(forwarded_query);
 
         const auto & settings = context->getSettingsRef();
@@ -169,7 +152,12 @@ void SelectStreamFactory::createForShardImpl(
         }
         else
         {
-            std::tie(shard_header, planner_context) = InterpreterSelectQueryAnalyzer::getSampleBlockAndPlannerContext(query_tree, context, SelectQueryOptions(processed_stage).analyze());
+            /// The same for all shards with this query tree, so do not plan the query again for each of them.
+            if (!query.header)
+                std::tie(query.header, query.planner_context) = InterpreterSelectQueryAnalyzer::getSampleBlockAndPlannerContext(query_tree, context, SelectQueryOptions(processed_stage).analyze());
+
+            shard_header = query.header;
+            planner_context = query.planner_context;
         }
 
         remote_shards.emplace_back(Shard{
@@ -295,41 +283,6 @@ void SelectStreamFactory::createForShardImpl(
     }
     else
         emplace_remote_stream();
-}
-
-void SelectStreamFactory::createForShard(
-    const Cluster::ShardInfo & shard_info,
-    const QueryTreeNodePtr & query_tree,
-    const StorageID & main_table,
-    const ASTPtr & table_func_ptr,
-    ContextPtr context,
-    QueryPlanPtrs & local_plans,
-    Shards & remote_shards,
-    UInt32 shard_count,
-    bool parallel_replicas_enabled,
-    AdditionalShardFilterGenerator shard_filter_generator,
-    const UnavailableShardTrackerPtr & unavailable_shard_tracker)
-{
-    /// Convert grouping function specializations (e.g. __groupingForGroupingSets -> grouping)
-    /// so the AST contains the generic function name that the shard's analyzer can re-resolve.
-    /// Use a clone to keep the original query_tree with specialized functions intact,
-    /// since it is reused later for getSampleBlock / plan building.
-    auto query_tree_for_ast = query_tree->clone();
-    removeGroupingFunctionSpecializations(query_tree_for_ast);
-
-    createForShardImpl(
-        shard_info,
-        queryNodeToDistributedSelectQuery(query_tree_for_ast),
-        query_tree,
-        main_table,
-        table_func_ptr,
-        std::move(context),
-        local_plans,
-        remote_shards,
-        shard_count,
-        parallel_replicas_enabled,
-        std::move(shard_filter_generator),
-        unavailable_shard_tracker);
 }
 
 

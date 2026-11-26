@@ -100,10 +100,11 @@ $CLICKHOUSE_CLIENT -q "
 "
 
 # Prints a query of the test. Its result is one line: the config, the number of rows and a checksum of the rows.
+# The joins are what is tested, including the ones whose other side is not read, so they are not removed.
 function query()
 {
     local mode=$1 config=$2 select=$3 settings=$4
-    echo "SELECT '$config', count(), sum(cityHash64(*)) FROM ($select) SETTINGS $settings, max_block_size = 997, max_joined_block_size_rows = 701, log_comment = '05457:$mode:$config';"
+    echo "SELECT '$config', count(), sum(cityHash64(*)) FROM ($select) SETTINGS $settings, max_block_size = 997, max_joined_block_size_rows = 701, query_plan_remove_unused_joins = 0, log_comment = '05457:$mode:$config';"
 }
 
 function settings_of()

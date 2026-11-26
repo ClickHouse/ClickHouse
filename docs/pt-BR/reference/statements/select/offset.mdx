@@ -36,6 +36,8 @@ Exemplo:
 > • Se o cálculo resultar em um número fracionário de linhas, ele será arredondado para cima até o próximo número inteiro.
 
 O `FETCH` especifica o número máximo de linhas que podem estar no resultado de uma consulta.
+`FETCH ... ONLY` funciona sem `ORDER BY`, assim como `LIMIT`, mas não há garantia de que as linhas retornadas sejam determinísticas.
+`FETCH ... WITH TIES` exige `ORDER BY` para identificar as linhas empatadas com a última linha selecionada.
 
 A opção `ONLY` é usada para retornar linhas que vêm imediatamente após as linhas omitidas pelo `OFFSET`. Nesse caso, `FETCH` é uma alternativa à cláusula [LIMIT](/pt-BR/reference/statements/select/limit). Por exemplo, a consulta a seguir
 
@@ -59,7 +61,7 @@ A opção `WITH TIES` é usada para retornar linhas adicionais empatadas na últ
   O deslocamento real também pode depender da configuração [offset](/pt-BR/reference/settings/session-settings/other#offset).
 </Note>
 
-## Exemplos
+## Exemplos {#examples}
 
 Tabela de entrada:
 

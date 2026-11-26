@@ -19,31 +19,41 @@ As funções `to<type>` e [cast](#CAST) se comportam de maneira diferente em alg
 
 Exemplo:
 
-```sql
+```sql title="Query"
 SELECT
     toTypeName(toLowCardinality('') AS val) AS source_type,
     toTypeName(toString(val)) AS to_type_result_type,
     toTypeName(CAST(val, 'String')) AS cast_result_type
+```
 
+```text title="Response"
 ┌─source_type────────────┬─to_type_result_type────┬─cast_result_type─┐
 │ LowCardinality(String) │ LowCardinality(String) │ String           │
 └────────────────────────┴────────────────────────┴──────────────────┘
+```
 
+```sql title="Query"
 SELECT
     toTypeName(toNullable('') AS val) AS source_type,
     toTypeName(toString(val)) AS to_type_result_type,
     toTypeName(CAST(val, 'String')) AS cast_result_type
+```
 
+```text title="Response"
 ┌─source_type──────┬─to_type_result_type─┬─cast_result_type─┐
 │ Nullable(String) │ Nullable(String)    │ String           │
 └──────────────────┴─────────────────────┴──────────────────┘
+```
 
+```sql title="Query"
 SELECT
     toTypeName(toNullable('') AS val) AS source_type,
     toTypeName(toString(val)) AS to_type_result_type,
     toTypeName(CAST(val, 'String')) AS cast_result_type
 SETTINGS cast_keep_nullable = 1
+```
 
+```text title="Response"
 ┌─source_type──────┬─to_type_result_type─┬─cast_result_type─┐
 │ Nullable(String) │ Nullable(String)    │ Nullable(String) │
 └──────────────────┴─────────────────────┴──────────────────┘
@@ -119,6 +129,51 @@ Introduzido em: v1.1.0
 Converte um valor para um tipo de dado especificado.
 Ao contrário da função reinterpret, CAST tenta gerar o mesmo valor no tipo de destino.
 Se isso não for possível, uma exceção é lançada.
+
+`CAST` remove o contêiner `LowCardinality`. Por outro lado, as funções `to<Type>` o mantêm.
+As funções `to<Type>` também mantêm o contêiner `Nullable`. `CAST` remove `Nullable` por padrão, mas
+o mantém quando a configuração [`cast_keep_nullable`](/pt-BR/reference/settings/session-settings/cast#cast_keep_nullable)
+está habilitada.
+
+```sql title="Query"
+SELECT
+    toTypeName(toLowCardinality('') AS val) AS source_type,
+    toTypeName(toString(val)) AS to_type_result_type,
+    toTypeName(CAST(val, 'String')) AS cast_result_type
+```
+
+```text title="Response"
+┌─source_type────────────┬─to_type_result_type────┬─cast_result_type─┐
+│ LowCardinality(String) │ LowCardinality(String) │ String           │
+└────────────────────────┴────────────────────────┴──────────────────┘
+```
+
+```sql title="Query"
+SELECT
+    toTypeName(toNullable('') AS val) AS source_type,
+    toTypeName(toString(val)) AS to_type_result_type,
+    toTypeName(CAST(val, 'String')) AS cast_result_type
+```
+
+```text title="Response"
+┌─source_type──────┬─to_type_result_type─┬─cast_result_type─┐
+│ Nullable(String) │ Nullable(String)    │ String           │
+└──────────────────┴─────────────────────┴──────────────────┘
+```
+
+```sql title="Query"
+SELECT
+    toTypeName(toNullable('') AS val) AS source_type,
+    toTypeName(toString(val)) AS to_type_result_type,
+    toTypeName(CAST(val, 'String')) AS cast_result_type
+SETTINGS cast_keep_nullable = 1
+```
+
+```text title="Response"
+┌─source_type──────┬─to_type_result_type─┬─cast_result_type─┐
+│ Nullable(String) │ Nullable(String)    │ Nullable(String) │
+└──────────────────┴─────────────────────┴──────────────────┘
+```
 
 Quando `x` é escrito como um número e `T` é um `Decimal` ou um inteiro com mais de 64 bits, os dígitos
 do número são lidos diretamente com `T`, sem perda de precisão. Caso contrário,
@@ -2731,17 +2786,17 @@ Introduzido em: v1.1.0
 Converte um valor de entrada do tipo String em um valor do tipo BFloat16.
 Se a string não representar um valor de ponto flutuante, a função retorna NULL.
 
-Argumentos compatíveis:
+Argumentos aceitos:
 
 * Representações em String de valores numéricos.
 
 Argumentos não suportados (retornam `NULL`):
 
-* Representações em String de valores binários e hexadecimais.
+* Representações em string de valores binários e hexadecimais.
 * Valores numéricos.
 
 <Note>
-  A função permite perda silenciosa de precisão ao converter a representação em String.
+  A função permite perda silenciosa de precisão ao converter a representação em string.
 </Note>
 
 Veja também:
