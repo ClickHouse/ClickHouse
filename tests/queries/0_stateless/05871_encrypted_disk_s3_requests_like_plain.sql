@@ -8,6 +8,8 @@
 -- does not start at the archive's header, so its header is read with a request of its own.
 -- Nothing may load the marks or the primary key before the queries, so that both queries load them themselves:
 -- otherwise the shared caches decide whether a query reads them.
+-- The merges are not compared: in this version the `ProfileEvents` of a merge in `system.part_log` count only the
+-- merge thread itself, not the threads that prefetch for it, so they do not count the same requests for both disks.
 
 DROP TABLE IF EXISTS t_plain;
 DROP TABLE IF EXISTS t_encrypted;
@@ -36,13 +38,7 @@ SETTINGS max_threads = 1, remote_filesystem_read_method = 'threadpool', remote_f
     use_page_cache_for_object_storage = 0, use_page_cache_for_disks_without_file_cache = 0, use_columns_cache = 0,
     enable_parallel_replicas = 0, log_comment = '05871_encrypted';
 
-SYSTEM FLUSH LOGS part_log, query_log;
-
-SELECT
-    sumIf(ProfileEvents['S3GetObject'], table = 't_plain') > 0,
-    sumIf(ProfileEvents['S3GetObject'], table = 't_encrypted') = sumIf(ProfileEvents['S3GetObject'], table = 't_plain')
-FROM system.part_log
-WHERE database = currentDatabase() AND event_type = 'MergeParts';
+SYSTEM FLUSH LOGS query_log;
 
 SELECT
     sumIf(ProfileEvents['S3GetObject'], log_comment = '05871_plain') > 0,
