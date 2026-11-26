@@ -6363,7 +6363,7 @@ static void checkUniqueKeyMutationCommands(const MutationCommands & commands)
     }
 }
 
-bool MergeTreeData::canAlterGranularitySettingForNewParts(const String & setting_name, const MergeTreeSettings & new_settings) const
+bool MergeTreeData::canAlterGranularitySettingForNewParts(const String & setting_name, const MergeTreeSettings & new_settings, ContextPtr local_context) const
 {
     if (setting_name != "index_granularity" && setting_name != "index_granularity_bytes")
         return false;
@@ -6371,6 +6371,13 @@ bool MergeTreeData::canAlterGranularitySettingForNewParts(const String & setting
     /// Replicated engines pin these in Keeper as immutable table-identity fields that every replica
     /// must match, with no replicated path to change them; keep them readonly there.
     if (supportsReplication())
+        return false;
+
+    /// A replicated or distributed metadata alter (a `Replicated` database, or `ON CLUSTER`) applies the same
+    /// change on replicas that can hold different local parts (e.g. after a non-replicated `ATTACH PARTITION
+    /// ... FROM`). The per-replica checks below would then disagree, letting one replica commit the shared
+    /// metadata while another rejects the replay. Refuse uniformly instead, independently of the local parts.
+    if (local_context->getZooKeeperMetadataTransaction())
         return false;
 
     /// Safe only while every part is adaptive (reads its granularity from its own marks); non-adaptive
@@ -7658,7 +7665,7 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
 
             if ((!current_value || *current_value != new_value)
                 && isReadonlySetting(setting_name)
-                && !canAlterGranularitySettingForNewParts(setting_name, *alter_effective_settings))
+                && !canAlterGranularitySettingForNewParts(setting_name, *alter_effective_settings, local_context))
             {
                 throw Exception(ErrorCodes::READONLY_SETTING, "Setting '{}' is readonly for storage '{}'", setting_name, getName());
             }
@@ -7696,7 +7703,7 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
             const Field * new_value = new_changes.tryGet(setting_name);
             /// Prevent unsetting readonly setting
             if (isReadonlySetting(setting_name) && !new_value
-                && !canAlterGranularitySettingForNewParts(setting_name, *alter_effective_settings))
+                && !canAlterGranularitySettingForNewParts(setting_name, *alter_effective_settings, local_context))
             {
                 throw Exception(ErrorCodes::READONLY_SETTING, "Setting '{}' is readonly for storage '{}'", setting_name, getName());
             }
