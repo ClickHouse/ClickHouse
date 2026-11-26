@@ -720,38 +720,41 @@ static std::optional<IcebergPathFromMetadata> getCurrentManifestListPath(const P
     return std::nullopt;
 }
 
-struct DeletionVectorChanges
+struct MatchedDataFile
 {
-    struct DataFile
-    {
-        ProcessedManifestFileEntryPtr entry;
-        Int32 partition_spec_id = 0;
-    };
-
-    WrittenDeletionVectorsFile file;
-    std::map<String, DataFile> data_files;
-    std::unordered_set<String> data_files_with_replaced_vectors;
-    std::vector<ManifestFileCacheKey> manifests_to_rewrite;
-    std::unordered_set<String> carried_forward_manifest_paths;
-    Int64 replaced_rows = 0;
+    ProcessedManifestFileEntryPtr entry;
+    Int32 partition_spec_id = 0;
+    IcebergDataObjectInfoPtr previous_deletes;
 };
 
-static DeletionVectorChanges prepareDeletionVectorChanges(
-    std::map<String, roaring::Roaring64Map> & positions_by_data_file,
+struct DeletionVectorPlan
+{
+    std::map<String, MatchedDataFile> matched_files;
+    std::vector<ProcessedManifestFileEntryPtr> replaced_deletion_vectors;
+    std::vector<ManifestFileCacheKey> manifests_to_rewrite;
+    std::unordered_set<String> manifests_to_carry_forward;
+};
+
+struct DeletionVectors
+{
+    DeletionVectorPlan plan;
+    WrittenDeletionVectorsFile file;
+};
+
+static DeletionVectorPlan planDeletionVectors(
+    const std::map<String, roaring::Roaring64Map> & positions_by_data_file,
     Poco::JSON::Object::Ptr metadata,
     ObjectStoragePtr object_storage,
     const PersistentTableComponents & persistent_table_components,
     ContextPtr context,
-    const std::optional<FormatSettings> & format_settings,
     Int32 current_schema_id,
-    FileNamesGenerator & filename_generator,
     LoggerPtr log)
 {
     const auto manifest_list_path = getCurrentManifestListPath(metadata);
     if (!manifest_list_path)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Iceberg mutation matched rows of a table without a current snapshot");
 
-    DeletionVectorChanges changes;
+    DeletionVectorPlan plan;
     std::vector<ProcessedManifestFileEntryPtr> position_deletes;
     std::unordered_map<const ProcessedManifestFileEntry *, size_t> manifest_of_position_delete;
     std::unordered_set<size_t> manifests_without_live_files;
@@ -766,15 +769,15 @@ static DeletionVectorChanges prepareDeletionVectorChanges(
         {
             const String path = data_file->parsed_entry->file_path_key.serialize();
             if (positions_by_data_file.contains(path))
-                changes.data_files.emplace(path, DeletionVectorChanges::DataFile{data_file, manifest.partition_spec_id});
+                plan.matched_files.emplace(path, MatchedDataFile{.entry = data_file, .partition_spec_id = manifest.partition_spec_id});
         }
-        for (const auto & position_delete : files_handle.getFilesWithoutDeleted(FileContentType::POSITION_DELETE))
+        const auto live_position_deletes = files_handle.getFilesWithoutDeleted(FileContentType::POSITION_DELETE);
+        for (const auto & position_delete : live_position_deletes)
         {
             manifest_of_position_delete.emplace(position_delete.get(), manifest_index);
             position_deletes.push_back(position_delete);
         }
-        if (manifest.content_type == ManifestFileContentType::DELETE
-            && files_handle.getFilesWithoutDeleted(FileContentType::POSITION_DELETE).empty()
+        if (manifest.content_type == ManifestFileContentType::DELETE && live_position_deletes.empty()
             && files_handle.getFilesWithoutDeleted(FileContentType::EQUALITY_DELETE).empty())
             manifests_without_live_files.insert(manifest_index);
     }
@@ -782,16 +785,17 @@ static DeletionVectorChanges prepareDeletionVectorChanges(
     const auto position_deletes_by_data_file = groupPositionDeletesByDataFile(position_deletes);
 
     std::unordered_set<size_t> manifests_to_rewrite;
-    for (auto & [path, positions] : positions_by_data_file)
+    for (const auto & [path, _] : positions_by_data_file)
     {
-        const auto data_file_it = changes.data_files.find(path);
-        if (data_file_it == changes.data_files.end())
+        const auto matched_file_it = plan.matched_files.find(path);
+        if (matched_file_it == plan.matched_files.end())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Iceberg mutation matched rows of data file {}, which is not in the current snapshot", path);
-        const auto & data_file = data_file_it->second.entry;
-        const auto & data_file_path = data_file->parsed_entry->file_path_key;
+        auto & matched_file = matched_file_it->second;
+        const auto & data_file_path = matched_file.entry->parsed_entry->file_path_key;
 
         auto object_info = std::make_shared<IcebergDataObjectInfo>(
-            data_file, persistent_table_components.path_resolver.resolve(data_file_path), current_schema_id, std::vector<std::pair<String, Field>>{});
+            matched_file.entry, persistent_table_components.path_resolver.resolve(data_file_path), current_schema_id,
+            std::vector<std::pair<String, Field>>{});
         auto add_position_delete = [&](const ProcessedManifestFileEntryPtr & position_delete)
         {
             const auto & delete_entry = *position_delete->parsed_entry;
@@ -801,8 +805,7 @@ static DeletionVectorChanges prepareDeletionVectorChanges(
                 if (delete_entry.referenced_data_file_path != data_file_path)
                     return;
                 object_info->addDeletionVector(position_delete, resolved_delete_path);
-                changes.data_files_with_replaced_vectors.insert(path);
-                changes.replaced_rows += delete_entry.record_count;
+                plan.replaced_deletion_vectors.push_back(position_delete);
                 manifests_to_rewrite.insert(manifest_of_position_delete.at(position_delete.get()));
             }
             else
@@ -814,32 +817,50 @@ static DeletionVectorChanges prepareDeletionVectorChanges(
         if (auto it = position_deletes_by_data_file.single_data_file.find(data_file_path);
             it != position_deletes_by_data_file.single_data_file.end())
         {
-            for (const auto & position_delete : defineDeletesSpan(data_file, it->second, /* is_equality_delete */ false, log))
+            for (const auto & position_delete : defineDeletesSpan(matched_file.entry, it->second, /* is_equality_delete */ false, log))
                 add_position_delete(position_delete);
         }
-        for (const auto & position_delete : defineDeletesSpan(data_file, position_deletes_by_data_file.other, /* is_equality_delete */ false, log))
+        for (const auto & position_delete :
+             defineDeletesSpan(matched_file.entry, position_deletes_by_data_file.other, /* is_equality_delete */ false, log))
             if (positionDeleteMayReferenceDataFile(*position_delete->parsed_entry, data_file_path))
                 add_position_delete(position_delete);
 
         if (object_info->info.hasPositionDeletes())
-            positions |= readDeletedPositions(object_info, object_storage, format_settings, context);
+            matched_file.previous_deletes = std::move(object_info);
     }
 
     for (size_t manifest_index = 0; manifest_index < manifest_list.size(); ++manifest_index)
     {
         if (manifests_to_rewrite.contains(manifest_index))
-            changes.manifests_to_rewrite.push_back(manifest_list[manifest_index]);
+            plan.manifests_to_rewrite.push_back(manifest_list[manifest_index]);
         else if (!manifests_without_live_files.contains(manifest_index))
-            changes.carried_forward_manifest_paths.insert(manifest_list[manifest_index].manifest_file_path.serialize());
+            plan.manifests_to_carry_forward.insert(manifest_list[manifest_index].manifest_file_path.serialize());
     }
+    return plan;
+}
 
-    changes.file = writeDeletionVectorsFile(
-        positions_by_data_file, filename_generator, persistent_table_components.path_resolver, object_storage, context);
-    return changes;
+static Int64 sumRecordCounts(const std::vector<ProcessedManifestFileEntryPtr> & entries)
+{
+    Int64 result = 0;
+    for (const auto & entry : entries)
+        result += entry->parsed_entry->record_count;
+    return result;
+}
+
+static void addPreviousDeletes(
+    const DeletionVectorPlan & plan,
+    std::map<String, roaring::Roaring64Map> & positions_by_data_file,
+    ObjectStoragePtr object_storage,
+    const std::optional<FormatSettings> & format_settings,
+    ContextPtr context)
+{
+    for (const auto & [path, matched_file] : plan.matched_files)
+        if (matched_file.previous_deletes)
+            positions_by_data_file.at(path) |= readDeletedPositions(matched_file.previous_deletes, object_storage, format_settings, context);
 }
 
 static std::vector<DeleteManifestListEntry> writeDeletionVectorManifests(
-    const DeletionVectorChanges & deletion_vectors,
+    const DeletionVectors & deletion_vectors,
     Poco::JSON::Object::Ptr metadata,
     Poco::JSON::Object::Ptr new_snapshot,
     SharedHeader sample_block,
@@ -852,9 +873,10 @@ static std::vector<DeleteManifestListEntry> writeDeletionVectorManifests(
 {
     std::vector<DeleteManifestListEntry> manifest_list_entries;
 
+    const auto & plan = deletion_vectors.plan;
     std::map<std::pair<Int32, Int32>, std::vector<String>> data_files_by_spec;
-    for (const auto & [path, data_file] : deletion_vectors.data_files)
-        data_files_by_spec[{data_file.partition_spec_id, data_file.entry->resolved_schema_id}].push_back(path);
+    for (const auto & [path, matched_file] : plan.matched_files)
+        data_files_by_spec[{matched_file.partition_spec_id, matched_file.entry->resolved_schema_id}].push_back(path);
 
     PartitionSpecResolver partition_spec_resolver(metadata, persistent_table_components.schema_processor, context);
     for (const auto & [spec_and_schema, paths] : data_files_by_spec)
@@ -875,7 +897,7 @@ static std::vector<DeleteManifestListEntry> writeDeletionVectorManifests(
         for (const auto & path : paths)
         {
             const auto & vector = deletion_vectors.file.vectors.at(path);
-            const auto & partition_value = deletion_vectors.data_files.at(path).entry->normalized_partition_key_value;
+            const auto & partition_value = plan.matched_files.at(path).entry->normalized_partition_key_value;
             partition_values.push_back(partition_value);
             file_paths.push_back(deletion_vectors.file.path);
             row_counts.push_back(vector.cardinality);
@@ -923,13 +945,17 @@ static std::vector<DeleteManifestListEntry> writeDeletionVectorManifests(
         manifest_list_entries.push_back(std::move(list_entry));
     }
 
+    std::unordered_set<String> data_files_with_replaced_vectors;
+    for (const auto & replaced : plan.replaced_deletion_vectors)
+        data_files_with_replaced_vectors.insert(replaced->parsed_entry->referenced_data_file_path->serialize());
+
     const Int64 new_snapshot_id = new_snapshot->getValue<Int64>(Iceberg::f_metadata_snapshot_id);
     Int64 removed_files = 0;
     Int64 removed_rows = 0;
-    for (const auto & manifest : deletion_vectors.manifests_to_rewrite)
+    for (const auto & manifest : plan.manifests_to_rewrite)
     {
         auto rewritten = rewriteDeleteManifest(
-            manifest, deletion_vectors.data_files_with_replaced_vectors, new_snapshot_id, filename_generator, path_resolver,
+            manifest, data_files_with_replaced_vectors, new_snapshot_id, filename_generator, path_resolver,
             object_storage, context);
         written_manifests.push_back(path_resolver.resolve(rewritten.manifest_list_entry.path));
         removed_files += rewritten.removed_files;
@@ -937,14 +963,16 @@ static std::vector<DeleteManifestListEntry> writeDeletionVectorManifests(
         manifest_list_entries.push_back(std::move(rewritten.manifest_list_entry));
     }
 
-    if (removed_files != static_cast<Int64>(deletion_vectors.data_files_with_replaced_vectors.size()) || removed_rows != deletion_vectors.replaced_rows)
+    const Int64 replaced_files = static_cast<Int64>(plan.replaced_deletion_vectors.size());
+    const Int64 replaced_rows = sumRecordCounts(plan.replaced_deletion_vectors);
+    if (removed_files != replaced_files || removed_rows != replaced_rows)
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "Rewritten Iceberg delete manifests remove {} deletion vectors with {} rows, but {} with {} rows are replaced",
             removed_files,
             removed_rows,
-            deletion_vectors.data_files_with_replaced_vectors.size(),
-            deletion_vectors.replaced_rows);
+            replaced_files,
+            replaced_rows);
 
     return manifest_list_entries;
 }
@@ -968,7 +996,7 @@ static bool writeMetadataFiles(
     Int32 partition_spec_id,
     std::optional<ChunkPartitioner> & chunk_partitioner,
     SharedHeader data_sample_block,
-    const DeletionVectorChanges * deletion_vectors,
+    const DeletionVectors * deletion_vectors,
     const PersistentTableComponents & persistent_table_components)
 {
     auto delete_sample_block = std::make_shared<const Block>(getPositionDeleteFileSampleBlock());
@@ -1009,8 +1037,8 @@ static bool writeMetadataFiles(
     if (deletion_vectors)
     {
         std::set<std::pair<Int32, Row>> partitions_with_deletes;
-        for (const auto & [_, data_file] : deletion_vectors->data_files)
-            partitions_with_deletes.emplace(data_file.partition_spec_id, data_file.entry->normalized_partition_key_value);
+        for (const auto & [_, matched_file] : deletion_vectors->plan.matched_files)
+            partitions_with_deletes.emplace(matched_file.partition_spec_id, matched_file.entry->normalized_partition_key_value);
         num_partitions = std::max(num_partitions, static_cast<Int64>(partitions_with_deletes.size()));
 
         delete_files_count = static_cast<Int64>(deletion_vectors->file.vectors.size());
@@ -1019,8 +1047,8 @@ static bool writeMetadataFiles(
         for (const auto & [_, vector] : deletion_vectors->file.vectors)
             delete_rows += static_cast<Int64>(vector.cardinality);
 
-        removals.position_delete_files = static_cast<Int64>(deletion_vectors->data_files_with_replaced_vectors.size());
-        removals.position_deletes = deletion_vectors->replaced_rows;
+        removals.position_delete_files = static_cast<Int64>(deletion_vectors->plan.replaced_deletion_vectors.size());
+        removals.position_deletes = sumRecordCounts(deletion_vectors->plan.replaced_deletion_vectors);
     }
 
     auto result = MetadataGenerator(metadata, context->getSettingsRef()[Setting::iceberg_metadata_previous_versions_max]).generateNextMetadata(
@@ -1194,7 +1222,7 @@ static bool writeMetadataFiles(
                 /* use_previous_snapshots */ deletion_vectors == nullptr,
                 per_entry_content_types,
                 /* entry_counts */ {},
-                /* carry_forward_manifest_paths */ deletion_vectors ? deletion_vectors->carried_forward_manifest_paths : std::unordered_set<String>{},
+                /* carry_forward_manifest_paths */ deletion_vectors ? deletion_vectors->plan.manifests_to_carry_forward : std::unordered_set<String>{},
                 /* entry_partition_spec_ids */ {},
                 entry_partition_summaries,
                 manifest_entry_row_counts,
@@ -1466,12 +1494,15 @@ void mutate(
             if (positions_by_data_file.empty())
                 break;
 
-            std::optional<DeletionVectorChanges> deletion_vectors;
+            DeletionVectors deletion_vectors;
             try
             {
-                deletion_vectors = prepareDeletionVectorChanges(
-                    positions_by_data_file, metadata, object_storage, persistent_table_components, context, format_settings,
-                    static_cast<Int32>(current_schema_id), filename_generator, log);
+                deletion_vectors.plan = planDeletionVectors(
+                    positions_by_data_file, metadata, object_storage, persistent_table_components, context,
+                    static_cast<Int32>(current_schema_id), log);
+                addPreviousDeletes(deletion_vectors.plan, positions_by_data_file, object_storage, format_settings, context);
+                deletion_vectors.file = writeDeletionVectorsFile(
+                    positions_by_data_file, filename_generator, persistent_table_components.path_resolver, object_storage, context);
             }
             catch (...)
             {
@@ -1498,7 +1529,7 @@ void mutate(
                     static_cast<Int32>(partition_spec_id),
                     chunk_partitioner,
                     addRowLineageColumns(sample_block),
-                    &*deletion_vectors,
+                    &deletion_vectors,
                     persistent_table_components))
                 continue;
             break;
