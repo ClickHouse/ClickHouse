@@ -13,15 +13,11 @@ import SettingsInfoBlock from "/snippets/es/components/SettingsInfoBlock/Setting
 
 Estas opciones configuran el servidor de ClickHouse y se generan automáticamente a partir del código fuente de ClickHouse.
 
-<div id="s3queue_disable_streaming">
-  ## s3queue_disable_streaming
-</div>
+## s3queue_disable_streaming {#s3queue_disable_streaming}
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="Sí" />Desactiva el streaming en S3Queue incluso si la tabla ya se ha creado y hay vistas materializadas adjuntas
 
-<div id="s3queue_log">
-  ## s3queue_log
-</div>
+## s3queue_log {#s3queue_log}
 
 Configuración de la tabla del sistema `s3queue_log`.
 

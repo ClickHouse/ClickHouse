@@ -53,6 +53,7 @@ public:
 
     /// Try to find table function input() in SELECT part
     void tryFindInputFunction(ASTPtr & input_function) const;
+    static void tryFindInputFunction(const ASTPtr & ast, ASTPtr & input_function);
 
     /** Get the text that identifies this element. */
     String getID(char delim) const override { return "InsertQuery" + (delim + table_id.database_name) + delim + table_id.table_name; }

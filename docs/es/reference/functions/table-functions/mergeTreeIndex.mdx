@@ -11,17 +11,13 @@ doc_type: 'reference'
 
 Representa el contenido de los archivos de índice y de marca de las tablas MergeTree. Puede utilizarse para tareas de introspección.
 
-<div id="syntax">
-  ## Sintaxis
-</div>
+## Sintaxis {#syntax}
 
 ```sql
 mergeTreeIndex(database, table [, with_marks = true] [, with_minmax = true])
 ```
 
-<div id="arguments">
-  ## Argumentos
-</div>
+## Argumentos {#arguments}
 
 | Argumento     | Descripción                                                             |
 | ------------- | ----------------------------------------------------------------------- |
@@ -30,9 +26,9 @@ mergeTreeIndex(database, table [, with_marks = true] [, with_minmax = true])
 | `with_marks`  | Si se incluyen en el resultado las columnas con marcas.                 |
 | `with_minmax` | Si se incluye en el resultado el índice min-max.                        |
 
-<div id="returned-value">
-  ## Valor devuelto
-</div>
+Para resolver la estructura del resultado, por ejemplo con `DESCRIBE`, se necesita el privilegio `SHOW COLUMNS` sobre la tabla de origen, y para leer de ella se necesita `SELECT` sobre las columnas que se lean.
+
+## Valor devuelto {#returned-value}
 
 Un objeto de tipo tabla con columnas con valores del índice primario y del índice min-max (si está habilitado) de la tabla de origen, columnas con valores de las marcas (si están habilitadas) para todos los archivos posibles en las partes de datos de la tabla de origen y columnas virtuales:
 
@@ -42,9 +38,7 @@ Un objeto de tipo tabla con columnas con valores del índice primario y del índ
 
 La columna de marcas puede contener el valor `(NULL, NULL)` cuando la columna no está presente en la parte de datos o cuando no se han escrito las marcas de uno de sus subflujos (p. ej., en partes compactas).
 
-<div id="usage-example">
-  ## Ejemplo de uso
-</div>
+## Ejemplo de uso {#usage-example}
 
 ```sql
 CREATE TABLE test_table

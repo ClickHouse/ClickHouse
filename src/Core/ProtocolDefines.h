@@ -271,6 +271,9 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_HASH_JOIN_L
 /// name is not written: the older peer does not store `String` columns in the hash join row store, so the setting has
 /// no effect there.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ROW_STORE_STRING_COLUMN_BYTES = 21;
+/// First query-plan serialization version that carries the set operation of `Join` and the `skip_deduplication` and
+/// `deduplicates_except_join` flags of `Distinct`. Below it, the join of a set operation is not sent.
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_SET_OPERATION_AS_JOIN = 21;
 /// First global query-plan version that writes `Aggregating` version 2 (top-K key collations); older peers get no collated top-K.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_GROUP_BY_TOP_K_COLLATION = 22;
 /// Version 1 added the initiator's settings changes to the task.

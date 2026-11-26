@@ -17,7 +17,7 @@ import { ClickHouseSupportedBadge } from "/snippets/ru/components/ClickHouseSupp
 QuickSight может подключаться к ClickHouse, развернутому в собственной инфраструктуре (23.11+), через интерфейс MySQL, используя официальный источник данных MySQL и режим Direct Query.
 
 <div id="on-premise-clickhouse-server-setup">
-  ## Настройка сервера ClickHouse в собственной инфраструктуре
+  ## Настройка сервера ClickHouse в собственной инфраструктуре {#on-premise-clickhouse-server-setup}
 </div>
 
 См. [официальную документацию](/ru/concepts/features/interfaces/mysql), где описано, как настроить сервер ClickHouse с включенным интерфейсом MySQL.
@@ -110,20 +110,14 @@ mysql> show databases;
 Read 4 rows, 603.00 B in 0.00156 sec., 2564 rows/sec., 377.48 KiB/sec.
 ```
 
-<div id="connecting-quicksight-to-clickhouse">
-  ## Подключение QuickSight к ClickHouse
-</div>
+## Подключение QuickSight к ClickHouse {#connecting-quicksight-to-clickhouse}
 
-Прежде всего, перейдите на [https://quicksight.aws.amazon.com](https://quicksight.aws.amazon.com), откройте раздел Datasets и нажмите &quot;New dataset&quot;:
+Прежде всего перейдите на [https://quicksight.aws.amazon.com](https://quicksight.aws.amazon.com), откройте раздел Datasets и нажмите «New dataset»:
 
 <div className="ch-image-md">
-
-<Frame>
-
-![Панель мониторинга Amazon QuickSight с кнопкой New dataset в разделе Datasets](/images/integrations/data-visualization/quicksight_01.webp)
-
-</Frame>
-
+  <Frame>
+    ![Панель мониторинга Amazon QuickSight с кнопкой New dataset в разделе Datasets](/images/integrations/data-visualization/quicksight_01.webp)
+  </Frame>
 </div>
 
 <br />
@@ -131,92 +125,68 @@ Read 4 rows, 603.00 B in 0.00156 sec., 2564 rows/sec., 377.48 KiB/sec.
 Найдите официальный коннектор MySQL, входящий в состав QuickSight (он называется просто **MySQL**):
 
 <div className="ch-image-md">
-
-<Frame>
-
-![Экран выбора источника данных в QuickSight, где в результатах поиска выделен MySQL](/images/integrations/data-visualization/quicksight_02.webp)
-
-</Frame>
-
+  <Frame>
+    ![Экран выбора источника данных QuickSight с выделенным MySQL в результатах поиска](/images/integrations/data-visualization/quicksight_02.webp)
+  </Frame>
 </div>
 
 <br />
 
-Укажите свои сведения о подключении. Обратите внимание, что порт интерфейса MySQL по умолчанию — 9004,
-и он может отличаться в зависимости от конфигурации сервера.
+Укажите сведения о подключении. Обратите внимание: по умолчанию интерфейс MySQL использует порт 9004,
+но в зависимости от конфигурации сервера он может быть другим.
 
 <div className="ch-image-md">
-
-<Frame>
-
-![Форма настройки подключения MySQL в QuickSight с полями hostname, port, database и учетных данных](/images/integrations/data-visualization/quicksight_03.webp)
-
-</Frame>
-
+  <Frame>
+    ![Форма настройки подключения MySQL в QuickSight с полями имени хоста, порта, базы данных и учётных данных](/images/integrations/data-visualization/quicksight_03.webp)
+  </Frame>
 </div>
 
 <br />
 
-Теперь у вас есть два варианта получения данных из ClickHouse. Во-первых, можно выбрать таблицу из списка:
+Получить данные из ClickHouse можно двумя способами. Первый — выбрать таблицу из списка:
 
 <div className="ch-image-md">
-
-<Frame>
-
-![Интерфейс выбора таблицы в QuickSight со списком таблиц базы данных, доступных из ClickHouse](/images/integrations/data-visualization/quicksight_04.webp)
-
-</Frame>
-
+  <Frame>
+    ![Интерфейс выбора таблиц QuickSight с таблицами базы данных, доступными в ClickHouse](/images/integrations/data-visualization/quicksight_04.webp)
+  </Frame>
 </div>
 
 <br />
 
-Либо можно указать custom SQL для получения данных:
+Второй — указать пользовательский SQL-запрос для получения данных:
 
 <div className="ch-image-md">
-
-<Frame>
-
-![Редактор custom SQL в QuickSight для получения данных из ClickHouse](/images/integrations/data-visualization/quicksight_05.webp)
-
-</Frame>
-
+  <Frame>
+    ![Редактор пользовательских SQL-запросов QuickSight для получения данных из ClickHouse](/images/integrations/data-visualization/quicksight_05.webp)
+  </Frame>
 </div>
 
 <br />
 
-Нажав &quot;Edit/Preview data&quot;, вы сможете увидеть автоматически определённую структуру таблицы или изменить свой custom SQL, если выбрали такой способ доступа к данным:
+Нажав «Edit/Preview data», вы увидите структуру таблицы, полученную из базы данных, или сможете скорректировать пользовательский SQL-запрос, если выбрали этот способ доступа к данным:
 
 <div className="ch-image-md">
-
-<Frame>
-
-![Предварительный просмотр данных в QuickSight, показывающий структуру таблицы со столбцами и примерами данных](/images/integrations/data-visualization/quicksight_06.webp)
-
-</Frame>
-
+  <Frame>
+    ![Предварительный просмотр данных в QuickSight со структурой таблицы, столбцами и выборкой данных](/images/integrations/data-visualization/quicksight_06.webp)
+  </Frame>
 </div>
 
 <br />
 
-Убедитесь, что в левом нижнем углу интерфейса выбран режим &quot;Direct Query&quot;:
+Убедитесь, что в левом нижнем углу интерфейса выбран режим «Direct Query»:
 
 <div className="ch-image-md">
-
-<Frame>
-
-![Интерфейс QuickSight, где в нижнем углу выделен режим Direct Query](/images/integrations/data-visualization/quicksight_07.webp)
-
-</Frame>
-
+  <Frame>
+    ![Интерфейс QuickSight с выделенным параметром режима Direct Query в нижнем углу](/images/integrations/data-visualization/quicksight_07.webp)
+  </Frame>
 </div>
 
 <br />
 
-Теперь можно перейти к публикации датасета и созданию новой визуализации!
+Теперь можно опубликовать набор данных и создать новую визуализацию!
 
 <div id="known-limitations">
-  ## Известные ограничения
+  ## Известные ограничения {#known-limitations}
 </div>
 
 * Импорт в SPICE работает некорректно; используйте вместо него режим Direct Query. См. [#58553](https://github.com/ClickHouse/ClickHouse/issues/58553).

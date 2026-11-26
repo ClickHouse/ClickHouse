@@ -456,9 +456,6 @@ const char * AggregatingStep::adaptiveAggregatorRejectionReason(const QueryPipel
     if (!params.enable_adaptive_aggregator)
         return "disabled by the setting";
 
-    if (pipeline.getNumStreams() <= 1 || params.max_threads <= 1)
-        return "the aggregation is single-stream";
-
     if (params.only_merge)
         return "the step only merges";
 
@@ -496,8 +493,8 @@ const char * AggregatingStep::adaptiveAggregatorRejectionReason(const QueryPipel
     if (skip_merging)
         return "the merge phase is skipped";
 
-    if (params.group_by_two_level_threshold == 0 && params.group_by_two_level_threshold_bytes == 0)
-        return "two-level aggregation is disabled";
+    if (!final && params.group_by_two_level_threshold == 0 && params.group_by_two_level_threshold_bytes == 0)
+        return "two-level aggregation is disabled for a partial aggregation";
 
     /// The verdict of a prior run found the staged streams repeat-dominated (see
     /// `Aggregator::adaptiveStagingVerdict`): freezing cannot pay for this query, so do not engage it again.
@@ -505,11 +502,13 @@ const char * AggregatingStep::adaptiveAggregatorRejectionReason(const QueryPipel
     /// statistics-driven initialization, exactly as if the feature were off. A run that may not thaw does not
     /// ask: the verdict is the thaw's. A run with the top-K pruning asks for the verdict of its own runs,
     /// because it keeps its statistics apart from those of the query without its `LIMIT` (see
-    /// `setAggregationHashTableCacheKeys`).
+    /// `setAggregationHashTableCacheKeys`). A run with one stream, which has a lone producer, and a run with
+    /// several ask for the verdict of their own kind, because the two thaw by different bounds (see
+    /// `AggregationEntry`).
     if (params.stats_collecting_params.isCollectionAndUseEnabled() && params.adaptiveMayThaw())
     {
         const auto hint = getHashTablesStatistics<AggregationEntry>().getSizeHint(params.stats_collecting_params);
-        if (hint && hint->adaptive_staging_repeat_dominated)
+        if (hint && hint->adaptiveStagingRepeatDominated(/*lone_producer=*/pipeline.getNumStreams() == 1))
             return "a prior run measured the staged streams as repeat-dominated";
     }
 
@@ -535,7 +534,12 @@ bool AggregatingStep::canUseRadixUniqExact() const
         return false;
 
     const auto & aggregate = params.aggregates[0];
-    return aggregate.function->getName() == "uniqExact" && aggregate.parameters.empty() && aggregate.argument_names.size() == 1
+    const bool has_internal_nulls = std::any_of(
+        aggregate.function->getArgumentTypes().begin(),
+        aggregate.function->getArgumentTypes().end(),
+        [](const auto & type) { return canContainNull(*type) && !type->isNullable(); });
+    return !has_internal_nulls
+        && aggregate.function->getName() == "uniqExact" && aggregate.parameters.empty() && aggregate.argument_names.size() == 1
         && WhichDataType(aggregate.function->getResultType()).isUInt64();
 }
 
@@ -969,8 +973,9 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
     /// step (and to the whole pipeline execution) without any parallelism to gain.
     const size_t streams_after_aggregation = (should_produce_results_in_order_of_bucket_number || params.keys.empty()) ? 1 : max_threads;
 
-    /// If there are several sources, then we perform parallel aggregation
-    if (pipeline.getNumStreams() > 1)
+    /// If there are several sources, then we perform parallel aggregation. A single source takes this branch
+    /// too when the adaptive aggregator engages, because only this branch creates the adaptive session.
+    if (pipeline.getNumStreams() > 1 || use_adaptive_aggregator)
     {
         /// Add resize transform to uniformly distribute data between aggregating streams.
         /// But not if we execute aggregation over partitioned data in which case data streams shouldn't be mixed.

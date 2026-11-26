@@ -3,7 +3,7 @@ description: '날짜 및 시간 작업 함수에 대한 문서'
 sidebarTitle: '날짜 및 시간'
 slug: /sql-reference/functions/date-time-functions
 title: '날짜 및 시간 작업 함수'
-doc_type: '참고'
+doc_type: 'reference'
 ---
 
 이 섹션의 대부분의 함수는 선택적으로 시간대 인수를 받습니다. 예를 들어 `Europe/Amsterdam`입니다. 이 경우 로컬(기본) 시간대 대신 지정한 시간대가 사용됩니다.
@@ -1528,7 +1528,7 @@ LIMIT 10
 
 ## formatDateTimeInJodaSyntax {#formatDateTimeInJodaSyntax}
 
-도입 버전: v20.1.0
+도입 버전: v23.1.0
 
 `formatDateTime`와 비슷하지만, MySQL 스타일 대신 Joda 스타일로 날짜-시간 값을 포맷합니다. 자세한 내용은 [Joda Time documentation](https://joda-time.sourceforge.net/apidocs/org/joda/time/format/DateTimeFormat.html)을 참조하십시오.
 
@@ -1538,31 +1538,31 @@ LIMIT 10
 
 **대체 필드:**
 
-| 자리 표시자 | Description            | Presentation | Examples                   |
-| ----------- | ---------------------- | ------------ | -------------------------- |
-| G           | 연호                     | 텍스트          | AD                         |
-| C           | 연호의 세기 (&gt;=0)        | 숫자           | 20                         |
-| Y           | 연호의 연도 (&gt;=0)        | 연도           | 1996                       |
-| x           | 주 기준 연도(아직 지원되지 않음)    | 연도           | 1996                       |
-| w           | 주 기준 연도의 주(아직 지원되지 않음) | 숫자           | 27                         |
-| e           | 요일                     | 숫자           | 2                          |
-| E           | 요일                     | 텍스트          | Tuesday; Tue               |
-| y           | 연도                     | 연도           | 1996                       |
-| D           | 연중 날짜                  | 숫자           | 189                        |
-| M           | 연중 월                   | 월            | July; Jul; 07              |
-| d           | 월의 날짜                  | 숫자           | 10                         |
-| a           | 오전/오후                  | 텍스트          | PM                         |
-| K           | 반일 기준 시(0~11)          | 숫자           | 0                          |
-| h           | 반일 기준 시각(1~12)         | 숫자           | 12                         |
-| H           | 하루 기준 시(0~23)          | 숫자           | 0                          |
-| k           | 하루 기준 시각(1~24)         | 숫자           | 24                         |
-| m           | 시의 분                   | 숫자           | 30                         |
-| s           | 분의 초                   | 숫자           | 55                         |
-| S           | 초의 소수 부분               | 숫자           | 978                        |
-| z           | 시간대                    | 텍스트          | Eastern Standard Time; EST |
-| Z           | 시간대 오프셋                | 시간대          | -0800; -0812               |
-| &#39;       | 텍스트 이스케이프              | 구분자          |                            |
-| &#39;&#39;  | 작은따옴표                  | 리터럴          | &#39;                      |
+| 자리 표시자     | 설명            | Presentation | 예시                   |
+| ---------- | ---------------------- | ------------ | -------------------------- |
+| G          | 연호                     | 텍스트          | AD                         |
+| C          | 연호의 세기 (&gt;=0)        | 숫자           | 20                         |
+| Y          | 연호의 연도 (&gt;=0)        | 연도           | 1996                       |
+| x          | 주 기준 연도(아직 지원되지 않음)    | 연도           | 1996                       |
+| w          | 주 기준 연도의 주(아직 지원되지 않음) | 숫자           | 27                         |
+| e          | 요일                     | 숫자           | 2                          |
+| E          | 요일                     | 텍스트          | Tuesday; Tue               |
+| y          | 연도                     | 연도           | 1996                       |
+| D          | 연중 날짜                  | 숫자           | 189                        |
+| M          | 연중 월                   | 월            | July; Jul; 07              |
+| d          | 월의 날짜                  | 숫자           | 10                         |
+| a          | 오전/오후                  | 텍스트          | PM                         |
+| K          | 반일 기준 시(0~11)          | 숫자           | 0                          |
+| h          | 반일 기준 시각(1~12)         | 숫자           | 12                         |
+| H          | 하루 기준 시(0~23)          | 숫자           | 0                          |
+| k          | 하루 기준 시각(1~24)         | 숫자           | 24                         |
+| m          | 시의 분                   | 숫자           | 30                         |
+| s          | 분의 초                   | 숫자           | 55                         |
+| S          | 초의 소수 부분               | 숫자           | 978                        |
+| z          | 시간대                    | 텍스트          | Eastern Standard Time; EST |
+| Z          | 시간대 오프셋                | 시간대          | -0800; -0812               |
+| &#39;      | 텍스트 이스케이프              | 구분자          |                            |
+| &#39;&#39; | 작은따옴표                  | 리터럴          | &#39;                      |
 
 **구문**
 
@@ -1570,11 +1570,11 @@ LIMIT 10
 formatDateTimeInJodaSyntax(datetime, format[, timezone])
 ```
 
-**별칭(Aliases)**: `FORMAT_DATETIME`
+**별칭**: `FORMAT_DATETIME`
 
 **인수**
 
-* `datetime` — 포맷할 날짜 또는 날짜-시간 값입니다. [`DateTime`](/ko/reference/data-types/datetime) 또는 [`Date`](/ko/reference/data-types/date) 또는 [`Date32`](/ko/reference/data-types/date32) 또는 [`DateTime64`](/ko/reference/data-types/datetime64)
+* `datetime` — 포맷할 날짜 또는 날짜 및 시간 값입니다. [`DateTime`](/ko/reference/data-types/datetime) 또는 [`Date`](/ko/reference/data-types/date) 또는 [`Date32`](/ko/reference/data-types/date32) 또는 [`DateTime64`](/ko/reference/data-types/datetime64)
 * `format` — Joda 스타일 대체 필드가 포함된 형식 문자열(format String)입니다. [`String`](/ko/reference/data-types/string)
 * `timezone` — 선택 사항입니다. 포맷된 시간에 사용할 시간대 이름입니다. [`String`](/ko/reference/data-types/string)
 
@@ -4723,10 +4723,12 @@ SELECT toStartOfISOYear(toDateTime('2023-04-21 10:20:30'))
 
 예를 들어,
 
-* `toStartOfInterval(t, INTERVAL 1 YEAR)`는 `toStartOfYear(t)`와 동일한 값을 반환합니다.
-* `toStartOfInterval(t, INTERVAL 1 MONTH)`는 `toStartOfMonth(t)`와 동일한 값을 반환합니다.
-* `toStartOfInterval(t, INTERVAL 1 DAY)`는 `toStartOfDay(t)`와 동일한 값을 반환합니다.
-* `toStartOfInterval(t, INTERVAL 15 MINUTE)`는 `toStartOfFifteenMinutes(t)`와 동일한 값을 반환합니다.
+* `toStartOfInterval(t, INTERVAL 1 YEAR)`는 `toStartOfYear(t)`와 동일한 경계로 내림합니다.
+* `toStartOfInterval(t, INTERVAL 1 MONTH)`는 `toStartOfMonth(t)`와 동일한 경계로 내림합니다.
+* `toStartOfInterval(t, INTERVAL 1 DAY)`는 `toStartOfDay(t)`와 동일한 경계로 내림합니다.
+* `toStartOfInterval(t, INTERVAL 15 MINUTE)`는 `toStartOfFifteenMinutes(t)`와 동일한 경계로 내림합니다.
+
+결과 타입은 이 함수들의 결과 타입과 다를 수 있습니다(아래 참조).
 
 계산은 특정 시점을 기준으로 수행됩니다.
 
@@ -4750,6 +4752,13 @@ unit으로 `WEEK`를 지정하면 `toStartOfInterval`은 주가 월요일에 시
 
 두 번째 오버로드는 TimescaleDB의 `time_bucket()` 함수와 PostgreSQL의 `date_bin()` 함수를 각각 에뮬레이션합니다.
 
+결과 타입은 `value` 인수의 타입과 같습니다. 즉, `Date`에는 `Date`, `Date32`에는 `Date32`, `DateTime`에는 `DateTime`, `DateTime64`에는 소수 자릿수(scale)가 동일한 `DateTime64`가 반환됩니다.
+유일한 예외는 `DateTime64` 인수의 소수 자릿수보다 더 세밀한 1초 미만 단위를 사용하는 경우입니다(예: `DateTime64(0)`에 대한 `INTERVAL 1500 MILLISECOND`). 이 경우 결과는 버킷 경계를 표현할 수 있도록 해당 단위의 소수 자릿수를 가집니다.
+결과가 `Date` 또는 `DateTime`의 범위보다 작으면(예: `1970-01-01`을 주 단위로 내림하는 경우) 해당 타입의 최솟값으로 제한됩니다.
+[`to_start_of_interval_preserves_argument_type`](/ko/reference/settings/session-settings#to_start_of_interval_preserves_argument_type) 설정을 비활성화하면 26.11 이전 버전과 마찬가지로 결과 타입이 인터벌 단위에 따라 결정됩니다.
+즉, `WEEK` 이상의 단위에는 `Date`, `DAY`부터 `SECOND`까지는 `DateTime`, 1초 미만 단위에는 해당 단위의 소수 자릿수를 가진 `DateTime64`가 반환됩니다.
+이 동작은 `origin`이 없는 오버로드에 적용됩니다. `origin`이 있는 오버로드는 이 경우에도 인수의 타입을 유지합니다. 단, `DateTime64` 인수와 1초 미만 단위를 사용하면 결과는 해당 단위의 소수 자릿수를 가집니다.
+
 **구문**
 
 ```sql
@@ -4761,12 +4770,12 @@ toStartOfInterval(value, INTERVAL x unit[, origin[, time_zone]])
 
 **인수**
 
-* `value` — 내림할 날짜 또는 날짜와 시간 값입니다. [`Date`](/ko/reference/data-types/date) 또는 [`DateTime`](/ko/reference/data-types/datetime) 또는 [`DateTime64`](/ko/reference/data-types/datetime64)
+* `value` — 내림할 날짜 또는 시간이 포함된 날짜 값입니다. [`Date`](/ko/reference/data-types/date) 또는 [`Date32`](/ko/reference/data-types/date32) 또는 [`DateTime`](/ko/reference/data-types/datetime) 또는 [`DateTime64`](/ko/reference/data-types/datetime64)
 * `x` — 인터벌 길이를 나타내는 숫자입니다. - `unit` — 인터벌 단위: YEAR, QUARTER, MONTH, WEEK, DAY, HOUR, MINUTE, SECOND, MILLISECOND, MICROSECOND, NANOSECOND. - `time_zone` — 선택 사항입니다. 문자열 형식의 시간대 이름입니다. - `origin` — 선택 사항입니다. 계산의 기준점입니다(두 번째 오버로드에만 해당).
 
 **반환 값**
 
-입력 값이 포함된 인터벌의 시작 시점을 반환합니다. [`DateTime`](/ko/reference/data-types/datetime)
+입력 값이 포함된 인터벌의 시작 시점을 입력 값과 동일한 타입으로 반환합니다. [`Date`](/ko/reference/data-types/date) 또는 [`Date32`](/ko/reference/data-types/date32) 또는 [`DateTime`](/ko/reference/data-types/datetime) 또는 [`DateTime64`](/ko/reference/data-types/datetime64)
 
 **예시**
 
@@ -4778,7 +4787,7 @@ SELECT toStartOfInterval(toDateTime('2023-01-15 14:30:00'), INTERVAL 1 MONTH)
 
 ```response title=Response
 ┌─toStartOfInterval(toDateTime('2023-01-15 14:30:00'), toIntervalMonth(1))─┐
-│                                                               2023-01-01 │
+│                                                      2023-01-01 00:00:00 │
 └──────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -5371,6 +5380,7 @@ int32samoa: 1546300800
 도입 버전: v23.8.0
 
 한 시간대의 날짜 또는 날짜-시간 값을 UTC 시간대의 타임스탬프로 변환합니다. 이 함수는 주로 Apache Spark 및 이와 유사한 프레임워크와의 호환성을 위해 포함되어 있습니다.
+일광 절약 시간제 전환으로 인해 두 번 나타나거나 존재하지 않는 현지 시간은 `toDateTime`과 동일한 방식으로 변환됩니다.
 
 **구문**
 
