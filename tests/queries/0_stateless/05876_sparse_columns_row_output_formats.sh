@@ -32,9 +32,10 @@ for f in TSV TSVRaw CSV JSONEachRow JSONStringsEachRow Values; do
     if [ "$f" = Values ]; then echo; fi
 done
 
+# With parallel replicas, `rows_before_limit_at_least` is written when a replica happens to report its profile info.
 for f in XML JSON; do
     echo "$f"
-    $CLICKHOUSE_CLIENT --allow_special_serialization_kinds_in_output_formats 1 -q "SELECT id, u, s, n FROM t_sparse_rows WHERE id < 6 ORDER BY id FORMAT $f $SETTINGS, output_format_write_statistics = 0" | tr '\0' '@'
+    $CLICKHOUSE_CLIENT --allow_special_serialization_kinds_in_output_formats 1 -q "SELECT id, u, s, n FROM t_sparse_rows WHERE id < 6 ORDER BY id FORMAT $f $SETTINGS, output_format_write_statistics = 0, enable_parallel_replicas = 0" | tr '\0' '@'
 done
 
 echo "Markdown"
