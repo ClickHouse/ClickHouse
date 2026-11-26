@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/Joins.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Core/SettingsEnums.h>
 #include <Common/Logger_fwd.h>
 #include <Interpreters/Context_fwd.h>
@@ -112,6 +113,7 @@ struct QueryPlanOptimizationSettings
     bool convert_outer_join_to_inner_join;
     bool convert_outer_join_to_inner_join_transitively;
     bool short_circuit_constant_false_join;
+    bool remove_unused_joins;
     bool execute_functions_after_sorting;
     bool reuse_storage_ordering_for_window_functions;
     bool lift_up_union;
@@ -141,6 +143,9 @@ struct QueryPlanOptimizationSettings
     bool aggregation_having_prefilter;
     UInt64 top_k_optimization_observation_rows = 65536;
     bool top_k_optimization_shared_boundary = true;
+    /// The `distributed_group_by_top_k` of the initiator, on a parallel replicas follower only.
+    UInt64 distributed_group_by_top_k = 0;
+    UInt64 max_rows_to_group_by = 0;
 
     /// If we can swap probe/build tables in join
     /// true/false - always/never swap
@@ -303,7 +308,7 @@ struct QueryPlanOptimizationSettings
     UInt64 join_runtime_filter_min_probe_rows = 1000;
     bool join_runtime_filter_size_from_hash_table_stats = false;
 
-    std::vector<JoinOrderAlgorithm> query_plan_optimize_join_order_algorithm;
+    std::vector<JoinOrderAlgorithm> query_plan_optimize_join_order_algorithm; // STYLE_CHECK_ALLOW_STD_CONTAINERS -- assigned from `SettingFieldMultiEnum`, which converts only to std::vector
 
     size_t min_columns_for_join_lazy_indexing = 0;
     size_t max_limit_for_join_lazy_indexing = 0;
@@ -327,6 +332,7 @@ struct QueryPlanOptimizationSettings
     float automatic_parallel_replicas_max_duplicated_read_ratio;
     float automatic_parallel_replicas_statistics_drift_ratio;
     bool automatic_parallel_replicas_remember_boundary = true;
+    UInt64 automatic_parallel_replicas_undecided_retry_after_executions = 0;
     /// Folded into the key under which automatic parallel replicas remembers the boundary of the single-replica
     /// plan; see `parallelReplicasBoundarySettingsHash`.
     UInt64 parallel_replicas_boundary_settings_hash = 0;

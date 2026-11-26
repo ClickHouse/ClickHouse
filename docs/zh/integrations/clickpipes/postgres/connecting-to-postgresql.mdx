@@ -19,9 +19,7 @@ import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/Exp
   了解我们的 [ClickHouse Managed Postgres](/zh/products/managed-postgres/overview) 服务。该服务采用与计算资源物理同置的 NVMe 存储；与使用 EBS 等网络附加存储的替代方案相比，对于受磁盘 IO 限制的工作负载，性能最高可提升 10 倍，并支持通过 ClickPipes 中的 Postgres CDC connector 将 Postgres 数据复制到 ClickHouse。
 </Tip>
 
-<div id="using-the-postgresql-table-engine">
-  ## 使用 PostgreSQL 表引擎
-</div>
+## 使用 PostgreSQL 表引擎 {#using-the-postgresql-table-engine}
 
 `PostgreSQL` 表引擎允许在 ClickHouse 中对存储在远程 PostgreSQL 服务器上的数据执行 **SELECT** 和 **INSERT** 操作。
 本文将通过一个表来说明集成的基本方法。
@@ -205,9 +203,7 @@ import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/Exp
   </Step>
 </Steps>
 
-<div id="using-the-materializedpostgresql-database-engine">
-  ## 使用 MaterializedPostgreSQL 数据库引擎
-</div>
+## 使用 MaterializedPostgreSQL 数据库引擎 {#using-the-materializedpostgresql-database-engine}
 
 <CloudNotSupportedBadge />
 
@@ -303,7 +299,7 @@ PostgreSQL 数据库引擎使用 PostgreSQL 的复制功能，为数据库中全
     2. 为该数据库引擎启用 PostgreSQL Experimental 功能：
 
     ```sql
-    SET allow_experimental_database_materialized_postgresql=1
+    SET enable_database_materialized_postgresql=1
     ```
 
     3. 创建要复制的新数据库，并定义初始表：

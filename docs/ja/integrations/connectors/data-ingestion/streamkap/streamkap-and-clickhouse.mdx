@@ -18,12 +18,12 @@ import { PartnerBadge } from "/snippets/ja/components/PartnerBadge/PartnerBadge.
 
 <a href="https://streamkap.com/" target="_blank">Streamkap</a> は、ストリーミング CDC (変更データキャプチャ) とストリーム処理に特化したリアルタイムデータインテグレーションプラットフォームです。Apache Kafka、Apache Flink、Debezium を活用した高スループットかつスケーラブルなスタック上に構築されており、SaaS または BYOC (Bring Your Own Cloud) 形態の完全マネージド型サービスとして提供されています。
 
-Streamkap を使用すると、PostgreSQL、MySQL、SQL Server、MongoDB、<a href="https://streamkap.com/connectors" target="_blank">そのほか多数</a>のソースデータベースで発生するあらゆる insert、update、delete を、ミリ秒単位のレイテンシで直接 ClickHouse にストリーミングできます。
+Streamkap を使用すると、PostgreSQL、MySQL、SQL Server、MongoDB、<a href="https://streamkap.com/connectors" target="_blank">そのほか多数</a>のソースデータベースで発生するあらゆる insert、更新、削除 を、ミリ秒単位のレイテンシで直接 ClickHouse にストリーミングできます。
 
-そのため、リアルタイム分析ダッシュボード、オペレーショナルアナリティクス、機械学習モデルへのライブデータ供給に最適です。
+そのため、リアルタイム分析ダッシュボード、オペレーショナル分析、機械学習モデルへのライブデータ供給に最適です。
 
 <div id="key-features">
-  ## 主な機能
+  ## 主な機能 {#key-features}
 </div>
 
 * **リアルタイムストリーミング CDC:** Streamkap はデータベースのログから変更を直接取り込み、ClickHouse 内のデータがソースのリアルタイムなレプリカであることを保証します。
@@ -38,13 +38,13 @@ Streamkap を使用すると、PostgreSQL、MySQL、SQL Server、MongoDB、<a hr
 * **耐障害性の高い配信:** このプラットフォームは at-least-once 配信保証を提供し、ソースと ClickHouse 間のデータ整合性を確保します。upsert 操作では、主キーに基づいて重複排除を行います。
 
 <div id="started">
-  ## はじめに
+  ## はじめに {#started}
 </div>
 
 このガイドでは、Streamkap パイプラインを設定して ClickHouse にデータを読み込む方法の概要を説明します。
 
 <div id="prerequisites">
-  ### 前提条件
+  ### 前提条件 {#prerequisites}
 </div>
 
 * <a href="https://app.streamkap.com/account/sign-up" target="_blank">Streamkap アカウント</a>。
@@ -90,13 +90,13 @@ Streamkap を使用すると、PostgreSQL、MySQL、SQL Server、MongoDB、<a hr
 </Steps>
 
 <div id="how-it-works-with-clickhouse">
-  ## ClickHouseでの仕組み
+  ## ClickHouseでの仕組み {#how-it-works-with-clickhouse}
 </div>
 
 Streamkapのインテグレーションは、ClickHouse内のCDC (変更データキャプチャ) データを効率的に管理できるように設計されています。
 
 <div id="table-engine-data-handling">
-  ### テーブルエンジンとデータの扱い
+  ### テーブルエンジンとデータの扱い {#table-engine-data-handling}
 </div>
 
 デフォルトでは、Streamkap は upsert インジェストモードを使用します。ClickHouse にテーブルを作成する際には、ReplacingMergeTree エンジンが使われます。このエンジンは、CDC イベントの処理に適しています。
@@ -109,7 +109,7 @@ Streamkapのインテグレーションは、ClickHouse内のCDC (変更デー�
   * 必要に応じて、削除済みレコードを分析目的で ClickHouse に保持できます
 
 <div id="metadata-columns">
-  ### メタデータカラム
+  ### メタデータカラム {#metadata-columns}
 </div>
 
 Streamkap は、データの状態を管理するために各テーブルに複数のメタデータカラムを追加します。
@@ -122,7 +122,7 @@ Streamkap は、データの状態を管理するために各テーブルに複�
 | `_STREAMKAP_OFFSET`       | Streamkap の内部ログ内のオフセット値で、順序付けやデバッグに役立ちます。        |
 
 <div id="query-latest-data">
-  ### 最新データのクエリ
+  ### 最新データのクエリ {#query-latest-data}
 </div>
 
 ReplacingMergeTree は更新と削除をバックグラウンドで処理するため、単純な SELECT * クエリでは、マージが完了する前の古い行や削除済みの行が表示されることがあります。データの最新の状態を取得するには、削除されたレコードを除外し、各行の最新バージョンのみを選択する必要があります。
@@ -151,7 +151,7 @@ GROUP BY key;
 本番環境のユースケースや、エンドユーザーから同時に繰り返し実行されるクエリに対しては、後続のアクセスパターンにより適した形でデータを構成するために、materialized viewを使用できます。
 
 <div id="further-reading">
-  ## 関連資料
+  ## 関連資料 {#further-reading}
 </div>
 
 * <a href="https://streamkap.com/" target="_blank">Streamkap 公式サイト</a>
