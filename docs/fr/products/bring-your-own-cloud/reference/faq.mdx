@@ -156,12 +156,12 @@ doc_type: 'reference'
 
 ### Mises à niveau et maintenance {#upgrades-and-maintenance}
 
-<Accordion title="Comment fonctionnent les mises à niveau de version de ClickHouse ? Puis-je définir la fréquence de maintenance ?">
-  Les mises à niveau fonctionnent de la même manière que dans ClickHouse Cloud : les services sont inscrits à des canaux de publication (rapide, régulier, lent) et respectent les fenêtres de maintenance planifiées. Contactez le support pour les configurer. Prévoyez au minimum une mise à jour par semaine. Les mises à niveau sont effectuées de manière progressive, réplique par réplique (make before break), de sorte que l’ensemble du service ne connaît aucune indisponibilité. Consultez les [opérations](/fr/products/bring-your-own-cloud/configuration/operations).
+<Accordion title="Comment fonctionnent les mises à niveau de version de ClickHouse ? Puis-je définir la fréquence de maintenance ?">
+  Les mises à niveau fonctionnent de la même manière que dans ClickHouse Cloud : les services sont inscrits à des canaux de publication (rapide, régulier, lent) et respectent les fenêtres de maintenance planifiées. Contactez l’assistance pour les configurer. Prévoyez au minimum une mise à jour par semaine. Les mises à niveau sont effectuées de manière progressive, réplique par réplique (make before break), de sorte que l’ensemble du service ne connaît aucune indisponibilité. Consultez les [opérations](/fr/products/bring-your-own-cloud/configuration/operations).
 </Accordion>
 
-<Accordion title="Qui est responsable des mises à niveau de Kubernetes et à quel impact faut-il s’attendre ?">
-  ClickHouse prend en charge et effectue les mises à niveau de Kubernetes de manière proactive, avant les dates de fin de support du fournisseur, et coordonne la fenêtre avec vous via le support. Les mises à niveau du plan de contrôle sont transparentes ; les mises à niveau des groupes de nœuds s’effectuent nœud par nœud selon une stratégie make before break. Vous pourrez donc observer de brèves réinitialisations de connexion lors du redémarrage des pods, mais aucune perte de données. Consultez les [opérations](/fr/products/bring-your-own-cloud/configuration/operations).
+<Accordion title="Qui est responsable des mises à niveau de Kubernetes et à quel impact faut-il s’attendre ?">
+  ClickHouse prend en charge et effectue les mises à niveau de Kubernetes de manière proactive, avant les dates de fin de support du fournisseur. Les mises à niveau du plan de contrôle sont transparentes ; les mises à niveau des groupes de nœuds s’effectuent nœud par nœud selon une stratégie make before break. Vous pourrez donc observer de brèves réinitialisations de connexion lors du redémarrage des pods, mais aucune perte de données. Consultez les [opérations](/fr/products/bring-your-own-cloud/configuration/operations).
 </Accordion>
 
 ### Sauvegardes et reprise après sinistre {#backups-and-disaster-recovery}

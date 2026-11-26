@@ -107,7 +107,7 @@ void DiskSetKeySorter<Key>::writeMemoryRuns(size_t count)
     const Key first = std::ranges::min(runs, {}, &Run::first).first;
     const Key last = std::ranges::max(runs, {}, &Run::last).last;
 
-    auto file = std::make_unique<TemporaryDataBuffer>(tmp_data, keys * sizeof(Key) + min_free_disk_space);
+    auto file = std::make_unique<TemporaryDataBuffer>(tmp_data, getTemporaryFileReserveSize(keys * sizeof(Key), min_free_disk_space));
     auto chains = DiskSetRunMerge::makeChains(std::move(runs));
     DiskSetRunMerge::merge(std::move(chains), DiskSetRunMerge::keys_per_batch<Key>, [&](std::span<const Key> batch)
     {
