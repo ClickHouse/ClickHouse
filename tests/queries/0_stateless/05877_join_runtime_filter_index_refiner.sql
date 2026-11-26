@@ -1,6 +1,6 @@
 -- With `use_indexes_refiner_in_read_pools`, the read pool drops the granules a JOIN runtime filter
--- prunes, reusing the per-part index result a reader has built. The results must not change, and on a
--- point lookup the pool must drop almost every mark instead of cutting tasks for them.
+-- prunes once the filter is built. The results must not change, and on a point lookup the pool must
+-- drop almost every mark instead of cutting tasks for them.
 
 SET enable_join_runtime_filters = 1;
 SET enable_join_runtime_filters_index_analysis = 1;
@@ -38,7 +38,7 @@ INSERT INTO t_rf_refiner SELECT number, number FROM numbers(200000);
 OPTIMIZE TABLE t_rf_refiner FINAL;
 
 SELECT 'INNER', count(), sum(t.v) FROM t_rf_refiner AS t INNER JOIN (SELECT toUInt64(150000) AS k) AS b ON t.k = b.k
-SETTINGS log_comment = '05876_inner_refiner_on';
+SETTINGS log_comment = '05877_inner_refiner_on';
 SELECT 'LEFT SEMI', count(), sum(t.v) FROM t_rf_refiner AS t LEFT SEMI JOIN (SELECT toUInt64(150000) AS k) AS b ON t.k = b.k;
 SELECT 'RIGHT', count(), sum(t.v) FROM t_rf_refiner AS t RIGHT JOIN (SELECT toUInt64(150000) AS k) AS b ON t.k = b.k;
 SELECT 'LEFT ANTI', count(), sum(t.v) FROM t_rf_refiner AS t LEFT ANTI JOIN (SELECT toUInt64(150000) AS k) AS b ON t.k = b.k;
@@ -54,22 +54,21 @@ SETTINGS allow_prefetched_read_pool_for_local_filesystem = 1, local_filesystem_r
 
 SELECT count(), sum(t.v) FROM t_rf_refiner AS t INNER JOIN (SELECT toUInt64(150000) AS k) AS b ON t.k = b.k
 FORMAT Null
-SETTINGS log_comment = '05876_inner_refiner_off', use_indexes_refiner_in_read_pools = 0;
+SETTINGS log_comment = '05877_inner_refiner_off', use_indexes_refiner_in_read_pools = 0;
 
 SYSTEM FLUSH LOGS query_log;
 
--- 3125 marks, one of them survives the filter: only the first task of each stream is cut before a
--- reader has built the index result.
+-- 3125 marks, one of them survives the filter.
 SELECT
     argMax(ProfileEvents['RuntimeFilterGranulesDropped'], event_time_microseconds) > 2500,
     argMax(ProfileEvents['ReadPoolRangeRefinerDroppedMarks'], event_time_microseconds) > 2500
 FROM system.query_log
-WHERE current_database = currentDatabase() AND log_comment = '05876_inner_refiner_on' AND type = 'QueryFinish';
+WHERE current_database = currentDatabase() AND log_comment = '05877_inner_refiner_on' AND type = 'QueryFinish';
 
 SELECT
     argMax(ProfileEvents['RuntimeFilterGranulesDropped'], event_time_microseconds) > 2500,
     argMax(ProfileEvents['ReadPoolRangeRefinerDroppedMarks'], event_time_microseconds) = 0
 FROM system.query_log
-WHERE current_database = currentDatabase() AND log_comment = '05876_inner_refiner_off' AND type = 'QueryFinish';
+WHERE current_database = currentDatabase() AND log_comment = '05877_inner_refiner_off' AND type = 'QueryFinish';
 
 DROP TABLE t_rf_refiner;
