@@ -384,5 +384,23 @@ SELECT 'advanced_chunked, sizes with the path', x.p.:`Array(Nullable(Int64))`.si
 SELECT 'advanced_chunked, outer and inner sizes alone', x.q.:`Array(Array(Nullable(Int64)))`.size1, x.q.:`Array(Array(Nullable(Int64)))`.size2 FROM t_shared_sizes_advanced_chunked;
 SELECT 'advanced_chunked, sizes and null map alone', x.p.:`Array(Nullable(Int64))`.size1, x.p.:`Array(Nullable(Int64))`.null FROM t_shared_sizes_advanced_chunked;
 
+-- A chunk without the path pads the subcolumn with the path default, resolved at the same level.
+DROP TABLE IF EXISTS t_shared_missing_advanced;
+DROP TABLE IF EXISTS t_shared_missing_advanced_chunked;
+CREATE TABLE t_shared_missing_advanced (x Array(JSON(max_dynamic_paths=0)))
+ENGINE = MergeTree ORDER BY tuple()
+SETTINGS min_bytes_for_wide_part = 0, object_shared_data_serialization_version = 'advanced',
+    object_shared_data_serialization_version_for_zero_level_parts = 'advanced';
+CREATE TABLE t_shared_missing_advanced_chunked (x Array(JSON(max_dynamic_paths=0)))
+ENGINE = MergeTree ORDER BY tuple()
+SETTINGS min_bytes_for_wide_part = 0, object_shared_data_serialization_version = 'advanced_chunked',
+    object_shared_data_serialization_version_for_zero_level_parts = 'advanced_chunked';
+INSERT INTO t_shared_missing_advanced VALUES (['{"q":1}']);
+INSERT INTO t_shared_missing_advanced_chunked VALUES (['{"q":1}']);
+SELECT 'advanced, missing path sizes', x.p.:`Array(Nullable(Int64))`.size1 FROM t_shared_missing_advanced;
+SELECT 'advanced_chunked, missing path sizes', x.p.:`Array(Nullable(Int64))`.size1 FROM t_shared_missing_advanced_chunked;
+DROP TABLE t_shared_missing_advanced;
+DROP TABLE t_shared_missing_advanced_chunked;
+
 DROP TABLE t_shared_sizes_advanced;
 DROP TABLE t_shared_sizes_advanced_chunked;

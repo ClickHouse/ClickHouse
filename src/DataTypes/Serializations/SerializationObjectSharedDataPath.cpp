@@ -237,6 +237,12 @@ void SerializationObjectSharedDataPath::deserializeBinaryBulkWithMultipleStreams
 
     auto * shared_data_path_state = checkAndGetState<DeserializeBinaryBulkStateObjectSharedDataPath>(state);
 
+    /// `path_subcolumn` keeps the array level it was requested at, so every extraction resolves it the same way.
+    auto extract_subcolumn = [&](const ColumnPtr & path_column)
+    {
+        return dynamic_type->getSubcolumn(path_subcolumn, path_column, path_subcolumn_array_level);
+    };
+
     if (serialization_version.value == SerializationObjectSharedData::SerializationVersion::MAP || serialization_version.value == SerializationObjectSharedData::SerializationVersion::MAP_WITH_BUCKETS)
     {
         ColumnPtr map_column;
@@ -294,7 +300,7 @@ void SerializationObjectSharedDataPath::deserializeBinaryBulkWithMultipleStreams
         /// Extract subcolumn from Dynamic column if needed.
         if (!path_subcolumn.empty())
         {
-            auto subcolumn = dynamic_type->getSubcolumn(path_subcolumn, dynamic_column.getPtr(), path_subcolumn_array_level);
+            auto subcolumn = extract_subcolumn(dynamic_column.getPtr());
             column.insertRangeFrom(*subcolumn, 0, subcolumn->size());
         }
     }
@@ -331,7 +337,7 @@ void SerializationObjectSharedDataPath::deserializeBinaryBulkWithMultipleStreams
                 {
                     auto null_dynamic_column = dynamic_type->createColumn();
                     null_dynamic_column->insertManyDefaults(chunk_structure.limit);
-                    auto subcolumn = dynamic_type->getSubcolumn(path_subcolumn, std::move(null_dynamic_column));
+                    auto subcolumn = extract_subcolumn(std::move(null_dynamic_column));
                     column.insertRangeFrom(*subcolumn, 0, subcolumn->size());
                 }
                 continue;
@@ -349,7 +355,7 @@ void SerializationObjectSharedDataPath::deserializeBinaryBulkWithMultipleStreams
                 /// If subcolumn is requested, extract it from the path data.
                 else
                 {
-                    auto subcolumn = dynamic_type->getSubcolumn(path_subcolumn, path_data_it->second, path_subcolumn_array_level);
+                    auto subcolumn = extract_subcolumn(path_data_it->second);
                     column.insertRangeFrom(*subcolumn, chunk_structure.offset, chunk_structure.limit);
                 }
             }
