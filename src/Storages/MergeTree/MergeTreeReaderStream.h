@@ -66,7 +66,8 @@ public:
     /// Returns the bytes of `ranges`, which a reader loaded from the file of `file_ranges`, that are not counted yet.
     /// Clears `ranges`.
     size_t registerRanges(ReadRanges & file_ranges, CompressedBlockRanges & ranges);
-    /// Adds to the statistics at once the bytes a reader counted from its files since the last `registerReadRanges`.
+    /// Adds to the statistics the bytes `registerRanges` returned. Only to save atomic operations: a reader sums what it
+    /// counted from all its files since the last `registerReadRanges` and adds it at once, instead of once per file.
     void commit(size_t bytes);
 
     /// Past the limit: nothing is counted any more, and the readers stop collecting the ranges.
