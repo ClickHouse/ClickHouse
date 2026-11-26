@@ -1,0 +1,575 @@
+---
+slug: /clickstack/observability/features/dashboards/overview
+title: 'Visualisations et tableaux de bord avec ClickHouse Observability'
+sidebarTitle: 'Vue d’ensemble'
+description: 'Visualisations et tableaux de bord avec ClickHouse Observability'
+doc_type: 'guide'
+keywords: ['clickstack', 'dashboards', 'visualization', 'monitoring', 'observability']
+---
+
+ClickHouse Observability permet de visualiser les événements grâce à la création de graphiques intégrée à l’UI. Ces graphiques peuvent être ajoutés à des tableaux de bord pour être partagés avec d’autres utilisateurs.
+
+Les visualisations peuvent être créées à partir de traces, de métriques, de logs ou de tout schéma d’événement large défini par l’utilisateur.
+
+## Créer des visualisations {#creating-visualizations}
+
+L’interface **Explorateur de graphiques** (Explorateur de graphiques) vous permet de visualiser l’évolution de métriques, de traces et de logs dans le temps, et de créer ainsi rapidement des visualisations pour l’analyse de données. Cette interface est également utilisée pour créer des tableaux de bord. La section suivante décrit comment créer une visualisation à l’aide de l’Explorateur de graphiques.
+
+Chaque visualisation commence par la sélection d’une **source de données**, puis d’une **métrique**, avec, en option, des **expressions de filtrage** et des champs de **regroupement** (group by). Sur le plan conceptuel, une visualisation correspond en interne à une requête SQL `GROUP BY` : vous définissez des métriques à agréger selon les dimensions sélectionnées.
+
+<Tip>
+  **Génération de graphiques et de tableaux de bord assistée par IA**
+
+  ClickHouse Observability permet également de créer des graphiques à partir de requêtes en langage naturel grâce à la fonctionnalité [Text-to-Chart](/fr/clickstack/observability/text-to-chart). Décrivez ce que vous souhaitez voir, et l’UI génère automatiquement la visualisation. Pour générer un tableau de bord complet comportant plusieurs tuiles, utilisez [Text-to-Dashboard](/fr/clickstack/observability/text-to-dashboard).
+</Tip>
+
+Par exemple, vous pouvez représenter le nombre d’erreurs (`count()`) regroupées par nom de service.
+
+Pour les exemples ci-dessous, nous utilisons le jeu de données distant disponible sur [sql.clickhouse.com](https://sql.clickhouse.com). **Vous pouvez également reproduire ces exemples sur [play-clickstack.clickhouse.com](https://play-clickstack.clickhouse.com).**
+
+<Steps>
+  <Step title="Accéder à Chart Explorer" id="navigate-chart-explorer">
+    Sélectionnez `Chart Explorer` dans le menu de gauche.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Explorateur de graphiques](/images/use-cases/observability/clickstack-visualization-1.webp)
+      </Frame>
+    </div>
+  </Step>
+
+  <Step title="Créer une visualisation" id="create-visualization">
+    Dans l’exemple ci-dessous, nous représentons l’évolution de la durée moyenne des requêtes pour chaque nom de service. Pour cela, l’utilisateur doit indiquer une métrique, une colonne (qui peut être une expression SQL) et un champ d’agrégation.
+
+    Sélectionnez le type de visualisation `Time Series` dans le menu supérieur, puis le jeu de données `Traces` (ou `Demo Traces` si vous utilisez [play-clickstack.clickhouse.com](https://play-clickstack.clickhouse.com)). Renseignez les valeurs suivantes :
+
+    * Metric : `Average`
+    * Column : `Duration/1000`
+    * Where : `<empty>`
+    * Group By : `ServiceName`
+    * Alias : `Average Time`
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Visualisation simple](/images/use-cases/observability/clickstack-visualization-2.webp)
+      </Frame>
+    </div>
+
+    Vous pouvez filtrer les événements à l’aide d’une clause SQL `WHERE` ou de la syntaxe Lucene, et définir la période sur laquelle les événements sont visualisés. Il est également possible d’afficher plusieurs séries.
+
+    Par exemple, filtrez sur le service `frontend` en ajoutant le filtre `ServiceName:"frontend"`. Cliquez ensuite sur `Add Series` pour ajouter une seconde série représentant le nombre d’événements dans le temps, avec l’alias `Count`.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Visualisation simple 2](/images/use-cases/observability/clickstack-visualization-3.webp)
+      </Frame>
+    </div>
+
+    Pour créer une série semblable à une série existante, vous pouvez dupliquer cette dernière plutôt que de partir de zéro. Cliquez sur l’icône de copie (`Duplicate series`) d’une ligne de série pour insérer une copie juste en dessous. La copie conserve les paramètres de la série d’origine, tels que la métrique, la colonne et le filtre. Il vous suffit ensuite de modifier les champs qui diffèrent (par exemple l’agrégation) et d’attribuer un alias propre à la copie. La duplication est disponible partout où plusieurs séries sont prises en charge. Elle est masquée pour les types de visualisation qui n’autorisent qu’une seule série, tels que `Number`, `Pie` et `Heatmap`.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![L’icône de copie Duplicate series et son infobulle sur la ligne d’une série de graphique](/images/use-cases/observability/clickstack-duplicate-series.webp)
+      </Frame>
+    </div>
+
+    <Note>
+      Les visualisations peuvent être créées à partir de n’importe quelle source de données : métriques, traces ou logs. ClickHouse Observability les traite toutes comme des événements larges (wide events). Toute **colonne numérique** peut être représentée dans le temps, et les colonnes de type **chaîne**, **date** ou **numérique** peuvent servir aux regroupements.
+
+      Cette approche unifiée vous permet de créer des tableaux de bord couvrant différents types de télémétrie avec un modèle cohérent et flexible.
+    </Note>
+  </Step>
+</Steps>
+
+## Créer des tableaux de bord {#creating-dashboards}
+
+Les tableaux de bord permettent de regrouper des visualisations connexes afin de comparer des métriques et d&#39;explorer des motifs côte à côte, pour identifier les causes profondes potentielles dans vos systèmes. Ils peuvent servir à des investigations ponctuelles ou être enregistrés pour une supervision continue.
+
+Des filtres globaux peuvent être appliqués au niveau du tableau de bord : ils se propagent automatiquement à toutes les visualisations qu&#39;il contient. Cela garantit une exploration détaillée cohérente d&#39;un graphique à l&#39;autre et simplifie la corrélation des événements entre services et types de télémétrie.
+
+Ci-dessous, nous créons un tableau de bord comportant deux visualisations à partir des sources de données de journaux et de traces. Vous pouvez reproduire ces étapes sur [play-clickstack.clickhouse.com](https://play-clickstack.clickhouse.com) ou en local, en vous connectant au jeu de données hébergé sur [sql.clickhouse.com](https://sql.clickhouse.com).
+
+<Steps>
+  <Step title="Accédez aux tableaux de bord" id="navigate-dashboards">
+    Sélectionnez `Dashboards` dans le menu de gauche, puis cliquez sur `New Dashboard` pour créer un tableau de bord temporaire ou enregistré.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Page Dashboards avec le menu New Dashboard proposant les options Saved Dashboard et Temporary Dashboard](/images/clickstack/observability-new-dashboard.png)
+      </Frame>
+    </div>
+  </Step>
+
+  <Step title="Créer une visualisation – durée moyenne des requêtes par service" id="create-a-tile">
+    Sélectionnez `Add` pour ouvrir le panneau de création de visualisation.
+
+    Dans le menu supérieur, sélectionnez le type de visualisation `Time Series`, puis le jeu de données `Traces` (ou `Demo Traces` si vous utilisez [play-clickstack.clickhouse.com](https://play-clickstack.clickhouse.com)). Renseignez les valeurs suivantes pour créer un graphique représentant l&#39;évolution de la durée moyenne des requêtes par nom de service :
+
+    * Chart Name : `Average duration by service`
+    * Metric : `Average`
+    * Column : `Duration/1000`
+    * Where : `<empty>`
+    * Group By : `ServiceName`
+    * Alias : `Average Time`
+
+    Cliquez sur `Run` pour prévisualiser le graphique, puis sur `Save`.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Éditeur de graphique Time Series affichant la durée moyenne regroupée par ServiceName](/images/clickstack/observability-dashboard-average-duration.png)
+      </Frame>
+    </div>
+
+    Redimensionnez la visualisation afin qu&#39;elle occupe toute la largeur du tableau de bord.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Tableau de bord avec le graphique Average duration by service occupant toute la largeur](/images/clickstack/observability-dashboard-duration-tile.png)
+      </Frame>
+    </div>
+  </Step>
+
+  <Step title="Créer une visualisation – évolution des événements dans le temps par service" id="create-a-tile-2">
+    Sélectionnez `Add` pour ouvrir le panneau de création de visualisation.
+
+    Dans le menu supérieur, sélectionnez le type de visualisation `Time Series`, puis le jeu de données `Logs` (ou `Demo Logs` si vous utilisez [play-clickstack.clickhouse.com](https://play-clickstack.clickhouse.com)). Renseignez les valeurs suivantes pour créer un graphique affichant l’évolution du nombre d’événements dans le temps, par nom de service :
+
+    * Chart Name : `Event count by service`
+    * Metric : `Count of Events`
+    * Where : `<empty>`
+    * Group By : `ServiceName`
+    * Alias : `Count of events`
+
+    Cliquez sur `Run` pour prévisualiser le graphique, puis sur `Save`.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Éditeur de graphique Time Series affichant le nombre d’événements regroupés par ServiceName](/images/clickstack/observability-dashboard-event-count.png)
+      </Frame>
+    </div>
+
+    Redimensionnez la visualisation pour qu’elle occupe toute la largeur du tableau de bord.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Tableau de bord avec des graphiques pleine largeur affichant la durée moyenne et le nombre d’événements par service](/images/clickstack/observability-dashboard-two-charts.png)
+      </Frame>
+    </div>
+  </Step>
+
+  <Step title="Ajoutez une tuile affichant une carte de chaleur de la durée des spans" id="create-a-tile-heatmap">
+    Les tuiles de carte de chaleur représentent, sous la forme d&#39;une grille colorée, le nombre d&#39;événements compris dans chaque bucket (temps, valeur). Utilisez une carte de chaleur lorsque vous souhaitez visualiser la **forme** d&#39;une distribution dans le temps, et pas seulement la moyenne ou un percentile unique. Une carte de chaleur de latence révèle des motifs de durée bimodaux, des grappes de valeurs lentes en queue de distribution ou des dispersions soudaines qu&#39;un graphique Line gommerait en faisant la moyenne.
+
+    Pour ajouter une tuile de carte de chaleur :
+
+    1. Sélectionnez `Add`.
+    2. Choisissez le type de visualisation `Heatmap` dans le menu supérieur. La liste déroulante des sources de données n&#39;affiche que les sources dont le [type de source est `Traces`](/fr/clickstack/observability/managing/config#datasource-settings). Les sources de logs, de métriques et de sessions sont exclues, car les cartes de chaleur nécessitent une colonne de durée de span que seules les sources de traces fournissent.
+    3. Choisissez l&#39;une de vos sources de traces par son nom. Le nom lui-même est arbitraire : seul le type compte.
+
+    Une fois la source sélectionnée, la carte de chaleur est pré-remplie :
+
+    * **Valeur** : la `Duration Expression` de la source, mise à l&#39;échelle selon l&#39;unité d&#39;affichage actuelle (par exemple `(Duration)/1e6` pour convertir la durée du span de chaque événement de nanosecondes en millisecondes)
+    * **Count** : `count()`
+
+    4. Donnez un nom au graphique et utilisez `Where` pour restreindre la carte de chaleur à un service spécifique ou à un ensemble d&#39;opérations dont vous souhaitez observer les performances.
+    5. Ajustez l&#39;intervalle de temps à la période qui vous intéresse. Des plages plus larges font apparaître des évolutions de distribution et des motifs de latence bimodaux que des fenêtres plus courtes peuvent masquer.
+
+    L&#39;exemple ci-dessous montre les durées des spans du service `payment` : la plupart des spans sont concentrés autour d&#39;une milliseconde, tandis que des spans plus lents sont dispersés au-dessus.
+
+    Pour personnaliser davantage la carte de chaleur, cliquez sur **Paramètres D’Affichage** afin d&#39;ouvrir un panneau coulissant permettant de définir l&#39;**échelle** (Log ou Linear), ainsi que les expressions **Valeur** et **Count**. La liste complète des options est documentée dans [Personnaliser la carte de chaleur](/fr/clickstack/observability/features/event-deltas#customize) sur la page Écarts entre événements, qui utilise le même panneau coulissant.
+
+    Cliquez sur `Run` pour prévisualiser le graphique, puis sur `Save`.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Éditeur de carte de chaleur affichant les durées des spans du service payment avec un filtre ServiceName et le bouton Display Settings](/images/clickstack/observability-dashboard-heatmap-editor.png)
+      </Frame>
+    </div>
+
+    La tuile enregistrée s&#39;affiche sous forme de carte de chaleur sur le tableau de bord. Survolez une cellule pour afficher les bornes du bucket et le nombre d&#39;événements.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Tableau de bord avec une tuile de carte de chaleur des durées des spans de payment et une infobulle affichant la durée et le nombre d'événements](/images/clickstack/observability-dashboard-heatmap-tile.png)
+      </Frame>
+    </div>
+
+    <Tip>
+      **Deux requêtes ClickHouse par carte de chaleur**
+
+      La carte de chaleur repose sur deux requêtes successives : une petite **requête de limites** qui détermine la plage de valeurs, puis une **requête de carte de chaleur** qui compte les événements par bucket. Les deux requêtes sont visibles dans l&#39;éditeur sous **Generated SQL** si vous souhaitez les examiner ou les copier.
+    </Tip>
+
+#### Explorer en détail avec Écarts entre événements {#heatmap-tile-drilldown}
+
+    Cliquez sur n&#39;importe quelle cellule d&#39;une tuile de carte de chaleur pour faire apparaître l&#39;action **View in Event Deltas**.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Clic sur une cellule de la carte de chaleur faisant apparaître l'action View in Event Deltas](/images/clickstack/dashboards/heatmap-tile-drilldown.webp)
+      </Frame>
+    </div>
+
+    Cette action ouvre la vue [Écarts entre événements](/fr/clickstack/observability/features/event-deltas) en conservant la source de données, la clause `Where` et l&#39;intervalle de temps de la tuile. Vous pouvez alors examiner la même distribution de manière interactive, la segmenter par attribut pour identifier ce qui distingue les spans lents des spans rapides, et inspecter les spans individuels de chaque cellule, sans avoir à reconstruire la requête manuellement.
+  </Step>
+
+  <Step title="Filtrer le tableau de bord" id="filter-dashboards">
+    Des filtres Lucene ou SQL, ainsi que l’intervalle de temps, peuvent être appliqués au niveau du tableau de bord et se propagent automatiquement à toutes les visualisations.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Tableau de bord filtré sur le service frontend, affichant les graphiques de durée moyenne et de nombre d’événements](/images/clickstack/observability-dashboard-filter.png)
+      </Frame>
+    </div>
+
+    Pour l’illustrer, appliquez le filtre Lucene `ServiceName:"frontend"` au tableau de bord et sélectionnez une fenêtre temporelle contenant des données. Vous constaterez que les visualisations ne reflètent plus que les données du service `frontend`.
+
+    Le tableau de bord est enregistré automatiquement. Pour le renommer, sélectionnez le titre et modifiez-le, puis cliquez sur `Save Name`.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Tableau de bord avec le nom My Dashboard sélectionné pour modification](/images/clickstack/observability-dashboard-save-name.png)
+      </Frame>
+    </div>
+  </Step>
+</Steps>
+
+## Tableaux de bord : modification des visualisations {#dashboards-editing-visualizations}
+
+Pour supprimer, modifier ou dupliquer une visualisation, survolez-la et utilisez les boutons d&#39;action correspondants.
+
+<div className="ch-image-lg">
+  <Frame>
+    ![Menu d'un graphique de tableau de bord affichant les options Dupliquer, Modifier et Supprimer](/images/clickstack/observability-dashboard-edit.png)
+  </Frame>
+</div>
+
+### Paramètres d’affichage des tuiles {#tile-display-settings}
+
+Chaque tuile dispose d’un panneau coulissant **Paramètres D’Affichage** regroupant les options qui déterminent la manière dont sa valeur est affichée. Pour l’ouvrir, cliquez sur **Paramètres D’Affichage** dans l’éditeur de tuile. Les options disponibles dépendent du type de visualisation.
+
+#### Couleur de la tuile numérique {#number-tile-color}
+
+Les tuiles numériques prennent en charge une couleur statique (**Color**) choisie dans la palette de graphiques prédéfinie. Une fois une tuile numérique sélectionnée, ouvrez **Paramètres D’Affichage** et utilisez le contrôle **Color** (libellé **Couleur de la tuile numérique** pour l’accessibilité) afin de choisir une pastille de couleur, ou effacez la sélection pour utiliser la couleur de texte par défaut.
+
+Les couleurs sont stockées sous forme de jetons de palette, et non de valeurs hexadécimales brutes : une même tuile s’affiche ainsi correctement avec les thèmes clair, sombre et IDE.
+
+**Jetons catégoriels** (teintes multi-séries) :
+
+| Jeton              | Libellé    |
+| ------------------ | ---------- |
+| `chart-blue`       | Bleu       |
+| `chart-orange`     | Orange     |
+| `chart-red`        | Rouge      |
+| `chart-cyan`       | Cyan       |
+| `chart-green`      | Vert       |
+| `chart-pink`       | Rose       |
+| `chart-purple`     | Violet     |
+| `chart-light-blue` | Bleu clair |
+| `chart-brown`      | Marron     |
+| `chart-gray`       | Gris       |
+
+**Jetons sémantiques** (liés au statut) :
+
+| Jeton           | Libellé       |
+| --------------- | ------------- |
+| `chart-success` | Succès        |
+| `chart-warning` | Avertissement |
+| `chart-error`   | Erreur        |
+
+Utilisez les jetons sémantiques lorsque le nombre représente un statut (par exemple un nombre d’erreurs en `chart-error` ou un taux satisfaisant en `chart-success`). Utilisez les jetons catégoriels lorsque vous souhaitez distinguer visuellement des tuiles de KPI liées sans suggérer de statut.
+
+Les configurations plus anciennes peuvent encore stocker des jetons numériques legacy (`chart-1` à `chart-10`). Lors du chargement d’un tableau de bord, l’UI les convertit en jetons nommés par teinte ci-dessus.
+
+La même palette sert aux **règles de couleur** facultatives, configurables dans le même panneau coulissant : des conditions ordonnées, évaluées par rapport à la valeur affichée (la dernière correspondance l’emporte). Si aucune règle ne correspond, la couleur statique s’applique, puis à défaut la couleur de texte par défaut.
+
+#### Graphique d’arrière-plan des tuiles numériques {#number-tile-background-chart}
+
+Les tuiles numériques peuvent afficher un **graphique d’arrière-plan** : un graphique sparkline de tendance tracé derrière la valeur, qui permet de visualiser d’un coup d’œil son évolution sur l’intervalle de temps sélectionné. Cette option est utile pour les tuiles de SLO et de budget d’erreur, pour lesquelles la tendance d’une valeur compte autant que sa valeur actuelle.
+
+Après avoir sélectionné une tuile numérique, ouvrez **Paramètres D’Affichage** et définissez **Background chart** sur **Line** ou **Area** (ou sur **None** pour le désactiver). Le graphique sparkline est dérivé d’une version de la requête de la tuile découpée en intervalles de temps ; aucune configuration supplémentaire n’est donc nécessaire. Par défaut, il reprend la couleur de la tuile ; définissez une **Background color** pour la remplacer par une couleur précise de la palette.
+
+<div className="ch-image-lg">
+  <Frame>
+    ![Panneau coulissant Paramètres D’Affichage d’une tuile numérique, avec Background chart défini sur Area](/images/clickstack/dashboards/number-tile-background-chart.webp)
+  </Frame>
+</div>
+
+Les graphiques d’arrière-plan s’appliquent aux tuiles numériques créées avec le constructeur de requêtes. Les tuiles numériques en SQL brut renvoient une valeur unique, sans dimension temporelle à découper en intervalles ; l’option y apparaît donc, mais elle est désactivée.
+
+Les tuiles de tableau peuvent alterner la couleur de leurs lignes grâce à **Alternate Row Background**, qui teinte une ligne sur deux afin de faciliter le parcours des tables larges. Cette option est désactivée par défaut.
+
+Après avoir sélectionné une tuile de tableau, ouvrez **Paramètres D’Affichage** et activez **Alternate Row Background**. L’alternance de couleurs étant purement visuelle, elle fonctionne aussi bien avec les tuiles de tableau créées avec le constructeur de requêtes qu’avec celles en SQL brut.
+
+<div className="ch-image-lg">
+  <Frame>
+    ![Panneau coulissant Paramètres D’Affichage d’une tuile de tableau, avec Alternate Row Background activé](/images/clickstack/dashboards/table-tile-display-settings.webp)
+  </Frame>
+</div>
+
+Les tuiles de tableau conservent également un séparateur entre la ligne d’en-tête et les données pendant le défilement, afin que les en-têtes de colonne restent bien distincts.
+
+#### API des tableaux de bord : couleur des tuiles numériques {#api-number-tile-color}
+
+Lorsque vous créez ou mettez à jour des tableaux de bord via l&#39;API externe (`POST` / `PUT` `/api/v2/dashboards`), attribuez à `color` un jeton de palette dans la configuration d&#39;une tuile numérique du constructeur. Les valeurs hexadécimales brutes sont rejetées.
+
+```json
+{
+  "name": "Error rate KPIs",
+  "tiles": [
+    {
+      "id": "65f5e4a3b9e77c001a222222",
+      "name": "Errors",
+      "x": 0,
+      "y": 0,
+      "w": 6,
+      "h": 4,
+      "config": {
+        "displayType": "number",
+        "sourceId": "<SOURCE_ID>",
+        "select": [
+          {
+            "aggFn": "count",
+            "where": "SeverityText:error",
+            "whereLanguage": "lucene",
+            "alias": "Errors"
+          }
+        ],
+        "color": "chart-error",
+        "backgroundChart": {
+          "type": "area"
+        }
+      }
+    }
+  ]
+}
+```
+
+`color` accepte n’importe quel jeton des listes catégorielle et sémantique ci-dessus (par exemple `chart-blue` ou `chart-success`). Le paramètre facultatif `backgroundChart.color` remplace la couleur du graphique sparkline et accepte les mêmes valeurs de jeton (enum). Consultez la [Référence de l’API](/fr/clickstack/observability/api-reference) pour en savoir plus sur l’authentification et les URL de base.
+
+## Tableau de bord - Liste et recherche {#dashboard-listing-search}
+
+Les tableaux de bord sont accessibles depuis la page des tableaux de bord. Ils sont organisés par étiquette et disposent d&#39;une recherche et d&#39;un filtrage intégrés pour retrouver rapidement un tableau de bord précis.
+
+Vous pouvez ajouter des tableaux de bord à vos favoris afin d&#39;y accéder facilement depuis la barre latérale et en haut de la page de liste. Les favoris sont propres à chaque utilisateur.
+
+<div className="ch-image-lg">
+  <Frame>
+    ![Liste des tableaux de bord avec un champ de recherche, des options de tri et My Dashboard contenant trois tuiles](/images/clickstack/observability-dashboard-listing.png)
+  </Frame>
+</div>
+
+## Tableaux de bord - balisage {#tagging}
+
+Vous pouvez ajouter des balises aux tableaux de bord et aux recherches enregistrées pour mieux les organiser.
+Les balises offrent un moyen souple de catégoriser et de filtrer vos éléments selon vos besoins.
+
+#### Fonctionnement des balises {#how-tags-work}
+
+* **Organisation** : les balises apparaissent dans la barre latérale gauche, où les tableaux de bord et les recherches enregistrées sont regroupés selon les balises qui leur sont assignées
+* **Balises multiples** : vous pouvez ajouter une ou plusieurs balises à un même élément pour mieux le catégoriser
+* **Création automatique** : si vous assignez une balise qui n&#39;existe pas encore, elle est créée automatiquement
+* **Gestion simplifiée** : vous pouvez ajouter ou supprimer des balises à tout moment pour ajuster votre organisation
+
+Vous retrouvez ainsi facilement les éléments associés et conservez un espace de travail bien organisé, même lorsque le nombre d&#39;éléments augmente.
+
+Ouvrez le menu **Balises** du tableau de bord pour sélectionner ou créer des balises. Vous pouvez assigner plusieurs balises à un même tableau de bord, comme illustré ci-dessous :
+
+<div className="ch-image-lg">
+  <Frame>
+    ![Menu Balises du tableau de bord avec API et MONITORING sélectionnés](/images/clickstack/observability-dashboard-tags.png)
+  </Frame>
+</div>
+
+## Filtres personnalisés et variables {#custom-filters}
+
+En plus des [filtres en texte libre](#filter-dashboards) disponibles sur tous les tableaux de bord, les tableaux de bord enregistrés prennent en charge des filtres personnalisés sous forme de listes déroulantes, alimentées par des données issues de requêtes sur ClickHouse. Ces filtres réutilisables s&#39;utilisent d&#39;un simple clic : les lecteurs du tableau de bord peuvent ainsi filtrer les données sans écrire d&#39;expressions manuellement.
+
+<div className="ch-image-lg">
+  <Frame>
+    ![Filtre déroulant Services affichant les noms de services disponibles](/images/clickstack/dashboards/filter-dropdown.webp)
+  </Frame>
+</div>
+
+Chaque filtre permet au lecteur de choisir une ou plusieurs valeurs, puis les exploite de l&#39;une des façons suivantes, ou des deux :
+
+* **Diffusion** — applique la sélection comme condition de filtrage aux tuiles correspondantes. Il n&#39;est pas nécessaire de modifier les tuiles pour qu&#39;elles référencent le filtre.
+* **Variable** — expose la sélection aux requêtes des tuiles sous la forme `$variableName`, afin que chaque tuile détermine où et comment utiliser la valeur.
+
+Un filtre doit remplir au moins l&#39;un de ces deux rôles. La diffusion est activée par défaut lors de la création d&#39;un filtre.
+
+Les étapes suivantes montrent comment ajouter un filtre au tableau de bord créé dans la section [« Créer des tableaux de bord »](#creating-dashboards).
+
+<Steps>
+  <Step title="Ouvrir la boîte de dialogue Modifier les filtres et les variables" id="open-edit-filters">
+    Ouvrez un tableau de bord enregistré et sélectionnez **Modifier les filtres et les variables** dans la barre d&#39;outils.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Bouton Modifier les filtres et les variables dans la barre d'outils du tableau de bord](/images/clickstack/dashboards/edit-filters.webp)
+      </Frame>
+    </div>
+  </Step>
+
+  <Step title="Ajouter un nouveau filtre" id="add-new-filter">
+    Cliquez sur **Add new filter**. Configurez le filtre en indiquant un **Display Name**, en sélectionnant une **source de données** et en saisissant une **expression de filtrage**, c&#39;est-à-dire une colonne ou une expression SQL dont les valeurs distinctes rempliront la liste déroulante. Cliquez sur **Save filter**.
+
+    Par exemple, pour ajouter un filtre par service sur les données de traçage, utilisez `ServiceName` comme expression de filtrage avec la source de données `Traces`. Le champ « Dropdown values filter » est facultatif et permet de restreindre les valeurs proposées dans la liste déroulante.
+
+    <div className="ch-image-md">
+      <Frame>
+        ![Boîte de dialogue d'ajout de filtre avec les champs Display Name, source de données et expression de filtrage](/images/clickstack/dashboards/add-filter.webp)
+      </Frame>
+    </div>
+
+    Cette même boîte de dialogue permet également de définir si le filtre [diffuse](#broadcast-filters) sa valeur et s&#39;il est [disponible en tant que variable](#dashboard-variables), deux options décrites ci-dessous.
+
+    La boîte de dialogue **Filters and Variables** affiche tous les filtres configurés pour le tableau de bord. Vous pouvez y modifier ou supprimer les filtres existants, ou en ajouter de nouveaux.
+
+    <div className="ch-image-md">
+      <Frame>
+        ![Boîte de dialogue Filters and Variables affichant un filtre Services utilisant Demo Traces et diffusé à toutes les sources](/images/clickstack/observability-dashboard-saved-filters.png)
+      </Frame>
+    </div>
+  </Step>
+
+  <Step title="Utiliser le filtre" id="use-filter">
+    Fermez la boîte de dialogue **Filters and Variables**. Le nouveau filtre déroulant apparaît sous la barre de recherche. Cliquez dessus pour afficher les valeurs disponibles, puis sélectionnez-en une pour filtrer toutes les visualisations du tableau de bord.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Tableau de bord filtré sur le service accounting avec la liste déroulante Services ouverte](/images/clickstack/observability-dashboard-filtered.png)
+      </Frame>
+    </div>
+  </Step>
+
+  <Step title="(Facultatif) Enregistrer les valeurs de filtre par défaut" id="save-default-filters">
+    Pour conserver une sélection de filtres comme valeur par défaut du tableau de bord, choisissez **Save Query &amp; Filters as Default** dans le menu du tableau de bord. Le tableau de bord s&#39;ouvrira alors toujours avec ces filtres appliqués. Pour revenir à l&#39;état initial, sélectionnez **Remove Default Query &amp; Filters** dans le même menu.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Menu du tableau de bord affichant Save Query & Filters as Default avec le service accounting sélectionné](/images/clickstack/observability-dashboard-save-filter-values.png)
+      </Frame>
+    </div>
+  </Step>
+</Steps>
+
+<Note>
+  Les filtres déroulants personnalisés sont disponibles sur les tableaux de bord enregistrés. Pour un exemple concret, consultez le [Tableau de bord Kubernetes](#kubernetes-dashboard), qui propose des filtres déroulants intégrés pour groupe de conteneurs, Déploiement, nom de nœud, Espace de noms et Cluster.
+</Note>
+
+### Diffusion {#broadcast-filters}
+
+Lorsque l&#39;option **Broadcast filter condition** est activée, les valeurs sélectionnées sont appliquées comme condition de filtrage aux tuiles du tableau de bord, sans qu&#39;aucune tuile ne fasse explicitement référence au filtre. Par défaut, la condition s&#39;applique à toutes les tuiles. Utilisez **Applies to sources** pour la limiter aux tuiles qui utilisent certaines sources, ce qui est utile lorsque l&#39;expression du filtre n&#39;a de sens que pour une partie des données du tableau de bord.
+
+Les tuiles créées avec l&#39;éditeur de graphiques prennent automatiquement en compte les filtres diffusés. Les tuiles en SQL brut doivent inclure la [macro `$__filters`](/fr/clickstack/observability/features/dashboards/sql-visualizations#dashboard-filter-macro) et avoir une source sélectionnée, car l&#39;UI ne peut pas inférer où placer la condition dans une requête écrite à la main.
+
+### Variables {#dashboard-variables}
+
+Lorsque l&#39;option **Available as variable** est activée, la sélection du filtre est également exposée aux requêtes des tuiles sous la forme `$variableName`. Le champ **Variable name** reprend par défaut le nom d&#39;affichage du filtre, débarrassé des caractères non autorisés, et peut être surchargé. Les noms doivent commencer par une lettre et ne peuvent contenir que des lettres, des chiffres et des traits de soulignement.
+
+Utilisez une variable lorsque la diffusion d&#39;une condition `WHERE` ne répond pas à votre besoin, par exemple pour insérer la valeur dans une expression `SELECT`, une clause `HAVING` ou une clé de jointure, ou pour filtrer une tuile sur une colonne autre que l&#39;expression du filtre lui-même.
+
+#### Référencer une variable {#referencing-variables}
+
+Une variable est remplacée par les valeurs actuellement sélectionnées dans sa liste déroulante. La forme de la référence détermine le rendu :
+
+| Référence           | Remplacée par                                                                                                                                                                                       | Sélection vide |
+| ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------- |
+| `$name`, `${name}`  | Les valeurs sélectionnées, au format `sqlstring` ou `lucene`, selon le contexte. Les accolades délimitent le nom lorsqu&#39;il est suivi de caractères alphanumériques, comme dans `${name}_total`. | `NULL`         |
+| `${name:sqlstring}` | Les valeurs sélectionnées, entre guillemets simples, séparées par des virgules et échappées comme valeurs SQL, par ex. `'a', 'b'`                                                                   | `NULL`         |
+| `${name:csv}`       | Sans guillemets et séparées par des virgules : `a,b`. Non échappées pour SQL.                                                                                                                       | chaîne vide    |
+| `${name:regex}`     | Une alternance d&#39;expression régulière, avec échappement des caractères spéciaux : `(a\|b)`.                                                                                                     | `.*`           |
+| `${name:lucene}`    | Un `OR` de termes entre guillemets, pour les entrées Lucene : `("a" OR "b")`.                                                                                                                       | `("")`         |
+
+Comme `$name` est rendu sous la forme `NULL` tant que rien n&#39;est sélectionné, privilégiez les macros suivantes partout où un prédicat SQL est attendu. Les deux macros sont remplacées par `1=1` tant qu&#39;aucune valeur n&#39;est sélectionnée pour leur variable, ce qui garantit la validité de la requête :
+
+| Macro                                         | Description                                                                                                                              |
+| --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `$__filter($<variable>)`                      | Remplacée par `toString(<filter expression>) IN ($variable)` lorsque des valeurs sont sélectionnées pour `variable`, et par `1=1` sinon. |
+| `$__filter(<expression>, $<variable>)`        | Remplacée par `<expression> IN ($variable)` lorsque des valeurs sont sélectionnées pour `variable`, et par `1=1` sinon.                  |
+| `$__conditionalAll(<condition>, $<variable>)` | Remplacée par `<condition>` lorsque des valeurs sont sélectionnées pour la variable, et par `1=1` sinon.                                 |
+
+#### Utiliser des variables dans les tuiles de l&#39;éditeur de graphiques {#variables-in-builder-tiles}
+
+Tous les champs de saisie d&#39;expression SQL de l&#39;éditeur de graphiques acceptent des références de variables : les colonnes `SELECT` et les expressions par série, `WHERE`, `GROUP BY` et `HAVING`. L&#39;éditeur propose la complétion automatique des variables du tableau de bord et affiche, pour la sélection actuelle, la valeur résultant du développement de chaque référence.
+
+En mode SQL, privilégiez les macros `$__filter` et `$__conditionalAll`, afin que les requêtes restent valides lorsque les sélections de variables sont vides. Les macros ne sont pas disponibles dans les champs Lucene : utilisez-y plutôt directement les variables brutes (par ex. `ServiceName:$service`).
+
+Dans un champ Lucene, la présence ou non de guillemets autour de la référence de variable détermine la manière dont une sélection à valeurs multiples est mise en correspondance. Par exemple, si `$service` a pour sélection `a,b` :
+
+| Référence                | Se développe en                        | Comportement de correspondance                                                                           |
+| ------------------------ | -------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `ServiceName:$service`   | `ServiceName:("a" OR "b")`             | Correspondance de sous-chaîne — traduite en SQL par `ServiceName ILIKE '%a%' OR ServiceName ILIKE '%b%'` |
+| `ServiceName:"$service"` | `(ServiceName:"a" OR ServiceName:"b")` | Correspondance exacte sur chaque valeur sélectionnée                                                     |
+
+Mettez la référence de variable entre guillemets (`Field:"$var"`) lorsque les valeurs sélectionnées doivent correspondre exactement à `Field` et non en tant que sous-chaînes.
+
+#### Utiliser des variables dans les tuiles SQL {#variables-in-sql-tiles}
+
+Les tuiles SQL brut font référence aux variables de la même manière, à n&#39;importe quel endroit de la requête :
+
+```sql
+SELECT
+  $__timeInterval(TimestampTime) AS ts,
+  count() AS count
+FROM otel_logs
+WHERE $__timeFilter(TimestampTime)
+  AND $__filter(ServiceName, $service)
+  AND $__conditionalAll(SeverityText NOT IN ($severity), $severity)
+GROUP BY ts
+ORDER BY ts ASC
+```
+
+Consultez [Visualisations basées sur SQL](/fr/clickstack/observability/features/dashboards/sql-visualizations#dashboard-variables) pour obtenir la liste complète des macros disponibles dans les tuiles SQL.
+
+<Note>
+  Les alertes définies sur une tuile qui fait référence à une variable de tableau de bord sont évaluées avec toutes les variables à l&#39;état vide, et non avec les valeurs sélectionnées dans le tableau de bord.
+</Note>
+
+## Exploration détaillée vers la recherche {#drilldown-to-search}
+
+Les tuiles de tableau de bord permettent une exploration détaillée vers la page Recherche. Cliquez sur un point de données d&#39;une visualisation pour ouvrir un menu contextuel proposant les options suivantes :
+
+* **View All Events** — ouvre la page Recherche avec tous les événements de la fenêtre temporelle sélectionnée.
+* **Recherche** (loupe à côté d&#39;une série) — ouvre la page Recherche pour cette série.
+* **Copy label** — copie l&#39;étiquette de la série.
+* **Focus** — met en évidence la série sélectionnée dans le graphique.
+
+<div className="ch-image-lg">
+  <Frame>
+    ![Infobulle d'un graphique de tableau de bord affichant les valeurs par service et l'action View All Events](/images/clickstack/observability-dashboard-drilldown.png)
+  </Frame>
+</div>
+
+Cette fonctionnalité est utile pour analyser des pics ou des anomalies précis repérés dans un tableau de bord : vous passez rapidement d&#39;une vue agrégée aux événements individuels sous-jacents.
+
+## Préréglages {#presets}
+
+L&#39;UI propose des tableaux de bord prêts à l&#39;emploi.
+
+### Tableau de bord Services {#services-dashboard}
+
+Le tableau de bord Services affiche les services actuellement actifs à partir des données de traçage. Il nécessite d&#39;avoir collecté des traces et configuré une source de données Traces valide.
+
+Les noms de services sont détectés automatiquement à partir des données de traçage, et une série de visualisations prédéfinies est répartie sur trois onglets : **HTTP Service**, **Database** et **Errors**.
+
+Les visualisations peuvent être filtrées à l&#39;aide de la syntaxe Lucene ou SQL, et la fenêtre temporelle peut être ajustée pour affiner l&#39;analyse.
+
+<div className="ch-image-lg">
+  <Frame>
+    ![Onglet HTTP Service du tableau de bord Services affichant le taux d'erreurs des requêtes, le débit, les endpoints les plus lents et la latence](/images/clickstack/observability-dashboard-services.png)
+  </Frame>
+</div>
+
+### Tableau de bord Kubernetes {#kubernetes-dashboard}
+
+Ce tableau de bord vous permet d&#39;explorer les événements Kubernetes collectés via OpenTelemetry. Il offre des options de filtrage avancées pour filtrer par groupe de conteneurs Kubernetes, Déploiement, nom de nœud, Espace de noms et cluster, ainsi que pour effectuer des recherches en texte libre.
+
+Pour faciliter la navigation, les données Kubernetes sont réparties en trois onglets : Pods, Nodes et Namespaces.
+
+<div className="ch-image-lg">
+  <Frame>
+    ![Onglet Pods du Tableau de bord Kubernetes affichant l'utilisation du CPU, l'utilisation de la mémoire, le statut des groupes de conteneurs et les filtres de cluster](/images/clickstack/observability-dashboard-kubernetes.png)
+  </Frame>
+</div>

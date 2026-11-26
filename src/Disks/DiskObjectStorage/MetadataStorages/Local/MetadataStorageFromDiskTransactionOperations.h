@@ -32,21 +32,6 @@ private:
     std::optional<Poco::Timestamp> old_timestamp;
 };
 
-struct ChmodOperation final : public IMetadataOperation
-{
-    ChmodOperation(std::string path_, mode_t mode_, IDisk & disk_);
-
-    void execute() override;
-    void undo() override;
-
-private:
-    const std::string path;
-    const mode_t mode;
-    IDisk & disk;
-
-    std::optional<mode_t> old_mode;
-};
-
 struct WriteFileOperation final : public IMetadataOperation
 {
     WriteFileOperation(std::string path_, std::string data_, IDisk & disk_);

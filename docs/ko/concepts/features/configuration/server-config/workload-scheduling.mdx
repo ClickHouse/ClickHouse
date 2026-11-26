@@ -407,6 +407,8 @@ CREATE WORKLOAD all SETTINGS max_concurrent_queries = 100, max_queries_per_secon
 
 `CREATE WORKLOAD` 및 `CREATE RESOURCE` 쿼리로 정의된 모든 워크로드와 리소스는 `workload_path`의 디스크 또는 `workload_zookeeper_path`의 ZooKeeper에 영구적으로 저장됩니다. 노드 간 일관성을 확보하려면 ZooKeeper 저장소를 사용하는 것이 좋습니다. 또는 디스크 저장소와 함께 `ON CLUSTER` 절을 사용할 수도 있습니다.
 
+워크로드와 리소스를 생성하거나 삭제하려면 `CREATE WORKLOAD`, `CREATE RESOURCE`, `DROP WORKLOAD`, `DROP RESOURCE` 권한(privilege)이 필요합니다. 이 권한(privilege)은 `CREATE` 및 `DROP` 권한(privilege) 그룹에 속하지 않으므로 명시적으로 부여하거나 `GRANT ALL`로 부여해야 합니다.
+
 ## 구성 기반 워크로드와 리소스 {#config_based_workloads}
 
 SQL 기반 정의 외에도 워크로드와 리소스는 서버 설정 파일에서 미리 정의할 수 있습니다. 이는 일부 제한은 인프라에 의해 결정되고, 다른 제한은 고객이 변경할 수 있는 클라우드 환경에서 유용합니다. 구성 기반 엔터티는 SQL로 정의된 엔터티보다 우선순위가 높으며, SQL 명령으로 수정하거나 삭제할 수 없습니다.

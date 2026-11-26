@@ -123,6 +123,42 @@ bool checkValidSchemaEvolution(Poco::Dynamic::Var old_type, Poco::Dynamic::Var n
 
 }
 
+void appendToMetadataLog(Poco::JSON::Object::Ptr metadata_object, const String & metadata_file, Int64 timestamp, std::optional<UInt64> max_entries)
+{
+    if (!metadata_object->has(Iceberg::f_metadata_log))
+        metadata_object->set(Iceberg::f_metadata_log, Poco::JSON::Array::Ptr(new Poco::JSON::Array));
+    auto metadata_log = metadata_object->getArray(Iceberg::f_metadata_log);
+
+    Poco::JSON::Object::Ptr new_metadata_item = new Poco::JSON::Object;
+    new_metadata_item->set(Iceberg::f_metadata_file, metadata_file);
+    new_metadata_item->set(Iceberg::f_timestamp_ms, timestamp);
+    metadata_log->add(new_metadata_item);
+
+    /// Like the Java implementation, the table property counts the previous versions and keeps at least one.
+    /// The log also holds the entry of the metadata file being written, so the property allows one entry more.
+    if (metadata_object->has(Iceberg::f_properties))
+    {
+        auto properties = metadata_object->getObject(Iceberg::f_properties);
+        if (properties && properties->has(Iceberg::f_metadata_previous_versions_max))
+            max_entries = static_cast<UInt64>(std::max<Int64>(1, parse<Int64>(properties->getValue<String>(Iceberg::f_metadata_previous_versions_max)))) + 1;
+    }
+
+    if (!max_entries || metadata_log->size() <= *max_entries)
+        return;
+
+    const size_t excess = metadata_log->size() - *max_entries;
+    if (excess == 1)
+    {
+        metadata_log->remove(0);
+        return;
+    }
+
+    Poco::JSON::Array::Ptr trimmed_metadata_log = new Poco::JSON::Array;
+    for (auto it = metadata_log->begin() + excess; it != metadata_log->end(); ++it)
+        trimmed_metadata_log->add(*it);
+    metadata_object->set(Iceberg::f_metadata_log, trimmed_metadata_log);
+}
+
 /// `last-column-id` written by some writers does not count nested field ids, so the ids of all schemas are taken into account too.
 Int32 getLastAssignedFieldId(const Poco::JSON::Object::Ptr & metadata_object)
 {
@@ -133,8 +169,9 @@ Int32 getLastAssignedFieldId(const Poco::JSON::Object::Ptr & metadata_object)
     return static_cast<Int32>(result);
 }
 
-MetadataGenerator::MetadataGenerator(Poco::JSON::Object::Ptr metadata_object_)
+MetadataGenerator::MetadataGenerator(Poco::JSON::Object::Ptr metadata_object_, std::optional<UInt64> metadata_previous_versions_max_)
     : metadata_object(metadata_object_)
+    , metadata_previous_versions_max(metadata_previous_versions_max_)
     , gen(randomSeed())
     , dis(1, std::numeric_limits<Int64>::max())
 {
@@ -307,12 +344,7 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateNextMetadata(
     else
         metadata_object->getObject(Iceberg::f_refs)->getObject(Iceberg::f_main)->set(Iceberg::f_metadata_snapshot_id, snapshot_id);
 
-    {
-        Poco::JSON::Object::Ptr new_metadata_item = new Poco::JSON::Object;
-        new_metadata_item->set(Iceberg::f_metadata_file, metadata_file_path.serialize());
-        new_metadata_item->set(Iceberg::f_timestamp_ms, timestamp);
-        metadata_object->getArray(Iceberg::f_metadata_log)->add(new_metadata_item);
-    }
+    appendToMetadataLog(metadata_object, metadata_file_path.serialize(), timestamp, metadata_previous_versions_max);
     {
         Poco::JSON::Object::Ptr new_snapshot_item = new Poco::JSON::Object;
         new_snapshot_item->set(Iceberg::f_metadata_snapshot_id, snapshot_id);
@@ -424,12 +456,7 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateManifestOnlySna
         metadata_object->getObject(Iceberg::f_refs)->getObject(Iceberg::f_main)->set(Iceberg::f_metadata_snapshot_id, snapshot_id);
     }
 
-    {
-        Poco::JSON::Object::Ptr new_metadata_item = new Poco::JSON::Object;
-        new_metadata_item->set(Iceberg::f_metadata_file, metadata_file_path.serialize());
-        new_metadata_item->set(Iceberg::f_timestamp_ms, timestamp);
-        metadata_object->getArray(Iceberg::f_metadata_log)->add(new_metadata_item);
-    }
+    appendToMetadataLog(metadata_object, metadata_file_path.serialize(), timestamp, metadata_previous_versions_max);
     {
         Poco::JSON::Object::Ptr new_snapshot_item = new Poco::JSON::Object;
         new_snapshot_item->set(Iceberg::f_metadata_snapshot_id, snapshot_id);

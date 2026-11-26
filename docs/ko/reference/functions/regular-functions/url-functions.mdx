@@ -353,24 +353,24 @@ SELECT cutToFirstSignificantSubdomainCustomRFC('www.foo', 'public_suffix_list');
 
 도입 버전: v21.1.0
 
-`www`를 제거하지 않고, 최상위 하위 도메인부터 첫 번째 유의미한 하위 도메인까지 포함하는 도메인 부분을 반환합니다. 사용자 지정 TLD 목록 이름을 받습니다. 최신 TLD 목록이 필요하거나 사용자 지정 목록을 사용하는 경우 유용할 수 있습니다.
+&#39;www&#39;를 제거하지 않고, 최상위 하위 도메인부터 유의미한 하위 도메인까지 포함하는 도메인 부분을 반환합니다. 사용자 지정 TLD 목록 이름을 받습니다. 최신 TLD 목록이 필요하거나 사용자 지정 목록을 사용하는 경우 유용할 수 있습니다.
 
 **구성 예시**
 
-````yaml
+```yaml
 <!-- <top_level_domains_path>/var/lib/clickhouse/top_level_domains/</top_level_domains_path> -->
 <top_level_domains_lists>
     <!-- https://publicsuffix.org/list/public_suffix_list.dat -->
     <public_suffix_list>public_suffix_list.dat</public_suffix_list>
-    <!-- NOTE: 경로는 top_level_domains_path 아래에 있습니다 -->
+    <!-- NOTE: path is under top_level_domains_path -->
 </top_level_domains_lists>
-    
+```
 
-**Syntax**
+**구문**
 
 ```sql
 cutToFirstSignificantSubdomainCustomWithWWW(url, tld_list_name)
-````
+```
 
 **인수**
 
@@ -378,7 +378,7 @@ cutToFirstSignificantSubdomainCustomWithWWW(url, tld_list_name)
 
 **반환 값**
 
-`www`를 제거하지 않고, 첫 번째 유의미한 하위 도메인까지의 최상위 하위 도메인을 포함한 도메인 부분입니다. [`String`](/ko/reference/data-types/string)
+&#39;www&#39;를 제거하지 않고, 유의미한 하위 도메인까지의 최상위 하위 도메인을 포함한 도메인 부분입니다. [`String`](/ko/reference/data-types/string)
 
 **예시**
 
@@ -394,31 +394,31 @@ SELECT cutToFirstSignificantSubdomainCustomWithWWW('www.foo', 'public_suffix_lis
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## cutToFirstSignificantSubdomainCustomWithWWWRFC {#cutToFirstSignificantSubdomainRFC}
+## cutToFirstSignificantSubdomainCustomWithWWWRFC {#cutToFirstSignificantSubdomainCustomWithWWWRFC}
 
 도입 버전: v22.10.0
 
-`www`를 제거하지 않은 채, 최상위 하위 도메인부터 첫 번째 유의미한 하위 도메인까지 포함하는 도메인 부분을 반환합니다.
+`www`를 제거하지 않은 채, 최상위 하위 도메인부터 유의미한 하위 도메인까지 포함하는 도메인 부분을 반환합니다.
 사용자 지정 TLD 목록 이름을 인자로 받습니다.
 최신 TLD 목록이 필요하거나 사용자 지정 목록을 사용하는 경우 유용합니다.
 [cutToFirstSignificantSubdomainCustomWithWWW](#cutToFirstSignificantSubdomainCustomWithWWW)와 유사하지만, [RFC 3986](https://datatracker.ietf.org/doc/html/rfc3986)를 준수합니다.
 
 **구성 예시**
 
-````xml
-{/* <top_level_domains_path>/var/lib/clickhouse/top_level_domains/</top_level_domains_path> */}
+```xml
+<!-- <top_level_domains_path>/var/lib/clickhouse/top_level_domains/</top_level_domains_path> -->
 <top_level_domains_lists>
-    {/* https://publicsuffix.org/list/public_suffix_list.dat */}
+    <!-- https://publicsuffix.org/list/public_suffix_list.dat -->
     <public_suffix_list>public_suffix_list.dat</public_suffix_list>
-    {/* NOTE: path is under top_level_domains_path */}
+    <!-- NOTE: path is under top_level_domains_path -->
 </top_level_domains_lists>
-    
+```
 
-**Syntax**
+**구문**
 
 ```sql
 cutToFirstSignificantSubdomainCustomWithWWWRFC(url, tld_list_name)
-````
+```
 
 **인수**
 
@@ -426,7 +426,7 @@ cutToFirstSignificantSubdomainCustomWithWWWRFC(url, tld_list_name)
 
 **반환 값**
 
-`www`를 제거하지 않고, 최상위 하위 도메인부터 첫 번째 유의미한 하위 도메인까지 포함한 도메인 부분을 반환합니다. [`String`](/ko/reference/data-types/string)
+`www`를 제거하지 않고, 최상위 하위 도메인부터 유의미한 하위 도메인까지 포함한 도메인 부분을 반환합니다. [`String`](/ko/reference/data-types/string)
 
 **예시**
 
@@ -440,7 +440,7 @@ SELECT cutToFirstSignificantSubdomainCustomWithWWWRFC('https://www.subdomain.exa
 example.custom
 ```
 
-## cutToFirstSignificantSubdomainRFC {#cutToFirstSignificantSubdomainWithWWW}
+## cutToFirstSignificantSubdomainRFC {#cutToFirstSignificantSubdomainRFC}
 
 도입 버전: v22.10.0
 
@@ -476,7 +476,7 @@ SELECT
 └─────────────────────────────────────────────────────────────────────────┴────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## cutToFirstSignificantSubdomainWithWWW {#cutToFirstSignificantSubdomainWithWWWRFC}
+## cutToFirstSignificantSubdomainWithWWW {#cutToFirstSignificantSubdomainWithWWW}
 
 도입 버전: v20.12.0
 
@@ -515,7 +515,7 @@ SELECT
 └──────────────────────────────────────────────────────────────────────────┴─────────────────────────────────────────────────┴─────────────────────────────────────────────┘
 ```
 
-## cutToFirstSignificantSubdomainWithWWWRFC {#cutURLParameter}
+## cutToFirstSignificantSubdomainWithWWWRFC {#cutToFirstSignificantSubdomainWithWWWRFC}
 
 도입 버전: v22.10.0
 
@@ -551,7 +551,7 @@ SELECT
 └───────────────────────────────────────────────────────────────────────────────────────┴──────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## cutURLParameter {#cutWWW}
+## cutURLParameter {#cutURLParameter}
 
 도입 버전: v1.1.0
 
@@ -590,7 +590,7 @@ SELECT
 └──────────────────────────────┴───────────────────────────┘
 ```
 
-## cutWWW {#decodeURLComponent}
+## cutWWW {#cutWWW}
 
 도입 버전: v1.1.0
 
@@ -624,7 +624,7 @@ SELECT cutWWW('http://www.example.com/path?query=value#fragment');
 └────────────────────────────────────────────────────────────┘
 ```
 
-## decodeURLComponent {#decodeURLFormComponent}
+## decodeURLComponent {#decodeURLComponent}
 
 도입 버전: v1.1.0
 
@@ -658,7 +658,7 @@ SELECT decodeURLComponent('http://127.0.0.1:8123/?query=SELECT%201%3B') AS Decod
 └────────────────────────────────────────┘
 ```
 
-## decodeURLFormComponent {#domain}
+## decodeURLFormComponent {#decodeURLFormComponent}
 
 도입 버전: v1.1.0
 
@@ -694,7 +694,7 @@ SELECT decodeURLFormComponent('http://127.0.0.1:8123/?query=SELECT%201+2%2B3') A
 └───────────────────────────────────────────┘
 ```
 
-## domain {#domainRFC}
+## domain {#domain}
 
 도입 버전: v1.1.0
 
@@ -730,7 +730,7 @@ SELECT domain('svn+ssh://some.svn-hosting.com:80/repo/trunk');
 └────────────────────────────────────────────────────────┘
 ```
 
-## domainRFC {#domainWithoutWWW}
+## domainRFC {#domainRFC}
 
 도입 버전: v22.10.0
 
@@ -769,7 +769,7 @@ SELECT
 └───────────────────────────────────────────────────────────────────────────┴──────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## domainWithoutWWW {#domainWithoutWWWRFC}
+## domainWithoutWWW {#domainWithoutWWW}
 
 도입 버전: v1.1.0
 
@@ -803,7 +803,7 @@ SELECT domainWithoutWWW('http://paul@www.example.com:80/');
 └─────────────────────────────────────────────────────┘
 ```
 
-## domainWithoutWWWRFC {#encodeURLComponent}
+## domainWithoutWWWRFC {#domainWithoutWWWRFC}
 
 도입 버전: v1.1.0
 
@@ -839,7 +839,7 @@ SELECT
 └─────────────────────────────────────────────────────────────────────────────────────────┴────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## encodeURLComponent {#encodeURLFormComponent}
+## encodeURLComponent {#encodeURLComponent}
 
 도입된 버전: v22.3.0
 
@@ -873,7 +873,7 @@ SELECT encodeURLComponent('http://127.0.0.1:8123/?query=SELECT 1;') AS EncodedUR
 └──────────────────────────────────────────────────────────┘
 ```
 
-## encodeURLFormComponent {#extractURLParameter}
+## encodeURLFormComponent {#encodeURLFormComponent}
 
 도입 버전: v22.3.0
 
@@ -909,7 +909,7 @@ SELECT encodeURLFormComponent('http://127.0.0.1:8123/?query=SELECT 1 2+3') AS En
 └───────────────────────────────────────────────────────────┘
 ```
 
-## extractURLParameter {#extractURLParameterNames}
+## extractURLParameter {#extractURLParameter}
 
 도입 버전: v1.1.0
 
@@ -946,7 +946,7 @@ SELECT extractURLParameter('http://example.com/?param1=value1&param2=value2', 'p
 └──────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## extractURLParameterNames {#extractURLParameters}
+## extractURLParameterNames {#extractURLParameterNames}
 
 도입 버전: v1.1.0
 
@@ -981,7 +981,7 @@ SELECT extractURLParameterNames('http://example.com/?param1=value1&param2=value2
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## extractURLParameters {#firstSignificantSubdomain}
+## extractURLParameters {#extractURLParameters}
 
 도입 버전: v1.1.0
 
@@ -1016,7 +1016,7 @@ SELECT extractURLParameters('http://example.com/?param1=value1&param2=value2');
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
-## firstSignificantSubdomain {#firstSignificantSubdomainCustom}
+## firstSignificantSubdomain {#firstSignificantSubdomain}
 
 도입 버전: v1.1.0
 
@@ -1055,7 +1055,7 @@ SELECT firstSignificantSubdomain('https://news.clickhouse.com/')
 └───────────────────────────────────────────────────────────┘
 ```
 
-## firstSignificantSubdomainCustom {#firstSignificantSubdomainCustomRFC}
+## firstSignificantSubdomainCustom {#firstSignificantSubdomainCustom}
 
 도입 버전: v21.1.0
 
@@ -1088,7 +1088,7 @@ SELECT firstSignificantSubdomainCustom('https://news.example.com', 'public_suffi
 example
 ```
 
-## firstSignificantSubdomainCustomRFC {#firstSignificantSubdomainRFC}
+## firstSignificantSubdomainCustomRFC {#firstSignificantSubdomainCustomRFC}
 
 도입 버전: v22.10.0
 
@@ -1121,7 +1121,7 @@ SELECT firstSignificantSubdomainCustomRFC('https://news.example.com', 'public_su
 example
 ```
 
-## firstSignificantSubdomainRFC {#fragment}
+## firstSignificantSubdomainRFC {#firstSignificantSubdomainRFC}
 
 도입 버전: v22.10.0
 
@@ -1141,7 +1141,7 @@ firstSignificantSubdomainRFC(url)
 
 **예시**
 
-## fragment {#netloc}
+## fragment {#fragment}
 
 도입 버전: v1.1.0
 
@@ -1175,7 +1175,7 @@ SELECT fragment('https://clickhouse.com/docs/get-started/setup/cloud#1-create-a-
 └───────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## netloc {#path}
+## netloc {#netloc}
 
 도입 버전: v20.5.0
 
@@ -1209,7 +1209,7 @@ SELECT netloc('http://paul@www.example.com:80/');
 └───────────────────────────────────────────┘
 ```
 
-## path {#pathFull}
+## path {#path}
 
 지원 시작 버전: v1.1.0
 
@@ -1243,7 +1243,7 @@ SELECT path('https://clickhouse.com/docs/reference/functions/regular-functions/u
 └─────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## pathFull {#port}
+## pathFull {#pathFull}
 
 지원 시작 버전: v1.1.0
 
@@ -1277,7 +1277,7 @@ SELECT pathFull('https://clickhouse.com/docs/reference/functions/regular-functio
 └─────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## port {#portRFC}
+## port {#port}
 
 도입 버전: v20.5.0
 
@@ -1312,7 +1312,7 @@ SELECT port('https://clickhouse.com:8443/docs'), port('https://clickhouse.com/do
 └──────────────────────────────────────────┴──────────────────────────────────────────┘
 ```
 
-## portRFC {#protocol}
+## portRFC {#portRFC}
 
 도입 버전: v22.10.0
 
@@ -1348,7 +1348,7 @@ SELECT port('http://user:password@example.com:8080/'), portRFC('http://user:pass
 └────────────────────────────────────────────────┴───────────────────────────────────────────────────┘
 ```
 
-## protocol {#queryString}
+## protocol {#protocol}
 
 도입 버전: v1.1.0
 
@@ -1386,7 +1386,7 @@ SELECT protocol('https://clickhouse.com/');
 └─────────────────────────────────────┘
 ```
 
-## queryString {#queryStringAndFragment}
+## queryString {#queryString}
 
 도입 버전: v1.1.0
 
@@ -1420,7 +1420,7 @@ SELECT queryString('https://clickhouse.com/docs?query=value&param=123#section');
 └──────────────────────────────────────────────────────────────────────────┘
 ```
 
-## queryStringAndFragment {#topLevelDomain}
+## queryStringAndFragment {#queryStringAndFragment}
 
 도입 버전: v1.1.0
 
@@ -1454,7 +1454,7 @@ SELECT queryStringAndFragment('https://clickhouse.com/docs?query=value&param=123
 └─────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## topLevelDomain {#topLevelDomainRFC}
+## topLevelDomain {#topLevelDomain}
 
 도입 버전: v1.1.0
 
@@ -1499,7 +1499,7 @@ SELECT topLevelDomain('svn+ssh://www.some.svn-hosting.com:80/repo/trunk');
 └────────────────────────────────────────────────────────────────────┘
 ```
 
-## topLevelDomainRFC
+## topLevelDomainRFC {#topLevelDomainRFC}
 
 도입 버전: v22.10.0
 

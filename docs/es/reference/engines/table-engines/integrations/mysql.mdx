@@ -40,7 +40,7 @@ La estructura de la tabla puede diferir de la estructura de la tabla MySQL origi
 
 **Parámetros del motor**
 
-* `host:port` — Dirección del servidor MySQL.
+* `host:port` — Dirección del servidor MySQL. El host debe ser un nombre de host simple o una dirección IP, y se accede a él mediante TCP en el puerto indicado, incluso en el caso de `localhost`: no se admiten sockets Unix. Se rechaza cualquier otra sintaxis de host de la biblioteca cliente de MySQL, como cadenas de conexión o listas de hosts separados por comas.
 * `database` — Nombre de la base de datos remota.
 * `table` — Nombre de la tabla remota, o una consulta pasada a MySQL tal cual (consulta [Pasar una consulta en lugar de un nombre de tabla](#passing-a-query)).
 * `user` — usuario MySQL.
@@ -58,17 +58,18 @@ El resto de las condiciones se ejecutan en ClickHouse después de que finalice l
 
 ## TLS/SSL {#tls-ssl}
 
-Las credenciales de una conexión cifrada a MySQL se proporcionan como claves de una colección nombrada (o como argumentos de clave-valor):
+Las credenciales de una conexión cifrada a MySQL se proporcionan como claves de una colección con nombre (o como argumentos de clave-valor):
 
-| Parámetro      | Descripción                                                                               |
-| -------------- | ----------------------------------------------------------------------------------------- |
-| `ssl_ca_pem`   | Contenido del certificado de CA con el que se verifica el certificado del servidor MySQL. |
-| `ssl_cert_pem` | Contenido del certificado de cliente, para la autenticación basada en certificados.       |
-| `ssl_key_pem`  | Contenido de la clave privada asociada a `ssl_cert_pem`.                                  |
+| Parámetro            | Descripción                                                                               |
+| -------------------- | ----------------------------------------------------------------------------------------- |
+| `ssl_ca_pem`         | Contenido del certificado de CA con el que se verifica el certificado del servidor MySQL. |
+| `ssl_cert_pem`       | Contenido del certificado de cliente, para la autenticación basada en certificados.       |
+| `ssl_key_pem`        | Contenido de la clave privada asociada a `ssl_cert_pem`.                                  |
+| `ssl_key_passphrase` | Frase de contraseña de una clave `ssl_key` / `ssl_key_pem` cifrada. Opcional.             |
 
-Los valores son el contenido de los archivos PEM correspondientes, que se puede copiar en una colección nombrada o en una consulta. Se enmascaran en los logs y en las consultas `SHOW`, del mismo modo que las contraseñas.
+Los valores son el contenido de los archivos PEM correspondientes (y la frase de contraseña de la clave), que se puede copiar en una colección con nombre o en una consulta. Se enmascaran en los logs y en las consultas `SHOW`, del mismo modo que las contraseñas.
 
-Las mismas credenciales también pueden proporcionarse como rutas a archivos del servidor, mediante `ssl_ca`, `ssl_cert` y `ssl_key`, pero **solo en una colección nombrada definida en el archivo de configuración del servidor**; dichos valores no pueden sobrescribirse en una consulta. El servidor abre esos archivos con sus propios privilegios, por lo que aceptar una ruta desde SQL permitiría a cualquier usuario capaz de definir una fuente MySQL examinar el sistema de archivos local y autenticarse con un certificado y una clave que no tiene permiso para leer.
+Las mismas credenciales también pueden proporcionarse como rutas a archivos del servidor, mediante `ssl_ca`, `ssl_cert` y `ssl_key`, pero **solo en una colección con nombre definida en el archivo de configuración del servidor**; dichos valores no pueden sobrescribirse en una consulta. El servidor abre esos archivos con sus propios privilegios, por lo que aceptar una ruta desde SQL permitiría a cualquier usuario capaz de definir una fuente MySQL examinar el sistema de archivos local y autenticarse con un certificado y una clave que no tiene permiso para leer.
 
 ```xml
 <named_collections>

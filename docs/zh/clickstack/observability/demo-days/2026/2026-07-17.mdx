@@ -1,0 +1,92 @@
+---
+slug: /clickstack/observability/demo-days/2026/2026-07-17
+title: '演示日 - 2026-07-17'
+sidebarTitle: '2026-07-17'
+description: 'ClickStack 演示日：2026-07-17'
+doc_type: 'guide'
+keywords: ['ClickStack', '演示日']
+---
+
+## 图表工具提示改进 {#chart-tooltip-improvements}
+
+*演示者 [@brandon-pereira](https://github.com/brandon-pereira)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/EsnGp9RPSKM" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+ClickStack 中的图表工具提示在易用性上迎来了大幅提升。现在点击图表即可将工具提示固定在原位，鼠标移开后也不会消失，方便您从容查看其中的数据。固定后的工具提示会显示数据系列中的所有值；值较多时，可以滚动浏览整个列表，不会再被截断。
+
+现在您还可以直接从工具提示中复制值，这项功能正是源自客户反馈。以前，客户虽然能看到所需的数据，却无法将其取出；现在只需点击某个值，即可将其复制到剪贴板。
+
+这一切得益于 Recharts 的升级：工具提示现在通过 portal 渲染，而不再渲染在图表自身的容器内。这一点对于图表密集排布的仪表盘尤为重要，因为工具提示不会再被相邻图表挤压或裁剪。
+
+**相关 PRs：** [#2642](https://github.com/hyperdxio/hyperdx/pull/2642) feat(charts): pin chart tooltip on click with inline drill-down actions
+
+## 从 PR 运行 MCP 评估 {#running-mcp-evals-from-a-pr}
+
+*演示者：[@brandon-pereira](https://github.com/brandon-pereira)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/YcDm1Mnw-Qc" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+团队现在可以直接从 GitHub PR 运行 MCP 评估，而不再局限于本地运行。这样一来，任何人都能在代码变更合并之前了解它对 MCP 质量的影响。这是该方案的首个版本：评估管道已接入 CI，可自动运行并将合并后的评分回报到 PR 上。
+
+如需进一步了解 ClickStack MCP 评估框架的工作原理，请参阅博客文章[使用 HDX 评估对 ClickStack MCP 服务器进行基准测试](https://clickhouse.com/blog/benchmarking-the-clickstack-mcp-server-with-hdx-evals)。
+
+**相关 PRs：** [#2628](https://github.com/hyperdxio/hyperdx/pull/2628) feat(evals): M1 CI skeleton — 在 GitHub Actions 中端到端运行 MCP 评估
+
+## MCP 服务器中的指标支持 {#metrics-support-in-the-mcp-server}
+
+*演示者：[@karl-power](https://github.com/karl-power)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/GqJWQN3P86c" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+MCP 服务器现在不仅能理解日志和链路追踪，还能理解指标，同时配套提供了一个评估框架，用于衡量它对指标的运用效果。此次更新为 ClickStack 支持的五种指标类型 (gauge、sum、histogram、exponential histogram 和 summary) 新增了生成器，并新增了一批必须借助指标才能解决的评估场景，例如仅凭日志和链路追踪几乎无法排查的 JVM 内存泄漏问题。
+
+早期结果显示，支持指标的 MCP 服务器完成这些场景的速度明显快于仅支持标准 SQL 的 MCP 服务器，主要原因在于得出答案所需的工具调用次数更少。目前仍有调优工作要做 (在部分场景中，同一指标的不同表示方式会干扰 LLM 的模式匹配) ，但方向已经明确：让 agent 直接访问指标，能够开展以往无法完成的调查。
+
+**相关 PRs：** [#2645](https://github.com/hyperdxio/hyperdx/pull/2645) feat(evals): support metric types and seeding
+
+## 数据源选择器改进 {#source-picker-improvements}
+
+*演示者 [@elizabetdev](https://github.com/elizabetdev)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/XTQygZSMUTs" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+以往，要选对 source 往往只能边滚动边猜。在 source 列表较长的实例中，打开下拉列表后，没有任何视觉提示能表明当前实际选中的是哪个 source。此次更新沿用现有多选的样式，在当前选中的 source 旁添加了勾选标记，让您在开始查询前就能一眼看出哪个 source 正在使用。
+
+改动虽小，却省去了“等等，我现在看的是哪个？”这样的片刻迟疑，而这些片刻在一整天的工作中会不断累积。
+
+**相关 PRs：** [#2651](https://github.com/hyperdxio/hyperdx/pull/2651) feat(app): clarify selected source in source picker
+
+## 图表构建器转换为 SQL {#chart-builder-to-sql-conversion}
+
+*演示者：[@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/IBNdi1rgiTc" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+过去，从可视化查询构建器切换到原始 SQL 模式就意味着要从头开始。如果您已在构建器中通过筛选条件和 group-by 构建好查询，随后却遇到构建器无法表达的需求，那么切换到 SQL 模式后，您面对的只是一个空白编辑器。
+
+现在，切换到 SQL 模式时，构建器中的查询会经由渲染图表所用的同一管道进行处理。因此进入 SQL 模式后，等价的查询已经写好，并且使用的是相应的宏，而非硬编码的值。反向转换 (从 SQL 转回构建器) 目前尚不支持，但已列入路线图。
+
+**相关 PRs：** [#2634](https://github.com/hyperdxio/hyperdx/pull/2634) feat: Auto-convert builder charts to Raw SQL，[#2666](https://github.com/hyperdxio/hyperdx/pull/2666) fix(charts): Keep selected source when switching from builder to SQL mode
+
+## 全新的过滤器拉取机制 {#new-filter-fetching-mechanism}
+
+*演示者：[@knudtty](https://github.com/knudtty)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/z31cAIJA3B4" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+获取可用过滤器值列表时，现在会经过一个更智能的路由层。新系统不再采用单一的固定策略，而是先检查 schema 中有哪些可用资源 (尤其是是否存在文本索引) ，再据此选择最高效的方式来构建过滤器列表。
+
+当存在文本索引时，ClickStack 会直接查询这些索引，而不再回退到 rollup 表。这意味着需要维护的 rollup 更少，也降低了部分客户在旧方案下遇到的内存压力风险。此功能要求 ClickHouse 26.3，尚未升级到该版本的用户将继续使用现有的基于 rollup 的方案，升级完成后新机制会自动生效。
+
+**相关 PRs：** [#2643](https://github.com/hyperdxio/hyperdx/pull/2643) feat: rework getAllKeyValues and add filters populated from text indices
+
+## RUM 仪表盘改进 {#improved-rum-dashboard}
+
+*演示者：[@teeohhem](https://github.com/teeohhem)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/roNhRzLvXro" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+浏览器真实用户监控仪表盘现已支持颜色编码，并配有 Markdown 图例说明各颜色的含义 (该图例后续还可进一步优化，使其更加清晰) 。用于展示含错误会话数等指标的数值卡片，现在会根据可配置的阈值进行颜色编码，让问题区域一眼可见，不再淹没在满屏千篇一律的数字之中。
+
+**相关 PRs：** [#2671](https://github.com/hyperdxio/hyperdx/pull/2671) feat(dashboards): color-code Browser RUM web vitals, page-load &amp; error tiles
