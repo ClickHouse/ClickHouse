@@ -6,10 +6,8 @@ tags: ['Erreurs et exceptions']
 keywords: ['OOM', 'limite de mémoire dépassée']
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 <div id="troubleshooting-out-of-memory-issues">
-  ## Limite de mémoire dépassée pour la requête
+  ## Limite de mémoire dépassée pour la requête {#troubleshooting-out-of-memory-issues}
 </div>
 
 Pour un nouvel utilisateur, ClickHouse peut souvent sembler magique : chaque requête est extrêmement rapide,
@@ -24,7 +22,7 @@ cela n’est pas toujours simple, et que des performances optimales ne sont pas 
 Dans ce cas, les utilisateurs disposent de plusieurs options.
 
 <div id="aggregations">
-  ### Agrégations
+  ### Agrégations {#aggregations}
 </div>
 
 Pour les scénarios d’agrégation ou de tri gourmands en mémoire, les utilisateurs peuvent utiliser respectivement les paramètres
@@ -43,9 +41,7 @@ le tri peut être autorisé à être déporté sur disque. Ce paramètre est ég
 les cas où l’utilisateur a un `ORDER BY` après un `GROUP BY` avec un `LIMIT`,
 en particulier lorsque la requête est distribuée.
 
-<div id="joins">
-  ### Jointures
-</div>
+### Jointures {#joins}
 
 Pour les jointures, les utilisateurs peuvent sélectionner différents algorithmes `JOIN`, ce qui peut aider à
 réduire la mémoire nécessaire. Par défaut, les jointures utilisent le hash join, qui offre
@@ -66,7 +62,11 @@ impossibles, par exemple dans le cas d’une sous-requête complexe. Dans ce cas
 sont toutes deux triées sur disque si elles ne tiennent pas en mémoire, ce qui permet de
 joindre de grandes tables.
 
-<Image img="/images/knowledgebase/memory-limit-exceeded-for-query.webp" size="md" alt="Algorithmes de jointure" />
+<div className="ch-image-md">
+  <Frame>
+    ![Algorithmes de jointure](/images/knowledgebase/memory-limit-exceeded-for-query.webp)
+  </Frame>
+</div>
 
 Depuis la version 20.3, ClickHouse prend en charge la valeur auto pour le paramètre `join_algorithm`.
 Cela indique à ClickHouse d’appliquer une approche adaptative des jointures, dans laquelle l’algorithme de hash join

@@ -7,10 +7,8 @@ title: 'Recomendaciones de escalado'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/es/components/Image.jsx";
-
 <div id="introduction">
-  ## Introducción
+  ## Introducción {#introduction}
 </div>
 
 El autoescalado de los recursos de la base de datos requiere un equilibrio cuidadoso: aumentar la capacidad demasiado lentamente puede poner en riesgo el rendimiento, mientras que reducirla de forma demasiado agresiva puede provocar oscilaciones constantes.
@@ -19,7 +17,7 @@ ClickHouse Cloud permite reducciones de capacidad más rápidas, minimiza las os
 al combinar un marco de recomendaciones de dos ventanas con un sistema de recomendaciones de CPU basado en seguimiento de objetivos.
 
 <div id="cpu-based-scaling">
-  ## Escalado basado en CPU
+  ## Escalado basado en CPU {#cpu-based-scaling}
 </div>
 
 El escalado de CPU se basa en target tracking, que calcula la asignación exacta de CPU necesaria para mantener la utilización en un nivel objetivo. Solo se activa una acción de escalado si la utilización actual de la CPU queda fuera de un rango definido:
@@ -39,14 +37,14 @@ recommended_cpu = max_cpu_usage / target_utilization
 Si la utilización de CPU está entre el 37.5 % y el 75 % de la capacidad asignada, no se realiza ninguna acción de escalado. Fuera de ese rango, el recomendador calcula el tamaño exacto necesario para volver al 53 % de utilización, y el servicio se escala en consecuencia.
 
 <div id="cpu-scaling-example">
-  ### Ejemplo
+  ### Ejemplo {#cpu-scaling-example}
 </div>
 
 Un servicio con 4 vCPU asignadas experimenta un pico de uso de 3.8 vCPU (~95% de utilización), superando el umbral superior del 75%.
 El recomendador calcula: `3.8 / 0.53 ≈ 7.2 vCPU`, y redondea al siguiente tamaño disponible (8 vCPU). Una vez que la carga disminuye y el uso cae por debajo del 37.5% (1.5 vCPU), el recomendador reduce de nuevo el tamaño de forma proporcional.
 
 <div id="memory-based-recommendations">
-  ## Recomendaciones basadas en memoria
+  ## Recomendaciones basadas en memoria {#memory-based-recommendations}
 </div>
 
 ClickHouse Cloud recomienda automáticamente tamaños de memoria en función de los patrones de uso reales de su servicio.
@@ -59,7 +57,7 @@ El recomendador tiene en cuenta tres señales:
 * **Eventos OOM**: Si las consultas o las réplicas se han quedado sin memoria recientemente
 
 <div id="how-headroom-is-calculated">
-  ### Cómo se calcula la holgura
+  ### Cómo se calcula la holgura {#how-headroom-is-calculated}
 </div>
 
 Para la memoria de consulta y la memoria residente, la holgura añadida depende de lo predecible que sea tu uso:
@@ -70,7 +68,7 @@ Para la memoria de consulta y la memoria residente, la holgura añadida depende 
 Si se detectan eventos OOM, el recomendador aplica un **multiplicador más agresivo de 1.5x** para garantizar que el servicio tenga suficiente memoria para recuperarse.
 
 <div id="final-recommendation">
-  ### Recomendación final
+  ### Recomendación final {#final-recommendation}
 </div>
 
 El sistema toma el valor más alto de entre todas las señales:
@@ -84,19 +82,21 @@ desired_memory = max(
 )
 ```
 
-<div id="two-window-recommender">
-  ## Recomendador de dos ventanas
-</div>
+## Recomendador de dos ventanas {#two-window-recommender}
 
 En lugar de usar una sola ventana, ClickHouse Cloud utiliza dos ventanas de retrospección con distintos intervalos de tiempo:
 
-* **Ventana pequeña (3 horas)**: Captura patrones de uso recientes y permite reducir la escala más rápido
-* **Ventana grande (30 horas)**: Garantiza que aumentemos la escala en un solo paso hasta el uso máximo observado en la ventana de retrospección más larga, en lugar de hacerlo mediante varios aumentos graduales. Esto es fundamental porque el escalado lleva tiempo e invalida las cachés locales; por eso, es más seguro aumentar la escala en un solo paso.
+* **Ventana pequeña (3 horas)**: Captura patrones de uso recientes y permite realizar scale-down más rápido
+* **Ventana grande (30 horas)**: Garantiza que realicemos scale-up en un solo paso hasta el uso máximo observado en la ventana de retrospección más larga, en lugar de hacerlo mediante varios scale-ups graduales. Esto es fundamental porque el escalado lleva tiempo e invalida las cachés locales; por eso, es más seguro realizar scale-up en un solo paso.
 
 Cada ventana genera de forma independiente una recomendación a partir del análisis de memoria y CPU.
 Luego, el sistema combina estas recomendaciones según la dirección de escalado que sugiera cada ventana, como se muestra en la figura siguiente:
 
-<Image img="/images/cloud/features/autoscaling/two-window-recommender.webp" size="lg" alt="Lógica de combinación del recomendador de dos ventanas" />
+<div className="ch-image-lg">
+  <Frame>
+    ![Lógica de combinación del recomendador de dos ventanas](/images/cloud/features/autoscaling/two-window-recommender.webp)
+  </Frame>
+</div>
 
-Para profundizar en las decisiones de diseño del recomendador, consulta [&quot;Autoescalado más inteligente para ClickHouse: el enfoque de dos ventanas
+Para profundizar en las decisiones de diseño del recomendador, consulta [&quot;Escalado automático más inteligente para ClickHouse: el enfoque de dos ventanas
 &quot;](https://clickhouse.com/blog/smarter-auto-scaling#the-two-window-solution)

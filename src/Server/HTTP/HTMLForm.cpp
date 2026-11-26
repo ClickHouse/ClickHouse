@@ -43,7 +43,7 @@ public:
 
 }
 
-const std::string HTMLForm::ENCODING_URL = "application/x-www-form-urlencoded";
+[[clang::no_destroy]] const std::string HTMLForm::ENCODING_URL = "application/x-www-form-urlencoded";
 const std::string HTMLForm::ENCODING_MULTIPART = "multipart/form-data";
 const int HTMLForm::UNKNOWN_CONTENT_LENGTH = -1;
 
@@ -93,7 +93,7 @@ void HTMLForm::load(const Poco::Net::HTTPRequest & request, ReadBuffer & request
     clear();
 
     Poco::URI uri(request.getURI());
-    const std::string & query = uri.getRawQuery();
+    std::string_view query = uri.getRawQuery();
     if (!query.empty())
     {
         ReadBufferFromString istr(query);
@@ -138,7 +138,7 @@ void HTMLForm::read(ReadBuffer & in)
 void HTMLForm::readQuery(ReadBuffer & in)
 {
     size_t fields = 0;
-    char ch = 0;  // silence "uninitialized" warning from gcc-*
+    char ch = 0;
     bool is_first = true;
 
     while (true)
@@ -288,7 +288,7 @@ bool HTMLForm::MultipartReadBuffer::skipToNextBoundary()
 std::string HTMLForm::MultipartReadBuffer::readLine(bool append_crlf)
 {
     std::string line;
-    char ch = 0;  // silence "uninitialized" warning from gcc-*
+    char ch = 0;
 
     /// If we don't append CRLF, it means that we may have to prepend CRLF from previous content line, which wasn't the boundary.
     if (in.read(ch))
