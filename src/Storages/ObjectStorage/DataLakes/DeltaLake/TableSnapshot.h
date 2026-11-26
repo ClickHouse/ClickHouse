@@ -87,12 +87,12 @@ public:
 private:
     class Iterator;
 
-    using KernelExternEngine = KernelPointerWrapper<ffi::SharedExternEngine, ffi::free_engine>;
-    using KernelSnapshot = KernelPointerWrapper<ffi::SharedSnapshot, ffi::free_snapshot>;
-    using KernelScan = KernelPointerWrapper<ffi::SharedScan, ffi::free_scan>;
-    using KernelScanMetadataIterator = KernelPointerWrapper<ffi::SharedScanMetadataIterator, ffi::free_scan_metadata_iter>;
-    using KernelDvInfo = KernelPointerWrapper<ffi::SharedDvInfo, ffi::free_kernel_dv_info>;
-    using KernelExpression = KernelPointerWrapper<ffi::SharedExpression, ffi::free_kernel_expression>;
+    using KernelExternEngine = KernelPointerWrapper<::SharedExternEngine, ::free_engine>;
+    using KernelSnapshot = KernelPointerWrapper<::SharedSnapshot, ::free_snapshot>;
+    using KernelScan = KernelPointerWrapper<::SharedScan, ::free_scan>;
+    using KernelScanMetadataIterator = KernelPointerWrapper<::SharedScanMetadataIterator, ::free_scan_metadata_iter>;
+    using KernelDvInfo = KernelPointerWrapper<::SharedDvInfo, ::free_kernel_dv_info>;
+    using KernelExpression = KernelPointerWrapper<::SharedExpression, ::free_kernel_expression>;
 
     using TableSchema = DB::NamesAndTypesList;
     using ReadSchema = DB::NamesAndTypesList;

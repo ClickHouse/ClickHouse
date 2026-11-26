@@ -61,7 +61,8 @@ public:
     /// Adds a data file with `rows` rows; `file_metrics` is aligned with the targets.
     void addFile(UInt64 rows, const std::vector<ColumnMetrics> & file_metrics);
 
-    /// Removes deleted rows from the row count; the column statistics keep them. Called after the last file.
+    /// Removes deleted rows from the row count; the column statistics keep them, and their coverage is still checked
+    /// against the rows before deletes. Called after the last file.
     void subtractDeletedRows(UInt64 rows);
 
     /// Sets the rows of `estimate` and its estimator: the merged statistics of the targets with their numbers of
@@ -88,8 +89,10 @@ private:
     std::vector<Target> targets;
     /// Aligned with `targets`.
     std::vector<DistinctValuesInputs> distinct_values_inputs;
-    /// Sum of the rows of the added files, less the subtracted deleted rows.
+    /// Sum of the rows of the added files, deleted rows included.
     UInt64 total_rows = 0;
+    /// The subtracted deleted rows, at most `total_rows`.
+    UInt64 deleted_rows = 0;
     /// Merges the per-file `Basic` statistics of each target, as those of MergeTree parts.
     ConditionSelectivityEstimatorBuilder statistics_builder;
 };

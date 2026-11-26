@@ -119,7 +119,8 @@ void TableFunctionPostgreSQL::parseArguments(const ASTPtr & ast_function, Contex
     }
 
     configuration.emplace(StoragePostgreSQL::getConfiguration(
-        args, context, &postgresql_settings, /*table_id=*/ nullptr, settings_ast ? settings_ast->as<ASTSetQuery>() : nullptr));
+        args, context, &postgresql_settings, globCaller(fmt::format("Table function '{}'", name)),
+        /*table_id=*/ nullptr, settings_ast ? settings_ast->as<ASTSetQuery>() : nullptr));
 
     /// Applied after getConfiguration, so that the explicit SETTINGS clause wins over the values
     /// stored in a named collection. `getConfiguration` checks these overrides of the collection.
@@ -166,7 +167,7 @@ postgresql({host:port, database, table, user, password[, schema, [, on_conflict]
 
 Arguments also can be passed using [named collections](/concepts/features/configuration/server-config/named-collections). In this case `host` and `port` should be specified separately. This approach is recommended for production environment.
 
-TLS/SSL parameters are forwarded to `libpq` and can be supplied as named collection keys or trailing key-value arguments: `sslmode` (`disable`, `allow`, `prefer`, `require`, `verify-ca` or `verify-full`; when unset, the `libpq` default of `prefer` applies), and the certificates and the key in one of two forms. `sslrootcert` (CA certificate, or the special value `system`), `sslcert` (client certificate) and `sslkey` (client private key) are paths to server-local files and can only be specified in a named collection defined in the server configuration file. `sslrootcert_pem`, `sslcert_pem` and `sslkey_pem` accept the literal contents of the corresponding file instead — for example, `postgresql('host:port', 'database', 'table', 'user', 'password', sslmode = 'verify-full', sslrootcert_pem = '...')` — and are masked in logs and `SHOW` queries like a password.
+TLS/SSL parameters are forwarded to `libpq` and can be supplied as named collection keys or trailing key-value arguments: `sslmode` (`disable`, `allow`, `prefer`, `require`, `verify-ca` or `verify-full`; when unset, the `libpq` default of `prefer` applies), and the certificates and the key in one of two forms. `sslrootcert` (CA certificate, or the special value `system`), `sslcert` (client certificate) and `sslkey` (client private key) are paths to server-local files and can only be specified in a named collection defined in the server configuration file. `sslrootcert_pem`, `sslcert_pem` and `sslkey_pem` accept the literal contents of the corresponding file instead — for example, `postgresql('host:port', 'database', 'table', 'user', 'password', sslmode = 'verify-full', sslrootcert_pem = '...')` — and are masked in logs and `SHOW` queries like a password. Unless both a client certificate (`sslcert` or `sslcert_pem`) and a client key (`sslkey` or `sslkey_pem`) are configured, ClickHouse sends `sslcertmode=disable`, so `libpq` does not authenticate with the service account's ambient default certificate or key (`~/.postgresql/postgresql.{crt,key}`): a connection whose endpoint and user are chosen in SQL must not reuse the service account's default credential.
 
 ## Returned value {#returned-value}
 

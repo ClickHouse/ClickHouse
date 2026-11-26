@@ -3,6 +3,7 @@
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
 #include <Storages/Statistics/RelationProfile.h>
 #include <Storages/Statistics/Statistics.h>
+#include <base/arithmeticOverflow.h>
 
 #include <algorithm>
 #include <cmath>
@@ -27,26 +28,37 @@ std::optional<UInt64> valueRangeWidth(const Field & min_value, const Field & max
     if (min_value.getType() != max_value.getType())
         return std::nullopt;
 
-    UInt64 difference = 0;
+    /// The bounds are written by any writer: a minimum above the maximum says nothing about the values. Otherwise the
+    /// difference of the signed values fits in `UInt64`, computed modulo 2^64.
+    auto width = [](auto max, auto min) -> std::optional<UInt64>
+    {
+        if (max < min)
+            return std::nullopt;
+        return common::subIgnoreOverflow(static_cast<UInt64>(max), static_cast<UInt64>(min));
+    };
+
+    std::optional<UInt64> difference;
     switch (min_value.getType())
     {
         case Field::Types::Int64:
-            difference = static_cast<UInt64>(max_value.safeGet<Int64>()) - static_cast<UInt64>(min_value.safeGet<Int64>());
+            difference = width(max_value.safeGet<Int64>(), min_value.safeGet<Int64>());
             break;
         case Field::Types::UInt64:
-            difference = max_value.safeGet<UInt64>() - min_value.safeGet<UInt64>();
+            difference = width(max_value.safeGet<UInt64>(), min_value.safeGet<UInt64>());
             break;
         case Field::Types::Bool:
-            difference = static_cast<UInt64>(max_value.safeGet<bool>()) - static_cast<UInt64>(min_value.safeGet<bool>());
+            difference = width(max_value.safeGet<bool>(), min_value.safeGet<bool>());
             break;
         case Field::Types::Decimal64:
-            difference = static_cast<UInt64>(max_value.safeGet<DecimalField<Decimal64>>().getValue().value)
-                - static_cast<UInt64>(min_value.safeGet<DecimalField<Decimal64>>().getValue().value);
+            difference = width(max_value.safeGet<DecimalField<Decimal64>>().getValue().value,
+                min_value.safeGet<DecimalField<Decimal64>>().getValue().value);
             break;
         default:
             return std::nullopt;
     }
-    return difference == std::numeric_limits<UInt64>::max() ? difference : difference + 1;
+    if (!difference)
+        return std::nullopt;
+    return *difference == std::numeric_limits<UInt64>::max() ? *difference : *difference + 1;
 }
 
 }
@@ -97,21 +109,26 @@ void DataLakeColumnStatistics::addFile(UInt64 rows, const std::vector<ColumnMetr
         else if (!metrics.identity_partition_value->isNull())
             inputs.identity_partition_values.insert(*metrics.identity_partition_value);
 
-        /// A file without the NULL count and the bounds adds nothing, as a MergeTree part without the statistic; with the
-        /// bounds alone its NULL count is taken as 0.
+        /// A file without the NULL count and the bounds adds nothing, as a MergeTree part without the statistic. With the
+        /// bounds alone, the merged NULL count misses its NULLs, which the statistics record (see
+        /// `StatisticsBasic::nullCountCoversAllRows`), so that the NULL fraction is unknown while the bounds stay valid.
+        /// With the NULL count alone, the merged bounds miss its non-NULL values, which the statistics record as well (see
+        /// `StatisticsBasic::minMaxCoversAllValues`), so that neither the bounds nor a number of distinct values derived
+        /// from them give a guarantee.
         if (!metrics.nulls && metrics.min_value.isNull())
             continue;
         statistics_builder.addStatistics(
             targets[i].name,
-            ColumnStatistics::createBasicFromSummary(
-                targets[i].storage_type, rows, metrics.min_value, metrics.max_value, metrics.nulls.value_or(0)));
+            ColumnStatistics::createBasicFromSummary(targets[i].storage_type, rows, metrics.min_value, metrics.max_value, metrics.nulls));
     }
 }
 
 std::optional<UInt64> DataLakeColumnStatistics::estimateDistinctValues(
     const Target & target, const DistinctValuesInputs & inputs, const ColumnStats & column, UInt64 rows)
 {
-    /// `value_or`: the optimizer may call `llround` before checking the optional, and MSan reports the empty value it reads.
+    /// An unknown NULL fraction (a file without a NULL count) counts no NULLs, so that the non-NULL rows are not too few.
+    /// `value_or` also because the optimizer may call `llround` before checking the optional, and MSan reports the empty
+    /// value it reads.
     const UInt64 nulls = static_cast<UInt64>(std::llround(column.null_fraction.value_or(0) * static_cast<Float64>(rows)));
     const UInt64 non_null_rows = rows - std::min(nulls, rows);
 
@@ -139,29 +156,33 @@ std::optional<UInt64> DataLakeColumnStatistics::estimateDistinctValues(
 
 void DataLakeColumnStatistics::subtractDeletedRows(UInt64 rows)
 {
-    chassert(rows <= total_rows);
-    total_rows -= std::min(rows, total_rows);
+    chassert(rows <= total_rows - deleted_rows);
+    deleted_rows += std::min(rows, total_rows - deleted_rows);
 }
 
 void DataLakeColumnStatistics::finalize(DataLakeReadEstimate & estimate)
 {
-    estimate.rows = total_rows;
+    const UInt64 live_rows = total_rows - deleted_rows;
+    estimate.rows = live_rows;
 
-    /// Selectivities are shares of these rows.
+    /// Selectivities are shares of the live rows. The statistics still count the deleted rows, so their coverage is
+    /// checked against all rows of the files: a file without metrics leaves it partial, whatever the deletes.
     statistics_builder.incrementRowCount(total_rows);
+    statistics_builder.subtractDeletedRows(deleted_rows);
     const auto estimator = statistics_builder.getEstimator();
     if (!estimator)
         return;
 
-    /// The merged bounds and NULL counts the numbers of distinct values come from.
-    const auto merged = estimator->estimateRelationProfile();
+    /// The merged bounds and NULL counts the numbers of distinct values come from. The statistics were built with the
+    /// current column types, so there are no outdated ones to skip.
+    const auto merged = estimator->estimateRelationProfile(/*metadata=*/nullptr);
     for (size_t i = 0; i < targets.size(); ++i)
     {
         const auto it = merged.column_stats.find(targets[i].name);
         if (it == merged.column_stats.end())
             continue;
         /// Without one, the estimator keeps its own guess, as for MergeTree without a `uniq` statistic.
-        if (const auto distinct_values = estimateDistinctValues(targets[i], distinct_values_inputs[i], it->second, total_rows))
+        if (const auto distinct_values = estimateDistinctValues(targets[i], distinct_values_inputs[i], it->second, live_rows))
             statistics_builder.setCardinality(targets[i].name, *distinct_values);
     }
     estimate.estimator = estimator;

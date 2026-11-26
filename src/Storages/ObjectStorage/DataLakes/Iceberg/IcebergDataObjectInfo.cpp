@@ -118,11 +118,12 @@ namespace
 
 void checkDataFileSupportsPositionDeletes(const Iceberg::IcebergObjectSerializableInfo & info)
 {
-    if (Poco::toUpper(info.file_format) != "PARQUET")
+    const String format = Poco::toUpper(info.file_format);
+    if (format != "PARQUET" && format != "ORC" && format != "AVRO")
     {
         throw Exception(
             ErrorCodes::NOT_IMPLEMENTED,
-            "Position deletes are only supported for data files of Parquet format in Iceberg, but got {}",
+            "Position deletes are only supported for data files of Parquet, ORC and Avro formats in Iceberg, but got {}",
             info.file_format);
     }
 }

@@ -597,7 +597,6 @@ test_storage_delta_disks/test.py	81540
 test_distributed_format/test.py	81251
 test_replicated_database_interserver_host/test.py	81152
 test_clickhouse_server_wait_server_pool/test.py	81150
-test_store_cleanup/test.py	80556
 test_rmv_access_denied_on_rename_race/test.py	80434
 test_database_catalog_shutdown_system_logs/test.py	80414
 test_storage_iceberg_with_spark/test_schema_inference.py	80033
@@ -1221,7 +1220,6 @@ test_block_structure_mismatch/test.py	16184
 test_kerberos_auth/test.py	16159
 test_composable_protocols/test.py	16088
 test_reload_certificate/test.py	16039
-test_keeper_ipv4_fallback/test.py	15978
 test_storage_dict/test.py	15801
 test_storage_iceberg_with_spark/test_iceberg_history_summary.py	15792
 test_storage_iceberg_with_spark/test_pruning_nullable_bug.py	15734

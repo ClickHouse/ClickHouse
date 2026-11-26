@@ -4,5 +4,7 @@ insert with self deduplication with join inside mv which produces sutable result
 2
 20000
 insert with self deduplication with join inside mv which produces large result
-INSERT INTO default.src_table (id, name) FORMAT Values	ExceptionWhileProcessing	48
+10
+100000
+INSERT INTO default.src_table (id, name) FORMAT Values	QueryFinish	0
 INSERT INTO default.src_table (id, name) FORMAT Values	QueryFinish	0

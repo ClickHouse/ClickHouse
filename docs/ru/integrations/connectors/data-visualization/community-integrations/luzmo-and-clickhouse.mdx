@@ -20,31 +20,23 @@ import { CommunityMaintainedBadge } from "/snippets/ru/components/CommunityMaint
     Чтобы подключиться к ClickHouse, перейдите на страницу **Connections**, выберите **New Connection**, затем выберите ClickHouse в модальном окне New Connection.
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![Интерфейс Luzmo с диалоговым окном Create a New Connection, в котором выбран ClickHouse](/images/integrations/data-visualization/luzmo_01.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Интерфейс Luzmo с диалоговым окном Create a New Connection, в котором выбран ClickHouse](/images/integrations/data-visualization/luzmo_01.webp)
+      </Frame>
     </div>
 
-    Вам будет предложено указать **host**, **username** и **password**:
+    Вам будет предложено указать **хост**, **имя пользователя** и **пароль**:
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![Форма настройки подключения Luzmo с полями host, username и password для ClickHouse](/images/integrations/data-visualization/luzmo_02.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Форма настройки подключения Luzmo с полями хост, имя пользователя и пароль для ClickHouse](/images/integrations/data-visualization/luzmo_02.webp)
+      </Frame>
     </div>
 
-    * **Host**: хост, на котором доступна ваша база данных ClickHouse. Обратите внимание, что здесь допускается только `https`, чтобы безопасно передавать данные по сети. URL хоста должен иметь следующую структуру: `https://url-to-clickhouse-db:port/database`
+    * **Хост**: хост, на котором доступна ваша база данных ClickHouse. Обратите внимание, что здесь допускается только `https`, чтобы безопасно передавать данные по сети. URL хоста должен иметь следующую структуру: `https://url-to-clickhouse-db:port/database`
       По умолчанию плагин подключается к базе данных `default` через порт 443. Если указать базу данных после символа `/`, можно настроить, к какой базе данных выполнять подключение.
-    * **Username**: имя пользователя, которое будет использоваться для подключения к вашему кластеру ClickHouse.
-    * **Password**: пароль для подключения к вашему кластеру ClickHouse
+    * **Имя пользователя**: имя пользователя, которое будет использоваться для подключения к вашему кластеру ClickHouse.
+    * **Пароль**: пароль для подключения к вашему кластеру ClickHouse
 
     Примеры см. в нашей документации для разработчиков, где описано, как [создать подключение к ClickHouse](https://developer.luzmo.com/api/createAccount?exampleSection=AccountCreateClickhouseRequestBody) через наш API.
   </Step>
@@ -54,22 +46,18 @@ import { CommunityMaintainedBadge } from "/snippets/ru/components/CommunityMaint
 
     Чтобы узнать, как добавлять датасеты с помощью нашего API, обратитесь к [этому примеру в нашей документации для разработчиков](https://developer.luzmo.com/api/createDataprovider?exampleSection=DataproviderCreateClickhouseRequestBody).
 
-    Теперь вы можете использовать свои датасеты для создания красивых встраиваемых панелей мониторинга или даже для работы ИИ-аналитика данных ([Luzmo IQ](https://luzmo.com/iq)), который может отвечать на вопросы ваших клиентов.
+    Теперь вы можете использовать свои датасеты для создания красивых встроенных панелей мониторинга или даже для работы ИИ-аналитика данных ([Luzmo IQ](https://luzmo.com/iq)), который может отвечать на вопросы ваших клиентов.
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![Пример панели мониторинга Luzmo с несколькими визуализациями данных из ClickHouse](/images/integrations/data-visualization/luzmo_03.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Пример панели мониторинга Luzmo с несколькими визуализациями данных из ClickHouse](/images/integrations/data-visualization/luzmo_03.webp)
+      </Frame>
     </div>
   </Step>
 </Steps>
 
 <div id="usage-notes">
-  ## Примечания по использованию
+  ## Примечания по использованию {#usage-notes}
 </div>
 
 1. Коннектор Luzmo ClickHouse использует интерфейс HTTP API (обычно доступный на порту 8123) для подключения.
