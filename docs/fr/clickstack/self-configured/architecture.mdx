@@ -1,0 +1,71 @@
+---
+slug: /clickstack/self-configured/architecture
+description: 'Architecture de ClickHouse Observability — Self-managed'
+title: 'Architecture'
+toc_max_heading_level: 2
+doc_type: 'reference'
+keywords: ['architecture ClickStack', 'architecture d’observability', 'interface utilisateur de ClickStack', 'collecteur OpenTelemetry', 'MongoDB', 'conception système']
+sidebarTitle: 'Architecture'
+---
+
+<Note>
+  Cette page porte sur **Self-managed ClickHouse Observability**. Pour l’expérience entièrement gérée, recommandée, consultez [cette documentation](/fr/clickstack/observability/architecture).
+</Note>
+
+ClickHouse Observability — Self-managed s’exécute entièrement dans **ClickHouse Cloud** et fournit un backend d’observability entièrement géré, tout en conservant le modèle de données et l’expérience utilisateur de ClickStack.
+
+Dans ce modèle, **ClickHouse et l’interface utilisateur de ClickStack** sont hébergés, exploités et sécurisés par ClickHouse Cloud. Les utilisateurs n’ont qu’à exécuter un **collecteur OpenTelemetry (OTel)** pour envoyer leurs données de télémétrie vers le service managé.
+
+<div className="ch-image-lg">
+  <Frame>
+    ![Collecteur OpenTelemetry autogéré envoyant les données de télémétrie vers ClickHouse et l’interface utilisateur de ClickStack hébergés dans ClickHouse Cloud](/images/use-cases/observability/clickstack-self-managed-architecture.svg)
+  </Frame>
+</div>
+
+### ClickHouse Cloud : le moteur {#clickhouse-cloud}
+
+Au cœur de ClickHouse Observability — Self-managed se trouve ClickHouse Cloud, une version sans serveur de ClickHouse, base de données orientée colonnes conçue pour l’analyse en temps réel à grande échelle. ClickHouse Cloud prend en charge l’ingestion et l’interrogation des données d’observability, ce qui permet :
+
+* Une recherche en moins d’une seconde sur des téraoctets d’événements
+* L’ingestion de milliards d’enregistrements high-cardinality par jour
+* Des taux de compression élevés, d’au moins 10x, sur les données d’observability
+* Une prise en charge native des données JSON semi-structurées, autorisant une évolution dynamique du schéma
+* Un puissant moteur SQL doté de centaines de fonctions analytiques intégrées
+
+ClickHouse Cloud traite les données d’observability sous forme d’événements larges, ce qui permet de corréler finement les logs, les métriques et les traces au sein d’une structure unique et unifiée.
+
+Par rapport à ClickHouse Open Source, il offre plusieurs avantages pour l’observability :
+
+* Mise à l’échelle automatique de la capacité de calcul, indépendamment du stockage
+* Rétention économique et pratiquement illimitée grâce au stockage d’objet
+* La possibilité d’[isoler les charges de travail de lecture et d’écriture](/fr/clickstack/self-configured/managing/isolating-read-write) grâce aux entrepôts.
+* Authentification intégrée
+* Sauvegardes automatisées
+* Fonctionnalités de sécurité et de conformité
+* Mises à niveau transparentes
+
+### Collecteur OpenTelemetry : ingestion de données {#open-telemetry-collector-managed}
+
+ClickHouse Observability — Self-managed inclut un collecteur OpenTelemetry (OTel) préconfiguré qui permet d&#39;ingérer la télémétrie de manière ouverte et standardisée. Vous pouvez envoyer des données avec le protocole OTLP via :
+
+* gRPC (port `4317`)
+* HTTP (port `4318`)
+
+Le collecteur exporte la télémétrie vers ClickHouse Cloud sous forme de batchs efficaces. Il prend en charge des schémas de table optimisés pour chaque source de données, ce qui garantit des performances évolutives pour tous les types de signaux.
+
+**Ce composant de l&#39;architecture est géré par l&#39;utilisateur**
+
+### Interface utilisateur de ClickStack : l’interface {#hyperdx}
+
+L’interface utilisateur de ClickStack est l’interface graphique de ClickStack. Elle offre :
+
+* Une recherche en langage naturel et de type Lucene
+* Le suivi en direct (live tailing) pour le débogage en temps réel
+* Des vues unifiées des logs, métriques et traces
+* La relecture de session pour l’observability du frontend
+* La création de tableaux de bord et la configuration d’alertes
+* Une interface de requête SQL pour les analyses avancées
+
+Conçue spécifiquement pour ClickHouse, l’interface utilisateur de ClickStack associe une recherche puissante à des flux de travail intuitifs pour vous permettre de repérer rapidement les anomalies, d’analyser les problèmes et d’obtenir des informations exploitables.
+
+Dans ClickHouse Observability — Self-managed, l’UI est intégrée au système d’authentification de la Console ClickHouse Cloud.

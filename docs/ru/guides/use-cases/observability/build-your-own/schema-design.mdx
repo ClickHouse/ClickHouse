@@ -9,11 +9,11 @@ doc_type: 'guide'
 
 Мы рекомендуем пользователям всегда создавать собственную схему для журналов и трассировок по следующим причинам:
 
-* **Выбор первичного ключа** - В схемах по умолчанию используется `ORDER BY`, оптимизированный под определённые паттерны доступа. Маловероятно, что ваши паттерны доступа будут им соответствовать.
+* **Выбор первичного ключа** - В схемах по умолчанию используется `ORDER BY`, оптимизированный под определённые шаблоны доступа. Маловероятно, что ваши шаблоны доступа будут им соответствовать.
 * **Извлечение структуры** - Возможно, вы захотите извлечь новые столбцы из существующих, например из столбца `Body`. Это можно сделать с помощью материализованных столбцов (а в более сложных случаях — с помощью materialized view). Для этого требуется изменить схему.
-* **Оптимизация Maps** - В схемах по умолчанию для хранения атрибутов используется тип Map. Эти столбцы позволяют хранить произвольные метаданные. Хотя это важная возможность, поскольку метаданные событий часто заранее не определены и потому иначе не могут быть сохранены в строго типизированной базе данных, такой как ClickHouse, доступ к ключам Map и их значениям менее эффективен, чем доступ к обычному столбцу. Мы решаем это, изменяя схему и вынося наиболее часто используемые ключи Map в столбцы верхнего уровня — см. [&quot;Извлечение структуры с помощью SQL&quot;](#extracting-structure-with-sql). Для этого требуется изменить схему.
-* **Упрощение доступа к ключам Map** - Доступ к ключам в Map требует более многословного синтаксиса. Это можно упростить с помощью псевдонимов. См. [&quot;Использование псевдонимов&quot;](#using-aliases), чтобы упростить запросы.
-* **Вторичные индексы** - В схеме по умолчанию используются вторичные индексы для ускорения доступа к Maps и текстовых запросов. Обычно они не требуются и занимают дополнительное место на диске. Их можно использовать, но следует проверить, действительно ли они нужны. См. [&quot;Вторичные / индексы пропуска данных&quot;](#secondarydata-skipping-indices).
+* **Оптимизация словарей** - В схемах по умолчанию для хранения атрибутов используется тип Map. Эти столбцы позволяют хранить произвольные метаданные. Хотя это важная возможность, поскольку метаданные событий часто заранее не определены и потому иначе не могут быть сохранены в строго типизированной базе данных, такой как ClickHouse, доступ к ключам словарей и их значениям менее эффективен, чем доступ к обычному столбцу. Мы решаем это, изменяя схему и вынося наиболее часто используемые ключи словарей в столбцы верхнего уровня — см. [&quot;Извлечение структуры с помощью SQL&quot;](#extracting-structure-with-sql). Для этого требуется изменить схему.
+* **Упрощение доступа к ключам словарей** - Доступ к ключам в словарях требует более многословного синтаксиса. Это можно упростить с помощью псевдонимов. См. [&quot;Использование псевдонимов&quot;](#using-aliases), чтобы упростить запросы.
+* **Вторичные индексы** - В схеме по умолчанию используются вторичные индексы для ускорения доступа к словарям и текстовых запросов. Обычно они не требуются и занимают дополнительное место на диске. Их можно использовать, но следует проверить, действительно ли они нужны. См. [&quot;Вторичные / индексы пропуска данных&quot;](#secondarydata-skipping-indices).
 * **Использование кодеков** - Возможно, вы захотите настроить кодеки для столбцов, если понимаете характер ожидаемых данных и у вас есть подтверждение, что это улучшает сжатие.
 
 *Ниже мы подробно описываем каждый из перечисленных выше сценариев использования.*
@@ -23,14 +23,14 @@ doc_type: 'guide'
 <Tip>
   **ClickStack поставляется с оптимизированной схемой по умолчанию**
 
-  **ClickStack предоставляет готовые схемы для журналов, трассировок и метрик**, в которых используются новейшие возможности ClickHouse (текстовые индексы для полнотекстового поиска и поиска по ключам Map, материализованные столбцы и массивы ALIAS для фильтрации с прямым чтением, поиск строк по номеру блока) и которые по результатам бенчмарков обеспечивают высокую производительность «из коробки» для рабочих нагрузок журналирования и трассировки. Используйте их как ориентир при разработке собственной схемы.
+  **ClickStack предоставляет готовые схемы для журналов, трассировок и метрик**, в которых используются новейшие возможности ClickHouse (текстовые индексы для полнотекстового поиска и поиска по ключам словарей, материализованные столбцы и массивы ALIAS для фильтрации с прямым чтением, поиск строк по номеру блока) и которые по результатам бенчмарков обеспечивают высокую производительность «из коробки» для рабочих нагрузок журналирования и трассировки. Используйте их как ориентир при разработке собственной схемы.
 
   * Канонический DDL: [Таблицы и схемы, используемые ClickStack](/ru/clickstack/ingesting-data/schemas).
   * Рецепты оптимизации: [Настройка производительности ClickStack](/ru/clickstack/managing/performance-tuning). Многие рекомендации на этой странице (материализованные столбцы, индекс пропуска данных, выбор первичного ключа, проекции, materialized view) напрямую применимы и к самостоятельной настройке.
 </Tip>
 
 <div id="extracting-structure-with-sql">
-  ## Извлечение структуры с помощью SQL
+  ## Извлечение структуры с помощью SQL {#extracting-structure-with-sql}
 </div>
 
 При приёме структурированных и неструктурированных журналов пользователям часто требуется возможность:
@@ -173,9 +173,7 @@ LIMIT 5
   Вы также можете выполнять обработку с помощью процессоров и операторов OTel коллектор, как описано [здесь](/ru/guides/use-cases/observability/build-your-own/integrating-opentelemetry#processing---filtering-transforming-and-enriching). В большинстве случаев ClickHouse будет значительно эффективнее по ресурсам и быстрее, чем процессоры коллектор. Основной недостаток выполнения всей обработки событий в SQL — привязка вашего решения к ClickHouse. Например, вы можете захотеть отправлять обработанные журналы из OTel коллектор в другие пункты назначения, например в S3.
 </Info>
 
-<div id="materialized-columns">
-  ### Материализованные столбцы
-</div>
+### Материализованные столбцы {#materialized-columns}
 
 Материализованные столбцы — это самый простой способ извлекать структуру из других столбцов. Значения таких столбцов всегда вычисляются во время вставки и не могут быть указаны в запросах INSERT.
 
@@ -187,26 +185,26 @@ LIMIT 5
 
 Материализованные столбцы поддерживают любые выражения ClickHouse и позволяют использовать любые аналитические функции для [обработки строк](/ru/reference/functions/regular-functions/string-functions) (включая [регулярные выражения и поиск](/ru/reference/functions/regular-functions/string-search-functions)) и [URL](/ru/reference/functions/regular-functions/url-functions), выполнять [преобразования типов](/ru/reference/functions/regular-functions/type-conversion-functions), [извлекать значения из JSON](/ru/reference/functions/regular-functions/json-functions) и [математические операции](/ru/reference/functions/regular-functions/math-functions).
 
-Мы рекомендуем материализованные столбцы для базовой обработки. Они особенно полезны для извлечения значений из Map, выноса их в столбцы верхнего уровня и преобразования типов. Чаще всего они наиболее полезны в очень простых схемах или в сочетании с materialized view. Рассмотрим следующую схему для журналов, в которой JSON был извлечён коллектором в столбец `LogAttributes`:
+Мы рекомендуем материализованные столбцы для базовой обработки. Они особенно полезны для извлечения значений из словарей, выноса их в столбцы верхнего уровня и преобразования типов. Чаще всего они наиболее полезны в очень простых схемах или в сочетании с materialized view. Рассмотрим следующую схему для журналов, в которой JSON был извлечён коллектором в столбец `LogAttributes`:
 
 ```sql
 CREATE TABLE otel_logs
 (
-        `Timestamp` DateTime64(9) CODEC(Delta(8), ZSTD(1)),
-        `TraceId` String CODEC(ZSTD(1)),
-        `SpanId` String CODEC(ZSTD(1)),
-        `TraceFlags` UInt32 CODEC(ZSTD(1)),
-        `SeverityText` LowCardinality(String) CODEC(ZSTD(1)),
-        `SeverityNumber` Int32 CODEC(ZSTD(1)),
-        `ServiceName` LowCardinality(String) CODEC(ZSTD(1)),
-        `Body` String CODEC(ZSTD(1)),
-        `ResourceSchemaUrl` String CODEC(ZSTD(1)),
-        `ResourceAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(1)),
-        `ScopeSchemaUrl` String CODEC(ZSTD(1)),
-        `ScopeName` String CODEC(ZSTD(1)),
-        `ScopeVersion` String CODEC(ZSTD(1)),
-        `ScopeAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(1)),
-        `LogAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(1)),
+        `Timestamp` DateTime64(9) CODEC(Delta, Default),
+        `TraceId` String,
+        `SpanId` String,
+        `TraceFlags` UInt32,
+        `SeverityText` LowCardinality(String),
+        `SeverityNumber` Int32,
+        `ServiceName` LowCardinality(String),
+        `Body` String,
+        `ResourceSchemaUrl` String,
+        `ResourceAttributes` Map(LowCardinality(String), String),
+        `ScopeSchemaUrl` String,
+        `ScopeName` String,
+        `ScopeVersion` String,
+        `ScopeAttributes` Map(LowCardinality(String), String),
+        `LogAttributes` Map(LowCardinality(String), String),
         `RequestPage` String MATERIALIZED path(LogAttributes['request_path']),
         `RequestType` LowCardinality(String) MATERIALIZED LogAttributes['request_type'],
         `RefererDomain` String MATERIALIZED domain(LogAttributes['referer'])
@@ -218,7 +216,7 @@ ORDER BY (ServiceName, SeverityText, toUnixTimestamp(Timestamp), TraceId)
 
 Эквивалентную схему для извлечения данных из `Body` типа String с помощью JSON-функций можно найти [здесь](https://pastila.nl/?005cbb97/513b174a7d6114bf17ecc657428cf829#gqoOOiomEjIiG6zlWhE+Sg==).
 
-Наши три материализованных столбца извлекают страницу запроса, тип запроса и домен реферера. Они обращаются к ключам в map и применяют функции к их значениям. В результате следующий запрос выполняется значительно быстрее:
+Наши три материализованных столбца извлекают страницу запроса, тип запроса и домен реферера. Они обращаются к ключам в словаре и применяют функции к их значениям. В результате следующий запрос выполняется значительно быстрее:
 
 ```sql
 SELECT RequestPage AS path, count() AS c
@@ -238,30 +236,24 @@ LIMIT 5
 │ /site/productModelImages │ 10866 │
 └──────────────────────────┴───────┘
 
-5 строк в наборе. Прошло: 0.173 сек. Обработано 10.37 миллиона строк, 418.03 МБ (60.07 миллиона строк/с., 2.42 ГБ/с.)
-Пиковое использование памяти: 3.16 МиБ.
+5 rows in set. Elapsed: 0.173 sec. Processed 10.37 million rows, 418.03 MB (60.07 million rows/s., 2.42 GB/s.)
+Peak memory usage: 3.16 MiB.
 ```
 
 <Note>
   Материализованные столбцы по умолчанию не включаются в результат `SELECT *`. Это сделано для сохранения инварианта: результат `SELECT *` всегда можно вставить обратно в таблицу с помощью INSERT. Это поведение можно отключить, установив `asterisk_include_materialized_columns=1`; его также можно включить в Grafana (см. `Additional Settings -> Custom Settings` в конфигурации источника данных).
 </Note>
 
-<div id="materialized-views">
-  ## Materialized views
-</div>
+## Materialized views {#materialized-views}
 
 [Materialized views](/ru/concepts/features/materialized-views/index) дают более широкие возможности для применения SQL-фильтрации и преобразований к журналам и трассировкам.
 
 Materialized Views позволяют перенести вычислительные затраты с этапа выполнения запроса на этап вставки. Materialized view в ClickHouse — это просто триггер, который запускает запрос на блоках данных по мере их вставки в таблицу. Результаты этого запроса вставляются во вторую, «целевую», таблицу.
 
 <div className="ch-image-md">
-
-<Frame>
-
-![Materialized view](/images/use-cases/observability/observability-10.webp)
-
-</Frame>
-
+  <Frame>
+    ![Materialized view](/images/use-cases/observability/observability-10.webp)
+  </Frame>
 </div>
 
 <Info>
@@ -274,30 +266,30 @@ Materialized Views позволяют перенести вычислитель�
 
 Следует помнить, что запрос — это всего лишь триггер, который выполняется над строками, вставляемыми в таблицу (исходную таблицу), а результаты отправляются в новую таблицу (целевую таблицу).
 
-Чтобы не сохранять данные дважды (в исходной и целевой таблицах), мы можем изменить движок исходной таблицы на [Null table engine](/ru/reference/engines/table-engines/special/null), сохранив исходную схему. Наши OTel коллекторы продолжат отправлять данные в эту таблицу. Например, для журналов таблица `otel_logs` будет выглядеть так:
+Чтобы не сохранять данные дважды (в исходной и целевой таблицах), мы можем изменить движок исходной таблицы на [движок таблиц Null](/ru/reference/engines/table-engines/special/null), сохранив исходную схему. Наши OTel коллекторы продолжат отправлять данные в эту таблицу. Например, для журналов таблица `otel_logs` будет выглядеть так:
 
 ```sql
 CREATE TABLE otel_logs
 (
-        `Timestamp` DateTime64(9) CODEC(Delta(8), ZSTD(1)),
-        `TraceId` String CODEC(ZSTD(1)),
-        `SpanId` String CODEC(ZSTD(1)),
-        `TraceFlags` UInt32 CODEC(ZSTD(1)),
-        `SeverityText` LowCardinality(String) CODEC(ZSTD(1)),
-        `SeverityNumber` Int32 CODEC(ZSTD(1)),
-        `ServiceName` LowCardinality(String) CODEC(ZSTD(1)),
-        `Body` String CODEC(ZSTD(1)),
-        `ResourceSchemaUrl` String CODEC(ZSTD(1)),
-        `ResourceAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(1)),
-        `ScopeSchemaUrl` String CODEC(ZSTD(1)),
-        `ScopeName` String CODEC(ZSTD(1)),
-        `ScopeVersion` String CODEC(ZSTD(1)),
-        `ScopeAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(1)),
-        `LogAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(1))
+        `Timestamp` DateTime64(9) CODEC(Delta, Default),
+        `TraceId` String,
+        `SpanId` String,
+        `TraceFlags` UInt32,
+        `SeverityText` LowCardinality(String),
+        `SeverityNumber` Int32,
+        `ServiceName` LowCardinality(String),
+        `Body` String,
+        `ResourceSchemaUrl` String,
+        `ResourceAttributes` Map(LowCardinality(String), String),
+        `ScopeSchemaUrl` String,
+        `ScopeName` String,
+        `ScopeVersion` String,
+        `ScopeAttributes` Map(LowCardinality(String), String),
+        `LogAttributes` Map(LowCardinality(String), String)
 ) ENGINE = Null
 ```
 
-Движок таблицы Null — это мощная оптимизация: считайте, что это `/dev/null`. Эта таблица не хранит данные, но все подключённые materialized view по-прежнему будут выполняться для вставляемых строк, прежде чем те будут отброшены.
+Движок таблиц Null — это мощная оптимизация: считайте, что это `/dev/null`. Эта таблица не хранит данные, но все подключённые materialized view по-прежнему будут выполняться для вставляемых строк, прежде чем те будут отброшены.
 
 Рассмотрим следующий запрос. Он преобразует наши строки в формат, который мы хотим сохранить, извлекая все столбцы из `LogAttributes` (предполагается, что это поле задаётся коллектором с помощью оператора `json_parser`), устанавливая `SeverityText` и `SeverityNumber` (на основе нескольких простых условий и определения [этих столбцов](https://opentelemetry.io/docs/specs/otel/logs/data-model/#field-severitytext)). В этом случае мы также выбираем только те столбцы, которые, как мы знаем, будут заполнены, игнорируя такие столбцы, как `TraceId`, `SpanId` и `TraceFlags`.
 
@@ -354,7 +346,7 @@ SeverityNumber:  9
 <Info>
   **Условные выражения**
 
-  Обратите внимание на использование [условных выражений](/ru/reference/functions/regular-functions/conditional-functions) выше для извлечения `SeverityText` и `SeverityNumber`. Они чрезвычайно полезны для построения сложных условий и проверки того, заданы ли значения в maps — здесь мы наивно предполагаем, что все ключи существуют в `LogAttributes`. Рекомендуем хорошо с ними ознакомиться: при парсинге логов они очень выручают, наряду с функциями для обработки [NULL-значений](/ru/reference/functions/regular-functions/functions-for-nulls)!
+  Обратите внимание на использование [условных выражений](/ru/reference/functions/regular-functions/conditional-functions) выше для извлечения `SeverityText` и `SeverityNumber`. Они чрезвычайно полезны для построения сложных условий и проверки того, заданы ли значения в словарях — здесь мы наивно предполагаем, что все ключи существуют в `LogAttributes`. Рекомендуем хорошо с ними ознакомиться: при разборе журналов они очень выручают, наряду с функциями для обработки [NULL-значений](/ru/reference/functions/regular-functions/functions-for-nulls)!
 </Info>
 
 Нам потребуется таблица для хранения этих результатов. Приведённая ниже целевая таблица соответствует указанному выше запросу:
@@ -384,13 +376,13 @@ ENGINE = MergeTree
 ORDER BY (ServiceName, Timestamp)
 ```
 
-Выбранные здесь типы основаны на оптимизациях, описанных в разделе [«Оптимизация типов»](#optimizing-types).
+Выбранные здесь типы основаны на оптимизациях, описанных в разделе [&quot;Оптимизация типов&quot;](#optimizing-types).
 
 <Note>
-  Обратите внимание, насколько сильно мы изменили схему. На практике у вас, скорее всего, будут и столбцы Trace, которые тоже стоит сохранить, а также столбец `ResourceAttributes` (обычно в нём содержатся метаданные Kubernetes). Grafana может использовать столбцы Trace, чтобы связывать журналы и трейсы — см. [&quot;Использование Grafana&quot;](/ru/guides/use-cases/observability/build-your-own/grafana).
+  Обратите внимание, насколько сильно мы изменили схему. На практике у вас, скорее всего, будут и столбцы Trace, которые тоже стоит сохранить, а также столбец `ResourceAttributes` (обычно в нём содержатся метаданные Kubernetes). Grafana может использовать столбцы Trace, чтобы связывать журналы и трассировки — см. [&quot;Использование Grafana&quot;](/ru/guides/use-cases/observability/build-your-own/grafana).
 </Note>
 
-Ниже мы создаём materialized view `otel_logs_mv`, которое выполняет приведённый выше запрос SELECT для таблицы `otel_logs` и отправляет результаты в `otel_logs_v2`.
+Ниже мы создаём materialized view `otel_logs_mv`, которое выполняет приведённый выше запрос SELECT для таблицы `otel_logs` и записывает результаты в `otel_logs_v2`.
 
 ```sql
 CREATE MATERIALIZED VIEW otel_logs_mv TO otel_logs_v2 AS
@@ -418,13 +410,9 @@ FROM otel_logs
 Это показано ниже:
 
 <div className="ch-image-md">
-
-<Frame>
-
-![Otel MV](/images/use-cases/observability/observability-11.webp)
-
-</Frame>
-
+  <Frame>
+    ![Otel MV](/images/use-cases/observability/observability-11.webp)
+  </Frame>
 </div>
 
 Если теперь перезапустить конфигурацию коллектор, использованную в [&quot;Экспорт в ClickHouse&quot;](/ru/guides/use-cases/observability/build-your-own/integrating-opentelemetry#exporting-to-clickhouse), данные появятся в `otel_logs_v2` в нужном нам формате. Обратите внимание на использование типизированных функций извлечения из JSON.
@@ -485,7 +473,7 @@ FROM otel_logs
 ```
 
 <div id="beware-types">
-  ### Будьте осторожны с типами
+  ### Будьте осторожны с типами {#beware-types}
 </div>
 
 Приведённые выше materialized view опираются на неявное приведение типов — особенно при использовании map `LogAttributes`. ClickHouse часто автоматически приводит извлечённое значение к типу целевой таблицы, что позволяет упростить синтаксис. Однако мы рекомендуем всегда проверять свои view: выполнять оператор `SELECT` из view вместе с оператором [`INSERT INTO`](/ru/reference/statements/insert-into) для целевой таблицы с той же схемой. Это поможет убедиться, что типы обрабатываются корректно. Особое внимание стоит обратить на следующие случаи:
@@ -501,7 +489,7 @@ FROM otel_logs
 </Info>
 
 <div id="choosing-a-primary-ordering-key">
-  ## Выбор первичного ключа (ключа сортировки)
+  ## Выбор первичного ключа (ключа сортировки) {#choosing-a-primary-ordering-key}
 </div>
 
 После того как вы извлекли нужные столбцы, можно переходить к оптимизации ключа сортировки/первичного ключа.
@@ -524,7 +512,7 @@ FROM otel_logs
 </Info>
 
 <div id="using-maps">
-  ## Использование Map
+  ## Использование Map {#using-maps}
 </div>
 
 В предыдущих примерах показано, как использовать синтаксис `map['key']` для доступа к значениям в столбцах типа `Map(String, String)`. Помимо нотации map для доступа к вложенным ключам, в ClickHouse также доступны специализированные [функции для map](/ru/reference/functions/regular-functions/tuple-map-functions#mapKeys), которые позволяют фильтровать или выбирать данные из этих столбцов.
@@ -552,9 +540,7 @@ Peak memory usage: 71.90 MiB.
   Мы не рекомендуем использовать точки в именах столбцов Map и в будущем можем отказаться от их поддержки. Используйте `_`.
 </Info>
 
-<div id="using-aliases">
-  ## Использование псевдонимов
-</div>
+## Использование псевдонимов {#using-aliases}
 
 Запросы к типам Map выполняются медленнее, чем запросы к обычным столбцам — см. [&quot;Ускорение запросов&quot;](#accelerating-queries). Кроме того, их синтаксис сложнее, и писать такие запросы может быть неудобно. Чтобы решить эту проблему, мы рекомендуем использовать столбцы ALIAS.
 
@@ -563,21 +549,21 @@ Peak memory usage: 71.90 MiB.
 ```sql
 CREATE TABLE otel_logs
 (
-        `Timestamp` DateTime64(9) CODEC(Delta(8), ZSTD(1)),
-        `TraceId` String CODEC(ZSTD(1)),
-        `SpanId` String CODEC(ZSTD(1)),
-        `TraceFlags` UInt32 CODEC(ZSTD(1)),
-        `SeverityText` LowCardinality(String) CODEC(ZSTD(1)),
-        `SeverityNumber` Int32 CODEC(ZSTD(1)),
-        `ServiceName` LowCardinality(String) CODEC(ZSTD(1)),
-        `Body` String CODEC(ZSTD(1)),
-        `ResourceSchemaUrl` String CODEC(ZSTD(1)),
-        `ResourceAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(1)),
-        `ScopeSchemaUrl` String CODEC(ZSTD(1)),
-        `ScopeName` String CODEC(ZSTD(1)),
-        `ScopeVersion` String CODEC(ZSTD(1)),
-        `ScopeAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(1)),
-        `LogAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(1)),
+        `Timestamp` DateTime64(9) CODEC(Delta, Default),
+        `TraceId` String,
+        `SpanId` String,
+        `TraceFlags` UInt32,
+        `SeverityText` LowCardinality(String),
+        `SeverityNumber` Int32,
+        `ServiceName` LowCardinality(String),
+        `Body` String,
+        `ResourceSchemaUrl` String,
+        `ResourceAttributes` Map(LowCardinality(String), String),
+        `ScopeSchemaUrl` String,
+        `ScopeName` String,
+        `ScopeVersion` String,
+        `ScopeAttributes` Map(LowCardinality(String), String),
+        `LogAttributes` Map(LowCardinality(String), String),
         `RequestPath` String MATERIALIZED path(LogAttributes['request_path']),
         `RequestType` LowCardinality(String) MATERIALIZED LogAttributes['request_type'],
         `RefererDomain` String MATERIALIZED domain(LogAttributes['referer']),
@@ -638,13 +624,13 @@ LIMIT 5
 </Info>
 
 <div id="optimizing-types">
-  ## Оптимизация типов
+  ## Оптимизация типов {#optimizing-types}
 </div>
 
 Для ClickHouse применимы [общие рекомендации по оптимизации типов](/ru/guides/clickhouse/data-modelling/schema-design#optimizing-types).
 
 <div id="using-codecs">
-  ## Использование кодеков
+  ## Использование кодеков {#using-codecs}
 </div>
 
 Помимо оптимизаций типов, при попытке оптимизировать сжатие для схем обсервабилити в ClickHouse вы можете следовать [общим рекомендациям по выбору кодеков](/ru/guides/clickhouse/data-modelling/compression/compression-in-clickhouse#choosing-the-right-column-compression-codec).
@@ -653,20 +639,14 @@ LIMIT 5
 
 Кроме того, хотя временные метки выигрывают от дельта-кодирования с точки зрения сжатия, если этот столбец используется в первичном ключе/ключе сортировки, это может приводить к снижению производительности запросов. Мы рекомендуем оценить соответствующий компромисс между степенью сжатия и производительностью запросов.
 
-<div id="using-dictionaries">
-  ## Использование словарей
-</div>
+## Использование словарей {#using-dictionaries}
 
 [Словари](/ru/reference/statements/create/dictionary) — одна из [ключевых возможностей](https://clickhouse.com/blog/faster-queries-dictionaries-clickhouse) ClickHouse: они предоставляют хранящееся в памяти представление данных в формате [ключ-значение](https://en.wikipedia.org/wiki/Key%E2%80%93value_database), поступающих из различных внутренних и внешних [источников](/ru/reference/statements/create/dictionary/sources/overview#dictionary-sources), оптимизированное для запросов с поиском по ключу со сверхнизкой задержкой.
 
 <div className="ch-image-md">
-
-<Frame>
-
-![Обсервабилити и словари](/images/use-cases/observability/observability-12.webp)
-
-</Frame>
-
+  <Frame>
+    ![Обсервабилити и словари](/images/use-cases/observability/observability-12.webp)
+  </Frame>
 </div>
 
 Это удобно в самых разных сценариях: от обогащения принимаемых данных на лету без замедления процесса ингестии до общего повышения производительности запросов, особенно при использовании JOIN.
@@ -679,7 +659,7 @@ LIMIT 5
 </Info>
 
 <div id="insert-time-vs-query-time">
-  ### При вставке vs при выполнении запроса
+  ### При вставке vs при выполнении запроса {#insert-time-vs-query-time}
 </div>
 
 Словари можно использовать для обогащения датасетов как при выполнении запроса, так и при вставке. У каждого из этих подходов есть свои плюсы и минусы. Кратко:
@@ -692,7 +672,7 @@ LIMIT 5
 Примеры простого обогащения смотрите в руководстве по словарям [здесь](/ru/concepts/features/dictionaries/index). Ниже мы сосредоточимся на распространённых задачах обогащения в обсервабилити.
 
 <div id="using-ip-dictionaries">
-  ### Использование IP-словарей
+  ### Использование IP-словарей {#using-ip-dictionaries}
 </div>
 
 Геообогащение журналов и трасс значениями широты и долготы по IP-адресам — типичное требование для обсервабилити. Этого можно добиться с помощью структурированного словаря `ip_trie`.
@@ -799,7 +779,7 @@ CREATE TABLE geoip
         `country_code` String
 )
 ENGINE = MergeTree
-ORDER BY cidr
+ORDER BY cidr;
 
 INSERT INTO geoip
 WITH
@@ -815,7 +795,7 @@ SELECT
 FROM geoip_url
 ```
 
-Чтобы выполнять в ClickHouse быстрые IP lookup-операции с низкой задержкой, мы будем использовать словари для хранения в памяти сопоставления ключ -&gt; атрибуты для наших GeoIP-данных. ClickHouse предоставляет `ip_trie` [структуру словаря](/ru/reference/statements/create/dictionary/layouts/ip-trie), чтобы сопоставлять наши сетевые префиксы (CIDR-блоки) с координатами и кодами стран. Следующий запрос задаёт словарь с этой структурой и использует указанную выше таблицу в качестве источника.
+Чтобы выполнять в ClickHouse быстрые IP-операции поиска с низкой задержкой, мы будем использовать словари для хранения в памяти сопоставления ключ -&gt; атрибуты для наших GeoIP-данных. ClickHouse предоставляет `ip_trie` [структуру словаря](/ru/reference/statements/create/dictionary/layouts/ip-trie), чтобы сопоставлять наши сетевые префиксы (CIDR-блоки) с координатами и кодами стран. Следующий запрос задаёт словарь с этой структурой и использует указанную выше таблицу в качестве источника.
 
 ```sql
 CREATE DICTIONARY ip_trie (
@@ -863,7 +843,7 @@ SELECT dictGet('ip_trie', ('country_code', 'latitude', 'longitude'), CAST('85.24
 │ ('PT',38.7944,-9.34284) │
 └─────────────────────────┘
 
-1 строка в наборе. Elapsed: 0.003 sec.
+1 row in set. Elapsed: 0.003 sec.
 ```
 
 Обратите внимание на скорость получения данных. Это позволяет нам обогащать журналы. В данном случае мы выбираем **выполнять обогащение на этапе выполнения запроса**.
@@ -931,11 +911,9 @@ ORDER BY (ServiceName, Timestamp)
 
 Указанные выше страны и координаты позволяют визуализировать данные не только с группировкой и фильтрацией по странам. Для примера см. [&quot;Visualizing geo data&quot;](/ru/guides/use-cases/observability/build-your-own/grafana#visualizing-geo-data).
 
-<div id="using-regex-dictionaries-user-agent-parsing">
-  ### Использование словарей на основе регулярных выражений (разбор user-agent)
-</div>
+### Использование словарей на основе регулярных выражений (разбор user-agent) {#using-regex-dictionaries-user-agent-parsing}
 
-Разбор [строк user-agent](https://en.wikipedia.org/wiki/User_agent) — классическая задача для регулярных выражений и распространённое требование для наборов данных на основе логов и трасс. ClickHouse обеспечивает эффективный разбор user-agent с помощью словарей на основе дерева регулярных выражений.
+Разбор [строк user-agent](https://en.wikipedia.org/wiki/User_agent) — классическая задача для регулярных выражений и распространённое требование для наборов данных на основе журналов и трасс. ClickHouse обеспечивает эффективный разбор user-agent с помощью словарей на основе дерева регулярных выражений.
 
 Словари на основе дерева регулярных выражений в ClickHouse open-source определяются с использованием типа источника словаря YAMLRegExpTree, который задаёт путь к YAML-файлу, содержащему дерево регулярных выражений. Если вы хотите использовать собственный словарь регулярных выражений, подробные сведения о требуемой структуре приведены [здесь](/ru/reference/statements/create/dictionary/layouts/regexp-tree#use-regular-expression-tree-dictionary-in-clickhouse-open-source). Ниже мы сосредоточимся на разборе user-agent с помощью [uap-core](https://github.com/ua-parser/uap-core) и загрузим наш словарь в поддерживаемом CSV-формате. Этот подход совместим с OSS и ClickHouse Cloud.
 
@@ -985,6 +963,10 @@ INSERT INTO regexp_browser SELECT * FROM s3('https://datasets-documentation.s3.e
 ```
 
 После заполнения наших таблиц в памяти мы можем загрузить словари регулярных выражений. Обратите внимание, что значения ключей нужно указать в виде столбцов — это будут атрибуты, которые мы сможем извлекать из User-Agent.
+
+<Note title="ClickHouse Cloud">
+  При создании словаря, получающего данные из таблицы ClickHouse, укажите в секции `SOURCE` имя пользователя и пароль выделенного пользователя. Этому пользователю требуется разрешение `SELECT` на исходную таблицу. См. [пример источника для словаря ClickHouse](/ru/reference/statements/create/dictionary/sources/clickhouse).
+</Note>
 
 ```sql
 CREATE DICTIONARY regexp_os_dict
@@ -1128,7 +1110,7 @@ Os:     ('Other','0','0','0')
 </Info>
 
 <div id="further-reading">
-  ### Дополнительные материалы
+  ### Дополнительные материалы {#further-reading}
 </div>
 
 Чтобы увидеть больше примеров и подробнее ознакомиться со словарями, рекомендуем следующие статьи:
@@ -1138,13 +1120,13 @@ Os:     ('Other','0','0','0')
 * [Словари](/ru/reference/statements/create/dictionary)
 
 <div id="accelerating-queries">
-  ## Ускорение запросов
+  ## Ускорение запросов {#accelerating-queries}
 </div>
 
 ClickHouse поддерживает ряд способов ускорения запросов. Приведённые ниже методы стоит рассматривать только после выбора подходящего основного/сортировочного ключа, чтобы оптимизировать наиболее распространённые сценарии доступа к данным и добиться максимального сжатия. Обычно именно это даёт наибольший прирост производительности при минимальных усилиях.
 
 <div id="using-materialized-views-incremental-for-aggregations">
-  ### Использование Materialized views (incremental) для агрегаций
+  ### Использование Materialized views (incremental) для агрегаций {#using-materialized-views-incremental-for-aggregations}
 </div>
 
 В предыдущих разделах мы рассмотрели использование Materialized views для преобразования и фильтрации данных. Однако Materialized views также можно использовать для предварительного вычисления агрегаций при вставке и сохранения результата. Этот результат можно обновлять данными из последующих вставок, что фактически позволяет заранее вычислять агрегации уже на этапе вставки.
@@ -1283,7 +1265,7 @@ LIMIT 5
 </Note>
 
 <div id="a-more-complex-example">
-  #### Более сложный пример
+  #### Более сложный пример {#a-more-complex-example}
 </div>
 
 В приведенном выше примере выполняется простое агрегирование количества по часам с использованием [SummingMergeTree](/ru/reference/engines/table-engines/mergetree-family/summingmergetree). Для статистики, выходящей за рамки простых сумм, нужен другой движок целевой таблицы: [AggregatingMergeTree](/ru/reference/engines/table-engines/mergetree-family/aggregatingmergetree).
@@ -1370,7 +1352,7 @@ ORDER BY Hour DESC
 Обратите внимание: здесь мы используем `GROUP BY`, а не `FINAL`.
 
 <div id="using-materialized-views-incremental--for-fast-lookups">
-  ### Использование materialized views (incremental)  для быстрого поиска
+  ### Использование materialized views (incremental)  для быстрого поиска {#using-materialized-views-incremental--for-fast-lookups}
 </div>
 
 При выборе ключа сортировки в ClickHouse следует учитывать типичные паттерны доступа и включать в него столбцы, которые часто используются в секциях фильтрации и агрегации. В сценариях обсервабилити это может быть ограничением, поскольку у пользователей паттерны доступа более разнообразны и их нельзя выразить одним набором столбцов. Это хорошо видно на примере, встроенном в схемы OTel по умолчанию. Рассмотрим схему по умолчанию для трасс:
@@ -1475,13 +1457,11 @@ LIMIT 1000
 
 Этот же подход можно применять и для похожих сценариев доступа. Мы рассматриваем аналогичный пример в разделе «Моделирование данных» [здесь](/ru/concepts/features/materialized-views/incremental-materialized-view#lookup-table).
 
-<div id="using-projections">
-  ### Использование проекций
-</div>
+### Использование проекций {#using-projections}
 
 Проекции ClickHouse позволяют задавать для таблицы несколько секций `ORDER BY`.
 
-В предыдущих разделах мы рассматривали, как materialized view можно использовать в ClickHouse для предварительного вычисления агрегаций, преобразования строк и оптимизации запросов обсервабилити для разных сценариев доступа.
+В предыдущих разделах мы рассматривали, как materialized view можно использовать в ClickHouse для предварительного вычисления агрегаций, преобразования строк и оптимизации запросов обсервабилити для разных шаблонов доступа.
 
 Мы приводили пример, в котором materialized view отправляет строки в целевую таблицу с другим ключом сортировки, чем у исходной таблицы, принимающей вставки, чтобы оптимизировать поиск по trace ID.
 
@@ -1492,17 +1472,13 @@ LIMIT 1000
 <Info>
   **Проекции и materialized view**
 
-  Проекции предоставляют многие из тех же возможностей, что и materialized view, но использовать их следует с осторожностью, поскольку во многих случаях предпочтительнее именно materialized view. Важно понимать их недостатки и когда их уместно применять. Например, хотя проекции можно использовать для предварительного вычисления агрегаций, для этого мы рекомендуем использовать Materialized views.
+  Проекции предоставляют многие из тех же возможностей, что и materialized view, но использовать их следует с осторожностью, поскольку во многих случаях предпочтительнее именно materialized view. Важно понимать их недостатки и когда их уместно применять. Например, хотя проекции можно использовать для предварительного вычисления агрегаций, для этого мы рекомендуем использовать materialized view.
 </Info>
 
 <div className="ch-image-md">
-
-<Frame>
-
-![Обсервабилити и проекции](/images/use-cases/observability/observability-13.webp)
-
-</Frame>
-
+  <Frame>
+    ![Обсервабилити и проекции](/images/use-cases/observability/observability-13.webp)
+  </Frame>
 </div>
 
 Рассмотрим следующий запрос, который фильтрует нашу таблицу `otel_logs_v2` по кодам ошибок 500. Вероятно, это распространенный сценарий для журналирования, когда пользователи хотят фильтровать данные по кодам ошибок:
@@ -1518,7 +1494,7 @@ FORMAT `Null`
 Ok.
 
 0 rows in set. Elapsed: 0.177 sec. Processed 10.37 million rows, 685.32 MB (58.66 million rows/s., 3.88 GB/s.)
-пиковое потребление памяти: 56.54 MiB.
+Peak memory usage: 56.54 MiB.
 ```
 
 <Info>
@@ -1605,7 +1581,7 @@ FORMAT `Null`
 В приведённом выше примере мы указываем в проекции столбцы, использованные в предыдущем запросе. Это означает, что на диске как часть проекции будут храниться только эти столбцы, отсортированные по Status. Если же вместо этого использовать здесь `SELECT *`, будут сохранены все столбцы. Это позволит большему числу запросов (использующих любое подмножество столбцов) воспользоваться проекцией, но потребует дополнительного места на диске. О том, как измерить дисковое пространство и степень сжатия, см. [&quot;Измерение размера таблицы и степени сжатия&quot;](#measuring-table-size--compression).
 
 <div id="secondarydata-skipping-indices">
-  ### Вторичные индексы / индексы пропуска данных
+  ### Вторичные индексы / индексы пропуска данных {#secondarydata-skipping-indices}
 </div>
 
 Как бы хорошо ни был настроен первичный ключ в ClickHouse, некоторые запросы неизбежно потребуют полного сканирования таблицы. Хотя это можно частично компенсировать с помощью materialized view (а для некоторых запросов — и проекций), они требуют дополнительного сопровождения, а пользователи должны знать об их наличии, чтобы действительно их задействовать. Если в традиционных реляционных базах данных эта задача решается вторичными индексами, то в столбцовых базах данных, таких как ClickHouse, они неэффективны. Вместо этого ClickHouse использует индексы &quot;Skip&quot;, которые могут значительно повысить производительность запросов, позволяя базе данных пропускать большие фрагменты данных, в которых нет подходящих значений.
@@ -1617,7 +1593,7 @@ FORMAT `Null`
 **В целом они эффективны, когда существует сильная корреляция между первичным ключом и целевым непервичным столбцом/выражением, а пользователи ищут редкие значения, то есть такие, которые встречаются лишь в небольшом числе гранул.**
 
 <div id="text-index-for-full-text-search">
-  ### Текстовый индекс для полнотекстового поиска
+  ### Текстовый индекс для полнотекстового поиска {#text-index-for-full-text-search}
 </div>
 
 ClickHouse предоставляет специализированный [текстовый индекс](/ru/reference/engines/table-engines/mergetree-family/textindexes) для полнотекстового поиска.
@@ -1680,7 +1656,7 @@ Query id: ff0b866c-6df7-47be-9e36-795ef3888169
 ```
 
 <div id="adding-a-text-index">
-  #### Добавление текстового индекса
+  #### Добавление текстового индекса {#adding-a-text-index}
 </div>
 
 Текстовый индекс для столбца Body можно добавить при создании таблицы:
@@ -1740,7 +1716,7 @@ Query id: ebc31a94-92b3-48aa-860a-939d7e788ef4
 ```
 
 <div id="using-a-preprocessor">
-  #### Использование препроцессора
+  #### Использование препроцессора {#using-a-preprocessor}
 </div>
 
 В этом наборе данных столбец Body содержит строку в формате JSON с несколькими парами ключ-значение (например, `msg`, `id`, `ctx`, `attr` и т. д.).
@@ -2011,16 +1987,14 @@ Query id: 730e4b77-e697-40b3-a24d-67219ec42075
 </details>
 
 <div id="extracting-from-maps">
-  ### Извлечение из Map
+  ### Извлечение из Map {#extracting-from-maps}
 </div>
 
 Тип Map широко распространен в схемах OTel. В нем и ключи, и значения должны быть одного типа — этого достаточно для метаданных, таких как метки Kubernetes. Имейте в виду: при запросе по вложенному ключу Map загружается весь столбец целиком. Если в Map много ключей, это может заметно ухудшить производительность запроса, поскольку с диска придется читать больше данных, чем если бы этот ключ был вынесен в отдельный столбец.
 
 Если вы часто запрашиваете определенный ключ, подумайте о том, чтобы вынести его в отдельный столбец верхнего уровня. Обычно такая задача возникает уже после развертывания, по мере появления типичных паттернов доступа, и ее бывает сложно предвидеть до выхода в production. О том, как изменить схему после развертывания, см. в разделе [&quot;Управление изменениями схемы&quot;](/ru/guides/use-cases/observability/build-your-own/managing-data#managing-schema-changes).
 
-<div id="measuring-table-size--compression">
-  ## Измерение размера таблицы и степени сжатия
-</div>
+## Измерение размера таблицы и степени сжатия {#measuring-table-size--compression}
 
 Одна из главных причин, по которым ClickHouse используют для обсервабилити, — сжатие.
 

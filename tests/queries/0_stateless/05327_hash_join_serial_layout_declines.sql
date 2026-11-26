@@ -7,6 +7,7 @@
 -- with `HashJoinBuiltWithSerialLayout` and `HashJoinBuiltWithParallelLayout`. `03356_threshold_for_parallel_hash`
 -- tests the hash table statistics of an earlier run.
 
+SET query_plan_remove_unused_joins = 0; -- The joins are what is tested, including the ones whose other side is not read
 SET query_plan_optimize_join_order_randomize = 0;
 SET query_plan_optimize_join_order_limit = 10;
 SET query_plan_join_swap_table = 0;
