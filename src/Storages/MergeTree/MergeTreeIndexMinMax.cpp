@@ -202,7 +202,16 @@ namespace
 
 KeyCondition buildCondition(const IndexDescription & index, const ActionsDAGWithInversionPushDown & filter_dag, ContextPtr context)
 {
-    return KeyCondition{filter_dag, context, index.column_names, index.expression};
+    /// A `NOT IN` atom can skip only a granule that holds one value.
+    return KeyCondition{
+        filter_dag,
+        context,
+        index.column_names,
+        index.expression,
+        /* single_point_ = */ false,
+        /* skip_analysis_ = */ false,
+        /* require_ready_sets_ = */ false,
+        /* require_ready_sets_for_not_in_ = */ true};
 }
 
 }

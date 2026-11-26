@@ -694,7 +694,7 @@ static NullAtomOverChain classifyNullAtomOverChain(const KeyCondition::Monotonic
     {"nullIn", "notNullIn"},
     {"notNullIn", "nullIn"},
     {"globalNullIn", "globalNotNullIn"},
-    {"globalNullNotIn", "globalNullIn"},
+    {"globalNotNullIn", "globalNullIn"},
     {"isNull", "isNotNull"},
     {"isNotNull", "isNull"},
     {"like", "notLike"},
@@ -1855,7 +1855,8 @@ KeyCondition::KeyCondition(
     const ExpressionActionsPtr & key_expr_,
     bool single_point_,
     bool skip_analysis_,
-    bool require_ready_sets_)
+    bool require_ready_sets_,
+    bool require_ready_sets_for_not_in_)
     : num_key_columns(key_column_names_.size())
     , single_point(single_point_)
     , date_time_overflow_behavior_ignore(
@@ -1886,7 +1887,8 @@ KeyCondition::KeyCondition(
         .key_expr = key_expr_,
         .key_subexpr_names = getAllSubexpressionNames(*key_expr_),
         .columns_named_like_key_expressions = getColumnsNamedLikeKeyExpressions(filter_dag, *key_expr_),
-        .require_ready_sets = require_ready_sets_};
+        .require_ready_sets = require_ready_sets_,
+        .require_ready_sets_for_not_in = require_ready_sets_for_not_in_};
 
     if (context->getSettingsRef()[Setting::analyze_index_with_space_filling_curves])
         getAllSpaceFillingCurves(info);
@@ -4383,12 +4385,13 @@ void KeyCondition::prepareSetAtomsForIn(
     if (!future_set)
         return;
 
-    /// `buildOrderedSetInplace` below executes the subquery and consumes its plan. `get()` is non-null
-    /// only for an already-built set, same check as `tryRewriteInTruthyCondition` above.
-    if (info.require_ready_sets && !future_set->get())
-        return;
+    const auto func_name = func.getFunctionName();
+    const bool is_not_in = func_name == "notIn" || func_name == "globalNotIn" || func_name == "notNullIn" || func_name == "globalNotNullIn";
 
-    auto prepared_set = future_set->buildOrderedSetInplace(right_arg.getContext());
+    /// `buildOrderedSetInplace` executes the subquery and consumes its plan.
+    auto prepared_set = info.require_ready_sets || (info.require_ready_sets_for_not_in && is_not_in)
+        ? future_set->getOrderedSetIfAlreadyBuilt(right_arg.getContext())
+        : future_set->buildOrderedSetInplace(right_arg.getContext());
     if (!prepared_set)
         return;
 

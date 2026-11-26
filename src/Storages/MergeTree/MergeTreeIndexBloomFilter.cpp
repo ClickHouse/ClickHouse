@@ -875,7 +875,8 @@ bool MergeTreeIndexConditionBloomFilter::traverseFunction(const RPNBuilderTreeNo
     {
         /// A bloom filter only answers "may be present", so a negated set atom holds for any granule
         /// that has one other value and can never skip one.
-        if (function_name == "notIn" || function_name == "globalNotIn")
+        if (function_name == "notIn" || function_name == "globalNotIn" || function_name == "notNullIn"
+            || function_name == "globalNotNullIn")
             return false;
 
         if (auto future_set = rhs_argument.tryGetPreparedSet(); future_set)

@@ -1,0 +1,21 @@
+minmax, NOT IN (subquery)
+1
+bloom_filter, NOT IN (subquery), transform_null_in = 1
+1
+minmax, IN (subquery) still builds the set
+minmax, NOT (NOT IN (subquery)) is an IN
+minmax, NOT (GLOBAL NOT IN (subquery)), transform_null_in = 1, is an IN
+Parts: 1 | Granules: 3
+Granules: 8/8
+Granules: 3/8
+384
+384
+minmax, NOT IN (literal list) still skips
+Parts: 1 | Granules: 5
+Granules: 8/8
+Granules: 5/8
+results
+640
+640
+640
+640
