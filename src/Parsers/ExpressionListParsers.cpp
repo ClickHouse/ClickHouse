@@ -1392,6 +1392,16 @@ private:
     bool is_operator;
 };
 
+/// The value of a literal element that is folded into an enclosing literal. Moved when nothing else holds the element:
+/// copying a nested collection at every level made folding deeply nested literals quadratic in their depth.
+static Field takeLiteralValue(const ASTPtr & element)
+{
+    auto & value = element->as<ASTLiteral &>().value;
+    if (element->use_count() == 1)
+        return std::move(value);
+    return value;
+}
+
 /// Check if all elements are ASTLiteral nodes without aliases, and their field types
 /// are either scalar or match `allowed_compound_type`. This mirrors the cases that
 /// ParserCollectionOfLiterals handles: same-bracket nesting only (arrays inside arrays,
@@ -1447,15 +1457,27 @@ public:
                 {
                     if (literal->value.getType() == Field::Types::Tuple && elements[0]->tryGetAlias().empty())
                     {
-                        /// Save the tuple value before clearing elements,
+                        /// Take the tuple value before clearing elements,
                         /// because elements.clear() destroys the ASTLiteral
                         /// that owns it.
-                        Tuple tup = literal->value.safeGet<Tuple>();
+                        Tuple tup = takeLiteralValue(elements[0]).safeGet<Tuple>();
                         elements.clear();
-                        elements.reserve(tup.size());
-                        for (auto & elem : tup)
-                            elements.push_back(make_intrusive<ASTLiteral>(std::move(elem)));
                         is_tuple = true;
+
+                        /// When the elements would fold back into a literal, fold the tuple as it is: splitting
+                        /// it at every grouping bracket made deep grouping of a wide tuple quadratic.
+                        auto is_array = [](const Field & elem) { return elem.getType() == Field::Types::Array; };
+                        if (tup.size() >= 2 && std::ranges::none_of(tup, is_array))
+                        {
+                            elements.push_back(make_intrusive<ASTLiteral>(std::move(tup)));
+                            folded_grouped_tuple = true;
+                        }
+                        else
+                        {
+                            elements.reserve(tup.size());
+                            for (auto & elem : tup)
+                                elements.push_back(make_intrusive<ASTLiteral>(std::move(elem)));
+                        }
                         /// Outer parens were grouping (single inner literal-tuple), not tuple delimiters,
                         /// so the resulting literal is parenthesized and must round-trip back to `((1, 2))`.
                         outer_paren_was_grouping = true;
@@ -1476,8 +1498,13 @@ public:
 protected:
     bool getResultImpl(ASTPtr & node) override
     {
+        if (folded_grouped_tuple)
+        {
+            node = std::move(elements[0]);
+            node->setParenthesized(true);
+        }
         // Round brackets can mean priority operator as well as function tuple
-        if (!is_tuple && elements.size() == 1)
+        else if (!is_tuple && elements.size() == 1)
         {
             node = std::move(elements[0]);
             node->setParenthesized(true);
@@ -1490,7 +1517,7 @@ protected:
             Tuple tup;
             tup.reserve(elements.size());
             for (auto & elem : elements)
-                tup.push_back(elem->as<ASTLiteral &>().value);
+                tup.push_back(takeLiteralValue(elem));
             node = make_intrusive<ASTLiteral>(std::move(tup));
             if (outer_paren_was_grouping)
                 node->setParenthesized(true);
@@ -1508,6 +1535,8 @@ protected:
 private:
     bool is_tuple = false;
     bool outer_paren_was_grouping = false;
+    /// `elements` holds the folded literal of a tuple in grouping brackets.
+    bool folded_grouped_tuple = false;
 };
 
 /// Layer for array square brackets operator
@@ -1529,7 +1558,7 @@ protected:
             Array arr;
             arr.reserve(elements.size());
             for (auto & elem : elements)
-                arr.push_back(elem->as<ASTLiteral &>().value);
+                arr.push_back(takeLiteralValue(elem));
             node = make_intrusive<ASTLiteral>(std::move(arr));
         }
         else
@@ -3193,6 +3222,7 @@ public:
             /// The speculation keeps its failed keyword readings to itself, as its variants may be discarded.
             select_expected.failed_keyword_readings = nullptr;
             select_expected.failed_subquery_readings = nullptr;
+            select_expected.failed_literal_readings = nullptr;
 
             if (ParserSelectWithUnionQuery().parse(select_pos, query, select_expected)
                 && ParserToken(TokenType::ClosingRoundBracket).ignore(select_pos, select_expected))
@@ -3200,6 +3230,7 @@ public:
                 pos = select_pos;
                 select_expected.failed_keyword_readings = expected.failed_keyword_readings;
                 select_expected.failed_subquery_readings = expected.failed_subquery_readings;
+                select_expected.failed_literal_readings = expected.failed_literal_readings;
                 expected = select_expected;
                 elements = {make_intrusive<ASTSubquery>(std::move(query))};
                 finished = true;

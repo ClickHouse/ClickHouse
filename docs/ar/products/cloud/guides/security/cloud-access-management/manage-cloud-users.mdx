@@ -12,12 +12,10 @@ import { EnterprisePlanFeatureBadge } from "/snippets/ar/components/EnterprisePl
 هذا الدليل مخصّص للمستخدمين الذين لديهم دور Admin في ClickHouse Cloud.
 
 <div id="add-users">
-  ## أضف مستخدمين إلى مؤسستك
+  ## أضف مستخدمين إلى مؤسستك {#add-users}
 </div>
 
-<div id="invite-users">
-  ### دعوة المستخدمين
-</div>
+### دعوة المستخدمين {#invite-users}
 
 يمكن للمسؤولين دعوة عدة مستخدمين في الوقت نفسه وتعيين دور واحد أو أكثر عند إرسال الدعوة.
 
@@ -26,13 +24,9 @@ import { EnterprisePlanFeatureBadge } from "/snippets/ar/components/EnterprisePl
     من صفحة الخدمات، اختر اسم مؤسستك. ثم اختر عنصر القائمة `Users and roles` من القائمة المنبثقة.
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![](/images/cloud/guides/control_plane/1_users_and_roles.webp)
-
-    </Frame>
-
+      <Frame>
+        ![](/images/cloud/guides/control_plane/1_users_and_roles.webp)
+      </Frame>
     </div>
   </Step>
 
@@ -40,13 +34,9 @@ import { EnterprisePlanFeatureBadge } from "/snippets/ar/components/EnterprisePl
     انقر على الزر `Invite members` في الزاوية العلوية اليسرى.
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![](/images/cloud/guides/control_plane/manage_cloud_users/2_invite_user.webp)
-
-    </Frame>
-
+      <Frame>
+        ![](/images/cloud/guides/control_plane/manage_cloud_users/2_invite_user.webp)
+      </Frame>
     </div>
   </Step>
 
@@ -54,13 +44,9 @@ import { EnterprisePlanFeatureBadge } from "/snippets/ar/components/EnterprisePl
     أدخل عناوين البريد الإلكتروني في أعلى شاشة الدعوة. ثم اختر دورًا واحدًا أو أكثر لتعيينها للمستخدمين.
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![](/images/cloud/guides/control_plane/manage_cloud_users/3_invite_user.webp)
-
-    </Frame>
-
+      <Frame>
+        ![](/images/cloud/guides/control_plane/manage_cloud_users/3_invite_user.webp)
+      </Frame>
     </div>
   </Step>
 
@@ -68,19 +54,15 @@ import { EnterprisePlanFeatureBadge } from "/snippets/ar/components/EnterprisePl
     انقر على `Send invites` في أسفل الشاشة. سيتلقى المستخدمون رسالة بريد إلكتروني يمكنهم من خلالها الانضمام إلى المؤسسة. لمزيد من المعلومات حول قبول الدعوات، راجع [إدارة حسابي](/ar/products/cloud/guides/security/cloud-access-management/manage-my-account).
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![](/images/cloud/guides/control_plane/manage_cloud_users/4_invite_user.webp)
-
-    </Frame>
-
+      <Frame>
+        ![](/images/cloud/guides/control_plane/manage_cloud_users/4_invite_user.webp)
+      </Frame>
     </div>
   </Step>
 </Steps>
 
 <div id="add-users-via-saml">
-  ### إضافة المستخدمين عبر موفّر الهوية SAML
+  ### إضافة المستخدمين عبر موفّر الهوية SAML {#add-users-via-saml}
 </div>
 
 <EnterprisePlanFeatureBadge feature="SAML SSO" />
@@ -92,29 +74,23 @@ import { EnterprisePlanFeatureBadge } from "/snippets/ar/components/EnterprisePl
 3. اتبع الإرشادات الواردة في `Manage user role assignments` أدناه لمنح الأذونات.
 
 <div id="enforce-saml">
-  ### فرض المصادقة عبر SAML فقط
+  ### فرض المصادقة عبر SAML فقط {#enforce-saml}
 </div>
 
 بمجرد أن يكون لديك مستخدم SAML واحد على الأقل داخل المؤسسة ومُعيَّن له دور Admin، أزِل من المؤسسة المستخدمين الذين يستخدمون طرق مصادقة أخرى لفرض المصادقة عبر SAML فقط على مستوى المؤسسة.
 
-<div id="manage-role-assignments">
-  ## إدارة إسناد الأدوار للمستخدمين
-</div>
+## إدارة تعيينات أدوار المستخدمين {#manage-role-assignments}
 
 يمكن للمستخدمين المُسنَد إليهم دور Admin تحديث أذونات المستخدمين الآخرين في أي وقت.
 
 <Steps>
   <Step title="الوصول إلى إعدادات المؤسسة واختيار Users and roles" id="users-and-roles-2">
-    من صفحة الخدمات، حدِّد اسم مؤسستك. اختر عنصر القائمة `Users and roles` من القائمة المنبثقة.
+    من صفحة الخدمات، حدِّد اسم مؤسستك. اختر عنصر القائمة `Users and roles` من القائمة المنبثقة.
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![](/images/cloud/guides/control_plane/1_users_and_roles.webp)
-
-    </Frame>
-
+      <Frame>
+        ![](/images/cloud/guides/control_plane/1_users_and_roles.webp)
+      </Frame>
     </div>
   </Step>
 
@@ -122,27 +98,19 @@ import { EnterprisePlanFeatureBadge } from "/snippets/ar/components/EnterprisePl
     اختر عنصر القائمة الموجود في نهاية الصف الخاص بالمستخدم الذي تريد تعديل مستوى وصوله. اختر `edit` من القائمة المنبثقة.
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![](/images/cloud/guides/control_plane/manage_cloud_users/5_edit_user.webp)
-
-    </Frame>
-
+      <Frame>
+        ![](/images/cloud/guides/control_plane/manage_cloud_users/5_edit_user.webp)
+      </Frame>
     </div>
   </Step>
 
   <Step title="تحديث الأذونات" id="update-permissions">
-    انقر داخل مربع `Roles` لتوسيع القائمة. حدِّد مربعات الاختيار لإضافة أدوار للمستخدم أو إزالتها منه. راجع [أدوار Console والأذونات](/ar/products/cloud/reference/security/console-roles) للحصول على قائمة بالأدوار والأذونات المرتبطة بها.
+    انقر داخل مربع `Roles` لتوسيع القائمة. حدِّد مربعات الاختيار لإضافة أدوار للمستخدم أو إزالتها منه. راجع [أدوار وحدة التحكم والأذونات](/ar/products/cloud/reference/security/console-roles) للحصول على قائمة بالأدوار والأذونات المرتبطة بها.
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![](/images/cloud/guides/control_plane/manage_cloud_users/6_edit_user.webp)
-
-    </Frame>
-
+      <Frame>
+        ![](/images/cloud/guides/control_plane/manage_cloud_users/6_edit_user.webp)
+      </Frame>
     </div>
   </Step>
 
@@ -152,7 +120,7 @@ import { EnterprisePlanFeatureBadge } from "/snippets/ar/components/EnterprisePl
 </Steps>
 
 <div id="remove-user">
-  ## إزالة مستخدم
+  ## إزالة مستخدم {#remove-user}
 </div>
 
 <Info>

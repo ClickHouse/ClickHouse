@@ -1,0 +1,144 @@
+---
+slug: /use-cases/observability/clickstack/demo-days/2026/2026-10-15
+title: '데모 데이 - 2026-10-15'
+sidebarTitle: '2026-10-15'
+description: '2026-10-15 ClickStack 데모 데이'
+doc_type: 'guide'
+keywords: ['ClickStack', '데모 데이']
+---
+
+## 저장 전 웹훅 body 템플릿 유효성 검사 {#validating-webhook-body-templates-before-they-save}
+
+*데모 진행자: [@brandon-pereira](https://github.com/brandon-pereira)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/Lb77q9zFVmA" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+이전에는 body 템플릿이 잘못된 Generic 또는 incident.io 웹훅을 저장해도 아무런 경고가 표시되지 않았습니다. 그 결과 모든 알림 전송이 실패했으며, 오류는 ClickStack의 trace와 서버 로그에만 나타났습니다. 흔한 원인은 `{{#if (eq state \"ALERT\")}}`처럼 Handlebars 표현식 안의 따옴표를 JSON 방식으로 이스케이프 처리하는 것이었습니다. 이는 JSON으로는 유효하지만 템플릿으로는 유효하지 않습니다.
+
+이제 웹훅 양식은 편집하는 동안 템플릿을 검사하고, `Template error on line 1, column 29`와 같이 줄과 컬럼 정보를 포함한 오류를 편집기 아래에 표시합니다. 입력을 멈추고 300 ms가 지난 뒤에 검사하므로 `{{ … }}` 표현식을 입력하는 도중에는 오류가 표시되지 않습니다. 빈 body는 서비스의 기본 템플릿을 사용하므로 검사를 건너뛰며, 렌더링되지 않는 Slack body도 마찬가지입니다. 편집기 아래에서는 `{{alertId}}`, `{{status}}`, `{{value}}`, `{{groupKey}}` 등 지원되는 변수와 각 변수에 대한 간단한 설명도 확인할 수 있습니다.
+
+이제 내부 API, 외부 API v2, MCP `clickstack_save_webhook` 도구 전반에서 동일한 유효성 검사가 서버 측에서도 실행됩니다. 유효하지 않은 템플릿은 생성, 업데이트 또는 테스트 시 Handlebars 오류와 해당 줄 및 컬럼 정보와 함께 400을 반환합니다. 테스트는 아무것도 전송되기 전에 실패합니다. 유효성 검사는 템플릿이 컴파일되는지만 확인하며, 결과를 렌더링하거나 출력이 유효한 JSON인지는 검사하지 않습니다.
+
+자동화된 워크플로에서는 새로운 `POST /api/v2/webhooks/validate` 엔드포인트를 사용해 Terraform이 plan 단계에서 웹훅 구성을 검사할 수 있습니다. `POST /api/v2/dashboards/validate`와 마찬가지로 저장하지 않고 유효성만 검사합니다. 생성 시와 동일한 URL 및 body 검사를 실행하며, 항상 `{ valid, errors, normalized }`와 함께 200을 반환합니다. 이름 중복 여부는 검사하지 않습니다.
+
+**관련 PR:** [#3350](https://github.com/hyperdxio/hyperdx/pull/3350) 편집기에 웹훅 body 템플릿 컴파일 오류 표시, [#3365](https://github.com/hyperdxio/hyperdx/pull/3365) 컴파일되지 않는 웹훅 body 템플릿 거부 및 /api/v2/webhooks/validate 추가
+
+## 온보딩 중 PromQL 소스 자동 감지 {#auto-detecting-a-promql-source-during-onboarding}
+
+*데모 진행자: [@karl-power](https://github.com/karl-power)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/Lb77q9zFVmA?start=96" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+연결에 소스가 없으면 ClickStack은 OpenTelemetry 테이블을 찾아 Logs, Traces, Metrics, Sessions 소스를 자동으로 생성합니다. 이제 PromQL이 활성화되어 있으면(`NEXT_PUBLIC_ENABLE_PROMQL=true`) ClickHouse `TimeSeries` 테이블을 찾았을 때 PromQL 소스도 함께 생성합니다.
+
+감지 시에는 `engine = 'TimeSeries'`인 테이블을 찾으며, 이 테이블이 생성하는 내부 MergeTree 테이블(MergeTree tables)은 무시합니다. 후보가 여러 개이면 다음 순서로 검사합니다.
+
+* `prometheus.metrics`: [ClickHouse Prometheus 문서](https://clickhouse.com/docs/concepts/features/interfaces/prometheus#create-a-timeseries-table)에서 사용하는 테이블입니다.
+* OpenTelemetry 테이블과 같은 데이터베이스에 있는 `metrics_ts`: collector의 PromQL 마이그레이션(migration)으로 생성됩니다.
+* 임의의 데이터베이스에 있는 `metrics_ts`
+
+`TimeSeries` 테이블이 하나뿐이면 ClickStack은 이름과 관계없이 해당 테이블을 사용합니다.
+
+이제 `TimeSeries` 테이블만 있는 연결도 수동 설정 단계로 넘어가지 않고 PromQL 소스가 생성됩니다. 감지나 PromQL 소스 생성에 실패하더라도 다른 소스는 그대로 유지됩니다.
+
+**관련 PR:** [#3310](https://github.com/hyperdxio/hyperdx/pull/3310) 온보딩 중 PromQL 소스 자동 감지, [#3311](https://github.com/hyperdxio/hyperdx/pull/3311) 개발 환경 기본 소스에 PromQL 소스 프로비저닝
+
+## PromQL 차트의 시계열 제한 및 최소 세분화 수준 {#series-limits-and-minimum-granularity-for-promql-charts}
+
+*데모 진행자: [@karl-power](https://github.com/karl-power)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/Lb77q9zFVmA?start=176" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+이제 PromQL 선 차트와 누적 막대 차트에서도 빌더 차트 및 원시 SQL 차트와 동일한 **Series Limit** 표시 설정을 사용할 수 있습니다. 이전에는 브라우저에서 렌더링되는 시계열이 250개로 제한되었고 나머지를 불러오는 옵션이 있었지만, 이 설정은 숨겨져 있었고 타일에 저장되지도 않았습니다.
+
+제한은 원시 SQL 차트와 마찬가지로 브라우저에서 적용됩니다. Prometheus 자체의 `limit` 매개변수는 값 기준 상위 시계열이 아니라 레이블 기준으로 정렬된 부분 집합을 반환하며, ClickHouse 테이블 함수 폴백은 이 매개변수를 무시하기 때문입니다. 숨겨진 시계열에 대한 안내 문구도 PromQL에 맞게 바뀌어, `GROUP BY`나 `WHERE`를 사용하라는 대신 레이블 매처 범위를 좁히거나 `sum by (...)`를 추가하도록 안내합니다.
+
+또한 PromQL 소스에도 메트릭 소스와 마찬가지로 **Minimum auto granularity** 설정이 추가되었습니다. 이 설정은 선, 숫자, 테이블, 파이, 막대 차트(생성되는 PromQL 프리뷰 포함)에서 자동 세분화 수준이 선택할 수 있는 최소 버킷 크기를 지정합니다. `$__rate_interval`도 이 값을 스크레이프 인터벌로 사용하며, 값이 설정되지 않은 경우 15s로 폴백합니다. 타일에 명시적으로 지정한 세분화 수준 설정은 기존과 동일하게 동작합니다.
+
+**관련 PR:** [#3292](https://github.com/hyperdxio/hyperdx/pull/3292) PromQL 소스에서 최소 자동 세분화 수준 지원, [#3294](https://github.com/hyperdxio/hyperdx/pull/3294) PromQL 시계열 차트에서 시계열 제한 지원
+
+## PromQL 소스에 대한 소스 수준 접근 제어 {#source-level-access-control-for-promql-sources}
+
+*데모 진행자: [@karl-power](https://github.com/karl-power)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/Lb77q9zFVmA?start=301" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+**이 기능은 Managed ClickStack에만 적용됩니다.**
+
+이제 역할 기반 접근 제어가 로그, trace, 메트릭과 마찬가지로 PromQL 소스에도 적용됩니다. 세분화된 소스 역할을 사용하면 특정 PromQL 소스에는 **읽기** 액세스를 부여하고 다른 소스에 대한 액세스는 제한할 수 있습니다.
+
+이제 모든 `/v1/prometheus/*` 라우트는 해당 소스에 대한 **읽기** 액세스를 검사하며, 이 액세스 권한이 없으면 403 `RBAC_PERMISSION_DENIED`를 반환합니다. 호출자의 소스 액세스 규칙에 따라 소스가 완전히 숨겨진 경우에는 소스 API와 동일하게 404 `Source not found`를 반환합니다. 이번 변경으로 ClickHouse 측에서 역할을 적용하는 기능이 추가되지는 않습니다. ClickStack Cloud에서는 PromQL 쿼리가 이미 사용자 본인의 토큰을 사용하기 때문입니다.
+
+## 대시보드용 애드혹 필터 {#ad-hoc-filters-for-dashboards}
+
+*데모 진행자: [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/Lb77q9zFVmA?start=401" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+이제 대시보드에서 기존 변수 및 필터와 함께 **애드혹 키와 값(Ad hoc keys and values)** 필터 유형을 사용할 수 있습니다. 각 애드혹 필터는 로그, trace 등 하나 이상의 ClickHouse 소스 또는 Prometheus 소스를 사용하여 사용 가능한 키와 값(keys and values)을 제안합니다. 기본적으로 조건은 해당 소스를 사용하는 모든 타일에 적용되지만, 적용 대상 소스를 제한할 수도 있습니다. 이 기능은 `NEXT_PUBLIC_ENABLE_ADHOC_FILTERS` 플래그로 활성화할 수 있으며, 계획된 작업 중 약 절반이 완료된 상태입니다.
+
+대시보드 필터 바에서 필터 입력란을 클릭하여 키, 연산자, 값을 선택하십시오. 키와 값 모두 추천 항목이 제공됩니다. SQL 소스는 equals, not equals, regex, not regex, `LIKE`, `NOT LIKE`를 지원합니다. PromQL 소스는 컬럼 키 대신 Prometheus 레이블을 사용합니다. 적용된 조건은 필(pill) 형태로 표시되며, 편집하거나 제외 조건으로 전환하거나 지울 수 있습니다. 선택 항목은 URL에 저장되며, 대시보드의 기본 필터 상태로 저장할 수도 있습니다.
+
+조건이 타일에 적용되는 방식은 타일 유형에 따라 다릅니다.
+
+* 빌더 타일은 기존 `filter` 구성 속성을 사용하므로 `WHERE` 절에 변수를 추가할 필요가 없습니다.
+* 원시 SQL(Raw SQL) 타일은 `$__filters`를 사용합니다. 쿼리에 이 매크로를 포함해야 하며, 누락된 경우 경고가 표시됩니다. 적용된 조건이 없으면 `1 = 1`로 확장됩니다.
+* PromQL 타일은 Grafana와 같은 파서 라이브러리를 사용하여 모든 메트릭 셀렉터에 조건을 레이블 매처로 추가합니다.
+
+적용된 조건은 생성된 SQL 및 PromQL 미리보기에서 확인할 수 있습니다.
+
+**검색 타일**에서 직접 필터링할 수도 있습니다. 셀 위에 마우스를 올리면 검색 페이지와 같은 복사, 필터, 제외 옵션이 표시됩니다. 필터링하면 해당 값이 관련 애드혹 필터에 추가되고, 같은 값을 다시 클릭하면 제거됩니다. 사이드 패널에서 행을 열면 그 안의 필터 버튼도 대시보드에 적용됩니다. 현재 클릭 필터링 기능은 검색 타일에서만 사용할 수 있습니다.
+
+대시보드를 가져올 때 애드혹 필터가 쿼리하는 소스와 적용 대상 소스를 모두 다시 매핑할 수 있습니다. 외부 API와 MCP는 아직 애드혹 필터를 지원하지 않습니다.
+
+**관련 PR:** [#3335](https://github.com/hyperdxio/hyperdx/pull/3335) Add schemas and types for adhoc dashboard filters, [#3317](https://github.com/hyperdxio/hyperdx/pull/3317) Extract FilterPill, add filter editor components, [#3341](https://github.com/hyperdxio/hyperdx/pull/3341) Add UI for configuring adhoc dashboard filters, [#3343](https://github.com/hyperdxio/hyperdx/pull/3343) Render adhoc dashboard filter inputs, [#3366](https://github.com/hyperdxio/hyperdx/pull/3366) Broadcast adhoc dashboard filter conditions, [#3367](https://github.com/hyperdxio/hyperdx/pull/3367) Support source remapping during ad hoc filter import, [#3380](https://github.com/hyperdxio/hyperdx/pull/3380) Support click-to-adhoc-filter on search tiles
+
+## SELECT와 ORDER BY를 결과 테이블로 이동 {#moving-select-and-order-by-into-the-results-table}
+
+*데모 진행자: [@elizabetdev](https://github.com/elizabetdev)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/Lb77q9zFVmA?start=636" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+**이 작업은 탐색 단계이며, 출시가 확정된 기능은 아닙니다.**
+
+현재 검색 페이지에서는 `SELECT`와 `ORDER BY`가 결과 테이블에만 영향을 주는데도 `WHERE` 옆에 배치되어 있습니다. 이벤트 패턴이나 이벤트 차이로 전환해도 이 항목들은 그대로 표시되지만, 값을 바꿔도 아무런 효과가 없습니다. 또한 의견을 나눈 사용자들은 `SELECT`에서 컬럼을 선택할 수 있다는 사실을 알지 못했고, 컬럼 및 정렬 컨트롤을 찾고 있었습니다.
+
+이 프로토타입은 두 항목을 결과 테이블 툴바의 **컬럼**과 **정렬**로 옮기고, 이벤트 차이와 이벤트 패턴에서는 숨깁니다. **컬럼**에는 현재 `SELECT` 항목이 나열되며, 드래그하여 순서를 바꾸거나 항목을 제거할 수 있습니다. 추천 항목을 선택하거나 `upper(Body) as message`와 같은 표현식을 입력한 후 **Add**를 클릭하세요. **SQL** 탭에서는 전체 `SELECT`를 직접 편집할 수 있습니다.
+
+**정렬**에는 각 `ORDER BY` 필드와 정렬 방향이 나열되며, `(toDateTime(Timestamp), Timestamp) DESC`와 같은 튜플(tuples)도 표시됩니다. **SQL**에서 원본 절을 직접 편집할 수도 있습니다. `Timestamp DESC NULLS LAST`처럼 컨트롤로 분리할 수 없는 표현식은 SQL 탭에서 열립니다. 컨트롤에서 변경하면 SQL이 자동으로 생성되며, 물론 직접 작성할 수도 있습니다.
+
+**Apply**는 절을 갱신하고 검색을 실행하며, **Cancel**은 변경 사항을 취소하고, **Reset to default**는 소스의 기본값으로 되돌립니다. 너비 초기화, 줄 바꿈, 생성된 SQL 보기, CSV 내보내기 같은 테이블 작업은 툴바 오른쪽의 아이콘 버튼으로 옮겨집니다.
+
+덕분에 검색 폼의 공간도 조금 더 여유로워집니다. 첫 번째 줄 왼쪽에는 소스가, 오른쪽에는 **Update**와 **알림**이 배치됩니다. `WHERE` 절은 Live Tail, 갱신 인터벌, **Run**과 함께 전체 너비를 차지하는 별도의 줄에 배치됩니다.
+
+이 PR은 아직 초안 단계이며, 실제로 사용해 본 소감을 들려주시면 감사하겠습니다.
+
+**관련 PR:** [#3387](https://github.com/hyperdxio/hyperdx/pull/3387) 결과 테이블에서 검색 컬럼 및 정렬 편집 (진행 중)
+
+## 휴대폰에서도 사용하기 편한 검색 페이지 {#a-usable-search-page-on-a-phone}
+
+*데모 진행자: [@elizabetdev](https://github.com/elizabetdev)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/Lb77q9zFVmA?start=843" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+휴대폰에서 알림을 열면 곧바로 로그를 확인할 수 있어야 합니다. 이전에는 필터 사이드바가 200px 미만으로 줄어들지 않았고, 쿼리 입력 행이 줄바꿈되지 않았으며, 결과가 `100vh` 프레임 안에서 잘렸습니다. 로그까지 스크롤하는 것조차 불가능했습니다.
+
+이제 검색 페이지는 내비게이션이 이미 접히는 900px 미만에서 컴팩트(compact) 레이아웃으로 전환됩니다. 필터는 기본적으로 닫혀 있으며 **Show filters**를 누르면 드로어로 열리므로, 로그 테이블이 화면 전체 너비를 사용할 수 있습니다. `SELECT`와 `ORDER BY`는 **컬럼** 토글 안으로 숨겨지고, 검색 상자는 계속 표시됩니다. 히스토그램도 72px 높이로 줄어든 채 그대로 표시되며, 결과는 툴바 아래 공간에서 스크롤됩니다. 필터 드로어를 열어도 데스크톱 환경 설정은 바뀌지 않으며, 창 너비를 900px 이상으로 늘리면 데스크톱 레이아웃으로 돌아갑니다.
+
+컴팩트 뷰포트 후크와 반응형 사이드 패널은 `packages/app/src/components/CompactViewport/`에 있으며, 다른 페이지에서도 재사용할 수 있습니다. 검색 페이지가 이를 가장 먼저 적용했습니다. 이 변경 사항은 이 글에서 소개하는 컬럼 및 정렬 프로토타입보다 먼저 반영되었습니다. 해당 프로토타입은 모든 화면 너비에서 `SELECT`와 `ORDER BY`를 결과 테이블로 옮기는 방식입니다.
+
+**관련 PR:** [#3376](https://github.com/hyperdxio/hyperdx/pull/3376) 휴대폰에서도 저장된 검색을 사용할 수 있도록 개선
+
+## 필터 키와 값을 사이드바로 스트리밍 {#streaming-filter-keys-and-values-into-the-sidebar}
+
+*데모 진행자: [@knudtty](https://github.com/knudtty)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/Lb77q9zFVmA?start=899" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+이전에는 검색 페이지의 필터 사이드바에 모든 필터 쿼리가 완료될 때까지 스피너 하나만 표시되었습니다. 쿼리는 이미 결과를 스트리밍 방식으로 전달하고 있었지만, 필터를 사용하려면 가장 느린 쿼리가 끝날 때까지 기다려야 했습니다.
+
+이제는 키가 먼저 표시되고 키마다 개별 로딩 표시기가 나타나며, 각 쿼리 결과가 반환되는 대로 값이 채워집니다. 쿼리 자체는 바뀌지 않았으며, 사이드바가 결과를 도착하는 즉시 표시할 뿐입니다. 이러한 개선 효과는 2일간의 검색처럼 시간 범위가 길수록 특히 두드러집니다.
+
+또한 사이드바가 이전 상태를 기억하지 못하던 문제도 수정했습니다. 브라우저의 응답성을 유지하기 위해 필터 그룹은 화면 밖으로 스크롤되면 DOM에서 제거됩니다. 이전에는 다시 스크롤해 돌아오면 펼쳐 두었던 그룹은 접혀 있고 불러온 분포는 사라져 있었습니다. 이제는 두 가지 모두 마지막 상태 그대로 유지됩니다.
+
+**관련 PR:** [#3348](https://github.com/hyperdxio/hyperdx/pull/3348) 필터 키와 값 결과를 UI로 스트리밍, [#3377](https://github.com/hyperdxio/hyperdx/pull/3377) 스크롤 시 필터 펼침 상태 유지
