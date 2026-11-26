@@ -1,10 +1,8 @@
--- Tags: no-parallel-replicas
--- no-parallel-replicas: the test configures parallel replicas with a custom key on its own.
-
 -- `GROUP BY ... WITH CLUSTER` over a direct `MergeTree` read with custom-key parallel replicas.
 -- The custom key splits adjacent keys between the replicas, so the clustering must run once,
 -- on the initiator, over the groups of all replicas instead of on each replica separately.
 
+SET enable_analyzer = 1; -- `WITH CLUSTER` is implemented for the analyzer only
 SET allow_experimental_group_by_with_cluster = 1;
 SET enable_parallel_replicas = 1, max_parallel_replicas = 3;
 SET cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';
