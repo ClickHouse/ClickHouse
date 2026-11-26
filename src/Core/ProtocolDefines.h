@@ -159,6 +159,9 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 /// Version 22 adds the `max_bytes_before_external_limit_by` and `max_bytes_ratio_before_external_limit_by` plan
 /// settings and version 1 of the `LimitBy` step, which carries the input order of a `LIMIT BY` that can spill. A peer
 /// below it receives neither and keeps its `LIMIT BY` in memory, which keeps the input order.
+/// Version 22 also adds version 1 of the `Join` step, which carries the set operation of a join that runs
+/// `INTERSECT DISTINCT` or `EXCEPT DISTINCT`, and version 3 of the `Distinct` step, which carries its flags
+/// for such a join. A peer below it receives the older versions of both steps, and no set operation join.
 ///
 /// Rules for this version:
 /// - Bump it at most once per release: the first change in a release that needs it bumps it, later changes
@@ -279,7 +282,7 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_HASH_JOIN_L
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ROW_STORE_STRING_COLUMN_BYTES = 21;
 /// First query-plan serialization version that carries the set operation of `Join` and the `skip_deduplication` and
 /// `deduplicates_except_join` flags of `Distinct`. Below it, the join of a set operation is not sent.
-static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_SET_OPERATION_AS_JOIN = 21;
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_SET_OPERATION_AS_JOIN = 22;
 /// Version 1 added the initiator's settings changes to the task.
 /// Version 2 added per-stream streaming-exchange ports to exchange_stream_sources.
 /// Version 3 added the error code of a failed task to its status reply.
