@@ -6,9 +6,7 @@ tags: ['Herramientas y utilidades']
 keywords: ['Windows']
 ---
 
-<div id="example">
-  ## Ejemplo
-</div>
+## Ejemplo {#example}
 
 Este ejemplo muestra cómo se puede conceder acceso basado en roles en ClickHouse a usuarios de AD que pertenecen a distintos grupos de seguridad de AD. También muestra cómo se puede añadir un usuario a varios grupos de usuarios de AD para que reciba el acceso proporcionado por varios roles.
 
@@ -35,15 +33,27 @@ En este entorno, tenemos lo siguiente:
 
 * Ejemplo de entorno de AD y estructura de UO:
 
-<Image img={ad_env} size="md" alt="Ejemplo de entorno de AD y estructura de UO" />
+<div className="ch-image-md">
+  <Frame>
+    ![Ejemplo de entorno de AD y estructura de UO](/images/knowledgebase/windows-ad-ch-roles/AD_Env_and_UO_structure.webp)
+  </Frame>
+</div>
 
 * Ejemplo de configuración de grupos de seguridad de AD:
 
-<Image img={ad_group} size="md" alt="Ejemplo de configuración de grupos de seguridad de AD" />
+<div className="ch-image-md">
+  <Frame>
+    ![Ejemplo de configuración de grupos de seguridad de AD](/images/knowledgebase/windows-ad-ch-roles/AD_Group_clickhouse_ad_db1_users.webp)
+  </Frame>
+</div>
 
 * Ejemplo de configuración de usuarios de AD:
 
-<Image img={ad_user} size="md" alt="Ejemplo de configuración de usuarios de AD" />
+<div className="ch-image-md">
+  <Frame>
+    ![Ejemplo de configuración de usuarios de AD](/images/knowledgebase/windows-ad-ch-roles/AD_user_clickhouse_db1_user.webp)
+  </Frame>
+</div>
 
 1. En Usuarios y Grupos de AD de Windows, añada cada usuario a sus grupos correspondientes; estos se asignarán a los roles de ClickHouse (ejemplo en el siguiente paso).
 
@@ -56,7 +66,11 @@ En este entorno, tenemos lo siguiente:
 
 * Ejemplo de pertenencia de usuarios a grupos:
 
-<Image img={ad_user_group} size="md" alt="Ejemplo de pertenencia de usuarios a grupos" />
+<div className="ch-image-md">
+  <Frame>
+    ![Ejemplo de pertenencia de usuarios a grupos](/images/knowledgebase/windows-ad-ch-roles/AD_user_to_group.webp)
+  </Frame>
+</div>
 
 2. En el archivo `config.xml` de ClickHouse, añada la configuración `ldap_servers` a cada nodo de ClickHouse.
 
@@ -89,7 +103,7 @@ En este entorno, tenemos lo siguiente:
 Consulta la documentación para ver el conjunto completo de opciones:
 [https://clickhouse.com/docs/operations/external-authenticators/ldap#ldap-server-definition](https://clickhouse.com/docs/operations/external-authenticators/ldap#ldap-server-definition)
 
-3. En el `config.xml` de ClickHouse, añade la configuración `<user_directories>` con entradas `<ldap>` en cada nodo de ClickHouse.
+3. En el archivo `config.xml` de ClickHouse, agregue la configuración `<user_directories>` con entradas `<ldap>` en cada nodo de ClickHouse.
 
 ```
 <user_directories>

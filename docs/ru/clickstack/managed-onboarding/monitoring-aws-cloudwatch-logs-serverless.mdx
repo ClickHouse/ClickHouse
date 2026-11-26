@@ -1,0 +1,339 @@
+---
+slug: /clickstack/managed-onboarding/monitoring-aws-cloudwatch-logs-serverless
+title: 'Сбор журналов AWS CloudWatch с помощью OpenTelemetry'
+sidebarTitle: 'Сбор журналов CloudWatch'
+description: 'Запустите один небольшой OpenTelemetry Collector, который опрашивает ваши группы журналов CloudWatch и отправляет события напрямую в ClickHouse Observability, а затем ищите их по группе журналов и потоку.'
+doc_type: 'guide'
+keywords: ['ClickHouse Observability', 'AWS', 'CloudWatch', 'CloudWatch Logs', 'коллектор OpenTelemetry', 'aws_cloudwatch', 'OTLP', 'журналы Lambda']
+unlisted: true
+custom_edit_url: null
+hide_advert: true
+---
+
+import { TrackedLink } from '/snippets/ru/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx';
+
+<Info>
+  **Кратко**
+
+  Выберите нужные группы журналов CloudWatch, вставьте блок экспортера с вкладки **Collector config** вашего сервиса в небольшую конфигурацию OpenTelemetry Collector и запустите её с помощью Docker Compose. Коллектор опрашивает группы журналов и отправляет каждое событие напрямую в ClickHouse Observability, помечая его именем группы журналов и потока.
+
+  Требуемое время: около 15 минут
+</Info>
+
+Сервис ClickHouse Observability уже создан. Это руководство пригодится, если нужные журналы уже находятся в CloudWatch: журналы лямбда-функций, задач ECS, RDS, журналы потоков VPC или любых других источников, которые пишут в группу журналов.
+
+Здесь используется стандартный для OpenTelemetry подход. Один коллектор с [приёмником `aws_cloudwatch`](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/receiver/awscloudwatchreceiver) опрашивает ваши группы журналов через API CloudWatch Logs и отправляет события напрямую на конечную точку OTLP вашего сервиса. Коллектор можно запустить где угодно, если там есть Docker и доступ к AWS API. Если разместить его на инстансе EC2 в том же регионе, что и группы журналов, это снизит задержку API и затраты на передачу данных.
+
+## Предварительные требования {#prerequisites}
+
+* Сервис ClickHouse Observability. Если у вас его ещё нет, воспользуйтесь [руководством по началу работы](/ru/clickstack/observability/getting-started).
+* Учётная запись AWS с одной или несколькими группами журналов CloudWatch, а также разрешение на создание или использование учётных данных с доступом на их чтение.
+* Хост с установленными Docker и [AWS CLI](https://aws.amazon.com/cli/), а также с исходящим доступом по HTTPS через порт `4318` к конечной точке телеметрии вашего сервиса.
+
+Выполняйте команды AWS и Docker в одной и той же командной оболочке на этом хосте: коллектор берёт учётные данные AWS из её переменных окружения.
+
+## Настройка коллектора {#set-up-the-collector}
+
+<Steps>
+  <Step title="Настройте учётные данные AWS" id="set-up-aws-credentials">
+    Приёмник использует стандартную цепочку учётных данных AWS SDK, поэтому всё, что работает с AWS CLI, будет работать и с коллектором. Учётные данные должны давать права на получение списка групп логов и чтение их событий:
+
+    ```json
+    {
+      "Version": "2012-10-17",
+      "Statement": [
+        {
+          "Sid": "CloudWatchLogsList",
+          "Effect": "Allow",
+          "Action": "logs:DescribeLogGroups",
+          "Resource": "*"
+        },
+        {
+          "Sid": "CloudWatchLogsRead",
+          "Effect": "Allow",
+          "Action": "logs:FilterLogEvents",
+          "Resource": "arn:aws:logs:*:YOUR_ACCOUNT_ID:log-group:*"
+        }
+      ]
+    }
+    ```
+
+    Замените `YOUR_ACCOUNT_ID` на ID вашей учётной записи AWS. Экспортируйте учётные данные и убедитесь, что они работают:
+
+    <Tabs>
+      <Tab title="AWS SSO" id="aws-sso">
+        ```shell
+        aws sso login --profile YOUR_PROFILE_NAME
+        eval $(aws configure export-credentials --profile YOUR_PROFILE_NAME --format env)
+        aws sts get-caller-identity
+        ```
+
+        Учётные данные SSO действуют ограниченное время — как правило, от 8 до 12 часов. Чтобы обновить и экспортировать их, повторно выполните эти команды, а затем запустите `docker compose up -d --force-recreate otel-collector` из каталога Compose. Новые переменные окружения применяются только при повторном создании контейнера; при перезапуске он продолжит использовать учётные данные с истекшим сроком действия. Чтобы избежать таких перерывов, используйте ключи доступа или роль инстанса.
+      </Tab>
+
+      <Tab title="Ключи доступа IAM" id="iam-access-keys">
+        ```shell
+        export AWS_ACCESS_KEY_ID="your-access-key-id"
+        export AWS_SECRET_ACCESS_KEY="your-secret-access-key"
+        export AWS_REGION="us-east-1"
+        aws sts get-caller-identity
+        ```
+      </Tab>
+    </Tabs>
+
+    <Info>
+      **Учётные данные для продакшн-среды**
+
+      В продакшн-среде вместо экспорта ключей привяжите политику к хосту: используйте роль IAM на EC2, IRSA на EKS или роль задачи на ECS. В этом случае коллектор получает учётные данные из службы метаданных экземпляра, а в приведённом ниже файле Compose переменные AWS вообще не нужны.
+    </Info>
+  </Step>
+
+  <Step title="Выберите группы логов" id="pick-your-log-groups">
+    Выведите список групп логов в своём регионе, чтобы использовать их точные имена и убедиться, что регион указан верно:
+
+    ```shell
+    aws logs describe-log-groups --region us-east-1 \
+      --query 'logGroups[].logGroupName' --output table
+    ```
+
+    Запишите нужные имена. Группы с общим префиксом, например `/aws/lambda/`, можно указать все сразу при написании конфигурации.
+  </Step>
+
+  <Step title="Скопируйте сведения о подключении" id="copy-connection-details">
+    Откройте сервис ClickHouse Observability. Пока данные не поступили, в нём отображается страница **Start sending telemetry**.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Страница Start sending telemetry, на которой показан текущий сервис, ещё не получивший данных, и три варианта: Use an existing OpenTelemetry setup, Instrument with AI и Follow setup guides](/images/clickstack/getting-started/observability-start-sending-telemetry.png)
+      </Frame>
+    </div>
+
+    В разделе **Use an existing OpenTelemetry setup** выберите **View connection details**, затем откройте вкладку **Collector config**. На ней показан готовый блок экспортера для вашего сервиса: конечная точка и заголовок `authorization`, в котором уже указан ваш ключ API с префиксом `Bearer`. Нажмите **Reveal key**, чтобы показать ключ полностью, затем скопируйте блок с помощью кнопки копирования.
+
+    <div className="ch-image-md">
+      <Frame>
+        ![Диалоговое окно Set up OpenTelemetry с выбранной вкладкой Collector config, на которой показан экспортер otlphttp со скрытой конечной точкой и заголовком авторизации Bearer](/images/clickstack/getting-started/observability-collector-config.png)
+      </Frame>
+    </div>
+
+    Блок выглядит следующим образом. На следующем шаге вы вставите его в конфигурацию коллектора в точности в том виде, в каком скопировали:
+
+    ```yaml
+    exporters:
+      otlphttp:
+        endpoint: https://YOUR_OTEL_ENDPOINT:4318
+        headers:
+          authorization: Bearer <your-api-key>
+    ```
+
+    Эти же значения всегда можно найти в разделе **Team Settings → Managed Telemetry**.
+  </Step>
+
+  <Step title="Создайте конфигурацию коллектора" id="write-the-configuration">
+    Создайте `otel-collector-config.yaml` на основе варианта, соответствующего нужному способу выбора групп логов, затем замените в нём блок `exporters` на скопированный. Оба варианта при запуске считывают события за последний час.
+
+    <Tabs>
+      <Tab title="Именованные группы логов" id="named-log-groups">
+        ```yaml
+        receivers:
+          aws_cloudwatch:
+            region: us-east-1
+            logs:
+              poll_interval: 1m
+              initial_lookback: 1h
+              groups:
+                named:
+                  /aws/lambda/payment-processor:
+                  /aws/lambda/order-service:
+                  /ecs/api-gateway:
+
+        processors:
+          batch:
+            timeout: 10s
+
+        exporters:
+          otlphttp:
+            endpoint: https://YOUR_OTEL_ENDPOINT:4318
+            headers:
+              authorization: Bearer <your-api-key>
+
+        service:
+          pipelines:
+            logs:
+              receivers: [aws_cloudwatch]
+              processors: [batch]
+              exporters: [otlphttp]
+        ```
+
+        Каждый ключ в разделе `named` соответствует группе логов. Чтобы читать все потоки группы, оставьте значение пустым. Чтобы читать только часть потоков, добавьте под ключом `names:` или `prefixes:`.
+      </Tab>
+
+      <Tab title="Автообнаружение по префиксу" id="autodiscover-by-prefix">
+        ```yaml
+        receivers:
+          aws_cloudwatch:
+            region: us-east-1
+            logs:
+              poll_interval: 1m
+              initial_lookback: 1h
+              groups:
+                autodiscover:
+                  limit: 100
+                  prefix: /aws/lambda/
+
+        processors:
+          batch:
+            timeout: 10s
+
+        exporters:
+          otlphttp:
+            endpoint: https://YOUR_OTEL_ENDPOINT:4318
+            headers:
+              authorization: Bearer <your-api-key>
+
+        service:
+          pipelines:
+            logs:
+              receivers: [aws_cloudwatch]
+              processors: [batch]
+              exporters: [otlphttp]
+        ```
+
+        В этом случае читаются все группы логов, имена которых начинаются с указанного префикса (не более `limit`), включая группы, созданные позже. Чтобы искать подстроку в любом месте имени, используйте `pattern` вместо `prefix`.
+      </Tab>
+    </Tabs>
+
+    Имя экспортера `otlphttp` совпадает с тем, что указано на вкладке. В последних выпусках коллектора он называется `otlp_http`, а `otlphttp` сохранён как псевдоним, поэтому работают оба варианта; при запуске коллектор однократно записывает в журнал сообщение `"otlphttp" alias is deprecated`. Это предупреждение можно игнорировать. Если вы переименуете экспортер, измените его имя и в конвейере. Указывайте конечную точку в виде базового URL: не добавляйте в конец `/v1/logs`, поскольку экспортер сам добавляет путь для сигнала.
+
+    Теперь в файле хранится ваш ключ API, поэтому не добавляйте его в систему контроля версий. Контейнер коллектора запускается от имени UID/GID `10001:10001`. В Linux выдайте этой группе права на чтение, сохранив за владельцем файла на хосте возможность его редактировать:
+
+    ```shell
+    sudo chgrp 10001 otel-collector-config.yaml
+    chmod 640 otel-collector-config.yaml
+    ```
+
+    Так контейнер сможет читать конфигурацию, смонтированную через bind mount, а ключ API при этом не станет доступен для чтения всем пользователям.
+
+    Настройки, которые нужно изменить:
+
+    * `region`: регион, в котором находятся группы логов.
+    * `initial_lookback`: на какую глубину в прошлое читать данные при запуске коллектора. Без этого параметра приёмник читает всю сохранённую историю каждой группы, что может обернуться масштабной разовой дозагрузкой и соответствующим количеством вызовов API. Чтобы вместо этого выполнить дозагрузку с определённого момента, замените его на `start_from` с временной меткой в формате RFC 3339.
+    * `poll_interval`: по умолчанию `1m`. Более короткие интервалы позволяют получать более свежие журналы ценой большего числа вызовов API.
+    * При перезапуске окно ретроспективного анализа читается повторно, поэтому данные за последний час дублируются. Для длительно работающего развертывания добавьте расширение `file_storage` и задайте параметр `storage` приёмника, чтобы после перезапуска он продолжал чтение с того места, где остановился.
+
+    Остальные параметры, включая фильтры потоков и чтение из связанных аккаунтов, описаны в [README](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/receiver/awscloudwatchreceiver) приёмника.
+
+    <Accordion title="Необязательно: используйте группу журналов в качестве имени сервиса">
+      События CloudWatch не содержат имени сервиса, поэтому поле `ServiceName` на странице «Поиск» остаётся пустым, а фильтры по сервису не работают. Чтобы заполнять его на основе группы журналов, добавьте процессор `transform` и поместите его в конвейере перед `batch`:
+
+      ```yaml
+      processors:
+        transform:
+          log_statements:
+            - context: resource
+              statements:
+                - set(attributes["service.name"], attributes["cloudwatch.log.group.name"])
+        batch:
+          timeout: 10s
+
+      service:
+        pipelines:
+          logs:
+            receivers: [aws_cloudwatch]
+            processors: [transform, batch]
+            exporters: [otlphttp]
+      ```
+    </Accordion>
+  </Step>
+
+  <Step title="Запустите коллектор с помощью Docker Compose" id="start-with-docker-compose">
+    Создайте файл `docker-compose.yaml` рядом с файлом конфигурации. Он монтирует конфигурацию в контейнер и передаёт в него ваши учётные данные AWS из командной оболочки:
+
+    ```yaml
+    services:
+      otel-collector:
+        image: otel/opentelemetry-collector-contrib:0.162.0
+        command: ["--config=/etc/otel-config.yaml"]
+        volumes:
+          - type: bind
+            source: ./otel-collector-config.yaml
+            target: /etc/otel-config.yaml
+            read_only: true
+        environment:
+          - AWS_ACCESS_KEY_ID
+          - AWS_SECRET_ACCESS_KEY
+          - AWS_SESSION_TOKEN
+          - AWS_REGION
+        restart: unless-stopped
+    ```
+
+    Запустите его и следите за журналами:
+
+    ```shell
+    docker compose up -d
+    docker compose logs -f otel-collector
+    ```
+
+    При успешном запуске последним выводится сообщение `Everything is ready. Begin running and processing data.` Первый опрос выполняется через один `poll_interval` после запуска, поэтому подождите минуту-другую. Возможные ошибки:
+
+    * `panic: runtime error: invalid memory address or nil pointer dereference` в `ensureSession`, после чего контейнер перезапускается: коллектору не удалось аутентифицироваться в AWS. Учётные данные отсутствуют, недопустимы или срок их действия истёк, либо конечная точка STS недоступна. Collector 0.162.0 в этом случае завершается аварийно, а не выводит сообщение об ошибке; проблема отслеживается в вышестоящем проекте в [задаче 50961](https://github.com/open-telemetry/opentelemetry-collector-contrib/issues/50961). Выполните на хосте `aws sts get-caller-identity`, обновите и экспортируйте действительные учётные данные, затем выполните `docker compose up -d --force-recreate otel-collector` в каталоге Compose.
+    * `AccessDeniedException`: учётным данным нужны права `logs:DescribeLogGroups` с `"Resource": "*"` и `logs:FilterLogEvents` на соответствующие группы логов.
+    * `ResourceNotFoundException`: имя группы логов указано с ошибкой или группа находится в другом регионе.
+    * `401` или `403` от экспортера: в конфигурации указано неверное значение `authorization`. Оно должно состоять из `Bearer` и полного ключа — именно в том виде, в каком он приведён на вкладке конфигурации Collector. Исправьте файл и выполните `docker compose restart otel-collector`.
+    * `404` от экспортера: к конечной точке дописан путь сигнала, например `/v1/logs`.
+  </Step>
+</Steps>
+
+## Проверка поступления данных {#confirm-data-is-arriving}
+
+Вернитесь на страницу **Start sending telemetry** вашего сервиса и нажмите **Check for data**. Когда телеметрия начнёт поступать, состояние сервиса изменится на **Data received** и станет доступна кнопка **Start exploring**.
+
+<div className="ch-image-lg">
+  <Frame>
+    ![Страница Start sending telemetry: состояние сервиса — Data received, отображается подтверждение готовности к исследованию данных, кнопка Start exploring активна](/images/clickstack/getting-started/observability-data-received.png)
+  </Frame>
+</div>
+
+Нажмите **Start exploring**, чтобы открыть **Поиск**, выберите источник **Logs** и задайте временной диапазон **Last 15 minutes**. События появятся в течение пары интервалов опроса. Каждое из них содержит сведения о своём происхождении в виде атрибутов ресурса:
+
+* `aws.region`: настроенный вами регион.
+* `cloudwatch.log.group.name`: исходная группа журналов.
+* `cloudwatch.log.stream`: исходный поток журнала.
+* `cloud.account.id`: учетная запись AWS, из которой поступили события.
+
+Чтобы вывести их в виде столбцов, замените `SELECT` на `Timestamp, SeverityText as level, ResourceAttributes['aws.region'], ResourceAttributes['cloudwatch.log.group.name'], ResourceAttributes['cloudwatch.log.stream'], Body`:
+
+<div className="ch-image-lg">
+  <Frame>
+    ![Страница поиска с событиями CloudWatch, где атрибуты ресурса region, log group и log stream выведены в виде столбцов](/images/clickstack/cloudwatch/log-search-attributes-clickstack.webp)
+  </Frame>
+</div>
+
+Выберите событие и откройте **Column Values**, чтобы просмотреть его атрибуты:
+
+<div className="ch-image-lg">
+  <Frame>
+    ![Представление подробных сведений о записи журнала с атрибутами ресурса aws.region, cloudwatch.log.group.name и cloudwatch.log.stream события CloudWatch](/images/clickstack/cloudwatch/error-log-column-values-clickstack.webp)
+  </Frame>
+</div>
+
+## Если ничего не отображается {#if-nothing-shows-up}
+
+* Сначала просмотрите журнал коллектора командой `docker compose logs -f otel-collector`. Там отображаются как проблемы с AWS, так и проблемы с экспортером — в виде сообщений, перечисленных выше.
+* Выполните на хосте команду `aws sts get-caller-identity`, чтобы убедиться, что учётные данные всё ещё действительны. Сеансы SSO имеют ограниченный срок действия, и по его истечении коллектор аварийно завершается, а не записывает ошибку в журнал.
+* Убедитесь, что группа журналов недавно получала события: приёмник читает только события, записанные в пределах окна ретроспективного анализа и позже. Например: `aws logs filter-log-events --log-group-name /aws/lambda/order-service --region us-east-1 --limit 5`.
+* Расширьте временной диапазон на странице **Поиск** и сбросьте все фильтры. Возможно, в качестве источника по умолчанию выбран **Traces**, а не **Logs**.
+* Чтобы исключить проблему на стороне самого сервиса, перейдите в **Team Settings → Managed Telemetry** и воспользуйтесь функцией **Send a Test Журнал**. Если тестовый журнал появится в **Поиске**, значит, сервис получает данные, а проблема возникает на участке между коллектором и CloudWatch или конечной точкой.
+
+## Импорт панели мониторинга CloudWatch (необязательно) {#import-the-cloudwatch-dashboard}
+
+Готовая панель мониторинга показывает объём журналов в разрезе групп журналов, разбивку по уровням важности и источники ошибок. <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/cloudwatch-logs-dashboard.json'} download="cloudwatch-logs-dashboard.json" eventName="docs.cloudwatch_logs_monitoring.dashboard_download">Скачайте `cloudwatch-logs-dashboard.json`</TrackedLink>, затем откройте **Dashboards**, выберите **Import**, загрузите файл и нажмите **Finish Import**. Диаграммы фильтруют данные по перечисленным выше атрибутам ресурса, поэтому заполнятся сразу после поступления событий.
+
+{/* TODO(dale): снимок экрана с импортированной панелью мониторинга CloudWatch Logs в ClickHouse Observability. */}
+
+## Дальнейшие шаги {#next-steps}
+
+* [Оповещения](/ru/clickstack/observability/features/alerts): настройте оповещение о росте числа ошибок в группе журналов.
+* [Поиск](/ru/clickstack/observability/features/search): выполняйте запросы по группе журналов, потоку и телу сообщения, используя синтаксис в стиле Lucene или SQL.
+* [Подключение OpenTelemetry Collector](/ru/clickstack/managed-onboarding/setting-up-your-opentelemetry-collector-serverless): добавьте в этот коллектор дополнительные приёмники (например, для сбора метрик хоста с инстанса, на котором он запущен), которые будут отправлять данные через тот же экспортер.
+* [Мониторинг Kubernetes с помощью OpenTelemetry](/ru/clickstack/managed-onboarding/monitoring-kubernetes-serverless): собирайте журналы и метрики контейнеров напрямую из EKS, минуя CloudWatch.

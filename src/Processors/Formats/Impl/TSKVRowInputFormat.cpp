@@ -134,18 +134,25 @@ bool TSKVRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & ex
                     NullOutput sink;
                     readEscapedStringInto<NullOutput,false>(sink, *in);
                 }
+                else if (seen_columns[it->getMapped()])
+                {
+                    if (!format_settings.skip_duplicated_fields)
+                        throw Exception(
+                            ErrorCodes::INCORRECT_DATA,
+                            "Duplicate field found while parsing TSKV format: {}. You can enable setting input_format_skip_duplicated_fields to keep the first value of a repeated field",
+                            name_ref);
+
+                    NullOutput sink;
+                    readEscapedStringInto<NullOutput, false>(sink, *in);
+                }
                 else
                 {
                     index = it->getMapped();
-
-                    if (seen_columns[index])
-                        throw Exception(ErrorCodes::INCORRECT_DATA, "Duplicate field found while parsing TSKV format: {}", name_ref);
-
                     seen_columns[index] = read_columns[index] = true;
                     const auto & type = getPort().getHeader().getByPosition(index).type;
                     const auto & serialization = serializations[index];
                     if (format_settings.null_as_default && !isNullableOrLowCardinalityNullable(type))
-                        read_columns[index] = SerializationNullable::deserializeNullAsDefaultOrNestedTextEscaped(*columns[index], *in, format_settings, serialization);
+                        read_columns[index] = SerializationNullable::deserializeNullAsDefaultOrNestedTextEscaped(*columns[index], *in, format_settings, serialization, type.get());
                     else
                         serialization->deserializeTextEscaped(*columns[index], *in, format_settings);
                 }
@@ -260,6 +267,7 @@ NamesAndTypesList TSKVSchemaReader::readRowAndGetNamesAndDataTypes(bool & eof)
     }
 
     NamesAndTypesList names_and_types;
+    NameSet row_field_names;
     std::string_view name_ref;
     String name_buf;
     String value;
@@ -271,6 +279,9 @@ NamesAndTypesList TSKVSchemaReader::readRowAndGetNamesAndDataTypes(bool & eof)
         {
             /// The value path parses the original bytes, so inference must see the field undecoded.
             readTSVField(value, in);
+            if (format_settings.skip_duplicated_fields && !row_field_names.insert(name).second)
+                continue;
+
             /// `\N` decodes to no bytes, and while it is the null representation the value path reads it as
             /// a null instead of as data, so such a field holds no value to infer a type from.
             const bool holds_no_value = value == "\\N" && format_settings.tsv.null_representation == "\\N";
@@ -305,7 +316,7 @@ void registerInputFormatTSKV(FormatFactory & factory)
         const FormatSettings & settings)
     {
         return std::make_shared<TSKVRowInputFormat>(buf, std::make_shared<const Block>(sample), std::move(params), settings);
-    });
+    }, /*supports_reset_parser=*/ true);
 
     factory.markFormatSupportsSubsetOfColumns("TSKV");
 

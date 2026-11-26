@@ -15,7 +15,7 @@
 -- right-deep reassociation the detectors unlock. Asserting the conditions rather than the step
 -- sequence keeps the arm immune to the build/probe side swap, which is randomized.
 
-SET enable_analyzer = 1, single_join_prefer_left_table = 0;
+SET single_join_prefer_left_table = 0;
 -- Pinned because the plan arms assert on the association the optimizer chooses.
 SET query_plan_optimize_join_order_randomize = 0, use_hash_table_stats_for_join_reordering = 0;
 -- Make t1 look expensive so the detector prefers to reorder t2/t3 to the front.
