@@ -100,8 +100,8 @@ public:
 
     ASTs getEngineArgsForNewTable(const String & name, ObjectStorageType engine_storage_type) const;
 
-    /// The settings of the database that a new table takes unless the `CREATE TABLE` query sets them.
-    SettingsChanges getSettingsForNewTable() const;
+    /// The settings of the database that all its tables take, also a new table unless the `CREATE TABLE` query sets them.
+    SettingsChanges getSettingsForTables() const;
 
     void applyCatalogSpecificConfiguration(StorageObjectStorageConfiguration & configuration) const;
 

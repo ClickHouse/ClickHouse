@@ -1164,19 +1164,10 @@ ASTs DatabaseDataLake::getEngineArgsForNewTable(const String & name, ObjectStora
     return engine_args.args;
 }
 
-SettingsChanges DatabaseDataLake::getSettingsForNewTable() const
+SettingsChanges DatabaseDataLake::getSettingsForTables() const
 {
-    /// Of the table settings, only the format version affects how a table is created. The others would only configure
-    /// the storage that `CREATE TABLE` builds, which the queries do not use: they get the table from the catalog with
-    /// the settings of the database, see `tryGetTableImpl`.
-    const auto settings = database_settings.get();
-    SettingsChanges changes;
-    for (auto & change : settings->allChanged())
-    {
-        if (change.name == "iceberg_format_version")
-            changes.push_back(std::move(change));
-    }
-    return changes;
+    /// The same settings as for the tables that `tryGetTableImpl` builds.
+    return database_settings.get()->allChanged();
 }
 
 /// Returns the storage type of an Iceberg table engine, or nullopt if the engine is not Iceberg.
@@ -1572,31 +1563,42 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(
 
     if (want_stateful)
     {
-        result_storage->startup();
         StoragePtr cached_storage;
         bool settings_changed = false;
         {
             std::lock_guard lock(stateful_tables_mutex);
-            /// `applySettingsChanges` publishes the new settings before it shuts down the cached tables under this lock,
-            /// so a table built with the previous settings is either shut down there or not cached here.
+            /// `applySettingsChanges` publishes the new settings before `shutdownStatefulTables` takes the cached tables
+            /// under this lock. So the storage is started only under this lock, together with the check of the settings and
+            /// with caching it: a storage built with the previous settings is either cached and started before that, and
+            /// then shut down there, or never started, so its background jobs do not run after `ALTER DATABASE` returns.
             settings_changed = database_settings.get() != settings_version;
             if (!settings_changed)
             {
                 auto [it, inserted] = stateful_tables.emplace(
                     name, StatefulTable{result_storage, table_endpoint, table_uuid, settings_version});
-                if (!inserted)
+                if (inserted)
+                {
+                    try
+                    {
+                        /// Only schedules the background jobs, so it does not hold the lock for long.
+                        result_storage->startup();
+                    }
+                    catch (...)
+                    {
+                        stateful_tables.erase(it);
+                        throw;
+                    }
+                }
+                else
                     cached_storage = it->second.storage;
             }
         }
+        /// Our storage was not started in both of these cases, so it needs no shutdown.
         if (settings_changed)
-        {
-            result_storage->shutdown(/*is_drop*/ false);
             return tryGetTableImpl(name, context_, lightweight, ignore_if_not_iceberg, use_stateful_tables);
-        }
         if (cached_storage)
         {
             /// Lost a race to another query; keep the already-cached storage and drop ours.
-            result_storage->shutdown(/*is_drop*/ false);
             /// NOLINT(storage-cast): a storage this database built and cached itself, never a proxy.
             if (auto * object_storage_table = dynamic_cast<StorageObjectStorage *>(cached_storage.get()))
                 object_storage_table->getObjectStorageConfiguration()->setExplicitMetadataFilePath(explicit_metadata_location);

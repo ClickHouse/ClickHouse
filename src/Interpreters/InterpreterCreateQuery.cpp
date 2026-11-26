@@ -3110,7 +3110,11 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
     /// we can safely destroy the object without a call to "shutdown", because there is guarantee
     /// that no background threads/similar resources remain after exception from "startup".
 
-    res->startup();
+    /// A `DataLakeCatalog` database does not keep the table: the queries get it from the catalog, and the database starts
+    /// the tables with background jobs itself (see `DatabaseDataLake::tryGetTableImpl`). Starting this storage would run
+    /// its background jobs, such as the compaction of an Iceberg table, until it is destroyed without `shutdown`.
+    if (!database->isDatalakeCatalog())
+        res->startup();
     return true;
 }
 

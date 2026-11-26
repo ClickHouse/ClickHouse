@@ -1148,8 +1148,8 @@ void registerStorageObjectStorage(StorageFactory & factory)
 
 #if USE_AVRO /// StorageIceberg depending on Avro to parse metadata with Avro format.
 
-/// A table created in a `DataLakeCatalog` database takes the settings of the database for new tables, unless the query
-/// sets them. For example, the storage factory creates the table when the location is in the engine arguments.
+/// A table created in a `DataLakeCatalog` database takes the settings of the database, like all its tables, unless the
+/// query sets them. For example, the storage factory creates the table when the location is in the engine arguments.
 static DataLakeStorageSettingsPtr getIcebergStorageSettings(const StorageFactory::Arguments & args)
 {
     auto storage_settings = std::make_shared<DataLakeStorageSettings>();
@@ -1158,7 +1158,7 @@ static DataLakeStorageSettingsPtr getIcebergStorageSettings(const StorageFactory
     {
         const String database_name = args.table_id.hasDatabase() ? args.table_id.database_name : args.getLocalContext()->getCurrentDatabase();
         if (const auto datalake_database = std::dynamic_pointer_cast<DatabaseDataLake>(DatabaseCatalog::instance().tryGetDatabase(database_name)))
-            storage_settings->loadFromSettingsChanges(datalake_database->getSettingsForNewTable());
+            storage_settings->loadFromSettingsChanges(datalake_database->getSettingsForTables());
     }
 #endif
     if (args.storage_def->settings)
