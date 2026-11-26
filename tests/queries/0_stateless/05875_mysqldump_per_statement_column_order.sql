@@ -766,7 +766,7 @@ INSERT INTO src (b,a) VALUES;$$); -- { serverError CANNOT_PARSE_INPUT_ASSERTION_
 
 -- Inference uses input positions when column name mapping is disabled.
 DESCRIBE TABLE format(MySQLDump, $$INSERT INTO src (a,b) VALUES (1,1.5);
-INSERT INTO src (b,a) VALUES (2.5,2);$$)
+INSERT INTO src (b,a) VALUES (2.5,2 );$$)
 SETTINGS input_format_mysql_dump_map_column_names=0, input_format_try_infer_integers=1,
     schema_inference_make_columns_nullable=1, schema_inference_hints='',
     input_format_max_rows_to_read_for_schema_inference=100,
@@ -774,7 +774,7 @@ SETTINGS input_format_mysql_dump_map_column_names=0, input_format_try_infer_inte
 
 -- The inferred positional schema must deserialize the same input successfully.
 SELECT a,b FROM format(MySQLDump, $$INSERT INTO src (a,b) VALUES (1,1.5);
-INSERT INTO src (b,a) VALUES (2.5,2);$$) ORDER BY a
+INSERT INTO src (b,a) VALUES (2.5,2 );$$) ORDER BY a
 SETTINGS input_format_mysql_dump_map_column_names=0, input_format_try_infer_integers=1,
     schema_inference_make_columns_nullable=1, schema_inference_hints='',
     input_format_max_rows_to_read_for_schema_inference=100,
@@ -782,7 +782,7 @@ SETTINGS input_format_mysql_dump_map_column_names=0, input_format_try_infer_inte
 
 -- Mapping by name must retain the original column assignments.
 SELECT a,b FROM format(MySQLDump, $$INSERT INTO src (a,b) VALUES (1,1.5);
-INSERT INTO src (b,a) VALUES (2.5,2);$$) ORDER BY a
+INSERT INTO src (b,a) VALUES (2.5,2 );$$) ORDER BY a
 SETTINGS input_format_mysql_dump_map_column_names=1, input_format_try_infer_integers=1,
     schema_inference_make_columns_nullable=1, schema_inference_hints='',
     input_format_max_rows_to_read_for_schema_inference=100,
@@ -790,8 +790,21 @@ SETTINGS input_format_mysql_dump_map_column_names=1, input_format_try_infer_inte
 
 -- A schema hint stays bound to its column across reordered statements.
 DESCRIBE TABLE format(MySQLDump, $$INSERT INTO src (a,b) VALUES (1,1.5);
-INSERT INTO src (b,a) VALUES (2.5,2);$$)
+INSERT INTO src (b,a) VALUES (2.5,2 );$$)
 SETTINGS input_format_mysql_dump_map_column_names=1, input_format_try_infer_integers=1,
     schema_inference_make_columns_nullable=1, schema_inference_hints='a Int32',
     input_format_max_rows_to_read_for_schema_inference=100,
     input_format_max_bytes_to_read_for_schema_inference=1048576;
+
+-- Inference accepts whitespace before the row terminator, including after strings.
+SELECT a,b FROM format(MySQLDump, $$
+INSERT INTO src (a,b) VALUES (1,'x'
+	 );
+INSERT INTO src (b,a) VALUES ('y',2
+	 );
+$$) ORDER BY a SETTINGS input_format_try_infer_integers=1;
+
+SELECT * FROM format(MySQLDump, $$
+INSERT INTO src VALUES (1,'x'
+	 ),(2,'y' );
+$$) ORDER BY 1 SETTINGS input_format_try_infer_integers=1;

@@ -111,3 +111,7 @@ b	Nullable(Float64)
 2	2.5
 a	Int32					
 b	Nullable(Float64)					
+1	x
+2	y
+1	x
+2	y

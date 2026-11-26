@@ -725,6 +725,7 @@ std::optional<DataTypes> MySQLDumpSchemaReader::readRowAndGetDataTypes()
         readQuotedField(value, in);
         auto type = tryInferDataTypeByEscapingRule(value, format_settings, FormatSettings::EscapingRule::Quoted);
         data_types.push_back(std::move(type));
+        skipWhitespaceIfAny(in);
     }
     skipEndOfRow(in);
     if (column_state.has_explicit_columns)
