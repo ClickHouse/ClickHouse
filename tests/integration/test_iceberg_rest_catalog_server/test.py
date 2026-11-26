@@ -1567,7 +1567,7 @@ def test_warehouse_management_access(started_cluster):
     response = catalog_request("GET", WAREHOUSES_URL, auth=("default", "wrong"), expected_code=401)
     assert_error_shape(response, "NotAuthorizedException")
 
-    # Reading is allowed for everyone who can log in. Changes follow `readonly` and `allow_ddl`.
+    # Users from `users.xml` hold all grants. Changes follow `readonly` and `allow_ddl`.
     create_warehouse(warehouse, base_location)
     for user in ["readonly_user", "no_ddl_user"]:
         auth = (user, "")
@@ -1581,6 +1581,41 @@ def test_warehouse_management_access(started_cluster):
         assert_error_shape(response, "ForbiddenException")
 
     delete_warehouse(warehouse)
+
+
+def test_warehouse_management_grants(started_cluster):
+    warehouse = f"grants_{uuid.uuid4().hex[:8]}"
+    base_location = f"s3://{BUCKET}/{warehouse}"
+    user = f"user_{uuid.uuid4().hex[:8]}"
+    auth = (user, "")
+    credential_url = f"{WAREHOUSES_URL}/{warehouse}/credential"
+
+    # A user created by SQL starts with no grants.
+    node.query(f"CREATE USER {user}")
+    response = create_warehouse(warehouse, base_location, auth=auth, expected_code=403)
+    assert_error_shape(response, "ForbiddenException")
+    response = catalog_request("GET", WAREHOUSES_URL, auth=auth, expected_code=403)
+    assert_error_shape(response, "ForbiddenException")
+    response = catalog_request("GET", f"{WAREHOUSES_URL}/{warehouse}", auth=auth, expected_code=403)
+    assert_error_shape(response, "ForbiddenException")
+
+    node.query(f"GRANT CREATE ICEBERG WAREHOUSE, SHOW ICEBERG WAREHOUSES ON *.* TO {user}")
+    create_warehouse(warehouse, base_location, auth=auth)
+    catalog_request("GET", WAREHOUSES_URL, auth=auth)
+    catalog_request("GET", f"{WAREHOUSES_URL}/{warehouse}", auth=auth)
+
+    # `ALTER` and `DROP` are separate grants.
+    response = catalog_request("PUT", credential_url, json={"credential": CREDENTIAL}, auth=auth, expected_code=403)
+    assert_error_shape(response, "ForbiddenException")
+    response = delete_warehouse(warehouse, auth=auth, expected_code=403)
+    assert_error_shape(response, "ForbiddenException")
+
+    # The group grants all four.
+    node.query(f"GRANT ICEBERG WAREHOUSE ADMIN ON *.* TO {user}")
+    catalog_request("PUT", credential_url, json={"credential": CREDENTIAL}, auth=auth, expected_code=204)
+    delete_warehouse(warehouse, auth=auth)
+
+    node.query(f"DROP USER {user}")
 
 
 def test_bucket_root_base_location(started_cluster):
