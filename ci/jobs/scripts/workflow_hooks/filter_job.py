@@ -62,6 +62,10 @@ DRAFT_PR_JOBS = [
 FUNCTIONAL_COVERAGE_REPLACEMENT_JOBS = [
     j.name for j in JobConfigs.functional_tests_arm_binary_coverage_replacement_pr_jobs
 ]
+# The stateless jobs that run with plan-based parallel replicas (see `ci/workflows/pull_request.py`).
+PLAN_BASED_PARALLEL_REPLICAS_JOBS = [
+    j.name for j in JobConfigs.functional_tests_arm_binary_plan_based_parallel_replicas_jobs
+]
 COVERAGE_REPLACEMENT_JOBS = [
     j.name
     for j in JobConfigs.functional_tests_arm_binary_coverage_replacement_pr_jobs
@@ -512,8 +516,6 @@ PR_SINGLE_ARCH_SKIPPED_STRESS_JOBS = (
 # `ci/workflows/pull_request.py` asserts that no other job of the PR workflow requires their
 # artifacts.
 PR_SINGLE_ARCH_SKIPPED_BUILDS = (
-    f"{JobNames.BUILD} (arm_debug)",
-    f"{JobNames.BUILD} (arm_tsan)",
     f"{JobNames.BUILD} (arm_msan)",
 )
 
@@ -778,6 +780,75 @@ def configure_performance_shards():
         if count != total:
             config.set_job_as_filtered(job.name, "Other performance shard family selected")
     config.dump()
+
+
+def _amd_performance_skipped(info):
+    """True if a pull request does not run the AMD performance comparison: it runs on ARM
+    by default, and on AMD only when asked for, or when the ARM run is a full one."""
+    if (
+        not info.pr_number  # run all performance jobs on master
+        or " Performance Improvement" in info.pr_body
+        or Labels.CI_PERFORMANCE in info.pr_labels
+        or Labels.PR_PERFORMANCE in info.pr_labels
+    ):
+        return False
+    from ci.jobs.scripts.performance_selection import full_suite_reason
+
+    # Automatic full ARM runs enable selected AMD runs, just like pr-performance.
+    return not full_suite_reason(info, "arm_release")
+
+
+# The kv data flag, set by `configure_amd_release_thinlto`, that makes `Build (amd_release)`
+# build without ThinLTO (see `ci/jobs/build_clickhouse.py`).
+AMD_RELEASE_WITHOUT_THINLTO_KV = "amd_release_without_thinlto"
+AMD_RELEASE_BUILD_JOB = f"{JobNames.BUILD} ({BuildTypes.AMD_RELEASE})"
+
+assert AMD_RELEASE_BUILD_JOB in {
+    j.name for j in JobConfigs.release_build_jobs
+}, "AMD_RELEASE_BUILD_JOB names a job that does not exist"
+
+
+def configure_amd_release_thinlto():
+    """Build `amd_release` without ThinLTO in a pull request that skips the AMD performance
+    comparison, its only consumer that depends on how the binary is optimized.
+
+    Over 2026-11-06 to 2026-11-13, 2569 of 2983 PR `amd_release` builds (86%) had no AMD
+    performance comparison, and their median `Build ClickHouse` step took 20 minutes
+    (the non-LTO `amd_binary`: 4 minutes). Without ThinLTO the compile commands of
+    `amd_release` are the same as those of `amd_binary`, which master builds on every commit,
+    so the build is served from the compiler cache and only links (the standalone
+    `clickhouse-keeper` objects are the exception). The other consumers - packages,
+    `Install packages`, `Compatibility check`, integration tests, `ClickBench` (which checks
+    correctness, not timings) - test the same code. `arm_release` keeps ThinLTO: the ARM
+    performance comparison runs in nearly every PR, so ThinLTO stays covered in PRs.
+
+    A pre-hook, not a filter hook: `ci-force-all` bypasses the filter hooks and then runs
+    every performance job, so that case must keep ThinLTO, and the decision must be recorded
+    before the cache lookup. The build is cached under a salted digest, so that a later run
+    with the same digest that does run the AMD comparison (e.g. after adding `pr-performance`)
+    does not reuse the non-LTO binary.
+    """
+    from ci.praktika.cache import Cache
+
+    info = Info()
+    force_all = (
+        Labels.CI_FORCE_ALL in info.pr_labels
+        or info.get_kv_data("unresolved_review_threads_force_all") is True
+    )
+    if (
+        info.pr_number <= 0
+        or info.workflow_name != SMALL_PR_WORKFLOW
+        # Private PR builds are deployed to staging (see `flavor_cmake_options`).
+        or info.repo_name != "ClickHouse/ClickHouse"
+        or force_all
+        or not _amd_performance_skipped(info)
+    ):
+        return
+    print(f"NOTE: no AMD performance comparison - [{AMD_RELEASE_BUILD_JOB}] builds without ThinLTO")
+    info.store_kv_data(AMD_RELEASE_WITHOUT_THINLTO_KV, True)
+    salts = info.get_kv_data(Cache.DIGEST_SALTS_KV_KEY) or {}
+    salts[AMD_RELEASE_BUILD_JOB] = "without_thinlto"
+    info.store_kv_data(Cache.DIGEST_SALTS_KV_KEY, salts)
 
 
 def configure_toolchain_builds():
@@ -1239,27 +1310,23 @@ def should_skip_job(job_name):
 
     # skip AMD perf tests for non-performance update (ARM runs by default)
     if (
-        " Performance Improvement" not in _info_cache.pr_body
-        and Labels.CI_PERFORMANCE not in _info_cache.pr_labels
-        and Labels.PR_PERFORMANCE not in _info_cache.pr_labels
-        and JobNames.PERFORMANCE in job_name
+        JobNames.PERFORMANCE in job_name
         and "amd" in job_name
-        and _info_cache.pr_number  # run all performance jobs on master
+        and _amd_performance_skipped(_info_cache)
     ):
-        from ci.jobs.scripts.performance_selection import full_suite_reason
-
-        # Automatic full ARM runs enable selected AMD runs, just like pr-performance.
-        if not full_suite_reason(_info_cache, "arm_release"):
-            return True, "Skipped, not labeled with 'pr-performance'"
+        return True, "Skipped, not labeled with 'pr-performance'"
 
     # If only CI scripts changed (no product code), run a minimal set of tests
     # to validate the CI pipeline: stateless batch 1 and amd_asan_ubsan integration batch 1.
     # The coverage family and its `arm_binary` replacements are already handled above and must run
     # in full when they run at all, so this only narrows down the other plain (non-coverage) test jobs.
+    # The plan-based parallel replicas jobs run in full too: a change to the job script can break how they
+    # install and start the server with the plan-based profile.
     if (
         changed_files
         and all(f.startswith("ci/") and f.endswith(".py") for f in changed_files)
         and job_name not in COVERAGE_REPLACEMENT_JOBS
+        and job_name not in PLAN_BASED_PARALLEL_REPLICAS_JOBS
         and "llvm_coverage" not in job_name
         and "excluded_from_llvm" not in job_name
     ):
@@ -1288,28 +1355,15 @@ def should_skip_merge_queue_job(job_name):
     """Config-time filter for the `MergeQueueCI` workflow.
 
     The merge queue runs a small, fixed set of jobs (style check, fast test, the
-    `amd_binary` build, the stateless flaky check, the stateless and integration
-    targeted checks, the docs examples, and the limited clang-tidy check). The
-    targeted checks select from CIDB and skip themselves when the selection is
-    empty. Two of the others are conditional here. The limited
-    clang-tidy check has nothing to analyze when the change touches neither a C
-    or C++ file, nor an input of a code generator producing C++, nor the
-    clang-tidy configuration or the check's own logic, so a docs- or test-only
-    PR does not need to claim a large runner for it. And the flaky check reruns
-    the PR's new/changed stateless tests and the tests `master` changed after
-    the PR's last CI run as a drift guard, so when there are none it has nothing
-    to do. Filter it out here, at config time, so such a PR does not schedule
-    the runner, restore `CH_AMD_BINARY`, and enter the test container only to
-    exit `SKIPPED`. This is the merge-queue counterpart to the `flaky` branch of
-    `should_skip_job`, kept deliberately minimal so it cannot skip the
-    build/style/fast-test/docs-examples jobs the queue always needs. The skip
-    condition matches the in-job selection in `functional_tests.py` (both rely
-    on `Targeting.get_merge_queue_tests`), so the early exit and the config-time
-    skip never disagree. `get_changed_tests` resolves data fixtures (a
-    `.parquet`/`.tsv` under `tests/queries/0_stateless/`, even one nested in a
-    subdirectory) back to the tests that consume them, so a fixture-only PR
-    still reruns the affected test surface instead of being skipped here as
-    "no changed tests".
+    `amd_binary` build, the stateless and integration targeted checks, the docs
+    examples, and the limited clang-tidy check). The targeted checks select from
+    CIDB and skip themselves when the selection is empty. One of the others is
+    conditional here: the limited clang-tidy check has nothing to analyze when
+    the change touches neither a C or C++ file, nor an input of a code generator
+    producing C++, nor the clang-tidy configuration or the check's own logic, so
+    a docs- or test-only PR does not need to claim a large runner for it. Filter
+    it out here, at config time, kept deliberately minimal so it cannot skip the
+    build/style/fast-test/docs-examples jobs the queue always needs.
     """
     global _info_cache
     if _info_cache is None:
@@ -1332,13 +1386,4 @@ def should_skip_merge_queue_job(job_name):
             )
         return False, ""
 
-    if "flaky" not in job_name.lower() or "stateless" not in job_name.lower():
-        return False, ""
-
-    from ci.jobs.scripts.find_tests import Targeting
-
-    targeter = Targeting(info=_info_cache)
-    targeter.job_type = Targeting.STATELESS_JOB_TYPE
-    if not targeter.get_merge_queue_tests():
-        return True, "Skipped, no new/changed stateless tests to rerun in the merge queue"
     return False, ""

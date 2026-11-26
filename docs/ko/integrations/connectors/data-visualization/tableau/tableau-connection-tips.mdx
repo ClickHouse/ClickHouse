@@ -15,7 +15,7 @@ import { ClickHouseSupportedBadge } from "/snippets/ko/components/ClickHouseSupp
 <ClickHouseSupportedBadge />
 
 <div id="initial-sql-tab">
-  ## Initial SQL 탭
+  ## Initial SQL 탭 {#initial-sql-tab}
 </div>
 
 Advanced 탭에서 *Set Session ID* 확인란이 활성화되어 있으면(기본적으로 활성화됨) 다음을 사용해 세션 수준 [설정](/ko/reference/settings/session-settings)을 지정할 수 있습니다.
@@ -25,7 +25,7 @@ SET my_setting=value;
 ```
 
 <div id="advanced-tab">
-  ## Advanced 탭
+  ## Advanced 탭 {#advanced-tab}
 </div>
 
 99%의 경우 Advanced 탭은 필요하지 않지만, 나머지 1%의 경우에는 다음 설정을 사용할 수 있습니다:
@@ -45,7 +45,7 @@ SET my_setting=value;
 * **Set Session ID** 체크박스. Initial SQL 탭에서 세션 수준 설정을 지정하는 데 필요하며, `"tableau-jdbc-connector-*{timestamp}*-*{number}*"` 형식으로 timestamp와 의사 난수를 사용해 `session_id`를 생성합니다
 
 <div id="limited-support-for-uint64-int128-uint256-data-types">
-  ## UInt64, Int128, (U)Int256 데이터 타입에 대한 제한적 지원
+  ## UInt64, Int128, (U)Int256 데이터 타입에 대한 제한적 지원 {#limited-support-for-uint64-int128-uint256-data-types}
 </div>
 
 기본적으로 드라이버는 *UInt64, Int128, (U)Int256* 타입의 필드를 문자열로 표시하지만, **변환하지는 않고 표시만 합니다**. 즉, 다음 계산 필드를 작성하려고 하면 오류가 발생합니다

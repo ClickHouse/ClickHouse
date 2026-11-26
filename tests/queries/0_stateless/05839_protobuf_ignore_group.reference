@@ -1,0 +1,7 @@
+empty group
+7	ok
+invalid wire type in group
+truncated varint in group
+truncated 64 bit field in group
+truncated length delimited field in group
+truncated 32 bit field in group

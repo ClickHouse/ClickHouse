@@ -14,6 +14,7 @@
 
 #include <Parsers/NullsAction.h>
 #include <Functions/IFunction.h>
+#include <base/sanitizer_defs.h>
 
 namespace DB
 {
@@ -159,6 +160,7 @@ private:
 
     static void mergeWindowWithParentWindow(const QueryTreeNodePtr & window_node, const QueryTreeNodePtr & parent_window_node, IdentifierResolveScope & scope);
 
+    NO_SANITIZE_UNSIGNED_OVERFLOW
     void replaceNodesWithPositionalArguments(QueryTreeNodePtr & node_list, const QueryTreeNodes & projection_nodes, IdentifierResolveScope & scope);
 
     static void convertLimitOffsetExpression(QueryTreeNodePtr & expression_node, const String & expression_description, IdentifierResolveScope & scope);
@@ -175,8 +177,12 @@ private:
 
     static void expandLimitByAll(QueryNode & query_tree_node_typed);
 
-    static std::string
-    rewriteAggregateFunctionNameIfNeeded(const std::string & aggregate_function_name, NullsAction action, const ContextPtr & context);
+    static std::string rewriteAggregateFunctionNameIfNeeded(
+        const std::string & aggregate_function_name,
+        NullsAction action,
+        const DataTypes & argument_types,
+        const Array & parameters,
+        const ContextPtr & context);
 
     static std::optional<JoinTableSide> getColumnSideFromJoinTree(const QueryTreeNodePtr & resolved_identifier, const JoinNode & join_node);
 
