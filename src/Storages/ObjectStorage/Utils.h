@@ -57,6 +57,16 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     bool allow_page_cache = true,
     bool read_is_authorized = false);
 
+class IDisk;
+using DiskPtr = std::shared_ptr<IDisk>;
+
+/// The disk that the `disk` setting of a data lake table function or engine names, after the checks that
+/// `DataLakeConfiguration::fromDisk` makes: the disk must be in `allowed_disks_for_table_engines`, and a custom disk must be
+/// usable by this session (`DiskFromAST::ensureDiskIsAllowed`, which a replayed stored definition is exempt from). They are
+/// made before the backend of the disk is inspected to choose the configuration, so that a caller who may not use a disk
+/// learns neither whether it exists nor what its backend is.
+DiskPtr getDiskForDataLake(const String & disk_name, const ContextPtr & context, bool is_replayed_definition);
+
 /// Fetches the metadata of an object to read (e.g. by an S3 `HEAD` request), when its size and ETag are not
 /// known from listing or table metadata. Every metadata request of the read path must go through these
 /// functions, so that it is accounted in `ObjectStorageMetadataFetchedForRead` and `ObjectStorageMetadataFetchMicroseconds`.

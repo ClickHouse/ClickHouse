@@ -94,7 +94,7 @@ StorageObjectStorageConfigurationPtr TableFunctionObjectStorage<Definition, Conf
                 if (!is_iceberg && !is_delta_lake)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting `disk` is not supported by table function {}", function_name);
 
-                auto disk = context->getDisk(disk_name);
+                auto disk = getDiskForDataLake(disk_name, context, arguments_from_stored_definition);
                 switch (disk->getObjectStorage()->getType())
                 {
 #if USE_AWS_S3 && USE_AVRO

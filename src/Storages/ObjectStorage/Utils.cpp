@@ -9,6 +9,8 @@
 #include <Disks/IO/CachedOnDiskReadBufferFromFile.h>
 #include <Disks/IO/getThreadPoolReader.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
+#include <Disks/DiskFromAST.h>
+#include <Disks/IDisk.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
@@ -453,6 +455,20 @@ void checkSessionMayUseServerIdentityIgnoringSharedFlag(
         object_storage.getAzureBlobStorageConnectionParams()->checkSessionMayUseServerIdentityIgnoringSharedFlag(
             context->shouldRestrictUserQueryS3Credentials());
 #endif
+}
+
+
+DiskPtr getDiskForDataLake(const String & disk_name, const ContextPtr & context, bool is_replayed_definition)
+{
+    if (!Context::getGlobalContextInstance()->getAllowedDisksForTableEngines().contains(disk_name))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Disk '{}' is not allowed for usage in storage engines. The list of allowed disks is defined by server setting "
+            "`allowed_disks_for_table_engines`", disk_name);
+
+    auto disk = context->getDisk(disk_name);
+    if (!is_replayed_definition)
+        DiskFromAST::ensureDiskIsAllowed(disk, context, /* check_remote_hosts */ true);
+    return disk;
 }
 
 }

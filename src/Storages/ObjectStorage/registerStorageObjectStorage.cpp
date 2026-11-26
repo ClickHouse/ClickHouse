@@ -1168,7 +1168,8 @@ void registerStorageIceberg(StorageFactory & factory)
             StorageObjectStorageConfigurationPtr configuration;
             if (!disk_name.empty())
             {
-                auto disk = Context::getGlobalContextInstance()->getDisk(disk_name);
+                auto disk = getDiskForDataLake(
+                    disk_name, args.getLocalContext(), isReplayedTableDefinition(args.mode, args.query, args.getLocalContext()));
                 switch (disk->getObjectStorage()->getType())
                 {
 #if USE_AWS_S3
@@ -1658,7 +1659,8 @@ ALTER TABLE example_table MODIFY SETTING iceberg_compaction_delay_bias = 600, ic
             StorageObjectStorageConfigurationPtr configuration;
             if (!disk_name.empty())
             {
-                auto disk = Context::getGlobalContextInstance()->getDisk(disk_name);
+                auto disk = getDiskForDataLake(
+                    disk_name, args.getLocalContext(), isReplayedTableDefinition(args.mode, args.query, args.getLocalContext()));
                 switch (disk->getObjectStorage()->getType())
                 {
                 case ObjectStorageType::S3:
@@ -1698,7 +1700,8 @@ ALTER TABLE example_table MODIFY SETTING iceberg_compaction_delay_bias = 600, ic
             StorageObjectStorageConfigurationPtr configuration;
             if (!disk_name.empty())
             {
-                auto disk = Context::getGlobalContextInstance()->getDisk(disk_name);
+                auto disk = getDiskForDataLake(
+                    disk_name, args.getLocalContext(), isReplayedTableDefinition(args.mode, args.query, args.getLocalContext()));
                 switch (disk->getObjectStorage()->getType())
                 {
                 case ObjectStorageType::Azure:
@@ -1759,7 +1762,8 @@ ALTER TABLE example_table MODIFY SETTING iceberg_compaction_delay_bias = 600, ic
             StorageObjectStorageConfigurationPtr configuration;
             if (!disk_name.empty())
             {
-                auto disk = Context::getGlobalContextInstance()->getDisk(disk_name);
+                auto disk = getDiskForDataLake(
+                    disk_name, args.getLocalContext(), isReplayedTableDefinition(args.mode, args.query, args.getLocalContext()));
                 switch (disk->getObjectStorage()->getType())
                 {
                     case ObjectStorageType::Local:
@@ -1815,7 +1819,8 @@ void registerStoragePaimon(StorageFactory & factory)
             StorageObjectStorageConfigurationPtr configuration;
             if (!disk_name.empty())
             {
-                auto disk = Context::getGlobalContextInstance()->getDisk(disk_name);
+                auto disk = getDiskForDataLake(
+                    disk_name, args.getLocalContext(), isReplayedTableDefinition(args.mode, args.query, args.getLocalContext()));
                 switch (disk->getObjectStorage()->getType())
                 {
 #if USE_AWS_S3
@@ -2232,7 +2237,8 @@ Data types supported in Paimon partition keys:
             StorageObjectStorageConfigurationPtr configuration;
             if (!disk_name.empty())
             {
-                auto disk = Context::getGlobalContextInstance()->getDisk(disk_name);
+                auto disk = getDiskForDataLake(
+                    disk_name, args.getLocalContext(), isReplayedTableDefinition(args.mode, args.query, args.getLocalContext()));
                 switch (disk->getObjectStorage()->getType())
                 {
                     case ObjectStorageType::S3:
@@ -2280,7 +2286,8 @@ Data types supported in Paimon partition keys:
             StorageObjectStorageConfigurationPtr configuration;
             if (!disk_name.empty())
             {
-                auto disk = Context::getGlobalContextInstance()->getDisk(disk_name);
+                auto disk = getDiskForDataLake(
+                    disk_name, args.getLocalContext(), isReplayedTableDefinition(args.mode, args.query, args.getLocalContext()));
                 switch (disk->getObjectStorage()->getType())
                 {
                     case ObjectStorageType::Azure:
@@ -2353,7 +2360,8 @@ Data types supported in Paimon partition keys:
             StorageObjectStorageConfigurationPtr configuration;
             if (!disk_name.empty())
             {
-                auto disk = Context::getGlobalContextInstance()->getDisk(disk_name);
+                auto disk = getDiskForDataLake(
+                    disk_name, args.getLocalContext(), isReplayedTableDefinition(args.mode, args.query, args.getLocalContext()));
                 switch (disk->getObjectStorage()->getType())
                 {
                     case ObjectStorageType::Local:
@@ -2406,7 +2414,8 @@ void registerStorageDeltaLake(StorageFactory & factory)
             StorageObjectStorageConfigurationPtr configuration;
             if (!disk_name.empty())
             {
-                auto disk = Context::getGlobalContextInstance()->getDisk(disk_name);
+                auto disk = getDiskForDataLake(
+                    disk_name, args.getLocalContext(), isReplayedTableDefinition(args.mode, args.query, args.getLocalContext()));
                 switch (disk->getObjectStorage()->getType())
                 {
                     case ObjectStorageType::S3:
@@ -2621,7 +2630,8 @@ The `DeltaLake` table engine and table function support data caching, the same a
             StorageObjectStorageConfigurationPtr configuration;
             if (!disk_name.empty())
             {
-                auto disk = Context::getGlobalContextInstance()->getDisk(disk_name);
+                auto disk = getDiskForDataLake(
+                    disk_name, args.getLocalContext(), isReplayedTableDefinition(args.mode, args.query, args.getLocalContext()));
                 switch (disk->getObjectStorage()->getType())
                 {
                 case ObjectStorageType::S3:
@@ -2663,7 +2673,8 @@ The `DeltaLake` table engine and table function support data caching, the same a
             StorageObjectStorageConfigurationPtr configuration;
             if (!disk_name.empty())
             {
-                auto disk = Context::getGlobalContextInstance()->getDisk(disk_name);
+                auto disk = getDiskForDataLake(
+                    disk_name, args.getLocalContext(), isReplayedTableDefinition(args.mode, args.query, args.getLocalContext()));
                 switch (disk->getObjectStorage()->getType())
                 {
                     case ObjectStorageType::Azure:
@@ -2702,7 +2713,8 @@ The `DeltaLake` table engine and table function support data caching, the same a
             StorageObjectStorageConfigurationPtr configuration;
             if (!disk_name.empty())
             {
-                auto disk = Context::getGlobalContextInstance()->getDisk(disk_name);
+                auto disk = getDiskForDataLake(
+                    disk_name, args.getLocalContext(), isReplayedTableDefinition(args.mode, args.query, args.getLocalContext()));
                 switch (disk->getObjectStorage()->getType())
                 {
                     case ObjectStorageType::Local:
