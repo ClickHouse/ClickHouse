@@ -566,39 +566,27 @@ def test_dns_resolver_filter_cache_disabled(cluster_ready):
 @pytest.mark.parametrize("network", ["loopback", "none"])
 def test_unreachable_nameserver_fails_fast(cluster_ready, network):
     """
-    A lookup must fail right away, not after the resolver timeout (5 s by
-    default), when the nameserver cannot be reached, as in a sandbox without a
-    network where `/etc/resolv.conf` points to a stub resolver of the host which
-    does not listen there. `clickhouse local` resolves the host name for `fqdn`
-    through a nameserver on a loopback port where nothing listens (an ICMP
-    port-unreachable error comes back), or in a network namespace where the
-    loopback is down (`sendto` fails). It is compared with the same query when
-    the host name is in `/etc/hosts`, so that the startup time of the build
-    does not matter.
+    A lookup must fail right away, not after the resolver timeout, when the
+    nameserver cannot be reached, as in a sandbox without a network where
+    `/etc/resolv.conf` points to a stub resolver of the host which does not
+    listen there. Here `clickhouse local` resolves the host name for `fqdn`,
+    which is not in `/etc/hosts`, through a nameserver on a loopback port where
+    nothing listens (an ICMP port-unreachable error comes back), or in a network
+    namespace where the loopback is down (`sendto` fails). The resolver timeout
+    is 30 s, so the lookup is cut by `timeout` if it waits for it.
     https://github.com/ClickHouse/ClickHouse/issues/134703
     """
     script = r"""
 set -e
 dir=$(mktemp -d)
-printf 'nameserver 127.0.0.2\n' > "$dir/resolv.conf"
+printf 'nameserver 127.0.0.2\noptions timeout:30 attempts:1\n' > "$dir/resolv.conf"
 printf '127.0.0.1 localhost\n' > "$dir/hosts"
-printf '127.0.0.1 localhost\n127.0.0.1 %s\n' "$(hostname)" > "$dir/hosts_with_hostname"
 mount --bind "$dir/resolv.conf" /etc/resolv.conf
-run() {
-    mount --bind "$dir/$1" /etc/hosts
-    start=$(date +%s%N)
-    timeout 60 clickhouse local --query 'SELECT fqdn() = hostName()' > /dev/null
-    echo $(( ($(date +%s%N) - start) / 1000000 ))
-    umount /etc/hosts
-}
-run hosts_with_hostname
-run hosts
+mount --bind "$dir/hosts" /etc/hosts
+timeout 20 clickhouse local --query 'SELECT fqdn() = hostName()'
 """
     unshare = ["unshare", "--mount"] + (["--net"] if network == "none" else [])
     result = node9.exec_in_container(
         unshare + ["bash", "-c", script], privileged=True, user="root"
     )
-    baseline_ms, lookup_ms = map(int, result.split())
-    logging.info(f"baseline {baseline_ms} ms, with the lookup {lookup_ms} ms")
-    # Waiting for the resolver timeout adds at least 5000 ms.
-    assert lookup_ms - baseline_ms < 2500
+    assert result == "1\n"
