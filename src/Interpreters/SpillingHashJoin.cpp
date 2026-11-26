@@ -111,7 +111,7 @@ void SpillingHashJoin::tryConvertBuildStreams(JoinBuildContext context)
             continue;
         }
 
-        const auto bytes = hash_join->takenBlockBytes(taken);
+        const auto bytes = HashJoin::takenBlockBytes(taken);
         SCOPE_EXIT({ hash_join->releaseTakenBlock(bytes); });
         const Block block = hash_join->materializeTakenBlock(std::move(taken));
         addBlockToExternalJoin(block, block.rows(), context.callerChecksLimits());

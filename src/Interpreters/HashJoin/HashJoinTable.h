@@ -544,12 +544,17 @@ public:
     /// With a spill budget, each slot reserves the growth of its buckets before it inserts; a refused slot stops the block.
     struct InsertBudget
     {
+        InsertBudget(JoinSpillBudget & budget_, absl::FunctionRef<size_t()> held_bytes_, bool checked_)
+            : budget(budget_), held_bytes(held_bytes_), checked(checked_)
+        {
+        }
+
         JoinSpillBudget & budget;
         absl::FunctionRef<size_t()> held_bytes;
         /// Otherwise the budget only counts the rows and never refuses them.
         bool checked;
 
-        std::optional<size_t> reserve(size_t bytes) const
+        [[nodiscard]] std::optional<size_t> reserve(size_t bytes) const
         {
             if (!checked)
                 return budget.reserveUnchecked(bytes);
@@ -823,8 +828,8 @@ private:
     template <typename Map>
     size_t estimateAnySplitGrowth(const Map & map, size_t slot, size_t slot_rows) const
     {
-        std::array<size_t, Map::NUM_BUCKETS> free_keys;
-        std::array<size_t, Map::NUM_BUCKETS> growth;
+        std::array<size_t, Map::NUM_BUCKETS> free_keys{};
+        std::array<size_t, Map::NUM_BUCKETS> growth{};
         size_t num_buckets = 0;
         for (size_t bucket = slot; bucket < Map::NUM_BUCKETS; bucket += slots.size(), ++num_buckets)
         {
