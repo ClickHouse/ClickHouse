@@ -98,6 +98,30 @@ SELECT planToASCII('{"Version": 1, "Root": "A", "Nodes": [{"NodeType": "T", "Nod
 SELECT planToASCII('{"Version": 1, "Root": "A", "Nodes": [{"NodeType": "T", "NodeId": "A", "Children": ["A"]}]}'); -- { serverError BAD_ARGUMENTS }
 SELECT planToASCII(1); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
+-- A count that is not a non-negative integer fitting `UInt64`: negative, too large, 2^64 as a
+-- double (which rounds to the same double as the maximum of `UInt64`), fractional, or not a number.
+SELECT planToASCII('{"Version": 1, "MaxThreads": -1, "Root": "A", "Nodes": [{"NodeType": "T", "NodeId": "A"}]}'); -- { serverError BAD_ARGUMENTS }
+SELECT planToASCII('{"Version": 1, "MaxThreads": 1e30, "Root": "A", "Nodes": [{"NodeType": "T", "NodeId": "A"}]}'); -- { serverError BAD_ARGUMENTS }
+SELECT planToASCII('{"Version": 1, "MaxThreads": 1.5, "Root": "A", "Nodes": [{"NodeType": "T", "NodeId": "A"}]}'); -- { serverError BAD_ARGUMENTS }
+SELECT planToASCII('{"Version": 1, "MaxThreads": "-1", "Root": "A", "Nodes": [{"NodeType": "T", "NodeId": "A"}]}'); -- { serverError BAD_ARGUMENTS }
+SELECT planToASCII('{"Version": 18446744073709551616.0, "Root": "A", "Nodes": []}'); -- { serverError BAD_ARGUMENTS }
+SELECT planToASCII('{"Version": "18446744073709551616", "Root": "A", "Nodes": []}'); -- { serverError BAD_ARGUMENTS }
+SELECT planToASCII('{"Version": "one", "Root": "A", "Nodes": []}'); -- { serverError BAD_ARGUMENTS }
+SELECT planToASCII('{"Version": 1, "Root": "A", "Nodes": [{"NodeType": "T", "NodeId": "A", "Statistics": {"Stages": [{"WallClockTimeNs": 10, "Processors": 18446744073709551616.0}]}}]}'); -- { serverError BAD_ARGUMENTS }
+SELECT planToASCII('{"Version": 1, "Root": "A", "Nodes": [{"NodeType": "T", "NodeId": "A", "Statistics": {"HashTable": {"Memory": "lots"}}}]}'); -- { serverError BAD_ARGUMENTS }
+
+-- Numbers quoted as strings, as `toJSONString` writes them with `output_format_json_quote_64bit_integers = 1`,
+-- render the same as unquoted ones, in the format of their metric.
+SELECT planToASCII('{"Version": 1, "Root": "A", "MaxThreads": 2, "Nodes": [{"NodeType": "T", "NodeId": "A", "Statistics": {
+    "HashTable": {"UniqueKeys": 40, "Memory": 4096},
+    "Time": {"StepTimeNs": 1000, "StepTimeShare": 50, "BranchTimeNs": 2000, "BranchTimeShare": 100},
+    "Stages": [{"Name": "", "WallClockTimeNs": 2000, "Processors": 2, "ProcessorTimeNs": {"Sum": 2000}}]}}]}') AS unquoted,
+    unquoted = planToASCII('{"Version": "1", "Root": "A", "MaxThreads": "2", "Nodes": [{"NodeType": "T", "NodeId": "A", "Statistics": {
+    "HashTable": {"UniqueKeys": "40", "Memory": "4096"},
+    "Time": {"StepTimeNs": "1000", "StepTimeShare": 50, "BranchTimeNs": "2000", "BranchTimeShare": 100},
+    "Stages": [{"Name": "", "WallClockTimeNs": "2000", "Processors": "2", "ProcessorTimeNs": {"Sum": "2000"}}]}}]}') AS same
+FORMAT Vertical;
+
 -- A plan logged by a real query renders its tree.
 SELECT number FROM numbers(1000) WHERE number % 7 = 0 AND '05327_logged' != '' ORDER BY number DESC LIMIT 3 SETTINGS log_query_plans = 1 FORMAT Null;
 SYSTEM FLUSH LOGS query_log;

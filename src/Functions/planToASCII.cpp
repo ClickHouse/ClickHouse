@@ -6,6 +6,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <IO/Operators.h>
+#include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <Processors/QueryPlan/Profiling/Metrics/StepAnalyzeInfo.h>
 #include <Processors/QueryPlan/Profiling/Render/FlatJSONPlanRenderer.h>
@@ -22,6 +23,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <string_view>
 
 
@@ -109,23 +111,68 @@ constexpr std::array<std::pair<std::string_view, MetricKey>, 41> metric_keys = {
     {"Concurrency", MetricKey::Concurrency},
 }};
 
-double toDouble(const Poco::Dynamic::Var & value)
+/// The document is the argument of the function, so a value that is not a number of the expected
+/// kind is an error of the argument. A `JSON` column may quote 64-bit integers when it is turned back
+/// into text, so a number can also arrive as a string.
+double toDouble(const Poco::Dynamic::Var & value, std::string_view key)
 {
-    /// A `JSON` column may quote 64-bit integers when it is turned back into text, so a number can
-    /// arrive as a string; the conversion parses it either way.
+    if (value.isString())
+    {
+        double result;
+        if (!tryParse(result, value.extract<std::string>()))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The value of `{}` in the query plan is not a number: {}", key, value.toString());
+        return result;
+    }
+    if (!value.isNumeric())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The value of `{}` in the query plan is not a number: {}", key, value.toString());
     return value.convert<double>();
 }
 
-UInt64 toUInt64(const Poco::Dynamic::Var & value)
+/// Checked rather than `Poco::Dynamic::Var::convert`, which lets a double equal to 2^64 through its
+/// range check and then casts it.
+UInt64 toUInt64(const Poco::Dynamic::Var & value, std::string_view key)
 {
-    return value.convert<UInt64>();
+    const auto not_unsigned = [&]
+    {
+        return Exception(ErrorCodes::BAD_ARGUMENTS,
+            "The value of `{}` in the query plan is not a non-negative integer that fits `UInt64`: {}", key, value.toString());
+    };
+
+    if (value.isString())
+    {
+        UInt64 result;
+        if (!tryParse(result, value.extract<std::string>()))
+            throw not_unsigned();
+        return result;
+    }
+    if (value.isInteger())
+    {
+        if (value.isSigned())
+        {
+            const Int64 signed_value = value.convert<Int64>();
+            if (signed_value < 0)
+                throw not_unsigned();
+            return static_cast<UInt64>(signed_value);
+        }
+        return value.convert<UInt64>();
+    }
+    if (value.isNumeric())
+    {
+        /// 2^64 is exactly representable as a double, unlike the maximum of `UInt64`.
+        constexpr double two_to_64 = 18446744073709551616.0;
+        const double number = value.convert<double>();
+        if (!std::isfinite(number) || number < 0 || number >= two_to_64 || number != std::floor(number))
+            throw not_unsigned();
+        return static_cast<UInt64>(number);
+    }
+    throw not_unsigned();
 }
 
 std::optional<double> findNumber(const Poco::JSON::Object & object, const std::string & key)
 {
     if (!object.has(key) || object.isNull(key))
         return std::nullopt;
-    return toDouble(object.get(key));
+    return toDouble(object.get(key), key);
 }
 
 double numberOrZero(const Poco::JSON::Object & object, const std::string & key)
@@ -153,10 +200,10 @@ String formatMetricValue(MetricKey key, const Poco::JSON::Object & group, const 
     const auto & value = group.get(json_key);
     const MetricFormat format = formatOf(key);
 
-    if (format == MetricFormat::Raw || value.isString())
+    if (format == MetricFormat::Raw || format == MetricFormat::Fraction)
         return value.toString();
 
-    const double numeric = toDouble(value);
+    const double numeric = toDouble(value, json_key);
     switch (format)
     {
         case MetricFormat::Bytes:
@@ -225,8 +272,8 @@ public:
         , out(out_)
     {
         execution_time_ns = findNumber(plan, "ExecutionTimeNs");
-        if (auto threads = findNumber(plan, "MaxThreads"))
-            max_threads = static_cast<UInt64>(*threads);
+        if (plan.has("MaxThreads") && !plan.isNull("MaxThreads"))
+            max_threads = toUInt64(plan.get("MaxThreads"), "MaxThreads");
 
         JSONArrayPtr nodes = plan.getArray("Nodes");
         if (!nodes)
@@ -273,7 +320,7 @@ private:
     UnorderedMapWithMemoryTracking<String, JSONObjectPtr> nodes_by_id;
     UnorderedSetWithMemoryTracking<String> visited;
 
-    const Poco::JSON::Object & findNode(const String & id) const
+    [[nodiscard]] const Poco::JSON::Object & findNode(const String & id) const
     {
         auto it = nodes_by_id.find(id);
         if (it == nodes_by_id.end())
@@ -502,7 +549,7 @@ private:
             out << ", replaced " << formatMetricValue(MetricKey::ReplacedFilterType, group, "Replaced");
         /// Not rounded, to compare it with `join_runtime_filter_exact_values_limit`.
         if (group.has("UniqueKeys") && !group.isNull("UniqueKeys"))
-            out << ", " << toUInt64(group.get("UniqueKeys")) << " " << toString(MetricKey::UniqueKeys);
+            out << ", " << toUInt64(group.get("UniqueKeys"), "UniqueKeys") << " " << toString(MetricKey::UniqueKeys);
 
         UnorderedSetWithMemoryTracking<std::string_view> known = {"Type", "Reason", "Replaced", "UniqueKeys"};
         for (const auto & [json_key, key] : metric_keys)
@@ -614,7 +661,7 @@ private:
                 if (JSONObjectPtr distribution = stage->getObject("ProcessorTimeNs"))
                     sum_elapsed_ns = numberOrZero(*distribution, "Sum");
 
-                const UInt64 processors = stage->has("Processors") ? toUInt64(stage->get("Processors")) : 0;
+                const UInt64 processors = stage->has("Processors") ? toUInt64(stage->get("Processors"), "Processors") : 0;
                 const UInt64 max_parallelism = max_threads ? std::min(*max_threads, processors) : processors;
                 out << fmt::format("{:.2f}/{}", sum_elapsed_ns / wall_clock_time_ns, max_parallelism);
             }
@@ -642,7 +689,7 @@ void renderDocument(const Poco::JSON::Object & document, WriteBuffer & out)
     if (!document.has("Version"))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "The query plan has no `Version`");
 
-    const UInt64 version = toUInt64(document.get("Version"));
+    const UInt64 version = toUInt64(document.get("Version"), "Version");
     if (version != QUERY_PLAN_JSON_VERSION)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "The query plan has version {}, and this server reads version {}", version, QUERY_PLAN_JSON_VERSION);
@@ -660,16 +707,16 @@ public:
     static constexpr auto name = "planToASCII";
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionPlanToASCII>(); }
 
-    String getName() const override { return name; }
-    size_t getNumberOfArguments() const override { return 1; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-    bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] String getName() const override { return name; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
     /// The default implementation would apply the function to the default value of the argument,
     /// which renders to an empty string anyway.
-    bool canBeExecutedOnDefaultArguments() const override { return false; }
+    [[nodiscard]] bool canBeExecutedOnDefaultArguments() const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors mandatory_args{
             {"query_plan",
@@ -681,7 +728,7 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const auto & argument = arguments[0];
         const bool is_string = isString(argument.type);

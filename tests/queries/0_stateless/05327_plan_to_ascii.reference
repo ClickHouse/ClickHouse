@@ -73,5 +73,13 @@ ReadFromSystemOne
 \N			
 Error: The query plan is too large
 
+Row 1:
+──────
+unquoted: T
+   Hash table: unique keys 40.00 · memory 4.10 KB
+   Time: step 1.00 us (50.00%) · branch 2.00 us (100.00%)
+     time 2.00 us · parallelism 1.00/2
+
+same:     1
 1	1	1	1
 1	1	1
