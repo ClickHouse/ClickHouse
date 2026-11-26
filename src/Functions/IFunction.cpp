@@ -2,15 +2,18 @@
 #include <Functions/FunctionVariantAdaptor.h>
 
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnNothing.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnReplicated.h>
 #include <Columns/ColumnsCommon.h>
+#include <Columns/ColumnsNumber.h>
 #include <Core/Block.h>
 #include <Core/Settings.h>
 #include <Core/TypeId.h>
+#include <Core/callOnTypeIndex.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -248,11 +251,57 @@ namespace
 /// formed value of its type, and a function that rejects it - `match` handed an invalid regular
 /// expression, `hasToken` handed a token separator - rejects it as data, exactly as it would in a
 /// non-null row. Installing the type default there would only swap one arbitrary value for another,
-/// while costing a per-row copy of every `Nullable` argument on paths whose whole point is to avoid
-/// even a `countBytesInFilter`. The fix for that family is to stop evaluating the discarded rows,
-/// which is what the short-circuit branch below already does when
+/// while costing a copy of every `Nullable` argument on paths whose whole point is to avoid even a
+/// `countBytesInFilter`. The fix for that family is to stop evaluating the discarded rows, which is
+/// what the short-circuit branch below already does when
 /// `short_circuit_function_evaluation_for_nulls_threshold` lets it;
 /// see https://github.com/ClickHouse/ClickHouse/issues/119614.
+///
+/// A nested column of a fixed-width type (a number, `Enum`, `Decimal`, `Date`, `DateTime64`, ...) is
+/// patched in a single pass that stores either the source value or the default per row, a loop the
+/// compiler can vectorize; any other column is rebuilt with a virtual call per row. Returns nullptr
+/// when the column is not of such a type.
+MutableColumnPtr patchNullSlotsOfFixedWidthColumn(
+    const IColumn & nested, const IDataType & nested_type, const NullMap & null_map, size_t input_rows_count)
+{
+    MutableColumnPtr patched;
+    auto patch = [&](const auto & types)
+    {
+        using T = typename std::decay_t<decltype(types)>::RightType;
+        using ColumnType = ColumnVectorOrDecimal<T>;
+
+        const auto * source = typeid_cast<const ColumnType *>(&nested);
+        if (!source)
+            return false;
+
+        /// The default as `insertDefaultInto` defines it, which for an `Enum` is its lowest value, not 0.
+        auto result = source->cloneEmpty();
+        nested_type.insertDefaultInto(*result);
+        auto & result_data = assert_cast<ColumnType &>(*result).getData();
+        const T default_value = result_data[0];
+        result_data.resize(input_rows_count);
+
+        /// Plain pointers, and the source value loaded before the choice: the loop is then a load, a
+        /// compare and a select per row, which clang vectorizes for native-width values (x86-64 SSE4.2
+        /// and arm64 checked). Written as a conditional load or through the containers (whose pointer
+        /// members a store to an `Int8` may alias), it is not.
+        T * data = result_data.data();
+        const T * source_data = source->getData().data();
+        const UInt8 * is_null = null_map.data();
+        for (size_t row = 0; row < input_rows_count; ++row)
+        {
+            const T value = source_data[row];
+            data[row] = is_null[row] ? default_value : value;
+        }
+
+        patched = std::move(result);
+        return true;
+    };
+
+    callOnBasicType<void, true, true, true, true>(nested_type.getTypeId(), patch);
+    return patched;
+}
+
 void patchNullSlots(
     const ColumnsWithTypeAndName & args, ColumnsWithTypeAndName & nested_args, size_t input_rows_count, bool only_enums)
 {
@@ -273,18 +322,14 @@ void patchNullSlots(
         }
 
         const auto & null_map = assert_cast<const ColumnNullable &>(*args[i].column).getNullMapData();
-
-        bool has_any_null = false;
-        for (size_t row = 0; row < input_rows_count; ++row)
-        {
-            if (null_map[row])
-            {
-                has_any_null = true;
-                break;
-            }
-        }
-        if (!has_any_null)
+        if (memoryIsZero(null_map.data(), 0, input_rows_count))
             continue;
+
+        if (auto patched = patchNullSlotsOfFixedWidthColumn(*nested_args[i].column, *nested_type, null_map, input_rows_count))
+        {
+            nested_args[i].column = std::move(patched);
+            continue;
+        }
 
         auto patched = nested_type->createColumn();
         patched->reserve(input_rows_count);
@@ -455,19 +500,20 @@ ColumnPtr IExecutableFunction::defaultImplementationForNulls(
                     && null_ratio >= short_circuit_function_evaluation_for_nulls_threshold));
 
         ColumnsWithTypeAndName temporary_columns = createBlockWithNestedColumns(args);
-        patchNullSlots(args, temporary_columns, input_rows_count, /*only_enums=*/ true);
         auto temporary_result_type = removeNullable(result_type);
 
         if (!should_short_circuit)
         {
             /// Each row should be evaluated if there are no nulls or short circuiting is disabled.
+            patchNullSlots(args, temporary_columns, input_rows_count, /*only_enums=*/ true);
             auto res = executeWithoutLowCardinalityColumns(temporary_columns, temporary_result_type, input_rows_count, dry_run);
             auto new_res = wrapInNullable(res, std::move(result_null_map));
             return new_res;
         }
         else
         {
-            /// If short circuit is enabled, we only execute the function on rows with all arguments not null
+            /// If short circuit is enabled, we only execute the function on rows with all arguments not null.
+            /// The null slots are among the rows filtered out below, so there is nothing to patch.
 
             /// Generate Filter
             IColumn::Filter filter_mask(input_rows_count);
