@@ -849,6 +849,13 @@ MergeTreeIndexReadResultPool::getOrBuildIndexReadResult(
                 }
             }
 
+            if (publish_built_results)
+            {
+                std::lock_guard registry_lock(index_read_result_registry_mutex);
+                if (auto built_it = index_read_result_registry.find(part_index); built_it != index_read_result_registry.end())
+                    built_it->second.built_result = res;
+            }
+
             promise->set_value(res);
             return res;
         }
@@ -868,18 +875,11 @@ MergeTreeIndexReadResultPool::getOrBuildIndexReadResult(
 
 MergeTreeIndexReadResultPtr MergeTreeIndexReadResultPool::tryGetBuiltIndexReadResult(size_t part_index)
 {
-    std::shared_future<MergeTreeIndexReadResultPtr> future;
-    {
-        std::shared_lock lock(index_read_result_registry_mutex);
-        auto it = index_read_result_registry.find(part_index);
-        if (it == index_read_result_registry.end())
-            return nullptr;
-        future = it->second.future;
-    }
-
-    if (future.wait_for(std::chrono::seconds(0)) != std::future_status::ready)
+    std::shared_lock lock(index_read_result_registry_mutex);
+    auto it = index_read_result_registry.find(part_index);
+    if (it == index_read_result_registry.end())
         return nullptr;
-    return future.get();
+    return it->second.built_result;
 }
 
 void MergeTreeIndexReadResultPool::clear(size_t part_index)

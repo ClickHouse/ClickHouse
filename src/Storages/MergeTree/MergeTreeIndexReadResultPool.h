@@ -9,6 +9,7 @@
 #include <Storages/MergeTree/MergeTreeIndexMinMax.h>
 #include <Storages/MergeTree/KeyCondition.h>
 
+#include <atomic>
 #include <functional>
 #include <roaring/roaring.hh>
 
@@ -261,6 +262,8 @@ public:
     {
         std::shared_ptr<std::promise<MergeTreeIndexReadResultPtr>> promise;
         std::shared_future<MergeTreeIndexReadResultPtr> future;
+        /// The value of `future` once the build succeeded, kept only with `publishBuiltResults`.
+        MergeTreeIndexReadResultPtr built_result;
 
         IndexReadResultEntry()
             : promise(std::make_shared<std::promise<MergeTreeIndexReadResultPtr>>())
@@ -285,6 +288,9 @@ public:
     /// Returns the part's MergeTreeIndexReadResult only if its build has already finished; never builds or waits.
     MergeTreeIndexReadResultPtr tryGetBuiltIndexReadResult(size_t part_index);
 
+    /// Makes tryGetBuiltIndexReadResult see the results built from now on.
+    void publishBuiltResults() { publish_built_results = true; }
+
     /// Cleans up the cached MergeTreeIndexReadResult for a given part if it exists.
     /// Should be called when the last task for the part has finished.
     void clear(size_t part_index);
@@ -304,6 +310,7 @@ private:
     /// Stores MergeTreeIndexReadResult instances per part to avoid redundant construction.
     std::unordered_map<size_t, IndexReadResultEntry> index_read_result_registry;
     SharedMutex index_read_result_registry_mutex;
+    std::atomic_bool publish_built_results = false;
 };
 
 using MergeTreeIndexReadResultPoolPtr = std::shared_ptr<MergeTreeIndexReadResultPool>;

@@ -744,7 +744,10 @@ static MergeTreeReadRangesRefinerPtr createIndexReadRangesRefiner(
 
     /// An eager build could snapshot JOIN runtime filters before they are published, so reuse what a reader built.
     if (index_build_context->index_reader_pool->hasRuntimeFilters())
+    {
+        index_build_context->index_reader_pool->publishBuiltResults();
         return std::make_shared<IndexReadRangesRefiner>(index_build_context, metadata_snapshot, /*only_built_results=*/ true);
+    }
 
     return std::make_shared<IndexReadRangesRefiner>(index_build_context, metadata_snapshot);
 }
