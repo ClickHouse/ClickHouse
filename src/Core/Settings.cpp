@@ -10394,7 +10394,13 @@ When the setting is enabled, the analyzer additionally:
   bodies, row policy conditions, mutations, column `DEFAULT` / `MATERIALIZED` / `ALIAS` expressions,
   `ClickHouse` dictionary source queries executed on the same server, SQL function bodies), where `a.b`
   is always table `b` of database `a`, except in the query argument of table functions `view`,
-  `viewIfPermitted`, `eval`, `obfuscate` and `explain`. Parts of the calling query that are resolved inside
+  `viewIfPermitted`, `eval`, `obfuscate` and `explain`. Nor is it applied to a table that an engine reads
+  by its stored name: a table of a `Merge` table or of the `merge` table function, and the table that
+  a `Distributed` table or the `remote` / `cluster` table functions read from a shard that the initiator
+  plans itself (its local replica with `prefer_localhost_replica`, or a shard that gets a serialized
+  query plan). A shard that receives the query as text reads it with its own current database. A filter
+  from `additional_table_filters` applied to such a table is read as written too.
+  Parts of the calling query that are resolved inside
   a SQL function body are read as written too: a lambda passed as an argument, a `WITH` lambda that the body
   calls, and a CTE that the body or such a lambda refers to. Such a CTE stays read as written for its later
   uses in the same query;

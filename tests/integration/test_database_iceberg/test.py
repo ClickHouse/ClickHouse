@@ -3238,8 +3238,7 @@ def test_namespace_serialized_plan_reads_table_as_written(started_cluster):
             node.query(f"CREATE TABLE default.{S} (x String) ENGINE = Set")
             node.query(f"INSERT INTO default.{S} VALUES ('kek')")
 
-        # the catalog is the worker user's default database (under the shard's `default_database` the
-        # initiator itself reports the ambiguity); the user is kept for the connections pooled on `node1`
+        # the catalog is the worker user's default database; the user is kept for the connections pooled on `node1`
         node2.query(f"CREATE USER IF NOT EXISTS {worker} IDENTIFIED WITH no_password DEFAULT DATABASE {CATALOG_NAME}")
         for table in (f"{CATALOG_NAME}.`{X}.{T2}`", f"default.{S}", f"{CATALOG_NAME}.`default.{S}`"):
             node2.query(f"GRANT SELECT ON {table} TO {worker}")
@@ -3282,6 +3281,83 @@ def test_namespace_serialized_plan_reads_table_as_written(started_cluster):
             node.query(f"DROP TABLE IF EXISTS default.{L}")
         node1.query(f"DROP TABLE IF EXISTS {CATALOG_NAME}.`default.{S}`")
         node1.query(f"DROP TABLE IF EXISTS {CATALOG_NAME}.`default.{M}`")
+
+
+def test_namespace_merge_and_distributed_read_children_as_written(started_cluster):
+    """
+    A `Merge` child and the local shard of a `Distributed` table are read through generated SQL
+    which names the table as `db`.`table`; the name is read as written, not also as table
+    `db.table` of the current database.
+    """
+    node1 = started_cluster.instances["node1"]
+    # the tables exist on `node1` only: its replica of the shard is read in the same server
+    on = {"allow_experimental_table_namespaces": 1, "prefer_localhost_replica": 1}
+
+    test_ref = f"test_ns_children_{uuid.uuid4().hex[:8]}"
+    L = f"local_{test_ref}"
+    L2 = f"local2_{test_ref}"
+    D = f"dist_{test_ref}"
+    D2 = f"dist2_{test_ref}"
+    user = f"u_dist_{test_ref}"
+
+    catalog = load_catalog_impl(started_cluster)
+
+    # a table `default.L` (1 row), while the catalog has a table `default.L` (5 rows) too
+    try:
+        catalog.create_namespace("default")
+    except NamespaceAlreadyExistsError:
+        pass
+    create_table(catalog, "default", L).append(pa.Table.from_pylist([generate_record() for _ in range(5)]))
+
+    create_clickhouse_iceberg_database(started_cluster, node1, CATALOG_NAME)
+
+    try:
+        node1.query(f"CREATE TABLE default.{L} (symbol Nullable(String)) ENGINE = Memory")
+        node1.query(f"INSERT INTO default.{L} VALUES ('a')")
+        # no table `default.L2` in the catalog
+        node1.query(f"CREATE TABLE default.{L2} (symbol Nullable(String)) ENGINE = Memory")
+        node1.query(f"INSERT INTO default.{L2} VALUES ('a'), ('b')")
+        # `node1` is a replica of the only shard of `cluster_simple`, so the shard is read locally
+        for dist, local in ((D, L), (D2, L2)):
+            node1.query(
+                f"CREATE TABLE default.{dist} (symbol Nullable(String)) "
+                f"ENGINE = Distributed(cluster_simple, default, {local})"
+            )
+
+        result = int(node1.query(f"USE {CATALOG_NAME}; SELECT count() FROM `default.{L}`", settings=on))
+        assert result == 5, f"catalog table default.L: expected 5 rows, got {result}"
+        _, err = node1.query_and_get_answer_with_error(
+            f"USE {CATALOG_NAME}; SELECT count() FROM default.{L}", settings=on
+        )
+        assert "AMBIGUOUS_IDENTIFIER" in err, f"direct read of default.L: {err}"
+
+        result = int(node1.query(f"USE {CATALOG_NAME}; SELECT count() FROM default.{D}", settings=on))
+        assert result == 1, f"`Distributed` table: expected 1 row, got {result}"
+
+        result = int(
+            node1.query(f"USE {CATALOG_NAME}; SELECT count() FROM merge('default', '^({L}|{D2})$')", settings=on)
+        )
+        assert result == 3, f"`Merge` over the table and a `Distributed` table: expected 3 rows, got {result}"
+
+        result = int(
+            node1.query(f"USE {CATALOG_NAME}; SELECT count() FROM merge('default', '^({L}|{D})$')", settings=on)
+        )
+        assert result == 2, f"`Merge` over the table and a `Distributed` table over it: expected 2 rows, got {result}"
+
+        # the user can read the catalog table but not `default.L`
+        node1.query(f"DROP USER IF EXISTS {user}")
+        node1.query(f"CREATE USER {user} IDENTIFIED WITH no_password")
+        node1.query(f"GRANT SELECT ON default.{D} TO {user}")
+        node1.query(f"GRANT SELECT ON {CATALOG_NAME}.`default.{L}` TO {user}")
+        _, err = node1.query_and_get_answer_with_error(
+            f"USE {CATALOG_NAME}; SELECT count() FROM default.{D}", settings=on, user=user
+        )
+        assert "ACCESS_DENIED" in err, f"`Distributed` table must read the database table: {err}"
+    finally:
+        node1.query(f"DROP USER IF EXISTS {user}")
+        for table in (D, D2, L, L2):
+            node1.query(f"DROP TABLE IF EXISTS default.{table}")
+        node1.query(f"DROP TABLE IF EXISTS {CATALOG_NAME}.`default.{L}`")
 
 
 def test_namespace_time_series_reads_targets_as_written(started_cluster):
