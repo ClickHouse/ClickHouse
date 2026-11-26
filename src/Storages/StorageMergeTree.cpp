@@ -1581,7 +1581,7 @@ std::unique_ptr<PlainLightweightUpdateLock> StorageMergeTree::getLockForLightwei
         ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::PatchesAcquireLockMicroseconds);
 
         const auto metadata_snapshot = getInMemoryMetadataPtr(local_context, /*bypass_metadata_cache=*/ false);
-        auto affected_columns = getUpdateAffectedColumns(commands, shared_from_this(), metadata_snapshot, local_context);
+        auto affected_columns = getUpdateAffectedColumns(commands, metadata_snapshot->getColumns(), local_context);
         lightweight_updates_sync.lockColumns(local_context, affected_columns, timeout_ms);
 
         update_lock->affected_columns = std::move(affected_columns);
