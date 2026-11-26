@@ -1,0 +1,311 @@
+---
+slug: /clickstack/observability/example-datasets/chrome-extension
+title: 'Chrome 扩展程序'
+description: '使用 HyperDX Chrome 扩展，为全托管的 ClickHouse Observability 捕获会话回放和 RUM 数据'
+doc_type: 'guide'
+keywords: ['clickstack', 'chrome extension', 'session replay', 'browser sdk', 'rum', 'observability', 'hyperdx']
+sidebarTitle: 'Chrome 扩展程序'
+---
+
+import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
+
+<Tabs>
+  <Tab title="全托管">
+    <BetaBadge label="Beta 版产品" />
+
+    <Info>
+      **TL;DR**
+
+      本指南介绍如何使用 [HyperDX Chrome 扩展](https://github.com/kyreddie/hyperdx-chrome-extension)将浏览器 SDK 注入任意网站。整个过程无需修改目标应用程序的源代码：只需配置一次该扩展，然后浏览网站，即可在 ClickHouse Observability 中查看会话回放。
+
+      所需时间：10-15 分钟
+    </Info>
+
+## 概览 {#overview}
+
+    [HyperDX Chrome 扩展](https://github.com/kyreddie/hyperdx-chrome-extension)会将 [@hyperdx/browser](https://github.com/hyperdxio/hyperdx-js) SDK 注入到您访问的页面中。如果您需要在不修改站点代码库的前提下调试其会话回放、RUM 或追踪上下文传播，例如第三方应用程序、生产环境构建版本，或启用了严格内容安全策略 (CSP) 的本地开发服务器，就可以使用该扩展。
+
+    SDK 已打包在扩展中 (约 480 KB) ，因此页面在运行时无需从 CDN 加载脚本。扩展会优先尝试以外部 `chrome-extension://` 脚本的方式注入；若 CSP 阻止了来自扩展源的脚本，则回退到内联注入。
+
+    与[会话回放演示](/zh/clickstack/observability/example-datasets/session-replay)对您自行控制的演示应用进行插桩不同，此方法会对您在 Chrome 中打开的受支持页面进行插桩；部分页面会限制脚本注入。您只需像普通用户一样浏览和操作网站，即可生成会话数据。
+
+    有关会话回放的背景信息及其在 ClickHouse Observability 中的作用，请参阅[会话回放](/zh/clickstack/observability/features/session-replay)功能页面。
+
+## 前置条件 {#prerequisites}
+
+    * Google Chrome 或基于 Chromium 的浏览器 (Edge、Brave 等)
+    * 已有的全托管 ClickHouse Observability 服务。请参阅[全托管入门指南](/zh/clickstack/observability/getting-started)。
+
+## 运行演示 {#running-the-demo}
+
+    <Steps>
+      <Step title="克隆扩展仓库" id="clone-extension">
+        ```shell
+        git clone https://github.com/kyreddie/hyperdx-chrome-extension
+        cd hyperdx-chrome-extension
+        ```
+      </Step>
+
+      <Step title="安装扩展" id="install-extension">
+        1. 打开 Chrome 并访问 `chrome://extensions`。
+        2. 开启右上角的 **Developer mode**。
+        3. 点击 **Load unpacked**。
+        4. 选择你克隆下来的 `hyperdx-chrome-extension` 目录。
+
+        安装完成后,工具栏中会出现名为 **HyperDX Browser Extension** 的扩展。
+      </Step>
+
+      <Step title="获取连接详情" id="get-connection-details">
+        打开你的 ClickHouse Observability 服务,进入 **团队设置 → Managed Telemetry**。复制 **OTLP HTTP endpoint** 和 **API key**,供配置扩展时使用。
+
+        请使用所提供的完整 HTTPS 端点(含端口),不要在末尾追加 `/v1/logs` 或 `/v1/traces`。
+
+        <div className="ch-image-lg">
+          <Frame>
+            ![团队设置中的 Managed Telemetry 页面,显示已遮盖的 OTLP HTTP 端点和 API key](/images/clickstack/getting-started/observability-managed-telemetry.png)
+          </Frame>
+        </div>
+      </Step>
+
+      <Step title="配置扩展" id="configure-extension">
+        点击 Chrome 工具栏中的 **HyperDX Browser Extension** 图标,填写以下设置:
+
+        | 字段                               | 全托管设置                                 | 说明                                        |
+        | -------------------------------- | ------------------------------------- | ----------------------------------------- |
+        | **Enable HyperDX Monitoring**    | 开启                                    | 注入功能的总开关                                  |
+        | **Service Name**                 | `my-frontend-app`                     | 必填,用于在 ClickHouse Observability 中标识该服务    |
+        | **API Key**                      | 你的 Managed Telemetry API key          | 必填,从 **团队设置 → Managed Telemetry** 中复制     |
+        | **Collector URL**                | 你的 Managed Telemetry OTLP HTTP 端点     | 将扩展的默认 URL 替换为 **Managed Telemetry** 中的端点 |
+        | **Environment**                  | `development`                         | 可选,用于设置 `deployment.environment` 资源属性     |
+        | **Trace Propagation Targets**    | `/api\.myapp\.domain/i, /localhost/i` | 可选,以逗号分隔的 JavaScript 正则表达式,用于传播 trace 请求头 |
+        | **Only inject on matching URLs** | 关闭                                    | 启用后可限定需要插桩的站点                             |
+        | **Capture console logs**         | 关闭                                    | 启用后会转发浏览器控制台输出                            |
+        | **Advanced network capture**     | 关闭                                    | 启用后可捕获详细的网络请求                             |
+
+        点击 **Save Configuration**,然后刷新需要插桩的标签页。
+      </Step>
+
+      <Step title="浏览网站并生成会话" id="browse-site">
+        在 Chrome 中打开任意网站或本地应用,例如前端开发服务器的 [http://localhost:3000](http://localhost:3000)。
+
+        像平常一样操作页面:点击链接、提交表单、触发错误,以及在不同视图之间切换。只要配置有效,扩展就会在每次页面加载时自动注入 Browser SDK。
+      </Step>
+
+      <Step title="查看会话回放" id="view-session-replay">
+        在你的 ClickHouse Observability 服务中,从左侧边栏打开 **Client Sessions**,并选择涵盖你浏览活动的时间范围。
+
+        此时应能看到你的会话,以及对应的时长和事件数。点击 ▶️ 按钮即可回放。
+
+        在 **Highlighted** 和 **All Events** 模式之间切换,可调整时间线上显示的详细程度。
+      </Step>
+    </Steps>
+
+## URL 过滤 {#url-filtering}
+
+    默认情况下，启用监控后，该扩展会在您访问的每个页面中注入 SDK。如需仅在特定站点注入，请开启 **Only inject on matching URLs**，并添加 URL 模式，每行一个 (或以逗号分隔) ：
+
+    | 模式                         | 匹配项                             |
+    | -------------------------- | ------------------------------- |
+    | `http://homedepot.com/*`   | 仅 `homedepot.com` 上的 HTTP       |
+    | `*://homedepot.com/*`      | `homedepot.com` 上的 HTTP 和 HTTPS |
+    | `*://*.homedepot.com/*`    | 子域名，如 `www.homedepot.com`       |
+    | `https://localhost:3000/*` | 运行在端口 3000 上的本地开发服务器            |
+
+    保存 URL 模式后，请重新加载该选项卡。
+
+## 验证注入 {#verify-injection}
+
+    在受监控的页面上打开 DevTools (**控制台**选项卡) ，重新加载页面，然后查找以下内容：
+
+    ```text
+    [HyperDX Extension] Configuration valid, injecting HyperDX
+    [HyperDX Extension] Injected via extension scripts
+    [HyperDX Extension] HyperDX initialized
+    ```
+
+    如果来自扩展的脚本被 CSP 拦截，扩展会记录一条回退日志消息，并改用内联注入方式重试。
+
+## 故障排查 {#troubleshooting}
+
+    <Accordion title="ClickHouse Observability 中未显示会话">
+      1. 检查浏览器控制台中是否有 `[HyperDX Extension]` 日志消息或错误
+      2. 确认 **Enable HyperDX Monitoring** 已开启，且已设置 **Service Name**
+      3. 确认 **采集器 URL** 和 **API Key** 与服务中 **团队设置 → Managed Telemetry** 下的值一致
+      4. 在 Client Sessions 视图中调整时间范围 (可尝试 **Last 15 minutes**)
+      5. 强制刷新浏览器：`Cmd+Shift+R` (Mac) 或 `Ctrl+Shift+R` (Windows/Linux)
+    </Accordion>
+
+    <Accordion title="chrome-extension://invalid/ 错误">
+      在 `chrome://extensions` 中重新加载该扩展，然后强制刷新该选项卡。如果在选项卡仍处于打开状态时更新或重新加载了扩展，就会出现这种情况。
+    </Accordion>
+
+    <Accordion title="未在网站中注入">
+      1. 检查是否已启用监控并已配置服务名称
+      2. 如果已开启 **Only inject on matching URLs**，请确认当前页面的 URL 与您设置的某条模式匹配
+      3. 某些网站会通过 CSP 同时阻止来自扩展源的脚本注入和内联脚本注入，在这些页面上可能无法完成注入
+    </Accordion>
+
+    <Accordion title="HyperDX：控制台中缺少 apiKey">
+      输入 **团队设置 → Managed Telemetry** 中的 API key，保存配置后重新加载受监控的页面。全托管摄取必须使用此 API key。
+    </Accordion>
+
+## 隐私 {#privacy}
+
+    该扩展会将可观测性代码注入您访问的页面。请仅在您有权调试的网站上使用。请勿与他人共享 API 密钥，也不要将其提交到版本控制系统。
+
+## 了解更多 {#learn-more}
+
+    * [会话回放](/zh/clickstack/observability/features/session-replay) — 功能概览、SDK 选项和隐私控制
+    * [Browser SDK 参考文档](/zh/clickstack/observability/ingesting-data/sdks/browser) — 完整的 SDK 选项和高级配置
+    * [会话回放演示](/zh/clickstack/observability/example-datasets/session-replay) — 基于源代码为演示应用插桩
+    * [全托管入门指南](/zh/clickstack/observability/getting-started) — 连接您的服务并摄取首批数据
+    * [GitHub 上的 HyperDX Chrome 扩展](https://github.com/kyreddie/hyperdx-chrome-extension) — 源代码和议题跟踪器
+  </Tab>
+
+  <Tab title="自管理">
+    将该扩展与现有的 OpenTelemetry 收集器搭配使用，该收集器负责将数据发送到您的 Self-managed ClickHouse Observability 服务。
+
+## 概览 {#overview-self-configured}
+
+    [HyperDX Chrome 扩展](https://github.com/kyreddie/hyperdx-chrome-extension)会将 [@hyperdx/browser](https://github.com/hyperdxio/hyperdx-js) SDK 注入您访问的页面。如果您需要在不修改站点代码库的前提下调试其会话回放、RUM 或追踪上下文传播，该扩展会非常有用，例如调试第三方应用程序、生产环境构建版本，或启用了严格内容安全策略 (CSP) 的本地开发服务器。
+
+    SDK 已打包在扩展中 (约 480 KB) ，因此页面无需在运行时从 CDN 加载脚本。扩展会优先尝试以外部 `chrome-extension://` 脚本方式注入；若 CSP 拦截了来自扩展源的脚本，则回退到内联注入。
+
+    [会话回放演示](/zh/clickstack/observability/example-datasets/session-replay)是对您自己控制的演示应用进行插桩，而此方法则是对您在 Chrome 中打开的受支持页面进行插桩；部分页面会限制脚本注入。您只需像普通用户一样与网站交互，即可生成会话数据。
+
+    有关会话回放的背景信息及其工作原理，请参阅[会话回放](/zh/clickstack/observability/features/session-replay)功能页面。
+
+## 前置条件 {#prerequisites-self-configured}
+
+    * Google Chrome 或基于 Chromium 的浏览器 (Edge、Brave 等)
+    * 已有的自管理 ClickHouse Observability 服务，以及正在运行的摄取采集器。如有需要，请先参阅[采集器设置指南](/zh/clickstack/self-configured/ingesting-data/collector#configuring-the-collector-self-configured)完成配置。
+    * 采集器的 OTLP HTTP 端点 (需可从浏览器访问) ，以及其身份验证令牌 (如已配置) 。
+
+## 运行演示 {#running-the-demo-self-configured}
+
+    <Steps>
+      <Step title="克隆扩展仓库" id="clone-extension-self-configured">
+        ```shell
+        git clone https://github.com/kyreddie/hyperdx-chrome-extension
+        cd hyperdx-chrome-extension
+        ```
+      </Step>
+
+      <Step title="安装扩展" id="install-extension-self-configured">
+        1. 打开 Chrome 并访问 `chrome://extensions`。
+        2. 启用右上角的 **Developer mode**。
+        3. 点击 **Load unpacked**。
+        4. 选择您克隆的 `hyperdx-chrome-extension` 目录。
+
+        该扩展会以 **HyperDX Browser Extension** 的名称显示在工具栏中。
+      </Step>
+
+      <Step title="获取采集器连接信息" id="get-api-key-self-configured">
+        使用正在运行的采集器的 OTLP HTTP 端点。例如,如果采集器与浏览器运行在同一台机器上,则使用 `http://localhost:4318`。如果是远程采集器,请使用可从浏览器访问的 HTTPS URL。请勿在末尾追加 `/v1/logs` 或 `/v1/traces`。
+
+        如果您的采集器使用了 `OTLP_AUTH_TOKEN`,请将该令牌填入扩展的 **API Key**,无需添加 `Bearer` 前缀。这是采集器的摄取凭据,而不是 ClickHouse 数据库的用户名和密码。请参阅[保护采集器](/zh/clickstack/self-configured/ingesting-data/collector#securing-the-collector-self-configured)。
+      </Step>
+
+      <Step title="配置扩展" id="configure-extension-self-configured">
+        点击 Chrome 工具栏中的 **HyperDX Browser Extension** 图标,并填写以下设置:
+
+        | 字段                               | 自管理设置                                 | 说明                                                 |
+        | -------------------------------- | ------------------------------------- | -------------------------------------------------- |
+        | **Enable HyperDX Monitoring**    | 开启                                    | 注入功能的总开关                                           |
+        | **Service Name**                 | `my-frontend-app`                     | 必填 — 用于在 ClickHouse Observability 中标识该服务           |
+        | **API Key**                      | 采集器的认证令牌                              | 如已配置,请使用 `OTLP_AUTH_TOKEN` 的值                      |
+        | **Collector URL**                | 采集器的 OTLP HTTP 端点                     | 替换扩展的默认 URL;仅当采集器运行在本机时才使用 `http://localhost:4318` |
+        | **Environment**                  | `development`                         | 可选 — 设置 `deployment.environment` 资源属性              |
+        | **Trace Propagation Targets**    | `/api\.myapp\.domain/i, /localhost/i` | 可选 — 以逗号分隔的 JavaScript 正则表达式,用于 trace 头传播          |
+        | **Only inject on matching URLs** | 关闭                                    | 启用后可限制需要插桩的站点                                      |
+        | **Capture console logs**         | 关闭                                    | 启用后会转发浏览器控制台输出                                     |
+        | **Advanced network capture**     | 关闭                                    | 启用后会详细捕获网络请求                                       |
+
+        点击 **Save Configuration**,然后重新加载需要插桩的选项卡。
+
+        <div className="ch-image-sm">
+          <Frame>
+            ![带有本地 ClickStack 设置的 HyperDX Chrome 扩展配置弹窗](/images/clickstack/chrome-extension/extension-config.png)
+          </Frame>
+        </div>
+
+        上图展示了一个典型的本地配置:已启用监控、已设置服务名称、采集器指向 `http://localhost:4318`,且追踪上下文传播仅限于 API 和 localhost URL。
+      </Step>
+
+      <Step title="浏览网站并生成会话" id="browse-site-self-configured">
+        在 Chrome 中打开任意网站或本地应用,例如前端开发服务器 [http://localhost:3000](http://localhost:3000)。
+
+        像平常一样与页面交互:点击链接、提交表单、触发错误以及在视图之间切换。只要配置有效,扩展就会在每次加载页面时自动注入 Browser SDK。
+      </Step>
+
+      <Step title="查看会话重放" id="view-session-replay-self-configured">
+        在 ClickHouse Cloud 中打开您的自管理 ClickHouse Observability 服务,然后在左侧边栏中选择 **Client Sessions**。选择一个涵盖您浏览活动的时间范围。
+
+        您应该能看到列出的会话及其时长和事件数。点击 ▶️ 按钮即可重放该会话。
+
+        在 **Highlighted** 和 **All Events** 模式之间切换,可调整时间线显示的详细程度。
+      </Step>
+    </Steps>
+
+## URL 过滤 {#url-filtering-self-configured}
+
+    默认情况下，在监控处于启用状态时，该扩展会在您访问的每个页面中注入 SDK。如需仅在特定站点注入，请开启 **Only inject on matching URLs**，然后每行添加一个模式 (也可用逗号分隔) ：
+
+    | 模式                         | 匹配范围                            |
+    | -------------------------- | ------------------------------- |
+    | `http://homedepot.com/*`   | 仅 `homedepot.com` 上的 HTTP       |
+    | `*://homedepot.com/*`      | `homedepot.com` 上的 HTTP 和 HTTPS |
+    | `*://*.homedepot.com/*`    | 子域名，如 `www.homedepot.com`       |
+    | `https://localhost:3000/*` | 运行在端口 3000 上的本地开发服务器            |
+
+    保存 URL 模式后，请重新加载该标签页。
+
+## 验证注入 {#verify-injection-self-configured}
+
+    在受监控的页面上打开 DevTools (**控制台**选项卡) ，重新加载页面，然后查看以下内容：
+
+    ```text
+    [HyperDX Extension] Configuration valid, injecting HyperDX
+    [HyperDX Extension] Injected via extension scripts
+    [HyperDX Extension] HyperDX initialized
+    ```
+
+    如果源自扩展的脚本被 CSP 拦截，扩展会记录一条回退消息，并改用内联注入方式重试。
+
+## 故障排查 {#troubleshooting-self-configured}
+
+    <Accordion title="ClickStack 用户界面中未显示会话">
+      1. 检查浏览器控制台中是否有 `[HyperDX Extension]` 日志消息或错误
+      2. 确认 **Enable HyperDX Monitoring** 已开启，并且已设置 **Service Name**
+      3. 确认采集器正在运行，其 OTLP HTTP 端点可从浏览器访问，并且 API key 与采集器的身份验证令牌一致
+      4. 在 Client Sessions 视图中调整时间范围 (可尝试 **Last 15 minutes**)
+      5. 强制刷新浏览器：`Cmd+Shift+R` (Mac) 或 `Ctrl+Shift+R` (Windows/Linux)
+    </Accordion>
+
+    <Accordion title="chrome-extension://invalid/ 错误">
+      在 `chrome://extensions` 中重新加载该扩展，然后强制刷新该选项卡。如果扩展在选项卡仍处于打开状态时被更新或重新加载，就会出现此问题。
+    </Accordion>
+
+    <Accordion title="网站未注入 SDK">
+      1. 检查是否已启用监控并配置了服务名称
+      2. 如果开启了 **Only inject on matching URLs**，请确认当前页面的 URL 与您设置的某条规则相匹配
+      3. 部分网站会通过 CSP 同时拦截来自扩展的脚本注入和内联脚本注入，这类页面可能无法注入
+    </Accordion>
+
+    <Accordion title="HyperDX：控制台中缺少 apiKey">
+      如果您的采集器需要身份验证，请在 **API Key** 中输入其令牌，保存配置，然后重新加载受监控的页面。请检查浏览器的网络请求和采集器日志，确认是否存在导出错误，而不要仅凭注入消息进行判断。
+    </Accordion>
+
+## 隐私 {#privacy-self-configured}
+
+    该扩展程序会将可观测性代码注入您访问的页面。请仅在您有权调试的网站上使用。请勿共享 API 密钥，也不要将其提交到版本控制系统中。
+
+## 了解更多 {#learn-more-self-configured}
+
+    * [会话回放](/zh/clickstack/observability/features/session-replay) — 功能概览、SDK 选项和隐私控制
+    * [Browser SDK 参考文档](/zh/clickstack/observability/ingesting-data/sdks/browser) — 完整的 SDK 选项和高级配置
+    * [会话回放演示](/zh/clickstack/observability/example-datasets/session-replay) — 基于源代码为演示应用插桩
+    * [自管理版入门指南](/zh/clickstack/self-configured/getting-started/managed) — 设置服务并摄取第一批数据
+    * [GitHub 上的 HyperDX Chrome 扩展](https://github.com/kyreddie/hyperdx-chrome-extension) — 源代码和议题跟踪器
+  </Tab>
+</Tabs>

@@ -19,6 +19,7 @@
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/SelectQueryOptions.h>
 #include <Core/ConstantValue.h>
+#include <Interpreters/convertColumnToType.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -292,13 +293,13 @@ StorageTimeSeriesSelector::Configuration StorageTimeSeriesSelector::getConfigura
 
     PrometheusQueryTree selector{getStringConstArgument(args[argument_index++], context, "selector")};
 
-    auto [min_time_field, min_time_type] = evaluateConstantExpression(args[argument_index++], context);
-    auto [max_time_field, max_time_type] = evaluateConstantExpression(args[argument_index++], context);
+    const auto min_time_value = evaluateConstantExpressionAsColumn(args[argument_index++], context);
+    const auto max_time_value = evaluateConstantExpressionAsColumn(args[argument_index++], context);
 
     UInt32 table_timestamp_scale = tryGetDecimalScale(*table_timestamp_type).value_or(0);
-    UInt32 parameters_scale = getTimeScale(table_timestamp_scale, min_time_type, max_time_type);
-    auto min_time = parseTimeSeriesTimestamp(min_time_field, min_time_type, parameters_scale);
-    auto max_time = parseTimeSeriesTimestamp(max_time_field, max_time_type, parameters_scale);
+    UInt32 parameters_scale = getTimeScale(table_timestamp_scale, min_time_value.getType(), max_time_value.getType());
+    auto min_time = parseTimeSeriesTimestamp(resolveActiveAlternative(min_time_value), parameters_scale);
+    auto max_time = parseTimeSeriesTimestamp(resolveActiveAlternative(max_time_value), parameters_scale);
 
     /// The argument `return_columns` chooses the columns returning the samples: 'samples' or 'timestamp_and_value'.
     String return_columns_str = getStringConstArgument(args[argument_index++], context, "return_columns");
@@ -364,10 +365,11 @@ namespace
         return makeASTFunction("arrayElement", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Tags), make_intrusive<ASTLiteral>(tag_name));
     }
 
+
     ASTPtr matcherToAST(const PrometheusQueryTree::Matcher & matcher, const std::unordered_map<String, String> & column_name_by_tag_name)
     {
         std::string_view function_name;
-        bool add_anchors = false;
+        bool is_regexp = false;
         bool add_not = false;
 
         auto matcher_type = matcher.matcher_type;
@@ -375,14 +377,16 @@ namespace
         {
             case PrometheusQueryTree::MatcherType::EQ:  function_name = "equals"; break;
             case PrometheusQueryTree::MatcherType::NE:  function_name = "notEquals"; break;
-            case PrometheusQueryTree::MatcherType::RE:  function_name = "match"; add_anchors = true; break;
-            case PrometheusQueryTree::MatcherType::NRE: function_name = "match"; add_anchors = true; add_not = true; break;
+            /// A regular expression of a PromQL matcher must match only whole values, as in Prometheus,
+            /// which is what `fullMatch` does.
+            case PrometheusQueryTree::MatcherType::RE:  function_name = "fullMatch"; is_regexp = true; break;
+            case PrometheusQueryTree::MatcherType::NRE: function_name = "fullMatch"; is_regexp = true; add_not = true; break;
         }
 
         String value = matcher.label_value;
-        if (add_anchors)
+        if (is_regexp)
         {
-            /// `IN` matches exactly what the fully anchored regex matches, and the primary key can filter by it.
+            /// `IN` matches exactly what the whole-value regex matches, and the primary key can filter by it.
             if (auto terms = tryGetLiteralAlternatives(value))
             {
                 /// A single term is an equality, which the text index on tags can serve too.
@@ -396,11 +400,6 @@ namespace
                 return makeASTFunction(add_not ? "notIn" : "in",
                     tagNameToAST(matcher.label_name, column_name_by_tag_name), makeASTFunction("tuple", std::move(literals)));
             }
-
-            if (!value.starts_with('^'))
-                value = '^' + value;
-            if (!value.ends_with('$'))
-                value += '$';
         }
         ASTPtr res = makeASTFunction(function_name, tagNameToAST(matcher.label_name, column_name_by_tag_name), make_intrusive<ASTLiteral>(value));
         if (add_not)

@@ -9,7 +9,13 @@ import typing
 
 from environment import get_system_timezones
 from tests.integration.helpers.cluster import ClickHouseCluster
-from tests.integration.helpers.config_cluster import mongo_pass, mysql_pass, pg_pass
+from tests.integration.helpers.config_cluster import (
+    mongo_pass,
+    mysql_pass,
+    nats_pass,
+    nats_user,
+    pg_pass,
+)
 
 
 def generate_xml_safe_string(length: int = 10) -> str:
@@ -98,6 +104,10 @@ SERVER_STOP_WAIT_SECONDS = 30
 # How long `dolor.py` waits for a restarted server to answer before giving up on it.
 SERVER_START_WAIT_SECONDS = 180
 
+# A debug build checks every segment of each filesystem cache at startup, 3 minutes for 26k of
+# them, so `max_elements` is capped to keep a restart within `SERVER_START_WAIT_SECONDS`.
+MAX_CACHE_ELEMENTS = 10000
+
 # The sleeps `dolor.py` takes between stopping and starting a server: one for the process to
 # settle before the binary may be swapped, one for the Keeper session to expire.
 SERVER_SETTLE_SLEEP_SECONDS = 1
@@ -109,6 +119,17 @@ NGINX_INTERNAL_PORT = 80
 REDIS_INTERNAL_PORT = 6379
 MONGO_INTERNAL_PORT = 27017
 KAFKA_INTERNAL_PORT = 19092
+NATS_INTERNAL_PORT = 4444
+RABBITMQ_INTERNAL_PORT = 5672
+# The broker's default user in `docker_compose_rabbitmq.yml`
+RABBITMQ_USER = "root"
+RABBITMQ_PASSWORD = "clickhouse"
+# The named collection of each broker in the server config, which BuzzHouse may use for the connection
+STREAMING_NAMED_COLLECTIONS = {
+    "kafka": "dolor_kafka",
+    "nats": "dolor_nats",
+    "rabbitmq": "dolor_rabbitmq",
+}
 
 
 rocksdb_properties = {
@@ -269,15 +290,6 @@ possible_properties = {
     ),
     "database_catalog_drop_table_concurrency": threads_lambda,
     "database_catalog_shutdown_table_concurrency": threads_lambda,
-    "database_catalog_unused_dir_cleanup_period_sec": threshold_generator(
-        0.2, 0.2, 60, 86400, allow_unlimited=False
-    ),
-    "database_catalog_unused_dir_hide_timeout_sec": threshold_generator(
-        0.2, 0.2, 60, 3600, allow_unlimited=False
-    ),
-    "database_catalog_unused_dir_rm_timeout_sec": threshold_generator(
-        0.2, 0.2, 3600, 2592000, allow_unlimited=False
-    ),
     "database_replicated_allow_detach_permanently": true_false_lambda,
     "database_replicated_drop_broken_tables": true_false_lambda,
     "dictionaries_lazy_load": true_false_lambda,
@@ -733,15 +745,17 @@ object_storages_properties = {
         **plain_rewritable_properties,
         # Opts the disk out of the distributed cache of the private binary
         "enable_distributed_cache": true_false_lambda,
-        "list_object_keys_size": threshold_generator(0.2, 0.2, 1, 10 * 1024 * 1024, 31),
+        # SeaweedFS rejects a ListObjectsV2 `max-keys` above 65535 with `InvalidArgument`
+        "list_object_keys_size": threshold_generator(0.2, 0.2, 1, 65535, 16),
         "metadata_keep_free_space_bytes": threshold_generator(
             0.2, 0.2, 0, 10 * 1024 * 1024
         ),
         "object_metadata_cache_size": threshold_generator(
             0.2, 0.2, 0, 10 * 1024 * 1024
         ),
+        # SeaweedFS rejects a DeleteObjects of more than 1000 keys with `InvalidArgument`
         "objects_chunk_size_to_delete": threshold_generator(
-            0.2, 0.2, 0, 10 * 1024 * 1024, 32
+            0.2, 0.2, 0, 1000, allow_unlimited=False
         ),
         "remove_shared_recursive_file_limit": threshold_generator(0.2, 0.2, 0, 31),
         "s3_allow_multipart_copy": true_false_lambda,
@@ -769,7 +783,7 @@ object_storages_properties = {
         ),
         # Never above the lower bound of s3_max_upload_part_size: validateUploadSettings
         # rejects min > max, and rejects a zero min. Never below the 5 MiB minimum part size
-        # of S3 and MinIO either: `CompleteMultipartUpload` of smaller parts fails with
+        # of S3 and SeaweedFS either: `CompleteMultipartUpload` of smaller parts fails with
         # `EntityTooSmall`, so no file above `s3_max_single_part_upload_size` can be written,
         # and the retried metadata writes outlast the shutdown wait.
         "s3_min_upload_part_size": threshold_generator(
@@ -972,7 +986,9 @@ cache_storage_properties = {
     "keep_free_space_size_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
     "load_metadata_asynchronously": true_false_lambda,
     "load_metadata_threads": no_zero_threads_lambda,
-    "max_elements": threshold_generator(0.2, 0.2, 10000, 10000000),
+    "max_elements": threshold_generator(
+        0.2, 0.2, 1000, MAX_CACHE_ELEMENTS, allow_unlimited=False
+    ),
     "max_file_segment_size": threshold_generator(
         0.2, 0.2, 4 * 1024 * 1024, 32 * 1024 * 1024
     ),  # must be >= default boundary_alignment (4Mi)
@@ -1169,6 +1185,10 @@ def normalize_cache_properties(
     """`FileCacheSettings::validate` checks a cache without `cache_policy` with the default SLRU.
     `forced_policy` is what such a cache gets after `validate` (a distributed cache server forces
     `LRU_OVERCOMMIT`), so it only matters for the checks done later."""
+    # Also without the random settings: the server's default `max_elements` is 10 million.
+    max_elements = int(get_cache_setting(cache_element, "max_elements", "0"))
+    if not 0 < max_elements <= MAX_CACHE_ELEMENTS:
+        set_cache_setting(cache_element, "max_elements", str(MAX_CACHE_ELEMENTS))
     policy_is_set = get_cache_setting(cache_element, "cache_policy", "") != ""
     runtime_policy = get_cache_setting(
         cache_element, "cache_policy", forced_policy or "SLRU"
@@ -1196,13 +1216,24 @@ def normalize_cache_properties(
     if get_cache_setting(cache_element, "cache_policy", "SLRU") in ("SLRU", "SLRU_OVERCOMMIT"):
         # The same rounding as `std::lround` and `std::clamp` in `FileCacheSettings::validate`.
         get_ratio = lambda total, ratio: int(total * min(max(ratio, 0.0), 1.0) + 0.5)
-        max_size = parse_cache_size(get_cache_setting(cache_element, "max_size", "0"))
         ratio = float(get_cache_setting(cache_element, "slru_size_ratio", "0.6"))
-        parts = [max_size]
-        if get_cache_setting(cache_element, "use_split_cache", "0") == "1":
-            system_ratio = float(get_cache_setting(cache_element, "split_cache_ratio", "0.1"))
-            parts = [get_ratio(max_size, 1 - system_ratio), get_ratio(max_size, system_ratio)]
-        smallest_queue_size = min(min(get_ratio(part, ratio), get_ratio(part, 1 - ratio)) for part in parts)
+        use_split_cache = get_cache_setting(cache_element, "use_split_cache", "0") == "1"
+        system_ratio = float(get_cache_setting(cache_element, "split_cache_ratio", "0.1"))
+
+        def get_smallest_queue(total: int) -> int:
+            parts = [total]
+            if use_split_cache:
+                parts = [get_ratio(total, 1 - system_ratio), get_ratio(total, system_ratio)]
+            return min(min(get_ratio(part, ratio), get_ratio(part, 1 - ratio)) for part in parts)
+
+        # `SLRUFileCachePriority` also rejects a queue without elements.
+        max_elements = int(get_cache_setting(cache_element, "max_elements", "0"))
+        while get_smallest_queue(max_elements) == 0 and max_elements < MAX_CACHE_ELEMENTS:
+            max_elements += 1
+        set_cache_setting(cache_element, "max_elements", str(max_elements))
+
+        max_size = parse_cache_size(get_cache_setting(cache_element, "max_size", "0"))
+        smallest_queue_size = get_smallest_queue(max_size)
 
         max_file_segment_size = parse_cache_size(
             get_cache_setting(cache_element, "max_file_segment_size", str(32 << 20))
@@ -2651,6 +2682,40 @@ def generate_distributed_cache_config(args, node: int) -> tuple[str, int]:
     config_path = f"{args.tmp_files_dir}/zz_distributed_cache_node{node}.xml"
     tree.write(config_path, encoding="utf-8", xml_declaration=True)
     return config_path, nservers
+
+
+def generate_streaming_named_collections(args, cluster) -> typing.Optional[str]:
+    """A server config with the named collection of each enabled broker, None without brokers."""
+    collections = {}
+    if args.with_kafka:
+        collections["kafka"] = {
+            "kafka_broker_list": f"{cluster.kafka_host}:{KAFKA_INTERNAL_PORT}"
+        }
+    if args.with_nats:
+        collections["nats"] = {
+            "nats_url": f"{cluster.nats_host}:{NATS_INTERNAL_PORT}",
+            "nats_username": nats_user,
+            "nats_password": nats_pass,
+        }
+    if args.with_rabbitmq:
+        collections["rabbitmq"] = {
+            "rabbitmq_host_port": f"{cluster.rabbitmq_host}:{RABBITMQ_INTERNAL_PORT}",
+            "rabbitmq_username": RABBITMQ_USER,
+            "rabbitmq_password": RABBITMQ_PASSWORD,
+        }
+    if not collections:
+        return None
+    root = ET.Element("clickhouse")
+    named_collections = ET.SubElement(root, "named_collections")
+    for engine, keys in collections.items():
+        collection = ET.SubElement(named_collections, STREAMING_NAMED_COLLECTIONS[engine])
+        for key, value in keys.items():
+            ET.SubElement(collection, key).text = value
+    tree = ET.ElementTree(root)
+    ET.indent(tree, space="    ", level=0)
+    config_path = f"{args.tmp_files_dir}/streaming_named_collections.xml"
+    tree.write(config_path, encoding="utf-8", xml_declaration=True)
+    return config_path
 
 
 def modify_user_settings(

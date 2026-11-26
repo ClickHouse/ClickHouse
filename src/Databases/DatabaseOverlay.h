@@ -140,6 +140,7 @@ public:
     bool shouldBeEmptyOnDetach() const override { return false; }
     bool empty() const override { return true; }
     bool isReadOnly() const override { return true; }
+    bool ownsTables() const override { return false; }
     void shutdown() override {}
 
     std::vector<std::pair<ASTPtr, StoragePtr>> getTablesForBackup(const FilterByNameFunction &, const ContextPtr &) const override { return {}; }
