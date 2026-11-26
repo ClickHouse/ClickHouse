@@ -3857,6 +3857,9 @@ std::optional<std::vector<std::pair<String, ColumnSize>>> IMergeTreeDataPart::ge
     const Names & column_names, bool with_columns, bool only_from_memory) const
 {
     std::vector<std::pair<String, ColumnSize>> sizes;
+    /// A compact part publishes no sizes of its columns, so every size here would be zero.
+    if (part_type == MergeTreeDataPartType::Compact)
+        return sizes;
     sizes.reserve(column_names.size());
     /// One reader per column: a reader reads the prefixes of all its columns as soon as one of them needs its prefix.
     std::vector<NamesAndTypesList> subcolumns_to_calculate;
