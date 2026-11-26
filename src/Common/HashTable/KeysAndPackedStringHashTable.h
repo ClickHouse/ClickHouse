@@ -7,8 +7,11 @@
 #include <Common/HashTable/StringHashTable.h>
 #include <Common/HashTable/TwoLevelHashTable.h>
 
+#include <base/arithmeticOverflow.h>
+
 #include <boost/noncopyable.hpp>
 
+#include <limits>
 #include <tuple>
 #include <type_traits>
 
@@ -327,6 +330,60 @@ public:
         m1.forEachValue(func);
     }
 
+    /// The position of a resumable traversal in `forEachValue` order. A default-constructed position is at the
+    /// beginning. The table must not change while a traversal is in progress.
+    struct ValuePosition
+    {
+        /// 0 before the traversal, 1 while it visits `m0`, 2 while it visits `m1`, 3 after the end.
+        size_t submap = 0;
+        /// The traversal sets the iterator of a sub-table when it enters that sub-table.
+        typename T0::const_iterator it0{nullptr, nullptr};
+        typename T1::const_iterator it1{nullptr, nullptr};
+    };
+
+    /// Calls `func(const Key &, const TMapped &)` for the elements of a map from `position` in `forEachValue`
+    /// order. A `func` returning false stops the traversal after that element. Leaves `position` at the next
+    /// unvisited element and returns whether the end was reached.
+    template <typename Func>
+    requires (!is_set)
+    bool forEachValueFrom(ValuePosition & position, Func && func) const
+    {
+        /// Visits the remaining cells of one sub-table; returns false when `func` stopped the traversal.
+        auto visit = [&](auto key_class, const auto & submap, auto & it)
+        {
+            while (it != submap.end())
+            {
+                const auto & cell = *it;
+                ++it;
+                if (!func(iteratedKey<decltype(key_class)::value>(cell), cell.getMapped()))
+                    return false;
+            }
+            return true;
+        };
+
+        switch (position.submap)
+        {
+            case 0:
+                position.submap = 1;
+                position.it0 = m0.begin();
+                [[fallthrough]];
+            case 1:
+                if (!visit(std::integral_constant<size_t, 0>{}, m0, position.it0))
+                    return false;
+                position.submap = 2;
+                position.it1 = m1.begin();
+                [[fallthrough]];
+            case 2:
+                if (!visit(std::integral_constant<size_t, 1>{}, m1, position.it1))
+                    return false;
+                position.submap = 3;
+                [[fallthrough]];
+            case 3:
+                return true;
+        }
+        UNREACHABLE();
+    }
+
     /// Calls `func(const Key &, TMapped &, size_t hash)` for every element of a map, and `func(const Key &,
     /// size_t hash)` for every element of a set, with the hash of the key in its sub-table (see `hash`). The
     /// cells do not save it, so it is computed again from the key.
@@ -445,6 +502,16 @@ public:
     [[nodiscard]] size_t sizeWithEmptyString() const { return m0.size(); }
     [[nodiscard]] bool empty() const { return m0.empty() && m1.empty(); }
     [[nodiscard]] size_t getBufferSizeInBytes() const { return m0.getBufferSizeInBytes() + m1.getBufferSizeInBytes(); }
+
+    /// Bounds the peak additional memory of inserting `additional_keys` new keys. Whether their strings are empty
+    /// is unknown, so each sub-table is assumed to receive all of them. Saturates at the maximum of `size_t`.
+    [[nodiscard]] size_t estimateGrowthMemory(size_t additional_keys) const noexcept
+    {
+        size_t total = 0;
+        if (common::addOverflow(m0.estimateGrowthMemory(additional_keys), m1.estimateGrowthMemory(additional_keys), total))
+            return std::numeric_limits<size_t>::max();
+        return total;
+    }
 
     /// Grows the sub-tables to hold `size_hint` keys, `size_hint_with_empty_string` of them with an empty
     /// string.

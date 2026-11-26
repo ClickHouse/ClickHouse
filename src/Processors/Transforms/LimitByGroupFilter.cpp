@@ -13,6 +13,7 @@
 #include <Common/ColumnsHashing.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
+#include <Common/HashTable/KeysAndPackedString.h>
 
 #include <algorithm>
 #include <limits>
@@ -44,10 +45,11 @@ size_t groupIndexFromMapped(AggregateDataPtr mapped)
     return static_cast<size_t>(reinterpret_cast<uintptr_t>(mapped) - 1);
 }
 
-/// Whether the hash method copies its keys into the arena of the variants.
+/// Whether the hash method copies its keys into the arena of the variants: a string key, or the string of a key of
+/// fixed-width values and one string, when the string does not fit inline.
 template <typename Method>
-constexpr bool stores_keys_in_arena
-    = std::is_same_v<typename Method::Key, std::string_view> || std::is_same_v<typename Method::Key, PackedStringRef>;
+constexpr bool stores_keys_in_arena = std::is_same_v<typename Method::Key, std::string_view>
+    || std::is_same_v<typename Method::Key, PackedStringRef> || is_keys_and_packed_string<typename Method::Key>;
 
 /// Peak additional table memory of `keys` new keys. The variants dispatcher also instantiates this helper
 /// for two-level tables, which `LIMIT BY` never selects.

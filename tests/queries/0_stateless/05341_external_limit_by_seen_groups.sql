@@ -36,6 +36,10 @@ SELECT count(), sum(cityHash64(k)), uniqExact(v) = count() FROM (SELECT toLowCar
 -- restores the columns in the order of the packing.
 SELECT count(), sum(cityHash64(a, b)), uniqExact(v) = count() FROM (SELECT toUInt8(x % 256) AS a, toUInt64(intDiv(x, 256)) * 1000000007 AS b, v FROM limit_by_input LIMIT 2 OFFSET 1 BY a, b) SETTINGS max_bytes_before_external_limit_by = 67108864, log_comment = '05341_external_limit_by_seen_groups/packed_keys';
 
+-- Fixed-size keys and one `String` key use a table that keeps the keys with an empty string apart, by their
+-- fixed-size part. The other keys keep strings of up to 15 bytes inside the cell and longer ones in the arena.
+SELECT count(), sum(cityHash64(a, k)), uniqExact(v) = count() FROM (SELECT toUInt32(x % 1000) AS a, multiIf(v % 100000 = 7, '', x % 2 = 0, toString(x), concat('arena-string-', toString(x))) AS k, v FROM limit_by_input LIMIT 2 OFFSET 1 BY a, k) SETTINGS max_bytes_before_external_limit_by = 67108864, log_comment = '05341_external_limit_by_seen_groups/fixed_and_string';
+
 -- Keys that the table stores serialized are deserialized into their columns when they are extracted, and
 -- the spill compares them by these columns.
 SELECT count(), sum(cityHash64(k)), uniqExact(v) = count() FROM (SELECT tuple(toString(x % 1024), [intDiv(x, 1024), x % 3]) AS k, v FROM limit_by_input LIMIT 2 OFFSET 1 BY k) SETTINGS max_bytes_before_external_limit_by = 67108864, log_comment = '05341_external_limit_by_seen_groups/serialized';
