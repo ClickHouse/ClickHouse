@@ -6369,7 +6369,8 @@ All the result branches have to be constants, so a nested `if` chain such as `if
 
 This setting has no effect while `optimize_if_transform_strings_to_enum` is enabled: the `Enum` rewrite takes precedence, and the result stays `String` (or `Nullable(String)`) even for the explicit `multiIf` form above.
 )", 0, \
-        {"26.11", false, true, "New setting to optimize results of const branches from `if`/`multiIf`/`transform` into `LowCardinality`."}) \
+        {"26.12", false, true, "Enabled by default: the result is built as indexes into a dictionary of the constant values, which is faster than producing a `String` column."}, \
+        {"26.11", false, false, "New setting to allow optimizing results of const branches from `if`/`multiIf`/`transform` into `LowCardinality`. Disabled by default."}) \
     DECLARE(Bool, optimize_if_transform_strings_to_enum, false, R"(
 Replaces string-type arguments in If and Transform to enum. Disabled by default cause it could make inconsistent change in distributed query that would lead to its fail.
 )", 0) \
