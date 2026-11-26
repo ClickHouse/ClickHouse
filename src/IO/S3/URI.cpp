@@ -10,6 +10,7 @@
 #include <Common/re2.h>
 #include <Common/RemoteHostFilter.h>
 #include <IO/Archives/ArchiveUtils.h>
+#include <IO/parseURI.h>
 
 #include <boost/algorithm/string/case_conv.hpp>
 #include <boost/algorithm/string/replace.hpp>
@@ -25,7 +26,7 @@ struct URIConverter
     static void modifyURI(Poco::URI & uri, NameToNameMap mapper)
     {
         Macros macros({{"bucket", uri.getHost()}});
-        uri = macros.expand(mapper[uri.getScheme()]).empty() ? uri : Poco::URI(macros.expand(mapper[uri.getScheme()]) + uri.getPathAndQuery());
+        uri = macros.expand(mapper[uri.getScheme()]).empty() ? uri : parseURI(macros.expand(mapper[uri.getScheme()]) + uri.getPathAndQuery());
     }
 };
 
@@ -80,7 +81,7 @@ URI::URI(std::string_view uri_, bool allow_archive_path_syntax, bool keep_presig
     else
         uri_str = uri_;
 
-    uri = Poco::URI(String(uri_str));
+    uri = parseURI(String(uri_str));
     /// Keep a copy of how Poco parsed the original string before any mapping
     Poco::URI original_uri{String(uri_str)};
     bool looks_like_presigned = false;
@@ -142,7 +143,7 @@ URI::URI(std::string_view uri_, bool allow_archive_path_syntax, bool keep_presig
     {
         String uri_with_question_mark_encode;
         Poco::URI::encode(uri_, "?", uri_with_question_mark_encode);
-        uri = Poco::URI(uri_with_question_mark_encode);
+        uri = parseURI(uri_with_question_mark_encode);
         if (!mapper.empty())
             URIConverter::modifyURI(uri, mapper);
     }

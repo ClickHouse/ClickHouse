@@ -20,6 +20,7 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/Web/WebObjectStorage.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/Local/LocalObjectStorage.h>
 #include <Disks/loadLocalDiskConfig.h>
+#include <IO/parseURI.h>
 
 #include <Interpreters/Context.h>
 #include <Common/LoggingFormatStringHelpers.h>
@@ -193,7 +194,7 @@ static void registerS3ObjectStorage(ObjectStorageFactory & factory)
         auto s3_capabilities = getCapabilitiesFromConfig(config, config_prefix);
         auto endpoint = getEndpoint(config, config_prefix, context);
         auto settings = std::make_unique<S3Settings>();
-        settings->loadFromConfigForObjectStorage(config, config_prefix, context->getSettingsRef(), Poco::URI(endpoint).getScheme(), true);
+        settings->loadFromConfigForObjectStorage(config, config_prefix, context->getSettingsRef(), parseURI(endpoint).getScheme(), true);
         auto uri = getS3URI(config, config_prefix, context, settings->auth_settings[S3AuthSetting::uri_style]);
         /// The endpoint of a disk created in SQL is user input, so it is subject to `remote_url_allow_hosts`
         /// like the URL of an `s3` table; checked before the client is built, which already talks to the endpoint.

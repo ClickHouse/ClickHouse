@@ -8,6 +8,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeString.h>
+#include <IO/parseURI.h>
 
 #include <Interpreters/ClusterFunctionReadTask.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
@@ -58,7 +59,7 @@ StorageURLCluster::StorageURLCluster(
 {
     const auto glob_caller = tableFunctionURLClusterCaller();
     auto headers = configuration_.headers;
-    context->getRemoteHostFilter().checkURL(Poco::URI(uri));
+    context->getRemoteHostFilter().checkURL(parseURI(uri));
     context->getHTTPHeaderFilter().checkHeaders(headers);
 
     StorageInMemoryMetadata storage_metadata;
@@ -68,12 +69,12 @@ StorageURLCluster::StorageURLCluster(
         ColumnsDescription columns;
         if (format_name == "auto")
             std::tie(columns, format_name) = StorageURL::getTableStructureAndFormatFromData(
-                uri, chooseCompressionMethod(Poco::URI(uri).getPath(), compression_method), headers, std::nullopt, context, glob_caller, /*check_redirect_access=*/ true);
+                uri, chooseCompressionMethod(parseURI(uri).getPath(), compression_method), headers, std::nullopt, context, glob_caller, /*check_redirect_access=*/ true);
         else
             columns = StorageURL::getTableStructureFromData(
                 format_,
                 uri,
-                chooseCompressionMethod(Poco::URI(uri).getPath(), compression_method),
+                chooseCompressionMethod(parseURI(uri).getPath(), compression_method),
                 headers,
                 std::nullopt,
                 context,
@@ -87,7 +88,7 @@ StorageURLCluster::StorageURLCluster(
         if (format_name == "auto")
             format_name = StorageURL::getTableStructureAndFormatFromData(
                            uri,
-                           chooseCompressionMethod(Poco::URI(uri).getPath(), compression_method),
+                           chooseCompressionMethod(parseURI(uri).getPath(), compression_method),
                            headers,
                            std::nullopt,
                            context,
@@ -194,7 +195,7 @@ RemoteQueryExecutor::Extension StorageURLCluster::getTaskIteratorExtension(
         for (const auto & option : parseRemoteDescription(url, 0, url.size(), '|', settings[Setting::glob_expansion_max_elements]))
         {
             Poco::Net::HTTPBasicCredentials credentials;
-            setCredentialsFromURL(credentials, Poco::URI(option, settings[Setting::enable_url_encoding]), context->getHTTPHeaderFilter());
+            setCredentialsFromURL(credentials, parseURI(option, settings[Setting::enable_url_encoding]), context->getHTTPHeaderFilter());
         }
 
         return std::make_shared<ClusterFunctionReadTaskResponse>(std::move(url));

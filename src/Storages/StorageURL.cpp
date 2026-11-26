@@ -71,6 +71,7 @@
 #include <Core/Settings.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/HTTPHeaderEntries.h>
+#include <IO/parseURI.h>
 
 #include <algorithm>
 #include <boost/algorithm/string/case_conv.hpp>
@@ -248,7 +249,7 @@ IStorageURLBase::IStorageURLBase(
     bool check_redirect_access_)
     : IStorage(table_id_)
     , uri(uri_)
-    , compression_method(chooseCompressionMethod(Poco::URI(uri_).getPath(), compression_method_))
+    , compression_method(chooseCompressionMethod(parseURI(uri_).getPath(), compression_method_))
     , format_name(format_name_)
     , format_settings(format_settings_)
     , headers(headers_)
@@ -598,7 +599,7 @@ private:
         std::vector<String> paths;
         paths.reserve(uris.size());
         for (const auto & uri : uris)
-            paths.push_back(Poco::URI(uri).getPath());
+            paths.push_back(parseURI(uri).getPath());
 
         VirtualColumnUtils::filterSourcesByIndexes(
             uris,
@@ -1323,7 +1324,7 @@ std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> StorageURLSource:
             return {};
 
         bool skip_url_not_found_error = glob_url && read_settings.http_settings.skip_not_found_url_for_globs && option == std::prev(end);
-        auto request_uri = Poco::URI(*option, context_->getSettingsRef()[Setting::enable_url_encoding]);
+        auto request_uri = parseURI(*option, context_->getSettingsRef()[Setting::enable_url_encoding]);
 
         for (const auto & [param, value] : params)
             request_uri.addQueryParameter(param, value);
@@ -1497,7 +1498,7 @@ void StorageURLSink::initBuffers()
     std::string content_type = FormatFactory::instance().getContentType(format, format_settings);
     std::string content_encoding = toContentEncodingName(compression_method);
 
-    auto poco_uri = Poco::URI(uri);
+    auto poco_uri = parseURI(uri);
 
     auto write_buffer = BuilderWriteBufferFromHTTP(poco_uri)
         .withConnectionGroup(HTTPConnectionGroupType::STORAGE)
@@ -1608,7 +1609,7 @@ public:
         if (write_access_check)
             write_access_check(context, partition_path);
 
-        context->getRemoteHostFilter().checkURL(Poco::URI(partition_path));
+        context->getRemoteHostFilter().checkURL(parseURI(partition_path));
         return std::make_shared<StorageURLSink>(
             partition_path, format, format_settings, sample_block, context, timeouts, compression_method, headers, http_method);
     }
@@ -1969,7 +1970,7 @@ std::pair<ColumnsDescription, String> IStorageURLBase::getTableStructureAndForma
     const RemoteDescriptionCaller & caller,
     bool check_redirect_access)
 {
-    context->getRemoteHostFilter().checkURL(Poco::URI(uri));
+    context->getRemoteHostFilter().checkURL(parseURI(uri));
     /// Enforce <http_forbid_headers> before any network access. This is the single funnel for
     /// schema inference (StorageURL ctor, StorageURLCluster, TableFunctionURL analysis), so the
     /// check here also covers the DESCRIBE / INSERT..SELECT / format-detection paths that never
@@ -2504,7 +2505,7 @@ std::optional<time_t> IStorageURLBase::tryGetLastModificationTime(
 {
     const auto & settings = context->getSettingsRef();
 
-    auto uri = Poco::URI(url, settings[Setting::enable_url_encoding]);
+    auto uri = parseURI(url, settings[Setting::enable_url_encoding]);
 
     auto buf = BuilderRWBufferFromHTTP(uri)
                    .withConnectionGroup(HTTPConnectionGroupType::STORAGE)
@@ -2556,7 +2557,7 @@ StorageURL::StorageURL(
         check_redirect_access_)
     , is_replayed_definition(is_replayed_definition_)
 {
-    context_->getRemoteHostFilter().checkURL(Poco::URI(uri));
+    context_->getRemoteHostFilter().checkURL(parseURI(uri));
     context_->getHTTPHeaderFilter().checkHeaders(headers);
 }
 
