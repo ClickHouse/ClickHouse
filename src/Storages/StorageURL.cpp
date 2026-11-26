@@ -3068,9 +3068,14 @@ AzureURLParts parseAzureURL(const String & url)
         const String host = (slash_pos == String::npos) ? host_and_path : host_and_path.substr(0, slash_pos);
         parts.blob_path = (slash_pos == String::npos) ? "" : host_and_path.substr(slash_pos + 1);
 
-        auto dot_pos = host.find('.');
-        const String account = (dot_pos == String::npos) ? host : host.substr(0, dot_pos);
-        parts.account_url = "https://" + account + ".blob.core.windows.net" + query;
+        /// The Blob endpoint of an account is its `dfs` host with the service label replaced, in every Azure cloud and in Fabric.
+        String blob_host = host;
+        boost::to_lower(blob_host);
+        if (auto dfs_pos = blob_host.find(".dfs."); dfs_pos != String::npos)
+            blob_host.replace(dfs_pos, std::string_view(".dfs.").size(), ".blob.");
+        else if (!blob_host.contains('.'))
+            blob_host += ".blob.core.windows.net";
+        parts.account_url = "https://" + blob_host + query;
         return parts;
     }
 
