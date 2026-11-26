@@ -10,7 +10,6 @@ integration:
   - category: 'sql_client'
 ---
 
-import { Image } from "/snippets/es/components/Image.jsx";
 import { CommunityMaintainedBadge } from "/snippets/es/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
 
 <CommunityMaintainedBadge />
@@ -79,7 +78,11 @@ GRANT SELECT ON system.data_skipping_indices TO reader;
     `clickhouse://localhost:8123/default` o `https://reader:secret@ch.example.com:8443/analytics`.
     Una URL `https://` activa TLS.
 
-    <Image img="/images/integrations/sql-clients/libredb-studio-new-connection.png" size="sm" border alt="Cuadro de diálogo New Connection de LibreDB Studio con ClickHouse seleccionado, el host, el puerto 8123, el nombre de usuario y la base de datos rellenados, y una prueba de conexión correcta" />
+    <div className="ch-image-sm">
+      <Frame>
+        ![Cuadro de diálogo New Connection de LibreDB Studio con ClickHouse seleccionado, el host, el puerto 8123, el nombre de usuario y la base de datos rellenados, y una prueba de conexión correcta](/images/integrations/sql-clients/libredb-studio-new-connection.png)
+      </Frame>
+    </div>
   </Step>
 
   <Step title="Ejecute una consulta" id="run-a-query">
@@ -102,7 +105,11 @@ GRANT SELECT ON system.data_skipping_indices TO reader;
     LIMIT 10
     ```
 
-    <Image img="/images/integrations/sql-clients/libredb-studio-query.png" size="md" border alt="Editor SQL de LibreDB Studio que muestra la consulta de uk_price_paid y una cuadrícula de resultados con los tipos de columnas de ClickHouse declarados" />
+    <div className="ch-image-md">
+      <Frame>
+        ![Editor SQL de LibreDB Studio que muestra la consulta de uk_price_paid y una cuadrícula de resultados con los tipos de columnas de ClickHouse declarados](/images/integrations/sql-clients/libredb-studio-query.png)
+      </Frame>
+    </div>
   </Step>
 </Steps>
 
@@ -128,7 +135,11 @@ LibreDB Studio también puede ejecutar `OPTIMIZE TABLE ... FINAL` sobre una tabl
 de una tabla o base de datos y detener una consulta en ejecución con `KILL QUERY ... SYNC`. Estas operaciones requieren los
 permisos correspondientes.
 
-<Image img="/images/integrations/sql-clients/libredb-studio-monitoring.png" size="md" border alt="Descripción general de monitorización de LibreDB Studio para una conexión de ClickHouse que muestra la versión del servidor, el tiempo de actividad, las conexiones, el tamaño de almacenamiento, el porcentaje de aciertos de caché y el número de tablas" />
+<div className="ch-image-md">
+  <Frame>
+    ![Descripción general de monitorización de LibreDB Studio para una conexión de ClickHouse que muestra la versión del servidor, el tiempo de actividad, las conexiones, el tamaño de almacenamiento, el porcentaje de aciertos de caché y el número de tablas](/images/integrations/sql-clients/libredb-studio-monitoring.png)
+  </Frame>
+</div>
 
 ## Resolución de problemas {#troubleshooting}
 

@@ -1216,7 +1216,7 @@ void RemoteQueryExecutor::processReadTaskRequest()
 
     ProfileEvents::increment(ProfileEvents::ReadTaskRequestsReceived);
 
-    auto response = (*extension->task_iterator)(extension->replica_info->number_of_current_replica);
+    auto response = (*extension->task_iterator)(extension->replica_info->number_of_current_replica, stop_waiting_for_read_task);
     connections->sendClusterFunctionReadTaskResponse(*response);
 }
 
@@ -1249,6 +1249,7 @@ void RemoteQueryExecutor::processMergeTreeInitialReadAnnouncement(InitialAllRang
 
 void RemoteQueryExecutor::finish()
 {
+    stop_waiting_for_read_task = true;
     {
         std::lock_guard gate(finish_gate_mutex);
         ++finish_in_progress;
@@ -1415,6 +1416,7 @@ void RemoteQueryExecutor::finishUnlocked()
 
 void RemoteQueryExecutor::cancel()
 {
+    stop_waiting_for_read_task = true;
     /// `finish` can hold `was_cancelled_mutex` across an unbounded blocking read, and this runs from a
     /// sweep that must not stall, so it must not wait for that mutex. Taking it while still holding the
     /// gate is what makes the check meaningful: a `finish` that owns it already incremented the counter.

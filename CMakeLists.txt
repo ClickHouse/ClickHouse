@@ -39,9 +39,6 @@ include (cmake/clang_tidy.cmake)
 include (cmake/git.cmake)
 include (cmake/utils.cmake)
 
-# This is needed to set up the CMAKE_INSTALL_BINDIR variable.
-include (GNUInstallDirs)
-
 # Ignore export() since we don't use it,
 # but it gets broken with global targets via link_libraries()
 macro (export)
@@ -271,9 +268,7 @@ if (LINKER_NAME MATCHES "lld" AND NOT LINKER_NAME MATCHES "ld64")
     set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--build-id=sha1")
 endif ()
 
-# Add a section with the hash of the compiled machine code for integrity checks.
-# Only for official builds, because adding a section can be time consuming (rewrite of several GB).
-# And cross compiled binaries are not supported (since you cannot execute clickhouse hash-binary)
+# Add a section with the hash of the compiled machine code for integrity checks. Only for official builds.
 if (CLICKHOUSE_OFFICIAL_BUILD AND OS_LINUX AND (ARCH_AMD64 OR ARCH_AARCH64) AND NOT ENABLE_CLANG_TIDY)
     message(STATUS "Official build: A checksum hash will be added to the clickhouse executable")
     set (USE_BINARY_HASH 1 CACHE STRING "Calculate binary hash and store it in the separate section")
@@ -285,32 +280,42 @@ endif ()
 option(DISABLE_ALL_DEBUG_SYMBOLS "Disable debug symbols, independently of which build type is used" OFF)
 option(SPLIT_DEBUG_SYMBOLS "Split binaries and debug symbols" OFF)
 set(SYMBOL_SECTIONS "symtab" CACHE STRING "Symbol table format retained in packaged binaries")
-set_property(CACHE SYMBOL_SECTIONS PROPERTY STRINGS symtab gnu_debugdata compact)
+set_property(CACHE SYMBOL_SECTIONS PROPERTY STRINGS symtab gnu_debugdata compact both)
 
-set(SYMBOL_SECTIONS_VALID_VALUES symtab gnu_debugdata compact)
+set(SYMBOL_SECTIONS_VALID_VALUES symtab gnu_debugdata compact both)
 if (NOT SYMBOL_SECTIONS IN_LIST SYMBOL_SECTIONS_VALID_VALUES)
     message(FATAL_ERROR "Unsupported SYMBOL_SECTIONS value '${SYMBOL_SECTIONS}'. Valid values: ${SYMBOL_SECTIONS_VALID_VALUES}")
 endif()
 
-if (SYMBOL_SECTIONS STREQUAL "compact" AND NOT SPLIT_DEBUG_SYMBOLS)
-    message(FATAL_ERROR "SYMBOL_SECTIONS=compact requires SPLIT_DEBUG_SYMBOLS=ON")
+# The sections added to the stripped binary in place of `.symtab`.
+set(ADD_COMPACT_SYMBOLS_SECTION OFF)
+set(ADD_GNU_DEBUGDATA_SECTION OFF)
+if (SYMBOL_SECTIONS STREQUAL "compact" OR SYMBOL_SECTIONS STREQUAL "both")
+    set(ADD_COMPACT_SYMBOLS_SECTION ON)
+endif()
+if (SYMBOL_SECTIONS STREQUAL "gnu_debugdata" OR SYMBOL_SECTIONS STREQUAL "both")
+    set(ADD_GNU_DEBUGDATA_SECTION ON)
 endif()
 
-if (SYMBOL_SECTIONS STREQUAL "gnu_debugdata")
+if (ADD_COMPACT_SYMBOLS_SECTION AND NOT SPLIT_DEBUG_SYMBOLS)
+    message(FATAL_ERROR "SYMBOL_SECTIONS=${SYMBOL_SECTIONS} requires SPLIT_DEBUG_SYMBOLS=ON")
+endif()
+
+if (ADD_GNU_DEBUGDATA_SECTION)
     # `.gnu_debugdata` is an ELF section, and `SymbolIndex` reads it only on ELF targets.
     if (NOT (OS_LINUX OR OS_FREEBSD))
-        message(FATAL_ERROR "SYMBOL_SECTIONS=gnu_debugdata is supported only for ELF targets (Linux, FreeBSD)")
+        message(FATAL_ERROR "SYMBOL_SECTIONS=${SYMBOL_SECTIONS} is supported only for ELF targets (Linux, FreeBSD)")
     endif()
 
     if (NOT SPLIT_DEBUG_SYMBOLS)
-        message(FATAL_ERROR "SYMBOL_SECTIONS=gnu_debugdata requires SPLIT_DEBUG_SYMBOLS=ON")
+        message(FATAL_ERROR "SYMBOL_SECTIONS=${SYMBOL_SECTIONS} requires SPLIT_DEBUG_SYMBOLS=ON")
     endif()
 
     ch_find_program(XZ_PATH NAMES "xz")
     if (XZ_PATH)
         message(STATUS "Using xz: ${XZ_PATH}")
     else()
-        message(FATAL_ERROR "Cannot find xz required by SYMBOL_SECTIONS=gnu_debugdata")
+        message(FATAL_ERROR "Cannot find xz required by SYMBOL_SECTIONS=${SYMBOL_SECTIONS}")
     endif()
 endif()
 
@@ -450,6 +455,12 @@ endif()
 # Note: it's not enabled on RISC-V64 due to bugs in LLVM.
 if (NOT OS_DARWIN AND NOT OS_SUNOS AND (ARCH_AMD64 OR ARCH_AARCH64 OR ARCH_PPC64LE OR ARCH_S390X))
     set (COMPILER_FLAGS "${COMPILER_FLAGS} -fstack-clash-protection")
+endif ()
+
+# Trap when a value-returning C++ function reaches its end without a `return`. Not in sanitizer and fuzzer builds (the
+# UBSan ones report it), nor with Emscripten, which links its UBSan runtime for any UBSan check.
+if (NOT SANITIZE AND NOT ENABLE_FUZZING AND NOT OS_WASM)
+    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=return -fsanitize-trap=return")
 endif ()
 
 # Disable floating-point expression contraction in order to get consistent floating point calculation results across platforms
@@ -631,6 +642,8 @@ if (ENABLE_THINLTO AND NOT ENABLE_TESTS AND NOT SANITIZE)
     set (CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO "${CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO} -flto=thin -fwhole-program-vtables")
 
     if(LINKER_NAME MATCHES "lld")
+        # Do not verify every module with debug info again on each load and import; the LTO pipeline still verifies each module.
+        set(CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO "${CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO} -Wl,-mllvm,-disable-auto-upgrade-debug-info")
         set(CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO "${CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO} -Wl,--lto-whole-program-visibility")
         # ThinLTO generates code in the linker, which does not see -falign-loops.
         set(CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO "${CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO} -Wl,-mllvm,-align-loops=32")
@@ -835,13 +848,6 @@ option(ENABLE_OPENSSL_DYNAMIC "This option removes SSL from ClickHouse and will 
 # call that crosses into or out of a library that is not part of the same link.
 if (ENABLE_CFI AND ENABLE_OPENSSL_DYNAMIC)
     message (FATAL_ERROR "ENABLE_CFI is incompatible with ENABLE_OPENSSL_DYNAMIC.")
-endif ()
-
-# when installing to /usr - place configs to /etc but for /usr/local place to /usr/local/etc
-if (CMAKE_INSTALL_PREFIX STREQUAL "/usr")
-    set (CLICKHOUSE_ETC_DIR "/etc")
-else ()
-    set (CLICKHOUSE_ETC_DIR "${CMAKE_INSTALL_PREFIX}/etc")
 endif ()
 
 message (STATUS "Building for: ${CMAKE_SYSTEM} ${CMAKE_SYSTEM_PROCESSOR} ${CMAKE_LIBRARY_ARCHITECTURE}")
