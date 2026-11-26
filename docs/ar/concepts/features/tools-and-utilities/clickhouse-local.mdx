@@ -201,7 +201,7 @@ $ clickhouse-local --copy < data.json > data.csv
 
 ## الاستخدام {#usage}
 
-افتراضيًا، يمكن لـ `clickhouse-local` الوصول إلى بيانات خادم ClickHouse على نفس المضيف، ولا يعتمد على تهيئة الخادم. كما يدعم تحميل تهيئة الخادم باستخدام الوسيطة `--config-file`. وبالنسبة إلى البيانات المؤقتة، يُنشأ افتراضيًا دليل مؤقت فريد للبيانات.
+افتراضيًا، يمكن لـ `clickhouse-local` الوصول إلى بيانات خادم ClickHouse على نفس المضيف، ولا يعتمد على تهيئة الخادم. كما يدعم تحميل تهيئة الخادم باستخدام الوسيطة `--config-file`. تُخزَّن البيانات في دليل مخصص لبيانات التطبيقات داخل دليل المستخدم الرئيسي (`$XDG_DATA_HOME/clickhouse-local` أو `~/.local/share/clickhouse-local` على Linux، و`~/Library/Application Support/clickhouse-local` على macOS)، ولذلك تبقى محفوظة بين مرات التشغيل. مرِّر `--path` لاستخدام موقع مختلف، أو `--tmp` للعمل على دليل مؤقت فريد يُحذف عند الخروج. ولا يمكن إلا لمثيل واحد العمل على الدليل نفسه في آنٍ واحد.
 
 في حال عدم تحديد `--config-file`، يبحث `clickhouse-local` عن ملف التهيئة في المواقع التالية، ويستخدم أول ملف يعثر عليه منها:
 
@@ -210,7 +210,7 @@ $ clickhouse-local --copy < data.json > data.csv
 3. `$HOME/.clickhouse-local/config.xml`، `$HOME/.clickhouse-local/config.yaml`، `$HOME/.clickhouse-local/config.yml`
 4. `/etc/clickhouse-local/config.xml`، `/etc/clickhouse-local/config.yaml`، `/etc/clickhouse-local/config.yml`
 
-يمكن كتابة ملف التهيئة بصيغة XML أو YAML، على غرار ملفات تهيئة خادم ClickHouse - راجع [&quot;ملفات التهيئة&quot;](/operations/configuration-files).
+يمكن كتابة ملف التهيئة بصيغة XML أو YAML، على غرار ملفات تهيئة خادم ClickHouse - راجع [&quot;ملفات التهيئة&quot;](/ar/operations/configuration-files).
 
 الاستخدام الأساسي (Linux):
 
@@ -252,6 +252,8 @@ $ ./clickhouse local --structure "table_structure" --input-format "format_of_inc
 * `--logger.level` — مستوى السجل.
 * `--ignore-error` — لا توقف المعالجة إذا فشل استعلام: يُبلَّغ عن الخطأ في `stderr` ثم يُعالَج الاستعلام التالي. ولأن الأخطاء تُتجاهَل، تنتهي العملية برمز نجاح حتى لو فشل بعض الاستعلامات.
 * `-c`, `--config-file` — مسار إلى ملف التهيئة بالصيغة نفسها المستخدمة في خادم ClickHouse. إذا لم يُحدَّد، يبحث `clickhouse-local` بنفسه عن ملف التهيئة الرئيسي الخاص به، راجع [&quot;ملفات التهيئة&quot;](#configuration-files)؛ ولا تكون التهيئة فارغة إلا إذا لم يُعثر على أي من الملفات التي يبحث عنها.
+* `--path` — دليل البيانات. افتراضيًا، يُستخدم دليل مخصص لبيانات التطبيقات داخل الدليل المنزلي للمستخدم (`$XDG_DATA_HOME/clickhouse-local` أو `~/.local/share/clickhouse-local` على Linux، و`~/Library/Application Support/clickhouse-local` على macOS)، وتبقى البيانات محفوظة بين مرات التشغيل.
+* `--tmp` — استخدم دليلًا مؤقتًا فريدًا للبيانات يُحذف عند الخروج (كان هذا هو السلوك الافتراضي في الإصدارات الأقدم). لا يكون له أي تأثير إذا تم تحديد `--path`.
 * `--no-system-tables` — لا تُرفق جداول النظام.
 * `--help` — مرجع الوسيطات لـ `clickhouse-local`.
 * `-V`, `--version` — اطبع معلومات الإصدار ثم اخرج.

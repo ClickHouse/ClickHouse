@@ -5,7 +5,6 @@
 
 SET mutations_sync = 2;
 SET optimize_mutations_with_partition_pruning = 1;
-SET enable_json_type = 1;
 
 DROP TABLE IF EXISTS t_mutation_pruning_subcolumns;
 

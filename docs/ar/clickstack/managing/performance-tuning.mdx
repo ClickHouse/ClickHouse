@@ -1,10 +1,10 @@
 ---
 slug: /use-cases/observability/clickstack/performance_tuning
-title: 'ClickStack - ضبط الأداء'
+title: 'ضبط الأداء'
 sidebarTitle: 'ضبط الأداء'
-description: 'ضبط الأداء في ClickStack - حزمة ClickHouse للـ observability'
+description: 'ضبط الأداء في ClickStack - حزمة ClickHouse لإمكانية المراقبة'
 doc_type: 'guide'
-keywords: ['clickstack', 'observability', 'السجلات', 'الأداء', 'التحسين']
+keywords: ['clickstack', 'إمكانية المراقبة', 'السجلات', 'الأداء', 'التحسين']
 ---
 
 import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
@@ -14,15 +14,19 @@ import OtelLogsSchema from '/snippets/ar/clickstack/_schema_otel_logs.mdx';
 import OtelTracesSchema from '/snippets/ar/clickstack/_schema_otel_traces.mdx';
 
 <div id="introduction">
-  ## المقدمة
+  ## المقدمة {#introduction}
 </div>
 
-يركّز هذا الدليل على أكثر أساليب تحسين الأداء شيوعًا وفعاليةً في ClickStack، وهي كافية لتحسين معظم أعباء عمل observability في البيئات الواقعية، عادةً حتى عشرات التيرابايتات من البيانات يوميًا.
+يركّز هذا الدليل على أكثر أساليب تحسين الأداء شيوعًا وفعاليةً في ClickStack، وهي كافية لتحسين معظم أعباء عمل إمكانية المراقبة في البيئات الواقعية، عادةً حتى عشرات التيرابايتات من البيانات يوميًا.
 
 تُعرض هذه التحسينات بترتيب مدروس، بدءًا من أبسط الأساليب وأكبرها أثرًا، ثم الانتقال تدريجيًا إلى أساليب الضبط الأكثر تقدمًا وتخصصًا. ينبغي تطبيق التحسينات الأولية أولًا، وغالبًا ما تحقق مكاسب كبيرة بمفردها. ومع ازدياد أحجام البيانات واشتداد متطلبات أعباء العمل، تصبح التقنيات اللاحقة أكثر جدوى للاستكشاف.
 
+<Tip>
+  مع [ClickHouse لإمكانية المراقبة](/ar/clickstack/observability)، يمكنك تخصيص وقت أطول لتحليل المشكلات ووقت أقل لتشغيل الواجهة الخلفية لإمكانية المراقبة. [سجّل في ClickHouse Cloud](https://clickhouse.cloud/signUp?loc=docs-clickstack-performance-tuning-inline) للبدء.
+</Tip>
+
 <div id="clickhouse-concepts">
-  ## مفاهيم ClickHouse
+  ## مفاهيم ClickHouse {#clickhouse-concepts}
 </div>
 
 قبل تطبيق أي من تحسينات الأداء الموضَّحة في هذا الدليل، من المهم الإلمام ببعض مفاهيم ClickHouse الأساسية.
@@ -74,7 +78,7 @@ import OtelTracesSchema from '/snippets/ar/clickstack/_schema_otel_traces.mdx';
 يمكن تطبيق جميع التحسينات الموضَّحة أدناه مباشرةً على الجداول الأساسية باستخدام ClickHouse SQL القياسي، سواء عبر [SQL Console في ClickHouse Cloud](/ar/integrations/connectors/sql-clients/sql-console) أو من خلال [ClickHouse client](/ar/concepts/features/interfaces/client).
 
 <div id="materialize-frequently-queried-attributes">
-  ## التحسين 1. تحويل السمات التي يُستعلَم عنها كثيرًا إلى أعمدة مُجسَّدة
+  ## التحسين 1. تحويل السمات التي يُستعلَم عنها كثيرًا إلى أعمدة مُجسَّدة {#materialize-frequently-queried-attributes}
 </div>
 
 أول تحسين وأبسطه لمستخدمي ClickStack هو تحديد السمات التي يكثر الاستعلام عنها في `LogAttributes` و`ScopeAttributes` و`ResourceAttributes`، ثم تحويلها إلى أعمدة من المستوى الأعلى باستخدام الأعمدة المُجسَّدة.
@@ -82,7 +86,7 @@ import OtelTracesSchema from '/snippets/ar/clickstack/_schema_otel_traces.mdx';
 وغالبًا ما يكون هذا التحسين وحده كافيًا لتوسيع نطاق عمليات نشر ClickStack إلى عشرات التيرابايت يوميًا، وينبغي تطبيقه قبل النظر في تقنيات ضبط أكثر تقدمًا.
 
 <div id="why-materialize-attributes">
-  ### لماذا نُجسِّد السمات
+  ### لماذا نُجسِّد السمات {#why-materialize-attributes}
 </div>
 
 يخزّن ClickStack البيانات الوصفية مثل labels الخاصة بـ Kubernetes، والبيانات الوصفية للخدمة، والسمات المخصّصة في أعمدة `Map(String, String)`. ورغم أن هذا يوفّر مرونة، فإن الاستعلام عن المفاتيح الفرعية داخل map له تأثير مهم على الأداء.
@@ -104,24 +108,18 @@ import OtelTracesSchema from '/snippets/ar/clickstack/_schema_otel_traces.mdx';
   يكتشف ClickStack تلقائيًا الأعمدة المُجسَّدة المستخرجة من map ويستخدمها بشفافية أثناء تنفيذ الاستعلامات، حتى عندما يواصل المستخدمون الاستعلام عن مسار السمة الأصلي.
 </Note>
 
-<div id="materialize-column-example">
-  ### مثال
-</div>
+### مثال {#materialize-column-example}
 
-انظر إلى مخطط ClickStack الافتراضي للتتبعات، حيث تُخزَّن بيانات Kubernetes الوصفية في `ResourceAttributes`:
+انظر إلى مخطط ClickStack الافتراضي للتتبعات، حيث تُخزَّن بيانات Kubernetes الوصفية في `ResourceAttributes`:
 
 <OtelTracesSchema />
 
 يمكن للمستخدم تصفية التتبعات باستخدام صيغة Lucene، مثل `ResourceAttributes.k8s.pod.name:"checkout-675775c4cc-f2p9c"`:
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![تصفية التتبعات](/images/clickstack/performance_guide/trace_filtering.webp)
-
-</Frame>
-
+  <Frame>
+    ![تصفية التتبعات](/images/clickstack/performance_guide/trace_filtering.webp)
+  </Frame>
 </div>
 
 ويؤدي ذلك إلى مسند SQL مشابه لما يلي:
@@ -134,7 +132,7 @@ ResourceAttributes['k8s.pod.name'] = 'checkout-675775c4cc-f2p9c'
 
 إذا كان الاستعلام عن هذه السمة يتكرر كثيرًا، فينبغي تجسيدها كعمود من المستوى الأعلى.
 
-لاستخراج اسم الكبسولة وقت الإدراج، أضِف عمودًا مُجسَّدًا:
+لاستخراج اسم الكبسولة وقت الإدراج، أضِف عمودًا مُجسَّدًا:
 
 ```sql
 ALTER TABLE otel_v2.otel_traces
@@ -147,18 +145,14 @@ MATERIALIZED ResourceAttributes['k8s.pod.name']
 يمكن للمستخدمين الآن الاستعلام عن أسماء الكبسولات بكفاءة باستخدام بناء جملة Lucene، مثل `PodName:"checkout-675775c4cc-f2p9c"`
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![تصفية التتبعات v2](/images/clickstack/performance_guide/trace_filtering_v2.webp)
-
-</Frame>
-
+  <Frame>
+    ![تصفية التتبعات v2](/images/clickstack/performance_guide/trace_filtering_v2.webp)
+  </Frame>
 </div>
 
 بالنسبة إلى البيانات المُدرجة حديثًا، يُلغي هذا الحاجة إلى الوصول إلى `map` بالكامل ويقلّل بشكل كبير من عمليات الإدخال/الإخراج.
 
-ومع ذلك، حتى إذا واصل المستخدمون الاستعلام باستخدام مسار السمة الأصلي مثل `ResourceAttributes.k8s.pod.name:"checkout-675775c4cc-f2p9c"`، فإن **ClickStack سيُعيد كتابة الاستعلام تلقائيًا** داخليًا لاستخدام العمود المُجسَّد `PodName`، أي باستخدام الشرط:
+ومع ذلك، حتى إذا واصل المستخدمون الاستعلام باستخدام مسار السمة الأصلي مثل `ResourceAttributes.k8s.pod.name:"checkout-675775c4cc-f2p9c"`، فإن **ClickStack سيُعيد كتابة الاستعلام تلقائيًا** داخليًا لاستخدام العمود المُجسَّد `PodName`، أي باستخدام الشرط:
 
 ```sql
 PodName = 'checkout-675775c4cc-f2p9c'
@@ -167,11 +161,11 @@ PodName = 'checkout-675775c4cc-f2p9c'
 يضمن ذلك استفادة المستخدمين من هذا التحسين من دون الحاجة إلى تغيير لوحات المعلومات أو التنبيهات أو الاستعلامات المحفوظة.
 
 <Note>
-  افتراضيًا، تُستبعَد الأعمدة المُجسَّدة من `SELECT * queries`. وهذا يحافظ على القاعدة الثابتة التي تقضي بإمكانية إعادة إدراج نتائج الاستعلام دائمًا في الجدول.
+  افتراضيًا، تُستبعَد الأعمدة المُجسَّدة من `SELECT * queries`. وهذا يحافظ على القاعدة الثابتة التي تقضي بإمكانية إعادة إدراج نتائج الاستعلام دائمًا في الجدول.
 </Note>
 
 <div id="materializing-historical-data">
-  ### تخزين البيانات التاريخية بشكل مادي
+  ### تخزين البيانات التاريخية بشكل مادي {#materializing-historical-data}
 </div>
 
 لا تُطبَّق الأعمدة المُجسَّدة تلقائيًا إلا على البيانات التي أُدرِجت بعد إنشاء العمود. أما البيانات الموجودة مسبقًا، فستعود الاستعلامات على العمود المُجسَّد تلقائيًا وبشكل شفاف إلى القراءة من الـMap الأصلية.
@@ -208,7 +202,7 @@ ORDER BY create_time DESC;
 </Warning>
 
 <div id="adding-skip-indexes">
-  ## التحسين 2. إضافة فهارس التخطي
+  ## التحسين 2. إضافة فهارس التخطي {#adding-skip-indexes}
 </div>
 
 بعد تجسيد السمات كثيرة الاستعلام، يكون التحسين التالي هو إضافة فهارس تخطي البيانات لتقليل كمية البيانات التي يحتاج ClickHouse إلى قراءتها أثناء تنفيذ الاستعلام بشكل أكبر.
@@ -228,7 +222,7 @@ ORDER BY create_time DESC;
 يستخدم جدول logs فهارس `text(tokenizer = 'array')` في كامل الجدول بدلًا من مرشحات Bloom، ويضيف فهرس `text(tokenizer = 'splitByNonAlpha')` على `lower(Body)` لأغراض البحث النصي الكامل. راجع [&quot;الجداول والمخططات التي يستخدمها ClickStack&quot;](/ar/clickstack/ingesting-data/schemas#logs) للاطلاع على DDL الكامل.
 
 <div id="bloom-filters">
-  ### مرشحات Bloom
+  ### مرشحات Bloom {#bloom-filters}
 </div>
 
 تُعد فهارس مرشح Bloom أكثر أنواع فهارس التخطي استخدامًا في ClickStack. وهي مناسبة جدًا للأعمدة النصية عالية الكاردينالية، وعادةً ما تحتوي على عشرات الآلاف على الأقل من القيم المميزة. يُعد معدل الإيجابيات الكاذبة البالغ 0.01 مع granularity بقيمة 1 نقطة بداية افتراضية جيدة، إذ يوازن بين الحمل الإضافي للتخزين وفعالية الاستبعاد.
@@ -259,7 +253,7 @@ GRANULARITY 1
 وكما هو الحال مع جميع فهارس التخطي، ينبغي إضافة bloom filters بشكل انتقائي والتحقق منها في مقابل أنماط الاستعلام الفعلية لضمان أنها توفّر فائدة قابلة للقياس - راجع [&quot;تقييم فعالية فهرس التخطي.&quot;](#evaluating-skip-index-effectiveness)
 
 <div id="text-indexes">
-  ### الفهارس النصية
+  ### الفهارس النصية {#text-indexes}
 </div>
 
 توفّر [الفهارس النصية](/ar/reference/engines/table-engines/mergetree-family/textindexes) بديلاً لمرشحات Bloom. مرشح Bloom هو بنية احتمالية يمكنها استبعاد الحبيبات بشكل قاطع، لكنه ينطوي على معدل من الإيجابيات الكاذبة، لذلك يجب مع ذلك تحميل الحبيبات التي لا يستبعدها وتقييمها وفق شرط `WHERE`. الفهارس النصية هي فهارس معكوسة تربط الرموز بإزاحات دقيقة داخل الجزء. ونظراً لأنها تقيّم الإزاحات بدلاً من الحبيبات ولا تنتج أي إيجابيات كاذبة، فيمكنها عادةً تلبية شرط `WHERE` من دون تحميل العمود الأساسي. ويُعرف هذا التحسين باسم [القراءة المباشرة](https://github.com/ClickHouse/clickhouse-docs/pull/6356/%E2%80%A6). وبما أن تحميل البيانات يكون غالباً أكبر عامل في زمن الاستعلام، فإن القراءة المباشرة يمكن أن تقلّل كمون الاستعلام بشكل ملحوظ.
@@ -274,7 +268,7 @@ GRANULARITY 1
 | `splitByNonAlpha` | البحث النصي الكامل على مستوى الكلمات في السلاسل النصية الحرة | `Body`, `lower(Body)`, `SpanName` |
 
 <div id="array-tokenizer">
-  #### مُقسِّم الرموز Array لأعمدة Map والأعمدة من النوع Array
+  #### مُقسِّم الرموز Array لأعمدة Map والأعمدة من النوع Array {#array-tokenizer}
 </div>
 
 يفهرس مخطط السجلات الافتراضي `mapKeys` ومصفوفات العناصر المُجسَّدة باستخدام مُقسِّم الرموز `array`:
@@ -289,11 +283,9 @@ INDEX idx_log_attr_items LogAttributeItems TYPE text(tokenizer = 'array')
 عمود Map نفسه. وهذه هي الآلية التي تجعل [تحسين القراءة المباشرة لـ Map](#map-direct-read-optimization)
 مجدياً.
 
-<div id="text-index-body">
-  #### `splitByNonAlpha` لمحتوى السجل
-</div>
+#### `splitByNonAlpha` لمحتوى السجل {#text-index-body}
 
-يستفيد البحث بالنص الكامل في العمود `Body` من فهرس نصي `splitByNonAlpha`.
+يستفيد البحث في النص الكامل في العمود `Body` من فهرس نصي `splitByNonAlpha`.
 ويعرّف ClickStack هذا الفهرس على `lower(Body)` بحيث تتمكّن عمليات بحث Lucene
 المتجاهلة لحالة الأحرف من استخدامه:
 
@@ -305,20 +297,22 @@ INDEX idx_lower_body lower(Body) TYPE text(tokenizer = 'splitByNonAlpha')
 `lower(Body)`، فإنه يعيد كتابة استعلامات Lucene ذات العمود الضمني مثل `error` أو
 `"connection refused"` إلى `hasAllTokens(lower(Body), lower(...))`، ما يتيح
 للفهرس تنفيذها من دون قراءة عمود `Body` بالكامل. بالنسبة إلى معظم أحمال عمل سجلات
-observability، فهذا أكبر تسريع منفرد متاح لعمليات التصفية.
+إمكانية المراقبة، فهذا أكبر تسريع منفرد متاح لعمليات التصفية.
 
 <Info>
-  **فهارس النص مقابل `tokenbf_v1`**
+  **فهارس نصية مقابل `tokenbf_v1`**
 
-  نوع الفهرس الأقدم `tokenbf_v1` (الذي لا يزال مستخدمًا في مخطط تتبعات الافتراضي لـ
-  `lower(SpanName)`) متشابه وظيفيًا، لكنه مُهمَل في ClickHouse 26.2
-  والإصدارات الأحدث. ينبغي أن تستخدم فهارس البحث النصي الجديدة `text(tokenizer = ...)`.
+  يستخدم مخطط التتبّعات الافتراضي الحالي
+  `text(tokenizer = 'splitByNonAlpha', preprocessor = lower(SpanName))` لفهرسة
+  رموز `SpanName` الموحَّدة الصيغة. وقد تستخدم مخططات التتبّعات الأقدم `tokenbf_v1`، وهو
+  مشابه وظيفيًا، لكنه مُهمَل في ClickHouse 26.2 والإصدارات الأحدث. ينبغي أن تستخدم
+  الفهارس النصية الجديدة `text(tokenizer = ...)`.
 </Info>
 
-للحصول على مرجع أكثر تفصيلًا حول خيارات مُقسِّم الرموز، والمعالِجات المسبقة، والتحقق، راجع [وثائق البحث النصي الكامل](/ar/reference/engines/table-engines/mergetree-family/textindexes).
+للحصول على مرجع أكثر تفصيلًا حول خيارات مُقسِّم الرموز، والمعالِجات المسبقة، والتحقق، راجع [وثائق البحث في النص الكامل](/ar/reference/engines/table-engines/mergetree-family/textindexes).
 
 <div id="text-indexes-in-default-logs-schema">
-  #### الفهارس النصية في مخطط السجلات الافتراضي
+  #### الفهارس النصية في مخطط السجلات الافتراضي {#text-indexes-in-default-logs-schema}
 </div>
 
 يأتي مخطط `otel_logs` الافتراضي، المُزامَن من المصدر الأصلي، متضمّنًا كل فهرس نصي نوقش أعلاه: `text(tokenizer = 'array')` على `TraceId`، وعلى كل من `mapKeys(...)` ومصفوفات `*AttributeItems`، و`text(tokenizer = 'splitByNonAlpha')` على `lower(Body)` لأغراض البحث النصي الكامل. للاطلاع على DDL القياسي، راجع [&quot;الجداول والمخططات المستخدمة بواسطة ClickStack&quot;](/ar/clickstack/ingesting-data/schemas#logs)؛ كما يَرِد أدناه المخطط نفسه.
@@ -326,7 +320,7 @@ observability، فهذا أكبر تسريع منفرد متاح لعمليات 
 <OtelLogsSchema />
 
 <div id="min-max-indexes">
-  ### فهارس MinMax
+  ### فهارس MinMax {#min-max-indexes}
 </div>
 
 تخزّن فهارس MinMax القيمتَين الدنيا والعليا لكل granule، وهي خفيفة جدًا. وهي فعّالة بشكل خاص مع الأعمدة الرقمية واستعلامات النطاق. ورغم أنها قد لا تسرّع كل استعلام، فإن كلفتها منخفضة، وغالبًا ما يكون من المفيد إضافتها إلى الحقول الرقمية.
@@ -359,7 +353,7 @@ ADD INDEX idx_kafka_offset KafkaOffset TYPE minmax GRANULARITY 1
 ومرة أخرى، يجب [إضفاء الطابع المادي على](#materialize-skip-index) الفهرس قبل أن يصبح متاحًا.
 
 <div id="materialize-skip-index">
-  ### تنفيذ فهرس التخطي ماديًا
+  ### تنفيذ فهرس التخطي ماديًا {#materialize-skip-index}
 </div>
 
 بعد إضافة فهرس تخطٍّ، لا يُطبَّق إلا على البيانات المُستوعبة حديثًا. ولن تستفيد البيانات التاريخية من الفهرس حتى يُنفَّذ عليها ماديًا بشكل صريح.
@@ -426,21 +420,20 @@ WHERE database = 'otel'
 
 لمزيد من التفاصيل حول فهارس التخطي، راجع الدليل [&quot;فهم فهارس ClickHouse لتخطي البيانات.&quot;](/ar/concepts/features/performance/skip-indexes/skipping-indexes-examples)
 
-<div id="evaluating-skip-index-effectiveness">
-  ### تقييم فعالية فهارس التخطي
-</div>
+### تقييم فعالية فهارس تخطي البيانات {#evaluating-skip-index-effectiveness}
 
-أكثر الطرق موثوقيةً لتقييم تقليص فهارس التخطي هي استخدام `EXPLAIN indexes = 1`، إذ يوضّح عدد [الأجزاء](/ar/concepts/core-concepts/parts) و[الحبيبات](/ar/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-organized-into-granules-for-parallel-data-processing) التي جرى استبعادها في كل مرحلة من مراحل تخطيط الاستعلام. في معظم الحالات، يُفترض أن ترى انخفاضًا كبيرًا في عدد الحبيبات عند مرحلة Skip، ويفضَّل أن يحدث ذلك بعد أن يكون المفتاح الأساسي قد قلّص نطاق البحث بالفعل. تُقيَّم فهارس التخطي بعد تقليص الأقسام وتقليص المفتاح الأساسي، لذا يُقاس أثرها بأفضل شكل مقارنةً بالأجزاء والحبيبات المتبقية.
+أكثر الطرق موثوقيةً لتقييم استبعاد فهارس تخطي البيانات هي استخدام `EXPLAIN indexes = 1`، إذ يوضّح عدد [الأجزاء](/ar/concepts/core-concepts/parts) و[حبيبات البيانات](/ar/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-organized-into-granules-for-parallel-data-processing) التي جرى استبعادها في كل مرحلة من مراحل تخطيط الاستعلام. في معظم الحالات، يُفترض أن ترى انخفاضًا كبيرًا في عدد حبيبات البيانات عند مرحلة Skip، ويفضَّل أن يحدث ذلك بعد أن يكون المفتاح الأساسي قد قلّص نطاق البحث بالفعل. تُقيَّم فهارس تخطي البيانات بعد استبعاد الأقسام واستبعاد المفتاح الأساسي، لذا يُقاس أثرها بأفضل شكل مقارنةً بالأجزاء وحبيبات البيانات المتبقية.
 
-يؤكد `EXPLAIN` ما إذا كان هذا التقليص يحدث، لكنه لا يضمن بالضرورة تحسنًا فعليًا في السرعة. فتقييم فهارس التخطي له كلفة، لا سيما إذا كان الفهرس كبيرًا. احرص دائمًا على إجراء benchmark للاستعلامات قبل إضافة الفهرس وتجسيده ماديًا وبعد ذلك، للتأكد من وجود تحسينات فعلية في الأداء.
+يؤكد `EXPLAIN` ما إذا كان هذا الاستبعاد يحدث، لكنه لا يضمن بالضرورة تحسنًا فعليًا في السرعة. فتقييم فهارس تخطي البيانات له كلفة، لا سيما إذا كان الفهرس كبيرًا. احرص دائمًا على إجراء اختبار الأداء للاستعلامات قبل إضافة الفهرس وتجسيده ماديًا وبعد ذلك، للتأكد من وجود تحسينات فعلية في الأداء.
 
-على سبيل المثال، تأمّل فهرس التخطي الافتراضي من نوع مرشح Bloom للحقل TraceId والمضمَّن في مخطط تتبعات الافتراضي:
+على سبيل المثال، يتضمّن مخطط تتبعات الافتراضي فهرسًا نصيًا للحقل `TraceId`:
 
 ```sql
-INDEX idx_trace_id TraceId TYPE bloom_filter(0.001) GRANULARITY 1
+INDEX idx_trace_id TraceId TYPE text(tokenizer = 'array')
 ```
 
-يمكنك استخدام `EXPLAIN indexes = 1` لمعرفة مدى فعاليته في استعلام انتقائي:
+يمكنك استخدام `EXPLAIN indexes = 1` للتحقق من أن استعلامًا انتقائيًا يستخدم هذا
+الفهرس:
 
 ```sql
 EXPLAIN indexes = 1
@@ -451,21 +444,16 @@ WHERE (ServiceName = 'accounting')
 
 ReadFromMergeTree (otel_v2.otel_traces)
 Indexes:
-  PrimaryKey
-    Keys:
-      ServiceName
-    Parts: 6/18
-    Granules: 255/35898
   Skip
     Name: idx_trace_id
-    Description: bloom_filter GRANULARITY 1
-    Parts: 1/6
-    Granules: 1/255
+    Description: text
 ```
 
-في هذه الحالة، يقلّص مرشح المفتاح الأساسي مجموعة البيانات بشكل كبير أولًا (من 35898 وحدة granule إلى 255)، ثم يختصر مرشح Bloom ذلك أكثر إلى وحدة granule واحدة (1/255). وهذا هو النمط المثالي لفهارس التخطي: إذ يضيّق تقليص المفتاح الأساسي نطاق البحث، ثم يزيل فهرس التخطي معظم ما تبقّى.
+يعتمد العدد الدقيق للأجزاء وحبيبات البيانات المُبلَّغ عنها على البيانات. في الاستعلام الانتقائي،
+يضيّق استبعاد المفتاح الأساسي نطاق البحث أولًا، ثم يمكن للفهرس النصي
+أن يقلّل أكثر من حجم البيانات التي يجب قراءتها.
 
-للتحقق من الأثر الفعلي، اختبر أداء الاستعلام بإعدادات مستقرة وقارن زمن التنفيذ. استخدم `FORMAT Null` لتجنّب الحمل الإضافي الناتج عن تسلسل النتائج، وعطّل ذاكرة التخزين المؤقت لشروط الاستعلام للحفاظ على قابلية تكرار التشغيل:
+للتحقق من الأثر الفعلي، أجرِ اختبار الأداء للاستعلام بإعدادات مستقرة وقارن زمن التنفيذ. استخدم `FORMAT Null` لتجنّب العبء الإضافي الناتج عن تسلسل النتائج، وعطّل ذاكرة التخزين المؤقت لشروط الاستعلام للحفاظ على قابلية تكرار التشغيل:
 
 ```sql
 SELECT *
@@ -479,7 +467,7 @@ SETTINGS use_query_condition_cache = 0
 Peak memory usage: 41.97 MiB.
 ```
 
-الآن نفّذ الاستعلام نفسه مع تعطيل فهارس التخطي:
+الآن نفّذ الاستعلام نفسه مع تعطيل فهارس تخطي البيانات:
 
 ```sql
 SELECT *
@@ -494,14 +482,14 @@ SETTINGS use_query_condition_cache = 0, use_skip_indexes = 0;
 Peak memory usage: 198.39 MiB.
 ```
 
-يضمن تعطيل `use_query_condition_cache` عدم تأثر النتائج بقرارات التصفية المخزنة مؤقتًا، كما أن ضبط `use_skip_indexes = 0` يوفّر خط أساس واضحًا للمقارنة. وإذا كان التقليم فعّالًا وكانت كلفة تقييم الفهرس منخفضة، فمن المفترض أن يكون الاستعلام المفهرس أسرع بشكل ملحوظ، كما في المثال أعلاه.
+يضمن تعطيل `use_query_condition_cache` عدم تأثر النتائج بقرارات التصفية المخزنة مؤقتًا، كما أن ضبط `use_skip_indexes = 0` يوفّر خط أساس واضحًا للمقارنة. وإذا كان الاستبعاد فعّالًا وكانت كلفة تقييم الفهرس منخفضة، فمن المفترض أن يكون الاستعلام المفهرس أسرع بشكل ملحوظ، كما في المثال أعلاه.
 
 <Tip>
-  إذا أظهر `EXPLAIN` قدرًا محدودًا من تقليم الحبيبات، أو كان فهرس التخطي كبيرًا جدًا، فقد تُلغي كلفة تقييم الفهرس أي فائدة محتملة. استخدم `EXPLAIN indexes = 1` للتأكد من حدوث التقليم، ثم أجرِ اختبارًا معياريًا للتأكد من تحسّن الأداء من البداية إلى النهاية.
+  إذا أظهر `EXPLAIN` قدرًا محدودًا من استبعاد حبيبات البيانات، أو كان فهرس تخطي البيانات كبيرًا جدًا، فقد تُلغي كلفة تقييم الفهرس أي فائدة محتملة. استخدم `EXPLAIN indexes = 1` للتأكد من حدوث الاستبعاد، ثم أجرِ اختبار الأداء للتأكد من تحسّن الأداء من البداية إلى النهاية.
 </Tip>
 
 <div id="when-to-add-skip-indexes">
-  ### متى تُضاف فهارس التخطي
+  ### متى تُضاف فهارس التخطي {#when-to-add-skip-indexes}
 </div>
 
 ينبغي إضافة فهارس التخطي بشكل انتقائي، استنادًا إلى أنواع عوامل التصفية التي يستخدمها المستخدمون بكثرة وبنية البيانات داخل الأجزاء والحبيبات. والهدف هو استبعاد عدد كافٍ من الحبيبات بما يعوّض تكلفة تقييم الفهرس نفسه، ولهذا يُعدّ إجراء اختبارات قياس الأداء على بيانات تشبه بيانات بيئة الإنتاج أمرًا أساسيًا.
@@ -513,7 +501,7 @@ Peak memory usage: 198.39 MiB.
 تكون Bloom filters أكثر فعالية مع الأعمدة النصية عالية الكاردينالية، حيث يكون تكرار كل قيمة منخفضًا نسبيًا، ما يعني أن معظم الأجزاء والحبيبات لا تحتوي على القيمة المطلوب البحث عنها. وكقاعدة عامة، تكون Bloom filters أكثر جدوى عندما يحتوي العمود على ما لا يقل عن 10,000 قيمة مميزة، وغالبًا ما تحقق أفضل أداء مع 100,000+ قيمة مميزة. كما تكون أكثر فعالية عندما تكون القيم المطابقة متجمعة في عدد صغير من الأجزاء المتسلسلة، وهو ما يحدث عادةً عندما يكون العمود مترابطًا مع مفتاح الترتيب. ومرة أخرى، قد تختلف النتائج من حالة إلى أخرى — فلا شيء يغني عن الاختبار العملي في بيئة واقعية.
 
 <div id="map-direct-read-optimization">
-  ## التحسين 3. القراءة المباشرة لـ Map
+  ## التحسين 3. القراءة المباشرة لـ Map {#map-direct-read-optimization}
 </div>
 
 عندما تُجري تصفية على مفتاح فرعي في Map مثل `LogAttributes['k8s.pod.name'] =
@@ -541,7 +529,7 @@ Peak memory usage: 198.39 MiB.
 لتمكينها.
 
 <div id="map-direct-read-schema">
-  ### المخطط
+  ### المخطط {#map-direct-read-schema}
 </div>
 
 لكل عمود `Map` تريد تسريع الوصول إليه، يعرّف ClickStack عمود `Array(String)` `ALIAS`
@@ -578,7 +566,7 @@ TYPE text(tokenizer = 'array')
 | `otel_traces` | `ResourceAttributeItems`, `SpanAttributeItems`                       | `idx_res_attr_items`, `idx_span_attr_items`                        |
 
 <div id="map-direct-read-rewrite">
-  ### إعادة كتابة الاستعلام
+  ### إعادة كتابة الاستعلام {#map-direct-read-rewrite}
 </div>
 
 عندما يضع المستخدم عامل تصفية على مفتاح فرعي في Map عبر واجهة ClickStack أو SDK، يعيد ClickStack
@@ -604,7 +592,7 @@ has(LogAttributeItems, concat('k8s.pod.name', '=', 'checkout'))
 تشير إلى `LogAttributes['key']` تستفيد من هذه الزيادة في السرعة من دون أي تغيير.
 
 <div id="map-direct-read-version">
-  ### متطلبات إصدار ClickHouse
+  ### متطلبات إصدار ClickHouse {#map-direct-read-version}
 </div>
 
 تتطلب إعادة كتابة الاستعلام إصدارًا من ClickHouse يدعم الاستبعاد المباشر
@@ -650,7 +638,7 @@ has(LogAttributeItems, concat('k8s.pod.name', '=', 'checkout'))
 </Info>
 
 <div id="modifying-the-primary-key">
-  ## التحسين 4. تعديل المفتاح الأساسي
+  ## التحسين 4. تعديل المفتاح الأساسي {#modifying-the-primary-key}
 </div>
 
 يُعد المفتاح الأساسي أحد أهم مكوّنات تحسين أداء ClickHouse لمعظم أعباء العمل. ولضبطه بفاعلية، يجب أن تفهم كيف يعمل وكيف يتفاعل مع أنماط الاستعلام لديك. وفي النهاية، ينبغي أن يتوافق المفتاح الأساسي مع الطريقة التي يصل بها المستخدمون إلى البيانات، وخصوصًا الأعمدة التي تُستخدم معها التصفية في أغلب الأحيان.
@@ -683,7 +671,7 @@ has(LogAttributeItems, concat('k8s.pod.name', '=', 'checkout'))
 **ينبغي تغيير المفاتيح الأساسية لكل جدول على حدة. فما يكون مناسبًا للسجلات قد لا يكون مناسبًا للتتبعات أو المقاييس.**
 
 <div id="choosing-a-primary-key">
-  ### اختيار مفتاح أساسي
+  ### اختيار مفتاح أساسي {#choosing-a-primary-key}
 </div>
 
 أولًا، حدِّد ما إذا كانت أنماط الوصول لديك تختلف بشكل ملحوظ عن الإعدادات الافتراضية لجدول معيّن. على سبيل المثال، إذا كنت في الغالب تُصفّي السجلات حسب عقدة Kubernetes قبل اسم الخدمة، وكان ذلك يمثّل سير عمل رئيسيًا، فقد يبرّر هذا تغيير المفتاح الأساسي.
@@ -706,7 +694,7 @@ has(LogAttributeItems, concat('k8s.pod.name', '=', 'checkout'))
 بعد تحديد المجموعة الفرعية من الأعمدة الخاصة بمفتاح الترتيب، يجب تحديدها بترتيب معيّن. ويمكن لهذا الترتيب أن يؤثر بشكل كبير في كلٍّ من كفاءة التصفية على الأعمدة الثانوية للمفتاح في الاستعلامات ونسبة الضغط لملفات بيانات الجدول. وبوجه عام، من الأفضل ترتيب المفاتيح تصاعديًا حسب الكاردينالية. ويجب موازنة ذلك مع حقيقة أن التصفية على الأعمدة التي تظهر لاحقًا في مفتاح الترتيب ستكون أقل كفاءة من التصفية على الأعمدة التي تظهر مبكرًا في الـ tuple. وازن بين هذين الأمرين وراعِ أنماط الوصول لديك. والأهم من ذلك، اختبر البدائل. ولمزيد من الفهم لمفاتيح الترتيب وكيفية تحسينها، يُوصى بقراءة [&quot;اختيار مفتاح أساسي.&quot;](/ar/concepts/best-practices/choosing-a-primary-key) وللحصول على فهم أعمق لضبط المفتاح الأساسي وبُنى البيانات الداخلية، راجع [&quot;مقدمة عملية إلى primary indexes المتفرقة في ClickHouse.&quot;](/ar/guides/clickhouse/data-modelling/sparse-primary-indexes)
 
 <div id="changing-the-primary-key">
-  ### تغيير المفتاح الأساسي
+  ### تغيير المفتاح الأساسي {#changing-the-primary-key}
 </div>
 
 إذا كنت واثقًا من أنماط الوصول لديك قبل إدخال البيانات، فما عليك سوى حذف الجدول وإعادة إنشائه لنوع البيانات المعني.
@@ -753,7 +741,7 @@ has(LogAttributeItems, concat('k8s.pod.name', '=', 'checkout'))
 
 <Steps>
   <Step title="إنشاء جدول جديد" id="create-new-table-with-key-2">
-    Create the new table with the desired مفتاح أساسي. Note the `_23_01_2025` suffix - adapt this to be the current date. e.g.
+    أنشئ الجدول الجديد باستخدام المفتاح الأساسي المطلوب. لاحظ اللاحقة `_23_01_2025`، وعدّلها لتطابق التاريخ الحالي. على سبيل المثال:
 
     ```sql
     CREATE TABLE otel_logs_23_01_2025 AS otel_logs
@@ -762,8 +750,8 @@ has(LogAttributeItems, concat('k8s.pod.name', '=', 'checkout'))
     ```
   </Step>
 
-  <Step title="Create a Merge table" id="create-merge-table">
-    The [Merge engine](/ar/reference/engines/table-engines/special/merge) (not to be confused with MergeTree) doesn&#39;t store data itself, but allows reading from any number of other tables simultaneously.
+  <Step title="إنشاء جدول Merge" id="create-merge-table">
+    لا يخزّن [محرك Merge](/ar/reference/engines/table-engines/special/merge) (ولا ينبغي الخلط بينه وبين MergeTree) البيانات بنفسه، لكنه يتيح القراءة من أي عدد من الجداول الأخرى في آنٍ واحد.
 
     ```sql
     CREATE TABLE otel_logs_merge
@@ -772,47 +760,43 @@ has(LogAttributeItems, concat('k8s.pod.name', '=', 'checkout'))
     ```
 
     <Note>
-      `currentDatabase()` assumes the command is run in the correct database. Otherwise, specify the database name explicitly.
+      تفترض `currentDatabase()` أن الأمر يُنفَّذ في قاعدة البيانات الصحيحة، وإلا فحدّد اسم قاعدة البيانات صراحةً.
     </Note>
 
-    You can now query this table to confirm it returns data from `otel_logs`.
+    يمكنك الآن تنفيذ استعلام على هذا الجدول للتأكد من أنه يُعيد البيانات من `otel_logs`.
   </Step>
 
-  <Step title="Update the واجهة ClickStack to read from the merge table" id="update-clickstack-ui-to-read-from-merge-tree">
-    Configure the واجهة ClickStack to use `otel_logs_merge` as the table for the logs data source.
+  <Step title="تحديث واجهة مستخدم ClickStack للقراءة من جدول Merge" id="update-clickstack-ui-to-read-from-merge-tree">
+    هيّئ واجهة مستخدم ClickStack لاستخدام `otel_logs_merge` جدولًا لمصدر بيانات السجلات.
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Select Merge Table](/images/clickstack/performance_guide/select_merge_table.webp)
-
-    </Frame>
-
+      <Frame>
+        ![اختيار جدول Merge](/images/clickstack/performance_guide/select_merge_table.webp)
+      </Frame>
     </div>
 
-    At this point, writes continue to `otel_logs` with the original مفتاح أساسي, while reads use the merge table. There is no visible change for users or impact on ingestion.
+    في هذه المرحلة، تستمر عمليات الكتابة إلى `otel_logs` بالمفتاح الأساسي الأصلي، بينما تستخدم عمليات القراءة جدول Merge. ولا يلاحظ المستخدمون أي تغيير، ولا يتأثر إدخال البيانات.
   </Step>
 
-  <Step title="Exchange the tables" id="exchange-the-tables">
+  <Step title="تبديل الجداول" id="exchange-the-tables">
     تُستخدم عبارة `EXCHANGE` الآن لتبديل أسماء الجدولين `otel_logs` و`otel_logs_23_01_2025` بشكل ذري.
 
     ```sql
     EXCHANGE TABLES otel_logs AND otel_logs_23_01_2025
     ```
 
-    Writes now go to the new `otel_logs` table with the updated مفتاح أساسي. Existing data remains in `otel_logs_23_01_2025` and is still accessible via the merge table. The suffix indicates the date the change was applied and represents the latest timestamp contained in that table.
+    تذهب عمليات الكتابة الآن إلى جدول `otel_logs` الجديد ذي المفتاح الأساسي المُحدَّث. وتبقى البيانات الموجودة في `otel_logs_23_01_2025` ويظل الوصول إليها ممكنًا عبر جدول Merge. وتشير اللاحقة إلى تاريخ تطبيق التغيير، وتمثّل أحدث طابع زمني موجود في ذلك الجدول.
 
-    This process allows مفتاح أساسي changes with no ingest interruption and no user-visible impact.
+    تتيح هذه العملية تغيير المفتاح الأساسي دون أي انقطاع في استيعاب البيانات ودون أي تأثير يلاحظه المستخدمون.
   </Step>
 </Steps>
 
-This process can be adapted should further changes be required to مفاتيح أساسية. For example, if you decide that actually the `SeverityNumber` should be part of the مفتاح أساسي one week later, rather than the `SeverityText`. The following process can be adapted as many times as مفتاح أساسي changes are required.
+يمكن تكييف هذه العملية إذا لزم إجراء تغييرات إضافية على المفاتيح الأساسية. على سبيل المثال، إذا قررت بعد أسبوع أن `SeverityNumber` هو الذي ينبغي أن يكون جزءًا من المفتاح الأساسي بدلًا من `SeverityText`. ويمكن تكرار العملية التالية كلما لزم تغيير المفتاح الأساسي.
 
 <Steps>
-  <Step title="Create new table" id="create-new-table-with-key-3">
-    Create the new table with the desired مفتاح أساسي.
-    In the example below `30_01_2025` is used as our suffix to denote the date of the table. e.g.
+  <Step title="إنشاء جدول جديد" id="create-new-table-with-key-3">
+    أنشئ الجدول الجديد باستخدام المفتاح الأساسي المطلوب.
+    في المثال أدناه، تُستخدم `30_01_2025` لاحقةً للدلالة على تاريخ الجدول. على سبيل المثال:
 
     ```sql
     CREATE TABLE otel_logs_30_01_2025 AS otel_logs
@@ -821,25 +805,25 @@ This process can be adapted should further changes be required to مفاتيح �
     ```
   </Step>
 
-  <Step title="Exchange the tables" id="exchange-the-tables-v2">
+  <Step title="تبديل الجداول" id="exchange-the-tables-v2">
     تُستخدم عبارة `EXCHANGE` الآن لتبديل أسماء الجدولين `otel_logs` و`otel_logs_30_01_2025` بشكل ذري.
 
     ```sql
     EXCHANGE TABLES otel_logs AND otel_logs_30_01_2025
     ```
 
-    Writes now go to the new `otel_logs` table with the updated مفتاح أساسي. The old data remains in `otel_logs_30_01_2025`, accessible via the merge table.
+    تذهب عمليات الكتابة الآن إلى جدول `otel_logs` الجديد ذي المفتاح الأساسي المُحدَّث. وتبقى البيانات القديمة في `otel_logs_30_01_2025`، ويمكن الوصول إليها عبر جدول Merge.
   </Step>
 </Steps>
 
 <Info>
-  **Redundant tables**
+  **الجداول الفائضة عن الحاجة**
 
-  If TTL policies are in place, which is recommended, tables with older مفاتيح أساسية that are no longer receiving writes will gradually empty as data expires. They should be monitored and periodically cleaned up once they contain no data. At present, this cleanup process is manual.
+  إذا كانت سياسات TTL مُطبَّقة، وهو أمر موصى به، فإن الجداول ذات المفاتيح الأساسية القديمة التي لم تعد تتلقى عمليات كتابة ستفرغ تدريجيًا مع انتهاء صلاحية البيانات. وينبغي مراقبتها وحذفها دوريًا بمجرد أن تخلو من البيانات. وفي الوقت الحالي، تتم عملية التنظيف هذه يدويًا.
 </Info>
 
 <div id="row-lookup-block-columns">
-  ### تسريع البحث عن الصفوف باستخدام أعمدة الكتل
+  ### تسريع البحث عن الصفوف باستخدام أعمدة الكتل {#row-lookup-block-columns}
 </div>
 
 يُفعِّل مخطط السجلات الافتراضي في ClickStack إعدادين من إعدادات MergeTree لا
@@ -874,7 +858,7 @@ MODIFY SETTING enable_block_number_column = 1, enable_block_offset_column = 1
 في استخدام آلية البحث القديمة لكل صف إلى أن تُعاد كتابتها عبر عملية دمج.
 
 <div id="exploiting-materialized-views">
-  ## التحسين 5. الاستفادة من العروض المُجسَّدة
+  ## التحسين 5. الاستفادة من العروض المُجسَّدة {#exploiting-materialized-views}
 </div>
 
 <BetaBadge />
@@ -883,11 +867,9 @@ MODIFY SETTING enable_block_number_column = 1, enable_block_offset_column = 1
 
 للاطلاع على تفاصيل استخدام هذه الميزة في ClickStack، راجع دليلنا المخصص [&quot;ClickStack - Materialized Views.&quot;](/ar/clickstack/managing/materialized-views)
 
-<div id="exploting-projections">
-  ## التحسين 6. الاستفادة من الإسقاطات
-</div>
+## التحسين 6. الاستفادة من الإسقاطات {#exploting-projections}
 
-تمثل الإسقاطات تحسينًا أخيرًا ومتقدمًا يمكن النظر فيه بعد تقييم الأعمدة المُجسَّدة، وفهارس التخطي، والمفاتيح الأساسية، والعروض المُجسَّدة. ومع أن الإسقاطات والعروض المُجسَّدة قد تبدوان متشابهتين، فإن لكلٍّ منهما في ClickStack غرضًا مختلفًا، ويُفضَّل استخدام كل واحدة منهما في سيناريوهات مختلفة.
+تمثل الإسقاطات تحسينًا أخيرًا ومتقدمًا يمكن النظر فيه بعد تقييم الأعمدة المُجسَّدة، وفهارس التخطي، والمفاتيح الأساسية، والعروض المُجسَّدة. ومع أن الإسقاطات والعروض المُجسَّدة قد تبدوان متشابهتين، فإن لكلٍّ منهما في ClickStack غرضًا مختلفًا، ويُفضَّل استخدام كل واحدة منهما في سيناريوهات مختلفة.
 
 <Frame>
   <iframe src="https://www.youtube.com/embed/6CdnUdZSEG0?si=1zUyrP-tCvn9tXse" title="مشغل فيديو YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
@@ -895,7 +877,7 @@ MODIFY SETTING enable_block_number_column = 1, enable_block_offset_column = 1
 
 من الناحية العملية، **يمكن النظر إلى الإسقاط على أنه نسخة إضافية مخفية من الجدول** تخزن الصفوف نفسها ولكن **بترتيب مادي مختلف**. وهذا يمنح الإسقاط فهرسًا أساسيًا خاصًا به، منفصلًا عن مفتاح `ORDER BY` الخاص بالجدول الأساسي، مما يتيح لـ ClickHouse استبعاد البيانات بفاعلية أكبر لأنماط الوصول التي لا تتوافق مع الترتيب الأصلي.
 
-يمكن للعروض المُجسَّدة تحقيق أثر مشابه من خلال كتابة الصفوف صراحةً إلى جدول هدف منفصل بمفتاح ترتيب مختلف. ويتمثل الفرق الأساسي في أن **الإسقاطات تُدار تلقائيًا وبشفافية** بواسطة ClickHouse، بينما العروض المُجسَّدة هي جداول صريحة يجب أن يسجلها ClickStack ويختارها عمدًا.
+يمكن للعروض المُجسَّدة تحقيق أثر مشابه من خلال كتابة الصفوف صراحةً إلى جدول هدف منفصل بمفتاح ترتيب مختلف. ويتمثل الفرق الأساسي في أن **الإسقاطات تُدار تلقائيًا وبشفافية** بواسطة ClickHouse، بينما العروض المُجسَّدة هي جداول صريحة يجب أن يسجلها ClickStack ويختارها عمدًا.
 
 عندما يستهدف الاستعلام الجدول الأساسي، يقيّم ClickHouse التخطيط الأساسي وأي إسقاطات متاحة، ويأخذ عينات من فهارسها الأساسية، ثم يختار التخطيط القادر على إنتاج النتيجة الصحيحة مع قراءة أقل عدد من الحبيبات. ويُتخذ هذا القرار تلقائيًا بواسطة محلل الاستعلامات.
 
@@ -905,16 +887,16 @@ MODIFY SETTING enable_block_number_column = 1, enable_block_offset_column = 1
 * يكون من غير العملي تغطية جميع مسارات العمل بمفتاح ترتيب واحد
 * تريد أن يختار ClickHouse التخطيط المادي الأمثل بشفافية
 
-أما بالنسبة إلى التجميع المسبق وتسريع المقاييس، فإن ClickStack يفضّل بشدة **العروض المُجسَّدة الصريحة**، لأنها تمنح طبقة التطبيق تحكمًا كاملًا في اختيار العرض واستخدامه.
+أما بالنسبة إلى التجميع المسبق وتسريع المقاييس، فإن ClickStack يفضّل بشدة **العروض المُجسَّدة الصريحة**، لأنها تمنح طبقة التطبيق تحكمًا كاملًا في اختيار العرض واستخدامه.
 
 للاطلاع على خلفية إضافية، انظر:
 
 * [دليل حول الإسقاطات](/ar/concepts/features/projections/projections)
 * [متى تستخدم الإسقاطات](/ar/concepts/features/projections/projections#when-to-use-projections)
-* [العروض المُجسَّدة مقابل الإسقاطات](/ar/concepts/features/projections/materialized-views-versus-projections)
+* [العروض المُجسَّدة مقابل الإسقاطات](/ar/concepts/features/projections/materialized-views-versus-projections)
 
 <div id="example-projections">
-  ### مثال: الإسقاطات
+  ### مثال: الإسقاطات {#example-projections}
 </div>
 
 افترض أن جدول التتبعات لديك مُحسَّن وفق نمط الوصول الافتراضي في ClickStack:
@@ -983,7 +965,7 @@ ORDER BY t;
 عمليًا، تكون الإسقاطات الأنسب لسير العمل الذي تنتقل فيه كثيرًا من بحث أوسع إلى التعمق التفصيلي المتمحور حول التتبّع (على سبيل المثال، جلب جميع وحدات span الخاصة بـ TraceId محدد).
 
 <div id="projection-costs-and-guidance">
-  ### التكاليف والإرشادات
+  ### التكاليف والإرشادات {#projection-costs-and-guidance}
 </div>
 
 * **عبء `insert` الإضافي**: إن إسقاط `SELECT *` ذي مفتاح ترتيب مختلف يعني فعليًا كتابة البيانات مرتين، ما يزيد من I/O للكتابة وقد يتطلب موارد CPU إضافية ومعدل نقل أعلى للقرص للحفاظ على معدل الإدخال.
@@ -996,7 +978,7 @@ ORDER BY t;
 * [العروض المجسدة مقابل الإسقاطات](/ar/concepts/features/projections/materialized-views-versus-projections)
 
 <div id="lightweight-projections">
-  ### الإسقاطات خفيفة الوزن باستخدام `_part_offset`
+  ### الإسقاطات خفيفة الوزن باستخدام `_part_offset` {#lightweight-projections}
 </div>
 
 <BetaBadge />
@@ -1012,9 +994,7 @@ ORDER BY t;
 * [تخزين أكثر ذكاءً باستخدام &#95;part&#95;offset](/ar/concepts/features/projections/projections#smarter_storage_with_part_offset)
 * [شرح وأمثلة في المدوّنة](https://clickhouse.com/blog/projections-secondary-indices#example-combining-multiple-projection-indexes)
 
-<div id="projection-alternatives">
-  ### بدائل
-</div>
+### بدائل {#projection-alternatives}
 
 إذا كنت بحاجة إلى عدة مفاتيح ترتيب، فليست الإسقاطات الخيار الوحيد. وبحسب القيود التشغيلية والطريقة التي تريد أن يوجّه بها ClickStack الاستعلامات، فكّر في الخيارات التالية:
 

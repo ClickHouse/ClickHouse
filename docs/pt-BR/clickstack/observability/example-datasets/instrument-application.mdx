@@ -1,0 +1,276 @@
+---
+slug: /clickstack/observability/example-datasets/instrument-application
+title: 'Demonstração do HackerNews Analyzer'
+sidebarTitle: 'Demonstração do HackerNews Analyzer'
+description: 'Instrumente uma aplicação Node.js com um agente e envie logs, rastros, métricas e dados de reprodução de sessão para o ClickHouse Observability totalmente gerenciado'
+doc_type: 'guide'
+keywords: ['ClickStack', 'HackerNews Analyzer', 'OpenTelemetry', 'instrumentação', 'reprodução de sessão', 'Node.js', 'OTLP']
+---
+
+import { BetaBadge } from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
+
+import { AgentPrompt as ManagedAgentPrompt } from '/snippets/pt-BR/components/AgentPrompt/AgentPrompt.jsx';
+import InstrumentApplication from '/snippets/pt-BR/clickstack/_instrument_application.mdx';
+
+<Tabs>
+  <Tab title="Totalmente gerenciado">
+    <BetaBadge label="Oferta Beta" />
+
+    <Note>
+      **Resumo**
+
+      Clone o [HackerNews Analyzer](https://github.com/ClickHouse/hn-news-analyzer), preencha o `.env` com o seu endpoint OTLP HTTP gerenciado e a sua chave de API e, em seguida, cole o prompt do agente. O backend não precisa de nenhum import do OpenTelemetry: o agente configura o `@hyperdx/node-opentelemetry` na inicialização do processo.
+
+      Tempo estimado: cerca de 10 minutos
+    </Note>
+
+    O HackerNews Analyzer é um aplicativo Node.js que consulta o dataset do HackerNews hospedado na demonstração pública do ClickHouse. As interações com o dashboard geram requisições ao backend. As requisições que não encontram dados no cache do aplicativo também consultam o ClickHouse, adicionando ao trace um span HTTPS de saída.
+
+    Esta demonstração combina instrumentação automática do backend, spans de consultas do ClickHouse e reprodução de sessão do navegador em um único aplicativo.
+
+## Pré-requisitos {#prerequisites}
+
+    * Versões do Node.js e do npm compatíveis com o [HackerNews Analyzer e suas dependências](https://github.com/ClickHouse/hn-news-analyzer#readme).
+    * Um serviço ClickHouse Observability totalmente gerenciado já existente. Consulte o [guia de primeiros passos da versão totalmente gerenciada](/pt-BR/clickstack/observability/getting-started).
+    * Acesso de rede ao endpoint de telemetria gerenciado, tanto a partir do servidor da aplicação quanto do seu navegador.
+
+## Clone o repositório {#clone-the-repository}
+
+    Clone o [HackerNews Analyzer](https://github.com/ClickHouse/hn-news-analyzer), instale as dependências e copie o modelo de arquivo env:
+
+    ```bash
+    git clone https://github.com/ClickHouse/hn-news-analyzer.git
+    cd hn-news-analyzer
+    npm install
+    cp .env.example .env
+    ```
+
+    Você preencherá o `.env` nas próximas etapas e, em seguida, fará a instrumentação a partir deste diretório.
+
+## Instrumente a aplicação {#instrument-the-application}
+
+    <Steps>
+      <Step title="Execute a aplicação" id="run-the-application">
+        No diretório `hn-news-analyzer` clonado, inicie a aplicação. Por padrão, a fonte de dados do ClickHouse usa o cluster de demonstração público read-only, então a aplicação é executada sem nenhuma configuração adicional:
+
+        ```bash
+        ./run.sh
+        ```
+
+        Abra [http://localhost:5001](http://localhost:5001). Você verá um seletor de ano, estatísticas resumidas, um gráfico de atividade, tabelas com os principais usuários e domínios e uma caixa de busca. Explore à vontade: alterne entre os anos e confira as histórias em detalhes.
+
+        <Frame>
+          <img src="/images/clickstack/getting-started/hackernews_main.webp" alt="A aplicação HackerNews Analyzer em execução localmente" />
+        </Frame>
+
+        Neste ponto, a aplicação está em execução, mas ainda não está instrumentada. Ela passará a enviar telemetria depois que você concluir as etapas de instrumentação abaixo.
+      </Step>
+
+      <Step title="Configurar ambiente" id="configure-environment">
+        Abra o seu serviço ClickHouse Observability e acesse **Team Settings → Managed Telemetry**. Copie o **OTLP HTTP endpoint** e a **API key**.
+
+        <div className="ch-image-lg">
+          <Frame>
+            ![Managed Telemetry em Team Settings exibindo o endpoint OTLP HTTP e a chave de API mascarados](/images/clickstack/getting-started/observability-managed-telemetry.png)
+          </Frame>
+        </div>
+
+        No arquivo `.env` da aplicação, defina os valores a seguir, substituindo os marcadores de posição do endpoint e da chave de API:
+
+        ```bash
+        OTEL_SERVICE_NAME=hn-analyzer-api
+        OTEL_EXPORTER_OTLP_ENDPOINT=https://YOUR_OTEL_ENDPOINT:4318
+        OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
+        OTEL_EXPORTER_OTLP_HEADERS=authorization=<your-api-key>
+        OTEL_TRACES_EXPORTER=otlp
+        OTEL_METRICS_EXPORTER=otlp
+        OTEL_LOGS_EXPORTER=otlp
+        ```
+
+        Mantenha o prefixo `https://` em `OTEL_EXPORTER_OTLP_ENDPOINT` e não acrescente `/v1/logs`, `/v1/traces` ou `/v1/metrics`. Os SDKs acrescentam os caminhos de cada sinal. Defina `OTEL_EXPORTER_OTLP_HEADERS` como `authorization=<your-api-key>`, sem o prefixo `Bearer`; a aplicação também repassa essa chave diretamente ao SDK do navegador.
+
+        O SDK do navegador usa o mesmo endpoint e a mesma chave de API. O `vite.config.ts` os incorpora ao pacote do navegador, onde qualquer visitante pode inspecioná-los. Use um serviço destinado a testar esta demonstração e mantenha o `.env` fora do controle de versão.
+      </Step>
+
+      <Step title="Instrumente a aplicação" id="instrument">
+        Escolha um caminho. Os três levam à mesma aplicação instrumentada.
+
+        <Tabs>
+          <Tab title="Instrumentação com agente" id="instrument-with-an-agent">
+            Com o repositório clonado e o `.env` preenchido, cole este prompt em um agente de programação **nesse diretório** para instrumentar a aplicação.
+
+            <ManagedAgentPrompt
+              prompt="Use curl to download, read and follow: https://raw.githubusercontent.com/ClickHouse/hn-news-analyzer/main/agent.md"
+              description="Depois de clonar o hn-news-analyzer e preencher o .env, execute este prompt a partir desse diretório. Funciona com Claude Code, Cursor, Codex e outros agentes de programação."
+              outline={[
+  "Confirma que você está no diretório clonado do hn-news-analyzer e que o .env já contém os valores OTEL_EXPORTER_OTLP_*. Para se algum deles estiver faltando.",
+  "Instala o @hyperdx/node-opentelemetry e altera o run.sh para usar opentelemetry-instrument.",
+  "Instala o @hyperdx/browser e habilita HyperDX.init e HyperDX.addAction.",
+  "Inicia a aplicação, confirma que as verificações de integridade do OTLP passam e orienta você a navegar em http://localhost:5001.",
+  ]}
+            />
+          </Tab>
+
+          <Tab title="Instrumentação manual" id="instrument-manually">
+            A instrumentação tem três etapas: instalar os SDKs, trocar o comando de inicialização e habilitar o SDK do navegador. Nada disso altera a regra de negócio da aplicação.
+
+### Instale o SDK do Node {#install-node-sdk}
+
+            ```bash
+            npm install @hyperdx/node-opentelemetry
+            ```
+
+### Habilite o wrapper no run.sh {#enable-run-sh-wrapper}
+
+            O final do `run.sh` tem duas linhas `exec`. Comente a linha com `node` simples e descomente a instrumentada:
+
+            ```diff
+             # BEFORE: plain node, no instrumentation:
+            -exec node scripts/entrypoint.js
+            +# exec node scripts/entrypoint.js
+
+             # AFTER: same source, wrapped by opentelemetry-instrument:
+            -# exec npx opentelemetry-instrument scripts/entrypoint.js
+            +exec npx opentelemetry-instrument scripts/entrypoint.js
+            ```
+
+            Continue iniciando por meio de `scripts/entrypoint.js`. Esse shim chama `require('console')` para que a captura do console encapsule `console.log`. Apontar o `opentelemetry-instrument` diretamente para `dist/server/index.js` envia os rastros, mas descarta os logs silenciosamente.
+
+### Habilite o SDK do navegador {#enable-browser-sdk}
+
+            ```bash
+            npm install @hyperdx/browser
+            ```
+
+            Em `src/web/telemetry.ts`, descomente o import, o bloco `HyperDX.init` e `HyperDX.addAction` em `recordAction`:
+
+            ```diff
+            -// import HyperDX from '@hyperdx/browser';
+            +import HyperDX from '@hyperdx/browser';
+
+             export function initTelemetry(): void {
+            -  // HyperDX.init({
+            -  //   url: __OTLP_ENDPOINT__,
+            -  //   apiKey: __OTLP_AUTH_TOKEN__,
+            -  //   service: 'hn-analyzer-web',
+            -  //   tracePropagationTargets: [/localhost:5001/i, /\/api\//i],
+            -  //   consoleCapture: true,
+            -  //   advancedNetworkCapture: true,
+            -  // });
+            +  HyperDX.init({
+            +    url: __OTLP_ENDPOINT__,
+            +    apiKey: __OTLP_AUTH_TOKEN__,
+            +    service: 'hn-analyzer-web',
+            +    tracePropagationTargets: [/localhost:5001/i, /\/api\//i],
+            +    consoleCapture: true,
+            +    advancedNetworkCapture: true,
+            +  });
+             }
+            ```
+
+            `__OTLP_ENDPOINT__` e `__OTLP_AUTH_TOKEN__` são constantes de tempo de compilação injetadas pelo `vite.config.ts` a partir dos mesmos valores `OTEL_EXPORTER_OTLP_*` usados pelo backend.
+          </Tab>
+
+          <Tab title="Usar um branch pré-instrumentado" id="use-the-instrumented-branch">
+            Para pular a instrumentação e começar com uma aplicação já instrumentada, faça checkout do [branch `instrumented`](https://github.com/ClickHouse/hn-news-analyzer/tree/instrumented).
+
+            ```bash
+            git checkout instrumented
+            npm install
+            ```
+
+            Não execute `./reset.sh` neste branch, a menos que queira remover os SDKs.
+          </Tab>
+        </Tabs>
+      </Step>
+
+      <Step title="Gere tráfego e visualize a telemetria" id="generate-traffic-and-view-telemetry">
+        Reinicie a aplicação para aplicar o novo comando de inicialização e o bundle do navegador recém-gerado:
+
+        ```bash
+        # Ctrl-C the previous run, then:
+        ./run.sh
+        ```
+
+        Confirme que o banner de inicialização exibe três linhas `Health check passed` para `/v1/traces`, `/v1/metrics` e `/v1/logs`. Recarregue a aba do navegador para que o Vite sirva o pacote atualizado; em seguida, alterne entre os anos e clique nas histórias para gerar tráfego.
+
+        Abra seu serviço do ClickHouse Observability:
+
+        1. Acesse **Busca**, selecione a fonte de dados **Logs** e defina o intervalo de tempo como **Last 15 minutes**. Filtre `ServiceName` por `hn-analyzer-api` para encontrar os logs do backend.
+
+        <Frame>
+          <img src="/images/clickstack/getting-started/observability-hackernews-logs.png" alt="Busca do ClickHouse Observability exibindo logs do backend filtrados por hn-analyzer-api" />
+        </Frame>
+
+        2. Selecione a fonte de dados **Traces** e abra uma requisição de `hn-analyzer-api`. Você verá o span do handler do Express, um span HTTP filho apontando para `sql-clickhouse.clickhouse.com` com a duração real de rede e os registros de `console.log` correlacionados no mesmo trace.
+
+        <Frame>
+          <img src="/images/clickstack/getting-started/observability-hackernews-traces.png" alt="Trace do ClickHouse Observability exibindo a requisição do navegador, spans do backend, logs correlacionados e uma requisição HTTP ao ClickHouse" />
+        </Frame>
+
+        3. Abra **Sessões de Cliente**, selecione uma sessão de `hn-analyzer-web` e abra **Session Replay** para revisar as interações no navegador.
+
+        <Frame>
+          <img src="/images/clickstack/getting-started/observability-hackernews-sessions.png" alt="Reprodução de sessão do ClickHouse Observability exibindo o HackerNews Analyzer com eventos de atualização do dashboard e de busca" />
+        </Frame>
+
+        4. Abra o **Chart Explorer**, selecione **Time Series** e a fonte de dados **Metrics** e escolha uma métrica emitida pela aplicação. Filtre por `ResourceAttributes.service.name:"hn-analyzer-api"`, selecione um intervalo de tempo que abranja o seu teste e clique em **Executar** para confirmar que há dados de métricas.
+      </Step>
+    </Steps>
+
+## Saiba mais {#learn-more}
+
+    * [HackerNews Analyzer](https://github.com/ClickHouse/hn-news-analyzer): o repositório de demonstração instrumentado neste guia.
+    * [Reprodução de sessão](/pt-BR/clickstack/observability/features/session-replay): visão geral da funcionalidade, opções do SDK e controles de privacidade.
+    * [Primeiros Passos com o serviço totalmente gerenciado](/pt-BR/clickstack/observability/getting-started): conecte sua primeira fonte de dados.
+    * [Todos os conjuntos de dados de exemplo](/pt-BR/clickstack/observability/example-datasets): outros conjuntos de dados de exemplo e guias.
+  </Tab>
+
+  <Tab title="Autogerenciado">
+    <Note>
+      Esta demonstração requer um coletor OpenTelemetry em execução, configurado para enviar dados ao seu serviço ClickHouse Observability autogerenciado. Se você ainda não implantou um, siga o [guia de configuração do coletor](/pt-BR/clickstack/self-configured/ingesting-data/collector#configuring-the-collector-self-configured) antes de continuar. Nas etapas abaixo, use o endpoint OTLP HTTP dele e, se estiver configurado, o [token de autenticação de ingestão](/pt-BR/clickstack/self-configured/ingesting-data/collector#securing-the-collector-self-configured).
+    </Note>
+
+    <Note>
+      **Resumo**
+
+      Clone o [HackerNews Analyzer](https://github.com/ClickHouse/hn-news-analyzer), preencha o `.env` com seu endpoint OTLP e token e, em seguida, cole o prompt do agente. O backend não precisa de nenhum import do OpenTelemetry; o agente configura o `@hyperdx/node-opentelemetry` na inicialização do processo.
+
+      Tempo necessário: cerca de 10 minutos
+    </Note>
+
+    O HackerNews Analyzer é uma aplicação Node.js que consulta o dataset do HackerNews hospedado na demonstração pública do ClickHouse. Cada gráfico, tabela e caixa de busca executa uma consulta real no ClickHouse, de modo que cada interação gera um trace cujo span principal é a chamada HTTPS do backend para o ClickHouse.
+
+    O objetivo aqui é diferente do da [demonstração de reprodução de sessão](/pt-BR/clickstack/observability/example-datasets/session-replay), que instrumenta uma aplicação executada apenas no navegador e envia telemetria para o ClickHouse Observability. Aqui, você obtém instrumentação automática do backend, spans de consultas do ClickHouse e reprodução de sessão na mesma aplicação.
+
+## Pré-requisitos {#prerequisites-self-configured}
+
+    * Node 18+ e npm
+    * Um serviço ClickHouse Observability autogerenciado existente e um coletor de ingestão em execução.
+    * O endpoint OTLP HTTP do coletor, acessível tanto pelo servidor da aplicação quanto pelo seu navegador. Use `http://localhost:4318` somente quando o coletor estiver em execução na mesma máquina.
+    * O `OTLP_AUTH_TOKEN` do coletor, se estiver configurado. Defina os cabeçalhos como `authorization=<token>`, sem o prefixo `Bearer`. Se o coletor não exigir autenticação, deixe `authorization=` vazio. Essas são as credenciais de ingestão do coletor, e não as credenciais do seu banco de dados ClickHouse.
+
+## Clonar o repositório {#clone-the-repository-self-configured}
+
+    Clone o [HackerNews Analyzer](https://github.com/ClickHouse/hn-news-analyzer), instale as dependências e copie o template de variáveis de ambiente:
+
+    ```bash
+    git clone https://github.com/ClickHouse/hn-news-analyzer.git
+    cd hn-news-analyzer
+    npm install
+    cp .env.example .env
+    ```
+
+    Você preencherá o `.env` nas próximas etapas e, em seguida, fará a instrumentação a partir deste diretório.
+
+    <InstrumentApplication />
+
+## Saiba mais {#learn-more-self-configured}
+
+    * [HackerNews Analyzer](https://github.com/ClickHouse/hn-news-analyzer): o repositório de demonstração instrumentado neste guia.
+    * [Reprodução de Sessão](/pt-BR/clickstack/observability/features/session-replay): visão geral da funcionalidade, opções do SDK e controles de privacidade.
+    * [Demonstração de Reprodução de Sessão](/pt-BR/clickstack/observability/example-datasets/session-replay): uma demonstração executada apenas no navegador que envia telemetria para o ClickHouse Observability.
+    * [Primeiros Passos com a versão autogerenciada](/pt-BR/clickstack/self-configured/getting-started/managed): configure seu serviço e faça a ingestão dos seus primeiros dados.
+    * [Todos os conjuntos de dados de exemplo](/pt-BR/clickstack/observability/example-datasets): outros conjuntos de dados de exemplo e guias.
+  </Tab>
+</Tabs>

@@ -1,0 +1,348 @@
+---
+slug: /clickstack/observability/integration-examples/redis-logs
+title: 'Мониторинг журналов Redis с помощью ClickHouse Observability'
+sidebarTitle: 'Журналы Redis'
+description: 'Сбор, поиск и визуализация журналов сервера Redis в ClickHouse Observability с помощью коллектора OpenTelemetry.'
+doc_type: 'guide'
+---
+
+import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
+
+import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
+
+Собирайте серверные журналы Redis с помощью коллектора OpenTelemetry и отправляйте их в ClickHouse Observability. Чтобы опробовать интеграцию без установки Redis, воспользуйтесь [демо-набором данных](#demo-dataset).
+
+## Предварительные требования {#prerequisites}
+
+* Сервис ClickHouse Observability
+* Docker для запуска примеров коллектора или уже развернутый OpenTelemetry Collector Contrib
+* Для работы с собственными журналами — установленный Redis и доступ к его файлам журналов
+
+### Сведения о подключении {#connection-details}
+
+<Tabs>
+  <Tab title="Полностью управляемый">
+    <BetaBadge label="Сервис в стадии бета-тестирования" />
+
+    Откройте ClickHouse Observability и перейдите в **Team Settings → Data → Managed Telemetry**. Скопируйте конечную точку OTLP по HTTP и ключ API. Чтобы скопировать конфигурацию, нажмите **Copy connection details**, а чтобы увидеть скрытый ключ — **Reveal key**.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Сведения о подключении в разделе Managed Telemetry](/images/clickstack/getting-started/observability-managed-telemetry.png)
+      </Frame>
+    </div>
+
+    Для приведённых ниже примеров с экспортером OTLP задайте следующие переменные в терминале, в котором будете запускать коллектор:
+
+    ```bash
+    export OTEL_EXPORTER_OTLP_ENDPOINT='https://YOUR_OTEL_ENDPOINT:4318'
+    export OTEL_EXPORTER_OTLP_AUTHORIZATION='Bearer YOUR_API_KEY'
+    ```
+
+    Замените плейсхолдеры точной конечной точкой (включая порт) и ключом API вашего сервиса. Указывайте базовую конечную точку HTTP без суффикса `/v1/logs`: экспортер сам добавляет в конец путь сигнала.
+  </Tab>
+
+  <Tab title="Самоуправляемый">
+    Укажите доступную конечную точку OTLP по HTTP вашего коллектора (например, `http://YOUR_COLLECTOR_HOST:4318`) и настройки аутентификации. Если коллектор не требует аутентификации, удалите блок `headers` экспортера из приведённых ниже конфигураций. Инструкции по настройке см. в [руководстве по началу работы с самоуправляемой версией](/ru/clickstack/self-configured/getting-started/managed).
+
+    ```bash
+    export OTEL_EXPORTER_OTLP_ENDPOINT='http://YOUR_COLLECTOR_HOST:4318'
+    export OTEL_EXPORTER_OTLP_AUTHORIZATION='YOUR_INGESTION_KEY'
+    ```
+  </Tab>
+</Tabs>
+
+Конечная точка должна быть доступна из контейнера коллектора. Если коллектор-получатель запущен на этом же компьютере, используйте `http://host.docker.internal:4318`. В приведённых ниже командах Docker сопоставление хоста уже задано.
+
+## Интеграция с существующим Redis {#existing-redis}
+
+<Steps>
+  <Step title="Проверьте конфигурацию логирования Redis" id="verify-redis">
+    Проверьте, куда Redis записывает журналы:
+
+    ```bash
+    redis-cli CONFIG GET logfile
+    ```
+
+    Типичное расположение журналов Redis:
+
+    * **Linux (apt/yum)**: `/var/log/redis/redis-server.log`
+    * **macOS (Homebrew)**: `/usr/local/var/log/redis.log` или `/opt/homebrew/var/log/redis.log`
+    * **Docker**: журналы обычно выводятся в stdout, но можно настроить их запись в `/data/redis.log`
+
+    Если Redis выводит журналы в stdout, настройте запись в файл, изменив `redis.conf`:
+
+    ```bash
+    # Log to file instead of stdout
+    logfile /var/log/redis/redis-server.log
+
+    # Set log level (options: debug, verbose, notice, warning)
+    loglevel notice
+    ```
+
+    Убедитесь, что каталог журналов существует и у Redis есть права на запись в него. После изменения конфигурации перезапустите Redis, указав имя сервиса, используемое в вашей установке:
+
+    ```bash
+    # For systemd
+    sudo systemctl restart redis
+
+    # For Docker
+    docker restart <redis-container>
+    ```
+  </Step>
+
+  <Step title="Настройте коллектор" id="configure-collector">
+    Сохраните следующую конфигурацию в файл `redis-monitoring.yaml`:
+
+    ```yaml
+    receivers:
+      filelog/redis:
+        include:
+          - /var/log/redis/redis-server.log
+        start_at: end
+        operators:
+          - type: regex_parser
+            regex: '^(?P<pid>\d+):(?P<role>\w+) (?P<timestamp>\d{2} \w+ \d{4} \d{2}:\d{2}:\d{2}\.\d+) (?P<log_level>[.\-*#]) (?P<message>.*)$'
+            parse_from: body
+            parse_to: attributes
+          - type: time_parser
+            parse_from: attributes.timestamp
+            layout_type: gotime
+            layout: '02 Jan 2006 15:04:05.000'
+            location: UTC
+          - type: add
+            field: attributes.source
+            value: redis
+          - type: add
+            field: resource["service.name"]
+            value: redis-service
+
+    processors:
+      memory_limiter:
+        check_interval: 1s
+        limit_mib: 256
+        spike_limit_mib: 64
+      transform/redis:
+        error_mode: propagate
+        log_statements:
+          - set(log.severity_text, "debug") where log.attributes["log_level"] == "." or log.attributes["log_level"] == "-"
+          - set(log.severity_number, SEVERITY_NUMBER_DEBUG) where log.severity_text == "debug"
+          - set(log.severity_text, "info") where log.attributes["log_level"] == "*"
+          - set(log.severity_number, SEVERITY_NUMBER_INFO) where log.severity_text == "info"
+          - set(log.severity_text, "warn") where log.attributes["log_level"] == "#"
+          - set(log.severity_number, SEVERITY_NUMBER_WARN) where log.severity_text == "warn"
+      batch:
+        timeout: 5s
+        send_batch_size: 1024
+
+    exporters:
+      otlp_http/observability:
+        endpoint: ${env:OTEL_EXPORTER_OTLP_ENDPOINT}
+        headers:
+          authorization: "${env:OTEL_EXPORTER_OTLP_AUTHORIZATION}"
+
+    service:
+      pipelines:
+        logs/redis:
+          receivers: [filelog/redis]
+          processors: [memory_limiter, transform/redis, batch]
+          exporters: [otlp_http/observability]
+    ```
+
+    Эта конфигурация разбирает идентификатор процесса, роль, временную метку, уровень лога и сообщение. Она задаёт для `service.name` значение `redis-service` и сопоставляет уровни логов Redis с `SeverityText` для панели мониторинга. Уведомления Redis (`*`) сопоставляются с `info`, предупреждения (`#`) — с `warn`, а отладочные и подробные сообщения (`.` и `-`) — с `debug`.
+
+    Временные метки в логах Redis не содержат часового пояса. Укажите в `location` часовой пояс вашего сервера Redis, например `America/Chicago`; в примере используется `UTC`. Исходные временные метки и тело записи журнала сохраняются. При `start_at: end` коллектор при первом открытии файла считывает только новые записи.
+  </Step>
+
+  <Step title="Запустите коллектор" id="run-collector">
+    Задайте [переменные подключения](#connection-details), затем выполните команду из каталога, в котором находится `redis-monitoring.yaml`. Укажите путь к каталогу журналов на хосте и имя файла в параметре `include` приёмника в соответствии с вашей конфигурацией:
+
+    ```bash
+    docker run --rm --name redis-monitoring-collector \
+      --add-host=host.docker.internal:host-gateway \
+      --memory=512m \
+      -e OTEL_EXPORTER_OTLP_ENDPOINT \
+      -e OTEL_EXPORTER_OTLP_AUTHORIZATION \
+      -v "$(pwd)/redis-monitoring.yaml:/etc/otelcol-contrib/config.yaml:ro" \
+      -v /var/log/redis:/var/log/redis:ro \
+      otel/opentelemetry-collector-contrib:0.161.0 \
+      --config=/etc/otelcol-contrib/config.yaml
+    ```
+
+    Не закрывайте этот терминал и сгенерируйте активность в Redis, чтобы появились новые записи журнала. У коллектора должен быть доступ на чтение смонтированных файлов.
+  </Step>
+
+  <Step title="Проверьте журналы" id="verify-logs">
+    Откройте **Поиск**, выберите **Logs** и задайте фильтр `ServiceName:redis-service`. Выберите временной диапазон, в который попадают новые записи журнала. Разверните запись, чтобы просмотреть `SeverityText` и разобранные поля в `LogAttributes`.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Журналы Redis в представлении поиска](/images/clickstack/observability-redis-demo-logs.png)
+      </Frame>
+    </div>
+  </Step>
+</Steps>
+
+## Демонстрационный датасет {#demo-dataset}
+
+Набор данных содержит 10,000 записей журнала сервера Redis. Перед началом работы задайте [переменные подключения](#connection-details).
+
+<Steps>
+  <Step title="Скачать тестовый набор данных" id="download-sample">
+    ```bash
+    curl -fLO https://datasets-documentation.s3.eu-west-3.amazonaws.com/clickstack-integrations/redis/redis-server.log
+    ```
+  </Step>
+
+  <Step title="Настройте демонстрационный коллектор" id="configure-demo">
+    Сохраните этот файл как `redis-demo.yaml` в каталоге загрузки:
+
+    ```yaml
+    receivers:
+      filelog/redis:
+        include:
+          - /var/log/redis-demo/redis-server.log
+        start_at: beginning
+        operators:
+          - type: regex_parser
+            regex: '^(?P<pid>\d+):(?P<role>\w+) (?P<timestamp>\d{2} \w+ \d{4} \d{2}:\d{2}:\d{2}\.\d+) (?P<log_level>[.\-*#]) (?P<message>.*)$'
+            parse_from: body
+            parse_to: attributes
+          - type: time_parser
+            parse_from: attributes.timestamp
+            layout_type: gotime
+            layout: '02 Jan 2006 15:04:05.000'
+            location: UTC
+          - type: add
+            field: attributes.source
+            value: redis-demo
+          - type: add
+            field: resource["service.name"]
+            value: redis-demo
+
+    processors:
+      memory_limiter:
+        check_interval: 1s
+        limit_mib: 256
+        spike_limit_mib: 64
+      transform/redis:
+        error_mode: propagate
+        log_statements:
+          - set(log.severity_text, "debug") where log.attributes["log_level"] == "." or log.attributes["log_level"] == "-"
+          - set(log.severity_number, SEVERITY_NUMBER_DEBUG) where log.severity_text == "debug"
+          - set(log.severity_text, "info") where log.attributes["log_level"] == "*"
+          - set(log.severity_number, SEVERITY_NUMBER_INFO) where log.severity_text == "info"
+          - set(log.severity_text, "warn") where log.attributes["log_level"] == "#"
+          - set(log.severity_number, SEVERITY_NUMBER_WARN) where log.severity_text == "warn"
+      transform/demo_timestamps:
+        error_mode: propagate
+        log_statements:
+          - >-
+            set(log.time,
+              Now() - Duration("2m") -
+              (Time("2025-10-28T14:59:22Z", "%Y-%m-%dT%H:%M:%SZ") - log.time)
+            )
+      batch:
+        timeout: 5s
+        send_batch_size: 1024
+
+    exporters:
+      otlp_http/observability:
+        endpoint: ${env:OTEL_EXPORTER_OTLP_ENDPOINT}
+        headers:
+          authorization: "${env:OTEL_EXPORTER_OTLP_AUTHORIZATION}"
+
+    service:
+      pipelines:
+        logs/redis:
+          receivers: [filelog/redis]
+          processors: [memory_limiter, transform/redis, transform/demo_timestamps, batch]
+          exporters: [otlp_http/observability]
+    ```
+
+    <Note>
+      Процессор `transform/demo_timestamps`, предназначенный только для демонстрационных данных, сдвигает выборку примерно на последние 24 часа так, чтобы она заканчивалась за две минуты до момента ингестии, сохраняя при этом характер трафика. Исходный атрибут временной метки и тело записи журнала остаются без изменений. Для собственных журналов Redis этот процессор не используйте.
+    </Note>
+  </Step>
+
+  <Step title="Запустите демонстрационный коллектор" id="run-demo">
+    Из каталога, в котором находятся `redis-server.log` и `redis-demo.yaml`, выполните:
+
+    ```bash
+    docker run --rm --name redis-demo-collector \
+      --add-host=host.docker.internal:host-gateway \
+      --memory=512m \
+      -e OTEL_EXPORTER_OTLP_ENDPOINT \
+      -e OTEL_EXPORTER_OTLP_AUTHORIZATION \
+      -v "$(pwd)/redis-demo.yaml:/etc/otelcol-contrib/config.yaml:ro" \
+      -v "$(pwd)/redis-server.log:/var/log/redis-demo/redis-server.log:ro" \
+      otel/opentelemetry-collector-contrib:0.161.0 \
+      --config=/etc/otelcol-contrib/config.yaml
+    ```
+
+    Не закрывайте терминал, пока проверяете ингестию. По завершении остановите коллектор сочетанием клавиш **Ctrl+C**. При повторном запуске демо выполняется повторная загрузка демонстрационных данных с обновлёнными временными метками, так как в этом примере смещения в файлах не сохраняются.
+  </Step>
+
+  <Step title="Проверьте демонстрационные журналы" id="verify-demo-logs">
+    Откройте **Поиск**, выберите **Logs**, задайте фильтр `ServiceName:redis-demo` и выберите **Последние 2 дня**. Разверните запись журнала, чтобы просмотреть разобранные атрибуты и уровень серьёзности.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Пример журналов Redis в представлении поиска](/images/clickstack/observability-redis-demo-logs.png)
+      </Frame>
+    </div>
+  </Step>
+</Steps>
+
+## Панели мониторинга и визуализация {#dashboards}
+
+<Steps>
+  <Step title={<TrackedLink href="https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/redis-logs-dashboard.json" download="redis-logs-dashboard.json" eventName="docs.redis_logs_monitoring.dashboard_download">Скачайте конфигурацию панели мониторинга</TrackedLink>} id="download-dashboard" />
+
+  <Step title="Импортируйте панель мониторинга" id="import-dashboard">
+    1. Откройте раздел **Dashboards** и нажмите **Import** в правом верхнем углу.
+    2. Загрузите файл `redis-logs-dashboard.json`.
+    3. Сопоставьте чарты с вашим источником **Logs** и нажмите **Finish Import**.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Страница Dashboards с выделенной кнопкой Import](/images/clickstack/observability-import-dashboard.png)
+      </Frame>
+    </div>
+  </Step>
+
+  <Step title="Просмотрите панель мониторинга" id="view-dashboard">
+    Задайте фильтр `ServiceName:redis-demo` для демонстрационных данных или `ServiceName:redis-service` для собственных журналов. Для демонстрационных данных выберите период **Last 2 days**.
+
+    Панель мониторинга отображает объём журналов и их распределение по уровню серьёзности. Чарт **Request rate** подсчитывает записи журнала, а не команды Redis.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Пример панели мониторинга журналов Redis](/images/clickstack/observability-redis-logs-dashboard.png)
+      </Frame>
+    </div>
+  </Step>
+</Steps>
+
+## Устранение неполадок {#troubleshooting}
+
+### Коллектор не запускается {#collector-fails-to-start}
+
+Проверьте вывод коллектора в терминале на наличие ошибок конфигурации. Убедитесь, что YAML-файл смонтирован по пути, указанному в документации, а конечная точка и все необходимые для аутентификации переменные заданы в том терминале, где вы запускаете Docker.
+
+### Журналы не отображаются {#no-logs}
+
+* Проверьте вывод коллектора на наличие ошибок аутентификации или экспорта и убедитесь, что сведения о подключении указаны верно.
+* Выполните `redis-cli CONFIG GET logfile`, чтобы убедиться, что Redis записывает журнал в файл. Проверьте, что у коллектора есть доступ на чтение этого файла и что смонтированный путь совпадает с путём в параметре `include` приёмника.
+* При `start_at: end` сгенерируйте новые записи журнала уже после запуска коллектора.
+* Проверьте источник **Logs**, фильтр по имени сервиса и временной диапазон. Для демонстрации добавьте `transform/demo_timestamps` в конвейер и выберите **Last 2 days**.
+
+### Журналы разбираются неправильно {#logs-not-parsing}
+
+Приёмник ожидает стандартный формат журналов Redis: `pid:role timestamp level message`. Проверьте файл журнала и, если ваш формат отличается, скорректируйте регулярное выражение. В параметре `location` синтаксического анализатора времени укажите часовой пояс сервера Redis.
+
+## Дальнейшие шаги {#next-steps}
+
+* Настройте [оповещения](/ru/clickstack/observability/features/alerts) о предупреждениях или аномальном объёме логов.
+* Создайте дополнительные [панели мониторинга](/ru/clickstack/observability/features/dashboards/overview).
+* Рекомендации по конфигурации коллектора см. в разделе [Отправка данных OpenTelemetry](/ru/clickstack/observability/ingesting-data/opentelemetry).

@@ -318,7 +318,6 @@ Este guia apresenta configurações simples e mínimas para configurar o ClickHo
            <transport_compression_level>0</transport_compression_level>
            <max_send_message_size>-1</max_send_message_size>
            <max_receive_message_size>-1</max_receive_message_size>
-           <verbose_logs>false</verbose_logs>
        </grpc>
        ```
 
@@ -460,13 +459,9 @@ Este guia apresenta configurações simples e mínimas para configurar o ClickHo
     5. Faça login na UI do Play pela interface `https` em `https://chnode1.marsnet.local:8443/play`.
 
        <div className="ch-image-md">
-
-       <Frame>
-
-       ![Configuração de TLS](/images/guides/sre/configuring-ssl_01.webp)
-
-       </Frame>
-
+         <Frame>
+           ![Configuração de TLS](/images/guides/sre/configuring-ssl_01.webp)
+         </Frame>
        </div>
 
     <Note>
@@ -519,7 +514,7 @@ Este guia apresenta configurações simples e mínimas para configurar o ClickHo
 </Steps>
 
 <div id="configure-openssl-for-standalone-clickhouse-keeper">
-  ## Configure o OpenSSL para o ClickHouse Keeper autônomo
+  ## Configure o OpenSSL para o ClickHouse Keeper autônomo {#configure-openssl-for-standalone-clickhouse-keeper}
 </div>
 
 Ao executar o ClickHouse Keeper como um processo autônomo (em vez de incorporado ao ClickHouse server), os certificados e as configurações do OpenSSL devem ser definidos separadamente no arquivo de configuração do Keeper. Sem isso, o Keeper não conseguirá estabelecer conexões seguras para a comunicação com clientes (`tcp_port_secure`) nem para a replicação Raft entre os nós do Keeper.
@@ -563,13 +558,13 @@ A seção `<server>` é usada para conexões de cliente de entrada na porta segu
 </Note>
 
 <div id="openssl-verification-modes">
-  ## Modos de verificação do OpenSSL e manipuladores de certificado
+  ## Modos de verificação do OpenSSL e manipuladores de certificado {#openssl-verification-modes}
 </div>
 
 A configuração `<openSSL>` oferece várias opções para `<verificationMode>` e `<invalidCertificateHandler>`, que controlam como o ClickHouse valida certificados TLS. Essas configurações se aplicam ao clickhouse-server, clickhouse-client e ao ClickHouse Keeper autônomo.
 
 <div id="verification-modes">
-  ### Modos de verificação
+  ### Modos de verificação {#verification-modes}
 </div>
 
 Defina `<verificationMode>` na seção `<server>` ou `<client>` de `<openSSL>`:
@@ -582,7 +577,7 @@ Defina `<verificationMode>` na seção `<server>` ou `<client>` de `<openSSL>`:
 | `strict`  | Exige e verifica integralmente o certificado do peer. A conexão falha se o certificado estiver ausente, expirado ou não tiver sido assinado por uma CA confiável. Recomendado para produção. |
 
 <div id="invalid-certificate-handlers">
-  ### Manipuladores de certificados inválidos
+  ### Manipuladores de certificados inválidos {#invalid-certificate-handlers}
 </div>
 
 Defina `<invalidCertificateHandler>` na seção `<server>` ou `<client>` de `<openSSL>`. Esse manipulador determina o que acontece quando a verificação do certificado falha. No lado do servidor, ele controla a resposta a certificados de cliente inválidos. No lado do cliente, ele controla a resposta a certificados de servidor inválidos.
@@ -593,7 +588,7 @@ Defina `<invalidCertificateHandler>` na seção `<server>` ou `<client>` de `<op
 | `AcceptCertificateHandler` | Aceita a conexão mesmo se o certificado for inválido. Use-o apenas para testes.              |
 
 <div id="disabling-certificate-verification">
-  ### Exemplo: desativando a verificação de certificados
+  ### Exemplo: desativando a verificação de certificados {#disabling-certificate-verification}
 </div>
 
 <Warning>
@@ -687,7 +682,7 @@ antigo quanto o novo; em seguida, troque os certificados dos nós e dos clientes
 substitua o pacote apenas pelo novo certificado CA.
 
 <div id="summary">
-  ## Resumo
+  ## Resumo {#summary}
 </div>
 
 Este artigo se concentrou na configuração de um ambiente ClickHouse com TLS. As configurações variam conforme os requisitos de cada ambiente de produção; por exemplo, níveis de verificação de certificados, protocolos, cifras etc. Mas agora você já deve ter uma boa compreensão das etapas envolvidas na configuração e implementação de conexões seguras.
