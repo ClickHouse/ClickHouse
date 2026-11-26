@@ -1373,11 +1373,11 @@ void AggregatingStep::serializeSettings(QueryPlanSerializationSettings & setting
         settings[QueryPlanSerializationSetting::enable_parallel_single_level_merge_by_index]
             = params.enable_parallel_single_level_merge_by_index;
 
-    /// Every peer that receives a plan skips a name it does not know (see `QueryPlanSerializationSettings`),
-    /// so this one needs no version. A peer without the setting stages every missed row, which changes only
-    /// the speed and the memory of the aggregation.
-    settings[QueryPlanSerializationSetting::adaptive_aggregator_combine_arg_min_max]
-        = params.adaptive_aggregator_combine_arg_min_max;
+    /// The same for a name of a later version. A peer that predates it stages every missed row, which changes
+    /// only the speed and the memory of the aggregation.
+    if (version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ADAPTIVE_AGGREGATOR_COMBINE_ARG_MIN_MAX)
+        settings[QueryPlanSerializationSetting::adaptive_aggregator_combine_arg_min_max]
+            = params.adaptive_aggregator_combine_arg_min_max;
 
     /// A peer predating the name keeps its own two-level decision: writing an unknown name would make it throw
     /// while reading the step settings (before version 21 the reader threw on an unknown name), which would break every distributed `GROUP BY` of a query that
