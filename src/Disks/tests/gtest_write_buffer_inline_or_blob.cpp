@@ -1,11 +1,13 @@
 #include <gtest/gtest.h>
 
 #include <Disks/IO/WriteBufferInlineOrBlob.h>
+#include <IO/ForkWriteBuffer.h>
 #include <IO/WriteBufferFromFileBase.h>
 
 #include <fmt/format.h>
 
 #include <optional>
+#include <stdexcept>
 
 using namespace DB;
 
@@ -13,6 +15,7 @@ namespace
 {
 
 /// Test double for the blob write path: appends into a shared string and records lifecycle calls.
+/// Like a writer that releases its handle on cancel (e.g. HDFS), it cannot sync after cancel.
 class WriteBufferToSharedString final : public WriteBufferFromFileBase
 {
 public:
@@ -26,7 +29,12 @@ public:
         cancel();
     }
 
-    void sync() override {}
+    void sync() override
+    {
+        if (isCanceled())
+            throw std::logic_error("sync of a canceled writer");
+    }
+
     std::string getFileName() const override { return "shared_string"; }
 
 private:
@@ -60,7 +68,10 @@ struct InlineBufferHarness
             [this]() -> std::unique_ptr<WriteBuffer>
             {
                 ++underlying_created;
-                return std::make_unique<WriteBufferToSharedString>(blob_content, blob_finalized);
+                /// The same blob write stack as `DiskObjectStorageTransaction::writeFile`.
+                ForkWriteBuffer::WriteBufferPtrs writers;
+                writers.push_back(std::make_unique<WriteBufferToSharedString>(blob_content, blob_finalized));
+                return std::make_unique<ForkWriteBuffer>(std::move(writers));
             },
             [this](FinalizeResult result)
             {
@@ -283,6 +294,18 @@ TEST(WriteBufferInlineOrBlob, SyncBeforeFinalizeSyncsMetadataBlob)
     EXPECT_EQ(harness.metadata_synced, 0u);
 
     buf->finalize();
+    EXPECT_EQ(harness.metadata_synced, 1u);
+}
+
+TEST(WriteBufferInlineOrBlob, SyncAfterCanceledEmptyBlobSyncsOnlyMetadata)
+{
+    /// An empty blob that is not required is canceled on finalize, before a wide part syncs it.
+    InlineBufferHarness harness;
+    auto buf = harness.makeBuffer(/*max_inline_bytes=*/0, /*buf_size=*/16, /*create_blob_if_empty=*/false);
+    buf->finalize();
+    EXPECT_FALSE(harness.blob_finalized);
+
+    EXPECT_NO_THROW(buf->sync());
     EXPECT_EQ(harness.metadata_synced, 1u);
 }
 
