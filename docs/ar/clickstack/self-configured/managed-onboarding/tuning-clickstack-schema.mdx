@@ -1,0 +1,89 @@
+---
+slug: /clickstack/self-configured/managed-onboarding/tuning-clickstack-schema
+title: 'ضبط Self-managed ClickHouse Observability - تحسين المخطط'
+description: 'حسّن مخطط ClickStack لتحقيق أداء استعلام أفضل وكفاءة تخزين أعلى في Self-managed ClickHouse Observability'
+doc_type: 'guide'
+keywords: ['clickstack', 'tuning', 'schema', 'managed', 'observability', 'performance', 'optimization', 'storage']
+unlisted: true
+custom_edit_url: null
+hide_advert: true
+sidebarTitle: 'ضبط مخطط ClickStack'
+---
+
+<Note>
+  تتناول هذه الصفحة **Self-managed ClickHouse Observability**. للاطلاع على التجربة المُدارة بالكامل الموصى بها، راجع الوثائق [هنا](/ar/clickstack/observability/overview).
+</Note>
+
+إذا كنت تشغّل ClickStack منذ فترة، فلعلك لاحظت أن المخطط الافتراضي يلبّي معظم أحمال العمل الخاصة بإمكانية المراقبة دون الحاجة إلى أي تعديل. هذه الصفحة موجّهة إلى الحالات التي لم يعد فيها ذلك كافيًا: حين يبدأ زمن الانتقال للاستعلامات في الارتفاع، أو حين تبتعد أنماط الوصول لديك عن الإعدادات الافتراضية.
+
+تغطي أربعة تحسينات معظم ما يُجدي نفعًا من الناحية العملية، وهي مرتبة تقريبًا بحسب الجهد المطلوب. التحسينان الأول والثاني تغييرات محلية باستخدام `ALTER TABLE` يمكنك تطبيقها بصورة تزايدية. ويؤتي الثالث ثماره عندما يتكرر تنفيذ التجميع نفسه على لوحة معلومات. أما الرابع فيتطلب ترحيل الجدول، ولذلك فهو الأكثر تعقيدًا.
+
+جاءت الملخصات أدناه موجزة عن قصد. لمعرفة الأسباب الكامنة وراء كل تغيير، ونتائج اختبارات الأداء المعيارية، وطرق تطبيقه على البيانات الموجودة، راجع [ضبط الأداء](/ar/clickstack/self-configured/managing/performance-tuning).
+
+<Steps>
+  <Step title="تجسيد السمات الأكثر استعلامًا" id="materialize-attributes">
+    تتطلب التصفية على `LogAttributes['service.version']` من ClickHouse تحميل خريطة `LogAttributes` بالكامل وفك ترميزها لكل صف يفحصه. أما عند ترقية هذه السمة إلى عمود `MATERIALIZED`، فيصبح عامل التصفية نفسه مجرد قراءة لعمود، وهو عادةً أسرع بنحو عشر مرات. ويعيد ClickStack كتابة عامل التصفية تلقائيًا بمجرد وجود العمود، لذا تستمر عمليات البحث المحفوظة ولوحات المعلومات في العمل دون أي تغيير.
+
+    اختر السمات التي تستعلم عنها كثيرًا بالفعل. فكل عمود مُجسَّد يستهلك مساحة تخزين ويضيف عبئًا في وقت الإدراج، لذا فالمبدأ هنا هو &quot;رقِّ ما تستخدمه&quot; وليس &quot;رقِّ كل شيء&quot;.
+
+    ```sql
+    ALTER TABLE otel_logs
+      ADD COLUMN ServiceVersion LowCardinality(String)
+      MATERIALIZED LogAttributes['service.version'];
+    ```
+
+    تبقى الصفوف الموجودة فارغة في العمود الجديد ما لم تنفّذ أيضًا `ALTER TABLE otel_logs MATERIALIZE COLUMN ServiceVersion`.
+
+    اقرأ المزيد: [تجسيد السمات الأكثر استعلامًا](/ar/clickstack/self-configured/managing/performance-tuning#materialize-frequently-queried-attributes).
+  </Step>
+
+  <Step title="إضافة فهارس تخطي البيانات" id="add-skip-indexes">
+    تتيح فهارس تخطي البيانات لـ ClickHouse استبعاد حبيبات البيانات التي لا يمكن أن تطابق عامل التصفية، مما يحوّل الفحص الكامل إلى قراءة محدودة وموجّهة. وهناك ثلاثة أنواع تستحق التعرّف عليها:
+
+    * **الفهارس النصية** (`text(tokenizer = ...)`) على أعمدة النصوص وعلى مصفوفات `mapKeys`/`*AttributeItems`. ويتضمنها مخطط السجلات الافتراضي بالفعل.
+    * **فهارس Min-max** على الأعمدة الرقمية التي تُصفّى حسب النطاق، ويُعدّ الحقل `Duration` في بيانات التتبّع المثال الأبرز على ذلك.
+    * **مرشحات Bloom** لعمليات البحث بالمساواة على القيم ذات عدد العناصر المرتفع، في إصدارات ClickHouse التي لا تدعم الفهارس النصية بعد.
+
+    ```sql
+    ALTER TABLE otel_traces ADD INDEX idx_duration Duration TYPE minmax GRANULARITY 1;
+    ALTER TABLE otel_traces MATERIALIZE INDEX idx_duration;
+    ```
+
+    لا يكون فهرس التخطي مجديًا مقابل تكلفة تقييمه إلا إذا استبعد حبيبات البيانات فعليًا. لذا تحقّق من ذلك باستخدام `EXPLAIN indexes = 1` على استعلام نموذجي قبل أن تفترض أنه حسّن الأداء.
+
+    اقرأ المزيد: [إضافة فهارس تخطي البيانات](/ar/clickstack/self-configured/managing/performance-tuning#adding-skip-indexes).
+  </Step>
+
+  <Step title="الحساب المسبق لعمليات التجميع المتكررة" id="materialized-views">
+    عندما يُنفَّذ التجميع نفسه مرارًا وتكرارًا على لوحة معلومات (مثل الخدمات الأعلى في معدل الأخطاء، أو زمن الانتقال p99 لكل نقطة نهاية، أو عدد الطلبات في الدقيقة)، يحسب العرض المُجسَّد النتيجة في وقت الإدراج ويكتبها في جدول تجميع تلخيصي صغير. وبذلك تستعلم لوحات المعلومات من جدول التجميع التلخيصي بدلًا من السجلات أو بيانات التتبّع الخام، وهو أقل تكلفة بكثير.
+
+    ويؤتي هذا الأسلوب ثماره عندما تكون لوحة المعلومات كثيرة الاستخدام والجدول الأساسي كبيرًا. أما الثمن فهو بعض استهلاك المعالج في وقت الإدراج، وجدول إضافي تتعين صيانته.
+
+    اقرأ المزيد: [الاستفادة من العروض المُجسَّدة](/ar/clickstack/self-configured/managing/performance-tuning#exploiting-materialized-views).
+  </Step>
+
+  <Step title="اختيار مفتاح أساسي يناسب نمط الوصول لديك" id="choose-primary-key">
+    يتحكم المفتاح الأساسي في ترتيب الصفوف على القرص. فعوامل التصفية على الأعمدة الأولى من هذا المفتاح تتيح لـ ClickHouse الانتقال مباشرةً إلى النطاق المعني، أما عوامل التصفية التي لا تبدأ بأحد هذه الأعمدة فتفحص القسم بأكمله.
+
+    يلائم مفتاح السجلات الافتراضي `(toStartOfFiveMinutes(Timestamp), ServiceName, Timestamp)` استعلامات من نوع &quot;ماذا حدث خلال آخر N دقيقة للخدمة X&quot;. فإذا كانت معظم استعلاماتك تبدأ بعمود مختلف (كمعرّف المستأجر، أو معرّف العميل، أو المنطقة)، فإن تغيير المفتاح الأساسي ليبدأ بهذا العمود هو أكثر التغييرات تأثيرًا التي يمكنك إجراؤها.
+
+    ```sql
+    CREATE TABLE otel_logs_v2
+    (
+      -- الأعمدة نفسها الموجودة في otel_logs
+    )
+    ENGINE = MergeTree
+    ORDER BY (TenantId, ServiceName, Timestamp);
+    ```
+
+    لا يسمح ClickHouse بتعديل المفتاح الأساسي لجدول قائم، لذا فهذه عملية ترحيل للجدول وليست مجرد أمر `ALTER` بسيط. ويشرح دليل ضبط الأداء خطوات إنشاء الجدول الجديد، وإعادة توجيه الاستيعاب، واستخدام جدول `Merge` لتظل لوحات المعلومات الحالية تعمل على البيانات القديمة والجديدة معًا.
+
+    اقرأ المزيد: [تعديل المفتاح الأساسي](/ar/clickstack/self-configured/managing/performance-tuning#modifying-the-primary-key).
+  </Step>
+</Steps>
+
+## قراءات إضافية {#further-reading}
+
+* [ضبط الأداء](/ar/clickstack/self-configured/managing/performance-tuning): دليل شامل يتناول الإسقاطات وتسريع البحث عن الصفوف.
+* [الجداول والمخططات المستخدمة في ClickStack](/ar/clickstack/self-configured/ingesting-data/schemas): تعريفات DDL القياسية التي تستند إليها التحسينات.
+* [الانتقال إلى بيئة الإنتاج](/ar/clickstack/self-configured/managing/production): توصيات أشمل لبيئة الإنتاج.

@@ -258,6 +258,11 @@ ALWAYS_INLINE inline bool tryRoundToShortest(IntType v, IntType lo, IntType hi, 
     return false;
 }
 
+}
+
+namespace detail
+{
+
 /// Float32 variant: exp 25-30, shift = exp - 23 (2..7), half_ulp 2..64.
 ///   shift=2:    % 10 only
 ///   shift=3..6: % 100, fallback % 10
@@ -354,90 +359,40 @@ NO_INLINE size_t writeFloatTextFastPathFloat64Rounded(Float64 f64, int16_t exp, 
     return itoa(v, buffer) - start;
 }
 
+char * writeIntegerFloatText(Int64 x, char * buffer)
+{
+    return itoa(x, buffer);
+}
+
+char * writeIntegerFloatText(Int32 x, char * buffer)
+{
+    return itoa(x, buffer);
+}
+
+char * writeShortestFloatText(Float64 x, char * buffer)
+{
+    return zmij::detail::write(buffer, x);
+}
+
+char * writeShortestFloatText(Float32 x, char * buffer)
+{
+    return zmij::detail::write(buffer, x);
 }
 
 template <typename T>
 requires is_floating_point<T>
-size_t writeFloatTextFastPath(T x, char * buffer, bool force_decimal_point)
+void writeFloatTextThroughStackBuffer(T x, WriteBuffer & buf, bool force_decimal_point)
 {
-    size_t result = 0;
-
-    if constexpr (std::is_same_v<T, Float64>)
-    {
-        DecomposedFloat64 decomposed(x);
-        auto exp = decomposed.normalizedExponent();
-
-        /// Float64 integer fast path, same structure as Float32:
-        ///   exp 0..52:  exact integers (isIntegerInRepresentableRange).
-        ///   exp 53:     ULP=2, all values are even integers, itoa matches dragonbox.
-        ///   exp 54..62: ULP=4..1024, use rounding to find the "roundest" integer.
-        ///   exp < 0:    |value| < 1, not an integer.
-        ///   exp > 62:   |value| >= 2^63, overflows Int64.
-        if (decomposed.isIntegerInRepresentableRange() || exp == 53)
-            result = itoa(Int64(x), buffer) - buffer;
-        else if (exp > 53 && exp <= 62)
-            result = writeFloatTextFastPathFloat64Rounded(x, exp, buffer);
-        else
-            result = zmij::detail::write(buffer, x) - buffer;
-    }
-    else if constexpr (std::is_same_v<T, Float32> || std::is_same_v<T, BFloat16>)
-    {
-        Float32 f32 = Float32(x);
-        DecomposedFloat32 decomposed(f32);
-        auto exp = decomposed.normalizedExponent();
-
-        /// Float32 integer fast path: covers exp 0..30 (values up to ~2^31).
-        ///
-        /// Three sub-ranges:
-        ///   exp 0..23:  ULP <= 1, every integer has a unique float. itoa gives the
-        ///               exact value, which is the only valid shortest representation.
-        ///               We just need to verify the float IS an integer (fractional
-        ///               mantissa bits are zero).
-        ///
-        ///   exp 24:     ULP = 2, but cast-to-int always lands on an even number.
-        ///               Exhaustive testing shows itoa matches dragonbox for all 8M values.
-        ///
-        ///   exp 25..30: ULP = 4..128. itoa gives the exact value, but dragonbox may
-        ///               prefer a "rounder" decimal (more trailing zeros). We use
-        ///               writeFloatTextFastPathFloat32Rounded to adjust, matching
-        ///               dragonbox exactly for all ~4.3 billion Float32 values
-        ///               (positive and negative, exhaustively verified).
-        ///               zmij was patched to produce identical output to dragonbox,
-        ///               so these results still hold.
-        ///
-        /// exp < 0:     |value| < 1, not an integer.
-        /// exp > 30:    |value| >= 2^31, overflows Int32.
-
-        /// Most common fast path first: exp 0..24, exact integers.
-        if (decomposed.isIntegerInRepresentableRange() || exp == 24)
-            result = itoa(Int32(f32), buffer) - buffer;
-        /// Extended fast path: exp 25..30, round to "roundest" decimal then itoa.
-        else if (exp > 24 && exp <= 30)
-            result = writeFloatTextFastPathFloat32Rounded(f32, exp, buffer);
-        /// Not an integer, or exp out of range: use zmij.
-        else
-            result = zmij::detail::write(buffer, f32) - buffer;
-    }
-
-    /// Append a trailing decimal point for finite values whose representation is a bare integer
-    /// (no '.', exponent, or inf/nan). The byte-scan predicate covers both the itoa fast paths
-    /// and the zmij path, which can also emit a bare integer for large magnitudes
-    /// (e.g. `toFloat32(1.23e20)` -> `123000000000000000000`). The `isFinite` guard keeps
-    /// `inf`/`nan` untouched. The caller guarantees at least
-    /// `DoubleConverter<false>::MAX_REPRESENTATION_LENGTH` bytes, which leaves room for the extra '.'.
-    if (force_decimal_point && isFinite(x)
-        && find_first_symbols<'.', 'e', 'E'>(buffer, buffer + result) == buffer + result)
-    {
-        buffer[result] = '.';
-        ++result;
-    }
-
-    return result;
+    DoubleConverter<false>::BufferType buffer;
+    size_t result = writeFloatTextFastPath(x, buffer, force_decimal_point);
+    buf.write(buffer, result);
 }
 
-template size_t writeFloatTextFastPath(Float64 x, char * buffer, bool force_decimal_point);
-template size_t writeFloatTextFastPath(Float32 x, char * buffer, bool force_decimal_point);
-template size_t writeFloatTextFastPath(BFloat16 x, char * buffer, bool force_decimal_point);
+template void writeFloatTextThroughStackBuffer(Float64 x, WriteBuffer & buf, bool force_decimal_point);
+template void writeFloatTextThroughStackBuffer(Float32 x, WriteBuffer & buf, bool force_decimal_point);
+template void writeFloatTextThroughStackBuffer(BFloat16 x, WriteBuffer & buf, bool force_decimal_point);
+
+}
 
 template <typename T>
 requires is_floating_point<T>

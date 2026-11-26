@@ -1,0 +1,42 @@
+---
+sidebarTitle: '웹 검색'
+slug: /agents/builder/web-search
+title: '웹 검색'
+description: 'ClickHouse Agents를 위한 외부 웹 검색 도구'
+keywords: ['AI', 'ClickHouse Cloud', 'agents', 'web search']
+doc_type: 'reference'
+---
+
+import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge />
+
+웹 검색을 사용하면 에이전트가 대화 중에 공개 웹에서 정보를 가져올 수 있습니다. 최신 릴리스, 서비스 외부에 있는 문서, 신뢰할 수 있는 출처를 통한 빠른 확인처럼 최신 정보가 필요한 질문에 이 기능을 사용하세요.
+
+## 활성화하기 {#enable-it}
+
+에이전트 빌더의 **Capabilities** 섹션에서 **웹 검색**을 활성화하십시오. 활성화하면 에이전트가 사용자의 질문과 에이전트 지침을 바탕으로 검색할 시점을 스스로 판단합니다. 검색이 실행되면 결과를 스크레이핑한 뒤 가장 관련성 높은 콘텐츠를 모델 컨텍스트로 다시 전달합니다.
+
+<div className="ch-image-sm">
+  <Frame>
+    ![웹 검색 섹션이 강조 표시되어 있고 웹 검색 체크박스가 보이는 Capabilities 패널](/images/cloud/agent-builder/web-search/web-search.webp)
+  </Frame>
+</div>
+
+## 검색 라운드의 작동 방식 {#how-a-search-round-works}
+
+각 검색은 3개의 스테이지로 진행되며, Cloud에서는 이 과정이 자동으로 관리됩니다.
+
+1. **검색(Search)** - 에이전트의 쿼리가 검색 provider로 전달되며, provider는 후보 URL을 반환합니다.
+2. **스크레이프(Scrape)** - 관련 페이지를 가져와 유의미한 텍스트를 추출합니다.
+3. **재순위화(Rerank)** - 리랭커(reranker)가 결과에 점수를 매겨 모델이 가장 유용한 결과부터 볼 수 있도록 합니다.
+
+에이전트의 응답에는 실제로 참조한 URL이 출처로 표시됩니다.
+
+## 사용 시점 {#when-to-use-it}
+
+* 서비스에 없는 release notes나 변경 로그를 찾아볼 때
+* 모델이 모를 수 있는 출처와 대조해 사실을 확인할 때
+* 공개된 블로그 게시물이나 문서를 대화로 가져와 분석할 때
+
+보유한 데이터나 모델 자체의 지식으로 답할 수 있는 질문에는 사용하지 마십시오. 검색 라운드마다 지연 시간이 늘어납니다.

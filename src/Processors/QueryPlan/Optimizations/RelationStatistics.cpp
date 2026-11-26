@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/Optimizations/RelationStatistics.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 
 #include <algorithm>
 #include <limits>
@@ -8,6 +9,33 @@
 
 namespace DB::QueryPlanOptimizations
 {
+
+ColumnStats makeGroupingKeyStats(const ColumnStats & input, const RelationStats & input_relation)
+{
+    ColumnStats result = input;
+    result.null_fraction.reset();
+    if (input_relation.estimated_rows && result.num_distinct_values > *input_relation.estimated_rows)
+    {
+        result.num_distinct_values = *input_relation.estimated_rows;
+        if (!input_relation.exactRows())
+            result.ndv_provenance.add(EstimatedRowCountClamp);
+    }
+    return result;
+}
+
+void keepOnlyEnclosingValueRange(ColumnStats & stats)
+{
+    if (stats.valueRange(ValueRangeGuarantee::Superset))
+        return;
+    stats.min_value.reset();
+    stats.max_value.reset();
+}
+
+void keepOnlyEnclosingValueRanges(UnorderedMapWithMemoryTracking<String, ColumnStats> & column_stats)
+{
+    for (auto & [_, stats] : column_stats)
+        keepOnlyEnclosingValueRange(stats);
+}
 
 void updateJoinKeyDistinctCounts(
     ColumnStats & left_stats,
@@ -39,14 +67,14 @@ void updateJoinKeyDistinctCounts(
         right_stats.num_distinct_values = minimum;
 }
 
-void remapColumnStats(std::unordered_map<String, ColumnStats> & mapped, const ActionsDAG & actions)
+void remapColumnStats(UnorderedMapWithMemoryTracking<String, ColumnStats> & mapped, const ActionsDAG & actions)
 {
     /// Column statistics are usually absent; do not pay for a full lineage walk of the
     /// `ActionsDAG` when there is nothing to remap.
     if (mapped.empty())
         return;
 
-    std::unordered_map<String, ColumnStats> original;
+    UnorderedMapWithMemoryTracking<String, ColumnStats> original;
     original.swap(mapped);
 
     const auto lineage = traceActionsDAGLineage(actions);
@@ -65,19 +93,18 @@ void remapColumnStats(std::unordered_map<String, ColumnStats> & mapped, const Ac
         /// Add the offset, guarding against overflow when the source NDV is near the maximum.
         if (stats.num_distinct_values <= std::numeric_limits<UInt64>::max() - output_lineage.input->ndv_delta)
             stats.num_distinct_values += output_lineage.input->ndv_delta;
+        if (output_lineage.input->kind == ActionsDAGLineageKind::DistinctValuesBound)
+        {
+            /// The measured range does not describe the values of a function that may change them (e.g. `negate(k)`),
+            /// and `NDVBoundExpression` keeps no value-range guarantee, so this clears the range. The NULL fraction
+            /// stays with its provenance: a `CAST` can turn NULL rows into values, which the provenance records.
+            stats.addTransformation(NDVBoundExpression);
+            keepOnlyEnclosingValueRange(stats);
+        }
         /// A hop that changes the type (e.g. `toString(k)`) changes the value bytes, so drop the
         /// width to unknown.
         if (!output_lineage.input->preserves_width)
             stats.avg_bytes = 0;
-        /// The value range and NULL set survive only lineage known to pass the value through
-        /// unchanged; unlike NDV, they do not survive a generic deterministic function (e.g. `negate(k)`)
-        /// or a `CAST`, which may rewrite NULL rows into real values.
-        if (output_lineage.input->kind == ActionsDAGLineageKind::DistinctValuesBound)
-        {
-            stats.min_value.reset();
-            stats.max_value.reset();
-            stats.null_fraction.reset();
-        }
         mapped[outputs[output_lineage.output_position]->result_name] = stats;
     }
 }

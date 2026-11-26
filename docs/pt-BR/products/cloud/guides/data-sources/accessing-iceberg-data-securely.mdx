@@ -7,12 +7,10 @@ keywords: ['Iceberg', 'RBAC', 'Amazon S3', 'autenticação']
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
-
 O ClickHouse Cloud oferece suporte ao acesso seguro baseado em funções a dados do Iceberg armazenados em armazenamento de objetos (normalmente no S3) por meio de uma relação de confiança do AWS IAM baseada em ARN. Este guia segue o mesmo padrão de configuração segura de [Acessando dados do S3 com segurança](/pt-BR/products/cloud/guides/data-sources/accessing-s3-data-securely) e adiciona a configuração específica do Iceberg no ClickHouse.
 
 <div id="overview">
-  ## Visão geral
+  ## Visão geral {#overview}
 </div>
 
 * Obtenha o ID da função de serviço do ClickHouse Cloud (IAM).
@@ -20,9 +18,7 @@ O ClickHouse Cloud oferece suporte ao acesso seguro baseado em funções a dados
 * Anexe à função políticas específicas do Iceberg para objetos e catálogos.
 * Use funções de tabela do Iceberg ou o mecanismo de tabela IcebergS3 com credenciais baseadas em IAM função.
 
-<div id="obtaining-the-clickhouse-service-iam-role-arn">
-  ## Obtenha o ID da função de serviço do ClickHouse (ARN)
-</div>
+## Obtenha o ID da função de serviço do ClickHouse (ARN) {#obtaining-the-clickhouse-service-iam-role-arn}
 
 <Steps>
   <Step title="1. Faça login na sua conta do ClickHouse Cloud." id="login" />
@@ -34,14 +30,18 @@ O ClickHouse Cloud oferece suporte ao acesso seguro baseado em funções a dados
   <Step title={<>4. Role até <strong>Informações de segurança de rede</strong>.</>} id="network-security-information" />
 
   <Step title={<>5. Copie o valor de <strong>ID da função de serviço (IAM)</strong>.</>} id="service-role-iam-value">
-    Esse ARN é necessário para a política de confiança da função do IAM da AWS que acessará seus dados do Iceberg.
+    Esse ARN é necessário para a política de confiança da IAM role da AWS que acessará seus dados do Iceberg.
 
-    <Image img="/images/cloud/security/secures3_arn.webp" size="lg" alt="Como obter o ARN da função do IAM do serviço ClickHouse" border />
+    <div className="ch-image-lg">
+      <Frame>
+        ![Como obter o ARN da IAM role do serviço ClickHouse](/images/cloud/security/secures3_arn.webp)
+      </Frame>
+    </div>
   </Step>
 </Steps>
 
 <div id="setting-up-iam-assume-role">
-  ## Configurar a assunção de função no IAM
+  ## Configurar a assunção de função no IAM {#setting-up-iam-assume-role}
 </div>
 
 <Steps>
@@ -122,11 +122,11 @@ O ClickHouse Cloud oferece suporte ao acesso seguro baseado em funções a dados
 </Steps>
 
 <div id="configure-iceberg-access">
-  ## Configure o acesso ao Iceberg no ClickHouse Cloud
+  ## Configure o acesso ao Iceberg no ClickHouse Cloud {#configure-iceberg-access}
 </div>
 
 <div id="iceberg-table-function-with-role-arn">
-  ### Opção A: função de tabela Iceberg com ARN da função
+  ### Opção A: função de tabela Iceberg com ARN da função {#iceberg-table-function-with-role-arn}
 </div>
 
 Use a função de tabela `icebergS3` com a opção `NOSIGN` e credenciais baseadas em função. O ClickHouse Cloud chamará o STS para assumir a função.
@@ -141,7 +141,7 @@ FROM icebergS3(
 ```
 
 <div id="persistent-iceberg-table-engine">
-  ### Opção B: mecanismo de tabela Iceberg persistente
+  ### Opção B: mecanismo de tabela Iceberg persistente {#persistent-iceberg-table-engine}
 </div>
 
 ```sql
@@ -158,7 +158,7 @@ ENGINE = IcebergS3(
 ```
 
 <div id="glue-catalog-plus-icebergs3">
-  ### Opção C: catálogo do Glue + IcebergS3
+  ### Opção C: catálogo do Glue + IcebergS3 {#glue-catalog-plus-icebergs3}
 </div>
 
 ```sql
@@ -179,7 +179,7 @@ SETTINGS
 > Observação: ao usar o catálogo do Glue, verifique se sua função do IAM tem permissões de leitura e listagem no S3 e no Glue.
 
 <div id="datalake-catalog-for-glue">
-  ### Opção D: DataLake Catalog para Glue
+  ### Opção D: DataLake Catalog para Glue {#datalake-catalog-for-glue}
 </div>
 
 <Note>
@@ -199,7 +199,7 @@ SETTINGS
 ```
 
 <div id="validate-access">
-  ## Verifique o acesso
+  ## Verifique o acesso {#validate-access}
 </div>
 
 1. Execute uma consulta simples:
@@ -212,7 +212,7 @@ LIMIT 5;
 2. Verifique se há erros de IAM, como `AccessDenied` ou `InvalidAccessKeyId`.
 
 <div id="troubelshooting">
-  ## Solução de problemas
+  ## Solução de problemas {#troubelshooting}
 </div>
 
 * Verifique o ARN da função nas configurações do serviço ClickHouse Cloud.

@@ -7,9 +7,7 @@ doc_type: 'guide'
 keywords: ['ClickStack', 'デモデイズ']
 ---
 
-<div id="version-aware-improved-schema-filtering">
-  ## バージョンを踏まえた改良版スキーマフィルタリング
-</div>
+## バージョンを踏まえた改良版スキーマフィルタリング {#version-aware-improved-schema-filtering}
 
 *デモ: [@knudtty](https://github.com/knudtty)*
 
@@ -23,9 +21,7 @@ ClickStack では現在、direct&#95;read 最適化は ClickHouse バージョ�
 
 **関連 PR:** [#2341](https://github.com/hyperdxio/hyperdx/pull/2341) feat: logs と traces に対して direct&#95;read 最適化をデフォルトで追加, [#2405](https://github.com/hyperdxio/hyperdx/pull/2405) feat(common-utils): direct&#95;read の KV items 最適化を SQL フィルターに適用, [#2376](https://github.com/hyperdxio/hyperdx/pull/2376) feat: フィルターとオートコンプリートをテキスト索引で実現
 
-<div id="better-log-parsing">
-  ## ログパースの改善
-</div>
+## ログパースの改善 {#better-log-parsing}
 
 *デモ担当: [@dhable](https://github.com/dhable)*
 
@@ -39,9 +35,7 @@ ClickStack では現在、direct&#95;read 最適化は ClickHouse バージョ�
 
 **関連PR:** [#2363](https://github.com/hyperdxio/hyperdx/pull/2363) fix(log-parser): ボディが `level` フィールドを含む JSON としてパースされる場合、文字列による推論をスキップ
 
-<div id="mcp-server-improvements">
-  ## MCPサーバーの改善
-</div>
+## MCPサーバーの改善 {#mcp-server-improvements}
 
 *デモ: [@brandon-pereira](https://github.com/brandon-pereira)*
 
@@ -53,25 +47,21 @@ ClickStack では現在、direct&#95;read 最適化は ClickHouse バージョ�
 
 **関連PR:** [#2337](https://github.com/hyperdxio/hyperdx/pull/2337) feat(mcp): MCPツールの品質を改善 — エラーヒント、共通ヘルパー、メッセージの改善、[#2396](https://github.com/hyperdxio/hyperdx/pull/2396) refactor(mcp): ツールのプレフィックスを hyperdx&#95; から clickstack&#95; にリネーム、[#2343](https://github.com/hyperdxio/hyperdx/pull/2343) feat(mcp): patch&#95;dashboard、get&#95;dashboard&#95;tile、search&#95;dashboards ツールを追加、[#2418](https://github.com/hyperdxio/hyperdx/pull/2418) fix(mcp): 読みやすいグラフ凡例のためにエイリアスの説明と例を改善、[#2412](https://github.com/hyperdxio/hyperdx/pull/2412) refactor: 共通ヘルパーとスキーマレベルのチェックにより MCP ObjectId の検証を簡素化
 
-<div id="new-series-color-palette">
-  ## 新しい系列カラーパレット
-</div>
+## 新しい系列カラーパレット {#new-series-color-palette}
 
-*[@elizabetdev](https://github.com/elizabetdev) によるデモ*
+*デモ担当者: [@elizabetdev](https://github.com/elizabetdev)*
 
 <Frame>
-  <iframe src="https://www.youtube.com/embed/YzECP3diWvg" title="YouTube 動画プレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+  <iframe src="https://www.youtube.com/embed/YzECP3diWvg" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
 </Frame>
 
-Elizabet は、Alex による カラーピッカー の対応を支える一環として、HyperDX と ClickStack の両テーマでデータ可視化のカラーパレットを統一する作業に取り組みました。これまで 2 つのテーマは別々のパレットを持ち、それぞれに例外ルールもあったため、色の扱いを把握・調整するのが不必要に複雑になっていました。目標は、両方のテーマで使える単一のパレットを作ることでした。
+Elizabet は、Alex による カラーピッカー の対応を支える一環として、ClickStack UI と ClickStack の両テーマでデータ可視化のカラーパレットを統一する作業に取り組みました。これまで 2 つのテーマは別々のパレットを持ち、それぞれに例外ルールもあったため、色の扱いを把握・調整するのが不必要に複雑になっていました。目標は、両方のテーマで使える単一のパレットを作ることでした。
 
 彼女は、コントラストとアクセシビリティを確認するために色覚シミュレーションツールを使い、業界標準のパレット (Tableau、Observable、IBM) と比較検証しました。ClickHouse のパレットは結果が芳しくなく、緑色が白い背景では十分なコントラストを確保できていませんでした。Tableau と Observable も、それぞれ少なくとも 1 項目で基準を満たしませんでした。IBM のパレットはすべてのチェックを通過したものの、色数が 5 色しかなく、それでは不十分です。総合的には Observable のパレットが最も近く、青をわずかに調整したうえで、今後は両テーマで共通利用されることになりました。
 
 **関連 PR:** [#2362](https://github.com/hyperdxio/hyperdx/pull/2362) refactor(theme): rename chart palette tokens to hue names + unify across themes
 
-<div id="new-page-layout-with-sticky-header">
-  ## スティッキーヘッダー対応の新しいページレイアウト
-</div>
+## スティッキーヘッダー対応の新しいページレイアウト {#new-page-layout-with-sticky-header}
 
 *[@elizabetdev](https://github.com/elizabetdev) によるデモ*
 
@@ -85,9 +75,7 @@ Elizabet は、Alex による カラーピッカー の対応を支える一環�
 
 **関連 PR:** [#2282](https://github.com/hyperdxio/hyperdx/pull/2282) PageHeader/PageLayout を追加して Sessions を移行, [#2345](https://github.com/hyperdxio/hyperdx/pull/2345) リストページで PageHeader の title を使用, [#2346](https://github.com/hyperdxio/hyperdx/pull/2346) Service Map を PageLayout に移行, [#2347](https://github.com/hyperdxio/hyperdx/pull/2347) Kubernetes dashboard を PageLayout に移行, [#2348](https://github.com/hyperdxio/hyperdx/pull/2348) ClickHouse dashboard を PageLayout に移行, [#2364](https://github.com/hyperdxio/hyperdx/pull/2364) feat(dashboard): スティッキーなクエリツールバー付きの PageLayout へ移行, [#2394](https://github.com/hyperdxio/hyperdx/pull/2394) fix(PageHeader): スティッキーヘッダーがドロワーのオーバーレイの下に維持されるよう修正
 
-<div id="new-datasource-selector-and-color-picking-for-series">
-  ## 新しいデータソースセレクターと系列の色選択
-</div>
+## 新しいデータソースセレクターと系列の色選択 {#new-datasource-selector-and-color-picking-for-series}
 
 *デモ: [@alex-fedotyev](https://github.com/alex-fedotyev)*
 
@@ -101,9 +89,7 @@ Numberタイルには、メトリクスに特定の色を割り当てられる�
 
 **関連PR:** [#2365](https://github.com/hyperdxio/hyperdx/pull/2365) feat(source-picker): chip + kebab menu UX, [#2265](https://github.com/hyperdxio/hyperdx/pull/2265) feat(app): number tile static color picker
 
-<div id="better-hints-for-dashboard-actions">
-  ## ダッシュボードアクションのヒントを改善
-</div>
+## ダッシュボードアクションのヒントを改善 {#better-hints-for-dashboard-actions}
 
 *デモ担当 [@alex-fedotyev](https://github.com/alex-fedotyev)*
 

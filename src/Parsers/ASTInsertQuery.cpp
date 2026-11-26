@@ -6,6 +6,7 @@
 #include <Common/SipHash.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
+#include <Parsers/ASTFormatting.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTExpressionList.h>
@@ -266,9 +267,8 @@ void ASTInsertQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
 
     if (columns)
     {
-        ostr << " (";
-        columns->format(ostr, settings, state, frame);
-        ostr << ")";
+        ostr << " ";
+        formatASTListInParentheses(*columns, ostr, settings, state, frame);
     }
 
     if (returning)
@@ -323,10 +323,11 @@ void ASTInsertQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
 
         /// For INSERT ... SELECT ... FROM input('...') FORMAT Values,
         /// the FORMAT clause must be preserved in the formatted output.
+        /// The parser reads the format name as one identifier and accepts any bare word, also a keyword (`Null`, `Values`).
         if (!format.empty())
         {
             ostr << delim
-                << "FORMAT" << " " << format;
+                << "FORMAT" << " " << backQuoteIfNotBareWord(format);
         }
     }
     else
@@ -334,7 +335,7 @@ void ASTInsertQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         if (!format.empty())
         {
             ostr << delim
-                << "FORMAT" << " " << format;
+                << "FORMAT" << " " << backQuoteIfNotBareWord(format);
         }
         else if (!infile)
         {
