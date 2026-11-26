@@ -22,14 +22,14 @@ MCP (即 Model Context Protocol) 是供基于 LLM 的 AI 应用访问结构化�
 
 ClickHouse 提供两种 MCP 服务器。
 
-|          | 远程 MCP 服务器 (Cloud)                                                | 开源 MCP 服务器                                                               |
-| -------- | --------------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| **来源**   | 由 ClickHouse Cloud 完全托管                                               | GitHub 上的 [mcp-clickhouse](https://github.com/ClickHouse/mcp-clickhouse) |
-| **传输方式** | Streamable HTTP (`https://mcp.clickhouse.cloud/mcp`)                  | 本地 stdio                                                                 |
-| **适用范围** | ClickHouse Cloud 服务                                                   | 任何 ClickHouse instance (自托管或 Cloud)                                      |
-| **身份验证** | 使用你的 Cloud 凭证 进行 OAuth 2.0 身份验证，或使用 ClickHouse Cloud API key | 环境变量                                                                     |
-| **工具**   | 13 个工具，涵盖查询、schema 探索、服务管理、备份、ClickPipes 和计费                          | 3 个工具：`run_select_query`、`list_databases`、`list_tables`                  |
-| **设置**   | 无需安装。将你的 MCP 客户端 指向该端点并完成身份验证即可。                                      | 在本地安装并运行 服务器                                                          |
+|          | 远程 MCP 服务器 (Cloud)                                           | 开源 MCP 服务器                                                               |
+| -------- | ------------------------------------------------------------ | ------------------------------------------------------------------------ |
+| **来源**   | 由 ClickHouse Cloud 完全托管                                      | GitHub 上的 [mcp-clickhouse](https://github.com/ClickHouse/mcp-clickhouse) |
+| **传输方式** | Streamable HTTP (`https://mcp.clickhouse.cloud/mcp`)         | 本地 stdio                                                                 |
+| **适用范围** | ClickHouse Cloud 服务和托管 Postgres 服务                           | 任何 ClickHouse instance (自托管或 Cloud)                                      |
+| **身份验证** | 使用你的 Cloud 凭证 进行 OAuth 2.0 身份验证，或使用 ClickHouse Cloud API 密钥 | 环境变量                                                                     |
+| **工具**   | 涵盖查询、schema 探索、服务管理、备份、ClickPipes、计费和 Postgres 监控的多种工具       | 3 个工具：`run_select_query`、`list_databases`、`list_tables`                  |
+| **设置**   | 无需安装。将你的 MCP 客户端 指向该端点并完成身份验证即可。                             | 在本地安装并运行 服务器                                                             |
 
 远程 MCP 服务器为 ClickHouse Cloud 提供最完整的集成能力，包括服务管理、备份监控、ClickPipe 可见性和计费数据，且无需管理任何基础设施。
 如需用于自托管 ClickHouse instance，请参阅[开源 MCP 服务器 指南](/zh/guides/use-cases/ai-ml/MCP/index)。
@@ -38,7 +38,8 @@ ClickHouse 提供两种 MCP 服务器。
 
 远程 MCP 服务器必须按服务分别启用，启用后才能接受连接。
 在 ClickHouse Cloud 控制台中，打开你的服务，点击 **Connect** 按钮，选择 **MCP**，然后将其启用。
-启用或禁用远程 MCP 服务器需要具备 `control-plane:service:manage-mcp` 权限 (参见[控制台角色和权限](/zh/products/cloud/reference/security/console-roles#console-permissions)) 。
+对于 ClickHouse 服务，启用或禁用远程 MCP 服务器需要具备 `control-plane:service:manage-mcp` 权限 (参见[控制台角色和权限](/zh/products/cloud/reference/security/console-roles#console-permissions)) 。
+对于托管 Postgres 服务，请打开该服务的 **Connect** 面板，开启 **Enable Model Context Protocol**。只读副本会沿用其父数据库的 MCP 设置。
 如需查看带截图的详细步骤，请参阅[设置指南](/zh/products/cloud/features/ai-ml/mcp/remote-mcp#enable-remote-mcp-server)。
 
 ## 端点 {#endpoint}
@@ -70,7 +71,7 @@ https://mcp.clickhouse.cloud/mcp
 
 ## 可用工具 {#available-tools}
 
-远程 MCP 服务器提供了 13 个工具，分为以下几类。
+远程 MCP 服务器提供以下类别的工具。具体可用哪些工具，取决于所用的身份验证方法以及已启用的功能。
 
 ### 查询与 schema 探索 {#query-and-schema}
 
@@ -82,6 +83,21 @@ https://mcp.clickhouse.cloud/mcp
 | `list_databases`   | 列出 ClickHouse 服务中所有可用的数据库。     | `serviceId`                                                         |
 | `list_tables`      | 列出数据库中的所有表，包括列定义。              | `serviceId`；`database`；可选 `like` 或 `notLike` (用于过滤表名的 SQL LIKE 模式)  |
 
+### Managed Postgres {#managed-postgres}
+
+这些工具用于查询和监控 托管 Postgres 服务。先使用 `get_organizations` 查找 `organizationId`，再使用 `get_services_list` 查找 `serviceType` 为 `postgres` 的服务，并将其 `id` 用作 `serviceId`。
+
+| 工具                                        | 描述                                                                     | 参数                                                                                                                                                |
+| ----------------------------------------- | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `run_postgres_select_query`               | 对 Postgres 服务执行只读 SQL 查询。需要 OAuth 身份验证；使用 ClickHouse Cloud API 密钥时不可用。 | `organizationId`；`serviceId`；`query`；可选 `database` (默认值：`postgres`) 和 `timeoutSeconds` (1–3600，默认值：300)                                           |
+| `list_postgres_slow_query_patterns`       | 列出慢查询模式及其聚合的延迟、调用次数、行数、CPU、I/O、WAL 和错误指标。耗时以微秒为单位。                     | `organizationId`；`serviceId`；`fromDate`；`toDate`；可选 `limit` (1–500，默认值：20) 、`offset`、`sortBy`、`sortOrder`、`dbName`、`dbUser`、`dbOperation` 和 `app` |
+| `get_postgres_slow_query_pattern_details` | 返回某个查询模式在过去 24 小时内最多 10 条最近执行记录，并在可用时一并返回聚合指标。                         | `organizationId`；`serviceId`；`queryId`；`dbName`；`dbUser`；`dbOperation`；可选 `app`                                                                   |
+| `get_postgres_metrics`                    | 返回 CPU、内存、磁盘、网络、连接、缓存命中率、事务和等待的时间序列指标。每个指标均包含其单位和带标签的数据系列。             | `organizationId`；`serviceId`；`fromDate`；`toDate`；可选 `bucketSizeSeconds` (正整数；省略时自动选择)                                                             |
+
+`fromDate` 和 `toDate` 须使用毫秒精度的 UTC 时间戳，例如 `2026-11-03T00:00:00.000Z`。起始时间包含边界。对于慢查询模式，结束时间按分钟粒度包含边界；对于指标，结束时间不包含边界。
+
+要查看某个慢查询模式的详情，请将 `list_postgres_slow_query_patterns` 返回的 `queryId`、`dbName`、`dbUser`、`dbOperation` 和 `app` 传给 `get_postgres_slow_query_pattern_details`。对于没有 `application_name` 的查询，请保留空的 `app` 字符串；若省略 `app`，则会包含所有应用程序。
+
 ### 组织 {#organizations}
 
 | Tool                       | 描述                                   | 参数               |
@@ -91,10 +107,10 @@ https://mcp.clickhouse.cloud/mcp
 
 ### 服务 {#services}
 
-| Tool                  | Description                   | Parameters                    |
-| --------------------- | ----------------------------- | ----------------------------- |
-| `get_services_list`   | 列出 ClickHouse Cloud 组织中的所有服务。 | `organizationId`              |
-| `get_service_details` | 返回特定服务的详细信息。                  | `organizationId`; `serviceId` |
+| 工具                  | 描述                                                            | 参数                    |
+| --------------------- | ---------------------------------------------------------------------- | ----------------------------- |
+| `get_services_list`   | 列出组织中的 ClickHouse 和 托管 Postgres 服务，并通过 `serviceType` 字段标识每个服务的类型。 | `organizationId`              |
+| `get_service_details` | 返回 ClickHouse 或 托管 Postgres 服务的详细信息，并自动识别其类型。                     | `organizationId`; `serviceId` |
 
 ### 备份 {#backups}
 

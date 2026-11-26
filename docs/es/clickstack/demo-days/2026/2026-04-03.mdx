@@ -7,9 +7,7 @@ doc_type: 'guide'
 keywords: ['ClickStack', 'Demo days']
 ---
 
-<div id="new-dashboard-and-saved-search-listing-pages">
-  ## Nuevas páginas de listado de dashboards y búsquedas guardadas
-</div>
+## Nuevas páginas de listado de dashboards y búsquedas guardadas {#new-dashboard-and-saved-search-listing-pages}
 
 *Demo de [@pulpdrew](https://github.com/pulpdrew)*
 
@@ -25,9 +23,7 @@ Una nueva galería de plantillas completa la experiencia. Con un par de clics, p
 
 **PR relacionadas:** [#1971](https://github.com/hyperdxio/hyperdx/pull/1971) Añadir página de listado de dashboards, [#2012](https://github.com/hyperdxio/hyperdx/pull/2012) Añadir página de listado de búsquedas guardadas, [#2021](https://github.com/hyperdxio/hyperdx/pull/2021) Añadir favoritos para dashboards y búsquedas guardadas, [#2033](https://github.com/hyperdxio/hyperdx/pull/2033) Agrupar dashboards y búsquedas por etiqueta, [#2031](https://github.com/hyperdxio/hyperdx/pull/2031) Mostrar metadatos de creación/actualización, [#2053](https://github.com/hyperdxio/hyperdx/pull/2053) Añadir iconos de alert a la página de listado de dashboards, [#2010](https://github.com/hyperdxio/hyperdx/pull/2010) Añadir galería de plantillas de dashboards
 
-<div id="filters-for-filters">
-  ## Filtros para filtros
-</div>
+## Filtros para filtros {#filters-for-filters}
 
 *Demo de [@pulpdrew](https://github.com/pulpdrew)*
 
@@ -41,9 +37,7 @@ El selector de filtros también se ha actualizado para admitir selección múlti
 
 **PR relacionadas:** [#1969](https://github.com/hyperdxio/hyperdx/pull/1969) Añadir condiciones a los filtros del dashboard; Admitir selección múltiple en filtros
 
-<div id="rbac-for-predefined-dashboards">
-  ## RBAC para dashboards predefinidos
-</div>
+## RBAC para dashboards predefinidos {#rbac-for-predefined-dashboards}
 
 *Demo de [@pulpdrew](https://github.com/pulpdrew)*
 
@@ -55,9 +49,7 @@ El control de acceso basado en roles ahora también se aplica a los dashboards p
 
 Los permisos de lectura granulares funcionan como cabría esperar. Un rol configurado con acceso de solo lectura a servicios específicos limita a los usuarios a ver únicamente los dashboards predefinidos correspondientes a esos servicios. Los usuarios con ese rol pueden ver los dashboards y sus filtros, pero los controles de filtro quedan bloqueados para impedir su edición. La demo muestra un rol personalizado con un permiso de lectura de &quot;services&quot; limitado a un servicio concreto, y a un usuario que inicia sesión con ese rol viendo exactamente los dashboards y el estado de los filtros a los que debería tener acceso.
 
-<div id="optimizations-for-searching">
-  ## Optimizaciones para la búsqueda
-</div>
+## Optimizaciones para la búsqueda {#optimizations-for-searching}
 
 *Demo de [@knudtty](https://github.com/knudtty)*
 
@@ -71,9 +63,7 @@ La corrección consiste en anteponer una ventana temporal de un minuto al array 
 
 **PR relacionadas:** [#2019](https://github.com/hyperdxio/hyperdx/pull/2019) Usar una ventana de 1 minuto para las búsquedas, [#2014](https://github.com/hyperdxio/hyperdx/pull/2014) Corregir las limitaciones de la optimización de ORDER BY para otel&#95;traces
 
-<div id="copy-row-and-configurable-filter-sizes">
-  ## Copiar filas y tamaños de filtro configurables
-</div>
+## Copiar filas y tamaños de filtro configurables {#copy-row-and-configurable-filter-sizes}
 
 *Demo de [@knudtty](https://github.com/knudtty)*
 
@@ -87,9 +77,7 @@ Ahora, la cantidad de claves de filtro recuperadas en la barra lateral es una co
 
 **PR relacionados:** [#2035](https://github.com/hyperdxio/hyperdx/pull/2035) Añadir botón para copiar fila como JSON, [#2020](https://github.com/hyperdxio/hyperdx/pull/2020) Nueva configuración de equipo para la cantidad de filtros que se recuperan, [#1979](https://github.com/hyperdxio/hyperdx/pull/1979) Virtualización de grupos de filtros anidados
 
-<div id="tabs-and-groups-in-dashboards">
-  ## Pestañas y grupos en dashboards
-</div>
+## Pestañas y grupos en dashboards {#tabs-and-groups-in-dashboards}
 
 *Demo de [@alex-fedotyev](https://github.com/alex-fedotyev)*
 
@@ -103,9 +91,7 @@ La demo muestra un grupo con varias opciones de personalización activadas o des
 
 **PR relacionados:** [#1972](https://github.com/hyperdxio/hyperdx/pull/1972) Grupos en dashboards con pestañas y opciones contraíbles/con borde, [#2015](https://github.com/hyperdxio/hyperdx/pull/2015) Unificar section/group en un único Group
 
-<div id="clickstack-cli">
-  ## ClickStack CLI
-</div>
+## ClickStack CLI {#clickstack-cli}
 
 *Demo de [@wrn14897](https://github.com/wrn14897)*
 
@@ -113,8 +99,8 @@ La demo muestra un grupo con varias opciones de personalización activadas o des
   <iframe src="https://www.youtube.com/embed/9XqJNhstabw" title="Reproductor de video de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
 </Frame>
 
-La CLI de ClickStack (`hdx`) es una nueva TUI de terminal para buscar, seguir e inspeccionar logs y trazas sin salir de la terminal. Se conecta a tu instancia de HyperDX mediante el mismo mecanismo de sesión web que el navegador, por lo que no hay ninguna API key aparte que gestionar. Después de ejecutar una sola vez `hdx auth login` con la URL de tu instancia y tu correo electrónico, la sesión queda autenticada.
+La CLI de ClickStack (`hdx`) es una nueva TUI de terminal para buscar, seguir e inspeccionar logs y trazas sin salir de la terminal. Se conecta a tu instancia de la UI de ClickStack mediante el mismo mecanismo de sesión web que el navegador, por lo que no hay ninguna API key aparte que gestionar. Después de ejecutar una sola vez `hdx auth login` con la URL de tu instancia y tu correo electrónico, la sesión queda autenticada.
 
-La TUI ofrece la misma interfaz de búsqueda que la aplicación web: la misma sintaxis de consulta, la misma selección de source y la misma capacidad de profundizar en entradas de log individuales. Uno de los aspectos más destacados es la vista en cascada de trazas, donde al hacer clic en una entrada de log se muestra la traza distribuida completa renderizada directamente en la terminal. La demo también adelanta un experimento inicial de uso agéntico: al dar a un agente de IA acceso a la salida de introspección del schema de la CLI, junto con la capacidad de ejecutar consultas a través del proxy de ClickHouse, el agente puede investigar problemas de forma autónoma. La demo va aún más allá y muestra al agente usando sesiones web para navegar por la UI de HyperDX con Playwright, extrayendo métricas de charts renderizados para contrastarlas con lo que encontró en los logs.
+La TUI ofrece la misma interfaz de búsqueda que la aplicación web: la misma sintaxis de consulta, la misma selección de source y la misma capacidad de profundizar en entradas de log individuales. Uno de los aspectos más destacados es la vista en cascada de trazas, donde al hacer clic en una entrada de log se muestra la traza distribuida completa renderizada directamente en la terminal. La demo también adelanta un experimento inicial de uso agéntico: al dar a un agente de IA acceso a la salida de introspección del esquema de la CLI, junto con la capacidad de ejecutar consultas a través del proxy de ClickHouse, el agente puede investigar problemas de forma autónoma. La demo va aún más allá y muestra al agente usando sesiones web para navegar por la UI de ClickStack con Playwright, extrayendo métricas de charts renderizados para contrastarlas con lo que encontró en los logs.
 
 **PR relacionadas:** [#2043](https://github.com/hyperdxio/hyperdx/pull/2043) Añade el paquete @hyperdx/cli — TUI de terminal para buscar y seguir eventos

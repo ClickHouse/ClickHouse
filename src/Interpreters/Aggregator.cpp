@@ -26,6 +26,7 @@
 #include <unordered_set>
 #include <base/memcmpSmall.h>
 #include <Columns/ColumnTuple.h>
+#include <Columns/replaceNegativeZeros.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Compression/CompressionInfo.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
@@ -106,7 +107,6 @@ namespace ErrorCodes
     extern const int EMPTY_DATA_PASSED;
     extern const int CANNOT_MERGE_DIFFERENT_AGGREGATED_DATA_VARIANTS;
     extern const int LOGICAL_ERROR;
-    extern const int BAD_ARGUMENTS;
     extern const int FAULT_INJECTED;
 }
 
@@ -208,10 +208,12 @@ void initDataVariantsWithSizeHint(
     ProfileEvents::increment(ProfileEvents::AggregationHashTablesInitializedAsTwoLevel, result.isTwoLevel());
 }
 
-/// Collection and use of the statistics should be enabled. `repeat_dominated` is the adaptive verdict of the run (see
+/// Collection and use of the statistics should be enabled. `verdict` is the adaptive verdict of the run (see
 /// `Aggregator::adaptiveStagingVerdict`), if it measured one.
 void updateStatistics(
-    const DB::ManyAggregatedDataVariants & data_variants, std::optional<bool> repeat_dominated, const DB::StatsCollectingParams & params)
+    const DB::ManyAggregatedDataVariants & data_variants,
+    std::optional<DB::Aggregator::AdaptiveStagingVerdict> verdict,
+    const DB::StatsCollectingParams & params)
 {
     if (!params.isCollectionAndUseEnabled())
         return;
@@ -230,20 +232,19 @@ void updateStatistics(
     for (const auto & variants : data_variants)
         sum_of_sizes_with_empty_string += variants->sizeWithEmptyString();
 
-    /// A run without a verdict of its own carries the stored one over, so that the runs the verdict keeps off the
-    /// adaptive path do not erase it: a query marked repeat-dominated is not measured again until its entry is evicted.
+    /// A run carries the stored verdicts over and replaces only the one it measured itself, which is the
+    /// verdict of its own kind of run. So the runs that a verdict keeps off the adaptive path do not erase
+    /// it: runs of a kind marked repeat-dominated are not measured again until the entry is evicted.
     auto & stats = DB::getHashTablesStatistics<DB::AggregationEntry>();
-    if (!repeat_dominated)
-    {
-        const auto prev = stats.getSizeHint(params);
-        repeat_dominated = prev && prev->adaptive_staging_repeat_dominated;
-    }
-    stats.update(
-        {.sum_of_sizes = sum_of_sizes,
-         .median_size = *median_size,
-         .sum_of_sizes_with_empty_string = sum_of_sizes_with_empty_string,
-         .adaptive_staging_repeat_dominated = *repeat_dominated},
-        params);
+    DB::AggregationEntry entry;
+    if (const auto prev = stats.getSizeHint(params))
+        entry = *prev;
+    entry.sum_of_sizes = sum_of_sizes;
+    entry.median_size = *median_size;
+    entry.sum_of_sizes_with_empty_string = sum_of_sizes_with_empty_string;
+    if (verdict)
+        entry.adaptiveStagingRepeatDominated(verdict->lone_producer) = verdict->repeat_dominated;
+    stats.update(entry, params);
 }
 
 DB::ColumnNumbers calculateKeysPositions(const DB::Block & header, const DB::Aggregator::Params & params)
@@ -498,37 +499,8 @@ Aggregator::Params::Params(
 
 size_t Aggregator::Params::getMaxBytesBeforeExternalGroupBy(size_t max_bytes_before_external_group_by, double max_bytes_ratio_before_external_group_by)
 {
-    std::optional<size_t> threshold;
-    if (max_bytes_before_external_group_by != 0)
-        threshold = max_bytes_before_external_group_by;
-
-    if (max_bytes_ratio_before_external_group_by != 0.)
-    {
-        double ratio = max_bytes_ratio_before_external_group_by;
-        if (ratio < 0 || ratio >= 1.)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting max_bytes_ratio_before_external_group_by should be >= 0 and < 1 ({:.3f})", ratio);
-
-        auto available_system_memory = getMostStrictAvailableSystemMemory();
-        if (available_system_memory.has_value())
-        {
-            size_t ratio_in_bytes = static_cast<size_t>(static_cast<double>(*available_system_memory) * ratio);
-            if (threshold)
-                threshold = std::min(threshold.value(), ratio_in_bytes);
-            else
-                threshold = ratio_in_bytes;
-
-            LOG_TRACE(getLogger("Aggregator"), "Adjusting memory limit before external aggregation with {} (ratio: {:.3f}, available system memory: {})",
-                formatReadableSizeWithBinarySuffix(ratio_in_bytes),
-                ratio,
-                formatReadableSizeWithBinarySuffix(*available_system_memory));
-        }
-        else
-        {
-            LOG_TRACE(getLogger("Aggregator"), "No system memory limits configured. Ignoring max_bytes_ratio_before_external_group_by");
-        }
-    }
-
-    return threshold.value_or(0);
+    return getMaxBytesBeforeExternalProcessing(
+        max_bytes_before_external_group_by, max_bytes_ratio_before_external_group_by, "max_bytes_ratio_before_external_group_by");
 }
 
 Aggregator::Params::Params(
@@ -1538,8 +1510,8 @@ size_t Aggregator::executeImplUntilAdaptiveFreeze(
         /// that can get it there, floored so a table hovering just below cannot degrade the
         /// block into row-sized dispatches (the floor is also the overshoot bound). The
         /// per-slice `after_slice` keeps the consecutive-keys cache statistics exact:
-        /// `executeImplBatch` resets the cache on entry, so the misses must be collected
-        /// slice by slice, not once at the end.
+        /// `executeImplBatch` and `executeImplBatchNoAggregates` reset the cache on entry, so
+        /// the misses must be collected slice by slice, not once at the end.
         const auto run_slices = [&](auto & state, auto && after_slice) -> size_t
         {
             size_t pos = row_begin;
@@ -1609,6 +1581,10 @@ void NO_INLINE Aggregator::executeImplBatchNoAggregates(
     bool all_keys_are_const) const
 {
     using KeyHolder = decltype(state.getKeyHolder(0, std::declval<Arena &>()));
+
+    /// The misses since the last reset are reported for this range only. `executeImplUntilAdaptiveFreeze`
+    /// runs one state over several ranges and must not count the misses of the earlier ones again.
+    state.resetCache();
 
     /// During processing of row #i we will prefetch HashTable cell for row #(i + prefetch_look_ahead).
     PrefetchingHelper prefetching;
@@ -1693,7 +1669,8 @@ void NO_INLINE Aggregator::executeImplBatchNoAggregates(
         {
             if (skip_bitmap ? static_cast<bool>(skip_bitmap[i])
                             : (method.top_k_heap.hasBoundary()
-                               && method.top_k_heap.shouldSkipTyped(typed_key_data, heap_key_cols, i)))
+                               && (has_typed_key ? method.top_k_heap.shouldSkipTyped(typed_key_data, heap_key_cols, i)
+                                                 : method.top_k_heap.shouldSkip(heap_key_cols, i))))
             {
                 ++top_k_rows_skipped;
                 continue;
@@ -1848,8 +1825,12 @@ void NO_INLINE Aggregator::executeImplBatch(
 
     [[maybe_unused]] auto heap_should_skip = [&](size_t row) -> bool
     {
-        if constexpr (top_k)
+        /// Without a typed key `shouldSkipTyped` always falls through to `shouldSkip`; calling it directly keeps the numeric
+        /// dispatch out of the loop, so the check stays small enough to be inlined.
+        if constexpr (top_k && has_typed_key)
             return method.top_k_heap.shouldSkipTyped(typed_key_data, heap_key_cols, row);
+        else if constexpr (top_k)
+            return method.top_k_heap.shouldSkip(heap_key_cols, row);
         return false;
     };
 
@@ -2712,6 +2693,9 @@ bool Aggregator::executeOnBlock(Columns columns,
         }
     }
 
+    /// Hash tables compare floating point keys bitwise, but `-0.` is equal to `0.`.
+    replaceNegativeZeros(key_columns, materialized_columns);
+
     prepareAggregateInstructions(columns, aggregate_columns, materialized_columns, aggregate_functions_instructions, nested_columns_holder);
     block_columns_scope.reset();
 
@@ -2812,7 +2796,7 @@ bool Aggregator::executeOnBlock(Columns columns,
         /// external-aggregation threshold the table is written to disk once the write frees enough memory, whether it
         /// is learning or frozen, and its producer learns again.
         if (over_external_threshold && adaptiveTableWorthSpilling(result, *adaptive))
-            spillAdaptiveTable(result, *adaptive, result.memoryUsage() + params.min_free_disk_space);
+            spillAdaptiveTable(result, *adaptive, getTemporaryFileReserveSize(result.memoryUsage(), params.min_free_disk_space));
         return true;
     }
 
@@ -2848,7 +2832,7 @@ bool Aggregator::executeOnBlock(Columns columns,
         && reached_spill_floor
         && spillAllowedUnderKeptKeysCutoff(no_more_keys, result))
     {
-        writeToTemporaryFile(result, result.memoryUsage() + params.min_free_disk_space, /*capture_kept_keys_seed=*/keepsKeysAcrossSpills());
+        writeToTemporaryFile(result, getTemporaryFileReserveSize(result.memoryUsage(), params.min_free_disk_space), /*capture_kept_keys_seed=*/keepsKeysAcrossSpills());
         reseedKeptKeysAfterSpill(result);
     }
 
@@ -2964,7 +2948,7 @@ size_t Aggregator::spill(AggregatedDataVariants & data_variants, bool no_more_ke
     size_t before = data_variants.memoryUsage();
     if (!data_variants.isTwoLevel())
         data_variants.convertToTwoLevel();
-    writeToTemporaryFile(data_variants, before + params.min_free_disk_space, /*capture_kept_keys_seed=*/keepsKeysAcrossSpills());
+    writeToTemporaryFile(data_variants, getTemporaryFileReserveSize(before, params.min_free_disk_space), /*capture_kept_keys_seed=*/keepsKeysAcrossSpills());
     reseedKeptKeysAfterSpill(data_variants);
     size_t after = data_variants.memoryUsage();
     return before > after ? before - after : 0;
@@ -6588,7 +6572,7 @@ bool Aggregator::mergeOnBlock(Columns columns, size_t rows, bool is_overflows, A
         && reached_spill_floor
         && spillAllowedUnderKeptKeysCutoff(no_more_keys, result))
     {
-        writeToTemporaryFile(result, result.memoryUsage() + params.min_free_disk_space, /*capture_kept_keys_seed=*/keepsKeysAcrossSpills());
+        writeToTemporaryFile(result, getTemporaryFileReserveSize(result.memoryUsage(), params.min_free_disk_space), /*capture_kept_keys_seed=*/keepsKeysAcrossSpills());
         reseedKeptKeysAfterSpill(result);
     }
 

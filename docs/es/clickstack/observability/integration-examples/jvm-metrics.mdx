@@ -1,0 +1,233 @@
+---
+slug: /clickstack/observability/integration-examples/jvm-metrics
+title: 'Monitorización de métricas de la JVM con ClickHouse Observability'
+sidebarTitle: 'Métricas de la JVM'
+description: 'Recopile métricas de la JVM con el agente Java de OpenTelemetry y visualícelas en ClickHouse Observability.'
+doc_type: 'guide'
+---
+
+import { BetaBadge } from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
+
+import { TrackedLink } from "/snippets/es/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
+
+Recopile métricas de la JVM con el agente Java de OpenTelemetry y envíelas a ClickHouse Observability. Utilice el [conjunto de datos de demostración](#demo-dataset) para probar la integración sin necesidad de instrumentar una aplicación.
+
+## Requisitos previos {#prerequisites}
+
+* Un servicio de ClickHouse Observability
+* Para sus propias métricas, una aplicación Java 8+ y acceso a su comando de inicio o a su entorno
+* Para la demo, Docker y `curl`
+
+### Datos de conexión {#connection-details}
+
+<Tabs>
+  <Tab title="Totalmente gestionado">
+    <BetaBadge label="Oferta en fase beta" />
+
+    Abra ClickHouse Observability y vaya a **Team Settings → Data → Managed Telemetry**. Copie su endpoint OTLP HTTP y su clave de API. Puede usar **Copy connection details** para copiar la configuración o **Reveal key** para ver la clave enmascarada.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Datos de conexión de Managed Telemetry](/images/clickstack/getting-started/observability-managed-telemetry.png)
+      </Frame>
+    </div>
+
+    Defina estas variables en la terminal desde la que iniciará su aplicación o el recolector de demostración:
+
+    ```bash
+    export OTEL_EXPORTER_OTLP_ENDPOINT='https://YOUR_OTEL_ENDPOINT:4318'
+    export OTEL_EXPORTER_OTLP_AUTHORIZATION='Bearer YOUR_API_KEY'
+    ```
+
+    Reemplace los marcadores de posición por el endpoint exacto de su servicio, incluido el puerto, y por su clave de API. Use el endpoint HTTP base sin el sufijo `/v1/metrics`, ya que el exportador añade al final la ruta de la señal.
+  </Tab>
+
+  <Tab title="Autogestionado">
+    Use un endpoint OTLP HTTP de su recolector que sea accesible (por ejemplo, `http://YOUR_COLLECTOR_HOST:4318`) y los ajustes de autenticación correspondientes. Si su recolector no requiere autenticación, omita `OTEL_EXPORTER_OTLP_HEADERS` en el agente de Java y el bloque `headers` del exportador en el recolector de demostración. Consulte la [guía de introducción para la versión autogestionada](/es/clickstack/self-configured/getting-started/managed) para obtener instrucciones de configuración.
+
+    ```bash
+    export OTEL_EXPORTER_OTLP_ENDPOINT='http://YOUR_COLLECTOR_HOST:4318'
+    export OTEL_EXPORTER_OTLP_AUTHORIZATION='YOUR_INGESTION_KEY'
+    ```
+  </Tab>
+</Tabs>
+
+El endpoint debe ser accesible desde su aplicación. En la demostración con Docker, también debe serlo desde el contenedor del recolector. Si el recolector de destino se ejecuta en este mismo equipo, use `http://host.docker.internal:4318`. Los comandos de Docker que se muestran a continuación ya incluyen la correspondencia del host.
+
+## Integración con una aplicación JVM existente {#existing-jvm}
+
+<Steps>
+  <Step title="Descargar el agente de Java" id="download-agent">
+    Descargue el Agente Java de OpenTelemetry `2.22.0`:
+
+    ```bash
+    curl -fLO https://github.com/open-telemetry/opentelemetry-java-instrumentation/releases/download/v2.22.0/opentelemetry-javaagent.jar
+    ```
+  </Step>
+
+  <Step title="Configurar e iniciar la aplicación" id="configure-jvm">
+    Defina las [variables de conexión](#connection-details) y, a continuación, configure el agente:
+
+    ```bash
+    export OTEL_SERVICE_NAME='jvm-service'
+    export OTEL_EXPORTER_OTLP_PROTOCOL='http/protobuf'
+    export OTEL_EXPORTER_OTLP_HEADERS="authorization=${OTEL_EXPORTER_OTLP_AUTHORIZATION}"
+    export OTEL_METRICS_EXPORTER='otlp'
+    export OTEL_LOGS_EXPORTER='none'
+    export OTEL_TRACES_EXPORTER='none'
+
+    java -javaagent:./opentelemetry-javaagent.jar -jar my-application.jar
+    ```
+
+    Reemplace `my-application.jar` por el JAR de su aplicación y ajuste la ruta del agente si es necesario. Elija un nombre del servicio que identifique su aplicación. Estos ajustes solo recopilan métricas. Si su aplicación ya exporta trazas o logs, mantenga la configuración de exportador que ya utiliza para esas señales.
+
+    En el caso de aplicaciones gestionadas por un servicio o contenedor, añada el agente a los argumentos de inicio de la JVM ya existentes y proporcione las variables de entorno a través de la configuración de su implementación. Consulte la [documentación de configuración del agente de Java](https://opentelemetry.io/docs/zero-code/java/agent/configuration/).
+  </Step>
+
+  <Step title="Verificar las métricas" id="verify-metrics">
+    Espere al menos dos minutos para que el agente exporte las métricas. Abra **Explorador de Gráficos**, seleccione su fuente **Metrics** y busque `jvm.memory.used` o `jvm.thread.count`. Filtre por `ServiceName:jvm-service` y seleccione **Last 15 minutes**.
+  </Step>
+</Steps>
+
+## Conjunto de datos de demostración {#demo-dataset}
+
+La muestra contiene 6,048 puntos de tipo gauge muestreados cada cinco minutos y los 412 eventos de recolección de basura del conjunto de datos original. Abarca aproximadamente 24 horas de actividad de memoria, threads, clases, CPU y GC. No se necesita ninguna aplicación Java ni acceso directo a la base de datos.
+
+Configure las [variables de conexión](#connection-details) antes de comenzar.
+
+<Steps>
+  <Step title="Descargar las métricas de muestra" id="download-sample">
+    [Descargue el paquete de demostración](/es/assets/jvm-metrics-demo.zip) y extráigalo en su directorio de trabajo. Contiene `jvm-metrics-demo.json` y `jvm-metrics-dashboard.json`.
+  </Step>
+
+  <Step title="Configurar el recolector de demostración" id="configure-demo-collector">
+    Guarde lo siguiente como `jvm-metrics-demo.yaml`:
+
+    ```yaml
+    receivers:
+      otlp:
+        protocols:
+          http:
+            endpoint: 0.0.0.0:4318
+    processors:
+      resource/demo:
+        attributes:
+          - key: service.name
+            value: jvm-demo
+            action: upsert
+      transform/demo_timestamps:
+        error_mode: propagate
+        metric_statements:
+          - context: datapoint
+            statements:
+              - set(cache["interval_ns"], time_unix_nano - start_time_unix_nano)
+              - set(time, Now() - Duration("2m") - (Time("2025-12-08T14:16:00Z", "%Y-%m-%dT%H:%M:%SZ") - time))
+              - set(start_time_unix_nano, time_unix_nano - cache["interval_ns"])
+      batch:
+        timeout: 5s
+        send_batch_size: 500
+        send_batch_max_size: 500
+    exporters:
+      otlp_http/managed:
+        endpoint: ${env:OTEL_EXPORTER_OTLP_ENDPOINT}
+        headers:
+          authorization: ${env:OTEL_EXPORTER_OTLP_AUTHORIZATION}
+    service:
+      pipelines:
+        metrics:
+          receivers: [otlp]
+          processors: [resource/demo, transform/demo_timestamps, batch]
+          exporters: [otlp_http/managed]
+    ```
+
+    <Note>
+      La transformación, exclusiva de la demostración, actualiza las marcas de tiempo y conserva los valores de las métricas y el intervalo entre las marcas de tiempo de inicio y fin de cada punto. Omítala si trabaja con métricas de la JVM en vivo. El límite de batch mantiene las cargas lo bastante pequeñas para el recolector de destino.
+    </Note>
+  </Step>
+
+  <Step title="Ejecutar el recolector de demostración" id="run-demo-collector">
+    Desde el directorio que contiene la configuración, ejecute el recolector y deje esta terminal abierta:
+
+    ```bash
+    docker run --rm --name jvm-metrics-demo-collector \
+      --add-host=host.docker.internal:host-gateway \
+      --memory=512m \
+      -p 127.0.0.1:14318:4318 \
+      -e OTEL_EXPORTER_OTLP_ENDPOINT \
+      -e OTEL_EXPORTER_OTLP_AUTHORIZATION \
+      -v "$(pwd)/jvm-metrics-demo.yaml:/etc/otelcol-contrib/config.yaml:ro" \
+      otel/opentelemetry-collector-contrib:0.161.0 \
+      --config=/etc/otelcol-contrib/config.yaml
+    ```
+  </Step>
+
+  <Step title="Enviar la muestra" id="load-metrics">
+    En otra terminal, ejecute este comando desde el directorio de descarga:
+
+    ```bash
+    curl --fail-with-body -sS http://localhost:14318/v1/metrics \
+      -H 'Content-Type: application/json' \
+      --data-binary @jvm-metrics-demo.json
+    ```
+
+    Una respuesta como `{}` o `{"partialSuccess":{}}` indica que el recolector local aceptó la solicitud. Revise la terminal del recolector por si hay errores de exportación y espere unos segundos a que se reenvíen los datos. Una vez verificados los datos, detenga el recolector con **Ctrl+C**. Si vuelve a enviar la muestra, pueden generarse puntos duplicados.
+  </Step>
+
+  <Step title="Verificar las métricas" id="verify-demo-metrics">
+    Importe el panel de control de la [siguiente sección](#dashboards), filtre por `ServiceName:jvm-demo` y seleccione **Últimos 2 días**. La muestra incluye métricas de tipo gauge y suma; no se necesita acceso directo a la base de datos.
+  </Step>
+</Steps>
+
+## Paneles y visualización {#dashboards}
+
+<Steps>
+  <Step title={<TrackedLink href="https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/jvm-metrics-dashboard.json" download="jvm-metrics-dashboard.json" eventName="docs.jvm_metrics_monitoring.dashboard_download">Descargue la configuración del panel de control</TrackedLink>} id="download-dashboard" />
+
+  <Step title="Importe el panel de control" id="import-dashboard">
+    1. Abra **Dashboards** y haga clic en **Import** en la esquina superior derecha.
+    2. Suba el archivo `jvm-metrics-dashboard.json`.
+    3. Asigne los gráficos a su fuente **Metrics** y haga clic en **Finish Import**.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Botón para importar el panel de control](/images/clickstack/observability-import-dashboard.png)
+      </Frame>
+    </div>
+  </Step>
+
+  <Step title="Consulte el panel de control" id="view-dashboard">
+    Para los datos de muestra, filtre por `ServiceName:jvm-demo` y seleccione **últimos 2 días**.
+
+    El panel de control muestra la memoria del montículo (heap), las pausas de GC, los threads, el metaspace, la CPU y las clases cargadas de los datos de muestra.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Panel de control de demostración de métricas de la JVM en ClickHouse Observability con los seis gráficos](/images/clickstack/observability-jvm-metrics-dashboard.png)
+      </Frame>
+    </div>
+
+    <Note>
+      Los datos de muestra utilizan un esquema de métricas de la JVM antiguo. Para el agente de Java `2.22.0`, seleccione el tipo de métrica suma para las métricas de memoria, threads, clases y tiempo de CPU, e histograma para la duración del GC. Las métricas de memoria y de recuento son sumas no monótonas: utilice sus valores actuales en lugar de una tasa. Actualice los filtros y la agrupación de los gráficos para usar `jvm.memory.type`, `jvm.memory.pool.name`, `jvm.thread.state` y `jvm.gc.name`. Consulte las [convenciones de métricas de la JVM](https://opentelemetry.io/docs/specs/semconv/runtime/jvm-metrics/) para conocer el esquema actual.
+    </Note>
+  </Step>
+</Steps>
+
+## Resolución de problemas {#troubleshooting}
+
+### El agente no se inicia {#agent-not-starting}
+
+Compruebe que el JAR del agente existe en la ruta pasada a `-javaagent`, que la aplicación tiene permisos para leerlo y que la versión de Java es la 8 o posterior. Revise la salida de inicio de la aplicación en busca de errores del agente.
+
+### No aparecen métricas {#no-metrics}
+
+* Revise la salida de la aplicación o del recolector de demostración para detectar errores de autenticación y de exportación.
+* Confirme que el endpoint es accesible desde la aplicación o el contenedor y que el protocolo es `http/protobuf`.
+* Compruebe la fuente **Metrics**, el filtro por nombre de servicio y el intervalo de tiempo. Para la demostración, use **Últimos 2 días**.
+* Si utiliza un recolector existente, confirme que su canalización de métricas incluye el receiver OTLP y un exportador de métricas.
+* Si el recolector de demostración acepta la solicitud pero no llegan datos, revise su terminal para detectar errores de reenvío.
+
+## Próximos pasos {#next-steps}
+
+* Configure [alertas](/es/clickstack/observability/features/alerts) para el uso del montículo (heap), las pausas de GC o el agotamiento de threads.
+* Cree [dashboards](/es/clickstack/observability/features/dashboards/overview) adicionales.
+* Consulte [Envío de datos de OpenTelemetry](/es/clickstack/observability/ingesting-data/opentelemetry) para obtener orientación sobre cómo desplegar el recolector.
