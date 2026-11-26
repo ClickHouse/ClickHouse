@@ -110,6 +110,14 @@ collision	s3cluster	1	5	6
 collision	s3cluster	2	5	100
 collision	input	1	5	6
 collision	input	2	5	100
+renamed_hint_column	direct	1	5	6
+renamed_hint_column	direct	2	5	6
+renamed_hint_column	file	1	5	6
+renamed_hint_column	file	2	5	6
+renamed_hint_column	s3cluster	1	5	6
+renamed_hint_column	s3cluster	2	5	6
+renamed_hint_column	input	1	5	6
+renamed_hint_column	input	2	5	6
 dict_get	direct	1	42
 dict_get	direct	2	100
 dict_get	file	1	42

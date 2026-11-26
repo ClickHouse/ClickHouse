@@ -101,6 +101,11 @@ check column_list column_list_rows "id UInt32, od UInt32 DEFAULT id * 10, nd UIn
 check collision rows "x UInt32, id UInt32 DEFAULT 5, q UInt32 DEFAULT id + 1" "(x, q)" "id, q" '{"x":1}
 {"x":2,"q":100}'
 
+# The input field `x` is inserted into `q`, so the hint column `x` has the `DEFAULT` of `q`, which reads the unwritten column `x`
+# and is aliased by `x` itself: the value of `x` replaces the argument without taking its name.
+check renamed_hint_column rows "id UInt32, x UInt32 DEFAULT 5, q UInt32 DEFAULT x + 1" "(id, q)" "id, x" '{"id":1}
+{"id":2}'
+
 check dict_get rows "id UInt32, name String ALIAS '${CLICKHOUSE_DATABASE}.kv_dictionary', q UInt32 DEFAULT dictGet(name, 'v', id)" "" "*"
 
 check diamond rows "id UInt32, a1 UInt32 ALIAS id + id, a2 UInt32 ALIAS a1 + a1, a3 UInt32 ALIAS a2 + a2, a4 UInt32 ALIAS a3 + a3,

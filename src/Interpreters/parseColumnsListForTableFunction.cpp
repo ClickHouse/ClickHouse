@@ -319,9 +319,12 @@ bool hasNonDeterministicFunction(const IAST & ast, const ContextPtr & context)
 class UnwrittenColumnsInliner
 {
 public:
-    UnwrittenColumnsInliner(const ColumnsDescription & insertion_columns_, const Names & written_columns, const ContextPtr & context_)
+    UnwrittenColumnsInliner(
+        const ColumnsDescription & insertion_columns_, const Names & written_columns,
+        const VectorWithMemoryTracking<String> & defaulted_hint_columns, const ContextPtr & context_)
         : insertion_columns(insertion_columns_)
         , written(written_columns.begin(), written_columns.end())
+        , defaulted(defaulted_hint_columns.begin(), defaulted_hint_columns.end())
         , context(context_)
         , max_expanded_ast_elements(context->getSettingsRef()[Setting::max_expanded_ast_elements])
     {
@@ -332,7 +335,8 @@ public:
     [[nodiscard]] bool declined() const { return is_declined; }
 
     /// Returns whether `ast` changed. Identifiers whose head is in `lambda_arguments` are lambda arguments. A replaced
-    /// argument of a function keeps the name of the column, which functions such as `tuple` and `formatRow` read.
+    /// argument of a function keeps the name of the column, which functions such as `tuple` and `formatRow` read, unless
+    /// a hint column with a `DEFAULT` has that name: the `DEFAULT` is aliased by it.
     bool rewrite(ASTPtr & ast, ExpandedASTBudget & budget, const NameSetWithMemoryTracking & lambda_arguments, bool is_argument = false)
     {
         checkStackSize();
@@ -353,7 +357,7 @@ public:
                 return false;
             }
             ast = budget.replace(ast, *value);
-            if (is_argument)
+            if (is_argument && !defaulted.contains(*name))
                 ast->setAlias(*name);
             return true;
         }
@@ -414,6 +418,7 @@ private:
 
     const ColumnsDescription & insertion_columns;
     const NameSetWithMemoryTracking written;
+    const NameSetWithMemoryTracking defaulted;
     const ContextPtr context;
     const size_t max_expanded_ast_elements;
 
@@ -458,7 +463,7 @@ void inlineUnwrittenColumnsInStructureHint(
     if (hasAlias(*expressions))
         return;
 
-    UnwrittenColumnsInliner inliner(insertion_columns, written_columns, context);
+    UnwrittenColumnsInliner inliner(insertion_columns, written_columns, names, context);
     ExpandedASTBudget budget(context->getSettingsRef()[Setting::max_expanded_ast_elements], *expressions, unwritten_columns_expansion);
     VectorWithMemoryTracking<size_t> changed;
     for (size_t i = 0; i < names.size(); ++i)
