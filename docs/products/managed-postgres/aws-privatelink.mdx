@@ -1,0 +1,458 @@
+---
+slug: /cloud/managed-postgres/aws-privatelink
+sidebarTitle: 'AWS PrivateLink'
+title: 'AWS PrivateLink for ClickHouse Managed Postgres'
+description: 'Connect to ClickHouse Managed Postgres from your AWS VPC over AWS PrivateLink'
+keywords: ['postgres', 'managed postgres', 'privatelink', 'private link', 'aws', 'vpc endpoint', 'private endpoint', 'private networking']
+doc_type: 'guide'
+---
+
+import { ScalePlanFeatureBadge } from "/snippets/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
+
+<ScalePlanFeatureBadge feature="AWS PrivateLink"/>
+
+You can use [AWS PrivateLink](https://aws.amazon.com/privatelink/) to connect to your ClickHouse Managed Postgres instance from your AWS VPC without exposing traffic to the public internet. This page describes how to set up AWS PrivateLink for a ClickHouse Managed Postgres instance yourself, using the ClickHouse Cloud console or the API.
+
+<Warning>
+AWS PrivateLink supports only connections initiated from your AWS VPC to ClickHouse Managed Postgres. It can't be used for connections initiated from ClickHouse Managed Postgres to services in your VPC.
+</Warning>
+
+<Note>
+If you don't see the **Private endpoints** section in the **Settings** tab of your instance, contact [ClickHouse support](https://clickhouse.com/support/program) to enable AWS PrivateLink for your organization.
+</Note>
+
+**Complete the following steps to enable AWS PrivateLink**:
+1. Create the AWS endpoint service of your instance and obtain its service name.
+1. Create a VPC endpoint in your AWS account.
+1. Add the VPC endpoint ID to the allow list of your instance.
+1. Optional: enable private DNS on your VPC endpoint, once the endpoint connection is approved.
+1. Connect to your instance through the VPC endpoint.
+
+## Important considerations {#considerations}
+
+- Create the VPC endpoint in the same AWS region as your ClickHouse Managed Postgres instance.
+- Each ClickHouse Managed Postgres instance has its own AWS endpoint service. To connect to several instances, create a VPC endpoint for each of them.
+- Every connection needs explicit approval. A VPC endpoint stays in the **Pending acceptance** state until you add its ID to the allow list of the instance. An instance can have up to 50 VPC endpoints in its allow list.
+- The endpoint service always points to the current primary of your instance, so it keeps working after a failover.
+- The endpoint service forwards two ports: `5432` for direct Postgres connections and `6432` for [PgBouncer](/products/managed-postgres/connection#pgbouncer).
+
+## Prerequisites {#prerequisites}
+
+Before you get started you will need:
+
+1. A ClickHouse Managed Postgres instance running in AWS, in an organization on the Scale or Enterprise plan.
+1. An AWS account and a VPC from which you want to connect to the instance.
+1. Permissions in your AWS account to create VPC endpoints and security groups.
+1. To use the API, a [ClickHouse API key](/products/cloud/features/admin-features/api/openapi) with permissions to manage the instance. See [ClickHouse Managed Postgres OpenAPI](/products/managed-postgres/openapi) for how to authenticate.
+
+The API steps on this page use the following endpoints:
+
+- [Create the private endpoint](/products/cloud/api-reference/postgres/postgres-private-endpoint-post)
+- [Get the private endpoint](/products/cloud/api-reference/postgres/postgres-private-endpoint-get)
+- [Update the private endpoint](/products/cloud/api-reference/postgres/postgres-private-endpoint-patch)
+- [Delete the private endpoint](/products/cloud/api-reference/postgres/postgres-private-endpoint-delete)
+
+The Terraform steps on this page use the [ClickHouse Terraform provider](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs) together with the [AWS provider](https://registry.terraform.io/providers/hashicorp/aws/latest/docs):
+
+- [`clickhouse_postgres_private_endpoint`](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs/resources/postgres_private_endpoint) creates the endpoint service of your instance.
+- [`clickhouse_postgres_private_endpoint_attachment`](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs/resources/postgres_private_endpoint_attachment) manages the allow list of the instance.
+
+<Note>
+These resources require ClickHouse Terraform provider **v3.45.0** or later. They're in beta, and their behavior may change in future provider versions. See the [provider releases](https://github.com/ClickHouse/terraform-provider-clickhouse/releases) and the [resource examples](https://github.com/ClickHouse/terraform-provider-clickhouse/tree/main/examples/resources) for details.
+</Note>
+
+```hcl
+terraform {
+  required_providers {
+    clickhouse = {
+      source  = "ClickHouse/clickhouse"
+      version = ">= 3.45.0"
+    }
+    aws = {
+      source = "hashicorp/aws"
+    }
+  }
+}
+```
+
+## Steps {#steps}
+
+### Obtain the AWS service name {#obtain-service-name}
+
+#### Option 1: ClickHouse Cloud console {#option-1-clickhouse-cloud-console}
+
+In the ClickHouse Cloud console, open the ClickHouse Managed Postgres instance you want to connect to, then navigate to the **Settings** tab. Under **Security** → **Private endpoints**, click **Set up private endpoint**.
+
+<div className="ch-image-lg">
+
+<Frame>
+
+![Create an AWS service endpoint step in the Set up private endpoint flyout](/images/managed-postgres/privatelink-create-service-endpoint.webp)
+
+</Frame>
+
+</div>
+
+In the **Create an AWS service endpoint** step of the flyout, click **Create service endpoint**. Creation takes about 5 to 10 minutes.
+
+When the endpoint service is ready, the **Create a VPC endpoint in AWS** step shows the **Service name** of your instance, for example `com.amazonaws.vpce.us-east-1.vpce-svc-xxxxxxxxxxxxxxxxx`. Make a note of it, then [move on to the next step](#create-aws-endpoint).
+
+#### Option 2: API {#option-2-api}
+
+Set the following environment variables before running any commands:
+
+```bash
+KEY_ID=<Your ClickHouse key ID>
+KEY_SECRET=<Your ClickHouse key secret>
+ORG_ID=<Your ClickHouse organization ID>
+POSTGRES_ID=<Your ClickHouse Managed Postgres service ID>
+```
+
+Create the endpoint service of your instance with the [create API](/products/cloud/api-reference/postgres/postgres-private-endpoint-post):
+
+```bash
+curl --silent --user "${KEY_ID:?}:${KEY_SECRET:?}" \
+-X POST -H "Content-Type: application/json" \
+"https://api.clickhouse.cloud/v1/organizations/${ORG_ID:?}/postgres/${POSTGRES_ID:?}/privateEndpoint" \
+-d '{}' | jq .result
+```
+
+Creation takes about 5 to 10 minutes. Check the endpoint service with the [get API](/products/cloud/api-reference/postgres/postgres-private-endpoint-get) until its `state` is `available`:
+
+```bash
+curl --silent --user "${KEY_ID:?}:${KEY_SECRET:?}" \
+"https://api.clickhouse.cloud/v1/organizations/${ORG_ID:?}/postgres/${POSTGRES_ID:?}/privateEndpoint" | \
+jq '{"state":.result.state, "endpointServiceName":.result.endpointServiceName}'
+```
+
+Once the endpoint service is ready, this command returns something like:
+
+```result
+{
+  "state": "available",
+  "endpointServiceName": "com.amazonaws.vpce.us-east-1.vpce-svc-xxxxxxxxxxxxxxxxx"
+}
+```
+
+Make a note of the `endpointServiceName`, then [move on to the next step](#create-aws-endpoint).
+
+#### Option 3: Terraform {#option-3-terraform-service}
+
+Create the endpoint service of your instance with the [`clickhouse_postgres_private_endpoint`](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs/resources/postgres_private_endpoint) resource. `terraform apply` waits until the endpoint service is available, which takes about 5 to 10 minutes.
+
+```hcl
+resource "clickhouse_postgres_private_endpoint" "example" {
+  postgres_id = clickhouse_postgres_service.example.id
+}
+
+output "endpoint_service_name" {
+  value = clickhouse_postgres_private_endpoint.example.endpoint_service_name
+}
+```
+
+The `endpoint_service_name` attribute holds the AWS service name. Use it as the `service_name` of the VPC endpoint in the [next step](#option-3-terraform).
+
+To manage an existing endpoint service with Terraform, import it by the ID of your instance:
+
+```bash
+terraform import clickhouse_postgres_private_endpoint.example <Your ClickHouse Managed Postgres service ID>
+```
+
+### Create a VPC endpoint in AWS {#create-aws-endpoint}
+
+<Warning>
+This section covers the details specific to ClickHouse Managed Postgres. AWS-specific steps are provided as a reference to guide you on where to look, but they may change over time without notice from AWS. Configure AWS according to your specific use case.
+
+ClickHouse isn't responsible for configuring the required AWS VPC endpoints, security group rules, or DNS records. For issues related to AWS configuration, contact AWS Support directly.
+</Warning>
+
+The **Create a VPC endpoint in AWS** step of the flyout shows the settings to use with the AWS console, the AWS CLI, and Terraform.
+
+Whichever option you choose, make sure that the security group attached to the VPC endpoint allows inbound traffic on ports `5432` and `6432` from the clients that should connect to the instance.
+
+#### Option 1: AWS console {#option-1-aws-console}
+
+Open the AWS console and go to **VPC** → **Endpoints** → **Create endpoint**.
+
+1. Select **Endpoint services that use NLBs and GWLBs** as the endpoint type.
+1. Enter the AWS service name from the [previous step](#obtain-service-name) in the **Service name** field and click **Verify service**.
+1. Select your VPC and at least one subnet.
+1. Select a security group that allows inbound traffic on ports `5432` and `6432`.
+1. Click **Create endpoint**.
+
+After the VPC endpoint is created, make a note of the **Endpoint ID**, for example `vpce-0123456789abcdef0`. You'll need it in the [next step](#add-endpoint-id-to-allow-list).
+
+#### Option 2: AWS CLI {#option-2-aws-cli}
+
+Set the following environment variables, then create the VPC endpoint:
+
+```bash
+REGION=<AWS region of your ClickHouse Managed Postgres instance, for example: us-east-1>
+SERVICE_NAME=<AWS service name from the previous step>
+VPC_ID=<Your VPC ID>
+SUBNET_IDS="<subnet-id-1> <subnet-id-2>"
+SECURITY_GROUP_ID=<Security group that allows inbound traffic on ports 5432 and 6432>
+
+aws ec2 create-vpc-endpoint \
+  --region "${REGION:?}" \
+  --vpc-endpoint-type Interface \
+  --service-name "${SERVICE_NAME:?}" \
+  --vpc-id "${VPC_ID:?}" \
+  --subnet-ids ${SUBNET_IDS:?} \
+  --security-group-ids "${SECURITY_GROUP_ID:?}" \
+  --no-private-dns-enabled \
+  --query 'VpcEndpoint.VpcEndpointId' \
+  --output text
+```
+
+The command prints the ID of the new VPC endpoint. Make a note of it; you'll need it in the [next step](#add-endpoint-id-to-allow-list).
+
+#### Option 3: Terraform {#option-3-terraform}
+
+Create the VPC endpoint with the [`aws_vpc_endpoint`](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/vpc_endpoint) resource. If you created the endpoint service with Terraform in the [previous step](#option-3-terraform-service), reference its `endpoint_service_name`. Otherwise, set `service_name` to the AWS service name from the console or the API.
+
+```hcl
+resource "aws_vpc_endpoint" "managed_postgres" {
+  vpc_id              = var.vpc_id
+  service_name        = clickhouse_postgres_private_endpoint.example.endpoint_service_name
+  vpc_endpoint_type   = "Interface"
+  security_group_ids  = [var.security_group_id]
+  subnet_ids          = [var.subnet_id1, var.subnet_id2]
+
+  # Set to true once the private DNS name is verified.
+  # See "Enable private DNS on the VPC endpoint" below.
+  private_dns_enabled = false
+}
+
+output "managed_postgres_vpc_endpoint_id" {
+  value = aws_vpc_endpoint.managed_postgres.id
+}
+```
+
+After the VPC endpoint is created, make a note of the endpoint ID; you'll need it in the [next step](#add-endpoint-id-to-allow-list).
+
+### Add the endpoint ID to the allow list {#add-endpoint-id-to-allow-list}
+
+Once the endpoint ID is in the allow list, ClickHouse Managed Postgres accepts the connection and the state of the VPC endpoint in your AWS account changes from **Pending acceptance** to **Available**. This can take a few minutes.
+
+#### Option 1: ClickHouse Cloud console {#option-1-clickhouse-cloud-console-2}
+
+Return to the **Set up private endpoint** flyout in the ClickHouse Cloud console. In the **Enable VPC endpoint on this service** step, paste the **Endpoint ID** from the [previous step](#create-aws-endpoint), optionally add an **Endpoint description**, and click **Add private endpoint**.
+
+<div className="ch-image-md">
+
+<Frame>
+
+![Enable VPC endpoint on this service](/images/managed-postgres/privatelink-enable-endpoint.webp)
+
+</Frame>
+
+</div>
+
+To remove access, delete the endpoint ID from the list of private endpoints in the **Settings** tab of your instance. ClickHouse Managed Postgres then rejects the connection from that VPC endpoint.
+
+#### Option 2: API {#option-2-api-2}
+
+Set `ENDPOINT_ID` to the endpoint ID from the [previous step](#create-aws-endpoint), keeping the environment variables from [Obtain the AWS service name](#option-2-api).
+
+<Warning>
+`allowedVpcEndpoints` replaces the whole allow list. VPC endpoints that aren't in the request are no longer allowed to connect, so include every endpoint you want to keep. To see the current list, [get the endpoint service](#option-2-api) and check `allowedVpcEndpoints`.
+</Warning>
+
+To set the allow list, use the [update API](/products/cloud/api-reference/postgres/postgres-private-endpoint-patch):
+
+```bash
+cat <<EOF | tee pl_config.json
+{
+  "allowedVpcEndpoints": [
+    {
+      "vpcEndpointId": "${ENDPOINT_ID:?}",
+      "description": "Connection from my VPC"
+    }
+  ]
+}
+EOF
+
+curl --silent --user "${KEY_ID:?}:${KEY_SECRET:?}" \
+-X PATCH -H "Content-Type: application/json" \
+"https://api.clickhouse.cloud/v1/organizations/${ORG_ID:?}/postgres/${POSTGRES_ID:?}/privateEndpoint" \
+-d @pl_config.json | jq .result
+```
+
+To remove an endpoint, send the list without it.
+
+#### Option 3: Terraform {#option-3-terraform-allow-list}
+
+Add the VPC endpoint to the allow list with the [`clickhouse_postgres_private_endpoint_attachment`](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs/resources/postgres_private_endpoint_attachment) resource. `allowed_vpc_endpoints` is keyed by the VPC endpoint ID, and `description` is optional:
+
+```hcl
+resource "clickhouse_postgres_private_endpoint_attachment" "example" {
+  postgres_id = clickhouse_postgres_private_endpoint.example.postgres_id
+
+  allowed_vpc_endpoints = {
+    (aws_vpc_endpoint.managed_postgres.id) = { description = "Application VPC" }
+  }
+}
+```
+
+<Warning>
+`clickhouse_postgres_private_endpoint_attachment` owns the whole allow list of the instance. VPC endpoints that aren't in `allowed_vpc_endpoints` can no longer connect, including endpoints added in the ClickHouse Cloud console or with the API. Use one `clickhouse_postgres_private_endpoint_attachment` per instance; several attachments for the same instance overwrite each other.
+</Warning>
+
+To remove an endpoint, delete it from `allowed_vpc_endpoints` and run `terraform apply`. To manage an existing allow list with Terraform, import it by the ID of your instance:
+
+```bash
+terraform import clickhouse_postgres_private_endpoint_attachment.example <Your ClickHouse Managed Postgres service ID>
+```
+
+### Optional: Enable private DNS on the VPC endpoint {#enable-private-dns}
+
+Private DNS lets you connect to your instance through its private hostname, with full TLS verification. Enable it on your VPC endpoint once the endpoint connection is approved, which means the VPC endpoint is **Available** after you [added its ID to the allow list](#add-endpoint-id-to-allow-list). If you only plan to [connect through the Regional or zonal DNS names](#connect-regional-zonal-dns) of the VPC endpoint, you can skip this step.
+
+<Note>
+Private DNS takes additional time to become available after the endpoint service is created, because AWS needs to verify the private DNS name of the endpoint service first. You can enable private DNS on your VPC endpoint only after the private DNS name is verified.
+</Note>
+
+To check whether the private DNS name is verified, [get the endpoint service](/products/cloud/api-reference/postgres/postgres-private-endpoint-get) with the API and check that `privateDnsVerificationState` is `verified`:
+
+```bash
+curl --silent --user "${KEY_ID:?}:${KEY_SECRET:?}" \
+"https://api.clickhouse.cloud/v1/organizations/${ORG_ID:?}/postgres/${POSTGRES_ID:?}/privateEndpoint" | \
+jq '.result | {privateDnsName, privateDnsVerificationState, privateHostname}'
+```
+
+Your VPC also needs **DNS hostnames** and **DNS resolution** turned on. See [DNS attributes for your VPC](https://docs.aws.amazon.com/vpc/latest/userguide/vpc-dns.html#vpc-dns-support) in the AWS documentation.
+
+Enable private DNS on the VPC endpoint. See [Enable private DNS names](https://docs.aws.amazon.com/vpc/latest/privatelink/interface-endpoints.html#enable-private-dns-names) in the AWS documentation for details:
+
+- **AWS console:** go to **VPC** → **Endpoints**, select your endpoint, then choose **Actions** → **Modify private DNS name**. Select **Enable private DNS names** and save the changes.
+- **AWS CLI:**
+
+  ```bash
+  aws ec2 modify-vpc-endpoint \
+    --region "${REGION:?}" \
+    --vpc-endpoint-id "${ENDPOINT_ID:?}" \
+    --private-dns-enabled
+  ```
+
+- **Terraform:** set `private_dns_enabled = true` on the `aws_vpc_endpoint` resource from the [VPC endpoint step](#option-3-terraform) and run `terraform apply`.
+
+### Connect to your instance using AWS PrivateLink {#connect}
+
+There are two ways to connect to your instance through the VPC endpoint:
+
+1. [**Private DNS name**](#connect-private-dns) (recommended): connect through the private hostname of your instance. Requires [private DNS](#enable-private-dns) to be enabled on the VPC endpoint, and supports full TLS verification.
+1. [**Regional or zonal DNS names**](#connect-regional-zonal-dns): connect through the DNS names that AWS creates for the VPC endpoint. Useful if you need a zonal DNS name, but doesn't support `sslmode=verify-full`.
+
+In both cases, use the user, password, and database from the [**Connect** view](/products/managed-postgres/connection) of your instance. Use port `5432` for direct connections or `6432` to connect through PgBouncer.
+
+#### Option 1: Private DNS name {#connect-private-dns}
+
+Once [private DNS is enabled](#enable-private-dns) on your VPC endpoint, the private hostname of your instance resolves to the VPC endpoint from inside your VPC.
+
+To get the private hostname in the ClickHouse Cloud console, click **Connect** in the left sidebar of your instance and select **Private link** under **Network**. The **Server** field shows the private hostname, and the connection strings under **Connect via** use it:
+
+<div className="ch-image-md">
+
+<Frame>
+
+![Connect dialog with the Private link network selected](/images/managed-postgres/privatelink-connect.webp)
+
+</Frame>
+
+</div>
+
+You can also get the private hostname from the `privateHostname` field of the [get API](/products/cloud/api-reference/postgres/postgres-private-endpoint-get), or from the `private_hostname` attribute of the `clickhouse_postgres_private_endpoint` Terraform resource.
+
+The private hostname is part of the TLS certificate of your instance, so you can connect with full TLS verification:
+
+```bash
+psql "host=<private hostname> port=5432 user=postgres dbname=postgres sslmode=verify-full sslrootcert=<path to CA certificate>"
+```
+
+See [Verified TLS connection](/products/managed-postgres/connection#verified-tls) for how to download the CA certificate of your instance.
+
+#### Option 2: Regional or zonal DNS names {#connect-regional-zonal-dns}
+
+For every interface VPC endpoint, AWS creates a Regional DNS name and a zonal DNS name for each Availability Zone of the endpoint. You can use them without private DNS. Both names start with the VPC endpoint ID followed by a short random string. See [DNS hostnames](https://docs.aws.amazon.com/vpc/latest/privatelink/privatelink-share-your-services.html#endpoint-service-dns-hostnames) in the AWS documentation for details.
+
+- **Regional DNS name**, for example `vpce-0123456789abcdef0-abcd1234.vpce-svc-0123456789abcdef0.us-east-1.vpce.amazonaws.com`: resolves to the endpoint network interfaces in all Availability Zones of the endpoint.
+- **Zonal DNS name**, for example `vpce-0123456789abcdef0-abcd1234-us-east-1a.vpce-svc-0123456789abcdef0.us-east-1.vpce.amazonaws.com`: includes the Availability Zone name and resolves to the endpoint network interface in one Availability Zone. Use it to send traffic through the endpoint network interface in the same Availability Zone as your client.
+
+In the AWS console, go to **VPC** → **Endpoints**, select your endpoint, and copy the DNS name you need from **DNS names** on the **Details** tab. The first entry is the Regional DNS name, and the others are zonal DNS names.
+
+```bash
+psql "host=vpce-0123456789abcdef0-abcd1234.vpce-svc-0123456789abcdef0.us-east-1.vpce.amazonaws.com port=5432 user=postgres dbname=postgres sslmode=require"
+```
+
+<Warning>
+The Regional and zonal DNS names of the VPC endpoint aren't part of the TLS certificate of your instance, so `sslmode=verify-full` fails hostname verification with them. Use `sslmode=require`, or connect through the [private DNS name](#connect-private-dns) to use `verify-full`.
+</Warning>
+
+## Remove AWS PrivateLink {#remove}
+
+To stop using AWS PrivateLink, delete the VPC endpoint in your AWS account and remove its ID from the allow list of your instance.
+
+To delete the endpoint service of your instance, use the [delete API](/products/cloud/api-reference/postgres/postgres-private-endpoint-delete):
+
+```bash
+curl --silent --user "${KEY_ID:?}:${KEY_SECRET:?}" \
+-X DELETE \
+"https://api.clickhouse.cloud/v1/organizations/${ORG_ID:?}/postgres/${POSTGRES_ID:?}/privateEndpoint" | jq
+```
+
+Connections through all approved VPC endpoints stop working after the endpoint service is deleted.
+
+If you manage AWS PrivateLink with Terraform, run `terraform destroy`, or remove the resources from your configuration and run `terraform apply`. Deleting `clickhouse_postgres_private_endpoint_attachment` removes every VPC endpoint from the allow list, and AWS then rejects their connections. Deleting `clickhouse_postgres_private_endpoint` deletes the endpoint service.
+
+<Note>
+If the `aws_vpc_endpoint` is destroyed in the same run, AWS can refuse to delete it with `The existing processing REJECT is too recent`. Run `terraform destroy` again.
+</Note>
+
+## Troubleshooting {#troubleshooting}
+
+<AccordionGroup>
+
+<Accordion title={"VPC endpoint stays in \"Pending acceptance\""} id="pending-acceptance">
+
+- Make sure that you added the correct endpoint ID to the allow list of the instance, as described in [Add the endpoint ID to the allow list](#add-endpoint-id-to-allow-list).
+- Make sure that the VPC endpoint was created with the AWS service name of the same instance.
+
+</Accordion>
+
+<Accordion title={"VPC endpoint is \"Rejected\""} id="rejected">
+
+The VPC endpoint was removed from the allow list of the instance. A rejected VPC endpoint can't be approved again, so [create a new VPC endpoint](#create-aws-endpoint) and [add its ID to the allow list](#add-endpoint-id-to-allow-list).
+
+</Accordion>
+
+<Accordion title={"\"Service name couldn't be verified\""} id="service-name-not-verified">
+
+- Make sure that you entered the AWS service name exactly as shown in the ClickHouse Cloud console or returned by the API.
+- Make sure that you create the VPC endpoint in the same AWS region as your instance.
+
+</Accordion>
+
+<Accordion title="Connection timed out" id="connection-timed-out">
+
+- Make sure that a security group is attached to the VPC endpoint.
+- Check the inbound rules of the security group attached to the VPC endpoint and allow ports `5432` and `6432`.
+- Check the outbound rules of the security group attached to your client and allow connections to ports `5432` and `6432`.
+
+</Accordion>
+
+<Accordion title="Can't enable private DNS on the VPC endpoint" id="private-dns-not-enabled">
+
+- The private DNS name of the endpoint service may not be verified yet. Check that `privateDnsVerificationState` is `verified`, as described in [Enable private DNS on the VPC endpoint](#enable-private-dns), and try again later.
+- Make sure that the VPC endpoint is **Available**, and that **DNS hostnames** and **DNS resolution** are turned on for your VPC.
+
+</Accordion>
+
+<Accordion title="Hostname can't be resolved" id="hostname-not-resolved">
+
+- If you connect through the [private DNS name](#connect-private-dns), make sure that private DNS is enabled on the VPC endpoint and that your client runs in the VPC of the endpoint or in a network that uses its DNS resolver.
+- If you connect through a [Regional or zonal DNS name](#connect-regional-zonal-dns), make sure that you copied it from the AWS console, and that your client runs in the VPC of the endpoint or in a network that can resolve it.
+
+</Accordion>
+
+</AccordionGroup>

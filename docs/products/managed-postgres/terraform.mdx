@@ -160,10 +160,14 @@ terraform import clickhouse_postgres_service.example xxxxxxxx-xxxx-xxxx-xxxx-xxx
 
 Import does not recover the password (the API does not return it). After importing, the first apply rotates the service to the `password` or `password_wo` declared in your configuration.
 
+## Private endpoints {#private-endpoints}
+
+AWS PrivateLink for a service is managed with two separate resources, available in provider version **v3.45.0** and later: `clickhouse_postgres_private_endpoint` creates the endpoint service, and `clickhouse_postgres_private_endpoint_attachment` manages the VPC endpoints allowed to connect. See [AWS PrivateLink for ClickHouse Managed Postgres](/products/managed-postgres/aws-privatelink#option-3-terraform-service) for examples.
+
 ## Unsupported operations {#unsupported-operations}
 
 The following are intentionally absent from the resource schema:
 
 - Operational commands (restart, promote, switchover).
-- IP allowlists, private endpoints, backup configuration, maintenance windows, customer-managed encryption keys, and BYOC.
+- IP allowlists, backup configuration, maintenance windows, customer-managed encryption keys, and BYOC.
 - Configurable lifecycle timeouts — there is no `timeouts {}` block.
