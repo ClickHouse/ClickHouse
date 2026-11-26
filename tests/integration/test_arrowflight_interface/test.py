@@ -10,6 +10,8 @@ import string
 from helpers.cluster import ClickHouseCluster, get_docker_compose_path
 from helpers.test_tools import TSV
 
+from .flight_sql_client import FlightSQLClient
+
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 DOCKER_COMPOSE_PATH = get_docker_compose_path()
 
@@ -112,10 +114,10 @@ def test_doput_nonexisting_table():
     )
 
     descriptor = flight.FlightDescriptor.for_path("nonexisting_table")
-    writer, _ = client.do_put(descriptor, schema, options)
-    writer.write_batch(batch)
 
     try:
+        writer, _ = client.do_put(descriptor, schema, options)
+        writer.write_batch(batch)
         writer.close()
         assert False, "Expected error but query succeeded: insert into nonexisting table"
     except flight.FlightServerError as e:
@@ -185,10 +187,10 @@ def test_doput_cmd_insert_invalid_format():
     )
 
     descriptor = flight.FlightDescriptor.for_command("INSERT INTO mytable FORMAT JSON")
-    writer, _ = client.do_put(descriptor, schema, options)
-    writer.write_batch(batch)
 
     try:
+        writer, _ = client.do_put(descriptor, schema, options)
+        writer.write_batch(batch)
         writer.close()
         assert False, "Expected to fail because of a wrong format but succeeded"
     except flight.FlightServerError as e:
@@ -223,10 +225,10 @@ def test_doput_cmd_insert_no_format():
     )
 
     descriptor = flight.FlightDescriptor.for_command("INSERT INTO mytable")
-    writer, _ = client.do_put(descriptor, schema, options)
-    writer.write_batch(batch)
 
     try:
+        writer, _ = client.do_put(descriptor, schema, options)
+        writer.write_batch(batch)
         writer.close()
         assert False, "Expected to fail because of no format but succeeded"
     except flight.FlightServerError as e:
@@ -487,6 +489,18 @@ def test_doget_ticket_from_select():
     assert actual.column("name").equals(expected_names)
 
 
+def test_doget_ticket_from_select_empty_result():
+    client, options = get_client()
+
+    reader = client.do_get(
+        flight.Ticket(b"SELECT number FROM system.numbers LIMIT 0"), options
+    )
+    actual = reader.read_all()
+
+    assert actual.schema == pa.schema([pa.field("number", pa.uint64(), nullable=False)])
+    assert actual.num_rows == 0
+
+
 # If a query outputs multiple chunks the method get_flight_info returns multiple tickets.
 def test_doget_multiple_chunks():
     node.query("CREATE TABLE mytable (id Int64, name String) ORDER BY id")
@@ -517,6 +531,43 @@ def test_doget_multiple_chunks():
     assert actual[1].column("id").equals(pa.chunked_array([pa.array([20], type=pa.int64())]))
     assert actual[0].column("name").equals(pa.chunked_array([pa.array(["abc"], type=pa.string())]))
     assert actual[1].column("name").equals(pa.chunked_array([pa.array(["cde"], type=pa.string())]))
+
+
+# A result is split across several Arrow arrays only when it exceeds the 32-bit offsets of the
+# String/Binary/List buffers, so a small one must arrive as a single chunk per column for every type.
+def test_doget_single_chunk_per_column():
+    node.query(
+        """
+        CREATE TABLE mytable (
+            id Int64,
+            s String,
+            ns Nullable(String),
+            lc LowCardinality(String),
+            arr Array(String),
+            m Map(String, String),
+            t Tuple(String, String),
+            fs FixedString(3)
+        ) ORDER BY id
+        """
+    )
+    node.query(
+        """
+        INSERT INTO mytable SELECT
+            number, toString(number), if(number % 2, NULL, toString(number)), toString(number % 2),
+            [toString(number)], map('k', toString(number)), (toString(number), 'x'), toFixedString('abc', 3)
+        FROM numbers(4)
+        """
+    )
+
+    client, options = get_client()
+
+    descriptor = flight.FlightDescriptor.for_command("SELECT * FROM mytable ORDER BY id")
+    flight_info = client.get_flight_info(descriptor, options)
+    table = client.do_get(flight_info.endpoints[0].ticket, options).read_all()
+
+    assert table.num_rows == 4
+    for name, column in zip(table.schema.names, table.columns):
+        assert column.num_chunks == 1, f"column {name} was split into {column.num_chunks} chunks"
 
 
 # We don't support any formats different from "Arrow".
@@ -575,6 +626,76 @@ def test_doget_cmd_select_arrow_format():
     assert actual.schema == expected_schema
     assert actual.column("id").equals(expected_ids)
     assert actual.column("name").equals(expected_names)
+
+
+def test_doget_sparse_columns():
+    node.query(
+        "CREATE TABLE mytable (id UInt64, x UInt64, n Nullable(Int64), s Nullable(String), t Tuple(a UInt64, b String)) "
+        "ENGINE = MergeTree ORDER BY id "
+        "SETTINGS ratio_of_defaults_for_sparse_serialization = 0.5, nullable_serialization_version = 'allow_sparse'"
+    )
+    node.query(
+        "INSERT INTO mytable SELECT number, if(number % 10 = 0, number, 0), if(number % 10 = 0, number, NULL), "
+        "if(number % 10 = 0, toString(number), NULL), (if(number % 10 = 0, number, 0), if(number % 10 = 0, toString(number), '')) "
+        "FROM numbers(100)"
+    )
+    assert node.query(
+        "SELECT column, serialization_kind, subcolumns.serializations FROM system.parts_columns "
+        "WHERE database = currentDatabase() AND table = 'mytable' AND active ORDER BY column"
+    ) == TSV(
+        [
+            ["id", "Default", "[]"],
+            ["n", "Sparse", "[]"],
+            ["s", "Sparse", "['Sparse']"],
+            ["t", "Default", "['Sparse','Sparse','Sparse']"],
+            ["x", "Sparse", "[]"],
+        ]
+    )
+
+    # No ORDER BY: sorting would materialize the sparse columns before they reach the Arrow Flight server.
+    query = "SELECT id, x, n, s, s.null, s.size, t FROM mytable"
+    client, options = get_client()
+    raw = client.do_get(flight.Ticket(query.encode()), options).read_all()
+    flight_info = client.get_flight_info(
+        flight.FlightDescriptor.for_command(query), options
+    )
+    via_info = pa.concat_tables(
+        [client.do_get(e.ticket, options).read_all() for e in flight_info.endpoints]
+    )
+
+    with open(os.path.join(SCRIPT_DIR, "certs/ca-cert.pem"), "rb") as file:
+        tls_root_certs = file.read()
+    sql_client = FlightSQLClient(
+        host=node.ip_address,
+        port=8888,
+        tls_root_certs=tls_root_certs,
+        override_hostname=SSL_HOST,
+        username="user1",
+        password="qwe123",
+    )
+    poll = sql_client.poll_flight_info(flight.FlightDescriptor.for_command(query))
+    while poll.flight_descriptor is not None:
+        poll = sql_client.poll_flight_info(poll.flight_descriptor)
+    via_poll = pa.concat_tables(
+        [sql_client.do_get(e.ticket).read_all() for e in poll.info.endpoints]
+    )
+
+    rows = range(100)
+    expected = {
+        "id": list(rows),
+        "x": [i if i % 10 == 0 else 0 for i in rows],
+        "n": [i if i % 10 == 0 else None for i in rows],
+        "s": [str(i) if i % 10 == 0 else None for i in rows],
+        "s.null": [0 if i % 10 == 0 else 1 for i in rows],
+        "s.size": [len(str(i)) if i % 10 == 0 else None for i in rows],
+        "t": [
+            {"a": i if i % 10 == 0 else 0, "b": str(i) if i % 10 == 0 else ""}
+            for i in rows
+        ],
+    }
+    assert raw.sort_by("id").to_pydict() == expected
+    assert via_info.sort_by("id").to_pydict() == expected
+    assert via_poll.sort_by("id").to_pydict() == expected
 
 
 # A type with no Arrow mapping (here `JSON`) is served as an opaque column holding one serialized value

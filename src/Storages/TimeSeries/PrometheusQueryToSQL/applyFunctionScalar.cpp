@@ -6,42 +6,12 @@
 #include <Parsers/Prometheus/stepsInTimeSeriesRange.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/checkArguments.h>
 #include <Storages/TimeSeries/timeSeriesTypesToAST.h>
-
-
-namespace DB::ErrorCodes
-{
-    extern const int CANNOT_EXECUTE_PROMQL_QUERY;
-}
 
 
 namespace DB::PrometheusQueryToSQL
 {
-
-namespace
-{
-    void checkArgumentTypes(
-        const PrometheusQueryTree::Function * function_node, const std::vector<SQLQueryPiece> & arguments, const ConverterContext & context)
-    {
-        const auto & function_name = function_node->function_name;
-        if (arguments.size() != 1)
-        {
-            throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
-                            "Function '{}' expects {} arguments, but was called with {} arguments",
-                            function_name, 1, arguments.size());
-        }
-
-        const auto & argument = arguments[0];
-        if (argument.type != ResultType::INSTANT_VECTOR)
-        {
-            throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
-                            "Function '{}' expects an argument of type {}, but expression {} has type {}",
-                            function_name, ResultType::INSTANT_VECTOR,
-                            getPromQLText(argument, context), argument.type);
-        }
-    }
-}
-
 
 SQLQueryPiece applyFunctionScalar(
     const PrometheusQueryTree::Function * function_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context)
@@ -49,7 +19,8 @@ SQLQueryPiece applyFunctionScalar(
     const auto & function_name = function_node->function_name;
     chassert(isFunctionScalar(function_name));
 
-    checkArgumentTypes(function_node, arguments, context);
+    checkNumberOfArguments(function_node, arguments, 1);
+    checkArgumentType(function_node, arguments, 0, ResultType::INSTANT_VECTOR, context);
     auto & argument = arguments[0];
 
     auto res = argument;
@@ -149,10 +120,11 @@ SQLQueryPiece applyFunctionScalar(
         }
 
         case StoreMethod::CONST_STRING:
-        case StoreMethod::RAW_DATA:
+        case StoreMethod::SAMPLES:
+        case StoreMethod::TIMESTAMP_AND_VALUE:
         {
             /// Can't get in here because these store methods are incompatible with the allowed argument types
-            /// (see checkArgumentTypes()).
+            /// (see the checks at the beginning of `applyFunctionScalar`).
             throwUnexpectedStoreMethod(argument, context);
         }
     }

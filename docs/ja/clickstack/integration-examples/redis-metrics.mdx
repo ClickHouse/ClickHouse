@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['Redis', 'メトリクス', 'OTel', 'ClickStack']
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
 <Info>
@@ -18,7 +16,7 @@ import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTra
 </Info>
 
 <div id="existing-redis">
-  ## 既存の Redis とのインテグレーション
+  ## 既存の Redis とのインテグレーション {#existing-redis}
 </div>
 
 このセクションでは、ClickStack OTel collector で Redis receiver を設定し、既存の Redis 環境から ClickStack にメトリクスを送信できるようにする手順を説明します。
@@ -26,7 +24,7 @@ import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTra
 既存の環境をご自身で設定する前に Redis メトリクスのインテグレーションを試したい場合は、[次のセクション](#demo-dataset)で用意されている事前設定済みのデモデータセットを使ってテストできます。
 
 <div id="prerequisites">
-  ##### 前提条件
+  ##### 前提条件 {#prerequisites}
 </div>
 
 * 稼働中の ClickStack インスタンス
@@ -62,7 +60,7 @@ import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTra
   </Step>
 
   <Step title="カスタム OTel collector の設定を作成する" id="custom-otel">
-    ClickStack では、カスタム設定ファイルをマウントし、環境変数を設定することで、OpenTelemetry collector のベース設定を拡張できます。カスタム設定は、OpAMP 経由で HyperDX が管理するベース設定にマージされます。
+    ClickStack では、カスタム設定ファイルをマウントし、環境変数を設定することで、OpenTelemetry collector のベース設定を拡張できます。カスタム設定は、OpAMP 経由で ClickStack UI が管理するベース設定にマージされます。
 
     以下の内容で、`redis-metrics.yaml` という名前のファイルを作成します。
 
@@ -149,7 +147,7 @@ import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTra
     2. 環境変数 `CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml` を設定する
     3. ClickStack と Redis 間のネットワーク接続を確保する
 
-    ##### オプション 1: Docker Compose
+##### オプション 1: Docker Compose {#docker-compose}
 
     ClickStack のデプロイメント設定を更新します。
 
@@ -177,7 +175,7 @@ import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTra
         # command: redis-server --requirepass your-redis-password
     ```
 
-    ##### オプション 2: Docker run (オールインワンイメージ)
+##### オプション 2: Docker run (オールインワンイメージ) {#all-in-one}
 
     オールインワンイメージを `docker run` で使用する場合：
 
@@ -208,19 +206,19 @@ import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step title="HyperDX でメトリクスを確認する" id="verifying-metrics">
-    設定が完了したら、HyperDX にログインして、メトリクスが取り込まれていることを確認します。
+  <Step title="ClickStack UI でメトリクスを確認する" id="verifying-metrics">
+    設定が完了したら、ClickStack UI にログインして、メトリクスが取り込まれていることを確認します。
 
     1. Metricsエクスプローラーに移動します
     2. `redis.` で始まるメトリクスを検索します (例: `redis.commands.processed`、`redis.memory.used`)
     3. 設定した収集間隔でメトリクスのデータポイントが表示されるはずです
 
-    {/* <Image img={metrics_view} alt="Redis メトリクスビュー"/> */}
+    {/* ![Redis メトリクスビュー](/images/clickstack/redis-metrics-dashboard.webp) */}
   </Step>
 </Steps>
 
 <div id="demo-dataset">
-  ## デモデータセット
+  ## デモデータセット {#demo-dataset}
 </div>
 
 本番システムを構成する前に Redis メトリクスのインテグレーションを試したいユーザー向けに、実際の Redis メトリクスの傾向に近い、事前生成済みのデータセットを用意しています。
@@ -271,13 +269,13 @@ import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step title="HyperDX でメトリクスを確認する" id="verify-metrics">
+  <Step title="ClickStack UI でメトリクスを確認する" id="verify-metrics">
     読み込み後、メトリクスをすばやく確認するには、あらかじめ用意されたダッシュボードを使うのが最も簡単です。
 
     ダッシュボードをインポートして Redis メトリクスをまとめて表示するには、[ダッシュボードと可視化](#dashboards) セクションに進んでください。
 
     <Note>
-      デモデータセットの時間範囲は 2025-10-20 00:00:00 から 2025-10-21 05:00:00 までです。HyperDX の時間範囲がこの期間に一致していることを確認してください。
+      デモデータセットの時間範囲は 2025-10-20 00:00:00 から 2025-10-21 05:00:00 までです。ClickStack UI の時間範囲がこの期間に一致していることを確認してください。
 
       次のような興味深いパターンを確認できます:
 
@@ -288,32 +286,42 @@ import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTra
   </Step>
 </Steps>
 
-<div id="dashboards">
-  ## ダッシュボードと可視化
-</div>
+## ダッシュボードと可視化 {#dashboards}
 
 ClickStack で Redis の監視を始めるにあたって、Redis メトリクス向けの主要な可視化を用意しています。
 
 <Steps>
   <Step title="ダッシュボード設定をダウンロードする" id="download">
-    <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/redis-metrics-dashboard.json'} download="redis-metrics-dashboard.json" eventName="docs.redis_metrics_monitoring.dashboard_download">ダッシュボード設定ファイルをダウンロード</TrackedLink>
+    <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/redis-metrics-dashboard.json'} download="redis-metrics-dashboard.json" eventName="docs.redis_metrics_monitoring.dashboard_download">ダッシュボード設定ファイルをダウンロード</TrackedLink>。
   </Step>
 
   <Step title="あらかじめ用意されたダッシュボードをインポートする" id="import-dashboard">
-    1. HyperDX を開き、**Dashboards** セクションに移動します
+    1. ClickStack UI を開き、**ダッシュボード** セクションに移動します
     2. 右上の三点メニューから **Import Dashboard** をクリックします
 
-    <Image img="/images/clickstack/import-dashboard.webp" alt="ダッシュボードのインポートボタン" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![ダッシュボードのインポートボタン](/images/clickstack/import-dashboard.webp)
+      </Frame>
+    </div>
 
     3. `redis-metrics-dashboard.json` ファイルをアップロードし、**Finish Import** をクリックします
 
-    <Image img="/images/clickstack/import-redis-metrics-dashboard.webp" alt="インポート完了ダイアログ" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![インポート完了ダイアログ](/images/clickstack/import-redis-metrics-dashboard.webp)
+      </Frame>
+    </div>
   </Step>
 
   <Step title="ダッシュボードを表示する" id="created-dashboard">
     ダッシュボードは、すべての可視化があらかじめ設定された状態で作成されます。
 
-    <Image img="/images/clickstack/redis-metrics-dashboard.webp" alt="Redis メトリクス ダッシュボード" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![Redis メトリクス ダッシュボード](/images/clickstack/redis-metrics-dashboard.webp)
+      </Frame>
+    </div>
 
     <Note>
       デモデータセットでは、時間範囲を **2025-10-20 05:00:00 - 2025-10-21 05:00:00 (UTC)** に設定してください (ローカルのタイムゾーンに応じて調整してください) 。インポートしたダッシュボードには、デフォルトでは時間範囲が設定されていません。
@@ -322,11 +330,11 @@ ClickStack で Redis の監視を始めるにあたって、Redis メトリク�
 </Steps>
 
 <div id="troubleshooting">
-  ## トラブルシューティング
+  ## トラブルシューティング {#troubleshooting}
 </div>
 
 <div id="troubleshooting-not-loading">
-  ### カスタム設定が読み込まれない
+  ### カスタム設定が読み込まれない {#troubleshooting-not-loading}
 </div>
 
 環境変数 `CUSTOM_OTELCOL_CONFIG_FILE` が正しく設定されているか確認してください。
@@ -347,23 +355,21 @@ docker exec <container-name> ls -lh /etc/otelcol-contrib/custom.config.yaml
 docker exec <container-name> cat /etc/otelcol-contrib/custom.config.yaml
 ```
 
-<div id="no-metrics">
-  ### HyperDX にメトリクスが表示されない
-</div>
+### ClickStack UI にメトリクスが表示されない {#no-metrics}
 
 collector から Redis にアクセスできることを確認してください。
 
 ```bash
-# ClickStack コンテナーから実行
+# From the ClickStack container
 docker exec <clickstack-container> redis-cli -h <redis-host> ping
-# 期待される出力: PONG
+# Expected output: PONG
 ```
 
 Redis の INFO コマンドが動作するか確認します:
 
 ```bash
 docker exec <clickstack-container> redis-cli -h <redis-host> INFO stats
-# Redis統計情報が表示されるはずです
+# Should display Redis statistics
 ```
 
 有効な設定に Redis receiver が含まれていることを確認してください:
@@ -376,11 +382,11 @@ collector のログにエラーがないか確認します：
 
 ```bash
 docker exec <container> cat /etc/otel/supervisor-data/agent.log | grep -i redis
-# 接続エラーや認証エラーがないか確認する
+# Look for connection errors or authentication failures
 ```
 
 <div id="auth-errors">
-  ### 認証エラー
+  ### 認証エラー {#auth-errors}
 </div>
 
 ログに認証エラーが表示された場合:
@@ -406,7 +412,7 @@ receivers:
 ```
 
 <div id="network-issues">
-  ### ネットワーク接続の問題
+  ### ネットワーク接続の問題 {#network-issues}
 </div>
 
 ClickStack から Redis に接続できない場合:
@@ -423,15 +429,13 @@ docker exec <clickstack-container> telnet redis 6379
 Docker Compose ファイルまたは `docker run` コマンドで、両方のコンテナーが同じネットワークに接続されるようにしてください。
 
 <div id="next-steps">
-  ## 次のステップ
+  ## 次のステップ {#next-steps}
 </div>
 
 * 重要なメトリクス (メモリ使用量のしきい値、接続数の上限、cache ヒット率の低下) に対する[アラート](/ja/clickstack/features/alerts)を設定します
 * 特定のユースケース向けに、追加のダッシュボードを作成します (レプリケーションラグ、永続化パフォーマンス)
 * 異なるエンドポイントとサービス名を使用して receiver 設定を複製し、複数の Redis インスタンスを監視します
 
-<div id="going-to-production">
-  ## 本番環境への移行
-</div>
+## 本番環境への移行 {#going-to-production}
 
 このガイドでは、すばやくセットアップできるよう、ClickStack に組み込まれた OpenTelemetry Collector を利用しています。本番環境でのデプロイメントでは、お使いの OTel Collector を運用し、データを ClickStack の OTLP エンドポイントに送信することを推奨します。本番環境向けの構成については、[OpenTelemetry データの送信](/ja/clickstack/ingesting-data/opentelemetry)を参照してください。

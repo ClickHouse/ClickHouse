@@ -7,11 +7,10 @@ doc_type: 'guide'
 keywords: ['ClickHouse Cloud', 'criptografia', 'CMEK', 'verificação periódica da chave KMS']
 ---
 
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
 import { EnterprisePlanFeatureBadge } from "/snippets/pt-BR/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
 
 <div id="storage-encryption">
-  ## Criptografia em nível de armazenamento
+  ## Criptografia em nível de armazenamento {#storage-encryption}
 </div>
 
 O ClickHouse Cloud é configurado com criptografia em repouso por padrão, usando chaves AES-256 gerenciadas pelo provedor de Cloud. Para mais informações, consulte:
@@ -21,7 +20,7 @@ O ClickHouse Cloud é configurado com criptografia em repouso por padrão, usand
 * [Criptografia de armazenamento do Azure para dados em repouso](https://learn.microsoft.com/en-us/azure/storage/common/storage-service-encryption)
 
 <div id="database-encryption">
-  ## Criptografia em nível do banco de dados
+  ## Criptografia em nível do banco de dados {#database-encryption}
 </div>
 
 <EnterprisePlanFeatureBadge feature="Enhanced Encryption" />
@@ -31,7 +30,7 @@ Os dados em repouso são criptografados por padrão com chaves AES-256 gerenciad
 A criptografia avançada está disponível atualmente nos serviços da AWS e do GCP. O Azure estará disponível em breve.
 
 <div id="transparent-data-encryption-tde">
-  ### Criptografia Transparente de Dados (TDE)
+  ### Criptografia Transparente de Dados (TDE) {#transparent-data-encryption-tde}
 </div>
 
 A TDE deve ser habilitada ao criar o serviço. Serviços existentes não podem ser criptografados após a criação. Depois que a TDE é habilitada, ela não pode ser desabilitada. Todos os dados do serviço permanecerão criptografados. Se você quiser desabilitar a TDE depois de habilitá-la, será necessário criar um novo serviço e migrar seus dados para ele.
@@ -43,7 +42,7 @@ A TDE deve ser habilitada ao criar o serviço. Serviços existentes não podem s
 5. Clique em `Create service`
 
 <div id="customer-managed-encryption-keys-cmek">
-  ### Chaves de criptografia gerenciadas pelo cliente (CMEK)
+  ### Chaves de criptografia gerenciadas pelo cliente (CMEK) {#customer-managed-encryption-keys-cmek}
 </div>
 
 <Warning>
@@ -138,27 +137,29 @@ Depois que um serviço é criptografado com TDE, os clientes podem atualizar a c
 </Accordion>
 
 <div id="key-rotation">
-  #### Rotação de chaves
+  #### Rotação de chaves {#key-rotation}
 </div>
 
 Depois de configurar o CMEK, faça a rotação da chave seguindo os procedimentos acima para criar uma nova chave do KMS e conceder as permissões necessárias. Volte às configurações do serviço, cole o novo ARN (AWS), o Key Resource Path (GCP) ou o Key Name (Azure) e salve as configurações. O serviço será reiniciado para aplicar a nova chave.
 
 <div id="kms-key-poller">
-  #### Verificação periódica da chave KMS
+  #### Verificação periódica da chave KMS {#kms-key-poller}
 </div>
 
 Ao usar CMEK, a validade da chave KMS fornecida é verificada a cada 10 minutos. Se o acesso à chave KMS se tornar inválido, o serviço do ClickHouse será interrompido. Para retomar o serviço, restaure o acesso à chave KMS seguindo as etapas deste guia e, em seguida, reinicie o serviço.
 
 <div id="backup-and-restore">
-  ### Backup e restauração
+  ### Backup e restauração {#backup-and-restore}
 </div>
 
 Os backups são criptografados com a mesma chave do serviço associado. Ao restaurar um backup criptografado, é criada uma instância criptografada que usa a mesma chave do KMS da instância original. Se necessário, você pode rotacionar a chave do KMS após a restauração; consulte [Rotação de chaves](#key-rotation) para mais detalhes.
 
-<div id="performance">
-  ## Desempenho
-</div>
+## Desempenho {#performance}
 
 A criptografia do banco de dados usa o [recurso integrado Virtual File System for Data Encryption](/pt-BR/concepts/features/configuration/server-config/storing-data#encrypted-virtual-file-system) do ClickHouse para criptografar e proteger seus dados. O algoritmo usado nesse recurso é `AES_256_CTR`, que deve causar uma perda de desempenho de 5-15%, dependendo da carga de trabalho:
 
-<Image img="/images/_snippets/cmek-performance.webp" size="lg" alt="Penalidade de desempenho do CMEK" />
+<div className="ch-image-lg">
+  <Frame>
+    ![Penalidade de desempenho do CMEK](/images/_snippets/cmek-performance.webp)
+  </Frame>
+</div>

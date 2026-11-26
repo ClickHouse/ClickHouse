@@ -1,13 +1,13 @@
---- default: aws_external_id hidden, role identifiers visible
+--- default: aws_external_id and aws_role_session_name hidden, aws_role_arn visible
 aws_external_id = '[HIDDEN]'
 aws_access_key_id = '[HIDDEN]'
 aws_secret_access_key = '[HIDDEN]'
 aws_role_arn = 'arn:aws:iam::1:role/r'
-aws_role_session_name = 'sess'
+aws_role_session_name = '[HIDDEN]'
 OK: no secret in formatted query
---- show_secrets: aws_external_id visible
+--- show_secrets: aws_external_id and aws_role_session_name visible
 aws_external_id = 'SECRET_THAT_MUST_NOT_LEAK'
 aws_access_key_id = 'SECRET_THAT_MUST_NOT_LEAK'
 aws_secret_access_key = 'SECRET_THAT_MUST_NOT_LEAK'
 aws_role_arn = 'arn:aws:iam::1:role/r'
-aws_role_session_name = 'sess'
+aws_role_session_name = 'SECRET_THAT_MUST_NOT_LEAK'

@@ -36,6 +36,7 @@ struct BaseXXEncode
 {
     static constexpr auto name = Name::name;
     static constexpr bool has_size_optimization = false;
+    static constexpr bool can_be_executed_on_default_arguments = true;
     /// Compile-time default input-size limit (0 means "no limit"). Only base58 sets a non-zero value;
     /// the actual limit is configurable at runtime, see FunctionBaseXXConversion.
     static constexpr size_t default_max_input_size = Traits::max_input_size;
@@ -137,6 +138,8 @@ struct BaseXXDecode
 {
     static constexpr auto name = Name::name;
     static constexpr bool has_size_optimization = Traits::has_size_optimization;
+    /// The zero bytes of a default `FixedString`, and an empty string when an expected size is given, do not decode.
+    static constexpr bool can_be_executed_on_default_arguments = ErrorHandling != BaseXXDecodeErrorHandling::ThrowException;
     /// Compile-time default input-size limit (0 means "no limit"). Only base58 sets a non-zero value;
     /// the actual limit is configurable at runtime, see FunctionBaseXXConversion.
     static constexpr size_t default_max_input_size = Traits::max_input_size;
@@ -313,41 +316,30 @@ public:
             max_input_size = context->getSettingsRef()[Setting::function_base58_max_input_size];
         return std::make_shared<FunctionBaseXXConversion>(max_input_size);
     }
-    String getName() const override { return Func::name; }
-    bool isVariadic() const override { return has_size_optimization; }
-    size_t getNumberOfArguments() const override { return has_size_optimization ? 0 : 1; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-    bool useDefaultImplementationForConstants() const override { return true; }
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override
+    [[nodiscard]] String getName() const override { return Func::name; }
+    [[nodiscard]] bool isVariadic() const override { return has_size_optimization; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return has_size_optimization ? 0 : 1; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool canBeExecutedOnDefaultArguments() const override { return Func::can_be_executed_on_default_arguments; }
+    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override
     {
         if constexpr (has_size_optimization)
             return {1};
         return {};
     }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] String getSignatureString() const override
     {
         if constexpr (has_size_optimization)
-        {
-            FunctionArgumentDescriptors mandatory_args{
-                {"arg", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "String or FixedString"}};
-            FunctionArgumentDescriptors optional_args{
-                {"expected_size", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeUInt), nullptr, "Native unsigned integer"}};
-            validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
-        }
+            return "(StringOrFixedString, [const NativeUInt]) -> String";
         else
-        {
-            FunctionArgumentDescriptors args{
-                {"arg", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "String or FixedString"}};
-            validateFunctionArguments(*this, arguments, args);
-        }
-
-        return std::make_shared<DataTypeString>();
+            return "(StringOrFixedString) -> String";
     }
 
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override { return std::make_shared<DataTypeString>(); }
+    [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override { return std::make_shared<DataTypeString>(); }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         /// The generic (variable-length) Base58 conversion is quadratic in the input length and can run
         /// for a long time on a single large value, ignoring the query's time limit (which is only checked

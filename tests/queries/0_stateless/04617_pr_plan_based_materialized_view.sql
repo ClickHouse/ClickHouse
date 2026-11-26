@@ -11,13 +11,11 @@
 -- the target from under the remote read. An APPEND refreshable MV reads a fixed target, like a regular
 -- MV, and is distributed. See PR #111063 review.
 
-SET enable_analyzer = 1;
 SET enable_parallel_replicas = 1;
 SET max_parallel_replicas = 3;
 SET cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';
 SET parallel_replicas_plan_based = 1;
 SET automatic_parallel_replicas_mode = 0;
-SET allow_experimental_refreshable_materialized_view = 1;
 
 DROP TABLE IF EXISTS t_pr_mv_src SYNC;
 DROP VIEW IF EXISTS mv_pr_repl SYNC;

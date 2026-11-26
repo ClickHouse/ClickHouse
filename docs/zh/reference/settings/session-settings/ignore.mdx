@@ -14,9 +14,7 @@ import { CloudOnlyBadge } from "/snippets/zh/components/CloudOnlyBadge/CloudOnly
 
 这些设置可在 [system.settings](/zh/reference/system-tables/settings) 中找到，并由 [源代码](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) 自动生成。
 
-<div id="ignore_cold_parts_seconds">
-  ## ignore_cold_parts_seconds
-</div>
+## ignore_cold_parts_seconds {#ignore_cold_parts_seconds}
 
 <CloudOnlyBadge />
 
@@ -24,9 +22,11 @@ import { CloudOnlyBadge } from "/snippets/zh/components/CloudOnlyBadge/CloudOnly
 
 仅在 ClickHouse Cloud 中生效。在新的数据分区片段被预热 (参见 [cache&#95;populated&#95;by&#95;fetch](/zh/reference/settings/merge-tree-settings/cache-populated-by-fetch#cache_populated_by_fetch)) 或达到指定秒数之前，会将其排除在 SELECT 查询之外。仅适用于 Replicated-/SharedMergeTree。
 
-<div id="ignore_data_skipping_indices">
-  ## ignore_data_skipping_indices
-</div>
+## ignore_data_skipping_indexes {#ignore_data_skipping_indexes}
+
+**别名**：`ignore_data_skipping_indices`
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": ""},{"label": "新增设置 `ignore_data_skipping_indices` 的别名。"}]}]} />
 
 如果查询会使用指定的跳过索引，则忽略这些索引。
 
@@ -113,9 +113,7 @@ Expression ((Projection + Before ORDER BY))
 
 适用于 MergeTree 家族中的表。
 
-<div id="ignore_drop_queries_probability">
-  ## ignore_drop_queries_probability
-</div>
+## ignore_drop_queries_probability {#ignore_drop_queries_probability}
 
 <SettingsInfoBlock type="Float" default_value="0" />
 
@@ -123,9 +121,7 @@ Expression ((Projection + Before ORDER BY))
 
 如果启用，服务器将以指定的概率忽略所有 DROP 表查询 (对于 Memory 和 JOIN 引擎，会将 DROP 替换为 TRUNCATE) 。用于测试目的
 
-<div id="ignore_format_null_for_explain">
-  ## ignore_format_null_for_explain
-</div>
+## ignore_format_null_for_explain {#ignore_format_null_for_explain}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -134,9 +130,7 @@ Expression ((Projection + Before ORDER BY))
 如果启用，`EXPLAIN` 查询中的 `FORMAT Null` 将被忽略，改为使用默认输出格式。
 如果禁用，带有 `FORMAT Null` 的 `EXPLAIN` 查询将不会产生任何输出 (向后兼容行为) 。
 
-<div id="ignore_materialized_views_with_dropped_target_table">
-  ## ignore_materialized_views_with_dropped_target_table
-</div>
+## ignore_materialized_views_with_dropped_target_table {#ignore_materialized_views_with_dropped_target_table}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 

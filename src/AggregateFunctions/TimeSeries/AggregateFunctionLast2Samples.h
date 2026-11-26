@@ -40,7 +40,7 @@ public:
     using TimestampColumnType = ColumnVectorOrDecimal<TimestampType>;
     using ValueColumnType = ColumnVectorOrDecimal<ValueType>;
 
-    String getName() const override
+    [[nodiscard]] String getName() const override
     {
         return "timeSeriesLastTwoSamples";
     }
@@ -188,19 +188,19 @@ public:
                 make_shared<DataTypeTuple>(DataTypes{timestamp_type, value_type}));
     }
 
-    bool allocatesMemoryInArena() const override { return false; }
+    [[nodiscard]] bool allocatesMemoryInArena() const override { return false; }
 
-    bool hasTrivialDestructor() const override
+    [[nodiscard]] bool hasTrivialDestructor() const override
     {
         return std::is_trivially_destructible_v<Data>;
     }
 
-    size_t alignOfData() const override
+    [[nodiscard]] size_t alignOfData() const override
     {
         return alignof(Data);
     }
 
-    size_t sizeOfData() const override
+    [[nodiscard]] size_t sizeOfData() const override
     {
         return sizeof(Data);
     }
@@ -294,12 +294,13 @@ public:
         {
             /// Merge the 2 sets of flags (null and if) into a single one. This allows us to use parallelizable sums when available
             const auto * if_flags = typeid_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData().data();
-            /// Default-init: the loop below fills [row_begin, row_end) and nothing reads the rest.
-            auto final_flags = std::make_unique_for_overwrite<UInt8[]>(row_end);
+            const size_t span = row_end - row_begin;
+            auto final_flags = std::make_unique_for_overwrite<UInt8[]>(span);
             for (size_t i = row_begin; i < row_end; ++i)
-                final_flags[i] = (!null_map[i]) & !!if_flags[i];
+                final_flags[i - row_begin] = (!null_map[i]) & !!if_flags[i];
 
-            addManyConditional(place, timestamp_column.getData().data(), value_column.getData().data(), final_flags.get(), row_begin, row_end);
+            addManyConditional(
+                place, timestamp_column.getData().data() + row_begin, value_column.getData().data() + row_begin, final_flags.get(), 0, span);
         }
         else
         {

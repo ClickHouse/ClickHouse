@@ -1,0 +1,438 @@
+---
+slug: /clickstack/self-configured/getting-started/managed
+title: 'Primeiros passos com o Self-managed ClickHouse Observability'
+sidebarTitle: 'Primeiros passos'
+description: 'Primeiros passos com o Self-managed ClickHouse Observability'
+doc_type: 'guide'
+keywords: ['Self-managed ClickHouse Observability', 'primeiros passos', 'ClickHouse Cloud']
+---
+
+import ExampleOTelConfig from '/snippets/pt-BR/clickstack/_config_example_otel.mdx';
+
+<Note>
+  Esta página aborda o **Self-managed ClickHouse Observability**. Para a experiência totalmente gerenciada, que é a recomendada, consulte a documentação [aqui](/pt-BR/clickstack/observability/getting-started).
+</Note>
+
+Implante o Self-managed ClickHouse Observability no ClickHouse Cloud, envie um evento de teste pelo seu pipeline de ingestão e confirme que o evento está disponível na UI de observabilidade.
+
+O ClickHouse Cloud opera o backend do ClickHouse, enquanto você mantém o controle do pipeline de ingestão e do schema. O Self-managed ClickHouse Observability oferece:
+
+* Escalonamento automático da capacidade computacional, independente do armazenamento
+* Retenção de baixo custo e praticamente ilimitada, com base em armazenamento de objetos
+* Isolamento independente das cargas de trabalho de leitura e escrita com [warehouses](/pt-BR/products/cloud/features/infrastructure/warehouses)
+* Autenticação integrada
+* Backups automatizados
+* Funcionalidades de segurança e conformidade
+* Upgrades sem interrupções
+
+## Antes de começar {#before-you-begin}
+
+Você também pode enviar dados diretamente para o ClickHouse usando uma [integração compatível](/pt-BR/integrations/home) e o seu próprio schema.
+
+### Crie um serviço do ClickHouse Cloud {#create-a-managed-clickstack-service}
+
+Conclua a etapa [Criar um serviço do ClickHouse](/pt-BR/get-started/setup/cloud#1-create-a-clickhouse-service) do guia de início rápido do ClickHouse Cloud. Antes de continuar, verifique se o serviço está em execução.
+
+<View title="OpenTelemetry">
+  <Tip>
+    Esta página apresenta o caminho com **OpenTelemetry**. Use o seletor de guia, na parte superior do guia, para alternar entre **OpenTelemetry** (recomendado) e **Vector**.
+  </Tip>
+
+  ### Prepare seu ambiente de ingestão {#prepare-your-ingestion-environment}
+
+  * Para iniciar um novo [Coletor OpenTelemetry](/pt-BR/clickstack/self-configured/ingesting-data/collector), instale o [Docker](https://docs.docker.com/get-docker/). No Kubernetes, implante o coletor com o [Helm](/pt-BR/clickstack/self-configured/ingesting-data/collector#configuring-the-collector-self-configured).
+  * Para usar um coletor existente, execute-o na [função de gateway](/pt-BR/clickstack/self-configured/ingesting-data/collector#collector-roles-self-configured) e verifique se a distribuição dele inclui o [exportador do ClickHouse](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/clickhouseexporter). A configuração necessária será adicionada ao longo deste guia.
+
+  ## Configure o Self-managed ClickHouse Observability {#set-up-managed-clickstack}
+
+  <Steps titleSize="h3">
+    <Step title="Escolha a fonte de dados para ingestão e a configuração do coletor" id="choose-an-ingestion-source">
+      No seu Serviço do ClickHouse Cloud, abra o ClickHouse Observability. Na página **Getting Started**, selecione **Start ingestion**.
+
+      <div className="ch-image-lg">
+        <Frame>
+          ![Iniciar ingestão](/images/clickstack/getting-started/start_ingestion.webp)
+        </Frame>
+      </div>
+
+      Na página **Choose an ingestion source**, selecione [OpenTelemetry](https://opentelemetry.io/).
+
+      <Info>
+        **OpenTelemetry recomendado**
+
+        O OpenTelemetry oferece schemas pré-configurados para logs, traces, métricas e sessões.
+      </Info>
+
+      <div className="ch-image-lg">
+        <Frame>
+          ![Seleção do OpenTelemetry como fonte de ingestão](/images/clickstack/getting-started/select_source_toggle.webp)
+        </Frame>
+      </div>
+
+      <Tabs>
+        <Tab title="Iniciar um novo coletor">
+          A UI gera o comando do coletor com as credenciais de administrador `default`. Recomendamos usar credenciais de ingestão dedicadas, para manter o acesso de ingestão separado da administração e não depender da senha de administrador.
+
+          <Accordion title="Criar credenciais de ingestão dedicadas (recomendado)">
+            No ClickHouse Cloud, abra o console SQL do seu serviço e execute:
+
+            ```sql
+            CREATE USER `clickstack-ingest` IDENTIFIED WITH sha256_password BY '<password>';
+            GRANT SELECT, INSERT, CREATE DATABASE, CREATE TABLE, CREATE VIEW ON default.* TO `clickstack-ingest`;
+            ```
+
+            No comando gerado, substitua `CLICKHOUSE_USER="default"` por `CLICKHOUSE_USER="clickstack-ingest"` e defina `CLICKHOUSE_PASSWORD` com a senha do usuário dedicado.
+          </Accordion>
+
+          Para continuar com as credenciais de administrador `default`, copie o comando da aba **Start Collector**. A UI já preenche o endpoint do serviço. Substitua o placeholder da senha pela senha do seu serviço. Caso não a tenha mais, [obtenha ou redefina os detalhes de conexão](/pt-BR/products/cloud/guides/sql-console/connection-details).
+
+          O comando segue este formato:
+
+          ```shell
+          docker run -e CLICKHOUSE_ENDPOINT="https://<host>:8443" \
+              -e CLICKHOUSE_USER="default" \
+              -e CLICKHOUSE_PASSWORD="<your_password_here>" \
+              -p 4317:4317 -p 4318:4318 \
+              clickhouse/clickstack-otel-collector:latest
+          ```
+
+          Substitua `<host>` e `<your_password_here>` pelos valores do seu Serviço do ClickHouse Cloud e execute o comando.
+
+          O coletor é executado em primeiro plano. Mantenha este terminal aberto e use um segundo terminal para os demais comandos deste guia.
+
+          <Note>
+            Este comando expõe as portas OTLP sem autenticação e se destina apenas à avaliação local. Antes de enviar tráfego de produção, [proteja o coletor](/pt-BR/clickstack/self-configured/ingesting-data/collector#securing-the-collector-self-configured).
+          </Note>
+        </Tab>
+
+        <Tab title="Usar um coletor existente">
+          Selecione **Configure existing collector** e adapte a configuração do seu coletor.
+
+          Execute o coletor como gateway entre suas aplicações e o ClickHouse Cloud. A configuração abaixo adiciona os exportadores do ClickHouse e os pipelines de sinais necessários.
+
+          O exemplo usa as credenciais `default` geradas pela UI. Para usar credenciais de ingestão dedicadas, siga a configuração opcional na aba **Start a new collector**. Nos dois blocos do exportador do ClickHouse, substitua `username: default` por `username: clickstack-ingest` e defina `password` com a senha do usuário dedicado.
+
+          Mescle os componentes a seguir à sua configuração existente, sem substituir receptores, processadores, exportadores ou extensões não relacionados.
+
+          <Info>
+            **Componentes do coletor necessários**
+
+            A distribuição do seu coletor deve incluir o [exportador do ClickHouse](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/clickhouseexporter) e o [routing connector](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/connector/routingconnector). A distribuição OpenTelemetry Collector Contrib inclui ambos os componentes.
+          </Info>
+
+          O exemplo adiciona receptores OTLP, processamento em lote e limitação de memória, roteamento de Session Replay e exportadores do ClickHouse.
+
+          <ExampleOTelConfig />
+
+          Reutilize seu receptor OTLP existente e preserve as configurações de autenticação e TLS dele. Se sua configuração já usa os IDs de componente ou de pipeline do exemplo, mescle-os ou renomeie-os em vez de criar IDs duplicados. Executar dois receptores nas portas `4317` e `4318` gera um conflito de porta.
+
+          Depois de mesclar a configuração, recarregue ou reinicie o coletor usando seu processo de implantação atual.
+
+          Para mais detalhes sobre como configurar coletores OpenTelemetry, consulte [Ingestão com OpenTelemetry](/pt-BR/clickstack/observability/ingesting-data/opentelemetry).
+        </Tab>
+      </Tabs>
+    </Step>
+
+    <Step title="Envie dados de teste" id="send-test-data">
+      Envie um log de teste com o timestamp atual:
+
+      ```shell
+      NOW_NANO="$(date +%s)000000000"
+
+      curl -i "http://localhost:4318/v1/logs" \
+        -H "Content-Type: application/json" \
+        --data-binary @- <<EOF
+      {
+        "resourceLogs": [{
+          "resource": {
+            "attributes": [{
+              "key": "service.name",
+              "value": {"stringValue": "clickstack-docs-test"}
+            }]
+          },
+          "scopeLogs": [{
+            "scope": {"name": "clickstack-docs-test"},
+            "logRecords": [{
+              "timeUnixNano": "${NOW_NANO}",
+              "severityText": "INFO",
+              "body": {"stringValue": "ClickStack ingestion test"}
+            }]
+          }]
+        }]
+      }
+      EOF
+      ```
+
+      Se você usar um coletor já existente, substitua `http://localhost:4318` pelo endpoint OTLP HTTP dele. Se o receptor exigir autenticação, adicione o cabeçalho necessário ao comando `curl`.
+
+      Uma requisição bem-sucedida retorna `HTTP/1.1 200 OK`.
+    </Step>
+
+    <Step title="Comece a explorar e confirme a ingestão" id="open-clickstack-and-confirm-ingestion">
+      Depois que a UI detectar as fontes de dados do OpenTelemetry, selecione **Start exploring** para abrir a visualização **Busca**. Pesquise por `ClickStack ingestion test`.
+
+      O resultado deve incluir o evento de teste com o nome do serviço `clickstack-docs-test`.
+
+      <div className="ch-image-lg">
+        <Frame>
+          ![Visualização de logs exibindo o evento de teste de ingestão do ClickStack](/images/clickstack/getting-started/clickstack_ingestion_test.webp)
+        </Frame>
+      </div>
+    </Step>
+  </Steps>
+</View>
+
+<View title="Vector">
+  ### Prepare seu ambiente de ingestão {#prepare-your-ingestion-environment-vector}
+
+  Comece com um [pipeline do Vector já existente](/pt-BR/clickstack/observability/ingesting-data/vector) que consiga enviar dados para o ClickHouse.
+
+  ## Configurar o Self-managed ClickHouse Observability {#set-up-managed-clickstack-vector}
+
+  <Steps titleSize="h3">
+    <Step title="Selecione Vector e configure a ingestão" id="choose-an-ingestion-source-vector">
+      No seu serviço do ClickHouse Cloud, abra o ClickHouse Observability. Na página **Primeiros Passos**, clique em **Iniciar ingestão**.
+
+      <div className="ch-image-lg">
+        <Frame>
+          ![Iniciar ingestão](/images/clickstack/getting-started/start_ingestion.webp)
+        </Frame>
+      </div>
+
+      Na página **Choose an ingestion source**, selecione [Vector](https://vector.dev/).
+
+      <div className="ch-image-lg">
+        <Frame>
+          ![Selecione Vector como fonte de dados de ingestão](/images/clickstack/getting-started/select_source_vector_toggle.webp)
+        </Frame>
+      </div>
+
+      [Vector](https://vector.dev) é um pipeline de dados de observabilidade de alto desempenho e independente de fornecedor, especialmente popular para a ingestão de logs graças à sua flexibilidade e ao baixo consumo de recursos.
+
+      Ao usar o Vector, é você quem define o schema. Ele pode seguir as convenções do OpenTelemetry ou usar campos específicos dos seus eventos.
+
+      <Info>
+        **É necessário ter um pipeline do Vector existente**
+
+        Siga este guia se você já executa o Vector com um pipeline de entrada. Os dados enviados pelo pipeline devem incluir uma **coluna de timestamp** ou um campo de tempo equivalente, que você selecionará ao configurar a fonte de dados na UI de observabilidade.
+
+        As etapas a seguir adicionam um destino do ClickHouse ao seu pipeline existente.
+      </Info>
+
+#### Crie um banco de dados e uma tabela {#create-a-vector-database-and-table}
+
+      Crie um banco de dados e uma tabela antes de configurar o destino do Vector.
+
+      No ClickHouse Cloud, abra o SQL Console do seu serviço e crie um banco de dados:
+
+      Por exemplo, crie um banco de dados para logs:
+
+      ```sql
+      CREATE DATABASE IF NOT EXISTS logs
+      ```
+
+      Em seguida, crie uma tabela cujo schema corresponda à estrutura dos seus dados de log. O exemplo abaixo pressupõe o formato clássico de log de acesso do Nginx:
+
+      ```sql
+      CREATE TABLE logs.nginx_logs
+      (
+          `time_local` DateTime,
+          `remote_addr` IPv4,
+          `remote_user` LowCardinality(String),
+          `request` String,
+          `status` UInt16,
+          `body_bytes_sent` UInt64,
+          `http_referer` String,
+          `http_user_agent` String,
+          `http_x_forwarded_for` LowCardinality(String),
+          `request_time` Float32,
+          `upstream_response_time` Float32,
+          `http_host` String
+      )
+      ENGINE = MergeTree
+      ORDER BY (toStartOfMinute(time_local), status, remote_addr);
+      ```
+
+      Sua tabela deve estar alinhada ao schema de saída produzido pelo Vector. Ajuste o schema conforme necessário para seus dados, seguindo as [boas práticas de schema](/pt-BR/concepts/best-practices/select-data-type) recomendadas.
+
+      Recomendamos fortemente que você entenda como funcionam as [chaves primárias](/pt-BR/concepts/core-concepts/primary-indexes) no ClickHouse e escolha uma chave de ordenação com base nos seus padrões de acesso. Consulte as orientações de [ajuste de desempenho](/pt-BR/clickstack/self-configured/managing/performance-tuning#choosing-a-primary-key) sobre como escolher uma chave primária.
+
+#### Configure o destino do ClickHouse {#configure-the-vector-clickhouse-sink}
+
+      Com a tabela criada, adicione um destino ClickHouse à configuração do Vector:
+
+      ```yaml
+      sinks:
+        clickhouse:
+          type: clickhouse
+          inputs:
+            - your_input
+          endpoint: "https://<host>:8443"
+          database: logs
+          table: nginx_logs
+          format: json_each_row
+          skip_unknown_fields: true
+          auth:
+            strategy: basic
+            user: default
+            password: "<your_password_here>"
+      ```
+
+      Substitua `your_input` pela entrada do seu pipeline atual. Substitua `<host>` e `<your_password_here>` pelos valores do seu serviço do ClickHouse Cloud. Se necessário, altere o banco de dados de destino ou a tabela.
+
+      <Accordion title="Use credenciais dedicadas à ingestão (recomendado)">
+        Em produção, crie um usuário dedicado e conceda a ele acesso à tabela de destino do Vector. No ClickHouse Cloud, abra o SQL Console do seu serviço e execute:
+
+        ```sql
+        CREATE USER `clickstack-ingest` IDENTIFIED WITH sha256_password BY '<password>';
+        GRANT SELECT, INSERT ON logs.nginx_logs TO `clickstack-ingest`;
+        ```
+
+        Substitua `default` por `clickstack-ingest` no destino do Vector e defina `password` como a senha do usuário dedicado.
+      </Accordion>
+
+      Salve a configuração atualizada e, em seguida, recarregue ou reinicie o Vector seguindo seu processo de implantação atual.
+
+      Para mais exemplos de ingestão de dados com o Vector, consulte [Ingestão com o Vector](/pt-BR/clickstack/observability/ingesting-data/vector) ou a [documentação do destino ClickHouse do Vector](https://vector.dev/docs/reference/configuration/sinks/clickhouse/) para opções avançadas.
+
+#### Criar uma fonte de dados {#create-a-vector-data-source}
+
+      Crie uma fonte de dados para a tabela populada pelo seu pipeline do Vector. A UI solicitará que você crie uma no primeiro acesso.
+
+      O formulário já vem preenchido com as expressões do schema padrão do OpenTelemetry. Para a tabela do Nginx criada neste guia, configure a fonte de dados com os seguintes valores:
+
+      | Configuração                          | Valor                                                                                                           |
+      | ------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+      | **Nome**                              | `Nginx logs`                                                                                                    |
+      | **Tipo de dados da fonte**            | Log                                                                                                             |
+      | **Conexão com o Servidor**            | `Default`                                                                                                       |
+      | **Banco de dados**                    | `logs`                                                                                                          |
+      | **Tabela**                            | `nginx_logs`                                                                                                    |
+      | **Coluna de Timestamp**               | `time_local`                                                                                                    |
+      | **SELECT padrão**                     | `time_local, remote_addr, status, request`                                                                      |
+      | **Expressão do nome do serviço**      | `'nginx'`                                                                                                       |
+      | **Expressão de nível de log**         | `multiIf(status >= 500, 'ERROR', status >= 400, 'WARN', 'INFO')`                                                |
+      | **Expressão de Atributos de Log**     | `map('http.remote_addr', toString(remote_addr), 'http.status_code', toString(status), 'http.request', request)` |
+      | **Expressão de Atributos de Recurso** | `map('service.name', 'nginx')`                                                                                  |
+      | **Coluna de Timestamp Exibida**       | `time_local`                                                                                                    |
+      | **Expressão do ID do trace**          | `''`                                                                                                            |
+      | **Expressão de ID do span**           | `''`                                                                                                            |
+      | **Expressão de coluna implícita**     | `request`                                                                                                       |
+
+      A tabela do Nginx não contém uma coluna `Body`. Defina **Body Expression** como:
+
+      ```sql
+      concat(
+        remote_addr, ' ',
+        remote_user, ' ',
+        '[', formatDateTime(time_local, '%d/%b/%Y:%H:%i:%S %z'), '] ',
+        '"', request, '" ',
+        toString(status), ' ',
+        toString(body_bytes_sent), ' ',
+        '"', http_referer, '" ',
+        '"', http_user_agent, '" ',
+        '"', http_x_forwarded_for, '" ',
+        toString(request_time), ' ',
+        toString(upstream_response_time), ' ',
+        '"', http_host, '"'
+      )
+      ```
+
+      Para outras configurações da fonte de dados, consulte a [referência de configuração](/pt-BR/clickstack/self-configured/managing/config).
+    </Step>
+
+    <Step title="Enviar dados de teste" id="send-test-data-vector">
+      Envie um evento representativo pela entrada do seu pipeline do Vector já existente.
+
+      Para mais exemplos de fontes e transformações do Vector, consulte [Ingestão com o Vector](/pt-BR/clickstack/observability/ingesting-data/vector).
+    </Step>
+
+    <Step title="Comece a explorar e confirme a ingestão" id="open-clickstack-and-confirm-ingestion-vector">
+      Depois de criar a fonte de dados, selecione **Start exploring** para abrir a visualização **Busca**. Selecione a fonte de dados da sua tabela e confirme que ela contém o evento enviado.
+
+      <div className="ch-image-lg">
+        <Frame>
+          ![Logs na UI de observabilidade](/images/clickstack/getting-started/clickstack_managed_ui.webp)
+        </Frame>
+      </div>
+    </Step>
+  </Steps>
+</View>
+
+Agora você tem um serviço Self-managed ClickHouse Observability, um caminho de ingestão em funcionamento e um evento de teste que você pode inspecionar na UI de observabilidade.
+
+## Próximos passos {#next-steps}
+
+Se outro guia solicitar o endpoint ou a senha do seu serviço ClickHouse Cloud, [obtenha ou redefina seus detalhes de conexão](/pt-BR/products/cloud/guides/sql-console/connection-details) antes de continuar.
+
+### Envie dados de aplicações e de infraestrutura {#send-application-and-infrastructure-data}
+
+Escolha um guia de acordo com os dados que você deseja enviar ao seu serviço:
+
+<CardGroup cols={2}>
+  <Card title="Instrumentar uma aplicação" icon="code" href="/pt-BR/clickstack/observability/ingesting-data/sdks/index">
+    Envie rastros e logs de aplicações usando um SDK do OpenTelemetry compatível.
+  </Card>
+
+  <Card title="Coletar logs do host" icon="server" href="/pt-BR/clickstack/observability/integration-examples/host-logs">
+    Encaminhe logs do host a partir de um Coletor OpenTelemetry em execução no papel de agente.
+  </Card>
+
+  <Card title="Monitorar o Kubernetes" icon="cubes" href="/pt-BR/clickstack/observability/integration-examples/kubernetes">
+    Colete logs, métricas e rastros de um cluster do Kubernetes.
+  </Card>
+
+  <Card title="Explorar outras integrações" icon="plug" href="/pt-BR/clickstack/observability/integration-examples/index">
+    Encontre guias para outras aplicações e fontes de dados de telemetria.
+  </Card>
+</CardGroup>
+
+### Explore dados de amostra {#explore-sample-data}
+
+Use um conjunto de dados de exemplo para explorar a UI com uma telemetria mais completa:
+
+<CardGroup cols={2}>
+  <Card title="Logs, rastros e métricas de exemplo" href="/pt-BR/clickstack/observability/example-datasets/sample-data">
+    <img src="/images/clickstack/example-trace-dashboard.webp" alt="" />
+
+    Carregue dados da demonstração pública e diagnostique um problema. Este guia pressupõe que você iniciou um novo Coletor OpenTelemetry local. Se você configurou um coletor já existente, ajuste as configurações de endpoint e de autenticação de acordo com a sua implantação.
+  </Card>
+
+  <Card title="Logs e métricas locais" href="/pt-BR/clickstack/observability/example-datasets/local-data">
+    <img src="/images/clickstack/host-logs/host-logs-dashboard.webp" alt="" />
+
+    Colete arquivos locais e métricas do sistema no MacOS ou no Linux.
+  </Card>
+</CardGroup>
+
+### Gerar dados sintéticos {#generate-synthetic-data}
+
+Use um gerador para testar a ingestão sem precisar de uma aplicação ou dataset existente:
+
+<CardGroup cols={2}>
+  <Card title="Gerar dados com otelgen" icon="terminal" href="/pt-BR/clickstack/observability/example-datasets/otelgen">
+    Envie uma rajada curta de logs, rastros e métricas OTLP sintéticos.
+  </Card>
+
+  <Card title="Gerar dados com telemetrygen" icon="terminal" href="/pt-BR/clickstack/observability/example-datasets/telemetrygen">
+    Gere sinais OpenTelemetry configuráveis para vários serviços.
+  </Card>
+</CardGroup>
+
+Confira [todos os dados de amostra e demonstrações](/pt-BR/clickstack/observability/example-datasets/index).
+
+### Preparação para produção {#prepare-for-production}
+
+Consulte as orientações de produção e dimensionamento antes de usar seu serviço para cargas de trabalho contínuas:
+
+<CardGroup cols={2}>
+  <Card title="Preparação para produção" icon="shield" href="/pt-BR/clickstack/self-configured/managing/production">
+    Revise as orientações sobre credenciais de ingestão, segurança, retenção e operação.
+  </Card>
+
+  <Card title="Estimativa de recursos" icon="chart-line" href="/pt-BR/clickstack/self-configured/managing/estimating-resources">
+    Dimensione a capacidade computacional para o volume de ingestão esperado.
+  </Card>
+</CardGroup>
+
+Para tarefas de implantação, consulte o [guia de implantação do Self-managed ClickHouse Observability](/pt-BR/clickstack/self-configured/deployment/managed#additional-tasks).

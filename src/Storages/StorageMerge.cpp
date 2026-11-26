@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <cmath>
 #include <functional>
 #include <iterator>
@@ -16,7 +17,6 @@
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/Utils.h>
-#include <Analyzer/traverseQueryTree.h>
 #include <Common/Logger.h>
 #include <Common/NaNUtils.h>
 #include <Common/logger_useful.h>
@@ -26,10 +26,13 @@
 #include <Core/QueryProcessingStage.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeEnum.h>
+#include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/Utils.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/NestedUtils.h>
@@ -42,18 +45,21 @@
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/ProcessList.h>
+#include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/addTypeConversionToAST.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/getHeaderForProcessingStage.h>
 #include <Interpreters/replaceAliasColumnsInQuery.h>
 #include <Interpreters/addMissingDefaults.h>
+#include <Interpreters/createSubcolumnsExtractionActions.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSubquery.h>
 #include <Planner/CollectSets.h>
 #include <Planner/PlannerActionsVisitor.h>
 #include <Planner/PlannerContext.h>
@@ -61,13 +67,17 @@
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <Processors/QueryPlan/ArrayJoinStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/MaterializingCTEStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
+#include <Processors/QueryPlan/ReadNothingStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
+#include <Processors/ISimpleTransform.h>
 #include <Processors/Sources/NullSource.h>
+#include <Processors/Transforms/AggregatingTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/FilterTransform.h>
 #include <Processors/Transforms/MaterializingTransform.h>
@@ -77,13 +87,14 @@
 #include <Storages/buildQueryTreeForShard.h>
 #include <Storages/ColumnDefault.h>
 #include <Storages/ColumnsDescription.h>
-#include <Storages/ReadInOrderOptimizer.h>
+#include <Storages/removeGroupingFunctionSpecializations.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageAlias.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageFile.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMerge.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/StorageURL.h>
 #include <Storages/StorageView.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -97,6 +108,7 @@
 #include <Common/typeid_cast.h>
 #include <Core/NamesAndTypes.h>
 #include <Functions/FunctionFactory.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 
 namespace DB
@@ -138,6 +150,7 @@ extern const int UNKNOWN_TABLE;
 extern const int PARAMETER_OUT_OF_BOUND;
 extern const int UNSUPPORTED_METHOD;
 extern const int INCOMPATIBLE_COLUMNS;
+extern const int ILLEGAL_PREWHERE;
 }
 
 namespace
@@ -147,8 +160,9 @@ bool queryHasOrderBy(const SelectQueryInfo & query_info)
 {
     if (query_info.query_tree)
     {
+        /// The streams of `SHUFFLE` are sorted by its key and merged the same way.
         if (const auto * query_node = query_info.query_tree->as<QueryNode>())
-            return query_node->hasOrderBy();
+            return query_node->hasOrderBy() || query_node->isShuffle();
     }
 
     if (query_info.query)
@@ -191,7 +205,7 @@ size_t applyStreamsMultiplier(size_t requested_num_streams, Float64 num_streams_
 
 /// `ColumnsDescription` registers no subcolumns for an ALIAS column, so a name like `arr.size0`
 /// never resolves through the subcolumn index even though the alias expression can produce it.
-bool isSubcolumnOfAliasColumn(const ColumnsDescription & storage_columns, const String & name)
+std::optional<std::pair<String, String>> tryGetSubcolumnOfAliasColumn(const ColumnsDescription & storage_columns, const String & name)
 {
     for (auto [parent_name, subcolumn_name] : Nested::getAllColumnAndSubcolumnPairs(name))
     {
@@ -200,10 +214,15 @@ bool isSubcolumnOfAliasColumn(const ColumnsDescription & storage_columns, const 
             continue;
 
         if (parent->type->tryGetSubcolumnType(subcolumn_name))
-            return true;
+            return std::pair{String(parent_name), String(subcolumn_name)};
     }
 
-    return false;
+    return {};
+}
+
+bool isSubcolumnOfAliasColumn(const ColumnsDescription & storage_columns, const String & name)
+{
+    return tryGetSubcolumnOfAliasColumn(storage_columns, name).has_value();
 }
 
 }
@@ -240,7 +259,7 @@ StorageMerge::StorageMerge(
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_.empty()
-        ? getColumnsDescriptionFromSourceTables(context_)
+        ? getColumnsDescriptionFromSourceTables(context_, nullptr)
         : columns_);
     storage_metadata.setComment(comment);
     storage_metadata.setVirtuals(createVirtuals());
@@ -254,7 +273,8 @@ StorageMerge::StorageMerge(
     const String & source_database_name_or_regexp_,
     bool database_is_regexp_,
     const String & source_table_regexp_,
-    ContextPtr context_)
+    ContextPtr context_,
+    bool keep_inferred_source_metadata)
     : IStorage(table_id_)
     , WithContext(context_->getGlobalContext())
     , database_name_or_regexp(
@@ -265,7 +285,7 @@ StorageMerge::StorageMerge(
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_.empty()
-        ? getColumnsDescriptionFromSourceTables(context_)
+        ? getColumnsDescriptionFromSourceTables(context_, keep_inferred_source_metadata ? &inferred_source_metadata : nullptr)
         : columns_);
     storage_metadata.setComment(comment);
     storage_metadata.setVirtuals(createVirtuals());
@@ -285,13 +305,13 @@ ColumnsDescription StorageMerge::getColumnsDescriptionFromSourceTables(
     size_t max_tables_to_look)
 {
     DatabaseNameOrRegexp database_name_or_regexp(source_database_name_or_regexp, database_is_regexp, source_database_name_or_regexp, source_table_regexp, {});
-    return getColumnsDescriptionFromSourceTablesImpl(query_context, database_name_or_regexp, max_tables_to_look, nullptr);
+    return getColumnsDescriptionFromSourceTablesImpl(query_context, database_name_or_regexp, max_tables_to_look, nullptr, nullptr);
 }
 
-ColumnsDescription StorageMerge::getColumnsDescriptionFromSourceTables(const ContextPtr & query_context) const
+ColumnsDescription StorageMerge::getColumnsDescriptionFromSourceTables(const ContextPtr & query_context, SourceMetadata * source_metadata) const
 {
     auto max_tables_to_look = query_context->getSettingsRef()[Setting::merge_table_max_tables_to_look_for_schema_inference];
-    auto res = getColumnsDescriptionFromSourceTablesImpl(query_context, database_name_or_regexp, max_tables_to_look, this);
+    auto res = getColumnsDescriptionFromSourceTablesImpl(query_context, database_name_or_regexp, max_tables_to_look, this, source_metadata);
     if (res.empty())
         throw Exception{DB::ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE, "There are no tables satisfied provided regexp, you must specify table structure manually"};
     /// Merge does not support TTL.
@@ -303,13 +323,14 @@ ColumnsDescription StorageMerge::getColumnsDescriptionFromSourceTablesImpl(
     const ContextPtr & query_context,
     const DatabaseNameOrRegexp & database_name_or_regexp,
     size_t max_tables_to_look,
-    const IStorage * ignore_self)
+    const IStorage * ignore_self,
+    SourceMetadata * source_metadata)
 {
     auto access = query_context->getAccess();
     size_t table_num = 0;
     ColumnsDescription res;
 
-    traverseTablesUntilImpl(query_context, ignore_self, database_name_or_regexp, [&table_num, &access, &res, max_tables_to_look, &query_context](auto && t)
+    traverseTablesUntilImpl(query_context, ignore_self, database_name_or_regexp, [&table_num, &access, &res, max_tables_to_look, &query_context, source_metadata](auto && t)
     {
         if (!t)
             return false;
@@ -329,8 +350,13 @@ ColumnsDescription StorageMerge::getColumnsDescriptionFromSourceTablesImpl(
                 "Not enough privileges to access the table that {} points to",
                 storage_id.getNameForLogs());
 
+        /// Otherwise a data lake table reports the schema of the snapshot pinned by its last direct query,
+        /// and a lazy stand-in that is not loaded yet reports the columns of its `CREATE` query.
+        resolveStorageProxyLoading(t)->updateExternalDynamicMetadataIfExists(query_context);
         auto table_metadata = t->getInMemoryMetadataPtr(query_context, false);
-        auto structure = table_metadata->getColumns();
+        if (source_metadata && table_metadata->datalake_table_state)
+            source_metadata->emplace(storage_id, InferredSourceMetadata{t, table_metadata});
+        const auto & structure = table_metadata->getColumns();
         String prev_column_name;
         for (const ColumnDescription & column : structure)
         {
@@ -389,6 +415,25 @@ StoragePtr StorageMerge::traverseTablesUntilImpl(const ContextPtr & query_contex
 }
 
 template <typename F>
+StoragePtr StorageMerge::traverseVisibleTablesUntil(const ContextPtr & query_context, F && predicate) const
+{
+    auto access = query_context->getAccess();
+    std::optional<String> last_database;
+    bool granted_show_on_all_tables = false;
+    return traverseTablesUntilImpl(query_context, this, database_name_or_regexp, [&](const StoragePtr & table)
+    {
+        auto id = table->getStorageID();
+        if (id.database_name != last_database)
+        {
+            last_database = id.database_name;
+            granted_show_on_all_tables = access->isGranted(AccessType::SHOW_TABLES, id.database_name);
+        }
+        return (granted_show_on_all_tables || access->isGranted(AccessType::SHOW_TABLES, id.database_name, id.table_name))
+            && predicate(table);
+    });
+}
+
+template <typename F>
 void StorageMerge::forEachTable(F && func) const
 {
     traverseTablesUntil([&func](const auto & table)
@@ -426,6 +471,12 @@ bool StorageMerge::supportsOptimizationToSubcolumns() const
 bool StorageMerge::supportsOptimizationToTupleElementSubcolumns() const
 {
     return traverseTablesUntil([](const auto & table) { return !table->supportsOptimizationToTupleElementSubcolumns(); }) == nullptr;
+}
+
+bool StorageMerge::hasBucketedMapSerialization() const
+{
+    /// The rewritten query is sent to every underlying table, so all of them must benefit from it.
+    return traverseTablesUntil([](const auto & table) { return !table->hasBucketedMapSerialization(); }) == nullptr;
 }
 
 bool StorageMerge::canMoveConditionsToPrewhere() const
@@ -504,71 +555,6 @@ std::optional<NameSet> StorageMerge::supportedPrewhereColumns() const
 namespace
 {
 
-/// Does converting a column from `from` to `to` keep the order AND map distinct values to distinct
-/// ones? The `Array` branch composes this elementwise, so a collapsing pair would reorder arrays.
-/// Unrecognised pairs are refused: a false "safe" gives wrong results, a false "unsafe" a pushdown.
-bool conversionPreservesOrder(const IDataType & from, const IDataType & to)
-{
-    if (from.equals(to))
-        return true;
-
-    const WhichDataType which_from(from);
-    const WhichDataType which_to(to);
-
-    /// An `Enum` is `static_cast` to the target's field type, so the order survives only when that
-    /// mapping is the identity: the target must agree on the values AND be wide enough not to
-    /// truncate, which `contains` does not check. An unmatched `to` falls through to the unwrapping.
-    if (const auto * from_enum = dynamic_cast<const IDataTypeEnum *>(&from))
-    {
-        if (const auto * to_enum = dynamic_cast<const IDataTypeEnum *>(&to))
-        {
-            if (from.getSizeOfValueInMemory() <= to.getSizeOfValueInMemory() && to_enum->contains(*from_enum))
-                return true;
-        }
-        else if (which_to.isInt() && from.getSizeOfValueInMemory() <= to.getSizeOfValueInMemory())
-            return true;
-    }
-
-    /// Widening an integer keeps the order when the signedness is preserved or the target is
-    /// signed, mirroring `ToNumberMonotonicity`'s expansion branch. An equal width can flip the
-    /// sign bit and a narrowing wraps, so both stay refused. `isInteger` covers the wide types as
-    /// well: `getLeastSupertype` derives `Int128`/`UInt128`/`Int256`/`UInt256` for an ordinary
-    /// column-list-less `Merge` over mixed integer widths, and those casts are just as injective.
-    if (which_from.isInteger() && which_to.isInteger()
-        && from.getSizeOfValueInMemory() < to.getSizeOfValueInMemory()
-        && (from.isValueRepresentedByUnsignedInteger() == to.isValueRepresentedByUnsignedInteger()
-            || !to.isValueRepresentedByUnsignedInteger()))
-        return true;
-
-    /// `ColumnLowCardinality::compareAt` compares through the dictionary, so a `LowCardinality`
-    /// column orders exactly like its nested type. The wrapper is therefore stripped from either
-    /// side; it never nests, so the stripped side is not `LowCardinality` again.
-    const auto * from_lc = typeid_cast<const DataTypeLowCardinality *>(&from);
-    const auto * to_lc = typeid_cast<const DataTypeLowCardinality *>(&to);
-    if (from_lc || to_lc)
-        return conversionPreservesOrder(
-            from_lc ? *from_lc->getDictionaryType() : from, to_lc ? *to_lc->getDictionaryType() : to);
-
-    /// Keeping or adding nullability moves no value: no NULL appears and every non-NULL keeps its
-    /// place, so only the nested pair matters. Removing it falls through, because a nullable value
-    /// then has to become a concrete one and NULL placement changes.
-    if (const auto * to_nullable = typeid_cast<const DataTypeNullable *>(&to))
-    {
-        const auto * from_nullable = typeid_cast<const DataTypeNullable *>(&from);
-        return conversionPreservesOrder(from_nullable ? *from_nullable->getNestedType() : from, *to_nullable->getNestedType());
-    }
-
-    /// `ColumnArray::compareAt` compares elementwise then by length, so a strictly monotonic element
-    /// conversion orders arrays the same way. Both sides must be `Array`: wrapping or unwrapping one
-    /// changes what is compared. `Tuple` and `Map` need their own analysis and stay refused.
-    const auto * from_array = typeid_cast<const DataTypeArray *>(&from);
-    const auto * to_array = typeid_cast<const DataTypeArray *>(&to);
-    if (from_array && to_array)
-        return conversionPreservesOrder(*from_array->getNestedType(), *to_array->getNestedType());
-
-    return false;
-}
-
 /// The column a child table should be read through to serve `column_name`, a name the child cannot
 /// resolve on its own. A subcolumn of a column whose type differs between the child and the `Merge`
 /// table exists only in the `Merge` type: `Merge` derives `seed Variant(String, UInt8)` from children
@@ -589,11 +575,143 @@ std::optional<String> getColumnToReadInsteadOfSubcolumn(
     for (auto [name_in_storage, subcolumn_name] : Nested::getAllColumnAndSubcolumnPairs(column_name))
     {
         auto merge_column = merge_columns.tryGetColumn(GetColumnsOptions::All, String(name_in_storage));
-        if (merge_column && merge_column->type->tryGetSubcolumnType(String(subcolumn_name)) && child_columns.has(String(name_in_storage)))
+        if (merge_column && merge_column->type->tryGetSubcolumnType(subcolumn_name) && child_columns.has(String(name_in_storage)))
             return String(name_in_storage);
     }
 
     return {};
+}
+
+/// The name a child table reads to serve `column_name`: the name itself if the child declares it as a column or a
+/// subcolumn, otherwise the whole column it is derived from after the conversion to the `Merge` type (see
+/// `getColumnToReadInsteadOfSubcolumn`). Empty if the child does not read anything for it, then it gets a default.
+/// Both the read and the access check of a child use it, so the check authorizes exactly the column that is read.
+std::optional<String> getChildColumnToRead(
+    const String & column_name, const ColumnsDescription & child_columns, const ColumnsDescription & merge_columns)
+{
+    if (child_columns.has(column_name) || child_columns.hasSubcolumn(GetColumnsOptions::All, column_name))
+        return column_name;
+    return getColumnToReadInsteadOfSubcolumn(column_name, child_columns, merge_columns);
+}
+
+/// Whether a subcolumn of a column a child does not have is taken from the column's default. A subcolumn that only a
+/// custom serialization adds (the codes of the `Quantized` codec) is not part of the value and gets its own default.
+bool isSubcolumnOfDefaultValue(const NameAndTypePair & column)
+{
+    const auto & type = column.getTypeInStorage();
+    return !type->getCustomSerialization()
+        || DataTypeFactory::instance().get(type->getName())->hasSubcolumn(column.getSubcolumnName());
+}
+
+std::pair<DataTypePtr, DataTypePtr> nameTupleElementsByPositionImpl(const DataTypePtr & from, const DataTypePtr & to, bool & renamed)
+{
+    if (from->equals(*to))
+        return {from, to};
+
+    const auto * from_nullable = typeid_cast<const DataTypeNullable *>(from.get());
+    const auto * to_nullable = typeid_cast<const DataTypeNullable *>(to.get());
+    if (from_nullable || to_nullable)
+    {
+        const auto & from_nested = from_nullable ? from_nullable->getNestedType() : from;
+        const auto & to_nested = to_nullable ? to_nullable->getNestedType() : to;
+        auto [new_from_nested, new_to_nested] = nameTupleElementsByPositionImpl(from_nested, to_nested, renamed);
+        return {
+            new_from_nested == from_nested ? from : (from_nullable ? std::make_shared<DataTypeNullable>(new_from_nested) : new_from_nested),
+            new_to_nested == to_nested ? to : (to_nullable ? std::make_shared<DataTypeNullable>(new_to_nested) : new_to_nested)};
+    }
+
+    const auto * from_array = typeid_cast<const DataTypeArray *>(from.get());
+    const auto * to_array = typeid_cast<const DataTypeArray *>(to.get());
+    if (from_array && to_array)
+    {
+        auto [from_nested, to_nested] = nameTupleElementsByPositionImpl(from_array->getNestedType(), to_array->getNestedType(), renamed);
+        return {
+            from_nested == from_array->getNestedType() ? from : std::make_shared<DataTypeArray>(from_nested),
+            to_nested == to_array->getNestedType() ? to : std::make_shared<DataTypeArray>(to_nested)};
+    }
+
+    const auto * from_map = typeid_cast<const DataTypeMap *>(from.get());
+    const auto * to_map = typeid_cast<const DataTypeMap *>(to.get());
+    if (from_map && to_map)
+    {
+        auto [from_key, to_key] = nameTupleElementsByPositionImpl(from_map->getKeyType(), to_map->getKeyType(), renamed);
+        auto [from_value, to_value] = nameTupleElementsByPositionImpl(from_map->getValueType(), to_map->getValueType(), renamed);
+        return {
+            from_key == from_map->getKeyType() && from_value == from_map->getValueType() ? from : std::make_shared<DataTypeMap>(from_key, from_value),
+            to_key == to_map->getKeyType() && to_value == to_map->getValueType() ? to : std::make_shared<DataTypeMap>(to_key, to_value)};
+    }
+
+    const auto * from_tuple = typeid_cast<const DataTypeTuple *>(from.get());
+    const auto * to_tuple = typeid_cast<const DataTypeTuple *>(to.get());
+    if (!from_tuple || !to_tuple || from_tuple->getElements().empty() || to_tuple->getElements().empty())
+        return {from, to};
+
+    DataTypes from_elements = from_tuple->getElements();
+    DataTypes to_elements = to_tuple->getElements();
+    const auto & to_names = to_tuple->getElementNames();
+
+    std::unordered_map<std::string_view, size_t> from_positions;
+    if (from_tuple->hasExplicitNames() && to_tuple->hasExplicitNames())
+    {
+        const auto & from_names = from_tuple->getElementNames();
+        from_positions.reserve(from_names.size());
+        for (size_t i = 0; i < from_names.size(); ++i)
+            from_positions.emplace(from_names[i], i);
+    }
+
+    const bool by_name = std::ranges::any_of(to_names, [&](const auto & name) { return from_positions.contains(name); });
+    const bool rename = !from_tuple->hasExplicitNames() && !to_tuple->hasExplicitNames() && from_elements.size() != to_elements.size();
+    if (!by_name && !rename && from_elements.size() != to_elements.size())
+        return {from, to};
+
+    if (by_name)
+    {
+        for (size_t i = 0; i < to_elements.size(); ++i)
+            if (auto it = from_positions.find(to_names[i]); it != from_positions.end())
+                std::tie(from_elements[it->second], to_elements[i])
+                    = nameTupleElementsByPositionImpl(from_elements[it->second], to_elements[i], renamed);
+    }
+    else
+    {
+        for (size_t i = 0; i < std::min(from_elements.size(), to_elements.size()); ++i)
+            std::tie(from_elements[i], to_elements[i]) = nameTupleElementsByPositionImpl(from_elements[i], to_elements[i], renamed);
+    }
+
+    renamed |= rename;
+    auto rebuild = [&](const DataTypePtr & type, const DataTypeTuple & tuple, const DataTypes & elements) -> DataTypePtr
+    {
+        if (rename)
+            return std::make_shared<DataTypeTuple>(elements, tuple.getElementNames());
+        if (elements == tuple.getElements())
+            return type;
+        if (tuple.hasExplicitNames())
+            return std::make_shared<DataTypeTuple>(elements, tuple.getElementNames());
+        return std::make_shared<DataTypeTuple>(elements);
+    };
+    return {rebuild(from, *from_tuple, from_elements), rebuild(to, *to_tuple, to_elements)};
+}
+
+/// Elements of two unnamed tuples are paired by position: missing trailing elements get default values and extra ones
+/// are dropped, as for missing and extra columns. Returns copies of both types in which such tuples are named by position.
+std::optional<std::pair<DataTypePtr, DataTypePtr>> nameTupleElementsByPosition(const DataTypePtr & from, const DataTypePtr & to)
+{
+    bool renamed = false;
+    auto named = nameTupleElementsByPositionImpl(from, to, renamed);
+    if (!renamed)
+        return {};
+    return named;
+}
+
+const ActionsDAG::Node & addCastWithTupleElementsByPosition(
+    ActionsDAG & dag, const ActionsDAG::Node & node, const DataTypePtr & to, ContextPtr context)
+{
+    const auto named = nameTupleElementsByPosition(node.result_type, to);
+    if (!named)
+        return dag.addCast(node, to, {}, context);
+
+    const auto & from_named = dag.addCast(node, named->first, {}, context);
+    const auto & to_named = dag.addCast(from_named, named->second, {}, context);
+    return dag.addCast(to_named, to, {}, context);
 }
 
 }
@@ -917,6 +1035,83 @@ void ReadFromMerge::addFilter(FilterDAGInfo filter)
     pushed_down_filters.push_back(std::move(filter));
 }
 
+/// Mirrors the `passed_residual_cpu_step` check that `optimizeReadInOrder` does for a direct
+/// `ReadFromMergeTree`, but for the child plans of a `Merge` table. The residual filter of the outer
+/// query is pushed *into* the child plan, above the child read, where `PrefetchingConcatProcessor`
+/// would collapse the streams and serialize it. The outer pass cannot see those steps - it only sees
+/// `ReadFromMerge` - so the check has to happen here.
+static void preferMultipleStreamsForResidualCPUWork(QueryPlan::Node * node, bool passed_residual_cpu_step)
+{
+    if (auto * read_from_merge_tree = typeid_cast<ReadFromMergeTree *>(node->step.get()))
+    {
+        if (passed_residual_cpu_step)
+            read_from_merge_tree->setPreferMultipleStreams();
+        return;
+    }
+
+    /// Unlike `findReadingStep`, a non-trivial `ExpressionStep` is NOT counted here: only filters
+    /// of the outer query are pushed into the child plans, while its expressions (e.g. a monotonic
+    /// `ORDER BY` key) stay above `ReadFromMerge`, where `findReadingStep` sees them and forwards
+    /// the opt-out via `ReadFromMerge::setPreferMultipleStreams`. The child plans do contain
+    /// `ExpressionStep`s, but those are `ReadFromMerge`'s own plumbing added by
+    /// `convertAndFilterSourceStream` (header conversion with `materialize` / casts, alias
+    /// materialization, missing defaults) - counting them would disable
+    /// `PrefetchingConcatProcessor` for every `Merge` table read.
+    passed_residual_cpu_step = passed_residual_cpu_step
+        || typeid_cast<FilterStep *>(node->step.get()) != nullptr
+        || typeid_cast<ArrayJoinStep *>(node->step.get()) != nullptr;
+
+    /// Follow only the ordered pipeline that reaches the sort. The children of a `UnionStep` all
+    /// belong to it, but for any other step with several children (a set-creating step, a join) only
+    /// the first one does: the others build sets or the right side of a join from unrelated reads,
+    /// which the residual work of the main pipeline does not run on.
+    if (typeid_cast<UnionStep *>(node->step.get()))
+    {
+        for (auto * child : node->children)
+            preferMultipleStreamsForResidualCPUWork(child, passed_residual_cpu_step);
+    }
+    else if (!node->children.empty())
+    {
+        preferMultipleStreamsForResidualCPUWork(node->children.front(), passed_residual_cpu_step);
+    }
+}
+
+namespace
+{
+
+/// Passes two-level partially aggregated chunks on as single-level, so the merging step re-buckets their keys itself.
+class ForgetAggregationBucketsTransform final : public ISimpleTransform
+{
+public:
+    explicit ForgetAggregationBucketsTransform(const SharedHeader & header_) : ISimpleTransform(header_, header_, false) {}
+    String getName() const override { return "ForgetAggregationBucketsTransform"; }
+
+protected:
+    void transform(Chunk & chunk) override
+    {
+        auto info = chunk.getChunkInfos().get<AggregatedChunkInfo>();
+        if (!info || info->bucket_num < 0)
+            return;
+
+        auto single_level_info = std::make_shared<AggregatedChunkInfo>();
+        single_level_info->is_overflows = info->is_overflows;
+        chunk.getChunkInfos().extract<AggregatedChunkInfo>();
+        chunk.getChunkInfos().add(std::move(single_level_info));
+    }
+};
+
+bool haveSameColumnTypes(const Block & lhs, const Block & rhs)
+{
+    if (lhs.columns() != rhs.columns())
+        return false;
+    for (size_t i = 0; i < lhs.columns(); ++i)
+        if (!lhs.getByPosition(i).type->equals(*rhs.getByPosition(i).type))
+            return false;
+    return true;
+}
+
+}
+
 /// Equalizes top-level constness across the sibling pipelines `ReadFromMerge` is about to unite.
 static void reconcileSiblingPipelineHeaders(std::span<const std::unique_ptr<QueryPipelineBuilder>> pipelines)
 {
@@ -964,6 +1159,15 @@ void ReadFromMerge::initializePipeline(QueryPipelineBuilder & pipeline, const Bu
         pipeline.init(Pipe(std::make_shared<NullSource>(output_header)));
         return;
     }
+
+    /// Residual per-row work of the outer query is pushed *into* the child plans, above the child
+    /// reads, where `PrefetchingConcatProcessor` would collapse the streams and serialize it. Only
+    /// here are the child plans final (filter push-down runs after `requestReadingInOrder`), so this
+    /// is the earliest point at which the check can see those steps.
+    if (order_info)
+        for (const auto & child_plan : *child_plans)
+            if (child_plan.plan.isInitialized())
+                preferMultipleStreamsForResidualCPUWork(child_plan.plan.getRootNode(), /* passed_residual_cpu_step */ false);
 
     QueryPlanResourceHolder resources;
     VectorWithMemoryTracking<std::unique_ptr<QueryPipelineBuilder>> pipelines;
@@ -1056,28 +1260,6 @@ void ReadFromMerge::filterTablesAndCreateChildrenPlans()
         selected_tables.resize(child_plans->size());
 }
 
-/// Every materialized CTE reachable from `node`. Pointer identity is what matters:
-/// all references to one CTE - including the ones a child plan resolves by name to
-/// the CTE's temporary `StorageMemory` - share the same `MaterializedCTE` object.
-static MaterializedCTESet collectMaterializedCTEsFromQueryTree(const QueryTreeNodePtr & node)
-{
-    MaterializedCTESet result;
-    if (!node)
-        return result;
-
-    traverseQueryTree(node, Everything{},
-        [&](const QueryTreeNodePtr & current_node)
-        {
-            if (const auto * table_node = current_node->as<TableNode>())
-            {
-                if (auto cte = table_node->getMaterializedCTE())
-                    result.insert(std::move(cte));
-            }
-        });
-
-    return result;
-}
-
 std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQueryInfo & query_info_) const
 {
     if (selected_tables.empty())
@@ -1142,28 +1324,7 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
     size_t remaining_streams = num_streams;
 
     if (order_info)
-    {
         query_info_.input_order_info = order_info;
-    }
-    else if (query_info.order_optimizer)
-    {
-        InputOrderInfoPtr input_sorting_info;
-        for (auto it = selected_tables.begin(); it != selected_tables.end(); ++it)
-        {
-            auto storage_ptr = std::get<1>(*it);
-            auto storage_metadata_snapshot = storage_ptr->getInMemoryMetadataPtr(context, false);
-            auto current_info = query_info.order_optimizer->getInputOrder(storage_metadata_snapshot, context);
-            if (it == selected_tables.begin())
-                input_sorting_info = current_info;
-            else if (!current_info || (input_sorting_info && *current_info != *input_sorting_info))
-                input_sorting_info.reset();
-
-            if (!input_sorting_info)
-                break;
-        }
-
-        query_info_.input_order_info = input_sorting_info;
-    }
 
     auto logger = getLogger("StorageMerge");
 
@@ -1237,9 +1398,7 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
             if (storage->getMaxReadStreams(current_streams, context) < current_streams)
                 modified_context->setSetting("parallelize_output_from_storages", Field(0));
 
-            bool sampling_requested = query_info.query->as<ASTSelectQuery>()->sampleSize() != nullptr;
-            if (query_info.table_expression_modifiers)
-                sampling_requested = query_info.table_expression_modifiers->hasSampleSizeRatio();
+            bool sampling_requested = query_info.getSampleSizeRatio().has_value();
 
             /// If sampling requested, then check that table supports it.
             if (sampling_requested && !storage->supportsSampling())
@@ -1247,7 +1406,9 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
 
             Aliases aliases;
             RowPolicyDataOpt row_policy_data_opt;
-            auto storage_metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
+            StorageMetadataPtr storage_metadata_snapshot = std::get<StorageMetadataPtr>(table);
+            if (!storage_metadata_snapshot)
+                storage_metadata_snapshot = getChildMetadataSnapshot(storage, modified_context);
 
             if (storage_metadata_snapshot->getColumns().empty())
             {
@@ -1322,7 +1483,7 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
                     for (const auto & row_policy : row_policy_filter_ptr->policies)
                         modified_context->getQueryContext()->addUsedRowPolicy(row_policy->getFullName().toString());
 
-                row_policy_data_opt = RowPolicyData(row_policy_filter_ptr, storage, modified_context);
+                row_policy_data_opt = RowPolicyData(row_policy_filter_ptr, storage_metadata_snapshot, modified_context);
                 row_policy_data_opt->extendNames(real_column_names);
             }
 
@@ -1333,9 +1494,10 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
             ///  - the non-analyzer path: getModifiedQueryInfo rewrites _table and _database
             ///    directly into the cloned AST, so sharing it across tables is incorrect;
             ///  - tables with row policies (they extend real_column_names differently);
-            ///  - Merge/Distributed/View storages (they interpret table_expression for
-            ///    query routing and nested plan building, so sharing a representative's
-            ///    table_expression would route reads to the wrong table);
+            ///  - storages whose read uses the query tree (`readRequiresAnalyzedQuery`: Merge,
+            ///    remote storages and wrappers over either) and views (they interpret
+            ///    table_expression for query routing and nested plan building, so sharing a
+            ///    representative's table_expression would route reads to the wrong table);
             ///  - when processed_stage > FetchColumns, because createPlanForTable will
             ///    either convert query_tree->toAST() (analyzer path, referencing the wrong
             ///    table) or call replaceDatabaseAndTable on the shared AST (non-analyzer
@@ -1346,8 +1508,7 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
             bool can_cache = query_info.table_expression
                 && !row_policy_data_opt
                 && common_processed_stage == QueryProcessingStage::FetchColumns
-                && !std::dynamic_pointer_cast<StorageMerge>(storage)
-                && !std::dynamic_pointer_cast<StorageDistributed>(storage)
+                && !storage->readRequiresAnalyzedQuery()
                 && !storage->isView();
             auto structure_key = can_cache
                 ? (std::get<0>(table) + "\n" + storage_metadata_snapshot->getColumns().toString(false))
@@ -1438,19 +1599,20 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
                 NameSet resolved_column_names_set;
                 resolved_column_names.reserve(column_names_to_read.size());
 
+                const bool child_supports_subcolumns = storage->supportsSubcolumns();
                 for (auto & column_name : column_names_to_read)
                 {
-                    String name_to_read = std::move(column_name);
-                    if (!child_columns.has(name_to_read) && !child_columns.hasSubcolumn(GetColumnsOptions::All, name_to_read))
-                    {
-                        auto column_to_read = getColumnToReadInsteadOfSubcolumn(name_to_read, child_columns, merge_columns);
-                        if (!column_to_read)
-                            continue;
-                        name_to_read = std::move(*column_to_read);
-                    }
+                    auto name_to_read = getChildColumnToRead(column_name, child_columns, merge_columns);
+                    /// The subcolumn is extracted from the whole column in `convertAndFilterSourceStream`.
+                    if (name_to_read && !child_supports_subcolumns && !child_columns.has(*name_to_read))
+                        if (auto child_column = child_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, *name_to_read);
+                            child_column && child_column->isSubcolumn())
+                            name_to_read = child_column->getNameInStorage();
+                    if (!name_to_read)
+                        continue;
 
-                    if (resolved_column_names_set.emplace(name_to_read).second)
-                        resolved_column_names.push_back(std::move(name_to_read));
+                    if (resolved_column_names_set.emplace(*name_to_read).second)
+                        resolved_column_names.push_back(std::move(*name_to_read));
                 }
 
                 column_names_to_read = std::move(resolved_column_names);
@@ -1470,6 +1632,10 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
 
             child.plan.addInterpreterContext(modified_context);
 
+            /// Bucket numbers depend on the aggregation key types, and the merging step merges the children's buckets as they are.
+            if (child.plan.isInitialized() && common_processed_stage == QueryProcessingStage::WithMergeableState && query_info.need_aggregate)
+                child.forget_aggregation_buckets = !haveSameColumnTypes(*child.plan.getCurrentHeader(), *common_header);
+
             if (child.plan.isInitialized())
             {
                 /// Source tables could have different but convertible types, like numeric types of different width.
@@ -1484,7 +1650,8 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
                     row_policy_data_opt,
                     context,
                     child,
-                    is_smallest_column_requested);
+                    is_smallest_column_requested,
+                    column_names_to_read);
 
                 for (const auto & filter_info : pushed_down_filters)
                 {
@@ -1558,45 +1725,82 @@ QueryTreeNodePtr replaceTableExpressionAndRemoveJoin(
     TableExpressionNodePtr original_table_expression,
     TableExpressionNodePtr replacement_table_expression,
     const ContextPtr & context,
-    const Names & required_column_names)
+    const Names & required_column_names,
+    bool select_only_required_columns)
 {
     auto * query_node = query->as<QueryNode>();
     auto join_tree_type = query_node->getJoinTreeNode()->getNodeType();
     auto modified_query = query_node->cloneAndReplace(original_table_expression, replacement_table_expression);
 
-    // For the case when join tree is just a table or a table function we don't need to do anything more.
-    if (join_tree_type == QueryTreeNodeType::TABLE || join_tree_type == QueryTreeNodeType::TABLE_FUNCTION)
+    const bool is_single_table
+        = join_tree_type == QueryTreeNodeType::TABLE || join_tree_type == QueryTreeNodeType::TABLE_FUNCTION;
+
+    // For the case when join tree is just a table or a table function we don't need to do anything more,
+    // unless only the required columns must be selected.
+    if (is_single_table && !select_only_required_columns)
         return modified_query;
 
     // JOIN needs to be removed because StorageMerge should produce not joined data.
     // GROUP BY should be removed as well.
 
     auto * modified_query_node = modified_query->as<QueryNode>();
+    query_node = modified_query_node;
 
-    // Remove the JOIN statement. As a result query will have a form like: SELECT * FROM <table> ...
-    modified_query = modified_query->cloneAndReplace(modified_query_node->getJoinTreeNodeTyped(), replacement_table_expression);
-    modified_query_node = modified_query->as<QueryNode>();
+    /// An `ARRAY JOIN` result column is produced above the table, so a filter over it is not a filter
+    /// over the table's own columns, and the child must not be asked to read it: `StorageMerge` reads
+    /// its children with `FetchColumns` and performs the array join on the initiator, where the filter
+    /// is applied. Replacing the join tree below rewires every column sourced from the `ARRAY JOIN`
+    /// node onto the child table expression, which makes such a filter indistinguishable from a filter
+    /// over the child's own columns, so drop those filters here, while the columns still point at the
+    /// `ARRAY JOIN` node. Filters over the table's columns are unaffected: they were rewired onto the
+    /// child table expression by the replacement above and are kept.
+    if (join_tree_type == QueryTreeNodeType::ARRAY_JOIN)
+    {
+        if (modified_query_node->hasPrewhere())
+            removeExpressionsThatDoNotDependOnTableIdentifiers(
+                modified_query_node->getPrewhere(), replacement_table_expression, context);
+        if (modified_query_node->hasWhere())
+            removeExpressionsThatDoNotDependOnTableIdentifiers(
+                modified_query_node->getWhere(), replacement_table_expression, context);
+    }
 
-    query_node = modified_query->as<QueryNode>();
+    if (!is_single_table)
+    {
+        // Remove the JOIN statement. As a result query will have a form like: SELECT * FROM <table> ...
+        modified_query = modified_query->cloneAndReplace(modified_query_node->getJoinTreeNodeTyped(), replacement_table_expression);
+        modified_query_node = modified_query->as<QueryNode>();
 
-    // For backward compatibility we need to leave all filters related to this table.
-    // It may lead to some incorrect result.
-    if (query_node->hasPrewhere())
-        removeExpressionsThatDoNotDependOnTableIdentifiers(query_node->getPrewhere(), replacement_table_expression, context);
-    if (query_node->hasWhere())
-        removeExpressionsThatDoNotDependOnTableIdentifiers(query_node->getWhere(), replacement_table_expression, context);
+        query_node = modified_query->as<QueryNode>();
+
+        // For backward compatibility we need to leave all filters related to this table.
+        // It may lead to some incorrect result.
+        if (query_node->hasPrewhere())
+            removeExpressionsThatDoNotDependOnTableIdentifiers(query_node->getPrewhere(), replacement_table_expression, context);
+        if (query_node->hasWhere())
+            removeExpressionsThatDoNotDependOnTableIdentifiers(query_node->getWhere(), replacement_table_expression, context);
+    }
 
     query_node->getGroupBy().getNodes().clear();
+    /// A GROUP BY modifier must not outlive its clause: with no GROUP BY keys and no aggregate
+    /// functions in the replaced projection, the child query is aggregation-free, and the ALL forms
+    /// would re-expand over that replaced projection instead of the original one.
+    query_node->setIsGroupByAll(false);
+    query_node->setIsGroupByWithTotals(false);
+    query_node->setIsGroupByWithRollup(false);
+    query_node->setIsGroupByWithCube(false);
+    query_node->setIsGroupByWithGroupingSets(false);
     query_node->getHaving() = {};
     query_node->getWindow().getNodes().clear();
     query_node->getQualify() = {};
     query_node->getOrderBy().getNodes().clear();
+    query_node->setIsOrderByAll(false);
     query_node->getInterpolate() = {};
     if (query_node->hasLimitByLimit())
         query_node->getLimitByLimit() = {};
     if (query_node->hasLimitByOffset())
         query_node->getLimitByOffset() = {};
     query_node->getLimitBy().getNodes().clear();
+    query_node->setIsLimitByAll(false);
     /// LIMIT selects rows relative to the ORDER BY cleared just above, so it is stale here.
     query_node->setIsLimitWithTies(false);
     if (query_node->hasLimit())
@@ -1681,7 +1885,7 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & mo
     bool & is_smallest_column_requested,
     Aliases & aliases) const
 {
-    const auto & [database_name, storage, storage_lock, table_name] = storage_with_lock_and_name;
+    const auto & [database_name, storage, storage_lock, table_name, _] = storage_with_lock_and_name;
     const StorageID current_storage_id = storage->getStorageID();
 
     SelectQueryInfo modified_query_info = query_info;
@@ -1698,7 +1902,18 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & mo
         if (query_info.table_expression_modifiers)
             replacement_table_expression->setTableExpressionModifiers(*query_info.table_expression_modifiers);
 
-        modified_query_info.query_tree = replaceTableExpressionAndRemoveJoin(modified_query_info.query_tree, modified_query_info.table_expression, replacement_table_expression, modified_context, required_column_names);
+        /// A remote child (`isRemote`, also behind a wrapper or a `Merge`) builds the query it sends from this tree,
+        /// so at `FetchColumns` it must ask for the columns to read and nothing else. A `Merge` with only local tables
+        /// also reads this tree (`readRequiresAnalyzedQuery`) but sends no query, so it gets the tree as is.
+        const bool select_only_required_columns
+            = common_processed_stage == QueryProcessingStage::FetchColumns && storage->isRemote();
+        modified_query_info.query_tree = replaceTableExpressionAndRemoveJoin(
+            modified_query_info.query_tree,
+            modified_query_info.table_expression,
+            replacement_table_expression,
+            modified_context,
+            required_column_names,
+            select_only_required_columns);
         modified_query_info.table_expression = replacement_table_expression;
         modified_query_info.planner_context->getOrCreateTableExpressionData(replacement_table_expression);
 
@@ -1708,7 +1923,7 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & mo
         /// This happens when merge() is used over tables with different schemas and the processing
         /// stage is above FetchColumns (e.g., for distributed/remote tables where the full query
         /// is sent to the child for processing).
-        auto storage_columns = storage_snapshot_->metadata->getColumns();
+        const auto & storage_columns = storage_snapshot_->metadata->getColumns();
 
         std::unordered_map<std::string, QueryTreeNodePtr> column_name_to_node;
         for (const auto & column_name : required_column_names)
@@ -1756,8 +1971,20 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & mo
                 }
             }
 
-            column_name_to_node.emplace(column_name,
-                std::make_shared<ConstantNode>(merge_column->type->getDefault(), merge_column->type));
+            /// A subcolumn of a missing column is the subcolumn of the column's default: `x.null` of a NULL is 1.
+            Field default_value = merge_column->type->getDefault();
+            if (merge_column->isSubcolumn() && isSubcolumnOfDefaultValue(*merge_column))
+            {
+                const auto & type_in_storage = merge_column->getTypeInStorage();
+                auto subcolumn = type_in_storage->getSubcolumn(
+                    merge_column->getSubcolumnName(), type_in_storage->createColumnConstWithDefaultValue(1));
+                default_value = (*subcolumn)[0];
+            }
+
+            /// The child re-analyzes the printed query, so the default must print as `_CAST` to keep its type and name.
+            auto default_node = foldConstantCast(createCastFunction(
+                std::make_shared<ConstantNode>(std::move(default_value), merge_column->type), merge_column->type, modified_context));
+            column_name_to_node.emplace(column_name, std::move(default_node));
         }
 
         bool with_aliases = /* common_processed_stage == QueryProcessingStage::FetchColumns && */ !storage_columns.getAliases().empty();
@@ -1895,8 +2122,24 @@ static bool recursivelyApplyToReadingSteps(QueryPlan::Node * node, const std::fu
 
     if (auto * read_from_merge_tree = typeid_cast<ReadFromMergeTree *>(node->step.get()))
         ok &= func(*read_from_merge_tree);
+    else if (node->children.empty() && !typeid_cast<ReadNothingStep *>(node->step.get()))
+        return false; /// Only a `ReadFromMergeTree` can be asked to read in order; any other read does not promise it.
 
     return ok;
+}
+
+/// Whether both keys start with the same `prefix_size` columns, sorted in the same directions.
+static bool sortingKeysSharePrefix(const KeyDescription & lhs, const KeyDescription & rhs, size_t prefix_size)
+{
+    if (lhs.column_names.size() < prefix_size || rhs.column_names.size() < prefix_size)
+        return false;
+
+    auto is_reverse = [](const KeyDescription & key, size_t i) { return !key.reverse_flags.empty() && key.reverse_flags[i]; };
+    for (size_t i = 0; i < prefix_size; ++i)
+        if (lhs.column_names[i] != rhs.column_names[i] || is_reverse(lhs, i) != is_reverse(rhs, i))
+            return false;
+
+    return true;
 }
 
 QueryPipelineBuilderPtr ReadFromMerge::buildPipeline(
@@ -1927,6 +2170,9 @@ QueryPipelineBuilderPtr ReadFromMerge::buildPipeline(
         builder->addSimpleTransform([](const SharedHeader & stream_header) { return std::make_shared<MaterializingTransform>(stream_header); });
     }
 
+    if (child.forget_aggregation_buckets)
+        builder->addSimpleTransform([](const SharedHeader & stream_header) { return std::make_shared<ForgetAggregationBucketsTransform>(stream_header); });
+
     return builder;
 }
 
@@ -1942,7 +2188,7 @@ ReadFromMerge::ChildPlan ReadFromMerge::createPlanForTable(
     ContextMutablePtr modified_context,
     size_t streams_num) const
 {
-    const auto & [database_name, storage, _, table_name] = storage_with_lock;
+    const auto & [database_name, storage, _, table_name, metadata_snapshot] = storage_with_lock;
     auto & modified_select = modified_query_info.query->as<ASTSelectQuery &>();
 
     if (!InterpreterSelectQuery::isQueryWithFinal(modified_query_info) && storage->needRewriteQueryWithFinal(real_column_names_read_from_the_source_table))
@@ -1964,7 +2210,18 @@ ReadFromMerge::ChildPlan ReadFromMerge::createPlanForTable(
         storage_snapshot_,
         modified_query_info);
 
+    /// A child's row policy is applied above its read, too late for a child that processes the query itself.
+    if (row_policy_data_opt && storage_stage > QueryProcessingStage::FetchColumns)
+        throw Exception(
+            ErrorCodes::ILLEGAL_PREWHERE,
+            "Row policy filter for {} cannot be applied by {}, because the table processes the query remotely. "
+            "Define the policy on the underlying tables instead; note that such a policy is not applied to reads "
+            "shipped with `serialize_query_plan = 1`",
+            storage->getStorageID().getNameForLogs(),
+            storage_merge->getStorageID().getNameForLogs());
+
     QueryPlan plan;
+    bool applies_row_policy = false;
 
     bool must_return_interpreter_select_query_plan
         = processed_stage > QueryProcessingStage::FetchColumns && dynamic_cast<StorageMerge *>(storage.get());
@@ -1976,6 +2233,15 @@ ReadFromMerge::ChildPlan ReadFromMerge::createPlanForTable(
         {
             real_column_names.push_back(ExpressionActions::getSmallestColumn(storage_snapshot_->metadata->getColumns().getAllPhysical()).name);
             is_smallest_column_requested = true;
+        }
+
+        if (row_policy_data_opt)
+        {
+            if (auto row_level_filter = row_policy_data_opt->makeRowLevelFilter(*storage, modified_query_info.row_level_filter, modified_context))
+            {
+                modified_query_info.row_level_filter = std::move(row_level_filter);
+                applies_row_policy = true;
+            }
         }
 
         storage->read(plan,
@@ -1992,7 +2258,9 @@ ReadFromMerge::ChildPlan ReadFromMerge::createPlanForTable(
 
         if (row_policy_data_opt)
         {
-            if (auto * source_step_with_filter = dynamic_cast<SourceStepWithFilter *>((plan.getRootNode()->step.get())))
+            if (applies_row_policy)
+                row_policy_data_opt->addCreatingSetsStep(plan, context);
+            else if (auto * source_step_with_filter = dynamic_cast<SourceStepWithFilter *>((plan.getRootNode()->step.get())))
                 row_policy_data_opt->addStorageFilter(source_step_with_filter);
         }
     }
@@ -2004,30 +2272,105 @@ ReadFromMerge::ChildPlan ReadFromMerge::createPlanForTable(
 
         /// The child plan is united into this pipeline in the same process, where nothing
         /// unmarshalls its blocks, so `BlocksMarshallingStep` must not be added to it.
-        auto child_select_query_options = SelectQueryOptions(processed_stage);
+        auto child_select_query_options = SelectQueryOptions(processed_stage).positionalArgumentsAlreadyResolved();
         child_select_query_options.is_local_plan_for_distributed_query = true;
+        child_select_query_options.view_source_in_subqueries
+            = modified_query_info.planner_context && modified_query_info.planner_context->isViewSourceInSubqueries();
+
+        /// The query tree passes already ran on the whole query, and this child plan's header must
+        /// stay convertible to the common header derived from it. Re-running the optimization passes
+        /// on the child query could change its result shape. Run only the resolve passes, same as for
+        /// queries sent to remote shards.
+        child_select_query_options.ignore_ast_optimizations = true;
 
         /// Converting query to AST because types might be different in the source table.
         /// Need to resolve types again.
-        auto ast = modified_query_info.query_tree->toAST();
+        /// The child's analyzer rebuilds the `grouping` specializations that do not resolve from the query text.
+        auto query_tree_for_ast = modified_query_info.query_tree->clone();
+        removeGroupingFunctionSpecializations(query_tree_for_ast, /*keep_ordinary=*/ true);
+        auto ast = query_tree_for_ast->toAST();
+        /// The analyzer substitutes the inserted block of a materialized view for its source table only when given it.
+        /// A child that is the source table itself reads the table, as it does at `FetchColumns`.
+        auto view_source = modified_context->isViewInnerQuery() ? nullptr : modified_context->getViewSource();
+        if (view_source && view_source->getStorageID().getFullNameNotQuoted() == storage->getStorageID().getFullNameNotQuoted())
+            view_source = nullptr;
         InterpreterSelectQueryAnalyzer interpreter(ast,
             modified_context,
-            child_select_query_options);
+            child_select_query_options,
+            view_source);
 
         auto & planner = interpreter.getPlanner();
         planner.buildQueryPlanIfNeeded();
         plan = std::move(planner).extractQueryPlan();
+        applies_row_policy = true;
     }
 
-    return ChildPlan{std::move(plan), storage_stage};
+    return ChildPlan{.plan = std::move(plan), .stage = storage_stage, .applies_row_policy = applies_row_policy};
+}
+
+namespace
+{
+
+/// Unique against the DAG outputs and the table's columns: on SELECT * a table column named
+/// `__row_policy_filter` lands in the same block as the filter column, and Block::insert throws.
+String makeUniqueRowPolicyFilterColumnName(const ActionsDAG & dag, const NamesAndTypesList & table_columns, const NameSet & other_names = {})
+{
+    NameSet reserved_names = other_names;
+    for (const auto & column : table_columns)
+        reserved_names.insert(column.name);
+
+    String name = "__row_policy_filter";
+    for (size_t i = 0; dag.tryFindInOutputs(name) != nullptr || reserved_names.contains(name); ++i)
+        name = "__row_policy_filter_" + std::to_string(i);
+    return name;
+}
+
+/// Identifiers in subqueries and those rooted at a lambda argument are not this table's columns.
+void replaceSubcolumnsOfAliasColumnsWithGetSubcolumn(ASTPtr & ast, const ColumnsDescription & columns, const NameSet & lambda_arguments)
+{
+    if (const auto * identifier = ast->as<ASTIdentifier>())
+    {
+        if (columns.has(identifier->name()) || lambda_arguments.contains(identifier->name()))
+            return;
+
+        for (auto [prefix, _] : Nested::getAllColumnAndSubcolumnPairs(identifier->name()))
+            if (lambda_arguments.contains(String(prefix)))
+                return;
+
+        if (auto subcolumn = tryGetSubcolumnOfAliasColumn(columns, identifier->name()))
+        {
+            auto function = makeASTFunction(
+                "getSubcolumn", make_intrusive<ASTIdentifier>(subcolumn->first), make_intrusive<ASTLiteral>(subcolumn->second));
+            if (auto alias = identifier->tryGetAlias(); !alias.empty())
+                function->setAlias(alias);
+            ast = std::move(function);
+        }
+        return;
+    }
+
+    if (ast->as<ASTSubquery>())
+        return;
+
+    if (const auto * function = ast->as<ASTFunction>(); function && function->name == "lambda")
+    {
+        NameSet body_lambda_arguments = lambda_arguments;
+        for (auto & name : RequiredSourceColumnsMatcher::extractNamesFromLambda(*function))
+            body_lambda_arguments.insert(std::move(name));
+        replaceSubcolumnsOfAliasColumnsWithGetSubcolumn(function->arguments->children[1], columns, body_lambda_arguments);
+        return;
+    }
+
+    for (auto & child : ast->children)
+        replaceSubcolumnsOfAliasColumnsWithGetSubcolumn(child, columns, lambda_arguments);
+}
+
 }
 
 ReadFromMerge::RowPolicyData::RowPolicyData(RowPolicyFilterPtr row_policy_filter_ptr,
-    std::shared_ptr<DB::IStorage> storage,
+    StorageMetadataPtr storage_metadata,
     ContextPtr local_context)
+    : storage_metadata_snapshot(std::move(storage_metadata))
 {
-    const auto storage_metadata = storage->getInMemoryMetadataPtr(local_context, false);
-    storage_metadata_snapshot = storage_metadata;
     auto storage_columns = storage_metadata_snapshot->getColumns();
     auto needed_columns = storage_columns.getAll();
 
@@ -2042,7 +2385,26 @@ ReadFromMerge::RowPolicyData::RowPolicyData(RowPolicyFilterPtr row_policy_filter
     /// `generateFilterActions` in `InterpreterSelectQuery` clones for the same reason.
     ASTPtr expr = row_policy_filter_ptr->expression->clone();
 
-    auto syntax_result = TreeRewriter(local_context).analyze(expr, needed_columns);
+    /// A read cannot produce `ALIAS` columns or their subcolumns: expand them, unless the expansion reads a virtual column.
+    TreeRewriterResultPtr syntax_result;
+    if (!storage_columns.getAliases().empty())
+    {
+        ColumnsDescription columns_with_virtuals = storage_columns;
+        for (const auto & virtual_column : storage_metadata_snapshot->virtuals)
+            if (!columns_with_virtuals.has(virtual_column.name))
+                columns_with_virtuals.add(ColumnDescription(virtual_column.name, virtual_column.type));
+
+        ASTPtr expanded_expr = expr->clone();
+        replaceSubcolumnsOfAliasColumnsWithGetSubcolumn(expanded_expr, storage_columns, {});
+        replaceAliasColumnsInQuery(expanded_expr, columns_with_virtuals, {}, local_context);
+
+        syntax_result = TreeRewriter(local_context, /* no_throw = */ true).analyze(expanded_expr, needed_columns);
+        if (syntax_result)
+            expr = std::move(expanded_expr);
+    }
+
+    if (!syntax_result)
+        syntax_result = TreeRewriter(local_context).analyze(expr, needed_columns);
     auto expression_analyzer = ExpressionAnalyzer{expr, syntax_result, local_context};
 
     actions_dag = expression_analyzer.getActionsDAG(false /* add_aliases */, false /* project_result */);
@@ -2058,17 +2420,7 @@ ReadFromMerge::RowPolicyData::RowPolicyData(RowPolicyFilterPtr row_policy_filter
     /// output (e.g. greater(a, 1) for "USING a > 1") leaks downstream. See commit message.
     const auto & filter_node = actions_dag.findInOutputs(expr->getColumnName());
 
-    /// The alias name must be unique against the current DAG outputs and against the child table's
-    /// real columns: a source table may legitimately have a column named __row_policy_filter, and
-    /// on SELECT * it flows into the same block as the alias, so a clash makes Block::insert throw.
-    NameSet reserved_names;
-    for (const auto & column : needed_columns)
-        reserved_names.insert(column.name);
-
-    filter_column_name = "__row_policy_filter";
-    for (size_t i = 0; actions_dag.tryFindInOutputs(filter_column_name) != nullptr || reserved_names.contains(filter_column_name); ++i)
-        filter_column_name = "__row_policy_filter_" + std::to_string(i);
-
+    filter_column_name = makeUniqueRowPolicyFilterColumnName(actions_dag, needed_columns);
     const auto & alias_node = actions_dag.addAlias(filter_node, filter_column_name);
 
     /// Keep only the source (input) columns and the alias as outputs. This drops the raw predicate
@@ -2113,9 +2465,97 @@ void ReadFromMerge::RowPolicyData::addFilterTransform(QueryPlan & plan, ContextP
     auto filter_step = std::make_unique<FilterStep>(plan.getCurrentHeader(), actions_dag.clone(), filter_column_name, true /* remove filter column */);
     plan.addStep(std::move(filter_step));
 
+    addCreatingSetsStep(plan, local_context);
+}
+
+void ReadFromMerge::RowPolicyData::addCreatingSetsStep(QueryPlan & plan, ContextPtr local_context) const
+{
     /// No other path builds these sets for every engine and for FINAL: addStorageFilter is only an
     /// additional pushdown. No subquery adds no step.
     addDelayedCreatingSetsStep(plan, prepared_sets, local_context);
+}
+
+StorageMetadataPtr ReadFromMerge::getChildMetadataSnapshot(const StoragePtr & storage, const ContextPtr & query_context) const
+{
+    const auto & inferred_source_metadata = assert_cast<const StorageMerge &>(*storage_merge).inferred_source_metadata;
+    if (auto it = inferred_source_metadata.find(storage->getStorageID());
+        it != inferred_source_metadata.end() && (it->first.hasUUID() || it->second.storage.lock() == storage))
+    {
+        return it->second.metadata;
+    }
+
+    /// The analyzer refreshes only the outer storage, so a data lake child would keep the snapshot of its last direct query.
+    resolveStorageProxy(storage)->updateExternalDynamicMetadataIfExists(query_context);
+    const auto metadata_handle = storage->getInMemoryMetadataPtr(query_context, false);
+    /// Returning the handle itself would convert it as an rvalue, which `StorageMetadataHandle` forbids.
+    StorageMetadataPtr child_metadata = metadata_handle;
+    return child_metadata;
+}
+
+FilterDAGInfoPtr ReadFromMerge::RowPolicyData::makeRowLevelFilter(
+    const IStorage & storage, const FilterDAGInfoPtr & forwarded, ContextPtr local_context) const
+{
+    const auto & columns = storage_metadata_snapshot->getColumns();
+    const auto required_columns = filter_actions->getRequiredColumns();
+    if (!canPushDownRowPolicyFilter(storage, columns, required_columns))
+        return nullptr;
+
+    /// The policy DAG does not compute `ALIAS` or `EPHEMERAL` columns, and the read cannot produce them.
+    for (const auto & column_name : required_columns)
+        if (!columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column_name))
+            return nullptr;
+
+    auto row_level_filter = std::make_shared<FilterDAGInfo>();
+    row_level_filter->do_remove_column = true;
+
+    if (!forwarded)
+    {
+        row_level_filter->actions = actions_dag.clone();
+        row_level_filter->column_name = filter_column_name;
+        return row_level_filter;
+    }
+
+    /// `forwarded` may be another `Merge`'s child policy filter, named like ours.
+    NameSet forwarded_names;
+    for (const auto * node : forwarded->actions.getInputs())
+        forwarded_names.insert(node->result_name);
+    for (const auto * node : forwarded->actions.getOutputs())
+        forwarded_names.insert(node->result_name);
+
+    auto policy_dag = actions_dag.clone();
+    const auto & policy_filter = policy_dag.findInOutputs(filter_column_name);
+    const auto & policy_alias = policy_dag.addAlias(
+        policy_filter, makeUniqueRowPolicyFilterColumnName(policy_dag, columns.getAll(), forwarded_names));
+    for (auto & output : policy_dag.getOutputs())
+        if (output == &policy_filter)
+            output = &policy_alias;
+    const String policy_column_name = policy_alias.result_name;
+
+    auto dag = ActionsDAG::merge(std::move(policy_dag), forwarded->actions.clone());
+    const auto * policy_node = &dag.findInOutputs(policy_column_name);
+    const auto * forwarded_node = &dag.findInOutputs(forwarded->column_name);
+    const auto & conjunction_node = dag.addFunction(FunctionFactory::instance().get("and", local_context), {policy_node, forwarded_node}, {});
+
+    row_level_filter->column_name = makeUniqueRowPolicyFilterColumnName(dag, columns.getAll());
+    const auto & alias_node = dag.addAlias(conjunction_node, row_level_filter->column_name);
+
+    ActionsDAG::NodeRawConstPtrs outputs;
+    std::unordered_set<const ActionsDAG::Node *> output_set;
+    for (const auto * output : dag.getOutputs())
+    {
+        if (output == policy_node || (forwarded->do_remove_column && output == forwarded_node))
+            continue;
+        outputs.push_back(output);
+        output_set.insert(output);
+    }
+    for (const auto * input : dag.getInputs())
+        if (!output_set.contains(input))
+            outputs.push_back(input);
+    outputs.push_back(&alias_node);
+    dag.getOutputs() = std::move(outputs);
+
+    row_level_filter->actions = std::move(dag);
+    return row_level_filter;
 }
 
 StorageMerge::StorageListWithLocks ReadFromMerge::getSelectedTables(
@@ -2125,8 +2565,21 @@ StorageMerge::StorageListWithLocks ReadFromMerge::getSelectedTables(
     StorageListWithLocks res;
     DatabaseTablesIterators database_table_iterators = assert_cast<StorageMerge &>(*storage_merge).getDatabaseIterators(query_context);
 
+    /// Before `applyFilters`, the filters already pushed down to this step exclude tables too: every child applies them.
+    std::optional<ActionsDAG> pushed_down_filters_dag;
+    const ActionsDAG * filter_dag = filter_actions_dag.get();
+    if (!filter_dag && !pushed_down_filters.empty())
+    {
+        ActionsDAG::NodeRawConstPtrs filter_nodes;
+        for (const auto & filter_info : pushed_down_filters)
+            filter_nodes.push_back(&filter_info.actions.findInOutputs(filter_info.column_name));
+        pushed_down_filters_dag = ActionsDAG::buildFilterActionsDAG(filter_nodes);
+        if (pushed_down_filters_dag)
+            filter_dag = &*pushed_down_filters_dag;
+    }
+
     std::function<bool(const String&,const String&)> table_filter;
-    if (filter_actions_dag && merge_storage_snapshot->metadata->isVirtualColumn("_database") && merge_storage_snapshot->metadata->isVirtualColumn("_table"))
+    if (filter_dag && merge_storage_snapshot->metadata->isVirtualColumn("_database") && merge_storage_snapshot->metadata->isVirtualColumn("_table"))
     {
         auto lc_string_type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
         Block sample_block = {
@@ -2134,7 +2587,7 @@ StorageMerge::StorageListWithLocks ReadFromMerge::getSelectedTables(
             ColumnWithTypeAndName(lc_string_type, "_table")
         };
         // Extract predicate part, that could be evaluated only with _database and _table columns
-        auto table_filter_dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_actions_dag->getOutputs().at(0), &sample_block, query_context);
+        auto table_filter_dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_dag->getOutputs().at(0), &sample_block, query_context);
         if (table_filter_dag)
         {
             auto filter_expression = VirtualColumnUtils::buildFilterExpression(std::move(*table_filter_dag), query_context);
@@ -2168,6 +2621,7 @@ StorageMerge::StorageListWithLocks ReadFromMerge::getSelectedTables(
     }
 
     auto access = query_context->getAccess();
+    QueryStatusPtr query_status = query_context->getProcessListElementSafe();
     for (const auto & iterator : database_table_iterators)
     {
         auto database = DatabaseCatalog::instance().tryGetDatabase(iterator->databaseName());
@@ -2192,14 +2646,61 @@ StorageMerge::StorageListWithLocks ReadFromMerge::getSelectedTables(
                 if (!table_filter || storage->readsFromOtherTables() || table_filter(iterator->databaseName(), iterator->name()))
                     if (granted_show_on_all_tables || access->isGranted(AccessType::SHOW_TABLES, iterator->databaseName(), iterator->name()))
                     {
-                        if  (!granted_select_on_all_tables)
+                        StorageMetadataPtr child_metadata_snapshot;
+                        if (!granted_select_on_all_tables)
                         {
                             const auto columns_to_check = VirtualColumnUtils::filterVirtualColumns(all_column_names, storage_snapshot->metadata, VirtualsKind::All, VirtualsMaterializationPlace::All);
-                            access->checkAccess(AccessType::SELECT, iterator->databaseName(), iterator->name(), columns_to_check);
+                            /// Only a dotted name can be a subcolumn. Without one there is nothing to resolve, and taking the
+                            /// snapshot here would refresh every data lake child before the time limit is checked between
+                            /// the children in `createChildrenPlans`.
+                            if (std::ranges::any_of(columns_to_check, [](const String & column_name) { return column_name.contains('.'); }))
+                            {
+                                /// A query referencing a subcolumn (e.g. `t.a` for a `Tuple` column `t`) keeps the
+                                /// subcolumn name here, but column-level grants are stored against top-level storage
+                                /// columns only. Map subcolumns back to their parent column so that `GRANT SELECT(t)`
+                                /// implicitly covers `t.a`, `t.b`, etc. Resolve against the child table's schema,
+                                /// not the merge table's: children may have different layouts, so the
+                                /// same dotted identifier can be a subcolumn of a `Tuple` column in one child and a
+                                /// real column named `a.b` in another, and the check is against the child table.
+                                /// The read of this child uses this snapshot too (see `createChildrenPlans`), so a concurrent
+                                /// `ALTER` cannot change how a dotted name resolves between the access check and the read.
+                                /// Taking the snapshot may refresh a data lake child with remote metadata I/O, so honor
+                                /// `KILL QUERY` and `max_execution_time` before each child, as `createChildrenPlans` does.
+                                /// `checkTimeLimit` throws for `KILL QUERY` and `timeout_overflow_mode = 'throw'`; for
+                                /// `'break'` it returns false, and the tables selected so far are read.
+                                if (query_status && !query_status->checkTimeLimit())
+                                    return res;
+                                child_metadata_snapshot = getChildMetadataSnapshot(storage, query_context);
+                                const auto & child_columns = child_metadata_snapshot->getColumns();
+                                /// A subcolumn that exists only in the `Merge` type of a column (e.g. `s.x` of a `String`
+                                /// child column `s` exposed as `JSON`) is read through the whole column, so authorize that
+                                /// column, the same one `createChildrenPlans` reads. A name the child reads nothing for
+                                /// is checked as is.
+                                Names columns_to_read;
+                                columns_to_read.reserve(columns_to_check.size());
+                                for (const auto & column_name : columns_to_check)
+                                {
+                                    auto column_to_read = getChildColumnToRead(column_name, child_columns, merge_storage_snapshot->metadata->getColumns());
+                                    if (column_to_read)
+                                        columns_to_read.push_back(std::move(*column_to_read));
+                                    else
+                                        columns_to_read.push_back(column_name);
+                                }
+                                access->checkAccess(
+                                    AccessType::SELECT,
+                                    iterator->databaseName(),
+                                    iterator->name(),
+                                    child_columns.getColumnNamesForSelectAccessCheck(
+                                        columns_to_read, query_context, StorageID(iterator->databaseName(), iterator->name())));
+                            }
+                            else
+                            {
+                                access->checkAccess(AccessType::SELECT, iterator->databaseName(), iterator->name(), columns_to_check);
+                            }
                         }
 
                         auto table_lock = storage->lockForShare(query_context->getCurrentQueryId(), settings[Setting::lock_acquire_timeout]);
-                        res.emplace_back(iterator->databaseName(), storage, std::move(table_lock), iterator->name());
+                        res.emplace_back(iterator->databaseName(), storage, std::move(table_lock), iterator->name(), std::move(child_metadata_snapshot));
                     }
             iterator->next();
         }
@@ -2320,7 +2821,8 @@ void ReadFromMerge::convertAndFilterSourceStream(
     const RowPolicyDataOpt & row_policy_data_opt,
     ContextPtr local_context,
     ChildPlan & child,
-    bool is_smallest_column_requested)
+    bool is_smallest_column_requested,
+    const Names & column_names_read)
 {
     auto before_block_header = child.plan.getCurrentHeader();
 
@@ -2354,7 +2856,7 @@ void ReadFromMerge::convertAndFilterSourceStream(
     }
 
     /// This is the filter for the individual source table, that's why filtering has to be done before all structure adaptations.
-    if (row_policy_data_opt)
+    if (row_policy_data_opt && !child.applies_row_policy)
         row_policy_data_opt->addFilterTransform(child.plan, local_context);
 
     /** Output headers may differ from what StorageMerge expects in some cases.
@@ -2406,7 +2908,35 @@ void ReadFromMerge::convertAndFilterSourceStream(
         {
             /// See `getColumnToReadInsteadOfSubcolumn`: the child either produces the name already,
             /// or it is a column of its own that the child does not have - and gets a default below.
-            if (child_header.has(required_column.name) || merge_columns.has(required_column.name))
+            if (child_header.has(required_column.name))
+                continue;
+
+            /// A child that cannot read subcolumns returned the whole column (see `createChildrenPlans`).
+            if (!snapshot->storage.supportsSubcolumns())
+            {
+                auto child_column = snapshot->tryGetColumn(
+                    GetColumnsOptions(GetColumnsOptions::All).withSubcolumns().withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::All),
+                    required_column.name);
+                if (child_column && child_column->isSubcolumn() && child_header.has(child_column->getNameInStorage()))
+                {
+                    /// Extracted with the child's type; the converting actions below cast it to the `Merge` type.
+                    const String parent_name = child_column->getNameInStorage();
+                    const String subcolumn_name = child_column->getSubcolumnName();
+                    auto subcolumn_name_type = std::make_shared<DataTypeString>();
+                    auto subcolumn_name_column = subcolumn_name_type->createColumnConst(0, subcolumn_name);
+                    const auto & subcolumn_name_node = extract_subcolumns_dag.addColumn(
+                        std::move(subcolumn_name_column), std::move(subcolumn_name_type), "'" + subcolumn_name + "'");
+                    const auto & get_subcolumn_node = extract_subcolumns_dag.addFunction(
+                        FunctionFactory::instance().get("getSubcolumn", local_context),
+                        {&extract_subcolumns_dag.findInOutputs(parent_name), &subcolumn_name_node}, {});
+                    extracted_subcolumns.push_back(&extract_subcolumns_dag.addAlias(get_subcolumn_node, required_column.name));
+                    if (!header.has(parent_name))
+                        columns_to_drop.insert(parent_name);
+                    continue;
+                }
+            }
+
+            if (merge_columns.has(required_column.name))
                 continue;
 
             for (auto [name_in_storage_view, subcolumn_name_view] : Nested::getAllColumnAndSubcolumnPairs(required_column.name))
@@ -2423,8 +2953,8 @@ void ReadFromMerge::convertAndFilterSourceStream(
 
                 auto [it, inserted] = converted_columns.emplace(name_in_storage, nullptr);
                 if (inserted)
-                    it->second = &extract_subcolumns_dag.addCast(
-                        extract_subcolumns_dag.findInOutputs(name_in_storage), merge_column->type, {}, local_context);
+                    it->second = &addCastWithTupleElementsByPosition(
+                        extract_subcolumns_dag, extract_subcolumns_dag.findInOutputs(name_in_storage), merge_column->type, local_context);
 
                 auto subcolumn_name_type = std::make_shared<DataTypeString>();
                 auto subcolumn_name_column = subcolumn_name_type->createColumnConst(0, subcolumn_name);
@@ -2475,6 +3005,12 @@ void ReadFromMerge::convertAndFilterSourceStream(
     };
 
     String smallest_column_name = ExpressionActions::getSmallestColumn(snapshot->metadata->getColumns().getAllPhysical()).name;
+
+    /// A column the child reads only for itself (its row policy or ALIAS columns) makes this a by-name read.
+    const NameSet column_names_read_set(column_names_read.begin(), column_names_read.end());
+    const bool has_columns_read_only_for_child = std::ranges::any_of(current_step_columns, [&](const auto & column)
+        { return !header.has(column.name) && column_names_read_set.contains(column.name); });
+
     for (size_t i = 0; i < size; ++i)
     {
         const auto & source_elem = current_step_columns[i];
@@ -2487,7 +3023,7 @@ void ReadFromMerge::convertAndFilterSourceStream(
             /// This column is unneeded in the result.
             converted_columns.push_back(source_elem);
         }
-        else if (header.columns() == current_step_columns.size())
+        else if (!has_columns_read_only_for_child && header.columns() == current_step_columns.size())
         {
             /// Virtual columns and columns read from Distributed tables (having different name but matched by position).
             converted_columns.push_back(materializeIfSourceIsNotConst(header.getByPosition(i), source_elem));
@@ -2496,6 +3032,29 @@ void ReadFromMerge::convertAndFilterSourceStream(
         {
             /// Matching by name, but some columns are unneeded.
             converted_columns.push_back(source_elem);
+        }
+    }
+
+    {
+        ActionsDAG tuple_elements_dag(current_step_columns);
+        auto & outputs = tuple_elements_dag.getOutputs();
+        bool has_tuple_elements_by_position = false;
+        for (size_t i = 0; i < size; ++i)
+        {
+            if (!nameTupleElementsByPosition(current_step_columns[i].type, converted_columns[i].type))
+                continue;
+
+            const auto & cast_node = addCastWithTupleElementsByPosition(tuple_elements_dag, *outputs[i], converted_columns[i].type, local_context);
+            outputs[i] = &tuple_elements_dag.addAlias(cast_node, current_step_columns[i].name);
+            has_tuple_elements_by_position = true;
+        }
+
+        if (has_tuple_elements_by_position)
+        {
+            auto tuple_elements_step = std::make_unique<ExpressionStep>(child.plan.getCurrentHeader(), std::move(tuple_elements_dag));
+            tuple_elements_step->setStepDescription("Convert tuples with different numbers of elements to the Merge table types");
+            child.plan.addStep(std::move(tuple_elements_step));
+            current_step_columns = child.plan.getCurrentHeader()->getColumnsWithTypeAndName();
         }
     }
 
@@ -2514,13 +3073,46 @@ void ReadFromMerge::convertAndFilterSourceStream(
         if (const auto * merge_tree = dynamic_cast<const MergeTreeData *>(&snapshot->storage))
             inner_share_nested_offsets = (*merge_tree->getSettings())[MergeTreeSetting::share_nested_offsets];
 
+        /// A subcolumn of a column the child does not have is extracted from that column once it is filled.
+        const auto & current_header = *child.plan.getCurrentHeader();
+        NamesAndTypesList columns_to_fill;
+        NameSet columns_to_fill_names;
+        bool has_subcolumns_of_missing_columns = false;
+        for (const auto & column : header)
+        {
+            NameAndTypePair column_to_fill(column.name, column.type);
+            if (!current_header.has(column.name) && !merge_columns.has(column.name))
+            {
+                auto merge_column = merge_columns.tryGetColumn(GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(), column.name);
+                if (merge_column && merge_column->isSubcolumn() && !current_header.has(merge_column->getNameInStorage())
+                    && isSubcolumnOfDefaultValue(*merge_column))
+                {
+                    column_to_fill = NameAndTypePair(merge_column->getNameInStorage(), merge_column->getTypeInStorage());
+                    has_subcolumns_of_missing_columns = true;
+                }
+            }
+
+            if (columns_to_fill_names.insert(column_to_fill.name).second)
+                columns_to_fill.push_back(std::move(column_to_fill));
+        }
+
         auto adding_missing_defaults_dag = addMissingDefaults(
-            *child.plan.getCurrentHeader(),
-            header.getNamesAndTypesList(),
+            current_header,
+            columns_to_fill,
             snapshot->getAllColumnsDescription(),
             local_context,
             false,
             inner_share_nested_offsets);
+
+        if (has_subcolumns_of_missing_columns)
+        {
+            auto extract_subcolumns_dag = createSubcolumnsExtractionActions(
+                Block(adding_missing_defaults_dag.getResultColumns()), header.getNames(), local_context);
+            adding_missing_defaults_dag = ActionsDAG::merge(std::move(adding_missing_defaults_dag), std::move(extract_subcolumns_dag));
+        }
+
+        /// `columns_to_fill` has each name once, but the header repeats a column the query selects twice.
+        adding_missing_defaults_dag.removeUnusedActions(header.getNames(), false);
 
         auto adding_missing_defaults_step = std::make_unique<ExpressionStep>(child.plan.getCurrentHeader(), std::move(adding_missing_defaults_dag));
         child.plan.addStep(std::move(adding_missing_defaults_step));
@@ -2533,13 +3125,54 @@ const ReadFromMerge::StorageListWithLocks & ReadFromMerge::getSelectedTables()
     return selected_tables;
 }
 
+bool ReadFromMerge::canReadInOrder(const InputOrderInfo & order_info_, bool allow_shorter_read_key)
+{
+    filterTablesAndCreateChildrenPlans();
+
+    auto table_it = selected_tables.begin();
+    for (const auto & child_plan : *child_plans)
+    {
+        /// A distributed child plan returns its result through one exchange stream, which does not keep the order
+        /// of the streams it gathers.
+        if (child_plan.plan.staysDistributed())
+            return false;
+
+        const auto table_metadata = std::get<StoragePtr>(*table_it++)->getInMemoryMetadataPtr(context, false);
+        auto can_read = [&](ReadFromMergeTree & read_from_merge_tree)
+        {
+            if (order_info_.direction != 1 && !read_from_merge_tree.canReadInReverseOrder())
+                return false;
+
+            /// The prefix counts columns of each table's sorting key, while a child read may be sorted by another key (a projection's).
+            const auto read_metadata = read_from_merge_tree.getStorageMetadata();
+            const auto & read_key = read_metadata->getSortingKey();
+            size_t prefix_size = order_info_.used_prefix_of_sorting_key_size;
+            if (allow_shorter_read_key)
+                prefix_size = std::min(prefix_size, read_key.column_names.size());
+            return sortingKeysSharePrefix(read_key, table_metadata->getSortingKey(), prefix_size);
+        };
+        if (child_plan.plan.isInitialized()
+            && !recursivelyApplyToReadingSteps(child_plan.plan.getRootNode(), can_read))
+            return false;
+    }
+
+    return true;
+}
+
+void ReadFromMerge::resetChildPlans()
+{
+    chassert(!order_info);
+    child_plans.reset();
+    selected_tables.clear();
+    expandable_reads.reset();
+}
+
 bool ReadFromMerge::requestReadingInOrder(InputOrderInfoPtr order_info_, size_t query_limit)
 {
     filterTablesAndCreateChildrenPlans();
 
-    /// Disable read-in-order optimization for reverse order with final.
-    /// Otherwise, it can lead to incorrect final behavior because the implementation may rely on the reading in direct order).
-    if (order_info_->direction != 1 && InterpreterSelectQuery::isQueryWithFinal(query_info))
+    /// Ask every reading step first: the loop below switches the children one by one.
+    if (!canReadInOrder(*order_info_, /*allow_shorter_read_key=*/ true))
         return false;
 
     auto request_read_in_order = [order_info_, query_limit](ReadFromMergeTree & read_from_merge_tree)
@@ -2561,6 +3194,21 @@ bool ReadFromMerge::requestReadingInOrder(InputOrderInfoPtr order_info_, size_t 
     return true;
 }
 
+void ReadFromMerge::setPreferMultipleStreams()
+{
+    filterTablesAndCreateChildrenPlans();
+
+    /// The opt-out has to reach the child `ReadFromMergeTree` steps: it is their
+    /// `PrefetchingConcatProcessor` that would otherwise collapse a single-part filtered read into
+    /// a single stream and serialize the per-stream work above the `Merge` table. Only the reads of
+    /// the ordered pipeline are affected: `preferMultipleStreamsForResidualCPUWork` follows all
+    /// branches of a `UnionStep` but only the first child of a join or a set-creating step, so the
+    /// build side of a join or the source of a set keeps `PrefetchingConcatProcessor`.
+    for (const auto & child_plan : *child_plans)
+        if (child_plan.plan.isInitialized())
+            preferMultipleStreamsForResidualCPUWork(child_plan.plan.getRootNode(), /* passed_residual_cpu_step */ true);
+}
+
 void ReadFromMerge::applyFilters(ActionDAGNodes added_filter_nodes)
 {
     for (const auto & filter_info : pushed_down_filters)
@@ -2571,9 +3219,24 @@ void ReadFromMerge::applyFilters(ActionDAGNodes added_filter_nodes)
     filterTablesAndCreateChildrenPlans();
 }
 
-QueryPlanRawPtrs ReadFromMerge::getChildPlans()
+QueryPlanRawPtrs ReadFromMerge::getChildPlans(bool /*for_explain*/)
 {
     filterTablesAndCreateChildrenPlans();
+
+    QueryPlanRawPtrs plans;
+    for (auto & child_plan : *child_plans)
+        if (child_plan.plan.isInitialized())
+            plans.push_back(&child_plan.plan);
+
+    return plans;
+}
+
+QueryPlanRawPtrs ReadFromMerge::getBuiltChildPlans()
+{
+    /// Deliberately does not call `filterTablesAndCreateChildrenPlans`: planning the children here
+    /// would be work done only because someone looked at the plan.
+    if (!child_plans)
+        return {};
 
     QueryPlanRawPtrs plans;
     for (auto & child_plan : *child_plans)
@@ -2595,7 +3258,7 @@ std::vector<QueryPlan *> ReadFromMerge::getAllChildPlans()
     return plans;
 }
 
-const std::vector<StorageID> & ReadFromMerge::getExpandableReads(
+std::vector<StorageID> ReadFromMerge::computeExpandableReads(
     const std::function<bool(const ReadFromMergeTree &)> & can_ship_read)
 {
     /// The parallel-replicas plan transformation only understands `ReadFromMergeTree` reads and unions of
@@ -2606,13 +3269,10 @@ const std::vector<StorageID> & ReadFromMerge::getExpandableReads(
     /// `MergeTree` reads. This tells the caller whether that is possible, and which tables the union would
     /// read, without touching the plan - so that the decision to distribute can be taken before anything is
     /// rewritten.
-    if (expandable_reads)
-        return *expandable_reads;
-
     filterTablesAndCreateChildrenPlans();
 
     if (selected_tables.empty() || child_plans->empty())
-        return expandable_reads.emplace();
+        return {};
 
     /// Every child must be a `MergeTree` table read by a plain read step, and none of them may be `FINAL`.
     /// A child read through an interpreter (a `View`, a nested `Merge`) or a table of another engine has no
@@ -2640,13 +3300,13 @@ const std::vector<StorageID> & ReadFromMerge::getExpandableReads(
     for (const auto & child : *child_plans)
     {
         if (table_it == selected_tables.end())
-            return expandable_reads.emplace();
+            return {};
 
         const auto & storage = std::get<1>(*table_it);
         ++table_it;
 
         if (!storage->isMergeTree() || !child.plan.isInitialized())
-            return expandable_reads.emplace();
+            return {};
 
         const auto * node = child.plan.getRootNode();
 
@@ -2657,7 +3317,7 @@ const std::vector<StorageID> & ReadFromMerge::getExpandableReads(
         /// whole `Merge` on a single replica, deliberately and not through the shape check below.
         if (node
             && (typeid_cast<const CreatingSetsStep *>(node->step.get()) || typeid_cast<const DelayedCreatingSetsStep *>(node->step.get())))
-            return expandable_reads.emplace();
+            return {};
 
         /// Descend the steps the child plan puts on top of the read - the converting expressions and the
         /// row policy filter of `convertAndFilterSourceStream`. Anything else means the child is not read
@@ -2668,12 +3328,34 @@ const std::vector<StorageID> & ReadFromMerge::getExpandableReads(
 
         const auto * reading = node ? typeid_cast<const ReadFromMergeTree *>(node->step.get()) : nullptr;
         if (!reading || reading->isQueryWithFinal() || !can_ship_read(*reading))
-            return expandable_reads.emplace();
+            return {};
 
         storage_ids.push_back(reading->getMergeTreeData().getStorageID());
     }
 
-    return expandable_reads.emplace(std::move(storage_ids));
+    return storage_ids;
+}
+
+const std::vector<StorageID> & ReadFromMerge::getExpandableReads(
+    const std::function<bool(const ReadFromMergeTree &)> & can_ship_read)
+{
+    if (!expandable_reads)
+        expandable_reads.emplace(computeExpandableReads(can_ship_read));
+    return *expandable_reads;
+}
+
+bool ReadFromMerge::mayBeExpandedForParallelReplicas(const std::function<bool(const ReadFromMergeTree &)> & can_ship_read)
+{
+    /// A `FINAL` read is never expanded (`getExpandableReads` rejects a `FINAL` child), and neither is any
+    /// `Merge` read with `parallel_replicas_allow_merge_tables = 0` (`expandMergeReadsForParallelReplicas`).
+    /// Otherwise the verdict is the one of `getExpandableReads`, but computed afresh and not cached: the
+    /// child plans may still change before `applyParallelReplicas` asks (a filter pushed down later is
+    /// added to them and they are optimized again), and that later answer must not be pinned by this one.
+    const auto & settings = context->getSettingsRef();
+    return settings[Setting::parallel_replicas_plan_based]
+        && settings[Setting::parallel_replicas_allow_merge_tables]
+        && !InterpreterSelectQuery::isQueryWithFinal(query_info)
+        && !computeExpandableReads(can_ship_read).empty();
 }
 
 QueryPlan ReadFromMerge::expandForParallelReplicas()
@@ -2683,7 +3365,7 @@ QueryPlan ReadFromMerge::expandForParallelReplicas()
     chassert(child_plans && !child_plans->empty());
 
     SharedHeaders input_headers;
-    std::vector<std::unique_ptr<QueryPlan>> plans;
+    VectorWithMemoryTracking<std::unique_ptr<QueryPlan>> plans;
     input_headers.reserve(child_plans->size());
     plans.reserve(child_plans->size());
     for (auto & child : *child_plans)
@@ -2744,11 +3426,27 @@ IStorage::ColumnSizeByName StorageMerge::getColumnSizes(const Names & columns, b
     return column_sizes;
 }
 
-std::optional<IStorage::ColumnSizeByName> StorageMerge::tryGetColumnSizes() const
+std::optional<IStorage::ColumnSizeByName> StorageMerge::tryGetColumnSizes(const ContextPtr & query_context) const
 {
     try
     {
-        return getColumnSizes();
+        auto access = query_context->getAccess();
+        ColumnSizeByName column_sizes;
+        auto first_table_without_sizes = traverseVisibleTablesUntil(query_context, [&](const auto & table)
+        {
+            auto sizes = table->tryGetColumnSizes(query_context);
+            if (!sizes)
+                return true;
+            auto id = table->getStorageID();
+            bool show_all_columns = access->isGranted(AccessType::SHOW_COLUMNS, id.database_name, id.table_name);
+            for (const auto & [name, size] : *sizes)
+                if (show_all_columns || access->isGranted(AccessType::SHOW_COLUMNS, id.database_name, id.table_name, name))
+                    column_sizes[name].add(size);
+            return false;
+        });
+        if (first_table_without_sizes)
+            return std::nullopt;
+        return column_sizes;
     }
     catch (const Exception & e)
     {
@@ -2788,27 +3486,44 @@ bool StorageMerge::supportsTrivialCountOptimization(const StorageSnapshotPtr &, 
     /// But to avoid complexity pass nullptr to make more lightweight check in MergeTreeData.
     /// A child's row policy is only applied when its rows are actually read, so counting one from
     /// metadata would return rows the policy hides.
-    return traverseTablesUntil([&](const auto & table)
+    auto access = ctx->getAccess();
+    return traverseVisibleTablesUntil(ctx, [&](const auto & table)
     {
-        return !table->supportsTrivialCountOptimization(nullptr, ctx) || getEffectiveRowPolicyFilter(*table, ctx);
+        /// Like a direct `SELECT count()`, counting a child needs `SELECT` on at least one of its columns.
+        auto id = table->getStorageID();
+        bool has_select_access = access->isGranted(AccessType::SELECT, id.database_name);
+        if (!has_select_access)
+        {
+            const auto metadata = table->getInMemoryMetadataPtr(ctx, false);
+            for (const auto & column : metadata->getColumns())
+            {
+                if (access->isGranted(AccessType::SELECT, id.database_name, id.table_name, column.name))
+                {
+                    has_select_access = true;
+                    break;
+                }
+            }
+        }
+
+        return !has_select_access || !table->supportsTrivialCountOptimization(nullptr, ctx) || getEffectiveRowPolicyFilter(*table, ctx);
     }) == nullptr;
 }
 
 std::optional<UInt64> StorageMerge::totalRows(ContextPtr query_context) const
 {
-    return totalRowsOrBytes([&](const auto & table) { return table->totalRows(query_context); });
+    return totalRowsOrBytes(query_context, [&](const auto & table) { return table->totalRows(query_context); });
 }
 
 std::optional<UInt64> StorageMerge::totalBytes(ContextPtr query_context) const
 {
-    return totalRowsOrBytes([&](const auto & table) { return table->totalBytes(query_context); });
+    return totalRowsOrBytes(query_context, [&](const auto & table) { return table->totalBytes(query_context); });
 }
 
 template <typename F>
-std::optional<UInt64> StorageMerge::totalRowsOrBytes(F && func) const
+std::optional<UInt64> StorageMerge::totalRowsOrBytes(const ContextPtr & query_context, F && func) const
 {
     UInt64 total_rows_or_bytes = 0;
-    auto first_table = traverseTablesUntil([&](const auto & table)
+    auto first_table = traverseVisibleTablesUntil(query_context, [&](const auto & table)
     {
         if (auto rows_or_bytes = func(table))
         {
@@ -2865,6 +3580,7 @@ void registerStorageMerge(StorageFactory & factory)
         return std::make_shared<StorageMerge>(
             args.table_id, args.columns, args.comment, source_database_name_or_regexp, is_regexp, table_name_regexp, args.getLocalContext());
     },
+    SecretArgumentsSpec{},
     {
         .supports_schema_inference = true
     },
@@ -2902,6 +3618,16 @@ When selecting tables to read, the `Merge` table itself is not selected, even if
 It is possible to create two `Merge` tables that will endlessly try to read each others' data, but this is not a good idea.
 
 The typical way to use the `Merge` engine is for working with a large number of `TinyLog` tables as if with a single table.
+
+## Access rights {#access-rights}
+
+Reading from a `Merge` table requires the [`SELECT`](/reference/statements/grant#select) privilege on the `Merge` table and, on each underlying table that is read, on the columns that the query reads.
+
+Data is read only from the matched tables that the current user can see, that is, has the [`SHOW TABLES`](/reference/statements/grant#show) privilege on. Any privilege on a table implies `SHOW TABLES` on it. A matched table that the user cannot see is skipped without an error or a warning. A matched table that the user can see but has no `SELECT` privilege on makes the query fail with `ACCESS_DENIED`.
+
+When a `Merge` table is created without a column list, its structure is derived only from the matched tables that the user who creates it can see, and the user needs the [`SHOW COLUMNS`](/reference/statements/grant#show) privilege on the tables it is derived from.
+
+To read all matched tables, grant the `SELECT` privilege on each of them. To make a query fail instead of skipping a matched table that the user has no `SELECT` privilege on, grant the `SHOW TABLES` privilege on that table.
 
 ## Examples {#examples}
 

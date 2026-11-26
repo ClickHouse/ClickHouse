@@ -11,8 +11,6 @@
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ParserDataType.h>
 #include <Parsers/ParserCreateQuery.h>
-#include <Parsers/StatementFactory.h>
-#include <Parsers/registerStatements.h>
 
 
 namespace DB
@@ -387,14 +385,11 @@ bool ParserCreateFunctionQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Exp
     return false;
 }
 
-}
-
-namespace DB
+std::map<String, Documentation> ParserCreateFunctionQuery::getDocumentation() const
 {
+    std::map<String, Documentation> documentation;
 
-void registerStatementCreateFunction(StatementFactory & factory)
-{
-    factory.registerStatement("CREATE FUNCTION",
+    documentation["CREATE FUNCTION"] =
     {
         .description = R"DOCS_MD(
 Creates a user defined function (UDF) from a lambda expression. The expression must consist of function parameters, constants, operators, or other function calls.
@@ -474,7 +469,9 @@ CREATE [OR REPLACE] FUNCTION name [ON CLUSTER cluster] AS (parameter0, ...) -> e
 )",
         .parent = "CREATE",
         .related = {"CREATE", "DROP", "SHOW"},
-    });
+    };
+
+    return documentation;
 }
 
 }

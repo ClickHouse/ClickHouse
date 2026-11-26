@@ -52,6 +52,14 @@ void assertWorkingBufferContainedIn(BufferBase::Buffer inner, BufferBase::Buffer
     chassert(inner_end <= outer_end);
 }
 
+/// A 0-byte object adds no bytes to the file, and its key may be missing from the object storage:
+/// an empty append could record such an object without uploading anything.
+StoredObjects withoutEmptyObjects(StoredObjects objects)
+{
+    std::erase_if(objects, [](const StoredObject & object) { return object.bytes_size == 0; });
+    return objects;
+}
+
 }
 
 ReadBufferFromRemoteFSGather::ReadBufferFromRemoteFSGather(
@@ -63,7 +71,7 @@ ReadBufferFromRemoteFSGather::ReadBufferFromRemoteFSGather(
     QueryStatusPtr query_status_)
     : ReadBufferFromFileBase(use_external_buffer_ ? 0 : buffer_size, nullptr, 0)
     , min_bytes_for_seek(min_bytes_for_seek_)
-    , blobs_to_read(blobs_to_read_)
+    , blobs_to_read(withoutEmptyObjects(blobs_to_read_))
     , read_buffer_creator(std::move(read_buffer_creator_))
     , query_id(CurrentThread::getQueryId())
     , query_status(std::move(query_status_))
@@ -214,6 +222,11 @@ bool ReadBufferFromRemoteFSGather::readImpl()
         query_status->throwIfKilled();
     }
 
+    /// The reader adopts the filled bytes as its `internal_buffer` and the swap hands that back;
+    /// lend the whole own buffer every time.
+    if (!use_external_buffer)
+        setPaddedInternalBuffer(memory, 0, memory.size());
+
     SwapHelper swap(*this, *current_buf);
 
     bool result = current_buf->next();
@@ -286,6 +299,9 @@ off_t ReadBufferFromRemoteFSGather::seek(off_t offset, int whence)
 
     if (whence != SEEK_SET)
         throw Exception(ErrorCodes::CANNOT_SEEK_THROUGH_FILE, "Only SEEK_SET mode is allowed.");
+
+    if (offset < 0)
+        throw Exception(ErrorCodes::CANNOT_SEEK_THROUGH_FILE, "Seek position is out of bound: {}", offset);
 
     if (use_external_buffer)
     {
