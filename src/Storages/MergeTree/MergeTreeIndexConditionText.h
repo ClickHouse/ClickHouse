@@ -159,7 +159,8 @@ public:
         bool has_positions_,
         IsShadowingColumn is_column_shadowing_map_subcolumn_,
         JSONIndexArgumentTypes json_argument_types_,
-        TextIndexAutomatonBudgetPtr automaton_budget_ = nullptr);
+        TextIndexAutomatonBudgetPtr automaton_budget_ = nullptr,
+        NameSet names_computed_by_index_expression_ = {});
 
     ~MergeTreeIndexConditionText() override = default;
     static bool isSupportedFunction(const String & function_name);
@@ -341,6 +342,10 @@ private:
     TextIndexAutomatonBudgetPtr automaton_budget;
     /// Whether the index has position data for phrase queries.
     bool has_positions = false;
+    /// Names of the nodes the index expression computes. An atom reading a column with one of these names
+    /// is not analyzed: by name it would look like the index column, e.g. `upper(lower(x))` over a column
+    /// `lower(x)` next to an index on `upper(lower(x))`.
+    NameSet names_computed_by_index_expression;
     /// Cache for tokens and their infos (cardinality, etc.)
     TextIndexTokensCachePtr tokens_cache;
     /// Cache for headers of the text index

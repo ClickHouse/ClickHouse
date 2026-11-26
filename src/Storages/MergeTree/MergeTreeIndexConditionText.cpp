@@ -270,7 +270,8 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
     bool has_positions_,
     IsShadowingColumn is_column_shadowing_map_subcolumn_,
     JSONIndexArgumentTypes json_argument_types_,
-    TextIndexAutomatonBudgetPtr automaton_budget_)
+    TextIndexAutomatonBudgetPtr automaton_budget_,
+    NameSet names_computed_by_index_expression_)
     : WithContext(context_)
     , header(index_sample_block)
     , json_argument_types(std::move(json_argument_types_))
@@ -286,6 +287,7 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
     , has_postprocessor(postprocessor && postprocessor->hasActions())
     , automaton_budget(automaton_budget_ ? std::move(automaton_budget_) : std::make_shared<TextIndexAutomatonBudget>())
     , has_positions(has_positions_)
+    , names_computed_by_index_expression(std::move(names_computed_by_index_expression_))
 {
     if (!predicate)
     {
@@ -792,6 +794,10 @@ bool MergeTreeIndexConditionText::hasSearchPatterns() const
 
 bool MergeTreeIndexConditionText::traverseAtomNode(const RPNBuilderTreeNode & node, RPNElement & out) const
 {
+    if (const auto * dag_node = node.getDAGNode(); dag_node && !names_computed_by_index_expression.empty()
+        && readsInputNamedIn(*dag_node, names_computed_by_index_expression))
+        return false;
+
     {
         Field const_value;
         DataTypePtr const_type;

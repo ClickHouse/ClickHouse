@@ -48,6 +48,15 @@ struct ActionsDAGWithInversionPushDown
 };
 
 
+/// A filter names a column by its raw name and a key node by its expression, so a column named `f(x)` and the
+/// key node computing `f(x)` look the same. Returns the names of the nodes `key_expr` computes, except the names
+/// of the columns it reads. A filter input with one of these names is a column that only looks like a key node.
+NameSet getNamesComputedByKeyExpression(const ExpressionActions & key_expr);
+
+/// True if the subtree of `root` reads an input whose name is in `names`.
+bool readsInputNamedIn(const ActionsDAG::Node & root, const NameSet & names);
+
+
 struct DeterministicKeyTransformDag
 {
     ExpressionActionsPtr actions;
