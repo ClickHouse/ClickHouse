@@ -1,8 +1,10 @@
 #pragma once
 
 #include <Common/Logger.h>
+#include <city.h>
 
 #include <cstdint>
+#include <expected>
 #include <functional>
 #include <limits>
 #include <string>
@@ -27,6 +29,8 @@ namespace DB
 
 class IDisk;
 using DiskPtr = std::shared_ptr<IDisk>;
+
+class ReadBuffer;
 
 bool isLocalDisk(const IDisk & disk);
 
@@ -142,6 +146,65 @@ void assertDigest(const KeeperRequestBatch & batch, const KeeperDigest & actual,
 
 inline static constexpr std::string_view tmp_keeper_file_prefix = "tmp_";
 
+/// The bytes that identify an immutable Keeper file while it is copied between disks.
+/// The hash construction is fixed by marker version 1: CityHash128 over 2048-byte blocks.
+struct KeeperFileDigest
+{
+    uint64_t size = 0;
+    CityHash_v1_0_2::uint128 hash{0, 0};
+
+    bool operator==(const KeeperFileDigest & other) const
+    {
+        return size == other.size && hash.low64 == other.hash.low64 && hash.high64 == other.hash.high64;
+    }
+};
+
+enum class KeeperMoveMarkerParseError : uint8_t
+{
+    LegacyEmpty,
+    UnknownVersion,
+    Malformed,
+};
+
+using KeeperMoveMarkerParseResult = std::expected<KeeperFileDigest, KeeperMoveMarkerParseError>;
+
+std::string serializeKeeperMoveMarker(const KeeperFileDigest & digest);
+KeeperMoveMarkerParseResult parseKeeperMoveMarker(std::string_view marker);
+KeeperMoveMarkerParseResult readKeeperMoveMarker(const DiskPtr & disk, const std::string & path);
+KeeperFileDigest computeKeeperFileDigest(ReadBuffer & input);
+KeeperFileDigest computeKeeperFileDigest(const DiskPtr & disk, const std::string & path);
+
+/// The path of the move marker that `moveFileBetweenDisks` keeps next to the destination `destination_path`.
+std::string getKeeperMoveMarkerPath(const std::string & destination_path);
+
+/// Remove a Keeper file while holding a sync guard for its parent directory.
+void removeKeeperFileIfExists(const DiskPtr & disk, const std::string & path);
+
+/// A length decoded from a Keeper file is used as the size of a `nuraft::buffer` before the data is
+/// read and before any checksum is verified. `nuraft::buffer::alloc` adds its bookkeeping header to
+/// the size without an overflow check, so a damaged length close to 2^64 would wrap the allocation
+/// below the size of that header. No valid changelog record or snapshot section is this large.
+inline constexpr uint64_t MAX_KEEPER_SERIALIZED_BUFFER_SIZE = 1ULL << 40;
+
+/// Throws `CORRUPTED_DATA` if `size` cannot be the length of a serialized buffer.
+void checkKeeperSerializedBufferSize(uint64_t size, std::string_view description);
+
+/// Make a removal or creation of `path` durable by synchronizing its parent directory. Does nothing
+/// for disks that are not `DiskLocal`.
+void syncKeeperParentDirectory(const DiskPtr & disk, const std::string & path);
+
+enum class KeeperMoveError : uint8_t
+{
+    FailedBeforeMarkerPublication,
+    MarkerPublishedCopyNotCompleted,
+    CopyCompletedDestinationValidationFailed,
+    MarkerRemovalFailed,
+    CallbackRejectedOrThrew,
+    DestinationPublishedSourceRemovalFailed,
+};
+
+using KeeperMoveResult = std::expected<void, KeeperMoveError>;
+
 /// Parse the log index out of a snapshot file name/path. Works for both legacy
 /// ("snapshot_100.bin.zstd") and unique ("snapshot_100_<uuid>.bin.zstd") names.
 uint64_t getLogIdxFromSnapshotPath(const std::string & snapshot_path);
@@ -154,9 +217,10 @@ std::string getCanonicalSnapshotS3Name(const std::string & snapshot_path);
 /// wrapping when it does not fit.
 int32_t getValueOrMaxInt32AndLogWarning(uint64_t value, const std::string & name, LoggerPtr log);
 
-/// `before_file_remove_op` runs after the copy and before the source removal. Returning
-/// `false` rejects the move: the source is kept, the caller cleans up the copied target.
-void moveFileBetweenDisks(
+/// `path_from` must remain closed and immutable until this function returns. `before_file_remove_op`
+/// runs only after the marker is removed and the destination was validated. Returning `false` keeps
+/// the source. An unexpected result identifies the stage at which the move stopped.
+KeeperMoveResult moveFileBetweenDisks(
     DiskPtr disk_from,
     const std::string & path_from,
     DiskPtr disk_to,
