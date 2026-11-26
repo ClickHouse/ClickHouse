@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Эти настройки доступны в [system.settings](/ru/reference/system-tables/settings) и автоматически генерируются из [исходного кода](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="use_top_k_dynamic_filtering">
-  ## use_top_k_dynamic_filtering
-</div>
+## use_top_k_dynamic_filtering {#use_top_k_dynamic_filtering}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -30,9 +28,22 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 * 0 — Отключено.
 * 1 — Включено.
 
-<div id="use_top_k_dynamic_filtering_for_variable_length_types">
-  ## use_top_k_dynamic_filtering_for_variable_length_types
-</div>
+## use_top_k_dynamic_filtering_for_single_string_sort_column {#use_top_k_dynamic_filtering_for_single_string_sort_column}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "Новая настройка: динамическая фильтрация TopN для одного столбца `ORDER BY` типа `String` в таблице `MergeTree`."}]}]} />
+
+Применяет `use_top_k_dynamic_filtering` к таблице `MergeTree`, если `ORDER BY` содержит один столбец типа `String` (в том числе обёрнутый в `Nullable`), даже если `use_top_k_dynamic_filtering_for_variable_length_types` равна `0`.
+
+Для такого столбца фильтр также отбрасывает строки, равные порогу, как только большинство строк блока оказываются равны ему (например, если столбец состоит в основном из пустых строк). Каждый порог проверяется только на одном блоке — первом, в котором большинство строк проходит фильтр. На другие источники, например файлы Parquet, настройка не влияет.
+
+Возможные значения:
+
+* 0 — Отключено.
+* 1 — Включено.
+
+## use_top_k_dynamic_filtering_for_variable_length_types {#use_top_k_dynamic_filtering_for_variable_length_types}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -43,6 +54,8 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 Для таких типов сравнение порога для каждой строки, выполняемое динамическим фильтром, может свести на нет выигрыш от его использования, если в столбце преобладает лексикографический минимум (например, в основном пустые строки) и можно пропустить лишь небольшое количество гранул. В таком случае динамический фильтр не уменьшает, а увеличивает задержку запроса.
 
 Когда этот параметр имеет значение `0`, динамическая фильтрация ограничивается столбцами, значения которых имеют фиксированный максимальный размер в памяти (числа, `Date`, `DateTime`, `FixedString`, `Enum`, `Nullable` таких типов, `Tuple` таких типов). При значении `1` динамическая фильтрация также применяется к типам переменной длины.
+
+Даже когда этот параметр имеет значение `0`, при чтении файлов Parquet по-прежнему пропускаются целые группы строк на основе статистики столбца сортировки типа `String`; параметр управляет только фильтром для каждой строки.
 
 Возможные значения:
 

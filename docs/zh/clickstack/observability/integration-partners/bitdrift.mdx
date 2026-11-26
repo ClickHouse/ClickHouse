@@ -1,0 +1,105 @@
+---
+slug: /clickstack/observability/integration-partners/bitdrift
+title: '将 bitdrift 移动端会话与 ClickStack 链路追踪关联'
+sidebarTitle: 'bitdrift'
+description: '借助 OpenTelemetry 追踪上下文，将 bitdrift 移动端会话与 ClickStack 中的后端追踪相关联，无需导出移动端遥测'
+doc_type: 'guide'
+keywords: ['bitdrift', 'ClickStack', 'ClickHouse', 'OpenTelemetry', 'mobile observability', 'tracing']
+---
+
+import { PartnerBadge } from "/snippets/zh/components/PartnerBadge/PartnerBadge.jsx";
+
+<PartnerBadge />
+
+<Info>
+  **TL;DR**
+
+  本指南介绍如何借助 OpenTelemetry 追踪上下文，将 bitdrift 移动端会话与已存储在 ClickStack 中的后端追踪关联起来。移动端遥测本身仍保留在 bitdrift 中，不会导出到 ClickStack。您将了解如何：
+
+  * 在移动应用中启用 bitdrift 的网络和追踪集成
+  * 为您的 bitdrift tenant 启用追踪，并将其深层链接指向您的 ClickStack 实例
+  * 从 bitdrift 中的移动端会话出发，通过追踪 ID 跳转到 ClickStack 用户界面
+
+  bitdrift 在移动设备上捕获丰富的未采样遥测数据；请求进入您已通过 OpenTelemetry 插桩的服务后，则由 ClickStack 负责存储和查询相应的后端追踪。
+
+  所需时间：10-15 分钟
+</Info>
+
+## 什么是 bitdrift？ {#what-is-bitdrift}
+
+[bitdrift](https://bitdrift.io/) 是一个专为移动应用打造的动态可观测性平台，由三个核心组件构成：
+
+* **[Capture SDK](https://bitdrift.io/feature/performance-centric)**：一个基于 Rust 构建的轻量级跨平台库，外加针对各平台的精简包装器。它将遥测数据写入设备上固定大小的环形缓冲区，而不是立即以流式方式发送出去。
+* **控制平面**：与每个客户端保持持久的双向连接，实时推送新配置，决定采集哪些数据、上传哪些数据。
+* **bitdrift 平台**：借助工作流、会话时间线、图表、议题和告警，将移动端遥测转化为可用的答案，支持通过网页用户界面、命令行客户端、AI 智能体以及公网 API 访问。
+
+bitdrift 会将移动端遥测保留在边缘，直到收到请求时才上传。因此，团队可以直接拉取导致崩溃或性能问题的完整、未经采样的会话，而不必依赖一组固定的、预先采样的信号。bitdrift Capture 平台既可以作为 bitdrift 托管的 SaaS 使用，也可以采用自带云 (或桶) 的方式部署在您的 AWS 账户中。
+
+<div className="ch-image-lg">
+  <Frame>
+    ![显示通往 ANR 路径的 bitdrift 用户旅程仪表盘](/images/clickstack/bitdrift/bitdrift-user-journey-dashboard.png)
+  </Frame>
+</div>
+
+*bitdrift 用户旅程仪表盘，展示用户最终遇到 ANR 之前所经过的路径。*
+
+## 为什么选择 bitdrift + ClickStack？ {#why-bitdrift-clickstack}
+
+ClickStack 为工程团队提供了一套基于 ClickHouse 构建的可观测性解决方案，可跨后端服务、Web 前端和基础设施采集、存储和查询数据。bitdrift 将这一基础延伸到移动设备——许多最棘手的生产环境问题正是从这里开始的。
+
+* **bitdrift 呈现设备端发生了什么**：用户操作、应用状态、网络请求、日志、错误、崩溃、性能信号以及相关的会话上下文。
+* **ClickStack 呈现请求到达后端之后发生了什么**：分布式链路追踪、服务依赖关系、日志、指标、数据库操作以及基础设施行为。
+* **OpenTelemetry 追踪上下文将两者串联起来。**
+
+一次调查可能始于 bitdrift 中的一次结账失败、一次页面加载缓慢、一个认证错误或一次崩溃。工程师可以从网络请求出发，沿着追踪 ID 进入 ClickStack 用户界面，查看该请求在各个后端服务之间的流转过程，无需再根据零散的时间戳手动拼凑还原。
+
+<Tip>
+  **要点总结**
+
+  * **bitdrift** 在移动应用中采集未经采样的移动原生遥测数据，并将采集到的追踪 ID 与对应的后端追踪关联起来。
+  * **ClickStack** 在 ClickHouse 中存储和查询由此生成的分布式 trace，并在 ClickStack 用户界面中展示。
+</Tip>
+
+## 前置条件 {#prerequisites}
+
+* 一个正在接收后端追踪数据的 **ClickHouse Observability** 服务。请参阅[全托管 ClickHouse Observability 入门指南](/zh/clickstack/observability/getting-started)；如果您自行运维摄取采集器，请参阅[自管理入门指南](/zh/clickstack/self-configured/getting-started/managed)。
+* 已使用 **OpenTelemetry** 完成插桩、并向 ClickStack 发送链路追踪数据的后端服务。请参阅[使用 OpenTelemetry 摄取数据](/zh/clickstack/observability/ingesting-data/opentelemetry)。
+* 已集成到移动应用中的 **bitdrift Capture SDK**。安装说明请参阅 [bitdrift SDK 文档](https://docs.bitdrift.io/)。
+* 一个 **bitdrift 账户**，并可联系[技术支持](https://bitdrift.io/contact-us)为您的 tenant 启用追踪功能 (追踪是一项实验性功能，由 bitdrift 按 tenant 单独启用) 。
+
+## 配置追踪 {#configure-tracing}
+
+所有配置均在 bitdrift 端完成，共分三步：
+
+1. 联系 [bitdrift 技术支持](https://bitdrift.io/contact-us)，**为您的 tenant 启用追踪，并配置指向您的 ClickStack 用户界面实例的 trace 深层链接**。**查看链路追踪** 链接正是依靠该深层链接配置才能指向您的 ClickStack 用户界面；若未进行此配置，追踪数据虽会被捕获，但不会显示 **查看链路追踪** 链接。
+2. 为您的平台**启用 bitdrift 的网络集成**，以便在出站请求中传播追踪请求头。
+3. **添加 Start Tracing 工作流操作**，为您关注的会话开启追踪。
+
+各步骤在不同平台上的具体操作，请参阅 bitdrift 文档中的 [How bitdrift and ClickStack work together](https://docs.bitdrift.io/product/integration-partners/clickhouse#how-bitdrift-and-clickstack-work-together)。
+
+配置完成后，bitdrift 时间线中的日志行和跨度视图会显示 **查看链路追踪** 链接，点击该链接即可将捕获的追踪 ID 带入 ClickStack 用户界面。
+
+<div className="ch-image-lg">
+  <Frame>
+    ![从 bitdrift trace 链接到 ClickStack 用户界面中的分布式 trace](/images/clickstack/bitdrift/bitdrift-view-trace.jpg)
+  </Frame>
+</div>
+
+*通过“查看链路追踪”链接，从 bitdrift 会话跳转到 ClickStack 用户界面中的分布式 trace。*
+
+## 部署灵活性 {#deployment-flexibility}
+
+无论 ClickStack 是自管理部署，还是作为托管服务运行在 ClickHouse Cloud 上，该集成均可正常使用，因为它不会改变数据进入 ClickStack 的方式。bitdrift 不会将移动端遥测导出到 ClickStack，而是在设备上捕获请求的 OpenTelemetry 追踪上下文，并关联到由您自己的、已通过 OpenTelemetry 插桩的服务发送到 ClickStack 的后端追踪。bitdrift 只需知道您的 ClickStack 用户界面地址，即可构建**查看链路追踪**链接，因此无需对 ClickStack 部署或其摄取管道做任何更改。
+
+## 后续步骤 {#next-steps}
+
+* **完整走一遍真实的调查流程**：从 bitdrift 中的移动端崩溃或慢请求入手，一路追查到 ClickStack 中的后端追踪
+* **在 ClickStack 用户界面中构建仪表盘**，监控移动应用所依赖的后端服务
+* **体验 [bitdrift 沙箱](https://bitdrift.io/sandbox)**，了解 Capture 的实际使用效果
+* **开始[免费试用](https://bitdrift.io/signup)**，将 bitdrift 集成到您的移动应用中
+
+## 延伸阅读 {#read-more}
+
+* [bitdrift 文档：ClickHouse 集成](https://docs.bitdrift.io/product/integration-partners/clickhouse)
+* [ClickHouse Observability 入门指南](/zh/clickstack/observability/getting-started)
+* [使用 OpenTelemetry 摄取数据](/zh/clickstack/observability/ingesting-data/opentelemetry)

@@ -14,56 +14,67 @@ Ce guide explique comment activer le serveur MCP distant de ClickHouse Cloud et 
 
 * Un [service ClickHouse Cloud](/fr/get-started/setup/cloud) actif
 * Votre IDE ou l’outil de développement agentique de votre choix
-* Pour l’authentification sans interface graphique, une [API key ClickHouse Cloud](/cloud/manage/openapi) ayant accès à l’organisation et aux services requis
+* Pour l’authentification sans interface graphique, une [API key ClickHouse Cloud](/fr/cloud/manage/openapi) ayant accès à l’organisation et aux services requis
 
 ## Activer le serveur MCP distant dans Cloud {#enable-remote-mcp-server}
 
 Connectez-vous au service ClickHouse Cloud pour lequel vous souhaitez activer le serveur MCP distant.
 Dans le menu de gauche, cliquez sur **Connect**. Une fenêtre contenant les informations de connexion s’ouvre.
 
-Sélectionnez **Connect with MCP** :
+Sélectionnez **Connect with MCP** :
 
 <div className="ch-image-md">
-
-<Frame>
-
-![Sélectionner MCP dans la fenêtre modale Connect](/images/use-cases/AI_ML/MCP/1connectmcpmodal.webp)
-
-</Frame>
-
+  <Frame>
+    ![Sélectionner MCP dans la fenêtre modale Connect](/images/use-cases/AI_ML/MCP/1connectmcpmodal.webp)
+  </Frame>
 </div>
 
-Activez le bouton pour activer MCP sur le service. L’activation ou la désactivation de MCP nécessite la permission `control-plane:service:manage-mcp` (voir [Console roles and permissions](/fr/products/cloud/reference/security/console-roles#console-permissions)) :
+Activez le bouton pour activer MCP sur le service. L’activation ou la désactivation de MCP nécessite la permission `control-plane:service:manage-mcp` (voir [Console roles and permissions](/fr/products/cloud/reference/security/console-roles#console-permissions)) :
 
 <div className="ch-image-md">
-
-<Frame>
-
-![Activer le serveur MCP](/images/use-cases/AI_ML/MCP/2enable_mcp.webp)
-
-</Frame>
-
+  <Frame>
+    ![Activer le serveur MCP](/images/use-cases/AI_ML/MCP/2enable_mcp.webp)
+  </Frame>
 </div>
 
-Copiez l’URL affichée, qui est identique à celle ci-dessous :
+Copiez l’URL affichée, qui est identique à celle ci-dessous :
 
 ```bash
 https://mcp.clickhouse.cloud/mcp
 ```
 
 <div id="setup-clickhouse-cloud-remote-mcp-server">
-  ## Configurer MCP distant pour le développement
+  ## Configurer MCP distant pour le développement {#setup-clickhouse-cloud-remote-mcp-server}
 </div>
 
 Choisissez votre IDE ou votre outil ci-dessous, puis suivez les instructions de configuration correspondantes.
 
 ### S&#39;authentifier depuis un environnement sans interface graphique {#headless-mcp-client-authentication}
 
-Si votre client MCP s&#39;exécute sur un hôte distant ou sans interface graphique, où un flux OAuth via un navigateur n&#39;est pas envisageable, authentifiez-vous plutôt avec une [API key ClickHouse Cloud](/cloud/manage/openapi).
+Si votre client MCP s&#39;exécute sur un hôte distant ou sans interface graphique, où un flux OAuth via un navigateur n&#39;est pas envisageable, authentifiez-vous plutôt avec une [API key ClickHouse Cloud](/fr/cloud/manage/openapi).
 
 1. Dans la console ClickHouse Cloud, ouvrez votre organisation et sélectionnez **API Keys**.
-2. Créez une clé dotée des rôles et permissions minimaux nécessaires pour les organisations et les services auxquels le client MCP doit accéder, puis téléchargez l&#39;ID et le secret de la clé.
-3. Sur l&#39;hôte distant, fournissez les identifiants via votre système de gestion des secrets et générez une valeur d&#39;autorisation HTTP Basic :
+2. Créez une clé dotée des rôles et autorisations minimaux nécessaires pour les organisations et les services auxquels le client MCP doit accéder, puis téléchargez l&#39;ID et le secret de la clé.
+
+   Pour créer plutôt la clé avec [`clickhousectl`](/fr/concepts/features/interfaces/cli), trouvez un ID de rôle, puis créez la clé avec une liste d&#39;autorisation d&#39;adresses IP pour l&#39;hôte MCP. `clickhousectl` nécessite une API key existante disposant de l’autorisation de créer des clés :
+
+   ```bash
+   clickhousectl cloud org role list
+   clickhousectl cloud key create --name mcp-headless --role-id <role_id> --ip-allow <host_ip>/32
+   ```
+
+   La commande n&#39;affiche qu&#39;une seule fois l&#39;ID et le secret de la nouvelle clé ; stockez-les dans votre gestionnaire de secrets. Sans `--ip-allow`, la liste d&#39;autorisation d&#39;adresses IP de la clé est vide et refuse tout accès.
+3. Pour chaque service ClickHouse que le client MCP doit interroger, configurez un point de terminaison générique de l&#39;API de requêtes :
+
+   * Assurez-vous que le service est actif, puis ouvrez **Settings** &gt; **Query API Endpoints**.
+   * Activez **Allow use of Query API Endpoints**.
+   * S&#39;il n&#39;existe aucun endpoint générique, sélectionnez **Enable generic query API Endpoint**. Choisissez la même API key que celle que vous utiliserez pour MCP, sélectionnez un rôle de base de données disposant d&#39;un accès en lecture aux données requises, puis créez l&#39;endpoint.
+   * Si un endpoint générique existe déjà, modifiez-le pour ajouter l&#39;API key MCP à ses clés autorisées. Les rôles de base de données de l&#39;endpoint déterminent l&#39;accès aux requêtes pour toutes les clés qui lui sont attachées.
+
+   Cette configuration au niveau du service est requise pour les appels à `list_databases`, `list_tables` et `run_select_query` authentifiés par API key. Les autorisations d&#39;organisation et de service ne suffisent pas à elles seules : elles ne remplacent ni l&#39;association de l&#39;API key à l&#39;endpoint, ni les rôles de base de données de celui-ci. Cette configuration ne s&#39;effectue qu&#39;une fois par service ; vous n&#39;avez besoin ni d&#39;une requête enregistrée ni d&#39;un endpoint distinct pour chaque outil MCP.
+
+   Si `get_services_list` réussit mais que les outils de requête signalent que le service est introuvable ou que vos identifiants n&#39;y donnent pas accès, vérifiez que l&#39;endpoint générique est activé et inclut la même API key. Les clients OAuth s&#39;appuient sur l&#39;accès à la console SQL de l&#39;utilisateur connecté et ne nécessitent pas cette configuration par API key.
+4. Sur l&#39;hôte distant, fournissez les identifiants via votre système de gestion des secrets et générez une valeur d&#39;autorisation HTTP Basic :
 
 ```bash
 export CLICKHOUSE_CLOUD_API_KEY="<key_id>"
@@ -77,7 +88,7 @@ export CH_AUTH="Basic $(
 )"
 ```
 
-4. Sélectionnez votre client MCP et ajoutez le serveur MCP distant :
+5. Sélectionnez votre client MCP et ajoutez le serveur MCP distant :
 
 <Tabs>
   <Tab title="Claude Code" id="headless-auth-claude-code">
@@ -138,10 +149,10 @@ export CH_AUTH="Basic $(
 
 Veillez à ce que `CH_AUTH` reste disponible dans chaque session client, et ne commitez jamais l&#39;API key, le secret ni la valeur de `CH_AUTH` dans votre système de gestion de versions. L&#39;encodage Base64 ne chiffre pas les identifiants.
 
-Cette méthode d&#39;authentification par API key ne nécessite ni navigateur ni connexion distincte via `clickhousectl`.
+Cette méthode d&#39;authentification par API key ne nécessite ni navigateur ni connexion distincte via `clickhousectl`. Si vous utilisez également `clickhousectl` sur le même hôte, il lit les mêmes variables `CLICKHOUSE_CLOUD_API_KEY` et `CLICKHOUSE_CLOUD_API_SECRET`, qui priment sur une connexion via navigateur.
 
 <div id="claude-code">
-  ### Claude Code
+  ### Claude Code {#claude-code}
 </div>
 
 Depuis votre répertoire de travail, exécutez la commande suivante pour ajouter la configuration du MCP Server de ClickHouse Cloud à Claude Code :
@@ -165,7 +176,7 @@ Exécutez la commande suivante pour afficher la liste des serveurs MCP :
 Sélectionnez `clickhouse-cloud` et authentifiez-vous via OAuth avec vos identifiants ClickHouse Cloud.
 
 <div id="claude-web">
-  ### Claude web UI
+  ### Claude web UI {#claude-web}
 </div>
 
 1. Accédez à **Customize** &gt; **Connectors**
@@ -175,7 +186,7 @@ Sélectionnez `clickhouse-cloud` et authentifiez-vous via OAuth avec vos identif
 5. Authentifiez-vous avec vos identifiants ClickHouse Cloud via OAuth
 
 <div id="cursor">
-  ### Cursor
+  ### Cursor {#cursor}
 </div>
 
 1. Parcourez et installez des serveurs MCP depuis le [Marketplace de Cursor](https://cursor.com/marketplace).
@@ -183,7 +194,7 @@ Sélectionnez `clickhouse-cloud` et authentifiez-vous via OAuth avec vos identif
 3. Authentifiez-vous avec OAuth.
 
 <div id="visual-studio-code">
-  ### Visual Studio Code
+  ### Visual Studio Code {#visual-studio-code}
 </div>
 
 Ajoutez la configuration suivante dans votre fichier `.vscode/mcp.json` :
@@ -202,7 +213,7 @@ Ajoutez la configuration suivante dans votre fichier `.vscode/mcp.json` :
 Pour plus d’informations, consultez la [documentation de Visual Studio Code](https://code.visualstudio.com/docs/copilot/customization/mcp-servers).
 
 <div id="windsurf">
-  ### Windsurf
+  ### Windsurf {#windsurf}
 </div>
 
 Modifiez votre fichier `mcp_config.json` comme suit :
@@ -221,7 +232,7 @@ Modifiez votre fichier `mcp_config.json` comme suit :
 Pour en savoir plus, consultez la [documentation Windsurf](https://docs.windsurf.com/windsurf/cascade/mcp#adding-a-new-mcp).
 
 <div id="zed">
-  ### Zed
+  ### Zed {#zed}
 </div>
 
 Ajoutez ClickHouse comme serveur personnalisé.
@@ -241,7 +252,7 @@ Zed devrait alors vous demander de vous authentifier via OAuth lors de sa premi�
 Pour plus de détails, consultez la [documentation de Zed](https://zed.dev/docs/ai/mcp#as-custom-servers).
 
 <div id="codex">
-  ### Codex
+  ### Codex {#codex}
 </div>
 
 Exécutez la commande suivante pour ajouter le serveur MCP ClickHouse Cloud via le CLI :
@@ -251,7 +262,7 @@ codex mcp add clickhouse-cloud --url https://mcp.clickhouse.cloud/mcp
 ```
 
 <div id="example-usage">
-  ## Exemple d’utilisation
+  ## Exemple d’utilisation {#example-usage}
 </div>
 
 Une fois connecté, vous pouvez interagir avec ClickHouse Cloud à l’aide de prompts en langage naturel.
@@ -259,7 +270,7 @@ Vous trouverez ci-dessous quelques workflows courants, ainsi que les outils que 
 Pour obtenir la liste complète des outils disponibles, consultez la [référence des outils](/fr/products/cloud/features/ai-ml/remote-mcp#available-tools).
 
 <div id="exploring-data">
-  ### Explorer vos données
+  ### Explorer vos données {#exploring-data}
 </div>
 
 Commencez par découvrir ce qui est disponible :
@@ -272,7 +283,7 @@ Commencez par découvrir ce qui est disponible :
 | &quot;Liste toutes les tables dont le nom commence par `events_`&quot;  | `list_tables` (avec le filtre `like`) |
 
 <div id="running-queries">
-  ### Exécuter des requêtes analytiques
+  ### Exécuter des requêtes analytiques {#running-queries}
 </div>
 
 Posez vos questions en langage naturel, et l&#39;agent les traduira en SQL :
@@ -286,7 +297,7 @@ Posez vos questions en langage naturel, et l&#39;agent les traduira en SQL :
 L&#39;outil `run_select_query` n&#39;autorise que les instructions `SELECT`. Toutes les requêtes sont en lecture seule.
 
 <div id="managing-services">
-  ### Gérer les services et l’infrastructure
+  ### Gérer les services et l’infrastructure {#managing-services}
 </div>
 
 Obtenez une vue d’ensemble de vos ressources ClickHouse Cloud :
@@ -300,7 +311,7 @@ Obtenez une vue d’ensemble de vos ressources ClickHouse Cloud :
 | &quot;Quels ClickPipes sont configurés sur ce service ?&quot;        | `list_clickpipes`                  |
 
 <div id="monitoring-costs">
-  ### Suivi des coûts
+  ### Suivi des coûts {#monitoring-costs}
 </div>
 
 | Prompt                                                                   | Outil invoqué                                           |
@@ -309,7 +320,7 @@ Obtenez une vue d’ensemble de vos ressources ClickHouse Cloud :
 | &quot;Affiche-moi les coûts quotidiens du 1er mars au 15 mars&quot;      | `get_organization_cost` (avec `from_date` et `to_date`) |
 
 <div id="related-content">
-  ## Contenu connexe
+  ## Contenu connexe {#related-content}
 </div>
 
 * [ClickHouse agent skills](https://github.com/ClickHouse/agent-skills)

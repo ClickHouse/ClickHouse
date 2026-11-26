@@ -1,0 +1,71 @@
+---
+slug: /clickstack/self-configured/architecture
+description: 'ClickHouse Observability — セルフマネージド版のアーキテクチャ'
+title: 'アーキテクチャ'
+toc_max_heading_level: 2
+doc_type: 'reference'
+keywords: ['ClickStack アーキテクチャ', 'オブザーバビリティ アーキテクチャ', 'ClickStack UI', 'OpenTelemetry collector', 'MongoDB', 'システム設計']
+sidebarTitle: 'アーキテクチャ'
+---
+
+<Note>
+  このページでは **セルフマネージド版の ClickHouse Observability** について説明します。推奨される完全マネージド型のエクスペリエンスについては、[こちら](/ja/clickstack/observability/architecture)のドキュメントを参照してください。
+</Note>
+
+ClickHouse Observability — セルフマネージド版は、すべて **ClickHouse Cloud** 上で動作します。ClickStack と同じデータモデルおよびユーザーエクスペリエンスはそのままに、完全マネージド型のオブザーバビリティバックエンドを提供します。
+
+このモデルでは、**ClickHouse と ClickStack UI** のホスティング、運用、セキュリティ確保はすべて ClickHouse Cloud が担います。ユーザー側で必要なのは、マネージドサービスにテレメトリデータを送信する **OpenTelemetry (OTel) collector** を実行することだけです。
+
+<div className="ch-image-lg">
+  <Frame>
+    ![セルフマネージドの OpenTelemetry collector が、ClickHouse Cloud 上でホストされる ClickHouse および ClickStack UI にテレメトリーを送信する構成](/images/use-cases/observability/clickstack-self-managed-architecture.svg)
+  </Frame>
+</div>
+
+### ClickHouse Cloud: エンジン {#clickhouse-cloud}
+
+ClickHouse Observability — セルフマネージド の中核を担うのは ClickHouse Cloud です。これは、大規模なリアルタイム分析向けに設計されたカラム指向データベースである ClickHouse のサーバーレス版です。ClickHouse Cloud はオブザーバビリティデータのインジェストとクエリの実行を支え、次のことを可能にします。
+
+* テラバイト規模のイベントに対する sub-second の検索
+* 1 日あたり数十億件の high-cardinality なレコードのインジェスト
+* オブザーバビリティデータで 10 倍以上の高い圧縮率
+* 半構造化 JSON データのネイティブサポートによる動的なスキーマ進化
+* 数百の組み込み分析関数を備えた強力な SQL エンジン
+
+ClickHouse Cloud はオブザーバビリティデータをワイドイベントとして扱うため、ログ、メトリクス、トレースを単一の統合された構造の中で深く相関付けることができます。
+
+さらに、ClickHouse Open Source と比べて、オブザーバビリティの観点で次のような利点があります。
+
+* ストレージとは独立したコンピュートの自動スケーリング
+* オブジェクトストレージを基盤とした、低コストかつ実質的に無制限のデータ保持
+* Warehouses による[読み取りと書き込みのワークロードの分離](/ja/clickstack/self-configured/managing/isolating-read-write)
+* 統合された認証
+* 自動バックアップ
+* セキュリティおよびコンプライアンス機能
+* シームレスなアップグレード
+
+### OpenTelemetry collector: データ取り込み {#open-telemetry-collector-managed}
+
+ClickHouse Observability — セルフマネージド には、オープンかつ標準化された方法でテレメトリーを取り込むための、設定済みの OpenTelemetry (OTel) collector が含まれています。OTLP プロトコルを使用して、次の方法でデータを送信できます。
+
+* gRPC (ポート `4317`)
+* HTTP (ポート `4318`)
+
+collector は、テレメトリーを効率的なバッチ単位で ClickHouse Cloud にエクスポートします。データソースごとに最適化されたテーブルスキーマに対応しているため、あらゆるシグナルタイプでスケーラブルなパフォーマンスを実現します。
+
+**アーキテクチャのこのコンポーネントはユーザーが管理します**
+
+### ClickStack UI: インターフェイス {#hyperdx}
+
+ClickStack UI は ClickStack のユーザーインターフェイスで、次の機能を備えています。
+
+* 自然言語および Lucene 形式の検索
+* リアルタイムのデバッグに役立つライブテーリング
+* ログ、メトリクス、トレースの統合ビュー
+* フロントエンドのオブザーバビリティを実現するセッションリプレイ
+* ダッシュボードの作成とアラートの設定
+* 高度な分析のための SQL クエリインターフェイス
+
+ClickHouse 専用に設計された ClickStack UI は、強力な検索機能と直感的なワークフローを兼ね備えており、異常の検出、問題の調査、インサイトの把握をすばやく行えます。
+
+ClickHouse Observability — セルフマネージド では、UI は ClickHouse Cloud コンソールの認証システムに統合されています。

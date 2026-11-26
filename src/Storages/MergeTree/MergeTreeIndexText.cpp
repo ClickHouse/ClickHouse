@@ -36,6 +36,7 @@
 #include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
+#include <Storages/MergeTree/MergeTreeIndexReader.h>
 #include <Storages/MergeTree/MarkRange.h>
 #include <Storages/MergeTree/MergeTreeIndexTextPostingListCodec.h>
 #include <Storages/MergeTree/MergeTreeIndexTextPostprocessor.h>
@@ -51,6 +52,7 @@
 #include <base/arithmeticOverflow.h>
 #include <base/range.h>
 #include <base/types.h>
+#include <base/unit.h>
 #include <base/PackedStringRef.h>
 #include <fmt/ranges.h>
 
@@ -60,6 +62,7 @@
 namespace ProfileEvents
 {
     extern const Event TextIndexReadDictionaryBlocks;
+    extern const Event TextIndexPatternScanSkippedByCost;
     extern const Event TextIndexReadSparseIndexBlocks;
     extern const Event TextIndexReadGranulesMicroseconds;
     extern const Event TextIndexReadPostings;
@@ -575,6 +578,67 @@ DictionaryBlockRanges blocksMatchingTokenKeyRanges(
     return merged_ranges;
 }
 
+/// Below this many compressed bytes the dictionary scan is cheap whatever the readable rows are,
+/// so the cost check below does not bypass it.
+constexpr size_t MIN_DICTIONARY_BYTES_TO_SKIP_PATTERN_SCAN = 1_MiB;
+
+/// Whether the dictionary scan over `block_ranges` reads more compressed bytes than the rows that are still
+/// readable take in the columns the index is built on. Each dictionary block starts a new compressed block,
+/// so the scanned bytes are the differences of the blocks' offsets in the dictionary file. The readable bytes
+/// are estimated from the compressed sizes of the indexed columns, which are known only for wide parts.
+/// Returns false when the rows are not narrowed down or a size is unknown.
+bool isPatternScanCostlierThanReadableRows(
+    const DictionarySparseIndex & sparse_index,
+    const DictionaryBlockRanges & block_ranges,
+    const MergeTreeIndexDeserializationState & state)
+{
+    if (!state.readable_ranges)
+        return false;
+
+    const auto & part_info = state.part_info;
+    const size_t total_rows = part_info.getRowCount();
+    if (total_rows == 0)
+        return false;
+
+    const auto dictionary_substream = getSubstream(state.index, MergeTreeIndexSubstream::Type::TextIndexDictionary);
+    const size_t dictionary_file_size = getIndexStreamFileSize(
+        part_info, state.index.getFileName() + dictionary_substream.suffix, dictionary_substream.extension);
+    if (dictionary_file_size == 0)
+        return false;
+
+    size_t dictionary_bytes_to_scan = 0;
+    for (const auto & [range_begin, range_end] : block_ranges)
+    {
+        UInt64 begin_offset = sparse_index.getOffsetInFile(range_begin);
+        UInt64 end_offset = range_end < sparse_index.size() ? sparse_index.getOffsetInFile(range_end) : dictionary_file_size;
+        if (end_offset > begin_offset)
+            dictionary_bytes_to_scan += end_offset - begin_offset;
+    }
+
+    if (dictionary_bytes_to_scan < MIN_DICTIONARY_BYTES_TO_SKIP_PATTERN_SCAN)
+        return false;
+
+    size_t indexed_columns_bytes = 0;
+    for (const auto & column_name : state.index.index.expression->getRequiredColumns())
+    {
+        size_t column_bytes = part_info.getColumnSize(column_name).data_compressed;
+        if (column_bytes == 0)
+            return false;
+        indexed_columns_bytes += column_bytes;
+    }
+
+    if (indexed_columns_bytes == 0)
+        return false;
+
+    const auto & index_granularity = part_info.getIndexGranularity();
+    size_t readable_rows = 0;
+    for (const auto & range : *state.readable_ranges)
+        readable_rows += index_granularity.getRowsCountInRange(range);
+
+    const double readable_bytes = static_cast<double>(indexed_columns_bytes) * static_cast<double>(readable_rows) / static_cast<double>(total_rows);
+    return static_cast<double>(dictionary_bytes_to_scan) > readable_bytes;
+}
+
 /// Unique identifier of the text index of a data part in the text index caches.
 String makeIndexIdForCaches(const IMergeTreeDataPartInfoForReader & part_info, const IMergeTreeIndex & index)
 {
@@ -837,6 +901,19 @@ void MergeTreeIndexGranuleText::analyzeDictionaryForPatterns(
     const auto block_ranges = blocksMatchingTokenKeyRanges(sparse_index, analyzer->getPatternTokenKeyRanges());
     const bool filter_tokens_by_literals = analyzer->canFilterTokensByLiterals();
     const bool intersect_dictionary = analyzer->canIntersectDictionary();
+
+    /// The scan reads every dictionary block in `block_ranges` however few rows are still readable.
+    /// When the readable rows of the indexed columns take fewer bytes than those blocks, the scan
+    /// cannot pay off: skip it and let the filter evaluate the patterns on the readable rows.
+    /// The automaton walk may skip blocks inside the ranges, so its cost is not estimated here.
+    /// Not cached in the pattern bypass cache: the decision depends on the readable ranges of the query.
+    if (!intersect_dictionary && isPatternScanCostlierThanReadableRows(sparse_index, block_ranges, state))
+    {
+        analyzer->bypassPatternQueries();
+        ProfileEvents::increment(ProfileEvents::TextIndexPatternScanSkippedByCost);
+        return;
+    }
+
     using AutomatonResult = TextIndexDictionaryDFA::Cursor::Result;
     String seek_token;
     String next_token;
@@ -2067,7 +2144,7 @@ void MergeTreeIndexTextGranuleBuilder::addDocumentsFromLowCardinality(
     const auto * column_array = typeid_cast<const ColumnArray *>(column.get());
     const auto & column_low_cardinality = assert_cast<const ColumnLowCardinality &>(column_array ? column_array->getData() : *column);
     const IColumnUnique & dictionary = column_low_cardinality.getDictionary();
-    auto elements_begin = [&](size_t row) { return column_array ? column_array->getOffsets()[row - 1] : row; };
+    auto elements_begin = [&](size_t row) { return column_array ? column_array->getOffsets()[static_cast<ssize_t>(row) - 1] : row; };
 
     /// Values must repeat for the cache to pay off.
     static constexpr size_t min_documents_per_value = 8;
@@ -2290,7 +2367,7 @@ void MergeTreeIndexAggregatorText::addDocumentsFromArray(ColumnPtr column, size_
         /// Dense position counter: dropped (empty/null) tokens leave no gap, so positions
         /// reflect the surviving token sequence only.
         UInt32 token_position = 0;
-        for (size_t element_idx = column_offsets[i - 1]; element_idx < column_offsets[i]; ++element_idx)
+        for (size_t element_idx = column_offsets[static_cast<ssize_t>(i) - 1]; element_idx < column_offsets[i]; ++element_idx)
         {
             if (data_is_nullable && column_data.isNullAt(element_idx))
                 continue;
@@ -2329,7 +2406,7 @@ void MergeTreeIndexAggregatorText::addDocumentsFromMap(ColumnPtr column, size_t 
 
         /// One position per map entry, in stored order, as the Array path does.
         UInt32 token_position = 0;
-        for (size_t element_idx = column_offsets[i - 1]; element_idx < column_offsets[i]; ++element_idx)
+        for (size_t element_idx = column_offsets[static_cast<ssize_t>(i) - 1]; element_idx < column_offsets[i]; ++element_idx)
         {
             const std::string_view key = keys.getDataAt(element_idx);
             const bool is_duplicate = !keys_in_row.insert(key).second;
@@ -2502,8 +2579,8 @@ static const String ARGUMENT_TOKENIZER = "tokenizer";
 static const String ARGUMENT_PREPROCESSOR = "preprocessor";
 static const String ARGUMENT_POSTPROCESSOR = "postprocessor";
 static const String ARGUMENT_DICTIONARY_BLOCK_SIZE = "dictionary_block_size";
-static const String ARGUMENT_DICTIONARY_BLOCK_FRONTCODING_COMPRESSION = "dictionary_block_frontcoding_compression";
-static const String ARGUMENT_POSTING_LIST_BLOCK_SIZE = "posting_list_block_size";
+[[clang::no_destroy]] static const String ARGUMENT_DICTIONARY_BLOCK_FRONTCODING_COMPRESSION = "dictionary_block_frontcoding_compression";
+[[clang::no_destroy]] static const String ARGUMENT_POSTING_LIST_BLOCK_SIZE = "posting_list_block_size";
 static const String ARGUMENT_POSTING_LIST_CODEC = "posting_list_codec";
 static const String ARGUMENT_POSITIONS = "support_phrase_search";
 
