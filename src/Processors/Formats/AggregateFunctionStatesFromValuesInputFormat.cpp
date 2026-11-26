@@ -7,6 +7,7 @@
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnTuple.h>
 #include <Core/Block.h>
+#include <Core/BlockMissingValues.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -83,7 +84,10 @@ DataTypePtr getTypeToParse(const DataTypePtr & type, Mode mode)
     return type;
 }
 
-ColumnPtr buildStates(const ColumnPtr & column, const DataTypeAggregateFunction & type, Mode mode)
+/// `missing_rows` are the rows that the input did not have: the underlying format filled them with the default of the argument type.
+/// Only in the `value` mode: in the `array` mode such a row is an empty array, which adds nothing to its state anyway.
+ColumnPtr buildStates(
+    const ColumnPtr & column, const DataTypeAggregateFunction & type, Mode mode, const BlockMissingValues::RowsBitMask * missing_rows)
 {
     const AggregateFunctionPtr & function = type.getFunction();
     size_t num_rows = column->size();
@@ -132,32 +136,60 @@ ColumnPtr buildStates(const ColumnPtr & column, const DataTypeAggregateFunction 
         states.push_back(place);
     }
 
+    /// One call for the whole chunk: some functions convert their whole argument columns on every call.
     if (mode == Mode::Array)
+    {
         function->addBatchArray(0, num_rows, states.data(), 0, argument_column_ptrs.data(), offsets->data(), &arena);
+    }
+    else if (missing_rows)
+    {
+        /// A missing row keeps its empty state: `addBatch` skips the rows without a place.
+        /// The mask can be shorter than the chunk, it is resized only up to the last row that was set.
+        PaddedPODArray<AggregateDataPtr> places(states.begin(), states.end());
+        for (size_t row = 0; row < std::min(num_rows, missing_rows->size()); ++row)
+            if ((*missing_rows)[row])
+                places[row] = nullptr;
+        function->addBatch(0, num_rows, places.data(), 0, argument_column_ptrs.data(), &arena);
+    }
     else
+    {
         function->addBatch(0, num_rows, states.data(), 0, argument_column_ptrs.data(), &arena);
+    }
 
     return res;
 }
 
 /// `column` is what the underlying format has parsed for `parsed_type`; returns a column of `type`.
-ColumnPtr buildStatesRecursively(const ColumnPtr & column, const DataTypePtr & parsed_type, const DataTypePtr & type, Mode mode)
+ColumnPtr buildStatesRecursively(
+    const ColumnPtr & column,
+    const DataTypePtr & parsed_type,
+    const DataTypePtr & type,
+    Mode mode,
+    const BlockMissingValues::RowsBitMask * missing_rows)
 {
     if (parsed_type.get() == type.get())
         return column;
 
     if (const auto * column_const = checkAndGetColumn<ColumnConst>(column.get()))
-        return ColumnConst::create(buildStatesRecursively(column_const->getDataColumnPtr(), parsed_type, type, mode), column_const->size());
+    {
+        /// The single row of the data column of a constant cannot be both missing and not missing.
+        if (missing_rows && missing_rows->any())
+            return buildStatesRecursively(column->convertToFullColumnIfConst(), parsed_type, type, mode, missing_rows);
+        return ColumnConst::create(
+            buildStatesRecursively(column_const->getDataColumnPtr(), parsed_type, type, mode, nullptr), column_const->size());
+    }
 
     if (const auto * type_aggregate_function = typeid_cast<const DataTypeAggregateFunction *>(type.get()))
-        return buildStates(column, *type_aggregate_function, mode);
+        return buildStates(column, *type_aggregate_function, mode, missing_rows);
 
+    /// A missing row of an `Array` or a `Map` is an empty one: it has no elements, so their rows are not missing.
     if (const auto * type_array = typeid_cast<const DataTypeArray *>(type.get()))
     {
         const auto & column_array = assert_cast<const ColumnArray &>(*column);
         const auto & parsed_type_array = assert_cast<const DataTypeArray &>(*parsed_type);
         return ColumnArray::create(
-            buildStatesRecursively(column_array.getDataPtr(), parsed_type_array.getNestedType(), type_array->getNestedType(), mode),
+            buildStatesRecursively(
+                column_array.getDataPtr(), parsed_type_array.getNestedType(), type_array->getNestedType(), mode, nullptr),
             column_array.getOffsetsPtr());
     }
 
@@ -165,10 +197,11 @@ ColumnPtr buildStatesRecursively(const ColumnPtr & column, const DataTypePtr & p
     {
         const auto & column_map = assert_cast<const ColumnMap &>(*column);
         const auto & parsed_type_map = assert_cast<const DataTypeMap &>(*parsed_type);
-        return ColumnMap::create(
-            buildStatesRecursively(column_map.getNestedColumnPtr(), parsed_type_map.getNestedType(), type_map->getNestedType(), mode));
+        return ColumnMap::create(buildStatesRecursively(
+            column_map.getNestedColumnPtr(), parsed_type_map.getNestedType(), type_map->getNestedType(), mode, nullptr));
     }
 
+    /// A missing row of a `Tuple` is missing in every element.
     if (const auto * type_tuple = typeid_cast<const DataTypeTuple *>(type.get()))
     {
         const auto & column_tuple = assert_cast<const ColumnTuple &>(*column);
@@ -177,7 +210,7 @@ ColumnPtr buildStatesRecursively(const ColumnPtr & column, const DataTypePtr & p
         const auto & parsed_elements = parsed_type_tuple.getElements();
         Columns columns(elements.size());
         for (size_t i = 0; i < elements.size(); ++i)
-            columns[i] = buildStatesRecursively(column_tuple.getColumnPtr(i), parsed_elements[i], elements[i], mode);
+            columns[i] = buildStatesRecursively(column_tuple.getColumnPtr(i), parsed_elements[i], elements[i], mode, missing_rows);
         return ColumnTuple::create(std::move(columns));
     }
 
@@ -254,8 +287,17 @@ Chunk AggregateFunctionStatesFromValuesInputFormat::read()
     const Block & parsed_header = underlying->getPort().getHeader();
     size_t num_rows = chunk.getNumRows();
     Columns columns = chunk.detachColumns();
+    /// The values that the input did not have, for the chunk just pulled. Their states stay empty, the default of the column type,
+    /// also when their `DEFAULT` expressions are not computed.
+    const BlockMissingValues * missing_values = mode == Mode::Value ? underlying->getOmittedValues() : nullptr;
     for (size_t i = 0; i < columns.size(); ++i)
-        columns[i] = buildStatesRecursively(columns[i], parsed_header.getByPosition(i).type, header.getByPosition(i).type, mode);
+    {
+        const BlockMissingValues::RowsBitMask * missing_rows = nullptr;
+        if (missing_values && i < missing_values->getNumColumns() && missing_values->hasDefaultBits(i))
+            missing_rows = &missing_values->getDefaultsBitmask(i);
+        columns[i] = buildStatesRecursively(
+            columns[i], parsed_header.getByPosition(i).type, header.getByPosition(i).type, mode, missing_rows);
+    }
     chunk.setColumns(std::move(columns), num_rows);
     return chunk;
 }

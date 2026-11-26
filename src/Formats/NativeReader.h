@@ -35,12 +35,14 @@ public:
 
     /// If a non-zero server_revision is specified, additional block information may be expected and read.
     /// The overloads without FormatSettings exist so that this header does not need its definition.
+    /// With `with_defaults_masks_`, each column carries a defaults mask, as in the `NativeWithDefaults` format.
     NativeReader(ReadBuffer & istr_, UInt64 server_revision_);
     NativeReader(
         ReadBuffer & istr_,
         UInt64 server_revision_,
         std::optional<FormatSettings> format_settings_,
-        ISerialization::KindSet allowed_kinds_ = default_allowed_kinds);
+        ISerialization::KindSet allowed_kinds_ = default_allowed_kinds,
+        bool with_defaults_masks_ = false);
 
     /// For cases when data structure (header) is known in advance.
     /// NOTE We may use header for data validation and/or type conversions. It is not implemented.
@@ -52,7 +54,8 @@ public:
         std::optional<FormatSettings> format_settings_,
         BlockMissingValues * block_missing_values_ = nullptr,
         NativeReaderTypeCache * type_cache_ = nullptr,
-        ISerialization::KindSet allowed_kinds_ = default_allowed_kinds);
+        ISerialization::KindSet allowed_kinds_ = default_allowed_kinds,
+        bool with_defaults_masks_ = false);
 
     /// For cases when we have an index. It allows to skip columns. Only columns specified in the index will be read.
     NativeReader(ReadBuffer & istr_, UInt64 server_revision_,
@@ -85,6 +88,10 @@ private:
     BlockMissingValues * block_missing_values = nullptr;
     NativeReaderTypeCache * type_cache = nullptr;
     ISerialization::KindSet allowed_kinds = default_allowed_kinds;
+
+    /// After its type, each column has a marker byte and, if the marker is 1, a mask with a byte per row.
+    /// The rows where the mask is not zero take the default and have no value in the column data.
+    bool with_defaults_masks = false;
 
     bool use_index = false;
     IndexForNativeFormat::Blocks::const_iterator index_block_it;
