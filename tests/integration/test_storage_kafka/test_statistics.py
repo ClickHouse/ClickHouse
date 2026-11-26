@@ -1,3 +1,4 @@
+import threading
 import time
 
 import pytest
@@ -297,6 +298,95 @@ def test_statistics_survive_blocked_insert_during_keeper_outage(kafka_cluster):
                 )
         finally:
             instance.query("DROP TABLE IF EXISTS test.dead_dst SYNC", ignore_error=True)
+
+
+def test_statistics_survive_shutdown_during_direct_select(kafka_cluster):
+    """Statistics must keep being served while a direct SELECT holds its consumer through the table's shutdown."""
+    topic_name = "topic_statistics_direct_hold"
+    hold_query_id = "kafka_statistics_hold"
+    consumer_in_use = "SELECT count() FROM system.kafka_consumers WHERE table = 'kafka' AND is_currently_used = 1"
+    # The DROP takes the table out of the catalog, so its drainer is the only thing left to observe.
+    drain_task_is_scheduled = (
+        "SELECT count() FROM system.background_schedule_pool "
+        "WHERE database = 'test' AND table = 'kafka' AND log_name LIKE '%(drain events)'"
+    )
+
+    create_kafka_query = k.generate_new_create_table_query(
+        "kafka", "a String", topic_list=topic_name, format="LineAsString"
+    )
+
+    with k.existing_kafka_topic(k.get_admin_client(kafka_cluster), topic_name):
+        instance.query(create_kafka_query)
+        # A direct read needs an active table.
+        instance.query_with_retry("SELECT count() FROM test.kafka", retry_count=30, sleep_time=1)
+
+        outcome = {}
+
+        def hold_consumer():
+            # The topic is empty, so the Kafka source finishes right away, but the pipeline keeps it, and with
+            # it the consumer, until the slow second branch is over.
+            outcome["select"] = instance.query_and_get_answer_with_error(
+                "SELECT a FROM test.kafka UNION ALL SELECT toString(sleepEachRow(1)) AS a FROM numbers(1000)",
+                query_id=hold_query_id,
+                settings={"max_block_size": 1},
+            )
+
+        def drop_table():
+            outcome["drop"] = instance.query_and_get_answer_with_error("DROP TABLE test.kafka")
+
+        select_thread = threading.Thread(target=hold_consumer)
+        drop_thread = threading.Thread(target=drop_table)
+        try:
+            select_thread.start()
+            deadline = time.monotonic() + 30
+            while time.monotonic() < deadline and instance.query(consumer_in_use).strip() != "1":
+                time.sleep(1)
+            assert select_thread.is_alive() and instance.query(consumer_in_use).strip() == "1", (
+                f"the direct SELECT did not take a consumer: {outcome.get('select')}"
+            )
+            wait_for_statistics("kafka")
+
+            drop_thread.start()
+            # The shutdown gives up on a held consumer after a minute. Until then the table is still listed.
+            ts_first = get_stat_ts("kafka")
+            ts_second = None
+            deadline = time.monotonic() + 50
+            while ts_first is not None and time.monotonic() < deadline:
+                ts_second = get_stat_ts("kafka")
+                if ts_second is not None and ts_second > ts_first:
+                    break
+                time.sleep(1)
+            assert drop_thread.is_alive(), "DROP TABLE returned before the shutdown gave up waiting for the consumer"
+            assert ts_first is not None and ts_second is not None and ts_second > ts_first, (
+                f"rdkafka_stat is not served while the shutdown waits for a held consumer (ts {ts_first} -> {ts_second})"
+            )
+
+            instance.wait_for_log_line(
+                r"Timed out waiting for consumer\(s\) to be released", timeout=100, look_behind_lines=0
+            )
+            drop_thread.join(timeout=30)
+            assert not drop_thread.is_alive(), f"DROP TABLE did not return: {outcome.get('drop')}"
+            assert instance.query("SELECT count() FROM system.tables WHERE database = 'test' AND name = 'kafka'").strip() == "0", (
+                f"the table outlived DROP TABLE: {outcome.get('drop')}"
+            )
+
+            assert select_thread.is_alive(), "the direct SELECT released its consumer before the shutdown gave up waiting"
+            assert instance.query(drain_task_is_scheduled).strip() == "1", (
+                "the drain task is stopped while a direct SELECT still holds a consumer"
+            )
+        finally:
+            instance.query(f"KILL QUERY WHERE query_id = '{hold_query_id}' SYNC", ignore_error=True)
+            select_thread.join(timeout=60)
+            if drop_thread.ident is not None:
+                drop_thread.join(timeout=130)
+
+        # The drainer stops by itself once the last held consumer is released.
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline and instance.query(drain_task_is_scheduled).strip() == "1":
+            time.sleep(1)
+        assert instance.query(drain_task_is_scheduled).strip() == "0", (
+            "the drain task did not stop after the last consumer was released"
+        )
 
 
 if __name__ == "__main__":

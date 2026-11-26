@@ -631,9 +631,8 @@ void StorageKafka2::shutdown(bool)
     cv.notify_all();
     activating_task->deactivate();
     partialShutdown();
-    /// Stop the drain task only after the streaming tasks: partialShutdown can block on a
-    /// stalled MV insert, and the drain task must keep serving events during that wait.
-    drain_task->deactivate();
+    /// The drain task stays on: it serves the consumers while `cleanConsumers` waits for them, and
+    /// those still held by direct SELECTs afterwards.
     LOG_TRACE(log, "Closing consumers");
     cleanConsumers();
     LOG_TRACE(log, "Consumers closed");
@@ -1510,6 +1509,12 @@ void StorageKafka2::releaseConsumer(KeeperHandlingConsumerPtr && consumer_ptr)
 {
     std::lock_guard lock{consumers_mutex};
     consumer_ptr->stopUsing();
+    if (retire_released_consumers)
+    {
+        for (auto & consumer : consumers)
+            if (consumer == consumer_ptr)
+                consumer = nullptr;
+    }
     /// Use notify_all so that all threads waiting for different consumer indices get a chance to check.
     cv.notify_all();
     CurrentMetrics::sub(CurrentMetrics::KafkaConsumersInUse);
@@ -1542,6 +1547,16 @@ void StorageKafka2::drainEventsTask()
     for (size_t idx = 0; idx < tasks.size(); ++idx)
         pollConsumerEvents(idx);
 
+    {
+        std::lock_guard lock(consumers_mutex);
+        /// Nothing takes the consumers again after the shutdown: stop once the direct SELECTs
+        /// released those they held.
+        const bool has_consumers
+            = std::any_of(consumers.begin(), consumers.end(), [](const auto & consumer) { return consumer && consumer->hasConsumer(); });
+        if (shutdown_called && !has_consumers)
+            return;
+    }
+
     drain_task->scheduleAfter(500);
 }
 
@@ -1570,6 +1585,13 @@ void StorageKafka2::cleanConsumers()
             LOG_WARNING(log, "Timed out waiting for consumer(s) to be released, proceeding with shutdown");
         }
 
+        /// The drain task serves the consumers during the wait above, but must not poll a handle
+        /// while it is taken away below. It waits for its current round, and that round takes this
+        /// mutex as well, so stop it with the mutex released.
+        lock.unlock();
+        drain_task->deactivate();
+        lock.lock();
+
         size_t skipped = 0;
         for (const auto & consumer : consumers)
         {
@@ -1584,12 +1606,25 @@ void StorageKafka2::cleanConsumers()
         }
         if (skipped)
             LOG_WARNING(log, "Skipped closing {} consumer(s) that are still in use", skipped);
+        retire_released_consumers = true;
     }
 
     cpp_consumers_to_close.clear();
 
-    std::lock_guard lock(consumers_mutex);
-    consumers.clear();
+    bool has_held_consumers = false;
+    {
+        std::lock_guard lock(consumers_mutex);
+        /// Consumers still held by direct SELECTs stay in their slots for the drain task, until
+        /// `releaseConsumer` drops them.
+        for (auto & consumer : consumers)
+        {
+            if (consumer && !consumer->hasConsumer())
+                consumer = nullptr;
+            has_held_consumers = has_held_consumers || static_cast<bool>(consumer);
+        }
+    }
+    if (has_held_consumers)
+        drain_task->activateAndSchedule();
 }
 
 std::optional<size_t> StorageKafka2::streamFromConsumer(KeeperHandlingConsumer & consumer, const Stopwatch & watch, UInt64 cycle_epoch)
