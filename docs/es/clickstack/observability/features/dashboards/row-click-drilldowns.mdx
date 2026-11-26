@@ -1,0 +1,160 @@
+---
+slug: /clickstack/observability/features/dashboards/row-click-drilldowns
+title: 'Exploración detallada al hacer clic en una fila de tabla'
+sidebarTitle: 'Exploración al hacer clic en una fila'
+description: 'Convierta un mosaico de tabla en un flujo de trabajo de inspección: haga clic en una fila para profundizar en un panel de control específico o en los log y trazas subyacentes, acotados a la fila seleccionada'
+doc_type: 'guide'
+keywords: ['clickstack', 'dashboards', 'drilldown', 'table', 'row click', 'inspection', 'observability']
+---
+
+Un mosaico de tabla suele funcionar como un **catálogo**: una fila por servicio, host, endpoint o grupo de errores, con unas pocas columnas que evalúan cada elemento. Las acciones al hacer clic en una fila convierten ese catálogo en un flujo de trabajo de inspección. Usted recorre el catálogo para encontrar la fila que le interesa, hace clic en ella y ClickHouse Observability traslada los valores de esa fila como filtros. Así, el destino se abre ya acotado a ese elemento, sin necesidad de reconstruir ninguna consulta manualmente.
+
+Un clic puede llevarle a uno de estos dos destinos:
+
+* **otro panel de control**, para obtener una vista centrada en ese elemento concreto, como un panel de control de detalle por servicio, o
+* **los eventos subyacentes** en [Búsqueda](/es/clickstack/observability/features/search), para consultar los log o trazas que hay detrás de la fila.
+
+Los dos casos de uso siguientes parten del mismo catálogo (un inventario de servicios) y, desde él, profundizan en cada destino. Las acciones al hacer clic en una fila solo se aplican a los mosaicos de tabla. No deben confundirse con la [exploración detallada hacia la búsqueda](/es/clickstack/observability/features/dashboards/overview#drilldown-to-search) de los gráficos, que abre un menú contextual al hacer clic en un punto de un gráfico de líneas o de barras.
+
+## Inspeccionar un servicio en su propio panel de control {#inspect-in-dashboard}
+
+Una tabla de descripción general con una fila por servicio responde a la pregunta «¿qué servicio no está en buen estado?». Un clic en una fila puede abrir un panel de control por servicio que responda a «¿qué está ocurriendo dentro de él?», limitado al servicio en el que hizo clic. El patrón siguiente combina una tabla de inventario de servicios con un panel de control `Service Detail`.
+
+<Steps>
+  <Step title="Crear el dashboard de detalle" id="detail-dashboard">
+    Cree un panel de control llamado `Service Detail` y añada un [filtro personalizado](/es/clickstack/observability/features/dashboards/overview#custom-filters) con la expresión `ServiceName` sobre su fuente de trazas. El filtro a nivel de panel de control limita cada bloque a un único servicio, de modo que los propios bloques no necesitan fijar un servicio en sus consultas. Añada las vistas por servicio que desee: cifras clave RED (solicitudes, errores, duración P95), un gráfico de percentiles de latencia (P50, P95, P99), la tasa de solicitudes a lo largo del tiempo y un desglose por endpoint agrupado por `SpanName`.
+
+    Guarde primero este panel de control para poder seleccionarlo como destino en el siguiente paso.
+  </Step>
+
+  <Step title="Crear el inventario de servicios" id="service-inventory">
+    En un panel de control de descripción general, añada un bloque **Table** sobre su fuente de trazas agrupado por `ServiceName`. Añádale las columnas RED que evalúan cada servicio, cada una como una serie con alias:
+
+    * `Requests`: recuento de spans (tasa).
+    * `Errors`: recuento de spans con estado de error.
+    * `P95 Duration`: el percentil 95 de `Duration`. Establezca el formato numérico de la columna como duración para que se muestre como `288ms` y no como nanosegundos sin procesar.
+
+    Ordene por `Requests` de forma descendente para que los servicios con más actividad aparezcan arriba. Esta tabla es el catálogo: una fila por servicio, evaluada con las métricas RED.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Tabla de inventario de servicios con columnas RED (Requests, Errors, P95 Duration) para cada servicio, ordenada por volumen de solicitudes](/images/clickstack/observability-row-click-catalog.png)
+      </Frame>
+    </div>
+
+    <Tip>
+      **Muestre primero la columna de agrupación**
+
+      De forma predeterminada, una tabla muestra su columna de agrupación (aquí `ServiceName`) a la derecha, después de las series. Un catálogo se lee mejor si la identidad de cada fila aparece en primer lugar. Abra **Display Settings** del bloque y active **Display Group By Columns on Left** para mover la columna de agrupación al principio.
+    </Tip>
+  </Step>
+
+  <Step title="Configurar el clic en una fila" id="wire-dashboard">
+    En la tabla de inventario, abra **Row Click Action**, seleccione **Panel de control** y elija `Service Detail` en la lista de paneles de control. Al seleccionar el panel de control directamente, queda vinculado por su ID. El vínculo sigue funcionando aunque el panel de control se renombre más adelante y se conserva al exportar e importar el panel de control. (Reserve la opción **Template** para elegir un panel de control distinto por fila; consulte [Configurar una acción al hacer clic en una fila](#set-up).)
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Editor de tabla con el botón Row Click Action resaltado en amarillo](/images/clickstack/observability-row-click-button.png)
+      </Frame>
+    </div>
+
+    Como `Service Detail` declara un filtro personalizado `ServiceName`, el panel deslizante precarga un filtro vacío para esa expresión. Complete su plantilla:
+
+    * **Expresión**: `ServiceName` (ya completado)
+    * **Template**: `{{ServiceName}}`
+
+    Haga clic en **Apply** y guarde. A partir de ahora, el servicio de la fila en la que se hace clic se pasa al filtro `ServiceName` del panel de control.
+  </Step>
+
+  <Step title="Hacer clic en una fila" id="click-dashboard">
+    Pase el cursor sobre una fila para que aparezca un icono de vínculo en el borde derecho de la tabla, con una información emergente que describe la acción (`Open dashboard "Service Detail"`).
+
+    Al hacer clic en la fila se abre el panel de control `Service Detail` con su filtro `Service` establecido en el valor seleccionado, de modo que todos los bloques (las cifras clave RED, los percentiles de latencia y el desglose por endpoint) se limitan a ese servicio con un solo clic.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Panel de control Service Detail tras hacer clic en una fila, con el filtro Service establecido en el servicio seleccionado y las cifras clave RED, los percentiles de latencia y el desglose por endpoint limitados a dicho servicio](/images/clickstack/dashboards/row-click-drilldown.webp)
+      </Frame>
+    </div>
+  </Step>
+</Steps>
+
+## Saltar de un servicio a sus trazas {#jump-to-traces}
+
+A veces no se necesita otra vista de agregación, sino los eventos sin procesar. Una acción **Búsqueda** dirige el clic a la página [Búsqueda](/es/clickstack/observability/features/search) en lugar de a un panel de control y abre los logs o las trazas correspondientes a la fila, ya filtrados por ella.
+
+Partiendo de la misma tabla de inventario de servicios, configure el clic en una fila para que lleve directamente a las trazas en lugar de al panel de control de detalle.
+
+<Steps>
+  <Step title="Dirigir el clic en una fila a Búsqueda" id="wire-search">
+    En la tabla de inventario, abra **Row Click Action** y seleccione **Búsqueda**. Elija su fuente de trazas (solo se muestran las fuentes de logs y de trazas). Añada un filtro:
+
+    * **Expresión**: `ServiceName`
+    * **Template**: `{{ServiceName}}`
+
+    Haga clic en **Apply** y guarde.
+  </Step>
+
+  <Step title="Hacer clic en una fila" id="click-search">
+    Ahora, al hacer clic en la fila de un servicio, se abre la página de Búsqueda con esa fuente de trazas, filtrada por `ServiceName = <service>`, de modo que verá únicamente los spans de ese servicio en el mismo intervalo de tiempo.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Página de Búsqueda abierta con la fuente de trazas tras un clic en una fila, filtrada por el servicio seleccionado](/images/clickstack/dashboards/row-click-search-drilldown.webp)
+      </Frame>
+    </div>
+  </Step>
+</Steps>
+
+El mismo esquema sirve para cualquier catálogo de elementos. Agrupe la tabla por una operación (`SpanName`) o por un atributo de endpoint en lugar de `ServiceName`, construya el filtro a partir de esa columna mediante una plantilla y cada clic en una fila abrirá los eventos de esa operación o endpoint concretos. Para un group-by sobre un atributo de tipo mapa, consulte la nota sobre alias en [Validación y limitaciones](#validation).
+
+## Configurar una acción al hacer clic en una fila {#set-up}
+
+Las acciones al hacer clic en una fila se configuran en el propio bloque de tabla; no existe una página independiente para ellas. Agregue o edite un bloque y establezca su tipo de visualización en **Table**. A continuación, aparecerá un botón **Row Click Action** en la barra de herramientas del editor, junto a **Display Settings**. El botón solo se muestra en los bloques de tabla, y su etiqueta refleja la acción actual: `Row Click Action: Default`, `Row Click Action: Search` o `Row Click Action: Dashboard`. Haga clic en él para abrir el panel deslizante.
+
+<div className="ch-image-lg">
+  <Frame>
+    ![Panel deslizante Row Click Action en modo Panel de control, con el panel de control Service Detail seleccionado como destino y un filtro ServiceName generado mediante plantilla a partir de la fila en la que se hizo clic](/images/clickstack/dashboards/row-click-drawer.webp)
+  </Frame>
+</div>
+
+El panel deslizante ofrece tres acciones:
+
+* **Default**: el comportamiento integrado. Al hacer clic en una fila, se abre la página de Búsqueda filtrada por los valores de las columnas de agrupación de esa fila y por el intervalo de tiempo seleccionado. Es el comportamiento que se aplica cuando no se ha establecido ninguna acción personalizada.
+* **Búsqueda**: dirige el clic a la página de Búsqueda de la fuente que usted elija.
+* **Panel de control**: dirige el clic a otro panel de control de su equipo.
+
+Con **Búsqueda** y **Panel de control**, usted elige adónde lleva el clic y define mediante plantillas los filtros que se trasladan al destino:
+
+* **Destino**: seleccione una fuente o un panel de control concreto, o elija **Template** e introduzca una plantilla de [Handlebars](https://handlebarsjs.com/) que se asocia por nombre con una fuente o un panel de control disponible. Al seleccionar un destino concreto, este queda fijado por su ID. Es la opción recomendada para un único destino fijo: se mantiene aunque se cambie el nombre y al exportar e importar el panel de control y, si el destino es un panel de control, rellena previamente los filtros que este declara. Use **Template** cuando el destino deba variar según la fila, haciendo referencia a una columna de la fila para elegirlo (por ejemplo, `Errors-{{ServiceName}}`).
+* **Filtros**: haga clic en **Add filter** e indique una **Expresión** (una columna o expresión del destino, por ejemplo, `ServiceName`) y una **Template** para su valor (por ejemplo, `{{ServiceName}}`). Las plantillas hacen referencia a las columnas de la fila en la que se hizo clic mediante `{{columnName}}` (consulte la nota siguiente sobre qué columnas están disponibles). Cada filtro se genera como una condición `expression IN (value)` en el destino, y los filtros que comparten expresión se fusionan. Cuando el destino es un panel de control, el panel deslizante rellena previamente un filtro vacío por cada filtro que ese panel de control ya declara, de modo que solo tiene que completar las plantillas.
+* **WHERE** (opcional): una plantilla de Handlebars que se genera en el filtro global del destino, además de las condiciones por filtro anteriores. Establezca su lenguaje de consulta en SQL o Lucene para que el destino pueda analizarla. Por ejemplo, la plantilla SQL `ServiceName = '{{ServiceName}}'` limita el destino al servicio de la fila en la que se hizo clic.
+
+<Info>
+  **Las plantillas hacen referencia a las columnas de la tabla**
+
+  Una plantilla `{{...}}` se resuelve con las columnas del propio bloque de tabla: las columnas de agrupación y cada serie por su nombre o alias, exactamente como aparecen en la tabla. No tiene acceso a las columnas de la fuente subyacente que la tabla no selecciona. Para que un valor se traslade mediante un clic, debe ser una columna de la tabla: `{{ServiceName}}` funciona porque `ServiceName` es la columna de agrupación de la tabla, y a una columna con alias se hace referencia por su alias. Si se hace referencia a un nombre que no existe en la tabla, el clic falla con `Row has no column '<name>'`.
+</Info>
+
+Haga clic en **Apply** para validar las plantillas (la interfaz de usuario indica las que tienen una sintaxis no válida) y, a continuación, guarde el panel de control para que la acción persista.
+
+## Cómo se resuelven el destino y los filtros {#how-it-resolves}
+
+Cuando un usuario hace clic en una fila, la interfaz de usuario resuelve la acción a partir de esa fila:
+
+* **Destino.** Al elegir una fuente o un panel de control concretos, queda fijado por su ID. Un destino de tipo **Template** se genera a partir de la fila en la que se hizo clic y, después, se busca por nombre entre las fuentes o los paneles de control de su equipo. Para que se resuelva, el nombre debe ser único: si dos fuentes o dos paneles de control comparten el nombre generado, el vínculo no puede resolverse a ninguno de ellos. Tampoco se resuelve si el nombre generado está vacío o no tiene coincidencias.
+* **Filtros.** Cada plantilla de filtro se genera a partir de la fila y se convierte en una condición `expression IN (value)` en el destino. Una acción `Search` abre `/search` limitada a la fuente elegida; una acción `Dashboard` abre ese panel de control. En ambos casos se conserva el intervalo de tiempo de la fila en la que se hizo clic.
+
+<Info>
+  **Los destinos de tipo panel de control requieren declarar un filtro coincidente**
+
+  Un filtro que se traslada a un panel de control solo surte efecto si el panel de control de destino declara un [filtro personalizado](/es/clickstack/observability/features/dashboards/overview#custom-filters) top-level cuya expresión coincida con la **Expresión** del filtro. Si ningún filtro declarado coincide, ese valor se descarta al hacer clic y el destino se abre sin filtrar para esa expresión. Por eso el modo panel de control rellena previamente los filtros declarados del destino: si la expresión coincide, la lista desplegable del destino se completa automáticamente con el valor de la fila en la que se hizo clic.
+</Info>
+
+## Validación y limitaciones {#validation}
+
+* **Solo bloques de tabla.** El botón **Row Click Action** aparece en los bloques de tabla, tanto en la tabla del creador de gráficos como en una tabla [basada en SQL](/es/clickstack/observability/features/dashboards/sql-visualizations). Los demás tipos de bloque no admiten una acción al hacer clic en una fila.
+* **Los destinos de búsqueda deben ser fuentes de logs o de trazas.** Las fuentes de métricas y de sesiones no se ofrecen como opción, ya que no pueden visualizarse en la página de búsqueda.
+* **Los nombres de plantilla deben ser únicos.** Un destino de plantilla se resuelve por nombre, por lo que no se pueden usar como destino de plantilla dos fuentes o dos paneles de control con el mismo nombre.
+* **Los destinos de panel de control requieren un filtro declarado coincidente** para que el valor transferido surta efecto (consulte la nota anterior).
+* **Las columnas de agrupación basadas en expresiones requieren un alias.** Un group-by sobre una expresión, como el atributo de mapa `SpanAttributes['http.route']`, genera una columna de resultado cuyo nombre es la propia expresión sin procesar, lo que dificulta referenciarla en una plantilla. Asigne un alias a la columna en el creador de gráficos: añada `AS <alias>` después de la expresión en el campo **Group By** (por ejemplo, `SpanAttributes['http.route'] AS Route`) y, a continuación, haga referencia a `{{Route}}` en la plantilla. Del mismo modo, las series agregadas toman el alias de su campo **Alias**. Un group-by sobre una columna simple como `ServiceName` ya tiene un nombre limpio y no necesita alias.

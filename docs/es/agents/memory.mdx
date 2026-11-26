@@ -3,7 +3,7 @@ sidebarTitle: 'Memory'
 slug: /agents/memory
 title: 'Memory'
 description: 'Memory y personalización en ClickHouse Agents'
-keywords: ['AI', 'ClickHouse Cloud', 'agents', 'memory', 'personalización']
+keywords: ['AI', 'ClickHouse Cloud', 'agents', 'memory', 'personalization']
 doc_type: 'reference'
 ---
 
@@ -11,128 +11,88 @@ import { BetaBadge } from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
 
 <BetaBadge />
 
-es un almacén por usuario que el agente puede recuperar a lo largo de las conversaciones. Está compuesto por varias entradas, cada una un par clave-valor: tu formato
-de fecha preferido, la base de datos que sueles consultar o lo concisas que quieres las respuestas. El agente incorpora estas entradas al contexto cuando corresponde.
+es un almacén por usuario al que el agente puede recurrir entre conversaciones. Se compone de varias entradas, cada una de ellas un par clave-valor: su formato
+de fecha preferido, la base de datos que suele consultar o lo concisas que desea que sean las respuestas. El agente incorpora estas entradas a su contexto cuando son pertinentes.
 
-<div id="how-it-works">
-  ## Cómo funciona la memoria
-</div>
+## Cómo funciona la Memory {#how-it-works}
 
-Un pequeño agente de memoria funciona junto con la conversación principal. Lee los mensajes recientes, decide qué merece la pena recordar y guarda entradas en un almacenamiento por usuario.
-En la siguiente conversación, esas entradas estarán disponibles como contexto al que el agente principal puede recurrir sin que tengas que repetirte.
+Un pequeño agente de Memory se ejecuta en paralelo a la conversación principal. Lee los mensajes recientes, decide qué merece la pena recordar y escribe entradas en un almacén por usuario.
+En la siguiente conversación, esas entradas están disponibles como contexto al que el agente principal puede recurrir sin que usted tenga que repetir la información.
 
-Esto se traduce en continuidad: dile una vez a un agente que prefieres la salida SQL en minúsculas y que tu año fiscal termina en marzo, y las conversaciones futuras se ajustarán a ello.
+Para usted, esto se traduce en continuidad: indíquele una sola vez a un agente que prefiere la salida SQL en minúsculas y que su ejercicio fiscal termina en marzo, y las conversaciones futuras se comportarán en consecuencia.
 
-<div id="manage-your-memories">
-  ## Gestiona tus memorias
-</div>
+## Administre sus memorias {#manage-your-memories}
 
-Abre el panel de Memory desde el icono **Memories** (cerebro) de la navegación izquierda. El panel muestra tus memorias guardadas con controles para crear, editar, eliminar y filtrar entradas.
+Abra el panel de memoria desde el icono **Memorias** (cerebro) en la barra de navegación izquierda. El panel muestra sus memorias almacenadas, con controles para crear, editar, eliminar y filtrar entradas.
 
 <div className="ch-image-sm">
-
-<Frame>
-
-![Panel Memories con el icono de cerebro resaltado en la navegación izquierda, un campo de filtro, un botón Add, una casilla Use memory, una entrada de Memory con controles para editar y eliminar, y un botón Admin Settings](/images/cloud/agent-builder/memory/memories.webp)
-
-</Frame>
-
+  <Frame>
+    ![Panel de memorias con el icono del cerebro resaltado en la barra de navegación izquierda, un campo de filtro, un botón Add, una casilla Usar memoria, una entrada de memoria con controles para editar y eliminar, y un botón Configuración de Administración](/images/cloud/agent-builder/memory/memories.webp)
+  </Frame>
 </div>
 
-Memory es privado y pertenece solo a tu usuario. Los agentes de otras personas nunca ven tus entradas, y tus agentes nunca ven las suyas.
+Memory es privada para cada usuario. Los agentes de otras personas nunca ven sus entradas, y sus agentes nunca ven las de los demás.
 
-<div id="create-memory">
-  ### Crear una memoria
-</div>
+### Crear una memoria {#create-memory}
 
-Haz clic en el botón **+** situado en la parte superior del panel para abrir el cuadro de diálogo **Create Memory**. Introduce una **Key** (solo letras minúsculas y guiones bajos) y un **Value** y, a continuación, haz clic en **Create**.
+Haga clic en el botón **+** situado en la parte superior del panel para abrir el cuadro de diálogo **Create Memory**. Introduzca una **clave** (solo letras minúsculas y guiones bajos) y un **valor**, y después haga clic en **Create**.
 
 <div className="ch-image-sm">
-
-<Frame>
-
-![Panel de Memory con el botón + de Create Memory resaltado](/images/cloud/agent-builder/memory/create.webp)
-
-</Frame>
-
+  <Frame>
+    ![Panel de memoria con el botón + de Create Memory resaltado](/images/cloud/agent-builder/memory/create.webp)
+  </Frame>
 </div>
 
-<div id="filter-memories">
-  ### Filtrar memorias
-</div>
+### Filtrar memorias {#filter-memories}
 
-Utilice el campo **Filtrar memorias** en la parte superior del panel para buscar una entrada por clave.
+Use el campo **Filter memorias** de la parte superior del panel para buscar una entrada por clave.
 
 <div className="ch-image-sm">
-
-<Frame>
-
-![Panel de Memory con el campo Filtrar memorias resaltado y 'demo' escrito](/images/cloud/agent-builder/memory/filter.webp)
-
-</Frame>
-
+  <Frame>
+    ![Panel de memoria con el campo Filter memorias resaltado y el texto 'demo' introducido](/images/cloud/agent-builder/memory/filter.webp)
+  </Frame>
 </div>
 
-<div id="edit-memory">
-  ### Editar una memoria
-</div>
+### Editar una memoria {#edit-memory}
 
-Haz clic en el icono de lápiz de una memoria para abrir el cuadro de diálogo **Edit Memory**. Modifica la Key o el Value y haz clic en **Save**.
+Haga clic en el icono del lápiz de una memoria para abrir el cuadro de diálogo **Edit Memory**. Modifique la clave o el valor y haga clic en **Guardar**.
 
 <div className="ch-image-sm">
-
-<Frame>
-
-![Entrada de memoria con el icono de lápiz de Edit Memory resaltado](/images/cloud/agent-builder/memory/edit.webp)
-
-</Frame>
-
+  <Frame>
+    ![Entrada de Memory con el icono del lápiz de Edit Memory resaltado](/images/cloud/agent-builder/memory/edit.webp)
+  </Frame>
 </div>
 
-<div id="delete-memory">
-  ### Eliminar una memoria
-</div>
+### Eliminar una memoria {#delete-memory}
 
-Haz clic en el icono de la papelera de una memoria para eliminarla.
+Haga clic en el icono de la papelera de una memoria para eliminarla.
 
 <div className="ch-image-sm">
-
-<Frame>
-
-![Entrada de memoria con el icono de la papelera «Eliminar memoria» resaltado](/images/cloud/agent-builder/memory/delete.webp)
-
-</Frame>
-
+  <Frame>
+    ![Entrada de Memory con el icono de papelera Delete Memory resaltado](/images/cloud/agent-builder/memory/delete.webp)
+  </Frame>
 </div>
 
-<div id="toggle-memory">
-  ## Activar o desactivar la Memory
-</div>
+## Activar o desactivar la Memory {#toggle-memory}
 
-Activa o desactiva la Memory con la casilla **Use memory** situada en la parte superior del panel de Memory. Desactívala para temas sensibles que no quieras guardar o para conversaciones esporádicas en las que la personalización no resulte útil.
+Active o desactive la Memory con la casilla **Usar Memory**, situada en la parte superior del panel de Memory. Desactívela cuando trate temas delicados que no quiera que se almacenen o en conversaciones puntuales en las que la personalización no aporte nada.
 
-Cuando la Memory está desactivada, el agente no lee ni escribe en tu almacenamiento de Memory.
+Con la Memory desactivada, el agente no lee ni escribe en su almacén de Memory.
 
 <div className="ch-image-sm">
-
-<Frame>
-
-![Panel de Memory con la casilla Use memory resaltada en la parte superior](/images/cloud/agent-builder/memory/toggle.webp)
-
-</Frame>
-
+  <Frame>
+    ![Panel de Memory con la casilla Usar Memory resaltada en la parte superior](/images/cloud/agent-builder/memory/toggle.webp)
+  </Frame>
 </div>
 
-<div id="memory-best-practices">
-  ## Buenas prácticas de memoria
-</div>
+## Buenas prácticas de Memory {#memory-best-practices}
 
-memoria puede ayudar cuando:
+Memory resulta útil para:
 
 * Convenciones recurrentes: formatos de fecha preferidos, definiciones de negocio, patrones de nomenclatura.
-* Contexto del proyecto: qué servicio o base de datos sueles consultar, qué paneles te interesan.
-* Estilo de comunicación: respuestas concisas frente a conversacionales, con mucho código frente a mucho texto.
+* Contexto del proyecto: qué servicio o base de datos consulta habitualmente, qué dashboards le interesan.
+* Estilo de comunicación: respuestas concisas o más extensas, con mucho código o con más prosa.
 
-memoria no está pensado para usarse como una base de datos. No es un lugar donde volcar grandes cantidades de material de referencia, por ejemplo.
-En su lugar, deberías usar una [skill](/es/agents/builder/skills) o incorporar ese material en las instrucciones del agente.
-Tampoco está pensado para recuperar información de chats anteriores; el propio historial de conversaciones cumple esa función.
+Memory no está pensada para usarse como una base de datos. Por ejemplo, no es el lugar donde volcar grandes cantidades de material de referencia.
+Para ello, es preferible usar una [habilidad](/es/agents/builder/skills) o incorporar ese material en las instrucciones del agente.
+Tampoco está pensada para recuperar información de chats anteriores; de eso ya se encarga el propio historial de conversaciones.

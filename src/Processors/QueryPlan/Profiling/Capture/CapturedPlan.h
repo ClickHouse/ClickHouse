@@ -43,6 +43,15 @@ struct CapturedStep
     std::optional<UInt64> shape_hash;
 };
 
+/// Statistics a query collects only when asked to, because collecting them costs extra.
+struct CollectedStatistics
+{
+    /// Work intervals of the processors, which the per-step `Time` and `Concurrency` groups come from.
+    bool work_intervals = false;
+    /// The extra bookkeeping in joins behind the matched rows metrics that cannot be derived.
+    bool join_matches = false;
+};
+
 /// A whole query: its own steps and the totals.
 struct CapturedPlan
 {
@@ -56,6 +65,12 @@ struct CapturedPlan
     /// Execution totals
     std::optional<UInt64> execution_time_ns;
     std::optional<UInt64> max_threads;
+    /// Execution time split by what the threads were doing. Only when the work intervals were collected.
+    std::optional<ExecutionTimeBreakdown> execution_time_breakdown;
+
+    /// What the query collected beyond the default statistics, so a reader can tell a metric that
+    /// was not collected from one the step does not have.
+    CollectedStatistics collected;
 
     VectorWithMemoryTracking<CapturedStep> nodes;
 

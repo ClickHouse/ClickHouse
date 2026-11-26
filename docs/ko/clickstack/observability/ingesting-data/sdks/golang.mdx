@@ -1,0 +1,54 @@
+---
+slug: /clickstack/observability/ingesting-data/sdks/golang
+description: 'ClickHouse Observability 및 자가 관리형 배포 환경을 위한 Golang 설정 및 구성 방법입니다.'
+title: 'Golang'
+doc_type: 'guide'
+keywords: ['ClickHouse Observability', 'SDK', 'instrumentation']
+sidebarTitle: 'Golang'
+---
+
+import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
+
+import { ClickStackIntegrates } from '/snippets/ko/components/ClickStackIntegrates/ClickStackIntegrates.jsx'
+
+OpenTelemetry Go SDK를 사용하여 로그, 메트릭, 트레이스를 ClickHouse Observability로 전송하세요.
+
+<ClickStackIntegrates signals={['logs', 'metrics', 'traces']} />
+
+## OpenTelemetry 설정 {#set-up-opentelemetry}
+
+공식 [OpenTelemetry Go 설정 지침](https://opentelemetry.io/docs/languages/go/getting-started/)에 따라 SDK를 초기화하고 애플리케이션을 계측하십시오.
+
+아래 연결 설정을 사용하여, 전송하려는 신호에 대해 [HTTP를 통한 OTLP 내보내기](https://opentelemetry.io/docs/languages/go/exporters/)를 구성하십시오. 업스트림 지침에 나오는 예시 대상은 신호별 엔드포인트 재정의를 포함하여 모두 아래 설정으로 대체하십시오.
+
+## 대상 구성 {#configure-destination}
+
+<Tabs>
+  <Tab title="완전 관리형">
+    <BetaBadge label="베타 제공" />
+
+    서비스에서 **팀 설정 → 데이터 → Managed Telemetry**를 열고 **OTLP HTTP 엔드포인트**와 **API Key**를 복사하십시오. 엔드포인트는 포트를 포함한 전체 HTTPS 주소를 사용하십시오.
+
+    ```shell
+    export OTEL_EXPORTER_OTLP_ENDPOINT='https://YOUR_OTEL_ENDPOINT:4318'
+    export OTEL_EXPORTER_OTLP_HEADERS='authorization=Bearer%20YOUR_INGESTION_API_KEY'
+    export OTEL_EXPORTER_OTLP_PROTOCOL='http/protobuf'
+    ```
+  </Tab>
+
+  <Tab title="자가 관리형">
+    collector의 OTLP HTTP 엔드포인트와 수집 키를 사용하십시오. collector에 TLS가 구성되어 있지 않으면 `https://` 대신 `http://`를 사용하십시오. collector 설정 방법은 [OpenTelemetry로 데이터 수집하기](/ko/clickstack/observability/ingesting-data/opentelemetry#sending-otel-data-self-configured)를 참조하십시오.
+
+    ```shell
+    export OTEL_EXPORTER_OTLP_ENDPOINT='https://YOUR_COLLECTOR_HOST:4318'
+    export OTEL_EXPORTER_OTLP_HEADERS='authorization=YOUR_INGESTION_API_KEY'
+    export OTEL_EXPORTER_OTLP_PROTOCOL='http/protobuf'
+    ```
+  </Tab>
+</Tabs>
+
+## 수집 확인 {#verify-ingestion}
+
+계측된 애플리케이션을 시작하고 활동을 발생시키십시오. ClickHouse Observability에서 최근 시간 범위를 선택한 다음 로그 또는 trace에서 애플리케이션의 서비스 이름을 찾으십시오. 애플리케이션이 메트릭을 내보내는 경우, 내보내기가 완료될 때까지 잠시 기다린 후 메트릭을 확인하십시오.
+
+instrumentation 및 익스포터 관련 문제 해결은 [OpenTelemetry Go 문서](https://opentelemetry.io/docs/languages/go/)를 참조하십시오.
