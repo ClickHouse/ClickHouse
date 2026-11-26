@@ -25,7 +25,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 #
 # Every cell compares the rows of the top with those of the same query with the feature off, as a multiset:
 # the top has no tie at its boundary. Reading every column keeps the other aggregate, whose records do not
-# combine as those of a lone `count()` do. The cell also compares every returned row with the row of its key
+# combine as those of a lone `count()` do: `adaptive_aggregator_combine_arg_min_max` is off, so `min(number)`
+# does not select one row per key. The cell also compares every returned row with the row of its key
 # in the full aggregation. The last three columns say whether a table thawed and whether the merge skipped
 # units and staged records. Each cell runs in its own clickhouse-local process, so the counters in
 # `system.events` belong to it alone.
@@ -47,6 +48,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 SETTINGS="SET max_threads = 4, max_threads_min_free_memory_per_thread = 0, max_block_size = 4096;
     SET max_rows_to_group_by = 10000000000, group_by_overflow_mode = 'throw';
     SET adaptive_aggregator_freeze_threshold = 4096, adaptive_aggregator_freeze_threshold_bytes = 0;
+    SET adaptive_aggregator_combine_arg_min_max = 0;
     SET collect_hash_table_stats_during_aggregation = 0, max_bytes_before_external_group_by = 0, max_bytes_ratio_before_external_group_by = 0;
     SET optimize_aggregation_in_order = 0, optimize_injective_functions_in_group_by = 0;
     SET query_plan_enable_optimizations = 1, query_plan_aggregation_bucket_top_k = 1, enable_adaptive_aggregator = 1;"
