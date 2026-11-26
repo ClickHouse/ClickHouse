@@ -374,7 +374,9 @@ Allow to merge filter into `JOIN` condition and convert `CROSS JOIN` to `INNER`.
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.7"},{"label": "0"},{"label": "Allow to merge filters in the query plan"}]}, {"id": "row-2","items": [{"label": "24.11"},{"label": "1"},{"label": "Allow to merge filters in the query plan. This is required to properly support filter-push-down with the analyzer."}]}]}/>
 
-Allow to merge filters in the query plan.
+Allows merging consecutive filter steps of the query plan into one. To keep the short-circuit evaluation of the merged condition, a filter on an `AND` chain is then executed as several consecutive filters, one per condition.
+
+This is required for the filter push-down to work properly with the analyzer. Merging takes effect only if `query_plan_enable_optimizations` is enabled.
 
 ## query_plan_min_columns_for_join_lazy_indexing {#query_plan_min_columns_for_join_lazy_indexing}
 
@@ -469,7 +471,9 @@ Optimize reading with FINAL from ReplacingMergeTree by building a set of primary
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.4"},{"label": "1"},{"label": "Added new setting to use query plan for lazy materialization optimisation"}]}]}/>
 
-Use query plan for lazy materialization optimization.
+Enables the lazy materialization optimization for `ORDER BY ... LIMIT n` queries: the columns that are not needed for sorting and filtering are read only for the `n` rows that remain after `LIMIT`, instead of for all the rows read. This reduces the amount of data read for top-N queries over wide tables.
+
+The optimization is not used if `n` is greater than `query_plan_max_limit_for_lazy_materialization`, or with `LIMIT ... WITH TIES`.
 
 ## query_plan_optimize_lazy_materialization_for_file {#query_plan_optimize_lazy_materialization_for_file}
 
@@ -619,6 +623,14 @@ Possible values:
 
 - 0 - Disable
 - 1 - Enable
+
+## query_plan_remove_unused_joins {#query_plan_remove_unused_joins}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "1"},{"label": "New setting to remove a `LEFT` or `RIGHT` `JOIN` whose other side is not read and which outputs every row of the preserved side exactly once."}]}]}/>
+
+Remove a `LEFT` or `RIGHT` `JOIN` if no column of its other side is read and it outputs every row of the preserved side exactly once: an `ANY` join, or a join whose other side is unique by the join keys, such as a subquery with `GROUP BY` or `DISTINCT` on them, or a table without a partition key whose `UNIQUE KEY` they cover. The other side is then not read at all.
 
 ## query_plan_replace_always_true_filter {#query_plan_replace_always_true_filter}
 

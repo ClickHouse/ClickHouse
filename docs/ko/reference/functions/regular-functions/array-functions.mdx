@@ -483,7 +483,7 @@ SELECT arrayConcat([1, 2], [3, 4], [5, 6]) AS res
 
 `arrayCount`는 [고차 함수](/ko/reference/functions/regular-functions/overview#higher-order-functions)입니다.
 
-<Info>
+<Note>
   **`UInt32`를 반환하려면 `array_count_legacy_uint32_result` 설정을 사용하십시오**
 
   버전 26.10에서 하위 호환되지 않는 변경 사항이 도입되었습니다. 조건에 일치하는 원소가 `4294967295`개를 초과하는 배열에서도 정확한 결과를 반환하도록 `arrayCount`가 `UInt32` 대신 `UInt64`를 반환합니다.
@@ -491,7 +491,7 @@ SELECT arrayConcat([1, 2], [3, 4], [5, 6]) AS res
   이전 동작(`UInt32` 결과 유형과 결과의 상수 여부 모두)을 유지하려면 `array_count_legacy_uint32_result` 설정(기본값: `false`)을 `true`로 설정하십시오.
 
   클러스터(Cluster)를 롤링 업그레이드하는 동안에는 아직 업그레이드되지 않은 서버에서 시작한 분산 쿼리(Distributed Query)가 이 설정을 전달하지 않습니다. 따라서 이미 업그레이드된 세그먼트(Shard)에서 로컬로 평가되는 표현식 중 유형에 따라 결과가 달라지는 표현식(예: `byteSize(arrayCount(...))`)은 `UInt64`를 기준으로 평가됩니다. 전체 클러스터의 업그레이드가 끝날 때까지 이러한 쿼리의 동작을 기존과 완전히 동일하게 유지하려면, 업그레이드된 서버에서 세그먼트 측 쿼리를 실행하는 사용자에 대해 `array_count_legacy_uint32_result = 1`을 설정하고 업그레이드가 완료된 후 이 설정을 제거하십시오. 어떤 사용자로 실행되는지는 클러스터 구성에 따라 달라집니다. 서버 간 `secret`이 구성되어 있으면 세그먼트는 initiator의 현재 사용자로 쿼리를 실행합니다. 그렇지 않으면 클러스터 정의 또는 `remote` 테이블 함수(Table Function)에 지정된 사용자로 실행합니다(지정하지 않으면 `default`). 가장 간단하면서도 확실한 방법은 업그레이드된 서버의 모든 사용자에 대해 이 설정을 활성화하는 것입니다.
-</Info>
+</Note>
 
 **구문**
 
@@ -3479,8 +3479,10 @@ SELECT arrayReduce('uniqUpTo(3)', [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
 
 도입 버전: v20.4.0
 
-지정된 범위에 있는 배열 요소에 집계 함수를 적용하고, 각 범위의 결과를 담은 배열을 반환합니다.
+지정된 범위에 있는 배열 원소에 집계 함수를 적용하고, 각 범위의 결과를 담은 배열을 반환합니다.
 이 함수는 여러 번 `arrayReduce(agg_func, arraySlice(arr1, index, length), ...)`를 호출한 것과 동일한 결과를 반환합니다.
+유일한 차이는 length가 부호 없는 값으로 처리된다는 점입니다. `Int64`의 최댓값보다 큰 length는 배열의 나머지 전체를 선택하지만,
+`arraySlice`는 이러한 값을 음수 길이로 해석합니다.
 
 **구문**
 
@@ -4514,6 +4516,171 @@ SELECT arrayTranspose([['a', 'b'], ['c', 'd']])
 [['a','c'],['b','d']]
 ```
 
+## arrayTreePreorder {#arrayTreePreorder}
+
+도입 버전: v26.11.0
+
+노드 식별자(identifiers)와 상위 에이전트 식별자(identifiers)라는 두 개의 배열로 저장된 트리(또는 포레스트)를 깊이 우선 전위 순회(preorder) 순서로 배치합니다.
+
+`ids`와 `parent_ids`의 원소 `i`는 입력 노드 `i`와 그 상위 에이전트를 나타냅니다.
+이 함수는 4개의 배열로 구성된 named tuple을 반환합니다. 모든 배열은 전위 순회 순서이며, 모든 위치는 1부터 시작하는 인덱스 방식을 따릅니다.
+원소 `k`는 전위 순회에서 `k`번째 노드를 나타냅니다.
+
+* `order[k]` — 이 노드의 입력 인덱스입니다. 데이터 배열은 `arrayMap(i -> x[i], t.order)`를 사용하여 전위 순회 순서로 재배열할 수 있습니다.
+* `size[k]` — 이 노드 자신을 포함하여 이 노드의 하위 트리(subtree)에 속한 노드 수입니다. 하위 트리는 연속된 위치 범위 `[k, k + size[k])`에 해당합니다.
+* `parent[k]` — 이 노드의 상위 에이전트 식별자(identifiers)와 같은 식별자(identifiers)를 가진 노드의 전위 순회 위치이며, 해당 노드가 없으면 `0`입니다.
+* `depth[k]` — 이 노드에서 해당 트리의 루트까지의 거리이며, 루트는 `0`입니다.
+
+노드 `a`는 `a < b AND b < a + size[a]`인 경우에만 노드 `b`의 조상입니다.
+하위 트리에 대한 가산적 집계는 두 접두사 합의 차이로 구할 수 있습니다([`arrayCumSum`](#arrayCumSum) 참조).
+그 밖의 하위 트리 집계는 전위 순회 순서로 재배열한 데이터 배열에 [`arraySlice`](#arraySlice)를 적용하여 구할 수 있습니다.
+
+트리는 루트의 입력 순서대로 하나씩 기록되고 각 노드의 자식도 입력 순서대로 방문하므로, 결과는 결정적입니다. 시간 복잡도는 배열 크기에 선형적으로 비례하며, 트리 깊이에는 제한이 없습니다.
+
+이 함수는 배열 내용 때문에 예외를 발생시키지 않으며, 어떤 입력이든 유효한 포레스트로 구성합니다.
+
+* 상위 에이전트 식별자(identifiers)가 `NULL`이거나 `ids`에 존재하지 않는 노드(예: 빈 문자열 또는 고아 노드)는 루트가 됩니다.
+* 상위 에이전트 연결이 사이클을 이루면, 사이클을 구성하는 노드 중 입력에서 가장 먼저 나오는 노드의 연결을 잘라내고 해당 노드를 루트로 만듭니다. 이 노드의 `parent`에는 실제 상위 에이전트의 위치가 그대로 유지되며, 이 값은 자신의 위치보다 크므로 `parent[k] > k`이면 위치 `k`에서 사이클이 잘렸다는 의미입니다. 자기 자신을 상위 에이전트로 가지는 노드는 `parent[k] = k`가 됩니다.
+* `ids`에 중복 값이 있으면 자식은 첫 번째 출현에 연결됩니다.
+
+식별자(identifiers)는 해싱으로 비교합니다. 따라서 식별자(identifiers)는 부동소수점 수이거나 이를 포함할 수 없으며(`0.0`과 `-0.0`은 같은 값이지만 해시가 다르기 때문입니다),
+`Dynamic`, `Variant`, `JSON` 값도 사용할 수 없습니다(이들 내부의 `NULL`은 일반 값으로 비교되지만, `Nullable` 타입의 `NULL`은 루트가 되기 때문입니다).
+
+입력의 구조는 결과로부터 파악할 수 있습니다(아래 예시 참조).
+
+* 사이클 존재 여부: `arrayExists((p, k) -> p > k, t.parent, arrayEnumerate(t.parent))`.
+* 사이클이 잘린 위치: `arrayFilter((k, p) -> p > k, arrayEnumerate(t.parent), t.parent)`.
+* 트리 루트의 위치: `arrayFilter((k, d) -> d = 0, arrayEnumerate(t.depth), t.depth)`, 트리 개수는 `countEqual(t.depth, 0)`입니다.
+* 상위 에이전트 식별자(identifiers)가 존재하지 않는 노드의 위치: `arrayFilter((k, p) -> p = 0, arrayEnumerate(t.parent), t.parent)`.
+* 입력이 실제 루트를 가진 단일 트리인지 여부: `t.size[1] = length(ids) AND t.parent[1] <= 1`. 두 가지 루트 표현 방식(존재하지 않는 상위 에이전트 식별자(identifiers)는 `0`, 자기 루프는 `1`)을 모두 허용하며, 배열 전체가 하나의 큰 사이클인 경우는 제외합니다.
+* 위치 `r`에서 잘린 사이클에 속한 노드의 위치: `arrayFilter(x -> x + t.size[x] > t.parent[r], range(r, t.parent[r] + 1))`. 이는 `r`부터 실제 상위 에이전트 `t.parent[r]`까지의 노드 중 하위 트리에 실제 상위 에이전트가 포함된 노드입니다.
+* 중복 식별자(identifiers): `arrayEnumerateUniq(ids) > 1`.
+
+위치 `k`에 있는 노드의 입력 인덱스는 `t.order[k]`로 구할 수 있습니다.
+
+**구문**
+
+```sql
+arrayTreePreorder(ids, parent_ids)
+```
+
+**인수**
+
+* `ids` — 노드 식별자(identifiers)입니다. 부동소수점 수, `Dynamic`, `Variant`, `JSON`은 지원되지 않습니다. [`Array(T)`](/ko/reference/data-types/array)
+* `parent_ids` — 상위 에이전트 식별자(identifiers)로, 노드마다 하나씩 지정합니다. `ids`와 동일한 크기여야 합니다. [`Array(T)`](/ko/reference/data-types/array)
+
+**반환 값**
+
+전위 순회(preorder) 레이아웃(layout)을 나타내는 튜플을 반환합니다. [`Tuple(order Array(UInt32), size Array(UInt32), parent Array(UInt32), depth Array(UInt32))`](/ko/reference/data-types/tuple)
+
+**예시**
+
+**사용 예시**
+
+```sql title=Query
+SELECT arrayTreePreorder(['G2', 'A', 'T1', 'B', 'G1', 'G3'], ['B', '', 'B', 'A', 'A', 'A']) AS t
+```
+
+```response title=Response
+([2,4,1,3,5,6],[6,3,1,1,1,1],[0,1,2,2,1,1],[0,1,2,2,1,1])
+```
+
+**트레이스 내 각 에이전트 스팬의 비용 및 하위 노드 수**
+
+```sql title=Query
+WITH
+    ['A', 'G1', 'B', 'G2', 'T1', 'G3'] AS ids,
+    ['', 'A', 'A', 'B', 'B', 'A'] AS parent_ids,
+    ['AGENT', 'GENERATION', 'AGENT', 'GENERATION', 'TOOL', 'GENERATION'] AS types,
+    [0, 2, 0, 3, 0, 1] AS costs,
+    arrayTreePreorder(ids, parent_ids) AS t,
+    arrayCumSum(arrayMap(i -> costs[i], t.order)) AS cum
+SELECT arrayMap(k -> (ids[t.order[k]], cum[k + t.size[k] - 1] - cum[k], t.size[k] - 1),
+    arrayFilter(k -> types[t.order[k]] = 'AGENT', arrayEnumerate(t.order))) AS res
+```
+
+```response title=Response
+[('A',6,5),('B',3,2)]
+```
+
+**유효하지 않은 입력: 사이클 C -&gt; D -&gt; E -&gt; C, 사이클 하위의 노드 F, 고아 노드 G**
+
+```sql title=Query
+SELECT arrayTreePreorder(['A', 'B', 'C', 'D', 'E', 'F', 'G'], ['', 'A', 'D', 'E', 'C', 'C', 'Z']) AS t
+```
+
+```response title=Response
+([1,2,3,5,4,6,7],[2,1,4,2,1,1,1],[0,1,5,3,4,3,0],[0,1,0,1,2,1,0])
+```
+
+**사이클을 감지하고 끊긴 지점 찾기**
+
+```sql title=Query
+WITH
+    ['A', 'B', 'C', 'D', 'E', 'F', 'G'] AS ids,
+    arrayTreePreorder(ids, ['', 'A', 'D', 'E', 'C', 'C', 'Z']) AS t
+SELECT
+    arrayExists((p, k) -> p > k, t.parent, arrayEnumerate(t.parent)) AS has_cycle,
+    arrayFilter((k, p) -> p > k, arrayEnumerate(t.parent), t.parent) AS cut_positions,
+    arrayMap(k -> ids[t.order[k]], cut_positions) AS cut_ids
+```
+
+```response title=Response
+┌─has_cycle─┬─cut_positions─┬─cut_ids─┐
+│         1 │ [3]           │ ['C']   │
+└───────────┴───────────────┴─────────┘
+```
+
+**루트, 트리 개수, 상위 에이전트를 찾을 수 없는 노드, 단일 트리 여부 검사**
+
+```sql title=Query
+WITH
+    ['A', 'B', 'C', 'D', 'E', 'F', 'G'] AS ids,
+    arrayTreePreorder(ids, ['', 'A', 'D', 'E', 'C', 'C', 'Z']) AS t
+SELECT
+    arrayMap(k -> ids[t.order[k]], arrayFilter((k, d) -> d = 0, arrayEnumerate(t.depth), t.depth)) AS roots,
+    countEqual(t.depth, 0) AS trees,
+    arrayMap(k -> ids[t.order[k]], arrayFilter((k, p) -> p = 0, arrayEnumerate(t.parent), t.parent)) AS parent_not_found,
+    t.size[1] = length(ids) AND t.parent[1] <= 1 AS is_one_tree
+```
+
+```response title=Response
+┌─roots─────────┬─trees─┬─parent_not_found─┬─is_one_tree─┐
+│ ['A','C','G'] │     3 │ ['A','G']        │           0 │
+└───────────────┴───────┴──────────────────┴─────────────┘
+```
+
+**위치 3에서 잘라낸 사이클의 노드**
+
+```sql title=Query
+WITH
+    ['A', 'B', 'C', 'D', 'E', 'F', 'G'] AS ids,
+    arrayTreePreorder(ids, ['', 'A', 'D', 'E', 'C', 'C', 'Z']) AS t,
+    3 AS r
+SELECT arrayMap(k -> ids[t.order[k]], arrayFilter(x -> x + t.size[x] > t.parent[r], range(r, t.parent[r] + 1))) AS cycle
+```
+
+```response title=Response
+┌─cycle─────────┐
+│ ['C','E','D'] │
+└───────────────┘
+```
+
+**중복된 식별자(identifiers): 자식 항목은 처음 나타나는 식별자에 연결됩니다**
+
+```sql title=Query
+WITH ['a', 'b', 'a', 'c'] AS ids
+SELECT
+    arrayFilter((id, n) -> n > 1, ids, arrayEnumerateUniq(ids)) AS duplicate_ids,
+    arrayTreePreorder(ids, ['', 'a', '', 'a']).order AS order
+```
+
+```response title=Response
+┌─duplicate_ids─┬─order─────┐
+│ ['a']         │ [1,2,4,3] │
+└───────────────┴───────────┘
+```
+
 ## arrayUnion {#arrayUnion}
 
 도입 버전: v24.10.0
@@ -4784,10 +4951,10 @@ SELECT countEqual([1, 2, NULL, NULL], NULL)
 
 입력 배열이 비어 있는지 확인합니다.
 
-배열에 요소가 하나도 없으면 빈 것으로 간주됩니다.
+배열에 원소가 하나도 없으면 빈 것으로 간주됩니다.
 
 <Note>
-  [`optimize_functions_to_subcolumns` 설정](/ko/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns)을 활성화하면 최적화할 수 있습니다. `optimize_functions_to_subcolumns = 1`이면 함수는 전체 배열 컬럼을 읽고 처리하는 대신 [size0](/ko/reference/data-types/array#array-size) 서브컬럼만 읽습니다. 쿼리 `SELECT empty(arr) FROM TABLE;`는 `SELECT arr.size0 = 0 FROM TABLE;`로 변환됩니다.
+  컬럼이 쿼리의 다른 곳에서 사용되지 않으면, 함수는 전체 배열 컬럼을 읽고 처리하는 대신 [size0](/ko/reference/data-types/array#array-size) 서브컬럼만 읽을 수 있습니다. 쿼리 `SELECT empty(arr) FROM TABLE;`는 `SELECT arr.size0 = 0 FROM TABLE;`로 변환됩니다. 이 최적화는 [`optimize_functions_to_subcolumns`](/ko/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns) 설정으로 제어되며, 이 설정은 기본적으로 활성화되어 있습니다.
 </Note>
 
 이 함수는 String 또는 UUID 타입에도 사용할 수 있습니다.
@@ -5835,10 +6002,10 @@ SELECT 'ábc' AS str, length(str), lengthUTF8(str)
 
 입력 배열이 비어 있지 않은지 확인합니다.
 
-배열에 요소가 하나 이상 있으면 비어 있지 않은 것으로 간주합니다.
+배열에 원소가 하나 이상 있으면 비어 있지 않은 것으로 간주합니다.
 
 <Note>
-  [`optimize_functions_to_subcolumns`](/ko/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns) 설정을 활성화하면 최적화할 수 있습니다. `optimize_functions_to_subcolumns = 1`이면 이 함수는 전체 배열 컬럼을 읽고 처리하는 대신 [size0](/ko/reference/data-types/array#array-size) 서브컬럼만 읽습니다. 쿼리 `SELECT notEmpty(arr) FROM table`는 `SELECT arr.size0 != 0 FROM TABLE`로 변환됩니다.
+  쿼리의 다른 곳에서 해당 컬럼을 사용하지 않으면 이 함수는 전체 배열 컬럼을 읽고 처리하는 대신 [size0](/ko/reference/data-types/array#array-size) 서브컬럼만 읽을 수 있습니다. 쿼리 `SELECT notEmpty(arr) FROM table`는 `SELECT arr.size0 != 0 FROM TABLE`로 변환됩니다. 이 최적화는 [`optimize_functions_to_subcolumns`](/ko/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns) 설정으로 제어되며, 이 설정은 기본적으로 활성화되어 있습니다.
 </Note>
 
 이 함수는 String 및 UUID에도 사용할 수 있습니다.

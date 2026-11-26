@@ -1,6 +1,6 @@
-set allow_experimental_variant_type = 1;
+-- Tags: long
+
 set use_variant_as_common_type = 1;
-set allow_experimental_dynamic_type = 1;
 set allow_suspicious_low_cardinality_types = 1;
 set session_timezone = 'UTC';
 set cast_string_to_date_time_mode = 'basic';

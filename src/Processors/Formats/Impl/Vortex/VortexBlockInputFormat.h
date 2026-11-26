@@ -174,7 +174,7 @@ private:
     std::shared_ptr<const ArrowIPC::ArrowSchema> file_schema;
     /// The GeoParquet geometry columns of the file's schema metadata, when `input_format_parquet_allow_geoparquet_parser` is on.
     UnorderedMapWithMemoryTracking<String, GeoColumnMetadata> geo_columns;
-    /// The requested types of the header columns, by name: the hints the decoder reads the batches with.
+    /// The requested types of the header columns, keyed by `RecordBatchDecoder::bindRequestedTypes`: the hints the decoder reads the batches with.
     UnorderedMapWithMemoryTracking<String, DataTypePtr> requested_types;
 
     /// Cancellation can arrive on any thread, so the lifetime of the scan handle is serialized.

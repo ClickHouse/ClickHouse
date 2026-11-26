@@ -1,0 +1,65 @@
+---
+slug: /clickstack/observability/features/dashboards/dashboard-templates
+title: 'Plantillas de paneles de control'
+sidebarTitle: 'Plantillas de paneles de control'
+description: 'Importación de plantillas de paneles de control preconfiguradas en ClickHouse Observability'
+doc_type: 'guide'
+keywords: ['clickstack', 'dashboards', 'templates', 'import', 'observability']
+---
+
+ClickHouse Observability incluye una biblioteca de plantillas de paneles de control preconfiguradas que le permiten visualizar la telemetría habitual de infraestructura y aplicaciones. Los gráficos empiezan a mostrar datos en cuanto su servicio de ClickHouse recibe la telemetría que requiere la plantilla.
+
+## Explorar las plantillas disponibles {#browsing-templates}
+
+Para explorar la biblioteca de plantillas integrada, vaya a **Dashboards** y haga clic en **Browse plantillas de paneles de control**.
+
+<div className="ch-image-lg">
+  <Frame>
+    ![Botón para explorar plantillas de paneles de control](/images/clickstack/observability-browse-dashboard-templates.png)
+  </Frame>
+</div>
+
+Se abrirá la galería de plantillas, donde estas aparecen organizadas por categoría. Haga clic en **Import** en la plantilla que desee utilizar.
+
+<div className="ch-image-lg">
+  <Frame>
+    ![Galería de plantillas de paneles de control](/images/clickstack/observability-dashboard-template-gallery.png)
+  </Frame>
+</div>
+
+## Importar una plantilla {#importing-a-template}
+
+En **Step 2: Map Data**, revise los campos **Dashboard Name** y **Tags** y, a continuación, confirme el origen de datos en la columna **To** para cada bloque y filtro. Es posible que las fuentes ya estén seleccionadas. En el siguiente ejemplo, la plantilla Node.js Runtime Metrics asigna sus gráficos y su filtro de servicio a la fuente **Metrics**. Haga clic en **Finalizar Importación** para crear el panel de control.
+
+<div className="ch-image-lg">
+  <Frame>
+    ![Importación de plantilla de panel](/images/clickstack/observability-import-dashboard-template.png)
+  </Frame>
+</div>
+
+## Plantillas preconfiguradas {#pre-built-templates}
+
+### Browser RUM {#browser-rum}
+
+La plantilla **Browser RUM** (real user monitoring, monitorización de usuarios reales) ofrece Core Web Vitals, percentiles de tiempo de carga de página, desgloses de tráfico y seguimiento de errores. Se basa en sesiones de navegador instrumentadas con el SDK para navegador de HyperDX o con instrumentación RUM de OpenTelemetry que emita `rum.sessionId`.
+
+### Métricas de ejecución de OTel {#otel-runtime-metrics}
+
+Las plantillas integradas de Métricas de ejecución de OTel están diseñadas para aplicaciones instrumentadas con [métricas del entorno de ejecución de OpenTelemetry](https://opentelemetry.io/docs/specs/semconv/runtime/).
+
+| Plantilla                   | Descripción                                                                                                                     |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| **.NET Runtime Metrics**    | Recolección de basura, fragmentación del montículo, excepciones, uso del pool de hilos y métricas de CPU para aplicaciones .NET |
+| **Go Runtime Metrics**      | Uso de memoria, asignaciones, objetivos de GC, utilización de CPU y métricas de goroutines para aplicaciones Go                 |
+| **JVM Runtime Metrics**     | Memoria del montículo, utilización de CPU, threads y métricas de GC para aplicaciones basadas en JVM                            |
+| **Node.js Runtime Metrics** | Retardo del bucle de eventos, uso del montículo, utilización de CPU y memoria de V8 para aplicaciones Node.js                   |
+| **Python Runtime Metrics**  | Utilización de CPU, uso de memoria, recolecciones de GC y número de threads para aplicaciones Python                            |
+
+Notas:
+
+* Cada plantilla está configurada con un [filtro personalizado](/es/clickstack/observability/features/dashboards/overview#custom-filters) que selecciona los servicios cuyo atributo de recurso [`telemetry.sdk.language`](https://opentelemetry.io/docs/specs/semconv/registry/attributes/telemetry/#telemetry-sdk-language) coincide con el entorno de ejecución del panel de control.
+* Los nombres de las métricas pueden variar según la versión del SDK de OpenTelemetry. Si su SDK emite nombres de métricas distintos, [edite las visualizaciones](/es/clickstack/observability/features/dashboards/overview#dashboards-editing-visualizations) para adaptarlas a sus datos.
+
+## Esquemas autogestionados {#self-configured-schemas}
+
+En implementaciones autogestionadas con esquemas de tabla de métricas personalizados, ajuste el filtro de servicio de la plantilla para que consulte las columnas correspondientes al nombre del servicio y a los atributos de recurso. Para workloads de alto volumen, considere la [materialización de los atributos consultados con frecuencia](/es/clickstack/self-configured/managing/performance-tuning#materialize-frequently-queried-attributes), como `ResourceAttributes['telemetry.sdk.language']`, para reducir los tiempos de carga de los filtros.

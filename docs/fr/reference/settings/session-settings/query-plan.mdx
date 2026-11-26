@@ -184,6 +184,18 @@ Ne prend effet que si le paramètre [query&#95;plan&#95;enable&#95;optimizations
   Il s’agit d’un paramètre réservé aux experts, qui ne doit être utilisé par les développeurs qu’à des fins de débogage. Ce paramètre peut évoluer de manière non rétrocompatible ou être supprimé ultérieurement.
 </Note>
 
+## query_plan_join_order_use_interesting_orders {#query_plan_join_order_use_interesting_orders}
+
+<BetaBadge />
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "Nouveau paramètre, activé par défaut : l’algorithme d’ordre des jointures DPsub choisit entre jointure par hachage et jointure sort-merge en fonction de l’ordre de tri des entrées."}]}]} />
+
+N’affecte que l’algorithme d’ordre des jointures `dpsub`. Ce paramètre lui permet de tenir compte de l’ordre de tri des tables jointes : pour chaque équi-jointure interne, l’algorithme choisit entre une jointure par hachage et `full_sorting_merge` en fonction du coût, et conserve les plans partiels dont l’ensemble de résultats est trié selon une clé de jointure exploitable par une jointure ultérieure.
+
+Une entrée est considérée comme triée selon une clé de jointure lorsque `optimize_read_in_order` peut la lire dans l’ordre de cette clé depuis une table `MergeTree`, ou lorsqu’elle est issue d’une jointure `full_sorting_merge` sur cette clé. Une jointure pour laquelle `full_sorting_merge` a été retenu tente d’abord cet algorithme, la liste `join_algorithm` servant de repli. Ce choix n’intervient que lorsque `join_algorithm` conserve sa valeur par défaut : toute autre liste est traitée comme une liste de priorité et utilisée telle quelle. Nécessite `enable_join_transitive_predicates`.
+
 ## query_plan_join_shard_by_pk_ranges {#query_plan_join_shard_by_pk_ranges}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -262,8 +274,7 @@ Valeurs possibles :
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Nouvelle optimisation transformant une fonction arrayJoin en véritable étape ARRAY JOIN ; désactivée par défaut."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "1"},{"label": "Activation par défaut de query_plan_lower_array_join_function."}]}]} />
 
-Active ou désactive une optimisation au niveau du plan de requête qui transforme une fonction `arrayJoin` au sein d’une expression en véritable étape `ARRAY JOIN`, afin qu’elle utilise les mêmes mécanismes d’exécution que la clause `ARRAY JOIN` (réplication différée et fusion des filtres).
-Ne prend effet que si le paramètre [query&#95;plan&#95;enable&#95;optimizations](/fr/reference/settings/session-settings/query-plan#query_plan_enable_optimizations) est défini sur 1.
+Exécute la fonction `arrayJoin` de la même manière que la clause `ARRAY JOIN`, c’est-à-dire sous la forme d’une étape `ARRAY JOIN` distincte du plan de requête. Lorsque ce paramètre est désactivé, la fonction est calculée au sein de l’expression qui la contient, comme dans les versions antérieures.
 
 <Note>
   Il s’agit d’un paramètre réservé aux experts, qui ne doit être utilisé par les développeurs qu’à des fins de débogage. Ce paramètre peut évoluer ultérieurement de manière non rétrocompatible ou être supprimé.
@@ -469,7 +480,7 @@ Utiliser le plan de requête pour l’optimisation par matérialisation différ�
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "Nouveau paramètre permettant d'utiliser la matérialisation différée pour les requêtes `ORDER BY ... LIMIT n` lisant des fichiers Parquet locaux avec la fonction de table `file` et le moteur de table `File`."}]}]} />
 
-Utilise l&#39;optimisation de matérialisation différée lors de la lecture de fichiers Parquet locaux avec la fonction de table `file` et le moteur de table `File` : pour les requêtes `ORDER BY ... LIMIT n`, les colonnes non nécessaires au tri et au filtrage ne sont lues que pour les `n` lignes conservées après l&#39;application de `LIMIT`. Ne prend effet que si `query_plan_optimize_lazy_materialization` est activé.
+Utilise l&#39;optimisation par matérialisation différée lors de la lecture de fichiers Parquet et Vortex locaux avec la fonction de table `file` et le moteur de table `File` : pour les requêtes `ORDER BY ... LIMIT n`, les colonnes non nécessaires au tri et au filtrage ne sont lues que pour les `n` lignes conservées après l&#39;application de `LIMIT`. Ne prend effet que si `query_plan_optimize_lazy_materialization` est activé.
 
 ## query_plan_optimize_lazy_materialization_for_object_storage {#query_plan_optimize_lazy_materialization_for_object_storage}
 
@@ -477,7 +488,7 @@ Utilise l&#39;optimisation de matérialisation différée lors de la lecture de 
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "Nouveau paramètre permettant d'utiliser la matérialisation différée pour les requêtes `ORDER BY ... LIMIT n` lisant des fichiers Parquet depuis le stockage d'objets, y compris les tables Iceberg."}]}]} />
 
-Utilise l&#39;optimisation de matérialisation différée pour lire des fichiers Parquet depuis le stockage d&#39;objets, y compris les tables Iceberg : pour les requêtes `ORDER BY ... LIMIT n`, les colonnes inutiles pour le tri et le filtrage ne sont lues que pour les `n` lignes conservées après application de `LIMIT`. Ne prend effet que si `query_plan_optimize_lazy_materialization` est activé.
+Utilise l&#39;optimisation par matérialisation différée pour lire des fichiers Parquet et Vortex depuis le stockage d&#39;objets, y compris les tables Iceberg : pour les requêtes `ORDER BY ... LIMIT n`, les colonnes inutiles pour le tri et le filtrage ne sont lues que pour les `n` lignes conservées après application de `LIMIT`. Ne prend effet que si `query_plan_optimize_lazy_materialization` est activé.
 
 ## query_plan_propagate_predicate_across_join {#query_plan_propagate_predicate_across_join}
 
@@ -670,6 +681,20 @@ Valeurs possibles :
 
 Permet d&#39;ajouter un hint (prédicat supplémentaire) pour le filtrage généré à partir de l&#39;index de texte inversé dans le plan de requête.
 
+## query_plan_top_k_through_array_join {#query_plan_top_k_through_array_join}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "Nouveau paramètre permettant de déplacer le tri borné sous `ARRAY JOIN` lorsque ses clés ne dépendent pas des colonnes dépliées."}]}]} />
+
+Active ou désactive une optimisation au niveau du plan de requête qui déplace `ORDER BY ... LIMIT n` sous un `ARRAY JOIN` lorsque la clé de tri ne lit aucune colonne jointe. Pour un `ARRAY JOIN` interne, l&#39;optimisation ajoute également un filtre sous le tri déplacé. Ce filtre élimine les lignes dont tous les tableaux sont vides, puisque ces lignes ne produisent aucune sortie.
+Ne s&#39;applique que si le paramètre [query&#95;plan&#95;enable&#95;optimizations](/fr/reference/settings/session-settings/query-plan#query_plan_enable_optimizations) vaut 1.
+
+Valeurs possibles :
+
+* 0 - Désactiver
+* 1 - Activer
+
 ## query_plan_top_k_through_join {#query_plan_top_k_through_join}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -697,7 +722,29 @@ Ne prend effet que si le paramètre [`query_plan_enable_optimizations`](/fr/refe
   Il s&#39;agit d&#39;un paramètre réservé aux experts, qui ne doit être utilisé par les développeurs que pour le débogage. Ce paramètre peut être modifié ultérieurement de manière non rétrocompatible, voire supprimé.
 </Note>
 
-Valeurs possibles :
+Valeurs possibles :
+
+* 0 - Désactiver
+* 1 - Activer
+
+## query_plan_use_shuffle_for_order_by_rand {#query_plan_use_shuffle_for_order_by_rand}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "Nouveau paramètre permettant d'exécuter `ORDER BY rand()` en mélangeant les lignes au lieu de les trier."}]}]} />
+
+Active ou désactive une optimisation au niveau du plan de requête qui exécute `ORDER BY rand()` et `ORDER BY rand64()` en mélangeant les lignes
+(de la même manière que la clause `SHUFFLE`) au lieu de les trier, ce qui s&#39;effectue en temps O(n) au lieu de O(n * log(n)).
+Le résultat suit la même distribution : les valeurs de la colonne `rand()` sont remplacées par d&#39;autres valeurs aléatoires, triées.
+S&#39;applique lorsque la valeur `rand()` n&#39;est pas utilisée dans d&#39;autres expressions, et lorsqu&#39;une clause `LIMIT` est présente ou que le tri externe est désactivé
+(le shuffle ne déverse pas de données sur le disque).
+Ne prend effet que si le paramètre [`query_plan_enable_optimizations`](/fr/reference/settings/session-settings/query-plan#query_plan_enable_optimizations) vaut 1.
+
+<Note>
+  Il s&#39;agit d&#39;un paramètre réservé aux experts, qui ne doit être utilisé par les développeurs que pour le débogage. Ce paramètre peut être modifié ultérieurement de manière non rétrocompatible, voire supprimé.
+</Note>
+
+Valeurs possibles :
 
 * 0 - Désactiver
 * 1 - Activer

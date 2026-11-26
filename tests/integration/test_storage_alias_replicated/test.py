@@ -6,7 +6,6 @@ cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(
     "node1",
     main_configs=["configs/remote_servers.xml"],
-    user_configs=["configs/config_alias.xml"],
     with_zookeeper=True,
     macros={"shard": "shard1", "replica": "node1"},
 )
@@ -14,7 +13,6 @@ node1 = cluster.add_instance(
 node2 = cluster.add_instance(
     "node2",
     main_configs=["configs/remote_servers.xml"],
-    user_configs=["configs/config_alias.xml"],
     with_zookeeper=True,
     macros={"shard": "shard1", "replica": "node2"},
 )

@@ -6,6 +6,11 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnsNumber.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <Common/assert_cast.h>
+#include <Common/iota.h>
+#include <IO/WriteHelpers.h>
 #include <Common/quoteString.h>
 #include <DataTypes/NestedUtils.h>
 #include <Interpreters/addTypeConversionToAST.h>
@@ -32,6 +37,9 @@ namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsBool share_nested_offsets;
 }
+
+/// Base name of the column `consume` tags rows with; the constructor prefixes `_` until no input or table column has it.
+static constexpr auto TTL_ROW_POSITION_COLUMN_NAME = "__ttl_row_position";
 
 static TTLExpressions getExpressions(const TTLDescription & ttl_descr, PreparedSets::Subqueries & subqueries_for_sets, const ContextPtr & context)
 {
@@ -168,16 +176,23 @@ TTLTransform::TTLTransform(
     time_t current_time_,
     bool apply_ttl_,
     bool force_,
-    bool ttl_delete_applied_by_merge_)
+    std::shared_ptr<WriteBuffer> ttl_skip_flags_)
     : IAccumulatingTransform(header_, addExpiredColumnsToBlock(header_, expired_columns_))
     , apply_ttl(apply_ttl_)
-    , ttl_delete_applied_by_merge(ttl_delete_applied_by_merge_)
+    , ttl_skip_flags(std::move(ttl_skip_flags_))
     , data_part(data_part_)
     , expired_columns(expired_columns_)
     , log(getLogger(storage_.getLogName() + " (TTLTransform)"))
 {
     const auto & storage_columns = metadata_snapshot_->getColumns();
     const auto & column_defaults = storage_columns.getDefaults();
+
+    if (ttl_skip_flags)
+    {
+        ttl_row_position_column_name = TTL_ROW_POSITION_COLUMN_NAME;
+        while (header_->has(ttl_row_position_column_name) || storage_columns.has(ttl_row_position_column_name))
+            ttl_row_position_column_name = "_" + ttl_row_position_column_name;
+    }
 
     auto build_default_expr = [&](const String & name)
     {
@@ -466,7 +481,11 @@ void TTLTransform::consume(Chunk chunk)
 {
     if (all_data_dropped)
     {
-        finishConsume();
+        /// The gather stage needs one skip flag per input row, so keep reading and record each row as dropped.
+        if (ttl_skip_flags)
+            writeChar(1, chunk.getNumRows(), *ttl_skip_flags);
+        else
+            finishConsume();
         return;
     }
 
@@ -495,7 +514,34 @@ void TTLTransform::consume(Chunk chunk)
             block.insert(ColumnWithTypeAndName(default_column, data.type, column));
     }
 
+    const size_t num_input_rows = block.rows();
+    /// In a vertical merge, tag every row with its position in the chunk. The TTL algorithms filter the block,
+    /// tag included, so the positions left afterwards are the kept rows; they go into `ttl_skip_flags` as flags
+    /// for the gather stage.
+    if (ttl_skip_flags)
+    {
+        auto positions = ColumnUInt32::create(num_input_rows);
+        iota(positions->getData().data(), num_input_rows, UInt32(0));
+        block.insert(ColumnWithTypeAndName(std::move(positions), std::make_shared<DataTypeUInt32>(), ttl_row_position_column_name));
+    }
+
     executeAlgorithms(block);
+
+    if (ttl_skip_flags)
+    {
+        const auto & kept_positions = assert_cast<const ColumnUInt32 &>(*block.getByName(ttl_row_position_column_name).column).getData();
+        /// The TTL algorithms filter rows in order, so the kept positions ascend and each gap is a run of dropped rows.
+        size_t next_position = 0;
+        for (const UInt32 position : kept_positions)
+        {
+            chassert(position >= next_position && position < num_input_rows,
+                fmt::format("Kept row position {} is not in [{}, {})", position, next_position, num_input_rows));
+            writeChar(1, position - next_position, *ttl_skip_flags);
+            writeChar(0, *ttl_skip_flags);
+            next_position = position + 1;
+        }
+        writeChar(1, num_input_rows - next_position, *ttl_skip_flags);
+    }
 
     if (block.empty())
         return;
@@ -539,8 +585,6 @@ void TTLTransform::finalize()
     {
         if (all_data_dropped)
             LOG_DEBUG(log, "Removed all rows from part {} due to expired TTL", data_part->name);
-        else if (ttl_delete_applied_by_merge)
-            LOG_DEBUG(log, "Rows with expired TTL were removed from part {} by the merging algorithm", data_part->name);
         else
             LOG_DEBUG(log, "Removed {} rows with expired TTL from part {}", delete_algorithm->getNumberOfRemovedRows(), data_part->name);
     }

@@ -3,7 +3,7 @@ description: '서버 없이 데이터를 처리하는 clickhouse-local 사용 �
 sidebarTitle: 'clickhouse-local'
 slug: /operations/utilities/clickhouse-local
 title: 'clickhouse-local'
-doc_type: '참고'
+doc_type: 'reference'
 ---
 
 ## `clickhouse-local`과 ClickHouse를 언제 사용해야 하나요? {#when-to-use-clickhouse-local-vs-clickhouse}
@@ -201,7 +201,7 @@ $ clickhouse-local --copy < data.json > data.csv
 
 ## 사용법 {#usage}
 
-기본적으로 `clickhouse-local`은 동일한 호스트에서 실행 중인 ClickHouse 서버의 데이터에 접근할 수 있으며, 서버 구성에 의존하지 않습니다. 또한 `--config-file` 인수를 사용해 서버 구성을 로드할 수도 있습니다. 임시 데이터의 경우 기본적으로 고유한 임시 데이터 디렉터리가 생성됩니다.
+기본적으로 `clickhouse-local`은 동일한 호스트에서 실행 중인 ClickHouse 서버의 데이터에 접근할 수 있으며, 서버 구성에 의존하지 않습니다. 또한 `--config-file` 인수를 사용해 서버 구성을 로드할 수도 있습니다. 데이터는 홈 디렉터리 내 애플리케이션 데이터 전용 디렉터리(Linux에서는 `$XDG_DATA_HOME/clickhouse-local` 또는 `~/.local/share/clickhouse-local`, macOS에서는 `~/Library/Application Support/clickhouse-local`)에 저장되므로 여러 번 실행해도 유지됩니다. 다른 위치를 사용하려면 `--path`를 지정하고, 종료 시 삭제되는 고유한 임시 디렉터리로 작업하려면 `--tmp`를 지정하십시오. 동일한 디렉터리는 한 번에 하나의 인스턴스만 사용할 수 있습니다.
 
 `--config-file`을 지정하지 않으면 `clickhouse-local`은 다음 위치에서 순서대로 설정 파일을 찾아, 처음으로 존재하는 파일을 사용합니다.
 
@@ -252,6 +252,8 @@ $ ./clickhouse local --structure "table_structure" --input-format "format_of_inc
 * `--logger.level` — 로그 수준입니다.
 * `--ignore-error` — 쿼리가 실패해도 처리를 중단하지 않습니다. 오류는 `stderr`에 보고되며 다음 쿼리를 처리합니다. 오류를 무시하므로 일부 쿼리가 실패해도 프로세스는 성공 종료 코드로 종료됩니다.
 * `-c`, `--config-file` — ClickHouse 서버와 동일한 포맷의 설정 파일 경로입니다. 지정하지 않으면 `clickhouse-local`이 주 설정 파일을 직접 찾습니다. 자세한 내용은 [&quot;설정 파일&quot;](#configuration-files)을 참조하십시오. 검색 대상 파일이 하나도 없는 경우에만 구성이 비어 있습니다.
+* `--path` — 데이터 디렉터리입니다. 기본적으로 홈 디렉터리 내 애플리케이션 데이터 전용 디렉터리(Linux에서는 `$XDG_DATA_HOME/clickhouse-local` 또는 `~/.local/share/clickhouse-local`, macOS에서는 `~/Library/Application Support/clickhouse-local`)를 사용하며, 데이터는 실행이 끝나도 유지됩니다.
+* `--tmp` — 데이터용으로 고유한 임시 디렉터리를 사용하며, 이 디렉터리는 종료 시 삭제됩니다(이전 버전에서는 이것이 기본 동작이었습니다). `--path`를 지정하면 적용되지 않습니다.
 * `--no-system-tables` — system tables을 ATTACH하지 않습니다.
 * `--help` — `clickhouse-local`의 인수 참고입니다.
 * `-V`, `--version` — 버전 정보를 출력하고 종료합니다.

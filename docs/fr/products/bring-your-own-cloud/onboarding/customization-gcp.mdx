@@ -22,18 +22,14 @@ Si vous préférez utiliser un VPC existant pour déployer ClickHouse BYOC au li
     </Note>
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Détails du sous-réseau GCP BYOC montrant les plages IPv4 primaires et secondaires avec Private Google Access activé](/images/cloud/reference/byoc-gcp-subnet.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Détails du sous-réseau GCP BYOC montrant les plages IPv4 primaires et secondaires avec Private Google Access activé](/images/cloud/reference/byoc-gcp-subnet.webp)
+      </Frame>
     </div>
   </Step>
 
   <Step title="Assurez la connectivité réseau" id="ensure-network-connectivity">
-    **Cloud NAT Gateway**
+    **Passerelle Cloud NAT**
     Assurez-vous qu’une [passerelle Cloud NAT](https://cloud.google.com/nat/docs/overview) est déployée pour le VPC. Elle fournit la connectivité sortante aux instances sans adresses IP externes, et deux éléments en dépendent :
 
     * **Tailscale.** Les composants ClickHouse BYOC s’enregistrent auprès du plan de contrôle Tailscale, qui fournit un réseau sécurisé de type zero-trust pour les opérations de gestion privées, sans nécessiter d’accès public entrant.
@@ -56,17 +52,13 @@ Si vous préférez utiliser un VPC existant pour déployer ClickHouse BYOC au li
     2. Saisissez le **nom de votre réseau VPC**.
     3. Saisissez le **nom du sous-réseau** que vous avez alloué à ClickHouse.
     4. Vous pouvez éventuellement saisir des **noms de plages secondaires** pour déterminer lesquelles des plages secondaires du sous-réseau GKE utilise pour les pods. Laissez le champ vide pour toutes les utiliser ; chaque nom que vous indiquez doit déjà exister sur le sous-réseau.
-    5. Si votre VPC se trouve dans un projet hôte de Shared VPC, saisissez l’**ID du projet hôte du Shared VPC**. Laissez le champ vide lorsque le VPC se trouve dans le même projet que l’infrastructure. Voir [Shared VPC depuis un projet hôte](#shared-vpc-host-project) ci-dessous.
+    5. Si votre VPC se trouve dans un projet hôte de Shared VPC, saisissez l’**ID du projet hôte du VPC partagé**. Laissez le champ vide lorsque le VPC se trouve dans le même projet que l’infrastructure. Voir [VPC partagé depuis un projet hôte](#shared-vpc-host-project) ci-dessous.
     6. Cliquez sur **Set up Infrastructure** pour lancer le provisionnement.
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Interface de configuration BYOC de ClickHouse Cloud avec Use existing VPC sélectionné pour GCP, affichant les champs nom du réseau VPC, nom du sous-réseau, noms des plages secondaires et ID du projet hôte du Shared VPC](/images/cloud/reference/byoc-gcp-existing-vpc-ui.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Interface de configuration BYOC de ClickHouse Cloud avec Use existing VPC sélectionné pour GCP, affichant les champs nom du réseau VPC, nom du sous-réseau, noms des plages secondaires et ID du projet hôte du VPC partagé](/images/cloud/reference/byoc-gcp-existing-vpc-ui.webp)
+      </Frame>
     </div>
   </Step>
 </Steps>
