@@ -917,7 +917,7 @@ StorageURLSource::~StorageURLSource() = default;
 void StorageURLSource::releaseReader()
 {
     if (pipeline)
-        (*pipeline).reset();
+        pipeline->reset();
     reader.reset();
     input_format.reset();
     read_buf.reset();
@@ -1571,6 +1571,8 @@ void StorageURLSink::cancelBuffers()
         write_buf->cancel();
 }
 
+namespace
+{
 class PartitionedStorageURLSink : public PartitionedSink
 {
 public:
@@ -1626,6 +1628,7 @@ private:
     const String http_method;
     const PartitionedWriteAccessCheck write_access_check;
 };
+}
 
 std::string IStorageURLBase::getReadMethod() const
 {
@@ -1974,8 +1977,7 @@ std::pair<ColumnsDescription, String> IStorageURLBase::getTableStructureAndForma
     /// schema inference (StorageURL ctor, StorageURLCluster, TableFunctionURL analysis), so the
     /// check here also covers the DESCRIBE / INSERT..SELECT / format-detection paths that never
     /// reach the StorageURL ctor body. The check takes a mutable reference, so validate a copy.
-    HTTPHeaderEntries headers_to_check(headers);
-    context->getHTTPHeaderFilter().checkHeaders(headers_to_check);
+    context->getHTTPHeaderFilter().checkHeaders(headers);
 
     Poco::Net::HTTPBasicCredentials credentials;
 
@@ -3553,10 +3555,9 @@ static StoragePtr tryDispatchURLEngineByScheme(const StorageFactory::Arguments &
 /// parameter named like a credential (`access_token`, Azure SAS `sig`, ...). Returns whether anything was masked.
 static bool maskURLCredentials(String & url)
 {
-    bool changed = maskURIPassword(&url, URI_AUTHORITY_TERMINATORS);
+    bool changed = maskURIPassword(url, URI_AUTHORITY_TERMINATORS);
     changed |= maskPresignedURLParameters(url);
-    String masked = maskSensitiveQueryParametersInURI(url);
-    if (masked != url)
+    if (String masked = maskSensitiveQueryParametersInURI(url); masked != url)
     {
         url = std::move(masked);
         changed = true;
