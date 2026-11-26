@@ -294,6 +294,27 @@ std::optional<Field> ReadBufferFromWebServer::getMetadata(const String & name) c
     return std::nullopt;
 }
 
+std::optional<size_t> ReadBufferFromWebServer::tryGetFileSize()
+{
+    if (!impl)
+        impl = initialize();
+    return impl ? impl->tryGetFileSize() : std::nullopt;
+}
+
+bool ReadBufferFromWebServer::checkIfActuallySeekable()
+{
+    if (!impl)
+        impl = initialize();
+    return impl && impl->checkIfActuallySeekable();
+}
+
+bool ReadBufferFromWebServer::supportsReadAt()
+{
+    if (!impl)
+        impl = initialize();
+    return impl && impl->supportsReadAt();
+}
+
 
 off_t ReadBufferFromWebServer::seek(off_t offset_, int whence)
 {

@@ -2769,10 +2769,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
 
     if (prepare_orc_metadata_cache && object_storage->getType() == ObjectStorageType::Web
         && webObjectHasSeveralURLs(object_info, assert_cast<const WebObjectStorage &>(*object_storage)))
-    {
         LOG_DEBUG(log, "Cannot use ORC metadata cache, the object can be read from several URLs (failover)");
-        return object_storage->readObject(StoredObject(object_info.getPath()), effective_read_settings);
-    }
 
     /// The page cache keeps the bytes under the ETag seen by this read, so the bytes must be checked to be of that
     /// generation of the object. Otherwise an object changed between the `HEAD` and the `GET` and then restored is
@@ -2963,7 +2960,9 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
 
     auto impl = pipeline.build();
 
-    if (prepare_orc_metadata_cache)
+    if (prepare_orc_metadata_cache
+        && !(object_storage->getType() == ObjectStorageType::Web
+            && webObjectHasSeveralURLs(object_info, assert_cast<const WebObjectStorage &>(*object_storage))))
         object_info.path_for_format_metadata_cache
             = getPageCachePathForObjectStorage(object_info, object_storage, page_cache_credentials_identity);
 

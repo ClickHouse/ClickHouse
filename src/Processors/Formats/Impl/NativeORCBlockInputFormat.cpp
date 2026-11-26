@@ -156,11 +156,13 @@ std::future<void> ORCInputStream::readAsync(void * buf, uint64_t length, uint64_
 std::unique_ptr<ORC::InputStream>
 asORCInputStream(ReadBuffer & in, const FormatSettings & settings, bool use_prefetch, std::atomic<int> & is_cancelled)
 {
-    bool has_file_size = isBufferWithFileSize(in);
     auto * seekable_in = dynamic_cast<SeekableReadBuffer *>(&in);
 
-    if (has_file_size && seekable_in && settings.seekable_read && seekable_in->checkIfActuallySeekable())
-        return std::make_unique<ORCInputStream>(*seekable_in, getFileSizeFromReadBuffer(in), use_prefetch);
+    if (seekable_in && settings.seekable_read && seekable_in->checkIfActuallySeekable())
+    {
+        if (auto file_size = tryGetFileSizeFromReadBuffer(in))
+            return std::make_unique<ORCInputStream>(*seekable_in, *file_size, use_prefetch);
+    }
 
     /// Fallback to loading the entire file in memory
     return asORCInputStreamLoadIntoMemory(in, is_cancelled);
