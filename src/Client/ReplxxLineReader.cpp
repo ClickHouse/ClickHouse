@@ -85,15 +85,19 @@ std::string getEditor()
     return editor;
 }
 
-/// `vfork` is called directly, not through a pointer from `dlsym`: only a call the compiler sees as
-/// one to a function that returns twice keeps the stack slots of this frame intact while the child
-/// runs on it - see the comment at the `vfork` in `ShellCommand::executeImpl`.
 int executeCommand(char * const argv[])
 {
+#if defined(OS_DARWIN)
+    /// Use separate memory for the child on all supported macOS versions.
+    pid_t pid = fork();
+#else
+    /// Call `vfork` directly so the compiler preserves the parent's stack frame while the child
+    /// runs on it; see `ShellCommand::executeImpl`.
     pid_t pid = vfork(); // NOLINT(bugprone-unsafe-functions,cert-msc24-c,cert-msc33-c,clang-analyzer-security.insecureAPI.vfork)
+#endif
 
     if (-1 == pid)
-        throw std::runtime_error(fmt::format("Cannot vfork {}: {}", argv[0], errnoToString()));
+        throw std::runtime_error(fmt::format("Cannot create child process for {}: {}", argv[0], errnoToString()));
 
     /// Child
     if (0 == pid)

@@ -657,9 +657,8 @@ bool leaveInheritedOriginalOpen(const ShellCommand::Config & config, size_t i)
     sigprocmask(SIG_UNBLOCK, &mask, nullptr); // NOLINT(concurrency-mt-unsafe)
 
     /// A group of its own, led by this process, so that the destructor can end it together
-    /// with whatever it starts (see `Config::own_process_group`). In the child, before `exec`:
-    /// by the time `vfork` returns in the parent the group already exists, so the parent can
-    /// never signal a group that is not there yet.
+    /// with whatever it starts (see `Config::own_process_group`). Set it before `exec`; the parent
+    /// also calls `setpgid` because with `fork` it can resume before the child gets here.
     if (config.own_process_group && 0 != ::setpgid(0, 0))
         reportChildSetupFailureAndExit(child_error_fd, ChildSetupStep::SET_PROCESS_GROUP);
 
@@ -705,7 +704,8 @@ std::unique_ptr<ShellCommand> ShellCommand::executeImpl(
     PipeFDs pipe_child_error;
     /// Another concurrent spawn can inherit a writer before Darwin installs `FD_CLOEXEC`.
     /// After `vfork` the report is already available or the child has executed successfully;
-    /// receiving it must not depend on every unrelated copy of the writer being closed.
+    /// after `fork`, `checkChildSetupReport` waits for the result with a deadline.
+    /// Receiving it must not wait indefinitely for unrelated copies of the writer to close.
     pipe_child_error.setNonBlockingRead();
     const int child_error_fd = ::fcntl(pipe_child_error.fds_rw[1], F_DUPFD_CLOEXEC, plan.first_free_fd);
     if (child_error_fd == -1)
@@ -736,6 +736,12 @@ std::unique_ptr<ShellCommand> ShellCommand::executeImpl(
         res->write_fds.emplace(fd, fds.fds_rw[1]);
     }
 
+#if defined(OS_DARWIN)
+    /// Use separate memory for the child on all supported macOS versions. This avoids sharing
+    /// the parent's stack across lazy symbol binding, without relying on the version-dependent
+    /// semantics of Darwin's `vfork`.
+    pid_t pid = fork();
+#else
     /// `vfork` must be called directly, not through a pointer obtained with `dlsym`: the compiler
     /// knows `vfork` as a function that returns twice, and only a call it can see as such makes
     /// it keep the stack slots of this frame intact across the child's execution. The child runs
@@ -756,9 +762,10 @@ std::unique_ptr<ShellCommand> ShellCommand::executeImpl(
     /// helpers, which allocate nothing, and touches nothing the parent shares beyond the
     /// descriptor table, which is the child's own. Suppressed, not hidden.
     pid_t pid = vfork(); // NOLINT(bugprone-unsafe-functions,cert-msc24-c,cert-msc33-c,clang-analyzer-security.insecureAPI.vfork)
+#endif
 
     if (pid == -1)
-        throw ErrnoException(ErrorCodes::CANNOT_FORK, "Cannot vfork");
+        throw ErrnoException(ErrorCodes::CANNOT_FORK, "Cannot create child process");
 
     if (0 == pid)
     {
@@ -769,7 +776,7 @@ std::unique_ptr<ShellCommand> ShellCommand::executeImpl(
     }
 
     /// The group, from this side too. A real `vfork` returns here only after the child's own
-    /// `setpgid`, but a `vfork` that is a `fork` in disguise (ThreadSanitizer intercepts it) can
+    /// `setpgid`, but `fork` (Darwin, or ThreadSanitizer's interception of `vfork`) can
     /// return first, and a discard right after would then signal a group that does not exist yet.
     /// Whichever of the two calls comes second finds the work done: here `EACCES` (the child has
     /// `exec`ed already) or `ESRCH` (it has exited) mean exactly that, and are fine.
@@ -828,20 +835,12 @@ void ShellCommand::killAndReapOrphan(pid_t child_pid, bool whole_group) noexcept
 
 void ShellCommand::checkChildSetupReport(pid_t child_pid, int report_fd, bool own_process_group)
 {
-    /// The child has either `exec`ed or written its report and exited (that is what `vfork`
-    /// guarantees by the time it returns in the parent). Read the report without waiting for EOF:
-    /// another process may still hold a copy of the write end.
-
-#if defined(THREAD_SANITIZER)
-    /// ThreadSanitizer intercepts `vfork` and calls `fork` instead, so here the parent can resume
-    /// before the child has got to `exec`, and a read without waiting would take a child that is
-    /// about to fail for one that started. Wait for its report or for the end of the pipe: the
-    /// write end is close-on-exec, so it goes at `exec` or at exit - in this child, and in any
-    /// other one spawned meanwhile that inherited it.
-    ///
-    /// Bounded all the same: a child spawned meanwhile by another thread that inherited the write
-    /// end and stalls before its own `exec` must not hang this one. Past the bound the report
-    /// is read as in any other build, without waiting.
+    /// With `vfork`, the child has already `exec`ed or reported its failure and exited.
+    /// With `fork`, the parent must wait for the report or EOF before accepting the launch.
+#if defined(OS_DARWIN) || defined(THREAD_SANITIZER)
+    /// Darwin uses `fork`, as does ThreadSanitizer's interception of `vfork`. The write end closes
+    /// at `exec` or exit, including in other children that inherited it. Bound the wait so a
+    /// stalled child cannot hang the caller; a timeout leaves the launch unconfirmed and fails it.
     {
         static constexpr UInt64 child_report_wait_ms = 10000;
         const UInt64 deadline_ns = monotonicDeadlineNs(child_report_wait_ms);
@@ -854,9 +853,10 @@ void ShellCommand::checkChildSetupReport(pid_t child_pid, int report_fd, bool ow
             const int res = remaining_ms == 0 ? 0 : ::poll(&pfd, 1, static_cast<int>(remaining_ms));
             if (res < 0 && errno == EINTR)
                 continue;
+            if (res < 0)
+                handleUnreadableChildReport(child_pid, errno, own_process_group);
             if (res == 0)
-                LOG_WARNING(
-                    getLogger(), "The child error pipe of pid {} neither reported nor closed within {} ms", child_pid, child_report_wait_ms);
+                handleUnreadableChildReport(child_pid, ETIMEDOUT, own_process_group);
             break;
         }
     }
@@ -869,7 +869,13 @@ void ShellCommand::checkChildSetupReport(pid_t child_pid, int report_fd, bool ow
     while (bytes_read == -1 && errno == EINTR);
 
     bool child_reported_failure = bytes_read > 0;
-    if (bytes_read < 0 && errno != EAGAIN && errno != EWOULDBLOCK)
+    /// Only a real `vfork` makes an empty pipe sufficient evidence that preparation has ended,
+    /// even if an unrelated child still holds a writer. With `fork`, require a report or EOF.
+    if (bytes_read < 0
+#if !defined(OS_DARWIN) && !defined(THREAD_SANITIZER)
+        && errno != EAGAIN && errno != EWOULDBLOCK
+#endif
+    )
         handleUnreadableChildReport(child_pid, errno, own_process_group);
 
     if (child_reported_failure)
@@ -893,22 +899,12 @@ void ShellCommand::checkChildSetupReport(pid_t child_pid, int report_fd, bool ow
     }
 }
 
-void ShellCommand::handleUnreadableChildReport(pid_t child_pid, int read_error, bool own_process_group)
+[[noreturn]] void ShellCommand::handleUnreadableChildReport(pid_t child_pid, int read_error, bool own_process_group)
 {
-    /// A read that failed for any other reason than an empty pipe says nothing about the child.
-    /// What does is the child itself: by the time `vfork` returned, it had either `exec`ed - and is
-    /// running, or has exited since - or written its report and exited. A non-blocking probe
-    /// answers without the risk of blocking on a child that is alive and well, which a pool worker
-    /// would be for as long as it is not asked to exit. And it reaps nothing (`peekChildState`): a
-    /// child that is not reaped keeps its pid, and the number of the group it leads, to itself, so
-    /// that the group can still be ended below before its leader goes.
+    /// A running child may still be preparing for `exec`, so its state cannot establish success
+    /// when the report is unavailable. Probe without reaping it, to preserve ownership of its pid
+    /// and process group until cleanup, and never signal a child that has already been reaped.
     const ChildState state = peekChildState(child_pid, /*blocking=*/ false);
-
-    if (state == ChildState::RUNNING)
-    {
-        LOG_WARNING(getLogger(), "Cannot read the child error pipe of pid {} ({}); the child is running, so it has started", child_pid, errnoToString(read_error));
-        return;
-    }
 
     /// Not ours any more: somebody else reaped it, and its pid may belong to anybody now, so it is
     /// neither signalled nor waited for.
@@ -920,12 +916,10 @@ void ShellCommand::handleUnreadableChildReport(pid_t child_pid, int read_error, 
 
     /// This call fails either way, so no `ShellCommand` is constructed, and a child left here would
     /// have nobody to wait for it, nobody to signal it and no entry in the registry of UDF
-    /// processes. A child that exited, or one nothing is known about (the probe failed), is ended
-    /// together with its group before the failure is reported: an exited child may have `exec`ed
-    /// and started processes of its own first - for a shared-memory UDF, processes that hold the
-    /// region's descriptor, whose pages and charge the caller is about to release. Killing a
-    /// zombie costs nothing, and this is the one place where killing is the conservative choice:
-    /// the alternative is leaking the process.
+    /// processes. End the child and its group before reporting the failure, whether it is running,
+    /// has exited, or its state is unknown. Even an exited child may have `exec`ed and started
+    /// processes of its own first - for a shared-memory UDF, processes that hold the region's
+    /// descriptor, whose pages and charge the caller is about to release.
     killAndReapOrphan(child_pid, own_process_group);
 
     if (state == ChildState::EXITED)

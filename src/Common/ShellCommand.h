@@ -439,8 +439,8 @@ private:
 
     static std::unique_ptr<ShellCommand> executeImpl(const char * filename, char * const argv[], const Config & config);
 
-    /// In the parent, after `vfork`: reads the report of a child that failed before `exec` off the
-    /// read end of its error pipe, `report_fd`, and throws `CANNOT_CREATE_CHILD_PROCESS` for it.
+    /// In the parent, after `fork` or `vfork`: reads the report of a child that failed before `exec`
+    /// off the read end of its error pipe, `report_fd`, and throws `CANNOT_CREATE_CHILD_PROCESS` for it.
     /// Returns if the child has started.
     /// `own_process_group`: the child leads a group of its own, which is ended with it if it is
     /// killed here.
@@ -455,9 +455,9 @@ private:
     /// caller's, to hand over to the reaper.
     static bool killAndWaitForChild(pid_t child_pid, bool whole_group);
 
-    /// The read of the child's error pipe failed with `read_error`: whether the child started is
-    /// established from the child itself. Throws unless it is running.
-    static void handleUnreadableChildReport(pid_t child_pid, int read_error, bool own_process_group);
+    /// Waiting for or reading the child's error pipe failed with `read_error`: clean up the child
+    /// and throw, because its successful preparation could not be established.
+    [[noreturn]] static void handleUnreadableChildReport(pid_t child_pid, int read_error, bool own_process_group);
 };
 
 
