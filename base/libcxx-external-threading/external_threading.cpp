@@ -84,6 +84,12 @@ void futexWake(uint32_t * word, uint32_t count)
     futexImpl(word, FUTEX_WAKE_PRIVATE, count, nullptr, 0);
 }
 
+uint64_t nanosecondsUntil(uint64_t deadline)
+{
+    const uint64_t now = silk::getTimeNanoseconds();
+    return deadline > now ? deadline - now : 0;
+}
+
 class Mutex
 {
 public:
@@ -423,15 +429,17 @@ private:
     {
         if (waiter.silk_aware_wait)
         {
-            const uint64_t now = silk::getTimeNanoseconds();
-            const uint64_t timeout = deadline > now ? deadline - now : 0;
             /// Silk sleep counts the timeout in 64-bit TSC cycles, which overflow for timeouts of about a century, so we treat anything near that as no timeout.
             constexpr uint64_t max_fiber_timeout = 1'000'000'000ULL * 1'000'000'000;
-            if (deadline == UINT64_MAX || timeout >= max_fiber_timeout)
+            if (deadline == UINT64_MAX || nanosecondsUntil(deadline) >= max_fiber_timeout)
                 return waiter.future.wait();
-            int result = silk::FiberFuture::waitWithTimeout(&waiter.future, timeout);
-            for (uint64_t now_after = silk::getTimeNanoseconds(); result == ETIMEDOUT && now_after < deadline; now_after = silk::getTimeNanoseconds())
-                result = silk::FiberFuture::waitWithTimeout(&waiter.future, deadline - now_after);
+
+            /// Wait until the deadline according to CLOCK_MONOTONIC: Silk sleep counts TSC cycles and may end slightly earlier.
+            int result = 0;
+            do
+            {
+                result = silk::FiberFuture::waitWithTimeout(&waiter.future, nanosecondsUntil(deadline));
+            } while (result == ETIMEDOUT && silk::getTimeNanoseconds() < deadline);
             return result;
         }
 
@@ -585,8 +593,11 @@ void __libcpp_thread_sleep_for(const chrono::nanoseconds & ns)
     if (needSilkAwareWait())
     {
         const uint64_t deadline = silk::getTimeNanoseconds() + static_cast<uint64_t>(ns.count());
-        for (uint64_t now = silk::getTimeNanoseconds(); now < deadline; now = silk::getTimeNanoseconds())
-            silk::FiberScheduler::sleep(deadline - now);
+        /// Wait until the deadline according to CLOCK_MONOTONIC: Silk sleep counts TSC cycles and may end slightly earlier.
+        do
+        {
+            silk::FiberScheduler::sleep(nanosecondsUntil(deadline));
+        } while (silk::getTimeNanoseconds() < deadline);
         return;
     }
     timespec ts = std::__convert_to_timespec<timespec>(ns);
