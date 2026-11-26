@@ -213,8 +213,9 @@ Field FillingRow::doLongJump(const FillColumnDescription & descr, size_t column_
 }
 
 /// `doLongJump` makes a bounded number of jumps and multiplies the step with wraparound, so integer distances are divided exactly.
+/// The unsigned differences wrap around on purpose: `to` is not before `from`, so they are exact.
 template <typename T>
-static bool integerStepsReach(T from, T to, T step, int direction)
+NO_SANITIZE_UNSIGNED_OVERFLOW static bool integerStepsReach(T from, T to, T step, int direction)
 {
     using U = make_unsigned_t<T>;
     const U distance = direction > 0 ? U(to) - U(from) : U(from) - U(to);
