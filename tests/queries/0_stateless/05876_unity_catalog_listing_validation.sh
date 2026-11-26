@@ -15,8 +15,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 PORT_FILE=$(mktemp "${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}.XXXXXX.port")
 
-# A catalog `loop_*` repeats the token of its listing; after 20 repeats it ends the listing, so that a client
-# which follows the repeated token still finishes.
+# A catalog `loop_*` pages its listing through the token cycle `A -> B -> A`; the fourth request of a listing gets
+# no token, so a client that does not stop at the first repeated token still finishes.
 python3 -c "
 import json
 import threading
@@ -52,8 +52,10 @@ class Handler(BaseHTTPRequestHandler):
             key = (url.path, catalog, params.get('schema_name', [''])[0])
             with lock:
                 repeats[key] = repeats.get(key, 0) + 1 if 'page_token' in params else 0
-                if repeats[key] >= 20:
+                if repeats[key] >= 3:
                     del body['next_page_token']
+                else:
+                    body['next_page_token'] = 'B' if params.get('page_token', [''])[0] == 'A' else 'A'
         data = json.dumps(body).encode()
         self.send_response(code)
         self.send_header('Content-Type', 'application/json')
