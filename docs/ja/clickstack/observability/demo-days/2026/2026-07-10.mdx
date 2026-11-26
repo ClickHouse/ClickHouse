@@ -1,0 +1,108 @@
+---
+slug: /clickstack/observability/demo-days/2026/2026-07-10
+title: 'デモデイズ - 2026-07-10'
+sidebarTitle: '2026-07-10'
+description: '2026-07-10 の ClickStack デモデー'
+doc_type: 'guide'
+keywords: ['ClickStack', 'デモデイズ']
+---
+
+## Map カラムの論理和フィルタにおけるテキスト索引の修正 {#text-index-fix-for-map-column-disjunction-filters}
+
+*デモ担当者: [@knudtty](https://github.com/knudtty)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/i7SOQ5uSfm8" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+この問題は、Map カラムの属性に対するクエリが想定外に遅いという報告について、Aaron がデバッグを手伝っていた際に見つかったものです。報告者はマテリアライズドカラムとブルームフィルターを追加して自力で回避していましたが、Map 属性向けの最適化がすでに導入されていることを踏まえると、本来そうした対応は不要なはずでした。
+
+調べたところ、Map 属性を複数の候補値でフィルタリングする場合、実質的に配列の論理和チェックである `hasAny` 関数が使われていることがわかりました。たとえば、ユーザー ID などのログ属性を値のリストと照合するケースがこれに該当します。ClickHouse 26.5 未満のバージョンでは、この処理でテキスト索引が使用されていませんでした。今回の修正では、この論理和を括弧で囲んだ OR による等値比較の組み合わせに書き換えることで、索引が正しく使われるようにしています。Aaron は `EXPLAIN` で、書き換えられたクエリが期待どおりスキップ索引を利用していることを確認しました。
+
+ほとんどのユーザーはすでに 26.5 以降を使用していますが、まだ移行していないユーザーも、この修正により移行までの間これらのクエリを高速に実行できます。
+
+**関連 プルリクエスト:** [#2643](https://github.com/hyperdxio/hyperdx/pull/2643) feat: rework getAllKeyValues and add filters populated from text indices
+
+## ClickCannon でのプロファイリングデータ {#profiling-data-in-clickcannon}
+
+*デモ担当者: [@SpencerTorres](https://github.com/SpencerTorres)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/Fo1XCHsA3rU" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+先日、合成データを生成して ClickHouse のベンチマーク測定を行うツール [ClickCannon をブログで紹介しました](https://clickhouse.com/blog/building-clickcannon-a-tool-for-benchmark-clickhouse)。今回 Spencer は、既存のログ、メトリクス、トレースに加えて、プロファイリングシグナルへの対応を追加しました。スタックの深さを設定してプロファイリングデータを生成でき、データは実行時に動的にシミュレートすることも、ディスクから読み取ることもできます。取り込み方法は他のシグナルと同じで、ClickCannon にプロファイルテーブルを指定するだけで行の生成が始まります。
+
+プロファイルのペイロードは他のシグナルよりもかなり大きいことがわかったため、サンプルごとに追加するキー数の調整や、インスタンスサイズに応じたスループットの検証は現在も進行中です。このデータを大量に生成できるようになったことで、チームはスキーマの最適化に着手し、その基準値を得られるようになりました。これは、ClickStack 全体でプロファイリングデータとその可視化をサポートするという、より大きな取り組みの一環です。さらに Spencer は、ClickStack のログビューアでプロファイルのフレームをレンダリングする試みにも着手しています。
+
+## 棒グラフ {#bar-charts}
+
+*デモ担当者: [@pulpdrew](https://github.com/pulpdrew)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/JIQJpGMh5tk" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+棒グラフが利用可能になりました。数か月前に作成されたものの、リベースの途中で古くなってしまった PR がきっかけとなって実装されたものです。棒グラフは現在、ダッシュボードや MCP ダッシュボードビルダーをはじめ、ClickStack 内でチャートが表示されるあらゆる場所でサポートされています。特定時点の比較でこれまで折れ線グラフが担っていた役割を棒グラフが担えるようになったため、両者の違いを明確にするために、折れ線グラフの名称は「時系列」に変更されました。
+
+棒グラフでは系列の上限を設定できるため、high-cardinality なグループ化を行う場合でも、表示される棒の数を制御できます。また、カスタムの並び順 (order by) にも対応しているため、デフォルトの並び順ではなく、最も重視するメトリクスでソートできます。
+
+**関連するプルリクエスト:** [#2606](https://github.com/hyperdxio/hyperdx/pull/2606) feat: Add categorical bar chart display type, [#2618](https://github.com/hyperdxio/hyperdx/pull/2618) feat: Allow custom order by on categorical (pie/bar) charts
+
+## コミュニティからのコントリビューション {#community-contributions}
+
+*デモ担当者: [@vinzee](https://github.com/vinzee)、[@zoov-xavier](https://github.com/zoov-xavier)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/f4xNJS6tcmY" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+今週は PR レビューを通じて、コミュニティから優れたコントリビューションがいくつか寄せられました。[@vinzee](https://github.com/vinzee) によるコントリビューションでは、検索バーの Lucene/SQL トグルの横に構文リファレンスボタンが追加されました。これにより、ページを離れることなく、利用可能なクエリ構文やオプションの例をアプリ内ですばやく確認できます。
+
+[@zoov-xavier](https://github.com/zoov-xavier) によるコントリビューションでは、フィルタピルに値を手動で入力できるようになりました。これまではサンプリングされた値のドロップダウンから選択するしかなかったため、まだサンプルに読み込まれていない値ではフィルタできませんでした。今後は、目的の値を入力して Enter を押すだけです。
+
+**関連 プルリクエスト:** [#2381](https://github.com/hyperdxio/hyperdx/pull/2381) 検索入力にクエリ構文リファレンスを追加、[#2471](https://github.com/hyperdxio/hyperdx/pull/2471) feat(search): フィルタピルの編集時に自由入力の値を許可
+
+## チャート上のアラートアノテーション {#alert-annotations-on-charts}
+
+*デモ担当者: [@teeohhem](https://github.com/teeohhem)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/NmEYBvtjpAQ" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+この機能は、アラートが発火した際にチャート上でアノテーションを確認したいというお客様からの要望を受けて実装されました。新たに追加された「アラートアノテーションを表示」トグル (デフォルトはオフ) を有効にすると、アラートが発火した時点と解決した時点がチャート上に正確に表示されます。現在表示している時間範囲より前からアラートが発火状態にあった場合は、チャートの左端にマーカーが表示され、表示範囲の開始時点ですでにアラートが有効だったことがわかります。また、アノテーションはアラートの発火や解決に合わせてリアルタイムで更新されます。
+
+Tom はこの機能を再利用可能なアノテーションパターンで構築しているため、今後リリースや Kubernetes イベントなど新しい種類のアノテーションを追加する際も、同じ仕組みの上に容易に組み込めるはずです。
+
+**関連プルリクエスト:** [#2605](https://github.com/hyperdxio/hyperdx/pull/2605) feat(dashboards): alert firing/recovery annotations on tile charts, [#2616](https://github.com/hyperdxio/hyperdx/pull/2616) fix(dashboards): improve alert annotation visibility on tile charts
+
+## イベントパターン、タイルの改善、線系列のアクション {#event-patterns-tile-polish-and-line-series-actions}
+
+*デモ担当者: [@brandon-pereira](https://github.com/brandon-pereira)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/Nwo_nt5VZL4" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+イベントパターンが、ダッシュボードタイルの正式な種別として本格的にサポートされるようになりました。パターンタイルを作成して `WHERE` 句やパターン式 (たとえばサービス名や severity text に基づくフィルタリング) を指定すれば、繰り返し発生するパターンを一目で把握できます。
+
+また Brandon は、小さなタイル上の可視化におけるテキストの折り返しを改善しました。長いタイトルが不自然に切れることはなくなり、複数行に折り返されたうえで末尾に省略記号が表示されます。タイルのアクションボタンの表示もすっきりしました。小さなタイルでは CSS コンテナクエリによってコンテキストメニューにまとめられ、タイルを大きくリサイズすると再びタイル上に直接表示されます。さらに、タイルの表示設定を保存せずに閉じると変更内容が警告なしに破棄されてしまう問題も修正され、編集内容が失われる前にきちんと警告が表示されるようになりました。
+
+最後に、ユーザーからのフィードバックを受けて、既存の検索アクションに加え、線系列をクリックしてその値をコピーしたり、その線だけにフォーカスしたりできるようになりました。Brandon は現在 Recharts v3 へのアップグレードも進めており、グループ数の多いテーブルでツールチップが見切れる問題の解消を目指しています。
+
+**関連 プルリクエスト:** [#2604](https://github.com/hyperdxio/hyperdx/pull/2604) feat: add event patterns as a first-class dashboard tile type, [#2596](https://github.com/hyperdxio/hyperdx/pull/2596) fix(charts): use multi-line ellipsis for dashboard tile titles, [#2597](https://github.com/hyperdxio/hyperdx/pull/2597) fix: track display/heatmap settings as dirty for unsaved changes modal, [#2611](https://github.com/hyperdxio/hyperdx/pull/2611) feat(charts): per-series drill-down actions, new-tab drill-in, and search-synced focus
+
+## ダッシュボードとサービスマップのスタイリング {#dashboard-and-service-map-styling}
+
+*デモ担当者: [@elizabetdev](https://github.com/elizabetdev)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/yzgjzU8RIz0" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+使いやすさを重視したスタイリングの改善をまとめて行いました。一つひとつは小さな変更ですが、積み重なることで操作感が目に見えてすっきりしました。ダッシュボードでは、ライトモードで編集可能なタイルのヘッダーの色がグレーだったり白だったりと統一されていませんでしたが、これを統一し、ヘッダーの下にすっきりとした区切り線を入れました。また、ホバー時にのみ表示されるタイルのアクションの位置を見直し、小さなレスポンシブカードでもタイトルと重ならないようにしました。さらに、チャートのズームをリセットできるようになりました。
+
+サービスマップにも同様の改善を施しました。コントロールがカラーモードに対応し、常に黒で表示されるのではなく、ライトモードでは明るく、ダークモードでは暗く表示されるようになりました。凡例ではレイテンシー、エラー率、スループットの表示がよりわかりやすくなりました。また、サービスをクリックするとそのサービスにフォーカスし、もう一度クリックするとフォーカスが解除されて全体表示に戻ります。
+
+**関連 プルリクエスト:** [#2592](https://github.com/hyperdxio/hyperdx/pull/2592) Polish dashboard tile styling and header layout, [#2601](https://github.com/hyperdxio/hyperdx/pull/2601) feat(service-map): metric color toggle and popover polish
