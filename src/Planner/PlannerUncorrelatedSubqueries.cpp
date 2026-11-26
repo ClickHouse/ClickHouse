@@ -14,6 +14,9 @@
 
 #include <Columns/ColumnSet.h>
 
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
+
 #include <Core/Block.h>
 
 #include <Core/Joins.h>
@@ -279,7 +282,7 @@ bool canRewriteInToJoin(const QueryTreeNodePtr & in_node, const QueryTreeNodePtr
     const std::vector<JoinAlgorithm> join_algorithms = settings[Setting::join_algorithm];
     if (!std::ranges::any_of(join_algorithms, [&](JoinAlgorithm algorithm)
         {
-            return algorithm == JoinAlgorithm::DEFAULT || algorithm == JoinAlgorithm::HASH || algorithm == JoinAlgorithm::PARALLEL_HASH
+            return algorithm == JoinAlgorithm::DEFAULT || algorithm == JoinAlgorithm::HASH
                 || (algorithm == JoinAlgorithm::GRACE_HASH && grace_hash_can_spill) || algorithm == JoinAlgorithm::AUTO
                 || algorithm == JoinAlgorithm::PARTIAL_MERGE || algorithm == JoinAlgorithm::PREFER_PARTIAL_MERGE;
         }))
@@ -436,10 +439,10 @@ void buildQueryPlanForUncorrelatedInSubquery(
 
     JoinExpressionActions join_expression_actions(lhs_header->getColumnsWithTypeAndName(), rhs_header->getColumnsWithTypeAndName());
 
-    std::vector<JoinActionRef> predicates;
+    VectorWithMemoryTracking<JoinActionRef> predicates;
     for (size_t i = 0; i < key_column_names.size(); ++i)
     {
-        std::vector<JoinActionRef> eq_arguments;
+        VectorWithMemoryTracking<JoinActionRef> eq_arguments;
         eq_arguments.push_back(join_expression_actions.findNode(key_column_names[i], /*is_input=*/ true));
         eq_arguments.push_back(join_expression_actions.findNode(subquery_column_names[i], /*is_input=*/ true));
         predicates.push_back(JoinActionRef::transform(eq_arguments, JoinActionRef::AddFunction(JoinConditionOperator::Equals)));
@@ -457,14 +460,14 @@ void buildQueryPlanForUncorrelatedInSubquery(
         JoinOperator(JoinKind::Left, JoinStrictness::Any, JoinLocality::Unspecified, std::move(predicates)),
         std::move(join_expression_actions),
         output_columns,
-        std::unordered_map<String, const ActionsDAG::Node *>{},
+        UnorderedMapWithMemoryTracking<String, const ActionsDAG::Node *>{},
         /*join_use_nulls=*/false,
         JoinSettings(settings, planner_context->getQueryContext()->getJoinAnalyzeMode()),
         SortingStep::Settings(settings));
     join_step->setStepDescription("JOIN to evaluate IN");
     makeJoinUnbounded(*join_step);
 
-    std::vector<QueryPlanPtr> plans;
+    QueryPlanPtrs plans;
     plans.emplace_back(std::make_unique<QueryPlan>(std::move(query_plan)));
     plans.emplace_back(std::make_unique<QueryPlan>(std::move(subquery_plan)));
 
