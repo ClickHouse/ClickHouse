@@ -2412,8 +2412,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     && !UserDefinedExecutableFunctionFactory::has(name, scope.context);
             };
 
-            /// A row filter of rows an outer `LIMIT 0` discards is never needed: keep it a set, which that `LIMIT` never builds.
-            /// Parallel replicas or a remote table under that `LIMIT 0` query would build the set on other servers: keep the scalar path.
+            /// Under a local outer `LIMIT 0` the IN set is never built, while the scalar subquery would run during analysis.
             if (only_analyze || !scope.context->getSettingsRef()[Setting::execute_exists_as_scalar_subquery]
                 || isExistsResultDiscardedByLimitZero(scope, function_node_ptr.get(), is_builtin_function))
             {
