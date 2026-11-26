@@ -11,6 +11,7 @@
 #include <Processors/ISimpleTransform.h>
 #include <Common/CacheBase.h>
 #include <Common/ProfileEvents.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <atomic>
 #include <cstddef>
@@ -182,6 +183,12 @@ struct RuntimeDataflowStatisticsBlock
 
     std::atomic_size_t read_ranges{0};
     std::atomic_bool counted_ranges_limit_exceeded{false};
+
+    /// The registries of the reads, whose ranges are all freed when the counting stops, see `ReadRangesRegistry`. Locked
+    /// before the mutex of a registry.
+    std::mutex read_ranges_registries_mutex;
+    VectorWithMemoryTracking<ReadRangesRegistry *> read_ranges_registries TSA_GUARDED_BY(read_ranges_registries_mutex);
+    std::atomic_bool read_ranges_released{false};
 
     /// The compressed bytes the readers loaded, see `ReadRangesRegistry`.
     std::atomic_size_t input_bytes_read{0};
