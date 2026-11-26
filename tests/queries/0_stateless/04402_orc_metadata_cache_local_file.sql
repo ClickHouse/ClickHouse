@@ -9,31 +9,30 @@
 
 SET log_queries = 1;
 SET engine_file_truncate_on_insert = 1;
--- A fresh local file's version token cannot prove its contents yet. Let the
--- fixture settle before expecting metadata-cache hits.
-SELECT sleepEachRow(4) FROM numbers(1) SETTINGS function_sleep_max_microseconds_per_block = 4000000 FORMAT Null;
+-- A fresh local file's version token cannot prove its contents yet. The
+-- fixture sleeps after each write so the token has settled before reading.
 -- Pin parallelism so the hit/miss counts are deterministic.
 SET max_threads = 1;
--- `StorageFile` keeps a per-path row-count schema cache; with `count()` the
--- second query is served from that cache and never reaches the ORC input
--- format, so the metadata-cache hit/miss counters would stay at 0/0. Disable
--- it so every query goes through `getInputWithMetadata` and the ORC metadata
--- cache is actually consulted.
+-- `StorageFile` can answer a count from its separate schema cache, bypassing
+-- the ORC reader. Read a real column so this test specifically measures ORC
+-- tail-cache reuse rather than the schema/count-cache shortcut.
 SET use_cache_for_count_from_files = 0;
-SET optimize_count_from_files = 1;
+SET optimize_count_from_files = 0;
 
 INSERT INTO FUNCTION file(currentDatabase() || '_04402_local.orc', ORC, 'id UInt64, name String')
 SELECT number, toString(number) FROM numbers(100);
 
+SELECT sleepEachRow(4) FROM numbers(1) SETTINGS function_sleep_max_microseconds_per_block = 4000000 FORMAT Null;
+
 SYSTEM DROP ORC METADATA CACHE;
 
 -- q1: fresh cache -> expect a miss
-SELECT count() FROM file(currentDatabase() || '_04402_local.orc', ORC, 'id UInt64, name String')
+SELECT sum(id) FROM file(currentDatabase() || '_04402_local.orc', ORC, 'id UInt64, name String')
     SETTINGS log_comment = '04402-q1', use_orc_metadata_cache = 1
     FORMAT Null;
 
 -- q2: same file -> expect a hit
-SELECT count() FROM file(currentDatabase() || '_04402_local.orc', ORC, 'id UInt64, name String')
+SELECT sum(id) FROM file(currentDatabase() || '_04402_local.orc', ORC, 'id UInt64, name String')
     SETTINGS log_comment = '04402-q2', use_orc_metadata_cache = 1
     FORMAT Null;
 
@@ -46,13 +45,13 @@ SELECT number + 1000, toString(number) FROM numbers(100);
 
 SELECT sleepEachRow(4) FROM numbers(1) SETTINGS function_sleep_max_microseconds_per_block = 4000000 FORMAT Null;
 
-SELECT count() FROM file(currentDatabase() || '_04402_local.orc', ORC, 'id UInt64, name String')
+SELECT sum(id) FROM file(currentDatabase() || '_04402_local.orc', ORC, 'id UInt64, name String')
     SETTINGS log_comment = '04402-q3', use_orc_metadata_cache = 1
     FORMAT Null;
 
 -- q4: cache disabled at query level -> the cache must not be consulted at all,
 -- so both the hit and miss counters stay at 0 even though a valid entry exists.
-SELECT count() FROM file(currentDatabase() || '_04402_local.orc', ORC, 'id UInt64, name String')
+SELECT sum(id) FROM file(currentDatabase() || '_04402_local.orc', ORC, 'id UInt64, name String')
     SETTINGS log_comment = '04402-q4', use_orc_metadata_cache = 0
     FORMAT Null;
 
@@ -63,12 +62,12 @@ SYSTEM DROP ORC METADATA CACHE;
 -- from a buffer that gets fully drained, so the reader must be built exactly once
 -- and reused; otherwise a second construction would fail with "Not an ORC file".
 -- Expect a miss here.
-SELECT count() FROM file(currentDatabase() || '_04402_local.orc', ORC, 'id UInt64, name String')
+SELECT sum(id) FROM file(currentDatabase() || '_04402_local.orc', ORC, 'id UInt64, name String')
     SETTINGS log_comment = '04402-q5', use_orc_metadata_cache = 1, input_format_allow_seeks = 0
     FORMAT Null;
 
 -- q6: same file on the non-seekable path -> expect a hit.
-SELECT count() FROM file(currentDatabase() || '_04402_local.orc', ORC, 'id UInt64, name String')
+SELECT sum(id) FROM file(currentDatabase() || '_04402_local.orc', ORC, 'id UInt64, name String')
     SETTINGS log_comment = '04402-q6', use_orc_metadata_cache = 1, input_format_allow_seeks = 0
     FORMAT Null;
 
