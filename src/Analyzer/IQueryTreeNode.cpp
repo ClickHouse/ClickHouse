@@ -82,6 +82,53 @@ struct NodePairHash
     }
 };
 
+/** The correspondence between the column sources of two compared trees.
+  *
+  * Column sources are compared by content, and they are not necessary part of the compared trees.
+  * The correspondence must be a bijection: if a column source of one tree was paired with a column source
+  * of the other tree, every other reference to one of them must be paired with the same counterpart.
+  * Otherwise `f(a.x, a.x)` is equal to `f(a.x, b.x)` when `a` and `b` have the same content.
+  * A column source can be paired with itself, when the two trees refer to the same table expression.
+  *
+  * This is also what `getTreeHash` does: it hashes the content of a column source on the first reference
+  * and the identifier of the column source on the subsequent references.
+  */
+class ColumnSourcesBijection
+{
+public:
+    enum class AddResult : uint8_t
+    {
+        /// The pair is new, and it does not contradict the bijection.
+        Added,
+        /// The pair is already known.
+        Exists,
+        /// One of the column sources is already paired with a different one.
+        Conflict,
+    };
+
+    AddResult add(const IQueryTreeNode * lhs_source, const IQueryTreeNode * rhs_source)
+    {
+        auto [lhs_it, lhs_inserted] = lhs_to_rhs.emplace(lhs_source, rhs_source);
+        auto [rhs_it, rhs_inserted] = rhs_to_lhs.emplace(rhs_source, lhs_source);
+
+        if (lhs_it->second != rhs_source || rhs_it->second != lhs_source)
+            return AddResult::Conflict;
+
+        if (lhs_source != rhs_source)
+            is_identity = false;
+
+        return lhs_inserted ? AddResult::Added : AddResult::Exists;
+    }
+
+    /// Every column source is paired with itself.
+    [[nodiscard]] bool isIdentity() const { return is_identity; }
+
+private:
+    UnorderedMapWithMemoryTracking<const IQueryTreeNode *, const IQueryTreeNode *> lhs_to_rhs;
+    UnorderedMapWithMemoryTracking<const IQueryTreeNode *, const IQueryTreeNode *> rhs_to_lhs;
+    bool is_identity = true;
+};
+
 }
 
 bool IQueryTreeNode::isEqual(const IQueryTreeNode & rhs, CompareOptions compare_options) const
@@ -92,26 +139,16 @@ bool IQueryTreeNode::isEqual(const IQueryTreeNode & rhs, CompareOptions compare_
     std::vector<NodePair> nodes_to_process;
     std::unordered_set<NodePair, NodePairHash> equals_pairs;
 
-    /** Column sources are compared by content, and they are not necessary part of the compared trees.
-      * The correspondence between the column sources of the two trees must be one-to-one:
-      * if a column source of one tree was compared with a column source of the other tree,
-      * every other reference to one of them must be paired with the same counterpart.
-      * Otherwise `f(a.x, a.x)` is equal to `f(a.x, b.x)` when `a` and `b` have the same content.
-      * This is also what `getTreeHash` does: it hashes the content of a column source on the first reference
-      * and the identifier of the column source on the subsequent references.
-      */
-    UnorderedMapWithMemoryTracking<const IQueryTreeNode *, const IQueryTreeNode *> lhs_source_to_rhs_source;
-    UnorderedMapWithMemoryTracking<const IQueryTreeNode *, const IQueryTreeNode *> rhs_source_to_lhs_source;
+    ColumnSourcesBijection column_sources;
 
     /** A node that is shared between the two trees is not traversed, because it is equal to itself.
-      * But every column source that is referenced from a shared node corresponds to itself,
-      * and this must not contradict the correspondence above: `f(a.x, a.x)` is not equal to `f(a.x, b.x)`
+      * But every column source that is referenced from a shared node is paired with itself,
+      * and this must not contradict the bijection: `f(a.x, a.x)` is not equal to `f(a.x, b.x)`
       * also when the first argument is the same node in both trees.
       * This is checked after the traversal, and only if some column source was paired with a different one.
       * It is not so in the usual case, when the compared expressions refer to the same table expressions.
       */
     VectorWithMemoryTracking<const IQueryTreeNode *> shared_nodes;
-    bool has_different_sources_paired = false;
 
     nodes_to_process.emplace_back(this, &rhs);
 
@@ -176,16 +213,13 @@ bool IQueryTreeNode::isEqual(const IQueryTreeNode & rhs, CompareOptions compare_
 
             if (lhs_source && rhs_source)
             {
-                auto [lhs_it, lhs_inserted] = lhs_source_to_rhs_source.emplace(lhs_source.get(), rhs_source.get());
-                auto [rhs_it, rhs_inserted] = rhs_source_to_lhs_source.emplace(rhs_source.get(), lhs_source.get());
+                auto add_result = column_sources.add(lhs_source.get(), rhs_source.get());
 
-                if (lhs_it->second != rhs_source.get() || rhs_it->second != lhs_source.get())
+                if (add_result == ColumnSourcesBijection::AddResult::Conflict)
                     return false;
 
-                if (lhs_source != rhs_source)
-                    has_different_sources_paired = true;
-
-                if (lhs_inserted)
+                /// Compare the content of the column sources only once.
+                if (add_result == ColumnSourcesBijection::AddResult::Added)
                     nodes_to_process.emplace_back(lhs_source.get(), rhs_source.get());
             }
         }
@@ -193,19 +227,8 @@ bool IQueryTreeNode::isEqual(const IQueryTreeNode & rhs, CompareOptions compare_
         equals_pairs.emplace(lhs_node_to_compare, rhs_node_to_compare);
     }
 
-    if (!has_different_sources_paired || shared_nodes.empty())
+    if (column_sources.isIdentity() || shared_nodes.empty())
         return true;
-
-    /// A column source that is referenced from a shared node corresponds to itself.
-    auto is_paired_with_different_source = [&](const IQueryTreeNode * source)
-    {
-        auto lhs_it = lhs_source_to_rhs_source.find(source);
-        if (lhs_it != lhs_source_to_rhs_source.end() && lhs_it->second != source)
-            return true;
-
-        auto rhs_it = rhs_source_to_lhs_source.find(source);
-        return rhs_it != rhs_source_to_lhs_source.end() && rhs_it->second != source;
-    };
 
     UnorderedSetWithMemoryTracking<const IQueryTreeNode *> visited_shared_nodes;
 
@@ -227,7 +250,8 @@ bool IQueryTreeNode::isEqual(const IQueryTreeNode & rhs, CompareOptions compare_
         {
             if (auto source = column_node->getColumnSourceOrNull())
             {
-                if (is_paired_with_different_source(source.get()))
+                /// A column source that is referenced from a shared node is paired with itself.
+                if (column_sources.add(source.get(), source.get()) == ColumnSourcesBijection::AddResult::Conflict)
                     return false;
 
                 shared_nodes.push_back(source.get());
