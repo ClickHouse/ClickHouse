@@ -68,7 +68,7 @@ SETTINGS_ALIASES_RE = re.compile(r"^\*\*Aliases\*\*:[^\n]*$", re.MULTILINE)
 SETTINGS_ALIAS_NAME_RE = re.compile(r"`(?P<alias>[A-Za-z0-9_.-]+)`")
 MERGE_TREE_SETTING_ALIAS_RE = re.compile(
     r"DECLARE_WITH_ALIAS\(\s*[^,]+,\s*(?P<name>\w+),.*?R\"\((?:.*?)\)\"\s*,\s*"
-    r"[^,]+,\s*(?P<alias>\w+)\s*,",
+    r"[^,]+,\s*(?P<alias>\w+)(?=\s*(?:,|\)))",
     re.DOTALL,
 )
 MARKDOWN_HEADING_RE = re.compile(

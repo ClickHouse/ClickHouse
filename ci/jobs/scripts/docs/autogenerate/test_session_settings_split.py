@@ -95,6 +95,8 @@ Serialization version for shared data in small parts.
             encoding="utf-8")
     registered_aliases = mod.merge_tree_setting_aliases(actual_source)
     assert registered_aliases[canonical] == (alias,)
+    assert registered_aliases["enable_block_number_column"] == (
+        "allow_experimental_block_number_column",)
     assert len(registered_aliases) == actual_source.count("DECLARE_WITH_ALIAS(")
     generator = next(
         gen for gen in mod.SETTINGS_GENERATORS if gen["name"] == "mergetree-settings")
