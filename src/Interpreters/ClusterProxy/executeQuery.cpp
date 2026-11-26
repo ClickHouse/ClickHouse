@@ -323,6 +323,18 @@ void stripInitiatorOnlySettings(Settings & settings)
     stripDatabaseSetting(settings);
 }
 
+void stripInsertExpectations(Settings & settings)
+{
+    settings.setDefaultValue("insert_expected_table_engine");
+    settings.setDefaultValue("insert_expected_column_types");
+}
+
+void stripInsertExpectationsFromQuery(const ASTPtr & query)
+{
+    static constexpr std::string_view names[] = {"insert_expected_table_engine", "insert_expected_column_types"};
+    removeSettingsFromQuery(query, names);
+}
+
 /// Single source of truth for the initiator-only setting names. MUST list exactly the settings reset by
 /// `stripInitiatorOnlySettings` above. Used both to test membership (`isInitiatorOnlySettingName`) and to
 /// remove these settings from a query's own `SETTINGS` clause before that query *text* is forwarded to a
@@ -461,6 +473,7 @@ static ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & c
     /// Strip the initiator-only settings (query-shaping and result-serialisation) so the
     /// inter-server `Settings` packet does not carry them; see `stripInitiatorOnlySettings`.
     stripInitiatorOnlySettings(new_settings);
+    stripInsertExpectations(new_settings);
 
     new_settings[Setting::run_query_in_background] = false;
 
@@ -1199,6 +1212,8 @@ void executeQueryWithParallelReplicas(
 
     auto [cluster, shard_num] = prepareClusterForParallelReplicas(logger, context);
     auto new_context = updateContextForParallelReplicas(logger, context, shard_num);
+    /// What an INSERT requires of its destination is never sent on by a read, see `stripInsertExpectations`.
+    new_context->resetSettingsToDefaultValue({"insert_expected_table_engine", "insert_expected_column_types"});
     auto [connection_pools, max_replicas_to_use] = prepareConnectionPoolsForParallelReplicas(logger, new_context, cluster);
 
     auto external_tables = new_context->getExternalTables();
@@ -1345,6 +1360,8 @@ QueryPlanPtr createParallelReplicasPlan(QueryPlanPtr plan_fragment, ContextPtr c
 
     auto [cluster, shard_num] = prepareClusterForParallelReplicas(logger, context);
     auto new_context = updateContextForParallelReplicas(logger, context, shard_num);
+    /// What an INSERT requires of its destination is never sent on by a read, see `stripInsertExpectations`.
+    new_context->resetSettingsToDefaultValue({"insert_expected_table_engine", "insert_expected_column_types"});
     auto [connection_pools, max_replicas_to_use] = prepareConnectionPoolsForParallelReplicas(logger, new_context, cluster);
     if (connection_pools.size() == 1)
         return nullptr;

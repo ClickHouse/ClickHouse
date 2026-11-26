@@ -148,19 +148,25 @@ public:
     /// Used by InterpreterInsertQuery
     std::string getRemoteDatabaseName() const { return remote_database; }
     std::string getRemoteTableName() const { return remote_table; }
+    /// Returns "<remote>" for a table created over remote()/cluster(), which has no cluster name.
+    std::string getClusterName() const { return cluster_name.empty() ? "<remote>" : cluster_name; }
     ClusterPtr getCluster() const;
+    const DistributedSettings & getDistributedSettingsRef() const { return *distributed_settings; }
 
     /// Used by InterpreterSystemQuery
     void flushClusterNodesAllData(ContextPtr context, const SettingsChanges & settings_changes);
 
     size_t getShardCount() const;
 
+    /// Which shards DistributedSink sends a row of `block` to (all of them when no sharding key splits it), by the same selector.
+    std::vector<bool> getShardsReceivingRows(const ClusterPtr & cluster, const Block & block) const;
+    const ExpressionActionsPtr & getShardingKeyExpr() const { return sharding_key_expr; }
+
     bool initializeDiskOnConfigChange(const std::set<String> & new_added_disks) override;
 
 private:
     void renameOnDisk(const String & new_path_to_table_data);
 
-    const ExpressionActionsPtr & getShardingKeyExpr() const { return sharding_key_expr; }
     /// A stored key whose `IN` set is never built still loads, so this is checked again before the key is used.
     void checkShardingKeySetsAreBuilt() const;
     const String & getShardingKeyColumnName() const { return sharding_key_column_name; }
@@ -254,9 +260,6 @@ private:
     bool hasShardingKeyForReads() const { return has_sharding_key && !is_remote_database_proxy; }
 
     size_t getRandomShardIndex(const Cluster::ShardsInfo & shards);
-    std::string getClusterName() const { return cluster_name.empty() ? "<remote>" : cluster_name; }
-
-    const DistributedSettings & getDistributedSettingsRef() const { return *distributed_settings; }
 
     void delayInsertOrThrowIfNeeded(const std::function<bool()> & is_cancelled) const;
 

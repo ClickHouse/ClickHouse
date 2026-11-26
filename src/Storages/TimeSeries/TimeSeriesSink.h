@@ -5,6 +5,7 @@
 #include <Core/Block.h>
 #include <DataTypes/IDataType.h>
 #include <Interpreters/Context_fwd.h>
+#include <Interpreters/StorageID.h>
 #include <Parsers/ASTViewTargets.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <QueryPipeline/BlockIO.h>
@@ -12,6 +13,8 @@
 #include <base/Decimal.h>
 
 #include <optional>
+#include <utility>
+#include <vector>
 
 
 namespace DB
@@ -39,6 +42,10 @@ public:
         bool async_insert_);
 
     String getName() const override { return "TimeSeriesSink"; }
+
+    /// The existing target tables a sink for `insert_columns` writes, each with the columns its INSERT names there.
+    static std::vector<std::pair<StorageID, Names>> getTargetInserts(
+        const StorageTimeSeries & time_series_storage, const Names & insert_columns, const ContextPtr & local_context);
 
     void consume(Chunk & chunk) override;
     void onFinish() override;
@@ -80,6 +87,7 @@ private:
     StorageTimeSeries & time_series_storage;
     TimeSeriesSettingsPtr time_series_settings;
     LoggerPtr log;
+    Names insert_columns;
 
     bool insert_tags_and_samples = false;
     bool insert_metric_families = false;
