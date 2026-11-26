@@ -227,8 +227,8 @@ namespace
 
 namespace
 {
-    /// `allow_unresolved_access_dependencies` is the obsolete name of `skip_unresolved_access_dependencies`;
-    /// a reset of either drops both.
+    /// `allow_unresolved_access_dependencies` is the obsolete name of `skip_unresolved_access_dependencies`:
+    /// either sets the field, and a reset of either drops both.
     std::string_view canonicalRestoreSettingName(std::string_view name)
     {
         if (name == "allow_unresolved_access_dependencies")
@@ -254,21 +254,16 @@ RestoreSettings RestoreSettings::fromRestoreQuery(const ASTBackupQuery & query)
             = resolveDefaultedSettings(query, RESTORE_SPECIFIC_SETTING_NAMES, canonicalRestoreSettingName).changes;
         for (const auto & setting : settings)
         {
+            const std::string_view name = canonicalRestoreSettingName(setting.name);
 #define GET_RESTORE_SETTINGS_FROM_QUERY(TYPE, NAME) \
-            if (setting.name == #NAME) \
+            if (name == #NAME) \
                 res.NAME = SettingField##TYPE{setting.value}.value; \
             else
 
             LIST_OF_RESTORE_SETTINGS(GET_RESTORE_SETTINGS_FROM_QUERY)
             /// else
-            /// `allow_unresolved_access_dependencies` is an obsolete name.
-            if (setting.name == "allow_unresolved_access_dependencies")
             {
-                res.skip_unresolved_access_dependencies = SettingFieldBool{setting.value}.value;
-            }
-            else
-            {
-                /// (if setting.name is not the name of a field of BackupSettings)
+                /// (if `name` is not the name of a field of RestoreSettings)
                 res.core_settings.emplace_back(setting);
             }
         }

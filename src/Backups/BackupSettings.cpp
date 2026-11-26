@@ -66,8 +66,9 @@ namespace ErrorCodes
 
 namespace
 {
-    /// `s3_storage_class_name` is an alias of the `s3_storage_class` field, so a reset of either drops a
-    /// change written as the other.
+    /// `s3_storage_class_name` is an alias of the `s3_storage_class` field: the disk configuration and the S3 request
+    /// settings use the former, the BACKUP command the latter, and both spellings are accepted in both places (issue
+    /// #68551). Either sets the field, and a reset of either drops a change written as the other.
     std::string_view canonicalBackupSettingName(std::string_view name)
     {
         if (name == "s3_storage_class_name")
@@ -99,32 +100,28 @@ BackupSettings BackupSettings::fromBackupQuery(const ASTBackupQuery & query)
         const auto & settings = resolveBackupSettings(query).changes;
         for (const auto & setting : settings)
         {
-            if (setting.name == "compression_level")
+            const std::string_view name = canonicalBackupSettingName(setting.name);
+            if (name == "compression_level")
                 res.compression_level = static_cast<int>(SettingFieldInt64{setting.value}.value);
-            else if (setting.name == "data_file_name_prefix_length")
+            else if (name == "data_file_name_prefix_length")
                 res.data_file_name_prefix_length = setting.value.safeGet<UInt64>();
-            /// `s3_storage_class_name` is an alias for `s3_storage_class`: the disk configuration uses the
-            /// former (the canonical request setting name) while the BACKUP command uses the latter. Accept
-            /// both spellings in both places so they are interchangeable. See issue #68551.
-            else if (setting.name == "s3_storage_class_name")
-                res.s3_storage_class = SettingFieldString{setting.value}.value;
             /// Handled before the macro below so that naming the setting is recorded even when the
             /// value given equals the default one.
-            else if (setting.name == "fsync_backup_files")
+            else if (name == "fsync_backup_files")
             {
                 res.fsync_backup_files = SettingFieldBool{setting.value}.value;
                 res.fsync_backup_files_specified = true;
             }
             else
 #define GET_BACKUP_SETTINGS_FROM_QUERY(TYPE, NAME) \
-            if (setting.name == #NAME) \
+            if (name == #NAME) \
                 res.NAME = SettingField##TYPE{setting.value}.value; \
             else
 
             LIST_OF_BACKUP_SETTINGS(GET_BACKUP_SETTINGS_FROM_QUERY)
             /// else
             {
-                /// (if setting.name is not the name of a field of BackupSettings)
+                /// (if `name` is not the name of a field of BackupSettings)
                 res.core_settings.emplace_back(setting);
             }
         }
