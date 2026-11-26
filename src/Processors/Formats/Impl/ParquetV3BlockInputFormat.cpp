@@ -182,7 +182,8 @@ ParquetV3BlockInputFormat::ParquetV3BlockInputFormat(
 
 void ParquetV3BlockInputFormat::prefetch()
 {
-    if (need_only_count)
+    /// Without random access, reading the footer reads the whole file, while the previous file may still be in memory.
+    if (need_only_count || !Parquet::Prefetcher::supportsRandomAccess(*in, read_options))
         return;
     readFileFooterIfNeeded();
 }

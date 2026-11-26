@@ -29,6 +29,9 @@ private:
 public:
     void init(ReadBuffer * reader_, const ReadOptions & options, FormatParserSharedResourcesPtr parser_shared_resources_);
 
+    /// Whether `init` can read only the needed ranges of the file. Otherwise it reads the whole file into memory.
+    static bool supportsRandomAccess(ReadBuffer & reader_, const ReadOptions & options);
+
     /// Waits for in-progress reads to complete, cancels queued reads that haven't started yet.
     ~Prefetcher();
 
