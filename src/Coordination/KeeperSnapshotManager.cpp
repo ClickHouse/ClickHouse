@@ -1657,6 +1657,13 @@ void KeeperSnapshotReader::readACLMapAndNodeCount()
     }
 
     readBinary(node_count, *in);
+
+    /// The count is used as a hash table capacity before any node is read, and the capacity computation
+    /// overflows for counts close to 2^62. A node takes more than 100 bytes of memory, so a snapshot
+    /// with more nodes than this limit cannot have been written.
+    static constexpr size_t max_node_count = 1ULL << 40;
+    if (node_count > max_node_count)
+        throw Exception(ErrorCodes::CORRUPTED_DATA, "Node count in snapshot is too big: {}", node_count);
 }
 
 std::vector<std::unique_ptr<KeeperSnapshotReader::Stream>> KeeperSnapshotReader::createStreams(size_t n)

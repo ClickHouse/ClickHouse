@@ -13,7 +13,10 @@
 #include <Coordination/KeeperStorage.h>
 
 #include <IO/CompressionMethod.h>
+#include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
 
 #include <Common/ProfileEvents.h>
@@ -54,6 +57,11 @@
 #include <thread>
 #include <vector>
 #include <unistd.h>
+
+namespace DB::ErrorCodes
+{
+    extern const int CORRUPTED_DATA;
+}
 
 namespace DB::CoordinationSetting
 {
@@ -6015,6 +6023,28 @@ TEST_P(CoordinationTest, MoveSnapshotCandidateRemovesTargetAfterDestinationValid
     EXPECT_FALSE(fs::exists("./snapshots/" + candidate.source_path));
     EXPECT_TRUE(fs::exists("./snapshots_move_target/" + candidate.target_path));
     EXPECT_FALSE(fs::exists("./snapshots_move_target/tmp_" + candidate.target_path));
+}
+
+TEST_P(CoordinationTest, SnapshotReaderRejectsImpossibleNodeCount)
+{
+    /// The node count is used as a hash table capacity before any node is read. For a count like
+    /// this one the capacity computation would shift by 64 bits.
+    DB::WriteBufferFromOwnString out;
+    DB::writeBinary(static_cast<size_t>(0), out); /// The size of the ACL map.
+    DB::writeBinary((static_cast<size_t>(1) << 62) + 1, out); /// The node count.
+    out.finalize();
+
+    DB::KeeperSnapshotReader reader(std::make_unique<DB::ReadBufferFromOwnString>(out.str()), this->keeper_context);
+    reader.current_version = DB::MAX_SUPPORTED_SNAPSHOT_VERSION;
+    try
+    {
+        reader.readACLMapAndNodeCount();
+        FAIL() << "the node count was accepted";
+    }
+    catch (const DB::Exception & e)
+    {
+        EXPECT_EQ(e.code(), DB::ErrorCodes::CORRUPTED_DATA);
+    }
 }
 
 TEST_P(CoordinationTest, MoveSnapshotCandidateHonorsBoolPublishCallback)
