@@ -1587,7 +1587,7 @@ public:
         }
     }
 
-    ALWAYS_INLINE bool skip(size_t row) const
+    [[nodiscard]] ALWAYS_INLINE bool skip(size_t row) const
     {
         if constexpr (enabled)
             return heap.shouldSkip(skip_bitmap, row);
@@ -1609,7 +1609,7 @@ public:
         }
     }
 
-    bool needsTrim() const
+    [[nodiscard]] bool needsTrim() const
     {
         if constexpr (enabled)
             return heap.needsTrim();
