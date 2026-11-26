@@ -1329,7 +1329,12 @@ IMergingAlgorithm::Status SummingSortedAlgorithm::mergeImpl()
             if constexpr (take_batches)
             {
                 /// With a single source the rows of a chunk come at consecutive positions.
-                previous_group_has_one_row = current->getPosRef() == group_start_pos + 1;
+                /// Before the first group `group_start_pos` is `max`, as if a group of one row ended just before position 0;
+                /// compare without `group_start_pos + 1` to not overflow.
+                if (group_start_pos == std::numeric_limits<size_t>::max())
+                    previous_group_has_one_row = current->getPosRef() == 0;
+                else
+                    previous_group_has_one_row = current->getPosRef() == group_start_pos + 1;
                 group_start_pos = current->getPosRef();
             }
             merged_data.startGroup(current->all_columns, current->getRow());
