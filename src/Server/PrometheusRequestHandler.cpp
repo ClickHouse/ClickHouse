@@ -537,7 +537,7 @@ public:
 
         response.setContentType("application/json");
 
-        /// Feeds the progress of the queries below into the `X-ClickHouse-Summary` header, as `HTTPHandler` does.
+        /// `X-ClickHouse-Summary` is built from the progress passed to the output buffer.
         auto & out = parent().getOutputStream(response);
         context->setProgressCallback(
             [&out, &request_context = context](const Progress & progress) { out.onProgress(progress, request_context); });
