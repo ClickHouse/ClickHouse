@@ -36,16 +36,23 @@ public:
     /// The provider for `cluster_name` if it is already built, otherwise null.
     StatelessWorkersProviderPtr tryGetProvider(const String & cluster_name);
 
-    /// The providers built so far, by cluster name (the default cluster's `default_cluster_name`, or empty
-    /// when it has none). Builds none.
-    std::vector<std::pair<String, StatelessWorkersProviderPtr>> getBuiltProviders();
+    /// The providers built so far: the current ones, and the retired ones that queries still hold (see
+    /// `IStatelessWorkersProvider::getRetireTime`). Several can have the same cluster name. Builds none.
+    std::vector<StatelessWorkersProviderPtr> getBuiltProviders();
+
+    /// The name to show for the cluster with registry key `cluster_name`: the default cluster's
+    /// `default_cluster_name`, or empty when it has none.
+    static String getClusterDisplayName(const Poco::Util::AbstractConfiguration & config, const String & cluster_name);
 
     /// On a config reload, retire providers whose cluster was removed or reconfigured (queries holding
     /// them drain on them) and refresh the others in place. Never throws: a cluster whose new
     /// configuration cannot be applied is retired, and the error surfaces to the next query that selects it.
+    /// A retired provider that queries still hold re-reads its credentials only from sources the new
+    /// configuration shares across clusters, never from its cluster's new definition, so a cluster
+    /// redefined under the same name cannot redirect it or hand it credentials.
     void reloadConfig(const Poco::Util::AbstractConfiguration & config);
 
-    /// Shut down and drop every provider (process teardown).
+    /// Shut down and drop every provider, retired ones included (process teardown).
     void shutdown();
 
     /// The registry key of the cluster a `distributed_plan_worker_cluster` value selects: empty for the
@@ -67,6 +74,14 @@ private:
     LoggerPtr log;
     std::mutex mutex;
     std::map<String, ProviderEntry> providers TSA_GUARDED_BY(mutex);
+    /// Weak, so the queries holding a retired provider alone decide how long it lives.
+    std::vector<std::weak_ptr<IStatelessWorkersProvider>> retired_providers TSA_GUARDED_BY(mutex);
+
+    /// Remember a provider just removed from `providers`; forget the retired ones no query holds any more.
+    void retireProvider(const StatelessWorkersProviderPtr & provider) TSA_REQUIRES(mutex);
+
+    /// The retired providers that queries still hold; forgets the others.
+    std::vector<StatelessWorkersProviderPtr> lockRetiredProviders() TSA_REQUIRES(mutex);
 
     /// Build the provider for `cluster_name` from the current server configuration.
     StatelessWorkersProviderPtr buildProvider(const Poco::Util::AbstractConfiguration & config, const String & cluster_name) TSA_REQUIRES(mutex);

@@ -38,6 +38,12 @@ public:
     /// Returns a per-query allocation over the workers snapshotted at construction.
     StatelessWorkerAllocationPtr allocate(size_t desired_workers, uint64_t provisioning_timeout_ms) override;
 
+    /// The snapshot is always available, so this is `allocate`.
+    StatelessWorkerAllocationPtr tryAllocate(size_t desired_workers, uint64_t provisioning_timeout_ms) override
+    {
+        return allocate(desired_workers, provisioning_timeout_ms);
+    }
+
     [[nodiscard]] std::vector<StatelessWorkerState> getWorkersState() const override;
 
     /// A static cluster serves its fixed snapshot regardless of the request, so plan for that many.

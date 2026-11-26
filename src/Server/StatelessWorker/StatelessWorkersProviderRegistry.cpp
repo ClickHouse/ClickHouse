@@ -113,6 +113,7 @@ StatelessWorkersProviderPtr StatelessWorkersProviderRegistry::getProvider(const 
         /// resolves to it. Queries already holding it drain on it.
         if (it->second.config_signature == signature)
             return it->second.provider;
+        retireProvider(it->second.provider);
         providers.erase(it);
     }
 
@@ -143,19 +144,21 @@ StatelessWorkersProviderPtr StatelessWorkersProviderRegistry::tryGetProvider(con
     return nullptr;
 }
 
-std::vector<std::pair<String, StatelessWorkersProviderPtr>> StatelessWorkersProviderRegistry::getBuiltProviders()
+std::vector<StatelessWorkersProviderPtr> StatelessWorkersProviderRegistry::getBuiltProviders()
 {
-    auto global_context = Context::getGlobalContextInstance();
-    const String default_cluster_name = global_context
-        ? global_context->getConfigRef().getString("stateless_worker_client.default_cluster_name", "")
-        : "";
-
     std::lock_guard lock(mutex);
-    std::vector<std::pair<String, StatelessWorkersProviderPtr>> result;
-    result.reserve(providers.size());
+    std::vector<StatelessWorkersProviderPtr> result = lockRetiredProviders();
+    result.reserve(result.size() + providers.size());
     for (const auto & [key, entry] : providers)
-        result.emplace_back(key.empty() ? default_cluster_name : key, entry.provider);
+        result.push_back(entry.provider);
     return result;
+}
+
+String StatelessWorkersProviderRegistry::getClusterDisplayName(const Poco::Util::AbstractConfiguration & config, const String & cluster_name)
+{
+    if (!cluster_name.empty())
+        return cluster_name;
+    return config.getString("stateless_worker_client.default_cluster_name", "");
 }
 
 StatelessWorkersProviderPtr StatelessWorkersProviderRegistry::buildProvider(
@@ -167,7 +170,9 @@ StatelessWorkersProviderPtr StatelessWorkersProviderRegistry::buildProvider(
         throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
             "Stateless worker cluster '{}' must configure exactly one worker source, got {}", cluster_name, sources.size());
     LOG_DEBUG(log, "Building stateless worker provider for cluster '{}' from `{}`", cluster_name, sources.front());
-    return StatelessWorkersProviderFactory::instance().get(sources.front()).create(config, config_prefix);
+    auto provider = StatelessWorkersProviderFactory::instance().get(sources.front()).create(config, config_prefix);
+    provider->setClusterName(cluster_name);
+    return provider;
 }
 
 String StatelessWorkersProviderRegistry::computeConfigSignatureForCluster(const Poco::Util::AbstractConfiguration & config, const String & cluster_name)
@@ -192,29 +197,69 @@ String StatelessWorkersProviderRegistry::computeConfigSignatureForCluster(const 
 
 void StatelessWorkersProviderRegistry::reloadConfig(const Poco::Util::AbstractConfiguration & config)
 {
-    std::lock_guard lock(mutex);
-    for (auto it = providers.begin(); it != providers.end();)
+    std::vector<StatelessWorkersProviderPtr> retired;
+    {
+        std::lock_guard lock(mutex);
+        for (auto it = providers.begin(); it != providers.end();)
+        {
+            try
+            {
+                if (computeConfigSignatureForCluster(config, it->first) == it->second.config_signature)
+                {
+                    /// Unchanged: refresh in place (e.g. re-read a token file).
+                    it->second.provider->reloadConfig(config, clusterConfigPrefix(it->first));
+                    ++it;
+                    continue;
+                }
+                /// Removed or reconfigured: queries holding the provider drain on it, and the cluster is
+                /// rebuilt on its next use.
+                LOG_INFO(log, "Retiring stateless worker provider for cluster '{}' after a configuration change", it->first);
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log, fmt::format("Retiring stateless worker provider for cluster '{}': cannot apply its new configuration", it->first));
+            }
+            retireProvider(it->second.provider);
+            it = providers.erase(it);
+        }
+        retired = lockRetiredProviders();
+    }
+
+    /// A draining query keeps renewing its leases, which needs a valid credential after a rotation. Runs
+    /// outside the lock, because dropping the last reference to a provider here stops its thread.
+    for (const auto & provider : retired)
     {
         try
         {
-            if (computeConfigSignatureForCluster(config, it->first) == it->second.config_signature)
-            {
-                /// Unchanged: refresh in place (e.g. re-read a token file).
-                it->second.provider->reloadConfig(config, clusterConfigPrefix(it->first));
-                ++it;
-                continue;
-            }
-            /// Removed or reconfigured: queries holding the provider drain on it, and the cluster is
-            /// rebuilt on its next use.
-            /// A retired provider is not refreshed any more, so queries draining on it may eventually fail.
-            LOG_INFO(log, "Retiring stateless worker provider for cluster '{}' after a configuration change", it->first);
+            provider->refreshSharedCredentials(config);
         }
         catch (...)
         {
-            tryLogCurrentException(log, fmt::format("Retiring stateless worker provider for cluster '{}': cannot apply its new configuration", it->first));
+            tryLogCurrentException(log, fmt::format(
+                "Cannot refresh the credentials of the retired stateless worker provider for cluster '{}'", provider->getClusterName()));
         }
-        it = providers.erase(it);
     }
+}
+
+void StatelessWorkersProviderRegistry::retireProvider(const StatelessWorkersProviderPtr & provider)
+{
+    std::erase_if(retired_providers, [](const auto & retired) { return retired.expired(); });
+    provider->markRetired();
+    retired_providers.push_back(provider);
+}
+
+std::vector<StatelessWorkersProviderPtr> StatelessWorkersProviderRegistry::lockRetiredProviders()
+{
+    std::vector<StatelessWorkersProviderPtr> result;
+    std::erase_if(retired_providers, [&](const auto & retired)
+    {
+        auto provider = retired.lock();
+        if (!provider)
+            return true;
+        result.push_back(std::move(provider));
+        return false;
+    });
+    return result;
 }
 
 void StatelessWorkersProviderRegistry::shutdown()
@@ -223,6 +268,9 @@ void StatelessWorkersProviderRegistry::shutdown()
     for (auto & [name, entry] : providers)
         entry.provider->shutdown();
     providers.clear();
+    for (const auto & provider : lockRetiredProviders())
+        provider->shutdown();
+    retired_providers.clear();
 }
 
 }
