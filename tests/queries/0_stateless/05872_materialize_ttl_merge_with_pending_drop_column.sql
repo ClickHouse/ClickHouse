@@ -1,5 +1,5 @@
--- Tags: no-parallel
--- Tag no-parallel: uses the server-wide failpoint `mt_mutate_task_pause_in_prepare`
+-- Tags: no-parallel, no-fasttest
+-- Tags no-parallel, no-fasttest: uses the server-wide failpoint `mt_mutate_task_pause_in_prepare`, so the test runs alone
 
 -- A merge applies a pending `DROP COLUMN`: the reader ignores the values the source parts store under the
 -- dropped name and fills the column added again under that name from its DEFAULT. The merged part then
