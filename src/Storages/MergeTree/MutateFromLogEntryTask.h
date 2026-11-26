@@ -27,8 +27,6 @@ public:
         {}
 
 
-    ~MutateFromLogEntryTask() override;
-
     Priority getPriority() const override { return priority; }
 
     void cancel() noexcept override
@@ -41,8 +39,6 @@ public:
     }
 
 private:
-
-    ContextMutablePtr createTaskContext() const override;
 
     ReplicatedMergeMutateTaskBase::PrepareResult prepare() override;
 

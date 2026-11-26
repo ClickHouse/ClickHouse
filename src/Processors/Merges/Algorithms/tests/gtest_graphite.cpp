@@ -87,7 +87,7 @@ struct  PatternForCheck
 };
 
 
-static bool checkRule(const Graphite::Pattern & pattern, const struct PatternForCheck & pattern_check,
+bool checkRule(const Graphite::Pattern & pattern, const struct PatternForCheck & pattern_check,
     const std::string & typ, const std::string & path, std::string & message)
 {
     bool rule_type_eq = (pattern.rule_type == pattern_check.rule_type);
@@ -107,7 +107,7 @@ static bool checkRule(const Graphite::Pattern & pattern, const struct PatternFor
     return false;
 }
 
-static std::ostream & operator<<(std::ostream & stream, const PatternForCheck & a)
+std::ostream & operator<<(std::ostream & stream, const PatternForCheck & a)
 {
     stream << "{ rule_type = " << ruleTypeStr(a.rule_type);
     if (!a.regexp_str.empty())

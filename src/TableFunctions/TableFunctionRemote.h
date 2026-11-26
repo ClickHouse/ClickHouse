@@ -1,7 +1,6 @@
 #pragma once
 
 #include <TableFunctions/ITableFunction.h>
-#include <Storages/Distributed/parseRemoteFunctionArguments.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/StorageID.h>
 
@@ -38,18 +37,11 @@ private:
     bool is_cluster_function;
     PreformattedMessage help_message;
     bool secure;
-    /// Names the invoked surface when the addresses expression exceeds the limit. It cannot be
-    /// derived from `name` at the point of use: `remoteSecure` shares `name == "remote"`.
-    RemoteDescriptionCaller glob_caller;
 
     ClusterPtr cluster;
     StorageID remote_table_id = StorageID::createEmpty();
     ASTPtr remote_table_function_ptr;
     ASTPtr sharding_key = nullptr;
-
-    /// Changes from a SETTINGS clause among the arguments, applied to the `DistributedSettings`
-    /// of the created `StorageDistributed`, e.g. SETTINGS skip_unavailable_shards = 1.
-    SettingsChanges settings_changes;
 };
 
 }

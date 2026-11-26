@@ -4,8 +4,8 @@
 #include <base/types.h>
 #include <base/defines.h>
 
+#include <cassert>
 #include <atomic>
-#include <limits>
 #include <memory>
 #include <system_error>
 #include <cerrno>
@@ -16,15 +16,19 @@
 ///    Similar to CLOCK_MONOTONIC, but provides access to a raw hardware-based
 ///    time that is not subject to NTP adjustments or the incremental
 ///    adjustments performed by adjtime(3).
-/// Emscripten defines `CLOCK_MONOTONIC_RAW` but `clock_gettime` returns EINVAL for it, so it
-/// cannot be the default there - see the note on `CLOCK_MONOTONIC_COARSE` in `base/time.h`.
-#if defined(CLOCK_MONOTONIC_RAW) && !defined(OS_WASM)
+#ifdef CLOCK_MONOTONIC_RAW
 static constexpr clockid_t STOPWATCH_DEFAULT_CLOCK = CLOCK_MONOTONIC_RAW;
 #else
 static constexpr clockid_t STOPWATCH_DEFAULT_CLOCK = CLOCK_MONOTONIC;
 #endif
 
-UInt64 clock_gettime_ns(clockid_t clock_type = STOPWATCH_DEFAULT_CLOCK);
+inline UInt64 clock_gettime_ns(clockid_t clock_type = STOPWATCH_DEFAULT_CLOCK)
+{
+    struct timespec ts;
+    if (0 != clock_gettime(clock_type, &ts))
+        throw std::system_error(std::error_code(errno, std::system_category()));
+    return UInt64(ts.tv_sec * 1000000000LL + ts.tv_nsec);
+}
 
 /// Takes previously returned value and returns it again if time stepped back for some reason.
 ///
@@ -41,7 +45,7 @@ inline UInt64 clock_gettime_ns_adjusted(UInt64 prev_time, clockid_t clock_type =
         return current_time;
 
     /// Something probably went completely wrong if time stepped back for more than 1 second.
-    chassert(prev_time - current_time <= 1000000000ULL);
+    assert(prev_time - current_time <= 1000000000ULL);
     return prev_time;
 }
 
@@ -64,14 +68,14 @@ public:
     void stop()                        { stop_ns = nanoseconds(); is_running = false; }
     void reset()                       { start_ns = 0; stop_ns = 0; is_running = false; }
     void restart()                     { start(); }
-    [[nodiscard]] UInt64 elapsed() const             { return elapsedNanoseconds(); }
-    [[nodiscard]] UInt64 elapsedNanoseconds() const  { return is_running ? nanoseconds() - start_ns : stop_ns - start_ns; }
-    [[nodiscard]] UInt64 elapsedMicroseconds() const { return elapsedNanoseconds() / 1000U; }
-    [[nodiscard]] UInt64 elapsedMilliseconds() const { return elapsedNanoseconds() / 1000000UL; }
-    [[nodiscard]] double elapsedSeconds() const      { return static_cast<double>(elapsedNanoseconds()) / 1000000000ULL; }
+    UInt64 elapsed() const             { return elapsedNanoseconds(); }
+    UInt64 elapsedNanoseconds() const  { return is_running ? nanoseconds() - start_ns : stop_ns - start_ns; }
+    UInt64 elapsedMicroseconds() const { return elapsedNanoseconds() / 1000U; }
+    UInt64 elapsedMilliseconds() const { return elapsedNanoseconds() / 1000000UL; }
+    double elapsedSeconds() const      { return static_cast<double>(elapsedNanoseconds()) / 1000000000ULL; }
 
-    [[nodiscard]] UInt64 getStart() const { return start_ns; }
-    [[nodiscard]] UInt64 getEnd() const { return stop_ns; }
+    UInt64 getStart() const { return start_ns; }
+    UInt64 getEnd() const { return stop_ns; }
 
 private:
     UInt64 start_ns = 0;
@@ -79,7 +83,7 @@ private:
     clockid_t clock_type;
     bool is_running = false;
 
-    [[nodiscard]] UInt64 nanoseconds() const { return clock_gettime_ns_adjusted(start_ns, clock_type); }
+    UInt64 nanoseconds() const { return clock_gettime_ns_adjusted(start_ns, clock_type); }
 };
 
 using StopwatchUniquePtr = std::unique_ptr<Stopwatch>;
@@ -107,7 +111,7 @@ public:
       */
     bool compareAndRestart(double seconds)
     {
-        UInt64 threshold = secondsToNanoseconds(seconds);
+        UInt64 threshold = static_cast<UInt64>(seconds * 1000000000.0);
         UInt64 current_start_ns = start_ns;
         UInt64 current_ns = nanoseconds(current_start_ns);
 
@@ -151,7 +155,7 @@ public:
       */
     Lock compareAndRestartDeferred(double seconds)
     {
-        UInt64 threshold = secondsToNanoseconds(seconds);
+        UInt64 threshold = UInt64(seconds * 1000000000.0);
         UInt64 current_start_ns = start_ns;
         UInt64 current_ns = nanoseconds(current_start_ns);
 
@@ -175,21 +179,4 @@ private:
 
     /// Most significant bit is a lock. When it is set, compareAndRestartDeferred method will return false.
     UInt64 nanoseconds(UInt64 prev_time) const { return clock_gettime_ns_adjusted(prev_time, clock_type) & 0x7FFFFFFFFFFFFFFFULL; }
-
-    /// Convert seconds to nanoseconds with saturation. Avoids UB when `seconds` is so large
-    /// that `seconds * 1e9` falls outside the representable range of `UInt64` — which can
-    /// happen when a `UInt64` interval setting tuned to an extreme value is fed in via a
-    /// `static_cast<double>` at the call site. Saturating at half of `UInt64::max` also
-    /// keeps `current_start_ns + threshold` from wrapping inside the compare-and-restart
-    /// loop, so an "essentially infinite" threshold behaves as "never restart".
-    static UInt64 secondsToNanoseconds(double seconds)
-    {
-        if (seconds <= 0.0)
-            return 0;
-        constexpr UInt64 max_ns = std::numeric_limits<UInt64>::max() / 2;
-        const double ns = seconds * 1000000000.0;
-        if (ns >= static_cast<double>(max_ns))
-            return max_ns;
-        return static_cast<UInt64>(ns);
-    }
 };

@@ -9,10 +9,8 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 ncpus="$(getconf _NPROCESSORS_ONLN)"
 
-# percpu arenas are sized by the possible CPU count (nr_cpu_ids), so a
-# restricted affinity mask must not disable them or abort, even with abort_conf:true.
-# NOTE: abort:false for compatibility with debug builds.
-export MALLOC_CONF=abort_conf:true,abort:false
+# Disable them explicitly, to avoid failing on "Number of CPUs is not deterministic".
+export MALLOC_CONF=abort_conf:false,abort:false
 
 # Regression for:
 #
@@ -24,4 +22,6 @@ taskset --cpu-list $((ncpus-1)) ${CLICKHOUSE_LOCAL} -q 'select 1' 2>&1
 # just in case something more complicated
 taskset --cpu-list $((ncpus-1)) ${CLICKHOUSE_LOCAL} -q 'select count() from numbers_mt(100000000) settings max_threads=100' 2>&1
 
-MALLOC_CONF=$MALLOC_CONF,narenas:$((ncpus)) taskset --cpu-list $((ncpus-1)) ${CLICKHOUSE_LOCAL} -q 'select 1' 2>&1
+# this command should not fail because we specify narenas explicitly
+# (even with abort_conf:true)
+MALLOC_CONF=abort_conf:true,abort:false,narenas:$((ncpus)) taskset --cpu-list $((ncpus-1)) ${CLICKHOUSE_LOCAL} -q 'select 1' 2>&1

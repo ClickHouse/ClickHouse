@@ -222,21 +222,6 @@ void HTTPRequest::write(std::ostream& ostr) const
 }
 
 
-void HTTPRequest::write(std::string& out) const
-{
-	checkNoLineBreaks(*this);
-
-	out.append(_method);
-	out.append(" ", 1);
-	out.append(_uri);
-	out.append(" ", 1);
-	out.append(getVersion());
-	out.append("\r\n", 2);
-	HTTPMessage::write(out);
-	out.append("\r\n", 2);
-}
-
-
 void HTTPRequest::read(std::istream& istr)
 {
 	static const int eof = std::char_traits<char>::eof();

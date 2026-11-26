@@ -22,9 +22,8 @@ public:
         : aggregate_function_nodes(aggregate_function_nodes_)
     {}
 
-    CollectAggregateFunctionNodesVisitor(String assert_no_aggregates_place_message_, String hint_)
+    explicit CollectAggregateFunctionNodesVisitor(String assert_no_aggregates_place_message_)
         : assert_no_aggregates_place_message(std::move(assert_no_aggregates_place_message_))
-        , hint(std::move(hint_))
     {}
 
     explicit CollectAggregateFunctionNodesVisitor(bool only_check_)
@@ -37,15 +36,14 @@ public:
             return;
 
         auto * function_node = node->as<FunctionNode>();
-        if (!function_node || !function_node->isAggregationCall())
+        if (!function_node || !function_node->isAggregateFunction())
             return;
 
         if (!assert_no_aggregates_place_message.empty())
             throw Exception(ErrorCodes::ILLEGAL_AGGREGATION,
-                "Aggregate function {} is found {} in query{}",
+                "Aggregate function {} is found {} in query",
                 function_node->formatASTForErrorMessage(),
-                assert_no_aggregates_place_message,
-                hint);
+                assert_no_aggregates_place_message);
 
         if (aggregate_function_nodes)
             aggregate_function_nodes->push_back(node);
@@ -53,7 +51,7 @@ public:
         has_aggregate_functions = true;
     }
 
-    [[nodiscard]] bool needChildVisit(const QueryTreeNodePtr &, const QueryTreeNodePtr & child_node) const
+    bool needChildVisit(const QueryTreeNodePtr &, const QueryTreeNodePtr & child_node) const
     {
         if (only_check && has_aggregate_functions)
             return false;
@@ -62,14 +60,13 @@ public:
         return !(child_node_type == QueryTreeNodeType::QUERY || child_node_type == QueryTreeNodeType::UNION);
     }
 
-    [[nodiscard]] bool hasAggregateFunctions() const
+    bool hasAggregateFunctions() const
     {
         return has_aggregate_functions;
     }
 
 private:
     String assert_no_aggregates_place_message;
-    String hint;
     QueryTreeNodes * aggregate_function_nodes = nullptr;
     bool only_check = false;
     bool has_aggregate_functions = false;
@@ -100,12 +97,9 @@ bool hasAggregateFunctionNodes(const QueryTreeNodePtr & node)
     return visitor.hasAggregateFunctions();
 }
 
-void assertNoAggregateFunctionNodes(const QueryTreeNodePtr & node, const String & assert_no_aggregates_place_message, const String & hint)
+void assertNoAggregateFunctionNodes(const QueryTreeNodePtr & node, const String & assert_no_aggregates_place_message)
 {
-    if (isQueryOrUnionNode(node))
-        return;
-
-    CollectAggregateFunctionNodesVisitor visitor(assert_no_aggregates_place_message, hint);
+    CollectAggregateFunctionNodesVisitor visitor(assert_no_aggregates_place_message);
     visitor.visit(node);
 }
 

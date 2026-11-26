@@ -8,7 +8,7 @@
 #include <Analyzer/Utils.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/IDataType.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/Context.h>
 
@@ -35,7 +35,7 @@ public:
             return;
 
         auto * function_node = node->as<FunctionNode>();
-        if (!function_node || !function_node->isAggregationCall() || !function_node->getResultType()->equals(DataTypeUInt64()))
+        if (!function_node || !function_node->isAggregateFunction() || !function_node->getResultType()->equals(DataTypeUInt64()))
             return;
 
         auto function_name = function_node->getFunctionName();
@@ -45,7 +45,7 @@ public:
         if (lower_function_name != "sum" && (lower_function_name != "sumif" || !function_name.ends_with("If")))
             return;
 
-        const auto & function_node_arguments_nodes = function_node->getArguments().getNodes();
+        auto & function_node_arguments_nodes = function_node->getArguments().getNodes();
 
         /// Rewrite `sumIf(1, cond)` into `countIf(cond)`
         if (lower_function_name == "sumif")
@@ -64,8 +64,18 @@ public:
             if (getSettings()[Setting::aggregate_functions_null_for_empty])
                 return;
 
-            /// Rewrite `sumIf(1, cond)` into `countIf(cond)` and `sumIf(123, cond)` into `123 * countIf(cond)`
-            node = createCountIf(function_node_arguments_nodes[1], function_node_arguments_nodes[0], constant_value_literal.safeGet<UInt64>());
+            /// Rewrite `sumIf(1, cond)` into `countIf(cond)`
+            auto multiplier_node = function_node_arguments_nodes[0];
+            function_node_arguments_nodes[0] = std::move(function_node_arguments_nodes[1]);
+            function_node_arguments_nodes.resize(1);
+
+            resolveAggregateFunctionNodeByName(*function_node, "countIf");
+
+            if (constant_value_literal.safeGet<UInt64>() != 1)
+            {
+                /// Rewrite `sumIf(123, cond)` into `123 * countIf(cond)`
+                node = getMultiplyFunction(std::move(multiplier_node), node);
+            }
             return;
         }
 
@@ -75,7 +85,7 @@ public:
         if (function_node_arguments_nodes.size() != 1)
             return;
 
-        const auto & nested_argument = function_node_arguments_nodes[0];
+        auto & nested_argument = function_node_arguments_nodes[0];
         auto * nested_function = nested_argument->as<FunctionNode>();
         if (!nested_function || nested_function->getFunctionName() != "if")
             return;
@@ -105,14 +115,29 @@ public:
 
         if (if_false_condition_value == 0)
         {
-            /// Rewrite `sum(if(cond, 1, 0))` into `countIf(cond)` and `sum(if(cond, 123, 0))` into `123 * countIf(cond)`.
-            node = createCountIf(nested_if_function_arguments_nodes[0], nested_if_function_arguments_nodes[1], if_true_condition_value);
+            /// Rewrite `sum(if(cond, 1, 0))` into `countIf(cond)`.
+            function_node_arguments_nodes[0] = nested_if_function_arguments_nodes[0];
+            function_node_arguments_nodes.resize(1);
+
+            resolveAggregateFunctionNodeByName(*function_node, "countIf");
+
+            if (if_true_condition_value != 1)
+            {
+                /// Rewrite `sum(if(cond, 123, 0))` into `123 * countIf(cond)`.
+                node = getMultiplyFunction(nested_if_function_arguments_nodes[1], node);
+            }
             return;
         }
 
-        if (if_true_condition_value == 0 && !isNullableOrLowCardinalityNullable(cond_argument->getResultType()))
+        if (if_true_condition_value == 0 && !cond_argument->getResultType()->isNullable())
         {
-            /// Rewrite `sum(if(cond, 0, 1))` into `countIf(not(cond))` only if the condition cannot be NULL
+            /// Rewrite `sum(if(cond, 0, 1))` into `countIf(not(cond))` if condition is not Nullable (otherwise the result can be different).
+            DataTypePtr not_function_result_type = std::make_shared<DataTypeUInt8>();
+
+            const auto & condition_result_type = nested_if_function_arguments_nodes[0]->getResultType();
+            if (condition_result_type->isNullable())
+                not_function_result_type = makeNullable(not_function_result_type);
+
             auto not_function = std::make_shared<FunctionNode>("not");
             not_function->markAsOperator();
 
@@ -121,7 +146,16 @@ public:
 
             not_function->resolveAsFunction(FunctionFactory::instance().get("not", getContext())->build(not_function->getArgumentColumns()));
 
-            node = createCountIf(std::move(not_function), nested_if_function_arguments_nodes[2], if_false_condition_value);
+            function_node_arguments_nodes[0] = std::move(not_function);
+            function_node_arguments_nodes.resize(1);
+
+            resolveAggregateFunctionNodeByName(*function_node, "countIf");
+
+            if (if_false_condition_value != 1)
+            {
+                /// Rewrite `sum(if(cond, 0, 123))` into `123 * countIf(not(cond))` if condition is not Nullable (otherwise the result can be different).
+                node = getMultiplyFunction(nested_if_function_arguments_nodes[2], node);
+            }
             return;
         }
     }
@@ -138,19 +172,6 @@ private:
         auto multiply_function_base = FunctionFactory::instance().get("multiply", getContext())->build(multiply_function_node->getArgumentColumns());
         multiply_function_node->resolveAsFunction(std::move(multiply_function_base));
         return std::move(multiply_function_node);
-    }
-
-    /// The visited node can be referenced from several places of the query tree, so it is replaced, not modified.
-    QueryTreeNodePtr createCountIf(QueryTreeNodePtr condition, QueryTreeNodePtr multiplier, UInt64 multiplier_value)
-    {
-        auto count_if_node = std::make_shared<FunctionNode>("countIf");
-        count_if_node->getArguments().getNodes().push_back(std::move(condition));
-        resolveAggregateFunctionNodeByName(*count_if_node, "countIf");
-
-        if (multiplier_value == 1)
-            return count_if_node;
-
-        return getMultiplyFunction(std::move(multiplier), std::move(count_if_node));
     }
 };
 

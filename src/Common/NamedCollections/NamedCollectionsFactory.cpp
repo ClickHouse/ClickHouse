@@ -6,9 +6,7 @@
 #include <Common/NamedCollections/NamedCollectionsMetadataStorage.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Core/BackgroundSchedulePool.h>
-#include <Core/UUID.h>
 #include <Interpreters/Context.h>
-#include <Common/FailPoint.h>
 
 namespace CurrentMetrics
 {
@@ -24,13 +22,6 @@ namespace ErrorCodes
     extern const int NAMED_COLLECTION_ALREADY_EXISTS;
     extern const int NAMED_COLLECTION_IS_IMMUTABLE;
     extern const int LOGICAL_ERROR;
-    extern const int TOO_MANY_NAMED_COLLECTIONS;
-    extern const int DATA_ENCRYPTION_ERROR;
-}
-
-namespace FailPoints
-{
-    extern const char named_collections_replicated_update_pause[];
 }
 
 
@@ -47,22 +38,10 @@ NamedCollectionFactory::~NamedCollectionFactory()
 
 void NamedCollectionFactory::shutdown()
 {
-    /// Stop the update task without holding `mutex`: the task locks it, and `deactivate` waits for the task.
     shutdown_called = true;
     if (update_task)
         update_task->deactivate();
-
-    /// The factory is a process-wide singleton, but its metadata storage belongs to the global context which is
-    /// being shut down. Return to the initial state, so that the next use loads the collections again (from the
-    /// next global context, if the process creates one) instead of using the destroyed metadata storage.
-    std::lock_guard lock(mutex);
-    update_task = {};
     metadata_storage.reset();
-    loaded_named_collections.clear();
-    CurrentMetrics::set(CurrentMetrics::NamedCollection, 0);
-    dependencies.clear();
-    loaded = false;
-    shutdown_called = false;
 }
 
 bool NamedCollectionFactory::exists(const std::string & collection_name) const
@@ -100,37 +79,6 @@ NamedCollectionsMap NamedCollectionFactory::getAll() const
 bool NamedCollectionFactory::exists(const std::string & collection_name, std::lock_guard<std::mutex> &) const
 {
     return loaded_named_collections.contains(collection_name);
-}
-
-NamedCollectionFactory::StoredEntry NamedCollectionFactory::loadIfInStorage(const std::string & collection_name, std::lock_guard<std::mutex> & lock)
-{
-    if (exists(collection_name, lock))
-        return StoredEntry::loaded;
-
-    if (!metadata_storage->exists(collection_name))
-        return StoredEntry::none;
-
-    MutableNamedCollectionPtr collection;
-    try
-    {
-        collection = metadata_storage->get(collection_name);
-    }
-    catch (const Coordination::Exception & e)
-    {
-        /// Removed through another server between the check and the read.
-        if (e.code == Coordination::Error::ZNONODE)
-            return StoredEntry::none;
-        throw;
-    }
-    catch (const Exception & e)
-    {
-        if (e.code() == ErrorCodes::DATA_ENCRYPTION_ERROR)
-            return StoredEntry::unreadable;
-        throw;
-    }
-
-    add(collection_name, collection, lock);
-    return StoredEntry::loaded;
 }
 
 MutableNamedCollectionPtr NamedCollectionFactory::tryGet(
@@ -304,7 +252,7 @@ bool NamedCollectionFactory::loadIfNot(std::lock_guard<std::mutex> & lock)
 
     if (metadata_storage->isReplicated())
     {
-        update_task = context->getSchedulePool()->createTask(StorageID::createEmpty(), "NamedCollectionsMetadataStorage", [this]{ updateFunc(); });
+        update_task = context->getSchedulePool().createTask(StorageID::createEmpty(), "NamedCollectionsMetadataStorage", [this]{ updateFunc(); });
         update_task->activate();
         update_task->schedule();
     }
@@ -345,55 +293,18 @@ void NamedCollectionFactory::createFromSQL(const ASTCreateNamedCollectionQuery &
     std::lock_guard lock(mutex);
     loadIfNot(lock);
 
-    const auto stored = loadIfInStorage(query.collection_name, lock);
-    if (stored == StoredEntry::loaded)
+    if (exists(query.collection_name, lock))
     {
-        if (query.if_not_exists)
-            return;
-
-        if (!query.or_replace)
-            throw Exception(
-                ErrorCodes::NAMED_COLLECTION_ALREADY_EXISTS,
-                "A named collection `{}` already exists",
-                query.collection_name);
-
-        /// Throws NAMED_COLLECTION_IS_IMMUTABLE before the metadata write if the existing collection comes from the server config.
-        getMutable(query.collection_name, lock);
-
-        loaded_named_collections[query.collection_name] = metadata_storage->createOrReplace(query);
-        return;
-    }
-
-    if (stored == StoredEntry::unreadable)
-    {
-        /// A named collection all the same, so it is not created again. It cannot be read back, so
-        /// nothing but the key it was encrypted with tells what overwriting it would lose: it is not
-        /// replaced either, only dropped.
         if (query.if_not_exists)
             return;
 
         throw Exception(
             ErrorCodes::NAMED_COLLECTION_ALREADY_EXISTS,
-            "A named collection `{}` already exists in the storage, but could not be loaded, see the server log. "
-            "Configure the encryption key it was written with to load it, or drop it",
+            "A named collection `{}` already exists",
             query.collection_name);
     }
 
-    /// `max_named_collection_num_to_throw` is enforced here, under the mutex, rather than in
-    /// `InterpreterCreateNamedCollectionQuery`, so that every path adding a new collection is
-    /// covered - in particular RESTORE, which calls this function directly. Only this branch adds
-    /// a collection: the skip and the replacement above do not increase the count and stay allowed
-    /// at the limit.
-    if (UInt64 limit = Context::getGlobalContextInstance()->getMaxNamedCollectionNumToThrow();
-        limit > 0 && loaded_named_collections.size() >= limit)
-        throw Exception(ErrorCodes::TOO_MANY_NAMED_COLLECTIONS,
-                        "Too many named collections. The limit (server configuration parameter `max_named_collection_num_to_throw`) "
-                        "is set to {}, the current number is {}", limit, loaded_named_collections.size());
-
-    if (query.or_replace)
-        add(query.collection_name, metadata_storage->createOrReplace(query), lock);
-    else
-        add(query.collection_name, metadata_storage->create(query), lock);
+    add(query.collection_name, metadata_storage->create(query), lock);
 }
 
 void NamedCollectionFactory::removeFromSQL(const ASTDropNamedCollectionQuery & query)
@@ -401,8 +312,7 @@ void NamedCollectionFactory::removeFromSQL(const ASTDropNamedCollectionQuery & q
     std::lock_guard lock(mutex);
     loadIfNot(lock);
 
-    const auto stored = loadIfInStorage(query.collection_name, lock);
-    if (stored == StoredEntry::none)
+    if (!exists(query.collection_name, lock))
     {
         if (query.if_exists)
             return;
@@ -414,9 +324,7 @@ void NamedCollectionFactory::removeFromSQL(const ASTDropNamedCollectionQuery & q
     }
 
     metadata_storage->remove(query.collection_name);
-    /// An unreadable entry is not loaded; dropping it is the way to get rid of it.
-    if (stored == StoredEntry::loaded)
-        remove(query.collection_name, lock);
+    remove(query.collection_name, lock);
 }
 
 void NamedCollectionFactory::updateFromSQL(const ASTAlterNamedCollectionQuery & query)
@@ -475,56 +383,6 @@ bool NamedCollectionFactory::usesReplicatedStorage()
     return metadata_storage->isReplicated();
 }
 
-NamedCollectionFactory::MetadataStorageProperties NamedCollectionFactory::getMetadataStorageProperties()
-{
-    std::lock_guard lock(mutex);
-    loadIfNot(lock);
-
-    MetadataStorageProperties properties;
-    properties.is_encrypted = metadata_storage->isEncrypted();
-    properties.is_replicated = metadata_storage->isReplicated();
-    if (properties.is_replicated)
-        properties.replication_id = metadata_storage->getReplicationId();
-    return properties;
-}
-
-#if CLICKHOUSE_CLOUD && USE_SSL
-NamedCollectionsEncryptionKeyInfo NamedCollectionFactory::getEncryptionKeyInfo()
-{
-    std::lock_guard lock(mutex);
-    loadIfNot(lock);
-
-    auto key_info = metadata_storage->getEncryptionKeyInfo();
-    if (!key_info)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "The metadata storage for named collections is not encrypted");
-    return std::move(*key_info);
-}
-#endif
-
-std::map<std::string, std::string> NamedCollectionFactory::getRawEntriesForBackup()
-{
-    std::lock_guard lock(mutex);
-    loadIfNot(lock);
-
-    /// The metadata storage holds exactly the SQL-created collections; the config-defined ones
-    /// exist only in memory and must be neither backed up nor restored.
-    return metadata_storage->getAllRaw();
-}
-
-std::string NamedCollectionFactory::authenticateStoredEntryForBackup(const std::string & stored)
-{
-    std::lock_guard lock(mutex);
-    loadIfNot(lock);
-    return metadata_storage->authenticateStoredForBackup(stored);
-}
-
-std::string NamedCollectionFactory::decryptStoredEntryFromBackup(const std::string & data)
-{
-    std::lock_guard lock(mutex);
-    loadIfNot(lock);
-    return metadata_storage->decryptStoredFromBackup(data);
-}
-
 void NamedCollectionFactory::updateFunc()
 {
     LOG_TRACE(log, "Named collections background updating thread started");
@@ -535,9 +393,6 @@ void NamedCollectionFactory::updateFunc()
         {
             if (metadata_storage->waitUpdate())
             {
-                /// Lets a test hold this replica's loaded collections stale while another server
-                /// modifies the shared storage.
-                FailPointInjection::pauseFailPoint(FailPoints::named_collections_replicated_update_pause);
                 reloadFromSQL();
             }
         }

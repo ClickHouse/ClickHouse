@@ -10,7 +10,6 @@
 #include <Interpreters/StorageID.h>
 
 #include <Analyzer/IQueryTreeNode.h>
-#include <Common/assert_cast.h>
 
 namespace DB
 {
@@ -30,7 +29,7 @@ namespace DB
 class JoinNode;
 using JoinNodePtr = std::shared_ptr<JoinNode>;
 
-class JoinNode final : public ITableExpressionNode
+class JoinNode final : public IQueryTreeNode
 {
 public:
     /** Construct join node with left table expression, right table expression and join expression.
@@ -49,62 +48,37 @@ public:
         bool is_using_join_expression_);
 
     /// Get left table expression
-    [[nodiscard]] const ITableExpressionNode & getLeftTableExpression() const
-    {
-        return children[left_table_expression_child_index]->assertTableExpression();
-    }
-
-    /// Get left table expression
-    QueryTreeNodePtr & getLeftTableExpressionNode()
-    {
-        return children[left_table_expression_child_index];
-    }
-
-    [[nodiscard]] const QueryTreeNodePtr & getLeftTableExpressionNode() const
+    const QueryTreeNodePtr & getLeftTableExpression() const
     {
         return children[left_table_expression_child_index];
     }
 
     /// Get left table expression
-    [[nodiscard]] TableExpressionNodePtr getLeftTableExpressionNodeTyped() const
+    QueryTreeNodePtr & getLeftTableExpression()
     {
-        children[left_table_expression_child_index]->assertTableExpression();
-        return static_pointer_cast<ITableExpressionNode>(children[left_table_expression_child_index]);
+        return children[left_table_expression_child_index];
     }
 
     /// Get right table expression
-    [[nodiscard]] const ITableExpressionNode & getRightTableExpression() const
-    {
-        return children[right_table_expression_child_index]->assertTableExpression();
-    }
-
-    /// Get right table expression
-    QueryTreeNodePtr & getRightTableExpressionNode()
+    const QueryTreeNodePtr & getRightTableExpression() const
     {
         return children[right_table_expression_child_index];
     }
 
     /// Get right table expression
-    [[nodiscard]] const QueryTreeNodePtr & getRightTableExpressionNode() const
+    QueryTreeNodePtr & getRightTableExpression()
     {
         return children[right_table_expression_child_index];
-    }
-
-    /// Get right table expression
-    [[nodiscard]] TableExpressionNodePtr getRightTableExpressionNodeTyped() const
-    {
-        children[right_table_expression_child_index]->assertTableExpression();
-        return static_pointer_cast<ITableExpressionNode>(children[right_table_expression_child_index]);
     }
 
     /// Returns true if join has join expression, false otherwise
-    [[nodiscard]] bool hasJoinExpression() const
+    bool hasJoinExpression() const
     {
         return children[join_expression_child_index] != nullptr;
     }
 
     /// Get join expression
-    [[nodiscard]] const QueryTreeNodePtr & getJoinExpression() const
+    const QueryTreeNodePtr & getJoinExpression() const
     {
         return children[join_expression_child_index];
     }
@@ -116,37 +90,19 @@ public:
     }
 
     /// Returns true if join has USING join expression, false otherwise
-    [[nodiscard]] bool isUsingJoinExpression() const
+    bool isUsingJoinExpression() const
     {
         return hasJoinExpression() && is_using_join_expression;
     }
 
     /// Returns true if join has ON join expression, false otherwise
-    [[nodiscard]] bool isOnJoinExpression() const
+    bool isOnJoinExpression() const
     {
         return hasJoinExpression() && !is_using_join_expression;
     }
 
-    /// Returns true if this is a NATURAL JOIN (USING columns are derived from common column names)
-    [[nodiscard]] bool isNaturalJoin() const
-    {
-        return is_natural;
-    }
-
-    /// Set the natural join flag (used during analysis to inject a synthesized USING expression)
-    void setNatural(bool value)
-    {
-        is_natural = value;
-    }
-
-    /// Mark this join as a USING-style join (used when synthesizing USING from NATURAL JOIN)
-    void setUsingJoinExpression()
-    {
-        is_using_join_expression = true;
-    }
-
     /// Get join locality
-    [[nodiscard]] JoinLocality getLocality() const
+    JoinLocality getLocality() const
     {
         return locality;
     }
@@ -158,39 +114,21 @@ public:
     }
 
     /// Get join strictness
-    [[nodiscard]] JoinStrictness getStrictness() const
+    JoinStrictness getStrictness() const
     {
         return strictness;
     }
 
     /// Get join kind
-    [[nodiscard]] JoinKind getKind() const
+    JoinKind getKind() const
     {
         return kind;
     }
 
-    /// Set join kind
-    void setKind(JoinKind kind_value)
-    {
-        kind = kind_value;
-    }
-
-    /// Returns true if join is LATERAL, false otherwise
-    [[nodiscard]] bool isLateral() const
-    {
-        return lateral;
-    }
-
-    /// Set join lateral flag
-    void setLateral(bool lateral_value)
-    {
-        lateral = lateral_value;
-    }
-
     /// Convert join node to ASTTableJoin
-    [[nodiscard]] ASTPtr toASTTableJoin() const;
+    ASTPtr toASTTableJoin() const;
 
-    [[nodiscard]] QueryTreeNodeType getNodeType() const override
+    QueryTreeNodeType getNodeType() const override
     {
         return QueryTreeNodeType::JOIN;
     }
@@ -205,21 +143,19 @@ public:
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
 
 protected:
-    [[nodiscard]] bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const override;
+    bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const override;
 
     void updateTreeHashImpl(HashState & state, CompareOptions) const override;
 
-    [[nodiscard]] QueryTreeNodePtr cloneImpl() const override;
+    QueryTreeNodePtr cloneImpl() const override;
 
-    [[nodiscard]] ASTPtr toASTImpl(const ConvertToASTOptions & options) const override;
+    ASTPtr toASTImpl(const ConvertToASTOptions & options) const override;
 
 private:
     JoinLocality locality = JoinLocality::Unspecified;
     JoinStrictness strictness = JoinStrictness::Unspecified;
     JoinKind kind = JoinKind::Inner;
     bool is_using_join_expression;
-    bool is_natural = false;
-    bool lateral = false;
 
     static constexpr size_t left_table_expression_child_index = 0;
     static constexpr size_t right_table_expression_child_index = 1;
@@ -233,7 +169,7 @@ using CrossJoinNodePtr = std::shared_ptr<CrossJoinNode>;
 /** CrossJoin node represents cross/comma join in query tree.
   * Example: SELECT * FROM t1, t2, t3
   */
-class CrossJoinNode final : public ITableExpressionNode
+class CrossJoinNode final : public IQueryTreeNode
 {
 public:
     struct JoinType
@@ -257,33 +193,20 @@ public:
 
     void appendTable(QueryTreeNodePtr table_expression, JoinType join_type);
 
+    const QueryTreeNodes & getTableExpressions() const
+    {
+        return children;
+    }
+
     QueryTreeNodes & getTableExpressions()
     {
         return children;
     }
 
-    [[nodiscard]] const QueryTreeNodes & getTableExpressions() const
-    {
-        return children;
-    }
-
-    const ITableExpressionNode & getTableExpressionAt(size_t pos)
-    {
-        auto & child = children.at(pos);
-        return child->assertTableExpression();
-    }
-
-    [[nodiscard]] TableExpressionNodePtr getTableExpressionTypedAt(size_t pos) const
-    {
-        const auto & child = children.at(pos);
-        child->assertTableExpression();
-        return static_pointer_cast<ITableExpressionNode>(child);
-    }
-
     /// The size is getTableExpressions.size() - 1
     const JoinTypes & getJoinTypes() { return join_types; }
 
-    [[nodiscard]] QueryTreeNodeType getNodeType() const override
+    QueryTreeNodeType getNodeType() const override
     {
         return QueryTreeNodeType::CROSS_JOIN;
     }
@@ -291,13 +214,13 @@ public:
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
 
 protected:
-    [[nodiscard]] bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const override;
+    bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const override;
 
     void updateTreeHashImpl(HashState & state, CompareOptions) const override;
 
-    [[nodiscard]] QueryTreeNodePtr cloneImpl() const override;
+    QueryTreeNodePtr cloneImpl() const override;
 
-    [[nodiscard]] ASTPtr toASTImpl(const ConvertToASTOptions & options) const override;
+    ASTPtr toASTImpl(const ConvertToASTOptions & options) const override;
 
     JoinTypes join_types;
 };

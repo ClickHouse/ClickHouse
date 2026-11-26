@@ -5,22 +5,15 @@
 #include <DataTypes/DataTypeQBit.h>
 #include <DataTypes/Serializations/SerializationQBit.h>
 #include <IO/Operators.h>
-#include <Common/Exception.h>
-#include <Common/typeid_cast.h>
 
 
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
 
-ColumnQBit::ColumnQBit(MutableColumnPtr && tuple_, size_t dimension_, size_t stride_)
+ColumnQBit::ColumnQBit(MutableColumnPtr && tuple_, size_t dimension_)
     : tuple(std::move(tuple_))
     , dimension(dimension_)
-    , stride(stride_)
 {
 }
 
@@ -33,7 +26,7 @@ Field ColumnQBit::operator[](size_t n) const
 
 MutableColumnPtr ColumnQBit::cloneResized(size_t new_size) const
 {
-    return ColumnQBit::create(tuple->cloneResized(new_size), dimension, stride);
+    return ColumnQBit::create(tuple->cloneResized(new_size), dimension);
 }
 
 size_t ColumnQBit::getBitsCount() const
@@ -43,12 +36,7 @@ size_t ColumnQBit::getBitsCount() const
 
 std::string ColumnQBit::getName() const
 {
-    /// The tuple holds element_size * num_strides FixedString columns, so divide by the number of stride groups to recover the element size.
-    const size_t element_size = getBitsCount() / getNumStrides();
-    const char * element_name = element_size == 8 ? "Int8" : element_size == 16 ? "BFloat16" : element_size == 32 ? "Float32" : "Float64";
-    if (stride == dimension)
-        return fmt::format("QBit({}, {})", element_name, dimension);
-    return fmt::format("QBit({}, {}, {})", element_name, dimension, stride);
+    return fmt::format("QBit({}, {})", getBitsCount() == 16 ? "BFloat16" : getBitsCount() == 32 ? "Float32" : "Float64", dimension);
 }
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
@@ -100,7 +88,7 @@ void ColumnQBit::get(size_t n, Field & res) const
 
 ColumnPtr ColumnQBit::filter(const Filter & filt, ssize_t result_size_hint) const
 {
-    return ColumnQBit::create(tuple->filter(filt, result_size_hint), dimension, stride);
+    return ColumnQBit::create(tuple->filter(filt, result_size_hint), dimension);
 }
 
 void ColumnQBit::filter(const Filter & filt)
@@ -115,17 +103,17 @@ void ColumnQBit::expand(const Filter & mask, bool inverted)
 
 ColumnPtr ColumnQBit::permute(const Permutation & perm, size_t limit) const
 {
-    return ColumnQBit::create(tuple->permute(perm, limit), dimension, stride);
+    return ColumnQBit::create(tuple->permute(perm, limit), dimension);
 }
 
 ColumnPtr ColumnQBit::index(const IColumn & indexes, size_t limit) const
 {
-    return ColumnQBit::create(tuple->index(indexes, limit), dimension, stride);
+    return ColumnQBit::create(tuple->index(indexes, limit), dimension);
 }
 
 ColumnPtr ColumnQBit::replicate(const Offsets & offsets) const
 {
-    return ColumnQBit::create(tuple->replicate(offsets), dimension, stride);
+    return ColumnQBit::create(tuple->replicate(offsets), dimension);
 }
 
 ColumnPtr ColumnQBit::compress(bool force_compression) const
@@ -135,8 +123,8 @@ ColumnPtr ColumnQBit::compress(bool force_compression) const
     return ColumnCompressed::create(
         size(),
         byte_size,
-        [my_compressed = std::move(compressed), my_dimension = dimension, my_stride = stride]
-        { return ColumnQBit::create(my_compressed->decompress(), my_dimension, my_stride); });
+        [my_compressed = std::move(compressed), my_dimension = dimension]
+        { return ColumnQBit::create(my_compressed->decompress(), my_dimension); });
 }
 
 void ColumnQBit::forEachMutableSubcolumn(MutableColumnCallback callback)
@@ -161,18 +149,12 @@ void ColumnQBit::forEachSubcolumnRecursively(RecursiveColumnCallback callback) c
     tuple->forEachSubcolumnRecursively(callback);
 }
 
-void ColumnQBit::prepareForSquashing(const VectorWithMemoryTracking<ColumnPtr> & source_columns, size_t factor)
+void ColumnQBit::prepareForSquashing(const Columns & source_columns, size_t factor)
 {
-    VectorWithMemoryTracking<ColumnPtr> source_tuple_columns;
+    Columns source_tuple_columns;
     source_tuple_columns.reserve(source_columns.size());
     for (const auto & source_column : source_columns)
-    {
-        const auto * source_qbit = typeid_cast<const ColumnQBit *>(source_column.get());
-        if (!source_qbit)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Source column for squashing of {} is not QBit, but {}", getName(), source_column->getName());
-
-        source_tuple_columns.push_back(source_qbit->getTuple());
-    }
+        source_tuple_columns.push_back(assert_cast<const ColumnQBit &>(*source_column).getTuple());
     tuple->prepareForSquashing(source_tuple_columns, factor);
 }
 

@@ -16,12 +16,10 @@
 #include <Functions/IFunction.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
-#include <WindowFunctions/IGeneralWindowFunction.h>
 
 #include <Analyzer/Utils.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/IdentifierNode.h>
-#include <Analyzer/Resolve/FunctionCompositionRewrite.h>
 
 namespace DB
 {
@@ -87,16 +85,9 @@ ColumnsWithTypeAndName FunctionNode::getArgumentColumns() const
 
 AggregateFunctionPtr  FunctionNode::getAggregateFunction() const
 {
-    if (kind != FunctionKind::AGGREGATE)
+    if (kind == FunctionKind::UNKNOWN || kind == FunctionKind::ORDINARY)
         return {};
     return std::static_pointer_cast<const IAggregateFunction>(function);
-}
-
-GeneralWindowFunctionPtr FunctionNode::getWindowFunction() const
-{
-    if (kind != FunctionKind::WINDOW)
-        return {};
-    return std::static_pointer_cast<const IGeneralWindowFunction>(function);
 }
 
 void FunctionNode::resolveAsFunction(FunctionBasePtr function_value)
@@ -120,15 +111,13 @@ void FunctionNode::resolveAsAggregateFunction(AggregateFunctionPtr aggregate_fun
     nulls_action = NullsAction::EMPTY;
 }
 
-void FunctionNode::resolveAsWindowFunction(GeneralWindowFunctionPtr window_function_value)
+void FunctionNode::resolveAsWindowFunction(AggregateFunctionPtr window_function_value)
 {
     if (!hasWindow())
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "Trying to resolve FunctionNode without window definition as a window function {}", window_function_value->getName());
-    function_name = window_function_value->getName();
-    function = std::move(window_function_value);
+    resolveAsAggregateFunction(window_function_value);
     kind = FunctionKind::WINDOW;
-    nulls_action = NullsAction::EMPTY;
 }
 
 void FunctionNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const
@@ -141,9 +130,9 @@ void FunctionNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state
     buffer << ", function_name: " << function_name;
 
     std::string function_type = "ordinary";
-    if (isAggregationCall())
+    if (isAggregateFunction())
         function_type = "aggregate";
-    else if (isWindowCall())
+    else if (isWindowFunction())
         function_type = "window";
 
     buffer << ", function_type: " << function_type;
@@ -154,11 +143,7 @@ void FunctionNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state
         buffer << ", nulls_action : IGNORE_NULLS";
 
     if (function)
-    {
         buffer << ", result_type: " + getResultType()->getName();
-        if (!isAggregationCall() && !isWindowCall() && getFunction()->isSpatialPredicate())
-            buffer << ", is_spatial_predicate: true";
-    }
 
     const auto & parameters = getParameters();
     if (!parameters.getNodes().empty())
@@ -181,17 +166,18 @@ void FunctionNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state
     }
 }
 
-bool FunctionNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions /*compare_options*/) const
+bool FunctionNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions compare_options) const
 {
     const auto & rhs_typed = assert_cast<const FunctionNode &>(rhs);
-    if (function_name != rhs_typed.function_name || kind != rhs_typed.kind || nulls_action != rhs_typed.nulls_action)
+    if (function_name != rhs_typed.function_name || isAggregateFunction() != rhs_typed.isAggregateFunction()
+        || isOrdinaryFunction() != rhs_typed.isOrdinaryFunction() || isWindowFunction() != rhs_typed.isWindowFunction()
+        || nulls_action != rhs_typed.nulls_action)
         return false;
 
-    /// is_operator is ignored here because it affects only AST formatting, except for the function
-    /// composition operator `f | g`: the operator and an ordinary call to a function of the same
-    /// name are different expressions.
-    if (function_name == function_composition_name && is_operator != rhs_typed.is_operator)
-        return false;
+    /// is_operator is ignored here because it affects only AST formatting
+
+    if (!compare_options.compare_types)
+        return true;
 
     if (isResolved() != rhs_typed.isResolved())
         return false;
@@ -211,19 +197,19 @@ bool FunctionNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions /*comp
     return true;
 }
 
-void FunctionNode::updateTreeHashImpl(HashState & hash_state, CompareOptions /*compare_options*/) const
+void FunctionNode::updateTreeHashImpl(HashState & hash_state, CompareOptions compare_options) const
 {
     hash_state.update(function_name.size());
     hash_state.update(function_name);
-    hash_state.update(kind == FunctionKind::ORDINARY);
-    hash_state.update(kind == FunctionKind::AGGREGATE);
-    hash_state.update(kind == FunctionKind::WINDOW);
+    hash_state.update(isOrdinaryFunction());
+    hash_state.update(isAggregateFunction());
+    hash_state.update(isWindowFunction());
     hash_state.update(nulls_action);
 
-    /// is_operator is ignored here because it affects only AST formatting, except for the function
-    /// composition operator, see `isEqualImpl`.
-    if (function_name == function_composition_name)
-        hash_state.update(is_operator);
+    /// is_operator is ignored here because it affects only AST formatting
+
+    if (!compare_options.compare_types)
+        return;
 
     if (!isResolved())
         return;
@@ -254,10 +240,9 @@ ASTPtr FunctionNode::toASTImpl(const ConvertToASTOptions & options) const
 
     function_ast->name = function_name;
     function_ast->setNullsAction(nulls_action);
-    /// Table functions are `TableFunctionNode`, so `not` here is boolean NOT
-    function_ast->setIsOperator(is_operator || function_name == "not");
+    function_ast->setIsOperator(is_operator);
 
-    if (isWindowCall())
+    if (isWindowFunction())
     {
         function_ast->setIsWindowFunction(true);
         function_ast->setKind(ASTFunction::Kind::WINDOW_FUNCTION);
@@ -305,10 +290,7 @@ ASTPtr FunctionNode::toASTImpl(const ConvertToASTOptions & options) const
         if (auto * identifier_node = window_node->as<IdentifierNode>())
             function_ast->window_name = identifier_node->getIdentifier().getFullName();
         else
-        {
-            function_ast->children.push_back(window_node->toAST(new_options));
-            function_ast->window_definition = function_ast->children.back();
-        }
+            function_ast->window_definition = window_node->toAST(new_options);
     }
 
     return function_ast;

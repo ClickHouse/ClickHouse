@@ -1,11 +1,9 @@
 #include <Common/HostResolvePool.h>
 
 #include <Common/DNSResolver.h>
-#include <Common/FailPoint.h>
 #include <Common/NetException.h>
 #include <Common/thread_local_rng.h>
 #include <Common/MemoryTrackerSwitcher.h>
-#include <Common/logger_useful.h>
 
 #include <mutex>
 #include <algorithm>
@@ -31,11 +29,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int DNS_ERROR;
-}
-
-namespace FailPoints
-{
-    extern const char host_resolvers_pool_drop_cache_during_resolve[];
 }
 
 HostResolverMetrics HostResolver::getMetrics()
@@ -86,20 +79,15 @@ HostResolver::~HostResolver()
 
 void HostResolver::Entry::setFail()
 {
-    skip_success_callback = true;
+    fail = true;
 
     if (auto lock = pool.lock())
         lock->setFail(address);
 }
 
-void HostResolver::Entry::setUnused()
-{
-    skip_success_callback = true;
-}
-
 HostResolver::Entry::~Entry()
 {
-    if (!skip_success_callback)
+    if (!fail)
     {
         if (auto lock = pool.lock())
             lock->setSuccess(address);
@@ -164,8 +152,7 @@ void HostResolver::setSuccess(const Poco::Net::IPAddress & address)
         return;
 
     auto old_weight = it->getWeight();
-    if (it->setSuccess())
-        CurrentMetrics::sub(metrics.banned_count);
+    it->setSuccess();
     auto new_weight = it->getWeight();
 
     if (old_weight != new_weight)
@@ -184,65 +171,17 @@ void HostResolver::setFail(const Poco::Net::IPAddress & address)
             return;
 
         if (it->setFail(now))
-        {
             CurrentMetrics::add(metrics.banned_count);
-
-            /// The address just transitioned to failed, so its weight is now zero.
-            /// Recompute `weight_prefix_sum` right here, under the lock, before the
-            /// DNS refresh in `update` below - which can throw (e.g. NXDOMAIN or an
-            /// empty result) and never reach `updateImpl`/`updateWeights`. Without
-            /// this, the failed address would keep its stale weight in the selection
-            /// table and `selectBest` could keep handing it out even though it is
-            /// known-bad.
-            ///
-            /// Use `updateWeightsImpl` (the plain prefix-sum recomputation), not
-            /// `updateWeights`: the latter also runs the "all addresses banned"
-            /// fallback that un-bans every record once the total weight reaches zero.
-            /// Applying that fallback here - before the refresh - would un-ban the
-            /// address we just failed, so a subsequent `update` that discovers a new
-            /// healthy address would still keep the bad one selectable, losing the
-            /// pessimization. The fallback is applied below only if the refresh fails.
-            updateWeightsImpl();
-        }
     }
 
     ProfileEvents::increment(metrics.failed);
-
-    try
-    {
-        update();
-    }
-    catch (...)
-    {
-        /// The refresh failed, so no new address became available. If every cached
-        /// address is now banned the selection table has zero total weight, which
-        /// `selectBest` cannot handle. Apply the "all addresses banned" fallback now
-        /// to keep at least one address selectable, then propagate the error.
-        std::lock_guard lock(mutex);
-        updateWeights();
-        throw;
-    }
+    update();
 }
 
 Poco::Net::IPAddress HostResolver::selectBest()
 {
     chassert(!records.empty());
-
-    /// Every address can be banned at once, giving a zero total weight. This happens
-    /// transiently and without holding the lock continuously: `setFail` zeroes the
-    /// just-failed address's weight via `updateWeightsImpl` under the lock and then
-    /// releases it to run the DNS refresh in `update`, which only re-adds weight
-    /// afterwards (or the "all addresses banned" fallback in `updateWeights` does).
-    /// A concurrent `resolve` can therefore observe a zero total weight here. Hand out
-    /// a uniformly chosen address in that case instead of computing
-    /// `getTotalWeight() - 1`, which would underflow to `SIZE_MAX` and make
-    /// `partition_point` return `records.end()` - tripping the assertion below in debug
-    /// builds and dereferencing the end iterator in release builds.
-    const size_t total_weight = getTotalWeight();
-    if (total_weight == 0)
-        return records[std::uniform_int_distribution<size_t>(0, records.size() - 1)(thread_local_rng)].address;
-
-    auto random_weight_picker = std::uniform_int_distribution<size_t>(0, total_weight - 1);
+    auto random_weight_picker = std::uniform_int_distribution<size_t>(0, getTotalWeight() - 1);
     size_t weight = random_weight_picker(thread_local_rng);
     auto it = std::partition_point(records.begin(), records.end(), [&](const Record & rec) { return rec.weight_prefix_sum <= weight; });
     chassert(it != records.end());
@@ -372,48 +311,19 @@ void HostResolversPool::dropCache()
 {
     std::lock_guard lock(mutex);
     host_pools.clear();
-    ++generation;
 }
 
 HostResolver::Ptr HostResolversPool::getResolver(const String & host)
 {
-    UInt64 generation_before_resolve = 0;
-    {
-        std::lock_guard lock(mutex);
-
-        auto it = host_pools.find(host);
-        if (it != host_pools.end())
-            return it->second;
-
-        generation_before_resolve = generation;
-    }
-
-    /// Creating a `HostResolver` resolves the host, which can take seconds when DNS is slow
-    /// or unreachable. Do it outside of the pool-wide lock, otherwise one slow lookup blocks
-    /// the requests to all other hosts as well as `dropCache`.
-    auto resolver = HostResolver::create(host);
-
-    /// Simulates `dropCache` called by another thread during the resolution.
-    fiu_do_on(FailPoints::host_resolvers_pool_drop_cache_during_resolve, { dropCache(); });
-
     std::lock_guard lock(mutex);
 
-    /// If the cache was dropped during the resolution, the result may predate the drop.
-    /// Use it for this request only, so that the requests started after the drop resolve the host again.
-    if (generation != generation_before_resolve)
-    {
-        LOG_DEBUG(getLogger("HostResolversPool"), "Not caching the resolver for host {}, because the cache was dropped during the resolution", host);
-        return resolver;
-    }
+    auto it = host_pools.find(host);
+    if (it != host_pools.end())
+        return it->second;
 
-    /// If several threads create a resolver for the same host concurrently, the first one inserted wins.
-    return host_pools.emplace(host, std::move(resolver)).first->second;
-}
+    it = host_pools.emplace(host, HostResolver::create(host)).first;
 
-void HostResolversPool::injectResolverForTest(const String & host, HostResolver::Ptr resolver)
-{
-    std::lock_guard lock(mutex);
-    host_pools[host] = std::move(resolver);
+    return it->second;
 }
 
 }

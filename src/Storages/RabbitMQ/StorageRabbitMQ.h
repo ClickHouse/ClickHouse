@@ -8,9 +8,7 @@
 #include <atomic>
 #include <Storages/RabbitMQ/RabbitMQConsumer.h>
 #include <Storages/RabbitMQ/RabbitMQConnection.h>
-#include <Storages/RabbitMQ/RabbitMQPublisherPool.h>
 #include <Storages/RabbitMQ/RabbitMQ_fwd.h>
-#include <Storages/IStreamingStorage.h>
 #include <Common/thread_local_rng.h>
 #include <amqpcpp/libuv.h>
 #include <uv.h>
@@ -22,7 +20,7 @@ namespace DB
 struct RabbitMQSettings;
 using RabbitMQConsumerPtr = std::shared_ptr<RabbitMQConsumer>;
 
-class StorageRabbitMQ final: public IStreamingStorage, WithContext
+class StorageRabbitMQ final: public IStorage, WithContext
 {
 public:
     StorageRabbitMQ(
@@ -43,8 +41,6 @@ public:
 
     void startup() override;
     void shutdown(bool is_drop) override;
-
-    void cancelBackgroundActivity() override;
 
     void renameInMemory(const StorageID & new_table_id) override;
 
@@ -123,9 +119,6 @@ private:
     RabbitMQConnectionPtr connection; /// Connection for all consumers
     RabbitMQConfiguration configuration;
 
-    /// Connections with an open channel for insert queries, reused across them.
-    RabbitMQPublisherPoolPtr publisher_pool;
-
     size_t num_created_consumers = 0;
     Poco::Semaphore semaphore;
     std::mutex consumers_mutex;
@@ -148,21 +141,24 @@ private:
     BackgroundSchedulePoolTaskHolder streaming_task;
     BackgroundSchedulePoolTaskHolder looping_task;
     BackgroundSchedulePoolTaskHolder init_task;
-    /// Closes idle producer connections of `publisher_pool`, which are expired or lost.
-    BackgroundSchedulePoolTaskHolder publisher_cleanup_task;
 
     uint64_t milliseconds_to_wait;
 
     /**
      * ╰( ͡° ͜ʖ ͡° )つ──☆* Evil atomics:
      */
+    /// Needed for tell MV or producer background tasks
+    /// that they must finish as soon as possible.
+    std::atomic<bool> shutdown_called{false};
+    /// Counter for producers, needed for channel id.
+    /// Needed to generate unique producer identifiers.
+    std::atomic<size_t> producer_id = 1;
     /// Allow to remove exchange only once.
     std::atomic<bool> exchange_removed = false;
     /// For select query we must be aware of the end of streaming
     /// to be able to turn off the loop.
     std::atomic<size_t> readers_count = 0;
-
-    void scheduleStreamingTasksImpl() override;
+    std::atomic<bool> mv_attached = false;
 
     /// In select query we start event loop, but do not stop it
     /// after that select is finished. Then in a thread, which
@@ -178,13 +174,10 @@ private:
     RabbitMQConsumerPtr createConsumer();
     std::atomic<bool> initialized = false;
 
-    UInt64 last_seen_refresh_epoch = 0;
-
     /// Functions working in the background
-    void threadFunc();
+    void streamingToViewsFunc();
     void loopingFunc();
     void connectionFunc();
-    void publisherCleanupFunc();
 
     void startLoop();
     void stopLoop();
@@ -200,13 +193,13 @@ private:
 
     void initRabbitMQ();
     void cleanupRabbitMQ() const;
-    void waitForConsumerChannelsToClose(const std::vector<std::weak_ptr<RabbitMQConsumer>> & consumers_snapshot) const;
 
     void bindExchange(AMQP::TcpChannel & rabbit_channel);
     void bindQueue(size_t queue_id, AMQP::TcpChannel & rabbit_channel);
 
+    void streamToViewsImpl();
     /// Return true on successful stream attempt.
-    bool streamToViews(UInt64 cycle_epoch, bool drive_loop_on_worker);
+    bool tryStreamToViews();
     bool hasDependencies(const StorageID & table_id);
 
     static VirtualColumnsDescription createVirtuals(StreamingHandleErrorMode handle_error_mode);

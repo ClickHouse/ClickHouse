@@ -32,3 +32,19 @@ select 'analyzer=1, join with table';
 SELECT u.uid, u.name, u.gid, u.gname
 FROM users u left join groups g using gid, gname
 format PrettyCompactMonoBlock;
+
+
+set allow_experimental_analyzer=0;
+
+select '';
+select 'analyzer=0, join with dictionary';
+
+SELECT u.uid, u.name, u.gid, u.gname
+FROM users u left join groups_dict g using gid, gname
+format PrettyCompactMonoBlock;
+
+select '';
+select 'analyzer=0, join with table';
+SELECT u.uid, u.name, u.gid, u.gname
+FROM users u left join groups g using gid, gname
+format PrettyCompactMonoBlock;

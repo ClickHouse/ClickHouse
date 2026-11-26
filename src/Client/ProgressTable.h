@@ -2,10 +2,13 @@
 
 #include <Interpreters/ProfileEventsExt.h>
 #include <base/types.h>
+#include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 
+#include <list>
 #include <map>
 #include <mutex>
+#include <ostream>
 #include <string_view>
 #include <unordered_map>
 #include <unistd.h>
@@ -44,10 +47,10 @@ private:
         explicit MetricInfo(ProfileEvents::Type t);
 
         void updateValue(Int64 new_value, double new_time);
-        [[nodiscard]] double calculateRecentProgress(double time_now) const;
-        [[nodiscard]] double calculateAverageProgress(double time_now) const;
-        [[nodiscard]] double getValue() const;
-        [[nodiscard]] double updateTime() const { return update_time; }
+        double calculateRecentProgress(double time_now) const;
+        double calculateAverageProgress(double time_now) const;
+        double getValue() const;
+        double updateTime() const { return update_time; }
 
     private:
         const ProfileEvents::Type type;
@@ -76,12 +79,12 @@ private:
         using HostName = String;
 
         void updateHostValue(const HostName & host, ProfileEvents::Type type, Int64 new_value, double new_time);
-        [[nodiscard]] double getSummaryValue() const;
+        double getSummaryValue() const;
         double getSummaryRecentProgress(double time_now);
-        [[nodiscard]] double getSummaryAverageProgress(double time_now) const;
-        [[nodiscard]] double getMaxProgress() const;
-        [[nodiscard]] double updateTime() const;
-        [[nodiscard]] int getDisplayPriority() const { return display_priority; }
+        double getSummaryAverageProgress(double time_now) const;
+        double getMaxProgress() const;
+        double updateTime() const;
+        int getDisplayPriority() const { return display_priority; }
         void increaseDisplayPriority() { ++display_priority; }
 
     private:
@@ -90,7 +93,7 @@ private:
         int display_priority = 0;
     };
 
-    [[nodiscard]] size_t getColumnDocumentationWidth(size_t terminal_width) const;
+    size_t getColumnDocumentationWidth(size_t terminal_width) const;
 
     using MetricName = String;
     using Metric = std::pair<MetricName, MetricInfoPerHost>;
