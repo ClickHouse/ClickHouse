@@ -39,20 +39,20 @@ public:
         std::shared_ptr<const StorageLimitsList> storage_limits_,
         LoggerPtr log_);
 
-    String getName() const override { return "ReadFromRemotePlan"; }
+    [[nodiscard]] String getName() const override { return "ReadFromRemotePlan"; }
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
-    bool isSerializable() const override { return false; }
+    [[nodiscard]] bool isSerializable() const override { return false; }
 
     void absorbStep(QueryPlanStepPtr step);
 
     void absorbLimitCopy(const LimitStep & limit_step);
 
-    bool isLimitCopied() const { return limit_copied; }
+    [[nodiscard]] bool isLimitCopied() const { return limit_copied; }
 
     void setDistributedTopKCoordination(UInt64 limit, SortDescription sort_description);
-    const std::optional<DistributedTopKCoordination> & getDistributedTopKCoordination() const
+    [[nodiscard]] const std::optional<DistributedTopKCoordination> & getDistributedTopKCoordination() const
     {
         return distributed_top_k_coordination;
     }
@@ -61,14 +61,14 @@ public:
 
     QueryPlanPtr extractInnerPlan();
 
-    const ClusterPtr & getCluster() const { return cluster; }
-    const String & getClusterName() const { return cluster_name; }
-    ContextMutablePtr getRemoteContext() const { return remote_context; }
-    const StorageID & getMainTable() const { return main_table; }
-    const ASTPtr & getTableFunctionPtr() const { return table_func_ptr; }
-    const ASTPtr & getQueryForLogging() const { return query_for_logging; }
-    std::shared_ptr<const StorageLimitsList> getStorageLimits() const { return storage_limits; }
-    LoggerPtr getLog() const { return log; }
+    [[nodiscard]] const ClusterPtr & getCluster() const { return cluster; }
+    [[nodiscard]] const String & getClusterName() const { return cluster_name; }
+    [[nodiscard]] ContextMutablePtr getRemoteContext() const { return remote_context; }
+    [[nodiscard]] const StorageID & getMainTable() const { return main_table; }
+    [[nodiscard]] const ASTPtr & getTableFunctionPtr() const { return table_func_ptr; }
+    [[nodiscard]] const ASTPtr & getQueryForLogging() const { return query_for_logging; }
+    [[nodiscard]] std::shared_ptr<const StorageLimitsList> getStorageLimits() const { return storage_limits; }
+    [[nodiscard]] LoggerPtr getLog() const { return log; }
 
 private:
     QueryPlanPtr inner_plan;
