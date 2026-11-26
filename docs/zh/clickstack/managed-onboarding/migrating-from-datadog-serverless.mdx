@@ -1,0 +1,254 @@
+---
+slug: /clickstack/managed-onboarding/migrating-from-datadog-serverless
+title: '使用现有 agent 从 Datadog 迁移'
+sidebarTitle: '从 Datadog 迁移'
+description: '将您已在运行的 Datadog 代理 指向 ClickHouse Observability 的 Datadog 兼容端点，既可与 Datadog 并行发送，也可完全取而代之，无需改动应用程序即可探索您的日志、链路追踪和指标。'
+doc_type: 'guide'
+keywords: ['ClickHouse Observability', 'Datadog', 'Datadog 代理', 'migration', 'dual shipping', 'additional_endpoints', 'Datadog receiver', 'logs', 'traces', 'metrics']
+unlisted: true
+custom_edit_url: null
+hide_advert: true
+---
+
+<Info>
+  **TL;DR**
+
+  将服务的 Datadog 兼容端点添加到已在运行的 Datadog 代理 中 (与 Datadog 并行或替代 Datadog) ，然后重启这些 Agent。您的日志、链路追踪和指标随即会出现在 ClickHouse Observability 中。无需部署任何采集器，也无需改动应用程序。
+
+  所需时间：约 15 分钟
+</Info>
+
+您已创建 ClickHouse Observability 服务，且遥测数据已经通过 Datadog 代理 传输。若想了解该服务如何处理您自己的数据，既无需替换这些 Agent，也无需改动应用程序。
+
+ClickHouse Observability 提供 Datadog 兼容端点，可接收 Agent 现有产生的日志、链路追踪和指标，将其转换为 OpenTelemetry 格式并存储到您的服务中。您只需修改 Agent 配置，即可：
+
+* 使用真实的生产环境遥测数据 (而非样本数据集) 评估 ClickHouse Observability。
+* 在并行对比两个平台期间，继续向 Datadog 发送数据。
+* 逐步迁移：分批切换 Agent，并按自己的节奏采用 OpenTelemetry 插桩。
+
+<img src="/images/clickstack/observability/clickstack-datadog-agents-overview-dark.svg" alt="主机、Kubernetes 集群和容器上的 Datadog Agent 保持不变，将日志、链路追踪和指标发送到 ClickHouse Observability 的 Datadog 兼容端点，再由其为 ClickStack 用户界面提供数据。在对比期间，它们还可以选择继续向 Datadog 发送数据。" width="720" height="300" className="ch-transparent hidden dark:block" style={{ width: '100%', height: 'auto', margin: '16px 0 8px', background: 'transparent', borderRadius: 0 }} />
+
+<img src="/images/clickstack/observability/clickstack-datadog-agents-overview-light.svg" alt="主机、Kubernetes 集群和容器上的 Datadog Agent 保持不变，将日志、链路追踪和指标发送到 ClickHouse Observability 的 Datadog 兼容端点，再由其为 ClickStack 用户界面提供数据。在对比期间，它们还可以选择继续向 Datadog 发送数据。" width="720" height="300" className="ch-transparent block dark:hidden" style={{ width: '100%', height: 'auto', margin: '16px 0 8px', background: 'transparent', borderRadius: 0 }} />
+
+<Note>
+  **已在使用 OpenTelemetry？**
+
+  如果您的遥测数据通过 OpenTelemetry 收集器传输，只需添加一个导出器即可，请参阅[连接 OpenTelemetry 收集器](/zh/clickstack/managed-onboarding/setting-up-your-opentelemetry-collector-serverless)。若要直接对应用程序进行插桩，请参阅[使用 OpenTelemetry 对应用程序进行插桩](/zh/clickstack/managed-onboarding/instrument-application-serverless)。
+</Note>
+
+## 前置条件 {#prerequisites}
+
+* 一个 ClickHouse Observability 服务。如果您还没有，请参阅[入门指南](/zh/clickstack/observability/getting-started)进行创建。
+* 在您要用于评估的主机、容器或 Kubernetes 集群上运行 Datadog 代理 7，且该 Agent 已在采集您关注的日志和指标。如需采集链路追踪，您的应用程序必须已通过 Datadog 追踪库将链路追踪发送到 Agent。
+* 有权访问 Agent 配置 (`datadog.yaml` 或等价的环境变量) ，并具有重启 Agent 的权限。
+* agent 主机能够通过 `8126` 端口以出站 HTTPS 方式访问您服务的遥测数据端点。
+
+## 连接 Datadog 代理 {#connect-your-datadog-agents}
+
+<Steps>
+  <Step title="复制连接详情" id="copy-connection-details">
+    打开您的 ClickHouse Observability 服务。在收到数据之前，该服务会显示 **Start sending telemetry** 页面。
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Start sending telemetry 页面，显示当前服务尚无数据，并提供三个选项：Use an existing OpenTelemetry setup、Instrument with AI 和 Follow setup guides](/images/clickstack/getting-started/observability-start-sending-telemetry.png)
+      </Frame>
+    </div>
+
+    在 **Use an existing OpenTelemetry setup** 下，选择 **View connection details**。**URL** 选项卡会显示您的 OTLP 端点 `https://YOUR_OTEL_HOST:4318` 以及 API key。选择 **Reveal key** 显示完整的 key，然后点击复制按钮进行复制。
+
+    <div className="ch-image-md">
+      <Frame>
+        ![Set up OpenTelemetry 对话框，包含 URL、Collector config 和 Env vars 选项，以及已遮蔽的连接详情](/images/clickstack/getting-started/observability-connection-details.png)
+      </Frame>
+    </div>
+
+    Datadog 兼容端点与 OTLP 端点位于同一主机上，只是端口为 `8126` 而非 `4318`；此外，您服务的 API key 也可直接用作 Datadog API key。本指南后续部分将使用以下占位符：
+
+    | 占位符                           | 值                                    |
+    | ----------------------------- | ------------------------------------ |
+    | `YOUR_API_KEY`                | 您服务的 API key                         |
+    | `YOUR_OTEL_HOST`              | OTLP 端点中的主机名，不含 `https://` 和端口       |
+    | `https://YOUR_OTEL_HOST:8126` | 用于指标和链路追踪的 Datadog 兼容端点              |
+    | `YOUR_OTEL_HOST:8126`         | 同一端点的 `host:port` 形式，供 Agent 的日志设置使用 |
+
+    您也可以随时在 **Team Settings → Managed Telemetry** 中查看这些值。
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![团队设置中的 Managed Telemetry 页面，显示已遮蔽的 OTLP HTTP 端点和 API key](/images/clickstack/getting-started/observability-managed-telemetry.png)
+      </Frame>
+    </div>
+  </Step>
+
+  <Step title="配置 Datadog 代理" id="configure-your-datadog-agents">
+    选择 agent 发送数据的方式。两种方式都只需修改 Agent 配置 (在 `datadog.yaml` 中或通过环境变量) ，均不会改变 Agent 采集的内容。建议先在一个 agent 上进行更改，确认数据已成功到达后，再逐步推广到其他 agent。
+
+    <Tabs>
+      <Tab title="与 Datadog 并行使用" id="alongside-datadog">
+        Agent 可以将每个载荷同时发送到多个目标端。保留现有的 `api_key` 和 `site`，并将您的服务添加为指标、链路追踪和日志的附加端点。Datadog 将此功能称为[双重发送](https://docs.datadoghq.com/agent/configuration/dual-shipping/)。
+
+        ```yaml
+        # datadog.yaml：保持 api_key 和 site 不变，然后添加以下设置。
+
+        # 指标
+        additional_endpoints:
+          "https://YOUR_OTEL_HOST:8126":
+            - "YOUR_API_KEY"
+
+        # 使用 v2 指标接收接口。
+        use_v3_api:
+          series:
+            enabled: false
+
+        # 链路追踪
+        apm_config:
+          additional_endpoints:
+            "https://YOUR_OTEL_HOST:8126":
+              - "YOUR_API_KEY"
+
+        # 日志
+        logs_config:
+          force_use_http: true
+          additional_endpoints:
+            - api_key: "YOUR_API_KEY"
+              Host: "YOUR_OTEL_HOST"
+              Port: 8126
+              is_reliable: true
+        ```
+
+        Datadog 仍会照常接收所有数据。每个目标端使用各自的 API key，因此您的 Datadog 密钥不会被发送到 ClickHouse Observability，ClickHouse Observability 的密钥也不会被发送到 Datadog。日志只能通过 HTTP 发送到附加端点，`force_use_http` 用于开启这一方式；`is_reliable: true` 则会让 Agent 在新端点短暂不可访问时缓冲并重试日志，而不是直接丢弃。如果您的文件中已有 `apm_config` 或 `logs_config`，请将新的键添加到现有配置段中。
+      </Tab>
+
+      <Tab title="替代 Datadog" id="instead-of-datadog">
+        要将 agent 完全迁移过来，请将其主目标端指向您的服务，并改用您服务的 API key：
+
+        ```yaml
+        api_key: "YOUR_API_KEY"
+
+        # 指标目标端
+        dd_url: "https://YOUR_OTEL_HOST:8126"
+
+        # 使用 v2 指标接收接口。
+        use_v3_api:
+          series:
+            enabled: false
+
+        # 链路追踪目标端
+        apm_config:
+          enabled: true
+          apm_dd_url: "https://YOUR_OTEL_HOST:8126"
+
+        # 日志目标端
+        logs_enabled: true
+        logs_config:
+          logs_dd_url: "YOUR_OTEL_HOST:8126"
+          force_use_http: true
+          logs_no_ssl: false
+
+        remote_updates: false
+        remote_configuration:
+          enabled: false
+        ```
+
+        这些设置会重定向 Agent 的日志、链路追踪和指标，但不会改变 Agent 采集哪些日志，也不会添加插桩，因此请保留现有的日志采集集成和追踪设置。此处关闭了远程配置，否则 Agent 会持续使用 Datadog 已不再识别的密钥向 Datadog 请求配置。
+      </Tab>
+    </Tabs>
+
+    <Accordion title="通过环境变量配置">
+      容器和 Kubernetes 部署通常通过 `DD_` 环境变量来配置 Agent，这些环境变量会覆盖 `datadog.yaml` 中的设置。请在 Docker 命令、Helm 配置值或 Operator 规范中设置这些变量。
+
+      如需在发送到 Datadog 的同时将数据发送到 ClickStack：
+
+      ```shell
+      DD_ADDITIONAL_ENDPOINTS='{"https://YOUR_OTEL_HOST:8126": ["YOUR_API_KEY"]}'
+      DD_APM_ADDITIONAL_ENDPOINTS='{"https://YOUR_OTEL_HOST:8126": ["YOUR_API_KEY"]}'
+      DD_LOGS_CONFIG_FORCE_USE_HTTP=true
+      DD_LOGS_CONFIG_ADDITIONAL_ENDPOINTS='[{"api_key": "YOUR_API_KEY", "Host": "YOUR_OTEL_HOST", "Port": 8126, "is_reliable": true}]'
+      ```
+
+      如需改为发送数据，而不发送到 Datadog：
+
+      ```shell
+      DD_API_KEY=YOUR_API_KEY
+      DD_DD_URL=https://YOUR_OTEL_HOST:8126
+      DD_APM_ENABLED=true
+      DD_APM_DD_URL=https://YOUR_OTEL_HOST:8126
+      DD_LOGS_ENABLED=true
+      DD_LOGS_CONFIG_LOGS_DD_URL=YOUR_OTEL_HOST:8126
+      DD_LOGS_CONFIG_FORCE_USE_HTTP=true
+      DD_REMOTE_CONFIGURATION_ENABLED=false
+      ```
+
+      Agent 7.81 及更高版本默认会将指标发送到较新的 series 接收端点。如果以这种方式配置的 agent 收不到指标，请参照上文基于文件的示例，在其 `datadog.yaml` 中添加 `use_v3_api.series.enabled: false`。
+    </Accordion>
+  </Step>
+
+  <Step title="重启 Agent 并检查其状态" id="restart-and-check">
+    重启 Agent 以使配置生效。在 Linux 上：
+
+    ```shell
+    sudo systemctl restart datadog-agent
+    sudo datadog-agent status
+    ```
+
+    在 macOS 上：
+
+    ```shell
+    sudo launchctl kickstart -k system/com.datadoghq.agent
+    datadog-agent status
+    ```
+
+    对于容器化部署的 Agent，请更新其环境变量，重新部署容器或 pod (容器组) ，然后在其中运行 `agent status`。
+
+    在状态输出中，**Forwarder**、**APM Agent** 和 **Logs Agent** 部分会列出各个目标端。若 agent 运行正常，会显示您的端点且没有任何错误。如果返回 `403` 响应，说明 API key 不正确，或者是在选择 **Reveal key** 之前复制的。如果出现连接错误或超时，通常是因为主机名存在拼写错误、使用了 `8126` 以外的端口，或者出站访问被阻止。
+  </Step>
+</Steps>
+
+## 确认数据已到达 {#confirm-data-is-arriving}
+
+返回服务中的 **Start sending telemetry** 页面，然后选择 **Check for data**。遥测数据到达后，服务状态将变为 **Data received**，**Start exploring** 按钮也随之可用。
+
+<div className="ch-image-lg">
+  <Frame>
+    ![Start sending telemetry 页面，显示服务状态为 Data received、已可开始探索的确认提示，以及已启用的 Start exploring 按钮](/images/clickstack/getting-started/observability-data-received.png)
+  </Frame>
+</div>
+
+选择 **Start exploring** 打开 **搜索**。选择 **Logs** source，将时间范围设置为 **Last 15 minutes**，并按 Agent 所应用的 `service` 标签过滤 `ServiceName`。展开任意一条记录：Agent 的 `host`、`env`、容器和 Kubernetes 标签会显示为资源属性，而 Datadog 的 `status` 已映射到 `SeverityText`，因此 `level:error` 这类筛选条件的用法与 OpenTelemetry 日志完全相同。
+
+{/* TODO(dale): 搜索页面截图，显示 Datadog 代理采集的日志，以及 service 和 host 属性。 */}
+
+切换到 **Traces** source，即可查看 Datadog 追踪库上报的服务。携带 `dd.trace_id` 的日志会与其对应的 span 相关联，因此每条 trace 都会一并显示相关的日志记录。如需查看指标，请打开 **Chart Explorer**，选择 **Time Series** 和 **Metrics** source，然后为 Agent 上报的某个指标 (例如 `system.cpu.user`) 绘制图表。
+
+{/* TODO(dale): Datadog 追踪库生成的 trace 及其关联日志的截图。 */}
+
+## 如果没有显示任何数据 {#if-nothing-shows-up}
+
+* 首先查看 Agent 状态。身份验证、端点和网络问题都会按目标端在此处报告。在 alongside 配置中，您的端点出现的错误绝不会影响数据发送到 Datadog。
+* 检查 API key。它必须是完整的值 (选择 **Reveal key** 后即可复制) ，并作为您端点的 Datadog `api_key` 使用，而不是作为请求头使用。
+* 确认端点。指标和链路追踪使用带协议前缀的 `https://YOUR_OTEL_HOST:8126`；日志设置使用不带协议前缀的 `YOUR_OTEL_HOST:8126`。主机名与您的 OTLP 端点中的主机名相同，端口为 `8126`，而非 `4318`。
+* 如果未收到日志，请确认已设置 `logs_enabled: true`，并已为预期的集成或文件配置了日志采集。该端点仅接受通过 HTTP 发送的日志，因此 `force_use_http` 必须为 `true`。
+* 如果未收到链路追踪，请确认已设置 `apm_config.enabled: true`，并且您的应用程序会将链路追踪发送到 Agent。该端点只接收 Agent 转发的数据，不会对应用程序进行插桩。
+* 如果未收到指标，请确认 agent 使用 v2 数据系列接收接口，即设置了 `use_v3_api.series.enabled: false`。
+* 在 **搜索** 中扩大时间范围，并移除所有筛选条件。默认 source 可能被设置为 **链路追踪**，而不是 **Logs**。
+* 若要排除服务本身的问题，请前往 **团队设置 → Managed Telemetry**，然后使用 **Send a Test Log**。如果该日志出现在 **搜索** 中，则说明服务能够正常接收数据，问题出在 Agent 与端点之间。
+
+## 端点支持的数据 {#what-the-endpoint-accepts}
+
+该端点能够识别 Datadog 代理 所使用的协议，并在每个载荷到达您的服务之前将其转换为 OpenTelemetry 格式：
+
+* **日志。** Datadog 的时间戳、消息体和状态会转换为 OpenTelemetry 的时间戳、消息体和严重级别。结构化 JSON 日志会被解码，其字段均可查询。主机名、服务名称、环境，以及已知的容器、云和 Kubernetes 标签会转换为资源属性。
+* **链路追踪。** 来自 Datadog 追踪库的 span 会保留其 service、resource 和标签数据，128 位追踪 ID 也会被重建，从而使来自 Datadog 的日志和 span 能够与使用 OpenTelemetry 插桩的服务相关联。
+* **指标。** 支持发送到 v2 intake 的数据系列，包括 Agent 的主机指标、自定义指标，以及 DogStatsD 的 gauge 和计数器。分布类指标以 sketch 形式传入。
+* **压缩。** Agent 7.59 及更高版本使用 Zstandard 压缩 HTTP 载荷，该端点同时支持 Zstandard 和 gzip。
+
+该端点基于 OpenTelemetry 收集器的 Datadog receiver 构建，该组件目前处于 alpha 阶段，在 ClickHouse Observability 中属于实验性功能。Datadog 自身的后端功能 (例如 monitors、pipelines 和 processors) 不在其支持范围内。如需完整的迁移指南 (包括在自管理环境中自行运行接收器的方案) ，请参阅[从 Datadog 迁移](/zh/clickstack/observability/migration/datadog)。
+
+## 后续步骤 {#next-steps}
+
+* **扩大评估范围。** 为更多 agent 添加同步发送 (alongside) 配置，在关键工作负载上对比两个平台；准备就绪后，再将这些 agent 切换为替代 (instead) 配置。这两个步骤都无需对您的应用程序做任何更改。
+* [使用 OpenTelemetry 对应用程序进行插桩](/zh/clickstack/managed-onboarding/instrument-application-serverless)：通过 OpenTelemetry SDK 将新建或迁移服务的遥测数据直接发送到您的 OTLP 端点，其余部分仍由 Datadog 代理负责。
+* [连接 OpenTelemetry 收集器](/zh/clickstack/managed-onboarding/setting-up-your-opentelemetry-collector-serverless)：如果您还在运行 OpenTelemetry 收集器，请将其指向同一服务。
+* [搜索](/zh/clickstack/observability/features/search)：使用 Lucene 风格语法或 SQL 查询来自 Datadog 的日志和链路追踪。
+* [仪表盘](/zh/clickstack/observability/features/dashboards/overview)和[告警](/zh/clickstack/observability/features/alerts)：基于相同的数据，重建您在 Datadog 中依赖的视图和监控。
