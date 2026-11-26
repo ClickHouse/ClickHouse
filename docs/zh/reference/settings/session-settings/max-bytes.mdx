@@ -50,9 +50,9 @@ Cloud 默认值：每个副本内存总量的一半。
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "0"},{"label": "用于控制哈希连接自动落盘的新设置。非零值会启用落盘并设置字节阈值。"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "0"},{"label": "用于控制哈希连接自动溢写的新增设置。非零值会启用溢写并设置字节阈值。"}]}]} />
 
-如果设置为非零值，且 `join_algorithm` 为 `hash`、`parallel_hash`、`default` 或 `auto`，当右侧数据超过该字节数时，哈希连接会自动转换为 grace hash 连接，以支持落盘。它与 `max_bytes_ratio_before_external_join` 一起，构成所有基于哈希的 `join_algorithm` 的基于阈值的落盘触发条件，其中包括 `grace_hash`，后者要求两者之一必须为非零值。一旦非零阈值使连接具备落盘能力，`enable_adaptive_memory_spill_scheduler` 就可以在内存压力下强制其在达到阈值之前落盘。设置为 `0` (默认值) 时，此绝对字节阈值将被禁用，但仍可能通过 `max_bytes_ratio_before_external_join` (其默认值为 `0.5`) 自动落盘。若两项设置均为 `0`，则该连接永不落盘，调度器也就无从触发。例外情况是 `legacy_join_size_limits_trigger_spilling`：启用该设置后，独立使用的 `grace_hash` 会忽略这两项设置，改为依据 `max_rows_in_join` / `max_bytes_in_join` 落盘。它会阻止通过连接优化实现的 read in order。无论 `join_algorithm` 设置为何值，该阈值同样会限制 [block nested loop 连接](/zh/reference/statements/select/join#join-with-an-arbitrary-on-condition) 所物化的右侧数据量。
+如果设置为非零值，且 `join_algorithm` 为 `hash`、`parallel_hash`、`default` 或 `auto`，当右侧数据超过该字节数时，哈希连接会将右侧数据溢写。仅当 `GraceHashJoin` 能够执行该连接时 (仅含一个相等析取项，且连接类型和严格性均受支持) 才会如此。包含多个析取项的 `ON` 条件 (`OR`) 仍使用 `hash`，可能在不溢写的情况下触及内存限制。溢写后，连接会以 Grace 哈希连接的方式继续执行；若查询计划需要保持左侧流的行顺序 (即穿过连接的按序读取) ，则改以部分合并连接的方式继续执行，因此该阈值不会妨碍这项优化。按序读取仅在满足以下所有条件时才能穿过此类连接：连接类型为 `INNER` 或 `LEFT`，严格性为 `ALL` 或 `ANY`，不含混合 `ON` 条件，`ANY` 严格性下未启用 `join_any_take_last_row`，且键 (包括嵌套键) 不是浮点、`JSON` 或 `Dynamic` 类型。它与 `max_bytes_ratio_before_external_join` 一起，构成所有基于哈希的 `join_algorithm` 的基于阈值的溢写触发条件，其中包括 `grace_hash`，后者要求两者之一必须为非零值。一旦非零阈值使连接具备溢写能力，`enable_adaptive_memory_spill_scheduler` 就可以在内存压力下强制其在达到阈值之前溢写。设置为 `0` (默认值) 时，此绝对字节阈值将被禁用，但仍可能通过 `max_bytes_ratio_before_external_join` (其默认值为 `0.5`) 自动溢写。若两项设置均为 `0`，则该连接永不溢写，调度器也就无从触发。例外情况是 `legacy_join_size_limits_trigger_spilling`：启用该设置后，独立使用的 `grace_hash` 会忽略这两项设置，改为依据 `max_rows_in_join` / `max_bytes_in_join` 溢写。无论 `join_algorithm` 设置为何值，该阈值同样会限制 [block nested loop 连接](/zh/reference/statements/select/join#join-with-an-arbitrary-on-condition) 所物化的右侧数据量。
 
 ## max_bytes_before_external_set {#max_bytes_before_external_set}
 
@@ -196,9 +196,9 @@ lazy FINAL 优化中集合的最大字节数。超过该值时，将回退到普
 
 <SettingsInfoBlock type="Double" default_value="0.5" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "0.5"},{"label": "新增设置：可用内存中用作 哈希 JOIN 落盘阈值的比例。默认启用，值为 `0.5`，与 `max_bytes_ratio_before_external_group_by` 和 `max_bytes_ratio_before_external_sort` 保持一致。与绝对值设置 `max_bytes_before_external_join` 结合使用时，取两者中较小者。"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "0.5"},{"label": "新增设置：可用内存中用作 哈希连接 落盘阈值的比例。默认启用，值为 `0.5`，与 `max_bytes_ratio_before_external_group_by` 和 `max_bytes_ratio_before_external_sort` 保持一致。与绝对值设置 `max_bytes_before_external_join` 结合使用时，取两者中较小者。"}]}]} />
 
-允许 `JOIN` 使用的可用内存比例。达到该比例后，哈希 JOIN 会转换为 grace hash join，并将右侧数据落盘到磁盘。
+允许 `JOIN` 使用的可用内存比例。达到该比例后，哈希连接会将右侧数据落盘。仅当 `GraceHashJoin` 能够执行该连接时 (只有一个相等析取项，且连接类型和严格性均受支持) 才会落盘。包含多个析取项的 `ON` 条件 (`OR`) 仍使用 `hash`，可能在未落盘的情况下就触及内存限制。落盘后，连接将以 Grace 哈希连接的方式继续执行；如果查询计划需要保持左侧输入流的行顺序，则改以部分合并连接的方式继续执行 (参见 `max_bytes_before_external_join`) 。
 
 例如，如果设置为 `0.6`，则在执行开始时，`JOIN` 允许右侧哈希表使用可用内存 (对 server/user/merges 可用) 的 `60%`；之后将开始落盘到磁盘。
 
