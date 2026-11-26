@@ -221,7 +221,7 @@ struct IdentifierResolveState
   * See `QueryAnalyzer::tryGetTypeOfOuterExpressionAlias`.
   */
 using OuterExpressionAliasTypeResolver = std::function<std::optional<DataTypePtr>(
-    IdentifierResolveScope & lookup_scope, IdentifierResolveScope & alias_scope, const std::string & alias_name)>;
+    const IdentifierResolveScope & lookup_scope, const IdentifierResolveScope & alias_scope, const std::string & alias_name)>;
 
 struct IdentifierResolveContext
 {

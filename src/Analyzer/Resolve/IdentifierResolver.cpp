@@ -1139,10 +1139,13 @@ bool IdentifierResolver::tableNameIsHiddenByAlias(
           * Only an alias that can provide the rest of the identifier counts, as `tryResolveIdentifierFromCompoundExpression`
           * requires there: an alias without the rest of the identifier gives it no reading. The alias table keeps the
           * expressions as they were written - lookups resolve a clone - so only the type of a constant, such as
-          * `1 AS t` or `WITH (1, 2) AS t`, is known there. Any other alias is resolved to learn its type, exactly as
-          * the parent lookup would resolve it once the name is hidden, so the answer does not depend on the order in
-          * which the enclosing query resolves its expressions. Only an alias whose type cannot be determined this
-          * way counts regardless of whether it has the rest.
+          * `1 AS t` or `WITH (1, 2) AS t`, is known there. Any other alias is resolved to learn its type, as the
+          * parent lookup would resolve it once the name is hidden, so the answer does not depend on the order in
+          * which the enclosing query resolves its expressions. It is resolved aside, in copies of the scopes, see
+          * `QueryAnalyzer::tryGetTypeOfOuterExpressionAlias`: the query may not use the alias at all, so asking for
+          * its type must not evaluate a scalar subquery, register a correlated column or count as a use of the alias,
+          * and an alias that cannot be resolved gives the identifier no reading. Only an alias that does not resolve
+          * to an expression counts regardless of whether it has the rest.
           */
         if (inner_scope->scope_node->getNodeType() == QueryTreeNodeType::QUERY
             && !inner_scope->context->getSettingsRef()[Setting::enable_global_with_statement])
@@ -1167,10 +1170,7 @@ bool IdentifierResolver::tableNameIsHiddenByAlias(
                 if (!scope.outer_expression_alias_type_resolver)
                     return OuterReading::READABLE;
 
-                /// The alias is resolved in the scope of the lookup, which needs a mutable scope. The scopes are
-                /// never constant objects: `QueryAnalyzer` owns them, and only the binding checks take them as constant.
-                auto alias_type = (*scope.outer_expression_alias_type_resolver)(
-                    const_cast<IdentifierResolveScope &>(scope), *outer_scope, identifier.front());
+                auto alias_type = (*scope.outer_expression_alias_type_resolver)(scope, *outer_scope, identifier.front());
                 if (!alias_type)
                     return OuterReading::READABLE;
                 if (!*alias_type)

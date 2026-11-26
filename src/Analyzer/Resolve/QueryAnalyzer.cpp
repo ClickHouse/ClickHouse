@@ -85,6 +85,8 @@
 #include <Storages/getEffectiveRowPolicyFilter.h>
 
 #include <base/scope_guard.h>
+#include <Common/ListWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <base/Decimal_fwd.h>
 #include <base/types.h>
 #include <base/sanitizer_defs.h>
@@ -161,6 +163,9 @@ namespace ErrorCodes
     extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
     extern const int UNEXPECTED_EXPRESSION;
     extern const int SYNTAX_ERROR;
+    extern const int MEMORY_LIMIT_EXCEEDED;
+    extern const int QUERY_WAS_CANCELLED;
+    extern const int TIMEOUT_EXCEEDED;
 }
 
 namespace
@@ -404,7 +409,7 @@ QueryAnalyzer::QueryAnalyzer(
     , view_source_in_subqueries(view_source_in_subqueries_)
 {
     outer_expression_alias_type_resolver
-        = [this](IdentifierResolveScope & lookup_scope, IdentifierResolveScope & alias_scope, const std::string & alias_name)
+        = [this](const IdentifierResolveScope & lookup_scope, const IdentifierResolveScope & alias_scope, const std::string & alias_name)
     {
         return tryGetTypeOfOuterExpressionAlias(lookup_scope, alias_scope, alias_name);
     };
@@ -1602,28 +1607,88 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromAliases(const Ide
 }
 
 std::optional<DataTypePtr> QueryAnalyzer::tryGetTypeOfOuterExpressionAlias(
-    IdentifierResolveScope & lookup_scope, IdentifierResolveScope & alias_scope, const std::string & alias_name)
+    const IdentifierResolveScope & lookup_scope, const IdentifierResolveScope & alias_scope, const std::string & alias_name)
 {
-    /// The expression of the alias can contain the identifier whose lookup asks for the type, e.g. `WITH t.x + 1 AS t`.
-    auto key = std::make_tuple(&lookup_scope, &alias_scope, alias_name);
-    if (!outer_expression_aliases_in_resolve_process.insert(key).second)
-        return std::nullopt;
-    SCOPE_EXIT({ outer_expression_aliases_in_resolve_process.erase(key); });
+    /** Asking for the type must not change the query: the alias may turn out not to provide the identifier, and then
+      * the query does not use it at all. But resolving an expression has side effects on the scopes (the aliases that
+      * were used, the stacks of the expressions in resolve process, the caches) and on the analyzer (the scopes of
+      * nested subqueries, the entries that an exception leaves behind). So, as the type inference of the early
+      * short-circuit of `and` / `or` does, resolve the alias in copies of the scopes with a dedicated analyzer.
+      */
+    ListWithMemoryTracking<IdentifierResolveScope> probe_scopes;
+    IdentifierResolveScope * probe_lookup_scope = nullptr;
+    IdentifierResolveScope * probe_alias_scope = nullptr;
 
-    /// Asking for the type is not a use of the alias, see `IdentifierResolveScope::used_alias_names`.
-    const bool alias_was_used = alias_scope.used_alias_names.contains(alias_name);
+    /// The query nodes are shared with the copies of the scopes, and resolving a column of an enclosing query
+    /// registers it as a correlated column of every query in between, see `checkCorrelatedColumn`.
+    VectorWithMemoryTracking<std::pair<ListNode *, size_t>> correlated_columns_sizes;
     SCOPE_EXIT({
-        if (!alias_was_used)
-            alias_scope.used_alias_names.erase(alias_name);
+        for (auto & [correlated_columns, size] : correlated_columns_sizes)
+            correlated_columns->getNodes().resize(size);
     });
+
+    for (const auto * scope = &lookup_scope; scope; scope = scope->parent_scope)
+    {
+        auto * inner_probe_scope = probe_scopes.empty() ? nullptr : &probe_scopes.back();
+        auto & probe_scope = probe_scopes.emplace_back(*scope);
+        probe_scope.parent_scope = nullptr;
+        /// The resolution below does not ask for the types of other aliases: an alias of unknown type counts as a reading.
+        probe_scope.outer_expression_alias_type_resolver = nullptr;
+
+        if (inner_probe_scope)
+            inner_probe_scope->parent_scope = &probe_scope;
+        else
+            probe_lookup_scope = &probe_scope;
+
+        if (scope == &alias_scope)
+            probe_alias_scope = &probe_scope;
+
+        if (auto * query_node = scope->scope_node->as<QueryNode>())
+            correlated_columns_sizes.emplace_back(&query_node->getCorrelatedColumns(), query_node->getCorrelatedColumns().getNodes().size());
+        else if (auto * union_node = scope->scope_node->as<UnionNode>())
+            correlated_columns_sizes.emplace_back(&union_node->getCorrelatedColumns(), union_node->getCorrelatedColumns().getNodes().size());
+    }
+
+    if (!probe_alias_scope)
+        return std::nullopt;
+
+    QueryAnalyzer probe_analyzer(only_analyze, positional_arguments_already_resolved, replaced_storage, view_source_in_subqueries);
+    /// Scalar subqueries are analyzed, but not executed.
+    probe_analyzer.early_short_circuit_type_inference_in_process = true;
+    probe_analyzer.subquery_counter = subquery_counter;
+    probe_analyzer.function_name_to_user_defined_lambda = function_name_to_user_defined_lambda;
+    probe_analyzer.lambdas_in_resolve_process = lambdas_in_resolve_process;
+    probe_analyzer.ctes_in_resolve_process = ctes_in_resolve_process;
+    probe_analyzer.cte_definitions_in_resolve_process = cte_definitions_in_resolve_process;
+    probe_analyzer.windows_in_resolve_process = windows_in_resolve_process;
+    probe_analyzer.cte_copy_to_original_map = cte_copy_to_original_map;
+    probe_analyzer.replaced_table_storages = replaced_table_storages;
+    probe_analyzer.table_expression_to_inlined_view_name = table_expression_to_inlined_view_name;
 
     /// As in `tryResolveIdentifierInParentScopes`.
     IdentifierResolveContext identifier_resolve_context;
-    identifier_resolve_context.resolveAliasesAt(&lookup_scope);
+    identifier_resolve_context.resolveAliasesAt(probe_lookup_scope);
     identifier_resolve_context.allow_to_check_database_catalog = false;
 
     IdentifierLookup alias_lookup{Identifier(std::vector<std::string>{alias_name}), IdentifierLookupContext::EXPRESSION};
-    auto resolved_alias = tryResolveIdentifierFromAliases(alias_lookup, alias_scope, identifier_resolve_context).resolved_identifier;
+    QueryTreeNodePtr resolved_alias;
+    try
+    {
+        resolved_alias = probe_analyzer.tryResolveIdentifierFromAliases(alias_lookup, *probe_alias_scope, identifier_resolve_context).resolved_identifier;
+    }
+    catch (const Exception & e)
+    {
+        if (e.code() == ErrorCodes::LOGICAL_ERROR
+            || e.code() == ErrorCodes::MEMORY_LIMIT_EXCEEDED
+            || e.code() == ErrorCodes::QUERY_WAS_CANCELLED
+            || e.code() == ErrorCodes::TIMEOUT_EXCEEDED)
+            throw;
+
+        /// An alias that cannot be resolved gives the lookup no expression to read. If the query uses the alias,
+        /// the error is reported where it is used; if it does not, the alias must not make the query fail.
+        return DataTypePtr{};
+    }
+
     if (!resolved_alias)
         return DataTypePtr{};
 
