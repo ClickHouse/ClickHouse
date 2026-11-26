@@ -10,6 +10,8 @@ with_mergeable_state, JSONEachRow
 with_mergeable_state, no rows
 with_mergeable_state, Native
 NOT_IMPLEMENTED
+with_mergeable_state, Buffers
+NOT_IMPLEMENTED
 complete
 2
 2
@@ -21,4 +23,6 @@ with_mergeable_state, JSONEachRow
 {}
 with_mergeable_state, no rows
 with_mergeable_state, Native
+NOT_IMPLEMENTED
+with_mergeable_state, Buffers
 NOT_IMPLEMENTED

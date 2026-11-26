@@ -122,6 +122,29 @@ TEST(NativeColumnLessBlock, OutputFormatRowCountRoundTrips)
     ASSERT_EQ(result.rows(), 42);
 }
 
+/// The header of the format can be a block of rows itself: the client makes the format out of the first
+/// block of the result. Every block is written with its own number of rows then.
+TEST(NativeColumnLessBlock, OutputFormatWritesRowCountOfEveryBlock)
+{
+    constexpr UInt64 revision = DBMS_MIN_REVISION_WITH_COLUMN_LESS_BLOCK_ROW_COUNT;
+
+    tryRegisterFormats();
+    FormatSettings settings;
+    settings.client_protocol_version = revision;
+    WriteBufferFromOwnString out;
+    auto format = FormatFactory::instance().getOutputFormat("Native", out, makeColumnLessBlock(2), getContext().context, settings);
+    format->write(makeColumnLessBlock(2));
+    format->write(makeColumnLessBlock(1));
+    format->finalize();
+    out.finalize();
+
+    ReadBufferFromString in(out.str());
+    NativeReader reader(in, revision);
+    ASSERT_EQ(reader.read().rows(), 2);
+    ASSERT_EQ(reader.read().rows(), 1);
+    ASSERT_TRUE(reader.read().empty());
+}
+
 /// Below that revision (a `Native` file, for one) the `Native` output format refuses the rows instead of
 /// silently writing an empty block.
 TEST(NativeColumnLessBlock, OutputFormatOlderRevisionIsRefused)

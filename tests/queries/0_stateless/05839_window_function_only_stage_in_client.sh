@@ -29,4 +29,8 @@ do
     # the query fails instead of silently writing nothing.
     echo "with_mergeable_state, Native"
     $client --stage with_mergeable_state --format Native --query "$QUERY" 2>&1 | grep -o -m1 "NOT_IMPLEMENTED" | head -n1
+
+    # The `Buffers` format takes the number of rows of a block from its columns, so it refuses such rows too.
+    echo "with_mergeable_state, Buffers"
+    $client --stage with_mergeable_state --format Buffers --query "$QUERY" 2>&1 | grep -o -m1 "NOT_IMPLEMENTED" | head -n1
 done
