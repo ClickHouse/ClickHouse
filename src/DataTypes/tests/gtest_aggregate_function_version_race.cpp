@@ -31,6 +31,16 @@ DataTypePtr makeVersionedAggType()
     return type;
 }
 
+/// `count` state is a single counter and its `serialize` ignores the version parameter, so there is
+/// no second representation a version could select between: `isVersioned` is the base class's false.
+DataTypePtr makeUnversionedAggType()
+{
+    auto type = DataTypeFactory::instance().get("AggregateFunction(count, UInt64)");
+    /// Guard the test's own premise: if this ever becomes versioned, the setup is invalid.
+    EXPECT_FALSE(typeid_cast<const DataTypeAggregateFunction &>(*type).isVersioned());
+    return type;
+}
+
 const DataTypeAggregateFunction & asAgg(const DataTypePtr & type)
 {
     const auto * agg = typeid_cast<const DataTypeAggregateFunction *>(type.get());
@@ -121,16 +131,15 @@ GTEST_TEST(DataTypeAggregateFunctionVersion, PreservesCustomNameOfNonAggregateTy
     ASSERT_EQ(point->getName(), "Point");
 }
 
-/// A wrapper whose only aggregate child is UNVERSIONED (uniq) must be left untouched:
-/// no leaf is replaced, so the outer Nested/Array/Tuple must NOT be rebuilt (that would drop the
-/// Nested custom name and rewrite the Native type name / ATTACH encoding from Nested(...) to
-/// plain Array(Tuple(...))).
+/// A wrapper whose only aggregate child is UNVERSIONED must be left untouched:
+/// no leaf is replaced, so the outer `Nested`/`Array`/`Tuple` must NOT be rebuilt (that would drop
+/// the `Nested` custom name and rewrite the Native type name / ATTACH encoding from `Nested(...)` to
+/// plain `Array(Tuple(...))`).
 GTEST_TEST(DataTypeAggregateFunctionVersion, UnversionedLeafPreservesNestedCustomName)
 {
     tryRegisterAggregateFunctions();
 
-    /// uniq is not versioned, so no leaf is ever replaced under this Nested wrapper.
-    DataTypePtr nested = DataTypeFactory::instance().get("Nested(s AggregateFunction(uniq, UInt64))");
+    DataTypePtr nested = createNested({makeUnversionedAggType()}, {"s"});
     const String name_before = nested->getName();
     ASSERT_TRUE(name_before.starts_with("Nested("));
     const IDataType * nested_ptr_before = nested.get();
@@ -338,11 +347,14 @@ GTEST_TEST(DataTypeAggregateFunctionVersion, VariantAlternativesCollapsingIsAnEr
         setVersionToAggregateFunctions(assigned, /*if_empty=*/false, /*revision=*/std::nullopt), DB::Exception);
 }
 
-/// `DataTypeObject` does not traverse typed `JSON` paths when assigning aggregate-state versions.
-/// This parses a type declaration that `JSON` serialization subsequently rejects, and protects that
-/// traversal boundary; it does not describe a `Native` wire-format exception. Binary type encoding
-/// does contain an explicit aggregate-state version field.
-GTEST_TEST(DataTypeAggregateFunctionVersion, VersionedLeafUnderJSONTypedPathIsNotAssigned)
+/// A typed `JSON` path is a child like any other, so a versioned state below one is re-versioned
+/// with the rest of the type rather than stopping at the `JSON` boundary. That boundary used to
+/// exist only because the walk was hand-written per caller and this one did not descend into
+/// `DataTypeObject`; every walk now goes through `IDataType::getChild`.
+/// The declaration parses but `JSON` serialization rejects it later, so this pins the traversal and
+/// not a `Native` wire-format shape - binary type encoding carries an explicit aggregate-state
+/// version field of its own.
+GTEST_TEST(DataTypeAggregateFunctionVersion, VersionedLeafUnderJSONTypedPathIsAssigned)
 {
     tryRegisterAggregateFunctions();
 
@@ -352,8 +364,11 @@ GTEST_TEST(DataTypeAggregateFunctionVersion, VersionedLeafUnderJSONTypedPathIsNo
     DataTypePtr assigned = json;
     setVersionToAggregateFunctions(assigned, /*if_empty=*/true, /*revision=*/std::nullopt);
 
-    ASSERT_EQ(assigned.get(), json.get());
+    ASSERT_NE(assigned.get(), json.get());
+    const auto & assigned_paths = typeid_cast<const DataTypeObject &>(*assigned).getTypedPaths();
+    ASSERT_EQ(asAgg(assigned_paths.at("x")).getVersion(), 0u);
 
+    /// The shared source type is untouched.
     const auto & source_paths = typeid_cast<const DataTypeObject &>(*json).getTypedPaths();
     ASSERT_EQ(asAgg(source_paths.at("x")).getVersion(), 1u);
 }

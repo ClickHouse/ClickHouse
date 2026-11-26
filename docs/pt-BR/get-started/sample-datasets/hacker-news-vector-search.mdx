@@ -7,9 +7,7 @@ keywords: ['busca semântica', 'similaridade vetorial', 'vizinhos mais próximos
 doc_type: 'guide'
 ---
 
-<div id="introduction">
-  ## Introdução
-</div>
+## Introdução {#introduction}
 
 O [conjunto de dados Hacker News](https://news.ycombinator.com/) contém 28,74 milhões de
 postagens e seus embeddings vetoriais. Os embeddings foram gerados com o modelo [SentenceTransformers](https://sbert.net/) [all-MiniLM-L6-v2](https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2). A dimensão de cada vetor de embedding é `384`.
@@ -17,17 +15,13 @@ postagens e seus embeddings vetoriais. Os embeddings foram gerados com o modelo 
 Este conjunto de dados pode ser usado para explorar os aspectos de projeto, dimensionamento e desempenho de uma aplicação real de busca vetorial em grande escala,
 construída sobre dados textuais gerados por usuários.
 
-<div id="dataset-details">
-  ## Detalhes do conjunto de dados
-</div>
+## Detalhes do conjunto de dados {#dataset-details}
 
 O conjunto de dados completo com embeddings vetoriais é disponibilizado pela ClickHouse como um único arquivo `Parquet` em um [bucket do S3](https://clickhouse-datasets.s3.amazonaws.com/hackernews-miniLM/hackernews_part_1_of_1.parquet)
 
 Recomendamos que os usuários façam primeiro uma análise de dimensionamento para estimar os requisitos de armazenamento e memória desse conjunto de dados, consultando a [documentação](/pt-BR/reference/engines/table-engines/mergetree-family/annindexes).
 
-<div id="steps">
-  ## Etapas
-</div>
+## Etapas {#steps}
 
 <Steps>
   <Step title="Criar tabela" id="create-table">
@@ -65,13 +59,13 @@ Recomendamos que os usuários façam primeiro uma análise de dimensionamento pa
     Para carregar os dados a partir do arquivo `Parquet`, execute a seguinte instrução SQL:
 
     ```sql
-    INSERT INTO hackernews SELECT * FROM s3('https://clickhouse-datasets.s3.amazonaws.com/hackernews-miniLM/hackernews_part_1_of_1.parquet');
+    INSERT INTO hackernews SELECT * FROM s3('https://clickhouse-datasets.s3.amazonaws.com/hackernews-miniLM/hackernews_part_1_of_1.parquet', NOSIGN);
     ```
 
     A inserção de 28,74 milhões de linhas na tabela levará alguns minutos.
   </Step>
 
-  <Step title="Criar um índice de similaridade vetorial" id="build-vector-similarity-index">
+  <Step title="Crie um índice de similaridade vetorial" id="build-vector-similarity-index">
     Execute o SQL abaixo para definir e criar um índice de similaridade vetorial na coluna `vector` da tabela `hackernews`:
 
     ```sql
@@ -103,14 +97,14 @@ Recomendamos que os usuários façam primeiro uma análise de dimensionamento pa
   </Step>
 
   <Step title="Gerar embeddings para consulta de busca" id="generating-embeddings-for-search-query">
-    [Sentence Transformers](https://www.sbert.net/) oferecem modelos de embedding locais e fáceis de usar para capturar o significado semântico de frases e parágrafos.
+    [Sentence Transformers](https://www.sbert.net/) oferecem modelos de embeddings locais, fáceis de usar, para capturar o significado semântico de frases e parágrafos.
 
-    O conjunto de dados do HackerNews contém embeddings vetoriais gerados pelo modelo
+    O conjunto de dados HackerNews contém embeddings vetoriais gerados pelo modelo
     [all-MiniLM-L6-v2](https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2).
 
-    Um exemplo de script Python é fornecido abaixo para demonstrar como gerar
-    vetores de embedding programaticamente usando o pacote Python `sentence_transformers`. O vetor de embedding de busca
-    é então passado como argumento para a função [`cosineDistance()`](/pt-BR/reference/functions/regular-functions/distance-functions#cosineDistance) na consulta &#96;SELECT&#96;.
+    Um exemplo de script Python é fornecido abaixo para demonstrar como gerar programaticamente
+    vetores de embedding usando o pacote Python `sentence_transformers1. O vetor de embedding de busca
+          é então passado como argumento para a função [`cosineDistance()`](/reference/functions/regular-functions/distance-functions#cosineDistance) na consulta `SELECT&#96;.
 
     ```python
     from sentence_transformers import SentenceTransformer
@@ -144,8 +138,8 @@ Recomendamos que os usuários façam primeiro uma análise de dimensionamento pa
 
     ```
 
-    Um exemplo da execução do script Python acima e os resultados da busca por similaridade são exibidos abaixo
-    (apenas 100 caracteres de cada um dos 20 posts principais são exibidos):
+    Um exemplo da execução do script Python acima e os resultados da busca por similaridade são mostrados abaixo
+    (apenas 100 caracteres de cada um dos 20 posts principais são impressos):
 
     ```text
     Initializing...
@@ -213,7 +207,7 @@ Recomendamos que os usuários façam primeiro uma análise de dimensionamento pa
     ---------
     ```
 
-    ## Aplicativo de demonstração de sumarização
+## Aplicativo de demonstração de sumarização {#summarization-demo-application}
 
     O exemplo acima mostrou a busca semântica e a recuperação de documentos usando o ClickHouse.
 
@@ -227,9 +221,9 @@ Recomendamos que os usuários façam primeiro uma análise de dimensionamento pa
     4. Usa `LangChain` e a Chat API `gpt-3.5-turbo` da OpenAI para **resumir** o conteúdo recuperado na etapa #3.
        Os posts/comentários recuperados na etapa #3 são usados como *contexto* para a Chat API e constituem o principal elo da IA generativa.
 
-    Um exemplo da execução do aplicativo de sumarização é listado abaixo, seguido pelo código
-    do aplicativo de sumarização. Para executar o aplicativo, é necessário definir uma API key da OpenAI na variável
-    de ambiente `OPENAI_API_KEY`. A API key da OpenAI pode ser obtida após o cadastro em https://platform.openai.com.
+    Um exemplo de execução do aplicativo de sumarização está listado primeiro abaixo, seguido pelo código
+    do aplicativo de sumarização. Para executar o aplicativo, é necessário definir uma chave de API da OpenAI na variável
+    de ambiente `OPENAI_API_KEY`. A chave de API da OpenAI pode ser obtida após o registro em https://platform.openai.com.
 
     Este aplicativo demonstra um caso de uso de Generative AI aplicável a vários domínios empresariais, como:
     análise de sentimento de clientes, automação do suporte técnico, mineração de conversas de usuários, documentos jurídicos, prontuários médicos,

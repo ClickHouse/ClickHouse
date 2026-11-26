@@ -15,7 +15,8 @@ A read-only first pass over a CI failure: turn a single URL into a per-test verd
 
 - `$0` (required): one of
   - a GitHub PR URL (`https://github.com/ClickHouse/ClickHouse/pull/NNNNN`),
-  - a direct S3/CI report URL (`https://s3.amazonaws.com/.../json.html?PR=...&sha=...`), or
+  - a direct S3/CI report URL (`https://s3.amazonaws.com/.../praktika.html?PR=...&sha=...`; older
+    `json.html` URLs are still accepted), or
   - a GitHub **issue** URL (`https://github.com/ClickHouse/ClickHouse/issues/NNNNN`) — typically
     a bot-generated `flaky test` issue. Resolved to its report URL in step 0.
 - `$1` (optional): master-history window in days for the flaky-vs-real verdict. Default `14`.
@@ -39,8 +40,8 @@ A read-only first pass over a CI failure: turn a single URL into a per-test verd
 
 ### 0. Resolve an issue URL to a report URL
 
-`fetch_ci_report.js` accepts only PR, S3 `json.html`, and direct `result_*.json` URLs — **not**
-issue links. If `$0` is `.../issues/NNNNN`, read the issue body and extract the report URL first:
+`fetch_ci_report.js` accepts only PR, S3 `praktika.html` (or the older `json.html`), and direct
+`result_*.json` URLs — **not** issue links. If `$0` is `.../issues/NNNNN`, read the issue body and extract the report URL first:
 
 ```bash
 .claude/tools/gh-ro.sh issue view <NNNNN> --repo ClickHouse/ClickHouse --json title,body
@@ -57,7 +58,7 @@ Bot-generated `flaky test` issues use this body format:
 ```
 Test name: <test_name>
 Failure reason: <reason>
-CI report: <S3 json.html url>          ← use this as the report URL for the steps below
+CI report: <S3 praktika.html url>      ← use this as the report URL for the steps below
 Failing test history: <play.clickhouse.com link>
 ```
 
@@ -103,7 +104,7 @@ commit) the tool prints a `SHA: <40-hex-sha>` line — read it and set `$SHA` to
 characters. For a **PR URL** the tool prints a multi-report summary without a `SHA:` line;
 extract `$SHA` from the `?sha=<hex>` query-string parameter in any `🔗 Report:` URL printed in
 the summary, or re-run with `--report N` on the relevant job to get single-report output that
-does print `SHA:`. For a **direct `result_*.json` S3 URL** (e.g. `https://s3.amazonaws.com/clickhouse-test-reports/PRs/111528/<sha>/result_fast_test_arm_darwin.json`) the tool also prints a `SHA:` line extracted from the URL path. Either way, `$SHA` is always a concrete commit hash, never a PR-number fallback. Then create the
+does print `SHA:`. For a **direct `result_*.json` S3 URL** (e.g. `https://s3.amazonaws.com/clickhouse-test-reports/PRs/111528/<sha>/pr/result_fast_test_arm_darwin.json`; the `pr` segment is the normalized workflow name) the tool also prints a `SHA:` line extracted from the URL path. Either way, `$SHA` is always a concrete commit hash, never a PR-number fallback. Then create the
 working directory:
 
 ```bash
@@ -598,7 +599,7 @@ the gap, not the whole bundle reflexively (it is large and sometimes truncates).
 
 `--download-logs <path>` takes a **file path** (not a directory) and downloads the single
 `logs.tar.gz`/`logs.tar.zst` bundle to it — this replaces hand-supplying a base dir. It works
-only against a **single concrete report** (an S3 `json.html`/`result_*.json` URL). A bare PR URL
+only against a **single concrete report** (an S3 `praktika.html`/`result_*.json` URL). A bare PR URL
 takes the multi-report path and returns after the summary **without downloading**, so substitute
 `<report-url>` — the S3 report URL for the failing check, or narrow the PR with `--report <n>`
 first (list reports by running the tool with no `--failed`). This writes a file, so the hook does
@@ -629,7 +630,7 @@ construct the Build report URL by replacing `name_1=<test-job>` with the build v
 
 ```bash
 # From a test-job report URL, swap name_1 to the build you want:
-BUILD_URL="...json.html?PR=...&sha=...&name_0=PR&name_1=Build%20(amd_binary)"
+BUILD_URL="...praktika.html?PR=...&sha=...&name_0=PR&name_1=Build%20(amd_binary)"
 node .claude/tools/fetch_ci_report.js "$BUILD_URL" --binary 2>/dev/null
 # grab just the executable (basename has no dots):
 node .claude/tools/fetch_ci_report.js "$BUILD_URL" --binary 2>/dev/null | grep -E '/clickhouse(-stripped)?$'

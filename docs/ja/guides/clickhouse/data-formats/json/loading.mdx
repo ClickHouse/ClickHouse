@@ -10,9 +10,7 @@ doc_type: 'guide'
 
 以下の例では、構造化JSONデータと半構造化JSONデータの読み込み方法を、ごく簡単な例で示します。ネスト構造を含むより複雑なJSONについては、ガイド[**JSONスキーマの設計**](/ja/guides/clickhouse/data-formats/json/schema)を参照してください。
 
-<div id="loading-structured-json">
-  ## 構造化JSONの読み込み
-</div>
+## 構造化JSONの読み込み {#loading-structured-json}
 
 このセクションでは、JSONデータが[`NDJSON`](https://github.com/ndjson/ndjson-spec) (改行区切りJSON) フォーマット、すなわちClickHouseで[`JSONEachRow`](/ja/reference/formats/JSON/JSONEachRow)として知られるフォーマットであり、カラム名と型が固定された構造化データであることを前提とします。`NDJSON`は簡潔でスペース効率に優れるため、JSONの読み込みに推奨されるフォーマットですが、[入力と出力](/ja/reference/formats/JSON/JSON)の両方で他のフォーマットもサポートされています。
 
@@ -72,7 +70,7 @@ ClickHouse は複数のフォーマットで JSON データを読み込むこと
 
 ```sql
 SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz', NOSIGN)
 LIMIT 1
 ```
 
@@ -87,7 +85,7 @@ LIMIT 1
 ファイルのフォーマットを指定する必要がない点に注目してください。代わりに、glob パターンを使用してバケット内のすべての `*.json.gz` ファイルを読み込みます。ClickHouse はファイルの拡張子と内容からフォーマットが `JSONEachRow` (ndjson) であることを自動的に推測します。ClickHouse が検出できない場合は、パラメータ関数を使ってフォーマットを手動で指定できます。
 
 ```sql
-SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz', JSONEachRow)
+SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz', NOSIGN, JSONEachRow)
 ```
 
 <Info>
@@ -99,7 +97,7 @@ SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi
 これらのファイルの行を読み込むには、[`INSERT INTO SELECT`](/ja/reference/statements/insert-into#inserting-the-results-of-select) を使用します。
 
 ```sql
-INSERT INTO pypi SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz')
+INSERT INTO pypi SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz', NOSIGN)
 ```
 
 ```response
@@ -131,15 +129,13 @@ FORMAT JSONEachRow
 
 これらの例では、`JSONEachRow` フォーマットを使用することを前提としています。その他の一般的な JSON フォーマットにも対応しており、それらの読み込み例は[こちら](/ja/guides/clickhouse/data-formats/json/formats)で確認できます。
 
-<div id="loading-semi-structured-json">
-  ## 半構造化 JSON の読み込み
-</div>
+## 半構造化 JSON の読み込み {#loading-semi-structured-json}
 
-前の例では、キー名と型があらかじめ分かっている固定的な JSON を読み込みました。しかし、実際にはそうでないことも少なくありません。キーが追加されたり、型が変わったりすることがあります。これは、オブザーバビリティ データのようなユースケースではよくあることです。
+前の例では、キー名と型があらかじめ分かっている静的な JSON を読み込みました。しかし、実際にはそうでないことも少なくありません。キーが追加されたり、型が変わったりすることがあります。これは、オブザーバビリティ データのようなユースケースではよくあることです。
 
 ClickHouse では、専用の [`JSON`](/ja/reference/data-types/newjson) 型でこれに対応しています。
 
-次に、上記の [Python PyPI dataset](https://clickpy.clickhouse.com/) を拡張したバージョンの例を見てみましょう。ここでは、任意のキーと値のペアを含む `tags` カラムを追加しています。
+次に、上記の [Python PyPIデータセット](https://clickpy.clickhouse.com/) を拡張したバージョンの例を見てみましょう。ここでは、任意のキーと値のペアを含む `tags` カラムを追加しています。
 
 ```json
 {
@@ -162,8 +158,6 @@ ClickHouse では、専用の [`JSON`](/ja/reference/data-types/newjson) 型で�
 ここでの`tags`カラムは内容が一定ではないため、スキーマとして定義できません。このデータを読み込むには、先ほどのスキーマを使いつつ、型を[`JSON`](/ja/reference/data-types/newjson)とする追加の`tags`カラムを指定できます。
 
 ```sql
-SET enable_json_type = 1;
-
 CREATE TABLE pypi_with_tags
 (
     `date` Date,
@@ -180,15 +174,19 @@ ENGINE = MergeTree
 ORDER BY (project, date);
 ```
 
+<Note>
+  バージョン 24.8 から 25.2 では、テーブルを作成する前に `SET allow_experimental_json_type = 1;` を実行して `JSON` 型を有効化してください。
+</Note>
+
 元のデータセットと同じ方法で、テーブルにデータを取り込みます。
 
 ```sql
-INSERT INTO pypi_with_tags SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/pypi_with_tags/sample.json.gz')
+INSERT INTO pypi_with_tags SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/pypi_with_tags/sample.json.gz', NOSIGN)
 ```
 
 ```sql
 INSERT INTO pypi_with_tags SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/pypi_with_tags/sample.json.gz')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/pypi_with_tags/sample.json.gz', NOSIGN)
 ```
 
 ```response
@@ -215,9 +213,7 @@ LIMIT 2
 
 ここでは、データの読み込み時の性能差に注目してください。JSONカラムでは、挿入時に型推論が必要になるほか、複数の型を持つカラムが存在する場合は追加のストレージ領域も必要になります。JSON型は、カラムを明示的に宣言した場合と同等の性能になるように設定できます ([JSONスキーマの設計](/ja/guides/clickhouse/data-formats/json/schema)を参照) が、既定では意図的に高い柔軟性を持たせています。ただし、この柔軟性には一定の代償が伴います。
 
-<div id="when-to-use-the-json-type">
-  ### JSON 型を使用するケース
-</div>
+### JSON 型を使用するケース {#when-to-use-the-json-type}
 
 データが次のような場合は、JSON 型を使用します。
 

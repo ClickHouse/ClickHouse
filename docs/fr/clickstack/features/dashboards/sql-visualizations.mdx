@@ -1,41 +1,41 @@
 ---
 slug: /use-cases/observability/clickstack/dashboards/sql-visualizations
-title: 'Visualisations SQL'
-sidebarTitle: 'Visualisations SQL'
+title: 'Visualisations basées sur SQL'
+sidebarTitle: 'Visualisations basées sur SQL'
 description: 'Créer des visualisations à partir de requêtes SQL dans ClickStack'
 doc_type: 'guide'
 keywords: ['clickstack', 'dashboards', 'visualisation', 'sql', 'observability']
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 ClickStack prend en charge les visualisations basées sur des requêtes SQL écrites manuellement. Cela vous donne un contrôle total sur la logique de la requête, tout en restant intégré aux intervalles de temps, aux filtres et au rendu des graphiques au niveau du tableau de bord.
 
 Les visualisations basées sur SQL sont utiles lorsque vous devez aller au-delà du Chart Explorer — par exemple, pour effectuer des jointures entre des tables ou créer des agrégations complexes qui ne sont pas prises en charge par le chart builder.
 
-<div id="creating-a-raw-sql-chart">
-  ## Création d’une visualisation SQL
+## Création d’une visualisation basée sur SQL {#creating-a-raw-sql-chart}
+
+Pour créer une visualisation basée sur SQL, ouvrez l’éditeur d’une tuile de tableau de bord et sélectionnez l’onglet **SQL**.
+
+<div className="ch-image-lg">
+  <Frame>
+    ![Bouton Éditeur SQL](/images/use-cases/observability/sql-editor-button.webp)
+  </Frame>
 </div>
 
-Pour créer une visualisation SQL, ouvrez l’éditeur d’une tuile de tableau de bord et sélectionnez l’onglet **SQL**.
-
-<Image img="/images/use-cases/observability/sql-editor-button.webp" alt="Bouton SQL Editor" size="lg" />
-
-À partir de là :
+À partir de là :
 
 1. Sélectionnez une **connexion ClickHouse** sur laquelle exécuter la requête.
 2. Sélectionnez éventuellement une **Source** — cela permet d’appliquer à votre visualisation des filtres au niveau du tableau de bord via la macro `$__filters`.
-3. Rédigez votre requête SQL dans l’éditeur, en utilisant des paramètres de requête et des macros pour l’intégrer à l’intervalle de temps et aux filtres du tableau de bord.
+3. Rédigez votre requête SQL dans l’éditeur, en utilisant des paramètres de requête et des macros pour l’intégrer à l’intervalle de temps, aux filtres et aux variables du tableau de bord.
 4. Cliquez sur le bouton **play** pour prévisualiser les résultats, puis sur **Save**.
 
 <div id="query-parameters">
-  ## Paramètres de requête
+  ## Paramètres de requête {#query-parameters}
 </div>
 
 Les [paramètres de requête](/fr/reference/syntax#defining-and-using-query-parameters) permettent à votre SQL de référencer l’intervalle de temps actuel du dashboard et sa granularité. Ils utilisent la syntaxe de requête paramétrée de ClickHouse : `{paramName:Type}`.
 
 <div id="available-parameters">
-  ### Paramètres disponibles
+  ### Paramètres disponibles {#available-parameters}
 </div>
 
 Les paramètres disponibles dépendent du type de graphique :
@@ -57,13 +57,13 @@ Les paramètres disponibles dépendent du type de graphique :
 | `{endDateMilliseconds:Int64}`   | Int64 | Fin de la plage de dates du tableau de bord (millisecondes depuis l’époque Unix)   |
 
 <div id="macros">
-  ## Macros
+  ## Macros {#macros}
 </div>
 
 Les macros sont des raccourcis qui se développent en expressions courantes de ClickHouse SQL. Elles sont préfixées par `$__` et remplacées avant l’envoi de la requête à ClickHouse.
 
 <div id="time-boundary-macros">
-  ### Macros de limites temporelles
+  ### Macros de limites temporelles {#time-boundary-macros}
 </div>
 
 Ces macros renvoient une expression ClickHouse représentant l’heure de début ou de fin du dashboard. Elles ne prennent aucun argument.
@@ -77,7 +77,7 @@ Ces macros renvoient une expression ClickHouse représentant l’heure de début
 | `$__interval_s`  | `{intervalSeconds:Int64}`                                             | Int64           |
 
 <div id="time-filter-macros">
-  ### Macros de filtrage temporel
+  ### Macros de filtrage temporel {#time-filter-macros}
 </div>
 
 Ces macros génèrent un fragment de clause `WHERE` qui filtre une colonne selon l’intervalle de temps du tableau de bord.
@@ -98,7 +98,7 @@ AND TimestampTime <= toDateTime(fromUnixTimestamp64Milli({endDateMilliseconds:In
 ```
 
 <div id="time-interval-macros">
-  ### Macros d’intervalle de temps
+  ### Macros d’intervalle de temps {#time-interval-macros}
 </div>
 
 Ces macros regroupent une colonne d’horodatage en intervalles correspondant à la granularité du dashboard. Elles sont généralement utilisées dans les clauses `SELECT` et `GROUP BY` pour les graphiques de séries temporelles. Elles sont uniquement disponibles pour les visualisations Line et Stacked-bar.
@@ -115,7 +115,7 @@ toStartOfInterval(toDateTime(TimestampTime), INTERVAL {intervalSeconds:Int64} se
 ```
 
 <div id="dashboard-filter-macro">
-  ### Macro de filtre du tableau de bord
+  ### Macro de filtre du tableau de bord {#dashboard-filter-macro}
 </div>
 
 | Macro        | Description                                                                                          |
@@ -124,14 +124,30 @@ toStartOfInterval(toDateTime(TimestampTime), INTERVAL {intervalSeconds:Int64} se
 
 Lorsqu’une **Source** est sélectionnée dans le graphique et que les filtres du tableau de bord sont actifs, `$__filters` se développe en conditions `WHERE` SQL correspondantes. Lorsqu’aucune source n’est sélectionnée ou qu’aucun filtre n’est appliqué, il se développe en `(1=1)` ; il peut donc toujours être inclus sans risque dans une clause `WHERE`.
 
+Seuls les filtres pour lesquels la **Condition de filtre de diffusion** est activée sont appliqués par `$__filters`. Les filtres exposés en tant que variables sont référencés explicitement, comme décrit ci-dessous.
+
+<div id="dashboard-variables">
+  ### Macros de variables de tableau de bord {#dashboard-variables}
+</div>
+
+Lorsqu&#39;un filtre de tableau de bord est [disponible sous forme de variable](/fr/clickstack/features/dashboards/overview#dashboard-variables), ses valeurs sélectionnées peuvent être référencées n&#39;importe où dans la requête. Ces macros ne sont disponibles que dans les tuiles d&#39;un tableau de bord déclarant au moins une variable.
+
+| Macro                                         | Description                                                                                                                            |
+| --------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `$__filter($<variable>)`                      | Se développe en `toString(<filter expression>) IN ($variable)` lorsque des valeurs sont sélectionnées pour `variable`, sinon en `1=1`. |
+| `$__filter(<expression>, $<variable>)`        | Se développe en `<expression> IN ($variable)` lorsque des valeurs sont sélectionnées pour `variable`, sinon en `1=1`.                  |
+| `$__conditionalAll(<condition>, $<variable>)` | Se développe en `<condition>` lorsque la variable comporte une sélection, sinon en `1=1`.                                              |
+
+Les valeurs d&#39;une variable peuvent également être interpolées directement sous la forme `$name` ou `${name}`, avec un format facultatif : `${name:sqlstring}` (par défaut), `${name:csv}` ou `${name:regex}`. Dans le format par défaut, une référence directe renvoie `NULL` tant qu&#39;aucune valeur n&#39;est sélectionnée ; utilisez donc de préférence les macros ci-dessus partout où un prédicat est attendu.
+
 <div id="how-results-are-plotted">
-  ## Comment les résultats de la requête sont représentés
+  ## Comment les résultats de la requête sont représentés {#how-results-are-plotted}
 </div>
 
 ClickStack associe automatiquement les colonnes du résultat de la requête aux éléments du graphique en fonction des types de colonnes. Les règles de correspondance varient selon le type de graphique.
 
 <div id="line-and-stacked-bar-charts">
-  ### Graphiques en courbes et en barres empilées
+  ### Graphiques en courbes et en barres empilées {#line-and-stacked-bar-charts}
 </div>
 
 | Rôle                | Type de colonne                       | Description                                                                                                     |
@@ -141,7 +157,7 @@ ClickStack associe automatiquement les colonnes du résultat de la requête aux 
 | **Noms de groupe**  | Colonnes String, Map ou Array         | Facultatif. Les lignes ayant des valeurs de groupe différentes sont représentées comme des séries distinctes.   |
 
 <div id="pie-chart">
-  ### Diagramme circulaire
+  ### Diagramme circulaire {#pie-chart}
 </div>
 
 | Rôle                   | Type de colonne                       | Description                                                          |
@@ -150,7 +166,7 @@ ClickStack associe automatiquement les colonnes du résultat de la requête aux 
 | **Libellé du secteur** | Colonnes de type String, Map ou Array | Facultatif. Chaque valeur distincte devient le libellé d’un secteur. |
 
 <div id="number-chart">
-  ### Graphique numérique
+  ### Graphique numérique {#number-chart}
 </div>
 
 | Rôle       | Type de colonne            | Description                                                              |
@@ -158,13 +174,13 @@ ClickStack associe automatiquement les colonnes du résultat de la requête aux 
 | **Nombre** | Première colonne numérique | Affiche la valeur de la première ligne de la première colonne numérique. |
 
 <div id="table-chart">
-  ### Tableau
+  ### Tableau {#table-chart}
 </div>
 
 Toutes les colonnes de résultat sont affichées directement sous forme de colonnes de tableau.
 
 <div id="examples">
-  ## Exemples
+  ## Exemples {#examples}
 </div>
 
 <Info>
@@ -174,7 +190,7 @@ Toutes les colonnes de résultat sont affichées directement sous forme de colon
 </Info>
 
 <div id="example-line-chart">
-  ### Graphique en courbes — nombre de logs au fil du temps par service
+  ### Graphique en courbes — nombre de logs au fil du temps par service {#example-line-chart}
 </div>
 
 Cette requête compte les événements de log par service, regroupés en intervalles de temps correspondant à la granularité du tableau de bord.
@@ -197,7 +213,7 @@ ORDER BY ts ASC
 * `ServiceName` (chaîne) crée une ligne distincte pour chaque service.
 
 <div id="example-line-chart-macros">
-  ### Graphique en courbes — avec des macros
+  ### Graphique en courbes — avec des macros {#example-line-chart-macros}
 </div>
 
 La même requête, écrite avec des macros pour plus de concision :
@@ -214,8 +230,26 @@ GROUP BY ServiceName, ts
 ORDER BY ts ASC
 ```
 
+<div id="example-line-chart-variables">
+  ### Graphique en courbes — utilisation des variables de tableau de bord {#example-line-chart-variables}
+</div>
+
+Étant donné un tableau de bord comportant une variable `service` sur `ServiceName` et une variable `severity` sur `SeverityText`, cette requête limite le graphique à la sélection actuelle du service et exclut les niveaux de gravité sélectionnés. Les deux macros se développent en `1=1` lorsqu’aucune valeur n’est sélectionnée pour leur variable ; le graphique s’affiche donc sans filtre jusqu’à ce que l’utilisateur sélectionne une valeur.
+
+```sql
+SELECT
+  $__timeInterval(TimestampTime) AS ts,
+  count() AS count
+FROM otel_logs
+WHERE $__timeFilter(TimestampTime)
+  AND $__filter(ServiceName, $service)
+  AND $__conditionalAll(SeverityText NOT IN ($severity), $severity)
+GROUP BY ts
+ORDER BY ts ASC
+```
+
 <div id="example-stacked-bar">
-  ### Graphique en barres empilées — nombre d’erreurs par niveau de gravité
+  ### Graphique en barres empilées — nombre d’erreurs par niveau de gravité {#example-stacked-bar}
 </div>
 
 ```sql
@@ -232,7 +266,7 @@ ORDER BY ts ASC
 ```
 
 <div id="example-table">
-  ### Tableau — les 10 endpoints les plus lents
+  ### Tableau — les 10 endpoints les plus lents {#example-table}
 </div>
 
 ```sql
@@ -249,7 +283,7 @@ LIMIT 10
 ```
 
 <div id="example-pie">
-  ### Diagramme circulaire — répartition des requêtes par service
+  ### Diagramme circulaire — répartition des requêtes par service {#example-pie}
 </div>
 
 ```sql
@@ -266,7 +300,7 @@ GROUP BY ServiceName
 * `ServiceName` (chaîne) correspond à l’étiquette de chaque secteur.
 
 <div id="example-number">
-  ### graphique numérique — nombre total d’erreurs
+  ### graphique numérique — nombre total d’erreurs {#example-number}
 </div>
 
 ```sql
@@ -281,10 +315,12 @@ WHERE $__timeFilter(TimestampTime)
 L’unique valeur numérique `total_errors` de la première ligne est affichée.
 
 <div id="notes">
-  ## Remarques
+  ## Remarques {#notes}
 </div>
 
 * Les visualisations basées sur SQL s’exécutent en mode `readonly` — seules les requêtes `SELECT` sont autorisées.
 * Les visualisations basées sur SQL doivent contenir exactement une requête SQL — les requêtes multiples ne sont pas prises en charge.
 * L’éditeur SQL propose des suggestions d’autocomplétion pour les paramètres de requête comme pour les macros.
-* Une source doit être sélectionnée pour appliquer les filtres du dashboard aux visualisations basées sur SQL. Pour un filtrage précis, la source doit correspondre à la table interrogée.
+* Une source doit être sélectionnée pour appliquer les filtres du tableau de bord aux visualisations basées sur SQL. Pour un filtrage précis, la source doit correspondre à la table interrogée.
+* Les variables de tableau de bord n’ont pas besoin de source — les valeurs proviennent des listes déroulantes de filtres du tableau de bord, et non de la source propre à la tuile.
+* Les alertes sur une tuile SQL qui référence une variable de tableau de bord sont évaluées avec chaque variable dans son état vide, et non avec les valeurs sélectionnées sur le tableau de bord.

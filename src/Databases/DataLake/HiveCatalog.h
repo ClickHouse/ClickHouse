@@ -48,6 +48,8 @@ public:
 
     DB::DatabaseDataLakeCatalogType getCatalogType() const override { return DB::DatabaseDataLakeCatalogType::ICEBERG_HIVE; }
 
+    DataLakeTableFormat getTableFormat(const TableMetadata &) const override { return DataLakeTableFormat::ICEBERG; }
+
 private:
     void reconnectUnlocked() const TSA_REQUIRES(client_mutex);
 

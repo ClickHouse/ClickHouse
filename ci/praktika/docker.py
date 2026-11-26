@@ -22,6 +22,11 @@ _IMAGE_PULL_RETRY_ERRORS = [
 ]
 _IMAGE_PULL_TIMEOUT_S = 300  # per attempt, matching prefetch-integration-test-images
 _IMAGE_PULL_RETRIES = 3
+# containerd's `unexpected status from <method> request to <url>: <status>`: Docker Hub's 429 for a burst,
+# and the 401 or 5xx of the token exchange during one. Permanent failures (`not found`,
+# `pull access denied`) are worded differently and are not retried.
+_IMAGE_MERGE_RETRY_ERRORS = ["unexpected status from ", *_IMAGE_PULL_RETRY_ERRORS]
+_IMAGE_MERGE_RETRIES = 6
 
 
 class Docker:
@@ -40,6 +45,12 @@ class Docker:
         # image (e.g. apt_archive / apt_ports_archive to point apt at an in-region
         # mirror). Images that don't declare the arg silently ignore it.
         build_args: Dict[str, str] = dataclasses.field(default_factory=dict)
+
+    @staticmethod
+    def tag_build_arg(image_name: str) -> str:
+        """The name of the build argument with the tag of the dependency image,
+        e.g. CCTOOLS_TAG for clickhouse/cctools"""
+        return image_name.split("/")[-1].upper().replace("-", "_") + "_TAG"
 
     @classmethod
     def build(
@@ -73,12 +84,14 @@ class Docker:
         if code != 0:
             tags_substr = f" -t {config.name}:{tag}"
 
+            # The first dependency is the base image and its tag is passed as FROM_TAG.
+            # The tag of every dependency is also passed as <NAME>_TAG
+            # (e.g. CCTOOLS_TAG for clickhouse/cctools) for the images that copy files from it
             from_tag = ""
             if config.depends_on:
-                assert (
-                    len(config.depends_on) == 1
-                ), f"Only one dependency in depends_on is currently supported, docker [{config}]"
                 from_tag = f" --build-arg FROM_TAG={digests[config.depends_on[0]]}{aarch_suffix}"
+                for dependency in config.depends_on:
+                    from_tag += f" --build-arg {cls.tag_build_arg(dependency)}={digests[dependency]}{aarch_suffix}"
 
             platforms = []
             for platform in config.platforms:
@@ -103,7 +116,7 @@ class Docker:
                     ",force-compression=true"
                 )
 
-            command = f"docker buildx build {tags_substr} {from_tag}{build_args} --platform {','.join(platforms)} --provenance=mode=max --sbom=true {config.path}{push_out}"
+            command = f"docker buildx build {tags_substr} {from_tag}{build_args} --platform {','.join(platforms)} --provenance=mode=max --attest=type=sbom,generator=docker/buildkit-syft-scanner:1.11 {config.path}{push_out}"
 
             return Result.from_commands_run(
                 name=name,
@@ -144,19 +157,15 @@ class Docker:
         # imagetools create works correctly with both plain manifests and indices,
         # preserving attestation manifests in the merged result.
         src_refs = " ".join(f"{config.name}:{t}" for t in tags[1:])
-        commands = [
-            f"docker buildx imagetools create --tag {config.name}:{digests[config.name]} {src_refs}"
-        ]
-
+        target_tags = f"--tag {config.name}:{digests[config.name]}"
         if add_latest:
-            commands.append(
-                f"docker buildx imagetools create --tag {config.name}:latest {src_refs}"
-            )
+            target_tags += f" --tag {config.name}:latest"
 
         return Result.from_commands_run(
             name=f"merge: {config.name}:{digests[config.name]} (latest={add_latest})",
-            command=commands,
-            fail_fast=True,
+            command=f"docker buildx imagetools create {target_tags} {src_refs}",
+            retries=_IMAGE_MERGE_RETRIES,
+            retry_errors=_IMAGE_MERGE_RETRY_ERRORS,
         )
 
     @classmethod

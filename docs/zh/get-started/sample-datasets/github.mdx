@@ -9,8 +9,6 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 该数据集包含 ClickHouse 仓库中的所有 提交 和变更。可使用 ClickHouse 随附分发的原生 `git-import` 工具生成。
 
 生成的数据会为以下每个表提供一个 `tsv` 文件：
@@ -26,7 +24,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 * `line_changes` - 2.7G - 7,535,157 行
 
 <div id="generating-the-data">
-  ## 生成数据
+  ## 生成数据 {#generating-the-data}
 </div>
 
 这一步是可选的。我们免费提供这些数据——请参阅[下载并插入数据](#downloading-and-inserting-the-data)。
@@ -71,7 +69,7 @@ CREATE TABLE git.commits
 * Linux - `~/clickhouse git-import` - 160 分钟
 
 <div id="downloading-and-inserting-the-data">
-  ## 下载并插入数据
+  ## 下载并插入数据 {#downloading-and-inserting-the-data}
 </div>
 
 以下数据可用于复现一个可运行的环境。此外，也可以在 play.clickhouse.com 上获取此数据集——更多详情请参见[查询](#queries)。
@@ -187,7 +185,7 @@ CREATE TABLE git.line_changes
 
 ```sql
 INSERT INTO git.commits SELECT *
-FROM s3('https://datasets-documentation.s3.amazonaws.com/github/commits/clickhouse/commits.tsv.xz', 'TSV', 'hash String,author LowCardinality(String), time DateTime, message String, files_added UInt32, files_deleted UInt32, files_renamed UInt32, files_modified UInt32, lines_added UInt32, lines_deleted UInt32, hunks_added UInt32, hunks_removed UInt32, hunks_changed UInt32')
+FROM s3('https://datasets-documentation.s3.amazonaws.com/github/commits/clickhouse/commits.tsv.xz', NOSIGN, 'TSV', 'hash String,author LowCardinality(String), time DateTime, message String, files_added UInt32, files_deleted UInt32, files_renamed UInt32, files_modified UInt32, lines_added UInt32, lines_deleted UInt32, hunks_added UInt32, hunks_removed UInt32, hunks_changed UInt32')
 ```
 
 ```response
@@ -198,7 +196,7 @@ FROM s3('https://datasets-documentation.s3.amazonaws.com/github/commits/clickhou
 
 ```sql
 INSERT INTO git.file_changes SELECT *
-FROM s3('https://datasets-documentation.s3.amazonaws.com/github/commits/clickhouse/file_changes.tsv.xz', 'TSV', 'change_type Enum(\'Add\' = 1, \'Delete\' = 2, \'Modify\' = 3, \'Rename\' = 4, \'Copy\' = 5, \'Type\' = 6), path LowCardinality(String), old_path LowCardinality(String), file_extension LowCardinality(String), lines_added UInt32, lines_deleted UInt32, hunks_added UInt32, hunks_removed UInt32, hunks_changed UInt32, commit_hash String, author LowCardinality(String), time DateTime, commit_message String, commit_files_added UInt32, commit_files_deleted UInt32, commit_files_renamed UInt32, commit_files_modified UInt32, commit_lines_added UInt32, commit_lines_deleted UInt32, commit_hunks_added UInt32, commit_hunks_removed UInt32, commit_hunks_changed UInt32')
+FROM s3('https://datasets-documentation.s3.amazonaws.com/github/commits/clickhouse/file_changes.tsv.xz', NOSIGN, 'TSV', 'change_type Enum(\'Add\' = 1, \'Delete\' = 2, \'Modify\' = 3, \'Rename\' = 4, \'Copy\' = 5, \'Type\' = 6), path LowCardinality(String), old_path LowCardinality(String), file_extension LowCardinality(String), lines_added UInt32, lines_deleted UInt32, hunks_added UInt32, hunks_removed UInt32, hunks_changed UInt32, commit_hash String, author LowCardinality(String), time DateTime, commit_message String, commit_files_added UInt32, commit_files_deleted UInt32, commit_files_renamed UInt32, commit_files_modified UInt32, commit_lines_added UInt32, commit_lines_deleted UInt32, commit_hunks_added UInt32, commit_hunks_removed UInt32, commit_hunks_changed UInt32')
 ```
 
 ```response
@@ -209,7 +207,7 @@ FROM s3('https://datasets-documentation.s3.amazonaws.com/github/commits/clickhou
 
 ```sql
 INSERT INTO git.line_changes SELECT *
-FROM s3('https://datasets-documentation.s3.amazonaws.com/github/commits/clickhouse/line_changes.tsv.xz', 'TSV', '    sign Int8, line_number_old UInt32, line_number_new UInt32, hunk_num UInt32, hunk_start_line_number_old UInt32, hunk_start_line_number_new UInt32, hunk_lines_added UInt32,\n    hunk_lines_deleted UInt32, hunk_context LowCardinality(String), line LowCardinality(String), indent UInt8, line_type Enum(\'Empty\' = 0, \'Comment\' = 1, \'Punct\' = 2, \'Code\' = 3), prev_commit_hash String, prev_author LowCardinality(String), prev_time DateTime, file_change_type Enum(\'Add\' = 1, \'Delete\' = 2, \'Modify\' = 3, \'Rename\' = 4, \'Copy\' = 5, \'Type\' = 6),\n    path LowCardinality(String), old_path LowCardinality(String), file_extension LowCardinality(String), file_lines_added UInt32, file_lines_deleted UInt32, file_hunks_added UInt32, file_hunks_removed UInt32, file_hunks_changed UInt32, commit_hash String,\n    author LowCardinality(String), time DateTime, commit_message String, commit_files_added UInt32, commit_files_deleted UInt32, commit_files_renamed UInt32, commit_files_modified UInt32, commit_lines_added UInt32, commit_lines_deleted UInt32, commit_hunks_added UInt32, commit_hunks_removed UInt32, commit_hunks_changed UInt32')
+FROM s3('https://datasets-documentation.s3.amazonaws.com/github/commits/clickhouse/line_changes.tsv.xz', NOSIGN, 'TSV', '    sign Int8, line_number_old UInt32, line_number_new UInt32, hunk_num UInt32, hunk_start_line_number_old UInt32, hunk_start_line_number_new UInt32, hunk_lines_added UInt32,\n    hunk_lines_deleted UInt32, hunk_context LowCardinality(String), line LowCardinality(String), indent UInt8, line_type Enum(\'Empty\' = 0, \'Comment\' = 1, \'Punct\' = 2, \'Code\' = 3), prev_commit_hash String, prev_author LowCardinality(String), prev_time DateTime, file_change_type Enum(\'Add\' = 1, \'Delete\' = 2, \'Modify\' = 3, \'Rename\' = 4, \'Copy\' = 5, \'Type\' = 6),\n    path LowCardinality(String), old_path LowCardinality(String), file_extension LowCardinality(String), file_lines_added UInt32, file_lines_deleted UInt32, file_hunks_added UInt32, file_hunks_removed UInt32, file_hunks_changed UInt32, commit_hash String,\n    author LowCardinality(String), time DateTime, commit_message String, commit_files_added UInt32, commit_files_deleted UInt32, commit_files_renamed UInt32, commit_files_modified UInt32, commit_lines_added UInt32, commit_lines_deleted UInt32, commit_hunks_added UInt32, commit_hunks_removed UInt32, commit_hunks_changed UInt32')
 ```
 
 ```response
@@ -217,7 +215,7 @@ FROM s3('https://datasets-documentation.s3.amazonaws.com/github/commits/clickhou
 ```
 
 <div id="queries">
-  ## 查询
+  ## 查询 {#queries}
 </div>
 
 该工具会在帮助输出中给出若干建议查询。除了回答这些查询之外，我们还补充回答了一些其他值得关注的问题。与工具中较为随意的排列顺序不同，下面这些查询大致按复杂度递增排序。
@@ -225,7 +223,7 @@ FROM s3('https://datasets-documentation.s3.amazonaws.com/github/commits/clickhou
 该数据集可在 [play.clickhouse.com](https://sql.clickhouse.com?query_id=DCQPNPAIMAQXRLHYURLKVJ) 的 `git_clickhouse` 数据库中获取。我们为所有查询都提供了指向该环境的链接，并按需调整数据库名称。请注意，由于数据采集时间不同，play 中的结果可能与此处展示的结果有所差异。
 
 <div id="history-of-a-single-file">
-  ### 单个文件的历史
+  ### 单个文件的历史 {#history-of-a-single-file}
 </div>
 
 最简单的一类查询。这里我们查看 `StorageReplicatedMergeTree.cpp` 的所有提交信息。由于这些内容通常更值得关注，我们按时间倒序排列，优先显示最新的消息。
@@ -305,7 +303,7 @@ LIMIT 10
 请注意，这个查询还有一个更复杂的变体：它会在考虑重命名的情况下，查找[文件的逐行提交历史](#line-by-line-commit-history-of-a-file)。
 
 <div id="find-the-current-active-files">
-  ### 查找当前活跃文件
+  ### 查找当前活跃文件 {#find-the-current-active-files}
 </div>
 
 这对后续分析很重要，因为我们只想考虑 仓库 中当前的文件。我们将这一集合估算为那些未被重命名或删除 (随后又被重新添加/再次重命名) 的文件。
@@ -443,7 +441,7 @@ git ls-files | grep -v -E 'generated\.cpp|^(contrib|docs?|website|libs/(libcityh
 这些差异不应对我们的分析产生实质性影响。**欢迎提供此查询的改进版本**。
 
 <div id="list-files-with-most-modifications">
-  ### 列出修改最多的文件
+  ### 列出修改最多的文件 {#list-files-with-most-modifications}
 </div>
 
 仅统计当前文件时，我们将修改次数视为删除次数与新增次数之和。
@@ -502,7 +500,7 @@ LIMIT 10
 ```
 
 <div id="what-day-of-the-week-do-commits-usually-occur">
-  ### 提交通常发生在一周中的哪一天？
+  ### 提交通常发生在一周中的哪一天？ {#what-day-of-the-week-do-commits-usually-occur}
 </div>
 
 [play](https://sql.clickhouse.com?query_id=GED2STFSYJDRAA59H8RLIV)
@@ -530,9 +528,7 @@ GROUP BY dayOfWeek(time) AS day_of_week
 
 考虑到周五生产力略有下降，这也说得通。很高兴看到大家周末也在提交代码！非常感谢我们的贡献者！
 
-<div id="history-of-subdirectoryfile---number-of-lines-commits-and-contributors-over-time">
-  ### 子目录/文件的历史 - 行数、提交数和贡献者数量随时间的变化
-</div>
+### 子目录/文件的历史 - 行数、提交数和贡献者数量随时间的变化 {#history-of-subdirectoryfile---number-of-lines-commits-and-contributors-over-time}
 
 这会产生一个很大的查询结果；如果不加过滤，既不适合展示，也不适合可视化。因此，在下面的示例中，我们支持按文件或子目录进行过滤。这里使用 `toStartOfWeek` 函数按周分组，请根据需要调整。
 
@@ -572,14 +568,22 @@ LIMIT 10
 
 **按新增和删除的行数：**
 
-<Image img="/images/getting-started/example-datasets/superset-github-lines-added-deleted.webp" alt="按新增和删除的行数" size="md" />
+<div className="ch-image-md">
+  <Frame>
+    ![按新增和删除的行数](/images/getting-started/example-datasets/superset-github-lines-added-deleted.webp)
+  </Frame>
+</div>
 
 **按提交和作者：**
 
-<Image img="/images/getting-started/example-datasets/superset-commits-authors.webp" alt="按提交和作者" size="md" />
+<div className="ch-image-md">
+  <Frame>
+    ![按提交和作者](/images/getting-started/example-datasets/superset-commits-authors.webp)
+  </Frame>
+</div>
 
 <div id="list-files-with-maximum-number-of-authors">
-  ### 列出作者最多的文件
+  ### 列出作者最多的文件 {#list-files-with-maximum-number-of-authors}
 </div>
 
 仅限当前文件。
@@ -638,7 +642,7 @@ LIMIT 10
 ```
 
 <div id="oldest-lines-of-code-in-the-repository">
-  ### 仓库中历史最久的代码行
+  ### 仓库中历史最久的代码行 {#oldest-lines-of-code-in-the-repository}
 </div>
 
 仅限当前文件。
@@ -699,7 +703,7 @@ LIMIT 10
 ```
 
 <div id="files-with-longest-history">
-  ### 历史记录最长的文件
+  ### 历史记录最长的文件 {#files-with-longest-history}
 </div>
 
 仅统计当前文件。
@@ -761,7 +765,7 @@ LIMIT 10
 我们的核心数据结构 Merge Tree 显然一直在不断演进，而且有着漫长的修改历史！
 
 <div id="distribution-of-contributors-with-respect-to-docs-and-code-over-the-month">
-  ### 一个月内贡献者在文档与代码方面的分布
+  ### 一个月内贡献者在文档与代码方面的分布 {#distribution-of-contributors-with-respect-to-docs-and-code-over-the-month}
 </div>
 
 **在数据捕获期间，由于 `docs/` 文件夹的提交历史非常混乱，其中的更改已被过滤掉。因此，此查询的结果并不准确。**
@@ -828,7 +832,7 @@ FROM
 也许在月底时会稍微多一点，但总体上分布仍然比较均匀。再次说明，由于在数据插入过程中应用了 docs 过滤器，因此这一结果并不可靠。
 
 <div id="authors-with-the-most-diverse-impact">
-  ### 影响最广泛的作者
+  ### 影响最广泛的作者 {#authors-with-the-most-diverse-impact}
 </div>
 
 这里的“多样性”是指某位作者参与贡献过的不同文件数量。
@@ -911,7 +915,7 @@ LIMIT 10
 ```
 
 <div id="favorite-files-for-an-author">
-  ### 某位作者最关注的文件
+  ### 某位作者最关注的文件 {#favorite-files-for-an-author}
 </div>
 
 这里我们选择创始人 [Alexey Milovidov](https://github.com/alexey-milovidov)，并将分析范围限定在当前文件上。
@@ -1003,7 +1007,7 @@ LIMIT 10
 这或许更能体现他的兴趣所在。
 
 <div id="largest-files-with-lowest-number-of-authors">
-  ### 作者数量最少的最大文件
+  ### 作者数量最少的最大文件 {#largest-files-with-lowest-number-of-authors}
 </div>
 
 为此，我们首先需要找出最大的文件。如果根据提交历史为每个文件完整重建其内容来估算，成本会非常高！
@@ -1181,7 +1185,7 @@ LIMIT 10
 ```
 
 <div id="commits-and-lines-of-code-distribution-by-time-by-weekday-by-author-for-specific-subdirectories">
-  ### 按时间、星期几、作者及特定子目录统计的提交和代码行分布
+  ### 按时间、星期几、作者及特定子目录统计的提交和代码行分布 {#commits-and-lines-of-code-distribution-by-time-by-weekday-by-author-for-specific-subdirectories}
 </div>
 
 这里我们将其理解为按星期几统计新增和删除的代码行数。在本例中，我们重点关注 [Functions 目录](https://github.com/ClickHouse/ClickHouse/tree/master/src/Functions)
@@ -1313,9 +1317,7 @@ FROM
 24 rows in set. Elapsed: 0.038 sec. Processed 266.05 thousand rows, 14.66 MB (7.09 million rows/s., 390.69 MB/s.)
 ```
 
-<div id="matrix-of-authors-that-shows-what-authors-tends-to-rewrite-another-authors-code">
-  ### 展示哪些作者倾向于重写他人代码的作者矩阵
-</div>
+### 展示哪些作者倾向于重写他人代码的作者矩阵 {#matrix-of-authors-that-shows-what-authors-tends-to-rewrite-another-authors-code}
 
 `sign = -1` 表示代码被删除。我们排除了标点符号以及空行的插入。
 
@@ -1365,14 +1367,22 @@ LIMIT 100
 
 Sankey 图表 (SuperSet) 可以很好地展示这一点。注意，我们将 `LIMIT BY` 增加到 3，以便找出每位作者对应的前 3 位“代码移除者”，从而让可视化结果更加丰富。
 
-<Image img="/images/getting-started/example-datasets/superset-authors-matrix.webp" alt="Superset 作者矩阵" size="md" />
+<div className="ch-image-md">
+  <Frame>
+    ![Superset 作者矩阵](/images/getting-started/example-datasets/superset-authors-matrix.webp)
+  </Frame>
+</div>
 
 Alexey 显然很喜欢删除别人的代码。为了让代码删除情况的视图更加均衡，我们把他排除掉。
 
-<Image img="/images/getting-started/example-datasets/superset-authors-matrix_v2.webp" alt="Superset 作者矩阵 v2" size="md" />
+<div className="ch-image-md">
+  <Frame>
+    ![Superset 作者矩阵 v2](/images/getting-started/example-datasets/superset-authors-matrix_v2.webp)
+  </Frame>
+</div>
 
 <div id="who-is-the-highest-percentage-contributor-per-day-of-week">
-  ### 按星期几来看，谁的贡献占比最高？
+  ### 按星期几来看，谁的贡献占比最高？ {#who-is-the-highest-percentage-contributor-per-day-of-week}
 </div>
 
 如果只看提交次数：
@@ -1495,7 +1505,7 @@ INNER JOIN
 ```
 
 <div id="distribution-of-code-age-across-repository">
-  ### 仓库中代码年龄分布
+  ### 仓库中代码年龄分布 {#distribution-of-code-age-across-repository}
 </div>
 
 我们将分析范围限定为当前文件。为简洁起见，结果仅显示深度为 2 的内容，且每个根文件夹最多显示 5 个文件。可按需调整。
@@ -1582,7 +1592,7 @@ LIMIT 5 BY root
 ```
 
 <div id="what-percentage-of-code-for-an-author-has-been-removed-by-other-authors">
-  ### 某位作者编写的代码中，有百分之多少被其他作者删除了？
+  ### 某位作者编写的代码中，有百分之多少被其他作者删除了？ {#what-percentage-of-code-for-an-author-has-been-removed-by-other-authors}
 </div>
 
 对于这个问题，我们需要将某位作者编写的代码行数除以其他贡献者删除的总行数。
@@ -1636,7 +1646,7 @@ LIMIT 10
 ```
 
 <div id="list-files-that-were-rewritten-most-number-of-times">
-  ### 列出被重写次数最多的文件？
+  ### 列出被重写次数最多的文件？ {#list-files-that-were-rewritten-most-number-of-times}
 </div>
 
 回答这个问题，最简单的方法可能就是直接统计每个 path 的行修改次数 (仅限当前文件) ，例如：
@@ -1783,7 +1793,7 @@ LIMIT 10
 ```
 
 <div id="what-weekday-does-the-code-have-the-highest-chance-to-stay-in-the-repository">
-  ### 代码在哪个工作日最有可能在仓库中保留得最久？
+  ### 代码在哪个工作日最有可能在仓库中保留得最久？ {#what-weekday-does-the-code-have-the-highest-chance-to-stay-in-the-repository}
 </div>
 
 为此，我们需要唯一标识一行代码。由于同一行内容可能在一个文件中出现多次，我们用路径和行内容来近似确定其唯一性。
@@ -1849,7 +1859,7 @@ GROUP BY dayOfWeek(added_day) AS day_of_week_added
 ```
 
 <div id="files-sorted-by-average-code-age">
-  ### 按平均代码年龄排序的文件
+  ### 按平均代码年龄排序的文件 {#files-sorted-by-average-code-age}
 </div>
 
 此查询使用了与[代码在哪个工作日最有可能保留在仓库中](#what-weekday-does-the-code-have-the-highest-chance-to-stay-in-the-repository)相同的原理——通过路径和行内容唯一标识一行代码。
@@ -1943,7 +1953,7 @@ LIMIT 10
 ```
 
 <div id="who-tends-to-write-more-tests--cpp-code--comments">
-  ### 谁通常会编写更多测试 / CPP 代码 / 注释？
+  ### 谁通常会编写更多测试 / CPP 代码 / 注释？ {#who-tends-to-write-more-tests--cpp-code--comments}
 </div>
 
 这个问题可以从几种不同的角度来回答。这里我们重点关注代码与测试的比例，因此这个查询相对简单——统计对包含 `tests` 的文件夹的贡献次数，并计算其占总贡献数的比例。
@@ -2083,7 +2093,7 @@ LIMIT 10
 注意，我们是按代码贡献排序的。令人意外的是，我们所有主要贡献者的这一比例都很高，而这也是我们的代码如此易于阅读的部分原因。
 
 <div id="how-does-an-authors-commits-change-over-time-with-respect-to-codecomments-percentage">
-  ### 某位作者的提交在代码/注释占比方面随时间是如何变化的？
+  ### 某位作者的提交在代码/注释占比方面随时间是如何变化的？ {#how-does-an-authors-commits-change-over-time-with-respect-to-codecomments-percentage}
 </div>
 
 按作者计算这一点很简单，
@@ -2205,7 +2215,7 @@ LIMIT 20
 令人欣慰的是，我们的注释占比相当稳定，不会因为作者贡献时间更长而下降。
 
 <div id="what-is-the-average-time-before-code-will-be-rewritten-and-the-median-half-life-of-code-decay">
-  ### 代码在被重写前的平均时长是多少，中位数 (代码衰减的半衰期) 又是多少？
+  ### 代码在被重写前的平均时长是多少，中位数 (代码衰减的半衰期) 又是多少？ {#what-is-the-average-time-before-code-will-be-rewritten-and-the-median-half-life-of-code-decay}
 </div>
 
 我们可以使用与 [列出被重写次数最多或被最多作者重写的文件](#list-files-that-were-rewritten-most-number-of-times) 相同的原理来识别重写，不过这里需要考虑所有文件。这里使用 窗口函数 来计算每个文件两次重写之间的时间间隔。基于此，我们可以进一步计算所有文件的平均值和中位数。
@@ -2269,7 +2279,7 @@ FROM rewrites
 ```
 
 <div id="what-is-the-worst-time-to-write-code-in-sense-that-the-code-has-highest-chance-to-be-re-written">
-  ### 从代码最容易被重写这一点来看，什么时候写代码最不合适？
+  ### 从代码最容易被重写这一点来看，什么时候写代码最不合适？ {#what-is-the-worst-time-to-write-code-in-sense-that-the-code-has-highest-chance-to-be-re-written}
 </div>
 
 这与[代码在被重写前的平均时间以及中位数 (代码衰减的半衰期) 是多少？](#what-is-the-average-time-before-code-will-be-rewritten-and-the-median-half-life-of-code-decay)和[列出被重写次数最多或由最多作者重写过的文件](#list-files-that-were-rewritten-most-number-of-times)类似，只是这里按星期几进行聚合。可根据需要调整，例如改为按月份聚合。
@@ -2337,7 +2347,7 @@ GROUP BY dayOfWeek
 ```
 
 <div id="which-authors-code-is-the-most-sticky">
-  ### 哪位作者的代码粘性最高？
+  ### 哪位作者的代码粘性最高？ {#which-authors-code-is-the-most-sticky}
 </div>
 
 我们将“粘性”定义为：作者编写的代码在被重写前能保留多长时间。与前一个问题[代码在被重写之前的平均时间是多少，以及中位数 (代码衰减的半衰期) 是多少？](#what-is-the-average-time-before-code-will-be-rewritten-and-the-median-half-life-of-code-decay)类似——这里使用相同的重写衡量标准，即某个文件中有 50% 为新增、50% 为删除。我们按作者计算平均重写时间，并且只统计关联文件数超过两个的贡献者。
@@ -2418,7 +2428,7 @@ LIMIT 10
 ```
 
 <div id="most-consecutive-days-of-commits-by-an-author">
-  ### 某位作者最长的连续提交天数
+  ### 某位作者最长的连续提交天数 {#most-consecutive-days-of-commits-by-an-author}
 </div>
 
 此查询首先需要计算某位作者在哪些天有提交。通过使用窗口函数并按作者分区，我们可以算出每次提交与上一次提交之间相隔的天数。对于每次提交，如果距离上一次提交正好 1 天，就将其标记为连续 (1) ，否则标记为 0，并将结果存入 `consecutive_day`。
@@ -2477,7 +2487,7 @@ LIMIT 10
 ```
 
 <div id="line-by-line-commit-history-of-a-file">
-  ### 文件的逐行提交历史
+  ### 文件的逐行提交历史 {#line-by-line-commit-history-of-a-file}
 </div>
 
 文件可以重命名。发生这种情况时，会产生一个重命名事件，其中 `path` 列会设置为文件的新路径，而 `old_path` 表示其之前的位置，例如：
@@ -2562,11 +2572,11 @@ FORMAT PrettyCompactMonoBlock
 ```
 
 <div id="unsolved-questions">
-  ## 待解决的问题
+  ## 待解决的问题 {#unsolved-questions}
 </div>
 
 <div id="git-blame">
-  ### Git blame
+  ### Git blame {#git-blame}
 </div>
 
 由于目前还无法在 数组函数 中保留状态，因此很难得到精确结果。等有了 `arrayFold` 或 `arrayReduce` 之后，这一点就可以实现，因为它们允许在每次迭代中保存状态。

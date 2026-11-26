@@ -29,6 +29,7 @@
 #include <Core/Defines.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
@@ -90,7 +91,7 @@ namespace Setting
     extern const SettingsUInt64 keeper_max_retries;
     extern const SettingsUInt64 keeper_retry_initial_backoff_ms;
     extern const SettingsUInt64 keeper_retry_max_backoff_ms;
-    extern const SettingsUInt64 max_compress_block_size;
+    extern const SettingsNonZeroUInt64 temporary_files_buffer_size;
 }
 
 namespace FailPoints
@@ -113,6 +114,7 @@ namespace ErrorCodes
     extern const int TABLE_WAS_NOT_DROPPED;
     extern const int MEMORY_LIMIT_EXCEEDED;
     extern const int CANNOT_ALLOCATE_MEMORY;
+    extern const int ILLEGAL_COLUMN;
 }
 
 namespace
@@ -177,6 +179,20 @@ std::optional<std::string> tryCanonicalPrimaryKey(const std::string & primary_ke
         return std::nullopt;
 
     return std::string(expression);
+}
+
+std::string formatPrimaryKeyForMetadata(const ASTPtr & ast)
+{
+    const auto * expression_list = ast ? ast->as<ASTExpressionList>() : nullptr;
+    if (expression_list && expression_list->children.size() == 1)
+    {
+        auto primary_key = expression_list->children.front()->clone();
+        primary_key->setParenthesized(false);
+        return formattedAST(primary_key);
+    }
+
+    /// Preserve expression-list spelling until every supported reader canonicalizes each element.
+    return formattedAST(ast);
 }
 
 void verifyTableId(const StorageID & table_id)
@@ -438,7 +454,7 @@ StorageKeeperMap::StorageKeeperMap(
     WriteBufferFromOwnString out;
     out << "KeeperMap metadata format version: 1\n"
         << "columns: " << metadata.columns.toString(true)
-        << "primary key: " << formattedAST(metadata.getPrimaryKey().expression_list_ast) << "\n";
+        << "primary key: " << formatPrimaryKeyForMetadata(metadata.getPrimaryKey().expression_list_ast) << "\n";
     metadata_string = out.str();
 
     if (zk_root_path.empty())
@@ -671,7 +687,7 @@ StorageKeeperMap::StorageKeeperMap(
 class ReadFromKeeperMap : public SourceStepWithFilter
 {
 public:
-    std::string getName() const override { return "ReadFromKeeperMap"; }
+    [[nodiscard]] std::string getName() const override { return "ReadFromKeeperMap"; }
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
     void applyFilters(ActionDAGNodes added_filter_nodes) override;
     void describeActions(FormatSettings & format_settings) const override;
@@ -708,7 +724,7 @@ private:
     template<typename KeyContainerPtr>
     void initializePipelineImpl(QueryPipelineBuilder & pipeline, KeyContainerPtr key_container);
 
-    Strings getAllKeys() const;
+    [[nodiscard]] Strings getAllKeys() const;
 };
 
 VirtualColumnsDescription StorageKeeperMap::createVirtuals()
@@ -1067,19 +1083,37 @@ bool StorageKeeperMap::dropTableData(
     {
         throw zkutil::KeeperException(Coordination::Error::ZOPERATIONTIMEOUT, "Manually triggered operation timeout");
     });
-    zookeeper->removeChildrenRecursive(zk_data_path_);
+    bool remove_data_recursively = zookeeper->isFeatureEnabled(DB::KeeperFeatureFlag::REMOVE_RECURSIVE);
+    if (!remove_data_recursively)
+        zookeeper->tryRemoveChildrenRecursive(zk_data_path_, /*probably_flat=*/ true);
 
     bool completely_removed = false;
     Coordination::Requests ops;
-    ops.emplace_back(zkutil::makeRemoveRequest(metadata_drop_lock->getPath(), -1));
-    ops.emplace_back(zkutil::makeRemoveRequest(zk_dropped_path_, -1));
-    ops.emplace_back(zkutil::makeRemoveRequest(zk_data_path_, -1));
-    ops.emplace_back(zkutil::makeRemoveRequest(zk_dropped_lock_version_path_, -1));
-    ops.emplace_back(zkutil::makeRemoveRequest(zk_metadata_path_, -1));
-    ops.emplace_back(zkutil::makeRemoveRequest(zk_root_path_, -1));
-
     Coordination::Responses responses;
-    auto code = zookeeper->tryMulti(ops, responses);
+    auto remove_metadata = [&]
+    {
+        ops.clear();
+        responses.clear();
+        ops.emplace_back(zkutil::makeRemoveRequest(metadata_drop_lock->getPath(), -1));
+        ops.emplace_back(zkutil::makeRemoveRequest(zk_dropped_path_, -1));
+        if (remove_data_recursively)
+            ops.emplace_back(zkutil::makeRemoveRecursiveRequest(*zookeeper, zk_data_path_, /*remove_nodes_limit=*/ 1000));
+        else
+            ops.emplace_back(zkutil::makeRemoveRequest(zk_data_path_, -1));
+        ops.emplace_back(zkutil::makeRemoveRequest(zk_dropped_lock_version_path_, -1));
+        ops.emplace_back(zkutil::makeRemoveRequest(zk_metadata_path_, -1));
+        ops.emplace_back(zkutil::makeRemoveRequest(zk_root_path_, -1));
+        return zookeeper->tryMulti(ops, responses);
+    };
+
+    auto code = remove_metadata();
+    /// RemoveRecursive returns ZNOTEMPTY above its node limit.
+    if (code == Coordination::Error::ZNOTEMPTY && remove_data_recursively)
+    {
+        remove_data_recursively = false;
+        zookeeper->tryRemoveChildrenRecursive(zk_data_path_, /*probably_flat=*/ true);
+        code = remove_metadata();
+    }
     using enum Coordination::Error;
     switch (code)
     {
@@ -1297,8 +1331,7 @@ void StorageKeeperMap::backupData(BackupEntriesCollector & backup_entries_collec
         }
 
         TemporaryDataOnDiskSettings tmp_data_settings;
-        auto max_compress_block_size = backup_entries_collector.getContext()->getSettingsRef()[Setting::max_compress_block_size];
-        tmp_data_settings.buffer_size = max_compress_block_size ? max_compress_block_size : DBMS_DEFAULT_BUFFER_SIZE;
+        tmp_data_settings.buffer_size = backup_entries_collector.getContext()->getSettingsRef()[Setting::temporary_files_buffer_size];
 
         auto tmp_data = std::make_shared<TemporaryDataOnDiskScope>(backup_entries_collector.getContext()->getTempDataOnDisk(), tmp_data_settings);
 
@@ -1909,6 +1942,11 @@ StoragePtr create(const StorageFactory::Arguments & args)
     if (engine_args.size() > 1)
         keys_limit = checkAndGetLiteralArgument<UInt64>(engine_args[1], "keys_limit");
 
+    if (!isReplayedTableDefinition(args.mode, args.query, args.getLocalContext()) && args.columns.hasNotAlias(String(version_column_name)))
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+            "Cannot create table with column '{}' for KeeperMap engine because it is reserved for a virtual column. Use another name",
+            version_column_name);
+
     StorageInMemoryMetadata metadata;
     metadata.setColumns(args.columns);
     metadata.setConstraints(args.constraints);
@@ -1942,9 +1980,9 @@ void registerStorageKeeperMap(StorageFactory & factory)
     factory.registerStorage(
         "KeeperMap",
         create,
+        SecretArgumentsSpec{},
         {
             .supports_sort_order = true,
-            .supports_parallel_insert = true,
         },
         Documentation{
             .description = R"DOCS_MD(

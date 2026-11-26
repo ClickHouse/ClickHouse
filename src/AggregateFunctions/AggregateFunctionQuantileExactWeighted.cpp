@@ -7,7 +7,9 @@
 #include <Common/HashTable/HashMap.h>
 #include <Common/NaNUtils.h>
 
+#include <limits>
 #include <numeric>
+#include <base/arithmeticOverflow.h>
 
 
 namespace DB
@@ -20,6 +22,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NOT_IMPLEMENTED;
+    extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
 namespace
@@ -58,26 +61,44 @@ struct QuantileExactWeighted
             ++map[x];
     }
 
+    /// The weight is the number of occurrences of a value, so a sum that does not fit `Weight` cannot be represented.
+    static Weight addWeights(Weight lhs, Weight rhs)
+    {
+        Weight sum = 0;
+        if (common::addOverflow(lhs, rhs, sum))
+            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "The sum of weights in an exact weighted quantile does not fit UInt64");
+        return sum;
+    }
+
     void add(const Value & x, Weight weight)
     {
         if constexpr (!interpolated)
         {
             /// Keep compatibility for function quantilesExactWeighted.
             if (!isNaN(x))
-                map[x] += weight;
+            {
+                auto & value_weight = map[x];
+                value_weight = addWeights(value_weight, weight);
+            }
         }
         else
         {
             /// Ignore values with zero weight in function quantilesExactWeightedInterpolated.
             if (!isNaN(x) && weight)
-                map[x] += weight;
+            {
+                auto & value_weight = map[x];
+                value_weight = addWeights(value_weight, weight);
+            }
         }
     }
 
     void merge(const QuantileExactWeighted & rhs)
     {
         for (const auto & pair : rhs.map)
-            map[pair.getKey()] += pair.getMapped();
+        {
+            auto & value_weight = map[pair.getKey()];
+            value_weight = addWeights(value_weight, pair.getMapped());
+        }
     }
 
     void serialize(WriteBuffer & buf) const
@@ -91,12 +112,17 @@ struct QuantileExactWeighted
         while (reader.next())
         {
             const auto & pair = reader.get();
+            /// `add` ignores values with zero weight in `quantilesExactWeightedInterpolated`, so a state that
+            /// holds them was not produced by it; skip them so that a state of only zero weights is empty.
+            if constexpr (interpolated)
+                if (!pair.second)
+                    continue;
             map[pair.first] = pair.second;
         }
     }
 
     /// Get the value of the `level` quantile. The level must be between 0 and 1.
-    Value get(Float64 level) const
+    [[nodiscard]] Value get(Float64 level) const
     {
         if constexpr (interpolated)
             return getInterpolatedImpl(level);
@@ -114,7 +140,7 @@ struct QuantileExactWeighted
             getManyImpl(levels, indices, num_levels, result);
     }
 
-    Float64 getFloat(Float64 level) const
+    [[nodiscard]] Float64 getFloat(Float64 level) const
     {
         if constexpr (interpolated)
             return getFloatInterpolatedImpl(level);
@@ -132,7 +158,7 @@ struct QuantileExactWeighted
 
 private:
     /// get implementation without interpolation
-    Value getImpl(Float64 level) const
+    [[nodiscard]] Value getImpl(Float64 level) const
     requires(!interpolated)
     {
         size_t size = map.size();
@@ -245,7 +271,7 @@ private:
     }
 
     /// getFloat implementation without interpolation
-    Float64 getFloatImpl(Float64) const
+    [[nodiscard]] Float64 getFloatImpl(Float64) const
     requires(!interpolated)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getFloat is not implemented for QuantileExact");
@@ -259,18 +285,17 @@ private:
     }
 
     /// get implementation with interpolation
-    Value getInterpolatedImpl(Float64 level) const
+    [[nodiscard]] Value getInterpolatedImpl(Float64 level) const
     requires interpolated
     {
         size_t size = map.size();
         if (0 == size)
             return Value();
 
-        Float64 res = getFloatInterpolatedImpl(level);
         if constexpr (is_decimal<Value>)
-            return Value(static_cast<typename Value::NativeType>(res));
+            return Value(getNativeInterpolatedImpl(level));
         else
-            return static_cast<Value>(res);
+            return static_cast<Value>(getFloatInterpolatedImpl(level));
     }
 
     /// getMany implementation with interpolation
@@ -285,20 +310,46 @@ private:
             return;
         }
 
-        std::unique_ptr<Float64 []> res_holder(new Float64[num_levels]);
-        Float64 * res = res_holder.get();
-        getManyFloatInterpolatedImpl(levels, indices, num_levels, res);
-        for (size_t i = 0; i < num_levels; ++i)
+        if constexpr (is_decimal<Value>)
         {
-            if constexpr (is_decimal<Value>)
-                result[i] = Value(static_cast<typename Value::NativeType>(res[i]));
-            else
+            using Native = typename Value::NativeType;
+            std::unique_ptr<Native []> res_holder(new Native[num_levels]);
+            Native * res = res_holder.get();
+            getManyNativeInterpolatedImpl(levels, indices, num_levels, res);
+            for (size_t i = 0; i < num_levels; ++i)
+                result[i] = Value(res[i]);
+        }
+        else
+        {
+            std::unique_ptr<Float64 []> res_holder(new Float64[num_levels]);
+            Float64 * res = res_holder.get();
+            getManyFloatInterpolatedImpl(levels, indices, num_levels, res);
+            for (size_t i = 0; i < num_levels; ++i)
                 result[i] = Value(res[i]);
         }
     }
 
+    /// Sorts the values into `array` and turns the weights into a cumulative sum, so that a
+    /// position in `[0, max_position]` selects a value. Returns `max_position`.
+    Weight buildCumulativeWeights(Pair * array, size_t size) const
+    requires interpolated
+    {
+        size_t i = 0;
+        for (const auto & pair : map)
+        {
+            array[i] = pair.getValue();
+            ++i;
+        }
+
+        ::sort(array, array + size, [](const Pair & a, const Pair & b) { return a.first < b.first; });
+        std::partial_sum(array, array + size, array,
+            [](const Pair & acc, const Pair & p) { return Pair(p.first, addWeights(acc.second, p.second)); });
+        /// `add` and `deserialize` keep only positive weights, so the total weight is at least 1.
+        return array[size - 1].second - 1;
+    }
+
     /// getFloat implementation with interpolation
-    Float64 getFloatInterpolatedImpl(Float64 level) const
+    [[nodiscard]] Float64 getFloatInterpolatedImpl(Float64 level) const
     requires interpolated
     {
         size_t size = map.size();
@@ -310,16 +361,7 @@ private:
         std::unique_ptr<Pair[]> array_holder(new Pair[size]);
         Pair * array = array_holder.get();
 
-        size_t i = 0;
-        for (const auto & pair : map)
-        {
-            array[i] = pair.getValue();
-            ++i;
-        }
-
-        ::sort(array, array + size, [](const Pair & a, const Pair & b) { return a.first < b.first; });
-        std::partial_sum(array, array + size, array, [](const Pair & acc, const Pair & p) { return Pair(p.first, acc.second + p.second); });
-        Weight max_position = array[size - 1].second - 1;
+        Weight max_position = buildCumulativeWeights(array, size);
         Float64 position = static_cast<Float64>(max_position) * level;
         return quantileInterpolated(array, size, position);
     }
@@ -340,16 +382,7 @@ private:
         std::unique_ptr<Pair[]> array_holder(new Pair[size]);
         Pair * array = array_holder.get();
 
-        size_t i = 0;
-        for (const auto & pair : map)
-        {
-            array[i] = pair.getValue();
-            ++i;
-        }
-
-        ::sort(array, array + size, [](const Pair & a, const Pair & b) { return a.first < b.first; });
-        std::partial_sum(array, array + size, array, [](Pair acc, Pair & p) { return Pair(p.first, acc.second + p.second); });
-        Weight max_position = array[size - 1].second - 1;
+        Weight max_position = buildCumulativeWeights(array, size);
 
         for (size_t j = 0; j < num_levels; ++j)
         {
@@ -358,15 +391,64 @@ private:
         }
     }
 
-    /// Calculate quantile, using linear interpolation between two closest values
-    Float64 NO_SANITIZE_UNDEFINED quantileInterpolated(const Pair * array, size_t size, Float64 position) const
+    [[nodiscard]] UnderlyingType getNativeInterpolatedImpl(Float64 level) const
     requires interpolated
     {
-        size_t lower = static_cast<size_t>(std::floor(position));
-        size_t higher = static_cast<size_t>(std::ceil(position));
+        size_t size = map.size();
+        std::unique_ptr<Pair[]> array_holder(new Pair[size]);
+        Pair * array = array_holder.get();
 
-        const auto * lower_it = std::lower_bound(array, array + size, lower + 1, [](const Pair & a, size_t b) { return a.second < b; });
-        const auto * higher_it = std::lower_bound(array, array + size, higher + 1, [](const Pair & a, size_t b) { return a.second < b; });
+        Weight max_position = buildCumulativeWeights(array, size);
+        Float64 position = static_cast<Float64>(max_position) * level;
+        return quantileInterpolatedNative(array, size, position);
+    }
+
+    void getManyNativeInterpolatedImpl(const Float64 * levels, const size_t * indices, size_t num_levels, UnderlyingType * result) const
+    requires interpolated
+    {
+        size_t size = map.size();
+        std::unique_ptr<Pair[]> array_holder(new Pair[size]);
+        Pair * array = array_holder.get();
+
+        Weight max_position = buildCumulativeWeights(array, size);
+
+        for (size_t j = 0; j < num_levels; ++j)
+        {
+            Float64 position = static_cast<Float64>(max_position) * levels[indices[j]];
+            result[indices[j]] = quantileInterpolatedNative(array, size, position);
+        }
+    }
+
+    /// The two values `position` falls between, and the weight of each.
+    struct InterpolationEndpoints
+    {
+        UnderlyingType lower_key;
+        UnderlyingType higher_key;
+        Float64 lower_coef;
+        Float64 higher_coef;
+    };
+
+    /// A rank as `size_t`, saturated: a weight sum near the maximum of `UInt64` rounds up to 2^64 as `Float64`, which a
+    /// plain conversion cannot represent.
+    static size_t rankFromPosition(Float64 position)
+    {
+        if (!(position > 0))
+            return 0;
+        if (position >= static_cast<Float64>(std::numeric_limits<size_t>::max()))
+            return std::numeric_limits<size_t>::max();
+        return static_cast<size_t>(position);
+    }
+
+    [[nodiscard]] InterpolationEndpoints interpolationEndpoints(const Pair * array, size_t size, Float64 position) const
+    requires interpolated
+    {
+        size_t lower = rankFromPosition(std::floor(position));
+        size_t higher = rankFromPosition(std::ceil(position));
+
+        /// The first cumulative weight above the rank, as `a.second < rank + 1` without the addition, which wraps for the
+        /// maximum rank.
+        const auto * lower_it = std::lower_bound(array, array + size, lower, [](const Pair & a, size_t b) { return a.second <= b; });
+        const auto * higher_it = std::lower_bound(array, array + size, higher, [](const Pair & a, size_t b) { return a.second <= b; });
         if (lower_it == array + size)
             lower_it = array + size - 1;
         if (higher_it == array + size)
@@ -376,9 +458,40 @@ private:
         UnderlyingType higher_key = higher_it->first;
 
         if (lower == higher || lower_key == higher_key)
-            return static_cast<Float64>(lower_key);
+            return {lower_key, lower_key, 1., 0.};
 
-        return (static_cast<Float64>(higher) - position) * static_cast<Float64>(lower_key) + (position - static_cast<Float64>(lower)) * static_cast<Float64>(higher_key);
+        return {
+            lower_key,
+            higher_key,
+            static_cast<Float64>(higher) - position,
+            position - static_cast<Float64>(lower)};
+    }
+
+    /// Calculate quantile, using linear interpolation between two closest values
+    Float64 quantileInterpolated(const Pair * array, size_t size, Float64 position) const
+    requires interpolated
+    {
+        const auto endpoints = interpolationEndpoints(array, size, position);
+        /// Coincident endpoints are returned without forming a product: `inf * 0.0` is a NaN.
+        if (endpoints.lower_key == endpoints.higher_key)
+            return static_cast<Float64>(endpoints.lower_key);
+        return static_cast<Float64>(endpoints.lower_key) * endpoints.lower_coef
+            + static_cast<Float64>(endpoints.higher_key) * endpoints.higher_coef;
+    }
+
+    UnderlyingType quantileInterpolatedNative(const Pair * array, size_t size, Float64 position) const
+    requires interpolated
+    {
+        const auto endpoints = interpolationEndpoints(array, size, position);
+        return QuantileInterpolation::interpolate<UnderlyingType>(
+            endpoints.lower_key,
+            endpoints.higher_key,
+            endpoints.higher_coef,
+            [&] {
+                return static_cast<Float64>(endpoints.lower_key) * endpoints.lower_coef
+                    + static_cast<Float64>(endpoints.higher_key) * endpoints.higher_coef;
+            },
+            /* forms_native_difference= */ false);
     }
 };
 
@@ -441,7 +554,7 @@ void registerAggregateFunctionsQuantileExactWeighted(AggregateFunctionFactory & 
 void registerAggregateFunctionsQuantileExactWeighted(AggregateFunctionFactory & factory)
 {
     /// For aggregate functions returning array we cannot return NULL on empty set.
-    AggregateFunctionProperties properties = { .returns_default_when_only_null = true };
+    AggregateFunctionProperties properties = { .returns_default_when_only_null = true, .variant_arguments_conversion = VariantArgumentsConversion::All};
 
     FunctionDocumentation::Description description = R"(
 Exactly computes the [quantile](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence, taking into account the weight of each element.
@@ -472,7 +585,7 @@ quantileExactWeighted(level)(expr, weight)
         R"(
 CREATE TABLE t (
     n Int32,
-    val Int32
+    val UInt32
 ) ENGINE = Memory;
 
 -- Insert the sample data
@@ -495,7 +608,7 @@ SELECT quantileExactWeighted(n, val) FROM t;
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction(NameQuantileExactWeighted::name, {createAggregateFunctionQuantile<FuncQuantileExactWeighted, false>, documentation});
+    factory.registerFunction(NameQuantileExactWeighted::name, {createAggregateFunctionQuantile<FuncQuantileExactWeighted, false>, documentation, {.variant_arguments_conversion = VariantArgumentsConversion::All}});
 
     FunctionDocumentation::Description description_quantiles = R"(
 Exactly computes multiple [quantiles](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence at different levels simultaneously, taking into account the weight of each element.
@@ -559,6 +672,13 @@ quantileExactWeightedInterpolated(level)(expr, weight)
     {
         "Computing exact weighted interpolated quantile",
         R"(
+CREATE TABLE t (
+    n Int32,
+    val UInt32
+) ENGINE = Memory;
+
+INSERT INTO t VALUES (0, 3), (1, 2), (2, 1), (5, 4);
+
 SELECT quantileExactWeightedInterpolated(n, val) FROM t;
         )",
         R"(
@@ -587,7 +707,7 @@ FROM numbers(9)
     FunctionDocumentation::Category category_interpolated = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation_interpolated = {description_interpolated, syntax_interpolated, arguments_interpolated, parameters_interpolated, returned_value_interpolated, examples_interpolated, introduced_in_interpolated, category_interpolated};
 
-    factory.registerFunction(NameQuantileExactWeightedInterpolated::name, {createAggregateFunctionQuantile<FuncQuantileExactWeighted, true>, documentation_interpolated});
+    factory.registerFunction(NameQuantileExactWeightedInterpolated::name, {createAggregateFunctionQuantile<FuncQuantileExactWeighted, true>, documentation_interpolated, {.variant_arguments_conversion = VariantArgumentsConversion::All}});
     FunctionDocumentation::Description description_quantiles_interpolated = R"(
 Computes multiple [quantiles](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence using linear interpolation at different levels simultaneously, taking into account the weight of each element.
 

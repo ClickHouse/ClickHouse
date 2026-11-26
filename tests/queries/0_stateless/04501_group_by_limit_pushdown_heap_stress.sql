@@ -1,4 +1,4 @@
--- Tags: long
+-- Tags: long, no-msan
 -- Behavior of the top-K heap under stress: heavy eviction across aggregation
 -- methods, boundary ties (bitwise-distinct keys that compare equal), the
 -- adaptive freeze, tie overflow, and aggregate-state arena-slot reuse.
@@ -11,6 +11,9 @@ SET enable_group_by_top_k_optimization = 1;
 SET query_plan_max_limit_for_top_k_optimization = 1000;
 SET max_threads = 1;
 SET max_rows_to_group_by = 0;
+-- The adaptive aggregator also takes one thread. It freezes its table at its freeze threshold, before a
+-- tie-set of the heap can grow past its cap, so the heap's own freezes are checked on the ordinary path.
+SET enable_adaptive_aggregator = 0;
 
 -- Heavy eviction across aggregation methods.
 
@@ -347,9 +350,9 @@ WHERE current_database = currentDatabase()
 -- new key and evicts an older one, so without reuse the arena grows by one
 -- state per distinct key seen (20M here) even though the hash table stays
 -- bounded, defeating the optimization's memory contract for non-`count`
--- aggregates and failing the memory limit below.
-
-SET max_memory_usage = 100000000;
+-- aggregates and failing the memory limit below.  The limit is per-query, not a
+-- session `SET`: the verification query below reads `system.query_log`, whose
+-- cost tracks the whole suite's log volume rather than anything under test.
 
 SELECT 'arena slot reuse under eviction';
 SELECT k, sum(v) FROM
@@ -359,7 +362,7 @@ SELECT k, sum(v) FROM
 GROUP BY k
 ORDER BY k ASC
 LIMIT 10
-SETTINGS log_comment = '04501_state_arena_reuse';
+SETTINGS log_comment = '04501_state_arena_reuse', max_memory_usage = 100000000;
 
 SYSTEM FLUSH LOGS query_log;
 

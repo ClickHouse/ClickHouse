@@ -10,12 +10,34 @@ SELECT name FROM system.documentation
 WHERE type = 'Statement' AND name IN ('SELECT', 'INSERT INTO', 'CREATE TABLE', 'WHERE')
 ORDER BY name;
 
--- The complete statement page is exposed verbatim through both system tables.
+-- The rendered document starts with the source-owned description.
 SELECT count() = 0
 FROM system.statements AS statements
 INNER JOIN system.documentation AS documentation
     ON documentation.type = 'Statement' AND documentation.name = statements.name
-WHERE statements.description != documentation.description;
+WHERE NOT startsWith(documentation.description, statements.description);
+
+-- Structured sections are included when the description is not already a complete page.
+SELECT description LIKE '%**Syntax**%' AND description LIKE '%CREATE DATABASE ...%'
+FROM system.documentation WHERE type = 'Statement' AND name = 'CREATE';
+
+-- Structured syntax is not appended when the source description already contains it.
+SELECT count() = 0
+FROM system.statements AS statements
+INNER JOIN system.documentation AS documentation
+    ON documentation.type = 'Statement' AND documentation.name = statements.name
+WHERE notEmpty(statements.syntax)
+    AND position(statements.description, statements.syntax) > 0
+    AND countSubstrings(documentation.description, statements.syntax)
+        > countSubstrings(statements.description, statements.syntax);
+
+-- A source description with an explicit syntax section or an SQL block introduced as syntax is not followed by
+-- another synthetic syntax section, even when its formatting or punctuation differs from the structured syntax.
+SELECT name, countSubstrings(description, '**Syntax**')
+FROM system.documentation
+WHERE type = 'Statement'
+    AND name IN ('ALTER NAMED COLLECTION', 'ALTER QUOTA', 'ALTER TABLE ... CONSTRAINT')
+ORDER BY name;
 
 -- Complete pages are exposed verbatim, without synthetic enclosing-statement sections.
 SELECT description NOT LIKE '%**Part of:**%'

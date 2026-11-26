@@ -1,22 +1,20 @@
 ---
 title: 'دمج OpenTelemetry لجمع البيانات'
-description: 'دمج OpenTelemetry وClickHouse من أجل الأوبزرفابيليتي'
+description: 'دمج OpenTelemetry وClickHouse من أجل إمكانية المراقبة'
 slug: /observability/integrating-opentelemetry
-keywords: ['الأوبزرفابيليتي', 'OpenTelemetry']
+keywords: ['إمكانية المراقبة', 'OpenTelemetry']
 show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
+يتطلب أي حل لإمكانية المراقبة وسيلةً لجمع السجلات والتتبّع وتصديرها. ولهذا الغرض، توصي ClickHouse بمشروع [OpenTelemetry (OTel)](https://opentelemetry.io/).
 
-يتطلب أي حل لـ Observability وسيلةً لجمع السجلات وtraces وتصديرها. ولهذا الغرض، توصي ClickHouse بمشروع [OpenTelemetry (OTel)](https://opentelemetry.io/).
+&quot;OpenTelemetry هو إطار عمل ومجموعة أدوات لإمكانية المراقبة صُمِّما لإنشاء بيانات القياس عن بُعد مثل التتبّع والمقاييس والسجلات وإدارتها.&quot;
 
-&quot;OpenTelemetry هو إطار عمل ومجموعة أدوات لـ Observability صُمِّما لإنشاء telemetry data مثل traces وmetrics وlogs وإدارتها.&quot;
-
-وعلى خلاف ClickHouse أو Prometheus، لا يُعد OpenTelemetry منصة backend للـ Observability، بل يركّز على إنشاء telemetry data وجمعها وإدارتها وتصديرها. وبينما كان الهدف الأولي من OpenTelemetry هو أن يسهّل عليك تزويد تطبيقاتك أو أنظمتك بقدرات telemetry باستخدام SDKs الخاصة بكل لغة، فقد توسّع ليشمل أيضًا جمع السجلات عبر OpenTelemetry Collector — وهو agent أو proxy يستقبل telemetry data ويعالجها ويصدّرها.
+وعلى خلاف ClickHouse أو Prometheus، لا يُعد OpenTelemetry منصة backend لإمكانية المراقبة، بل يركّز على إنشاء بيانات القياس عن بُعد وجمعها وإدارتها وتصديرها. وبينما كان الهدف الأولي من OpenTelemetry هو أن يسهّل عليك تزويد تطبيقاتك أو أنظمتك بقدرات telemetry باستخدام SDKs الخاصة بكل لغة، فقد توسّع ليشمل أيضًا جمع السجلات عبر OpenTelemetry Collector — وهو وكيل أو وكيل وسيط يستقبل بيانات القياس عن بُعد ويعالجها ويصدّرها.
 
 <div id="clickhouse-relevant-components">
-  ## المكوّنات ذات الصلة بـ ClickHouse
+  ## المكوّنات ذات الصلة بـ ClickHouse {#clickhouse-relevant-components}
 </div>
 
 يتكوّن OpenTelemetry من عدد من المكوّنات. وإلى جانب توفير مواصفات للبيانات وواجهة برمجة تطبيقات وبروتوكول موحّد واصطلاحات تسمية للحقول/الأعمدة، يوفّر OTel إمكانيتين أساسيتين لبناء حل للرصد باستخدام ClickHouse:
@@ -27,7 +25,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 يستفيد حل الرصد المعتمد على ClickHouse من كلتا هاتين الأداتين.
 
 <div id="distributions">
-  ## التوزيعات
+  ## التوزيعات {#distributions}
 </div>
 
 يحتوي OpenTelemetry Collector على [عدد من التوزيعات](https://github.com/open-telemetry/opentelemetry-collector-releases?tab=readme-ov-file). ولا يتوفر مستقبِل filelog مع مُصدِّر ClickHouse، وهما مطلوبان لحل يعتمد على ClickHouse، إلا في [توزيعة OpenTelemetry Collector Contrib](https://github.com/open-telemetry/opentelemetry-collector-releases/tree/main/distributions/otelcol-contrib).
@@ -40,11 +38,11 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 يمكن إنشاء [مجمِّع مخصص](https://opentelemetry.io/docs/collector/custom-collector/) باستخدام [OpenTelemetry Collector Builder](https://github.com/open-telemetry/opentelemetry-collector/tree/main/cmd/builder).
 
 <div id="ingesting-data-with-otel">
-  ## إدخال البيانات باستخدام OTel
+  ## إدخال البيانات باستخدام OTel {#ingesting-data-with-otel}
 </div>
 
 <div id="collector-deployment-roles">
-  ### أدوار نشر OpenTelemetry Collector
+  ### أدوار نشر OpenTelemetry Collector {#collector-deployment-roles}
 </div>
 
 لجمع السجلات وإدراجها في ClickHouse، نوصي باستخدام OpenTelemetry Collector. ويمكن نشر OpenTelemetry Collector في دورين رئيسيين:
@@ -54,31 +52,41 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 فيما يلي، نفترض وجود مجمّع وكيل بسيط يرسل أحداثه مباشرةً إلى ClickHouse. راجع [التوسّع باستخدام البوابات](#scaling-with-gateways) لمزيد من التفاصيل حول استخدام البوابات ومتى يكون ذلك مناسبًا.
 
-<div id="collecting-logs">
-  ### جمع السجلات
+### جمع السجلات {#collecting-logs}
+
+الميزة الرئيسية لاستخدام جامع البيانات هي أنه يتيح لخدماتك تفريغ البيانات بسرعة، تاركًا لجامع البيانات مهمة التعامل مع المعالجة الإضافية مثل إعادة المحاولة، والتجميع على دفعات، والتشفير، وحتى تصفية البيانات الحساسة.
+
+يستخدم جامع البيانات مصطلحات [المستقبِل](https://opentelemetry.io/docs/collector/configuration/#receivers) و[معالج](https://opentelemetry.io/docs/collector/configuration/#processors) و[المُصدِّر](https://opentelemetry.io/docs/collector/configuration/#exporters) لمراحله الثلاث الرئيسية في المعالجة. تُستخدم المستقبِلات لجمع البيانات، ويمكن أن تكون قائمة على السحب أو الدفع. وتوفّر المعالجات إمكانية إجراء التحويلات وإثراء الرسائل. أما المُصدِّرات فهي مسؤولة عن إرسال البيانات إلى خدمة لاحقة. ومع أن هذه الخدمة يمكن نظريًا أن تكون جامع بيانات آخر، فإننا نفترض في الشرح الأولي أدناه أن جميع البيانات تُرسل مباشرةً إلى ClickHouse.
+
+<div className="ch-image-md">
+  <Frame>
+    ![جمع السجلات](/images/use-cases/observability/observability-3.webp)
+  </Frame>
 </div>
 
-الميزة الرئيسية لاستخدام المُجمِّع هي أنه يتيح لخدماتك تفريغ البيانات بسرعة، تاركًا للمُجمِّع مهمة التعامل مع المعالجة الإضافية مثل إعادة المحاولة، والتجميع على دفعات، والتشفير، وحتى تصفية البيانات الحساسة.
+نوصي المستخدمين بالتعرّف على المجموعة الكاملة من المستقبِلات والمعالجات والمُصدِّرات.
 
-يستخدم المُجمِّع مصطلحات [receiver](https://opentelemetry.io/docs/collector/configuration/#receivers) و[processor](https://opentelemetry.io/docs/collector/configuration/#processors) و[exporter](https://opentelemetry.io/docs/collector/configuration/#exporters) لمراحله الثلاث الرئيسية في المعالجة. تُستخدم المستقبلات لجمع البيانات، ويمكن أن تكون قائمة على السحب أو الدفع. وتوفّر المعالجات إمكانية إجراء التحويلات وإثراء الرسائل. أما المُصدِّرات فهي مسؤولة عن إرسال البيانات إلى خدمة لاحقة. ومع أن هذه الخدمة يمكن نظريًا أن تكون مُجمِّعًا آخر، فإننا نفترض في الشرح الأولي أدناه أن جميع البيانات تُرسل مباشرةً إلى ClickHouse.
+يوفّر جامع البيانات مستقبِلين رئيسيين لجمع السجلات:
 
-<Image img="/images/use-cases/observability/observability-3.webp" alt="جمع السجلات" size="md" />
+**عبر OTLP** - في هذه الحالة، تُرسل السجلات (دفعًا) مباشرةً إلى جامع البيانات من OpenTelemetry SDKs عبر بروتوكول OTLP. ويستخدم [OpenTelemetry demo](https://opentelemetry.io/docs/demo/) هذا الأسلوب، حيث تفترض مُصدِّرات OTLP في كل لغة وجود نقطة نهاية محلية لجامع البيانات. ويجب تهيئة جامع البيانات باستخدام مستقبِل OTLP في هذه الحالة — راجع [العرض التوضيحي أعلاه للاطلاع على إعدادات](https://github.com/ClickHouse/opentelemetry-demo/blob/main/src/otelcollector/otelcol-config.yml#L5-L12). وتتمثل ميزة هذا الأسلوب في أن بيانات السجل ستتضمن تلقائيًا معرّفات التتبّع، مما يتيح للمستخدمين لاحقًا تحديد التتبعات المرتبطة بسجل معيّن والعكس صحيح.
 
-نوصي المستخدمين بالتعرّف على المجموعة الكاملة من المستقبلات والمعالجات والمُصدِّرات.
-
-يوفّر المُجمِّع مستقبلين رئيسيين لجمع السجلات:
-
-**عبر OTLP** - في هذه الحالة، تُرسل السجلات (دفعًا) مباشرةً إلى المُجمِّع من OpenTelemetry SDKs عبر بروتوكول OTLP. ويستخدم [OpenTelemetry demo](https://opentelemetry.io/docs/demo/) هذا الأسلوب، حيث تفترض مُصدِّرات OTLP في كل لغة وجود نقطة نهاية محلية للمُجمِّع. ويجب تهيئة المُجمِّع باستخدام مستقبِل OTLP في هذه الحالة — راجع [العرض التوضيحي أعلاه للاطلاع على إعداد](https://github.com/ClickHouse/opentelemetry-demo/blob/main/src/otelcollector/otelcol-config.yml#L5-L12). وتتمثل ميزة هذا الأسلوب في أن بيانات السجل ستتضمن تلقائيًا معرّفات التتبّع، مما يتيح للمستخدمين لاحقًا تحديد التتبعات المرتبطة بسجل معيّن والعكس صحيح.
-
-<Image img="/images/use-cases/observability/observability-4.webp" alt="جمع السجلات عبر otlp" size="md" />
+<div className="ch-image-md">
+  <Frame>
+    ![جمع السجلات عبر otlp](/images/use-cases/observability/observability-4.webp)
+  </Frame>
+</div>
 
 يتطلب هذا الأسلوب من المستخدمين تضمين شيفرتهم باستخدام [SDK المناسب للغتهم](https://opentelemetry.io/docs/languages/).
 
 * **الكشط عبر مستقبِل filelog** - يتتبع هذا المستقبِل الملفات على القرص ويحوّلها إلى رسائل سجل، ثم يرسلها إلى ClickHouse. ويتعامل هذا المستقبِل مع مهام معقدة مثل اكتشاف الرسائل متعددة الأسطر، والتعامل مع تدوير السجلات، وإنشاء نقاط تحقق لضمان المتانة عند إعادة التشغيل، واستخراج البنية. كما يستطيع هذا المستقبِل أيضًا تتبّع سجلات حاويات Docker وKubernetes، ويمكن نشره كمخطط Helm، مع [استخراج بنيتها](https://opentelemetry.io/blog/2024/otel-collector-container-log-parser/) وإثرائها بتفاصيل الـ pod.
 
-<Image img="/images/use-cases/observability/observability-5.webp" alt="مستقبِل سجلات الملفات" size="md" />
+<div className="ch-image-md">
+  <Frame>
+    ![مستقبِل سجلات الملفات](/images/use-cases/observability/observability-5.webp)
+  </Frame>
+</div>
 
-**ستستخدم معظم عمليات النشر مزيجًا من المستقبلات المذكورة أعلاه. نوصي المستخدمين بقراءة [توثيق المُجمِّع](https://opentelemetry.io/docs/collector/) والتعرّف على المفاهيم الأساسية، إلى جانب [بنية الإعداد](https://opentelemetry.io/docs/collector/configuration/) و[طرق التثبيت](https://opentelemetry.io/docs/collector/installation/).**
+**ستستخدم معظم عمليات النشر مزيجًا من المستقبِلات المذكورة أعلاه. نوصي المستخدمين بقراءة [توثيق جامع البيانات](https://opentelemetry.io/docs/collector/) والتعرّف على المفاهيم الأساسية، إلى جانب [بنية الإعدادات](https://opentelemetry.io/docs/collector/configuration/) و[طرق التثبيت](https://opentelemetry.io/docs/collector/installation/).**
 
 <Info>
   **نصيحة: `otelbin.io`**
@@ -87,7 +95,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 </Info>
 
 <div id="structured-vs-unstructured">
-  ## المهيكلة مقابل غير المهيكلة
+  ## المهيكلة مقابل غير المهيكلة {#structured-vs-unstructured}
 </div>
 
 يمكن أن تكون السجلات مهيكلة أو غير مهيكلة.
@@ -116,7 +124,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 نوصي المستخدمين باعتماد التسجيل المنظَّم وتسجيل السجلات بصيغة JSON (أي ndjson) كلما أمكن. سيُبسّط ذلك معالجة السجلات المطلوبة لاحقًا، سواء قبل إرسالها إلى ClickHouse باستخدام [معالجات Collector](https://opentelemetry.io/docs/collector/configuration/#processors) أو عند وقت الإدراج باستخدام العروض المادية. وفي النهاية، توفّر السجلات المنظَّمة موارد المعالجة اللاحقة، مما يقلّل من مقدار CPU المطلوب في حل ClickHouse لديك.
 
 <div id="example">
-  ### مثال
+  ### مثال {#example}
 </div>
 
 لأغراض هذا المثال، نوفر مجموعة بيانات لسجلات منظَّمة (JSON) وأخرى غير منظَّمة، تحتوي كل منهما على نحو 10m صفوف، وهما متاحتان عبر الروابط التالية:
@@ -214,13 +222,13 @@ Flags: 0
 بالنسبة إلى المستخدمين الذين يحتاجون إلى جمع log files محلية أو خاصة بـ Kubernetes، نوصيهم بالتعرّف على خيارات الإعداد المتاحة لـ [filelog receiver](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/receiver/filelogreceiver/README.md#configuration)، وكيفية التعامل مع [offsets](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/receiver/filelogreceiver#offset-tracking)، وكيفية [تحليل السجلات متعددة الأسطر](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/receiver/filelogreceiver#example---multiline-logs-parsing).
 
 <div id="collecting-kubernetes-logs">
-  ## جمع سجلات Kubernetes
+  ## جمع سجلات Kubernetes {#collecting-kubernetes-logs}
 </div>
 
 لجمع سجلات Kubernetes، نوصي بالرجوع إلى [دليل توثيق OpenTelemetry](https://opentelemetry.io/docs/kubernetes/). كما نوصي باستخدام [معالج سمات Kubernetes](https://opentelemetry.io/docs/kubernetes/collector/components/#kubernetes-attributes-processor) لإثراء السجلات والمقاييس بالبيانات الوصفية للحاويات المنفردة. وقد ينتج عن ذلك بيانات وصفية ديناميكية، مثل التسميات، تُخزَّن في العمود `ResourceAttributes`. يستخدم ClickHouse حاليًا النوع `Map(String, String)` لهذا العمود. راجع [Using Maps](/ar/guides/use-cases/observability/build-your-own/schema-design#using-maps) و[Extracting from maps](/ar/guides/use-cases/observability/build-your-own/schema-design#extracting-from-maps) لمزيد من التفاصيل حول كيفية التعامل مع هذا النوع وتحسينه.
 
 <div id="collecting-traces">
-  ## جمع التتبعات
+  ## جمع التتبعات {#collecting-traces}
 </div>
 
 بالنسبة إلى المستخدمين الذين يريدون تزويد شيفرتهم بقدرات القياس عن بُعد وجمع التتبعات، نوصي باتباع [وثائق OTel الرسمية](https://opentelemetry.io/docs/languages/).
@@ -228,7 +236,7 @@ Flags: 0
 ولإرسال الأحداث إلى ClickHouse، ستحتاج إلى Deploy ‏OTel collector لتلقّي أحداث التتبع عبر بروتوكول OTLP من خلال الـ receiver المناسب. يوفّر OpenTelemetry demo [مثالًا على تزويد كل لغة مدعومة بقدرات القياس عن بُعد](https://opentelemetry.io/docs/demo/) وإرسال الأحداث إلى collector. ويرد أدناه مثال على تهيئة collector مناسبة تُخرج الأحداث إلى stdout:
 
 <div id="example">
-  ### مثال
+  ### مثال {#example-1}
 </div>
 
 نظرًا إلى أن بيانات التتبّع يجب أن تُستقبل عبر OTLP، فإننا نستخدم أداة [`telemetrygen`](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/cmd/telemetrygen) لتوليد بيانات التتبّع. اتبع التعليمات [هنا](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/cmd/telemetrygen) للتثبيت.
@@ -292,7 +300,7 @@ Attributes:
 يُحفَظ المخطط الكامل لرسائل trace [هنا](https://opentelemetry.io/docs/concepts/signals/traces/). ونوصي بشدة بأن يتعرّف المستخدمون إلى هذا المخطط.
 
 <div id="processing---filtering-transforming-and-enriching">
-  ## المعالجة - التصفية والتحويل والإثراء
+  ## المعالجة - التصفية والتحويل والإثراء {#processing---filtering-transforming-and-enriching}
 </div>
 
 كما هو موضح في المثال السابق لتعيين الطابع الزمني لحدث سجل، ستحتاج حتمًا إلى تصفية رسائل الأحداث وتحويلها وإثرائها. ويمكن تحقيق ذلك باستخدام عدد من الإمكانات في OpenTelemetry:
@@ -312,7 +320,7 @@ Attributes:
 إذا كانت المعالجة تُجرى باستخدام OTel collector، فنوصي بإجراء التحويلات في مثيلات gateway وتقليل أي عمل يُنفَّذ في مثيلات agent إلى الحد الأدنى. ويضمن ذلك أن تبقى الموارد المطلوبة من agents الطرفية، التي تعمل على الخوادم، عند أقل مستوى ممكن. وعادةً ما نرى المستخدمين يجرون التصفية فقط (لتقليل استخدام الشبكة غير الضروري)، وتعيين الطابع الزمني (عبر المشغّلات)، والإثراء الذي يتطلب سياقًا داخل agents. على سبيل المثال، إذا كانت مثيلات gateway موجودة في Kubernetes cluster مختلف، فسيلزم تنفيذ إثراء k8s داخل agent.
 
 <div id="example">
-  ### مثال
+  ### مثال {#example-2}
 </div>
 
 يوضح الإعداد التالي كيفية جمع بيانات ملف السجل غير المنظم. لاحظ استخدام المشغّلات لاستخراج البنية من أسطر السجل (`regex_parser`) وتصفية الأحداث، إلى جانب معالج لتجميع الأحداث في دفعات والحد من استخدام الذاكرة.
@@ -356,7 +364,7 @@ service:
 ```
 
 <div id="exporting-to-clickhouse">
-  ## التصدير إلى ClickHouse
+  ## التصدير إلى ClickHouse {#exporting-to-clickhouse}
 </div>
 
 ترسل المصدّرات البيانات إلى نظام خلفي واحد أو أكثر أو إلى وجهات أخرى. ويمكن أن تعتمد المصدّرات على السحب أو على الدفع. ولإرسال الأحداث إلى ClickHouse، ستحتاج إلى استخدام [ClickHouse exporter](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/exporter/clickhouseexporter/README.md) المعتمد على الدفع.
@@ -511,7 +519,7 @@ Links.Attributes:   []
 ```
 
 <div id="out-of-the-box-schema">
-  ## المخطط الجاهز للاستخدام
+  ## المخطط الجاهز للاستخدام {#out-of-the-box-schema}
 </div>
 
 <Tip>
@@ -622,13 +630,13 @@ SETTINGS ttl_only_drop_parts = 1
 نوصي المستخدمين بتعطيل الإنشاء التلقائي للمخطط وإنشاء جداولهم يدويًا. يتيح ذلك تعديل المفاتيح الأساسية والثانوية، كما يتيح إضافة أعمدة إضافية لتحسين أداء الاستعلام. ولمزيد من التفاصيل، راجع [تصميم المخطط](/ar/guides/use-cases/observability/build-your-own/schema-design).
 
 <div id="optimizing-inserts">
-  ## تحسين عمليات الإدراج
+  ## تحسين عمليات الإدراج {#optimizing-inserts}
 </div>
 
 لتحقيق أداء عالٍ لعمليات الإدراج مع ضمان اتساق قوي، ينبغي الالتزام بقواعد بسيطة عند إدراج بيانات observability في ClickHouse عبر collector. ومع الإعداد الصحيح لـ OTel collector، يفترض أن يكون اتباع القواعد التالية أمرًا مباشرًا. ويساعد ذلك أيضًا على تجنب [المشكلات الشائعة](https://clickhouse.com/blog/common-getting-started-issues-with-clickhouse) التي يواجهها المستخدمون عند استخدام ClickHouse لأول مرة.
 
 <div id="batching">
-  ### التجميع على دفعات
+  ### التجميع على دفعات {#batching}
 </div>
 
 افتراضيًا، تؤدي كل عملية insert تُرسَل إلى ClickHouse إلى أن ينشئ ClickHouse فورًا جزءًا تخزينيًا يحتوي على بيانات تلك العملية، إلى جانب بيانات وصفية أخرى يجب تخزينها. لذلك، فإن إرسال عدد أقل من عمليات insert بحيث تحتوي كل واحدة منها على قدر أكبر من البيانات، بدلًا من إرسال عدد أكبر من عمليات insert يحتوي كلٌّ منها على قدر أقل من البيانات، يقلل عدد عمليات الكتابة المطلوبة. نوصي بإدراج البيانات في دفعات كبيرة نسبيًا لا تقل عن 1,000 صف في المرة الواحدة. لمزيد من التفاصيل، راجع [هنا](https://clickhouse.com/blog/asynchronous-data-inserts-in-clickhouse#data-needs-to-be-batched-for-optimal-performance).
@@ -642,26 +650,28 @@ SETTINGS ttl_only_drop_parts = 1
 
 نوصي بأن يستخدم المستخدمون [معالج الدفعات](https://github.com/open-telemetry/opentelemetry-collector/blob/main/processor/batchprocessor/README.md) الموضّح في الإعدادات السابقة لتحقيق ما سبق. فهذا يضمن إرسال عمليات insert على شكل دفعات متسقة من الصفوف تستوفي المتطلبات المذكورة أعلاه. وإذا كان من المتوقع أن يحقق الـ collector معدل throughput مرتفعًا (أحداثًا في الثانية)، وكان بالإمكان إرسال ما لا يقل عن 10,000 حدث في كل عملية insert، فعادةً ما يكون هذا هو التجميع الوحيد المطلوب في مسار المعالجة. ويمكن استخدام قيم تصل إلى 100,000 إذا كانت الذاكرة تسمح بذلك. وفي هذه الحالة، سيقوم الـ collector بتفريغ الدفعات قبل بلوغ `timeout` الخاص بمعالج الدفعات، مما يضمن بقاء زمن الانتقال من طرف إلى طرف في مسار المعالجة منخفضًا، وأن تكون الدفعات ذات حجم متسق.
 
-<div id="use-asynchronous-inserts">
-  ### استخدم asynchronous inserts
+### استخدم asynchronous inserts {#use-asynchronous-inserts}
+
+عادةً ما يضطر المستخدمون إلى إرسال دفعات أصغر عندما يكون معدل النقل في جامع البيانات منخفضًا، ومع ذلك يظلون يتوقعون أن تصل البيانات إلى ClickHouse بأقل زمن انتقال ممكن من طرف إلى طرف. في هذه الحالة، تُرسل الدفعات الصغيرة عند انتهاء مهلة `timeout` الخاصة بـ معالج الدُفعات. وقد يؤدي ذلك إلى مشكلات، وهنا تبرز الحاجة إلى asynchronous inserts. تظهر هذه الحالة عادةً عندما **تُضبط جامعات البيانات التي تعمل بدور وكيل للإرسال مباشرةً إلى ClickHouse**. ويمكن للبوابات، من خلال عملها كمجمِّعات مركزية، أن تخفف هذه المشكلة — راجع [التوسع باستخدام البوابات](#scaling-with-gateways).
+
+إذا لم يكن من الممكن ضمان دفعات كبيرة، فيمكنك إسناد التجميع في دفعات إلى ClickHouse باستخدام [asynchronous inserts](/ar/concepts/best-practices/selecting-an-insert-strategy#asynchronous-inserts). مع asynchronous inserts، تُدرج البيانات أولًا في buffer، ثم تُكتب لاحقًا إلى مساحة تخزين قاعدة البيانات، أي بشكل غير متزامن.
+
+<div className="ch-image-md">
+  <Frame>
+    ![asynchronous inserts](/images/use-cases/observability/observability-6.webp)
+  </Frame>
 </div>
 
-عادةً ما يضطر المستخدمون إلى إرسال دفعات أصغر عندما يكون throughput في collector منخفضًا، ومع ذلك يظلون يتوقعون أن تصل البيانات إلى ClickHouse بأقل زمن انتقال ممكن من طرف إلى طرف. في هذه الحالة، تُرسل الدفعات الصغيرة عند انتهاء مهلة `timeout` الخاصة بـ معالج الدفعات. وقد يؤدي ذلك إلى مشكلات، وهنا تبرز الحاجة إلى asynchronous inserts. تظهر هذه الحالة عادةً عندما **تُضبط collectors التي تعمل بدور agent للإرسال مباشرةً إلى ClickHouse**. ويمكن لـ gateways، من خلال عملها كمجمِّعات مركزية، أن تخفف هذه المشكلة — راجع [التوسع باستخدام gateways](#scaling-with-gateways).
+عند [تمكين asynchronous inserts](/ar/concepts/features/operations/insert/asyncinserts#enabling-asynchronous-inserts)، عندما يستقبل ClickHouse ① استعلام الإدراج، تُكتب بيانات الاستعلام ② فورًا إلى buffer داخل الذاكرة. وعندما ③ تحدث عملية التفريغ التالية للـ buffer، تُرتَّب بيانات الـ buffer [ترتيبًا](/ar/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-stored-on-disk-ordered-by-primary-key-columns) ثم تُكتب كجزء إلى مساحة تخزين قاعدة البيانات. لاحظ أن البيانات لا تكون قابلة للبحث عبر queries قبل التفريغ إلى مساحة تخزين قاعدة البيانات؛ كما أن عملية التفريغ للـ buffer [قابلة للضبط](/ar/concepts/features/operations/insert/asyncinserts).
 
-إذا لم يكن من الممكن ضمان دفعات كبيرة، فيمكنك إسناد التجميع إلى ClickHouse باستخدام [asynchronous inserts](/ar/concepts/best-practices/selecting-an-insert-strategy#asynchronous-inserts). مع asynchronous inserts، تُدرج البيانات أولًا في buffer، ثم تُكتب لاحقًا إلى مساحة تخزين قاعدة البيانات، أي بشكل غير متزامن.
+لتمكين asynchronous inserts لجامع البيانات، أضف `async_insert=1` إلى connection string. نوصي باستخدام `wait_for_async_insert=1` (وهو الإعداد الافتراضي) للحصول على ضمانات التسليم — راجع [هنا](https://clickhouse.com/blog/asynchronous-data-inserts-in-clickhouse) لمزيد من التفاصيل.
 
-<Image img="/images/use-cases/observability/observability-6.webp" alt="asynchronous inserts" size="md" />
-
-عند [تمكين asynchronous inserts](/ar/concepts/features/operations/insert/asyncinserts#enabling-asynchronous-inserts)، عندما يستقبل ClickHouse ① insert query، تُكتب بيانات الاستعلام ② فورًا إلى buffer داخل الذاكرة. وعندما ③ تحدث عملية flush التالية للـ buffer، تُرتَّب بيانات الـ buffer [ترتيبًا](/ar/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-stored-on-disk-ordered-by-primary-key-columns) ثم تُكتب كجزء إلى مساحة تخزين قاعدة البيانات. لاحظ أن البيانات لا تكون قابلة للبحث عبر queries قبل flush إلى مساحة تخزين قاعدة البيانات؛ كما أن عملية flush للـ buffer [قابلة للضبط](/ar/concepts/features/operations/insert/asyncinserts).
-
-لتمكين asynchronous inserts للمجمّع، أضف `async_insert=1` إلى connection string. نوصي باستخدام `wait_for_async_insert=1` (وهو الإعداد الافتراضي) للحصول على ضمانات التسليم — راجع [هنا](https://clickhouse.com/blog/asynchronous-data-inserts-in-clickhouse) لمزيد من التفاصيل.
-
-تُدرج بيانات async insert بمجرد تنفيذ flush لـ buffer في ClickHouse. ويحدث ذلك إما بعد تجاوز [`async_insert_max_data_size`](/ar/reference/settings/session-settings/async-insert#async_insert_max_data_size) أو بعد مرور [`async_insert_busy_timeout_ms`](/ar/reference/settings/session-settings/async-insert#async_insert_busy_timeout_max_ms) مللي ثانية منذ أول INSERT query. وإذا ضُبط `async_insert_stale_timeout_ms` على قيمة غير صفرية، فستُدرج البيانات بعد مرور `async_insert_stale_timeout_ms milliseconds` منذ آخر query. يمكنك ضبط هذه settings للتحكم في زمن الانتقال من طرف إلى طرف في pipeline لديك. وترد [هنا](/ar/reference/settings/session-settings/async-insert#async_insert) settings إضافية يمكن استخدامها لضبط flush للـ buffer. وبوجه عام، تكون القيم الافتراضية مناسبة.
+تُدرج بيانات async insert بمجرد تنفيذ تفريغ لـ buffer في ClickHouse. ويحدث ذلك إما بعد تجاوز [`async_insert_max_data_size`](/ar/reference/settings/session-settings/async-insert#async_insert_max_data_size) أو بعد مرور [`async_insert_busy_timeout_ms`](/ar/reference/settings/session-settings/async-insert#async_insert_busy_timeout_max_ms) مللي ثانية منذ أول استعلام إدراج. وإذا ضُبط `async_insert_stale_timeout_ms` على قيمة غير صفرية، فستُدرج البيانات بعد مرور `async_insert_stale_timeout_ms milliseconds` منذ آخر query. يمكنك ضبط هذه settings للتحكم في زمن الانتقال من طرف إلى طرف في pipeline لديك. وترد [هنا](/ar/reference/settings/session-settings/async-insert#async_insert) settings إضافية يمكن استخدامها لضبط التفريغ للـ buffer. وبوجه عام، تكون القيم الافتراضية مناسبة.
 
 <Info>
   **فكّر في asynchronous inserts التكيفية**
 
-  في الحالات التي يُستخدم فيها عدد قليل من agents، مع throughput منخفض ومتطلبات صارمة لزمن الانتقال من طرف إلى طرف، فقد تكون [asynchronous inserts التكيفية](https://clickhouse.com/blog/clickhouse-release-24-02#adaptive-asynchronous-inserts) مفيدة. لكن هذه الميزة لا تكون مناسبة عادةً لحالات استخدام Observability ذات throughput المرتفع، كما هو الحال مع ClickHouse.
+  في الحالات التي يُستخدم فيها عدد قليل من الوكلاء، مع معدل نقل منخفض ومتطلبات صارمة لزمن الانتقال من طرف إلى طرف، فقد تكون [asynchronous inserts التكيفية](https://clickhouse.com/blog/clickhouse-release-24-02#adaptive-asynchronous-inserts) مفيدة. لكن هذه الميزة لا تكون مناسبة عادةً لحالات استخدام إمكانية المراقبة ذات معدل النقل المرتفع، كما هو الحال مع ClickHouse.
 </Info>
 
 أخيرًا، لا يكون سلوك deduplication السابق المرتبط بالإدراجات المتزامنة في ClickHouse مُمكّنًا افتراضيًا عند استخدام asynchronous inserts. وإذا لزم الأمر، فراجع الإعداد [`async_insert_deduplicate`](/ar/reference/settings/session-settings/async-insert#async_insert_deduplicate).
@@ -669,36 +679,40 @@ SETTINGS ttl_only_drop_parts = 1
 يمكن العثور على التفاصيل الكاملة حول ضبط هذه feature [هنا](/ar/concepts/features/operations/insert/asyncinserts#enabling-asynchronous-inserts)، مع شرح معمّق [هنا](https://clickhouse.com/blog/asynchronous-data-inserts-in-clickhouse).
 
 <div id="deployment-architectures">
-  ## معماريات النشر
+  ## معماريات النشر {#deployment-architectures}
 </div>
 
 يمكن اعتماد عدة معماريات للنشر عند استخدام OTel collector مع ClickHouse. نوضح أدناه كل خيار ومتى يكون مناسبًا على الأرجح.
 
-<div id="agents-only">
-  ### agents فقط
+### الوكلاء فقط {#agents-only}
+
+في معمارية الوكلاء فقط، ينشر المستخدمون جامع بيانات OTel كوكلاء على الأطراف. تستقبل هذه الوكلاء `traces` من التطبيقات المحلية (مثلًا كحاوية sidecar) وتجمع `logs` من الخوادم وعُقد Kubernetes. في هذا الوضع، ترسل الوكلاء بياناتها مباشرةً إلى ClickHouse.
+
+<div className="ch-image-md">
+  <Frame>
+    ![الوكلاء فقط](/images/use-cases/observability/observability-7.webp)
+  </Frame>
 </div>
 
-في معمارية agents فقط، ينشر المستخدمون OTel collector كـ agents على الأطراف. تستقبل هذه agents `traces` من التطبيقات المحلية (مثلًا كحاوية sidecar) وتجمع `logs` من الخوادم وعُقد Kubernetes. في هذا الوضع، ترسل agents بياناتها مباشرةً إلى ClickHouse.
+تُعد هذه المعمارية مناسبة لعمليات النشر الصغيرة والمتوسطة. وتتمثل ميزتها الرئيسية في أنها لا تتطلب عتادًا إضافيًا، وتُبقي البصمة الإجمالية لموارد حل إمكانية المراقبة من ClickHouse عند الحد الأدنى، مع اقتران بسيط بين التطبيقات و`collectors`.
 
-<Image img="/images/use-cases/observability/observability-7.webp" alt="الوكلاء فقط" size="md" />
+ينبغي التفكير في الانتقال إلى معمارية قائمة على البوابة بمجرد أن يتجاوز عدد الوكلاء عدة مئات. فهذه المعمارية تنطوي على عدة عيوب تجعل توسيع نطاقها صعبًا:
 
-تُعد هذه المعمارية مناسبة لعمليات النشر الصغيرة والمتوسطة. وتتمثل ميزتها الرئيسية في أنها لا تتطلب عتادًا إضافيًا، وتُبقي البصمة الإجمالية لموارد حل observability من ClickHouse عند الحد الأدنى، مع اقتران بسيط بين التطبيقات و`collectors`.
+* **توسيع نطاق الاتصالات** - سينشئ كل وكيل اتصالًا مع ClickHouse. ومع أن ClickHouse قادر على الحفاظ على مئات، إن لم يكن آلاف، اتصالات `insert` المتزامنة، فإن ذلك سيصبح في نهاية المطاف عاملًا مقيِّدًا وسيجعل `inserts` أقل كفاءة — أي إن ClickHouse سيستهلك موارد أكثر للإبقاء على هذه الاتصالات. ويؤدي استخدام `gateways` إلى تقليل عدد الاتصالات وجعل `inserts` أكثر كفاءة.
+* **المعالجة عند الأطراف** - يجب تنفيذ أي تحويلات أو معالجة للأحداث عند الأطراف أو داخل ClickHouse في هذه المعمارية. وإلى جانب كون ذلك مقيِّدًا، فقد يعني هذا إما إنشاء `materialized views` معقدة في ClickHouse أو نقل قدر كبير من العمليات الحسابية إلى الأطراف — حيث قد تتأثر الخدمات الحرجة وتكون الموارد شحيحة.
+* **الدفعات الصغيرة وزمن الاستجابة** - قد تجمع `collectors` الخاصة بالوكلاء عددًا قليلًا جدًا من الأحداث، كلٌّ على حدة. وهذا يعني عادةً أنها تحتاج إلى تهيئتها لتنفيذ `flush` على فاصل زمني محدد للوفاء بـ اتفاقيات مستوى الخدمة الخاصة بالتسليم. وقد يؤدي ذلك إلى أن يرسل `collector` دفعات صغيرة إلى ClickHouse. وعلى الرغم من أن هذا يُعد عيبًا، فإنه يمكن التخفيف منه باستخدام `Asynchronous inserts` — انظر [تحسين `inserts`](#optimizing-inserts).
 
-ينبغي التفكير في الانتقال إلى معمارية قائمة على البوابة بمجرد أن يتجاوز عدد agents عدة مئات. فهذه المعمارية تنطوي على عدة عيوب تجعل توسيع نطاقها صعبًا:
+### التوسّع باستخدام البوابات {#scaling-with-gateways}
 
-* **توسيع نطاق الاتصالات** - سينشئ كل agent اتصالًا مع ClickHouse. ومع أن ClickHouse قادر على الحفاظ على مئات، إن لم يكن آلاف، اتصالات `insert` المتزامنة، فإن ذلك سيصبح في نهاية المطاف عاملًا مقيِّدًا وسيجعل `inserts` أقل كفاءة — أي إن ClickHouse سيستهلك موارد أكثر للإبقاء على هذه الاتصالات. ويؤدي استخدام `gateways` إلى تقليل عدد الاتصالات وجعل `inserts` أكثر كفاءة.
-* **المعالجة عند الأطراف** - يجب تنفيذ أي تحويلات أو معالجة للأحداث عند الأطراف أو داخل ClickHouse في هذه المعمارية. وإلى جانب كون ذلك مقيِّدًا، فقد يعني هذا إما إنشاء `materialized views` معقدة في ClickHouse أو نقل قدر كبير من العمليات الحسابية إلى الأطراف — حيث قد تتأثر الخدمات الحرجة وتكون الموارد شحيحة.
-* **الدفعات الصغيرة وزمن الاستجابة** - قد تجمع `collectors` الخاصة بـ agents عددًا قليلًا جدًا من الأحداث، كلٌّ على حدة. وهذا يعني عادةً أنها تحتاج إلى تهيئتها لتنفيذ `flush` على فاصل زمني محدد للوفاء بـ اتفاقيات مستوى الخدمة الخاصة بالتسليم. وقد يؤدي ذلك إلى أن يرسل `collector` دفعات صغيرة إلى ClickHouse. وعلى الرغم من أن هذا يُعد عيبًا، فإنه يمكن التخفيف منه باستخدام `Asynchronous inserts` — انظر [تحسين `inserts`](#optimizing-inserts).
+يمكن نشر OTel collector كمثيلات بوابة لمعالجة القيود المذكورة أعلاه. فهي توفّر خدمة مستقلة، عادةً لكل مركز بيانات أو لكل منطقة. وتتلقى هذه المثيلات الأحداث من التطبيقات (أو من جامعي بيانات آخرين يؤدون دور وكيل) عبر OTLP endpoint واحد. وعادةً ما تُنشر مجموعة من مثيلات بوابة، مع استخدام load balancer جاهز لتوزيع الحمل فيما بينها.
 
-<div id="scaling-with-gateways">
-  ### التوسّع باستخدام gateways
+<div className="ch-image-md">
+  <Frame>
+    ![التوسّع باستخدام البوابات](/images/use-cases/observability/observability-8.webp)
+  </Frame>
 </div>
 
-يمكن نشر OTel collector كمثيلات gateway لمعالجة القيود المذكورة أعلاه. فهي توفّر خدمة مستقلة، عادةً لكل مركز بيانات أو لكل منطقة. وتتلقى هذه المثيلات الأحداث من التطبيقات (أو من collectors أخرى تؤدي دور agent) عبر OTLP endpoint واحد. وعادةً ما تُنشر مجموعة من مثيلات gateway، مع استخدام load balancer جاهز لتوزيع الحمل فيما بينها.
-
-<Image img="/images/use-cases/observability/observability-8.webp" alt="التوسّع باستخدام البوابات" size="md" />
-
-الهدف من هذه المعمارية هو نقل المعالجة كثيفة الاستهلاك حسابيًا بعيدًا عن agents، مما يقلّل استخدامهم للموارد إلى الحد الأدنى. ويمكن لهذه الـ gateways تنفيذ مهام التحويل التي كان سيتعيّن على agents تنفيذها لولا ذلك. وعلاوة على ذلك، فمن خلال تجميع الأحداث من عدد كبير من agents، يمكن للـ gateways ضمان إرسال batches كبيرة إلى ClickHouse، مما يتيح insertion بكفاءة. كما يمكن توسيع gateway collectors هذه بسهولة مع إضافة المزيد من agents وازدياد throughput للأحداث. ويظهر أدناه مثال على config لـ gateway، مع config agent مرتبط يستهلك ملف السجل المنظَّم المستخدم في المثال. لاحظ استخدام OTLP للتواصل بين agent وgateway.
+الهدف من هذه المعمارية هو نقل المعالجة كثيفة الاستهلاك حسابيًا بعيدًا عن الوكلاء، مما يقلّل استخدامهم للموارد إلى الحد الأدنى. ويمكن لهذه البوابات تنفيذ مهام التحويل التي كان سيتعيّن على الوكلاء تنفيذها لولا ذلك. وعلاوة على ذلك، فمن خلال تجميع الأحداث من عدد كبير من الوكلاء، يمكن للبوابات ضمان إرسال دفعات كبيرة إلى ClickHouse، مما يتيح insertion بكفاءة. كما يمكن توسيع جامعي بيانات البوابة هؤلاء بسهولة مع إضافة المزيد من الوكلاء وازدياد معدل النقل للأحداث. ويظهر أدناه مثال على config لبوابة، مع config وكيل مرتبط يستهلك ملف السجل المنظَّم المستخدم في المثال. لاحظ استخدام OTLP للتواصل بين الوكيل والبوابة.
 
 [clickhouse-agent-config.yaml](https://www.otelbin.io/#config=receivers%3A*N_filelog%3A*N___include%3A*N_____-_%2Fopt%2Fdata%2Flogs%2Faccess-structured.log*N___start*_at%3A_beginning*N___operators%3A*N_____-_type%3A_json*_parser*N_______timestamp%3A*N_________parse*_from%3A_attributes.time*_local*N_________layout%3A_*%22*.Y-*.m-*.d_*.H%3A*.M%3A*.S*%22*N*Nprocessors%3A*N_batch%3A*N___timeout%3A_5s*N___send*_batch*_size%3A_10000*N*Nexporters%3A*N_otlp%3A*N___endpoint%3A_localhost%3A4317*N___tls%3A*N_____insecure%3A_true_*H_Set_to_false_if_you_are_using_a_secure_connection*N*Nservice%3A*N_telemetry%3A*N___metrics%3A*N_____address%3A_0.0.0.0%3A9888_*H_Modified_as_2_collectors_running_on_same_host*N_pipelines%3A*N___logs%3A*N_____receivers%3A_%5Bfilelog%5D*N_____processors%3A_%5Bbatch%5D*N_____exporters%3A_%5Botlp%5D%7E\&distro=otelcol-contrib%7E\&distroVersion=v0.103.1%7E)
 
@@ -780,24 +794,26 @@ service:
 
 للاطلاع على مثال لإدارة معماريات أكبر قائمة على الـ gateway وما يرتبط بها من دروس مستفادة، نوصي بهذه [التدوينة](https://clickhouse.com/blog/building-a-logging-platform-with-clickhouse-and-saving-millions-over-datadog).
 
-<div id="adding-kafka">
-  ### إضافة Kafka
-</div>
+### إضافة Kafka {#adding-kafka}
 
-قد يلاحظ القرّاء أن المعماريات المذكورة أعلاه لا تستخدم Kafka كصف انتظار للرسائل.
+قد يلاحظ القرّاء أن المعماريات المذكورة أعلاه لا تستخدم Kafka كقائمة انتظار للرسائل.
 
-يُعد استخدام Kafka كمخزن مؤقت للرسائل نمط تصميم شائعًا في معماريات السجلات، وقد شاع مع حزمة ELK. ويوفر ذلك عدة فوائد؛ أهمها أنه يتيح ضمانات أقوى لتسليم الرسائل ويساعد على التعامل مع الضغط العكسي. تُرسل الرسائل من وكلاء التجميع إلى Kafka وتُكتب على القرص. ومن الناحية النظرية، ينبغي أن يوفر مثيل Kafka عنقودي مخزنًا مؤقتًا للرسائل عالي الإنتاجية، لأن كتابة البيانات خطيًا إلى القرص تتطلب كلفة حوسبية أقل من تحليل الرسالة ومعالجتها — ففي Elastic، على سبيل المثال، تفرض عمليتا tokenization وindexing كلفة إضافية كبيرة. كما أن نقل البيانات بعيدًا عن الوكلاء يقلل من خطر فقدان الرسائل نتيجة تدوير السجلات عند المصدر. وأخيرًا، يوفّر بعض إمكانات إعادة تشغيل الرسائل والنسخ المتماثل عبر المناطق، وهو ما قد يكون مناسبًا لبعض حالات الاستخدام.
+يُعد استخدام Kafka كمخزن مؤقت للرسائل نمط تصميم شائعًا في معماريات السجلات، وقد شاع مع حزمة ELK. ويوفر ذلك عدة فوائد؛ أهمها أنه يتيح ضمانات أقوى لتسليم الرسائل ويساعد على التعامل مع الضغط العكسي. تُرسل الرسائل من وكلاء التجميع إلى Kafka وتُكتب على القرص. ومن الناحية النظرية، ينبغي أن يوفر مثيل Kafka عنقودي مخزنًا مؤقتًا للرسائل ذا معدل نقل عالٍ، لأن كتابة البيانات خطيًا إلى القرص تتطلب عبئًا إضافيًا أقل من تحليل الرسالة ومعالجتها — ففي Elastic، على سبيل المثال، تفرض عمليتا tokenization وindexing عبئًا إضافيًا كبيرًا. كما أن نقل البيانات بعيدًا عن الوكلاء يقلل من خطر فقدان الرسائل نتيجة تدوير السجلات عند المصدر. وأخيرًا، يوفّر بعض إمكانات إعادة تشغيل الرسائل والنسخ المتماثل عبر المناطق، وهو ما قد يكون مناسبًا لبعض حالات الاستخدام.
 
-ومع ذلك، يمكن لـ ClickHouse التعامل مع إدراج البيانات بسرعة كبيرة جدًا — ملايين الصفوف في الثانية على عتاد متوسط. ويُعد الضغط العكسي من ClickHouse **نادرًا**. وغالبًا ما يعني الاعتماد على صف Kafka مزيدًا من التعقيد المعماري والتكلفة. وإذا كان بإمكانك تبنّي مبدأ أن السجلات لا تحتاج إلى ضمانات التسليم نفسها المطلوبة للمعاملات المصرفية وغيرها من البيانات بالغة الأهمية، فنحن نوصي بتجنّب تعقيد Kafka.
+ومع ذلك، يمكن لـ ClickHouse التعامل مع إدراج البيانات بسرعة كبيرة جدًا — ملايين الصفوف في الثانية على عتاد متوسط. ويُعد الضغط العكسي من ClickHouse **نادرًا**. وغالبًا ما يعني الاعتماد على قائمة انتظار Kafka مزيدًا من التعقيد المعماري والتكلفة. وإذا كان بإمكانك تبنّي مبدأ أن السجلات لا تحتاج إلى ضمانات التسليم نفسها المطلوبة للمعاملات المصرفية وغيرها من البيانات بالغة الأهمية، فنحن نوصي بتجنّب تعقيد Kafka.
 
 ومع ذلك، إذا كنت تحتاج إلى ضمانات تسليم عالية أو إلى القدرة على إعادة تشغيل البيانات (وربما إلى عدة وجهات)، فقد تكون Kafka إضافة معمارية مفيدة.
 
-<Image img="/images/use-cases/observability/observability-9.webp" alt="إضافة Kafka" size="md" />
+<div className="ch-image-md">
+  <Frame>
+    ![إضافة Kafka](/images/use-cases/observability/observability-9.webp)
+  </Frame>
+</div>
 
 في هذه الحالة، يمكن تهيئة وكلاء OTel لإرسال البيانات إلى Kafka عبر [Kafka exporter](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/exporter/kafkaexporter/README.md). وتقوم مثيلات البوابة، بدورها، باستهلاك الرسائل باستخدام [Kafka receiver](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/receiver/kafkareceiver/README.md). نوصي بالرجوع إلى وثائق Confluent وOTel لمزيد من التفاصيل.
 
 <div id="estimating-resources">
-  ### تقدير الموارد
+  ### تقدير الموارد {#estimating-resources}
 </div>
 
 تعتمد متطلبات الموارد لـ OTel collector على معدل تدفق الأحداث، وحجم الرسائل، ومقدار المعالجة المنفَّذة. ويوفّر مشروع OpenTelemetry [اختبارات أداء يمكن للمستخدمين](https://opentelemetry.io/docs/collector/benchmarks/) الاستفادة منها لتقدير متطلبات الموارد.

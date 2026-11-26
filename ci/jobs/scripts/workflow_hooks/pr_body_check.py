@@ -76,7 +76,7 @@ def check_changelog_entry(category, pr_body: str) -> str:
 
 if __name__ == "__main__":
 
-    title, body, labels = GH.get_pr_title_body_labels()
+    title, body, labels, _is_draft = GH.get_pr_title_body_labels()
     if not title or not body:
         print("WARNING: Failed to get PR title or body, read from environment")
         body = Info().pr_body

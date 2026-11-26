@@ -4,6 +4,7 @@
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnReplicated.h>
 #include <Columns/ColumnTuple.h>
 
 #include <DataTypes/DataTypeArray.h>
@@ -147,6 +148,13 @@ ColumnPtr recursiveRemoveLowCardinality(const ColumnPtr & column)
     {
         res = column_low_cardinality->convertToFullColumn();
     }
+    else if (const auto * column_replicated = typeid_cast<const ColumnReplicated *>(column.get()))
+    {
+        const auto & nested = column_replicated->getNestedColumn();
+        auto nested_no_lc = recursiveRemoveLowCardinality(nested);
+        if (nested.get() != nested_no_lc.get())
+            res = ColumnReplicated::create(nested_no_lc, column_replicated->getIndexesColumn());
+    }
 
     if (res != column)
     {
@@ -259,7 +267,9 @@ ColumnPtr recursiveLowCardinalityTypeConversion(const ColumnPtr & column, const 
             {
                 auto & element = columns[i];
                 auto element_no_lc = recursiveLowCardinalityTypeConversion(element, from_elements.at(i), to_elements.at(i));
-                if (element.get() != element_no_lc.get())
+                /// Only compare pointer identity here: go through the const `get` so a shared
+                /// tuple element is not treated as mutable (`assumeMutableRef`) just for a read.
+                if (std::as_const(element).get() != element_no_lc.get())
                 {
                     element = element_no_lc;
                     has_converted = true;

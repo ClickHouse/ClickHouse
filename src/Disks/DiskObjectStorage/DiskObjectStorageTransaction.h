@@ -33,8 +33,6 @@ protected:
     /// calls in parallel. Owned by `DiskObjectStorage` and shared across transactions.
     const std::shared_ptr<ThreadPool> copy_object_pool;
     const bool wait_blob_removal;
-    const std::string read_resource_name;
-    const std::string write_resource_name;
 
     MetadataTransactionPtr metadata_transaction;
     std::vector<std::function<void(MetadataTransactionPtr tx)>> operations_to_execute;
@@ -60,9 +58,7 @@ public:
         ObjectStorageRouterPtr object_storages_,
         BlobKillerThreadPtr blob_killer_,
         std::shared_ptr<ThreadPool> copy_object_pool_,
-        bool wait_blob_removal_,
-        std::string read_resource_name_,
-        std::string write_resource_name_);
+        bool wait_blob_removal_);
 
     void commit() override;
     TransactionCommitOutcomeVariant tryCommit(const TransactionCommitOptionsVariant & options) override;
@@ -117,7 +113,6 @@ public:
     void removeSharedFiles(const RemoveBatchRequest & files, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only) override;
 
     void setLastModified(const std::string & path, const Poco::Timestamp & timestamp) override;
-    void chmod(const String & path, mode_t mode) override;
     void setReadOnly(const std::string & path) override;
     void createHardLink(const std::string & src_path, const std::string & dst_path) override;
 
@@ -158,9 +153,7 @@ struct MultipleDisksObjectStorageTransaction final : public DiskObjectStorageTra
         ClusterConfigurationPtr destination_cluster_,
         MetadataStoragePtr destination_metadata_storage_,
         ObjectStorageRouterPtr destination_object_storages_,
-        std::shared_ptr<ThreadPool> copy_object_pool_,
-        std::string read_resource_name_,
-        std::string write_resource_name_);
+        std::shared_ptr<ThreadPool> copy_object_pool_);
 
     void copyFile(const std::string & from_file_path, const std::string & to_file_path, const ReadSettings & read_settings, const WriteSettings &) override;
 };

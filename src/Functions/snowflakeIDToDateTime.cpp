@@ -8,6 +8,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
+#include <base/arithmeticOverflow.h>
 
 
 namespace DB
@@ -43,31 +44,28 @@ public:
         : allow_nonconst_timezone_arguments(context->getSettingsRef()[Setting::allow_nonconst_timezone_arguments])
     {}
 
-    String getName() const override { return name; }
-    size_t getNumberOfArguments() const override { return 0; }
-    bool isVariadic() const override { return true; }
-    bool useDefaultImplementationForConstants() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] String getName() const override { return name; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] bool isVariadic() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] String getSignatureString() const override
     {
-        FunctionArgumentDescriptors args{
-            {"value", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt64), nullptr, "UInt64"}
-        };
-        FunctionArgumentDescriptors optional_args{
-            {"epoch", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeUInt), isColumnConst, "const UInt*"},
-            {"time_zone", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"}
-        };
-        validateFunctionArguments(*this, arguments, args, optional_args);
-
-        String timezone;
-        if (arguments.size() == 3)
-            timezone = extractTimeZoneNameFromFunctionArguments(arguments, 2, 0, allow_nonconst_timezone_arguments);
-
-        return std::make_shared<DataTypeDateTime>(timezone);
+        /// (UInt64 value, [const NativeUInt epoch, [String tz]]). Note tz requires epoch, so the
+        /// optional groups can't be flattened to `(UInt64, [const NativeUInt], [String])` — that
+        /// would erroneously accept `(UInt64, "tz")`.
+        if (allow_nonconst_timezone_arguments)
+            return
+                "(UInt64, const NativeUInt, const tz String) -> DateTime(tz)"
+                " OR (UInt64, const NativeUInt, [String]) -> DateTime"
+                " OR (UInt64) -> DateTime";
+        return
+            "(UInt64, const NativeUInt, const tz String) -> DateTime(tz)"
+            " OR (UInt64, [const NativeUInt]) -> DateTime";
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const auto & col_src = *arguments[0].column;
 
@@ -76,6 +74,8 @@ public:
         {
             const auto & col_epoch = *arguments[1].column;
             epoch = col_epoch.getUInt(0);
+            /// The epoch is an arbitrary `UInt64` from the caller, so adding it to the extracted
+            /// timestamp is modular, as everywhere else in ClickHouse arithmetic.
         }
 
         auto col_res = ColumnDateTime::create(input_rows_count);
@@ -85,13 +85,13 @@ public:
         {
             const auto & src_data = col_src_non_const->getData();
             for (size_t i = 0; i < input_rows_count; ++i)
-                res_data[i] = static_cast<UInt32>(((src_data[i] >> time_shift) + epoch) / 1000);
+                res_data[i] = static_cast<UInt32>(common::addIgnoreOverflow(src_data[i] >> time_shift, epoch) / 1000);
         }
         else if (const auto * col_src_const = typeid_cast<const ColumnConst *>(&col_src))
         {
             UInt64 src_val = col_src_const->getValue<UInt64>();
             for (size_t i = 0; i < input_rows_count; ++i)
-                res_data[i] = static_cast<UInt32>(((src_val >> time_shift) + epoch) / 1000);
+                res_data[i] = static_cast<UInt32>(common::addIgnoreOverflow(src_val >> time_shift, epoch) / 1000);
         }
         else
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal argument for function {}", name);
@@ -114,31 +114,25 @@ public:
         : allow_nonconst_timezone_arguments(context->getSettingsRef()[Setting::allow_nonconst_timezone_arguments])
     {}
 
-    String getName() const override { return name; }
-    size_t getNumberOfArguments() const override { return 0; }
-    bool isVariadic() const override { return true; }
-    bool useDefaultImplementationForConstants() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] String getName() const override { return name; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] bool isVariadic() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] String getSignatureString() const override
     {
-        FunctionArgumentDescriptors args{
-            {"value", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt64), nullptr, "UInt64"}
-        };
-        FunctionArgumentDescriptors optional_args{
-            {"epoch", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeUInt), isColumnConst, "const UInt*"},
-            {"time_zone", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"}
-        };
-        validateFunctionArguments(*this, arguments, args, optional_args);
-
-        String timezone;
-        if (arguments.size() == 3)
-            timezone = extractTimeZoneNameFromFunctionArguments(arguments, 2, 0, allow_nonconst_timezone_arguments);
-
-        return std::make_shared<DataTypeDateTime64>(3, timezone);
+        if (allow_nonconst_timezone_arguments)
+            return
+                "(UInt64, const NativeUInt, const tz String) -> DateTime64(3, tz)"
+                " OR (UInt64, const NativeUInt, [String]) -> DateTime64(3)"
+                " OR (UInt64) -> DateTime64(3)";
+        return
+            "(UInt64, const NativeUInt, const tz String) -> DateTime64(3, tz)"
+            " OR (UInt64, [const NativeUInt]) -> DateTime64(3)";
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const auto & col_src = *arguments[0].column;
 
@@ -147,6 +141,8 @@ public:
         {
             const auto & col_epoch = *arguments[1].column;
             epoch = col_epoch.getUInt(0);
+            /// The epoch is an arbitrary `UInt64` from the caller, so adding it to the extracted
+            /// timestamp is modular, as everywhere else in ClickHouse arithmetic.
         }
 
         auto col_res = ColumnDateTime64::create(input_rows_count, 3);
@@ -156,13 +152,13 @@ public:
         {
             const auto & src_data = col_src_non_const->getData();
             for (size_t i = 0; i < input_rows_count; ++i)
-                res_data[i] = (src_data[i] >> time_shift) + epoch;
+                res_data[i] = common::addIgnoreOverflow(src_data[i] >> time_shift, epoch);
         }
         else if (const auto * col_src_const = typeid_cast<const ColumnConst *>(&col_src))
         {
             UInt64 src_val = col_src_const->getValue<UInt64>();
             for (size_t i = 0; i < input_rows_count; ++i)
-                res_data[i] = (src_val >> time_shift) + epoch;
+                res_data[i] = common::addIgnoreOverflow(src_val >> time_shift, epoch);
         }
         else
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal argument for function {}", name);
@@ -222,9 +218,9 @@ Returns the timestamp component of a [Snowflake ID](https://en.wikipedia.org/wik
 SELECT snowflakeIDToDateTime64(7204436857747984384) AS res
         )",
         R"(
-┌─────────────────res─┐
-│ 2024-06-06 10:59:58 │
-└─────────────────────┘
+┌─────────────────────res─┐
+│ 2024-06-06 10:59:58.851 │
+└─────────────────────────┘
         )"
     }
     };

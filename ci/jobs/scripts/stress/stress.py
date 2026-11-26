@@ -2,9 +2,11 @@
 # -*- coding: utf-8 -*-
 """This script is used in docker images for stress tests and upgrade tests"""
 import argparse
+import json
 import logging
 import os
 import random
+import re
 import shlex
 import shutil
 import signal
@@ -14,10 +16,21 @@ import threading
 from multiprocessing import cpu_count
 from pathlib import Path
 from subprocess import PIPE, STDOUT, Popen, call, check_output
-from typing import List, Optional
+from typing import Dict, List, Optional, Tuple
 
 # Failpoint that delays every background mutation by a bounded random amount.
 MUTATION_DELAY_FAILPOINT = "mutate_task_random_sleep_in_prepare"
+
+# Databases the hung check keeps attached. The log export sends the system logs
+# of the run from the `Distributed` tables of `ci_logs_export` (the default of
+# `LOG_EXPORT_DATABASE` in `ci/jobs/scripts/functional_tests/setup_log_cluster.sh`),
+# and they are created with `flush_on_detach=0`, so detaching that database
+# drops whatever is still queued and exports nothing for the rest of the run.
+KEEP_DATABASES = ("system", "ci_logs_export")
+
+# GNU `tar` exit statuses: 0 - success, 1 - some files differ (a file changed
+# or shrank while it was being read), 2 and above - a fatal error.
+TAR_EXIT_DIFFERS = 1
 
 
 class ServerDied(Exception):
@@ -41,14 +54,47 @@ def escape_tsv_info(text: str) -> str:
     )
 
 
+HUNG_CHECK_INFO_BUDGET = 32 * 1024
+
+
+def build_hung_check_info(hung_check_log: Path) -> str:
+    """Build the `info` cell of the `Hung check failed` row from `hung_check.log`.
+
+    Bounded, and read from the head: `clickhouse-test --hung-check` prints the
+    verdict and the longest-running queries first, so the head is the diagnostic
+    region. The whole log is uploaded as a CI artifact.
+    """
+    with open(hung_check_log, "rb") as f:
+        # The extra byte separates "exactly the budget" from "there was more".
+        chunk = f.read(HUNG_CHECK_INFO_BUDGET + 1)
+    log_text = chunk[:HUNG_CHECK_INFO_BUDGET].decode("utf-8", errors="replace")
+    if len(chunk) > HUNG_CHECK_INFO_BUDGET:
+        # Keep the trailing fragment: one hung query is one unescaped line of
+        # arbitrary length, so dropping a partial last line can erase the whole
+        # processlist.
+        log_text = (
+            "(truncated; see the hung_check.log artifact for the full output;"
+            " showing the first 32 KiB, whose last line may be cut)\n"
+            + log_text
+            + "\n..."
+        )
+    return log_text
+
+
+def quote_identifier(name: str) -> str:
+    """`name` as a back-quoted ClickHouse identifier, escaped as `readBackQuotedString` expects."""
+    return "`" + name.replace("\\", "\\\\").replace("`", "\\`") + "`"
+
+
 class RandomDisruptor:
-    """Background thread that randomly kills queries, client processes and mutations, and
-    briefly stops background operations such as merges, during stress tests.
+    """Background thread that randomly kills queries, client processes and mutations,
+    briefly stops background operations such as merges, empties caches and restarts
+    replicas, during stress tests.
 
     This helps test that queries and mutations are cancelled correctly, handles
     scenarios where the client unexpectedly disconnects (issue #39803), and exercises
     operations that run while one of the background activities in `_SYSTEM_STATEMENT_PAIRS`
-    is unavailable.
+    is unavailable, or while the data they cache disappears.
     """
 
     # Subprocess caps for one loop iteration: a SELECT to pick a victim, then the kill.
@@ -77,6 +123,50 @@ class RandomDisruptor:
         ("STOP MOVES", "START MOVES"),
         ("STOP VIEWS", "START VIEWS"),
         ("PAUSE VIEWS", "START VIEWS"),
+        ("STOP FETCHES", "START FETCHES"),
+        ("STOP DISTRIBUTED SENDS", "START DISTRIBUTED SENDS"),
+        ("STOP REPLICATED SENDS", "START REPLICATED SENDS"),
+        ("STOP REPLICATION QUEUES", "START REPLICATION QUEUES"),
+        ("STOP CLEANUP", "START CLEANUP"),
+        ("STOP PULLING REPLICATION LOG", "START PULLING REPLICATION LOG"),
+    )
+    # Server-wide statements the one-shot branch runs: a lost Keeper session, objects that the
+    # running queries use going away and loading again, and memory returned to the system.
+    _ONE_SHOT_STATEMENTS = (
+        "RECONNECT ZOOKEEPER",
+        "FLUSH ASYNC INSERT QUEUE",
+        "UNLOAD DICTIONARIES",
+        "RELOAD FUNCTIONS",
+        "RELOAD USERS",
+        "JEMALLOC PURGE",
+        # Every refreshable materialized view at once, and the background activity of streaming tables.
+        "REFRESH ALL BACKGROUND",
+    )
+    # Statements that throw `SUPPORT_IS_DISABLED` in some builds: sanitizer builds have no jemalloc.
+    _OPTIONAL_STATEMENTS = ("JEMALLOC PURGE",)
+    # Caches the cache branch empties, one per iteration, while queries are reading through them.
+    _CACHES = (
+        "MARK CACHE",
+        "UNCOMPRESSED CACHE",
+        "INDEX MARK CACHE",
+        "INDEX UNCOMPRESSED CACHE",
+        "PRIMARY INDEX CACHE",
+        "COLUMNS CACHE",
+        "MMAP CACHE",
+        "PAGE CACHE",
+        "QUERY CACHE",
+        "QUERY CONDITION CACHE",
+        "COMPILED EXPRESSION CACHE",
+        "FILESYSTEM CACHE",
+        "SCHEMA CACHE",
+        "STATISTICS CACHE",
+        "VECTOR SIMILARITY INDEX CACHE",
+        "TEXT INDEX CACHES",
+        "ICEBERG METADATA CACHE",
+        "PAIMON METADATA CACHE",
+        "PARQUET METADATA CACHE",
+        "DNS CACHE",
+        "CONNECTIONS CACHE",
     )
     # Longest an iteration can run, plus margin, so stop() outlasts one of them. The pause
     # branch is the stop, the wait and the start back to back; on shutdown the wait collapses,
@@ -151,11 +241,13 @@ class RandomDisruptor:
             logging.warning("Random query kill failed: %s: %s", type(e).__name__, e)
 
     def _kill_random_client(self) -> None:
-        """Kill a random clickhouse-client process."""
+        """Kill a random client process."""
         try:
-            # Get list of clickhouse-test child processes (clickhouse client)
+            # Get list of clickhouse-test child processes: clickhouse client, and `protocol_client.py`,
+            # which runs the tests over the other protocols (see `--protocols`), so that the server
+            # sees the client of every protocol disconnect in the middle of a query.
             result = check_output(
-                "pgrep -f 'clickhouse-client|clickhouse client' 2>/dev/null || true",
+                "pgrep -f 'clickhouse-client|clickhouse client|protocol_client[.]py' 2>/dev/null || true",
                 shell=True,
                 timeout=5,
             )
@@ -236,26 +328,63 @@ class RandomDisruptor:
         except Exception as e:
             logging.warning("Random mutation kill failed: %s: %s", type(e).__name__, e)
 
-    def _run_system_statement(self, statement: str) -> bool:
-        """Run `SYSTEM <statement>`, reporting whether it succeeded."""
-        query = f"SYSTEM {statement}"
+    def _run_query(
+        self,
+        query: str,
+        params: Optional[Dict[str, str]] = None,
+        quiet: bool = False,
+        timeout: Optional[float] = None,
+    ) -> Tuple[bool, str]:
+        """Run `query`, returning whether it succeeded and its output. `quiet` logs a failure at
+        debug level, for a query that a concurrent test routinely makes fail, for example by
+        dropping its table."""
+        timeout = self._SYSTEM_STATEMENT_TIMEOUT if timeout is None else timeout
+        # Keep the subprocess cap above --receive_timeout so the client's own timeout is the one
+        # that governs, as in the mutation kill above.
+        # No AST fuzzing: the stress profile enables it, and a fuzzed `STOP` run after a successful `START` would undo it.
+        command = ["clickhouse", "client", f"--receive_timeout={max(timeout - 5, 5)}", "--ast_fuzzer_runs=0"]
+        # Values are passed as query parameters instead of interpolating them, as in the kills above.
+        for name, value in (params or {}).items():
+            command += [f"--param_{name}", value]
+        command += ["-q", query]
         try:
-            # Keep the subprocess cap above --receive_timeout so the client's own timeout is
-            # the one that governs, as in the mutation kill above.
-            returncode = call(
-                ["clickhouse", "client", "--receive_timeout=10", "-q", query],
-                stderr=subprocess.DEVNULL,
-                timeout=self._SYSTEM_STATEMENT_TIMEOUT,
-            )
-            if returncode:
-                logging.warning("%s exited %s", query, returncode)
-            return returncode == 0
+            result = subprocess.run(command, capture_output=True, timeout=timeout, check=False)
         except subprocess.TimeoutExpired as e:
             logging.debug("%s timed out: %s", query, e)
-            return False
+            return False, ""
         except Exception as e:
             logging.warning("%s failed: %s: %s", query, type(e).__name__, e)
-            return False
+            return False, ""
+        if result.returncode:
+            # The first line of the client's error names the exception.
+            error = result.stderr.decode("utf-8", errors="replace").strip().split("\n", 1)[0]
+            logging.log(
+                logging.DEBUG if quiet else logging.WARNING,
+                "%s exited %s: %s",
+                query,
+                result.returncode,
+                error,
+            )
+            return False, ""
+        return True, result.stdout.decode("utf-8")
+
+    def _select_rows(self, query: str, params: Optional[Dict[str, str]] = None) -> List[Dict]:
+        """The rows of a `SELECT`, empty if it did not succeed."""
+        succeeded, output = self._run_query(
+            f"{query} FORMAT JSONEachRow", params, timeout=self._SELECT_TIMEOUT
+        )
+        if not succeeded:
+            return []
+        return [json.loads(line) for line in output.splitlines() if line]
+
+    @staticmethod
+    def _keep_databases_param() -> str:
+        """`KEEP_DATABASES` as an `Array(String)` parameter."""
+        return "[" + ",".join("'" + name.replace("\\", "\\\\").replace("'", "\\'") + "'" for name in KEEP_DATABASES) + "]"
+
+    def _run_system_statement(self, statement: str) -> bool:
+        """Run `SYSTEM <statement>`, reporting whether it succeeded."""
+        return self._run_query(f"SYSTEM {statement}", quiet=statement in self._OPTIONAL_STATEMENTS)[0]
 
     def _pause_random_operation(self) -> None:
         """Stop a background operation server-wide for a short interval, then start it again."""
@@ -290,6 +419,77 @@ class RandomDisruptor:
                 # Interruptible, so shutdown does not wait out the full backoff.
                 self._stop_event.wait(self._SYSTEM_STATEMENT_RESTART_BACKOFF)
 
+    def _drop_random_cache(self) -> None:
+        """Empty one of the caches server-wide."""
+        cache = random.choice(self._CACHES)
+        if self._run_system_statement(f"DROP {cache}"):
+            logging.info("SYSTEM DROP %s", cache)
+
+    def _run_one_shot_statement(self) -> None:
+        """Run one of `_ONE_SHOT_STATEMENTS`."""
+        statement = random.choice(self._ONE_SHOT_STATEMENTS)
+        if self._run_system_statement(statement):
+            logging.info("SYSTEM %s", statement)
+
+    def _refresh_or_cancel_random_view(self) -> None:
+        """Start a refresh of a random refreshable materialized view now, or cancel the running one."""
+        rows = self._select_rows(
+            "SELECT database, view FROM system.view_refreshes "
+            "WHERE database NOT IN {keep:Array(String)} ORDER BY rand() LIMIT 1",
+            {"keep": self._keep_databases_param()},
+        )
+        if not rows or self._stop_event.is_set():
+            return
+        name = f"{quote_identifier(rows[0]['database'])}.{quote_identifier(rows[0]['view'])}"
+        statement = f"{random.choice(('REFRESH', 'CANCEL'))} VIEW {name}"
+        # Quiet: a test may drop the view at any moment.
+        if self._run_query(f"SYSTEM {statement}", quiet=True)[0]:
+            logging.info("SYSTEM %s", statement)
+
+    def _reload_random_dictionary(self) -> None:
+        """Reload a random dictionary while queries read from it."""
+        rows = self._select_rows(
+            "SELECT database, name FROM system.dictionaries "
+            "WHERE database NOT IN {keep:Array(String)} ORDER BY rand() LIMIT 1",
+            {"keep": self._keep_databases_param()},
+        )
+        if not rows or self._stop_event.is_set():
+            return
+        # A dictionary from the server configuration has no database.
+        name = quote_identifier(rows[0]["name"])
+        if rows[0]["database"]:
+            name = f"{quote_identifier(rows[0]['database'])}.{name}"
+        # Quiet: the source of a test's dictionary may be gone, or fail on purpose.
+        if self._run_query(f"SYSTEM RELOAD DICTIONARY {name}", quiet=True)[0]:
+            logging.info("SYSTEM RELOAD DICTIONARY %s", name)
+
+    def _restart_random_replica(self) -> None:
+        """Reinitialize the Keeper session and the state of a random replicated table, or of all of them."""
+        rows = self._select_rows(
+            "SELECT database, table FROM system.replicas "
+            "WHERE database NOT IN {keep:Array(String)} ORDER BY rand()",
+            {"keep": self._keep_databases_param()},
+        )
+        if not rows or self._stop_event.is_set():
+            return
+        names = [f"{quote_identifier(row['database'])}.{quote_identifier(row['table'])}" for row in rows]
+        if random.random() < 0.26:
+            statement = "RESTART REPLICAS"
+        else:
+            statement, names = f"RESTART REPLICA {names[0]}", names[:1]
+        if self._run_query(f"SYSTEM {statement}", quiet=True)[0]:
+            logging.info("SYSTEM %s", statement)
+            return
+        # A restart that fails after detaching the table leaves it detached (`doRestartReplica`), also when
+        # killed. `ATTACH` waits for the restart to end, as both take the table's DDL guard, and fails if it is back.
+        for name in names:
+            # On shutdown leave the rest: the teardown must not overlap these queries.
+            if self._stop_event.is_set():
+                logging.warning("Shutting down, not attaching back the tables of a failed SYSTEM %s", statement)
+                break
+            if self._run_query(f"ATTACH TABLE {name}", quiet=True)[0]:
+                logging.warning("Attached %s back after a failed SYSTEM %s", name, statement)
+
     def _run(self) -> None:
         """Main loop that runs in the background thread."""
         logging.info("Random disruptor started (interval: %.1fs)", self._interval)
@@ -301,9 +501,19 @@ class RandomDisruptor:
             self._kill_random_client,
             self._kill_random_mutation,
             self._pause_random_operation,
+            self._drop_random_cache,
+            self._run_one_shot_statement,
+            self._reload_random_dictionary,
+            self._refresh_or_cancel_random_view,
+            self._restart_random_replica,
         )
         while not self._stop_event.is_set():
-            random.choice(disruptions)()
+            disruption = random.choice(disruptions)
+            try:
+                disruption()
+            except Exception as e:
+                # A broken disruption must not end the thread and with it every other one.
+                logging.warning("Random disruption %s failed: %s: %s", disruption.__name__, type(e).__name__, e)
             self._stop_event.wait(self._interval)
         logging.info("Random disruptor stopped")
 
@@ -332,6 +542,21 @@ class RandomDisruptor:
         self._thread = None
 
 
+# The protocols for `clickhouse-test --protocols`.
+STRESS_PROTOCOLS = [
+    "native",
+    "native_tls",
+    "http",
+    "https",
+    "mysql",
+    "postgresql",
+    "grpc",
+    "arrowflight",
+    "ssh",
+    "webterminal",
+]
+
+
 def get_options(i: int, upgrade_check: bool, encrypted_storage: bool) -> str:
     options = []
     client_options = []
@@ -340,13 +565,6 @@ def get_options(i: int, upgrade_check: bool, encrypted_storage: bool) -> str:
         # Disable settings randomization for upgrade checks to prevent test failures caused by missing settings in old version
         options.append("--no-random-settings")
         options.append("--no-random-merge-tree-settings")
-
-    # The stress test profile constrains enable_analyzer to >= 1 (stress_tests.lib) so neither the
-    # AST fuzzer nor a test spends the run on the old interpreter. Send the setting explicitly so the
-    # randomized compatibility below cannot revert it: compatibility only rewrites settings that are
-    # not `changed`, and a constraint cannot catch that revert because there is no explicit change to
-    # check. The profile pins the same value server-side for the queries this does not cover.
-    client_options.append("enable_analyzer=1")
 
     if i > 0:
         options.append("--order=random")
@@ -376,18 +594,38 @@ def get_options(i: int, upgrade_check: bool, encrypted_storage: bool) -> str:
         client_options.append("join_use_nulls=1")
 
     if i % 2 == 1:
-        join_alg_num = i // 2
-        if join_alg_num % 5 == 0:
-            client_options.append("join_algorithm='parallel_hash'")
-        if join_alg_num % 5 == 1:
-            client_options.append("join_algorithm='partial_merge'")
-        if join_alg_num % 5 == 2:
-            client_options.append("join_algorithm='full_sorting_merge'")
-        if join_alg_num % 5 == 3 and not upgrade_check:
-            # Some crashes are not fixed in 23.2 yet, so ignore the setting in Upgrade check
-            client_options.append("join_algorithm='grace_hash'")
-        if join_alg_num % 5 == 4:
-            client_options.append("join_algorithm='auto'")
+        # `join_algorithm` accepts a comma-separated priority list: for each query the
+        # first applicable algorithm is used. Pick a random subset in random order, so
+        # every algorithm meets every worker mode (plain, join_use_nulls, replicated
+        # database) and the multi-algorithm fallback paths are covered too.
+        join_algorithms = [
+            "hash",
+            "parallel_hash",
+            "partial_merge",
+            "full_sorting_merge",
+            "grace_hash",
+            "auto",
+        ]
+        if not upgrade_check:
+            # The Upgrade check runs the pre-upgrade load against the previous
+            # release server, which rejects join_algorithm values it does not
+            # know yet and would fail every query, so skip the values that are
+            # newer than the previous release.
+            join_algorithms += ["parallel_full_sorting_merge", "inequality"]
+        selected = random.sample(
+            join_algorithms, k=random.randint(1, len(join_algorithms))
+        )
+        if selected == ["inequality"]:
+            # `inequality` applies only to joins with inequality conditions; alone it would fail every plain
+            # equality join with NOT_IMPLEMENTED.
+            selected.append("hash")
+        client_options.append("join_algorithm='{}'".format(",".join(selected)))
+        if selected[0] == "auto":
+            # The low limit makes auto switch from hash to partial_merge. It is safe
+            # only when auto is actually selected: the planner takes the first
+            # buildable algorithm from the list, and max_rows_in_join applies to
+            # every join implementation, so with e.g. 'hash,auto' the hash join
+            # would run under the cap and fail with SET_SIZE_LIMIT_EXCEEDED.
             client_options.append("max_rows_in_join=1000")
 
     # Rarely enable the query cache; independently, half the time also pin the
@@ -409,15 +647,54 @@ def get_options(i: int, upgrade_check: bool, encrypted_storage: bool) -> str:
             client_options.append("distinct_overflow_mode='throw'")
 
     if i % 5 == 1:
-        client_options.append("memory_tracker_fault_probability=0.001")
+        client_options.append("memory_tracker_fault_probability=0.05")
+        # Write sampled allocations to system.trace_log as MemorySample. users.d/memory_profiler.xml
+        # sets memory_profiler_step and max_untracked_memory but leaves this at 0, so allocation
+        # sampling is off in every stress run today.
+        client_options.append("memory_profiler_sample_probability=0.05")
 
     if i % 5 == 1:
         client_options.append(
             "merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability=0.05"
         )
 
+    if i % 5 == 3:
+        # Keeper fault injection: every replicated INSERT commit and every BACKUP/RESTORE
+        # coordination step can draw a fault, exercising the retry and dedup logic.
+        # users.d/insert_keeper_retries.xml already sets 0.01 server-wide, so only a higher
+        # value adds anything here; it also raises insert_keeper_max_retries to 100.
+        client_options.append("insert_keeper_fault_injection_probability=0.05")
+        # Not set anywhere by default, so any non-zero value is new coverage.
+        client_options.append("backup_restore_keeper_fault_injection_probability=0.05")
+        # Fault after the ReplicatedMergeTree metadata is written to Keeper but before the
+        # table is created, exercising dropIfEmpty() cleanup and re-creation over the leftover
+        # znodes. This one throws instead of retrying, and a CREATE is far rarer than an INSERT
+        # commit, so it gets a higher probability than the two above but stays low.
+        client_options.append(
+            "create_replicated_merge_tree_fault_injection_probability=0.1"
+        )
+
     if i % 2 == 1 and not upgrade_check:
         client_options.append("group_by_use_nulls=1")
+
+    # Widen NULL coverage the way join_use_nulls/group_by_use_nulls do: each of these rewrites
+    # a broad query class (IN evaluation, every CAST, every aggregate over an empty set).
+    # Independent draws so the three can combine, up to all three on one worker. Not keyed on
+    # `i`: --num-parallel is min(8, cpu_count()), so the earlier `i % 7 == 4` / `i % 7 == 6`
+    # arms never fired at all on a runner with fewer than 5 and 7 cores.
+    # https://github.com/ClickHouse/ClickHouse/issues/112032 needs to be fixed to enable transform_null_in
+    #if random.random() < 1 / 3:
+    #    client_options.append("transform_null_in=1")
+    # The upgrade check runs this load against the previous release's server. Before #119385
+    # (26.9) a sorting key such as `CAST(json.b, 'String')` is matched to the same expression
+    # in `ORDER BY` by name and arity only, although under `cast_keep_nullable = 1` the query
+    # types it `Nullable(String)` while the key is `String`; read-in-order with
+    # `read_in_order_use_virtual_row = 1` then aborts the shipped server with
+    # `Logical error: Virtual row has different type` (`03277_json_subcolumns_in_primary_key`).
+    if random.random() < 1 / 3 and not upgrade_check:
+        client_options.append("cast_keep_nullable=1")
+    if random.random() < 1 / 3:
+        client_options.append("aggregate_functions_null_for_empty=1")
 
     # TODO: Enable implicit_transaction back after the issue with `assertHasValidVersionMetadata` will be fixed:
     # https://play.clickhouse.com/play?user=play&run=1#U0VMRUNUIGNoZWNrX3N0YXJ0X3RpbWUsIGNoZWNrX25hbWUsIHRlc3RfbmFtZSwgcmVwb3J0X3VybApGUk9NIGNoZWNrcwpXSEVSRSAxCiAgICBBTkQgY2hlY2tfc3RhcnRfdGltZSA+PSBub3coKSAtIElOVEVSVkFMIDEwIERBWQogICAgQU5EIChoZWFkX3JlZiA9ICdtYXN0ZXInIEFORCBzdGFydHNXaXRoKGhlYWRfcmVwbywgJ0NsaWNrSG91c2UvJykpCiAgICBBTkQgdGVzdF9zdGF0dXMgIT0gJ1NLSVBQRUQnCiAgICBBTkQgKHRlc3Rfc3RhdHVzIExJS0UgJ0YlJyBPUiB0ZXN0X3N0YXR1cyBMSUtFICdFJScpCiAgICBBTkQgY2hlY2tfc3RhdHVzICE9ICdzdWNjZXNzJwogICAgQU5EIGNoZWNrX25hbWUgTk9UIExJS0UgJ2xpYkZ1enplciUnCiAgICBBTkQgY2hlY2tfbmFtZSAhPSAnQ2xpY2tIb3VzZSBLZWVwZXIgSmVwc2VuJwogICAgQU5EIHRlc3RfbmFtZSBMSUtFICclYXNzZXJ0SGFzVmFsaWRWZXJzaW9uTWV0YWRhdGElJwpPUkRFUiBCWSBjaGVja19zdGFydF90aW1lIERFU0M=
@@ -438,6 +715,11 @@ def get_options(i: int, upgrade_check: bool, encrypted_storage: bool) -> str:
         client_options.append("max_parallel_replicas=3")
         client_options.append("cluster_for_parallel_replicas='parallel_replicas'")
         client_options.append("parallel_replicas_for_non_replicated_merge_tree=1")
+        # Ship serialized query plans to the replicas instead of query text. The upgrade
+        # check's only test load runs against the previous release, so a failure on this
+        # path there cannot be fixed by any change to master.
+        if random.random() < 1 / 2 and not upgrade_check:
+            client_options.append("serialize_query_plan=1")
 
     if random.random() < 0.2:
         client_options.append(
@@ -457,9 +739,72 @@ def get_options(i: int, upgrade_check: bool, encrypted_storage: bool) -> str:
 
     if random.random() < 0.2:
         client_options.append("async_insert=1")
+        # Fire-and-forget: the INSERT returns before the flush lands. Disabled because any
+        # test that inserts then selects reads an empty table, which fails the smoke check.
+        # if random.random() < 1 / 2:
+        #     client_options.append("wait_for_async_insert=0")
 
     if random.random() < 0.05:
         client_options.append("enable_join_runtime_filters=1")
+
+    # A 26.8 setting: the pre-upgrade load of the upgrade check runs against the previous
+    # release server, which may reject it as unknown.
+    if random.random() < 0.2 and not upgrade_check:
+        client_options.append("enable_cascades_optimizer=1")
+
+    if random.random() < 0.2:
+        client_options.append("apply_mutations_on_fly=1")
+
+    if random.random() < 0.2:
+        # Collect per-query metrics every 100ms instead of the default 1000ms.
+        client_options.append("query_metric_log_interval=100")
+
+    if random.random() < 0.2:
+        # users.d/opentelemetry.xml already traces 10% of queries; this gives those traces one
+        # span per processor instead of one per query, multiplying the span volume.
+        client_options.append("opentelemetry_trace_processors=1")
+
+    if random.random() < 0.2:
+        client_options.append("network_compression_method='zstd'")
+
+    if random.random() < 0.2:
+        # Route DELETE FROM and ALTER UPDATE through lightweight updates (patch parts) instead
+        # of heavy mutations. The `*_force` variants fail where patch parts are unsupported, so
+        # they stay the rare arm.
+        delete_mode = (
+            "lightweight_update_force"
+            if random.random() < 0.25
+            else "lightweight_update"
+        )
+        update_mode = (
+            "lightweight_force" if random.random() < 0.25 else "lightweight"
+        )
+        client_options.append(f"lightweight_delete_mode='{delete_mode}'")
+        client_options.append(f"alter_update_mode='{update_mode}'")
+        client_options.append(
+            f"update_parallel_mode='{random.choice(['sync', 'auto'])}'"
+        )
+
+    if random.random() < 0.2:
+        # Sleep before each `MergeTree` storage snapshot, widening the window in which the
+        # concurrent merges, mutations and `ALTER`s change the parts under the query.
+        client_options.append(
+            f"merge_tree_storage_snapshot_sleep_ms={random.choice([1, 5, 20])}"
+        )
+
+    if random.random() < 0.2:
+        # Dependent materialized views are written in parallel instead of sequentially.
+        client_options.append("parallel_view_processing=1")
+
+    if random.random() < 0.2:
+        # Rewrite IN/JOIN to GLOBAL IN/GLOBAL JOIN; pays off in the replicated-database and
+        # parallel-replicas workers.
+        client_options.append("prefer_global_in_and_join=1")
+
+    # Compute extremes for every SELECT. Disabled because it appends an extremes block
+    # (blank line, then the min and max rows) to every result, so no reference matches.
+    # if random.random() < 0.2:
+    #     client_options.append("extremes=1")
 
     # dpsize' - implements DPsize algorithm currently only for Inner joins. So it may not work in some tests.
     # That is why we use it with fallback to 'greedy'.
@@ -601,6 +946,11 @@ def run_func_test(
     # clickhouse-test exits on its own within the execute_bash timeout (180s).
     smoke_time_limit = min(global_time_limit, 120) if global_time_limit else 120
     smoke_time_limit_option = f"--global_time_limit={smoke_time_limit}"
+    # Every `.sql` test of the stress run goes over a random protocol, to send the randomized and
+    # fuzzed load to every protocol handler of the server. Not in the smoke check, which compares
+    # results with the references. Not in the upgrade check: its load runs against the previous
+    # release, which may lack a protocol (and its server configuration).
+    protocols_option = "" if upgrade_check else f"--protocols={','.join(STRESS_PROTOCOLS)}"
 
     output_paths = [
         output_prefix / f"stress_test_run_{i}.txt" for i in range(num_processes)
@@ -616,7 +966,7 @@ def run_func_test(
             f"{cmd} --stress-tests {options} "
             f"{skip_tests_option} {upgrade_check_option} {encrypted_storage_option} "
         )
-        full_command = f"{base_command} {global_time_limit_option} "
+        full_command = f"{base_command} {global_time_limit_option} {protocols_option} "
         commands.append(full_command)
         # Smoke check: disable AST fuzzer (fuzzed queries produce expected
         # errors in stderr) and cap global_time_limit so clickhouse-test
@@ -695,11 +1045,41 @@ def run_func_test(
 
 
 def compress_stress_logs(output_path: Path, files_prefix: str) -> None:
-    cmd = (
-        f"cd {output_path} && tar --zstd --create --file=stress_run_logs.tar.zst "
-        f"{files_prefix}* && rm {files_prefix}*"
+    """Archive the per-process `clickhouse-test` logs into a single file.
+
+    A log can still be growing while it is archived: when the global time
+    limit is reached, `clickhouse-test` force-kills its workers and exits,
+    but a worker - or a `clickhouse client` the worker spawned - can outlive
+    it and keep appending through the inherited stdout descriptor. `tar`
+    notices the size change and exits with `TAR_EXIT_DIFFERS`, which used to
+    fail the whole stress test job right before the hung check, even though
+    the archive itself is written and only the tail of one log is missing.
+    Only a fatal `tar` status is treated as a failure here.
+    """
+    archive = "stress_run_logs.tar.zst"
+    result = subprocess.run(
+        f"cd {output_path} && tar --zstd --create --file={archive} {files_prefix}*",
+        shell=True,
+        capture_output=True,
+        text=True,
+        check=False,
     )
-    check_output(cmd, shell=True)
+    if result.returncode == TAR_EXIT_DIFFERS:
+        logging.warning(
+            "Some logs changed while %s was being created: %s",
+            archive,
+            result.stderr.strip(),
+        )
+    elif result.returncode != 0:
+        raise RuntimeError(
+            f"Failed to create {archive}, tar exit code {result.returncode}:\n"
+            f"{result.stdout}\n{result.stderr}"
+        )
+
+    # Not chained after `tar` with `&&`: the logs have to be removed on the
+    # `TAR_EXIT_DIFFERS` path as well, otherwise they are uploaded twice.
+    for path in output_path.glob(f"{files_prefix}*"):
+        path.unlink()
 
 
 def call_with_retry(
@@ -756,6 +1136,24 @@ def make_query_command(query: str) -> str:
     )
 
 
+def serving_server_pid() -> str:
+    """The PID of the process that serves. With the filesystem isolation and `CAP_SYS_ADMIN`, the pid file has the PID
+    of its supervisor, whose child is the init of the PID namespace, whose child is the watchdog or the server."""
+
+    def comm(pid: str) -> str:
+        return Path(f"/proc/{pid}/comm").read_text().strip()
+
+    def first_child(pid: str) -> str:
+        return Path(f"/proc/{pid}/task/{pid}/children").read_text().split()[0]
+
+    pid = Path("/var/run/clickhouse-server/clickhouse-server.pid").read_text().strip()
+    if comm(pid) == "clickhouse-isol":
+        pid = first_child(first_child(pid))
+        if comm(pid) == "ClickHouseWatch":
+            pid = first_child(pid)
+    return pid
+
+
 def prepare_for_hung_check(drop_databases: bool) -> bool:
     # FIXME this function should not exist, but...
 
@@ -779,7 +1177,7 @@ def prepare_for_hung_check(drop_databases: bool) -> bool:
         raise ServerDied("clickhouse-server process does not exist")
     # Sometimes there is a message `Child process was stopped by signal 19` in logs after stopping gdb
     call_with_retry(
-        "kill -CONT $(cat /var/run/clickhouse-server/clickhouse-server.pid) && clickhouse client --receive_timeout=5 -q 'SELECT 1 FORMAT Null'"
+        f"kill -CONT {serving_server_pid()} && clickhouse client --receive_timeout=5 -q 'SELECT 1 FORMAT Null'"
     )
 
     # ThreadFuzzer significantly slows down server and causes false-positive hung check failures
@@ -799,10 +1197,10 @@ def prepare_for_hung_check(drop_databases: bool) -> bool:
     call_with_retry(make_query_command("SYSTEM START REPLICATED SENDS"))
     call_with_retry(make_query_command("SYSTEM START REPLICATION QUEUES"))
     call_with_retry(make_query_command("SYSTEM START VIEWS"))
+    # Stopped only by the random disruptor.
+    call_with_retry(make_query_command("SYSTEM START CLEANUP"))
+    call_with_retry(make_query_command("SYSTEM START PULLING REPLICATION LOG"))
     call_with_retry(make_query_command("SYSTEM DROP MARK CACHE"))
-
-    # Issue #21004, window views are experimental, so let's just suppress it
-    call_with_retry(make_query_command("KILL QUERY WHERE upper(query) LIKE 'WATCH %'"))
 
     # Kill other queries which known to be slow
     # It's query from 01232_preparing_sets_race_condition_long,
@@ -843,7 +1241,7 @@ def prepare_for_hung_check(drop_databases: bool) -> bool:
                     .split()
                 )
                 for db in databases:
-                    if db == "system":
+                    if db in KEEP_DATABASES:
                         continue
                     command = make_query_command(f"DETACH DATABASE {db}")
                     # we don't wait for drop
@@ -883,16 +1281,22 @@ def prepare_for_hung_check(drop_databases: bool) -> bool:
     # Even if all clickhouse-test processes are finished, there are probably some sh scripts,
     # which still run some new queries. Let's ignore them.
     try:
-        query = 'clickhouse client --receive_timeout=30 -q "SELECT count() FROM system.processes where elapsed > 300" '
         output = (
-            check_output(query, shell=True, stderr=STDOUT, timeout=30)
+            check_output(
+                make_query_command(
+                    "SELECT count() FROM system.processes where elapsed > 300"
+                ),
+                shell=True,
+                stderr=STDOUT,
+                timeout=30,
+            )
             .decode("utf-8")
             .strip()
         )
         if int(output) == 0:
             return False
-    except:
-        pass
+    except Exception as ex:
+        logging.error("Failed to check for long running queries: %s", str(ex))
     return True
 
 
@@ -923,10 +1327,81 @@ def parse_args() -> argparse.Namespace:
         dest="no_random_disruptor",
         action="store_true",
         default=False,
-        help="Disable the random disruptor (query/client/mutation kills, merge pauses) "
-        "during stress test",
+        help="Disable the random disruptor during stress test: query/client/mutation kills, "
+        "pauses of background operations and listeners, cache drops, Keeper reconnects, "
+        "replica restarts, dictionary reloads and view refreshes",
     )
     return parser.parse_args()
+
+
+HUNG_CHECK_DEADLOCK = "Hung check failed, possible deadlock found"
+
+
+def hung_check_failure_name(hung_check_log: Path) -> str:
+    """Name the hung-check failure after the outcome it actually reached.
+
+    A hung check that fails is not always a hang. The variant seen regularly in
+    CI is a server that is alive and answers every connection with an error --
+    most often `MEMORY_LIMIT_EXCEEDED`, because the global memory tracker sits
+    far above the memory the process really uses, so every allocation fails
+    down to the zero-byte check at the start of a connection. `clickhouse-test`
+    then never reaches the processlist and reports no hung query at all. Filing
+    that under "possible deadlock found" sends investigators after a hang that
+    does not exist and hides how often the memory tracker breaks, so report it
+    as itself.
+
+    The name is taken from the terminal outcome `clickhouse-test` prints, not
+    from any error the log happens to mention along the way: a run whose early
+    retries hit the memory tracker but which ended on a refused connection is
+    not the memory-tracker case. Every place where a rejection is the terminal
+    outcome -- the startup probe, the processlist query of the hung check
+    itself, which a run that started fine can still be rejected on, and any
+    other query of the runner, such as the setup queries right after the
+    startup probe, whose error ends the run -- prints the same
+    `Server rejects queries.` marker, followed by which query was rejected.
+    The row is named after that: only a rejected startup probe says
+    that every query was rejected, because when the processlist query is the
+    one rejected, the version query and the preparation queries before it did
+    go through.
+    """
+    rejected = ""
+    try:
+        with open(hung_check_log, "r", encoding="utf-8", errors="replace") as log:
+            for line in log:
+                # The processlist was reached and did show hung queries: a hang,
+                # whatever else the log holds.
+                if "Found hung queries in processlist" in line:
+                    return HUNG_CHECK_DEADLOCK
+                # Printed once, at the end of the run, and only when the
+                # server answered with an error rather than failing to be
+                # reached at all.
+                if "Server rejects queries." in line:
+                    rejected = line
+    except OSError as ex:
+        logging.warning("Failed to read %s: %s", hung_check_log, ex)
+        return HUNG_CHECK_DEADLOCK
+
+    if not rejected:
+        return HUNG_CHECK_DEADLOCK
+
+    # What follows the marker says which query was rejected.
+    rejected = rejected.split("Server rejects queries.", 1)[1].strip()
+    if rejected.startswith("Cannot query the server version"):
+        name = "Server rejects all queries"
+    elif rejected.startswith("Cannot get the processlist size"):
+        name = "Server rejects the processlist query"
+    else:
+        name = "Server rejects queries"
+
+    # Keep the error name, so that a memory tracker above the real usage and a
+    # thread pool that cannot start a thread do not share one row. The last
+    # such token is the error the server answered with: a server exception
+    # ends with the error name, and the `(version 26.9.1.1)` that can follow
+    # it is lower case and does not match.
+    errors = re.findall(r"\(([A-Z][A-Z_0-9]+)\)", rejected)
+    if errors:
+        return f"{name}, {errors[-1]}"
+    return name
 
 
 def collect_stacktrace_dumps(output_folder: Path) -> None:
@@ -998,11 +1473,6 @@ def run_stress_test(args: argparse.Namespace) -> None:
                     # NOTE: memory_profiler_step should be also adjusted, because:
                     #
                     #     untracked_memory_limit = min(settings.max_untracked_memory, settings.memory_profiler_step)
-                    #
-                    # NOTE: that if there will be queries with GROUP BY, this trick
-                    # will not work due to CurrentMemoryTracker::check() from
-                    # Aggregator code.
-                    # But right now it should work, since neither hung check, nor 00001_select_1 has GROUP BY.
                     "--client-option",
                     "max_untracked_memory=1Gi",
                     "max_memory_usage_for_user=0",
@@ -1064,44 +1534,14 @@ def run_stress_test(args: argparse.Namespace) -> None:
             if res != 0 and have_long_running_queries:
                 logging.info("Hung check failed with exit code %d", res)
 
-                # Embed a tail of the captured hung-check output in
-                # test_results.tsv so the processlist and thread stacktraces
-                # are visible in CIDB. The full log is also kept as a CI
-                # artifact (see process_results in stress_job.py), giving
-                # investigators access to the complete diagnostic output.
-                #
-                # Read only the last 32 KiB rather than the whole file: on
-                # deadlock failures `hung_check.log` can be very large (a
-                # full processlist plus a `gdb` backtrace for every server
-                # process), and the stress-test machine is already under
-                # memory pressure. The diagnostic content we need
-                # (`Found hung queries`, the processlist with stacktraces,
-                # the `gdb` backtraces) is printed at the end of the log,
-                # so the tail is exactly the relevant region.
+                # Embed part of the hung-check output in test_results.tsv so the
+                # verdict and the processlist are visible in CIDB. The whole log
+                # is also a CI artifact (process_results in stress_job.py).
                 info_field = ""
                 try:
-                    tail_bytes_size = 32 * 1024
-                    with open(hung_check_log, "rb") as f:
-                        f.seek(0, os.SEEK_END)
-                        size = f.tell()
-                        offset = max(0, size - tail_bytes_size)
-                        f.seek(offset)
-                        tail_bytes = f.read()
-                    log_text = tail_bytes.decode("utf-8", errors="replace")
-                    if offset > 0:
-                        # Drop the (likely partial) first line so the tail
-                        # always starts on a line boundary.
-                        nl = log_text.find("\n")
-                        if nl >= 0:
-                            log_text = log_text[nl + 1 :]
-                        log_text = (
-                            "(truncated; see hung_check.log artifact for"
-                            " the full output; showing last 32 KiB)\n...\n"
-                            + log_text
-                        )
                     # Escape so NUL, tab, and newline survive the TSV encoding,
                     # matching the decoder in read_test_results().
-                    info_field = escape_tsv_info(log_text)
+                    info_field = escape_tsv_info(build_hung_check_info(hung_check_log))
                 except OSError as ex:
                     logging.warning(
                         "Failed to read hung_check.log to embed in"
@@ -1110,7 +1550,7 @@ def run_stress_test(args: argparse.Namespace) -> None:
                     )
 
                 hung_check_status = (
-                    "Hung check failed, possible deadlock found\tFAIL\t\\N\t"
+                    f"{hung_check_failure_name(hung_check_log)}\tFAIL\t\\N\t"
                     f"{info_field}\n"
                 )
                 with open(

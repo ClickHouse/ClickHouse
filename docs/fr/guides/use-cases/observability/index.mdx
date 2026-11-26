@@ -11,29 +11,25 @@ import { CloudNotSupportedBadge } from "/snippets/fr/components/CloudNotSupporte
 
 ClickHouse offre une vitesse, une scalabilité et une efficacité économique inégalées pour l’observabilité. Ce guide propose deux options selon vos besoins :
 
-<div id="clickstack">
-  ## ClickStack - la pile d’observabilité ClickHouse
-</div>
+## ClickStack - la stack d’observabilité ClickHouse {#clickstack}
 
-La pile d’observabilité ClickHouse est notre **approche recommandée** pour la plupart des utilisateurs.
+La stack d’observabilité ClickHouse est notre **approche recommandée** pour la plupart des utilisateurs.
 
 **ClickStack** est une plateforme d’observabilité prête pour la production, construite sur ClickHouse et OpenTelemetry (OTel), qui unifie les logs, les traces, les métriques et les sessions dans une solution unique, performante et évolutive, allant du déploiement sur un seul nœud jusqu’à une échelle de **plusieurs pétaoctets**.
 
 | Section                                                         | Description                                                        |
 | --------------------------------------------------------------- | ------------------------------------------------------------------ |
 | [Vue d’ensemble](/fr/clickstack/overview)                          | Introduction à ClickStack et à ses principales fonctionnalités     |
-| [Prise en main](/fr/clickstack/getting-started/index)              | Guide de démarrage rapide et instructions de configuration de base |
+| [Prise en main](/fr/clickstack/getting-started/oss)                | Guide de démarrage rapide et instructions de configuration de base |
 | [Jeux de données d’exemple](/fr/clickstack/example-datasets/index) | Jeux de données d’exemple et cas d’usage                           |
 | [Architecture](/fr/clickstack/architecture)                        | Architecture du système et vue d’ensemble des composants           |
 | [Déploiement](/fr/clickstack/deployment/overview)                  | Guides et options de déploiement                                   |
 | [Configuration](/fr/clickstack/managing/config)                    | Options de configuration et paramètres détaillés                   |
-| [Ingestion des données](/fr/clickstack/ingesting-data/index)       | Recommandations pour l’ingestion des données dans ClickStack       |
+| [Ingestion des données](/fr/clickstack/ingesting-data/overview)    | Recommandations pour l’ingestion des données dans ClickStack       |
 | [Recherche](/fr/clickstack/features/search)                        | Comment rechercher et interroger vos données d’observabilité       |
 | [Production](/fr/clickstack/managing/production)                   | Bonnes pratiques pour le déploiement en production                 |
 
-<div id="build-your-own-stack">
-  ## Créez votre propre stack
-</div>
+## Créez votre propre stack {#build-your-own-stack}
 
 Pour les utilisateurs ayant des **besoins spécifiques** — tels que des pipelines d’ingestion hautement spécialisés, des schémas sur mesure ou des besoins de mise à l’échelle extrêmes — nous proposons des conseils pour créer une stack d’observabilité personnalisée avec ClickHouse comme base de données centrale.
 
@@ -46,9 +42,7 @@ Pour les utilisateurs ayant des **besoins spécifiques** — tels que des pipeli
 | [Utilisation des outils de visualisation](/fr/guides/use-cases/observability/build-your-own/grafana)       | Découvrez comment utiliser les outils de visualisation pour l’observabilité avec ClickHouse, notamment HyperDX et Grafana.                                                                      |
 | [Application de démonstration](/fr/guides/use-cases/observability/build-your-own/demo-application)         | Découvrez l’OpenTelemetry demo application adaptée pour fonctionner avec ClickHouse pour les logs et les traces.                                                                                |
 
-<div id="prometheus-metrics">
-  ## Métriques Prometheus
-</div>
+## Métriques Prometheus {#prometheus-metrics}
 
 <CloudNotSupportedBadge />
 

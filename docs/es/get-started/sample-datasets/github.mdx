@@ -9,8 +9,6 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/es/components/Image.jsx";
-
 Este conjunto de datos contiene todos los commits y cambios del repositorio de ClickHouse. Puede generarse con la herramienta nativa `git-import` incluida con ClickHouse.
 
 Los datos generados incluyen un archivo `tsv` para cada una de las siguientes tablas:
@@ -26,7 +24,7 @@ A fecha de 8 de noviembre de 2022, cada TSV tiene aproximadamente el siguiente t
 * `line_changes` - 2.7G - 7,535,157 filas
 
 <div id="generating-the-data">
-  ## Generación de datos
+  ## Generación de datos {#generating-the-data}
 </div>
 
 Esto es opcional. Ofrecemos los datos de forma gratuita; consulta [Descarga e inserción de los datos](#downloading-and-inserting-the-data).
@@ -71,7 +69,7 @@ CREATE TABLE git.commits
 * Linux - `~/clickhouse git-import` - 160 min
 
 <div id="downloading-and-inserting-the-data">
-  ## Descarga e inserción de datos
+  ## Descarga e inserción de datos {#downloading-and-inserting-the-data}
 </div>
 
 Los siguientes datos pueden utilizarse para reproducir un entorno de trabajo funcional. Como alternativa, este conjunto de datos está disponible en play.clickhouse.com; consulta [Consultas](#queries) para obtener más información.
@@ -187,7 +185,7 @@ Inserta los datos mediante `INSERT INTO SELECT` y la [función s3](/es/reference
 
 ```sql
 INSERT INTO git.commits SELECT *
-FROM s3('https://datasets-documentation.s3.amazonaws.com/github/commits/clickhouse/commits.tsv.xz', 'TSV', 'hash String,author LowCardinality(String), time DateTime, message String, files_added UInt32, files_deleted UInt32, files_renamed UInt32, files_modified UInt32, lines_added UInt32, lines_deleted UInt32, hunks_added UInt32, hunks_removed UInt32, hunks_changed UInt32')
+FROM s3('https://datasets-documentation.s3.amazonaws.com/github/commits/clickhouse/commits.tsv.xz', NOSIGN, 'TSV', 'hash String,author LowCardinality(String), time DateTime, message String, files_added UInt32, files_deleted UInt32, files_renamed UInt32, files_modified UInt32, lines_added UInt32, lines_deleted UInt32, hunks_added UInt32, hunks_removed UInt32, hunks_changed UInt32')
 ```
 
 ```response
@@ -198,7 +196,7 @@ FROM s3('https://datasets-documentation.s3.amazonaws.com/github/commits/clickhou
 
 ```sql
 INSERT INTO git.file_changes SELECT *
-FROM s3('https://datasets-documentation.s3.amazonaws.com/github/commits/clickhouse/file_changes.tsv.xz', 'TSV', 'change_type Enum(\'Add\' = 1, \'Delete\' = 2, \'Modify\' = 3, \'Rename\' = 4, \'Copy\' = 5, \'Type\' = 6), path LowCardinality(String), old_path LowCardinality(String), file_extension LowCardinality(String), lines_added UInt32, lines_deleted UInt32, hunks_added UInt32, hunks_removed UInt32, hunks_changed UInt32, commit_hash String, author LowCardinality(String), time DateTime, commit_message String, commit_files_added UInt32, commit_files_deleted UInt32, commit_files_renamed UInt32, commit_files_modified UInt32, commit_lines_added UInt32, commit_lines_deleted UInt32, commit_hunks_added UInt32, commit_hunks_removed UInt32, commit_hunks_changed UInt32')
+FROM s3('https://datasets-documentation.s3.amazonaws.com/github/commits/clickhouse/file_changes.tsv.xz', NOSIGN, 'TSV', 'change_type Enum(\'Add\' = 1, \'Delete\' = 2, \'Modify\' = 3, \'Rename\' = 4, \'Copy\' = 5, \'Type\' = 6), path LowCardinality(String), old_path LowCardinality(String), file_extension LowCardinality(String), lines_added UInt32, lines_deleted UInt32, hunks_added UInt32, hunks_removed UInt32, hunks_changed UInt32, commit_hash String, author LowCardinality(String), time DateTime, commit_message String, commit_files_added UInt32, commit_files_deleted UInt32, commit_files_renamed UInt32, commit_files_modified UInt32, commit_lines_added UInt32, commit_lines_deleted UInt32, commit_hunks_added UInt32, commit_hunks_removed UInt32, commit_hunks_changed UInt32')
 ```
 
 ```response
@@ -209,7 +207,7 @@ FROM s3('https://datasets-documentation.s3.amazonaws.com/github/commits/clickhou
 
 ```sql
 INSERT INTO git.line_changes SELECT *
-FROM s3('https://datasets-documentation.s3.amazonaws.com/github/commits/clickhouse/line_changes.tsv.xz', 'TSV', '    sign Int8, line_number_old UInt32, line_number_new UInt32, hunk_num UInt32, hunk_start_line_number_old UInt32, hunk_start_line_number_new UInt32, hunk_lines_added UInt32,\n    hunk_lines_deleted UInt32, hunk_context LowCardinality(String), line LowCardinality(String), indent UInt8, line_type Enum(\'Empty\' = 0, \'Comment\' = 1, \'Punct\' = 2, \'Code\' = 3), prev_commit_hash String, prev_author LowCardinality(String), prev_time DateTime, file_change_type Enum(\'Add\' = 1, \'Delete\' = 2, \'Modify\' = 3, \'Rename\' = 4, \'Copy\' = 5, \'Type\' = 6),\n    path LowCardinality(String), old_path LowCardinality(String), file_extension LowCardinality(String), file_lines_added UInt32, file_lines_deleted UInt32, file_hunks_added UInt32, file_hunks_removed UInt32, file_hunks_changed UInt32, commit_hash String,\n    author LowCardinality(String), time DateTime, commit_message String, commit_files_added UInt32, commit_files_deleted UInt32, commit_files_renamed UInt32, commit_files_modified UInt32, commit_lines_added UInt32, commit_lines_deleted UInt32, commit_hunks_added UInt32, commit_hunks_removed UInt32, commit_hunks_changed UInt32')
+FROM s3('https://datasets-documentation.s3.amazonaws.com/github/commits/clickhouse/line_changes.tsv.xz', NOSIGN, 'TSV', '    sign Int8, line_number_old UInt32, line_number_new UInt32, hunk_num UInt32, hunk_start_line_number_old UInt32, hunk_start_line_number_new UInt32, hunk_lines_added UInt32,\n    hunk_lines_deleted UInt32, hunk_context LowCardinality(String), line LowCardinality(String), indent UInt8, line_type Enum(\'Empty\' = 0, \'Comment\' = 1, \'Punct\' = 2, \'Code\' = 3), prev_commit_hash String, prev_author LowCardinality(String), prev_time DateTime, file_change_type Enum(\'Add\' = 1, \'Delete\' = 2, \'Modify\' = 3, \'Rename\' = 4, \'Copy\' = 5, \'Type\' = 6),\n    path LowCardinality(String), old_path LowCardinality(String), file_extension LowCardinality(String), file_lines_added UInt32, file_lines_deleted UInt32, file_hunks_added UInt32, file_hunks_removed UInt32, file_hunks_changed UInt32, commit_hash String,\n    author LowCardinality(String), time DateTime, commit_message String, commit_files_added UInt32, commit_files_deleted UInt32, commit_files_renamed UInt32, commit_files_modified UInt32, commit_lines_added UInt32, commit_lines_deleted UInt32, commit_hunks_added UInt32, commit_hunks_removed UInt32, commit_hunks_changed UInt32')
 ```
 
 ```response
@@ -217,7 +215,7 @@ FROM s3('https://datasets-documentation.s3.amazonaws.com/github/commits/clickhou
 ```
 
 <div id="queries">
-  ## Consultas
+  ## Consultas {#queries}
 </div>
 
 La herramienta sugiere varias consultas en su salida de ayuda. Hemos respondido a estas, además de incluir algunas preguntas complementarias de interés. Estas consultas están ordenadas, de forma aproximada, por complejidad creciente, en lugar de seguir el orden arbitrario de la herramienta.
@@ -225,7 +223,7 @@ La herramienta sugiere varias consultas en su salida de ayuda. Hemos respondido 
 Este conjunto de datos está disponible en [play.clickhouse.com](https://sql.clickhouse.com?query_id=DCQPNPAIMAQXRLHYURLKVJ) en las bases de datos `git_clickhouse`. Proporcionamos un enlace a este entorno para todas las consultas, adaptando el nombre de la base de datos según sea necesario. Ten en cuenta que los resultados en play pueden variar con respecto a los que se presentan aquí debido a diferencias en el momento de la recopilación de los datos.
 
 <div id="history-of-a-single-file">
-  ### Historial de un solo archivo
+  ### Historial de un solo archivo {#history-of-a-single-file}
 </div>
 
 La más sencilla de las consultas. Aquí vemos todos los mensajes de commit de `StorageReplicatedMergeTree.cpp`. Como probablemente sean los más interesantes, los ordenamos empezando por los más recientes.
@@ -305,7 +303,7 @@ LIMIT 10
 Ten en cuenta que existe una variante más compleja de esta consulta en la que se obtiene el [historial de commits línea por línea de un archivo](#line-by-line-commit-history-of-a-file), teniendo en cuenta los cambios de nombre.
 
 <div id="find-the-current-active-files">
-  ### Encontrar los archivos activos actuales
+  ### Encontrar los archivos activos actuales {#find-the-current-active-files}
 </div>
 
 Esto es importante para el análisis posterior, cuando solo queremos tener en cuenta los archivos actuales del repositorio. Estimamos que este conjunto está formado por los archivos que no se han renombrado ni eliminado (y luego vuelto a añadir o renombrar).
@@ -443,7 +441,7 @@ La diferencia aquí se debe a varios factores:
 Estas diferencias no deberían afectar de forma significativa a nuestro análisis. **Se agradecen versiones mejoradas de esta consulta**.
 
 <div id="list-files-with-most-modifications">
-  ### Lista de archivos con más modificaciones
+  ### Lista de archivos con más modificaciones {#list-files-with-most-modifications}
 </div>
 
 Si nos limitamos a los archivos actuales, consideramos que el número de modificaciones es la suma de eliminaciones y adiciones.
@@ -502,7 +500,7 @@ LIMIT 10
 ```
 
 <div id="what-day-of-the-week-do-commits-usually-occur">
-  ### ¿Qué día de la semana suelen realizarse los commits?
+  ### ¿Qué día de la semana suelen realizarse los commits? {#what-day-of-the-week-do-commits-usually-occur}
 </div>
 
 [play](https://sql.clickhouse.com?query_id=GED2STFSYJDRAA59H8RLIV)
@@ -530,9 +528,7 @@ GROUP BY dayOfWeek(time) AS day_of_week
 
 Esto cuadra con cierta bajada de productividad los viernes. ¡Qué bien ver a gente haciendo commits de código los fines de semana! ¡Muchas gracias a nuestros colaboradores!
 
-<div id="history-of-subdirectoryfile---number-of-lines-commits-and-contributors-over-time">
-  ### Historial del subdirectorio/archivo: número de líneas, commits y colaboradores a lo largo del tiempo
-</div>
+### Historial del subdirectorio/archivo: número de líneas, commits y colaboradores a lo largo del tiempo {#history-of-subdirectoryfile---number-of-lines-commits-and-contributors-over-time}
 
 Esto produciría un resultado de consulta muy grande, poco práctico de mostrar o visualizar sin filtrar. Por ello, en el siguiente ejemplo permitimos filtrar por archivo o subdirectorio. Aquí agrupamos por semana mediante la función `toStartOfWeek`; adáptela según sea necesario.
 
@@ -572,14 +568,22 @@ Estos datos se prestan bien a la visualización. A continuación, usamos Superse
 
 **Para líneas añadidas y eliminadas:**
 
-<Image img="/images/getting-started/example-datasets/superset-github-lines-added-deleted.webp" alt="Para líneas añadidas y eliminadas" size="md" />
+<div className="ch-image-md">
+  <Frame>
+    ![Para líneas añadidas y eliminadas](/images/getting-started/example-datasets/superset-github-lines-added-deleted.webp)
+  </Frame>
+</div>
 
 **Para commits y autores:**
 
-<Image img="/images/getting-started/example-datasets/superset-commits-authors.webp" alt="Para commits y autores" size="md" />
+<div className="ch-image-md">
+  <Frame>
+    ![Para commits y autores](/images/getting-started/example-datasets/superset-commits-authors.webp)
+  </Frame>
+</div>
 
 <div id="list-files-with-maximum-number-of-authors">
-  ### Listar archivos con el mayor número de autores
+  ### Listar archivos con el mayor número de autores {#list-files-with-maximum-number-of-authors}
 </div>
 
 Solo incluir los archivos actuales.
@@ -638,7 +642,7 @@ LIMIT 10
 ```
 
 <div id="oldest-lines-of-code-in-the-repository">
-  ### Las líneas de código más antiguas del repositorio
+  ### Las líneas de código más antiguas del repositorio {#oldest-lines-of-code-in-the-repository}
 </div>
 
 Solo se incluyen los archivos actuales.
@@ -699,7 +703,7 @@ LIMIT 10
 ```
 
 <div id="files-with-longest-history">
-  ### Archivos con el historial más extenso
+  ### Archivos con el historial más extenso {#files-with-longest-history}
 </div>
 
 Se limita solo a los archivos actuales.
@@ -761,7 +765,7 @@ LIMIT 10
 Nuestra principal estructura de datos, el Merge Tree, está obviamente en constante evolución y cuenta con un largo historial de cambios.
 
 <div id="distribution-of-contributors-with-respect-to-docs-and-code-over-the-month">
-  ### Distribución de colaboradores entre documentación y código a lo largo del mes
+  ### Distribución de colaboradores entre documentación y código a lo largo del mes {#distribution-of-contributors-with-respect-to-docs-and-code-over-the-month}
 </div>
 
 **Durante la captura de datos, se han filtrado los cambios en la carpeta `docs/` debido a un historial de commits muy desordenado. Por lo tanto, los resultados de esta consulta no son precisos.**
@@ -828,7 +832,7 @@ FROM
 Quizá un poco más hacia el final del mes, pero en general mantenemos una distribución bastante uniforme. De nuevo, esto no es fiable debido al filtrado aplicado por el filtro de docs durante la inserción de datos.
 
 <div id="authors-with-the-most-diverse-impact">
-  ### Autores con el impacto más variado
+  ### Autores con el impacto más variado {#authors-with-the-most-diverse-impact}
 </div>
 
 Aquí, consideramos la diversidad como la cantidad de archivos únicos en los que ha contribuido un autor.
@@ -911,7 +915,7 @@ LIMIT 10
 ```
 
 <div id="favorite-files-for-an-author">
-  ### Archivos favoritos de un autor
+  ### Archivos favoritos de un autor {#favorite-files-for-an-author}
 </div>
 
 Aquí tomamos a nuestro fundador [Alexey Milovidov](https://github.com/alexey-milovidov) y limitamos el análisis a los archivos actuales.
@@ -1003,7 +1007,7 @@ LIMIT 10
 Esto quizá refleje más sus áreas de interés.
 
 <div id="largest-files-with-lowest-number-of-authors">
-  ### Archivos más grandes con el menor número de autores
+  ### Archivos más grandes con el menor número de autores {#largest-files-with-lowest-number-of-authors}
 </div>
 
 Para ello, primero tenemos que identificar los archivos más grandes. Estimar esto reconstruyendo por completo cada archivo a partir del historial de commits sería muy costoso.
@@ -1181,7 +1185,7 @@ LIMIT 10
 ```
 
 <div id="commits-and-lines-of-code-distribution-by-time-by-weekday-by-author-for-specific-subdirectories">
-  ### Distribución de commits y líneas de código en el tiempo; por día de la semana, por autor; para subdirectorios específicos
+  ### Distribución de commits y líneas de código en el tiempo; por día de la semana, por autor; para subdirectorios específicos {#commits-and-lines-of-code-distribution-by-time-by-weekday-by-author-for-specific-subdirectories}
 </div>
 
 Interpretamos esto como el número de líneas añadidas y eliminadas según el día de la semana. En este caso, nos centramos en el [directorio Functions](https://github.com/ClickHouse/ClickHouse/tree/master/src/Functions)
@@ -1313,9 +1317,7 @@ FROM
 24 rows in set. Elapsed: 0.038 sec. Processed 266.05 thousand rows, 14.66 MB (7.09 million rows/s., 390.69 MB/s.)
 ```
 
-<div id="matrix-of-authors-that-shows-what-authors-tends-to-rewrite-another-authors-code">
-  ### Matriz de autores que muestra qué autores tienden a reescribir el código de otros autores
-</div>
+### Matriz de autores que muestra qué autores tienden a reescribir el código de otros autores {#matrix-of-authors-that-shows-what-authors-tends-to-rewrite-another-authors-code}
 
 El `sign = -1` indica una eliminación de código. Excluimos la puntuación y la inserción de líneas vacías.
 
@@ -1365,14 +1367,22 @@ LIMIT 100
 
 Un diagrama de Sankey (SuperSet) permite visualizar esto claramente. Observa que aumentamos nuestro `LIMIT BY` a 3 para obtener los 3 autores que más código eliminan de cada autor y así mejorar la variedad de la visualización.
 
-<Image img="/images/getting-started/example-datasets/superset-authors-matrix.webp" alt="Matriz de autores de Superset" size="md" />
+<div className="ch-image-md">
+  <Frame>
+    ![Matriz de autores de Superset](/images/getting-started/example-datasets/superset-authors-matrix.webp)
+  </Frame>
+</div>
 
 Está claro que a Alexey le gusta eliminar el código de otras personas. Excluyámoslo para obtener una visión más equilibrada de la eliminación de código.
 
-<Image img="/images/getting-started/example-datasets/superset-authors-matrix_v2.webp" alt="Matriz de autores de Superset v2" size="md" />
+<div className="ch-image-md">
+  <Frame>
+    ![Matriz de autores de Superset v2](/images/getting-started/example-datasets/superset-authors-matrix_v2.webp)
+  </Frame>
+</div>
 
 <div id="who-is-the-highest-percentage-contributor-per-day-of-week">
-  ### ¿Quién aporta el mayor porcentaje por día de la semana?
+  ### ¿Quién aporta el mayor porcentaje por día de la semana? {#who-is-the-highest-percentage-contributor-per-day-of-week}
 </div>
 
 Si consideramos solo el número de commits:
@@ -1495,7 +1505,7 @@ INNER JOIN
 ```
 
 <div id="distribution-of-code-age-across-repository">
-  ### Distribución de la antigüedad del código en el repositorio
+  ### Distribución de la antigüedad del código en el repositorio {#distribution-of-code-age-across-repository}
 </div>
 
 Limitamos el análisis a los archivos actuales. Por brevedad, restringimos los resultados a una profundidad de 2, con 5 archivos por carpeta raíz. Ajústelo según sea necesario.
@@ -1582,7 +1592,7 @@ LIMIT 5 BY root
 ```
 
 <div id="what-percentage-of-code-for-an-author-has-been-removed-by-other-authors">
-  ### ¿Qué porcentaje del código de un autor han eliminado otros autores?
+  ### ¿Qué porcentaje del código de un autor han eliminado otros autores? {#what-percentage-of-code-for-an-author-has-been-removed-by-other-authors}
 </div>
 
 Para esta consulta, necesitamos el número de líneas escritas por un autor dividido entre el número total de líneas que otros colaboradores le han eliminado.
@@ -1636,7 +1646,7 @@ LIMIT 10
 ```
 
 <div id="list-files-that-were-rewritten-most-number-of-times">
-  ### ¿Qué archivos se reescribieron más veces?
+  ### ¿Qué archivos se reescribieron más veces? {#list-files-that-were-rewritten-most-number-of-times}
 </div>
 
 El enfoque más sencillo para responder a esta pregunta podría ser simplemente contar el número de modificaciones de líneas por ruta (limitándose a los archivos actuales), por ejemplo:
@@ -1783,7 +1793,7 @@ LIMIT 10
 ```
 
 <div id="what-weekday-does-the-code-have-the-highest-chance-to-stay-in-the-repository">
-  ### ¿Qué día de la semana tiene el código más probabilidades de permanecer en el repositorio?
+  ### ¿Qué día de la semana tiene el código más probabilidades de permanecer en el repositorio? {#what-weekday-does-the-code-have-the-highest-chance-to-stay-in-the-repository}
 </div>
 
 Para ello, necesitamos identificar de forma única una línea de código. Lo estimamos así (ya que la misma línea puede aparecer varias veces en un archivo) usando la ruta y el contenido de la línea.
@@ -1849,7 +1859,7 @@ GROUP BY dayOfWeek(added_day) AS day_of_week_added
 ```
 
 <div id="files-sorted-by-average-code-age">
-  ### Archivos ordenados por la antigüedad media del código
+  ### Archivos ordenados por la antigüedad media del código {#files-sorted-by-average-code-age}
 </div>
 
 Esta consulta utiliza el mismo principio que [Qué día de la semana tiene el código la mayor probabilidad de permanecer en el repositorio](#what-weekday-does-the-code-have-the-highest-chance-to-stay-in-the-repository): intenta identificar de forma única una línea de código mediante la ruta y el contenido de la línea.
@@ -1943,7 +1953,7 @@ LIMIT 10
 ```
 
 <div id="who-tends-to-write-more-tests--cpp-code--comments">
-  ### ¿Quién suele escribir más tests / código en C++ / comentarios?
+  ### ¿Quién suele escribir más tests / código en C++ / comentarios? {#who-tends-to-write-more-tests--cpp-code--comments}
 </div>
 
 Hay varias formas de abordar esta pregunta. Si nos centramos en la proporción entre código y tests, esta consulta es relativamente sencilla: contar el número de contribuciones a carpetas que contienen `tests` y calcular la proporción con respecto al total de contribuciones.
@@ -2083,7 +2093,7 @@ LIMIT 10
 Ten en cuenta que ordenamos por contribuciones de código. Es un % sorprendentemente alto en todos nuestros principales colaboradores y parte de lo que hace que nuestro código sea tan legible.
 
 <div id="how-does-an-authors-commits-change-over-time-with-respect-to-codecomments-percentage">
-  ### ¿Cómo varían con el tiempo los commits de un autor en cuanto al porcentaje de código/comentarios?
+  ### ¿Cómo varían con el tiempo los commits de un autor en cuanto al porcentaje de código/comentarios? {#how-does-an-authors-commits-change-over-time-with-respect-to-codecomments-percentage}
 </div>
 
 Calcular esto por autor es trivial,
@@ -2205,7 +2215,7 @@ LIMIT 20
 Es alentador que nuestro % de comentarios se mantenga bastante constante y no disminuya cuanto más tiempo contribuyen los autores.
 
 <div id="what-is-the-average-time-before-code-will-be-rewritten-and-the-median-half-life-of-code-decay">
-  ### ¿Cuál es el tiempo promedio antes de que el código se reescriba y cuál es la mediana (vida media de la degradación del código)?
+  ### ¿Cuál es el tiempo promedio antes de que el código se reescriba y cuál es la mediana (vida media de la degradación del código)? {#what-is-the-average-time-before-code-will-be-rewritten-and-the-median-half-life-of-code-decay}
 </div>
 
 Podemos usar el mismo principio que en [List files that were rewritten most number of time or by most of authors](#list-files-that-were-rewritten-most-number-of-times) para identificar reescrituras, pero teniendo en cuenta todos los archivos. Se utiliza una función de ventana para calcular el tiempo entre reescrituras de cada archivo. A partir de esto, podemos calcular el promedio y la mediana para todos los archivos.
@@ -2269,7 +2279,7 @@ FROM rewrites
 ```
 
 <div id="what-is-the-worst-time-to-write-code-in-sense-that-the-code-has-highest-chance-to-be-re-written">
-  ### ¿Cuándo es peor escribir código, en el sentido de que tenga más probabilidades de reescribirse?
+  ### ¿Cuándo es peor escribir código, en el sentido de que tenga más probabilidades de reescribirse? {#what-is-the-worst-time-to-write-code-in-sense-that-the-code-has-highest-chance-to-be-re-written}
 </div>
 
 Al igual que en [¿Cuál es el tiempo promedio antes de que el código sea reescrito y la mediana (vida media de la degradación del código)?](#what-is-the-average-time-before-code-will-be-rewritten-and-the-median-half-life-of-code-decay) y [Listar archivos que fueron reescritos la mayor cantidad de veces o por la mayor cantidad de autores](#list-files-that-were-rewritten-most-number-of-times), excepto que aquí agregamos por día de la semana. Ajústalo según sea necesario; por ejemplo, al mes del año.
@@ -2337,7 +2347,7 @@ GROUP BY dayOfWeek
 ```
 
 <div id="which-authors-code-is-the-most-sticky">
-  ### ¿De qué autor es el código más duradero?
+  ### ¿De qué autor es el código más duradero? {#which-authors-code-is-the-most-sticky}
 </div>
 
 Definimos &quot;duradero&quot; como el tiempo que permanece el código de un autor antes de ser reescrito. Al igual que en la pregunta anterior [¿Cuál es el tiempo promedio antes de que se reescriba el código y la mediana (vida media de la degradación del código)?](#what-is-the-average-time-before-code-will-be-rewritten-and-the-median-half-life-of-code-decay), usamos la misma métrica para las reescrituras; es decir, 50% de adiciones y 50% de eliminaciones en el archivo. Calculamos el tiempo promedio de reescritura por autor y solo consideramos a los colaboradores con más de dos archivos.
@@ -2418,7 +2428,7 @@ LIMIT 10
 ```
 
 <div id="most-consecutive-days-of-commits-by-an-author">
-  ### Mayor número de días consecutivos de commits por autor
+  ### Mayor número de días consecutivos de commits por autor {#most-consecutive-days-of-commits-by-an-author}
 </div>
 
 Esta consulta requiere primero calcular los días en que un autor ha realizado commits. Mediante una función de ventana, con partición por autor, podemos calcular los días transcurridos entre sus commits. Para cada commit, si el tiempo desde el commit anterior fue de 1 día, lo marcamos como consecutivo (1); en caso contrario, como 0, y almacenamos este resultado en `consecutive_day`.
@@ -2477,7 +2487,7 @@ LIMIT 10
 ```
 
 <div id="line-by-line-commit-history-of-a-file">
-  ### Historial de commits línea por línea de un archivo
+  ### Historial de commits línea por línea de un archivo {#line-by-line-commit-history-of-a-file}
 </div>
 
 Los archivos se pueden renombrar. Cuando esto ocurre, se genera un evento de cambio de nombre, donde la columna `path` se establece con la nueva ruta del archivo y `old_path` representa la ubicación anterior, por ejemplo.
@@ -2562,11 +2572,11 @@ FORMAT PrettyCompactMonoBlock
 ```
 
 <div id="unsolved-questions">
-  ## Cuestiones pendientes
+  ## Cuestiones pendientes {#unsolved-questions}
 </div>
 
 <div id="git-blame">
-  ### Git blame
+  ### Git blame {#git-blame}
 </div>
 
 Actualmente, es especialmente difícil obtener un resultado exacto debido a que no se puede mantener el estado en las funciones de array. Esto será posible con `arrayFold` o `arrayReduce`, que permiten conservar el estado en cada iteración.

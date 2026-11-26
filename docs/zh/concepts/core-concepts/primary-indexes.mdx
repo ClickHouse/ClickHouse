@@ -6,8 +6,6 @@ keywords: ['稀疏主索引', '主索引', '索引']
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 <Tip>
   **想了解更高级的索引详情？**
 
@@ -17,22 +15,24 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 </Tip>
 
 <div id="how-does-the-sparse-primary-index-work-in-clickHouse">
-  ## ClickHouse 中的稀疏主索引是如何工作的？
+  ## ClickHouse 中的稀疏主索引是如何工作的？ {#how-does-the-sparse-primary-index-work-in-clickHouse}
 </div>
 
 <br />
 
 ClickHouse 中的稀疏主索引有助于高效识别可能包含与查询在表主键列条件相匹配数据的[粒度](/zh/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-organized-into-granules-for-parallel-data-processing)——即由多行组成的数据块。在下一节中，我们将说明该索引是如何根据这些列中的值构建的。
 
-<div id="sparse-primary-index-creation">
-  ### 稀疏主索引的创建
-</div>
+### 稀疏主索引的创建 {#sparse-primary-index-creation}
 
 为了说明稀疏主索引是如何构建的，我们使用 [uk&#95;price&#95;paid&#95;simple](/zh/concepts/core-concepts/parts) 表，并结合一些动画来展示。
 
 [回顾一下](/zh/concepts/core-concepts/parts)，在我们的 ① 示例表中，主键为 (town, street)，② 插入的数据会 ③ 按主键列值排序后存储到磁盘上，并按列分别压缩保存到独立文件中：
 
-<Image img="/images/managing-data/core-concepts/primary-index-light_01.webp" size="lg" />
+<div className="ch-image-lg">
+  <Frame>
+    ![](/images/managing-data/core-concepts/primary-index-light_01.webp)
+  </Frame>
+</div>
 
 <br />
 
@@ -42,36 +42,52 @@ ClickHouse 中的稀疏主索引有助于高效识别可能包含与查询在表
 
 这种粒度结构也是主索引之所以是**稀疏**的原因：ClickHouse 不会为每一行建立索引，而是 ⑤ 每个粒度只存储一行的主键值——更准确地说，是该粒度的第一行。因此，每个粒度都会对应一个索引条目：
 
-<Image img="/images/managing-data/core-concepts/primary-index-light_02.webp" size="lg" />
-
-<br />
-
-<br />
-
-得益于这种稀疏性，主索引足够小，可以完全装入内存，从而能够对主键列上带有过滤条件的查询进行快速过滤。在下一节中，我们将说明它如何帮助加速此类查询。
-
-<div id="primary-index-usage">
-  ### 主索引的用法
+<div className="ch-image-lg">
+  <Frame>
+    ![](/images/managing-data/core-concepts/primary-index-light_02.webp)
+  </Frame>
 </div>
+
+<br />
+
+<br />
+
+得益于这种稀疏性，主索引足够小，可以完全装入内存，从而能够对主键列上带有谓词的查询进行快速过滤。在下一节中，我们将说明它如何帮助加速此类查询。
+
+### 主索引的用法 {#primary-index-usage}
 
 我们通过另一个动画来说明稀疏主索引如何用于加速查询：
 
-<Image img="/images/managing-data/core-concepts/primary-index-light_03.webp" size="lg" />
+<div className="ch-image-lg">
+  <Frame>
+    ![](/images/managing-data/core-concepts/primary-index-light_03.webp)
+  </Frame>
+</div>
 
 <br />
 
 <br />
 
-① 示例查询同时包含针对两个主键列的谓词：`town = 'LONDON' AND street = 'OXFORD STREET'`。
+<Steps>
+  <Step title="解析查询谓词">
+    示例查询同时包含针对两个主键列的谓词：`town = 'LONDON' AND street = 'OXFORD STREET'`。
+  </Step>
 
-② 为了加速查询，ClickHouse 会将表的主索引加载到内存中。
+  <Step title="加载主索引">
+    为了加速查询，ClickHouse 会将表的主索引加载到内存中。
+  </Step>
 
-③ 然后，它会扫描索引条目，以确定哪些粒度可能包含与该谓词匹配的行——也就是说，哪些粒度不能跳过。
+  <Step title="识别匹配的粒度">
+    然后，它会扫描索引条目，以确定哪些粒度可能包含与该谓词匹配的行——也就是说，哪些粒度不能跳过。
+  </Step>
 
-④ 随后，这些可能相关的粒度会被加载到内存中，并与查询所需的其他列中对应的粒度一起进行[处理](/zh/concepts/core-concepts/query-parallelism)。
+  <Step title="加载并处理粒度">
+    随后，这些可能相关的粒度会被加载到内存中，并与查询所需的其他列中对应的粒度一起进行[处理](/zh/concepts/core-concepts/query-parallelism)。
+  </Step>
+</Steps>
 
 <div id="monitoring-primary-indexes">
-  ## 监控主索引
+  ## 监控主索引 {#monitoring-primary-indexes}
 </div>
 
 表中的每个[数据分区片段](/zh/concepts/core-concepts/parts)都有自己的主索引。我们可以使用 [mergeTreeIndex](/zh/reference/functions/table-functions/mergeTreeIndex) 表函数查看这些索引的内容。
@@ -184,7 +200,7 @@ SELECT count() FROM uk.uk_price_paid_simple;
 ```
 
 <div id="key-takeaways">
-  ## 关键要点
+  ## 关键要点 {#key-takeaways}
 </div>
 
 * **稀疏主索引**通过识别哪些粒度中可能包含在主键列上满足查询条件的行，帮助 ClickHouse 跳过不必要的数据。
@@ -197,9 +213,7 @@ SELECT count() FROM uk.uk_price_paid_simple;
 
 * 你可以使用 `mergeTreeIndex` 表函数来**查看索引内容**，并通过 `EXPLAIN` 子句监控索引的使用情况。
 
-<div id="where-to-find-more-information">
-  ## 更多信息
-</div>
+## 更多信息 {#where-to-find-more-information}
 
 如果你想更深入地了解 ClickHouse 中稀疏主索引的工作原理，包括它与传统数据库索引的区别，以及使用它的最佳实践，请参阅我们关于索引的详细[深度解析](/zh/guides/clickhouse/data-modelling/sparse-primary-indexes)。
 

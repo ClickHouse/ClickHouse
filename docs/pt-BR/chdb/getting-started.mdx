@@ -213,11 +213,20 @@ from chdb import session as chs
 
 Em seguida, vamos inicializar uma sessão.
 Se quisermos que a sessão seja persistida em disco, precisaremos fornecer um nome de diretório.
-Se deixarmos em branco, o banco de dados ficará em memória e será perdido assim que encerrarmos o processo do Python.
+Se deixarmos em branco, a sessão será temporária: o chDB manterá os dados em um diretório temporário em disco e os excluirá quando a sessão for encerrada, portanto, os dados não persistirão.
 
 ```python
 sess = chs.Session("gettingStarted.chdb")
 ```
+
+<Note>
+  O chDB executa um único engine embutido por processo; portanto, o diretório do banco de dados (seu caminho) segue algumas regras:
+
+  * **Um processo por caminho**: um diretório de dados do chDB pode ser aberto por apenas um processo do sistema operacional por vez. Um segundo processo que tentar abrir o mesmo caminho falhará até que o primeiro seja fechado.
+  * **Um caminho por processo**: enquanto uma sessão ou conexão estiver aberta, abrir outra para um caminho *diferente* falhará; primeiro feche a(s) sessão(ões) ou conexão(ões) abertas para evitar o erro. Várias sessões ou conexões no *mesmo* caminho podem coexistir.
+  * **Concorrência**: sessões ou conexões no mesmo caminho podem executar consultas simultaneamente.
+  * **Sessões sem caminho são compartilhadas**: sem um caminho, as sessões usam o banco de dados `:memory:` de todo o processo (portanto, sessões sem caminho veem as tabelas umas das outras), e seu diretório temporário é removido somente quando a última é fechada.
+</Note>
 
 Em seguida, vamos criar um banco de dados:
 

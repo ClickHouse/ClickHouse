@@ -5,6 +5,7 @@
 
 #include <mysqlxx/Pool.h>
 
+#include <Common/SecretString.h>
 #include <Common/ThreadPool.h>
 #include <Core/LogsLevel.h>
 #include <Storages/ColumnsDescription.h>
@@ -84,6 +85,8 @@ public:
     StoragePtr detachTable(ContextPtr context, const String & table_name) override;
 
     void detachTablePermanently(ContextPtr context, const String & table_name) override;
+    DatabaseDetachedTablesSnapshotIteratorPtr getDetachedTablesIterator(
+        ContextPtr context, const FilterByNameFunction & filter_by_table_name, bool skip_not_loaded) const override;
 
     void dropTable(ContextPtr context, const String & table_name, bool sync) override;
 
@@ -97,7 +100,7 @@ protected:
 
 private:
     String metadata_path;
-    ASTPtr database_engine_define;
+    SecretString database_engine_define;
     String database_name_in_mysql;
     std::unique_ptr<MySQLSettings> mysql_settings;
 
@@ -111,7 +114,7 @@ private:
     mutable std::vector<StoragePtr> outdated_tables;
     mutable std::map<String, ModifyTimeAndStorage> local_tables_cache;
 
-    std::unordered_set<String> remove_or_detach_tables;
+    mutable std::unordered_set<String> remove_or_detach_tables;
 
     void cleanOutdatedTables();
 
@@ -124,6 +127,8 @@ private:
     void destroyLocalCacheExtraTables(const std::map<String, UInt64> & tables_with_modification_time) const TSA_REQUIRES(mutex);
 
     void fetchLatestTablesStructureIntoCache(const std::map<String, UInt64> & tables_modification_time, ContextPtr context) const TSA_REQUIRES(mutex);
+
+    StoragePtr createStorage(const String & table_name, const ColumnsDescription & columns) const TSA_REQUIRES(mutex);
 
     ThreadFromGlobalPool thread;
 

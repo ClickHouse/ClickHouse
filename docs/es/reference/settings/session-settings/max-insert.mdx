@@ -13,19 +13,19 @@ import { VersionHistory } from "/snippets/es/components/VersionHistory/VersionHi
 
 Estas configuraciones están disponibles en [system.settings](/es/reference/system-tables/settings) y se generan automáticamente a partir del [código fuente](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="max_insert_block_size">
-  ## max_insert_block_size
-</div>
+## max_insert_block_size {#max_insert_block_size}
 
 **Aliases**: `max_insert_block_size_rows`
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="1048449" />
 
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.1"},{"label": "1048449"},{"label": "Se añadió el alias `max_insert_block_size_rows`."}]}]} />
+
 El tamaño máximo de los bloques (en cantidad de filas) que se forman para la inserción en una tabla.
 
 Esta configuración controla la formación de bloques en dos contextos:
 
-1. Análisis del formato: Cuando el server analiza formatos de entrada basados en filas (CSV, TSV, JSONEachRow, etc.) desde cualquier interface (HTTP, clickhouse-client con datos inline, gRPC, PostgreSQL wire protocol), los bloques se emiten cuando:
+1. Análisis del formato: Cuando el servidor analiza formatos de entrada basados en filas (CSV, TSV, JSONEachRow, etc.) desde cualquier interfaz (HTTP, clickhouse-client con datos inline, gRPC, PostgreSQL wire protocol), los bloques se emiten cuando:
 
    * Se alcanzan tanto min&#95;insert&#95;block&#95;size&#95;rows AND min&#95;insert&#95;block&#95;size&#95;bytes, OR
    * Se alcanza max&#95;insert&#95;block&#95;size&#95;rows OR max&#95;insert&#95;block&#95;size&#95;bytes
@@ -44,9 +44,7 @@ Possible values:
 
 * Entero positivo.
 
-<div id="max_insert_block_size_bytes">
-  ## max_insert_block_size_bytes
-</div>
+## max_insert_block_size_bytes {#max_insert_block_size_bytes}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -61,9 +59,7 @@ Posibles valores:
 * Entero positivo.
 * 0 — la configuración no participa en la formación de bloques.
 
-<div id="max_insert_delayed_streams_for_parallel_write">
-  ## max_insert_delayed_streams_for_parallel_write
-</div>
+## max_insert_delayed_streams_for_parallel_write {#max_insert_delayed_streams_for_parallel_write}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -71,9 +67,7 @@ El número máximo de streams (columnas) para retrasar el volcado final de la pa
 
 Valor predeterminado de Cloud: `50`.
 
-<div id="max_insert_threads">
-  ## max_insert_threads
-</div>
+## max_insert_threads {#max_insert_threads}
 
 <SettingsInfoBlock type="MaxThreads" default_value="auto(N)" />
 
@@ -106,9 +100,7 @@ La paralelización del lado de escritura se aplica solo a `INSERT` simples sínc
 El lado de escritura se paraleliza solo cuando es seguro hacerlo; de lo contrario, permanece en un único flujo y esta configuración no le afecta. En particular, la escritura se mantiene en un único flujo cuando [`use_strict_insert_block_limits`](/es/reference/settings/session-settings/use#use_strict_insert_block_limits) está habilitada, una tabla de destino (o una tabla a la que reenvía) deduplica bloques insertados y la deduplicación de inserciones está habilitada para la consulta (consulte [`deduplicate_insert`](/es/reference/settings/session-settings/deduplicate-insert#deduplicate_insert)); cuando el destino tiene vistas materializadas dependientes —incluidas las vistas de una tabla a la que el destino reenvía, por ejemplo, detrás de un `Alias`—, salvo que [`parallel_view_processing`](/es/reference/settings/session-settings/parallel#parallel_view_processing) esté habilitada y las cadenas de vistas dependientes no presenten riesgos de deduplicación —la deduplicación en las vistas está deshabilitada ([`deduplicate_blocks_in_dependent_materialized_views`](/es/reference/settings/session-settings/other#deduplicate_blocks_in_dependent_materialized_views)) o ninguna ruta de vista dependiente puede deduplicar—; y siempre para destinos `Buffer` y `Distributed`. Un `Buffer` se vacía en su propio contexto y un `Distributed` reenvía la escritura a un fragmento remoto (que puede almacenar los datos en búfer), por lo que la configuración de deduplicación de esta consulta no determina la escritura final, que se mantiene en un único flujo independientemente de dicha configuración. Una inserción de quórum no paralela ([`insert_quorum`](/es/reference/settings/session-settings/insert-quorum#insert_quorum) es `2` o mayor, o `'auto'`, y [`insert_quorum_parallel`](/es/reference/settings/session-settings/insert-quorum#insert_quorum_parallel) está deshabilitada) también permanece en un único flujo, porque solo permite una parte de quórum en curso por tabla.
 Los valores más altos aumentan el uso de memoria.
 
-<div id="max_insert_threads_min_free_memory_per_thread">
-  ## max_insert_threads_min_free_memory_per_thread
-</div>
+## max_insert_threads_min_free_memory_per_thread {#max_insert_threads_min_free_memory_per_thread}
 
 <SettingsInfoBlock type="UInt64" default_value="4294967296" />
 

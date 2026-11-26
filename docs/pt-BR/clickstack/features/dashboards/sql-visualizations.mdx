@@ -7,35 +7,35 @@ doc_type: 'guide'
 keywords: ['clickstack', 'dashboards', 'visualização', 'sql', 'observabilidade']
 ---
 
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
-
 O ClickStack oferece suporte a visualizações baseadas em consultas SQL puras. Isso dá a você controle total sobre a lógica da consulta, sem perder a integração com intervalos de tempo no nível do dashboard, filtros e renderização de gráficos.
 
 As visualizações baseadas em SQL são úteis quando você precisa ir além do Chart Explorer integrado — por exemplo, para fazer JOIN entre tabelas ou criar agregações complexas que não são compatíveis com o construtor de gráficos.
 
-<div id="creating-a-raw-sql-chart">
-  ## Criando uma visualização baseada em SQL
+## Criando uma visualização baseada em SQL {#creating-a-raw-sql-chart}
+
+Para criar uma visualização baseada em SQL, abra o editor de bloco do dashboard e selecione a aba **SQL**.
+
+<div className="ch-image-lg">
+  <Frame>
+    ![Botão do Editor SQL](/images/use-cases/observability/sql-editor-button.webp)
+  </Frame>
 </div>
-
-Para criar uma visualização baseada em SQL, abra o editor de tile do dashboard e selecione a aba **SQL**.
-
-<Image img="/images/use-cases/observability/sql-editor-button.webp" alt="Botão do SQL Editor" size="lg" />
 
 A partir daí:
 
 1. Selecione uma **conexão do ClickHouse** para executar a consulta.
 2. Opcionalmente, selecione uma **Source** — isso permite aplicar filtros no nível do dashboard ao seu gráfico por meio da macro `$__filters`.
-3. Escreva sua consulta SQL no editor, usando parâmetros de consulta e macros para integrá-la ao intervalo de tempo e aos filtros do dashboard.
+3. Escreva sua consulta SQL no editor, usando parâmetros de consulta e macros para integrá-la ao intervalo de tempo, aos filtros e às variáveis do dashboard.
 4. Clique no botão **play** para visualizar os resultados e depois em **Save**.
 
 <div id="query-parameters">
-  ## Parâmetros de consulta
+  ## Parâmetros de consulta {#query-parameters}
 </div>
 
 [Parâmetros de consulta](/pt-BR/reference/syntax#defining-and-using-query-parameters) permitem que seu SQL faça referência ao intervalo de tempo e à granularidade atuais do dashboard. Eles usam a sintaxe de consultas parametrizadas do ClickHouse: `{paramName:Type}`.
 
 <div id="available-parameters">
-  ### Parâmetros disponíveis
+  ### Parâmetros disponíveis {#available-parameters}
 </div>
 
 Os parâmetros disponíveis dependem do tipo de gráfico:
@@ -57,13 +57,13 @@ Os parâmetros disponíveis dependem do tipo de gráfico:
 | `{endDateMilliseconds:Int64}`   | Int64 | Fim do intervalo de datas do dashboard (milissegundos desde epoch)    |
 
 <div id="macros">
-  ## Macros
+  ## Macros {#macros}
 </div>
 
 Macros são atalhos que se expandem em expressões comuns do ClickHouse SQL. Elas são precedidas por `$__` e substituídas antes de a consulta ser enviada ao ClickHouse.
 
 <div id="time-boundary-macros">
-  ### Macros de limite de tempo
+  ### Macros de limite de tempo {#time-boundary-macros}
 </div>
 
 Essas macros retornam uma expressão do ClickHouse que representa a hora de início ou de término do dashboard. Elas não recebem argumentos.
@@ -77,7 +77,7 @@ Essas macros retornam uma expressão do ClickHouse que representa a hora de iní
 | `$__interval_s`  | `{intervalSeconds:Int64}`                                             | Int64          |
 
 <div id="time-filter-macros">
-  ### Macros de filtro de tempo
+  ### Macros de filtro de tempo {#time-filter-macros}
 </div>
 
 Essas macros geram um fragmento de cláusula `WHERE` que filtra uma coluna com base no intervalo de tempo do dashboard.
@@ -98,7 +98,7 @@ AND TimestampTime <= toDateTime(fromUnixTimestamp64Milli({endDateMilliseconds:In
 ```
 
 <div id="time-interval-macros">
-  ### Macros de intervalo de tempo
+  ### Macros de intervalo de tempo {#time-interval-macros}
 </div>
 
 Essas macros agrupam uma coluna de `timestamp` em intervalos que correspondem à granularidade do dashboard. Elas geralmente são usadas nas cláusulas `SELECT` e `GROUP BY` para gráficos de séries temporais. Estão disponíveis apenas para visualizações de linha e de barras empilhadas.
@@ -115,7 +115,7 @@ toStartOfInterval(toDateTime(TimestampTime), INTERVAL {intervalSeconds:Int64} se
 ```
 
 <div id="dashboard-filter-macro">
-  ### Macro de filtro do dashboard
+  ### Macro de filtro do dashboard {#dashboard-filter-macro}
 </div>
 
 | Macro        | Descrição                                                                                              |
@@ -124,14 +124,30 @@ toStartOfInterval(toDateTime(TimestampTime), INTERVAL {intervalSeconds:Int64} se
 
 Quando uma **Source** é selecionada no gráfico e os filtros do dashboard estão ativos, `$__filters` se expande para as condições SQL `WHERE` correspondentes. Quando nenhuma Source é selecionada ou nenhum filtro é aplicado, ele se expande para `(1=1)`, portanto é sempre seguro incluí-lo em uma cláusula `WHERE`.
 
+Somente os filtros com a **Condição de filtro de transmissão** ativada são aplicados por `$__filters`. Os filtros expostos como variáveis são referenciados explicitamente, conforme descrito abaixo.
+
+<div id="dashboard-variables">
+  ### Macros de variáveis de dashboard {#dashboard-variables}
+</div>
+
+Quando um filtro de dashboard está [disponível como variável](/pt-BR/clickstack/features/dashboards/overview#dashboard-variables), é possível fazer referência aos valores selecionados em qualquer parte da consulta. Essas macros estão disponíveis apenas em blocos pertencentes a um dashboard que declara pelo menos uma variável.
+
+| Macro                                         | Descrição                                                                                                                                |
+| --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `$__filter($<variable>)`                      | Expande para `toString(<filter expression>) IN ($variable)` quando há valores selecionados para `variable` ou para `1=1` caso contrário. |
+| `$__filter(<expression>, $<variable>)`        | Expande para `<expression> IN ($variable)` quando há valores selecionados para `variable` ou para `1=1` caso contrário.                  |
+| `$__conditionalAll(<condition>, $<variable>)` | Expande para `<condition>` quando a variável tem uma seleção ou para `1=1` caso contrário.                                               |
+
+Os valores de uma variável também podem ser interpolados diretamente como `$name` ou `${name}`, com um formato opcional: `${name:sqlstring}` (o padrão), `${name:csv}` ou `${name:regex}`. No formato padrão, uma referência direta é renderizada como `NULL` antes de qualquer seleção; portanto, prefira as macros acima sempre que for esperado um predicado.
+
 <div id="how-results-are-plotted">
-  ## Como os resultados da consulta são exibidos nos gráficos
+  ## Como os resultados da consulta são exibidos nos gráficos {#how-results-are-plotted}
 </div>
 
 O ClickStack mapeia automaticamente as colunas do resultado para elementos do gráfico com base nos tipos de coluna. As regras de mapeamento variam conforme o tipo de gráfico.
 
 <div id="line-and-stacked-bar-charts">
-  ### Gráficos de linha e de barras empilhadas
+  ### Gráficos de linha e de barras empilhadas {#line-and-stacked-bar-charts}
 </div>
 
 | Papel              | Tipo de coluna                       | Descrição                                                                                   |
@@ -141,7 +157,7 @@ O ClickStack mapeia automaticamente as colunas do resultado para elementos do gr
 | **Nomes de grupo** | Colunas String, Map ou Array         | Opcional. Linhas com valores de grupo diferentes são plotadas como séries separadas.        |
 
 <div id="pie-chart">
-  ### Gráfico de pizza
+  ### Gráfico de pizza {#pie-chart}
 </div>
 
 | Função              | Tipo de coluna               | Descrição                                                     |
@@ -150,7 +166,7 @@ O ClickStack mapeia automaticamente as colunas do resultado para elementos do gr
 | **Rótulo da fatia** | colunas String, map ou Array | Opcional. Cada valor distinto se torna o rótulo de uma fatia. |
 
 <div id="number-chart">
-  ### Gráfico numérico
+  ### Gráfico numérico {#number-chart}
 </div>
 
 | Função     | Tipo de coluna           | Descrição                                                        |
@@ -158,13 +174,13 @@ O ClickStack mapeia automaticamente as colunas do resultado para elementos do gr
 | **Número** | Primeira coluna numérica | É exibido o valor da primeira linha da primeira coluna numérica. |
 
 <div id="table-chart">
-  ### Tabela
+  ### Tabela {#table-chart}
 </div>
 
 Todas as colunas do resultado são exibidas diretamente como colunas da tabela.
 
 <div id="examples">
-  ## Exemplos
+  ## Exemplos {#examples}
 </div>
 
 <Info>
@@ -174,7 +190,7 @@ Todas as colunas do resultado são exibidas diretamente como colunas da tabela.
 </Info>
 
 <div id="example-line-chart">
-  ### Gráfico de linhas — contagem de logs ao longo do tempo por serviço
+  ### Gráfico de linhas — contagem de logs ao longo do tempo por serviço {#example-line-chart}
 </div>
 
 Esta consulta conta eventos de log por serviço, agrupando-os em intervalos de tempo de acordo com a granularidade do dashboard.
@@ -197,7 +213,7 @@ ORDER BY ts ASC
 * `ServiceName` (string) cria uma linha separada para cada serviço.
 
 <div id="example-line-chart-macros">
-  ### Gráfico de linhas — usando macros
+  ### Gráfico de linhas — usando macros {#example-line-chart-macros}
 </div>
 
 A mesma consulta escrita com macros, para ficar mais concisa:
@@ -214,8 +230,26 @@ GROUP BY ServiceName, ts
 ORDER BY ts ASC
 ```
 
+<div id="example-line-chart-variables">
+  ### Gráfico de linhas — usando variáveis do dashboard {#example-line-chart-variables}
+</div>
+
+Em um dashboard com uma variável `service` em `ServiceName` e uma variável `severity` em `SeverityText`, esta consulta restringe o gráfico à seleção atual de serviço e exclui as severidades selecionadas. Ambas as macros são expandidas para `1=1` quando suas variáveis não têm nenhuma seleção; portanto, o gráfico é exibido sem filtros até que o visualizador escolha um valor.
+
+```sql
+SELECT
+  $__timeInterval(TimestampTime) AS ts,
+  count() AS count
+FROM otel_logs
+WHERE $__timeFilter(TimestampTime)
+  AND $__filter(ServiceName, $service)
+  AND $__conditionalAll(SeverityText NOT IN ($severity), $severity)
+GROUP BY ts
+ORDER BY ts ASC
+```
+
 <div id="example-stacked-bar">
-  ### Gráfico de barras empilhadas — contagem de erros por nível de severidade
+  ### Gráfico de barras empilhadas — contagem de erros por nível de severidade {#example-stacked-bar}
 </div>
 
 ```sql
@@ -232,7 +266,7 @@ ORDER BY ts ASC
 ```
 
 <div id="example-table">
-  ### Gráfico de tabela — 10 endpoints mais lentos
+  ### Gráfico de tabela — 10 endpoints mais lentos {#example-table}
 </div>
 
 ```sql
@@ -249,7 +283,7 @@ LIMIT 10
 ```
 
 <div id="example-pie">
-  ### gráfico de pizza — distribuição de solicitações por serviço
+  ### gráfico de pizza — distribuição de solicitações por serviço {#example-pie}
 </div>
 
 ```sql
@@ -266,7 +300,7 @@ GROUP BY ServiceName
 * `ServiceName` (string) identifica cada segmento.
 
 <div id="example-number">
-  ### Gráfico numérico — contagem total de erros
+  ### Gráfico numérico — contagem total de erros {#example-number}
 </div>
 
 ```sql
@@ -281,10 +315,12 @@ WHERE $__timeFilter(TimestampTime)
 O único valor numérico `total_errors` da primeira linha é exibido.
 
 <div id="notes">
-  ## Observações
+  ## Observações {#notes}
 </div>
 
 * As visualizações baseadas em SQL são executadas com o modo `readonly` ativado — somente consultas `SELECT` são permitidas.
 * As visualizações baseadas em SQL devem conter exatamente uma única consulta SQL - várias consultas não são compatíveis.
 * O editor SQL fornece sugestões de preenchimento automático tanto para parâmetros de consulta quanto para macros.
 * É necessário selecionar uma source para aplicar os filtros do dashboard às visualizações baseadas em SQL. A source deve corresponder à tabela consultada, para garantir uma filtragem precisa.
+* As variáveis do dashboard não exigem uma source — os valores vêm dos menus suspensos de filtro do dashboard, não da source do próprio bloco.
+* Alertas em um bloco SQL que faz referência a uma variável do dashboard são avaliados com todas as variáveis em seu estado vazio, e não com os valores selecionados no dashboard.

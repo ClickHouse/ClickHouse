@@ -1,0 +1,78 @@
+---
+slug: /clickstack/observability/text-to-chart
+title: 'Text-to-Chart'
+sidebarTitle: 'Text-to-Chart'
+description: 'أنشئ مخططات من موجّهات باللغة الطبيعية في ClickHouse Observability باستخدام ميزة Text-to-Chart المدعومة بالذكاء الاصطناعي.'
+doc_type: 'guide'
+keywords: ['clickstack', 'text-to-chart', 'AI', 'visualization', 'Chart Explorer', 'natural language', 'observability']
+---
+
+تتيح لك ميزة Text-to-Chart في ClickHouse Observability إنشاء تصورات بمجرد وصف ما تريد رؤيته بلغة عادية. فبدلاً من اختيار المقاييس وعوامل التصفية وحقول group-by يدويًا، يكفي أن تكتب موجّهًا مثل &quot;أعداد الأخطاء حسب الخدمة خلال آخر 3 أيام&quot;، ليُنشئ مساعد الذكاء الاصطناعي المخطط المناسب تلقائيًا.
+
+تعتمد هذه الميزة على نموذج لغوي كبير (LLM) لتحويل الموجّه النصي إلى استعلام، ثم تُنشئ التصور في [مستكشف المخططات](/ar/clickstack/observability/features/dashboards/overview#navigate-chart-explorer).
+
+## المتطلبات المسبقة {#prerequisites}
+
+يجب أن يُمكِّن مسؤول الفريق الذكاء الاصطناعي التوليدي من **إعدادات الفريق** ضمن قسم **Configure Generative AI**. للاطلاع على التعليمات، راجع [تمكين الذكاء الاصطناعي التوليدي](/ar/clickstack/observability/notebooks#enabling-generative-ai). تتولى المنصة إدارة نماذج الذكاء الاصطناعي ومزوّدي الخدمات تلقائيًا.
+
+## استخدام Text-to-Chart {#using-text-to-chart}
+
+<Steps>
+  <Step title="الانتقال إلى مستكشف المخططات" id="navigate-chart-explorer">
+    اختر **مستكشف المخططات** من الشريط الجانبي الأيسر.
+  </Step>
+
+  <Step title="اختيار مصدر البيانات" id="select-data-source">
+    وسّع قسم **مساعد الذكاء الاصطناعي** أعلى صفحة مستكشف المخططات إذا كان مطويًا. ثم اختر مصدر البيانات الذي تريد تصوره من المحدِّد المجاور لحقل الموجّه، مثل **سجلات** أو **تتبّعات**.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![مستكشف المخططات مع توسيع مساعد الذكاء الاصطناعي واختيار سجلات وزر Generate](/images/clickstack/observability-text-to-chart-explorer.png)
+      </Frame>
+    </div>
+  </Step>
+
+  <Step title="إدخال موجّه نصي" id="enter-text-prompt">
+    في حقل الموجّه ضمن **مساعد الذكاء الاصطناعي**، اكتب بلغة طبيعية وصفًا للمخطط الذي تريد إنشاءه. على سبيل المثال:
+
+    * `Error counts by service over the last 3 days`
+    * `Latency breakdown by endpoint`
+    * `Count of events over time grouped by severity`
+
+    انقر على **Generate** لإنشاء المخطط بناءً على الموجّه، ثم راجع التهيئة المُنشأة في المنشئ أدناه. يمكنك تعديل نوع المخطط وعوامل التصفية والتجميع، ثم النقر على **Run** لتحديث التصور.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![مخطط أعداد مرات ظهور الأخطاء حسب الخدمة بعد إنشائه، مع إبراز موجّه مساعد الذكاء الاصطناعي](/images/clickstack/observability-text-to-chart-result.png)
+      </Frame>
+    </div>
+  </Step>
+</Steps>
+
+## أمثلة على الموجّهات {#example-prompts}
+
+توضّح الموجّهات التالية حالات استخدام شائعة عند التعامل مع بيانات إمكانية المراقبة:
+
+| الموجّه                                           | مصدر البيانات | الوصف                                                |
+| ------------------------------------------------- | ------------- | ---------------------------------------------------- |
+| `Error count by service over time`                | السجلات       | يعرض مخططًا لوتيرة تكرار الأخطاء في الخدمات المختلفة |
+| `Average request duration grouped by endpoint`    | التتبّعات     | يعرض أنماط زمن الانتقال لكل نقطة نهاية               |
+| `P99 latency by service`                          | التتبّعات     | يحدّد زمن استجابة أبطأ الطلبات في الخدمات المختلفة   |
+| `Count of 5xx status codes over the last 6 hours` | السجلات       | يتتبّع اتجاهات أخطاء الخادم                          |
+
+يمكن أن تشير الموجّهات إلى أي عمود أو attribute متاح في مصادر البيانات التي هيّأتها. حدّد أسماء أعمدة بعينها وعوامل تصفية ونطاقات زمنية لمساعدة الذكاء الاصطناعي على إنشاء المخطط الذي تريده.
+
+## القيود {#limitations}
+
+* لا تُدعَم سوى السجلات والتتبّعات كمصادر بيانات، أما مقاييس Prometheus فليست مدعومة بعد.
+* تتوقف دقة المخطط على وضوح الموجّه وعلى بنية البيانات الأساسية. إذا لم يأتِ المخطط المُنشأ على النحو المتوقع، فجرّب إعادة صياغة الموجّه أو تحديد أسماء الأعمدة صراحةً.
+
+## قراءات إضافية {#further-reading}
+
+* [Text-to-Dashboard](/ar/clickstack/observability/text-to-dashboard) — إنشاء لوحة معلومات محفوظة تضم عدة مربعات انطلاقًا من موجّه
+
+* [From text to charts: a faster way to visualize with ClickStack](https://clickhouse.com/blog/text-to-charts-faster-way-to-visualize-clickstack) — تدوينة تعرّف بهذه الميزة
+
+* [لوحات المعلومات والتمثيلات المرئية](/ar/clickstack/observability/features/dashboards/overview) — إنشاء المخططات يدويًا باستخدام مستكشف المخططات
+
+* [البحث](/ar/clickstack/observability/features/search) — صيغة البحث في النص الكامل والبحث حسب الخصائص

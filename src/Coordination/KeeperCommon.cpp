@@ -6,6 +6,7 @@
 #include <thread>
 
 #include <Common/Exception.h>
+#include <Common/LockMemoryExceptionInThread.h>
 #include <Common/logger_useful.h>
 #include <Common/SipHash.h>
 #include <Common/ZooKeeper/IKeeper.h>
@@ -25,6 +26,57 @@ namespace CoordinationSetting
 {
     extern const CoordinationSettingsUInt64 disk_move_retries_during_init;
     extern const CoordinationSettingsUInt64 disk_move_retries_wait_ms;
+}
+
+bool checkDigest(const KeeperDigest & first, const KeeperDigest & second)
+{
+    if (first.version != second.version)
+        return true;
+
+    if (first.version == KeeperDigestVersion::NO_DIGEST)
+        return true;
+
+    return first.value == second.value;
+}
+
+void assertDigest(const KeeperRequestBatch & batch, const KeeperDigest & actual, std::string_view operation)
+{
+    if (!checkDigest(batch.digest, actual))
+    {
+        LOG_FATAL(
+            getLogger("KeeperStateMachine"),
+            "Digest for nodes is not matching after {} request batch at log index {}.\nExpected digest - {}, actual digest - {} "
+            "(digest {}). Keeper will terminate to avoid inconsistencies.\nExtra information about the request:\n{}",
+            operation,
+            batch.log_idx,
+            batch.digest.value,
+            actual.value,
+            batch.digest.version,
+            batch.toString());
+        std::terminate();
+    }
+}
+
+bool KeeperRequestBatch::ownsZxids() const
+{
+    return requests.size() != 1 || requests[0].request->getOpNum() != Coordination::OpNum::SessionID;
+}
+
+std::string KeeperRequestBatch::toString() const
+{
+    std::string res = fmt::format("batch of {} request(s), first zxid {}, log idx {}", requests.size(), first_zxid, log_idx);
+    for (size_t i = 0; i < requests.size(); ++i)
+    {
+        const auto & request_for_session = requests[i];
+        res += fmt::format(
+            "\nrequest #{}: zxid {}, session id {}, op '{}'\n{}",
+            i,
+            getZxid(i),
+            request_for_session.session_id,
+            Coordination::opNumToString(request_for_session.request->getOpNum()),
+            request_for_session.request->toString());
+    }
+    return res;
 }
 
 bool isLocalDisk(const IDisk & disk)
@@ -72,6 +124,11 @@ void moveFileBetweenDisks(
     LoggerPtr logger,
     const KeeperContextPtr & keeper_context)
 {
+    /// This is the only work that frees the local disk, and the Raft write path that fills it is
+    /// itself exempt from memory limit exceptions. Refusing the mover under memory pressure turns
+    /// that pressure into a full disk and a fail-stop abort, so it is exempt too.
+    LockMemoryExceptionInThread blocker{VariableContext::Global};
+
     LOG_TRACE(logger, "Moving {} to {} from disk {} to disk {}", path_from, path_to, disk_from->getName(), disk_to->getName());
     /// we use empty file with prefix tmp_ to detect incomplete copies
     /// if a copy is complete we don't care from which disk we use the same file
@@ -290,6 +347,7 @@ bool checkIfRequestIncreaseMem(const Coordination::ZooKeeperRequestPtr & request
         /// But we don't know znode sizes at this point (is the Remove removing a small or big znode?),
         /// so can't do much better here. Maybe it would make sense to move this check to preprocessRequest,
         /// where we have access to the znode states.
+        /// The sizes are converted to `Int64` before the arithmetic, because `memory_delta` goes below zero.
         Int64 memory_delta = 0;
         for (const auto & sub_req : multi_req.requests)
         {
@@ -303,26 +361,26 @@ bool checkIfRequestIncreaseMem(const Coordination::ZooKeeperRequestPtr & request
                 case Coordination::OpNum::CreateIfNotExists: {
                     Coordination::ZooKeeperCreateRequest & create_req
                         = dynamic_cast<Coordination::ZooKeeperCreateRequest &>(*sub_zk_request);
-                    memory_delta += create_req.bytesSize();
+                    memory_delta += static_cast<Int64>(create_req.bytesSize());
                     break;
                 }
                 case Coordination::OpNum::Set: {
                     Coordination::ZooKeeperSetRequest & set_req = dynamic_cast<Coordination::ZooKeeperSetRequest &>(*sub_zk_request);
                     /// Only the data can grow the stored size; the path already exists.
-                    memory_delta += set_req.data.size();
+                    memory_delta += static_cast<Int64>(set_req.data.size());
                     break;
                 }
                 case Coordination::OpNum::Remove:
                 case Coordination::OpNum::TryRemove: {
                     Coordination::ZooKeeperRemoveRequest & remove_req
                         = dynamic_cast<Coordination::ZooKeeperRemoveRequest &>(*sub_zk_request);
-                    memory_delta -= remove_req.bytesSize();
+                    memory_delta -= static_cast<Int64>(remove_req.bytesSize());
                     break;
                 }
                 case Coordination::OpNum::RemoveRecursive: {
                     Coordination::ZooKeeperRemoveRecursiveRequest & remove_req
                         = dynamic_cast<Coordination::ZooKeeperRemoveRecursiveRequest &>(*sub_zk_request);
-                    memory_delta -= remove_req.bytesSize();
+                    memory_delta -= static_cast<Int64>(remove_req.bytesSize());
                     break;
                 }
                 default:

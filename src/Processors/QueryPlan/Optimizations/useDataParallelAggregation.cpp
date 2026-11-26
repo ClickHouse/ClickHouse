@@ -80,7 +80,10 @@ namespace DB::QueryPlanOptimizations
 /// 3. We match partition key actions with the key actions to find col1', ..., coln' in partition key actions.
 /// 4. We check that partition key is indeed a deterministic function of col1', ..., coln'.
 bool isPartitionKeyFunctionOfKeys(
-    const ActionsDAG & partition_actions, const Names & partition_key_columns, const ActionsDAG & key_actions, const Names & key_names)
+    const ActionsDAG & partition_actions,
+    const ActionsDAG::NodeRawConstPtrs & partition_key_outputs,
+    const ActionsDAG & key_actions,
+    const Names & key_names)
 {
     if (key_actions.hasStatefulFunctions() || key_actions.hasNonDeterministic())
         return false;
@@ -108,19 +111,17 @@ bool isPartitionKeyFunctionOfKeys(
 
     const auto matches = matchTrees(key_dag.getOutputs(), partition_actions);
 
-    /// `partition_actions.getOutputs()` contains both the partition key columns and source columns.
-    /// For example, if `PARTITION BY toYYYYMM(date)`, then `getOutputs() = [toYYYYMM(date), date]`. The `date` column is a source
-    /// column but not a key value, and should be excluded from checks. We need to find the actual partition key output
-    /// nodes to check that they depend only on the allowed set of nodes (`irreducible_nodes`).
-    const auto partition_key_outputs = partition_actions.findInOutputs(partition_key_columns);
-
     return allOutputsDependsOnlyOnAllowedNodes(partition_key_outputs, irreducible_nodes, matches);
 }
 
 bool isPartitionKeyFunctionOfKeys(const KeyDescription & partition_key, const ActionsDAG & key_actions, const Names & key_names)
 {
+    const auto & partition_actions = partition_key.expression->getActionsDAG();
+    /// The DAG may output both partition key columns and source columns. For example, with
+    /// `PARTITION BY toYYYYMM(date)`, its outputs can be `[toYYYYMM(date), date]`. Only `toYYYYMM(date)`
+    /// defines the partition key; checking the source column `date` separately would be too strict.
     return isPartitionKeyFunctionOfKeys(
-        partition_key.expression->getActionsDAG(), partition_key.column_names, key_actions, key_names);
+        partition_actions, partition_actions.findInOutputs(partition_key.column_names), key_actions, key_names);
 }
 
 ActionsDAG buildArrayJoinDAG(const ArrayJoinStep & array_join)
@@ -151,8 +152,8 @@ void optimizeAggregationPerPartition(QueryPlan::Node & node, QueryPlan::Nodes &,
     /// aggregation. Aggregating each partition independently skips that merge, so the limit would be
     /// enforced against each partition's own hash table instead of globally, letting a query return
     /// more groups (or apply `group_by_overflow_mode`) per partition than the global limit allows.
-    /// Fall back to normal aggregation, matching `AggregatingStep::canUseShardedAggregation` and
-    /// `make_distributed_plan`, both of which reject this case for the same reason.
+    /// Fall back to normal aggregation, matching `make_distributed_plan`, which rejects this
+    /// case for the same reason.
     if (aggregating_step->getParams().max_rows_to_group_by != 0)
         return;
 
@@ -236,31 +237,36 @@ void optimizeDistinctPerPartition(QueryPlan::Node & node, QueryPlan::Nodes &, co
     if (!dag)
         return;
 
+    /// An empty list of `DISTINCT` columns means all columns of the input.
+    const Names keys = distinct_step->getColumnNames().empty() ? distinct_step->getInputHeaders().front()->getNames()
+                                                               : distinct_step->getColumnNames();
     if (!reading->willOutputEachPartitionThroughSeparatePort()
-        && isPartitionKeyFunctionOfKeys(reading->getStorageMetadata()->getPartitionKey(), *dag, distinct_step->getColumnNames()))
+        && isPartitionKeyFunctionOfKeys(reading->getStorageMetadata()->getPartitionKey(), *dag, keys))
     {
         reading->requestOutputEachPartitionThroughSeparatePortForDistinct();
     }
 }
 
-void optimizeWindowPerPartition(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings & /*optimization_settings*/)
+/// The reading whose partitions can each be processed by a separate window for the sorting at `node`, or nullptr.
+static ReadFromMergeTree * findReadingForWindowPerPartition(QueryPlan::Node & node)
 {
     if (node.children.size() != 1)
-        return;
+        return nullptr;
 
     auto * sorting_step = typeid_cast<SortingStep *>(node.step.get());
     if (!sorting_step)
-        return;
+        return nullptr;
 
     /// Trigger only on a window-function sorting: a full sort that scatters the input by the hash of the
     /// window `PARTITION BY` columns. A merge-join sorting may also scatter by the sort key
     /// (`convertToScatteredFullSort`), but there both join sides must be sharded by the same hash, so it
     /// must be left alone. This pass runs after `optimizeReadInOrder`, which may have converted the
     /// sorting to `FinishSorting` (see `query_plan_reuse_storage_ordering_for_window_functions`); such a
-    /// sorting merges to a single stream and is not matched here.
+    /// sorting merges the streams read in order and is not matched here. `optimizeReadInOrder` leaves the
+    /// sorting alone when `canOptimizeWindowPerPartition` holds, so the per-partition plan wins.
     if (sorting_step->getType() != SortingStep::Type::Full || !sorting_step->hasPartitions()
         || sorting_step->isSortingForMergeJoin())
-        return;
+        return nullptr;
 
     /// `max_rows_to_sort` / `max_bytes_to_sort` are enforced per stream by the checking transforms of
     /// `fullSortStreams`, so which rows land in which stream is user-visible. Skipping the scatter
@@ -268,24 +274,36 @@ void optimizeWindowPerPartition(QueryPlan::Node & node, QueryPlan::Nodes &, cons
     /// scatter, so the scatter is kept and per-partition reading has nothing to serve.
     const auto & size_limits = sorting_step->getSettings().size_limits;
     if (size_limits.max_rows != 0 || size_limits.max_bytes != 0)
-        return;
+        return nullptr;
 
     auto * reading = findReadingStep(*node.children.front());
     if (!reading)
-        return;
+        return nullptr;
 
     const Names key_names = sorting_step->getPartitionByColumnNames();
 
     std::optional<ActionsDAG> dag;
     buildKeyDAG(*node.children.front(), dag);
     if (!dag)
-        return;
+        return nullptr;
 
-    if (!reading->willOutputEachPartitionThroughSeparatePort()
-        && isPartitionKeyFunctionOfKeys(reading->getStorageMetadata()->getPartitionKey(), *dag, key_names))
-    {
+    if (reading->willOutputEachPartitionThroughSeparatePort()
+        || !isPartitionKeyFunctionOfKeys(reading->getStorageMetadata()->getPartitionKey(), *dag, key_names))
+        return nullptr;
+
+    return reading;
+}
+
+void optimizeWindowPerPartition(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings & /*optimization_settings*/)
+{
+    if (auto * reading = findReadingForWindowPerPartition(node))
         reading->requestOutputEachPartitionThroughSeparatePortForWindow();
-    }
+}
+
+bool canOptimizeWindowPerPartition(QueryPlan::Node & node)
+{
+    auto * reading = findReadingForWindowPerPartition(node);
+    return reading && reading->canOutputEachPartitionThroughSeparatePortForWindow();
 }
 
 void optimizeCreatingSetPerPartition(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings & /*optimization_settings*/)

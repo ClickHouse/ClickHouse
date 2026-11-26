@@ -8,20 +8,17 @@ from typing import List, Optional
 from ._environment import _Environment
 from .info import Info
 
-try:
-    import requests
-except ImportError as ex:
-    if not Info().is_local_run:
-        raise ex
-    else:
-        print(
-            f"WARNING: 'requests' module is not installed: {ex}. CIDB will not work - ok for local runs only."
-        )
-
 from .result import Result
 from .settings import Settings
 from .usage import ComputeUsage, PipelineUtilization, StorageUsage
 from .utils import Utils
+
+
+class CIDBTimeoutError(RuntimeError):
+    """CIDB was unavailable: the last attempt of a request timed out on the
+    client side or found the server out of memory, or the connection was still
+    refused after `CIDB.refused_retry_sec`, and no attempt got another error
+    answer."""
 
 
 class CIDB:
@@ -85,12 +82,39 @@ class CIDB:
             # Transparently convert Result.Status values to legacy CIDB strings
             self.check_status = CIDB.convert_status(self.check_status)
 
-    def __init__(self, url, user, passwd):
+    def __init__(self, url, user=None, passwd=None, refused_retry_sec=0):
+        # Falsy user/passwd (None, empty string, JSON null) means "send no
+        # auth header" — used when the runner-facing CH user is configured
+        # with <no_password/> + a network ACL on the server side.
         self.url = url
-        self.auth = {
-            "X-ClickHouse-User": user,
-            "X-ClickHouse-Key": passwd,
-        }
+        self.auth = {}
+        if user:
+            self.auth["X-ClickHouse-User"] = user
+        if passwd:
+            self.auth["X-ClickHouse-Key"] = passwd
+        # With 0, a refused connection fails like any other error after `retries`.
+        self.refused_retry_sec = refused_retry_sec
+
+    @classmethod
+    def from_connection_secret(cls, connection_str: str) -> "CIDB":
+        """Build a CIDB from a JSON connection blob in SSM Parameter Store.
+
+        The blob must have a ``url`` field and may have ``user``/``password``
+        fields. Null/empty/missing user or password mean "send no auth" so
+        the runner side stays creds-free when the server enforces auth via
+        network ACLs (`<no_password/>` user scoped to the VPC CIDR).
+
+        Example::
+
+            {"url": "http://10.0.42.144:8123", "user": null, "password": null}
+            {"url": "http://...", "user": "admin", "password": "..."}
+        """
+        data = json.loads(connection_str)
+        return cls(
+            url=data["url"],
+            user=data.get("user"),
+            passwd=data.get("password"),
+        )
 
     def get_link_to_test_case_statistics(
         self,
@@ -244,6 +268,13 @@ ORDER BY day DESC
         """Generates JSON data records for the result and its test cases."""
         env = _Environment.get()
 
+        # Job-level usage attributes: host metrics plus the re-run attempt this
+        # row came from (0 = first run), so a consumer can tell a re-run's row
+        # from the original job's.
+        job_attributes = cls._host_usage_attributes(result.ext.get("metrics"))
+        if env.RERUN_COUNT:
+            job_attributes["rerun_count"] = env.RERUN_COUNT
+
         # Create the base record
         base_record = cls.TableRecord(
             pull_request_number=env.PR_NUMBER,
@@ -269,7 +300,7 @@ ORDER BY day DESC
             test_status="",
             test_duration_ms=None,
             test_context_raw=result.info,
-            attributes=cls._host_usage_attributes(result.ext.get("metrics")),
+            attributes=job_attributes,
         )
         yield json.dumps(dataclasses.asdict(base_record))
 
@@ -297,9 +328,18 @@ ORDER BY day DESC
     def _post_with_retries(self, params, data, timeout, retries, what):
         """POST to CI DB, backing off progressively on transport errors and on
         non-OK responses alike: `requests` does not raise for 4xx/5xx."""
+        # Imported here so that local runs, which never post to CI DB, work without `requests`.
+        import requests
+
+        # At `max_concurrent_queries` the server waits this long for a free slot
+        # instead of rejecting the request with TOO_MANY_SIMULTANEOUS_QUERIES.
+        params = {**params, "queue_max_wait_ms": int(timeout * 1000) // 2}
+        deadline = time.monotonic() + self.refused_retry_sec
+        answered_error = False
         retry = 0
         while True:
             retry += 1
+            refused = False
             try:
                 response = requests.post(
                     url=self.url,
@@ -310,21 +350,41 @@ ORDER BY day DESC
                 )
                 if response.ok:
                     return response
+                # An overloaded server times out some requests and rejects others for lack of memory.
+                overloaded = "(total) memory limit exceeded" in response.text
+                # Any other answer is an error of the request itself.
+                answered_error = answered_error or not overloaded
                 error = f"{what} failed, response code [{response.status_code}], body [{response.text}]"
             except Exception as ex:
+                overloaded = isinstance(ex, requests.exceptions.Timeout)
+                refused = not isinstance(
+                    ex, requests.exceptions.ProxyError
+                ) and "Connection refused" in str(ex)
                 error = f"{what} failed, exception [{ex}]"
 
+            if refused and self.refused_retry_sec and not answered_error:
+                remaining = deadline - time.monotonic()
+                print(
+                    f"WARNING: CIDB {error} - attempt {retry}, {max(remaining, 0):.0f} s left to retry"
+                )
+                if remaining <= 0:
+                    raise CIDBTimeoutError(f"CIDB {error}")
+                time.sleep(min(2**retry, remaining))
+                continue
             print(f"WARNING: CIDB {error} - attempt {retry}/{retries}")
             if retry >= retries:
+                if overloaded and not answered_error:
+                    raise CIDBTimeoutError(f"CIDB {error}")
                 raise RuntimeError(f"CIDB {error}")
             time.sleep(2**retry)
 
-    def query(self, query: str, retries: int = 5, log_level="warning"):
+    def query(self, query: str, retries: int = 5, log_level="warning", timeout=None):
         """
         Executes a SELECT query on CI DB with retry support.
 
         :param query: SQL query string
         :param retries: Number of retry attempts on failure
+        :param timeout: Per-attempt timeout in seconds, `Settings.CI_DB_QUERY_TIMEOUT_SEC` by default
         :return: Response text if successful
         """
         params = {
@@ -337,7 +397,7 @@ ORDER BY day DESC
         return self._post_with_retries(
             params=params,
             data=query.encode(),
-            timeout=Settings.CI_DB_QUERY_TIMEOUT_SEC,
+            timeout=timeout or Settings.CI_DB_QUERY_TIMEOUT_SEC,
             retries=retries,
             what="query",
         ).text
@@ -387,6 +447,7 @@ ORDER BY day DESC
         start_time: Optional[float] = None,
         duration_s: Optional[float] = None,
         workflow_status: str = "",
+        rerun_count: int = 0,
     ):
         """Write a single workflow-level summary row carrying pipeline
         utilization, storage and compute usage in the ``attributes`` JSON
@@ -397,6 +458,10 @@ ORDER BY day DESC
         written as ``pipeline_<bucket>_jobs``. Note this is distinct from
         ``pipeline_jobs`` below, which counts only the jobs substantial enough
         to qualify for the utilization KPI.
+
+        ``rerun_count`` is the highest per-job re-run count in the run; when
+        non-zero it is written as ``pipeline_max_rerun_count`` so a consumer can
+        tell a clean run's usage from one whose totals were affected by re-runs.
 
         Replaces the older ``insert_storage_usage``/``insert_compute_usage``,
         which encoded these numbers into the ``check_duration_ms``/``test_*``
@@ -418,6 +483,12 @@ ORDER BY day DESC
             attributes["pipeline_duration_s"] = round(duration_s, 1)
         for bucket, count in (job_counts or {}).items():
             attributes[f"pipeline_{bucket}_jobs"] = count
+        # Highest per-job re-run count in the run. >0 means at least one job was
+        # re-run, so these usage totals reflect the latest attempt of each job
+        # and understate the resources actually consumed across attempts — a
+        # consumer can filter these rows out of clean-run baselines.
+        if rerun_count:
+            attributes["pipeline_max_rerun_count"] = rerun_count
         if pipeline_utilization and pipeline_utilization.jobs:
             for key, value in pipeline_utilization.to_summary().items():
                 attributes[f"pipeline_{key}"] = value

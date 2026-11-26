@@ -7,10 +7,8 @@ doc_type: 'guide'
 keywords: ['移行', 'ClickHouse Cloud', 'OSS', 'セルフマネージドから Cloud へ移行', 'BACKUP', 'RESTORE']
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 <div id="overview-migration-approaches">
-  ## 概要
+  ## 概要 {#overview-migration-approaches}
 </div>
 
 セルフマネージド ClickHouse (OSS) から ClickHouse Cloud にデータを移行するには、主に 2 つの方法があります。
@@ -38,7 +36,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 </Info>
 
 <div id="oss-setup">
-  ## OSS の準備
+  ## OSS の準備 {#oss-setup}
 </div>
 
 まず、examples リポジトリの Docker Compose 設定を使って ClickHouse クラスターを起動します。
@@ -72,7 +70,7 @@ docker exec -it clickhouse-01 clickhouse-client
 ```
 
 <div id="mergetree-to-replicatedmergetree">
-  ### MergeTree テーブルから ReplicatedMergeTree テーブルへ
+  ### MergeTree テーブルから ReplicatedMergeTree テーブルへ {#mergetree-to-replicatedmergetree}
 </div>
 
 ClickHouse Cloud は [`SharedMergeTree`](/ja/products/cloud/features/infrastructure/shared-merge-tree) を使用します。
@@ -175,7 +173,7 @@ WHERE name = 'trips_small_adapted' AND database = 'nyc_taxi';
 S3 バケットからバックアップを復元できるよう、Cloud サービスの設定に進む準備が整いました。
 
 <div id="distributed-tables">
-  ### ReplicatedMergeTree を使った分散テーブル
+  ### ReplicatedMergeTree を使った分散テーブル {#distributed-tables}
 </div>
 
 構成で複数の分片にまたがる分散テーブルを使用している場合は、各ノードにローカルの `ReplicatedMergeTree` テーブルと、クエリの入口となる `Distributed` テーブルが必要です。
@@ -264,9 +262,7 @@ FROM s3(
 );
 ```
 
-<div id="cloud-setup">
-  ## Cloud の準備
-</div>
+## Cloud の準備 {#cloud-setup}
 
 データは新しい Cloud サービスに復元します。
 以下の手順に従って、新しい Cloud サービスを作成してください。
@@ -277,21 +273,33 @@ FROM s3(
   </Step>
 
   <Step title="新しいサービスを作成する" id="create-new-service">
-    <Image img="/images/cloud/onboard/migrate/oss_to_cloud_via_backup/create_service.webp" size="md" alt="新しいサービスを作成する" />
+    <div className="ch-image-md">
+      <Frame>
+        ![新しいサービスを作成する](/images/cloud/onboard/migrate/oss_to_cloud_via_backup/create_service.webp)
+      </Frame>
+    </div>
   </Step>
 
   <Step title="サービスを設定して作成する" id="configure-and-create">
     使用するリージョンと構成を選択し、`Create service` をクリックします
 
-    <Image img="/images/cloud/onboard/migrate/oss_to_cloud_via_backup/service_details.webp" size="md" alt="サービスの設定を行う" />
+    <div className="ch-image-md">
+      <Frame>
+        ![サービスの設定を行う](/images/cloud/onboard/migrate/oss_to_cloud_via_backup/service_details.webp)
+      </Frame>
+    </div>
   </Step>
 
   <Step title="アクセスロールを作成する" id="create-an-access-role">
     SQL Console を開きます
 
-    <Image img="/images/cloud/onboard/migrate/oss_to_cloud_via_backup/open_console.webp" size="md" alt="サービスの設定を行う" />
+    <div className="ch-image-md">
+      <Frame>
+        ![サービスの設定を行う](/images/cloud/onboard/migrate/oss_to_cloud_via_backup/open_console.webp)
+      </Frame>
+    </div>
 
-    ### S3 アクセスを設定する
+### S3 アクセスを設定する {#set-up-s3-access}
 
     S3 からバックアップを復元するには、ClickHouse Cloud と S3 バケットの間で安全にアクセスできるよう設定する必要があります。
 
@@ -327,14 +335,12 @@ FROM s3(
 
     このポリシーには、両方の ARN が含まれています。
 
-    * **IAM user** (`docs-s3-user`): セルフマネージドの ClickHouse クラスターが S3 にバックアップできるようにします
+    * **IAM ユーザー** (`docs-s3-user`): セルフマネージドの ClickHouse クラスターが S3 にバックアップできるようにします
     * **ClickHouse Cloud role** (`ClickHouseAccess-001`): Cloud サービスが S3 から復元できるようにします
   </Step>
 </Steps>
 
-<div id="taking-a-backup-on-oss">
-  ## バックアップの作成 (セルフマネージド環境)
-</div>
+## バックアップの作成 (セルフマネージド環境) {#taking-a-backup-on-oss}
 
 各分片は個別にバックアップする必要があります。各分片上のノードに接続し、
 分片ごとに一意の宛先パスを指定してバックアップコマンドを実行します。
@@ -391,9 +397,13 @@ Query id: efcaf053-75ed-4924-aeb1-525547ea8d45
   ```
 </Info>
 
-先ほどまで空だった S3 バケットを確認すると、いくつかのフォルダが作成されているのがわかります。
+先ほどまで空だった S3 バケットを確認すると、いくつかのフォルダーが作成されているのがわかります。
 
-<Image img="/images/cloud/onboard/migrate/oss_to_cloud_via_backup/backup_in_s3_bucket.webp" size="md" alt="バックアップ、データ、メタデータ" />
+<div className="ch-image-md">
+  <Frame>
+    ![バックアップ、データ、メタデータ](/images/cloud/onboard/migrate/oss_to_cloud_via_backup/backup_in_s3_bucket.webp)
+  </Frame>
+</div>
 
 完全な移行を行う場合は、次のコマンドを実行してサーバー全体をバックアップできます。
 
@@ -454,7 +464,7 @@ WHERE id = 'abc123-def456-789'
 バックアップ全般の詳細については、[バックアップと復元](/ja/concepts/features/backup-restore/overview)のドキュメントを参照してください。
 
 <div id="restore-to-clickhouse-cloud">
-  ## ClickHouse Cloud への復元
+  ## ClickHouse Cloud への復元 {#restore-to-clickhouse-cloud}
 </div>
 
 各分片のバックアップを 1 つずつ Cloud サービスに復元します。`ROLE_ARN` は

@@ -6,43 +6,47 @@ keywords: ['الفهرس الأساسي المتناثر', 'الفهرس الأ�
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 <Tip>
   **هل تبحث عن تفاصيل متقدمة حول الفهرسة؟**
 
   تقدّم هذه الصفحة الفهرس الأساسي المتناثر في ClickHouse، وكيفية بنائه، وآلية عمله، وكيف يساعد في تسريع الاستعلامات.
 
-  للاطلاع على استراتيجيات فهرسة متقدمة وتفاصيل تقنية أعمق، راجع [شرحًا معمقًا عن الفهارس الأساسية](/ar/guides/clickhouse/data-modelling/sparse-primary-indexes).
+  للاطلاع على استراتيجيات فهرسة متقدمة وتفاصيل تقنية أعمق، راجع [شرحًا معمّقًا عن الفهارس الأساسية](/ar/guides/clickhouse/data-modelling/sparse-primary-indexes).
 </Tip>
 
 <div id="how-does-the-sparse-primary-index-work-in-clickHouse">
-  ## كيف يعمل الفهرس الأساسي المتناثر في ClickHouse؟
+  ## كيف يعمل الفهرس الأساسي المتناثر في ClickHouse؟ {#how-does-the-sparse-primary-index-work-in-clickHouse}
 </div>
 
 <br />
 
 يساعد الفهرس الأساسي المتناثر في ClickHouse على تحديد [الحبيبات](/ar/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-organized-into-granules-for-parallel-data-processing)—وهي كتل من الصفوف—التي يُحتمل أن تحتوي على بيانات تطابق شرط query على أعمدة primary key للجدول، وذلك بكفاءة. في القسم التالي، نشرح كيفية إنشاء هذا الفهرس من القيم الموجودة في تلك الأعمدة.
 
-<div id="sparse-primary-index-creation">
-  ### إنشاء الفهرس الأساسي المتناثر
-</div>
+### إنشاء الفهرس الأساسي المتناثر {#sparse-primary-index-creation}
 
 لتوضيح كيفية بناء الفهرس الأساسي المتناثر، نستخدم جدول [uk&#95;price&#95;paid&#95;simple](/ar/concepts/core-concepts/parts) مع بعض الرسوم المتحركة.
 
-وللتذكير [بما سبق](/ar/concepts/core-concepts/parts)، في ① جدول المثال لدينا ذي المفتاح الأساسي (town, street)، تُخزَّن ② البيانات المُدرجة ③ على القرص، مرتبةً حسب قيم أعمدة المفتاح الأساسي، ومضغوطةً، في ملفات منفصلة لكل عمود:
+وللتذكير [بما سبق](/ar/concepts/core-concepts/parts)، في ① جدول المثال لدينا ذي المفتاح الأساسي (town, street)، تُخزَّن ② البيانات المُدرجة ③ على القرص، مرتبةً حسب قيم أعمدة المفتاح الأساسي، ومضغوطةً، في ملفات منفصلة لكل عمود:
 
-<Image img="/images/managing-data/core-concepts/primary-index-light_01.webp" size="lg" />
+<div className="ch-image-lg">
+  <Frame>
+    ![](/images/managing-data/core-concepts/primary-index-light_01.webp)
+  </Frame>
+</div>
 
 <br />
 
 <br />
 
-لأغراض المعالجة، تُقسَّم بيانات كل عمود ④ منطقيًا إلى حبيبات—تغطي كل منها 8,192 صفًا—وهي أصغر الوحدات التي تعمل عليها آليات معالجة البيانات في ClickHouse.
+لأغراض المعالجة، تُقسَّم بيانات كل عمود ④ منطقيًا إلى حبيبات—تغطي كل منها 8,192 صفًا—وهي أصغر الوحدات التي تعمل عليها آليات معالجة البيانات في ClickHouse.
 
 وهذا التقسيم إلى حبيبات هو أيضًا ما يجعل الفهرس الأساسي **متناثرًا**: فبدلًا من فهرسة كل صف، يخزّن ClickHouse ⑤ قيم المفتاح الأساسي من صف واحد فقط لكل حبيبة—وتحديدًا الصف الأول. وينتج عن ذلك مُدخل فهرس واحد لكل حبيبة:
 
-<Image img="/images/managing-data/core-concepts/primary-index-light_02.webp" size="lg" />
+<div className="ch-image-lg">
+  <Frame>
+    ![](/images/managing-data/core-concepts/primary-index-light_02.webp)
+  </Frame>
+</div>
 
 <br />
 
@@ -50,28 +54,40 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 وبفضل هذا التبعثر، يكون الفهرس الأساسي صغيرًا بما يكفي ليتسع بالكامل في الذاكرة، مما يتيح تصفيةً سريعةً للاستعلامات التي تتضمن شروطًا على أعمدة المفتاح الأساسي. في القسم التالي، نوضح كيف يساعد ذلك في تسريع مثل هذه الاستعلامات.
 
-<div id="primary-index-usage">
-  ### استخدام الفهرس الأساسي
-</div>
+### استخدام الفهرس الأساسي {#primary-index-usage}
 
 نوضح بإيجاز كيف يُستخدم الفهرس الأساسي المتناثر لتسريع الاستعلام من خلال رسم متحرك آخر:
 
-<Image img="/images/managing-data/core-concepts/primary-index-light_03.webp" size="lg" />
+<div className="ch-image-lg">
+  <Frame>
+    ![](/images/managing-data/core-concepts/primary-index-light_03.webp)
+  </Frame>
+</div>
 
 <br />
 
 <br />
 
-① يتضمن استعلام المثال شرطًا على كلٍّ من عمودَي المفتاح الأساسي: `town = 'LONDON' AND street = 'OXFORD STREET'`.
+<Steps>
+  <Step title="تحليل شرط الاستعلام">
+    يتضمن استعلام المثال شرطًا على كلٍّ من عمودَي المفتاح الأساسي: `town = 'LONDON' AND street = 'OXFORD STREET'`.
+  </Step>
 
-② لتسريع الاستعلام، يحمّل ClickHouse الفهرس الأساسي للجدول إلى الذاكرة.
+  <Step title="تحميل الفهرس الأساسي">
+    لتسريع الاستعلام، يحمّل ClickHouse الفهرس الأساسي للجدول إلى الذاكرة.
+  </Step>
 
-③ ثم يفحص إدخالات الفهرس لتحديد الحبيبات التي قد تحتوي على صفوف تطابق الشرط، أي الحبيبات التي لا يمكن تخطيها.
+  <Step title="تحديد الحبيبات المطابقة">
+    ثم يفحص إدخالات الفهرس لتحديد الحبيبات التي قد تحتوي على صفوف تطابق الشرط، أي الحبيبات التي لا يمكن تخطيها.
+  </Step>
 
-④ بعد ذلك، تُحمَّل هذه الحبيبات التي يُحتمل أن تكون ذات صلة وتُ[عالَج](/ar/concepts/core-concepts/query-parallelism) في الذاكرة، إلى جانب الحبيبات المقابلة من أي أعمدة أخرى مطلوبة للاستعلام.
+  <Step title="تحميل الحبيبات ومعالجتها">
+    بعد ذلك، تُحمَّل هذه الحبيبات التي يُحتمل أن تكون ذات صلة وتُ[عالَج](/ar/concepts/core-concepts/query-parallelism) في الذاكرة، إلى جانب الحبيبات المقابلة من أي أعمدة أخرى مطلوبة للاستعلام.
+  </Step>
+</Steps>
 
 <div id="monitoring-primary-indexes">
-  ## مراقبة الفهارس الأساسية
+  ## مراقبة الفهارس الأساسية {#monitoring-primary-indexes}
 </div>
 
 لكل [جزء بيانات](/ar/concepts/core-concepts/parts) في الجدول فهرسه الأساسي الخاص به. ويمكننا فحص محتويات هذه الفهارس باستخدام الدالة الجدولية [mergeTreeIndex](/ar/reference/functions/table-functions/mergeTreeIndex).
@@ -184,7 +200,7 @@ SELECT count() FROM uk.uk_price_paid_simple;
 ```
 
 <div id="key-takeaways">
-  ## النقاط الرئيسية
+  ## النقاط الرئيسية {#key-takeaways}
 </div>
 
 * تساعد **الفهارس الأساسية المتناثرة** ClickHouse على تخطي البيانات غير الضرورية عبر تحديد الحبيبات التي قد تحتوي على صفوف تطابق شروط الاستعلام على أعمدة المفتاح الأساسي.
@@ -197,9 +213,7 @@ SELECT count() FROM uk.uk_price_paid_simple;
 
 * يمكنك **فحص محتويات الفهرس** باستخدام الدالة الجدولية ‏`mergeTreeIndex` ومراقبة استخدام الفهرس باستخدام clause ‏`EXPLAIN`.
 
-<div id="where-to-find-more-information">
-  ## أين تجد مزيدًا من المعلومات
-</div>
+## أين تجد مزيدًا من المعلومات {#where-to-find-more-information}
 
 لإلقاء نظرة أعمق على كيفية عمل الفهارس الأساسية المتناثرة في ClickHouse، بما في ذلك أوجه اختلافها عن فهارس قواعد البيانات التقليدية وأفضل الممارسات لاستخدامها، اطّلع على [الشرح المتعمق](/ar/guides/clickhouse/data-modelling/sparse-primary-indexes) الخاص بالفهرسة.
 

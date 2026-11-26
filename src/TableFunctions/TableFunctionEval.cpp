@@ -6,6 +6,7 @@
 #include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
 #include <Interpreters/QueryConstructionSettings.h>
 #include <Interpreters/SelectIntersectExceptQueryVisitor.h>
+#include <Core/ConstantValue.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/executeQuery.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -23,8 +24,7 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_analyzer;
-    extern const SettingsBool allow_experimental_eval_table_function;
+    extern const SettingsBool enable_eval_table_function;
     extern const SettingsSetOperationMode except_default_mode;
     extern const SettingsSetOperationMode intersect_default_mode;
     extern const SettingsUInt64 max_parser_backtracks;
@@ -37,7 +37,6 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int NOT_IMPLEMENTED;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int SUPPORT_IS_DISABLED;
 }
@@ -101,15 +100,10 @@ void TableFunctionEval::parseArguments(const ASTPtr & ast_function, ContextPtr c
 {
     const auto & settings = context->getSettingsRef();
 
-    if (!settings[Setting::allow_experimental_eval_table_function])
+    if (!settings[Setting::enable_eval_table_function])
         throw Exception(
             ErrorCodes::SUPPORT_IS_DISABLED,
-            "Table function `eval` is experimental. Set `allow_experimental_eval_table_function = 1` to enable it");
-
-    if (!settings[Setting::allow_experimental_analyzer])
-        throw Exception(
-            ErrorCodes::NOT_IMPLEMENTED,
-            "Table function `eval` is supported only with the analyzer. Set `enable_analyzer = 1` to use it");
+            "Table function `eval` is experimental. Set `enable_eval_table_function = 1` to enable it");
 
     /// The generated query can still reach `eval` indirectly, for example through the body
     /// of a SQL user defined function, so recursion is bounded by the stack size check.
@@ -121,7 +115,8 @@ void TableFunctionEval::parseArguments(const ASTPtr & ast_function, ContextPtr c
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
             "Table function `eval` requires exactly one argument: a constant expression returning a query string");
 
-    const auto & [value, type] = evaluateConstantExpression(function->arguments->children[0], context);
+    const auto argument = evaluateConstantExpressionAsColumn(function->arguments->children[0], context);
+    const auto & type = argument.getType();
 
     if (!isString(removeLowCardinalityAndNullable(type)))
         throw Exception(
@@ -129,10 +124,10 @@ void TableFunctionEval::parseArguments(const ASTPtr & ast_function, ContextPtr c
             "Table function `eval` requires the argument of type String (possibly Nullable or LowCardinality), got {}",
             type->getName());
 
-    if (value.isNull())
+    if (argument.isNull())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "The query text passed to table function `eval` cannot be NULL");
 
-    const auto & query_text = value.safeGet<String>();
+    const std::string_view query_text = argument.getDataAt();
 
     ParserSelectWithUnionQuery parser;
     ASTPtr query = parseQuery(
@@ -146,9 +141,9 @@ void TableFunctionEval::parseArguments(const ASTPtr & ast_function, ContextPtr c
 
     checkNoEval(query);
 
-    /// The generated query cannot flip the `enable_analyzer` setting in a SETTINGS clause:
-    /// `eval` is analyzer-only, and the same validation rejects such a change for a usual query.
-    validateAnalyzerSettings(query, settings[Setting::allow_experimental_analyzer]);
+    /// The generated query cannot disable the analyzer in a SETTINGS clause, the same way a usual
+    /// query cannot: such a change is rewritten to `1`.
+    normalizeAnalyzerSettings(query);
 
     /// The generated query does not go through `executeQuery`, so materialize the construction
     /// settings a NON-last `UNION` arm carries in its own `SETTINGS` clause here, same as
@@ -224,7 +219,7 @@ void registerTableFunctionEval(TableFunctionFactory & factory)
         {
             .description = R"(Evaluates a constant expression to a query string and executes the resulting `SELECT` query.)",
             .category = FunctionDocumentation::Category::TableFunction,
-        },
+        }, SecretArgumentsSpec{},
         {.allow_readonly = true});
 }
 

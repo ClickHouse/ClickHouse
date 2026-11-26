@@ -1,4 +1,5 @@
 #include <IO/Operators.h>
+#include <Common/SetWithMemoryTracking.h>
 #include <IO/WriteBufferFromString.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
@@ -8,7 +9,7 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/ReadFromTextIndexCount.h>
 
-#include <Access/EnabledRowPolicies.h>
+#include <Storages/getEffectiveRowPolicyFilter.h>
 #include <AggregateFunctions/AggregateFunctionCount.h>
 #include <Core/Settings.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
@@ -16,6 +17,7 @@
 #include <Common/typeid_cast.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ITokenizer.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
@@ -34,7 +36,6 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool empty_result_for_aggregation_by_empty_set;
     extern const SettingsBool serialize_query_plan;
     extern const SettingsInt64 max_partitions_to_read;
 }
@@ -60,6 +61,10 @@ std::optional<String> matchBareCount(const AggregatingStep & aggregating)
 
     const auto & params = aggregating.getParams();
     if (!params.keys.empty() || params.aggregates.size() != 1)
+        return {};
+
+    /// Also set for constant `GROUP BY` keys; the count source would emit a `0` row instead of no row.
+    if (params.empty_result_for_aggregation_by_empty_set)
         return {};
 
     const auto & desc = params.aggregates.front();
@@ -206,7 +211,7 @@ bool guardsHold(const ReadFromMergeTree & reading)
 
         if (max_partitions_to_read > 0)
         {
-            std::set<String> partitions;
+            SetWithMemoryTracking<String> partitions;
             for (const auto & part_with_ranges : reading.getParts())
             {
                 partitions.insert(part_with_ranges.data_part->info.getPartitionId());
@@ -218,10 +223,6 @@ bool guardsHold(const ReadFromMergeTree & reading)
 
     /// A transaction may see Outdated parts that the cardinalities do not reflect.
     if (context->getCurrentTransaction())
-        return false;
-
-    /// An empty set must then yield an empty result, not a 0 row.
-    if (context->getSettingsRef()[Setting::empty_result_for_aggregation_by_empty_set])
         return false;
 
     if (reading.isQueryWithFinal() || reading.isQueryWithSampling())
@@ -242,18 +243,19 @@ bool guardsHold(const ReadFromMergeTree & reading)
         if (!useful.index->isTextIndex())
             return false;
 
+    /// The effective row policy may belong to a wrapper such as `Alias`.
+    if (reading.getRowLevelFilter())
+        return false;
+
     /// Row policy filters rows the cardinality ignores; without a database name it can't be resolved, so fail closed.
-    auto storage_id = reading.getStorageID();
-    if (!storage_id.hasDatabase())
+    if (!reading.getStorageID().hasDatabase() || getEffectiveRowPolicyFilter(reading.getMergeTreeData(), context))
         return false;
 
-    if (auto row_policy_filter = context->getRowPolicyFilter(
-            storage_id.getDatabaseName(), storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
-        row_policy_filter && !row_policy_filter->isAlwaysTrue())
-        return false;
-
+    /// A pending DROP COLUMN (a metadata mutation) makes the reader return defaults, so the cardinalities are stale.
     if (const auto & mutations = reading.getMutationsSnapshot();
-        mutations && (mutations->hasDataMutations() || mutations->hasPatchParts() || mutations->hasLightweightDeletedMask()))
+        mutations
+        && (mutations->hasDataMutations() || mutations->hasMetadataMutations() || mutations->hasPatchParts()
+            || mutations->hasLightweightDeletedMask()))
         return false;
 
     if (reading.getStorageMetadata()->hasUniqueKey())
@@ -275,15 +277,15 @@ std::optional<ResolvedQuery> recoverSearchQuery(const ReadFromMergeTree & readin
     for (const auto & [index_name, task] : reading.getIndexReadTasks())
     {
         /// Only the task that produced this virtual column can resolve it.
-        bool owns_column = std::ranges::any_of(task.columns, [&column_name](const auto & column) { return column.name == column_name; });
-        if (!owns_column || !task.index.condition_template)
+        auto task_column_it = std::ranges::find(task.columns, column_name, &IndexReadTask::Column::name);
+        if (task_column_it == task.columns.end() || !task.index.condition_template)
             continue;
 
         auto condition = std::dynamic_pointer_cast<MergeTreeIndexConditionText>(task.index.condition_template->generateUnsubstituted());
         if (!condition)
             continue;
 
-        auto query = condition->getSearchQueryForVirtualColumn(column_name);
+        auto query = task_column_it->search_query;
 
         /// Hint mode keeps the original predicate, so only Exact is answerable from the index alone.
         if (query->getDirectReadMode() != TextIndexDirectReadMode::Exact)
@@ -302,22 +304,24 @@ std::optional<ResolvedQuery> recoverSearchQuery(const ReadFromMergeTree & readin
     return {};
 }
 
-/// E.g. "Trivial count from text index (idx, token = 'alpha')" or "... (idx, tokens = ['alpha', 'zeta'])".
+/// E.g. "Trivial count from text index (idx, token = "alpha")" or "... (idx, tokens = ["alpha", "zeta"])".
 String makeStepDescription(const ResolvedQuery & resolved)
 {
     const auto & query_tokens = resolved.query->getTokens();
+    const auto & tokenizer = *resolved.condition->getTokenizer();
 
     WriteBufferFromOwnString description;
     description << "Trivial count from text index (" << resolved.index.index->index.name << ", ";
+
     if (query_tokens.size() == 1)
     {
-        description << "token = '" << query_tokens.front() << "'";
+        description << "token = " << tokenizer.formatTokenForLogs(query_tokens.front());
     }
     else
     {
         description << "tokens = [";
         for (size_t i = 0; i < query_tokens.size(); ++i)
-            description << (i == 0 ? "'" : ", '") << query_tokens[i] << "'";
+            description << (i == 0 ? "" : ", ") << tokenizer.formatTokenForLogs(query_tokens[i]);
         description << "]";
     }
     description << ")";
@@ -335,6 +339,12 @@ bool optimizeTrivialCountFromTextIndex(QueryPlan::Node & node, QueryPlan::Nodes 
     /// `applyParallelReplicas` runs first and builds such fragments around the `ReadFromMergeTree` we would
     /// replace, so bail and let the reader be distributed across replicas as before.
     if (settings.make_distributed_plan || settings.enable_parallel_replicas)
+        return false;
+
+    /// The plan for automatic parallel replicas has no index analysis of its reads, so analyzing here would run it
+    /// over the filter `processAndOptimizeTextIndexFunctions` already rewrote. There is nothing to gain either:
+    /// when the single-node plan made this replacement, automatic parallel replicas does not consider the query.
+    if (settings.find_single_node_read)
         return false;
 
     auto * aggregating = typeid_cast<AggregatingStep *>(node.step.get());
@@ -417,6 +427,10 @@ bool optimizeTrivialCountFromTextIndex(QueryPlan::Node & node, QueryPlan::Nodes 
     }
 
     String description = makeStepDescription(*search_query);
+
+    if (!matched->reading->getQueryInfo().is_internal && matched->reading->getContext()->hasQueryContext())
+        matched->reading->getContext()->getQueryContext()->addUsedDataSkippingIndex(
+            matched->reading->getMergeTreeData().getStorageID(), search_query->index.index->index.name);
 
     auto & source_node = nodes.emplace_back();
     source_node.step = std::make_unique<ReadFromTextIndexCount>(

@@ -6,9 +6,6 @@
 SET ast_fuzzer_runs = 0;
 SET ast_fuzzer_any_query = 0;
 
--- Every assertion below reads the state a preceding statement left in Keeper, so a DROP has to drop.
-SET ignore_drop_queries_probability = 0;
-
 DROP TABLE IF EXISTS 05024_keeper_map_parenthesized_metadata_bad SYNC;
 DROP TABLE IF EXISTS 05024_keeper_map_parenthesized_metadata_malformed SYNC;
 DROP TABLE IF EXISTS 05024_keeper_map_parenthesized_metadata_terminated SYNC;

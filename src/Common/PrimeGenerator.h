@@ -159,7 +159,7 @@ public:
         chassert(std::is_sorted(primes.begin(), primes.end()));
     }
 
-    const std::vector<UInt32> & getPrimes() const { return primes; }
+    [[nodiscard]] const std::vector<UInt32> & getPrimes() const { return primes; }
 
 private:
     /// Marks or gets the bit corresponding to odd number at index idx (0 -> 3, 1 -> 5, 2 -> 7, ...)

@@ -55,12 +55,31 @@ IMPLEMENT_SETTING_MULTI_ENUM(JoinAlgorithm, ErrorCodes::UNKNOWN_JOIN,
      {"hash",                 JoinAlgorithm::HASH},
      {"partial_merge",        JoinAlgorithm::PARTIAL_MERGE},
      {"prefer_partial_merge", JoinAlgorithm::PREFER_PARTIAL_MERGE},
-     {"parallel_hash",        JoinAlgorithm::PARALLEL_HASH},
+     {"parallel_hash",        JoinAlgorithm::HASH},
      {"direct",               JoinAlgorithm::DIRECT},
      {"full_sorting_merge",   JoinAlgorithm::FULL_SORTING_MERGE},
      {"parallel_full_sorting_merge", JoinAlgorithm::PARALLEL_FULL_SORTING_MERGE},
      {"grace_hash",           JoinAlgorithm::GRACE_HASH},
-     {"ie_join",              JoinAlgorithm::IE_JOIN}})
+     {"inequality",           JoinAlgorithm::INEQUALITY},
+     /// The former name of `inequality`, kept for compatibility. Listed after it, so `inequality` is the name it is shown with.
+     {"ie_join",              JoinAlgorithm::INEQUALITY}})
+
+/// Keep the names here in sync with `JoinAlgorithm` above. The difference is that `ie_join` goes before
+/// `inequality`, so it is the name written into a serialized query plan: a server released before the
+/// rename rejects `inequality`. Both names are read.
+IMPLEMENT_SETTING_MULTI_ENUM_WITH_RENAME(QueryPlanJoinAlgorithm, ErrorCodes::UNKNOWN_JOIN,
+    {{"default",              JoinAlgorithm::DEFAULT},
+     {"auto",                 JoinAlgorithm::AUTO},
+     {"hash",                 JoinAlgorithm::HASH},
+     {"partial_merge",        JoinAlgorithm::PARTIAL_MERGE},
+     {"prefer_partial_merge", JoinAlgorithm::PREFER_PARTIAL_MERGE},
+     {"parallel_hash",        JoinAlgorithm::HASH},
+     {"direct",               JoinAlgorithm::DIRECT},
+     {"full_sorting_merge",   JoinAlgorithm::FULL_SORTING_MERGE},
+     {"parallel_full_sorting_merge", JoinAlgorithm::PARALLEL_FULL_SORTING_MERGE},
+     {"grace_hash",           JoinAlgorithm::GRACE_HASH},
+     {"ie_join",              JoinAlgorithm::INEQUALITY},
+     {"inequality",           JoinAlgorithm::INEQUALITY}})
 
 
 IMPLEMENT_SETTING_MULTI_ENUM(JoinOrderAlgorithm, ErrorCodes::BAD_ARGUMENTS,
@@ -68,6 +87,18 @@ IMPLEMENT_SETTING_MULTI_ENUM(JoinOrderAlgorithm, ErrorCodes::BAD_ARGUMENTS,
      {"dpsize",             JoinOrderAlgorithm::DPSIZE},
      {"dpsub",              JoinOrderAlgorithm::DPSUB},
      {"dphyp",              JoinOrderAlgorithm::DPHYP}})
+
+
+IMPLEMENT_SETTING_ENUM(JoinOrderConflictDetector, ErrorCodes::BAD_ARGUMENTS,
+    {{"",  JoinOrderConflictDetector::NONE},
+     {"a", JoinOrderConflictDetector::CD_A},
+     {"c", JoinOrderConflictDetector::CD_C}})
+
+
+IMPLEMENT_SETTING_ENUM(HashJoinLayout, ErrorCodes::BAD_ARGUMENTS,
+    {{"auto",     HashJoinLayout::AUTO},
+     {"serial",   HashJoinLayout::SERIAL},
+     {"parallel", HashJoinLayout::PARALLEL}})
 
 
 IMPLEMENT_SETTING_ENUM(TotalsMode, ErrorCodes::UNKNOWN_TOTALS_MODE,
@@ -125,7 +156,7 @@ IMPLEMENT_SETTING_ENUM(DateTimeOutputFormat, ErrorCodes::BAD_ARGUMENTS,
      {"unix_timestamp", FormatSettings::DateTimeOutputFormat::UnixTimestamp}})
 
 IMPLEMENT_SETTING_ENUM(IntervalOutputFormat, ErrorCodes::BAD_ARGUMENTS,
-    {{"kusto",     FormatSettings::IntervalOutputFormat::Kusto},
+    {{"kusto",   FormatSettings::IntervalOutputFormat::Kusto},
      {"numeric", FormatSettings::IntervalOutputFormat::Numeric}})
 
 IMPLEMENT_SETTING_ENUM(AggregateFunctionInputFormat, ErrorCodes::BAD_ARGUMENTS,
@@ -146,8 +177,13 @@ IMPLEMENT_SETTING_AUTO_ENUM(DefaultDatabaseEngine, ErrorCodes::BAD_ARGUMENTS)
 IMPLEMENT_SETTING_AUTO_ENUM(DefaultTableEngine, ErrorCodes::BAD_ARGUMENTS)
 
 IMPLEMENT_SETTING_ENUM(TextIndexPostingListApplyMode, ErrorCodes::BAD_ARGUMENTS,
-    {{"materialize", TextIndexPostingListApplyMode::MATERIALIZE},
-     {"lazy", TextIndexPostingListApplyMode::LAZY}})
+    {{"materialize", TextIndexPostingListApplyMode::Materialize},
+     {"lazy", TextIndexPostingListApplyMode::Lazy}})
+
+IMPLEMENT_SETTING_ENUM(TextIndexPostingsIntersectionAlgorithm, ErrorCodes::BAD_ARGUMENTS,
+    {{"bruteforce", TextIndexPostingsIntersectionAlgorithm::BruteForce},
+     {"leapfrog", TextIndexPostingsIntersectionAlgorithm::Leapfrog},
+     {"auto", TextIndexPostingsIntersectionAlgorithm::Auto}})
 
 IMPLEMENT_SETTING_AUTO_ENUM(CleanDeletedRows, ErrorCodes::BAD_ARGUMENTS)
 
@@ -209,7 +245,9 @@ IMPLEMENT_SETTING_ENUM(Dialect, ErrorCodes::BAD_ARGUMENTS,
      {"prql", Dialect::prql},
      {"promql", Dialect::promql},
      {"polyglot", Dialect::polyglot},
-     {"clickhouse_json", Dialect::clickhouse_json}})
+     {"clickhouse_json", Dialect::clickhouse_json},
+     {"logsql", Dialect::logsql},
+     {"trino", Dialect::trino}})
 
 IMPLEMENT_SETTING_ENUM(ParallelReplicasCustomKeyFilterType, ErrorCodes::BAD_ARGUMENTS,
     {{"default", ParallelReplicasCustomKeyFilterType::DEFAULT},
@@ -245,6 +283,11 @@ IMPLEMENT_SETTING_ENUM(UniqueKeyProbeImplementation, ErrorCodes::BAD_ARGUMENTS,
     {{"auto", UniqueKeyProbeImplementation::Auto},
      {"simple", UniqueKeyProbeImplementation::Simple}})
 
+IMPLEMENT_SETTING_ENUM(UniqueKeyConflictAction, ErrorCodes::BAD_ARGUMENTS,
+    {{"overwrite", UniqueKeyConflictAction::Overwrite},
+     {"ignore", UniqueKeyConflictAction::Ignore},
+     {"abort", UniqueKeyConflictAction::Abort}})
+
 IMPLEMENT_SETTING_ENUM(AlterColumnSecondaryIndexMode, ErrorCodes::BAD_ARGUMENTS,
     {{"throw", AlterColumnSecondaryIndexMode::THROW},
      {"drop", AlterColumnSecondaryIndexMode::DROP},
@@ -279,6 +322,11 @@ IMPLEMENT_SETTING_ENUM(ArrowCompression, ErrorCodes::BAD_ARGUMENTS,
      {"lz4_frame", FormatSettings::ArrowCompression::LZ4_FRAME},
      {"zstd", FormatSettings::ArrowCompression::ZSTD}})
 
+IMPLEMENT_SETTING_ENUM(ArrowUnsupportedTypes, ErrorCodes::BAD_ARGUMENTS,
+    {{"throw", FormatSettings::ArrowUnsupportedTypes::THROW},
+     {"text", FormatSettings::ArrowUnsupportedTypes::TEXT},
+     {"binary", FormatSettings::ArrowUnsupportedTypes::BINARY}})
+
 IMPLEMENT_SETTING_ENUM(ORCCompression, ErrorCodes::BAD_ARGUMENTS,
     {{"none", FormatSettings::ORCCompression::NONE},
      {"snappy", FormatSettings::ORCCompression::SNAPPY},
@@ -288,7 +336,8 @@ IMPLEMENT_SETTING_ENUM(ORCCompression, ErrorCodes::BAD_ARGUMENTS,
 
 IMPLEMENT_SETTING_ENUM(ObjectStorageQueueMode, ErrorCodes::BAD_ARGUMENTS,
                        {{"ordered", ObjectStorageQueueMode::ORDERED},
-                        {"unordered", ObjectStorageQueueMode::UNORDERED}})
+                        {"unordered", ObjectStorageQueueMode::UNORDERED},
+                        {"exclusive", ObjectStorageQueueMode::EXCLUSIVE}})
 
 IMPLEMENT_SETTING_ENUM(ObjectStorageQueueAction, ErrorCodes::BAD_ARGUMENTS,
                        {{"keep", ObjectStorageQueueAction::KEEP},
@@ -346,6 +395,29 @@ IMPLEMENT_SETTING_ENUM(
     {{"throw", GroupArrayActionWhenLimitReached::THROW}, {"discard", GroupArrayActionWhenLimitReached::DISCARD}})
 
 IMPLEMENT_SETTING_ENUM(
+    AsynchronousMetricsKeyValuesMode,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"key_values", AsynchronousMetricsKeyValuesMode::KeyValues},
+     {"legacy_names", AsynchronousMetricsKeyValuesMode::LegacyNames},
+     {"both", AsynchronousMetricsKeyValuesMode::Both}})
+
+IMPLEMENT_SETTING_ENUM(
+    SeccompMode,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"disabled", SeccompMode::Disabled},
+     {"log", SeccompMode::Log},
+     {"errno", SeccompMode::Errno},
+     {"trap", SeccompMode::Trap},
+     {"kill", SeccompMode::Kill}})
+
+IMPLEMENT_SETTING_ENUM(
+    FilesystemIsolationMode,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"disabled", FilesystemIsolationMode::Disabled},
+     {"best_effort", FilesystemIsolationMode::BestEffort},
+     {"enforce", FilesystemIsolationMode::Enforce}})
+
+IMPLEMENT_SETTING_ENUM(
     IdentifierQuotingStyle,
     ErrorCodes::BAD_ARGUMENTS,
     {{"Backticks", IdentifierQuotingStyle::Backticks},
@@ -380,6 +452,13 @@ IMPLEMENT_SETTING_ENUM(
      {"horizon", DatabaseDataLakeCatalogType::ICEBERG_HORIZON},
      {"s3tables", DatabaseDataLakeCatalogType::S3_TABLES},
      {"delta_sharing", DatabaseDataLakeCatalogType::ICEBERG_DELTA_SHARING}})
+
+IMPLEMENT_SETTING_ENUM(
+    DatabaseDataLakeSnapshotLoadingMode,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"auto", DatabaseDataLakeSnapshotLoadingMode::AUTO},
+     {"all", DatabaseDataLakeSnapshotLoadingMode::ALL},
+     {"refs", DatabaseDataLakeSnapshotLoadingMode::REFS}})
 
 IMPLEMENT_SETTING_ENUM(
     FileCachePolicy,
@@ -417,7 +496,8 @@ IMPLEMENT_SETTING_ENUM(
     MergeTreeSerializationInfoVersion,
     ErrorCodes::BAD_ARGUMENTS,
     {{"basic", MergeTreeSerializationInfoVersion::BASIC},
-     {"with_types", MergeTreeSerializationInfoVersion::WITH_TYPES}})
+     {"with_types", MergeTreeSerializationInfoVersion::WITH_TYPES},
+     {"with_missing_columns", MergeTreeSerializationInfoVersion::WITH_MISSING_COLUMNS}})
 
 IMPLEMENT_SETTING_ENUM(
     MergeTreeStringSerializationVersion,
@@ -456,7 +536,8 @@ IMPLEMENT_SETTING_ENUM(
     ErrorCodes::BAD_ARGUMENTS,
     {{"map", MergeTreeObjectSharedDataSerializationVersion::MAP},
      {"map_with_buckets", MergeTreeObjectSharedDataSerializationVersion::MAP_WITH_BUCKETS},
-     {"advanced", MergeTreeObjectSharedDataSerializationVersion::ADVANCED}})
+     {"advanced", MergeTreeObjectSharedDataSerializationVersion::ADVANCED},
+     {"advanced_chunked", MergeTreeObjectSharedDataSerializationVersion::ADVANCED_CHUNKED}})
 
 IMPLEMENT_SETTING_ENUM(
     MergeTreeDynamicSerializationVersion,
@@ -464,6 +545,17 @@ IMPLEMENT_SETTING_ENUM(
     {{"v1", MergeTreeDynamicSerializationVersion::V1},
      {"v2", MergeTreeDynamicSerializationVersion::V2},
      {"v3", MergeTreeDynamicSerializationVersion::V3}})
+
+IMPLEMENT_SETTING_ENUM(
+    MergeTreeObjectTypedSharedDataSerializationVersion,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"v1", MergeTreeObjectTypedSharedDataSerializationVersion::V1}})
+
+IMPLEMENT_SETTING_ENUM(
+    MergeTreePatchPartsVersion,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"v1", MergeTreePatchPartsVersion::V1},
+     {"v2", MergeTreePatchPartsVersion::V2}})
 
 IMPLEMENT_SETTING_ENUM(
     SearchOrphanedPartsDisks,
@@ -476,7 +568,8 @@ IMPLEMENT_SETTING_ENUM(
     TextIndexPostingListCodec,
     ErrorCodes::BAD_ARGUMENTS,
     {{"none", TextIndexPostingListCodec::None},
-     {"bitpacking", TextIndexPostingListCodec::Bitpacking}})
+     {"bitpacking", TextIndexPostingListCodec::Bitpacking},
+     {"pfor", TextIndexPostingListCodec::PFor}})
 
 IMPLEMENT_SETTING_ENUM(
     MergeTreeTextIndexSerializationVersion,
@@ -543,6 +636,10 @@ IMPLEMENT_SETTING_ENUM(S3UriStyle, ErrorCodes::BAD_ARGUMENTS,
     {{"auto", S3UriStyle::AUTO},
      {"path", S3UriStyle::PATH},
      {"virtual_hosted", S3UriStyle::VIRTUAL_HOSTED}})
+
+IMPLEMENT_SETTING_ENUM(S3RequestPayer, ErrorCodes::BAD_ARGUMENTS,
+    {{"none", S3RequestPayer::NONE},
+     {"requester", S3RequestPayer::REQUESTER}})
 
 IMPLEMENT_SETTING_ENUM(ExplainQueryPlanDefault, ErrorCodes::BAD_ARGUMENTS,
     {{"legacy", ExplainQueryPlanDefault::LEGACY},

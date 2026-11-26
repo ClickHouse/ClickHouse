@@ -1,13 +1,13 @@
 ---
-sidebarTitle: 'Rede'
-description: 'Opções de configuração de rede para ClickPipes.'
-slug: /integrations/clickpipes/networking
-title: 'Rede'
-doc_type: 'guide'
-keywords: ['rede clickpipes', 'rede privada', 'endpoint privado reverso', 'aws privatelink', 'gcp private service connect', 'conectividade privada', 'azure privatelink']
+title: "Visão geral"
+sidebarTitle: "Visão geral"
+description: "Opções de configuração de rede para ClickPipes."
+slug: "/integrations/clickpipes/networking"
+doc_type: "guide"
+keywords: ["rede clickpipes", "rede privada", "endpoint privado reverso", "aws privatelink", "gcp private service connect", "conectividade privada", "azure privatelink"]
 integration:
-  - support_level: 'core'
-  - category: 'clickpipes'
+  - support_level: "core"
+  - category: "clickpipes"
 ---
 
 Dependendo da configuração de rede da sua fonte de dados upstream, é possível conectar o ClickPipes usando as seguintes abordagens:
@@ -26,21 +26,20 @@ Para fontes de dados que **não** estão expostas à internet pública, você po
 
 O suporte a RPE depende do provedor de Cloud e da região em que sua fonte de dados está hospedada:
 
-| Provedor                                                                    | Compatível | Observações                                                                                                                                                                                                                                         |
-| --------------------------------------------------------------------------- | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [AWS PrivateLink](/pt-BR/integrations/clickpipes/networking/aws-privatelink)      | Sim        | Para fontes de dados hospedadas na AWS. A conectividade entre regiões pode ser configurada usando um serviço de endpoint da VPC.                                                                                                                    |
-| [GCP Private Service Connect](/pt-BR/integrations/clickpipes/networking/gcp-psc)  | Sim        | Para fontes de dados `AlloyDB` hospedadas no GCP. A conectividade entre regiões via Global Access ainda não é compatível; use [tunelamento SSH](#ssh-tunneling) para acessar uma fonte de dados `AlloyDB` privada em uma região do GCP sem suporte. |
-| [Azure Private Link](/pt-BR/integrations/clickpipes/networking/azure-privatelink) | No         | Use [tunelamento SSH](#ssh-tunneling) para acessar uma fonte de dados privada do Azure.                                                                                                                                                             |
+| Provedor                                                                    | Compatível | Observações                                                                                                                                                                                                              |
+| --------------------------------------------------------------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| [AWS PrivateLink](/pt-BR/integrations/clickpipes/networking/aws-privatelink)      | Sim        | Para fontes de dados hospedadas na AWS. A conectividade entre regiões pode ser configurada usando um serviço de endpoint da VPC.                                                                                         |
+| [GCP Private Service Connect](/pt-BR/integrations/clickpipes/networking/gcp-psc)  | Sim        | Para fontes de dados hospedadas no GCP. A conectividade entre regiões pode ser configurada usando o [acesso global](https://docs.cloud.google.com/vpc/docs/about-accessing-vpc-hosted-services-endpoints#global-access). |
+| [Azure Private Link](/pt-BR/integrations/clickpipes/networking/azure-privatelink) | No         | Use [tunelamento SSH](#ssh-tunneling) para acessar uma fonte de dados privada do Azure.                                                                                                                                  |
 
 <div id="ssh-tunneling">
   ## Tunelamento SSH
 </div>
 
-Para fontes de dados que **não** estão expostas à internet pública e **não podem** usar endpoints privados gerenciados, é possível estabelecer uma conexão
-por meio de um túnel SSH usando um bastion host. Adicione os [IPs NAT estáticos](/pt-BR/integrations/clickpipes/networking/static-ips) da região de onde o ClickPipes se conecta às regras de firewall do bastion host upstream.
+Para fontes de dados que **não** estão expostas à internet pública e **não podem** usar endpoints privados gerenciados, é possível estabelecer uma conexão por meio de um túnel SSH usando um bastion host. Adicione os [IPs NAT estáticos](/pt-BR/integrations/clickpipes/networking/static-ips) da região de onde o ClickPipes se conecta às regras de firewall do bastion host upstream.
 
 Use essa abordagem quando:
 
 * A fonte de dados estiver hospedada no Azure.
 * A fonte de dados e o ClickPipes estiverem hospedados em provedores de Cloud ou regiões diferentes, e não houver opção de conectividade entre regiões com [endpoints privados gerenciados](#managed-private-endpoints).
-* Não houver opção de usar [endpoints privados gerenciados](#managed-private-endpoints), por exemplo, em implantações on-premises que só podem ser acessadas por meio de um bastion host.
+* Não houver opção de usar [endpoints privados gerenciados](#managed-private-endpoints), *por exemplo*, em implantações on-premises que só podem ser acessadas por meio de um bastion host.

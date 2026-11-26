@@ -21,7 +21,7 @@ settings disk = disk(
     name = '${CLICKHOUSE_TEST_UNIQUE_NAME}',
     path = '${CLICKHOUSE_TEST_UNIQUE_NAME}/',
     max_size = '1Gi',
-    disk = disk(type = 'local_blob_storage', path = '${CLICKHOUSE_TEST_UNIQUE_NAME}_blob/'));
+    disk = disk(type = 'local_blob_storage', path = '${CLICKHOUSE_DISKS_FILES}/${CLICKHOUSE_TEST_UNIQUE_NAME}_blob/'));
 insert into ${CLICKHOUSE_DATABASE}.test select number, toString(number) from numbers(100000);
 "
 
@@ -33,7 +33,7 @@ select sum(a), count() from ${CLICKHOUSE_DATABASE}.test
 settings prefetch_buffer_size = 10000000000000000000, max_read_buffer_size_remote_fs = 10000000000000000000,
          remote_filesystem_read_prefetch = 1, remote_filesystem_read_method = 'threadpool',
          enable_filesystem_cache = 1, filesystem_cache_prefer_bigger_buffer_size = 1,
-         read_from_filesystem_cache_if_exists_otherwise_bypass_cache = 0, read_through_distributed_cache = 0;
+         read_from_filesystem_cache_if_exists_otherwise_bypass_cache = 0;
 "
 
 ${CLICKHOUSE_CLIENT} --query "drop table ${CLICKHOUSE_DATABASE}.test;"
