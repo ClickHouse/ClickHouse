@@ -1,11 +1,10 @@
 {
-  "icon": "/images/icons/icon-concepts.svg",
-  "item": "Conceitos",
+  "item": "Concepts",
   "pages": [
     "pt-BR/concepts/index",
     {
       "expanded": true,
-      "group": "Fundamentos",
+      "group": "Fundamentals",
       "pages": [
         "pt-BR/concepts/core-concepts/index",
         "pt-BR/concepts/core-concepts/glossary",
@@ -19,11 +18,11 @@
     },
     {
       "expanded": true,
-      "group": "Conceitos do ClickHouse",
+      "group": "ClickHouse concepts",
       "pages": [
         "pt-BR/concepts/features/index",
         {
-          "group": "Visões materializadas",
+          "group": "Materialized views",
           "pages": [
             "pt-BR/concepts/features/materialized-views/index",
             "pt-BR/concepts/features/materialized-views/incremental-materialized-view",
@@ -32,21 +31,21 @@
           ]
         },
         {
-          "group": "Dicionários",
+          "group": "Dictionaries",
           "pages": [
             "pt-BR/concepts/features/dictionaries/index",
             "pt-BR/concepts/features/dictionaries/best-practices"
           ]
         },
         {
-          "group": "Projeções",
+          "group": "Projections",
           "pages": [
             "pt-BR/concepts/features/projections/projections",
             "pt-BR/concepts/features/projections/materialized-views-versus-projections"
           ]
         },
         {
-          "group": "Desempenho",
+          "group": "Performance",
           "pages": [
             "pt-BR/concepts/features/performance/index",
             "pt-BR/concepts/features/performance/prewhere",
@@ -62,7 +61,7 @@
               ]
             },
             {
-              "group": "Índices de salto",
+              "group": "Skipping-indexes",
               "pages": [
                 "pt-BR/concepts/features/performance/skip-indexes/skipping-indexes",
                 "pt-BR/concepts/features/performance/skip-indexes/skipping-indexes-examples"
@@ -70,7 +69,7 @@
             },
             "pt-BR/concepts/features/performance/lazy-materialization",
             {
-              "group": "Solução de problemas",
+              "group": "Troubleshooting",
               "pages": [
                 "pt-BR/concepts/features/performance/troubleshoot/debugging-memory-issues",
                 "pt-BR/concepts/features/performance/troubleshoot/oom-canary",
@@ -81,14 +80,15 @@
           ]
         },
         {
-          "group": "Operações",
+          "group": "Operations",
           "pages": [
             "pt-BR/concepts/features/operations/background-queries",
             {
-              "group": "Inserir",
+              "group": "Insert",
               "pages": [
                 "pt-BR/concepts/features/operations/insert/inserting-data",
                 "pt-BR/concepts/features/operations/insert/asyncinserts",
+                "pt-BR/concepts/features/operations/insert/async-insert-select",
                 "pt-BR/concepts/features/operations/insert/bulkinserts",
                 "pt-BR/concepts/features/operations/insert/deduplication",
                 "pt-BR/concepts/features/operations/insert/deduplicating-inserts-on-retries",
@@ -96,13 +96,22 @@
               ]
             },
             {
-              "group": "Selecionar",
+              "group": "Select",
               "pages": [
-                "pt-BR/concepts/features/operations/select/joining-tables"
+                {
+                  "group": "JOINs",
+                  "pages": [
+                    "pt-BR/concepts/features/operations/select/joining-tables",
+                    "pt-BR/concepts/features/operations/select/join-execution",
+                    "pt-BR/concepts/features/operations/select/join-algorithms",
+                    "pt-BR/concepts/features/operations/select/join-memory-management",
+                    "pt-BR/concepts/features/operations/select/join-settings"
+                  ]
+                }
               ]
             },
             {
-              "group": "Atualizar",
+              "group": "Update",
               "pages": [
                 "pt-BR/concepts/features/operations/update/index",
                 "pt-BR/concepts/features/operations/update/overview",
@@ -110,7 +119,7 @@
               ]
             },
             {
-              "group": "Excluir",
+              "group": "Delete",
               "pages": [
                 "pt-BR/concepts/features/operations/delete/index",
                 "pt-BR/concepts/features/operations/delete/overview",
@@ -123,10 +132,10 @@
           ]
         },
         {
-          "group": "Configuração",
+          "group": "Configuration",
           "pages": [
             {
-              "group": "Configurações",
+              "group": "Settings",
               "pages": [
                 "pt-BR/concepts/features/configuration/settings/overview",
                 "pt-BR/concepts/features/configuration/settings/settings-query-level",
@@ -142,7 +151,7 @@
               ]
             },
             {
-              "group": "Configuração do servidor",
+              "group": "Server config",
               "pages": [
                 "pt-BR/concepts/features/configuration/server-config/configuration-files",
                 "pt-BR/concepts/features/configuration/server-config/storing-data",
@@ -157,7 +166,7 @@
           ]
         },
         {
-          "group": "Segurança e autenticação",
+          "group": "Security and auth",
           "pages": [
             "pt-BR/concepts/features/security/index",
             "pt-BR/concepts/features/security/access-rights",
@@ -171,7 +180,7 @@
               ]
             },
             {
-              "group": "Autenticadores externos",
+              "group": "External authenticators",
               "pages": [
                 "pt-BR/concepts/features/security/external-authenticators/index",
                 {
@@ -196,10 +205,11 @@
           ]
         },
         {
-          "group": "Backup e restauração",
+          "group": "Backup and restore",
           "pages": [
             "pt-BR/concepts/features/backup-restore/overview",
             "pt-BR/concepts/features/backup-restore/restore-settings",
+            "pt-BR/concepts/features/backup-restore/named-collections",
             "pt-BR/concepts/features/backup-restore/local-disk",
             "pt-BR/concepts/features/backup-restore/s3-endpoint",
             "pt-BR/concepts/features/backup-restore/azure-blob-storage",
@@ -215,7 +225,7 @@
             "pt-BR/concepts/features/interfaces/client",
             "pt-BR/concepts/features/interfaces/mcp",
             {
-              "group": "Drivers e interfaces",
+              "group": "Drivers and interfaces",
               "pages": [
                 "pt-BR/concepts/features/interfaces/overview",
                 "pt-BR/concepts/features/interfaces/http",
@@ -240,10 +250,11 @@
             "pt-BR/concepts/features/interfaces/sql-console",
             "pt-BR/concepts/features/interfaces/web-ui-color-coding",
             "pt-BR/concepts/features/interfaces/web-ui-pinned-columns",
+            "pt-BR/concepts/features/interfaces/web-ui-notebook",
             "pt-BR/concepts/features/interfaces/web-ui-result-shaping",
             "pt-BR/concepts/features/interfaces/web-terminal",
             {
-              "group": "Clientes de terceiros",
+              "group": "Third-party clients",
               "pages": [
                 "pt-BR/concepts/features/interfaces/third-party/index"
               ]
@@ -251,7 +262,7 @@
           ]
         },
         {
-          "group": "Ferramentas e utilitários",
+          "group": "Tools and utilities",
           "pages": [
             "pt-BR/concepts/features/tools-and-utilities/index",
             "pt-BR/concepts/features/tools-and-utilities/backupview",
@@ -271,7 +282,7 @@
     },
     {
       "expanded": true,
-      "group": "Boas práticas",
+      "group": "Best practices",
       "pages": [
         "pt-BR/concepts/best-practices/index",
         "pt-BR/concepts/best-practices/choosing-a-primary-key",

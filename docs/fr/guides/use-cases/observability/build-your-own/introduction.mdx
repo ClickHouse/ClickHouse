@@ -7,17 +7,17 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
-
-<div id="introduction">
-  ## Introduction
-</div>
+## Introduction {#introduction}
 
 Ce guide s’adresse à vous si vous souhaitez créer votre propre solution d’observabilité basée sur SQL avec ClickHouse, en mettant l’accent sur les logs et les traces. Il couvre tous les aspects de la création de votre propre solution, notamment les considérations liées à l’ingestion, l’optimisation des schémas pour vos schémas d’accès et l’extraction de structure à partir de logs non structurés.
 
 ClickHouse seul n’est pas une solution d’observabilité clé en main. Il peut toutefois servir de moteur de stockage très performant pour les données d’observabilité, avec des taux de compression inégalés et des temps de réponse aux requêtes extrêmement rapides. Pour utiliser ClickHouse dans une solution d’observabilité, vous avez besoin à la fois d’une interface utilisateur et d’un framework de collecte de données. Nous recommandons actuellement d’utiliser **Grafana** pour visualiser les signaux d’observabilité et **OpenTelemetry** pour la collecte de données (tous deux sont des intégrations officiellement prises en charge).
 
-<Image img="/images/use-cases/observability/observability-1.webp" alt="OTel simple" size="md" />
+<div className="ch-image-md">
+  <Frame>
+    ![OTel simple](/images/use-cases/observability/observability-1.webp)
+  </Frame>
+</div>
 
 <br />
 
@@ -28,7 +28,7 @@ ClickHouse seul n’est pas une solution d’observabilité clé en main. Il peu
 </Info>
 
 <div id="why-use-clickhouse">
-  ## Pourquoi utiliser ClickHouse ?
+  ## Pourquoi utiliser ClickHouse ? {#why-use-clickhouse}
 </div>
 
 La caractéristique la plus importante de tout magasin centralisé d’observabilité est sa capacité à agréger, analyser et parcourir rapidement de vastes volumes de logs provenant de sources diverses. Cette centralisation simplifie le dépannage et facilite l’identification des causes profondes des interruptions de service.
@@ -48,7 +48,7 @@ Plus précisément, les points suivants font de ClickHouse une solution particul
 * **Open-source &amp; standards ouverts** - En tant que base de données open-source, ClickHouse s’appuie sur des standards ouverts tels qu’OpenTelemetry. La possibilité de contribuer et de participer activement aux projets est attrayante, tout en évitant les contraintes liées à l’enfermement propriétaire.
 
 <div id="when-should-you-use-clickhouse-for-observability">
-  ## Quand faut-il utiliser ClickHouse pour l’observabilité ?
+  ## Quand faut-il utiliser ClickHouse pour l’observabilité ? {#when-should-you-use-clickhouse-for-observability}
 </div>
 
 Utiliser ClickHouse pour des données d’observabilité suppose d’adopter une observabilité basée sur SQL. Nous vous recommandons [cet article de blog](https://clickhouse.com/blog/the-state-of-sql-based-observability) pour retracer l’histoire de l’observabilité basée sur SQL, mais en résumé :
@@ -71,7 +71,7 @@ L’observabilité basée sur SQL n’est peut-être pas faite pour vous si :
 * Vous préférez attendre que l’écosystème gagne encore en maturité et que l’observabilité basée sur SQL devienne plus clé en main.
 
 <div id="logs-and-traces">
-  ## Logs et traces
+  ## Logs et traces {#logs-and-traces}
 </div>
 
 Le cas d’usage de l’observabilité repose sur trois piliers distincts : le logging, le tracing et les métriques. Chacun possède des types de données et des modes d’accès distincts.
@@ -93,16 +93,18 @@ Nous recommandons actuellement ClickHouse pour stocker deux types de données d�
   Bien que ClickHouse puisse être utilisé pour stocker des données de métriques, ce pilier est moins mature dans ClickHouse, la prise en charge de fonctionnalités telles que le format de données Prometheus et PromQL étant encore en attente.
 </Info>
 
-<div id="distributed-tracing">
-  ### Tracing distribué
+### Traçage distribué {#distributed-tracing}
+
+Le traçage distribué est une fonctionnalité essentielle de l&#39;observabilité. Une trace distribuée, ou simplement une trace, retrace le parcours d&#39;une requête dans un système. Cette requête provient d&#39;un utilisateur final ou d&#39;une application, puis se propage à l&#39;ensemble du système, généralement sous la forme d&#39;un enchaînement d&#39;actions entre microservices. En enregistrant cette séquence et en permettant de corréler les événements qui en découlent, le traçage permet à un utilisateur de l&#39;observabilité ou à un SRE de diagnostiquer des problèmes dans le flux d&#39;une application, quelle que soit la complexité de l&#39;architecture, y compris en environnement serverless.
+
+Chaque trace se compose de plusieurs spans, le span initial associé à la requête étant appelé span racine. Ce span racine capture l&#39;intégralité de la requête du début à la fin. Les spans suivants, rattachés au span racine, fournissent des informations détaillées sur les différentes étapes ou opérations qui interviennent pendant la requête. Sans traçage, diagnostiquer des problèmes de performances dans un système distribué peut s&#39;avérer extrêmement difficile. Le traçage facilite le débogage et la compréhension des systèmes distribués en détaillant la séquence des événements d&#39;une requête à mesure qu&#39;elle traverse le système.
+
+La plupart des fournisseurs d&#39;observabilité visualisent ces informations sous la forme d&#39;un diagramme en cascade, où les durées relatives sont représentées par des barres horizontales de taille proportionnelle. Par exemple, dans Grafana :
+
+<div className="ch-image-lg">
+  <Frame>
+    ![Exemple de trace](/images/use-cases/observability/observability-2.webp)
+  </Frame>
 </div>
-
-Le tracing distribué est une fonctionnalité essentielle de l&#39;observabilité. Une trace distribuée, ou simplement une trace, retrace le parcours d&#39;une requête dans un système. Cette requête provient d&#39;un utilisateur final ou d&#39;une application, puis se propage à l&#39;ensemble du système, généralement sous la forme d&#39;un enchaînement d&#39;actions entre microservices. En enregistrant cette séquence et en permettant de corréler les événements qui en découlent, le tracing permet à un utilisateur de l&#39;observabilité ou à un SRE de diagnostiquer des problèmes dans le flux d&#39;une application, quelle que soit la complexité de l&#39;architecture, y compris en environnement serverless.
-
-Chaque trace se compose de plusieurs spans, le span initial associé à la requête étant appelé span racine. Ce span racine capture l&#39;intégralité de la requête du début à la fin. Les spans suivants, rattachés au span racine, fournissent des informations détaillées sur les différentes étapes ou opérations qui interviennent pendant la requête. Sans tracing, diagnostiquer des problèmes de performances dans un système distribué peut s&#39;avérer extrêmement difficile. Le tracing facilite le débogage et la compréhension des systèmes distribués en détaillant la séquence des événements d&#39;une requête à mesure qu&#39;elle traverse le système.
-
-La plupart des fournisseurs d&#39;observabilité visualisent ces informations sous la forme d&#39;un diagramme en cascade, où les durées relatives sont représentées par des barres horizontales de taille proportionnelle. Par exemple, dans Grafana :
-
-<Image img="/images/use-cases/observability/observability-2.webp" alt="Exemple de trace" size="lg" border />
 
 Pour les utilisateurs qui souhaitent approfondir les concepts de logs et de traces, nous recommandons vivement la [documentation OpenTelemetry](https://opentelemetry.io/docs/concepts/).

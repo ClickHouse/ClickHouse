@@ -191,7 +191,8 @@ std::shared_ptr<InterpreterSelectQueryAnalyzer> interpretSubqueryWithAnalyzer(
     /// Under a materialized view the source table is read from the inserted block, as the interpreter did by
     /// resolving it through the context; the analyzer substitutes it only when given the storage explicitly.
     return std::make_shared<InterpreterSelectQueryAnalyzer>(
-        query, prepared.context, prepared.options, prepared.context->getViewSource(), required_source_columns);
+        query, prepared.context, prepared.options,
+        prepared.context->isViewInnerQuery() ? nullptr : prepared.context->getViewSource(), required_source_columns);
 }
 
 }

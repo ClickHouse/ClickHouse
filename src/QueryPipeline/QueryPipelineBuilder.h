@@ -10,6 +10,9 @@
 namespace DB
 {
 
+class StepProfiler;
+using StepProfilerPtr = std::shared_ptr<StepProfiler>;
+
 class QueryPipelineProcessorsCollector;
 
 struct AggregatingTransformParams;
@@ -116,6 +119,10 @@ public:
     /// Forget about current extremes, keeping totals. Needed before a join, whose inputs' extremes
     /// say nothing about the join result; they are recalculated above the join if they are wanted.
     void dropExtremes();
+    /// Take the extremes out of the pipeline, so that the following transforms do not process them,
+    /// and put them back with `attachExtremes`, converted to the header the pipeline has then.
+    void detachExtremes();
+    void attachExtremes();
 
     void addMergingAggregatedMemoryEfficientTransform(
         AggregatingTransformParamsPtr params, size_t num_merging_processors, bool should_produce_results_in_order_of_bucket_number);
@@ -163,7 +170,7 @@ public:
         size_t min_block_size_bytes,
         size_t max_streams,
         IQueryPlanStep * join_step,
-        bool keep_left_read_in_order,
+        bool keep_left_pipeline_layout,
         const std::optional<String> & seal_gate = std::nullopt,
         Processors * collected_processors = nullptr);
 
@@ -233,6 +240,9 @@ public:
     void setProcessListElement(QueryStatusPtr elem);
     void setProgressCallback(ProgressCallback callback);
 
+    /// Carried only so that `getPipeline` can hand it to the pipeline, which owns it from then on.
+    void setStepProfiler(StepProfilerPtr step_profiler_) { step_profiler = std::move(step_profiler_); }
+
     /// Recommend number of threads for pipeline execution.
     size_t getNumThreads() const
     {
@@ -294,6 +304,7 @@ private:
     bool read_stream_count_was_reduced = false;
 
     QueryStatusPtr process_list_element;
+    StepProfilerPtr step_profiler;
     ProgressCallback progress_callback = nullptr;
 
     void checkInitialized();

@@ -1,6 +1,8 @@
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <array>
+#include <bit>
 #include <optional>
 #include <set>
 #include <thread>
@@ -255,21 +257,29 @@ TEST(DistinctSetFilterExtraction, NullableKey)
 
 TEST(DistinctSetFilterExtraction, FloatBitPatternsSurviveExtraction)
 {
-    /// 0. and -0. are different distinct values (binary comparison); the extraction must preserve both.
+    /// NaNs with different payloads are different distinct values (binary comparison); the extraction must
+    /// preserve both. `-0.` is the same key as `0.` (see `replaceNegativeZeros`), and the set holds `0.`.
     const Block header = {ColumnWithTypeAndName(std::make_shared<DataTypeFloat64>(), "k")};
 
+    const Float64 nan = std::bit_cast<Float64>(0x7ff8000000000000ULL);
+    const Float64 nan_with_payload = std::bit_cast<Float64>(0x7ff8000000000001ULL);
+
     DistinctSetFilter filter(header, {}, SizeLimits{});
-    auto column = makeNumberColumn<ColumnFloat64, Float64>({0., -0., 0., -0.});
-    Chunk filtered = filter.filter(Chunk({column}, 4));
-    ASSERT_EQ(filtered.getNumRows(), 2u);
+    auto column = makeNumberColumn<ColumnFloat64, Float64>({-0., 0., nan, nan_with_payload, nan, -0.});
+    Chunk filtered = filter.filter(Chunk({column}, 6));
+    ASSERT_EQ(filtered.getNumRows(), 3u);
 
     auto extractor = std::move(filter).extractKeys();
-    auto batch = extractor->next(2, /*max_bytes=*/ 0);
+    auto batch = extractor->next(3, /*max_bytes=*/ 0);
     ASSERT_EQ(batch.size(), 1u);
-    EXPECT_TRUE(extractor->next(2, /*max_bytes=*/ 0).empty());
+    EXPECT_TRUE(extractor->next(3, /*max_bytes=*/ 0).empty());
     const auto & extracted = assert_cast<const ColumnFloat64 &>(*batch[0]).getData();
-    ASSERT_EQ(extracted.size(), 2u);
-    EXPECT_NE(std::signbit(extracted[0]), std::signbit(extracted[1]));
+    ASSERT_EQ(extracted.size(), 3u);
+    std::vector<UInt64> extracted_bits;
+    for (const auto value : extracted)
+        extracted_bits.push_back(std::bit_cast<UInt64>(value));
+    std::ranges::sort(extracted_bits);
+    EXPECT_EQ(extracted_bits, (std::vector<UInt64>{0, 0x7ff8000000000000ULL, 0x7ff8000000000001ULL}));
 }
 
 TEST(DistinctSetFilterSemantics, ThrowModeAllowsReachingTheLimitExactly)
@@ -1056,6 +1066,23 @@ TEST(DistinctSetFilterGrowth, PreparationMaterializesRetainedStringKeys)
     }
 }
 
+TEST(DistinctSetFilterSemantics, ExtractionRetainsMemoryUntilTheLastKey)
+{
+    const Block header{ColumnWithTypeAndName(std::make_shared<DataTypeUInt64>(), "k")};
+    DistinctSetFilter filter(header, {}, {});
+    filter.filter(Chunk({makeNumberColumn<ColumnUInt64>(std::vector<UInt64>{1, 2, 3})}, 3));
+    const auto bytes = filter.getTotalByteCount();
+    ASSERT_GT(bytes, 0);
+    auto keys = std::move(filter).extractKeys();
+    EXPECT_EQ(keys->getTotalByteCount(), bytes);
+    for (size_t i = 0; i < 3; ++i)
+    {
+        const auto columns = keys->next(1, 0);
+        ASSERT_EQ(columns.front()->size(), 1);
+        EXPECT_EQ(keys->getTotalByteCount(), i == 2 ? 0 : bytes);
+    }
+}
+
 TEST(DistinctSetFilterWorkspace, PreparedKeysMatchActualAllocation)
 {
     const auto u8 = std::make_shared<DataTypeUInt8>();
@@ -1065,6 +1092,7 @@ TEST(DistinctSetFilterWorkspace, PreparedKeysMatchActualAllocation)
     const std::vector<DataTypes> key_types{
         {u8}, {u64}, {u8, u16}, {u8, u32}, {u8, u64}, {u64, u64}, {u64, u64, u64},
         {std::make_shared<DataTypeNullable>(u8), u64},
+        {std::make_shared<DataTypeNullable>(u64), u64},
         {std::make_shared<DataTypeFixedString>(3), u64},
         {std::make_shared<DataTypeLowCardinality>(u64), u64},
         {std::make_shared<DataTypeArray>(u64)}};

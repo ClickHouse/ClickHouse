@@ -37,6 +37,7 @@ This is the recommended option if you're a ClickHouse Cloud user. ClickPipes is 
 * Optimized for ClickHouse Cloud, delivering blazing-fast performance
 * Horizontal and vertical scalability for high-throughput workloads
 * Built-in fault tolerance with configurable replicas and automatic retries
+* Can be configured to support [exactly-once semantics](/integrations/clickpipes/kafka/best-practices#delivery-semantics)
 * Deployment and management via ClickHouse Cloud UI, [Open API](/integrations/clickpipes/programmatic-access/openapi), or [Terraform](/integrations/clickpipes/programmatic-access/terraform)
 * Enterprise-grade security with support for cloud-native authorization (IAM) and private connectivity (PrivateLink)
 * Supports a wide range of [data sources](/integrations/clickpipes/kafka/reference), including Confluent Cloud, Amazon MSK, Redpanda Cloud, and Azure Event Hubs
@@ -86,13 +87,13 @@ To get started using the Kafka table engine, see the [reference documentation](/
 
 | Product | Strengths | Weaknesses |
 |---------|-----------|------------|
-| **ClickPipes for Kafka** | • Scalable architecture for high throughput and low latency<br/>• Built-in monitoring and schema management<br/>• Private networking connections (via PrivateLink)<br/>• Supports SSL/TLS authentication and IAM authorization<br/>• Supports programmatic configuration (Terraform, API endpoints) | • Doesn't support pushing data to Kafka<br/>• At-least-once semantics |
+| **ClickPipes for Kafka** | • Scalable architecture for high throughput and low latency<br/>• [Exactly-once semantics](/integrations/clickpipes/kafka/best-practices#delivery-semantics)<br/>• Built-in monitoring and schema management<br/>• Private networking connections (via PrivateLink)<br/>• Supports SSL/TLS authentication and IAM authorization<br/>• Supports programmatic configuration (Terraform, API endpoints) | • Doesn't support pushing data to Kafka |
 | **Kafka Connect Sink** | • Exactly-once semantics<br/>• Allows granular control over data transformation, batching and error handling<br/>• Can be deployed in private networks<br/>• Allows real-time replication from databases not yet supported in ClickPipes via Debezium | • Doesn't support pushing data to Kafka<br/>• Operationally complex to set up and maintain<br/>• Requires Kafka and Kafka Connect expertise |
 | **Kafka table engine** | • Supports [pushing data to Kafka](/integrations/connectors/data-ingestion/kafka/kafka-table-engine#clickhouse-to-kafka)<br/>• Operationally simple to set up | • At-least-once semantics<br/>• Limited horizontal scaling for consumers. Can't be scaled independently from the ClickHouse server<br/>• Limited error handling and debugging options<br/>• Requires Kafka expertise |
 
 ### Other options {#other-options}
 
-* [**Confluent**](/integrations/connectors/data-ingestion/kafka/confluent/index) - On Confluent Cloud, use the [fully managed ClickHouse Connector Sink](/integrations/connectors/data-ingestion/kafka/confluent/confluent-cloud) or upload it yourself as a [Custom Connector](/integrations/connectors/data-ingestion/kafka/confluent/custom-connector). You can also use the [HTTP Sink Connector for Confluent Platform](/integrations/connectors/data-ingestion/kafka/confluent/kafka-connect-http) that integrates Apache Kafka with an API via HTTP or HTTPS.
+* [**Confluent**](/integrations/connectors/data-ingestion/kafka/confluent/index) - On Confluent Cloud, use the [fully managed ClickHouse Connector Sink](/integrations/connectors/data-ingestion/kafka/confluent/confluent-cloud) or upload it yourself as a [Custom Connector](/integrations/connectors/data-ingestion/kafka/confluent/custom-connector). You can also use the [HTTP Sink Connector](/integrations/connectors/data-ingestion/kafka/confluent/kafka-connect-http), self-managed or fully managed on Confluent Cloud, to integrate Apache Kafka with an API via HTTP or HTTPS.
 
 * [**Vector**](/integrations/connectors/data-ingestion/kafka/kafka-vector) - Vector is a vendor-agnostic data pipeline. With the ability to read from Kafka, and send events to ClickHouse, this represents a robust integration option.
 

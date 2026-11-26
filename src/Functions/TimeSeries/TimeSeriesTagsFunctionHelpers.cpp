@@ -112,7 +112,7 @@ namespace
                 for (size_t i = 0; i != num_rows; ++i)
                 {
                     auto & res = out_tags_vector[i];
-                    auto start_offset = offsets[i - 1];
+                    auto start_offset = offsets[static_cast<ssize_t>(i) - 1];
                     auto end_offset = offsets[i];
                     res.reserve(res.size() + (end_offset - start_offset) + num_extra_tags);
                     for (size_t j = start_offset; j != end_offset; ++j)

@@ -12,12 +12,12 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # event starts at zero. See 05317_hash_table_stats_cache_captured_settings for the other settings.
 
 $CLICKHOUSE_LOCAL \
-    --enable_analyzer=1 \
     --optimize_aggregation_in_order=0 \
     --optimize_group_by_function_keys=0 \
     --collect_hash_table_stats_during_aggregation=1 \
     --max_size_to_preallocate_for_aggregation=1000000000000 \
     --max_threads=1 \
+    --enable_adaptive_aggregator=0 \
     --max_bytes_before_external_group_by=0 \
     --max_bytes_ratio_before_external_group_by=0 \
     -q "

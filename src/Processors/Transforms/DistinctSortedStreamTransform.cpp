@@ -1,9 +1,12 @@
 #include <Processors/Transforms/DistinctSortedStreamTransform.h>
 
+#include <Columns/ColumnConst.h>
+#include <Common/typeid_cast.h>
 #include <Core/SortCursor.h>
+#include <Processors/Transforms/DistinctSetFilter.h>
+#include <Columns/replaceNegativeZeros.h>
 #include <Common/FailPoint.h>
 #include <Common/logger_useful.h>
-
 
 namespace DB
 {
@@ -23,6 +26,17 @@ namespace ErrorCodes
 /// Poll cancellation every this many rows while skipping plain (no-hash-table) ranges,
 /// so KILL QUERY interrupts long equal-key runs instead of waiting for the whole chunk.
 constexpr size_t poll_interval = 4096;
+
+namespace
+{
+/// The column and row holding the value at `row`: a constant holds it once, in its nested column.
+std::pair<const IColumn *, size_t> getValueSource(const IColumn & column, size_t row)
+{
+    if (const auto * const_column = typeid_cast<const ColumnConst *>(&column))
+        return {&const_column->getDataColumn(), 0};
+    return {&column, row};
+}
+}
 
 DistinctSortedStreamTransform::DistinctSortedStreamTransform(
     SharedHeader header_,
@@ -56,6 +70,8 @@ DistinctSortedStreamTransform::DistinctSortedStreamTransform(
             other_columns_pos.emplace_back(pos);
     }
 
+    materialized_columns_pos = calculateDistinctKeyColumnsPositions(*header_, {});
+
     /// reserve space in auxiliary column vectors for processing
     sorted_columns.reserve(sorted_columns_pos.size());
     other_columns.reserve(other_columns_pos.size());
@@ -71,6 +87,10 @@ void DistinctSortedStreamTransform::initChunkProcessing(const Columns & input_co
     other_columns.clear();
     for (size_t pos : other_columns_pos)
         other_columns.emplace_back(input_columns[pos].get());
+
+    /// Hash tables compare floating point keys bitwise, but `-0.` is equal to `0.`.
+    other_columns_holder.clear();
+    replaceNegativeZeros(other_columns, other_columns_holder);
 
     if (!other_columns.empty() && data.type == ClearableSetVariants::Type::EMPTY)
         data.init(ClearableSetVariants::chooseMethod(other_columns, other_columns_sizes));
@@ -91,7 +111,9 @@ template <typename Method>
 size_t DistinctSortedStreamTransform::buildFilterForRange(
     Method & method, IColumnFilter & filter, const size_t range_begin, const size_t range_end)
 {
-    typename Method::State state(other_columns, other_columns_sizes, nullptr);
+    /// The state is built per equal-range of the sorted prefix but the columns span the whole chunk,
+    /// so the range it will be asked about has to be passed explicitly.
+    ColumnsHashing::SubRangeState<typename Method::State> state(other_columns, other_columns_sizes, nullptr, {range_begin, range_end});
 
     size_t count = 0;
     for (size_t i = range_begin; i < range_end; ++i)
@@ -143,8 +165,9 @@ void DistinctSortedStreamTransform::saveLatestKey(const size_t row_pos)
     prev_chunk_latest_key.clear();
     for (const auto & col : sorted_columns)
     {
-        prev_chunk_latest_key.emplace_back(col->cloneEmpty());
-        prev_chunk_latest_key.back()->insertFrom(*col, row_pos);
+        const auto [source, source_row] = getValueSource(*col, row_pos);
+        prev_chunk_latest_key.emplace_back(source->cloneEmpty());
+        prev_chunk_latest_key.back()->insertFrom(*source, source_row);
     }
 }
 
@@ -163,7 +186,8 @@ bool DistinctSortedStreamTransform::isLatestKeyFromPrevChunk(const size_t row_po
                 i,
                 sorted_column.getFamilyName());
 
-        const int res = prev_chunk_latest_key[i]->compareAt(0, row_pos, sorted_column, sorted_columns_descr[i].nulls_direction);
+        const auto [rhs, rhs_row] = getValueSource(sorted_column, row_pos);
+        const int res = prev_chunk_latest_key[i]->compareAt(0, rhs_row, *rhs, sorted_columns_descr[i].nulls_direction);
         if (res != 0)
             return false;
     }
@@ -217,7 +241,7 @@ void DistinctSortedStreamTransform::transform(Chunk & chunk)
         return;
 
     removeSpecialColumnRepresentations(chunk);
-    convertToFullIfConst(chunk);
+    materializeChunk(chunk, materialized_columns_pos);
 
     Columns input_columns = chunk.detachColumns();
     /// split input columns into sorted and other("non-sorted") columns
