@@ -7,42 +7,42 @@
       "versionId": "626f994624b93eb9edf478df58264b0784feb8e8423734cc7c78955f5ed4b4f7",
       "translations": {
         "zh": {
-          "updatedAt": "2026-11-26T19:08:16.867Z",
+          "updatedAt": "2026-11-26T19:10:36.857Z",
           "fileName": "docs.json",
           "postProcessHash": "02e88710ac181943c411660ab7c9bc719f666200ea855968e19a68f68d34c39e"
         },
         "es": {
-          "updatedAt": "2026-11-26T19:08:16.486Z",
+          "updatedAt": "2026-11-26T19:10:36.453Z",
           "fileName": "docs.json",
           "postProcessHash": "02e88710ac181943c411660ab7c9bc719f666200ea855968e19a68f68d34c39e"
         },
         "ja": {
-          "updatedAt": "2026-11-26T19:08:16.563Z",
+          "updatedAt": "2026-11-26T19:10:36.534Z",
           "fileName": "docs.json",
           "postProcessHash": "02e88710ac181943c411660ab7c9bc719f666200ea855968e19a68f68d34c39e"
         },
         "fr": {
-          "updatedAt": "2026-11-26T19:08:17.017Z",
+          "updatedAt": "2026-11-26T19:10:37.011Z",
           "fileName": "docs.json",
           "postProcessHash": "02e88710ac181943c411660ab7c9bc719f666200ea855968e19a68f68d34c39e"
         },
         "ru": {
-          "updatedAt": "2026-11-26T19:08:16.793Z",
+          "updatedAt": "2026-11-26T19:10:36.774Z",
           "fileName": "docs.json",
           "postProcessHash": "02e88710ac181943c411660ab7c9bc719f666200ea855968e19a68f68d34c39e"
         },
         "pt-BR": {
-          "updatedAt": "2026-11-26T19:08:16.718Z",
+          "updatedAt": "2026-11-26T19:10:36.696Z",
           "fileName": "docs.json",
           "postProcessHash": "02e88710ac181943c411660ab7c9bc719f666200ea855968e19a68f68d34c39e"
         },
         "ar": {
-          "updatedAt": "2026-11-26T19:08:16.940Z",
+          "updatedAt": "2026-11-26T19:10:36.935Z",
           "fileName": "docs.json",
           "postProcessHash": "02e88710ac181943c411660ab7c9bc719f666200ea855968e19a68f68d34c39e"
         },
         "ko": {
-          "updatedAt": "2026-11-26T19:08:16.643Z",
+          "updatedAt": "2026-11-26T19:10:36.616Z",
           "fileName": "docs.json",
           "postProcessHash": "02e88710ac181943c411660ab7c9bc719f666200ea855968e19a68f68d34c39e"
         }
@@ -152300,47 +152300,47 @@
     },
     {
       "fileId": "6823ea76e3f814e87a53f731b0225431e907554dc2acdb542d2710915f4b2cd9",
-      "versionId": "3cbaff967089468f197ecac86b1e107af7757371a5020d50f39cda2e360447d7",
+      "versionId": "6649241a13d084c8a000d22be0f0f4182626a5ea9e142a0e09f8f4f81c66a3f9",
       "translations": {
-        "ar": {
-          "updatedAt": "2026-11-26T08:52:16.737Z",
-          "fileName": "ar/guides/use-cases/ai-ml/loom.mdx",
-          "postProcessHash": "0e45e51d1c36e081caa0f4107b2569da13eb9d0a22ba739be6fa2770a5c52c6c"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-11-26T08:52:16.737Z",
-          "fileName": "pt-BR/guides/use-cases/ai-ml/loom.mdx",
-          "postProcessHash": "ad4d27a9e5f7debb89114477bb5826d6dd266880b497569363098b6891cfcab7"
-        },
         "es": {
-          "updatedAt": "2026-11-26T08:52:16.738Z",
+          "updatedAt": "2026-11-26T19:10:38.924Z",
           "fileName": "es/guides/use-cases/ai-ml/loom.mdx",
-          "postProcessHash": "e22a53e7bdc5868c9cdcbf829341d7a33659948636f850bdaa04dd87eb46a6b5"
-        },
-        "ru": {
-          "updatedAt": "2026-11-26T08:52:16.738Z",
-          "fileName": "ru/guides/use-cases/ai-ml/loom.mdx",
-          "postProcessHash": "5ad9516ca662d8bf45e3afe8a8fd97ff4d6b8d1bab22105048907f79fc5320dc"
+          "postProcessHash": "a11438f620d7127a8cdfe6b0206db4a9b18a2c12e20ab8f2f2a0acb26c3ffa26"
         },
         "ko": {
-          "updatedAt": "2026-11-26T08:52:16.739Z",
+          "updatedAt": "2026-11-26T19:10:38.925Z",
           "fileName": "ko/guides/use-cases/ai-ml/loom.mdx",
-          "postProcessHash": "b82d1033d703be4c04fa3e9d575611c96d14c86c7b40fd103b5f74c3bd632137"
+          "postProcessHash": "8cc85a764e059a4235361a81ab577d1eadc2a432e4fbe81d63309028b0d8e271"
         },
         "ja": {
-          "updatedAt": "2026-11-26T08:52:16.739Z",
+          "updatedAt": "2026-11-26T19:10:38.925Z",
           "fileName": "ja/guides/use-cases/ai-ml/loom.mdx",
-          "postProcessHash": "6f14de00bdce886153f96a09f99db748ab6f49b7a98c17ed6fbec4654efb7639"
+          "postProcessHash": "80c85063e7859960b34ba73edc8ba49431bb58178ce5e196e00dda55e70607ad"
         },
         "fr": {
-          "updatedAt": "2026-11-26T08:52:16.740Z",
+          "updatedAt": "2026-11-26T19:10:38.926Z",
           "fileName": "fr/guides/use-cases/ai-ml/loom.mdx",
-          "postProcessHash": "a69e32ca192ac7440bf6e12b5583ab8ed551459640cf3ab0087e881b63f55bc2"
+          "postProcessHash": "7ab03b10594d4f1e9a63c749b57b6b555315659d6dfe28590e9cd1590dc92f64"
+        },
+        "ru": {
+          "updatedAt": "2026-11-26T19:10:38.926Z",
+          "fileName": "ru/guides/use-cases/ai-ml/loom.mdx",
+          "postProcessHash": "f9f06c361c64156ad3ae114812380e50d81ad6a302f136eeac2f02a89613fbcb"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-11-26T19:10:38.926Z",
+          "fileName": "pt-BR/guides/use-cases/ai-ml/loom.mdx",
+          "postProcessHash": "7cad6b02c61421c856f32f9b6d01565ee96e1a974aeb4d4ad9a6830ef9b28715"
+        },
+        "ar": {
+          "updatedAt": "2026-11-26T19:10:38.927Z",
+          "fileName": "ar/guides/use-cases/ai-ml/loom.mdx",
+          "postProcessHash": "a452c9f9ed06592d1460409eb944cb6fc79b1fbe3e0a3e4fe2160979888a7344"
         },
         "zh": {
-          "updatedAt": "2026-11-26T08:52:16.740Z",
+          "updatedAt": "2026-11-26T19:10:38.927Z",
           "fileName": "zh/guides/use-cases/ai-ml/loom.mdx",
-          "postProcessHash": "786d27e94cf7c2b2035e0d4103446c0ee2e842f160941e8304dd8ebdff370836"
+          "postProcessHash": "12cf9fedf5ac58ce176c16ab0945777d9b425a921c30641e1a7eb4d53e42d4b9"
         }
       },
       "fileName": "guides/use-cases/ai-ml/loom.mdx"
