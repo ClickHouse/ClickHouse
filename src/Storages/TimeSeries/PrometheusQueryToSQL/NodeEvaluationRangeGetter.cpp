@@ -1,5 +1,6 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/NodeEvaluationRangeGetter.h>
 
+#include <Common/checkStackSize.h>
 #include <Core/DecimalFunctions.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <Storages/TimeSeries/PrometheusQueryEvaluationSettings.h>
@@ -103,6 +104,8 @@ NodeEvaluationRangeGetter::NodeEvaluationRangeGetter(std::shared_ptr<const Prome
 
 void NodeEvaluationRangeGetter::visitNode(const Node * node, const NodeEvaluationRange & range)
 {
+    checkStackSize();
+
     map[node] = range;
     visitChildren(node, range);
 }

@@ -164,9 +164,10 @@ function_
     | END LEFT_PAREN RIGHT_PAREN
     ;
 
+// A literal is a `vectorOperation` too, so a separate `literal` alternative would give a literal argument
+// two parses, and the parser would resolve that with full-context prediction on every such argument.
 parameter
-    : literal
-    | vectorOperation
+    : vectorOperation
     ;
 
 parameterList
@@ -175,10 +176,10 @@ parameterList
 
 // Aggregations
 
+// `by` and `without` are factored out so that no two alternatives start with the same `parameterList`:
+// to choose between such alternatives the parser would look ahead through the whole list.
 aggregation
-    : AGGREGATION_OPERATOR parameterList
-    | AGGREGATION_OPERATOR (by | without) parameterList
-    | AGGREGATION_OPERATOR parameterList ( by | without)
+    : AGGREGATION_OPERATOR ((by | without) parameterList | parameterList (by | without)?)
     ;
 
 by
@@ -203,6 +204,9 @@ ignoring
     : IGNORING labelNameList
     ;
 
+// `(` after `group_left` or `group_right` can also start the right operand, so `labelNameList?` is ambiguous here.
+// As in Prometheus, `(` always starts the label list: `ParserATNSimulatorCheckingStackSize::adaptivePredict` chooses it
+// without looking ahead.
 groupLeft
     : GROUP_LEFT labelNameList?
     ;
@@ -226,7 +230,23 @@ labelNameList
 
 metricName
     : METRIC_NAME
-    | keyword
+    | metricNameKeyword
+    ;
+
+// Unlike a label name, a metric name can't be `bool`, `on`, `ignoring`, `group_left`, `group_right` or `atan2`,
+// as in Prometheus. Otherwise `1 == bool -abs(up)` would have two parses, `bool` being a modifier or a metric,
+// and to choose between them the parser would look ahead through the whole operand, however deeply it is nested.
+metricNameKeyword
+    : AND
+    | OR
+    | UNLESS
+    | BY
+    | WITHOUT
+    | OFFSET
+    | START
+    | END
+    | AGGREGATION_OPERATOR
+    | FUNCTION
     ;
 
 keyword

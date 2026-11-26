@@ -88,9 +88,12 @@ TEST(PromQLParser, ReservedKeywordMetricNames)
          {"and", "or", "unless", "atan2", "by", "without", "on", "ignoring", "group_left", "group_right", "offset", "bool"})
     {
         expectRoundTrip(fmt::format(R"({{"{}"}})", keyword), fmt::format(R"({{"{}"}})", keyword));
-        expectRoundTrip(fmt::format(R"({}{{job="x"}})", keyword), fmt::format(R"({{"{}",job="x"}})", keyword));
         expectRoundTrip(fmt::format(R"(up * {{"{}"}})", keyword), fmt::format(R"(up * {{"{}"}})", keyword));
     }
+
+    /// As in Prometheus, only these keywords can also be written as a bare metric name.
+    for (const auto * const keyword : {"and", "or", "unless", "by", "without", "offset"})
+        expectRoundTrip(fmt::format(R"({}{{job="x"}})", keyword), fmt::format(R"({{"{}",job="x"}})", keyword));
 }
 
 
@@ -883,7 +886,7 @@ PrometheusQueryTree(INSTANT_VECTOR):
 )");
 
     EXPECT_EQ(parse("sum without(job) (demo_memory_usage_bytes) / on(instance, type) group_left demo_memory_usage_bytes"), R"(
-sum without (job) (demo_memory_usage_bytes) / on(instance, type) group_left demo_memory_usage_bytes
+sum without (job) (demo_memory_usage_bytes) / on(instance, type) group_left() demo_memory_usage_bytes
 
 PrometheusQueryTree(INSTANT_VECTOR):
     BinaryOperator(/)
@@ -913,7 +916,7 @@ PrometheusQueryTree(INSTANT_VECTOR):
 )");
 
     EXPECT_EQ(parse("demo_memory_usage_bytes / on(instance, job) group_left demo_num_cpus"), R"(
-demo_memory_usage_bytes / on(instance, job) group_left demo_num_cpus
+demo_memory_usage_bytes / on(instance, job) group_left() demo_num_cpus
 
 PrometheusQueryTree(INSTANT_VECTOR):
     BinaryOperator(/)
@@ -1783,6 +1786,37 @@ TEST(PromQLParser, TrailingCommasInGroupingLabelLists)
          })
     {
         EXPECT_ANY_THROW(PrometheusQueryTree{query}) << query;
+    }
+}
+
+
+TEST(PromQLParser, ParenthesisAfterGroupModifier)
+{
+    /// As in Prometheus, `(` after `group_left` or `group_right` always starts the label list,
+    /// so `(b)` is not the right operand here, and the operand is missing at the end of the query.
+    for (const std::string_view query : {"a * on(x) group_left (b)", "a * on(x) group_right (b)"})
+    {
+        PrometheusQueryTree query_tree;
+        String error_message;
+        size_t error_pos = String::npos;
+
+        EXPECT_FALSE(query_tree.tryParse(query, 3, &error_message, &error_pos)) << query;
+        EXPECT_EQ(error_pos, query.size()) << query << ": " << error_message;
+    }
+}
+
+
+TEST(PromQLParser, EmptyGroupLabelListRoundTrip)
+{
+    for (const std::string_view modifier : {"group_left", "group_right"})
+    {
+        expectRoundTrip(fmt::format("a * on(x) {} b", modifier), fmt::format("a * on(x) {}() b", modifier));
+        expectRoundTrip(fmt::format("a * on(x) {} -b", modifier), fmt::format("a * on(x) {}() (-b)", modifier));
+        for (const std::string_view operand : {"b", "(b + c)", "(b * c)"})
+        {
+            const auto query = fmt::format("a * on(x) {}() {}", modifier, operand);
+            expectRoundTrip(query, query);
+        }
     }
 }
 

@@ -1,5 +1,6 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/Converter.h>
 
+#include <Common/checkStackSize.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SQLQueryPiece.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyAggregationOperator.h>
@@ -24,6 +25,10 @@ namespace
 {
     SQLQueryPiece visitNode(const Node * node, ConverterContext & context)
     {
+        /// The checks in the parser don't make a tree safe to convert:
+        /// a chain of unary operators takes more stack per operator here than in the parser.
+        checkStackSize();
+
         switch (node->node_type)
         {
             case NodeType::Scalar:

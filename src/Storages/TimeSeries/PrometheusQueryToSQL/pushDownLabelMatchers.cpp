@@ -1,5 +1,6 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/pushDownLabelMatchers.h>
 
+#include <Common/checkStackSize.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyAggregationOperatorCountValues.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyAggregationOperatorQuantile.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyBinaryOperatorAnd.h>
@@ -122,6 +123,8 @@ namespace
     /// Whether the series of the node come from one metric, so they stay different after the metric name is dropped.
     bool hasSingleMetricName(const Node * node)
     {
+        checkStackSize();
+
         if (node->node_type == NodeType::InstantSelector)
         {
             const auto & matchers = static_cast<const PrometheusQueryTree::InstantSelector *>(node)->matchers;
@@ -169,6 +172,8 @@ namespace
     /// Returns the matchers which every series of the node's result satisfies, except the ones on the metric name.
     MatcherList getCommonMatchers(const Node * node)
     {
+        checkStackSize();
+
         if (node->node_type == NodeType::InstantSelector)
         {
             MatcherList matchers = static_cast<const PrometheusQueryTree::InstantSelector *>(node)->matchers;
@@ -202,6 +207,8 @@ namespace
     /// Adds the matchers to the selectors of the node, so it returns only the result series which satisfy them.
     void addMatchers(const Node * node, const MatcherList & matchers)
     {
+        checkStackSize();
+
         if (matchers.empty())
             return;
 
@@ -250,6 +257,8 @@ namespace
 
     size_t countBinaryOperators(const Node * node)
     {
+        checkStackSize();
+
         size_t count = (node->node_type == NodeType::BinaryOperator) ? 1 : 0;
         for (const auto * child : node->children)
             count += countBinaryOperators(child);
@@ -258,6 +267,8 @@ namespace
 
     void pushDownAcrossBinaryOperators(const Node * node)
     {
+        checkStackSize();
+
         for (const auto * child : node->children)
             pushDownAcrossBinaryOperators(child);
 
