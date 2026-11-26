@@ -1,4 +1,5 @@
-<test>
+<test iceberg="0">
+    <!-- Not on Iceberg tables: they do not support FINAL. -->
     <create_query>CREATE TABLE rf_limit_zero (p UInt32, k UInt32, v UInt64) ENGINE = ReplacingMergeTree PARTITION BY p ORDER BY (p, k)</create_query>
 
     <fill_query>SYSTEM STOP MERGES rf_limit_zero</fill_query>
