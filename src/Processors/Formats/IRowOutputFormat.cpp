@@ -107,7 +107,7 @@ private:
             cacheDefault(serialize, slot, settings);
 
         const auto & bytes = defaults[slot].bytes;
-        /// `memcpySmall` instead of `write`: a `memcpy` call costs more than the few bytes of a default value. A closed buffer goes to `write`.
+        /// A `memcpy` call costs more than these few bytes; a closed buffer still goes to `write`.
         if (!ostr.isFinalized() && !ostr.isCanceled() && bytes.size() <= MAX_INLINE_WRITE_SIZE && bytes.size() <= ostr.available())
         {
             memcpySmall(ostr.position(), bytes.data(), bytes.size());
