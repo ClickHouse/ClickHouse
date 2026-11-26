@@ -5,6 +5,7 @@
 
 # An ordered queue with hive partitioning keeps the last processed file of every partition in a Keeper node.
 # `date=2025-01-01_/city=x` and `date=2025-01-01/_city=x` must not share it, also when it was written by an older version.
+# Older versions read only the shared old node `date=2025-01-01___city=x`, so it must still hold the greatest processed file.
 
 set -e
 

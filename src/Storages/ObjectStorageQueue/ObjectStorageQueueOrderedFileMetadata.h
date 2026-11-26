@@ -121,7 +121,7 @@ private:
     /// `zk_path/buckets/<N>/processed`.  Stores NodeMetadata and is used for
     /// global version-pinning and for writes via doPrepareProcessedRequests.
     const std::string processed_bucket_path;
-    /// HIVE mode: the partition node older versions used, if its name changed. Only read, never written.
+    /// HIVE mode: the partition node older versions used, if its name changed.
     const std::optional<std::string> old_processed_node_path;
 
     std::pair<bool, FileStatus::State> setProcessingImpl() override;

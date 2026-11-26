@@ -77,6 +77,19 @@ namespace
         return node_name;
     }
 
+    /// Whether some kept hive part may have this node name.
+    bool isKeptHivePartNodeName(std::string_view node_name)
+    {
+        for (size_t begin = node_name.find('_'); begin != std::string_view::npos; begin = node_name.find('_', begin))
+        {
+            const size_t end = std::min(node_name.find_first_not_of('_', begin), node_name.size());
+            if (end - begin > 1 && (end - begin) % 2 == 1)
+                return false;
+            begin = end;
+        }
+        return true;
+    }
+
     /// Utility function to extract partition key from file path
     std::string getPartitionKey(
         const std::string & file_path,
@@ -1034,26 +1047,31 @@ void ObjectStorageQueueOrderedFileMetadata::preparePartitionProcessedMap(Partiti
     /// processed_node_path already contains the partition suffix (= processed_bucket_path / partition_key).
     const auto & partition_processed_path = processed_node_path;
 
-    if (auto it = last_processed_file_per_partition.find(partition_processed_path);
-        it != last_processed_file_per_partition.end())
+    auto add_node = [&](const std::string & node_path, bool keep_greater_stored_path)
     {
+        auto it = last_processed_file_per_partition.find(node_path);
+        if (it == last_processed_file_per_partition.end())
+        {
+            auto zk_retry = ObjectStorageQueueMetadata::getKeeperRetriesControl(log);
+            zk_retry.retryLoop([&]
+            {
+                auto zookeeper = ObjectStorageQueueMetadata::getZooKeeper(log, zookeeper_name);
+                std::string stored_path;
+                bool processed_path_exists
+                    = keep_greater_stored_path ? zookeeper->tryGet(node_path, stored_path) : zookeeper->exists(node_path);
+                it = last_processed_file_per_partition.emplace(
+                    node_path, PartitionLastProcessedFileInfo({processed_path_exists, std::move(stored_path)})).first;
+            });
+        }
         auto & last_processed_path = it->second.file_path;
         if (last_processed_path < node_metadata.file_path)
             last_processed_path = node_metadata.file_path;
-    }
-    else
-    {
-        auto zk_retry = ObjectStorageQueueMetadata::getKeeperRetriesControl(log);
-        zk_retry.retryLoop([&]
-        {
-            bool processed_path_exists = ObjectStorageQueueMetadata::getZooKeeper(log, zookeeper_name)->exists(partition_processed_path);
-            last_processed_file_per_partition.emplace(
-                partition_processed_path,
-                PartitionLastProcessedFileInfo({
-                    processed_path_exists,
-                    /* last_processed_path */node_metadata.file_path}));
-        });
-    }
+    };
+
+    add_node(partition_processed_path, /* keep_greater_stored_path */false);
+    /// Older versions read only the old node: it keeps the greatest file of the partitions sharing it, unless a kept part may own it.
+    if (old_processed_node_path && !isKeptHivePartNodeName(getHivePart(path)))
+        add_node(*old_processed_node_path, /* keep_greater_stored_path */true);
 }
 
 void ObjectStorageQueueOrderedFileMetadata::migrateToBuckets(
