@@ -215,7 +215,9 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
     impl = wrapAsyncPrefetch(std::move(impl)); // Stage 5
     impl = wrapDecryption(std::move(impl));    // Stage 6 (encryption)
 
-    if (initial_read_bounds)
+    /// Keep a filesystem cache's file segments of a range read within it; see `wrapDecryption`. Without such a cache
+    /// this bound has no reader to act on it, and leaving it unset keeps a range read identical to an unbounded one.
+    if (initial_read_bounds && !filesystem_caches.empty())
         impl->setReadBounds(initial_read_bounds->first, initial_read_bounds->second);
 
     return impl;
@@ -839,13 +841,19 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::wrapDecryption(std::unique
 #if USE_SSL
     /// Bound the source before reading the headers. Every encryption layer adds a header in front of the data it wraps.
     size_t layers = std::ranges::count_if(decryption_stages, [](const auto & dec) { return dec.key_finder != nullptr; });
-    if (layers && initial_read_bounds)
+    /// Bounding the header reads to the headers keeps a filesystem cache below from creating a segment for the header
+    /// read that spans the range (it aligns segments outward to its boundary). Without such a cache the bound would
+    /// only change which bytes a request covers, not the caching, and a view's reads of one file share no stream: a
+    /// per-read header bound would make each read start at the file's beginning. So split the header read off only when
+    /// a filesystem cache is below; without one, leave the header read as the plain case does.
+    const bool cache_below = !filesystem_caches.empty();
+    if (layers && initial_read_bounds && cache_below)
     {
         const size_t headers_size = layers * FileEncryption::Header::kSize;
         impl->setReadUntilPosition(headers_size);
         impl->setReadBounds(0, headers_size);
     }
-    else if (layers && initial_read_until_position)
+    else if (layers && !initial_read_bounds && initial_read_until_position)
     {
         impl->setReadUntilPosition(*initial_read_until_position + layers * FileEncryption::Header::kSize);
     }
