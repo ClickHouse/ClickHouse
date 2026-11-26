@@ -9,18 +9,20 @@
 namespace DB
 {
 
-#if defined(__AVX2__)
-using UInt32x8 = UInt32 __attribute__((vector_size(32)));
-using UInt8x8 = UInt8 __attribute__((vector_size(8)));
-
-/// Returns `source[control[i]]` in lane `i`. Clang lowers this loop to a single `vpermd`.
-ALWAYS_INLINE inline UInt32x8 permuteDwords(UInt32x8 source, UInt32x8 control)
+/// Returns `source[control[i]]` in lane `i`; every index must be less than the number of lanes. Clang lowers this loop to one
+/// `vpermd` for the dwords of a 32-byte vector (AVX2) and to one `pshufb` (SSSE3) or `tbl` (NEON) for the bytes of a 16-byte one.
+template <typename Vector>
+ALWAYS_INLINE inline Vector permute(Vector source, Vector control)
 {
-    UInt32x8 res{};
-    for (size_t i = 0; i < 8; ++i)
+    Vector res{};
+    for (size_t i = 0; i < sizeof(Vector) / sizeof(source[0]); ++i)
         res[i] = source[control[i]];
     return res;
 }
+
+#if defined(__AVX2__)
+using UInt32x8 = UInt32 __attribute__((vector_size(32)));
+using UInt8x8 = UInt8 __attribute__((vector_size(8)));
 
 /// 4 and 8-byte elements are permuted as dwords in a 32-byte vector (`vpermd`), which moves twice as many rows per lookup.
 /// It needs AVX2: without it the 32-byte permute is split or scalarized and is slower than two 16-byte shuffles.

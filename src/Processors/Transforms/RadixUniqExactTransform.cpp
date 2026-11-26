@@ -338,17 +338,21 @@ constexpr size_t DUPLICATES_BLOCK_BYTES = 16; /// SSE2, NEON
 /// The size of the cache of the recent keys (see `routeValues`): a few frequent keys fit, and it stays in L1.
 constexpr size_t RECENT_KEYS_BITS = 6;
 
-#if defined(__AVX2__)
+#if defined(__SSSE3__) || (defined(__aarch64__) && defined(__ARM_NEON))
 /// Appends to `keys` the values (zero-extended to `Key`) of the rows from `row` (> 0) that differ from their previous rows,
-/// four vectors at a time, and advances `row` past them. Stores whole vectors, so `keys` needs room for all the rows.
+/// 128 bytes of keys at a time, and advances `row` past them. Stores whole vectors, so `keys` needs room for all the rows.
 template <typename T, typename Key>
 ALWAYS_INLINE size_t appendDistinctFromPrevious(const char * bytes, size_t & row, size_t end, Key * keys, size_t num_keys)
 {
     static_assert(sizeof(Key) == 4 || sizeof(Key) == 8);
     static_assert(sizeof(T) <= sizeof(Key));
-    constexpr size_t lanes = 32 / sizeof(Key);
-    static_assert(COMPRESS_DWORDS<sizeof(Key)> && COMPRESS_ROWS<sizeof(Key)> == lanes);
-    constexpr size_t vectors = 4;
+    /// The rows of one permute: 32 bytes of dwords with AVX2, else 16 bytes.
+    constexpr size_t lanes = COMPRESS_ROWS<sizeof(Key)>;
+    constexpr size_t vector_bytes = lanes * sizeof(Key);
+    using Unit = std::conditional_t<COMPRESS_DWORDS<sizeof(Key)>, UInt32, UInt8>;
+    using Units = Unit __attribute__((vector_size(vector_bytes)));
+    using Control = UInt8 __attribute__((vector_size(vector_bytes / sizeof(Unit))));
+    constexpr size_t vectors = 128 / vector_bytes;
     constexpr size_t rows_per_step = vectors * lanes;
     using Values = T __attribute__((ext_vector_type(lanes)));
     using Keys = Key __attribute__((ext_vector_type(lanes)));
@@ -392,10 +396,10 @@ ALWAYS_INLINE size_t appendDistinctFromPrevious(const char * bytes, size_t & row
         {
             Values values;
             memcpy(&values, position + i * sizeof(Values), sizeof(values));
-            UInt8x8 control;
+            Control control;
             memcpy(&control, compress_table<sizeof(Key)>[masks[i]].data(), sizeof(control));
-            const UInt32x8 compacted = permuteDwords(
-                __builtin_bit_cast(UInt32x8, __builtin_convertvector(values, Keys)), __builtin_convertvector(control, UInt32x8));
+            const Units compacted
+                = permute(__builtin_bit_cast(Units, __builtin_convertvector(values, Keys)), __builtin_convertvector(control, Units));
             memcpy(keys + num_keys, &compacted, sizeof(compacted));
             num_keys += std::popcount(masks[i]);
         }
@@ -658,7 +662,7 @@ public:
             }
             else if (skip_duplicates)
             {
-#if defined(__AVX2__)
+#if defined(__SSSE3__) || (defined(__aarch64__) && defined(__ARM_NEON))
                 if constexpr ((std::is_same_v<Key, UInt32> && sizeof(T) <= 4) || (std::is_same_v<Key, UInt64> && sizeof(T) == 8))
                 {
                     size_t row = begin;

@@ -935,7 +935,7 @@ ALWAYS_INLINE size_t compressBlock(UInt64 mask, const T * data_pos, T * res)
             memcpy(&source, data_pos + i, sizeof(source));
             UInt8x8 control_bytes;
             memcpy(&control_bytes, compress_table<ELEMENT_WIDTH>[rows_mask].data(), sizeof(control_bytes));
-            const UInt32x8 compressed = permuteDwords(source, __builtin_convertvector(control_bytes, UInt32x8));
+            const UInt32x8 compressed = permute(source, __builtin_convertvector(control_bytes, UInt32x8));
             memcpy(res + count, &compressed, sizeof(compressed));
             count += std::popcount(rows_mask);
             continue;
