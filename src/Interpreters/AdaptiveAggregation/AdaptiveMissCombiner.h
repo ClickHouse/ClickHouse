@@ -215,8 +215,8 @@ private:
             const UInt32 multiplicity = countsRows() ? unalignedLoad<UInt32>(tail.counter) : 0;
             if (multiplicity > max_rows - rows)
                 return false;
-            adaptive.partitions->rollback(partition, tail.bytes);
-            misses.addReplaced({.key_bytes = tail.key_bytes, .record_bytes = tail.bytes});
+            adaptive.partitions->rollback(partition, tail.record_bytes);
+            misses.addReplaced({.key_bytes = tail.key_bytes, .record_bytes = tail.record_bytes});
             addDescriptor(partition, row, hash, key, multiplicity + rows);
             pending = true;
             return true;

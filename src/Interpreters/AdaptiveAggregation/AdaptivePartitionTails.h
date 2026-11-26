@@ -62,7 +62,7 @@ public:
         Int64 rank = 0;
         /// The size of the record of a written tail and of the key it stores, which its rollback gives back to
         /// the buffer and to the accounting of the staged bytes (see `AdaptiveStagedBytes`).
-        UInt32 bytes = 0;
+        UInt32 record_bytes = 0;
         UInt32 key_bytes = 0;
     };
 
@@ -148,7 +148,7 @@ public:
                 if (layout->multiplicity_offset)
                     tail.counter = layout->multiplicityPosition(record);
             }
-            tail.bytes = static_cast<UInt32>(format.bytes(record));
+            tail.record_bytes = static_cast<UInt32>(format.bytes(record));
             tail.key_bytes = static_cast<UInt32>(format.key(record).second);
             states[partition] = State::written;
         }
