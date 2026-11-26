@@ -129,7 +129,8 @@ SELECT groupArray(k) FROM (SELECT k FROM t_multi_mark_middle WHERE n = tuple(toU
 
 -- The upper bound is not changed, so values above it are still skipped.
 SELECT 'several marks, skipped';
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT k FROM t_multi_mark_middle WHERE n IN ((4, true, 0), (5, false, 0))) WHERE explain LIKE '%Granules: _/_%';
+-- With parallel replicas the plan is drawn inside a frame, so the line is not just indented.
+SELECT extract(explain, 'Granules: \\d+/\\d+') FROM (EXPLAIN indexes = 1 SELECT k FROM t_multi_mark_middle WHERE n IN ((4, true, 0), (5, false, 0))) WHERE explain LIKE '%Granules: _/_%';
 
 DROP TABLE t_bool;
 DROP TABLE t_saf;
