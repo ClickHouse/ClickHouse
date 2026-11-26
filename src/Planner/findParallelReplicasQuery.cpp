@@ -578,7 +578,7 @@ const QueryNode * findQueryForParallelReplicas(const QueryTreeNodePtr & query_tr
     if (stack.back() == query_tree_node.get())
         return nullptr;
 
-    /// Each replica plans every one of these (sub)queries with its own context, the shipped one included (see `Planner`).
+    /// The replicas plan the shipped (sub)query and those below it with their own contexts (see `Planner`).
     for (const auto * node : stack)
         if (!node->getContext()->canUseTaskBasedParallelReplicas())
             return nullptr;
