@@ -11,7 +11,7 @@ namespace DB
 class ParserShowTypeQuery : public IParserBase
 {
 protected:
-    const char * getName() const override { return "SHOW TYPE query"; }
+    [[nodiscard]] const char * getName() const override { return "SHOW TYPE query"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
