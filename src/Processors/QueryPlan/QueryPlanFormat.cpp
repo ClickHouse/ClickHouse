@@ -3,6 +3,7 @@
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnSet.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/HiddenSecret.h>
@@ -209,6 +210,22 @@ namespace QueryPlanFormat
             return std::nullopt;
         }
 
+        /// Whether `IColumn::get` would reach a `Nothing` value in `column`, which has no `Field`.
+        bool hasNothingValue(const IColumn & column)
+        {
+            if (column.isDummy())
+                return !column.empty();
+            if (const auto * nullable = typeid_cast<const ColumnNullable *>(&column))
+            {
+                /// `ColumnNullable::get` reads nothing of a NULL row.
+                const auto & null_map = nullable->getNullMapData();
+                return std::ranges::find(null_map, 0) != null_map.end() && hasNothingValue(nullable->getNestedColumn());
+            }
+            bool found = false;
+            column.forEachSubcolumn([&](const IColumn::WrappedPtr & subcolumn) { found = found || hasNothingValue(*subcolumn); });
+            return found;
+        }
+
         String formatConstant(const ActionsDAG::Node * node)
         {
             /// A masked secret constant must render as `[HIDDEN]`, never as the value held in its
@@ -229,6 +246,9 @@ namespace QueryPlanFormat
 
             /// node->column is a size-0 ColumnConst; read the value from its data column.
             const auto & data_col = node->column->getDataColumnPtr();
+            if (hasNothingValue(*data_col))
+                return node->result_name;
+
             WhichDataType data_type(node->result_type);
 
             if (data_type.isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64())

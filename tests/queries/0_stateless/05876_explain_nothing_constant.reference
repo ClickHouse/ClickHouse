@@ -1,0 +1,20 @@
+Output: (arrayElement([], 1))
+
+ReadFromSystemOne
+Output: [arrayElement([], 1)]
+
+ReadFromSystemOne
+Output: map(\'a\', arrayElement([], 1))
+
+ReadFromSystemOne
+Output: [CAST(NULL, \'Nullable(Tuple(Nothing))\'), (arrayElement([], 1))]
+
+ReadFromSystemOne
+Output: (arrayElement(_CAST([], \'Array(Nothing)\'), 1))
+Output: tuple(NULL), [], [[]]
+
+ReadFromSystemOne
+Output: NULL, [NULL]
+
+ReadFromSystemOne
+1	1
