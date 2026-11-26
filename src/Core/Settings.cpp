@@ -5349,6 +5349,14 @@ Output stack trace of a job creator when job results in exception. Disabled by d
     DECLARE(Bool, allow_ddl, true, R"(
 If it is set to true, then a user is allowed to executed DDL queries.
 )", 0) \
+    DECLARE(Bool, allow_alias_table_engine, false, R"(
+Allows creating tables with the [`Alias`](/reference/engines/table-engines/special/alias) table engine.
+
+While this setting is disabled, it cannot be enabled at the session or query level, so only the server
+administrator can grant it, through the server configuration or a settings profile. Existing `Alias`
+tables keep working regardless of the value of this setting.
+)", 0, \
+        {"26.12", false, false, "New setting to allow creating tables with the `Alias` table engine. While it is disabled, it cannot be enabled at the session or query level, so only the server administrator can grant it through a settings profile."}) \
     DECLARE(Bool, parallel_view_processing, false, R"(
 Enables pushing to attached views concurrently instead of sequentially.
 )", 0) \

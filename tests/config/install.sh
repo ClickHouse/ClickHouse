@@ -449,6 +449,11 @@ ln -sf $SRC_PATH/users.d/insert_keeper_retries.xml $DEST_SERVER_PATH/users.d/
 ln -sf $SRC_PATH/users.d/prefetch_settings.xml $DEST_SERVER_PATH/users.d/
 ln -sf $SRC_PATH/users.d/nonconst_timezone.xml $DEST_SERVER_PATH/users.d/
 ln -sf $SRC_PATH/users.d/allow_introspection_functions.yaml $DEST_SERVER_PATH/users.d/
+# The `allow_alias_table_engine` setting appeared in 26.12; a previous-release server of the upgrade
+# check refuses to start with an unknown setting in a profile.
+if check_clickhouse_version 26.12; then
+    ln -sf $SRC_PATH/users.d/allow_alias_table_engine.yaml $DEST_SERVER_PATH/users.d/
+fi
 ln -sf $SRC_PATH/users.d/replicated_ddl_entry.xml $DEST_SERVER_PATH/users.d/
 # A marker setting for merges and mutations, which take their settings from the background profile.
 ln -sf $SRC_PATH/users.d/background_profile.xml $DEST_SERVER_PATH/users.d/

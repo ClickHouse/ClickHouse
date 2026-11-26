@@ -31,6 +31,7 @@ namespace DB
 
 namespace Setting
 {
+    extern const SettingsBool allow_alias_table_engine;
     extern const SettingsSeconds lock_acquire_timeout;
 }
 
@@ -739,6 +740,16 @@ void registerStorageAlias(StorageFactory & factory)
 
         auto local_context = args.getLocalContext();
 
+        /// While `allow_alias_table_engine` is disabled it cannot be enabled at the session or query level
+        /// (see `SettingsConstraints`), so creating Alias tables is reserved for the users whose
+        /// settings profile enables it. Replays of an accepted definition are not refused.
+        if (isFreshTableDefinition(args.mode, args.query.attach_short_syntax)
+            && !local_context->getSettingsRef()[Setting::allow_alias_table_engine])
+            throw Exception(
+                ErrorCodes::SUPPORT_IS_DISABLED,
+                "Creating tables with the Alias engine is not allowed "
+                "(the setting 'allow_alias_table_engine' can only be enabled by the server administrator in a settings profile)");
+
         String target_database;
         String target_table;
 
@@ -797,8 +808,7 @@ void registerStorageAlias(StorageFactory & factory)
         /// an already accepted definition must stay loadable, because a rejection while loading
         /// metadata fails the whole load rather than the one table. They run after the access check
         /// so that a caller without access to the target cannot learn its engine from the message.
-        bool fresh_user_definition = args.mode == LoadingStrictnessLevel::CREATE
-            || (args.mode == LoadingStrictnessLevel::ATTACH && !args.query.attach_short_syntax);
+        bool fresh_user_definition = isFreshTableDefinition(args.mode, args.query.attach_short_syntax);
         if (fresh_user_definition)
         {
             StorageID target_id(target_database, target_table);
@@ -827,6 +837,8 @@ void registerStorageAlias(StorageFactory & factory)
 The `Alias` engine creates a proxy to another table. All read and write operations are forwarded to the target table, while the alias itself stores no data and only maintains a reference to the target table.
 
 ## Creating a Table {#creating-a-table}
+
+Creating a table with the `Alias` engine requires the [`allow_alias_table_engine`](/reference/settings/session-settings#allow_alias_table_engine) setting. While that setting is disabled, it cannot be enabled at the session or query level, so only the server administrator can grant it, through the server configuration or a settings profile. Existing `Alias` tables keep working regardless of the value of the setting.
 
 ```sql
 CREATE TABLE [db_name.]alias_name

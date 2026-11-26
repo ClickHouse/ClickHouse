@@ -2,6 +2,7 @@
     <users>
         <default>
             <show_named_collections_secrets>1</show_named_collections_secrets>
+            <allow_alias_table_engine>1</allow_alias_table_engine>
         </default>
     </users>
 </clickhouse>

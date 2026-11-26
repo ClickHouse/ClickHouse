@@ -24,6 +24,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool allow_alias_table_engine;
     extern const SettingsBool allow_ddl;
     extern const SettingsBool dynamic_disk_allow_from_env;
     extern const SettingsBool dynamic_disk_allow_include;
@@ -912,6 +913,13 @@ SettingsConstraints::Checker SettingsConstraints::getChecker(const Settings & cu
     }
     if (!current_settings[Setting::allow_ddl] && resolved_name == "allow_ddl")
         return Checker(PreformattedMessage::create("Cannot modify 'allow_ddl' setting when DDL queries are prohibited for the user"),
+                       ErrorCodes::QUERY_IS_PROHIBITED);
+
+    /// While `allow_alias_table_engine` is disabled it cannot be re-enabled at the session or query level,
+    /// so only a settings profile controlled by the server administrator can grant it (profiles are
+    /// applied at login without these checks).
+    if (!current_settings[Setting::allow_alias_table_engine] && resolved_name == "allow_alias_table_engine")
+        return Checker(PreformattedMessage::create("Cannot modify 'allow_alias_table_engine' setting when creating tables with the Alias engine is prohibited for the user"),
                        ErrorCodes::QUERY_IS_PROHIBITED);
 
     /** The `readonly` value is understood as follows:

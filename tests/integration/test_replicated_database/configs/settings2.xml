@@ -6,6 +6,7 @@
             <allow_suspicious_codecs>0</allow_suspicious_codecs>
             <database_replicated_allow_replicated_engine_arguments>3</database_replicated_allow_replicated_engine_arguments>
             <database_replicated_allow_explicit_uuid>3</database_replicated_allow_explicit_uuid>
+            <allow_alias_table_engine>1</allow_alias_table_engine>
 
             <throw_on_unsupported_query_inside_transaction>0</throw_on_unsupported_query_inside_transaction>
         </default>
