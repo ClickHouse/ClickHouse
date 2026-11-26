@@ -33,7 +33,11 @@ $CLICKHOUSE_LOCAL --path "$workdir" --send_logs_level=error -m -q "
     BACKUP DATABASE repeated TO File('$workdir/backups/repeated') FORMAT Null;
     RESTORE DATABASE repeated AS restored_repeated FROM File('$workdir/backups/repeated') FORMAT Null;
     SELECT name, position(engine_full, 'disk') > 0 FROM system.databases
-        WHERE name IN ('biglake', 'restored', 'repeated', 'restored_repeated') ORDER BY name;" \
+        WHERE name IN ('biglake', 'restored', 'repeated', 'restored_repeated') ORDER BY name;
+    -- The backup matches the database it was taken from, which still has its disk setting.
+    RESTORE DATABASE biglake FROM File('$workdir/backups/biglake') FORMAT Null;
+    RESTORE DATABASE biglake FROM File('$workdir/backups/biglake') SETTINGS create_database = 'must-exist' FORMAT Null;
+    SELECT 'restored into the existing database';" \
     -- --backups.allowed_path="$workdir/backups"
 
 rm -rf "$workdir"

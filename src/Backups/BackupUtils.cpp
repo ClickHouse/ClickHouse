@@ -9,6 +9,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Core/SettingsEnums.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
@@ -21,6 +22,7 @@
 #include <Common/typeid_cast.h>
 
 #include <algorithm>
+#include <ranges>
 
 
 namespace DB::BackupUtils
@@ -231,9 +233,41 @@ bool compareRestoredTableDef(const IAST & restored_table_create_query, const IAS
     return false;
 }
 
+bool removeDiskOfBigLakeCatalogWithGoogleCredentials(ASTCreateQuery & create)
+{
+    if (!create.storage || !create.storage->engine || !create.storage->settings)
+        return false;
+    if (create.storage->engine->name != "DataLakeCatalog" && create.storage->engine->name != "Iceberg")
+        return false;
+
+    auto & changes = create.storage->settings->as<ASTSetQuery &>().changes;
+    /// A repeated setting takes its last value, as when the database is loaded.
+    auto last_value = [&](std::string_view name) -> const Field *
+    {
+        const auto it = std::ranges::find(changes | std::views::reverse, name, &SettingChange::name);
+        return it == (changes | std::views::reverse).end() ? nullptr : &it->value;
+    };
+    const Field * catalog_type = last_value("catalog_type");
+    if (!catalog_type || SettingFieldDatabaseDataLakeCatalogType(*catalog_type).value != DatabaseDataLakeCatalogType::ICEBERG_BIGLAKE)
+        return false;
+
+    const bool has_google_credentials = std::ranges::any_of(
+        std::array{"google_service_account_key", "google_adc_client_id", "google_adc_client_secret", "google_adc_refresh_token"},
+        [&](const char * name)
+        {
+            const Field * value = last_value(name);
+            return value && value->getType() == Field::Types::String && !value->safeGet<String>().empty();
+        });
+
+    return has_google_credentials && std::erase_if(changes, [](const SettingChange & change) { return change.name == "disk"; }) > 0;
+}
+
 bool compareRestoredDatabaseDef(const IAST & restored_database_create_query, const IAST & create_query_from_backup, const ContextPtr & global_context)
 {
-    return compareRestoredTableDef(restored_database_create_query, create_query_from_backup, global_context);
+    /// A legacy BigLake database still has the `disk` that its restored definition does not.
+    auto existing = boost::static_pointer_cast<ASTCreateQuery>(restored_database_create_query.clone());
+    removeDiskOfBigLakeCatalogWithGoogleCredentials(*existing);
+    return compareRestoredTableDef(*existing, create_query_from_backup, global_context);
 }
 
 bool isInnerTable(const QualifiedTableName & table_name)
