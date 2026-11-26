@@ -2289,9 +2289,14 @@ def test_stage_create_location(started_cluster):
     assert committed["metadata-location"].startswith(f"{location}/metadata/v1-")
     assert get_keeper().exists(location_node(location))
 
-    # Staging stores nothing, so the overlap is found at the commit.
+    # A stage inside the location of another table is refused.
     inner = f"{location}/data"
-    staged_inner = stage_create_table(ns, "inner", location=inner).json()["metadata"]
+    response = stage_create_table(ns, "inner", location=inner, expected_code=400)
+    assert_error_shape(response, "BadRequestException")
+    assert f"Location {inner} overlaps location {location}" in response.json()["error"]["message"]
+
+    # Staging stores nothing, so the commit checks the overlap again. The client sends the location in the commit.
+    staged_inner = {**stage_create_table(ns, "inner").json()["metadata"], "location": inner}
     response = commit_table(ns, "inner", ASSERT_CREATE, create_updates_from_metadata(staged_inner), expected_code=400)
     assert_error_shape(response, "BadRequestException")
     assert f"Location {inner} overlaps location {location}" in response.json()["error"]["message"]
@@ -2368,6 +2373,24 @@ def test_vended_credentials(started_cluster):
     committed = commit_table(ns, "events", [], [], headers=VENDING_HEADERS).json()
     assert "config" not in committed
     assert "storage-credentials" not in committed
+
+
+def test_vended_credentials_staged_create_location(started_cluster):
+    ns = f"vended_{uuid.uuid4().hex[:8]}"
+    create_namespace([ns])
+    outer = create_table(ns, "outer").json()["metadata"]["location"]
+
+    # A stage at the location of another table is refused before any credentials are issued.
+    for location in (outer, f"{outer}/data", outer.rsplit("/", 1)[0]):
+        response = stage_create_table(ns, "staged", headers=VENDING_HEADERS, location=location, expected_code=400)
+        assert_error_shape(response, "BadRequestException")
+        assert f"Location {location} overlaps location {outer}" in response.json()["error"]["message"]
+
+    # A stage reserves nothing, so a client-chosen location gets the metadata without credentials.
+    custom = f"{BASE_LOCATION}/custom/{ns}"
+    result = stage_create_table(ns, "staged", headers=VENDING_HEADERS, location=custom).json()
+    assert result["metadata"]["location"] == custom
+    assert "storage-credentials" not in result
 
 
 def test_vended_credentials_need_header(started_cluster):

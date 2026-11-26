@@ -812,6 +812,7 @@ IcebergRESTResponse IcebergRESTCatalogService::handleCreateTable(const RoutedReq
 
     String name;
     bool stage_create = false;
+    bool client_picked_location = false;
     IcebergTablePointer pointer{.uuid = uuid, .metadata_location = {}};
     CompressionMethod compression_method = CompressionMethod::None;
     String location;
@@ -835,6 +836,7 @@ IcebergRESTResponse IcebergRESTCatalogService::handleCreateTable(const RoutedReq
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "'location' must be a string");
             location = stripTrailingSlashes(json->getValue<String>("location"));
             request.warehouse.validateLocation(location);
+            client_picked_location = true;
         }
         /// Otherwise the catalog builds it from the namespace location or the warehouse base location.
         else
@@ -878,7 +880,23 @@ IcebergRESTResponse IcebergRESTCatalogService::handleCreateTable(const RoutedReq
         /// A best-effort check. The create commit registers the table and fails if it exists by then.
         if (request.warehouse.tableExists(ns, name))
             return makeConflictError("TableAlreadyExistsException", fmt::format("Table already exists: {}.{}", joinNamespace(ns), name));
-        const auto credentials = vendCredentialsIfRequested(request, ns, name, location, VendedAccessLevel::ReadWrite);
+
+        /// Check overlap before vending, so that credentials never cover directory of another table.
+        if (const auto conflict = request.warehouse.checkForLocationConflict(ns, name, location))
+        {
+            using CreateTableResult = IcebergRESTCatalogWarehouse::CreateTableResult;
+            if (conflict->result == CreateTableResult::TableExists)
+                return makeConflictError("TableAlreadyExistsException", fmt::format("Table already exists: {}.{}", joinNamespace(ns), name));
+            if (conflict->result == CreateTableResult::NamespaceMissing)
+                return makeNoSuchNamespaceError(ns);
+            return makeLocationOverlapsError(location, conflict->conflicting_location);
+        }
+
+        /// A stage reserves nothing, so a location picked by client can cover tables created later.
+        /// A location built by catalog ends with a fresh uuid, so only this table can use it.
+        std::optional<VendedCredentials> credentials;
+        if (!client_picked_location)
+            credentials = vendCredentialsIfRequested(request, ns, name, location, VendedAccessLevel::ReadWrite);
         LOG_INFO(log, "Staged table {}.{} at {}", joinNamespace(ns), name, location);
         return makeLoadTableResult(std::nullopt, metadata, credentials);
     }
