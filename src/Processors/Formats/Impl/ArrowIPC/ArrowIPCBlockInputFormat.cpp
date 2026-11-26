@@ -633,8 +633,6 @@ bool variantElementPrefersType(const DataTypePtr & decoded, const DataTypePtr & 
 std::optional<DataTypes> variantElementTargets(const DataTypeVariant & from, const DataTypeVariant & to, bool case_insensitive);
 bool variantElementMatchesType(const DataTypePtr & decoded, const DataTypePtr & alternative, bool case_insensitive);
 
-/// Whether every name is distinct after lowercasing, so a case-insensitive lookup is unambiguous and the
-/// rename before the cast cannot map two fields onto one name.
 bool namesDistinctCaseInsensitively(const Strings & names)
 {
     UnorderedSetWithMemoryTracking<String> lowered;
@@ -644,19 +642,10 @@ bool namesDistinctCaseInsensitively(const Strings & names)
     return true;
 }
 
-/// Whether a decoded composite element can be repaired into a requested composite alternative: the same
-/// shape, and a field correspondence the repair cast realises without inventing or relabelling a value. A
-/// named target tuple must find every one of its fields in the decoded struct, which is what makes the cast
-/// pair them by name: a decoded field the target does not name is projected out, a target field the decode
-/// does not have would be filled with a default, and two disjoint name sets are paired positionally
-/// (#70830), so a field would come back holding another field's value. An unnamed target tuple expresses no
-/// name expectation and is paired positionally, with the same arity so no decoded field is dropped
-/// silently. A nested `Variant` child is admissible when this walk's own repair reaches types the request
-/// names, decided by the same function that performs it.
+/// The tuple cast defaults a target field the source lacks and pairs disjoint name sets by position, so a
+/// named target tuple must find each of its fields by name in the decoded struct.
 bool variantElementCompositeMatchesType(const DataTypePtr & decoded, const DataTypePtr & to, bool case_insensitive)
 {
-    /// A decoded child carries the wrappers the Arrow schema gave it, while the element rules are stated
-    /// for the unwrapped type; the cast restores the requested wrappers.
     const auto child_matches = [&](const DataTypePtr & from_child, const DataTypePtr & to_child)
     {
         return variantElementMatchesType(ArrowIPC::stripHint(from_child), to_child, case_insensitive);
@@ -713,10 +702,9 @@ bool variantElementCompositeMatchesType(const DataTypePtr & decoded, const DataT
 /// Whether a decoded `Variant` element can be repaired into a requested alternative: its own decoded type,
 /// otherwise only an alternative the ordinary (non-union) Arrow column path already reaches from `decoded`.
 /// Two exclusions whose reason the arms below do not show: a `UInt8` value outside 0/1 would render as
-/// `true` under the equal-comparing `Bool`; and `Date32` decoding is hint-dependent (range-checked,
-/// saturated or verbatim) while this layer supplies no hint, whereas the admitted widenings read no hint
-/// and are in range at every scale. A composite takes an alternative of the same shape under the
-/// correspondence rule above.
+/// `true` under the equal-comparing `Bool`; and `Date32` decoding is
+/// hint-dependent (range-checked, saturated or verbatim) while this layer supplies no hint, whereas the
+/// admitted widenings read no hint and are in range at every scale.
 bool variantElementMatchesType(const DataTypePtr & decoded, const DataTypePtr & alternative, bool case_insensitive)
 {
     const DataTypePtr to = ArrowIPC::stripHint(alternative);
@@ -774,8 +762,8 @@ bool variantElementMatchesType(const DataTypePtr & decoded, const DataTypePtr & 
 /// an element whose correspondence stays ambiguous is left unassigned, so no guess is ever made. Two
 /// elements are never left on one alternative name: `DataTypeVariant` deduplicates by name while the column
 /// keeps one element per union child, so a shared name would describe a column whose layout contradicts its
-/// type. Nothing is returned at all when an element would end up under a type the request does not name: the
-/// cast then rejects the read whatever this walk does, so the assignment is not worth performing.
+/// type.
+/// `std::nullopt` when an element would end up under a type the request does not name.
 std::optional<DataTypes> variantElementTargets(const DataTypeVariant & from, const DataTypeVariant & to, bool case_insensitive)
 {
     const DataTypes & elements = from.getVariants();
@@ -851,9 +839,7 @@ std::optional<DataTypes> variantElementTargets(const DataTypeVariant & from, con
             }
     }
 
-    /// Matched by full name, as the cast itself matches alternatives: when an element ends up under a type
-    /// the request does not name, the cast rejects the read whatever this walk does, and rebuilding would
-    /// only change the type its message prints.
+    /// By full name, as the cast pairs `Variant` alternatives; it rejects a type the request does not name.
     for (size_t e = 0; e < elements.size(); ++e)
     {
         const DataTypePtr & landed = targets[e] ? targets[e] : elements[e];
@@ -1142,10 +1128,7 @@ std::pair<ColumnPtr, DataTypePtr> repairVariantElements(
             std::tie(element, element_type) = reinterpretRawBytes(
                 element, from_element, target, /*ancestor_nulls=*/nullptr, case_insensitive, /*field=*/nullptr,
                 format_settings, /*repair_variants=*/true);
-            /// Tuple element names live in the type, so a case-differing decoded field is renamed here
-            /// rather than left to the cast, which pairs two disjoint name sets positionally. An element
-            /// already named as requested reaches no cast, and renaming it could only merge two of its
-            /// fields the request keeps apart by case.
+            /// The tuple cast pairs disjoint name sets by position, so case-differing names are aligned first.
             if (case_insensitive && element_type->getName() != target->getName())
                 element_type = alignStructFieldNamesCaseInsensitive(element_type, target);
             /// By name, not `equals`: `Bool` and `UInt8` compare equal yet the element must end up under
