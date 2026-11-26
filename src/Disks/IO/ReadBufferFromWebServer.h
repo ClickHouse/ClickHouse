@@ -62,11 +62,6 @@ public:
     Map getResponseHeaders() const;
     std::optional<Field> getMetadata(const String & name) const override;
 
-    std::optional<size_t> tryGetFileSize() override;
-    bool checkIfActuallySeekable() override;
-    bool supportsReadAt() override;
-    size_t readBigAt(char * to, size_t n, size_t offset, const std::function<bool(size_t m)> & progress_callback) const override;
-
 private:
     std::unique_ptr<SeekableReadBuffer> initialize();
 

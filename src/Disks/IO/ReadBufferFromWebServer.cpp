@@ -6,7 +6,6 @@
 #include <IO/Operators.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/WriteBufferFromString.h>
-#include <IO/WithFileSize.h>
 #include <Interpreters/Context.h>
 #include <Common/logger_useful.h>
 
@@ -298,30 +297,6 @@ std::optional<Field> ReadBufferFromWebServer::getMetadata(const String & name) c
         return Field(http_buf->getResponseHeaders());
 
     return std::nullopt;
-}
-
-std::optional<size_t> ReadBufferFromWebServer::tryGetFileSize()
-{
-    if (!impl)
-        impl = initialize();
-    return impl ? tryGetFileSizeFromReadBuffer(*impl) : std::nullopt;
-}
-
-bool ReadBufferFromWebServer::checkIfActuallySeekable()
-{
-    if (!impl)
-        impl = initialize();
-    return impl && impl->checkIfActuallySeekable();
-}
-
-bool ReadBufferFromWebServer::supportsReadAt()
-{
-    return false;
-}
-
-size_t ReadBufferFromWebServer::readBigAt(char * to, size_t n, size_t file_offset, const std::function<bool(size_t m)> & progress_callback) const
-{
-    return impl->readBigAt(to, n, file_offset, progress_callback);
 }
 
 
