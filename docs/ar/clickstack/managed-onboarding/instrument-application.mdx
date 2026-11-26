@@ -1,9 +1,10 @@
 ---
 slug: /use-cases/observability/clickstack/instrument-application
-title: 'زوّد تطبيقًا بأدوات الرصد خلال 5 دقائق باستخدام Managed ClickStack'
-description: 'زوّد تطبيق Node.js بأدوات الرصد باستخدام OpenTelemetry وأرسل logs وmetrics وtraces الخاصة به إلى Managed ClickStack'
+title: 'تزويد تطبيق بأدوات جمع بيانات الرصد في 5 دقائق باستخدام ClickHouse Observability'
+sidebarTitle: 'تزويد تطبيق بأدوات جمع بيانات الرصد'
+description: 'زوّد تطبيق Node.js بأدوات جمع بيانات الرصد باستخدام OpenTelemetry، وأرسل سجلاته ومقاييسه وبيانات التتبّع الخاصة به عبر جامع البيانات الخاص بك إلى ClickHouse Observability في الإصدار المُدار ذاتيًا'
 doc_type: 'guide'
-keywords: ['clickstack', 'instrumentation', 'opentelemetry', 'managed', 'observability', 'sdk', 'nodejs', 'agent']
+keywords: ['clickstack', 'instrumentation', 'opentelemetry', 'self-managed', 'ClickHouse Observability', 'sdk', 'nodejs', 'agent']
 unlisted: true
 custom_edit_url: null
 hide_advert: true
@@ -11,16 +12,24 @@ hide_advert: true
 
 import InstrumentApplication from '/snippets/ar/clickstack/_instrument_application.mdx';
 
-يوضح هذا الدليل كيفية تزويد تطبيق Node.js صغير بأدوات الرصد باستخدام OpenTelemetry لإرسال السجلات والمقاييس والتتبعات وSession Replay الخاصة به إلى Managed ClickStack. وقد جرى تزويد الواجهة الخلفية بأدوات الرصد من دون أي تغييرات على الشفرة المصدرية للتطبيق.
+<Note>
+  **أنت على مسار الإدارة الذاتية**
 
-إن [HackerNews Analyzer](https://github.com/ClickHouse/hn-news-analyzer) هو تطبيق Node.js ينفّذ استعلامات على dataset ‏HackerNews المستضاف في العرض التجريبي العام لـ ClickHouse. ويستند كل مخطط وجدول ومربع بحث إلى استعلام ClickHouse حقيقي، لذا ينتج عن كل تفاعل trace يكون الـ span الرئيسي فيه هو استدعاء HTTPS الصادر من الواجهة الخلفية إلى ClickHouse.
+  لقد اخترت إعداد ClickHouse Observability بنفسك باستخدام [التجربة المُدارة ذاتيًا](/ar/clickstack/self-configured/overview). في هذا المسار، تتولى بنفسك تشغيل جامع بيانات OpenTelemetry، وإدارة إدخال البيانات إلى خدمة ClickHouse Cloud الخاصة بك، وضبط المخطط، والفصل بين أحمال عمل الإدخال والاستعلام باستخدام المستودعات. راجع [جامع بيانات OpenTelemetry](/ar/clickstack/self-configured/ingesting-data/collector) و[ضبط الأداء](/ar/clickstack/self-configured/managing/performance-tuning) و[عزل أحمال عمل القراءة والكتابة](/ar/clickstack/self-configured/managing/isolating-read-write).
 
-يفترض هذا الدليل أنك أكملت [إعداد OpenTelemetry Collector](/ar/clickstack/managed-onboarding/setting-up-your-opentelemetry-collector) وأن لديك مجمّع ClickStack قيد التشغيل ويمكن الوصول إليه من الجهاز الذي تشغّل عليه هذا التطبيق. **تأكد من أنك دوّنت نقطة نهاية OTLP الخاصة به** و`OTLP_AUTH_TOKEN` الذي عيّنته عند نشره. ستضع هذه القيم في `.env` قبل تزويده بأدوات الرصد.
+  هل تفضّل تجربة بلا خوادم يتولى فيها ClickHouse إدخال البيانات والمخططات والقدرة الحاسوبية نيابةً عنك؟ استخدم إذًا تجربة ClickHouse Observability الافتراضية واتبع دليل [تزويد تطبيقك بأدوات جمع بيانات الرصد باستخدام OpenTelemetry](/ar/clickstack/managed-onboarding/instrument-application-serverless).
+</Note>
+
+يشرح هذا الدليل خطوة بخطوة كيفية تزويد تطبيق Node.js صغير بأدوات جمع بيانات الرصد باستخدام OpenTelemetry، وإرسال سجلاته ومقاييسه وتتبّعاته وإعادات تشغيل جلساته إلى ClickHouse Observability عبر جامع البيانات الذي تشغّله. ويُزوَّد الجزء الخلفي بأدوات الرصد دون أي تعديل على الشيفرة المصدرية للتطبيق.
+
+[HackerNews Analyzer](https://github.com/ClickHouse/hn-news-analyzer) هو تطبيق Node.js يستعلم عن مجموعة بيانات HackerNews المستضافة في بيئة ClickHouse التجريبية العامة. ويعتمد كل مخطط وجدول ومربع بحث فيه على استعلام ClickHouse حقيقي، لذا يُنتج كل تفاعل تتبّعًا يكون الامتداد (span) الرئيسي فيه هو استدعاء HTTPS الصادر من الجزء الخلفي إلى ClickHouse.
+
+يفترض هذا الدليل أنك أكملت [إعداد مُجمِّع OpenTelemetry الخاص بك](/ar/clickstack/self-configured/managed-onboarding/setting-up-your-opentelemetry-collector)، وأن لديك مُجمِّع ClickStack قيد التشغيل ويمكن الوصول إليه من الجهاز الذي تشغّل عليه هذا التطبيق. **تأكد من تدوين نقطة نهاية OTLP الخاصة به** وقيمة `OTLP_AUTH_TOKEN` التي عيّنتها عند نشره، إذ ستضع هاتين القيمتين في الملف `.env` قبل تزويد التطبيق بأدوات الرصد.
 
 ## المتطلبات الأساسية {#prerequisites}
 
-* مجمّع ClickStack يمكن الوصول إليه من هذا الجهاز. إذا لم تكن قد نشرت واحدًا بعد، فاتبع أولًا [إعداد OpenTelemetry Collector](/ar/clickstack/managed-onboarding/setting-up-your-opentelemetry-collector).
-* نقطة نهاية OTLP/HTTP لذلك المجمّع (عادةً المنفذ `4318`) و`OTLP_AUTH_TOKEN` الذي ضبطته عليه. استخدمهما كـ`OTEL_EXPORTER_OTLP_ENDPOINT` و`OTEL_EXPORTER_OTLP_HEADERS=authorization=<token>`.
+* جامع بيانات ClickStack يمكن الوصول إليه من هذا الجهاز. إذا لم تكن قد نشرت واحدًا بعد، فاتبع أولًا [إعداد مُجمِّع OpenTelemetry الخاص بك](/ar/clickstack/self-configured/managed-onboarding/setting-up-your-opentelemetry-collector).
+* نقطة نهاية OTLP/HTTP لجامع البيانات ذلك (عادةً المنفذ `4318`) و`OTLP_AUTH_TOKEN` الذي ضبطته عليه. استخدمهما كـ`OTEL_EXPORTER_OTLP_ENDPOINT` و`OTEL_EXPORTER_OTLP_HEADERS=authorization=<token>`.
 * Node 18+ وnpm.
 
 ## استنسخ المستودع {#clone-the-repository}
@@ -40,7 +49,7 @@ cp .env.example .env
 
 ## للمزيد من القراءة {#further-reading}
 
-* [مراقبة Kubernetes](/ar/clickstack/managed-onboarding/monitoring-kubernetes): اجمع السجلات، ومقاييس البنية التحتية، وأحداث Kubernetes من عنقود.
-* [مراقبة سجلات AWS CloudWatch](/ar/clickstack/managed-onboarding/monitoring-aws-cloudwatch-logs): مرّر سجلات CloudWatch عبر مستقبل CloudWatch في OpenTelemetry.
-* [Session Replay](/ar/clickstack/features/session-replay): نظرة عامة على الميزة، وخيارات SDK، وعناصر التحكّم في الخصوصية.
-* [الانتقال إلى بيئة الإنتاج](/ar/clickstack/managing/production) للاطلاع على التوصيات الخاصة بالتشغيل في بيئة الإنتاج.
+* [مراقبة Kubernetes](/ar/clickstack/self-configured/managed-onboarding/monitoring-kubernetes): اجمع السجلات، ومقاييس البنية التحتية، وأحداث Kubernetes من عنقود.
+* [مراقبة سجلات AWS CloudWatch](/ar/clickstack/self-configured/managed-onboarding/monitoring-aws-cloudwatch-logs): مرّر سجلات CloudWatch عبر مستقبل CloudWatch في OpenTelemetry.
+* [إعادة تشغيل الجلسة](/ar/clickstack/observability/features/session-replay#self-managed): نظرة عامة على الميزة، وخيارات SDK، وعناصر التحكّم في الخصوصية.
+* [الانتقال إلى بيئة الإنتاج](/ar/clickstack/self-configured/managing/production) للاطلاع على التوصيات الخاصة بالتشغيل في بيئة الإنتاج.

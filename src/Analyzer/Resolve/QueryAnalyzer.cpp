@@ -87,6 +87,7 @@
 #include <base/scope_guard.h>
 #include <base/Decimal_fwd.h>
 #include <base/types.h>
+#include <base/sanitizer_defs.h>
 
 #include <boost/algorithm/string/predicate.hpp>
 #include <memory>
@@ -907,6 +908,7 @@ void QueryAnalyzer::mergeWindowWithParentWindow(const QueryTreeNodePtr & window_
   * Example: SELECT id, value FROM test_table ORDER BY 1, 2;
   * Example: SELECT id, value FROM test_table LIMIT 5 BY 1, 2;
   */
+NO_SANITIZE_UNSIGNED_OVERFLOW
 void QueryAnalyzer::replaceNodesWithPositionalArguments(QueryTreeNodePtr & node_list, const QueryTreeNodes & projection_nodes, IdentifierResolveScope & scope)
 {
     const auto & settings = scope.context->getSettingsRef();
@@ -1172,7 +1174,7 @@ std::pair<bool, UInt64> QueryAnalyzer::recursivelyCollectMaxOrdinaryExpressions(
 
     // We don't need to have GROUPING under GROUP BY ALL, so we treat GROUPING
     // as an aggregate function for GROUP BY ALL expansion
-    if (function->isAggregateFunction() || function->isWindowFunction() || Poco::icompare(function->getFunctionName(), "grouping") == 0)
+    if (function->isAggregationCall() || function->isWindowCall() || Poco::icompare(function->getFunctionName(), "grouping") == 0)
         return {true, 0};
 
     UInt64 pushed_children = 0;
@@ -2441,7 +2443,6 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveQualifiedMatcher(Qu
     chassert(matcher_node_typed.isQualified());
 
     auto expression_identifier_lookup = IdentifierLookup{matcher_node_typed.getQualifiedIdentifier(), IdentifierLookupContext::EXPRESSION};
-    expression_identifier_lookup.is_matcher_qualifier = true;
     auto expression_identifier_resolve_result = tryResolveIdentifier(expression_identifier_lookup, scope);
     auto expression_query_tree_node = expression_identifier_resolve_result.resolved_identifier;
 
@@ -3031,7 +3032,7 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
     ///
     /// We traverse the APPLY expression tree because the aggregate function may be nested
     /// inside other function calls (e.g. `toString(argMax(x, number))`), not just at the top level.
-    /// We use `AggregateFunctionFactory` name lookup (not `FunctionNode::isAggregateFunction`) because
+    /// We use `AggregateFunctionFactory` name lookup (not `FunctionNode::isAggregationCall`) because
     /// APPLY expressions have not been resolved yet at this point — `FunctionNode::kind` is still `UNKNOWN`.
     auto has_aggregate_function_in_tree = [](const IQueryTreeNode * root) -> bool
     {
@@ -4178,6 +4179,17 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
                     }
                 }
 
+                /// A qualifier that matches a table expression names it, see `tryResolveIdentifierFromTableExpression`.
+                if (from_clause_hint.empty())
+                {
+                    if (auto qualifying = IdentifierResolver::tryFindTableExpressionByQualifier(unresolved_identifier, scope); qualifying.node)
+                        throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER, "Identifier '{}' cannot be resolved from {}{}. In scope {}",
+                            unresolved_identifier.getFullName(),
+                            IdentifierResolver::describeTableExpressionForErrorMessage(qualifying.node, *qualifying.data),
+                            getHintsErrorMessageSuffix(hints),
+                            scope.scope_node->formatASTForErrorMessage());
+                }
+
                 /// The typo hint goes before the formatted query, which can be many kilobytes long, so that
                 /// the actionable part of the message does not end up behind it. The optional `FROM`-clause
                 /// hint is still attached via `addMessage` to keep the number of placeholders in
@@ -4710,7 +4722,12 @@ void expandTuplesInList(QueryTreeNodes & key_list)
     expanded_keys.reserve(key_list.size());
     for (auto const & key : key_list)
     {
-        if (auto * function = key->as<FunctionNode>(); function != nullptr && function->getFunctionName() == "tuple")
+        const auto * function = key->as<FunctionNode>();
+        /// a `tuple` that the query does not write is folded into a constant when its arguments are constants
+        if (const auto * constant = key->as<ConstantNode>(); constant && constant->hasSourceExpression() && !constant->getSourceExpression()->hasOriginalAST())
+            function = constant->getSourceExpression()->as<FunctionNode>();
+
+        if (function != nullptr && function->getFunctionName() == "tuple")
         {
             std::copy(function->getArguments().begin(), function->getArguments().end(), std::back_inserter(expanded_keys));
         }
@@ -7336,10 +7353,10 @@ HavingConjunctMoveAction classifyHavingConjunctForMove(const QueryTreeNodePtr & 
 
         if (auto * function_node = current->as<FunctionNode>())
         {
-            if (function_node->isWindowFunction())
+            if (function_node->isWindowCall())
                 return HavingConjunctMoveAction::AbortRewrite;
 
-            if (function_node->isOrdinaryFunction())
+            if (function_node->isOrdinaryCall())
             {
                 if (auto function_base = function_node->getFunction())
                 {
@@ -7351,7 +7368,7 @@ HavingConjunctMoveAction classifyHavingConjunctForMove(const QueryTreeNodePtr & 
                 }
             }
 
-            if (function_node->isAggregateFunction() && verdict == HavingConjunctMoveAction::Move)
+            if (function_node->isAggregationCall() && verdict == HavingConjunctMoveAction::Move)
                 verdict = HavingConjunctMoveAction::KeepInHaving;
 
             if (function_node->getFunctionName() == "grouping" && verdict == HavingConjunctMoveAction::Move)

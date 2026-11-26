@@ -10,7 +10,6 @@ integration:
   - category: 'sql_client'
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
 import { CommunityMaintainedBadge } from "/snippets/ru/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
 
 <CommunityMaintainedBadge />
@@ -53,7 +52,7 @@ GRANT SELECT ON system.data_skipping_indices TO reader;
 3. Сервер возвращает строки, типы столбцов, объявленные ClickHouse, и затраченное время, сообщённое
    ClickHouse. Каждый оператор выполняется как отдельный запрос без сохранения состояния; сеанс не закрепляется.
 
-## Подключение к самостоятельно размещённому ClickHouse {#connect-to-self-hosted-clickhouse}
+## Соединение с самостоятельно размещённым ClickHouse {#connect-to-self-hosted-clickhouse}
 
 <Steps>
   <Step title="Соберите сведения о подключении" id="gather-your-connection-details">
@@ -79,7 +78,11 @@ GRANT SELECT ON system.data_skipping_indices TO reader;
     `clickhouse://localhost:8123/default` или `https://reader:secret@ch.example.com:8443/analytics`.
     URL со схемой `https://` включает TLS.
 
-    <Image img="/images/integrations/sql-clients/libredb-studio-new-connection.png" size="sm" border alt="Диалог New Connection в LibreDB Studio с выбранным ClickHouse, заполненными хостом, портом 8123, именем пользователя и базой данных, а также успешной проверкой подключения" />
+    <div className="ch-image-sm">
+      <Frame>
+        ![Диалог New Connection в LibreDB Studio с выбранным ClickHouse, заполненными хостом, портом 8123, именем пользователя и базой данных, а также успешной проверкой соединения](/images/integrations/sql-clients/libredb-studio-new-connection.png)
+      </Frame>
+    </div>
   </Step>
 
   <Step title="Выполните запрос" id="run-a-query">
@@ -102,7 +105,11 @@ GRANT SELECT ON system.data_skipping_indices TO reader;
     LIMIT 10
     ```
 
-    <Image img="/images/integrations/sql-clients/libredb-studio-query.png" size="md" border alt="SQL-редактор LibreDB Studio с запросом к uk_price_paid и таблицей результатов с объявленными типами столбцов ClickHouse" />
+    <div className="ch-image-md">
+      <Frame>
+        ![SQL-редактор LibreDB Studio с запросом к uk_price_paid и таблицей результатов с объявленными типами столбцов ClickHouse](/images/integrations/sql-clients/libredb-studio-query.png)
+      </Frame>
+    </div>
   </Step>
 </Steps>
 
@@ -128,7 +135,11 @@ GRANT SELECT ON system.data_skipping_indices TO reader;
 по таблице или базе данных и остановить выполняемый запрос с помощью `KILL QUERY ... SYNC`. Для этих операций требуются
 соответствующие привилегии.
 
-<Image img="/images/integrations/sql-clients/libredb-studio-monitoring.png" size="md" border alt="Обзор мониторинга LibreDB Studio для соединения с ClickHouse: версия сервера, время непрерывной работы, соединения, размер хранилища, коэффициент попаданий в кэш и количество таблиц" />
+<div className="ch-image-md">
+  <Frame>
+    ![Обзор мониторинга LibreDB Studio для соединения с ClickHouse: версия сервера, время непрерывной работы, соединения, размер хранилища, коэффициент попаданий в кэш и количество таблиц](/images/integrations/sql-clients/libredb-studio-monitoring.png)
+  </Frame>
+</div>
 
 ## Устранение неполадок {#troubleshooting}
 

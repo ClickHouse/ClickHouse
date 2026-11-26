@@ -9,9 +9,7 @@ doc_type: 'reference'
 Оконные функции позволяют выполнять вычисления по набору строк, связанных с текущей строкой.
 Их можно использовать для вычислений, похожих на те, которые выполняются агрегатными функциями, но оконная функция не объединяет строки в один результирующий вывод — отдельные строки по-прежнему возвращаются.
 
-<div id="standard-window-functions">
-  ## Стандартные оконные функции
-</div>
+## Стандартные оконные функции {#standard-window-functions}
 
 ClickHouse поддерживает стандартный SQL-синтаксис для окон и оконных функций.
 В таблице ниже показано, какие возможности поддерживаются в настоящее время:
@@ -32,9 +30,7 @@ ClickHouse поддерживает стандартный SQL-синтакси�
 | `lag/lead(value, offset)`                                                       | ✅               | Также можно использовать один из следующих обходных вариантов:<br /> 1) `any(value) OVER (... ROWS BETWEEN <offset> PRECEDING AND <offset> PRECEDING)`, или `FOLLOWING` вместо `PRECEDING` для `lead` <br /> 2) `lagInFrame/leadInFrame`, это аналогичные функции, но они учитывают рамку окна. Чтобы получить поведение, идентичное `lag/lead`, используйте `ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING`. |
 | [`ntile(buckets)`](/ru/reference/functions/window-functions/ntile)                 | ✅               | Укажите окно, например: `(PARTITION BY x ORDER BY y ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)`.                                                                                                                                                                                                                                                                                                          |
 
-<div id="syntax">
-  ## Синтаксис
-</div>
+## Синтаксис {#syntax}
 
 ```text
 aggregate_function (column_name)
@@ -70,9 +66,7 @@ WINDOW window_name as ([
 └─────────────────┘  <--- UNBOUNDED FOLLOWING (END of the PARTITION)
 ```
 
-<div id="functions">
-  ## Функции, доступные только как оконные функции
-</div>
+## Функции, доступные только как оконные функции {#functions}
 
 Следующие функции можно использовать только как оконные функции. Большинство из них — стандартные функции SQL; `lagInFrame`, `leadInFrame` и `nonNegativeDerivative` — расширения ClickHouse.
 
@@ -93,15 +87,11 @@ WINDOW window_name as ([
 | [`ntile(buckets)`](/ru/reference/functions/window-functions/ntile)                                                                             | Разделить упорядоченные строки в пределах партиции на указанное количество бакетов и вернуть номер бакета для текущей строки.                    |
 | [`nonNegativeDerivative(metric_column, timestamp_column[, INTERVAL X UNITS])`](/ru/reference/functions/window-functions/nonNegativeDerivative) | Вычислить неотрицательную производную `metric_column` по `timestamp_column`. Специфична для ClickHouse.                                          |
 
-<div id="examples">
-  ## Примеры
-</div>
+## Примеры {#examples}
 
 Рассмотрим несколько примеров использования оконных функций.
 
-<div id="numbering-rows">
-  ### Нумерация строк
-</div>
+### Нумерация строк {#numbering-rows}
 
 ```sql
 CREATE TABLE salaries
@@ -159,9 +149,7 @@ FROM salaries;
 └─────────────────┴────────┴─────┴──────┴───────────┘
 ```
 
-<div id="aggregation-functions">
-  ### Функции агрегации
-</div>
+### Функции агрегации {#aggregation-functions}
 
 Сравните зарплату каждого игрока со средней зарплатой в его команде.
 
@@ -207,9 +195,7 @@ FROM salaries;
 └─────────────────┴────────┴───────────────────────────┴─────────┴────────┘
 ```
 
-<div id="partitioning-by-column">
-  ### Партиционирование по столбцу
-</div>
+### Партиционирование по столбцу {#partitioning-by-column}
 
 ```sql
 CREATE TABLE wf_partition
@@ -242,9 +228,7 @@ ORDER BY
 └──────────┴───────┴───────┴──────────────┘
 ```
 
-<div id="frame-bounding">
-  ### Границы рамки окна
-</div>
+### Границы рамки окна {#frame-bounding}
 
 ```sql
 CREATE TABLE wf_frame
@@ -286,7 +270,7 @@ ORDER BY
 
 ```sql
 -- short form - no bound expression, no order by,
--- an equalent of `ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING`
+-- an equivalent of `ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING`
 SELECT
     part_key,
     value,
@@ -335,7 +319,7 @@ ORDER BY
 
 ```sql
 -- short form (frame is bounded by the beginning of a partition and the current row)
--- an equalent of `ORDER BY order ASC ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW`
+-- an equivalent of `ORDER BY order ASC ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW`
 SELECT
     part_key,
     value,
@@ -527,9 +511,7 @@ ORDER BY
 └────────────────┴──────────────┘
 ```
 
-<div id="groups-frame">
-  ### Рамка GROUPS
-</div>
+### Рамка GROUPS {#groups-frame}
 
 Рамка `GROUPS` считает целые *группы равных строк* — наборы строк с одинаковым ключом `ORDER BY` — а не физические строки (`ROWS`) или значения `ORDER BY` (`RANGE`). `N PRECEDING` и `N FOLLOWING` отсчитывают `N` групп равных строк до и после группы равных строк текущей строки, при этом каждая включённая группа учитывается целиком.
 
@@ -565,15 +547,11 @@ ORDER BY order, value;
 * `RANGE` считает значения `order`, поэтому `1 PRECEDING` и `1 FOLLOWING` охватывают строки, чьё значение `order` отличается от значения текущей строки не более чем на 1. При разрывах в 10 ни одна соседняя строка не попадает в рамку, поэтому она содержит только строки с тем же значением `order`, что и у текущей строки.
 * `GROUPS` считает группы равных строк, поэтому `1 PRECEDING` и `1 FOLLOWING` всегда полностью включают соседние группы независимо от разрывов между значениями `order`.
 
-<div id="real-world-examples">
-  ## Примеры из практики
-</div>
+## Примеры из практики {#real-world-examples}
 
 Следующие примеры показывают, как решать распространённые практические задачи.
 
-<div id="maximumtotal-salary-per-department">
-  ### Максимальная/общая зарплата по отделам
-</div>
+### Максимальная/общая зарплата по отделам {#maximumtotal-salary-per-department}
 
 ```sql
 CREATE TABLE employees
@@ -629,9 +607,7 @@ FROM
 └────────────┴──────┴────────┴────────────────────┴──────────────────────┴──────────────────┘
 ```
 
-<div id="cumulative-sum">
-  ### Нарастающий итог
-</div>
+### Нарастающий итог {#cumulative-sum}
 
 ```sql
 CREATE TABLE warehouse
@@ -640,7 +616,7 @@ CREATE TABLE warehouse
     `ts` DateTime,
     `value` Float
 )
-ENGINE = Memory
+ENGINE = Memory;
 
 INSERT INTO warehouse VALUES
     ('sku38', '2020-01-01', 9),
@@ -672,9 +648,7 @@ ORDER BY
 └───────┴─────────────────────┴───────┴───────────────┘
 ```
 
-<div id="moving--sliding-average-per-3-rows">
-  ### Скользящее среднее (по 3 строкам)
-</div>
+### Скользящее среднее (по 3 строкам) {#moving--sliding-average-per-3-rows}
 
 ```sql
 CREATE TABLE sensors
@@ -722,9 +696,7 @@ ORDER BY
 └──────────┴─────────────────────┴───────┴───────────────────┘
 ```
 
-<div id="moving--sliding-average-per-10-seconds">
-  ### Скользящее среднее (за 10 секунд)
-</div>
+### Скользящее среднее (за 10 секунд) {#moving--sliding-average-per-10-seconds}
 
 ```sql
 SELECT
@@ -750,9 +722,7 @@ ORDER BY
 └──────────┴─────────────────────┴───────┴────────────────────────────┘
 ```
 
-<div id="moving--sliding-average-per-10-days">
-  ### Скользящее среднее (за 10 дней)
-</div>
+### Скользящее среднее (за 10 дней) {#moving--sliding-average-per-10-days}
 
 Температура хранится с точностью до секунд, но с помощью `Range` и `ORDER BY toDate(ts)` мы формируем рамку окна размером 10 единиц, и благодаря `toDate(ts)` этой единицей является день.
 
@@ -807,21 +777,15 @@ ORDER BY
 └──────────────┴─────────────────────┴───────┴─────────────────────────┘
 ```
 
-<div id="references">
-  ## Ссылки
-</div>
+## Ссылки {#references}
 
-<div id="github-issues">
-  ### GitHub Issues
-</div>
+### GitHub Issues {#github-issues}
 
 План начальной поддержки оконных функций приведён [в этом issue](https://github.com/ClickHouse/ClickHouse/issues/18097).
 
 Все GitHub issues, связанные с оконными функциями, помечены тегом [comp-window-functions](https://github.com/ClickHouse/ClickHouse/labels/comp-window-functions).
 
-<div id="tests">
-  ### Тесты
-</div>
+### Тесты {#tests}
 
 Эти тесты содержат примеры поддерживаемой в настоящее время грамматики:
 
@@ -829,9 +793,7 @@ https://github.com/ClickHouse/ClickHouse/blob/master/tests/performance/window&#9
 
 https://github.com/ClickHouse/ClickHouse/blob/master/tests/queries/0&#95;stateless/01591&#95;window&#95;functions.sql
 
-<div id="postgres-docs">
-  ### Документация Postgres
-</div>
+### Документация Postgres {#postgres-docs}
 
 https://www.postgresql.org/docs/current/sql-select.html#SQL-WINDOW
 
@@ -841,9 +803,7 @@ https://www.postgresql.org/docs/devel/functions-window.html
 
 https://www.postgresql.org/docs/devel/tutorial-window.html
 
-<div id="mysql-docs">
-  ### Документация MySQL
-</div>
+### Документация MySQL {#mysql-docs}
 
 https://dev.mysql.com/doc/refman/8.0/en/window-function-descriptions.html
 
@@ -851,9 +811,7 @@ https://dev.mysql.com/doc/refman/8.0/en/window-functions-usage.html
 
 https://dev.mysql.com/doc/refman/8.0/en/window-functions-frames.html
 
-<div id="related-content">
-  ## Связанные материалы
-</div>
+## Связанные материалы {#related-content}
 
 * Блог: [Работа с временными рядами в ClickHouse](https://clickhouse.com/blog/working-with-time-series-data-and-functions-ClickHouse)
 * Блог: [Оконные функции и функции для работы с массивами для последовательностей коммитов Git](https://clickhouse.com/blog/clickhouse-window-array-functions-git-commits)
