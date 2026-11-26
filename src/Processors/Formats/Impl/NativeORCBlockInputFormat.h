@@ -156,6 +156,7 @@ public:
     /// requested is read with its type in `nested_table_type_hints_`, the one its fields were selected with, if it is there.
     ORCColumnToCHColumn(
         const Block & header_,
+        const ORC::Type & file_schema_,
         bool allow_missing_columns_,
         bool null_as_default_,
         bool case_insensitive_matching_ = false,
@@ -192,6 +193,8 @@ private:
         const String & mapper_path = {}) const;
 
     const Block & header;
+    /// The type tree of the file, which the read types are pruned from.
+    const ORC::Type & file_schema;
     /// If false, throw exception if some columns in header not exists in arrow table.
     bool allow_missing_columns;
     bool null_as_default;

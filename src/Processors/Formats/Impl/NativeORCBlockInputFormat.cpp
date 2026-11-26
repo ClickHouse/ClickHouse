@@ -1759,6 +1759,7 @@ void NativeORCBlockInputFormat::prepareFileReader()
 
     orc_column_to_ch_column = std::make_unique<ORCColumnToCHColumn>(
         header,
+        file_schema,
         format_settings.orc.allow_missing_columns,
         format_settings.null_as_default,
         format_settings.orc.case_insensitive_column_matching,
@@ -1986,6 +1987,7 @@ std::optional<size_t> NativeORCSchemaReader::readNumberOrRows()
 
 ORCColumnToCHColumn::ORCColumnToCHColumn(
     const Block & header_,
+    const ORC::Type & file_schema_,
     bool allow_missing_columns_,
     bool null_as_default_,
     bool case_insensitive_matching_,
@@ -1998,6 +2000,7 @@ ORCColumnToCHColumn::ORCColumnToCHColumn(
     UnorderedMapWithMemoryTracking<String, DataTypePtr> nested_table_type_hints_,
     UnorderedSetWithMemoryTracking<UInt64> structs_without_field_ids_)
     : header(header_)
+    , file_schema(file_schema_)
     , allow_missing_columns(allow_missing_columns_)
     , null_as_default(null_as_default_)
     , case_insensitive_matching(case_insensitive_matching_)
@@ -2783,6 +2786,20 @@ static bool orcUnionBranchPrefersType(const ORC::Type * orc_branch_type, const D
     }
 }
 
+/// The node of the type tree `root` with the column id `id`.
+static const ORC::Type & getORCTypeByColumnId(const ORC::Type & root, UInt64 id)
+{
+    const ORC::Type * node = &root;
+    while (node->getColumnId() != id)
+    {
+        UInt64 i = 0;
+        while (node->getSubtype(i)->getMaximumColumnId() < id)
+            ++i;
+        node = node->getSubtype(i);
+    }
+    return *node;
+}
+
 /// Variant sorts its nested types, so the positional correspondence between ORC union branches
 /// and the alternatives of an explicit (or inferred) Variant type hint is lost. Reconstruct it
 /// structurally: collect the alternatives each branch can be read as (orcUnionBranchMatchesType),
@@ -2943,9 +2960,11 @@ ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
         /// The hints enable the explicit-schema conversions the scalar readers support (e.g.
         /// binary -> IPv6) and keep the branch types aligned with the hinted Variant (e.g.
         /// Array(Nullable(...)) produced by schema inference). See computeOrcUnionBranchHints for
-        /// how a branch's forced alternative is reconstructed; updateIncludeTypeIds calls the same
-        /// function so a hinted STRUCT branch's field pruning matches what is actually read here.
-        const DataTypes branch_hints = computeOrcUnionBranchHints(orc_type, type_hint, case_insensitive_matching);
+        /// how a branch's forced alternative is reconstructed.
+        /// Computed on the file's union, as in updateIncludeTypeIds: a pruned field can change which alternatives a branch matches.
+        const auto & file_union = getORCTypeByColumnId(file_schema, orc_type->getColumnId());
+        chassert(file_union.getSubtypeCount() == num_children);
+        const DataTypes branch_hints = computeOrcUnionBranchHints(&file_union, type_hint, case_insensitive_matching);
 
         /// Read each ORC union branch into its own column. ORC keeps a separate physical batch per
         /// branch. Variant branches are non-nullable, and an ORC union row can be non-null yet
