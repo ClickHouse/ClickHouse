@@ -207,6 +207,10 @@ private:
         if (!can_be_had_above)
             return Decision::Carry;
 
+        /// A join output with a name clash is not touched: it crosses the `LIMIT` as the join outputs it.
+        if (merged.name_clash_outputs.contains(node))
+            return Decision::Carry;
+
         /// A lambda is not a column a step can hand over. It is placed only for the higher-order function that reads it,
         /// which is recomputed only when the lambda can be as well, see `canBeRecomputed`.
         if (WhichDataType(node->result_type).isFunction())

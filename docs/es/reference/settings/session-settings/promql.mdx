@@ -34,6 +34,16 @@ Especifica el nombre de la base de datos que usa el dialecto &#39;promql&#39;. U
 
 Establece el tiempo de evaluación que se usará con el dialecto promql, como una marca temporal Unix en segundos con una parte fraccionaria opcional. &#39;auto&#39; significa la hora actual.
 
+## promql_max_points_per_series {#promql_max_points_per_series}
+
+<PrivatePreviewBadge />
+
+<SettingsInfoBlock type="UInt64" default_value="11000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "11000"},{"label": "Nueva configuración para limitar la resolución de una consulta de rango en la API HTTP de Prometheus, igual que en Prometheus."}]}]} />
+
+Resolución máxima de una consulta de rango en la API HTTP de Prometheus (`/api/v1/query_range`). Al igual que en Prometheus, la consulta se rechaza si `(end - start) / step` es mayor que este valor. 0 significa sin límite. La función de tabla [prometheusQueryRange](/es/reference/functions/table-functions/prometheusQueryRange) no está sujeta a este límite.
+
 ## promql_push_down_label_matchers {#promql_push_down_label_matchers}
 
 <PrivatePreviewBadge />

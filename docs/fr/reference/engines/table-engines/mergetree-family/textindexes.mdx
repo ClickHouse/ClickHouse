@@ -4,7 +4,7 @@ keywords: ['recherche en texte intégral', 'index de texte', 'index', 'indices']
 sidebarTitle: 'Recherche en texte intégral avec des index de texte'
 slug: /engines/table-engines/mergetree-family/textindexes
 title: 'Recherche en texte intégral avec des index de texte'
-doc_type: 'référence'
+doc_type: 'reference'
 ---
 
 import { CloudNotSupportedBadge } from "/snippets/fr/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
@@ -638,7 +638,7 @@ Les positions stockées peuvent être consultées dans la colonne `positions` de
 
   Le paramètre facultatif `posting_list_block_size` (par défaut : 1048576) spécifie la taille des blocs de posting lists en lignes.
 
-  Le paramètre facultatif `posting_list_codec` (par défaut : `none`) spécifie le codec de la posting list :
+  Le paramètre facultatif `posting_list_codec` (par défaut : `pfor`) spécifie le codec de la posting list :
 
   * `none` - les posting lists sont stockées sans compression supplémentaire.
   * `bitpacking` - applique le [codage différentiel (delta)](https://en.wikipedia.org/wiki/Delta_encoding), suivi du [bit-packing](https://dev.to/madhav_baby_giraffe/bit-packing-the-secret-to-optimizing-data-storage-and-transmission-m70) (chacun dans des blocs de taille fixe). Cela ralentit les requêtes SELECT et n&#39;est pas recommandé pour le moment.
@@ -914,6 +914,16 @@ Exemple :
 ```sql
 SELECT count() FROM table WHERE hasAny(tags, ['clickhouse', 'olap']);
 SELECT count() FROM table WHERE hasAll(tags, ['clickhouse', 'olap']);
+```
+
+#### `arrayJoin` {#functions-example-arrayjoin}
+
+Une condition portant sur un élément du tableau indexé utilise l’index de la même manière que `has` et `hasAny` : `arrayJoin(tags) = 'clickhouse'` l’utilise comme `has(tags, 'clickhouse')`, et `arrayJoin(tags) IN (set)` l’utilise comme `hasAny(tags, set)`. Il en va de même pour `GLOBAL IN`, pour `IN` avec `transform_null_in = 1` lorsque le set ne contient aucun `NULL`, ainsi que pour la clause `ARRAY JOIN`. L’index permet uniquement d’ignorer des granules : ClickHouse vérifie toujours la condition sur chaque élément. `LEFT ARRAY JOIN` n’utilise pas l’index.
+
+Exemple :
+
+```sql
+SELECT arrayJoin(tags) AS tag FROM table WHERE tag IN ('clickhouse', 'olap');
 ```
 
 #### `mapContains` {#functions-example-mapcontains}
@@ -1630,11 +1640,14 @@ L’index de texte présente actuellement les limitations suivantes :
 La version du format sur disque des index de texte est contrôlée par le paramètre de table [`text_index_serialization_version`](/fr/reference/settings/merge-tree-settings/text-index) (par défaut : `v2_with_positions`).
 Ce paramètre constitue une préférence plutôt qu&#39;une contrainte stricte : si la version configurée ne permet pas de représenter un index, une version plus récente qui le permet est automatiquement sélectionnée. Ainsi, l&#39;écriture d&#39;un index de texte n&#39;échoue jamais à cause de ce paramètre.
 Lors d&#39;une mise à niveau progressive, verrouillez le format à l&#39;aide du paramètre [`compatibility`](/fr/reference/settings/session-settings/compatibility#compatibility) sur les serveurs déjà mis à niveau : lorsqu&#39;il est défini sur une version antérieure à celle ayant introduit le format correspondant, `text_index_serialization_version` reprend automatiquement une valeur antérieure et les serveurs plus récents continuent d&#39;écrire dans un format que les serveurs plus anciens peuvent toujours lire.
-Le codec de liste de postings n&#39;est pas régi par cette version : une partie de données écrite avec `posting_list_codec = 'pfor'` (ou le paramètre `text_index_posting_list_codec`) ne peut pas être lue par des serveurs antérieurs à ce codec, et ni `text_index_serialization_version` ni `compatibility` n&#39;empêchent son utilisation, car un codec désigné pour l&#39;index prend le pas sur la préférence de version, de la même manière que `support_phrase_search`. N&#39;activez pas `pfor` tant que chaque serveur susceptible de lire la table n&#39;a pas été mis à niveau.
+
+Le codec de liste de postings n&#39;est pas régi par `text_index_serialization_version`. Les parts écrites avec le codec `pfor` ne peuvent pas être lues par des serveurs antérieurs à la version 26.10.
+
+Depuis la version 26.11, `pfor` est la valeur par défaut du paramètre [`text_index_posting_list_codec`](/fr/reference/settings/merge-tree-settings/text-index#text_index_posting_list_codec). Lors d&#39;une mise à niveau progressive, définissez [`compatibility`](/fr/reference/settings/session-settings/compatibility#compatibility) sur une version antérieure à 26.11 sur les serveurs mis à niveau. La valeur par défaut revient alors à `none`, et ces serveurs continuent d&#39;écrire des parts que les serveurs plus anciens peuvent lire.
 
 ## Index de texte vs index basés sur des filtres de Bloom {#text-index-vs-bloom-filter-indexes}
 
-Les prédicats String peuvent être accélérés à l’aide d’index de texte et d’index basés sur des filtres de Bloom (types d’index `bloom_filter`, `ngrambf_v1`, `tokenbf_v1`, `sparse_grams`), mais ces deux types d’index diffèrent fondamentalement par leur conception et leurs cas d’usage visés :
+Les prédicats String peuvent être accélérés à l’aide d’index de texte et d’index basés sur des filtres de Bloom (types d’index `bloom_filter`, `ngrambf_v1`, `tokenbf_v1`, `sparse_grams`), mais ces deux types d’index diffèrent fondamentalement par leur conception et leurs cas d’usage visés :
 
 **Index à filtre de Bloom**
 
@@ -1651,13 +1664,13 @@ Les prédicats String peuvent être accélérés à l’aide d’index de texte 
 * Stockent des informations au niveau des lignes, ce qui permet une recherche de termes efficace.
 * Sont relativement volumineux (de dizaines à des centaines de mégaoctets par part).
 
-Les index basés sur des filtres de Bloom ne prennent en charge la recherche en texte intégral qu’en tant qu’« effet secondaire » :
+Les index basés sur des filtres de Bloom ne prennent en charge la recherche en texte intégral qu’en tant qu’« effet secondaire » :
 
 * Ils ne prennent pas en charge la tokenisation ni le prétraitement avancés.
 * Ils ne prennent pas en charge la recherche sur plusieurs tokens.
 * Ils n’offrent pas les performances attendues d’un index inversé.
 
-Les index de texte, en revanche, sont conçus spécifiquement pour la recherche en texte intégral :
+Les index de texte, en revanche, sont conçus spécifiquement pour la recherche en texte intégral :
 
 * Ils fournissent la tokenisation et le prétraitement
 * Ils prennent efficacement en charge `hasAllTokens`, `LIKE`, `match` et des fonctions de recherche textuelle similaires.

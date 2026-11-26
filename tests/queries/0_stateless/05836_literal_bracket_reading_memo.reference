@@ -1,0 +1,29 @@
+SELECT CAST(\'[1, 2]\', \'Array(UInt8)\'), CAST(\'(1, \\\'a\\\')\', \'Tuple(UInt8, String)\')
+SELECT [(1, 2), x], [[1, 2], [3, x]], (1, (2, (3, x))), ([1, 2], x), (1), (1, (2, 3))[1]
+SELECT CAST((CAST((CAST((1), \'UInt8\')), \'UInt16\')), \'UInt32\'), CAST([[1], [2]], \'Array(Array(UInt8))\'), CAST(\'[[1], [2]]\', \'Array(Array(UInt8))\')
+SELECT (1, (2, 3)) + x, [[1, 2], [3, 4]][1], CAST(((1, 2), (3, x)), \'Tuple(Tuple(UInt8, UInt8), Tuple(UInt8, UInt8))\')
+SELECT [[1, [2, x]], [3]], [[1, 2], [3]], CAST(\'(1, (2, (3, 4)))\', \'Tuple(UInt8, Tuple(UInt8, Tuple(UInt8, String)))\')
+(1,(2,(3,4)))	Tuple(\n    a UInt8,\n    b Tuple(\n        c UInt8,\n        d Tuple(\n            e UInt8,\n            f UInt64)))
+7	[(1,2),(7,3)]	[[1,2],[3,7]]	(1,(2,(3,7)))	((1,2),(3,7))	[[1],[2]]
+[[1,2],[3,4]]	Array(Array(UInt16))
+1
+258
+258
+860
+SELECT [1, [1, [1, 2]]], (1, (1, (1, 2))), (1, (1, 2))
+[[[2],[3]],[[4]]]	Array(Array(Array(UInt8)))	(1,(1,(1,2)))	Tuple(UInt8, Tuple(UInt8, Tuple(UInt8, UInt8)))	(1,(1,2))	Tuple(UInt8, Tuple(UInt8, UInt8))
+258
+SELECT (1; SELECT 2): Code: 62 failed at position 10 
+SELECT 1; SELECT (2: Code: 62 failed at position 10 Unmatched parentheses: '(' at position 8 is never closed 
+SELECT (1; SELECT 2]: Code: 62 failed at position 10 Unmatched parentheses: '(' at position 8 is never closed 
+SELECT 1); SELECT (2: Code: 62 failed at position 9 Unmatched parentheses: ')' at position 9 has no matching opening bracket 
+SELECT [1, (2]; SELECT 3: Code: 62 failed at position 14 Unmatched parentheses: ']' at position 14 does not match '(' at position 12 
+SELECT 1; SELECT 2; SELECT (3)): Code: 62 failed at position 11 Unmatched parentheses: ')' at position 11 has no matching opening bracket 
+SELECT [1, 2] 3: 1
+SELECT ((1, 2) 3): 1
+SELECT (1, (2, x) 3): 0
+SELECT [[1, 2], [3, x] 3]: 0
+SELECT (1) 3: 0
+SELECT [0x1] 3: 0
+SELECT ([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20] 3, x): 1
+SELECT ([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, x] 3, x): 0
