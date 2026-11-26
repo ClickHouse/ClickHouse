@@ -1,0 +1,8 @@
+<test>
+    <!--Exercise CBC last-block padding and an ECB control with constant keys.-->
+    <query>WITH toString(number) as plaintext, repeat('k', 16) as key16, repeat('iv', 8) as iv16, substring(iv16, 1, 12) as iv12, substring(concat(toString(number), key16), 1, 16) as vkey16, substring(concat(toString(number), iv16), 1, 16) as viv16 SELECT count() FROM numbers(3000000) WHERE NOT ignore(encrypt('aes-128-cbc', materialize(plaintext), key16, iv16))</query>
+    <query>WITH repeat('k', 16) AS key16, repeat('iv', 8) AS iv16 SELECT count() FROM numbers(3000000) WHERE NOT ignore(encrypt('aes-128-cbc', materialize(''), key16, iv16))</query>
+    <query>WITH repeat('k', 16) AS key16, repeat('iv', 8) AS iv16 SELECT count() FROM numbers(3000000) WHERE NOT ignore(encrypt('aes-128-cbc', materialize('message'), key16, iv16))</query>
+    <query>WITH repeat('k', 16) AS key16, repeat('iv', 8) AS iv16 SELECT count() FROM numbers(3000000) WHERE NOT ignore(encrypt('aes-128-cbc', materialize('short plaintext'), key16, iv16))</query>
+    <query>WITH toString(number) as plaintext, repeat('k', 16) as key16, repeat('iv', 8) as iv16, substring(iv16, 1, 12) as iv12, substring(concat(toString(number), key16), 1, 16) as vkey16, substring(concat(toString(number), iv16), 1, 16) as viv16 SELECT count() FROM numbers(3000000) WHERE NOT ignore(encrypt('aes-128-ecb', materialize(plaintext), key16))</query>
+</test>

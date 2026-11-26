@@ -542,6 +542,29 @@ private:
                 const size_t remaining = input_size - full_blocks * block_size;
                 unsigned char last_buf[block_size];
                 auto * last = deferred ? reinterpret_cast<unsigned char *>(encrypted) : last_buf;
+#if defined(__x86_64__)
+                if (is_cbc)
+                {
+                    __builtin_memset(last, static_cast<int>(block_size - remaining), block_size);
+                    if (remaining > 0)
+                        memcpy(last, input + full_blocks * block_size, remaining);
+
+                    /// XOR complete values instead of byte read-modify-writes after a partial padding store.
+                    using Block = UInt8 __attribute__((vector_size(16)));
+                    Block value;
+                    Block previous;
+                    __builtin_memcpy(&value, last, block_size);
+                    __builtin_memcpy(&previous, chain, block_size);
+                    value ^= previous;
+                    __builtin_memcpy(last, &value, block_size);
+                }
+                else
+                {
+                    if (remaining > 0)
+                        memcpy(last, input + full_blocks * block_size, remaining);
+                    memset(last + remaining, static_cast<int>(block_size - remaining), block_size - remaining);
+                }
+#else
                 if (remaining > 0)
                     memcpy(last, input + full_blocks * block_size, remaining);
                 memset(last + remaining, static_cast<int>(block_size - remaining), block_size - remaining);
@@ -550,6 +573,7 @@ private:
                     for (size_t i = 0; i < block_size; ++i)
                         last[i] ^= chain[i];
                 }
+#endif
                 if (!deferred && EVP_EncryptUpdate(ecb_ctx, reinterpret_cast<unsigned char *>(encrypted), &output_len, last, block_size) != 1)
                     onError("EVP_EncryptUpdate");
                 encrypted += block_size;
