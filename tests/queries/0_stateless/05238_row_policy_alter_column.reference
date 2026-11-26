@@ -9,9 +9,9 @@ after modify	[1,3]
 after clear	[]
 after reinsert	[4]
 -- IF EXISTS on a missing column stays a no-op even if a stale policy mentions it
--- a mention inside a subquery counts too
+-- the names inside a subquery belong to the tables the subquery reads
 ALTER_OF_COLUMN_IS_FORBIDDEN
-ALTER_OF_COLUMN_IS_FORBIDDEN
+subquery policy after rename	[1]
 -- table-qualified names count
 ALTER_OF_COLUMN_IS_FORBIDDEN
 ALTER_OF_COLUMN_IS_FORBIDDEN
@@ -36,6 +36,8 @@ ALTER_OF_COLUMN_IS_FORBIDDEN
 ALTER_OF_COLUMN_IS_FORBIDDEN
 -- a read through an Alias applies the policies of the alias and of its target
 ALTER_OF_COLUMN_IS_FORBIDDEN
+ALTER_OF_COLUMN_IS_FORBIDDEN
+-- a policy of an Alias can read the target in a subquery, those names count
 ALTER_OF_COLUMN_IS_FORBIDDEN
 -- the policy pins an ALIAS column, the alias pins its base column
 ALTER_OF_COLUMN_IS_FORBIDDEN
