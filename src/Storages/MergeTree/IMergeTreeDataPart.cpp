@@ -1989,7 +1989,7 @@ void IMergeTreeDataPart::loadProjections(
                         part->loadColumnsChecksumsIndexes(require_columns_checksums, check_consistency);
                         if (String reason = getProjectionPartDeletedRowsReason(*part); !reason.empty())
                         {
-                            LOG_WARNING(storage.log, "Considering projection {} of part {} broken: {}", projection.name, name, reason);
+                            LOG_WARNING(storage.log, "Will consider projection broken. Reason: {}", reason);
                             has_broken_projection = true;
                             part->setBrokenReason(reason, ErrorCodes::BROKEN_PROJECTION);
                         }
