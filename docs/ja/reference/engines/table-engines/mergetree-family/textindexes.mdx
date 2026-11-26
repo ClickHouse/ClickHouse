@@ -572,58 +572,61 @@ ORDER BY tuple();
 `support_phrase_search` がない場合、`hasPhrase` は索引をヒントとしてのみ使用し、残った各行を元の述語で検証します。さらに、ポストプロセッサはフレーズと haystack のトークンの両方を同じ方法で正規化するため、結果は読み取り経路に依存せず、ポストプロセッサが削除するトークンによってフレーズの隣接関係が崩れることもありません。`support_phrase_search = 1` の場合、`hasPhrase` は正確な direct read を使用します (存在する場合は、ポストプロセッサも引き続き適用されます) 。このポストプロセッサのサポートは `splitByRegexp` トークナイザーには適用されません。ポストプロセッサと組み合わせた `splitByRegexp` 索引に対する `hasPhrase` は拒否されます (以下の脚注 ³ を参照) 。
 ポストプロセッサによって空文字列にマップされる検索トークンは無視され、つまり検索フレーズに存在しないものとして扱われます。
 
-| 関数                                                                                                      | プリプロセッサ対応                   | 互換性のあるトークナイザー⁵                                                                    | ポストプロセッサ対応 |
-| ------------------------------------------------------------------------------------------------------- | --------------------------- | --------------------------------------------------------------------------------- | ---------- |
-| `=`                                                                                                     | はい                          | すべて                                                                               | はい         |
-| `IN`                                                                                                    | はい                          | すべて                                                                               | はい         |
-| [hasToken](/ja/reference/functions/regular-functions/string-search-functions#hasToken)                     | はい                          | すべて (`splitByNonAlpha` 向けに設計)                                                     | はい         |
-| [hasAnyTokens(col, str)](/ja/reference/functions/regular-functions/string-search-functions#hasAnyTokens)   | はい                          | すべて                                                                               | はい         |
-| [hasAllTokens(col, str)](/ja/reference/functions/regular-functions/string-search-functions#hasAllTokens)   | はい                          | すべて                                                                               | はい         |
-| [hasAnyTokens(col, arr)](/ja/reference/functions/regular-functions/string-search-functions#hasAnyTokens)   | いいえ (配列要素はそのままトークンとして扱われます) | すべて                                                                               | はい         |
-| [hasAllTokens(col, arr)](/ja/reference/functions/regular-functions/string-search-functions#hasAllTokens)   | いいえ (配列要素はそのままトークンとして扱われます) | すべて                                                                               | はい         |
-| [hasPhrase](/ja/reference/functions/regular-functions/string-search-functions#hasPhrase)                   | はい                          | `splitByNonAlpha`, `splitByString`, `splitByRegexp`³, `ngrams`, `asciiCJK`, `icu` | はい³        |
-| [startsWith](/ja/reference/functions/regular-functions/string-functions#startsWith)                        | はい⁴                         | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`, `array`⁴                  | はい⁴        |
-| [endsWith](/ja/reference/functions/regular-functions/string-functions#endsWith)                            | はい⁴                         | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`, `array`⁴                  | はい⁴        |
-| [like](/ja/reference/functions/regular-functions/string-search-functions#like)                             | はい¹                         | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`¹                           | はい¹        |
-| [match](/ja/reference/functions/regular-functions/string-search-functions#match)                           | はい¹                         | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`¹                           | はい¹        |
-| [ilike](/ja/reference/functions/regular-functions/string-search-functions#like)                            | はい² (`lower`/`upper` のみ)    | `splitByNonAlpha`, `array`²                                                       | いいえ²       |
-| [mapContainsKey](/ja/reference/functions/regular-functions/tuple-map-functions#mapContainsKey)             | はい                          | すべて                                                                               | はい         |
-| [mapContainsValue](/ja/reference/functions/regular-functions/tuple-map-functions#mapContainsValue)         | はい                          | すべて                                                                               | はい         |
-| [mapContainsKeyLike](/ja/reference/functions/regular-functions/tuple-map-functions#mapContainsKeyLike)     | はい                          | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`                            | はい         |
-| [mapContainsValueLike](/ja/reference/functions/regular-functions/tuple-map-functions#mapContainsValueLike) | はい                          | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`                            | はい         |
-| [has](/ja/reference/functions/regular-functions/array-functions#has)                                       | はい                          | `array`                                                                           | はい         |
-| [hasAny](/ja/reference/functions/regular-functions/array-functions#hasAny)                                 | はい                          | `array`                                                                           | はい         |
-| [hasAll](/ja/reference/functions/regular-functions/array-functions#hasAll)                                 | はい                          | `array`                                                                           | はい         |
+| 関数                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | プリプロセッサ対応                   | 互換性のあるトークナイザー⁵                                                                    | ポストプロセッサ対応 |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------- | --------------------------------------------------------------------------------- | ---------- |
+| `=`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | はい                          | すべて                                                                               | はい         |
+| `IN`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | はい                          | すべて                                                                               | はい         |
+| [hasToken](/ja/reference/functions/regular-functions/string-search-functions#hasToken)                                                                                                                                                                                                                                                                                                                                                                                                                                            | はい                          | すべて (`splitByNonAlpha` 向けに設計)                                                     | はい         |
+| [hasAnyTokens(col, str)](/ja/reference/functions/regular-functions/string-search-functions#hasAnyTokens)                                                                                                                                                                                                                                                                                                                                                                                                                          | はい                          | すべて                                                                               | はい         |
+| [hasAllTokens(col, str)](/ja/reference/functions/regular-functions/string-search-functions#hasAllTokens)                                                                                                                                                                                                                                                                                                                                                                                                                          | はい                          | すべて                                                                               | はい         |
+| [hasAnyTokens(col, arr)](/ja/reference/functions/regular-functions/string-search-functions#hasAnyTokens)                                                                                                                                                                                                                                                                                                                                                                                                                          | いいえ (配列要素はそのままトークンとして扱われます) | すべて                                                                               | はい         |
+| [hasAllTokens(col, arr)](/ja/reference/functions/regular-functions/string-search-functions#hasAllTokens)                                                                                                                                                                                                                                                                                                                                                                                                                          | いいえ (配列要素はそのままトークンとして扱われます) | すべて                                                                               | はい         |
+| [hasPhrase](/ja/reference/functions/regular-functions/string-search-functions#hasPhrase)                                                                                                                                                                                                                                                                                                                                                                                                                                          | はい                          | `splitByNonAlpha`, `splitByString`, `splitByRegexp`³, `ngrams`, `asciiCJK`, `icu` | はい³        |
+| [startsWith](/ja/reference/functions/regular-functions/string-functions#startsWith)                                                                                                                                                                                                                                                                                                                                                                                                                                               | はい⁴                         | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`, `array`⁴                  | はい⁴        |
+| [endsWith](/ja/reference/functions/regular-functions/string-functions#endsWith)                                                                                                                                                                                                                                                                                                                                                                                                                                                   | はい⁴                         | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`, `array`⁴                  | はい⁴        |
+| [like](/ja/reference/functions/regular-functions/string-search-functions#like)                                                                                                                                                                                                                                                                                                                                                                                                                                                    | はい¹                         | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`¹                           | はい¹        |
+| [match](/ja/reference/functions/regular-functions/string-search-functions#match)                                                                                                                                                                                                                                                                                                                                                                                                                                                  | はい¹                         | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`¹                           | はい¹        |
+| [ilike](/ja/reference/functions/regular-functions/string-search-functions#like)                                                                                                                                                                                                                                                                                                                                                                                                                                                   | はい² (`lower`/`upper` のみ)    | `splitByNonAlpha`, `array`²                                                       | いいえ²       |
+| [position](/ja/reference/functions/regular-functions/string-search-functions#position), [positionUTF8](/ja/reference/functions/regular-functions/string-search-functions#positionUTF8), [countSubstrings](/ja/reference/functions/regular-functions/string-search-functions#countSubstrings) (`> 0`、[後述](#functions-example-position)を参照)                                                                                                                                                                                               | `lower`/`upper` のみ          | `splitByNonAlpha`, `array`                                                        | はい¹        |
+| [positionCaseInsensitive](/ja/reference/functions/regular-functions/string-search-functions#positionCaseInsensitive), [positionCaseInsensitiveUTF8](/ja/reference/functions/regular-functions/string-search-functions#positionCaseInsensitiveUTF8), [countSubstringsCaseInsensitive](/ja/reference/functions/regular-functions/string-search-functions#countSubstringsCaseInsensitive), [countSubstringsCaseInsensitiveUTF8](/ja/reference/functions/regular-functions/string-search-functions#countSubstringsCaseInsensitiveUTF8) (`> 0`) | `lower`/`upper` のみ²         | `splitByNonAlpha`, `array`²                                                       | いいえ²       |
+| [mapContainsKey](/ja/reference/functions/regular-functions/tuple-map-functions#mapContainsKey)                                                                                                                                                                                                                                                                                                                                                                                                                                    | はい                          | すべて                                                                               | はい         |
+| [mapContainsValue](/ja/reference/functions/regular-functions/tuple-map-functions#mapContainsValue)                                                                                                                                                                                                                                                                                                                                                                                                                                | はい                          | すべて                                                                               | はい         |
+| [mapContainsKeyLike](/ja/reference/functions/regular-functions/tuple-map-functions#mapContainsKeyLike)                                                                                                                                                                                                                                                                                                                                                                                                                            | はい                          | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`                            | はい         |
+| [mapContainsValueLike](/ja/reference/functions/regular-functions/tuple-map-functions#mapContainsValueLike)                                                                                                                                                                                                                                                                                                                                                                                                                        | はい                          | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`                            | はい         |
+| [has](/ja/reference/functions/regular-functions/array-functions#has)                                                                                                                                                                                                                                                                                                                                                                                                                                                              | はい                          | `array`                                                                           | はい         |
+| [hasAny](/ja/reference/functions/regular-functions/array-functions#hasAny)                                                                                                                                                                                                                                                                                                                                                                                                                                                        | はい                          | `array`                                                                           | はい         |
+| [hasAll](/ja/reference/functions/regular-functions/array-functions#hasAll)                                                                                                                                                                                                                                                                                                                                                                                                                                                        | はい                          | `array`                                                                           | はい         |
 
-¹ `LIKE` と `match` は、記載されたトークナイザーではヒントとして direct read を使用し、それ以外では 総当たりスキャン にフォールバックします。
-`LIKE` はさらに、プリプロセッサやポストプロセッサを使わない `splitByNonAlpha` および `array` トークナイザーに対して、辞書スキャンによる評価もサポートします (`use_text_index_like_evaluation_by_dictionary_scan` で有効化) 。以下の [LIKE/ILIKE クエリ](#like-ilike-queries-perf) のセクションを参照してください。
+¹ `LIKE` と `match` は、記載されているトークナイザーでは direct read をヒントとして使用し、それ以外の場合は総当たりのスキャンにフォールバックします。
+さらに `LIKE` は、プリプロセッサおよびポストプロセッサを持たない `splitByNonAlpha` および `array` トークナイザーに対して、辞書スキャンによる評価 (`use_text_index_like_evaluation_by_dictionary_scan` で有効化) もサポートしています。詳しくは後述の [LIKE/ILIKE クエリ](#like-ilike-queries-perf) セクションを参照してください。
+[`position` の比較](#functions-example-position) は `LIKE '%needle%'` として評価されるため、`array` トークナイザーの場合も含め、この辞書スキャンが適用されます。
 
-² `ILIKE` は、辞書スキャンによる評価でのみサポートされます (`use_text_index_like_evaluation_by_dictionary_scan = 1`、`splitByNonAlpha` または `array` トークナイザー) 。
-辞書スキャンがサポートしないパターンについて、索引をヒントとして使うフォールバックはありません。設定が無効になっている場合、またはトークナイザーがサポート対象外の場合、`ILIKE` では索引は使用されません。
-プリプロセッサがある場合は `lower` または `upper` である必要があり、ポストプロセッサはサポートされません。
-さらに、一部の needle は対象外となります。[LIKE/ILIKE クエリ](#like-ilike-queries-perf) を参照してください。
+² `ILIKE` は、辞書スキャンによる評価 (`use_text_index_like_evaluation_by_dictionary_scan = 1`、`splitByNonAlpha` または `array` トークナイザー) でのみサポートされます。
+辞書スキャンが対応していないパターンについて、索引をヒントとして使用する方式へのフォールバックはありません。設定が無効になっている場合や、トークナイザーがサポート対象外の場合、`ILIKE` に索引は使用されません。
+プリプロセッサを指定する場合は `lower` または `upper` である必要があり、ポストプロセッサはサポートされません。
+また、一部の検索文字列は対象外となります。[LIKE/ILIKE クエリ](#like-ilike-queries-perf) を参照してください。
 
 ³ `splitByRegexp` テキスト索引上の `hasPhrase` は ポストプロセッサ を**サポートしません**。ポストプロセッサ の row-level な rewrite が空白分割による `splitByNonAlpha` 形式のトークンを前提としているため、この組み合わせは例外で拒否されます。ポストプロセッサ を指定しない場合、`splitByRegexp` は `hasPhrase` で完全にサポートされます。
 
-⁴ `startsWith` と `endsWith` は needle の完全なトークンを検索しますが、needle の開いた側の端にあるトークンは値がそこから続くため不完全です: `startsWith(col, 'ClickHouse is')` はトークン `ClickHouse` を検索しますが、`startsWith(col, 'ClickHouse')` には検索できる完全なトークンがありません。
+⁴ `startsWith` と `endsWith` は 検索文字列 の完全なトークンを検索しますが、検索文字列 の開いた側の端にあるトークンは値がそこから続くため不完全です: `startsWith(col, 'ClickHouse is')` はトークン `ClickHouse` を検索しますが、`startsWith(col, 'ClickHouse')` には検索できる完全なトークンがありません。
 後者は代わりに辞書スキャン (`use_text_index_like_evaluation_by_dictionary_scan = 1`、`splitByNonAlpha` または `array` トークナイザー、プリプロセッサ および ポストプロセッサ なし) によって評価されます。これは `col LIKE 'ClickHouse%'` が取るパスでもあります。アナライザのパス [optimize&#95;rewrite&#95;like&#95;perfect&#95;affix](/ja/reference/settings/session-settings/optimize-rewrite#optimize_rewrite_like_perfect_affix) がこれを `startsWith` に rewrite するためです。
 [LIKE/ILIKE クエリ](#like-ilike-queries-perf) を参照してください。
 
 ⁵ *互換性のあるトークナイザー* カラムでは、`Map` カラム向けの特殊なトークナイザーである [`keyValuePairs`](#tokenizer-key-value-pairs) トークナイザーは対象外としています。
 
-**Experimental: フレーズ検索サポートの引数 (任意)**。
+**実験的: フレーズ検索サポートの引数 (任意)**。
 
 実験的なパラメータ `support_phrase_search` (デフォルト: `0`) は、索引にトークン位置を保存するかどうかを制御します。
 `1` に設定すると、索引は位置データ (`.pos` ファイル内) も追加で保存し、これにより [`hasPhrase`](#functions-example-hasphrase) 関数で direct read を介した完全なフレーズ一致が可能になります。
 位置情報を保存すると、索引のディスク上のサイズと書き込みコストが増加するため、これはオプトインです。
-ディスク上フォーマットはまだ stable ではないため、このパラメータは Experimental であり、将来の release で変更される可能性があります。
-そのため、`support_phrase_search = 1` を指定して索引を作成するには、MergeTree setting [`allow_experimental_text_index_phrase_search`](/ja/reference/settings/merge-tree-settings/allow-experimental#allow_experimental_text_index_phrase_search) を有効にする必要があります。
+ディスク上フォーマットはまだ stable ではないため、このパラメータは 実験的 であり、将来の release で変更される可能性があります。
+そのため、`support_phrase_search = 1` を指定して索引を作成するには、MergeTree 設定 [`allow_experimental_text_index_phrase_search`](/ja/reference/settings/merge-tree-settings/allow-experimental#allow_experimental_text_index_phrase_search) を有効にする必要があります。
 ポスティングリストのみの保存を維持するには `support_phrase_search = 0` (デフォルト) を設定してください。この引数を指定せずに作成されたテキスト索引には位置情報は含まれません。
 保存された位置情報は、テーブル関数 [mergeTreeTextIndex](/ja/reference/functions/table-functions/mergeTreeTextIndex) の `positions` カラムで確認できます。
 
 <Warning>
-  この引数は Experimental であり、テスト用途でのみ使用してください。
-  位置情報の保存を有効にするには、MergeTree setting [`allow_experimental_text_index_phrase_search`](/ja/reference/settings/merge-tree-settings/allow-experimental#allow_experimental_text_index_phrase_search) を設定してください。
+  この引数は 実験的 であり、テスト用途でのみ使用してください。
+  位置情報の保存を有効にするには、MergeTree 設定 [`allow_experimental_text_index_phrase_search`](/ja/reference/settings/merge-tree-settings/allow-experimental#allow_experimental_text_index_phrase_search) を設定してください。
 </Warning>
 
 <details markdown="1">
@@ -836,6 +839,23 @@ startsWith(comment, 'clickhouse supports ')`
 
 ```sql
 SELECT count() FROM table WHERE endsWith(comment, ' olap engine');
+```
+
+#### `position` と `countSubstrings` {#functions-example-position}
+
+`position(col, 'value') > 0` ([position](/ja/reference/functions/regular-functions/string-search-functions#position)) は、`col LIKE '%value%'` が真となる場合にのみ真となります。そのため、設定 `use_text_index_for_substring_search` を有効にすると、その `LIKE` クエリと同じ方法でテキスト索引が使用されます。詳しくは [LIKE/ILIKE クエリ](#like-ilike-queries-perf)を参照してください。
+この設定はデフォルトで無効です。一意の ID のように、ほとんどの行がそれぞれ固有のトークンを持つ場合は、辞書をスキャンするほうがカラムを直接検索するよりも遅くなるためです。
+`!= 0`、`>= 1`、および `0 < position(col, 'value')` のように左右を入れ替えた比較や、[positionUTF8](/ja/reference/functions/regular-functions/string-search-functions#positionUTF8) と [countSubstrings](/ja/reference/functions/regular-functions/string-search-functions#countSubstrings) についても同様です。
+[positionCaseInsensitive](/ja/reference/functions/regular-functions/string-search-functions#positionCaseInsensitive) (別名 `instr`) 、[positionCaseInsensitiveUTF8](/ja/reference/functions/regular-functions/string-search-functions#positionCaseInsensitiveUTF8)、[countSubstringsCaseInsensitive](/ja/reference/functions/regular-functions/string-search-functions#countSubstringsCaseInsensitive)、[countSubstringsCaseInsensitiveUTF8](/ja/reference/functions/regular-functions/string-search-functions#countSubstringsCaseInsensitiveUTF8) は、`col ILIKE '%value%'` と同様に索引を使用します。
+`positionCaseInsensitive` と `countSubstringsCaseInsensitive` は ASCII 文字についてのみ大文字・小文字を折り畳むため、`ILIKE` とは異なり、非 ASCII 文字を含む検索文字列であっても `array` トークナイザーで索引を使用できます。
+
+次の場合、索引は使用されません：開始位置の引数を取る形式の場合、検索文字列が有効なUTF-8ではない場合、`Nullable` カラムの場合、索引に `lower` または `upper` 以外のプリプロセッサが設定されている場合、トークナイザーが `splitByNonAlpha` または `array` 以外の場合。
+これらの関数はバイト単位で検索する一方、その他のトークナイザーは UTF-8 としてデコードするため、有効なUTF-8ではない値に含まれる一致を見逃す可能性があるためです。
+
+例:
+
+```sql
+SELECT count() FROM table WHERE position(comment, 'clickhouse') > 0 SETTINGS use_text_index_for_substring_search = 1;
 ```
 
 #### `hasToken` {#functions-example-hastoken}
@@ -1528,7 +1548,7 @@ LIKE/ILIKE のクエリパターンが `%<alpha-numeric-characters-without-space
 辞書スキャンの結果をどう利用するかは、検索文字列がどこにアンカーされているかによって決まります。
 
 * `%value%` は、その行のいずれかのトークンに一致する場合にのみ行に一致します。そのため索引だけでクエリを判定でき、元の述語を除去する [direct read (hint なし) ](#direct-read) となります。
-* `value%` と `%value` は検索文字列を値全体にアンカーしますが、辞書スキャンはトークン単位でしかアンカーできません。そのためスキャンは一致する行の superset を返し、[ヒントとしての direct read](#direct-read) に利用されます。
+* `value%` と `%value` は検索文字列を値全体にアンカーしますが、辞書スキャンはトークン単位でしかアンカーできません。そのためスキャンは一致する行の superset を返し、[ヒントとしての直接読み取り](#direct-read) に利用されます。
 
 この同じ辞書スキャンは、検索文字列に検索できる完全なトークンが存在しない場合の `startsWith(col, 'value')` と `endsWith(col, 'value')` にも使われます。
 アナライザのパスである [optimize&#95;rewrite&#95;like&#95;perfect&#95;affix](/ja/reference/settings/session-settings/optimize-rewrite#optimize_rewrite_like_perfect_affix) (デフォルトで有効) が `col LIKE 'value%'` を `startsWith(col, 'value')` に、`col LIKE '%value'` を `endsWith(col, 'value')` に rewrite するため、実際にはほとんどの `value%` および `%value` パターンがこの経路をたどります。
@@ -1536,7 +1556,7 @@ LIKE/ILIKE のクエリパターンが `%<alpha-numeric-characters-without-space
 
 特別なケースとして、索引のトークナイザーが `array` の場合は、*あらゆる* パターンがこの最適化の対象となります。アンカー、句読点、`_` の wildcard、`%` で区切られた複数の検索文字列、escape された metacharacter などがすべて含まれます。
 
-この最適化が有効な場合、LIKE/ILIKE クエリはフルテーブルスキャンよりも大幅に高速になります。ただし、パターンが辞書内のほとんどのトークンに一致する場合は、フルテーブルスキャンより性能が低下することがあります。幸い、これを防ぐための fallback の仕組みがあります。
+この最適化が有効な場合、LIKE/ILIKE クエリはフルテーブルスキャンよりも大幅に高速になります。ただし、パターンが辞書内のほとんどのトークンに一致する場合は、フルテーブルスキャンよりパフォーマンスが低下することがあります。幸い、これを防ぐための フォールバック の仕組みがあります。
 
 `value%` や `%value` パターンの高速化はグラニュールのスキップによって得られるため、一致する行の配置状況に依存します。すべてのグラニュールに一致行が存在するような検索文字列では何も prune されず、結局は行われる full scan に加えて辞書スキャンのコストまで支払うことになります。そのような workload では [use&#95;text&#95;index&#95;like&#95;evaluation&#95;by&#95;dictionary&#95;scan](/ja/reference/settings/session-settings/use-text#use_text_index_like_evaluation_by_dictionary_scan) を無効にしてください。
 
@@ -1544,15 +1564,15 @@ LIKE/ILIKE のクエリパターンが `%<alpha-numeric-characters-without-space
 
 * [use&#95;text&#95;index&#95;like&#95;evaluation&#95;by&#95;dictionary&#95;scan](/ja/reference/settings/session-settings/use-text#use_text_index_like_evaluation_by_dictionary_scan)
 
-fallback の仕組みは 2 つの設定で制御されます。
+フォールバック の仕組みは 2 つの設定で制御されます。
 
 * [text&#95;index&#95;like&#95;min&#95;pattern&#95;length](/ja/reference/settings/session-settings/text-index#text_index_like_min_pattern_length)
 * [text&#95;index&#95;like&#95;max&#95;postings&#95;to&#95;read](/ja/reference/settings/session-settings/text-index#text_index_like_max_postings_to_read)
 
-この最適化がサポートするのは、`like`、`ilike`、`startsWith`、`endsWith` の各関数、および検索文字列が 1 つの場合の `multiSearchAny`、`multiSearchAnyUTF8`、`multiSearchAnyCaseInsensitive`、`multiSearchAnyCaseInsensitiveUTF8` の各関数のみです。
+この最適化がサポートするのは、`like`、`ilike`、`startsWith`、`endsWith` の各関数、`like` または `ilike` として評価される [`position` の比較](#functions-example-position)、および検索文字列が 1 つの場合の `multiSearchAny`、`multiSearchAnyUTF8`、`multiSearchAnyCaseInsensitive`、`multiSearchAnyCaseInsensitiveUTF8` の各関数のみです。
 また一般に、プリプロセッサやポストプロセッサを持たない索引が必要です (`ilike` はプリプロセッサ関数として `lower` または `upper` も受け付けます)。
 
-`ilike` の場合、`splitByNonAlpha` トークナイザーと `array` トークナイザーのいずれにおいても、次の 1 つの特殊なケースでは検索がフルテーブルスキャンに falls back します。
+`ilike` の場合、`splitByNonAlpha` トークナイザーと `array` トークナイザーのいずれにおいても、次の 1 つの特殊なケースでは検索がフルテーブルスキャンに フォールバック します。
 
 * 索引のプリプロセッサ式に `lowerUTF8` または `upperUTF8` が含まれる場合。これらは非 ASCII 文字を ASCII の文字に書き換える (`ß` を `SS` に、`ſ` を `S` に) ため、`ilike` が一致しない行を索引が報告してしまうことになります。
 
