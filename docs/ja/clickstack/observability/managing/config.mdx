@@ -1,0 +1,112 @@
+---
+slug: /clickstack/observability/managing/config
+title: '設定オプション'
+description: '完全マネージド型の ClickHouse Observability で、サービスへのアクセス、テレメトリーソース、API およびエージェントの接続を管理します。'
+keywords: ['ClickHouse Observability', 'マネージド設定', 'ソース', 'マネージドテレメトリー']
+doc_type: 'guide'
+sidebarTitle: '設定オプション'
+---
+
+import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge label="ベータ版" />
+
+ClickHouse Observability の **チーム設定** では、データアクセス、API およびエージェントの接続、インテグレーション、クエリ設定を管理できます。以下のセクションは、アプリケーション内のタブに沿って構成されています。インジェスト、スキーマ、インフラストラクチャ、スケーリングは ClickHouse が管理します。
+
+## Data {#data}
+
+**チーム設定 → Data** を開くと、ソースと、テレメトリーを送信するための接続情報を確認できます。
+
+### ログソース {#datasource-settings}
+
+**ログソース** セクションには、マネージドサービスで提供されているログソースが一覧表示されます。
+
+| ログソース       | データ               |
+| --------- | ----------------- |
+| **ログ**    | ログイベント            |
+| **トレース**  | 分散トレーシングのスパン      |
+| **メトリクス** | メトリクスデータ          |
+| **セッション** | ブラウザのセッションリプレイデータ |
+
+各ログソースには、関連付けられた読み取り用の接続と、該当する場合はテーブル名が表示されます。ログソースの右側にあるスイッチで、ログソースの有効化と無効化を切り替えられます。ログソースを無効化しても設定は保持されますが、ログソースセレクターに表示されなくなり、自動的に選択されることもなくなります。なお、テレメトリーのインジェストが停止したり、保存済みのデータが削除されたりすることはありません。再度有効化すると、セレクターで選択できるようになります。
+
+### Managed Telemetry {#managed-telemetry}
+
+**ソース** の下にある **Managed Telemetry** セクションには、ストレージと OpenTelemetry Collector のステータスに加え、サービスにデータを送信するための接続情報が表示されます。
+
+* **URL**、**Collector config**、**Env vars** のいずれかを選択すると、必要なフォーマットで接続情報を表示できます。
+* 設定をコピーするには **Copy connection details** を使用します。マスクされた認証情報を確認する必要がある場合は、**Reveal key** を選択してください。
+* **Send a Test Log** を使用すると、サービスにサンプルログを送信できます。
+
+アプリケーションやコレクターの設定手順については、[データの取り込み](/ja/clickstack/observability/ingesting-data/overview)を参照してください。
+
+### IP access list {#ip-access-list}
+
+**Managed Telemetry** の **IP access list → 編集** から、collector のエンドポイントへのアクセスを許可する IP アドレスまたは CIDR 範囲を設定できます。
+
+### プライベートエンドポイント {#private-endpoints}
+
+collector へのプライベート接続を設定するには、**プライベートエンドポイントを設定** を使用します。AWS 上のデプロイメントでは、AWS PrivateLink が使用されます。**プライベートエンドポイント** リンクをクリックすると、クラウドコンソールで組織のプライベートエンドポイントの一覧が開きます。
+
+### 危険な操作 {#service-settings}
+
+**Delete warehouse** を実行すると、オブザーバビリティ warehouse とそのすべてのサービスが削除されます。まず読み取りサービスが削除され、続いてプライマリサービスが削除されます。この操作は、warehouse およびそのデータが不要になった場合にのみ実行してください。
+
+## メンバーとロール {#members-and-roles}
+
+**チーム設定 → メンバーとロール** を開くと、RBAC ロールと新規ユーザーのデフォルトロールを確認できます。ClickHouse Cloud でチームのメンバーを管理するには、**コンソールで管理** を使用してください。詳しくは [ロールベースのアクセス制御](/ja/clickstack/observability/managing/rbac) を参照してください。
+
+## API &amp; Agents {#api-and-agents}
+
+**チーム設定 → API &amp; Agents** を開くと、インジェストキーの管理、サービス識別子の確認、エージェントの接続、AI 機能の設定を行えます。
+
+### インジェスト API key {#ingestion-api-keys}
+
+**API keys** セクションには、**Team ID**、**サービス ID**、およびインジェストキーが表示されます。インジェストキーは、OpenTelemetry collector に送信されるテレメトリーの認証に使用されます。
+
+名前を入力して **Create key** を選択すると、ログソースまたは環境ごとにキーを発行できます。既存のキーでは、**Reveal key**、**Copy key**、**Freeze**、**Revoke** の各操作を利用できます。変更は1分ほどで反映されます。
+
+これとは別の **Manage API Keys** リンクからは、ClickHouse Cloud の組織設定が開き、管理 API で使用するキーを管理できます。
+
+### エージェントを接続する {#connect-an-agent}
+
+**Connect your AI agents** にある **Enable MCP for this service** で、リモートMCPサーバーの有効/無効を切り替えます。使用するクライアントを選択し、生成された設定をコピーします。この設定にはサービス ID が含まれているため、エージェントのリクエストは対象のサービスに送信されます。**Manage sessions** をクリックすると クラウドコンソールが開き、MCP セッションを確認できます。クラウドMCPエンドポイントは OAuth を使用するため、クライアントからサインインを求められたら、ClickHouse Cloud アカウントでサインインしてください。セットアップ手順と対応クライアントについては、[MCPクライアントを接続する](/ja/clickstack/observability/mcp#managed-connecting-a-client) を参照してください。
+
+### APIを使用する {#use-the-api}
+
+[ClickHouse Observability API](/ja/clickstack/observability/api-reference)を使用すると、ダッシュボード、アラート、その他のリソースをプログラムから管理できます。APIリクエストの認証には、ClickHouse Cloud APIキーのIDとシークレットを使用し、HTTP Basic認証で行います。必要なアクセス許可とキーの設定については、[API認証](/ja/clickstack/observability/api-reference#authentication)を参照してください。
+
+API認証情報は、**Data → Managed Telemetry** で確認できるインジェスト API keyとは別物です。なお、MCPクライアントはどちらのAPIキーも使用せず、OAuthで認証します。
+
+### Terraform へのエクスポート {#export-to-terraform}
+
+**Export to Terraform** は **実験的** 機能です。含めるリソースの種類を選択し、**Download import file** を使用して Terraform プロジェクトに追加します。UI には、ClickHouse プロバイダーでリソース設定を生成するためのコマンドが表示されます。プラットフォームで管理される接続は、参照専用の locals としてエクスポートされます。
+
+### Generative AI の設定 {#generative-ai}
+
+**Configure Generative AI** を使用すると、サービスの生成 AI 機能を有効化または無効化できます。対象となる機能には、Chart Explorer の Chart AIアシスタントと [AIノートブック](/ja/clickstack/observability/notebooks) があります。
+
+## インテグレーション {#integrations}
+
+Webhook を管理するには、**チーム設定 → インテグレーション** を開きます。アラート通知用のインテグレーションを追加するには、**Add Webhook** を選択します。アラートの設定については、[アラート](/ja/clickstack/observability/features/alerts)を参照してください。
+
+## クエリ設定 {#query-settings}
+
+**チーム設定 → クエリ設定** を開くと、アプリケーションが ClickHouse にクエリを実行する方法を調整できます。設定を変更するには、その横にある **編集** を選択します。このタブは UI 上で **実験的** と表示されています。
+
+| 設定                                    | 目的                                                                     |
+| ------------------------------------- | ---------------------------------------------------------------------- |
+| **Search Row Limit**                  | 検索ページおよび検索ダッシュボードタイルで、1 回のクエリで返される行数を制限します。                            |
+| **Query Timeout (seconds)**           | クエリの最大実行時間を設定します。                                                      |
+| **Max Rows to Read (METADATA ONLY)**  | メタデータクエリでスキャンされるテーブル行数を制限します。                                          |
+| **Filter Keys Fetch Limit**           | 検索ページで **More filters** を選択したときに取得するフィルタキーの数を制御します。                    |
+| **Field Metadata Queries**            | アプリケーションが ClickHouse からフィールドメタデータを取得するかどうかを制御します。                      |
+| **Parallelize Queries When Possible** | 条件を満たすウィンドウ単位のクエリを並列に実行できるようにします。これにより、ClickHouse のピーク負荷が増加する可能性があります。 |
+
+このタブには、検索ヒストグラムのソフトブロックしきい値や検索ウィンドウの期間を設定する項目もあります。クエリ設定をデフォルトに戻すには、**Reset to default** を使用します。
+
+## スキーマ移行 {#schema-migrations}
+
+**チーム設定 → スキーマ移行** を開くと、移行履歴を確認できます。
+
+セルフマネージド環境でのログソースおよびスキーマの設定については、[セルフマネージド環境におけるログソースとスキーマの設定](/ja/clickstack/self-configured/managing/config)を参照してください。

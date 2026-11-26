@@ -111,6 +111,8 @@ doc_type: 'guide'
 
 تنطبق سياسة الصفوف عند قراءة بيانات الجدول محليًا. بالنسبة إلى جدول [Distributed](/ar/reference/engines/table-engines/special/distributed)، أو أي جدول آخر يفوّض القراءة إلى خوادم بعيدة، عرّف السياسة على الجداول الأساسية في كل خادم: إذ لا يمكن تطبيق سياسة على الجدول نفسه المدعوم بخوادم بعيدة على الاستعلام المُرسَل، وتُرفض القراءات من خلاله بدلًا من ذلك. ولا تُطبّق مثل هذه السياسة على جدول أساسي عندما يرسل المُبادِر خطة قراءة مُنشأة مسبقًا، لذا أبقِ [`serialize_query_plan = 0`](/ar/reference/settings/session-settings/serialize#serialize_query_plan) للمستخدمين الذين يجب فرض سياسات الصفوف عليهم (راجع [issue #112891](https://github.com/ClickHouse/ClickHouse/issues/112891)).
 
+تُصفّي سياسة الصفوف الصفوفَ التي يُعيدها الاستعلام، لكنها لا تُخفي أعداد الصفوف: فقد تشمل البيانات الوصفية للجدول، مثل `total_rows` في [`system.tables`](/ar/reference/system-tables/tables) و`rows` في [`system.parts`](/ar/reference/system-tables/parts)، وكذلك إحصاءات الاستعلام، مثل [`EXPLAIN ESTIMATE`](/ar/reference/statements/explain#explain-estimate) و`read_rows` في تقدّم الاستعلام والحد [`max_rows_to_read`](/ar/reference/settings/session-settings/max-rows#max_rows_to_read)، صفوفًا تُخفيها السياسة.
+
 <Note>
   لا تكون سياسات الصفوف ذات جدوى إلا إذا كانت لديك صلاحية `readonly` فقط. فإذا كان بإمكانك تعديل جدول أو نسخ partitions بين جداول، فإن ذلك يُلغي القيود التي تفرضها سياسات الصفوف.
 </Note>

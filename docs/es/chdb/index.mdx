@@ -11,7 +11,7 @@ chDB es un motor SQL OLAP rápido que se ejecuta en el mismo proceso y está bas
 Puede usarlo cuando quiera aprovechar la potencia de ClickHouse en un lenguaje de programación sin necesidad de conectarse a un servidor de ClickHouse.
 
 <div id="key-features">
-  ## Características principales
+  ## Características principales {#key-features}
 </div>
 
 * **Motor SQL OLAP en el mismo proceso** - Con tecnología de ClickHouse, no es necesario instalar ClickHouse server
@@ -22,7 +22,7 @@ Puede usarlo cuando quiera aprovechar la potencia de ClickHouse en un lenguaje d
 * **DataStore API** - API compatible con pandas con optimización SQL, compatible con más de 630 métodos
 
 <div id="datastore">
-  ## DataStore: API compatible con pandas
+  ## DataStore: API compatible con pandas {#datastore}
 </div>
 
 **¡NUEVO!** DataStore ofrece una API compatible con pandas que combina la sintaxis familiar de pandas con el rendimiento de ClickHouse.
@@ -35,7 +35,7 @@ Puede usarlo cuando quiera aprovechar la potencia de ClickHouse en un lenguaje d
 </Tip>
 
 <div id="one-line-migration">
-  ### Migración en una sola línea
+  ### Migración en una sola línea {#one-line-migration}
 </div>
 
 ```python
@@ -48,7 +48,7 @@ result = df[df['age'] > 25].groupby('city')['salary'].mean()
 ```
 
 <div id="performance-highlights">
-  ### Aspectos destacados del rendimiento
+  ### Aspectos destacados del rendimiento {#performance-highlights}
 </div>
 
 | Operación           | pandas  | DataStore | Aceleración |
@@ -60,7 +60,7 @@ result = df[df['age'] > 25].groupby('city')['salary'].mean()
 *Benchmarks con 10M de filas*
 
 <div id="datastore-features">
-  ### Características de DataStore
+  ### Características de DataStore {#datastore-features}
 </div>
 
 * **Más de 630 métodos de API** - 209 métodos de pandas DataFrame y más de 185 métodos de accessor
@@ -71,7 +71,7 @@ result = df[df['age'] > 25].groupby('city')['salary'].mean()
 Más información: [Documentación de DataStore](/es/chdb/datastore/index)
 
 <div id="what-languages-are-supported-by-chdb">
-  ## ¿Qué lenguajes admite chDB?
+  ## ¿Qué lenguajes admite chDB? {#what-languages-are-supported-by-chdb}
 </div>
 
 chDB tiene bindings para los siguientes lenguajes:
@@ -83,15 +83,13 @@ chDB tiene bindings para los siguientes lenguajes:
 * [Bun](/es/chdb/install/bun)
 * [C y C++](/es/chdb/install/c)
 
-<div id="how-do-i-get-started">
-  ## ¿Cómo empiezo?
-</div>
+## ¿Cómo empiezo? {#how-do-i-get-started}
 
 * Si usas [Go](/es/chdb/install/go), [Rust](/es/chdb/install/rust), [NodeJS](/es/chdb/install/nodejs), [Bun](/es/chdb/install/bun) o [C y C++](/es/chdb/install/c), consulta la página correspondiente de cada lenguaje.
-* Si usas Python, consulta la [guía de inicio para desarrolladores](/es/chdb/getting-started) o el [curso bajo demanda de chDB](<https://learn.clickhouse.com/chdb-data-analytics-with-clickhouse-and-python>).
+* Si usas Python, consulta la [guía de inicio para desarrolladores](/es/chdb/getting-started) o el [curso bajo demanda de chDB](https://learn.clickhouse.com/chdb-data-analytics-with-clickhouse-and-python).
 
 <div id="for-pandas-users">
-  ### Para usuarios de pandas
+  ### Para usuarios de pandas {#for-pandas-users}
 </div>
 
 Comience con la DataStore API para obtener una experiencia similar a la de pandas con el rendimiento de ClickHouse:
@@ -103,7 +101,7 @@ Comience con la DataStore API para obtener una experiencia similar a la de panda
 * [Guía de rendimiento](/es/chdb/guides/pandas-performance) - Consejos de optimización
 
 <div id="datastore-reference">
-  ### Referencia de la API de DataStore
+  ### Referencia de la API de DataStore {#datastore-reference}
 </div>
 
 * [Métodos de fábrica](/es/chdb/datastore/factory-methods) - Crear a partir de archivos, bases de datos y almacenamiento en la nube
@@ -114,7 +112,7 @@ Comience con la DataStore API para obtener una experiencia similar a la de panda
 * [Depuración](/es/chdb/debugging/index) - explain(), profiling y logging
 
 <div id="sql-guides">
-  ### Guías de la API SQL
+  ### Guías de la API SQL {#sql-guides}
 </div>
 
 * [Referencia de la API de Python](/es/chdb/api/python) - Documentación completa de la API SQL
@@ -127,7 +125,7 @@ Comience con la DataStore API para obtener una experiencia similar a la de panda
 * [Uso de la base de datos clickhouse-local](/es/chdb/guides/clickhouse-local)
 
 <div id="an-introductory-video">
-  ## Un video introductorio
+  ## Un video introductorio {#an-introductory-video}
 </div>
 
 Vea una breve introducción a chDB y descubra cómo lleva la potencia de ClickHouse a su entorno de Python:
@@ -139,7 +137,7 @@ Vea una breve introducción a chDB y descubra cómo lleva la potencia de ClickHo
 </div>
 
 <div id="performance-benchmarks">
-  ## Benchmarks de rendimiento
+  ## Benchmarks de rendimiento {#performance-benchmarks}
 </div>
 
 chDB ofrece un rendimiento excepcional en distintos escenarios:
@@ -149,27 +147,21 @@ chDB ofrece un rendimiento excepcional en distintos escenarios:
 * **[DataStore vs Pandas](/es/chdb/datastore/index#performance)** - Hasta 20 veces más rápido que pandas en operaciones habituales
 
 <div className="ch-image-md">
-
-<Frame>
-
-![Resultados del benchmark de DataFrame](/images/chdb/df_bench.webp)
-
-</Frame>
-
+  <Frame>
+    ![Resultados del benchmark de DataFrame](/images/chdb/df_bench.webp)
+  </Frame>
 </div>
 
-<div id="about-chdb">
-  ## Acerca de chDB
-</div>
+## Acerca de chDB {#about-chdb}
 
 * Lee la historia completa del nacimiento del proyecto chDB en el [blog](https://clickhouse.com/blog/chdb-embedded-clickhouse-rocket-engine-on-a-bicycle)
 * Lee sobre chDB y sus casos de uso en el [Blog](https://clickhouse.com/blog/welcome-chdb-to-clickhouse)
-* Haz el [curso on-demand de chDB](<https://learn.clickhouse.com/chdb-data-analytics-with-clickhouse-and-python>)
+* Haz el [curso bajo demanda de chDB](https://learn.clickhouse.com/chdb-data-analytics-with-clickhouse-and-python)
 * Descubre chDB en tu navegador con [ejemplos de codapi](https://antonz.org/trying-chdb/)
 * Consulta más ejemplos en (https://github.com/chdb-io/chdb/tree/main/examples)
 
 <div id="license">
-  ## Licencia
+  ## Licencia {#license}
 </div>
 
 chDB está disponible bajo la Licencia Apache, versión 2.0. Consulta [LICENSE](https://github.com/chdb-io/chdb/blob/main/LICENSE.txt) para obtener más información.

@@ -16,14 +16,12 @@ import { ClickHouseSupportedBadge } from "/snippets/ar/components/ClickHouseSupp
 
 تُعد [Amazon Glue](https://aws.amazon.com/glue/) خدمة تكامل بيانات مُدارة بالكامل وبدون خوادم تقدّمها Amazon Web Services ‏(AWS). وهي تُبسّط عملية اكتشاف البيانات وإعدادها وتحويلها لأغراض التحليلات والتعلّم الآلي وتطوير التطبيقات.
 
-<div id="installation">
-  ## التثبيت
-</div>
+## التثبيت {#installation}
 
-لدمج شيفرة Glue الخاصة بك مع ClickHouse، يمكنك استخدام موصل Spark الرسمي الخاص بنا في Glue بإحدى الطريقتين التاليتين:
+لدمج شيفرة Glue الخاصة بك مع ClickHouse، يمكنك استخدام موصّل Spark الرسمي الخاص بنا في Glue بإحدى الطريقتين التاليتين:
 
 * تثبيت موصل ClickHouse Glue من AWS Marketplace (موصى به).
-* إضافة ملفات JAR الخاصة بـ موصل Spark يدويًا إلى مهمة Glue.
+* إضافة ملفات JAR الخاصة بـ موصّل Spark يدويًا إلى مهمة Glue.
 
 <Tabs>
   <Tab title="AWS Marketplace">
@@ -37,30 +35,22 @@ import { ClickHouseSupportedBadge } from "/snippets/ar/components/ClickHouseSupp
       </Step>
 
       <Step title="تفعيل الـ موصل وإنشاء اتصال" id="activate-the-connector">
-        بعد الاشتراك، حدِّد إصدار Glue الذي يطابق متطلبات مهمتك. في قسم **Additional details**، ضمن **Usage instructions**، انقر على الرابط **Open Glue Studio - Add ClickHouse connector**. سيؤدي ذلك إلى فتح صفحة إنشاء اتصال في Glue مع تعبئة الحقول الأساسية مسبقًا. امنح الـ اتصال اسمًا ثم اضغط على create (ولا حاجة إلى إدخال تفاصيل الاتصال الخاصة بـ ClickHouse في هذه المرحلة).
+        بعد الاشتراك، حدِّد إصدار Glue الذي يطابق متطلبات مهمتك. في قسم **Additional details**، ضمن **Usage instructions**، انقر على الرابط **Open Glue Studio - Add ClickHouse connector**. سيؤدي ذلك إلى فتح صفحة إنشاء اتصال في Glue مع تعبئة الحقول الأساسية مسبقًا. امنح الـ اتصال اسمًا ثم اضغط على create (ولا حاجة إلى إدخال تفاصيل الاتصال الخاصة بـ ClickHouse في هذه المرحلة).
 
         <div className="ch-image-md">
-
-        <Frame>
-
-        ![إرشادات الاستخدام في AWS Marketplace لـ موصل ClickHouse Glue](/images/integrations/data-ingestion/aws-glue/marketplace-usage-instructions.png)
-
-        </Frame>
-
+          <Frame>
+            ![إرشادات الاستخدام في AWS Marketplace لـ موصل ClickHouse Glue](/images/integrations/data-ingestion/aws-glue/marketplace-usage-instructions.png)
+          </Frame>
         </div>
       </Step>
 
       <Step title="الاستخدام في مهمة Glue" id="use-in-glue-job">
-        في مهمة Glue، حدِّد علامة التبويب `Job details`، ثم وسِّع نافذة `Advanced properties`. ضمن قسم `Connections`، حدِّد الـ اتصال الذي أنشأته للتو. يضيف الـ موصل تلقائيًا ملفات JAR المطلوبة إلى runtime الخاص بالمهمة.
+        في مهمة Glue، حدِّد علامة التبويب `Job details`، ثم وسِّع نافذة `Advanced properties`. ضمن قسم `Connections`، حدِّد الـ اتصال الذي أنشأته للتو. يضيف الـ موصل تلقائيًا ملفات JAR المطلوبة إلى بيئة التشغيل الخاصة بالمهمة.
 
         <div className="ch-image-md">
-
-        <Frame>
-
-        ![إعدادات اتصالات Glue Notebook](/images/integrations/data-ingestion/aws-glue/notebook-connections-config.webp)
-
-        </Frame>
-
+          <Frame>
+            ![إعدادات اتصالات Glue Notebook](/images/integrations/data-ingestion/aws-glue/notebook-connections-config.webp)
+          </Frame>
         </div>
 
         <Note>
@@ -78,7 +68,7 @@ import { ClickHouseSupportedBadge } from "/snippets/ar/components/ClickHouseSupp
 
     <Steps titleSize="h3">
       <Step title="رفع ملف JAR الخاص بالـ موصل">
-        ارفع أحدث ملف JAR لـ موصل Spark (`clickhouse-spark-runtime-3.X_2.X-0.10.X.jar`) إلى S3 bucket.
+        ارفع أحدث ملف JAR لـ موصّل Spark (`clickhouse-spark-runtime-3.X_2.X-0.10.X.jar`) إلى S3 bucket.
       </Step>
 
       <Step title="منح حق الوصول إلى S3 bucket">
@@ -86,16 +76,12 @@ import { ClickHouseSupportedBadge } from "/snippets/ar/components/ClickHouseSupp
       </Step>
 
       <Step title="تكوين مسار JAR التابع">
-        ضمن علامة التبويب `Job details`، مرِّر إلى الأسفل ووسِّع القائمة المنسدلة `Advanced properties`، ثم أدخل مسار ملفات JAR في `Dependent JARs path`:
+        ضمن علامة التبويب `Job details`، مرِّر إلى الأسفل ووسِّع القائمة المنسدلة `Advanced properties`، ثم أدخل مسار ملفات JAR في `Dependent JARs path`:
 
         <div className="ch-image-md">
-
-        <Frame>
-
-        ![خيارات مسار JAR في Glue Notebook](/images/integrations/data-ingestion/aws-glue/dependent_jars_path_option.webp)
-
-        </Frame>
-
+          <Frame>
+            ![خيارات مسار JAR في Glue Notebook](/images/integrations/data-ingestion/aws-glue/dependent_jars_path_option.webp)
+          </Frame>
         </div>
       </Step>
     </Steps>
@@ -103,13 +89,13 @@ import { ClickHouseSupportedBadge } from "/snippets/ar/components/ClickHouseSupp
 </Tabs>
 
 <div id="secrets-manager">
-  ## استخدام AWS Secrets Manager لبيانات الاعتماد
+  ## استخدام AWS Secrets Manager لبيانات الاعتماد {#secrets-manager}
 </div>
 
 بدلاً من تضمين مستخدم ClickHouse وكلمة المرور مباشرةً في المهمة، خزّنهما في [AWS Secrets Manager](https://docs.aws.amazon.com/secretsmanager/) وأشِر إلى السر من اتصال Glue أو البرنامج النصي للمهمة. أثناء التشغيل، يجلب Glue السر ويدمج أزواج المفتاح والقيمة الخاصة بها ضمن خيارات اتصال الموصّل.
 
 <div id="create-secret">
-  ### أنشئ السر
+  ### أنشئ السر {#create-secret}
 </div>
 
 في AWS Secrets Manager، أنشئ سرًا من النوع **نوع آخر من الأسرار** يتضمن أزواجًا من المفتاح والقيمة تكون مفاتيحها مطابقة لأسماء خيارات الموصّل:
@@ -122,7 +108,7 @@ import { ClickHouseSupportedBadge } from "/snippets/ar/components/ClickHouseSupp
 أي مفتاح تضيفه إلى السر يُمرَّر إلى الموصّل، لذلك يمكنك أيضًا تخزين `host` أو `database` أو أي خيار آخر هناك إذا أردت إبقاءها خارج الشيفرة.
 
 <div id="reference-secret">
-  ### الإشارة إلى السر
+  ### الإشارة إلى السر {#reference-secret}
 </div>
 
 هناك طريقتان لربط السر بالمهمة.
@@ -165,26 +151,20 @@ import { ClickHouseSupportedBadge } from "/snippets/ar/components/ClickHouseSupp
 
 تُدمَج المفتاحان `user` و`password` الخاصان بالسر ضمن خيارات الموصل في وقت التشغيل، لذلك لن تحتاج مطلقًا إلى قراءتهما في برنامجك النصي.
 
-<div id="example">
-  ## أمثلة
-</div>
+## أمثلة {#example}
 
-تستخدم الأمثلة أدناه `marketplace.spark` وتشير إلى الموصل عبر `connectionName`. إذا ثبّتَّ الموصل يدويًا (علامة تبويب التثبيت اليدوي)، فاستخدم `connection_type="custom.spark"` ومرّر `className` و`host` و`http_port` و`user` و`password` مباشرةً ضمن الخيارات بدلًا من ذلك.
+تستخدم الأمثلة أدناه `marketplace.spark` وتشير إلى الموصل عبر `connectionName`. إذا ثبّتَّ الموصل يدويًا (علامة تبويب التثبيت اليدوي)، فاستخدم `connection_type="custom.spark"` ومرّر `className` و`host` و`http_port` و`user` و`password` مباشرةً ضمن الخيارات بدلًا من ذلك.
 
 إذا كنت قد أرفقت سرًا من AWS بالاتصال نفسه (الخيار 1 في [استخدام AWS Secrets Manager لبيانات الاعتماد](#secrets-manager))، فاحذف `secretId` من الخيارات — إذ يستخرج Glue بيانات الاعتماد من الاتصال تلقائيًا.
 
 <Tabs>
   <Tab title="المحرر المرئي">
-    يمكنك استخدام موصل ClickHouse إما كمصدر أو كهدف في المحرر المرئي لـ Glue Studio. ما عليك سوى سحب مكوّن ClickHouse Spark Connector إلى لوحة العمل وربطه بخط أنابيب البيانات لديك.
+    يمكنك استخدام موصل ClickHouse إما كمصدر أو كهدف في المحرر المرئي لـ Glue Studio. ما عليك سوى سحب مكوّن موصّل Spark الخاص بـ ClickHouse إلى لوحة العمل وربطه بخط أنابيب البيانات لديك.
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![المحرر المرئي لـ Glue Studio مع موصل ClickHouse](/images/integrations/data-ingestion/aws-glue/glue-studio-visual-editor.png)
-
-    </Frame>
-
+      <Frame>
+        ![المحرر المرئي لـ Glue Studio مع موصل ClickHouse](/images/integrations/data-ingestion/aws-glue/glue-studio-visual-editor.png)
+      </Frame>
     </div>
   </Tab>
 
