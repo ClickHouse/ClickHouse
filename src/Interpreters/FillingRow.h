@@ -28,6 +28,9 @@ class FillingRow
     /// finds last value <= to
     Field doLongJump(const FillColumnDescription & descr, size_t column_ind, const Field & to);
 
+    /// Whether the steps of the column from the current row land exactly on `value`.
+    [[nodiscard]] bool stepsReach(size_t pos, const Field & value);
+
     /// Resets the keys after `pos` to FROM, or to `next_original_row` without FROM. Returns whether the row goes before it:
     /// never if equal to it in all keys, or up to `pos` with a first differing later key (neither NULL nor NaN) that is not less.
     [[nodiscard]] bool resetKeysAfter(size_t pos, const FillingRow & next_original_row);
