@@ -33,7 +33,7 @@ public:
     /// query-plan packet serialized at it.
     [[nodiscard]] virtual bool supportsQueryPlanSerializationVersion(UInt64 version) const = 0;
 
-    virtual void sendClusterFunctionReadTaskResponse(const ClusterFunctionReadTaskResponse &) = 0;
+    virtual void sendClusterFunctionReadTaskResponse(const ClusterFunctionReadTaskResponses &) = 0;
     virtual void sendMergeTreeReadTaskResponse(const ParallelReadResponse & response) = 0;
     virtual void sendMergeTreeAllRangesAnnouncementResponse(const InitialAllRangesAnnouncementResponse & response) = 0;
 

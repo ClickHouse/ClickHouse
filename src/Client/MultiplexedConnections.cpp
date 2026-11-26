@@ -236,12 +236,12 @@ void MultiplexedConnections::sendQuery(
 }
 
 
-void MultiplexedConnections::sendClusterFunctionReadTaskResponse(const ClusterFunctionReadTaskResponse & response)
+void MultiplexedConnections::sendClusterFunctionReadTaskResponse(const ClusterFunctionReadTaskResponses & responses)
 {
     std::lock_guard lock(cancel_mutex);
     if (cancelled)
         return;
-    current_connection->sendClusterFunctionReadTaskResponse(response);
+    current_connection->sendClusterFunctionReadTaskResponse(responses);
 }
 
 

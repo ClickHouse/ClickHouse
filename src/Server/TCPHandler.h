@@ -22,6 +22,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Common/StringWithMemoryTracking.h>
 
 #include <IO/WriteBuffer.h>
@@ -56,6 +57,7 @@ class NativeWriter;
 class NativeReader;
 struct ClusterFunctionReadTaskResponse;
 using ClusterFunctionReadTaskResponsePtr = std::shared_ptr<ClusterFunctionReadTaskResponse>;
+using ClusterFunctionReadTaskResponses = VectorWithMemoryTracking<ClusterFunctionReadTaskResponsePtr>;
 
 /// TCPHandlerPocoChunkedWriter is used in TCPHandler
 /// and it uses `sync` api for explicit protocol delivery.
@@ -316,7 +318,7 @@ private:
     /// `force` skips the interactive-delay rate limit, for callers that must know right now.
     void receivePacketsExpectCancel(QueryState & state, bool force = false) TSA_REQUIRES(callback_mutex);
 
-    ClusterFunctionReadTaskResponsePtr receiveClusterFunctionReadTaskResponse(QueryState & state) TSA_REQUIRES(callback_mutex);
+    ClusterFunctionReadTaskResponses receiveClusterFunctionReadTaskResponse(QueryState & state, size_t max_tasks) TSA_REQUIRES(callback_mutex);
 
     std::optional<ParallelReadResponse> receivePartitionMergeTreeReadTaskResponse(QueryState & state) TSA_REQUIRES(callback_mutex);
 
@@ -358,7 +360,7 @@ private:
     static void sendLogs(QueryState & state, std::shared_ptr<TCPHandlerPocoChunkedWriter> out, UInt32 client_tcp_protocol_version);
     void sendLogs(QueryState & state) TSA_REQUIRES(callback_mutex);
     void sendEndOfStream(QueryState & state);
-    void sendReadTaskRequest() TSA_REQUIRES(callback_mutex);
+    void sendReadTaskRequest(size_t max_tasks) TSA_REQUIRES(callback_mutex);
     void sendMergeTreeAllRangesAnnouncement(QueryState & state, InitialAllRangesAnnouncement announcement) TSA_REQUIRES(callback_mutex);
     void sendMergeTreeReadTaskRequest(ParallelReadRequest request) TSA_REQUIRES(callback_mutex);
     void sendProfileInfo(QueryState & state, const ProfileInfo & info);

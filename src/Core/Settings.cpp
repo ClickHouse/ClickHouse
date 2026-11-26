@@ -8956,6 +8956,12 @@ If is not zero, limit the number of threads reading data from files in *Cluster 
 How long the initiator of a `*Cluster` table function or of parallel replicas over object storage waits for a replica to ask for tasks before giving the files assigned to that replica to other replicas. `0` disables the wait.
 )", 0, \
         {"26.10", 0, 0, "New setting"}) \
+    DECLARE(UInt64, cluster_function_max_read_tasks_per_request, 0, R"(
+The maximum number of read tasks (files or pieces of files) that a replica executing a `*Cluster` table function or reading from object storage with parallel replicas receives from the initiator in one request. Several tasks per request save round trips to the initiator, which matters for many small tasks, such as with `cluster_table_function_split_granularity = 'bucket'`. The initiator adds to the first task only the tasks that are assigned to this replica and available without waiting, so near the end of the query a request returns one task and the remaining tasks can still be given to other replicas.
+
+`0` means the number of reading threads (`max_threads`). `1` requests tasks one by one. Has no effect when the initiator or the replica is of an older version.
+)", 0, \
+        {"26.12", 0, 0, "New setting"}) \
     DECLARE(Bool, enable_filesystem_cache, true, R"(
 Use cache for remote filesystem. This setting does not turn on/off cache for disks (must be done via disk config), but allows to bypass cache for some queries if intended
 )", 0) \

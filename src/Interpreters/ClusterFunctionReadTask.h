@@ -1,5 +1,6 @@
 #pragma once
 #include <Core/Types.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeObjectMetadata.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergDataObjectInfo.h>
 #include <Storages/ObjectStorage/IObjectIterator.h>
@@ -44,6 +45,8 @@ struct ClusterFunctionReadTaskResponse
 };
 
 using ClusterFunctionReadTaskResponsePtr = std::shared_ptr<ClusterFunctionReadTaskResponse>;
-using ClusterFunctionReadTaskCallback = std::function<ClusterFunctionReadTaskResponsePtr()>;
+using ClusterFunctionReadTaskResponses = VectorWithMemoryTracking<ClusterFunctionReadTaskResponsePtr>;
+/// Returns from 1 to `max_tasks` tasks, or no tasks when there are no more of them.
+using ClusterFunctionReadTaskCallback = std::function<ClusterFunctionReadTaskResponses(size_t max_tasks)>;
 
 }

@@ -35,13 +35,15 @@ using ProfileEventsCallback = std::function<void(const Block & block)>;
 
 struct ClusterFunctionReadTaskResponse;
 using ClusterFunctionReadTaskResponsePtr = std::shared_ptr<ClusterFunctionReadTaskResponse>;
+using ClusterFunctionReadTaskResponses = VectorWithMemoryTracking<ClusterFunctionReadTaskResponsePtr>;
 
 class RemoteQueryExecutorReadContext;
 
 class ParallelReplicasReadingCoordinator;
 
-/// Takes the number of the replica and a flag that becomes true when the replica's query executor is cancelled or finished.
-using TaskIterator = std::function<ClusterFunctionReadTaskResponsePtr(size_t, const std::atomic_bool &)>;
+/// Takes the number of the replica, the maximum number of tasks to return, and a flag that becomes true when the replica's
+/// query executor is cancelled or finished. Returns no tasks when there are no more tasks for the replica.
+using TaskIterator = std::function<ClusterFunctionReadTaskResponses(size_t, size_t, const std::atomic_bool &)>;
 
 /// This class allows one to launch queries on remote replicas of one shard and get results
 class RemoteQueryExecutor
@@ -416,7 +418,7 @@ private:
     /// Send all temporary tables to remote servers
     void sendExternalTables();
 
-    void processReadTaskRequest();
+    void processReadTaskRequest(size_t max_tasks);
 
     /// Accounts the `ProfileEvents` packet of a remote server for the quotas over profile events and
     /// passes it on to the client.

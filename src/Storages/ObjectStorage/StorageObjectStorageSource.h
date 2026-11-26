@@ -3,6 +3,7 @@
 #include <future>
 #include <mutex>
 #include <optional>
+#include <Common/DequeWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/re2.h>
 #include <Common/threadPoolCallbackRunner.h>
@@ -295,15 +296,18 @@ public:
     ReadTaskIterator(
         const ClusterFunctionReadTaskCallback & callback_,
         size_t max_threads_count,
+        size_t max_tasks_per_request,
         bool is_archive_,
         ObjectStoragePtr object_storage_,
         ContextPtr context_);
 
     ObjectInfoPtr next(size_t) override;
 
-    size_t estimatedKeysCount() override { return buffer.size(); }
+    size_t estimatedKeysCount() override { return initial_tasks_count; }
 
 private:
+    void requestTasks(size_t max_tasks);
+
     ObjectInfoPtr createObjectInfoInArchive(
         const std::string & path_to_archive,
         const std::string & path_in_archive,
@@ -311,8 +315,11 @@ private:
         std::optional<size_t> archive_entry_index);
 
     ClusterFunctionReadTaskCallback callback;
-    ObjectInfos buffer;
-    std::atomic_size_t index = 0;
+    size_t tasks_per_request;
+    std::mutex buffer_mutex;
+    DequeWithMemoryTracking<ObjectInfoPtr> buffer;
+    bool finished = false;
+    size_t initial_tasks_count = 0;
     bool is_archive;
     ObjectStoragePtr object_storage;
     /// path_to_archive -> archive reader.

@@ -2,6 +2,7 @@
 
 #include <base/types.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Access/QueryPrivilegesInfo.h>
 #include <Core/BackgroundSchedulePoolTaskHolder.h>
 #include <Core/Block_fwd.h>
@@ -298,7 +299,8 @@ using InputBlocksReader = std::function<Block(ContextPtr)>;
 /// Used in distributed task processing
 struct ClusterFunctionReadTaskResponse;
 using ClusterFunctionReadTaskResponsePtr = std::shared_ptr<ClusterFunctionReadTaskResponse>;
-using ClusterFunctionReadTaskCallback = std::function<ClusterFunctionReadTaskResponsePtr()>;
+using ClusterFunctionReadTaskResponses = VectorWithMemoryTracking<ClusterFunctionReadTaskResponsePtr>;
+using ClusterFunctionReadTaskCallback = std::function<ClusterFunctionReadTaskResponses(size_t max_tasks)>;
 
 using MergeTreeAllRangesCallback = std::function<std::optional<InitialAllRangesAnnouncementResponse>(InitialAllRangesAnnouncement)>;
 using MergeTreeReadTaskCallback = std::function<std::optional<ParallelReadResponse>(ParallelReadRequest)>;

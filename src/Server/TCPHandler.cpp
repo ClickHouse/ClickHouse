@@ -852,8 +852,11 @@ void TCPHandler::runImpl()
             if (!query_state->run_query_in_background)
             {
                 /// This callback is needed for requesting read tasks inside pipeline for distributed processing
-                query_state->query_context->setClusterFunctionReadTaskCallback([this, &query_state]() -> ClusterFunctionReadTaskResponsePtr
+                query_state->query_context->setClusterFunctionReadTaskCallback([this, &query_state](size_t max_tasks) -> ClusterFunctionReadTaskResponses
                 {
+                    if (max_tasks == 0)
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Requested zero read tasks");
+
                     Stopwatch watch;
                     CurrentMetrics::Increment callback_metric_increment(CurrentMetrics::ReadTaskRequestsSent);
 
@@ -865,11 +868,11 @@ void TCPHandler::runImpl()
 
                         try
                         {
-                            sendReadTaskRequest();
+                            sendReadTaskRequest(max_tasks);
 
                             ProfileEvents::increment(ProfileEvents::ReadTaskRequestsSent);
 
-                            auto res = receiveClusterFunctionReadTaskResponse(*query_state);
+                            auto res = receiveClusterFunctionReadTaskResponse(*query_state, max_tasks);
 
                             ProfileEvents::increment(ProfileEvents::ReadTaskRequestsSentElapsedMicroseconds, watch.elapsedMicroseconds());
 
@@ -2013,9 +2016,11 @@ void TCPHandler::processTablesStatusRequest()
 }
 
 
-void TCPHandler::sendReadTaskRequest()
+void TCPHandler::sendReadTaskRequest(size_t max_tasks)
 {
     writeVarUInt(Protocol::Server::ReadTaskRequest, *out);
+    if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_CLUSTER_FUNCTION_READ_TASK_BATCHES)
+        writeVarUInt(max_tasks, *out);
 
     out->finishChunk();
     out->sync();
@@ -2654,7 +2659,7 @@ void TCPHandler::sendHello()
 }
 
 
-ClusterFunctionReadTaskResponsePtr TCPHandler::receiveClusterFunctionReadTaskResponse(QueryState & state)
+ClusterFunctionReadTaskResponses TCPHandler::receiveClusterFunctionReadTaskResponse(QueryState & state, size_t max_tasks)
 {
     UInt64 packet_type = 0;
     state.at_packet_boundary = false;
@@ -2669,10 +2674,33 @@ ClusterFunctionReadTaskResponsePtr TCPHandler::receiveClusterFunctionReadTaskRes
 
         case Protocol::Client::ReadTaskResponse:
         {
-            auto task = std::make_shared<ClusterFunctionReadTaskResponse>();
-            task->deserialize(*in);
+            ClusterFunctionReadTaskResponses tasks;
+            if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_CLUSTER_FUNCTION_READ_TASK_BATCHES)
+            {
+                size_t num_tasks = 0;
+                readVarUInt(num_tasks, *in);
+                if (num_tasks > max_tasks)
+                    throw Exception(ErrorCodes::INCORRECT_DATA, "Received {} read tasks, while at most {} were requested", num_tasks, max_tasks);
+
+                tasks.reserve(num_tasks);
+                for (size_t i = 0; i < num_tasks; ++i)
+                {
+                    auto task = std::make_shared<ClusterFunctionReadTaskResponse>();
+                    task->deserialize(*in);
+                    if (task->isEmpty())
+                        throw Exception(ErrorCodes::INCORRECT_DATA, "Received an empty read task in a list of {} read tasks", num_tasks);
+                    tasks.push_back(std::move(task));
+                }
+            }
+            else
+            {
+                auto task = std::make_shared<ClusterFunctionReadTaskResponse>();
+                task->deserialize(*in);
+                if (!task->isEmpty())
+                    tasks.push_back(std::move(task));
+            }
             state.at_packet_boundary = true;
-            return task;
+            return tasks;
         }
 
         default:

@@ -437,6 +437,7 @@ namespace Setting
     extern const SettingsUInt64 max_download_buffer_size;
     extern const SettingsBool use_query_condition_cache_for_top_k;
     extern const SettingsMaxThreads max_threads;
+    extern const SettingsUInt64 cluster_function_max_read_tasks_per_request;
     extern const SettingsBool use_cache_for_count_from_files;
     extern const SettingsString filesystem_cache_name;
     extern const SettingsUInt64 filesystem_cache_boundary_alignment;
@@ -1000,6 +1001,7 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
         auto distributed_iterator = std::make_unique<ReadTaskIterator>(
             local_context->getClusterFunctionReadTaskCallback(),
             local_context->getSettingsRef()[Setting::max_threads],
+            local_context->getSettingsRef()[Setting::cluster_function_max_read_tasks_per_request],
             /*is_archive_=*/is_archive && !expect_whole_archive,
             object_storage,
             local_context);
@@ -3333,40 +3335,42 @@ StorageObjectStorageSource::ReaderHolder::operator=(ReaderHolder && other) noexc
 StorageObjectStorageSource::ReadTaskIterator::ReadTaskIterator(
     const ClusterFunctionReadTaskCallback & callback_,
     size_t max_threads_count,
+    size_t max_tasks_per_request,
     bool is_archive_,
     ObjectStoragePtr object_storage_,
     ContextPtr context_)
     : WithContext(context_)
     , callback(callback_)
+    , tasks_per_request(std::max<size_t>(1, max_tasks_per_request ? max_tasks_per_request : max_threads_count))
     , is_archive(is_archive_)
     , object_storage(object_storage_)
 {
-    ThreadPool pool(
-        CurrentMetrics::StorageObjectStorageThreads,
-        CurrentMetrics::StorageObjectStorageThreadsActive,
-        CurrentMetrics::StorageObjectStorageThreadsScheduled, max_threads_count);
+    max_threads_count = std::max<size_t>(1, max_threads_count);
 
-    auto pool_scheduler = threadPoolCallbackRunnerUnsafe<ObjectInfoPtr>(pool, ThreadName::READ_TASK_ITERATOR);
+    std::lock_guard lock(buffer_mutex);
+    while (!finished && buffer.size() < max_threads_count)
+        requestTasks(std::min(tasks_per_request, max_threads_count - buffer.size()));
+    initial_tasks_count = buffer.size();
+}
 
-    std::vector<std::future<ObjectInfoPtr>> objects;
-    objects.reserve(max_threads_count);
-    for (size_t i = 0; i < max_threads_count; ++i)
-        objects.push_back(pool_scheduler([this]() -> ObjectInfoPtr
-        {
-            auto task = callback();
-            if (!task || task->isEmpty())
-                return nullptr;
-            return task->getObjectInfo();
-        }, Priority{}));
+void StorageObjectStorageSource::ReadTaskIterator::requestTasks(size_t max_tasks)
+{
+    auto tasks = callback(max_tasks);
 
-    pool.wait();
-    buffer.reserve(max_threads_count);
-    for (auto & object_future : objects)
+    if (auto query_status = getContext()->getProcessListElement())
+        query_status->checkTimeLimit();
+
+    if (tasks.size() > max_tasks)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Got {} read tasks, while at most {} were requested", tasks.size(), max_tasks);
+
+    if (tasks.empty())
     {
-        auto object = object_future.get();
-        if (object)
-            buffer.push_back(object);
+        finished = true;
+        return;
     }
+
+    for (const auto & task : tasks)
+        buffer.push_back(task->getObjectInfo());
 }
 
 static size_t getKnownArchiveSize(const ObjectInfoPtr & object_info)
@@ -3405,23 +3409,17 @@ static std::unique_ptr<IArchiveReader::FileEnumerator> locateArchiveEntry(
 
 ObjectInfoPtr StorageObjectStorageSource::ReadTaskIterator::next(size_t)
 {
-    size_t current_index = index.fetch_add(1, std::memory_order_relaxed);
-
     ObjectInfoPtr object_info;
-    if (current_index >= buffer.size())
     {
-        auto task = callback();
+        std::lock_guard lock(buffer_mutex);
+        if (buffer.empty() && !finished)
+            requestTasks(tasks_per_request);
 
-        if (auto query_status = getContext()->getProcessListElement())
-            query_status->checkTimeLimit();
-
-        if (!task || task->isEmpty())
+        if (buffer.empty())
             return nullptr;
-        object_info = task->getObjectInfo();
-    }
-    else
-    {
-        object_info =  buffer[current_index];
+
+        object_info = std::move(buffer.front());
+        buffer.pop_front();
     }
 
     if (!is_archive)

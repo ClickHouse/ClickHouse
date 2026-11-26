@@ -183,11 +183,11 @@ RemoteQueryExecutor::Extension StorageURLCluster::getTaskIteratorExtension(
     /// about the other tasks. The limit is on the addresses of both stages together, as for `url`, so the
     /// iterator counts the options of every task as it generates it, before the `_path` / `_file` filter:
     /// `{1,2}{1|2}` is four addresses, not two tasks of two addresses each.
-    auto next_callback = [iter = std::move(iterator), context](size_t, const std::atomic_bool &) mutable -> ClusterFunctionReadTaskResponsePtr
+    auto next_callback = [iter = std::move(iterator), context](size_t, size_t, const std::atomic_bool &) mutable -> ClusterFunctionReadTaskResponses
     {
         auto url = iter->next();
         if (url.empty())
-            return std::make_shared<ClusterFunctionReadTaskResponse>();
+            return {};
 
         /// The workers check the credentials under their own configuration, which can differ from this one.
         const auto & settings = context->getSettingsRef();
@@ -197,7 +197,7 @@ RemoteQueryExecutor::Extension StorageURLCluster::getTaskIteratorExtension(
             setCredentialsFromURL(credentials, Poco::URI(option, settings[Setting::enable_url_encoding]), context->getHTTPHeaderFilter());
         }
 
-        return std::make_shared<ClusterFunctionReadTaskResponse>(std::move(url));
+        return {std::make_shared<ClusterFunctionReadTaskResponse>(std::move(url))};
     };
     auto callback = std::make_shared<TaskIterator>(std::move(next_callback));
     return RemoteQueryExecutor::Extension{.task_iterator = std::move(callback)};

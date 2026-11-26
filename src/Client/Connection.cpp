@@ -94,6 +94,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int TOO_LARGE_ARRAY_SIZE;
+    extern const int INCORRECT_DATA;
 }
 
 Connection::~Connection()
@@ -1305,10 +1306,25 @@ void Connection::sendData(const Block & block, const String & name, bool scalar)
         throttler->throttle(out->count() - prev_bytes);
 }
 
-void Connection::sendClusterFunctionReadTaskResponse(const ClusterFunctionReadTaskResponse & response)
+void Connection::sendClusterFunctionReadTaskResponse(const ClusterFunctionReadTaskResponses & responses)
 {
     writeVarUInt(Protocol::Client::ReadTaskResponse, *out);
-    response.serialize(*out, worker_cluster_function_protocol_version);
+    if (server_revision >= DBMS_MIN_REVISION_WITH_CLUSTER_FUNCTION_READ_TASK_BATCHES)
+    {
+        writeVarUInt(responses.size(), *out);
+        for (const auto & response : responses)
+            response->serialize(*out, worker_cluster_function_protocol_version);
+    }
+    else if (responses.empty())
+    {
+        ClusterFunctionReadTaskResponse().serialize(*out, worker_cluster_function_protocol_version);
+    }
+    else
+    {
+        if (responses.size() > 1)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot send {} read tasks to a server of revision {}", responses.size(), server_revision);
+        responses.front()->serialize(*out, worker_cluster_function_protocol_version);
+    }
     out->finishChunk();
     out->next();
 }
@@ -1645,6 +1661,12 @@ Packet Connection::receivePacket()
                 return res;
             }
             case Protocol::Server::ReadTaskRequest:
+                if (server_revision >= DBMS_MIN_REVISION_WITH_CLUSTER_FUNCTION_READ_TASK_BATCHES)
+                {
+                    readVarUInt(res.max_read_tasks, *in);
+                    if (res.max_read_tasks == 0)
+                        throw Exception(ErrorCodes::INCORRECT_DATA, "Received a read task request for zero tasks");
+                }
                 return res;
 
             case Protocol::Server::MergeTreeAllRangesAnnouncement:

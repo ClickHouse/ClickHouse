@@ -2281,9 +2281,10 @@ void ReadFromURL::createIterator(const ActionsDAG::Node * predicate)
         iterator_wrapper = std::make_shared<StorageURLSource::IteratorWrapper>(
             [callback = context->getClusterFunctionReadTaskCallback(), max_addresses, caller = storage->glob_caller]()
             {
-                auto task = callback();
-                if (!task || task->isEmpty())
+                auto tasks = callback(1);
+                if (tasks.empty())
                     return StorageURLSource::FailoverOptions{};
+                const auto & task = tasks.front();
                 /// The worker only knows its task, not the pattern of the initiator, which counts the
                 /// failover options of every task against the limit before handing it out.
                 return parseRemoteDescription(task->path, 0, task->path.size(), '|', max_addresses, caller);
