@@ -1621,6 +1621,9 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStor
     /// `DEFAULT` expressions unless the query gives one.
     src_storage_cluster.updateQueryToSendIfNeeded(source_to_send, src_snapshot, local_context, cluster_name, /*add_structure_and_format=*/false);
 
+    if (!AddDefaultDatabaseVisitor(local_context, local_context->getCurrentDatabase()).tryBindQuerySentToOtherServers(new_query->select))
+        return {};
+
     /// Drop the initiator-only settings from the query text forwarded to the shards (the settings
     /// packet is stripped separately, on `query_context` below).
     stripInitiatorOnlySettingsFromQueryText(*new_query);

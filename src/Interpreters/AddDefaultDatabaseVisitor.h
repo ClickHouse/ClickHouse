@@ -128,6 +128,22 @@ public:
             substituteDatabaseInTableFunctions(*child);
     }
 
+    /// For a query sent to servers that interpret it in their own default database: qualify its names and replace
+    /// `currentDatabase()` with the database. Returns false, changing nothing, if a lambda may shadow `currentDatabase`.
+    [[nodiscard]] bool tryBindQuerySentToOtherServers(ASTPtr & ast) const
+    {
+        if (hasCurrentDatabaseCall(*ast) && hasAliasThatMayNameLambdaAsCurrentDatabase(*ast))
+            return false;
+
+        visit(ast);
+        if (!database_name.empty())
+        {
+            for (auto & child : ast->children)
+                substituteCurrentDatabase(child, *ast);
+        }
+        return true;
+    }
+
 private:
 
     ContextPtr context;
@@ -394,18 +410,54 @@ private:
             visitTableFunction(*argument);
     }
 
-    /// Whether the function is `currentDatabase` or one of its aliases (`DATABASE`, `SCHEMA`, `current_database`),
+    /// `currentDatabase` or one of its aliases (`DATABASE`, `SCHEMA`, `current_database`, `current_schema`),
     /// which are registered in `FunctionFactory` as case-insensitive.
+    static bool isCurrentDatabaseName(const String & name)
+    {
+        if (name == "currentDatabase")
+            return true;
+
+        const String lowered_name = Poco::toLower(name);
+        return lowered_name == "database" || lowered_name == "schema" || lowered_name == "current_database"
+            || lowered_name == "current_schema";
+    }
+
     static bool isCurrentDatabaseFunction(const ASTFunction & function)
     {
         if (function.arguments && !function.arguments->children.empty())
             return false;
 
-        if (function.name == "currentDatabase")
+        return isCurrentDatabaseName(function.name);
+    }
+
+    static bool hasCurrentDatabaseCall(const IAST & ast)
+    {
+        if (const auto * function = ast.as<ASTFunction>(); function && isCurrentDatabaseFunction(*function))
             return true;
 
-        const String lowered_name = Poco::toLower(function.name);
-        return lowered_name == "database" || lowered_name == "schema" || lowered_name == "current_database";
+        for (const auto & child : ast.children)
+        {
+            if (hasCurrentDatabaseCall(*child))
+                return true;
+        }
+        return false;
+    }
+
+    /// A call of `currentDatabase` resolves to a lambda of the query with that alias, given directly or through an identifier.
+    static bool hasAliasThatMayNameLambdaAsCurrentDatabase(const IAST & ast)
+    {
+        const auto * function = ast.as<ASTFunction>();
+        const auto * identifier = dynamic_cast<const ASTIdentifier *>(&ast);
+        if (((function && function->name == "lambda") || (identifier && !identifier->compound()))
+            && isCurrentDatabaseName(ast.tryGetAlias()))
+            return true;
+
+        for (const auto & child : ast.children)
+        {
+            if (hasAliasThatMayNameLambdaAsCurrentDatabase(*child))
+                return true;
+        }
+        return false;
     }
 
     /// Replace `currentDatabase()` with a literal everywhere in the subtree.
@@ -416,7 +468,9 @@ private:
             /// The `updatePointerToChild` function replaces the old address with the new one without access, so it is safe to invalidate it in place.
             /// However, just for safety, let's store the old node for a little longer.
             ASTPtr old_ast = ast;
-            ast = make_intrusive<ASTLiteral>(database_name);
+            auto literal = make_intrusive<ASTLiteral>(database_name);
+            literal->setAlias(function->alias);
+            ast = std::move(literal);
             parent.updatePointerToChild(old_ast.get(), ast);
             return;
         }
