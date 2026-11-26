@@ -52,7 +52,8 @@ struct GroupLimitParams
 /// scheduler requests a spill (see `spill`). The threshold triggers no spill while the state of the operator
 /// stays below a run's worth of bytes (see `isBelowSpillFloor`). The spill runs compare the keys that its
 /// filter retains, or their 128-bit fingerprints where the filter has no key to sort: the `hashed` set of
-/// `DISTINCT` keeps only the fingerprint, and `LIMIT BY` keeps one for a key of a type without an order.
+/// `DISTINCT` keeps only the fingerprint, and `LIMIT BY` keeps one for a key without a reliable order (see
+/// `LimitByGroupFilter`).
 ///
 /// At the first spill, the filter's groups become sorted seen runs carrying the number of input rows seen per
 /// group. Extraction prepares one run at a time with a soft byte target and waits for its file to finish.

@@ -41,10 +41,11 @@ ChunkRowRange shrinkRunToLimitWindow(
 /// `ExternalLimitByTransform` also extracts the groups with their counts when it spills.
 ///
 /// Spill runs sort the groups by their key columns, which the extraction restores from the keys of the
-/// method, serialized keys included. A key of a type without an order, such as an aggregate state, cannot be
-/// sorted. A filter that keeps fingerprints therefore also keeps, for each group of such a key, the 128-bit
-/// fingerprint of its key columns, as the `hashed` method of `DISTINCT` does; spill runs compare the
-/// fingerprints instead of the keys.
+/// method, serialized keys included. A key whose type has no order, such as an aggregate state, or may hold a
+/// value without one (`Dynamic`, `JSON`, or a `Variant` of such a type), cannot be sorted reliably. A filter
+/// that keeps fingerprints therefore also keeps, for each group of such a key, the 128-bit fingerprint of its
+/// key columns, as the `hashed` method of `DISTINCT` does; spill runs compare the fingerprints instead of the
+/// keys.
 ///
 /// The row loop observes cancellation of `owner_`: a cancelled filter returns the chunk without rows, and its
 /// counts no longer describe the consumed input.

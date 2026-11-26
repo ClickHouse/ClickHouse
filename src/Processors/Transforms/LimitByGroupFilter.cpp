@@ -5,6 +5,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Columns/replaceNegativeZeros.h>
 #include <Core/Block.h>
+#include <DataTypes/TypeTree.h>
 #include <Processors/IProcessor.h>
 #include <base/PackedStringRef.h>
 #include <base/arithmeticOverflow.h>
@@ -43,6 +44,15 @@ AggregateDataPtr mappedFromGroupIndex(size_t group_index)
 size_t groupIndexFromMapped(AggregateDataPtr mapped)
 {
     return static_cast<size_t>(reinterpret_cast<uintptr_t>(mapped) - 1);
+}
+
+/// Whether comparing values of `type` orders them consistently with their equality, so that spilled keys
+/// can be told apart by comparison. An aggregate state has no order: it compares as equal to every other
+/// state, also inside a `Variant`, which reports itself comparable whatever its variants. `Dynamic` and
+/// `JSON` can hold a value of any type.
+bool hasReliableOrder(const IDataType & type)
+{
+    return !anyInTypeTree(type, [](const IDataType & node) { return !node.isComparable() || isDynamic(node) || isObject(node); });
 }
 
 /// Whether the hash method copies its keys into the arena of the variants: a string key, or the string of a key of
@@ -414,7 +424,7 @@ LimitByGroupFilter::LimitByGroupFilter(
     const auto type = AggregatedDataVariants::chooseMethod(header, key_names, data->key_sizes);
     data->init(type);
     retains_fingerprints = keep_fingerprints_
-        && !std::ranges::all_of(key_types, [](const DataTypePtr & key_type) { return key_type->isComparable(); });
+        && !std::ranges::all_of(key_types, [](const DataTypePtr & key_type) { return hasReliableOrder(*key_type); });
 
     ColumnsHashing::HashMethodContextSettings ctx_settings;
     ctx_settings.max_threads = 1;
