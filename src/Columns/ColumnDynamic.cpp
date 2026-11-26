@@ -944,17 +944,23 @@ void ColumnDynamic::updateHashWithValueRange(size_t begin, size_t end, SipHash &
 {
     checkStackSize();
 
-    /// Discriminators index this column's own variants, which differ between blocks, so a variant is
-    /// numbered by its first appearance in the range and identified by its type name.
+    /// A discriminator depends on which types the column holds, so the hash must identify a type by its name.
+    /// To hash each name once instead of once per row, a row hashes the index of its type in `types_in_range`
+    /// (types in order of first appearance in the range), and then each type hashes its name and its values.
     const auto & variant_col = getVariantColumn();
     const auto & local_discriminators = variant_col.getLocalDiscriminators();
     const auto & offsets = variant_col.getOffsets();
-    const size_t num_variants = variant_col.getNumVariants();
 
-    VectorWithMemoryTracking<ColumnVariant::Discriminator> rank_by_local_discr(num_variants, ColumnVariant::NULL_DISCRIMINATOR);
-    VectorWithMemoryTracking<ColumnVariant::Discriminator> local_discr_by_rank;
-    VectorWithMemoryTracking<size_t> variant_first_offset(num_variants, 0);
-    VectorWithMemoryTracking<size_t> variant_count(num_variants, 0);
+    struct TypeInRange
+    {
+        ColumnVariant::Discriminator local_discr;
+        /// The values of a type in a row range are contiguous in its variant column.
+        size_t first_offset;
+        size_t count = 0;
+    };
+    VectorWithMemoryTracking<TypeInRange> types_in_range;
+    VectorWithMemoryTracking<ColumnVariant::Discriminator> type_index_by_local_discr(
+        variant_col.getNumVariants(), ColumnVariant::NULL_DISCRIMINATOR);
 
     for (size_t i = begin; i < end; ++i)
     {
@@ -965,23 +971,22 @@ void ColumnDynamic::updateHashWithValueRange(size_t begin, size_t end, SipHash &
             continue;
         }
 
-        auto & rank = rank_by_local_discr[local_discr];
-        if (rank == ColumnVariant::NULL_DISCRIMINATOR)
+        auto & type_index = type_index_by_local_discr[local_discr];
+        if (type_index == ColumnVariant::NULL_DISCRIMINATOR)
         {
-            rank = static_cast<ColumnVariant::Discriminator>(local_discr_by_rank.size());
-            local_discr_by_rank.push_back(local_discr);
-            variant_first_offset[local_discr] = offsets[i];
+            type_index = static_cast<ColumnVariant::Discriminator>(types_in_range.size());
+            types_in_range.push_back({.local_discr = local_discr, .first_offset = offsets[i]});
         }
 
-        ++variant_count[local_discr];
-        hash.update(rank);
+        hash.update(type_index);
+        ++types_in_range[type_index].count;
     }
 
-    for (const auto local_discr : local_discr_by_rank)
+    for (const auto & type : types_in_range)
     {
-        updateHashWithTypeName(hash, variant_info.variant_names[variant_col.globalDiscriminatorByLocal(local_discr)]);
-        variant_col.getVariantByLocalDiscriminator(local_discr).updateHashWithValueRange(
-            variant_first_offset[local_discr], variant_first_offset[local_discr] + variant_count[local_discr], hash);
+        updateHashWithTypeName(hash, variant_info.variant_names[variant_col.globalDiscriminatorByLocal(type.local_discr)]);
+        variant_col.getVariantByLocalDiscriminator(type.local_discr).updateHashWithValueRange(
+            type.first_offset, type.first_offset + type.count, hash);
     }
 }
 
