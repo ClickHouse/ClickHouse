@@ -24,18 +24,20 @@ SET enable_parallel_replicas = 1, automatic_parallel_replicas_mode = 1,
 SET automatic_parallel_replicas_min_bytes_per_replica = 0;
 -- The runs must select the same granules, see `05332_autopr_min_bytes_per_replica_events`.
 SET use_query_condition_cache = 0;
+-- The filter is written as `PREWHERE`: under `parallel_replicas_plan_based = 1`, a filter that `optimize_move_to_prewhere`
+-- moves makes the plans not comparable, and no statistics are collected.
 
 -- Two files take 16 units; the hundreds of ranges they read take the rest.
-SELECT key % 10 AS k, max(value) FROM t_autopr_ranges_capacity WHERE key % 256 < 128 GROUP BY k FORMAT Null
+SELECT key % 10 AS k, max(value) FROM t_autopr_ranges_capacity PREWHERE key % 256 < 128 GROUP BY k FORMAT Null
 SETTINGS automatic_parallel_replicas_max_counted_ranges = 100, log_comment = 'autopr_ranges_capacity_1_collect';
-SELECT key % 10 AS k, max(value) FROM t_autopr_ranges_capacity WHERE key % 256 < 128 GROUP BY k FORMAT Null
+SELECT key % 10 AS k, max(value) FROM t_autopr_ranges_capacity PREWHERE key % 256 < 128 GROUP BY k FORMAT Null
 SETTINGS automatic_parallel_replicas_max_counted_ranges = 100, log_comment = 'autopr_ranges_capacity_2_rejected';
 
 -- The table grows past the drift ratio, so the next run collects the statistics again, now without a limit.
 INSERT INTO t_autopr_ranges_capacity SELECT number + 100000, toString(number) FROM numbers(300000);
-SELECT key % 10 AS k, max(value) FROM t_autopr_ranges_capacity WHERE key % 256 < 128 GROUP BY k FORMAT Null
+SELECT key % 10 AS k, max(value) FROM t_autopr_ranges_capacity PREWHERE key % 256 < 128 GROUP BY k FORMAT Null
 SETTINGS automatic_parallel_replicas_max_counted_ranges = 0, log_comment = 'autopr_ranges_capacity_3_recollect';
-SELECT key % 10 AS k, max(value) FROM t_autopr_ranges_capacity WHERE key % 256 < 128 GROUP BY k FORMAT Null
+SELECT key % 10 AS k, max(value) FROM t_autopr_ranges_capacity PREWHERE key % 256 < 128 GROUP BY k FORMAT Null
 SETTINGS automatic_parallel_replicas_max_counted_ranges = 0, log_comment = 'autopr_ranges_capacity_4_evaluated';
 
 SET enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0;
