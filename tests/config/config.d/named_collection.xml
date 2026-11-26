@@ -47,6 +47,8 @@
         </s3_conn_db>
         <cache_collection>
             <max_size>1Mi</max_size>
+            <max_file_segment_size>256Ki</max_file_segment_size>
+            <boundary_alignment>256Ki</boundary_alignment>
             <path>collection</path>
         </cache_collection>
         <url_override1>
@@ -129,5 +131,17 @@
             <nats_username overridable="false">operator</nats_username>
             <nats_password overridable="false">secret</nats_password>
         </nats_config_locked_basic_credentials>
+        <!-- librdkafka properties that refer to the filesystem of the server are accepted only from a collection
+             defined here, see 05816_kafka_server_local_file_properties. Nothing listens on the port, and
+             the connection does not use TLS, thus the file is not opened. -->
+        <kafka_config_file_paths>
+            <kafka_broker_list>127.0.0.1:1</kafka_broker_list>
+            <kafka_topic_list>topic</kafka_topic_list>
+            <kafka_group_name>group</kafka_group_name>
+            <kafka_format>JSONEachRow</kafka_format>
+            <kafka>
+                <ssl_ca_location>/etc/clickhouse-server/server.crt</ssl_ca_location>
+            </kafka>
+        </kafka_config_file_paths>
     </named_collections>
 </clickhouse>

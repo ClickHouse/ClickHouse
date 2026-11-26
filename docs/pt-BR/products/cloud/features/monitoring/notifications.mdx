@@ -7,44 +7,54 @@ sidebarTitle: 'Notificações'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
-
 O ClickHouse Cloud envia notificações sobre eventos críticos relacionados ao seu serviço ou à sua organização. Há alguns conceitos que você deve ter em mente para entender como as notificações são enviadas e configuradas:
 
 1. **Categoria de notificação**: Refere-se a grupos de notificações, como notificações de cobrança, notificações relacionadas ao serviço etc. Dentro de cada categoria, há várias notificações para as quais o modo de entrega pode ser configurado.
 2. **Severidade da notificação**: A severidade da notificação pode ser `info`, `warning` ou `critical`, dependendo da importância da notificação. Isso não é configurável.
 3. **Canal de notificação**: Refere-se ao meio pelo qual a notificação é recebida, como UI, e-mail, Slack etc. Isso é configurável para a maioria das notificações.
 
-<div id="receiving-notifications">
-  ## Recebimento de notificações
+## Recebimento de notificações {#receiving-notifications}
+
+As notificações podem ser recebidas por vários canais. No ClickHouse Cloud, você pode receber notificações por e-mail, pela UI do ClickHouse Cloud e pelo Slack. Você pode clicar no ícone de sino no menu superior esquerdo para ver as notificações atuais, o que abre um painel lateral. Ao clicar no botão **View All** na parte inferior do painel lateral, você será levado a uma página que mostra o registro de atividades de todas as notificações.
+
+<div className="ch-image-md">
+  <Frame>
+    ![Painel lateral de notificações do ClickHouse Cloud](/images/cloud/manage/notifications-1.webp)
+  </Frame>
 </div>
 
-As notificações podem ser recebidas por vários canais. No ClickHouse Cloud, você pode receber notificações por e-mail, pela UI do ClickHouse Cloud e pelo Slack. Você pode clicar no ícone de sino no menu superior esquerdo para ver as notificações atuais, o que abre um painel lateral. Ao clicar no botão **View All** na parte inferior do painel lateral, você será levado a uma página que mostra o log de atividades de todas as notificações.
-
-<Image img="/images/cloud/manage/notifications-1.webp" size="md" alt="painel lateral de notificações do ClickHouse Cloud" border />
-
-<Image img="/images/cloud/manage/notifications-2.webp" size="md" alt="log de atividades das notificações do ClickHouse Cloud" border />
-
-<div id="customizing-notifications">
-  ## Personalizando notificações
+<div className="ch-image-md">
+  <Frame>
+    ![Registro de atividades de notificações do ClickHouse Cloud](/images/cloud/manage/notifications-2.webp)
+  </Frame>
 </div>
 
-Para cada notificação, você pode personalizar como deseja recebê-la. É possível acessar a tela de configurações pelo painel lateral de notificações ou pela segunda aba no log de atividades de notificações.
+## Personalizando notificações {#customizing-notifications}
+
+Para cada notificação, você pode personalizar como deseja recebê-la. É possível acessar a tela de configurações pelo painel lateral de notificações ou pela segunda aba no registro de atividades de notificações.
 
 Você pode personalizar as notificações entregues pela Cloud UI, e essas personalizações se aplicam individualmente a cada usuário. Também é possível personalizar as notificações enviadas para os seus próprios e-mails, mas somente usuários com permissões de administrador podem personalizar notificações enviadas para e-mails personalizados e notificações entregues a canais do Slack.
 
 Para configurar a entrega de uma notificação específica, clique no ícone de lápis para modificar os canais de entrega da notificação.
 
-<Image img="/images/cloud/manage/notifications-3.webp" size="md" alt="Tela de configurações de notificações do ClickHouse Cloud" border />
+<div className="ch-image-md">
+  <Frame>
+    ![Tela de configurações de notificações do ClickHouse Cloud](/images/cloud/manage/notifications-3.webp)
+  </Frame>
+</div>
 
-<Image img="/images/cloud/manage/notifications-4.webp" size="md" alt="Configurações de entrega de notificações do ClickHouse Cloud" border />
+<div className="ch-image-md">
+  <Frame>
+    ![Configurações de entrega de notificações do ClickHouse Cloud](/images/cloud/manage/notifications-4.webp)
+  </Frame>
+</div>
 
 <Note>
   Algumas notificações **obrigatórias**, como **Falha no pagamento**, não podem ser configuradas.
 </Note>
 
 <div id="service-notifications">
-  ## Notificações de serviço
+  ## Notificações de serviço {#service-notifications}
 </div>
 
 O ClickHouse envia notificações de serviço quando uma determinada condição de alerta é acionada. Veja abaixo mais informações sobre as notificações de serviço do ClickHouse Cloud:
@@ -60,25 +70,25 @@ O ClickHouse envia notificações de serviço quando uma determinada condição 
 | Versão do ClickHouse alterada      | Quando a atualização da versão do serviço ClickHouse começa e quando é concluída.                                                                                     |                                               | N/A                                                                                                                                                   |
 
 <div id="clickpipes-notifications">
-  ## Notificações do ClickPipes
+  ## Notificações do ClickPipes {#clickpipes-notifications}
 </div>
 
 A ClickHouse envia notificações do ClickPipes quando seu ClickPipe apresenta falhas ou problemas.
 
 <div id="billing-notifications">
-  ## Notificações de cobrança
+  ## Notificações de cobrança {#billing-notifications}
 </div>
 
 O ClickHouse envia notificações de cobrança em caso de problemas de pagamento e quando compromissos pré-pagos atingem determinados limites de consumo.
 
 <div id="supported-notifications">
-  ## Notificações suportadas
+  ## Notificações suportadas {#supported-notifications}
 </div>
 
 Atualmente, enviamos notificações relacionadas à cobrança (falha no pagamento, uso acima de um determinado limite etc.), bem como notificações relacionadas a eventos de escalonamento (escalonamento concluído, escalonamento bloqueado etc.).
 
 <div id="related">
-  ## Páginas relacionadas
+  ## Páginas relacionadas {#related}
 </div>
 
 * [Monitoramento do Cloud Console](/pt-BR/products/cloud/features/monitoring/cloud-console) — Dashboards integrados para a saúde do serviço, os recursos e o desempenho das consultas

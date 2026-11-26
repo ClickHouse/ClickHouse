@@ -1,4 +1,6 @@
--- Tags: long
+-- Tags: long, no-msan
+-- no-msan: with `meta in keeper` and `s3 storage` writing the files of 256 buckets takes over the 600 s timeout
+-- under MSan. It checks where the paths are written, which other builds cover as well.
 -- long: 256 shared-data buckets are 256 substreams in every wide part, and where the metadata of
 -- the database lives in Keeper each of their files is a transaction - the test then takes minutes
 -- there, over the 180 s the flaky check allows an untagged test.
@@ -9,7 +11,6 @@
 DROP TABLE IF EXISTS t_json_max_buckets_wide;
 DROP TABLE IF EXISTS t_json_max_buckets_compact;
 DROP TABLE IF EXISTS t_array_json_max_buckets;
-SET enable_json_type = 1;
 SET output_format_json_quote_64bit_integers = 0;
 
 CREATE TABLE t_json_max_buckets_wide (id UInt64, json JSON(max_dynamic_paths = 0))

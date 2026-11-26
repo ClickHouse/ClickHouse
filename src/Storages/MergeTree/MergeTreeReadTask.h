@@ -85,7 +85,7 @@ struct IndexReadTask
     std::vector<Column> columns;
     MergeTreeIndexWithCondition index;
 
-    NamesAndTypesList getNamesAndTypesList() const;
+    [[nodiscard]] NamesAndTypesList getNamesAndTypesList() const;
 };
 
 /// Ordered map to ensure deterministic iteration order.
@@ -104,8 +104,8 @@ struct MergeTreeReadTaskColumns
     /// Column names to read from patch parts.
     NamesAndTypesLists patch_columns;
 
-    String dump() const;
-    Names getAllColumnNames() const;
+    [[nodiscard]] String dump() const;
+    [[nodiscard]] Names getAllColumnNames() const;
     void moveAllColumnsFromPrewhere();
 };
 
@@ -151,6 +151,9 @@ struct MergeTreeReadTaskInfo
     MarkRangesPtr read_request_map;
     /// The same for each of `patch_parts`; empty = the whole patch parts.
     std::vector<MarkRangesPtr> patch_read_request_maps;
+
+    /// Rows the reader drops from this part before PREWHERE; non-empty, or null to drop none.
+    ConstDeleteBitmapPtr delete_bitmap;
 };
 
 using MergeTreeReadTaskInfoPtr = std::shared_ptr<const MergeTreeReadTaskInfo>;

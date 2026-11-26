@@ -228,7 +228,7 @@ Você também pode buscar perfis de heap globais e por consulta diretamente pela
 
     * `GET /jemalloc/stats` — saída bruta de `malloc_stats_print`
     * `GET /jemalloc/status` — estado do profiling em JSON (`prof_enabled`, `prof_active`, `thread_active_init`, `lg_sample`)
-    * `GET /jemalloc/profile?format={collapsed|raw}` — gera um perfil de heap com simbolização no lado do servidor e retorna pilhas colapsadas adequadas para renderização de flame graph (padrão) ou o dump bruto do jemalloc
+    * `GET /jemalloc/profile?format={collapsed|raw}` — gera um perfil de heap com simbolização no lado do servidor e retorna pilhas colapsadas adequadas para renderização de flame graph (padrão) ou o perfil de heap na mesma forma que o formato `raw` de `system.jemalloc_profile_text`
   </Tab>
 </Tabs>
 
@@ -256,8 +256,8 @@ SELECT * FROM system.jemalloc_profile_text
 
 O formato de saída é controlado pela configuração `jemalloc_profile_text_output_format`, que oferece suporte a três valores:
 
-* `raw` — perfil de heap bruto, gerado pelo jemalloc.
-* `symbolized` — formato compatível com o jeprof, com símbolos de função incorporados. Como os símbolos já estão incorporados, o `jeprof` pode analisar a saída sem precisar do binário do ClickHouse.
+* `raw` — perfil de heap tal como gerado pelo jemalloc, exceto pelo fato de que os endereços de tempo de execução não são publicados: os endereços de pilha dentro do binary do ClickHouse são substituídos pelos respectivos offsets nesse binary, os demais endereços (bibliotecas compartilhadas, código JIT) são substituídos por `0`, e o mapa de memória (`MAPPED_LIBRARIES`) é removido. O `jeprof` analisa esse perfil usando o binary do ClickHouse: `jeprof /path/to/clickhouse profile.heap`.
+* `symbolized` — formato compatível com o jeprof, com símbolos de função incorporados. Como os símbolos já estão incorporados, o `jeprof` pode analisar a saída sem precisar do binary do ClickHouse.
 * `collapsed` (padrão) — pilhas colapsadas compatíveis com FlameGraph, uma pilha por linha com a contagem de bytes.
 
 Por exemplo, para obter o perfil bruto:
@@ -344,13 +344,13 @@ SETTINGS allow_introspection_functions=1
 
 ### Exemplo: gerando um flame graph de fragmentação {#example-fragmentation-flamegraph}
 
-A mesma consulta pode distribuir o desperdício de cada size class entre seus backtraces, proporcionalmente ao número de alocações antigas, e imprimir o resultado no formato `collapsed` para o `flamegraph.pl`. As size classes que apresentam desperdício, mas não têm samples suficientemente antigos, ficam sob um frame `[unattributed]`, de modo que o total do flame graph corresponde ao desperdício total. Leia `system.jemalloc_sampled_allocations` apenas uma vez por consulta: cada leitura faz o flush de um novo profile, portanto duas subqueries veriam dados diferentes.
+A mesma consulta pode distribuir o desperdício de cada size class entre seus backtraces, proporcionalmente ao número de alocações antigas, e imprimir o resultado no formato `collapsed` para o `flamegraph.pl`. As size classes que apresentam desperdício, mas não têm amostras suficientemente antigas, ficam sob um frame `[unattributed]`, de modo que o total do flame graph corresponde ao desperdício total. As amostras cuja pilha o jemalloc não conseguiu desenrolar têm um `trace` vazio e ficam sob `[unknown]`. Leia `system.jemalloc_sampled_allocations` apenas uma vez por consulta: cada leitura faz o flush de um novo perfil, portanto duas subqueries veriam dados diferentes.
 
 ```sql
 WITH 60e9 AS min_age_ns
 SELECT format('{} {}',
     if(s.est_old_objects > 0, s.stack, format('[unattributed];arena_{}_class_{}', toString(b.arena), toString(b.size))),
-    toString(toUInt64(if(s.est_old_objects > 0, b.waste * s.est_old_objects / sum(s.est_old_objects) OVER (PARTITION BY b.arena, b.index), b.waste))))
+    toString(toUInt64(if(s.est_old_objects > 0, b.waste * s.est_old_objects / sum(s.est_old_objects) OVER (PARTITION BY b.arena, b.index), toFloat64(b.waste)))))
 FROM system.jemalloc_arena_bins AS b
 LEFT JOIN
 (
@@ -358,7 +358,7 @@ LEFT JOIN
         arena,
         size_class,
         sum(weight) AS est_old_objects,
-        arrayStringConcat(arrayMap(a -> demangle(addressToSymbol(a)), arrayReverse(trace)), ';') AS stack
+        if(empty(trace), '[unknown]', arrayStringConcat(arrayMap(a -> demangle(addressToSymbol(a)), arrayReverse(trace)), ';')) AS stack
     FROM system.jemalloc_sampled_allocations
     WHERE age_ns > min_age_ns
     GROUP BY arena, size_class, trace

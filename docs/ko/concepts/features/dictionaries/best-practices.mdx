@@ -11,9 +11,7 @@ keywords: ['dictionary', 'dictionaries', 'layout', 'dictGet', 'JOIN', 'hashed', 
 
 예시와 함께 딕셔너리를 소개하는 내용은 [메인 딕셔너리 가이드](/ko/concepts/features/dictionaries/index)를 참조하십시오.
 
-<div id="when-to-use-dictionaries-vs-joins">
-  ## 딕셔너리와 JOIN 중 언제 사용해야 하나요
-</div>
+## 딕셔너리와 JOIN 중 언제 사용해야 하나요 {#when-to-use-dictionaries-vs-joins}
 
 딕셔너리는 JOIN의 한쪽이 메모리에 들어가는 조회 테이블일 때 가장 효과적입니다. 일반적인 JOIN에서는 ClickHouse가 먼저 오른쪽에서 해시 테이블을 만든 뒤, 왼쪽 데이터를 사용해 이를 조회합니다. 이후 `WHERE` 필터로 대부분의 행이 걸러지더라도 마찬가지입니다. 최근 버전(24.12+)에서는 많은 경우 JOIN 전에 필터를 푸시하지만, 그렇다고 해서 오버헤드가 항상 없어지는 것은 아닙니다. 반면 딕셔너리를 사용하면 `dictGet`을 인라인으로 호출하므로, 조회는 이미 필터링을 통과한 행에 대해서만 수행됩니다.
 
@@ -24,9 +22,7 @@ keywords: ['dictionary', 'dictionaries', 'layout', 'dictGet', 'JOIN', 'hashed', 
 * 조회 키를 이미 알고 있는 작은 차원 테이블에 대한 JOIN을 대체할 때는 딕셔너리를 사용합니다.
 * 많은 행에서 조회된 값을 기준으로 필터링해야 할 때는 일반 컬럼과 인덱스를 사용합니다.
 
-<div id="choosing-a-layout">
-  ## 레이아웃 선택
-</div>
+## 레이아웃 선택 {#choosing-a-layout}
 
 `LAYOUT` 절은 딕셔너리의 내부 데이터 구조를 제어합니다. 사용 가능한 모든 레이아웃은 [레이아웃 참고](/ko/reference/statements/create/dictionary/layouts/overview#storing-dictionaries-in-memory)에 문서화되어 있습니다.
 
@@ -37,12 +33,16 @@ keywords: ['dictionary', 'dictionaries', 'layout', 'dictGet', 'JOIN', 'hashed', 
 * **`hashed`** — 전체 딕셔너리를 해시 테이블에 저장합니다. 속성이 매우 적을 때는 `hashed_array`보다 더 빠를 수 있지만, 속성 수가 늘어날수록 메모리 사용량이 더 커집니다.
 * **`complex_key_hashed` / `complex_key_hashed_array`** — 키를 `UInt64`로 CAST할 수 없을 때(예: `String` 키) 사용합니다. 성능상의 절충점은 비복합 키 레이아웃과 동일합니다.
 * **`sparse_hashed`** — `hashed`보다 메모리 사용량을 줄이는 대신 CPU를 더 사용합니다. 최선의 선택인 경우는 드물며, 단일 속성만 있을 때에만 효율적입니다. 대부분의 경우 `hashed_array`가 더 적합합니다.
-* **`cache` / `ssd_cache`** — 자주 액세스되는 키만 캐시합니다. 전체 데이터셋이 메모리에 들어가지 않을 때 유용하지만, 캐시 미스가 발생하면 조회가 원본 소스에 도달할 수 있습니다. 지연 시간에 민감한 workload에는 권장되지 않습니다.
+* **`cache` / `ssd_cache`** — 자주 액세스되는 키만 캐시합니다. 전체 데이터셋이 메모리에 들어가지 않을 때 유용하지만, 캐시 미스가 발생하면 조회가 원본 소스에 도달할 수 있습니다. 지연 시간에 민감한 workload나 삽입 시점의 안정적인 데이터 보강에는 권장되지 않습니다. 자세한 내용은 [수집 경로의 캐시 딕셔너리](#cache-dictionaries-in-ingestion-path)를 참고하십시오.
 * **`direct`** — 메모리에 저장하지 않고 매 조회마다 원본 소스를 쿼리합니다. 데이터가 너무 자주 변경되어 캐시하기 어렵거나, 딕셔너리가 메모리에 담기에는 너무 클 때 사용하십시오.
 
-<div id="monitoring-dictionary-usage">
-  ## 딕셔너리 사용 모니터링
-</div>
+## 수집 경로의 캐시 딕셔너리 {#cache-dictionaries-in-ingestion-path}
+
+캐시 기반 레이아웃(`cache`, `complex_key_cache`, `ssd_cache`, `complex_key_ssd_cache`)은 워밍된 엔트리를 로컬 서버에만 보관합니다. 각 서버는 캐시를 독립적으로 워밍하며, 서버를 재시작하거나 교체하면 빈 캐시 상태에서 다시 시작합니다. 콜드 캐시 상태에서는 조회가 딕셔너리 소스에 의존하므로 지연 시간이 늘어나고, 소스가 조회를 처리하지 못하면 삽입이 차단되거나 실패할 수 있습니다. ClickHouse Cloud에서는 자동 스케일링과 관리형 노드 교체 때문에 이러한 상황이 더 자주 발생할 수 있습니다.
+
+예측 가능한 지연 시간과 소스 가용성이 중요하다면 [증분형 materialized view](/ko/concepts/features/materialized-views/incremental-materialized-view)나 `MATERIALIZED` 및 `DEFAULT` 컬럼에서 삽입 시점 보강에 이러한 레이아웃을 사용하지 마십시오. 대신 각 서버에 전체 딕셔너리를 로드하는 레이아웃을 사용하십시오. 일반적으로 `UInt64` 키에는 `hashed` 또는 `hashed_array`를, 문자열 키나 복합 키에는 `complex_key_hashed` 또는 `complex_key_hashed_array`를 사용합니다. `flat` 등 전체를 로드하는 다른 레이아웃도 적합할 수 있습니다. 전체 딕셔너리를 메모리에 올릴 수 없다면 수집 경로에서 워밍된 캐시에 의존하지 말고, 삽입 전이나 쿼리 시점에 데이터를 보강하십시오.
+
+## 딕셔너리 사용 모니터링 {#monitoring-dictionary-usage}
 
 [`system.dictionaries`](/ko/reference/system-tables/dictionaries) 테이블을 통해 메모리 사용량과 상태를 확인할 수 있습니다:
 

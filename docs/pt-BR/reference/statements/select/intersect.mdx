@@ -27,11 +27,9 @@ FROM table2
 
 A condição pode ser qualquer expressão, dependendo dos seus requisitos.
 
-<div id="examples">
-  ## Exemplos
-</div>
+## Exemplos {#examples}
 
-Veja um exemplo simples que faz a interseção dos números de 1 a 10 com os números de 3 a 8:
+Veja um exemplo simples que faz a interseção dos números de 1 a 10 com os números de 3 a 10:
 
 ```sql title="Query"
 SELECT number FROM numbers(1,10) INTERSECT SELECT number FROM numbers(3,8);
@@ -45,6 +43,8 @@ SELECT number FROM numbers(1,10) INTERSECT SELECT number FROM numbers(3,8);
 │      6 │
 │      7 │
 │      8 │
+│      9 │
+│     10 │
 └────────┘
 ```
 
@@ -67,6 +67,7 @@ INSERT INTO crypto_prices
    SELECT *
    FROM s3(
     'https://learn-clickhouse.s3.us-east-2.amazonaws.com/crypto_prices.csv',
+    NOSIGN,
     'CSVWithNames'
 );
 
@@ -107,7 +108,7 @@ INSERT INTO holdings VALUES
    ('Bitcoin', 200),
    ('Ethereum', 250),
    ('Ethereum', 5000),
-   ('DOGEFI', 10);
+   ('DOGEFI', 10),
    ('Bitcoin Diamond', 5000);
 ```
 
@@ -131,9 +132,7 @@ WHERE price > 100
 
 Isso significa que, em algum momento, Bitcoin e Ethereum foram negociados acima de US$ 100, e DOGEFI e Bitcoin Diamond nunca foram negociados acima de US$ 100 (pelo menos com base nos dados deste exemplo).
 
-<div id="intersect-distinct">
-  ## INTERSECT DISTINCT
-</div>
+## INTERSECT DISTINCT {#intersect-distinct}
 
 Observe que, na consulta anterior, tínhamos várias posições de Bitcoin e Ethereum negociadas acima de $100. Pode ser útil remover linhas duplicadas, já que elas apenas repetem o que já sabemos. Você pode adicionar `DISTINCT` a `INTERSECT` para eliminar linhas duplicadas do resultado:
 

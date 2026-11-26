@@ -1,0 +1,7 @@
+SELECT(`secret.no_such_subcolumn`): ACCESS_DENIED
+SHOW COLUMNS(`secret.no_such_subcolumn`): ACCESS_DENIED
+SELECT(`tup.no_such_subcolumn`): ACCESS_DENIED
+SELECT(`no_such_column.a`): ACCESS_DENIED
+SELECT(`tup.a`): visible
+SHOW COLUMNS(`tup.a`): visible
+SELECT(`j.some.path`): visible

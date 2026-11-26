@@ -6,9 +6,7 @@ keywords: ['Cuotas', 'Complejidad de las consultas']
 description: 'Las cuotas y la complejidad de las consultas son mecanismos eficaces para limitar y restringir lo que los usuarios pueden hacer en ClickHouse. Este artículo de la base de conocimientos muestra ejemplos de cómo aplicar estos dos enfoques.'
 ---
 
-<div id="about-quotas-and-query-complexity">
-  ## Acerca de las cuotas y la complejidad de las consultas
-</div>
+## Acerca de las cuotas y la complejidad de las consultas {#about-quotas-and-query-complexity}
 
 Las [cuotas](/es/concepts/features/configuration/server-config/quotas) y la [complejidad de las consultas](/es/concepts/features/configuration/settings/query-complexity) son formas eficaces de limitar y restringir lo que los usuarios pueden hacer en ClickHouse.
 
@@ -16,9 +14,7 @@ Las cuotas aplican restricciones dentro del contexto de un intervalo de tiempo, 
 
 Este artículo de la base de conocimientos muestra ejemplos de cómo aplicar estos dos enfoques diferentes.
 
-<div id="the-sample-data">
-  ## Los datos de ejemplo
-</div>
+## Los datos de ejemplo {#the-sample-data}
 
 Usaremos esta sencilla tabla de ejemplo en los ejemplos siguientes:
 
@@ -70,9 +66,7 @@ clickhouse-cloud :) SELECT * FROM default.test_table_00006488 LIMIT 5
 -- 5 rows in set. Elapsed: 0.003 sec.
 ```
 
-<div id="using-quotas">
-  ## Uso de cuotas
-</div>
+## Uso de cuotas {#using-quotas}
 
 En este ejemplo, creamos un rol al que aplicaremos una cuota que permite recuperar solo 10 filas de resultados durante cada intervalo de 10 segundos:
 
@@ -136,7 +130,7 @@ clickhouse-cloud :) CREATE QUOTA quota_max_10_result_rows_per_10_seconds FOR INT
 Ahora inicia sesión con el usuario `user_with_quota`
 
 ```sql
--- iniciar sesión como el usuario al que se aplica la cuota a través del rol
+-- login as the user where quota is applied through the role
 clickhouse-cloud :) SELECT user()
 
 -- SELECT user()
@@ -149,7 +143,7 @@ clickhouse-cloud :) SELECT user()
 
 -- 1 row in set. Elapsed: 0.002 sec.
 
--- listar permisos
+-- list grants
 clickhouse-cloud :) SHOW GRANTS
 
 -- SHOW GRANTS
@@ -162,7 +156,7 @@ clickhouse-cloud :) SHOW GRANTS
 
 -- 1 row in set. Elapsed: 0.001 sec.
 
--- verificar la hora
+-- check the time
 clickhouse-cloud :) select now()
 
 -- SELECT now()
@@ -175,7 +169,7 @@ clickhouse-cloud :) select now()
 
 -- 1 row in set. Elapsed: 0.001 sec.
 
--- consultar diez filas
+-- query ten rows
 clickhouse-cloud :) SELECT * FROM test_table LIMIT 10
 
 -- SELECT *
@@ -199,7 +193,7 @@ clickhouse-cloud :) SELECT * FROM test_table LIMIT 10
 
 -- 10 rows in set. Elapsed: 0.002 sec.
 
--- intentar obtener otra fila dentro del intervalo de 10 segundos desde la última consulta
+-- attempt to get another row within the 10 seconds interval since the last query
 clickhouse-cloud :) SELECT * FROM test_table LIMIT 1
 
 -- SELECT *
@@ -214,7 +208,7 @@ clickhouse-cloud :) SELECT * FROM test_table LIMIT 1
 -- Code: 201. DB::Exception: Received from dxqjx1s5lt.eu-west-1.aws.clickhouse.cloud:9440. DB::Exception: Quota for user `user_with_quota` for 10s has been exceeded: result_rows = 11/10. 
 -- Interval will end at 2023-10-25 14:37:50. Name of quota template: `quota_max_10_result_rows_per_10_seconds`. (QUOTA_EXCEEDED)
 
--- verificar la hora
+-- check the time
 clickhouse-cloud :) select now()
 
 -- SELECT now()
@@ -230,9 +224,7 @@ clickhouse-cloud :) select now()
 
 Ten en cuenta que el usuario tendrá que esperar otros 5 segundos antes de poder obtener un nuevo &quot;cupo&quot; de conjunto de resultados de 10 filas.
 
-<div id="using-query-complexity">
-  ## Uso de la complejidad de las consultas
-</div>
+## Uso de la complejidad de las consultas {#using-query-complexity}
 
 En este ejemplo, creamos un rol al que aplicaremos una `SETTING` de complejidad de las consultas que permite devolver solo 1 fila por consulta.
 

@@ -1,6 +1,7 @@
 #include <limits>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnsCommon.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -42,14 +43,39 @@ public:
 
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayShiftRotate>(); }
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    bool isVariadic() const override { return strategy == ShiftRotateStrategy::Shift; }
-    size_t getNumberOfArguments() const override { return strategy == ShiftRotateStrategy::Rotate ? 2 : 0; }
-    bool useDefaultImplementationForNulls() const override { return strategy == ShiftRotateStrategy::Rotate; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] bool isVariadic() const override { return strategy == ShiftRotateStrategy::Shift; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return strategy == ShiftRotateStrategy::Rotate ? 2 : 0; }
+    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return strategy == ShiftRotateStrategy::Rotate; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    /// Declarative signature for `Rotate` (preserves the element type);
+    /// docs-only for `Shift` because its optional default-value uses a
+    /// more permissive "must not widen past the element type" rule that
+    /// the current DSL doesn't capture.
+    [[nodiscard]] String getSignatureString() const override
+    {
+        if constexpr (strategy == ShiftRotateStrategy::Rotate)
+            return "(Array(T : Any), NativeInteger) -> Array(T)";
+        else
+            return "(Array(T : Any), NativeInteger, [Any]) -> Array(T)";
+    }
+
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        /// Authoritative for `Rotate` (DSL drives the result); bypass for
+        /// `Shift` so the legacy `getReturnTypeImpl(DataTypes)` runs.
+        if constexpr (strategy == ShiftRotateStrategy::Rotate)
+            return IFunction::getReturnTypeImpl(arguments);
+
+        DataTypes data_types(arguments.size());
+        for (size_t i = 0; i < arguments.size(); ++i)
+            data_types[i] = arguments[i].type;
+        return getReturnTypeImpl(data_types);
+    }
+
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if constexpr (strategy == ShiftRotateStrategy::Shift)
         {
@@ -101,7 +127,7 @@ public:
         return std::make_shared<DataTypeArray>(elem_type);
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         if (result_type->onlyNull())
             return result_type->createColumnConstWithDefaultValue(input_rows_count);
@@ -140,11 +166,31 @@ public:
                 if (!elem_type->isNullable() && default_argument.type->isNullable())
                 {
                     auto materialized_default_column = default_argument.column->convertToFullColumnIfConst()->convertToFullColumnIfReplicated();
+                    const auto nested_default_type = removeNullable(default_argument.type);
                     if (const auto * nullable_default_column = checkAndGetColumn<ColumnNullable>(materialized_default_column.get()))
-                        materialized_default_column = nullable_default_column->getNestedColumnWithDefaultOnNull();
+                    {
+                        const auto & null_map = nullable_default_column->getNullMapData();
+                        if (nested_default_type->isDefaultInsertTrivial() || memoryIsZero(null_map.data(), 0, null_map.size()))
+                            materialized_default_column = nullable_default_column->getNestedColumnWithDefaultOnNull();
+                        else
+                        {
+                            /// The default of an `Enum` is its first value, not the column zero.
+                            const auto & nested_default_column = nullable_default_column->getNestedColumn();
+                            auto filled_default_column = nested_default_column.cloneEmpty();
+                            filled_default_column->reserve(nested_default_column.size());
+                            for (size_t row = 0; row < nested_default_column.size(); ++row)
+                            {
+                                if (null_map[row])
+                                    nested_default_type->insertDefaultInto(*filled_default_column);
+                                else
+                                    filled_default_column->insertFrom(nested_default_column, row);
+                            }
+                            materialized_default_column = std::move(filled_default_column);
+                        }
+                    }
 
                     default_argument.column = std::move(materialized_default_column);
-                    default_argument.type = removeNullable(default_argument.type);
+                    default_argument.type = nested_default_type;
                 }
 
                 default_column = castColumn(default_argument, elem_type);
@@ -192,12 +238,16 @@ struct ArrayRotateImpl
             }
 
             size_t shift_num = static_cast<size_t>(shift_num_value);
-            if (nested_size > 0 && shift_num >= nested_size)
+            /// An empty array is rotated by nothing at all: the loop below does not run, and
+            /// `nested_size - shift_num` would underflow here, having had no size to reduce against.
+            if (nested_size > 0)
+            {
                 shift_num %= nested_size;
 
-            // Rotating left to N is the same as shifting right to (size - N).
-            if (actual_direction == ShiftRotateDirection::Right)
-                shift_num = nested_size - shift_num;
+                // Rotating left to N is the same as shifting right to (size - N).
+                if (actual_direction == ShiftRotateDirection::Right)
+                    shift_num = nested_size - shift_num;
+            }
 
             for (size_t j = 0; j < nested_size; ++j)
                 permutation[current_offset + j] = current_offset + (j + shift_num) % nested_size;

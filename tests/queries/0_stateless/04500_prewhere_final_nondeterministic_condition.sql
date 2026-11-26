@@ -1,7 +1,6 @@
 -- Conditions with non-deterministic functions like rand must stay in WHERE under FINAL,
 -- otherwise row versions of the same key get filtered differently and a stale row can win the merge
 SET explain_query_plan_default = 'legacy';
-SET enable_analyzer = 1;
 SET optimize_move_to_prewhere = 1;
 SET optimize_move_to_prewhere_if_final = 1;
 

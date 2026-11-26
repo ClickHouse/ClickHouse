@@ -8,13 +8,13 @@
 -- confirmed by the insert quorum) must estimate PREWHERE column sizes from the same pinned part set:
 -- an unconfirmed part that execution never reads must not influence which conditions are moved.
 
-SET enable_analyzer = 1, explain_query_plan_default = 'legacy';
+SET explain_query_plan_default = 'legacy';
 SET optimize_move_to_prewhere = 1, move_all_conditions_to_prewhere = 0;
 -- Keep the conditions on the columns themselves: rewriting them to `.size` subcolumns changes what is measured.
 -- The conditions are spelled as `notEmpty` directly, so the randomized `optimize_empty_string_comparisons`
 -- rewrite of `!= ''` cannot change the printed plan.
 SET optimize_functions_to_subcolumns = 0;
-SET query_plan_optimize_primary_key = 1, convert_query_to_cnf = 0, enable_parallel_replicas = 0;
+SET convert_query_to_cnf = 0, enable_parallel_replicas = 0;
 SET use_statistics = 0, materialize_statistics_on_insert = 0;
 SET use_query_cache = 0, use_query_condition_cache = 0;
 SET insert_keeper_fault_injection_probability = 0;

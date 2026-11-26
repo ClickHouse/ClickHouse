@@ -1,14 +1,14 @@
 {
   "groups": [
     {
-      "group": "بدء الاستخدام",
+      "group": "Get started",
       "pages": [
         "ar/products/managed-postgres/overview",
         "ar/products/managed-postgres/quickstart"
       ]
     },
     {
-      "group": "الميزات",
+      "group": "Features",
       "pages": [
         "ar/products/managed-postgres/connection",
         "ar/products/managed-postgres/settings",
@@ -43,7 +43,27 @@
       ]
     },
     {
-      "group": "الأسعار",
+      "group": "Guides",
+      "pages": [
+        "ar/products/managed-postgres/guides/bun",
+        "ar/products/managed-postgres/guides/cloudflare-workers",
+        "ar/products/managed-postgres/guides/django",
+        "ar/products/managed-postgres/guides/dotnet",
+        "ar/products/managed-postgres/guides/drizzle",
+        "ar/products/managed-postgres/guides/fastapi",
+        "ar/products/managed-postgres/guides/go",
+        "ar/products/managed-postgres/guides/kysely",
+        "ar/products/managed-postgres/guides/laravel",
+        "ar/products/managed-postgres/guides/nodejs",
+        "ar/products/managed-postgres/guides/phoenix",
+        "ar/products/managed-postgres/guides/prisma",
+        "ar/products/managed-postgres/guides/ruby-on-rails",
+        "ar/products/managed-postgres/guides/rust",
+        "ar/products/managed-postgres/guides/spring-boot"
+      ]
+    },
+    {
+      "group": "Pricing",
       "pages": [
         "ar/products/managed-postgres/pricing"
       ]
@@ -56,7 +76,7 @@
       ]
     },
     {
-      "group": "عمليات الترحيل",
+      "group": "Migrations",
       "pages": [
         "ar/products/managed-postgres/migrations/overview",
         "ar/products/managed-postgres/migrations/clickpipes",
@@ -69,7 +89,7 @@
       ]
     },
     {
-      "group": "المراقبة",
+      "group": "Monitoring",
       "pages": [
         "ar/products/managed-postgres/monitoring/overview",
         "ar/products/managed-postgres/monitoring/dashboard",
@@ -80,7 +100,7 @@
       ]
     },
     {
-      "group": "الأسئلة الشائعة",
+      "group": "FAQ",
       "pages": [
         "ar/products/managed-postgres/faq"
       ]

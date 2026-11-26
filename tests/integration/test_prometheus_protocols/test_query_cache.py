@@ -21,32 +21,11 @@ def start_cluster():
     try:
         cluster.start()
         node.query(
-            "CREATE TABLE prometheus_data (id UUID, timestamp DateTime64(3, 'UTC'), value Float64)"
-            " ENGINE = MergeTree ORDER BY (id, timestamp)"
+            "CREATE TABLE prometheus (samples Array(Tuple(DateTime64(3, 'UTC'), Float64))) ENGINE = TimeSeries"
         )
         node.query(
-            "CREATE TABLE prometheus_tags (id UUID, metric_name LowCardinality(String),"
-            " tags Map(LowCardinality(String), String),"
-            " min_time SimpleAggregateFunction(min, Nullable(DateTime64(3, 'UTC'))),"
-            " max_time SimpleAggregateFunction(max, Nullable(DateTime64(3, 'UTC'))))"
-            " ENGINE = AggregatingMergeTree ORDER BY (metric_name, id)"
-            " SETTINGS allow_dimensions_outside_sorting_key = 1"
-        )
-        node.query(
-            "CREATE TABLE prometheus_metrics (metric_family String, type String, unit String, help String)"
-            " ENGINE = ReplacingMergeTree ORDER BY metric_family"
-        )
-        node.query(
-            "CREATE TABLE prometheus ENGINE = TimeSeries"
-            " DATA prometheus_data TAGS prometheus_tags METRICS prometheus_metrics"
-        )
-        node.query(
-            "INSERT INTO prometheus_tags VALUES ('00000000-0000-0000-0000-000000000001', 'up',"
-            " {'instance':'host1'}, toDateTime64(1699999000, 3, 'UTC'), toDateTime64(1700001000, 3, 'UTC'))"
-        )
-        node.query(
-            "INSERT INTO prometheus_data VALUES"
-            " ('00000000-0000-0000-0000-000000000001', toDateTime64(1700000000, 3, 'UTC'), 1)"
+            "INSERT INTO prometheus (metric_name, tags, samples)"
+            " VALUES ('up', {'instance':'host1'}, [(toDateTime64(1700000000, 3, 'UTC'), 1)])"
         )
         yield cluster
     finally:

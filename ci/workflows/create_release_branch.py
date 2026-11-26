@@ -24,6 +24,7 @@ release_branch_job = Job.Config(
 workflow = Workflow.Config(
     name="CreateReleaseBranch",
     event=Workflow.Event.DISPATCH,
+    engine=Workflow.Engine.GH_ACTIONS,
     jobs=[release_branch_job],
     secrets=SECRETS + [robot_token_secret],
     # Join CreateRelease's group so a branch cut cannot overlap an in-flight patch and publish a stale `:latest`.
@@ -34,12 +35,6 @@ workflow = Workflow.Config(
     # release either - that flow lives in the separate CreateRelease workflow.
     enable_slack_feed=True,
     inputs=[
-        Workflow.Config.InputConfig(
-            name="ref",
-            description="Git reference (branch or commit SHA) to cut the new release branch from",
-            is_required=True,
-            default_value="",
-        ),
         Workflow.Config.InputConfig(
             name="dry-run",
             description="Dry run — show what would be done without making changes",
