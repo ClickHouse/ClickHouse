@@ -2514,7 +2514,7 @@
       ],
       [
         "ClickHouse Observability",
-        "/clickstack/demo-days/2026/2026-09-24"
+        "/clickstack/observability/demo-days/2026/2026-09-24"
       ]
     ]
   },
@@ -2528,7 +2528,7 @@
       ],
       [
         "ClickHouse Observability",
-        "/clickstack/demo-days/2026/2026-10-01"
+        "/clickstack/observability/demo-days/2026/2026-10-01"
       ]
     ]
   },
@@ -2542,7 +2542,7 @@
       ],
       [
         "ClickHouse Observability",
-        "/clickstack/demo-days/2026/2026-10-08"
+        "/clickstack/observability/demo-days/2026/2026-10-08"
       ]
     ]
   },
@@ -2558,7 +2558,7 @@
       ],
       [
         "ClickHouse Observability",
-        "/clickstack/demo-days/2026/2026-10-15"
+        "/clickstack/observability/demo-days/2026/2026-10-15"
       ]
     ]
   },
@@ -2572,7 +2572,7 @@
       ],
       [
         "ClickHouse Observability",
-        "/clickstack/demo-days/2026/2026-10-22"
+        "/clickstack/observability/demo-days/2026/2026-10-22"
       ]
     ]
   },
@@ -2591,7 +2591,7 @@
       ],
       [
         "ClickHouse Observability",
-        "/clickstack/demo-days/2026/2026-11-12"
+        "/clickstack/observability/demo-days/2026/2026-11-12"
       ]
     ]
   },
@@ -2932,6 +2932,97 @@
       [
         "ClickHouse Observability",
         "/clickstack/observability/demo-days/2026/2026-09-17"
+      ]
+    ]
+  },
+  "/clickstack/observability/demo-days/2026/2026-09-24": {
+    "observabilityOnly": [],
+    "openSourceOnly": [],
+    "variants": [
+      [
+        "Open Source",
+        "/clickstack/demo-days/2026/2026-09-24"
+      ],
+      [
+        "ClickHouse Observability",
+        "/clickstack/observability/demo-days/2026/2026-09-24"
+      ]
+    ]
+  },
+  "/clickstack/observability/demo-days/2026/2026-10-01": {
+    "observabilityOnly": [],
+    "openSourceOnly": [],
+    "variants": [
+      [
+        "Open Source",
+        "/clickstack/demo-days/2026/2026-10-01"
+      ],
+      [
+        "ClickHouse Observability",
+        "/clickstack/observability/demo-days/2026/2026-10-01"
+      ]
+    ]
+  },
+  "/clickstack/observability/demo-days/2026/2026-10-08": {
+    "observabilityOnly": [],
+    "openSourceOnly": [],
+    "variants": [
+      [
+        "Open Source",
+        "/clickstack/demo-days/2026/2026-10-08"
+      ],
+      [
+        "ClickHouse Observability",
+        "/clickstack/observability/demo-days/2026/2026-10-08"
+      ]
+    ]
+  },
+  "/clickstack/observability/demo-days/2026/2026-10-15": {
+    "observabilityOnly": [
+      "source-level-access-control-for-promql-sources"
+    ],
+    "openSourceOnly": [],
+    "variants": [
+      [
+        "Open Source",
+        "/clickstack/demo-days/2026/2026-10-15"
+      ],
+      [
+        "ClickHouse Observability",
+        "/clickstack/observability/demo-days/2026/2026-10-15"
+      ]
+    ]
+  },
+  "/clickstack/observability/demo-days/2026/2026-10-22": {
+    "observabilityOnly": [],
+    "openSourceOnly": [],
+    "variants": [
+      [
+        "Open Source",
+        "/clickstack/demo-days/2026/2026-10-22"
+      ],
+      [
+        "ClickHouse Observability",
+        "/clickstack/observability/demo-days/2026/2026-10-22"
+      ]
+    ]
+  },
+  "/clickstack/observability/demo-days/2026/2026-11-12": {
+    "observabilityOnly": [
+      "mcp-server-connections-without-custom-headers",
+      "datadog-agent-setup-in-getting-started"
+    ],
+    "openSourceOnly": [
+      "organization-api-keys"
+    ],
+    "variants": [
+      [
+        "Open Source",
+        "/clickstack/demo-days/2026/2026-11-12"
+      ],
+      [
+        "ClickHouse Observability",
+        "/clickstack/observability/demo-days/2026/2026-11-12"
       ]
     ]
   }
