@@ -1,4 +1,5 @@
-<test>
+<test iceberg="0">
+    <!-- Not on Iceberg tables: they do not support FINAL. -->
     <settings>
         <max_threads>8</max_threads>
     </settings>
