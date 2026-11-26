@@ -39,9 +39,6 @@ include (cmake/clang_tidy.cmake)
 include (cmake/git.cmake)
 include (cmake/utils.cmake)
 
-# This is needed to set up the CMAKE_INSTALL_BINDIR variable.
-include (GNUInstallDirs)
-
 # Ignore export() since we don't use it,
 # but it gets broken with global targets via link_libraries()
 macro (export)
@@ -271,9 +268,7 @@ if (LINKER_NAME MATCHES "lld" AND NOT LINKER_NAME MATCHES "ld64")
     set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--build-id=sha1")
 endif ()
 
-# Add a section with the hash of the compiled machine code for integrity checks.
-# Only for official builds, because adding a section can be time consuming (rewrite of several GB).
-# And cross compiled binaries are not supported (since you cannot execute clickhouse hash-binary)
+# Add a section with the hash of the compiled machine code for integrity checks. Only for official builds.
 if (CLICKHOUSE_OFFICIAL_BUILD AND OS_LINUX AND (ARCH_AMD64 OR ARCH_AARCH64) AND NOT ENABLE_CLANG_TIDY)
     message(STATUS "Official build: A checksum hash will be added to the clickhouse executable")
     set (USE_BINARY_HASH 1 CACHE STRING "Calculate binary hash and store it in the separate section")
@@ -285,32 +280,42 @@ endif ()
 option(DISABLE_ALL_DEBUG_SYMBOLS "Disable debug symbols, independently of which build type is used" OFF)
 option(SPLIT_DEBUG_SYMBOLS "Split binaries and debug symbols" OFF)
 set(SYMBOL_SECTIONS "symtab" CACHE STRING "Symbol table format retained in packaged binaries")
-set_property(CACHE SYMBOL_SECTIONS PROPERTY STRINGS symtab gnu_debugdata compact)
+set_property(CACHE SYMBOL_SECTIONS PROPERTY STRINGS symtab gnu_debugdata compact both)
 
-set(SYMBOL_SECTIONS_VALID_VALUES symtab gnu_debugdata compact)
+set(SYMBOL_SECTIONS_VALID_VALUES symtab gnu_debugdata compact both)
 if (NOT SYMBOL_SECTIONS IN_LIST SYMBOL_SECTIONS_VALID_VALUES)
     message(FATAL_ERROR "Unsupported SYMBOL_SECTIONS value '${SYMBOL_SECTIONS}'. Valid values: ${SYMBOL_SECTIONS_VALID_VALUES}")
 endif()
 
-if (SYMBOL_SECTIONS STREQUAL "compact" AND NOT SPLIT_DEBUG_SYMBOLS)
-    message(FATAL_ERROR "SYMBOL_SECTIONS=compact requires SPLIT_DEBUG_SYMBOLS=ON")
+# The sections added to the stripped binary in place of `.symtab`.
+set(ADD_COMPACT_SYMBOLS_SECTION OFF)
+set(ADD_GNU_DEBUGDATA_SECTION OFF)
+if (SYMBOL_SECTIONS STREQUAL "compact" OR SYMBOL_SECTIONS STREQUAL "both")
+    set(ADD_COMPACT_SYMBOLS_SECTION ON)
+endif()
+if (SYMBOL_SECTIONS STREQUAL "gnu_debugdata" OR SYMBOL_SECTIONS STREQUAL "both")
+    set(ADD_GNU_DEBUGDATA_SECTION ON)
 endif()
 
-if (SYMBOL_SECTIONS STREQUAL "gnu_debugdata")
+if (ADD_COMPACT_SYMBOLS_SECTION AND NOT SPLIT_DEBUG_SYMBOLS)
+    message(FATAL_ERROR "SYMBOL_SECTIONS=${SYMBOL_SECTIONS} requires SPLIT_DEBUG_SYMBOLS=ON")
+endif()
+
+if (ADD_GNU_DEBUGDATA_SECTION)
     # `.gnu_debugdata` is an ELF section, and `SymbolIndex` reads it only on ELF targets.
     if (NOT (OS_LINUX OR OS_FREEBSD))
-        message(FATAL_ERROR "SYMBOL_SECTIONS=gnu_debugdata is supported only for ELF targets (Linux, FreeBSD)")
+        message(FATAL_ERROR "SYMBOL_SECTIONS=${SYMBOL_SECTIONS} is supported only for ELF targets (Linux, FreeBSD)")
     endif()
 
     if (NOT SPLIT_DEBUG_SYMBOLS)
-        message(FATAL_ERROR "SYMBOL_SECTIONS=gnu_debugdata requires SPLIT_DEBUG_SYMBOLS=ON")
+        message(FATAL_ERROR "SYMBOL_SECTIONS=${SYMBOL_SECTIONS} requires SPLIT_DEBUG_SYMBOLS=ON")
     endif()
 
     ch_find_program(XZ_PATH NAMES "xz")
     if (XZ_PATH)
         message(STATUS "Using xz: ${XZ_PATH}")
     else()
-        message(FATAL_ERROR "Cannot find xz required by SYMBOL_SECTIONS=gnu_debugdata")
+        message(FATAL_ERROR "Cannot find xz required by SYMBOL_SECTIONS=${SYMBOL_SECTIONS}")
     endif()
 endif()
 
@@ -440,9 +445,14 @@ endif()
 # every `src/` library plus the libFuzzer and Address Sanitizer runtimes into one image already just
 # under the 2 GiB reach of `R_X86_64_PC32`, which the extra prologues push over; the fuzzers are never
 # shipped, and Address Sanitizer reports stack buffer overflows earlier and in more detail than an abort.
+# The Rust crates get the same canaries (see contrib/corrosion-cmake).
 if (NOT ENABLE_FUZZING)
     set (COMPILER_FLAGS "${COMPILER_FLAGS} -fstack-protector-strong")
+    list (APPEND RUSTFLAGS_ADD "-Zstack-protector=strong")
 endif()
+
+# Rust wraps integer overflow silently in release builds; panic instead, which the FFI boundaries catch.
+list (APPEND RUSTFLAGS_ADD "-C" "overflow-checks=yes")
 
 # Probe every page of a large stack allocation (big frames, `alloca`, VLAs) so that it cannot jump over
 # the guard page into another mapping. Only functions with frames larger than a page pay for it.
@@ -450,6 +460,12 @@ endif()
 # Note: it's not enabled on RISC-V64 due to bugs in LLVM.
 if (NOT OS_DARWIN AND NOT OS_SUNOS AND (ARCH_AMD64 OR ARCH_AARCH64 OR ARCH_PPC64LE OR ARCH_S390X))
     set (COMPILER_FLAGS "${COMPILER_FLAGS} -fstack-clash-protection")
+endif ()
+
+# Trap when a value-returning C++ function reaches its end without a `return`. Not in sanitizer and fuzzer builds (the
+# UBSan ones report it), nor with Emscripten, which links its UBSan runtime for any UBSan check.
+if (NOT SANITIZE AND NOT ENABLE_FUZZING AND NOT OS_WASM)
+    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=return -fsanitize-trap=return")
 endif ()
 
 # Disable floating-point expression contraction in order to get consistent floating point calculation results across platforms
@@ -540,6 +556,7 @@ if (DISABLE_OMIT_FRAME_POINTER)
     set (CMAKE_CXX_FLAGS_ADD "${CMAKE_CXX_FLAGS_ADD} -fno-omit-frame-pointer -mno-omit-leaf-frame-pointer")
     set (CMAKE_C_FLAGS_ADD "${CMAKE_C_FLAGS_ADD} -fno-omit-frame-pointer -mno-omit-leaf-frame-pointer")
     set (CMAKE_ASM_FLAGS_ADD "${CMAKE_ASM_FLAGS_ADD} -fno-omit-frame-pointer -mno-omit-leaf-frame-pointer")
+    list (APPEND RUSTFLAGS_ADD "-C" "force-frame-pointers=yes")
 endif()
 
 # Before you start hating your debugger because it refuses to show variables ('<optimized out>'), try building with -DDEBUG_O_LEVEL="0"
@@ -589,6 +606,21 @@ if (ENABLE_CFI AND NOT ENABLE_THINLTO)
         "when ThinLTO is enabled. Current configuration has ENABLE_THINLTO=${ENABLE_THINLTO}.")
 endif ()
 
+if (ENABLE_CFI_DIAGNOSTICS AND NOT ENABLE_CFI)
+    message (FATAL_ERROR "ENABLE_CFI_DIAGNOSTICS requires ENABLE_CFI.")
+endif ()
+
+# Both runtimes bundle `sanitizer_common`, so they cannot be linked together.
+if (ENABLE_CFI_DIAGNOSTICS AND ENABLE_XRAY)
+    message (FATAL_ERROR "ENABLE_CFI_DIAGNOSTICS is incompatible with ENABLE_XRAY.")
+endif ()
+
+# Rust std calls glibc's `__pthread_get_minstack` through a pointer from `dlsym`, which CFI rejects; the replacement
+# that keeps the call inside the program is in base/glibc-compatibility.
+if (ENABLE_CFI AND OS_LINUX AND NOT USE_MUSL AND NOT GLIBC_COMPATIBILITY)
+    message (FATAL_ERROR "ENABLE_CFI requires GLIBC_COMPATIBILITY or USE_MUSL on Linux.")
+endif ()
+
 if (ENABLE_CFI AND ENABLE_TESTS)
     message (FATAL_ERROR "ENABLE_CFI is incompatible with ENABLE_TESTS. "
         "ThinLTO (required by CFI) is disabled when building tests. "
@@ -616,46 +648,39 @@ if (ENABLE_THINLTO AND NOT ENABLE_TESTS AND NOT SANITIZE)
     set (CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO "${CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO} -flto=thin -fwhole-program-vtables")
 
     if(LINKER_NAME MATCHES "lld")
+        # Do not verify every module with debug info again on each load and import; the LTO pipeline still verifies each module.
+        set(CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO "${CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO} -Wl,-mllvm,-disable-auto-upgrade-debug-info")
         set(CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO "${CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO} -Wl,--lto-whole-program-visibility")
         # ThinLTO generates code in the linker, which does not see -falign-loops.
         set(CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO "${CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO} -Wl,-mllvm,-align-loops=32")
     endif()
 
     if (ENABLE_CFI)
-        # CFI checks: virtual dispatch type safety and bad downcasts via static_cast.
-        # cfi-icall is omitted because C function pointers in contrib libraries (compiled without
-        # CFI) would cause false positives. Start conservative; broaden after baseline is clean.
-        # cfi-vcall and cfi-derived-cast are C++-only checks; do not apply to C compilation.
-        #
-        # Use `-fvisibility=default` rather than the CFI-documented `hidden`: with hidden
-        # visibility the resulting binary crashes with SIGSEGV before main runs. Validated
-        # empirically by WeeklyCFI run 25790910376 — `clickhouse-server --version` exited with
-        # signal 11.
-        #
-        # That crash was originally attributed to inline-static singletons like
-        # `Context::global_context_instance` being duplicated per shared object. That is not the
-        # cause. Every `-Wunique-object-duplication` site has since been fixed (the warning now
-        # reports nothing under `-fvisibility=hidden`) and the crash is unchanged: it is
-        # `numa_init()`, a pre-main libc constructor, calling `free()` — which this binary
-        # interposes in `Common/malloc.cpp` — and reaching jemalloc before jemalloc has
-        # initialised. Whether it fires at all depends on static-initialisation order, so it can
-        # appear to come and go with unrelated changes. Fixing that is what would let CFI use
-        # `hidden`; the duplication fixes on their own do not.
-        # CFI vtable visibility is still satisfied for in-binary types because
-        # `-fwhole-program-vtables` and `-Wl,--lto-whole-program-visibility` (set above) cause
-        # the linker to treat all vtables as internal to the binary.
-        #
-        # CFI is left in the default trap mode: a violation executes an illegal instruction
-        # (SIGILL) and CI's core-dump handler yields a stack trace pinpointing the bad vcall/cast.
-        # Diagnostic mode (`-fno-sanitize-trap=cfi`, which prints a UBSan-style type/location
-        # report) is deliberately NOT used: it makes Clang link `libclang_rt.ubsan_standalone`,
-        # which this toolchain does not ship (only select compiler-rt libs are built from contrib),
-        # so even host tools like `protoc` fail to link — validated by WeeklyCFI run 28943752776.
-        # `-fno-sanitize-recover=cfi` is redundant in trap mode but kept as an explicit marker that
-        # a violation must never be continued past.
-        set (CFI_FLAGS "-fsanitize=cfi-vcall,cfi-derived-cast -fno-sanitize-recover=cfi -fvisibility=default")
-        set (CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} ${CFI_FLAGS}")
-        set (CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO "${CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO} ${CFI_FLAGS}")
+        # All CFI checks, in trap mode: a violation executes an illegal instruction (SIGILL).
+        # Clang checks (and devirtualizes) only classes with hidden LTO visibility, so C++ needs
+        # `-fvisibility=hidden`; symbols that the shared libc must see are marked with default
+        # visibility at their definitions. C has no classes, so it keeps the default visibility.
+        # Libraries that put `visibility("default")` on their classes would exempt them from CFI.
+        add_compile_definitions (_LIBCPP_DISABLE_VISIBILITY_ANNOTATIONS _LIBCXXABI_DISABLE_VISIBILITY_ANNOTATIONS)
+        if (ENABLE_CFI_DIAGNOSTICS)
+            set (CFI_FLAGS "-fsanitize=cfi -fsanitize-recover=cfi -fno-sanitize-trap=cfi")
+            # For `__ubsan_default_options` in base/base/sanitizer_options.h.
+            add_compile_definitions (CFI_DIAGNOSTICS=1)
+        else ()
+            set (CFI_FLAGS "-fsanitize=cfi -fno-sanitize-recover=cfi -fsanitize-trap=cfi")
+        endif ()
+        set (CFI_FLAGS "${CFI_FLAGS} -fsanitize-ignorelist=${PROJECT_SOURCE_DIR}/cmake/cfi-ignorelist.txt")
+        # Encode integer types by size, as `-Zsanitizer-cfi-normalize-integers` does for Rust: the type ids of an
+        # indirect call between C or C++ and Rust then match (the Rust code is checked in the same link, see
+        # contrib/corrosion-cmake).
+        set (CFI_FLAGS "${CFI_FLAGS} -fsanitize-cfi-icall-experimental-normalize-integers")
+        set (CMAKE_C_FLAGS_RELWITHDEBINFO "${CMAKE_C_FLAGS_RELWITHDEBINFO} ${CFI_FLAGS} -fvisibility=default")
+        set (CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} ${CFI_FLAGS} -fvisibility=hidden")
+        set (CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO "${CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO} ${CFI_FLAGS} -fvisibility=hidden")
+        if (GLIBC_COMPATIBILITY)
+            # Rust std finds `__pthread_get_minstack` with `dlsym` (see base/glibc-compatibility/pthread_get_minstack.c).
+            set (CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO "${CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO} -Wl,--export-dynamic-symbol=__pthread_get_minstack")
+        endif ()
     endif ()
 elseif (ENABLE_THINLTO)
     message (${RECONFIGURE_MESSAGE_LEVEL} "Cannot enable ThinLTO")
@@ -825,11 +850,10 @@ enable_testing() # Enable for tests without binary
 set(ENABLE_OPENSSL_DYNAMIC_DEFAULT OFF)
 option(ENABLE_OPENSSL_DYNAMIC "This option removes SSL from ClickHouse and will link to the OpenSSL version supplied by OS." ${ENABLE_OPENSSL_DYNAMIC_DEFAULT})
 
-# when installing to /usr - place configs to /etc but for /usr/local place to /usr/local/etc
-if (CMAKE_INSTALL_PREFIX STREQUAL "/usr")
-    set (CLICKHOUSE_ETC_DIR "/etc")
-else ()
-    set (CLICKHOUSE_ETC_DIR "${CMAKE_INSTALL_PREFIX}/etc")
+# A shared libcrypto calls back into ClickHouse (e.g. certificate verification callbacks), and Clang CFI rejects every
+# call that crosses into or out of a library that is not part of the same link.
+if (ENABLE_CFI AND ENABLE_OPENSSL_DYNAMIC)
+    message (FATAL_ERROR "ENABLE_CFI is incompatible with ENABLE_OPENSSL_DYNAMIC.")
 endif ()
 
 message (STATUS "Building for: ${CMAKE_SYSTEM} ${CMAKE_SYSTEM_PROCESSOR} ${CMAKE_LIBRARY_ARCHITECTURE}")
@@ -868,6 +892,9 @@ macro (clickhouse_add_executable target)
     get_target_property (type ${target} TYPE)
     if (${type} STREQUAL EXECUTABLE)
         target_link_libraries (${target} PUBLIC clickhouse_new_delete)
+        if (TARGET pthread_get_minstack)
+            target_sources (${target} PRIVATE $<TARGET_OBJECTS:pthread_get_minstack>)
+        endif ()
 
         # In case of static jemalloc, because zone_register() is located in zone.c and
         # is never used outside (it is declared as constructor) it is omitted

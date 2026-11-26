@@ -74,6 +74,8 @@ import CloudUnsupportedFeatures from '/snippets/ar/_cloud_unsupported_features.m
 
 تُعدّ القواميس وسيلة شائعة لتسريع عمليات البحث في ClickHouse. يدعم ClickHouse Cloud حاليًا القواميس المستندة إلى PostgreSQL وMySQL وخوادم ClickHouse البعيدة والمحلية وRedis وMongoDB ومصادر HTTP.
 
+عند إنشاء قاموس يقرأ من جدول ClickHouse، أدرِج اسم المستخدم وكلمة المرور الخاصين بمستخدم مخصص في عبارة `SOURCE`. ويجب أن يمتلك هذا المستخدم صلاحية `SELECT` على الجدول المصدر. راجع [مثال مصدر القاموس في ClickHouse](/ar/reference/statements/create/dictionary/sources/clickhouse).
+
 ### الاستعلامات الاتحادية {#federated-queries}
 
 ندعم استعلامات ClickHouse الاتحادية للاتصال بين العناقيد في السحابة، وللاتصال بعناقيد ClickHouse الخارجية المُدارة ذاتيًا. يدعم ClickHouse Cloud حاليًا الاستعلامات الاتحادية باستخدام محركات التكامل التالية:

@@ -216,6 +216,16 @@ std::span<const ProcessedManifestFileEntryPtr> defineDeletesSpan(
 
 bool positionDeleteMayReferenceDataFile(const ParsedManifestFileEntry & position_delete, const IcebergPathFromMetadata & data_file_path);
 
+/// Position delete files whose `file_path` lower and upper bounds are the same data file path, by that path, and the other ones,
+/// each in the order of the input.
+struct PositionDeletesByDataFile
+{
+    std::unordered_map<IcebergPathFromMetadata, std::vector<ProcessedManifestFileEntryPtr>> single_data_file;
+    std::vector<ProcessedManifestFileEntryPtr> other;
+};
+
+PositionDeletesByDataFile groupPositionDeletesByDataFile(const std::vector<ProcessedManifestFileEntryPtr> & position_deletes);
+
 }
 
 #endif
