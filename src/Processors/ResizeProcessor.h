@@ -3,6 +3,8 @@
 #include <queue>
 #include <unordered_map>
 #include <vector>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/IProcessor.h>
 #include <Processors/Port.h>
 
@@ -174,11 +176,11 @@ private:
     size_t oldestInputWithData() const;
     void updateNeeded();
 
-    std::vector<InputState> inputs_state;
-    std::vector<OutputState> outputs_state;
-    std::unordered_map<const InputPort *, size_t> input_index;
-    std::unordered_map<const OutputPort *, size_t> output_index;
-    std::vector<size_t> waiting_outputs;
+    VectorWithMemoryTracking<InputState> inputs_state;
+    VectorWithMemoryTracking<OutputState> outputs_state;
+    UnorderedMapWithMemoryTracking<const InputPort *, size_t> input_index;
+    UnorderedMapWithMemoryTracking<const OutputPort *, size_t> output_index;
+    VectorWithMemoryTracking<size_t> waiting_outputs;
     UInt64 data_counter = 0;
     size_t num_finished_inputs = 0;
     size_t num_finished_outputs = 0;

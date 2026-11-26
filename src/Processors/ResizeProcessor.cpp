@@ -408,6 +408,8 @@ StickyResizeProcessor::StickyResizeProcessor(SharedHeader header, size_t num_str
         output_index.emplace(&output, outputs_state.size());
         outputs_state.push_back({.port = &output, .source = outputs_state.size()});
     }
+    /// An output is waiting at most once, so `prepare` does not allocate.
+    waiting_outputs.reserve(num_streams);
 }
 
 IProcessor::Status StickyResizeProcessor::prepare(const UpdatedInputPorts & updated_inputs, const UpdatedOutputPorts & updated_outputs)
