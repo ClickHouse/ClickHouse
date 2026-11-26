@@ -221,7 +221,6 @@ DROP TABLE IF EXISTS sub_buf;
 DROP TABLE IF EXISTS sub_merge;
 DROP TABLE IF EXISTS sub_merge_bad;
 
-SET enable_json_type = 1;
 CREATE TABLE sub_leaf (j JSON, t Tuple(a UInt64), x UInt64) ENGINE = MergeTree ORDER BY x;
 -- The element is cast explicitly instead of relying on `tuple(number)`, because with
 -- `enable_named_columns_in_function_tuple` the analyzer derives the element name from the bare

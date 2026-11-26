@@ -20,11 +20,11 @@ import { PrivatePreviewBadge } from "/snippets/ja/components/PrivatePreviewBadge
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "各スレッドのローカルハッシュテーブルが `adaptive_aggregator_freeze_threshold` 個のキーに達した時点で固定するアダプティブ `GROUP BY` 集約を有効にする新しい設定です。頻出キーは小さなローカルテーブルで集約を継続し、まれなキーはハッシュに基づいてバケットごとのバックログに振り分けられ、バケット並列マージ内で正確に1回だけ集約されます。これにより、まれなキーはスレッドごとではなく1回だけ保存・処理されます。"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "各スレッドのローカルハッシュテーブルが `adaptive_aggregator_freeze_threshold` 個のキーに達した時点で固定するアダプティブ `GROUP BY` 集約を有効にする新しい設定です。頻出キーは小さなローカルテーブルで集約を継続し、まれなキーはハッシュに基づいてバケットごとのバックログに振り分けられ、バケット並列マージ内で正確に1回だけ集計されます。これにより、まれなキーはスレッドごとではなく1回だけ保存・処理されます。"}]}]} />
 
-アダプティブ `GROUP BY` アルゴリズムを有効にします。各スレッドは、ローカルハッシュテーブルが `adaptive_aggregator_freeze_threshold` 個のキー (または `adaptive_aggregator_freeze_threshold_bytes` のメモリ) に達するまで集約を行い、その後テーブルは固定されます。すでに出現した頻出キーの行はそのテーブル内で更新され続ける一方、新しいまれなキーはハッシュに基づいてバケットごとのバックログに振り分けられ、バケット並列マージ内で正確に1回だけ集約されます。頻出キーはキャッシュに収まる小さなテーブルに保持され、まれなキーはスレッドごとではなく1回だけ保存・処理されます。
+アダプティブ `GROUP BY` アルゴリズムを有効にします。各スレッドは、ローカルハッシュテーブルが `adaptive_aggregator_freeze_threshold` 個のキーに達するか、ハッシュテーブルのバッファが `adaptive_aggregator_freeze_threshold_bytes` に達するまで集約を行い、その後テーブルは固定されます。すでに出現した頻出キーの行はそのテーブル内で更新され続ける一方、新しいまれなキーはハッシュに基づいてパーティションごとのバッファに一時的に格納され、バケット並列マージ内で正確に1回だけ集計されます。このマージでは、キャッシュに収まるサイズのテーブルを使ってパーティションを数個ずつ処理します。頻出キーはキャッシュに収まる小さなテーブルに保持され、まれなキーはスレッドごとではなく1回だけ保存・処理されます。
 
-外部集約の設定 (`max_bytes_before_external_group_by`、`max_bytes_ratio_before_external_group_by`) も考慮されます。しきい値を超えると、バックログは早期に共有テーブルへ排出されます。それでも使用量をしきい値未満に戻せない場合は、通常の外部集約により共有テーブルがディスクにスピルされます。
+外部集約の設定 (`max_bytes_before_external_group_by`、`max_bytes_ratio_before_external_group_by`) も考慮されます。しきい値を超えると、スレッドはステージングされたレコードをディスクに書き込んでメモリを解放し、マージ時にそれらをバケット単位で読み戻します。まだ固定されていないテーブルは、保持するメモリ量が一定に達した時点で通常の外部集約と同様にディスクへ書き込まれます。固定済みのテーブルは、`uniqExact` や `groupArray` などの集約状態が十分に大きくなった時点でディスクへ書き込まれます。その後、スレッドは新しいテーブルへの書き込みを開始します。
 
 ## enable_adaptive_memory_spill_scheduler {#enable_adaptive_memory_spill_scheduler}
 
@@ -45,16 +45,6 @@ import { PrivatePreviewBadge } from "/snippets/ja/components/PrivatePreviewBadge
 
 `IN` サブクエリで `DISTINCT` を有効にします。これはトレードオフのある設定です。有効にすると、一意の値だけが送信されるようになるため、分散 `IN` サブクエリで転送される一時テーブルのサイズを大幅に削減でき、分片間のデータ転送を大きく高速化できます。
 ただし、この設定を有効にすると、重複排除 (DISTINCT) を実行する必要があるため、各ノードで追加のマージ処理負荷が発生します。ネットワーク転送がボトルネックになっており、追加のマージコストを許容できる場合にこの設定を使用してください。
-
-## enable_alp_codec {#enable_alp_codec}
-
-<BetaBadge />
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "`allow_experimental_codecs` を使用せずに、実験的な `ALP` 圧縮コーデックを個別に有効化するための新しい設定。"}]}]} />
-
-`ALP` 圧縮コーデックを有効にします。
 
 ## enable_automatic_decision_for_merging_across_partitions_for_final {#enable_automatic_decision_for_merging_across_partitions_for_final}
 
@@ -79,6 +69,58 @@ import { PrivatePreviewBadge } from "/snippets/ja/components/PrivatePreviewBadge
 分散クエリプランに対して、Cascades のコストベースオプティマイザを有効にします。
 `make_distributed_plan = 1` と併用した場合にのみ有効になります。この設定だけでは、単一ノードのクエリプランニングは変更されません。
 
+## enable_cleanup_old_data_files_compaction {#enable_cleanup_old_data_files_compaction}
+
+<ExperimentalBadge />
+
+**別名**: `allow_experimental_cleanup_old_data_files_compaction`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "0"},{"label": "新しい設定"}]}, {"id": "row-2","items": [{"label": "26.11"},{"label": "0"},{"label": "設定 `allow_experimental_cleanup_old_data_files_compaction` の別名を追加しました。"}]}]} />
+
+Iceberg のコンパクション時に古いデータファイルをクリーンアップできるようにします。
+
+クリーンアップでは、コンパクションの後に `iceberg_compaction_data_cleanup` が実行されます。これにより、コンパクションによって不要になったスナップショットが `expire_snapshots` と同じ
+方法で失効します。つまり、それらのスナップショットをテーブルのメタデータから削除し、他のどのスナップショットからも参照されていないファイルを削除します。フォーマットバージョン 1 のテーブル、
+またはトランザクション対応のカタログで管理されているテーブルでは、ファイルのみが削除され、スナップショットはメタデータに残ります。
+
+## enable_database_hms_catalog {#enable_database_hms_catalog}
+
+<ExperimentalBadge />
+
+**別名**: `allow_experimental_database_hms_catalog`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "設定 `allow_experimental_database_hms_catalog` の別名を追加しました。"}]}, {"id": "row-2","items": [{"label": "25.5"},{"label": "0"},{"label": "catalog_type = 'hive' を指定した実験的なデータベースエンジン DataLakeCatalog の使用を許可します"}]}]} />
+
+`catalog_type = 'hms'` を指定したデータベースエンジン `DataLakeCatalog` の使用を許可します
+
+## enable_database_materialized_postgresql {#enable_database_materialized_postgresql}
+
+<ExperimentalBadge />
+
+**別名**: `allow_experimental_database_materialized_postgresql`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "設定 `allow_experimental_database_materialized_postgresql` の別名を追加しました。"}]}]} />
+
+`Engine = MaterializedPostgreSQL(...)` を使用したデータベースの作成を許可します。
+
+## enable_database_paimon_rest_catalog {#enable_database_paimon_rest_catalog}
+
+<ExperimentalBadge />
+
+**別名**: `allow_experimental_database_paimon_rest_catalog`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "設定 `allow_experimental_database_paimon_rest_catalog` の別名を追加しました。"}]}, {"id": "row-2","items": [{"label": "26.1"},{"label": "0"},{"label": "新しい設定"}]}]} />
+
+`catalog_type = 'paimon_rest'` を指定したデータベースエンジン `DataLakeCatalog` の使用を許可します。
+
 ## enable_early_constant_folding {#enable_early_constant_folding}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -94,6 +136,18 @@ import { PrivatePreviewBadge } from "/snippets/ja/components/PrivatePreviewBadge
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "実験的な Elasticsearch インテグレーション（`Elasticsearch` テーブルエンジンおよび `elasticsearch` テーブル関数）の利用可否を制御する新しい設定。"}]}]} />
 
 実験的な Elasticsearch インテグレーション (`Elasticsearch` テーブルエンジンおよび `elasticsearch` テーブル関数) を有効化します。
+
+## enable_eval_table_function {#enable_eval_table_function}
+
+<ExperimentalBadge />
+
+**別名**: `allow_experimental_eval_table_function`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "0"},{"label": "実験的なテーブル関数 `eval` を有効化するための新しい設定。"}]}, {"id": "row-2","items": [{"label": "26.11"},{"label": "0"},{"label": "設定 `allow_experimental_eval_table_function` の別名を追加しました。"}]}]} />
+
+テーブル関数 `eval` を有効化します。
 
 ## enable_extended_results_for_datetime_functions {#enable_extended_results_for_datetime_functions}
 
@@ -156,6 +210,16 @@ true に設定すると、テキスト索引を使用できます。
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "設定 `allow_experimental_funnel_functions` の別名を追加しました。"}]}]} />
 
 ファネル分析用の関数を有効にします。
+
+## enable_gdeflate_codec {#enable_gdeflate_codec}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "実験的な `GDeflate` 圧縮コーデックを有効化するための新しい設定。"}]}]} />
+
+`GDeflate` 圧縮コーデックを有効化します。
 
 ## enable_global_with_statement {#enable_global_with_statement}
 
@@ -296,6 +360,30 @@ SET dialect = 'clickhouse_json';
 メタデータのみの操作になります。既存のパーツでは型ヒントがクエリ時に適用され、
 履歴データを書き換える代わりに、データ挿入時およびバックグラウンドマージ時にマテリアライズされます。
 
+## enable_kusto_dialect {#enable_kusto_dialect}
+
+<BetaBadge />
+
+**別名**: `allow_experimental_kusto_dialect`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "設定 `allow_experimental_kusto_dialect` の別名を追加しました。"}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "0"},{"label": "Kusto Query Language (KQL) ダイアレクトがベータに移行しました。"}]}, {"id": "row-3","items": [{"label": "25.1"},{"label": "0"},{"label": "新しい設定"}]}]} />
+
+SQL の代替となるクエリ言語である Kusto Query Language (KQL) ダイアレクトを有効にします。
+
+## enable_lateral_join {#enable_lateral_join}
+
+<ExperimentalBadge />
+
+**別名**: `allow_experimental_lateral_join`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "設定 `allow_experimental_lateral_join` の別名を追加しました。"}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "0"},{"label": "`LATERAL JOIN` 構文を許可するための新しい設定です。"}]}]} />
+
+LATERAL JOIN 構文を許可します。有効にすると、JOIN の右側にあるサブクエリから左側のカラムを参照できるようになり、FROM句で相関サブクエリ (SQL標準の LATERAL JOIN) を使用できるようになります。
+
 ## enable_lazy_columns_replication {#enable_lazy_columns_replication}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -392,6 +480,18 @@ AND で結合された複数の条件がある場合、より多くの条件を 
 この設定は、抽出された tuple のサブカラム (Dynamic、Variant、JSON、Tuple カラムから抽出されたものなど) を `Nullable` にできるかどうかは制御しません。
 抽出された tuple のサブカラムを `Nullable` にできるかどうかは、`allow_nullable_tuple_in_extracted_subcolumns` で制御してください。
 
+## enable_object_storage_queue_hive_partitioning {#enable_object_storage_queue_hive_partitioning}
+
+<ExperimentalBadge />
+
+**別名**: `allow_experimental_object_storage_queue_hive_partitioning`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "設定 `allow_experimental_object_storage_queue_hive_partitioning` の別名を追加しました。"}]}, {"id": "row-2","items": [{"label": "26.1"},{"label": "0"},{"label": "新しい設定"}]}]} />
+
+`S3Queue`/`AzureQueue` エンジンで Hive パーティション化を使用できるようにします。
+
 ## enable_order_by_all {#enable_order_by_all}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -439,6 +539,30 @@ SELECT * FROM TAB ORDER BY ALL SETTINGS enable_order_by_all = 0;
 
 分散クエリに参加するすべてのサーバーで、この値が一致している必要があります。`distributed_aggregation_memory_efficient`では、二段階バケット番号がキーのハッシュに依存し、そのハッシュは2つの方式で異なるため、この設定が一致しないサーバーでは同じキーが異なるバケットに分割され、不正にマージされた結果が生成される可能性があります。一致を保証するため、イニシエーターは有効な値を常にセカンダリクエリとともに送信します (サーバーまたはプロファイルのデフォルトから取得された値のみの場合も含む) 。これにより、リモートサーバー側のデフォルトは上書きされます。
 
+## enable_packed_string_keys_in_hash_join {#enable_packed_string_keys_in_hash_join}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "単一の `String` キーによるハッシュ結合を高速化し、メモリ使用量を削減する新しい設定。"}]}]} />
+
+単一の `String` または `Nullable(String)` キーによる `hash`、`parallel_hash`、`grace_hash` 結合を高速化し、メモリ使用量を削減します。`OR` を含む結合も、各条件のキーがそれぞれ単一のこうしたキーである場合は対象となります。
+
+ハッシュテーブルが小さくなるため、結合が `max_bytes_in_join` および `max_bytes_before_external_join` の上限に達するまでの余裕が大きくなります。
+
+この設定は、`FixedString` キーや `LowCardinality(Nullable(String))` キー、`Join` エンジンを使用するテーブル、および `joinGet` には適用されません。`LowCardinality(String)` キーによる結合では、代わりにキーの辞書が使用される場合があります。また、右側の推定行数が `min_rows_for_packed_string_keys_in_hash_join` 未満の結合も対象外です。
+
+## enable_paimon_storage_engine {#enable_paimon_storage_engine}
+
+<ExperimentalBadge />
+
+**別名**: `allow_experimental_paimon_storage_engine`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "0"},{"label": "新しい設定"}]}, {"id": "row-2","items": [{"label": "26.11"},{"label": "0"},{"label": "設定 `allow_experimental_paimon_storage_engine` の別名を追加しました。"}]}]} />
+
+`Paimon*` テーブルエンジンを使用したテーブルの作成を許可します。
+
 ## enable_parsing_to_custom_serialization {#enable_parsing_to_custom_serialization}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -457,6 +581,18 @@ true の場合、テーブルから取得したシリアライゼーションの
 
 `PCO` 圧縮コーデックを有効にします。
 
+## enable_polyglot_dialect {#enable_polyglot_dialect}
+
+<ExperimentalBadge />
+
+**別名**: `allow_experimental_polyglot_dialect`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.3"},{"label": "0"},{"label": "polyglot SQL トランスパイラーのダイアレクトを有効にする新しい設定。"}]}, {"id": "row-2","items": [{"label": "26.11"},{"label": "0"},{"label": "設定の別名 `allow_experimental_polyglot_dialect` を追加しました。"}]}]} />
+
+polyglot SQL トランスパイラーを有効にします。30 種類以上のダイアレクト (MySQL、PostgreSQL、SQLite、Snowflake、DuckDB など) の SQL を ClickHouse SQL に変換します。
+
 ## enable_producing_buckets_out_of_order_in_aggregation {#enable_producing_buckets_out_of_order_in_aggregation}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -466,6 +602,18 @@ true の場合、テーブルから取得したシリアライゼーションの
 メモリ効率の高い集約 (`distributed_aggregation_memory_efficient`を参照) で、バケットを順不同で生成できるようにします。
 これにより、集約バケットのサイズに偏りがある場合でも、レプリカは id の小さい重いバケットをまだ処理している間に、id の大きいバケットをイニシエーターへ送信できるため、パフォーマンスが向上することがあります。
 欠点として、メモリ使用量が増える可能性があります。
+
+## enable_prql_dialect {#enable_prql_dialect}
+
+<ExperimentalBadge />
+
+**別名**: `allow_experimental_prql_dialect`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "設定 `allow_experimental_prql_dialect` の別名を追加しました。"}]}, {"id": "row-2","items": [{"label": "25.1"},{"label": "0"},{"label": "新しい設定"}]}]} />
+
+SQL の代替となるクエリ言語 PRQL を有効化します。
 
 ## enable_quantized_codec {#enable_quantized_codec}
 
@@ -510,6 +658,14 @@ true の場合、テーブルから取得したシリアライゼーションの
 
 * 0 - 無効
 * 1 - 有効
+
+## enable_robin_hood_hash_for_joins {#enable_robin_hood_hash_for_joins}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "新しい設定。26.10 では、`parallel_hash` 結合のハッシュテーブルは、大きくなると Robin Hood モードを使用していました。これによりメモリを節約できますが、大規模な結合が遅くなる場合があります。"}]}]} />
+
+ハッシュテーブルを複数のパーツに分割するハッシュ結合 (`hash_join_layout` を参照) において、集約のハッシュテーブルと同様に、ハッシュテーブルが大きくなった時点で Robin Hood モードへ切り替えることを許可します。これにより、キー数が約 8 百万を超える右テーブルでは、ハッシュテーブルのメモリ使用量が最大で半分になります。ただし、キーによっては結合のルックアップが遅くなる場合があります。
 
 ## enable_s3_requests_logging {#enable_s3_requests_logging}
 
@@ -737,13 +893,49 @@ MergeTree ファミリーのエンジンで `UNIQUE KEY` 句を使用したテ�
 
 実験的な XGBoost インテグレーション (`XGBOOST` 辞書レイアウトおよび `predictXGBoost` 関数) を有効にします。
 
-## enable_zxc_codec {#enable_zxc_codec}
+## enable_ytsaurus_dictionary_source {#enable_ytsaurus_dictionary_source}
 
 <ExperimentalBadge />
 
+**別名**: `allow_experimental_ytsaurus_dictionary_source`
+
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "`allow_experimental_codecs` を使用せずに、実験的な `ZXC` 圧縮コーデックを個別に有効化するための新しい設定。"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "設定 `allow_experimental_ytsaurus_dictionary_source` の別名を追加しました。"}]}, {"id": "row-2","items": [{"label": "25.8"},{"label": "0"},{"label": "新しい設定。"}]}]} />
+
+YTsaurusとの連携に使用する `ytsaurus` Dictionary ソースを有効化します。
+
+## enable_ytsaurus_table_engine {#enable_ytsaurus_table_engine}
+
+<ExperimentalBadge />
+
+**別名**: `allow_experimental_ytsaurus_table_engine`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "設定 `allow_experimental_ytsaurus_table_engine` の別名を追加しました。"}]}, {"id": "row-2","items": [{"label": "25.8"},{"label": "0"},{"label": "新しい設定。"}]}]} />
+
+YTsaurusとの連携に使用する `YTsaurus` テーブルエンジンを有効化します。
+
+## enable_ytsaurus_table_function {#enable_ytsaurus_table_function}
+
+<ExperimentalBadge />
+
+**別名**: `allow_experimental_ytsaurus_table_function`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "設定の別名 `allow_experimental_ytsaurus_table_function` を追加しました。"}]}, {"id": "row-2","items": [{"label": "25.8"},{"label": "0"},{"label": "新しい設定。"}]}]} />
+
+YTsaurusとの連携に使用する `ytsaurus` テーブル関数を有効化します。
+
+## enable_zxc_codec {#enable_zxc_codec}
+
+<BetaBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "`allow_experimental_codecs` を使用せずに、実験的な `ZXC` 圧縮コーデックを個別に有効化するための新しい設定。"}]}, {"id": "row-2","items": [{"label": "26.11"},{"label": "0"},{"label": "`ZXC` 圧縮コーデックがベータに移行しました。"}]}]} />
 
 `ZXC` 圧縮コーデックを有効化します。
 
