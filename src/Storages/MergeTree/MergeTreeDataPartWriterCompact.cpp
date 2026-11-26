@@ -1,5 +1,6 @@
 #include <Compression/CompressionFactory.h>
 #include <Storages/MergeTree/MergeTreeDataPartWriterCompact.h>
+#include <Storages/MergeTree/MergeTreeOneRowPerBlockLayout.h>
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/ParallelSyncFiles.h>
@@ -235,6 +236,8 @@ ISerialization::SerializeBinaryBulkSettings MergeTreeDataPartWriterCompact::getS
 
 void MergeTreeDataPartWriterCompact::write(const Block & block, const IColumnPermutation * permutation, Block * /*permuted_columns_cache*/)
 {
+    checkUncompressedFixedArraySizes(block, *metadata_snapshot);
+
     /// The permuted columns cache is intentionally ignored in the Compact writer:
     /// `permuteBlockIfNeeded` below permutes the whole block once, and the subsequent
     /// `getIndexBlockAndPermute` calls in `writeDataBlockPrimaryIndexAndSkipIndices`

@@ -1,0 +1,98 @@
+setting on
+123
+337
+413
+121
+101
+275
+65
+397
+383
+35
+brute force
+123
+337
+413
+121
+101
+275
+65
+397
+383
+35
+setting off
+123
+337
+413
+121
+101
+275
+65
+397
+383
+35
+defaults without columns, setting on
+123	0	1
+337	0	1
+413	0	1
+121	0	1
+101	0	1
+275	0	1
+65	0	1
+397	0	1
+383	0	1
+35	0	1
+default with an identifier, setting on
+123	1
+337	1
+413	1
+121	1
+101	1
+275	1
+65	1
+397	1
+383	1
+35	1
+default with an identifier, setting off
+123	1
+337	1
+413	1
+121	1
+101	1
+275	1
+65	1
+397	1
+383	1
+35	1
+default with an identifier, column not read, setting on
+123
+337
+413
+121
+101
+275
+65
+397
+383
+35
+reused reader
+ok
+ok
+ok
+dotted column, setting on
+123	-0.74
+337	-0.246
+413	-0.23
+121	-0.225
+101	-0.074
+275	0.82
+65	-0.235
+397	0.131
+383	-0.154
+35	0.002
+one_row_per_block_hnsw_default_not_read_on	0
+one_row_per_block_hnsw_default_on	0
+one_row_per_block_hnsw_dotted_on	1
+one_row_per_block_hnsw_no_column_defaults_on	1
+one_row_per_block_hnsw_off	0
+one_row_per_block_hnsw_on	1

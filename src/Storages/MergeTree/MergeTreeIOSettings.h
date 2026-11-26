@@ -52,6 +52,9 @@ struct MergeTreeReaderSettings
     bool is_metadata_file = false;
     /// True if we read a stream that holds a single value for the whole part, which every granule reads.
     bool is_single_value_per_part = false;
+    /// Read only the selected rows of the columns with `OneRowPerBlockLayout`, see `IMergeTreeReader::setSelectedRows`
+    /// and the setting `merge_tree_use_one_row_per_block_layout`.
+    bool use_one_row_per_block_layout = false;
     /// Deleted mask is applied to all reads except internal select from mutate some part columns.
     bool apply_deleted_mask = true;
     /// Put reading task in a common I/O pool, return Async state on prepare()

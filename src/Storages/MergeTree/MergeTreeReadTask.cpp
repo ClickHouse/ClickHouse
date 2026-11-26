@@ -433,6 +433,8 @@ void MergeTreeReadTask::initializeReadersChain(
     if (index_build_context || lazy_materializing_rows || info->delete_bitmap)
         initializeIndexReader(index_build_context, lazy_materializing_rows);
 
+    initializeSelectedRows(lazy_materializing_rows);
+
     for (const auto & step : info->mutation_steps)
         all_prewhere_actions.steps.push_back(step);
 
@@ -477,6 +479,38 @@ void MergeTreeReadTask::initializeIndexReader(const MergeTreeIndexBuildContextPt
             readers.main.get(), std::move(index_read_result), part_rows, info->delete_bitmap);
     }
 
+}
+
+void MergeTreeReadTask::initializeSelectedRows(const LazyMaterializingRowsPtr & lazy_materializing_rows)
+{
+    /// Rows that are not selected may get placeholder values. PREWHERE steps, mutations applied on the fly and patch parts
+    /// could see them before the filter, so in that case all rows are read as usual.
+    if (!readers.main || !readers.prewhere.empty() || !info->mutation_steps.empty() || !readers.patches.empty())
+        return;
+
+    /// Lazy materialization: `MergeTreeReaderIndex` filters the rows to these, see its `mustApplyFilter`.
+    /// They are already sorted and unique.
+    if (lazy_materializing_rows)
+    {
+        const auto it = lazy_materializing_rows->rows_in_parts.find(getInfo().part_index_in_query);
+        if (it != lazy_materializing_rows->rows_in_parts.end())
+            readers.main->setSelectedRows(it->second);
+        return;
+    }
+
+    /// Rescoring with a vector similarity index: the main reader filters the rows to the candidates of the index,
+    /// see `MergeTreeRangeReader::fillDistanceColumnAndFilterForVectorSearch`. The candidates are in the order of the
+    /// index results, so they are sorted and deduplicated here.
+    const auto & read_hints = info->read_hints;
+    if (read_hints.use_vector_search_result_filter && read_hints.vector_search_results)
+    {
+        const auto & candidates = read_hints.vector_search_results->rows;
+        PaddedPODArray<UInt64> rows;
+        rows.insert(candidates.data(), candidates.data() + candidates.size());
+        std::sort(rows.begin(), rows.end());
+        rows.resize(std::unique(rows.begin(), rows.end()) - rows.begin());
+        readers.main->setSelectedRows(rows);
+    }
 }
 
 UInt64 MergeTreeReadTask::estimateNumRows() const

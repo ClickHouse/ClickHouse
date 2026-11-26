@@ -51,6 +51,12 @@ public:
 
     [[nodiscard]] virtual bool canReadIncompleteGranules() const = 0;
 
+    /// Only these rows of the part are needed. A filter that keeps exactly them is applied to the result of every read
+    /// before any value is used, so a reader does not need to read whole granules: it may put any value of the column's
+    /// type in the other rows, as long as it returns the usual number of rows. `rows` are the numbers of the rows in the
+    /// part, strictly increasing.
+    virtual void setSelectedRows(const PaddedPODArray<UInt64> & /*rows*/) {}
+
     /// This is a special case for the filter-only reader, when no other filtration is potentially applied.
     /// So we must always apply filter into the RangeReader.
     [[nodiscard]] virtual bool mustApplyFilter() const { return false; }

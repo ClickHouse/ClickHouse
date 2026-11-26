@@ -51,6 +51,7 @@
 #include <Storages/IndicesDescription.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/StorageProxy.h>
+#include <Storages/MergeTree/MergeTreeOneRowPerBlockLayout.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
 #include <Common/typeid_cast.h>
@@ -2295,6 +2296,44 @@ void validateSubcolumnCodecCommand(
 
 }
 
+namespace
+{
+
+/// The setting `uncompressed_fixed_array_size` can be specified only in `CREATE TABLE`, so that every part of the table is
+/// written with it, see `tryGetOneRowPerBlockLayout`. So `ALTER` can neither add, change nor remove it, nor change the
+/// properties of a column with it that define how its data is stored.
+void validateModifyColumnWithUncompressedFixedArraySize(const AlterCommand & command, const ColumnDescription & column)
+{
+    if (command.settings_changes.tryGet(UNCOMPRESSED_FIXED_ARRAY_SIZE_SETTING)
+        || command.settings_resets.contains(UNCOMPRESSED_FIXED_ARRAY_SIZE_SETTING))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Cannot modify the setting `{}` of column {}: it can be specified only in CREATE TABLE",
+            UNCOMPRESSED_FIXED_ARRAY_SIZE_SETTING, backQuote(column.name));
+
+    if (!getUncompressedFixedArraySize(column))
+        return;
+
+    auto error = [&](std::string_view what)
+    {
+        return Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot {} of column {} with the setting `{}`",
+            what, backQuote(column.name), UNCOMPRESSED_FIXED_ARRAY_SIZE_SETTING);
+    };
+
+    if (command.data_type && !command.data_type->equals(*column.type))
+        throw error("change the type");
+    if (command.codec || command.to_remove == AlterCommand::RemoveProperty::CODEC)
+        throw error("change the codec");
+    if (command.ttl)
+        throw error("set a TTL");
+    if (!command.settings_changes.empty() || !command.settings_resets.empty() || command.to_remove == AlterCommand::RemoveProperty::SETTINGS)
+        throw error("change the settings");
+    if (command.default_expression
+        && (command.default_kind == ColumnDefaultKind::Alias || command.default_kind == ColumnDefaultKind::Ephemeral))
+        throw error("make an ALIAS or EPHEMERAL");
+}
+
+}
+
 void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
 {
     /// Load the table before taking its metadata: a table that is not loaded yet has no virtual columns.
@@ -2371,6 +2410,11 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                                 "Data type have to be specified for column {} to add", backQuote(column_name));
 
+            if (command.settings_changes.tryGet(UNCOMPRESSED_FIXED_ARRAY_SIZE_SETTING))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Cannot add column {} with the setting `{}`: it can be specified only in CREATE TABLE",
+                    backQuote(column_name), UNCOMPRESSED_FIXED_ARRAY_SIZE_SETTING);
+
             validateDataType(command.data_type, DataTypeValidationSettings(context->getSettingsRef()));
             checkAllTypesAreAllowedInTable(NamesAndTypesList{{command.column_name, command.data_type}});
 
@@ -2414,6 +2458,11 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                     if (renamed_columns.contains(subcolumn->getNameInStorage()))
                         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot rename and modify the same column {} "
                                                                      "in a single ALTER query", backQuote(subcolumn->getNameInStorage()));
+                    if (getUncompressedFixedArraySize(all_columns.get(subcolumn->getNameInStorage())))
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Cannot modify subcolumn {} of column {} with the setting `{}`",
+                            backQuote(subcolumn->getSubcolumnName()), backQuote(subcolumn->getNameInStorage()),
+                            UNCOMPRESSED_FIXED_ARRAY_SIZE_SETTING);
                     validateSubcolumnCodecCommand(command, *subcolumn, all_columns, table, context);
                     modified_columns.emplace(subcolumn->getNameInStorage());
                     continue;
@@ -2430,6 +2479,8 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
             if (renamed_columns.contains(column_name))
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot rename and modify the same column {} "
                                                              "in a single ALTER query", backQuote(column_name));
+
+            validateModifyColumnWithUncompressedFixedArraySize(command, all_columns.get(column_name));
 
             if (command.default_kind == ColumnDefaultKind::Ephemeral
                 && virtuals.tryGet(column_name, VirtualsKind::Ephemeral, VirtualsMaterializationPlace::All))
@@ -2535,6 +2586,17 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
         }
         else if (command.type == AlterCommand::DROP_COLUMN)
         {
+            /// `CLEAR COLUMN` replaces the values with the default, which can have another number of elements, and a pending
+            /// clear makes the reader fill the column from the default, see `validateUncompressedFixedArraySize`.
+            if (command.clear)
+            {
+                for (const auto & column : all_columns)
+                    if ((column.name == command.column_name || column.name.starts_with(command.column_name + "."))
+                        && getUncompressedFixedArraySize(column))
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot clear column {} with the setting `{}`",
+                            backQuote(column.name), UNCOMPRESSED_FIXED_ARRAY_SIZE_SETTING);
+            }
+
             if (all_columns.has(command.column_name) || (share_nested && all_columns.hasNested(command.column_name)))
             {
                 if (!command.clear) /// CLEAR column is Ok even if there are dependencies.
