@@ -79,18 +79,6 @@ if (ENABLE_TESTS OR ENABLE_BENCHMARKS)
     endfunction ()
 endif ()
 
-if (ENABLE_TESTS)
-    function (clickhouse_add_wyrd_tests)
-        foreach (pattern ${ARGN})
-            file (GLOB sources CONFIGURE_DEPENDS ${pattern})
-            if (NOT sources)
-                message (FATAL_ERROR "clickhouse_add_wyrd_tests: no file matches ${pattern}")
-            endif ()
-            set_property (GLOBAL APPEND PROPERTY CLICKHOUSE_WYRD_TESTS ${sources})
-        endforeach ()
-    endfunction ()
-endif ()
-
 add_subdirectory (Access)
 add_subdirectory (Backups)
 add_subdirectory (Columns)
@@ -1156,10 +1144,21 @@ if (ENABLE_TESTS)
     if (TARGET ch_contrib::silk_fibers)
         target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::silk_fibers)
     endif()
+endif ()
 
-    get_property (wyrd_tests GLOBAL PROPERTY CLICKHOUSE_WYRD_TESTS)
-    clickhouse_add_executable (unit_tests_wyrd ${wyrd_tests})
-    target_link_libraries (unit_tests_wyrd PRIVATE clickhouse_wyrd_enabled dbms)
+if (ENABLE_TESTS)
+    macro (grep_wyrd_gtest_sources BASE_DIR DST_VAR)
+        file(GLOB_RECURSE "${DST_VAR}" CONFIGURE_DEPENDS RELATIVE "${BASE_DIR}" "gtest_wyrd*.cpp")
+    endmacro()
+
+    # attach all wyrd gtest sources
+    grep_wyrd_gtest_sources("${ClickHouse_SOURCE_DIR}/src" wyrd_gtest_sources)
+    clickhouse_add_executable(unit_tests_wyrd ${wyrd_gtest_sources})
+
+    target_link_libraries(unit_tests_wyrd PRIVATE
+        clickhouse_wyrd_enabled
+        dbms
+    )
 endif ()
 
 if (TARGET ch_contrib::jwt-cpp)

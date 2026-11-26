@@ -10,6 +10,4 @@ if (ENABLE_TESTS)
     target_compile_definitions (clickhouse_wyrd_enabled PUBLIC WYRD_ENABLED=1)
     target_compile_options (clickhouse_wyrd_enabled PUBLIC $<TARGET_PROPERTY:unit_tests_dbms,COMPILE_OPTIONS>)
     target_link_libraries (clickhouse_wyrd_enabled PUBLIC clickhouse_common_io ch_contrib::gtest)
-
-    clickhouse_add_wyrd_tests (tests/*.cpp)
 endif ()
