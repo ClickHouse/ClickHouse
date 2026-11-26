@@ -114,6 +114,27 @@ void StorageGCSConfiguration::fromDisk(const String & disk_name, ASTs & args, Co
     setPaths({key});
 }
 
+String StorageGCSConfiguration::getDataSourceDescriptionForNamespace(const String & object_namespace) const
+{
+    if (!disk_settings || disk_settings->endpoint_override.empty())
+        return StorageS3Configuration::getDataSourceDescriptionForNamespace(object_namespace);
+
+    const Poco::URI endpoint_uri(disk_settings->endpoint_override);
+    String endpoint_path = endpoint_uri.getPath();
+    while (endpoint_path.ends_with('/'))
+        endpoint_path.pop_back();
+    if (endpoint_path.empty())
+        return StorageS3Configuration::getDataSourceDescriptionForNamespace(object_namespace);
+
+    /// The path is percent-encoded into the first component, after `@`, which no bucket name contains, so the
+    /// description of a gateway cannot be the description of an endpoint without a path and of some bucket and key.
+    String encoded_path;
+    Poco::URI::encode(endpoint_path, "/@%", encoded_path);
+    return std::filesystem::path(
+               endpoint_uri.getHost() + ":" + std::to_string(endpoint_uri.getPort()) + "@" + encoded_path)
+        / object_namespace;
+}
+
 void StorageGCSConfiguration::fromAST(ASTs & args, ContextPtr context, bool with_structure)
 {
     StorageS3Configuration::fromAST(args, context, with_structure);

@@ -49,6 +49,12 @@ public:
     /// rather than reused.
     void fromDisk(const String & disk_name, ASTs & args, ContextPtr context, bool with_structure) override;
 
+    /// The identity of the data source in the caches keyed without the object generation (the query condition cache, the
+    /// row-count cache): it includes the path of the disk's `endpoint_override`, which the URI of this configuration does
+    /// not have (see `fromDisk`), because two gateways under the same host can serve different contents for the same
+    /// bucket and key.
+    [[nodiscard]] String getDataSourceDescriptionForNamespace(const String & object_namespace) const override;
+
 protected:
     /// The inherited parser silently ignores the key-value arguments that only matter to the native
     /// backend (`google_adc_*`, including `google_adc_token_uri`, and `use_environment_credentials`),
