@@ -1,6 +1,8 @@
 -- Tags: no-fasttest, no-replicated-database
 -- Tag no-fasttest: Parquet, S3 and Iceberg
 -- Tag no-replicated-database: the replicated DDL worker evaluates the `IcebergLocal` arguments without the session, so it does not see the `TEMPORARY TABLE iceberg_paths`
+-- Random settings limits: output_format_parquet_row_group_size=(1000000, None); output_format_parquet_row_group_size_bytes=(536870912, None)
+-- (a single file with several row groups is read by several sources, so `_05361_0.parquet` must stay one row group)
 
 -- File, URL and object storage reads give whole files to their streams. With at least as many files as threads,
 -- each stream keeps its own output (`Overflow`), and a stream that has run out of files takes the chunks that the
