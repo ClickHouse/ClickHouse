@@ -1,5 +1,6 @@
 -- Tags: no-fasttest
 -- no-fasttest: 1M-row joins, about 15 of them.
+-- Random settings limits: max_block_size=(65409, 65409); grace_hash_join_initial_buckets=(1, 1); query_plan_optimize_join_order_randomize=(0, 0); query_plan_read_in_order_through_join=(0, 0); enable_join_runtime_filters=(0, 0)
 
 -- A hash join that fits in `max_bytes_before_external_join` stays in memory, and one that does not switches to
 -- `GraceHashJoin` before it goes over. The right side (1M unique keys, one payload column) takes about 72 MiB in
@@ -7,14 +8,9 @@
 -- `count()` and `sum()` of a right column: a right block lost or inserted twice while the join switches changes them.
 
 SET join_algorithm = 'hash';
-SET max_block_size = 65409;
 SET max_bytes_ratio_before_external_join = 0;
-SET grace_hash_join_initial_buckets = 1;
 SET collect_hash_table_stats_during_joins = 0;
 SET query_plan_join_swap_table = 'false';
-SET query_plan_optimize_join_order_randomize = 0;
-SET query_plan_read_in_order_through_join = 0;
-SET enable_join_runtime_filters = 0;
 SET enable_robin_hood_hash_for_joins = 0;
 
 SELECT 'serial fits', count(), sum(r.v)
