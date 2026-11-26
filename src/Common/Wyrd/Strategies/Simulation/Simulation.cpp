@@ -1,6 +1,6 @@
 #include <Common/Wyrd/Strategies/Simulation/Simulation.h>
 #include <Common/Wyrd/Strategies/Simulation/SimulatedThread.h>
-#include <Common/Wyrd/Random.h>
+#include <Common/Wyrd/Strategies/Random.h>
 #include <Common/Exception.h>
 #include <base/defines.h>
 
@@ -216,7 +216,7 @@ void Simulation::spawn(std::function<void()> body, std::source_location location
 bool Simulation::spuriousFailure(std::source_location location)
 {
     traceEvent("spuriousFailure", location);
-    return randomEvent(params.spurious_failure_probability);
+    return randomBool(params.spurious_failure_probability);
 }
 
 void Simulation::enterLockFreeScope(std::source_location location)
@@ -251,7 +251,7 @@ void Simulation::brokenInvariant(std::string message)
 
 UInt64 Simulation::advanceClock()
 {
-    clock_ns += 1'000 + randomNumber() % 9'000;
+    clock_ns += randomInt(1'000, 9'999);
     return clock_ns;
 }
 

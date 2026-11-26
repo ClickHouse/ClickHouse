@@ -1,5 +1,5 @@
 #include <Common/Wyrd/Strategies/Adversary/Adversary.h>
-#include <Common/Wyrd/Random.h>
+#include <Common/Wyrd/Strategies/Random.h>
 
 #include <algorithm>
 #include <semaphore>
@@ -26,7 +26,7 @@ thread_local bool pinned = false;
 int chooseCore()
 {
     unsigned cores = std::max(1u, std::thread::hardware_concurrency());
-    return static_cast<int>(randomNumber() % cores);
+    return static_cast<int>(randomInt(0, cores - 1));
 }
 
 void pinThisThreadToSingleCore()
@@ -113,7 +113,7 @@ void Adversary::threadFail(std::exception_ptr exception)
 
 void Adversary::threadFault()
 {
-    if (randomEvent(params.suspend_probability))
+    if (randomBool(params.suspend_probability))
         suspendThisThread();
     else
         maybeYield();
@@ -121,7 +121,7 @@ void Adversary::threadFault()
 
 bool Adversary::threadSpuriousFailure()
 {
-    if (!randomEvent(params.spurious_failure_probability))
+    if (!randomBool(params.spurious_failure_probability))
         return false;
 
     spurious_failure_count.fetch_add(1);
@@ -147,7 +147,7 @@ void Adversary::threadLeaveLockFreeScope()
 
 void Adversary::threadProgress()
 {
-    if (suspended_count.load() > 0 && randomEvent(params.resume_probability))
+    if (suspended_count.load() > 0 && randomBool(params.resume_probability))
         resumeRandomThread();
 }
 
@@ -191,7 +191,7 @@ void Adversary::resumeRandomThread()
         if (suspended.empty())
             return;
 
-        size_t index = randomNumber() % suspended.size();
+        size_t index = randomInt(0, suspended.size() - 1);
         victim = std::move(suspended[index]);
         std::swap(suspended[index], suspended.back());
         suspended.pop_back();
@@ -202,7 +202,7 @@ void Adversary::resumeRandomThread()
 
 void Adversary::maybeYield()
 {
-    if (randomEvent(params.yield_probability))
+    if (randomBool(params.yield_probability))
     {
         std::this_thread::yield();
         yield_count.fetch_add(1);

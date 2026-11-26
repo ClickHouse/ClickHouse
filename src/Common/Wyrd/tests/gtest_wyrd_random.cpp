@@ -1,4 +1,5 @@
-#include <Common/Wyrd/Random.h>
+#include <Common/Wyrd/Facade/Random.h>
+#include <Common/Wyrd/Strategies/Random.h>
 
 #include <Common/Wyrd/Testing/Test.h>
 

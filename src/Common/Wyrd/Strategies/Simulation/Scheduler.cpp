@@ -1,5 +1,5 @@
 #include <Common/Wyrd/Strategies/Simulation/Scheduler.h>
-#include <Common/Wyrd/Random.h>
+#include <Common/Wyrd/Strategies/Random.h>
 
 #include <algorithm>
 
@@ -8,6 +8,15 @@ namespace DB::Wyrd::SimulationMode
 
 namespace
 {
+
+SimulatedThread * popRandom(VectorWithMemoryTracking<SimulatedThread *> & threads)
+{
+    size_t index = randomInt(0, threads.size() - 1);
+    SimulatedThread * thread = threads[index];
+    threads[index] = threads.back();
+    threads.pop_back();
+    return thread;
+}
 
 void moveRandom(VectorWithMemoryTracking<SimulatedThread *> & from, VectorWithMemoryTracking<SimulatedThread *> & to)
 {
@@ -42,17 +51,17 @@ bool Scheduler::shouldHold() const
         return false;
     if (std::ranges::none_of(runnable_threads, [this](const SimulatedThread * thread) { return lock_free_depth.contains(thread); }))
         return false;
-    return randomEvent(params.lock_free_suspend_probability);
+    return randomBool(params.lock_free_suspend_probability);
 }
 
 bool Scheduler::shouldWakeSpuriously() const
 {
-    return randomEvent(params.spurious_wakeup_probability);
+    return randomBool(params.spurious_wakeup_probability);
 }
 
 void Scheduler::onSync()
 {
-    if (randomEvent(params.preempt_probability))
+    if (randomBool(params.preempt_probability))
         onYield();
 }
 
@@ -103,7 +112,7 @@ void Scheduler::onProgress()
     if (!lock_free_depth.contains(current_thread))
         return;
 
-    if (randomEvent(params.resume_probability))
+    if (randomBool(params.resume_probability))
         moveRandom(held_threads, runnable_threads);
 }
 

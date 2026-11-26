@@ -1,10 +1,10 @@
-file (GLOB wyrd_sources CONFIGURE_DEPENDS *.cpp Facade/*.cpp Testing/*.cpp)
+file (GLOB wyrd_sources CONFIGURE_DEPENDS Facade/*.cpp Testing/*.cpp Strategies/Random.cpp)
 
 add_library (clickhouse_wyrd ${wyrd_sources})
 target_link_libraries (clickhouse_wyrd PUBLIC clickhouse_common_io)
 
 if (ENABLE_TESTS)
-    file (GLOB strategy_sources CONFIGURE_DEPENDS Strategies/*.cpp Strategies/*/*.cpp)
+    file (GLOB strategy_sources CONFIGURE_DEPENDS Strategies/Mode.cpp Strategies/*/*.cpp)
 
     add_library (clickhouse_wyrd_enabled ${wyrd_sources} ${strategy_sources})
     target_compile_definitions (clickhouse_wyrd_enabled PUBLIC WYRD_ENABLED=1)

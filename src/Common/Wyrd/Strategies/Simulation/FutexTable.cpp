@@ -1,8 +1,22 @@
 #include <Common/Wyrd/Strategies/Simulation/FutexTable.h>
-#include <Common/Wyrd/Random.h>
+#include <Common/Wyrd/Strategies/Random.h>
 
 namespace DB::Wyrd::SimulationMode
 {
+
+namespace
+{
+
+SimulatedThread * popRandom(VectorWithMemoryTracking<SimulatedThread *> & threads)
+{
+    size_t index = randomInt(0, threads.size() - 1);
+    SimulatedThread * thread = threads[index];
+    threads[index] = threads.back();
+    threads.pop_back();
+    return thread;
+}
+
+}
 
 void FutexTable::park(void * address, SimulatedThread * thread)
 {
