@@ -94,6 +94,29 @@ bool isColumnNameList(const IAST & parent, const IAST & child)
     const auto * matcher = parent.as<ASTQualifiedColumnsListMatcher>();
     return matcher && &child == matcher->column_list.get();
 }
+
+/// `QueryTreeBuilder` reads each `COLUMNS(a, b)` entry as an identifier.
+void throwIfColumnsListHasNonIdentifier(const IAST & ast, const String & function_name)
+{
+    StackWithMemoryTracking<const IAST *> nodes;
+    nodes.push(&ast);
+    while (!nodes.empty())
+    {
+        const auto * node = nodes.top();
+        nodes.pop();
+        if (const auto * matcher = node->as<ASTColumnsListMatcher>(); matcher && matcher->column_list)
+        {
+            for (const auto & column : matcher->column_list->children)
+                if (!column->as<ASTIdentifier>())
+                    throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER,
+                        "Identifier inside COLUMNS matcher must resolve into a column, but the expansion of SQL function {} puts {} there",
+                        function_name, column->formatForErrorMessage());
+        }
+        for (const auto & child : node->children)
+            if (child)
+                nodes.push(child.get());
+    }
+}
 }
 
 ASTPtr UserDefinedSQLFunctionVisitor::tryToReplaceFunction(const ASTFunction & function, UnorderedSetWithMemoryTracking<std::string> & udf_in_replace_process, ContextPtr context_)
@@ -195,20 +218,6 @@ ASTPtr UserDefinedSQLFunctionVisitor::tryToReplaceFunction(const ASTFunction & f
         auto ast_node_to_update = ast_nodes_to_update.top();
         ast_nodes_to_update.pop();
 
-        /// `COLUMNS(a, b)` resolves each name to a column, so a parameter there must be passed an identifier.
-        if (const auto * matcher = ast_node_to_update->as<ASTColumnsListMatcher>(); matcher && matcher->column_list)
-        {
-            for (const auto & column : matcher->column_list->children)
-            {
-                auto column_name = tryGetIdentifierName(column);
-                auto argument_it = column_name ? identifier_name_to_function_argument.find(*column_name) : identifier_name_to_function_argument.end();
-                if (argument_it != identifier_name_to_function_argument.end() && !argument_it->second->as<ASTIdentifier>())
-                    throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER,
-                        "Identifier '{}' inside COLUMNS matcher must resolve into a column, but function {} passes {}",
-                        *column_name, function.name, argument_it->second->formatForErrorMessage());
-            }
-        }
-
         for (auto & child : ast_node_to_update->children)
         {
             if (isColumnNameList(*ast_node_to_update, *child))
@@ -245,6 +254,10 @@ ASTPtr UserDefinedSQLFunctionVisitor::tryToReplaceFunction(const ASTFunction & f
     udf_in_replace_process.erase(it);
 
     function_body_to_update = expression_list->children[0];
+
+    /// Nested calls are expanded by the outermost one, so only it sees the final `COLUMNS` lists.
+    if (udf_in_replace_process.empty())
+        throwIfColumnsListHasNonIdentifier(*function_body_to_update, function.name);
 
     auto function_alias = function.tryGetAlias();
 
