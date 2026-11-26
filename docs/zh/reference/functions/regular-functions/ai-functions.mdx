@@ -32,7 +32,7 @@ AI 函数是 ClickHouse 中的内置函数，可用于调用 AI 或生成嵌入�
 
 ## 配置 {#configuration}
 
-AI 函数会引用一个**命名集合**，其中存储了提供商凭据和配置信息。可以针对不同的函数或函数调用创建并使用不同的命名集合。例如，你可能希望为文本函数 (`aiGenerate`、`aiClassify`、`aiFilter`、`aiExtract`、`aiTranslate`、`aiRedact`) 定义一个命名集合，而为嵌入向量函数 (`aiEmbed`、`aiSimilarity`) 定义另一个，因为它们需要不同的端点，通常也会使用不同的模型。
+AI 函数需要 `AI FUNCTIONS` 授权 (参见[访问控制](#access-control)) ，并会引用一个**命名集合**，其中存储了提供商凭据和配置信息。可以针对不同的函数或函数调用创建并使用不同的命名集合。例如，你可能希望为文本函数 (`aiGenerate`、`aiClassify`、`aiFilter`、`aiExtract`、`aiTranslate`、`aiRedact`) 定义一个命名集合，而为嵌入向量函数 (`aiEmbed`、`aiSimilarity`) 定义另一个，因为它们需要不同的端点，通常也会使用不同的模型。
 
 以下是创建包含提供商凭据的命名集合的示例语句：一个用于聊天端点，另一个用于 embedding 端点：
 
@@ -50,6 +50,41 @@ CREATE NAMED COLLECTION ai_embedding_credentials AS
     provider = 'openai',
     endpoint = 'https://api.openai.com/v1/embeddings',
     api_key = 'sk-...';
+```
+
+### 访问控制 {#access-control}
+
+调用 AI 函数需要以下两项特权：
+
+* 该函数自身的特权：可以是 per-function 特权 (例如 `aiGenerate`) ，也可以是 `AI FUNCTIONS` 特权组，参见 [`GRANT`](/zh/reference/statements/grant#ai-functions)；
+* 所选凭证上的 `NAMED COLLECTION` 特权。
+
+```sql
+GRANT AI FUNCTIONS ON *.* TO ai_user_role;
+GRANT aiGenerate, aiClassify ON *.* TO ai_analyst_role;
+GRANT NAMED COLLECTION ON ai_text_credentials TO ai_user_role, ai_analyst_role;
+```
+
+设置 [`allow_ai_functions`](/zh/reference/settings/session-settings/allow#allow_ai_functions) (默认已启用) 设为 `0` 时会禁用 AI 函数，例如可在设置配置文件中或通过约束将其设为 `0`。若使用 `CONST`，该 profile 的用户将无法重新启用 AI 函数：
+
+```sql
+CREATE SETTINGS PROFILE no_ai SETTINGS allow_ai_functions = 0 CONST TO ai_restricted_role;
+```
+
+AI 函数仅在用户运行的查询中执行。变更 (`ALTER TABLE ... UPDATE`、`ALTER TABLE ... DELETE`) 以及表的键、生存时间 (TTL)、跳过索引和投影均在后台执行，因此会拒绝 AI 函数；此外，`Buffer` 在刷写过程中若需对 AI 函数求值，会抛出异常。`DEFAULT` 和 `MATERIALIZED` 列在插入时求值；如果通过 `ALTER TABLE` 添加此类列，现有 parts 会在后台计算该列，而后台不会执行 AI 函数。
+
+如需为现有行填充某一列，请使用轻量级 [`UPDATE`](/zh/reference/statements/update)。它由查询执行，且只写入被更新的列：
+
+```sql
+UPDATE t SET y = aiEmbed(x, 'model') WHERE empty(y) SETTINGS enable_lightweight_update = 1;
+```
+
+如果表不满足[轻量级更新要求](/zh/reference/statements/update#lightweight-update-requirements)，请改用 `INSERT ... SELECT`，例如每次处理一个分区：
+
+```sql
+CREATE TABLE t_tmp AS t;
+INSERT INTO t_tmp SELECT x, aiEmbed(x, 'model') AS y FROM t WHERE _partition_id = '202610';
+ALTER TABLE t REPLACE PARTITION ID '202610' FROM t_tmp;
 ```
 
 ### 命名集合参数 {#named-collection-parameters}
@@ -196,31 +231,56 @@ AI 函数与大多数传统 ClickHouse 函数不同：其吞吐量几乎完全�
 
 ## 可观测性 {#observability}
 
-可通过 ClickHouse [ProfileEvents](/zh/reference/system-tables/query_log) 跟踪 AI 函数活动：
+AI 函数的活动通过 ClickHouse [ProfileEvents](/zh/reference/system-tables/query_log) 进行跟踪：
 
-| ProfileEvent      | Description                                               |
-| ----------------- | --------------------------------------------------------- |
-| `AIAPICalls`      | 向 AI 提供商发出的 HTTP 请求数。                                     |
-| `AIInputTokens`   | 消耗的输入标记总数。                                                |
-| `AIOutputTokens`  | 消耗的输出标记总数。                                                |
-| `AIRowsProcessed` | 获得结果的行数。                                                  |
-| `AIRowsSkipped`   | 被跳过的行数 (超出配额，或在 `ai_function_throw_on_error = 0` 时发生错误) 。 |
+| ProfileEvent                 | 描述                                                         |
+| ---------------------------- | ---------------------------------------------------------- |
+| `AIAPICalls`                 | 向 AI 服务提供商发出的 HTTP 请求数。                                    |
+| `AIInputTokens`              | 消耗的输入词元总数，包括缓存读取和缓存写入的词元。                                  |
+| `AIOutputTokens`             | 消耗的输出词元总数。                                                 |
+| `AICacheReadTokens`          | 从提供商提示词缓存中读取的输入词元数。                                        |
+| `AICacheWriteTokens`         | 写入提供商提示词缓存的输入词元数。                                          |
+| `AIRequestMicroseconds`      | 调用 AI 服务提供商的总耗时 (包括请求序列化、HTTP 往返和响应解析) ，包含失败的尝试，但不含重试退避时间。 |
+| `AIRetryBackoffMicroseconds` | 失败的 AI 服务提供商调用在重试前的总等待时间。                                  |
+| `AIRowsProcessed`            | 获得结果的行数。                                                   |
+| `AIRowsSkipped`              | 被跳过的行数 (因超出配额，或在 `ai_function_throw_on_error = 0` 时发生错误) 。 |
+
+各项时间是跨所有执行和线程累加的，因此可能超过查询的挂钟时间。
+将 `AIRequestMicroseconds` 除以 `AIAPICalls`，即可得到平均请求延迟 (含失败的尝试) 。
+这些计数器按查询统计，不提供单个请求的延迟信息。
+如果一个查询调用了多个 AI 函数，其计数会累加在一起。
+
+缓存计数器是 `AIInputTokens` 的子集，并非额外的词元。它们反映的是提供商上报的缓存读取/写入情况，而非 ClickHouse 内部的缓存机制。如果提供商未返回缓存用量，则其贡献的
+缓存词元数为零。
 
 查询这些事件：
 
 ```sql
+SYSTEM FLUSH LOGS;
+
 SELECT
+    query_duration_ms,
     ProfileEvents['AIAPICalls'] AS api_calls,
+    ProfileEvents['AIRequestMicroseconds'] / 1000 AS request_ms,
+    request_ms / nullIf(api_calls, 0) AS mean_request_ms,
+    ProfileEvents['AIRetryBackoffMicroseconds'] / 1000 AS retry_backoff_ms,
+    ProfileEvents['AIRowsProcessed'] AS rows_processed,
+    ProfileEvents['AIRowsSkipped'] AS rows_skipped,
     ProfileEvents['AIInputTokens'] AS input_tokens,
-    ProfileEvents['AIOutputTokens'] AS output_tokens
+    ProfileEvents['AIOutputTokens'] AS output_tokens,
+    ProfileEvents['AICacheReadTokens'] AS cache_read_tokens,
+    ProfileEvents['AICacheWriteTokens'] AS cache_write_tokens
 FROM system.query_log
 WHERE query_id = 'query_id'
-AND type = 'QueryFinish'
+AND type IN ('QueryFinish', 'ExceptionWhileProcessing')
 ORDER BY event_time DESC;
 ```
 
+`log_queries` 和 `log_profile_events` 默认已启用，用于将这些事件记录到 `system.query_log` 中。
+服务器级别的汇总数据也可以在 `system.events` 中查看。
+
 {/*
-  以下标签内的内容会在文档框架构建时被替换为
+  以下标签内的内容会在文档框架构建时替换为
   根据 system.functions 生成的文档。请勿修改或删除这些标签。
   参见：https://github.com/ClickHouse/clickhouse-docs/blob/main/contribute/autogenerated-documentation-from-source.md
   */}

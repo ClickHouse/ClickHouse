@@ -6,23 +6,19 @@ tags: ['Sources de données', 'Formats de données']
 keywords: ['Conversion', 'Parquet', 'CSV', 'JSON']
 ---
 
-<div id="converting-files-from-parquet-to-csv-or-json">
-  ## Conversion de fichiers Parquet en CSV ou JSON
-</div>
+## Conversion de fichiers Parquet en CSV ou JSON {#converting-files-from-parquet-to-csv-or-json}
 
-Vous pouvez utiliser `clickhouse-local` pour convertir des fichiers entre n’importe lesquels des [formats d’entrée et de sortie](/fr/reference/formats/index) pris en charge par ClickHouse (soit plus de 70 formats différents !). Dans cet article, nous allons convertir un fichier Parquet dans S3 en fichiers CSV et JSON.
+Vous pouvez utiliser `clickhouse-local` pour convertir des fichiers entre n’importe lesquels des [formats d’entrée et de sortie](/fr/reference/formats/index) pris en charge par ClickHouse (soit plus de 70 formats différents !). Dans cet article, nous allons convertir un fichier Parquet dans S3 en fichiers CSV et JSON.
 
 Commençons par le commencement. ClickHouse dispose d’un ensemble de [fonctions de table](/fr/reference/functions/table-functions/index) qui lisent des fichiers, des bases de données et d’autres ressources, puis convertissent les données sous forme de table. Pour l’illustrer, supposons que nous ayons un fichier Parquet dans S3. Nous utiliserons la fonction de table `s3` pour le lire (ClickHouse sait qu’il s’agit d’un fichier Parquet d’après son nom).
 
-Mais d’abord, téléchargeons le binaire `clickhouse` :
+Mais d’abord, téléchargeons le binaire `clickhouse` :
 
 ```bash
 curl https://clickhouse.com/ | sh
 ```
 
-<div id="accessing-the-data-using-a-table-function">
-  ## Accéder aux données à l’aide d’une fonction de table
-</div>
+## Accéder aux données à l’aide d’une fonction de table {#accessing-the-data-using-a-table-function}
 
 Vérifions que nous pouvons lire le fichier en exécutant `DESCRIBE` sur la table générée par la fonction de table `s3` :
 
@@ -76,9 +72,7 @@ ASCOT	551491.2975753123
 WEYBRIDGE	548974.828692494
 ```
 
-<div id="convert-the-parquet-file-to-a-csv">
-  ## Convertir le fichier Parquet en CSV
-</div>
+## Convertir le fichier Parquet en CSV {#convert-the-parquet-file-to-a-csv}
 
 Vous pouvez envoyer le résultat de n’importe quelle requête SQL dans un fichier. Récupérons toutes les colonnes de notre fichier Parquet dans S3 et écrivons le résultat dans un nouveau fichier CSV. Comme le fichier de sortie se termine par `.csv`, ClickHouse sait qu’il doit utiliser le format de sortie `CSV` :
 
@@ -104,9 +98,7 @@ $ tail house_prices.csv
 250000,15950,"YO8","9YD","detached",0,"freehold","3","","ONE ACRE GARTH","HAMBLETON","SELBY","SELBY","NORTH YORKSHIRE"
 ```
 
-<div id="convert-the-parquet-file-to-a-json">
-  ## Convertir le fichier Parquet au format JSON
-</div>
+## Convertir le fichier Parquet au format JSON {#convert-the-parquet-file-to-a-json}
 
 Pour convertir le fichier Parquet au format JSON, modifiez simplement l’extension du nom du fichier de sortie :
 
@@ -132,9 +124,7 @@ Vérifions que cela a bien fonctionné :
 {"price":"250000","date":15950,"postcode1":"YO8","postcode2":"9YD","type":"detached","is_new":0,"duration":"freehold","addr1":"3","addr2":"","street":"ONE ACRE GARTH","locality":"HAMBLETON","town":"SELBY","district":"SELBY","county":"NORTH YORKSHIRE"}
 ```
 
-<div id="convert-csv-to-parquet">
-  ## Convertir un CSV en Parquet
-</div>
+## Convertir un CSV en Parquet {#convert-csv-to-parquet}
 
 Cela fonctionne dans les deux sens : nous pouvons facilement lire le nouveau fichier CSV et le convertir en fichier Parquet. Le fichier local `house_prices.csv` peut être lu dans ClickHouse à l’aide de la fonction de table `file`, et ClickHouse écrit le fichier au format Parquet en se basant sur l’extension `.parquet` du nom de fichier (ou nous aurions pu ajouter la clause `FORMAT Parquet`) :
 

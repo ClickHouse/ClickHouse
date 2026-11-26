@@ -1,0 +1,84 @@
+---
+slug: /clickstack/self-configured/managing/estimating-resources
+title: '资源估算'
+sidebarTitle: '资源估算'
+description: 'Self-managed ClickHouse Observability 部署的资源估算指南'
+doc_type: 'guide'
+keywords: ['ClickHouse Observability', '资源', '资源规模规划', '计算资源', '生产环境', '容量规划']
+---
+
+import ResourceEstimation from '/snippets/zh/_resource_estimation.mdx';
+
+<Note>
+  本页介绍的是**自管理 ClickHouse Observability**。如需使用我们推荐的全托管方案，请参阅[此文档](/zh/clickstack/observability/overview)。
+</Note>
+
+<ResourceEstimation />
+
+## 根据您的环境细化资源规模规划假设 {#refining-sizing-assumptions}
+
+该模型假设服务持续保持平均 1 QPS 的查询负载，涵盖搜索、仪表盘和告警在内的所有查询类型。
+
+如需支持更高的查询量，可将 CPU 需求乘以目标 QPS，按线性方式扩展 CPU 需求。例如，以 100 MB/s 速率摄取数据、目标为 9 QPS 的部署，需要 90 个查询 CPU (10 × 9) ，而非基线的 10 个，因此调整后共需 100 个 CPU (10 个用于摄取 + 90 个用于查询) 。
+
+存储估算基于保守的 10 倍压缩率。实际上，日志、链路追踪和指标的压缩率通常更高。我们建议在上线生产环境之前，先用数据样本进行测试，以确定您的压缩率和存储需求。如需计算更长保留期所需的存储，请将每月存储量乘以需要保留的月数。
+
+上述估算假设查询分布相对均衡。如果工作负载偏重于开销较大的历史查询或归档查询，其计算资源需求可能会有显著差异，应通过负载测试加以验证。我们计划推出更灵活的容量估算模型，支持根据不同的查询分布模式推算查询计算资源。
+
+### 计算示例 {#worked-example}
+
+**需求：** 每月摄取 1.5 PB，5 QPS，保留 3 个月。
+
+**换算为 MB/s**
+
+容量估算模型以 MB/s 为单位。将每月 1.5 PB (1,500 TB) 换算为持续吞吐量：
+
+* 1,500 TB = 1,500,000,000 MB
+* 每月秒数 (按 30 天计) ：30 × 24 × 60 × 60 = 2,592,000
+* MB/s = 1,500,000,000 ÷ 2,592,000 ≈ **579 MB/s**
+
+**数据摄取计算资源**
+
+按每 10 MB/s 持续摄取需要 1 个 vCPU 计算：
+
+579 ÷ 10 = **约 58 个 vCPUs** (用于摄取)
+
+**查询计算资源**
+
+查询计算资源会随摄取吞吐量和 QPS 共同增长。在 5 QPS 下：
+
+(579 ÷ 10) × 5 = 58 × 5 = **290 个 vCPUs** (用于查询)
+
+**存储**
+
+以 579 MB/s 持续摄取 30 天，原始摄取量为每月 1,500 TB。按假定的 10 倍压缩率计算：
+
+* 每月压缩后数据量：1,500 TB ÷ 10 = **每月 150 TB**
+* 保留 3 个月：150 TB × 3 = **共 450 TB**
+
+**摘要**
+
+| 资源          | 值         |
+| ----------- | --------- |
+| 数据摄取计算资源    | 58 vCPUs  |
+| 查询计算资源      | 290 vCPUs |
+| 计算资源总计      | 348 vCPUs |
+| 每月存储 (已压缩)  | 150 TB    |
+| 保留 3 个月所需存储 | 450 TB    |
+
+## 隔离可观测性工作负载 {#isolating-workloads}
+
+如果您要将 Self-managed ClickHouse Observability 添加到已承载其他工作负载 (例如实时应用程序数据分析) 的**现有 ClickHouse Cloud 服务**中，强烈建议对可观测性流量进行隔离。
+
+使用 [**Managed Warehouses**](/zh/products/cloud/features/infrastructure/warehouses) 创建一个专用于可观测性的**子服务**。这样您可以：
+
+* 将摄取和查询负载与现有应用程序隔离
+* 独立扩展可观测性工作负载
+* 避免可观测性查询影响生产环境中的数据分析
+* 在需要时跨服务共享相同的底层数据集
+
+这种方法既能确保现有工作负载不受影响，又能让可观测性工作负载随数据量增长而独立扩展。
+
+借助同一功能，您还可以将上文估算的数据摄取计算资源和查询计算资源分别预配为独立的服务，以便各自独立扩展。请参阅指南：[隔离读写工作负载](/zh/clickstack/self-configured/managing/isolating-read-write)。
+
+如需部署更大规模的环境或获取自定义资源规模规划指导，请联系支持团队，以获得更精确的估算。

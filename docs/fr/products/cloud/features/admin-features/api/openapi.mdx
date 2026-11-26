@@ -15,30 +15,22 @@ ClickHouse Cloud fournit une API basée sur OpenAPI qui vous permet de gérer pa
 
 <Steps>
   <Step title="Ouvrez la page API Keys">
-    Vous pouvez utiliser l’onglet **API Keys** dans le menu de gauche pour créer et gérer vos clés API.
+    Vous pouvez utiliser l’onglet **Clés API** dans le menu de gauche pour créer et gérer vos clés API.
 
     <div className="ch-image-sm">
-
-    <Frame>
-
-    ![Onglet API Keys](/images/cloud/manage/openapi1.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Onglet Clés API](/images/cloud/manage/openapi1.webp)
+      </Frame>
     </div>
   </Step>
 
   <Step title="Commencez à créer une clé API">
-    La page **API Keys** affiche d’abord une invite vous proposant de créer votre première clé API, comme illustré ci-dessous. Une fois cette première clé créée, vous pouvez en créer de nouvelles à l’aide du bouton `New API Key` qui apparaît dans l’angle supérieur droit.
+    La page **Clés API** affiche d’abord une invite vous proposant de créer votre première clé API, comme illustré ci-dessous. Une fois cette première clé créée, vous pouvez en créer de nouvelles à l’aide du bouton `New API Key` qui apparaît dans l’angle supérieur droit.
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![Page API Keys](/images/cloud/manage/openapi2.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Page Clés API](/images/cloud/manage/openapi2.webp)
+      </Frame>
     </div>
   </Step>
 
@@ -56,13 +48,9 @@ ClickHouse Cloud fournit une API basée sur OpenAPI qui vous permet de gérer pa
     </Tip>
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![Formulaire de création de clé API](/images/cloud/manage/openapi3.png)
-
-    </Frame>
-
+      <Frame>
+        ![Formulaire de création de clé API](/images/cloud/manage/openapi3.png)
+      </Frame>
     </div>
   </Step>
 
@@ -72,13 +60,9 @@ ClickHouse Cloud fournit une API basée sur OpenAPI qui vous permet de gérer pa
     Les Query API endpoints respectent les listes d’autorisation d’IP définies au niveau des clés API. Étant donné que les requêtes sont relayées depuis l’infrastructure de ClickHouse, les listes d’autorisation d’IP au niveau du service ne s’appliquent pas. Consultez [IP Access Control](/fr/products/cloud/features/sql-console-features/query-endpoints#ip-access-control) pour plus de détails.
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![Adresses IP autorisées configurées pour une clé API](/images/cloud/guides/query-endpoints/specific-locations.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Adresses IP autorisées configurées pour une clé API](/images/cloud/guides/query-endpoints/specific-locations.webp)
+      </Frame>
     </div>
 
     Cliquez sur **Generate API Key** lorsque vous avez terminé de configurer la clé.
@@ -88,18 +72,14 @@ ClickHouse Cloud fournit une API basée sur OpenAPI qui vous permet de gérer pa
     L’écran suivant affiche votre Key ID et votre Key secret. Copiez ces valeurs et conservez-les en lieu sûr, par exemple dans un coffre-fort. Elles ne seront plus affichées après que vous aurez quitté cet écran.
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![Détails de la clé API](/images/cloud/manage/openapi4.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Détails de la clé API](/images/cloud/manage/openapi4.webp)
+      </Frame>
     </div>
   </Step>
 
   <Step title="Authentifiez les requêtes API">
-    La ClickHouse Cloud API utilise l’[authentification HTTP Basic](https://developer.mozilla.org/en-US/docs/Web/HTTP/Authentication) pour vérifier la validité de vos clés API. Voici un exemple montrant comment utiliser vos clés API pour envoyer des requêtes à la ClickHouse Cloud API avec `curl` :
+    La ClickHouse Cloud API utilise l’[authentification HTTP Basic](https://developer.mozilla.org/en-US/docs/Web/HTTP/Authentication) pour vérifier la validité de vos clés API. Voici un exemple montrant comment utiliser vos clés API pour envoyer des requêtes à la ClickHouse Cloud API avec `curl` :
 
     ```bash
     $ KEY_ID=mykeyid
@@ -110,26 +90,22 @@ ClickHouse Cloud fournit une API basée sur OpenAPI qui vous permet de gérer pa
   </Step>
 
   <Step title="Gérez les clés API existantes">
-    En revenant sur la page **API Keys**, vous verrez le nom de la clé, les quatre derniers caractères du Key ID, les permissions, le statut, la date d’expiration et le créateur. Depuis cet écran, vous pouvez modifier le nom de la clé, les permissions et la date d’expiration. Vous pouvez également y désactiver ou supprimer des clés.
+    En revenant sur la page **Clés API**, vous verrez le nom de la clé, les quatre derniers caractères du Key ID, les permissions, le statut, la date d’expiration et le créateur. Depuis cet écran, vous pouvez modifier le nom de la clé, les permissions et la date d’expiration. Vous pouvez également y désactiver ou supprimer des clés.
 
     <Note>
       La suppression d’une clé API est définitive. Tous les services qui utilisent cette clé perdront immédiatement l’accès à ClickHouse Cloud.
     </Note>
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![Page de gestion des API Keys](/images/cloud/manage/openapi5.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Page de gestion des Clés API](/images/cloud/manage/openapi5.webp)
+      </Frame>
     </div>
   </Step>
 </Steps>
 
 <div id="endpoints">
-  ## Endpoints
+  ## Endpoints {#endpoints}
 </div>
 
 Pour en savoir plus sur les endpoints, consultez la [Référence API](/fr/products/cloud/api-reference/organization/get-list-of-available-organizations).

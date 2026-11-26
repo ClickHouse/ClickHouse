@@ -48,6 +48,11 @@ struct JoinFeatures
     static constexpr bool need_flags = MapGetter<KIND, STRICTNESS, mapsKindOf<Map>()>::flagged;
 
     static constexpr bool is_maps_all = std::is_same_v<std::decay_t<Map>, HashJoin::MapsAll>;
+
+    /// Whether the maps are only built for a join of one clause: INNER ANY on a set map needs one disjunct, and RIGHT ANTI
+    /// on one row per key is used for `EXCEPT DISTINCT`, which always has a single clause.
+    static constexpr bool one_clause_only = (inner && is_any_join && SetJoinMaps<Map>)
+        || (right && is_anti_join && std::is_same_v<std::decay_t<Map>, HashJoin::MapsOne>);
 };
 
 }

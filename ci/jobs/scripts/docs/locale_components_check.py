@@ -39,7 +39,10 @@ EXTS = (".mdx", ".md", ".jsx", ".tsx", ".js")
 # production mount some shared components hardcode (identically in English), not
 # a repo-relative doc path, so it is out of scope for the locale check.
 SKIP_PREFIXES = ("/images/", "/assets/", "/_site/", "/.well-known/", "/docs/")
-SKIP_EXACT = {"/docs", "/"}
+# `/play` is the ClickHouse server's Web UI endpoint, used in configuration
+# examples. It is not a documentation page, so it cannot resolve to a local
+# file in the documentation tree.
+SKIP_EXACT = {"/docs", "/", "/play"}
 # `href: "/x"`, `href="/x"`, `href={'/x'}`, `to: "/x"`, ...; a `$` belongs
 # to a template literal handled by `TEMPLATE`, not a static href.
 HREF = re.compile(r"""\b(?:href|to)\s*[:=]\s*\{?\s*(['"`])(/[^'"`\s$]+)\1""")

@@ -27,15 +27,18 @@ private:
     /// Nullable(UInt32))`.a.null. Unlike `is_null_map_subcolumn`, which is the null map OF the element,
     /// this one is read through the element; see `SerializationVariantElement`.
     bool selected_subcolumn_is_null_map;
+    /// The type `nested_serialization` serializes, for the defaults of the rows of other types. Not part of the pool
+    /// key: the key of the nested serialization already determines the default of its type.
+    DataTypePtr element_type;
 
-    SerializationDynamicElement(const SerializationPtr & nested_, const SerializationPtr & shared_variant_serialization_, const String & dynamic_element_name_, const String & nested_subcolumn_, bool is_null_map_subcolumn_, bool nullable_added_by_extraction_, bool selected_subcolumn_is_null_map_)
-        : SerializationWrapper(nested_), shared_variant_serialization(shared_variant_serialization_), dynamic_element_name(dynamic_element_name_), nested_subcolumn(nested_subcolumn_), is_null_map_subcolumn(is_null_map_subcolumn_), nullable_added_by_extraction(nullable_added_by_extraction_), selected_subcolumn_is_null_map(selected_subcolumn_is_null_map_)
+    SerializationDynamicElement(const SerializationPtr & nested_, const SerializationPtr & shared_variant_serialization_, const String & dynamic_element_name_, const String & nested_subcolumn_, bool is_null_map_subcolumn_, bool nullable_added_by_extraction_, bool selected_subcolumn_is_null_map_, const DataTypePtr & element_type_)
+        : SerializationWrapper(nested_), shared_variant_serialization(shared_variant_serialization_), dynamic_element_name(dynamic_element_name_), nested_subcolumn(nested_subcolumn_), is_null_map_subcolumn(is_null_map_subcolumn_), nullable_added_by_extraction(nullable_added_by_extraction_), selected_subcolumn_is_null_map(selected_subcolumn_is_null_map_), element_type(element_type_)
     {
     }
 
 public:
     static UInt128 getHash(const SerializationPtr & nested_, const SerializationPtr & shared_variant_serialization_, const String & dynamic_element_name_, const String & nested_subcolumn_, bool is_null_map_subcolumn_, bool nullable_added_by_extraction_, bool selected_subcolumn_is_null_map_);
-    static SerializationPtr create(const SerializationPtr & nested_, const SerializationPtr & shared_variant_serialization_, const String & dynamic_element_name_, const String & nested_subcolumn_, bool is_null_map_subcolumn_, bool nullable_added_by_extraction_, bool selected_subcolumn_is_null_map_ = false);
+    static SerializationPtr create(const SerializationPtr & nested_, const SerializationPtr & shared_variant_serialization_, const String & dynamic_element_name_, const String & nested_subcolumn_, bool is_null_map_subcolumn_, bool nullable_added_by_extraction_, bool selected_subcolumn_is_null_map_ = false, const DataTypePtr & element_type_ = nullptr);
     size_t allocatedBytes() const override;
     bool supportsPooling() const override { return SerializationWrapper::supportsPooling() && shared_variant_serialization->supportsPooling(); }
     MutableColumnPtr createColumnForDeserialization(const IDataType & type) const override;

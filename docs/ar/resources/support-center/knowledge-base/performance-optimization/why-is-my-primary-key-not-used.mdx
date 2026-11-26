@@ -6,15 +6,11 @@ tags: ['الأداء والتحسينات']
 keywords: ['المفتاح الأساسي']
 ---
 
-<div id="checking-your-primary-key">
-  ## التحقق من المفتاح الأساسي
-</div>
+## التحقق من المفتاح الأساسي {#checking-your-primary-key}
 
 قد يلاحظ المستخدمون أحيانًا أن استعلاماتهم أبطأ من المتوقع، رغم اعتقادهم أنهم يجرون الترتيب أو التصفية باستخدام مفتاح أساسي. في هذه المقالة نوضح كيف يمكنهم التأكد من استخدام المفتاح، مع تسليط الضوء على الأسباب الشائعة لعدم استخدامه.
 
-<div id="create-table">
-  ## إنشاء جدول
-</div>
+## إنشاء جدول {#create-table}
 
 لنأخذ الجدول البسيط التالي:
 
@@ -30,9 +26,7 @@ ORDER BY (code, toUnixTimestamp(timestamp))
 
 لاحظ كيف يتضمّن مفتاح الترتيب لدينا `toUnixTimestamp(timestamp)` بوصفه العنصر الثاني.
 
-<div id="populate-data">
-  ## تعبئة البيانات
-</div>
+## تعبئة البيانات {#populate-data}
 
 عبّئ هذا الجدول بـ 100 مليون صف:
 
@@ -54,11 +48,9 @@ FROM logs
 1 row in set. Elapsed: 0.002 sec.
 ```
 
-<div id="basic-filtering">
-  ## التصفية الأساسية
-</div>
+## عوامل التصفية الأساسية {#basic-filtering}
 
-إذا قمنا بالتصفية حسب `code`، فسنرى في الناتج عدد الصفوف التي جرى فحصها: `49.15 thousand`. لاحظ أن هذا يمثّل مجموعة فرعية من إجمالي 100m صف.
+إذا قمنا باستخدام عامل تصفية حسب `code`، فسنرى في الناتج عدد الصفوف التي جرى فحصها: `49.15 thousand`. لاحظ أن هذا يمثّل مجموعة فرعية من إجمالي 100m صف.
 
 ```sql
 SELECT count() AS c
@@ -106,15 +98,13 @@ PrimaryKey
    code 
 ```
 
-تُعدّ الحبيبات وحدة معالجة البيانات في ClickHouse، وعادةً ما تحتوي كل واحدة منها على 8192 صفًا. ولمزيد من التفاصيل حول الحبيبات وكيفية ترشيحها، نوصي بقراءة [هذا الدليل](/ar/guides/clickhouse/data-modelling/sparse-primary-indexes#mark-files-are-used-for-locating-granules).
+تُعدّ الحبيبات وحدة معالجة البيانات في ClickHouse، وعادةً ما تحتوي كل واحدة منها على 8192 صفًا. ولمزيد من التفاصيل حول الحبيبات وكيفية تطبيق عوامل تصفية عليها، نوصي بقراءة [هذا الدليل](/ar/guides/clickhouse/data-modelling/sparse-primary-indexes#mark-files-are-used-for-locating-granules).
 
 <Note>
-  لن تكون التصفية على المفاتيح المتأخرة ضمن مفتاح الترتيب بالكفاءة نفسها التي تكون عليها التصفية على المفاتيح الأسبق في الـ tuple. ولمعرفة السبب، راجع [هنا](/ar/guides/clickhouse/data-modelling/sparse-primary-indexes#secondary-key-columns-can-not-be-inefficient)
+  لن تكون عوامل التصفية على المفاتيح المتأخرة ضمن مفتاح الترتيب بالكفاءة نفسها التي تكون عليها عوامل التصفية على المفاتيح الأسبق في الـ tuple. ولمعرفة السبب، راجع [هنا](/ar/guides/clickhouse/data-modelling/sparse-primary-indexes#secondary-key-columns-can-not-be-inefficient)
 </Note>
 
-<div id="multi-key-filtering">
-  ## التصفية باستخدام مفاتيح متعددة
-</div>
+## التصفية باستخدام مفاتيح متعددة {#multi-key-filtering}
 
 لنفترض أننا نُجري التصفية وفقًا لـ`code` و`timestamp`:
 
@@ -156,9 +146,7 @@ WHERE (code = '200') AND (timestamp >= '2025-01-01 00:00:00') AND (timestamp <= 
 
 في هذه الحالة، يُستخدم مفتاحا الترتيب كليهما لتصفية الصفوف، ما يعني الحاجة إلى قراءة `87` حبيبة فقط.
 
-<div id="using-keys-in-sorting">
-  ## استخدام المفاتيح في الفرز
-</div>
+## استخدام المفاتيح في الفرز {#using-keys-in-sorting}
 
 يمكن لـ ClickHouse أيضًا الاستفادة من مفاتيح الترتيب لتنفيذ الفرز بكفاءة. وتحديدًا،
 
