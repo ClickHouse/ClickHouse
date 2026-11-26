@@ -282,14 +282,8 @@ NamesAndTypesList TSKVSchemaReader::readRowAndGetNamesAndDataTypes(bool & eof)
             if (format_settings.skip_duplicated_fields && !row_field_names.insert(name).second)
                 continue;
 
-            /// `\N` decodes to no bytes, and while it is the null representation the value path reads it as
-            /// a null instead of as data, so such a field holds no value to infer a type from.
-            const bool holds_no_value = value == "\\N" && format_settings.tsv.null_representation == "\\N";
             names_and_types.emplace_back(
-                std::move(name),
-                holds_no_value
-                    ? nullptr
-                    : tryInferDataTypeByEscapingRule(value, format_settings, FormatSettings::EscapingRule::Escaped));
+                std::move(name), tryInferDataTypeByEscapingRule(value, format_settings, FormatSettings::EscapingRule::Escaped));
         }
         else
         {
@@ -304,6 +298,11 @@ NamesAndTypesList TSKVSchemaReader::readRowAndGetNamesAndDataTypes(bool & eof)
     assertChar('\n', in);
 
     return names_and_types;
+}
+
+void TSKVSchemaReader::transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type)
+{
+    transformInferredTypesByEscapingRuleIfNeeded(type, new_type, format_settings, FormatSettings::EscapingRule::Escaped);
 }
 
 void registerInputFormatTSKV(FormatFactory & factory);
