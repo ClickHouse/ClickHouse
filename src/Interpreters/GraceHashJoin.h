@@ -13,12 +13,15 @@
 #include <Common/SharedMutex.h>
 #include <base/defines.h>
 
+#include <list>
 #include <mutex>
 
 namespace DB
 {
 class TableJoin;
 class HashJoin;
+class JoinSpillBudget;
+struct StoredBlock;
 
 /**
  * Efficient and highly parallel implementation of external memory JOIN based on HashJoin.
@@ -73,7 +76,7 @@ public:
     using Buckets = std::vector<BucketPtr>;
 
     /// `external_join_threshold_` comes from `max_bytes_before_external_join` (or the ratio): we rehash the
-    /// buckets once the in-memory table reaches half of it. Only legacy mode passes 0.
+    /// buckets before the in-memory table would reach it. Only legacy mode passes 0.
     GraceHashJoin(
         size_t initial_num_buckets_,
         size_t max_num_buckets_,
@@ -125,6 +128,12 @@ public:
     ProcessorMemoryStats getMemoryStats() const;
     size_t spill(size_t at_least_bytes);
 
+    /// The in-memory join of `SpillingHashJoin` whose blocks this join takes over: they count against the spill threshold
+    /// until their share is in this join. Call before the first block.
+    void setHeldElsewhere(std::shared_ptr<HashJoin> join) { held_elsewhere = std::move(join); }
+    /// Takes over a block of the `setHeldElsewhere` join, freeing each column once it is scattered.
+    void addHandedOverBlock(HashJoin & from, std::list<StoredBlock> taken, JoinBuildContext context);
+
 private:
     SpillableAdapter<GraceHashJoin> spillable{*this};
 
@@ -132,14 +141,21 @@ private:
     /// Create empty join for in-memory processing.
     InMemoryJoinPtr makeInMemoryJoin(const String & bucket_id, size_t reserve_num = 0);
 
-    /// Add right table block to the @join. Calls @rehash on overflow.
-    void addBlockToJoinImpl(Block block, JoinBuildContext context);
+    /// A block of `held_elsewhere` while this join takes it over.
+    struct HandedOver;
+
+    /// Add right table block to the @join. Calls @rehash on overflow. An `owned` block is freed as it is scattered.
+    void addBlockToJoinImpl(Block block, JoinBuildContext context, bool owned = false, HandedOver * handed_over = nullptr);
+    /// The most the scatter of `block` into `num_buckets` buckets allocates.
+    size_t estimateScatterBytes(const Block & block, size_t num_buckets, bool owned) const;
+    /// What is held against the spill threshold besides the inner join. Caller holds `hash_join_mutex`.
+    size_t heldBytes() const;
 
     /// Split the bucket held in memory in two, half of it onto disk. Caller holds `hash_join_mutex`.
     void repartitionCurrentBucket(size_t prev_keys_num, Block leftover, JoinBuildContext context);
     bool canForceRepartition() const;
 
-    /// Check that join satisfies limits on rows/bytes in table_join.
+    /// Check that join satisfies limits on rows/bytes in table_join. Caller holds `hash_join_mutex`.
     bool hasMemoryOverflow(size_t total_rows, size_t total_bytes) const;
 
     /// Add bucket_count new buckets
@@ -178,6 +194,10 @@ private:
     const size_t max_num_buckets;
     const size_t external_join_threshold;
     const size_t max_threads;
+
+    /// The admission of every insert against `external_join_threshold`, null without one. Shared by the inner joins.
+    std::unique_ptr<JoinSpillBudget> spill_budget;
+    std::shared_ptr<HashJoin> held_elsewhere;
 
     Names left_key_names;
     Names right_key_names;

@@ -4,6 +4,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/GraceHashJoin.h>
 #include <Interpreters/HashJoin/HashJoin.h>
+#include <Interpreters/HashJoin/JoinSpillBudget.h>
 #include <Interpreters/HashJoin/MatchedRowsStats.h>
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
@@ -310,6 +311,7 @@ GraceHashJoin::GraceHashJoin(
     , max_num_buckets(max_num_buckets_)
     , external_join_threshold(external_join_threshold_)
     , max_threads(std::max<size_t>(1, max_threads_))
+    , spill_budget(external_join_threshold_ ? std::make_unique<JoinSpillBudget>([threshold = external_join_threshold_] { return threshold; }) : nullptr)
     , left_key_names(table_join->getOnlyClause().key_names_left)
     , right_key_names(table_join->getOnlyClause().key_names_right)
     , tmp_data(tmp_data_->childScope({
@@ -409,9 +411,11 @@ bool GraceHashJoin::hasMemoryOverflow(size_t total_rows, size_t total_bytes) con
     /// One row can't be split, avoid loop
     if (total_rows < 2)
         return false;
-    /// Only the threshold decides when to spill now, the size limits are caps checked in `addBlockToJoin`.
-    /// Half of it, because the hash table doubles in power-of-two steps and briefly holds 3x while resizing.
-    bool has_overflow = external_join_threshold > 0 && total_bytes * 2 >= external_join_threshold;
+    /// Only the threshold decides when to spill now, the size limits are caps checked in `addBlockToJoin`. Every insert is
+    /// admitted against it before it allocates, so this only catches what an insert went over by.
+    bool has_overflow = spill_budget
+        && JoinSpillBudget::add(JoinSpillBudget::add(hash_join->getRawByteCount(), heldBytes()), spill_budget->getReserved())
+            >= external_join_threshold;
 
     /// Legacy mode: the size limits spill as well. Standalone `grace_hash` is built with no threshold
     /// then, `SpillingHashJoin` still passes one, so whichever comes first wins for the adaptive path.
@@ -827,7 +831,7 @@ IBlocksStreamPtr GraceHashJoin::getDelayedBlocks()
         for (Block block = right_reader.read(); !block.empty(); block = right_reader.read())
         {
             num_rows += block.rows();
-            addBlockToJoinImpl(std::move(block), JoinBuildContext::serial());
+            addBlockToJoinImpl(std::move(block), JoinBuildContext::serial(), /*owned=*/true);
         }
         hash_join->onBuildPhaseFinish();
 
@@ -849,6 +853,11 @@ IBlocksStreamPtr GraceHashJoin::getDelayedBlocks()
     return nullptr;
 }
 
+size_t GraceHashJoin::heldBytes() const
+{
+    return held_elsewhere ? held_elsewhere->getRawByteCount() : 0;
+}
+
 GraceHashJoin::InMemoryJoinPtr GraceHashJoin::makeInMemoryJoin(const String & bucket_id, size_t reserve_num)
 {
     /// One bucket: 256 buckets of empty buffers would count against `max_bytes_before_external_join` and could make
@@ -859,6 +868,8 @@ GraceHashJoin::InMemoryJoinPtr GraceHashJoin::makeInMemoryJoin(const String & bu
     /// A bucket that outgrows memory is rebucketed, which reads its right blocks back out - and that
     /// can happen at any point, so these blocks are never dropped.
     join->keepRightBlocksForAnotherAlgorithm();
+    if (spill_budget)
+        join->setSpillBudget(spill_budget.get(), [this] { return heldBytes(); });
     return join;
 }
 
@@ -884,32 +895,9 @@ void GraceHashJoin::repartitionCurrentBucket(size_t prev_keys_num, Block leftove
     Buckets buckets_snapshot = rehashBuckets();
     /// The replacement table reserves only ~half, so capture the peak before the rehash splits it away.
     stats.peak_in_memory_bytes = std::max(stats.peak_in_memory_bytes, hash_join->getPeakBuildBytes());
-    /// `releaseJoinedBlocks` resets the join's data before it finishes allocating, so detach
-    /// first: a throw must not leave `hash_join` pointing at a join whose data is gone.
+    /// The maps go first, and each block is freed once scattered, so the split needs at most the copy of one block more.
     auto released_join = std::move(hash_join);
-    auto right_blocks = released_join->releaseJoinedBlocks(/* restructure */ false);
-    released_join.reset();
-
-    {
-        Blocks leftovers;
-        leftovers.reserve(right_blocks.size() + 1);
-
-        if (leftover.rows() > 0)
-        {
-            Blocks blocks = JoinCommon::scatterBlockByHash(right_key_names, leftover, buckets_snapshot.size());
-            flushBlocksToBuckets<JoinTableSide::Right>(blocks, buckets_snapshot, bucket_index);
-            leftovers.emplace_back(std::move(blocks[bucket_index]));
-        }
-
-        for (const auto & right_block : right_blocks)
-        {
-            Blocks blocks = JoinCommon::scatterBlockByHash(right_key_names, right_block, buckets_snapshot.size());
-            flushBlocksToBuckets<JoinTableSide::Right>(blocks, buckets_snapshot, bucket_index);
-            leftovers.emplace_back(std::move(blocks[bucket_index]));
-        }
-
-        leftover = concatenateBlocks(leftovers);
-    }
+    auto right_blocks = released_join->takeStoredBlocks();
 
     /// `rehashBuckets` doubles the bucket count from N to 2N. Of the `prev_keys_num` rows that
     /// were in this bucket, about half map to bucket `i` and half to bucket `i + N` under the
@@ -918,8 +906,27 @@ void GraceHashJoin::repartitionCurrentBucket(size_t prev_keys_num, Block leftove
     /// immediately blow past `max_bytes_before_external_join`.
     hash_join = makeInMemoryJoin(fmt::format("grace{}", bucket_index), prev_keys_num / 2);
 
-    if (leftover.rows() > 0)
-        hash_join->addBlockToJoin(leftover, leftover.rows(), context.callerChecksLimits());
+    auto keep_share = [&](Block && block)
+    {
+        if (!block.rows())
+            return;
+        Blocks blocks = JoinCommon::scatterBlockByHash(right_key_names, std::move(block), buckets_snapshot.size());
+        flushBlocksToBuckets<JoinTableSide::Right>(blocks, buckets_snapshot, bucket_index);
+        const Block & kept = blocks[bucket_index];
+        if (!kept.rows())
+            return;
+        /// After its one split a block goes in whatever its size.
+        bool refused = false;
+        hash_join->addBlockToJoin(kept, context.callerChecksLimits(), refused, /*checked=*/false);
+    };
+
+    keep_share(std::move(leftover));
+    while (!right_blocks.empty())
+    {
+        std::list<StoredBlock> block;
+        block.splice(block.end(), right_blocks, right_blocks.begin());
+        keep_share(released_join->materializeTakenBlock(std::move(block)));
+    }
 }
 
 ProcessorMemoryStats GraceHashJoin::getMemoryStats() const
@@ -953,21 +960,134 @@ size_t GraceHashJoin::spill(size_t at_least_bytes)
     return before > after ? before - after : 0;
 }
 
-void GraceHashJoin::addBlockToJoinImpl(Block block, JoinBuildContext context)
+struct GraceHashJoin::HandedOver
+{
+    HashJoin::TakenBlockBytes bytes;
+    /// For its materialization.
+    size_t reserved = 0;
+    bool split_done = false;
+    bool released = false;
+};
+
+size_t GraceHashJoin::estimateScatterBytes(const Block & block, size_t num_buckets, bool owned) const
+{
+    if (owned && num_buckets == 1)
+        return 0;
+    const size_t rows = block.rows();
+    /// The hash of each row, its bucket, a copy of one key column at a time, and the copies of the columns.
+    size_t bytes = JoinSpillBudget::add(JoinSpillBudget::paddedPodArrayBytes<UInt32>(rows), JoinSpillBudget::paddedPodArrayBytes<UInt64>(rows));
+    size_t key_copy = 0;
+    for (const auto & name : right_key_names)
+        key_copy = std::max(key_copy, JoinSpillBudget::columnsCopyBytes(Columns{block.getByName(name).column}, 1));
+    bytes = JoinSpillBudget::add(bytes, key_copy);
+    return JoinSpillBudget::add(bytes, JoinSpillBudget::columnsCopyBytes(block.getColumns(), num_buckets));
+}
+
+void GraceHashJoin::addHandedOverBlock(HashJoin & from, std::list<StoredBlock> taken, JoinBuildContext context)
+{
+    HandedOver handed_over{.bytes = from.takenBlockBytes(taken)};
+    SCOPE_EXIT({
+        if (!handed_over.released)
+        {
+            from.releaseTakenBlock(handed_over.bytes);
+            if (handed_over.reserved)
+                spill_budget->release(handed_over.reserved);
+        }
+    });
+
+    if (spill_budget)
+    {
+        const size_t bytes = from.estimateMaterializeBytes(taken);
+        std::lock_guard lock(hash_join_mutex);
+        if (!hash_join)
+            hash_join = makeInMemoryJoin(fmt::format("grace{}", current_bucket->idx));
+        if (spill_budget->tryReserve(bytes, [this] { return JoinSpillBudget::add(hash_join->getRawByteCount(), heldBytes()); }))
+            handed_over.reserved = bytes;
+        else
+        {
+            if (canForceRepartition())
+            {
+                repartitionCurrentBucket(hash_join->getTotalRowCount(), {}, context);
+                handed_over.split_done = true;
+            }
+            handed_over.reserved = spill_budget->reserveUnchecked(bytes);
+        }
+    }
+
+    addBlockToJoinImpl(from.materializeTakenBlock(std::move(taken)), context, /*owned=*/true, &handed_over);
+}
+
+void GraceHashJoin::addBlockToJoinImpl(Block block, JoinBuildContext context, bool owned, HandedOver * handed_over)
 {
     block = prepareRightBlock(block);
     Buckets buckets_snapshot = getCurrentBuckets();
     size_t bucket_index = current_bucket->idx;
     Block current_block;
 
+    /// Released once the share of this block is in the join, or when it is not kept, and on a throw.
+    size_t scatter_reserved = 0;
+    size_t row_store_reserved = 0;
+    SCOPE_EXIT({
+        if (scatter_reserved)
+            spill_budget->release(scatter_reserved);
+        if (row_store_reserved)
+            spill_budget->release(row_store_reserved);
+    });
+    bool split_done = handed_over && handed_over->split_done;
+    auto held = [this] { return JoinSpillBudget::add(hash_join->getRawByteCount(), heldBytes()); };
+
+    if (spill_budget)
     {
-        Blocks blocks = JoinCommon::scatterBlockByHash(right_key_names, block, buckets_snapshot.size());
+        std::lock_guard lock(hash_join_mutex);
+        if (!hash_join)
+            hash_join = makeInMemoryJoin(fmt::format("grace{}", bucket_index));
+        /// The inner join counts the row store it builds from the share, and the source columns are alive until it is built.
+        const size_t row_store = hash_join->rowStoreSourceBytes(block);
+        const size_t scatter = estimateScatterBytes(block, buckets_snapshot.size(), owned);
+        if (spill_budget->tryReserve(JoinSpillBudget::add(scatter, row_store), held))
+        {
+            scatter_reserved = scatter;
+            row_store_reserved = row_store;
+        }
+        else
+        {
+            if (!split_done && canForceRepartition())
+            {
+                repartitionCurrentBucket(hash_join->getTotalRowCount(), {}, context);
+                split_done = true;
+                buckets_snapshot = getCurrentBuckets();
+            }
+            scatter_reserved = spill_budget->reserveUnchecked(estimateScatterBytes(block, buckets_snapshot.size(), owned));
+            row_store_reserved = spill_budget->reserveUnchecked(row_store);
+        }
+    }
+
+    {
+        Blocks blocks = owned ? JoinCommon::scatterBlockByHash(right_key_names, std::move(block), buckets_snapshot.size())
+                              : JoinCommon::scatterBlockByHash(right_key_names, block, buckets_snapshot.size());
         flushBlocksToBuckets<JoinTableSide::Right>(blocks, buckets_snapshot, bucket_index);
         current_block = std::move(blocks[bucket_index]);
     }
 
+    auto release_handed_over = [&]
+    {
+        if (!handed_over || handed_over->released)
+            return;
+        handed_over->released = true;
+        held_elsewhere->releaseTakenBlock(handed_over->bytes);
+        if (handed_over->reserved)
+            spill_budget->release(handed_over->reserved);
+    };
+
     if (current_block.rows() == 0)
+    {
+        if (handed_over)
+        {
+            std::lock_guard lock(hash_join_mutex);
+            release_handed_over();
+        }
         return;
+    }
 
     // Add block to the in-memory join
     {
@@ -981,44 +1101,54 @@ void GraceHashJoin::addBlockToJoinImpl(Block block, JoinBuildContext context)
         if (buckets_snapshot.size() != current_buckets.size())
         {
             LOG_TRACE(log, "mismatch buckets size. previous:{}, current:{}", buckets_snapshot.size(), getCurrentBuckets().size());
-            Blocks blocks = JoinCommon::scatterBlockByHash(right_key_names, current_block, current_buckets.size());
+            size_t rescatter_reserved = 0;
+            if (spill_budget)
+            {
+                const size_t bytes = estimateScatterBytes(current_block, current_buckets.size(), /*owned=*/true);
+                rescatter_reserved = spill_budget->tryReserve(bytes, held) ? bytes : spill_budget->reserveUnchecked(bytes);
+            }
+            SCOPE_EXIT({
+                if (rescatter_reserved)
+                    spill_budget->release(rescatter_reserved);
+            });
+            Blocks blocks = JoinCommon::scatterBlockByHash(right_key_names, std::move(current_block), current_buckets.size());
             flushBlocksToBuckets<JoinTableSide::Right>(blocks, current_buckets, bucket_index);
             current_block = std::move(blocks[bucket_index]);
-            if (!current_block.rows())
-                return;
         }
+
+        if (scatter_reserved)
+            spill_budget->release(std::exchange(scatter_reserved, 0));
+        /// Each byte of a handed-over block counts either in `held_elsewhere` or in this join.
+        release_handed_over();
+
+        if (!current_block.rows())
+            return;
+
         auto prev_keys_num = hash_join->getTotalRowCount();
-        size_t pre_total_bytes = hash_join->getTotalByteCount();
 
-        /// Pre-check: rehash when the in-memory bucket alone is already past half of the
-        /// owner-supplied auto-spill cap. The inner `HashJoin::addBlockToJoin` grows its
-        /// hash buffer in power-of-two steps. Doubling from X to 2X transiently holds 3X
-        /// (old buffer + new buffer being filled), so a post-add check can race with that
-        /// doubling and observe the OOM only as an allocator exception.
-        ///
-        /// We trigger the rehash on the existing table size and deliberately do NOT factor
-        /// in the incoming block: `block.allocatedBytes()` is a misleading lower bound on
-        /// the actual hash-table cost (cell overhead, load-factor padding, resize peaks),
-        /// so a tiny block could leave a near-full bucket bypassing the pre-check and OOM
-        /// during the resize. Mirrors `SpillingHashJoin::addBlockToJoin`.
-        const bool pre_threshold_overflow = external_join_threshold > 0 && pre_total_bytes * 2 >= external_join_threshold;
-
-        bool block_added = false;
-        if (!pre_threshold_overflow)
+        if (!spill_budget)
         {
+            /// Legacy mode: only the size limits spill, after the insert.
             hash_join->addBlockToJoin(current_block, current_block.rows(), context.callerChecksLimits());
-            block_added = true;
-            size_t hash_join_total_keys = hash_join->getTotalRowCount();
-            size_t hash_join_total_bytes = hash_join->getTotalByteCount();
-            if (!hasMemoryOverflow(hash_join_total_keys, hash_join_total_bytes))
-                return;
+            if (hasMemoryOverflow(hash_join->getTotalRowCount(), hash_join->getTotalByteCount()))
+                repartitionCurrentBucket(prev_keys_num, {}, context);
+            return;
         }
 
-        if (block_added)
-            current_block = {};
-        /// else: we did not add the block, so we must include it when re-scattering after rehash.
+        bool refused = false;
+        hash_join->addBlockToJoin(current_block, context.callerChecksLimits(), refused, /*checked=*/!split_done);
+        if (row_store_reserved)
+            spill_budget->release(std::exchange(row_store_reserved, 0));
 
-        repartitionCurrentBucket(prev_keys_num, std::move(current_block), context);
+        if (refused)
+        {
+            /// The share is not in the table: split before it goes in.
+            repartitionCurrentBucket(prev_keys_num, std::move(current_block), context);
+            return;
+        }
+
+        if (!split_done && hasMemoryOverflow(hash_join->getTotalRowCount(), hash_join->getTotalByteCount()))
+            repartitionCurrentBucket(prev_keys_num, {}, context);
 
         /// One split per block, so a bucket can end the build phase above the threshold - a single huge block,
         /// or one whose rows nearly all belong here. The threshold says when to start spilling, it is not a

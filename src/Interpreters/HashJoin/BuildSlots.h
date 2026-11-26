@@ -45,9 +45,30 @@ public:
         return res;
     }
 
+    /// The cells of the buckets of `map` in `slot`, zero for a `PartitionedFixedHashTable`, whose cells never change.
+    template <typename Map>
+    [[nodiscard]] size_t slotCells(const Map & map, size_t slot) const
+    {
+        size_t res = 0;
+        if constexpr (!is_partitioned_fixed_table<Map>)
+            for (size_t bucket = slot; bucket < Map::NUM_BUCKETS; bucket += slots.size())
+                res += map.impls[bucket].getBufferSizeInCells();
+        return res;
+    }
+
     /// Reserving every bucket up front would be serial work before the build. So each slot reserves its
     /// share of `reserve_keys_` keys at its first insert, under its own lock.
     void setReserve(size_t reserve_keys_) { reserve_keys = reserve_keys_; }
+
+    /// The keys that `reserveOnFirstInsert` reserves in each bucket of `slot`, zero once it has. Call under the lock of `slot`.
+    template <typename Map>
+    [[nodiscard]] size_t keysToReservePerBucket(size_t slot) const
+    {
+        if constexpr (is_partitioned_fixed_table<Map>)
+            return 0;
+        else
+            return reserved[slot] ? 0 : std::max<size_t>(reserve_keys / Map::NUM_BUCKETS, min_keys_per_bucket);
+    }
 
     /// Call under the lock of `slot`. On the first insert of `slot` into `map`, reserves the
     /// slot's share of `reserve_keys` over the slot's buckets, and at least `min_keys_per_bucket` keys in each.
@@ -71,8 +92,8 @@ public:
     }
 
     /// Calls `insert_slot(slot)` under the lock of every slot that `per_slot` gives rows to. Slots are taken in
-    /// whatever order they come free.
-    void insert(std::span<const ScatteredBlock::Selector> per_slot, absl::FunctionRef<void(size_t)> insert_slot)
+    /// whatever order they come free. Stops and returns false when `insert_slot` returns false.
+    bool insert(std::span<const ScatteredBlock::Selector> per_slot, absl::FunctionRef<bool(size_t)> insert_slot)
     {
         const size_t num_slots = slots.size();
         std::vector<char> pending(num_slots);
@@ -80,7 +101,7 @@ public:
             pending[slot] = per_slot[slot].size() != 0;
         size_t slots_left = std::ranges::count(pending, 1);
         if (!slots_left)
-            return;
+            return true;
 
         /// Where to look for a slot to wait for. It differs between the threads, so that they do not queue
         /// for the same slot while the other slots become free.
@@ -101,7 +122,8 @@ public:
                     continue;
 
                 made_progress = true;
-                insert_slot(slot);
+                if (!insert_slot(slot))
+                    return false;
                 pending[slot] = 0;
                 --slots_left;
                 wait_from = (slot + 1) % num_slots;
@@ -118,11 +140,13 @@ public:
                 slot = (slot + 1) % num_slots;
 
             std::lock_guard lock(slots[slot].mutex);
-            insert_slot(slot);
+            if (!insert_slot(slot))
+                return false;
             pending[slot] = 0;
             --slots_left;
             wait_from = (slot + 1) % num_slots;
         }
+        return true;
     }
 
 private:

@@ -181,6 +181,22 @@ size_t HashJoinTable::cellSize() const
         maps);
 }
 
+bool HashJoinTable::copiesKeysToArena() const
+{
+    switch (key_type)
+    {
+        case Type::key_string:
+        case Type::key_fixed_string:
+        case Type::two_level_key_string:
+        case Type::two_level_key_fixed_string:
+        case Type::low_cardinality_key_string:
+        case Type::low_cardinality_key_fixed_string:
+            return true;
+        default:
+            return false;
+    }
+}
+
 /// The keys are reinterpreted signed values, so the range is computed in wrapping unsigned arithmetic.
 template <bool is_signed, typename Key, typename Maps>
 NO_SANITIZE_UNSIGNED_OVERFLOW

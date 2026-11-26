@@ -2,6 +2,7 @@
 
 #include <Interpreters/GraceHashJoin.h>
 #include <Interpreters/HashJoin/HashJoin.h>
+#include <Interpreters/HashJoin/JoinSpillBudget.h>
 #include <Interpreters/MergeJoin.h>
 #include <Interpreters/QueryExecutionCounters.h>
 #include <Interpreters/TableJoin.h>
@@ -9,6 +10,7 @@
 #include <Common/FailPoint.h>
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
+#include <base/scope_guard.h>
 
 #include <algorithm>
 #include <atomic>
@@ -56,6 +58,8 @@ SpillingHashJoin::SpillingHashJoin(
     hash_join = HashJoin::create(table_join, right_sample_block_, build_layout_, any_take_last_row, stats_collecting_params_);
     /// Until the build phase ends this join may have to hand its right blocks to `GraceHashJoin`.
     hash_join->keepRightBlocksForAnotherAlgorithm();
+    spill_budget = std::make_unique<JoinSpillBudget>([threshold = max_bytes_before_external_join] { return threshold; });
+    hash_join->setSpillBudget(spill_budget.get());
     supports_parallel_non_joined_blocks_processing = hash_join->supportParallelNonJoinedBlocksProcessing();
 }
 
@@ -79,24 +83,46 @@ void SpillingHashJoin::tryConvertBuildStreams(JoinBuildContext context)
 {
     chassert(grace_join || merge_join);
 
-    const size_t num_build_streams = hash_join->getMaxBuildThreads();
-
-    if (next_build_stream_to_convert.load(std::memory_order_acquire) >= num_build_streams)
+    if (all_blocks_claimed.load(std::memory_order_acquire))
         return;
 
+    const size_t num_build_streams = hash_join->getMaxBuildThreads();
     while (true)
     {
-        size_t stream = next_build_stream_to_convert.fetch_add(1);
-        if (stream >= num_build_streams)
-            break;
-
-        auto blocks = hash_join->releaseBuildStreamBlocks(stream);
-        while (!blocks.empty())
+        HashJoin::StoredBlocksList taken;
         {
-            addBlockToExternalJoin(blocks.front(), blocks.front().rows(), context.callerChecksLimits());
-            blocks.pop_front();
+            std::lock_guard lock(convert_mutex);
+            for (; next_build_stream_to_convert < num_build_streams; ++next_build_stream_to_convert)
+            {
+                taken = hash_join->takeBuildStreamBlock(next_build_stream_to_convert);
+                if (!taken.empty())
+                    break;
+            }
+            if (taken.empty())
+            {
+                all_blocks_claimed.store(true, std::memory_order_release);
+                return;
+            }
         }
+
+        if (grace_join)
+        {
+            grace_join->addHandedOverBlock(*hash_join, std::move(taken), context.callerChecksLimits());
+            continue;
+        }
+
+        const auto bytes = hash_join->takenBlockBytes(taken);
+        SCOPE_EXIT({ hash_join->releaseTakenBlock(bytes); });
+        const Block block = hash_join->materializeTakenBlock(std::move(taken));
+        addBlockToExternalJoin(block, block.rows(), context.callerChecksLimits());
     }
+}
+
+bool SpillingHashJoin::addBlockAfterSwitch(const Block & block, size_t num_rows, JoinBuildContext context)
+{
+    throwIfSwitchFailed();
+    tryConvertBuildStreams(context);
+    return addBlockToExternalJoin(block, num_rows, context);
 }
 
 std::string SpillingHashJoin::getName() const
@@ -135,41 +161,23 @@ bool SpillingHashJoin::addBlockToJoin(const Block & block, size_t num_rows, Join
 {
     /// Fast path: already switched to the external join (no switch lock needed).
     if (state.load(std::memory_order_acquire) != State::COLLECTING)
+        return addBlockAfterSwitch(block, num_rows, context);
+
     {
-        throwIfSwitchFailed();
-        /// Help convert the HashJoin build streams into the external join.
-        tryConvertBuildStreams(context);
-        return addBlockToExternalJoin(block, num_rows, context);
+        /// Shared so build threads do not serialize, but still excludes them while it is drained.
+        std::shared_lock lock(switch_mutex);
+        if (state.load(std::memory_order_acquire) == State::COLLECTING)
+        {
+            /// The insert is admitted against the threshold before it allocates, and a refused block is not in the join.
+            bool refused = false;
+            const bool res = hash_join->addBlockToJoin(block, context, refused);
+            if (!refused)
+                return res;
+        }
     }
 
-    /// The hash table buffer grows in power-of-two steps. Doubling from X to 2X allocates the new
-    /// buffer while the old one is still alive, transiently using 3X memory. We must trigger the
-    /// switch BEFORE the inner `addBlockToJoin` runs (and possibly doubles the buffer); a check
-    /// that runs after the call would race with the doubling and observe the OOM only as an
-    /// allocator exception. Threshold is half of `max_bytes_before_external_join` so that after
-    /// the switch the live buffer (already at half) plus the conversion peak still fit under the
-    /// configured cap.
-    if (hash_join->getTotalByteCount() * 2 >= max_bytes_before_external_join)
-        switchToExternalJoin(context);
-
-    /// Re-check: we may have just switched.
-    if (state.load(std::memory_order_acquire) != State::COLLECTING)
-    {
-        throwIfSwitchFailed();
-        tryConvertBuildStreams(context);
-        return addBlockToExternalJoin(block, num_rows, context);
-    }
-
-    /// Shared so build threads do not serialize, but still excludes them while it is drained.
-    std::shared_lock lock(switch_mutex);
-
-    if (state.load(std::memory_order_acquire) != State::COLLECTING)
-    {
-        throwIfSwitchFailed();
-        return addBlockToExternalJoin(block, num_rows, context);
-    }
-
-    return hash_join->addBlockToJoin(block, num_rows, context);
+    switchToExternalJoin(context);
+    return addBlockAfterSwitch(block, num_rows, context);
 }
 
 ProcessorMemoryStats SpillingHashJoin::getMemoryStats() const
@@ -184,7 +192,7 @@ ProcessorMemoryStats SpillingHashJoin::getMemoryStats() const
         auto res = grace_join->getMemoryStats();
         if (getMaxBuildThreads() > 1)
         {
-            /// Unconverted build streams still own memory; their counters are cleared by `releaseBuildStreamBlocks`.
+            /// The blocks of the HashJoin count there until the grace join takes their share.
             const auto unconverted_bytes = hash_join->getTotalByteCount();
             res.spillable_memory_bytes += unconverted_bytes;
             res.need_reserved_memory_bytes += unconverted_bytes;
@@ -281,6 +289,8 @@ void SpillingHashJoin::switchToExternalJoin(JoinBuildContext context, bool spill
         ProfileEvents::increment(switch_event);
 
         chosen_join = make_external_join();
+        if (grace_join)
+            grace_join->setHeldElsewhere(hash_join);
 
         /// `spill` has no build-stream identity. Replay under the exclusive lock before publishing
         /// the new join, so its `serial` context cannot overlap another insert into that join.
@@ -307,6 +317,11 @@ void SpillingHashJoin::switchToExternalJoin(JoinBuildContext context, bool spill
             }
         }
 
+        /// Every insert into the in-memory join holds `switch_mutex` shared, so none runs any more. The maps go before
+        /// the new state is published, so that no insert into the external join counts them.
+        if (!spill_immediately)
+            hash_join->releaseJoinMaps();
+
         state.store(target_state, std::memory_order_release);
         QueryExecutionCounters::addUsedJoinAlgorithm(target_algorithm);
     }
@@ -314,9 +329,6 @@ void SpillingHashJoin::switchToExternalJoin(JoinBuildContext context, bool spill
     if (spill_immediately)
         return;
 
-    /// Every insert into the in-memory join holds `switch_mutex` shared, so none runs any more, and threads
-    /// queued on the lock need not wait for the free. Freeing before the conversion lowers its peak.
-    hash_join->releaseJoinMaps();
     tryConvertBuildStreams(context);
 }
 
@@ -337,11 +349,9 @@ void SpillingHashJoin::onBuildPhaseFinish()
 
     if (state.load(std::memory_order_acquire) == State::COLLECTING)
     {
-        /// Safety net for the terminal block: the proactive pre-insert check in `addBlockToJoin`
-        /// fires only on subsequent calls. If the very last block pushed total bytes past
-        /// `max_bytes_before_external_join` without a follow-up insert to trigger the switch,
-        /// promote it to `GraceHashJoin` here so the configured cap is honored.
-        const size_t total_bytes = hash_join->getTotalByteCount();
+        /// Every insert was admitted against the threshold, so this is a safety net. The bytes include what the
+        /// in-memory join allocates once the build is over.
+        const size_t total_bytes = hash_join->getRawByteCount();
         if (total_bytes >= max_bytes_before_external_join)
         {
             switchToExternalJoin(JoinBuildContext::serial());

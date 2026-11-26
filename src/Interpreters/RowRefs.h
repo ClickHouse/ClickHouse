@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <iterator>
 #include <limits>
 #include <memory>
@@ -564,6 +565,10 @@ public:
     /// Registers a stored block, returns its block_no. Throws when the 2^31 limit
     /// (RowRef::BLOCK_NO_MASK, the MSB is the inline flag) is exceeded.
     UInt32 add(const StoredBlock * block);
+
+    /// Like `add`, but when the index has to grow, first calls `reserve_growth` under the mutex with the most the growth
+    /// allocates, and adds nothing if it returns false. `capacity_growth` gets the bytes the capacity grew by.
+    std::optional<UInt32> add(const StoredBlock * block, const std::function<bool(size_t)> & reserve_growth, size_t & capacity_growth);
 
     /// Protection against dangling pointers: a popped/replaced block keeps its slot,
     /// but the slot is nulled so that a stale ref fails loudly instead of reading freed memory.

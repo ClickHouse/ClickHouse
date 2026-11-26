@@ -1848,7 +1848,10 @@ public:
     /// its replacement before releasing the old buffer's accounting, even when allocation grows in place.
     /// Capacity gained by preceding resizes remains charged throughout subsequent resizes.
     /// Saturates at the maximum of `size_t` when the projected capacity or memory is not representable.
-    [[nodiscard]] size_t estimateGrowthMemory(size_t additional_keys) const noexcept
+    /// `reserve_elements` adds a `reserve` of that many elements before the inserts. `final_cells`, if set, gets the
+    /// buffer size in cells after them.
+    [[nodiscard]] size_t estimateGrowthMemory(
+        size_t additional_keys, size_t reserve_elements = 0, size_t * final_cells = nullptr) const noexcept
     {
         auto projected_grower = grower;
         const size_t initial_bytes = getBufferSizeInBytes();
@@ -1858,6 +1861,35 @@ public:
             return max_size;
         size_t buffer_bytes = initial_bytes;
         size_t peak_extra_bytes = 0;
+
+        auto grow_to = [&](const Grower & next_grower)
+        {
+            size_t next_bytes = 0;
+            size_t extra_bytes = 0;
+            if (common::mulOverflow(next_grower.bufSize(), sizeof(Cell), next_bytes)
+                || common::addOverflow(buffer_bytes - initial_bytes, next_bytes, extra_bytes))
+                return false;
+            peak_extra_bytes = std::max(peak_extra_bytes, extra_bytes);
+            buffer_bytes = next_bytes;
+            return true;
+        };
+
+        if (reserve_elements > 1)
+        {
+            if (reserve_elements > max_size / 4)
+                return max_size;
+            auto reserved_grower = projected_grower;
+            reserved_grower.set(reserve_elements);
+            if (reserved_grower.bufSize() > projected_grower.bufSize())
+            {
+                if (!grow_to(reserved_grower))
+                    return max_size;
+                projected_grower = reserved_grower;
+            }
+            else if (reserved_grower.bufSize() == projected_grower.bufSize())
+                projected_grower = reserved_grower;
+        }
+
         while (projected_grower.overflow(projected_size))
         {
             /// The largest representable power-of-two capacity cannot grow further.
@@ -1868,14 +1900,11 @@ public:
             /// Switching to the Robin Hood mode does not allocate.
             if (projected_grower.bufSize() == prev_buf_size)
                 continue;
-            size_t next_bytes = 0;
-            size_t extra_bytes = 0;
-            if (common::mulOverflow(projected_grower.bufSize(), sizeof(Cell), next_bytes)
-                || common::addOverflow(buffer_bytes - initial_bytes, next_bytes, extra_bytes))
+            if (!grow_to(projected_grower))
                 return max_size;
-            peak_extra_bytes = std::max(peak_extra_bytes, extra_bytes);
-            buffer_bytes = next_bytes;
         }
+        if (final_cells)
+            *final_cells = projected_grower.bufSize();
         return peak_extra_bytes;
     }
 

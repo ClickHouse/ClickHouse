@@ -203,6 +203,8 @@ IColumn::Selector hashToSelector(const PaddedPODArray<UInt32> & hashes, Sharder 
 }
 
 Blocks scatterBlockByHash(const Strings & key_columns_names, const Block & block, size_t num_shards);
+/// Frees each column of `block` once it is scattered. One shard is `block` itself.
+Blocks scatterBlockByHash(const Strings & key_columns_names, Block && block, size_t num_shards);
 Blocks scatterBlockByHash(const Strings & key_columns_names, const Blocks & blocks, size_t num_shards);
 Blocks scatterBlockByHash(const Strings & key_columns_names, const BlocksList & blocks, size_t num_shards);
 

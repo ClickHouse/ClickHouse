@@ -22,7 +22,7 @@ extern const int LOGICAL_ERROR;
 
 template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate>
 BuildResult HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::insertFromBlockImpl(
-    HashJoin & join, HashJoinTable & table, const HashJoinTable::InsertRows & rows, size_t stream)
+    HashJoin & join, HashJoinTable & table, const HashJoinTable::InsertRows & rows, size_t stream, bool checked)
 {
     static_assert((STRICTNESS == JoinStrictness::Asof) == std::is_same_v<MapsTemplate, HashJoin::MapsAsof>);
     const HashJoinTable::InsertSettings settings{
@@ -32,7 +32,18 @@ BuildResult HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::insertFromBlockImpl
         .asof_type = join.getAsofType(),
         .asof_inequality = join.getAsofInequality()};
     const auto add_bytes = [&](size_t bytes) { join.data->addBytes(join.data->bucket_bytes, bytes); };
-    return table.insert<MapsTemplate>(settings, rows, stream, add_bytes);
+    if (!join.spill_budget)
+        return table.insert<MapsTemplate>(settings, rows, stream, add_bytes);
+
+    const auto held_bytes = [&] { return join.spillHeldBytes(); };
+    const auto add_untracked = [&](size_t bytes) { join.addUntrackedBytes(bytes, /*freed_with_maps=*/true); };
+    const HashJoinTable::InsertBudget budget{
+        .budget = *join.spill_budget,
+        .held_bytes = held_bytes,
+        .add_untracked = add_untracked,
+        .count_cells = join.spill_counts_cell_flags,
+        .checked = checked};
+    return table.insert<MapsTemplate>(settings, rows, stream, add_bytes, &budget);
 }
 
 template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate>

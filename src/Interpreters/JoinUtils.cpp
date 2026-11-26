@@ -813,20 +813,24 @@ void splitAdditionalColumns(const Names & key_names, const Block & sample_block,
     }
 }
 
-template <Fn<size_t(size_t)> Sharder>
-static Blocks scatterBlockByHashImpl(const Strings & key_columns_names, const Block & block, size_t num_shards, Sharder sharder)
+template <bool owned, Fn<size_t(size_t)> Sharder>
+static Blocks scatterBlockByHashImpl(
+    const Strings & key_columns_names, std::conditional_t<owned, Block &, const Block &> block, size_t num_shards, Sharder sharder)
 {
     size_t num_rows = block.rows();
     size_t num_cols = block.columns();
 
-    PaddedPODArray<UInt32> hash(num_rows, WEAK_HASH32_INITIAL_VALUE);
-    for (const auto & key_name : key_columns_names)
+    IColumn::Selector selector;
     {
-        /// `-0.` and `0.` are equal keys, so they have to land in the same bucket.
-        ColumnPtr key_col = replaceNegativeZeros(materializeColumn(block, key_name));
-        key_col->computeHashInto(0, num_rows, hash.data(), false);
+        PaddedPODArray<UInt32> hash(num_rows, WEAK_HASH32_INITIAL_VALUE);
+        for (const auto & key_name : key_columns_names)
+        {
+            /// `-0.` and `0.` are equal keys, so they have to land in the same bucket.
+            ColumnPtr key_col = replaceNegativeZeros(materializeColumn(block, key_name));
+            key_col->computeHashInto(0, num_rows, hash.data(), false);
+        }
+        selector = hashToSelector(hash, sharder);
     }
-    auto selector = hashToSelector(hash, sharder);
 
     Blocks result;
     result.reserve(num_shards);
@@ -837,7 +841,14 @@ static Blocks scatterBlockByHashImpl(const Strings & key_columns_names, const Bl
 
     for (size_t i = 0; i < num_cols; ++i)
     {
-        auto dispatched_columns = block.getByPosition(i).column->scatter(num_shards, selector);
+        ColumnPtr column;
+        /// A column of an owned block is freed once it is scattered.
+        if constexpr (owned)
+            column = std::move(block.getByPosition(i).column);
+        else
+            column = block.getByPosition(i).column;
+        auto dispatched_columns = column->scatter(num_shards, selector);
+        column.reset();
         chassert(result.size() == dispatched_columns.size());
         for (size_t block_index = 0; block_index < num_shards; ++block_index)
         {
@@ -847,26 +858,36 @@ static Blocks scatterBlockByHashImpl(const Strings & key_columns_names, const Bl
     return result;
 }
 
-static Blocks scatterBlockByHashPow2(const Strings & key_columns_names, const Block & block, size_t num_shards)
+template <bool owned>
+static Blocks scatterBlockByHashDispatch(
+    const Strings & key_columns_names, std::conditional_t<owned, Block &, const Block &> block, size_t num_shards)
 {
-    size_t mask = num_shards - 1;
-    return scatterBlockByHashImpl(key_columns_names, block, num_shards, [mask](size_t hash) { return hash & mask; });
-}
-
-static Blocks scatterBlockByHashGeneric(const Strings & key_columns_names, const Block & block, size_t num_shards)
-{
+    if (num_shards == 0)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Number of shards must be positive");
+    if (likely(isPowerOf2(num_shards)))
+    {
+        size_t mask = num_shards - 1;
+        return scatterBlockByHashImpl<owned>(key_columns_names, block, num_shards, [mask](size_t hash) { return hash & mask; });
+    }
     /// Use the "fastrange" method from Daniel Lemire:
-    return scatterBlockByHashImpl(key_columns_names, block, num_shards,
+    return scatterBlockByHashImpl<owned>(key_columns_names, block, num_shards,
         [num_shards](size_t hash) { return ((hash & 0xFFFFFFFF) * num_shards) >> 32; });
 }
 
 Blocks scatterBlockByHash(const Strings & key_columns_names, const Block & block, size_t num_shards)
 {
-    if (num_shards == 0)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Number of shards must be positive");
-    if (likely(isPowerOf2(num_shards)))
-        return scatterBlockByHashPow2(key_columns_names, block, num_shards);
-    return scatterBlockByHashGeneric(key_columns_names, block, num_shards);
+    return scatterBlockByHashDispatch<false>(key_columns_names, block, num_shards);
+}
+
+Blocks scatterBlockByHash(const Strings & key_columns_names, Block && block, size_t num_shards)
+{
+    if (num_shards == 1)
+    {
+        Blocks result;
+        result.emplace_back(std::move(block));
+        return result;
+    }
+    return scatterBlockByHashDispatch<true>(key_columns_names, block, num_shards);
 }
 
 template<typename T>

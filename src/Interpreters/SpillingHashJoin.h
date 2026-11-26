@@ -18,6 +18,7 @@ namespace DB
 
 class HashJoin;
 class GraceHashJoin;
+class JoinSpillBudget;
 struct HashJoinBuildLayout;
 class MergeJoin;
 
@@ -30,8 +31,9 @@ class MergeJoin;
 /// Blocks are fed into a HashJoin, possibly from multiple threads concurrently.
 /// A SharedMutex protects the COLLECTING -> GRACE_HASH_JOIN / MERGE_JOIN transition: addBlockToJoin takes a shared lock, while
 /// switchToExternalJoin takes an exclusive lock.
-/// If the data exceeds max_bytes_before_external_join, the external join is created and the HashJoin build streams are converted via
-/// addBlockToJoin calls possibly from multiple threads. Inserts into a MergeJoin target are serialized
+/// Every insert into the HashJoin is admitted against max_bytes_before_external_join before it allocates (see JoinSpillBudget).
+/// The insert the threshold refuses creates the external join, and the stored blocks of the HashJoin are handed over to it one
+/// at a time, possibly from multiple threads. Inserts into a MergeJoin target are serialized
 /// by merge_join_insert_mutex, so its build stays single-threaded; GraceHashJoin inserts stay concurrent.
 /// If all blocks fit in memory, the HashJoin is promoted to chosen_join with zero rework.
 ///
@@ -147,6 +149,10 @@ private:
     /// serialized by `merge_join_insert_mutex` (single-threaded build), GraceHashJoin inserts
     /// stay concurrent.
     bool addBlockToExternalJoin(const Block & block, size_t num_rows, JoinBuildContext context);
+    /// Every block after the switch goes here: the blocks of the HashJoin first, so that a new block finds at most the
+    /// blocks other threads are handing over.
+    bool addBlockAfterSwitch(const Block & block, size_t num_rows, JoinBuildContext context);
+    /// Hands the blocks of the HashJoin over, one at a time, until none is left to claim.
     void tryConvertBuildStreams(JoinBuildContext context);
     void throwIfSwitchFailed() const;
 
@@ -161,7 +167,11 @@ private:
     size_t max_bytes_before_external_join;
 
     SharedMutex switch_mutex;
-    std::atomic<size_t> next_build_stream_to_convert{0};
+    std::unique_ptr<JoinSpillBudget> spill_budget;
+    /// The build stream whose blocks are claimed next, under `convert_mutex`.
+    std::mutex convert_mutex;
+    size_t next_build_stream_to_convert = 0;
+    std::atomic<bool> all_blocks_claimed{false};
     /// Serializes the inserts into the pinned MergeJoin fallback: its build stays
     /// single-threaded even though multiple build threads hand their blocks over (see
     /// `addBlockToExternalJoin`).

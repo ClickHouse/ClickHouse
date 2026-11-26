@@ -319,6 +319,14 @@ void throwRowRefOutOfRange(size_t block_no, size_t row_no)
 
 UInt32 StoredColumnsIndex::add(const StoredBlock * block)
 {
+    size_t capacity_growth = 0;
+    return *add(block, [](size_t) { return true; }, capacity_growth);
+}
+
+std::optional<UInt32> StoredColumnsIndex::add(
+    const StoredBlock * block, const std::function<bool(size_t)> & reserve_growth, size_t & capacity_growth)
+{
+    capacity_growth = 0;
     std::lock_guard guard(mutex);
     if (blocks.size() > RowRef::BLOCK_NO_MASK)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Too many stored blocks in HashJoin: {}", blocks.size());
@@ -334,8 +342,12 @@ UInt32 StoredColumnsIndex::add(const StoredBlock * block)
     if (blocks.size() == blocks.capacity() || row_stores.size() == row_stores.capacity())
     {
         const size_t new_capacity = 2 * blocks.size() + 1;
+        const size_t old_capacity_bytes = blocks.capacity() * sizeof(blocks[0]) + row_stores.capacity() * sizeof(row_stores[0]);
+        if (!reserve_growth(new_capacity * (sizeof(blocks[0]) + sizeof(row_stores[0]))))
+            return {};
         blocks.reserve(new_capacity);
         row_stores.reserve(new_capacity);
+        capacity_growth = blocks.capacity() * sizeof(blocks[0]) + row_stores.capacity() * sizeof(row_stores[0]) - old_capacity_bytes;
     }
     blocks.push_back(block);
     row_stores.push_back(block->row_store.get());
