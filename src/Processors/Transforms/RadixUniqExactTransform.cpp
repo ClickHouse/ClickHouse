@@ -339,9 +339,8 @@ constexpr size_t DUPLICATES_BLOCK_BYTES = 16; /// SSE2, NEON
 constexpr size_t RECENT_KEYS_BITS = 6;
 
 #if defined(__AVX2__)
-/// Appends to `keys` the values (zero-extended to `Key`) of the rows from `row` on that differ from their previous rows,
-/// which must exist (`row > 0`), four vectors at a time, and advances `row` past them. Returns the new number of keys.
-/// A vector stores whole lanes: `keys` needs room for all the rows, as the keys never outnumber the rows before a vector.
+/// Appends to `keys` the values (zero-extended to `Key`) of the rows from `row` (> 0) that differ from their previous rows,
+/// four vectors at a time, and advances `row` past them. Stores whole vectors, so `keys` needs room for all the rows.
 template <typename T, typename Key>
 ALWAYS_INLINE size_t appendDistinctFromPrevious(const char * bytes, size_t & row, size_t end, Key * keys, size_t num_keys)
 {
@@ -362,7 +361,6 @@ ALWAYS_INLINE size_t appendDistinctFromPrevious(const char * bytes, size_t & row
         UInt32 any = 0;
         if constexpr (sizeof(T) < 4)
         {
-            /// The rows of the four vectors of keys fit into one or two vectors of values.
             using StepValues = T __attribute__((ext_vector_type(rows_per_step)));
             using StepRows = bool __attribute__((ext_vector_type(rows_per_step)));
             static_assert(sizeof(StepRows) == sizeof(any));
@@ -663,7 +661,6 @@ public:
 #if defined(__AVX2__)
                 if constexpr ((std::is_same_v<Key, UInt32> && sizeof(T) <= 4) || (std::is_same_v<Key, UInt64> && sizeof(T) == 8))
                 {
-                    /// The rows of a column are contiguous, so a row is compared with the previous one in memory.
                     size_t row = begin;
                     if (row == 0)
                     {
