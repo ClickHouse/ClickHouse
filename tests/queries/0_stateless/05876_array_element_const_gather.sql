@@ -40,3 +40,12 @@ SELECT (SELECT sum(cityHash64(n, toString(a))) FROM (SELECT n, a FROM t_array_ga
     = (SELECT sum(cityHash64(n, toString(a))) FROM t_array_gather_chunks);
 DROP TABLE t_array_gather_chunks;
 SELECT sum(cityHash64(toString(materialize([[1, 2], [], [3]])))) = 100000 * cityHash64(toString([[1, 2], [], [3]])) FROM numbers(100000);
+
+-- The total number of gathered elements overflows: empty tuples take no memory, so the arrays can be that large.
+SELECT length(arrayFlatten(replicate(b, arrayWithConstant(32768 + number, tuple()))))
+FROM
+(
+    SELECT number, arrayFlatten(replicate(a, arrayWithConstant(1048576 + number, tuple()))) AS b
+    FROM (SELECT number, arrayWithConstant(536870912 + number, tuple()) AS a FROM numbers(1))
+)
+SETTINGS max_threads = 1, max_memory_usage = 100000000; -- { serverError TOO_LARGE_ARRAY_SIZE }

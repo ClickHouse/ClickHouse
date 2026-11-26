@@ -9,3 +9,9 @@ SELECT count(), sum(length(a)) FROM (SELECT materialize([(arrayReduce('groupArra
 SELECT length(finalizeAggregation(a[1])), arraySum(finalizeAggregation(a[1]))
 FROM (SELECT number, materialize([arrayReduce('groupArrayState', range(toUInt64(1000)))]) AS a FROM numbers(100000))
 WHERE number IN (0, 70000, 99999);
+
+-- The first chunk has only empty inner arrays, so the states of the following chunks are appended to an empty column.
+WITH arrayReduce('groupArrayState', range(toUInt64(1000))) AS st
+SELECT sum(arraySum(arrayMap(x -> length(x[1]), z)))
+FROM (SELECT replicate([replicate(st, range(number))], range(if(number = 0, 65536, 131072))) AS z FROM numbers(2))
+SETTINGS max_block_size = 200000;

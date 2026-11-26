@@ -331,8 +331,11 @@ void ColumnAggregateFunction::doInsertRangeFrom(const IColumn & from, size_t sta
     }
     else
     {
-        /// Keep shared ownership of aggregation states. Keep `src` for a view of it, so later views still match.
-        if (!same_source)
+        /// Keep shared ownership of aggregation states. Hold the source of a view rather than the view itself,
+        /// so that later views of the same source still match.
+        if (from_concrete.src && !same_source)
+            src = from_concrete.src;
+        else if (!same_source)
             src = from_concrete.getPtr();
 
         size_t old_size = data.size();

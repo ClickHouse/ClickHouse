@@ -15,6 +15,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 #include <Common/HashTable/Hash.h>
+#include <base/arithmeticOverflow.h>
 #include <IO/Operators.h>
 #include <IO/ReadHelpers.h>
 #include <algorithm>
@@ -1490,7 +1491,8 @@ ColumnPtr ColumnArray::indexImpl(const PaddedPODArray<T> & indexes, size_t limit
     Offset total_size = 0;
     for (size_t i = 0; i < limit; ++i)
     {
-        total_size += sizeAt(indexes[i]);
+        if (common::addOverflow(total_size, static_cast<Offset>(sizeAt(indexes[i])), total_size))
+            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large total size of arrays: the number of elements overflows");
         res_offsets[i] = total_size;
     }
     const size_t current_offset = total_size;
