@@ -18,12 +18,22 @@ ENGINE = DataLakeCatalog('http://localhost:1/iceberg')
 SETTINGS catalog_type = 'biglake', warehouse = 'gs://bucket', disk = 'default',
     google_adc_client_id = 'id', google_adc_client_secret = 'secret', google_adc_refresh_token = 'token'
 SQL
+# A repeated setting takes its last value.
+cat > "$workdir/metadata/repeated.sql" <<'SQL'
+ATTACH DATABASE repeated
+ENGINE = DataLakeCatalog('http://localhost:1/iceberg')
+SETTINGS catalog_type = 'rest', catalog_type = 'biglake', warehouse = 'gs://bucket', disk = 'default',
+    google_adc_client_id = '', google_adc_client_id = 'id', disk = 'default'
+SQL
 
 $CLICKHOUSE_LOCAL --path "$workdir" --send_logs_level=error -m -q "
     SET allow_database_iceberg = 1;
     BACKUP DATABASE biglake TO File('$workdir/backups/biglake') FORMAT Null;
     RESTORE DATABASE biglake AS restored FROM File('$workdir/backups/biglake') FORMAT Null;
-    SELECT name, position(engine_full, 'disk') > 0 FROM system.databases WHERE name IN ('biglake', 'restored') ORDER BY name;" \
+    BACKUP DATABASE repeated TO File('$workdir/backups/repeated') FORMAT Null;
+    RESTORE DATABASE repeated AS restored_repeated FROM File('$workdir/backups/repeated') FORMAT Null;
+    SELECT name, position(engine_full, 'disk') > 0 FROM system.databases
+        WHERE name IN ('biglake', 'restored', 'repeated', 'restored_repeated') ORDER BY name;" \
     -- --backups.allowed_path="$workdir/backups"
 
 rm -rf "$workdir"

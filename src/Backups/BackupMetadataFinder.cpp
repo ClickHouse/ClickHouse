@@ -22,6 +22,7 @@
 #include <boost/range/adaptor/map.hpp>
 
 #include <filesystem>
+#include <ranges>
 #include <IO/ReadHelpers.h>
 
 namespace fs = std::filesystem;
@@ -51,7 +52,13 @@ void removeDiskOfBigLakeCatalogWithGoogleCredentials(ASTCreateQuery & create, co
         return;
 
     auto & changes = create.storage->settings->as<ASTSetQuery &>().changes;
-    const Field * catalog_type = changes.tryGet("catalog_type");
+    /// A repeated setting takes its last value, as when the database is loaded.
+    auto last_value = [&](std::string_view name) -> const Field *
+    {
+        const auto it = std::ranges::find(changes | std::views::reverse, name, &SettingChange::name);
+        return it == (changes | std::views::reverse).end() ? nullptr : &it->value;
+    };
+    const Field * catalog_type = last_value("catalog_type");
     if (!catalog_type || SettingFieldDatabaseDataLakeCatalogType(*catalog_type).value != DatabaseDataLakeCatalogType::ICEBERG_BIGLAKE)
         return;
 
@@ -59,11 +66,11 @@ void removeDiskOfBigLakeCatalogWithGoogleCredentials(ASTCreateQuery & create, co
         std::array{"google_service_account_key", "google_adc_client_id", "google_adc_client_secret", "google_adc_refresh_token"},
         [&](const char * name)
         {
-            const Field * value = changes.tryGet(name);
+            const Field * value = last_value(name);
             return value && value->getType() == Field::Types::String && !value->safeGet<String>().empty();
         });
 
-    if (has_google_credentials && changes.removeSetting("disk"))
+    if (has_google_credentials && std::erase_if(changes, [](const SettingChange & change) { return change.name == "disk"; }))
         LOG_WARNING(log, "The `disk` setting of the BigLake catalog {} in the backup is combined with Google credentials. "
             "It is restored without `disk`, so its data files are read with the credentials of the catalog",
             backQuoteIfNeed(database_name));
