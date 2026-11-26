@@ -10,13 +10,17 @@
 DROP TABLE IF EXISTS t_plain;
 DROP TABLE IF EXISTS t_encrypted;
 
+-- Merges are pinned horizontal. In CI, a vertical merge of a packed part sometimes opens more files of the archive on the
+-- encrypted disk for the first time, and each of them reads the header, which is more than the allowed difference covers.
 CREATE TABLE t_plain (k UInt64, s1 String, s2 String, s3 String, n1 UInt64, n2 UInt64, n3 UInt64, n4 UInt64) ENGINE = MergeTree ORDER BY k
 SETTINGS storage_policy = 's3_no_cache', min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_bytes_for_full_part_storage = 1000000000000,
-    prewarm_mark_cache = 0, prewarm_primary_key_cache = 0, use_primary_key_cache = 0, index_granularity = 1024;
+    prewarm_mark_cache = 0, prewarm_primary_key_cache = 0, use_primary_key_cache = 0, index_granularity = 1024,
+    enable_vertical_merge_algorithm = 0;
 
 CREATE TABLE t_encrypted (k UInt64, s1 String, s2 String, s3 String, n1 UInt64, n2 UInt64, n3 UInt64, n4 UInt64) ENGINE = MergeTree ORDER BY k
 SETTINGS storage_policy = 's3_no_cache_encrypted', min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_bytes_for_full_part_storage = 1000000000000,
-    prewarm_mark_cache = 0, prewarm_primary_key_cache = 0, use_primary_key_cache = 0, index_granularity = 1024;
+    prewarm_mark_cache = 0, prewarm_primary_key_cache = 0, use_primary_key_cache = 0, index_granularity = 1024,
+    enable_vertical_merge_algorithm = 0;
 
 -- One part per table, so that no background merge runs before `OPTIMIZE` and each table has exactly one merge.
 INSERT INTO t_plain SELECT number, toString(number), toString(number * 3), toString(number * 7), number, number * 3, number * 7, number * 11 FROM numbers(200000)
