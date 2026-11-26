@@ -16,10 +16,13 @@ namespace DB
 
 /// The warehouses stored in Keeper. Every lookup reads the warehouse root node, so a warehouse
 /// created, changed or dropped on any server is visible on the next request.
-class IcebergRESTCatalogWarehouseRegistry
+/// One registry serves the catalog server and the `ICEBERG WAREHOUSE` statements. Get it with `Context::getIcebergRESTCatalogWarehouseRegistry`.
+class IcebergRESTCatalogWarehouseRegistry : private WithContext
 {
 public:
-    explicit IcebergRESTCatalogWarehouseRegistry(ContextPtr context_);
+    IcebergRESTCatalogWarehouseRegistry(ContextPtr global_context_, IcebergRESTCatalogKeeperConfig keeper_config_);
+
+    const IcebergRESTCatalogKeeperConfig & getKeeperConfig() const { return keeper_config; }
 
     /// Returns nullptr if the warehouse does not exist.
     IcebergRESTCatalogWarehousePtr tryGet(const String & name) const;
@@ -61,7 +64,6 @@ private:
     /// Builds the S3 client of the definition and reads the base location with it. An S3 error is reported as `BAD_ARGUMENTS`.
     void checkStorageAccess(const String & name, const IcebergRESTCatalogWarehouseDefinition & definition) const;
 
-    const ContextPtr context;
     const IcebergRESTCatalogKeeperConfig keeper_config;
     const LoggerPtr log;
 

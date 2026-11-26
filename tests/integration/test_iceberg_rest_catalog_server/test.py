@@ -1590,8 +1590,11 @@ def test_warehouse_management_grants(started_cluster):
     auth = (user, "")
     credential_url = f"{WAREHOUSES_URL}/{warehouse}/credential"
 
-    # A user created by SQL starts with no grants.
+    create_query = f"CREATE ICEBERG WAREHOUSE {warehouse} SETTINGS base_location = '{base_location}', role_arn = '{CREDENTIAL['role_arn']}'"
+
+    # A user created by SQL starts with no grants. SQL and REST refuse the same operations.
     node.query(f"CREATE USER {user}")
+    assert "ACCESS_DENIED" in node.query_and_get_error(create_query, user=user)
     response = create_warehouse(warehouse, base_location, auth=auth, expected_code=403)
     assert_error_shape(response, "ForbiddenException")
     response = catalog_request("GET", WAREHOUSES_URL, auth=auth, expected_code=403)
@@ -1607,15 +1610,51 @@ def test_warehouse_management_grants(started_cluster):
     # `ALTER` and `DROP` are separate grants.
     response = catalog_request("PUT", credential_url, json={"credential": CREDENTIAL}, auth=auth, expected_code=403)
     assert_error_shape(response, "ForbiddenException")
+    assert "ACCESS_DENIED" in node.query_and_get_error(f"DROP ICEBERG WAREHOUSE {warehouse}", user=user)
     response = delete_warehouse(warehouse, auth=auth, expected_code=403)
     assert_error_shape(response, "ForbiddenException")
 
     # The group grants all four.
     node.query(f"GRANT ICEBERG WAREHOUSE ADMIN ON *.* TO {user}")
     catalog_request("PUT", credential_url, json={"credential": CREDENTIAL}, auth=auth, expected_code=204)
-    delete_warehouse(warehouse, auth=auth)
+    node.query(f"DROP ICEBERG WAREHOUSE {warehouse}", user=user)
 
     node.query(f"DROP USER {user}")
+
+
+def test_warehouse_sql(started_cluster):
+    warehouse = f"sql_{uuid.uuid4().hex[:8]}"
+    base_location = f"s3://{BUCKET}/{warehouse}"
+    settings = (
+        f"base_location = '{base_location}', role_arn = '{CREDENTIAL['role_arn']}', "
+        f"external_id = '{EXTERNAL_ID}', role_session_name = '{ROLE_SESSION_NAME}'"
+    )
+
+    # A warehouse created by SQL is visible through REST, with the same definition in Keeper.
+    node.query(f"CREATE ICEBERG WAREHOUSE {warehouse} SETTINGS {settings}")
+    expected = {"name": warehouse, "base_location": base_location, "credential": HIDDEN_CREDENTIAL}
+    assert catalog_request("GET", f"{WAREHOUSES_URL}/{warehouse}").json() == expected
+    stored = stored_warehouse_definition(warehouse)
+    assert stored == warehouse_definition(base_location, stored["uuid"])
+
+    assert "already exists" in node.query_and_get_error(f"CREATE ICEBERG WAREHOUSE {warehouse} SETTINGS {settings}")
+    node.query(f"CREATE ICEBERG WAREHOUSE IF NOT EXISTS {warehouse} SETTINGS {settings}")
+    assert "Unknown setting" in node.query_and_get_error(f"CREATE ICEBERG WAREHOUSE {warehouse}_2 SETTINGS {settings}, foo = 'bar'")
+
+    # A warehouse with namespaces is not dropped.
+    catalog_request("POST", f"/v1/{warehouse}/namespaces", json={"namespace": ["ns"]})
+    assert "is not empty" in node.query_and_get_error(f"DROP ICEBERG WAREHOUSE {warehouse}")
+    remove_namespace_in_keeper(warehouse, "ns")
+
+    node.query(f"DROP ICEBERG WAREHOUSE {warehouse}")
+    catalog_request("GET", f"{WAREHOUSES_URL}/{warehouse}", expected_code=404)
+    assert "does not exist" in node.query_and_get_error(f"DROP ICEBERG WAREHOUSE {warehouse}")
+    node.query(f"DROP ICEBERG WAREHOUSE IF EXISTS {warehouse}")
+
+    # A warehouse created through REST is dropped by SQL.
+    create_warehouse(warehouse, base_location)
+    node.query(f"DROP ICEBERG WAREHOUSE {warehouse}")
+    catalog_request("GET", f"{WAREHOUSES_URL}/{warehouse}", expected_code=404)
 
 
 def test_bucket_root_base_location(started_cluster):

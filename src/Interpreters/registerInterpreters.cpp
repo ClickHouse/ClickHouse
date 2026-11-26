@@ -14,6 +14,7 @@ void registerInterpreterShowColumnsQuery(InterpreterFactory & factory);
 void registerInterpreterShowIndexesQuery(InterpreterFactory & factory);
 void registerInterpreterShowSettingQuery(InterpreterFactory & factory);
 void registerInterpreterShowEnginesQuery(InterpreterFactory & factory);
+void registerInterpreterIcebergWarehouseQueries(InterpreterFactory & factory);
 void registerInterpreterShowFunctionsQuery(InterpreterFactory & factory);
 void registerInterpreterUseQuery(InterpreterFactory & factory);
 void registerInterpreterSetQuery(InterpreterFactory & factory);
@@ -82,6 +83,7 @@ void registerInterpreters()
     registerInterpreterShowIndexesQuery(factory);
     registerInterpreterShowSettingQuery(factory);
     registerInterpreterShowEnginesQuery(factory);
+    registerInterpreterIcebergWarehouseQueries(factory);
     registerInterpreterShowFunctionsQuery(factory);
     registerInterpreterUseQuery(factory);
     registerInterpreterSetQuery(factory);

@@ -258,7 +258,7 @@ enum class AccessType : uint16_t
     M(CREATE_RESOURCE, "", GLOBAL, ALL) /* allows to execute CREATE RESOURCE */ \
     M(CREATE_NAMED_COLLECTION, "", NAMED_COLLECTION, NAMED_COLLECTION_ADMIN) /* allows to execute CREATE NAMED COLLECTION */ \
     M(CREATE_HANDLER, "", GLOBAL, HANDLER_ADMIN) /* allows to execute CREATE HANDLER */ \
-    M(CREATE_ICEBERG_WAREHOUSE, "", GLOBAL, ICEBERG_WAREHOUSE_ADMIN) /* allows to create a warehouse of the Iceberg REST catalog */ \
+    M(CREATE_ICEBERG_WAREHOUSE, "", GLOBAL, ICEBERG_WAREHOUSE_ADMIN) /* allows to execute CREATE ICEBERG WAREHOUSE */ \
     M(CREATE, "", GROUP, ALL) /* allows to execute {CREATE|ATTACH} */ \
     \
     M(DROP_DATABASE, "", DATABASE, DROP) /* allows to execute {DROP|DETACH|TRUNCATE} DATABASE */\
@@ -271,7 +271,7 @@ enum class AccessType : uint16_t
     M(DROP_RESOURCE, "", GLOBAL, ALL) /* allows to execute DROP RESOURCE */\
     M(DROP_NAMED_COLLECTION, "", NAMED_COLLECTION, NAMED_COLLECTION_ADMIN) /* allows to execute DROP NAMED COLLECTION */\
     M(DROP_HANDLER, "", GLOBAL, HANDLER_ADMIN) /* allows to execute DROP HANDLER */\
-    M(DROP_ICEBERG_WAREHOUSE, "", GLOBAL, ICEBERG_WAREHOUSE_ADMIN) /* allows to drop a warehouse of the Iceberg REST catalog */\
+    M(DROP_ICEBERG_WAREHOUSE, "", GLOBAL, ICEBERG_WAREHOUSE_ADMIN) /* allows to execute DROP ICEBERG WAREHOUSE */\
     M(DROP, "", GROUP, ALL) /* allows to execute {DROP|DETACH} */\
     \
     M(UNDROP_TABLE, "", TABLE, ALL) /* allows to execute {UNDROP} TABLE */\
