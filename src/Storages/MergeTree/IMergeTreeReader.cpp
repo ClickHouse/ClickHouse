@@ -146,7 +146,12 @@ IMergeTreeReader::IMergeTreeReader(
     const bool may_write_to_columns_cache = columns_cache && settings.enable_columns_cache_writes
         && canUseColumnsCacheForPart(data_part_info_for_read->getTableUUID());
 
-    if (settings.string_value_filters && !settings.string_value_filters->empty() && !has_mutations_on_fly && !may_write_to_columns_cache)
+    /// Patches are applied to the rows matched by the sorting key values read from the part and from its patch parts,
+    /// so these values must not be substituted. Read the values in full then.
+    const bool applies_patches = (alter_conversions && alter_conversions->hasPatches()) || data_part_info_for_read->getPartInfo().isPatch();
+
+    if (settings.string_value_filters && !settings.string_value_filters->empty() && !has_mutations_on_fly && !may_write_to_columns_cache
+        && !applies_patches)
     {
         /// Count how many requested columns read from each storage column
         /// (e.g. a column requested together with its subcolumn).

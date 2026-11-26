@@ -1,0 +1,89 @@
+---
+slug: /clickstack/observability/features/search
+title: 'ClickHouse オブザーバビリティでの検索'
+sidebarTitle: '検索'
+description: 'ClickHouse オブザーバビリティでの検索'
+doc_type: 'guide'
+keywords: ['clickstack', 'search', 'logs', 'observability', 'full-text search']
+---
+
+import Tagging from '/snippets/ja/_observability_tagging.mdx';
+
+ClickHouse オブザーバビリティでは、イベント (ログおよびトレース) を全文検索できます。イベントに一致するキーワードを入力するだけで、すぐに検索を始められます。たとえば、ログに &quot;Error&quot; が含まれている場合は、検索バーに &quot;Error&quot; と入力するだけで該当するログを見つけられます。
+
+ダッシュボードやチャートでイベントをフィルタする際にも、同じ検索構文を使用します。
+
+## 検索機能 {#search-features}
+
+### Lucene 検索構文 {#natural-language-syntax}
+
+* 検索では大文字と小文字は区別されません
+* 検索はデフォルトで単語全体に一致します (例: `Error` は `Error here` に一致しますが、`Errors here` には一致しません) 。単語をワイルドカードで囲むと、部分一致で検索できます (例: `*Error*` は `AnyError` と `AnyErrors` の両方に一致します)
+* 検索語は順序を問わず検索されます (例: `Hello World` は、`Hello World` を含むログと `World Hello` を含むログの両方に一致します)
+* `NOT` または `-` を使うと、キーワードを除外できます (例: `Error NOT Exception` または `Error -Exception`)
+* `AND` や `OR` を使うと、複数のキーワードを組み合わせられます (例: `Error OR Exception`)
+* 完全一致で検索するには、ダブルクォートで囲みます (例: `"Error tests not found"`)
+
+<div className="ch-image-md">
+  <Frame>
+    ![クエリ failed to watch のログ結果を表示している完全マネージド型の検索画面](/images/clickstack/observability-search.png)
+  </Frame>
+</div>
+
+#### カラム/プロパティ検索 {#column-search}
+
+* `column:value` の形式で、カラムや JSON/Map のプロパティを検索できます (例: `SeverityText:error`、
+  `ServiceName:app`)
+* 比較演算子 (`>`、`<`、
+  `>=`、`<=`) を使用すると、値の範囲を指定して検索できます (例: `Duration:>1000`)
+* `property:*` を使用すると、プロパティが存在するかどうかで検索できます (例:
+  `Duration:*`)
+
+### 時刻入力 {#time-input}
+
+* 時刻入力には自然言語 (例: `1 hour ago`、`yesterday`、
+  `last week`) を使用できます。
+* 特定の時点を1つだけ指定すると、その時点から現在までが
+  検索対象になります。
+* 時刻クエリをデバッグしやすくするため、検索時には時間範囲が常にパース済みの時間範囲に
+  変換されます。
+* ヒストグラムの棒を選択して、特定の時間範囲にズームインすることもできます。
+
+### SQL 検索構文 {#sql-syntax}
+
+必要に応じて、検索入力を SQL モードに切り替えることもできます。SQL モードでは、有効な
+`WHERE` 句であれば何でも検索に使用できます。Lucene 構文では表現できない
+複雑なクエリを記述する場合に便利です。
+
+### SELECT文 {#select-statement}
+
+検索結果に表示するカラムを指定するには、`SELECT` 入力欄を使用します。これは、検索ページで取得するカラムを指定する SQL の `SELECT` 式です。
+現時点ではエイリアスはサポートされていません (例: `column as "alias"` は使用できません) 。
+
+## 保存済み検索 {#saved-searches}
+
+検索を保存しておくと、後からすばやくアクセスできます。保存した検索は `Saved Searches` ページに表示されるため、よく使う検索クエリを一から組み立て直さなくても簡単に呼び出せます。
+
+<div className="ch-image-lg">
+  <Frame>
+    ![完全マネージド型の ClickHouse オブザーバビリティの 保存済み検索 ページ（My Saved Search を表示）](/images/clickstack/observability-saved-search-listing.png)
+  </Frame>
+</div>
+
+検索を保存するには、クエリを設定して **Save** を選択し、内容がわかりやすい名前を付けます。既存の保存済み検索を編集する場合は、以下の例のようにダイアログに **Update** と表示されます。
+
+<div className="ch-image-md">
+  <Frame>
+    ![既存の保存済み検索のクエリ、名前、タグ、Update ボタンが表示された Save Search ダイアログ](/images/clickstack/observability-save-search.png)
+  </Frame>
+</div>
+
+### 保存済み検索へのアラートの追加 {#alerts-on-saved-searches}
+
+保存済み検索はアラートで監視でき、特定の条件が満たされたときに通知を受け取れます。保存済み検索に一致するイベント数が、指定したしきい値を上回ったとき、または下回ったときにトリガーされるようにアラートを設定できます。
+
+アラートの設定方法の詳細については、[アラートのドキュメント](/ja/clickstack/observability/features/alerts)を参照してください。
+
+### タグ付け {#tagging}
+
+<Tagging />

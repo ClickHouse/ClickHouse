@@ -1,0 +1,315 @@
+---
+slug: /clickstack/observability/integration-partners/odigos
+title: 'Odigos を使用して OpenTelemetry データを ClickHouse オブザーバビリティに送信する'
+sidebarTitle: 'Odigos'
+description: 'Odigos で Kubernetes ワークロードを自動計装し、OTLP 経由でテレメトリーを ClickHouse オブザーバビリティにエクスポートする方法'
+doc_type: 'guide'
+keywords: ['Odigos', 'ClickStack', 'ClickHouse', 'OpenTelemetry', 'eBPF', 'auto-instrumentation']
+---
+
+import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
+
+import { PartnerBadge } from "/snippets/ja/components/PartnerBadge/PartnerBadge.jsx";
+
+<PartnerBadge />
+
+<Info>
+  **TL;DR**
+
+  このガイドでは、Odigos のテレメトリーを ClickHouse オブザーバビリティにエクスポートする方法を説明します。このガイドで学ぶ内容は次のとおりです:
+
+  * Helm を使用して Kubernetes 上に Odigos をデプロイする
+  * Odigos の UI でソースを追加する
+  * ClickHouse オブザーバビリティを送信先とする OTLP HTTP の宛先を追加する
+  * ClickHouse オブザーバビリティでログ、メトリクス、トレースを確認する
+
+  Odigos は、コードの変更や再起動を必要とせずにアプリケーションを自動でインストルメントします。ClickHouse オブザーバビリティは、そのデータを ClickHouse に保存してクエリします。
+
+  所要時間: 10–20 分
+</Info>
+
+{/* vale off */}
+
+## Odigos とは？ {#what-is-odigos}
+
+{/* vale on */}
+
+[Odigos](https://odigos.io/) は、Kubernetes および VM 向けのインストルメンテーションのコントロールプレーンであり、**eBPF** を使用してカーネルレベルでアプリケーションをインストルメントします。収集処理はカーネル内で実行されるため、アプリケーションのオーバーヘッドを低く抑えながら、高い可視性を確保できます。アプリケーションコードに新たなエージェントを組み込んだり、すべてのサービスでライブラリのアップグレードを待ったりすることなく、本番環境での使用に適した OpenTelemetry のトレース、メトリクス、ログ、プロファイルを取得できます。
+
+この eBPF レイヤーこそが、大規模環境でも詳細かつ一貫したテレメトリーを実現する鍵です。Odigos は、問題のデバッグやトラブルシューティングを支援するため、必要に応じてより詳細なインストルメンテーションを自動的に有効化・無効化できます。
+
+* **コードレベルのコンテキスト** — 関数やランタイムの動作に紐づく属性
+* **HTTP トラフィック** — サービス間のリクエストとレスポンス
+* **メッセージングシステム** — Kafka などのブローカーからのペイロードとメッセージ
+* **詳細なエラー情報** — 障害発生時のスタックトレース
+* **カスタムインストルメンテーション** — コードの変更や再起動なしで、自動計装ではカバーしきれない範囲まで対象を拡張
+
+内部では、Odigos がクラスター向けに完全な OpenTelemetry パイプラインを構築・管理します。これには、負荷に応じてスケールするコレクター、任意のバックエンドへのルーティング、UI から制御できるパイプラインロジックが含まれます。**サンプリング**でデータ量を管理し、**PII マスキング**で機密データがエクスポートに含まれないようにし、**OTTL ルール**でテレメトリーがクラスター外に送出される前にフィルタ、変換、データの拡充を行えます。
+
+{/* vale off */}
+
+## Odigos + ClickHouse オブザーバビリティを選ぶ理由 {#why-odigos-clickstack}
+
+{/* vale on */}
+
+多数のサービスに OpenTelemetry を展開するには多くの時間がかかりがちで、しかもアプリケーションについては表面的な可視性しか得られません。Odigos は、より詳細なテレメトリーを取得するための eBPF インストルメンテーションと、Kubernetes 上での collector の運用を担います。一方、ClickHouse オブザーバビリティは、ClickHouse を基盤とするストレージと、大規模なテレメトリーに対してクエリを実行できる ClickStack UI を提供します。
+
+<Tip>
+  **重要なポイント**
+
+  * **Odigos** は、再起動することなくあらゆる Kubernetes ワークロードを自動でインストルメントし、OpenTelemetry パイプラインも自動で管理します。
+  * **ClickHouse オブザーバビリティ** は、ログ、メトリクス、トレースを ClickHouse に保存し、ClickStack UI で可視化します。
+</Tip>
+
+## 前提条件 {#prerequisites}
+
+* Kubernetes クラスターから接続可能な ClickHouse オブザーバビリティサービス。[はじめに](/ja/clickstack/observability/getting-started)を参照してください。セルフマネージドのデプロイメントについては、[セルフマネージドのセットアップ](/ja/clickstack/self-configured/deployment/managed)を参照してください。
+* **チーム設定 → Data → マネージドテレメトリー** で確認できる **OTLP HTTPエンドポイント** とインジェスト API key。セルフマネージドのデプロイメントでは、スタンドアロン collector のエンドポイントと `OTLP_AUTH_TOKEN` を使用してください。
+* **Kubernetes クラスター** (eBPF インストルメンテーションを使用する場合は、カーネル 4.18 以降の Linux ノード)
+* `odigos-system` 名前空間へのインストールに必要な **Helm**、**kubectl**、およびクラスターの認証情報
+* **Odigos Enterprise オンプレミストークン** — 入手するには [Odigos チーム](https://odigos.io/)にお問い合わせください
+
+{/* vale off */}
+
+## ClickHouse オブザーバビリティと Odigos の統合 {#integrate-odigos-clickstack}
+
+{/* vale on */}
+
+<Steps>
+  <Step title="Helm を使用した Odigos のデプロイ" id="deploy-odigos">
+    Odigos Enterprise にはオンプレミス用のライセンストークンが必要です。シェルで環境変数としてエクスポートしてください。
+
+    ```bash
+    export ODIGOS_ONPREM_TOKEN="<your-enterprise-token>"
+    ```
+
+    または、インストール前にトークンを `odigos-pro` という名前の Kubernetes Secret に保存しておくこともできます。詳しくは [Odigos Enterprise のドキュメント](https://enterprise.docs.odigos.io/) (アクセス権が必要) を参照してください。
+
+    Odigos の Helm リポジトリを追加し、`odigos-system` にチャートをインストールします。
+
+    ```bash
+    helm repo add odigos https://odigos-io.github.io/odigos/
+    helm repo update
+
+    helm upgrade --install odigos odigos/odigos \
+      --namespace odigos-system \
+      --create-namespace \
+      --set onPremToken=$ODIGOS_ONPREM_TOKEN
+    ```
+
+    `--set` フラグまたはカスタムの values ファイル (`-f`) を使用して、追加の設定オーバーライドを指定できます。チャートのデフォルト値を確認するには、`helm show values odigos/odigos` を実行します。
+
+    Odigos のポッドが実行中であることを確認します。
+
+    ```bash
+    kubectl get pods -n odigos-system
+    ```
+  </Step>
+
+  <Step title="OdigosのUIでソースを追加する" id="add-sources">
+    1. Odigos UI のサービスをポートフォワードします：
+
+    ```bash
+    kubectl port-forward svc/ui -n odigos-system 3000:3000
+    ```
+
+    2. ブラウザで [http://localhost:3000](http://localhost:3000) を開きます。
+    3. **Sources** に移動し、インストルメントする名前空間またはワークロードを選択します。
+    4. インストルメンテーション対象のワークロードをすべて選択したら、画面下部の **Done** をクリックします。
+    5. ソースカラムで、ワークロードが正常にインストルメントされたことを確認します。
+  </Step>
+
+  <Step title="Odigos の UI で ClickHouse オブザーバビリティを宛先として追加する" id="add-destination-ui">
+    テレメトリを送信するには、Odigos に **OTLP HTTP** の宛先を追加します。以下からご利用のデプロイメントを選択してください。
+
+    <Tabs>
+      <Tab title="完全マネージド型">
+        <BetaBadge label="ベータ版サービス" />
+
+        ClickHouse オブザーバビリティは OTLP エンドポイントを提供します。インジェスト、スキーマ、コンピュートは ClickHouse が処理するため、Odigos の送信先をそのエンドポイントに指定するだけで済みます。collector をデプロイする必要はありません。
+
+        1. Odigos UI で **Add Destination** をクリックし、**OTLP HTTP** を選択します。
+        2. **OTLP HTTP Endpoint** に、ClickHouse Cloud の HTTPSエンドポイントをポート `4318` を含めて設定します。例: `https://<service-id>.otel.<region>.aws.clickhouse.com:4318`
+        3. **Headers** に以下を追加します。
+           * **Key**: `Authorization`
+           * **Value**: `Bearer <YOUR_INGESTION_API_KEY>`
+        4. **Logs**、**Metrics**、**Traces** を有効にします。
+        5. 宛先を保存します。
+      </Tab>
+
+      <Tab title="セルフマネージド">
+        <Tip>
+          **代替手段: ClickHouse に直接書き込む**
+
+          セルフマネージドのデプロイメントでは、ClickHouse サービスに Kubernetes クラスターからアクセスできる場合、OTLP コレクターを実行する代わりに Odigos の[ネイティブ **ClickHouse** 宛先](#native-clickhouse-destination)を使用できます。完全マネージド型のデプロイメントでは、マネージドの OTLP エンドポイントを使用する必要があります。
+        </Tip>
+
+        セルフマネージドのデプロイメントでは、[ClickStack ディストリビューションの collector をスタンドアロンモードで](/ja/clickstack/self-configured/ingesting-data/collector#configuring-the-collector-self-configured)ご自身で実行し、コンテナの起動時に `OTLP_AUTH_TOKEN` 環境変数で認証トークンを設定します。Odigos は、同じトークンを `Authorization` ヘッダーに付与して、その collector に OTLP HTTP トラフィックを送信します。
+
+        1. ClickStack コレクターをスタンドアロンモードで起動します。その際、ClickHouse Cloud サービスを宛先に指定し、任意の `OTLP_AUTH_TOKEN` で保護します。
+
+           ```shell
+           export CLICKHOUSE_ENDPOINT=<HTTPS_ENDPOINT>
+           export CLICKHOUSE_USER=<CLICKHOUSE_USER>
+           export CLICKHOUSE_PASSWORD=<CLICKHOUSE_PASSWORD>
+           export OTLP_AUTH_TOKEN="a_very_secure_string"
+
+           docker run \
+             -e OTLP_AUTH_TOKEN=${OTLP_AUTH_TOKEN} \
+             -e CLICKHOUSE_ENDPOINT=${CLICKHOUSE_ENDPOINT} \
+             -e CLICKHOUSE_USER=${CLICKHOUSE_USER} \
+             -e CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD} \
+             -p 4317:4317 \
+             -p 4318:4318 \
+             clickhouse/clickstack-otel-collector:latest
+           ```
+
+           TLS、インジェスト専用ユーザー、その他の本番環境向けの推奨事項については、[collector のセキュリティ保護](/ja/clickstack/self-configured/ingesting-data/collector#securing-the-collector-self-configured)を参照してください。
+        2. Odigos UI で **Add Destination** をクリックし、**OTLP HTTP** を選択します。
+        3. **OTLP HTTP Endpoint** に、先ほど起動したスタンドアロンの collector のアドレスを設定します (例: `http://my-collector.example.com:4318`)。
+        4. **Headers** に以下を追加します。
+           * **Key**: `Authorization`
+           * **Value**: collector に設定した `OTLP_AUTH_TOKEN` の値
+        5. **Logs**、**Metrics**、**Traces** を有効にします。
+        6. 宛先を保存します。
+
+        <Info>
+          **オプション: Kubernetes マニフェスト**
+
+          UI を使う代わりに、`Destination` マニフェストで同じ宛先を設定することもできます。詳細設定の[Kubernetes マニフェストで宛先を設定する](#destination-manifest)を参照してください。
+        </Info>
+      </Tab>
+    </Tabs>
+  </Step>
+
+  <Step title="ClickHouse オブザーバビリティでテレメトリーを確認する" id="verify-telemetry">
+    1. ClickStack UI を開きます。
+       * **セルフマネージド**: [ClickHouse Cloud コンソール](https://console.clickhouse.cloud)でサービスを開き、**Launch ClickStack** をクリックします。詳細は [ClickStack UI への移動](/ja/clickstack/self-configured/deployment/managed)を参照してください。
+       * **完全マネージド型**: ClickHouse Cloud サービスのオブザーバビリティビューを開きます。
+    2. **Logs**、**Metrics**、**Traces** で、計装済みサービスからのデータが表示されていることを確認します。
+    3. `odigos.version` でトレースをフィルタし、エンドツーエンドでエクスポートが行われていることを検証します。
+
+    データが表示されない場合は、collector のログを確認してください: `kubectl logs deploy/odigos-gateway -n odigos-system`
+  </Step>
+</Steps>
+
+## 詳細設定 {#advanced-configuration}
+
+### ネイティブ ClickHouse 宛先 {#native-clickhouse-destination}
+
+ネイティブ ClickHouse 宛先は、**セルフマネージド**のデプロイメントでのみ利用できます。**完全マネージド型**のデプロイメントでは、マネージドエンドポイントを指定した **OTLP HTTP** 宛先を使用してください。
+
+<Tabs>
+  <Tab title="セルフマネージド">
+    クラスターから ClickHouse に直接接続できる場合は、OTLP HTTP の代わりに Odigos のネイティブ **ClickHouse** 宛先を使用できます。ClickHouse のエンドポイント、データベース名、スキーマ関連のオプションは、UI またはマニフェストで設定します。詳しくは [Odigos ClickHouse 宛先](https://docs.odigos.io/backends/clickhouse) を参照してください。
+
+    * **本番環境のスキーマ**: `CLICKHOUSE_CREATE_SCHEME` を `false` に設定し、独自の DDL を適用します。
+    * **TLS / 認証**: `CLICKHOUSE_TLS_ENABLED` と `CLICKHOUSE_USERNAME` を使用し、パスワードは Kubernetes Secret で管理します。
+
+    **Kubernetes マニフェスト**
+
+    ```yaml
+    apiVersion: odigos.io/v1alpha1
+    kind: Destination
+    metadata:
+      name: clickhouse
+      namespace: odigos-system
+    spec:
+      type: clickhouse
+      destinationName: clickhouse
+      signals:
+        - TRACES
+        - METRICS
+        - LOGS
+      data:
+        CLICKHOUSE_ENDPOINT: 'http://clickstack.example.com:8123'
+        CLICKHOUSE_DATABASE_NAME: 'otel'
+        CLICKHOUSE_CREATE_SCHEME: 'true'
+    ```
+
+    マニフェストを `destination.yaml` として保存し、適用します。
+
+    ```bash
+    kubectl apply -f destination.yaml
+    ```
+
+#### HyperDX ログノーマライザー {#hyperdx-log-normalizer}
+
+    Odigos のネイティブ **ClickHouse** 宛先を使用して ClickHouse に直接エクスポートするセルフマネージドのデプロイメントでは、**HyperDX ログノーマライザー** (`HYPERDX_LOG_NORMALIZER: true`) を有効化してください。JSON 形式のログボディをパースして属性を正規化することで、ClickStack UI でのクエリが行いやすくなります。この設定は、完全マネージド型の OTLP 宛先には適用されません。
+  </Tab>
+</Tabs>
+
+### Kubernetes マニフェストによる宛先の設定 {#destination-manifest}
+
+**OTLP HTTP (ClickStack)**
+
+```yaml
+apiVersion: odigos.io/v1alpha1
+kind: Destination
+metadata:
+  name: clickstack
+  namespace: odigos-system
+spec:
+  type: otlphttp
+  destinationName: otlphttp
+  signals:
+    - TRACES
+    - METRICS
+    - LOGS
+  data:
+    OTLP_HTTP_ENDPOINT: 'http://clickstack.example.com:4318'
+    # Self-managed: OTLP_AUTH_TOKEN
+    # ClickHouse Observability: Bearer <YOUR_INGESTION_API_KEY>
+    OTLP_HTTP_HEADERS: 'Authorization:<YOUR_AUTHORIZATION_VALUE>'
+```
+
+マニフェストを適用します。
+
+```bash
+kubectl apply -f destination.yaml
+```
+
+{/* vale off */}
+
+### Odigos VM Agent {#odigos-vm-agent}
+
+{/* vale on */}
+
+[Odigos VM Agent](https://docs.odigos.io/vmagent/overview) は、eBPF を使用して Linux プロセス、systemd サービス、Docker コンテナをインストルメントします。テレメトリーは、クラスターベースの Odigos と同じ宛先にエクスポートされます。OTLP HTTP 経由での ClickHouse オブザーバビリティへのエクスポートにも対応しています。
+
+VM Agent は Odigos Pro に含まれています。セットアップ、ソース、宛先の設定については、[VM Agent の概要](https://docs.odigos.io/vmagent/overview)を参照してください。
+
+{/* vale off */}
+
+### Odigos Central {#odigos-central}
+
+{/* vale on */}
+
+[Odigos Central](https://docs.odigos.io/central/overview) は、複数の Kubernetes クラスターにまたがるインストルメンテーション、宛先、パイプラインの設定を単一の UI から一元管理できる集中型コントロールプレーンです。クラスターごとに個別に設定する必要はありません。
+
+Odigos Central は Odigos Enterprise で利用できます。マルチクラスター管理、SSO、統合サンプリングルールについては、[Central の概要](https://docs.odigos.io/central/overview)を参照してください。
+
+## 次のステップ {#next-steps}
+
+* ClickHouse オブザーバビリティで、計装済みサービス全体の**トレースを探索**する
+* Odigos がエクスポートするメトリクスの**ダッシュボードを作成**する
+* **セルフマネージドのデプロイメントでは、ClickHouse のスキーマと有効期限 (TTL) を調整**し、データの保持期間やクエリパターンに合わせて最適化する
+
+## 関連情報 {#read-more}
+
+* [Odigos Enterprise ドキュメント](https://enterprise.docs.odigos.io/) (アクセス権が必要)
+* [Odigos ClickHouse 宛先](https://docs.odigos.io/backends/clickhouse)
+* [Odigos VM Agent の概要](https://docs.odigos.io/vmagent/overview)
+* [Odigos Central の概要](https://docs.odigos.io/central/overview)
+* [本番環境で推測に頼るのはもうやめよう：ClickHouse と Odigos による大規模なフルフィデリティ・トレーシング](https://clickhouse.com/blog/odigos-full-fidelity-tracing)
+* [ClickStack Open Source で Odigos を使用する](/ja/clickstack/integration-partners/odigos)
+
+## 宛先設定の例 {#example-destination-configuration}
+
+次のスクリーンショットは、ログ、メトリクス、トレースを有効にし、`Authorization` ヘッダーに Bearer トークンを設定した OTLP HTTP 宛先の例です。例示されているエンドポイントとトークンは、ご利用のサービスの OTLP HTTP エンドポイントとインジェスト API key に置き換えてください。
+
+<div className="ch-image-md">
+  <Frame>
+    ![ログ、メトリクス、トレースが有効で、HTTPS エンドポイントと、Bearer トークンのプレースホルダーを含む Authorization ヘッダーが設定された Odigos の OTLP HTTP 宛先](/images/clickstack/integration-partners/odigos-otlp-http-destination.png)
+  </Frame>
+</div>

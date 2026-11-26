@@ -856,7 +856,7 @@ Valores possíveis:
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "1"},{"label": "Nova configuração para usar colunas geo em um arquivo Parquet"}]}]} />
 
-Ao ler arquivos Parquet, decodifica colunas de geometria como tipos geográficos do ClickHouse (`Point`, `MultiPoint`, `LineString`, `Polygon`, `MultiLineString`, `MultiPolygon` ou `Geometry`). Aplica-se às colunas descritas pelo metadado `geo` do GeoParquet e às colunas anotadas com o tipo lógico `GEOMETRY` ou `GEOGRAPHY` do Parquet. Se desabilitada, essas colunas são lidas como `String` contendo os bytes brutos em WKB (ou WKT), a menos que um tipo geográfico seja solicitado explicitamente.
+Ao ler arquivos Parquet, decodifica colunas de geometria como tipos geográficos do ClickHouse (`Point`, `MultiPoint`, `LineString`, `Polygon`, `MultiLineString`, `MultiPolygon` ou `Geometry`). Aplica-se às colunas descritas pelo metadado `geo` do GeoParquet e às colunas anotadas com o tipo lógico `GEOMETRY` ou `GEOGRAPHY` do Parquet. Se desabilitada, essas colunas são lidas como `String` contendo os bytes brutos em WKB (ou WKT), a menos que um tipo geográfico seja solicitado explicitamente. Com a configuração desabilitada, colunas com codificação nativa (GeoArrow) do GeoParquet 1.1 passam a ser lidas como os tipos aninhados subjacentes `Array` e `Tuple`.
 
 ## input_format_parquet_allow_missing_columns {#input_format_parquet_allow_missing_columns}
 
@@ -1219,6 +1219,22 @@ Para o formato Values: se o campo não puder ser analisado pelo parser de stream
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Para o formato Values: se o campo não puder ser analisado pelo parser de streaming, execute o parser SQL e tente interpretá-lo como uma expressão SQL.
+
+## input_format_vortex_filter_push_down {#input_format_vortex_filter_push_down}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "Nova configuração para enviar as partes traduzíveis das condições WHERE sobre colunas de nível superior dos tipos inteiro, ponto flutuante, string\/binary, `Bool`, `Date`, `Date32` e `DateTime64` para dentro da varredura do formato Vortex, o que pode reduzir o número de linhas decodificadas; uma condição apenas parcialmente traduzível é ampliada para outra que mantenha, no mínimo, todas as linhas correspondentes, e o ClickHouse reaplica o filtro completo após a varredura."}]}]} />
+
+Ao ler arquivos Vortex, envia as partes traduzíveis das condições WHERE sobre colunas de nível superior dos tipos inteiro, ponto flutuante, string/binary, `Bool`, `Date`, `Date32` e `DateTime64` para dentro da varredura, de modo que uma consulta seletiva leia e decodifique menos dados. Apenas a parte traduzida da condição é aplicada dentro da varredura: uma condição apenas parcialmente traduzível é ampliada para outra que mantenha, no mínimo, todas as linhas correspondentes; por isso, linhas que não correspondem ainda podem ser lidas e decodificadas. O ClickHouse reaplica o filtro completo após a varredura.
+
+## input_format_vortex_preserve_order {#input_format_vortex_preserve_order}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "Nova configuração para retornar as linhas de um arquivo Vortex na ordem em que aparecem no arquivo; por padrão, o arquivo é decodificado em paralelo e a ordem das linhas não é garantida."}]}]} />
+
+Retorna as linhas de um arquivo Vortex na ordem em que aparecem no arquivo. Por padrão, as divisões de linhas de um arquivo são decodificadas em paralelo (consulte `max_parsing_threads`) e retornadas assim que ficam prontas, portanto a ordem das linhas não é garantida; com esta configuração, uma divisão lenta segura as seguintes. Não é recomendado, pois a ordem das linhas geralmente não é garantida, e outras partes do pipeline de consulta podem alterá-la.
 
 ## input_format_with_names_use_header {#input_format_with_names_use_header}
 
