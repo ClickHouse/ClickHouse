@@ -845,7 +845,9 @@ IBlocksStreamPtr GraceHashJoin::getDelayedBlocks()
             continue;
         }
 
-        hash_join = makeInMemoryJoin(fmt::format("grace{}", bucket_idx), prev_keys_num);
+        /// The previous bucket's table held these keys within the threshold.
+        hash_join = makeInMemoryJoin(fmt::format("grace{}", bucket_idx));
+        hash_join->reserveCountedKeys(prev_keys_num);
         resetResidentRows();
         auto right_reader = current_bucket->startJoining();
         size_t num_rows = 0; /// count rows that were written and rehashed
@@ -1106,6 +1108,9 @@ void GraceHashJoin::addBlockToJoinImpl(Block block, JoinBuildContext context, bo
         /// in unchecked then, and its size after the insert decides. A refused insert can leave keys that reference the block,
         /// so only the split, which rebuilds the bucket, may follow it.
         const auto block_hash = residentHashOf(current_block);
+        /// The keys of the previous bucket say nothing about a bucket of one key.
+        if (block_hash && !has_resident_rows)
+            hash_join->reserveCountedKeys(0);
         const bool checked = !(block_hash && (!has_resident_rows || resident_hash == block_hash)) && getNumBuckets() * 2 <= max_num_buckets;
         bool refused = false;
         const size_t blocks_before = storedBlocks(*hash_join);
