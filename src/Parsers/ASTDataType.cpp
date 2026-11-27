@@ -21,6 +21,7 @@
 #include <Parsers/ASTJSONHelpers.h>
 #include <Parsers/ASTJSONReadHelpers.h>
 
+#include <algorithm>
 #include <limits>
 #include <optional>
 #include <unordered_set>
@@ -233,6 +234,31 @@ constexpr TypeNameArgument columns_list_arguments[]
     {"structureToProtobufSchema", 0},
 };
 
+/// Table functions that accept the schema as a named `structure = ...` argument.
+constexpr std::string_view table_functions_with_named_structure_argument[]
+{
+    "file", "fileCluster",
+    "url", "urlCluster",
+    "hdfs", "hdfsCluster",
+    "s3", "s3Cluster", "gcs", "oss", "cosn",
+    "azureBlobStorage", "azureBlobStorageCluster",
+    "iceberg", "icebergCluster", "icebergS3", "icebergS3Cluster", "icebergAzure", "icebergAzureCluster",
+    "icebergHDFS", "icebergHDFSCluster", "icebergLocal", "icebergLocalCluster",
+    "deltaLake", "deltaLakeCluster", "deltaLakeS3", "deltaLakeS3Cluster", "deltaLakeAzure", "deltaLakeAzureCluster",
+    "deltaLakeLocal",
+    "hudi", "hudiCluster",
+    "paimon", "paimonCluster", "paimonS3", "paimonS3Cluster", "paimonAzure", "paimonAzureCluster",
+    "paimonHDFS", "paimonHDFSCluster", "paimonLocal",
+    "mongodb", "elasticsearch",
+};
+
+bool tableFunctionHasNamedStructureArgument(std::string_view name)
+{
+    return std::ranges::any_of(
+        table_functions_with_named_structure_argument,
+        [&](std::string_view candidate) { return equalsCaseInsensitiveString(name, candidate); });
+}
+
 /// Return the structure argument of a table function, if this overload has one.
 ///
 /// This must follow the individual table-function signatures. In particular, a string which happens to look like
@@ -245,29 +271,27 @@ std::vector<ASTPtr *> getTableFunctionStructureArguments(ASTFunction & table_fun
     auto & arguments = table_function.arguments->children;
     const auto argument_at = [&arguments](size_t index) -> ASTPtr * { return index < arguments.size() ? &arguments[index] : nullptr; };
 
-    /// These table functions have only positional arguments. An argument of the form `structure = ...` is an ordinary
-    /// comparison there (for example, a row of `values` that refers to a `WITH` alias named `structure`), not a schema.
-    const bool has_only_positional_arguments = equalsCaseInsensitiveString(table_function.name, "values")
-        || equalsCaseInsensitiveString(table_function.name, "format") || equalsCaseInsensitiveString(table_function.name, "input")
-        || equalsCaseInsensitiveString(table_function.name, "null")
-        || equalsCaseInsensitiveString(table_function.name, "generateRandom");
-
-    /// Named arguments override a positional structure slot. This also covers the object-storage table-function
-    /// family, whose positional signatures differ according to credentials, but all share `structure = ...`.
-    for (auto & argument : arguments)
+    /// Only the table functions that take `key = value` arguments have a named schema argument: the file-like and
+    /// object-storage families (named collection overrides and key-value arguments), `mongodb` and `elasticsearch`.
+    /// Everywhere else an argument of the form `structure = ...` is an ordinary comparison, such as a row of `values`,
+    /// the limit of `numbers` or a `String` parameter of a parameterized view that refers to something named
+    /// `structure`, and it is data, not a schema. So the named form is recognized by an explicit list of table
+    /// functions, never for an unknown name.
+    if (tableFunctionHasNamedStructureArgument(table_function.name))
     {
-        if (has_only_positional_arguments)
-            break;
+        /// Named arguments override a positional structure slot. This also covers the object-storage table-function
+        /// family, whose positional signatures differ according to credentials, but all share `structure = ...`.
+        for (auto & argument : arguments)
+        {
+            auto * equals = argument->as<ASTFunction>();
+            if (!equals || !equalsCaseInsensitiveString(equals->name, "equals") || !equals->arguments
+                || equals->arguments->children.size() != 2)
+                continue;
 
-
-        auto * equals = argument->as<ASTFunction>();
-        if (!equals || !equalsCaseInsensitiveString(equals->name, "equals") || !equals->arguments
-            || equals->arguments->children.size() != 2)
-            continue;
-
-        const auto * name = equals->arguments->children[0]->as<ASTIdentifier>();
-        if (name && equalsCaseInsensitiveString(name->name(), "structure"))
-            return {&equals->arguments->children[1]};
+            const auto * name = equals->arguments->children[0]->as<ASTIdentifier>();
+            if (name && equalsCaseInsensitiveString(name->name(), "structure"))
+                return {&equals->arguments->children[1]};
+        }
     }
 
     const auto all_columns_list_arguments = [&arguments](size_t begin)

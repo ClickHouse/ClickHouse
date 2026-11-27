@@ -1,0 +1,10 @@
+numbers, direct
+1
+numbers, table
+1
+numbers, view
+1
+parameterized view, direct
+id UUID
+parameterized view, view
+id UUID
