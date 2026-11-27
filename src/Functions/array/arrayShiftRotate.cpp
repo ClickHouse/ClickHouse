@@ -1,9 +1,11 @@
+#include <algorithm>
 #include <limits>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnNullable.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
@@ -52,20 +54,34 @@ public:
 
     /// A `Dynamic` or `Variant` default that the array elements already accept, as a `Dynamic` default of an `Array(Dynamic)`,
     /// is handled here: the adaptor would apply its NULL handling to it and change the result type from `Array`.
-    /// While the array is itself `Dynamic` or `Variant`, its element type is not known yet, so the adaptor resolves
-    /// the array first, and the default is decided for each of its types.
     [[nodiscard]] bool useDefaultImplementationForDynamicOrVariantArgument(const ColumnsWithTypeAndName & arguments, size_t argument_index) const override
     {
         if constexpr (strategy == ShiftRotateStrategy::Shift)
         {
-            if (argument_index == 2 && arguments.size() == 3)
+            if (argument_index != 2 || arguments.size() != 3)
+                return true;
+
+            const auto & array_argument_type = arguments[0].type;
+            const auto & default_type = arguments[2].type;
+            if (const auto * array_type = typeid_cast<const DataTypeArray *>(array_argument_type.get()))
+                return !defaultFitsElementType(array_type->getNestedType(), default_type);
+
+            /// A `Variant` array goes through its adaptor first, which builds the function for each alternative and merges
+            /// the result types. A `Dynamic` default can be left to the alternatives only if every array alternative accepts
+            /// it: the `Dynamic` adaptor would give a `Dynamic` result for the others, which cannot be merged with an `Array`.
+            if (const auto * variant_type = typeid_cast<const DataTypeVariant *>(array_argument_type.get()); variant_type && isDynamic(default_type))
             {
-                const auto & array_argument_type = arguments[0].type;
-                if (isDynamic(array_argument_type) || isVariant(array_argument_type))
-                    return false;
-                if (const auto * array_type = typeid_cast<const DataTypeArray *>(array_argument_type.get()))
-                    return !defaultFitsElementType(array_type->getNestedType(), arguments[2].type);
+                return !std::ranges::all_of(variant_type->getVariants(), [&](const DataTypePtr & alternative)
+                {
+                    const auto * alternative_array_type = typeid_cast<const DataTypeArray *>(alternative.get());
+                    return !alternative_array_type || defaultFitsElementType(alternative_array_type->getNestedType(), default_type);
+                });
             }
+
+            /// A `Dynamic` or `Variant` array goes through its adaptor first, and the default is decided for each of its types.
+            /// Any other first argument is rejected by `getReturnTypeImpl` whatever the default is, so an alternative of a
+            /// `Variant` array that is not an array is skipped.
+            return false;
         }
         return true;
     }

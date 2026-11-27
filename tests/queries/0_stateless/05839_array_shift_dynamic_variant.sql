@@ -17,3 +17,8 @@ SELECT arrayShiftLeft(CAST(CAST([1, 2, 3], 'Array(Dynamic)'), 'Variant(Array(Dyn
 SELECT arrayPopBack(arrayShiftLeft(CAST(CAST([1, 2, 3], 'Array(Dynamic)'), 'Variant(Array(Dynamic))'), 1, CAST(9, 'Dynamic')));
 SELECT arrayShiftLeft(CAST(CAST([1, 2, 3], 'Array(Dynamic)'), 'Variant(Array(Dynamic))'), 1, if(number = 1, CAST(NULL, 'Dynamic'), number::Dynamic)) FROM numbers(3);
 SELECT arrayShiftLeft(CAST(CAST([1, 2, 3], 'Array(Dynamic)'), 'Dynamic'), 1, CAST(NULL, 'Dynamic'));
+
+-- An alternative of a `Variant` array that is not an array is skipped, also with a `Dynamic` default.
+SELECT arrayShiftLeft(CAST(CAST([1, 2, 3], 'Array(Dynamic)'), 'Variant(Array(Dynamic), String)'), 1, CAST(9, 'Dynamic')) AS r, toTypeName(r);
+SELECT arrayShiftLeft(CAST(CAST([1, 2, 3], 'Array(Dynamic)'), 'Variant(Array(Dynamic), String)'), 1, CAST(NULL, 'Dynamic'));
+SELECT arrayShiftRight(CAST(CAST([1, 2, 3], 'Array(Dynamic)'), 'Variant(Array(Dynamic), String)'), 1, CAST(9, 'Dynamic'));
