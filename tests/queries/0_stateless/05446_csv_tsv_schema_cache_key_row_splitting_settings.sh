@@ -71,3 +71,10 @@ printf '${c1:Raw}\n' > "${DATA_FILE}_row_c1_raw"
 printf '${:CSV}\n${data}' > "${DATA_FILE}_prefix_csv"
 check format_csv_allow_double_quotes Template '"a\nb"\n1\n' "format_template_row = '${DATA_FILE}_row_x_raw', format_template_resultset = '${DATA_FILE}_prefix_csv'"
 check format_csv_allow_double_quotes Template '"a\nb"\n1\n' "format_template_row = '${DATA_FILE}_row_c1_raw', format_template_resultset = '${DATA_FILE}_prefix_csv'"
+
+# The key of Template is computed for every input format when the format is detected, so a result set format of the
+# output with parts that an input format does not have (${rows}) must not make the detection fail.
+printf '1,2\n3,4\n' > "${DATA_FILE}_detect.unknown"
+printf '${data}Rows: ${rows:Raw}\n' > "${DATA_FILE}_result_rows"
+echo "-- format detection with a Template output"
+${CLICKHOUSE_LOCAL} --query "SELECT * FROM file('${DATA_FILE}_detect.unknown') FORMAT Template SETTINGS format_template_row_format = '\${c1:Raw},\${c2:Raw}\n', format_template_resultset = '${DATA_FILE}_result_rows', format_template_rows_between_delimiter = '', schema_inference_use_cache_for_file = 1" 2>&1

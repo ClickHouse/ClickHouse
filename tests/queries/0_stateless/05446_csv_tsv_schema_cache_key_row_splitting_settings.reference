@@ -72,3 +72,7 @@ CANNOT_EXTRACT_TABLE_STRUCTURE
 2
 -- format_csv_allow_double_quotes Template
 c1	Nullable(String)
+-- format detection with a Template output
+1,2
+3,4
+Rows: 2

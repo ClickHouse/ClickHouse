@@ -542,7 +542,9 @@ void TemplateSchemaReader::transformTypesIfNeeded(DataTypePtr & type, DataTypePt
     transformInferredTypesByEscapingRuleIfNeeded(type, new_type, format_settings, row_format.escaping_rules[field_index], &json_inference_info);
 }
 
-static ParsedTemplateFormatString fillResultSetFormat(const FormatSettings & settings)
+/// With `only_escaping_rules` the parts other than `${data}` are accepted: the result set format of the output has more of them
+/// (`${rows}`, ...), and the cache key, which only needs the escaping rules, is computed for every input format when the format is detected.
+static ParsedTemplateFormatString fillResultSetFormat(const FormatSettings & settings, bool only_escaping_rules = false)
 {
     ParsedTemplateFormatString resultset_format;
     if (settings.template_settings.resultset_format.empty())
@@ -569,6 +571,8 @@ static ParsedTemplateFormatString fillResultSetFormat(const FormatSettings & set
             {
                 if (partName == "data")
                     return 0;
+                if (only_escaping_rules)
+                    return std::nullopt;
                 throw Exception(ErrorCodes::SYNTAX_ERROR, "Unknown input part {}", partName);
             });
     }
@@ -931,7 +935,7 @@ void registerTemplateSchemaReader(FormatFactory & factory)
             };
             add_escaping_rules(row_format);
             /// The fields of the result set prefix and suffix are skipped with their own escaping rules, which can differ from the ones of the row.
-            add_escaping_rules(fillResultSetFormat(settings));
+            add_escaping_rules(fillResultSetFormat(settings, /*only_escaping_rules=*/ true));
             return result;
         });
     }
