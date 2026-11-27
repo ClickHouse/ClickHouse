@@ -623,11 +623,33 @@ La función `transform` no funciona con `NULL`.
 
 `x -> expr` – La función `lambda(x, expr)`.
 
+## Operador de composición de funciones {#function-composition-operator}
+
+`f | g` – Composición de funciones: una función que aplica `f` y, a continuación, `g`. Puede utilizarse en cualquier lugar donde se espere una función, es decir, como argumento de una función de orden superior:
+
+```sql
+SELECT arrayMap(plus(_, 1) | multiply(_, 2), [1, 2, 3]); -- [4, 6, 8]
+```
+
+La composición se lee de izquierda a derecha: el valor fluye a través de los operandos en el orden en que están escritos, de modo que `f | g` significa `g(f(x))` y `f | g | h` significa `h(g(f(x)))`. Es la misma dirección que la del pipe de la shell y la del `|` de los rangos de C++, y por eso se utiliza el mismo símbolo. Es lo contrario del `∘` matemático y del `.` de Haskell, donde `g . f` aplica primero `f`; los equivalentes de izquierda a derecha en esos lenguajes se escriben `>>>` o `>>`.
+
+Cada operando puede ser una lambda, el nombre de una función, otra composición o una expresión con marcadores de posición de argumentos. Los marcadores de posición convierten una expresión en una lambda: `_1`, `_2`, ... hacen referencia al primer, segundo, ... argumento de la lambda y pueden usarse a cualquier nivel de profundidad de la expresión (excepto dentro de una subconsulta); el número de marcador de posición más alto determina el número de argumentos. El marcador de posición anónimo `_` introduce un argumento por cada aparición, en el orden en que aparecen, y debe ser un argumento directo de una llamada a función. Por ejemplo, tanto `plus(_, 1)` como `plus(_1, 1)` significan `x -> plus(x, 1)`. Los marcadores de posición no se buscan dentro de las subconsultas: allí, `_1` es un identificador normal, del mismo modo que una subconsulta no puede hacer referencia al argumento de una lambda explícita.
+
+Los marcadores de posición también pueden usarse sin el operador de composición en la posición de la lambda de una función de orden superior: `arrayMap(_1 * 2 + 1, [1, 2, 3])`. Los nombres vinculados en la consulta tienen prioridad sobre los marcadores de posición, por lo que una columna, un alias o una lambda vinculada con `WITH` que se llame `_1` conserva su significado. Los marcadores de posición situados en la posición de la lambda de una función de orden superior anidada pertenecen a esa llamada anidada: `arrayMap(arrayMap(_ + 1, _1), [[1, 2], [3]])` significa `arrayMap(x -> arrayMap(y -> y + 1, x), [[1, 2], [3]])`.
+
+La composición se resuelve durante el análisis de consultas insertando `f` en línea dentro de `g`, igual que ocurre con las funciones definidas por el usuario en SQL, y el resultado es una lambda ordinaria. El operando derecho debe ser una función de un solo argumento.
+
+Un marcador de posición aislado es la función identidad, por lo que `_1 | toString` equivale a `toString(_1)`.
+
+Tenga en cuenta que el `|` simple no es el OR bit a bit; para ello, utilice la función `bitOr`. El operador no tiene un nombre de función propio visible para el usuario y no reserva ningún nombre: cualquier identificador, incluido `compose`, sigue estando disponible para una función definida por el usuario.
+
 Los siguientes operadores no tienen prioridad, ya que son corchetes:
 
 ## Operador de creación de Array {#array-creation-operator}
 
 `[x1, ...]` – La función `array(x1, ...)`.
+
+`ARRAY[x1, ...]` – Lo mismo, con la sintaxis del estándar SQL, PostgreSQL y Trino.
 
 ## Operador de creación de tupla {#tuple-creation-operator}
 

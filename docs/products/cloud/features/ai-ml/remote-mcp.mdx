@@ -26,9 +26,9 @@ ClickHouse offers two MCP servers.
 | ------------------ | ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
 | **Source**         | Fully managed by ClickHouse Cloud                                                                    | [mcp-clickhouse](https://github.com/ClickHouse/mcp-clickhouse) on GitHub |
 | **Transport**      | Streamable HTTP (`https://mcp.clickhouse.cloud/mcp`)                                                 | Local stdio                                                              |
-| **Works with**     | ClickHouse Cloud services                                                                            | Any ClickHouse instance (self-hosted or Cloud)                           |
+| **Works with**     | ClickHouse Cloud and Managed Postgres services                                                       | Any ClickHouse instance (self-hosted or Cloud)                           |
 | **Authentication** | OAuth 2.0 with your Cloud credentials, or a ClickHouse Cloud API key                                 | Environment variables                                                    |
-| **Tools**          | 13 tools covering querying, schema exploration, service management, backups, ClickPipes, and billing | 3 tools: `run_select_query`, `list_databases`, `list_tables`             |
+| **Tools**          | Tools for querying, schema exploration, service management, backups, ClickPipes, billing, and Postgres monitoring | 3 tools: `run_select_query`, `list_databases`, `list_tables`             |
 | **Setup**          | Zero installation. Point your MCP client at the endpoint and authenticate.                           | Install and run the server locally                                       |
 
 The remote MCP server provides the richest integration with ClickHouse Cloud, including service management, backup monitoring, ClickPipe visibility, and billing data, with no infrastructure to manage.
@@ -38,7 +38,8 @@ For self-hosted ClickHouse instances, see the [open-source MCP server guides](/g
 
 The remote MCP server must be enabled per service before it can accept connections.
 In the ClickHouse Cloud console, open your service, click the **Connect** button, select **MCP**, and enable it.
-Enabling or disabling the remote MCP server requires the `control-plane:service:manage-mcp` permission (see [Console roles and permissions](/products/cloud/reference/security/console-roles#console-permissions)).
+For ClickHouse services, enabling or disabling the remote MCP server requires the `control-plane:service:manage-mcp` permission (see [Console roles and permissions](/products/cloud/reference/security/console-roles#console-permissions)).
+For Managed Postgres services, open the service's **Connect** panel and turn on **Enable Model Context Protocol**. Read replicas inherit the parent database's MCP setting.
 For detailed steps with screenshots, see the [setup guide](/products/cloud/features/ai-ml/mcp/remote-mcp#enable-remote-mcp-server).
 
 ## Endpoint {#endpoint}
@@ -70,7 +71,7 @@ All tools exposed by the remote MCP server are **read-only**. Each tool is annot
 
 ## Available tools {#available-tools}
 
-The remote MCP server exposes 13 tools organized into the following categories.
+The remote MCP server provides tools in the following categories. Tool availability depends on the authentication method and enabled features.
 
 ### Query and schema exploration {#query-and-schema}
 
@@ -81,6 +82,21 @@ These tools allow agents to discover what data is available and run analytical q
 | `run_select_query` | Execute a read-only SELECT query against a ClickHouse service. | `query`, a valid ClickHouse SQL SELECT query; `serviceId`                                         |
 | `list_databases`   | List all databases available in a ClickHouse service.          | `serviceId`                                                                                       |
 | `list_tables`      | List all tables in a database, including column definitions.   | `serviceId`; `database`; optionally `like` or `notLike` (SQL LIKE patterns to filter table names) |
+
+### Managed Postgres {#managed-postgres}
+
+These tools query and monitor Managed Postgres services. Use `get_organizations` to find the `organizationId`, then `get_services_list` to find a service whose `serviceType` is `postgres` and use its `id` as `serviceId`.
+
+| Tool | Description | Parameters |
+| ---- | ----------- | ---------- |
+| `run_postgres_select_query` | Execute a read-only SQL query against a Postgres service. Requires OAuth authentication; unavailable with ClickHouse Cloud API keys. | `organizationId`; `serviceId`; `query`; optionally `database` (default: `postgres`) and `timeoutSeconds` (1–3600, default: 300) |
+| `list_postgres_slow_query_patterns` | List slow query patterns with aggregate latency, call count, rows, CPU, I/O, WAL, and error metrics. Durations are in microseconds. | `organizationId`; `serviceId`; `fromDate`; `toDate`; optionally `limit` (1–500, default: 20), `offset`, `sortBy`, `sortOrder`, `dbName`, `dbUser`, `dbOperation`, and `app` |
+| `get_postgres_slow_query_pattern_details` | Return up to 10 recent executions of a query pattern from the last 24 hours, plus aggregate metrics when available. | `organizationId`; `serviceId`; `queryId`; `dbName`; `dbUser`; `dbOperation`; optionally `app` |
+| `get_postgres_metrics` | Return time-series metrics for CPU, memory, disk, network, connections, cache hit ratio, transactions, and waits. Each metric includes its unit and labeled series. | `organizationId`; `serviceId`; `fromDate`; `toDate`; optionally `bucketSizeSeconds` (positive integer; automatically selected when omitted) |
+
+For `fromDate` and `toDate`, use UTC timestamps with millisecond precision, such as `2026-11-03T00:00:00.000Z`. The start is inclusive. The end is inclusive at minute granularity for slow query patterns and exclusive for metrics.
+
+To inspect a slow query pattern, pass its `queryId`, `dbName`, `dbUser`, `dbOperation`, and `app` from `list_postgres_slow_query_patterns` to `get_postgres_slow_query_pattern_details`. Preserve an empty `app` string for queries without an `application_name`; omitting `app` includes all applications.
 
 ### Organizations {#organizations}
 
@@ -93,8 +109,8 @@ These tools allow agents to discover what data is available and run analytical q
 
 | Tool                  | Description                                           | Parameters                    |
 | --------------------- | ----------------------------------------------------- | ----------------------------- |
-| `get_services_list`   | List all services in a ClickHouse Cloud organization. | `organizationId`              |
-| `get_service_details` | Return details of a specific service.                 | `organizationId`; `serviceId` |
+| `get_services_list`   | List ClickHouse and Managed Postgres services in an organization, with a `serviceType` field identifying each kind. | `organizationId`              |
+| `get_service_details` | Return details of a ClickHouse or Managed Postgres service, detecting its type automatically. | `organizationId`; `serviceId` |
 
 ### Backups {#backups}
 

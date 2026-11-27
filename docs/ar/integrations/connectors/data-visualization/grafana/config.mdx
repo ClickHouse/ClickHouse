@@ -10,8 +10,6 @@ integration:
   - category: 'data_visualization'
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 import { ClickHouseSupportedBadge } from "/snippets/ar/components/ClickHouseSupported/ClickHouseSupported.jsx";
 
 <ClickHouseSupportedBadge />
@@ -26,7 +24,15 @@ import { ClickHouseSupportedBadge } from "/snippets/ar/components/ClickHouseSupp
 
 مثال على شاشة التهيئة:
 
-<Image size="sm" img="/images/integrations/data-visualization/grafana/config_common.webp" alt="مثال على تهيئة آمنة للبروتوكول الأصلي" border />
+<div className="ch-image-sm">
+
+<Frame>
+
+![مثال على تهيئة آمنة للبروتوكول الأصلي](/images/integrations/data-visualization/grafana/config_common.webp)
+
+</Frame>
+
+</div>
 
 مثال على ملف YAML للإعدادات الشائعة:
 
@@ -60,7 +66,15 @@ secureJsonData:
 
 ستظهر إعدادات إضافية إذا اخترت الاتصال عبر بروتوكول HTTP.
 
-<Image size="md" img="/images/integrations/data-visualization/grafana/config_http.webp" alt="خيارات إعداد HTTP إضافية" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![خيارات إعداد HTTP إضافية](/images/integrations/data-visualization/grafana/config_http.webp)
+
+</Frame>
+
+</div>
 
 <div id="http-path">
   #### مسار HTTP
@@ -108,7 +122,15 @@ secureJsonData:
 
 هذه الإعدادات الإضافية اختيارية.
 
-<Image size="sm" img="/images/integrations/data-visualization/grafana/config_additional.webp" alt="مثال لإعدادات إضافية" border />
+<div className="ch-image-sm">
+
+<Frame>
+
+![مثال لإعدادات إضافية](/images/integrations/data-visualization/grafana/config_additional.webp)
+
+</Frame>
+
+</div>
 
 مثال YAML:
 
@@ -143,7 +165,15 @@ jsonData:
 
 مثال على شاشة تهيئة السجلات:
 
-<Image size="sm" img="/images/integrations/data-visualization/grafana/config_logs.webp" alt="إعداد السجلات" border />
+<div className="ch-image-sm">
+
+<Frame>
+
+![إعداد السجلات](/images/integrations/data-visualization/grafana/config_logs.webp)
+
+</Frame>
+
+</div>
 
 مثال على YAML لتهيئة السجلات:
 
@@ -181,7 +211,15 @@ jsonData:
 
 مثال على شاشة تهيئة التتبعات:
 
-<Image size="sm" img="/images/integrations/data-visualization/grafana/config_traces.webp" alt="إعداد التتبعات" border />
+<div className="ch-image-sm">
+
+<Frame>
+
+![إعداد التتبعات](/images/integrations/data-visualization/grafana/config_traces.webp)
+
+</Frame>
+
+</div>
 
 مثال على YAML لتهيئة التتبعات:
 
@@ -284,11 +322,27 @@ INSERT INTO example_table_aliases (`alias`, `select`, `type`) VALUES
 
 يمكننا بعد ذلك إعداد هذا الجدول لاستخدامه في Grafana. لاحظ أن الاسم يمكن أن يكون أي اسم، أو حتى يمكن تعريفه في قاعدة بيانات منفصلة:
 
-<Image size="md" img="/images/integrations/data-visualization/grafana/alias_table_config_example.webp" alt="مثال على إعداد جدول الأسماء المستعارة" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![مثال على إعداد جدول الأسماء المستعارة](/images/integrations/data-visualization/grafana/alias_table_config_example.webp)
+
+</Frame>
+
+</div>
 
 سيعرض Grafana الآن نتائج جدول الأسماء المستعارة بدلًا من النتائج الناتجة عن `DESC example_table`:
 
-<Image size="md" img="/images/integrations/data-visualization/grafana/alias_table_select_example.webp" alt="مثال على استعلام جدول الأسماء المستعارة" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![مثال على استعلام جدول الأسماء المستعارة](/images/integrations/data-visualization/grafana/alias_table_select_example.webp)
+
+</Frame>
+
+</div>
 
 يمكن استخدام كلا نوعَي الأسماء المستعارة لإجراء تحويلات معقدة للأنواع أو لاستخراج حقول JSON.
 

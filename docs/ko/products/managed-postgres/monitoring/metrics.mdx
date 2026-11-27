@@ -3,7 +3,7 @@ slug: /cloud/managed-postgres/monitoring/metrics
 sidebarTitle: '메트릭 참고'
 title: 'ClickHouse Managed Postgres 메트릭 참고'
 description: 'ClickHouse Managed Postgres Prometheus 엔드포인트를 통해 노출되는 메트릭 전체 목록'
-keywords: ['managed postgres', '메트릭', 'prometheus', '참고', '관측성']
+keywords: ['managed postgres', '메트릭', 'prometheus', '참고', '관측성', '대기 이벤트', '잠금 대기']
 doc_type: 'reference'
 ---
 
@@ -26,8 +26,8 @@ import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
 | `postgres_service_name` | Postgres 서비스 이름 |
 
 일부 메트릭에는 구분 기준이 되는 차원에 대한 레이블이 추가로 포함됩니다(예:
-CPU 메트릭의 `mode`, 연결의 `state`, 데이터베이스 크기의 `database`).
-이러한 레이블은 각 메트릭과 함께 나열됩니다.
+CPU 메트릭의 `mode`, 연결의 `state`, 데이터베이스 크기의 `database`,
+대기 이벤트의 `wait`). 이러한 레이블은 각 메트릭과 함께 나열됩니다.
 
 ## 정보 메트릭 {#information-metric}
 
@@ -121,10 +121,31 @@ CPU 사용률을 백분율로 계산하려면,
 | `PostgresServer_CacheHitRatio`     | gauge |            | 버퍼 캐시 적중률입니다. 전체 접근 블록 수 대비 캐시에서 제공된 블록 수의 비율을 백분율로 나타냅니다.                 |
 | `PostgresServer_DatabaseSizeBytes` | gauge | `database` | 각 데이터베이스의 디스크 크기(바이트)입니다. `postgres` 기본 데이터베이스와 사용자가 생성한 모든 데이터베이스를 포함합니다. |
 
+## 대기 이벤트 {#wait-events}
+
+ClickHouse Managed Postgres가 프라이머리에서 30초마다 수집하는 대기 샘플을 기반으로 한
+게이지입니다. 이 샘플은
+[쿼리 인사이트의 대기 차트](/ko/products/managed-postgres/monitoring/query-insights#wait-charts)에 사용되는 샘플과 동일합니다.
+시계열은 보고할 내용이 있을 때만 나타납니다. 유휴 상태인
+서비스에는 대기 시계열이 없으며, `PostgresServer_LockWaitMaxSeconds`는
+세션이 잠금 때문에 차단되어 있는 동안에만 나타납니다.
+
+| 메트릭                                   | 유형    | 추가 레이블 | 설명                                                                                                                                                     |
+| ------------------------------------- | ----- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `PostgresServer_ActiveSessionsByWait` | gauge | `wait` | 대기 이벤트별 활성 세션 수로, 해당 이벤트가 보고된 최근 샘플들의 평균값입니다. `wait`는 `type:event` 형식의 대기 이벤트(예: `Lock:relation`, `IO:WalSync`)이며, 대기 이벤트 없이 실행 중인 세션은 `None`으로 표시됩니다. |
+| `PostgresServer_LockWaitMaxSeconds`   | gauge |        | 세션이 잠금 때문에 차단된 최장 시간(초)입니다.                                                                                                                            |
+
+잠금 때문에 차단된 세션 수를 구하려면 `Lock` 대기 이벤트를 합산하십시오.
+
+```promql
+sum by (postgres_service_name) (PostgresServer_ActiveSessionsByWait{wait=~"Lock:.*"})
+```
+
 ## 관련 페이지 {#related}
 
 * [Prometheus 엔드포인트] — 설정, 인증 및 스크레이핑
 * [대시보드](/ko/products/managed-postgres/monitoring/dashboard) — Cloud Console에 기본 제공되는 차트
+* [쿼리 인사이트](/ko/products/managed-postgres/monitoring/query-insights#wait-charts) — Cloud Console의 대기 차트 및 대기 테이블
 * [OpenAPI 가이드](/ko/products/managed-postgres/openapi) — API Key 생성
   및 조직과 서비스 ID 조회
 

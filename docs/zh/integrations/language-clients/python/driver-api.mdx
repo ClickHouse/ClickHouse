@@ -153,11 +153,15 @@ with clickhouse_connect.get_client(interface="chdb") as client:
 
 同步和异步 HTTP 客户端在遇到某些远程连接关闭，或收到 HTTP 429、503、504 响应时，都会对符合条件的读操作进行重试。对于 `query` 及其专用查询方法、`raw_query` 和 `raw_stream`，可通过 `query_retries` 设置额外尝试的次数。即使 `query_retries=0`，符合条件的读操作在远程连接关闭后也至少会重试一次。通过 `command` 发送的读操作在远程连接关闭后可重试一次，但不计入 `query_retries` 的重试额度，也不会因上述 HTTP 状态码而重试。
 
+在因 HTTP 429、503 或 504 响应而重试之前，两种客户端都会等待 `0.1 * attempt` 秒 (`attempt` 从 1 开始计数) ，并关闭失败的响应。
+
+如果连接在 HTTP 状态行或进度请求头之后、ClickHouse 发送最终响应头之前关闭，同样遵循上述远程连接关闭策略。
+
 客户端能够识别 `SELECT`、`SHOW`、`DESCRIBE` 和 `EXISTS` 等读语句，包括受支持的 `WITH` 和 `EXPLAIN` 形式。无法识别为读操作的 SQL 在发生上述故障后不会重试。包含 `PARALLEL WITH` 或 `INTO OUTFILE` 的语句以及多语句也不在重试范围内。
 
 通过 `command`、`query`、`raw_query` 或 `raw_stream` 发送的 SQL 写操作、DDL 和变更在发生上述故障后不会重放。DB-API 或 SQLAlchemy 通过这些方法执行 SQL 时同样如此。连接错误并不能说明写操作是否已提交，因此在应用程序中重试前，请先确认执行结果。
 
-当请求正文可以重放时，插入 API 仍会在连接关闭后进行重试，这可能会产生重复行。请参阅[插入重试与去重](/zh/integrations/language-clients/python/advanced-inserting#insert-retries-and-deduplication)。
+当请求体可以重放时，插入 API 仍会在连接关闭后进行重试，这可能会产生重复行。请参阅[插入重试与去重](/zh/integrations/language-clients/python/advanced-inserting#insert-retries-and-deduplication)。
 
 ## 客户端生命周期和最佳实践 {#client-lifecycle-and-best-practices}
 

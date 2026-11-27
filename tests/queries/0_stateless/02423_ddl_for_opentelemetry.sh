@@ -91,7 +91,7 @@ DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE}.ddl_test_for_opentelemetry;
 cluster_name=$($CLICKHOUSE_CLIENT -q "select if(engine = 'Replicated', name, 'test_shard_localhost')  from system.databases where name='$CLICKHOUSE_DATABASE'")
 
 #
-# Only format_version 4 enables the tracing
+# Format version 3 is written as 4, so both enable the tracing
 #
 # Total number of 1-second sleeps check_span may spend waiting for spans to be enqueued.
 span_poll_sleeps_left=15
@@ -111,33 +111,10 @@ for ddl_version in 3 4; do
         check_span 1 $trace_id "%tryEnqueueAndExecuteEntry%" "attribute['clickhouse.cluster']='${cluster_name}'"
     fi
     
-    if [ $cluster_name = "test_shard_localhost" ]; then
-        # The tracing is only enabled when entry format version is 4
-        if [ $ddl_version = "4" ]; then
-            expected=1
-        else
-            expected=0
-        fi
-    else
-        # For Replicated database engine, the tracing is always enabled because it calls DDLWorker::processTask directly
-        expected=1
-    fi
-    check_span $expected $trace_id "%DDLWorker::processTask%"
-    
-    # For queries that tracing are enabled(format version is 4 or Replicated database engine), there should be two 'query' spans,
-    # one is for the TCPHandler, the other is for the DDL executing in DDLWorker.
-    #
-    # For other format, there should be only one 'query' span
-    if [ $cluster_name = "test_shard_localhost" ]; then
-        if [ $ddl_version = "4" ]; then
-            expected=2
-        else
-            expected=1
-        fi
-    else
-        expected=2
-    fi
-    check_span $expected $trace_id "query"
+    check_span 1 $trace_id "%DDLWorker::processTask%"
+
+    # There should be two 'query' spans, one is for the TCPHandler, the other is for the DDL executing in DDLWorker.
+    check_span 2 $trace_id "query"
 
     # Remove table
     # Under Replicated database engine, the DDL is executed as ON CLUSTER DDL, so distributed_ddl_output_mode is needed to supress output

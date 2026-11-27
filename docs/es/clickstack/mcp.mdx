@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['ClickStack', 'MCP', 'Model Context Protocol', 'IA', 'observabilidad', 'HyperDX', 'Claude', 'Cursor', 'ClickHouse Cloud', 'OAuth']
 ---
 
-import { Image } from "/snippets/es/components/Image.jsx";
-
 ClickStack incluye un servidor [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) integrado que permite a los asistentes de IA interactuar con sus datos de observabilidad. Una vez conectado, un asistente de IA puede consultar logs, trace y métricas; gestionar dashboards y alertas; explorar fuentes de datos; y trabajar con búsquedas guardadas, todo mediante lenguaje natural.
 
 Esto le permite usar herramientas como [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [Cursor](https://www.cursor.com/) o cualquier cliente compatible con MCP para investigar incidentes, crear dashboards y gestionar su configuración de observabilidad sin salir de su entorno de desarrollo.
@@ -148,14 +146,20 @@ Sin el encabezado `x-service-id`, las solicitudes se dirigen de forma predetermi
 
 Las implementaciones de Open Source y BYOC usan el endpoint MCP integrado de la instancia de ClickStack con autenticación mediante token Bearer.
 
-<div id="oss-prerequisites">
-  ### Requisitos previos
-</div>
+### Requisitos previos {#oss-prerequisites}
 
 * Una instancia de ClickStack en ejecución (consulta [Implementación](/es/clickstack/deployment/overview) para ver las opciones de configuración)
 * Una **Personal API Access Key** — encontrarás la tuya en HyperDX, en **configuración del equipo → API Keys → Personal API Access Key**
 
-<Image img="/images/clickstack/api-key-personal.webp" alt="Personal API Access Key en configuración del equipo" size="md" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Personal API Access Key en configuración del equipo](/images/clickstack/api-key-personal.webp)
+
+</Frame>
+
+</div>
 
 <Note>
   La Personal API Access Key es distinta de la **API key de ingesta** que se encuentra en configuración del equipo y se usa para autenticar los datos de telemetría enviados al collector de OpenTelemetry.
@@ -174,6 +178,7 @@ El servidor MCP está disponible en la ruta `/api/mcp` de la URL del frontend de
 El servidor MCP usa el transporte **Streamable HTTP** con autenticación mediante **token Bearer**.
 
 <div id="managed-connecting-a-client">
+  <a id="oss-connecting-a-client" />
   ### Conectar un cliente MCP
 </div>
 
@@ -271,7 +276,7 @@ Una vez conectado, tu asistente de IA tiene acceso a un conjunto de herramientas
 * **Consulta de datos** — Busca y agrega logs, traces y métricas mediante el constructor de consultas de ClickStack, la sintaxis de búsqueda o SQL puro.
 * **Fuentes de datos** — Enumera las fuentes de datos disponibles, las conexiones a bases de datos, los esquemas de columnas y las claves de atributos.
 * **Dashboards** — Crea, actualiza, elimina e inspecciona dashboards junto con sus tiles.
-* **Alertas** — Crea, actualiza e inspecciona alertas junto con su historial de evaluación.
+* **Alertas** — Crea, actualiza e inspecciona alertas junto con su historial de evaluación. Si la [detección de anomalías](/es/clickstack/features/anomaly-detection) está habilitada, los asistentes también pueden hacer backtesting de la configuración de las alertas de anomalías con el historial reciente antes de guardarlas.
 * **Búsquedas guardadas** — Crea, actualiza e inspecciona definiciones reutilizables de búsquedas guardadas.
 * **Webhooks** — Enumera los destinos de webhook disponibles para las notificaciones de alertas.
 * **Equipos** — Enumera los equipos a los que pertenece el usuario actual e identifica el equipo activo.

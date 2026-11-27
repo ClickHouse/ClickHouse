@@ -5,8 +5,6 @@ description: 'Cet article explique comment désactiver la collecte des rapports 
 tags: ['Gestion du Cloud']
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 <div id="overview">
   ## Vue d’ensemble
 </div>
@@ -62,10 +60,26 @@ Si vous préférez ne pas participer à la collecte des rapports de plantage, vo
 4. Faites défiler la page jusqu&#39;à « Share crash reports with ClickHouse »
 5. Désactivez l&#39;option pour ne plus participer
 
-<Image img="/images/crash-reports.png" size="md" alt="Où trouver l'option de retrait dans l'interface Cloud" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Où trouver l'option de retrait dans l'interface Cloud](/images/crash-reports.png)
+
+</Frame>
+
+</div>
 
 <Note>
   Outre le paramètre au niveau du service, nous prenons également en charge la configuration des préférences au niveau de l&#39;organisation. Si ce paramètre est désactivé, c&#39;est-à-dire si vous refusez la collecte des rapports de plantage, tous les services existants et nouveaux seront automatiquement exclus. Si vous activez cette préférence, c&#39;est-à-dire si vous choisissez d&#39;y participer, vous pouvez la désactiver individuellement au niveau du service pour la remplacer et refuser la collecte.
 </Note>
 
-<Image img="/images/cloud/crash-reports-collection.png" size="md" alt="Collecte des rapports de plantage" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Collecte des rapports de plantage](/images/cloud/crash-reports-collection.png)
+
+</Frame>
+
+</div>

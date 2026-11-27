@@ -3,7 +3,6 @@
 -- evaluates to `NULL AND <unknown>` for not-matched rows, which is falsy but does not fold to a constant.
 -- The optimization must still recognize such filters as always false for not-matched rows.
 
-SET enable_analyzer = 1;
 SET join_use_nulls = 1;
 SET query_plan_convert_outer_join_to_inner_join = 1;
 SET query_plan_join_swap_table = 0;

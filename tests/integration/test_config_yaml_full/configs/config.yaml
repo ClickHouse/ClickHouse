@@ -21,7 +21,6 @@ grpc:
   compression_level: medium
   max_send_message_size: -1
   max_receive_message_size: -1
-  verbose_logs: false
 openSSL:
   server:
     certificateFile: /etc/clickhouse-server/server.crt

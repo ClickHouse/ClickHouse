@@ -1,7 +1,6 @@
 -- Lazy materialization for ORDER BY ... LIMIT over joins: the columns the result needs only for the rows
 -- the LIMIT returns are read after it, by the row index of each table, which the joins pass through.
 
-SET enable_analyzer = 1;
 SET query_plan_optimize_lazy_materialization = 1;
 SET query_plan_lazy_materialization_for_join = 1;
 SET query_plan_max_limit_for_lazy_materialization = 10;

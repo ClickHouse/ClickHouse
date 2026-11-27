@@ -303,7 +303,7 @@ private:
         std::vector<std::condition_variable> wake; /// To wake specific preempted thread
 
         /// A thread is "running" (holds a slot and is on CPU) iff leased and neither preempted nor parked.
-        bool isRunning(size_t thread_num) const { return leased[thread_num] && !preempted[thread_num] && !parked[thread_num]; }
+        [[nodiscard]] bool isRunning(size_t thread_num) const { return leased[thread_num] && !preempted[thread_num] && !parked[thread_num]; }
 
         /// Update running_count/last_running after the leased/preempted/parked bits are set
         void enterRunning(size_t thread_num)
@@ -375,8 +375,8 @@ private:
         /// Returns true if the pending request was removed before the scheduler processed it
         bool cancel(std::unique_lock<std::mutex> & lock);
         void scheduled();
-        ResourceCost getMaxConsumed() const { return tail->max_consumed; }
-        bool hasEnqueued() const { return enqueued; }
+        [[nodiscard]] ResourceCost getMaxConsumed() const { return tail->max_consumed; }
+        [[nodiscard]] bool hasEnqueued() const { return enqueued; }
 
     private:
         // Configuration

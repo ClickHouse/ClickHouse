@@ -39,12 +39,12 @@ if [ -s "${STDERR_FILE}" ]; then echo "client got logs: 1"; else echo "client go
 ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS text_log"
 echo "site level: $(${CLICKHOUSE_CLIENT} --query "
     SELECT level FROM system.text_log
-    WHERE query_id = '${QUERY_ID}' AND logger_name = 'DatabaseDataLake(${DB})'
+    WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_id = '${QUERY_ID}' AND logger_name = 'DatabaseDataLake(${DB})'
     ORDER BY event_time_microseconds
     LIMIT 1")"
 echo "entries above information: $(${CLICKHOUSE_CLIENT} --query "
     SELECT count() FROM system.text_log
-    WHERE query_id = '${QUERY_ID}' AND level IN ('Fatal', 'Critical', 'Error', 'Warning')")"
+    WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_id = '${QUERY_ID}' AND level IN ('Fatal', 'Critical', 'Error', 'Warning')")"
 
 # The same property on the other listing entry point: `system.iceberg_history` reaches the lightweight
 # iterator, while `system.iceberg_files` reaches the general one (`getTablesIterator`), which is also what
@@ -58,9 +58,9 @@ if [ -s "${STDERR_FILE_FILES}" ]; then echo "client got logs (files): 1"; else e
 ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS text_log"
 echo "site level (files): $(${CLICKHOUSE_CLIENT} --query "
     SELECT level FROM system.text_log
-    WHERE query_id = '${QUERY_ID_FILES}' AND logger_name = 'DatabaseDataLake(${DB})'
+    WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_id = '${QUERY_ID_FILES}' AND logger_name = 'DatabaseDataLake(${DB})'
     ORDER BY event_time_microseconds
     LIMIT 1")"
 echo "entries above information (files): $(${CLICKHOUSE_CLIENT} --query "
     SELECT count() FROM system.text_log
-    WHERE query_id = '${QUERY_ID_FILES}' AND level IN ('Fatal', 'Critical', 'Error', 'Warning')")"
+    WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_id = '${QUERY_ID_FILES}' AND level IN ('Fatal', 'Critical', 'Error', 'Warning')")"

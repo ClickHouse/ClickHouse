@@ -8,13 +8,20 @@ doc_type: 'guide'
 ---
 
 import { PrivatePreviewBadge } from '/snippets/ar/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
-import { Image } from "/snippets/ar/components/Image.jsx";
 
 <PrivatePreviewBadge />
 
 يعمل الوضع المُدار على عنقود Amazon EKS تملكه أنت. ويتضمن كل إصدار أربع وحدات Terraform جذرية (يُشار إليها أدناه بالجذور)، تُنشئ إما عنقودًا يستوفي متطلباته، وإما تضيف ما يلزمه إلى شبكة VPC أو عنقود لديك بالفعل. تُنشئ الجذور العنقود مع مجموعة عقد النظام والإضافات المُدارة (`vpc-cni` و`kube-proxy` و`coredns` و`aws-ebs-csi-driver`)، إلى جانب أدوار IAM ومفاتيح KMS والوسوم؛ أما `existing-eks` فلا يثبّت إلا الإضافات التي تحددها في `install_addons`. وعند استهداف Helm، يثبّت الأمر `clicklink clctl init` بعد ذلك طبقة المنصة اعتمادًا على المخرجات وحزمة المنصة، وتشمل: Karpenter، ووحدة تحكم AWS Load Balancer، وStorageClass، والمكوّنات ذات الإصدارات المثبّتة (راجع [تهيئة الموصل من مخرجات Terraform](#hand-off)). تتطلب الجذور Terraform 1.10+ أو OpenTofu 1.12+، ومزوّد AWS بالإصدار `~> 6.0`. ويمكن استخدام `tofu` بدلًا من `terraform` في جميع الأوامر الواردة في هذه الصفحة.
 
-<Image img="/images/cloud/reference/byoc-connector-terraform-flow.svg" size="lg" alt="مسار التجهيز باستخدام Terraform لموصل ClickHouse على AWS" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![مسار التجهيز باستخدام Terraform لموصل ClickHouse على AWS](/images/cloud/reference/byoc-connector-terraform-flow.svg)
+
+</Frame>
+
+</div>
 
 ## قبل أن تبدأ {#before-you-begin}
 

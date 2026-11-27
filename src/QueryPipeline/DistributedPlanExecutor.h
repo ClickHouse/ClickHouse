@@ -53,9 +53,9 @@ public:
     /// Out-of-line so the `worker_allocation` deleter is instantiated where `StatelessWorkerAllocation` is complete.
     ~TaskToHostMap();
 
-    const VectorWithMemoryTracking<WorkerAddress> & getWorkerAddresses() const { return worker_addresses; }
-    const UnorderedMapWithMemoryTracking<String, WorkerAddress> & getTaskHosts() const { return task_hosts; }
-    const UnorderedMapWithMemoryTracking<String, StreamSourceAddress> & getExchangeStreamSourceHosts() const { return exchange_stream_source_hosts; }
+    [[nodiscard]] const VectorWithMemoryTracking<WorkerAddress> & getWorkerAddresses() const { return worker_addresses; }
+    [[nodiscard]] const UnorderedMapWithMemoryTracking<String, WorkerAddress> & getTaskHosts() const { return task_hosts; }
+    [[nodiscard]] const UnorderedMapWithMemoryTracking<String, StreamSourceAddress> & getExchangeStreamSourceHosts() const { return exchange_stream_source_hosts; }
 
 private:
     void fillWorkerAddresses(ContextPtr context);
@@ -174,7 +174,7 @@ protected:
     virtual void startStage(const String & stage_name, const DistributedQueryStage & stage) = 0;
     virtual bool waitForStage(const String & stage_name, std::optional<UInt64> timeout_ms) = 0;
 
-    virtual bool waitsForFilterOnlyStages() const { return false; }
+    [[nodiscard]] virtual bool waitsForFilterOnlyStages() const { return false; }
 
     void checkCancelled() const;
 
@@ -229,9 +229,11 @@ struct DistributedQueryTaskDescription
 /// while `object_storage_path` locates this node's persisted temporary files.
 /// `execute_locally` is true only when the whole query runs in-process on the initiator, false on a
 /// worker. It selects the exchange transport, so the caller must pass it (see `createExchangeLookup`).
+/// `on_failure` is called while the task's exception is handled and before the task frees its resources.
 void doExecuteTask(const DistributedQueryTaskDescription & task, ObjectStoragePtr object_storage,
     const String & object_storage_path, const String & distributed_query_id, ContextMutablePtr context,
-    bool execute_locally, std::function<bool()> is_cancelled = nullptr, ProgressCallback progress_callback = nullptr);
+    bool execute_locally, std::function<bool()> is_cancelled = nullptr, ProgressCallback progress_callback = nullptr,
+    std::function<void()> on_failure = nullptr);
 
 /// Returns object storage and path for temporary files
 std::pair<ObjectStoragePtr, String> getObjectStorageForTemporaryFiles(const String & unique_temp_file_path, ContextPtr context);

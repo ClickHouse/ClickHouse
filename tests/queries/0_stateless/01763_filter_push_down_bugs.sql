@@ -63,7 +63,7 @@ EXPLAIN indexes=1 SELECT id, delete_time FROM t1
  CROSS JOIN (
     SELECT delete_time
     FROM t2
-) AS d WHERE create_time < delete_time AND id = 101 SETTINGS enable_analyzer=1;
+) AS d WHERE create_time < delete_time AND id = 101;
 
 DROP TABLE IF EXISTS t1;
 DROP TABLE IF EXISTS t2;

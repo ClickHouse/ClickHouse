@@ -1,6 +1,7 @@
 #pragma once
 
 #include "config.h"
+#include <Common/StackWithMemoryTracking.h>
 
 #if USE_MSGPACK
 
@@ -52,11 +53,12 @@ public:
 
     /// Update info_stack
     void set_info(IColumn & column, DataTypePtr type, UInt8 & read);
-    void reset();
+    /// Called by msgpack's parse_helper::init.
+    void init();
 
 private:
     /// Stack is needed to process arrays and maps
-    std::stack<Info> info_stack;
+    StackWithMemoryTracking<Info> info_stack;
     bool null_as_default;
 };
 

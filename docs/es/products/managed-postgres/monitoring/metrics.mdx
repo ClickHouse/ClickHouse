@@ -3,7 +3,7 @@ slug: /cloud/managed-postgres/monitoring/metrics
 sidebarTitle: 'Referencia de métricas'
 title: 'Referencia de métricas de ClickHouse Managed Postgres'
 description: 'Lista completa de las métricas expuestas en el endpoint de Prometheus de ClickHouse Managed Postgres'
-keywords: ['managed postgres', 'métricas', 'prometheus', 'referencia', 'observabilidad']
+keywords: ['managed postgres', 'métricas', 'prometheus', 'referencia', 'observabilidad', 'eventos de espera', 'esperas de bloqueo']
 doc_type: 'reference'
 ---
 
@@ -27,7 +27,7 @@ Cada métrica incluye las siguientes etiquetas:
 
 Algunas métricas añaden una etiqueta para la dimensión que desglosan (p. ej.,
 `mode` en las métricas de CPU, `state` en las conexiones, `database` en el
-tamaño de la base de datos). Estas se indican junto a cada métrica.
+tamaño de la base de datos, `wait` en los eventos de espera). Estas se indican junto a cada métrica.
 
 ## Métrica de información {#information-metric}
 
@@ -121,10 +121,31 @@ Contadores de los eventos registrados por Query Insights, sin incluir las operac
 | `PostgresServer_CacheHitRatio`     | gauge |                       | Porcentaje de aciertos de la caché del búfer: bloques servidos desde la caché frente al total de bloques a los que se accedió.              |
 | `PostgresServer_DatabaseSizeBytes` | gauge | `database`            | Tamaño en disco de cada base de datos, en bytes. Incluye la base de datos predeterminada `postgres` y cualquier otra creada por el usuario. |
 
+## Eventos de espera {#wait-events}
+
+Métricas de tipo Gauge obtenidas de las muestras de espera que ClickHouse Managed Postgres toma en
+la instancia principal cada 30 segundos. Son las mismas muestras en las que se basan los
+[gráficos de esperas en Query insights](/es/products/managed-postgres/monitoring/query-insights#wait-charts).
+Una serie solo aparece cuando hay algo que notificar: un
+servicio inactivo no tiene series de espera, y `PostgresServer_LockWaitMaxSeconds`
+solo aparece mientras una sesión está bloqueada esperando un bloqueo.
+
+| Métrica                               | Tipo  | Etiquetas adicionales | Descripción                                                                                                                                                                                                                                                                                         |
+| ------------------------------------- | ----- | --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `PostgresServer_ActiveSessionsByWait` | gauge | `wait`                | Sesiones activas en cada evento de espera, promediadas entre las muestras recientes en las que aparece dicho evento. `wait` es el evento de espera con el formato `type:event`, por ejemplo `Lock:relation` o `IO:WalSync`, o `None` para las sesiones que se ejecutan sin ningún evento de espera. |
+| `PostgresServer_LockWaitMaxSeconds`   | gauge |                       | Tiempo máximo, en segundos, que una sesión lleva bloqueada esperando un bloqueo.                                                                                                                                                                                                                    |
+
+Para contar las sesiones bloqueadas a la espera de un bloqueo, sume los eventos de espera `Lock`:
+
+```promql
+sum by (postgres_service_name) (PostgresServer_ActiveSessionsByWait{wait=~"Lock:.*"})
+```
+
 ## Páginas relacionadas {#related}
 
 * [endpoint de Prometheus] — configuración, autenticación y scraping
 * [Dashboard](/es/products/managed-postgres/monitoring/dashboard) — gráficos integrados en la consola de Cloud
+* [Query insights](/es/products/managed-postgres/monitoring/query-insights#wait-charts) — gráficos de esperas y la tabla Esperas en la consola de Cloud
 * [Guía de OpenAPI](/es/products/managed-postgres/openapi) — creación de API key
   y consulta de los ID de la organización y del servicio
 

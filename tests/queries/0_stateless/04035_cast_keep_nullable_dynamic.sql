@@ -1,6 +1,5 @@
 -- Tags: no-fasttest, no-random-settings
 -- Tests for cast_keep_nullable with Dynamic/JSON types
-SET enable_analyzer = 1;
 SET cast_keep_nullable = 1;
 
 -- Dynamic cast NULL to Nullable-eligible types: should return NULL

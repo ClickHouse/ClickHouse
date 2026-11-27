@@ -64,17 +64,17 @@ public:
         return std::make_shared<FunctionsNullSafeCmp>(context ? ComparisonParams(context) : ComparisonParams());
     }
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    bool isVariadic() const override { return false; }
+    [[nodiscard]] bool isVariadic() const override { return false; }
 
-    size_t getNumberOfArguments() const override { return 2; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     /// See `FunctionComparison::canThrowIfKnown`. Operands of different types are cast to their common type or compared
     /// by `FunctionComparison`, either of which can throw, so only the types that need no cast at all are reported as not throwing.
-    std::optional<bool> canThrowIfKnown(const DataTypesWithConstInfo & arguments) const override
+    [[nodiscard]] std::optional<bool> canThrowIfKnown(const DataTypesWithConstInfo & arguments) const override
     {
         if (arguments.size() != 2)
             return true;
@@ -84,16 +84,16 @@ public:
         return !left->equals(*right) || comparisonCanThrow(left, right);
     }
 
-    bool useDefaultImplementationForNulls() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
 
-    bool useDefaultImplementationForNothing() const override { return true; }
-    bool useDefaultImplementationForConstants() const override { return true; }
-    bool useDefaultImplementationForLowCardinalityColumns() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForNothing() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForLowCardinalityColumns() const override { return true; }
 
     /// Documentation-only — null-safe comparison treats `NULL` as comparable
     /// and always returns a definite `UInt8` (or `Nothing` when an argument
     /// contains the bare `Nothing` type).
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(Any, Any) -> UInt8";
     }
@@ -102,7 +102,7 @@ public:
     /// value-dependent (`Nothing` when an argument contains `Nothing`, otherwise `UInt8`) and the
     /// least-supertype check cannot be expressed in the DSL, so keep the legacy
     /// `getReturnTypeImpl(DataTypes)` authoritative.
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         DataTypes data_types(arguments.size());
         for (size_t i = 0; i < arguments.size(); ++i)
@@ -110,7 +110,7 @@ public:
         return getReturnTypeImpl(data_types);
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (arguments.size() != 2)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
@@ -174,7 +174,7 @@ public:
         return std::make_shared<DataTypeUInt8>();
     }
 
-    ColumnPtr ALWAYS_INLINE executeForVariantOrDynamicAndNull(const ColumnWithTypeAndName & variant_or_dynamic_col) const
+    [[nodiscard]] ColumnPtr ALWAYS_INLINE executeForVariantOrDynamicAndNull(const ColumnWithTypeAndName & variant_or_dynamic_col) const
     {
         ColumnPtr col = variant_or_dynamic_col.column->convertToFullColumnIfConst();
         const auto & column_variant_or_dynamic =
@@ -194,7 +194,7 @@ public:
 
     /// Null-safe comparison for types that have no least common supertype (e.g.
     /// `Nullable(UInt64)` vs `Nullable(Int64)`).
-    ColumnPtr executeNullableWithoutSupertype(const ColumnsWithTypeAndName & columns_with_type_and_name, size_t input_rows_count) const
+    [[nodiscard]] ColumnPtr executeNullableWithoutSupertype(const ColumnsWithTypeAndName & columns_with_type_and_name, size_t input_rows_count) const
     {
         auto extract_nested_column_info = [](const ColumnWithTypeAndName & arg, ColumnPtr & null_map, ColumnWithTypeAndName & nested)
         {
@@ -252,7 +252,7 @@ public:
         return res;
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         ColumnPtr left_col = arguments[0].column;
         ColumnPtr right_col = arguments[1].column;
@@ -305,6 +305,14 @@ public:
         if (common_type)
         {
             // To address: Nullable vs Nullable
+            // A `FixedString` vs `String` pair is compared zero-padded by `=`, while the cast to the common type `String`
+            // drops the trailing zero bytes of the `FixedString` operand only, so compare the nested values as `=` does.
+            // The same holds for such a pair of tuple elements.
+            const bool has_zero_padded_strings = (isStringOrFixedString(left_nested_type) && isStringOrFixedString(right_nested_type))
+                || hasAlignedStringVsFixedStringElement(left_nested_type, right_nested_type)
+                || hasAlignedStringVsFixedStringElement(right_nested_type, left_nested_type);
+            if (common_type->isNullable() && has_zero_padded_strings)
+                return executeNullableWithoutSupertype(arguments, input_rows_count);
             if (common_type->isNullable())
             {
                 ColumnPtr c0_converted = castColumn(arguments[0], common_type);
@@ -328,6 +336,16 @@ public:
             // `Nullable(Int64)`).
             return executeNullableWithoutSupertype(arguments, input_rows_count);
         }
+
+        // To address: two empty tuples, also as elements of the tuples compared below. `FunctionComparison` does not
+        // compare them, while they are not distinct when wrapped in `Nullable` and compared as whole values above.
+        auto is_empty_tuple = [](const DataTypePtr & type)
+        {
+            const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get());
+            return tuple_type && tuple_type->getElements().empty();
+        };
+        if (is_empty_tuple(arguments[0].type) && is_empty_tuple(arguments[1].type))
+            return result_type->createColumnConst(input_rows_count, UInt8(is_equal_mode ? 1 : 0));
 
         // To address regular case (also covers types with no common supertype that are not Nullable,
         // e.g. `UInt64` vs `Int64` and `Array(UInt64)` vs `Array(Int64)`;

@@ -12,11 +12,11 @@ doc_type: 'справочник'
 Создаёт новую таблицу. По умолчанию таблицы создаются только на текущем сервере.
 Распределённые DDL-запросы реализованы в виде предложения `ON CLUSTER`, которое [описано отдельно](/ru/reference/statements/distributed-ddl).
 
-## Синтаксические формы
+## Синтаксические формы {#syntax-forms}
 
 Этот запрос может иметь различные синтаксические формы в зависимости от сценария использования.
 
-### Создание таблицы с явной схемой
+### Создание таблицы с явной схемой {#with-explicit-schema}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -41,7 +41,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 Для столбцов и таблицы можно добавлять комментарии.
 
-### Создать таблицу со схемой существующей таблицы
+### Создать таблицу со схемой существующей таблицы {#with-a-schema-similar-to-other-table}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db2.]table_clone AS [db.]table [ENGINE = engine]
@@ -53,9 +53,9 @@ ClickHouse позволяет копировать схему и данные с
 
 Это создает таблицу с такой же структурой, как у другой таблицы.
 
-### Создать таблицу со схемой и данными существующей таблицы
+### Создать таблицу со схемой и данными существующей таблицы {#with-a-schema-and-data-cloned-from-another-table}
 
-Чтобы реплицировать схему и данные существующей таблицы:
+Для репликации схемы и данных существующей таблицы:
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db2.]table_clone CLONE AS [db.]table [ENGINE = engine]
@@ -77,7 +77,9 @@ CREATE TABLE [IF NOT EXISTS] [db2.]table_clone CLONE AS [db.]table [ENGINE = eng
 Для обеих возможностей можно указать для таблицы другой движок.
 Если движок не указан, будет использоваться тот же движок, что и у исходной таблицы (`db.table`).
 
-### Создание таблицы с помощью табличной функции
+Для копирования схемы требуется привилегия `SHOW COLUMNS` на `db.table`. Если наследуемое определение содержит учётные данные, которые `SHOW CREATE TABLE` скрывает маской, для копирования также требуется привилегия `SELECT`, поскольку новая таблица сможет читать данные с этими учётными данными.
+
+### Создание таблицы с помощью табличной функции {#from-a-table-function}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name AS table_function()
@@ -85,7 +87,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name AS table_function()
 
 Создаёт таблицу с тем же результатом, что и указанная [табличная функция](/ru/reference/functions/table-functions/index). Созданная таблица также будет работать так же, как соответствующая табличная функция.
 
-### Создание таблицы с помощью SELECT-запроса
+### Создание таблицы с помощью SELECT-запроса {#from-select-query}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name[(name1 [type1], name2 [type2], ...)] ENGINE = engine AS SELECT ...
@@ -110,7 +112,7 @@ SELECT x, toTypeName(x) FROM t1;
 └───┴───────────────┘
 ```
 
-## Указание значений по умолчанию
+## Указание значений по умолчанию {#default_values}
 
 Описание столбца может задавать выражение значения по умолчанию в форме `DEFAULT expr`, `MATERIALIZED expr` или `ALIAS expr`. Пример: `URLDomain String DEFAULT domain(URL)`.
 
@@ -122,7 +124,7 @@ SELECT x, toTypeName(x) FROM t1;
 
 Выражение значения по умолчанию `expr` может ссылаться на произвольные столбцы таблицы и константы. ClickHouse проверяет, что изменения структуры таблицы не приводят к появлению циклов при вычислении выражений. Для INSERT также проверяется, что выражения могут быть вычислены, то есть что переданы все столбцы, на основе которых их можно вычислить.
 
-### DEFAULT
+### DEFAULT {#default}
 
 `DEFAULT expr`
 
@@ -148,7 +150,7 @@ SELECT * FROM test;
 └────┴─────────────────────┴─────────────────┘
 ```
 
-### MATERIALIZED
+### MATERIALIZED {#materialized}
 
 `MATERIALIZED expr`
 
@@ -186,7 +188,7 @@ SELECT * FROM test SETTINGS asterisk_include_materialized_columns=1;
 └────┴─────────────────────┴─────────────────┘
 ```
 
-### EPHEMERAL
+### EPHEMERAL {#ephemeral}
 
 `EPHEMERAL [expr]`
 
@@ -222,7 +224,7 @@ hexed:      Z��
 hex(hexed): 5A90B714
 ```
 
-### ALIAS
+### ALIAS {#alias}
 
 `ALIAS expr`
 
@@ -259,7 +261,7 @@ SELECT * FROM test SETTINGS asterisk_include_alias_columns=1;
 └────┴────────────┴──────────┘
 ```
 
-## Модификаторы `NULL` и `NOT NULL`
+## Модификаторы `NULL` и `NOT NULL` {#null-or-not-null-modifiers}
 
 Модификаторы `NULL` и `NOT NULL`, указанные после типа данных в определении столбца, соответственно разрешают или запрещают делать его [Nullable](/ru/reference/data-types/nullable).
 
@@ -267,7 +269,7 @@ SELECT * FROM test SETTINGS asterisk_include_alias_columns=1;
 
 См. также настройку [data&#95;type&#95;default&#95;nullable](/ru/reference/settings/session-settings/other#data_type_default_nullable).
 
-## Первичный ключ
+## Первичный ключ {#primary-key}
 
 При создании таблицы можно определить [первичный ключ](/ru/reference/engines/table-engines/mergetree-family/mergetree#primary-keys-and-indexes-in-queries). Первичный ключ можно задать двумя способами:
 
@@ -303,11 +305,11 @@ SELECT * FROM test SETTINGS asterisk_include_alias_columns=1;
   Нельзя использовать оба способа в одном запросе.
 </Tip>
 
-## Задание ограничений таблицы
+## Задание ограничений таблицы {#constraints}
 
 Наряду с описанием столбцов можно также задавать ограничения:
 
-### CONSTRAINT
+### CONSTRAINT {#constraint}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -325,7 +327,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 Существующие ограничения для всех таблиц можно просмотреть в таблице [`system.constraints`](/ru/reference/system-tables/constraints).
 
-### ASSUME
+### ASSUME {#assume}
 
 Предложение `ASSUME` используется для задания `CONSTRAINT` для таблицы, которое считается истинным. Затем это ограничение может использоваться оптимизатором для повышения производительности SQL-запросов.
 
@@ -349,11 +351,11 @@ ORDER BY (name_len, name);
 
 `ASSUME CONSTRAINT` **не обеспечивает соблюдение ограничения**, а лишь сообщает оптимизатору, что ограничение выполняется. Если ограничение на самом деле не выполняется, результаты запросов могут быть некорректными. Поэтому использовать `ASSUME CONSTRAINT` следует только в том случае, если вы уверены, что ограничение действительно выполняется.
 
-## Укажите срок хранения с TTL
+## Укажите срок хранения с TTL {#ttl-expression}
 
 Определяет срок хранения значений. Может быть указано только для таблиц семейства MergeTree. Подробное описание см. в разделе [TTL для столбцов и таблиц](/ru/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-ttl).
 
-## Выбор кодеков сжатия для столбцов
+## Выбор кодеков сжатия для столбцов {#column_compression_codec}
 
 {/* Якоря для ссылок на разделы, перенесённые в /reference/statements/create/table/codec */}
 
@@ -418,11 +420,31 @@ ENGINE = <Engine>
 
 Сведения о доступных универсальных, специализированных кодеках и кодеках шифрования см. в разделе [Кодеки сжатия столбцов](/ru/reference/statements/create/table/codec).
 
-## Создание временных таблиц
+### Кодеки для подстолбцов {#subcolumn-codecs}
+
+Это экспериментальная возможность, для её использования необходимо включить настройку [enable&#95;subcolumn&#95;codecs](/ru/reference/settings/session-settings/enable#enable_subcolumn_codecs).
+
+Запись `CODEC name (codec, ...)` в списке столбцов задаёт кодек для подстолбца, например для элемента `Tuple` или для значений `Map`:
+
+```sql
+CREATE TABLE subcolumn_codec_example
+(
+    id UInt64,
+    payload Tuple(ts DateTime64(3), value Float64),
+    attrs Map(String, Float64),
+    CODEC payload.ts (DoubleDelta, ZSTD),
+    CODEC attrs.values (Gorilla, ZSTD)
+)
+ENGINE = MergeTree ORDER BY id
+```
+
+Кодеки для подстолбцов поддерживаются только движками семейства `MergeTree`. У столбца может быть либо собственный кодек, либо кодеки для его подстолбцов. Кодеки нельзя задавать для вложенных подстолбцов: если кодек объявлен для `payload.meta`, то для `payload.meta.seq` объявить его уже нельзя. К элементу безымянного `Tuple` обращаются по именам, заключённым в кавычки, например ``CODEC `pair`.`2` (ZSTD)``, поскольку `pair.2` будет интерпретировано как число. Подстолбец должен существовать в типе столбца и не может находиться внутри значения `JSON`, `Dynamic` или `Variant`. К потокам, которые хранят только структурную информацию, например размеры массивов или карты NULL, применяется только универсальная часть кодека. Объявления отображаются в выводе `SHOW CREATE TABLE` и в столбце `subcolumn_codecs` таблицы `system.columns`.
+
+## Создание временных таблиц {#temporary-tables}
 
 ClickHouse поддерживает временные таблицы, которые удаляются после завершения сеанса. Подробнее см. [CREATE TEMPORARY TABLE](/ru/reference/statements/create/table/temporary-table).
 
-## Атомарное обновление таблицы с помощью REPLACE TABLE
+## Атомарное обновление таблицы с помощью REPLACE TABLE {#replace-table}
 
 {/* Якоря для ссылок на разделы, перемещённые в /reference/statements/create/table/replace-table */}
 
@@ -432,7 +454,7 @@ ClickHouse поддерживает временные таблицы, кото�
 
 Оператор `REPLACE` позволяет атомарно обновить таблицу [атомарно](/ru/concepts/core-concepts/glossary#atomicity). Подробнее см. в разделе [REPLACE TABLE](/ru/reference/statements/create/table/replace-table).
 
-## Добавление комментария к таблице
+## Добавление комментария к таблице {#comment-clause}
 
 Комментарий к таблице можно добавить при её создании.
 
@@ -473,7 +495,7 @@ SELECT name, comment FROM system.tables WHERE name = 't1';
 └──────┴─────────────────────┘
 ```
 
-## Материалы по теме
+## Материалы по теме {#related-content}
 
 * Блог: [Оптимизация ClickHouse с помощью схем и кодеков](https://clickhouse.com/blog/optimize-clickhouse-codecs-compression-schema)
 * Блог: [Работа с временными рядами в ClickHouse](https://clickhouse.com/blog/working-with-time-series-data-and-functions-ClickHouse)

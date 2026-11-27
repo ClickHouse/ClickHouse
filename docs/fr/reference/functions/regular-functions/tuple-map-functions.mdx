@@ -150,7 +150,7 @@ SELECT extractKeyValuePairs('age:a\\x0A\\n\\0') AS kv;
 extractKeyValuePairs(data, [key_value_delimiter], [pair_delimiter], [quoting_character], [unexpected_quoting_character_strategy])
 ```
 
-**Alias** : `mapFromString`, `str_to_map`
+**Alias** : `str_to_map`, `mapFromString`
 
 **Arguments**
 
@@ -830,7 +830,7 @@ SELECT mapFromArrays([1, 2, 3], map('a', 1, 'b', 2, 'c', 3))
 
 ## mapKeys {#mapKeys}
 
-Introduit dans : v21.2.0
+Introduit dans : v21.2.0
 
 Renvoie les clés de la map donnée.
 Cette fonction peut être optimisée en activant le paramètre [`optimize_functions_to_subcolumns`](/fr/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns).
@@ -842,6 +842,8 @@ La requête `SELECT mapKeys(m) FROM table` est transformée en `SELECT m.keys FR
 ```sql
 mapKeys(map)
 ```
+
+**Alias** : `map_keys`
 
 **Arguments**
 
@@ -935,7 +937,7 @@ SELECT mapPartialSort((k, v) -> v, 2, map('k1', 3, 'k2', 1, 'k3', 2))
 
 ## mapPopulateSeries {#mapPopulateSeries}
 
-Introduite dans : v20.10.0
+Introduit dans : v20.10.0
 
 Remplit les paires clé-valeur manquantes dans une map à clés entières.
 Pour permettre d’étendre les clés au-delà de la valeur la plus élevée, une clé maximale peut être spécifiée.
@@ -958,7 +960,7 @@ mapPopulateSeries(map[, max]) | mapPopulateSeries(keys, values[, max])
 
 **Valeur renvoyée**
 
-Renvoie une map ou un tuple de deux tableaux, dans lequel le premier contient les clés dans l’ordre trié et le second les valeurs correspondant à ces clés. [`Map(K, V)`](/fr/reference/data-types/map) ou [`Tuple(Array(UInt*), Array(Any))`](/fr/reference/data-types/tuple)
+Renvoie une map ou un tuple de deux tableaux, dans lequel le premier contient les clés dans l’ordre trié et le second les valeurs correspondant à ces clés. [`Map(K, V)`](/fr/reference/data-types/map) ou [`Tuple(Array(UInt*), Array)`](/fr/reference/data-types/tuple)
 
 **Exemples**
 
@@ -1162,7 +1164,7 @@ SELECT mapUpdate(map('key1', 0, 'key3', 0), map('key1', 10, 'key2', 10))
 
 ## mapValues {#mapValues}
 
-Introduit dans : v21.2.0
+Introduit dans : v21.2.0
 
 Renvoie les valeurs de la map donnée.
 Cette fonction peut être optimisée en activant le paramètre [`optimize_functions_to_subcolumns`](/fr/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns).
@@ -1174,6 +1176,8 @@ La requête `SELECT mapValues(m) FROM table` est transformée en `SELECT m.value
 ```sql
 mapValues(map)
 ```
+
+**Alias** : `map_values`
 
 **Arguments**
 

@@ -10,9 +10,7 @@ import CloudDetails from '/snippets/ru/_snippet_dictionary_in_cloud.mdx';
 import { CloudNotSupportedBadge } from "/snippets/ru/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/ExperimentalBadge.jsx";
 
-<div id="dictionary-sources">
-  ## Синтаксис
-</div>
+## Синтаксис {#dictionary-sources}
 
 <CloudDetails />
 
@@ -49,9 +47,7 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 
 <br />
 
-<div id="supported-dictionary-sources">
-  ## Поддерживаемые источники словаря
-</div>
+## Поддерживаемые источники словаря {#supported-dictionary-sources}
 
 Доступны следующие типы источников (`SOURCE_TYPE`/`source_type`):
 
@@ -96,3 +92,41 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
     ```
   </Tab>
 </Tabs>
+
+## Порядок столбцов в пользовательском запросе {#custom-query-column-order}
+
+Источники [ClickHouse](/ru/reference/statements/create/dictionary/sources/clickhouse),
+[MySQL](/ru/reference/statements/create/dictionary/sources/mysql),
+[PostgreSQL](/ru/reference/statements/create/dictionary/sources/postgresql) и
+[ODBC](/ru/reference/statements/create/dictionary/sources/odbc) поддерживают поле `query`, которое
+заменяет запрос, формируемый ClickHouse по умолчанию на основе `table` и `where`.
+
+Словарь ожидает столбцы результата в фиксированном порядке, который отличается от порядка
+атрибутов в операторе `CREATE DICTIONARY`:
+
+1. ключевой столбец (или столбцы) в порядке `PRIMARY KEY`;
+2. для словаря [`range_hashed`](/ru/reference/statements/create/dictionary/layouts/range-hashed) или
+   `complex_key_range_hashed` — столбец `range_min`, затем столбец `range_max`;
+3. остальные атрибуты в порядке их объявления.
+
+Источник ClickHouse сопоставляет результат с этим порядком по именам столбцов, поэтому для него порядок
+столбцов в `query` не важен, если имя каждого столбца совпадает с именем заполняемого им атрибута. Источники
+MySQL, PostgreSQL и ODBC берут столбцы по позиции, поэтому если в `query` для них столбцы расположены
+в другом порядке, значения загрузятся не в те атрибуты. В зависимости от задействованных типов
+словарь либо не загрузится из-за ошибки преобразования, либо сохранит неверные значения. Поэтому
+указывайте столбцы в `query` в приведённом выше порядке:
+
+```sql
+CREATE DICTIONARY contracts (
+    meter_no String,
+    id Int64,
+    contract_time Date,
+    end_date Date
+)
+PRIMARY KEY meter_no
+-- The key comes first, then the range columns, then the remaining attributes.
+SOURCE(POSTGRESQL(... query 'SELECT meter_no, contract_time, end_date, id FROM contracts'))
+LAYOUT(RANGE_HASHED())
+RANGE(MIN contract_time MAX end_date)
+LIFETIME(300)
+```

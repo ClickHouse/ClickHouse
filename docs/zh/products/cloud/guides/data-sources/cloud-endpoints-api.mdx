@@ -7,8 +7,6 @@ doc_type: 'reference'
 keywords: ['ClickHouse Cloud', '静态 IP 地址', '云端点', 'API', '安全', '出站 IP', '入站 IP', '防火墙']
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 <div id="static-ips-api">
   ## 静态 IP API
 </div>
@@ -52,8 +50,24 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
 例如，运行在 `us-east-2` 且需要连接到 ClickHouse Cloud 服务的 AWS RDS 实例，应配置以下入站安全组规则：
 
-<Image img="/images/_snippets/aws-rds-mysql.webp" size="lg" alt="AWS 安全组规则" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![AWS 安全组规则](/images/_snippets/aws-rds-mysql.webp)
+
+</Frame>
+
+</div>
 
 对于同样运行在 `us-east-2` 的 ClickHouse Cloud 服务，如果这次连接的是 GCP 中的 MySQL，`Authorized networks` 应如下所示：
 
-<Image img="/images/_snippets/gcp-authorized-network.webp" size="md" alt="GCP Authorized networks" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![GCP Authorized networks](/images/_snippets/gcp-authorized-network.webp)
+
+</Frame>
+
+</div>

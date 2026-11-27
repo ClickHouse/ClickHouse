@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['レプリケーション', '高可用性', 'クラスター構成', 'データ冗長化', 'フォールトトレランス']
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 import ConfigExplanation from '/snippets/ja/_config_explanation.mdx';
 import ListenHost from '/snippets/ja/_listen_host.mdx';
 import ServerParameterTable from '/snippets/ja/_server_parameter_table.mdx';
@@ -17,13 +15,22 @@ import KeeperConfigExplanation from '/snippets/ja/_keeper_explanation.mdx';
 import VerifyKeeperStatus from '/snippets/ja/_verify_keeper_using_mntr.mdx';
 import DedicatedKeeperServers from '/snippets/ja/_dedicated_keeper_servers.mdx';
 import ExampleFiles from '/snippets/ja/_working_example.mdx';
+
 import CloudTip from '/snippets/ja/_cloud_tip.mdx';
 
 > この例では、データをレプリケーションするシンプルな ClickHouse クラスターのセットアップ方法を学びます。サーバーは 5 台構成です。うち 2 台はデータのコピーを保持するために使用されます。残りの 3 台は、データのレプリケーションを調整するために使用されます。
 
 これからセットアップするクラスターのアーキテクチャを以下に示します。
 
-<Image img="/images/deployment-guides/replication-sharding-examples/replication.webp" size="md" alt="ReplicatedMergeTree を使用した 1 分片 2 レプリカのアーキテクチャ図" />
+<div className="ch-image-md">
+
+<Frame>
+
+![ReplicatedMergeTree を使用した 1 分片 2 レプリカのアーキテクチャ図](/images/deployment-guides/replication-sharding-examples/replication.webp)
+
+</Frame>
+
+</div>
 
 <DedicatedKeeperServers />
 

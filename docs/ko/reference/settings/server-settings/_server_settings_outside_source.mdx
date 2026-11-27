@@ -58,15 +58,15 @@ ClickHouse Cloud 배포에서는 기본적으로 활성화됩니다.
   SELECT arrayJoin([
     ('allow_concurrent_backups', 'Bool','동일한 호스트에서 여러 백업 작업을 동시에 실행할 수 있는지 결정합니다.', 'true'),
     ('allow_concurrent_restores', 'Bool', '동일한 호스트에서 여러 복원 작업을 동시에 실행할 수 있는지 결정합니다.', 'true'),
-    ('allowed_disk', 'String', '`File()`을 사용할 때 백업할 디스크입니다. `File`을 사용하려면 이 설정을 지정해야 합니다.', ''),
-    ('allowed_path', 'String', '`File()`을 사용할 때 백업할 경로입니다. `File`을 사용하려면 이 설정을 지정해야 합니다.', ''),
+    ('allowed_disk', 'String', '`File()`을 사용할 때 백업 대상 디스크입니다. `File`을 사용하려면 이 설정을 지정해야 합니다.', ''),
+    ('allowed_path', 'String', '`File()`을 사용할 때 백업 대상 경로입니다. `File`을 사용하려면 이 설정을 지정해야 합니다.', ''),
     ('attempts_to_collect_metadata_before_sleep', 'UInt', '수집된 메타데이터를 비교한 후 불일치가 있을 경우, 대기 상태로 들어가기 전에 메타데이터를 수집하려고 시도하는 횟수입니다.', '2'),
-    ('collect_metadata_timeout', 'UInt64', '백업 중 메타데이터를 수집할 때의 시간 제한(밀리초)입니다.', '600000'),
+    ('collect_metadata_timeout', 'UInt64', '백업 중 메타데이터를 수집할 때의 타임아웃(밀리초)입니다.', '600000'),
     ('compare_collected_metadata', 'Bool', 'true이면 백업 중 메타데이터가 변경되지 않았는지 확인하기 위해 수집된 메타데이터를 기존 메타데이터와 비교합니다.', 'true'),
-    ('create_table_timeout', 'UInt64', '복원 중 테이블 생성 시간 제한(밀리초)입니다.', '300000'),
-    ('max_attempts_after_bad_version', 'UInt64', '조정된 백업/복원 중 bad version 오류가 발생한 후 재시도할 수 있는 최대 횟수입니다.', '3'),
-    ('max_sleep_before_next_attempt_to_collect_metadata', 'UInt64', '다음 메타데이터 수집 시도 전 최대 대기 시간(밀리초)입니다.', '100'),
-    ('min_sleep_before_next_attempt_to_collect_metadata', 'UInt64', '다음 메타데이터 수집 시도 전 최소 대기 시간(밀리초)입니다.', '5000'),
+    ('create_table_timeout', 'UInt64', '복원 중 테이블 생성 타임아웃(밀리초)입니다.', '300000'),
+    ('max_attempts_after_bad_version', 'UInt64', '조정된 백업/복원 중 잘못된 버전 오류가 발생한 후 재시도할 수 있는 최대 횟수입니다.', '3'),
+    ('max_sleep_before_next_attempt_to_collect_metadata', 'UInt64', '다음 메타데이터 수집 시도 전 최대 대기 시간(밀리초)입니다.', '5000'),
+    ('min_sleep_before_next_attempt_to_collect_metadata', 'UInt64', '다음 메타데이터 수집 시도 전 최소 대기 시간(밀리초)입니다.', '100'),
     ('remove_backup_files_after_failure', 'Bool', '`BACKUP` 명령이 실패하면 ClickHouse는 실패 전에 백업으로 이미 복사된 파일을 제거하려고 시도하고, 그렇지 않으면 복사된 파일을 그대로 둡니다.', 'true'),
     ('sync_period_ms', 'UInt64', '조정된 백업/복원을 위한 동기화 주기(밀리초)입니다.', '5000'),
     ('test_inject_sleep', 'Bool', '테스트 관련 대기', 'false'),
@@ -83,14 +83,14 @@ ClickHouse Cloud 배포에서는 기본적으로 활성화됩니다.
 | `allowed_disk`                                      | String | `File()`을 사용할 때 백업 대상 디스크입니다. `File`을 사용하려면 이 설정을 반드시 지정해야 합니다.                          | &#96;&#96;            |
 | `allowed_path`                                      | String | `File()`을 사용할 때 백업 대상 경로입니다. `File`을 사용하려면 이 설정을 반드시 지정해야 합니다.                           | &#96;&#96;            |
 | `attempts_to_collect_metadata_before_sleep`         | UInt   | 수집된 메타데이터를 비교한 후 불일치가 있는 경우, 잠시 대기하기 전에 메타데이터 수집을 시도하는 횟수입니다.                            | `2`                   |
-| `collect_metadata_timeout`                          | UInt64 | 백업 중 메타데이터를 수집할 때의 밀리초 단위 시간 제한입니다.                                                      | `600000`              |
+| `collect_metadata_timeout`                          | UInt64 | 백업 중 메타데이터를 수집할 때의 밀리초 단위 타임아웃입니다.                                                      | `600000`              |
 | `compare_collected_metadata`                        | Bool   | true이면 수집된 메타데이터를 기존 메타데이터와 비교하여 백업 중 변경되지 않았는지 확인합니다.                                   | `true`                |
-| `create_table_timeout`                              | UInt64 | 복원 중 테이블 생성 시 적용되는 밀리초 단위 시간 제한입니다.                                                      | `300000`              |
-| `max_attempts_after_bad_version`                    | UInt64 | 조정된 백업/복원 중 잘못된 버전 오류가 발생한 후 다시 시도할 수 있는 최대 횟수입니다.                               | `3`                   |
-| `max_sleep_before_next_attempt_to_collect_metadata` | UInt64 | 메타데이터를 다시 수집하기 전에 대기하는 최대 시간(밀리초)입니다.                                                    | `100`                 |
-| `min_sleep_before_next_attempt_to_collect_metadata` | UInt64 | 메타데이터를 다시 수집하기 전에 대기하는 최소 시간(밀리초)입니다.                                                    | `5000`                |
+| `create_table_timeout`                              | UInt64 | 복원 중 테이블 생성 시 적용되는 밀리초 단위 타임아웃입니다.                                                      | `300000`              |
+| `max_attempts_after_bad_version`                    | UInt64 | 조정된 백업/복원 중 잘못된 버전 오류가 발생한 후 다시 시도할 수 있는 최대 횟수입니다.                                       | `3`                   |
+| `max_sleep_before_next_attempt_to_collect_metadata` | UInt64 | 메타데이터를 다시 수집하기 전에 대기하는 최대 시간(밀리초)입니다.                                                    | `5000`                |
+| `min_sleep_before_next_attempt_to_collect_metadata` | UInt64 | 메타데이터를 다시 수집하기 전에 대기하는 최소 시간(밀리초)입니다.                                                    | `100`                 |
 | `remove_backup_files_after_failure`                 | Bool   | `BACKUP` 명령이 실패하면 ClickHouse는 실패 전에 이미 백업으로 복사된 파일을 제거하려고 시도하며, 그렇지 않으면 복사된 파일을 그대로 둡니다. | `true`                |
-| `sync_period_ms`                                    | UInt64 | 조정된 백업/복원에 사용되는 밀리초 단위 동기화 주기입니다.                                                | `5000`                |
+| `sync_period_ms`                                    | UInt64 | 조정된 백업/복원에 사용되는 밀리초 단위 동기화 주기입니다.                                                        | `5000`                |
 | `test_inject_sleep`                                 | Bool   | 테스트 관련 대기                                                                                | `false`               |
 | `test_randomize_order`                              | Bool   | true이면 테스트 목적으로 특정 작업의 순서를 무작위로 섞습니다.                                                    | `false`               |
 | `zookeeper_path`                                    | String | `ON CLUSTER` 절을 사용할 때 백업 및 복원 메타데이터가 저장되는 ZooKeeper 내 경로입니다.                             | `/clickhouse/backups` |
@@ -1192,8 +1192,8 @@ DDL 쿼리는 동일한 그룹에 속한 레플리카만 기다립니다.
 <opentelemetry_span_log>
     <engine>
         engine MergeTree
-        partition by toYYYYMM(finish_date)
-        order by (finish_date, finish_time_us, trace_id)
+        partition by toYYYYMM(event_date)
+        order by (event_date, finish_time_us, trace_id)
     </engine>
     <database>system</database>
     <table>opentelemetry_span_log</table>
@@ -1801,6 +1801,7 @@ URL 관련 스토리지 엔진과 테이블 함수에서 사용할 수 있도록
 * 여러 주체가 엔드포인트를 공유할 때 유용합니다. 예를 들어 경로 스타일 AWS 엔드포인트 `s3.us-west-2.amazonaws.com`에서 호스트 전체를 허용하면 해당 호스트의 모든 버킷이 허용됩니다.
 * 버킷은 파싱된 S3 URL에서 추출되므로, 해당 엔트리는 `https://s3.us-west-2.amazonaws.com/my-bucket/...`와 `https://my-bucket.s3.us-west-2.amazonaws.com/...`에 모두 일치합니다.
 * S3 URL에만 적용됩니다. 즉, `s3` 테이블 함수와 엔진, `S3` 데이터베이스 엔진, `S3`로의 `BACKUP`/`RESTORE`, 그리고 SQL에서 `disk` 함수로 생성한 S3 디스크에 적용됩니다.
+* SQL에서 생성한 S3 디스크는 쿼리가 해당 디스크를 생성할 때 검사합니다. 목록을 설정할 당시 이미 존재하던 디스크나 이 검사가 없는 버전에서 생성된 디스크는 서버 시작 시 그대로 로드됩니다. 삭제되었지만 아직 완전히 제거되지 않은 테이블도 마찬가지로 로드되므로 `UNDROP TABLE`은 계속 동작합니다. 이 경우 서버는 로그와 `system.warnings`에 이를 보고합니다.
 * S3가 반환하는 영구(301) 리디렉션도 버킷 엔트리를 기준으로 검사하지만, 임시(307) 리디렉션은 호스트만 검사하므로 목록에 `\<s3_bucket\>` 엔트리만 있으면 거부됩니다.
 
 예시:
@@ -1930,17 +1931,18 @@ PostgreSQL 프로토콜을 통해 클라이언트와 통신할 때 사용하는 
 
 액세스 제어 시스템의 선택적 개선 사항에 대한 설정입니다.
 
-| Setting                                         | Description                                                                                                                                                                                                                                                                                                                                                  | Default |
-| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------- |
-| `enable_read_write_grants`                      | `S3`, `HDFS`, `Kafka` 등 외부 데이터 소스에 대한 `READ` 및 `WRITE` 권한을 분리할 수 있도록 합니다. 버전 25.7부터 사용할 수 있습니다. `true`로 설정하면 두 작업을 모두 포괄하는 단일 권한 대신 소스별로 `READ`와 `WRITE` 권한을 각각 부여할 수 있습니다.                                                                                                                                                                                  | `false` |
-| `on_cluster_queries_require_cluster_grant`      | `ON CLUSTER` 쿼리에 `CLUSTER` 권한이 필요한지 설정합니다.                                                                                                                                                                                                                                                                                                                   | `true`  |
-| `role_cache_expiration_time_seconds`            | 마지막 접근 이후 역할이 역할 캐시(Role Cache)에 저장되는 시간을 초 단위로 설정합니다.                                                                                                                                                                                                                                                                                                       | `600`   |
-| `select_from_information_schema_requires_grant` | `SELECT * FROM information_schema.<table>`에 권한이 필요한지, 그리고 모든 사용자가 이를 실행할 수 있는지 설정합니다. true로 설정하면 이 쿼리는 일반 테이블과 마찬가지로 `GRANT SELECT ON information_schema.<table>` 권한이 필요합니다.                                                                                                                                                                                 | `true`  |
+| Setting                                         | Description                                                                                                                                                                                                                                                                                                                                            | Default |
+| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------- |
+| `enable_read_write_grants`                      | `S3`, `HDFS`, `Kafka` 등 외부 데이터 소스에 대한 `READ` 및 `WRITE` 권한을 분리할 수 있도록 합니다. 버전 25.7부터 사용할 수 있습니다. `true`로 설정하면 두 작업을 모두 포괄하는 단일 권한 대신 소스별로 `READ`와 `WRITE` 권한을 각각 부여할 수 있습니다.                                                                                                                                                                            | `false` |
+| `on_cluster_queries_require_cluster_grant`      | `ON CLUSTER` 쿼리에 `CLUSTER` 권한이 필요한지 설정합니다.                                                                                                                                                                                                                                                                                                             | `true`  |
+| `readonly_restricts_set_role`                   | 세션 또는 쿼리가 읽기 전용일 때 `SET ROLE` 문을 거부할지 설정합니다. `false`이면 `readonly`가 `SET ROLE`을 제한하지 않습니다. `role` HTTP 쿼리 매개변수(query parameter)에는 영향을 주지 않습니다.                                                                                                                                                                                                          | `false` |
+| `role_cache_expiration_time_seconds`            | 마지막 접근 이후 역할이 역할 캐시(Role Cache)에 저장되는 시간을 초 단위로 설정합니다.                                                                                                                                                                                                                                                                                                 | `600`   |
+| `select_from_information_schema_requires_grant` | `SELECT * FROM information_schema.<table>`에 권한이 필요한지, 그리고 모든 사용자가 이를 실행할 수 있는지 설정합니다. true로 설정하면 이 쿼리는 일반 테이블과 마찬가지로 `GRANT SELECT ON information_schema.<table>` 권한이 필요합니다.                                                                                                                                                                           | `true`  |
 | `select_from_system_db_requires_grant`          | `SELECT * FROM system.<table>`에 권한이 필요한지, 그리고 모든 사용자가 이를 실행할 수 있는지 설정합니다. true로 설정하면 이 쿼리는 일반 테이블과 마찬가지로 `GRANT SELECT ON system.<table>` 권한이 필요합니다. 예외적으로 일부 시스템 테이블(`tables`, `columns`, `databases` 및 `one`, `contributors` 같은 일부 상수 테이블)은 계속 모든 사용자가 접근할 수 있습니다. 또한 `SHOW` 권한(예: `SHOW USERS`)이 부여된 경우 해당 시스템 테이블(즉, `system.users`)에도 접근할 수 있습니다. | `true`  |
-| `settings_constraints_replace_previous`         | 특정 설정에 대한 설정 프로필의 제약 조건이 해당 설정의 이전 제약 조건(다른 프로필에 정의됨)의 동작을 취소할지 설정합니다. 여기에는 새 제약 조건에서 설정하지 않은 필드도 포함됩니다. 또한 `changeable_in_readonly` 제약 조건 유형도 활성화합니다.                                                                                                                                                                                                       | `true`  |
-| `table_engines_require_grant`                   | 특정 테이블 엔진으로 테이블을 생성할 때 권한이 필요한지 설정합니다. ClickHouse Cloud에서는 지원되지 않습니다.                                                                                                                                                                                                                                                                                        | `false` |
-| `throw_on_unmatched_row_policies`               | 테이블에 행 정책(row policy)이 있지만 현재 사용자에게 적용되는 정책이 하나도 없을 때, 해당 테이블을 읽으면 예외를 발생시킬지 설정합니다.                                                                                                                                                                                                                                                                          | `false` |
-| `users_without_row_policies_can_read_rows`      | 허용형 행 정책이 없는 사용자도 `SELECT` 쿼리로 행을 읽을 수 있는지 설정합니다. 예를 들어 사용자 A와 B가 있고 A에 대해서만 행 정책이 정의된 경우, 이 설정이 true이면 사용자 B는 모든 행을 볼 수 있습니다. 이 설정이 false이면 사용자 B는 어떤 행도 볼 수 없습니다.                                                                                                                                                                                          | `true`  |
+| `settings_constraints_replace_previous`         | 특정 설정에 대한 설정 프로필의 제약 조건이 해당 설정의 이전 제약 조건(다른 프로필에 정의됨)의 동작을 취소할지 설정합니다. 여기에는 새 제약 조건에서 설정하지 않은 필드도 포함됩니다. 또한 `changeable_in_readonly` 제약 조건 유형도 활성화합니다.                                                                                                                                                                                                 | `true`  |
+| `table_engines_require_grant`                   | 특정 테이블 엔진으로 테이블을 생성할 때 권한이 필요한지 설정합니다. ClickHouse Cloud에서는 지원되지 않습니다.                                                                                                                                                                                                                                                                                  | `false` |
+| `throw_on_unmatched_row_policies`               | 테이블에 행 정책(row policy)이 있지만 현재 사용자에게 적용되는 정책이 하나도 없을 때, 해당 테이블을 읽으면 예외를 발생시킬지 설정합니다.                                                                                                                                                                                                                                                                    | `false` |
+| `users_without_row_policies_can_read_rows`      | 허용형 행 정책이 없는 사용자도 `SELECT` 쿼리로 행을 읽을 수 있는지 설정합니다. 예를 들어 사용자 A와 B가 있고 A에 대해서만 행 정책이 정의된 경우, 이 설정이 true이면 사용자 B는 모든 행을 볼 수 있습니다. 이 설정이 false이면 사용자 B는 어떤 행도 볼 수 없습니다.                                                                                                                                                                                    | `true`  |
 
 예시:
 
@@ -1953,6 +1955,7 @@ PostgreSQL 프로토콜을 통해 클라이언트와 통신할 때 사용하는 
     <select_from_information_schema_requires_grant>true</select_from_information_schema_requires_grant>
     <settings_constraints_replace_previous>true</settings_constraints_replace_previous>
     <table_engines_require_grant>false</table_engines_require_grant>
+    <readonly_restricts_set_role>false</readonly_restricts_set_role>
     <role_cache_expiration_time_seconds>600</role_cache_expiration_time_seconds>
     <enable_read_write_grants>false</enable_read_write_grants>
 </access_control_improvements>

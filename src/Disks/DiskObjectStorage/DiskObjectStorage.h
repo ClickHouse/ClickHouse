@@ -8,6 +8,7 @@
 #include <Disks/DiskObjectStorage/Replication/BlobCopierThread.h>
 #include <Disks/IDisk.h>
 #include <Interpreters/Context_fwd.h>
+#include <Interpreters/FileCache/FileCache_fwd.h>
 
 #include <base/scope_guard.h>
 
@@ -201,6 +202,8 @@ public:
 
     ObjectStoragePtr getObjectStorage() override;
 
+    std::unordered_map<Location, ObjectStoragePtr> getObjectStorages() const { return object_storages->getRegistry(); }
+
     bool supportsCache() const override;
 
     /// Is object storage read only?
@@ -217,6 +220,8 @@ public:
     bool isWriteOnce() const override;
 
     bool prefersRecursiveRemoval() const override;
+
+    bool supportsAtomicFileCreation() const override;
 
     /// Return true if the disk is "shared-compatible", i.e. does not uses local disks
     bool isSharedCompatible() const;
@@ -316,13 +321,13 @@ public:
         , metric_increment(CurrentMetrics::DiskSpaceReservedForMerge, size_)
     {}
 
-    UInt64 getSize() const override { return size; }
+    [[nodiscard]] UInt64 getSize() const override { return size; }
 
-    std::optional<UInt64> getUnreservedSpace() const override { return unreserved_space; }
+    [[nodiscard]] std::optional<UInt64> getUnreservedSpace() const override { return unreserved_space; }
 
-    DiskPtr getDisk(size_t i) const override;
+    [[nodiscard]] DiskPtr getDisk(size_t i) const override;
 
-    Disks getDisks() const override { return {disk}; }
+    [[nodiscard]] Disks getDisks() const override { return {disk}; }
 
     void update(UInt64 new_size) override;
 

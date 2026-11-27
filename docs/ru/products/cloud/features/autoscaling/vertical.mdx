@@ -7,8 +7,6 @@ title: 'Вертикальное автомасштабирование'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 import { ScalePlanFeatureBadge } from "/snippets/ru/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
 
 <ScalePlanFeatureBadge feature="Автоматическое вертикальное масштабирование" />
@@ -25,7 +23,15 @@ import { ScalePlanFeatureBadge } from "/snippets/ru/components/ScalePlanFeatureB
   Сервисы Scale с одной репликой и сервисы Enterprise со стандартными профилями `1:4` поддерживают вертикальное автоматическое масштабирование. Для сервисов Enterprise с пользовательскими профилями изменение размера по вертикали выполняется при содействии службы поддержки. Сервисы уровня Basic имеют фиксированный размер и не могут масштабироваться.
 </Note>
 
-<Image img="/images/cloud/manage/AutoScaling.webp" size="lg" alt="Страница настроек масштабирования" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Страница настроек масштабирования](/images/cloud/manage/AutoScaling.webp)
+
+</Frame>
+
+</div>
 
 Задайте для реплик значение **Максимальный объём памяти** больше, чем **Минимальный объём памяти**. После этого сервис будет масштабироваться по мере необходимости в пределах этих значений. Эти настройки также доступны при первоначальном создании сервиса. Каждой реплике в вашем сервисе будет выделен одинаковый объём памяти и одинаковые ресурсы CPU.
 

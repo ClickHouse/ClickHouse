@@ -1,5 +1,6 @@
 #pragma once
 
+#include <map>
 #include <optional>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
@@ -14,7 +15,7 @@ class ASTRolesOrUsersSet;
 /** CREATE QUOTA [IF NOT EXISTS | OR REPLACE] name
   *      [KEYED BY {none | user_name | ip_address | client_key | client_key, user_name | client_key, ip_address} | NOT KEYED]
   *      [FOR [RANDOMIZED] INTERVAL number {second | minute | hour | day | week | month | quarter | year}
-  *       {MAX {{queries | errors | result_rows | result_bytes | read_rows | read_bytes | execution_time} = number} [,...] |
+  *       {MAX {{queries | errors | result_rows | result_bytes | read_rows | read_bytes | execution_time | profile_event_name} = number} [,...] |
   *        NO LIMITS | TRACKING ONLY} [,...]]
   *      [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
   *
@@ -22,7 +23,7 @@ class ASTRolesOrUsersSet;
   *      [RENAME TO new_name]
   *      [KEYED BY {none | user_name | ip_address | client_key | client_key, user_name | client_key, ip_address} | NOT KEYED]
   *      [FOR [RANDOMIZED] INTERVAL number {second | minute | hour | day | week | month | quarter | year}
-  *       {MAX {{queries | errors | result_rows | result_bytes | read_rows | read_bytes | execution_time} = number} [,...] |
+  *       {MAX {{queries | errors | result_rows | result_bytes | read_rows | read_bytes | execution_time | profile_event_name} = number} [,...] |
   *        NO LIMITS | TRACKING ONLY} [,...]]
   *      [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
   */
@@ -46,6 +47,8 @@ public:
     struct Limits
     {
         std::optional<QuotaValue> max[static_cast<size_t>(QuotaType::MAX)];
+        /// Limits over arbitrary profile events, keyed by the event name.
+        std::map<String, QuotaValue> profile_events_max;
         bool drop = false;
         std::chrono::seconds duration = std::chrono::seconds::zero();
         bool randomize_interval = false;

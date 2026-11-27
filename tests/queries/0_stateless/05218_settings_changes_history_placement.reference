@@ -12,3 +12,40 @@ also shipped in 26.8
 enabled in 26.1
 1
 0
+backported to 26.8
+ai_function_max_api_calls_per_query	0
+ai_function_max_concurrent_requests_per_thread	8
+ai_function_max_retries	3
+backup_s3_expired_token_retry_timeout_ms	120000
+iceberg_tolerate_conflicting_manifest_schemas	1
+ai_function_max_api_calls_per_query	0
+ai_function_max_concurrent_requests_per_thread	1
+ai_function_max_retries	0
+backup_s3_expired_token_retry_timeout_ms	0
+iceberg_tolerate_conflicting_manifest_schemas	0
+backported to 26.7
+ai_function_max_input_tokens_per_query	0
+ai_function_max_output_tokens_per_query	0
+azure_validate_etag_on_read	1
+ai_function_max_input_tokens_per_query	1000000
+ai_function_max_output_tokens_per_query	500000
+azure_validate_etag_on_read	0
+backported to 26.9, or to 26.8 but not to 26.9
+azure_validate_etag_on_read	0
+use_text_index_postings_cache	1
+azure_validate_etag_on_read	1
+use_text_index_postings_cache	0
+backported to 26.1
+http_headers_read_timeout	30
+http_max_field_name_size	4096
+http_max_fields	1000
+http_max_request_header_size	10485760
+http_headers_read_timeout	0
+http_max_field_name_size	131072
+http_max_fields	1000000
+http_max_request_header_size	0
+backported to 26.3 and 26.5, not to 26.4
+1000
+60000
+1000
+60000

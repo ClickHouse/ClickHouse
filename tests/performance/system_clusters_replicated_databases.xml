@@ -1,0 +1,121 @@
+<test>
+    <!-- `system.clusters` fills the replica-state columns (`is_active`, `replication_lag`, ...) of every
+         `Replicated` database from Keeper. With many databases the query time is dominated by these
+         requests: they have to be in flight together, not one round trip per database
+         (https://github.com/ClickHouse/ClickHouse/issues/79300). A filter on `cluster` has to be applied
+         before going to Keeper. The clusters of the databases are built on the prewarm run. -->
+    <substitutions>
+        <substitution>
+            <name>n</name>
+            <values>
+                <value>1</value>
+                <value>2</value>
+                <value>3</value>
+                <value>4</value>
+                <value>5</value>
+                <value>6</value>
+                <value>7</value>
+                <value>8</value>
+                <value>9</value>
+                <value>10</value>
+                <value>11</value>
+                <value>12</value>
+                <value>13</value>
+                <value>14</value>
+                <value>15</value>
+                <value>16</value>
+                <value>17</value>
+                <value>18</value>
+                <value>19</value>
+                <value>20</value>
+                <value>21</value>
+                <value>22</value>
+                <value>23</value>
+                <value>24</value>
+                <value>25</value>
+                <value>26</value>
+                <value>27</value>
+                <value>28</value>
+                <value>29</value>
+                <value>30</value>
+                <value>31</value>
+                <value>32</value>
+                <value>33</value>
+                <value>34</value>
+                <value>35</value>
+                <value>36</value>
+                <value>37</value>
+                <value>38</value>
+                <value>39</value>
+                <value>40</value>
+                <value>41</value>
+                <value>42</value>
+                <value>43</value>
+                <value>44</value>
+                <value>45</value>
+                <value>46</value>
+                <value>47</value>
+                <value>48</value>
+                <value>49</value>
+                <value>50</value>
+                <value>51</value>
+                <value>52</value>
+                <value>53</value>
+                <value>54</value>
+                <value>55</value>
+                <value>56</value>
+                <value>57</value>
+                <value>58</value>
+                <value>59</value>
+                <value>60</value>
+                <value>61</value>
+                <value>62</value>
+                <value>63</value>
+                <value>64</value>
+                <value>65</value>
+                <value>66</value>
+                <value>67</value>
+                <value>68</value>
+                <value>69</value>
+                <value>70</value>
+                <value>71</value>
+                <value>72</value>
+                <value>73</value>
+                <value>74</value>
+                <value>75</value>
+                <value>76</value>
+                <value>77</value>
+                <value>78</value>
+                <value>79</value>
+                <value>80</value>
+                <value>81</value>
+                <value>82</value>
+                <value>83</value>
+                <value>84</value>
+                <value>85</value>
+                <value>86</value>
+                <value>87</value>
+                <value>88</value>
+                <value>89</value>
+                <value>90</value>
+                <value>91</value>
+                <value>92</value>
+                <value>93</value>
+                <value>94</value>
+                <value>95</value>
+                <value>96</value>
+                <value>97</value>
+                <value>98</value>
+                <value>99</value>
+                <value>100</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <create_query>CREATE DATABASE perf_system_clusters_{n} ENGINE = Replicated('/clickhouse/perf_system_clusters/{n}', 'shard1', 'replica1')</create_query>
+
+    <query>SELECT is_active, replication_lag FROM system.clusters FORMAT Null</query>
+    <query>SELECT is_active, replication_lag FROM system.clusters WHERE cluster = 'perf_system_clusters_50' FORMAT Null</query>
+
+    <drop_query>DROP DATABASE IF EXISTS perf_system_clusters_{n} SYNC</drop_query>
+</test>

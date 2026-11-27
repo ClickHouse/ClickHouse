@@ -48,7 +48,7 @@ struct ConnectionTimeouts
     ConnectionTimeouts() = default;
 
     static Poco::Timespan saturate(Poco::Timespan timespan, Poco::Timespan limit);
-    ConnectionTimeouts getSaturated(Poco::Timespan limit) const;
+    [[nodiscard]] ConnectionTimeouts getSaturated(Poco::Timespan limit) const;
 
     /// Timeouts for the case when we have just single attempt to connect.
     static ConnectionTimeouts getTCPTimeoutsWithoutFailover(const Settings & settings);
@@ -63,7 +63,7 @@ struct ConnectionTimeouts
 
     static ConnectionTimeouts getFetchPartHTTPTimeouts(const ServerSettings & server_settings, const Settings & user_settings);
 
-    ConnectionTimeouts getAdaptiveTimeouts(const String & method, bool first_attempt, bool first_byte) const;
+    [[nodiscard]] ConnectionTimeouts getAdaptiveTimeouts(const String & method, bool first_attempt, bool first_byte) const;
 
 #define DECLARE_BUILDER_FOR_MEMBER(member, setter_func) \
     ConnectionTimeouts & setter_func(size_t seconds); \

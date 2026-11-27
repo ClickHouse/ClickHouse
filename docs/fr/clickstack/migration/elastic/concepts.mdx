@@ -8,8 +8,6 @@ keywords: ['Elasticsearch']
 doc_type: 'reference'
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 <div id="elastic-vs-clickstack">
   ## Elastic Stack vs ClickStack
 </div>
@@ -91,7 +89,15 @@ Les deux systèmes proposent une API REST, mais ClickHouse fournit également un
   ### Indexation et stockage
 </div>
 
-<Image img="/images/use-cases/observability/elasticsearch.webp" alt="Elasticsearch" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Elasticsearch](/images/use-cases/observability/elasticsearch.webp)
+
+</Frame>
+
+</div>
 
 Le concept de sharding est fondamental dans le modèle de mise à l’échelle d’Elasticsearch. Chaque ① [**index**](https://www.elastic.co/blog/what-is-an-elasticsearch-index) est découpé en **shards**, chacun correspondant à un index Lucene physique stocké sur disque sous forme de segments. Un shard peut avoir une ou plusieurs copies physiques, appelées shards de réplique, pour assurer la résilience. Pour passer à l’échelle, les shards et les répliques peuvent être répartis sur plusieurs nœuds. Un shard ② se compose d’un ou plusieurs segments immuables. Un segment est la structure d’indexation de base de Lucene, la bibliothèque Java qui fournit les fonctionnalités d’indexation et de recherche sur lesquelles repose Elasticsearch.
 
@@ -111,7 +117,15 @@ Dans Elasticsearch, les [mappings d’index](https://www.elastic.co/guide/en/ela
 
 ClickHouse, à l’inverse, est **orienté colonnes** : chaque colonne est stockée indépendamment, mais toujours triée selon la clé primaire/de tri de la table. Cet ordre permet d’utiliser des [index primaires clairsemés](/fr/concepts/core-concepts/primary-indexes), qui permettent à ClickHouse d’ignorer efficacement certaines données pendant l’exécution des requêtes. Lorsque les requêtes filtrent sur les champs de la clé primaire, ClickHouse ne lit que les parties pertinentes de chaque colonne, ce qui réduit considérablement les E/S disque et améliore les performances, même sans index complet sur chaque colonne.
 
-<Image img="/images/use-cases/observability/clickhouse.webp" alt="ClickHouse" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![ClickHouse](/images/use-cases/observability/clickhouse.webp)
+
+</Frame>
+
+</div>
 
 ClickHouse prend également en charge les [**index de saut**](/fr/concepts/features/performance/skip-indexes/skipping-indexes), qui accélèrent le filtrage en précalculant des données d’index pour les colonnes sélectionnées. Ils doivent être définis explicitement, mais peuvent améliorer considérablement les performances. En outre, ClickHouse vous permet de spécifier des [codecs de compression](/fr/guides/use-cases/observability/build-your-own/schema-design#using-codecs) et des algorithmes de compression par colonne, ce qu’Elasticsearch ne prend pas en charge (sa [compression](https://www.elastic.co/docs/reference/elasticsearch/index-settings/index-modules) s’applique uniquement au stockage JSON de `_source`).
 
@@ -184,7 +198,15 @@ Les différences ci-dessus s’expliquent par les modèles d’exécution d’El
 
 ClickHouse a été conçu pour maximiser l’efficacité sur le matériel moderne. Par défaut, ClickHouse exécute une requête SQL avec N voies d’exécution concurrentes sur une machine disposant de N cœurs CPU :
 
-<Image img="/images/use-cases/observability/clickhouse-execution.webp" alt="Exécution de ClickHouse" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Exécution de ClickHouse](/images/use-cases/observability/clickhouse-execution.webp)
+
+</Frame>
+
+</div>
 
 Sur un nœud unique, les voies d’exécution divisent les données en plages indépendantes, ce qui permet un traitement concurrent sur les threads CPU. Cela inclut le filtrage, l’agrégation et le tri. Les résultats locaux de chaque voie sont ensuite fusionnés, puis un opérateur LIMIT est appliqué si la requête comporte une clause LIMIT.
 
@@ -199,7 +221,15 @@ Ce modèle permet une mise à l’échelle efficace entre les cœurs et les nœu
 
 Elasticsearch, en revanche, attribue un thread par shard pour la plupart des agrégations, quel que soit le nombre de cœurs CPU disponibles. Ces threads renvoient des résultats top-N locaux au shard, qui sont fusionnés sur le nœud coordinateur. Cette approche peut sous-utiliser les ressources système et introduire d’éventuelles imprécisions dans les agrégations globales, en particulier lorsque des termes fréquents sont répartis sur plusieurs shards. La précision peut être améliorée en augmentant le paramètre `shard_size`, mais cela se fait au prix d’une utilisation mémoire plus élevée et d’une latence accrue des requêtes.
 
-<Image img="/images/use-cases/observability/elasticsearch-execution.webp" alt="Exécution d’Elasticsearch" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Exécution d’Elasticsearch](/images/use-cases/observability/elasticsearch-execution.webp)
+
+</Frame>
+
+</div>
 
 En résumé, ClickHouse exécute les agrégations et les requêtes avec un parallélisme plus fin et un contrôle accru des ressources matérielles, tandis qu’Elasticsearch repose sur une exécution basée sur les shards, avec des contraintes plus rigides.
 
@@ -241,7 +271,15 @@ Dans Elasticsearch, les **rollups** ou les **agrégats** reposent sur un mécani
 
 Le schéma suivant illustre abstraitement le fonctionnement des transforms (notez que nous utilisons la couleur bleue pour tous les documents appartenant au même bucket pour lequel nous voulons précalculer des valeurs agrégées) :
 
-<Image img="/images/use-cases/observability/es-transforms.webp" alt="Transforms Elasticsearch" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Transforms Elasticsearch](/images/use-cases/observability/es-transforms.webp)
+
+</Frame>
+
+</div>
 
 Les transforms continues utilisent des [checkpoints](https://www.elastic.co/guide/en/elasticsearch/reference/current/transform-checkpoints.html) basés sur un intervalle de vérification configurable (la [frequency](https://www.elastic.co/guide/en/elasticsearch/reference/current/put-transform.html) de la transform, avec une valeur par défaut d’une minute). Dans le schéma ci-dessus, nous supposons ① qu’un nouveau checkpoint est créé une fois l’intervalle de vérification écoulé. Elasticsearch vérifie alors les changements dans l’index source des transforms et détecte trois nouveaux documents `blue` (11, 12 et 13) apparus depuis le checkpoint précédent. L’index source est donc filtré pour récupérer tous les documents `blue` existants, puis, à l’aide d’une [composite aggregation](https://www.elastic.co/guide/en/elasticsearch/reference/current/search-aggregations-bucket-composite-aggregation.html) (afin de tirer parti de la [pagination](https://www.elastic.co/guide/en/elasticsearch/reference/current/paginate-search-results.html) des résultats), les valeurs agrégées sont recalculées (et l’index de destination est mis à jour avec un document qui remplace celui contenant les valeurs d’agrégation précédentes). De même, en ② et ③, de nouveaux checkpoints sont traités en vérifiant les changements puis en recalculant les valeurs agrégées à partir de tous les documents existants appartenant au même bucket `blue`.
 
@@ -251,7 +289,15 @@ Ce modèle est rendu possible par la prise en charge par ClickHouse des [**état
 
 Nous illustrons abstraitement le mécanisme des vues matérialisées incrémentielles (notez que nous utilisons la couleur bleue pour toutes les lignes appartenant au même groupe pour lequel nous voulons précalculer des valeurs agrégées) :
 
-<Image img="/images/use-cases/observability/ch-mvs.webp" alt="Vues matérialisées ClickHouse" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Vues matérialisées ClickHouse](/images/use-cases/observability/ch-mvs.webp)
+
+</Frame>
+
+</div>
 
 Dans le schéma ci-dessus, la table source de la vue matérialisée contient déjà une partie de données stockant certaines lignes `blue` (de 1 à 10) appartenant au même groupe. Pour ce groupe, il existe déjà aussi une partie de données dans la table cible de la vue stockant un [état d’agrégation partiel](https://www.youtube.com/watch?v=QDAJTKZT8y4) pour le groupe `blue`. Lorsque les insertions ① ② ③ de nouvelles lignes dans la table source ont lieu, une partie de données correspondante est créée dans la table source pour chaque insertion et, en parallèle, pour chaque block de lignes nouvellement insérées, un état d’agrégation partiel est calculé puis inséré sous la forme d’une partie de données dans la table cible de la vue matérialisée. ④ Lors des fusions de parts en arrière-plan, les états d’agrégation partiels sont fusionnés, ce qui produit une agrégation incrémentielle des données.
 

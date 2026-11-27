@@ -7,8 +7,6 @@ title: 'التحجيم الرأسي التلقائي'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 import { ScalePlanFeatureBadge } from "/snippets/ar/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
 
 <ScalePlanFeatureBadge feature="التحجيم الرأسي التلقائي" />
@@ -25,7 +23,15 @@ import { ScalePlanFeatureBadge } from "/snippets/ar/components/ScalePlanFeatureB
   تدعم خدمات Scale ذات النسخة المتماثلة الواحدة وخدمات Enterprise ذات ملفات التعريف القياسية `1:4` التحجيم الرأسي التلقائي. تتطلب خدمات Enterprise ذات ملفات التعريف المخصصة تغيير الحجم الرأسي بمساعدة الدعم. تظل خدمات فئة Basic ثابتة الحجم ولا يمكن توسيعها.
 </Note>
 
-<Image img="/images/cloud/manage/AutoScaling.webp" size="lg" alt="صفحة إعدادات التوسّع" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![صفحة إعدادات التوسّع](/images/cloud/manage/AutoScaling.webp)
+
+</Frame>
+
+</div>
 
 اضبط **الحد الأقصى للذاكرة** لنسخك المتماثلة على قيمة أعلى من **الحد الأدنى للذاكرة**. بعد ذلك ستتوسّع الخدمة حسب الحاجة ضمن هذه الحدود. تتوفر هذه الإعدادات أيضًا أثناء عملية إنشاء الخدمة لأول مرة. وسيُخصَّص لكل نسخة متماثلة في خدمتك القدر نفسه من موارد الذاكرة وCPU.
 

@@ -1,7 +1,6 @@
 -- Regression test for issue #111709: a FINAL query filtering on a sorting-key column that is
 -- not in the SELECT list must not throw NOT_FOUND_COLUMN_IN_BLOCK when the filter is in PREWHERE.
 
-SET enable_analyzer = 1;
 SET optimize_move_to_prewhere = 1;
 SET optimize_move_to_prewhere_if_final = 1;
 -- Pin query_plan_remove_unused_columns (the runner disables it with 5% probability): it must stay on
@@ -22,7 +21,6 @@ SELECT (SELECT sum(s) FROM t_04627_summing FINAL WHERE k GROUP BY s)
      = (SELECT sum(s) FROM t_04627_summing FINAL WHERE k GROUP BY s SETTINGS optimize_move_to_prewhere_if_final = 0);
 -- Explicit PREWHERE on the unprojected key hits the same merge-key pruning path.
 SELECT sum(s) FROM t_04627_summing FINAL PREWHERE k GROUP BY s;
--- The old planner (enable_analyzer = 0) shares the pruning path too.
 -- The optimization must still fire: the filter on k is moved to PREWHERE (returns 1).
 SELECT count() > 0 FROM (EXPLAIN actions = 1 SELECT s FROM t_04627_summing FINAL WHERE k GROUP BY s)
 WHERE explain ILIKE '%Prewhere filter column:%k%';

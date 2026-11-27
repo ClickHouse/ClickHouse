@@ -18,6 +18,7 @@ namespace Paimon
 struct TableStateSnapshot
 {
     Int64 snapshot_id{-1};
+    /// Schema to read with: the latest schema for the latest state, the snapshot's own schema for a state loaded by snapshot id.
     Int64 schema_id{-1};
     String base_manifest_list_path;
     String delta_manifest_list_path;
@@ -58,7 +59,10 @@ struct TableStateSnapshot
     {
     }
 
-    bool isCompact() const { return commit_kind == "COMPACT"; }
+    [[nodiscard]] bool isCompact() const { return commit_kind == "COMPACT"; }
+    [[nodiscard]] bool isAppend() const { return commit_kind == "APPEND"; }
+    [[nodiscard]] bool isOverwrite() const { return commit_kind == "OVERWRITE"; }
+    [[nodiscard]] bool isAnalyze() const { return commit_kind == "ANALYZE"; }
 
     bool operator==(const TableStateSnapshot & other) const
     {

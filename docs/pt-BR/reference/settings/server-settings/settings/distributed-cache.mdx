@@ -12,15 +12,27 @@ import SettingsInfoBlock from "/snippets/pt-BR/components/SettingsInfoBlock/Sett
 
 Essas configurações configuram o servidor ClickHouse e são geradas automaticamente a partir do código-fonte do ClickHouse.
 
-## distributed_cache_apply_throttling_settings_from_client
+## distributed_cache_apply_throttling_settings_from_client {#distributed_cache_apply_throttling_settings_from_client}
 
 <SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />Indica se o servidor de cache deve aplicar as configurações de throttling recebidas do cliente.
 
-## distributed_cache_keep_up_free_connections_ratio
+## distributed_cache_keep_up_free_connections_ratio {#distributed_cache_keep_up_free_connections_ratio}
 
 <SettingsInfoBlock type="Float" default_value="0.1" changeable_without_restart="No" />Limite flexível para o número de conexões ativas livres que o cache distribuído tentará manter. Quando o número de conexões livres ficar abaixo de distributed&#95;cache&#95;keep&#95;up&#95;free&#95;connections&#95;ratio * max&#95;connections, as conexões com a atividade mais antiga serão fechadas até que esse número volte a ficar acima do limite.
 
-## distributed_cache_write_pool_size
+## distributed_cache_warmer_max_bytes_in_queue {#distributed_cache_warmer_max_bytes_in_queue}
+
+<SettingsInfoBlock type="UInt64" default_value="107374182400" changeable_without_restart="No" />Só tem efeito no ClickHouse Cloud. Tamanho total máximo dos intervalos que o cache warmer mantém na fila para um disco sem cache do sistema de arquivos local; acima desse limite, os intervalos mais antigos são descartados (com um cache local, o warmer usa o próprio `max_size`). Zero significa ilimitado.
+
+## distributed_cache_warmer_max_file_segment_size {#distributed_cache_warmer_max_file_segment_size}
+
+<SettingsInfoBlock type="NonZeroUInt64" default_value="33554432" changeable_without_restart="No" />Só tem efeito no ClickHouse Cloud. Tamanho dos intervalos em que o cache warmer lê uma parte obtida para o distributed cache quando o disco da parte não tem cache do sistema de arquivos local (com um cache local, o warmer usa o próprio `max_file_segment_size`).
+
+## distributed_cache_warmer_max_segments_in_queue {#distributed_cache_warmer_max_segments_in_queue}
+
+<SettingsInfoBlock type="UInt64" default_value="100000" changeable_without_restart="No" />Só tem efeito no ClickHouse Cloud. Número máximo de intervalos que o cache warmer mantém na fila para um disco sem cache do sistema de arquivos local; acima desse limite, os intervalos mais antigos são descartados (quando há cache local, o warmer usa o `max_elements` dele). Zero significa ilimitado.
+
+## distributed_cache_write_pool_size {#distributed_cache_write_pool_size}
 
 <SettingsInfoBlock type="UInt64" default_value="100" changeable_without_restart="No" />O número máximo de solicitações de gravação do cache distribuído executadas simultaneamente em uma background thread (em todas as queries). Quando o limite é atingido, a gravação no write-through cache é ignorada (os dados continuam sendo gravados no armazenamento de objetos), de modo que não fica bloqueada aguardando um slot nem cria um número ilimitado de threads. Gravações de temporary data não usam background threads e não são afetadas pelo limite.
 

@@ -69,3 +69,59 @@ SELECT (SELECT arraySort(groupArray((l.id, l.k, l.s, r.id, r.lo, r.hi, r.s))) FR
 
 DROP TABLE lpad;
 DROP TABLE rpad;
+
+-- `Enum` columns, also inside a `Tuple`, are padded with the type default (the smallest value), not the column zero 0.
+DROP TABLE IF EXISTS lpad_enum;
+DROP TABLE IF EXISTS rpad_enum;
+
+CREATE TABLE lpad_enum (id Int32, k Int32, e Enum8('a' = 1, 'b' = 2), t Tuple(s String, e Enum16('x' = -5, 'y' = 7))) ENGINE = MergeTree ORDER BY id;
+CREATE TABLE rpad_enum (id Int32, lo Int32, hi Int32, mid Int32, e Enum8('a' = 1, 'b' = 2), t Tuple(s String, e Enum16('x' = -5, 'y' = 7))) ENGINE = MergeTree ORDER BY id;
+
+INSERT INTO lpad_enum VALUES (1, 10, 'b', ('l1', 'y')), (2, 40, 'b', ('l2', 'y'));
+INSERT INTO rpad_enum VALUES (1, 9, 11, 10, 'b', ('r1', 'y')), (2, 49, 51, 50, 'b', ('r2', 'y'));
+
+SELECT 'enum left';
+SELECT l.id, l.e, l.t, r.id, r.e, r.t FROM lpad_enum l LEFT JOIN rpad_enum r ON l.k > r.lo AND l.k < r.hi ORDER BY ALL;
+SELECT (SELECT arraySort(groupArray((l.id, l.e, l.t, r.id, r.e, r.t))) FROM lpad_enum l LEFT JOIN rpad_enum r ON l.k > r.lo AND l.k < r.hi)
+     = (SELECT arraySort(groupArray((l.id, l.e, l.t, r.id, r.e, r.t))) FROM lpad_enum l LEFT JOIN rpad_enum r ON l.k = r.mid);
+
+SELECT 'enum right';
+SELECT l.id, l.e, l.t, r.id, r.e, r.t FROM lpad_enum l RIGHT JOIN rpad_enum r ON l.k > r.lo AND l.k < r.hi ORDER BY ALL;
+SELECT (SELECT arraySort(groupArray((l.id, l.e, l.t, r.id, r.e, r.t))) FROM lpad_enum l RIGHT JOIN rpad_enum r ON l.k > r.lo AND l.k < r.hi)
+     = (SELECT arraySort(groupArray((l.id, l.e, l.t, r.id, r.e, r.t))) FROM lpad_enum l RIGHT JOIN rpad_enum r ON l.k = r.mid);
+
+SELECT 'enum full';
+SELECT l.id, l.e, l.t, r.id, r.e, r.t FROM lpad_enum l FULL JOIN rpad_enum r ON l.k > r.lo AND l.k < r.hi ORDER BY ALL;
+SELECT (SELECT arraySort(groupArray((l.id, l.e, l.t, r.id, r.e, r.t))) FROM lpad_enum l FULL JOIN rpad_enum r ON l.k > r.lo AND l.k < r.hi)
+     = (SELECT arraySort(groupArray((l.id, l.e, l.t, r.id, r.e, r.t))) FROM lpad_enum l FULL JOIN rpad_enum r ON l.k = r.mid);
+
+SELECT 'enum anti';
+SELECT l.id, l.e, l.t, r.id, r.e, r.t FROM lpad_enum l LEFT ANTI JOIN rpad_enum r ON l.k > r.lo AND l.k < r.hi ORDER BY ALL;
+SELECT (SELECT arraySort(groupArray((l.id, l.e, l.t, r.id, r.e, r.t))) FROM lpad_enum l LEFT ANTI JOIN rpad_enum r ON l.k > r.lo AND l.k < r.hi)
+     = (SELECT arraySort(groupArray((l.id, l.e, l.t, r.id, r.e, r.t))) FROM lpad_enum l LEFT ANTI JOIN rpad_enum r ON l.k = r.mid);
+
+SELECT 'enum right anti';
+SELECT l.id, l.e, l.t, r.id, r.e, r.t FROM lpad_enum l RIGHT ANTI JOIN rpad_enum r ON l.k > r.lo AND l.k < r.hi ORDER BY ALL;
+SELECT (SELECT arraySort(groupArray((l.id, l.e, l.t, r.id, r.e, r.t))) FROM lpad_enum l RIGHT ANTI JOIN rpad_enum r ON l.k > r.lo AND l.k < r.hi)
+     = (SELECT arraySort(groupArray((l.id, l.e, l.t, r.id, r.e, r.t))) FROM lpad_enum l RIGHT ANTI JOIN rpad_enum r ON l.k = r.mid);
+
+SELECT 'enum filter';
+SELECT (SELECT count() FROM lpad_enum l LEFT JOIN rpad_enum r ON l.k > r.lo AND l.k < r.hi WHERE r.e = 'a' AND r.t.e = 'x'),
+       (SELECT count() FROM lpad_enum l LEFT JOIN rpad_enum r ON l.k = r.mid WHERE r.e = 'a' AND r.t.e = 'x');
+
+-- A typed `JSON` path of an `Enum` type is padded with the type default as well.
+DROP TABLE IF EXISTS rpad_json;
+CREATE TABLE rpad_json (id Int32, lo Int32, hi Int32, mid Int32, j JSON(p Enum8('a' = 1, 'b' = 2))) ENGINE = MergeTree ORDER BY id;
+INSERT INTO rpad_json VALUES (1, 9, 11, 10, '{"p":"b"}'), (2, 49, 51, 50, '{"p":"b"}');
+
+SELECT 'enum json';
+SELECT l.id, r.id, r.j FROM lpad_enum l LEFT JOIN rpad_json r ON l.k > r.lo AND l.k < r.hi ORDER BY l.id, r.id;
+SELECT (SELECT arraySort(groupArray((l.id, r.id, toString(r.j)))) FROM lpad_enum l LEFT JOIN rpad_json r ON l.k > r.lo AND l.k < r.hi)
+     = (SELECT arraySort(groupArray((l.id, r.id, toString(r.j)))) FROM lpad_enum l LEFT JOIN rpad_json r ON l.k = r.mid);
+SELECT (SELECT count() FROM lpad_enum l LEFT JOIN rpad_json r ON l.k > r.lo AND l.k < r.hi WHERE r.j.p = 'a'),
+       (SELECT count() FROM lpad_enum l LEFT JOIN rpad_json r ON l.k = r.mid WHERE r.j.p = 'a');
+
+DROP TABLE rpad_json;
+
+DROP TABLE lpad_enum;
+DROP TABLE rpad_enum;

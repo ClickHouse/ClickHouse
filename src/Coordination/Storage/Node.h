@@ -37,7 +37,7 @@ struct FullNode
 
     uint32_t serialized_size = 0; // assigned only when deserializing node
 
-    std::string_view getData() const { return std::string_view(data_ptr, stats.data_size); }
+    [[nodiscard]] std::string_view getData() const { return std::string_view(data_ptr, stats.data_size); }
     void setData(std::string_view data) { data_ptr = data.data(); stats.data_size = static_cast<uint32_t>(data.size()); }
 
     /// Assigns `path_hash` if it's 0.
@@ -102,10 +102,10 @@ struct BlockData
 
     /// The data buffer is in memory immediately after the BlockData struct.
     char * data() { return reinterpret_cast<char *>(this + 1); }
-    const char * data() const { return reinterpret_cast<const char *>(this + 1); }
+    [[nodiscard]] const char * data() const { return reinterpret_cast<const char *>(this + 1); }
 
     /// Estimate how many bytes serialized node would take. Never underestimates.
-    size_t nodeSerializedSizeUpperBound(const FullNode & node) const;
+    [[nodiscard]] size_t nodeSerializedSizeUpperBound(const FullNode & node) const;
 
     /// Initializes the block, taking base values for delta encoding from `node`.
     /// `node` itself is not written.
@@ -131,7 +131,7 @@ struct BlockData
     void parseHeader();
 
     /// Make a copy with capacity = size.
-    BlockPtr copyAndShrinkToFit() const;
+    [[nodiscard]] BlockPtr copyAndShrinkToFit() const;
 
 private:
     /// Constructed only via create()/reserve(), which allocate the object together with its trailing

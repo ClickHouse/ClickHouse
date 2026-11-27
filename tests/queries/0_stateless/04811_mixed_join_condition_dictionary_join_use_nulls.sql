@@ -8,7 +8,6 @@
 -- resolves those by name, so it read a `Nullable` column through the non-`Nullable` interface the
 -- condition declared: an aborted assertion in a debug build, and arbitrary matching in a release one.
 
-SET enable_analyzer = 1;
 SET allow_experimental_join_condition = 1;
 
 DROP TABLE IF EXISTS dsrc;

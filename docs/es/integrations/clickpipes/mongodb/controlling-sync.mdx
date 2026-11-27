@@ -10,8 +10,6 @@ integration:
   - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/es/components/Image.jsx";
-
 Este documento describe cómo controlar la sincronización de un ClickPipe de MongoDB cuando el ClickPipe está en **modo CDC (Running)**.
 
 <div id="overview">
@@ -47,15 +45,39 @@ Un máximo seguro es de 10 millones.
 Puede establecer el intervalo de sincronización y el tamaño del lote de extracción al crear un ClickPipe o editar uno existente.
 Al crear un ClickPipe, esto aparecerá en el segundo paso del asistente de creación, como se muestra a continuación:
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/create_sync_settings.webp" alt="Crear ajustes de sincronización" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Crear ajustes de sincronización](/images/integrations/data-ingestion/clickpipes/postgres/create_sync_settings.webp)
+
+</Frame>
+
+</div>
 
 Al editar un ClickPipe existente, puede ir a la pestaña **Settings** del pipe, pausar el pipe y luego hacer clic en **Configure** aquí:
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/edit_sync_button.webp" alt="Botón para editar la sincronización" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Botón para editar la sincronización](/images/integrations/data-ingestion/clickpipes/postgres/edit_sync_button.webp)
+
+</Frame>
+
+</div>
 
 Esto abrirá un panel lateral con los ajustes de sincronización, donde puede cambiar el intervalo de sincronización y el tamaño del lote de extracción:
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/sync_settings_edit.webp" alt="Editar ajustes de sincronización" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Editar ajustes de sincronización](/images/integrations/data-ingestion/clickpipes/postgres/sync_settings_edit.webp)
+
+</Frame>
+
+</div>
 
 <div id="monitoring">
   ### Supervisión del comportamiento del control de sincronización
@@ -63,4 +85,12 @@ Esto abrirá un panel lateral con los ajustes de sincronización, donde puede ca
 
 Puede ver cuánto tarda cada lote en la tabla **CDC Syncs** de la pestaña **Metrics** de ClickPipe. Tenga en cuenta que la duración aquí incluye el tiempo de envío y que, si no llegan filas, ClickPipe espera, y ese tiempo de espera también se incluye en la duración.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/cdc_syncs.webp" alt="tabla CDC Syncs" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![tabla CDC Syncs](/images/integrations/data-ingestion/clickpipes/postgres/cdc_syncs.webp)
+
+</Frame>
+
+</div>

@@ -7,8 +7,6 @@ sidebarTitle: 'AWS IAMユーザーとS3バケットの作成方法'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 > このガイドでは、AWS で IAM ユーザーと S3 バケットを設定する方法を説明します。
 > これは、S3 へのバックアップの取得や、ClickHouse が
 > データを S3 に保存するように設定するための前提手順です
@@ -23,42 +21,114 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
 2. `Users` タブで、`Create user` を選択します
 
-<Image size="lg" img="/images/_snippets/s3/2025/s3-1.webp" alt="AWS IAM Management Console - 新しいユーザーの追加" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![AWS IAM Management Console - 新しいユーザーの追加](/images/_snippets/s3/2025/s3-1.webp)
+
+</Frame>
+
+</div>
 
 3. ユーザー名を入力します
 
-<Image size="lg" img="/images/_snippets/s3/2025/s3-2.webp" alt="AWS IAM Management Console - 新しいユーザーの追加" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![AWS IAM Management Console - 新しいユーザーの追加](/images/_snippets/s3/2025/s3-2.webp)
+
+</Frame>
+
+</div>
 
 4. `Next` を選択します
 
-<Image size="lg" img="/images/_snippets/s3/2025/s3-3.webp" alt="AWS IAM Management Console - 新しいユーザーの追加" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![AWS IAM Management Console - 新しいユーザーの追加](/images/_snippets/s3/2025/s3-3.webp)
+
+</Frame>
+
+</div>
 
 5. `Next` を選択します
 
-<Image size="lg" img="/images/_snippets/s3/2025/s3-4.webp" alt="AWS IAM Management Console - 新しいユーザーの追加" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![AWS IAM Management Console - 新しいユーザーの追加](/images/_snippets/s3/2025/s3-4.webp)
+
+</Frame>
+
+</div>
 
 6. `Create user` を選択します
 
 これでユーザーが作成されます。
 新しく作成したユーザーをクリックします
 
-<Image size="lg" img="/images/_snippets/s3/2025/s3-5.webp" alt="AWS IAM Management Console - 新しいユーザーの追加" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![AWS IAM Management Console - 新しいユーザーの追加](/images/_snippets/s3/2025/s3-5.webp)
+
+</Frame>
+
+</div>
 
 7. `Create access key` を選択します
 
-<Image size="lg" img="/images/_snippets/s3/2025/s3-6.webp" alt="AWS IAM Management Console - 新しいユーザーの追加" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![AWS IAM Management Console - 新しいユーザーの追加](/images/_snippets/s3/2025/s3-6.webp)
+
+</Frame>
+
+</div>
 
 8. `Application running outside AWS` を選択します
 
-<Image size="lg" img="/images/_snippets/s3/2025/s3-7.webp" alt="AWS IAM Management Console - 新しいユーザーの追加" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![AWS IAM Management Console - 新しいユーザーの追加](/images/_snippets/s3/2025/s3-7.webp)
+
+</Frame>
+
+</div>
 
 9. `Create access key` を選択します
 
-<Image size="lg" img="/images/_snippets/s3/2025/s3-8.webp" alt="AWS IAM Management Console - 新しいユーザーの追加" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![AWS IAM Management Console - 新しいユーザーの追加](/images/_snippets/s3/2025/s3-8.webp)
+
+</Frame>
+
+</div>
 
 10. 後で使用できるよう、アクセスキーとシークレットアクセスキーを .csv としてダウンロードします
 
-<Image size="lg" img="/images/_snippets/s3/2025/s3-9.webp" alt="AWS IAM Management Console - 新しいユーザーの追加" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![AWS IAM Management Console - 新しいユーザーの追加](/images/_snippets/s3/2025/s3-9.webp)
+
+</Frame>
+
+</div>
 
 <div id="create-an-s3-bucket">
   ## S3 バケットを作成する
@@ -66,11 +136,27 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
 1. S3 バケットのセクションで、**Create bucket** を選択します
 
-<Image size="lg" img="/images/_snippets/s3/2025/s3-10.webp" alt="AWS IAM Management Console - 新しいユーザーの追加" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![AWS IAM Management Console - 新しいユーザーの追加](/images/_snippets/s3/2025/s3-10.webp)
+
+</Frame>
+
+</div>
 
 2. バケット名を入力し、その他のオプションはデフォルトのままにします
 
-<Image size="lg" img="/images/_snippets/s3/2025/s3-11.webp" alt="AWS IAM Management Console - 新しいユーザーの追加" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![AWS IAM Management Console - 新しいユーザーの追加](/images/_snippets/s3/2025/s3-11.webp)
+
+</Frame>
+
+</div>
 
 <Note>
   バケット名は組織内だけでなく AWS 全体で一意である必要があります。そうでない場合はエラーが発生します。
@@ -78,37 +164,101 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
 3. `Block all Public Access` は有効のままにします。パブリックアクセスは不要です。
 
-<Image size="lg" img="/images/_snippets/s3/2025/s3-12.webp" alt="AWS IAM Management Console - 新しいユーザーの追加" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![AWS IAM Management Console - 新しいユーザーの追加](/images/_snippets/s3/2025/s3-12.webp)
+
+</Frame>
+
+</div>
 
 4. ページ下部の **Create Bucket** を選択します
 
-<Image size="lg" img="/images/_snippets/s3/2025/s3-13.webp" alt="AWS IAM Management Console - 新しいユーザーの追加" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![AWS IAM Management Console - 新しいユーザーの追加](/images/_snippets/s3/2025/s3-13.webp)
+
+</Frame>
+
+</div>
 
 5. リンクを選択して ARN をコピーし、バケットのアクセスポリシーを構成する際に使用できるよう保存します
 
-<Image size="lg" img="/images/_snippets/s3/2025/s3-14.webp" alt="AWS IAM Management Console - 新しいユーザーの追加" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![AWS IAM Management Console - 新しいユーザーの追加](/images/_snippets/s3/2025/s3-14.webp)
+
+</Frame>
+
+</div>
 
 6. バケットを作成したら、S3 バケット一覧で新しい S3 バケットを見つけてバケット名を選択します。すると、以下のページが表示されます。
 
-<Image size="lg" img="/images/_snippets/s3/2025/s3-15.webp" alt="AWS IAM Management Console - 新しいユーザーの追加" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![AWS IAM Management Console - 新しいユーザーの追加](/images/_snippets/s3/2025/s3-15.webp)
+
+</Frame>
+
+</div>
 
 7. `Create folder` を選択します
 
 8. ClickHouse の S3 ディスクまたは Backup の保存先となるフォルダー名を入力し、ページ下部の `Create folder` を選択します
 
-<Image size="lg" img="/images/_snippets/s3/2025/s3-16.webp" alt="AWS IAM Management Console - 新しいユーザーの追加" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![AWS IAM Management Console - 新しいユーザーの追加](/images/_snippets/s3/2025/s3-16.webp)
+
+</Frame>
+
+</div>
 
 9. フォルダーがバケット一覧に表示されます
 
-<Image size="lg" img="/images/_snippets/s3/2025/s3-17.webp" alt="AWS IAM Management Console - 新しいユーザーの追加" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![AWS IAM Management Console - 新しいユーザーの追加](/images/_snippets/s3/2025/s3-17.webp)
+
+</Frame>
+
+</div>
 
 10. 新しいフォルダーのチェックボックスを選択し、`Copy URL` をクリックします。次のセクションで ClickHouse のストレージ構成に使用するため、この URL を保存します。
 
-<Image size="lg" img="/images/_snippets/s3/2025/s3-18.webp" alt="AWS IAM Management Console - 新しいユーザーの追加" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![AWS IAM Management Console - 新しいユーザーの追加](/images/_snippets/s3/2025/s3-18.webp)
+
+</Frame>
+
+</div>
 
 11. **Permissions** タブを選択し、**Bucket Policy** セクションの **Edit** ボタンをクリックします
 
-<Image size="lg" img="/images/_snippets/s3/2025/s3-19.webp" alt="AWS IAM Management Console - 新しいユーザーの追加" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![AWS IAM Management Console - 新しいユーザーの追加](/images/_snippets/s3/2025/s3-19.webp)
+
+</Frame>
+
+</div>
 
 12. バケットポリシーを追加します。以下は例です
 

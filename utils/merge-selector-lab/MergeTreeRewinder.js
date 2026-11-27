@@ -197,8 +197,8 @@ export class MergeTreeRewinder {
 <html>
     <head>
         <title>Merge Selector Lab</title>
-        <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
-        <script src="https://d3js.org/d3.v7.min.js"></script>
+        <link rel="stylesheet" href="vendor/bootstrap.min.css">
+        <script src="vendor/d3.min.js"></script>
     </head>
     <body>
         <div class="container-fluid bg-primary text-white">

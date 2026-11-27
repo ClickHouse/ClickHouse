@@ -2,6 +2,7 @@
 
 #include <base/types.h>
 #include <Common/PODArray.h>
+#include <Common/HashTable/ClearableHashSet.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/HashSet.h>
 
@@ -48,7 +49,7 @@ public:
         }
     }
 
-    size_t getSizeInBytes() const
+    [[nodiscard]] size_t getSizeInBytes() const
     {
         return parent_to_children_keys_range.getBufferSizeInBytes() + (keys.size() * sizeof(UInt64));
     }
@@ -295,7 +296,8 @@ namespace detail
             Int64 depth;
         };
 
-        HashSet<UInt64> already_processed_keys_during_loop;
+        /// Cleared after every requested key that has children, so clearing must not cost O(capacity).
+        ClearableHashSet<UInt64> already_processed_keys_during_loop;
         already_processed_keys_during_loop.reserve(keys_size);
 
         PaddedPODArray<KeyAndDepth> next_keys_to_process_stack;

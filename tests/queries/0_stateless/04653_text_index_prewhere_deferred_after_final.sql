@@ -1,7 +1,6 @@
 -- Direct read from text index must not rewrite a PREWHERE that is deferred after FINAL,
 -- otherwise the post-FINAL filter keeps the old DAG while the read step switches to index columns
 SET explain_query_plan_default = 'legacy';
-SET enable_analyzer = 1;
 SET query_plan_direct_read_from_text_index = 1;
 SET apply_prewhere_after_final = 1;
 

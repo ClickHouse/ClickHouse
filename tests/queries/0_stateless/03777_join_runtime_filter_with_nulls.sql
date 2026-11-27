@@ -1,4 +1,3 @@
-SET enable_analyzer=1;
 SET enable_parallel_replicas=0;
 SET join_algorithm = 'hash,parallel_hash';
 SET query_plan_optimize_join_order_algorithm='greedy';

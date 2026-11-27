@@ -11,8 +11,6 @@ integration:
   - category: "clickpipes"
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 您可以使用 GCP [Private Service Connect (PSC)](https://cloud.google.com/vpc/docs/private-service-connect)，在 ClickPipes 与托管在 GCP 上的数据源之间建立安全连接。ClickPipes 会在其 VPC 中创建一个**反向专用终结点 (RPE)**，并将其指向为您的数据源发布的专用端点服务，确保流量不会暴露于公网。
 
 <Check>
@@ -138,6 +136,25 @@ gcloud beta compute service-attachments update <SERVICE_ATTACHMENT_NAME> \
 要更改端点的自定义私有 DNS 映射，请使用 [Cloud API](/zh/integrations/clickpipes/programmatic-access/openapi) 或 [Terraform](/zh/integrations/clickpipes/programmatic-access/terraform)。更新操作会替换整个映射列表，而不是在其中添加映射。
 
 如果端点显示 `Rejected` 或 `Failed`，请查看其状态下方的消息：该消息可区分被生产者拒绝的连接，以及已关闭或需要处理的连接。这两种情况通常都表示服务附件的接受列表未包含 ClickPipes 消费者项目。要查看 GCP 针对该端点报告的状态，请描述服务附件的 `connectedEndpoints`。
+
+## 自动清理非活跃端点 {#automatic-cleanup}
+
+长期处于终止状态的反向专用终结点会在规定的宽限期结束后被自动移除。
+这样可以确保未使用或配置错误的端点不会无限期地保留下去。
+
+不同端点状态对应的宽限期如下：
+
+| 状态       | 宽限期 | 描述                                                     |
+| -------- | --- | ------------------------------------------------------ |
+| **失败**   | 7 天 | 端点在预配过程中遇到错误。                                          |
+| **等待接受** | 1 天 | 端点连接尚未被服务所有者接受。这种情况主要出现在生产者拥有的 PSC 中，原生 PSC 端点会自动接受连接。 |
+| **已拒绝**  | 1 天 | 端点连接已被服务所有者拒绝。                                         |
+
+宽限期结束后，端点及其所有关联资源将被自动删除。
+
+如需避免被自动移除，请在宽限期到期前解决根本问题。
+例如，按照[批准生产者拥有的连接](#producer-owned)中的说明，将 ClickPipes 消费者项目添加到服务附件的允许列表中；
+如果端点已进入失败状态，则可重新创建该端点。
 
 ## 已知限制 {#limitations}
 

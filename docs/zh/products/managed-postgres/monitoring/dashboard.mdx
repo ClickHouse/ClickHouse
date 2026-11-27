@@ -8,13 +8,20 @@ doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/zh/components/Image.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.monitoring-dashboard-beta" />
 
 实例左侧边栏中的 **监控** 选项卡会显示所选时间范围内资源使用情况和数据库活动的实时图表。
 
-<Image img="/images/managed-postgres/monitoring/dashboard.webp" alt="显示 IOPS、CPU usage、内存、磁盘、Network traffic、Database size、连接数、吞吐量、Transactions、Cache hit ratio 和 Deadlocks 的监控仪表板" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![显示 IOPS、CPU usage、内存、磁盘、Network traffic、Database size、连接数、吞吐量、Transactions、Cache hit ratio 和 Deadlocks 的监控仪表板](/images/managed-postgres/monitoring/dashboard.webp)
+
+</Frame>
+
+</div>
 
 <div id="panels">
   ## 面板

@@ -10,8 +10,6 @@ integration:
    - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 <Info>
   PlanetScale for Postgres 目前正处于[抢先体验阶段](https://planetscale.com/postgres)。
 </Info>
@@ -40,7 +38,15 @@ ClickPipes 支持 Postgres 12 及以上版本。
 
    默认情况下，输出应为 `logical`。如果不是，请登录 PlanetScale 控制台，前往 `Cluster configuration->Parameters`，然后向下滚动到 `Write-ahead log` 进行修改。
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/planetscale/planetscale_wal_level_logical.webp" alt="在 PlanetScale 控制台中调整 wal_level" size="md" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![在 PlanetScale 控制台中调整 wal_level](/images/integrations/data-ingestion/clickpipes/postgres/source/planetscale/planetscale_wal_level_logical.webp)
+
+</Frame>
+
+</div>
 
 <Warning>
   在 PlanetScale 控制台中更改此项将触发重启。
@@ -48,7 +54,15 @@ ClickPipes 支持 Postgres 12 及以上版本。
 
 2. 此外，建议将 `max_slot_wal_keep_size` 从默认的 4GB 调大。这同样需要在 PlanetScale 控制台中完成：前往 `Cluster configuration->Parameters`，然后向下滚动到 `Write-ahead log`。如需帮助确定新的值，请参阅[此处](/zh/integrations/clickpipes/postgres/faq#recommended-max_slot_wal_keep_size-settings)。
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/planetscale/planetscale_max_slot_wal_keep_size.webp" alt="在 PlanetScale 控制台中调整 max_slot_wal_keep_size" size="md" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![在 PlanetScale 控制台中调整 max_slot_wal_keep_size](/images/integrations/data-ingestion/clickpipes/postgres/source/planetscale/planetscale_max_slot_wal_keep_size.webp)
+
+</Frame>
+
+</div>
 
 <div id="creating-a-user-with-permissions-and-publication">
   ## 创建具有相应权限和 publication 的用户

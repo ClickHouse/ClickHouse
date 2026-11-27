@@ -59,8 +59,17 @@ struct ArrayFirstLastImpl
         return ColumnNullable::create(std::move(column), std::move(null_map));
     }
 
-    static ColumnPtr execute(const ColumnArray & array, ColumnPtr mapped)
+    static ColumnPtr execute(const ColumnArray & array, ColumnPtr mapped, const DataTypePtr & result_type)
     {
+        /// For the OrNull variants `result_type` is Nullable, so the row under the NULL keeps the column zero.
+        const bool trivial_default = result_type->isDefaultInsertTrivial();
+        MutableColumnPtr type_default;
+        if (!trivial_default)
+        {
+            type_default = array.getData().cloneEmpty();
+            result_type->insertDefaultInto(*type_default);
+        }
+
         const auto * column_filter = typeid_cast<const ColumnUInt8 *>(&*mapped);
 
         if (!column_filter)
@@ -101,7 +110,10 @@ struct ArrayFirstLastImpl
                     }
                     else
                     {
-                        out->insertDefault();
+                        if (trivial_default)
+                            out->insertDefault();
+                        else
+                            out->insertFrom(*type_default, 0);
 
                         if constexpr (element_not_exists_strategy == ArrayFirstLastElementNotExistsStrategy::Null)
                             (*vec_null_map_to)[offset_index] = true;
@@ -115,7 +127,10 @@ struct ArrayFirstLastImpl
             }
 
             auto out = array.getData().cloneEmpty();
-            out->insertManyDefaults(array.size());
+            if (trivial_default)
+                out->insertManyDefaults(array.size());
+            else
+                out->insertManyFrom(*type_default, 0, array.size());
 
             if constexpr (element_not_exists_strategy == ArrayFirstLastElementNotExistsStrategy::Null)
             {
@@ -176,7 +191,10 @@ struct ArrayFirstLastImpl
 
             if (!exists)
             {
-                out->insertDefault();
+                if (trivial_default)
+                    out->insertDefault();
+                else
+                    out->insertFrom(*type_default, 0);
 
                 if constexpr (element_not_exists_strategy == ArrayFirstLastElementNotExistsStrategy::Null)
                     (*vec_null_map_to)[offset_index] = true;

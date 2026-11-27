@@ -863,6 +863,70 @@ SELECT timeSeriesTagsToGroup([('__name__', 'up'), ('job', 'api-server'), ('servi
 └───────┴──────────────┴────────────────────────────────────────────────────────────────────────┘
 ```
 
+## timeSeriesSliceSortedArray {#timeSeriesSliceSortedArray}
+
+Introduced in: v26.11.0
+
+Returns the samples of a time series with timestamps in the interval `[min_time, max_time]`.
+
+The samples are passed as an array of tuples `(timestamp, value)` sorted by timestamp, for example a value of the
+`samples` column of the samples table of a `TimeSeries` table, or a result of the aggregate function `timeSeriesGroupArray`.
+The function finds the requested interval in the array with a binary search, so the array must be sorted by timestamp.
+
+If the array is not sorted, the result is not specified: the function returns some part of the array, which can
+include samples outside of the interval and miss samples inside of it. The function doesn't check that the array is sorted.
+
+The function returns an array of the same type as `sorted_samples`. If `min_time` is greater than `max_time`, the function returns an empty array.
+
+<Note>
+This function is in private preview, enable it by setting `enable_time_series_table = 1`.
+</Note>
+    
+
+**Syntax**
+
+```sql
+timeSeriesSliceSortedArray(sorted_samples, min_time, max_time)
+```
+
+**Arguments**
+
+- `sorted_samples` — Samples of a time series sorted by timestamp. The result is not specified if the array is not sorted. [`Array(Tuple(DateTime64, Float*))`](/reference/data-types/array) or [`Array(Tuple(DateTime, Float*))`](/reference/data-types/array) or [`Array(Tuple(UInt32, Float*))`](/reference/data-types/array)
+- `min_time` — Start of the interval, inclusive. It is converted to the type of the timestamps. [`DateTime64`](/reference/data-types/datetime64) or [`DateTime`](/reference/data-types/datetime) or [`UInt32`](/reference/data-types/int-uint) or [`(U)Int*`](/reference/data-types/int-uint) or [`Float*`](/reference/data-types/float) or [`Decimal*`](/reference/data-types/decimal)
+- `max_time` — End of the interval, inclusive. It is converted to the type of the timestamps. [`DateTime64`](/reference/data-types/datetime64) or [`DateTime`](/reference/data-types/datetime) or [`UInt32`](/reference/data-types/int-uint) or [`(U)Int*`](/reference/data-types/int-uint) or [`Float*`](/reference/data-types/float) or [`Decimal*`](/reference/data-types/decimal)
+
+**Returned value**
+
+Returns the samples with timestamps in the interval `[min_time, max_time]`, in the same order as in `sorted_samples`. [`Array(Tuple(T1, T2))`](/reference/data-types/array)
+
+**Examples**
+
+**Usage example**
+
+```sql title=Query
+SELECT timeSeriesSliceSortedArray([(100, 1.), (110, 2.), (120, 3.), (130, 4.)]::Array(Tuple(UInt32, Float64)), 105, 120) AS result
+```
+
+```response title=Response
+┌─result────────────┐
+│ [(110,2),(120,3)] │
+└───────────────────┘
+```
+
+**Slicing samples with DateTime64 timestamps**
+
+```sql title=Query
+SELECT timeSeriesSliceSortedArray(
+    [('2025-06-01 00:00:00'::DateTime64(3), 1.), ('2025-06-01 00:00:30'::DateTime64(3), 2.), ('2025-06-01 00:01:00'::DateTime64(3), 3.)],
+    '2025-06-01 00:00:15'::DateTime64(3), '2025-06-01 00:01:00'::DateTime64(3)) AS result
+```
+
+```response title=Response
+┌─result────────────────────────────────────────────────────────┐
+│ [('2025-06-01 00:00:30.000',2),('2025-06-01 00:01:00.000',3)] │
+└───────────────────────────────────────────────────────────────┘
+```
+
 ## timeSeriesStoreTags {#timeSeriesStoreTags}
 
 Introduced in: v25.8.0

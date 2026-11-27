@@ -150,7 +150,7 @@ SELECT extractKeyValuePairs('age:a\\x0A\\n\\0') AS kv;
 extractKeyValuePairs(data, [key_value_delimiter], [pair_delimiter], [quoting_character], [unexpected_quoting_character_strategy])
 ```
 
-**別名**: `mapFromString`, `str_to_map`
+**別名**: `str_to_map`, `mapFromString`
 
 **引数**
 
@@ -842,6 +842,8 @@ SELECT mapFromArrays([1, 2, 3], map('a', 1, 'b', 2, 'c', 3))
 mapKeys(map)
 ```
 
+**別名**: `map_keys`
+
 **引数**
 
 * `map` — キーを抽出する対象の Map。[`Map(K, V)`](/ja/reference/data-types/map)
@@ -936,9 +938,9 @@ SELECT mapPartialSort((k, v) -> v, 2, map('k1', 3, 'k2', 1, 'k3', 2))
 
 導入バージョン: v20.10.0
 
-整数のキーを持つマップで、欠落しているキー・バリューのペアを補完します。
+整数のキーを持つMapで、欠落しているキー・バリューのペアを補完します。
 最大値を超えてキーを拡張できるように、最大キーを指定できます。
-具体的には、この関数は、キーが最小キーから最大キー (または指定されている場合は `max` 引数) まで 1 刻みで連続する系列を成し、それに対応する値を持つマップを返します。
+具体的には、この関数は、キーが最小キーから最大キー (または指定されている場合は `max` 引数) まで 1 刻みで連続する系列を成し、それに対応する値を持つMapを返します。
 キーに対応する値が指定されていない場合は、デフォルト値が使用されます。
 キーが重複している場合は、最初の値のみ (出現順) がそのキーに関連付けられます。
 
@@ -953,11 +955,11 @@ mapPopulateSeries(map[, max]) | mapPopulateSeries(keys, values[, max])
 * `map` — 整数キーを持つ Map。[`Map((U)Int*, V)`](/ja/reference/data-types/map)
 * `keys` — キーの Array。[`Array(T)`](/ja/reference/data-types/array)
 * `values` — 値の Array。[`Array(T)`](/ja/reference/data-types/array)
-* `max` — オプション。キーの最大値。[`Int8`](/ja/reference/data-types/int-uint) または [`Int16`](/ja/reference/data-types/int-uint) または [`Int32`](/ja/reference/data-types/int-uint) または [`Int64`](/ja/reference/data-types/int-uint) または [`Int128`](/ja/reference/data-types/int-uint) または [`Int256`](/ja/reference/data-types/int-uint)
+* `max` — 任意。キーの最大値。[`Int8`](/ja/reference/data-types/int-uint) または [`Int16`](/ja/reference/data-types/int-uint) または [`Int32`](/ja/reference/data-types/int-uint) または [`Int64`](/ja/reference/data-types/int-uint) または [`Int128`](/ja/reference/data-types/int-uint) または [`Int256`](/ja/reference/data-types/int-uint)
 
 **戻り値**
 
-キーがソート順に並んだ最初の配列と、対応するキーの値を格納した 2 番目の配列からなる Map または 2 つの配列の Tuple を返します。[`Map(K, V)`](/ja/reference/data-types/map) または [`Tuple(Array(UInt*), Array(Any))`](/ja/reference/data-types/tuple)
+キーがソート順に並んだ最初の配列と、対応するキーの値を格納した 2 番目の配列からなる Map または 2 つの配列の Tuple を返します。[`Map(K, V)`](/ja/reference/data-types/map) または [`Tuple(Array(UInt*), Array)`](/ja/reference/data-types/tuple)
 
 **例**
 
@@ -1163,16 +1165,18 @@ SELECT mapUpdate(map('key1', 0, 'key3', 0), map('key1', 10, 'key2', 10))
 
 導入バージョン: v21.2.0
 
-指定したマップの値を返します。
+指定したMapの値を返します。
 この関数は、設定 [`optimize_functions_to_subcolumns`](/ja/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns) を有効にすることで最適化できます。
-この設定を有効にすると、関数はマップ全体ではなく、`values` サブカラムのみを読み取ります。
+この設定を有効にすると、関数はMap全体ではなく、`values` サブカラムのみを読み取ります。
 クエリ `SELECT mapValues(m) FROM table` は `SELECT m.values FROM table` に変換されます。
 
-**Syntax**
+**構文**
 
 ```sql
 mapValues(map)
 ```
+
+**別名**: `map_values`
 
 **引数**
 

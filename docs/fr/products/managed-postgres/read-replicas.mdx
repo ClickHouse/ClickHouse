@@ -8,7 +8,6 @@ doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/fr/components/Image.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.read-replicas-beta" />
 
@@ -16,11 +15,27 @@ Les répliques de lecture vous permettent de créer une ou plusieurs copies de v
 
 Pour gérer les répliques de lecture, cliquez sur l’icône de modification de votre warehouse :
 
-<Image img="/images/managed-postgres/warehouse-view.webp" alt="Vue du warehouse avec l’icône de modification" size="md" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Vue du warehouse avec l’icône de modification](/images/managed-postgres/warehouse-view.webp)
+
+</Frame>
+
+</div>
 
 La boîte de dialogue du warehouse s’ouvre alors, où vous pouvez voir les services existants et créer de nouvelles répliques de lecture :
 
-<Image img="/images/managed-postgres/read-replica-dialog.webp" alt="Boîte de dialogue de gestion des répliques de lecture" size="md" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Boîte de dialogue de gestion des répliques de lecture](/images/managed-postgres/read-replica-dialog.webp)
+
+</Frame>
+
+</div>
 
 ## Gérer les répliques de lecture {#managing-read-replicas}
 
@@ -28,11 +43,27 @@ La page **Répliques de lecture** propose deux vues, accessibles via les contrô
 
 La vue **Flux** affiche la topologie de réplication : votre instance primaire en haut, avec des flèches pointant vers chaque réplique attachée, ce qui permet de voir d’un coup d’œil le niveau de service, la région et le statut :
 
-<Image img="/images/managed-postgres/read-replicas-flow.webp" alt="Vue Flux des répliques de lecture montrant la topologie de l’instance primaire et des répliques" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Vue Flux des répliques de lecture montrant la topologie de l’instance primaire et des répliques](/images/managed-postgres/read-replicas-flow.webp)
+
+</Frame>
+
+</div>
 
 La vue **Tableau** répertorie chaque réplique avec son nom de service, son fournisseur cloud et sa région, le statut du service, l’heure de création, ainsi qu’une action **Détacher le service** :
 
-<Image img="/images/managed-postgres/read-replicas-table.webp" alt="Vue Tableau des répliques de lecture" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Vue Tableau des répliques de lecture](/images/managed-postgres/read-replicas-table.webp)
+
+</Frame>
+
+</div>
 
 Pour créer une nouvelle réplique, cliquez sur **Créer une réplique de lecture** en haut à droite, dans l’une ou l’autre vue.
 

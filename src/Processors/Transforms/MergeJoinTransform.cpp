@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <Common/VectorWithMemoryTracking.h>
 #include <cstddef>
 #include <limits>
 #include <memory>
@@ -36,7 +37,7 @@ namespace
 
 FullMergeJoinCursor createCursor(const Block & block, const Names & columns, JoinStrictness strictness)
 {
-    std::vector<size_t> indices;
+    VectorWithMemoryTracking<size_t> indices;
     indices.reserve(columns.size());
     for (const auto & name : columns)
         indices.emplace_back(block.getPositionByName(name));
@@ -435,7 +436,7 @@ void AsofJoinState::reset()
     value.clear();
 }
 
-FullMergeJoinCursor::FullMergeJoinCursor(std::vector<size_t> key_indices_, bool is_asof_)
+FullMergeJoinCursor::FullMergeJoinCursor(VectorWithMemoryTracking<size_t> key_indices_, bool is_asof_)
     : key_indices(std::move(key_indices_))
     , is_asof(is_asof_)
 {

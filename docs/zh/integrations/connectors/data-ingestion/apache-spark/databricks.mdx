@@ -7,8 +7,6 @@ title: '集成 ClickHouse 与 Databricks'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 import { ClickHouseSupportedBadge } from "/snippets/zh/components/ClickHouseSupported/ClickHouseSupported.jsx";
 
 <ClickHouseSupportedBadge />
@@ -53,9 +51,25 @@ ClickHouse Spark connector 可与 Databricks 无缝集成。本指南介绍 Data
    * 选择 **DBFS** 或 **Workspace** → 导航到已上传的 JAR 文件
    * 点击 **Install**
 
-<Image img="/images/integrations/data-ingestion/apache-spark/databricks/databricks-libraries-tab.webp" alt="Databricks Libraries 选项卡" />
+<div className="ch-image-lg">
 
-<Image img="/images/integrations/data-ingestion/apache-spark/databricks/databricks-install-from-volume.webp" alt="从工作区卷安装库" />
+<Frame>
+
+![Databricks Libraries 选项卡](/images/integrations/data-ingestion/apache-spark/databricks/databricks-libraries-tab.webp)
+
+</Frame>
+
+</div>
+
+<div className="ch-image-lg">
+
+<Frame>
+
+![从工作区卷安装库](/images/integrations/data-ingestion/apache-spark/databricks/databricks-install-from-volume.webp)
+
+</Frame>
+
+</div>
 
 4. 重启集群以加载该库
 
@@ -90,7 +104,15 @@ databricks libraries install \
 com.clickhouse.spark:clickhouse-spark-runtime-{{ spark_binary_version }}_{{ scala_binary_version }}:{{ stable_version }}
 ```
 
-<Image img="/images/integrations/data-ingestion/apache-spark/databricks/databricks-maven-tab.webp" alt="Databricks Maven 库配置" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Databricks Maven 库配置](/images/integrations/data-ingestion/apache-spark/databricks/databricks-maven-tab.webp)
+
+</Frame>
+
+</div>
 
 3. 点击 **Install**，然后重启集群以加载该库
 

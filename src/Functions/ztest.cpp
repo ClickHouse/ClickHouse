@@ -30,14 +30,14 @@ public:
 
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionTwoSampleProportionsZTest>(); }
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    size_t getNumberOfArguments() const override { return 6; }
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {5}; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 6; }
+    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {5}; }
 
-    bool useDefaultImplementationForNulls() const override { return false; }
-    bool useDefaultImplementationForConstants() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     static DataTypePtr getReturnType()
     {
@@ -49,7 +49,7 @@ public:
         return std::make_shared<DataTypeTuple>(std::move(types), std::move(names));
     }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(UInt, UInt, UInt, UInt, Float, const String) -> "
                "Tuple(z_statistic Float64, p_value Float64, "
@@ -57,7 +57,7 @@ public:
     }
 
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & const_arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & const_arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         auto arguments = const_arguments;
         /// Only last argument have to be constant

@@ -8,13 +8,20 @@ doc_type: 'guide'
 ---
 
 import { PrivatePreviewBadge } from '/snippets/ja/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
-import { Image } from "/snippets/ja/components/Image.jsx";
 
 <PrivatePreviewBadge />
 
 managed モードは、お客様が所有する Amazon EKS クラスター上で動作します。各リリースには 4 つの Terraform ルートモジュール (以下、ルート) が同梱されており、要件を満たすクラスターを新規作成するか、既存の VPC またはクラスターに不足しているリソースを追加します。ルートは、システムノードグループとマネージドアドオン (`vpc-cni`、`kube-proxy`、`coredns`、`aws-ebs-csi-driver`) を備えたクラスターを作成するほか、IAM role、KMS キー、タグも作成します。なお、`existing-eks` は `install_addons` で指定したアドオンのみをインストールします。Helm ターゲットの場合は、その後 `clicklink clctl init` が Terraform の出力とプラットフォームバンドルを使用してプラットフォームレイヤーをインストールします。プラットフォームレイヤーには、Karpenter、AWS Load Balancer コントローラー、StorageClass、およびバージョンが固定されたコンポーネントが含まれます ([Terraform の出力からコネクタを初期化する](#hand-off)を参照) 。ルートを使用するには、Terraform 1.10 以降または OpenTofu 1.12 以降と、AWS プロバイダー `~> 6.0` が必要です。このページのすべてのコマンドで、`terraform` の代わりに `tofu` を使用できます。
 
-<Image img="/images/cloud/reference/byoc-connector-terraform-flow.svg" size="lg" alt="AWS 上の ClickHouse Connector の Terraform プロビジョニングフロー" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![AWS 上の ClickHouse Connector の Terraform プロビジョニングフロー](/images/cloud/reference/byoc-connector-terraform-flow.svg)
+
+</Frame>
+
+</div>
 
 ## 始める前に {#before-you-begin}
 

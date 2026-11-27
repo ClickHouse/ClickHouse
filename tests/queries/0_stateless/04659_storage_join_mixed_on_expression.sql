@@ -1,9 +1,6 @@
 -- The Join table engine reuses one prebuilt join, so it cannot serve an ON condition that
 -- references both tables. Such queries used to reach inconsistent state and fail with a
 -- logical error, std::bad_variant_access, or a misleading "with ORs" message.
--- enable_analyzer = 1 is load-bearing: the old analyzer rejects this shape earlier with a
--- different error, so without the pin the test stops exercising the guard.
-SET enable_analyzer = 1;
 SET allow_experimental_join_condition = 1;
 -- join_algorithm is load-bearing: chooseJoinAlgorithm rejects a mixed ON condition outright for
 -- any algorithm other than hash, parallel_hash or grace_hash, and it does so before reaching the

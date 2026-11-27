@@ -1,5 +1,6 @@
 import datetime
 import json
+import uuid
 
 import pytest
 import requests
@@ -11,7 +12,7 @@ from helpers.test_tools import wait_condition
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
     "node",
-    main_configs=["configs/named_collections.xml"],
+    main_configs=["configs/named_collections.xml", "configs/http_forbid_headers.xml"],
     user_configs=["configs/users.xml"],
     with_elasticsearch=True,
 )
@@ -181,6 +182,59 @@ def test_declared_json_column():
         node.query(f"SELECT toTypeName(doc.id), doc.id, doc FROM {table_function} ORDER BY doc.id FORMAT TSV")
         == expected
     )
+
+
+def test_source_filter():
+    create_index_with_documents(
+        "source_filter",
+        [
+            {"a": {"b": 1, "c": 2}, "padding": "x" * 100000},
+            {"a.b": 3, "a.c": 4},
+            {"items": [{"sku": 1}, {"qty": 2}]},
+            {"items": []},
+            {"a": {"b": None}},
+            {"z": 1},
+        ],
+    )
+    table_function = elasticsearch_table_function("source_filter")
+
+    node.query("DROP TABLE IF EXISTS es_source_filter_local")
+    node.query(f"CREATE TABLE es_source_filter_local ENGINE = Memory AS SELECT _id, document FROM {table_function}")
+
+    for columns in [
+        "document.a.b",
+        "document.a.b, document.a.c",
+        "document.^a",
+        "document.@a",
+        "document.items",
+        "document.items[].sku",
+        "document.z",
+    ]:
+        query = "SELECT _id, {} FROM {} ORDER BY _id FORMAT TSV"
+        assert node.query(query.format(columns, table_function)) == node.query(
+            query.format(columns, "es_source_filter_local")
+        ), columns
+
+    query = "SELECT _id FROM {} WHERE document.a.b::Nullable(Int64) = 3 FORMAT TSV"
+    assert node.query(query.format(table_function)) == node.query(query.format("es_source_filter_local")) == "2\n"
+
+    query_id_path = f"source_filter_path_{uuid.uuid4()}"
+    query_id_whole = f"source_filter_whole_{uuid.uuid4()}"
+    node.query(f"SELECT document.a.b FROM {table_function} FORMAT Null", query_id=query_id_path)
+    node.query(f"SELECT document FROM {table_function} FORMAT Null", query_id=query_id_whole)
+    node.query("SYSTEM FLUSH LOGS query_log")
+    bytes_path, bytes_whole = (
+        int(
+            node.query(
+                "SELECT ProfileEvents['ReadWriteBufferFromHTTPBytes'] FROM system.query_log "
+                f"WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
+            )
+        )
+        for query_id in [query_id_path, query_id_whole]
+    )
+    assert bytes_whole - bytes_path > 100000, (bytes_path, bytes_whole)
+
+    node.query("DROP TABLE es_source_filter_local")
 
 
 def test_empty_index():
@@ -429,7 +483,7 @@ def test_query_argument():
     create_index_with_documents("dsl", [{"id": i} for i in range(10)])
 
     def query_argument(query_body):
-        return f"query = '{json.dumps(query_body)}'"
+        return f"query('{json.dumps(query_body)}')"
 
     def read_ids(table_function, where=""):
         return node.query(
@@ -466,7 +520,7 @@ def test_query_numeric_tokens():
         [{"key": "1.0"}] * 5 + [{"key": "1"}] * 2,
         mapping={"properties": {"key": {"type": "keyword"}}},
     )
-    term_query = "query = '" + json.dumps({"term": {"key": 1.0}}) + "'"
+    term_query = "query('" + json.dumps({"term": {"key": 1.0}}) + "')"
     table_function = elasticsearch_table_function("numeric_tokens", extra_arguments=term_query)
 
     assert node.query(f"SELECT count(), uniqExact(_id) FROM {table_function}") == "5\t5\n"
@@ -675,3 +729,29 @@ def test_pit_closed_after_read():
         )
         == ""
     )
+
+
+FORBID_CONFIG = "/etc/clickhouse-server/config.d/http_forbid_headers.xml"
+FORBID_PLACEHOLDER = "<header>X-Forbidden-Placeholder</header>"
+
+
+def test_basic_auth_with_forbidden_authorization():
+    # `user` and `password` are sent as Basic credentials in the `Authorization` header.
+    create_index_with_documents("forbidden_authorization", [{"id": 1}])
+    node.query("DROP TABLE IF EXISTS es_forbidden_authorization")
+    node.query(f"CREATE TABLE es_forbidden_authorization {elasticsearch_engine('forbidden_authorization')}")
+    try:
+        assert node.query("SELECT count() FROM es_forbidden_authorization") == "1\n"
+        node.replace_in_config(FORBID_CONFIG, FORBID_PLACEHOLDER, FORBID_PLACEHOLDER + "<header>Authorization</header>")
+        node.query("SYSTEM RELOAD CONFIG")
+        try:
+            # The stored table still loads, but its reads do not send the credentials.
+            node.query("DETACH TABLE es_forbidden_authorization")
+            node.query("ATTACH TABLE es_forbidden_authorization")
+            error = node.query_and_get_error("SELECT count() FROM es_forbidden_authorization")
+            assert 'HTTP header "Authorization" is forbidden' in error, error
+        finally:
+            node.replace_in_config(FORBID_CONFIG, "<header>Authorization</header>", "")
+            node.query("SYSTEM RELOAD CONFIG")
+    finally:
+        node.query("DROP TABLE IF EXISTS es_forbidden_authorization")

@@ -6,7 +6,6 @@ keywords: ['PrivateLink']
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
 import { ScalePlanFeatureBadge } from "/snippets/pt-BR/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
 
 <ScalePlanFeatureBadge feature="AWS PrivateLink" />
@@ -95,7 +94,15 @@ Siga estes passos para conectar seus serviços no ClickHouse Cloud por meio do A
 
 No console do ClickHouse Cloud, abra o serviço ao qual você deseja se conectar via PrivateLink e, em seguida, acesse o menu **Settings**.
 
-<Image img="/images/cloud/security/aws-privatelink-pe-create.webp" size="md" alt="Endpoints privados" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Endpoints privados](/images/cloud/security/aws-privatelink-pe-create.webp)
+
+</Frame>
+
+</div>
 
 Anote o `Service name` e o `DNS name` e siga para a [próxima etapa](#create-aws-endpoint).
 
@@ -161,7 +168,15 @@ Abra o Console da AWS e vá para **VPC** → **Endpoints** → **Create endpoint
 
 Selecione **Endpoint services that use NLBs and GWLBs** e use `Service name`<sup>console</sup> ou `endpointServiceId`<sup>API</sup> obtido na etapa [Obtain Endpoint &quot;Service name&quot; ](#obtain-endpoint-service-info), no campo **Service Name**. Clique em **Verify service**:
 
-<Image img="/images/cloud/security/aws-privatelink-endpoint-settings.webp" size="md" alt="Configurações do endpoint do AWS PrivateLink" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Configurações do endpoint do AWS PrivateLink](/images/cloud/security/aws-privatelink-endpoint-settings.webp)
+
+</Frame>
+
+</div>
 
 <Note>
   Para uma conexão entre regiões, marque a caixa de seleção **Cross region endpoint** e especifique a região do serviço em que seu serviço ClickHouse está em execução.
@@ -171,7 +186,15 @@ Se você receber o erro &quot;Service name couldn&#39;t be verified.&quot;, entr
 
 Em seguida, selecione sua VPC e sub-redes:
 
-<Image img="/images/cloud/security/aws-privatelink-select-vpc-and-subnets.webp" size="md" alt="Selecione a VPC e as sub-redes" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Selecione a VPC e as sub-redes](/images/cloud/security/aws-privatelink-select-vpc-and-subnets.webp)
+
+</Frame>
+
+</div>
 
 Como etapa opcional, atribua Security groups/Tags:
 
@@ -181,7 +204,15 @@ Como etapa opcional, atribua Security groups/Tags:
 
 Após criar o endpoint da VPC, anote o valor de `Endpoint ID`; você precisará dele em uma próxima etapa.
 
-<Image img="/images/cloud/security/aws-privatelink-vpc-endpoint-id.webp" size="md" alt="ID do endpoint da VPC" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![ID do endpoint da VPC](/images/cloud/security/aws-privatelink-vpc-endpoint-id.webp)
+
+</Frame>
+
+</div>
 
 <div id="option-2-aws-cloudformation">
   #### Opção 2: AWS CloudFormation
@@ -257,7 +288,15 @@ Para adicionar, navegue até o console do ClickHouse Cloud, abra o serviço ao q
   Se você quiser permitir acesso a partir de uma conexão PrivateLink existente, use o menu suspenso de endpoint existente.
 </Note>
 
-<Image img="/images/cloud/security/aws-privatelink-pe-filters.webp" size="md" alt="Filtro de endpoints privados" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Filtro de endpoints privados](/images/cloud/security/aws-privatelink-pe-filters.webp)
+
+</Frame>
+
+</div>
 
 Para remover, navegue até o console do ClickHouse Cloud, localize o serviço e depois vá para **Configurações** do serviço. Localize o endpoint que deseja remover. Remova-o da lista de endpoints.
 
@@ -334,7 +373,15 @@ Cada serviço com o Private Link habilitado tem um endpoint público e outro pri
 
 No console do ClickHouse Cloud, acesse **Settings**. Clique no botão **Set up private endpoint**. No painel lateral aberto, copie o **DNS Name**.
 
-<Image img="/images/cloud/security/aws-privatelink-pe-dns-name.webp" size="md" alt="Nome DNS do endpoint privado" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Nome DNS do endpoint privado](/images/cloud/security/aws-privatelink-pe-dns-name.webp)
+
+</Frame>
+
+</div>
 
 <div id="option-2-api-3">
   ##### Opção 2: API

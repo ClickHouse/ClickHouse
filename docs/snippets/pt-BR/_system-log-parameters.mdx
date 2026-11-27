@@ -20,14 +20,18 @@ As configurações a seguir podem ser definidas por subtags:
 | `buffer_size_rows_flush_threshold` | Limite para a quantidade de linhas. Se esse limite for atingido, a gravação dos logs em disco será iniciada em segundo plano.                                                         | `max_size_rows / 2` |                                                                                                                                             |
 | `flush_on_crash`                   | Define se os logs devem ser gravados em disco em caso de falha.                                                                                                                       | `false`             |                                                                                                                                             |
 
-Além disso, a configuração a seguir, no nível do servidor, controla a política padrão de descarregamento para todas as tabelas de logs do sistema:
+Todas as configurações, exceto `database`, `table` e `engine`, também podem ser definidas uma única vez para todas as tabelas de logs do sistema na seção `system_tables`. Uma configuração definida na seção de uma tabela específica tem precedência, e um `engine` definido por tabela substitui toda a definição do motor, inclusive os valores globais de `partition_by`, `ttl`, `order_by`, `storage_policy` e `settings`:
 
 ```xml
-<default_system_log_flush_policy>
-    <skip_alias_columns>true</skip_alias_columns>
-</default_system_log_flush_policy>
+<system_tables>
+    <ttl>event_date + INTERVAL 30 DAY DELETE</ttl>
+</system_tables>
 ```
+
+A seção `system_tables` também aceita a configuração a seguir, que se aplica a todas as tabelas de logs do sistema e não pode ser definida por tabela:
 
 | Configuração         | Descrição                                                                                                                                  | Padrão  |
 | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ | ------- |
 | `skip_alias_columns` | Quando `true`, as colunas ALIAS são omitidas dos esquemas das tabelas de log do sistema. Necessário para logs do sistema com suporte a S3. | `false` |
+
+O local anterior desta configuração, `default_system_log_flush_policy.skip_alias_columns`, está obsoleto e só é usado se `system_tables.skip_alias_columns` não estiver definida.

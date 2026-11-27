@@ -7,8 +7,6 @@ keywords: ['ML', 'Jupyer', 'chDB', 'pandas']
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 Dans ce guide, vous apprendrez à explorer un jeu de données dans ClickHouse Cloud à partir d’un notebook Jupyter à l’aide de [chDB](/fr/chdb/index), un moteur SQL OLAP in-process rapide basé sur ClickHouse.
 
 **Prérequis** :
@@ -39,15 +37,39 @@ Pour ajouter ce jeu de données à un service ClickHouse Cloud existant, connect
 
 Dans le menu de gauche, cliquez sur `Data sources`. Cliquez ensuite sur `Predefined sample data` :
 
-<Image size="md" img="/images/use-cases/AI_ML/jupyter/1.webp" alt="Ajouter un exemple de jeu de données" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Ajouter un exemple de jeu de données](/images/use-cases/AI_ML/jupyter/1.webp)
+
+</Frame>
+
+</div>
 
 Sélectionnez `Get started` sur la carte des données de prix de l’immobilier au Royaume-Uni (4GB) :
 
-<Image size="md" img="/images/use-cases/AI_ML/jupyter/2.webp" alt="Sélectionner le jeu de données des prix de l’immobilier au Royaume-Uni" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Sélectionner le jeu de données des prix de l’immobilier au Royaume-Uni](/images/use-cases/AI_ML/jupyter/2.webp)
+
+</Frame>
+
+</div>
 
 Cliquez ensuite sur `Import dataset` :
 
-<Image size="md" img="/images/use-cases/AI_ML/jupyter/3.webp" alt="Importer le jeu de données des prix de l’immobilier au Royaume-Uni" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Importer le jeu de données des prix de l’immobilier au Royaume-Uni](/images/use-cases/AI_ML/jupyter/3.webp)
+
+</Frame>
+
+</div>
 
 ClickHouse créera automatiquement la table `pp_complete` dans la base de données `default` et la remplira avec 28,92 millions de lignes de données sur les prix.
 
@@ -80,12 +102,28 @@ jupyter notebook
 Une nouvelle fenêtre de navigateur devrait s’ouvrir avec l’interface Jupyter sur `localhost:8888`.
 Cliquez sur `File` &gt; `New` &gt; `Notebook` pour créer un nouveau notebook.
 
-<Image size="md" img="/images/use-cases/AI_ML/jupyter/4.webp" alt="Créer un nouveau notebook" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Créer un nouveau notebook](/images/use-cases/AI_ML/jupyter/4.webp)
+
+</Frame>
+
+</div>
 
 Vous serez invité à sélectionner un noyau.
 Sélectionnez n’importe quel noyau Python disponible ; dans cet exemple, nous choisirons `ipykernel` :
 
-<Image size="md" img="/images/use-cases/AI_ML/jupyter/5.webp" alt="Sélectionner un noyau" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Sélectionner un noyau](/images/use-cases/AI_ML/jupyter/5.webp)
+
+</Frame>
+
+</div>
 
 Dans une cellule vide, vous pouvez saisir la commande suivante pour installer chDB, que nous utiliserons pour nous connecter à notre instance ClickHouse Cloud distante :
 
@@ -165,7 +203,15 @@ Le résultat est ensuite stocké sous forme de DataFrame dans une variable appel
 
 `df.head` affiche uniquement les premières lignes des données renvoyées :
 
-<Image size="md" img="/images/use-cases/AI_ML/jupyter/6.webp" alt="aperçu du dataframe" />
+<div className="ch-image-md">
+
+<Frame>
+
+![aperçu du dataframe](/images/use-cases/AI_ML/jupyter/6.webp)
+
+</Frame>
+
+</div>
 
 Exécutez la commande suivante dans une nouvelle cellule pour vérifier les types des colonnes :
 
@@ -202,7 +248,15 @@ plt.tight_layout()
 plt.show()
 ```
 
-<Image size="md" img="/images/use-cases/AI_ML/jupyter/7.webp" alt="aperçu du DataFrame" />
+<div className="ch-image-md">
+
+<Frame>
+
+![aperçu du DataFrame](/images/use-cases/AI_ML/jupyter/7.webp)
+
+</Frame>
+
+</div>
 
 Sans surprise, les prix de l’immobilier à Londres ont considérablement augmenté au fil du temps.
 
@@ -258,7 +312,15 @@ df_2.head()
   ```
 </Accordion>
 
-<Image size="md" img="/images/use-cases/AI_ML/jupyter/8.webp" alt="aperçu du DataFrame" />
+<div className="ch-image-md">
+
+<Frame>
+
+![aperçu du DataFrame](/images/use-cases/AI_ML/jupyter/8.webp)
+
+</Frame>
+
+</div>
 
 Bien qu’il manque des données à partir de 2020, nous pouvons représenter les deux jeux de données sur un même graphique pour les années 1995 à 2019.
 Dans une nouvelle cellule, exécutez la commande suivante :
@@ -304,7 +366,15 @@ plt.tight_layout()
 plt.show()
 ```
 
-<Image size="md" img="/images/use-cases/AI_ML/jupyter/9.webp" alt="Graphique du jeu de données distant et du jeu de données local" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Graphique du jeu de données distant et du jeu de données local](/images/use-cases/AI_ML/jupyter/9.webp)
+
+</Frame>
+
+</div>
 
 D’après le graphique, on voit que les ventes ont démarré autour de 160 000 en 1995 et ont rapidement progressé, pour culminer à environ 540 000 en 1999.
 Ensuite, les volumes ont fortement reculé jusqu’au milieu des années 2000, chutant brutalement pendant la crise financière de 2007-2008 pour retomber à environ 140 000.

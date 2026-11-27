@@ -13,7 +13,7 @@ ClickHouse는 쿼리 실행을 분석할 수 있는 샘플링 프로파일러를
 ClickHouse Cloud에서는 쿼리 프로파일러가 자동으로 활성화됩니다.
 다음 예시 쿼리는 함수 이름과 소스 위치가 확인된 상태로, 프로파일링된 쿼리에서 가장 자주 나타나는 스택 트레이스를 찾습니다.
 
-기본적으로 프로파일러는 수집 시점에 스택 트레이스를 심볼화하고 결과를 [`system.trace_log`](/ko/reference/system-tables/trace_log)의 `symbols` 및 `lines` 컬럼에 저장하므로, 아래 예시는 이 컬럼을 직접 읽으며 인트로스펙션 함수를 필요로 하지 않습니다. 심볼화는 `trace_log` 서버 구성 섹션의 `symbolize` 설정으로 제어되며(기본적으로 활성화됨), ELF 플랫폼(Linux 등)과 macOS에서 지원됩니다. FreeBSD에서는 `symbols` 및 `lines` 컬럼이 항상 비어 있습니다. `symbols`의 함수 이름은 바이너리의 심볼 테이블에서 가져오며 기본적으로 사용할 수 있습니다. `lines`의 소스 위치는 가능한 범위에서 제공됩니다. 이를 위해서는 디버그 정보가 필요하며(macOS에서는 바이너리 옆의 `.dSYM` 번들), ELF 플랫폼에서는 기본 ClickHouse 바이너리 내부의 프레임만 확인되므로 확인할 수 없는 프레임(예: 공유 라이브러리 내부)의 항목은 비어 있게 됩니다. 심볼화가 비활성화된 경우에는 `addressToSymbol`, `demangle`, `addressToLine` [인트로스펙션 함수](/ko/reference/functions/regular-functions/introspection)를 사용하여 대신 `trace` 컬럼의 원시 주소를 확인하십시오. 이 함수는 심볼화와 동일한 플랫폼(예: Linux의 ELF 플랫폼 및 macOS)에서 사용할 수 있습니다. FreeBSD에서는 이 함수들 또한 컴파일되지 않으므로 `trace`의 주소는 서버 외부에서 확인해야 합니다.
+기본적으로 프로파일러는 수집 시점에 스택 트레이스를 심볼화하고 결과를 [`system.trace_log`](/ko/reference/system-tables/trace_log)의 `symbols` 및 `lines` 컬럼에 저장하므로, 아래 예시는 이 컬럼을 직접 읽으며 인트로스펙션 함수를 필요로 하지 않습니다. 심볼화는 `trace_log` 서버 구성 섹션의 `symbolize` 설정으로 제어되며(기본적으로 활성화됨), ELF 플랫폼(Linux 등)과 macOS에서 지원됩니다. FreeBSD에서는 `symbols` 및 `lines` 컬럼이 항상 비어 있습니다. `symbols`의 함수 이름은 바이너리의 심볼 테이블에서 가져오며 기본적으로 사용할 수 있습니다. `lines`의 소스 위치는 가능한 범위에서 제공됩니다. 이를 위해서는 디버그 정보가 필요하며(macOS에서는 바이너리 옆의 `.dSYM` 번들), 소스 위치는 프레임 주소가 속한 로드된 객체(기본 ClickHouse 바이너리 또는 공유 라이브러리)를 기준으로 확인되므로 디버그 정보가 없는 프레임의 항목은 비어 있게 됩니다. 심볼화가 비활성화된 경우에는 `addressToSymbol`, `demangle`, `addressToLine` [인트로스펙션 함수](/ko/reference/functions/regular-functions/introspection)를 사용하여 대신 `trace` 컬럼의 원시 주소를 확인하십시오. 이 함수는 심볼화와 동일한 플랫폼(예: Linux의 ELF 플랫폼 및 macOS)에서 사용할 수 있습니다. FreeBSD에서는 이 함수들 또한 컴파일되지 않으므로 `trace`의 주소는 서버 외부에서 확인해야 합니다.
 
 <Tip>
   `query_id` 값을 프로파일링할 쿼리의 ID로 바꾸십시오.
@@ -51,9 +51,7 @@ ClickHouse Cloud에서는 쿼리 프로파일러가 자동으로 활성화됩니
   </Tab>
 </Tabs>
 
-<div id="self-managed-query-profiler">
-  ## 자가 관리형 배포에서 쿼리 프로파일러 사용하기
-</div>
+## 자가 관리형 배포에서 쿼리 프로파일러 사용하기 {#self-managed-query-profiler}
 
 자가 관리형 배포에서 쿼리 프로파일러를 사용하려면 아래 단계를 따르십시오.
 
@@ -90,7 +88,7 @@ ClickHouse Cloud에서는 쿼리 프로파일러가 자동으로 활성화됩니
 
     이 섹션은 프로파일러 동작 결과를 포함하는 [trace&#95;log](/ko/reference/system-tables/trace_log) 시스템 테이블을 구성합니다.
     기본적으로 활성화된 `symbolize` 옵션을 사용하면 ClickHouse가 수집 시점에 각 스택 프레임을 해석하고 디맹글된 함수 이름과 소스 위치를 `symbols` 및 `lines` 컬럼에 저장합니다.
-    `symbols`의 함수 이름은 심볼 테이블에서 가져오며 기본적으로 사용할 수 있지만, `lines`의 소스 위치를 확인하려면 디버그 정보(macOS에서는 `.dSYM` 번들)가 필요합니다. 또한 ELF 플랫폼에서는 기본 ClickHouse 바이너리 내부의 프레임에 대해서만 해석되며, 해석되지 않은 프레임의 `lines` 항목은 비어 있습니다.
+    `symbols`의 함수 이름은 심볼 테이블에서 가져오며 기본적으로 사용할 수 있지만, `lines`의 소스 위치를 확인하려면 디버그 정보(macOS에서는 `.dSYM` 번들)가 필요합니다. 또한 소스 위치는 프레임 주소가 속한 로드된 객체(기본 ClickHouse 바이너리 또는 공유 라이브러리)를 기준으로 해석되며, 해석되지 않은 프레임의 `lines` 항목은 비어 있습니다.
 
     `trace` 컬럼의 원시 주소는 사전 심볼화된 컬럼보다 재시작 및 업그레이드 간 안정성이 낮다는 점에 유의하십시오.
     FreeBSD를 제외한 ELF 플랫폼에서는 기본 ClickHouse 바이너리의 프레임이 물리적 파일 오프셋으로 저장되므로 바이너리가 변경되지 않는 한 재시작 후에도 해석할 수 있습니다. macOS와 FreeBSD에서는 재시작 후 유효하지 않을 수 있는 런타임 가상 주소로 저장됩니다.
@@ -115,7 +113,7 @@ ClickHouse Cloud에서는 쿼리 프로파일러가 자동으로 활성화됩니
     특정 쿼리의 프로파일을 얻으려면 `trace_log` 테이블의 데이터를 집계해야 합니다.
     개별 함수별로 또는 전체 스택 트레이스별로 데이터를 집계할 수 있습니다.
 
-    심볼화가 활성화된 경우(기본값), 디맹글된 함수 이름과 소스 위치는 이미 `symbols` 및 `lines` 컬럼에서 사용할 수 있으므로 추가 설정이 필요하지 않습니다. FreeBSD에서는 심볼화가 지원되지 않으며, 이 컬럼들은 항상 비어 있습니다. 디버그 정보가 없거나 기본 ClickHouse 바이너리 범위 밖에 있는 프레임의 경우 `lines` 항목이 비어 있을 수 있습니다([위](#server-config) 참조).
+    심볼화가 활성화된 경우(기본값), 디맹글된 함수 이름과 소스 위치는 이미 `symbols` 및 `lines` 컬럼에서 사용할 수 있으므로 추가 설정이 필요하지 않습니다. FreeBSD에서는 심볼화가 지원되지 않으며, 이 컬럼들은 항상 비어 있습니다. 디버그 정보가 없는 프레임의 경우 `lines` 항목이 비어 있을 수 있습니다([위](#server-config) 참조).
 
     심볼화가 비활성화되어 있거나 `trace` 컬럼의 원시 주소를 즉시 확인하려는 경우(예: 인라인 프레임 확장), [`allow_introspection_functions`](/ko/reference/settings/session-settings/allow#allow_introspection_functions) 설정으로 인트로스펙션 함수를 허용하십시오:
 
@@ -135,9 +133,7 @@ ClickHouse Cloud에서는 쿼리 프로파일러가 자동으로 활성화됩니
   </Step>
 </Steps>
 
-<div id="flamegraph">
-  ## `flameGraph` 함수로 플레임 그래프 만들기
-</div>
+## `flameGraph` 함수로 플레임 그래프 만들기 {#flamegraph}
 
 ClickHouse는 `trace_log`에 저장된 스택 트레이스로부터 직접 플레임 그래프를 생성하는 [`flameGraph`](/ko/reference/functions/aggregate-functions/flame_graph) 집계 함수를 제공합니다.
 출력은 [flamegraph.pl](https://github.com/brendangregg/FlameGraph)과 호환되는 포맷의 문자열 배열입니다.
@@ -158,9 +154,7 @@ flameGraph(traces, [size = 1], [ptr = 0])
 해제되지 않은 할당만 표시됩니다.
 짝이 맞지 않는 할당 해제는 무시됩니다.
 
-<div id="cpu-flame-graph">
-  ### CPU 플레임 그래프
-</div>
+### CPU 플레임 그래프 {#cpu-flame-graph}
 
 <Note>
   아래 쿼리를 실행하려면 [flamegraph.pl](https://github.com/brendangregg/FlameGraph)이 설치되어 있어야 합니다.
@@ -190,9 +184,7 @@ clickhouse client --allow_introspection_functions=1 \
     | flamegraph.pl > flame_cpu.svg
 ```
 
-<div id="memory-flame-graph-all">
-  ### 메모리 플레임 그래프 — 전체 할당
-</div>
+### 메모리 플레임 그래프 — 전체 할당 {#memory-flame-graph-all}
 
 ```sql
 SET memory_profiler_sample_probability = 1, max_untracked_memory = 1;
@@ -208,9 +200,7 @@ clickhouse client --allow_introspection_functions=1 \
     | flamegraph.pl --countname=bytes --color=mem > flame_mem.svg
 ```
 
-<div id="memory-flame-graph-unfreed">
-  ### 메모리 플레임 그래프 — 해제되지 않은 할당
-</div>
+### 메모리 플레임 그래프 — 해제되지 않은 할당 {#memory-flame-graph-unfreed}
 
 이 유형에서는 포인터를 기준으로 할당과 해제를 대조하여, 쿼리 실행 중 해제되지 않은 메모리만 표시합니다.
 
@@ -231,9 +221,7 @@ clickhouse client --allow_introspection_functions=1 \
     | flamegraph.pl --countname=bytes --color=mem > flame_mem_unfreed.svg
 ```
 
-<div id="memory-flame-graph-time-point">
-  ### 메모리 플레임 그래프 — 특정 시점의 활성 할당
-</div>
+### 메모리 플레임 그래프 — 특정 시점의 활성 할당 {#memory-flame-graph-time-point}
 
 이 방법을 사용하면 최대 메모리 사용량을 확인하고 해당 시점에 무엇이 할당되었는지 시각화할 수 있습니다.
 
@@ -241,9 +229,7 @@ clickhouse client --allow_introspection_functions=1 \
 SET memory_profiler_sample_probability = 1, max_untracked_memory = 1;
 ```
 
-<div id="find-memory-usage-over-time">
-  #### 시간에 따른 메모리 사용량 확인
-</div>
+#### 시간에 따른 메모리 사용량 확인 {#find-memory-usage-over-time}
 
 ```sql
 SELECT
@@ -260,9 +246,7 @@ GROUP BY event_time
 ORDER BY event_time;
 ```
 
-<div id="find-time-point-maximum-memory-usage">
-  #### 메모리 사용량이 가장 많은 시점 찾기
-</div>
+#### 메모리 사용량이 가장 많은 시점 찾기 {#find-time-point-maximum-memory-usage}
 
 ```sql
 SELECT
@@ -277,9 +261,7 @@ FROM (
 );
 ```
 
-<div id="build-flame-graph">
-  #### 해당 시점의 활성 할당 플레임 그래프 생성
-</div>
+#### 해당 시점의 활성 할당 플레임 그래프 생성 {#build-flame-graph}
 
 ```bash
 clickhouse client --allow_introspection_functions=1 \
@@ -294,9 +276,7 @@ clickhouse client --allow_introspection_functions=1 \
     | flamegraph.pl --countname=bytes --color=mem > flame_mem_time_point_pos.svg
 ```
 
-<div id="build-flame-graph-deallocations">
-  #### 해당 시점 이후의 메모리 해제에 대한 플레임 그래프 만들기(나중에 무엇이 해제되었는지 파악하기 위해)
-</div>
+#### 해당 시점 이후의 메모리 해제에 대한 플레임 그래프 만들기(나중에 무엇이 해제되었는지 파악하기 위해) {#build-flame-graph-deallocations}
 
 ```bash
 clickhouse client --allow_introspection_functions=1 \
@@ -311,9 +291,7 @@ clickhouse client --allow_introspection_functions=1 \
     | flamegraph.pl --countname=bytes --color=mem > flame_mem_time_point_neg.svg
 ```
 
-<div id="example">
-  ## 예시
-</div>
+## 예시 {#example}
 
 아래 코드 조각은 다음을 수행합니다.
 

@@ -25,7 +25,7 @@ if [ "$($CLICKHOUSE_CLIENT --query "SELECT value FROM system.build_options WHERE
     PROBE_ERROR=$($CLICKHOUSE_CLIENT --allow_experimental_gpu_aggregation 1 \
         --query "SELECT k % 10, sum(v) FROM gpu_split GROUP BY k % 10 FORMAT Null" 2>&1 > /dev/null)
     if [ -z "$PROBE_ERROR" ]; then
-        GPU_SETTINGS=(--allow_experimental_gpu_aggregation 1 --allow_experimental_gpu_filtered_read 1 --gpu_aggregation_readers 4 --gpu_aggregation_decompression device)
+        GPU_SETTINGS=(--allow_experimental_gpu_aggregation 1 --allow_experimental_gpu_filtered_read 1 --gpu_aggregation_readers 4)
     elif [[ "$PROBE_ERROR" != *"There is no GPU"* ]]; then
         echo "$PROBE_ERROR"
     fi

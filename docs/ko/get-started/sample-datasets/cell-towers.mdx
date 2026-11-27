@@ -6,8 +6,6 @@ keywords: ['example dataset', 'cell towers', 'OpenCelliD', 'geospatial', 'pointI
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 이 튜토리얼에서는 기지국(cell tower) 데이터셋을 사용하여 ClickHouse로 Geo 데이터를 다루는 방법을 살펴봅니다.
 먼저 데이터셋을 ClickHouse Cloud에 로드하고 스키마(schema)를 확인한 다음, 수천만 개의 행을 대상으로 집계 쿼리(aggregation query)를 실행합니다.
 이어서 딕셔너리(Dictionary)로 데이터를 보강하고, `pointInPolygon` 함수로 독일 내 기지국 수를 집계한 뒤, ClickHouse Agents를 사용하여 결과를 지도에 시각화합니다.
@@ -226,15 +224,23 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 
   <Step title="선택 사항: ClickHouse Agents를 사용해 데이터 시각화">
     다음으로 이 데이터를 시각화해 보겠습니다. 이 단계는 선택 사항인 예시 실행입니다. ClickHouse Agents는 모델 기반의 베타 기능이므로 계획, 도구 트레이스, 출력 결과가 실행할 때마다 다를 수 있습니다.
-    [ClickHouse Agents](/ko/products/cloud/features/ai-ml/agents)를 사용하면 SQL이나 오케스트레이션 로직을 직접 작성하지 않고도 대화만으로 ClickHouse 데이터를 손쉽게 쿼리하고 탐색할 수 있습니다.
+    [ClickHouse Agents](/ko/agents)를 사용하면 SQL이나 오케스트레이션 로직을 직접 작성하지 않고도 대화만으로 ClickHouse 데이터를 손쉽게 쿼리하고 탐색할 수 있습니다.
     에이전트는 사용자의 의도를 해석하고 단계를 계획한 뒤, 구성된 도구를 호출하여 결과를 반환합니다.
 
     왼쪽 메뉴 하단의 조직 이름 아래에 있는 **ClickHouse agents**를 클릭하여 ClickHouse Agents를 여십시오.
-    [채팅](/ko/products/cloud/features/ai-ml/agents/chat)을 통해 ClickHouse 에이전트에 메시지를 보낼 수 있습니다.
+    [채팅](/ko/agents/chat)을 통해 ClickHouse 에이전트에 메시지를 보낼 수 있습니다.
     &quot;Visualize cell towers within Germany on a map using the `default.cell_towers` and `default.germany` tables&quot;를 입력하고 전송하세요.
     한 실행에서 에이전트는 다음 단계를 수행했습니다.
 
-    <Image img="/images/get-started/sample-datasets/clickhouse-agents-cell-towers.webp" size="lg" alt="독일의 기지국 밀도 그리드를 만들기 위해 수행한 단계를 보여주는 ClickHouse Agent 채팅" />
+    <div className="ch-image-lg">
+
+    <Frame>
+
+    ![독일의 기지국 밀도 그리드를 만들기 위해 수행한 단계를 보여주는 ClickHouse Agent 채팅](/images/get-started/sample-datasets/clickhouse-agents-cell-towers.webp)
+
+    </Frame>
+
+    </div>
 
     * `mcc_country_dict`에서 독일의 모바일 국가 코드를 조회하여 MCC `262`를 찾았습니다.
     * `pointInPolygon`을 사용하여 `germany`의 폴리곤 내부에 있으면서 `mcc = 262`인 기지국 수를 집계했으며, 그 결과 2,588,635개가 나왔습니다. 추가된 `mcc` 필터로 인해 폴리곤 내부에 있더라도 다른 국가에 등록된 기지국은 제외되므로, 앞서 구한 개수보다 약간 적습니다.
@@ -243,7 +249,15 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 
     생성된 파일을 열어 결과를 확인하십시오. 밝게 표시된 밀집 지역은 베를린, 함부르크, 뮌헨, 프랑크푸르트 등 주요 대도시권입니다.
 
-    <Image img="/images/get-started/sample-datasets/clickhouse-agents-cell-towers-visualization.webp" size="md" alt="로그 색상 척도를 적용한 0.1도 그리드 기반 독일 기지국 밀도 히트맵" />
+    <div className="ch-image-md">
+
+    <Frame>
+
+    ![로그 색상 척도를 적용한 0.1도 그리드 기반 독일 기지국 밀도 히트맵](/images/get-started/sample-datasets/clickhouse-agents-cell-towers-visualization.webp)
+
+    </Frame>
+
+    </div>
   </Step>
 </Steps>
 
@@ -255,7 +269,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 
 이제 다음과 같은 작업을 이어서 진행할 수 있습니다.
 
-* **에이전트에게 후속 질문하기.** `LTE`와 `GSM` 같은 무선 유형에 따라 밀도가 어떻게 다른지, 또는 `NR` 기지국이 가장 많은 도시가 어디인지 질문해 보십시오. 자주 사용하는 프롬프트는 [프롬프트 라이브러리](/ko/products/cloud/features/ai-ml/agents/prompts)에 저장해 두거나, [Agent Builder](/ko/products/cloud/features/ai-ml/agents/builder)에서 특화된 에이전트를 만들 수 있습니다.
+* **에이전트에게 후속 질문하기.** `LTE`와 `GSM` 같은 무선 유형에 따라 밀도가 어떻게 다른지, 또는 `NR` 기지국이 가장 많은 도시가 어디인지 질문해 보십시오. 자주 사용하는 프롬프트는 [프롬프트 라이브러리](/ko/agents/prompts)에 저장해 두거나, [Agent Builder](/ko/agents/builder)에서 특화된 에이전트를 만들 수 있습니다.
 * **국가별로 비교하기.** 다른 국가의 다각형을 삽입하고 각 국가를 대상으로 동일한 `pointInPolygon` 쿼리를 실행해 보십시오. 앞서 생성한 딕셔너리를 사용하면 결과에 국가 이름을 레이블로 붙일 수 있습니다.
 * **H3 또는 geohash로 기지국 그룹화하기.** 에이전트는 단순한 반올림 격자를 사용했습니다. ClickHouse는 [H3](/ko/reference/functions/regular-functions/geo/h3) 및 [geohash](/ko/reference/functions/regular-functions/geo/geohash) 함수도 제공합니다. 이 함수들은 계층형 셀을 생성하므로 확대/축소가 가능한 지도에 적합합니다.
 * **다른 데이터셋 살펴보기.** [NYC taxi](/ko/get-started/sample-datasets/nyc-taxi) 데이터셋에도 승차 및 하차 좌표가 포함되어 있으며, [샘플 데이터셋](/ko/get-started/sample-datasets) 목록에서 더 많은 데이터셋을 확인할 수 있습니다.

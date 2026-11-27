@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Processors/IProcessor.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Core/SortDescription.h>
 #include <Core/SortCursor.h>
 #include <Processors/ISource.h>
@@ -36,7 +37,7 @@ public:
         size_t max_block_rows, size_t preferred_block_bytes, size_t input_rows, size_t input_bytes);
 
     /// Returns the row limit, reduced by the optional byte target using the input's average row size.
-    size_t getMaxMergedBlockSize() const { return max_merged_block_size; }
+    [[nodiscard]] size_t getMaxMergedBlockSize() const { return max_merged_block_size; }
 
 private:
     Chunks chunks;
@@ -56,7 +57,7 @@ private:
     template <Mode merge_mode, typename TSortingQueue>
     Chunk mergeBatchImpl(TSortingQueue & queue);
 
-    MutableColumns createMergedColumns() const;
+    [[nodiscard]] MutableColumns createMergedColumns() const;
 
 };
 
@@ -118,7 +119,7 @@ protected:
     /// Save original block structure here.
     Block header_without_constants;
     /// Columns which were constant in header and we need to remove from chunks.
-    std::vector<bool> const_columns_to_remove;
+    VectorWithMemoryTracking<bool> const_columns_to_remove;
 
     void removeConstColumns(Chunk & chunk);
     void enrichChunkWithConstants(Chunk & chunk);

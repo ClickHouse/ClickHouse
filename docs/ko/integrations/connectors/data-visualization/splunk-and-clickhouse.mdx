@@ -10,8 +10,6 @@ integration:
   - category: 'data_visualization'
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 import { ClickHouseSupportedBadge } from "/snippets/ko/components/ClickHouseSupported/ClickHouseSupported.jsx";
 
 <ClickHouseSupportedBadge />
@@ -34,7 +32,15 @@ Splunk는 보안 및 관측성에 널리 사용되는 기술입니다. 또한 �
 
 이 가이드를 따르면 다음과 같이 ClickHouse에 연결된 대시보드를 만들 수 있습니다.
 
-<Image img="/images/integrations/splunk/splunk-1.webp" size="lg" border alt="NYC 택시 데이터 시각화를 보여주는 Splunk 대시보드" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![NYC 택시 데이터 시각화를 보여주는 Splunk 대시보드](/images/integrations/splunk/splunk-1.webp)
+
+</Frame>
+
+</div>
 
 <Note>
   이 가이드에서는 [New York City Taxi 데이터셋](/ko/get-started/sample-datasets/nyc-taxi)을 사용합니다. 사용할 수 있는 다른 데이터셋도 [문서](http://localhost:3000/docs/getting-started/example-datasets)에서 많이 확인할 수 있습니다.
@@ -71,7 +77,15 @@ DB Connect App 설치에 문제가 있으면 추가 지침은 [이 링크](https
 
 DB Connect App이 설치되어 있는지 확인한 후 Configuration -&gt; Settings에서 `java_home` 경로를 DB Connect App에 추가하고 save를 클릭한 다음 reset을 클릭하십시오.
 
-<Image img="/images/integrations/splunk/splunk-2.webp" size="md" border alt="Java Home 구성을 보여주는 Splunk DB Connect 설정 페이지" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Java Home 구성을 보여주는 Splunk DB Connect 설정 페이지](/images/integrations/splunk/splunk-2.webp)
+
+</Frame>
+
+</div>
 
 <div id="configure-jdbc-for-clickhouse">
   ## ClickHouse용 JDBC 구성
@@ -106,7 +120,15 @@ ui_default_catalog = $database$
 
 DB Connect App으로 돌아가 Configuration &gt; 설정 &gt; Drivers로 이동하십시오. ClickHouse 옆에 녹색 체크 표시가 나타나야 합니다:
 
-<Image img="/images/integrations/splunk/splunk-3.webp" size="lg" border alt="ClickHouse 드라이버가 성공적으로 설치된 것으로 표시된 Splunk DB Connect 드라이버 페이지" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![ClickHouse 드라이버가 성공적으로 설치된 것으로 표시된 Splunk DB Connect 드라이버 페이지](/images/integrations/splunk/splunk-3.webp)
+
+</Frame>
+
+</div>
 
 <div id="connect-splunk-search-to-clickhouse">
   ## Splunk 검색을 ClickHouse에 연결하기
@@ -116,13 +138,29 @@ DB Connect App Configuration -&gt; Databases -&gt; Identities로 이동하여 Cl
 
 Configuration -&gt; Databases -&gt; Connections에서 ClickHouse에 대한 새 연결을 생성한 다음 &quot;New Connection&quot;을 선택합니다.
 
-<Image img="/images/integrations/splunk/splunk-4.webp" size="sm" border alt="Splunk DB Connect 새 연결 버튼" />
+<div className="ch-image-sm">
+
+<Frame>
+
+![Splunk DB Connect 새 연결 버튼](/images/integrations/splunk/splunk-4.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
 ClickHouse 호스트 정보를 추가하고 &quot;Enable SSL&quot;이 선택되어 있는지 확인합니다:
 
-<Image img="/images/integrations/splunk/splunk-5.webp" size="md" border alt="ClickHouse용 Splunk 연결 구성 페이지" />
+<div className="ch-image-md">
+
+<Frame>
+
+![ClickHouse용 Splunk 연결 구성 페이지](/images/integrations/splunk/splunk-5.webp)
+
+</Frame>
+
+</div>
 
 연결을 저장하면 ClickHouse와 Splunk가 성공적으로 연결됩니다!
 
@@ -138,11 +176,27 @@ ClickHouse 호스트 정보를 추가하고 &quot;Enable SSL&quot;이 선택되�
 
 DB Connect App의 DataLab 섹션에 있는 SQL Explorer에서 연결 정보를 선택합니다. 이 데모에서는 `trips` 테이블을 사용합니다:
 
-<Image img="/images/integrations/splunk/splunk-6.webp" size="md" border alt="ClickHouse 연결 정보를 선택하는 Splunk SQL Explorer" />
+<div className="ch-image-md">
+
+<Frame>
+
+![ClickHouse 연결 정보를 선택하는 Splunk SQL Explorer](/images/integrations/splunk/splunk-6.webp)
+
+</Frame>
+
+</div>
 
 테이블의 전체 레코드 수를 반환하는 `trips` 테이블에 대해 SQL 쿼리를 실행합니다:
 
-<Image img="/images/integrations/splunk/splunk-7.webp" size="md" border alt="trips 테이블의 레코드 수를 보여주는 Splunk SQL 쿼리 실행 화면" />
+<div className="ch-image-md">
+
+<Frame>
+
+![trips 테이블의 레코드 수를 보여주는 Splunk SQL 쿼리 실행 화면](/images/integrations/splunk/splunk-7.webp)
+
+</Frame>
+
+</div>
 
 쿼리가 성공하면 결과가 표시됩니다.
 
@@ -164,7 +218,15 @@ ORDER BY count DESC LIMIT 10;" connection="chc"
 
 생성된 컬럼 차트를 보려면 시각화 탭을 선택합니다:
 
-<Image img="/images/integrations/splunk/splunk-8.webp" size="lg" border alt="상위 10개 승차 지역을 보여주는 Splunk 컬럼 차트 시각화" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![상위 10개 승차 지역을 보여주는 Splunk 컬럼 차트 시각화](/images/integrations/splunk/splunk-8.webp)
+
+</Frame>
+
+</div>
 
 이제 Save As &gt; Save to a Dashboard를 클릭하여 대시보드를 생성하겠습니다.
 
@@ -177,7 +239,15 @@ FROM default.trips GROUP BY passenger_count;" connection="chc"
 
 이번에는 막대 차트 시각화를 만들고 이전 대시보드에 저장하겠습니다.
 
-<Image img="/images/integrations/splunk/splunk-9.webp" size="lg" border alt="승객 수별 평균 요금을 보여주는 Splunk 막대 차트" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![승객 수별 평균 요금을 보여주는 Splunk 막대 차트](/images/integrations/splunk/splunk-9.webp)
+
+</Frame>
+
+</div>
 
 마지막으로, 승객 수와 이동 거리 간의 상관관계를 보여주는 쿼리를 하나 더 추가하겠습니다:
 
@@ -190,7 +260,15 @@ ORDER BY year, count(*) DESC; " connection="chc"
 
 최종 대시보드는 다음과 같이 표시됩니다:
 
-<Image img="/images/integrations/splunk/splunk-10.webp" size="lg" border alt="NYC 택시 데이터에 대한 여러 시각화를 보여주는 최종 Splunk 대시보드" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![NYC 택시 데이터에 대한 여러 시각화를 보여주는 최종 Splunk 대시보드](/images/integrations/splunk/splunk-10.webp)
+
+</Frame>
+
+</div>
 
 <div id="time-series-data">
   ## 시계열 데이터

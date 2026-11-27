@@ -132,7 +132,7 @@ const FormatSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "input_format_*",
-      count: 132,
+      count: 133,
       settings: [
         { name: "input_format_allow_errors_num", path: "/input-format#input_format_allow_errors_num", default: "0" },
         { name: "input_format_allow_errors_ratio", path: "/input-format#input_format_allow_errors_ratio", default: "0" },
@@ -243,6 +243,7 @@ const FormatSettingsExplorer = ({ href: baseRoute }) => {
         { name: "input_format_parquet_allow_missing_columns", path: "/input-format#input_format_parquet_allow_missing_columns", default: "1" },
         { name: "input_format_parquet_bloom_filter_push_down", path: "/input-format#input_format_parquet_bloom_filter_push_down", default: "1" },
         { name: "input_format_parquet_case_insensitive_column_matching", path: "/input-format#input_format_parquet_case_insensitive_column_matching", default: "0" },
+        { name: "input_format_parquet_detect_variant_by_structure", path: "/input-format#input_format_parquet_detect_variant_by_structure", default: "1" },
         { name: "input_format_parquet_dictionary_filter_push_down", path: "/input-format#input_format_parquet_dictionary_filter_push_down", default: "1048576" },
         { name: "input_format_parquet_enable_json_parsing", path: "/input-format#input_format_parquet_enable_json_parsing", default: "1" },
         { name: "input_format_parquet_enable_row_group_prefetch", path: "/input-format#input_format_parquet_enable_row_group_prefetch", default: "1" },
@@ -299,7 +300,7 @@ const FormatSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "output_format_*",
-      count: 113,
+      count: 116,
       settings: [
         { name: "output_format_always_write_decimal_point_in_float_and_decimal", path: "/output-format#output_format_always_write_decimal_point_in_float_and_decimal", default: "0" },
         { name: "output_format_arrow_compression_method", path: "/output-format#output_format_arrow_compression_method", default: "lz4_frame" },
@@ -367,14 +368,17 @@ const FormatSettingsExplorer = ({ href: baseRoute }) => {
         { name: "output_format_parquet_enum_as_byte_array", path: "/output-format#output_format_parquet_enum_as_byte_array", default: "1" },
         { name: "output_format_parquet_fixed_string_as_fixed_byte_array", path: "/output-format#output_format_parquet_fixed_string_as_fixed_byte_array", default: "1" },
         { name: "output_format_parquet_geometadata", path: "/output-format#output_format_parquet_geometadata", default: "1" },
+        { name: "output_format_parquet_geometry_logical_type", path: "/output-format#output_format_parquet_geometry_logical_type", default: "0" },
         { name: "output_format_parquet_max_dictionary_size", path: "/output-format#output_format_parquet_max_dictionary_size", default: "1048576" },
         { name: "output_format_parquet_parallel_encoding", path: "/output-format#output_format_parquet_parallel_encoding", default: "1" },
         { name: "output_format_parquet_row_group_size", path: "/output-format#output_format_parquet_row_group_size", default: "1000000" },
         { name: "output_format_parquet_row_group_size_bytes", path: "/output-format#output_format_parquet_row_group_size_bytes", default: "536870912" },
         { name: "output_format_parquet_string_as_string", path: "/output-format#output_format_parquet_string_as_string", default: "1" },
+        { name: "output_format_parquet_use_alp_encoding", path: "/output-format#output_format_parquet_use_alp_encoding", default: "0" },
         { name: "output_format_parquet_wide_integer_as_decimal", path: "/output-format#output_format_parquet_wide_integer_as_decimal", default: "0" },
         { name: "output_format_parquet_write_bloom_filter", path: "/output-format#output_format_parquet_write_bloom_filter", default: "1" },
         { name: "output_format_parquet_write_checksums", path: "/output-format#output_format_parquet_write_checksums", default: "1" },
+        { name: "output_format_parquet_write_file_logical_type", path: "/output-format#output_format_parquet_write_file_logical_type", default: "0" },
         { name: "output_format_parquet_write_page_index", path: "/output-format#output_format_parquet_write_page_index", default: "1" },
         { name: "output_format_pretty_color", path: "/output-format#output_format_pretty_color", default: "auto" },
         { name: "output_format_pretty_display_control_characters", path: "/output-format#output_format_pretty_display_control_characters", default: "1" },

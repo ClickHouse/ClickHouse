@@ -21,7 +21,7 @@ pip install "clickhouse-connect[rust,numpy]"   # NumPy results
 pip install "clickhouse-connect[rust,pandas]"  # Pandas results and inserts
 ```
 
-코어 휠은 Linux, macOS, Windows에서 CPython 3.10~3.14 및 free-threaded CPython 3.14t용으로 배포됩니다. free-threaded Python에서는 코어 확장 모듈을 가져와도 GIL이 다시 활성화되지 않습니다.
+코어 휠은 Linux, macOS, Windows에서 CPython 3.10~3.15 및 free-threaded CPython 3.14t, 3.15t용으로 배포됩니다. free-threaded Python에서는 코어 확장 모듈을 가져와도 GIL이 다시 활성화되지 않습니다.
 
 일반적인 Rust 기반 NumPy 및 Pandas 출력에는 PyArrow나 기타 Arrow 패키지가 필요하지 않습니다. 여기에는 `query_np`, `query_df`, 이들의 스트리밍 변형, 그리고 `query(..., use_numpy=True)`가 포함됩니다. NumPy 쿼리에는 Pandas도 필요하지 않습니다. 비동기 클라이언트를 사용하려면 `async` 엑스트라를 추가하십시오.
 
@@ -39,7 +39,7 @@ pip install "clickhouse-connect[rust,pandas,arrow]"
 
 널 허용 스칼라 DateTime64(9)에서 `query_df`와 `query_df_stream`은 SimpleAggregateFunction 별칭을 거치는 경우를 포함하여 소수점 이하 9자리를 모두 보존합니다. Pandas 3에서는 이제 기본 출력의 datetime 컬럼이 마이크로초 대신 나노초 단위를 사용합니다. 모든 값이 NULL인 블록에 대한 기존 object dtype 추론은 변경되지 않습니다. 명명된 시간대로 인해 값이 Pandas의 나노초 범위를 벗어나게 되면, 해당 컬럼은 이전의 객체 변환 및 범위 동작을 유지합니다.
 
-이러한 컬럼에서 `query_np`와 `query_np_stream`의 object 필드에는 이제 Python `datetime` 셀 대신 `numpy.datetime64` 셀이 담기며, SQL NULL은 `None`으로 표시됩니다. 명명된 시간대 값은 Python 코덱과 마찬가지로 시간대 메타데이터 없이 UTC 틱을 사용합니다. 따라서 Pandas 없이도 나노초를 보존할 수 있습니다. 시간대 정보가 포함된 타임스탬프가 필요하면 `query_df`를 사용하세요. 그 밖의 널 허용 시간 관련 NumPy 셀 유형은 변경되지 않습니다.
+이러한 컬럼에서 `query_np`와 `query_np_stream`의 object 필드에는 이제 Python `datetime` 셀 대신 `numpy.datetime64` 셀이 담기며, SQL NULL은 `None`으로 표시됩니다. 명명된 시간대 값은 Python 코덱과 마찬가지로 시간대 메타데이터 없이 UTC 틱을 사용합니다. 따라서 Pandas 없이도 나노초를 보존할 수 있습니다. 시간대 정보가 포함된 타임스탬프가 필요하면 `query_df`를 사용하세요. 그 밖의 널 허용 시간 관련 NumPy 셀 타입은 변경되지 않습니다.
 
 스칼라 DateTime64 NumPy 및 Pandas 쿼리는 널 허용 컬럼과 SimpleAggregateFunction 별칭을 포함하여 정밀도가 0, 3, 6, 9가 아니면 `ProgrammingError`를 발생시킵니다.
 
@@ -87,6 +87,8 @@ PyArrow가 없으면 Rust 문자열 변환은 디코딩된 각 블록에서 Pyth
 
 `naive_datetime_insert="server"`가 활성화되어 있으면 `rust`는 `DateTime` 또는 `DateTime64` 컬럼이 포함된 삽입을 Python 코덱으로 라우팅하여, 선언된 컬럼 시간대 또는 서버 시간대가 적용되도록 합니다. `rust_strict`는 이 조합을 거부합니다. 기본값인 `naive_datetime_insert="local"` 모드에서는 계속 Rust 인코더를 사용합니다.
 
+Python 행 및 컬럼 쿼리(`query`, `query_row_block_stream`, `query_column_block_stream`, `query_rows_stream`) 중 시간대가 지정되지 않은 `DateTime` 또는 `DateTime64` 컬럼이 UTC가 아닌 실행 환경 시간대(서버 시간대 또는 로컬 시간대)로 렌더링되는 쿼리는, 설치된 core가 지원하면 Rust 코덱을 사용합니다. 결과 값은 Python 코덱과 동일합니다. 로컬 시간대는 IANA 이름으로 확인되는 경우, 즉 `TZ`가 설정되어 있거나 `tzlocal`이 설치되어 있는 경우에만 해당됩니다. 그렇지 않으면 IANA 이름이 없는 고정 오프셋으로 처리되어 Python 코덱으로 라우팅됩니다. UTC가 아닌 실행 환경 시간대를 사용하는 NumPy 및 Pandas 쿼리(`query_np`, `query_df` 및 각각의 스트리밍 변형)와, `query_tz`, `column_tzs` 또는 기본값이 아닌 `tz_mode`를 설정하거나 서버 시간대 헤더를 수신하는 쿼리는 여전히 Python 코덱으로 라우팅됩니다. `rust_strict`는 이러한 경우를 거부합니다.
+
 SQLAlchemy 방언 리플렉션 SQL 문을 비롯한 드라이버 내부 메타데이터 쿼리는 모든 모드에서 항상 별도의 알림 없이 Python 코덱을 사용합니다.
 
 Rust 코덱이 감지한 잘못된 형식의 Native 페이로드는 `DataError`를 발생시킵니다.
@@ -100,6 +102,8 @@ pip install --upgrade clickhouse-connect-core
 ```
 
 컴파일된 코덱의 수정 및 성능 개선 사항은 `clickhouse-connect-core` 릴리스로 제공되며, 호환되는 core 휠(wheel)로 업그레이드하여 적용할 수 있습니다. 드라이버의 Rust 통합과 관련된 변경 사항을 적용하려면 `clickhouse-connect`를 업그레이드해야 합니다.
+
+실행 환경 시간대가 UTC가 아닐 때 Python 행 및 컬럼 쿼리에 Rust 지원을 사용하려면 `clickhouse-connect>=1.11.0` 및 `clickhouse-connect-core>=0.2.3`이 필요합니다. 이 기능을 활성화하려면 두 패키지를 모두 업그레이드하십시오. 이보다 이전 버전의 호환 core에서는 `rust` 모드의 기존 Python 폴백과 `rust_strict` 모드의 거부 동작이 그대로 유지됩니다.
 
 ## 알려진 동작 차이 {#known-behavior-differences}
 

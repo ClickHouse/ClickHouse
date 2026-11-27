@@ -11,6 +11,7 @@ doc_type: 'reference'
 import SettingsInfoBlock from "/snippets/pt-BR/components/SettingsInfoBlock/SettingsInfoBlock.jsx";
 import { VersionHistory } from "/snippets/pt-BR/components/VersionHistory/VersionHistory.jsx";
 import { ExperimentalBadge } from "/snippets/pt-BR/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import { BetaBadge } from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
 
 Estas configurações estão disponíveis em [system.settings](/pt-BR/reference/system-tables/settings) e são autogeradas com base no [código-fonte](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
@@ -20,7 +21,12 @@ Estas configurações estão disponíveis em [system.settings](/pt-BR/reference/
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "Nova configuração para ativar ou desativar a otimização do plano que materializa apenas os n melhores grupos de cada bucket de dois níveis quando uma agregação final alimenta ORDER BY com suas saídas usando LIMIT n e é possível comprovar que a seleção por bucket é exata."}]}]} />
 
-Ativa ou desativa uma otimização no nível do plano de consulta que, quando uma agregação final alimenta `ORDER BY` com as saídas da agregação usando `LIMIT n` e o plano comprova que a seleção por bucket é exata, materializa apenas os n melhores grupos de cada bucket de dois níveis nessa ordem durante a conversão final da agregação. O resultado é exato: um grupo que não está entre os n melhores de seu próprio bucket tem pelo menos n grupos à sua frente globalmente e, portanto, não pode estar entre os n melhores globais.
+Ativa ou desativa uma otimização no nível do plano de consulta que, quando uma agregação final alimenta `ORDER BY` com as saídas da agregação usando `LIMIT n` e o plano comprova que a seleção por bucket é exata, mantém apenas os n melhores grupos de cada bucket de dois níveis durante a mesclagem ou conversão final da agregação. O resultado é exato: um grupo que não está entre os n melhores de seu próprio bucket tem pelo menos n grupos à sua frente globalmente e, portanto, não pode estar entre os n melhores globais.
+
+Para ordenação por `count`, a otimização pode selecionar os melhores grupos durante a conversão final. Para funções agregadas cujos valores mesclados podem ser limitados a partir de seus estados parciais, ela pode, em vez disso, usar uma mesclagem por limiar (Threshold Algorithm de Fagin), que deixa de mesclar grupos que não têm como alcançar os n melhores. Isso é compatível com `count`, `sum` de inteiros sem sinal cujo resultado é `UInt64` (argumentos de `UInt8` a `UInt64`; inteiros sem sinal largos, como `UInt128`, ficam de fora) e `uniqExact` em ordem decrescente, além de `max` em ordem decrescente e `min` em ordem crescente para tipos inteiros, de data, de data e hora, decimais e enum (ponto flutuante, `UUID`, `IPv4`, `IPv6`, `String`, `FixedString` e outros tipos ficam de fora). Os combinadores `If` e `Null` mantêm a mesclagem por limiar apenas para `count`, `sum` sem sinal e `uniqExact`, e somente quando o resultado não é anulável (por exemplo, `countIf`, `sumIf` de um argumento não `Nullable` ou `uniqExact` de um argumento `Nullable`); `sum` e `sumIf` de um argumento `Nullable` (cujo resultado é `Nullable`), `maxIf`, `minIf` e `max` ou `min` de um argumento `Nullable` usam a mesclagem comum. O algoritmo é escolhido automaticamente de acordo com a função agregada, o formato da consulta e a distribuição dos estados parciais.
+
+Um grupo que não está entre os n melhores de seu bucket não é mesclado nem finalizado; portanto, esta não é apenas uma opção de desempenho: as demais funções agregadas da consulta deixam de ser mescladas e finalizadas nos grupos que não têm como alcançar os n melhores. Uma consulta que lançava uma exceção ao mesclar ou finalizar uma dessas funções agregadas em um desses grupos pode, em vez disso, retornar linhas. Definir esta configuração como 0 mantém o comportamento anterior.
+
 Só tem efeito se a configuração [query&#95;plan&#95;enable&#95;optimizations](/pt-BR/reference/settings/session-settings/query-plan#query_plan_enable_optimizations) estiver definida como 1.
 
 Valores possíveis:
@@ -180,11 +186,17 @@ Só tem efeito se a configuração [query&#95;plan&#95;enable&#95;optimizations]
 
 ## query_plan_join_shard_by_pk_ranges {#query_plan_join_shard_by_pk_ranges}
 
-<SettingsInfoBlock type="Bool" default_value="0" />
+<SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.4"},{"label": "0"},{"label": "Nova configuração"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "Habilitado por padrão. Um JOIN `full_sorting_merge` ou `parallel_full_sorting_merge` entre duas tabelas MergeTree cujas chaves contêm um prefixo de ambas as chaves primárias agora é executado como junções merge independentes sobre intervalos da chave primária, em paralelo, em vez de uma única junção merge de thread única. Hash joins só são afetados quando nem Filtros em Tempo de Execução de JOIN nem descarregamento em disco estão em vigor."}]}, {"id": "row-2","items": [{"label": "25.4"},{"label": "0"},{"label": "Nova configuração"}]}]} />
 
-Aplica sharding ao JOIN se as chaves de junção contiverem um prefixo de PRIMARY KEY em ambas as tabelas. Compatível com os algoritmos hash, parallel&#95;hash, full&#95;sorting&#95;merge e parallel&#95;full&#95;sorting&#95;merge. Normalmente não acelera as consultas, mas pode reduzir o consumo de memória.
+Executa um JOIN entre duas tabelas MergeTree como junções independentes sobre intervalos da chave primária quando as chaves de junção contêm um prefixo da chave primária de ambas as tabelas. As duas tabelas são divididas nos mesmos intervalos pelos valores desse prefixo (da mesma forma que `FINAL` divide as partes em camadas não sobrepostas), de modo que chaves iguais ficam no mesmo intervalo, e cada intervalo é unido em sua própria thread.
+
+Para `full_sorting_merge` e `parallel_full_sorting_merge`, isso substitui uma única junção merge de thread única sobre as duas tabelas por uma junção merge em streaming para cada intervalo, executadas em paralelo, o que normalmente é várias vezes mais rápido e consome várias vezes menos memória.
+
+Para `hash` e `parallel_hash`, cada intervalo recebe sua própria tabela hash. Isso só se aplica quando nem Filtros em Tempo de Execução de JOIN (`enable_join_runtime_filters`) nem descarregamento em disco (`max_bytes_ratio_before_external_join`, `max_bytes_before_external_join`) estão em vigor, já que ambos tornam a junção opaca para essa otimização; nesse caso, geralmente não acelera as consultas, mas pode reduzir o consumo de memória. Os intervalos são atribuídos às threads de forma estática; assim, um filtro que seja seletivo apenas em parte do intervalo da chave primária deixa algumas threads ociosas.
+
+Não se aplica a `FINAL`, `ASOF`, junções com várias disjunções em `ON` nem à leitura com réplicas paralelas.
 
 ## query_plan_join_swap_table {#query_plan_join_swap_table}
 
@@ -197,6 +209,20 @@ Define qual lado do join deve ser a tabela de build (também chamada de inner, a
 * &#39;auto&#39;: Deixa o planner decidir qual tabela usar como tabela de build.
 * &#39;false&#39;: Nunca troca as tabelas (a tabela da direita é a tabela de build).
 * &#39;true&#39;: Sempre troca as tabelas (a tabela da esquerda é a tabela de build).
+
+## query_plan_lazy_materialization_for_join {#query_plan_lazy_materialization_for_join}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "Nova configuração para usar materialização preguiçosa em consultas `LIMIT n` sobre junções."}]}]} />
+
+Usa materialização preguiçosa em consultas `LIMIT n` sobre junções, com ou sem `ORDER BY`: as colunas das
+tabelas `MergeTree`, assim como as das tabelas de armazenamento de objetos, caso
+`query_plan_optimize_lazy_materialization_for_object_storage` esteja habilitada, são lidas apenas para as `n` linhas que
+restam após o `LIMIT`, e não para todas as linhas produzidas pelas junções. A decisão é tomada com base em um único
+`ActionsDAG` mesclado para toda a subárvore abaixo do `LIMIT`. Assim, um valor exigido tanto por um filtro quanto pelo resultado
+é calculado duas vezes, a baixo custo, acima do `LIMIT`, em vez de se tornar uma coluna propagada por todas as junções
+intermediárias. Só tem efeito se `query_plan_optimize_lazy_materialization` estiver habilitada.
 
 ## query_plan_lift_up_array_join {#query_plan_lift_up_array_join}
 
@@ -359,32 +385,34 @@ Só tem efeito quando `query_plan_direct_read_from_text_index` está habilitada.
 
 ## query_plan_optimize_join_order_algorithm {#query_plan_optimize_join_order_algorithm}
 
-<ExperimentalBadge />
+<BetaBadge />
 
-<SettingsInfoBlock type="JoinOrderAlgorithm" default_value="greedy" />
+<SettingsInfoBlock type="JoinOrderAlgorithm" default_value="dpsub,greedy" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.12"},{"label": "greedy"},{"label": "Nova configuração experimental."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "dpsub,greedy"},{"label": "`dpsub` agora é o algoritmo de ordem de join padrão; consultas com mais de 12 relações recorrem a `greedy`."}]}, {"id": "row-2","items": [{"label": "25.12"},{"label": "greedy"},{"label": "Nova configuração experimental."}]}]} />
 
 Especifica quais algoritmos de ordem de join devem ser testados durante a otimização do plano de consulta. Os seguintes algoritmos estão disponíveis:
 
-* &#39;greedy&#39; - algoritmo guloso básico - é rápido, mas pode não produzir a melhor ordem de join
-* &#39;dpsize&#39; - implementa o algoritmo DPsize, atualmente apenas para INNER JOINs - considera todas as ordens de join possíveis e encontra a mais otimizada, mas pode ser lento para consultas com muitas tabelas e predicados de junção.
-* &#39;dpsub&#39; - implementa o algoritmo DPsub, que oferece suporte a junções INNER e não INNER - considera todas as ordens de join possíveis e encontra a mais otimizada, mas pode ser lento para consultas com muitas tabelas e predicados de junção.
+* &#39;greedy&#39; - algoritmo guloso básico - é rápido, mas pode não produzir a melhor ordem de junção
+* &#39;dpsize&#39; - implementa o algoritmo DPsize, atualmente apenas para junções INNER - considera todas as ordens de junção possíveis e encontra a mais otimizada, mas pode ser lento para consultas com muitas tabelas e predicados de junção.
+* &#39;dpsub&#39; - implementa o algoritmo DPsub, que oferece suporte a junções INNER e não INNER - considera todas as ordens de junção possíveis e encontra a mais otimizada. Aplica-se apenas a consultas com no máximo 12 relações; acima disso, dá lugar ao próximo algoritmo da lista.
 * &#39;dphyp&#39; - implementa o algoritmo DPhyp (Programação Dinâmica via Particionamento de Hipergrafo), atualmente apenas para junções INNER - explora o mesmo espaço de busca que `dpsize`, mas enumera apenas pares de subgrafos conectados, o que gera menos junções intermediárias em grafos de junção esparsos, em troca de não considerar produtos cartesianos
-  Vários algoritmos podem ser especificados como uma lista separada por vírgulas, por exemplo `dphyp,greedy`. Eles são testados na ordem informada; se um algoritmo não conseguir processar a consulta (por exemplo, devido a OUTER JOINs ou componentes desconectados), o próximo será usado como alternativa.
+  Vários algoritmos podem ser especificados como uma lista separada por vírgulas, por exemplo `dphyp,greedy`. Eles são testados na ordem informada; se um algoritmo não conseguir processar a consulta (por exemplo, devido a um número excessivo de relações ou a componentes desconectados), o próximo será usado como alternativa.
 
 ## query_plan_optimize_join_order_conflict_detector {#query_plan_optimize_join_order_conflict_detector}
 
-<ExperimentalBadge />
+<BetaBadge />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": ""},{"label": "Nova configuração que seleciona o conflict detector que define a validade da reordenação de junções baseada em custo no algoritmo de ordem de join DPsub: `a` para o CD-A (correto, porém incompleto), `c` para o CD-C (correto e completo), vazio para nenhum."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": ""},{"label": "Nova configuração que seleciona o conflict detector que define a validade da reordenação de junções baseada em custo no algoritmo de ordem de join DPsub: `a` para o CD-A (correto, porém incompleto), `c` para o CD-C (correto e completo), vazio para nenhum."}]}]} />
+<SettingsInfoBlock type="JoinOrderConflictDetector" default_value="c" />
 
-Afeta apenas o algoritmo de ordem de join `dpsub`. Seleciona o conflict detector que o DPsub utiliza para
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": ""},{"label": "Nova configuração que seleciona o conflict detector que define a validade da reordenação de junções baseada em custo no algoritmo de ordem de junção DPsub: `a` para o CD-A (correto, porém incompleto), `c` para o CD-C (correto e completo), vazio para nenhum."}]}, {"id": "row-2","items": [{"label": "26.11"},{"label": "c"},{"label": "Nova configuração que seleciona o conflict detector que define a validade da reordenação de junções baseada em custo no algoritmo de ordem de junção DPsub: `a` para o CD-A (correto, porém incompleto), `c` para o CD-C (correto e completo), vazio para nenhum. O padrão é o CD-C, em conjunto com o padrão `dpsub` de `query_plan_optimize_join_order_algorithm`, o que também permite que junções semi e junções anti participem da reordenação."}]}]} />
+
+Afeta apenas o algoritmo de ordem de junção `dpsub`. Seleciona o conflict detector que o DPsub utiliza para
 decidir quais reordenações de junções baseadas em custo são válidas. Os seguintes valores estão disponíveis:
 
-* `''` (padrão) - nenhum conflict detector; o DPsub usa a restrição da cláusula `ON` por relation
+* `''` - nenhum conflict detector; o DPsub usa a restrição da cláusula `ON` por relation
 * `'a'` - o conflict detector CD-A, que é correto, porém incompleto
-* `'c'` - o conflict detector CD-C, que é correto e completo
+* `'c'` (padrão) - o conflict detector CD-C, que é correto e completo
 
 ## query_plan_optimize_join_order_limit {#query_plan_optimize_join_order_limit}
 
@@ -520,11 +548,13 @@ Valores possíveis:
 
 ## query_plan_read_in_order_through_join {#query_plan_read_in_order_through_join}
 
-<SettingsInfoBlock type="Bool" default_value="1" />
+<SettingsInfoBlock type="BoolForce" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.12"},{"label": "1"},{"label": "Nova configuração"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "Adicionado o valor `force`: mantém a leitura em ordem através de uma junção mesmo quando as partes não anunciam linhas virtuais."}]}, {"id": "row-2","items": [{"label": "25.12"},{"label": "1"},{"label": "Nova configuração"}]}]} />
 
-Mantém a leitura em ordem da tabela à esquerda em operações JOIN, que pode ser aproveitada por etapas subsequentes.
+Mantém a leitura em ordem a partir da tabela à esquerda em operações JOIN, o que pode ser aproveitado pelas etapas seguintes.
+
+Em junções que não sejam `LEFT`, a leitura só permanece em ordem quando todas as partes da tabela à esquerda anunciam uma linha virtual (consulte [`read_in_order_use_virtual_row`](/pt-BR/reference/settings/session-settings/read-in#read_in_order_use_virtual_row)); sem as linhas virtuais, a mesclagem após a junção pode ler muito mais do que o limite exige. O valor `force` mantém a leitura em ordem em qualquer caso.
 
 ## query_plan_remove_redundant_distinct {#query_plan_remove_redundant_distinct}
 
@@ -579,6 +609,14 @@ Valores possíveis:
 
 * 0 - Desabilitar
 * 1 - Habilitar
+
+## query_plan_replace_always_true_filter {#query_plan_replace_always_true_filter}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "Nova configuração."}]}]} />
+
+Substitui uma etapa de filtro por uma etapa de expressão quando a condição de filtragem é sempre verdadeira e a consulta não usa a coluna de filtro. Esse tipo de etapa de filtro não remove linhas, mas impede a reordenação de junções baseada em custo.
 
 ## query_plan_reuse_storage_ordering_for_window_functions {#query_plan_reuse_storage_ordering_for_window_functions}
 

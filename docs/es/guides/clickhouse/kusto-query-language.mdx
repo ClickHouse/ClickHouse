@@ -1,6 +1,6 @@
 ---
 title: 'Kusto Query Language (KQL) en ClickHouse'
-description: 'Qué admite el dialecto KQL experimental y qué no admite deliberadamente'
+description: 'Qué admite el dialecto KQL en fase Beta y qué no admite deliberadamente'
 keywords: ['KQL', 'Kusto', 'dialecto']
 sidebarTitle: 'Kusto Query Language (KQL)'
 slug: /guides/kusto-query-language
@@ -8,7 +8,7 @@ doc_type: 'guide'
 ---
 
 ClickHouse puede analizar un subconjunto de [Kusto Query Language](https://learn.microsoft.com/en-us/kusto/query/)
-en lugar de SQL. El dialecto es **experimental** y está desactivado de forma predeterminada:
+en lugar de SQL. El dialecto está en fase **Beta** y está desactivado de forma predeterminada:
 
 ```sql
 SET allow_experimental_kusto_dialect = 1;
@@ -20,7 +20,7 @@ StormEvents
 | top 5 by Total
 ```
 
-`SET dialect = 'clickhouse'` permite volver atrás. `SET` es la única instrucción SQL reconocida mientras
+`SET dialect = 'clickhouse'` permite volver atrás. `SET` es la única sentencia SQL reconocida mientras
 el dialecto KQL está activo, por lo que siempre se puede salir de él desde una sesión.
 
 ## Compatibilidad {#what-is-supported}

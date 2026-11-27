@@ -6,7 +6,6 @@ description: 'Разделение вычислительных ресурсов
 doc_type: 'reference'
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
 import { ScalePlanFeatureBadge } from "/snippets/ru/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
 
 <ScalePlanFeatureBadge feature="Разделение вычислительных ресурсов" />
@@ -21,7 +20,15 @@ import { ScalePlanFeatureBadge } from "/snippets/ru/components/ScalePlanFeatureB
 * конечную точку (или несколько конечных точек, созданных через консоль ClickHouse Cloud) для подключения к сервису (например, `https://dv2fzne24g.us-east-1.aws.clickhouse.cloud:8443`) для локальных подключений и подключений сторонних приложений
 * папку в объектном хранилище, где сервис хранит все данные и часть метаданных:
 
-<Image img="/images/cloud/reference/compute-compute-1.webp" size="md" alt="Один сервис в ClickHouse Cloud" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Один сервис в ClickHouse Cloud](/images/cloud/reference/compute-compute-1.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
@@ -35,7 +42,15 @@ import { ScalePlanFeatureBadge } from "/snippets/ru/components/ScalePlanFeatureB
 
 Разделение вычислительных ресурсов также позволяет отделить операции чтения от операций записи, чтобы они не мешали друг другу:
 
-<Image img="/images/cloud/reference/compute-compute-2.webp" size="md" alt="Разделение вычислительных ресурсов в ClickHouse Cloud" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Разделение вычислительных ресурсов в ClickHouse Cloud](/images/cloud/reference/compute-compute-2.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
@@ -52,7 +67,15 @@ import { ScalePlanFeatureBadge } from "/snippets/ru/components/ScalePlanFeatureB
 * Основной сервис `DWH Prod`
 * Вторичный сервис `DWH Prod Subservice`
 
-<Image img="/images/cloud/reference/compute-compute-8.webp" size="lg" alt="Пример хранилища с основным и вторичным сервисами" background="white" />
+<div className="ch-image-lg ch-image-background-white">
+
+<Frame>
+
+![Пример хранилища с основным и вторичным сервисами](/images/cloud/reference/compute-compute-8.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
@@ -77,7 +100,15 @@ import { ScalePlanFeatureBadge } from "/snippets/ru/components/ScalePlanFeatureB
 Это означает, что все пользователи базы данных, созданные в Service 1, смогут использовать и Service 2 с теми же разрешениями (привилегиями для таблиц, представлений и т. д.), и наоборот.
 Для каждого сервиса используется отдельная конечная точка, но одни и те же имя пользователя и пароль действуют во всех сервисах. Иными словами, **пользователи являются общими для сервисов, работающих с одним и тем же хранилищем**, как показано на рисунке ниже:
 
-<Image img="/images/cloud/reference/compute-compute-3.webp" size="md" alt="Доступ пользователей между сервисами, использующими одни и те же данные" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Доступ пользователей между сервисами, использующими одни и те же данные](/images/cloud/reference/compute-compute-3.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
@@ -93,7 +124,15 @@ import { ScalePlanFeatureBadge } from "/snippets/ru/components/ScalePlanFeatureB
 
 В примере ниже Alice не имеет доступа к сервису 2 в хранилище:
 
-<Image img="/images/cloud/reference/compute-compute-4.webp" size="md" alt="Параметры управления сетевым доступом" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Параметры управления сетевым доступом](/images/cloud/reference/compute-compute-4.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
@@ -118,7 +157,15 @@ import { ScalePlanFeatureBadge } from "/snippets/ru/components/ScalePlanFeatureB
 Иногда требуется изолировать критически важные рабочие нагрузки на чтение от накладных расходов на запись и слияние, сделав сервис доступным только для чтения.
 Это можно сделать для второго сервиса и любых дополнительных сервисов, которые вы создадите; однако первый сервис всегда будет с возможностью чтения и записи, как показано на рисунке ниже:
 
-<Image img="/images/cloud/reference/compute-compute-5.webp" size="lg" alt="Сервисы с возможностью чтения и записи и только для чтения в хранилище" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Сервисы с возможностью чтения и записи и только для чтения в хранилище](/images/cloud/reference/compute-compute-5.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
@@ -208,7 +255,15 @@ SETTINGS distributed_ddl_task_timeout=0
 
 Чтобы создать хранилище, нужно создать второй сервис, который будет использовать общие данные с существующим сервисом. Для этого нажмите значок плюса на любом из существующих сервисов:
 
-<Image img="/images/cloud/reference/compute-compute-7.webp" size="md" alt="Создание нового сервиса в хранилище" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Создание нового сервиса в хранилище](/images/cloud/reference/compute-compute-7.webp)
+
+</Frame>
+
+</div>
 
 <br />
 

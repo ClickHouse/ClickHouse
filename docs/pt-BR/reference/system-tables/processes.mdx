@@ -52,6 +52,7 @@ Esta tabela de sistema é usada para implementar a consulta `SHOW PROCESSLIST`.
 * `written_bytes` ([UInt64](/pt-BR/reference/data-types/int-uint)) — O número de bytes gravados no armazenamento.
 * `memory_usage` ([Int64](/pt-BR/reference/data-types/int-uint)) — Quantidade de RAM usada pela consulta. Pode não incluir alguns tipos de memória dedicada.
 * `peak_memory_usage` ([Int64](/pt-BR/reference/data-types/int-uint)) — O pico atual de uso de memória.
+* `spillable_memory_bytes` ([Int64](/pt-BR/reference/data-types/int-uint)) — A quantidade atual de memória passível de spill.
 * `query` ([String](/pt-BR/reference/data-types/string)) — O texto da consulta. Para INSERT, não inclui os dados a serem inseridos.
 * `normalized_query_hash` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Um valor de hash numérico, idêntico para consultas que diferem apenas pelos valores dos literais.
 * `query_kind` ([String](/pt-BR/reference/data-types/string)) — O tipo da consulta: SELECT, INSERT etc.

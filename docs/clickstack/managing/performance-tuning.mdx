@@ -1,6 +1,6 @@
 ---
 slug: /use-cases/observability/clickstack/performance_tuning
-title: 'ClickStack - performance tuning'
+title: 'Performance Tuning'
 sidebarTitle: 'Performance tuning'
 description: 'Performance Tuning for ClickStack - The ClickHouse Observability Stack'
 doc_type: 'guide'
@@ -10,15 +10,18 @@ keywords: ['clickstack', 'observability', 'logs', 'performance', 'optimization']
 import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
 
 import OtelLogsSchema from '/snippets/clickstack/_schema_otel_logs.mdx';
-import OtelTracesSchema from '/snippets/clickstack/_schema_otel_traces.mdx';
 
-import { Image } from "/snippets/components/Image.jsx";
+import OtelTracesSchema from '/snippets/clickstack/_schema_otel_traces.mdx';
 
 ## Introduction {#introduction}
 
 This guide focuses on the most common and effective performance optimizations for ClickStack, sufficient to optimize the majority of real-world observability workloads, typically up to tens of terabytes of data per day.
 
 The optimizations are presented in a deliberate order, starting with the simplest and highest impact techniques and progressing toward more advanced and specialized tuning. Early optimizations should be applied first and will often deliver substantial gains on their own. As data volumes grow and workloads become more demanding, the latter techniques become increasingly worthwhile to explore.
+
+<Tip>
+Spend more time investigating issues and less time operating your observability backend with [ClickHouse Observability](/clickstack/observability). [Sign up for ClickHouse Cloud](https://clickhouse.cloud/signUp?loc=docs-clickstack-performance-tuning-inline) to get started.
+</Tip>
 
 ## ClickHouse concepts {#clickhouse-concepts}
 
@@ -105,7 +108,15 @@ Consider the default ClickStack schema for traces, where Kubernetes metadata is 
 
 A user may filter traces using Lucene syntax e.g. `ResourceAttributes.k8s.pod.name:"checkout-675775c4cc-f2p9c"`:
 
-<Image img="/images/clickstack/performance_guide/trace_filtering.webp" size="lg" alt="Trace filtering"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Trace filtering](/images/clickstack/performance_guide/trace_filtering.webp)
+
+</Frame>
+
+</div>
 
 This results in a SQL predicate similar to:
 
@@ -129,7 +140,15 @@ From this point forward, **new** data will store the Pod name as a dedicated col
 
 Users can now query for pod names efficiently, using Lucene syntax e.g. `PodName:"checkout-675775c4cc-f2p9c"`
 
-<Image img="/images/clickstack/performance_guide/trace_filtering_v2.webp" size="lg" alt="Trace filtering v2"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Trace filtering v2](/images/clickstack/performance_guide/trace_filtering_v2.webp)
+
+</Frame>
+
+</div>
 
 For newly inserted data, this avoids map access entirely and significantly reduces I/O.
 
@@ -275,9 +294,11 @@ available.
 <Info>
 **Text indexes vs `tokenbf_v1`**
 
-The older `tokenbf_v1` index type (still used in the default traces schema for
-`lower(SpanName)`) is functionally similar but deprecated in ClickHouse 26.2
-and above. New text-search indexes should use `text(tokenizer = ...)`.
+The current default traces schema uses
+`text(tokenizer = 'splitByNonAlpha', preprocessor = lower(SpanName))` to index
+normalized `SpanName` tokens. Older trace schemas can use `tokenbf_v1`, which
+is functionally similar but deprecated in ClickHouse 26.2 and above. New
+text-search indexes should use `text(tokenizer = ...)`.
 </Info>
 
 For a deeper reference on tokenizer options, preprocessors, and verification, see the [full-text search documentation](/reference/engines/table-engines/mergetree-family/textindexes).
@@ -391,13 +412,14 @@ The most reliable way to evaluate skip index pruning is to use `EXPLAIN indexes 
 
 `EXPLAIN` confirms whether pruning occurs, but it doesn't guarantee a net speedup. Skip indexes have a cost to evaluate, especially if the index is large. Always benchmark queries before and after adding and materializing an index to confirm real performance improvements.
 
-For example, consider the default Bloom filter skip index for TraceId included with the default Traces schema:
+For example, the default Traces schema includes a text index for `TraceId`:
 
 ```sql
-INDEX idx_trace_id TraceId TYPE bloom_filter(0.001) GRANULARITY 1
+INDEX idx_trace_id TraceId TYPE text(tokenizer = 'array')
 ```
 
-You can use `EXPLAIN indexes = 1` to see how effective it's for a selective query:
+You can use `EXPLAIN indexes = 1` to confirm that a selective query uses this
+index:
 
 ```sql
 EXPLAIN indexes = 1
@@ -408,19 +430,14 @@ WHERE (ServiceName = 'accounting')
 
 ReadFromMergeTree (otel_v2.otel_traces)
 Indexes:
-  PrimaryKey
-    Keys:
-      ServiceName
-    Parts: 6/18
-    Granules: 255/35898
   Skip
     Name: idx_trace_id
-    Description: bloom_filter GRANULARITY 1
-    Parts: 1/6
-    Granules: 1/255
+    Description: text
 ```
 
-In this case, the primary key filter reduces the dataset substantially first (from 35898 granules down to 255), and the Bloom filter then prunes that further to a single granule (1/255). This is the ideal pattern for skip indexes: primary key pruning narrows the search, then the skip index removes most of what remains.
+The exact parts and granules reported depend on the data. In a selective query,
+primary key pruning narrows the search space first, and the text index can
+further reduce the data that must be read.
 
 To validate the real impact, benchmark the query with stable settings and compare execution time. Use `FORMAT Null` to avoid result serialization overhead, and disable the query condition cache to keep runs repeatable:
 
@@ -728,7 +745,15 @@ You can now query this table to confirm it returns data from `otel_logs`.
 
 Configure the ClickStack UI to use `otel_logs_merge` as the table for the logs data source.
 
-<Image img="/images/clickstack/performance_guide/select_merge_table.webp" size="lg" alt="Select Merge Table"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Select Merge Table](/images/clickstack/performance_guide/select_merge_table.webp)
+
+</Frame>
+
+</div>
 
 At this point, writes continue to `otel_logs` with the original primary key, while reads use the merge table. There is no visible change for users or impact on ingestion.
 </Step>

@@ -53,11 +53,35 @@ SETTINGS use_query_condition_cache = true;
 将存储表中不满足谓词的范围。
 后续执行相同查询时，如果同样使用参数 `use_query_condition_cache = true`，将利用查询条件缓存以减少扫描的数据量。
 
+### Parquet 文件 {#parquet-files}
+
+查询条件缓存同样适用于通过 `File`、`S3`、`AzureBlobStorage`、`URL` 以及数据湖表引擎读取的 Parquet 文件 (但不适用于通过表函数读取的情况，因为缓存条目归属于表) 。
+对于此类文件，缓存记录的是行组而非粒度。
+文件的缓存条目与文件版本绑定，因此文件一旦被修改便会重新读取：对象存储以 ETag 标识版本，本地文件和 `URL` 则以修改时间和大小标识版本。
+由于 Web 服务器报告的修改时间 (`Last-Modified`) 精度仅为一秒，通过 `URL` 读取的文件只有同时满足以下条件时才会使用缓存：按 Web 服务器的时钟 (即其响应中的 `Date`) 计算，文件的最后修改时间距今已超过一分钟；且服务器报告了文件的修改时间、大小和日期。
+
+### 涉及当前时间的条件 {#time-conditions}
+
+像 `WHERE time >= now() - INTERVAL 10 DAY` 这样的条件是非确定性的：`now()` 折叠后的值每次查询都会变化，因此此类条件无法直接缓存。
+为此，ClickHouse 会将当前时间常量舍入到时间网格上，从而由这些条件派生出确定性的条件。例如，`time >= '2026-08-09 12:34:56'` 会被缓存为 `time >= '2026-08-09 00:00:00'` (读取缓存时向下取整，写入缓存时向上取整，从而保证已缓存信息的正确性) 。
+网格步长与该常量和当前时间之间的距离成正比——回溯十天的条件，步长为一天；回溯九十分钟的条件，步长为一小时——并被限制在一秒到一天的范围内。比例因子可通过设置 `query_condition_cache_time_condition_grid_factor` 进行配置 (默认值：1.0) 。
+
+如果常量已与网格对齐，例如 `WHERE time >= today() - 10` 或 `WHERE time >= toStartOfDay(now()) - INTERVAL 10 DAY`，那么紧接着的下一次查询就能复用缓存，且缓存会一直有效，直到该常量发生变化 (例如直到当天结束) 。
+对于未对齐的常量，例如 `WHERE time >= now() - INTERVAL 10 DAY`，在某个网格单元内写入的缓存条目将供下一个网格单元内的查询使用：昨天的查询会为今天的查询预热缓存。
+这种复用仅适用于时间下界。对于上界 (例如 `WHERE time < now()`) ，无论是单独使用，还是用于两端均以当前时间为边界的滑动窗口 (如 `WHERE time >= now() - INTERVAL 10 DAY AND time < now()`) ，只有当其常量与网格对齐时才能被复用 (例如 `WHERE time < today()` 或 `WHERE time >= today() - 10 AND time < today()`) ：若常量未对齐，后一次查询的条件并不包含在前一次查询的条件之内，因此无论网格如何划分，都无法可靠地应用前一次查询的缓存条目。
+
+可以通过设置 [`use_query_condition_cache_for_time_conditions`](/zh/reference/settings/session-settings/use-query) (默认：已启用) 禁用这种派生，该设置仅在 `use_query_condition_cache` 同时启用时才会生效。
+它适用于 `MergeTree` 表；从文件和对象存储 (`file`、`s3` 等) 读取数据时，查询条件缓存仍然只用于确定性的条件。
+使用动态过滤 (`use_top_k_dynamic_filtering`) 的 `ORDER BY ... LIMIT N` 形式的查询，会复用条件相同的其他查询所写入的条目。
+当动态过滤器被添加到 `PREWHERE`，或条件保留在 `WHERE` 中时，此类查询自身不会为涉及当前时间的条件写入条目：它们跳过的行取决于满足条件的前 `N` 行，而映射到同一网格点的两个条件所对应的前 `N` 行并不相同。
+如果动态过滤器无法添加到 `PREWHERE` (例如排序列为某些类型时) ，那么带有当前时间条件的 `PREWHERE` 所跳过的粒度并不依赖于前 `N` 行，因此会以派生条件记录下来，且这些条目仅会被具有相同 TopK 计划的查询复用 (参见[下文](#top-k-queries)) 。
+
 ### `ORDER BY ... LIMIT n` (TopK) 查询 {#top-k-queries}
 
-使用 TopK 优化的查询 (`ORDER BY <column> LIMIT n`，通过动态筛选或排序列上的 minmax 跳过索引加速) 也会使用查询条件缓存。
+使用 TopK 优化的查询 (`ORDER BY <column> LIMIT n`，通过动态过滤或排序列上的 minmax 跳过索引加速) 也会使用查询条件缓存。
 TopK 读取可根据查询执行期间不断变化的阈值跳过粒度，因此其缓存条目会按 TopK 计划参数以及读取的 parts 集合进行分区：只有使用相同计划读取相同 parts 的查询才会复用这些条目。
 这同样适用于通过 `File` 表引擎对 Parquet 文件进行的 TopK 读取：此时，缓存会记录不包含任何结果行的行组，条目则按 TopK 计划参数、过滤条件 (如有) 以及所读取的文件集合及其版本进行分区，因此只要任一文件被修改，就会生成新的条目。
+对于以 Parquet 作为数据文件的数据湖表 (例如 `Iceberg`、`DeltaLake`、`Paimon`)，其 TopK 读取同样如此：条目按 TopK 计划参数、过滤条件 (如有) 以及表的快照进行分区，因此每生成一个新快照，都会产生新的条目。
 与其他读取不同，此类 TopK 读取即使没有过滤条件也会使用缓存，例如 `SELECT * FROM hits ORDER BY EventTime LIMIT 10`。
 可通过设置 [`use_query_condition_cache_for_top_k`](/zh/reference/settings/session-settings/use-query) (默认：启用) 将此类读取完全排除在缓存之外；仅当同时启用 `use_query_condition_cache` 时，该设置才会生效。
 

@@ -14,9 +14,7 @@ ClickHouse 支持用于表示地理对象 (如位置、区域等) 的数据类�
 
 * [简单地理要素表示](https://en.wikipedia.org/wiki/GeoJSON)。
 
-<div id="point">
-  ## Point
-</div>
+## Point {#point}
 
 `Point` 由其 X 和 Y 坐标表示，存储为 [Tuple](/zh/reference/data-types/tuple)([Float64](/zh/reference/data-types/float), [Float64](/zh/reference/data-types/float))。
 
@@ -34,11 +32,10 @@ SELECT p, toTypeName(p) FROM geo_point;
 └─────────┴───────────────┘
 ```
 
-<div id="multipoint">
-  ## MultiPoint
-</div>
+## MultiPoint {#multipoint}
 
 `MultiPoint` 是由多个点组成的集合，以点数组的形式存储：[Array](/zh/reference/data-types/array)([Point](#point))。
+`Point` 可以转换为 `MultiPoint`；转换结果中仅包含该点这一个元素。
 
 **示例**
 
@@ -54,9 +51,7 @@ SELECT mp, toTypeName(mp) FROM geo_multipoint;
 └───────────────────────────────┴────────────────┘
 ```
 
-<div id="ring">
-  ## Ring
-</div>
+## Ring {#ring}
 
 `Ring` 是一种不含孔的简单多边形，存储为点数组：[Array](/zh/reference/data-types/array)([Point](#point))。
 
@@ -74,9 +69,7 @@ SELECT r, toTypeName(r) FROM geo_ring;
 └───────────────────────────────┴───────────────┘
 ```
 
-<div id="linestring">
-  ## LineString
-</div>
+## LineString {#linestring}
 
 `LineString` 是由点构成并以数组形式存储的线：[Array](/zh/reference/data-types/array)([Point](#point))。
 
@@ -94,11 +87,10 @@ SELECT l, toTypeName(l) FROM geo_linestring;
 └───────────────────────────────┴───────────────┘
 ```
 
-<div id="multilinestring">
-  ## MultiLineString
-</div>
+## MultiLineString {#multilinestring}
 
 `MultiLineString` 表示由多个 `LineString` 组成，并以数组形式存储：[Array](/zh/reference/data-types/array)([LineString](#linestring))。
+`LineString` 可以转换为 `MultiLineString`，转换结果中仅包含该线这一个元素。
 
 **示例**
 
@@ -114,9 +106,7 @@ SELECT l, toTypeName(l) FROM geo_multilinestring;
 └─────────────────────────────────────────────────────┴─────────────────┘
 ```
 
-<div id="polygon">
-  ## Polygon
-</div>
+## Polygon {#polygon}
 
 `Polygon` 是一种带孔的多边形，存储为由环组成的数组：[Array](/zh/reference/data-types/array)([Ring](#ring))。外层数组的第一个元素表示多边形的外边界，后续所有元素都是孔。
 
@@ -136,11 +126,10 @@ SELECT pg, toTypeName(pg) FROM geo_polygon;
 └───────────────────────────────────────────────────────────────┴────────────────┘
 ```
 
-<div id="multipolygon">
-  ## MultiPolygon
-</div>
+## MultiPolygon {#multipolygon}
 
 `MultiPolygon` 由多个多边形组成，并以多边形数组的形式存储：[Array](/zh/reference/data-types/array)([Polygon](#polygon))。
+`Polygon` 可以转换为 `MultiPolygon`，转换结果中仅包含该多边形这一个元素。
 
 **示例**
 
@@ -158,9 +147,7 @@ SELECT mpg, toTypeName(mpg) FROM geo_multipolygon;
 └─────────────────────────────────────────────────────────────────────────────────────────────────┴─────────────────┘
 ```
 
-<div id="geometry">
-  ## Geometry
-</div>
+## Geometry {#geometry}
 
 `Geometry` 是适用于上述所有类型的通用类型，相当于这些类型构成的 Variant。
 
@@ -204,9 +191,7 @@ SELECT * FROM geo_dst;
 └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-<div id="related-content">
-  ## 相关内容
-</div>
+## 相关内容 {#related-content}
 
 * [探索海量真实数据集：ClickHouse 中 100 多年的天气记录](https://clickhouse.com/blog/real-world-data-noaa-climate-data)
 

@@ -43,8 +43,10 @@ ALTER TABLE codec_example MODIFY COLUMN float_value CODEC(Default);
 
 Os codecs podem ser combinados em um pipeline, por exemplo, `CODEC(Delta, Default)`.
 
+Os nomes de codecs não diferenciam maiúsculas de minúsculas, portanto `CODEC(ZSTD)`, `CODEC(zstd)` e `CODEC(ZStd)` se referem ao mesmo codec.
+
 <Tip>
-  Não é possível descompactar arquivos de banco de dados do ClickHouse com utilitários externos, como o `lz4`. Em vez disso, use o utilitário especial [clickhouse-compressor](https://github.com/ClickHouse/ClickHouse/tree/master/programs/compressor).
+  Não é possível descomprimir arquivos de banco de dados do ClickHouse com utilitários externos, como o `lz4`. Em vez disso, use o utilitário especial [clickhouse-compressor](https://github.com/ClickHouse/ClickHouse/tree/master/programs/compressor).
 </Tip>
 
 A compressão é compatível com os seguintes motores de tabela:
@@ -130,6 +132,22 @@ O codec aceita um argumento de variante opcional:
 
 <Note>
   Este codec está em beta e requer `SET enable_alp_codec = 1` para ser usado.
+</Note>
+
+### PCO {#pco}
+
+<BetaBadge />
+
+`PCO(level)` — Compressão sem perdas para sequências de números de largura fixa, usando a biblioteca [pcodec](https://github.com/pcodec/pcodec). Aplicável a todos os tipos numéricos de 1, 2, 4 ou 8 bytes (`Int8`..`Int64`, `UInt8`..`UInt64`, `Float32`, `Float64` e os tipos baseados neles, como `Date`, `DateTime`, `Decimal32`, `Decimal64`, `IPv4` e `Enum`). `Decimal128`/`Decimal256` e tipos não numéricos não são suportados.
+
+O pcodec identifica uma estrutura aproximada dos números (um &quot;modo&quot;, por exemplo, um multiplicador comum aproximado) e divide cada valor em &quot;latentes&quot;, que depois são comprimidos com codificação delta e um codificador de entropia [tANS](https://en.wikipedia.org/wiki/Asymmetric_numeral_systems) intercalado. Em colunas numéricas com distribuições suaves, multimodais ou de alta entropia (medições, tempos, contadores, identificadores), ele frequentemente comprime melhor que `Gorilla`/`FPC`/`ZSTD`/`ALP`. Por outro lado, como não tem um mecanismo baseado em run-length ou em correspondências, colunas constantes ou de baixa cardinalidade têm compressão pior. A codificação é várias vezes mais lenta que a do `ZSTD`; o desempenho da decodificação depende da carga de trabalho.
+
+O argumento opcional `level` define o nível de compressão, de 0 a 12; o padrão é 8. Quando um bloco não pode ser comprimido (por exemplo, com dados incompressíveis), ele é armazenado não comprimido, de modo que o codec nunca aumenta o tamanho dos dados em mais do que uma pequena constante por bloco.
+
+A carga útil de cada bloco de compressão é um stream [`.pco`](https://github.com/pcodec/pcodec) independente, compatível com a implementação de referência do pcodec.
+
+<Note>
+  Este codec está em beta e, para usá-lo, é necessário executar `SET enable_pco_codec = 1`. Como ele depende do tipo da coluna, só pode ser especificado por coluna; não pode ser usado nas configurações de compressão não tipadas (`marks_compression_codec`, `primary_key_compression_codec`, `default_compression_codec`) nem em `TTL ... RECOMPRESS`.
 </Note>
 
 ### FPC {#fpc}

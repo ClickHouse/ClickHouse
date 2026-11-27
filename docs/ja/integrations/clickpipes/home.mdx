@@ -10,7 +10,6 @@ integration:
   - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
 import ClickPipesConnectors from '/snippets/ja/_clickpipes_connectors.mdx';
 
 <div id="overview">
@@ -59,7 +58,15 @@ ClickHouse Cloud では、ほとんどのユースケースに適したデフォ
 1. カスタムロール `CREATE ROLE my_clickpipes_role SETTINGS ...` を作成します。詳細は [CREATE ROLE](/ja/reference/statements/create/role) の構文を参照してください。
 2. ClickPipes の作成時に、`Details and Settings` ステップで ClickPipes ユーザーにカスタムロールを追加します。
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_custom_role.webp" alt="カスタムロールを割り当てる" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![カスタムロールを割り当てる](/images/integrations/data-ingestion/clickpipes/cp_custom_role.webp)
+
+</Frame>
+
+</div>
 
 <div id="clickpipes-advanced-settings">
   ## ClickPipes の高度な設定の調整
@@ -84,7 +91,15 @@ ClickPipes には、ほとんどのユースケースに対応できる適切な
 | `Parallel view processing`           | false   | アタッチされたビューへのプッシュを、[順次ではなく同時実行](/ja/reference/settings/session-settings/parallel#parallel_view_processing)にするかどうか。             |
 | `Use cluster function`               | true    | 複数のノードにまたがってファイルを並列に処理するかどうか。                                                                                              |
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_advanced_settings.webp" alt="ClickPipes の高度な設定" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![ClickPipes の高度な設定](/images/integrations/data-ingestion/clickpipes/cp_advanced_settings.webp)
+
+</Frame>
+
+</div>
 
 <div id="clickpipes-advanced-settings-streaming">
   ### ストリーミング ClickPipes

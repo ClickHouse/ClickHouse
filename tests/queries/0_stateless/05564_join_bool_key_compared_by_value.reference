@@ -1,0 +1,39 @@
+oracle	2
+on	2
+on reversed	2
+on swap	2
+hash	2
+parallel_hash	2
+grace_hash	2
+full_sorting_merge	2
+using	2
+using reversed	2
+null-safe	2
+right anti	2
+join_use_nulls	2
+anti rf	2
+anti rf built	1	1
+anti	2
+lc bool	2
+lc int	2
+array	2
+tuple	2
+subtype	2
+named tuple	2
+named subtype	2
+named anti rf	2
+named anti rf built	1	1
+nested	2
+nested reversed	2
+json	2
+json reversed	2
+empty array	2
+empty array anti rf	2
+empty array anti rf built	1	1
+asof	[1]
+natural	2
+using full	3	0
+using full reversed	3	0
+using left	3	0
+using types	Nullable(Bool)	Nullable(Bool)
+using types	Nullable(Bool)	Nullable(Bool)

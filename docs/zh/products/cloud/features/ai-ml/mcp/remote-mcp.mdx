@@ -8,8 +8,6 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 本指南介绍如何启用 ClickHouse Cloud Remote MCP 服务器，并将其配置为可与常见的开发者工具配合使用。
 
 **前置条件**
@@ -25,11 +23,27 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
 选择 **Connect with MCP**：
 
-<Image img="/images/use-cases/AI_ML/MCP/1connectmcpmodal.webp" alt="在 Connect 对话框中选择 MCP" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![在 Connect 对话框中选择 MCP](/images/use-cases/AI_ML/MCP/1connectmcpmodal.webp)
+
+</Frame>
+
+</div>
 
 打开切换开关，为该服务启用 MCP。启用或禁用 MCP 需要具备 `control-plane:service:manage-mcp` 权限 (参见[控制台角色和权限](/zh/products/cloud/reference/security/console-roles#console-permissions)) ：
 
-<Image img="/images/use-cases/AI_ML/MCP/2enable_mcp.webp" alt="启用 MCP 服务器" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![启用 MCP 服务器](/images/use-cases/AI_ML/MCP/2enable_mcp.webp)
+
+</Frame>
+
+</div>
 
 复制显示的 URL，它与下方的 URL 相同：
 
@@ -49,6 +63,15 @@ https://mcp.clickhouse.cloud/mcp
 
 1. 在 ClickHouse Cloud 控制台中，打开您的组织并选择 **API Keys**。
 2. 创建一个 key，仅授予 MCP 客户端访问相关组织和服务所需的最小角色和权限，然后下载 key ID 和 secret。
+
+   如需改用 [`clickhousectl`](/zh/concepts/features/interfaces/cli) 创建 key，请先查找角色 ID，然后创建 key，并为 MCP 主机配置 IP 允许列表。`clickhousectl` 需要一个已有的、具备创建 key 权限的 API key：
+
+   ```bash
+   clickhousectl cloud org role list
+   clickhousectl cloud key create --name mcp-headless --role-id <role_id> --ip-allow <host_ip>/32
+   ```
+
+   该命令只会输出一次新 key 的 ID 和 secret，请将其妥善保存到您的机密信息管理系统中。如果未指定 `--ip-allow`，该 key 的 IP 允许列表将为空，所有访问都会被拒绝。
 3. 在远程主机上，通过您的机密信息管理系统提供这些凭证，并生成 HTTP Basic 授权值：
 
 ```bash
@@ -124,7 +147,7 @@ export CH_AUTH="Basic $(
 
 请确保 `CH_AUTH` 在每个客户端会话中均可用,切勿将 API key、机密信息或 `CH_AUTH` 的值提交到源代码管理系统。Base64 编码并不会对凭证进行加密。
 
-使用这种 API key 方式,既不需要浏览器,也无需另行通过 `clickhousectl` 登录。
+使用这种 API key 方式,既不需要浏览器,也无需另行通过 `clickhousectl` 登录。如果您在同一主机上也使用 `clickhousectl`,它会读取相同的 `CLICKHOUSE_CLOUD_API_KEY` 和 `CLICKHOUSE_CLOUD_API_SECRET` 变量,且这些变量的优先级高于浏览器登录。
 
 <div id="claude-code">
   ### Claude Code

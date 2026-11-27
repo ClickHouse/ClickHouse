@@ -825,6 +825,18 @@ Las filas y los bytes se informan una vez para todo el paso (la línea `I/O`). E
   2. el número máximo de hilos de procesamiento de consultas configurado en `max_threads`.
 </Note>
 
+#### Volcado a disco en los pasos de agregación, ordenación y DISTINCT {#explain-analyze-spilling}
+
+Cuando un paso `GROUP BY`, `ORDER BY` o `DISTINCT` vuelca datos al almacenamiento temporal, informa lo siguiente:
+
+```txt
+Spill: spilled <compressed_bytes>
+```
+
+Es el número acumulado de bytes comprimidos escritos por todo el paso, incluidos sus procesadores paralelos.
+El total incluye los archivos temporales ya consumidos o eliminados, y contabiliza cada escritura cuando los datos se vuelcan a disco más de una vez.
+Esta línea se omite cuando no se ha volcado ningún dato a disco.
+
 #### Pasos de unión {#explain-analyze-join-steps}
 
 En un paso de unión, `EXPLAIN ANALYZE` muestra líneas que comparan las estimaciones del optimizador de orden de unión con lo que ocurrió realmente (consulte [Métricas de unión estimadas frente a reales](#explain-analyze-join-estimation)) y líneas de *participación* para cada lado —`Left` y `Right`—, seguidas de las líneas específicas de la implementación de la unión. `Left` y `Right` corresponden a los lados lógicos de SQL. En la mayoría de los casos, `Left` también será el lado de sondeo (probe) de la unión y `Right`, el lado de construcción (build). Sin embargo, no siempre es así, debido al intercambio que puede producirse durante la ejecución de la unión. Se cubren todos los valores de [`join_algorithm`](/es/reference/settings/session-settings/join#join_algorithm) (`hash`, `parallel_hash`, `grace_hash`, `partial_merge`, `full_sorting_merge`, `parallel_full_sorting_merge`, `direct`), así como las tres implementaciones que esta configuración no puede seleccionar: una unión `CROSS` o `COMMA`, la [unión block nested loop](/es/reference/statements/select/join#join-with-an-arbitrary-on-condition) que recibe una sección `ON` que no determina ninguna clave de unión y el motor de tabla [`Join`](/es/reference/engines/table-engines/special/join). La mayoría informa sobre ambos lados; algunas solo informan del lado que materializan (por ejemplo, `direct` solo muestra `Left:`).
@@ -1101,7 +1113,7 @@ El informe indica las marcas y filas que leería, un `read_ratio` respecto a la 
 
 Cuando el resultado depende de cómo se dispondría la parte de la proyección, `marks_span` indica el rango, y una decisión que podría decantarse hacia cualquiera de los dos lados se notifica como `too close to call`. En tablas grandes, la estimación lee una muestra de gránulos (consulte `projection_scan_budget_rows`).
 
-Las proyecciones de agregación, las proyecciones con una cláusula `WHERE`, con índices de omisión propios, con una clave basada en el orden de commit o en columnas virtuales, o con un `_block_number` almacenado, así como las proyecciones que no cubren todas las columnas que lee la consulta, se notifican como `not_applicable`. Se ignoran `force_optimize_projection_name` y `preferred_optimize_projection_name`, y `force_optimize_projection` no hace que la sentencia falle.
+WHATIF notifica como `not_applicable` las proyecciones de agregación y las proyecciones con sus propios índices de omisión. También notifica como `not_applicable` las proyecciones con una clave basada en el orden de commit, una clave basada en columnas virtuales o un `_block_number` almacenado. Lo mismo ocurre con las proyecciones que no contienen todas las columnas que lee la consulta. WHATIF ignora `force_optimize_projection_name` y `preferred_optimize_projection_name`, y `force_optimize_projection` no hace que la sentencia falle.
 
 **Sintaxis**
 

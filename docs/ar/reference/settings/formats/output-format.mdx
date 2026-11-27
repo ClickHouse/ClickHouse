@@ -195,7 +195,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.1"},{"label": "3"},{"label": "السماح بتغيير مستوى الضغط في مخرجات الاستعلام"}]}]} />
 
-مستوى الضغط الافتراضي إذا كانت مخرجات الاستعلام مضغوطة. يُطبَّق هذا الإعداد عندما يتضمن استعلام `SELECT` ‎`INTO OUTFILE` أو عند الكتابة إلى دوال الجدول `file` و`url` و`hdfs` و`s3` و`azureBlobStorage`.
+مستوى الضغط الافتراضي إذا كانت مخرجات الاستعلام مضغوطة. يُطبَّق هذا الإعداد عندما يتضمن استعلام `SELECT` ‎`INTO OUTFILE` أو عند الكتابة إلى دوال الجدول `file` و`url` و`hdfs` و`s3` و`azureBlobStorage`. ويُطبَّق أيضًا على الاستجابة المضغوطة لطلب HTTP يستخدم طريقة ضغط غير `gzip` و`deflate`، أما هاتان الطريقتان فيُستخدم لهما الإعداد [http&#95;zlib&#95;compression&#95;level](/ar/reference/settings/session-settings/http#http_zlib_compression_level).
 
 القيم الممكنة: من `1` إلى `22`
 
@@ -731,8 +731,8 @@ SELECT area/period FROM account_orders FORMAT JSON;
 الموضع داخل ملف Parquet الذي تُوضَع فيه مرشحات bloom. ستُكتب مرشحات bloom في مجموعات بهذا الحجم التقريبي. وعلى وجه التحديد:
 
 * إذا كانت القيمة 0، فستُكتب مرشحات bloom الخاصة بكل مجموعة صفوف مباشرةً بعد مجموعة الصفوف،
-  * إذا كانت أكبر من الحجم الإجمالي لجميع مرشحات bloom، فستُجمَّع مرشحات bloom الخاصة بجميع مجموعات الصفوف في الذاكرة، ثم تُكتب معًا بالقرب من نهاية الملف،
-  * وإلا، فستُجمَّع مرشحات bloom في الذاكرة وتُكتب كلما تجاوز حجمها الإجمالي هذه القيمة.
+* إذا كانت أكبر من الحجم الإجمالي لجميع مرشحات bloom، فستُجمَّع مرشحات bloom الخاصة بجميع مجموعات الصفوف في الذاكرة، ثم تُكتب معًا بالقرب من نهاية الملف،
+* وإلا، فستُجمَّع مرشحات bloom في الذاكرة وتُكتب كلما تجاوز حجمها الإجمالي هذه القيمة.
 
 ## output_format_parquet_compression_method {#output_format_parquet_compression_method}
 
@@ -788,6 +788,14 @@ SELECT area/period FROM account_orders FORMAT JSON;
 
 يسمح بكتابة معلومات عن الأعمدة الجغرافية في البيانات الوصفية لـ Parquet وترميز الأعمدة بتنسيق WKB.
 
+## output_format_parquet_geometry_logical_type {#output_format_parquet_geometry_logical_type}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "إعداد جديد"}]}]} />
+
+يُرفق بالأعمدة الجغرافية المكتوبة بصيغة WKB (راجع `output_format_parquet_geometadata`) تعليقًا توضيحيًا بالنوع المنطقي `GEOMETRY` الخاص بـ Parquet، ويكتب لها `GeospatialStatistics` (مستطيل الإحاطة وأنواع البيانات الهندسية) بدلًا من إحصاءات القيم الدنيا والقصوى. وتتعرّف القارئات التي تدعم هذا النوع المنطقي على هذه الأعمدة بوصفها أشكالًا هندسية حتى في غياب البيانات الوصفية `geo` الخاصة بـ GeoParquet. لا يكون لهذا الإعداد أي أثر إذا كان `output_format_parquet_geometadata` معطّلًا. كذلك يُوصف العمود من النوع `Geometry` في البيانات الوصفية `geo` الخاصة بـ GeoParquet، مع قائمة فارغة من أنواع البيانات الهندسية. أما عند تعطيل هذا الإعداد، فتُكتب هذه الأعمدة بالنوع `BYTE_ARRAY` دون تعليق توضيحي جغرافي مكاني ومع إحصاءات القيم الدنيا والقصوى، ولا يُوصف العمود من النوع `Geometry` في البيانات الوصفية `geo`. هذا الإعداد معطّل افتراضيًا، لأن القارئات التي لا تتعرّف على هذا النوع المنطقي (مثل Arrow C++ و`pyarrow` في الإصدارات السابقة للإصدار 20) تعجز عن فتح الملف بأكمله.
+
 ## output_format_parquet_max_dictionary_size {#output_format_parquet_max_dictionary_size}
 
 <SettingsInfoBlock type="UInt64" default_value="1048576" />
@@ -822,6 +830,14 @@ SELECT area/period FROM account_orders FORMAT JSON;
 
 استخدم نوع Parquet String بدلًا من Binary لأعمدة String.
 
+## output_format_parquet_use_alp_encoding {#output_format_parquet_use_alp_encoding}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "إعداد جديد."}]}]} />
+
+يرمّز أعمدة `Float32` و`Float64` (أي `FLOAT` و`DOUBLE` في Parquet) باستخدام ترميز `ALP` (Adaptive Lossless floating-Point). ‏`ALP` ترميز بلا فقدان، ويضغط بيانات الفاصلة العائمة ذات الطابع العشري (كالأسعار والقياسات والإحداثيات) بكفاءة تفوق `PLAIN` بكثير. تُكتب هذه الأعمدة دون قاموس، وأي صفحة يكون حجمها بترميز `ALP` أكبر منه بترميز `PLAIN` تُكتب بترميز `PLAIN`. أُضيف هذا الترميز إلى تنسيق Parquet حديثًا، لذا لا تدعمه جميع قارئات Parquet حتى الآن؛ فلا تمكّنه إلا إذا كانت الملفات ستُقرأ بقارئات تدعمه.
+
 ## output_format_parquet_wide_integer_as_decimal {#output_format_parquet_wide_integer_as_decimal}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
@@ -845,6 +861,16 @@ SELECT area/period FROM account_orders FORMAT JSON;
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.11"},{"label": "1"},{"label": "إعداد جديد."}]}]} />
 
 أضف قيم التحقق crc32 إلى ترويسات صفحات Parquet.
+
+## output_format_parquet_write_file_logical_type {#output_format_parquet_write_file_logical_type}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "إعداد جديد لكتابة `Tuple` مُسمّى تكون حقوله من حقول النوع المنطقي `FILE` في Parquet على هيئة مجموعة تحمل التعليق التوضيحي `FILE`."}]}]} />
+
+يكتب `Tuple` مُسمّى تكون أسماء عناصره جميعها من حقول النوع المنطقي `FILE` في Parquet (`uri` و`offset` و`size` و`content_type` و`checksum` و`inline`؛ أي مجموعة جزئية غير فارغة منها وبأي ترتيب) على هيئة مجموعة تحمل التعليق التوضيحي للنوع المنطقي `FILE`، الذي يمثّل مرجعًا إلى نطاق من البايتات المخزَّنة إما بشكل مضمّن أو في ملف خارجي. يجب أن يكون العنصران `offset` و`size` عددين صحيحين (يُكتبان بالنوع `INT64`)، بينما يجب أن تكون العناصر الأخرى من النوع `String` أو `FixedString` (يُكتب `inline` بالنوع `BYTE_ARRAY` دون تعليق توضيحي، وتُكتب البقية بالنوع `STRING`). وكما تقتضي المواصفة، يُكتب كل حقل على أنه `OPTIONAL`. وتُكتب القيم كما هي، دون التحقق من أنها تشكّل مرجعًا صالحًا.
+
+عند القراءة، تُقرأ المجموعة التي تحمل التعليق التوضيحي `FILE` دائمًا على هيئة `Tuple` كهذا تكون عناصره من النوع `Nullable`.
 
 ## output_format_parquet_write_page_index {#output_format_parquet_write_page_index}
 

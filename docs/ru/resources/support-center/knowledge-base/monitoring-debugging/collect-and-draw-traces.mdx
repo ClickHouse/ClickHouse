@@ -6,8 +6,6 @@ keywords: ['трассировка запроса', 'OTel', 'Grafana']
 description: "В этом руководстве показано, как собирать и визуализировать трассировки запросов в самоуправляемом ClickHouse с помощью встроенных средств или Grafana. Это особенно полезно при работе со сложными запросами, когда нужно понять внутренний механизм выполнения глубже, чем это позволяет EXPLAIN."
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 **Предварительные требования**:
 
 * Знакомство с [файлами конфигурации ClickHouse](/ru/concepts/features/configuration/server-config/configuration-files)
@@ -27,32 +25,19 @@ import { Image } from "/snippets/ru/components/Image.jsx";
         NOTE: this table does not use standard schema with event_date and event_time!
     -->
     <opentelemetry_span_log>
-        <!--
-            The default table creation code is insufficient, this <engine> spec
-            is a workaround. There is no 'event_time' for this log, but two times,
-            start and finish. It is sorted by finish time, to avoid inserting
-            data too far away in the past (probably we can sometimes insert a span
-            that is seconds earlier than the last span in the table, due to a race
-            between several spans inserted in parallel). This gives the spans a
-            global order that we can use to e.g. retry insertion into some external
-            system.
-        -->
-        <engine>
-            engine MergeTree
-            partition by toYYYYMM(finish_date)
-            order by (finish_date, finish_time_us, trace_id)
-        </engine>
-        <database>system</database>
-        <table>opentelemetry_span_log</table>
-        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
-        <max_size_rows>1048576</max_size_rows>
-        <reserved_size_rows>8192</reserved_size_rows>
-        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
-        <flush_on_crash>false</flush_on_crash>
+        <!-- <partition_by>toYYYYMM(event_date)</partition_by> -->
+        <!-- <order_by>event_date, finish_time_us</order_by> -->
+        <!-- <database>system</database> -->
+        <!-- <table>opentelemetry_span_log</table> -->
+        <!-- <flush_interval_milliseconds>7500</flush_interval_milliseconds> -->
+        <!-- <max_size_rows>1048576</max_size_rows> -->
+        <!-- <reserved_size_rows>8192</reserved_size_rows> -->
+        <!-- <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold> -->
+        <!-- <flush_on_crash>false</flush_on_crash> -->
     </opentelemetry_span_log>
     ```
 
-    Убедитесь, что эта строка не закомментирована, иначе на следующих шагах вы не увидите `system.opentelemetry_span_log`.
+    Убедитесь, что сам элемент `<opentelemetry_span_log>` не закомментирован, иначе на следующих шагах вы не увидите `system.opentelemetry_span_log`. Настройки внутри него закомментированы, поскольку совпадают со значениями по умолчанию.
     Это также может произойти, если ваш сервер ClickHouse не использует файл конфигурации по умолчанию.
 
     Проверьте серверный журнал на наличие примерно следующего:
@@ -74,7 +59,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
     SET opentelemetry_trace_processors=1;
     ```
 
-    Теперь, если выполнить:
+    Теперь, если выполнить следующий запрос, вы должны увидеть системную таблицу `opentelemetry_span_log`:
 
     ```sql
     SHOW TABLES IN system
@@ -145,7 +130,15 @@ import { Image } from "/snippets/ru/components/Image.jsx";
     Используйте размещённый сервис визуализации трейсов по адресу [https://trace-visualizer.clickhouse.com/](https://trace-visualizer.clickhouse.com/).
     Загрузите файл `trace.json` из предыдущего шага, чтобы визуализировать трейс.
 
-    <Image img="/images/knowledgebase/trace-visualizer-example.png" size="md" alt="Пример визуализатора трейсов ClickHouse" />
+    <div className="ch-image-md">
+
+    <Frame>
+
+    ![Пример визуализатора трейсов ClickHouse](/images/knowledgebase/trace-visualizer-example.png)
+
+    </Frame>
+
+    </div>
   </Step>
 
   <Step title="Визуализация трассировок в Grafana" id="using-grafana">
@@ -174,10 +167,26 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
     Убедитесь, что для `Query type` выбрано значение `Traces`:
 
-    <Image img="/images/knowledgebase/trace-visualization-grafana.png" size="md" alt="Визуализация трейсов ClickHouse в Grafana" />
+    <div className="ch-image-md">
+
+    <Frame>
+
+    ![Визуализация трейсов ClickHouse в Grafana](/images/knowledgebase/trace-visualization-grafana.png)
+
+    </Frame>
+
+    </div>
 
     Нажмите &quot;Run Query&quot; и просмотрите диаграмму трассировки:
 
-    <Image img="/images/knowledgebase/trace-visualization-diagram.png" size="md" alt="Визуализация трейсов ClickHouse в Grafana" />
+    <div className="ch-image-md">
+
+    <Frame>
+
+    ![Визуализация трейсов ClickHouse в Grafana](/images/knowledgebase/trace-visualization-diagram.png)
+
+    </Frame>
+
+    </div>
   </Step>
 </Steps>

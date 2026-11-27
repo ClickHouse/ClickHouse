@@ -23,6 +23,8 @@ struct CompiledGPUExpression
     GPUExpression expression;
     std::vector<NameAndTypePair> columns;
     DataTypePtr result_type;
+    /// Keeps `expression.kernel` loaded. Whoever launches it holds this until the streams it was launched on are
+    /// synchronized, as the kernel is unloaded without waiting for the device when its last reference goes.
     std::shared_ptr<const GPUKernel> kernel;
 };
 

@@ -8,8 +8,6 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 > تقدّم هذه الوثيقة مقدمة عن ترحيل البيانات من Snowflake إلى ClickHouse.
 
 Snowflake هو مستودع بيانات سحابي يركّز أساسًا على نقل أعباء عمل مستودعات البيانات القديمة المحلية إلى السحابة. وهو مُحسَّن بدرجة كبيرة لتشغيل التقارير طويلة الأمد على نطاق واسع. ومع انتقال مجموعات البيانات إلى السحابة، يبدأ مالكو البيانات في التفكير في سبل أخرى لاستخلاص قيمة من هذه البيانات، بما في ذلك استخدام هذه المجموعات لتشغيل تطبيقات آنية لحالات استخدام داخلية وخارجية. وعندها، غالبًا ما يدركون أنهم بحاجة إلى قاعدة بيانات مُحسَّنة للتحليلات الآنية، مثل ClickHouse.
@@ -45,7 +43,15 @@ Snowflake هي منصة مستودعات بيانات سحابية توفّر ح
 تُظهر الصورة أدناه من [docs.snowflake.com](https://docs.snowflake.com/en/user-guide/intro-key-concepts)
 هذه المعمارية:
 
-<Image img="/images/cloud/onboard/discover/use_cases/snowflake_architecture.webp" size="md" alt="معمارية Snowflake" />
+<div className="ch-image-md">
+
+<Frame>
+
+![معمارية Snowflake](/images/cloud/onboard/discover/use_cases/snowflake_architecture.webp)
+
+</Frame>
+
+</div>
 
 وعلى النقيض من ذلك، وبصفته منتجًا مفتوح المصدر ومستضافًا سحابيًا، يمكن نشر ClickHouse
 باستخدام كلٍّ من معماريتَي القرص المشترك وshared-nothing. والأخيرة هي النمط المعتاد في
@@ -64,7 +70,15 @@ Snowflake هي منصة مستودعات بيانات سحابية توفّر ح
 المتاح للعقد الحالية في cluster لا يتأثر عند
 إضافة عقد إضافية.
 
-<Image img="/images/cloud/onboard/discover/use_cases/cloud_architecture.webp" size="md" alt="معمارية ClickHouse Cloud" />
+<div className="ch-image-md">
+
+<Frame>
+
+![معمارية ClickHouse Cloud](/images/cloud/onboard/discover/use_cases/cloud_architecture.webp)
+
+</Frame>
+
+</div>
 
 <div id="differences">
   ### الاختلافات

@@ -8,7 +8,6 @@ doc_type: 'guide'
 ---
 
 import { PrivatePreviewBadge } from '/snippets/ja/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
-import { Image } from "/snippets/ja/components/Image.jsx";
 
 <PrivatePreviewBadge />
 
@@ -41,7 +40,15 @@ AWS 認証情報 が必要なのは `prepare` のみで、S3 バケットと IAM
 * `prepare` には、コネクタ 設定のコピー (`--config`) 、executor のローカル API への `kubectl port-forward`、および書き込み可能な `--output-dir` が必要です。executor に対して service name を照合し、到達できない場合は実行を拒否します。
 * このホストに設定で指定された認証情報ファイルが存在しない場合、`instances create` はそれらを `clicklink-hmac` および `clicklink-mtls` Secret から読み取り、読み取るたびにその旨を通知します。コネクタ のネームスペースが `clicklink` でない場合は `--connector-namespace` を追加してください。このフォールバックがあるのは `instances create` のみです。
 
-<Image img="/images/cloud/reference/byoc-connector-service-lifecycle.svg" size="lg" alt="ClickHouse Connector service lifecycle in managed mode" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![ClickHouse Connector service lifecycle in managed mode](/images/cloud/reference/byoc-connector-service-lifecycle.svg)
+
+</Frame>
+
+</div>
 
 <Steps>
   <Step title="サービスを準備する" id="prepare">

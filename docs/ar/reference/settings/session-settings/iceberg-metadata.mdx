@@ -14,19 +14,16 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
 هذه الإعدادات متوفرة في [system.settings](/ar/reference/system-tables/settings)، وهي مُولَّدة تلقائيًا من [المصدر](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="iceberg_metadata_compression_method">
-  ## iceberg_metadata_compression_method
-</div>
+## iceberg_metadata_compression_method {#iceberg_metadata_compression_method}
 
 <ExperimentalBadge />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": ""},{"label": "إعداد جديد"}]}]} />
 
 طريقة ضغط ملف `.metadata.json`.
+تتيح السلسلة الفارغة لـ catalog اختيار المرمِّز عند كتابته أول ملف بيانات وصفية. اضبط القيمة على `none` لطلب بيانات وصفية غير مضغوطة.
 
-<div id="iceberg_metadata_log_level">
-  ## iceberg_metadata_log_level
-</div>
+## iceberg_metadata_log_level {#iceberg_metadata_log_level}
 
 <SettingsInfoBlock type="IcebergMetadataLogLevel" default_value="none" />
 
@@ -44,9 +41,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 * manifest&#95;file&#95;metadata - كل ما سبق + البيانات الوصفية من ملفات manifest بصيغة Avro التي تم اجتيازها.
 * manifest&#95;file&#95;entry - كل ما سبق + إدخالات ملفات manifest بصيغة Avro التي تم اجتيازها.
 
-<div id="iceberg_metadata_staleness_ms">
-  ## iceberg_metadata_staleness_ms
-</div>
+## iceberg_metadata_staleness_ms {#iceberg_metadata_staleness_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 

@@ -9,7 +9,6 @@ doc_type: 'guide'
 keywords: ['クエリ最適化', 'クエリのボトルネック', 'パフォーマンス', 'ベンチマーク']
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
 import NYCTaxiExampleDataset from '/snippets/ja/_nyc_taxi_example_dataset.mdx';
 
 一度に変更するクエリの箇所を1つに絞り、安定したベースラインと結果を比較することで、クエリ最適化が容易になります。このガイドでは、クエリを段階的に簡略化し、実行ごとの差分から所要時間に最も大きく影響する操作を特定する方法を説明します。その後、最適化を選択する前に、疑わしいボトルネックを検証できます。
@@ -71,7 +70,15 @@ SET optimize_use_implicit_projections = 0;
 
 このワークフローでは、制御された条件でのクエリ実行と、クエリログから取得した測定値を組み合わせます。
 
-<Image img="/images/guides/best-practices/query_optimization_diagram_1.webp" size="lg" alt="クエリログ内の候補クエリを特定し、変更を分離してテストするためのワークフロー" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![クエリログ内の候補クエリを特定し、変更を分離してテストするためのワークフロー](/images/guides/best-practices/query_optimization_diagram_1.webp)
+
+</Frame>
+
+</div>
 
 各実行について、次のように測定値を収集します。
 

@@ -1,0 +1,31 @@
+id	Nullable(Int32)					
+s_empty	Nullable(Tuple(Nullable(Int32), Nullable(String)))					
+s_dup	Nullable(Tuple(Nullable(Int32), Nullable(String)))					
+s_ok	Nullable(Tuple(x Nullable(Int32), y Nullable(String)))					
+m	Map(String, Nullable(Int32))					
+1	(10,'p')	(1,'u')	(7,'a')	{'k':1}
+2	(NULL,'q')	(2,'v')	(8,'b')	{}
+3	(30,NULL)	(3,'w')	(9,'c')	{'k':2,'j':3}
+id	Nullable(Int32)					
+s_empty	Nullable(Tuple(Nullable(Int32), Nullable(String)))					
+s_dup	Nullable(Tuple(Nullable(Int32), Nullable(String)))					
+s_ok	Nullable(Tuple(x Nullable(Int32), y Nullable(String)))					
+m	Map(String, Nullable(Int32))					
+1	(10,'p')	(1,'u')	(7,'a')	{'k':1}
+2	(NULL,'q')	(2,'v')	(8,'b')	{}
+3	(30,NULL)	(3,'w')	(9,'c')	{'k':2,'j':3}
+10	p	u
+\N	q	v
+30	\N	w
+(10,'p')	(1,'u')
+(NULL,'q')	(2,'v')
+(30,NULL)	(3,'w')
+(10,'p')	(1,'u')
+(NULL,'q')	(2,'v')
+(30,NULL)	(3,'w')
+(1)
+(1)
+(19000,'2022-01-08')
+(3000000,3000000)
+((7))
+((7))

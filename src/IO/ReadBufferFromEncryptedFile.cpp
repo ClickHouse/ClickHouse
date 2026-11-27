@@ -17,7 +17,7 @@ ReadBufferFromEncryptedFile::ReadBufferFromEncryptedFile(
     const String & file_name_,
     size_t buffer_size_,
     std::unique_ptr<ReadBufferFromFileBase> in_,
-    const String & key_,
+    const SecretString & key_,
     const FileEncryption::Header & header_,
     size_t offset_)
     : ReadBufferFromFileBase(buffer_size_, nullptr, 0)
@@ -197,7 +197,7 @@ bool ReadBufferFromEncryptedFile::nextImpl()
     /// This is needed because ReadBuffer::next can set working_buffer = Buffer(pos, pos) on EOF,
     /// moving working_buffer.begin() past internal_buffer.begin(). If the buffer is then revived
     /// (e.g. after setReadUntilPosition extends the range), working_buffer.begin() would be wrong.
-    working_buffer = Buffer(internal_buffer.begin(), internal_buffer.begin() + count);
+    working_buffer = WorkingBuffer::fromPaddedStorage(memory, 0, count);
 
     chassert(working_buffer.begin() != nullptr);
     chassert(working_buffer.size() == count);
@@ -306,6 +306,11 @@ void ReadBufferFromEncryptedFile::performSeekAndSetReadUntilPosition()
 
 void ReadBufferFromEncryptedFile::prefetch(Priority priority)
 {
+    /// Apply a pending seek or `read_until_position` before prefetching. Otherwise the inner buffer
+    /// prefetches with the old range, and applying the new one in `nextImpl` discards that prefetch.
+    if (need_seek || need_set_read_until_position)
+        performSeekAndSetReadUntilPosition();
+
     in->prefetch(priority);
 }
 

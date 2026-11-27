@@ -1,5 +1,5 @@
 -- Tags: no-fasttest
--- Tag no-fasttest: depends on cld2 and nlp-data
+-- Tag no-fasttest: depends on cld2
 
 SET allow_experimental_nlp_functions = 1;
 
@@ -12,7 +12,3 @@ SELECT detectLanguage('*****///// _____ ,,,,,,,, .....');
 SELECT detectLanguageMixed('二兎を追う者は一兎をも得ず二兎を追う者は一兎をも得ず A vaincre sans peril, on triomphe sans gloire.');
 SELECT detectLanguageMixed('어디든 가치가 있는 곳으로 가려면 지름길은 없다');
 SELECT detectLanguageMixed('*****///// _____ ,,,,,,,, .....');
-
-SELECT detectCharset('Plain English');
-SELECT detectLanguageUnknown('Plain English');
-

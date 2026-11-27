@@ -47,3 +47,29 @@ right anti
 0	\N		5	49	51	r5
 0	\N		6	\N	\N	rnull
 1
+enum left
+1	b	('l1','y')	1	b	('r1','y')
+2	b	('l2','y')	0	a	('','x')
+1
+enum right
+0	a	('','x')	2	b	('r2','y')
+1	b	('l1','y')	1	b	('r1','y')
+1
+enum full
+0	a	('','x')	2	b	('r2','y')
+1	b	('l1','y')	1	b	('r1','y')
+2	b	('l2','y')	0	a	('','x')
+1
+enum anti
+2	b	('l2','y')	0	a	('','x')
+1
+enum right anti
+0	a	('','x')	2	b	('r2','y')
+1
+enum filter
+1	1
+enum json
+1	1	{"p":"b"}
+2	0	{"p":"a"}
+1
+1	1

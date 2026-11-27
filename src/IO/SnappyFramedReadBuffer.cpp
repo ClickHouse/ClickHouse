@@ -47,6 +47,7 @@ uint32_t maskedCrc32c(const char * data, size_t size)
 SnappyFramedReadBuffer::SnappyFramedReadBuffer(
     std::unique_ptr<ReadBuffer> in_, size_t buf_size, char * existing_memory, size_t alignment)
     : CompressedReadBufferWrapper(std::move(in_), buf_size, existing_memory, alignment)
+    , decompress_buffer(MAX_UNCOMPRESSED_CHUNK_SIZE)
 {
 }
 
@@ -169,7 +170,6 @@ bool SnappyFramedReadBuffer::nextImpl()
                     "Snappy chunk claims uncompressed length {} which exceeds the framing format limit of {}{}",
                     uncompressed_length, MAX_UNCOMPRESSED_CHUNK_SIZE, getExceptionEntryWithFileName(*in));
 
-            decompress_buffer.resize(uncompressed_length);
             if (!snappy::RawUncompress(compressed, payload_size, decompress_buffer.data()))
                 throw Exception(ErrorCodes::SNAPPY_UNCOMPRESS_FAILED,
                     "Snappy decompression failed{}",
@@ -187,7 +187,7 @@ bool SnappyFramedReadBuffer::nextImpl()
             if (uncompressed_length == 0)
                 continue;
 
-            working_buffer = Buffer(decompress_buffer.data(), decompress_buffer.data() + uncompressed_length);
+            working_buffer = WorkingBuffer::fromPaddedStorage(decompress_buffer, 0, uncompressed_length);
             return true;
         }
 
@@ -212,7 +212,7 @@ bool SnappyFramedReadBuffer::nextImpl()
             /// Snappy framing format encodes the masked CRC-32C as little-endian.
             uint32_t expected_crc = unalignedLoadLittleEndian<uint32_t>(chunk_buf.data());
 
-            decompress_buffer.assign(chunk_buf.data() + 4, payload_size);
+            memcpy(decompress_buffer.data(), chunk_buf.data() + 4, payload_size);
 
             uint32_t actual_crc = maskedCrc32c(decompress_buffer.data(), payload_size);
             if (actual_crc != expected_crc)
@@ -225,7 +225,7 @@ bool SnappyFramedReadBuffer::nextImpl()
             if (payload_size == 0)
                 continue;
 
-            working_buffer = Buffer(decompress_buffer.data(), decompress_buffer.data() + payload_size);
+            working_buffer = WorkingBuffer::fromPaddedStorage(decompress_buffer, 0, payload_size);
             return true;
         }
 

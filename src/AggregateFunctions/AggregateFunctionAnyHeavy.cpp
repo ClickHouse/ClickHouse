@@ -46,7 +46,7 @@ public:
     ~AggregateFunctionAnyHeavyData() { data().~SingleValueDataBase(); }
 
     SingleValueDataBase & data() { return v_data.get(); }
-    const SingleValueDataBase & data() const { return v_data.get(); }
+    [[nodiscard]] const SingleValueDataBase & data() const { return v_data.get(); }
 
     void add(const IColumn & column, size_t row_num, Arena * arena)
     {

@@ -8,8 +8,6 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 데이터 스키핑 인덱스는 먼저 기존 모범 사례를 따랐을 때, 즉 타입이 최적화되고 적절한 프라이머리 키가 선택되었으며 구체화된 뷰(Materialized View)가 활용되었을 때 고려해야 합니다. 스킵 인덱스가 익숙하지 않다면 [이 가이드](/ko/concepts/features/performance/skip-indexes/skipping-indexes)부터 시작하는 것이 좋습니다.
 
 이러한 인덱스는 동작 방식을 이해하고 신중하게 사용할 경우 쿼리 성능을 향상하는 데 도움이 됩니다.
@@ -192,7 +190,15 @@ ORDER BY (PostTypeId, toDate(CreationDate))
 
 다음 애니메이션은 예시 테이블에서 minmax 스킵 인덱스가 어떻게 생성되는지 보여줍니다. 이 인덱스는 테이블의 각 행 블록(granule)별 최소 `ViewCount` 값과 최대 `ViewCount` 값을 기록합니다:
 
-<Image img="/images/bestpractices/building_skipping_indices.webp" size="lg" alt="스킵 인덱스 구축" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![스킵 인덱스 구축](/images/bestpractices/building_skipping_indices.webp)
+
+</Frame>
+
+</div>
 
 앞서 사용한 쿼리를 다시 실행하면 성능이 크게 향상된 것을 확인할 수 있습니다. 스캔된 행 수가 줄어든 점에 주목하십시오:
 
@@ -257,7 +263,15 @@ WHERE (CreationDate > '2009-01-01') AND (ViewCount > 10000000)
 
 또한 예시 쿼리에서 `ViewCount` &gt; 10,000,000 프레디케이트와 일치할 수 없는 모든 행 블록을 minmax 스킵 인덱스가 어떻게 걸러내는지 보여주는 애니메이션도 확인할 수 있습니다:
 
-<Image img="/images/bestpractices/using_skipping_indices.webp" size="lg" alt="스킵 인덱스 사용" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![스킵 인덱스 사용](/images/bestpractices/using_skipping_indices.webp)
+
+</Frame>
+
+</div>
 
 <div id="related-docs">
   ## 관련 문서

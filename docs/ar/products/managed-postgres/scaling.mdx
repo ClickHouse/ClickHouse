@@ -8,7 +8,6 @@ doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/ar/components/Image.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.scaling-beta" />
 
@@ -22,7 +21,15 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 * **تخزين مدعوم بـ NVMe** في جميع أنواع المثيلات لضمان عمليات إدخال/إخراج على القرص متسقة وعالية الأداء
 * **التحجيم المستقل للموارد**: اختر التوازن المناسب بين CPU والذاكرة والتخزين وفقًا لعبء العمل لديك
 
-<Image img="/images/managed-postgres/instance-types.webp" alt="أنواع المثيلات" size="md" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![أنواع المثيلات](/images/managed-postgres/instance-types.webp)
+
+</Frame>
+
+</div>
 
 <div id="choosing-instance">
   ### اختيار نوع المثيل المناسب
@@ -46,7 +53,15 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 عند تغيير أنواع المثيلات، يُجري ClickHouse Managed Postgres عملية التحجيم الرأسي توفّر بنية تحتية جديدة وتنقل قاعدة بياناتك بأقل قدر ممكن من التعطل.
 
-<Image img="/images/managed-postgres/scaling-settings.webp" alt="إعدادات التحجيم" size="md" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![إعدادات التحجيم](/images/managed-postgres/scaling-settings.webp)
+
+</Frame>
+
+</div>
 
 <div id="scaling-process">
   ### عملية التحجيم

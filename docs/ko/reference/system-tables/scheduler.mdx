@@ -50,6 +50,8 @@ import SystemTableCloud from '/snippets/ko/_system_table_cloud.mdx';
 * `throttling_us` ([Nullable(Int64)](/ko/reference/data-types/nullable)) — `bandwidth_limit` 노드에만 해당합니다. 이 노드가 스로틀링 상태였던 총 마이크로초 수입니다.
 * `tokens` ([Nullable(Float64)](/ko/reference/data-types/nullable)) — `bandwidth_limit` 노드에만 해당합니다. 토큰 버킷 스로틀러에서 현재 사용할 수 있는 토큰 수입니다.
 * `allocated` ([Nullable(Int64)](/ko/reference/data-types/nullable)) — space-shared 노드에만 해당합니다. 이 노드 아래에 현재 할당된 리소스 양입니다.
+* `reclaimable` ([Nullable(Int64)](/ko/reference/data-types/nullable)) — space-shared 노드에만 해당합니다. 이 노드 아래에서 새 디스크 유출(spill) 요청에 사용할 수 있는 메모리입니다. 각 할당별로 보고된 회수 가능한 메모리에서 미처리 요청을 차감하고, 결과가 0보다 작으면 0으로 처리한 뒤 합산합니다.
+* `reclaiming` ([Nullable(Int64)](/ko/reference/data-types/nullable)) — space-shared 노드에만 해당합니다. 이 노드 아래에서 스필이 요청되었으나 아직 정산되지 않은 메모리로, 실행이 시작되지 않은 요청도 포함합니다. 정산 시에는 실제로 해제된 양과 관계없이 요청된 양만큼 차감됩니다.
 * `allocations` ([Nullable(UInt64)](/ko/reference/data-types/nullable)) — space-shared 노드에만 해당합니다. 이 노드 아래에서 현재 실행 중인 리소스 할당 수입니다.
 * `updates` ([Nullable(UInt64)](/ko/reference/data-types/nullable)) — space-shared 노드에만 해당합니다. 이 노드를 통해 전파된 업데이트의 총횟수입니다.
 * `increases` ([Nullable(UInt64)](/ko/reference/data-types/nullable)) — space-shared 노드에만 해당합니다. 이 노드가 승인한 증가 요청의 총횟수입니다.
@@ -58,6 +60,8 @@ import SystemTableCloud from '/snippets/ko/_system_table_cloud.mdx';
 * `removes` ([Nullable(UInt64)](/ko/reference/data-types/nullable)) — space-shared 노드에만 해당합니다. 이 노드에서 제거된 할당의 총횟수입니다.
 * `killers` ([Nullable(UInt64)](/ko/reference/data-types/nullable)) — space-shared 노드에만 해당합니다. 이 노드의 증가 요청으로 인해 시작된 축출 작업의 총횟수입니다.
 * `victims` ([Nullable(UInt64)](/ko/reference/data-types/nullable)) — space-shared 노드에만 해당합니다. 이 노드에서 축출된 할당의 총횟수입니다.
+* `spills` ([Nullable(UInt64)](/ko/reference/data-types/nullable)) — space-shared 노드에만 해당합니다. 소프트 메모리 제한을 초과하여 이 노드가 발행한 디스크 유출(spill) 요청의 총횟수입니다.
+* `soft_limit` ([Nullable(Int64)](/ko/reference/data-types/nullable)) — `allocation_limit` 노드에만 해당합니다. 이 값을 초과하면 회수 가능한 할당에 디스크 유출(spill)이 요청되는 실제 소프트 메모리 제한입니다(`max_memory_before_spill`과 `max_memory_to_spill_ratio * max_memory` 중 작은 값). 값이 하드 메모리 제한 이상이면 스필이 비활성화된 것입니다.
 * `rejects` ([Nullable(UInt64)](/ko/reference/data-types/nullable)) — `allocation_queue` 노드에만 해당합니다. 이 노드에서 거부된 리소스 할당의 총횟수입니다.
 * `pending` ([Nullable(UInt64)](/ko/reference/data-types/nullable)) — `allocation_queue` 노드에만 해당합니다. 이 노드에서 대기 중인 리소스 할당의 현재 수입니다.
 

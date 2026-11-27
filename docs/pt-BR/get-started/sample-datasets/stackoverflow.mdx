@@ -8,15 +8,21 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
-
 Este conjunto de dados contém todos os registros de `Posts`, `Users`, `Votes`, `Comments`, `Badges`, `PostHistory` e `PostLinks` do Stack Overflow.
 
 Você pode baixar versões Parquet dos dados já preparadas, contendo todas as postagens até abril de 2024, ou baixar os dados mais recentes em formato XML e carregá-los. O Stack Overflow fornece atualizações desses dados periodicamente — historicamente, a cada 3 meses.
 
 O diagrama a seguir mostra o esquema das tabelas disponíveis, considerando o formato Parquet.
 
-<Image img="/images/getting-started/example-datasets/stackoverflow.webp" alt="Esquema do Stack Overflow" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Esquema do Stack Overflow](/images/getting-started/example-datasets/stackoverflow.webp)
+
+</Frame>
+
+</div>
 
 Uma descrição do esquema desses dados pode ser encontrada [aqui](https://meta.stackexchange.com/questions/2677/database-schema-documentation-for-the-public-data-dump-and-sede).
 

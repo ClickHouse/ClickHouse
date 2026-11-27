@@ -47,15 +47,15 @@ Actualmente están definidos los siguientes ajustes globales:
 
 ## Compresión {#compression}
 
-ClickHouse Connect admite compresión de respuestas con lz4, zstd, brotli, gzip y deflate. Las inserciones Native admiten lz4, zstd, brotli y gzip. La compresión reduce la transferencia de red a costa de tiempo de CPU.
+ClickHouse Connect admite compresión de respuestas con lz4, zstd, brotli, gzip y deflate. Las inserciones nativas admiten lz4, zstd, brotli y gzip. La compresión reduce la transferencia de red a costa de tiempo de CPU.
 
 Para recibir datos comprimidos, en el servidor ClickHouse `enable_http_compression` debe establecerse en 1, o el usuario debe tener permiso para cambiar esta configuración para cada consulta.
 
-La compresión se controla mediante el argumento `compress` de `get_client` y `get_async_client`. El valor predeterminado, `True`, anuncia todas las codificaciones de respuesta disponibles y comprime los bloques de inserción Native con lz4. Establezca `compress=False` para desactivar la compresión, o pase uno de `"lz4"`, `"zstd"`, `"br"` o `"gzip"` para solicitar un método específico.
+La compresión se controla mediante el argumento `compress` de `get_client` y `get_async_client`. El valor predeterminado, `True`, anuncia todas las codificaciones de respuesta disponibles y comprime los bloques de inserción nativa con lz4. Establezca `compress=False` para desactivar la compresión, o pase uno de `"lz4"`, `"zstd"`, `"br"` o `"gzip"` para solicitar un método específico.
 
 Los métodos raw del client no usan la configuración `compress` a nivel de client. `raw_query` y `raw_stream` devuelven datos sin comprimir, y `raw_insert` usa su propio argumento `compression` para indicar la compresión ya aplicada al payload.
 
-La compatibilidad con lz4 y zstd se instala con ClickHouse Connect. En Python 3.14, zstd usa el módulo `compression.zstd` de la biblioteca estándar. Python 3.10 a 3.13 usa `backports.zstd`. Un intérprete CPython 3.14+ personalizado compilado sin compatibilidad con zstd sigue pudiéndose importar; zstd se elimina de los métodos disponibles y solo se genera un error cuando se solicita zstd explícitamente. Brotli es opcional y debe instalarse por separado antes de usar `compress="br"`.
+La compatibilidad con lz4 y zstd se instala con ClickHouse Connect. En Python 3.14 y versiones posteriores, zstd usa el módulo `compression.zstd` de la biblioteca estándar. Python 3.10 a 3.13 usa `backports.zstd`. Un intérprete CPython 3.14+ personalizado compilado sin compatibilidad con zstd sigue pudiéndose importar; zstd se elimina de los métodos disponibles y solo se genera un error cuando se solicita zstd explícitamente. Brotli es opcional y debe instalarse por separado antes de usar `compress="br"`.
 
 gzip suele ser más lento que lz4 o zstd para las cargas de trabajo de ClickHouse.
 

@@ -99,6 +99,11 @@ Limpa o cache de marks.
 Limpa o cache de índice primário, que mantém em memória as chaves primárias das tabelas [`MergeTree`](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree).
 Seu tamanho é configurado pela configuração no nível do servidor [`primary_index_cache_size`](/pt-BR/reference/settings/server-settings/settings/primary-index#primary_index_cache_size).
 
+## SYSTEM CLEAR|DROP STATISTICS CACHE {#drop-statistics-cache}
+
+Limpa o cache de estatísticas, que mantém em memória as estatísticas de coluna das partes de dados de tabelas [`MergeTree`](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree), com uma entrada para cada combinação de parte de dados e coluna.
+Seu tamanho é definido pela configuração no nível do servidor `statistics_cache_size`.
+
 ## SYSTEM CLEAR|DROP ICEBERG METADATA CACHE {#drop-iceberg-metadata-cache}
 
 Limpa o cache de metadados do Iceberg.
@@ -183,7 +188,7 @@ SYSTEM DROP DISK METADATA CACHE <disk_name>
 
 ## SYSTEM CLEAR|DROP TIME SERIES CACHES {#drop-time-series-caches}
 
-Limpa os caches de uma tabela `TimeSeries` que permitem que os inserts ignorem as linhas já presentes em suas tabelas de destino. Há dois caches desse tipo: o cache de desduplicação da tabela de famílias de métricas e o cache de desduplicação da tabela de tags (usado apenas quando `store_min_time_and_max_time` está desabilitado). Consulte as configurações `metric_families_deduplication_cache_expiration_seconds` e `tags_deduplication_cache_expiration_seconds` da tabela. Os caches são locais ao servidor e não detectam alterações feitas diretamente nas tabelas de destino. Essa divergência se resolve sozinha quando as entradas expiram; use a instrução para que o próximo insert grave todas as suas linhas sem precisar esperar (por exemplo, após executar TRUNCATE na tabela de famílias de métricas). O `TRUNCATE TABLE` de uma tabela `TimeSeries` limpa apenas os caches do servidor que o executa; portanto, se as tabelas de destino forem replicadas, execute em seguida a instrução com `ON CLUSTER` para limpar os caches das demais réplicas.
+Limpa os caches de uma tabela `TimeSeries` que permitem que os inserts ignorem as linhas já presentes em suas tabelas de destino. Há dois caches desse tipo: o cache de desduplicação da tabela de famílias de métricas e o cache de desduplicação da tabela de tags. Consulte as configurações `metric_families_deduplication_cache_expiration_seconds` e `tags_deduplication_cache_expiration_seconds` da tabela. Os caches são locais ao servidor e não detectam alterações feitas diretamente nas tabelas de destino. Essa divergência se resolve sozinha quando as entradas expiram; use a instrução para que o próximo insert grave todas as suas linhas sem precisar esperar (por exemplo, após executar TRUNCATE na tabela de famílias de métricas). O `TRUNCATE TABLE` de uma tabela `TimeSeries` limpa apenas os caches do servidor que o executa; portanto, se as tabelas de destino forem replicadas, execute em seguida a instrução com `ON CLUSTER` para limpar os caches das demais réplicas.
 
 ```sql
 SYSTEM DROP TIME SERIES CACHES [ON CLUSTER cluster_name] [db.]table

@@ -45,11 +45,11 @@ for level in 1 6; do
         SELECT (SELECT sum(cityHash64(k, v, d, s)) FROM gpu_gdeflate) = (SELECT sum(cityHash64(k, v, d, s)) FROM gpu_lz4)"
 
     # Grouped on the device from the compressed chunks, against the CPU over the other table.
-    for mode in device host; do
+    for mode in device; do
         on_cpu=$($CLICKHOUSE_CLIENT --query "SELECT k, sum(v), count() FROM gpu_lz4 WHERE d < '2024-06-01' GROUP BY k ORDER BY k")
         on_gpu=$($CLICKHOUSE_CLIENT --allow_experimental_gpu_aggregation 1 --query "
             SELECT k, sum(v), count() FROM gpu_gdeflate WHERE d < toDate('2024-06-01') GROUP BY k ORDER BY k
-            SETTINGS optimize_move_to_prewhere = 1, gpu_aggregation_decompression = '$mode'")
+            SETTINGS optimize_move_to_prewhere = 1")
         [ "$on_cpu" == "$on_gpu" ] && echo "$mode ok" || echo "$mode MISMATCH"
     done
 

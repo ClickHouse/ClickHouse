@@ -1,0 +1,38 @@
+<test run_all_queries="1">
+    <settings>
+        <max_threads>1</max_threads>
+    </settings>
+    <!-- Include partial-vector gains and exact-block sizes that have native adapter costs. -->
+    <query>
+        SELECT sum(length(toValidUTF8(materialize(repeat('a', 16))))) AS total
+        FROM numbers(1000000) FORMAT Null
+    </query>
+    <query>
+        SELECT sum(length(toValidUTF8(materialize(repeat('a', 31))))) AS total
+        FROM numbers(1000000) FORMAT Null
+    </query>
+    <query>
+        SELECT sum(length(toValidUTF8(materialize(repeat('a', 32))))) AS total
+        FROM numbers(1000000) FORMAT Null
+    </query>
+    <query>
+        SELECT sum(length(toValidUTF8(materialize(repeat('a', 63))))) AS total
+        FROM numbers(1000000) FORMAT Null
+    </query>
+    <query>
+        SELECT sum(length(toValidUTF8(materialize(repeat('a', 64))))) AS total
+        FROM numbers(1000000) FORMAT Null
+    </query>
+    <query>
+        SELECT sum(length(toValidUTF8(materialize(repeat('a', 127))))) AS total
+        FROM numbers(1000000) FORMAT Null
+    </query>
+    <query>
+        SELECT sum(length(toValidUTF8(materialize(repeat('€', 21))))) AS total
+        FROM numbers(1000000) FORMAT Null
+    </query>
+    <query>
+        SELECT sum(length(toValidUTF8(materialize('\xFF')))) AS total
+        FROM numbers(1000000) FORMAT Null
+    </query>
+</test>

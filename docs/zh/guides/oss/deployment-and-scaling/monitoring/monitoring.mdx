@@ -9,8 +9,6 @@ title: '监控'
 doc_type: 'reference'
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 <Note>
   本指南概述的监控数据可在 ClickHouse Cloud 中查看。除了可通过下文介绍的内置仪表板查看外，基础和高级性能指标也可以直接在主服务控制台中查看。
 </Note>
@@ -24,7 +22,15 @@ import { Image } from "/snippets/zh/components/Image.jsx";
   ## 内置高级可观测性仪表板
 </div>
 
-<Image img="/images/cloud/manage/monitoring/native_advanced_dashboard.webp" alt="原生高级可观测性仪表板" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![原生高级可观测性仪表板](/images/cloud/manage/monitoring/native_advanced_dashboard.webp)
+
+</Frame>
+
+</div>
 
 ClickHouse 内置了高级可观测性仪表板，可通过 `$HOST:$PORT/dashboard` 访问 (需要用户名和密码) ，显示以下指标：
 

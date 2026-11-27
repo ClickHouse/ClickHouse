@@ -45,6 +45,8 @@ GPUElementType uploadTypeOrThrow(const IDataType & type)
         return GPUElementType::String;
     if (const auto element_type = keyElementTypeOf(type))
         return *element_type;
+    if (const auto element_type = filterElementTypeOf(type))
+        return *element_type;
 
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Columns of {} are not supported on the GPU yet", type.getName());
 }
@@ -63,7 +65,6 @@ void fillFixed(IColumn & column, GPUElementType element_type, size_t rows, std::
     if (values.size() != rows * sizeOf(element_type))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "{} bytes of {} values of {} bytes", values.size(), rows, sizeOf(element_type));
 
-    /// The bytes of a `FixedString` key, grouped as an integer as wide.
     if (auto * fixed_string = typeid_cast<ColumnFixedString *>(&column))
     {
         if (fixed_string->getN() != sizeOf(element_type) || !fixed_string->empty())

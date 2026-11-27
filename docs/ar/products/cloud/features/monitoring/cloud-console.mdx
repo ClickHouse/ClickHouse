@@ -7,8 +7,6 @@ sidebarTitle: 'Cloud Console'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 تأتي الخدمات في ClickHouse Cloud مزوّدةً بمكوّنات Monitoring جاهزة توفّر للمستخدمين لوحات معلومات وإشعارات. وبشكل افتراضي، يمكن لجميع المستخدمين في Cloud Console الوصول إلى لوحات المعلومات هذه.
 
 <div id="dashboards">
@@ -68,7 +66,15 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 لوحة المعلومات هذه هي نسخة معدّلة من [لوحة observability المتقدمة المضمّنة](/ar/products/cloud/features/monitoring/advanced-dashboard)، حيث تمثّل كل سلسلة المقاييس لكل نسخة متماثلة. يمكن أن تكون هذه اللوحة مفيدة في مراقبة المشكلات الخاصة بـ ClickHouse واستكشافها وإصلاحها.
 
-<Image img="/images/cloud/manage/monitoring/advanced_dashboard.webp" size="lg" alt="لوحة المعلومات المتقدمة في ClickHouse Cloud" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![لوحة المعلومات المتقدمة في ClickHouse Cloud](/images/cloud/manage/monitoring/advanced_dashboard.webp)
+
+</Frame>
+
+</div>
 
 <Note>
   يقوم ClickHouse Cloud بجمع المقاييس المعروضة في لوحة المعلومات هذه وتخزينها من جداول النظام بحيث يمكن عرضها حتى عندما تكون الخدمة في حالة خمول. ولا يؤدي الوصول إلى هذه المقاييس إلى تنفيذ استعلام على الخدمة الأساسية، كما أنه لن يوقظ الخدمات الخاملة.
@@ -115,7 +121,15 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 بعد تحديد خدمة، يتوسّع عنصر التنقل **Monitoring** في الشريط الجانبي الأيسر ليُظهر عنصرًا فرعيًا باسم **Query insights**:
 
-<Image img="/images/cloud/sqlconsole/insights_overview.webp" size="md" alt="نظرة عامة على واجهة مستخدم Query Insights" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![نظرة عامة على واجهة مستخدم Query Insights](/images/cloud/sqlconsole/insights_overview.webp)
+
+</Frame>
+
+</div>
 
 <div id="top-level-metrics">
   ### المقاييس عالية المستوى
@@ -123,7 +137,15 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 تمثل مربعات الإحصاءات في الأعلى مقاييس الاستعلام الأساسية خلال الفترة الزمنية المحددة. وأسفلها، تعرض المخططات الزمنية حجم الاستعلامات، وزمن الاستجابة، ومعدل الأخطاء، مقسّمة حسب نوع الاستعلام (select وinsert وother). ويمكن ضبط مخطط زمن الاستجابة لعرض قيم p50 وp90 وp99:
 
-<Image img="/images/cloud/sqlconsole/insights_latency.webp" size="md" alt="مخطط زمن الاستجابة في Query Insights" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![مخطط زمن الاستجابة في Query Insights](/images/cloud/sqlconsole/insights_latency.webp)
+
+</Frame>
+
+</div>
 
 <div id="recent-queries">
   ### الاستعلامات الأخيرة
@@ -131,7 +153,15 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 يعرض الجدول إدخالات من سجل الاستعلامات، مجمّعة حسب تجزئة الاستعلام المُطبَّع والمستخدم ضمن الفترة الزمنية المحددة. يمكن تصفية الاستعلامات الأخيرة وفرزها حسب أي حقل متاح، كما يمكن تهيئة الجدول لعرض حقول إضافية مثل الجداول وزمني الاستجابة p90 وp99 أو إخفائها:
 
-<Image img="/images/cloud/sqlconsole/insights_recent.webp" size="md" alt="جدول الاستعلامات الأخيرة في Query Insights" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![جدول الاستعلامات الأخيرة في Query Insights](/images/cloud/sqlconsole/insights_recent.webp)
+
+</Frame>
+
+</div>
 
 <div id="query-drill-down">
   ### التعمّق في الاستعلام
@@ -139,11 +169,27 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 يؤدي اختيار استعلام من جدول الاستعلامات الأخيرة إلى فتح لوحة منبثقة تحتوي على مقاييس ومعلومات خاصة بالاستعلام المحدد:
 
-<Image img="/images/cloud/sqlconsole/insights_drilldown.webp" size="md" alt="واجهة Query Insights للتعمّق في الاستعلام" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![واجهة Query Insights للتعمّق في الاستعلام](/images/cloud/sqlconsole/insights_drilldown.webp)
+
+</Frame>
+
+</div>
 
 جميع المقاييس في علامة التبويب **معلومات الاستعلام** هي مقاييس مُجمّعة، ولكن يمكننا أيضًا عرض مقاييس عمليات التنفيذ الفردية عبر تحديد علامة التبويب **سجل الاستعلام**:
 
-<Image img="/images/cloud/sqlconsole/insights_query_info.webp" size="sm" alt="واجهة Query Insights لمعلومات الاستعلام" border />
+<div className="ch-image-sm">
+
+<Frame>
+
+![واجهة Query Insights لمعلومات الاستعلام](/images/cloud/sqlconsole/insights_query_info.webp)
+
+</Frame>
+
+</div>
 
 من هذه اللوحة، يمكن توسيع العنصرين `Settings` و`Profile Events` لكل عملية تنفيذ استعلام لإظهار معلومات إضافية.
 

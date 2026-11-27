@@ -1,11 +1,7 @@
 #include <Compression/CompressionCodecGDeflate.h>
-
-#if USE_GPU
-
 #include <Compression/CompressionFactory.h>
 #include <Compression/CompressionInfo.h>
 #include <Compression/registerCompressionCodecs.h>
-#include <GPU/GPUGDeflate.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/IAST.h>
 #include <base/unaligned.h>
@@ -14,6 +10,7 @@
 
 #include <algorithm>
 #include <cstring>
+#include <limits>
 #include <memory>
 
 namespace DB
@@ -31,10 +28,7 @@ namespace ErrorCodes
 namespace
 {
 
-/// The block format is that of `GPU::forEachGDeflateChunk`, which the host expands here with the GDeflate pages of
-/// NVIDIA's fork of libdeflate: a device is no faster for a block at a time, and is not there for every read.
 constexpr size_t chunk_bytes = CompressionCodecGDeflate::chunk_bytes;
-static_assert(chunk_bytes == GPU::gdeflate_chunk_bytes);
 constexpr size_t chunk_alignment = 4;
 
 size_t alignUp(size_t bytes)
@@ -47,13 +41,8 @@ size_t numChunks(size_t uncompressed_bytes)
     return (uncompressed_bytes + chunk_bytes - 1) / chunk_bytes;
 }
 
-size_t headerBytes(size_t num_chunks)
-{
-    return sizeof(UInt32) + num_chunks * sizeof(UInt32);
-}
-
-/// The most a GDeflate page of `chunk_bytes` compresses to, the room each chunk has in a block.
-size_t maxCompressedChunkBytes()
+/// The most a GDeflate page of `chunk_bytes` compresses to.
+size_t maxPageBytes()
 {
     return libdeflate_gdeflate_compress_bound(nullptr, chunk_bytes, nullptr);
 }
@@ -71,25 +60,67 @@ struct DecompressorDeleter
     }
 };
 
-void decompressChunk(const char * compressed, size_t compressed_size, char * out, size_t out_size)
+class Chunk
 {
-    thread_local std::unique_ptr<libdeflate_gdeflate_decompressor, DecompressorDeleter> decompressor;
-    if (!decompressor)
+public:
+    static constexpr size_t descriptor_bytes = sizeof(UInt32);
+
+    static size_t maxCompressedBytes() { return alignUp(maxPageBytes()); }
+
+    [[nodiscard]] size_t compressedBytes() const { return alignUp(compressed_size); }
+
+    /// Compresses `size` bytes of `source` into `out`, of `maxCompressedBytes`.
+    void compress(libdeflate_gdeflate_compressor * compressor, const char * source, size_t size, char * out)
     {
-        decompressor.reset(libdeflate_alloc_gdeflate_decompressor());
-        if (!decompressor)
-            throw Exception(ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Cannot allocate a GDeflate decompressor");
+        libdeflate_gdeflate_out_page page{.data = out, .nbytes = maxPageBytes()};
+        if (libdeflate_gdeflate_compress(compressor, source, size, &page, 1) == 0)
+            throw Exception(ErrorCodes::CANNOT_COMPRESS, "Cannot compress a chunk of {} bytes with GDeflate", size);
+        compressed_size = static_cast<UInt32>(page.nbytes);
+        memset(out + compressed_size, 0, compressedBytes() - compressed_size);
     }
 
-    libdeflate_gdeflate_in_page page{.data = compressed, .nbytes = compressed_size};
-    size_t decompressed_size = 0;
-    const auto result = libdeflate_gdeflate_decompress(decompressor.get(), &page, 1, out, out_size, &decompressed_size);
-    if (result != LIBDEFLATE_SUCCESS)
-        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress a GDeflate chunk: error code {}", static_cast<int>(result));
-    if (decompressed_size != out_size)
-        throw Exception(
-            ErrorCodes::CANNOT_DECOMPRESS, "A GDeflate chunk expands to {} bytes, where {} were expected", decompressed_size, out_size);
-}
+    void decompress(const char * in, size_t size, char * out) const
+    {
+        thread_local std::unique_ptr<libdeflate_gdeflate_decompressor, DecompressorDeleter> decompressor;
+        if (!decompressor)
+        {
+            decompressor.reset(libdeflate_alloc_gdeflate_decompressor());
+            if (!decompressor)
+                throw Exception(ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Cannot allocate a GDeflate decompressor");
+        }
+
+        libdeflate_gdeflate_in_page page{.data = in, .nbytes = compressed_size};
+        size_t decompressed_size = 0;
+        const auto result = libdeflate_gdeflate_decompress(decompressor.get(), &page, 1, out, size, &decompressed_size);
+        if (result != LIBDEFLATE_SUCCESS)
+            throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress a GDeflate chunk: error code {}", static_cast<int>(result));
+        if (decompressed_size != size)
+            throw Exception(
+                ErrorCodes::CANNOT_DECOMPRESS, "A GDeflate chunk expands to {} bytes, where {} were expected", decompressed_size, size);
+    }
+
+    void serialize(char * out) const { unalignedStoreLittleEndian<UInt32>(out, compressed_size); }
+    void deserialize(const char * in) { compressed_size = unalignedLoadLittleEndian<UInt32>(in); }
+
+    UInt32 compressed_size = 0;
+};
+
+class Header
+{
+public:
+    Header() = default;
+    explicit Header(size_t num_chunks_) : num_chunks(num_chunks_) {}
+
+    static size_t maxCompressedBytes(size_t num_chunks) { return descriptorOffset(num_chunks); }
+
+    [[nodiscard]] size_t compressedBytes() const { return descriptorOffset(num_chunks); }
+    static size_t descriptorOffset(size_t chunk) { return sizeof(UInt32) + chunk * Chunk::descriptor_bytes; }
+
+    void serialize(char * out) const { unalignedStoreLittleEndian<UInt32>(out, static_cast<UInt32>(num_chunks)); }
+    void deserialize(const char * in) { num_chunks = unalignedLoadLittleEndian<UInt32>(in); }
+
+    size_t num_chunks = 0;
+};
 
 }
 
@@ -116,40 +147,69 @@ void CompressionCodecGDeflate::updateHash(SipHash & hash) const
 UInt32 CompressionCodecGDeflate::getMaxCompressedDataSize(UInt32 uncompressed_size) const
 {
     const size_t num_chunks = numChunks(uncompressed_size);
-    return static_cast<UInt32>(headerBytes(num_chunks) + num_chunks * alignUp(maxCompressedChunkBytes()));
+    const size_t result = Header::maxCompressedBytes(num_chunks) + num_chunks * Chunk::maxCompressedBytes();
+    if (result > std::numeric_limits<UInt32>::max() - getHeaderSize())
+        throw Exception(
+            ErrorCodes::CANNOT_COMPRESS,
+            "Cannot compress with GDeflate codec, block of {} bytes is too large: worst-case compressed size {} does not fit into 32 bits",
+            uncompressed_size,
+            result);
+    return static_cast<UInt32>(result);
 }
 
 UInt32 CompressionCodecGDeflate::doCompressData(const char * source, UInt32 source_size, char * dest) const
 {
-    const size_t num_chunks = numChunks(source_size);
-    unalignedStoreLittleEndian<UInt32>(dest, static_cast<UInt32>(num_chunks));
+    const Header header(numChunks(source_size));
+    header.serialize(dest);
 
-    std::unique_ptr<libdeflate_gdeflate_compressor, CompressorDeleter> compressor(libdeflate_alloc_gdeflate_compressor(level));
+    std::unique_ptr<libdeflate_gdeflate_compressor, CompressorDeleter> compressor(
+        libdeflate_alloc_gdeflate_compressor(level));
     if (!compressor)
         throw Exception(ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Cannot allocate a GDeflate compressor of level {}", level);
 
-    size_t at = headerBytes(num_chunks);
-    for (size_t i = 0; i < num_chunks; ++i)
+    size_t at = header.compressedBytes();
+    for (size_t i = 0; i < header.num_chunks; ++i)
     {
-        const size_t chunk_size = std::min(chunk_bytes, source_size - i * chunk_bytes);
-        libdeflate_gdeflate_out_page page{.data = dest + at, .nbytes = maxCompressedChunkBytes()};
-        if (libdeflate_gdeflate_compress(compressor.get(), source + i * chunk_bytes, chunk_size, &page, 1) == 0)
-            throw Exception(ErrorCodes::CANNOT_COMPRESS, "Cannot compress a chunk of {} bytes with GDeflate", chunk_size);
-
-        unalignedStoreLittleEndian<UInt32>(dest + sizeof(UInt32) * (1 + i), static_cast<UInt32>(page.nbytes));
-        const size_t next = alignUp(at + page.nbytes);
-        memset(dest + at + page.nbytes, 0, next - at - page.nbytes);
-        at = next;
+        Chunk chunk;
+        chunk.compress(compressor.get(), source + i * chunk_bytes, std::min(chunk_bytes, source_size - i * chunk_bytes), dest + at);
+        chunk.serialize(dest + Header::descriptorOffset(i));
+        at += chunk.compressedBytes();
     }
     return static_cast<UInt32>(at);
 }
 
 UInt32 CompressionCodecGDeflate::doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const
 {
-    GPU::forEachGDeflateChunk({source, source_size}, uncompressed_size, [&](const GPU::GDeflateChunk & chunk)
+    if (source_size < sizeof(UInt32))
+        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "A GDeflate block of {} bytes", source_size);
+
+    Header header;
+    header.deserialize(source);
+    if (header.num_chunks != numChunks(uncompressed_size) || header.compressedBytes() > source_size)
+        throw Exception(
+            ErrorCodes::CANNOT_DECOMPRESS,
+            "A GDeflate block of {} bytes holds {} chunks, where {} expanded bytes make {}",
+            source_size,
+            header.num_chunks,
+            uncompressed_size,
+            numChunks(uncompressed_size));
+
+    size_t at = header.compressedBytes();
+    for (size_t i = 0; i < header.num_chunks; ++i)
     {
-        decompressChunk(source + chunk.offset, chunk.compressed_bytes, dest + chunk.decompressed_offset, chunk.decompressed_bytes);
-    });
+        Chunk chunk;
+        chunk.deserialize(source + Header::descriptorOffset(i));
+        if (at + chunk.compressed_size > source_size)
+            throw Exception(
+                ErrorCodes::CANNOT_DECOMPRESS,
+                "Chunk {} of a GDeflate block of {} bytes ends at {}",
+                i,
+                source_size,
+                at + chunk.compressed_size);
+
+        chunk.decompress(source + at, std::min(chunk_bytes, uncompressed_size - i * chunk_bytes), dest + i * chunk_bytes);
+        at += chunk.compressedBytes();
+    }
     return uncompressed_size;
 }
 
@@ -179,10 +239,9 @@ void registerCodecGDeflate(CompressionCodecFactory & factory)
                     value);
             level = static_cast<int>(value);
         }
+
         return std::make_shared<CompressionCodecGDeflate>(level);
     });
 }
 
 }
-
-#endif

@@ -31,25 +31,21 @@ GRANT SELECT ON $db.pv_none TO $invoker;
 EOF
 
 # The invoker has SELECT on the views only, not on the base table.
-# DEFINER/NONE must return rows; INVOKER must be denied. This must hold for BOTH the
-# default analyzer and the old analyzer (the old-analyzer path was the bug: issue #84188).
-for analyzer in 1; do
-    echo "--- enable_analyzer=$analyzer ---"
-    echo -n "definer: "
-    ${CLICKHOUSE_CLIENT} --user "$invoker" --query \
-        "SELECT count() FROM $db.pv_definer(lim = 5000) SETTINGS enable_analyzer = $analyzer, enable_parallel_replicas = 0"
-    echo -n "none:    "
-    ${CLICKHOUSE_CLIENT} --user "$invoker" --query \
-        "SELECT count() FROM $db.pv_none(lim = 5000) SETTINGS enable_analyzer = $analyzer, enable_parallel_replicas = 0"
-    echo -n "invoker: "
-    ${CLICKHOUSE_CLIENT} --user "$invoker" --query \
-        "SELECT count() FROM $db.pv_invoker(lim = 5000) SETTINGS enable_analyzer = $analyzer, enable_parallel_replicas = 0" 2>&1 \
-        | grep -m1 -oF "ACCESS_DENIED" || echo "UNEXPECTED"
-done
+# DEFINER/NONE must return rows; INVOKER must be denied (issue #84188).
+echo -n "definer: "
+${CLICKHOUSE_CLIENT} --user "$invoker" --query \
+    "SELECT count() FROM $db.pv_definer(lim = 5000) SETTINGS enable_parallel_replicas = 0"
+echo -n "none:    "
+${CLICKHOUSE_CLIENT} --user "$invoker" --query \
+    "SELECT count() FROM $db.pv_none(lim = 5000) SETTINGS enable_parallel_replicas = 0"
+echo -n "invoker: "
+${CLICKHOUSE_CLIENT} --user "$invoker" --query \
+    "SELECT count() FROM $db.pv_invoker(lim = 5000) SETTINGS enable_parallel_replicas = 0" 2>&1 \
+    | grep -m1 -oF "ACCESS_DENIED" || echo "UNEXPECTED"
 
-# Originally reported scenario: parameterized DEFINER view read via parallel replicas by a
-# low-privilege invoker must succeed (no ACCESS_DENIED, no data leak) and must actually use
-# parallel replicas (guard against a silent fallback masking the bug).
+# A parameterized DEFINER view read by a low-privilege invoker with parallel replicas returns the
+# definer's rows and is read without parallel replicas, which would run the view's body as another
+# user. The same settings do use parallel replicas for a read that does not switch the user.
 echo "--- parallel replicas ---"
 # automatic_parallel_replicas_mode = 0 forces the explicit parallel-replicas path so the
 # ParallelReplicasUsedCount guard below is deterministic (otherwise the coordinator may skip
@@ -63,17 +59,22 @@ pr_settings="enable_parallel_replicas = 1, max_parallel_replicas = 3, cluster_fo
 echo -n "definer pr: "
 ${CLICKHOUSE_CLIENT} --user "$invoker" --query \
     "SELECT count() FROM $db.pv_definer(lim = 5000) SETTINGS $pr_settings, log_comment = '04545_pr_${CLICKHOUSE_DATABASE}'"
+echo -n "table pr: "
+${CLICKHOUSE_CLIENT} --user "$definer" --query \
+    "SELECT count() FROM $db.nums WHERE x <= 5000 SETTINGS $pr_settings, log_comment = '04545_pr_table_${CLICKHOUSE_DATABASE}'"
 
 ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS query_log"
-echo -n "parallel replicas used: "
-${CLICKHOUSE_CLIENT} --query "
-    SELECT ProfileEvents['ParallelReplicasUsedCount'] > 0
-    FROM system.query_log
-    WHERE current_database = currentDatabase()
-      AND log_comment = '04545_pr_${CLICKHOUSE_DATABASE}'
-      AND type = 'QueryFinish'
-      AND initial_query_id = query_id
-    SETTINGS enable_parallel_replicas = 0"
+for comment in 04545_pr 04545_pr_table; do
+    echo -n "$comment parallel replicas used: "
+    ${CLICKHOUSE_CLIENT} --query "
+        SELECT ProfileEvents['ParallelReplicasUsedCount'] > 0
+        FROM system.query_log
+        WHERE current_database = currentDatabase()
+          AND log_comment = '${comment}_${CLICKHOUSE_DATABASE}'
+          AND type = 'QueryFinish'
+          AND initial_query_id = query_id
+        SETTINGS enable_parallel_replicas = 0"
+done
 
 ${CLICKHOUSE_CLIENT} <<EOF
 DROP VIEW $db.pv_definer, $db.pv_invoker, $db.pv_none;

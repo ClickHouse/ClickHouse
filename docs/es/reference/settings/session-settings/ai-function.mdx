@@ -52,6 +52,25 @@ Número máximo de textos que se pueden incluir en una sola solicitud HTTP reali
 
 Número máximo de solicitudes HTTP que las funciones de IA pueden realizar por consulta. 0 (valor predeterminado) desactiva el límite. Se aplica de forma independiente en cada servidor y fragmento de consulta: dentro de un contexto de ejecución, es un límite exacto compartido por todas las funciones de IA, bloques e hilos presentes; sin embargo, una consulta distribuida (entre segmentos o fragmentos de réplicas paralelas) puede realizar hasta este número de solicitudes por segmento/fragmento. Debe establecerse en la consulta de nivel superior; se ignora una sobrescritura de `SETTINGS` en una subconsulta.
 
+## ai_function_max_concurrent_requests_per_thread {#ai_function_max_concurrent_requests_per_thread}
+
+<BetaBadge />
+
+<SettingsInfoBlock type="NonZeroUInt64" default_value="8" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "8"},{"label": "nueva configuración"}]}]} />
+
+Número máximo de solicitudes al provider que un thread de consulta puede tener en curso simultáneamente. Con `1`, las solicitudes se envían de una en una.
+
+Una consulta que se ejecuta en varios threads (como máximo `max_threads`) puede tener hasta este número de solicitudes en curso por thread. Use una [restricción de perfil de configuración](/es/concepts/features/configuration/settings/constraints-on-settings) (`<constraints><ai_function_max_concurrent_requests_per_thread><max>...</max></...>`) para fijar un límite superior que ninguna consulta pueda elevar. Este límite se sigue aplicando por thread.
+
+Un valor superior a `1` relaja dos garantías:
+
+* El uso de tokens de una solicitud solo se conoce cuando llega su respuesta, por lo que las cuotas de tokens (`ai_function_max_input_tokens_per_query`, `ai_function_max_output_tokens_per_query`) pueden superarse en el equivalente a una solicitud por cada solicitud en curso; es decir, hasta el equivalente a este número de solicitudes, en lugar de a una sola.
+* Se envía una tanda completa de solicitudes antes de detectar cualquiera de sus errores, por lo que una consulta que falla en su primera fila puede haber emitido (y haberse facturado) hasta este número de solicitudes.
+
+`ai_function_max_api_calls_per_query` no se ve afectado y sigue siendo un límite exacto, ya que se reserva un cupo antes de enviar cada solicitud.
+
 ## ai_function_max_input_tokens_per_query {#ai_function_max_input_tokens_per_query}
 
 <BetaBadge />
@@ -80,9 +99,9 @@ Este límite solo se aplica a los proveedores que informan un objeto `usage` en 
 
 <BetaBadge />
 
-<SettingsInfoBlock type="UInt64" default_value="1" />
+<SettingsInfoBlock type="UInt64" default_value="3" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "Reintenta un error transitorio de la API una vez de forma predeterminada, para que un único error 429 o 5xx del proveedor no haga fallar la consulta."}]}, {"id": "row-2","items": [{"label": "26.4"},{"label": "0"},{"label": "Nueva configuración"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "Reintenta un error transitorio de la API una vez de forma predeterminada, para que un único error 429 o 5xx del provider no haga fallar la consulta."}]}, {"id": "row-2","items": [{"label": "26.4"},{"label": "0"},{"label": "Nueva configuración"}]}, {"id": "row-3","items": [{"label": "26.10"},{"label": "3"},{"label": "Reintenta un error transitorio de la API hasta tres veces de forma predeterminada, para reducir la carga sobre un provider sobrecargado y con límite de tasa cuando hay solicitudes concurrentes."}]}]} />
 
 Número máximo de reintentos por errores transitorios para cada solicitud individual a la API. Cada reintento usa backoff exponencial a partir de `ai_function_retry_initial_delay_ms`.
 

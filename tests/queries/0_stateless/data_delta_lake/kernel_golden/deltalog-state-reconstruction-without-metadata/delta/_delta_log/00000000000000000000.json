@@ -1,0 +1,2 @@
+{"protocol":{"minReaderVersion":3,"minWriterVersion":7,"readerFeatures":[],"writerFeatures":[]}}
+{"add":{"path":"abc","partitionValues":{},"size":1,"modificationTime":1,"dataChange":true}}

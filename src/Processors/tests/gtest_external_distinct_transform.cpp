@@ -69,7 +69,7 @@ public:
     {
     }
 
-    Ptr merge(const Ptr & right) const override
+    [[nodiscard]] Ptr merge(const Ptr & right) const override
     {
         ++merge_calls;
         return right;

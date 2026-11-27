@@ -1,0 +1,11 @@
+partition	1
+partition_string	2
+partition_nullable	3
+serial	4
+bucket	5
+fixed_map	6
+collect leaks: 0
+partition_batch	1
+serial_batch	2
+tuple_batch	3
+batch leaks: 0

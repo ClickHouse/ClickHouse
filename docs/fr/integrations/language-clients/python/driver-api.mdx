@@ -153,6 +153,10 @@ Par défaut, il s’agit d’une base de données en mémoire. Passez `path="/da
 
 Les clients HTTP synchrones et asynchrones relancent les lectures éligibles après certaines fermetures de connexion côté distant ainsi qu&#39;après les réponses HTTP 429, 503 ou 504. Pour `query`, ses méthodes de requête spécialisées, `raw_query` et `raw_stream`, `query_retries` définit le nombre de tentatives supplémentaires. Les lectures éligibles bénéficient d&#39;au moins une nouvelle tentative après une fermeture côté distant, même lorsque `query_retries=0`. Une lecture envoyée via `command` peut être relancée une fois après une fermeture côté distant, mais elle ne consomme pas le budget `query_retries` et n&#39;est pas relancée en cas de réponse avec l&#39;un de ces statuts HTTP.
 
+Avant de relancer une requête ayant reçu une réponse HTTP 429, 503 ou 504, les deux clients attendent `0.1 * attempt` secondes (`attempt` commençant à 1), puis ferment la réponse en échec.
+
+Une connexion qui se ferme après la ligne de statut HTTP ou les en-têtes de progression, mais avant que ClickHouse n&#39;envoie les en-têtes de réponse finaux, est soumise à la même politique que les fermetures côté distant.
+
 Le client reconnaît les instructions de lecture telles que `SELECT`, `SHOW`, `DESCRIBE` et `EXISTS`, y compris les formes `WITH` et `EXPLAIN` prises en charge. Tout code SQL qu&#39;il ne parvient pas à identifier comme une lecture n&#39;est pas relancé après ces échecs. Les instructions contenant `PARALLEL WITH` ou `INTO OUTFILE`, ainsi que les requêtes regroupant plusieurs instructions, sont également exclues.
 
 Les écritures SQL, les instructions DDL et les mutations envoyées via `command`, `query`, `raw_query` ou `raw_stream` ne sont pas rejouées après ces échecs. Il en va de même lorsque DB-API ou SQLAlchemy exécute du SQL via ces méthodes. Une erreur de connexion ne permet pas de savoir si une écriture a été validée : vérifiez son résultat avant de la relancer dans votre application.

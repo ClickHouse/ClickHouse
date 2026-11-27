@@ -1,0 +1,176 @@
+---
+slug: /integrations/libredb-studio
+sidebarTitle: 'LibreDB Studio'
+description: 'Подключение LibreDB Studio — веб-IDE для SQL с открытым исходным кодом — к самостоятельно размещённому серверу ClickHouse через HTTP-интерфейс.'
+title: 'Подключение LibreDB Studio к ClickHouse'
+doc_type: 'guide'
+keywords: ['libredb studio', 'sql client', 'sql ide', 'web', 'open source', 'self-hosted', 'monitoring']
+integration:
+  - support_level: 'community'
+  - category: 'sql_client'
+---
+
+import { Image } from "/snippets/ru/components/Image.jsx";
+import { CommunityMaintainedBadge } from "/snippets/ru/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+
+<CommunityMaintainedBadge />
+
+[LibreDB Studio](https://github.com/libredb/libredb-studio) — это самоуправляемая SQL IDE с открытым исходным кодом (MIT),
+работающая в браузере. Она подключается к ClickHouse через HTTP-интерфейс, не требуя JDBC или нативного
+драйвера, и предоставляет редактор SQL, обозреватель баз данных, планы `EXPLAIN` и панель мониторинга
+на основе таблиц `system`.
+
+## Перед началом работы {#before-you-begin}
+
+* Запустите LibreDB Studio в Docker (`docker run -p 3000:3000 ghcr.io/libredb/libredb-studio:latest`)
+  или с помощью Node.js 24 или более поздней версии (`npx @libredb/studio`), затем откройте `http://localhost:3000`. При первом
+  запуске пароль администратора выводится в журнал.
+* Убедитесь, что с машины, на которой запущена LibreDB Studio, доступен HTTP- или HTTPS-порт ClickHouse.
+* Создайте пользователя ClickHouse с доступом к базам данных, к которым вы планируете выполнять запросы. Обозревателю баз данных
+  также требуются привилегии `SELECT` на `system.dictionaries` и `system.data_skipping_indices`, а также `dictGet` на
+  каждую базу данных, содержащую словари. Для работы панели мониторинга выдайте привилегию `SELECT` на таблицы `system`,
+  перечисленные в разделе [Мониторинг ClickHouse](#monitor-clickhouse).
+
+Например, для пользователя `reader`, который выполняет запросы к базе данных `uk`:
+
+```sql
+GRANT SELECT ON uk.* TO reader;
+GRANT dictGet ON uk.* TO reader;
+GRANT SELECT ON system.dictionaries TO reader;
+GRANT SELECT ON system.data_skipping_indices TO reader;
+```
+
+| Развертывание                         | Протестированная версия | Примечания                                                    |
+| ------------------------------------- | ----------------------- | ------------------------------------------------------------- |
+| Самостоятельно размещённый ClickHouse | 26.7                    | Используется интерфейс HTTP(S) (`8123` или `8443` для HTTPS). |
+
+## Как это работает {#how-it-works}
+
+1. Браузер отправляет оператор на сервер LibreDB Studio.
+2. Сервер передаёт его в ClickHouse в теле HTTP-запроса `POST /`; `default_format=JSONCompact` и выбранная
+   база данных передаются как параметры URL, а учётные данные — через
+   базовую аутентификацию HTTP.
+3. Сервер возвращает строки, типы столбцов, объявленные ClickHouse, и затраченное время, сообщённое
+   ClickHouse. Каждый оператор выполняется как отдельный запрос без сохранения состояния; сеанс не закрепляется.
+
+## Подключение к самостоятельно размещённому ClickHouse {#connect-to-self-hosted-clickhouse}
+
+<Steps>
+  <Step title="Соберите сведения о подключении" id="gather-your-connection-details">
+    Вам понадобятся хост, HTTP-порт (по умолчанию `8123`; либо HTTPS-порт, который использует ваш сервер, — обычно
+    `8443`), имя пользователя и пароль, а также при необходимости имя базы данных. Если база данных
+    в соединении не указана, используется `default`.
+  </Step>
+
+  <Step title="Создайте подключение" id="create-the-connection">
+    1. На боковой панели нажмите **+** (**New connection**).
+    2. Выберите **ClickHouse** в качестве типа базы данных. В поле порта автоматически подставляется `8123`.
+    3. Введите имя соединения, хост, порт, имя пользователя, пароль и при необходимости
+       имя базы данных.
+    4. Для HTTPS откройте **SSL / TLS**, выберите любой режим SSL, кроме `disable`, и замените значение **Port** на
+       HTTPS-порт вашего сервера (обычно `8443`). Во всех режимах, кроме `disable`, сертификат сервера проверяется
+       по CA, которым доверяет сервер LibreDB Studio, — именно это и описывает режим `verify-system`.
+       Такой вариант подходит для ClickHouse Cloud и для серверов, сертификат которых выдан общепризнанным
+       доверенным CA. О самоподписанных сертификатах и сертификатах частного CA см. раздел
+       [Устранение неполадок](#troubleshooting).
+    5. Нажмите **Test Connection**, затем **Establish Connection**.
+
+    Вместо заполнения полей можно вставить URL с помощью **Paste URL**, например
+    `clickhouse://localhost:8123/default` или `https://reader:secret@ch.example.com:8443/analytics`.
+    URL со схемой `https://` включает TLS.
+
+    <Image img="/images/integrations/sql-clients/libredb-studio-new-connection.png" size="sm" border alt="Диалог New Connection в LibreDB Studio с выбранным ClickHouse, заполненными хостом, портом 8123, именем пользователя и базой данных, а также успешной проверкой подключения" />
+  </Step>
+
+  <Step title="Выполните запрос" id="run-a-query">
+    Откройте соединение, введите оператор в редакторе и выполните его. В обозревателе баз данных для каждой
+    базы данных отображаются таблицы, представления, materialized view, словари и пользовательские функции, а также
+    столбцы, столбцы первичного ключа, индексы пропуска данных и определения объектов.
+
+    В этом примере используется [набор данных UK Property Price](/ru/get-started/sample-datasets/uk-price-paid).
+    Загрузите его в `uk.uk_price_paid`, как описано в соответствующем руководстве, укажите `uk` в качестве базы данных соединения
+    и выполните:
+
+    ```sql
+    SELECT
+        town,
+        count() AS sales,
+        round(avg(price)) AS average_price
+    FROM uk_price_paid
+    GROUP BY town
+    ORDER BY sales DESC
+    LIMIT 10
+    ```
+
+    <Image img="/images/integrations/sql-clients/libredb-studio-query.png" size="md" border alt="SQL-редактор LibreDB Studio с запросом к uk_price_paid и таблицей результатов с объявленными типами столбцов ClickHouse" />
+  </Step>
+</Steps>
+
+## Мониторинг ClickHouse {#monitor-clickhouse}
+
+Панель мониторинга считывает данные из следующих источников от имени пользователя, указанного в соединении:
+
+| Область                                                        | Источник в ClickHouse                                               |
+| -------------------------------------------------------------- | ------------------------------------------------------------------- |
+| Версия, время непрерывной работы, соединения                   | `version()`, `uptime()`, `system.metrics`, `system.server_settings` |
+| Коэффициент попаданий в кэш, запросы в секунду, память         | `system.events`, `system.asynchronous_metrics`                      |
+| Медленные запросы, сгруппированные по нормализованному запросу | `system.query_log`                                                  |
+| Выполняемые запросы                                            | `system.processes`                                                  |
+| Таблицы, части таблиц, строки и размер                         | `system.tables`, `system.parts`                                     |
+| Индексы пропуска данных                                        | `system.data_skipping_indices`                                      |
+| Диски                                                          | `system.disks`                                                      |
+
+Если у пользователя нет привилегии на одну из этих таблиц или `query_log` отключён, соответствующая панель
+просто остаётся пустой, не нарушая работу всей панели мониторинга. `system.query_log` сбрасывается на диск асинхронно, поэтому
+только что завершившийся оператор может появиться в нём с задержкой в несколько секунд.
+
+Кроме того, LibreDB Studio позволяет выполнить `OPTIMIZE TABLE ... FINAL` для таблицы, просмотреть сводку `system.parts`
+по таблице или базе данных и остановить выполняемый запрос с помощью `KILL QUERY ... SYNC`. Для этих операций требуются
+соответствующие привилегии.
+
+<Image img="/images/integrations/sql-clients/libredb-studio-monitoring.png" size="md" border alt="Обзор мониторинга LibreDB Studio для соединения с ClickHouse: версия сервера, время непрерывной работы, соединения, размер хранилища, коэффициент попаданий в кэш и количество таблиц" />
+
+## Устранение неполадок {#troubleshooting}
+
+<Accordion title="Соединение отклонено или истекло время ожидания">
+  Запросы отправляет сервер LibreDB Studio, а не ваш браузер, поэтому хост должен быть доступен с
+  машины или из контейнера, где он запущен. Если LibreDB Studio работает в Docker, а ClickHouse — на
+  той же машине, `localhost` указывает на контейнер, а не на хост. Убедитесь, что вы указали
+  HTTP-порт, а не порт собственного протокола `9000`.
+</Accordion>
+
+<Accordion title="HTTPS не работает с самоподписанным сертификатом или сертификатом частного центра сертификации">
+  Сервер LibreDB Studio работает на Node.js, который проверяет сертификат сервера по собственному
+  встроенному списку публичных CA. CA‑сертификат, вставленный в разделе **SSL / TLS**, игнорируется, а
+  одного лишь добавления CA в хранилище сертификатов операционной системы недостаточно. Запустите сервер
+  LibreDB Studio с переменной окружения `NODE_EXTRA_CA_CERTS`, указав в ней путь к PEM-файлу
+  с вашим CA‑сертификатом или, если сертификат самоподписанный, с сертификатом самого сервера. При использовании Docker смонтируйте
+  файл в контейнер и передайте, например, `-e NODE_EXTRA_CA_CERTS=/certs/ca.pem`.
+</Accordion>
+
+<Accordion title="Обозреватель баз данных не показывает объекты или словарь отображается как таблица">
+  Обозреватель баз данных читает `system.dictionaries`, чтобы распределить объекты каждой базы данных по типам, а
+  `system.data_skipping_indices` — чтобы получить сведения о таблице. Без `SELECT` на `system.dictionaries`
+  список объектов не загружается, а без `SELECT` на `system.data_skipping_indices` не открываются сведения о
+  таблице. Словарь отображается среди таблиц, пока у пользователя нет `dictGet` на его базу данных.
+  Выдайте эти привилегии, как показано в разделе [Перед началом работы](#before-you-begin), затем обновите обозреватель.
+</Accordion>
+
+<Accordion title="Некоторые панели на панели мониторинга пусты">
+  Пользователь ClickHouse не может читать одну или несколько таблиц `system`, перечисленных в разделе
+  [Мониторинг ClickHouse](#monitor-clickhouse). Выдайте `SELECT` на нужные таблицы и переподключитесь.
+</Accordion>
+
+<Accordion title="Представление медленных запросов пусто">
+  Представление медленных запросов читает `system.query_log`, куда ничего не записывается, пока логирование запросов выключено.
+  Включите настройку `log_queries` для пользователя, например в его профиле настроек, и выполните несколько
+  запросов. Новые записи появятся после сброса журнала, что может занять несколько секунд.
+  Если представление остаётся пустым, возможно, логирование запросов отключено для всего сервера, а не только для
+  пользователя. Убедитесь, что в конфигурации сервера есть раздел `query_log`, как описано в
+  [system.query&#95;log](/ru/operations/system-tables/query_log).
+</Accordion>
+
+## Дальнейшие шаги {#next-steps}
+
+* Подробное описание работы см. в [документации по провайдеру ClickHouse для LibreDB Studio](https://github.com/libredb/libredb-studio/blob/main/docs/providers/clickhouse.md).
+* Сведения о конфигурации сервера см. в [документации по HTTP-интерфейсу ClickHouse](/ru/concepts/features/interfaces/http).

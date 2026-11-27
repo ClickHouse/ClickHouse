@@ -7,7 +7,6 @@ doc_type: 'guide'
 ---
 
 import { PrivatePreviewBadge } from '/snippets/es/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
-import { Image } from "/snippets/es/components/Image.jsx";
 
 <PrivatePreviewBadge />
 
@@ -19,7 +18,15 @@ Una sesión de soporte es una ventana de tiempo acotada en la cual el solucionad
 
 Las sesiones rigen únicamente los diagnósticos. Los comandos de ciclo de vida de los servicios en modo Managed viajan por el canal independiente del executor, que una sesión de soporte ni abre ni controla; consulte [servicios administrados](/es/products/bring-your-own-cloud/connector/managed-services#service-lifecycle).
 
-<Image img="/images/cloud/reference/byoc-connector-session-trust.svg" size="lg" alt="Flujo de confianza de la sesión de soporte de ClickHouse Connector" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Flujo de confianza de la sesión de soporte de ClickHouse Connector](/images/cloud/reference/byoc-connector-session-trust.svg)
+
+</Frame>
+
+</div>
 
 Usted controla las sesiones a través de dos superficies:
 

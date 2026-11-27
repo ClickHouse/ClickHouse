@@ -7,8 +7,6 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 任何可观测性解决方案都需要具备收集并导出日志和链路追踪的能力。为此，ClickHouse 推荐使用 [OpenTelemetry (OTel) 项目](https://opentelemetry.io/)。
 
 “OpenTelemetry 是一个可观测性框架和工具包，旨在创建和管理链路追踪、指标和日志等遥测数据。”
@@ -62,7 +60,15 @@ OpenTelemetry collector 提供[多个发行版](https://github.com/open-telemetr
 
 Collector 将其三个主要处理阶段称为 [receiver](https://opentelemetry.io/docs/collector/configuration/#receivers)、[处理器](https://opentelemetry.io/docs/collector/configuration/#processors) 和 [exporter](https://opentelemetry.io/docs/collector/configuration/#exporters)。receiver 用于采集数据，可以是拉取式，也可以是推送式。处理器可对消息进行转换和富集。exporter 则负责将数据发送到下游服务。理论上，这个服务也可以是另一个 collector，但在下面的初步说明中，我们假设所有数据都直接发送到 ClickHouse。
 
-<Image img="/images/use-cases/observability/observability-3.webp" alt="收集日志" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![收集日志](/images/use-cases/observability/observability-3.webp)
+
+</Frame>
+
+</div>
 
 我们建议用户先熟悉完整的 receiver、处理器和 exporter 体系。
 
@@ -70,13 +76,29 @@ collector 提供两种用于收集日志的主要 receiver：
 
 **通过 OTLP** - 在这种情况下，日志会通过 OTLP 协议由 OpenTelemetry SDK 直接发送 (推送) 到 collector。[OpenTelemetry Demo](https://opentelemetry.io/docs/demo/) 就采用了这种方式，其中各语言中的 OTLP exporter 都默认使用本地 collector 端点。在这种情况下，collector 必须配置 OTLP receiver——参见上方的 [demo 配置](https://github.com/ClickHouse/opentelemetry-demo/blob/main/src/otelcollector/otelcol-config.yml#L5-L12)。这种方式的优势在于，日志数据会自动包含 trace ID，从而便于用户后续根据特定日志定位对应的 trace，反之亦然。
 
-<Image img="/images/use-cases/observability/observability-4.webp" alt="通过 otlp 收集日志" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![通过 otlp 收集日志](/images/use-cases/observability/observability-4.webp)
+
+</Frame>
+
+</div>
 
 这种方式要求用户使用其[对应语言的 SDK](https://opentelemetry.io/docs/languages/)对代码进行埋点。
 
 * **通过 Filelog receiver 抓取** - 该 receiver 会持续跟踪磁盘上的文件，并生成日志消息，然后将其发送到 ClickHouse。该 receiver 可处理多种复杂任务，例如检测多行消息、处理日志轮转、通过检查点机制增强重启后的稳健性，以及提取结构。该 receiver 还可以跟踪 Docker 和 Kubernetes 容器日志，并可作为 Helm 图表部署，[从中提取结构](https://opentelemetry.io/blog/2024/otel-collector-container-log-parser/)，再结合 pod 详情对其进行富化。
 
-<Image img="/images/use-cases/observability/observability-5.webp" alt="File log receiver" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![File log receiver](/images/use-cases/observability/observability-5.webp)
+
+</Frame>
+
+</div>
 
 **大多数部署都会结合使用上述 receiver。我们建议用户阅读[collector 文档](https://opentelemetry.io/docs/collector/)，熟悉基本概念，以及[配置结构](https://opentelemetry.io/docs/collector/configuration/)和[安装方法](https://opentelemetry.io/docs/collector/installation/)。**
 
@@ -650,7 +672,15 @@ SETTINGS ttl_only_drop_parts = 1
 
 如果无法保证大批次，你可以使用[异步插入](/zh/concepts/best-practices/selecting-an-insert-strategy#asynchronous-inserts)将批处理交给 ClickHouse。使用异步插入时，数据会先写入 buffer，之后再延迟写入数据库存储，也就是以异步方式写入。
 
-<Image img="/images/use-cases/observability/observability-6.webp" alt="异步插入" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![异步插入](/images/use-cases/observability/observability-6.webp)
+
+</Frame>
+
+</div>
 
 启用[异步插入](/zh/concepts/features/operations/insert/asyncinserts#enabling-asynchronous-inserts)后，当 ClickHouse ① 收到插入查询时，查询中的数据会先②立即写入内存 buffer。到③下一次 buffer flush 时，buffer 中的数据会被[排序](/zh/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-stored-on-disk-ordered-by-primary-key-columns)，并作为一个分片写入数据库存储。请注意，在数据 flush 到数据库存储之前，这些数据无法被查询到；buffer flush 是[可配置的](/zh/concepts/features/operations/insert/asyncinserts)。
 
@@ -680,7 +710,15 @@ SETTINGS ttl_only_drop_parts = 1
 
 在仅使用 agent 的架构中，用户将 OTel collector 作为 agent 部署在边缘。这些 agent 从本地应用接收链路追踪 (例如以 sidecar 容器的形式) ，并从服务器和 Kubernetes 节点收集日志。在这种模式下，agent 会将数据直接发送到 ClickHouse。
 
-<Image img="/images/use-cases/observability/observability-7.webp" alt="仅使用 agent" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![仅使用 agent](/images/use-cases/observability/observability-7.webp)
+
+</Frame>
+
+</div>
 
 这种架构适用于中小规模部署。其主要优势是不需要额外硬件，能够将 ClickHouse 可观测性方案的整体资源占用降到最低，同时应用与 collector 之间的对应关系也比较简单。
 
@@ -696,7 +734,15 @@ SETTINGS ttl_only_drop_parts = 1
 
 OTel collector 可以部署为 Gateway 实例，以应对上述限制。它们提供独立的服务，通常按数据中心或区域部署。这些实例通过单个 OTLP 端点接收来自应用程序 (或承担 agent 角色的其他 collector) 的事件。通常会部署一组 Gateway 实例，并使用现成的负载均衡器在它们之间分配流量。
 
-<Image img="/images/use-cases/observability/observability-8.webp" alt="通过 Gateway 扩缩容" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![通过 Gateway 扩缩容](/images/use-cases/observability/observability-8.webp)
+
+</Frame>
+
+</div>
 
 这种架构的目标是将计算密集型处理从 agent 侧卸载出去，从而尽可能降低其资源占用。这些 Gateway 可以执行原本需要由 agent 完成的转换任务。此外，通过聚合来自多个 agent 的事件，Gateway 可以确保向 ClickHouse 发送更大的批次，从而实现高效插入。随着部署更多 agent 且事件吞吐量增加，这些 Gateway collector 也可以轻松扩缩容。下面展示了一个 Gateway 配置示例，以及一个关联的 agent 配置，该配置会消费示例中的结构化日志文件。请注意，agent 与 Gateway 之间通过 OTLP 通信。
 
@@ -792,7 +838,15 @@ service:
 
 不过，如果你需要较高的投递保障，或者需要回放数据的能力 (可能回放到多个目标) ，Kafka 仍然是一个有用的架构补充。
 
-<Image img="/images/use-cases/observability/observability-9.webp" alt="添加 Kafka" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![添加 Kafka](/images/use-cases/observability/observability-9.webp)
+
+</Frame>
+
+</div>
 
 在这种情况下，可以将 OTel agent 配置为通过 [Kafka exporter](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/exporter/kafkaexporter/README.md) 将数据发送到 Kafka。而 Gateway 实例则使用 [Kafka receiver](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/receiver/kafkareceiver/README.md) 来消费消息。更多细节请参考 Confluent 和 OTel 文档。
 

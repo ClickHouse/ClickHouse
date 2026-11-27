@@ -38,6 +38,16 @@ ClickHouse 接受 W3C [Trace Context 建议](https://www.w3.org/TR/trace-context
 
 对 `Distributed` 表执行的 `INSERT` 查询会在 `DistributedSink` 中产生类似的 span，并使用相同的 `clickhouse.cluster` 和 `clickhouse.shard_num` 属性键。
 
+### 分布式执行计划任务的 span {#spans-of-distributed-plan-tasks}
+
+启用实验性的 `make_distributed_plan` 设置后，查询会被拆分为由多个阶段组成的执行计划，每个阶段再拆分为若干任务，并通过 HTTP 分派给无状态工作节点。分派请求通过 `traceparent` 和 `tracestate` 请求头携带追踪上下文，因此工作节点上的 span 会并入发起服务器的 trace：
+
+* `StatelessWorkerClient::sendTask` (类型 `CLIENT`) —— 发起服务器上每个已分派的任务各对应一个 span，仅涵盖启动请求；任务本身在工作节点上异步运行，并通过轮询确认是否完成。属性：`clickhouse.distributed.task_id`、`clickhouse.initial_query_id` 和 `clickhouse.target_host`，分派失败时另含 `clickhouse.exception`；
+* `InterserverIOHTTPHandler` (类型 `SERVER`) —— 携带追踪上下文的请求在工作节点侧的 span，包含 `clickhouse.uri`、`http.method` 和 `clickhouse.http_status`。如果请求在任务启动前就已失败 (身份验证失败，或端点抛出异常) ，则会在此 span 上记录 `clickhouse.exception` 和 `clickhouse.exception_code`，此时它就是该次分派在工作节点侧留下的唯一追踪记录。不带 `traceparent` 请求头的请求 (例如副本之间的数据分片拉取操作) 不会被追踪；
+* `DistributedPlanTask::execute` (类型 `SERVER`) —— 表示工作节点上单个任务的执行，相当于常规查询中的 `query` span：它以相同方式携带 `db.statement`、`clickhouse.query_id`，以及 `clickhouse.query_status` 或异常信息；此外还包含标识任务身份的属性：`clickhouse.distributed.task_id`、`clickhouse.initial_query_id`、`clickhouse.distributed.plan_hash` (已序列化执行计划片段的哈希) 、`clickhouse.distributed.serialization_version`、`clickhouse.distributed.execute_locally`，以及该任务所读写的 `clickhouse.exchange.inputs` / `clickhouse.exchange.outputs` 流。
+
+任务 span 的生命周期长于启动它的请求 span。当设置 `distributed_plan_execute_locally = 1` 时，不会发送任何请求：任务直接在发起服务器的线程上运行，其 `DistributedPlanTask::execute` span 也会直接附加到发起服务器的 trace 上。
+
 ## 追踪 ClickHouse Keeper 请求 {#tracing-clickhouse-keeper-requests}
 
 ClickHouse 支持对 [ClickHouse Keeper](/zh/guides/oss/deployment-and-scaling/keeper/index) 请求进行 OpenTelemetry 追踪 (ClickHouse 的兼容 ZooKeeper 语义的协调服务) 。该功能可让你详细了解 Keeper 操作的整个生命周期，从客户端提交请求到服务端处理。

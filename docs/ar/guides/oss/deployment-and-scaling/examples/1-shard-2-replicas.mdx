@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['النسخ المتماثل', 'التوافر العالي', 'إعداد العنقود', 'تكرار البيانات', 'تحمّل الأعطال']
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 import ConfigExplanation from '/snippets/ar/_config_explanation.mdx';
 import ListenHost from '/snippets/ar/_listen_host.mdx';
 import ServerParameterTable from '/snippets/ar/_server_parameter_table.mdx';
@@ -17,6 +15,7 @@ import KeeperConfigExplanation from '/snippets/ar/_keeper_explanation.mdx';
 import VerifyKeeperStatus from '/snippets/ar/_verify_keeper_using_mntr.mdx';
 import DedicatedKeeperServers from '/snippets/ar/_dedicated_keeper_servers.mdx';
 import ExampleFiles from '/snippets/ar/_working_example.mdx';
+
 import CloudTip from '/snippets/ar/_cloud_tip.mdx';
 
 > في هذا المثال، ستتعلّم كيفية إعداد عنقود ClickHouse بسيط
@@ -26,7 +25,15 @@ import CloudTip from '/snippets/ar/_cloud_tip.mdx';
 
 تظهر أدناه معمارية العنقود الذي ستقوم بإعداده:
 
-<Image img="/images/deployment-guides/replication-sharding-examples/replication.webp" size="md" alt="مخطط معمارية لجزء بيانات واحد ونسختين متماثلتين باستخدام ReplicatedMergeTree" />
+<div className="ch-image-md">
+
+<Frame>
+
+![مخطط معمارية لجزء بيانات واحد ونسختين متماثلتين باستخدام ReplicatedMergeTree](/images/deployment-guides/replication-sharding-examples/replication.webp)
+
+</Frame>
+
+</div>
 
 <DedicatedKeeperServers />
 

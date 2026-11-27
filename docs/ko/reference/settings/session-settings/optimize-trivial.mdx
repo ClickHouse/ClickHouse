@@ -23,7 +23,7 @@ import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
 가능한 값:
 
 * 0 — 최적화가 비활성화됩니다.
-  * 1 — 최적화가 활성화됩니다.
+* 1 — 최적화가 활성화됩니다.
 
 ## optimize_trivial_count_query {#optimize_trivial_count_query}
 
@@ -34,7 +34,7 @@ MergeTree의 메타데이터를 사용해 단순한 `SELECT count() FROM table` 
 가능한 값:
 
 * 0 — 최적화가 비활성화됩니다.
-  * 1 — 최적화가 활성화됩니다.
+* 1 — 최적화가 활성화됩니다.
 
 관련 항목:
 
@@ -64,7 +64,7 @@ MergeTree가 이미 `serialization.json`에 유지하는 컬럼별 `num_defaults
 * 부호 없는 정수 컬럼의 `col > 0`, `col >= 1`, `col < 1`, `col <= 0`.
 * `Int*`, `UInt*`, `Bool` 컬럼의 단독 `col` / `NOT col`(truthy 검사).
 
-등호 비교 패턴은 `Float*`, `Enum*`, `Nullable`, `LowCardinality`,
+등호 비교 패턴은 `Float*`, `Enum*`, `Date32`, `Nullable`, `LowCardinality`,
 또는 복합 타입(`Tuple`, `Array`, `Map`, ...)에는 적용되지 않습니다. 이러한 타입에서는 count가
 일반 스캔 경로로 처리됩니다.
 
@@ -82,7 +82,7 @@ MergeTree가 이미 `serialization.json`에 유지하는 컬럼별 `num_defaults
 가능한 값:
 
 * 0 — 최적화가 비활성화됩니다.
-  * 1 — 최적화가 활성화됩니다.
+* 1 — 최적화가 활성화됩니다.
 
 관련 항목:
 

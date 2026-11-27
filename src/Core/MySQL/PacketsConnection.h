@@ -25,7 +25,7 @@ public:
     String auth_plugin_data;
 
 protected:
-    size_t getPayloadSize() const override;
+    [[nodiscard]] size_t getPayloadSize() const override;
 
     void readPayloadImpl(ReadBuffer & payload) override;
 
@@ -51,7 +51,7 @@ public:
     String auth_plugin_name;
 
 protected:
-    size_t getPayloadSize() const override;
+    [[nodiscard]] size_t getPayloadSize() const override;
 
     void readPayloadImpl(ReadBuffer & payload) override;
 
@@ -72,7 +72,7 @@ public:
     String auth_plugin_data;
 
 protected:
-    size_t getPayloadSize() const override;
+    [[nodiscard]] size_t getPayloadSize() const override;
 
     void writePayloadImpl(WriteBuffer & buffer) const override;
 
@@ -95,7 +95,7 @@ public:
     String data;
 
 protected:
-    size_t getPayloadSize() const override;
+    [[nodiscard]] size_t getPayloadSize() const override;
 
     void writePayloadImpl(WriteBuffer & buffer) const override;
 

@@ -7,8 +7,6 @@ keywords: ['重複排除戦略', 'データ重複排除', 'upsert', '更新と�
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 **重複排除**とは、***データセットから重複した行を取り除くこと***&#x3092;指します。OLTP データベースでは、各行が一意の主キーを持つため、これは簡単に行えますが、その代償として insert は遅くなります。挿入するすべての行について、まず既存の行を検索し、見つかった場合は置き換える必要があるためです。
 
 ClickHouse は、高速なデータ挿入を重視して設計されています。ストレージファイルは不変であり、ClickHouse は行を挿入する前に既存の主キーを確認しないため、重複排除にはもう少し手間がかかります。つまり、重複排除は即時には行われず、**最終的に**行われるということです。そのため、いくつかの副作用があります。
@@ -20,7 +18,7 @@ ClickHouse は、高速なデータ挿入を重視して設計されています
 <div class="transparent-table">
   |                                                                                      |                                                                                                                                                                                                                                |
   | ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-  | <Image img="/images/guides/developer/de_duplication.webp" alt="重複排除のロゴ" size="sm" /> | ClickHouse では、重複排除をはじめとするさまざまなトピックについて、無料のトレーニングを提供しています。[Deleting and Updating Data training module](https://learn.clickhouse.com/visitor_catalog_class/show/1328954/?utm_source=clickhouse\&utm_medium=docs) は、その出発点として最適です。 |
+  | <span className="ch-image-sm"><Frame>![重複排除のロゴ](/images/guides/developer/de_duplication.webp)</Frame></span> | ClickHouse では、重複排除をはじめとするさまざまなトピックについて、無料のトレーニングを提供しています。[Deleting and Updating Data training module](https://learn.clickhouse.com/real-time-analytics-with-clickhouse/550461) は、その出発点として最適です。 |
 </div>
 
 <div id="options-for-deduplication">
@@ -33,7 +31,7 @@ ClickHouse では、重複排除は次のテーブルエンジンを使って実
 
 2. 行の折りたたみ: `CollapsingMergeTree` および `VersionedCollapsingMergeTree` テーブルエンジンでは、既存の行を「キャンセル」し、新しい行を挿入するというロジックを使用します。これらは `ReplacingMergeTree` より実装が複雑ですが、データがまだマージ済みかどうかを気にせず、クエリや集計をよりシンプルに記述できます。これら 2 つのテーブルエンジンは、データを頻繁に更新する必要がある場合に役立ちます。
 
-以下では、これら 2 つの手法を順に説明します。詳細については、無料のオンデマンド [Deleting and Updating Data training module](https://learn.clickhouse.com/visitor_catalog_class/show/1328954/?utm_source=clickhouse\&utm_medium=docs) をご覧ください。
+以下では、これら 2 つの手法を順に説明します。詳細については、無料のオンデマンド [Deleting and Updating Data training module](https://learn.clickhouse.com/real-time-analytics-with-clickhouse/550461) をご覧ください。
 
 <div id="using-replacingmergetree-for-upserts">
   ## upsert に ReplacingMergeTree を使う
@@ -164,7 +162,7 @@ GROUP BY (id, author, comment)
 
 上記のクエリで示したようにグループ化すると、`FINAL` キーワードを使用するよりも、実際には (クエリ性能の観点で) 効率的な場合があります。
 
-この例については、[Deleting and Updating Data training module](https://learn.clickhouse.com/visitor_catalog_class/show/1328954/?utm_source=clickhouse\&utm_medium=docs) でさらに詳しく解説しており、`ReplacingMergeTree` で `version` カラムを使用する方法も含まれています。
+この例については、[Deleting and Updating Data training module](https://learn.clickhouse.com/real-time-analytics-with-clickhouse/550461) でさらに詳しく解説しており、`ReplacingMergeTree` で `version` カラムを使用する方法も含まれています。
 
 <div id="using-collapsingmergetree-for-updating-columns-frequently">
   ## カラムを頻繁に更新するための CollapsingMergeTree の使用

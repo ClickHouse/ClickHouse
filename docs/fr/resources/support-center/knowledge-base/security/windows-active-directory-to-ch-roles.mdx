@@ -35,15 +35,39 @@ Dans cet environnement, nous avons les éléments suivants :
 
 * Exemple d’environnement AD et de structure d’UO :
 
-<Image img={ad_env} size="md" alt="Exemple d’environnement AD et de structure d’UO" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Exemple d’environnement AD et de structure d’UO](/images/knowledgebase/windows-ad-ch-roles/AD_Env_and_UO_structure.webp)
+
+</Frame>
+
+</div>
 
 * Exemple de configuration des groupes de sécurité AD :
 
-<Image img={ad_group} size="md" alt="Exemple de configuration des groupes de sécurité AD" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Exemple de configuration des groupes de sécurité AD](/images/knowledgebase/windows-ad-ch-roles/AD_Group_clickhouse_ad_db1_users.webp)
+
+</Frame>
+
+</div>
 
 * Exemple de configuration d’un utilisateur AD :
 
-<Image img={ad_user} size="md" alt="Exemple de configuration d’un utilisateur AD" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Exemple de configuration d’un utilisateur AD](/images/knowledgebase/windows-ad-ch-roles/AD_user_clickhouse_db1_user.webp)
+
+</Frame>
+
+</div>
 
 1. Dans Utilisateurs et groupes AD sous Windows, ajoutez chaque utilisateur à son ou ses groupes respectifs ; ils seront ensuite mappés aux rôles ClickHouse (voir l’exemple à l’étape suivante).
 
@@ -56,7 +80,15 @@ Dans cet environnement, nous avons les éléments suivants :
 
 * Exemple d’appartenance d’un utilisateur à des groupes :
 
-<Image img={ad_user_group} size="md" alt="Exemple d’appartenance d’un utilisateur à des groupes" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Exemple d’appartenance d’un utilisateur à des groupes](/images/knowledgebase/windows-ad-ch-roles/AD_user_to_group.webp)
+
+</Frame>
+
+</div>
 
 2. Dans le `config.xml` de ClickHouse, ajoutez la configuration `ldap_servers` à chaque nœud ClickHouse.
 

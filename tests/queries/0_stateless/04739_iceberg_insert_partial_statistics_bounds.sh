@@ -67,13 +67,13 @@ ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query \
     "INSERT INTO ${PREFIX}_c SELECT number::Int32, 'val-' || toString(number) FROM numbers(5)"
 report "${ROOT}/c"
 
-# Case D: wrapper composition with a non-NULL value. Float64 is unsupported for bounds even though
-# the byte dumper handles it, so the filter must gate on the bounds predicate and skip only `f`.
-echo '--- D: key Int32 + f Nullable(Float64) with values'
+# Case D: wrapper composition with a non-NULL value. `Float64` is dumpable, but an all-NaN column has no
+# valid bound, so the filter must gate on the bounds predicate and skip only `f`.
+echo '--- D: key Int32 + f Nullable(Float64) all NaN'
 ${CLICKHOUSE_CLIENT} --query "
     CREATE TABLE ${PREFIX}_d (key Int32, f Nullable(Float64))
     ENGINE = IcebergLocal('${ROOT}/d/')
 "
 ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query \
-    "INSERT INTO ${PREFIX}_d SELECT number::Int32, number + 0.5 FROM numbers(5)"
+    "INSERT INTO ${PREFIX}_d SELECT number::Int32, nan FROM numbers(5)"
 report "${ROOT}/d"

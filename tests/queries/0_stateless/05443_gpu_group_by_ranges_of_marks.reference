@@ -1,6 +1,6 @@
 in ranges of marks
 in ranges of marks
-- device, use_skip_indexes_on_data_read = 0
+- use_skip_indexes_on_data_read = 0
 ok
 ok
 ok
@@ -8,23 +8,7 @@ ok
 ok
 ok
 ok
-- device, use_skip_indexes_on_data_read = 1
-ok
-ok
-ok
-ok
-ok
-ok
-ok
-- host, use_skip_indexes_on_data_read = 0
-ok
-ok
-ok
-ok
-ok
-ok
-ok
-- host, use_skip_indexes_on_data_read = 1
+- use_skip_indexes_on_data_read = 1
 ok
 ok
 ok

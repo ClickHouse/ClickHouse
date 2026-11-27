@@ -8,7 +8,6 @@ doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/es/components/Image.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.monitoring-dashboard-beta" />
 
@@ -16,7 +15,15 @@ La pestaña **Monitoring** en la barra lateral izquierda de una instancia muestr
 gráficos en tiempo real del uso de recursos y de la actividad de la base de datos en el
 periodo de tiempo seleccionado.
 
-<Image img="/images/managed-postgres/monitoring/dashboard.webp" alt="Panel de Monitoring que muestra IOPS, uso de CPU, memoria, disco, tráfico de red, tamaño de la base de datos, conexiones, rendimiento, transacciones, tasa de aciertos de caché e interbloqueos" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Panel de Monitoring que muestra IOPS, uso de CPU, memoria, disco, tráfico de red, tamaño de la base de datos, conexiones, rendimiento, transacciones, tasa de aciertos de caché e interbloqueos](/images/managed-postgres/monitoring/dashboard.webp)
+
+</Frame>
+
+</div>
 
 <div id="panels">
   ## Paneles

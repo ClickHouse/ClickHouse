@@ -7,8 +7,6 @@ keywords: ['chdb', 'datastore', 'pandas', 'dataframe', 'sql', 'évaluation pares
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 DataStore est l’API compatible avec pandas de chDB. Elle associe l’interface familière des DataFrame pandas à la puissance de l’optimisation des requêtes SQL et vous permet d’écrire du code dans le style de pandas tout en bénéficiant des performances de ClickHouse.
 
 <div id="key-features">
@@ -25,7 +23,15 @@ DataStore est l’API compatible avec pandas de chDB. Elle associe l’interface
   ## Architecture
 </div>
 
-<Image size="md" img="/images/chdb/datastore_architecture.png" alt="Architecture de DataStore" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Architecture de DataStore](/images/chdb/datastore_architecture.png)
+
+</Frame>
+
+</div>
 
 DataStore utilise une **évaluation paresseuse** avec une **exécution sur deux moteurs** :
 

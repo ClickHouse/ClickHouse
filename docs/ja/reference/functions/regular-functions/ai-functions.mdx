@@ -28,6 +28,7 @@ AI 関数は ClickHouse の組み込み関数で、AI の呼び出しや埋め�
 
 * **クォータの適用**: トークン ([`ai_function_max_input_tokens_per_query`](/ja/reference/settings/session-settings/ai-function#ai_function_max_input_tokens_per_query), [`ai_function_max_output_tokens_per_query`](/ja/reference/settings/session-settings/ai-function#ai_function_max_output_tokens_per_query)) および API 呼び出し ([`ai_function_max_api_calls_per_query`](/ja/reference/settings/session-settings/ai-function#ai_function_max_api_calls_per_query)) に対するクエリ単位の上限。
 * **バックオフ付き再試行**: 一時的な障害は、指数バックオフ ([`ai_function_retry_initial_delay_ms`](/ja/reference/settings/session-settings/ai-function#ai_function_retry_initial_delay_ms)) を使用して再試行 ([`ai_function_max_retries`](/ja/reference/settings/session-settings/ai-function#ai_function_max_retries)) されます。
+* **同時実行リクエスト**: リクエストはサーバー全体で共有されるスレッドプールから、複数同時に発行されます ([`ai_function_max_concurrent_requests_per_thread`](/ja/reference/settings/session-settings/ai-function#ai_function_max_concurrent_requests_per_thread) で制御) 。
 
 ## Configuration {#configuration}
 
@@ -115,6 +116,24 @@ SELECT aiGenerate(body, map('temperature', '0.2', 'system_prompt', 'You are ters
 
 すべての AI 関連の設定は、`ai_function_` プレフィックスで [Settings](/ja/reference/settings/session-settings) に一覧表示されています。
 
+### サーバー構成 {#server-configuration}
+
+サーバー設定 `ai_function_allow_sql_named_collections` (デフォルトは `true`) は、AI関数が受け付ける名前付きコレクションを制御します。`false` に設定すると、AI関数はサーバー設定ファイルで定義された名前付きコレクションのみを受け付けるようになり、`CREATE NAMED COLLECTION` で作成したコレクションを使用すると例外がスローされます。これは `credentials` パラメータと default-credentials 設定の両方に適用されます。この設定の変更を反映するには、サーバーの再起動が必要です。
+
+```xml
+<clickhouse>
+    <ai_function_allow_sql_named_collections>false</ai_function_allow_sql_named_collections>
+    <named_collections>
+        <ai_text_credentials>
+            <provider>openai</provider>
+            <endpoint>https://api.openai.com/v1/chat/completions</endpoint>
+            <model>gpt-4o-mini</model>
+            <api_key>sk-...</api_key>
+        </ai_text_credentials>
+    </named_collections>
+</clickhouse>
+```
+
 ### エンドポイントホストの制限 {#restricting-endpoint-hosts}
 
 AI 名前付きコレクション の `endpoint` URL は、サーバーが自身の identity で接続する送信先であり、リクエストヘッダーに 名前付きコレクション の `api_key` を (指定されている場合に) 含めて送信する可能性があります。デフォルトでは、ClickHouse はすべてのホストへの接続を許可します。関数を特定の provider 群のみに制限するには、サーバー設定で [`remote_url_allow_hosts`](/ja/reference/settings/server-settings/settings/remote#remote_url_allow_hosts) を設定します。例:
@@ -138,6 +157,35 @@ AI 名前付きコレクション の `endpoint` URL は、サーバーが自身
 デフォルトでは、AI 関数はリモート host に平文でデータを送信する `endpoint` を拒否します。host がループバックでない HTTPS 以外のエンドポイント は例外を発生させます。ループバック host (`localhost`、`127.0.0.0/8`、`::1`) は対象外のため、ローカルの `http://localhost` モデル server はそのまま動作します。リモート host で平文の `http://` エンドポイント を許可するには、[`ai_function_allow_insecure_endpoint`](/ja/reference/settings/session-settings/ai-function#ai_function_allow_insecure_endpoint) を `1` に設定します。この check は [`remote_url_allow_hosts`](/ja/reference/settings/server-settings/settings/remote#remote_url_allow_hosts) とは独立しています。この設定は host の allowlist であり、URL スキームは検査しないため、許可された host を指す `http://` エンドポイント は引き続き許可されます。
 
 いずれの場合も、プロバイダー は TLS 終端後の入力データを平文で受け取る点に注意してください。TLS が保護するのは、server と プロバイダー の間のネットワーク経路上のデータのみです。
+
+### スループット {#throughput}
+
+AI関数は、そのスループットがローカルの CPU や I/O ではなく、リクエスト送信先のリモートエンドポイントによってほぼ完全に左右されるという点で、従来の多くの ClickHouse 関数とは異なります。そのため、ClickHouse 全体で使用される標準の `max_threads` を超えて同時実行度を高めることで、大きな効果が得られます。こうした理由から、リクエストはサーバー全体で共有される専用のスレッドプールから発行されます。そのサイズ (サーバー設定 `ai_function_max_thread_pool_size`) によって、すべてのクエリを合わせてサーバー全体で同時に処理中にできる AIプロバイダーへのリクエスト数の上限が決まります。
+
+[`ai_function_max_concurrent_requests_per_thread`](/ja/reference/settings/session-settings/ai-function#ai_function_max_concurrent_requests_per_thread) は、各クエリスレッドがそのプールを使用できる割り当て分を制限します。そのため、複数のスレッド (最大 `max_threads`) で実行されるクエリは、スレッドごとにこの値までのリクエストを同時に処理中にできます。クエリ側でこの値を引き上げられないようにするには、[設定プロファイルの制約](/ja/concepts/features/configuration/settings/constraints-on-settings)を使用してこの設定に上限を設けてください。なお、この上限もスレッドごとに適用されるため、1 つのクエリで処理中にできるリクエスト数は最大で「上限 × スレッド数」となります。例:
+
+```xml
+<profiles>
+    <default>
+        <constraints>
+            <ai_function_max_concurrent_requests_per_thread>
+                <max>16</max>
+            </ai_function_max_concurrent_requests_per_thread>
+        </constraints>
+    </default>
+</profiles>
+```
+
+デフォルトは `8` です。`1` より大きい値を指定すると、次の 2 つの保証が緩和されます。
+
+* リクエストのトークン使用量は応答が返ってくるまで判明しないため、[`ai_function_max_input_tokens_per_query`](/ja/reference/settings/session-settings/ai-function#ai_function_max_input_tokens_per_query) と [`ai_function_max_output_tokens_per_query`](/ja/reference/settings/session-settings/ai-function#ai_function_max_output_tokens_per_query) の超過量は、全体で 1 リクエスト分ではなく、処理中のリクエスト 1 件につき 1 リクエスト分に達する可能性があります。
+* 複数のリクエストは、いずれのエラーも検出されないうちにまとめて送出されるため、最初の行で失敗したクエリであっても、同時実行度が許す数のリクエストがすでに発行され、その分が課金されている場合があります。
+
+[`ai_function_max_api_calls_per_query`](/ja/reference/settings/session-settings/ai-function#ai_function_max_api_calls_per_query) はこの影響を受けず、引き続き厳密な上限として機能します。各リクエストの送出前にスロットが予約されるためです。
+
+<Note>
+  materialized view の場合、設定は `CREATE MATERIALIZED VIEW` ステートメントではなく、ビューのソーステーブルにデータを供給する `INSERT` に指定する必要があります。クォータは最上位クエリから読み取られ、ビュー定義内の `SETTINGS` 句は無視されるためです。
+</Note>
 
 ## サポートされているプロバイダー {#supported-providers}
 
@@ -179,7 +227,7 @@ ORDER BY event_time DESC;
 
 {/*AUTOGENERATED_START*/}
 
-## aiClassify
+## aiClassify {#aiClassify}
 
 導入バージョン: v26.4.0
 
@@ -229,7 +277,7 @@ INSERT INTO issues VALUES ('The application exits unexpectedly after login.');
 SELECT body, aiClassify(body, ['bug', 'question', 'feature'], map('credentials', 'ai_text_credentials')) AS kind FROM issues LIMIT 5
 ```
 
-## aiEmbed
+## aiEmbed {#aiEmbed}
 
 導入バージョン: v26.6.0
 
@@ -294,7 +342,7 @@ INSERT INTO articles VALUES ('ClickHouse is a fast analytical database.');
 SELECT aiEmbed(title, 'text-embedding-3-small', map('credentials', 'ai_embedding_credentials', 'dimensions', '256')) FROM articles LIMIT 10
 ```
 
-## aiExtract
+## aiExtract {#aiExtract}
 
 導入バージョン: v26.4.0
 
@@ -352,7 +400,7 @@ INSERT INTO reviews VALUES ('The screen is bright, but the battery lasts only tw
 SELECT aiExtract(review, '{"sentiment": "positive, negative or neutral", "topic": "main topic of the review"}') FROM reviews LIMIT 5
 ```
 
-## aiFilter
+## aiFilter {#aiFilter}
 
 導入バージョン: v26.8.0
 
@@ -406,7 +454,7 @@ INSERT INTO issues VALUES ('The application exits unexpectedly after login.');
 SELECT body, aiFilter(body, 'describes a bug', map('credentials', 'ai_text_credentials')) AS is_bug FROM issues LIMIT 5
 ```
 
-## aiGenerate
+## aiGenerate {#aiGenerate}
 
 導入バージョン: v26.4.0
 
@@ -469,7 +517,7 @@ INSERT INTO articles VALUES ('ClickHouse', 'ClickHouse is an open-source column-
 SELECT article_title, aiGenerate(concat('Summarize in one sentence: ', article_body)) AS summary FROM articles LIMIT 5
 ```
 
-## aiRedact
+## aiRedact {#aiRedact}
 
 導入バージョン: v26.8.0
 
@@ -541,7 +589,7 @@ INSERT INTO tickets VALUES ('Contact Jane Doe at jane@example.com.');
 SELECT aiRedact(body, [], map('replacement', '***')) FROM tickets LIMIT 5
 ```
 
-## aiSimilarity
+## aiSimilarity {#aiSimilarity}
 
 導入バージョン: v26.8.0
 
@@ -604,7 +652,7 @@ INSERT INTO docs VALUES (1, 'ClickHouse documentation'), (2, 'ClickHouse databas
 SELECT a.id, b.id FROM docs a, docs b WHERE a.id < b.id AND aiSimilarity(a.title, b.title, 'text-embedding-3-small') > 0.9
 ```
 
-## aiTranslate
+## aiTranslate {#aiTranslate}
 
 導入バージョン: v26.4.0
 

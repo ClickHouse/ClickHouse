@@ -8,8 +8,6 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/es/components/Image.jsx";
-
 <div id="inserting-into-clickhouse-vs-oltp-databases">
   ## Inserciones en ClickHouse frente a las bases de datos OLTP
 </div>
@@ -76,7 +74,15 @@ Si no es posible insertar lotes grandes, puede delegar la agrupación por lotes 
 
 Con las inserciones asíncronas, los datos se insertan primero en un búfer y luego se escriben en el almacenamiento de la base de datos en 3 pasos, como se muestra en el siguiente diagrama:
 
-<Image img="/images/guides/postgres-inserts.webp" size="md" alt="Inserciones de Postgres" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Inserciones de Postgres](/images/guides/postgres-inserts.webp)
+
+</Frame>
+
+</div>
 
 Con las inserciones asíncronas habilitadas, ClickHouse:
 

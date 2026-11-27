@@ -28,6 +28,7 @@ doc_type: 'reference'
 
 * **Контроль квот**: лимиты на количество токенов в рамках одного запроса ([`ai_function_max_input_tokens_per_query`](/ru/reference/settings/session-settings/ai-function#ai_function_max_input_tokens_per_query), [`ai_function_max_output_tokens_per_query`](/ru/reference/settings/session-settings/ai-function#ai_function_max_output_tokens_per_query)) и вызовов API ([`ai_function_max_api_calls_per_query`](/ru/reference/settings/session-settings/ai-function#ai_function_max_api_calls_per_query)).
 * **Повторные попытки с задержкой**: при временных сбоях выполняются повторные попытки ([`ai_function_max_retries`](/ru/reference/settings/session-settings/ai-function#ai_function_max_retries)) с экспоненциально растущей задержкой ([`ai_function_retry_initial_delay_ms`](/ru/reference/settings/session-settings/ai-function#ai_function_retry_initial_delay_ms)).
+* **Параллельные запросы**: запросы отправляются по несколько одновременно из общего пула потоков сервера (управляется настройкой [`ai_function_max_concurrent_requests_per_thread`](/ru/reference/settings/session-settings/ai-function#ai_function_max_concurrent_requests_per_thread)).
 
 ## Конфигурация {#configuration}
 
@@ -115,6 +116,24 @@ SELECT aiGenerate(body, map('temperature', '0.2', 'system_prompt', 'You are ters
 
 Все настройки, связанные с ИИ, перечислены в разделе [Настройки](/ru/reference/settings/session-settings) и имеют префикс `ai_function_`.
 
+### Конфигурация сервера {#server-configuration}
+
+Настройка сервера `ai_function_allow_sql_named_collections` (по умолчанию `true`) определяет, какие именованные коллекции могут использовать функции ИИ. Если задано значение `false`, функции ИИ принимают только именованные коллекции, определённые в файле конфигурации сервера, а при попытке использовать коллекцию, созданную с помощью `CREATE NAMED COLLECTION`, генерируется исключение. Это относится как к параметру `credentials`, так и к настройкам default-credentials. Изменение этой настройки вступает в силу только после перезапуска сервера.
+
+```xml
+<clickhouse>
+    <ai_function_allow_sql_named_collections>false</ai_function_allow_sql_named_collections>
+    <named_collections>
+        <ai_text_credentials>
+            <provider>openai</provider>
+            <endpoint>https://api.openai.com/v1/chat/completions</endpoint>
+            <model>gpt-4o-mini</model>
+            <api_key>sk-...</api_key>
+        </ai_text_credentials>
+    </named_collections>
+</clickhouse>
+```
+
 ### Ограничение хостов конечных точек {#restricting-endpoint-hosts}
 
 URL `endpoint` в именованной коллекции AI — это исходящий пункт назначения, к которому сервер подключается от своего имени, потенциально передавая (если указан) `api_key` этой именованной коллекции в заголовках запроса. По умолчанию ClickHouse разрешает любой хост. Чтобы ограничить функции определённым набором провайдеров, настройте [`remote_url_allow_hosts`](/ru/reference/settings/server-settings/settings/remote#remote_url_allow_hosts) в конфигурации сервера, например:
@@ -138,6 +157,35 @@ URL `endpoint` в именованной коллекции AI — это исх
 По умолчанию функции ИИ отклоняют `endpoint`, который отправлял бы данные в открытом виде на удалённый хост: любая конечная точка, отличная от HTTPS, хост которой не является loopback-адресом, вызывает исключение. Loopback-хосты (`localhost`, `127.0.0.0/8`, `::1`) являются исключением, поэтому локальный сервер моделей `http://localhost` работает без дополнительной настройки. Чтобы разрешить незашифрованную конечную точку `http://` на удалённом хосте, установите [`ai_function_allow_insecure_endpoint`](/ru/reference/settings/session-settings/ai-function#ai_function_allow_insecure_endpoint) в значение `1`. Эта проверка не зависит от [`remote_url_allow_hosts`](/ru/reference/settings/server-settings/settings/remote#remote_url_allow_hosts): эта настройка представляет собой список разрешённых хостов и не проверяет схему URL, поэтому конечная точка `http://`, указывающая на разрешённый хост, всё равно проходит её.
 
 Обратите внимание: в обоих случаях провайдер получает входные данные в открытом виде после завершения TLS; TLS защищает данные только на сетевом участке между сервером и провайдером.
+
+### Пропускная способность {#throughput}
+
+Функции ИИ отличаются от большинства традиционных функций ClickHouse тем, что их пропускная способность почти полностью ограничена удалённой конечной точкой, к которой они обращаются, а не локальными ресурсами CPU или I/O. Поэтому они значительно выигрывают от повышения параллелизма сверх стандартного значения `max_threads`, используемого в ClickHouse. По этой причине HTTP-запросы отправляются из выделенного пула потоков, общего для всего сервера. Его размер (`ai_function_max_thread_pool_size`, настройка сервера) ограничивает число запросов к провайдеру ИИ, которые одновременно находятся в обработке на всём сервере, суммарно по всем SQL-запросам.
+
+[`ai_function_max_concurrent_requests_per_thread`](/ru/reference/settings/session-settings/ai-function#ai_function_max_concurrent_requests_per_thread) ограничивает долю этого пула, приходящуюся на каждый поток запроса, поэтому запрос, выполняемый в нескольких потоках (не более `max_threads`), может держать в обработке до указанного числа запросов на каждый поток. Чтобы запросы не могли повышать это значение, задайте для настройки верхний предел с помощью [ограничения профиля настроек](/ru/concepts/features/configuration/settings/constraints-on-settings). Предел по-прежнему действует на каждый поток, поэтому число запросов в обработке может достигать значения предела, умноженного на количество потоков запроса. Пример:
+
+```xml
+<profiles>
+    <default>
+        <constraints>
+            <ai_function_max_concurrent_requests_per_thread>
+                <max>16</max>
+            </ai_function_max_concurrent_requests_per_thread>
+        </constraints>
+    </default>
+</profiles>
+```
+
+Значение по умолчанию — `8`. Значение больше `1` ослабляет две гарантии:
+
+* Расход токенов запроса становится известен только после получения ответа, поэтому лимиты [`ai_function_max_input_tokens_per_query`](/ru/reference/settings/session-settings/ai-function#ai_function_max_input_tokens_per_query) и [`ai_function_max_output_tokens_per_query`](/ru/reference/settings/session-settings/ai-function#ai_function_max_output_tokens_per_query) могут быть превышены на объём одного запроса для каждого запроса в обработке, а не на объём одного запроса в сумме.
+* Пакет запросов направляется на обработку до того, как станут известны их ошибки, поэтому запрос, завершившийся ошибкой на первой строке, всё равно может успеть отправить (и оплатить) столько запросов, сколько допускает параллелизм.
+
+На [`ai_function_max_api_calls_per_query`](/ru/reference/settings/session-settings/ai-function#ai_function_max_api_calls_per_query) это не влияет: ограничение остаётся точным, поскольку слот резервируется до того, как каждый запрос будет направлен на обработку.
+
+<Note>
+  Для materialized view настройки необходимо указывать в `INSERT`, который записывает данные в исходную таблицу представления, а не в операторе `CREATE MATERIALIZED VIEW`: квоты считываются из запроса верхнего уровня, а предложение `SETTINGS` в определении представления игнорируется.
+</Note>
 
 ## Поддерживаемые провайдеры {#supported-providers}
 
@@ -179,7 +227,7 @@ ORDER BY event_time DESC;
 
 {/*AUTOGENERATED_START*/}
 
-## aiClassify
+## aiClassify {#aiClassify}
 
 Добавленный в: v26.4.0
 
@@ -231,7 +279,7 @@ INSERT INTO issues VALUES ('The application exits unexpectedly after login.');
 SELECT body, aiClassify(body, ['bug', 'question', 'feature'], map('credentials', 'ai_text_credentials')) AS kind FROM issues LIMIT 5
 ```
 
-## aiEmbed
+## aiEmbed {#aiEmbed}
 
 Добавленный в: v26.6.0
 
@@ -295,7 +343,7 @@ INSERT INTO articles VALUES ('ClickHouse is a fast analytical database.');
 SELECT aiEmbed(title, 'text-embedding-3-small', map('credentials', 'ai_embedding_credentials', 'dimensions', '256')) FROM articles LIMIT 10
 ```
 
-## aiExtract
+## aiExtract {#aiExtract}
 
 Добавленный в: v26.4.0
 
@@ -353,7 +401,7 @@ INSERT INTO reviews VALUES ('The screen is bright, but the battery lasts only tw
 SELECT aiExtract(review, '{"sentiment": "positive, negative or neutral", "topic": "main topic of the review"}') FROM reviews LIMIT 5
 ```
 
-## aiFilter
+## aiFilter {#aiFilter}
 
 Добавлено в: v26.8.0
 
@@ -414,7 +462,7 @@ INSERT INTO issues VALUES ('The application exits unexpectedly after login.');
 SELECT body, aiFilter(body, 'describes a bug', map('credentials', 'ai_text_credentials')) AS is_bug FROM issues LIMIT 5
 ```
 
-## aiGenerate
+## aiGenerate {#aiGenerate}
 
 Добавленный в: v26.4.0
 
@@ -477,7 +525,7 @@ INSERT INTO articles VALUES ('ClickHouse', 'ClickHouse is an open-source column-
 SELECT article_title, aiGenerate(concat('Summarize in one sentence: ', article_body)) AS summary FROM articles LIMIT 5
 ```
 
-## aiRedact
+## aiRedact {#aiRedact}
 
 Добавлено в: v26.8.0
 
@@ -549,7 +597,7 @@ INSERT INTO tickets VALUES ('Contact Jane Doe at jane@example.com.');
 SELECT aiRedact(body, [], map('replacement', '***')) FROM tickets LIMIT 5
 ```
 
-## aiSimilarity
+## aiSimilarity {#aiSimilarity}
 
 Добавлено в: v26.8.0
 
@@ -612,7 +660,7 @@ INSERT INTO docs VALUES (1, 'ClickHouse documentation'), (2, 'ClickHouse databas
 SELECT a.id, b.id FROM docs a, docs b WHERE a.id < b.id AND aiSimilarity(a.title, b.title, 'text-embedding-3-small') > 0.9
 ```
 
-## aiTranslate
+## aiTranslate {#aiTranslate}
 
 Добавленный в: v26.4.0
 

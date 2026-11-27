@@ -613,6 +613,17 @@ DROP FUNCTION [IF EXISTS] name [ON CLUSTER cluster]
 
 이 예시 드라이버는 출발점으로 삼기 위한 것입니다. 신뢰할 수 없는 사용자에게 노출하기 전에 환경에 맞게 샌드박스 구성을 검토하고 강화하십시오.
 
+### 타사 드라이버 {#third-party-drivers}
+
+드라이버는 ClickHouse 외부에서 제공될 수도 있습니다. 이러한 드라이버는 ClickHouse가 아닌 각 작성자가 유지 관리하므로, 신뢰할 수 없는 사용자에게 노출하기 전에 예시 드라이버와 마찬가지로 직접 검토하십시오.
+
+* [`HyperlightPython`](https://github.com/hyperlight-dev/hyperlight-unikraft/tree/main/integrations/clickhouse) - 자체 커널을 갖춘 [Hyperlight](https://github.com/hyperlight-dev/hyperlight) 마이크로 가상 머신(VM)에서 Python 함수 본문을 실행합니다. Hyperlight는 [Cloud Native Computing Foundation](https://www.cncf.io/projects/hyperlight/)의 샌드박스 프로젝트입니다. 각 행 블록은 게스트의 스냅샷에서 새로 시작하므로, 코드는 네트워크를 사용할 수 없고 서버의 파일에 액세스할 수 없으며 쿼리 간에 상태가 유지되지 않습니다. `/dev/kvm`을 지원하는 Linux가 필요합니다.
+
+  ```sql
+  CREATE FUNCTION py_words ARGUMENTS (s String) RETURNS UInt64
+  ENGINE = HyperlightPython AS 'return len(s.split())';
+  ```
+
 ## 관련 콘텐츠 {#related-content}
 
 * [ClickHouse Cloud의 사용자 정의 함수](https://clickhouse.com/blog/user-defined-functions-clickhouse-udfs)

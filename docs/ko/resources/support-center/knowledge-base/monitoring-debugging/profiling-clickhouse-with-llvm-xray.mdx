@@ -5,8 +5,6 @@ description: "LLVM의 XRay 계측(instrumentation) 프로파일러를 사용하�
 tags: ['성능 및 최적화', '도구 및 유틸리티']
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 <div id="types-of-profilers">
   ## 프로파일러의 유형
 </div>
@@ -52,7 +50,15 @@ system.trace&#95;log에 수집된 데이터를 [Chrome
 시각화합니다. 각 항목에서 query&#95;id, cpu&#95;id, stacktrace를
 확인하십시오.
 
-<Image img="/images/knowledgebase/profiling-clickhouse-with-llvm-xray/profile.webp" size="md" alt="시간 순서" />
+<div className="ch-image-md">
+
+<Frame>
+
+![시간 순서](/images/knowledgebase/profiling-clickhouse-with-llvm-xray/profile.webp)
+
+</Frame>
+
+</div>
 
 <div id="profiling-a-native-application-using-xray">
   ## XRay를 사용한 네이티브 애플리케이션 프로파일링
@@ -159,19 +165,43 @@ Perfetto는 여러 스레드를 시각화하고 데이터를 쿼리하기에 더
   #### 시간순
 </div>
 
-<Image img="/images/knowledgebase/profiling-clickhouse-with-llvm-xray/time-order.webp" size="md" alt="시간순" />
+<div className="ch-image-md">
+
+<Frame>
+
+![시간순](/images/knowledgebase/profiling-clickhouse-with-llvm-xray/time-order.webp)
+
+</Frame>
+
+</div>
 
 <div id="left-heavy">
   #### 왼쪽 편중
 </div>
 
-<Image img="/images/knowledgebase/profiling-clickhouse-with-llvm-xray/left-heavy.webp" size="md" alt="왼쪽 편중" />
+<div className="ch-image-md">
+
+<Frame>
+
+![왼쪽 편중](/images/knowledgebase/profiling-clickhouse-with-llvm-xray/left-heavy.webp)
+
+</Frame>
+
+</div>
 
 <div id="sandwitch">
   #### 샌드위치
 </div>
 
-<Image img="/images/knowledgebase/profiling-clickhouse-with-llvm-xray/sandwich.webp" size="md" alt="샌드위치" />
+<div className="ch-image-md">
+
+<Frame>
+
+![샌드위치](/images/knowledgebase/profiling-clickhouse-with-llvm-xray/sandwich.webp)
+
+</Frame>
+
+</div>
 
 <div id="check-out-the-docs">
   ## 문서 살펴보기

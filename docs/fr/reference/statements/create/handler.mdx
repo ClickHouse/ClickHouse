@@ -10,9 +10,7 @@ doc_type: 'reference'
 
 Crée un gestionnaire HTTP personnalisé défini en SQL, sans modifier le fichier de configuration du serveur. Les gestionnaires définis en SQL constituent une alternative aux [gestionnaires de l&#39;interface HTTP](/fr/concepts/features/interfaces/http) configurés via la configuration.
 
-<div id="syntax">
-  ## Syntaxe
-</div>
+## Syntaxe {#syntax}
 
 ```sql
 CREATE HANDLER [IF NOT EXISTS] name [ON CLUSTER cluster]
@@ -25,25 +23,19 @@ AS [SELECT|INSERT|...] ...
 
 Crée un gestionnaire avec un `nom` spécifié. Le nom est utilisé pour gérer les gestionnaires à l’aide de requêtes SQL, pour les messages de diagnostic et pour définir leur ordre.
 
-<div id="clauses">
-  ## Clauses
-</div>
+## Clauses {#clauses}
 
-* `PROTOCOL` — facultatif. Si un nom de protocole est spécifié, le gestionnaire est actif uniquement pour le [protocole composable](/fr/concepts/features/configuration/server-config/composable-protocols) indiqué. Sinon, le gestionnaire est actif sur tous les endpoints HTTP : les ports `http`/`https` intégrés et chaque écouteur de [protocole composable](/fr/concepts/features/configuration/server-config/composable-protocols) de type HTTP. `PROTOCOL ANY` sélectionne explicitement ce comportement par défaut ; dans `ALTER HANDLER`, il supprime une restriction de protocole définie précédemment. Un protocole littéralement nommé `any` peut être référencé à l’aide d’accents graves : ``PROTOCOL `any` ``.
-* `URL` — obligatoire. Peut prendre la forme d’une URL exacte, d’un `URL PREFIX` ou d’un `URL REGEXP`. Pour les URL exactes et les préfixes, l’ambiguïté est vérifiée lors de la création ou de la modification, et une exception est levée en cas d’ambiguïté. Pour les expressions régulières, l’ambiguïté ne peut pas être vérifiée. L’URL est mise en correspondance sans la chaîne de requête `?` ni l’identifiant de fragment `#`. Un `URL PREFIX` est mis en correspondance comme un chemin de base, à la limite d’un segment de chemin — avec la même sémantique que la règle `url_prefix` des [gestionnaires définis par la configuration](/fr/concepts/features/interfaces/http) : `URL PREFIX '/api/v1'` correspond à `/api/v1`, `/api/v1/` et `/api/v1/write`, mais pas à `/api/v1beta`. Un `/` final dans le préfixe est ignoré ; `'/api/v1/'` et `'/api/v1'` se comportent donc de la même manière.
-* `METHODS` — facultatif. Liste des méthodes HTTP autorisées. Par défaut, seule `GET` est autorisée. Les méthodes prises en charge sont `GET`, `POST`, `PUT` et `DELETE`. Les méthodes de modification `POST`, `PUT` et `DELETE` peuvent exécuter des requêtes modifiant des données ; les méthodes sûres telles que `GET` et `HEAD` sont toujours exécutées en mode `readonly`. Par conséquent, un gestionnaire dont la requête modifie des données (par exemple `INSERT` ou DDL) doit autoriser au moins une méthode de modification : créer un tel gestionnaire avec uniquement des méthodes en lecture seule (par exemple `GET`, la valeur par défaut) lève une exception. Les requêtes dont les effets secondaires subsistent en mode `readonly` constituent un cas particulier : `BACKUP` et `RESTORE` ont des effets secondaires durables, les instructions modifiant la session `SET`, `SET ROLE`, `USE`, `BEGIN TRANSACTION`, `COMMIT`, `ROLLBACK` et `SET TRANSACTION SNAPSHOT` modifient un état de session ou de transaction qui persiste entre les requêtes lorsque `session_id` est utilisé, et `CREATE TEMPORARY TABLE` / `CREATE TEMPORARY VIEW` créent un objet qui existe pendant la session — pourtant, le mode `readonly` des méthodes sûres ne bloque aucune d’entre elles. Les mutations d’une table temporaire *existante* ne sont pas non plus bloquées par le mode `readonly`. Les requêtes susceptibles d’en cibler une sont donc traitées de la même manière : un `INSERT` dont la table cible n’est pas qualifiée par une base de données (un nom non qualifié peut désigner une table temporaire de session), un `DROP TEMPORARY TABLE`, un `DROP TABLE` / `TRUNCATE TABLE` sur une table non qualifiée par une base de données, et un `ALTER` sur une table non qualifiée par une base de données (`ALTER TEMPORARY TABLE` est la même instruction). Une cible qualifiée par une base de données ne peut jamais être une table temporaire ; ces requêtes ne sont donc pas soumises à cette règle. HTTP exige que les méthodes sûres soient exemptes d’effets secondaires (un gestionnaire déclaré pour `GET` répond également à `HEAD`, pour lequel le corps de la réponse est supprimé et l’effet serait invisible). Un gestionnaire exécutant une telle requête doit donc répertorier *uniquement* des méthodes de modification : le créer ou le modifier pour inclure une méthode sûre lève une exception. Les instructions composites sont examinées en profondeur : pour `statement1 PARALLEL WITH statement2 ...` et `EXECUTE AS <user> <statement>`, les règles ci-dessus s’appliquent aux instructions encapsulées, car ce sont elles qui sont exécutées (chacune dans une copie du contexte du gestionnaire, qui conserve le mode `readonly`). Un `EXECUTE AS <user>` seul fait exécuter toute la session sous un autre utilisateur ; il est donc lui-même considéré comme modifiant la session. De plus, tout gestionnaire `EXECUTE AS` — seul ou encapsulant une instruction — doit autoriser au moins une méthode de modification : l’impersonation nécessite le privilège `IMPERSONATE`, que le mode `readonly` des méthodes sûres refuse.
+* `PROTOCOL` — facultatif. Si un nom de protocole est spécifié, le gestionnaire est actif uniquement pour le [protocole composable](/fr/concepts/features/configuration/server-config/composable-protocols) indiqué. Sinon, le gestionnaire est actif sur tous les endpoints HTTP : les ports `http`/`https` intégrés et chaque écouteur de [protocole composable](/fr/concepts/features/configuration/server-config/composable-protocols) de type HTTP. `PROTOCOL ANY` sélectionne explicitement ce comportement par défaut ; dans `ALTER HANDLER`, il supprime une restriction de protocole définie précédemment. Un protocole littéralement nommé `any` peut être référencé à l’aide d’accents graves : ``PROTOCOL `any` ``.
+* `URL` — obligatoire. Peut prendre la forme d’une URL exacte, d’un `URL PREFIX` ou d’un `URL REGEXP`. Pour les URL exactes et les préfixes, l’ambiguïté est vérifiée lors de la création ou de la modification, et une exception est levée en cas d’ambiguïté. Pour les expressions régulières, l’ambiguïté ne peut pas être vérifiée. L’URL est mise en correspondance sans la chaîne de requête `?` ni l’identifiant de fragment `#`. Un `URL PREFIX` est mis en correspondance comme un chemin de base, à la limite d’un segment de chemin — avec la même sémantique que la règle `url_prefix` des [gestionnaires définis par la configuration](/fr/concepts/features/interfaces/http) : `URL PREFIX '/api/v1'` correspond à `/api/v1`, `/api/v1/` et `/api/v1/write`, mais pas à `/api/v1beta`. Un `/` final dans le préfixe est ignoré ; `'/api/v1/'` et `'/api/v1'` se comportent donc de la même manière. Un `URL REGEXP` est ancré : il doit correspondre au chemin entier. Ainsi, `URL REGEXP '/users/(?P<id>\d+)'` correspond à `/users/42`, mais pas à `/users/42/roles` (écrivez `'/users/(?P<id>\d+).*'` pour couvrir toute la sous-arborescence).
+* `METHODS` — facultatif. Liste des méthodes HTTP autorisées. Par défaut, seule `GET` est autorisée. Les méthodes prises en charge sont `GET`, `POST`, `PUT` et `DELETE`. Les méthodes de modification `POST`, `PUT` et `DELETE` peuvent exécuter des requêtes modifiant des données ; les méthodes sûres telles que `GET` et `HEAD` sont toujours exécutées en mode `readonly`. Par conséquent, un gestionnaire dont la requête modifie des données (par exemple `INSERT` ou DDL) doit autoriser au moins une méthode de modification : créer un tel gestionnaire avec uniquement des méthodes en lecture seule (par exemple `GET`, la valeur par défaut) lève une exception. Les requêtes dont les effets secondaires subsistent en mode `readonly` constituent un cas particulier : `BACKUP` et `RESTORE` ont des effets secondaires durables, les instructions modifiant la session `SET`, `SET ROLE`, `USE`, `BEGIN TRANSACTION`, `COMMIT`, `ROLLBACK` et `SET TRANSACTION SNAPSHOT` modifient un état de session ou de transaction qui persiste entre les requêtes lorsque `session_id` est utilisé, et `CREATE TEMPORARY TABLE` / `CREATE TEMPORARY VIEW` créent un objet qui existe pendant la session — pourtant, par défaut, le mode `readonly` des méthodes sûres ne bloque aucune d’entre elles. `SET ROLE` est bloqué lorsque `access_control_improvements.readonly_restricts_set_role` est activé ; la restriction imposée au gestionnaire ne dépend pas de ce paramètre et s’applique dans tous les cas. Les mutations d’une table temporaire *existante* ne sont pas non plus bloquées par le mode `readonly`. Les requêtes susceptibles d’en cibler une sont donc traitées de la même manière : un `INSERT` dont la table cible n’est pas qualifiée par une base de données (un nom non qualifié peut désigner une table temporaire de session), un `DROP TEMPORARY TABLE`, un `DROP TABLE` / `TRUNCATE TABLE` sur une table non qualifiée par une base de données, et un `ALTER` sur une table non qualifiée par une base de données (`ALTER TEMPORARY TABLE` est la même instruction). Une cible qualifiée par une base de données ne peut jamais être une table temporaire ; ces requêtes ne sont donc pas soumises à cette règle. HTTP exige que les méthodes sûres soient exemptes d’effets secondaires (un gestionnaire déclaré pour `GET` répond également à `HEAD`, pour lequel le corps de la réponse est supprimé et l’effet serait invisible). Un gestionnaire exécutant une telle requête doit donc répertorier *uniquement* des méthodes de modification : le créer ou le modifier pour inclure une méthode sûre lève une exception. Les instructions composites sont examinées en profondeur : pour `statement1 PARALLEL WITH statement2 ...` et `EXECUTE AS <user> <statement>`, les règles ci-dessus s’appliquent aux instructions encapsulées, car ce sont elles qui sont exécutées (chacune dans une copie du contexte du gestionnaire, qui conserve le mode `readonly`). Un `EXECUTE AS <user>` seul fait exécuter toute la session sous un autre utilisateur ; il est donc lui-même considéré comme modifiant la session. De plus, tout gestionnaire `EXECUTE AS` — seul ou encapsulant une instruction — doit autoriser au moins une méthode de modification : l’impersonation nécessite le privilège `IMPERSONATE`, que le mode `readonly` des méthodes sûres refuse.
 * `TYPE` — facultatif. Le seul type actuellement pris en charge est `query`.
-* `AS` — la requête SQL qui sera exécutée par ce gestionnaire. La requête peut être paramétrée. Sa validité syntaxique est vérifiée lors de la création ou de la modification du gestionnaire, mais elle n&#39;est pas analysée davantage : par exemple, les tables auxquelles elle fait référence peuvent être absentes au moment de la création du gestionnaire. Les clauses `FORMAT` et similaires appartiennent à la requête, et non à l&#39;instruction `CREATE`/`ALTER` dans son ensemble. La requête peut être placée entre parenthèses pour lever toute ambiguïté. Une requête `INSERT` ne doit pas contenir de données en ligne après la clause `VALUES` ou `FORMAT` : la création ou la modification d&#39;un tel gestionnaire lève une exception, car la charge utile en ligne ne peut pas être conservée dans la définition du gestionnaire ; les données doivent être fournies dans le corps HTTP (ou calculées par un `INSERT ... SELECT`). Une requête adressée à un gestionnaire dont la requête lit le corps — un `INSERT` qui obtient ses données depuis le corps, ou une requête utilisant le paramètre `_request_body` — doit déclarer sa longueur : une requête sans transfert fragmenté et sans en-tête `Content-Length` reçoit la réponse `411 Length Required`, car le corps serait sinon lu jusqu&#39;à la fin du flux et une connexion interrompue serait acceptée comme une requête complète. Toutes les méthodes d&#39;un tel gestionnaire doivent également accepter un corps (`POST`, `PUT` ou `DELETE`) — le créer avec une méthode sûre dans la clause `METHODS` (par exemple, `GET` par défaut) lève une exception, car une méthode sûre ne fournit jamais de corps de requête et la requête lirait silencieusement un corps vide ; un `GET` déclaré est également pris en charge pour `HEAD`, de sorte que mélanger des méthodes sûres et des méthodes acceptant un corps rendrait ces invocations accessibles. Un `INSERT ... SELECT` ne lit pas le corps (ses données proviennent du `SELECT`) et n&#39;est donc pas soumis à ces exigences — sauf si son `SELECT` lit depuis la fonction de table `input`, qui est alimentée par le corps de la requête. Un `INSERT` lisant le corps doit être la requête propre au gestionnaire : `EXECUTE AS` et `PARALLEL WITH` exécutent les instructions qu&#39;ils englobent sans le corps de la requête ; l&#39;encapsuler dans l&#39;une de ces instructions est donc rejeté lors de la création, plutôt que d&#39;ignorer silencieusement chaque téléversement. Une requête lisant le corps ne doit pas non plus utiliser le paramètre `_request_body` : il n&#39;existe qu&#39;un seul corps de requête, et la liaison de `_request_body` le consomme avant que la requête ne lise ses données d&#39;entrée ; un tel gestionnaire est donc rejeté lors de la création, plutôt que de perdre silencieusement chaque téléversement — utilisez soit la propre entrée depuis le corps de la requête, soit `_request_body`, mais pas les deux. Les gestionnaires qui ne lisent pas le corps ne sont soumis à aucune exigence de ce type ; le corps d&#39;une requête adressée à un tel gestionnaire est ignoré et n&#39;est jamais ajouté à la requête du gestionnaire. Le texte de requête stocké est analysé de nouveau par le serveur avec une profondeur d&#39;analyseur syntaxique et un nombre de retours arrière illimités chaque fois que le gestionnaire est rechargé ou exécuté ; ainsi, un gestionnaire créé dans une session avec `max_parser_depth` / `max_parser_backtracks` augmentés reste chargeable et exécutable avec les limites de session ordinaires.
+* `AS` — la requête SQL qui sera exécutée par ce gestionnaire. La requête peut être paramétrée. Sa validité syntaxique est vérifiée lors de la création ou de la modification du gestionnaire, mais elle n&#39;est pas analysée davantage : par exemple, les tables auxquelles elle fait référence peuvent être absentes au moment de la création du gestionnaire. Les clauses `FORMAT` et similaires appartiennent à la requête, et non à l&#39;instruction `CREATE`/`ALTER` dans son ensemble. La requête peut être placée entre parenthèses pour lever toute ambiguïté. Une requête `INSERT` ne doit pas contenir de données en ligne après la clause `VALUES` ou `FORMAT` : la création ou la modification d&#39;un tel gestionnaire lève une exception, car la charge utile en ligne ne peut pas être conservée dans la définition du gestionnaire ; les données doivent être fournies dans le corps HTTP (ou calculées par un `INSERT ... SELECT`). Une requête adressée à un gestionnaire dont la requête lit le corps — un `INSERT` qui obtient ses données depuis le corps, ou une requête utilisant le paramètre `_request_body` — doit déclarer sa longueur : une requête sans transfert fragmenté et sans en-tête `Content-Length` reçoit la réponse `411 Length Required`, car le corps serait sinon lu jusqu&#39;à la fin du flux et une connexion interrompue serait acceptée comme une requête complète. Toutes les méthodes d&#39;un tel gestionnaire doivent également accepter un corps (`POST`, `PUT` ou `DELETE`) — le créer avec une méthode sûre dans la clause `METHODS` (par exemple, `GET` par défaut) lève une exception, car une méthode sûre ne fournit jamais de corps de requête et la requête lirait silencieusement un corps vide ; un `GET` déclaré est également pris en charge pour `HEAD`, de sorte que mélanger des méthodes sûres et des méthodes acceptant un corps rendrait ces invocations accessibles. Un `INSERT ... SELECT` ne lit pas le corps (ses données proviennent du `SELECT`) et n&#39;est donc pas soumis à ces exigences — sauf si son `SELECT` lit depuis la fonction de table `input`, qui est alimentée par le corps de la requête. Un `INSERT` lisant le corps doit être la requête propre au gestionnaire : `EXECUTE AS` et `PARALLEL WITH` exécutent les instructions qu&#39;ils englobent sans le corps de la requête ; l&#39;encapsuler dans l&#39;une de ces instructions est donc rejeté lors de la création, plutôt que d&#39;ignorer silencieusement chaque téléversement. Une requête lisant le corps ne doit pas non plus utiliser le paramètre `_request_body` : il n&#39;existe qu&#39;un seul corps de requête, et la liaison de `_request_body` le consomme avant que la requête ne lise ses données d&#39;entrée ; un tel gestionnaire est donc rejeté lors de la création, plutôt que de perdre silencieusement chaque téléversement — utilisez soit la propre entrée depuis le corps de la requête, soit `_request_body`, mais pas les deux. Les gestionnaires qui ne lisent pas le corps ne sont soumis à aucune exigence de ce type ; le corps d&#39;une requête adressée à un tel gestionnaire est ignoré et n&#39;est jamais ajouté à la requête du gestionnaire. Le texte de requête stocké est analysé de nouveau par le serveur chaque fois que le gestionnaire est rechargé ou exécuté, avec une profondeur d&#39;analyseur syntaxique et un nombre de retours arrière illimités, ainsi qu&#39;une limite de taille toujours suffisante pour contenir le texte. Ainsi, un gestionnaire créé dans une session avec `max_parser_depth`, `max_parser_backtracks` ou `max_query_size` augmentés reste chargeable et exécutable avec les limites ordinaires, et une requête ne peut pas abaisser ces limites pour la requête du gestionnaire. Le texte stocké est par ailleurs toujours analysé en tant que SQL ClickHouse, quel que soit le `dialect` demandé par la requête ; une requête ne peut donc pas rendre la requête du gestionnaire impossible à analyser en changeant de dialecte. Seuls les fragments de construction contrôlés par la requête (`select`/`filter`/`order`/`page`) suivent les paramètres de la requête. Ces deux garanties valent également à un saut près : lorsque la requête du gestionnaire lit depuis `remote()` ou une table `Distributed`, ou émet une instruction `ON CLUSTER`, le SQL que les autres hôtes analysent de nouveau est mis en forme par le serveur ; il y est donc analysé en tant que SQL ClickHouse, et sans tenir compte du `max_query_size` de la requête appelante.
 
-<div id="priority">
-  ## Priorité
-</div>
+## Priorité {#priority}
 
 Les gestionnaires définis dans la configuration du serveur sont prioritaires par rapport aux gestionnaires définis en SQL. Les gestionnaires définis en SQL sont associés dans l’ordre lexicographique de leurs noms.
 
-<div id="parameters">
-  ## Paramètres
-</div>
+## Paramètres {#parameters}
 
 Les paramètres de requête des requêtes paramétrées sont fournis, comme pour les gestionnaires définis dans la configuration, à partir des sources suivantes :
 
@@ -55,9 +47,7 @@ Les en-têtes HTTP ClickHouse standard (tels que `X-ClickHouse-Database`, `X-Cli
 
 Les fonctions [`currentHandler`](/fr/reference/functions/regular-functions/other-functions#currentHandler) et [`currentRequestURL`](/fr/reference/functions/regular-functions/other-functions#currentRequestURL) peuvent être utilisées pour personnaliser le comportement de la requête selon le gestionnaire appelé et l’URL de la requête.
 
-<div id="access-control">
-  ## Contrôle d’accès
-</div>
+## Contrôle d’accès {#access-control}
 
 `CREATE HANDLER`, `DROP HANDLER` et `ALTER HANDLER` requièrent respectivement les privilèges `CREATE HANDLER`, `DROP HANDLER` et `ALTER HANDLER`.
 
@@ -65,9 +55,7 @@ La lecture de la table [`system.handlers`](/fr/reference/system-tables/handlers)
 
 L’appel d’un gestionnaire ne requiert aucun privilège distinct, mais les privilèges sont vérifiés comme d’habitude lors de l’exécution de la requête, et l’authentification fonctionne normalement. Pour encapsuler l’accès à certaines requêtes, créez une [`VIEW` avec `SQL SECURITY DEFINER`](/fr/reference/statements/create/view#sql_security) et définissez un gestionnaire qui effectue un `SELECT` sur cette vue.
 
-<div id="storage">
-  ## Stockage
-</div>
+## Stockage {#storage}
 
 Les gestionnaires sont enregistrés dans un stockage local ou Keeper, à l’instar des [collections nommées](/fr/concepts/features/configuration/server-config/named-collections), configuré dans la section `query_rules_storage` du fichier de configuration :
 
@@ -80,12 +68,10 @@ Les gestionnaires sont enregistrés dans un stockage local ou Keeper, à l’ins
 
 Avec le stockage Keeper, les gestionnaires sont automatiquement synchronisés sur l’ensemble des répliques. Une clause `ON CLUSTER` explicite est donc redondante et conduirait chaque réplique à tenter de créer le même gestionnaire. Activez le paramètre `ignore_on_cluster_for_replicated_handler_queries` afin que `CREATE`, `ALTER` et `DROP HANDLER` ignorent `ON CLUSTER` lorsque le stockage est répliqué, comme `ignore_on_cluster_for_replicated_named_collections_queries`.
 
-<div id="alter-handler">
-  ## ALTER HANDLER
-</div>
+## ALTER HANDLER {#alter-handler}
 
 ```sql
-ALTER HANDLER name
+ALTER HANDLER name [ON CLUSTER cluster]
 [PROTOCOL protocol_name|ANY]
 [URL [PREFIX|REGEXP] '/path']
 [METHODS (GET, POST)]
@@ -95,25 +81,19 @@ ALTER HANDLER name
 
 Remplace le gestionnaire par un nouveau. La requête `ALTER` ne peut inclure qu’un sous-ensemble de clauses. Elle peut, par exemple, servir à modifier uniquement l’URL ou la requête. Les clauses non spécifiées conservent leurs valeurs précédentes. `PROTOCOL ANY` supprime une restriction de protocole existante et rend le gestionnaire à nouveau actif sur tous les endpoints HTTP.
 
-<div id="drop-handler">
-  ## DROP HANDLER
-</div>
+## DROP HANDLER {#drop-handler}
 
 ```sql
-DROP HANDLER [IF EXISTS] name
+DROP HANDLER [IF EXISTS] name [ON CLUSTER cluster]
 ```
 
 Supprime le gestionnaire portant le nom spécifié.
 
-<div id="introspection">
-  ## Introspection
-</div>
+## Introspection {#introspection}
 
 La table [`system.handlers`](/fr/reference/system-tables/handlers) répertorie tous les gestionnaires définis en SQL. La table [`system.query_log`](/fr/reference/system-tables/query_log) enregistre, pour chaque requête, le nom du gestionnaire ainsi que le chemin de la requête HTTP (sans la chaîne de requête) dans les colonnes `http_handler_name` et `http_request_url`.
 
-<div id="example">
-  ## Exemple
-</div>
+## Exemple {#example}
 
 ```sql
 CREATE HANDLER my_handler URL '/my_handler' AS SELECT version();
@@ -133,9 +113,7 @@ CREATE HANDLER get_user URL REGEXP '/users/(?P<id>\d+)' AS SELECT * FROM users W
 $ curl 'http://localhost:8123/users/42'
 ```
 
-<div id="related-statements">
-  ## Instructions associées
-</div>
+## Instructions associées {#related-statements}
 
 `CREATE HANDLER` fait partie de la famille d’instructions `CREATE` et est lié à `ALTER` et `DROP`.
 

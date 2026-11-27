@@ -2,7 +2,6 @@
 -- describes the rows stored in it, not the rows that survive the merge, so pruning by the
 -- probe key would let a superseded row win.
 
-SET enable_analyzer = 1;
 SET enable_join_runtime_filters = 1;
 SET enable_join_runtime_filters_index_analysis = 1;
 SET use_skip_indexes_on_data_read = 1;

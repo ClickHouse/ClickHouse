@@ -7,8 +7,6 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 我们建议用户始终为日志和链路追踪创建自己的 schema，原因如下：
 
 * **选择主键** - 默认 schema 使用的 `ORDER BY` 是针对特定访问模式优化的。你的访问模式很可能与其并不匹配。
@@ -256,7 +254,15 @@ LIMIT 5
 
 Materialized Views 允许你将计算成本从查询时转移到写入时。ClickHouse materialized view 本质上只是一个 trigger：当数据块插入表中时，它会对这些块执行查询。该查询的结果会被插入到第二个“目标”表中。
 
-<Image img="/images/use-cases/observability/observability-10.webp" alt="Materialized view" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Materialized view](/images/use-cases/observability/observability-10.webp)
+
+</Frame>
+
+</div>
 
 <Info>
   **实时更新**
@@ -411,7 +417,15 @@ FROM otel_logs
 
 如下图所示：
 
-<Image img="/images/use-cases/observability/observability-11.webp" alt="Otel MV" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Otel MV](/images/use-cases/observability/observability-11.webp)
+
+</Frame>
+
+</div>
 
 如果现在重启在[&quot;导出到 ClickHouse&quot;](/zh/guides/use-cases/observability/build-your-own/integrating-opentelemetry#exporting-to-clickhouse)中使用的 collector 配置，数据就会以所需格式出现在 `otel_logs_v2` 中。请注意，这里使用了带类型的 JSON 提取函数。
 
@@ -645,7 +659,15 @@ LIMIT 5
 
 [字典](/zh/reference/statements/create/dictionary)是 ClickHouse 的一项[核心特性](https://clickhouse.com/blog/faster-queries-dictionaries-clickhouse)，为来自各种内部和外部[数据源](/zh/reference/statements/create/dictionary/sources/overview#dictionary-sources)的数据提供内存中的[键值](https://en.wikipedia.org/wiki/Key%E2%80%93value_database)表示，并针对超低延迟查找查询进行了优化。
 
-<Image img="/images/use-cases/observability/observability-12.webp" alt="可观测性与字典" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![可观测性与字典](/images/use-cases/observability/observability-12.webp)
+
+</Frame>
+
+</div>
 
 这在多种场景下都很实用，例如在不拖慢摄取过程的情况下实时富集已摄取的数据，以及整体提升查询性能，其中对 JOIN 的加速尤为明显。
 虽然在可观测性场景中很少需要使用 JOIN，但字典在富集方面仍然很有用——无论是在写入时还是查询时。下面我们会分别给出这两种示例。
@@ -1473,7 +1495,15 @@ ClickHouse 投影允许你为一张表指定多个 `ORDER BY` 子句。
   投影具备许多与 materialized view 相同的能力，但应谨慎使用，通常更推荐后者。你需要了解它们的缺点以及适用场景。比如，虽然 投影 可用于预计算聚合，但我们更建议用户为此使用 Materialized views。
 </Info>
 
-<Image img="/images/use-cases/observability/observability-13.webp" alt="可观测性与投影" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![可观测性与投影](/images/use-cases/observability/observability-13.webp)
+
+</Frame>
+
+</div>
 
 考虑下面这个查询，它会按 500 错误码过滤 `otel_logs_v2` 表中的数据。这很可能是日志场景中的一种常见访问模式，因为用户往往希望按错误码进行过滤：
 

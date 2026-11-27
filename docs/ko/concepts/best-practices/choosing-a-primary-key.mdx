@@ -8,8 +8,6 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 > 이 페이지에서는 &quot;순서 지정 키&quot;와 &quot;기본 키&quot;를 같은 의미로 사용합니다. 엄밀히 말하면 [ClickHouse에서는 두 개념이 다릅니다](/ko/reference/engines/table-engines/mergetree-family/mergetree#choosing-a-primary-key-that-differs-from-the-sorting-key). 하지만 이 문서에서는 두 용어를 서로 바꿔 사용해도 되며, 순서 지정 키는 테이블 `ORDER BY`에 지정된 컬럼을 의미합니다.
 
 ClickHouse의 기본 키는 Postgres와 같은 OLTP 데이터베이스에서 익숙한 유사한 개념과 [매우 다르게](/ko/get-started/migrate/postgres/migration-guide/migration-guide-part3#primary-ordering-keys-in-clickhouse) 동작합니다.
@@ -122,7 +120,15 @@ ORDER BY (PostTypeId, toDate(CreationDate))
 
 다음 애니메이션은 Stack Overflow posts 테이블에서 최적화된 희소 기본 키 인덱스가 생성되는 방식을 보여줍니다. 개별 행에 인덱스를 생성하는 대신, 행 block을 대상으로 인덱스를 생성합니다.
 
-<Image img="/images/bestpractices/create_primary_key.webp" size="lg" alt="기본 키" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![기본 키](/images/bestpractices/create_primary_key.webp)
+
+</Frame>
+
+</div>
 
 같은 쿼리를 이 순서 지정 키를 사용하는 테이블에서 다시 실행하면 다음과 같습니다.
 
@@ -170,7 +176,15 @@ WHERE (CreationDate >= '2024-01-01') AND (PostTypeId = 'Question')
 
 또한 희소 인덱스가 예시 쿼리와 일치하는 항목을 포함할 수 없는 모든 행 블록을 어떻게 가지치기하는지 시각화합니다:
 
-<Image img="/images/bestpractices/primary_key.webp" size="lg" alt="기본 키" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![기본 키](/images/bestpractices/primary_key.webp)
+
+</Frame>
+
+</div>
 
 <Note>
   테이블의 모든 컬럼은 키 자체에 포함되는지 여부와 관계없이 지정된 순서 지정 키의 값을 기준으로 정렬됩니다. 예를 들어 `CreationDate`가 키로 사용되면 다른 모든 컬럼의 값 순서도 `CreationDate` 컬럼의 값 순서를 따릅니다. 여러 개의 순서 지정 키를 지정할 수도 있으며, 이 경우 `SELECT` 쿼리의 `ORDER BY` 절과 동일한 의미로 정렬됩니다.

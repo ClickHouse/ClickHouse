@@ -1,0 +1,147 @@
+<!-- https://clickhouse.com/docs/getting-started/example-datasets/tpcds -->
+<!-- Scale factor: 1. The queries of tpcds.xml over an IcebergLocal copy of its `tpcds` dataset. -->
+<!-- Each table is one data file. Iceberg has no FixedString: those columns are copied as String. -->
+<test run_all_queries="1">
+
+<settings file="../benchmarks/tpc-ds/settings.json"/>
+<!-- As in tpcds.xml: keep the join order the same on every run. -->
+<settings>
+    <use_hash_table_stats_for_join_reordering>0</use_hash_table_stats_for_join_reordering>
+    <iceberg_metadata_log_level>none</iceberg_metadata_log_level>
+    <allow_insert_into_iceberg>1</allow_insert_into_iceberg>
+    <iceberg_delete_data_on_drop>1</iceberg_delete_data_on_drop>
+    <iceberg_insert_max_rows_in_data_file>100000000</iceberg_insert_max_rows_in_data_file>
+    <iceberg_insert_max_bytes_in_data_file>100000000000</iceberg_insert_max_bytes_in_data_file>
+    <max_insert_threads>1</max_insert_threads>
+</settings>
+
+<create_query>CREATE DATABASE IF NOT EXISTS tpcds_ice</create_query>
+<create_query>CREATE TABLE tpcds_ice.call_center ENGINE = IcebergLocal(concat(getServerSetting('user_files_path'), '/tpcds_ice_call_center_', toString(toUnixTimestamp64Micro(now64(6))), '/')) SETTINGS allow_experimental_iceberg_compaction = 0 AS SELECT * REPLACE (toString(cc_call_center_id) AS cc_call_center_id, toString(cc_hours) AS cc_hours, toString(cc_mkt_class) AS cc_mkt_class, toString(cc_company_name) AS cc_company_name, toString(cc_street_number) AS cc_street_number, toString(cc_street_type) AS cc_street_type, toString(cc_suite_number) AS cc_suite_number, toString(cc_state) AS cc_state, toString(cc_zip) AS cc_zip) FROM tpcds.call_center</create_query>
+<create_query>CREATE TABLE tpcds_ice.catalog_page ENGINE = IcebergLocal(concat(getServerSetting('user_files_path'), '/tpcds_ice_catalog_page_', toString(toUnixTimestamp64Micro(now64(6))), '/')) SETTINGS allow_experimental_iceberg_compaction = 0 AS SELECT * REPLACE (toString(cp_catalog_page_id) AS cp_catalog_page_id) FROM tpcds.catalog_page</create_query>
+<create_query>CREATE TABLE tpcds_ice.customer_address ENGINE = IcebergLocal(concat(getServerSetting('user_files_path'), '/tpcds_ice_customer_address_', toString(toUnixTimestamp64Micro(now64(6))), '/')) SETTINGS allow_experimental_iceberg_compaction = 0 AS SELECT * REPLACE (toString(ca_address_id) AS ca_address_id, toString(ca_street_number) AS ca_street_number, toString(ca_street_type) AS ca_street_type, toString(ca_suite_number) AS ca_suite_number, toString(ca_state) AS ca_state, toString(ca_zip) AS ca_zip, toString(ca_location_type) AS ca_location_type) FROM tpcds.customer_address</create_query>
+<create_query>CREATE TABLE tpcds_ice.customer_demographics ENGINE = IcebergLocal(concat(getServerSetting('user_files_path'), '/tpcds_ice_customer_demographics_', toString(toUnixTimestamp64Micro(now64(6))), '/')) SETTINGS allow_experimental_iceberg_compaction = 0 AS SELECT * REPLACE (toString(cd_gender) AS cd_gender, toString(cd_marital_status) AS cd_marital_status, toString(cd_education_status) AS cd_education_status, toString(cd_credit_rating) AS cd_credit_rating) FROM tpcds.customer_demographics</create_query>
+<create_query>CREATE TABLE tpcds_ice.customer ENGINE = IcebergLocal(concat(getServerSetting('user_files_path'), '/tpcds_ice_customer_', toString(toUnixTimestamp64Micro(now64(6))), '/')) SETTINGS allow_experimental_iceberg_compaction = 0 AS SELECT * REPLACE (toString(c_customer_id) AS c_customer_id, toString(c_salutation) AS c_salutation, toString(c_first_name) AS c_first_name, toString(c_last_name) AS c_last_name, toString(c_preferred_cust_flag) AS c_preferred_cust_flag, toString(c_login) AS c_login, toString(c_email_address) AS c_email_address) FROM tpcds.customer</create_query>
+<create_query>CREATE TABLE tpcds_ice.date_dim ENGINE = IcebergLocal(concat(getServerSetting('user_files_path'), '/tpcds_ice_date_dim_', toString(toUnixTimestamp64Micro(now64(6))), '/')) SETTINGS allow_experimental_iceberg_compaction = 0 AS SELECT * REPLACE (toString(d_date_id) AS d_date_id, toString(d_day_name) AS d_day_name, toString(d_quarter_name) AS d_quarter_name, toString(d_holiday) AS d_holiday, toString(d_weekend) AS d_weekend, toString(d_following_holiday) AS d_following_holiday, toString(d_current_day) AS d_current_day, toString(d_current_week) AS d_current_week, toString(d_current_month) AS d_current_month, toString(d_current_quarter) AS d_current_quarter, toString(d_current_year) AS d_current_year) FROM tpcds.date_dim</create_query>
+<create_query>CREATE TABLE tpcds_ice.household_demographics ENGINE = IcebergLocal(concat(getServerSetting('user_files_path'), '/tpcds_ice_household_demographics_', toString(toUnixTimestamp64Micro(now64(6))), '/')) SETTINGS allow_experimental_iceberg_compaction = 0 AS SELECT * REPLACE (toString(hd_buy_potential) AS hd_buy_potential) FROM tpcds.household_demographics</create_query>
+<create_query>CREATE TABLE tpcds_ice.income_band ENGINE = IcebergLocal(concat(getServerSetting('user_files_path'), '/tpcds_ice_income_band_', toString(toUnixTimestamp64Micro(now64(6))), '/')) SETTINGS allow_experimental_iceberg_compaction = 0 AS SELECT * FROM tpcds.income_band</create_query>
+<create_query>CREATE TABLE tpcds_ice.item ENGINE = IcebergLocal(concat(getServerSetting('user_files_path'), '/tpcds_ice_item_', toString(toUnixTimestamp64Micro(now64(6))), '/')) SETTINGS allow_experimental_iceberg_compaction = 0 AS SELECT * REPLACE (toString(i_item_id) AS i_item_id, toString(i_brand) AS i_brand, toString(i_class) AS i_class, toString(i_category) AS i_category, toString(i_manufact) AS i_manufact, toString(i_size) AS i_size, toString(i_formulation) AS i_formulation, toString(i_color) AS i_color, toString(i_units) AS i_units, toString(i_container) AS i_container, toString(i_product_name) AS i_product_name) FROM tpcds.item</create_query>
+<create_query>CREATE TABLE tpcds_ice.promotion ENGINE = IcebergLocal(concat(getServerSetting('user_files_path'), '/tpcds_ice_promotion_', toString(toUnixTimestamp64Micro(now64(6))), '/')) SETTINGS allow_experimental_iceberg_compaction = 0 AS SELECT * REPLACE (toString(p_promo_id) AS p_promo_id, toString(p_promo_name) AS p_promo_name, toString(p_channel_dmail) AS p_channel_dmail, toString(p_channel_email) AS p_channel_email, toString(p_channel_catalog) AS p_channel_catalog, toString(p_channel_tv) AS p_channel_tv, toString(p_channel_radio) AS p_channel_radio, toString(p_channel_press) AS p_channel_press, toString(p_channel_event) AS p_channel_event, toString(p_channel_demo) AS p_channel_demo, toString(p_purpose) AS p_purpose, toString(p_discount_active) AS p_discount_active) FROM tpcds.promotion</create_query>
+<create_query>CREATE TABLE tpcds_ice.reason ENGINE = IcebergLocal(concat(getServerSetting('user_files_path'), '/tpcds_ice_reason_', toString(toUnixTimestamp64Micro(now64(6))), '/')) SETTINGS allow_experimental_iceberg_compaction = 0 AS SELECT * REPLACE (toString(r_reason_id) AS r_reason_id, toString(r_reason_desc) AS r_reason_desc) FROM tpcds.reason</create_query>
+<create_query>CREATE TABLE tpcds_ice.ship_mode ENGINE = IcebergLocal(concat(getServerSetting('user_files_path'), '/tpcds_ice_ship_mode_', toString(toUnixTimestamp64Micro(now64(6))), '/')) SETTINGS allow_experimental_iceberg_compaction = 0 AS SELECT * REPLACE (toString(sm_ship_mode_id) AS sm_ship_mode_id, toString(sm_type) AS sm_type, toString(sm_code) AS sm_code, toString(sm_carrier) AS sm_carrier, toString(sm_contract) AS sm_contract) FROM tpcds.ship_mode</create_query>
+<create_query>CREATE TABLE tpcds_ice.store ENGINE = IcebergLocal(concat(getServerSetting('user_files_path'), '/tpcds_ice_store_', toString(toUnixTimestamp64Micro(now64(6))), '/')) SETTINGS allow_experimental_iceberg_compaction = 0 AS SELECT * REPLACE (toString(s_store_id) AS s_store_id, toString(s_hours) AS s_hours, toString(s_street_type) AS s_street_type, toString(s_suite_number) AS s_suite_number, toString(s_state) AS s_state, toString(s_zip) AS s_zip) FROM tpcds.store</create_query>
+<create_query>CREATE TABLE tpcds_ice.time_dim ENGINE = IcebergLocal(concat(getServerSetting('user_files_path'), '/tpcds_ice_time_dim_', toString(toUnixTimestamp64Micro(now64(6))), '/')) SETTINGS allow_experimental_iceberg_compaction = 0 AS SELECT * REPLACE (toString(t_time_id) AS t_time_id, toString(t_am_pm) AS t_am_pm, toString(t_shift) AS t_shift, toString(t_sub_shift) AS t_sub_shift, toString(t_meal_time) AS t_meal_time) FROM tpcds.time_dim</create_query>
+<create_query>CREATE TABLE tpcds_ice.warehouse ENGINE = IcebergLocal(concat(getServerSetting('user_files_path'), '/tpcds_ice_warehouse_', toString(toUnixTimestamp64Micro(now64(6))), '/')) SETTINGS allow_experimental_iceberg_compaction = 0 AS SELECT * REPLACE (toString(w_warehouse_id) AS w_warehouse_id, toString(w_street_number) AS w_street_number, toString(w_street_type) AS w_street_type, toString(w_suite_number) AS w_suite_number, toString(w_state) AS w_state, toString(w_zip) AS w_zip) FROM tpcds.warehouse</create_query>
+<create_query>CREATE TABLE tpcds_ice.web_page ENGINE = IcebergLocal(concat(getServerSetting('user_files_path'), '/tpcds_ice_web_page_', toString(toUnixTimestamp64Micro(now64(6))), '/')) SETTINGS allow_experimental_iceberg_compaction = 0 AS SELECT * REPLACE (toString(wp_web_page_id) AS wp_web_page_id, toString(wp_autogen_flag) AS wp_autogen_flag, toString(wp_type) AS wp_type) FROM tpcds.web_page</create_query>
+<create_query>CREATE TABLE tpcds_ice.web_site ENGINE = IcebergLocal(concat(getServerSetting('user_files_path'), '/tpcds_ice_web_site_', toString(toUnixTimestamp64Micro(now64(6))), '/')) SETTINGS allow_experimental_iceberg_compaction = 0 AS SELECT * REPLACE (toString(web_site_id) AS web_site_id, toString(web_company_name) AS web_company_name, toString(web_street_number) AS web_street_number, toString(web_street_type) AS web_street_type, toString(web_suite_number) AS web_suite_number, toString(web_state) AS web_state, toString(web_zip) AS web_zip) FROM tpcds.web_site</create_query>
+<create_query>CREATE TABLE tpcds_ice.store_sales ENGINE = IcebergLocal(concat(getServerSetting('user_files_path'), '/tpcds_ice_store_sales_', toString(toUnixTimestamp64Micro(now64(6))), '/')) SETTINGS allow_experimental_iceberg_compaction = 0 AS SELECT * FROM tpcds.store_sales</create_query>
+<create_query>CREATE TABLE tpcds_ice.store_returns ENGINE = IcebergLocal(concat(getServerSetting('user_files_path'), '/tpcds_ice_store_returns_', toString(toUnixTimestamp64Micro(now64(6))), '/')) SETTINGS allow_experimental_iceberg_compaction = 0 AS SELECT * FROM tpcds.store_returns</create_query>
+<create_query>CREATE TABLE tpcds_ice.catalog_sales ENGINE = IcebergLocal(concat(getServerSetting('user_files_path'), '/tpcds_ice_catalog_sales_', toString(toUnixTimestamp64Micro(now64(6))), '/')) SETTINGS allow_experimental_iceberg_compaction = 0 AS SELECT * FROM tpcds.catalog_sales</create_query>
+<create_query>CREATE TABLE tpcds_ice.catalog_returns ENGINE = IcebergLocal(concat(getServerSetting('user_files_path'), '/tpcds_ice_catalog_returns_', toString(toUnixTimestamp64Micro(now64(6))), '/')) SETTINGS allow_experimental_iceberg_compaction = 0 AS SELECT * FROM tpcds.catalog_returns</create_query>
+<create_query>CREATE TABLE tpcds_ice.web_sales ENGINE = IcebergLocal(concat(getServerSetting('user_files_path'), '/tpcds_ice_web_sales_', toString(toUnixTimestamp64Micro(now64(6))), '/')) SETTINGS allow_experimental_iceberg_compaction = 0 AS SELECT * FROM tpcds.web_sales</create_query>
+<create_query>CREATE TABLE tpcds_ice.web_returns ENGINE = IcebergLocal(concat(getServerSetting('user_files_path'), '/tpcds_ice_web_returns_', toString(toUnixTimestamp64Micro(now64(6))), '/')) SETTINGS allow_experimental_iceberg_compaction = 0 AS SELECT * FROM tpcds.web_returns</create_query>
+<create_query>CREATE TABLE tpcds_ice.inventory ENGINE = IcebergLocal(concat(getServerSetting('user_files_path'), '/tpcds_ice_inventory_', toString(toUnixTimestamp64Micro(now64(6))), '/')) SETTINGS allow_experimental_iceberg_compaction = 0 AS SELECT * FROM tpcds.inventory</create_query>
+
+<fill_query>USE tpcds_ice</fill_query>
+
+<!-- Q1 -->  <query file="../benchmarks/tpc-ds/queries/query_01.sql"/>
+<!-- Q2 -->  <query file="../benchmarks/tpc-ds/queries/query_02.sql"/>
+<!-- Q3 -->  <query file="../benchmarks/tpc-ds/queries/query_03.sql"/>
+<!-- Q4 -->  <query file="../benchmarks/tpc-ds/queries/query_04.sql"/>
+<!-- Q5 -->  <query file="../benchmarks/tpc-ds/queries/query_05.sql"/>
+<!-- Q6 -->  <query file="../benchmarks/tpc-ds/queries/query_06.sql"/>
+<!-- Q7 -->  <query file="../benchmarks/tpc-ds/queries/query_07.sql"/>
+<!-- Q8 -->  <query file="../benchmarks/tpc-ds/queries/query_08.sql"/>
+<!-- Q9 -->  <query file="../benchmarks/tpc-ds/queries/query_09.sql"/>
+<!-- Q10 --> <query file="../benchmarks/tpc-ds/queries/query_10.sql"/>
+<!-- Q11 --> <query file="../benchmarks/tpc-ds/queries/query_11.sql"/>
+<!-- Q12 --> <query file="../benchmarks/tpc-ds/queries/query_12.sql"/>
+<!-- Q13 --> <query file="../benchmarks/tpc-ds/queries/query_13.sql"/>
+<!-- Q14 --> <query file="../benchmarks/tpc-ds/queries/query_14.sql"/>
+<!-- Q15 --> <query file="../benchmarks/tpc-ds/queries/query_15.sql"/>
+<!-- Q16 --> <query file="../benchmarks/tpc-ds/queries/query_16.sql"/>
+<!-- Q17 --> <query file="../benchmarks/tpc-ds/queries/query_17.sql"/>
+<!-- Q18 --> <query file="../benchmarks/tpc-ds/queries/query_18.sql"/>
+<!-- Q19 --> <query file="../benchmarks/tpc-ds/queries/query_19.sql"/>
+<!-- Q20 --> <query file="../benchmarks/tpc-ds/queries/query_20.sql"/>
+<!-- Q21 --> <query file="../benchmarks/tpc-ds/queries/query_21.sql"/>
+<!-- Q22 --> <query file="../benchmarks/tpc-ds/queries/query_22.sql"/>
+<!-- Q23 --> <query file="../benchmarks/tpc-ds/queries/query_23.sql"/>
+<!-- Q24 --> <query file="../benchmarks/tpc-ds/queries/query_24.sql"/>
+<!-- Q25 --> <query file="../benchmarks/tpc-ds/queries/query_25.sql"/>
+<!-- Q26 --> <query file="../benchmarks/tpc-ds/queries/query_26.sql"/>
+<!-- Q27 --> <query file="../benchmarks/tpc-ds/queries/query_27.sql"/>
+<!-- Q28 --> <query file="../benchmarks/tpc-ds/queries/query_28.sql"/>
+<!-- Q29 --> <query file="../benchmarks/tpc-ds/queries/query_29.sql"/>
+<!-- Q30 --> <query file="../benchmarks/tpc-ds/queries/query_30.sql"/>
+<!-- Q31 --> <query file="../benchmarks/tpc-ds/queries/query_31.sql"/>
+<!-- Q32 --> <query file="../benchmarks/tpc-ds/queries/query_32.sql"/>
+<!-- Q33 --> <query file="../benchmarks/tpc-ds/queries/query_33.sql"/>
+<!-- Q34 --> <query file="../benchmarks/tpc-ds/queries/query_34.sql"/>
+<!-- Q36 --> <query file="../benchmarks/tpc-ds/queries/query_36.sql"/>
+<!-- Q37 --> <query file="../benchmarks/tpc-ds/queries/query_37.sql"/>
+<!-- Q38 --> <query file="../benchmarks/tpc-ds/queries/query_38.sql"/>
+<!-- Q39 --> <query file="../benchmarks/tpc-ds/queries/query_39.sql"/>
+<!-- Q40 --> <query file="../benchmarks/tpc-ds/queries/query_40.sql"/>
+<!-- Q41 --> <query file="../benchmarks/tpc-ds/queries/query_41.sql"/>
+<!-- Q42 --> <query file="../benchmarks/tpc-ds/queries/query_42.sql"/>
+<!-- Q43 --> <query file="../benchmarks/tpc-ds/queries/query_43.sql"/>
+<!-- Q44 --> <query file="../benchmarks/tpc-ds/queries/query_44.sql"/>
+<!-- Q45 --> <query file="../benchmarks/tpc-ds/queries/query_45.sql"/>
+<!-- Q46 --> <query file="../benchmarks/tpc-ds/queries/query_46.sql"/>
+<!-- Q47 --> <query file="../benchmarks/tpc-ds/queries/query_47.sql"/>
+<!-- Q48 --> <query file="../benchmarks/tpc-ds/queries/query_48.sql"/>
+<!-- Q49 --> <query file="../benchmarks/tpc-ds/queries/query_49.sql"/>
+<!-- Q50 --> <query file="../benchmarks/tpc-ds/queries/query_50.sql"/>
+<!-- Q51 --> <query file="../benchmarks/tpc-ds/queries/query_51.sql"/>
+<!-- Q52 --> <query file="../benchmarks/tpc-ds/queries/query_52.sql"/>
+<!-- Q53 --> <query file="../benchmarks/tpc-ds/queries/query_53.sql"/>
+<!-- Q54 --> <query file="../benchmarks/tpc-ds/queries/query_54.sql"/>
+<!-- Q55 --> <query file="../benchmarks/tpc-ds/queries/query_55.sql"/>
+<!-- Q56 --> <query file="../benchmarks/tpc-ds/queries/query_56.sql"/>
+<!-- Q57 --> <query file="../benchmarks/tpc-ds/queries/query_57.sql"/>
+<!-- Q58 --> <query file="../benchmarks/tpc-ds/queries/query_58.sql"/>
+<!-- Q59 --> <query file="../benchmarks/tpc-ds/queries/query_59.sql"/>
+<!-- Q60 --> <query file="../benchmarks/tpc-ds/queries/query_60.sql"/>
+<!-- Q61 --> <query file="../benchmarks/tpc-ds/queries/query_61.sql"/>
+<!-- Q62 --> <query file="../benchmarks/tpc-ds/queries/query_62.sql"/>
+<!-- Q63 --> <query file="../benchmarks/tpc-ds/queries/query_63.sql"/>
+<!-- Q64 --> <query file="../benchmarks/tpc-ds/queries/query_64.sql"/>
+<!-- Q65 --> <query file="../benchmarks/tpc-ds/queries/query_65.sql"/>
+<!-- Q66 --> <query file="../benchmarks/tpc-ds/queries/query_66.sql"/>
+<!-- Q67 --> <query file="../benchmarks/tpc-ds/queries/query_67.sql"/>
+<!-- Q68 --> <query file="../benchmarks/tpc-ds/queries/query_68.sql"/>
+<!-- Q69 --> <query file="../benchmarks/tpc-ds/queries/query_69.sql"/>
+<!-- Q70 --> <query file="../benchmarks/tpc-ds/queries/query_70.sql"/>
+<!-- Q71 --> <query file="../benchmarks/tpc-ds/queries/query_71.sql"/>
+<!-- Q72 --> <query file="../benchmarks/tpc-ds/queries/query_72.sql"/>
+<!-- Q73 --> <query file="../benchmarks/tpc-ds/queries/query_73.sql"/>
+<!-- Q74 --> <query file="../benchmarks/tpc-ds/queries/query_74.sql"/>
+<!-- Q75 --> <query file="../benchmarks/tpc-ds/queries/query_75.sql"/>
+<!-- Q76 --> <query file="../benchmarks/tpc-ds/queries/query_76.sql"/>
+<!-- Q77 --> <query file="../benchmarks/tpc-ds/queries/query_77.sql"/>
+<!-- Q78 --> <query file="../benchmarks/tpc-ds/queries/query_78.sql"/>
+<!-- Q79 --> <query file="../benchmarks/tpc-ds/queries/query_79.sql"/>
+<!-- Q80 --> <query file="../benchmarks/tpc-ds/queries/query_80.sql"/>
+<!-- Q81 --> <query file="../benchmarks/tpc-ds/queries/query_81.sql"/>
+<!-- Q82 --> <query file="../benchmarks/tpc-ds/queries/query_82.sql"/>
+<!-- Q83 --> <query file="../benchmarks/tpc-ds/queries/query_83.sql"/>
+<!-- Q84 --> <query file="../benchmarks/tpc-ds/queries/query_84.sql"/>
+<!-- Q85 --> <query file="../benchmarks/tpc-ds/queries/query_85.sql"/>
+<!-- Q86 --> <query file="../benchmarks/tpc-ds/queries/query_86.sql"/>
+<!-- Q87 --> <query file="../benchmarks/tpc-ds/queries/query_87.sql"/>
+<!-- Q88 --> <query file="../benchmarks/tpc-ds/queries/query_88.sql"/>
+<!-- Q89 --> <query file="../benchmarks/tpc-ds/queries/query_89.sql"/>
+<!-- Q90 --> <query file="../benchmarks/tpc-ds/queries/query_90.sql"/>
+<!-- Q91 --> <query file="../benchmarks/tpc-ds/queries/query_91.sql"/>
+<!-- Q92 --> <query file="../benchmarks/tpc-ds/queries/query_92.sql"/>
+<!-- Q93 --> <query file="../benchmarks/tpc-ds/queries/query_93.sql"/>
+<!-- Q94 --> <query file="../benchmarks/tpc-ds/queries/query_94.sql"/>
+<!-- Q95 --> <query file="../benchmarks/tpc-ds/queries/query_95.sql"/>
+<!-- Q96 --> <query file="../benchmarks/tpc-ds/queries/query_96.sql"/>
+<!-- Q97 --> <query file="../benchmarks/tpc-ds/queries/query_97.sql"/>
+<!-- Q98 --> <query file="../benchmarks/tpc-ds/queries/query_98.sql"/>
+<!-- Q99 --> <query file="../benchmarks/tpc-ds/queries/query_99.sql"/>
+
+<drop_query>DROP DATABASE IF EXISTS tpcds_ice SYNC</drop_query>
+
+</test>

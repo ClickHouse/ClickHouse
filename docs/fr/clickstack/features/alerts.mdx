@@ -4,10 +4,8 @@ title: 'Alertes avec ClickStack'
 sidebarTitle: 'Alertes'
 description: 'Alertes avec ClickStack'
 doc_type: 'guide'
-keywords: ['ClickStack', 'observability', 'alertes', 'search-alerts', 'notifications', 'seuils', 'slack', 'email', 'pagerduty', 'monitoring-des-erreurs', 'monitoring-des-performances', 'événements-utilisateur']
+keywords: ['ClickStack', 'observability', 'alertes', 'search-alerts', 'détection-des-anomalies', 'notifications', 'seuils', 'slack', 'email', 'pagerduty', 'monitoring-des-erreurs', 'monitoring-des-performances', 'événements-utilisateur']
 ---
-
-import { Image } from "/snippets/fr/components/Image.jsx";
 
 ClickStack inclut la prise en charge native des alertes, ce qui permet aux équipes de détecter les problèmes et d’y répondre en temps réel dans les logs, les metrics et les traces.
 
@@ -19,11 +17,14 @@ Les alertes fonctionnent de manière fluide sur l’ensemble de vos données Cli
   ## Types d’alertes
 </div>
 
-ClickStack prend en charge deux façons complémentaires de créer des alertes : **alertes de recherche** et **Dashboard chart alerts**. Une fois l’alerte créée, elle est associée soit à la recherche, soit au graphique.
+ClickStack prend en charge deux façons complémentaires de créer des alertes : **alertes de recherche** et **Dashboard chart alerts**. Une fois l’alerte créée, elle est associée soit à la recherche, soit au graphique.
 
-<div id="search-alerts">
-  ### 1. Alertes de recherche
-</div>
+Chaque alerte utilise l’un des deux modes de détection, à sélectionner sous **Alert type** dans l’éditeur d’alerte :
+
+* **Static threshold** : se déclenche lorsque la valeur franchit un seuil numérique que vous définissez. Il s’agit du mode par défaut, décrit sur cette page.
+* **Anomaly detection** (Managed ClickStack uniquement) : se déclenche lorsque la valeur sort de sa plage attendue, déterminée à partir de l’historique récent. Consultez [Alertes de détection d’anomalies](/fr/clickstack/features/anomaly-detection).
+
+### 1. Alertes de recherche {#search-alerts}
 
 Les alertes de recherche vous permettent de déclencher des notifications en fonction des résultats d’une recherche enregistrée. Elles vous aident à détecter lorsque des événements ou des motifs spécifiques se produisent plus (ou moins) fréquemment que prévu.
 
@@ -37,7 +38,15 @@ Pour qu’une alerte puisse être créée pour une recherche, celle-ci doit êtr
   <Step title="Ouvrir la boîte de dialogue de création d’alerte" id="open-dialog">
     Commencez par saisir une [recherche](/fr/clickstack/features/search), puis cliquez sur le bouton `Alerts` dans l’angle supérieur droit de la page `Search`.
 
-    <Image img="/images/use-cases/observability/alerts_search_view.webp" alt="Vue Search des alertes" size="lg" />
+    <div className="ch-image-lg">
+
+    <Frame>
+
+    ![Vue Search des alertes](/images/use-cases/observability/alerts_search_view.webp)
+
+    </Frame>
+
+    </div>
   </Step>
 
   <Step title="Créer l’alerte" id="create-the-alert">
@@ -50,17 +59,31 @@ Pour qu’une alerte puisse être créée pour une recherche, celle-ci doit êtr
 
     Avant d’enregistrer, ClickStack visualise la condition de seuil afin que vous puissiez vérifier qu’elle se comportera comme prévu.
 
-    <Image img="/images/use-cases/observability/search_alert.webp" alt="Alertes de recherche" size="lg" />
+    <div className="ch-image-lg">
+
+    <Frame>
+
+    ![Alertes de recherche](/images/use-cases/observability/search_alert.webp)
+
+    </Frame>
+
+    </div>
   </Step>
 </Steps>
 
 Notez que plusieurs alertes peuvent être ajoutées à une recherche. Si vous répétez le processus ci-dessus, vous verrez les alertes actuelles sous forme d’onglets en haut de la boîte de dialogue de modification d’alerte, chaque alerte étant associée à un numéro.
 
-<Image img="/images/use-cases/observability/multiple_search_alerts.webp" alt="Alertes multiples" size="md" />
+<div className="ch-image-md">
 
-<div id="dashboard-alerts">
-  ### 2. Dashboard chart alerts
+<Frame>
+
+![Alertes multiples](/images/use-cases/observability/multiple_search_alerts.webp)
+
+</Frame>
+
 </div>
+
+### 2. Dashboard chart alerts {#dashboard-alerts}
 
 Les alertes sur tableau de bord étendent l’alerte aux graphiques.
 
@@ -80,27 +103,49 @@ Les alertes peuvent être créées pendant le processus de création du graphiqu
   <Step title="Ouvrir la boîte de dialogue de modification du graphique" id="open-chart-dialog">
     Ouvrez le menu de configuration du graphique et sélectionnez le bouton d’alerte. La boîte de dialogue de modification du graphique s’affiche.
 
-    <Image img="/images/use-cases/observability/edit_chart_alert.webp" alt="Modifier l’alerte du graphique" size="lg" />
+    <div className="ch-image-lg">
+
+    <Frame>
+
+    ![Modifier l’alerte du graphique](/images/use-cases/observability/edit_chart_alert.webp)
+
+    </Frame>
+
+    </div>
   </Step>
 
   <Step title="Ajouter l’alerte" id="add-chart-alert">
     Sélectionnez **Add Alert**.
 
-    <Image img="/images/use-cases/observability/add_chart_alert.webp" alt="Ajouter une alerte au graphique" size="lg" />
+    <div className="ch-image-lg">
+
+    <Frame>
+
+    ![Ajouter une alerte au graphique](/images/use-cases/observability/add_chart_alert.webp)
+
+    </Frame>
+
+    </div>
   </Step>
 
   <Step title="Définir les conditions de l’alerte" id="define-alert-conditions">
     Définissez la condition (`>=`, `>`, `<=`, `<`, `=`, `!=`, `<= x >=`, `> or <`), le seuil, la durée et le webhook. La durée détermine également la fréquence de déclenchement de l’alerte.
 
-    <Image img="/images/use-cases/observability/create_chart_alert.webp" alt="Créer une alerte pour le graphique" size="lg" />
+    <div className="ch-image-lg">
+
+    <Frame>
+
+    ![Créer une alerte pour le graphique](/images/use-cases/observability/create_chart_alert.webp)
+
+    </Frame>
+
+    </div>
 
     Vous pouvez ajouter un nouveau webhook directement depuis cette vue. Voir [Ajouter un webhook](#add-webhook) pour plus de détails.
   </Step>
 </Steps>
 
-<div id="add-webhook">
-  ## Ajouter un webhook
-</div>
+## Ajouter un webhook {#add-webhook}
 
 Lors de la création d&#39;une alerte, vous pouvez utiliser un webhook existant ou en créer un. Une fois créé, le webhook pourra être réutilisé dans d&#39;autres alertes.
 
@@ -108,11 +153,27 @@ Un webhook peut être créé pour différents types de service, notamment Slack 
 
 Par exemple, prenons le cas de la création de l&#39;alerte pour un graphique ci-dessous. Avant de spécifier le webhook, l&#39;utilisateur peut sélectionner `Add New Webhook`.
 
-<Image img="/images/use-cases/observability/add_new_webhook.webp" alt="Ajouter un webhook" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Ajouter un webhook](/images/use-cases/observability/add_new_webhook.webp)
+
+</Frame>
+
+</div>
 
 Cela ouvre la boîte de dialogue de création du webhook, dans laquelle vous pouvez créer un nouveau webhook :
 
-<Image img="/images/use-cases/observability/add_webhook_dialog.webp" alt="Création du webhook" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Création du webhook](/images/use-cases/observability/add_webhook_dialog.webp)
+
+</Frame>
+
+</div>
 
 Un nom de webhook est requis, tandis que la description est facultative. Les autres paramètres à renseigner dépendent du type de service.
 
@@ -154,17 +215,31 @@ Selon le type de service, vous devrez fournir des informations différentes, à 
 * En-têtes du webhook (facultatif)
 * Corps du webhook (facultatif). Le corps prend actuellement en charge les variables de modèle `{{title}}`, `{{body}}` et `{{link}}`.
 
-<div id="managing-alerts">
-  ## Gérer les alertes
-</div>
+## Gérer les alertes {#managing-alerts}
 
 Les alertes peuvent être gérées de façon centralisée depuis le panneau des alertes, sur la gauche de HyperDX.
 
-<Image img="/images/use-cases/observability/manage_alerts.webp" alt="Gérer les alertes" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Gérer les alertes](/images/use-cases/observability/manage_alerts.webp)
+
+</Frame>
+
+</div>
 
 Depuis cette vue, vous pouvez voir toutes les alertes qui ont été créées et qui sont actuellement actives dans ClickStack.
 
-<Image img="/images/use-cases/observability/alerts_view.webp" alt="Vue des alertes" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Vue des alertes](/images/use-cases/observability/alerts_view.webp)
+
+</Frame>
+
+</div>
 
 Cette vue affiche également l’historique d’évaluation des alertes. Les alertes sont évaluées à intervalles réguliers (définis par la période/durée configurée lors de la création de l’alerte). À chaque évaluation, HyperDX interroge vos données pour vérifier si la condition de l’alerte est remplie :
 
@@ -177,14 +252,20 @@ Dans l’exemple ci-dessus, la première alerte s’est déclenchée à chaque �
 
 En cliquant sur une alerte, vous accédez au graphique ou à la recherche auquel elle est associée.
 
-<div id="deleting-alerts">
-  ### Suppression d’une alerte
-</div>
+### Suppression d’une alerte {#deleting-alerts}
 
 Pour supprimer une alerte, ouvrez la boîte de dialogue de modification du Search ou du graphique associé, puis sélectionnez **Supprimer l’alerte**.
 Dans l’exemple ci-dessous, le bouton `Remove Alert` supprimera l’alerte du graphique.
 
-<Image img="/images/use-cases/observability/remove_chart_alert.webp" alt="Supprimer l’alerte du graphique" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Supprimer l’alerte du graphique](/images/use-cases/observability/remove_chart_alert.webp)
+
+</Frame>
+
+</div>
 
 <div id="sql-based-alerts">
   ## Alertes de graphiques basées sur SQL
@@ -206,9 +287,7 @@ Les alertes SQL sont prises en charge pour trois types de graphiques :
 
 Les autres types de graphiques SQL (Table, Pie, Heatmap, etc.) ne prennent pas en charge les alertes.
 
-<div id="create-sql-based-alert">
-  ### Créer une alerte SQL
-</div>
+### Créer une alerte SQL {#create-sql-based-alert}
 
 Pour créer une alerte sur un graphique SQL :
 
@@ -218,7 +297,15 @@ Pour créer une alerte sur un graphique SQL :
 
     Choisissez **Line**, **Stacked Bar** ou **Number** comme type d’affichage.
 
-    <Image img="/images/use-cases/observability/open_sql_chart_mode.webp" alt="Créer un graphique SQL" size="lg" />
+    <div className="ch-image-lg">
+
+    <Frame>
+
+    ![Créer un graphique SQL](/images/use-cases/observability/open_sql_chart_mode.webp)
+
+    </Frame>
+
+    </div>
   </Step>
 
   <Step title="Ajouter l’alerte" id="add-sql-alert">
@@ -229,7 +316,15 @@ Pour créer une alerte sur un graphique SQL :
     * **Interval** : la fréquence d’évaluation de l’alerte (1m, 5m, 15m, 30m, 1h, 6h, 12h ou 1d). Cela définit également l’intervalle de temps de chaque évaluation.
     * **Webhook** : le canal de notification à utiliser lorsque l’alerte se déclenche. Voir [Ajouter un webhook](#add-webhook).
 
-    <Image img="/images/use-cases/observability/add_raw_sql_alert.webp" alt="Modifier l’alerte du graphique" size="lg" />
+    <div className="ch-image-lg">
+
+    <Frame>
+
+    ![Modifier l’alerte du graphique](/images/use-cases/observability/add_raw_sql_alert.webp)
+
+    </Frame>
+
+    </div>
 
     <Warning>
       **intervalle de temps de l’alerte**
@@ -308,11 +403,13 @@ WHERE request_count > 10
 
 Dans cette requête, `ServiceName` est une colonne qui n’est ni numérique ni de type horodatage ; chaque service est donc suivi dans un groupe d’alertes distinct. L’alerte se déclenche indépendamment pour chaque service.
 
-<div id="example-anomaly-detection">
-  #### Détection d’anomalies avec moyenne décalée (séries temporelles)
-</div>
+#### Détection d’anomalies avec moyenne décalée (séries temporelles) {#example-anomaly-detection}
 
-Déclenchez une alerte lorsque le nombre d’erreurs dépasse une moyenne mobile de plus de deux écarts-types. Cela permet de détecter des pics par rapport au niveau de référence récent plutôt qu’en fonction d’un seuil fixe.
+Déclenchez une alerte lorsque le nombre d’erreurs dépasse une moyenne mobile de plus de deux écarts-types. Cela permet de détecter des pics par rapport à la valeur de référence récente plutôt qu’en fonction d’un seuil fixe.
+
+<Tip>
+  Sur Managed ClickStack, les [alertes de détection d’anomalies](/fr/clickstack/features/anomaly-detection) offrent cette fonctionnalité sans SQL personnalisé, avec en plus une préversion, un backtest et des valeurs de référence par groupe. Utilisez l’approche SQL ci-dessous si vous avez besoin d’un contrôle total sur le calcul de la valeur de référence, ou si vous utilisez ClickStack Open Source.
+</Tip>
 
 ```sql
 WITH buckets AS (
@@ -354,8 +451,8 @@ WHERE ts >= fromUnixTimestamp64Milli({startDateMilliseconds:Int64})
   AND ts < fromUnixTimestamp64Milli({endDateMilliseconds:Int64})
 ```
 
-**Type d&#39;affichage** : Ligne
-**Seuil** : `> 0` (se déclenche lorsqu’un excès d’erreurs au-dessus de la baseline glissante est détecté)
+**Type d&#39;affichage** : ligne
+**Seuil** : `> 0` (se déclenche lorsqu’un excès d’erreurs au-dessus de la valeur de référence glissante est détecté)
 
 Notez que la requête récupère 30 intervalles *avant* le début de la plage de dates afin d’initialiser les calculs de fenêtre glissante, puis filtre le résultat final pour ne conserver que la fenêtre d’évaluation.
 
@@ -363,15 +460,20 @@ Notez que la requête récupère 30 intervalles *avant* le début de la plage de
   ## Scénarios d&#39;alerte courants
 </div>
 
-Voici quelques scénarios d&#39;alerte courants pour lesquels vous pouvez utiliser HyperDX :
+Voici quelques scénarios d&#39;alerte courants pour lesquels vous pouvez utiliser HyperDX :
 
-**Erreurs :** Nous vous recommandons de configurer des alertes pour les recherches enregistrées par défaut
+**Erreurs :** Nous vous recommandons de configurer des alertes pour les recherches enregistrées par défaut
 `All Error Events` et `HTTP Status >= 400` afin d&#39;être averti en cas de
 nombre excessif d&#39;erreurs.
 
-**Opérations lentes :** Vous pouvez également configurer une recherche pour les opérations lentes (par exemple,
+**Opérations lentes :** Vous pouvez également configurer une recherche pour les opérations lentes (par exemple,
 `duration:>5000`), puis déclencher une alerte lorsqu&#39;un trop grand nombre d&#39;opérations lentes
 surviennent.
 
-**Événements utilisateur :** Vous pouvez aussi configurer des alertes pour que les équipes en contact avec les clients soient
+**Événements utilisateur :** Vous pouvez aussi configurer des alertes pour que les équipes en contact avec les clients soient
 averties lorsque de nouveaux utilisateurs s&#39;inscrivent ou lorsqu&#39;une action utilisateur critique est effectuée.
+
+**Variations inhabituelles :** Lorsqu&#39;aucun seuil évident ne se dégage, par exemple lorsque le nombre d&#39;erreurs
+varie selon le service ou que le trafic évolue au fil de la journée, utilisez une
+[alerte de détection d&#39;anomalies](/fr/clickstack/features/anomaly-detection) regroupée par
+`ServiceName`.

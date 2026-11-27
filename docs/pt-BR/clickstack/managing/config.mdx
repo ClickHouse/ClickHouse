@@ -6,8 +6,6 @@ keywords: ['configuração do ClickStack', 'configuração de observabilidade', 
 doc_type: 'reference'
 ---
 
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
-
 As opções de configuração a seguir estão disponíveis para cada componente do ClickStack:
 
 <div id="modifying-settings">
@@ -117,7 +115,15 @@ A UI do ClickStack depende de o usuário definir uma fonte para cada um dos tipo
 
 Essa configuração pode ser feita no aplicativo em `Team Settings -> Sources`, como mostrado abaixo para logs:
 
-<Image img="/images/use-cases/observability/hyperdx-25.webp" alt="Configuração de fonte do HyperDX" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Configuração de fonte do HyperDX](/images/use-cases/observability/hyperdx-25.webp)
+
+</Frame>
+
+</div>
 
 Cada uma dessas fontes exige que pelo menos uma tabela seja especificada na criação, além de um conjunto de colunas que permite ao HyperDX consultar os dados.
 
@@ -296,15 +302,39 @@ Cada atributo é configurado com as seguintes configurações:
 
 Por exemplo, esta trace fonte foi configurada com um Atributo destacado e um Atributo de trace destacado:
 
-<Image img="/images/use-cases/observability/hyperdx-highlighted-attributes-config.webp" alt="Configuração de Atributos destacados" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Configuração de Atributos destacados](/images/use-cases/observability/hyperdx-highlighted-attributes-config.webp)
+
+</Frame>
+
+</div>
 
 Esses atributos são exibidos no painel lateral após clicar em um log ou span:
 
-<Image img="/images/use-cases/observability/hyperdx-highlighted-attributes.webp" alt="Atributos destacados" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Atributos destacados](/images/use-cases/observability/hyperdx-highlighted-attributes.webp)
+
+</Frame>
+
+</div>
 
 Ao clicar em um atributo, são fornecidas opções para usá-lo como valor de busca. Se a expressão Lucene opcional for fornecida na configuração do atributo, a expressão Lucene será usada para a busca em vez da expressão SQL.
 
-<Image img="/images/use-cases/observability/hyperdx-highlighted-attributes-search.webp" alt="Busca de Atributos destacados" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Busca de Atributos destacados](/images/use-cases/observability/hyperdx-highlighted-attributes-search.webp)
+
+</Frame>
+
+</div>
 
 <div id="correlated-sources">
   ### Fontes correlacionadas
@@ -321,7 +351,15 @@ Configurar essas correlações habilita vários recursos. Por exemplo, o HyperDX
 
 Por exemplo, abaixo está a fonte de Logs configurada com fontes correlacionadas:
 
-<Image img="/images/use-cases/observability/hyperdx-26.webp" alt="Fonte correlacionada do HyperDX" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Fonte correlacionada do HyperDX](/images/use-cases/observability/hyperdx-26.webp)
+
+</Frame>
+
+</div>
 
 <div id="application-configuration-settings">
   ### Configurações do aplicativo

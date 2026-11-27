@@ -49,13 +49,13 @@ print(common.get_setting("invalid_setting_action"))
 
 يدعم ClickHouse Connect ضغط الاستجابة باستخدام lz4 وzstd وbrotli وgzip وdeflate. كما تدعم عمليات الإدراج Native كلاً من lz4 وzstd وbrotli وgzip. يوازن الضغط بين استهلاك وقت CPU وتقليل حجم النقل عبر الشبكة.
 
-لتلقّي بيانات مضغوطة، يجب ضبط `enable_http_compression` على ClickHouse server إلى 1، أو يجب أن تكون لدى المستخدم permission لتغيير هذا الإعداد على أساس &quot;لكل query&quot;.
+لتلقّي بيانات مضغوطة، يجب ضبط `enable_http_compression` على خادم ClickHouse إلى 1، أو يجب أن تكون لدى المستخدم permission لتغيير هذا الإعداد على أساس &quot;لكل query&quot;.
 
-يُتحكَّم في الضغط من خلال الوسيط `compress` في `get_client` و`get_async_client`. تشير القيمة الافتراضية `True` إلى جميع ترميزات الاستجابة المتاحة، وتضغط insert blocks الخاصة بـ Native باستخدام lz4. اضبط `compress=False` لتعطيل الضغط، أو مرّر إحدى القيم `"lz4"` أو `"zstd"` أو `"br"` أو `"gzip"` لطلب طريقة محددة.
+يُتحكَّم في الضغط من خلال الوسيطة `compress` في `get_client` و`get_async_client`. تشير القيمة الافتراضية `True` إلى جميع ترميزات الاستجابة المتاحة، وتضغط blocks الإدراج الخاصة بـ Native باستخدام lz4. اضبط `compress=False` لتعطيل الضغط، أو مرّر إحدى القيم `"lz4"` أو `"zstd"` أو `"br"` أو `"gzip"` لطلب طريقة محددة.
 
-لا تستخدم methods الخاصة بالعميل الخام إعداد `compress` على مستوى client. تُرجع `raw_query` و`raw_stream` بيانات غير مضغوطة، بينما يستخدم `raw_insert` وسيط `compression` خاصًا به يصف الضغط المطبّق مسبقًا على payload.
+لا تستخدم methods الخاصة بالعميل الخام إعداد `compress` على مستوى Client. تُرجع `raw_query` و`raw_stream` بيانات غير مضغوطة، بينما يستخدم `raw_insert` وسيطة `compression` خاصةً به تصف الضغط المطبّق مسبقًا على payload.
 
-يُثبَّت دعم lz4 وzstd مع ClickHouse Connect. في بايثون 3.14، يستخدم zstd وحدة المكتبة القياسية `compression.zstd`. وتستخدم إصدارات بايثون من 3.10 إلى 3.13 `backports.zstd`. وحتى إذا كان مفسّر CPython 3.14+ مخصصًا ومبنيًا دون دعم zstd، فيمكن استيراده؛ إذ يُستبعد zstd من methods المتاحة، ولا يظهر error إلا عند طلب zstd صراحةً. أما Brotli فهو اختياري ويجب تثبيته بشكل منفصل قبل استخدام `compress="br"`.
+يُثبَّت دعم lz4 وzstd مع ClickHouse Connect. في بايثون 3.14 والإصدارات الأحدث، يستخدم zstd وحدة المكتبة القياسية `compression.zstd`. وتستخدم إصدارات بايثون من 3.10 إلى 3.13 `backports.zstd`. وحتى إذا كان مفسّر CPython 3.14+ مخصصًا ومبنيًا دون دعم zstd، فيمكن استيراده؛ إذ يُستبعد zstd من methods المتاحة، ولا يظهر error إلا عند طلب zstd صراحةً. أما Brotli فهو اختياري ويجب تثبيته بشكل منفصل قبل استخدام `compress="br"`.
 
 يكون gzip أبطأ عمومًا من lz4 أو zstd في workloads الخاصة بـ ClickHouse.
 

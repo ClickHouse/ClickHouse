@@ -8,13 +8,20 @@ doc_type: 'guide'
 ---
 
 import { PrivatePreviewBadge } from '/snippets/fr/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
-import { Image } from "/snippets/fr/components/Image.jsx";
 
 <PrivatePreviewBadge />
 
 Le mode managé s&#39;exécute sur un cluster Amazon EKS dont vous êtes propriétaire. Chaque version fournit quatre modules racines Terraform (appelés « racines » ci-dessous) qui créent un cluster répondant à ses exigences ou ajoutent les éléments nécessaires à un VPC ou à un cluster existant. Les racines créent le cluster avec son groupe de nœuds système et ses add-ons managés (`vpc-cni`, `kube-proxy`, `coredns`, `aws-ebs-csi-driver`), ainsi que les rôles IAM, les clés KMS et les balises ; `existing-eks` installe uniquement les add-ons que vous indiquez dans `install_addons`. Sur la cible Helm, `clicklink clctl init` installe ensuite la couche plateforme à partir des sorties et d&#39;un bundle de plateforme : Karpenter, le contrôleur AWS Load Balancer, la StorageClass et les composants à version figée (voir [initialiser le connecteur à partir des sorties Terraform](#hand-off)). Les racines nécessitent Terraform 1.10+ ou OpenTofu 1.12+, ainsi que le fournisseur AWS `~> 6.0`. Vous pouvez utiliser `tofu` à la place de `terraform` dans toutes les commandes de cette page.
 
-<Image img="/images/cloud/reference/byoc-connector-terraform-flow.svg" size="lg" alt="Flux de provisionnement Terraform pour le ClickHouse Connector sur AWS" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Flux de provisionnement Terraform pour le ClickHouse Connector sur AWS](/images/cloud/reference/byoc-connector-terraform-flow.svg)
+
+</Frame>
+
+</div>
 
 ## Avant de commencer {#before-you-begin}
 

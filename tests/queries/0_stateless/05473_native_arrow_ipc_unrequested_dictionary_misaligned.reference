@@ -1,0 +1,6 @@
+--- SELECT the column whose dictionary is intact succeeds ---
+a0
+a1
+a2
+--- SELECT the column whose dictionary is misaligned fails ---
+misaligned record batch vector

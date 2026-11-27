@@ -9,7 +9,6 @@
 -- but the `force_*` settings still report `INDEX_NOT_USED`. These tests lock in that behavior
 -- so a future change does not silently alter it.
 
-SET enable_analyzer = 1;
 SET use_constant_folding_in_index_analysis = 1;
 SET use_statistics_for_part_pruning=0;
 

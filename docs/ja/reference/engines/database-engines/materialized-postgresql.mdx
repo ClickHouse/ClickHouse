@@ -31,9 +31,7 @@ PostgreSQL データベースのテーブルを取り込んだ ClickHouse デー
   ```
 </Note>
 
-<div id="creating-a-database">
-  ## データベースの作成
-</div>
+## データベースの作成 {#creating-a-database}
 
 ```sql
 CREATE DATABASE [IF NOT EXISTS] db_name [ON CLUSTER cluster]
@@ -47,9 +45,7 @@ ENGINE = MaterializedPostgreSQL('host:port', 'database', 'user', 'password') [SE
 * `user` — PostgreSQL ユーザー。
 * `password` — ユーザーのパスワード。
 
-<div id="example-of-use">
-  ## 使用例
-</div>
+## 使用例 {#example-of-use}
 
 ```sql
 CREATE DATABASE postgres_db
@@ -64,9 +60,7 @@ SHOW TABLES FROM postgres_db;
 SELECT * FROM postgres_db.postgres_table;
 ```
 
-<div id="dynamically-adding-table-to-replication">
-  ## レプリケーションに新しいテーブルを動的に追加する
-</div>
+## レプリケーションに新しいテーブルを動的に追加する {#dynamically-adding-table-to-replication}
 
 `MaterializedPostgreSQL` データベースを作成しても、対応する PostgreSQL データベース内の新しいテーブルは自動では検出されません。こうしたテーブルは手動で追加できます。
 
@@ -78,9 +72,7 @@ ATTACH TABLE postgres_database.new_table;
   バージョン 22.1 より前では、テーブルをレプリケーションに追加すると、削除されない一時的なレプリケーションスロット (`{db_name}_ch_replication_slot_tmp` という名前) が残っていました。22.1 より前の ClickHouse バージョンでテーブルを Attach する場合は、必ずこれを手動で削除してください (`SELECT pg_drop_replication_slot('{db_name}_ch_replication_slot_tmp')`) 。削除しないと、ディスク使用量が増加します。この問題は 22.1 で修正されています。
 </Warning>
 
-<div id="dynamically-removing-table-from-replication">
-  ## テーブルをレプリケーション対象から動的に外す
-</div>
+## テーブルをレプリケーション対象から動的に外す {#dynamically-removing-table-from-replication}
 
 特定のテーブルをレプリケーション対象から外すことができます。
 
@@ -88,9 +80,7 @@ ATTACH TABLE postgres_database.new_table;
 DETACH TABLE postgres_database.table_to_remove PERMANENTLY;
 ```
 
-<div id="schema">
-  ## PostgreSQL スキーマ
-</div>
+## PostgreSQL スキーマ {#schema}
 
 PostgreSQL の[スキーマ](https://www.postgresql.org/docs/9.1/ddl-schemas.html)は、3 つの方法で設定できます (バージョン 21.12 以降) 。
 
@@ -137,9 +127,7 @@ SELECT * FROM database1.`schema2.table2`;
 
 警告: この場合、テーブル名にドットは使用できません。
 
-<div id="requirements">
-  ## 要件
-</div>
+## 要件 {#requirements}
 
 1. PostgreSQL の設定ファイルで、[wal&#95;level](https://www.postgresql.org/docs/current/runtime-config-wal.html) の値を `logical` に設定し、`max_replication_slots` パラメータの値を少なくとも `2` にする必要があります。
 
@@ -174,13 +162,9 @@ WHERE oid = 'postgres_table'::regclass;
   [**TOAST**](https://www.postgresql.org/docs/current/storage-toast.html) の値はレプリケートされます。PostgreSQL が更新時に変更されていない TOAST 参照を送信した場合、既存の値が保持されます。変更されていない TOAST replica identity カラムでは、PostgreSQL が古いキーのタプルを送信する必要があります。そうしないと、行を識別できません。
 </Note>
 
-<div id="settings">
-  ## 設定
-</div>
+## 設定 {#settings}
 
-<div id="materialized-postgresql-tables-list">
-  ### `materialized_postgresql_tables_list`
-</div>
+### `materialized_postgresql_tables_list` {#materialized-postgresql-tables-list}
 
 [MaterializedPostgreSQL](/ja/reference/engines/database-engines/materialized-postgresql)データベースエンジンでレプリケートする、PostgreSQLデータベースのテーブルをカンマ区切りで指定します。
 
@@ -192,21 +176,15 @@ materialized_postgresql_tables_list = 'table1(co1, col2),table2,table3(co3, col5
 
 デフォルト値: 空のリスト — PostgreSQL データベース全体がレプリケートされます。
 
-<div id="materialized-postgresql-schema">
-  ### `materialized_postgresql_schema`
-</div>
+### `materialized_postgresql_schema` {#materialized-postgresql-schema}
 
 デフォルト値: 空文字列。 (デフォルトのスキーマが使用されます)
 
-<div id="materialized-postgresql-schema-list">
-  ### `materialized_postgresql_schema_list`
-</div>
+### `materialized_postgresql_schema_list` {#materialized-postgresql-schema-list}
 
 デフォルト値: 空のリスト。 (デフォルトのスキーマが使用されます)
 
-<div id="materialized-postgresql-max-block-size">
-  ### `materialized_postgresql_max_block_size`
-</div>
+### `materialized_postgresql_max_block_size` {#materialized-postgresql-max-block-size}
 
 データを PostgreSQL データベースのテーブルに書き出す前に、メモリに蓄積する行数を設定します。
 
@@ -216,15 +194,12 @@ materialized_postgresql_tables_list = 'table1(co1, col2),table2,table3(co3, col5
 
 デフォルト値: `65536`.
 
-<div id="materialized-postgresql-replication-slot">
-  ### `materialized_postgresql_replication_slot`
-</div>
+### `materialized_postgresql_replication_slot` {#materialized-postgresql-replication-slot}
 
 ユーザーが作成したレプリケーションスロットです。`materialized_postgresql_snapshot` と一緒に使用する必要があります。
+`materialized_postgresql_use_unique_replication_consumer_identifier` と併用することはできません。
 
-<div id="materialized-postgresql-snapshot">
-  ### `materialized_postgresql_snapshot`
-</div>
+### `materialized_postgresql_snapshot` {#materialized-postgresql-snapshot}
 
 [PostgreSQLテーブルの初期ダンプ](/ja/reference/engines/database-engines/materialized-postgresql)の実行元となるスナップショットを識別するテキスト文字列です。`materialized_postgresql_replication_slot`とあわせて使用する必要があります。
 
@@ -242,25 +217,20 @@ SELECT * FROM database1.table1;
 ALTER DATABASE postgres_database MODIFY SETTING materialized_postgresql_max_block_size = <new_size>;
 ```
 
-<div id="materialized_postgresql_use_unique_replication_consumer_identifier">
-  ### `materialized_postgresql_use_unique_replication_consumer_identifier`
-</div>
+### `materialized_postgresql_use_unique_replication_consumer_identifier` {#materialized_postgresql_use_unique_replication_consumer_identifier}
 
-レプリケーションには一意の consumer 識別子を使用します。デフォルトは `0` です。
+レプリケーションには一意のコンシューマー識別子を使用します。デフォルトは `0` です。
 `1` に設定すると、同じ `PostgreSQL` テーブルを参照する複数の `MaterializedPostgreSQL` テーブルを設定できます。
+`materialized_postgresql_replication_slot` とは併用できません。ユーザーが管理するレプリケーションスロットは名前が 1 つに固定されているため、コンシューマーごとに一意にできないためです。この組み合わせは `CREATE` 時、および完全な定義を指定した `ATTACH` 時には拒否されますが、すでにこの組み合わせで作成済みのデータベースまたはテーブルは引き続き読み込むことができます。
 
-<div id="materialized-postgresql-use-extended-date-and-time-types">
-  ### `materialized_postgresql_use_extended_date_and_time_types`
-</div>
+### `materialized_postgresql_use_extended_date_and_time_types` {#materialized-postgresql-use-extended-date-and-time-types}
 
 PostgreSQL の `date` および `timestamp`/`timestamptz` 型を、これらの PostgreSQL 型よりも広い値範囲をカバーする ClickHouse の `Date32` および `DateTime64` にマッピングします。デフォルト: `1`。
 `0` に設定すると、代わりにより範囲の狭い `Date` および `DateTime` 型が使用されます (それらの範囲外の値や、秒未満の精度を持つ値は表現できません) 。
 
 この設定が制御するのは、ネストされたテーブルの作成時に型推論によって選択されるカラム型のみであるため、`CREATE DATABASE` の時点で指定する必要があります。その後に `ALTER DATABASE ... MODIFY SETTING` で変更することはできません (すでに作成されたネストされたテーブルは固定のカラム型を保持するため、このような変更は拒否されます) 。変更するには、データベースを再作成してください。カラム型が明示的に宣言される `MaterializedPostgreSQL` テーブルエンジンには適用されません。
 
-<div id="tls-ssl">
-  ## TLS/SSL
-</div>
+## TLS/SSL {#tls-ssl}
 
 TLS/SSLパラメータは`libpq`に渡され、[名前付きコレクション](/ja/concepts/features/configuration/server-config/named-collections)またはエンジンの末尾に指定するキー・バリュー引数として指定できます。指定できるのは、`sslmode` (`disable`、`allow`、`prefer`、`require`、`verify-ca`、`verify-full`。未設定の場合は`libpq`のデフォルトである`prefer`が適用されます) と、証明書および秘密鍵です。証明書と秘密鍵は、次の2つの形式のいずれかで指定できます。`sslrootcert` (CA証明書) 、`sslcert` (クライアント証明書) 、`sslkey` (クライアント秘密鍵) はサーバーローカルファイルへのパスであり、サーバー設定ファイルで定義された名前付きコレクションからのみ指定できます。一方、`sslrootcert_pem`、`sslcert_pem`、`sslkey_pem`には対応するファイルの内容をリテラルとして指定でき、SQLから設定可能です。また、パスワードと同様に、ログおよび`SHOW`クエリではマスクされます。
 
@@ -276,13 +246,9 @@ ENGINE = MaterializedPostgreSQL('postgres-host:5432', 'postgres_database', 'post
 
 TLS/SSL パラメータは、データベース の作成時に固定される PostgreSQL 接続パラメータの一部です。変更するには、データベース を再作成する必要があります。
 
-<div id="notes">
-  ## 注記
-</div>
+## 注記 {#notes}
 
-<div id="logical-replication-slot-failover">
-  ### 論理レプリケーションスロットのフェイルオーバー
-</div>
+### 論理レプリケーションスロットのフェイルオーバー {#logical-replication-slot-failover}
 
 プライマリに存在する論理レプリケーションスロットは、スタンバイレプリカでは利用できません。
 そのため、フェイルオーバーが発生すると、新しいプライマリ (以前の物理スタンバイ) は、以前のプライマリに存在していたスロットを認識できません。これにより、PostgreSQL からのレプリケーションが中断されます。
@@ -336,9 +302,7 @@ TLS/SSL パラメータは、データベース の作成時に固定される P
    kubectl exec acid-demo-cluster-0 -c postgres -- su postgres -c 'patronictl failover --candidate acid-demo-cluster-1 --force'
    ```
 
-<div id="required-permissions">
-  ### 必要な権限
-</div>
+### 必要な権限 {#required-permissions}
 
 1. [CREATE PUBLICATION](https://www.postgresql.org/docs/14/sql-createpublication.html) -- 作成権限。
 
@@ -358,9 +322,7 @@ TLS/SSL パラメータは、データベース の作成時に固定される P
 
 3. pg&#95;publication&#95;tables
 
-<div id="backup-and-restore">
-  ### バックアップと復元
-</div>
+### バックアップと復元 {#backup-and-restore}
 
 `MaterializedPostgreSQL`データベースはバックアップできます。各レプリケートテーブルのデータは入れ子の`ReplacingMergeTree`テーブルに格納されるため、`BACKUP DATABASE`は入れ子テーブルに処理を委譲して、そのデータもバックアップ対象に含めます。
 

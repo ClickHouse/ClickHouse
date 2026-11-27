@@ -1,0 +1,168 @@
+---
+slug: /integrations/libredb-studio
+sidebarTitle: 'LibreDB Studio'
+description: 'LibreDB Studio 是一款开源的基于 Web 的 SQL IDE，本文介绍如何通过 HTTP 接口将其连接到自托管的 ClickHouse 服务器。'
+title: '将 LibreDB Studio 连接到 ClickHouse'
+doc_type: 'guide'
+keywords: ['libredb studio', 'sql client', 'sql ide', 'web', 'open source', 'self-hosted', 'monitoring']
+integration:
+  - support_level: 'community'
+  - category: 'sql_client'
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+import { CommunityMaintainedBadge } from "/snippets/zh/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+
+<CommunityMaintainedBadge />
+
+[LibreDB Studio](https://github.com/libredb/libredb-studio) 是一款开源 (MIT 许可) 、自托管的 SQL IDE，
+可直接在浏览器中运行。它通过 HTTP 接口连接 ClickHouse，无需 JDBC 或原生
+驱动程序，并提供 SQL 编辑器、数据库浏览器、`EXPLAIN` 执行计划，以及基于 `system` 表构建的监控仪表板。
+
+## 开始之前 {#before-you-begin}
+
+* 使用 Docker 运行 LibreDB Studio (`docker run -p 3000:3000 ghcr.io/libredb/libredb-studio:latest`) ，
+  或使用 Node.js 24 及以上版本运行 (`npx @libredb/studio`) ，然后打开 `http://localhost:3000`。首次
+  运行时，管理员密码会打印到日志中。
+* 确保运行 LibreDB Studio 的机器能够访问 ClickHouse 的 HTTP 或 HTTPS 端口。
+* 创建一个 ClickHouse 用户，并授予其访问待查询数据库的权限。此外，数据库浏览器
+  还需要 `system.dictionaries` 和 `system.data_skipping_indices` 的 `SELECT` 权限，以及
+  每个包含字典的数据库的 `dictGet` 权限。如需使用仪表盘，请授予 [监控 ClickHouse](#monitor-clickhouse) 中
+  所列 `system` 表的 `SELECT` 权限。
+
+例如，对于查询 `uk` 数据库的用户 `reader`：
+
+```sql
+GRANT SELECT ON uk.* TO reader;
+GRANT dictGet ON uk.* TO reader;
+GRANT SELECT ON system.dictionaries TO reader;
+GRANT SELECT ON system.data_skipping_indices TO reader;
+```
+
+| 部署方式           | 已测试版本 | 说明                                          |
+| -------------- | ----- | ------------------------------------------- |
+| 自托管 ClickHouse | 26.7  | 使用 HTTP(S) 接口 (端口 `8123`；HTTPS 使用 `8443`) 。 |
+
+## 工作原理 {#how-it-works}
+
+1. 浏览器将语句发送到 LibreDB Studio 服务器。
+2. 服务器将该语句作为 HTTP `POST /` 的请求正文发送给 ClickHouse，并以 URL 参数的形式传递
+   `default_format=JSONCompact` 和所选数据库，凭证则通过 HTTP 基本身份验证传递。
+3. 服务器返回结果行、ClickHouse 声明的列类型，以及 ClickHouse 报告的耗时。
+   每条语句都是一次独立的无状态请求，不绑定任何会话。
+
+## 连接到自托管 ClickHouse {#connect-to-self-hosted-clickhouse}
+
+<Steps>
+  <Step title="收集连接详情" id="gather-your-connection-details">
+    您需要准备主机、HTTP 端口 (默认为 `8123`；若使用 HTTPS，则为服务器的 HTTPS 端口，通常为
+    `8443`) 、用户名和密码，数据库名称可选。如果连接未指定数据库，则使用 `default`。
+  </Step>
+
+  <Step title="创建连接" id="create-the-connection">
+    1. 在侧边栏中选择 **+** (**新连接**) 。
+    2. 选择 **ClickHouse** 作为数据库类型，端口会自动填充为 `8123`。
+    3. 输入连接名称、主机、端口、用户名和密码，并可选填
+       数据库名称。
+    4. 如需使用 HTTPS，请展开 **SSL / TLS**，选择 `disable` 以外的任一 SSL 模式，并将 **端口** 改为
+       服务器的 HTTPS 端口 (通常为 `8443`) 。除 `disable` 外，所有模式都会依据 LibreDB Studio 服务器信任的 CA 来验证服务器
+       证书，也就是 `verify-system` 所描述的行为。
+       该方式适用于 ClickHouse Cloud，以及证书由公共受信任 CA 签发的服务器。如果使用自签名证书或私有 CA 证书，请参阅
+       [故障排查](#troubleshooting)。
+    5. 选择 **测试连接**，然后选择 **Establish Connection**。
+
+    您也可以通过 **Paste URL** 直接粘贴 URL，而无需逐项填写，例如
+    `clickhouse://localhost:8123/default` 或 `https://reader:secret@ch.example.com:8443/analytics`。
+    使用 `https://` URL 时会自动启用 TLS。
+
+    <Image img="/images/integrations/sql-clients/libredb-studio-new-connection.png" size="sm" border alt="LibreDB Studio 新连接对话框，已选择 ClickHouse，填写了主机、端口 8123、用户名和数据库，且连接测试成功" />
+  </Step>
+
+  <Step title="运行查询" id="run-a-query">
+    打开连接，在编辑器中编写语句并运行。数据库浏览器会列出每个
+    数据库中的表、视图、物化视图、字典和用户定义函数，并展示
+    列、主键列、数据跳过索引以及对象定义。
+
+    本示例使用[英国房产价格数据集](/zh/get-started/sample-datasets/uk-price-paid)。
+    请先按照该指南将数据加载到 `uk.uk_price_paid`，再将连接的数据库设置为 `uk`，
+    然后运行：
+
+    ```sql
+    SELECT
+        town,
+        count() AS sales,
+        round(avg(price)) AS average_price
+    FROM uk_price_paid
+    GROUP BY town
+    ORDER BY sales DESC
+    LIMIT 10
+    ```
+
+    <Image img="/images/integrations/sql-clients/libredb-studio-query.png" size="md" border alt="LibreDB Studio SQL 编辑器，显示 uk_price_paid 查询以及包含所声明 ClickHouse 列类型的结果表格" />
+  </Step>
+</Steps>
+
+## 监控 ClickHouse {#monitor-clickhouse}
+
+监控仪表板以该连接所配置的用户身份读取以下数据源：
+
+| 区域              | ClickHouse 数据源                                                      |
+| --------------- | ------------------------------------------------------------------- |
+| 版本、运行时间、连接数     | `version()`, `uptime()`, `system.metrics`, `system.server_settings` |
+| 缓存命中率、每秒查询数、内存  | `system.events`, `system.asynchronous_metrics`                      |
+| 慢查询 (按归一化查询分组)  | `system.query_log`                                                  |
+| 正在运行的查询         | `system.processes`                                                  |
+| 表、表数据片段、行数和大小   | `system.tables`, `system.parts`                                     |
+| 数据跳过索引          | `system.data_skipping_indices`                                      |
+| 磁盘              | `system.disks`                                                      |
+
+如果用户缺少上述某张表的授权，或者 `query_log` 已关闭，对应面板将保持
+空白，而不会导致整个仪表盘无法加载。`system.query_log` 采用异步方式变为已刷盘状态，因此
+刚执行完的语句可能需要几秒钟才会出现。
+
+LibreDB Studio 还可以对表执行 `OPTIMIZE TABLE ... FINAL`，显示某个表或数据库的 `system.parts` 摘要，
+并通过 `KILL QUERY ... SYNC` 终止正在运行的查询。执行这些操作需要
+具备相应的授权。
+
+<Image img="/images/integrations/sql-clients/libredb-studio-monitoring.png" size="md" border alt="LibreDB Studio 中某个 ClickHouse 连接的监控概览，显示服务器版本、运行时间、连接数、存储大小、缓存命中率和表数量" />
+
+## 故障排查 {#troubleshooting}
+
+<Accordion title="连接被拒绝或超时">
+  请求由 LibreDB Studio 的服务器发出，而非你的浏览器，因此运行 LibreDB Studio 的机器或容器必须能够访问该主机。
+  当 LibreDB Studio 在 Docker 中运行、而 ClickHouse 运行在同一台机器上时，`localhost` 指向的是容器本身，而不是宿主机。请确认你输入的是
+  HTTP 端口，而不是原生协议端口 `9000`。
+</Accordion>
+
+<Accordion title="使用自签名或私有 CA 证书时 HTTPS 连接失败">
+  LibreDB Studio 的服务器基于 Node.js 运行，Node.js 会使用其自带的公共 CA 列表来校验服务器证书。它会忽略在 **SSL / TLS** 下粘贴的 CA 证书，而仅将
+  CA 添加到操作系统的证书存储中也不足以解决问题。启动 LibreDB Studio
+  服务器时，请将 `NODE_EXTRA_CA_CERTS` 环境变量设置为某个 PEM 文件的路径，该文件中包含你的 CA 证书；如果服务器证书为自签名证书，则包含服务器自身的证书。使用 Docker 时，请将
+  该文件挂载到容器中，并传入相应参数，例如 `-e NODE_EXTRA_CA_CERTS=/certs/ca.pem`。
+</Accordion>
+
+<Accordion title="数据库浏览器未显示任何对象，或字典被显示为表">
+  数据库浏览器会读取 `system.dictionaries` 来对每个数据库中的对象进行分类，并读取
+  `system.data_skipping_indices` 来获取表的详细信息。如果没有 `system.dictionaries` 的 `SELECT` 权限，
+  对象列表将无法加载；如果没有 `system.data_skipping_indices` 的 `SELECT` 权限，则无法打开表的详细信息。
+  在用户获得字典所在数据库的 `dictGet` 权限之前，该字典会显示在表列表中。
+  请按照[开始之前](#before-you-begin)中的说明授予上述权限，然后刷新浏览器。
+</Accordion>
+
+<Accordion title="部分仪表盘面板为空">
+  该 ClickHouse 用户无法读取[监控 ClickHouse](#monitor-clickhouse) 中列出的一个或多个 `system`
+  表。请为所需的表授予 `SELECT` 权限，然后重新连接。
+</Accordion>
+
+<Accordion title="慢查询视图为空">
+  慢查询视图读取的是 `system.query_log`，而在查询日志关闭时，该表不会记录任何内容。
+  请为该用户启用 `log_queries` 设置 (例如在其设置配置文件中启用) ，然后运行几条
+  查询。日志已刷盘后即会出现新条目，这可能需要几秒钟。
+  如果视图仍然为空，则可能是整个服务器 (而非仅该用户) 禁用了查询日志。请按照
+  [system.query&#95;log](/zh/operations/system-tables/query_log) 中的说明，检查服务器配置中是否包含 `query_log` 部分。
+</Accordion>
+
+## 后续步骤 {#next-steps}
+
+* 如需了解完整行为，请参阅 [LibreDB Studio ClickHouse 提供商文档](https://github.com/libredb/libredb-studio/blob/main/docs/providers/clickhouse.md)。
+* 有关服务器配置，请参阅 [ClickHouse HTTP 接口文档](/zh/concepts/features/interfaces/http)。

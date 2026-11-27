@@ -1,0 +1,152 @@
+---
+slug: /use-cases/AI_ML/AIChat
+sidebarTitle: 'Overview'
+title: 'Assistant dans ClickHouse Cloud'
+description: 'Découvrir, activer et utiliser Assistant dans la Console ClickHouse Cloud'
+keywords: ['IA', 'ClickHouse Cloud', 'Chat', 'SQL Console', 'Agent', 'Docs AI']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+Assistant vous permet d’utiliser le langage naturel pour analyser les données d’un service ClickHouse Cloud. Il peut générer des requêtes, des visualisations et des résumés en s’appuyant sur le contexte, tel que les onglets actifs, les requêtes enregistrées, les schémas et les tableaux de bord.
+
+L’Assistant inclut également un mode Docs AI pour poser des questions fondées sur la documentation ClickHouse. Utilisez ce guide pour activer l’Assistant et utiliser les deux modes dans la Console ClickHouse Cloud.
+
+<Steps>
+  <Step title="Prérequis" id="prerequisites">
+    1. Vous devez avoir accès à une organisation ClickHouse Cloud avec les fonctionnalités d’IA activées (contactez l’administrateur de votre org ou le support si elles ne sont pas disponibles).
+  </Step>
+
+  <Step title="Ouvrir le panneau AI Chat" id="open-panel">
+    1. Accédez à un service ClickHouse Cloud.
+    2. Dans la barre latérale gauche, cliquez sur l’icône en forme d’étincelle libellée « Assistant ».
+    3. (Raccourci) Appuyez sur <kbd>⌘</kbd> + <kbd>&#39;</kbd> (macOS) ou <kbd>Ctrl</kbd> + <kbd>&#39;</kbd> (Linux/Windows) pour l’ouvrir ou le fermer.
+
+    <div className="ch-image-md">
+
+    <Frame>
+
+    ![Ouvrir le volet AI Chat](/images/use-cases/AI_ML/AIChat/1_open_chat.webp)
+
+    </Frame>
+
+    </div>
+  </Step>
+
+  <Step title="Accepter le consentement d’utilisation des données (première utilisation)" id="consent">
+    1. Lors de la première utilisation, une boîte de dialogue de consentement s’affiche pour décrire le traitement des données ainsi que les sous-traitants tiers des LLM.
+    2. Prenez-en connaissance et acceptez pour continuer. Si vous refusez, le panneau ne s’ouvrira pas.
+
+    <div className="ch-image-md">
+
+    <Frame>
+
+    ![Boîte de dialogue de consentement](/images/use-cases/AI_ML/AIChat/2_consent.webp)
+
+    </Frame>
+
+    </div>
+  </Step>
+
+  <Step title="Choisir un mode de chat" id="modes">
+    AI Chat prend actuellement en charge :
+
+    * **Agent** : raisonnement en plusieurs étapes sur le schéma et les métadonnées (le service doit être actif).
+    * **Docs AI (Ask)** : questions-réponses ciblées, fondées sur la documentation officielle de ClickHouse et les références de bonnes pratiques.
+
+    Utilisez le sélecteur de mode en bas à gauche du volet pour changer de mode.
+
+    <div className="ch-image-sm">
+
+    <Frame>
+
+    ![Sélection du mode](/images/use-cases/AI_ML/AIChat/3_modes.webp)
+
+    </Frame>
+
+    </div>
+  </Step>
+
+  <Step title="Rédiger et envoyer un message" id="compose">
+    1. Saisissez votre question (par ex. « Create a materialized view to aggregate daily events by user »).
+    2. Appuyez sur <kbd>Enter</kbd> pour envoyer (utilisez <kbd>Shift</kbd> + <kbd>Enter</kbd> pour insérer un retour à la ligne).
+    3. Pendant le traitement par le modèle, vous pouvez cliquer sur « Stop » pour interrompre l’opération.
+  </Step>
+
+  <Step title="Comprendre les étapes de réflexion d’« Agent »" id="thinking-steps">
+    En mode Agent, des étapes intermédiaires extensibles de « réflexion » ou de planification peuvent s’afficher. Elles apportent de la transparence sur la façon dont l’assistant élabore sa réponse. Réduisez-les ou développez-les selon vos besoins.
+
+    <div className="ch-image-md">
+
+    <Frame>
+
+    ![Étapes de réflexion](/images/use-cases/AI_ML/AIChat/4_thinking.webp)
+
+    </Frame>
+
+    </div>
+  </Step>
+
+  <Step title="Démarrer de nouvelles discussions" id="new-chats">
+    Cliquez sur le bouton « New Chat » pour effacer le contexte et démarrer une nouvelle session.
+  </Step>
+
+  <Step title="Afficher l’historique des discussions" id="history">
+    1. La section inférieure affiche vos discussions récentes.
+    2. Sélectionnez une discussion précédente pour recharger ses messages.
+    3. Supprimez une conversation à l’aide de l’icône de corbeille.
+
+    <div className="ch-image-md">
+
+    <Frame>
+
+    ![Liste de l’historique des discussions](/images/use-cases/AI_ML/AIChat/5_history.webp)
+
+    </Frame>
+
+    </div>
+  </Step>
+
+  <Step title="Travailler avec le SQL généré" id="sql-actions">
+    Lorsque l’assistant renvoie du SQL :
+
+    * Vérifiez qu’il est correct.
+    * Cliquez sur « Open in editor » pour charger la requête dans un nouvel onglet SQL.
+    * Modifiez-la et exécutez-la dans la Console.
+
+    <div className="ch-image-md">
+
+    <Frame>
+
+    ![Actions sur le résultat](/images/use-cases/AI_ML/AIChat/6_result_actions.webp)
+
+    </Frame>
+
+    </div>
+
+    <div className="ch-image-md">
+
+    <Frame>
+
+    ![Ouvrir la requête générée dans l’éditeur](/images/use-cases/AI_ML/AIChat/7_open_in_editor.webp)
+
+    </Frame>
+
+    </div>
+  </Step>
+
+  <Step title="Arrêter ou interrompre une réponse" id="interrupt">
+    Si une réponse prend trop de temps ou s’écarte du sujet :
+
+    1. Cliquez sur le bouton « Stop » (visible pendant le traitement).
+    2. Le message est marqué comme interrompu ; vous pouvez affiner votre prompt et le renvoyer.
+  </Step>
+
+  <Step title="Raccourcis clavier" id="shortcuts">
+    | Action             | Raccourci            |
+    | ------------------ | -------------------- |
+    | Ouvrir AI Chat     | `⌘ + '` / `Ctrl + '` |
+    | Envoyer un message | `Enter`              |
+    | Nouvelle ligne     | `Shift + Enter`      |
+  </Step>
+</Steps>

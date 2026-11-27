@@ -10,6 +10,7 @@ doc_type: 'reference'
 
 import SettingsInfoBlock from "/snippets/fr/components/SettingsInfoBlock/SettingsInfoBlock.jsx";
 import { VersionHistory } from "/snippets/fr/components/VersionHistory/VersionHistory.jsx";
+import { ExperimentalBadge } from "/snippets/fr/components/ExperimentalBadge/ExperimentalBadge.jsx";
 import { BetaBadge } from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
 
 Ces paramètres sont disponibles dans [system.settings](/fr/reference/system-tables/settings) et sont générés automatiquement à partir du [code source](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
@@ -42,16 +43,30 @@ Filtre la partie gauche à l’aide de l’ensemble des clés de JOIN collectée
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Les JOIN runtime filters sont devenus une fonctionnalité de niveau Production."}]}, {"id": "row-2","items": [{"label": "26.7"},{"label": "0"},{"label": "Nouveau paramètre permettant d'activer le filtrage de jointure à l'aide d'une analyse d’index dynamique"}]}, {"id": "row-3","items": [{"label": "26.10"},{"label": "1"},{"label": "Active l'élagage des granules du côté sonde (gauche) d'un JOIN à l'aide du runtime filter collecté du côté construction (droit)."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Les JOIN Filtres Dynamiques sont devenus une fonctionnalité de niveau Production."}]}, {"id": "row-2","items": [{"label": "26.7"},{"label": "0"},{"label": "Nouveau paramètre permettant d'activer le filtrage de jointure à l'aide d'une analyse d’index dynamique"}]}, {"id": "row-3","items": [{"label": "26.10"},{"label": "1"},{"label": "Active l'élagage des granules du côté sonde (gauche) d'un JOIN à l'aide du Filtre Dynamique collecté du côté construction (droit)."}]}]} />
 
-Élague les granules du côté sonde d&#39;un JOIN à l&#39;aide du runtime filter collecté du côté construction (voir `enable_join_runtime_filters`).
+Élague les granules du côté sonde d&#39;un JOIN à l&#39;aide du Filtre Dynamique collecté du côté construction (voir `enable_join_runtime_filters`).
 N&#39;a d&#39;effet que si `use_skip_indexes_on_data_read = 1`.
 Seule une clé de jointure qui est une colonne de clé primaire du côté sonde, ou qui est couverte par un index de saut `minmax`, `set` ou `bloom_filter`, peut faire l&#39;objet d&#39;un élagage.
-Si le runtime filter a conservé les valeurs exactes des clés, le prédicat d&#39;élagage est un set `IN` de ces valeurs ; sinon, c&#39;est la plage minimum/maximum des clés qui est utilisée (l&#39;élagage est alors moins efficace).
+Si le Filtre Dynamique a conservé les valeurs exactes des clés, le prédicat d&#39;élagage est un set `IN` de ces valeurs ; sinon, c&#39;est la plage minimum/maximum des clés qui est utilisée (l&#39;élagage est alors moins efficace).
 
-Ne prend effet que lorsque le côté sonde de la jointure est lu localement. Les descripteurs qui pilotent l&#39;élagage sont attachés à l&#39;étape de lecture lors de l&#39;optimisation du plan de requête, mais ne sont pas conservés lorsque cette étape est reconstruite pour une exécution distante ; l&#39;élagage des granules n&#39;a donc pas lieu avec les répliques parallèles (`enable_parallel_replicas = 1`) ni avec un plan de requête distribué (`make_distributed_plan = 1`). Dans ces modes, le paramètre est sans effet : la requête renvoie le même résultat et le JOIN runtime filter lui-même se comporte exactement comme lorsque ce paramètre est désactivé ; seul l&#39;élagage des granules est perdu.
+Fonctionne avec les répliques parallèles (`enable_parallel_replicas = 1`) : chaque réplique élague les granules qu&#39;elle lit à l&#39;aide du filtre qu&#39;elle a elle-même construit. Ce filtre peut être partiel (pour une jointure `RIGHT`, c&#39;est le côté construction qui est réparti entre les répliques, si bien que le filtre de chaque réplique n&#39;en couvre que sa propre part), mais le résultat reste correct : un seul côté de la jointure est réparti, chaque paire de lignes correspondantes se retrouve sur une seule et même réplique, et chaque réplique produit une part disjointe du résultat.
+
+L&#39;élagage des granules n&#39;a pas lieu avec un plan de requête distribué (`make_distributed_plan = 1`). Dans ce cas, le paramètre est sans effet : la requête renvoie le même résultat et le JOIN Filtre Dynamique lui-même se comporte exactement comme lorsque ce paramètre est désactivé ; seul l&#39;élagage des granules est perdu.
 
 L&#39;élagage des granules est également ignoré pour une lecture du côté sonde avec `FINAL` (l&#39;élagage n&#39;est pas implémenté pour les lectures `FINAL`, et `optimizeLazyFinal` reconstruit une telle lecture sans les descripteurs), ainsi que pour une table comportant des mutations de données ou `ALTER` en attente, ou des patch parts. Dans ces cas, le paramètre est également sans effet, au sens décrit ci-dessus.
+
+## enable_join_seal_gated_reading {#enable_join_seal_gated_reading}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "Nouveau paramètre expérimental permettant de subordonner la lecture côté sonde d'une JOIN par hachage à la complétion du Filtre Dynamique côté construction, et d'élaguer les plages de lecture à l'aide de ce filtre."}]}]} />
+
+Subordonne la lecture côté sonde d&#39;une JOIN par hachage à la complétion du Filtre Dynamique côté construction (voir `enable_join_runtime_filters`) : aucune donnée n&#39;est lue côté sonde tant que le filtre n&#39;est pas complet. Le filtre sert ensuite à élaguer des plages de marques entières à l&#39;aide de la clé primaire avant la création des tâches de lecture, en plus du filtrage ordinaire au niveau des lignes. Cette condition d&#39;activation est exprimée sous la forme d&#39;une arête du pipeline de requête. Lors d&#39;une lecture conditionnée, l&#39;analyse d&#39;index effectuée au moment de la lecture par ce même Filtre Dynamique (voir `enable_join_runtime_filters_index_analysis`) est ignorée, car redondante.
+
+Expérimental. Les lectures locales sont conditionnées, y compris la lecture single-threaded et la lecture ordonnée ; les lectures avec FINAL, avec les répliques parallèles ou dans le cadre d&#39;une jointure partitionnée par plages de clé primaire se rabattent sur une lecture non conditionnée avec filtrage au niveau des lignes.
 
 ## enable_join_transitive_predicates {#enable_join_transitive_predicates}
 

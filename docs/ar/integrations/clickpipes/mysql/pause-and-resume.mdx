@@ -10,8 +10,6 @@ integration:
   - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 هناك سيناريوهات قد يكون من المفيد فيها إيقاف MySQL ClickPipe مؤقتًا. على سبيل المثال، قد ترغب في إجراء بعض التحليلات على البيانات الحالية وهي في حالة مستقرة. أو قد تكون بصدد تنفيذ عمليات ترقية على MySQL. إليك كيفية إيقاف MySQL ClickPipe مؤقتًا ثم استئنافها.
 
 <div id="pause-clickpipe-steps">
@@ -22,16 +20,40 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 2. انتقل إلى علامة تبويب **الإعدادات**.
 3. انقر على زر **إيقاف مؤقت**.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/pause_button.webp" border size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![](/images/integrations/data-ingestion/clickpipes/postgres/pause_button.webp)
+
+</Frame>
+
+</div>
 
 4. من المفترض أن تظهر نافذة تأكيد. انقر على **إيقاف مؤقت** مرة أخرى.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/pause_dialog.webp" border size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![](/images/integrations/data-ingestion/clickpipes/postgres/pause_dialog.webp)
+
+</Frame>
+
+</div>
 
 4. انتقل إلى علامة تبويب **المقاييس**.
 5. بعد نحو 5 ثوانٍ (وأيضًا عند تحديث الصفحة)، يجب أن تظهر حالة المسار على أنها **موقوف مؤقتًا**.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/pause_status.webp" border size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![](/images/integrations/data-ingestion/clickpipes/postgres/pause_status.webp)
+
+</Frame>
+
+</div>
 
 <div id="resume-clickpipe-steps">
   ## خطوات استئناف MySQL ClickPipe
@@ -41,11 +63,27 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 2. انتقل إلى علامة التبويب **Settings**.
 3. انقر على زر **Resume**.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/resume_button.webp" border size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![](/images/integrations/data-ingestion/clickpipes/postgres/resume_button.webp)
+
+</Frame>
+
+</div>
 
 4. سيظهر مربع حوار للتأكيد. انقر على **Resume** مرة أخرى.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/resume_dialog.webp" border size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![](/images/integrations/data-ingestion/clickpipes/postgres/resume_dialog.webp)
+
+</Frame>
+
+</div>
 
 5. انتقل إلى علامة التبويب **مقياس**.
 6. خلال نحو 5 ثوانٍ (وأيضًا عند تحديث الصفحة)، يجب أن تصبح حالة المسار **Running**.

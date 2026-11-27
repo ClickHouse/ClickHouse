@@ -10,8 +10,6 @@ integration:
   - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 تشرح هذه الوثيقة كيفية عمل اللقطة/التحميل الأولي المتوازي في Postgres ClickPipe، وتستعرض معلمات اللقطة التي يمكن استخدامها للتحكم في ذلك.
 
 <div id="overview-pg-snapshot">
@@ -35,7 +33,15 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 لنتناول الإعدادات التالية:
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/snapshot_params.webp" alt="معلمات اللقطة" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![معلمات اللقطة](/images/integrations/data-ingestion/clickpipes/postgres/snapshot_params.webp)
+
+</Frame>
+
+</div>
 
 <div id="numrows-pg-snapshot">
   #### عدد الصفوف لكل قسم في اللقطة

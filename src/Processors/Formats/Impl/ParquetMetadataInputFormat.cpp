@@ -1,7 +1,11 @@
+#include <span>
 #include <Processors/Formats/Impl/ParquetMetadataInputFormat.h>
 
-#if USE_PARQUET
+#if USE_ARROW_LIBRARY
 
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
+#include <base/unaligned.h>
 #include <Formats/FormatFactory.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <DataTypes/DataTypeString.h>
@@ -23,6 +27,8 @@
 #include <parquet/size_statistics.h>
 #include <parquet/statistics.h>
 #include <Processors/Formats/Impl/ArrowBufferedStreams.h>
+#include <Processors/Formats/Impl/Parquet/ThriftUtil.h>
+#include <arrow/io/memory.h>
 #include <DataTypes/NestedUtils.h>
 
 
@@ -32,6 +38,9 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int CANNOT_ALLOCATE_MEMORY;
+    extern const int CANNOT_READ_ALL_DATA;
+    extern const int TOO_DEEP_RECURSION;
 }
 
 static NamesAndTypesList getHeaderForParquetMetadata()
@@ -126,7 +135,7 @@ static NamesAndTypesList getHeaderForParquetMetadata()
 static void checkHeader(const Block & header)
 {
     auto expected_names_and_types = getHeaderForParquetMetadata();
-    std::unordered_map<String, DataTypePtr> name_to_type;
+    UnorderedMapWithMemoryTracking<String, DataTypePtr> name_to_type;
     for (const auto & [name, type] : expected_names_and_types)
         name_to_type[name] = type;
 
@@ -149,12 +158,115 @@ static void checkHeader(const Block & header)
     }
 }
 
+/// Arrow's `parquet::Encoding` lacks the encodings added to the format recently (such as `ALP`) and
+/// reports all of them as `UNDEFINED`. Their names are taken from the Thrift metadata instead, which
+/// keeps the original values.
+static std::optional<Parquet::parq::FileMetaData> getThriftFileMetadata(const parquet::FileMetaData & metadata)
+{
+    /// Serializing the footer of an encrypted file with a plaintext footer requires the encryptor.
+    if (metadata.is_encryption_algorithm_set())
+        return std::nullopt;
+
+    auto stream = arrow::io::BufferOutputStream::Create();
+    if (!stream.ok())
+        throw Exception(ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Cannot serialize Parquet metadata: {}", stream.status().ToString());
+    metadata.WriteTo(stream->get());
+    auto buffer = (*stream)->Finish();
+    if (!buffer.ok())
+        throw Exception(ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Cannot serialize Parquet metadata: {}", buffer.status().ToString());
+
+    Parquet::parq::FileMetaData result;
+    Parquet::deserializeThriftStruct(result, reinterpret_cast<const char *>((*buffer)->data()), (*buffer)->size());
+    return result;
+}
+
+static std::shared_ptr<arrow::Buffer> readAt(arrow::io::RandomAccessFile & file, int64_t position, int64_t nbytes)
+{
+    auto buffer = file.ReadAt(position, nbytes);
+    if (!buffer.ok())
+        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read Parquet metadata: {}", buffer.status().ToString());
+    if ((*buffer)->size() != nbytes)
+        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read Parquet metadata: unexpected end of file");
+    return *buffer;
+}
+
+/// Arrow builds the schema tree recursively (`parquet::schema::Unflatten`, `parquet::SchemaDescriptor`),
+/// so a deeply nested schema exhausts the stack. Unlike the native Parquet reader, which has `checkStackSize`
+/// as a backstop, the recursion in Arrow cannot be guarded, so the depth is always limited by this ceiling,
+/// even if `max_parser_depth` is raised or set to 0 (unlimited). In a release build, Arrow exhausts
+/// an 8 MiB stack at a depth between 30000 and 100000; frames are several times larger in sanitizer
+/// and debug builds, and the ceiling leaves a wide margin for them.
+static constexpr size_t MAX_SCHEMA_DEPTH_FOR_ARROW = 1000;
+
+/// Check the nesting depth of the schema with a non-recursive walk before giving the footer to Arrow,
+/// with the same limit as the native Parquet reader (`max_parser_depth`), capped by `MAX_SCHEMA_DEPTH_FOR_ARROW`.
+static void checkSchemaDepth(arrow::io::RandomAccessFile & file, const FormatSettings & format_settings)
+{
+    const size_t max_parser_depth = format_settings.max_parser_depth;
+    const size_t max_depth = (max_parser_depth == 0) ? MAX_SCHEMA_DEPTH_FOR_ARROW : std::min(max_parser_depth, MAX_SCHEMA_DEPTH_FOR_ARROW);
+
+    auto file_size_or_error = file.GetSize();
+    if (!file_size_or_error.ok())
+        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read Parquet metadata: {}", file_size_or_error.status().ToString());
+    const int64_t file_size = *file_size_or_error;
+
+    /// Leave invalid and encrypted files (with the "PARE" magic) to Arrow, which reports a proper error.
+    if (file_size < 12)
+        return;
+    auto tail = readAt(file, file_size - 8, 8);
+    if (memcmp(tail->data() + 4, "PAR1", 4) != 0)
+        return;
+    const int64_t metadata_size = unalignedLoadLittleEndian<uint32_t>(tail->data());
+    if (metadata_size > file_size - 8)
+        return;
+
+    /// Only the schema is needed: skip the column chunks, the bulk of a large footer, without decoding them,
+    /// because Arrow parses the whole footer again right after.
+    auto footer = readAt(file, file_size - 8 - metadata_size, metadata_size);
+    Parquet::parq::FileMetaData metadata;
+    Parquet::ColumnChunkOffsets column_chunk_offsets;
+    Parquet::deserializeFileMetaDataWithoutColumnChunks(
+        metadata, reinterpret_cast<const char *>(footer->data()), footer->size(), column_chunk_offsets);
+
+    /// The schema is a depth-first list of elements where a group element is followed by its `num_children` children.
+    /// The stack holds the number of children still to come for each group the walk is in.
+    VectorWithMemoryTracking<int64_t> children_left;
+    for (const auto & element : metadata.schema)
+    {
+        while (!children_left.empty() && children_left.back() == 0)
+            children_left.pop_back();
+        if (!children_left.empty())
+            --children_left.back();
+        else if (&element != &metadata.schema.front())
+            break; /// Elements after the root are invalid, Arrow reports it.
+
+        if (element.__isset.num_children && element.num_children > 0)
+        {
+            children_left.push_back(element.num_children);
+            if (children_left.size() > max_depth)
+            {
+                if (max_depth == MAX_SCHEMA_DEPTH_FOR_ARROW)
+                    throw Exception(
+                        ErrorCodes::TOO_DEEP_RECURSION,
+                        "Parquet schema is nested deeper than the limit ({}) of the `ParquetMetadata` format",
+                        max_depth);
+                throw Exception(
+                    ErrorCodes::TOO_DEEP_RECURSION,
+                    "Parquet schema is nested deeper than the limit ({}). It can be raised with the setting "
+                    "'max_parser_depth', but a very deeply nested schema is rarely intentional",
+                    max_depth);
+            }
+        }
+    }
+}
+
 static std::shared_ptr<parquet::FileMetaData> getFileMetadata(
     ReadBuffer & in,
     const FormatSettings & format_settings,
     std::atomic<int> & is_stopped)
 {
     auto arrow_file = asArrowFile(in, format_settings, is_stopped, "Parquet", PARQUET_MAGIC_BYTES, /* avoid_buffering */ true);
+    checkSchemaDepth(*arrow_file, format_settings);
     return parquet::ReadMetaData(arrow_file);
 }
 
@@ -264,6 +376,8 @@ void ParquetMetadataInputFormat::fillColumnsMetadata(const std::shared_ptr<parqu
     auto & array_column = assert_cast<ColumnArray &>(*column);
     auto & tuple_column = assert_cast<ColumnTuple &>(array_column.getData());
     int32_t num_columns = metadata->num_columns();
+    std::optional<Parquet::parq::FileMetaData> thrift_metadata;
+    bool thrift_metadata_parsed = false;
     for (int32_t column_i = 0; column_i != num_columns; ++column_i)
     {
         const auto * column_info = metadata->schema()->Column(column_i);
@@ -310,9 +424,31 @@ void ParquetMetadataInputFormat::fillColumnsMetadata(const std::shared_ptr<parqu
             /// encodings
             auto & encodings_array_column = assert_cast<ColumnArray &>(tuple_column.getColumn(10));
             auto & encodings_nested_column = assert_cast<ColumnString &>(encodings_array_column.getData());
-            for (auto codec : column_chunk_metadata->encodings())
+            const auto & encodings = column_chunk_metadata->encodings();
+            for (size_t encoding_i = 0; encoding_i < encodings.size(); ++encoding_i)
             {
-                auto codec_name = magic_enum::enum_name(codec);
+                std::string_view codec_name = magic_enum::enum_name(encodings[encoding_i]);
+                if (encodings[encoding_i] == parquet::Encoding::UNDEFINED)
+                {
+                    if (!thrift_metadata_parsed)
+                    {
+                        thrift_metadata = getThriftFileMetadata(*metadata);
+                        thrift_metadata_parsed = true;
+                    }
+                    /// The encodings of the last row group are shown, see the loop above.
+                    const size_t row_group_i = metadata->num_row_groups() - 1;
+                    if (thrift_metadata && row_group_i < thrift_metadata->row_groups.size()
+                        && size_t(column_i) < thrift_metadata->row_groups[row_group_i].columns.size())
+                    {
+                        const auto & thrift_encodings = thrift_metadata->row_groups[row_group_i].columns[column_i].meta_data.encodings;
+                        if (encoding_i < thrift_encodings.size())
+                        {
+                            auto it = Parquet::parq::_Encoding_VALUES_TO_NAMES.find(Parquet::thriftEnumToInt(thrift_encodings[encoding_i]));
+                            if (it != Parquet::parq::_Encoding_VALUES_TO_NAMES.end())
+                                codec_name = it->second;
+                        }
+                    }
+                }
                 encodings_nested_column.insertData(codec_name.data(), codec_name.size());
             }
             encodings_array_column.getOffsets().push_back(encodings_nested_column.size());
@@ -448,7 +584,7 @@ void ParquetMetadataInputFormat::fillColumnSizeStatistics(
         unencoded_bytes.insertDefault();
     }
 
-    auto insert_histogram = [&](const std::vector<int64_t> & histogram, IColumn & histogram_column)
+    auto insert_histogram = [&](std::span<const int64_t> histogram, IColumn & histogram_column)
     {
         auto & array_column = assert_cast<ColumnArray &>(histogram_column);
         auto & data_column = assert_cast<ColumnUInt64 &>(array_column.getData());
@@ -457,9 +593,8 @@ void ParquetMetadataInputFormat::fillColumnSizeStatistics(
         array_column.getOffsets().push_back(data_column.size());
     };
 
-    static const std::vector<int64_t> empty_histogram;
-    insert_histogram(size_statistics ? size_statistics->repetition_level_histogram : empty_histogram, size_statistics_column.getColumn(1));
-    insert_histogram(size_statistics ? size_statistics->definition_level_histogram : empty_histogram, size_statistics_column.getColumn(2));
+    insert_histogram(size_statistics ? std::span<const int64_t>(size_statistics->repetition_level_histogram) : std::span<const int64_t>(), size_statistics_column.getColumn(1));
+    insert_histogram(size_statistics ? std::span<const int64_t>(size_statistics->definition_level_histogram) : std::span<const int64_t>(), size_statistics_column.getColumn(2));
 }
 
 template <typename T>
@@ -613,7 +748,8 @@ void registerInputFormatParquetMetadata(FormatFactory & factory)
            bool /* is_remote_fs */,
            FormatParserSharedResourcesPtr,
            FormatFilterInfoPtr) -> InputFormatPtr
-        { return std::make_shared<ParquetMetadataInputFormat>(buf, std::make_shared<const Block>(sample), settings); });
+        { return std::make_shared<ParquetMetadataInputFormat>(buf, std::make_shared<const Block>(sample), settings); },
+        /*supports_reset_parser=*/ true);
     factory.markFormatSupportsSubsetOfColumns("ParquetMetadata");
 
     factory.setDocumentation("ParquetMetadata", Documentation{

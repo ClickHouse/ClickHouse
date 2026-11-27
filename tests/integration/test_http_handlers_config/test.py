@@ -142,6 +142,8 @@ def test_dynamic_handler_put_delete_still_readonly():
             "CREATE DATABASE IF NOT EXISTS test_put_delete_db"
         )
 
+        modifying_query_body = "CREATE DATABASE IF NOT EXISTS test_default_query_put_db"
+
         for method in ("PUT", "DELETE"):
             # A read-only query is allowed over PUT/DELETE for a config handler (nothing to force).
             res_select = cluster.instance.http_request(
@@ -162,6 +164,27 @@ def test_dynamic_handler_put_delete_still_readonly():
             assert (
                 "Cannot execute query in readonly mode" in res_modify.content.decode()
             ), method
+
+
+        # The default query parameter name is also used by configured dynamic handlers. It must not
+        # enable the built-in path-upload mutation exception for a handler-owned PUT route.
+        res_default_modify = cluster.instance.http_request(
+            "test_dynamic_handler_default_query_put",
+            method="PUT",
+            data=modifying_query_body,
+        )
+        assert 200 != res_default_modify.status_code
+        assert "Cannot execute query in readonly mode" in res_default_modify.content.decode()
+
+        # A configured handler that owns a path with a format-looking suffix must also keep the
+        # request readonly; the built-in path-upload exception is only for its catch-all handler.
+        res_default_suffix_modify = cluster.instance.http_request(
+            "test_dynamic_handler_default_query_put.CSV",
+            method="PUT",
+            data=modifying_query_body,
+        )
+        assert 200 != res_default_suffix_modify.status_code
+        assert "Cannot execute query in readonly mode" in res_default_suffix_modify.content.decode()
 
 
 def test_predefined_query_handler():
@@ -238,6 +261,35 @@ def test_predefined_query_handler():
         assert res3.status_code == 200
         assert cluster.instance.query("SELECT * FROM test_table") == "100\tTEST\n"
         cluster.instance.query("DROP TABLE test_table")
+
+        # `_request_body` is bound from the request body only. A capture group binding it would leave the body
+        # unread, and the unread body would be appended to the handler's query, extending its SQL.
+        res_capture = cluster.instance.http_request(
+            "test_predefined_handler_request_body_capture/bob",
+            method="POST",
+            data="UNION ALL SELECT 1+1".encode("utf8"),
+        )
+        assert res_capture.status_code != 200
+        assert b"BAD_ARGUMENTS" in res_capture.content
+
+        # A `_request_body` left in a named session must not be used either: it would leave the body unread, and
+        # the unread body would be appended to the handler's query. The parameter is bound from the current body.
+        session_params = {"session_id": "test_predefined_handler_request_body_session"}
+        res_set = cluster.instance.http_request(
+            "test_predefined_handler_request_body_session_query",
+            method="POST",
+            params={**session_params, "query": "SET param__request_body = 'Stale'"},
+        )
+        assert res_set.status_code == 200, res_set.content
+        res_session = cluster.instance.http_request(
+            "test_predefined_handler_request_body",
+            method="POST",
+            params=session_params,
+            headers={"Content-Type": "text/plain"},
+            data=" UNION ALL SELECT 1+1".encode("utf8"),
+        )
+        assert res_session.status_code == 200, res_session.content
+        assert res_session.content == b"Welcome,  UNION ALL SELECT 1+1\n"
 
         cluster.instance.http_request(
             "test_predefined_handler_get?max_threads=1&param_setting_name=max_threads",

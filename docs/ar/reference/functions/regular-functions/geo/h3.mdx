@@ -92,7 +92,7 @@ h3EdgeAngle(resolution)
 
 **المعلمة**
 
-* `resolution` — دقة الفهرس. [UInt8](/ar/reference/data-types/int-uint). النطاق: `[0, 15]`.
+* `resolution` — مستوى دقة الفهرس. [UInt8](/ar/reference/data-types/int-uint). النطاق: `[0, 15]`.
 
 **القيم المعادة**
 
@@ -105,16 +105,16 @@ SELECT h3EdgeAngle(10) AS edgeAngle;
 ```
 
 ```text title="Response"
-┌───────h3EdgeAngle(10)─┐
-│ 0.0005927224846720883 │
+┌─────────────edgeAngle─┐
+│ 0.0006822586214258879 │
 └───────────────────────┘
 ```
 
 ## h3EdgeLengthM {#h3edgelengthm}
 
-يحسب متوسط طول حافة السداسي [H3](#h3-index) بالأمتار.
+يحسب متوسط طول ضلع السداسي [H3](#h3-index) بالأمتار.
 
-**البنية**
+**الصيغة**
 
 ```sql
 h3EdgeLengthM(resolution)
@@ -122,11 +122,11 @@ h3EdgeLengthM(resolution)
 
 **المعلمة**
 
-* `resolution` — دقة الفهرس. [UInt8](/ar/reference/data-types/int-uint). النطاق: `[0, 15]`.
+* `resolution` — مستوى دقة الفهرس. [UInt8](/ar/reference/data-types/int-uint). النطاق: `[0, 15]`.
 
 **القيم المُعادة**
 
-* متوسط طول حافة سداسي [H3](#h3-index) بالأمتار. [Float64](/ar/reference/data-types/float).
+* متوسط طول ضلع سداسي [H3](#h3-index) بالأمتار. [Float64](/ar/reference/data-types/float).
 
 **مثال**
 
@@ -136,7 +136,7 @@ SELECT h3EdgeLengthM(15) AS edgeLengthM;
 
 ```text title="Response"
 ┌─edgeLengthM─┐
-│ 0.509713273 │
+│  0.58416863 │
 └─────────────┘
 ```
 
@@ -150,13 +150,13 @@ SELECT h3EdgeLengthM(15) AS edgeLengthM;
 h3EdgeLengthKm(resolution)
 ```
 
-**المعامل**
+**المعلمة**
 
-* `resolution` — دقة الفهرس. [UInt8](/ar/reference/data-types/int-uint). النطاق: `[0, 15]`.
+* `resolution` — مستوى دقة الفهرس. [UInt8](/ar/reference/data-types/int-uint). النطاق: `[0, 15]`.
 
 **القيم المُعادة**
 
-* متوسط طول حافة خلية [H3](#h3-index) السداسية بالكيلومترات. [Float64](/ar/reference/data-types/float).
+* متوسط طول ضلع خلية [H3](#h3-index) السداسية بالكيلومترات. [Float64](/ar/reference/data-types/float).
 
 **مثال**
 
@@ -166,7 +166,7 @@ SELECT h3EdgeLengthKm(15) AS edgeLengthKm;
 
 ```text title="Response"
 ┌─edgeLengthKm─┐
-│  0.000509713 │
+│  0.000584169 │
 └──────────────┘
 ```
 
@@ -241,7 +241,7 @@ SELECT h3ToGeo(644325524701193974) AS coordinates;
 
 يعيد مصفوفة من الأزواج `(lat, lon)` تمثل حدود فهرس H3 المُدخل.
 
-**البنية**
+**الصيغة**
 
 ```sql
 h3ToGeoBoundary(h3Index)
@@ -249,11 +249,11 @@ h3ToGeoBoundary(h3Index)
 
 **الوسائط**
 
-* `h3Index` — H3 Index. [UInt64](/ar/reference/data-types/int-uint).
+* `h3Index` — فهرس H3. [UInt64](/ar/reference/data-types/int-uint).
 
 **القيم المُعادة**
 
-* [Array](/ar/reference/data-types/array) من الأزواج &#39;(lat, lon)&#39;. ([Float64](/ar/reference/data-types/float), [Float64](/ar/reference/data-types/float)).
+* [مصفوفة](/ar/reference/data-types/array) من الأزواج &#39;(lat, lon)&#39;. ([Float64](/ar/reference/data-types/float), [Float64](/ar/reference/data-types/float)).
 
 **مثال**
 
@@ -262,9 +262,9 @@ SELECT h3ToGeoBoundary(644325524701193974) AS coordinates;
 ```
 
 ```text title="Response"
-┌─h3ToGeoBoundary(599686042433355775)────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
-│ [(37.2713558667319,-121.91508032705622),(37.353926450852256,-121.8622232890249),(37.42834118609435,-121.92354999630156),(37.42012867767779,-122.03773496427027),(37.33755608435299,-122.090428929044),(37.26319797461824,-122.02910130919001)] │
-└────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌─coordinates───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ [(55.71290022535552,37.79505811173474),(55.71289713485415,37.79506506997184),(55.71289934095484,37.79507312653982),(55.71290463755744,37.79507422487167),(55.71290772805917,37.79506726663346),(55.7129055219579,37.795059210064515)] │
+└───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## h3kRing {#h3kring}
@@ -1077,7 +1077,7 @@ h3GetRes0Indexes()
 **مثال**
 
 ```sql title="Query"
-SELECT h3GetRes0Indexes AS indexes ;
+SELECT h3GetRes0Indexes() AS indexes;
 ```
 
 ```text title="Response"

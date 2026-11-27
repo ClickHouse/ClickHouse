@@ -1,4 +1,3 @@
-SET enable_analyzer = 1;
 
 SELECT (number, number + 1) IN (materialize(number)) FROM numbers(1); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT (number, number + 1) NOT IN (materialize(number)) FROM numbers(1); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }

@@ -161,6 +161,7 @@ void ConstantNode::convertToNullable()
     constant_value
         = {ColumnConst::create(makeNullableOrLowCardinalityNullableSafe(column->getDataColumnPtr()), column->size()),
            makeNullableOrLowCardinalityNullableSafe(constant_value.getType())};
+    cached_tree_hash.reset();
 }
 
 bool ConstantNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions /*compare_options*/) const

@@ -1,3 +1,4 @@
+#include <span>
 #include <Formats/EscapingRuleUtils.h>
 #include <Formats/SchemaInferenceUtils.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
@@ -74,6 +75,14 @@ static NullOutput shared_null_output;
 
 void skipFieldByEscapingRule(ReadBuffer & buf, FormatSettings::EscapingRule escaping_rule, const FormatSettings & format_settings)
 {
+    /// The most common case, separately: a tail call that needs no stack frame, so with pointer authentication
+    /// there's no return address to sign and authenticate for every skipped field.
+    if (escaping_rule == FormatSettings::EscapingRule::Escaped)
+    {
+        readEscapedStringInto<NullOutput, false>(shared_null_output, buf);
+        return;
+    }
+
     NullOutput & out = shared_null_output;
     constexpr const char * field_name = "<SKIPPED COLUMN>";
     constexpr size_t field_name_len = 16;
@@ -129,31 +138,31 @@ bool deserializeFieldByEscapingRule(
     {
         case FormatSettings::EscapingRule::Escaped:
             if (parse_as_nullable)
-                read = SerializationNullable::deserializeNullAsDefaultOrNestedTextEscaped(column, buf, format_settings, serialization);
+                read = SerializationNullable::deserializeNullAsDefaultOrNestedTextEscaped(column, buf, format_settings, serialization, type.get());
             else
                 serialization->deserializeTextEscaped(column, buf, format_settings);
             break;
         case FormatSettings::EscapingRule::Quoted:
             if (parse_as_nullable)
-                read = SerializationNullable::deserializeNullAsDefaultOrNestedTextQuoted(column, buf, format_settings, serialization);
+                read = SerializationNullable::deserializeNullAsDefaultOrNestedTextQuoted(column, buf, format_settings, serialization, type.get());
             else
                 serialization->deserializeTextQuoted(column, buf, format_settings);
             break;
         case FormatSettings::EscapingRule::CSV:
             if (parse_as_nullable && !isCSVSeparateColumnsTuple(type, format_settings))
-                read = SerializationNullable::deserializeNullAsDefaultOrNestedTextCSV(column, buf, format_settings, serialization);
+                read = SerializationNullable::deserializeNullAsDefaultOrNestedTextCSV(column, buf, format_settings, serialization, type.get());
             else
                 serialization->deserializeTextCSV(column, buf, format_settings);
             break;
         case FormatSettings::EscapingRule::JSON:
             if (parse_as_nullable)
-                read = SerializationNullable::deserializeNullAsDefaultOrNestedTextJSON(column, buf, format_settings, serialization);
+                read = SerializationNullable::deserializeNullAsDefaultOrNestedTextJSON(column, buf, format_settings, serialization, type.get());
             else
                 serialization->deserializeTextJSON(column, buf, format_settings);
             break;
         case FormatSettings::EscapingRule::Raw:
             if (parse_as_nullable)
-                read = SerializationNullable::deserializeNullAsDefaultOrNestedTextRaw(column, buf, format_settings, serialization);
+                read = SerializationNullable::deserializeNullAsDefaultOrNestedTextRaw(column, buf, format_settings, serialization, type.get());
             else
                 serialization->deserializeTextRaw(column, buf, format_settings);
             break;
@@ -419,7 +428,7 @@ DataTypePtr tryInferDataTypeByEscapingRule(const String & field, const FormatSet
     }
 }
 
-DataTypes tryInferDataTypesByEscapingRule(const std::vector<String> & fields, const FormatSettings & format_settings, FormatSettings::EscapingRule escaping_rule, JSONInferenceInfo * json_info)
+DataTypes tryInferDataTypesByEscapingRule(std::span<const String> fields, const FormatSettings & format_settings, FormatSettings::EscapingRule escaping_rule, JSONInferenceInfo * json_info)
 {
     DataTypes data_types;
     data_types.reserve(fields.size());

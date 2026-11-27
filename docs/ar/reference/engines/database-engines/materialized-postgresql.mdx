@@ -31,9 +31,7 @@ import { CloudNotSupportedBadge } from "/snippets/ar/components/CloudNotSupporte
   ```
 </Note>
 
-<div id="creating-a-database">
-  ## إنشاء قاعدة بيانات
-</div>
+## إنشاء قاعدة بيانات {#creating-a-database}
 
 ```sql
 CREATE DATABASE [IF NOT EXISTS] db_name [ON CLUSTER cluster]
@@ -47,9 +45,7 @@ ENGINE = MaterializedPostgreSQL('host:port', 'database', 'user', 'password') [SE
 * `user` — اسم مستخدم PostgreSQL.
 * `password` — كلمة مرور المستخدم.
 
-<div id="example-of-use">
-  ## مثال للاستخدام
-</div>
+## مثال للاستخدام {#example-of-use}
 
 ```sql
 CREATE DATABASE postgres_db
@@ -64,9 +60,7 @@ SHOW TABLES FROM postgres_db;
 SELECT * FROM postgres_db.postgres_table;
 ```
 
-<div id="dynamically-adding-table-to-replication">
-  ## إضافة جداول جديدة إلى النسخ المتماثل بشكل ديناميكي
-</div>
+## إضافة جداول جديدة إلى النسخ المتماثل بشكل ديناميكي {#dynamically-adding-table-to-replication}
 
 بعد إنشاء قاعدة البيانات `MaterializedPostgreSQL`، فإنها لا تكتشف تلقائيًا الجداول الجديدة في قاعدة بيانات PostgreSQL المقابلة. ويمكن إضافة هذه الجداول يدويًا:
 
@@ -78,9 +72,7 @@ ATTACH TABLE postgres_database.new_table;
   قبل الإصدار 22.1، كانت إضافة جدول إلى النسخ المتماثل تترك فتحة النسخ المتماثل مؤقتة بدون حذف (اسمها `{db_name}_ch_replication_slot_tmp`). إذا كنت تُرفق جداول في إصدار ClickHouse أقدم من 22.1، فتأكّد من حذفها يدويًا (`SELECT pg_drop_replication_slot('{db_name}_ch_replication_slot_tmp')`). وإلا فسيزداد استخدام القرص. وقد أُصلحت هذه المشكلة في الإصدار 22.1.
 </Warning>
 
-<div id="dynamically-removing-table-from-replication">
-  ## إزالة الجداول من النسخ المتماثل ديناميكيًا
-</div>
+## إزالة الجداول من النسخ المتماثل ديناميكيًا {#dynamically-removing-table-from-replication}
 
 يمكن إزالة جداول محددة من النسخ المتماثل:
 
@@ -88,9 +80,7 @@ ATTACH TABLE postgres_database.new_table;
 DETACH TABLE postgres_database.table_to_remove PERMANENTLY;
 ```
 
-<div id="schema">
-  ## مخطط PostgreSQL
-</div>
+## مخطط PostgreSQL {#schema}
 
 يمكن إعداد [مخطط](https://www.postgresql.org/docs/9.1/ddl-schemas.html) PostgreSQL بثلاث طرق (ابتداءً من الإصدار 21.12).
 
@@ -137,9 +127,7 @@ SELECT * FROM database1.`schema2.table2`;
 
 تحذير: في هذه الحالة، لا يُسمح بوجود نقاط في اسم الجدول.
 
-<div id="requirements">
-  ## المتطلبات
-</div>
+## المتطلبات {#requirements}
 
 1. يجب أن تكون قيمة إعداد [wal&#95;level](https://www.postgresql.org/docs/current/runtime-config-wal.html) هي `logical`، وأن تكون قيمة المَعلمة `max_replication_slots` في ملف إعدادات PostgreSQL `2` على الأقل.
 
@@ -174,13 +162,9 @@ WHERE oid = 'postgres_table'::regclass;
   تُنسخ قيم [**TOAST**](https://www.postgresql.org/docs/current/storage-toast.html) متماثلًا. عندما يرسل PostgreSQL مرجع TOAST لم يتغير أثناء عملية update، تُحفَظ القيمة الحالية. يتطلب عمود هوية النسخة المتماثلة لـ TOAST الذي لم يتغير أن يرسل PostgreSQL مجموعة المفتاح القديمة، وإلا فلا يمكن تحديد الصف.
 </Note>
 
-<div id="settings">
-  ## الإعدادات
-</div>
+## الإعدادات {#settings}
 
-<div id="materialized-postgresql-tables-list">
-  ### `materialized_postgresql_tables_list`
-</div>
+### `materialized_postgresql_tables_list` {#materialized-postgresql-tables-list}
 
 يحدّد قائمة مفصولة بفواصل من جداول قاعدة بيانات PostgreSQL التي ستتم مزامنتها عبر محرك قاعدة البيانات [MaterializedPostgreSQL](/ar/reference/engines/database-engines/materialized-postgresql).
 
@@ -192,21 +176,15 @@ materialized_postgresql_tables_list = 'table1(co1, col2),table2,table3(co3, col5
 
 القيمة الافتراضية: قائمة فارغة — وهذا يعني أنه ستتم عملية النسخ المتماثل لقاعدة بيانات PostgreSQL بالكامل.
 
-<div id="materialized-postgresql-schema">
-  ### `materialized_postgresql_schema`
-</div>
+### `materialized_postgresql_schema` {#materialized-postgresql-schema}
 
 القيمة الافتراضية: سلسلة فارغة. (يُستخدَم المخطط الافتراضي)
 
-<div id="materialized-postgresql-schema-list">
-  ### `materialized_postgresql_schema_list`
-</div>
+### `materialized_postgresql_schema_list` {#materialized-postgresql-schema-list}
 
 القيمة الافتراضية: قائمة فارغة. (يُستخدَم المخطط الافتراضي)
 
-<div id="materialized-postgresql-max-block-size">
-  ### `materialized_postgresql_max_block_size`
-</div>
+### `materialized_postgresql_max_block_size` {#materialized-postgresql-max-block-size}
 
 يحدّد عدد الصفوف التي تُجمَّع في الذاكرة قبل دفع البيانات إلى جدول قاعدة بيانات PostgreSQL.
 
@@ -216,15 +194,12 @@ materialized_postgresql_tables_list = 'table1(co1, col2),table2,table3(co3, col5
 
 القيمة الافتراضية: `65536`.
 
-<div id="materialized-postgresql-replication-slot">
-  ### `materialized_postgresql_replication_slot`
-</div>
+### `materialized_postgresql_replication_slot` {#materialized-postgresql-replication-slot}
 
 فتحة النسخ المتماثل ينشئها المستخدم. يجب استخدامها مع `materialized_postgresql_snapshot`.
+لا يمكن استخدامها مع `materialized_postgresql_use_unique_replication_consumer_identifier`.
 
-<div id="materialized-postgresql-snapshot">
-  ### `materialized_postgresql_snapshot`
-</div>
+### `materialized_postgresql_snapshot` {#materialized-postgresql-snapshot}
 
 سلسلة نصية تُحدِّد لقطة لقطة سيتم انطلاقًا منها إجراء [التفريغ الأولي لجداول PostgreSQL](/ar/reference/engines/database-engines/materialized-postgresql). يجب استخدامها بالاقتران مع `materialized_postgresql_replication_slot`.
 
@@ -242,25 +217,20 @@ SELECT * FROM database1.table1;
 ALTER DATABASE postgres_database MODIFY SETTING materialized_postgresql_max_block_size = <new_size>;
 ```
 
-<div id="materialized_postgresql_use_unique_replication_consumer_identifier">
-  ### `materialized_postgresql_use_unique_replication_consumer_identifier`
-</div>
+### `materialized_postgresql_use_unique_replication_consumer_identifier` {#materialized_postgresql_use_unique_replication_consumer_identifier}
 
-استخدم معرّف مستهلك فريدًا لعملية النسخ المتماثل. القيمة الافتراضية: `0`.
+استخدم معرّف مستهلك فريدًا لعملية replication. القيمة الافتراضية: `0`.
 إذا ضُبطت القيمة على `1`، فسيُسمح بإعداد عدة جداول `MaterializedPostgreSQL` تشير إلى جدول `PostgreSQL` نفسه.
+لا يمكن استخدام هذا الإعداد مع `materialized_postgresql_replication_slot`، إذ إن فتحة replication التي يديرها المستخدم تحمل اسمًا ثابتًا واحدًا، فلا يمكن أن تكون فريدة لكل مستهلك. يُرفض الجمع بين الإعدادين عند تنفيذ `CREATE`، وكذلك عند تنفيذ `ATTACH` بتعريف كامل، غير أنه يظل بالإمكان تحميل قاعدة بيانات أو جدول سبق إنشاؤه بهذا الجمع.
 
-<div id="materialized-postgresql-use-extended-date-and-time-types">
-  ### `materialized_postgresql_use_extended_date_and_time_types`
-</div>
+### `materialized_postgresql_use_extended_date_and_time_types` {#materialized-postgresql-use-extended-date-and-time-types}
 
 يربط أنواع PostgreSQL `date` و`timestamp`/`timestamptz` بالنوعين `Date32` و`DateTime64` في ClickHouse، لأنهما يغطيان نطاق القيم الأوسع لهذه الأنواع في PostgreSQL. القيمة الافتراضية: `1`.
 إذا ضُبط على `0`، فستُستخدم بدلًا من ذلك الأنواع الأضيق `Date` و`DateTime` (إذ لا يمكن تمثيل القيم الواقعة خارج نطاقها أو التي تتضمن دقة أجزاء من الثانية).
 
 لا يتحكم هذا الإعداد إلا في أنواع الأعمدة التي يحددها استنتاج النوع عند إنشاء الجداول المتداخلة، لذا يجب تحديده عند تنفيذ `CREATE DATABASE`. ولا يمكن تغييره بعد ذلك باستخدام `ALTER DATABASE ... MODIFY SETTING` (إذ تحتفظ الجداول المتداخلة التي أُنشئت بالفعل بأنواع أعمدتها الثابتة، ويُرفض مثل هذا التغيير)؛ أعد إنشاء قاعدة البيانات لتغييره. ولا ينطبق هذا على محرك الجداول `MaterializedPostgreSQL`، حيث تُصرَّح أنواع الأعمدة صراحةً.
 
-<div id="tls-ssl">
-  ## TLS/SSL
-</div>
+## TLS/SSL {#tls-ssl}
 
 تُمرَّر معلمات TLS/SSL إلى `libpq`، ويمكن توفيرها عبر [مجموعة مُسمّاة](/ar/concepts/features/configuration/server-config/named-collections) أو كوسيطات مفتاح-قيمة تُلحق بالمحرك: `sslmode` (`disable` أو `allow` أو `prefer` أو `require` أو `verify-ca` أو `verify-full`؛ عند عدم تعيينه، يُستخدم الإعداد الافتراضي `prefer` في `libpq`)، بالإضافة إلى الشهادات والمفتاح بإحدى صيغتين. تشير `sslrootcert` (شهادة CA) و`sslcert` (شهادة العميل) و`sslkey` (المفتاح الخاص للعميل) إلى مسارات ملفات محلية على الخادم، ولا تُقبل إلا من مجموعة مُسمّاة معرّفة في ملف تهيئة الخادم. أما `sslrootcert_pem` و`sslcert_pem` و`sslkey_pem` فتقبل المحتوى الحرفي للملف المقابل بدلاً من ذلك، ويمكن تحديدها من SQL، وتُخفى في السجلات واستعلامات `SHOW` مثل كلمة المرور.
 
@@ -276,13 +246,9 @@ ENGINE = MaterializedPostgreSQL('postgres-host:5432', 'postgres_database', 'post
 
 تُعد معلمات TLS/SSL جزءًا من معلمات الاتصال بـ PostgreSQL، وتُحدَّد عند إنشاء قاعدة البيانات؛ ولتغييرها، أعد إنشاء قاعدة البيانات.
 
-<div id="notes">
-  ## ملاحظات
-</div>
+## ملاحظات {#notes}
 
-<div id="logical-replication-slot-failover">
-  ### التبديل عند الفشل لفتحة النسخ المنطقي
-</div>
+### التبديل عند الفشل لفتحة النسخ المنطقي {#logical-replication-slot-failover}
 
 فتحات النسخ المنطقي الموجودة على العقدة الأساسية لا تكون متاحة على النسخ الاحتياطية.
 لذلك، إذا حدث تبديل عند الفشل، فلن تكون العقدة الأساسية الجديدة (أي العقدة الاحتياطية الفعلية السابقة) على علم بأي فتحات كانت موجودة على العقدة الأساسية القديمة. وسيؤدي ذلك إلى تعطل النسخ من PostgreSQL.
@@ -336,9 +302,7 @@ ENGINE = MaterializedPostgreSQL('postgres-host:5432', 'postgres_database', 'post
    kubectl exec acid-demo-cluster-0 -c postgres -- su postgres -c 'patronictl failover --candidate acid-demo-cluster-1 --force'
    ```
 
-<div id="required-permissions">
-  ### الأذونات المطلوبة
-</div>
+### الأذونات المطلوبة {#required-permissions}
 
 1. [CREATE PUBLICATION](https://www.postgresql.org/docs/14/sql-createpublication.html) -- امتياز إنشاء الاستعلام.
 
@@ -358,9 +322,7 @@ ENGINE = MaterializedPostgreSQL('postgres-host:5432', 'postgres_database', 'post
 
 3. pg&#95;publication&#95;tables
 
-<div id="backup-and-restore">
-  ### النسخ الاحتياطي والاستعادة
-</div>
+### النسخ الاحتياطي والاستعادة {#backup-and-restore}
 
 يمكن أخذ نسخة احتياطية من قاعدة بيانات `MaterializedPostgreSQL`. تُخزَّن بيانات كل جدول مُكرَّر في جدول `ReplacingMergeTree` متداخل، لذلك يشمل الأمر `BACKUP DATABASE` هذه البيانات عبر التفويض إلى الجدول المتداخل.
 

@@ -4,8 +4,6 @@
 -- with an empty name part, causing the exception `Logical error: '!part.empty()'`
 -- during the `EXPLAIN SYNTAX` round trip in debug builds.
 
-SET enable_analyzer = 1;
-
 DROP TABLE IF EXISTS t_window_params;
 CREATE TABLE t_window_params (p UInt8, x UInt8) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO t_window_params VALUES (0, 1), (0, 2), (1, 10);

@@ -8,7 +8,6 @@ doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/zh/components/Image.jsx";
 
 本指南将逐步介绍如何使用 Postgres 原生逻辑复制，将您的 PostgreSQL 数据库迁移到 ClickHouse Managed Postgres。
 
@@ -51,7 +50,15 @@ dig +short <your-managed-postgres-hostname>
 
 请确保你的源数据库已按如下方式配置：
 
-<Image img="/images/managed-postgres/logical_replication/source-setup.webp" alt="源 PostgreSQL 复制设置" size="md" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![源 PostgreSQL 复制设置](/images/managed-postgres/logical_replication/source-setup.webp)
+
+</Frame>
+
+</div>
 
 <div id="migration-logical-replication-schema-dump">
   ## 源数据库的纯 schema 转储
@@ -76,7 +83,15 @@ pg_dump \
 
 在本例中，我们有两个表：`events` 和 `users`。`events` 有一百万行，`users` 有一千行。
 
-<Image img="/images/managed-postgres/pg_dump_restore/source-setup.webp" alt="源 PostgreSQL 表设置" size="xl" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![源 PostgreSQL 表设置](/images/managed-postgres/pg_dump_restore/source-setup.webp)
+
+</Frame>
+
+</div>
 
 <div id="migration-pgdump-pg-restore-create-pg">
   ### 创建 ClickHouse Managed Postgres 实例
@@ -84,7 +99,15 @@ pg_dump \
 
 首先，请确保您已创建好一个 ClickHouse Managed Postgres 实例，最好与源实例位于同一区域。您可以参考[此处](/zh/products/managed-postgres/quickstart#create-postgres-database)的快速指南。以下是本指南中将要创建的实例：
 
-<Image img="/images/managed-postgres/pg_dump_restore/create-pg-for-migration.webp" alt="创建 ClickHouse Managed Postgres 实例" size="md" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![创建 ClickHouse Managed Postgres 实例](/images/managed-postgres/pg_dump_restore/create-pg-for-migration.webp)
+
+</Frame>
+
+</div>
 
 <div id="migration-logical-replication-restore-schema">
   ## 将 schema 恢复到 ClickHouse Managed Postgres
@@ -107,7 +130,15 @@ pg_restore \
 
 在我们的示例中，运行此命令后，两个表都已创建完成，并且是空的：
 
-<Image img="/images/managed-postgres/logical_replication/target-initial-setup.webp" alt="目标 ClickHouse Managed Postgres 初始设置" size="xl" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![目标 ClickHouse Managed Postgres 初始设置](/images/managed-postgres/logical_replication/target-initial-setup.webp)
+
+</Frame>
+
+</div>
 
 <div id="migration-logical-replication-setup-replication">
   ## 设置逻辑复制
@@ -145,7 +176,15 @@ PUBLICATION <pub_name_you_entered_above>;
 
 在我们的示例中，设置好订阅后，数据便开始流入：
 
-<Image img="/images/managed-postgres/logical_replication/migration-result.webp" alt="逻辑复制后的迁移结果" size="xl" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![逻辑复制后的迁移结果](/images/managed-postgres/logical_replication/migration-result.webp)
+
+</Frame>
+
+</div>
 
 现在，插入源数据库的新行将近乎实时地复制到目标 ClickHouse Managed Postgres 数据库。
 

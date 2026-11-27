@@ -31,9 +31,7 @@ La réplication s’appuie sur le protocole de réplication logique de PostgreSQ
   ```
 </Note>
 
-<div id="creating-a-database">
-  ## Créer une base de données
-</div>
+## Créer une base de données {#creating-a-database}
 
 ```sql
 CREATE DATABASE [IF NOT EXISTS] db_name [ON CLUSTER cluster]
@@ -47,9 +45,7 @@ ENGINE = MaterializedPostgreSQL('host:port', 'database', 'user', 'password') [SE
 * `user` — utilisateur PostgreSQL.
 * `password` — mot de passe de l’utilisateur.
 
-<div id="example-of-use">
-  ## Exemple d&#39;utilisation
-</div>
+## Exemple d&#39;utilisation {#example-of-use}
 
 ```sql
 CREATE DATABASE postgres_db
@@ -64,9 +60,7 @@ SHOW TABLES FROM postgres_db;
 SELECT * FROM postgres_db.postgres_table;
 ```
 
-<div id="dynamically-adding-table-to-replication">
-  ## Ajout dynamique de nouvelles tables à la réplication
-</div>
+## Ajout dynamique de nouvelles tables à la réplication {#dynamically-adding-table-to-replication}
 
 Une fois la base de données `MaterializedPostgreSQL` créée, elle ne détecte pas automatiquement les nouvelles tables de la base de données PostgreSQL correspondante. Ces tables peuvent être ajoutées manuellement :
 
@@ -78,9 +72,7 @@ ATTACH TABLE postgres_database.new_table;
   Avant la version 22.1, l’ajout d’une table à la réplication laissait un slot de réplication temporaire qui n’était pas supprimé (nommé `{db_name}_ch_replication_slot_tmp`). Si vous attachez des tables avec une version de ClickHouse antérieure à 22.1, veillez à le supprimer manuellement (`SELECT pg_drop_replication_slot('{db_name}_ch_replication_slot_tmp')`). Sinon, l’utilisation du disque augmentera. Ce problème a été corrigé dans la version 22.1.
 </Warning>
 
-<div id="dynamically-removing-table-from-replication">
-  ## Retrait dynamique de tables de la réplication
-</div>
+## Retrait dynamique de tables de la réplication {#dynamically-removing-table-from-replication}
 
 Il est possible de retirer certaines tables de la réplication :
 
@@ -88,9 +80,7 @@ Il est possible de retirer certaines tables de la réplication :
 DETACH TABLE postgres_database.table_to_remove PERMANENTLY;
 ```
 
-<div id="schema">
-  ## Schéma PostgreSQL
-</div>
+## Schéma PostgreSQL {#schema}
 
 Le [schéma](https://www.postgresql.org/docs/9.1/ddl-schemas.html) PostgreSQL peut être configuré de 3 façons (à partir de la version 21.12).
 
@@ -137,9 +127,7 @@ SELECT * FROM database1.`schema2.table2`;
 
 Avertissement : dans ce cas, le nom de la table ne peut pas contenir de points.
 
-<div id="requirements">
-  ## Prérequis
-</div>
+## Prérequis {#requirements}
 
 1. Le paramètre [wal&#95;level](https://www.postgresql.org/docs/current/runtime-config-wal.html) doit être défini sur `logical`, et le paramètre `max_replication_slots` doit avoir une valeur d’au moins `2` dans le fichier de configuration de PostgreSQL.
 
@@ -174,13 +162,9 @@ WHERE oid = 'postgres_table'::regclass;
   Les valeurs [**TOAST**](https://www.postgresql.org/docs/current/storage-toast.html) sont répliquées. Lorsque PostgreSQL envoie une référence TOAST inchangée lors d’une mise à jour, la valeur existante est conservée. Si une colonne d’identité de réplica TOAST est inchangée, PostgreSQL doit envoyer un ancien tuple de clé, sans quoi la ligne ne peut pas être identifiée.
 </Note>
 
-<div id="settings">
-  ## Paramètres
-</div>
+## Paramètres {#settings}
 
-<div id="materialized-postgresql-tables-list">
-  ### `materialized_postgresql_tables_list`
-</div>
+### `materialized_postgresql_tables_list` {#materialized-postgresql-tables-list}
 
 Définit une liste de tables de base de données PostgreSQL séparées par des virgules, qui seront répliquées via le moteur de base de données [MaterializedPostgreSQL](/fr/reference/engines/database-engines/materialized-postgresql).
 
@@ -192,21 +176,15 @@ materialized_postgresql_tables_list = 'table1(co1, col2),table2,table3(co3, col5
 
 Valeur par défaut : liste vide — ce qui signifie que l’intégralité de la base de données PostgreSQL sera répliquée.
 
-<div id="materialized-postgresql-schema">
-  ### `materialized_postgresql_schema`
-</div>
+### `materialized_postgresql_schema` {#materialized-postgresql-schema}
 
 Valeur par défaut : chaîne vide. (Le schéma par défaut est utilisé)
 
-<div id="materialized-postgresql-schema-list">
-  ### `materialized_postgresql_schema_list`
-</div>
+### `materialized_postgresql_schema_list` {#materialized-postgresql-schema-list}
 
 Valeur par défaut : liste vide. (Le schéma par défaut est alors utilisé)
 
-<div id="materialized-postgresql-max-block-size">
-  ### `materialized_postgresql_max_block_size`
-</div>
+### `materialized_postgresql_max_block_size` {#materialized-postgresql-max-block-size}
 
 Définit le nombre de lignes conservées en mémoire avant l&#39;écriture des données dans la table PostgreSQL.
 
@@ -216,15 +194,12 @@ Valeurs possibles :
 
 Valeur par défaut : `65536`.
 
-<div id="materialized-postgresql-replication-slot">
-  ### `materialized_postgresql_replication_slot`
-</div>
+### `materialized_postgresql_replication_slot` {#materialized-postgresql-replication-slot}
 
 Un slot de réplication créé par l’utilisateur. Doit être utilisé avec `materialized_postgresql_snapshot`.
+Ne peut pas être utilisé conjointement avec `materialized_postgresql_use_unique_replication_consumer_identifier`.
 
-<div id="materialized-postgresql-snapshot">
-  ### `materialized_postgresql_snapshot`
-</div>
+### `materialized_postgresql_snapshot` {#materialized-postgresql-snapshot}
 
 Chaîne de texte identifiant un snapshot à partir duquel le [dump initial des tables PostgreSQL](/fr/reference/engines/database-engines/materialized-postgresql) sera effectué. Doit être utilisée avec `materialized_postgresql_replication_slot`.
 
@@ -242,25 +217,20 @@ Les paramètres peuvent être modifiés, si nécessaire, à l’aide d’une req
 ALTER DATABASE postgres_database MODIFY SETTING materialized_postgresql_max_block_size = <new_size>;
 ```
 
-<div id="materialized_postgresql_use_unique_replication_consumer_identifier">
-  ### `materialized_postgresql_use_unique_replication_consumer_identifier`
-</div>
+### `materialized_postgresql_use_unique_replication_consumer_identifier` {#materialized_postgresql_use_unique_replication_consumer_identifier}
 
-Utilisez un identifiant unique de consommateur de réplication pour la réplication. Valeur par défaut : `0`.
+Utilisez un identifiant unique de consommateur de réplication pour la réplication. Valeur par défaut : `0`.
 Si cette valeur est définie sur `1`, elle permet de configurer plusieurs tables `MaterializedPostgreSQL` pointant vers la même table `PostgreSQL`.
+Ce paramètre ne peut pas être utilisé conjointement avec `materialized_postgresql_replication_slot` : un slot de réplication géré par l&#39;utilisateur porte un nom fixe et unique, qui ne peut donc pas être propre à chaque consommateur. Une telle combinaison est rejetée lors d&#39;un `CREATE` ainsi que d&#39;un `ATTACH` avec une définition complète, mais une base de données ou une table déjà créée avec cette combinaison peut toujours être chargée.
 
-<div id="materialized-postgresql-use-extended-date-and-time-types">
-  ### `materialized_postgresql_use_extended_date_and_time_types`
-</div>
+### `materialized_postgresql_use_extended_date_and_time_types` {#materialized-postgresql-use-extended-date-and-time-types}
 
 Associe les types PostgreSQL `date` et `timestamp`/`timestamptz` aux types ClickHouse `Date32` et `DateTime64`, qui couvrent la plage de valeurs plus large des types PostgreSQL. Valeur par défaut : `1`.
 S&#39;il est défini sur `0`, les types plus limités `Date` et `DateTime` sont utilisés à la place (les valeurs en dehors de leur plage ou avec une précision sub-seconde ne peuvent pas être représentées).
 
 Ce paramètre contrôle uniquement les types de colonne choisis par l&#39;inférence de type lors de la création des tables imbriquées. Il doit donc être spécifié au moment du `CREATE DATABASE`. Il ne peut pas être modifié ensuite avec `ALTER DATABASE ... MODIFY SETTING` (les tables imbriquées déjà créées conservent leurs types de colonne fixes, et une telle modification est refusée) ; pour le modifier, recréez la base de données. Il ne s&#39;applique pas au moteur de table `MaterializedPostgreSQL`, où les types de colonne sont déclarés explicitement.
 
-<div id="tls-ssl">
-  ## TLS/SSL
-</div>
+## TLS/SSL {#tls-ssl}
 
 Les paramètres TLS/SSL sont transmis à `libpq` et peuvent être fournis via une [collection nommée](/fr/concepts/features/configuration/server-config/named-collections) ou sous forme d’arguments clé-valeur ajoutés à la fin du moteur : `sslmode` (`disable`, `allow`, `prefer`, `require`, `verify-ca` ou `verify-full` ; s’il n’est pas défini, la valeur par défaut de `libpq`, `prefer`, s’applique), ainsi que les certificats et la clé, sous l’une de deux formes. `sslrootcert` (certificat de CA), `sslcert` (certificat client) et `sslkey` (clé privée client) sont des chemins vers des fichiers locaux au serveur, acceptés uniquement depuis une collection nommée définie dans le fichier de configuration du serveur. `sslrootcert_pem`, `sslcert_pem` et `sslkey_pem` acceptent à la place le contenu littéral du fichier correspondant, peuvent être spécifiés en SQL et sont masqués dans les logs et les requêtes `SHOW`, comme un mot de passe.
 
@@ -276,13 +246,9 @@ ENGINE = MaterializedPostgreSQL('postgres-host:5432', 'postgres_database', 'post
 
 Les paramètres TLS/SSL font partie des paramètres de connexion PostgreSQL, qui sont définis lors de la création de la base de données. Pour les modifier, recréez la base de données.
 
-<div id="notes">
-  ## Remarques
-</div>
+## Remarques {#notes}
 
-<div id="logical-replication-slot-failover">
-  ### Basculement du slot de réplication logique
-</div>
+### Basculement du slot de réplication logique {#logical-replication-slot-failover}
 
 Les slots de réplication logique qui existent sur le primaire ne sont pas disponibles sur les répliques de secours.
 Ainsi, en cas de basculement, le nouveau primaire (l’ancien standby physique) n’aura connaissance d’aucun des slots qui existaient sur l’ancien primaire. Cela entraînera une rupture de la réplication depuis PostgreSQL.
@@ -336,9 +302,7 @@ Notez que cette solution ne doit être utilisée qu’en cas de besoin réel. S�
    kubectl exec acid-demo-cluster-0 -c postgres -- su postgres -c 'patronictl failover --candidate acid-demo-cluster-1 --force'
    ```
 
-<div id="required-permissions">
-  ### Autorisations requises
-</div>
+### Autorisations requises {#required-permissions}
 
 1. [CREATE PUBLICATION](https://www.postgresql.org/docs/14/sql-createpublication.html) -- privilège CREATE.
 
@@ -358,9 +322,7 @@ Accès aux tables :
 
 3. pg&#95;publication&#95;tables
 
-<div id="backup-and-restore">
-  ### Sauvegarde et restauration
-</div>
+### Sauvegarde et restauration {#backup-and-restore}
 
 Une base de données `MaterializedPostgreSQL` peut faire l’objet d’une sauvegarde. Les données de chaque table répliquée sont stockées dans une table `ReplacingMergeTree` imbriquée ; `BACKUP DATABASE` sauvegarde donc ces données en déléguant à la table imbriquée.
 

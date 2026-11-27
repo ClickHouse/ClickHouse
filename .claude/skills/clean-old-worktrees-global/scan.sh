@@ -3,7 +3,8 @@
 # Usage: scan.sh <out_dir> [root=$HOME] [age='1 day ago'] [parallelism=16]
 # Outputs in <out_dir>, with fields separated by tabs (directory names containing a tab or a newline are not supported
 # and are listed in skipped.txt instead):
-#   checkouts.txt     "<wt|main>\t<RECENT|old|UNKNOWN>\t<dir>" for every direct child of root that is a git checkout.
+#   checkouts.txt     "<wt|main>\t<RECENT|old|UNKNOWN>\t<dir>" for every direct child of root that is a git checkout,
+#                     and every worktree nested deeper (e.g. in `.claude/worktrees` or `tmp` of another checkout).
 #                     UNKNOWN means the age could not be established (e.g. unreadable subdirectories): keep it.
 #   wt_old_status.txt "<dir>\tdirty=N\tunpushed=N\tsubmodule_commits=N\tbranch=B" for every old worktree.
 #                     Any count that could not be established is ERROR.
@@ -38,15 +39,33 @@ supported_name()
         *$'\t'*|*$'\n'*) printf 'unsupported name\t%q\n' "$1" >> "$SKIPPED"; return 1 ;;
     esac
 }
-export -f age_of supported_name
+# A `.git` file of a worktree points to `<main>/.git/worktrees/<name>`, unlike the one of a submodule
+# (`<main>/.git/modules/<name>`, which for a submodule of a worktree is `<main>/.git/worktrees/<wt>/modules/<name>`).
+# Submodule names may contain `worktrees/`, so the whole part after the first `.git` component is checked. This also
+# holds for orphaned worktrees, whose metadata is already pruned. Anything else (e.g. worktrees of a bare repository or
+# of a submodule) is not considered a worktree, so it is kept.
+is_worktree()
+{
+    local g
+    g=$(sed -n '1s/^gitdir: //p' "$1/.git" 2>/dev/null)
+    g=${g#*/.git/}
+    [[ $g == worktrees/?* && ${g#worktrees/} != */* ]]
+}
+export -f age_of supported_name is_worktree
 
 # 1. Classify checkouts. Build dirs, contrib and .git are pruned: they are huge and do not reflect use of the checkout.
 #    Modifications inside contrib submodules are detected by the status check in step 2.
+#    Worktrees are also searched deeper, up to 6 levels below root.
 # shellcheck disable=SC2016 # The inner scripts are expanded by the inner shell.
-find . -mindepth 1 -maxdepth 1 -type d -printf '%P\0' | xargs -r -0 -P "$par" -n1 bash -c '
+{
+    find . -mindepth 1 -maxdepth 1 -type d -printf '%P\0'
+    # No -mindepth: it would also disable pruning above that depth.
+    find . -xdev -maxdepth 7 \( -name contrib -o -name 'build*' -o -name .git -o -name node_modules \) -type d -prune \
+        -o -path './*/*/.git' -type f -printf '%h\0'
+} | sed -z 's#^\./##' | xargs -r -0 -P "$par" -n1 bash -c '
     d=$1
     supported_name "$d" || exit 0
-    if [ -f "$d/.git" ]; then t=wt; elif [ -d "$d/.git" ]; then t=main; else exit 0; fi
+    if [ -d "$d/.git" ] && [[ $d != */* ]]; then t=main; elif is_worktree "$d"; then t=wt; else exit 0; fi
     a=$(age_of "$d" -xdev \( -path "$d/build*" -o -path "$d/contrib" -o -path "$d/.git" \) -prune -o)
     printf "%s\t%s\t%s\n" "$t" "$a" "$d"
 ' _ | sort -t $'\t' -k3 > "$out/checkouts.txt"

@@ -35,19 +35,19 @@ class FunctionH3PolygonToCells final : public IFunction
 {
 public:
     static constexpr auto name = "h3PolygonToCells";
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionH3PolygonToCells>(); }
 
-    size_t getNumberOfArguments() const override { return 2; }
-    bool useDefaultImplementationForConstants() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(Any, Any) -> Array(UInt64)";
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         /// One polygon can expand to hundreds of millions of cells, so the executor's between-blocks check
         /// cannot bound this call. Resolved from the executing thread rather than captured: this instance

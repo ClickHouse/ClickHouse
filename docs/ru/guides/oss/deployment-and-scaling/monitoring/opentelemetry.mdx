@@ -39,6 +39,16 @@ ClickHouse принимает HTTP-заголовки контекста тра�
 
 Запросы `INSERT` в `Distributed` table порождают аналогичные спаны в `DistributedSink` с теми же ключами атрибутов `clickhouse.cluster` и `clickhouse.shard_num`.
 
+### Спаны задач распределённого плана выполнения {#spans-of-distributed-plan-tasks}
+
+При включённой экспериментальной настройке `make_distributed_plan` запрос разбивается на план из стадий, а каждая стадия — на задачи, которые по HTTP направляются на обработку воркерам без сохранения состояния. Запрос диспетчеризации передаёт контекст трассировки в заголовках `traceparent` и `tracestate`, поэтому спаны на воркере присоединяются к трассе узла-initiator:
+
+* `StatelessWorkerClient::sendTask` (вид `CLIENT`) — по одному спану на каждую направленную задачу на узле-initiator. Спан охватывает только запрос на запуск: сама задача выполняется на воркере асинхронно, а её завершение отслеживается опросом. Атрибуты: `clickhouse.distributed.task_id`, `clickhouse.initial_query_id` и `clickhouse.target_host`, а также `clickhouse.exception`, если диспетчеризация завершилась ошибкой;
+* `InterserverIOHTTPHandler` (вид `SERVER`) — обработка на стороне воркера запроса, содержащего контекст трассировки; атрибуты: `clickhouse.uri`, `http.method` и `clickhouse.http_status`. Если запрос завершается ошибкой до запуска задачи (ошибка аутентификации или исключение в конечной точке), в этот спан записываются `clickhouse.exception` и `clickhouse.exception_code`, и он остаётся единственным следом диспетчеризации на стороне воркера. Запросы без заголовка `traceparent` (например, загрузка кусков между репликами) не трассируются;
+* `DistributedPlanTask::execute` (вид `SERVER`) — выполнение одной задачи на воркере, аналог спана `query` обычного запроса: он точно так же содержит `db.statement`, `clickhouse.query_id` и `clickhouse.query_status` либо исключение, а также идентичность задачи: `clickhouse.distributed.task_id`, `clickhouse.initial_query_id`, `clickhouse.distributed.plan_hash` (хеш сериализованного фрагмента плана), `clickhouse.distributed.serialization_version`, `clickhouse.distributed.execute_locally` и потоки `clickhouse.exchange.inputs` / `clickhouse.exchange.outputs`, из которых задача читает и в которые записывает данные.
+
+Спан задачи завершается позже, чем спан запроса, который её запустил. При `distributed_plan_execute_locally = 1` запрос не отправляется: задачи выполняются в потоках узла-initiator, а их спаны `DistributedPlanTask::execute` присоединяются непосредственно к его трассе.
+
 ## Трассировка запросов ClickHouse Keeper {#tracing-clickhouse-keeper-requests}
 
 ClickHouse поддерживает трассировку OpenTelemetry для запросов [ClickHouse Keeper](/ru/guides/oss/deployment-and-scaling/keeper/index) (сервиса координации, совместимого с ZooKeeper). Эта возможность обеспечивает подробную видимость всего жизненного цикла операций Keeper — от отправки клиентского запроса до его обработки на стороне сервера.

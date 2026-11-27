@@ -6,8 +6,6 @@ title: "Client ClickHouse"
 doc_type: "reference"
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 ClickHouse fournit un client en ligne de commande natif permettant d’exécuter des requêtes SQL directement sur un serveur ClickHouse.
 Il prend en charge à la fois le mode interactif (pour l’exécution en direct des requêtes) et le mode batch (pour les scripts et l’automatisation).
 Les résultats des requêtes peuvent être affichés dans le terminal ou exportés vers un fichier, avec la prise en charge de tous les [formats](/fr/reference/formats/index) de sortie de ClickHouse, tels que Pretty, CSV, JSON, etc.
@@ -68,7 +66,15 @@ Pour obtenir la liste complète des options de ligne de commande, voir [Options 
 
 Les informations de votre service ClickHouse Cloud sont disponibles dans la console ClickHouse Cloud. Sélectionnez le service auquel vous souhaitez vous connecter, puis cliquez sur **Connect** :
 
-<Image img="/images/_snippets/cloud-connect-button.webp" size="md" alt="Bouton Connect du service ClickHouse Cloud" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Bouton Connect du service ClickHouse Cloud](/images/_snippets/cloud-connect-button.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
@@ -76,7 +82,15 @@ Les informations de votre service ClickHouse Cloud sont disponibles dans la cons
 
 Choisissez **Native** : les informations de connexion s’affichent avec un exemple de commande `clickhouse-client` :
 
-<Image img="/images/_snippets/connection-details-native.webp" size="md" alt="Détails de connexion Native TCP du service ClickHouse Cloud" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Détails de connexion Native TCP du service ClickHouse Cloud](/images/_snippets/connection-details-native.webp)
+
+</Frame>
+
+</div>
 
 ### Stocker des connexions dans un fichier de configuration {#connection-credentials}
 

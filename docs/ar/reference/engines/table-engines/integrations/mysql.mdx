@@ -42,7 +42,7 @@ SETTINGS
 
 * `host:port` — عنوان خادم MySQL.
 * `database` — اسم قاعدة البيانات البعيدة.
-* `table` — اسم الجدول البعيد، أو استعلام يُمرَّر إلى MySQL كما هو (راجع [تمرير استعلام بدلًا من اسم جدول](#passing-a-query)).
+* `table` — اسم الجدول البعيد، أو استعلام يُمرَّر إلى MySQL كما هو (راجع [تمرير استعلام بدلًا من اسم جدول](#passing-a-query)).
 * `user` — مستخدم MySQL.
 * `password` — كلمة مرور المستخدم.
 * `replace_query` — علامة تُحوّل استعلامات `INSERT INTO` إلى `REPLACE INTO`. إذا كانت `replace_query=1`، فسيُستبدل الاستعلام.
@@ -50,11 +50,11 @@ SETTINGS
   مثال: `INSERT INTO t (c1,c2) VALUES ('a', 2) ON DUPLICATE KEY UPDATE c2 = c2 + 1`، حيث تكون `on_duplicate_clause` هي `UPDATE c2 = c2 + 1`. راجع [وثائق MySQL](https://dev.mysql.com/doc/refman/8.0/en/insert-on-duplicate.html) لمعرفة أي `on_duplicate_clause` يمكنك استخدامه مع العبارة `ON DUPLICATE KEY`.
   لتحديد `on_duplicate_clause`، يجب تمرير `0` إلى المعلمة `replace_query`. وإذا مرّرت `replace_query = 1` و`on_duplicate_clause` في الوقت نفسه، فسينشئ ClickHouse استثناءً.
 
-يمكن أيضًا تمرير الوسيطات باستخدام [المجموعات المسماة](/ar/concepts/features/configuration/server-config/named-collections). في هذه الحالة، يجب تحديد `host` و`port` كلٌّ على حدة. ويُنصح بهذا النهج في بيئة الإنتاج.
+يمكن أيضًا تمرير الوسيطات باستخدام [المجموعات المسماة](/ar/concepts/features/configuration/server-config/named-collections). في هذه الحالة، يجب تحديد `host` و`port` كلٌّ على حدة. ويُنصح بهذا النهج في بيئة الإنتاج.
 
-تُنفَّذ عبارات `WHERE` البسيطة، مثل `=, !=, >, >=, <, <=`، على خادم MySQL.
+تُنفَّذ عبارات `WHERE` البسيطة، مثل `=, !=, >, >=, <, <=`، على خادم MySQL.
 
-أما بقية الشروط وقيد أخذ العينات `LIMIT`، فلا تُنفَّذ إلا في ClickHouse بعد اكتمال الاستعلام إلى MySQL.
+أما بقية الشروط، فتُنفَّذ في ClickHouse بعد اكتمال الاستعلام إلى MySQL. ولا يُمرَّر قيد أخذ العينات `LIMIT` إلى MySQL إلا إذا كان ذلك آمنًا وكان الإعداد [external&#95;storage&#95;push&#95;down&#95;limit](/ar/reference/settings/session-settings/external-storage#external_storage_push_down_limit) مُفعّلًا؛ وإلا فإنه يُنفَّذ في ClickHouse.
 
 ## TLS/SSL {#tls-ssl}
 

@@ -85,9 +85,32 @@ GROUP BY
 └─────────────┴──────────┴─────────┘
 ```
 
-<div id="important-note">
-  ### Bonne pratique
-</div>
+### Ordre des lignes {#row-order}
+
+Pour chaque ligne source, `arrayJoin` produit les éléments dans l&#39;ordre où ils apparaissent dans le tableau.
+
+Si une requête comporte plusieurs appels à `arrayJoin` avec des arguments différents, l&#39;ensemble de résultats contient une ligne pour chaque combinaison d&#39;éléments. L&#39;ordre de ces lignes n&#39;est pas garanti, car il dépend du plan de requête. Par exemple, si la clause `WHERE` utilise l&#39;un des appels, la requête peut développer cet appel en premier. Pour obtenir un ordre prévisible, utilisez `ORDER BY` :
+
+```sql title="Query"
+SELECT arrayJoin(['a', 'b']) AS x, arrayJoin([1, 2]) AS y
+WHERE y > 0
+ORDER BY x, y
+```
+
+```text title="Response"
+┌─x─┬─y─┐
+│ a │ 1 │
+│ a │ 2 │
+│ b │ 1 │
+│ b │ 2 │
+└───┴───┘
+```
+
+Sans `ORDER BY`, cette requête peut renvoyer les lignes dans l&#39;ordre `('a', 1)`, `('b', 1)`, `('a', 2)`, `('b', 2)`.
+
+Sans `ORDER BY`, l&#39;ordre des lignes sources n&#39;est pas garanti. Pour obtenir un ordre stable et paginer les résultats avec `LIMIT` et `OFFSET`, consultez la section &quot;Ordre des lignes et pagination&quot; de la documentation de la clause [`ARRAY JOIN`](/fr/reference/statements/select/array-join). Les règles relatives à `ORDER BY` décrites dans cette section s&#39;appliquent également à `arrayJoin`.
+
+### Bonne pratique {#important-note}
 
 L&#39;utilisation de plusieurs `arrayJoin` avec la même expression peut ne pas produire les résultats attendus en raison de l&#39;élimination des sous-expressions communes.
 Dans ce cas, envisagez de modifier les expressions de tableau répétées en leur appliquant des opérations supplémentaires qui n&#39;affectent pas le résultat du JOIN. Par exemple, `arrayJoin(arraySort(arr))`, `arrayJoin(arrayConcat(arr, []))`

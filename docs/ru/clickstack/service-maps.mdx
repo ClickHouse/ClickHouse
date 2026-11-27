@@ -8,7 +8,7 @@ keywords: ['ClickStack', 'карты сервисов', 'топология', '�
 ---
 
 import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/ru/components/Image.jsx";
+
 import { Video } from "/snippets/ru/components/Video/Video.jsx";
 
 <BetaBadge />
@@ -17,7 +17,15 @@ import { Video } from "/snippets/ru/components/Video/Video.jsx";
 
 Нажмите **Service Map** на левой панели навигации, чтобы открыть полный граф. Сервисы появятся, как только вы начнёте [принимать данные трассировки](/ru/clickstack/ingesting-data/overview) с помощью OpenTelemetry.
 
-<Image img="/images/clickstack/service-maps/service-map-overview.webp" alt="Карта сервисов с узлами сервисов и потоком запросов между ними" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Карта сервисов с узлами сервисов и потоком запросов между ними](/images/clickstack/service-maps/service-map-overview.webp)
+
+</Frame>
+
+</div>
 
 <div id="exploring-the-service-map">
   ## Изучение карты сервисов
@@ -29,15 +37,39 @@ import { Video } from "/snippets/ru/components/Video/Video.jsx";
 
 **Селектор источника** — отфильтруйте карту по конкретному источнику трассировки (например, &quot;ClickPy Traces&quot;).
 
-<Image img="/images/clickstack/service-maps/source-selector.webp" alt="Селектор источника, выделенный на панели инструментов карты сервисов" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Селектор источника, выделенный на панели инструментов карты сервисов](/images/clickstack/service-maps/source-selector.webp)
+
+</Frame>
+
+</div>
 
 **Ползунок сэмплирования** — настройте частоту сэмплирования, чтобы найти баланс между производительностью и точностью. При более низких значениях данные быстрее загружаются в кластерах с большим объёмом трафика.
 
-<Image img="/images/clickstack/service-maps/sampling.webp" alt="Ползунок сэмплирования, выделенный на панели инструментов карты сервисов" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Ползунок сэмплирования, выделенный на панели инструментов карты сервисов](/images/clickstack/service-maps/sampling.webp)
+
+</Frame>
+
+</div>
 
 **Выбор диапазона дат** — задайте временное окно для данных трассировки, используемых при построении карты.
 
-<Image img="/images/clickstack/service-maps/date-selector.webp" alt="Выбор диапазона дат, выделенный на панели инструментов карты сервисов" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Выбор диапазона дат, выделенный на панели инструментов карты сервисов](/images/clickstack/service-maps/date-selector.webp)
+
+</Frame>
+
+</div>
 
 Используйте кнопки **+/-** в левом нижнем углу карты или прокрутку, чтобы увеличивать и уменьшать масштаб.
 

@@ -51,9 +51,9 @@ private:
     ColumnVector(std::initializer_list<T> il) : data{il} {}
 
 public:
-    bool isNumeric() const override { return is_arithmetic_v<T>; }
+    [[nodiscard]] bool isNumeric() const override { return is_arithmetic_v<T>; }
 
-    size_t size() const final
+    [[nodiscard]] size_t size() const final
     {
         return data.size();
     }
@@ -114,17 +114,17 @@ public:
 
     void updateHashFast(SipHash & hash) const override;
 
-    size_t byteSize() const override
+    [[nodiscard]] size_t byteSize() const override
     {
         return data.size() * sizeof(data[0]);
     }
 
-    size_t byteSizeAt(size_t) const override
+    [[nodiscard]] size_t byteSizeAt(size_t) const override
     {
         return sizeof(data[0]);
     }
 
-    size_t allocatedBytes() const override
+    [[nodiscard]] size_t allocatedBytes() const override
     {
         return data.allocated_bytes();
     }
@@ -147,9 +147,9 @@ public:
 
     /// This method implemented in header because it could be possibly devirtualized.
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
-    int compareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const final
+    [[nodiscard]] int compareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const final
 #else
-    int doCompareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const override
+    [[nodiscard]] int doCompareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const override
 #endif
     {
         return CompareHelper<T>::compare(data[n], assert_cast<const Self &>(rhs_).data[m], nan_direction_hint);
@@ -159,7 +159,7 @@ public:
 
 #if USE_EMBEDDED_COMPILER
 
-    bool isComparatorCompilable() const override;
+    [[nodiscard]] bool isComparatorCompilable() const override;
 
     llvm::Value * compileComparator(llvm::IRBuilderBase & /*builder*/, llvm::Value * /*lhs*/, llvm::Value * /*rhs*/, llvm::Value * /*nan_direction_hint*/) const override;
 
@@ -169,7 +169,7 @@ public:
         PaddedPODArray<UInt64> * row_indexes, PaddedPODArray<Int8> & compare_results,
         int direction, int nan_direction_hint) const override;
 
-    size_t getEqualRangeEndAssumeSorted(size_t begin, size_t end, int nan_direction_hint) const final;
+    [[nodiscard]] size_t getEqualRangeEndAssumeSorted(size_t begin, size_t end, int nan_direction_hint) const final;
 
     void getPermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
                     size_t limit, int nan_direction_hint, IColumn::Permutation & res) const override;
@@ -177,14 +177,14 @@ public:
     void updatePermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
                     size_t limit, int nan_direction_hint, IColumn::Permutation & res, EqualRanges& equal_ranges) const override;
 
-    size_t estimateCardinalityInPermutedRange(const IColumn::Permutation & permutation, const EqualRange & equal_range) const override;
+    [[nodiscard]] size_t estimateCardinalityInPermutedRange(const IColumn::Permutation & permutation, const EqualRange & equal_range) const override;
 
     void reserve(size_t n) override
     {
         data.reserve_exact(n);
     }
 
-    size_t capacity() const override
+    [[nodiscard]] size_t capacity() const override
     {
         return data.capacity();
     }
@@ -194,10 +194,10 @@ public:
         data.shrink_to_fit();
     }
 
-    const char * getFamilyName() const override { return TypeName<T>.data(); }
-    TypeIndex getDataType() const override { return TypeToTypeIndex<T>; }
+    [[nodiscard]] const char * getFamilyName() const override { return TypeName<T>.data(); }
+    [[nodiscard]] TypeIndex getDataType() const override { return TypeToTypeIndex<T>; }
 
-    MutableColumnPtr cloneResized(size_t size) const override;
+    [[nodiscard]] MutableColumnPtr cloneResized(size_t size) const override;
 
     Field operator[](size_t n) const override
     {
@@ -213,13 +213,13 @@ public:
 
     void getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t n, const IColumn::Options &) const override;
 
-    UInt64 get64(size_t n) const override;
+    [[nodiscard]] UInt64 get64(size_t n) const override;
 
-    Float64 getFloat64(size_t n) const override;
-    Float32 getFloat32(size_t n) const override;
+    [[nodiscard]] Float64 getFloat64(size_t n) const override;
+    [[nodiscard]] Float32 getFloat32(size_t n) const override;
 
     /// Out of range conversion is permitted.
-    UInt64 NO_SANITIZE_UNDEFINED getUInt(size_t n) const override
+    [[nodiscard]] UInt64 NO_SANITIZE_UNDEFINED getUInt(size_t n) const override
     {
         if constexpr (is_arithmetic_v<T>)
             return UInt64(data[n]);
@@ -228,7 +228,7 @@ public:
     }
 
     /// Out of range conversion is permitted.
-    Int64 NO_SANITIZE_UNDEFINED getInt(size_t n) const override
+    [[nodiscard]] Int64 NO_SANITIZE_UNDEFINED getInt(size_t n) const override
     {
         if constexpr (is_arithmetic_v<T>)
             return Int64(data[n]);
@@ -236,7 +236,7 @@ public:
             throwColumnConvertNotSupported(TypeName<T>, "Int");
     }
 
-    bool getBool(size_t n) const override
+    [[nodiscard]] bool getBool(size_t n) const override
     {
         if constexpr (is_arithmetic_v<T>)
             return bool(data[n]);
@@ -257,39 +257,39 @@ public:
     void doInsertRangeFrom(const IColumn & src, size_t start, size_t length) override;
 #endif
 
-    ColumnPtr filter(const IColumn::Filter & filt, ssize_t result_size_hint) const override;
+    [[nodiscard]] ColumnPtr filter(const IColumn::Filter & filt, ssize_t result_size_hint) const override;
 
     void filter(const IColumn::Filter & filt) override;
 
     void expand(const IColumn::Filter & mask, bool inverted) override;
 
-    ColumnPtr permute(const IColumn::Permutation & perm, size_t limit) const override;
+    [[nodiscard]] ColumnPtr permute(const IColumn::Permutation & perm, size_t limit) const override;
 
-    ColumnPtr index(const IColumn & indexes, size_t limit) const override;
+    [[nodiscard]] ColumnPtr index(const IColumn & indexes, size_t limit) const override;
 
     template <typename Type>
     ColumnPtr indexImpl(const PaddedPODArray<Type> & indexes, size_t limit) const;
 
-    ColumnPtr replicate(const IColumn::Offsets & offsets) const override;
+    [[nodiscard]] ColumnPtr replicate(const IColumn::Offsets & offsets) const override;
 
     void getExtremes(Field & min, Field & max, size_t start, size_t end) const override;
 
-    bool canBeInsideNullable() const override { return true; }
-    bool isFixedAndContiguous() const override { return true; }
-    size_t sizeOfValueIfFixed() const override { return sizeof(T); }
+    [[nodiscard]] bool canBeInsideNullable() const override { return true; }
+    [[nodiscard]] bool isFixedAndContiguous() const override { return true; }
+    [[nodiscard]] size_t sizeOfValueIfFixed() const override { return sizeof(T); }
     std::span<char> insertRawUninitialized(size_t count) override;
 
-    std::string_view getRawData() const override
+    [[nodiscard]] std::string_view getRawData() const override
     {
         return {reinterpret_cast<const char*>(data.data()), byteSize()};
     }
 
-    std::string_view getDataAt(size_t n) const override
+    [[nodiscard]] std::string_view getDataAt(size_t n) const override
     {
         return std::string_view(reinterpret_cast<const char *>(&data[n]), sizeof(data[n]));
     }
 
-    bool isDefaultAt(size_t n) const override
+    [[nodiscard]] bool isDefaultAt(size_t n) const override
     {
         if constexpr (is_floating_point<T>)
         {
@@ -313,18 +313,18 @@ public:
         }
     }
 
-    bool hasOnlyTypeDefaults() const override;
+    [[nodiscard]] bool hasOnlyTypeDefaults() const override;
 
-    bool structureEquals(const IColumn & rhs) const override
+    [[nodiscard]] bool structureEquals(const IColumn & rhs) const override
     {
         return typeid(rhs) == typeid(ColumnVector<T>);
     }
 
-    ColumnPtr createWithOffsets(const IColumn::Offsets & offsets, const ColumnConst & column_with_default_value, size_t total_rows, size_t shift) const override;
+    [[nodiscard]] ColumnPtr createWithOffsets(const IColumn::Offsets & offsets, const ColumnConst & column_with_default_value, size_t total_rows, size_t shift) const override;
 
     void updateAt(const IColumn & src, size_t dst_pos, size_t src_pos) override;
 
-    ColumnPtr compress(bool force_compression) const override;
+    [[nodiscard]] ColumnPtr compress(bool force_compression) const override;
 
     /// Replace elements that match the filter with zeroes. If inverted replaces not matched elements.
     void applyZeroMap(const IColumn::Filter & filt, bool inverted = false);

@@ -41,7 +41,6 @@ OPTIMIZE TABLE t_right_big FINAL;
 
 CREATE TABLE t_right_baseline (c UInt64) ENGINE = Memory;
 
-SET enable_analyzer = 1;
 SET enable_join_runtime_filters = 0;
 SET query_plan_optimize_join_order_randomize = 0;
 SET query_plan_optimize_join_order_limit = 10;

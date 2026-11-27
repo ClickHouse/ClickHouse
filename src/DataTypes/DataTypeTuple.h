@@ -44,6 +44,7 @@ public:
     Field getDefault() const override;
     void insertDefaultInto(IColumn & column) const override;
     bool isDefaultInsertTrivial() const override;
+    MutableColumnConstPtr createColumnConst(size_t size, const Field & field) const override;
 
     bool equals(const IDataType & rhs) const override;
 
@@ -72,6 +73,9 @@ public:
     String getNameByPosition(size_t i) const;
 
     bool hasExplicitNames() const { return has_explicit_names; }
+
+    /// Whether `names` can be the element names of a named `Tuple`: they must be non-empty, unique and not `null`.
+    static bool hasValidElementNames(const Strings & names);
 
     void updateHashImpl(SipHash & hash) const override;
 

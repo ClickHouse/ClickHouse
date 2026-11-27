@@ -5,6 +5,9 @@
 -- no-fasttest: a UNIQUE KEY INSERT writes the dense-index SST, which needs RocksDB.
 
 SET enable_unique_key = 1;
+-- Plan-based parallel replicas fails a read of a UNIQUE KEY table (count() reads one without trivial count):
+-- https://github.com/ClickHouse/ClickHouse/issues/128534
+SET parallel_replicas_plan_based = 0;
 
 -- 1. sorted writer: red if the dense-index writer accepts a repeated key.
 DROP TABLE IF EXISTS uk_dup_sorted;

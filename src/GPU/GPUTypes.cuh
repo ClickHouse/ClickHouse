@@ -25,8 +25,20 @@ __host__ inline void checkCuda(cudaError_t status, const char * message)
         throwCudaError(status, message);
 }
 
+/// Makes `waiting` wait for what is queued on `stream` so far, without the host waiting.
+__host__ inline void waitFor(cuda::stream_ref waiting, cuda::stream_ref stream)
+{
+    cudaEvent_t event = nullptr;
+    checkCuda(cudaEventCreateWithFlags(&event, cudaEventDisableTiming), "Cannot create a CUDA event");
+    const cudaError_t recorded = cudaEventRecord(event, stream.get());
+    const cudaError_t waited = recorded == cudaSuccess ? cudaStreamWaitEvent(waiting.get(), event, 0) : recorded;
+    cudaEventDestroy(event);
+    checkCuda(waited, "Cannot make a stream wait for another");
+}
+
 __host__ bool isClickHouseException(const std::exception & exception);
 
+/// Shared by code of libstdc++ and libc++, whose `std::span` differ.
 template <typename T>
 struct GPUSpan
 {
@@ -41,7 +53,7 @@ struct GPUSpan
     }
 
     template <typename Container, typename = typename Container::value_type>
-    __host__ GPUSpan(const Container & container)
+    __host__ GPUSpan(const Container & container) /// NOLINT
         : values(container.data()), count(container.size())
     {
     }
@@ -75,22 +87,10 @@ enum class GPUAggregationKind : int
     Sum = 0,
     Min = 1,
     Max = 2,
-    /// Of the rows, of no column. Only in a `GROUP BY`.
     Count = 3,
-    /// `avg`, into a `Float64`. Only in a `GROUP BY`.
     Mean = 4,
 };
 
-enum class GPUCodec : int
-{
-    LZ4 = 0,
-    ZSTD = 1,
-    /// A block in chunks, each a chunk of nvcomp, see `GPU::gdeflate_chunk_bytes`.
-    GDEFLATE = 2,
-};
-
-/// One aggregate of a `GROUP BY`: of the value column `column`, or of no column for `GPUAggregationKind::Count`, into a
-/// column of `result_type`.
 struct GPUGroupByAggregate
 {
     static constexpr uint32_t no_column = ~uint32_t{0};
@@ -98,6 +98,14 @@ struct GPUGroupByAggregate
     GPUAggregationKind aggregation;
     uint32_t column;
     GPUElementType result_type;
+};
+
+enum class GPUCodec : int
+{
+    LZ4 = 0,
+    ZSTD = 1,
+    /// Expanded by chunks, each a call of nvcomp, see `addCompressedBlocksOf`.
+    GDEFLATE = 2,
 };
 
 enum class GPUColumnKind : int
@@ -125,6 +133,15 @@ struct DeviceVariableColumn
     const char * const chars = nullptr;
     const size_t rows = 0;
     const size_t chars_bytes = 0;
+};
+
+/// The rows of the device that a filter keeps, a bit each in 32-bit words; without words, all of them.
+struct DeviceBitmask
+{
+    const uint32_t * words = nullptr;
+    size_t rows = 0;
+
+    __host__ bool keepsAll() const { return words == nullptr; }
 };
 
 struct DeviceColumnView
@@ -156,6 +173,11 @@ struct HostColumnView
 __host__ __device__ constexpr bool isInteger(GPUElementType type)
 {
     return type != GPUElementType::Float32 && type != GPUElementType::Float64 && type != GPUElementType::String;
+}
+
+__host__ __device__ constexpr bool isUnsigned(GPUElementType type)
+{
+    return type == GPUElementType::UInt8 || type == GPUElementType::UInt16 || type == GPUElementType::UInt32 || type == GPUElementType::UInt64;
 }
 
 __host__ __device__ constexpr size_t sizeOf(GPUElementType type)

@@ -2,13 +2,15 @@
 
 #include <GPU/GPUTypes.cuh>
 
+#include <cuda/stream_ref>
+
 namespace DB::GPU
 {
 
 class CudfReduction
 {
 public:
-    __host__ CudfReduction(GPUElementType element_type, GPUElementType result_type, GPUAggregationKind aggregation);
+    __host__ CudfReduction(GPUElementType element_type, GPUElementType result_type, GPUAggregationKind aggregation, cuda::stream_ref stream);
     __host__ ~CudfReduction();
 
     CudfReduction(const CudfReduction &) = delete;
@@ -16,11 +18,13 @@ public:
 
     __host__ void addBatch(DeviceColumnView values);
 
-    /// The reduction of every batch so far, as a column of one row on the device that lives as long as this does, or
-    /// of no rows where there was no batch.
+    /// Lives as long as this; has no rows if there was no batch.
     __host__ DeviceColumnView finalize();
 
 private:
+    __host__ void addBatchImpl(DeviceColumnView values);
+    __host__ DeviceColumnView finalizeImpl();
+
     struct State;
     State * state = nullptr;
 };

@@ -111,13 +111,13 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 
 ## parallel_replicas_filter_pushdown {#parallel_replicas_filter_pushdown}
 
-<BetaBadge />
+<SettingsInfoBlock type="Bool" default_value="1" />
 
-<SettingsInfoBlock type="Bool" default_value="0" />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.2"},{"label": "0"},{"label": "إعداد جديد"}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "1"},{"label": "مفعّل افتراضيًا"}]}]} />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.2"},{"label": "0"},{"label": "إعداد جديد"}]}]} />
+يُرحِّل الشرطَ الواقع فوق جزء الاستعلام الذي تنفّذه النسخ المتماثلة المتوازية إلى داخل ذلك الجزء، وإلى الاستعلام المُرسَل إلى النسخ المتماثلة، كي تُجري التصفية وفقًا له هي أيضًا.
 
-السماح بتمرير عوامل التصفية إلى الجزء من الاستعلام الذي تختار النسخ المتماثلة المتوازية تنفيذه
+عطّل هذا الإعداد لإبقاء الشرط فوق عملية القراءة على المُبادِر، كما كان الحال في الإصدارات السابقة لـ 26.10. ويُعدّ هذا الحل البديل إذا لم يعمل الترحيل كما ينبغي: فالنتيجة لا تتغيّر في الحالتين، وإنما يتغيّر فقط حجم العمل الذي تؤديه النسخ المتماثلة ومدى تبكيرها في أدائه.
 
 ## parallel_replicas_for_cluster_engines {#parallel_replicas_for_cluster_engines}
 
@@ -153,6 +153,8 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 
 يُجرى تحليل الفهرس فقط على replica-coordinator، ويُتخطى على النسخ المتماثلة الأخرى. ولا يسري ذلك إلا عند تمكين parallel&#95;replicas&#95;local&#95;plan
 
+يخص هذا الإعداد تحليل الفهرس الذي يحدد نطاقات العلامات التي تُعلنها عملية القراءة، وهي النطاقات التي يوزّعها المنسّق. ولا يشمل الاستبعاد الذي يجري أثناء قراءة البيانات، مثل استبعاد حبيبات التخزين في `enable_join_runtime_filters_index_analysis`؛ إذ لا يتكوّن مرشّح JOIN أثناء التنفيذ إلا بعد قراءة جانب البناء، ولذلك تُقيّم كل نسخة متماثلة مرشّحها الخاص وتستبعد حصتها بنفسها، ولا يستطيع أي منسّق أن يتولى ذلك نيابةً عنها.
+
 ## parallel_replicas_local_plan {#parallel_replicas_local_plan}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -173,7 +175,9 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
-قيِّد عدد النسخ المتماثلة المستخدمة في استعلام إلى (عدد الصفوف التقديري المراد قراءتها / min&#95;number&#95;of&#95;rows&#95;per&#95;replica). ويظل الحد الأقصى مقيَّدًا بـ &#39;max&#95;parallel&#95;replicas&#39;
+قيِّد عدد النسخ المتماثلة المستخدمة في استعلام إلى (عدد الصفوف التقديري المراد قراءتها / min&#95;number&#95;of&#95;rows&#95;per&#95;replica). ويظل الحد الأقصى مقيَّدًا بـ &#39;max&#95;parallel&#95;replicas&#39;
+
+يُتجاهَل هذا الإعداد عندما يكون `automatic_parallel_replicas_mode` مفعّلًا، إذ يعتمد الوضع التلقائي في قراره على نموذج التكلفة الخاص به.
 
 ## parallel_replicas_mode {#parallel_replicas_mode}
 

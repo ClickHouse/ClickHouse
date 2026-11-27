@@ -167,7 +167,7 @@ Field DataTypeEnum<Type>::castToName(const Field & value_or_name) const
 {
     if (value_or_name.getType() == Field::Types::String)
     {
-        this->getValue(value_or_name.safeGet<String>()); /// Check correctness
+        (void)this->getValue(value_or_name.safeGet<String>()); /// Check correctness
         return value_or_name.safeGet<String>();
     }
     if (value_or_name.getType() == Field::Types::Int64)
@@ -190,7 +190,7 @@ Field DataTypeEnum<Type>::castToValue(const Field & value_or_name) const
     {
         Int64 value = value_or_name.safeGet<Int64>();
         checkOverflow<Type>(value);
-        this->getNameForValue(static_cast<Type>(value)); /// Check correctness
+        (void)this->getNameForValue(static_cast<Type>(value)); /// Check correctness
         return value;
     }
     throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD, "DataTypeEnum: Unsupported type of field {}", value_or_name.getTypeName());

@@ -21,7 +21,7 @@ pip install "clickhouse-connect[rust,numpy]"   # NumPy results
 pip install "clickhouse-connect[rust,pandas]"  # Pandas results and inserts
 ```
 
-Os wheels do núcleo são publicados para CPython 3.10 a 3.14 e para o CPython 3.14t com free-threading no Linux, macOS e Windows. No Python com free-threading, importar a extensão do núcleo não reabilita o GIL.
+Os wheels do núcleo são publicados para CPython 3.10 a 3.15 e para o CPython 3.14t e 3.15t com free-threading no Linux, macOS e Windows. No Python com free-threading, importar a extensão do núcleo não reabilita o GIL.
 
 A saída comum de NumPy e Pandas em Rust não exige PyArrow nem qualquer outro pacote Arrow. Isso inclui `query_np`, `query_df`, suas variantes de streaming e `query(..., use_numpy=True)`. Consultas NumPy não exigem Pandas. Adicione o extra `async` para usar o cliente assíncrono.
 
@@ -83,9 +83,11 @@ Faça um benchmark da sua própria carga de trabalho antes de adotar o codec. Us
 
 ## Regras de fallback {#fallback-rules}
 
-As decisões de fallback são tomadas antes que qualquer byte seja lido ou enviado, portanto nunca ocorre troca de codec no meio do stream. Para queries, a escolha acontece antes de o response body ser consumido. Para inserções, o codificador Rust só é selecionado quando todos os tipos de coluna têm suporte; caso contrário, a inserção inteira é executada no codec Python.
+As decisões de fallback são tomadas antes que qualquer byte seja lido ou enviado, portanto nunca ocorre troca de codec no meio do stream. Para queries, a escolha acontece antes de o response body ser consumido. Para inserts, o codificador Rust só é selecionado quando todos os tipos de coluna têm suporte; caso contrário, o insert inteiro é executado no codec Python.
 
-Quando `naive_datetime_insert="server"` está ativo, o `rust` encaminha ao codec Python qualquer inserção que contenha uma coluna `DateTime` ou `DateTime64`, de modo que a timezone declarada da coluna ou a server timezone seja aplicada. Já o `rust_strict` rejeita essa combinação. O modo padrão `naive_datetime_insert="local"` continua usando o codificador Rust.
+Quando `naive_datetime_insert="server"` está ativo, o `rust` encaminha ao codec Python qualquer insert que contenha uma coluna `DateTime` ou `DateTime64`, de modo que o fuso horário declarado da coluna ou o fuso horário do servidor seja aplicado. Já o `rust_strict` rejeita essa combinação. O modo padrão `naive_datetime_insert="local"` continua usando o codificador Rust.
+
+Consultas Python de linhas e colunas (`query`, `query_row_block_stream`, `query_column_block_stream` e `query_rows_stream`) cujas colunas `DateTime` ou `DateTime64` sem fuso horário são renderizadas em um fuso horário do ambiente diferente de UTC, seja o fuso horário do servidor ou o fuso horário local, usam o codec Rust quando o core instalado oferece suporte a isso. Os valores são idênticos aos do codec Python. O fuso horário local só é elegível quando pode ser resolvido para um nome IANA, ou seja, quando `TZ` está definido ou `tzlocal` está instalado. Caso contrário, trata-se de um deslocamento fixo sem nome IANA, e a consulta é roteada para o codec Python. Consultas NumPy e Pandas (`query_np`, `query_df` e suas variantes de streaming) com um fuso horário do ambiente diferente de UTC, assim como consultas que definem `query_tz`, `column_tzs` ou um `tz_mode` diferente do padrão, ou que recebem um cabeçalho de fuso horário do servidor, continuam sendo roteadas para o codec Python. O `rust_strict` rejeita esses casos.
 
 Queries de metadados internas do driver, incluindo as instruções de reflexão do dialect do SQLAlchemy, sempre usam o codec Python, de forma silenciosa, em todos os modos.
 
@@ -100,6 +102,8 @@ pip install --upgrade clickhouse-connect-core
 ```
 
 Correções e melhorias de desempenho no codec compilado são publicadas como lançamentos do `clickhouse-connect-core` e podem ser obtidas com um upgrade para uma wheel do core compatível. Alterações na integração Rust do driver exigem um upgrade do `clickhouse-connect`.
+
+O suporte do Rust a consultas Python de linhas e colunas em fusos horários do ambiente diferentes de UTC requer `clickhouse-connect>=1.11.0` e `clickhouse-connect-core>=0.2.3`. Faça o upgrade de ambos os pacotes para habilitá-lo. Versões compatíveis mais antigas do core mantêm o fallback existente para Python no modo `rust` e a rejeição no modo `rust_strict`.
 
 ## Diferenças de comportamento conhecidas {#known-behavior-differences}
 

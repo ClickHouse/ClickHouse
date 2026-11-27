@@ -76,6 +76,17 @@ NodeEvaluationRangeGetter::NodeEvaluationRangeGetter(std::shared_ptr<const Prome
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "step is not specified");
             if (*settings_.step <= 0)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "step must be positive");
+
+            if (is_query_range && settings_.max_points_per_series)
+            {
+                UInt64 num_steps = (static_cast<UInt64>(settings_.end_time->value) - static_cast<UInt64>(settings_.start_time->value))
+                    / static_cast<UInt64>(settings_.step->value);
+                if (num_steps > settings_.max_points_per_series)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                    "exceeded maximum resolution of {} points per timeseries. "
+                                    "Try decreasing the query resolution (?step=XX) or increasing the setting promql_max_points_per_series",
+                                    settings_.max_points_per_series);
+            }
         }
         range.start_time = *settings_.start_time;
         range.end_time = *settings_.end_time;

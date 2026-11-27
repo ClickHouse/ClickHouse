@@ -954,7 +954,7 @@ age('unit', startdate, enddate[, timezone])
 
 * `unit` — 结果的时间间隔类型。
 
-| 单位          | 可能的值                                     |
+| 单位          | 可选值                                     |
 | ----------- | ---------------------------------------- |
 | nanosecond  | `nanosecond`, `nanoseconds`, `ns`        |
 | microsecond | `microsecond`, `microseconds`, `us`, `u` |
@@ -970,7 +970,7 @@ age('unit', startdate, enddate[, timezone])
 
 * `startdate` — 相减时的第一个时间值 (减数) 。[`Date`](/zh/reference/data-types/date) 或 [`Date32`](/zh/reference/data-types/date32) 或 [`DateTime`](/zh/reference/data-types/datetime) 或 [`DateTime64`](/zh/reference/data-types/datetime64)
 * `enddate` — 相减时的第二个时间值 (被减数) 。[`Date`](/zh/reference/data-types/date) 或 [`Date32`](/zh/reference/data-types/date32) 或 [`DateTime`](/zh/reference/data-types/datetime) 或 [`DateTime64`](/zh/reference/data-types/datetime64)
-* `timezone` — 可选。时区名称。如果指定，则同时应用于 startdate 和 enddate。如果未指定，则使用 startdate 和 enddate 各自的时区。如果两者不一致，则结果未定义。[`String`](/zh/reference/data-types/string)
+* `timezone` — 可选。时区名称。如果指定，则同时应用于 startdate 和 enddate。如果未指定，则使用 startdate 和 enddate 各自的时区。如果两者不一致，则结果未指定。[`String`](/zh/reference/data-types/string)
 
 **返回值**
 
@@ -1225,13 +1225,13 @@ SELECT changeYear('2024-01-01'::DateTime, 2023)
 dateDiff(unit, startdate, enddate[, timezone])
 ```
 
-**别名**: `timestampDiff`, `TIMESTAMP_DIFF`, `DATE_DIFF`, `date_diff`, `timestamp_diff`
+**别名**: `timestampDiff`, `TIMESTAMP_DIFF`, `DATE_DIFF`, `timestamp_diff`, `date_diff`
 
 **参数**
 
 * `unit` — 结果所使用的时间间隔类型。
 
-| 单位          | 可能的值                                     |
+| 单位          | 可选值                                      |
 | ----------- | ---------------------------------------- |
 | nanosecond  | `nanosecond`, `nanoseconds`, `ns`        |
 | microsecond | `microsecond`, `microseconds`, `us`, `u` |
@@ -1267,7 +1267,7 @@ SELECT dateDiff('hour', toDateTime('2018-01-01 22:00:00'), toDateTime('2018-01-0
 └─────┘
 ```
 
-**按不同单位计算日期差**
+**按不同单位计算日期差值**
 
 ```sql title=Query
 SELECT
@@ -1528,7 +1528,7 @@ LIMIT 10
 
 ## formatDateTimeInJodaSyntax {#formatDateTimeInJodaSyntax}
 
-引入于：v20.1.0
+引入版本：v20.1.0
 
 与 `formatDateTime` 类似，不同之处在于它使用 Joda 风格而不是 MySQL 风格来格式化日期时间。请参阅 [Joda Time 文档](https://joda-time.sourceforge.net/apidocs/org/joda/time/format/DateTimeFormat.html)。
 
@@ -1569,6 +1569,8 @@ LIMIT 10
 ```sql
 formatDateTimeInJodaSyntax(datetime, format[, timezone])
 ```
+
+**别名**: `FORMAT_DATETIME`
 
 **参数**
 
@@ -2158,7 +2160,7 @@ SELECT monthName(date_value)
 now([timezone])
 ```
 
-**别名**: `current_timestamp`, `localtimestamp`
+**别名**: `localtimestamp`, `current_timestamp`
 
 **参数**
 
@@ -3306,7 +3308,7 @@ SELECT timestamp('2023-12-31 12:00:00', '12:00:00.11') AS ts;
 timezone()
 ```
 
-**别名**: `timeZone`
+**别名**: `current_timezone`, `timeZone`
 
 **参数**
 
@@ -3318,7 +3320,7 @@ timezone()
 
 **示例**
 
-**用法示例**
+**使用示例**
 
 ```sql title=Query
 SELECT timezone()
@@ -3419,7 +3421,7 @@ timezoneOffset(Time) AS Offset_in_seconds,
 toDayOfMonth(datetime)
 ```
 
-**别名**：`DAYOFMONTH`, `DAY`
+**别名**：`DAYOFMONTH`, `DAY`, `DAY_OF_MONTH`
 
 **参数**
 
@@ -3465,7 +3467,7 @@ SELECT toDayOfMonth(toDateTime('2023-04-21 10:20:30'))
 toDayOfWeek(datetime[, mode[, timezone]])
 ```
 
-**别名**: `DAYOFWEEK`
+**别名**: `DAYOFWEEK`, `DAY_OF_WEEK`
 
 **参数**
 
@@ -3482,7 +3484,7 @@ toDayOfWeek(datetime[, mode[, timezone]])
 **使用示例**
 
 ```sql title=Query
--- 以下日期为 2023 年 4 月 21 日，是星期五：
+-- The following date is April 21, 2023, which was a Friday:
 SELECT
     toDayOfWeek(toDateTime('2023-04-21')),
     toDayOfWeek(toDateTime('2023-04-21'), 1)
@@ -3506,7 +3508,7 @@ SELECT
 toDayOfYear(datetime)
 ```
 
-**别名**: `DAYOFYEAR`
+**别名**: `DAYOFYEAR`, `DAY_OF_YEAR`
 
 **参数**
 
@@ -3518,7 +3520,7 @@ toDayOfYear(datetime)
 
 **示例**
 
-**用法示例**
+**使用示例**
 
 ```sql title=Query
 SELECT toDayOfYear(toDateTime('2023-04-21 10:20:30'))
@@ -3660,6 +3662,8 @@ ISO 周从星期一开始，一年中的第一周包含 1 月 4 日。
 toISOWeek(datetime[, timezone])
 ```
 
+**别名**：`WEEK_OF_YEAR`
+
 **参数**
 
 * `datetime` — 用于获取 ISO 周数的日期或日期时间。[`Date`](/zh/reference/data-types/date) 或 [`DateTime`](/zh/reference/data-types/datetime) 或 [`Date32`](/zh/reference/data-types/date32) 或 [`DateTime64`](/zh/reference/data-types/datetime64)
@@ -3707,6 +3711,8 @@ SELECT toDate('2025-12-29') AS date, toISOWeek(date) AS isoWeek, toYear(date) AS
 toISOYear(datetime)
 ```
 
+**别名**: `YEAR_OF_WEEK`
+
 **参数**
 
 * `datetime` — 日期或日期时间值。[`Date`](/zh/reference/data-types/date) 或 [`Date32`](/zh/reference/data-types/date32) 或 [`DateTime`](/zh/reference/data-types/datetime) 或 [`DateTime64`](/zh/reference/data-types/datetime64)
@@ -3747,7 +3753,7 @@ toISOYear(toDateTime('2024-10-02 01:30:00')) as year2
 toLastDayOfMonth(value)
 ```
 
-**别名**: `LAST_DAY`
+**别名**: `LAST_DAY_OF_MONTH`, `LAST_DAY`
 
 **参数**
 
@@ -5733,7 +5739,7 @@ SELECT toDate('2016-12-27') AS date, toYearWeek(date) AS yearWeek0, toYearWeek(d
 
 ## today {#today}
 
-于 v1.1.0 中引入
+引入版本：v1.1.0
 
 返回查询分析时刻的当前日期。等同于 `toDate(now())`。
 
@@ -5747,7 +5753,7 @@ SELECT toDate('2016-12-27') AS date, toYearWeek(date) AS yearWeek0, toYearWeek(d
 today()
 ```
 
-**别名**：`current_date`, `curdate`
+**别名**：`curdate`, `current_date`
 
 **参数**
 
@@ -5759,7 +5765,7 @@ today()
 
 **示例**
 
-**用法示例**
+**使用示例**
 
 ```sql title=Query
 SELECT today() AS today, curdate() AS curdate, current_date() AS current_date FORMAT Pretty

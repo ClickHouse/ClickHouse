@@ -32,10 +32,10 @@ ENGINE = <Engine>
 ```
 
 Le codec `Default` peut être spécifié pour utiliser la compression par défaut, qui peut dépendre de différents paramètres (et des propriétés des données) au moment de l’exécution.
-Exemple : `value UInt64 CODEC(Default)` — équivaut à l’absence de spécification de codec.
+Exemple : `value UInt64 CODEC(Default)` — équivaut à l’absence de spécification de codec.
 Voir aussi [Sélection adaptative de codec](#adaptive-codec-selection).
 
-Vous pouvez également supprimer le CODEC actuel de la colonne et utiliser la compression par défaut définie dans config.xml :
+Vous pouvez également supprimer le CODEC actuel de la colonne et utiliser la compression par défaut définie dans config.xml :
 
 ```sql
 ALTER TABLE codec_example MODIFY COLUMN float_value CODEC(Default);
@@ -43,11 +43,13 @@ ALTER TABLE codec_example MODIFY COLUMN float_value CODEC(Default);
 
 Les codecs peuvent être combinés dans un pipeline de codecs, par exemple `CODEC(Delta, Default)`.
 
+Les noms de codecs sont case-insensitive : `CODEC(ZSTD)`, `CODEC(zstd)` et `CODEC(ZStd)` désignent donc tous le même codec.
+
 <Tip>
   Vous ne pouvez pas décompresser les fichiers de base de données ClickHouse à l’aide d’utilitaires externes tels que `lz4`. Utilisez plutôt l’utilitaire dédié [clickhouse-compressor](https://github.com/ClickHouse/ClickHouse/tree/master/programs/compressor).
 </Tip>
 
-La compression est prise en charge par les moteurs de table suivants :
+La compression est prise en charge par les moteurs de table suivants :
 
 * Famille [MergeTree](/fr/reference/engines/table-engines/mergetree-family/mergetree). Prend en charge les codecs de compression de colonnes et la sélection de la méthode de compression par défaut via les paramètres de [compression](/fr/reference/settings/server-settings/settings/other#compression).
 * Famille [Log](/fr/reference/engines/table-engines/log-family/index). Utilise par défaut la méthode de compression `lz4` et prend en charge les codecs de compression de colonnes.
@@ -130,6 +132,22 @@ Le codec accepte un argument de variante facultatif :
 
 <Note>
   Ce codec est en bêta et nécessite `SET enable_alp_codec = 1` pour être utilisé.
+</Note>
+
+### PCO {#pco}
+
+<BetaBadge />
+
+`PCO(level)` — Compression sans perte pour les séquences de nombres à largeur fixe, reposant sur la bibliothèque [pcodec](https://github.com/pcodec/pcodec). S&#39;applique à tous les types numériques de 1, 2, 4 ou 8 octets (`Int8`..`Int64`, `UInt8`..`UInt64`, `Float32`, `Float64`, ainsi qu&#39;aux types qui reposent sur eux, tels que `Date`, `DateTime`, `Decimal32`, `Decimal64`, `IPv4` et `Enum`). `Decimal128`/`Decimal256` et les types non numériques ne sont pas pris en charge.
+
+pcodec identifie une structure approximative des nombres (un « mode », par exemple un multiplicateur commun approximatif) et découpe chaque valeur en « latents », qu&#39;il compresse ensuite à l&#39;aide d&#39;un encodage delta et d&#39;un codeur entropique [tANS](https://en.wikipedia.org/wiki/Asymmetric_numeral_systems) entrelacé. Sur les colonnes numériques présentant des distributions lisses, multimodales ou à forte entropie (mesures, durées, compteurs, identifiants), il compresse souvent mieux que `Gorilla`/`FPC`/`ZSTD`/`ALP`. En revanche, il ne dispose d&#39;aucun mécanisme de codage par plages (run-length) ni de recherche de correspondances : les colonnes constantes ou à faible cardinalité se compressent donc moins bien. L&#39;encodage est plusieurs fois plus lent qu&#39;avec `ZSTD`, tandis que les performances de décodage dépendent de la charge de travail.
+
+L&#39;argument facultatif `level` définit le niveau de compression, de 0 à 12 ; la valeur par défaut est 8. Lorsqu&#39;un bloc ne peut pas être compressé (par exemple, en présence de données incompressibles), il est stocké décompressé : le codec n&#39;augmente donc jamais la taille des données de plus d&#39;une petite constante par bloc.
+
+La charge utile de chaque bloc de compression est un flux [`.pco`](https://github.com/pcodec/pcodec) autonome, compatible avec l&#39;implémentation de référence de pcodec.
+
+<Note>
+  Ce codec est en bêta et son utilisation nécessite `SET enable_pco_codec = 1`. Comme il a besoin du type de colonne, il ne peut être spécifié qu&#39;au niveau de chaque colonne ; il ne peut pas être utilisé dans les paramètres de compression non typés (`marks_compression_codec`, `primary_key_compression_codec`, `default_compression_codec`) ni dans `TTL ... RECOMPRESS`.
 </Note>
 
 ### FPC {#fpc}

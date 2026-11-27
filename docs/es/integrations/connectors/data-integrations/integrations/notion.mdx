@@ -10,7 +10,6 @@ integration:
   - category: 'data_integration'
 ---
 
-import { Image } from "/snippets/es/components/Image.jsx";
 import { PartnerBadge } from "/snippets/es/components/PartnerBadge/PartnerBadge.jsx";
 
 <PartnerBadge />
@@ -35,13 +34,29 @@ ClickHouse aparece como una conexión preconfigurada en Notion (actualmente en b
 1. En Notion, crea un nuevo Custom Agent desde la sección **Agents** de la barra lateral.
 2. En **Settings** de tu Agent, en **Tools and Access**, selecciona **Add connection** y añade **ClickHouse** de la lista de conexiones disponibles.
 
-<Image img="/images/integrations/tools/data-integration/notion/add-clickhouse-connection.webp" size="md" alt="Selección de ClickHouse en el selector Add connection de Notion" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Selección de ClickHouse en el selector Add connection de Notion](/images/integrations/tools/data-integration/notion/add-clickhouse-connection.webp)
+
+</Frame>
+
+</div>
 
 3. Haz clic en **Conectar** y completa el flujo de OAuth con tus credenciales de ClickHouse Cloud. El acceso se limita a las organizaciones y servicios a los que tu cuenta ya puede acceder.
 
 4. Expande la nueva conexión de ClickHouse en la configuración del agent y activa las herramientas que quieras que use este agent. Para cada herramienta, también puedes elegir si el agent debe ejecutarla automáticamente o pedir aprobación siempre. Todas las herramientas expuestas por el servidor MCP remoto de ClickHouse son de solo lectura. Consulta la referencia de [herramientas disponibles](/es/products/cloud/features/ai-ml/remote-mcp#available-tools) para ver la lista completa y actualizada.
 
-<Image img="/images/integrations/tools/data-integration/notion/clickhouse-tools-toggles.webp" size="md" alt="La conexión de ClickHouse expandida en Notion, con los controles por herramienta" />
+<div className="ch-image-md">
+
+<Frame>
+
+![La conexión de ClickHouse expandida en Notion, con los controles por herramienta](/images/integrations/tools/data-integration/notion/clickhouse-tools-toggles.webp)
+
+</Frame>
+
+</div>
 
 <Note>
   Cada Custom Agent requiere su propia conexión de ClickHouse, y solo la persona que autenticó una conexión puede cambiar la configuración de sus herramientas. Consulta las [buenas prácticas de seguridad para las conexiones de Agent](https://www.notion.com/help/security-best-practices-for-agent-connections) de Notion para obtener más detalles.

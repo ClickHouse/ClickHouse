@@ -6,7 +6,6 @@ keywords: ['PrivateLink']
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
 import { ScalePlanFeatureBadge } from "/snippets/fr/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
 
 <ScalePlanFeatureBadge feature="AWS PrivateLink" />
@@ -95,7 +94,15 @@ Suivez ces étapes pour connecter vos services ClickHouse Cloud à l’aide d’
 
 Dans la console ClickHouse Cloud, ouvrez le service auquel vous souhaitez vous connecter via PrivateLink, puis accédez au menu **Settings**.
 
-<Image img="/images/cloud/security/aws-privatelink-pe-create.webp" size="md" alt="Points de terminaison privés" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Points de terminaison privés](/images/cloud/security/aws-privatelink-pe-create.webp)
+
+</Frame>
+
+</div>
 
 Relevez le `Service name` et le `nom DNS`, puis [passez à l’étape suivante](#create-aws-endpoint).
 
@@ -161,7 +168,15 @@ Ouvrez la console AWS et accédez à **VPC** → **Endpoints** → **Create endp
 
 Sélectionnez **Endpoint services that use NLBs and GWLBs** et utilisez `Service name`<sup>console</sup> ou `endpointServiceId`<sup>API</sup> obtenu à l’étape [Obtenir le &quot;Service name&quot; de l’endpoint ](#obtain-endpoint-service-info) dans le champ **Service Name**. Cliquez sur **Verify service** :
 
-<Image img="/images/cloud/security/aws-privatelink-endpoint-settings.webp" size="md" alt="Paramètres de l’endpoint AWS PrivateLink" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Paramètres de l’endpoint AWS PrivateLink](/images/cloud/security/aws-privatelink-endpoint-settings.webp)
+
+</Frame>
+
+</div>
 
 <Note>
   Pour une connexion interrégionale, cochez la case **Cross region endpoint** et indiquez la région du service dans laquelle votre service ClickHouse s’exécute.
@@ -171,7 +186,15 @@ Si vous obtenez l’erreur &quot;Service name couldn&#39;t be verified.&quot;, v
 
 Ensuite, sélectionnez votre VPC et vos sous-réseaux :
 
-<Image img="/images/cloud/security/aws-privatelink-select-vpc-and-subnets.webp" size="md" alt="Sélectionner le VPC et les sous-réseaux" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Sélectionner le VPC et les sous-réseaux](/images/cloud/security/aws-privatelink-select-vpc-and-subnets.webp)
+
+</Frame>
+
+</div>
 
 À titre facultatif, attribuez des groupes de sécurité/Tags :
 
@@ -181,7 +204,15 @@ Ensuite, sélectionnez votre VPC et vos sous-réseaux :
 
 Après avoir créé le VPC Endpoint, notez la valeur de `Endpoint ID` ; vous en aurez besoin à l’étape suivante.
 
-<Image img="/images/cloud/security/aws-privatelink-vpc-endpoint-id.webp" size="md" alt="ID du VPC Endpoint" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![ID du VPC Endpoint](/images/cloud/security/aws-privatelink-vpc-endpoint-id.webp)
+
+</Frame>
+
+</div>
 
 <div id="option-2-aws-cloudformation">
   #### Option 2 : AWS CloudFormation
@@ -257,7 +288,15 @@ Pour l’ajouter, accédez à la console ClickHouse Cloud, ouvrez le service que
   Si vous souhaitez autoriser l’accès depuis une connexion PrivateLink existante, utilisez le menu déroulant des endpoints existants.
 </Note>
 
-<Image img="/images/cloud/security/aws-privatelink-pe-filters.webp" size="md" alt="Filtre des endpoints privés" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Filtre des endpoints privés](/images/cloud/security/aws-privatelink-pe-filters.webp)
+
+</Frame>
+
+</div>
 
 Pour le supprimer, accédez à la console ClickHouse Cloud, recherchez le service, puis accédez à ses **Settings**. Trouvez l’endpoint que vous souhaitez supprimer. Supprimez-le de la liste des endpoints.
 
@@ -334,7 +373,15 @@ Chaque service pour lequel Private Link est activé dispose d’un endpoint publ
 
 Dans la console ClickHouse Cloud, accédez à **Settings**. Cliquez sur le bouton **Set up private endpoint**. Dans le flyout qui s’ouvre, copiez le **nom DNS**.
 
-<Image img="/images/cloud/security/aws-privatelink-pe-dns-name.webp" size="md" alt="Nom DNS du Private Endpoint" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Nom DNS du Private Endpoint](/images/cloud/security/aws-privatelink-pe-dns-name.webp)
+
+</Frame>
+
+</div>
 
 <div id="option-2-api-3">
   ##### Option 2 : API

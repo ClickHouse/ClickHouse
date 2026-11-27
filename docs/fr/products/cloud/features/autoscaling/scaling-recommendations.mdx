@@ -7,8 +7,6 @@ title: 'Recommandations de mise à l’échelle'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 <div id="introduction">
   ## Introduction
 </div>
@@ -96,7 +94,15 @@ Au lieu d’utiliser une seule fenêtre, ClickHouse Cloud s’appuie sur deux fe
 Chaque fenêtre génère indépendamment une recommandation à partir d’une analyse de la mémoire et du CPU.
 Le système fusionne ensuite ces recommandations en fonction du sens de la mise à l’échelle suggéré par chaque fenêtre, comme illustré dans la figure ci-dessous :
 
-<Image img="/images/cloud/features/autoscaling/two-window-recommender.webp" size="lg" alt="Logique de fusion du recommandeur à deux fenêtres" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Logique de fusion du recommandeur à deux fenêtres](/images/cloud/features/autoscaling/two-window-recommender.webp)
+
+</Frame>
+
+</div>
 
 Pour en savoir plus sur les choix de conception du recommandeur, consultez [&quot;Une mise à l’échelle automatique plus intelligente pour ClickHouse : l’approche à deux fenêtres
 &quot;](https://clickhouse.com/blog/smarter-auto-scaling#the-two-window-solution)

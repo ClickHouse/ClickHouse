@@ -52,6 +52,25 @@ Número máximo de textos a serem incluídos em uma única requisição HTTP fei
 
 Número máximo de requisições HTTP que as funções de IA podem encaminhar em uma consulta. 0 (padrão) desabilita o limite. Aplicado independentemente por cada servidor e fragmento de consulta: em um contexto de execução, é um limite exato compartilhado por todas as funções de IA, blocos e threads nele, mas uma consulta distribuída (entre shards ou fragmentos de réplicas paralelas) pode encaminhar até esse número de requisições por shard/fragmento. Deve ser definido na consulta de nível superior — uma substituição de `SETTINGS` em uma subconsulta é ignorada.
 
+## ai_function_max_concurrent_requests_per_thread {#ai_function_max_concurrent_requests_per_thread}
+
+<BetaBadge />
+
+<SettingsInfoBlock type="NonZeroUInt64" default_value="8" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "8"},{"label": "Nova configuração"}]}]} />
+
+Número máximo de requisições ao provedor que uma thread de consulta pode manter em andamento simultaneamente. Com `1`, as requisições são enviadas uma de cada vez.
+
+Uma consulta executada em várias threads (no máximo `max_threads`) pode ter até esse número de requisições em andamento por thread. Use uma [restrição de perfil de configurações](/pt-BR/concepts/features/configuration/settings/constraints-on-settings) (`<constraints><ai_function_max_concurrent_requests_per_thread><max>...</max></...>`) para definir um limite que a consulta não possa aumentar. O limite continua sendo por thread.
+
+Um valor acima de `1` enfraquece duas garantias:
+
+* O uso de tokens de uma requisição só é conhecido quando a resposta chega, portanto as cotas de tokens (`ai_function_max_input_tokens_per_query`, `ai_function_max_output_tokens_per_query`) podem ser ultrapassadas no equivalente a uma requisição para cada requisição em andamento — ou seja, no equivalente a até esse número de requisições, e não apenas a uma.
+* Uma leva inteira de requisições é encaminhada antes que qualquer erro delas seja detectado, portanto uma consulta que falha já na primeira linha ainda pode ter enviado até esse número de requisições, e ter sido cobrada por elas.
+
+`ai_function_max_api_calls_per_query` não é afetada e continua sendo um limite exato, pois um slot é reservado antes que cada requisição seja encaminhada.
+
 ## ai_function_max_input_tokens_per_query {#ai_function_max_input_tokens_per_query}
 
 <BetaBadge />
@@ -80,11 +99,11 @@ Esse limite só é aplicado a provedores que informam um objeto `usage` na respo
 
 <BetaBadge />
 
-<SettingsInfoBlock type="UInt64" default_value="1" />
+<SettingsInfoBlock type="UInt64" default_value="3" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "Por padrão, tenta novamente uma vez em caso de erro transitório da API, para que um único 429 ou 5xx do provedor não faça a consulta falhar."}]}, {"id": "row-2","items": [{"label": "26.4"},{"label": "0"},{"label": "Nova configuração"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "Por padrão, tenta novamente uma vez em caso de erro transitório da API, para que um único 429 ou 5xx do provedor não faça a consulta falhar."}]}, {"id": "row-2","items": [{"label": "26.4"},{"label": "0"},{"label": "Nova configuração"}]}, {"id": "row-3","items": [{"label": "26.10"},{"label": "3"},{"label": "Por padrão, tenta novamente até três vezes em caso de erro transitório da API, para reduzir a carga sobre um provedor sobrecarregado e com limite de taxa em cenários de requisições concorrentes."}]}]} />
 
-Número máximo de retentativas para erros transitórios por solicitação individual à API. Cada retentativa usa backoff exponencial a partir de `ai_function_retry_initial_delay_ms`.
+Número máximo de retentativas para erros transitórios por requisição individual à API. Cada retentativa usa backoff exponencial a partir de `ai_function_retry_initial_delay_ms`.
 
 ## ai_function_request_timeout_sec {#ai_function_request_timeout_sec}
 

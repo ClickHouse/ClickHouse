@@ -8,8 +8,6 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 <Info>
   **في هذا الدليل، ستتعرّف على ما يلي:**
 
@@ -47,7 +45,15 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 لنلقِ نظرة على مثال بسيط لفهم كيفية عمل البحث المتجهي.
 لنأخذ تضمينات (تمثيلات متجهية) لبعض الكلمات:
 
-<Image size="md" img="/images/use-cases/AI_ML/QBit/diagram_4.jpg" alt="تصور تضمينات الفواكه والحيوانات" />
+<div className="ch-image-md">
+
+<Frame>
+
+![تصور تضمينات الفواكه والحيوانات](/images/use-cases/AI_ML/QBit/diagram_4.jpg)
+
+</Frame>
+
+</div>
 
 أنشئ الجدول أدناه باستخدام بعض التضمينات على سبيل المثال:
 
@@ -118,7 +124,15 @@ query embedding: [-0.88693672,1.31532824,-0.51182908,-0.99652702,0.5990777]
   ### العالم الصغير الهرمي القابل للتنقّل (HNSW)
 </div>
 
-<Image size="md" img="/images/use-cases/AI_ML/QBit/diagram_1.jpg" alt="بنية طبقات HNSW" />
+<div className="ch-image-md">
+
+<Frame>
+
+![بنية طبقات HNSW](/images/use-cases/AI_ML/QBit/diagram_1.jpg)
+
+</Frame>
+
+</div>
 
 يتكوّن HNSW من طبقات متعددة من العقد (المتجهات). وتُسنَد كل عقدة عشوائيًا إلى طبقة واحدة أو أكثر، مع تناقص احتمال ظهورها في الطبقات الأعلى بشكل أُسّي.
 
@@ -154,7 +168,15 @@ query embedding: [-0.88693672,1.31532824,-0.51182908,-0.99652702,0.5990777]
 QBit هي بنية بيانات جديدة يمكنها تخزين قيم `BFloat16` و`Float32` و`Float64` بالاستفادة من طريقة تمثيل الأعداد ذات الفاصلة العائمة، أي على شكل بتات.
 وبدلًا من تخزين كل عدد كقيمة كاملة، تقسّم QBit القيم إلى **طبقات بتات**: كل بت أول، وكل بت ثانٍ، وكل بت ثالث، وهكذا.
 
-<Image size="md" img="/images/use-cases/AI_ML/QBit/diagram_2.jpg" alt="مفهوم طبقات بتات QBit" />
+<div className="ch-image-md">
+
+<Frame>
+
+![مفهوم طبقات بتات QBit](/images/use-cases/AI_ML/QBit/diagram_2.jpg)
+
+</Frame>
+
+</div>
 
 يعالج هذا النهج القيد الرئيسي في أساليب التكميم التقليدية. فلا حاجة إلى تخزين بيانات مكررة أو المخاطرة بأن تصبح القيم بلا معنى. كما أنه يتجنب اختناقات RAM في HNSW، لأن QBit تعمل مباشرة على البيانات المخزنة بدلًا من الاحتفاظ بفهرس داخل الذاكرة.
 
@@ -195,7 +217,15 @@ INSERT INTO fruit_animal VALUES
 ('horse',  [-0.61435682, 0.48542571, 1.21091247, -0.62530446, -1.33082533]);
 ```
 
-<Image size="md" img="/images/use-cases/AI_ML/QBit/diagram_5.jpg" alt="نقل بنية بيانات QBit" />
+<div className="ch-image-md">
+
+<Frame>
+
+![نقل بنية بيانات QBit](/images/use-cases/AI_ML/QBit/diagram_5.jpg)
+
+</Frame>
+
+</div>
 
 عند إدراج البيانات في عمود QBit، يُعاد ترتيبها بحيث تصطف جميع البتات الأولى معًا، وجميع البتات الثانية معًا، وهكذا. ونُطلق على هذه **مجموعات**.
 
@@ -237,13 +267,29 @@ ORDER BY distance;
   ### تحسين عمليات I/O
 </div>
 
-<Image size="md" img="/images/use-cases/AI_ML/QBit/diagram_3.jpg" alt="تحسين QBit لعمليات I/O" />
+<div className="ch-image-md">
+
+<Frame>
+
+![تحسين QBit لعمليات I/O](/images/use-cases/AI_ML/QBit/diagram_3.jpg)
+
+</Frame>
+
+</div>
 
 قبل أن نتمكن من حساب المسافات، يجب أولًا قراءة البيانات المطلوبة من القرص ثم فكّ نقلها (أي تحويلها مرة أخرى من تمثيل البتات المجمّعة إلى متجهات كاملة). ولأن QBit يخزّن القيم بصيغة البتات المنقولة بحسب مستوى الدقة، يمكن لـ ClickHouse قراءة أعلى طبقات البت فقط اللازمة لإعادة بناء الأرقام بالدقة المطلوبة.
 
 في الاستعلام أعلاه، نستخدم مستوى دقة مقداره 16. وبما أن Float64 يتكوّن من 64 بت، فإننا نقرأ فقط أول 16 طبقة بت، **متجاوزين 75% من البيانات**.
 
-<Image size="md" img="/images/use-cases/AI_ML/QBit/diagram_6.jpg" alt="إعادة بناء QBit" />
+<div className="ch-image-md">
+
+<Frame>
+
+![إعادة بناء QBit](/images/use-cases/AI_ML/QBit/diagram_6.jpg)
+
+</Frame>
+
+</div>
 
 بعد القراءة، نعيد بناء الجزء العلوي فقط من كل رقم من طبقات البت المحمّلة، مع إبقاء البتات غير المقروءة صفراً.
 
@@ -251,7 +297,15 @@ ORDER BY distance;
   ### تحسين العمليات الحسابية
 </div>
 
-<Image size="md" img="/images/use-cases/AI_ML/QBit/diagram_7.jpg" alt="مقارنة التصغير إلى نوع أقل دقة" />
+<div className="ch-image-md">
+
+<Frame>
+
+![مقارنة التصغير إلى نوع أقل دقة](/images/use-cases/AI_ML/QBit/diagram_7.jpg)
+
+</Frame>
+
+</div>
 
 قد يتساءل البعض عمّا إذا كان التحويل إلى نوع أصغر، مثل Float32 أو BFloat16، يمكن أن يزيل هذا الجزء غير المستخدم. هذا ممكن بالفعل، لكن التحويلات الصريحة مكلفة عند تطبيقها على كل صف.
 

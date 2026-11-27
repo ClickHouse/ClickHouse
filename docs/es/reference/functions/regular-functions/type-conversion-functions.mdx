@@ -347,9 +347,11 @@ SELECT accurateCastOrDefault('abc', 'UInt32')
 Introducido en: v1.1.0
 
 Convierte un valor a un tipo de dato especificado.
-Como [`accurateCast`](#accurateCast), pero devuelve `NULL` en lugar de generar una excepción si la conversión no puede realizarse con precisión.
+Como [`accurateCast`](#accurateCast), pero devuelve `NULL` en lugar de provocar el lanzamiento de una excepción si la conversión no puede realizarse con precisión.
 
 Esta función combina la seguridad de [`accurateCast`](#accurateCast) con un manejo adecuado de errores.
+
+La sintaxis `TRY_CAST(x AS T)`, como en los dialectos SQL de Trino, Spark, Snowflake y SQL Server, equivale a `accurateCastOrNull(x, 'T')`.
 
 **Sintaxis**
 
@@ -2879,6 +2881,7 @@ Introducido en: v1.1.0
 
 Convierte un valor de entrada al tipo [`Date`](/es/reference/data-types/date).
 Admite la conversión desde tipos String, FixedString, DateTime o numéricos.
+Los valores numéricos que quedan fuera del rango del tipo se rigen por el parámetro de configuración [`date_time_overflow_behavior`](/es/reference/settings/formats/date-time#date_time_overflow_behavior): en el modo predeterminado `ignore` y en el modo `saturate`, se saturan a los límites del rango, y en el modo `throw` se lanza una excepción.
 
 **Sintaxis**
 
@@ -2916,7 +2919,7 @@ SELECT toDate(toDateTime('2025-04-15 10:30:00'))
 2025-04-15
 ```
 
-**Conversión de entero a fecha**
+**Conversión de entero a Date**
 
 ```sql title=Query
 SELECT toDate(20297)
@@ -2933,6 +2936,7 @@ Introducido en: v21.9.0
 Convierte el argumento al tipo de dato [Date32](/es/reference/data-types/date32).
 Si el valor está fuera del rango `[0000-01-01, 9999-12-31]`, `toDate32` devuelve los valores límite admitidos por [Date32](/es/reference/data-types/date32).
 Si el argumento es de tipo [`Date`](/es/reference/data-types/date), se tienen en cuenta sus límites.
+Los valores numéricos fuera del rango del tipo se rigen por el parámetro de configuración [`date_time_overflow_behavior`](/es/reference/settings/formats/date-time#date_time_overflow_behavior): en el modo predeterminado `ignore` y en el modo `saturate` se ajustan a los límites del rango, y en el modo `throw` se lanza una excepción.
 
 **Sintaxis**
 
@@ -3242,6 +3246,8 @@ Convierte un valor de entrada al tipo [DateTime](/es/reference/data-types/dateti
   Por lo tanto, el análisis de las representaciones en cadena de números cortos (de hasta 4 dígitos) está explícitamente deshabilitado debido a la ambigüedad; por ejemplo, una cadena `'1999'` puede ser tanto un año (una representación en cadena incompleta de Date / DateTime) como una marca temporal Unix. Se permiten cadenas numéricas más largas.
 </Note>
 
+Los valores numéricos fuera del rango del tipo (de `1970-01-01 00:00:00` a `2106-02-07 06:28:15`) siguen la configuración [`date_time_overflow_behavior`](/es/reference/settings/formats/date-time#date_time_overflow_behavior): en el modo predeterminado `ignore` y en el modo `saturate` se ajustan a los límites del rango, y en el modo `throw` se lanza una excepción.
+
 Si `expr` es un valor [Time](/es/reference/data-types/time) o [Time64](/es/reference/data-types/time64), se interpreta como la cantidad de segundos transcurridos desde el inicio de la época Unix: la parte fraccionaria de un `Time64` se redondea hacia menos infinito, y los valores fuera del rango de `DateTime` siguen la configuración `date_time_overflow_behavior`.
 
 **Sintaxis**
@@ -3282,8 +3288,8 @@ Introducido en: v20.9.0
 Convierte un valor de entrada al tipo `DateTime`.
 Admite conversiones desde `String`, `FixedString`, `Date`, `Date32`, `Time`, `Time64`, `DateTime`, `DateTime64` o tipos numéricos (`(U)Int8`, `(U)Int16`, `(U)Int32`, `(U)Int64`, `(U)Int128`, `(U)Int256`, `BFloat16`, `Float32`, `Float64`). Los valores `Decimal` no son compatibles y generan una excepción.
 `DateTime32` es un alias de `DateTime` y admite fechas desde `1970-01-01 00:00:00` hasta `2106-02-07 06:28:15`.
-Al convertir desde una cadena o desde uno de los tipos numéricos saturables enumerados anteriormente, los valores fuera de este intervalo se saturan en sus límites. Los valores de coma flotante no finitos (`NaN`, `inf`, `-inf`) no se pueden convertir y generan una excepción.
-Las conversiones desde otros tipos de fecha y hora, como `Date32`, `DateTime64`, `Time` o `Time64`, siguen la configuración `date_time_overflow_behavior`: el modo predeterminado `ignore` puede producir valores con desbordamiento, `saturate` los limita a los límites del intervalo y `throw` genera una excepción. Los valores `Time64` se redondean primero hacia menos infinito a segundos enteros.
+Al convertir desde una cadena, los valores fuera de este intervalo se saturan en sus límites.
+Las conversiones desde los tipos numéricos enumerados anteriormente y desde otros tipos de fecha y hora, como `Date32`, `DateTime64`, `Time` o `Time64`, siguen la configuración [`date_time_overflow_behavior`](/es/reference/settings/formats/date-time#date_time_overflow_behavior): el modo predeterminado `ignore` satura los valores numéricos, pero puede producir valores con desbordamiento en los tipos de fecha y hora de origen; `saturate` los limita a los límites del intervalo y `throw` genera una excepción. Los valores `Time64` se redondean primero hacia menos infinito a segundos enteros. Los valores de coma flotante no finitos (`NaN`, `inf`, `-inf`) no se pueden convertir y generan una excepción.
 
 **Sintaxis**
 
@@ -3343,6 +3349,7 @@ SELECT toDateTime32('2025-01-01 00:00:00', 'Asia/Istanbul') AS value, toTypeName
 Introducido en: v20.1.0
 
 Convierte un valor de entrada en un valor del tipo [`DateTime64`](/es/reference/data-types/datetime64).
+Los valores numéricos fuera del rango del tipo se rigen por el parámetro de configuración [`date_time_overflow_behavior`](/es/reference/settings/formats/date-time#date_time_overflow_behavior): en el modo predeterminado `ignore` y en el modo `saturate` se saturan a los límites del rango (el último tick representable de la escala (`scale`) solicitada), y en el modo `throw` se lanza una excepción.
 
 **Sintaxis**
 
@@ -6979,7 +6986,7 @@ Introducido en: v25.5.0
 
 Convierte un valor de entrada al tipo [Time](/es/reference/data-types/time).
 Admite la conversión desde String, FixedString, DateTime, DateTime64, Time64 o tipos numéricos que representan segundos transcurridos desde la medianoche.
-Los valores numéricos fuera del rango del tipo (de `-999:59:59` a `999:59:59`, es decir, de `-3599999` a `3599999` segundos) se saturan a los límites del rango, y los valores de coma flotante no finitos (`NaN`, `inf`, `-inf`) no se pueden convertir y generan una excepción.
+Los valores numéricos fuera del rango del tipo (de `-999:59:59` a `999:59:59`, es decir, de `-3599999` a `3599999` segundos) se rigen por el parámetro de configuración [`date_time_overflow_behavior`](/es/reference/settings/formats/date-time#date_time_overflow_behavior): en el modo predeterminado `ignore` y en el modo `saturate` se saturan a los límites del rango, mientras que en el modo `throw` se lanza una excepción. Los valores de coma flotante no finitos (`NaN`, `inf`, `-inf`) no se pueden convertir y generan una excepción.
 Los valores `Time64` se redondean hacia el infinito negativo a segundos enteros y se saturan al mismo rango.
 
 <Note title="`toTime` heredada">
@@ -7051,6 +7058,7 @@ Introducido en: v25.6.0
 Convierte un valor de entrada al tipo [Time64](/es/reference/data-types/time64).
 Admite la conversión desde String, FixedString, DateTime64 o tipos numéricos que representan los segundos transcurridos desde la medianoche.
 Proporciona precisión de subsegundos para valores de tiempo, con hasta `scale` dígitos fraccionarios.
+Los valores numéricos que quedan fuera del rango del tipo (de `-999:59:59.999999999` a `999:59:59.999999999`) se rigen por el parámetro de configuración [`date_time_overflow_behavior`](/es/reference/settings/formats/date-time#date_time_overflow_behavior): en el modo predeterminado `ignore` y en el modo `saturate`, se saturan a los límites del rango, mientras que en el modo `throw` se lanza una excepción.
 
 **Sintaxis**
 

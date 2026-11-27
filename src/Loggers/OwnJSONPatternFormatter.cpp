@@ -1,4 +1,5 @@
 #include <Loggers/OwnJSONPatternFormatter.h>
+#include <Formats/FormatSettings.h>
 
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>

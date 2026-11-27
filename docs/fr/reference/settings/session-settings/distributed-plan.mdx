@@ -11,6 +11,7 @@ doc_type: 'reference'
 import SettingsInfoBlock from "/snippets/fr/components/SettingsInfoBlock/SettingsInfoBlock.jsx";
 import { VersionHistory } from "/snippets/fr/components/VersionHistory/VersionHistory.jsx";
 import { ExperimentalBadge } from "/snippets/fr/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import { BetaBadge } from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
 import { PrivatePreviewBadge } from "/snippets/fr/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
 
 Ces paramètres sont disponibles dans [system.settings](/fr/reference/system-tables/settings) et sont générés automatiquement à partir du [source](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
@@ -36,6 +37,38 @@ Utilisé par le planificateur distribué basé sur des règles. L’optimiseur b
 
 Nombre de buckets par défaut pour la jointure shuffle-hash distribuée.
 Utilisé par le planificateur distribué basé sur des règles. L’optimiseur basé sur les coûts choisit le fan-out selon le coût estimé et n’utilise pas ce paramètre.
+
+## distributed_plan_exchange_compression_method {#distributed_plan_exchange_compression_method}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="String" default_value="LZ4" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "LZ4"},{"label": "Nouveau paramètre : l'échange en streaming d'un plan de requête distribué est compressé avec `LZ4` au lieu du codec défini par `network_compression_method`."}]}]} />
+
+Codec utilisé pour compresser les paquets de l&#39;échange en streaming entre les tâches d&#39;un plan de requête distribué. Les échanges via des fichiers temporaires utilisent le codec par défaut du serveur.
+
+Valeurs possibles :
+
+* `''` — utiliser le codec défini par [network&#95;compression&#95;method](/fr/reference/settings/session-settings/network#network_compression_method).
+* `NONE` — aucune compression.
+* `LZ4` — utiliser le codec LZ4.
+* `LZ4HC` — utiliser le codec LZ4HC avec son niveau par défaut, 9. La compression est nettement plus lente qu&#39;avec `LZ4`.
+* `ZSTD` — utiliser le codec ZSTD avec le niveau défini par [distributed&#95;plan&#95;exchange&#95;zstd&#95;compression&#95;level](/fr/reference/settings/session-settings/distributed-plan#distributed_plan_exchange_zstd_compression_level).
+
+## distributed_plan_exchange_zstd_compression_level {#distributed_plan_exchange_zstd_compression_level}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Int64" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "Nouveau paramètre définissant le niveau de compression ZSTD de l'échange en streaming d'un plan de requête distribué."}]}]} />
+
+Niveau de compression ZSTD de l&#39;échange en streaming d&#39;un plan de requête distribué. Utilisé uniquement lorsque [distributed&#95;plan&#95;exchange&#95;compression&#95;method](/fr/reference/settings/session-settings/distributed-plan#distributed_plan_exchange_compression_method) est défini sur `ZSTD`.
+
+Valeurs possibles :
+
+* Entier compris entre 1 et 22. Plus le niveau est élevé, meilleure est la compression, mais plus elle est lente.
 
 ## distributed_plan_execute_locally {#distributed_plan_execute_locally}
 
@@ -65,7 +98,7 @@ Ne prend effet que lorsque `make_distributed_plan` (private preview) est activé
 
 Force le type spécifié d&#39;opérateurs Exchange entre les étapes d&#39;une requête distribuée.
 
-Valeurs possibles :
+Valeurs possibles :
 
 * &#39;&#39; - ne forcer aucun type d&#39;opérateurs Exchange et laisser l&#39;optimiseur choisir,
 * &#39;Persisted&#39; - utiliser des fichiers temporaires sur le stockage objet,
@@ -81,6 +114,16 @@ Valeurs possibles :
 
 Utiliser la stratégie d’agrégation Shuffle au lieu de PartialAggregation + Merge dans le plan de requête distribuée.
 Ignoré lorsque la stratégie Shuffle ne peut pas produire un résultat correct, par exemple pour `GROUPING SETS` ou lorsque l’agrégation doit produire les résultats dans l’ordre des buckets.
+
+## distributed_plan_join_runtime_filters {#distributed_plan_join_runtime_filters}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "Nouveau paramètre expérimental."}]}]} />
+
+Avec `make_distributed_plan`, envoie les filtres d’exécution de JOIN construits dans une étape aux étapes qui lisent le côté sondage, afin que celles-ci filtrent les lignes avant de les transmettre. Si un filtre ne parvient pas à destination, les lignes sont transmises sans filtrage. Nécessite `enable_join_runtime_filters`.
 
 ## distributed_plan_max_buffered_log_rows {#distributed_plan_max_buffered_log_rows}
 
@@ -111,6 +154,18 @@ Une heuristique destinée au planificateur distribué basé sur des règles. Lor
 
 Supprime les échanges superflus du plan de requête distribuée. Désactivez-le pour le débogage.
 
+## distributed_plan_partial_aggregation_before_shuffle {#distributed_plan_partial_aggregation_before_shuffle}
+
+<BetaBadge />
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "Nouveau paramètre expérimental : une agrégation distribuée redistribue des états d’agrégation partiels au lieu des lignes d’entrée."}]}]} />
+
+Effectue une agrégation partielle sur les nœuds qui lisent les données avant qu’une agrégation distribuée ne les redistribue selon les clés `GROUP BY`. La redistribution n’envoie ainsi, depuis chaque nœud, qu’un seul état d’agrégation par groupe au lieu de la totalité des lignes d’entrée, et chaque bucket fusionne les états de ses propres clés.
+Le planificateur à base de règles continue de redistribuer les lignes d’entrée lorsque les statistiques de colonne indiquent que l’agrégation partielle ne diviserait pas au moins par deux le volume de données. Avec `enable_cascades_optimizer`, ce paramètre permet à l’optimiseur de requêtes de choisir une telle fusion par bucket en fonction du coût.
+Ne prend effet qu’en combinaison avec `make_distributed_plan = 1`, et pas avec `distributed_plan_force_shuffle_aggregation`, qui redistribue les lignes d’entrée.
+
 ## distributed_plan_prefer_replicas_over_workers {#distributed_plan_prefer_replicas_over_workers}
 
 <PrivatePreviewBadge />
@@ -135,6 +190,14 @@ clé de tri de la table puisse éviter le tri et s&#39;arrêter plus tôt, au li
 Désactivé par défaut : le rewrite qui distribue un tri suppose que le tri qu&#39;il encapsule ne dépend pas du fait que son entrée
 soit déjà ordonnée ; or un tri qui en dépend peut se voir alimenté en rows via un exchange qui ne préserve pas
 l&#39;ordre. À ce jour, seules les formes où aucun exchange ne subsiste entre la lecture et le tri sont sûres.
+
+## distributed_plan_worker_cluster {#distributed_plan_worker_cluster}
+
+<PrivatePreviewBadge />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": ""},{"label": "Nouveau paramètre permettant de sélectionner le cluster de workers sans état utilisé pour l'exécution du plan distribué."}]}]} />
+
+Nom du cluster stateless-worker sur lequel exécuter le plan distribué de cette requête. Par défaut, la valeur vide sélectionne le cluster par défaut préconfiguré ; les autres clusters se configurent dans `stateless_worker_client.clusters`.
 
 ## distributed_plan_workers_num {#distributed_plan_workers_num}
 

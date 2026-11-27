@@ -1,5 +1,6 @@
 from abc import abstractmethod
 import json
+import math
 import os
 import pathlib
 import random
@@ -7,30 +8,57 @@ import sys
 import tempfile
 import xml.etree.ElementTree as ET
 from pathlib import Path
-from typing import Optional
 
 from environment import set_environment_variables
-from integration.helpers.client import CommandRequest
-from integration.helpers.cluster import ClickHouseInstance
-from integration.helpers.config_cluster import (
+from properties import (
+    KAFKA_INTERNAL_PORT,
+    NATS_INTERNAL_PORT,
+    RABBITMQ_INTERNAL_PORT,
+    RABBITMQ_PASSWORD,
+    RABBITMQ_USER,
+    STREAMING_NAMED_COLLECTIONS,
+    KEEPER_SESSION_EXPIRE_SLEEP_SECONDS,
+    MONGO_INTERNAL_PORT,
+    NGINX_INTERNAL_PORT,
+    REDIS_INTERNAL_PORT,
+    SERVER_SETTLE_SLEEP_SECONDS,
+    SERVER_START_WAIT_SECONDS,
+    SERVER_STOP_WAIT_SECONDS,
+)
+from tests.integration.helpers.client import CommandRequest
+from tests.integration.helpers.cluster import ClickHouseInstance
+from tests.integration.helpers.config_cluster import (
     pg_pass,
     mysql_pass,
     mongo_pass,
+    nats_user,
+    nats_pass,
+)
+
+# A restart of `node0` takes the load generator's connection down, so its reconnect budget
+# outlasts a whole restart (stop, binary swap, start), or it reports the deliberate downtime as
+# a lost server. A server that died for real is still reported at once: `dolor.py` notices the
+# missing process within a second and kills the generator itself.
+BUZZHOUSE_RECONNECT_SLEEP_SECONDS = 3
+# `Client::tryToReconnect` tries at once and sleeps only between attempts, hence the extra one.
+BUZZHOUSE_RECONNECT_ATTEMPTS = 1 + math.ceil(
+    (
+        SERVER_STOP_WAIT_SECONDS
+        + SERVER_SETTLE_SLEEP_SECONDS
+        + KEEPER_SESSION_EXPIRE_SLEEP_SECONDS
+        + SERVER_START_WAIT_SECONDS
+    )
+    / BUZZHOUSE_RECONNECT_SLEEP_SECONDS
 )
 
 
 class Generator:
-    def __init__(
-        self,
-        binary: pathlib.Path,
-        config: pathlib.Path,
-        tmpdir: pathlib.Path,
-        _suffix: Optional[str],
-    ):
-        self.binary: pathlib.Path = binary
-        self.config: pathlib.Path = config
-        if _suffix is not None:
-            self.temp = tempfile.NamedTemporaryFile(dir=tmpdir, suffix=_suffix)
+    # Display name used in log messages; lacasadeldolor_job.py greps for
+    # "<name> exited with code", so keep the two in sync.
+    name = "Load generator"
+
+    def __init__(self):
+        pass
 
     @abstractmethod
     def get_run_cmd(self, server: ClickHouseInstance) -> list[str]:
@@ -50,14 +78,18 @@ class Generator:
             stdout_file_path=sys.stdout,
             stderr_file_path=sys.stderr,
             env=set_environment_variables(logger, args, "generator"),
+            # The generator runs the tested binary as a client, and a relative `kernel.core_pattern`
+            # writes its core to the working directory, which the job collects `core.*` from.
+            cwd=args.tmp_files_dir,
         )
 
 
 class BuzzHouseGenerator(Generator):
+    name = "BuzzHouse"
+
     def __init__(self, args, cluster, catalog_server, server_settings):
-        super().__init__(
-            args.client_binary, args.client_config, args.tmp_files_dir, ".json"
-        )
+        super().__init__()
+        self.binary: pathlib.Path = args.client_binary
 
         if server_settings is None:
             root = ET.Element("clickhouse")
@@ -74,6 +106,12 @@ class BuzzHouseGenerator(Generator):
                 buzz_config = json.load(file1)
 
         buzz_config["seed"] = random.randint(1, 18446744073709551615)
+
+        # Outlast a deliberate restart of the server the generator is attached to
+        buzz_config["max_reconnection_attempts"] = BUZZHOUSE_RECONNECT_ATTEMPTS
+        buzz_config["time_to_sleep_between_reconnects"] = (
+            BUZZHOUSE_RECONNECT_SLEEP_SECONDS * 1000
+        )
 
         # Set paths
         buzz_config["client_file_path"] = (
@@ -96,9 +134,9 @@ class BuzzHouseGenerator(Generator):
         if args.with_minio:
             buzz_config["minio"] = {
                 "database": cluster.minio_bucket,
-                "server_hostname": "minio",
+                "server_hostname": cluster.minio_host,
                 "client_hostname": cluster.minio_ip,
-                "port": 9000,
+                "port": cluster.minio_port,
                 "user": "minio",
                 "password": cluster.minio_access_key,
                 "secret": cluster.minio_secret_key,
@@ -137,7 +175,8 @@ class BuzzHouseGenerator(Generator):
                 "query_log_file": os.path.join(args.tmp_files_dir, "mongodb.doc"),
                 "database": "test",
                 "server_hostname": cluster.mongo_host,
-                "port": cluster.mongo_port,
+                "client_hostname": cluster.get_instance_ip(cluster.mongo_host),
+                "port": MONGO_INTERNAL_PORT,
                 "user": "root",
                 "password": urllib.parse.quote_plus(mongo_pass),
                 "named_collection": "mongo_remote",
@@ -145,14 +184,14 @@ class BuzzHouseGenerator(Generator):
         if args.with_redis:
             buzz_config["redis"] = {
                 "server_hostname": cluster.redis_host,
-                "port": cluster.redis_port,
+                "port": REDIS_INTERNAL_PORT,
                 "user": "",
                 "password": "clickhouse",
             }
         if args.with_nginx:
             buzz_config["http"] = {
                 "server_hostname": cluster.nginx_host,
-                "port": cluster.nginx_port,
+                "port": NGINX_INTERNAL_PORT,
             }
         if args.with_azurite:
             buzz_config["azurite"] = {
@@ -169,34 +208,33 @@ class BuzzHouseGenerator(Generator):
             buzz_config["keeper_map_path_prefix"] = "/keeper_map_tables"
         # Set SMT disk only when property.py doesn't do it
         buzz_config["set_smt_disk"] = root.find("shared_merge_tree") is None
-        if (
-            args.with_spark
-            or args.with_glue
-            or args.with_hms
-            or args.with_rest
-            or args.with_unity
-            or args.with_kafka
-        ):
+        buzz_config["has_distributed_cache"] = args.with_distributed_cache
+        # Dolor stops the servers itself and requires a graceful shutdown. A failpoint left enabled
+        # can park a background task in a sleep, and shutdown waits on that task's mutex forever
+        buzz_config["enable_failpoints"] = False
+        # Without Spark the dolor connection serves only the streaming tables, e.g. in CI
+        buzz_config["dolor_spark_tables"] = args.with_spark
+        if args.with_spark or args.with_kafka or args.with_nats or args.with_rabbitmq:
             buzz_config["dolor"] = {
                 "server_hostname": catalog_server.host,
                 "client_hostname": catalog_server.host,
                 "port": catalog_server.port,
             }
-            if args.with_glue:
+            if args.with_spark and args.with_glue:
                 buzz_config["dolor"]["glue"] = {
                     "server_hostname": "glue",
                     "region": "us-east-1",
                     "port": 3000,
                     "warehouse": "warehouse-glue",
                 }
-            if args.with_hms:
+            if args.with_spark and args.with_hms:
                 buzz_config["dolor"]["hive"] = {
                     "server_hostname": "hive",
                     "region": "us-east-1",
                     "port": 9083,
                     "warehouse": "warehouse-hms",
                 }
-            if args.with_rest:
+            if args.with_spark and args.with_rest:
                 buzz_config["dolor"]["rest"] = {
                     "server_hostname": "rest",
                     "region": "us-east-1",
@@ -204,7 +242,7 @@ class BuzzHouseGenerator(Generator):
                     "path": "/v1",
                     "warehouse": "warehouse-rest",
                 }
-            if args.with_unity:
+            if args.with_spark and args.with_unity:
                 buzz_config["dolor"]["unity"] = {
                     "server_hostname": "host.docker.internal",
                     "port": 8085,
@@ -214,13 +252,37 @@ class BuzzHouseGenerator(Generator):
             if args.with_kafka:
                 buzz_config["kafka"] = {
                     "server_hostname": cluster.kafka_host,
-                    "port": cluster.kafka_port,
+                    "port": KAFKA_INTERNAL_PORT,
                     "user": "",
                     "password": "",
+                    "named_collection": STREAMING_NAMED_COLLECTIONS["kafka"],
+                }
+            if args.with_nats:
+                buzz_config["nats"] = {
+                    "server_hostname": cluster.nats_host,
+                    "port": NATS_INTERNAL_PORT,
+                    "user": nats_user,
+                    "password": nats_pass,
+                    "named_collection": STREAMING_NAMED_COLLECTIONS["nats"],
+                }
+            if args.with_rabbitmq:
+                buzz_config["rabbitmq"] = {
+                    "server_hostname": cluster.rabbitmq_host,
+                    "port": RABBITMQ_INTERNAL_PORT,
+                    "user": RABBITMQ_USER,
+                    "password": RABBITMQ_PASSWORD,
+                    "named_collection": STREAMING_NAMED_COLLECTIONS["rabbitmq"],
                 }
 
-        with open(self.temp.name, "w+") as file2:
-            file2.write(json.dumps(buzz_config))
+        with tempfile.NamedTemporaryFile(
+            dir=args.tmp_files_dir,
+            mode="w",
+            prefix="buzzhouse_",
+            suffix=".json",
+            delete=False,
+        ) as temp_file:
+            self.temp_name = temp_file.name
+            json.dump(buzz_config, temp_file, indent=4)
 
     def get_run_cmd(self, server: ClickHouseInstance) -> list[str]:
         return [
@@ -231,8 +293,8 @@ class BuzzHouseGenerator(Generator):
             "--port",
             "9000",
             "--max_memory_usage_in_client=1000000000",
-            f"--buzz-house-config={self.temp.name}",
+            f"--buzz-house-config={self.temp_name}",
         ]
 
     def validate_exit_code(self, exit_code: int) -> bool:
-        return exit_code in (0, 137, 143)
+        return exit_code in (-9, -15, -2, 0, 32, 130, 137, 143, 210)

@@ -7,6 +7,7 @@ keywords: ['其他查询语言', '查询方言', 'MySQL 方言', 'PostgreSQL 方
 doc_type: 'reference'
 ---
 
+import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/ExperimentalBadge.jsx";
 
 除标准 SQL 外，ClickHouse 还支持多种可用于数据查询的其他查询语言。
@@ -54,12 +55,12 @@ ClickHouse 在底层通过将 PRQL 转译为 SQL 来运行 PRQL 查询。
 
 ## Kusto 查询语言 (KQL) {#kusto-query-language-kql}
 
-<ExperimentalBadge />
+<BetaBadge />
 
 如需启用 KQL：
 
 ```sql
-SET allow_experimental_kusto_dialect = 1; -- 此 SET 语句仅适用于 ClickHouse 版本 >= 25.1
+SET allow_experimental_kusto_dialect = 1; -- this SET statement is required only for ClickHouse versions >= 25.1
 SET dialect = 'kusto'
 ```
 
@@ -109,7 +110,7 @@ _time:5m error | stats by (level) count() as hits | sort by (hits desc)
 
 ## Trino SQL {#trino-sql}
 
-<ExperimentalBadge />
+<BetaBadge />
 
 要启用 Trino 方言：
 

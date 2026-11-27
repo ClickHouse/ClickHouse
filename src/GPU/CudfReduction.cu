@@ -33,7 +33,7 @@ __host__ std::unique_ptr<cudf::reduce_aggregation> reduceAggregationFor(GPUAggre
     throwGPUError(("unknown aggregation " + std::to_string(static_cast<int>(aggregation))).c_str());
 }
 
-/// How many batches' results are kept before they are reduced into one.
+/// Partial results kept before they are reduced into one.
 constexpr size_t max_partials = 1024;
 
 }
@@ -42,17 +42,18 @@ struct CudfReduction::State
 {
     const GPUElementType element_type;
     const GPUElementType result_type;
+    const cuda::stream_ref stream;
     const cudf::data_type output_type;
     const std::unique_ptr<cudf::reduce_aggregation> aggregation;
 
-    /// The results of the batches, a row each.
     std::vector<std::unique_ptr<cudf::column>> partials;
     std::unique_ptr<cudf::column> result;
     std::unique_ptr<cudf::column> result_offsets;
 
-    __host__ State(GPUElementType element_type_, GPUElementType result_type_, GPUAggregationKind aggregation_kind)
+    __host__ State(GPUElementType element_type_, GPUElementType result_type_, GPUAggregationKind aggregation_kind, cuda::stream_ref stream_)
         : element_type(element_type_)
         , result_type(result_type_)
+        , stream(stream_)
         , output_type(cudfTypeOf(result_type_))
         , aggregation(reduceAggregationFor(aggregation_kind))
     {
@@ -60,8 +61,6 @@ struct CudfReduction::State
 
     __host__ std::unique_ptr<cudf::column> reduce(const cudf::column_view & values, const std::string & what) const
     {
-        const cuda::stream_ref stream = GPUResources::get().compute;
-
         const std::unique_ptr<cudf::scalar> value = guarded(what, [&] { return cudf::reduce(values, *aggregation, output_type, stream); });
         if (value->type() != output_type)
             throwGPUError(
@@ -84,20 +83,20 @@ struct CudfReduction::State
             views.push_back(partial->view());
 
         const std::unique_ptr<cudf::column> gathered
-            = guarded("gathering " + std::to_string(views.size()) + " batches' results", [&] { return cudf::concatenate(views, GPUResources::get().compute); });
+            = guarded("gathering " + std::to_string(views.size()) + " batches' results", [&] { return cudf::concatenate(views, stream); });
         partials.clear();
         partials.push_back(reduce(gathered->view(), "reducing the batches' results"));
     }
 };
 
-__host__ CudfReduction::CudfReduction(GPUElementType element_type, GPUElementType result_type, GPUAggregationKind aggregation)
+__host__ CudfReduction::CudfReduction(GPUElementType element_type, GPUElementType result_type, GPUAggregationKind aggregation, cuda::stream_ref stream)
 {
     if (aggregation == GPUAggregationKind::Sum && sizeOf(result_type) != 8)
         throwGPUError(("a sum into element type " + std::to_string(static_cast<int>(result_type)) + ", which is not eight bytes wide").c_str());
     if (aggregation == GPUAggregationKind::Sum && columnKindOf(element_type) != GPUColumnKind::Fixed)
         throwGPUError("a sum of values of varying width");
 
-    state = new State(element_type, result_type, aggregation);
+    state = guarded("making a reduction", [&] { return new State(element_type, result_type, aggregation, stream); });
 }
 
 __host__ CudfReduction::~CudfReduction()
@@ -106,6 +105,11 @@ __host__ CudfReduction::~CudfReduction()
 }
 
 __host__ void CudfReduction::addBatch(DeviceColumnView values)
+{
+    guarded("adding a batch to a reduction", [&] { addBatchImpl(values); });
+}
+
+__host__ void CudfReduction::addBatchImpl(DeviceColumnView values)
 {
     if (values.rows() == 0)
         throwGPUError("nothing to reduce");
@@ -118,6 +122,11 @@ __host__ void CudfReduction::addBatch(DeviceColumnView values)
 }
 
 __host__ DeviceColumnView CudfReduction::finalize()
+{
+    return guarded("finalizing a reduction", [&] { return finalizeImpl(); });
+}
+
+__host__ DeviceColumnView CudfReduction::finalizeImpl()
 {
     state->result.reset();
     state->result_offsets.reset();
@@ -135,7 +144,7 @@ __host__ DeviceColumnView CudfReduction::finalize()
 
     if (columnKindOf(state->result_type) == GPUColumnKind::Variable)
     {
-        DeviceVariableColumnOfCudf of_cudf = deviceViewOfVariable(state->result->view(), GPUResources::get().compute);
+        DeviceVariableColumnOfCudf of_cudf = deviceViewOfVariable(state->result->view(), state->stream);
         state->result_offsets = std::move(of_cudf.widened_offsets);
         return of_cudf.view;
     }

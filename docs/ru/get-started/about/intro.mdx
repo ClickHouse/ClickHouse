@@ -7,8 +7,6 @@ keywords: ['ClickHouse', 'столбцовая база данных', 'база
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 ClickHouse® — это высокопроизводительная столбцовая система управления базами данных SQL (СУБД) для онлайн-аналитической обработки (OLAP). Она доступна как в виде [программного обеспечения с открытым исходным кодом](https://github.com/ClickHouse/ClickHouse), так и в виде [облачного сервиса](https://clickhouse.com/cloud).
 
 <div id="what-are-analytics">
@@ -51,7 +49,15 @@ LIMIT 8;
 
 Вы можете [выполнить этот запрос в Песочнице ClickHouse](https://sql.clickhouse.com?query=U0VMRUNUIE1vYmlsZVBob25lTW9kZWwsIENPVU5UKCkgQVMgYyAKRlJPTSBtZXRyaWNhLmhpdHMgCldIRVJFIAogICAgICBSZWdpb25JRCA9IDIyOSAKICBBTkQgRXZlbnREYXRlID49ICcyMDEzLTA3LTAxJyAKICBBTkQgRXZlbnREYXRlIDw9ICcyMDEzLTA3LTMxJyAKICBBTkQgTW9iaWxlUGhvbmUgIT0gMCAKICBBTkQgTW9iaWxlUGhvbmVNb2RlbCBub3QgaW4gWycnLCAnaVBhZCddIApHUk9VUCBCWSBNb2JpbGVQaG9uZU1vZGVsCk9SREVSIEJZIGMgREVTQyAKTElNSVQgODs\&chart=eyJ0eXBlIjoicGllIiwiY29uZmlnIjp7InhheGlzIjoiTW9iaWxlUGhvbmVNb2RlbCIsInlheGlzIjoiYyJ9fQ\&run_query=true), который выбирает и фильтрует [всего несколько из более чем 100](https://sql.clickhouse.com/?query=U0VMRUNUIG5hbWUKRlJPTSBzeXN0ZW0uY29sdW1ucwpXSEVSRSBkYXRhYmFzZSA9ICdtZXRyaWNhJyBBTkQgdGFibGUgPSAnaGl0cyc7\&tab=results\&run_query=true) существующих столбцов, и возвращает результат за миллисекунды:
 
-<Image img="/images/column-oriented-example-query.webp" alt="Пример запроса в столбцовой базе данных" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Пример запроса в столбцовой базе данных](/images/column-oriented-example-query.webp)
+
+</Frame>
+
+</div>
 
 Как видно из раздела статистики на диаграмме выше, запрос обработал 100 миллионов строк за 92 миллисекунды — это чуть более 1 миллиарда строк в секунду или чуть менее 7 ГБ данных в секунду.
 
@@ -59,14 +65,30 @@ LIMIT 8;
 
 В строко-ориентированной базе данных, хотя приведённый выше запрос обрабатывает лишь несколько существующих столбцов, системе всё равно приходится загружать с диска в память данные из остальных столбцов. Причина в том, что данные хранятся на диске в [блоках](https://en.wikipedia.org/wiki/Block_\(data_storage\)) (обычно фиксированного размера, например 4 КБ или 8 КБ). Блоки — это наименьшие единицы данных, считываемые с диска в память. Когда приложение или база данных запрашивает данные, подсистема дискового ввода-вывода операционной системы считывает с диска необходимые блоки. Даже если нужна только часть блока, в память всё равно считывается весь блок (это обусловлено устройством дисков и файловых систем):
 
-<Image img="/images/row-oriented.webp" alt="Структура строко-ориентированной базы данных" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Структура строко-ориентированной базы данных](/images/row-oriented.webp)
+
+</Frame>
+
+</div>
 
 **Столбцовая СУБД**
 
 Поскольку значения каждого столбца хранятся на диске последовательно, одно за другим, при выполнении приведённого выше запроса не загружаются лишние данные.
 Поскольку блочное хранение и передача данных с диска в память соответствуют шаблону доступа к данным в аналитических запросах, с диска считываются только столбцы, необходимые для запроса, что позволяет избежать лишних операций ввода-вывода для неиспользуемых данных. Это [намного быстрее](https://benchmark.clickhouse.com/) по сравнению с построчным хранением, при котором считываются целые строки (включая нерелевантные столбцы):
 
-<Image img="/images/column-oriented.webp" alt="Структура столбцовой базы данных" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Структура столбцовой базы данных](/images/column-oriented.webp)
+
+</Frame>
+
+</div>
 
 <div id="data-replication-and-integrity">
   ## Репликация данных и их целостность

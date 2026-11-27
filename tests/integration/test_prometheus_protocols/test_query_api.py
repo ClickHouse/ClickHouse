@@ -13,6 +13,7 @@ from .prometheus_test_utils import (
     extract_data_from_http_api_response,
     extract_error_from_http_api_response,
     get_response_to_http_api_query,
+    get_response_to_http_api_range_query,
     send_protobuf_to_remote_write,
 )
 
@@ -162,6 +163,30 @@ def test_range_query_accepts_positive_step_for_equal_start_and_end():
     assert result == '{"resultType": "matrix", "result": [{"metric": {"__name__": "post_body_metric", "job": "test"}, "values": [[1000, "1"]]}]}'
 
 
+# As in Prometheus, a range query is rejected with 400 bad_data if (end - start) / step is greater than 11000.
+def test_range_query_max_points_per_series():
+    def range_query(end, params=None):
+        return get_response_to_http_api_range_query(
+            node.ip_address, 9093, "/api/v1/query_range", "vector(1)", 0, end, 1, params
+        )
+
+    response = range_query(11001)
+    assert response.status_code == 400
+    assert response.json()["errorType"] == "bad_data"
+    assert response.json()["error"] == (
+        "exceeded maximum resolution of 11000 points per timeseries. "
+        "Try decreasing the query resolution (?step=XX) or increasing the setting promql_max_points_per_series"
+    )
+
+    response = range_query(11000)
+    assert response.status_code == 200
+    assert len(response.json()["data"]["result"][0]["values"]) == 11001
+
+    response = range_query(20000, {"promql_max_points_per_series": 0})
+    assert response.status_code == 200
+    assert len(response.json()["data"]["result"][0]["values"]) == 20001
+
+
 def test_query_lookback_delta():
     query = 'foo{shape="circle"}'
     timestamp = 151
@@ -230,6 +255,40 @@ def test_error_while_parsing():
     )
     error_message = extract_error_from_http_api_response(response)
     assert "while parsing PromQL query" in error_message
+
+
+# Errors raised before the query runs (a bad setting, a wrong password) keep their HTTP status
+# and come as a Prometheus error response `{"status":"error",...}` too.
+def test_error_before_dispatch():
+    node.query("CREATE USER IF NOT EXISTS prometheus_password_user IDENTIFIED BY 'right'")
+    for params, status_code, error_type, error in (
+        ({"no_such_setting": "1"}, 404, "not_found", "UNKNOWN_SETTING"),
+        ({"max_threads": "abc"}, 400, "bad_data", "CANNOT_PARSE"),
+        ({"user": "prometheus_password_user", "password": "wrong"}, 403, "bad_data", "AUTHENTICATION_FAILED"),
+    ):
+        response = get_response_to_http_api_query(
+            node.ip_address, 9093, "/api/v1/query", "vector(1)", 150, params=params,
+        )
+        assert response.status_code == status_code, response.text
+        assert response.headers["Content-Type"] == "application/json"
+        assert response.json()["errorType"] == error_type
+        assert error in extract_error_from_http_api_response(response)
+    node.query("DROP USER prometheus_password_user")
+
+
+# A time-series table that cannot be found keeps its HTTP status too.
+def test_unknown_table_before_query():
+    for params, error in (
+        ({"table": "no_such_table"}, "UNKNOWN_TABLE"),
+        ({"database": "no_such_database", "table": "prometheus"}, "UNKNOWN_DATABASE"),
+    ):
+        response = get_response_to_http_api_query(
+            node.ip_address, 9093, "/dynamic_table/api/v1/query", "vector(1)", 150, params=params,
+        )
+        assert response.status_code == 404, response.text
+        assert response.headers["Content-Type"] == "application/json"
+        assert response.json()["errorType"] == "not_found"
+        assert error in extract_error_from_http_api_response(response)
 
 
 # Checks the case when an exception appears before any block has been written to the response buffer.

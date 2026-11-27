@@ -42,6 +42,8 @@ public:
 
 private:
 
+    ContextMutablePtr createTaskContext() const override;
+
     ReplicatedMergeMutateTaskBase::PrepareResult prepare() override;
 
     bool finalize(ReplicatedMergeMutateTaskBase::PartLogWriter write_part_log) override;

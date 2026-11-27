@@ -14,7 +14,7 @@ import { ExperimentalBadge } from "/snippets/ko/components/ExperimentalBadge/Exp
 
 기본적으로 ClickHouse는 자가 관리형 버전에서 `lz4` 압축을 사용하고, ClickHouse Cloud에서는 `zstd`를 사용합니다.
 
-`MergeTree` 엔진 패밀리에서는 서버 구성의 [compression](/ko/reference/settings/server-settings/settings/other#compression) 섹션에서 기본 압축 메서드를 변경할 수 있습니다.
+`MergeTree` 엔진 계열에서는 서버 구성의 [compression](/ko/reference/settings/server-settings/settings/other#compression) 섹션에서 기본 압축 메서드를 변경할 수 있습니다.
 
 개별 컬럼마다 [`CREATE TABLE`](/ko/reference/statements/create/table) 쿼리에서 압축 메서드를 정의할 수도 있습니다.
 
@@ -42,6 +42,8 @@ ALTER TABLE codec_example MODIFY COLUMN float_value CODEC(Default);
 ```
 
 코덱은 예를 들어 `CODEC(Delta, Default)`와 같이 파이프라인으로 결합할 수 있습니다.
+
+코덱 이름은 대소문자를 구분하지 않으므로 `CODEC(ZSTD)`, `CODEC(zstd)`, `CODEC(ZStd)`는 모두 같은 코덱을 가리킵니다.
 
 <Tip>
   `lz4`와 같은 외부 유틸리티로는 ClickHouse 데이터베이스 파일의 압축을 해제할 수 없습니다. 대신 전용 [clickhouse-compressor](https://github.com/ClickHouse/ClickHouse/tree/master/programs/compressor) 유틸리티를 사용하십시오.
@@ -130,6 +132,22 @@ ClickHouse는 범용 코덱과 특수 코덱을 지원합니다.
 
 <Note>
   이 코덱은 베타 기능이며, 사용하려면 `SET enable_alp_codec = 1`을 설정해야 합니다.
+</Note>
+
+### PCO {#pco}
+
+<BetaBadge />
+
+`PCO(level)` — [pcodec](https://github.com/pcodec/pcodec) 라이브러리를 사용하여 고정 폭 숫자 시퀀스를 무손실 압축합니다. 1, 2, 4 또는 8바이트 크기의 모든 숫자 타입(`Int8`..`Int64`, `UInt8`..`UInt64`, `Float32`, `Float64`, 그리고 이를 기반으로 하는 `Date`, `DateTime`, `Decimal32`, `Decimal64`, `IPv4`, `Enum` 등의 타입)에 적용할 수 있습니다. `Decimal128`/`Decimal256` 및 숫자가 아닌 타입은 지원되지 않습니다.
+
+pcodec은 숫자의 근사적인 구조(예: 근사 공통 승수와 같은 &quot;모드(mode)&quot;)를 식별하고 각 값을 &quot;잠재값(latents)&quot;으로 분할한 다음, 델타 인코딩과 인터리브 방식의 [tANS](https://en.wikipedia.org/wiki/Asymmetric_numeral_systems) 엔트로피 코더로 압축합니다. 분포가 매끄럽거나, 다봉형이거나, 엔트로피가 높은 숫자 컬럼(측정값, 소요 시간, 카운터, 식별자 등)에서는 `Gorilla`/`FPC`/`ZSTD`/`ALP`보다 압축률이 높은 경우가 많습니다. 다만 런 렝스(run-length)나 일치 기반 압축 경로가 없으므로, 상수 컬럼이나 카디널리티(cardinality)가 낮은 컬럼에서는 압축률이 떨어집니다. 인코딩은 `ZSTD`보다 몇 배 느리며, 디코딩 성능은 워크로드에 따라 다릅니다.
+
+선택 사항인 `level` 인수로 압축 수준을 0에서 12 사이로 설정할 수 있으며, 기본값은 8입니다. 압축되지 않는 블록(예: 압축할 수 없는 데이터)은 비압축 상태로 저장되므로, 이 코덱을 사용해도 데이터 크기는 블록당 작은 상수 크기 이상 늘어나지 않습니다.
+
+각 압축 블록의 payload는 독립형 [`.pco`](https://github.com/pcodec/pcodec) 스트림이며, pcodec 참조 구현과 호환됩니다.
+
+<Note>
+  이 코덱은 베타 상태이며, 사용하려면 `SET enable_pco_codec = 1`을 설정해야 합니다. 컬럼 타입 정보가 필요하므로 컬럼별로만 지정할 수 있으며, 타입이 지정되지 않은 압축 설정(`marks_compression_codec`, `primary_key_compression_codec`, `default_compression_codec`)이나 `TTL ... RECOMPRESS`에서는 사용할 수 없습니다.
 </Note>
 
 ### FPC {#fpc}

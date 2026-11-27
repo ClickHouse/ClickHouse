@@ -8,6 +8,7 @@
 #include <DataTypes/DataTypeFixedString.h>
 #include <Compression/CompressionCodecMultiple.h>
 #include <Compression/CompressionInfo.h>
+#include <Compression/ICompressionCodec.h>
 #include <Common/Exception.h>
 #include <Common/typeid_cast.h>
 
@@ -48,6 +49,49 @@ GPUElementType elementTypeOrThrow(const IDataType & type)
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Columns of {} are not supported on the GPU yet", type.getName());
 }
 
+std::optional<GPUElementType> filterElementTypeOf(const IDataType & type)
+{
+    switch (type.getTypeId())
+    {
+        case TypeIndex::Date: return GPUElementType::UInt16;
+        case TypeIndex::Date32: return GPUElementType::Int32;
+        case TypeIndex::DateTime: return GPUElementType::UInt32;
+        default: return elementTypeOf(type);
+    }
+}
+
+std::vector<GPUElementType> filterElementTypesOrThrow(const DataTypes & types)
+{
+    std::vector<GPUElementType> element_types;
+    element_types.reserve(types.size());
+    for (const auto & type : types)
+    {
+        const auto element_type = filterElementTypeOf(*type);
+        if (!element_type)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "A column of {} in a `WHERE` on the GPU", type->getName());
+        element_types.push_back(*element_type);
+    }
+    return element_types;
+}
+
+std::vector<GPUElementType> elementTypesOrThrow(const DataTypes & types)
+{
+    std::vector<GPUElementType> element_types;
+    element_types.reserve(types.size());
+    for (const auto & type : types)
+        element_types.push_back(elementTypeOrThrow(*type));
+    return element_types;
+}
+
+std::vector<size_t> elementSizesOf(const std::vector<GPUElementType> & element_types)
+{
+    std::vector<size_t> sizes;
+    sizes.reserve(element_types.size());
+    for (const GPUElementType element_type : element_types)
+        sizes.push_back(sizeOf(element_type));
+    return sizes;
+}
+
 std::optional<GPUCodec> codecOf(UInt8 method_byte)
 {
     switch (method_byte)
@@ -64,10 +108,10 @@ std::optional<GPUCodec> deviceCodecOf(const ICompressionCodec & codec)
     if (const auto own = codecOf(codec.getMethodByte()))
         return own;
 
+    /// A chain of `BitPacking` and a codec the device expands: the device unpacks the integers after it.
     const auto * multiple = typeid_cast<const CompressionCodecMultiple *>(&codec);
     if (!multiple)
         return {};
-
     const auto chain = multiple->getCodecs();
     if (chain.size() != 2 || chain[0]->getMethodByte() != static_cast<UInt8>(CompressionMethodByte::BitPacking))
         return {};
@@ -146,53 +190,6 @@ HostColumnView resizeForElementType(IColumn & column, size_t num_rows, GPUElemen
 }
 
 
-std::optional<GPUElementType> filterElementTypeOf(const IDataType & type)
-{
-    switch (type.getTypeId())
-    {
-        case TypeIndex::Date: return GPUElementType::UInt16;
-        case TypeIndex::Date32: return GPUElementType::Int32;
-        case TypeIndex::DateTime: return GPUElementType::UInt32;
-        default: return elementTypeOf(type);
-    }
-}
-
-std::vector<GPUElementType> filterElementTypesOrThrow(const DataTypes & types)
-{
-    std::vector<GPUElementType> element_types;
-    element_types.reserve(types.size());
-    for (const auto & type : types)
-    {
-        const auto element_type = filterElementTypeOf(*type);
-        if (!element_type)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "A column of {} in a `WHERE` on the GPU", type->getName());
-        element_types.push_back(*element_type);
-    }
-    return element_types;
-}
-
-std::vector<GPUElementType> elementTypesOrThrow(const DataTypes & types)
-{
-    std::vector<GPUElementType> element_types;
-    element_types.reserve(types.size());
-
-    for (const auto & type : types)
-        element_types.push_back(elementTypeOrThrow(*type));
-
-    return element_types;
-}
-
-std::vector<size_t> elementSizesOf(const std::vector<GPUElementType> & element_types)
-{
-    std::vector<size_t> sizes;
-    sizes.reserve(element_types.size());
-
-    for (const GPUElementType element_type : element_types)
-        sizes.push_back(sizeOf(element_type));
-
-    return sizes;
-}
-
 GPUElementType sumResultTypeFor(GPUElementType element_type)
 {
     switch (element_type)
@@ -245,79 +242,6 @@ String aggregationName(GPUAggregationKind aggregation)
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown GPU aggregation {}", aggregation);
 }
 
-bool canReduceOnDevice(const IDataType & argument_type, const IDataType & result_type, GPUAggregationKind aggregation)
-{
-    /// Only a `GROUP BY` counts and averages, see `canGroupByOnDevice`.
-    if (aggregation == GPUAggregationKind::Count || aggregation == GPUAggregationKind::Mean)
-        return false;
-
-    if (aggregation == GPUAggregationKind::Sum)
-    {
-        const auto element_type = elementTypeOf(argument_type);
-        return element_type && elementTypeOf(result_type) == sumResultTypeFor(*element_type);
-    }
-
-    /// A `min` or a `max` is of the argument's type, and of values of varying width too, compared by their bytes.
-    const auto column_type = columnTypeOf(argument_type);
-    return column_type && columnTypeOf(result_type) == column_type;
-}
-
-bool canGroupByOnDevice(const IDataType * argument_type, const IDataType & result_type, GPUAggregationKind aggregation)
-{
-    switch (aggregation)
-    {
-        case GPUAggregationKind::Count:
-            return elementTypeOf(result_type) == GPUElementType::UInt64;
-        case GPUAggregationKind::Mean:
-        {
-            /// cuDF averages integers through a sum in an `Int64`, which a group of 64-bit integers overflows where
-            /// ClickHouse's `avg` does not; one of narrower integers does not, below 2^31 rows.
-            const auto element_type = argument_type ? elementTypeOf(*argument_type) : std::nullopt;
-            return element_type && (!isInteger(*element_type) || sizeOf(*element_type) <= 4)
-                && elementTypeOf(result_type) == GPUElementType::Float64;
-        }
-        case GPUAggregationKind::Sum:
-            /// cuDF sums a `Float32` into a `Float32`, where ClickHouse sums it into a `Float64`.
-            if (argument_type && elementTypeOf(*argument_type) == GPUElementType::Float32)
-                return false;
-            [[fallthrough]];
-        case GPUAggregationKind::Min:
-        case GPUAggregationKind::Max:
-            return argument_type && canReduceOnDevice(*argument_type, result_type, aggregation);
-    }
-    return false;
-}
-
-GPUElementType groupByResultTypeOrThrow(const IDataType * argument_type, const IDataType & result_type, GPUAggregationKind aggregation)
-{
-    if (!canGroupByOnDevice(argument_type, result_type, aggregation))
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Cannot group a column of {} into {} by `{}` on a GPU",
-            argument_type ? argument_type->getName() : "nothing",
-            result_type.getName(),
-            aggregationName(aggregation));
-    return *columnTypeOf(result_type);
-}
-
-GPUElementType reducibleElementTypeOrThrow(const IDataType & argument_type, const IDataType & result_type, GPUAggregationKind aggregation)
-{
-    if (canReduceOnDevice(argument_type, result_type, aggregation))
-        return *columnTypeOf(argument_type);
-
-    throw Exception(
-        ErrorCodes::LOGICAL_ERROR,
-        "Cannot reduce a column of {} into {} by `{}` on a GPU",
-        argument_type.getName(),
-        result_type.getName(),
-        aggregationName(aggregation));
-}
-
-bool isStringKey(const IDataType & type)
-{
-    return isString(type);
-}
-
 std::optional<GPUElementType> keyElementTypeOf(const IDataType & type)
 {
     if (const auto * fixed_string = typeid_cast<const DataTypeFixedString *>(&type))
@@ -332,6 +256,11 @@ std::optional<GPUElementType> keyElementTypeOf(const IDataType & type)
         }
     }
     return elementTypeOf(type);
+}
+
+bool isStringKey(const IDataType & type)
+{
+    return isString(type);
 }
 
 std::optional<GPUElementType> collectElementTypeOf(const IDataType & type)
@@ -362,17 +291,53 @@ std::vector<GPUElementType> groupByKeysOrThrow(const DataTypes & key_types)
     return keys;
 }
 
-bool canGroupByReduceOnDevice(
+namespace
+{
+
+bool canAggregateOnDevice(const IDataType * argument_type, const IDataType & result_type, GPUAggregationKind aggregation, bool grouped)
+{
+    switch (aggregation)
+    {
+        case GPUAggregationKind::Count:
+            return grouped && elementTypeOf(result_type) == GPUElementType::UInt64;
+        case GPUAggregationKind::Mean:
+        {
+            /// cuDF sums for `avg` in the argument's width: 64-bit integers overflow, a `Float32` loses precision.
+            const auto element_type = argument_type ? elementTypeOf(*argument_type) : std::nullopt;
+            return grouped && element_type && *element_type != GPUElementType::Float32
+                && (!isInteger(*element_type) || sizeOf(*element_type) <= 4)
+                && elementTypeOf(result_type) == GPUElementType::Float64;
+        }
+        case GPUAggregationKind::Sum:
+        {
+            const auto element_type = argument_type ? elementTypeOf(*argument_type) : std::nullopt;
+            /// cuDF groups a sum of a `Float32` into a `Float32`, where ClickHouse sums it into a `Float64`.
+            return element_type && !(grouped && *element_type == GPUElementType::Float32)
+                && elementTypeOf(result_type) == sumResultTypeFor(*element_type);
+        }
+        case GPUAggregationKind::Min:
+        case GPUAggregationKind::Max:
+        {
+            /// Not of floats: cuDF compares a `NaN` as is, where ClickHouse skips it once it has a number.
+            const auto column_type = argument_type ? columnTypeOf(*argument_type) : std::nullopt;
+            return column_type && *column_type != GPUElementType::Float32 && *column_type != GPUElementType::Float64
+                && columnTypeOf(result_type) == column_type;
+        }
+    }
+    return false;
+}
+
+}
+
+bool canAggregateOnDevice(
     const DataTypes & key_types,
     const DataTypes & argument_types,
     const DataTypes & result_types,
     const std::vector<GPUAggregationKind> & aggregations)
 {
-    /// Without keys, `CudfGroupBy` groups the rows by a key of its own, the same for every row.
     if (argument_types.empty() || argument_types.size() != result_types.size() || argument_types.size() != aggregations.size())
         return false;
 
-    /// `CudfGroupBy` takes keys of integers and strings.
     for (const auto & key_type : key_types)
     {
         if (isStringKey(*key_type))
@@ -382,20 +347,19 @@ bool canGroupByReduceOnDevice(
             return false;
     }
 
-    /// A `count` has no argument.
+    const bool grouped = !key_types.empty();
     bool averages = false;
     bool extremes_of_strings = false;
     for (size_t i = 0; i < argument_types.size(); ++i)
     {
-        if (!canGroupByOnDevice(argument_types[i].get(), *result_types[i], aggregations[i]))
+        if (!canAggregateOnDevice(argument_types[i].get(), *result_types[i], aggregations[i], grouped))
             return false;
         averages |= aggregations[i] == GPUAggregationKind::Mean;
         extremes_of_strings |= (aggregations[i] == GPUAggregationKind::Min || aggregations[i] == GPUAggregationKind::Max)
             && columnTypeOf(*argument_types[i]) == GPUElementType::String;
     }
 
-    /// `CudfGroupBy` takes the `min` and the `max` of strings from partial results of the batches, which those of an
-    /// `avg` do not combine into.
+    /// `CudfGroupBy` combines `min` and `max` of strings from per-batch partial results, which `avg` cannot be.
     return !(averages && extremes_of_strings);
 }
 }

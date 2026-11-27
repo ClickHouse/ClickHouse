@@ -8,8 +8,6 @@ keywords: ['ClickStack']
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 يوفّر Elastic Stack نوعين من حِزم SDK الخاصة بلغات البرمجة لإضافة أدوات الرصد إلى التطبيقات:
 
 1. **[Elastic Official APM agents](https://www.elastic.co/docs/reference/apm-agents/)** – صُمِّمت هذه خصيصًا للاستخدام مع Elastic Stack. لا يتوفر حاليًا مسار ترحيل مباشر لهذه الحِزم. وستحتاج التطبيقات التي تستخدمها إلى إعادة تزويدها بأدوات الرصد باستخدام [ClickStack SDKs](/ar/clickstack/ingesting-data/sdks/index) المناسبة.
@@ -50,4 +48,12 @@ export OTEL_EXPORTER_OTLP_HEADERS="authorization=<YOUR_INGESTION_API_KEY>"
 
 يتم إنشاء مفتاح API للإدخال بواسطة تطبيق HyperDX، ويمكن العثور عليه ضمن Team Settings → API Keys.
 
-<Image img="/images/use-cases/observability/ingestion-keys.webp" alt="مفاتيح الإدخال" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![مفاتيح الإدخال](/images/use-cases/observability/ingestion-keys.webp)
+
+</Frame>
+
+</div>

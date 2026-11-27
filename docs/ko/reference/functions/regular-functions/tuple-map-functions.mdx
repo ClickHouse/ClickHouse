@@ -150,7 +150,7 @@ SELECT extractKeyValuePairs('age:a\\x0A\\n\\0') AS kv;
 extractKeyValuePairs(data, [key_value_delimiter], [pair_delimiter], [quoting_character], [unexpected_quoting_character_strategy])
 ```
 
-**별칭**: `mapFromString`, `str_to_map`
+**별칭**: `str_to_map`, `mapFromString`
 
 **인수**
 
@@ -841,6 +841,8 @@ SELECT mapFromArrays([1, 2, 3], map('a', 1, 'b', 2, 'c', 3))
 mapKeys(map)
 ```
 
+**별칭**: `map_keys`
+
 **인수**
 
 * `map` — 키를 추출할 맵입니다. [`Map(K, V)`](/ko/reference/data-types/map)
@@ -956,7 +958,7 @@ mapPopulateSeries(map[, max]) | mapPopulateSeries(keys, values[, max])
 
 **반환 값**
 
-맵 또는 2개의 배열로 이루어진 튜플을 반환합니다. 첫 번째 배열에는 정렬된 순서의 키가 들어 있고, 두 번째 배열에는 각 키에 대응하는 값이 들어 있습니다. [`Map(K, V)`](/ko/reference/data-types/map) 또는 [`Tuple(Array(UInt*), Array(Any))`](/ko/reference/data-types/tuple)
+맵 또는 2개의 배열로 이루어진 튜플을 반환합니다. 첫 번째 배열에는 정렬된 순서의 키가 들어 있고, 두 번째 배열에는 각 키에 대응하는 값이 들어 있습니다. [`Map(K, V)`](/ko/reference/data-types/map) 또는 [`Tuple(Array(UInt*), Array)`](/ko/reference/data-types/tuple)
 
 **예시**
 
@@ -1172,6 +1174,8 @@ SELECT mapUpdate(map('key1', 0, 'key3', 0), map('key1', 10, 'key2', 10))
 ```sql
 mapValues(map)
 ```
+
+**별칭**: `map_values`
 
 **인수**
 

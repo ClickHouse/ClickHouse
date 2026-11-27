@@ -6,7 +6,9 @@
 -- mentioning `obfuscate_seed` itself. The query result cache must judge the determinism of
 -- `obfuscate(...)` by the seed the subquery really runs with.
 
-SET allow_experimental_analyzer = 1;
+-- The subquery query result cache is not used with plan-based parallel replicas:
+-- https://github.com/ClickHouse/ClickHouse/issues/131463
+SET parallel_replicas_plan_based = 0;
 
 DROP SETTINGS PROFILE IF EXISTS profile_05332_empty_seed;
 DROP SETTINGS PROFILE IF EXISTS profile_05332_stable_seed;

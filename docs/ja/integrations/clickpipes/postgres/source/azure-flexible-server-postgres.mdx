@@ -10,8 +10,6 @@ integration:
    - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 ClickPipes は Postgres 12 以降をサポートしています。
 
 <div id="enable-logical-replication">
@@ -22,15 +20,39 @@ ClickPipes は Postgres 12 以降をサポートしています。
 
 1. **Server parameters** セクションをクリックします
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/azure-flexible-server-postgres/server_parameters.webp" alt="Azure Flexible Server for Postgres の Server Parameters" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Azure Flexible Server for Postgres の Server Parameters](/images/integrations/data-ingestion/clickpipes/postgres/source/azure-flexible-server-postgres/server_parameters.webp)
+
+</Frame>
+
+</div>
 
 2. `wal_level` を `logical` に変更します
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/azure-flexible-server-postgres/wal_level.webp" alt="Azure Flexible Server for Postgres で wal_level を logical に変更する" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Azure Flexible Server for Postgres で wal_level を logical に変更する](/images/integrations/data-ingestion/clickpipes/postgres/source/azure-flexible-server-postgres/wal_level.webp)
+
+</Frame>
+
+</div>
 
 3. この変更を反映するにはサーバーの再起動が必要です。要求されたら再起動してください。
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/azure-flexible-server-postgres/restart.webp" alt="wal_level の変更後にサーバーを再起動する" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![wal_level の変更後にサーバーを再起動する](/images/integrations/data-ingestion/clickpipes/postgres/source/azure-flexible-server-postgres/restart.webp)
+
+</Frame>
+
+</div>
 
 <div id="creating-clickpipes-user-and-granting-permissions">
   ## ClickPipes ユーザーの作成と権限の付与
@@ -86,7 +108,15 @@ ClickPipes は Postgres 12 以降をサポートしています。
 
 1. **Networking** タブに移動し、[ClickPipes の IP](/ja/integrations/clickpipes/networking/static-ips) を Azure Flexible Server Postgres のファイアウォールに追加します。SSH トンネリングを使用している場合は、Jump Server/Bastion に追加してください。
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/azure-flexible-server-postgres/firewall.webp" alt="Azure Flexible Server for Postgres で ClickPipes の IP をファイアウォールに追加" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Azure Flexible Server for Postgres で ClickPipes の IP をファイアウォールに追加](/images/integrations/data-ingestion/clickpipes/postgres/source/azure-flexible-server-postgres/firewall.webp)
+
+</Frame>
+
+</div>
 
 <div id="whats-next">
   ## 次のステップ

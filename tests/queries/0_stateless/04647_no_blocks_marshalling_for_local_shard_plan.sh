@@ -10,14 +10,12 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # every statement of a multi-statement invocation, so batching below does not weaken it.
 # `--compression 1` is required as well: without a network codec the marshalling callback returns
 # the block unchanged, so nothing is wrapped into `ColumnBLOB`.
-# `enable_analyzer` is pinned because `BlocksMarshallingStep` is only ever added by the analyzer,
-# and CI runs variants with `allow_experimental_analyzer = 0`.
 # `serialize_query_plan` is pinned to 0 so that the counts below describe the plan this test is
 # about: with a serialized plan the shard's own plan is built here instead of on the shard, which
 # changes where the steps are counted. The `distributed plan` CI variants set
 # `serialize_query_plan = 1` in the default profile.
-CLIENT="$CLICKHOUSE_CLIENT --enable_analyzer 1 --compression 1 --serialize_query_plan 0 --query_kind=secondary_query"
-INITIAL_CLIENT="$CLICKHOUSE_CLIENT --enable_analyzer 1 --compression 1 --serialize_query_plan 0"
+CLIENT="$CLICKHOUSE_CLIENT --compression 1 --serialize_query_plan 0 --query_kind=secondary_query"
+INITIAL_CLIENT="$CLICKHOUSE_CLIENT --compression 1 --serialize_query_plan 0"
 
 # Statements are grouped into as few client invocations as possible, and the section headers are
 # emitted as `SELECT` constants inside those batches instead of by the shell. None of the queries

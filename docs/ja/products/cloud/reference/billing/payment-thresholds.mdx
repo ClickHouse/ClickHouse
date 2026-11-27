@@ -7,8 +7,6 @@ keywords: ['課金', '支払いしきい値', '自動請求', '請求書']
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 <div id="threshholds">
   ## 支払いしきい値
 </div>
@@ -27,9 +25,25 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
 以下の例では、Cloud Console の Billing UI を示しています。
 
-<Image img="/images/cloud/reference/billing_payment_threshhold.webp" size="sm" alt="UI で Billing を確認する場所" />
+<div className="ch-image-sm">
 
-<Image img="/images/cloud/reference/billing_payment_threshhold_2.webp" size="lg" alt="請求書" />
+<Frame>
+
+![UI で Billing を確認する場所](/images/cloud/reference/billing_payment_threshhold.webp)
+
+</Frame>
+
+</div>
+
+<div className="ch-image-lg">
+
+<Frame>
+
+![請求書](/images/cloud/reference/billing_payment_threshhold_2.webp)
+
+</Frame>
+
+</div>
 
 上の例からわかるように、2 月 28 日から 3 月 31 日までの請求期間中にしきい値請求書が送信され、その後、同じ請求期間中に 1,000 米ドルを超えた残りの利用額に対して別の請求書が送信されています。
 

@@ -8,15 +8,21 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 Этот набор данных содержит все записи `Posts`, `Users`, `Votes`, `Comments`, `Badges`, `PostHistory` и `PostLinks` из Stack Overflow.
 
 Вы можете либо скачать заранее подготовленные версии данных в формате Parquet, содержащие все посты по состоянию на апрель 2024 года, либо скачать самые свежие данные в формате XML и загрузить их. Stack Overflow периодически публикует обновления этих данных — исторически каждые 3 месяца.
 
 На следующей диаграмме показана схема доступных таблиц для данных в формате Parquet.
 
-<Image img="/images/getting-started/example-datasets/stackoverflow.webp" alt="Схема Stack Overflow" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Схема Stack Overflow](/images/getting-started/example-datasets/stackoverflow.webp)
+
+</Frame>
+
+</div>
 
 Описание схемы этих данных можно найти [здесь](https://meta.stackexchange.com/questions/2677/database-schema-documentation-for-the-public-data-dump-and-sede).
 

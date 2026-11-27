@@ -150,14 +150,13 @@ std::string MetadataStorageFromCacheObjectStorage::readInlineDataToString(const 
     return underlying->readInlineDataToString(path);
 }
 
+/// The underlying metadata storage belongs to the wrapped disk, which starts it up and shuts it down itself.
 void MetadataStorageFromCacheObjectStorage::startup()
 {
-    underlying->startup();
 }
 
 void MetadataStorageFromCacheObjectStorage::shutdown()
 {
-    underlying->shutdown();
 }
 
 void MetadataStorageFromCacheObjectStorage::refresh(UInt64 not_sooner_than_milliseconds)

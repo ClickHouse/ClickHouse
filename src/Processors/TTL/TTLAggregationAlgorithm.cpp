@@ -37,6 +37,7 @@ namespace Setting
     extern const SettingsFloat min_hit_rate_to_use_consecutive_keys_optimization;
     extern const SettingsBool optimize_group_by_constant_keys;
     extern const SettingsBool enable_packed_string_keys_in_aggregation;
+    extern const SettingsBool enable_fixed_and_packed_string_keys_in_aggregation;
     extern const SettingsBool enable_producing_buckets_out_of_order_in_aggregation;
     extern const SettingsBool serialize_string_in_memory_with_zero_byte;
 }
@@ -167,10 +168,13 @@ TTLAggregationAlgorithm::TTLAggregationAlgorithm(
         settings[Setting::enable_producing_buckets_out_of_order_in_aggregation],
         settings[Setting::serialize_string_in_memory_with_zero_byte],
         /*enable_parallel_single_level_merge_=*/false,
+        /*enable_parallel_single_level_merge_by_index_=*/true,
         settings[Setting::enable_packed_string_keys_in_aggregation],
+        settings[Setting::enable_fixed_and_packed_string_keys_in_aggregation],
         /* enable_adaptive_aggregator */ false,
         /* adaptive_aggregator_freeze_threshold */ 0,
         /* adaptive_aggregator_freeze_threshold_bytes */ 0,
+        /* adaptive_aggregator_disable_thaw */ false,
         /* use_aggregation_memory_tracker */ true);
 
     aggregator = std::make_unique<Aggregator>(header, params);
@@ -207,6 +211,17 @@ void TTLAggregationAlgorithm::execute(Block & block)
         PaddedPODArray<Int64> timestamps;
         extractTimestamps(ttl_column.get(), timestamps);
 
+        /// Resolve columns by name once per block, not once per row.
+        std::vector<const IColumn *> key_columns_in_block;
+        key_columns_in_block.reserve(description.group_by_keys.size());
+        for (const auto & key_column : description.group_by_keys)
+            key_columns_in_block.push_back(block.getByName(key_column).column.get());
+
+        std::vector<std::pair<const IColumn *, size_t>> columns_in_block_and_header;
+        columns_in_block_and_header.reserve(column_names.size());
+        for (const auto & name : column_names)
+            columns_in_block_and_header.emplace_back(block.getByName(name).column.get(), header.getPositionByName(name));
+
         size_t rows_aggregated = 0;
         size_t current_key_start = 0;
         size_t rows_with_current_key = 0;
@@ -218,10 +233,9 @@ void TTLAggregationAlgorithm::execute(Block & block)
             bool ttl_expired = isTTLExpired(cur_ttl) && where_filter_passed;
 
             bool same_as_current = true;
-            for (size_t j = 0; j < description.group_by_keys.size(); ++j)
+            for (size_t j = 0; j < key_columns_in_block.size(); ++j)
             {
-                const String & key_column = description.group_by_keys[j];
-                const IColumn * values_column = block.getByName(key_column).column.get();
+                const IColumn * values_column = key_columns_in_block[j];
                 if (!same_as_current || (*values_column)[i] != current_key_value[j])
                 {
                     values_column->get(i, current_key_value[j]);
@@ -256,21 +270,13 @@ void TTLAggregationAlgorithm::execute(Block & block)
             {
                 ++rows_with_current_key;
                 ++rows_aggregated;
-                for (const auto & name : column_names)
-                {
-                    const IColumn * values_column = block.getByName(name).column.get();
-                    auto & column = aggregate_columns[header.getPositionByName(name)];
-                    column->insertFrom(*values_column, i);
-                }
+                for (const auto & [values_column, position] : columns_in_block_and_header)
+                    aggregate_columns[position]->insertFrom(*values_column, i);
             }
             else
             {
-                for (const auto & name : column_names)
-                {
-                    const IColumn * values_column = block.getByName(name).column.get();
-                    auto & column = result_columns[header.getPositionByName(name)];
-                    column->insertFrom(*values_column, i);
-                }
+                for (const auto & [values_column, position] : columns_in_block_and_header)
+                    result_columns[position]->insertFrom(*values_column, i);
             }
         }
 

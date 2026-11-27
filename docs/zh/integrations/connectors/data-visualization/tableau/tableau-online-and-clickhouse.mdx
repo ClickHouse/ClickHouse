@@ -12,7 +12,6 @@ integration:
 
 import MySQLCloudSetup from '/snippets/zh/_clickhouse_mysql_cloud_setup.mdx';
 import MySQLOnPremiseSetup from '/snippets/zh/_clickhouse_mysql_on_premise_setup.mdx';
-import { Image } from "/snippets/zh/components/Image.jsx";
 
 Tableau Online 可以使用官方 MySQL 数据源，通过 MySQL 接口连接到 ClickHouse Cloud 或本地部署的 ClickHouse。
 
@@ -34,25 +33,57 @@ Tableau Online 可以使用官方 MySQL 数据源，通过 MySQL 接口连接到
 
 登录 Tableau Cloud 站点，并添加一个新的已发布数据源。
 
-<Image size="md" img="/images/integrations/data-visualization/tableau_online_01.webp" alt="Tableau Online 界面，显示用于创建已发布数据源的“New”按钮" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Tableau Online 界面，显示用于创建已发布数据源的“New”按钮](/images/integrations/data-visualization/tableau_online_01.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
 从可用连接器列表中选择“MySQL”。
 
-<Image size="md" img="/images/integrations/data-visualization/tableau_online_02.webp" alt="Tableau Online 连接器选择界面，其中突出显示了 MySQL 选项" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Tableau Online 连接器选择界面，其中突出显示了 MySQL 选项](/images/integrations/data-visualization/tableau_online_02.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
 填写在设置 ClickHouse 时收集到的连接详细信息。
 
-<Image size="md" img="/images/integrations/data-visualization/tableau_online_03.webp" alt="Tableau Online MySQL 连接配置界面，包含服务器、端口、数据库和凭据字段" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Tableau Online MySQL 连接配置界面，包含服务器、端口、数据库和凭据字段](/images/integrations/data-visualization/tableau_online_03.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
 Tableau Online 会自动识别数据库结构，并提供可用表列表。将所需的表拖到右侧画布上。此外，还可以点击“Update Now”预览数据，并进一步调整自动识别出的字段类型或名称。
 
-<Image size="md" img="/images/integrations/data-visualization/tableau_online_04.webp" alt="Tableau Online 数据源页面，左侧显示数据库表，右侧显示支持拖放功能的画布" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Tableau Online 数据源页面，左侧显示数据库表，右侧显示支持拖放功能的画布](/images/integrations/data-visualization/tableau_online_04.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
@@ -72,7 +103,15 @@ Tableau Online 会自动识别数据库结构，并提供可用表列表。将�
 如果你在 Data Source 下拉菜单中选择 MySQL，即可按照[这里](https://www.tableau.com/support/drivers)显示的设置指南进行设置。
 如果你使用的是 M1 Mac，请查看[这个故障排查讨论串](https://community.tableau.com/s/question/0D58b0000Ar6OhvCQE/unable-to-install-mysql-driver-for-m1-mac)，了解安装 驱动 的替代方法。
 
-<Image size="md" img="/images/integrations/data-visualization/tableau_desktop_01.webp" alt="Tableau Desktop 界面，显示 Connect 菜单，并高亮了 MySQL 选项" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Tableau Desktop 界面，显示 Connect 菜单，并高亮了 MySQL 选项](/images/integrations/data-visualization/tableau_desktop_01.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
@@ -84,26 +123,58 @@ Tableau Online 会自动识别数据库结构，并提供可用表列表。将�
 
 输入你的 ClickHouse Cloud 实例的 MySQL 用户 credentials，以及已下载根证书的 path。
 
-<Image size="sm" img="/images/integrations/data-visualization/tableau_desktop_02.webp" alt="Tableau Desktop MySQL 连接对话框，已启用 SSL 选项，并包含 server、username、password 和 certificate 字段" border />
+<div className="ch-image-sm">
+
+<Frame>
+
+![Tableau Desktop MySQL 连接对话框，已启用 SSL 选项，并包含 server、username、password 和 certificate 字段](/images/integrations/data-visualization/tableau_desktop_02.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
 像平常一样选择所需的表 (与 Tableau Online 中的操作类似) ，
 然后依次选择 &quot;Server&quot; -&gt; &quot;Publish Data Source&quot; -&gt; Tableau Cloud。
 
-<Image size="md" img="/images/integrations/data-visualization/tableau_desktop_03.webp" alt="Tableau Desktop 显示 Server 菜单，并高亮了 Publish Data Source 选项" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Tableau Desktop 显示 Server 菜单，并高亮了 Publish Data Source 选项](/images/integrations/data-visualization/tableau_desktop_03.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
 重要提示：你需要在 &quot;Authentication&quot; 选项中选择 &quot;Embedded password&quot;。
 
-<Image size="md" img="/images/integrations/data-visualization/tableau_desktop_04.webp" alt="Tableau Desktop 发布对话框，显示 Authentication 选项，并已选择 Embedded password" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Tableau Desktop 发布对话框，显示 Authentication 选项，并已选择 Embedded password](/images/integrations/data-visualization/tableau_desktop_04.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
 此外，选择 &quot;Update workbook to use the 已发布数据源&quot;。
 
-<Image size="sm" img="/images/integrations/data-visualization/tableau_desktop_05.webp" alt="Tableau Desktop 发布对话框，已勾选“Update workbook to use the 已发布数据源”选项" border />
+<div className="ch-image-sm">
+
+<Frame>
+
+![Tableau Desktop 发布对话框，已勾选“Update workbook to use the 已发布数据源”选项](/images/integrations/data-visualization/tableau_desktop_05.webp)
+
+</Frame>
+
+</div>
 
 <br />
 

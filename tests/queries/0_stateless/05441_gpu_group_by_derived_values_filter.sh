@@ -85,24 +85,20 @@ function check_plan()
 
 check_plan "SELECT k_small, sum(p * (1 - d)) FROM gpu_derived_filter WHERE f < 600 GROUP BY k_small"
 
-for mode in device host; do
-    echo "- $mode"
-    for where in "" "WHERE f >= 1000" "WHERE f >= 12000" "WHERE f < 20000" "WHERE f < 600" "WHERE f > 60000"; do
-        compare_with_cpu "
-            SELECT k_small, sum(p * (1 - d)), sum(p * (1 - d) * (1 + t)), sum(p), count()
-            FROM gpu_derived_filter $where GROUP BY k_small ORDER BY k_small" "gpu_aggregation_decompression = '$mode'"
-    done
-
-    # Many groups, of which a `WHERE` keeps few rows each, and an `avg`.
+for where in "" "WHERE f >= 1000" "WHERE f >= 12000" "WHERE f < 20000" "WHERE f < 600" "WHERE f > 60000"; do
     compare_with_cpu "
-        SELECT k, sum(p * (1 - d)), avg(p), count() FROM gpu_derived_filter WHERE f < 3000 GROUP BY k ORDER BY k" \
-        "gpu_aggregation_decompression = '$mode'"
-
-    # Small batches from several readers, so that the device thread hands many of them over to the
-    # grouping thread while it groups.
-    compare_with_cpu "
-        SELECT k_small, sum(p * (1 - d) * (1 + t)), count() FROM gpu_derived_filter WHERE f < 20000 GROUP BY k_small ORDER BY k_small" \
-        "gpu_aggregation_decompression = '$mode', gpu_aggregation_batch_bytes = 65536, gpu_aggregation_readers = 3"
+        SELECT k_small, sum(p * (1 - d)), sum(p * (1 - d) * (1 + t)), sum(p), count()
+        FROM gpu_derived_filter $where GROUP BY k_small ORDER BY k_small"
 done
+
+# Many groups, of which a `WHERE` keeps few rows each, and an `avg`.
+compare_with_cpu "
+    SELECT k, sum(p * (1 - d)), avg(p), count() FROM gpu_derived_filter WHERE f < 3000 GROUP BY k ORDER BY k"
+
+# Small batches from several readers, so that the device thread hands many of them over to the
+# grouping thread while it groups.
+compare_with_cpu "
+    SELECT k_small, sum(p * (1 - d) * (1 + t)), count() FROM gpu_derived_filter WHERE f < 20000 GROUP BY k_small ORDER BY k_small" \
+    "gpu_aggregation_batch_bytes = 65536, gpu_aggregation_readers = 3"
 
 $CLICKHOUSE_CLIENT --query "DROP TABLE gpu_derived_filter"

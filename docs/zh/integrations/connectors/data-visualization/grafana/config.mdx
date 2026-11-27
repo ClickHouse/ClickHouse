@@ -10,8 +10,6 @@ integration:
   - category: 'data_visualization'
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 import { ClickHouseSupportedBadge } from "/snippets/zh/components/ClickHouseSupported/ClickHouseSupported.jsx";
 
 <ClickHouseSupportedBadge />
@@ -26,7 +24,15 @@ import { ClickHouseSupportedBadge } from "/snippets/zh/components/ClickHouseSupp
 
 示例配置界面：
 
-<Image size="sm" img="/images/integrations/data-visualization/grafana/config_common.webp" alt="安全原生配置示例" border />
+<div className="ch-image-sm">
+
+<Frame>
+
+![安全原生配置示例](/images/integrations/data-visualization/grafana/config_common.webp)
+
+</Frame>
+
+</div>
 
 通用设置的 YAML 配置示例：
 
@@ -60,7 +66,15 @@ secureJsonData:
 
 如果选择通过 HTTP 协议连接，则会显示更多设置选项。
 
-<Image size="md" img="/images/integrations/data-visualization/grafana/config_http.webp" alt="额外的 HTTP 配置选项" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![额外的 HTTP 配置选项](/images/integrations/data-visualization/grafana/config_http.webp)
+
+</Frame>
+
+</div>
 
 <div id="http-path">
   #### HTTP 路径
@@ -108,7 +122,15 @@ secureJsonData:
 
 这些附加设置为可选项。
 
-<Image size="sm" img="/images/integrations/data-visualization/grafana/config_additional.webp" alt="附加设置示例" border />
+<div className="ch-image-sm">
+
+<Frame>
+
+![附加设置示例](/images/integrations/data-visualization/grafana/config_additional.webp)
+
+</Frame>
+
+</div>
 
 示例 YAML：
 
@@ -143,7 +165,15 @@ OpenTelemetry 数据可通过我们的 [exporter 插件](https://github.com/open
 
 日志配置界面示例：
 
-<Image size="sm" img="/images/integrations/data-visualization/grafana/config_logs.webp" alt="日志配置" border />
+<div className="ch-image-sm">
+
+<Frame>
+
+![日志配置](/images/integrations/data-visualization/grafana/config_logs.webp)
+
+</Frame>
+
+</div>
 
 日志配置 YAML 示例：
 
@@ -181,7 +211,15 @@ jsonData:
 
 链路追踪配置界面示例：
 
-<Image size="sm" img="/images/integrations/data-visualization/grafana/config_traces.webp" alt="链路追踪配置" border />
+<div className="ch-image-sm">
+
+<Frame>
+
+![链路追踪配置](/images/integrations/data-visualization/grafana/config_traces.webp)
+
+</Frame>
+
+</div>
 
 链路追踪配置 YAML 示例：
 
@@ -284,11 +322,27 @@ INSERT INTO example_table_aliases (`alias`, `select`, `type`) VALUES
 
 然后，我们就可以将此表配置为供 Grafana 使用。请注意，这个名称可以随意指定，甚至可以在单独的数据库中定义：
 
-<Image size="md" img="/images/integrations/data-visualization/grafana/alias_table_config_example.webp" alt="别名表配置示例" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![别名表配置示例](/images/integrations/data-visualization/grafana/alias_table_config_example.webp)
+
+</Frame>
+
+</div>
 
 现在，Grafana 看到的将是别名表的结果，而不是 `DESC example_table` 的结果：
 
-<Image size="md" img="/images/integrations/data-visualization/grafana/alias_table_select_example.webp" alt="别名表查询示例" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![别名表查询示例](/images/integrations/data-visualization/grafana/alias_table_select_example.webp)
+
+</Frame>
+
+</div>
 
 这两种别名方式都可用于执行复杂的类型转换或提取 JSON 字段。
 

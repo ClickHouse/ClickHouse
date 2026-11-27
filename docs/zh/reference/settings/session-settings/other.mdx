@@ -39,6 +39,16 @@ import { CloudOnlyBadge } from "/snippets/zh/components/CloudOnlyBadge/CloudOnly
 
 写入 HTTP CORS 请求头。
 
+## analyze_index_with_multiple_key_columns_per_condition {#analyze_index_with_multiple_key_columns_per_condition}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "新增设置，允许在索引分析期间由单个条件约束多个键列。"}]}]} />
+
+允许 `WHERE`/`PREWHERE` 表达式中的单个原子条件 (如单个比较、`IN`、`has` 等) 在索引分析期间约束多个键列。
+
+例如，若表定义了 `ORDER BY (toDate(ts), ts)`，而查询包含 `WHERE ts = '2026-01-10 00:00:00' AND user_id = 42`，则其中第一个条件会同时约束这两个键列：其分析效果相当于写成了 `toDate(ts) = '2026-01-10' AND ts = '2026-01-10 00:00:00'`。禁用该设置后，此谓词仅约束 `ts`。不过，诸如 `(a, b) IN ((1, 2), (3, 4))` 之类的元组成员谓词仍可约束多个键列。
+
 ## analyze_index_with_space_filling_curves {#analyze_index_with_space_filling_curves}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -137,6 +147,14 @@ import { CloudOnlyBadge } from "/snippets/zh/components/CloudOnlyBadge/CloudOnly
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "300"},{"label": "新增设置，用于限制单个 Arrow Flight 请求的时长。此前没有设置任何超时，因此如果 Flight 服务器接受请求后始终不响应，查询会被无限期阻塞；设为 0 可恢复此前的行为。"}]}]} />
 
 单个 Arrow Flight 请求的超时时间 (单位：秒) 。该限制作用于整个请求：对于读取操作，它涵盖整个结果流，而不仅仅是等待第一个记录批次的时间。设为 0 表示不设超时，此时如果 Flight 服务器接受请求后始终不响应，查询将一直阻塞，直到连接关闭为止。
+
+## backup_s3_expired_token_retry_timeout_ms {#backup_s3_expired_token_retry_timeout_ms}
+
+<SettingsInfoBlock type="UInt64" default_value="120000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "120000"},{"label": "在令牌过期后重试 S3 备份和恢复请求；设置为 0 可恢复之前的行为。"}]}]} />
+
+在备份或恢复期间，如果 S3 请求的响应标识为 `ExpiredToken`，则对该请求进行重试的最长时间 (以毫秒为单位) 。重试次数达到 `backup_restore_s3_retry_attempts` 时也会停止重试。设置为 0 则禁用此类重试。由于 AWS S3 的 `HEAD` 响应仅返回通用的 HTTP 状态码，此重试不适用于 `HEAD` 元数据请求。
 
 ## backup_slow_all_threads_after_retryable_s3_error {#backup_slow_all_threads_after_retryable_s3_error}
 
@@ -304,8 +322,9 @@ SETTINGS convert_query_to_cnf = true;
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 允许将列定义中未显式使用修饰符 [NULL or NOT NULL](/zh/reference/statements/create/table#null-or-not-null-modifiers) 的数据类型设为 [Nullable](/zh/reference/data-types/nullable)。
+该设置适用于 `CREATE TABLE`、`ALTER TABLE ... ADD COLUMN` 和 `ALTER TABLE ... MODIFY COLUMN`。
 
-可能的值：
+可选值：
 
 * 1 — 列定义中的数据类型默认设置为 `Nullable`。
 * 0 — 列定义中的数据类型默认不设置为 `Nullable`。
@@ -368,13 +387,13 @@ SETTINGS convert_query_to_cnf = true;
 支持的值：
 
 * `clickhouse` (默认) — 标准 ClickHouse SQL。
-* `kusto` — Kusto 查询语言。需要启用 Experimental 设置 `allow_experimental_kusto_dialect`。
+* `kusto` — Kusto 查询语言。需要启用 Beta 设置 `allow_experimental_kusto_dialect`。
 * `prql` — PRQL。需要启用 Experimental 设置 `allow_experimental_prql_dialect`。
 * `polyglot` — 将其他方言 (MySQL、PostgreSQL 等) 的 SQL 转译为 ClickHouse SQL。需要启用 Experimental 设置 `allow_experimental_polyglot_dialect`。
 * `promql` — PromQL (Prometheus 查询语言) ，基于由 `promql_database`、`promql_table` 和 `promql_evaluation_time` 设置指定的 TimeSeries 表进行计算。
 * `clickhouse_json` — 查询将不作为 SQL 文本处理，而是解释为 JSON AST (`parseQueryToJSON` 的输出) 。仍可使用普通形式的 `SET` 查询，以便切换回其他方言。需要启用 Experimental 设置 `enable_json_ast_dialect`。
 * `logsql` — LogsQL，即 VictoriaLogs 的日志查询语言，会被转换为 `SELECT` 查询，作用于由 `logsql_database` 和 `logsql_table` 设置指定的日志表。需要启用 Experimental 设置 `enable_logsql_dialect`。
-* `trino` — Trino SQL：转换 Trino 语法 (`ARRAY[...]`、`TRY_CAST`、`UNNEST` 等) ，并将 Trino 函数名映射为对应的 ClickHouse 函数。需要启用 Experimental 设置 `enable_trino_dialect`。
+* `trino` — Trino SQL：转换 Trino 语法 (`ARRAY[...]`、`TRY_CAST`、`UNNEST` 等) ，并将 Trino 函数名映射为对应的 ClickHouse 函数。需要启用 Beta 设置 `enable_trino_dialect`。
 
 ## discard_query_data {#discard_query_data}
 
@@ -792,12 +811,12 @@ curl "http://localhost:8123/?framing_output_format=JSONEachPacketString" -d "SEL
 
 <SettingsInfoBlock type="Milliseconds" default_value="120000" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "120000"},{"label": "New setting"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "120000"},{"label": "新增设置"}]}]} />
 
-定义 Keeper 客户端获取对应 `Context` 互斥锁时的最长等待时间 (毫秒) ，超时则判定失败。
+定义查询等待 Keeper 客户端的最长时间 (毫秒) ，包括等待该客户端的 `Context` 互斥锁，以及等待其他线程为该客户端发起的连接尝试。超过该时间后，查询将失败并报错 `TIMEOUT_EXCEEDED`。查询被取消时也会停止等待。
 
-该值取自执行获取操作的 `Context`。仅当操作使用查询上下文时，查询级别的覆盖值才会生效，例如从 `system.zookeeper` 读取数据、`zookeeperSessionUptime`、`SYSTEM RECONNECT ZOOKEEPER`，以及基于查询上下文的辅助 Keeper 访问。
-使用全局上下文或后台上下文的操作 (包括 `BACKUP` 和 `RESTORE` 的协调以及 `Replicated` 数据库的相关活动) 则使用该上下文中的值；发生超时时，这些操作会收到一个 Keeper 错误 (`ZOPERATIONTIMEOUT`) ，并按与其他 Keeper 错误相同的方式进行处理。
+该值取自查询上下文，因此适用于使用查询上下文的操作，例如从 `system.zookeeper` 读取数据、`zookeeperSessionUptime`、`SYSTEM RECONNECT ZOOKEEPER`，以及基于查询上下文的辅助 Keeper 访问。
+使用全局上下文或后台上下文的操作 (包括 `BACKUP` 和 `RESTORE` 的协调以及 `Replicated` 数据库的相关活动) 则会一直等到连接尝试结束，并获得由此产生的客户端或 Keeper 错误。
 `SYSTEM RELOAD CONFIG` 和 `SYSTEM RELOAD ASYNCHRONOUS METRICS` 不受此设置影响，因为它们使用各自独立序列化的重新加载路径。
 
 可选值：
@@ -900,15 +919,27 @@ HSTS 的过期时长。0 表示禁用 HSTS。
 
 设置 INTERSECT 查询的默认 mode。可能的值：空字符串、&#39;ALL&#39;、&#39;DISTINCT&#39;。如果为空，未指定 mode 的查询将抛出异常。
 
-## kill_throw_if_noop {#kill_throw_if_noop}
+## json_extract_named_tuples_as_objects {#json_extract_named_tuples_as_objects}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "新增设置"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "新增设置，使 `JSONExtract` 函数家族仅从 JSON 对象填充命名元组，不再沿用以往从数组按位置填充的方式。未命名元组始终按位置填充；从 `JSON` 数据类型的列中提取数据不受影响。"}]}]} />
+
+在 `JSONExtract` 函数家族中，仅从 JSON 对象填充命名元组。禁用时，JSON 数组会按位置填充命名元组 (即以往的行为) ，因此各数组元素会落入哪个命名字段，取决于元组的声明顺序。无论此设置如何，未命名元组始终从数组按位置填充。
+
+此设置适用于以字符串形式传入的 JSON。从 `JSON` 数据类型的列中提取数据不受此设置影响，无论路径是否显式指定类型：此类提取直接读取该列的子列，而非解析 JSON 文档，因此根本不会执行到此设置所控制的代码。JSON 输入格式中的命名元组*列*由另一个设置 [input&#95;format&#95;json&#95;named&#95;tuples&#95;as&#95;objects](/zh/reference/settings/formats/input-format#input_format_json_named_tuples_as_objects) 控制；此设置仅作用于提取函数。
+
+默认禁用。
+
+## kill_throw_if_noop {#kill_throw_if_noop}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "默认启用 `kill_throw_if_noop`，使 `KILL QUERY` 和 `KILL MUTATION` 在匹配结果为空时报告错误。"}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "0"},{"label": "新增设置"}]}]} />
 
 控制 [`KILL QUERY`](/zh/reference/statements/kill#kill-query) 和 [`KILL MUTATION`](/zh/reference/statements/kill#kill-mutation) 的 `WHERE` 子句未匹配到任何行时是否抛出异常。
 
-设置为 true 时，如果在排除当前 `KILL` 语句后，`system.processes` 中没有符合条件的行，`KILL QUERY` 会抛出异常；如果 `system.mutations` 中没有匹配的行，`KILL MUTATION` 会抛出异常。默认情况下，匹配结果为空时会直接返回，不会抛出异常。使用 `ON CLUSTER` 执行时，即使匹配结果为空也不会抛出异常，因为匹配结果不会跨主机汇总。
+默认启用。如果在排除当前 `KILL` 语句后，`system.processes` 中没有符合条件的行，`KILL QUERY` 会抛出异常；如果 `system.mutations` 中没有匹配的行，`KILL MUTATION` 会抛出异常。设置为 `false` 可允许匹配结果为空而不抛出异常。`TEST` 试运行会返回空的预览结果，不会抛出异常。使用 `ON CLUSTER` 执行时，即使匹配结果为空也不会抛出异常，因为匹配结果不会跨主机汇总。
 
 可选值：
 
@@ -983,9 +1014,9 @@ HSTS 的过期时长。0 表示禁用 HSTS。
 
 定义锁请求在失败前等待的秒数。
 
-锁超时用于防止对表执行读/写操作时发生死锁。当超时时间到期且锁请求失败时，ClickHouse server 会抛出异常 &quot;Locking attempt timed out! Possible deadlock avoided. Client should retry.&quot;，错误代码为 `DEADLOCK_AVOIDED`。
+锁超时用于防止对表执行读/写操作时发生死锁。当超时时间到期且锁请求失败时，ClickHouse server 会抛出异常 &quot;Locking attempt timed out. Possible deadlock avoided. Client should retry.&quot;，错误代码为 `DEADLOCK_AVOIDED`。
 
-Possible values:
+可选值:
 
 * 正整数 (单位：秒) 。
 * 0 — 不设置锁超时。
@@ -1047,6 +1078,14 @@ Possible values:
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "21.3"},{"label": "1"},{"label": "将函数名称规范化为其标准名称，这对于投影查询路由是必需的"}]}]} />
 
 将函数名称规范化为其标准名称
+
+## obfuscate_seed {#obfuscate_seed}
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": ""},{"label": "新增设置：obfuscate 表函数的种子字符串。"}]}]} />
+
+`obfuscate` 表函数使用的种子，可以是任意字符串。每一列的种子均由该字符串和列名派生而来，因此相同的种子始终会产生相同的混淆结果。如果设置为空字符串，则会为每个查询生成一个随机种子。
+
+该种子只是一个普通设置，而非机密信息：与其他设置一样，其值会以明文形式存储和显示，例如在 `system.query_log` 和 `system.settings` 中。请勿使用密码或其他机密信息作为种子。如果要求不同查询的已混淆输出之间无法相互关联，请保留默认的空值 (即每个查询使用一个新的随机种子) ，不要设置固定种子。
 
 ## offset {#offset}
 
@@ -1251,6 +1290,16 @@ a   Tuple(
 
 默认情况下，在精度为 1 时，参考向量保留全精度，仅将存储的向量简化为符号 (即非对称距离) 。对称距离的计算速度要快数倍，但会忽略参考向量各元素的大小：参考值较大的维度与参考值接近零的维度权重相同。
 
+## query_condition_cache_time_condition_grid_factor {#query_condition_cache_time_condition_grid_factor}
+
+<SettingsInfoBlock type="Float" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "新增设置：查询条件缓存在从涉及当前时间的条件推导确定性条件时所用的网格步长，以时间常量与当前时间之间距离的比例表示。"}]}]} />
+
+对于 `MergeTree` 表的[查询条件缓存](/zh/concepts/features/performance/caches/query-condition-cache)中涉及当前时间的条件 (参见 [`use_query_condition_cache_for_time_conditions`](/zh/reference/settings/session-settings/use-query#use_query_condition_cache_for_time_conditions)) ，该设置指定时间常量取整时所对齐的网格大小，以常量与当前时间之间距离的比例表示。例如，在默认系数 1.0 下，`WHERE time >= now() - INTERVAL 10 DAY` 中的常量会取整到以一天为单位的网格上 (最大为一天) ，而 `WHERE time >= now() - INTERVAL 1 HOUR` 中的常量则会取整到以一小时为单位的网格上。
+
+较小的值可使推导出的条件更贴近原始条件 (减少边界附近的过量读取) ，代价是缓存键的轮换更加频繁。网格步长最小为一秒，因此系数较小时，推导出的条件会逐渐趋近原始条件，而不会被禁用。小于或等于 0 的值会完全禁用该推导。
+
 ## query_metric_log_interval {#query_metric_log_interval}
 
 <SettingsInfoBlock type="Int64" default_value="-1" />
@@ -1441,7 +1490,7 @@ FORMAT Null;
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "新增设置，用于在后台运行查询，使其脱离提交该查询的连接，并丢弃结果。"}]}]} />
 
-启用后，服务器会在后台调度查询，立即返回一个空的成功结果，并继续运行查询直至完成，不受连接状态影响。
+启用后，服务器会在后台调度查询，待查询通过各项检查 (例如表是否存在、用户是否具备所需授权) 、即将开始主要工作时，返回一个空的成功结果，并继续运行查询直至完成，不受连接状态影响。在此之前引发的错误会返回给客户端；此后发生的错误仅记录在 `system.query_log` 中。
 
 后台查询不会在服务器重启后保留。关闭服务器时，它遵循与前台查询相同的服务器设置：`shutdown_wait_unfinished_queries` 决定取消查询还是等待其完成 (无论哪种情况，队列中的条目都会被丢弃，且不会写入 `system.query_log`) ，`shutdown_wait_unfinished` 则限制服务器的最长等待时间。
 
@@ -1710,6 +1759,22 @@ TCPHandler 收到查询后休眠的时长
 
 * `0` - 剩余字符串不会包含在结果数组的最后一个元素中。
 * `1` - 剩余字符串会包含在结果数组的最后一个元素中。这是 Spark 的 [`split()`](https://spark.apache.org/docs/latest/api/python/reference/pyspark.sql/api/pyspark.sql.functions.split.html) 函数和 Python 的 [`string.split()`](https://docs.python.org/3/library/stdtypes.html#str.split) 方法的行为。
+
+## sql_compatible_division_for_integers {#sql_compatible_division_for_integers}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "整数除法设置改用与 SQL 兼容的名称。"}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "0"},{"label": "新增设置，用于为 `\/` 和 `divide` 启用精确整数除法。"}]}]} />
+
+当两个操作数均为整数类型 (包括 `Int128`、`UInt128`、`Int256` 和 `UInt256`) 时，`/` 和 `divide` 将返回整数。
+商向零截断。结果的位宽与第一个操作数相同；只要任一操作数为有符号类型，结果即为有符号类型。
+除数为零或商超出结果类型的范围时，会抛出异常。`Nullable` 操作数会传播 `NULL`。
+
+默认情况下，两个整数相除返回 `Float64`。此设置不影响涉及 `Decimal` 或浮点操作数的除法，
+也不影响显式函数 `intDiv`、`divideDecimal` 和 `divideOrNull`。
+
+对于新提交的 SQL，该设置的取值会在表达式存储到表元数据、视图、SQL 函数或变更之前被记录下来。
+现有定义和 `ATTACH` 查询将保留其原有的除法语义，不受此设置影响。
 
 ## statistics_max_set_size_for_exact_selectivity_estimation {#statistics_max_set_size_for_exact_selectivity_estimation}
 

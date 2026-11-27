@@ -283,7 +283,7 @@ TEST(ActionsDAGPartialResultTypeDrift, DriftInCapturedLambdaUnderArrayMapIsRecov
 
     try
     {
-        dag.updateHeader(drifted_header);
+        (void)dag.updateHeader(drifted_header);
         FAIL() << "a drifted capture cannot produce a usable header";
     }
     catch (const Exception & e)

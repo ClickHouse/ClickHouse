@@ -1,0 +1,322 @@
+---
+sidebarTitle: 'Entra ID を使用した JWT認証'
+slug: /cloud/security/jwt-authentication-entra-id
+title: 'Microsoft Entra ID を使用した JWT認証'
+description: 'ClickHouse Cloud サービス向けに JWT を発行するよう Microsoft Entra ID を設定し、Entra ID のアプリロールを ClickHouse ロールにマッピングする方法'
+doc_type: 'guide'
+keywords: ['ClickHouse Cloud', 'JWT', 'JWKS', 'Entra ID', 'Azure AD', 'Microsoft', 'OAuth', 'OIDC', 'app roles', 'authentication', 'identity provider']
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+import { EnterprisePlanFeatureBadge } from "/snippets/ja/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
+
+import { VersionBadge } from "/snippets/ja/components/VersionBadge/VersionBadge.jsx";
+
+<VersionBadge minVersion="26.4" />
+
+<EnterprisePlanFeatureBadge feature="JWT authentication with a custom identity provider" />
+
+このガイドでは、**Microsoft Entra ID** (旧 Azure Active Directory) を設定し、ユーザーやアプリケーションがデータベースのパスワードの代わりに Entra ID のアクセストークンを使用して ClickHouse Cloud サービスに接続できるようにする方法を説明します。Entra ID のアプリロールは ClickHouse ロールにマッピングされるため、Entra ID 上でユーザー、グループ、アプリケーションをアプリロールに割り当てることでアクセスを制御できます。
+
+<Tip>
+  このガイドでは、Entra ID 側の設定と、ClickHouse Cloud に入力する値について説明します。JWTプロバイダーの概要については、[JWT認証の設定](/ja/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup)を参照してください。トークンのクレームや一時ユーザーの仕組みについては、[JWT認証](/ja/concepts/features/security/external-authenticators/jwt)のリファレンスを参照してください。
+</Tip>
+
+## 始める前に {#before-you-begin}
+
+以下のものが必要です。
+
+* **Enterprise** プランの組織と、**ClickHouse バージョン 26.4 以降**で稼働しているサービス。
+* JWT プロバイダーを追加するための、対象サービスに対する `control-plane:service:manage` アクセス許可を持つ ClickHouse Cloud ロール (例: **管理者** または **サービス管理者**) 。
+* **Cloud Application Administrator** 以上のロールを持つ、**Microsoft Entra admin center** へのアクセス権。
+* 個々のユーザーではなくグループをアプリロールに割り当てる場合は、Microsoft Entra ID P1 または P2。
+* セットアップをテストするための [Azure CLI](https://learn.microsoft.com/cli/azure/install-azure-cli) (`az`) と [`clickhouse-client`](/ja/concepts/features/interfaces/client)。
+* Entra ID 経由で付与する ClickHouse ロールの一覧。各ロールは、同じ名前の Entra ID アプリロールとして作成します。このガイドでは次の 2 つを使用します。
+
+  | アプリロールの値      | ClickHouse の権限                         |
+  | ------------- | -------------------------------------- |
+  | `ch_analyst`  | `analytics.*` に対する `SELECT` と `INSERT` |
+  | `ch_readonly` | `*.*` に対する `SELECT`                    |
+
+## 仕組み {#how-it-works}
+
+1. ClickHouse Cloud サービスを表すアプリケーションを Entra ID に登録し、ClickHouse ロールごとにアプリロールを 1 つずつ定義します。
+2. Entra ID のユーザー、グループ、アプリケーションを、それらのアプリロールに割り当てます。
+3. ユーザーが Azure CLI または `clickhouse-client --login` でサインインするか、アプリケーションがクライアント認証情報グラントを使用します。Entra ID は v2.0 アクセストークンを発行します。このトークンの `aud` claim にはアプリケーション (クライアント) ID が設定され、`roles` claim には呼び出し元に割り当てられたアプリロールが列挙されます。
+4. ClickHouse Cloud は Entra ID の公開鍵を使用してトークンの署名を検証し、`iss` および `aud` claim を確認したうえで、`roles` claim で指定された ClickHouse ロールの権限を持つ一時ユーザーを作成します。ただし、この権限は `default` ユーザーの権限が上限となります。
+
+## Entra ID に ClickHouse を登録する {#register-in-entra-id}
+
+<Steps>
+  <Step title="アプリの登録を作成する" id="create-app-registration">
+    Microsoft Entra 管理センターで **App registrations** を開き、**New registration** を選択します。
+
+    * **Name**: 表示名を入力します。例: `clickhouse-cloud-production`
+    * **Supported account types**: シングルテナントを選択します。ポータルのバージョンによって、このオプションは **Single tenant only** または **Accounts in this organizational directory only** と表示されます。
+    * **Redirect URI**: 空欄のままにします。ユーザーはリダイレクト URI を使用しないデバイスコードフローでサインインします。
+
+    <Image img="/images/cloud/security/jwt/entra-register-application.webp" size="lg" alt="Microsoft Entra 管理センターのアプリケーション登録フォーム。シングルテナントのアカウントタイプが選択され、リダイレクト URI は未設定" />
+
+    **Register** を選択します。**Overview** ページで、次の値をコピーします。
+
+    * **Application (client) ID** (以下 `<CLIENT_ID>`) 。トークンの `aud` claim になります。
+    * **Directory (tenant) ID** (以下 `<TENANT_ID>`) 。発行元および JWKS URL の一部として使用されます。
+  </Step>
+
+  <Step title="v2.0 アクセストークンをリクエストする" id="request-v2-tokens">
+    デフォルトでは、Entra ID は v1.0 のアクセストークンを発行し、その発行元は `https://sts.windows.net/<TENANT_ID>/` です。代わりに v2.0 トークンを受け取るようにアプリケーションを設定してください。v2.0 トークンの発行元は `https://login.microsoftonline.com/<TENANT_ID>/v2.0` で、`aud` claim は常にクライアント ID になります。
+
+    アプリの登録で **Manifest** を開き、アクセストークンのバージョンを `2` に設定して **保存** を選択します。プロパティ名は、エディターに表示されるマニフェストのフォーマットによって異なります。
+
+    * Microsoft Graph フォーマット: `api` セクション内の `requestedAccessTokenVersion`
+    * Azure AD Graph フォーマット: 下のスクリーンショットのとおり、top-level の `accessTokenAcceptedVersion`
+
+    <Image img="/images/cloud/security/jwt/entra-manifest-token-version.webp" size="lg" alt="accessTokenAcceptedVersion が 2 に設定されたアプリケーションマニフェストエディター" />
+  </Step>
+
+  <Step title="API を公開する" id="expose-an-api">
+    **Expose an API** を開きます。
+
+    1. **Application ID URI** の横にある **Add** を選択し、デフォルト値 `api://<CLIENT_ID>` のまま保存します。クライアントはこの URI を使用して ClickHouse 用のトークンをリクエストします。なお、この設定によって v2.0 トークンの `aud` claim が変わることはなく、値はクライアント ID のままです。
+
+       <Image img="/images/cloud/security/jwt/entra-application-id-uri.webp" size="lg" alt="デフォルトの api:// 値が表示された Application ID URI パネルを含む Expose an API ページ" />
+
+    2. **Add a scope** を選択し、フォームに入力します。このスコープは、ユーザーがサインインする際にリクエストされます。アプリケーション自身として認証するアプリケーションでは使用されません。
+
+       | フィールド                          | 値                                            |
+       | ------------------------------ | -------------------------------------------- |
+       | **Scope name**                 | `access_as_application`                      |
+       | **Who can consent?**           | **Admins only**                              |
+       | **Admin consent display name** | 例: `Access ClickHouse as the signed-in user` |
+       | **Admin consent description**  | 任意の説明                                        |
+       | **State**                      | **Enabled**                                  |
+
+       <Image img="/images/cloud/security/jwt/entra-add-scope.webp" size="lg" alt="access_as_application スコープ、管理者のみに限定された同意、Enabled に設定された State を示す Add a scope パネル" />
+  </Step>
+
+  <Step title="ユーザーのサインインに使用するクライアントアプリケーションを承認する" id="authorize-client-application">
+    ユーザーはパブリッククライアントアプリケーションを介してトークンを取得します。このアプリケーションを `access_as_application` スコープに対して事前承認しておけば、ユーザーに同意を求める画面は表示されません。このガイドでは、`az` と `clickhouse-client --login` の両方に Azure CLI (クライアント ID: `04b07795-8ddb-461a-bbee-02f9e1bf7b46`) を使用します。
+
+    **Expose an API** の **Authorized client applications** で、**Add a client application** を選択します。`04b07795-8ddb-461a-bbee-02f9e1bf7b46` を入力し、`api://<CLIENT_ID>/access_as_application` スコープを選択してから、**Add application** を選択します。
+
+    <Image img="/images/cloud/security/jwt/entra-authorize-client-application.webp" size="lg" alt="Azure CLI のクライアント ID と access_as_application スコープが選択された Add a client application パネル" />
+
+    <Note>
+      Azure CLI ではなく独自のクライアントアプリケーションを使用する場合は、別途アプリケーションを登録し、**Authentication** で **Allow public client flows** を **Yes** に設定したうえで、そのクライアント ID をここで事前承認します。その後、[clickhouse-client でサインイン](#sign-in-with-clickhouse-client)する際に、そのクライアント ID を `--oauth-client-id` に指定します。tenant でユーザーによる同意が許可されていない場合は、そのアプリケーションの `openid`、`profile`、`offline_access` アクセス許可について、管理者による同意の付与も必要です。
+    </Note>
+  </Step>
+
+  <Step title="アプリロールを作成する" id="create-app-roles">
+    各アプリロールは、1つのClickHouseロールに対応します。アプリロールの **Value** はトークンの `roles` claimに含まれる値であり、大文字・小文字の区別も含めてClickHouseロールの名前と完全に一致している必要があります。
+
+    **App roles** を開き、ClickHouseロールごとに **Create app role** を選択します。
+
+    | フィールド                                    | 値                                                                                                                    |
+    | ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+    | **Display name**                         | わかりやすい名前 (例: `ClickHouse analyst`)                                                                                   |
+    | **Allowed member types**                 | **Both (Users/Groups + Applications)**。ユーザーのみが接続する場合は **Users/Groups** を、アプリケーションのみが接続する場合は **Applications** を選択します。 |
+    | **Value**                                | ClickHouseロール名 (例: `ch_analyst`)                                                                                     |
+    | **Description**                          | 任意の説明                                                                                                                |
+    | **Do you want to enable this app role?** | オン (選択)                                                                                                              |
+
+    次の例では、ClickHouseロール名を値とする3つのアプリロールを定義しています。
+
+    <Image img="/images/cloud/security/jwt/entra-app-roles.webp" size="lg" alt="ClickHouse Admin、ClickHouse Analyst DB、ClickHouse Read Onlyが、それぞれ値ch_admin、ch_analyst、ch_readonlyとともに一覧表示されたApp rolesページ" />
+  </Step>
+
+  <Step title="割り当てを必須にする" id="require-assignment">
+    デフォルトでは、tenant 内のすべてのユーザーがアプリケーションのトークンを取得できます。トークンの取得をアプリロールに割り当てたユーザー、グループ、アプリケーションのみに制限するには、**Enterprise applications** を開いてアプリ登録と同じ名前のアプリケーションを選択し、**Properties** を開きます。次に、**Assignment required?** を **Yes** に設定して **Save** を選択します。
+
+    <Image img="/images/cloud/security/jwt/entra-assignment-required.webp" size="lg" alt="Assignment required が Yes に設定されたエンタープライズアプリケーションのプロパティ" />
+  </Step>
+
+  <Step title="ユーザーとグループをアプリのロールに割り当てる" id="assign-users-and-groups">
+    同じエンタープライズアプリケーションで **Users and groups** を開き、**Add user/group** を選択します。ユーザーまたはグループを選び、アプリロールを選択してから **Assign** を選択します。この手順を、ユーザーまたはグループごとに繰り返します。
+
+    <Image img="/images/cloud/security/jwt/entra-assign-users-and-groups.webp" size="lg" alt="ClickHouse Read Only アプリロールにユーザーが割り当てられている、エンタープライズアプリケーションの Users and groups ページ" />
+
+    直接またはグループ経由で複数のアプリロールが割り当てられているユーザーの場合、`roles` claim にはそれらすべてのロールが含まれます。
+
+    <Note>
+      グループをアプリロールに割り当てるには、Microsoft Entra ID P1 または P2 が必要です。ネストされたグループはサポートされていません。アプリロールが付与されるのは、割り当てられたグループの直接のメンバーのみです。
+    </Note>
+  </Step>
+</Steps>
+
+## ClickHouse で対応するロールを作成する {#create-clickhouse-roles}
+
+SQL コンソールなどから `default` ユーザーとしてサービスに接続し、アプリロールの値ごとにロールを作成します。
+
+```sql
+CREATE ROLE ch_analyst;
+GRANT SELECT, INSERT ON analytics.* TO ch_analyst;
+
+CREATE ROLE ch_readonly;
+GRANT SELECT ON *.* TO ch_readonly;
+```
+
+以下の点に注意してください:
+
+* ロール名は case-sensitive であり、アプリロールの値と一致している必要があります。
+* ClickHouse は、`roles` claim に含まれる名前のうち、サービス上の既存のロールと一致しないものを無視します。
+* ClickHouse Cloud における JWTプロバイダーの権限上限は `default` ユーザーです。ロールの権限のうち `default` ユーザーが持たないものは、ClickHouse によってすべて削除されます。
+
+## Entra ID を JWTプロバイダーとして追加する {#add-jwt-provider}
+
+[JWTプロバイダーを追加する](/ja/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup#add-a-jwt-provider) の手順に従い、次の値を入力します。
+
+| フィールド           | 値                                                                      |
+| --------------- | ---------------------------------------------------------------------- |
+| **Name**        | 任意の名前 (例: `entra-id`)                                                  |
+| **Issuer**      | `https://login.microsoftonline.com/<TENANT_ID>/v2.0`                   |
+| **Audience**    | `<CLIENT_ID>` (アプリケーション (クライアント) ID) 。`api://<CLIENT_ID>` は使用しないでください。 |
+| **JWKS URL**    | `https://login.microsoftonline.com/<TENANT_ID>/discovery/v2.0/keys`    |
+| **Roles claim** | `roles`                                                                |
+
+<Warning>
+  **Roles claim** には必ず `roles` を設定してください。空欄のままにすると、ClickHouse は `clickhouse:roles` claim からロールを読み取ろうとします。しかし Entra ID のトークンにはこの claim が含まれていないため、ユーザーは権限を一切持たない状態で認証されてしまいます。
+</Warning>
+
+## ユーザーとして接続する {#connect-as-a-user}
+
+アプリ登録で取得した値とサービスホスト名を、シェル変数として設定します。
+
+```bash
+TENANT_ID="<TENANT_ID>"
+CLIENT_ID="<CLIENT_ID>"
+CH_HOST="<your-service-hostname>"
+```
+
+### Azure CLI トークンを渡す {#pass-an-azure-cli-token}
+
+Azure CLI でサインインして ClickHouse アプリケーション用のアクセストークンをリクエストし、`--jwt` で `clickhouse-client` に渡します。
+
+```bash
+az login --tenant "$TENANT_ID" --allow-no-subscriptions
+TOKEN=$(az account get-access-token --resource "api://$CLIENT_ID" --query accessToken --output tsv)
+
+clickhouse-client --host "$CH_HOST" --secure --jwt "$TOKEN"
+```
+
+同じトークンを HTTP インターフェースでも使用できます：
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" "https://$CH_HOST:8443/?query=SELECT%20currentUser()"
+```
+
+Entra ID のアクセストークンの有効期間は、デフォルトで 60～90 分です。有効期限が切れた場合は新しいトークンを取得するか、長時間のセッションでは `--login` を使用してください。
+
+### clickhouse-client でサインインする {#sign-in-with-clickhouse-client}
+
+`clickhouse-client` は OAuth 2.0 デバイスコードフローを単独で実行でき、session 中にトークンを更新することもできます。
+
+```bash
+clickhouse-client --host "$CH_HOST" --secure --login \
+  --oauth-url "https://login.microsoftonline.com/$TENANT_ID/v2.0" \
+  --oauth-client-id 04b07795-8ddb-461a-bbee-02f9e1bf7b46 \
+  --oauth-scope "openid profile offline_access api://$CLIENT_ID/access_as_application"
+```
+
+クライアントに URL とコードが表示されます。その URL を開いてコードを入力し、Entra ID アカウントでサインインしてください。スコープには `offline_access` を必ず含めておいてください。これにより Entra ID がリフレッシュトークンを返すようになり、クライアントはこれを使ってアクセストークンを更新します。含めない場合は、アクセストークンの有効期限が切れるたびにサインインし直す必要があります。
+
+## アプリケーションとして接続する {#connect-as-an-application}
+
+ETL ジョブやバックエンドサービスなどのアプリケーションは、OAuth 2.0 のクライアント資格情報グラントを使用して、アプリケーション自身として認証します。アプリケーションに付与するアプリロールでは、メンバーの種類として **Applications** が許可されている必要があります。
+
+1. **App registrations** で、ワークロード専用のアプリケーションを別途登録します。**Certificates &amp; secrets** で、クライアントシークレットを作成するか、証明書をアップロードします。以下のコマンドでは、ワークロードのクライアント ID とシークレットをそれぞれ `<WORKLOAD_CLIENT_ID>`、`<WORKLOAD_CLIENT_SECRET>` と表記します。
+2. ワークロードのアプリ登録で **API permissions** を開き、**Add a permission** を選択します。**APIs my organization uses** で ClickHouse アプリケーションを探して **Application permissions** を選択し、ワークロードに必要なアプリロールを選んで **Add permissions** を選択します。
+3. **Grant admin consent** を選択して、アプリロールをワークロードに割り当てます。
+
+Entra ID のトークンエンドポイントからトークンを取得し、ClickHouse に送信します。
+
+```bash
+TOKEN=$(curl -s "https://login.microsoftonline.com/$TENANT_ID/oauth2/v2.0/token" \
+  -d grant_type=client_credentials \
+  -d client_id="<WORKLOAD_CLIENT_ID>" \
+  --data-urlencode client_secret="<WORKLOAD_CLIENT_SECRET>" \
+  --data-urlencode scope="api://$CLIENT_ID/.default" | jq -r .access_token)
+
+curl -H "Authorization: Bearer $TOKEN" "https://$CH_HOST:8443/?query=SELECT%20currentUser()"
+```
+
+本番環境のコードでは、[Microsoft Authentication Library (MSAL)](https://learn.microsoft.com/entra/identity-platform/msal-overview) または使用する言語向けの Azure Identity ライブラリを使用してください。これらのライブラリはトークンをキャッシュし、既存のトークンの有効期限が切れる前に新しいトークンを取得します。
+
+## 確認 {#verify}
+
+接続後、session のアイデンティティと権限を確認します。
+
+```sql
+SELECT currentUser();
+SHOW GRANTS;
+SHOW CURRENT ROLES;
+```
+
+| クエリ                    | 期待される結果                                                                               |
+| ---------------------- | ------------------------------------------------------------------------------------- |
+| `SELECT currentUser()` | `JWT::<sub>::<hash>` 形式の名前 (`<sub>` はトークンの `sub` claim)                               |
+| `SHOW GRANTS`          | トークンの `roles` claim に含まれるロールの権限 (例: `ch_readonly` の場合は `GRANT SELECT ON *.* TO ...`)  |
+| `SHOW CURRENT ROLES`   | 行なし                                                                                   |
+
+ClickHouse は、ロールそのものを一時ユーザーに付与するわけではありません。トークンで指定されたロールの権限を収集し、`default` ユーザーの権限との積集合を求めたうえで、その結果をユーザーに直接付与します。そのため、`SHOW CURRENT ROLES` は行を返しません。
+
+ユーザートークンの場合、Entra ID は `sub` に、ユーザーとアプリケーションの組み合わせごとに一意な不透明な識別子を設定します。これはユーザーのメールアドレスやオブジェクト ID ではありません。
+
+## ベストプラクティス {#best-practices}
+
+### 個々のユーザーではなくグループを割り当てる {#assign-groups}
+
+各アプリロールに Entra ID グループを 1 つずつ割り当て、アクセスの付与や取り消しはグループのメンバーを変更して行います。こうしておけば、チームにメンバーが加わったり抜けたりしても、アプリケーションを編集する必要はありません。
+
+### 環境ごとに個別のアプリ登録を使用する {#separate-app-registrations}
+
+トークンの `aud` claim には、発行元のアプリ登録のクライアント ID が含まれます。本番環境とステージング環境で個別のアプリ登録を使用すれば、一方の環境向けに発行されたトークンでもう一方の環境に認証することはできません。
+
+### ロールの変更は次に発行されるトークンから反映される {#role-changes}
+
+Entra ID は、トークンの発行時に `roles` claim を書き込みます。そのため、ユーザーのアプリロールの割り当てを変更しても、変更が反映されるのはユーザーが新しいトークンを取得した時点です。発行済みのトークンは、有効期限が切れるまで変更前のロールを保持します。Azure CLI を使用している場合は、`az logout` と `az login` を実行すると、新しいトークンをすぐに取得できます。
+
+## トラブルシューティング {#troubleshooting}
+
+<AccordionGroup>
+  <Accordion title="トークンが拒否され、発行元が https://sts.windows.net で始まっている" id="v1-token">
+    Entra ID が v1.0 トークンを発行しています。[v2.0 アクセストークンを要求する](#request-v2-tokens) の手順に従ってアプリケーションのマニフェストで `requestedAccessTokenVersion` を `2` に設定し、トークンを再取得してください。
+  </Accordion>
+
+  <Accordion title="オーディエンスが原因でトークンが拒否される" id="audience-mismatch">
+    * ClickHouse Cloud のプロバイダーの **Audience** には、`api://<CLIENT_ID>` ではなくクライアント ID を指定する必要があります。
+    * ClickHouse アプリケーション向けのトークンを要求しているか確認してください。`--resource` を指定しないと、`az account get-access-token` は Azure Resource Manager 向けのトークンを返します。
+  </Accordion>
+
+  <Accordion title="Entra ID が AADSTS65001 を返す、または同意を求められる" id="consent-required">
+    クライアントアプリケーションが `access_as_application` スコープに対して事前承認されていません。[ユーザーのサインイン用にクライアントアプリケーションを承認する](#authorize-client-application) の手順に従い、**Expose an API → Authorized client applications** にそのクライアント ID を追加してください。
+  </Accordion>
+
+  <Accordion title="Entra ID が AADSTS50105 または AADSTS501051 を返す" id="not-assigned">
+    **Assignment required?** が **Yes** に設定されているにもかかわらず、ユーザーまたはアプリケーションが ClickHouse アプリケーションに割り当てられていません。ユーザー、そのユーザーが所属するグループ、またはアプリケーションをアプリロールに割り当ててください。グループを割り当てた場合は、ユーザーがそのグループの直接のメンバーになっていることを確認してください。
+  </Accordion>
+
+  <Accordion title="認証は成功するが、クエリが ACCESS_DENIED で失敗する" id="no-privileges">
+    一時ユーザーに、クエリの実行に必要な権限がありません。次の点を確認してください。
+
+    * プロバイダーの **Roles claim** が `roles` に設定されていること。
+    * トークンに `roles` クレームが含まれていること。呼び出し元がアプリロールなしでアプリケーションに割り当てられている場合、このクレームは含まれません。
+    * `roles` クレームの各値が、サービス上の既存の ClickHouse ロールと大文字・小文字まで一致していること。
+    * ロールに付与した権限を `default` ユーザーが保持していること。
+
+    トークン内のクレームを確認するには、ペイロードをローカルでデコードします。
+
+    ```bash
+    python3 -c 'import sys, base64, json; p = sys.argv[1].split(".")[1]; print(json.dumps(json.loads(base64.urlsafe_b64decode(p + "=" * (-len(p) % 4))), indent=2))' "$TOKEN"
+    ```
+  </Accordion>
+
+  <Accordion title="クレームマッピングポリシーの設定後にトークンが拒否される" id="app-signing-key">
+    アプリケーションにクレームマッピングポリシーやカスタム署名キーを設定している場合、Entra ID はテナントの JWKS に含まれないキーでトークンに署名します。プロバイダーの **JWKS URL** を `https://login.microsoftonline.com/<TENANT_ID>/discovery/v2.0/keys?appid=<CLIENT_ID>` に設定してください。
+  </Accordion>
+</AccordionGroup>
+
+## 関連項目 {#related}
+
+* [JWT認証のセットアップ](/ja/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup): クラウドコンソールでJWTプロバイダーを追加、更新、削除する方法について説明します。
+* [JWT認証](/ja/concepts/features/security/external-authenticators/jwt): トークンのクレーム、一時ユーザー、クライアントでの使用方法について説明します。

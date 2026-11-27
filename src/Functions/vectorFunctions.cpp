@@ -1,4 +1,6 @@
 #include <Columns/ColumnTuple.h>
+#include <array>
+#include <string_view>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeInterval.h>
@@ -71,32 +73,44 @@ struct L2SquaredLabel { static constexpr auto name = "2Squared"; };
 struct LinfLabel { static constexpr auto name = "inf"; };
 struct LpLabel { static constexpr auto name = "p"; };
 
-constexpr std::string makeFirstLetterUppercase(const std::string & str)
+/// "tuple" + `Name` with the first letter uppercased + `suffix`, built at compile time so that the function name is a
+/// constant rather than a `std::string` with a static initializer per instantiation.
+template <class FuncName, size_t suffix_size>
+constexpr auto makeTupleFunctionName(const char (&suffix)[suffix_size])
 {
-    std::string res(str);
-    res[0] += 'A' - 'a';
+    constexpr std::string_view base = FuncName::name;
+    constexpr std::string_view prefix = "tuple";
+    std::array<char, prefix.size() + base.size() + suffix_size> res{};
+    size_t pos = 0;
+    for (char c : prefix)
+        res[pos++] = c;
+    for (size_t i = 0; i < base.size(); ++i)
+        res[pos++] = (i == 0 && base[i] >= 'a' && base[i] <= 'z') ? static_cast<char>(base[i] - 'a' + 'A') : base[i];
+    for (size_t i = 0; i < suffix_size; ++i) /// including the terminating zero
+        res[pos++] = suffix[i];
     return res;
 }
+
 
 template <class FuncName>
 class FunctionTupleOperator final : public ITupleFunction
 {
 public:
-    /// constexpr cannot be used because std::string allocations cannot persist past constant evaluation
-    static inline auto name = "tuple" + makeFirstLetterUppercase(FuncName::name);
+    static constexpr auto name_storage = makeTupleFunctionName<FuncName>("");
+    static constexpr const char * name = name_storage.data();
 
     explicit FunctionTupleOperator(ContextPtr context_) : ITupleFunction(context_) {}
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionTupleOperator>(context_); }
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    size_t getNumberOfArguments() const override { return 0; }
-    bool isVariadic() const override { return true; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] bool isVariadic() const override { return true; }
 
     /// Documentation-only — element-wise binary op applied to each pair of
     /// tuple elements; the result is a tuple whose i-th element type follows
     /// the underlying scalar op's promotion rules.
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(Tuple, Tuple) -> Tuple";
     }
@@ -106,7 +120,7 @@ public:
     /// Route the types-only path to it too, so the base `IFunction::getReturnTypeImpl(DataTypes)`
     /// fallback never evaluates the bare container return type (which would yield a wrong type or
     /// an internal error).
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         ColumnsWithTypeAndName columns;
         columns.reserve(arguments.size());
@@ -115,7 +129,7 @@ public:
         return getReturnTypeImpl(columns);
     }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (arguments.size() < 2)
             throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION,
@@ -156,7 +170,7 @@ public:
         return std::make_shared<DataTypeTuple>(std::move(current_types));
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const auto * first_tuple = checkAndGetDataType<DataTypeTuple>(arguments[0].type.get());
         Columns current_elements = getTupleElements(*arguments[0].column);
@@ -204,13 +218,13 @@ public:
     explicit FunctionTupleNegate(ContextPtr context_) : ITupleFunction(context_) {}
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionTupleNegate>(context_); }
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    size_t getNumberOfArguments() const override { return 1; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
 
     /// Documentation-only — element-wise `negate` applied to each tuple element;
     /// the result tuple's i-th element type follows scalar `negate` promotion.
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(Tuple) -> Tuple";
     }
@@ -220,7 +234,7 @@ public:
     /// Route the types-only path to it too, so the base `IFunction::getReturnTypeImpl(DataTypes)`
     /// fallback never evaluates the bare container return type (which would yield a wrong type or
     /// an internal error).
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         ColumnsWithTypeAndName columns;
         columns.reserve(arguments.size());
@@ -229,7 +243,7 @@ public:
         return getReturnTypeImpl(columns);
     }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors mandatory_args{
             {"tuple", &isTuple, nullptr, "Tuple"}
@@ -265,7 +279,7 @@ public:
         return std::make_shared<DataTypeTuple>(std::move(types));
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const auto * cur_tuple = checkAndGetDataType<DataTypeTuple>(arguments[0].type.get());
         const auto & cur_types = cur_tuple->getElements();
@@ -293,20 +307,20 @@ template <class FuncName>
 class FunctionTupleOperatorByNumber final : public ITupleFunction
 {
 public:
-    /// constexpr cannot be used because std::string allocations cannot persist past constant evaluation
-    static inline auto name = "tuple" + makeFirstLetterUppercase(FuncName::name) + "ByNumber";
+    static constexpr auto name_storage = makeTupleFunctionName<FuncName>("ByNumber");
+    static constexpr const char * name = name_storage.data();
 
     explicit FunctionTupleOperatorByNumber(ContextPtr context_) : ITupleFunction(context_) {}
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionTupleOperatorByNumber>(context_); }
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    size_t getNumberOfArguments() const override { return 2; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
 
     /// Documentation-only — applies the scalar op to each tuple element with
     /// the same right-hand operand; the result tuple's i-th element type
     /// follows the underlying scalar op's promotion rules.
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(Tuple, Any) -> Tuple";
     }
@@ -316,7 +330,7 @@ public:
     /// Route the types-only path to it too, so the base `IFunction::getReturnTypeImpl(DataTypes)`
     /// fallback never evaluates the bare container return type (which would yield a wrong type or
     /// an internal error).
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         ColumnsWithTypeAndName columns;
         columns.reserve(arguments.size());
@@ -325,7 +339,7 @@ public:
         return getReturnTypeImpl(columns);
     }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors mandatory_args{
             {"tuple", &isTuple, nullptr, "Tuple"},
@@ -362,7 +376,7 @@ public:
         return std::make_shared<DataTypeTuple>(types);
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const auto * cur_tuple = checkAndGetDataType<DataTypeTuple>(arguments[0].type.get());
         const auto & cur_types = cur_tuple->getElements();
@@ -402,11 +416,11 @@ public:
     explicit FunctionDotProduct(ContextPtr context_) : ITupleFunction(context_) {}
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionDotProduct>(context_); }
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    size_t getNumberOfArguments() const override { return 2; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors mandatory_args{
             {"left_tuple", &isTuple, nullptr, "Tuple"},
@@ -469,7 +483,7 @@ public:
         return res_type;
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const auto * left_tuple = checkAndGetDataType<DataTypeTuple>(arguments[0].type.get());
         const auto * right_tuple = checkAndGetDataType<DataTypeTuple>(arguments[1].type.get());
@@ -524,19 +538,19 @@ public:
         return std::make_shared<FunctionDateOrDateTimeOperationTupleOfIntervals>(context_);
     }
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    size_t getNumberOfArguments() const override { return 2; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
 
     /// Documentation-only — applies `plus`/`minus` with each tuple-element
     /// interval to the date/datetime. The concrete result type depends on
     /// the date/datetime input and the precision of the intervals.
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(Date | Date32 | DateTime | DateTime64, Tuple) -> Any";
     }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors mandatory_args{
             {"date_or_datetime", &isDateOrDate32OrDateTimeOrDateTime64, nullptr, "Date, Date32, DateTime or DateTime64"},
@@ -577,7 +591,7 @@ public:
         return res_type;
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const auto * cur_tuple = checkAndGetDataType<DataTypeTuple>(arguments[1].type.get());
         const auto & cur_types = cur_tuple->getElements();
@@ -630,20 +644,20 @@ public:
         return std::make_shared<FunctionTupleOperationInterval>(context_);
     }
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    size_t getNumberOfArguments() const override { return 2; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
 
     /// Documentation-only — accumulates intervals into a tuple of intervals.
     /// If the right-hand interval shares the unit of the last element of the
     /// tuple, it's merged in place; otherwise it's appended. The composite
     /// per-element-interval-kind result isn't expressible in the DSL.
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(Tuple | Interval, Interval) -> Tuple";
     }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         DataTypes data_types(arguments.size());
         for (size_t i = 0; i < arguments.size(); ++i)
@@ -651,7 +665,7 @@ public:
         return getReturnTypeImpl(data_types);
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (!isTuple(arguments[0]) && !isInterval(arguments[0]))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
@@ -696,7 +710,7 @@ public:
         return std::make_shared<DataTypeTuple>(types);
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         if (!isInterval(arguments[1].type))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
@@ -813,11 +827,11 @@ public:
     explicit FunctionLNorm(ContextPtr context_) : ITupleFunction(context_) {}
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionLNorm>(context_); }
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    size_t getNumberOfArguments() const override { return 1; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors mandatory_args{
             {"tuple", &isTuple, nullptr, "Tuple"}
@@ -865,7 +879,7 @@ public:
         return res_type;
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const auto * cur_tuple = checkAndGetDataType<DataTypeTuple>(arguments[0].type.get());
         const auto & cur_types = cur_tuple->getElements();
@@ -914,11 +928,11 @@ public:
     explicit FunctionLNorm(ContextPtr context_) : ITupleFunction(context_) {}
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionLNorm>(context_); }
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    size_t getNumberOfArguments() const override { return 1; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors mandatory_args{
             {"tuple", &isTuple, nullptr, "Tuple"}
@@ -968,7 +982,7 @@ public:
         return res_type;
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const auto * cur_tuple = checkAndGetDataType<DataTypeTuple>(arguments[0].type.get());
         const auto & cur_types = cur_tuple->getElements();
@@ -1019,9 +1033,9 @@ public:
     explicit FunctionLNorm(ContextPtr context_) : Base(context_) {}
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionLNorm>(context_); }
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         const auto * cur_tuple = checkAndGetDataType<DataTypeTuple>(arguments[0].type.get());
 
@@ -1038,7 +1052,7 @@ public:
         return sqrt->build({ColumnWithTypeAndName{Base::getReturnTypeImpl(arguments), {}}})->getResultType();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         auto cur_elements = getTupleElements(*arguments[0].column);
 
@@ -1066,11 +1080,11 @@ public:
     explicit FunctionLNorm(ContextPtr context_) : ITupleFunction(context_) {}
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionLNorm>(context_); }
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    size_t getNumberOfArguments() const override { return 1; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors mandatory_args{
             {"tuple", &isTuple, nullptr, "Tuple"}
@@ -1120,7 +1134,7 @@ public:
         return res_type;
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const auto * cur_tuple = checkAndGetDataType<DataTypeTuple>(arguments[0].type.get());
         const auto & cur_types = cur_tuple->getElements();
@@ -1169,13 +1183,13 @@ public:
     explicit FunctionLNorm(ContextPtr context_) : ITupleFunction(context_) {}
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionLNorm>(context_); }
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    size_t getNumberOfArguments() const override { return 2; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
 
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
+    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors mandatory_args{
             {"tuple", &isTuple, nullptr, "Tuple"},
@@ -1240,7 +1254,7 @@ public:
         return pow->build({ColumnWithTypeAndName{res_type, {}}, inv_p_column})->getResultType();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const auto * cur_tuple = checkAndGetDataType<DataTypeTuple>(arguments[0].type.get());
         const auto & cur_types = cur_tuple->getElements();
@@ -1304,11 +1318,11 @@ public:
     explicit FunctionLDistance(ContextPtr context_) : ITupleFunction(context_) {}
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionLDistance>(context_); }
 
-    String getName() const override { return name; }
-    size_t getNumberOfArguments() const override { return FuncLabel::name[0] == 'p' ? 3 : 2; }
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return FuncLabel::name[0] == 'p' ? ColumnNumbers{2} : ColumnNumbers{}; }
+    [[nodiscard]] String getName() const override { return name; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return FuncLabel::name[0] == 'p' ? 3 : 2; }
+    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return FuncLabel::name[0] == 'p' ? ColumnNumbers{2} : ColumnNumbers{}; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionTupleMinus tuple_minus(context);
         // Only pass the first two arguments (the tuples) to tupleMinus
@@ -1324,7 +1338,7 @@ public:
             return func->build({minus_res})->getResultType();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         FunctionTupleMinus tuple_minus(context);
         // Only pass the first two arguments (the tuples) to tupleMinus
@@ -1363,9 +1377,9 @@ public:
     explicit FunctionLNormalize(ContextPtr context_) : ITupleFunction(context_) {}
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionLNormalize>(context_); }
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    size_t getNumberOfArguments() const override
+    [[nodiscard]] size_t getNumberOfArguments() const override
     {
         if constexpr (FuncLabel::name[0] == 'p')
             return 2;
@@ -1377,7 +1391,7 @@ public:
     /// `Lp` variant takes a `p` parameter; the others are unary. The result
     /// element type is computed from `LNorm / TupleDivideByNumber`, so the
     /// string is surfaced via `system.functions` only.
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         if constexpr (FuncLabel::name[0] == 'p')
             return "(Tuple, const Float | UInt) -> Tuple";
@@ -1385,7 +1399,7 @@ public:
             return "(Tuple) -> Tuple";
     }
 
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override
+    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override
     {
         if constexpr (FuncLabel::name[0] == 'p')
             return {1};
@@ -1398,7 +1412,7 @@ public:
     /// Route the types-only path to it too, so the base `IFunction::getReturnTypeImpl(DataTypes)`
     /// fallback never evaluates the bare container return type (which would yield a wrong type or
     /// an internal error).
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         ColumnsWithTypeAndName columns;
         columns.reserve(arguments.size());
@@ -1407,7 +1421,7 @@ public:
         return getReturnTypeImpl(columns);
     }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionLNorm<FuncLabel> norm(context);
         auto type = norm.getReturnTypeImpl(arguments);
@@ -1418,7 +1432,7 @@ public:
         return divide.getReturnTypeImpl({arguments[0], norm_res});
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         FunctionLNorm<FuncLabel> norm(context);
         auto type = norm.getReturnTypeImpl(arguments);
@@ -1444,11 +1458,11 @@ public:
     explicit FunctionCosineDistance(ContextPtr context_) : ITupleFunction(context_) {}
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionCosineDistance>(context_); }
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    size_t getNumberOfArguments() const override { return 2; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors mandatory_args{
             {"left_tuple", &isTuple, nullptr, "Tuple"},
@@ -1480,7 +1494,7 @@ public:
         return minus->build({one, divide_result})->getResultType();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         /// TODO: cosineDistance does not support nullable arguments
         /// https://github.com/ClickHouse/ClickHouse/pull/27933#issuecomment-916670286
@@ -1548,23 +1562,27 @@ public:
 
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<TupleOrArrayFunction>(context_); }
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    bool isVariadic() const override { return array_function->isVariadic(); }
+    [[nodiscard]] bool isVariadic() const override { return array_function->isVariadic(); }
 
-    size_t getNumberOfArguments() const override { return array_function->getNumberOfArguments(); }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return array_function->getNumberOfArguments(); }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return array_function->getArgumentsThatAreAlwaysConstant(); }
+    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return array_function->getArgumentsThatAreAlwaysConstant(); }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
+    /// Both implementations throw for some values (arrays of different sizes, a decimal overflow, a zero norm).
+    [[nodiscard]] bool canBeExecutedOnDefaultArguments() const override { return false; }
+    [[nodiscard]] std::optional<bool> canThrowIfKnown(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     /// Documentation-only — `Traits` may expose a `signature` constant describing
     /// the shape accepted by both the tuple- and array-path. The actual return
     /// type is computed by the underlying `tuple_function` / `array_function`,
     /// so the string is surfaced via `system.functions` only.
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         if constexpr (requires { Traits::signature; })
             return Traits::signature;
@@ -1574,7 +1592,7 @@ public:
 
     /// The signature is documentation-only. Route type-only calls to the selected
     /// implementation instead of letting the base class evaluate `Traits::signature`.
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         ColumnsWithTypeAndName columns;
         columns.reserve(arguments.size());
@@ -1583,7 +1601,7 @@ public:
         return getReturnTypeImpl(columns);
     }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         /// Since transposed distance functions are variadic, we check the number of arguments, as we won't do it later like with others
         if constexpr (IsTransposedTrait<Traits>::value)
@@ -1614,7 +1632,7 @@ public:
         }
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         bool is_array = checkDataTypes<DataTypeArray>(arguments[0].type.get());
 

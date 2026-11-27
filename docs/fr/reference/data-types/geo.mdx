@@ -15,9 +15,7 @@ ClickHouse prend en charge des types de données permettant de représenter des 
 
 * [Représentation d’entités géographiques simples](https://en.wikipedia.org/wiki/GeoJSON).
 
-<div id="point">
-  ## Point
-</div>
+## Point {#point}
 
 `Point` est défini par ses coordonnées X et Y, stockées sous la forme d’un [Tuple](/fr/reference/data-types/tuple)([Float64](/fr/reference/data-types/float), [Float64](/fr/reference/data-types/float)).
 
@@ -35,11 +33,10 @@ SELECT p, toTypeName(p) FROM geo_point;
 └─────────┴───────────────┘
 ```
 
-<div id="multipoint">
-  ## MultiPoint
-</div>
+## MultiPoint {#multipoint}
 
-`MultiPoint` est un ensemble de points stocké dans un tableau de points : [Array](/fr/reference/data-types/array)([Point](#point)).
+`MultiPoint` est un ensemble de points stocké dans un tableau de points : [Array](/fr/reference/data-types/array)([Point](#point)).
+Un `Point` peut être converti en `MultiPoint` ; le résultat contient alors ce point comme unique élément.
 
 **Exemple**
 
@@ -55,9 +52,7 @@ SELECT mp, toTypeName(mp) FROM geo_multipoint;
 └───────────────────────────────┴────────────────┘
 ```
 
-<div id="ring">
-  ## Ring
-</div>
+## Ring {#ring}
 
 `Ring` est un polygone simple sans trou, stocké sous forme de tableau de points : [Array](/fr/reference/data-types/array)([Point](#point)).
 
@@ -75,9 +70,7 @@ SELECT r, toTypeName(r) FROM geo_ring;
 └───────────────────────────────┴───────────────┘
 ```
 
-<div id="linestring">
-  ## LineString
-</div>
+## LineString {#linestring}
 
 `LineString` représente une ligne stockée sous forme de tableau de points : [Array](/fr/reference/data-types/array)([Point](#point)).
 
@@ -95,11 +88,10 @@ SELECT l, toTypeName(l) FROM geo_linestring;
 └───────────────────────────────┴───────────────┘
 ```
 
-<div id="multilinestring">
-  ## MultiLineString
-</div>
+## MultiLineString {#multilinestring}
 
-`MultiLineString` est un ensemble de lignes stocké sous forme de tableau de `LineString` : [Array](/fr/reference/data-types/array)([LineString](#linestring)).
+`MultiLineString` est un ensemble de lignes stocké sous forme de tableau de `LineString` : [Array](/fr/reference/data-types/array)([LineString](#linestring)).
+Un `LineString` peut être converti en `MultiLineString` ; le résultat contient alors cette ligne comme unique élément.
 
 **Exemple**
 
@@ -115,9 +107,7 @@ SELECT l, toTypeName(l) FROM geo_multilinestring;
 └─────────────────────────────────────────────────────┴─────────────────┘
 ```
 
-<div id="polygon">
-  ## Polygon
-</div>
+## Polygon {#polygon}
 
 `Polygon` est un polygone avec des trous, stocké sous la forme d&#39;un tableau d&#39;anneaux : [Array](/fr/reference/data-types/array)([Ring](#ring)). Le premier élément du tableau externe correspond au contour extérieur du polygone, et tous les éléments suivants sont des trous.
 
@@ -137,15 +127,14 @@ SELECT pg, toTypeName(pg) FROM geo_polygon;
 └───────────────────────────────────────────────────────────────┴────────────────┘
 ```
 
-<div id="multipolygon">
-  ## MultiPolygon
-</div>
+## MultiPolygon {#multipolygon}
 
-`MultiPolygon` est composé de plusieurs polygones et est stocké sous la forme d&#39;un tableau de polygones : [Array](/fr/reference/data-types/array)([Polygon](#polygon)).
+`MultiPolygon` est composé de plusieurs polygones et est stocké sous la forme d&#39;un tableau de polygones : [Array](/fr/reference/data-types/array)([Polygon](#polygon)).
+Un `Polygon` peut être converti en `MultiPolygon` ; le résultat contient alors ce polygone comme unique élément.
 
 **Exemple**
 
-Ce multipolygone est composé de deux polygones distincts — le premier sans trou, et le second avec un trou :
+Ce multipolygone est composé de deux polygones distincts — le premier sans trou, et le second avec un trou :
 
 ```sql title="Query"
 CREATE TABLE geo_multipolygon (mpg MultiPolygon) ENGINE = Memory();
@@ -159,9 +148,7 @@ SELECT mpg, toTypeName(mpg) FROM geo_multipolygon;
 └─────────────────────────────────────────────────────────────────────────────────────────────────┴─────────────────┘
 ```
 
-<div id="geometry">
-  ## Geometry
-</div>
+## Geometry {#geometry}
 
 `Geometry` est un type commun à tous les types ci-dessus. Il équivaut à un Variant de ces types.
 
@@ -205,9 +192,7 @@ SELECT * FROM geo_dst;
 └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-<div id="related-content">
-  ## Contenu connexe
-</div>
+## Contenu connexe {#related-content}
 
 * [Explorer de vastes jeux de données du monde réel : plus de 100 ans de relevés météorologiques dans ClickHouse](https://clickhouse.com/blog/real-world-data-noaa-climate-data)
 

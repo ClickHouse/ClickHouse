@@ -12,15 +12,27 @@ import SettingsInfoBlock from "/snippets/fr/components/SettingsInfoBlock/Setting
 
 Ces paramètres configurent le serveur ClickHouse et sont générés automatiquement à partir du code source de ClickHouse.
 
-## distributed_cache_apply_throttling_settings_from_client
+## distributed_cache_apply_throttling_settings_from_client {#distributed_cache_apply_throttling_settings_from_client}
 
 <SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />Indique si le serveur de cache doit appliquer les paramètres de limitation du débit reçus du client.
 
-## distributed_cache_keep_up_free_connections_ratio
+## distributed_cache_keep_up_free_connections_ratio {#distributed_cache_keep_up_free_connections_ratio}
 
 <SettingsInfoBlock type="Float" default_value="0.1" changeable_without_restart="No" />Limite souple du nombre de connexions actives que le distributed cache tentera de maintenir libres. Lorsque le nombre de connexions libres passe sous distributed&#95;cache&#95;keep&#95;up&#95;free&#95;connections&#95;ratio * max&#95;connections, les connexions dont l&#39;activité est la plus ancienne sont fermées jusqu&#39;à ce que ce nombre repasse au-dessus de la limite.
 
-## distributed_cache_write_pool_size
+## distributed_cache_warmer_max_bytes_in_queue {#distributed_cache_warmer_max_bytes_in_queue}
+
+<SettingsInfoBlock type="UInt64" default_value="107374182400" changeable_without_restart="No" />N’a d’effet que dans ClickHouse Cloud. Taille totale maximale des plages que le préchauffeur de cache conserve en file d’attente pour un disque dépourvu de cache du système de fichiers local ; au-delà de cette limite, les plages les plus anciennes sont supprimées (avec un cache local, le préchauffeur utilise son paramètre `max_size`). La valeur zéro signifie aucune limite.
+
+## distributed_cache_warmer_max_file_segment_size {#distributed_cache_warmer_max_file_segment_size}
+
+<SettingsInfoBlock type="NonZeroUInt64" default_value="33554432" changeable_without_restart="No" />N’a d’effet que dans ClickHouse Cloud. Taille des plages par lesquelles le préchauffeur de cache lit une partie de données récupérée dans le Distributed Cache lorsque le disque de cette partie de données ne dispose d’aucun cache du système de fichiers local (avec un cache local, le préchauffeur utilise son propre `max_file_segment_size`).
+
+## distributed_cache_warmer_max_segments_in_queue {#distributed_cache_warmer_max_segments_in_queue}
+
+<SettingsInfoBlock type="UInt64" default_value="100000" changeable_without_restart="No" />N’a d’effet que dans ClickHouse Cloud. Nombre maximal de plages que le préchauffeur de cache conserve en file d’attente pour un disque dépourvu de cache du système de fichiers local ; au-delà de cette limite, les plages les plus anciennes sont supprimées (avec un cache local, le préchauffeur utilise son paramètre `max_elements`). Une valeur de zéro signifie aucune limite.
+
+## distributed_cache_write_pool_size {#distributed_cache_write_pool_size}
 
 <SettingsInfoBlock type="UInt64" default_value="100" changeable_without_restart="No" />Le nombre maximal de requêtes d’écriture du distributed cache pouvant s’exécuter simultanément sur un thread d’arrière-plan (toutes requêtes confondues). Lorsque cette limite est atteinte, l’écriture dans le cache en écriture directe est ignorée (les données sont toujours écrites dans le stockage d’objets) ; elle n’est donc ni bloquée dans l’attente d’un slot ni à l’origine d’un nombre illimité de threads. Les écritures de données temporaires n’utilisent pas de threads d’arrière-plan et ne sont pas affectées par cette limite.
 

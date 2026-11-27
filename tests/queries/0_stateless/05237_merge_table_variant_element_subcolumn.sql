@@ -1,6 +1,10 @@
 -- `variantElement` over a `Merge` table must see the `Variant` column that `Merge` derives as the
 -- common type of the children, wherever in the query the call appears.
 
+-- The children must store `Nullable(String)`, which `optimize_if_transform_const_strings_to_lowcardinality`
+-- would turn into `LowCardinality(Nullable(String))` for the `if` below, renaming the `String` variant.
+SET optimize_if_transform_const_strings_to_lowcardinality = 0;
+
 DROP TABLE IF EXISTS t_05237_seeds_a;
 DROP TABLE IF EXISTS t_05237_seeds_b;
 

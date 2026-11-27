@@ -7,7 +7,6 @@
 -- (query_plan_direct_read_from_text_index = 1) or via the row-scan fallback (= 0), including on partially
 -- materialized indexes.
 
-SET enable_analyzer = 1;
 SET use_skip_indexes = 1;
 SET use_query_condition_cache = 0;
 

@@ -89,14 +89,18 @@ Chunk FileLogSource::generate()
     MutableColumns virtual_columns = virtual_header.cloneEmptyColumns();
 
     EmptyReadBuffer empty_buf;
-    auto input_format = FormatFactory::instance().getInput(
-        storage.getFormatName(),
-        empty_buf,
-        non_virtual_header,
-        context,
-        max_block_size,
-        std::nullopt,
-        FormatParserSharedResources::singleThreaded(context->getSettingsRef()));
+    auto parser_shared_resources = FormatParserSharedResources::singleThreaded(context->getSettingsRef());
+    auto create_format = [&]
+    {
+        return FormatFactory::instance().getInput(
+            storage.getFormatName(),
+            empty_buf,
+            non_virtual_header,
+            context,
+            max_block_size,
+            std::nullopt,
+            parser_shared_resources);
+    };
 
     std::optional<String> exception_message;
     size_t total_rows = 0;
@@ -137,7 +141,9 @@ Chunk FileLogSource::generate()
         throw std::move(e);
     };
 
-    StreamingFormatExecutor executor(non_virtual_header, input_format, on_error);
+    StreamingFormatExecutor executor(non_virtual_header, std::move(create_format), on_error);
+
+    const Field table_name = storage.getStorageID().getTableName();
 
     size_t failed_poll_attempts = 0;
 
@@ -157,7 +163,7 @@ Chunk FileLogSource::generate()
             {
                 virtual_columns[0]->insert(file_name);
                 virtual_columns[1]->insert(offset);
-                virtual_columns[2]->insert(storage.getStorageID().getTableName());
+                virtual_columns[2]->insert(table_name);
                 if (handle_error_mode == StreamingHandleErrorMode::STREAM)
                 {
                     if (exception_message)

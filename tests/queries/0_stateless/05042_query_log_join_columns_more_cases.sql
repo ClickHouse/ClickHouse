@@ -8,11 +8,12 @@
 --    pipeline. Subqueries, common table expressions, views, views of views and the `SELECT` of a
 --    materialized view triggered by an `INSERT` all report into the row of that query, even though its
 --    text may hold no `JOIN` at all.
---  * `PARALLEL_HASH` and `DIRECT` are the two algorithms the main test never forces: each comes from an
---    `IJoin` that is built only under conditions a query has to set up on purpose, so each is covered
---    over the kinds and the strictness it is picked for. The group ends the other way around, asking for
---    an algorithm whose conditions the query then fails to meet, because the column reports the
---    algorithm that ran and not the one that was requested.
+--  * `DIRECT` is the algorithm the main test never forces: it comes from an `IJoin` that is built only
+--    under conditions a query has to set up on purpose, so it is covered over the kinds and the
+--    strictness it is picked for. A hash join built with the parallel layout is covered the same way;
+--    like any hash join, it reports `HASH`. The group ends the other way around, asking for an
+--    algorithm whose conditions the query then fails to meet, because the column reports the algorithm
+--    that ran and not the one that was requested.
 --  * The columns describe the pipeline that was built, so they are empty in the `QueryStart` row of a
 --    query and filled in the row that ends it, which is the one carrying the exception when it fails.
 --
@@ -171,18 +172,13 @@ INSERT INTO ins SELECT t1.a FROM t1 JOIN t2 ON t1.a = t2.a
 SETTINGS log_comment = '05042_join_views_insert_plain', join_algorithm = 'hash';
 
 
--- `parallel_hash` builds a `ConcurrentHashJoin`, which reports `PARALLEL_HASH`. It is picked only for
--- INNER, LEFT, RIGHT and FULL joins over a single disjunct and never for a special storage on the
--- right. When `join_algorithm` allows `hash` as well, the right table also has to be estimated at
--- `parallel_hash_join_threshold` bytes or more, so asking for `parallel_hash` alone keeps the size
--- estimate out of the decision and the algorithm is the one that runs whatever the tables hold.
+-- `parallel_hash` is an alias of `hash`, so a join that lists it reports `HASH` whatever layout it builds.
 SELECT count() FROM t1 JOIN t2 ON t1.a = t2.a
 FORMAT Null
 SETTINGS log_comment = '05042_join_algorithms_parallel_hash', join_algorithm = 'parallel_hash', max_threads = 4;
 
 
--- The kinds `ConcurrentHashJoin` is built for are INNER, which is above, and these three. Strictness
--- is not part of the condition, so an ASOF join of an allowed kind is executed with it as well.
+-- The same holds for the other kinds, and for an ASOF join.
 SELECT count() FROM t1 LEFT JOIN t2 ON t1.a = t2.a
 FORMAT Null
 SETTINGS log_comment = '05042_join_algorithms_ph_kind_a_left', join_algorithm = 'parallel_hash', max_threads = 4;
@@ -197,10 +193,9 @@ FORMAT Null
 SETTINGS log_comment = '05042_join_algorithms_ph_kind_d_asof_left', join_algorithm = 'parallel_hash', max_threads = 4;
 
 
--- A `parallel_hash` join with a spilling threshold is a `SpillingHashJoin` wrapping the concurrent
--- join, and it reports `PARALLEL_HASH` until it switches. Over the threshold it becomes `grace_hash`
--- while the query is already running, and both algorithms are reported for the one join, the same way
--- a plain `hash` join that switches reports `HASH` and `GRACE_HASH`.
+-- A `parallel_hash` join with a spilling threshold is a `SpillingHashJoin` wrapping a parallel
+-- `HashJoin`, and it reports `HASH` until it switches. Over the threshold it becomes `grace_hash` while
+-- the query is already running, and both algorithms are reported for the one join.
 SELECT count() FROM (SELECT number AS a FROM numbers(10000)) s1 JOIN (SELECT number AS a FROM numbers(10000)) s2 ON s1.a = s2.a
 FORMAT Null
 SETTINGS log_comment = '05042_join_algorithms_parallel_hash_switch', join_algorithm = 'parallel_hash', max_threads = 4, max_bytes_before_external_join = 65536;
@@ -235,18 +230,13 @@ FORMAT Null
 SETTINGS log_comment = '05042_join_algorithms_direct_e_anti_left', join_algorithm = 'direct';
 
 
--- The reported algorithm is the one that ran, not the one the query asked for. Each of these queries
--- allows an algorithm whose conditions it then fails to meet, and the join falls back to `hash`:
---  * `parallel_hash` is not built for more than one disjunct, and multiple ORs need `hash` to be
---    allowed as well, so it is the only algorithm left.
---  * `parallel_hash` is not built when the right side is a special storage, here a `Join` engine
---    table, which is joined by `FilledJoinStep` with the table's own hash table.
+-- The reported algorithm is the one that ran, not the one the query asked for. The first query asks
+-- for `parallel_hash`, which is an alias of `hash`, so it only checks that the alias reports `HASH`.
+-- 05327_hash_join_serial_layout_declines checks the layout of a join with a `Join` engine table.
+-- Each of the other queries allows `direct` but fails its conditions, so the join falls back to `hash`:
 --  * `direct` needs an INNER or a LEFT join, so a RIGHT one falls back.
 --  * `direct` looks rows up by the equality key alone and cannot evaluate the mixed condition of the
 --    `ON` clause, so it declines a join that carries one rather than drop it.
-SELECT count() FROM t1 JOIN t2 ON t1.a = t2.a OR t1.b = t2.b
-FORMAT Null
-SETTINGS log_comment = '05042_join_algorithms_declined_a_parallel_hash_disjuncts', join_algorithm = 'parallel_hash,hash', max_threads = 4;
 SELECT count() FROM t1 ANY LEFT JOIN tj ON t1.a = tj.a
 FORMAT Null
 SETTINGS log_comment = '05042_join_algorithms_declined_b_parallel_hash_special_storage', join_algorithm = 'parallel_hash', max_threads = 4;

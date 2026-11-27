@@ -40,13 +40,14 @@ TYPE_MAP = {
 # not for query execution — it causes Nullable(Array(...)) errors with groupArray.
 CLICKHOUSE_SETTINGS = [
     "allow_experimental_join_condition = 1",
-    "allow_experimental_analyzer = 1",
     "use_query_cache = 0",
     "union_default_mode = 'DISTINCT'",
     "join_use_nulls = 1",
     "group_by_use_nulls = 1",
     "prefer_column_name_to_alias = 1",
     "cast_keep_nullable = 1",
+    # PostgreSQL `[LEFT] JOIN LATERAL (subquery) alias ON TRUE`.
+    "enable_lateral_join = 1",
     # aggregate_functions_null_for_empty is NOT set because it makes groupArray
     # return Nullable(Array(...)) which is illegal in ClickHouse's type system.
 ]

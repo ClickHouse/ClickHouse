@@ -177,9 +177,9 @@ Aggregate function that takes time series data as pairs of timestamps and values
 
 The quantile level follows the samples as the last argument: either one number used at every grid point, or an array with one number per grid point. It must be the same in every row. Like in Prometheus, a level below 0 gives `-Inf`, a level above 1 gives `+Inf` and a NaN level gives NaN for every grid point whose window has samples.
 
-:::note
+<Note>
 This function is in private preview, enable it by setting `enable_time_series_aggregate_functions=true`.
-:::
+</Note>
     )";
     FunctionDocumentation::Syntax syntax_timeSeriesQuantileToGrid = R"(
 timeSeriesQuantileToGrid(start_timestamp, end_timestamp, grid_step, staleness)(timestamp, value, phi)

@@ -7,8 +7,6 @@ title: '스케일링 권장 사항'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 <div id="introduction">
   ## 소개
 </div>
@@ -95,7 +93,15 @@ ClickHouse Cloud는 단일 윈도우 대신 시간 범위가 서로 다른 2개�
 각 윈도우는 메모리와 CPU 분석을 모두 사용하여 독립적으로 권장 사항을 생성합니다.
 그런 다음 시스템은 아래 그림과 같이 각 윈도우가 제안하는 스케일링 방향에 따라 이러한 권장 사항을 머지합니다:
 
-<Image img="/images/cloud/features/autoscaling/two-window-recommender.webp" size="lg" alt="두 윈도우 추천기 머지 로직" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![두 윈도우 추천기 머지 로직](/images/cloud/features/autoscaling/two-window-recommender.webp)
+
+</Frame>
+
+</div>
 
 추천기의 설계 결정에 관해 자세히 알아보려면 [&quot;ClickHouse를 위한 더 스마트한 자동 스케일링: 두 윈도우 접근 방식
 &quot;](https://clickhouse.com/blog/smarter-auto-scaling#the-two-window-solution)을 참조하십시오.

@@ -37,23 +37,23 @@ public:
     {
     }
 
-    String getName() const override { return name; }
-    size_t getNumberOfArguments() const override { return 1; }
-    bool isVariadic() const override { return false; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
-    bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] String getName() const override { return name; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
+    [[nodiscard]] bool isVariadic() const override { return false; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(DateTime64) -> Int64";
     }
 
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {
         return std::make_shared<DataTypeInt64>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const auto & src = arguments[0];
         const auto & col = *src.column;
@@ -91,9 +91,9 @@ public:
         return res_column;
     }
 
-    bool hasInformationAboutMonotonicity() const override { return true; }
+    [[nodiscard]] bool hasInformationAboutMonotonicity() const override { return true; }
 
-    Monotonicity getMonotonicityForRange(const IDataType & /*type*/, const Field & /*left*/, const Field & /*right*/) const override
+    [[nodiscard]] Monotonicity getMonotonicityForRange(const IDataType & /*type*/, const Field & /*left*/, const Field & /*right*/) const override
     {
         return {.is_monotonic = true, .is_always_monotonic = true};
     }
@@ -110,17 +110,17 @@ private:
 public:
     FunctionFromUnixTimestamp64(size_t target_scale_, const char * name_, ContextPtr context);
 
-    String getName() const override { return name; }
-    size_t getNumberOfArguments() const override { return 0; }
-    bool isVariadic() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
-    bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] String getName() const override { return name; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] bool isVariadic() const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
     /// Not declarative: the timezone argument's constness requirement is
     /// gated by the `allow_nonconst_timezone_arguments` setting, which the DSL
     /// cannot express. With the setting enabled, a non-constant timezone is
     /// accepted and the result becomes tz-less `DateTime64`.
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (arguments.empty() || arguments.size() > 2)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} takes one or two arguments", name);
@@ -154,7 +154,7 @@ public:
         return true;
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         auto result_column = ColumnDecimal<DateTime64>::create(input_rows_count, static_cast<UInt32>(target_scale));
 

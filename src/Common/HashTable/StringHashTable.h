@@ -3,8 +3,11 @@
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/HashTable.h>
 
+#include <base/constexpr_helpers.h>
+
 #include <bit>
 #include <new>
+#include <tuple>
 
 
 using StringKey8 = UInt64;
@@ -135,12 +138,13 @@ template <typename Cell>
 struct StringHashTableEmpty // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - `zero_value_storage` is raw storage for placement new, only written when `has_zero` becomes true
 {
     using Self = StringHashTableEmpty;
+    using cell_type = Cell;
 
     bool has_zero = false;
     alignas(Cell) std::byte zero_value_storage[sizeof(Cell)];
 
 public:
-    bool hasZero() const { return has_zero; }
+    [[nodiscard]] bool hasZero() const { return has_zero; }
 
     void prefetchByHash(size_t) const {} /// No-op: empty key storage is trivially small
 
@@ -164,7 +168,7 @@ public:
     }
 
     Cell * zeroValue() { return std::launder(reinterpret_cast<Cell *>(&zero_value_storage)); }
-    const Cell * zeroValue() const { return std::launder(reinterpret_cast<const Cell *>(&zero_value_storage)); }
+    [[nodiscard]] const Cell * zeroValue() const { return std::launder(reinterpret_cast<const Cell *>(&zero_value_storage)); }
 
     using LookupResult = Cell *;
     using ConstLookupResult = const Cell *;
@@ -189,7 +193,7 @@ public:
     }
 
     template <typename Key>
-    ConstLookupResult ALWAYS_INLINE find(const Key &, size_t = 0) const
+    [[nodiscard]] ConstLookupResult ALWAYS_INLINE find(const Key &, size_t = 0) const
     {
         return hasZero() ? zeroValue() : nullptr;
     }
@@ -198,10 +202,11 @@ public:
     void writeText(DB::WriteBuffer & wb) const { zeroValue()->writeText(wb); }
     void read(DB::ReadBuffer & rb) { zeroValue()->read(rb); }
     void readText(DB::ReadBuffer & rb) { zeroValue()->readText(rb); }
-    size_t size() const { return hasZero() ? 1 : 0; }
-    bool empty() const { return !hasZero(); }
-    size_t getBufferSizeInBytes() const { return sizeof(Cell); }
-    size_t getCollisions() const { return 0; }
+    [[nodiscard]] size_t size() const { return hasZero() ? 1 : 0; }
+    [[nodiscard]] bool empty() const { return !hasZero(); }
+    static constexpr size_t initial_buffer_bytes = sizeof(Cell);
+    [[nodiscard]] size_t getBufferSizeInBytes() const { return sizeof(Cell); }
+    [[nodiscard]] size_t getCollisions() const { return 0; }
 };
 
 template <size_t initial_size_degree = 8>
@@ -234,8 +239,11 @@ struct StringHashTableLookupResult
 template <typename SubMaps>
 class StringHashTable : private boost::noncopyable
 {
+public:
+    /// The submaps, one per key class of `dispatchOnKeyClass` (see `submapForClass`).
+    static constexpr size_t NUM_SUBMAPS = 5;
+
 protected:
-    static constexpr size_t NUM_MAPS = 5;
     // Map for storing empty string
     using T0 = typename SubMaps::T0;
 
@@ -275,7 +283,7 @@ protected:
     }
 
     template <size_t key_class>
-    const auto & submapForClass() const
+    [[nodiscard]] const auto & submapForClass() const
     {
         if constexpr (key_class == 0)
             return m0;
@@ -296,8 +304,54 @@ public:
     using value_type = typename Ts::value_type;
     using cell_type = typename Ts::cell_type;
 
+    /// What `getBufferSizeInBytes` returns before any submap grows.
+    static constexpr size_t initial_buffer_bytes = T0::initial_buffer_bytes + T1::initial_buffer_bytes
+        + T2::initial_buffer_bytes + T3::initial_buffer_bytes + Ts::initial_buffer_bytes;
+
     using LookupResult = StringHashTableLookupResult<typename cell_type::mapped_type>;
     using ConstLookupResult = StringHashTableLookupResult<const typename cell_type::mapped_type>;
+
+    /// The type of the cells of the submap of `key_class` (see `submapForClass`). The slot of the empty key
+    /// holds a cell of the type of `ms`.
+    template <size_t key_class>
+    using SubmapCell = typename std::tuple_element_t<key_class, std::tuple<T0, T1, T2, T3, Ts>>::cell_type;
+
+    /// Calls `func(key_class, cell, hash)` for every cell, submap by submap in the order of `submapForClass`.
+    /// `key_class` is the class of the submap as a `std::integral_constant`, `cell` is a
+    /// `SubmapCell<key_class>`, and `hash` is what `hash` computes for the cell's key: a cell hashes its
+    /// packed key, or returns the hash it saved for a key of `ms`.
+    template <typename Func>
+    void ALWAYS_INLINE forEachCellWithHash(Func && func)
+    {
+        if (m0.hasZero())
+            func(std::integral_constant<size_t, 0>{}, *m0.zeroValue(), hash(std::string_view{}));
+        const StringHashTableHash hash_function;
+        static_for<size_t{1}, NUM_SUBMAPS>([&](auto key_class)
+        {
+            for (auto & cell : submapForClass<decltype(key_class)::value>())
+                func(key_class, cell, cell.getHash(hash_function));
+        });
+    }
+
+    /// The key of a cell of the submap of `key_class` as the iterations of a string table hand it out, such
+    /// as `StringHashMap::forEachValueWithHash`: the key of a fixed-size submap is a view of the integer that
+    /// it is packed into, which only `emplaceIteratedKey` may read.
+    template <size_t key_class>
+    static std::string_view ALWAYS_INLINE iteratedKey(const SubmapCell<key_class> & cell)
+    {
+        if constexpr (key_class == 0)
+        {
+            return {};
+        }
+        else
+        {
+            const auto & key = SubmapCell<key_class>::getKey(cell.getValue());
+            if constexpr (std::is_same_v<std::decay_t<decltype(key)>, std::string_view>)
+                return key;
+            else
+                return toStringView(key);
+        }
+    }
 
     /// Visits the size-class sub-tables of two tables of the same type as pairs, in matching order.
     template <typename Func>
@@ -480,7 +534,7 @@ public:
     /// allows that - a `ColumnString` / `ColumnFixedString` data slice, or an arena key holder -
     /// and never a `std::string` or a lone unpadded buffer. Every caller already satisfies it by
     /// construction: they hash exactly the keys they then `emplace` or `find` in the same table.
-    size_t ALWAYS_INLINE hash(const Key & x) const
+    [[nodiscard]] size_t ALWAYS_INLINE hash(const Key & x) const
     {
         return dispatchOnKeyClass(
             [&](auto, size_t) -> const auto & { return m0; },
@@ -524,6 +578,25 @@ public:
     static bool usesStringViewSubmap(std::string_view key)
     {
         return key.size() > 24 || (!key.empty() && key.back() == 0);
+    }
+
+    /// Emplaces a key that an iteration of a string table handed out, with its hash (see `iteratedKey`), as
+    /// `HashTable::emplaceIteratedKey` does for the other tables. A key packed into an integer of a
+    /// fixed-size submap is handed out as a view of that integer in its cell, which the packing must not read
+    /// around (see `hash`), so it is packed again from a padded copy, which the table does not keep. A key of
+    /// `ms` is stored through its view: the memory that holds it for the table it came from, usually an
+    /// arena, must outlive this table.
+    void ALWAYS_INLINE emplaceIteratedKey(std::string_view key, LookupResult & it, bool & inserted, size_t hash_value)
+    {
+        if (key.empty() || usesStringViewSubmap(key))
+        {
+            emplace(key, it, inserted, hash_value);
+            return;
+        }
+        /// The packing reads 8 bytes at a time, as far as 7 bytes before a key of up to 8 bytes.
+        alignas(8) char padded[8 + sizeof(StringKey24) + 8]{};
+        memcpy(padded + 8, key.data(), key.size());
+        emplace(std::string_view(padded + 8, key.size()), it, inserted, hash_value);
     }
 
     void reserveAdditionalStringViewKeys(size_t additional) { ms.reserve(ms.size() + additional); }
@@ -574,7 +647,7 @@ public:
         return dispatchWithHash(*this, x, hash_value, FindCallable{});
     }
 
-    ConstLookupResult ALWAYS_INLINE find(const Key & x, size_t hash_value) const
+    [[nodiscard]] ConstLookupResult ALWAYS_INLINE find(const Key & x, size_t hash_value) const
     {
         return dispatchWithHash(*this, x, hash_value, FindCallable{});
     }
@@ -585,12 +658,12 @@ public:
         dispatchWithHash(*this, std::forward<KeyHolder>(key_holder), hash_value, PrefetchCallable{});
     }
 
-    ConstLookupResult ALWAYS_INLINE find(const Key & x) const
+    [[nodiscard]] ConstLookupResult ALWAYS_INLINE find(const Key & x) const
     {
         return dispatch(*this, x, FindCallable{});
     }
 
-    bool ALWAYS_INLINE has(const Key & x) const
+    [[nodiscard]] bool ALWAYS_INLINE has(const Key & x) const
     {
         return dispatch(*this, x, FindCallable{}) != nullptr;
     }
@@ -624,7 +697,7 @@ public:
         return callable.erased;
     }
 
-    bool ALWAYS_INLINE has(const Key & x, size_t hash_value) const
+    [[nodiscard]] bool ALWAYS_INLINE has(const Key & x, size_t hash_value) const
     {
         return dispatchWithHash(*this, x, hash_value, FindCallable{}) != nullptr;
     }
@@ -673,11 +746,11 @@ public:
         ms.readText(rb);
     }
 
-    size_t size() const { return m0.size() + m1.size() + m2.size() + m3.size() + ms.size(); }
+    [[nodiscard]] size_t size() const { return m0.size() + m1.size() + m2.size() + m3.size() + ms.size(); }
 
-    bool empty() const { return m0.empty() && m1.empty() && m2.empty() && m3.empty() && ms.empty(); }
+    [[nodiscard]] bool empty() const { return m0.empty() && m1.empty() && m2.empty() && m3.empty() && ms.empty(); }
 
-    size_t getBufferSizeInBytes() const
+    [[nodiscard]] size_t getBufferSizeInBytes() const
     {
         return m0.getBufferSizeInBytes() + m1.getBufferSizeInBytes() + m2.getBufferSizeInBytes() + m3.getBufferSizeInBytes()
             + ms.getBufferSizeInBytes();
@@ -685,7 +758,7 @@ public:
 
     void clear()
     {
-        m1.clearHasZero();
+        m0.clearHasZero();
         m1.clear();
         m2.clear();
         m3.clear();
@@ -694,7 +767,7 @@ public:
 
     void clearAndShrink()
     {
-        m1.clearHasZero();
+        m0.clearHasZero();
         m1.clearAndShrink();
         m2.clearAndShrink();
         m3.clearAndShrink();

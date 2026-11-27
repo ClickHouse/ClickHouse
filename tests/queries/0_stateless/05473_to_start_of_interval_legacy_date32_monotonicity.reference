@@ -1,0 +1,46 @@
+compatibility
+Date
+3
+3
+Date	DateTime
+boundary values
+3
+3
+3
+3
+3
+3
+2
+2
+2
+exact count with a skip index
+6
+6
+intervals longer than one unit
+13
+13
+4
+4
+4
+4
+dateTrunc
+3
+3
+2
+2
+time zone
+1
+1
+Nullable key
+3
+3
+2
+2
+order
+1
+order, LowCardinality(Nullable) key
+1
+1
+the primary key is still used where the rounding fits
+1
+1

@@ -7,8 +7,6 @@ doc_type: 'guide'
 sidebarTitle: 'ReplacingMergeTree エンジンの使い方'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 トランザクション型データベースは、更新や削除を伴うトランザクション処理向けのworkloadsに最適化されていますが、OLAPデータベースでは、こうした操作に対する保証は限定的です。代わりに、分析queriesを大幅に高速化するために、batchesで挿入される不変データ向けに最適化されています。ClickHouseは、mutationsによる更新操作に加え、行を軽量に削除する手段も提供していますが、カラム指向のstructureであるため、これらの操作は上で説明したとおり慎重にスケジュールする必要があります。これらの操作は非同期に処理され、単一のthreadで実行され、さらに (更新の場合は) ディスク上のデータを書き換える必要があります。したがって、多数の小さな変更には使用すべきではありません。
 更新行および削除行のstreamを処理しつつ、上記のような使用パターンを避けるには、ClickHouseのtable engineであるReplacingMergeTreeを使用できます。
 
@@ -32,7 +30,15 @@ ReplacingMergeTree では、さらに deleted カラムも指定できます。�
 
 <br />
 
-<Image img="/images/migrations/postgres-replacingmergetree.webp" size="md" alt="ReplacingMergeTree のプロセス" />
+<div className="ch-image-md">
+
+<Frame>
+
+![ReplacingMergeTree のプロセス](/images/migrations/postgres-replacingmergetree.webp)
+
+</Frame>
+
+</div>
 
 <br />
 

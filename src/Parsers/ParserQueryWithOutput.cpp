@@ -315,7 +315,7 @@ SELECT <expr_list> INTO OUTFILE file_name [AND STDOUT] [APPEND | TRUNCATE] [COMP
 - The query will fail if a file with the same file name already exists.
 - The default [output format](/reference/formats/index) is `TabSeparated` (like in the command-line client batch mode). Use [FORMAT](/reference/statements/select/format) clause to change it.
 - If `AND STDOUT` is mentioned in the query then the output that is written to the file is also displayed on standard output. If used with compression, the plaintext is displayed on standard output.
-- If `APPEND` is mentioned in the query then the output is appended to an existing file. If compression is used, append cannot be used.
+- If `APPEND` is mentioned in the query then the output is appended to an existing file. If compression is used, append cannot be used. Formats that do not support appending, such as `JSON`, `Parquet`, `Arrow`, `ORC` and `Avro`, cannot be appended to a non-empty file: the query fails with `CANNOT_APPEND_TO_FILE`. When appending to a non-empty file, the header of formats such as `CSVWithNames` is not written again.
 - When writing to a file that already exists, `APPEND` or `TRUNCATE` must be used.
 
 **Example**

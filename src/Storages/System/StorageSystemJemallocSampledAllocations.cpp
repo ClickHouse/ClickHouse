@@ -20,6 +20,7 @@
 #    include <Processors/ISource.h>
 #    include <Processors/Sources/JemallocProfileSource.h>
 #    include <Common/Jemalloc.h>
+#    include <Common/StackTrace.h>
 #    include <Common/StringUtils.h>
 #    include <Common/filesystemHelpers.h>
 #endif
@@ -142,7 +143,10 @@ protected:
             /// Materialize the stack as Fields lazily: most stacks carry only "t:" records
             /// and never produce a row.
             if (current_stack.empty())
-                current_stack.assign(current_addresses.begin(), current_addresses.end());
+            {
+                for (UInt64 address : current_addresses)
+                    current_stack.push_back(StackTrace::resolveAddressForStorage(reinterpret_cast<const void *>(address)));
+            }
 
             size_t col_num = 0;
             res_columns.at(col_num++)->insert(current_stack);
@@ -201,7 +205,8 @@ ColumnsDescription StorageSystemJemallocSampledAllocations::getColumnsDescriptio
     auto description = ColumnsDescription
     {
         {"trace", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()),
-            "Addresses of the allocating backtrace, leaf frame first (same convention as `system.trace_log.trace`). "
+            "Addresses of the allocating backtrace, leaf frame first. Addresses inside the main ClickHouse binary are stored as "
+            "offsets in it (same convention as `system.trace_log.trace`), and frames outside it are stored as 0. "
             "Empty if jemalloc could not unwind the stack. "
             "Symbolize with `addressToSymbol` and `demangle` (requires `allow_introspection_functions`)."},
         {"age_ns", std::make_shared<DataTypeUInt64>(),

@@ -5,7 +5,6 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
-#include <Core/Defines.h>
 
 namespace CurrentMetrics
 {
@@ -23,8 +22,6 @@ namespace DB::GPU
 
 namespace
 {
-
-constexpr size_t max_kernel_cache_bytes = 256UL << 20;
 
 void checkLoading(cudaError_t status, const std::string & what)
 {
@@ -77,9 +74,7 @@ GPUKernel::~GPUKernel()
     if (!library)
         return;
 
-    cudaError_t status = cudaDeviceSynchronize();
-    if (status == cudaSuccess)
-        status = cudaLibraryUnload(library);
+    const cudaError_t status = cudaLibraryUnload(library);
     if (status != cudaSuccess)
     {
         cudaGetLastError();
@@ -87,13 +82,42 @@ GPUKernel::~GPUKernel()
     }
 }
 
-GPUKernelCache::GPUKernelCache()
-    : CacheBase(
-          CurrentMetrics::GPUExpressionKernelCacheBytes,
-          CurrentMetrics::GPUExpressionKernelCacheCount,
-          max_kernel_cache_bytes,
-          DEFAULT_COMPILED_EXPRESSION_CACHE_MAX_ENTRIES)
+GPUKernelCache::GPUKernelCache(size_t max_size_in_bytes, size_t max_count)
+    : CacheBase(CurrentMetrics::GPUExpressionKernelCacheBytes, CurrentMetrics::GPUExpressionKernelCacheCount, max_size_in_bytes, max_count)
 {
+}
+
+void GPUKernelCache::setMaxSizeInBytes(size_t max_size_in_bytes)
+{
+    Base::setMaxSizeInBytes(max_size_in_bytes);
+    unloadEvicted();
+}
+
+void GPUKernelCache::setMaxCount(size_t max_count)
+{
+    Base::setMaxCount(max_count);
+    unloadEvicted();
+}
+
+void GPUKernelCache::onEntryRemoval(size_t /*weight_loss*/, const MappedPtr & kernel)
+{
+    std::lock_guard lock(evicted_mutex);
+    chassert(!kernel->next_evicted);
+    kernel->next_evicted = std::move(evicted);
+    evicted = kernel;
+}
+
+void GPUKernelCache::unloadEvicted()
+{
+    MappedPtr unloaded;
+    {
+        std::lock_guard lock(evicted_mutex);
+        unloaded = std::move(evicted);
+    }
+    /// The kernels whose last reference was here are unloaded one by one, outside both mutexes. The list is unlinked
+    /// before each kernel goes, so a long list is not destroyed by recursion.
+    while (unloaded)
+        unloaded = std::move(unloaded->next_evicted);
 }
 
 }

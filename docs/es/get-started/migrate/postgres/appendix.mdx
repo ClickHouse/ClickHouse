@@ -6,8 +6,6 @@ description: 'Información adicional sobre la migración desde PostgreSQL'
 doc_type: 'reference'
 ---
 
-import { Image } from "/snippets/es/components/Image.jsx";
-
 <div id="postgres-vs-clickhouse-equivalent-and-different-concepts">
   ## Postgres vs ClickHouse: Conceptos equivalentes y diferentes
 </div>
@@ -40,7 +38,15 @@ ClickHouse usa ClickHouse Keeper (una implementación de ZooKeeper en C++; tambi
 
 El proceso de replicación en ClickHouse (1) comienza cuando se insertan datos en cualquier réplica. Estos datos, en su formato de inserción sin procesar, se (2) escriben en disco junto con sus sumas de verificación. Una vez escritos, la réplica (3) intenta registrar esta nueva parte de datos en Keeper asignándole un número de bloque único y registrando los detalles de la nueva parte. Las demás réplicas, al (4) detectar nuevas entradas en el registro de replicación, (5) descargan la parte de datos correspondiente mediante un protocolo HTTP interno y la verifican con las sumas de verificación registradas en ZooKeeper. Este método garantiza que todas las réplicas acaben teniendo datos consistentes y actualizados, a pesar de las diferencias en la velocidad de procesamiento o de posibles retrasos. Además, el sistema puede gestionar múltiples operaciones de forma concurrente, lo que optimiza los procesos de gestión de datos y permite escalar el sistema y hacerlo más robusto frente a diferencias de hardware.
 
-<Image img="/images/integrations/data-ingestion/dbms/postgres-replicas.webp" size="md" alt="Consistencia eventual" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Consistencia eventual](/images/integrations/data-ingestion/dbms/postgres-replicas.webp)
+
+</Frame>
+
+</div>
 
 Ten en cuenta que ClickHouse Cloud utiliza un [mecanismo de replicación optimizado para Cloud](https://clickhouse.com/blog/clickhouse-cloud-boosts-performance-with-sharedmergetree-and-lightweight-updates) adaptado a su arquitectura de separación entre almacenamiento y compute. Al almacenar los datos en object storage compartido, estos quedan disponibles automáticamente para todos los nodos de compute sin necesidad de replicarlos físicamente entre nodos. En su lugar, Keeper se usa únicamente para compartir metadatos (qué datos existen y dónde están en el object storage) entre los nodos de compute.
 

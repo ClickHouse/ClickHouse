@@ -1,13 +1,12 @@
 #pragma once
 
-#include <GPU/GPUExpression.cuh>
-#include <GPU/GPUExpressionCompiler.h>
-#include <GPU/GPUTypes.cuh>
 #include "config.h"
 
 #if USE_GPU
 
-#include <Core/SettingsEnums.h>
+#include <GPU/GPUExpressionCompiler.h>
+#include <GPU/GPUTypes.cuh>
+
 #include <Processors/QueryPlan/ISourceStep.h>
 #include <Storages/MergeTree/MarkRange.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -40,16 +39,12 @@ public:
         GPU::GPUAggregationKind aggregation;
     };
 
-    /// A `Float64` the device computes from `columns` before it groups the rows, the argument of an aggregate.
+    /// A value the device computes from `columns` before it groups the rows, the argument of an aggregate.
     struct DerivedColumn
     {
-        GPU::GPUExpression expression;
-        /// Keeps the kernel of `expression` loaded.
-        std::shared_ptr<const GPU::GPUKernel> kernel;
+        GPU::CompiledGPUExpression compiled;
         /// Of `columns`, what it loads as its column `i`.
         std::vector<uint32_t> columns;
-        /// Of the values it computes.
-        DataTypePtr type;
         /// The expression as the plan names it.
         String description;
     };
@@ -69,10 +64,8 @@ public:
     /// `columns`, the keys first and then the aggregates.
     struct GroupFilter
     {
-        GPU::GPUExpression expression;
-        /// Keeps the kernel of `expression` loaded.
-        std::shared_ptr<const GPU::GPUKernel> kernel;
-        std::vector<uint32_t> columns;
+        GPU::CompiledGPUExpression compiled;
+        std::vector<size_t> columns;
         /// The predicate as the plan names it.
         String description;
     };
@@ -84,14 +77,11 @@ public:
         MarkRanges ranges;
     };
 
-    /// A `WHERE` the device evaluates before it groups a row, over columns read along with the
-    /// keys and the values.
+    /// A `WHERE` the device evaluates before it groups a row, over `compiled.columns`, read along with the keys and the
+    /// values.
     struct DeviceFilter
     {
-        GPU::GPUExpression expression;
-        /// Keeps the kernel of `expression` loaded.
-        std::shared_ptr<const GPU::GPUKernel> kernel;
-        std::vector<NameAndTypePair> columns;
+        GPU::CompiledGPUExpression compiled;
         /// The predicate as the plan names it.
         String description;
     };
@@ -109,7 +99,6 @@ public:
         ContextPtr context_,
         size_t batch_bytes_,
         size_t num_readers_,
-        GPUDecompressionMode decompression_,
         bool collect_ = false);
 
     String getName() const override { return "ReadFromGPUCompressedColumns"; }
@@ -142,8 +131,6 @@ private:
     size_t batch_bytes;
     /// Threads that read the parts, each a part at a time.
     size_t num_readers;
-    /// Who expands a column of a part: see `gpu_aggregation_decompression`.
-    GPUDecompressionMode decompression;
     /// The rows the filter keeps are sent back, of `columns`, rather than aggregated.
     bool collect;
 };
