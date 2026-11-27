@@ -6,6 +6,7 @@
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/DistinctStep.h>
+#include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Optimizer.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
@@ -493,10 +494,24 @@ void optimizeTreeSecondPass(
     /// Do PREWHERE optimization after all possible filters including JOIN runtime filters were pushed down
     if (optimization_settings.optimize_prewhere)
     {
+        /// A filter moved entirely to PREWHERE leaves an expression in its place, after the expressions were merged.
+        /// Merge it with the expression above, as optimizing the plan again would: a plan fragment of plan-based
+        /// parallel replicas is optimized again, and automatic parallel replicas can't match it with this plan otherwise.
+        /// Not with a filter above, which would be rebuilt and lose its query condition cache key.
+        UnorderedSetWithMemoryTracking<const QueryPlan::Node *> moved_filters;
         traverseQueryPlan(stack, root,
             [&](auto & frame_node)
             {
+                const bool is_filter = typeid_cast<const FilterStep *>(frame_node.step.get()) != nullptr;
                 optimizePrewhere(frame_node, optimization_settings.remove_unused_columns);
+                if (is_filter && typeid_cast<const ExpressionStep *>(frame_node.step.get()))
+                    moved_filters.insert(&frame_node);
+            },
+            [&](auto & frame_node)
+            {
+                if (optimization_settings.merge_expressions && typeid_cast<const ExpressionStep *>(frame_node.step.get())
+                    && frame_node.children.size() == 1 && moved_filters.contains(frame_node.children.front()))
+                    tryMergeExpressions(&frame_node, nodes, extra_settings);
             });
     }
 
