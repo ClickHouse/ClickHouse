@@ -1909,12 +1909,6 @@ void ReadFromMerge::setStreamForChild(
     /// A table without an entry is read from the beginning. The keys of the cursor tree of a query are split by dots,
     /// so the subtree of a name with dots is found by its parts.
     Strings path;
-    for (const auto & part_name : {database_name, table_name})
-    {
-        Strings parts;
-        boost::split(parts, part_name, boost::is_any_of("."));
-        path.insert(path.end(), parts.begin(), parts.end());
-    }
 
     /// An incremental refresh of a materialized view: the bounded read of every table reports its cursor in the
     /// holder of the refresh. The tables matching the `Merge` table may change, so they are checked on every refresh.
@@ -1923,15 +1917,26 @@ void ReadFromMerge::setStreamForChild(
     {
         StorageMaterializedView::validateIncrementalRefreshSource(storage);
 
-        /// The cursor persisted by the refresh is bound to the UUID of the table: a table that is dropped and
-        /// created again under the same name has its blocks numbered from the beginning, so it must be read from
-        /// the beginning instead of resuming from the cursor of its predecessor.
+        /// The cursor persisted by the refresh is a map from the UUID of the table to the cursor of the table, regardless
+        /// of its name: a table that is renamed keeps its data and its position (also when it still matches the `Merge`
+        /// table under the new name), while a table that is dropped and created again under the same name has its blocks
+        /// numbered from the beginning, so it must be read from the beginning instead of resuming from the cursor of its
+        /// predecessor.
         const auto uuid = storage->getStorageID().uuid;
         if (uuid == UUIDHelpers::Nil)
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                 "Table {} of {} has no UUID, so it cannot be the source of an incremental refresh of a materialized view",
                 storage->getStorageID().getNameForLogs(), storage_merge->getStorageID().getNameForLogs());
         path.push_back(toString(uuid));
+    }
+    else
+    {
+        for (const auto & part_name : {database_name, table_name})
+        {
+            Strings parts;
+            boost::split(parts, part_name, boost::is_any_of("."));
+            path.insert(path.end(), parts.begin(), parts.end());
+        }
     }
 
     CursorTreeNodePtr table_cursor = stream_settings.cursor;
@@ -3760,7 +3765,7 @@ SELECT _table, _block_number, _block_offset, * FROM merge_table
 STREAM CURSOR {'db': {'t1': {'all': {'block_number': 5, 'block_offset': 99}}}}
 ```
 
-A table without an entry in the cursor is read from the beginning. The set of tables is determined at the start of the query. If all the tables can be the source of an incremental refresh of a refreshable materialized view (`APPEND INCREMENTAL`), so can the `Merge` table; the tables are checked on every refresh, and a table that starts matching later, or is dropped and created again, is read from the beginning by the next refresh. `WATERMARK` and nested `Merge` tables are not supported.
+A table without an entry in the cursor is read from the beginning. The set of tables is determined at the start of the query. If all the tables can be the source of an incremental refresh of a refreshable materialized view (`APPEND INCREMENTAL`), so can the `Merge` table; the tables are checked on every refresh, and a table that starts matching later, or is dropped and created again, is read from the beginning by the next refresh, while a table that is renamed keeps its position (the refresh tracks the tables by UUID). `WATERMARK` and nested `Merge` tables are not supported.
 
 ## Virtual columns {#virtual-columns}
 
