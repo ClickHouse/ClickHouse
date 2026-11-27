@@ -7,13 +7,16 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # Files with the same size and checksum are stored in a backup once, and `num_entries` counts the stored files.
 # It must not depend on how the stored files are named: by the first file name (the default) or by the checksum.
 # The backup names are unique because `system.backups` is shared by all tests.
+# The table is on the local disk: on object storage a backup takes the checksums of some files from their blob paths
+# (`allow_checksums_from_remote_paths`), and from an encrypted disk it copies each file encrypted with its own IV, so
+# identical files of two parts wouldn't be recognized as duplicates there.
 
 DEFAULT="${CLICKHOUSE_TEST_UNIQUE_NAME}_default"
 CHECKSUM="${CLICKHOUSE_TEST_UNIQUE_NAME}_checksum"
 
 $CLICKHOUSE_CLIENT -m -q "
 DROP TABLE IF EXISTS t;
-CREATE TABLE t (x UInt64) ENGINE = MergeTree ORDER BY x;
+CREATE TABLE t (x UInt64) ENGINE = MergeTree ORDER BY x SETTINGS storage_policy = 'default';
 
 -- Two parts with the same data, so most of their files are identical.
 SYSTEM STOP MERGES t;
