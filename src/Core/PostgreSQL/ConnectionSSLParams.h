@@ -21,7 +21,11 @@ namespace postgres
 ///
 /// For each credential at most one of the two forms may be used. Empty fields are omitted from the
 /// connection string, so libpq keeps its own defaults (in particular, an empty `ssl_mode` leaves
-/// libpq at `sslmode=prefer`).
+/// libpq at `sslmode=prefer`). The one exception is the client credential: unless both a certificate
+/// (`ssl_cert` or `ssl_cert_pem`) and a key (`ssl_key` or `ssl_key_pem`) are set, `sslcertmode=disable`
+/// is sent so that libpq does not fall back to the service account's ambient default certificate or key
+/// (`~/.postgresql/postgresql.{crt,key}`) - a certificate alone would otherwise be paired with the
+/// default key.
 struct ConnectionSSLParams
 {
     String ssl_mode;           /// libpq `sslmode`: disable, allow, prefer, require, verify-ca or verify-full.

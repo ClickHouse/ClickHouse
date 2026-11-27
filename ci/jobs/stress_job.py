@@ -173,10 +173,11 @@ def get_additional_envs(info, check_name: str) -> List[str]:
 
     # Sanitizer builds have no jemalloc. The server dumps heap profiles here on peak growth
     # and on hitting its memory limit (jemalloc_flush_profile.yaml from tests/config), and
-    # stress_tests.lib archives them.
+    # stress_tests.lib archives them. junk:true fills memory on allocation and free, so a
+    # use-after-free or uninitialized read fails close to the bug.
     if not any(san in check_name for san in SANITIZERS):
         result.append(
-            "MALLOC_CONF=prof_prefix:/var/log/clickhouse-server/jemalloc_profiles/clickhouse.jemalloc"
+            "MALLOC_CONF=junk:true,prof_prefix:/var/log/clickhouse-server/jemalloc_profiles/clickhouse.jemalloc"
         )
 
     return result

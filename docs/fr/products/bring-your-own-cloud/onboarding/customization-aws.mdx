@@ -8,7 +8,7 @@ doc_type: 'reference'
 ---
 
 <div id="customer-managed-vpc-aws">
-  ## VPC géré par le client (BYO-VPC) pour AWS
+  ## VPC géré par le client (BYO-VPC) pour AWS {#customer-managed-vpc-aws}
 </div>
 
 Si vous préférez utiliser un VPC existant pour déployer ClickHouse BYOC plutôt que de laisser ClickHouse Cloud créer un nouveau VPC, suivez les étapes ci-dessous. Cette approche vous offre un contrôle accru sur votre configuration réseau et vous permet d’intégrer ClickHouse BYOC à votre infrastructure réseau existante.
@@ -21,23 +21,15 @@ Si vous préférez utiliser un VPC existant pour déployer ClickHouse BYOC plut�
     4. Ajoutez les tags `kubernetes.io/role/internal-elb=1` et `clickhouse-byoc="true"` à chaque sous-réseau afin de permettre une configuration correcte de l’équilibreur de charge.
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Sous-réseau VPC BYOC](/images/cloud/reference/byoc-subnet-1.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Sous-réseau VPC BYOC](/images/cloud/reference/byoc-subnet-1.webp)
+      </Frame>
     </div>
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Tags de sous-réseau VPC BYOC](/images/cloud/reference/byoc-subnet-2.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Tags de sous-réseau VPC BYOC](/images/cloud/reference/byoc-subnet-2.webp)
+      </Frame>
     </div>
   </Step>
 
@@ -45,13 +37,9 @@ Si vous préférez utiliser un VPC existant pour déployer ClickHouse BYOC plut�
     Si votre VPC n&#39;a pas encore de point de terminaison Gateway S3 configuré, vous devrez en créer un pour permettre une communication sécurisée et privée entre votre VPC et Amazon S3. Ce point de terminaison permet à vos services ClickHouse d&#39;accéder à S3 sans passer par l&#39;internet public. Reportez-vous à la capture d&#39;écran ci-dessous pour voir un exemple de configuration.
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Point de terminaison S3 BYOC](/images/cloud/reference/byoc-s3-endpoint.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Point de terminaison S3 BYOC](/images/cloud/reference/byoc-s3-endpoint.webp)
+      </Frame>
     </div>
   </Step>
 
@@ -81,7 +69,7 @@ Si vous préférez utiliser un VPC existant pour déployer ClickHouse BYOC plut�
       Les buckets de stockage, le cluster Kubernetes et les ressources de calcul nécessaires à l’exécution de ClickHouse ne sont pas inclus dans cette configuration initiale. Ils seront provisionnés à une étape ultérieure. Même si vous contrôlez votre VPC, ClickHouse Cloud a toujours besoin d’autorisations IAM pour créer et gérer le cluster Kubernetes, les rôles IAM pour les comptes de service, les buckets S3 et d’autres ressources essentielles dans votre compte AWS.
     </Note>
 
-#### Module Terraform
+#### Module Terraform {#terraform-module-aws}
 
     Si vous préférez utiliser Terraform plutôt que CloudFormation, utilisez le module [terraform-byoc-onboarding](https://github.com/ClickHouse/terraform-byoc-onboarding) :
 
@@ -118,13 +106,9 @@ Si vous préférez utiliser un VPC existant pour déployer ClickHouse BYOC plut�
     5. Cliquez sur **Set up Infrastructure** pour lancer le provisionnement.
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![UI de configuration BYOC de ClickHouse Cloud avec Use existing VPC sélectionné](/images/cloud/reference/byoc-aws-existing-vpc-ui.webp)
-
-    </Frame>
-
+      <Frame>
+        ![UI de configuration BYOC de ClickHouse Cloud avec Use existing VPC sélectionné](/images/cloud/reference/byoc-aws-existing-vpc-ui.webp)
+      </Frame>
     </div>
 
     <Note>

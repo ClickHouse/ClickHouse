@@ -970,20 +970,19 @@ See also /etc/clickhouse-server/users.xml on the server where ClickHouse is inst
     }
 }
 
-void AccessControl::restoreFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup)
+AccessControl::StoragePtr AccessControl::getStorageForRestore()
 {
-    StoragePtr destination;
     for (const auto & storage : getStorages())
     {
         if (storage->isRestoreAllowed())
-        {
-            destination = storage;
-            break;
-        }
+            return storage;
     }
+    throwRestoreNotAllowed();
+}
 
-    if (!destination)
-        throwRestoreNotAllowed();
+void AccessControl::restoreFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup)
+{
+    StoragePtr destination = getStorageForRestore();
 
     if (destination->isReplicated())
     {

@@ -11,7 +11,7 @@ chDB は、[ClickHouse](https://github.com/clickhouse/clickhouse) v25.8.2.1 を�
 ClickHouse server に接続しなくても、プログラミング言語から ClickHouse の機能を利用したい場合に使えます。
 
 <div id="key-features">
-  ## 主な機能
+  ## 主な機能 {#key-features}
 </div>
 
 * **In-process SQL OLAP Engine** - ClickHouse を基盤とし、ClickHouse server を別途インストールする必要はありません
@@ -22,7 +22,7 @@ ClickHouse server に接続しなくても、プログラミング言語から C
 * **DataStore API** - SQL 最適化を備えた pandas-compatible API で、630 以上の methods をサポート
 
 <div id="datastore">
-  ## DataStore: pandas互換API
+  ## DataStore: pandas互換API {#datastore}
 </div>
 
 **NEW!** DataStore は、使い慣れた pandas 構文と ClickHouse のパフォーマンスを組み合わせた pandas互換API を提供します。
@@ -35,7 +35,7 @@ ClickHouse server に接続しなくても、プログラミング言語から C
 </Tip>
 
 <div id="one-line-migration">
-  ### ワンライナーでの移行
+  ### ワンライナーでの移行 {#one-line-migration}
 </div>
 
 ```python
@@ -48,7 +48,7 @@ result = df[df['age'] > 25].groupby('city')['salary'].mean()
 ```
 
 <div id="performance-highlights">
-  ### パフォーマンスの概要
+  ### パフォーマンスの概要 {#performance-highlights}
 </div>
 
 | 操作               | pandas  | DataStore | 高速化率       |
@@ -60,7 +60,7 @@ result = df[df['age'] > 25].groupby('city')['salary'].mean()
 *1,000万行でのベンチマーク*
 
 <div id="datastore-features">
-  ### DataStore の機能
+  ### DataStore の機能 {#datastore-features}
 </div>
 
 * **630 を超える API メソッド** - 209 個の pandas DataFrame メソッド、185 個超のアクセサメソッド
@@ -71,7 +71,7 @@ result = df[df['age'] > 25].groupby('city')['salary'].mean()
 詳しくは: [DataStore ドキュメント](/ja/chdb/datastore/index)
 
 <div id="what-languages-are-supported-by-chdb">
-  ## chDBはどの言語をサポートしていますか？
+  ## chDBはどの言語をサポートしていますか？ {#what-languages-are-supported-by-chdb}
 </div>
 
 chDBは次の言語バインディングに対応しています。
@@ -83,15 +83,13 @@ chDBは次の言語バインディングに対応しています。
 * [Bun](/ja/chdb/install/bun)
 * [C と C++](/ja/chdb/install/c)
 
-<div id="how-do-i-get-started">
-  ## はじめるには？
-</div>
+## はじめるには？ {#how-do-i-get-started}
 
 * [Go](/ja/chdb/install/go)、[Rust](/ja/chdb/install/rust)、[NodeJS](/ja/chdb/install/nodejs)、[Bun](/ja/chdb/install/bun)、または [C/C++](/ja/chdb/install/c) を使用している場合は、それぞれの言語向けページを参照してください。
-* Python を使用している場合は、[入門開発者ガイド](/ja/chdb/getting-started) または [chDB オンデマンドコース](<https://learn.clickhouse.com/chdb-data-analytics-with-clickhouse-and-python>) を参照してください。
+* Python を使用している場合は、[入門開発者ガイド](/ja/chdb/getting-started) または [chDBオンデマンドコース](https://learn.clickhouse.com/chdb-data-analytics-with-clickhouse-and-python) を参照してください。
 
 <div id="for-pandas-users">
-  ### pandasユーザー向け
+  ### pandasユーザー向け {#for-pandas-users}
 </div>
 
 ClickHouseの性能を活かしながら、使い慣れたpandasのように扱うには、まずDataStore APIから始めてください。
@@ -103,7 +101,7 @@ ClickHouseの性能を活かしながら、使い慣れたpandasのように扱�
 * [パフォーマンスガイド](/ja/chdb/guides/pandas-performance) - 最適化のヒント
 
 <div id="datastore-reference">
-  ### DataStore API リファレンス
+  ### DataStore API リファレンス {#datastore-reference}
 </div>
 
 * [ファクトリメソッド](/ja/chdb/datastore/factory-methods) - ファイル、データベース、クラウドストレージから作成
@@ -114,7 +112,7 @@ ClickHouseの性能を活かしながら、使い慣れたpandasのように扱�
 * [デバッグ](/ja/chdb/debugging/index) - explain()、プロファイリング、ログ
 
 <div id="sql-guides">
-  ### SQL API ガイド
+  ### SQL API ガイド {#sql-guides}
 </div>
 
 * [Python API リファレンス](/ja/chdb/api/python) - SQL API の完全なドキュメント
@@ -127,7 +125,7 @@ ClickHouseの性能を活かしながら、使い慣れたpandasのように扱�
 * [clickhouse-local database の使用](/ja/chdb/guides/clickhouse-local)
 
 <div id="an-introductory-video">
-  ## chDB の紹介ビデオ
+  ## chDB の紹介ビデオ {#an-introductory-video}
 </div>
 
 chDB の概要を短いビデオで紹介します。ClickHouse のパワーを Python 環境で活用する方法をご覧ください。
@@ -139,7 +137,7 @@ chDB の概要を短いビデオで紹介します。ClickHouse のパワーを 
 </div>
 
 <div id="performance-benchmarks">
-  ## パフォーマンスベンチマーク
+  ## パフォーマンスベンチマーク {#performance-benchmarks}
 </div>
 
 chDBは、さまざまなユースケースで優れたパフォーマンスを発揮します。
@@ -149,27 +147,21 @@ chDBは、さまざまなユースケースで優れたパフォーマンスを�
 * **[DataStore と Pandas](/ja/chdb/datastore/index#performance)** - 一般的な操作では pandas より最大20倍高速
 
 <div className="ch-image-md">
-
-<Frame>
-
-![DataFrameのベンチマーク結果](/images/chdb/df_bench.webp)
-
-</Frame>
-
+  <Frame>
+    ![DataFrame ベンチマーク結果](/images/chdb/df_bench.webp)
+  </Frame>
 </div>
 
-<div id="about-chdb">
-  ## chDBについて
-</div>
+## chDBについて {#about-chdb}
 
 * [ブログ](https://clickhouse.com/blog/chdb-embedded-clickhouse-rocket-engine-on-a-bicycle)で、chDBプロジェクト誕生の全貌をご覧ください
 * [ブログ](https://clickhouse.com/blog/welcome-chdb-to-clickhouse)で、chDBとそのユースケースについてご覧ください
-* [chDBのオンデマンドコース](<https://learn.clickhouse.com/chdb-data-analytics-with-clickhouse-and-python>)を受講してください
+* [chDBオンデマンドコース](https://learn.clickhouse.com/chdb-data-analytics-with-clickhouse-and-python)を受講してください
 * [codapi examples](https://antonz.org/trying-chdb/)を使って、ブラウザーでchDBを試してみてください
 * その他の例については、(https://github.com/chdb-io/chdb/tree/main/examples) を参照してください
 
 <div id="license">
-  ## ライセンス
+  ## ライセンス {#license}
 </div>
 
 chDB は Apache License 2.0 の下で提供されています。詳細については、[LICENSE](https://github.com/chdb-io/chdb/blob/main/LICENSE.txt) を参照してください。

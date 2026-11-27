@@ -7,13 +7,13 @@ doc_type: 'reference'
 ---
 
 <div id="postgres-vs-clickhouse-equivalent-and-different-concepts">
-  ## Postgres vs ClickHouse: 대응되는 개념과 차이점
+  ## Postgres vs ClickHouse: 대응되는 개념과 차이점 {#postgres-vs-clickhouse-equivalent-and-different-concepts}
 </div>
 
 ACID 트랜잭션에 익숙한 OLTP 시스템 사용자라면, ClickHouse가 성능을 위해 이를 완전하게 제공하는 대신 의도적으로 일부를 절충한다는 점을 알아야 합니다. ClickHouse의 동작 방식을 잘 이해하면 높은 내구성 보장과 높은 쓰기 처리량을 확보할 수 있습니다. 아래에서는 Postgres에서 ClickHouse로 작업을 시작하기 전에 숙지해야 할 몇 가지 핵심 개념을 소개합니다.
 
 <div id="shards-vs-replicas">
-  ### 세그먼트와 레플리카 비교
+  ### 세그먼트와 레플리카 비교 {#shards-vs-replicas}
 </div>
 
 세그먼트 분할과 복제는 저장소 및/또는 컴퓨트가 성능 병목이 될 때 단일 Postgres 인스턴스를 넘어 스케일링하기 위해 사용하는 두 가지 전략입니다. Postgres에서 세그먼트 분할은 대규모 데이터베이스를 여러 노드에 걸쳐 더 작고 관리하기 쉬운 조각으로 나누는 것을 의미합니다. 하지만 Postgres는 세그먼트 분할을 네이티브로 지원하지 않습니다. 대신 [Citus](https://www.citusdata.com/)와 같은 확장 기능을 사용해 세그먼트 분할을 구현할 수 있으며, 이 경우 Postgres는 수평 확장이 가능한 분산 데이터베이스가 됩니다. 이러한 접근 방식은 여러 머신에 부하를 분산해 Postgres가 더 높은 트랜잭션 처리량과 더 큰 데이터셋을 처리할 수 있게 합니다. 세그먼트는 트랜잭션 처리 또는 분석과 같은 워크로드 유형에 유연하게 대응할 수 있도록 행 기반 또는 스키마 기반으로 구성할 수 있습니다. 세그먼트 분할은 여러 머신 간 조정과 일관성 보장이 필요하므로 데이터 관리와 쿼리 실행 측면에서 상당한 복잡성을 초래할 수 있습니다.
@@ -30,30 +30,24 @@ ACID 트랜잭션에 익숙한 OLTP 시스템 사용자라면, ClickHouse가 성
 
 > ClickHouse Cloud는 S3에 저장된 단일 데이터 복사본과 여러 컴퓨트 레플리카를 사용합니다. 데이터는 각 레플리카 노드에서 사용할 수 있으며, 각 노드에는 로컬 SSD 캐시가 있습니다. 이는 ClickHouse Keeper를 통한 메타데이터 복제에만 의존합니다.
 
-<div id="eventual-consistency">
-  ## 최종 일관성
-</div>
+## 최종 일관성(Consistency) {#eventual-consistency}
 
-ClickHouse는 내부 복제 메커니즘을 관리하기 위해 ClickHouse Keeper(C++로 구현된 ZooKeeper 구현체이며, ZooKeeper도 사용할 수 있음)를 사용하며, 주로 메타데이터 저장과 최종 일관성 보장에 중점을 둡니다. Keeper는 분산 환경에서 각 삽입에 고유한 순차 번호를 할당하는 데 사용됩니다. 이는 작업 전반에서 순서와 일관성을 유지하는 데 매우 중요합니다. 또한 이 프레임워크는 머지 및 뮤테이션과 같은 백그라운드 작업도 처리하며, 이러한 작업이 분산되어 수행되면서도 모든 레플리카에서 동일한 순서로 실행되도록 보장합니다. 메타데이터 외에도 Keeper는 저장된 데이터 파트의 체크섬 추적을 포함해 복제 전반을 제어하는 포괄적인 제어 센터 역할을 하며, 레플리카 간 분산 알림 시스템으로도 작동합니다.
+ClickHouse는 내부 복제 메커니즘을 관리하기 위해 ClickHouse Keeper(C++로 구현된 ZooKeeper 구현체이며, ZooKeeper도 사용할 수 있음)를 사용하며, 주로 메타데이터 저장과 최종 일관성(Consistency) 보장에 중점을 둡니다. Keeper는 분산 환경에서 각 삽입에 고유한 순차 번호를 할당하는 데 사용됩니다. 이는 작업 전반에서 순서와 일관성(Consistency)을 유지하는 데 매우 중요합니다. 또한 이 프레임워크는 머지 및 뮤테이션과 같은 백그라운드 작업도 처리하며, 이러한 작업이 분산되어 수행되면서도 모든 레플리카에서 동일한 순서로 실행되도록 보장합니다. 메타데이터 외에도 Keeper는 저장된 데이터 파트의 체크섬 추적을 포함해 복제 전반을 제어하는 포괄적인 제어 센터 역할을 하며, 레플리카 간 분산 알림 시스템으로도 작동합니다.
 
 ClickHouse의 복제 프로세스는 (1) 데이터가 임의의 레플리카에 삽입될 때 시작됩니다. 이 데이터는 원시 삽입 형태 그대로 (2) 체크섬과 함께 디스크에 기록됩니다. 기록이 완료되면 해당 레플리카는 (3) 고유한 블록 번호를 할당하고 새 파트의 세부 정보를 기록하여 이 새로운 데이터 파트를 Keeper에 등록하려고 시도합니다. 다른 레플리카는 복제 로그의 새 항목을 (4) 감지하면, (5) 내부 HTTP 프로토콜을 통해 해당 데이터 파트를 다운로드하고 ZooKeeper에 기록된 체크섬과 대조해 검증합니다. 이 방식은 처리 속도가 다르거나 지연이 발생하더라도 모든 레플리카가 결국 일관되고 최신 상태의 데이터를 보유하도록 보장합니다. 또한 이 시스템은 여러 작업을 동시에 처리할 수 있어 데이터 관리 프로세스를 최적화하고, 시스템 확장성과 하드웨어 차이에 대한 견고성을 높입니다.
 
 <div className="ch-image-md">
-
-<Frame>
-
-![최종 일관성](/images/integrations/data-ingestion/dbms/postgres-replicas.webp)
-
-</Frame>
-
+  <Frame>
+    ![최종 일관성(Consistency)](/images/integrations/data-ingestion/dbms/postgres-replicas.webp)
+  </Frame>
 </div>
 
 ClickHouse Cloud는 스토리지와 컴퓨트가 분리된 아키텍처에 맞게 조정된 [클라우드 최적화 복제 메커니즘](https://clickhouse.com/blog/clickhouse-cloud-boosts-performance-with-sharedmergetree-and-lightweight-updates)을 사용한다는 점에 유의하십시오. 데이터를 공유 객체 스토리지에 저장하므로 노드 간 데이터를 물리적으로 복제할 필요 없이 모든 컴퓨트 노드에서 데이터에 자동으로 접근할 수 있습니다. 대신 Keeper는 컴퓨트 노드 간에 메타데이터만(어떤 데이터가 객체 스토리지의 어디에 존재하는지) 공유하는 데 사용됩니다.
 
-PostgreSQL은 ClickHouse와 비교해 다른 복제 전략을 사용하며, 주로 스트리밍 복제를 사용합니다. 이 방식은 프라이머리-레플리카 모델을 기반으로 하며, 데이터가 프라이머리에서 하나 이상의 레플리카 노드로 지속적으로 스트리밍됩니다. 이러한 유형의 복제는 거의 실시간에 가까운 일관성을 보장하며, 동기식 또는 비동기식으로 구성할 수 있어 관리자가 가용성과 일관성 간의 균형을 제어할 수 있습니다. ClickHouse와 달리 PostgreSQL은 WAL(Write-Ahead Logging), 논리적 복제 및 디코딩을 사용해 노드 간 데이터 객체와 변경 사항을 스트리밍합니다. PostgreSQL의 이 접근 방식은 더 단순하지만, 분산 작업 조정과 최종 일관성을 위해 Keeper를 복합적으로 활용하는 ClickHouse가 고도로 분산된 환경에서 달성하는 수준의 확장성과 장애 허용은 제공하지 못할 수 있습니다.
+PostgreSQL은 ClickHouse와 비교해 다른 복제 전략을 사용하며, 주로 스트리밍 복제를 사용합니다. 이 방식은 프라이머리-레플리카 모델을 기반으로 하며, 데이터가 프라이머리에서 하나 이상의 레플리카 노드로 지속적으로 스트리밍됩니다. 이러한 유형의 복제는 거의 실시간에 가까운 일관성(Consistency)을 보장하며, 동기식 또는 비동기식으로 구성할 수 있어 관리자가 가용성과 일관성(Consistency) 간의 균형을 제어할 수 있습니다. ClickHouse와 달리 PostgreSQL은 WAL(Write-Ahead Logging), 논리적 복제 및 디코딩을 사용해 노드 간 데이터 객체와 변경 사항을 스트리밍합니다. PostgreSQL의 이 접근 방식은 더 단순하지만, 분산 작업 조정과 최종 일관성(Consistency)을 위해 Keeper를 복합적으로 활용하는 ClickHouse가 고도로 분산된 환경에서 달성하는 수준의 확장성과 장애 허용은 제공하지 못할 수 있습니다.
 
 <div id="user-implications">
-  ## 사용자에게 미치는 영향
+  ## 사용자에게 미치는 영향 {#user-implications}
 </div>
 
 ClickHouse에서는 Keeper가 관리하는 최종 일관성 기반 복제 모델로 인해 더티 리드(dirty read)가 발생할 수 있습니다. 즉, 한 레플리카에 데이터를 기록한 뒤 다른 레플리카에서 아직 복제되지 않은 데이터를 읽게 될 가능성이 있습니다. 이 모델은 분산 시스템 전반에서 성능과 확장성을 중시하며, 각 레플리카가 독립적으로 동작하면서 비동기적으로 동기화될 수 있도록 합니다. 그 결과, 새로 삽입된 데이터는 복제 지연과 변경 사항이 시스템 전체에 전파되는 데 걸리는 시간에 따라 모든 레플리카에 즉시 반영되지 않을 수 있습니다.
@@ -61,7 +55,7 @@ ClickHouse에서는 Keeper가 관리하는 최종 일관성 기반 복제 모델
 반면 PostgreSQL의 스트리밍 복제 모델은 일반적으로 동기 복제 옵션을 통해 더티 리드를 방지할 수 있습니다. 이 방식에서는 프라이머리가 트랜잭션을 커밋하기 전에, 적어도 하나의 레플리카가 데이터를 수신했음을 확인할 때까지 대기합니다. 이를 통해 트랜잭션이 커밋되면 해당 데이터가 다른 레플리카에도 존재한다는 보장이 제공됩니다. 프라이머리에 장애가 발생하더라도 레플리카는 쿼리 시 커밋된 데이터를 볼 수 있도록 하므로, 더 엄격한 수준의 일관성을 유지합니다.
 
 <div id="recommendations">
-  ## 권장 사항
+  ## 권장 사항 {#recommendations}
 </div>
 
 ClickHouse를 처음 사용하는 사용자는 복제된 환경에서 이러한 차이가 나타날 수 있다는 점을 알아야 합니다. 일반적으로 수십억, 많게는 수조 개의 데이터 포인트를 분석하는 환경에서는 최종 일관성만으로도 충분합니다. 이러한 환경에서는 메트릭이 비교적 안정적이거나, 새로운 데이터가 지속적으로 높은 속도로 삽입되므로 추정값만으로도 충분한 경우가 많습니다.
@@ -69,7 +63,7 @@ ClickHouse를 처음 사용하는 사용자는 복제된 환경에서 이러한 
 필요한 경우 읽기 일관성을 높일 수 있는 몇 가지 방법이 있습니다. 두 예시 모두 복잡성이나 오버헤드 증가를 수반하므로, 쿼리 성능이 저하되고 ClickHouse를 확장하기도 더 어려워집니다. **이러한 방식은 반드시 필요한 경우에만 사용할 것을 권장합니다.**
 
 <div id="consistent-routing">
-  ## 일관된 라우팅
+  ## 일관된 라우팅 {#consistent-routing}
 </div>
 
 최종 일관성의 일부 한계를 보완하려면 클라이언트가 항상 동일한 레플리카로 라우팅되도록 할 수 있습니다. 이는 여러 사용자가 ClickHouse에 쿼리를 보내고, 요청 간 결과가 결정적으로 일관되어야 하는 경우에 유용합니다. 새 데이터가 삽입되면 결과는 달라질 수 있지만, 동일한 레플리카를 쿼리하면 일관된 뷰를 유지할 수 있습니다.
@@ -77,7 +71,7 @@ ClickHouse를 처음 사용하는 사용자는 복제된 환경에서 이러한 
 이는 아키텍처와 ClickHouse OSS 또는 ClickHouse Cloud 사용 여부에 따라 여러 가지 방식으로 구현할 수 있습니다.
 
 <div id="clickhouse-cloud">
-  ## ClickHouse Cloud
+  ## ClickHouse Cloud {#clickhouse-cloud}
 </div>
 
 ClickHouse Cloud는 S3에 저장된 단일 데이터 사본과 여러 컴퓨트 레플리카를 사용합니다. 데이터는 로컬 SSD 캐시를 갖춘 각 레플리카 노드에서 사용할 수 있습니다. 따라서 일관된 결과를 보장하려면 동일한 노드로 일관되게 라우팅되도록 하면 됩니다.
@@ -89,7 +83,7 @@ ClickHouse Cloud 서비스의 노드와의 통신은 프록시를 통해 이루�
 > 스티키 엔드포인트에 대한 액세스는 지원팀에 문의하십시오.
 
 <div id="clickhouse-oss">
-  ## ClickHouse OSS
+  ## ClickHouse OSS {#clickhouse-oss}
 </div>
 
 OSS에서 이러한 동작을 구현하는 방법은 세그먼트와 레플리카의 토폴로지, 그리고 쿼리에 [분산 테이블](/ko/reference/engines/table-engines/special/distributed)을 사용하는지에 따라 달라집니다.
@@ -103,7 +97,7 @@ OSS에서 이러한 동작을 구현하는 방법은 세그먼트와 레플리�
 > 분산 테이블을 만들 때는 cluster를 지정해야 합니다. `config.xml`에 지정하는 이 cluster 정의에는 세그먼트(및 해당 레플리카)가 나열되므로, 사용자는 각 노드에서 사용 순서를 제어할 수 있습니다. 이를 통해 선택이 항상 같은 방식으로 이루어지도록 할 수 있습니다.
 
 <div id="sequential-consistency">
-  ## 순차 일관성
+  ## 순차 일관성 {#sequential-consistency}
 </div>
 
 예외적인 상황에서는 순차 일관성이 필요할 수 있습니다.
@@ -125,7 +119,7 @@ OSS에서 이러한 동작을 구현하는 방법은 세그먼트와 레플리�
 > 삽입과 읽기가 더 느려질 수 있습니다. ClickHouse Cloud에서 기본 테이블 엔진으로 사용되는 SharedMergeTree는 순차 일관성 사용 시 [오버헤드가 더 적고 확장성이 더 뛰어납니다](/ko/products/cloud/features/infrastructure/shared-merge-tree#consistency). OSS에서는 이 방식을 신중하게 사용하고 Keeper 부하를 측정해야 합니다.
 
 <div id="transactional-acid-support">
-  ## 트랜잭션(ACID) 지원
+  ## 트랜잭션(ACID) 지원 {#transactional-acid-support}
 </div>
 
 PostgreSQL에서 마이그레이션하는 사용자는 ACID(Atomicity, Consistency, Isolation, Durability) 속성에 대한 PostgreSQL의 강력한 지원에 익숙할 수 있습니다. 이러한 특성 덕분에 PostgreSQL은 트랜잭션 데이터베이스에 적합한 신뢰할 수 있는 선택지로 여겨집니다. PostgreSQL의 atomicity는 각 transaction을 하나의 단위로 처리하여, 완전히 성공하거나 전체가 롤백되도록 함으로써 부분 업데이트를 방지합니다. consistency는 모든 데이터베이스 transaction이 유효한 상태에 도달하도록 constraints, triggers, 규칙을 적용해 유지됩니다. PostgreSQL은 Read Committed부터 Serializable까지의 isolation level을 지원하므로 concurrent transaction이 수행한 변경 사항의 가시성을 세밀하게 제어할 수 있습니다. 마지막으로 durability는 write-ahead logging(WAL)을 통해 보장되며, transaction이 한 번 커밋되면 시스템 장애가 발생하더라도 그 상태가 유지됩니다.
@@ -137,7 +131,7 @@ PostgreSQL에서 마이그레이션하는 사용자는 ACID(Atomicity, Consisten
 ClickHouse는 [제한된 구성](/ko/concepts/features/operations/insert/transactions)에서 ACID 속성을 제공합니다. 가장 단순한 예는 하나의 파티션을 사용하는 비복제 MergeTree 테이블 엔진 인스턴스입니다. 이러한 경우를 벗어나면 이런 속성을 기대해서는 안 되며, 이것이 필수 요구 사항이 아닌지 확인해야 합니다.
 
 <div id="compression">
-  ## 압축
+  ## 압축 {#compression}
 </div>
 
 ClickHouse&#39;s 컬럼 지향 스토리지는 Postgres와 비교할 때 압축 효율이 훨씬 더 뛰어난 경우가 많습니다. 다음은 두 데이터베이스에서 모든 Stack Overflow 테이블의 스토리지 요구 사항을 비교한 예시입니다:
@@ -177,9 +171,7 @@ GROUP BY `table`
 
 압축 최적화 및 측정에 관한 자세한 내용은 [여기](/ko/guides/clickhouse/data-modelling/compression/compression-in-clickhouse)에서 확인할 수 있습니다.
 
-<div id="data-type-mappings">
-  ## 데이터 타입 매핑
-</div>
+## 데이터 타입 매핑 {#data-type-mappings}
 
 다음 표는 Postgres와 대응되는 ClickHouse 데이터 타입을 보여줍니다.
 

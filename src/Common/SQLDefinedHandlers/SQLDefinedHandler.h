@@ -1,6 +1,7 @@
 #pragma once
 
 #include <base/types.h>
+#include <Access/Common/SQLSecurityDefs.h>
 #include <Core/Names.h>
 #include <Common/re2.h>
 
@@ -57,6 +58,13 @@ struct SQLDefinedHandler
 
     /// The canonical CREATE HANDLER statement, used for persistence and introspection.
     String create_statement;
+
+    /// The `SQL SECURITY` of the query; not set means `INVOKER` (the query runs as the requesting user).
+    std::optional<SQLSecurityType> sql_security_type;
+    std::optional<String> definer;
+
+    /// Whether `readonly` rejects the query, so it can run only for a mutating HTTP method.
+    bool requires_mutating_method = false;
 
     /// Whether a request to this handler can consume the HTTP request body: an `INSERT` takes the body as its
     /// data, and a query using the `_request_body` parameter reads it explicitly. Only for such handlers must a

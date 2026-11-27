@@ -69,17 +69,11 @@ import SettingsInfoBlock from "/snippets/zh/components/SettingsInfoBlock/Setting
 
 ## max_iceberg_manifest_decode_thread_pool_free_size {#max_iceberg_manifest_decode_thread_pool_free_size}
 
-<SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="Yes" />
-
-在用于解码 Iceberg 数据 manifest 文件的线程池中，可保留的空闲备用线程的最大数量。
+<SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="No" />在用于解码 Iceberg 数据 manifest 文件的线程池中，可保留的空闲备用线程的最大数量。该设置已弃用且不起作用：Iceberg 清单文件在 IO 线程池中读取。
 
 ## max_iceberg_manifest_decode_thread_pool_size {#max_iceberg_manifest_decode_thread_pool_size}
 
-<SettingsInfoBlock type="UInt64" default_value="100" changeable_without_restart="Yes" />
-
-用于解码 Iceberg 数据 manifest 文件的最大线程总数。
-
-该 pool 特意与 IO pool 分开：解码 task 可能会阻塞，直到查询消费掉它已产生的 entries；而 delete manifest 的解码则会在任何 entry 被消费之前，先等待其在 IO pool 上的 tasks 完成——共用同一个 pool 可能导致死锁。
+<SettingsInfoBlock type="UInt64" default_value="100" changeable_without_restart="No" />用于解码 Iceberg 数据 manifest 文件的最大线程总数。该设置已弃用，且不再生效：Iceberg 清单文件改为在 IO 线程池中读取。
 
 ## max_keep_alive_requests {#max_keep_alive_requests}
 

@@ -894,7 +894,7 @@ StorageURLSource::StorageURLSource(
     , columns_description(info.columns_description)
     , requested_columns(info.requested_columns)
     , need_headers_virtual_column(info.requested_virtual_columns.contains("_headers"))
-    , requested_virtual_columns(info.requested_virtual_columns.eraseNames({"_headers"}))
+    , requested_virtual_columns(info.requested_virtual_columns)
     , block_for_format(info.format_header)
     , uri_iterator(uri_iterator_)
     , format(format_)
@@ -1052,7 +1052,9 @@ StorageURLSource::StorageURLSource(
 
         QueryPipelineBuilder builder;
         std::optional<size_t> num_rows_from_cache = std::nullopt;
-        if (need_only_count && !has_request_body && getContext()->getSettingsRef()[Setting::use_cache_for_count_from_files])
+        /// The number of rows from the cache is returned without a request for the data, while the `_headers`
+        /// virtual column is the headers of the response to that request. Do the request when `_headers` is requested.
+        if (need_only_count && !has_request_body && !need_headers_virtual_column && getContext()->getSettingsRef()[Setting::use_cache_for_count_from_files])
             num_rows_from_cache = tryGetNumRowsFromCache(curr_uri.toString(), current_file_last_modified);
 
         if (num_rows_from_cache)
@@ -1134,7 +1136,7 @@ StorageURLSource::~StorageURLSource() = default;
 void StorageURLSource::releaseReader()
 {
     if (pipeline)
-        (*pipeline).reset();
+        pipeline->reset();
     reader.reset();
     input_format.reset();
     read_buf.reset();
@@ -1294,6 +1296,15 @@ Chunk StorageURLSource::generate()
                     getContext());
             }
 
+            chassert(dynamic_cast<ReadWriteBufferFromHTTP *>(read_buf.get()));
+            if (need_headers_virtual_column && !http_response_headers_initialized)
+            {
+                http_response_headers = dynamic_cast<ReadWriteBufferFromHTTP *>(read_buf.get())->getResponseHeaders();
+                http_response_headers_initialized = true;
+            }
+
+            /// `_headers` is added along with the other virtual columns, in the order they are requested in,
+            /// which is the order of the columns in the header of the source.
             VirtualColumnUtils::addRequestedFileLikeStorageVirtualsToChunk(
                 chunk,
                 requested_virtual_columns,
@@ -1304,25 +1315,11 @@ Chunk StorageURLSource::generate()
                     .last_modified = current_file_last_modified
                         ? std::optional<Poco::Timestamp>(Poco::Timestamp::fromEpochTime(*current_file_last_modified))
                         : std::nullopt,
+                    .http_response_headers = need_headers_virtual_column ? &http_response_headers : nullptr,
                 },
                 getContext(),
                 format_settings);
 
-            chassert(dynamic_cast<ReadWriteBufferFromHTTP *>(read_buf.get()));
-            if (need_headers_virtual_column)
-            {
-                if (!http_response_headers_initialized)
-                {
-                    http_response_headers = dynamic_cast<ReadWriteBufferFromHTTP *>(read_buf.get())->getResponseHeaders();
-                    http_response_headers_initialized = true;
-                }
-
-                auto type = std::make_shared<DataTypeMap>(
-                    std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()),
-                    std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()));
-
-                chunk.addColumn(type->createColumnConst(chunk.getNumRows(), http_response_headers)->convertToFullColumnIfConst());
-            }
             return chunk;
         }
 
@@ -1788,6 +1785,8 @@ void StorageURLSink::cancelBuffers()
         write_buf->cancel();
 }
 
+namespace
+{
 class PartitionedStorageURLSink : public PartitionedSink
 {
 public:
@@ -1843,6 +1842,7 @@ private:
     const String http_method;
     const PartitionedWriteAccessCheck write_access_check;
 };
+}
 
 std::string IStorageURLBase::getReadMethod() const
 {
@@ -2222,8 +2222,7 @@ std::pair<ColumnsDescription, String> IStorageURLBase::getTableStructureAndForma
     /// schema inference (StorageURL ctor, StorageURLCluster, TableFunctionURL analysis), so the
     /// check here also covers the DESCRIBE / INSERT..SELECT / format-detection paths that never
     /// reach the StorageURL ctor body. The check takes a mutable reference, so validate a copy.
-    HTTPHeaderEntries headers_to_check(headers);
-    context->getHTTPHeaderFilter().checkHeaders(headers_to_check);
+    context->getHTTPHeaderFilter().checkHeaders(headers);
 
     Poco::Net::HTTPBasicCredentials credentials;
 
@@ -3413,9 +3412,14 @@ AzureURLParts parseAzureURL(const String & url)
         const String host = (slash_pos == String::npos) ? host_and_path : host_and_path.substr(0, slash_pos);
         parts.blob_path = (slash_pos == String::npos) ? "" : host_and_path.substr(slash_pos + 1);
 
-        auto dot_pos = host.find('.');
-        const String account = (dot_pos == String::npos) ? host : host.substr(0, dot_pos);
-        parts.account_url = "https://" + account + ".blob.core.windows.net" + query;
+        /// The Blob endpoint of an account is its `dfs` host with the service label replaced, in every Azure cloud and in Fabric.
+        String blob_host = host;
+        boost::to_lower(blob_host);
+        if (auto dfs_pos = blob_host.find(".dfs."); dfs_pos != String::npos)
+            blob_host.replace(dfs_pos, std::string_view(".dfs.").size(), ".blob.");
+        else if (!blob_host.contains('.'))
+            blob_host += ".blob.core.windows.net";
+        parts.account_url = "https://" + blob_host + query;
         return parts;
     }
 
@@ -3908,10 +3912,9 @@ static StoragePtr tryDispatchURLEngineByScheme(const StorageFactory::Arguments &
 /// parameter named like a credential (`access_token`, Azure SAS `sig`, ...). Returns whether anything was masked.
 static bool maskURLCredentials(String & url)
 {
-    bool changed = maskURIPassword(&url, URI_AUTHORITY_TERMINATORS);
+    bool changed = maskURIPassword(url, URI_AUTHORITY_TERMINATORS);
     changed |= maskPresignedURLParameters(url);
-    String masked = maskSensitiveQueryParametersInURI(url);
-    if (masked != url)
+    if (String masked = maskSensitiveQueryParametersInURI(url); masked != url)
     {
         url = std::move(masked);
         changed = true;
