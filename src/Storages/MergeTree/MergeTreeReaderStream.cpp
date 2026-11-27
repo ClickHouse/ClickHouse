@@ -376,6 +376,13 @@ ReadRangesRegistry::~ReadRangesRegistry()
 
 ReadRangesRegistry::ReadRanges * ReadRangesRegistry::getReadRanges(const String & path)
 {
+    /// Also for a file looked up before. `registerRanges` checks again, as the counting can stop after the lookup.
+    if (stopped())
+    {
+        releaseAll();
+        return nullptr;
+    }
+
     const UInt128 key = sipHash128(path.data(), path.size());
     {
         std::lock_guard lock(mutex);
@@ -412,8 +419,9 @@ size_t ReadRangesRegistry::ReadRanges::add(CompressedBlockRanges & ranges)
 
         united_ranges.emplace_back(begin, end);
         /// Merged in bulk, once the appended ranges are as many as the merged ones, so that each merge is paid for by
-        /// the ranges appended since the last one.
-        if (united_ranges.size() - merged > std::max<size_t>(merged, 64))
+        /// the ranges appended since the last one. Merged as soon as they are, before the next range grows the memory,
+        /// which is what the limit is charged by.
+        if (united_ranges.size() - merged >= std::max<size_t>(merged, 64))
             mergeLocked();
     }
     ranges.clear();
