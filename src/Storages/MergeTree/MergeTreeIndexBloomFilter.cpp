@@ -11,6 +11,7 @@
 #include <Core/AccurateComparison.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeIPv4andIPv6.h>
@@ -945,6 +946,14 @@ static bool bloomFilterHashDomainMatches(const DataTypePtr & value_type, const D
     return (isInteger(value) && isInteger(element)) || value->equals(*element);
 }
 
+/// `Bool`, or a customization of `UInt8` that converts like it: `SimpleAggregateFunction(any, Bool)` is
+/// a `UInt8` with a custom name and no child types, and a conversion to it collapses every non-zero
+/// number to `true` as well. This is the predicate the conversion code uses.
+static bool isBoolOrBoolCustomization(const IDataType & type)
+{
+    return isBool(type.getPtr()) || isSimpleAggregateFunctionOfBool(type);
+}
+
 /// The same for the elements of a set of `IN`. Set membership is not the numeric comparison `equals`
 /// does: `Set::castToKeyType` converts the left-hand side to the type of the set, and a conversion to
 /// `Bool` collapses every non-zero number to `true`, so `2 IN (SELECT true)` holds while casting the
@@ -957,8 +966,7 @@ static bool bloomFilterSetHashDomainMatches(const DataTypePtr & set_type, const 
     if (!set_type)
         return false;
 
-    auto has_bool = [](const IDataType & type) { return isBool(type.getPtr()); };
-    if (anyInTypeTree(*set_type, has_bool) || anyInTypeTree(*nested_type, has_bool))
+    if (anyInTypeTree(*set_type, isBoolOrBoolCustomization) || anyInTypeTree(*nested_type, isBoolOrBoolCustomization))
         return false;
 
     return bloomFilterHashDomainMatches(set_type, nested_type);
@@ -1014,7 +1022,7 @@ static Field coerceConstantForBloomFilterHash(
     /// compared; for any other type that is not an `IPv4` itself the index declines.
     if (value_field.getType() == Field::Types::IPv4 && !WhichDataType(actual_type).isIPv4())
     {
-        if (!isNativeInteger(actual_type) || isBool(actual_type))
+        if (!isNativeInteger(actual_type) || isBoolOrBoolCustomization(*actual_type))
             return {};
         return convertFieldToType(Field(static_cast<UInt64>(value_field.safeGet<IPv4>().toUnderType())), *actual_type);
     }
@@ -1041,8 +1049,14 @@ static Field coerceConstantForBloomFilterHash(
         {
             case Field::Types::Float64:
             {
+                /// A non-finite value equals no stored value, and converting a `NaN` to an integer is
+                /// undefined behavior, which `accurate::convertNumeric` does not guard against.
+                const Float64 float_value = value_field.safeGet<Float64>();
+                if (!std::isfinite(float_value))
+                    return {};
+
                 UInt32 seconds = 0;
-                if (!accurate::convertNumeric<Float64, UInt32, true>(value_field.safeGet<Float64>(), seconds))
+                if (!accurate::convertNumeric<Float64, UInt32, true>(float_value, seconds))
                     return {};
                 return convertFieldToType(Field(static_cast<UInt64>(seconds)), *actual_type, value_type.get());
             }
@@ -1072,12 +1086,13 @@ static Field coerceConstantForBloomFilterHash(
         && value_field.getType() != Field::Types::String)
         return {};
 
-    /// `Bool` is stored as `UInt8`, and a column can hold a byte other than 0 and 1 (e.g. through
+    /// `Bool` (and `SimpleAggregateFunction(any, Bool)`) is stored as `UInt8`, and a column can hold a byte other than 0 and 1 (e.g. through
     /// `reinterpret`). `equals` compares that byte with an integer constant numerically, while the
     /// non-strict `convertFieldToType` clamps any non-zero integer to `true`, so `2` would be hashed
     /// as `1` and the granule holding the byte `2` pruned. Hash the number that is compared; one
     /// outside of `UInt8` equals no stored value, and the index declines.
-    if (isBool(actual_type) && !(value_type && isBool(removeLowCardinalityAndNullable(value_type))))
+    if (isBoolOrBoolCustomization(*actual_type)
+        && !(value_type && isBoolOrBoolCustomization(*removeLowCardinalityAndNullable(value_type))))
     {
         if (value_field.getType() == Field::Types::UInt64)
         {
@@ -1767,7 +1782,9 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
                         return true;
                     }
 
-                    auto converted_field = convertFieldToType(value_field, *actual_type, value_type.get());
+                    /// The same recipe as `equals` on a column: the domain check above admits any pair of
+                    /// integers, and a plain `convertFieldToType` would clamp an integer to `true` for a `Bool`.
+                    auto converted_field = coerceConstantForBloomFilterHash(value_field, value_type, actual_type);
                     if (converted_field.isNull())
                         return false;
 

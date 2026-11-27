@@ -1,0 +1,35 @@
+A set of SimpleAggregateFunction(any, Bool) over an integer index
+2
+2
+2
+2
+2
+2
+An integer constant with an index of SimpleAggregateFunction(any, Bool)
+1
+1
+0
+0
+arrayJoin of an Array(Bool) with an integer constant
+1
+1
+1
+1
+1
+1
+0
+0
+DateTime with a non-finite Float64 constant
+0
+0
+0
+0
+0
+0
+0
+0
+0
+0
+0
+1
+1
