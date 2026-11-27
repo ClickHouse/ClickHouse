@@ -1156,7 +1156,7 @@ static bool isStringConversionOfJSONPath(const RPNBuilderTreeNode & node)
     if (!node.isFunction())
         return false;
     const auto function = node.toFunctionNode();
-    const auto & name = function.getFunctionName();
+    const auto name = function.getFunctionName();
     return name == "CAST" || name == "_CAST" || name == "toString";
 }
 
@@ -1305,8 +1305,6 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     const String function_name = function_node.getFunctionName();
     auto direct_read_mode = getDirectReadMode(function_name);
 
-    const bool text_rendering_settings_default = textRenderingSettingsAreDefault(getContext());
-
     /// The index knows the expression under the conversion, e.g. `m.key_<key>` in `equals(_CAST(m.key_<key>, 'String'), 'value')`.
     auto index_column_node = unwrapLosslessConversion(argument_node);
 
@@ -1340,7 +1338,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     }
     else if (tryMatchNodeToJSONIndex(index_column_node, header, "JSONAllValues", json_argument_types))
     {
-        if (!text_rendering_settings_default && isStringConversionOfJSONPath(index_column_node))
+        if (isStringConversionOfJSONPath(index_column_node) && !textRenderingSettingsAreDefault(getContext()))
             return false;
         has_index_column = true;
         direct_read_mode = getHintOrNoneMode();
@@ -2517,7 +2515,7 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
             return true;
         if (tryMatchNodeToJSONIndex(node, header, "JSONAllValues", json_argument_types))
         {
-            if (textRenderingSettingsAreDefault(getContext()) || !isStringConversionOfJSONPath(node))
+            if (!isStringConversionOfJSONPath(node) || textRenderingSettingsAreDefault(getContext()))
                 return true;
             return hasIndexForColumn(node.getColumnName());
         }
