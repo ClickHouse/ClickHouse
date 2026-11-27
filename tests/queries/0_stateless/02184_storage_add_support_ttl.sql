@@ -132,18 +132,3 @@ WHERE database = currentDatabase() AND name LIKE 'qv_%_02184' ORDER BY name;
 -- has to be refused here and not persisted into a table that would fail to load afterwards.
 DROP TABLE IF EXISTS qv_copy_02184;
 CREATE TABLE qv_copy_02184 ENGINE = Memory AS qv_merge_02184; -- { serverError ILLEGAL_COLUMN }
-
--- Clearing the TTL must not rebuild the column either: an ALIAS column has no real subcolumns, so
--- registering them makes a subcolumn read of the alias fail.
-DROP TABLE IF EXISTS qv_alias_02184;
-CREATE TABLE qv_alias_02184 (id UInt64, dt Date, arr Array(UInt64), al Array(UInt64) ALIAS arr TTL dt + INTERVAL 1 MONTH)
-ENGINE = MergeTree ORDER BY id;
-INSERT INTO qv_alias_02184 VALUES (1, '2026-01-01', [1, 2, 3]);
-
-DROP TABLE IF EXISTS qv_alias_merge_02184;
-CREATE TABLE qv_alias_merge_02184 ENGINE = Merge(currentDatabase(), '^qv_alias_02184$');
-SELECT al, al.size0 FROM qv_alias_merge_02184;
-
-DROP TABLE IF EXISTS qv_alias_buffer_02184;
-CREATE TABLE qv_alias_buffer_02184 ENGINE = Buffer(currentDatabase(), qv_alias_02184, 16, 10, 100, 10000, 1000000, 10000000, 100000000);
-SELECT al, al.size0 FROM qv_alias_buffer_02184;

@@ -6655,19 +6655,20 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
                 if (command.type == AlterCommand::RENAME_COLUMN && !command.ignore)
                     renames.push_back({command.column_name, command.rename_to});
 
+            /// Whether `new_ast` is `old_ast` up to the column renames of this ALTER.
+            auto is_kept = [&](const ASTPtr & old_ast, const ASTPtr & new_ast)
+            {
+                if (!old_ast || !new_ast)
+                    return false;
+                ASTPtr renamed = old_ast->clone();
+                for (auto & rename : renames)
+                    RenameColumnVisitor(rename).visit(renamed);
+                return renamed->getTreeHash(/*ignore_aliases=*/ false) == new_ast->getTreeHash(/*ignore_aliases=*/ false);
+            };
             auto check = [&](const ASTPtr & old_ast, const ASTPtr & new_ast, std::string_view clause)
             {
-                if (!new_ast)
-                    return;
-                if (old_ast)
-                {
-                    ASTPtr renamed = old_ast->clone();
-                    for (auto & rename : renames)
-                        RenameColumnVisitor(rename).visit(renamed);
-                    if (renamed->getTreeHash(/*ignore_aliases=*/ false) == new_ast->getTreeHash(/*ignore_aliases=*/ false))
-                        return;
-                }
-                KeyDescription::checkNoAlias(new_ast.get(), clause);
+                if (new_ast && !is_kept(old_ast, new_ast))
+                    KeyDescription::checkNoAlias(new_ast.get(), clause);
             };
             check(old_metadata.sorting_key.definition_ast, new_metadata.sorting_key.definition_ast, "ORDER BY");
             check(old_metadata.sampling_key.definition_ast, new_metadata.sampling_key.definition_ast, "SAMPLE BY");
@@ -6725,6 +6726,11 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
                 auto it = old_names.find(column.name);
                 const auto * old_column = it != old_names.end() && it->second ? old_metadata.columns.tryGet(*it->second) : nullptr;
                 check(old_column ? old_column->ttl : nullptr, column.ttl, "TTL");
+
+                if (column.ttl && !new_metadata.columns.hasPhysical(column.name)
+                    && !(old_column && !old_metadata.columns.hasPhysical(old_column->name) && is_kept(old_column->ttl, column.ttl)))
+                    throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot set TTL for {} column {}: it is not stored",
+                        toString(column.default_desc.kind), backQuote(column.name));
             }
         }
 

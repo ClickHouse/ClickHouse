@@ -1426,6 +1426,15 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
             checkTextIndexPreAndPostProcessorPermissions(index, getContext());
     }
 
+    /// A column that is not stored has no values for a TTL to expire.
+    if (!isReplayedTableDefinition(mode, create, getContext()))
+    {
+        for (const auto & [name, _] : properties.columns.getColumnTTLs())
+            if (!properties.columns.hasPhysical(name))
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot set TTL for {} column {}: it is not stored",
+                    toString(properties.columns.get(name).default_desc.kind), backQuote(name));
+    }
+
     ASTPtr new_columns = formatColumns(properties.columns);
     ASTPtr new_codec_declarations = formatCodecDeclarations(properties.columns);
     ASTPtr new_indices = formatIndices(properties.indices);
