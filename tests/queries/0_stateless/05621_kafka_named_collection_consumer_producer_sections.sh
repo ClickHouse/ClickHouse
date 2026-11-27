@@ -97,9 +97,11 @@ $CLICKHOUSE_CLIENT -q "
         kafka_group_name = 'group',
         kafka_format = 'JSONEachRow',
         kafka_sasl_username = 'stored_05621',
-        kafka_sasl_mechanism = 'PLAIN';
+        kafka_sasl_mechanism = 'PLAIN',
+        \`kafka.consumer.fetch_min_bytes\` = '777';
     CREATE TABLE kafka_flat (x UInt64) ENGINE = Kafka(${collection}_flat, \`kafka.consumer.sasl_username\` = 'override_05621',
-        \`kafka.consumer.sasl_mechanisms\` = 'SCRAM-SHA-256')
+        \`kafka.consumer.sasl_mechanisms\` = 'SCRAM-SHA-256',
+        \`kafka.consumer.fetch.min.bytes\` = '888')
         SETTINGS kafka_poll_timeout_ms = 100, kafka_flush_interval_ms = 100;
 "
 logs=$($CLICKHOUSE_CLIENT --send_logs_level=trace -q "
@@ -109,6 +111,8 @@ echo "nested override of flat setting set: $(grep -c 'Consumer set property sasl
 echo "flat setting set: $(grep -c 'Consumer set property sasl.username:stored_05621' <<< "$logs")"
 echo "nested alias override of flat setting set: $(grep -c 'Consumer set property sasl.mechanisms:SCRAM-SHA-256' <<< "$logs")"
 echo "flat setting set with alias override: $(grep -c 'Consumer set property sasl.mechanism:PLAIN' <<< "$logs")"
+echo "dot spelling override set: $(grep -c 'Consumer set property fetch.min.bytes:888' <<< "$logs")"
+echo "underscore spelling stored value set: $(grep -c 'Consumer set property fetch.min.bytes:777' <<< "$logs")"
 
 $CLICKHOUSE_CLIENT -q "
     DROP TABLE kafka_secret;

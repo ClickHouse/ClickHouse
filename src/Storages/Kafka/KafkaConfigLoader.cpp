@@ -624,6 +624,29 @@ void loadProducerConfig(cppkafka::Configuration & kafka_config, const KafkaConfi
     loadFromConfig(kafka_config, params, producer_path);
 }
 
+/// The name librdkafka uses: without the `topic.` prefix and with the aliases of the properties that the flat settings write.
+String canonicalKafkaPropertyName(String name)
+{
+    if (name.starts_with("topic."))
+        name.erase(0, 6);
+    if (name == "compression.type")
+        return "compression.codec";
+    if (name == "sasl.mechanisms")
+        return "sasl.mechanism";
+    return name;
+}
+
+/// The same for every spelling of a property in a section: `kafka.consumer.fetch.min.bytes` and `kafka.consumer.fetch_min_bytes`.
+String canonicalNamedCollectionKey(const String & key)
+{
+    const auto normalized_key = tryNormalizeNamedCollectionKey(key).value_or(key);
+    const auto property_key = namedCollectionPropertyKey(normalized_key);
+    if (property_key.empty())
+        return normalized_key;
+    return normalized_key.substr(0, normalized_key.size() - property_key.size())
+        + canonicalKafkaPropertyName(toKafkaPropertyName(String(property_key)));
+}
+
 /// The current named collection with the overrides from the table definition, so that changes of the collection reach existing tables.
 NamedCollectionPtr getCurrentCollection(const NamedCollectionPtr & table_collection)
 {
@@ -637,21 +660,16 @@ NamedCollectionPtr getCurrentCollection(const NamedCollectionPtr & table_collect
         if (!table_collection->isQueryOverridden(key))
             continue;
         checkNamedCollectionOverrideLock(*current_collection, key);
+        /// The stored key can spell the same property differently, then the override replaces it.
+        const String canonical_key = canonicalNamedCollectionKey(key);
+        for (const auto & stored_key : current_collection->getKeys())
+        {
+            if (stored_key != key && !table_collection->isQueryOverridden(stored_key) && canonicalNamedCollectionKey(stored_key) == canonical_key)
+                collection->remove(stored_key);
+        }
         collection->setOrUpdate<String>(key, table_collection->get<String>(key), {});
     }
     return collection;
-}
-
-/// The name librdkafka uses: without the `topic.` prefix and with the aliases of the properties that the flat settings write.
-String canonicalKafkaPropertyName(String name)
-{
-    if (name.starts_with("topic."))
-        name.erase(0, 6);
-    if (name == "compression.type")
-        return "compression.codec";
-    if (name == "sasl.mechanisms")
-        return "sasl.mechanism";
-    return name;
 }
 
 /// The properties of the client that the table definition overrides with nested keys, e.g. `kafka.consumer.sasl_username`.

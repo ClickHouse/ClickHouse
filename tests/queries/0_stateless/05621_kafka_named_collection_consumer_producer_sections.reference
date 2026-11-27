@@ -14,3 +14,7 @@ file path override rejected: 1
 override of config collection set: 1
 nested override of flat setting set: 1
 flat setting set: 0
+nested alias override of flat setting set: 1
+flat setting set with alias override: 0
+dot spelling override set: 1
+underscore spelling stored value set: 0
