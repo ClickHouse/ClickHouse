@@ -1541,7 +1541,7 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Unit tests (arm_debug)' --workflow "MasterCI" --ci --timestamp
 
-  unit_tests_asan_ubsan:
+  unit_tests_arm_asan_ubsan:
     runs-on: [self-hosted, arm-large]
     needs:
     - build_arm_asan_ubsan
@@ -1549,8 +1549,8 @@ jobs:
     - dockers_build_amd
     - dockers_build_arm
     - dockers_build_multiplatform_manifest
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'VW5pdCB0ZXN0cyAoYXNhbl91YnNhbik=') }}
-    name: "Unit tests (asan_ubsan)"
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'VW5pdCB0ZXN0cyAoYXJtX2FzYW5fdWJzYW4p') }}
+    name: "Unit tests (arm_asan_ubsan)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -1578,9 +1578,9 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Unit tests (asan_ubsan)' --workflow "MasterCI" --ci --timestamp
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Unit tests (arm_asan_ubsan)' --workflow "MasterCI" --ci --timestamp
 
-  unit_tests_tsan:
+  unit_tests_arm_tsan:
     runs-on: [self-hosted, arm-large]
     needs:
     - build_arm_tsan
@@ -1588,8 +1588,8 @@ jobs:
     - dockers_build_amd
     - dockers_build_arm
     - dockers_build_multiplatform_manifest
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'VW5pdCB0ZXN0cyAodHNhbik=') }}
-    name: "Unit tests (tsan)"
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'VW5pdCB0ZXN0cyAoYXJtX3RzYW4p') }}
+    name: "Unit tests (arm_tsan)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -1617,9 +1617,9 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Unit tests (tsan)' --workflow "MasterCI" --ci --timestamp
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Unit tests (arm_tsan)' --workflow "MasterCI" --ci --timestamp
 
-  unit_tests_msan:
+  unit_tests_amd_msan:
     runs-on: [self-hosted, amd-large]
     needs:
     - build_amd_msan
@@ -1627,8 +1627,8 @@ jobs:
     - dockers_build_amd
     - dockers_build_arm
     - dockers_build_multiplatform_manifest
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'VW5pdCB0ZXN0cyAobXNhbik=') }}
-    name: "Unit tests (msan)"
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'VW5pdCB0ZXN0cyAoYW1kX21zYW4p') }}
+    name: "Unit tests (amd_msan)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -1656,9 +1656,9 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Unit tests (msan)' --workflow "MasterCI" --ci --timestamp
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Unit tests (amd_msan)' --workflow "MasterCI" --ci --timestamp
 
-  unit_tests_asan_ubsan_function_prop_fuzzer:
+  unit_tests_arm_asan_ubsan_function_prop_fuzzer:
     runs-on: [self-hosted, arm-large]
     needs:
     - build_arm_asan_ubsan
@@ -1666,8 +1666,8 @@ jobs:
     - dockers_build_amd
     - dockers_build_arm
     - dockers_build_multiplatform_manifest
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'VW5pdCB0ZXN0cyAoYXNhbl91YnNhbiwgZnVuY3Rpb25fcHJvcF9mdXp6ZXIp') }}
-    name: "Unit tests (asan_ubsan, function_prop_fuzzer)"
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'VW5pdCB0ZXN0cyAoYXJtX2FzYW5fdWJzYW4sIGZ1bmN0aW9uX3Byb3BfZnV6emVyKQ==') }}
+    name: "Unit tests (arm_asan_ubsan, function_prop_fuzzer)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -1695,9 +1695,9 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Unit tests (asan_ubsan, function_prop_fuzzer)' --workflow "MasterCI" --ci --timestamp
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Unit tests (arm_asan_ubsan, function_prop_fuzzer)' --workflow "MasterCI" --ci --timestamp
 
-  unit_tests_tsan_function_prop_fuzzer:
+  unit_tests_arm_tsan_function_prop_fuzzer:
     runs-on: [self-hosted, arm-large]
     needs:
     - build_arm_tsan
@@ -1705,8 +1705,8 @@ jobs:
     - dockers_build_amd
     - dockers_build_arm
     - dockers_build_multiplatform_manifest
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'VW5pdCB0ZXN0cyAodHNhbiwgZnVuY3Rpb25fcHJvcF9mdXp6ZXIp') }}
-    name: "Unit tests (tsan, function_prop_fuzzer)"
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'VW5pdCB0ZXN0cyAoYXJtX3RzYW4sIGZ1bmN0aW9uX3Byb3BfZnV6emVyKQ==') }}
+    name: "Unit tests (arm_tsan, function_prop_fuzzer)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -1734,9 +1734,9 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Unit tests (tsan, function_prop_fuzzer)' --workflow "MasterCI" --ci --timestamp
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Unit tests (arm_tsan, function_prop_fuzzer)' --workflow "MasterCI" --ci --timestamp
 
-  unit_tests_msan_function_prop_fuzzer:
+  unit_tests_amd_msan_function_prop_fuzzer:
     runs-on: [self-hosted, amd-large]
     needs:
     - build_amd_msan
@@ -1744,8 +1744,8 @@ jobs:
     - dockers_build_amd
     - dockers_build_arm
     - dockers_build_multiplatform_manifest
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'VW5pdCB0ZXN0cyAobXNhbiwgZnVuY3Rpb25fcHJvcF9mdXp6ZXIp') }}
-    name: "Unit tests (msan, function_prop_fuzzer)"
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'VW5pdCB0ZXN0cyAoYW1kX21zYW4sIGZ1bmN0aW9uX3Byb3BfZnV6emVyKQ==') }}
+    name: "Unit tests (amd_msan, function_prop_fuzzer)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -1773,7 +1773,7 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Unit tests (msan, function_prop_fuzzer)' --workflow "MasterCI" --ci --timestamp
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Unit tests (amd_msan, function_prop_fuzzer)' --workflow "MasterCI" --ci --timestamp
 
   unit_tests_arm_debug_wyrd:
     runs-on: [self-hosted, arm-large]
@@ -1814,7 +1814,7 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Unit tests (arm_debug, wyrd)' --workflow "MasterCI" --ci --timestamp
 
-  unit_tests_asan_ubsan_wyrd:
+  unit_tests_arm_asan_ubsan_wyrd:
     runs-on: [self-hosted, arm-large]
     needs:
     - build_arm_asan_ubsan
@@ -1822,8 +1822,8 @@ jobs:
     - dockers_build_amd
     - dockers_build_arm
     - dockers_build_multiplatform_manifest
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'VW5pdCB0ZXN0cyAoYXNhbl91YnNhbiwgd3lyZCk=') }}
-    name: "Unit tests (asan_ubsan, wyrd)"
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'VW5pdCB0ZXN0cyAoYXJtX2FzYW5fdWJzYW4sIHd5cmQp') }}
+    name: "Unit tests (arm_asan_ubsan, wyrd)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -1851,9 +1851,9 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Unit tests (asan_ubsan, wyrd)' --workflow "MasterCI" --ci --timestamp
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Unit tests (arm_asan_ubsan, wyrd)' --workflow "MasterCI" --ci --timestamp
 
-  unit_tests_tsan_wyrd:
+  unit_tests_arm_tsan_wyrd:
     runs-on: [self-hosted, arm-large]
     needs:
     - build_arm_tsan
@@ -1861,8 +1861,8 @@ jobs:
     - dockers_build_amd
     - dockers_build_arm
     - dockers_build_multiplatform_manifest
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'VW5pdCB0ZXN0cyAodHNhbiwgd3lyZCk=') }}
-    name: "Unit tests (tsan, wyrd)"
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'VW5pdCB0ZXN0cyAoYXJtX3RzYW4sIHd5cmQp') }}
+    name: "Unit tests (arm_tsan, wyrd)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -1890,9 +1890,9 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Unit tests (tsan, wyrd)' --workflow "MasterCI" --ci --timestamp
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Unit tests (arm_tsan, wyrd)' --workflow "MasterCI" --ci --timestamp
 
-  unit_tests_msan_wyrd:
+  unit_tests_amd_msan_wyrd:
     runs-on: [self-hosted, amd-large]
     needs:
     - build_amd_msan
@@ -1900,8 +1900,8 @@ jobs:
     - dockers_build_amd
     - dockers_build_arm
     - dockers_build_multiplatform_manifest
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'VW5pdCB0ZXN0cyAobXNhbiwgd3lyZCk=') }}
-    name: "Unit tests (msan, wyrd)"
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'VW5pdCB0ZXN0cyAoYW1kX21zYW4sIHd5cmQp') }}
+    name: "Unit tests (amd_msan, wyrd)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -1929,7 +1929,7 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Unit tests (msan, wyrd)' --workflow "MasterCI" --ci --timestamp
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Unit tests (amd_msan, wyrd)' --workflow "MasterCI" --ci --timestamp
 
   docker_server_image:
     runs-on: [self-hosted, amd-tiny]
@@ -6811,17 +6811,17 @@ jobs:
     - stress_test_arm_tsan
     - stress_test_azure_amd_msan
     - stress_test_azure_amd_tsan
+    - unit_tests_amd_msan
+    - unit_tests_amd_msan_function_prop_fuzzer
+    - unit_tests_amd_msan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
     - unit_tests_arm_debug
     - unit_tests_arm_debug_wyrd
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_asan_ubsan_wyrd
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_msan_wyrd
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
-    - unit_tests_tsan_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ always() }}
     name: "Finish Workflow"
     outputs:

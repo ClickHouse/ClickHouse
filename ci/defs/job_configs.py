@@ -1364,7 +1364,7 @@ class JobConfigs:
     # Builds the "before" unit_tests_dbms (merge-base + only the PR's unit-test file
     # changes) in-job, so it needs the binary-builder image and submodules. It does NOT
     # require the PR's UNITTEST_ARM_ASAN_UBSAN artifact: the "touched tests pass on the
-    # PR binary" side is delegated to the regular `Unit tests (asan_ubsan)` job (see the
+    # PR binary" side is delegated to the regular `Unit tests (arm_asan_ubsan)` job (see the
     # module docstring), so this job is not gated behind `build_arm_asan_ubsan` and
     # builds the "before" binary in parallel with the build matrix — matching the early
     # start of the functional/integration bugfix validators.
@@ -1423,35 +1423,35 @@ class JobConfigs:
             requires=[ArtifactNames.UNITTEST_ARM_DEBUG],
         ),
         Job.ParamSet(
-            parameter="asan_ubsan",
+            parameter="arm_asan_ubsan",
             runs_on=RunnerLabels.ARM_LARGE,
             requires=[ArtifactNames.UNITTEST_ARM_ASAN_UBSAN],
         ),
         Job.ParamSet(
-            parameter="tsan",
+            parameter="arm_tsan",
             runs_on=RunnerLabels.ARM_LARGE,
             requires=[ArtifactNames.UNITTEST_ARM_TSAN],
         ),
         # aarch64 MSan reports uninitialized values in fiber code that x86-64 MSan finds clean.
         Job.ParamSet(
-            parameter="msan",
+            parameter="amd_msan",
             runs_on=RunnerLabels.AMD_LARGE,
             requires=[ArtifactNames.UNITTEST_AMD_MSAN],
         ),
         Job.ParamSet(
-            parameter="asan_ubsan, function_prop_fuzzer",
+            parameter="arm_asan_ubsan, function_prop_fuzzer",
             runs_on=RunnerLabels.ARM_LARGE,
             requires=[ArtifactNames.UNITTEST_ARM_ASAN_UBSAN],
             command=_fuzzer_command,
         ),
         Job.ParamSet(
-            parameter="tsan, function_prop_fuzzer",
+            parameter="arm_tsan, function_prop_fuzzer",
             runs_on=RunnerLabels.ARM_LARGE,
             requires=[ArtifactNames.UNITTEST_ARM_TSAN],
             command=_fuzzer_command,
         ),
         Job.ParamSet(
-            parameter="msan, function_prop_fuzzer",
+            parameter="amd_msan, function_prop_fuzzer",
             runs_on=RunnerLabels.AMD_LARGE,
             requires=[ArtifactNames.UNITTEST_AMD_MSAN],
             command=_fuzzer_command,
@@ -1463,19 +1463,19 @@ class JobConfigs:
             command=_wyrd_command,
         ),
         Job.ParamSet(
-            parameter="asan_ubsan, wyrd",
+            parameter="arm_asan_ubsan, wyrd",
             runs_on=RunnerLabels.ARM_LARGE,
             requires=[ArtifactNames.WYRD_UNITTEST_ARM_ASAN_UBSAN],
             command=_wyrd_command,
         ),
         Job.ParamSet(
-            parameter="tsan, wyrd",
+            parameter="arm_tsan, wyrd",
             runs_on=RunnerLabels.ARM_LARGE,
             requires=[ArtifactNames.WYRD_UNITTEST_ARM_TSAN],
             command=_wyrd_command,
         ),
         Job.ParamSet(
-            parameter="msan, wyrd",
+            parameter="amd_msan, wyrd",
             runs_on=RunnerLabels.AMD_LARGE,
             requires=[ArtifactNames.WYRD_UNITTEST_AMD_MSAN],
             command=_wyrd_command,

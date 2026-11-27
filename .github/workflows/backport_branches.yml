@@ -1141,15 +1141,15 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (amd_asan_ubsan, db disk, distributed plan, sequential, 3/3)' --workflow "BackportPR" --ci --timestamp
 
-  unit_tests_asan_ubsan:
+  unit_tests_arm_asan_ubsan:
     runs-on: [self-hosted, arm-large]
     needs:
     - build_arm_asan_ubsan
     - config_workflow
     - dockers_build_amd
     - dockers_build_arm
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'VW5pdCB0ZXN0cyAoYXNhbl91YnNhbik=') }}
-    name: "Unit tests (asan_ubsan)"
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'VW5pdCB0ZXN0cyAoYXJtX2FzYW5fdWJzYW4p') }}
+    name: "Unit tests (arm_asan_ubsan)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -1177,17 +1177,17 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Unit tests (asan_ubsan)' --workflow "BackportPR" --ci --timestamp
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Unit tests (arm_asan_ubsan)' --workflow "BackportPR" --ci --timestamp
 
-  unit_tests_tsan:
+  unit_tests_arm_tsan:
     runs-on: [self-hosted, arm-large]
     needs:
     - build_arm_tsan
     - config_workflow
     - dockers_build_amd
     - dockers_build_arm
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'VW5pdCB0ZXN0cyAodHNhbik=') }}
-    name: "Unit tests (tsan)"
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'VW5pdCB0ZXN0cyAoYXJtX3RzYW4p') }}
+    name: "Unit tests (arm_tsan)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -1215,17 +1215,17 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Unit tests (tsan)' --workflow "BackportPR" --ci --timestamp
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Unit tests (arm_tsan)' --workflow "BackportPR" --ci --timestamp
 
-  unit_tests_asan_ubsan_function_prop_fuzzer:
+  unit_tests_arm_asan_ubsan_function_prop_fuzzer:
     runs-on: [self-hosted, arm-large]
     needs:
     - build_arm_asan_ubsan
     - config_workflow
     - dockers_build_amd
     - dockers_build_arm
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'VW5pdCB0ZXN0cyAoYXNhbl91YnNhbiwgZnVuY3Rpb25fcHJvcF9mdXp6ZXIp') }}
-    name: "Unit tests (asan_ubsan, function_prop_fuzzer)"
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'VW5pdCB0ZXN0cyAoYXJtX2FzYW5fdWJzYW4sIGZ1bmN0aW9uX3Byb3BfZnV6emVyKQ==') }}
+    name: "Unit tests (arm_asan_ubsan, function_prop_fuzzer)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -1253,17 +1253,17 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Unit tests (asan_ubsan, function_prop_fuzzer)' --workflow "BackportPR" --ci --timestamp
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Unit tests (arm_asan_ubsan, function_prop_fuzzer)' --workflow "BackportPR" --ci --timestamp
 
-  unit_tests_tsan_function_prop_fuzzer:
+  unit_tests_arm_tsan_function_prop_fuzzer:
     runs-on: [self-hosted, arm-large]
     needs:
     - build_arm_tsan
     - config_workflow
     - dockers_build_amd
     - dockers_build_arm
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'VW5pdCB0ZXN0cyAodHNhbiwgZnVuY3Rpb25fcHJvcF9mdXp6ZXIp') }}
-    name: "Unit tests (tsan, function_prop_fuzzer)"
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'VW5pdCB0ZXN0cyAoYXJtX3RzYW4sIGZ1bmN0aW9uX3Byb3BfZnV6emVyKQ==') }}
+    name: "Unit tests (arm_tsan, function_prop_fuzzer)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -1291,17 +1291,17 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Unit tests (tsan, function_prop_fuzzer)' --workflow "BackportPR" --ci --timestamp
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Unit tests (arm_tsan, function_prop_fuzzer)' --workflow "BackportPR" --ci --timestamp
 
-  unit_tests_asan_ubsan_wyrd:
+  unit_tests_arm_asan_ubsan_wyrd:
     runs-on: [self-hosted, arm-large]
     needs:
     - build_arm_asan_ubsan
     - config_workflow
     - dockers_build_amd
     - dockers_build_arm
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'VW5pdCB0ZXN0cyAoYXNhbl91YnNhbiwgd3lyZCk=') }}
-    name: "Unit tests (asan_ubsan, wyrd)"
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'VW5pdCB0ZXN0cyAoYXJtX2FzYW5fdWJzYW4sIHd5cmQp') }}
+    name: "Unit tests (arm_asan_ubsan, wyrd)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -1329,17 +1329,17 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Unit tests (asan_ubsan, wyrd)' --workflow "BackportPR" --ci --timestamp
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Unit tests (arm_asan_ubsan, wyrd)' --workflow "BackportPR" --ci --timestamp
 
-  unit_tests_tsan_wyrd:
+  unit_tests_arm_tsan_wyrd:
     runs-on: [self-hosted, arm-large]
     needs:
     - build_arm_tsan
     - config_workflow
     - dockers_build_amd
     - dockers_build_arm
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'VW5pdCB0ZXN0cyAodHNhbiwgd3lyZCk=') }}
-    name: "Unit tests (tsan, wyrd)"
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'VW5pdCB0ZXN0cyAoYXJtX3RzYW4sIHd5cmQp') }}
+    name: "Unit tests (arm_tsan, wyrd)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -1367,7 +1367,7 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Unit tests (tsan, wyrd)' --workflow "BackportPR" --ci --timestamp
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Unit tests (arm_tsan, wyrd)' --workflow "BackportPR" --ci --timestamp
 
   stress_test_amd_tsan:
     runs-on: [self-hosted, amd-medium]
@@ -2065,12 +2065,12 @@ jobs:
     - stateless_tests_amd_asan_ubsan_distributed_plan_parallel
     - stress_test_amd_tsan
     - style_check
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_asan_ubsan_wyrd
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
-    - unit_tests_tsan_wyrd
+    - unit_tests_arm_asan_ubsan
+    - unit_tests_arm_asan_ubsan_function_prop_fuzzer
+    - unit_tests_arm_asan_ubsan_wyrd
+    - unit_tests_arm_tsan
+    - unit_tests_arm_tsan_function_prop_fuzzer
+    - unit_tests_arm_tsan_wyrd
     if: ${{ always() }}
     name: "Finish Workflow"
     outputs:
