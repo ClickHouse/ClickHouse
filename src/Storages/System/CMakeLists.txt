@@ -15,6 +15,8 @@ generate_system_build_options()
 include("${ClickHouse_SOURCE_DIR}/cmake/dbms_glob_sources.cmake")
 add_headers_and_sources(storages_system .)
 list (APPEND storages_system_sources StorageSystemBuildOptions.generated.cpp)
+# Changes with every commit, see NO_LTO_COMPILE_OPTIONS.
+set_source_files_properties(${CMAKE_CURRENT_BINARY_DIR}/StorageSystemBuildOptions.generated.cpp PROPERTIES COMPILE_OPTIONS "${NO_LTO_COMPILE_OPTIONS}")
 
 if (NOT TARGET ch_contrib::icu)
     list(REMOVE_ITEM storages_system_sources StorageSystemUnicode.cpp)

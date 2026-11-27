@@ -5,6 +5,8 @@ if (USE_CLANG_TIDY)
 endif ()
 
 configure_file(GitHash.cpp.in GitHash.generated.cpp)
+# Changes with every commit, see NO_LTO_COMPILE_OPTIONS.
+set_source_files_properties(${CMAKE_CURRENT_BINARY_DIR}/GitHash.generated.cpp PROPERTIES COMPILE_OPTIONS "${NO_LTO_COMPILE_OPTIONS}")
 
 set (SRCS
     argsToConfig.cpp
