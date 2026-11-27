@@ -387,13 +387,14 @@ ManifestFileIterator::ManifestFileEntriesHandle ManifestFileIterator::getFilesWi
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot get files from manifest file before it is fully initialized");
 
     SharedLockGuard lock{files_mutex};
-    return ManifestFileEntriesHandle
-    {
+    return ManifestFileEntriesHandle{
         data_files_without_deleted,
         position_deletes_files_without_deleted,
         equality_deletes_files_without_deleted,
-        partition_key_description
-    };
+        partition_specification_header,
+        manifest_schema_id,
+        schema_header,
+        partition_key_description};
 }
 
 
@@ -409,7 +410,8 @@ std::shared_ptr<ManifestFileIterator> ManifestFileIterator::create(
     std::optional<UInt64> inherited_first_row_id_,
     DB::ContextPtr context_,
     std::shared_ptr<const ActionsDAG> filter_dag_,
-    Int32 table_snapshot_schema_id_)
+    Int32 table_snapshot_schema_id_,
+    std::shared_ptr<SharedManifestFilesPruners> shared_pruners_)
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::IcebergManifestFileIteratorCreateMicroseconds);
 
@@ -503,12 +505,15 @@ std::shared_ptr<ManifestFileIterator> ManifestFileIterator::create(
         inherited_first_row_id_,
         context_,
         manifest_schema_id,
+        std::move(*partition_spec_json_string),
+        std::move(*schema_json_string),
         std::make_shared<const PartitionSpecification>(std::move(partition_key.partition_specification)),
         std::move(partition_key.key_description),
         partition_spec_fields_count,
         total_rows,
         std::move(filter_dag_),
-        table_snapshot_schema_id_));
+        table_snapshot_schema_id_,
+        std::move(shared_pruners_)));
 }
 
 ManifestFileIterator::ManifestFileIterator(
@@ -522,12 +527,15 @@ ManifestFileIterator::ManifestFileIterator(
     std::optional<UInt64> inherited_first_row_id_,
     DB::ContextPtr context_,
     Int32 manifest_schema_id_,
+    String partition_specification_header_,
+    String schema_header_,
     std::shared_ptr<const PartitionSpecification> common_partition_specification_,
     std::optional<DB::KeyDescription> partition_key_description_,
     size_t partition_spec_fields_count_,
     size_t total_rows_,
     std::shared_ptr<const ActionsDAG> filter_dag_,
-    Int32 table_snapshot_schema_id_)
+    Int32 table_snapshot_schema_id_,
+    std::shared_ptr<SharedManifestFilesPruners> shared_pruners_)
     : manifest_file_deserializer(std::move(manifest_file_deserializer_))
     , path_to_manifest_file(path_to_manifest_file_)
     , format_version(format_version_)
@@ -536,6 +544,8 @@ ManifestFileIterator::ManifestFileIterator(
     , inherited_snapshot_id(inherited_snapshot_id_)
     , context(context_)
     , manifest_schema_id(manifest_schema_id_)
+    , partition_specification_header(std::move(partition_specification_header_))
+    , schema_header(std::move(schema_header_))
     , common_partition_specification(std::move(common_partition_specification_))
     , partition_key_description(
           partition_key_description_ ? std::make_shared<const DB::KeyDescription>(std::move(*partition_key_description_)) : nullptr)
@@ -547,6 +557,7 @@ ManifestFileIterator::ManifestFileIterator(
     , equality_deletes_files_without_deleted(std::make_shared<std::vector<ProcessedManifestFileEntryPtr>>())
     , filter_dag(std::move(filter_dag_))
     , schema_processor_ptr(&schema_processor)
+    , shared_pruners(std::move(shared_pruners_))
 {
     if (!inherited_first_row_id_.has_value())
         return;
@@ -730,17 +741,36 @@ const ManifestFilesPruner * ManifestFileIterator::getOrCreatePruner(Int32 schema
     std::lock_guard lock(pruners_mutex);
     auto it = pruners_by_schema_id.find(schema_id);
     if (it != pruners_by_schema_id.end())
-        return it->second.get();
+        return it->second;
 
-    auto pruner = std::make_unique<ManifestFilesPruner>(
-        *schema_processor_ptr,
-        table_snapshot_schema_id,
-        schema_id,
-        filter_dag.get(),
-        partition_key_description.get(),
-        *common_partition_specification,
-        context);
-    return pruners_by_schema_id.emplace(schema_id, std::move(pruner)).first->second.get();
+    auto make_pruner = [&](const DB::KeyDescription * partition_key)
+    {
+        return std::make_unique<ManifestFilesPruner>(
+            *schema_processor_ptr,
+            table_snapshot_schema_id,
+            schema_id,
+            filter_dag.get(),
+            partition_key,
+            *common_partition_specification,
+            context);
+    };
+
+    const ManifestFilesPruner * pruner = nullptr;
+    if (shared_pruners)
+    {
+        pruner = shared_pruners->getOrCreate(
+            ManifestPrunerCacheKey{partition_specification_header, manifest_schema_id, schema_header},
+            schema_id,
+            partition_key_description,
+            make_pruner);
+    }
+    else
+    {
+        owned_pruners.emplace_back(make_pruner(partition_key_description.get()));
+        pruner = owned_pruners.back().get();
+    }
+
+    return pruners_by_schema_id.emplace(schema_id, pruner).first->second;
 }
 
 bool ManifestFileIterator::isInitialized() const

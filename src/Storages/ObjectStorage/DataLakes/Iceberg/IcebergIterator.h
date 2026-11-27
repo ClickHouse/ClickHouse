@@ -71,6 +71,8 @@ private:
     Iceberg::PersistentTableComponents persistent_components;
     /// Shared read-only by the threads parsing data and delete manifests concurrently.
     std::shared_ptr<const ActionsDAG> manifest_filter_dag;
+    /// One pruner per partition spec and schema identity across this iterator's manifest walk.
+    std::shared_ptr<Iceberg::SharedManifestFilesPruners> shared_file_pruners;
     IDataLakeMetadata::FileProgressCallback callback;
 
     /// Filled under `deletes_mutex` and never mutated after `deletes_ready`, so `next` may read them

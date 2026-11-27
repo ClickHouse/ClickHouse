@@ -22,6 +22,7 @@ namespace DB::Iceberg
 {
 
 class ManifestFilesPruner;
+class SharedManifestFilesPruners;
 
 /**
  * Manifest file has the following format: '/iceberg_data/db/table_name/metadata/c87bfec7-d36c-4075-ad04-600b6b0f2020-m0.avro'
@@ -75,6 +76,11 @@ public:
         /// nullptr if the partition spec has no usable field. Kept in the handle so files can be pruned after the iterator is gone.
         [[nodiscard]] const DB::KeyDescription * getPartitionKeyDescription() const { return partition_key.get(); }
 
+        [[nodiscard]] const std::shared_ptr<const DB::KeyDescription> & getSharedPartitionKeyDescription() const { return partition_key; }
+        [[nodiscard]] const String & getPartitionSpecificationHeader() const { return partition_specification_header; }
+        [[nodiscard]] Int32 getManifestSchemaId() const { return manifest_schema_id; }
+        [[nodiscard]] const String & getSchemaHeader() const { return schema_header; }
+
     private:
         friend class ManifestFileIterator;
 
@@ -82,10 +88,16 @@ public:
             FilesPtr data_files_,
             FilesPtr position_delete_files_,
             FilesPtr equality_delete_files_,
+            String partition_specification_header_,
+            Int32 manifest_schema_id_,
+            String schema_header_,
             std::shared_ptr<const DB::KeyDescription> partition_key_)
             : data_files(std::move(data_files_))
             , position_delete_files(std::move(position_delete_files_))
             , equality_delete_files(std::move(equality_delete_files_))
+            , partition_specification_header(std::move(partition_specification_header_))
+            , manifest_schema_id(manifest_schema_id_)
+            , schema_header(std::move(schema_header_))
             , partition_key(std::move(partition_key_))
         {
         }
@@ -93,6 +105,9 @@ public:
         FilesPtr data_files;
         FilesPtr position_delete_files;
         FilesPtr equality_delete_files;
+        String partition_specification_header;
+        Int32 manifest_schema_id;
+        String schema_header;
         std::shared_ptr<const DB::KeyDescription> partition_key;
     };
 
@@ -106,7 +121,8 @@ public:
         std::optional<UInt64> inherited_first_row_id,
         DB::ContextPtr context,
         std::shared_ptr<const ActionsDAG> filter_dag_,
-        Int32 table_snapshot_schema_id_);
+        Int32 table_snapshot_schema_id_,
+        std::shared_ptr<SharedManifestFilesPruners> shared_pruners_ = nullptr);
 
     ManifestFileEntriesHandle getFilesWithoutDeletedHandle() const;
 
@@ -140,12 +156,15 @@ private:
         std::optional<UInt64> inherited_first_row_id,
         DB::ContextPtr context,
         Int32 manifest_schema_id,
+        String partition_specification_header,
+        String schema_header,
         std::shared_ptr<const PartitionSpecification> common_partition_specification,
         std::optional<DB::KeyDescription> partition_key_description,
         size_t partition_spec_fields_count,
         size_t total_rows,
         std::shared_ptr<const ActionsDAG> filter_dag,
-        Int32 table_snapshot_schema_id);
+        Int32 table_snapshot_schema_id,
+        std::shared_ptr<SharedManifestFilesPruners> shared_pruners);
 
     ProcessedManifestFileEntryPtr processRow(size_t row_index);
 
@@ -160,6 +179,8 @@ private:
     std::vector<std::optional<UInt64>> entry_first_row_ids;
     const DB::ContextPtr context;
     const Int32 manifest_schema_id;
+    const String partition_specification_header;
+    const String schema_header;
     const std::shared_ptr<const PartitionSpecification> common_partition_specification;
     const std::shared_ptr<const DB::KeyDescription> partition_key_description;
     const size_t partition_spec_fields_count;
@@ -181,10 +202,13 @@ private:
     /// Filtering (partition and min-max index pruning)
     const std::shared_ptr<const ActionsDAG> filter_dag;
     IcebergSchemaProcessor * const schema_processor_ptr;
+    const std::shared_ptr<SharedManifestFilesPruners> shared_pruners;
 
-    /// Cache of pruners by schema_id to avoid recreation on each row
+    /// Cache of pruner pointers by schema_id to avoid recreation on each row.
+    /// Pruners are owned by shared_pruners, or by owned_pruners when no shared cache is supplied.
     mutable std::mutex pruners_mutex;
-    std::unordered_map<Int32, std::unique_ptr<ManifestFilesPruner>> pruners_by_schema_id;
+    std::unordered_map<Int32, const ManifestFilesPruner *> pruners_by_schema_id;
+    std::vector<std::unique_ptr<ManifestFilesPruner>> owned_pruners;
     const ManifestFilesPruner * getOrCreatePruner(Int32 schema_id);
 };
 
