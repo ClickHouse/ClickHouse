@@ -141,4 +141,17 @@ FROM (EXPLAIN actions = 0 SELECT k, count() FROM (SELECT k, v FROM t1 UNION ALL 
 SELECT sum(cityHash64(*)) FROM (SELECT k, count() FROM (SELECT k, v FROM t1 UNION ALL SELECT k, v FROM t2) GROUP BY k) SETTINGS distributed_plan_optimize_exchanges = 0;
 SELECT sum(cityHash64(*)) FROM (SELECT k, count() FROM (SELECT k, v FROM t1 UNION ALL SELECT k, v FROM t2) GROUP BY k) SETTINGS make_distributed_plan = 0, distributed_plan_optimize_exchanges = 0;
 
+-- N10/N10b: a stateful expression that is deterministic within a query (including inside a lambda)
+-- depends on task-local state and must stay in the single-task union stage above the gathers.
+SELECT 'N10', countIf(explain LIKE '%ScatterExchange%') >= 1, countIf(explain LIKE '%GatherExchange%') >= 2
+FROM (EXPLAIN actions = 0 SELECT uniqExact(timeSeriesTagsToGroup([('k', toString(k))])) FROM (SELECT k FROM t1 UNION ALL SELECT k FROM t1) SETTINGS query_plan_lift_up_union = 0, make_distributed_plan = 1) SETTINGS make_distributed_plan = 0;
+SELECT uniqExact(timeSeriesTagsToGroup([('k', toString(k))])) FROM (SELECT k FROM t1 UNION ALL SELECT k FROM t1) SETTINGS query_plan_lift_up_union = 0;
+SELECT uniqExact(timeSeriesTagsToGroup([('k', toString(k))])) FROM (SELECT k FROM t1 UNION ALL SELECT k FROM t1) SETTINGS query_plan_lift_up_union = 0, distributed_plan_optimize_exchanges = 0;
+SELECT uniqExact(timeSeriesTagsToGroup([('k', toString(k))])) FROM (SELECT k FROM t1 UNION ALL SELECT k FROM t1) SETTINGS query_plan_lift_up_union = 0, make_distributed_plan = 0;
+SELECT 'N10b', countIf(explain LIKE '%ScatterExchange%') >= 1, countIf(explain LIKE '%GatherExchange%') >= 2
+FROM (EXPLAIN actions = 0 SELECT uniqExact(arrayMap(x -> timeSeriesTagsToGroup([('k', toString(x))]), [k])[1]) FROM (SELECT k FROM t1 UNION ALL SELECT k FROM t1) SETTINGS query_plan_lift_up_union = 0, make_distributed_plan = 1) SETTINGS make_distributed_plan = 0;
+SELECT uniqExact(arrayMap(x -> timeSeriesTagsToGroup([('k', toString(x))]), [k])[1]) FROM (SELECT k FROM t1 UNION ALL SELECT k FROM t1) SETTINGS query_plan_lift_up_union = 0;
+SELECT uniqExact(arrayMap(x -> timeSeriesTagsToGroup([('k', toString(x))]), [k])[1]) FROM (SELECT k FROM t1 UNION ALL SELECT k FROM t1) SETTINGS query_plan_lift_up_union = 0, distributed_plan_optimize_exchanges = 0;
+SELECT uniqExact(arrayMap(x -> timeSeriesTagsToGroup([('k', toString(x))]), [k])[1]) FROM (SELECT k FROM t1 UNION ALL SELECT k FROM t1) SETTINGS query_plan_lift_up_union = 0, make_distributed_plan = 0;
+
 DROP TABLE t1, t2, t3, t_small;

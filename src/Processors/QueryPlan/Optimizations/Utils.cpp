@@ -168,9 +168,10 @@ bool canHoistGatherThroughStep(const IQueryPlanStep & step)
     if (!dag && !typeid_cast<const BuildRuntimeFilterStep *>(&step))
         return false;
 
-    /// Per-block functions (rowNumberInAllBlocks, blockNumber, nowInBlock, ...) depend on the whole block
-    /// stream; below a gather they would run per shard and produce different values.
-    return !(dag && dagContainsNonDeterministicFunction(*dag));
+    /// Per-block functions (`rowNumberInAllBlocks`, `blockNumber`, `nowInBlock`, ...) and stateful
+    /// functions (`timeSeriesTagsToGroup`, ...) depend on the whole block stream or per-task state;
+    /// below a gather they would run per task and produce different values.
+    return !(dag && dag->hasNonDeterministicOrStatefulFunctions());
 }
 
 bool dagContainsNonDeterministicFunction(const ActionsDAG & dag)
