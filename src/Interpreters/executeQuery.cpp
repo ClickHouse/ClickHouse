@@ -58,7 +58,6 @@
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ASTFromJSON.h>
-#include <Parsers/forEachNonChildSemanticAST.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/queryNormalization.h>
 #include <Common/quoteString.h>
@@ -356,37 +355,6 @@ static bool queryReadsDataFromClient(const ASTPtr & ast)
     ASTPtr input_function;
     insert_query->tryFindInputFunction(input_function);
     return input_function != nullptr;
-}
-
-/// Whether `ast` contains an `EXPLAIN ANALYZE`, anywhere in the tree (it can also be a subquery, e.g.
-/// `SELECT * FROM (EXPLAIN ANALYZE SELECT ...)`). Unlike the other kinds of `EXPLAIN`, it runs its inner
-/// query to completion while its interpreter builds the result, before the pipeline is pulled.
-/// The parser lowers an `EXPLAIN` in a subquery to the `viewExplain` table function, which takes the kind of the
-/// `EXPLAIN` as its first argument, so no `ASTExplainQuery` is left there; the table function can also be written directly.
-static bool containsExplainAnalyze(const IAST & ast)
-{
-    if (const auto * explain = ast.as<ASTExplainQuery>(); explain && explain->getKind() == ASTExplainQuery::Analyze)
-        return true;
-    if (const auto * function = ast.as<ASTFunction>(); function && function->name == "viewExplain")
-    {
-        /// A kind that is not a string literal is not valid for `viewExplain`; do not let it past this check.
-        const auto * kind = function->arguments && !function->arguments->children.empty()
-            ? function->arguments->children.front()->as<ASTLiteral>() : nullptr;
-        if (!kind || kind->value.getType() != Field::Types::String
-            || kind->value.safeGet<String>() == ASTExplainQuery::toString(ASTExplainQuery::Analyze))
-            return true;
-    }
-    for (const auto & child : ast.children)
-        if (child && containsExplainAnalyze(*child))
-            return true;
-    /// Some queries keep executable subtrees outside `children`, e.g. the `WHERE` expression of `SHOW TABLES`,
-    /// which can hold a subquery: `SHOW TABLES WHERE name IN (SELECT * FROM (EXPLAIN ANALYZE ...))`.
-    bool found = false;
-    forEachNonChildSemanticAST(ast, [&](const ASTPtr & member)
-    {
-        found = found || containsExplainAnalyze(*member);
-    });
-    return found;
 }
 
 static void checkASTSizeLimits(const IAST & ast, const Settings & settings)
@@ -3259,7 +3227,16 @@ static BlockIO executeQueryImpl(
             applied_rewrite_rules = flags.rewritten_query_origin->applied_rewrite_rules;
 
         if (!applied_rewrite_rules.empty())
+        {
             context->setRewrittenByQueryRules(true);
+            /// The query is only described (its result header is read, and the pipeline is never run), so the rewrite
+            /// must not produce a statement that does its work while it is being built, which a cancelled pipeline
+            /// cannot undo. `EXPLAIN ANALYZE` is such a statement, and it checks this flag before it runs its inner query.
+            /// The AST is not inspected here, because it does not show every `EXPLAIN ANALYZE` that will be run:
+            /// the `filter` setting is parsed into the query later, and a view is expanded during the analysis.
+            if (flags.rewritten_query_is_only_described)
+                context->setRewrittenQueryOnlyDescribed(true);
+        }
 
         /// The client chooses how to run the query (send the rows of an `INSERT`, or read a result) from the query it
         /// submitted, not from the rewritten one. A rewrite that changes whether the server waits for rows from the
@@ -3287,14 +3264,6 @@ static BlockIO executeQueryImpl(
                     "The query was rewritten by a query rule into a statement that does not return rows, "
                     "which is not allowed here");
         }
-
-        /// The query is only described (its result header is read, and the pipeline is never run), so a rewrite
-        /// must not produce a statement that does its work while it is being built, which a cancelled pipeline
-        /// cannot undo.
-        if (flags.rewritten_query_is_only_described && !applied_rewrite_rules.empty() && containsExplainAnalyze(*out_ast))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "The query was rewritten by a query rule into a statement with `EXPLAIN ANALYZE`, "
-                "which is not allowed when only the result structure of the query is requested");
     }
     catch (...)
     {

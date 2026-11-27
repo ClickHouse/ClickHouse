@@ -10,11 +10,16 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # The same holds for an `EXPLAIN ANALYZE` in a subquery, which the parser lowers to the `viewExplain` table function.
 # It also holds for an `EXPLAIN ANALYZE` in a part of the query that is not among the children of its AST,
 # such as the `WHERE` expression of `SHOW TABLES`.
+# The `EXPLAIN ANALYZE` does not have to be in the AST of the rewritten query at all: it can be in the text of the `filter` setting,
+# which is parsed into the `WHERE` of the query later, or in the definition of a view that the query reads from.
+# So it is refused where the inner query would be run, not by an inspection of the rewritten query.
 # A rewrite into a plain `EXPLAIN` is still described.
 
 RULE_ANALYZE="rule_prepare_analyze_${CLICKHOUSE_DATABASE}"
 RULE_NESTED_ANALYZE="rule_prepare_nested_analyze_${CLICKHOUSE_DATABASE}"
 RULE_SHOW_ANALYZE="rule_prepare_show_analyze_${CLICKHOUSE_DATABASE}"
+RULE_FILTER_ANALYZE="rule_prepare_filter_analyze_${CLICKHOUSE_DATABASE}"
+RULE_VIEW_ANALYZE="rule_prepare_view_analyze_${CLICKHOUSE_DATABASE}"
 RULE_EXPLAIN="rule_prepare_explain_${CLICKHOUSE_DATABASE}"
 RULE_NESTED_EXPLAIN="rule_prepare_nested_explain_${CLICKHOUSE_DATABASE}"
 
@@ -22,16 +27,21 @@ ${CLICKHOUSE_CLIENT} -q "
 DROP RULE IF EXISTS ${RULE_ANALYZE};
 DROP RULE IF EXISTS ${RULE_NESTED_ANALYZE};
 DROP RULE IF EXISTS ${RULE_SHOW_ANALYZE};
+DROP RULE IF EXISTS ${RULE_FILTER_ANALYZE};
+DROP RULE IF EXISTS ${RULE_VIEW_ANALYZE};
 DROP RULE IF EXISTS ${RULE_EXPLAIN};
 DROP RULE IF EXISTS ${RULE_NESTED_EXPLAIN};
 CREATE RULE ${RULE_ANALYZE} AS (SELECT '${RULE_ANALYZE}') REWRITE TO (EXPLAIN ANALYZE SELECT throwIf(number = 0) FROM numbers(1));
 CREATE RULE ${RULE_NESTED_ANALYZE} AS (SELECT '${RULE_NESTED_ANALYZE}') REWRITE TO (SELECT * FROM (EXPLAIN ANALYZE SELECT throwIf(number = 0) FROM numbers(1)));
 CREATE RULE ${RULE_SHOW_ANALYZE} AS (SELECT '${RULE_SHOW_ANALYZE}') REWRITE TO (SHOW TABLES WHERE name IN (SELECT * FROM (EXPLAIN ANALYZE SELECT throwIf(number = 0) FROM numbers(1))));
+CREATE RULE ${RULE_FILTER_ANALYZE} AS (SELECT '${RULE_FILTER_ANALYZE}') REWRITE TO (SELECT 1 SETTINGS filter = '1 IN (SELECT length(explain) FROM (EXPLAIN ANALYZE SELECT throwIf(number = 0) FROM numbers(1)))');
+CREATE VIEW view_with_explain_analyze AS SELECT * FROM (EXPLAIN ANALYZE SELECT 1);
+CREATE RULE ${RULE_VIEW_ANALYZE} AS (SELECT '${RULE_VIEW_ANALYZE}') REWRITE TO (SELECT * FROM ${CLICKHOUSE_DATABASE}.view_with_explain_analyze);
 CREATE RULE ${RULE_EXPLAIN} AS (SELECT '${RULE_EXPLAIN}') REWRITE TO (EXPLAIN SELECT 1);
 CREATE RULE ${RULE_NESTED_EXPLAIN} AS (SELECT '${RULE_NESTED_EXPLAIN}') REWRITE TO (SELECT * FROM (EXPLAIN SELECT 1));
 "
 
-RULE_ANALYZE="${RULE_ANALYZE}" RULE_NESTED_ANALYZE="${RULE_NESTED_ANALYZE}" RULE_SHOW_ANALYZE="${RULE_SHOW_ANALYZE}" RULE_EXPLAIN="${RULE_EXPLAIN}" RULE_NESTED_EXPLAIN="${RULE_NESTED_EXPLAIN}" python3 - <<'PYTHON'
+RULE_ANALYZE="${RULE_ANALYZE}" RULE_NESTED_ANALYZE="${RULE_NESTED_ANALYZE}" RULE_SHOW_ANALYZE="${RULE_SHOW_ANALYZE}" RULE_FILTER_ANALYZE="${RULE_FILTER_ANALYZE}" RULE_VIEW_ANALYZE="${RULE_VIEW_ANALYZE}" RULE_EXPLAIN="${RULE_EXPLAIN}" RULE_NESTED_EXPLAIN="${RULE_NESTED_EXPLAIN}" python3 - <<'PYTHON'
 import os
 import socket
 import struct
@@ -43,6 +53,8 @@ database = os.environ.get("CLICKHOUSE_DATABASE", "default")
 rule_analyze = os.environ["RULE_ANALYZE"]
 rule_nested_analyze = os.environ["RULE_NESTED_ANALYZE"]
 rule_show_analyze = os.environ["RULE_SHOW_ANALYZE"]
+rule_filter_analyze = os.environ["RULE_FILTER_ANALYZE"]
+rule_view_analyze = os.environ["RULE_VIEW_ANALYZE"]
 rule_explain = os.environ["RULE_EXPLAIN"]
 rule_nested_explain = os.environ["RULE_NESTED_EXPLAIN"]
 
@@ -112,6 +124,10 @@ set_query_rules(sock, rule_nested_analyze)
 print("Nested EXPLAIN ANALYZE:", prepare(sock, f"SELECT '{rule_nested_analyze}'"))
 set_query_rules(sock, rule_show_analyze)
 print("EXPLAIN ANALYZE in SHOW TABLES WHERE:", prepare(sock, f"SELECT '{rule_show_analyze}'"))
+set_query_rules(sock, rule_filter_analyze)
+print("EXPLAIN ANALYZE in the filter setting:", prepare(sock, f"SELECT '{rule_filter_analyze}'"))
+set_query_rules(sock, rule_view_analyze)
+print("EXPLAIN ANALYZE in a view:", prepare(sock, f"SELECT '{rule_view_analyze}'"))
 set_query_rules(sock, rule_explain)
 print("EXPLAIN:", prepare(sock, f"SELECT '{rule_explain}'"))
 set_query_rules(sock, rule_nested_explain)
@@ -123,6 +139,8 @@ ${CLICKHOUSE_CLIENT} -q "
 DROP RULE ${RULE_ANALYZE};
 DROP RULE ${RULE_NESTED_ANALYZE};
 DROP RULE ${RULE_SHOW_ANALYZE};
+DROP RULE ${RULE_FILTER_ANALYZE};
+DROP RULE ${RULE_VIEW_ANALYZE};
 DROP RULE ${RULE_EXPLAIN};
 DROP RULE ${RULE_NESTED_EXPLAIN};
 "

@@ -52,7 +52,8 @@ struct QueryFlags
     bool rewritten_query_must_return_rows = false;
     /// If true, only the structure of the result of the query is requested, and its pipeline is never run (MySQL
     /// `COM_STMT_PREPARE`, Arrow Flight `GetSchema`), so a query rewrite rule must not turn it into a statement that
-    /// runs a query while it is built (`EXPLAIN ANALYZE`).
+    /// runs a query while it is built (`EXPLAIN ANALYZE`). It is enforced where that query would be run, see
+    /// `Context::isRewrittenQueryOnlyDescribed`.
     bool rewritten_query_is_only_described = false;
     /// Set for the `background` run of a query rewritten by a rule at dispatch, see `RewrittenQueryOrigin`.
     std::shared_ptr<const RewrittenQueryOrigin> rewritten_query_origin = nullptr;

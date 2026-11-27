@@ -1726,6 +1726,7 @@ ContextData::ContextData(const ContextData &o) :
     is_background_operation(o.is_background_operation),
     is_ddl_or_on_cluster_internal(o.is_ddl_or_on_cluster_internal),
     is_rewritten_by_query_rules(o.is_rewritten_by_query_rules),
+    is_rewritten_query_only_described(o.is_rewritten_query_only_described),
     is_recovery_from_stored_metadata(o.is_recovery_from_stored_metadata),
     is_analyzing_background_expressions(o.is_analyzing_background_expressions),
     skip_forced_projection_check(o.skip_forced_projection_check),
