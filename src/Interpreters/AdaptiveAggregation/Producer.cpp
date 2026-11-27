@@ -1018,45 +1018,54 @@ AdaptiveStagedBytes NO_INLINE Aggregator::appendDelayedRecords(
         /// partition would take the key, and then each argument in a pass of its own, but the lines of a batch, one per
         /// partition its records go to, do not stay in the L1 cache between the passes. The assembled records do: they
         /// are written in sequence, and only the copies go to the partitions.
+        ///
+        /// Only records of at most `max_assembled_record_bytes` are assembled. A fixed-size argument can be as wide as a
+        /// `FixedString` is declared, and a batch of wide records would not stay in the L1 cache either, so their second
+        /// copy would gain nothing. Wider records are written in place below. The buffer holds the records of one batch,
+        /// or all the records of the call when they are fewer, so its size follows the records that are staged.
         if constexpr (Record::fixed_width_key && !Record::with_variable_arguments)
         {
+            constexpr size_t max_assembled_record_bytes = 64;
             const size_t stride = format.bytesFor(0, 0);
-            const size_t stored_key_size = format.keyBytes(0);
-            /// The copy of a key, whole as `write_key` makes it, and the copy of a record run past the record by less
-            /// than the padding.
-            constexpr size_t assembled_padding = 64;
-            static_assert(!Record::fixed_width_key || sizeof(RecordKey) <= assembled_padding);
-            PaddedPODArray<char> assembled(argument_rows.size() * stride + assembled_padding);
-            for (size_t batch_begin = 0; batch_begin < total; batch_begin += argument_rows.size())
+            if (stride <= max_assembled_record_bytes)
             {
-                const size_t batch_end = std::min(total, batch_begin + argument_rows.size());
-                const size_t batch_rows = batch_end - batch_begin;
-                for (size_t i = batch_begin; i < batch_end; ++i)
+                const size_t stored_key_size = format.keyBytes(0);
+                /// The copy of a key, whole as `write_key` makes it, and the copy of a record run past the record by less
+                /// than the padding.
+                constexpr size_t assembled_padding = 64;
+                static_assert(!Record::fixed_width_key || sizeof(RecordKey) <= assembled_padding);
+                PaddedPODArray<char> assembled(std::min(total, argument_rows.size()) * stride + assembled_padding);
+                for (size_t batch_begin = 0; batch_begin < total; batch_begin += argument_rows.size())
                 {
-                    char * record = assembled.data() + (i - batch_begin) * stride;
-                    argument_rows[i - batch_begin] = record;
-                    write_key(i, 0, format.writeHeader(record, hashes[i], 0, stride), format);
+                    const size_t batch_end = std::min(total, batch_begin + argument_rows.size());
+                    const size_t batch_rows = batch_end - batch_begin;
+                    for (size_t i = batch_begin; i < batch_end; ++i)
+                    {
+                        char * record = assembled.data() + (i - batch_begin) * stride;
+                        argument_rows[i - batch_begin] = record;
+                        write_key(i, 0, format.writeHeader(record, hashes[i], 0, stride), format);
+                    }
+                    for (const auto & field : argument_layout.fixed_fields)
+                    {
+                        const auto & [column, rows] = arguments[field.position];
+                        column->gatherSelectedIntoRows(
+                            {rows + batch_begin, batch_rows},
+                            {argument_rows.data(), batch_rows},
+                            field.offset,
+                            /*null_map=*/ nullptr);
+                    }
+                    for (size_t i = batch_begin; i < batch_end; ++i)
+                    {
+                        prefetch_append(i);
+                        char * record = partitions.append(layout.partitionOf(hashes[i]), stride);
+                        copyAssembledRecord(record, argument_rows[i - batch_begin], stride);
+                        check_record(format, record, i, hashes[i]);
+                    }
+                    key_bytes += batch_rows * stored_key_size;
+                    record_bytes += batch_rows * stride;
                 }
-                for (const auto & field : argument_layout.fixed_fields)
-                {
-                    const auto & [column, rows] = arguments[field.position];
-                    column->gatherSelectedIntoRows(
-                        {rows + batch_begin, batch_rows},
-                        {argument_rows.data(), batch_rows},
-                        field.offset,
-                        /*null_map=*/ nullptr);
-                }
-                for (size_t i = batch_begin; i < batch_end; ++i)
-                {
-                    prefetch_append(i);
-                    char * record = partitions.append(layout.partitionOf(hashes[i]), stride);
-                    copyAssembledRecord(record, argument_rows[i - batch_begin], stride);
-                    check_record(format, record, i, hashes[i]);
-                }
-                key_bytes += batch_rows * stored_key_size;
-                record_bytes += batch_rows * stride;
+                return;
             }
-            return;
         }
 
         for (size_t batch_begin = 0; batch_begin < total; batch_begin += argument_rows.size())

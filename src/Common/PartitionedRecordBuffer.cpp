@@ -58,6 +58,9 @@ PartitionedRecordBuffer::PartitionedRecordBuffer(
     chassert(num_partitions > 0 && partitions_per_group > 0);
     chassert(first_chunk_bytes >= min_first_chunk_bytes && first_chunk_bytes <= max_first_chunk_bytes);
     chassert(max_chunk_bytes >= first_chunk_bytes);
+    /// The chunks of a block are carved one after another, so the sizes that a chunk can take keep the next one aligned
+    /// (see `startChunk`).
+    chassert(first_chunk_bytes % alignof(ChunkHeader) == 0 && max_chunk_bytes % alignof(ChunkHeader) == 0);
     cursors = std::make_unique<Cursor[]>(num_partitions);
     chains = std::make_unique<Chain[]>(num_partitions);
     carvers.resize((num_partitions - 1) / partitions_per_group + 1);
@@ -168,6 +171,15 @@ void PartitionedRecordBuffer::startChunk(size_t partition, size_t bytes)
         block = carver.block;
         block->addChunk();
     }
+
+    /// A chunk allocated on its own is aligned by its allocation. A carved chunk starts where the previous one of the
+    /// block ends, or after the block's header, so it is aligned as long as every carved capacity is a multiple of the
+    /// alignment: the first chunk and the cap are (see the constructor), `needed` is rounded up above, and the rest of a
+    /// block is, as the sizes of the blocks are such multiples too.
+    static_assert(sizeof(Block) % alignof(ChunkHeader) == 0);
+    static_assert(max_block_bytes % alignof(ChunkHeader) == 0);
+    chassert(reinterpret_cast<uintptr_t>(data) % alignof(ChunkHeader) == 0);
+    chassert(capacity % alignof(ChunkHeader) == 0);
 
     auto * chunk = new (data) ChunkHeader{.next = nullptr, .block = block, .used = 0, .capacity = static_cast<UInt32>(capacity)};
     if (chain.last)
