@@ -19,6 +19,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/formatReadable.h>
 #include <Storages/MutationCommands.h>
+#include <Storages/MergeTree/PartitionIds.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <base/defines.h>
 #include <base/sort.h>
@@ -1260,23 +1261,26 @@ int32_t ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper
                 LOG_WARNING(log, "Cannot get mutation node {} ({}), probably it was concurrently removed", entries_to_load[i], maybe_response.error);
                 continue;
             }
-            new_mutations.push_back(std::make_shared<ReplicatedMergeTreeMutationEntry>(
-                ReplicatedMergeTreeMutationEntry::parse(maybe_response.data, entries_to_load[i])));
-        }
+            auto new_entry = std::make_shared<ReplicatedMergeTreeMutationEntry>(
+                ReplicatedMergeTreeMutationEntry::parse(maybe_response.data, entries_to_load[i]));
 
-        /** Resolve the partitions of the commands that name some, so that the per-part selection of the
-          * on-the-fly commands can keep such a command out of the partitions it does not name. Done here,
-          * once per entry, and not while a storage snapshot is built: a partition expression is arbitrary
-          * user SQL and must not be evaluated on the read path.
-          *
-          * The submitting replica already replaced every partition expression of an entry with the
-          * `ID '...'` it resolved to (`StorageReplicatedMergeTree::mutate`), so for such an entry this
-          * evaluates nothing - no user SQL runs under `update_mutations_mutex` - and every replica gets
-          * the same partitions. Only an entry created by an older version may still carry an expression;
-          * it is left unresolved and not evaluated here.
-          */
-        for (const auto & entry : new_mutations)
-            storage.resolvePartitionIdsOfScopedCommands(entry->commands, storage.getContext(), /* only_pinned = */ true);
+            /// Resolve the partitions of the commands that name some into `MutationCommand::partition_ids`,
+            /// so that the per-part selection of the on-the-fly commands can keep such a command out of
+            /// the partitions it does not name. Done here, once per entry, and not while a storage
+            /// snapshot is built: a partition expression is arbitrary user SQL and must not be evaluated
+            /// on the read path.
+            /// The submitting replica already replaced every partition expression of an entry with the
+            /// `ID '...'` it resolved to (`StorageReplicatedMergeTree::mutate`), so for such an entry
+            /// this evaluates nothing, and every replica gets the same partitions.
+            /// Only an entry written by an older server version still scopes its commands with the
+            /// original `IN PARTITION <value>` literals. Its scope is pinned once here as well, so
+            /// that executing the commands does not have to decode the literals through the
+            /// current partition key, which can throw after a key-safe partition key type
+            /// change (e.g. `Enum8 -> Int8`).
+            storage.pinPartitionScopeOfLegacyCommands(new_entry->commands, new_entry->block_numbers, storage.getContext());
+
+            new_mutations.push_back(std::move(new_entry));
+        }
 
         bool some_mutations_are_probably_done = false;
         {
@@ -2329,11 +2333,40 @@ std::map<std::string, MutationCommands> ReplicatedMergeTreeQueue::getUnfinishedM
     std::map<std::string, MutationCommands> result;
     std::lock_guard lock(state_mutex);
 
-    for (const auto & [name, status] : mutations_by_znode | std::views::reverse)
+    /// The finished mutations are not necessarily a prefix of `mutations_by_znode`: a mutation
+    /// can be marked as done while an earlier one is still pending (see `tryFinalizeMutations`),
+    /// so all entries are checked.
+    for (const auto & [name, status] : mutations_by_znode)
     {
         if (status.is_done)
-            break;
+            continue;
         result.emplace(name, status.entry->commands);
+    }
+
+    return result;
+}
+
+Strings ReplicatedMergeTreeQueue::getMutationsWithLegacyPartitionScope(const String & min_replicas_mutation_pointer) const
+{
+    Strings result;
+    std::lock_guard lock(state_mutex);
+
+    /// Not a prefix scan, see `getUnfinishedMutations`.
+    for (const auto & [name, status] : mutations_by_znode)
+    {
+        /// `is_done` is local to this replica: a lagging replica may still have to load and execute
+        /// the entry, so it is skipped only once every replica has passed it. The local `is_done` is
+        /// not checked: an entry just loaded by `updateMutations` (e.g. after a restart) is not marked
+        /// done until `tryFinalizeMutations` runs, but every entry not greater than the `mutation_pointer`
+        /// of this replica is marked done there unconditionally, and `clearOldMutations` removes it.
+        if (!min_replicas_mutation_pointer.empty() && name <= min_replicas_mutation_pointer)
+            continue;
+
+        /// The znode keeps the original literals whatever this replica pinned in memory, so every
+        /// replica that loads the entry later (and this one after a restart) has to decode them again.
+        if (MergeTreeData::hasUnresolvedPartitionScope(status.entry->commands)
+            && !MergeTreeData::isLegacyPartitionScopeRecoverableFromBlockNumbers(status.entry->commands, status.entry->block_numbers))
+            result.push_back(name);
     }
 
     return result;

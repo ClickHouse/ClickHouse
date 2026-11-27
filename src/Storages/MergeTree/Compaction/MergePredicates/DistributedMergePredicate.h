@@ -3,6 +3,7 @@
 #include <Storages/MergeTree/Compaction/MergePredicates/IMergePredicate.h>
 #include <Storages/MergeTree/MergeTreeCommittingBlock.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
+#include <Storages/MergeTree/PartitionIds.h>
 #include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 
@@ -13,7 +14,7 @@
 namespace DB
 {
 
-using PartitionIdsHint = std::unordered_set<String>;
+using PartitionIdsHint = PartitionIds;
 using CommittingBlocks = std::unordered_map<String, CommittingBlocksSet>;
 
 CommittingBlocks getCommittingBlocks(zkutil::ZooKeeperPtr & zookeeper, const std::string & zookeeper_path, std::optional<PartitionIdsHint> & partition_ids_hint, bool with_data);
