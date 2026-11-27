@@ -396,6 +396,8 @@ public:
             cache.empty = true;
             cache.found = false;
             cache.misses = 0;
+            if constexpr (nullable)
+                cache.is_null = false;
         }
     }
 
