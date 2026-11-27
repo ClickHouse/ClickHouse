@@ -12,6 +12,37 @@
 namespace DB::GPU
 {
 
+namespace detail
+{
+
+inline bool isReady(const EventPtr & ready)
+{
+    const cudaError_t status = cudaEventQuery(ready.get());
+    if (status == cudaErrorNotReady)
+        return false;
+    checkCuda(status, "Cannot ask the device whether a value is ready");
+    return true;
+}
+
+inline void waitOn(const EventPtr & ready, cuda::stream_ref stream)
+{
+    checkCuda(cudaStreamWaitEvent(stream.get(), ready.get(), 0), "Cannot make a stream wait for a value of the device");
+}
+
+inline void wait(const EventPtr & ready)
+{
+    checkCuda(cudaEventSynchronize(ready.get()), "Cannot wait for a value of the device");
+}
+
+inline EventPtr recordOn(cuda::stream_ref stream)
+{
+    EventPtr ready = createEvent();
+    checkCuda(cudaEventRecord(ready.get(), stream.get()), "Cannot mark a point in a stream of the device");
+    return ready;
+}
+
+}
+
 /// A value that work queued on a stream of the device makes ready: it is there once the device has done what was queued
 /// before `ready` was recorded. Its owner waits for it on the device, by `waitOn`, or on the host, by `get`.
 template <typename T>
@@ -25,26 +56,19 @@ public:
     }
 
     /// Whether the device has made it ready, without waiting.
-    bool isReady() const
-    {
-        const cudaError_t status = cudaEventQuery(ready.get());
-        if (status == cudaErrorNotReady)
-            return false;
-        checkCuda(status, "Cannot ask the device whether a value is ready");
-        return true;
-    }
+    bool isReady() const { return detail::isReady(ready); }
 
     /// The value, for the work queued on `stream` from now on, which waits for it on the device; the host does not wait.
     T waitOn(cuda::stream_ref stream) &&
     {
-        checkCuda(cudaStreamWaitEvent(stream.get(), ready.get(), 0), "Cannot make a stream wait for a value of the device");
+        detail::waitOn(ready, stream);
         return std::move(value);
     }
 
     /// The value once it is ready, waiting for it on the host.
     T get() &&
     {
-        checkCuda(cudaEventSynchronize(ready.get()), "Cannot wait for a value of the device");
+        detail::wait(ready);
         return std::move(value);
     }
 
@@ -67,15 +91,50 @@ public:
 
     T & value() { return promised; }
 
-    GPUFuture<T> fulfill() &&
-    {
-        EventPtr ready = createEvent();
-        checkCuda(cudaEventRecord(ready.get(), stream.get()), "Cannot mark a point in a stream of the device");
-        return GPUFuture<T>(std::move(promised), std::move(ready));
-    }
+    GPUFuture<T> fulfill() && { return GPUFuture<T>(std::move(promised), detail::recordOn(stream)); }
 
 private:
     T promised;
+    const cuda::stream_ref stream;
+};
+
+/// That work queued on a stream of the device is done, of no value.
+template <>
+class GPUFuture<void>
+{
+public:
+    explicit GPUFuture(EventPtr ready_)
+        : ready(std::move(ready_))
+    {
+    }
+
+    bool isReady() const { return detail::isReady(ready); }
+
+    /// The work queued on `stream` from now on waits for it on the device.
+    void waitOn(cuda::stream_ref stream) && { detail::waitOn(ready, stream); }
+
+    /// Waits for it on the host.
+    void get() && { detail::wait(ready); }
+
+private:
+    EventPtr ready;
+};
+
+/// The promise that the work queued on `stream` until `fulfill` is done.
+template <>
+class GPUPromise<void>
+{
+public:
+    explicit GPUPromise(cuda::stream_ref stream_)
+        : stream(stream_)
+    {
+    }
+
+    cuda::stream_ref on() const { return stream; }
+
+    GPUFuture<void> fulfill() && { return GPUFuture<void>(detail::recordOn(stream)); }
+
+private:
     const cuda::stream_ref stream;
 };
 

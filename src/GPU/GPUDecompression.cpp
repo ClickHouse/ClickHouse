@@ -2,10 +2,12 @@
 
 #if USE_GPU
 
+#include <GPU/CompressedHostColumn.h>
 #include <GPU/GPUDevice.h>
 #include <GPU/GPUMemory.h>
 
 #include <Common/Exception.h>
+#include <base/scope_guard.h>
 
 #include <Compression/CompressionCodecGDeflate.h>
 #include <base/unaligned.h>
@@ -28,6 +30,9 @@ namespace DB::GPU
 
 namespace
 {
+
+/// The alignment of the addresses that nvcomp expands blocks to: 8 bytes for ZSTD, 4 for LZ4.
+constexpr size_t expand_alignment = 8;
 
 void checkNvcomp(nvcompStatus_t status, const char * what)
 {
@@ -175,21 +180,60 @@ DecompressionBatch::DecompressionBatch(cuda::stream_ref stream_)
 {
 }
 
-void DecompressionBatch::launch(GPUCodec codec, std::span<const CompressedPiece> pieces, char * destination, cudaEvent_t destination_ready_event)
+std::vector<DecompressionBatch::Piece> & DecompressionBatch::piecesOf(GPUCodec codec)
 {
-    /// The destination is the caller's, which may have just allocated or written it on the compute stream.
-    if (!destination_ready_event)
+    for (auto & [of, list] : pieces_by_codec)
     {
-        checkCuda(cudaEventRecord(destination_ready.get(), GPUResources::get().compute.get()), "Cannot mark a point in the compute stream");
-        destination_ready_event = destination_ready.get();
+        if (of == codec)
+            return list;
     }
-    checkCuda(cudaStreamWaitEvent(stream.get(), destination_ready_event, 0), "Cannot make the decompression stream wait for its destination");
+    return pieces_by_codec.emplace_back(codec, std::vector<Piece>{}).second;
+}
 
+void DecompressionBatch::add(const CompressedHostColumn & column, char * destination)
+{
+    const size_t expanded_bytes = column.expandedBytes();
+    if (expanded_bytes == 0)
+        return;
+
+    char * const at = uploaded.emplace_back(stream).grow(column.bytes.size());
+    checkCuda(
+        cudaMemcpyAsync(at, column.bytes.data(), column.bytes.size(), cudaMemcpyHostToDevice, stream.get()),
+        "Cannot send compressed blocks to the device");
+
+    char * expand_to = destination;
+    if (reinterpret_cast<uintptr_t>(destination) % expand_alignment != 0)
+    {
+        expand_to = expanded_elsewhere.emplace_back(stream).grow(expanded_bytes);
+        moves.push_back({expand_to, destination, expanded_bytes});
+    }
+    piecesOf(*column.codec).push_back({.device_compressed = at, .compressed_bytes = column.bytes.size(), .blocks = column.blocks, .destination = expand_to});
+}
+
+GPUFuture<void> DecompressionBatch::expand()
+{
+    /// The buffers are freed in the order of the stream, after what is queued on it.
+    SCOPE_EXIT({
+        pieces_by_codec.clear();
+        uploaded.clear();
+        expanded_elsewhere.clear();
+        moves.clear();
+    });
+
+    for (auto & [codec, pieces] : pieces_by_codec)
+        check(launch(codec, pieces));
+    for (const Move & move : moves)
+        checkCuda(cudaMemcpyAsync(move.to, move.from, move.bytes, cudaMemcpyDeviceToDevice, stream.get()), "Cannot move expanded bytes on the device");
+    return GPUPromise<void>(stream).fulfill();
+}
+
+GPUFuture<void> DecompressionBatch::launch(GPUCodec codec, std::span<const Piece> pieces)
+{
     size_t num_blocks = 0;
     size_t decompressed_total = 0;
     size_t max_decompressed = 0;
 
-    for (const CompressedPiece & piece : pieces)
+    for (const Piece & piece : pieces)
     {
         size_t piece_compressed = 0;
         for (const CompressedBlock & block : piece.blocks)
@@ -208,18 +252,13 @@ void DecompressionBatch::launch(GPUCodec codec, std::span<const CompressedPiece>
 
         num_blocks += piece.blocks.size();
 
-        if (piece.uploaded)
-            checkCuda(cudaStreamWaitEvent(stream.get(), piece.uploaded, 0), "Cannot make the decompression stream wait for an upload");
     }
 
     expected_bytes.clear();
     expected_bytes.reserve(num_blocks);
 
     if (num_blocks == 0)
-    {
-        checkCuda(cudaEventRecord(expanded.get(), stream.get()), "Cannot mark a point in the decompression stream");
-        return;
-    }
+        return GPUPromise<void>(stream).fulfill();
 
     const size_t arguments_bytes = num_blocks * (2 * sizeof(void *) + 2 * sizeof(size_t));
     host_arguments.clear();
@@ -233,13 +272,10 @@ void DecompressionBatch::launch(GPUCodec codec, std::span<const CompressedPiece>
 
     size_t block_index = 0;
     size_t at = 0;
-    for (const CompressedPiece & piece : pieces)
+    for (const Piece & piece : pieces)
     {
-        if (piece.destination)
-        {
-            destination = piece.destination;
-            at = 0;
-        }
+        char * const destination = piece.destination;
+        at = 0;
         for (const CompressedBlock & block : piece.blocks)
         {
             compressed_ptrs[block_index] = piece.device_compressed + block.offset;
@@ -301,18 +337,13 @@ void DecompressionBatch::launch(GPUCodec codec, std::span<const CompressedPiece>
             cudaMemcpyAsync(results, device_results.data(), results_bytes, cudaMemcpyDeviceToHost, stream.get()),
             "Cannot copy the decompression statuses back");
 
-        checkCuda(cudaEventRecord(expanded.get(), stream.get()), "Cannot mark a point in the decompression stream");
     });
+    return GPUPromise<void>(stream).fulfill();
 }
 
-void DecompressionBatch::wait()
+void DecompressionBatch::check(GPUFuture<void> expanded)
 {
-    checkCuda(cudaEventSynchronize(expanded.get()), "Cannot wait for a decompression");
-}
-
-void DecompressionBatch::waitAndCheck()
-{
-    wait();
+    std::move(expanded).get();
 
     const size_t num_blocks = expected_bytes.size();
     if (num_blocks == 0)

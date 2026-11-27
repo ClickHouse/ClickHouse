@@ -4,6 +4,7 @@
 
 #if USE_GPU
 
+#include <GPU/GPUFuture.h>
 #include <GPU/GPUMemory.h>
 #include <GPU/GPUResources.cuh>
 #include <GPU/GPUTypes.cuh>
@@ -30,32 +31,52 @@ size_t decompressedBytesOf(std::span<const CompressedBlock> blocks);
 void addCompressedBlocksOf(
     GPUCodec codec, std::string_view payload, size_t offset, size_t decompressed_bytes, std::vector<CompressedBlock> & blocks);
 
-struct CompressedPiece
-{
-    const char * device_compressed = nullptr;
-    size_t compressed_bytes = 0;
-    std::span<const CompressedBlock> blocks;
-    cudaEvent_t uploaded = nullptr;
-    /// Without it, the piece expands after the piece before.
-    char * destination = nullptr;
-};
+struct CompressedHostColumn;
 
-/// One batched nvcomp call, on the decompression stream unless the caller gives its own. Codecs other than those of
-/// `GPUCodec` are decompressed by the CPU.
+/// The compressed blocks of a batch, which the device expands on `stream`: `add` sends the blocks of a stream to the
+/// device, to be expanded to a destination there, and `expand` expands all of them, a call of nvcomp per codec.
 class DecompressionBatch
 {
 public:
-    explicit DecompressionBatch(cuda::stream_ref stream_ = GPUResources::get().decompression);
+    explicit DecompressionBatch(cuda::stream_ref stream_);
 
-    /// Writes the destination after `destination_ready_event`, or else after what the compute stream has queued.
-    void launch(GPUCodec codec, std::span<const CompressedPiece> pieces, char * destination, cudaEvent_t destination_ready_event = nullptr);
+    /// Sends the blocks of `column`, from pinned memory, to be expanded to `destination`, which is of this stream.
+    void add(const CompressedHostColumn & column, char * destination);
 
-    void wait();
-
-    void waitAndCheck();
+    /// Expands what was added and checks what each block expanded to, which waits for the device; the host memory of
+    /// what was added is read until then. The future is of the expanded bytes in their destinations.
+    GPUFuture<void> expand();
 
 private:
-    cuda::stream_ref stream;
+    /// The blocks of a stream on the device, and where they expand to.
+    struct Piece
+    {
+        const char * device_compressed = nullptr;
+        size_t compressed_bytes = 0;
+        std::span<const CompressedBlock> blocks;
+        char * destination = nullptr;
+    };
+
+    struct Move
+    {
+        const char * from;
+        char * to;
+        size_t bytes;
+    };
+
+    std::vector<Piece> & piecesOf(GPUCodec codec);
+
+    /// One batched call of nvcomp, whose future is of the statuses back on the host, which `check` reads.
+    GPUFuture<void> launch(GPUCodec codec, std::span<const Piece> pieces);
+    void check(GPUFuture<void> expanded);
+
+    const cuda::stream_ref stream;
+
+    std::vector<DeviceBuffer> uploaded;
+    std::vector<std::pair<GPUCodec, std::vector<Piece>>> pieces_by_codec;
+    /// nvcomp takes only aligned destinations: the blocks of others expand elsewhere and are copied in place.
+    std::vector<DeviceBuffer> expanded_elsewhere;
+    std::vector<Move> moves;
 
     PinnedBuffer host_arguments;
     PinnedBuffer host_results;
@@ -64,8 +85,6 @@ private:
     DeviceBuffer device_results{stream};
     DeviceBuffer device_temp{stream};
 
-    EventPtr destination_ready = createEvent();
-    EventPtr expanded = createEvent();
     std::vector<size_t> expected_bytes;
 };
 

@@ -23,19 +23,8 @@ namespace DB::GPU
 namespace
 {
 
-/// Where each compressed block starts on the device, as nvcomp reads them, see `nvcompZstdRequiredDecompressionAlignment`.
-constexpr size_t compressed_alignment = 8;
-
-/// The alignment of the addresses that nvcomp expands blocks to: 8 bytes for ZSTD, 4 for LZ4.
-constexpr size_t expand_alignment = 8;
-
 /// The bytes the sizes of a `String` column may add up to, as `MAX_TOTAL_STRING_SIZE` of `SerializationString`.
 constexpr UInt64 max_total_string_bytes = 1ULL << 48;
-
-size_t alignedUp(size_t bytes)
-{
-    return (bytes + compressed_alignment - 1) / compressed_alignment * compressed_alignment;
-}
 
 bool isVariable(GPUElementType type)
 {
@@ -51,28 +40,27 @@ GPUDeviceBatch::GPUDeviceBatch(std::shared_ptr<StreamPtr> upload_stream_)
 
 GPUDeviceBatch::~GPUDeviceBatch()
 {
-    if (!consumed || !consumer || !upload_stream)
+    if (!released || !upload_stream)
         return;
 
     /// The uploader's stream frees the memory, so it must wait for the consumer's stream.
+    const cuda::stream_ref consumer = released->on();
     try
     {
-        checkCuda(cudaEventRecord(consumed.get(), consumer), "Cannot mark a point in the stream of a GPU batch's consumer");
-        checkCuda(cudaStreamWaitEvent(upload_stream->get(), consumed.get(), 0), "Cannot make an upload stream wait for a GPU batch's consumer");
+        std::move(*released).fulfill().waitOn(cuda::stream_ref{upload_stream->get()});
     }
     catch (...)
     {
         tryLogCurrentException(__PRETTY_FUNCTION__);
-        cudaStreamSynchronize(consumer);
+        cudaStreamSynchronize(consumer.get());
     }
 }
 
 void GPUDeviceBatch::useOn(cuda::stream_ref stream)
 {
-    if (consumer)
+    if (released)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "A GPU batch taken on a stream twice");
-    consumed = createEvent();
-    consumer = stream.get();
+    released.emplace(stream);
 }
 
 GPUDeviceBatch takeOn(GPUFuture<GPUDeviceBatch> future, cuda::stream_ref stream)
@@ -110,96 +98,15 @@ std::optional<GPUFuture<GPUDeviceBatch>> GPUBatchUploader::sendHostToDevice(cons
     return batch;
 }
 
-/// The compressed blocks of a batch: sent to the device in one buffer, and expanded there by nvcomp, a call per codec.
-class GPUBatchUploader::BatchUpload
-{
-public:
-    BatchUpload(const GPUHostBatch & staged, cuda::stream_ref own_)
-        : own(own_)
-        , uploaded(own_)
-    {
-        size_t compressed_total = 0;
-        for (const auto & column : staged.columns)
-            compressed_total += alignedUp(column.values.bytes.size()) + alignedUp(column.sizes.bytes.size());
-        uploaded_base = compressed_total ? uploaded.grow(compressed_total) : nullptr;
-    }
-
-    /// Sends the compressed blocks of a stream, to be expanded to `destination`.
-    void send(const CompressedHostColumn & column, char * destination)
-    {
-        const size_t expanded_bytes = column.expandedBytes();
-        if (expanded_bytes == 0)
-            return;
-        char * const at = uploaded_base + uploaded_at;
-        checkCuda(
-            cudaMemcpyAsync(at, column.bytes.data(), column.bytes.size(), cudaMemcpyHostToDevice, own.get()),
-            "Cannot send compressed blocks to the device");
-        char * expand_to = destination;
-        if (reinterpret_cast<uintptr_t>(destination) % expand_alignment != 0)
-        {
-            expand_to = expanded_elsewhere.emplace_back(own).grow(expanded_bytes);
-            moves.push_back({expand_to, destination, expanded_bytes});
-        }
-        piecesOf(*column.codec).push_back({
-            .device_compressed = at,
-            .compressed_bytes = column.bytes.size(),
-            .blocks = column.blocks,
-            .destination = expand_to,
-        });
-        uploaded_at += alignedUp(column.bytes.size());
-    }
-
-    /// Expands what was sent. The staged memory is free once it returns: nvcomp waits for the uploads as well.
-    void expandAll(DecompressionBatch & batch_decompression, cudaEvent_t sent)
-    {
-        checkCuda(cudaEventRecord(sent, own.get()), "Cannot mark a point in an uploader's own");
-        for (auto & [codec, list] : pieces)
-        {
-            batch_decompression.launch(codec, list, nullptr, sent);
-            batch_decompression.waitAndCheck();
-        }
-        checkCuda(cudaEventSynchronize(sent), "Cannot wait for the uploads of a batch");
-        for (const Move & move : moves)
-            checkCuda(
-                cudaMemcpyAsync(move.to, move.from, move.bytes, cudaMemcpyDeviceToDevice, own.get()), "Cannot move expanded bytes on the device");
-    }
-
-private:
-    struct Move
-    {
-        const char * from;
-        char * to;
-        size_t bytes;
-    };
-
-    std::vector<CompressedPiece> & piecesOf(GPUCodec codec)
-    {
-        for (auto & [of, list] : pieces)
-        {
-            if (of == codec)
-                return list;
-        }
-        return pieces.emplace_back(codec, std::vector<CompressedPiece>{}).second;
-    }
-
-    const cuda::stream_ref own;
-    DeviceBuffer uploaded;
-    char * uploaded_base = nullptr;
-    size_t uploaded_at = 0;
-    std::vector<std::pair<GPUCodec, std::vector<CompressedPiece>>> pieces;
-    /// nvcomp takes only aligned destinations: the blocks of others expand elsewhere and are copied in place.
-    std::vector<DeviceBuffer> expanded_elsewhere;
-    std::vector<Move> moves;
-};
-
 /// A column of a batch while the device expands it: the rows carried from the batch before, then those of its staged
 /// blocks, of a `String` its bytes so and the offsets of its rows, carried and from its sizes. `take` makes it the
 /// `GPUDeviceColumn` of the rows of the batch.
 class GPUBatchUploader::ExpandingColumn
 {
 public:
-    /// Places the column in memory of its own, and sends its blocks through `upload`.
-    ExpandingColumn(GPUElementType type_, const GPUHostColumn & staged, const Carried & carried_column, BatchUpload & upload, cuda::stream_ref own)
+    /// Places the column in memory of its own, and adds its blocks to `expansion`.
+    ExpandingColumn(
+        GPUElementType type_, const GPUHostColumn & staged, const Carried & carried_column, DecompressionBatch & expansion, cuda::stream_ref own)
         : type(type_)
         , values_buffer(own)
         , sizes_buffer(own)
@@ -213,7 +120,7 @@ public:
         char * const base = values_buffer.grow(padding + lead - staged_values.skipped_bytes + staged_values.expandedBytes());
         values = base + padding + lead - carried_bytes;
         values_bytes = carried_bytes + staged_values.kept_bytes;
-        upload.send(staged_values, base + padding + lead - staged_values.skipped_bytes);
+        expansion.add(staged_values, base + padding + lead - staged_values.skipped_bytes);
 
         if (!isVariable(type))
             return;
@@ -244,7 +151,7 @@ public:
         of.sized_rows = of.carried_rows + size_bytes / sizeof(UInt64);
         of.tail_bytes = size_bytes % sizeof(UInt64);
         of.tail = first_size + size_bytes - of.tail_bytes;
-        upload.send(staged_sizes, first_size + tail.size());
+        expansion.add(staged_sizes, first_size + tail.size());
     }
 
     /// Once its blocks are expanded: the carried bytes before them, and of a `String` the offsets of its sizes.
@@ -375,13 +282,13 @@ std::optional<GPUFuture<GPUDeviceBatch>> GPUBatchUploader::expand(const GPUHostB
 
     GPUPromise<GPUDeviceBatch> promise(GPUDeviceBatch(stream), own);
 
-    BatchUpload upload(staged, own);
     std::vector<ExpandingColumn> columns;
     columns.reserve(num_columns);
     for (size_t c = 0; c < num_columns; ++c)
-        columns.emplace_back(column_types[c], staged.columns[c], carried[c], upload, own);
+        columns.emplace_back(column_types[c], staged.columns[c], carried[c], decompression, own);
 
-    upload.expandAll(decompression, staged_sent.get());
+    /// The host batch is free once it returns.
+    decompression.expand().waitOn(own);
     for (size_t c = 0; c < num_columns; ++c)
         columns[c].finish(carried[c], own);
 

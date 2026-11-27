@@ -57,7 +57,7 @@ private:
     friend class GPUBatchUploader;
     friend GPUDeviceBatch takeOn(GPUFuture<GPUDeviceBatch> future, cuda::stream_ref stream);
 
-    /// The stream that reads it, which the uploader's waits for before it frees the memory.
+    /// The stream that reads it, whose promise the uploader's stream waits for before it frees the memory.
     void useOn(cuda::stream_ref stream);
 
     explicit GPUDeviceBatch(std::shared_ptr<StreamPtr> upload_stream_);
@@ -66,8 +66,8 @@ private:
     std::shared_ptr<StreamPtr> upload_stream;
     std::vector<GPUDeviceColumn> device_columns;
     size_t num_rows = 0;
-    EventPtr consumed;
-    cudaStream_t consumer = nullptr;
+    /// That the stream it was taken on is done with it.
+    std::optional<GPUPromise<void>> released;
 };
 
 /// Sends the staged batches of one reader to the device and expands them, on a stream of its own. A batch has the rows
@@ -95,7 +95,6 @@ private:
         DeviceBuffer size_tail;
     };
 
-    class BatchUpload;
     class ExpandingColumn;
 
     std::optional<GPUFuture<GPUDeviceBatch>> expand(const GPUHostBatch & staged);
@@ -105,7 +104,6 @@ private:
     const std::vector<GPUElementType> column_types;
     std::vector<Carried> carried;
     DecompressionBatch decompression;
-    EventPtr staged_sent = createEvent();
     size_t part_rows_sent = 0;
     bool failed = false;
 };
