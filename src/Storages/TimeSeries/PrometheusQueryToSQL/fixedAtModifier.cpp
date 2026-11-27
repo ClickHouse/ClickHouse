@@ -35,6 +35,9 @@ void checkNoTimeVaryingArgumentWithFixedAt(
     std::string_view argument_description,
     const ConverterContext & context)
 {
+    /// A fixed @ freezes the samples but not such an argument, so PromQL still evaluates per step, while a
+    /// `timeSeries*ToGrid` aggregate function derives its window from each grid point and cannot apply one frozen
+    /// window with a value per grid point.
     if (!scalar_argument.is_constant && getFixedAtModifier(range_argument))
     {
         throw Exception(

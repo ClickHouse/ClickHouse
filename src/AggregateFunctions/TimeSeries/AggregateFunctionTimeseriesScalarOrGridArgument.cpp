@@ -53,6 +53,8 @@ void AggregateFunctionTimeseriesScalarOrGridArgument::captureOrCheck(
     const UInt8 * flags,
     bool flag_value_to_include)
 {
+    /// A row is included if its flag is non-zero and `flag_value_to_include` is true, or its flag is zero and
+    /// `flag_value_to_include` is false. `flags` is nullptr when every row is included.
     auto is_excluded = [&](size_t row) { return flags && ((flags[row] != 0) != flag_value_to_include); };
 
     size_t row = row_begin;
@@ -178,6 +180,7 @@ void AggregateFunctionTimeseriesScalarOrGridArgument::deserialize(TimeseriesScal
 
 Float64 AggregateFunctionTimeseriesScalarOrGridArgument::at(size_t grid_index) const
 {
+    /// Without rows every window is empty, so the returned value is not used.
     if (values.empty())
         return 0;
 

@@ -14,9 +14,8 @@ struct ScalarAST
     /// nullptr if the scalar is statically empty, then the result of the function is empty too.
     ASTPtr ast;
 
-    /// Whether the scalar is the same at every grid point. Then `ast` is a number: a literal or a reference to a single-row
-    /// scalar subquery. Otherwise (e.g. `time()` in a range query) it varies with the evaluation time and `ast` is an array
-    /// with one value per grid point.
+    /// Whether the scalar is the same at every grid point: then `ast` is a number, otherwise an array with one value
+    /// per grid point.
     bool is_constant = true;
 };
 

@@ -25,9 +25,7 @@ struct ScalarAST;
 const PrometheusQueryTree::Offset * getFixedAtModifier(const SQLQueryPiece & argument);
 
 /// Throws `NOT_IMPLEMENTED` if the range vector has a fixed @ modifier and `scalar_argument` varies with the evaluation
-/// time. A fixed @ freezes the samples but not such an argument, so PromQL still evaluates per step, while a
-/// `timeSeries*ToGrid` aggregate function derives its window from each grid point and cannot apply one frozen window with
-/// a value per grid point. `function_node` and `argument_description` are named in the message.
+/// time. `function_node` and `argument_description` are named in the message.
 void checkNoTimeVaryingArgumentWithFixedAt(
     const PrometheusQueryTree::Node * function_node,
     const SQLQueryPiece & range_argument,
