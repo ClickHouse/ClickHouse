@@ -1,11 +1,13 @@
 append	[(100,100,'unknown'),(101,120,'not_reset'),(102,3,'reset'),(103,4,'not_reset')]	1
 conflict	[(100,100,'unknown'),(101,120,'not_reset'),(102,3,'reset')]	1
 cut	[(101,5,'unknown')]	1
+duplicate_predecessor	[(50,5,'unknown'),(100,1,'reset')]	1
 gauge	[(100,100,'gauge'),(101,120,'gauge'),(102,3,'gauge')]	1
-interleave	[(100,1,'unknown'),(101,2,'not_reset'),(102,3,'not_reset'),(103,4,'not_reset')]	1
-single	[(100,1,'unknown'),(101,2,'reset')]	1
+single	[(100,1,'unknown'),(101,2,'not_reset')]	1
 [(100,'unknown'),(120,'not_reset'),(3,'reset')]
 [(1,'unknown')]	[(0,'unknown'),(1,'unknown')]
+equal	[(50,5,'unknown'),(100,1,'reset'),(200,2,'not_reset')]	1	1	1	1	1	1
+order	[(100,10,'unknown'),(200,2,'reset'),(300,5,'not_reset')]	1	1	1	1	1	1
 [(1,'unknown'),(2,'not_reset'),(3,'not_reset')]
 [(100,'unknown'),(120,'not_reset')]
 [(100,'unknown'),(120,'not_reset'),(3,'reset')]

@@ -2,6 +2,7 @@
 -- counter_reset_hint is a value of its Enum8 type: a conversion rejects other values, binary input is rejected by the validation
 -- schema is -4..8 or -53
 -- the bucket indexes of a side increase strictly
+-- the gap between two bucket indexes of a side fits the offset of a span
 -- no count is negative
 -- the buckets and the zero bucket of an integer histogram add up to count_int, or to at most count_int when sum is NaN
 -- custom buckets: finite increasing bounds covering the positive side, no negative side, no zero bucket; exponential buckets have no bounds
@@ -20,3 +21,4 @@
 109000	true	unknown	0	0	0	0	0	[]	[]	100	[(0,1)]	[]
 110000	false	unknown	-53	0	0	15	0	[(0,1),(1,2),(2,4),(3,8)]	[]	0	[]	[0.1,0.5,1]
 111000	false	unknown	0	0	0	9223372036854775807	0	[(0,9223372036854775807)]	[]	0	[]	[]
+112000	false	unknown	0	0	0	2	0	[(-2147483648,1),(0,1)]	[]	0	[]	[]

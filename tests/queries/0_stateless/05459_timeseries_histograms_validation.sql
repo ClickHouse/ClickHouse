@@ -1,6 +1,6 @@
 -- The validation of histogram samples inserted into a TimeSeries table (see validateTimeSeriesHistograms): the rules follow
--- Prometheus's `Histogram.Validate` plus the shape rules of the storage (the pairs of a side sorted by index, `is_float` and
--- `counter_reset_hint` within their types). An INSERT with an invalid histogram is rejected as a whole before anything is written:
+-- Prometheus's `Histogram.Validate` plus the shape rules of the storage (the pairs of a side sorted by index without a gap wider than
+-- a span offset, `is_float` and `counter_reset_hint` within their types). An INSERT with an invalid histogram is rejected as a whole before anything is written:
 -- no tags row, no time range, no samples row. The histograms are inserted as named tuples with only the elements a case needs: the
 -- insert gives the others their default values, so a valid histogram needs only a timestamp.
 
@@ -51,6 +51,13 @@ INSERT INTO ts_val (metric_name, tags, histograms)
 INSERT INTO ts_val (metric_name, tags, histograms)
     SELECT 'm', map('job', 'api'),
         CAST([(toDateTime64(100, 3), true, 2, [(0, 1), (0, 1)])], 'Array(Tuple(timestamp DateTime64(3), is_float Bool, count_float Float64, positive_float Array(Tuple(Int32, Float64))))'); -- { serverError INCORRECT_DATA }
+
+SELECT '-- the gap between two bucket indexes of a side fits the offset of a span';
+-- Prometheus addresses the buckets with spans whose offset from the previous span is an Int32, so remote read couldn't return a
+-- wider gap. From the index -2147483648 to 1 the offset would be 2147483648.
+INSERT INTO ts_val (metric_name, tags, histograms)
+    SELECT 'm', map('job', 'api'),
+        CAST([(toDateTime64(100, 3), 2, [(-2147483648, 1), (1, 1)])], 'Array(Tuple(timestamp DateTime64(3), count_int Int64, negative_int Array(Tuple(Int32, Int64))))'); -- { serverError INCORRECT_DATA }
 
 SELECT '-- no count is negative';
 -- The buckets of the integer cases add up to count_int, so only the rules on negative counts can fire.
@@ -138,6 +145,10 @@ INSERT INTO ts_val (metric_name, tags, histograms)
 INSERT INTO ts_val (metric_name, tags, histograms)
     SELECT 'm', map('job', 'api'),
         CAST([(toDateTime64(111, 3), 9223372036854775807, [(0, 9223372036854775807)])], 'Array(Tuple(timestamp DateTime64(3), count_int Int64, positive_int Array(Tuple(Int32, Int64))))');
+-- The widest gap a span offset can express: from the index -2147483648 to 0 the offset is 2147483647, the greatest Int32.
+INSERT INTO ts_val (metric_name, tags, histograms)
+    SELECT 'm', map('job', 'api'),
+        CAST([(toDateTime64(112, 3), 2, [(-2147483648, 1), (0, 1)])], 'Array(Tuple(timestamp DateTime64(3), count_int Int64, positive_int Array(Tuple(Int32, Int64))))');
 
 SELECT toUnixTimestamp64Milli(h.timestamp) AS timestamp_ms, h.is_float, h.counter_reset_hint, h.schema, h.zero_threshold, h.sum,
        h.count_int, h.zero_count_int, h.positive_int, h.negative_int, h.count_float, h.positive_float, h.custom_values

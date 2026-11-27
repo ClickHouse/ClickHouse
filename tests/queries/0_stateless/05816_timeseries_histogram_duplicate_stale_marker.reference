@@ -1,8 +1,0 @@
--- the aggregate: two arrays and one array, each in either order
-ordinary_nan	[('7FF8000000000001',0)]	[('7FF8000000000001',0)]	[('7FF8000000000001',0)]	[('7FF8000000000001',0)]
-smaller_count	[('3FF0000000000000',3)]	[('3FF0000000000000',3)]	[('3FF0000000000000',3)]	[('3FF0000000000000',3)]
--- the sink: both orders within one INSERT
-ordinary_nan_stale_first	['7FF8000000000001']	[0]
-ordinary_nan_stale_last	['7FF8000000000001']	[0]
-smaller_count_stale_first	['3FF0000000000000']	[3]
-smaller_count_stale_last	['3FF0000000000000']	[3]

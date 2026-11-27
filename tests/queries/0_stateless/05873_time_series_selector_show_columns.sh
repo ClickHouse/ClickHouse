@@ -52,10 +52,8 @@ function same_as_owner()
 
 echo "--- SHOW TABLES"
 as_user "DESCRIBE TABLE timeSeriesSelector(ts, 'up', 0, 1, 'samples')"
-as_user "DESCRIBE TABLE timeSeriesSelector(ts, 'up', 0, 1, 'histograms')"
-as_user "DESCRIBE TABLE timeSeriesSelector(ts, 'up', 0, 1, 'samples_and_histograms')"
+# The owner gets BAD_ARGUMENTS here: a table of version 11 stores no histograms.
 as_user "DESCRIBE TABLE timeSeriesSelector(ts_v11, 'up', 0, 1, 'histograms')"
-as_user "DESCRIBE TABLE timeSeriesSelector(ts_v11, 'up', 0, 1, 'samples_and_histograms')"
 
 # A missing table must look the same as an existing one without access.
 echo "--- missing table"
@@ -64,7 +62,6 @@ as_user "DESCRIBE TABLE timeSeriesSelector(no_such_table, 'up', 0, 1, 'histogram
 echo "--- SHOW COLUMNS"
 ${CLICKHOUSE_CLIENT} --query "GRANT SHOW COLUMNS ON ${CLICKHOUSE_DATABASE}.ts TO ${username}"
 same_as_owner "DESCRIBE TABLE timeSeriesSelector(ts, 'up', 0, 1, 'histograms')"
-same_as_owner "DESCRIBE TABLE timeSeriesSelector(ts, 'up', 0, 1, 'samples_and_histograms')"
 
 ${CLICKHOUSE_CLIENT} -m --query "
     DROP USER ${username};

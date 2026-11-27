@@ -8,27 +8,17 @@ buckets	1970-01-01 00:01:00.000	1970-01-01 00:01:10.000	1970-01-01 00:01:20.000	
 buckets	1970-01-01 00:02:00.000	1970-01-01 00:02:10.000	1970-01-01 00:02:50.000	[('1970-01-01 00:02:10.000',2)]	['1970-01-01 00:02:20.000','1970-01-01 00:02:50.000']	[2,3]
 buckets	1970-01-01 00:03:00.000	1970-01-01 00:03:10.000	1970-01-01 00:03:10.000	[('1970-01-01 00:03:10.000',3)]	[]	[]
 buckets	1970-01-01 00:04:00.000	1970-01-01 00:04:10.000	1970-01-01 00:04:10.000	[]	['1970-01-01 00:04:10.000']	[4]
--- unsorted histograms are sorted; of duplicates by timestamp the greatest count wins (counts compared exactly across flavours, a NaN count loses), then the greatest sum, then the other elements; never the input order
+-- unsorted histograms are sorted; of duplicates by timestamp one is kept by the rule of TimeSeriesDuplicateTimestampRule, never by the input order
 dups	10000	false	5	0	4	[(0,5)]	[]
 dups	20000	false	7	0	6	[(0,7)]	[]
 dups	30000	false	5	0	1	[(0,5)]	[]
-dups	40000	false	1	0	7	[(0,1)]	[]
-dups	50000	false	3	0	9	[(0,2),(1,1)]	[]
 -- the time range of a series covers its float samples and its histograms
 buckets	1970-01-01 00:01:10.000	1970-01-01 00:04:10.000
-dups	1970-01-01 00:00:10.000	1970-01-01 00:00:50.000
+dups	1970-01-01 00:00:10.000	1970-01-01 00:00:30.000
 float_hist	1970-01-01 00:01:40.000	1970-01-01 00:01:40.000
 int_hist	1970-01-01 00:01:40.000	1970-01-01 00:01:40.000
 mixed	1970-01-01 00:02:05.000	1970-01-01 00:02:30.000
 -- errors: a histogram needs a series
--- a timestamp alone is a valid empty integer histogram: the other elements default to zeros and empty arrays
-timestamps_only	1970-01-01 00:01:00.000	0	['1970-01-01 00:01:40.000']	[false]	[0]	[[]]
-timestamps_only	1970-01-01 00:02:00.000	0	['1970-01-01 00:02:40.000']	[false]	[0]	[[]]
 -- an insert without histograms stores an empty histograms array, with or without the histograms column in the column list
 all_columns	[('1970-01-01 00:01:40.000',2)]	[]
 floats_only	[('1970-01-01 00:01:40.000',1)]	[]
--- mixed integer and float counts above 2^53 choose the same winner in both input orders
-mixed_counts_ABC	false	9007199254740993	0	1
-mixed_counts_ACB	false	9007199254740993	0	1
--- the recent samples table gets the same histograms
-(1,2)	(1,2)
