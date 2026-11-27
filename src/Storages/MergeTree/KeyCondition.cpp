@@ -1752,31 +1752,41 @@ static bool hasInputNamedLikeExpression(const ActionsDAG & dag)
 /// the key does not read: an expression named like a column of the key, and a column named like a node that the key computes.
 struct KeyNameCollisionResolver
 {
+    struct KeyNames
+    {
+        NameSet all;
+        NameSet stored;
+        NameSet computed;
+
+        explicit KeyNames(const ActionsDAG & key_dag)
+        {
+            for (const auto & node : key_dag.getNodes())
+            {
+                all.insert(node.result_name);
+                if (node.type == ActionsDAG::ActionType::INPUT)
+                    stored.insert(node.result_name);
+                else if (node.type != ActionsDAG::ActionType::COLUMN)
+                    computed.insert(node.result_name);
+            }
+        }
+    };
+
+    const KeyNames & key_names;
     const ContextPtr & context;
-    NameSet key_names;
-    NameSet stored_names;
-    NameSet computed_names;
     ActionsDAG dag;
     std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> copies;
 
-    KeyNameCollisionResolver(const ActionsDAG & key_dag, const ContextPtr & context_)
-        : context(context_)
+    KeyNameCollisionResolver(const KeyNames & key_names_, const ContextPtr & context_)
+        : key_names(key_names_)
+        , context(context_)
     {
-        for (const auto & node : key_dag.getNodes())
-        {
-            key_names.insert(node.result_name);
-            if (node.type == ActionsDAG::ActionType::INPUT)
-                stored_names.insert(node.result_name);
-            else if (node.type != ActionsDAG::ActionType::COLUMN)
-                computed_names.insert(node.result_name);
-        }
     }
 
     const ActionsDAG::Node & addColumnThatKeyDoesNotRead(String name, const DataTypePtr & type)
     {
         do
             name += '#';
-        while (key_names.contains(name));
+        while (key_names.all.contains(name));
         return dag.addInput(std::move(name), type);
     }
 
@@ -1788,8 +1798,8 @@ struct KeyNameCollisionResolver
         for (const auto & name : {tree_node.getColumnName(), tree_node.getColumnNameWithModuloLegacy()})
         {
             if (is_lambda
-                    ? std::ranges::any_of(stored_names, [&](const auto & column) { return column.contains('(') && name.contains(column); })
-                    : stored_names.contains(name))
+                    ? std::ranges::any_of(key_names.stored, [&](const auto & column) { return column.contains('(') && name.contains(column); })
+                    : key_names.stored.contains(name))
                 return true;
         }
         return false;
@@ -1806,7 +1816,7 @@ struct KeyNameCollisionResolver
         {
             case ActionsDAG::ActionType::INPUT:
                 is_expression = false;
-                res = computed_names.contains(node.result_name)
+                res = key_names.computed.contains(node.result_name)
                     ? &addColumnThatKeyDoesNotRead(node.result_name, node.result_type)
                     : &dag.addInput({node.column, node.result_type, node.result_name});
                 break;
@@ -1826,6 +1836,25 @@ struct KeyNameCollisionResolver
                 children.reserve(node.children.size());
                 for (const auto * child : node.children)
                     children.push_back(&copy(*child));
+
+                /// Index analysis reads the arguments of `indexHint` from the function, not from the DAG.
+                const auto * adaptor = typeid_cast<const FunctionToFunctionBaseAdaptor *>(node.function_base.get());
+                const auto * index_hint = adaptor ? typeid_cast<const FunctionIndexHint *>(adaptor->getFunction().get()) : nullptr;
+                if (index_hint)
+                {
+                    KeyNameCollisionResolver hint_resolver(key_names, context);
+                    for (const auto * argument : index_hint->getActions().getOutputs())
+                    {
+                        hint_resolver.dag.getOutputs().push_back(&hint_resolver.copy(*argument));
+                        children.push_back(&copy(*argument));
+                    }
+                    auto resolved_hint = std::make_shared<FunctionIndexHint>();
+                    resolved_hint->setActions(std::move(hint_resolver.dag));
+                    res = &dag.addFunction(std::make_shared<FunctionToOverloadResolverAdaptor>(std::move(resolved_hint)), std::move(children), node.result_name);
+                    is_expression = false;
+                    break;
+                }
+
                 res = &dag.addFunction(node.function_base, std::move(children), node.result_name);
                 break;
             }
@@ -1956,9 +1985,10 @@ KeyCondition::KeyCondition(
     has_filter = true;
 
     const auto * predicate = filter_dag.predicate;
+    std::optional<KeyNameCollisionResolver::KeyNames> key_names;
     std::optional<KeyNameCollisionResolver> name_collision_resolver;
     if (hasInputNamedLikeExpression(key_expr_->getActionsDAG()) || hasInputNamedLikeExpression(*filter_dag.dag))
-        predicate = &name_collision_resolver.emplace(key_expr_->getActionsDAG(), context).copy(*predicate);
+        predicate = &name_collision_resolver.emplace(key_names.emplace(key_expr_->getActionsDAG()), context).copy(*predicate);
 
     RPNBuilder<RPNElement> builder(predicate, context, [&](const RPNBuilderTreeNode & node, RPNElement & out)
     {
