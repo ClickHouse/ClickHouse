@@ -72,6 +72,15 @@ public:
     /// chain when the target is itself an Alias. The chain stops at a cycle or at a target that does not exist.
     std::vector<std::pair<String, String>> getTargetChain() const;
 
+    /// Returns whether a table this alias resolves through is in a database that `query_context` asked the catalog
+    /// tables (`system.tables`, `system.columns` and the like) not to contact: a remote database with
+    /// `show_remote_databases_in_system_tables = 0`, or a data lake catalog with
+    /// `show_data_lake_catalogs_in_system_tables = 0`. Resolving a table of such a database contacts the external
+    /// system, so a catalog table has to ask this before anything that resolves the target, including the access
+    /// checks above. The databases are looked up by name, and the chain is followed only through the databases that
+    /// are not hidden, so the question itself contacts nothing.
+    bool isTargetHiddenFromSystemTables(ContextPtr query_context) const;
+
     /// Read from target table
     void read(
         QueryPlan & query_plan,

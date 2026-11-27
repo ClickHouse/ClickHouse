@@ -1,0 +1,14 @@
+--- show_remote_databases_in_system_tables = 0: the target in the remote database is not resolved
+SELECT name, engine, total_rows FROM system.tables WHERE database = currentDatabase() AND name LIKE 'alias_into_%' ORDER BY name -> alias_into_local Alias 3 alias_into_remote Alias \N | contacted the remote server: 0
+SELECT count() FROM system.tables WHERE database = currentDatabase() -> 3 | contacted the remote server: 0
+SELECT table, name FROM system.columns WHERE database = currentDatabase() AND table IN ('alias_into_remote', 'alias_into_local') ORDER BY table, name -> alias_into_local id alias_into_local name | contacted the remote server: 0
+SELECT count() FROM system.completions WHERE belongs = 'alias_into_remote' AND context = 'column' -> 0 | contacted the remote server: 0
+SELECT count() FROM system.data_skipping_indices WHERE database = currentDatabase() AND table IN ('alias_into_remote', 'alias_into_local') -> 0 | contacted the remote server: 0
+SELECT count() FROM system.constraints WHERE database = currentDatabase() AND table IN ('alias_into_remote', 'alias_into_local') -> 0 | contacted the remote server: 0
+SELECT count() FROM system.projections WHERE database = currentDatabase() AND table IN ('alias_into_remote', 'alias_into_local') -> 0 | contacted the remote server: 0
+--- show_remote_databases_in_system_tables = 1: it is resolved as before
+SELECT name, engine FROM system.tables WHERE database = currentDatabase() AND name LIKE 'alias_into_%' ORDER BY name -> alias_into_local Alias alias_into_remote Alias | contacted the remote server: 1
+SELECT table, name FROM system.columns WHERE database = currentDatabase() AND table IN ('alias_into_remote', 'alias_into_local') ORDER BY table, name -> alias_into_local id alias_into_local name alias_into_remote id alias_into_remote name | contacted the remote server: 1
+--- an explicit SHOW COLUMNS of the alias describes its target whatever the setting is
+id	UInt64
+name	String

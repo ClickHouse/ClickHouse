@@ -485,10 +485,14 @@ protected:
                             continue;
 
                         const auto * alias = table.second->as<StorageAlias>();
+                        /// The target of an alias is not resolved, not even for the access checks, when it is in a
+                        /// database that the query asked not to contact. The row is still shown, with the columns
+                        /// that do not need the target.
+                        const bool alias_target_is_hidden = alias && alias->isTargetHiddenFromSystemTables(context);
                         const bool can_expose_metadata
-                            = !alias || alias->isTargetTableGranted(context, AccessType::SHOW_TABLES, {});
+                            = !alias || (!alias_target_is_hidden && alias->isTargetTableGranted(context, AccessType::SHOW_TABLES, {}));
                         const bool can_show_columns_temp
-                            = !alias || alias->isTargetTableGranted(context, AccessType::SHOW_COLUMNS, {});
+                            = !alias || (!alias_target_is_hidden && alias->isTargetTableGranted(context, AccessType::SHOW_COLUMNS, {}));
                         const bool can_expose_declared_definition
                             = !alias || alias->isDeclaredTargetGranted(context, AccessType::SHOW_TABLES, {});
                         /// As for a persistent alias below, the CREATE query is checked against the declared
@@ -578,7 +582,7 @@ protected:
                             {
                                 try
                                 {
-                                    if (auto total_rows = table.second->totalRows(totals_context))
+                                    if (auto total_rows = alias_target_is_hidden ? std::nullopt : table.second->totalRows(totals_context))
                                         res_columns[res_index]->insert(*total_rows);
                                     else
                                         res_columns[res_index]->insertDefault();
@@ -596,7 +600,7 @@ protected:
                             {
                                 try
                                 {
-                                    if (auto total_bytes = table.second->totalBytes(totals_context))
+                                    if (auto total_bytes = alias_target_is_hidden ? std::nullopt : table.second->totalBytes(totals_context))
                                         res_columns[res_index]->insert(*total_bytes);
                                     else
                                         res_columns[res_index]->insertDefault();
@@ -670,8 +674,13 @@ protected:
                 /// `table` being non-null.
 
                 const auto * alias = table ? table->as<StorageAlias>() : nullptr;
+                /// The target of an alias is not resolved, not even for the access checks, when it is in a database
+                /// that the query asked not to contact (`show_remote_databases_in_system_tables`,
+                /// `show_data_lake_catalogs_in_system_tables`). The row is still shown, with the columns that do
+                /// not need the target: its name, its engine and its own definition.
+                const bool alias_target_is_hidden = alias && alias->isTargetHiddenFromSystemTables(context);
                 const bool can_expose_metadata
-                    = table && (!alias || alias->isTargetTableGranted(context, AccessType::SHOW_TABLES, {}));
+                    = table && (!alias || (!alias_target_is_hidden && alias->isTargetTableGranted(context, AccessType::SHOW_TABLES, {})));
                 const bool can_expose_declared_definition
                     = table && (!alias || alias->isDeclaredTargetGranted(context, AccessType::SHOW_TABLES, {}));
 
@@ -680,7 +689,7 @@ protected:
                 /// privilege `DESCRIBE` and `SHOW CREATE TABLE` require for the same object.
                 const bool can_show_columns = !need_to_check_access_for_columns
                     || (access->isGranted(AccessType::SHOW_COLUMNS, database_name, table_name)
-                        && (!alias || alias->isTargetTableGranted(context, AccessType::SHOW_COLUMNS, {})));
+                        && (!alias || (!alias_target_is_hidden && alias->isTargetTableGranted(context, AccessType::SHOW_COLUMNS, {}))));
 
                 /// The CREATE query is the alias's own stored definition, which may carry its declared
                 /// target's columns inlined, so the declared target is checked rather than the whole chain.
@@ -873,7 +882,7 @@ protected:
                 {
                     try
                     {
-                        auto total_rows = table ? table->totalRows(totals_context) : std::nullopt;
+                        auto total_rows = table && !alias_target_is_hidden ? table->totalRows(totals_context) : std::nullopt;
                         if (total_rows)
                             res_columns[res_index]->insert(*total_rows);
                         else
@@ -892,7 +901,7 @@ protected:
                 {
                     try
                     {
-                        auto total_bytes = table ? table->totalBytes(totals_context) : std::nullopt;
+                        auto total_bytes = table && !alias_target_is_hidden ? table->totalBytes(totals_context) : std::nullopt;
                         if (total_bytes)
                             res_columns[res_index]->insert(*total_bytes);
                         else
