@@ -1,0 +1,11 @@
+--- no grant on the target table
+(ACCESS_DENIED)
+(ACCESS_DENIED)
+(ACCESS_DENIED)
+--- with the grant
+OK
+OK
+OK
+4
+5
+6
