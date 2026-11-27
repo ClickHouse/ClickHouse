@@ -1,0 +1,6 @@
+plan	1	1
+cosine_top2_is_scale_invariant	[123,1500]
+l2_top2_excludes_scaled_copy	1
+top10_matches_exact_scan	1
+cosine_top1_of_one_candidate	parallel	0
+l2_top1_of_one_candidate	near_l2	1.4142
