@@ -77,8 +77,6 @@
 #include <Common/ProfileEvents.h>
 #include <Core/SettingsEnums.h>
 #include <Core/Field.h>
-#include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -1153,6 +1151,12 @@ Chunk StorageObjectStorageSource::generate()
 
             FailPointInjection::pauseFailPoint(FailPoints::object_storage_source_pause_before_virtual_columns);
 
+            /// `_headers` is added along with the other virtual columns, in the order they are requested in,
+            /// which is the order of the columns in the header of the source.
+            std::optional<Map> http_response_headers;
+            if (read_from_format_info.requested_virtual_columns.contains("_headers"))
+                http_response_headers = tryGetHeadersFromReadBuffer(reader.readBuffer()).value_or(objectAttributesToMap(object_metadata->attributes));
+
             VirtualColumnUtils::addRequestedFileLikeStorageVirtualsToChunk(
                 chunk,
                 read_from_format_info.requested_virtual_columns,
@@ -1174,22 +1178,10 @@ Chunk StorageObjectStorageSource::generate()
                     .first_row_id = first_row_id,
                     .materialized_row_ids = materialized_row_ids,
                     .materialized_last_updated_sequence_numbers = materialized_last_updated_sequence_numbers,
+                    .http_response_headers = http_response_headers ? &*http_response_headers : nullptr,
                 },
                 read_context,
                 format_settings);
-
-            if (read_from_format_info.requested_virtual_columns.contains("_headers"))
-            {
-                auto type = std::make_shared<DataTypeMap>(
-                    std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()),
-                    std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()));
-
-                const Map headers = tryGetHeadersFromReadBuffer(reader.readBuffer()).value_or(objectAttributesToMap(object_metadata->attributes));
-
-                chunk.addColumn(type->createColumnConst(
-                    chunk.getNumRows(),
-                    headers)->convertToFullColumnIfConst());
-            }
 
             if (lazy_row_index_registry)
             {
