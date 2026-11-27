@@ -571,8 +571,9 @@ public:
     /// `bucket_groups`, the groups of the bucket just merged, to `merged_groups`, the running total of the
     /// threads that merge the buckets, and checks the total. The buckets partition the key space, so the
     /// total never exceeds the final group count: once it crosses the limit, so does the final count. The
-    /// producers' checks miss what this catches: the baseline producers check their tables one by one, so
-    /// they cannot see the merged cardinality, and the adaptive producers cannot see the staged keys at all.
+    /// producers' checks miss what this catches: each producer checks only its own keys, a baseline one by
+    /// the size of its table and an adaptive one by an estimate that leaves an excess within its margin to
+    /// this check (see `checkEstimatedGroupLimit`), so no producer sees the merged cardinality.
     /// The total covers only the groups that the merge builds: a merge that prunes by the top-K (the
     /// threshold merge, the adaptive top-K pruning, the settled adaptive merge of an ascending top-K) skips
     /// the groups that the top does not need, and a merge that stops early, as under a `LIMIT` without
@@ -1990,6 +1991,12 @@ private:
       * - sets the variable no_more_keys to true.
       */
     bool checkLimits(size_t result_size, bool & no_more_keys) const;
+
+    /// Holds a throw-mode `max_rows_to_group_by` against the keys of an adaptive producer, which the size of
+    /// its table stops counting once the table freezes: throws `TOO_MANY_ROWS` when `counter`, the distinct
+    /// key counter of the producer, puts its keys over the limit by more than the error margin of the
+    /// estimate.
+    void checkEstimatedGroupLimit(const AdaptiveDistinctKeyCounter & counter) const;
 
     /// Arbitration between an external-aggregation spill and the kept-keys cutoff
     /// (see `Params::SharedKeptKeysControl`). Always true when the cutoff is not armed.

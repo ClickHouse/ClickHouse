@@ -2830,6 +2830,11 @@ bool Aggregator::executeOnBlock(Columns columns,
     }
 
     size_t result_size = result.sizeWithoutOverflowRow();
+
+    /// The check runs before the producer advances, so the block in which it thaws is checked too, and a
+    /// producer over the limit throws before it writes its staged records to disk.
+    if (adaptive && adaptive->distinct_key_counter)
+        checkEstimatedGroupLimit(*adaptive->distinct_key_counter);
     Int64 current_memory_usage = getCurrentQueryMemoryUsage();
     const bool over_external_threshold = params.max_bytes_before_external_group_by
         && current_memory_usage > static_cast<Int64>(params.max_bytes_before_external_group_by);
@@ -3887,6 +3892,22 @@ bool Aggregator::checkLimits(size_t result_size, bool & no_more_keys) const
     return true;
 }
 
+
+void Aggregator::checkEstimatedGroupLimit(const AdaptiveDistinctKeyCounter & counter) const
+{
+    /// The gate admits a `max_rows_to_group_by` only in throw mode, and a producer has a counter only under
+    /// the limit.
+    chassert(params.group_by_overflow_mode == OverflowMode::THROW);
+
+    /// An excess within the error margin of the estimate is left to the exact count of the merge.
+    const UInt64 keys = counter.getCount();
+    const UInt64 limit = params.max_rows_to_group_by;
+    if (keys <= limit || keys - limit <= counter.getErrorMargin())
+        return;
+
+    ProfileEvents::increment(ProfileEvents::OverflowThrow);
+    throw Exception(ErrorCodes::TOO_MANY_ROWS, "Limit for rows to GROUP BY exceeded: has about {} rows, maximum: {}", keys, limit);
+}
 
 void Aggregator::checkMergedGroupLimit(std::atomic<size_t> & merged_groups, size_t bucket_groups) const
 {
