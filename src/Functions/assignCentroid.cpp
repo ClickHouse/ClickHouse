@@ -27,6 +27,8 @@
 #include <memory>
 #include <mutex>
 #include <numeric>
+#include <span>
+#include <tuple>
 #include <utility>
 #include <variant>
 
@@ -259,18 +261,18 @@ struct CentroidMatrix
 
     [[nodiscard]] size_t tilePaddedWidth(size_t tile_start) const { return roundUpToColBlock(std::min(tile_width, num_centroids - tile_start)); }
 
-    /// Pack the centroids into the layout the kernel reads. `id_values` gives the id per centroid, or null
-    /// to use 0..num_centroids-1. Runs once per block for the inline form, and once per dictionary version
-    /// for the dictionary form - never per row.
+    /// Pack the centroids into the layout the kernel reads. `centroids[i]` points at the `dim_` coordinates of
+    /// centroid i, `id_values` gives the id per centroid, or null to use 0..num_centroids-1. Runs once per block
+    /// for the inline form, and once per dictionary version for the dictionary form - never per row.
     ///
-    /// For three centroids of dimension 2, `row_major` = [[1,2], [3,4], [5,6]], one tile padded to 16 columns:
+    /// For three centroids [1,2], [3,4], [5,6] of dimension 2, one tile padded to 16 columns:
     ///
     ///     tiles             = [1, 3, 5, 0 x 13,  2, 4, 6, 0 x 13]   coordinate 0 of every centroid, then coordinate 1
     ///     centroid_sq_norms = [5, 25, 61, inf x 13]                 1*1+2*2, 3*3+4*4, 5*5+6*6
     ///     ids               = [0, 1, 2, 0 x 13]                     or the dictionary cids when id_values is given
-    void build(const Float32 * row_major, size_t num_centroids_, size_t dim_, const UInt32 * id_values)
+    void build(std::span<const Float32 * const> centroids, size_t dim_, const UInt32 * id_values)
     {
-        num_centroids = num_centroids_;
+        num_centroids = centroids.size();
         dim = dim_;
         if (num_centroids == 0 || dim == 0)
             throw Exception(ErrorCodes::LOGICAL_ERROR,
@@ -297,7 +299,7 @@ struct CentroidMatrix
             Float32 * tile = tiles.data() + tile_start * dim;
             const size_t column = centroid_index - tile_start;
 
-            const Float32 * centroid = row_major + centroid_index * dim;
+            const Float32 * centroid = centroids[centroid_index];
             const UInt32 centroid_id = id_values ? id_values[centroid_index] : static_cast<UInt32>(centroid_index);
             double sq_norm = 0;
             for (size_t coord = 0; coord < dim; ++coord)
@@ -411,66 +413,70 @@ struct HierarchicalCentroids
             return;
         }
 
-        const size_t stride = coarse.paddedSize();
-        const size_t chunk_rows = std::clamp<size_t>(SCORE_BUFFER_BYTES / (stride * sizeof(Float32)), 1, num_rows);
-
-        VectorWithMemoryTracking<Float32> scores(chunk_rows * stride);
-        VectorWithMemoryTracking<UInt32> order(num_clusters);
-        VectorWithMemoryTracking<UInt32> probes(chunk_rows * COARSE_PROBES);
-        VectorWithMemoryTracking<size_t> cluster_begin(num_clusters + 1);
-        VectorWithMemoryTracking<size_t> cluster_cursor(num_clusters);
-        VectorWithMemoryTracking<UInt32> cluster_rows(chunk_rows * COARSE_PROBES);
-        VectorWithMemoryTracking<Float32> gathered_vecs(chunk_rows * dim);
-        VectorWithMemoryTracking<Float32> gathered_best(chunk_rows);
-        VectorWithMemoryTracking<UInt32> gathered_ids(chunk_rows);
-
-        for (size_t chunk_start = 0; chunk_start < num_rows; chunk_start += chunk_rows)
+        /// The probes of every row of the block come first, so that each cluster is then scanned once per block.
+        VectorWithMemoryTracking<UInt32> probes(num_rows * COARSE_PROBES);
+        VectorWithMemoryTracking<size_t> cluster_begin(num_clusters + 1, 0);
         {
-            const size_t rows = std::min(chunk_rows, num_rows - chunk_start);
-            coarse.scoreAll(vec_data + chunk_start * dim, rows, scores.data(), stride);
+            const size_t stride = coarse.paddedSize();
+            const size_t chunk_rows = std::clamp<size_t>(SCORE_BUFFER_BYTES / (stride * sizeof(Float32)), 1, num_rows);
+            VectorWithMemoryTracking<Float32> scores(chunk_rows * stride);
+            VectorWithMemoryTracking<UInt32> order(num_clusters);
 
-            /// The probes of a row are the COARSE_PROBES smallest under (score, position), so ties go to the lower coarse cid.
-            std::fill(cluster_begin.begin(), cluster_begin.end(), 0);
-            for (size_t row = 0; row < rows; ++row)
+            for (size_t chunk_start = 0; chunk_start < num_rows; chunk_start += chunk_rows)
             {
-                const Float32 * row_scores = scores.data() + row * stride;
-                std::iota(order.begin(), order.end(), 0);
-                std::nth_element(order.begin(), order.begin() + COARSE_PROBES, order.end(),
-                    [row_scores](UInt32 a, UInt32 b) { return row_scores[a] < row_scores[b] || (row_scores[a] == row_scores[b] && a < b); });
-                std::copy_n(order.begin(), COARSE_PROBES, probes.begin() + row * COARSE_PROBES);
-                for (size_t probe = 0; probe < COARSE_PROBES; ++probe)
-                    ++cluster_begin[order[probe] + 1];
+                const size_t rows = std::min(chunk_rows, num_rows - chunk_start);
+                coarse.scoreAll(vec_data + chunk_start * dim, rows, scores.data(), stride);
+
+                /// The probes of a row are the COARSE_PROBES smallest under (score, position), so ties go to the lower coarse cid.
+                for (size_t row = 0; row < rows; ++row)
+                {
+                    const Float32 * row_scores = scores.data() + row * stride;
+                    std::iota(order.begin(), order.end(), 0);
+                    std::nth_element(order.begin(), order.begin() + COARSE_PROBES, order.end(),
+                        [row_scores](UInt32 a, UInt32 b) { return row_scores[a] < row_scores[b] || (row_scores[a] == row_scores[b] && a < b); });
+                    std::copy_n(order.begin(), COARSE_PROBES, probes.begin() + (chunk_start + row) * COARSE_PROBES);
+                    for (size_t probe = 0; probe < COARSE_PROBES; ++probe)
+                        ++cluster_begin[order[probe] + 1];
+                }
             }
+        }
 
-            /// Group the rows by probed cluster (a counting sort), so each cluster is scored once per chunk.
-            for (size_t cluster = 0; cluster < num_clusters; ++cluster)
-                cluster_begin[cluster + 1] += cluster_begin[cluster];
-            std::copy_n(cluster_begin.begin(), num_clusters, cluster_cursor.begin());
-            for (size_t row = 0; row < rows; ++row)
-                for (size_t probe = 0; probe < COARSE_PROBES; ++probe)
-                    cluster_rows[cluster_cursor[probes[row * COARSE_PROBES + probe]]++] = static_cast<UInt32>(row);
+        /// Group the rows by probed cluster (a counting sort).
+        size_t max_count = 0;
+        for (size_t cluster = 0; cluster < num_clusters; ++cluster)
+        {
+            max_count = std::max(max_count, cluster_begin[cluster + 1]);
+            cluster_begin[cluster + 1] += cluster_begin[cluster];
+        }
+        VectorWithMemoryTracking<size_t> cluster_cursor(cluster_begin.begin(), cluster_begin.end() - 1);
+        VectorWithMemoryTracking<UInt32> cluster_rows(num_rows * COARSE_PROBES);
+        for (size_t row = 0; row < num_rows; ++row)
+            for (size_t probe = 0; probe < COARSE_PROBES; ++probe)
+                cluster_rows[cluster_cursor[probes[row * COARSE_PROBES + probe]]++] = static_cast<UInt32>(row);
 
-            for (size_t cluster = 0; cluster < num_clusters; ++cluster)
+        VectorWithMemoryTracking<Float32> gathered_vecs(max_count * dim);
+        VectorWithMemoryTracking<Float32> gathered_best(max_count);
+        VectorWithMemoryTracking<UInt32> gathered_ids(max_count);
+        for (size_t cluster = 0; cluster < num_clusters; ++cluster)
+        {
+            const size_t begin = cluster_begin[cluster];
+            const size_t count = cluster_begin[cluster + 1] - begin;
+            if (count == 0)
+                continue;
+
+            for (size_t i = 0; i < count; ++i)
             {
-                const size_t begin = cluster_begin[cluster];
-                const size_t count = cluster_begin[cluster + 1] - begin;
-                if (count == 0)
-                    continue;
-
-                for (size_t i = 0; i < count; ++i)
-                {
-                    const size_t row = chunk_start + cluster_rows[begin + i];
-                    std::copy_n(vec_data + row * dim, dim, gathered_vecs.data() + i * dim);
-                    gathered_best[i] = best_score[row];
-                    gathered_ids[i] = result_ids[row];
-                }
-                clusters[cluster].scoreRows(gathered_vecs.data(), count, gathered_best.data(), gathered_ids.data());
-                for (size_t i = 0; i < count; ++i)
-                {
-                    const size_t row = chunk_start + cluster_rows[begin + i];
-                    best_score[row] = gathered_best[i];
-                    result_ids[row] = gathered_ids[i];
-                }
+                const size_t row = cluster_rows[begin + i];
+                std::copy_n(vec_data + row * dim, dim, gathered_vecs.data() + i * dim);
+                gathered_best[i] = best_score[row];
+                gathered_ids[i] = result_ids[row];
+            }
+            clusters[cluster].scoreRows(gathered_vecs.data(), count, gathered_best.data(), gathered_ids.data());
+            for (size_t i = 0; i < count; ++i)
+            {
+                const size_t row = cluster_rows[begin + i];
+                best_score[row] = gathered_best[i];
+                result_ids[row] = gathered_ids[i];
             }
         }
     }
@@ -612,7 +618,7 @@ private:
         if (dim == 0)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "assignCentroid: centroids have zero dimension");
 
-        VectorWithMemoryTracking<Float32> row_major(num_centroids * dim);
+        VectorWithMemoryTracking<const Float32 *> centroid_data(num_centroids);
         for (size_t centroid_index = 0; centroid_index < num_centroids; ++centroid_index)
         {
             size_t start = centroid_index ? inner_array.getOffsets()[static_cast<ssize_t>(centroid_index) - 1] : 0;
@@ -620,11 +626,11 @@ private:
             if (length != dim)
                 throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH,
                     "assignCentroid: centroid {} has {} dimensions, expected {}", centroid_index, length, dim);
-            std::copy(&values[start], &values[start + length], &row_major[centroid_index * dim]);
+            centroid_data[centroid_index] = values.data() + start;
         }
 
         auto matrix = std::make_shared<CentroidMatrix>();
-        matrix->build(row_major.data(), num_centroids, dim, /*id_values=*/nullptr);
+        matrix->build(centroid_data, dim, /*id_values=*/nullptr);
         return matrix;
     }
 
@@ -656,14 +662,18 @@ private:
         QueryPipeline pipeline(dictionary->read(columns, /*max_block_size=*/65536, /*num_streams=*/1));
         PullingPipelineExecutor executor(pipeline);
 
-        struct DictionaryCentroid
+        /// One entry per dictionary row, pointing into the `vec` column of its block, so each vector is copied
+        /// only once, from the block straight into the tiles. `parent` is 0 except for leaves.
+        struct IndexEntry
         {
-            UInt64 cid;
             UInt64 level;
             UInt64 parent;
-            VectorWithMemoryTracking<Float32> vec;
+            UInt64 cid;
+            const Float32 * vec;
+            size_t size;
         };
-        VectorWithMemoryTracking<DictionaryCentroid> centroids;
+        VectorWithMemoryTracking<IndexEntry> entries;
+        VectorWithMemoryTracking<ColumnPtr> vec_columns; /// keeps the data `entries` points at alive
         Block block;
         while (executor.pull(block))
         {
@@ -694,113 +704,100 @@ private:
             const auto & vec_arr = assert_cast<const ColumnArray &>(*vec_col.column);
             const auto & vec_vals = assert_cast<const ColumnFloat32 &>(vec_arr.getData()).getData();
             const auto & vec_off = vec_arr.getOffsets();
+            vec_columns.push_back(vec_col.column);
             for (size_t row = 0; row < cid_col.size(); ++row)
             {
                 size_t start = row ? vec_off[row - 1] : 0;
-                size_t length = vec_off[row] - start;
-                centroids.push_back({
+                const UInt64 level = level_col ? level_col->getUInt(row) : 0;
+                entries.push_back({
+                    level,
+                    (level == 0 && parent_col) ? parent_col->getUInt(row) : 0,
                     cid_col.getUInt(row),
-                    level_col ? level_col->getUInt(row) : 0,
-                    parent_col ? parent_col->getUInt(row) : 0,
-                    VectorWithMemoryTracking<Float32>(&vec_vals[start], &vec_vals[start + length])});
+                    vec_vals.data() + start,
+                    vec_off[row] - start});
             }
         }
 
-        if (centroids.empty())
+        if (entries.empty())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "assignCentroid: dictionary {} produced no centroids", dict_name);
 
-        std::sort(centroids.begin(), centroids.end(), [](const auto & a, const auto & b) { return a.cid < b.cid; });
+        /// Leaves first, ordered by (parent, cid), so each cluster is one run; then the coarse centroids, ordered by cid.
+        std::ranges::sort(entries, {}, [](const IndexEntry & entry) { return std::tie(entry.level, entry.parent, entry.cid); });
 
-        size_t dim = centroids[0].vec.size();
+        const size_t dim = entries[0].size;
         if (dim == 0)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "assignCentroid: dictionary {} has zero-dimension centroids", dict_name);
 
-        for (const auto & centroid : centroids)
+        VectorWithMemoryTracking<const Float32 *> vecs(entries.size());
+        VectorWithMemoryTracking<UInt32> ids(entries.size());
+        for (size_t i = 0; i < entries.size(); ++i)
         {
-            if (centroid.vec.size() != dim)
+            const auto & entry = entries[i];
+            if (entry.size != dim)
                 throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH,
                     "assignCentroid: dictionary {} centroid {} has {} dimensions, expected {}",
-                    dict_name, centroid.cid, centroid.vec.size(), dim);
+                    dict_name, entry.cid, entry.size, dim);
 
             /// The result type is exactly UInt32 - reject anything greater
-            if (centroid.cid > std::numeric_limits<UInt32>::max())
+            if (entry.cid > std::numeric_limits<UInt32>::max())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "assignCentroid: dictionary {} has cid {} which exceeds the UInt32 range of the result",
-                    dict_name, centroid.cid);
+                    dict_name, entry.cid);
+
+            if (entry.level > 1)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "assignCentroid: dictionary {} centroid {} has level {}, only levels 0 (leaf) and 1 (coarse) are supported",
+                    dict_name, entry.cid, entry.level);
+
+            vecs[i] = entry.vec;
+            ids[i] = static_cast<UInt32>(entry.cid);
         }
 
-        auto build_matrix = [&](const VectorWithMemoryTracking<size_t> & rows)
+        auto build_matrix = [&](size_t begin, size_t end)
         {
-            VectorWithMemoryTracking<Float32> row_major(rows.size() * dim);
-            VectorWithMemoryTracking<UInt32> ids(rows.size());
-            for (size_t i = 0; i < rows.size(); ++i)
-            {
-                const auto & centroid = centroids[rows[i]];
-                std::copy(centroid.vec.begin(), centroid.vec.end(), &row_major[i * dim]);
-                ids[i] = static_cast<UInt32>(centroid.cid);
-            }
             CentroidMatrix matrix;
-            matrix.build(row_major.data(), rows.size(), dim, ids.data());
+            matrix.build(std::span<const Float32 * const>(vecs.data() + begin, end - begin), dim, ids.data() + begin);
             return matrix;
         };
 
         Centroids result;
         if (!two_level)
         {
-            VectorWithMemoryTracking<size_t> all_rows(centroids.size());
-            std::iota(all_rows.begin(), all_rows.end(), 0);
-            result = std::make_shared<const CentroidMatrix>(build_matrix(all_rows));
+            result = std::make_shared<const CentroidMatrix>(build_matrix(0, entries.size()));
         }
         else
         {
-            /// Level 1 rows are the coarse centroids, in ascending cid as `centroids` is sorted.
-            VectorWithMemoryTracking<size_t> coarse_rows;
-            for (size_t i = 0; i < centroids.size(); ++i)
-            {
-                const auto & centroid = centroids[i];
-                if (centroid.level > 1)
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "assignCentroid: dictionary {} centroid {} has level {}, only levels 0 (leaf) and 1 (coarse) are supported",
-                        dict_name, centroid.cid, centroid.level);
-                if (centroid.level == 0)
-                    continue;
-                if (!coarse_rows.empty() && centroids[coarse_rows.back()].cid == centroid.cid)
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "assignCentroid: dictionary {} has more than one level 1 centroid with cid {}", dict_name, centroid.cid);
-                coarse_rows.push_back(i);
-            }
-
-            VectorWithMemoryTracking<VectorWithMemoryTracking<size_t>> leaf_rows(coarse_rows.size());
-            bool has_leaves = false;
-            for (size_t i = 0; i < centroids.size(); ++i)
-            {
-                const auto & centroid = centroids[i];
-                if (centroid.level != 0)
-                    continue;
-                const auto coarse = std::ranges::lower_bound(
-                    coarse_rows, centroid.parent, {}, [&](size_t row) { return centroids[row].cid; });
-                if (coarse == coarse_rows.end() || centroids[*coarse].cid != centroid.parent)
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "assignCentroid: dictionary {} leaf centroid {} has parent {}, which is not the cid of a level 1 centroid",
-                        dict_name, centroid.cid, centroid.parent);
-                leaf_rows[coarse - coarse_rows.begin()].push_back(i);
-                has_leaves = true;
-            }
-            if (!has_leaves)
+            const auto num_leaves = static_cast<size_t>(
+                std::ranges::partition_point(entries, [](const IndexEntry & entry) { return entry.level == 0; }) - entries.begin());
+            if (num_leaves == 0)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "assignCentroid: dictionary {} has no level 0 (leaf) centroids", dict_name);
+            for (size_t i = num_leaves + 1; i < entries.size(); ++i)
+                if (entries[i].cid == entries[i - 1].cid)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "assignCentroid: dictionary {} has more than one level 1 centroid with cid {}", dict_name, entries[i].cid);
 
             /// A coarse centroid without leaves (k-means can leave one) is dropped, so every probe opens a cluster.
             auto hierarchical = std::make_shared<HierarchicalCentroids>();
             hierarchical->dim = dim;
-            VectorWithMemoryTracking<size_t> non_empty_coarse_rows;
-            for (size_t c = 0; c < coarse_rows.size(); ++c)
+            VectorWithMemoryTracking<const Float32 *> coarse_vecs;
+            VectorWithMemoryTracking<UInt32> coarse_ids;
+            size_t coarse_pos = num_leaves;
+            for (size_t begin = 0, end = 0; begin < num_leaves; begin = end)
             {
-                if (leaf_rows[c].empty())
-                    continue;
-                non_empty_coarse_rows.push_back(coarse_rows[c]);
-                hierarchical->clusters.push_back(build_matrix(leaf_rows[c]));
+                const UInt64 parent = entries[begin].parent;
+                while (end < num_leaves && entries[end].parent == parent)
+                    ++end;
+                while (coarse_pos < entries.size() && entries[coarse_pos].cid < parent)
+                    ++coarse_pos;
+                if (coarse_pos == entries.size() || entries[coarse_pos].cid != parent)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "assignCentroid: dictionary {} leaf centroid {} has parent {}, which is not the cid of a level 1 centroid",
+                        dict_name, entries[begin].cid, parent);
+                coarse_vecs.push_back(vecs[coarse_pos]);
+                coarse_ids.push_back(ids[coarse_pos]);
+                hierarchical->clusters.push_back(build_matrix(begin, end));
             }
-            hierarchical->coarse = build_matrix(non_empty_coarse_rows);
+            hierarchical->coarse.build(coarse_vecs, dim, coarse_ids.data());
             result = std::move(hierarchical);
         }
 
