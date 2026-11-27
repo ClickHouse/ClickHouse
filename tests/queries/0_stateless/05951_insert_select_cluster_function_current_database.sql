@@ -63,6 +63,10 @@ INSERT INTO dst WITH (() -> 'shadow') AS f, f AS currentDatabase SELECT 'shadow_
 FROM fileCluster('test_cluster_one_shard_three_replicas_localhost', {CLICKHOUSE_DATABASE:String} || '_05951_*.tsv', 'TSV', 'x UInt64')
 SETTINGS parallel_distributed_insert_select = 2, log_comment = '05951_2c';
 
+INSERT INTO dst WITH ((v, d) -> length(d)) AS assignCentroid SELECT 'shadow_centroid', '', assignCentroid([toFloat32(x), toFloat32(x)], 'centroids_dict')
+FROM fileCluster('test_cluster_one_shard_three_replicas_localhost', currentDatabase() || '_05951_*.tsv', 'TSV', 'x UInt64')
+SETTINGS parallel_distributed_insert_select = 2, log_comment = '05951_2f';
+
 INSERT INTO dst SELECT 'renamed', currentDatabase(), x AS database
 FROM fileCluster('test_cluster_one_shard_three_replicas_localhost', currentDatabase() || '_05951_*.tsv', 'TSV', 'x UInt64')
 SETTINGS parallel_distributed_insert_select = 2, log_comment = '05951_2d';
@@ -80,6 +84,10 @@ SETTINGS parallel_distributed_insert_select = 2, log_comment = '05951_4';
 INSERT INTO dist SELECT 'centroid', '', assignCentroid([toFloat32(x), toFloat32(x)], 'centroids_dict')
 FROM fileCluster('test_cluster_two_shards_localhost', currentDatabase() || '_05951_*.tsv', 'TSV', 'x UInt64')
 SETTINGS parallel_distributed_insert_select = 2, log_comment = '05951_4a';
+
+INSERT INTO dist WITH ((d, a, k) -> length(d)) AS dictGetUInt64 SELECT 'shadow_dict', '', dictGetUInt64('dct', 'v', x)
+FROM fileCluster('test_cluster_two_shards_localhost', currentDatabase() || '_05951_*.tsv', 'TSV', 'x UInt64')
+SETTINGS parallel_distributed_insert_select = 2, distributed_foreground_insert = 1, log_comment = '05951_4b';
 
 INSERT INTO dist SELECT 'in_subquery', '', x
 FROM fileCluster('test_cluster_two_shards_localhost', currentDatabase() || '_05951_*.tsv', 'TSV', 'x UInt64')

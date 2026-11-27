@@ -129,13 +129,16 @@ public:
     }
 
     /// For a query sent to servers that interpret it in their own default database: qualify its names and replace
-    /// `currentDatabase()` with the database. Returns false, changing nothing, if a lambda may shadow `currentDatabase`.
+    /// `currentDatabase()` with the database. Returns false, changing nothing, if a lambda may shadow a function whose
+    /// arguments it rewrites.
     [[nodiscard]] bool tryBindQuerySentToOtherServers(ASTPtr & ast) const
     {
-        if (hasCurrentDatabaseCall(*ast) && hasAliasThatMayNameLambdaAsCurrentDatabase(*ast))
+        if ((hasCurrentDatabaseCall(*ast) && hasAliasThatMayNameLambda(*ast, isCurrentDatabaseName))
+            || hasAliasThatMayNameLambda(*ast, isFunctionWithBoundArgumentsName))
             return false;
 
         visit(ast);
+        qualifyAssignCentroidDictionaryNames(*ast);
         if (!database_name.empty())
         {
             for (auto & child : ast->children)
@@ -422,6 +425,12 @@ private:
             || lowered_name == "current_schema";
     }
 
+    /// Functions whose arguments the binder rewrites by the function name: dictionary names and `IN` tables.
+    static bool isFunctionWithBoundArgumentsName(const String & name)
+    {
+        return functionIsDictGet(name) || name == "assignCentroid" || functionIsInOrGlobalInOperator(name);
+    }
+
     static bool isCurrentDatabaseFunction(const ASTFunction & function)
     {
         if (function.arguments && !function.arguments->children.empty())
@@ -443,18 +452,18 @@ private:
         return false;
     }
 
-    /// A call of `currentDatabase` resolves to a lambda of the query with that alias, given directly or through an identifier.
-    static bool hasAliasThatMayNameLambdaAsCurrentDatabase(const IAST & ast)
+    /// A call of a function named like this alias may resolve to a lambda of the query, given directly or through an identifier.
+    static bool hasAliasThatMayNameLambda(const IAST & ast, bool (*is_name)(const String &))
     {
         const auto * function = ast.as<ASTFunction>();
         const auto * identifier = dynamic_cast<const ASTIdentifier *>(&ast);
         if (((function && function->name == "lambda") || (identifier && !identifier->compound()))
-            && isCurrentDatabaseName(ast.tryGetAlias()))
+            && is_name(ast.tryGetAlias()))
             return true;
 
         for (const auto & child : ast.children)
         {
-            if (hasAliasThatMayNameLambdaAsCurrentDatabase(*child))
+            if (hasAliasThatMayNameLambda(*child, is_name))
                 return true;
         }
         return false;
@@ -513,11 +522,24 @@ private:
         literal_value = qualified_dictionary_name.getFullName();
     }
 
+    /// The dictionary name of `assignCentroid`, as the analyzer binds it in the queries it sends to other servers.
+    void qualifyAssignCentroidDictionaryNames(IAST & ast) const
+    {
+        if (auto * function = ast.as<ASTFunction>(); function && function->name == "assignCentroid" && function->arguments
+            && function->arguments->children.size() > 1)
+        {
+            if (auto * literal = function->arguments->children[1]->as<ASTLiteral>())
+                qualifyDictionaryName(*literal);
+        }
+
+        for (const auto & child : ast.children)
+            qualifyAssignCentroidDictionaryNames(*child);
+    }
+
     void visit(ASTFunction & function, ASTPtr &) const
     {
         bool is_operator_in = functionIsInOrGlobalInOperator(function.name);
         bool is_dict_get = functionIsDictGet(function.name);
-        const bool is_assign_centroid = function.name == "assignCentroid";
 
         for (auto & child : function.children)
         {
@@ -545,11 +567,6 @@ private:
                         {
                             qualifyDictionaryName(*literal);
                         }
-                    }
-                    else if (is_assign_centroid && i == 1 && child->children[i]->as<ASTLiteral>())
-                    {
-                        /// The dictionary name of assignCentroid, as the analyzer binds it.
-                        qualifyDictionaryName(*child->children[i]->as<ASTLiteral>());
                     }
                     else if (is_operator_in && i == 1)
                     {

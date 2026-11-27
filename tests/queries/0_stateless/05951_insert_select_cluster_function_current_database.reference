@@ -5,6 +5,7 @@ dict	600	0	1803000
 renamed	600	600	180300
 schema	600	600	180300
 shadow	600	0	180300
+shadow_centroid	600	0	8400
 shadow_ident	600	0	180300
 shadow
 loc
@@ -13,6 +14,7 @@ db	600	600	180300
 dict	600	0	1803000
 in_subquery	299	0	89700
 in_table	299	0	89700
+shadow_dict	600	0	1800
 forwarded
 05951_1	1
 05951_2	1
