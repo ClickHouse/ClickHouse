@@ -15,6 +15,7 @@ performance comparison runs two servers side by side), and a job that runs more
 than one server tells them apart with `check_name_suffix`.
 """
 
+import json
 import math
 import os
 import time
@@ -67,32 +68,50 @@ SENDER_TABLES_QUERY = (
 # in progress per `_sender` table holds it, for at most the send timeouts of the `ci_logs_sender` profile.
 EXPORT_DROP_SEC = 60
 
+# Where the `fetch_ci_logs_credentials` pre-hook drops the credentials it reads
+# on the host, so a job whose container has no AWS access reads them from here
+# instead of calling SSM. Under the checkout, which is mounted into the container.
+CREDENTIALS_FILE = "ci/tmp/ci_logs_credentials.json"
+
 _credentials = None
 
 
-def get_credentials():
-    """The host and the password of the CI Logs cluster, from AWS SSM.
-
-    Fetched once per process: every server of the job exports to the same
-    cluster.
-    """
-    global _credentials
-    if _credentials is None:
-        _credentials = (
+def fetch_credentials_from_aws():
+    """The host and the password of the CI Logs cluster, from AWS SSM. Needs AWS
+    access, so it runs on the host (locally or in the pre-hook), not in a job
+    container that has none."""
+    return (
+        Secret.Config(
+            name="clickhouse_ci_logs_host",
+            type=Secret.Type.AWS_SSM_PARAMETER,
+            region="us-east-1",
+        )
+        .join_with(
             Secret.Config(
-                name="clickhouse_ci_logs_host",
+                name="clickhouse_ci_logs_password",
                 type=Secret.Type.AWS_SSM_PARAMETER,
                 region="us-east-1",
             )
-            .join_with(
-                Secret.Config(
-                    name="clickhouse_ci_logs_password",
-                    type=Secret.Type.AWS_SSM_PARAMETER,
-                    region="us-east-1",
-                )
-            )
-            .get_value()
         )
+        .get_value()
+    )
+
+
+def get_credentials():
+    """The host and the password of the CI Logs cluster.
+
+    Read from the file the `fetch_ci_logs_credentials` pre-hook wrote on the host
+    when it exists (the container needs no AWS access then), otherwise from AWS
+    SSM directly (local runs and the pre-hook itself). Fetched once per process:
+    every server of the job exports to the same cluster.
+    """
+    global _credentials
+    if _credentials is None:
+        creds_file = Path(CREDENTIALS_FILE)
+        if creds_file.exists():
+            _credentials = tuple(json.loads(creds_file.read_text()))
+        else:
+            _credentials = fetch_credentials_from_aws()
     return _credentials
 
 

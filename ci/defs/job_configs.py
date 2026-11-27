@@ -119,6 +119,13 @@ HOST_NETWORK = (
     else "+--network=host"
 )
 
+# Pre-hook (runs on the host, which has AWS access) that fetches the CI Logs cluster
+# credentials and writes them into the checkout, so a job whose container has no AWS
+# access can still configure its system-log export. See fetch_ci_logs_credentials.py.
+CI_LOGS_CREDENTIALS_HOOK = (
+    "python3 ./ci/jobs/scripts/job_hooks/fetch_ci_logs_credentials.py"
+)
+
 BINARY_DOCKER_COMMAND = (
     f"clickhouse/binary-builder{HOST_NETWORK}"
     f"+--memory={BINARY_DOCKER_MEM * 95 // 100}"
@@ -231,6 +238,7 @@ common_build_job_config = Job.Config(
 )
 
 common_ft_job_config = Job.Config(
+    pre_hooks=[CI_LOGS_CREDENTIALS_HOOK],
     name=JobNames.STATELESS,
     runs_on=[],  # from parametrize
     command='python3 ./ci/jobs/functional_tests.py --options "{PARAMETER}"',
@@ -1047,7 +1055,7 @@ class JobConfigs:
         runs_on=None,  # set per ParamSet
         command="python3 ./ci/jobs/functional_tests.py --options BugfixValidation",
         # some tests can be flaky due to very slow disks - use tmpfs for temporary ClickHouse files
-        run_in_docker="clickhouse/stateless-test+--network=host+--privileged+--cgroupns=host+root+--security-opt seccomp=unconfined+--ulimit nofile=1048576:1048576+--tmpfs /tmp/clickhouse:mode=1777",
+        run_in_docker="clickhouse/stateless-test+--privileged+--cgroupns=host+root+--security-opt seccomp=unconfined+--ulimit nofile=1048576:1048576+--tmpfs /tmp/clickhouse:mode=1777",
         # No digest_config: the Bugfix Validation verdict is intentionally NOT
         # cacheable. Its inputs are not captured by any set of repository files -
         # it depends on (1) the PR's source fix and (2) the master-HEAD binary
@@ -2045,6 +2053,7 @@ class JobConfigs:
     # Separate instrumented run: no timings, comparison, sampling, or PR gate.
     # Use the same per-test LLVM build as the stateless and integration collectors.
     performance_coverage_jobs = Job.Config(
+        pre_hooks=[CI_LOGS_CREDENTIALS_HOOK],
         name=JobNames.PERFORMANCE,
         runs_on=RunnerLabels.FUNC_TESTER_AMD,
         command='python3 ./ci/jobs/performance_coverage.py --test-options "{PARAMETER}"',
@@ -2064,6 +2073,7 @@ class JobConfigs:
     )
 
     performance_comparison_with_master_head_job = Job.Config(
+        pre_hooks=[CI_LOGS_CREDENTIALS_HOOK],
         name=JobNames.PERFORMANCE,
         runs_on=["#from param"],
         command='python3 ./ci/jobs/performance_tests.py --test-options "{PARAMETER}"',
@@ -2139,6 +2149,7 @@ class JobConfigs:
     # Iceberg tables (`perf.py --table-engine`). In pull requests only when the
     # Iceberg code changes, see `filter_job.py`.
     performance_comparison_iceberg_jobs = Job.Config(
+        pre_hooks=[CI_LOGS_CREDENTIALS_HOOK],
         name=JobNames.PERFORMANCE,
         runs_on=RunnerLabels.FUNC_TESTER_ARM,
         command='python3 ./ci/jobs/performance_tests.py --test-options "{PARAMETER}"',
@@ -2176,6 +2187,7 @@ class JobConfigs:
         ],
     )
     performance_comparison_with_release_base_jobs = Job.Config(
+        pre_hooks=[CI_LOGS_CREDENTIALS_HOOK],
         name=JobNames.PERFORMANCE,
         runs_on=["#from param"],
         command='python3 ./ci/jobs/performance_tests.py --test-options "{PARAMETER}"',
@@ -2213,6 +2225,7 @@ class JobConfigs:
         ]
     )
     clickbench_jobs = Job.Config(
+        pre_hooks=[CI_LOGS_CREDENTIALS_HOOK],
         name=JobNames.CLICKBENCH,
         runs_on=RunnerLabels.FUNC_TESTER_AMD,
         command="python3 ./ci/jobs/clickbench.py",
@@ -2233,7 +2246,7 @@ class JobConfigs:
                 "./tests/config/users.d/ci_logs_sender.yaml",
             ],
         ),
-        run_in_docker="clickhouse/stateless-test+--shm-size=16g+--network=host",
+        run_in_docker="clickhouse/stateless-test+--shm-size=16g",
     ).parametrize(
         Job.ParamSet(
             parameter=BuildTypes.AMD_RELEASE,
@@ -2248,6 +2261,7 @@ class JobConfigs:
     )
     # No `requires`: the wrapper downloads both binaries from S3.
     nightly_extended_performance_jobs = Job.Config(
+        pre_hooks=[CI_LOGS_CREDENTIALS_HOOK],
         name=JobNames.PERFORMANCE,
         runs_on=RunnerLabels.ARM_MEDIUM_STORAGE,
         command='python3 ./ci/jobs/nightly_extended_performance.py --test-options "{PARAMETER}"',
@@ -2263,6 +2277,7 @@ class JobConfigs:
     )
     # The Iceberg configuration of `performance_comparison_iceberg_jobs` in `NightlyExtendedPerformance`, every query of every test.
     nightly_iceberg_performance_jobs = Job.Config(
+        pre_hooks=[CI_LOGS_CREDENTIALS_HOOK],
         name=JobNames.PERFORMANCE,
         runs_on=RunnerLabels.ARM_MEDIUM_STORAGE,
         command='python3 ./ci/jobs/nightly_extended_performance.py --test-options "{PARAMETER}"',
@@ -2499,6 +2514,7 @@ class JobConfigs:
         ArtifactNames.CH_AMD_BINARY, reset=True
     ).set_runs_on(RunnerLabels.FUNC_TESTER_AMD)
     sqlstorm_test_job = Job.Config(
+        pre_hooks=[CI_LOGS_CREDENTIALS_HOOK],
         name=JobNames.SQL_STORM_TEST,
         runs_on=RunnerLabels.FUNC_TESTER_ARM,
         command="python3 ./ci/jobs/sqlstorm_test.py",
