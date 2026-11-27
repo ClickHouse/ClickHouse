@@ -6638,17 +6638,26 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
         /// definition stays as it was, up to a column rename.
         if (is_initial_alter)
         {
-            /// Each rename sees the columns as they are right after it, as in `AlterCommand::apply`.
+            /// Each rename sees the columns as they are right before and after it, as in `AlterCommands::apply`.
             std::vector<RenameColumnData> renames;
-            std::list<ColumnsDescription> columns_after_renames;
-            for (const auto & command : commands)
+            std::list<ColumnsDescription> columns_around_renames;
+            if (std::ranges::any_of(commands, [](const auto & command) { return command.type == AlterCommand::RENAME_COLUMN; }))
             {
-                if (command.type != AlterCommand::RENAME_COLUMN || command.ignore)
-                    continue;
-                columns_after_renames.push_back(columns_after_renames.empty() ? old_metadata.columns : columns_after_renames.back());
-                if (columns_after_renames.back().has(command.column_name))
-                    columns_after_renames.back().rename(command.column_name, command.rename_to);
-                renames.push_back({command.column_name, command.rename_to, &columns_after_renames.back()});
+                StorageInMemoryMetadata replayed_metadata = old_metadata;
+                for (const auto & command : commands)
+                {
+                    if (command.ignore)
+                        continue;
+                    if (command.type == AlterCommand::RENAME_COLUMN)
+                        columns_around_renames.push_back(replayed_metadata.columns);
+                    command.apply(replayed_metadata, apply_context, share_nested_offsets, &old_metadata.columns, settings_defaults.get());
+                    if (command.type == AlterCommand::RENAME_COLUMN)
+                    {
+                        const auto & columns_before = columns_around_renames.back();
+                        columns_around_renames.push_back(replayed_metadata.columns);
+                        renames.push_back({command.column_name, command.rename_to, &columns_before, &columns_around_renames.back()});
+                    }
+                }
             }
 
             auto check = [&](const ASTPtr & old_ast, const ASTPtr & new_ast, std::string_view clause)

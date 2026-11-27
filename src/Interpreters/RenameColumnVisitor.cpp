@@ -45,16 +45,23 @@ void RenameColumnData::visit(ASTIdentifier & identifier, ASTPtr & ast) const
     else if (identifier_column_name->starts_with(column_name + "."))
     {
         /// `column_name.x` (written as a compound identifier, or as one part as the key expressions built from the metadata
-        /// of a data lake are written) is a subcolumn unless the table has a physical column with this name, such as
-        /// `MergeTree` with `share_nested_offsets = 0`, or a subcolumn of such a column.
-        if (columns)
+        /// of a data lake are written) is renamed if it refers to a subcolumn of `column_name`, not to another column such
+        /// as a physical `column_name.x` in `MergeTree` with `share_nested_offsets = 0`, or to a subcolumn of one.
+        if (columns_before)
         {
-            if (columns->hasColumnOrSubcolumn(GetColumnsOptions::All, *identifier_column_name)
-                || hasColumnPrefix(*columns, *identifier_column_name, column_name.size()))
+            if (auto column = columns_before->tryGetColumnOrSubcolumn(GetColumnsOptions::All, *identifier_column_name))
+            {
+                if (column->getNameInStorage() != column_name)
+                    return;
+            }
+            else if (hasColumnPrefix(*columns_before, *identifier_column_name, column_name.size()))
                 return;
+        }
 
+        if (columns_after)
+        {
             String renamed_name = rename_to + identifier_column_name->substr(column_name.size());
-            if (hasColumnPrefix(*columns, renamed_name, rename_to.size()))
+            if (hasColumnPrefix(*columns_after, renamed_name, rename_to.size()))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "Cannot rename column {} to {}: the reference {} would refer to the column {}",
                     backQuote(column_name), backQuote(rename_to), backQuote(*identifier_column_name), backQuote(renamed_name));
@@ -62,20 +69,23 @@ void RenameColumnData::visit(ASTIdentifier & identifier, ASTPtr & ast) const
 
         if (identifier.compound())
         {
-            /// The column name can span several parts, as the `n.x` of a `Nested` does.
+            /// The column name can span several parts, as the `n.x` of a `Nested` does, or be a part of one, as in `s.x`.z.
             size_t prefix_parts = 0;
             String prefix;
-            while (prefix != column_name && prefix_parts < identifier.name_parts.size())
+            while (prefix != column_name && !prefix.starts_with(column_name + ".") && prefix_parts < identifier.name_parts.size())
             {
                 if (prefix_parts)
                     prefix += '.';
                 prefix += identifier.name_parts[prefix_parts];
                 ++prefix_parts;
             }
-            if (prefix != column_name)
-                return;
             Strings name_parts;
-            boost::split(name_parts, rename_to, boost::is_any_of("."));
+            if (prefix == column_name)
+                boost::split(name_parts, rename_to, boost::is_any_of("."));
+            else if (prefix.starts_with(column_name + "."))
+                name_parts.push_back(rename_to + prefix.substr(column_name.size()));
+            else
+                return;
             name_parts.insert(name_parts.end(), identifier.name_parts.begin() + prefix_parts, identifier.name_parts.end());
             auto renamed = make_intrusive<ASTIdentifier>(std::move(name_parts));
             renamed->setAlias(identifier.tryGetAlias());
