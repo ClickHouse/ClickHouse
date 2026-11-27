@@ -3744,14 +3744,14 @@ static bool isTextOfElementValues(
     if (name != "toString" || !date_time_output_format_is_simple)
         return false;
 
-    /// `DataTypeDateTime::equals` ignores its time zone, while `toString` and `CAST` use it. Keep this case to explicit
-    /// `UTC` and `simple` output, where the key text and the index-side conversion have the same canonical spelling.
+    /// `DataTypeDateTime::equals` ignores its time zone, while `toString` and `CAST` use it. Matching explicit fixed-offset
+    /// time zones with `simple` output give the key text and the index-side conversion the same canonical spelling.
     const auto * source_date_time = typeid_cast<const DataTypeDateTime *>(source_type.get());
     const auto * element_date_time = typeid_cast<const DataTypeDateTime *>(element_type.get());
     return source_date_time && element_date_time
         && source_date_time->hasExplicitTimeZone() && element_date_time->hasExplicitTimeZone()
-        && source_date_time->getTimeZone().getTimeZone() == "UTC"
-        && element_date_time->getTimeZone().getTimeZone() == "UTC";
+        && source_date_time->getTimeZone().getTimeZone() == element_date_time->getTimeZone().getTimeZone()
+        && source_date_time->getTimeZone().hasFixedOffset();
 }
 
 bool KeyCondition::tryPrepareSetColumnsForIndex(
