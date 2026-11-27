@@ -57,7 +57,6 @@ size_t findKeysOfDisjunct(JoinRightColumnsData & data, size_t k)
     DisjunctState & disjunct = data.left_block_state.disjuncts[k];
     return (k == 0 ? data.functions.find_keys_first : data.functions.find_keys_later)(
         {.table = *data.tables[k],
-         .keys = disjunct.columns,
          .disjunct = disjunct,
          .rows = rowsToProbe(data, k),
          .enable_prefetch = data.added_columns.enable_prefetch,

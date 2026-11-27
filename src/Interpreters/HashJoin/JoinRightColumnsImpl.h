@@ -872,7 +872,6 @@ NO_INLINE size_t findKeysAndAddMatches(JoinRightColumnsData & data)
         const size_t first = data.batch_first_row + begin;
         Lookup::template run<TYPE, Maps, fast_path, /*row_list=*/false>(
             {.table = *data.tables[0],
-             .keys = data.left_block_state.disjuncts[0].columns,
              .disjunct = data.left_block_state.disjuncts[0],
              .rows = {.first = first, .rows = nullptr, .size = size},
              .enable_prefetch = data.added_columns.enable_prefetch},

@@ -38,8 +38,6 @@ enum class FindKeysMode : uint8_t
 struct FindKeysArgs
 {
     const HashJoinTable & table;
-    /// The key columns of the disjunct, read-only: the same object as `disjunct.columns`.
-    const JoinOnKeyColumns & keys;
     DisjunctState & disjunct;
     ProbeRows rows;
     bool enable_prefetch = false;
@@ -49,6 +47,11 @@ struct FindKeysArgs
     MatchWord * words = nullptr;
     size_t * key_offsets = nullptr;
     size_t max_output_rows = 0;
+
+    const JoinOnKeyColumns & keys() const
+    {
+        return disjunct.columns;
+    }
 };
 
 /// Returns how many rows it visited: `rows.size`, unless the row limit stopped it.
@@ -77,7 +80,7 @@ template <typename KeyGetter, bool is_asof_join>
 NO_INLINE std::shared_ptr<void> makeKeyGetter(const FindKeysArgs & args)
 {
     return std::make_shared<KeyGetter>(
-        createJoinKeyGetter<KeyGetter, is_asof_join>(args.keys.key_columns, args.table.keySizes(), args.table.keyRange()));
+        createJoinKeyGetter<KeyGetter, is_asof_join>(args.keys().key_columns, args.table.keySizes(), args.table.keyRange()));
 }
 
 /// The key getter of a single LowCardinality key. It deduplicates the lookups of a block per dictionary index through its own
@@ -94,13 +97,11 @@ template <typename KeyGetter>
 constexpr bool key_getter_holds_block_state
     = detail::PacksKeysIntoBlob<KeyGetter> || PreparedKeyGetter<KeyGetter> || is_low_cardinality_join_key_getter<KeyGetter>;
 
-/// The key getter of the key columns `args.keys`, kept in `args.disjunct` for the block. Its first use in the block
-/// builds it, and every later use in the block gets the same getter. The lookup methods that search the batches of one
-/// disjunct share it, so every method must use the getter type `KeyGetterForType<TYPE, const JoinMapOf<TYPE, Maps>>::Type`.
+/// All batches of one disjunct share this getter. Every consumer must use the same
+/// `KeyGetterForType<TYPE, const JoinMapOf<TYPE, Maps>>::Type`.
 template <typename KeyGetter, bool is_asof_join>
 ALWAYS_INLINE KeyGetter & keptKeyGetter(const FindKeysArgs & args)
 {
-    chassert(&args.keys == &args.disjunct.columns);
     std::shared_ptr<void> & kept = args.disjunct.key_getter;
     if (!kept)
         kept = makeKeyGetter<KeyGetter, is_asof_join>(args);
@@ -112,10 +113,9 @@ ALWAYS_INLINE KeyGetter & keptKeyGetter(const FindKeysArgs & args)
 /// read the same bytes.
 inline const UInt8 * skipBytesOf(const FindKeysArgs & args)
 {
-    chassert(&args.keys == &args.disjunct.columns);
     DisjunctState & disjunct = args.disjunct;
     if (!disjunct.skip)
-        disjunct.skip = args.keys.buildRowSkipData(disjunct.skip_buffer, 0, args.keys.join_mask_column.getSize());
+        disjunct.skip = args.keys().buildRowSkipData(disjunct.skip_buffer, 0, args.keys().join_mask_column.getSize());
     return *disjunct.skip;
 }
 
@@ -130,7 +130,7 @@ ALWAYS_INLINE decltype(auto) keyGetterOf(const FindKeysArgs & args)
         return keptKeyGetter<KeyGetter, is_asof_join>(args);
     /// By value: the stores in the search loop could make the loop reload a getter that it reads through a reference.
     else
-        return createJoinKeyGetter<KeyGetter, is_asof_join>(args.keys.key_columns, args.table.keySizes(), args.table.keyRange());
+        return createJoinKeyGetter<KeyGetter, is_asof_join>(args.keys().key_columns, args.table.keySizes(), args.table.keyRange());
 }
 
 /// Prepares the keys of a row list in a prepared key getter (`PreparedJoinKeys`). The list is in ascending
