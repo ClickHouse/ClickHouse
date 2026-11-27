@@ -311,8 +311,12 @@ Allow missing columns while reading Parquet input formats
 )", 0, \
         {"23.12", false, true, "Allow missing columns in Parquet files by default"}) \
     DECLARE(UInt64, input_format_parquet_local_file_min_bytes_for_seek, 8192, R"(
-Min bytes required for local read (file) to do seek, instead of read with ignore in Parquet input format. Also used for a file in object storage when everything the Parquet reader would read with this threshold is already in the filesystem cache.
+Min bytes required for local read (file) to do seek, instead of read with ignore in Parquet input format
 )", 0) \
+    DECLARE(UInt64, input_format_parquet_filesystem_cache_min_bytes_for_seek, 1024 * 1024, R"(
+Min bytes required to do seek, instead of read with ignore, in Parquet input format (reader v3) for a file in object storage when everything the reader would read with this threshold is already in the filesystem cache. Every read from the cache has a fixed cost, so a shorter gap between the needed ranges is read from the cache instead of skipped, and a shorter column chunk is read in one piece instead of page by page. A value not lower than `remote_read_min_bytes_for_seek` reads such files as if they were not cached.
+)", 0, \
+        {"26.12", 4 * 1024 * 1024, 1024 * 1024, "New setting: the seek threshold of a Parquet file whose ranges are all in the filesystem cache; the value of `remote_read_min_bytes_for_seek` (4 MiB by default) reads such files as before."}) \
     DECLARE(Bool, input_format_parquet_enable_row_group_prefetch, true, R"(
 Enable row group prefetching during parquet parsing. Currently, only single-threaded parsing can prefetch.
 )", 0, \

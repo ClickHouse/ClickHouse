@@ -42,7 +42,7 @@ static bool gapAtLeast(size_t from, size_t to, size_t gap)
 void Prefetcher::init(ReadBuffer * reader_, const ReadOptions & options, FormatParserSharedResourcesPtr parser_shared_resources_)
 {
     min_bytes_for_seek = options.min_bytes_for_seek;
-    local_min_bytes_for_seek = options.format.parquet.local_read_min_bytes_for_seek;
+    cache_min_bytes_for_seek = options.format.parquet.filesystem_cache_min_bytes_for_seek;
     bytes_per_read_task = options.bytes_per_read_task;
     parser_shared_resources = parser_shared_resources_;
     determineReadModeAndFileSize(reader_, options);
@@ -209,8 +209,8 @@ void Prefetcher::finalizeRanges()
             chassert(s == RequestState::State::Cancelled);
     }
 
-    /// If everything the reads cover with the local seek threshold is in a local cache, skip gaps as for a local file.
-    if (local_min_bytes_for_seek < min_bytes_for_seek && read_mode == ReadMode::RandomRead)
+    /// If everything the reads cover with the cache seek threshold is in a local cache, it replaces the remote one.
+    if (cache_min_bytes_for_seek < min_bytes_for_seek && read_mode == ReadMode::RandomRead)
     {
         bool all_cached = true;
         std::optional<std::pair<size_t, size_t>> run;
@@ -218,7 +218,7 @@ void Prefetcher::finalizeRanges()
         {
             if (range.request->state.load(std::memory_order_relaxed) != RequestState::State::HasRange)
                 continue;
-            if (run && !gapAtLeast(run->second, range.start, local_min_bytes_for_seek))
+            if (run && !gapAtLeast(run->second, range.start, cache_min_bytes_for_seek))
             {
                 run->second = std::max(run->second, range.end);
                 continue;
@@ -231,7 +231,7 @@ void Prefetcher::finalizeRanges()
             run.emplace(range.start, range.end);
         }
         if (all_cached && run && reader->isRangeCachedLocally(run->first, run->second - run->first))
-            min_bytes_for_seek = local_min_bytes_for_seek;
+            min_bytes_for_seek = cache_min_bytes_for_seek;
     }
 }
 

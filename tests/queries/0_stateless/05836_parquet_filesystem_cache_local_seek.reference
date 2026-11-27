@@ -7,6 +7,9 @@
 134209536	402628608
 134209536	402628608
 134209536	402628608
+134209536	402628608
+4999950000
+4999950000
 1_count_cold	131072
 2_count_cached	65536
 3_a_c_cold	gap read
@@ -16,3 +19,6 @@
 1_a_c_cold	gap read	2
 2_a_c_passive	gap read	1
 3_a_c	gaps not read	0
+4_a_c_default	gap read	0
+1_cold	chunk in one read	1
+2_cached	chunk in one read	0

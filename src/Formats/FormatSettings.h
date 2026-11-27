@@ -368,6 +368,7 @@ struct FormatSettings : FormatSettingsEnums
         UInt64 max_block_size = DEFAULT_BLOCK_SIZE;
         size_t prefer_block_bytes = DEFAULT_BLOCK_SIZE * 256;
         size_t local_read_min_bytes_for_seek = 8192;
+        size_t filesystem_cache_min_bytes_for_seek = 1 << 20;
         size_t memory_low_watermark = 2ul << 20;
         size_t memory_high_watermark = 4ul << 30;
 

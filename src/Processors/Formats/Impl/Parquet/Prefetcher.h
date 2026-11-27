@@ -219,7 +219,7 @@ private:
     size_t file_size{};
     bool is_local_file = false;
     size_t min_bytes_for_seek{};
-    size_t local_min_bytes_for_seek{};
+    size_t cache_min_bytes_for_seek{};
     size_t bytes_per_read_task{};
 
     std::shared_ptr<ShutdownHelper> shutdown = std::make_shared<ShutdownHelper>();

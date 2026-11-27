@@ -287,6 +287,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.parquet.bloom_filter_bits_per_value = settings[Setting::output_format_parquet_bloom_filter_bits_per_value];
     format_settings.parquet.bloom_filter_flush_threshold_bytes = settings[Setting::output_format_parquet_bloom_filter_flush_threshold_bytes];
     format_settings.parquet.local_read_min_bytes_for_seek = settings[Setting::input_format_parquet_local_file_min_bytes_for_seek];
+    format_settings.parquet.filesystem_cache_min_bytes_for_seek = settings[Setting::input_format_parquet_filesystem_cache_min_bytes_for_seek];
     format_settings.parquet.enable_row_group_prefetch = settings[Setting::input_format_parquet_enable_row_group_prefetch];
     format_settings.parquet.verify_checksums = settings[Setting::input_format_parquet_verify_checksums];
     format_settings.parquet.local_time_as_utc = settings[Setting::input_format_parquet_local_time_as_utc];
