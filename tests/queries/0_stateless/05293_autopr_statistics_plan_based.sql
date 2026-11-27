@@ -25,9 +25,9 @@ DROP TABLE IF EXISTS t_plan_based_baseline;
 -- Pinned layout: the cost model works off estimated bytes, and leaving granularity or part format to
 -- randomization changes whether the optimization runs at all.
 CREATE TABLE t_plan_based_big   (key UInt64, v UInt64) ENGINE = MergeTree ORDER BY key
-    SETTINGS index_granularity = 8192, min_bytes_for_wide_part = 0;
+    SETTINGS index_granularity = 8192, min_bytes_for_wide_part = 0, enable_adaptive_codec_selection = 0;
 CREATE TABLE t_plan_based_small (key UInt64, v UInt64) ENGINE = MergeTree ORDER BY key
-    SETTINGS index_granularity = 8192, min_bytes_for_wide_part = 0;
+    SETTINGS index_granularity = 8192, min_bytes_for_wide_part = 0, enable_adaptive_codec_selection = 0;
 
 INSERT INTO t_plan_based_big   SELECT number, number FROM numbers(300000);
 INSERT INTO t_plan_based_small SELECT number, number FROM numbers(3000);

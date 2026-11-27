@@ -9,8 +9,6 @@ title: 'Monitoring'
 doc_type: 'reference'
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
-
 <Note>
 The monitoring data outlined in this guide is accessible in ClickHouse Cloud. In addition to being displayed through the built-in dashboard described below, both basic and advanced performance metrics can also be viewed directly in the main service console.
 </Note>
@@ -22,7 +20,15 @@ You can monitor:
 
 ## Built-in advanced observability dashboard {#built-in-advanced-observability-dashboard}
 
-<Image img="/images/cloud/manage/monitoring/native_advanced_dashboard.webp" alt="Native advanced observability dashboard" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Native advanced observability dashboard](/images/cloud/manage/monitoring/native_advanced_dashboard.webp)
+
+</Frame>
+
+</div>
 
 ClickHouse comes with a built-in advanced observability dashboard feature which can be accessed by `$HOST:$PORT/dashboard` (requires user and password) that shows the following metrics:
 - Queries/second

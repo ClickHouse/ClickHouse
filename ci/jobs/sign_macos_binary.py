@@ -42,6 +42,10 @@ _NOTARY_KEY_SECRET = Secret.Config(
 )
 NOTARY_ISSUER_ID = "b17e8d0b-6b5d-4063-9a1d-24d9baa80daf"
 NOTARY_KEY_ID = "99QTC6XVSW"
+NOTARY_MAX_WAIT_SECONDS = 3000
+# Printed only when the submission request fails. That is before the upload and the wait,
+# so retrying it cannot overrun the job timeout (3600 s).
+NOTARY_SUBMIT_REQUEST = "POST https://appstoreconnect.apple.com/notary/v2/submissions"
 
 MAX_SIZE_GROWTH_BYTES = 32 * 1024 * 1024
 
@@ -228,8 +232,10 @@ def write_notary_api_key():
 def notarize():
     return Shell.check(
         f"{RCODESIGN} notary-submit --api-key-file {NOTARY_API_KEY_JSON}"
-        f" --wait --max-wait-seconds 1800 {SIGNED_ZIP}",
+        f" --wait --max-wait-seconds {NOTARY_MAX_WAIT_SECONDS} {SIGNED_ZIP}",
         verbose=True,
+        retries=5,
+        retry_errors=[NOTARY_SUBMIT_REQUEST],
     )
 
 

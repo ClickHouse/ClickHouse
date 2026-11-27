@@ -23,6 +23,16 @@ Estos ajustes están disponibles en [system.settings](/es/reference/system-table
 
 Habilita la agregación independiente de las particiones en hilos separados cuando la clave de partición coincide con la clave de group by. Resulta beneficioso cuando el número de particiones es cercano al número de núcleos y las particiones tienen aproximadamente el mismo tamaño. Las heurísticas de `ReadFromMergeTree` desactivan automáticamente la optimización para distribuciones desfavorables (muy pocas particiones, demasiadas particiones o tamaños de partición muy desiguales); consulta `force_aggregate_partitions_independently` para omitir esas comprobaciones.
 
+## allow_ai_functions {#allow_ai_functions}
+
+**alias**: `allow_experimental_ai_functions`
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "Las funciones de IA están en Beta y habilitadas de forma predeterminada. En ese momento, el parámetro de configuración se llamaba `allow_experimental_ai_functions`, que ahora es un alias de este. Se mantiene el valor predeterminado independientemente de `compatibility`."}]}, {"id": "row-2","items": [{"label": "26.4"},{"label": "0"},{"label": "Nuevo ajuste. En ese momento, el parámetro de configuración se llamaba `allow_experimental_ai_functions`, que ahora es un alias de este."}]}, {"id": "row-3","items": [{"label": "26.11"},{"label": "1"},{"label": "Se agregó un alias para la configuración `allow_experimental_ai_functions`."}]}]} />
+
+Permite el uso de funciones de IA (`aiGenerate`, `aiClassify`, `aiFilter`, `aiExtract`, `aiTranslate`, `aiRedact`, `aiEmbed`, `aiSimilarity`). Si está deshabilitado, cualquier consulta que las utilice lanza una excepción.
+
 ## allow_archive_path_syntax {#allow_archive_path_syntax}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -149,18 +159,6 @@ valor predeterminado en Cloud: `1`.
 
 Si se establece en true, un usuario puede ejecutar consultas DDL.
 
-## allow_delta_kernel_rs {#allow_delta_kernel_rs}
-
-<BetaBadge />
-
-**Alias**: `allow_experimental_delta_kernel_rs`
-
-<SettingsInfoBlock type="Bool" default_value="1" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "Nuevo nombre de `allow_experimental_delta_kernel_rs`, que ya no es experimental y se mantiene como alias. El valor predeterminado no cambia."}]}, {"id": "row-2","items": [{"label": "25.5"},{"label": "1"},{"label": "Nueva SETTING. Se introdujo con el nombre `allow_experimental_delta_kernel_rs`, que ahora es un alias; la fila se conserva bajo el nombre canónico para mantener todo el historial."}]}]} />
-
-Permite usar la implementación `delta-kernel-rs` para leer tablas de Delta Lake.
-
 ## allow_delta_lake_create_table {#allow_delta_lake_create_table}
 
 <ExperimentalBadge />
@@ -191,7 +189,7 @@ Habilita la funcionalidad de escrituras de delta-kernel.
 
 Habilita la evaluación independiente de `DISTINCT` por partición en hilo separado cuando la expresión de partición es una función determinista de las columnas de `DISTINCT`, evitando la combinación entre flujos. Resulta beneficioso cuando el número de particiones se aproxima al número de núcleos y las particiones tienen aproximadamente el mismo tamaño; de lo contrario, una heurística de coste la omite. Consulte [max&#95;number&#95;of&#95;partitions&#95;for&#95;independent&#95;distinct](/es/reference/settings/session-settings/max-number#max_number_of_partitions_for_independent_distinct) y [force&#95;distinct&#95;partitions&#95;independently](/es/reference/settings/session-settings/force#force_distinct_partitions_independently). No se aplica con `FINAL` ni con réplicas paralelas.
 
-No se aplica cuando se configura [max&#95;rows&#95;in&#95;distinct](/es/reference/settings/session-settings/max-rows#max_rows_in_distinct) o [max&#95;bytes&#95;in&#95;distinct](/es/reference/settings/session-settings/max-bytes#max_bytes_in_distinct): estos límites los aplica la única transformada `DISTINCT` que procesa todo el resultado combinado, por lo que se mantiene la combinación entre flujos para preservar su alcance global.
+[max&#95;rows&#95;in&#95;distinct](/es/reference/settings/session-settings/max-rows#max_rows_in_distinct) y [max&#95;bytes&#95;in&#95;distinct](/es/reference/settings/session-settings/max-bytes#max_bytes_in_distinct) se aplican al tamaño combinado de los conjuntos de todas las particiones mientras los flujos se mantienen separados.
 
 ## allow_distributed_ddl {#allow_distributed_ddl}
 
@@ -228,6 +226,18 @@ Al deshabilitarla, solo se rechazan las lecturas: crear, adjuntar, eliminar y de
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Permite ejecutar la función multiIf de forma columnar
+
+## allow_expire_snapshots {#allow_expire_snapshots}
+
+<ExperimentalBadge />
+
+**Alias**: `allow_experimental_expire_snapshots`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.3"},{"label": "0"},{"label": "Nueva configuración."}]}, {"id": "row-2","items": [{"label": "26.11"},{"label": "0"},{"label": "Se añadió un alias para la configuración `allow_experimental_expire_snapshots`."}]}]} />
+
+Permite ejecutar el comando de Iceberg `ALTER TABLE ... EXECUTE expire_snapshots`.
 
 ## allow_fuzz_query_functions {#allow_fuzz_query_functions}
 
@@ -450,6 +460,20 @@ ClickHouse usa el valor de esta configuración cargado al iniciar el servidor.
 Los cambios realizados con `SET` o con `SETTINGS` a nivel de consulta no cambian el comportamiento de las subcolumnas extraídas.
 Para cambiar el comportamiento de las subcolumnas extraídas, actualiza `allow_nullable_tuple_in_extracted_subcolumns` en la configuración del perfil de inicio (por ejemplo, users.xml) y reinicia el servidor.
 
+## allow_parallel_distinct {#allow_parallel_distinct}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "Nueva configuración para evaluar el `DISTINCT` final en paralelo mediante particionado por hash."}]}]} />
+
+Evalúa el `DISTINCT` final en varios threads particionando los flujos de entrada según el hash de las columnas de `DISTINCT`. Las claves iguales llegan al mismo flujo, lo que permite eliminar duplicados en cada partición de forma independiente.
+
+A diferencia de [allow&#95;distinct&#95;partitions&#95;independently](/es/reference/settings/session-settings/allow#allow_distinct_partitions_independently), este ajuste no requiere ninguna relación entre la clave de partición de la tabla y las columnas de `DISTINCT`. El número de flujos de entrada y de particiones por hash se limita con independencia de `max_threads` para acotar el coste de dividir bloques y conectar flujos.
+
+El particionado por hash no se aplica a entradas ordenadas globalmente, ya que `DISTINCT` conserva ese orden. [max&#95;rows&#95;in&#95;distinct](/es/reference/settings/session-settings/max-rows#max_rows_in_distinct) y [max&#95;bytes&#95;in&#95;distinct](/es/reference/settings/session-settings/max-bytes#max_bytes_in_distinct) se aplican al tamaño combinado de todas las particiones por hash.
+
+`DISTINCT` sin `ORDER BY` no garantiza un orden de filas definido, por lo que esta optimización puede devolver los mismos valores distintos en otro orden. Por tanto, `LIMIT`, `OFFSET` o `LIMIT BY` aplicados sobre resultados de `DISTINCT` sin ordenar pueden seleccionar un subconjunto de filas distinto.
+
 ## allow_preliminary_distinct_abandoning {#allow_preliminary_distinct_abandoning}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -494,6 +518,14 @@ Permite que `ALTER TABLE ... REPLACE PARTITION ... FROM ...` elimine silenciosam
 De forma predeterminada, esto no está permitido: `REPLACE PARTITION` desde una tabla de origen que no tiene datos en la partición solicitada genera una excepción, porque en ese caso la operación pasa, en la práctica, a ser un `DROP PARTITION` silencioso en el destino (se eliminan los datos del destino y nada los sustituye), una causa habitual de pérdida accidental de datos (consulta [#23727](https://github.com/ClickHouse/ClickHouse/issues/23727)).
 
 Habilita esta configuración para restaurar el comportamiento anterior, por ejemplo, cuando uses intencionadamente una partición de origen vacía para borrar datos del destino. Si quieres eliminarla sin condiciones, es preferible usar `ALTER TABLE ... DROP PARTITION ...`.
+
+## allow_reserved_column_names {#allow_reserved_column_names}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "Se rechazan las columnas con el mismo nombre que una columna virtual de una tabla MergeTree"}]}]} />
+
+Permite que una columna de una tabla de la familia `MergeTree` tenga el nombre de una de las columnas virtuales de la tabla (por ejemplo, `_part`, `_part_offset` o `_table`) en `CREATE TABLE`, en `ATTACH TABLE` con una definición completa y en `ALTER TABLE ... ADD COLUMN` y `RENAME COLUMN`. Una columna así oculta la columna virtual correspondiente. Las tablas que ya tienen una columna de este tipo se cargan independientemente de este parámetro de configuración. Los nombres de columnas virtuales persistentes se rechazan siempre.
 
 ## allow_settings_after_format_in_insert {#allow_settings_after_format_in_insert}
 

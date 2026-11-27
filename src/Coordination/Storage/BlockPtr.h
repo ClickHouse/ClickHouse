@@ -88,7 +88,7 @@ struct BlockPtr
         }
     }
 
-    BlockData * get() const { return ptr; }
+    [[nodiscard]] BlockData * get() const { return ptr; }
     BlockData * operator->() const { return ptr; }
     BlockData & operator*() const { return *ptr; }
     explicit operator bool() const { return ptr != nullptr; }
@@ -148,7 +148,7 @@ struct BlockWeakPtr
     }
 
     /// weak -> strong.
-    BlockPtr lock() const noexcept { return lockBlockControl(control); }
+    [[nodiscard]] BlockPtr lock() const noexcept { return lockBlockControl(control); }
 };
 
 /// A BlockWeakPtr and a spinlock packed into 8 bytes.

@@ -2,19 +2,15 @@
 slug: /guides/replacing-merge-tree
 title: 'Uso del motor ReplacingMergeTree'
 description: 'Guía para usar el motor ReplacingMergeTree en ClickHouse'
-keywords: ['replacingmergetree', 'inserciones', 'deduplicación']
+keywords: ['replacingmergetree', 'inserts', 'deduplication']
 doc_type: 'guide'
 sidebarTitle: 'Uso del motor ReplacingMergeTree'
 ---
 
-import { Image } from "/snippets/es/components/Image.jsx";
-
 Mientras que las bases de datos transaccionales están optimizadas para cargas de trabajo transaccionales con actualizaciones y eliminaciones, las bases de datos OLAP ofrecen menos garantías para este tipo de operaciones. En su lugar, están optimizadas para datos inmutables insertados en lotes, lo que permite consultas analíticas significativamente más rápidas. Aunque ClickHouse ofrece operaciones de actualización mediante mutaciones, así como un mecanismo ligero para eliminar filas, su estructura orientada a columnas implica que estas operaciones deben planificarse con cuidado, como se ha descrito anteriormente. Estas operaciones se gestionan de forma asíncrona, se procesan con un único hilo y requieren (en el caso de las actualizaciones) que los datos se reescriban en disco. Por lo tanto, no deben usarse para grandes cantidades de cambios pequeños.
 Para procesar un flujo de filas con actualizaciones y eliminaciones evitando los patrones de uso anteriores, podemos usar el motor de tabla ReplacingMergeTree de ClickHouse.
 
-<div id="automatic-upserts-of-inserted-rows">
-  ## Upserts automáticos de filas insertadas
-</div>
+## Upserts automáticos de filas insertadas {#automatic-upserts-of-inserted-rows}
 
 El [motor de tabla ReplacingMergeTree](/es/reference/engines/table-engines/mergetree-family/replacingmergetree) permite aplicar operaciones de actualización a las filas sin necesidad de usar sentencias `ALTER` o `DELETE` ineficientes, ya que permite insertar varias copias de la misma fila y marcar una como la versión más reciente. A su vez, un proceso en segundo plano elimina de forma asíncrona las versiones anteriores de la misma fila, imitando de forma eficiente una operación de actualización mediante inserciones inmutables.
 Esto se basa en la capacidad del motor de tabla para identificar filas duplicadas. Esto se logra usando la cláusula `ORDER BY` para determinar la unicidad; es decir, si dos filas tienen los mismos valores en las columnas especificadas en `ORDER BY`, se consideran duplicadas. Una columna `version`, especificada al definir la tabla, permite conservar la versión más reciente de una fila cuando se identifican dos filas como duplicadas; es decir, se conserva la fila con el valor de versión más alto.
@@ -32,11 +28,15 @@ Como resultado de este proceso de fusión, tenemos cuatro filas que representan 
 
 <br />
 
-<Image img="/images/migrations/postgres-replacingmergetree.webp" size="md" alt="Proceso de ReplacingMergeTree" />
+<div className="ch-image-md">
+  <Frame>
+    ![Proceso de ReplacingMergeTree](/images/migrations/postgres-replacingmergetree.webp)
+  </Frame>
+</div>
 
 <br />
 
-Tenga en cuenta que las filas eliminadas nunca se quitan. Se pueden eliminar forzosamente con un `OPTIMIZE table FINAL CLEANUP`. Esto requiere la configuración experimental `allow_experimental_replacing_merge_with_cleanup=1`. Esto solo debe ejecutarse en las siguientes condiciones:
+Tenga en cuenta que las filas eliminadas nunca se quitan. Se pueden eliminar forzosamente con un `OPTIMIZE table FINAL CLEANUP`. Esto requiere el parámetro de configuración experimental `allow_experimental_replacing_merge_with_cleanup=1`. Esto solo debe ejecutarse en las siguientes condiciones:
 
 1. Puede estar seguro de que no se insertarán filas con versiones antiguas (de aquellas que se están eliminando con la limpieza) después de ejecutar la operación. Si se insertan, se conservarán incorrectamente, ya que las filas eliminadas ya no estarán presentes.
 2. Asegúrese de que todas las réplicas estén sincronizadas antes de ejecutar la limpieza. Esto puede lograrse con el comando:
@@ -53,9 +53,7 @@ Recomendamos pausar las inserciones una vez que (1) esté garantizado y hasta qu
 
 > Consejo: También puede emitir `OPTIMIZE FINAL CLEANUP` en particiones específicas que ya no estén sujetas a cambios.
 
-<div id="choosing-a-primarydeduplication-key">
-  ## Elegir una clave primaria/de deduplicación
-</div>
+## Elegir una clave primaria/de deduplicación {#choosing-a-primarydeduplication-key}
 
 Antes destacamos una restricción adicional importante que también debe cumplirse en el caso de ReplacingMergeTree: los valores de las columnas de `ORDER BY` deben identificar de forma única una fila a lo largo de sus cambios. Por lo tanto, si se migra desde una base de datos transaccional como Postgres, la clave primaria original de Postgres debe incluirse en la cláusula `ORDER BY` de ClickHouse.
 
@@ -69,22 +67,22 @@ CREATE TABLE stackoverflow.posts_updateable
 (
        `Version` UInt32,
        `Deleted` UInt8,
-        `Id` Int32 CODEC(Delta(4), ZSTD(1)),
+        `Id` Int32 CODEC(Delta, Default),
         `PostTypeId` Enum8('Question' = 1, 'Answer' = 2, 'Wiki' = 3, 'TagWikiExcerpt' = 4, 'TagWiki' = 5, 'ModeratorNomination' = 6, 'WikiPlaceholder' = 7, 'PrivilegeWiki' = 8),
         `AcceptedAnswerId` UInt32,
         `CreationDate` DateTime64(3, 'UTC'),
         `Score` Int32,
-        `ViewCount` UInt32 CODEC(Delta(4), ZSTD(1)),
+        `ViewCount` UInt32 CODEC(Delta, Default),
         `Body` String,
         `OwnerUserId` Int32,
         `OwnerDisplayName` String,
         `LastEditorUserId` Int32,
         `LastEditorDisplayName` String,
-        `LastEditDate` DateTime64(3, 'UTC') CODEC(Delta(8), ZSTD(1)),
+        `LastEditDate` DateTime64(3, 'UTC') CODEC(Delta, Default),
         `LastActivityDate` DateTime64(3, 'UTC'),
         `Title` String,
         `Tags` String,
-        `AnswerCount` UInt16 CODEC(Delta(2), ZSTD(1)),
+        `AnswerCount` UInt16 CODEC(Delta, Default),
         `CommentCount` UInt8,
         `FavoriteCount` UInt8,
         `ContentLicense` LowCardinality(String),
@@ -99,16 +97,14 @@ ORDER BY (PostTypeId, toDate(CreationDate), CreationDate, Id)
 
 Usamos una clave `ORDER BY` de `(PostTypeId, toDate(CreationDate), CreationDate, Id)`. La columna `Id`, única para cada publicación, garantiza que las filas se puedan deduplicar. Se añaden al esquema las columnas `Version` y `Deleted`, según sea necesario.
 
-<div id="querying-replacingmergetree">
-  ## Consultando ReplacingMergeTree
-</div>
+## Consultando ReplacingMergeTree {#querying-replacingmergetree}
 
 En el momento de la fusión, ReplacingMergeTree identifica las filas duplicadas usando los valores de las columnas `ORDER BY` como identificador único, y conserva solo la versión más alta o elimina todos los duplicados si la versión más reciente indica una eliminación. Sin embargo, esto solo ofrece corrección eventual: no garantiza que las filas se dedupliquen, y no debe confiar en ello.
 
 <Info>
   **Use FINAL para leer datos deduplicados**
 
-  Dado que la deduplicación solo ocurre durante las fusiones en segundo plano, un `SELECT` simple aún puede devolver filas duplicadas o eliminadas. Para obtener resultados correctos en tiempo de consulta, use el modificador `FINAL`, que completa la deduplicación y la eliminación de filas borradas mientras se ejecuta la consulta.
+  Dado que la deduplicación solo ocurre durante las fusiones en segundo plano, un `SELECT` simple aún puede devolver filas duplicadas o eliminadas. Para obtener resultados correctos en el momento de la consulta, use el modificador `FINAL`, que completa la deduplicación y la eliminación de filas borradas mientras se ejecuta la consulta.
 </Info>
 
 Considere la tabla posts anterior. Podemos usar el método habitual para cargar este conjunto de datos, pero especificando además una columna deleted y una columna version con valor 0. A efectos del ejemplo, cargamos solo 10000 filas.
@@ -136,7 +132,7 @@ SELECT count() FROM stackoverflow.posts_updateable
 1 row in set. Elapsed: 0.002 sec.
 ```
 
-Ahora actualizamos nuestras estadísticas posteriores a la respuesta. En lugar de actualizar estos valores, insertamos nuevas copias de 5000 filas e incrementamos en uno su número de versión (esto significa que habrá 150 filas en la tabla). Podemos simularlo con un simple `INSERT INTO SELECT`:
+Ahora actualizamos nuestras estadísticas posteriores a la respuesta. En lugar de actualizar estos valores, insertamos nuevas copias de 5000 filas e incrementamos en uno su número de versión (esto significa que habrá 15000 filas en la tabla). Podemos simularlo con un simple `INSERT INTO SELECT`:
 
 ```sql
 INSERT INTO posts_updateable SELECT
@@ -242,7 +238,7 @@ Peak memory usage: 8.14 MiB.
 ```
 
 <div id="final-performance">
-  ## Rendimiento de `FINAL`
+  ## Rendimiento de `FINAL` {#final-performance}
 </div>
 
 El operador `FINAL` sí añade una pequeña sobrecarga de rendimiento a las consultas.
@@ -253,22 +249,20 @@ la deduplicación.
 
 Si la condición `WHERE` no utiliza una columna clave, actualmente ClickHouse no aprovecha la optimización `PREWHERE` al usar `FINAL`. Esta optimización busca reducir las filas leídas de las columnas no filtradas. Puede encontrar ejemplos de cómo emular este `PREWHERE` y, por tanto, mejorar potencialmente el rendimiento [aquí](https://clickhouse.com/blog/clickhouse-postgresql-change-data-capture-cdc-part-1#final-performance).
 
-<div id="exploiting-partitions-with-replacingmergetree">
-  ## Aprovechar las particiones con ReplacingMergeTree
-</div>
+## Aprovechar las particiones con ReplacingMergeTree {#exploiting-partitions-with-replacingmergetree}
 
-La fusión de datos en ClickHouse se produce a nivel de partición. Al usar ReplacingMergeTree, recomendamos a los usuarios particionar su tabla según las prácticas recomendadas, siempre que puedan garantizar que esta **clave de partición no cambie para una fila determinada**. Esto garantizará que las actualizaciones de una misma fila se envíen a la misma partición de ClickHouse. Puede reutilizar la misma clave de partición que en Postgres, siempre que siga las prácticas recomendadas descritas aquí.
+La fusión de datos en ClickHouse se produce a nivel de partición. Al usar ReplacingMergeTree, recomendamos a los usuarios particionar su tabla según las buenas prácticas, siempre que puedan garantizar que esta **clave de partición no cambie para una fila determinada**. Esto garantizará que las actualizaciones de una misma fila se envíen a la misma partición de ClickHouse. Puede reutilizar la misma clave de partición que en Postgres, siempre que siga las buenas prácticas descritas aquí.
 
-Suponiendo que así sea, puede usar la configuración `do_not_merge_across_partitions_select_final=1` para mejorar el rendimiento de las consultas con `FINAL`. Esta configuración hace que las particiones se fusionen y se procesen de forma independiente al usar FINAL.
+Suponiendo que así sea, puede usar el parámetro de configuración `do_not_merge_across_partitions_select_final=1` para mejorar el rendimiento de las consultas con `FINAL`. Este parámetro de configuración hace que las particiones se fusionen y se procesen de forma independiente al usar FINAL.
 
-Considere la siguiente tabla posts, donde no usamos particionado:
+Considere la siguiente tabla posts, donde no usamos partición:
 
 ```sql
 CREATE TABLE stackoverflow.posts_no_part
 (
         `Version` UInt32,
         `Deleted` UInt8,
-        `Id` Int32 CODEC(Delta(4), ZSTD(1)),
+        `Id` Int32 CODEC(Delta, Default),
         ...
 )
 ENGINE = ReplacingMergeTree
@@ -311,14 +305,14 @@ ORDER BY year ASC
 Peak memory usage: 2.09 GiB.
 ```
 
-Repitiendo estos mismos pasos con una tabla particionada por año y repitiendo la consulta anterior con `do_not_merge_across_partitions_select_final=1`.
+Repitiendo estos mismos pasos con una tabla con partición por año y repitiendo la consulta anterior con `do_not_merge_across_partitions_select_final=1`.
 
 ```sql
 CREATE TABLE stackoverflow.posts_with_part
 (
         `Version` UInt32,
         `Deleted` UInt8,
-        `Id` Int32 CODEC(Delta(4), ZSTD(1)),
+        `Id` Int32 CODEC(Delta, Default),
         ...
 )
 ENGINE = ReplacingMergeTree
@@ -347,22 +341,22 @@ ORDER BY year ASC
 17 rows in set. Elapsed: 0.994 sec. Processed 64.65 million rows, 983.64 MB (65.02 million rows/s., 989.23 MB/s.)
 ```
 
-Como se muestra, el particionado ha mejorado significativamente el rendimiento de las consultas en este caso, al permitir que el proceso de deduplicación pueda realizarse en paralelo a nivel de partición.
+Como se muestra, la partición ha mejorado significativamente el rendimiento de las consultas en este caso, al permitir que el proceso de deduplicación pueda realizarse en paralelo a nivel de partición.
 
 <div id="merge-behavior-considerations">
-  ## Consideraciones sobre el comportamiento de las operaciones de merge
+  ## Consideraciones sobre el comportamiento de las operaciones de merge {#merge-behavior-considerations}
 </div>
 
 El mecanismo de selección de operaciones de merge de ClickHouse va más allá de la simple combinación de partes. A continuación, examinamos este comportamiento en el contexto de ReplacingMergeTree, incluidas las opciones de configuración para habilitar una combinación más agresiva de datos antiguos y las consideraciones relativas a partes de mayor tamaño.
 
 <div id="merge-selection-logic">
-  ### Lógica de selección de fusiones
+  ### Lógica de selección de fusiones {#merge-selection-logic}
 </div>
 
 Aunque la fusión busca minimizar el número de partes, también equilibra ese objetivo con el coste de la amplificación de escritura. En consecuencia, algunos rangos de partes se excluyen de la fusión si, según cálculos internos, darían lugar a una amplificación de escritura excesiva. Este comportamiento ayuda a evitar un uso innecesario de recursos y prolonga la vida útil de los componentes de almacenamiento.
 
 <div id="merging-behavior-on-large-parts">
-  ### Comportamiento de la fusión en partes grandes
+  ### Comportamiento de la fusión en partes grandes {#merging-behavior-on-large-parts}
 </div>
 
 El motor ReplacingMergeTree de ClickHouse está optimizado para gestionar filas duplicadas mediante la fusión de partes de datos, conservando solo la versión más reciente de cada fila en función de una clave única especificada. Sin embargo, cuando una parte fusionada alcanza el umbral `max_bytes_to_merge_at_max_space_in_pool`, deja de seleccionarse para futuras fusiones, incluso si `min_age_to_force_merge_seconds` está configurado. Como resultado, ya no se puede depender de las fusiones automáticas para eliminar los duplicados que puedan acumularse con la inserción continua de datos.
@@ -372,13 +366,13 @@ Para resolver esto, puedes ejecutar `OPTIMIZE FINAL` para fusionar manualmente l
 Como solución más sostenible para mantener el rendimiento, se recomienda particionar la tabla. Esto puede ayudar a evitar que las partes de datos alcancen el tamaño máximo de fusión y reducir la necesidad de optimizaciones manuales continuas.
 
 <div id="partitioning-and-merging-across-partitions">
-  ### Particionado y fusiones entre particiones
+  ### Particionado y fusiones entre particiones {#partitioning-and-merging-across-partitions}
 </div>
 
 Como se explica en Aprovechamiento de particiones con ReplacingMergeTree, recomendamos particionar las tablas como práctica general. El particionado aísla los datos para que las fusiones sean más eficientes y evita las fusiones entre particiones, especialmente durante la ejecución de consultas. Este comportamiento mejora a partir de la versión 23.12: si la clave de partición es un prefijo de la clave de ordenación, no se realizan fusiones entre particiones en tiempo de consulta, lo que se traduce en un mejor rendimiento de las consultas.
 
 <div id="tuning-merges-for-better-query-performance">
-  ### Ajuste de las fusiones para mejorar el rendimiento de las consultas
+  ### Ajuste de las fusiones para mejorar el rendimiento de las consultas {#tuning-merges-for-better-query-performance}
 </div>
 
 De forma predeterminada, `min_age_to_force_merge_seconds` y `min_age_to_force_merge_on_partition_only` se establecen en 0 y false, respectivamente, lo que desactiva estas funciones. Con esta configuración, ClickHouse aplicará el comportamiento de fusión estándar sin forzar fusiones en función de la antigüedad de la partición.
@@ -388,7 +382,7 @@ Si se especifica un valor para `min_age_to_force_merge_seconds`, ClickHouse igno
 Este comportamiento puede ajustarse aún más estableciendo `min_age_to_force_merge_on_partition_only=true`, lo que exige que todas las partes de la partición sean más antiguas que `min_age_to_force_merge_seconds` para aplicar una fusión agresiva. Esta configuración permite que, con el tiempo, las particiones más antiguas se fusionen hasta quedar en una sola parte, lo que consolida los datos y mantiene el rendimiento de las consultas.
 
 <div id="recommended-settings">
-  ### Ajustes recomendados
+  ### Ajustes recomendados {#recommended-settings}
 </div>
 
 <Warning>

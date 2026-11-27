@@ -37,7 +37,12 @@
 #if USE_AWS_S3 && USE_SSL
 #include <Databases/DataLake/S3TablesCatalog.h>
 #endif
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeTuple.h>
 
 #include <Storages/ObjectStorage/S3/Configuration.h>
 #include <Storages/ObjectStorage/S3/S3SecretArguments.h>
@@ -79,9 +84,10 @@ namespace DatabaseDataLakeSetting
 {
     extern const DatabaseDataLakeSettingsDatabaseDataLakeCatalogType catalog_type;
     extern const DatabaseDataLakeSettingsString warehouse;
-    extern const DatabaseDataLakeSettingsString catalog_credential;
+    extern const DatabaseDataLakeSettingsTimezone iceberg_timezone_for_timestamptz;
+    extern const DatabaseDataLakeSettingsSecretString catalog_credential;
     extern const DatabaseDataLakeSettingsBool use_unity_catalog_v2;
-    extern const DatabaseDataLakeSettingsString auth_header;
+    extern const DatabaseDataLakeSettingsSecretString auth_header;
     extern const DatabaseDataLakeSettingsString auth_scope;
     extern const DatabaseDataLakeSettingsString storage_endpoint;
     extern const DatabaseDataLakeSettingsS3UriStyle storage_uri_style;
@@ -89,28 +95,28 @@ namespace DatabaseDataLakeSetting
     extern const DatabaseDataLakeSettingsBool oauth_server_use_request_body;
     extern const DatabaseDataLakeSettingsBool vended_credentials;
     extern const DatabaseDataLakeSettingsString aws_access_key_id;
-    extern const DatabaseDataLakeSettingsString aws_secret_access_key;
+    extern const DatabaseDataLakeSettingsSecretString aws_secret_access_key;
     extern const DatabaseDataLakeSettingsString region;
     extern const DatabaseDataLakeSettingsString aws_role_arn;
     extern const DatabaseDataLakeSettingsString aws_role_session_name;
     extern const DatabaseDataLakeSettingsString aws_external_id;
     extern const DatabaseDataLakeSettingsString onelake_tenant_id;
     extern const DatabaseDataLakeSettingsString onelake_client_id;
-    extern const DatabaseDataLakeSettingsString onelake_client_secret;
-    extern const DatabaseDataLakeSettingsString onelake_bearer_token;
-    extern const DatabaseDataLakeSettingsString onelake_refresh_token;
+    extern const DatabaseDataLakeSettingsSecretString onelake_client_secret;
+    extern const DatabaseDataLakeSettingsSecretString onelake_bearer_token;
+    extern const DatabaseDataLakeSettingsSecretString onelake_refresh_token;
     extern const DatabaseDataLakeSettingsBool onelake_use_blob_endpoint;
     extern const DatabaseDataLakeSettingsString dlf_access_key_id;
-    extern const DatabaseDataLakeSettingsString dlf_access_key_secret;
+    extern const DatabaseDataLakeSettingsSecretString dlf_access_key_secret;
     extern const DatabaseDataLakeSettingsString google_project_id;
     extern const DatabaseDataLakeSettingsString google_service_account;
     extern const DatabaseDataLakeSettingsString google_metadata_service;
     extern const DatabaseDataLakeSettingsString google_adc_client_id;
-    extern const DatabaseDataLakeSettingsString google_adc_client_secret;
-    extern const DatabaseDataLakeSettingsString google_adc_refresh_token;
+    extern const DatabaseDataLakeSettingsSecretString google_adc_client_secret;
+    extern const DatabaseDataLakeSettingsSecretString google_adc_refresh_token;
     extern const DatabaseDataLakeSettingsString google_adc_quota_project_id;
     extern const DatabaseDataLakeSettingsString google_adc_credentials_file;
-    extern const DatabaseDataLakeSettingsString google_service_account_key;
+    extern const DatabaseDataLakeSettingsSecretString google_service_account_key;
     extern const DatabaseDataLakeSettingsString disk;
     extern const DatabaseDataLakeSettingsBool force_add_bucket;
     extern const DatabaseDataLakeSettingsBool flat_namespaces;
@@ -172,6 +178,46 @@ namespace FailPoints
 namespace
 {
 
+DataTypePtr setTimezoneForTimestamptz(const DataTypePtr & type, const String & timezone)
+{
+    if (const auto * datetime = typeid_cast<const DataTypeDateTime64 *>(type.get()))
+    {
+        if (datetime->hasExplicitTimeZone() && datetime->getTimeZone().getTimeZone() == "UTC")
+            return std::make_shared<DataTypeDateTime64>(datetime->getScale(), timezone);
+        return type;
+    }
+    if (const auto * nullable = typeid_cast<const DataTypeNullable *>(type.get()))
+        return makeNullable(setTimezoneForTimestamptz(nullable->getNestedType(), timezone));
+    if (const auto * array = typeid_cast<const DataTypeArray *>(type.get()))
+        return std::make_shared<DataTypeArray>(setTimezoneForTimestamptz(array->getNestedType(), timezone));
+    if (const auto * map = typeid_cast<const DataTypeMap *>(type.get()))
+        return std::make_shared<DataTypeMap>(
+            setTimezoneForTimestamptz(map->getKeyType(), timezone), setTimezoneForTimestamptz(map->getValueType(), timezone));
+    if (const auto * tuple = typeid_cast<const DataTypeTuple *>(type.get()))
+    {
+        DataTypes elements;
+        for (const auto & element : tuple->getElements())
+            elements.push_back(setTimezoneForTimestamptz(element, timezone));
+        if (tuple->hasExplicitNames())
+            return std::make_shared<DataTypeTuple>(elements, tuple->getElementNames());
+        return std::make_shared<DataTypeTuple>(elements);
+    }
+    return type;
+}
+
+NamesAndTypesList getTableSchema(
+    const DataLake::ICatalog & catalog, const DataLake::TableMetadata & table_metadata, const DatabaseDataLakeSettings & settings)
+{
+    const String & timezone = settings[DatabaseDataLakeSetting::iceberg_timezone_for_timestamptz];
+    auto schema = table_metadata.getSchema();
+    if (catalog.getTableEngineName(table_metadata) != "Iceberg" || timezone == "UTC")
+        return schema;
+    NamesAndTypesList result;
+    for (const auto & column : schema)
+        result.emplace_back(column.name, setTimezoneForTimestamptz(column.type, timezone));
+    return result;
+}
+
 /// In refresh-token mode a single token, minted with `auth_scope`, serves both the OneLake
 /// catalog and Azure storage requests, so the scope must be the Azure storage audience.
 constexpr auto ONELAKE_STORAGE_AUTH_SCOPE = "https://storage.azure.com/.default";
@@ -212,8 +258,8 @@ DatabaseDataLake::DatabaseDataLake(
     : IDatabase(database_name_)
     , url(url_)
     , database_settings(std::make_unique<const DatabaseDataLakeSettings>(settings_))
-    , database_engine_definition(database_engine_definition_)
-    , table_engine_definition(table_engine_definition_)
+    , database_engine_definition(database_engine_definition_->formatWithSecretsOneLine<SecretString>())
+    , table_engine_definition(table_engine_definition_->formatWithSecretsOneLine<SecretString>())
     , log(getLogger("DatabaseDataLake(" + database_name_ + ")"))
     , allow_server_credentials_in_user_queries(allow_server_credentials_in_user_queries_)
     , is_loading_from_existing_metadata(is_loading_from_existing_metadata_)
@@ -322,7 +368,7 @@ void DatabaseDataLake::initialize() const
                 url,
                 settings[DatabaseDataLakeSetting::catalog_credential].value,
                 settings[DatabaseDataLakeSetting::auth_scope].value,
-                settings[DatabaseDataLakeSetting::auth_header],
+                settings[DatabaseDataLakeSetting::auth_header].value,
                 settings[DatabaseDataLakeSetting::oauth_server_uri].value,
                 settings[DatabaseDataLakeSetting::oauth_server_use_request_body].value,
                 settings[DatabaseDataLakeSetting::flat_namespaces].value,
@@ -339,7 +385,7 @@ void DatabaseDataLake::initialize() const
                 url,
                 settings[DatabaseDataLakeSetting::catalog_credential].value,
                 settings[DatabaseDataLakeSetting::auth_scope].value,
-                settings[DatabaseDataLakeSetting::auth_header],
+                settings[DatabaseDataLakeSetting::auth_header].value,
                 settings[DatabaseDataLakeSetting::oauth_server_uri].value,
                 settings[DatabaseDataLakeSetting::oauth_server_use_request_body].value,
                 settings[DatabaseDataLakeSetting::flat_namespaces].value,
@@ -357,7 +403,7 @@ void DatabaseDataLake::initialize() const
                 url,
                 settings[DatabaseDataLakeSetting::catalog_credential].value,
                 settings[DatabaseDataLakeSetting::auth_scope].value,
-                settings[DatabaseDataLakeSetting::auth_header],
+                settings[DatabaseDataLakeSetting::auth_header].value,
                 settings[DatabaseDataLakeSetting::oauth_server_uri].value,
                 settings[DatabaseDataLakeSetting::oauth_server_use_request_body].value,
                 settings[DatabaseDataLakeSetting::flat_namespaces].value,
@@ -394,10 +440,10 @@ void DatabaseDataLake::initialize() const
             std::string google_service_account = settings[DatabaseDataLakeSetting::google_service_account].value;
             std::string google_metadata_service = settings[DatabaseDataLakeSetting::google_metadata_service].value;
             std::string google_adc_client_id = settings[DatabaseDataLakeSetting::google_adc_client_id].value;
-            std::string google_adc_client_secret = settings[DatabaseDataLakeSetting::google_adc_client_secret].value;
-            std::string google_adc_refresh_token = settings[DatabaseDataLakeSetting::google_adc_refresh_token].value;
+            std::string_view google_adc_client_secret = settings[DatabaseDataLakeSetting::google_adc_client_secret].value;
+            std::string_view google_adc_refresh_token = settings[DatabaseDataLakeSetting::google_adc_refresh_token].value;
             std::string google_adc_quota_project_id = settings[DatabaseDataLakeSetting::google_adc_quota_project_id].value;
-            std::string google_service_account_key = settings[DatabaseDataLakeSetting::google_service_account_key].value;
+            std::string_view google_service_account_key = settings[DatabaseDataLakeSetting::google_service_account_key].value;
 
             if (settings[DatabaseDataLakeSetting::google_adc_credentials_file].changed)
             {
@@ -783,9 +829,13 @@ std::string DatabaseDataLake::getStorageEndpointForTable(const DataLake::TableMe
     const DatabaseDataLakeSettings & settings = *settings_version;
 
     auto endpoint_from_settings = settings[DatabaseDataLakeSetting::storage_endpoint].value;
-    if (endpoint_from_settings.empty())
-        return table_metadata.getLocation();
-    return table_metadata.getLocationWithEndpoint(endpoint_from_settings, settings[DatabaseDataLakeSetting::storage_uri_style]);
+    auto table_url = endpoint_from_settings.empty()
+        ? table_metadata.getLocation()
+        : table_metadata.getLocationWithEndpoint(endpoint_from_settings, settings[DatabaseDataLakeSetting::storage_uri_style]);
+    /// Only the S3 configuration parses this as a URI and decodes the key from it, the others take the path verbatim.
+    if (table_metadata.isS3Location())
+        return DataLake::encodeLocationForURI(table_url);
+    return table_url;
 }
 
 bool DatabaseDataLake::catalogManagesProviderChain(const DataLake::ICatalog & catalog)
@@ -810,8 +860,10 @@ DatabaseDataLake::TableEngineArgs DatabaseDataLake::buildTableEngineArgs(
     TableEngineArgs result;
 
     /// Take database engine definition AST as base.
-    ASTStorage * storage = table_engine_definition->as<ASTStorage>();
-    result.args = storage->engine->arguments->children;
+    auto table_engine_definition_ast = parseDatabaseEngineDefinition(table_engine_definition);
+    ASTStorage * storage = table_engine_definition_ast->as<ASTStorage>();
+    if (storage->engine->arguments)
+        result.args = storage->engine->arguments->children;
 
     if (table_metadata.hasLocation())
     {
@@ -958,6 +1010,13 @@ std::optional<DataLake::TableMetadata> DatabaseDataLake::tryGetNewTableMetadata(
     auto location = catalog.getDefaultTableLocation(namespace_name, table_name);
     if (!location)
         return std::nullopt;
+
+    /// A catalog can report a placeholder instead of a location, e.g. Databricks reports `not_used` for a schema of managed tables.
+    if (!location->contains("://"))
+    {
+        LOG_DEBUG(log, "Ignoring location {} reported by the catalog for new table {}: it is not a URI", *location, name);
+        return std::nullopt;
+    }
 
     LOG_DEBUG(log, "Location assigned by the catalog for new table {}: {}", name, *location);
 
@@ -1317,7 +1376,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(
     const auto storage_type = table_engine_args.storage_type;
     const bool static_credentials_applied = table_engine_args.static_credentials_applied;
 
-    const auto columns = ColumnsDescription(table_metadata.getSchema());
+    const auto columns = ColumnsDescription(getTableSchema(*catalog, table_metadata, settings));
 
     const bool catalog_manages_provider_chain = catalogManagesProviderChain(*catalog);
 
@@ -1401,7 +1460,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(
         context_->getAccess()->checkAccessWithFilter(
             AccessType::READ,
             toStringSource(AccessTypeObjects::Source::HDFS),
-            ITableFunction::normalizeURIForAccessCheck(hdfs_configuration->getRawURI()));
+            ITableFunction::normalizeURIForAccessCheck(String(hdfs_configuration->getRawURI())));
         /// Writes reach HDFS through many entrypoints (`INSERT` and its cluster variant, `ALTER`, `OPTIMIZE`, `DROP`...) and
         /// would use the server's own identity, so rather than authorizing each, catalog tables on HDFS are read-only.
         hdfs_configuration->setReadOnly();
@@ -1453,7 +1512,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(
             /// because this table is actually stateless like a table function.
             /* is_table_function */true,
             getFormatSettings(context_copy),
-            getCatalog());
+            catalog);
 
         if (context_->hasQueryContext() && context_->getSettingsRef()[Setting::log_queries])
             context_->getQueryContext()->addQueryFactoriesInfo(Context::QueryLogFactories::Storage, storage_cluster->getName());
@@ -1481,7 +1540,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(
         /* comment */"",
         getFormatSettings(context_copy),
         LoadingStrictnessLevel::CREATE,
-        getCatalog(),
+        catalog,
         /* if_not_exists*/true,
         /* is_datalake_query*/true,
         distributed_processing,
@@ -1796,7 +1855,7 @@ ASTPtr DatabaseDataLake::getCreateDatabaseQueryImpl() const
 {
     const auto & create_query = make_intrusive<ASTCreateQuery>();
     create_query->setDatabase(database_name);
-    create_query->set(create_query->storage, database_engine_definition);
+    create_query->set(create_query->storage, parseDatabaseEngineDefinition(database_engine_definition));
     create_query->uuid = db_uuid;
     if (!comment.empty())
         create_query->set(create_query->comment, make_intrusive<ASTLiteral>(comment));
@@ -1833,7 +1892,7 @@ void DatabaseDataLake::applySettingsChanges(const SettingsChanges & settings_cha
     ASTPtr new_engine_definition;
     {
         std::lock_guard lock(mutex);
-        new_engine_definition = database_engine_definition->clone();
+        new_engine_definition = parseDatabaseEngineDefinition(database_engine_definition);
     }
     auto * storage = new_engine_definition->as<ASTStorage>();
     if (!storage)
@@ -1889,6 +1948,7 @@ void DatabaseDataLake::applySettingsChanges(const SettingsChanges & settings_cha
     new_create_query->uuid = db_uuid;
     if (const auto database_comment = getDatabaseComment(); !database_comment.empty())
         new_create_query->set(new_create_query->comment, make_intrusive<ASTLiteral>(database_comment));
+    auto new_engine_definition_text = new_engine_definition->formatWithSecretsOneLine<SecretString>();
     DatabaseCatalog::instance().updateMetadataFile(getDatabaseName(), new_create_query);
 
     /// Publish. Nothing below throws.
@@ -1897,7 +1957,7 @@ void DatabaseDataLake::applySettingsChanges(const SettingsChanges & settings_cha
     database_settings.set(std::move(new_settings));
     {
         std::lock_guard lock(mutex);
-        database_engine_definition = new_engine_definition;
+        database_engine_definition = std::move(new_engine_definition_text);
     }
     if (!local_catalog_snapshot)
     {
@@ -1912,7 +1972,7 @@ void DatabaseDataLake::applySettingsChanges(const SettingsChanges & settings_cha
 
 ASTPtr DatabaseDataLake::getCreateTableQueryImpl(
     const String & name,
-    ContextPtr /* context_ */,
+    ContextPtr context_,
     bool throw_on_error) const
 {
     const auto settings_version = database_settings.get();
@@ -1933,9 +1993,13 @@ ASTPtr DatabaseDataLake::getCreateTableQueryImpl(
     }
 
     auto create_table_query = make_intrusive<ASTCreateQuery>();
-    auto table_storage_define = table_engine_definition->clone();
+    auto table_storage_define = parseDatabaseEngineDefinition(table_engine_definition);
 
     auto * storage = table_storage_define->as<ASTStorage>();
+    if (storage->engine->arguments == nullptr)
+    {
+        storage->engine->arguments = make_intrusive<ASTExpressionList>();
+    }
     storage->engine->setKind(ASTFunction::Kind::TABLE_ENGINE);
     storage->engine->name = String(catalog->getTableEngineName(table_metadata));
 
@@ -1952,7 +2016,18 @@ ASTPtr DatabaseDataLake::getCreateTableQueryImpl(
     create_table_query->setTable(name);
     create_table_query->setDatabase(getDatabaseName());
 
-    for (const auto & column_type_and_name : table_metadata.getSchema())
+    auto columns = getTableSchema(*catalog, table_metadata, settings);
+    if (columns.empty() && table_metadata.isDefaultReadableTable())
+    {
+        /// The catalog left the schema to the table storage, which reads it from the table metadata.
+        if (auto table = tryGetTableImpl(name, context_, /*lightweight*/ false, /*ignore_if_not_iceberg*/ false, /*use_stateful_tables*/ false))
+        {
+            auto metadata = table->getInMemoryMetadataPtr(context_, false);
+            columns = metadata->getColumns().getOrdinary();
+        }
+    }
+
+    for (const auto & column_type_and_name : columns)
     {
         LOG_DEBUG(log, "Processing column {}", column_type_and_name.name);
         const auto column_declaration = make_intrusive<ASTColumnDeclaration>();
@@ -2010,17 +2085,26 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
         const auto * database_engine_define = args.create_query.storage;
         const auto & database_engine_name = args.engine_name;
 
+        /// A catalog of databases replicated through a coordination service replays the stored definition as a
+        /// `CREATE` query marked with `isRecoveryFromStoredMetadata`. It is an existing definition as well: it was
+        /// already validated where it was created, so the validations of a fresh `CREATE` below are skipped for it
+        /// just as for `ATTACH`, and an unreachable or unauthorized catalog (for example, a deleted IAM role of an
+        /// S3 Tables catalog) must not abort the whole replay and block startup.
+        const bool is_recovery_from_stored_metadata = args.context->isRecoveryFromStoredMetadata();
+        const bool is_stored_definition = args.create_query.attach || is_recovery_from_stored_metadata;
+
         DatabaseDataLakeSettings database_settings;
         if (database_engine_define->settings)
-            database_settings.loadFromQuery(*database_engine_define, args.create_query.attach);
+            database_settings.loadFromQuery(*database_engine_define, is_stored_definition);
 
-        const auto & auth_header_str = database_settings[DatabaseDataLakeSetting::auth_header].value;
-        /// Validate `auth_header` on CREATE only (matches the `allow_experimental_database_*`
-        /// gates below, which also self-skip on attach). An already-persisted database whose
+        std::string_view auth_header_str = database_settings[DatabaseDataLakeSetting::auth_header].value;
+        /// Validate `auth_header` on a fresh CREATE only (matches the `allow_experimental_database_*`
+        /// gates below, which also self-skip for a stored definition). An already-persisted database whose
         /// `auth_header` was accepted by an older version must still attach at startup, so a
         /// single misconfigured database cannot block the server from starting. The malformed
-        /// header is then reported lazily on first use of the database.
-        if (!args.create_query.attach && !auth_header_str.empty())
+        /// header is then reported lazily on first use of the database, and a header forbidden by
+        /// `http_forbid_headers` is still never sent: `RestCatalog::validateAuthHeaders` rejects it first.
+        if (!is_stored_definition && !auth_header_str.empty())
         {
             /// Only headers with a valid `name: value` format are accepted.
             auto pos = auth_header_str.find(':');
@@ -2077,6 +2161,9 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
             url = engine_args[0]->as<ASTLiteral>()->value.safeGet<String>();
 
         auto engine_for_tables = database_engine_define->clone();
+        /// The clone is retained for the lifetime of the database, its SETTINGS may hold credentials, and no reader needs them.
+        auto & engine_for_tables_storage = engine_for_tables->as<ASTStorage &>();
+        engine_for_tables_storage.reset(engine_for_tables_storage.settings);
         ASTFunction * engine_func = engine_for_tables->as<ASTStorage &>().engine;
         if (engine_func->arguments == nullptr)
         {
@@ -2091,7 +2178,7 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
             case DatabaseDataLakeCatalogType::ICEBERG_DELTA_SHARING:
             case DatabaseDataLakeCatalogType::ICEBERG_HORIZON:
             {
-                if (!args.create_query.attach
+                if (!is_stored_definition
                     && !args.context->getSettingsRef()[Setting::allow_database_iceberg])
                 {
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
@@ -2099,7 +2186,7 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
                                     "To allow its usage, enable setting allow_database_iceberg");
                 }
 
-                if (!args.create_query.attach && catalog_type == DatabaseDataLakeCatalogType::ICEBERG_HORIZON)
+                if (!is_stored_definition && catalog_type == DatabaseDataLakeCatalogType::ICEBERG_HORIZON)
                 {
                     const bool has_credential = !database_settings[DatabaseDataLakeSetting::catalog_credential].value.empty();
                     const bool has_auth_header = !database_settings[DatabaseDataLakeSetting::auth_header].value.empty();
@@ -2130,7 +2217,7 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
                     }
                 }
 
-                if (!args.create_query.attach && catalog_type == DatabaseDataLakeCatalogType::ICEBERG_ONELAKE)
+                if (!is_stored_definition && catalog_type == DatabaseDataLakeCatalogType::ICEBERG_ONELAKE)
                 {
                     /// Require exactly one auth method: a bearer token, a refresh token (needs a client id,
                     /// a secret only for confidential app registrations), or a client id + secret pair.
@@ -2187,7 +2274,7 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
             }
             case DatabaseDataLakeCatalogType::GLUE:
             {
-                if (!args.create_query.attach
+                if (!is_stored_definition
                     && !args.context->getSettingsRef()[Setting::allow_database_glue_catalog])
                 {
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
@@ -2199,7 +2286,7 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
             }
             case DatabaseDataLakeCatalogType::UNITY:
             {
-                if (!args.create_query.attach
+                if (!is_stored_definition
                     && !args.context->getSettingsRef()[Setting::allow_database_unity_catalog])
                 {
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
@@ -2211,7 +2298,7 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
             }
             case DatabaseDataLakeCatalogType::ICEBERG_HIVE:
             {
-                if (!args.create_query.attach
+                if (!is_stored_definition
                     && !args.context->getSettingsRef()[Setting::enable_database_hms_catalog])
                 {
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
@@ -2223,7 +2310,7 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
             }
             case DatabaseDataLakeCatalogType::PAIMON_REST:
             {
-                if (!args.create_query.attach
+                if (!is_stored_definition
                     && !args.context->getSettingsRef()[Setting::enable_database_paimon_rest_catalog])
                 {
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
@@ -2235,7 +2322,7 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
             }
             case DatabaseDataLakeCatalogType::S3_TABLES:
             {
-                if (!args.create_query.attach
+                if (!is_stored_definition
                     && !args.context->getSettingsRef()[Setting::allow_database_iceberg])
                 {
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
@@ -2259,7 +2346,9 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
         /// loader's attach (server startup) as a metadata load so a now-restricted catalog is left unavailable
         /// instead of aborting startup. The loader flag, not `internal`, is the discriminator: wrappers such as
         /// `PARALLEL WITH` run user statements as internal ones, and a user `ATTACH DATABASE` stays fail-closed.
-        const bool is_loading_from_existing_metadata = args.is_metadata_replay && args.mode >= LoadingStrictnessLevel::ATTACH;
+        /// A replay of a stored definition as `CREATE` (see `is_recovery_from_stored_metadata` above) counts as well.
+        const bool is_loading_from_existing_metadata
+            = (args.is_metadata_replay && args.mode >= LoadingStrictnessLevel::ATTACH) || is_recovery_from_stored_metadata;
 
         return std::make_shared<DatabaseDataLake>(
             args.database_name,
@@ -2274,7 +2363,7 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
             /// definition. They shouldn't do network I/O: an unreachable or unauthorized catalog must not block them.
             /// Keyed on the attach and restore flags, not `internal`: a user `CREATE` wrapped in `PARALLEL WITH` or
             /// `EXECUTE AS` runs as an internal query and must still build the catalog eagerly.
-            /*is_existing_definition=*/args.create_query.attach || args.is_restore_from_backup);
+            /*is_existing_definition=*/is_stored_definition || args.is_restore_from_backup);
     };
     /// TODO: DataLakeCatalog is polymorphic — underlying source (S3, Azure, HDFS, etc.) depends
     /// on the catalog type chosen at runtime. Consider adding source_access_type once a mechanism
@@ -2283,7 +2372,7 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
     /// we need a function to check if the url is S3 or Azure.
     /// right now we assume it's a S3 url
     auto secret_arguments = s3DatabaseSecretArguments();
-    secret_arguments.secret_settings = DataLake::SETTINGS_TO_HIDE;
+    secret_arguments.secret_settings = DataLake::settingsToHide();
     factory.registerDatabase("DataLakeCatalog", create_fn, std::move(secret_arguments), {
         .supports_arguments = true,
         .supports_settings = true,
@@ -2334,7 +2423,7 @@ The following settings are supported:
 | `catalog_type`          | Type of catalog: `glue`, `unity` (Delta, or Delta and Iceberg with `use_unity_catalog_v2`), `rest` (Iceberg), `hive`, `onelake` (Iceberg), `delta_sharing` (Iceberg, flat namespaces), `horizon` (Snowflake Horizon Iceberg REST) |
 | `warehouse`             | The warehouse/database name to use in the catalog.                                      |
 | `catalog_credential`    | Authentication credential for the catalog (e.g., API key or token)                      |
-| `use_unity_catalog_v2`  | For `catalog_type = 'unity'`: use the new implementation, which serves both Delta Lake and Iceberg tables. Default: `false`. Set it on `CREATE`, or change it for an existing database with `ALTER DATABASE ... MODIFY SETTING`. |
+| `use_unity_catalog_v2`  | For `catalog_type = 'unity'`: use the new implementation, which serves both Delta Lake and Iceberg tables. Default: `true`. Set it on `CREATE`, or change it for an existing database with `ALTER DATABASE ... MODIFY SETTING`. |
 | `auth_header`           | Custom HTTP header for authentication with the catalog service                          |
 | `auth_scope`            | OAuth2 scope for authentication (if using OAuth)                                        |
 | `storage_endpoint`      | Endpoint URL for the underlying storage                                                 |
@@ -2350,6 +2439,7 @@ The following settings are supported:
 | `dlf_access_key_secret` | Access key Secret for DLF access                                                        |
 | `force_add_bucket`      | When constructing object-storage URLs from the catalog-provided table location and `storage_endpoint`, prepend the bucket/container name even if the endpoint already contains it. Default: `false`. Set to `true` for catalogs that hand back paths without the bucket and require it to be added at the URL-construction step (Polaris-style paths). |
 | `snapshot_loading_mode` | For Iceberg REST based catalogs: the `snapshots` query parameter of the load-table request. `all` loads every snapshot of the table, `refs` loads only the snapshots referenced by branches and tags. `auto` (the default) uses the `snapshot-loading-mode` that the catalog advertises in its configuration, or `all` if it advertises none. A `snapshot-loading-mode` in the catalog's `overrides` is used even when the setting is set. ClickHouse reads snapshots from the table's metadata file, so `refs` only makes the catalog response smaller, which matters for tables with a long snapshot history. Requires catalog support: some catalogs reject `refs` for tables with statistics files, or omit `metadata-location` from the response. |
+| `iceberg_timezone_for_timestamptz` | The time zone of the `DateTime64` type that Iceberg `timestamptz` and `timestamptz_ns` columns of the tables in the database are mapped to. Default: `UTC`. |
 
 ## Examples {#examples}
 

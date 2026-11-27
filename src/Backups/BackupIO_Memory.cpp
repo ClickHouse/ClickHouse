@@ -84,6 +84,12 @@ void BackupWriterMemory::removeEmptyDirectories()
         backup_in_memory->drop();
 }
 
+void BackupWriterMemory::removeEmptyRootDirectory()
+{
+    if (backup_in_memory->isEmpty())
+        backup_in_memory->drop();
+}
+
 
 void registerBackupEngineMemory(BackupFactory & factory);
 

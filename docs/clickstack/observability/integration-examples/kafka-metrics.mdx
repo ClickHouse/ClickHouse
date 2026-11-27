@@ -9,7 +9,6 @@ keywords: ['Kafka', 'metrics', 'OTEL', 'ClickHouse Observability', 'JMX']
 
 import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
 
-import { Image } from "/snippets/components/Image.jsx";
 import { TrackedLink } from "/snippets/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
 Collect Kafka broker metrics with the OpenTelemetry JMX Metric Gatherer and send them to ClickHouse Observability. Use the [demo dataset](#demo-dataset) to try the integration without a Kafka deployment.
@@ -29,7 +28,15 @@ Collect Kafka broker metrics with the OpenTelemetry JMX Metric Gatherer and send
 
 Open ClickHouse Observability and go to **Team Settings → Data → Managed Telemetry**. Copy your OTLP HTTP endpoint and API key. You can use **Copy connection details** to copy the configuration, or **Reveal key** to view the masked key.
 
-<Image img="/images/clickstack/getting-started/observability-managed-telemetry.png" alt="Managed Telemetry connection details"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Managed Telemetry connection details](/images/clickstack/getting-started/observability-managed-telemetry.png)
+
+</Frame>
+
+</div>
 
 Set these variables in the terminal where you will run the JMX gatherer or demo collector:
 
@@ -242,14 +249,30 @@ Import the dashboard in the [next section](#dashboards), filter for `ServiceName
 2. Upload `kafka-metrics-dashboard.json`.
 3. Map the charts to your **Metrics** source and click **Finish Import**.
 
-<Image img="/images/clickstack/observability-import-dashboard.png" alt="Import dashboard button"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Import dashboard button](/images/clickstack/observability-import-dashboard.png)
+
+</Frame>
+
+</div>
 
 </Step>
 <Step title="View the dashboard" id="view-dashboard">
 
 For the sample, filter for `ServiceName:kafka-demo` and select **Last 2 days**. The dashboard shows throughput, consumer lag, request latency, queue depth, and offline partitions.
 
-<Image img="/images/clickstack/observability-kafka-metrics-dashboard.png" alt="Kafka metrics demo dashboard in ClickHouse Observability showing throughput, consumer lag, request latency, queue depth, and offline partitions"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Kafka metrics demo dashboard in ClickHouse Observability showing throughput, consumer lag, request latency, queue depth, and offline partitions](/images/clickstack/observability-kafka-metrics-dashboard.png)
+
+</Frame>
+
+</div>
 
 <Note>
 The dashboard uses the demo's metric names, including precomputed rates and consumer lag. The broker JMX gatherer exposes a different set of metrics, so adjust charts to match your live data. Broker JMX alone does not provide consumer-group lag.

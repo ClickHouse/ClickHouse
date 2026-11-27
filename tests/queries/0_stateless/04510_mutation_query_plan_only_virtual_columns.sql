@@ -1,5 +1,6 @@
 -- Tests that _sample_factor is materialized by the per-part read path. See issue #78465.
 
+SET allow_reserved_column_names = 1;
 DROP TABLE IF EXISTS t_mut_sf;
 CREATE TABLE t_mut_sf (c0 UInt32, u Float64) ENGINE = MergeTree ORDER BY c0 SAMPLE BY c0;
 INSERT INTO t_mut_sf VALUES (1, 0), (5, 0);

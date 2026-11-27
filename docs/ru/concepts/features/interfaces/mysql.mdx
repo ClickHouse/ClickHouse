@@ -7,8 +7,6 @@ title: 'Интерфейс MySQL'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 ClickHouse поддерживает протокол MySQL. Это позволяет некоторым клиентам, для которых нет нативных коннекторов ClickHouse, использовать вместо них протокол MySQL; совместимость была проверена со следующими BI-инструментами:
 
 * [Looker Studio](/ru/integrations/connectors/data-visualization/looker-studio-and-clickhouse)
@@ -29,34 +27,48 @@ ClickHouse поддерживает протокол MySQL. Это позвол�
   Отключить это нельзя, и в редких пограничных случаях это может приводить к различиям в поведении между запросами, отправленными через обычный интерфейс запросов ClickHouse и через интерфейс запросов MySQL.
 </Note>
 
-<div id="enabling-the-mysql-interface-on-clickhouse-cloud">
-  ## Включение интерфейса MySQL в ClickHouse Cloud
-</div>
+## Включение интерфейса MySQL в ClickHouse Cloud {#enabling-the-mysql-interface-on-clickhouse-cloud}
 
 1. После создания сервиса ClickHouse Cloud нажмите кнопку `Connect`.
 
 <br />
 
-<Image img="/images/interfaces/mysql0.webp" alt="Экран учетных данных — промпт" size="md" />
+<div className="ch-image-md">
+  <Frame>
+    ![Экран учетных данных — промпт](/images/interfaces/mysql0.webp)
+  </Frame>
+</div>
 
 2. В раскрывающемся списке `Connect with` выберите `MySQL`.
 
 <br />
 
-<Image img="/images/interfaces/mysql1.webp" alt="Экран учетных данных — выбран MySQL" size="md" />
+<div className="ch-image-md">
+  <Frame>
+    ![Экран учетных данных — выбран MySQL](/images/interfaces/mysql1.webp)
+  </Frame>
+</div>
 
 3. Включите переключатель, чтобы активировать интерфейс MySQL для этого сервиса. После этого для сервиса будет открыт порт `3306`, и отобразится экран подключения MySQL с вашим уникальным именем пользователя MySQL. Пароль будет таким же, как у пользователя сервиса по умолчанию.
 
 <br />
 
-<Image img="/images/interfaces/mysql2.webp" alt="Экран учетных данных — MySQL включен" size="md" />
+<div className="ch-image-md">
+  <Frame>
+    ![Экран учетных данных — MySQL включен](/images/interfaces/mysql2.webp)
+  </Frame>
+</div>
 
 Скопируйте показанную строку подключения MySQL.
 
-<Image img="/images/interfaces/mysql3.webp" alt="Экран учетных данных — строка подключения" size="md" />
+<div className="ch-image-md">
+  <Frame>
+    ![Экран учетных данных — строка подключения](/images/interfaces/mysql3.webp)
+  </Frame>
+</div>
 
 <div id="creating-multiple-mysql-users-in-clickhouse-cloud">
-  ## Создание нескольких пользователей MySQL в ClickHouse Cloud
+  ## Создание нескольких пользователей MySQL в ClickHouse Cloud {#creating-multiple-mysql-users-in-clickhouse-cloud}
 </div>
 
 По умолчанию существует встроенный пользователь `mysql4<subdomain>`, который использует тот же пароль, что и `default`. Часть `<subdomain>` — это первый сегмент имени хоста вашего ClickHouse Cloud. Такой формат необходим для работы с инструментами, которые поддерживают защищённое соединение, но не передают [информацию SNI при TLS-рукопожатии](https://www.cloudflare.com/learning/ssl/what-is-sni), из-за чего внутренняя маршрутизация невозможна без дополнительной подсказки в имени пользователя (клиент консоли MySQL — один из таких инструментов).
@@ -100,7 +112,7 @@ ClickHouse поддерживает протокол MySQL. Это позвол�
 4. Используйте созданного пользователя для подключения к вашему сервису ClickHouse Cloud через интерфейс MySQL.
 
 <div id="troubleshooting-multiple-mysql-users-in-clickhouse-cloud">
-  ### Устранение неполадок при работе с несколькими пользователями MySQL в ClickHouse Cloud
+  ### Устранение неполадок при работе с несколькими пользователями MySQL в ClickHouse Cloud {#troubleshooting-multiple-mysql-users-in-clickhouse-cloud}
 </div>
 
 Если вы создали нового пользователя MySQL и при подключении через клиент MySQL CLI видите следующую ошибку:
@@ -112,7 +124,7 @@ ERROR 2013 (HY000): Lost connection to MySQL server at 'reading authorization pa
 В этом случае убедитесь, что имя пользователя имеет формат `mysql4<subdomain>_<username>`, как описано ([выше](#creating-multiple-mysql-users-in-clickhouse-cloud)).
 
 <div id="enabling-the-mysql-interface-on-self-managed-clickhouse">
-  ## Включение интерфейса MySQL в самоуправляемом ClickHouse
+  ## Включение интерфейса MySQL в самоуправляемом ClickHouse {#enabling-the-mysql-interface-on-self-managed-clickhouse}
 </div>
 
 Добавьте настройку [mysql&#95;port](/ru/reference/settings/server-settings/settings/mysql#mysql_port) в файл конфигурации сервера. Например, можно указать порт в новом XML-файле в вашем `config.d/` [каталоге](/ru/concepts/features/configuration/server-config/configuration-files):
@@ -130,7 +142,7 @@ ERROR 2013 (HY000): Lost connection to MySQL server at 'reading authorization pa
 ```
 
 <div id="connect-mysql-to-clickhouse">
-  ## Подключение MySQL к ClickHouse
+  ## Подключение MySQL к ClickHouse {#connect-mysql-to-clickhouse}
 </div>
 
 Следующая команда показывает, как подключиться к ClickHouse с помощью клиента MySQL `mysql`:

@@ -1,4 +1,7 @@
 #include <memory>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/SetWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <DataTypes/DataTypeString.h>
 #include <Processors/QueryPlan/ReadFromParallelReplicas.h>
 
@@ -96,7 +99,7 @@ ReadFromParallelReplicasStep::ReadFromParallelReplicasStep(
     ClusterPtr cluster_,
     ParallelReplicasReadingCoordinatorPtr coordinator_,
     ContextPtr context_,
-    std::vector<ConnectionPoolPtr> pools_to_use_,
+    VectorWithMemoryTracking<ConnectionPoolPtr> pools_to_use_,
     std::optional<size_t> exclude_pool_index_,
     ConnectionPoolWithFailoverPtr connection_pool_with_failover_)
     : ISourceStep(query_plan_->getRootNode()->step->getOutputHeader())
@@ -104,7 +107,6 @@ ReadFromParallelReplicasStep::ReadFromParallelReplicasStep(
     , cluster(cluster_)
     , coordinator(std::move(coordinator_))
     , context(context_)
-    // , scalars(scalars_)
     // , storage_limits(std::move(storage_limits_))
     , log(getLogger("ReadFromParallelReplicas"))
     , pools_to_use(std::move(pools_to_use_))
@@ -113,7 +115,7 @@ ReadFromParallelReplicasStep::ReadFromParallelReplicasStep(
 {
     chassert(cluster->getShardCount() == 1);
 
-    std::vector<String> replicas;
+    VectorWithMemoryTracking<String> replicas;
     replicas.reserve(pools_to_use.size());
 
     for (size_t i = 0, l = pools_to_use.size(); i < l; ++i)
@@ -126,6 +128,13 @@ ReadFromParallelReplicasStep::ReadFromParallelReplicasStep(
 
     auto description = fmt::format("QueryPlan: {} Replicas: {}", dumpQueryPlanShape(*query_plan), fmt::join(replicas, ", "));
     setStepDescription(std::move(description), context->getSettingsRef()[Setting::query_plan_max_step_description_length]);
+}
+
+void ReadFromParallelReplicasStep::enableGroupByTopK(size_t top_k_limit)
+{
+    auto new_context = Context::createCopy(context);
+    new_context->setSetting("distributed_group_by_top_k", top_k_limit);
+    context = std::move(new_context);
 }
 
 void ReadFromParallelReplicasStep::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
@@ -144,7 +153,7 @@ Pipes ReadFromParallelReplicasStep::addPipes(const SharedHeader & out_header)
 {
     Pipes pipes;
 
-    std::vector<std::string_view> addresses;
+    VectorWithMemoryTracking<std::string_view> addresses;
     addresses.reserve(pools_to_use.size());
     for (size_t i = 0, l = pools_to_use.size(); i < l; ++i)
     {
@@ -156,7 +165,7 @@ Pipes ReadFromParallelReplicasStep::addPipes(const SharedHeader & out_header)
     LOG_DEBUG(getLogger("ReadFromParallelReplicas"), "Addresses to use: {}", fmt::join(addresses, ", "));
 
     using ProcessorWeakPtr = std::weak_ptr<IProcessor>;
-    std::unordered_map<size_t, ProcessorWeakPtr> remote_sources;
+    UnorderedMapWithMemoryTracking<size_t, ProcessorWeakPtr> remote_sources;
     for (size_t i = 0, l = pools_to_use.size(); i < l; ++i)
     {
         if (exclude_pool_index.has_value() && i == exclude_pool_index)
@@ -174,7 +183,8 @@ Pipes ReadFromParallelReplicasStep::addPipes(const SharedHeader & out_header)
             pools_to_use[i]->getAddress());
 
         const size_t parallel_marshalling_threads
-            = (context->getSettingsRef()[Setting::max_threads] + pools_to_use.size() - 1) / pools_to_use.size();
+            = context->getSettingsRef()[Setting::max_threads] / pools_to_use.size()
+            + (context->getSettingsRef()[Setting::max_threads] % pools_to_use.size() != 0);
         Pipe pipe = createPipeForSingeReplica(pools_to_use[i], replica_info, out_header, parallel_marshalling_threads);
         remote_sources.emplace(replica_info.number_of_current_replica, pipe.getProcessors().front());
         pipes.emplace_back(std::move(pipe));
@@ -188,7 +198,7 @@ Pipes ReadFromParallelReplicasStep::addPipes(const SharedHeader & out_header)
     if (!wait_for_unused_replicas)
     {
         coordinator->setReadCompletedCallback(
-            [sources = std::move(remote_sources)](const std::set<size_t> & used_replicas)
+            [sources = std::move(remote_sources)](const SetWithMemoryTracking<size_t> & used_replicas)
             {
                 for (const auto & [replica_num, processor] : sources)
                 {
@@ -241,15 +251,24 @@ Pipe ReadFromParallelReplicasStep::createPipeForSingeReplica(
 
     chassert(output_header);
 
+    /// Only the shard scalars: scalar subquery values are already constants in the plan.
+    /// `_shard_num` of an enclosing distributed query is needed: without it a follower assumes the initiator
+    /// runs a local plan (see `canUseLocalPlanForParallelReplicas`) and skips its own index analysis.
+    Scalars scalars;
+    if (context->hasQueryContext())
+    {
+        for (const auto * name : {"_shard_num", "_shard_count"})
+            if (context->getQueryContext()->hasScalar(name))
+                scalars.emplace(name, context->getQueryContext()->getScalar(name));
+    }
+
     auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
         pool,
         dumpQueryPlanShape(*query_plan),
         out_header,
         context,
         getThrottler(context),
-        /// Carries `_shard_num` of an enclosing distributed query: without it a follower assumes the initiator
-        /// runs a local plan (see `canUseLocalPlanForParallelReplicas`) and skips its own index analysis.
-        context->hasQueryContext() ? context->getQueryContext()->getScalars() : Scalars{},
+        scalars,
         context->getExternalTables(),
         QueryProcessingStage::QueryPlan,
         RemoteQueryExecutor::Extension{.parallel_reading_coordinator = coordinator, .replica_info = std::move(replica_info)},

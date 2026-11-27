@@ -1,18 +1,13 @@
 ---
 slug: /cloud/managed-postgres/monitoring/prometheus
-sidebarTitle: 'endpoint do Prometheus'
+sidebarTitle: 'Endpoint do Prometheus'
 title: 'Integração do ClickHouse Managed Postgres com Prometheus'
 description: 'Colete métricas do ClickHouse Managed Postgres no Prometheus, Grafana, Datadog ou em qualquer collector compatível com OpenMetrics'
 keywords: ['managed postgres', 'prometheus', 'grafana', 'datadog', 'métricas', 'openmetrics', 'observabilidade']
 doc_type: 'guide'
 ---
 
-import { BetaBadge } from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
-
 import { TrackedLink } from "/snippets/pt-BR/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
-
-<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.monitoring-prometheus-beta" />
 
 O ClickHouse Managed Postgres expõe dois endpoints de métricas compatíveis com Prometheus
 na [ClickHouse Cloud API][cloud-api]:
@@ -29,7 +24,7 @@ na [ClickHouse Cloud API][cloud-api]:
 </Note>
 
 <div id="authentication">
-  ## Autenticação
+  ## Autenticação {#authentication}
 </div>
 
 O endpoint usa as mesmas [chaves de API] usadas no restante da OpenAPI; consulte
@@ -44,7 +39,7 @@ PG_ID=mypgid
 ```
 
 <div id="scrape-org">
-  ## Coletando métricas de todos os serviços de uma organização
+  ## Coletando métricas de todos os serviços de uma organização {#scrape-org}
 </div>
 
 ```bash
@@ -53,7 +48,7 @@ curl -s --user "$KEY_ID:$KEY_SECRET" \
 ```
 
 <div id="scrape-instance">
-  ## Coleta de um único serviço
+  ## Coleta de um único serviço {#scrape-instance}
 </div>
 
 ```bash
@@ -62,7 +57,7 @@ curl -s --user "$KEY_ID:$KEY_SECRET" \
 ```
 
 <div id="sample-response">
-  ## Exemplo de resposta
+  ## Exemplo de resposta {#sample-response}
 </div>
 
 ```response
@@ -84,7 +79,7 @@ Para ver a lista completa de métricas e seus significados, consulte a
 [referência de métricas](/pt-BR/products/managed-postgres/monitoring/metrics).
 
 <div id="configuring-prometheus">
-  ## Configurando o Prometheus
+  ## Configurando o Prometheus {#configuring-prometheus}
 </div>
 
 Esta configuração faz coleta do endpoint em nível de organização a cada 60 segundos:
@@ -112,9 +107,7 @@ sobrescritos pelo Prometheus.
 
 Para fazer a coleta de um único serviço, acrescente `/<PG_ID>` a `metrics_path`.
 
-<div id="grafana-dashboard">
-  ## Dashboard pré-criado do Grafana
-</div>
+## Dashboard pré-criado do Grafana {#grafana-dashboard}
 
 Um dashboard pronto para uso do Grafana visualiza cada métrica que o endpoint
 expõe — uma tabela de serviços que pode ser ordenada, utilização de CPU e memória, uso de disco
@@ -122,11 +115,13 @@ com alertas de limite, conexões por estado, transações e
 taxa de rollback, atividade de Tuple, E/S, armazenamento por banco de dados e
 deadlocks.
 
-<Image img="/images/managed-postgres/monitoring/grafana-dashboard.webp" alt="Dashboard do Grafana dos serviços do ClickHouse Managed Postgres" size="md" border />
-
-<div id="import-dashboard">
-  ### Importando o dashboard
+<div className="ch-image-md">
+  <Frame>
+    ![Dashboard do Grafana dos serviços ClickHouse Managed Postgres](/images/managed-postgres/monitoring/grafana-dashboard.webp)
+  </Frame>
 </div>
+
+### Importando o dashboard {#import-dashboard}
 
 <Steps>
   <Step title="Baixe o JSON do dashboard" id="download">
@@ -134,20 +129,20 @@ deadlocks.
   </Step>
 
   <Step title="Abra o fluxo de importação no Grafana" id="open-import">
-    Vá para **Dashboards → New → Import**. Faça upload do arquivo JSON ou cole seu conteúdo.
+    Acesse **Dashboards → New → Import**. Envie o arquivo JSON ou cole o conteúdo dele.
   </Step>
 
-  <Step title="Escolha sua fonte de dados do Prometheus" id="pick-datasource">
-    Quando o campo `DS_PROMETHEUS` for solicitado, selecione a fonte de dados do Prometheus que faz a coleta do endpoint configurado na [seção anterior](#configuring-prometheus).
+  <Step title="Escolha a fonte de dados do Prometheus" id="pick-datasource">
+    Quando for solicitada a entrada `DS_PROMETHEUS`, selecione a fonte de dados do Prometheus que faz a coleta do endpoint configurado na [seção anterior](#configuring-prometheus).
   </Step>
 </Steps>
 
-Para implantações provisionadas do Grafana, coloque o JSON no seu
+Em implantações do Grafana provisionadas, coloque o JSON no
 caminho de provisionamento de dashboards. O Grafana associa a referência `${DS_PROMETHEUS}`
 a uma fonte de dados do Prometheus disponível na instância.
 
 <div id="template-variables">
-  ### Variáveis de template
+  ### Variáveis de template {#template-variables}
 </div>
 
 O dashboard disponibiliza três variáveis:
@@ -160,7 +155,7 @@ O dashboard disponibiliza três variáveis:
   JSON se o seu intervalo de coleta for diferente.
 
 <div id="drill-in">
-  ### Filtre para um único serviço para aprofundar a análise
+  ### Filtre para um único serviço para aprofundar a análise {#drill-in}
 </div>
 
 Vários painéis permitem uma análise mais detalhada quando você filtra
@@ -170,7 +165,7 @@ para que você possa identificar se um pico vem do código da aplicação, de pr
 de espera por disco ou de contenção no hipervisor.
 
 <div id="third-party-integrations">
-  ## Integração com Grafana e Datadog
+  ## Integração com Grafana e Datadog {#third-party-integrations}
 </div>
 
 O endpoint segue o mesmo formato do [endpoint Prometheus do ClickHouse](/pt-BR/products/cloud/features/monitoring/prometheus), portanto as configurações do Grafana Cloud, Grafana

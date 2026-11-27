@@ -42,9 +42,27 @@ Una tabla con la estructura especificada para leer datos de la tabla de Paimon i
 
 ## Limitaciones {#limitations}
 
-La fusión durante la lectura no está implementada, por lo que **no se pueden leer tablas con clave primaria**: el componente de lectura devuelve la unión sin procesar de los
-archivos de datos de la instantánea, que aún contiene versiones de filas sustituidas por operaciones posteriores de inserción o actualización. Por tanto, leer una tabla cuyo esquema
-declara `primary-key` genera una excepción.
+La fusión durante la lectura no está implementada, por lo que una tabla con clave primaria solo puede leerse en los casos en que Paimon la lee sin fusionar: un bucket se
+lee cuando todos sus archivos de datos están por encima del nivel 0, se sabe que no contienen filas de retracción y se encuentran en un único nivel. Con
+`deletion-vectors.enabled` o `'merge-engine' = 'first-row'`, los archivos pueden estar en varios niveles y, a menos que
+`batch-scan-mode` se configure con un modo distinto de `none`, los archivos de nivel 0 no se leen hasta que se compactan, igual que en Paimon.
+Leer cualquier otro bucket genera una excepción; una compactación completa en Paimon (`compact_strategy => 'full'`) permite leerlo.
+
+Los vectores de eliminación no se aplican, por lo que **no se pueden leer instantáneas con vectores de eliminación**: el resultado seguiría
+conteniendo las filas eliminadas por sentencias `DELETE` y `UPDATE` posteriores. Por tanto, leer una instantánea cuyo manifiesto de índices incluye
+vectores de eliminación genera una excepción, incluso después de desactivar `deletion-vectors.enabled`.
+Una compactación completa en Paimon (`compact_strategy => 'full'`) aplica los vectores de eliminación, y las instantáneas creadas a partir
+de ese momento pueden volver a leerse.
+
+Cada archivo de datos se lee con el esquema con el que se escribió, y sus columnas de nivel superior se asocian al esquema actual mediante el
+id de campo de Paimon, por lo que las columnas renombradas y las columnas eliminadas y vueltas a añadir con el mismo nombre se leen igual que en Spark.
+
+Los campos dentro de una columna `ROW` se asocian a los archivos de datos por nombre, no por id de campo de Paimon, por lo que **no se pueden leer los archivos de datos escritos antes de que se
+renombrara un campo dentro de un `ROW`, o antes de que dicho campo se eliminara y se añadiera otro con el mismo nombre (comparado
+sin distinguir entre mayúsculas y minúsculas)**: el resultado contendría `NULL` para el campo renombrado y los valores del campo eliminado
+para el campo añadido de nuevo. Por tanto, leer un archivo de datos de este tipo genera una excepción. Sí se admite añadir y eliminar campos.
+Reescribir la tabla con el esquema actual en Paimon, por ejemplo con `INSERT OVERWRITE <table> SELECT * FROM <table>`,
+permite leer las instantáneas creadas a partir de ese momento.
 
 ## Definir una colección con nombre {#defining-a-named-collection}
 
@@ -93,7 +111,7 @@ La función de tabla `paimon` ahora es un alias de `paimonS3`.
 | FLOAT                             | Float32                    |
 | DOUBLE                            | Float64                    |
 | STRING,VARCHAR,BYTES,VARBINARY    | String                     |
-| DATE                              | Date                       |
+| DATE                              | Date32                     |
 | TIME(p),TIME                      | Time(&#39;UTC&#39;)        |
 | TIMESTAMP(p) WITH LOCAL TIME ZONE | DateTime64                 |
 | TIMESTAMP(p)                      | DateTime64(&#39;UTC&#39;)  |
@@ -102,6 +120,7 @@ La función de tabla `paimon` ahora es un alias de `paimonS3`.
 | DECIMAL(P,S)                      | Decimal(P,S)               |
 | ARRAY                             | Array                      |
 | MAP                               | Map                        |
+| ROW                               | Tuple                      |
 
 ## Particiones admitidas {#partition-supported}
 

@@ -8,6 +8,7 @@
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/assert_cast.h>
+#include <base/scope_guard.h>
 
 
 namespace DB
@@ -178,7 +179,7 @@ private:
         return place + prefix_size;
     }
 
-    MutableColumns prepareArgumentColumns() const
+    [[nodiscard]] MutableColumns prepareArgumentColumns() const
     {
         MutableColumns argument_columns;
         argument_columns.reserve(this->argument_types.size());
@@ -233,14 +234,15 @@ private:
     /// Adds the rows in [row_begin, row_end) to the places returned by `get_place(row)` (nullptr to skip the row).
     /// The rows with the values seen for the first time in their place are collected and passed to the nested function together,
     /// because adding them one by one is slow for some nested functions (example: the conversion of `Variant` arguments).
+    /// `places` with `place_offset`, if not nullptr, give the same places as `get_place` (they are changed during the call and restored).
     template <typename GetPlace>
     void addBatchToNested(
-        size_t row_begin, size_t row_end, const IColumn ** columns, Arena * arena, ssize_t if_argument_pos, GetPlace && get_place) const
+        size_t row_begin, size_t row_end, const IColumn ** columns, Arena * arena, ssize_t if_argument_pos, GetPlace && get_place,
+        AggregateDataPtr * places = nullptr, size_t place_offset = 0) const
     {
         const UInt8 * flags = if_argument_pos >= 0 ? assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData().data() : nullptr;
-        auto new_rows = ColumnUInt64::create();
-        auto & new_rows_data = new_rows->getData();
-        PaddedPODArray<AggregateDataPtr> new_places;
+        PODArrayWithStackMemory<UInt64, 512> new_rows_data;
+        PODArrayWithStackMemory<AggregateDataPtr, 512> new_places;
         for (size_t row = row_begin; row < row_end; ++row)
         {
             if (flags && !flags[row])
@@ -260,13 +262,45 @@ private:
         if (new_rows_data.empty())
             return;
 
-        /// All rows are new and the places are indexed from zero, there is no need to copy the rows.
-        if (row_begin == 0 && new_rows_data.size() == row_end)
+        /// All rows are new, there is no need to copy them.
+        if (new_rows_data.size() == row_end - row_begin)
         {
-            nested_func->addBatchWithNonNullPlaces(0, row_end, new_places.data(), prefix_size, columns, arena);
+            if (places)
+            {
+                nested_func->addBatchWithNonNullPlaces(row_begin, row_end, places, place_offset + prefix_size, columns, arena);
+                return;
+            }
+            if (row_begin == 0)
+            {
+                nested_func->addBatchWithNonNullPlaces(0, row_end, new_places.data(), prefix_size, columns, arena);
+                return;
+            }
+        }
+
+        /// A short range is not copied: it is passed as it is, with the places of the rows that are not new set to nullptr for the call.
+        static constexpr size_t max_rows_to_hide = 64;
+        if (places && row_end - row_begin <= max_rows_to_hide)
+        {
+            const size_t num_rows = row_end - row_begin;
+            AggregateDataPtr saved_places[max_rows_to_hide];
+            memcpy(saved_places, places + row_begin, num_rows * sizeof(AggregateDataPtr));
+            SCOPE_EXIT(memcpy(places + row_begin, saved_places, num_rows * sizeof(AggregateDataPtr)));
+
+            size_t next_new = 0;
+            for (size_t row = row_begin; row < row_end; ++row)
+            {
+                if (next_new < new_rows_data.size() && new_rows_data[next_new] == row)
+                    ++next_new;
+                else
+                    places[row] = nullptr;
+            }
+
+            nested_func->addBatch(row_begin, row_end, places, place_offset + prefix_size, columns, arena);
             return;
         }
 
+        auto new_rows = ColumnUInt64::create();
+        new_rows->getData().assign(new_rows_data.begin(), new_rows_data.end());
         auto new_columns = indexColumns(columns, *new_rows);
         nested_func->addBatchWithNonNullPlaces(0, new_rows_data.size(), new_places.data(), prefix_size, new_columns.second.data(), arena);
     }
@@ -373,7 +407,7 @@ public:
         ssize_t if_argument_pos) const override
     {
         addBatchToNested(row_begin, row_end, columns, arena, if_argument_pos,
-            [&](size_t row) { return places[row] ? places[row] + place_offset : nullptr; });
+            [&](size_t row) { return places[row] ? places[row] + place_offset : nullptr; }, places, place_offset);
     }
 
     void addBatchWithNonNullPlaces(
@@ -383,7 +417,8 @@ public:
         Arena * arena,
         ssize_t if_argument_pos) const override
     {
-        addBatchToNested(row_begin, row_end, columns, arena, if_argument_pos, [&](size_t row) { return places[row] + place_offset; });
+        addBatchToNested(
+            row_begin, row_end, columns, arena, if_argument_pos, [&](size_t row) { return places[row] + place_offset; }, places, place_offset);
     }
 
     void addBatchLookupTable8(
@@ -435,12 +470,12 @@ public:
         nested_func->rollbackInsertResult(getNestedPlace(place), to);
     }
 
-    size_t sizeOfData() const override
+    [[nodiscard]] size_t sizeOfData() const override
     {
         return prefix_size + nested_func->sizeOfData();
     }
 
-    size_t alignOfData() const override
+    [[nodiscard]] size_t alignOfData() const override
     {
         return std::max(alignof(Data), nested_func->alignOfData());
     }
@@ -448,7 +483,15 @@ public:
     void create(AggregateDataPtr __restrict place) const override
     {
         new (place) Data;
-        nested_func->create(getNestedPlace(place));
+        try
+        {
+            nested_func->create(getNestedPlace(place));
+        }
+        catch (...)
+        {
+            this->data(place).~Data();
+            throw;
+        }
     }
 
     void destroy(AggregateDataPtr __restrict place) const noexcept override
@@ -457,7 +500,7 @@ public:
         nested_func->destroy(getNestedPlace(place));
     }
 
-    bool hasTrivialDestructor() const override
+    [[nodiscard]] bool hasTrivialDestructor() const override
     {
         return std::is_trivially_destructible_v<Data> && nested_func->hasTrivialDestructor();
     }
@@ -468,42 +511,44 @@ public:
         nested_func->destroyUpToState(getNestedPlace(place));
     }
 
-    String getName() const override
+    [[nodiscard]] String getName() const override
     {
         return nested_func->getName() + "Distinct";
     }
 
-    bool allocatesMemoryInArena() const override
+    [[nodiscard]] bool allocatesMemoryInArena() const override
     {
         return true;
     }
 
-    bool isState() const override
+    [[nodiscard]] bool ignoresRepeatedValues() const override { return true; }
+
+    [[nodiscard]] bool isState() const override
     {
         return nested_func->isState();
     }
 
-    bool isVersioned() const override
+    [[nodiscard]] bool isVersioned() const override
     {
         return nested_func->isVersioned();
     }
 
-    size_t getVersionFromRevision(size_t revision) const override
+    [[nodiscard]] size_t getVersionFromRevision(size_t revision) const override
     {
         return nested_func->getVersionFromRevision(revision);
     }
 
-    size_t getDefaultVersion() const override
+    [[nodiscard]] size_t getDefaultVersion() const override
     {
         return nested_func->getDefaultVersion();
     }
 
-    DataTypePtr getStateType() const override
+    [[nodiscard]] DataTypePtr getStateType() const override
     {
         return this->getStateTypeWithVersionOf(*nested_func);
     }
 
-    bool canMergeStateFromDifferentVariant(const IAggregateFunction & rhs) const override
+    [[nodiscard]] bool canMergeStateFromDifferentVariant(const IAggregateFunction & rhs) const override
     {
         /// Distinct state contains a history of unique values and can be merged across
         /// variants without reading the nested function state from rhs
@@ -519,9 +564,9 @@ public:
         this->merge(place, rhs_place, arena);
     }
 
-    AggregateFunctionPtr getNestedFunction() const override { return nested_func; }
+    [[nodiscard]] AggregateFunctionPtr getNestedFunction() const override { return nested_func; }
 
-    AggregateFunctionPtr getOwnNullAdapter(
+    [[nodiscard]] AggregateFunctionPtr getOwnNullAdapter(
         const AggregateFunctionPtr & nested_function,
         const DataTypes & arguments,
         const Array & params,

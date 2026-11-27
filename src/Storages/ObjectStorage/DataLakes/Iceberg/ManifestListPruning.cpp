@@ -62,6 +62,14 @@ std::optional<std::pair<Field, Field>> boundsOfPartitionFieldSummary(
     const auto non_nullable_type = removeNullable(type);
     const WhichDataType which(non_nullable_type);
 
+    if (which.isUUID())
+    {
+        auto point = deserializeUUIDPointFromBinaryRepr(*summary.lower_bound, *summary.upper_bound);
+        if (!point.has_value())
+            return {};
+        return std::pair{*point, *point};
+    }
+
     std::optional<Field> lower;
     std::optional<Field> upper;
     if (which.isUInt())

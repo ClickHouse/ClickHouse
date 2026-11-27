@@ -1,0 +1,7 @@
+1
+1
+1
+{"a":1}	JSON
+['{"b":1}']	Array(JSON(max_dynamic_types=0, max_dynamic_paths=256))
+7
+42	Int64

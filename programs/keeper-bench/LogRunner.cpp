@@ -74,67 +74,67 @@ struct ZooKeeperRequestBlock
         , version_idx(block.getPositionByName("version"))
     {}
 
-    size_t rows() const
+    [[nodiscard]] size_t rows() const
     {
         return block.rows();
     }
 
-    UInt64 getExecutorId(size_t row) const
+    [[nodiscard]] UInt64 getExecutorId(size_t row) const
     {
         return getSessionId(row);
     }
 
-    DB::DateTime64 getRequestEventTime(size_t row) const
+    [[nodiscard]] DB::DateTime64 getRequestEventTime(size_t row) const
     {
         return getField(request_event_time_idx, row).safeGet<DB::DateTime64>();
     }
 
-    DB::DateTime64 getResponseEventTime(size_t row) const
+    [[nodiscard]] DB::DateTime64 getResponseEventTime(size_t row) const
     {
         return getField(response_event_time_idx, row).safeGet<DB::DateTime64>();
     }
 
-    Int64 getSessionId(size_t row) const
+    [[nodiscard]] Int64 getSessionId(size_t row) const
     {
         return getField(session_id_idx, row).safeGet<Int64>();
     }
 
-    bool hasWatch(size_t row) const
+    [[nodiscard]] bool hasWatch(size_t row) const
     {
         return getField(has_watch_idx, row).safeGet<UInt8>();
     }
 
-    Coordination::OpNum getOpNum(size_t row) const
+    [[nodiscard]] Coordination::OpNum getOpNum(size_t row) const
     {
         return static_cast<Coordination::OpNum>(getField(op_num_idx, row).safeGet<Int64>());
     }
 
-    bool isEphemeral(size_t row) const
+    [[nodiscard]] bool isEphemeral(size_t row) const
     {
         return getField(is_ephemeral_idx, row).safeGet<UInt8>();
     }
 
-    bool isSequential(size_t row) const
+    [[nodiscard]] bool isSequential(size_t row) const
     {
         return getField(is_sequential_idx, row).safeGet<UInt8>();
     }
 
-    std::string getPath(size_t row) const
+    [[nodiscard]] std::string getPath(size_t row) const
     {
         return getField(path_idx, row).safeGet<std::string>();
     }
 
-    std::string getData(size_t row) const
+    [[nodiscard]] std::string getData(size_t row) const
     {
         return getField(data_idx, row).safeGet<std::string>();
     }
 
-    UInt64 getRequestsSize(size_t row) const
+    [[nodiscard]] UInt64 getRequestsSize(size_t row) const
     {
         return getField(requests_size_idx, row).safeGet<UInt64>();
     }
 
-    std::optional<Int32> getVersion(size_t row) const
+    [[nodiscard]] std::optional<Int32> getVersion(size_t row) const
     {
         auto field = getField(version_idx, row);
         if (field.isNull())
@@ -142,7 +142,7 @@ struct ZooKeeperRequestBlock
         return static_cast<Int32>(field.safeGet<Int64>());
     }
 
-    std::optional<Coordination::Error> getError(size_t row) const
+    [[nodiscard]] std::optional<Coordination::Error> getError(size_t row) const
     {
         auto field = getField(error_idx, row);
         if (field.isNull())
@@ -151,7 +151,7 @@ struct ZooKeeperRequestBlock
         return static_cast<Coordination::Error>(field.safeGet<Int64>());
     }
 private:
-    DB::Field getField(size_t position, size_t row) const
+    [[nodiscard]] DB::Field getField(size_t position, size_t row) const
     {
         DB::Field field;
         block.getByPosition(position).column->get(row, field);

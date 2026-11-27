@@ -35,21 +35,21 @@ public:
         return std::make_shared<FunctionAssumeNotNull>();
     }
 
-    std::string getName() const override
+    [[nodiscard]] std::string getName() const override
     {
         return name;
     }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    size_t getNumberOfArguments() const override { return 1; }
-    bool useDefaultImplementationForNulls() const override { return false; }
-    bool useDefaultImplementationForConstants() const override { return true; }
-    ColumnNumbers getArgumentsThatDontImplyNullableReturnType(size_t /*number_of_arguments*/) const override { return {0}; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
+    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] ColumnNumbers getArgumentsThatDontImplyNullableReturnType(size_t /*number_of_arguments*/) const override { return {0}; }
 
-    bool hasInformationAboutMonotonicity() const override { return true; }
+    [[nodiscard]] bool hasInformationAboutMonotonicity() const override { return true; }
 
-    Monotonicity getMonotonicityForRange(const IDataType & type, const Field & /*left*/, const Field & right) const override
+    [[nodiscard]] Monotonicity getMonotonicityForRange(const IDataType & type, const Field & /*left*/, const Field & right) const override
     {
         /// assumeNotNull() is identity for non-Nullable values, so it preserves ordering and thus monotonic.
         /// For Nullable, treat it as monotonic only when the analyzed range is guaranteed to not contain
@@ -62,9 +62,9 @@ public:
         return { .is_monotonic = true, .is_positive = true, .is_always_monotonic = !can_contain_null };
     }
 
-    String getSignatureString() const override { return "(MaybeNullable(U)) -> U"; }
+    [[nodiscard]] String getSignatureString() const override { return "(MaybeNullable(U)) -> U"; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override
     {
         const ColumnPtr & col = arguments[0].column;
 
@@ -77,7 +77,7 @@ public:
     }
 
 #if USE_EMBEDDED_COMPILER
-    bool isCompilableImpl(const DataTypes & arguments, const DataTypePtr &) const override { return canBeNativeType(arguments[0]); }
+    [[nodiscard]] bool isCompilableImpl(const DataTypes & arguments, const DataTypePtr &) const override { return canBeNativeType(arguments[0]); }
 
     llvm::Value *
     compileImpl(llvm::IRBuilderBase & builder, const ValuesWithType & arguments, const DataTypePtr & /*result_type*/) const override

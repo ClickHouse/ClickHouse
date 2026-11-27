@@ -15,8 +15,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # keys sit in the frozen tables as source cells and the tail in the staged records. Every cell compares the top with
 # the one of the feature off: the counts as a multiset, which ties cannot reorder, and every returned row against the
 # row of its key in the full aggregation, which catches a group whose other aggregates missed records or source cells.
-# The last column says whether units were merged count first. An ascending order, which turns the top-K
-# pruning off, still counts first, and so does a throw-mode group limit, which keeps the pruning: the merge
+# The last column says whether units were merged count first. An ascending order, which the count bins do
+# not prune, still counts first, and so does a throw-mode group limit, which keeps the pruning: the merge
 # checks the limit against the groups that the counting finds. The last query freezes the tables at once,
 # so no thread holds a group, and sets a limit far below the groups of a bucket: it fails although every
 # unit keeps only its best groups.

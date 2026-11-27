@@ -69,9 +69,9 @@ public:
     void wakeUp();
 
     /// Methods to access/change currently executing task.
-    bool hasTask() const { return processor != nullptr; }
+    [[nodiscard]] bool hasTask() const { return processor != nullptr; }
     void setTask(IProcessor * task) { processor = task; }
-    IProcessor * getTask() const { return processor; }
+    [[nodiscard]] IProcessor * getTask() const { return processor; }
     IProcessor * popTask() { return std::exchange(processor, nullptr); }
     bool executeTask(ISpillable * spill_target = nullptr);
 

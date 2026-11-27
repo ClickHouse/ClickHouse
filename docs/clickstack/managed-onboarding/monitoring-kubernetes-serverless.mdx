@@ -10,7 +10,6 @@ custom_edit_url: null
 hide_advert: true
 ---
 
-import { Image } from '/snippets/components/Image.jsx';
 
 <Info>
 **TL;DR**
@@ -43,11 +42,27 @@ Keep them and add the exporter instead, as described in [Connecting an OpenTelem
 <Step title="Copy your connection details" id="copy-connection-details">
 Open your ClickHouse Observability service. Until data arrives it shows the **Start sending telemetry** page.
 
-<Image img="/images/clickstack/getting-started/observability-start-sending-telemetry.png" alt="Start sending telemetry page showing the current service with no data yet and three options: Use an existing OpenTelemetry setup, Instrument with AI, and Follow setup guides" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Start sending telemetry page showing the current service with no data yet and three options: Use an existing OpenTelemetry setup, Instrument with AI, and Follow setup guides](/images/clickstack/getting-started/observability-start-sending-telemetry.png)
+
+</Frame>
+
+</div>
 
 Under **Use an existing OpenTelemetry setup**, select **View connection details**, then open the **Collector config** tab. It shows the exporter block for your service: the endpoint URL and an `authorization` header carrying your API key. Select **Reveal key** to show the full key.
 
-<Image img="/images/clickstack/getting-started/observability-collector-config.png" alt="Set up OpenTelemetry dialog with the Collector config tab selected, showing an otlphttp exporter with the masked endpoint and a Bearer authorization header" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Set up OpenTelemetry dialog with the Collector config tab selected, showing an otlphttp exporter with the masked endpoint and a Bearer authorization header](/images/clickstack/getting-started/observability-collector-config.png)
+
+</Frame>
+
+</div>
 
 You need the two values separately in the next step: the endpoint, including its `https://` scheme and port, and the API key on its own, without the `Bearer` prefix. The values files below add the prefix.
 
@@ -281,19 +296,51 @@ Expect one Deployment pod and one DaemonSet pod per node, all `Running`. A runni
 
 Return to the **Start sending telemetry** page in your service and select **Check for data**. Once telemetry has arrived, the service status changes to **Data received** and **Start exploring** becomes available.
 
-<Image img="/images/clickstack/getting-started/observability-data-received.png" alt="Start sending telemetry page showing the service status as Data received, a confirmation that you are ready to explore, and the Start exploring button enabled" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Start sending telemetry page showing the service status as Data received, a confirmation that you are ready to explore, and the Start exploring button enabled](/images/clickstack/getting-started/observability-data-received.png)
+
+</Frame>
+
+</div>
 
 Select **Start exploring** to open **Search**, select the **Logs** source, and set the time range to **Last 15 minutes**. Container logs from across the cluster appear within a few seconds, with cluster components such as `kube-proxy` and `coredns` listed under `ServiceName` alongside your workloads. Expand a row to see its **ResourceAttributes**: `k8s.namespace.name`, `k8s.pod.name`, `k8s.node.name`, and the pod's labels.
 
-<Image img="/images/clickstack/getting-started/observability-kubernetes-logs.png" alt="Search showing container logs from a Kubernetes cluster, with the kindnet, kube-proxy, and sample-logs services listed in the ServiceName filter" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Search showing container logs from a Kubernetes cluster, with the kindnet, kube-proxy, and sample-logs services listed in the ServiceName filter](/images/clickstack/getting-started/observability-kubernetes-logs.png)
+
+</Frame>
+
+</div>
 
 For metrics, open **Chart Explorer**, select **Time Series** and the **Metrics** source, and chart **Average** of `k8s.pod.memory.usage` grouped by `ResourceAttributes['k8s.pod.name']`. Leave **Delta** unchecked and select **Run** to compare memory usage across pods. If the chart has gaps, choose a granularity at least as large as the collection interval.
 
-<Image img="/images/clickstack/getting-started/observability-kubernetes-metrics.png" alt="Chart Explorer showing average Kubernetes pod memory usage grouped by pod name" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Chart Explorer showing average Kubernetes pod memory usage grouped by pod name](/images/clickstack/getting-started/observability-kubernetes-metrics.png)
+
+</Frame>
+
+</div>
 
 Then open **Dashboards** in the sidebar and select **Kubernetes** under **Preset Dashboards**. Select your **Logs** and **Metrics** sources at the top. The **Pods**, **Nodes**, and **Namespaces** tabs show CPU and memory usage, pod status with restart counts, and the latest Kubernetes warning events. Narrow the view with the pod, deployment, node, namespace, and cluster filters.
 
-<Image img="/images/clickstack/getting-started/observability-kubernetes-dashboard.png" alt="Kubernetes dashboard showing pod CPU and memory usage, a pods table with status and restart counts, and the latest Kubernetes warning events" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Kubernetes dashboard showing pod CPU and memory usage, a pods table with status and restart counts, and the latest Kubernetes warning events](/images/clickstack/getting-started/observability-kubernetes-dashboard.png)
+
+</Frame>
+
+</div>
 
 ## If nothing shows up {#if-nothing-shows-up}
 

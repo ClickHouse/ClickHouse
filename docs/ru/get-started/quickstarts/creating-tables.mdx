@@ -38,15 +38,15 @@ CREATE DATABASE IF NOT EXISTS helloworld
 Следующая таблица с именем `my_first_table` создается в базе данных `helloworld`:
 
 ```sql
-  CREATE TABLE helloworld.my_first_table
-  (
-      user_id UInt32,
-      message String,
-      timestamp DateTime,
-      metric Float32
-  )
-  ENGINE = MergeTree()
-  PRIMARY KEY (user_id, timestamp)
+CREATE TABLE helloworld.my_first_table
+(
+    user_id UInt32,
+    message String,
+    timestamp DateTime,
+    metric Float32
+)
+ENGINE = MergeTree()
+PRIMARY KEY (user_id, timestamp)
 ```
 
 В приведённом выше примере `my_first_table` — это таблица `MergeTree` с четырьмя столбцами:
@@ -66,9 +66,7 @@ CREATE DATABASE IF NOT EXISTS helloworld
   Доступно множество движков, но для простой таблицы на одноузловом сервере ClickHouse вашим наиболее вероятным выбором будет [MergeTree](/ru/reference/engines/table-engines/mergetree-family/mergetree).
 </Note>
 
-<div id="a-brief-intro-to-primary-keys">
-  ## Краткое введение в первичные ключи
-</div>
+## Краткое введение в первичные ключи {#a-brief-intro-to-primary-keys}
 
 Прежде чем двигаться дальше, важно понять, как работают первичные ключи в ClickHouse (их реализация
 может показаться неожиданной!):
@@ -87,7 +85,7 @@ CREATE DATABASE IF NOT EXISTS helloworld
 файле столбца, будут отсортированы сначала по `user_id`, а затем по `timestamp`.
 
 <Tip>
-  Подробнее см. в [учебном модуле Modeling Data](https://learn.clickhouse.com/visitor_catalog_class/show/1328860/?utm_source=clickhouse\&utm_medium=docs) в ClickHouse Academy.
+  Подробнее см. в [учебном модуле Modeling Data](https://learn.clickhouse.com/real-time-analytics-with-clickhouse/550440) в ClickHouse Academy.
 </Tip>
 
 <div className="mt-8">

@@ -7,7 +7,6 @@ doc_type: 'guide'
 keywords: ['clickstack', 'example data', 'sample dataset', 'logs', 'observability']
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
 
 This getting started guide allows you to collect local logs and metrics from your system, sending them to ClickStack for visualization and analysis.
 
@@ -124,7 +123,15 @@ Visit [http://localhost:8080](http://localhost:8080) to access the ClickStack UI
 
 Data sources should be pre-created for you. The search UI should be populated with local system logs. Expand the filters to select the `system.log`:
 
-<Image img="/images/use-cases/observability/hyperdx-20.webp" alt="ClickStack UI Local logs" size="lg"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![ClickStack UI Local logs](/images/use-cases/observability/hyperdx-20.webp)
+
+</Frame>
+
+</div>
 
 ### Explore system metrics {#explore-system-metrics-oss}
 
@@ -136,12 +143,36 @@ For the `Select a Metric` menu simply type `memory` before selecting `system.mem
 
 Press the run button to visualize your memory utilization over time.
 
-<Image img="/images/use-cases/observability/hyperdx-21.webp" alt="Memory over time" size="lg"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Memory over time](/images/use-cases/observability/hyperdx-21.webp)
+
+</Frame>
+
+</div>
 
 Note the number is returned as a floating point `%`. To render it more clearly, select `Set number format`. 
 
-<Image img="/images/use-cases/observability/hyperdx-22.webp" alt="Number format" size="lg"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Number format](/images/use-cases/observability/hyperdx-22.webp)
+
+</Frame>
+
+</div>
 
 From the subsequent menu you can select `Percentage` from the `Output format` drop down before clicking `Apply`.
 
-<Image img="/images/use-cases/observability/hyperdx-23.webp" alt="Memory % of time" size="lg"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Memory % of time](/images/use-cases/observability/hyperdx-23.webp)
+
+</Frame>
+
+</div>

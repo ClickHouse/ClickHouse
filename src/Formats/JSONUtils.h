@@ -31,7 +31,9 @@ namespace JSONUtils
     /// Read row in JSONEachRow format and try to determine type for each field.
     /// Return list of names and types.
     /// If cannot determine the type of some field, return nullptr for it.
-    NamesAndTypesList readRowAndGetNamesAndDataTypesForJSONEachRow(ReadBuffer & in, const FormatSettings & settings, JSONInferenceInfo * inference_info);
+    /// With `skip_duplicated_fields`, a field named `name_read_before` is a repeated one: its value is skipped and its type is nullptr.
+    NamesAndTypesList readRowAndGetNamesAndDataTypesForJSONEachRow(
+        ReadBuffer & in, const FormatSettings & settings, JSONInferenceInfo * inference_info, const String & name_read_before = "");
 
     /// Read row in JSONCompactEachRow format and try to determine type for each field.
     /// If cannot determine the type of some field, return nullptr for it.
@@ -196,11 +198,11 @@ namespace JSONUtils
     using NestedDeserialize = std::function<ReturnType(IColumn &, ReadBuffer &)>;
 
     template <typename ReturnType, bool default_column_return_value = true>
-    ReturnType deserializeEmpyStringAsDefaultOrNested(IColumn & column, ReadBuffer & istr, const NestedDeserialize<ReturnType> & deserialize_nested);
+    ReturnType deserializeEmpyStringAsDefaultOrNested(IColumn & column, ReadBuffer & istr, const NestedDeserialize<ReturnType> & deserialize_nested, const IDataType * type = nullptr);
 
-    extern template void deserializeEmpyStringAsDefaultOrNested<void, true>(IColumn & column, ReadBuffer & istr, const NestedDeserialize<void> & deserialize_nested);
-    extern template bool deserializeEmpyStringAsDefaultOrNested<bool, true>(IColumn & column, ReadBuffer & istr, const NestedDeserialize<bool> & deserialize_nested);
-    extern template bool deserializeEmpyStringAsDefaultOrNested<bool, false>(IColumn & column, ReadBuffer & istr, const NestedDeserialize<bool> & deserialize_nested);
+    extern template void deserializeEmpyStringAsDefaultOrNested<void, true>(IColumn & column, ReadBuffer & istr, const NestedDeserialize<void> & deserialize_nested, const IDataType * type);
+    extern template bool deserializeEmpyStringAsDefaultOrNested<bool, true>(IColumn & column, ReadBuffer & istr, const NestedDeserialize<bool> & deserialize_nested, const IDataType * type);
+    extern template bool deserializeEmpyStringAsDefaultOrNested<bool, false>(IColumn & column, ReadBuffer & istr, const NestedDeserialize<bool> & deserialize_nested, const IDataType * type);
 }
 
 }
