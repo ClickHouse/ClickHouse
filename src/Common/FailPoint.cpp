@@ -510,6 +510,7 @@ static struct InitFiu
     ONCE(iceberg_compaction_lose_metadata_commit_response) \
     ONCE(iceberg_compaction_lose_metadata_commit_request) \
     PAUSEABLE_ONCE(iceberg_compaction_pause_before_commit_reconciliation) \
+    PAUSEABLE_ONCE(iceberg_expire_snapshots_pause_before_metadata_commit) \
     PAUSEABLE_ONCE(iceberg_reader_pause_before_next_file) \
     PAUSEABLE_ONCE(datalake_optimize_pause_before_arming_compaction) \
     PAUSEABLE_ONCE(datalake_background_pause_before_loading_metadata) \
