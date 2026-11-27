@@ -7,8 +7,6 @@ keywords: ['managed postgres', 'guía de inicio rápido', 'primeros pasos', 'cre
 doc_type: 'guide'
 ---
 
-import { BetaBadge } from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
-
 import QuickstartCLI from "/snippets/es/managed-postgres/_quickstart_cli.mdx";
 
 <Visibility for="agents">
@@ -16,15 +14,13 @@ import QuickstartCLI from "/snippets/es/managed-postgres/_quickstart_cli.mdx";
 </Visibility>
 
 <Visibility for="humans">
-  <View title="UI de Cloud">
-    <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.quick-start-beta" />
-
+  <View title="Interfaz de usuario de Cloud">
     ClickHouse Managed Postgres es un servicio Postgres de nivel empresarial respaldado por almacenamiento NVMe, que ofrece un rendimiento hasta 10 veces más rápido para cargas de trabajo limitadas por disco en comparación con el almacenamiento en red como EBS. Esta guía de inicio rápido se divide en dos partes:
 
     * **Parte 1:** Comienza a usar NVMe Postgres y comprueba su rendimiento
     * **Parte 2:** Desbloquea la analítica en tiempo real integrándolo con ClickHouse
 
-    ClickHouse Managed Postgres está disponible actualmente en AWS en varias regiones y se encuentra en public beta. GCP está en Private Preview. Puedes apuntarte a la lista de espera de la Private Preview de GCP [aquí](https://clickhouse.com/cloud/postgres#gcp-waitlist).
+    ClickHouse Managed Postgres está disponible actualmente en AWS en varias regiones. GCP está en Private Preview. Puedes apuntarte a la lista de espera de la Private Preview de GCP [aquí](https://clickhouse.com/cloud/postgres#gcp-waitlist).
 
     **En esta guía de inicio rápido, harás lo siguiente:**
 
@@ -34,53 +30,41 @@ import QuickstartCLI from "/snippets/es/managed-postgres/_quickstart_cli.mdx";
     * Replica los datos en ClickHouse para analítica en tiempo real
     * Consulta ClickHouse directamente desde Postgres usando `pg_clickhouse`
 
-## Parte 1: Primeros pasos con NVMe Postgres
+## Parte 1: Primeros pasos con NVMe Postgres {#part-1}
 
-### Crear una base de datos
+### Crear una base de datos {#create-postgres-database}
 
     Para crear un nuevo servicio ClickHouse Managed Postgres, haz clic en el botón **New service** en la lista de servicios de la Cloud Console. A continuación, podrás seleccionar Postgres como tipo de base de datos.
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![Crear un servicio de ClickHouse Managed Postgres](/images/managed-postgres/create-service.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Crear un servicio de ClickHouse Managed Postgres](/images/managed-postgres/create-service.webp)
+      </Frame>
     </div>
 
     Introduce un nombre para tu instancia de base de datos y haz clic en **Create service**. Serás redirigido a la página de descripción general.
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![Resumen de ClickHouse Managed Postgres](/images/managed-postgres/overview.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Resumen de ClickHouse Managed Postgres](/images/managed-postgres/overview.webp)
+      </Frame>
     </div>
 
     Tu instancia de ClickHouse Managed Postgres estará aprovisionada y lista para usar en 3-5 minutos.
 
-### Conectar a tu base de datos
+### Conectar a tu base de datos {#connect}
 
     En la barra lateral izquierda, verás un [**botón Conectar**](/es/products/managed-postgres/connection). Haz clic en él para ver los detalles de conexión y las cadenas de conexión en varios formatos.
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![Modal Conectar de ClickHouse Managed Postgres](/images/managed-postgres/connect-modal.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Modal Conectar de ClickHouse Managed Postgres](/images/managed-postgres/connect-modal.webp)
+      </Frame>
     </div>
 
     Copia la cadena de conexión de `psql` y conéctate a tu base de datos. También puedes usar cualquier client compatible con Postgres, como DBeaver, o cualquier biblioteca de aplicación.
 
-### Comprueba el rendimiento de NVMe
+### Comprueba el rendimiento de NVMe {#nvme-performance}
 
     Veamos el rendimiento de NVMe en acción. Primero, habilita la medición de tiempo en psql para medir la ejecución de consultas:
 
@@ -178,7 +162,7 @@ import QuickstartCLI from "/snippets/es/managed-postgres/_quickstart_cli.mdx";
         ) AS names;
     ```
 
-### Ejecuta consultas sobre tus datos
+### Ejecuta consultas sobre tus datos {#run-queries}
 
     Ahora ejecutemos algunas consultas para ver con qué rapidez responde Postgres con almacenamiento NVMe.
 
@@ -253,9 +237,15 @@ import QuickstartCLI from "/snippets/es/managed-postgres/_quickstart_cli.mdx";
       Continúa con la Parte 2 para ver cómo la integración nativa de ClickHouse puede potenciar tu analítica.
     </Info>
 
+    <Tip>
+      **Explora conjuntos de datos de ejemplo**
+
+      Para probar Postgres con datos reales, selecciona **Data sources** en la barra lateral izquierda de tu servicio y, a continuación, haz clic en **Add sample data**. Elige un conjunto de datos (Cell towers, NYC taxi o UK property prices), selecciona una base de datos de destino y haz clic en **Import dataset**.
+    </Tip>
+
     ***
 
-## Parte 2: Añade analítica en tiempo real con ClickHouse
+## Parte 2: Añade analítica en tiempo real con ClickHouse {#part-2}
 
     Mientras que Postgres destaca en cargas de trabajo transaccionales (OLTP), ClickHouse está diseñado específicamente para consultas analíticas (OLAP) sobre grandes conjuntos de datos. Al integrar ambos, se obtiene lo mejor de los dos mundos:
 
@@ -264,18 +254,14 @@ import QuickstartCLI from "/snippets/es/managed-postgres/_quickstart_cli.mdx";
 
     Esta sección muestra cómo replicar los datos de Postgres en ClickHouse y consultarlos sin interrupciones.
 
-### Configurar la integración con ClickHouse
+### Configurar la integración con ClickHouse {#setup-integrate-clickhouse}
 
     Ahora que tenemos tablas y datos en Postgres, vamos a replicar las tablas en ClickHouse para analítica. Comenzamos haciendo clic en **Sync to ClickHouse** en la barra lateral. Luego puedes hacer clic en **Replicate data in ClickHouse**.
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![Integración vacía de ClickHouse Managed Postgres](/images/managed-postgres/integration-landing.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Integración vacía de ClickHouse Managed Postgres](/images/managed-postgres/integration-landing.webp)
+      </Frame>
     </div>
 
     En el formulario que aparece a continuación, puedes introducir un nombre para tu integración y seleccionar una instancia de ClickHouse existente a la que replicar los datos. Si aún no tienes una instancia de ClickHouse, puedes crear una directamente desde este formulario.
@@ -287,13 +273,9 @@ import QuickstartCLI from "/snippets/es/managed-postgres/_quickstart_cli.mdx";
     </Info>
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![Formulario de integración de ClickHouse Managed Postgres](/images/managed-postgres/postgres-analytics-form.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Formulario de integración de ClickHouse Managed Postgres](/images/managed-postgres/postgres-analytics-form.webp)
+      </Frame>
     </div>
 
     Haz clic en **Siguiente** para acceder al selector de tablas. Aquí solo tienes que:
@@ -303,18 +285,14 @@ import QuickstartCLI from "/snippets/es/managed-postgres/_quickstart_cli.mdx";
     * Haz clic en **Replicate data to ClickHouse**.
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![selector de tablas de ClickHouse Managed Postgres](/images/managed-postgres/table-picker.webp)
-
-    </Frame>
-
+      <Frame>
+        ![selector de tablas de ClickHouse Managed Postgres](/images/managed-postgres/table-picker.webp)
+      </Frame>
     </div>
 
     El proceso de replicación comenzará y serás redirigido a la página de resumen de la integración. Al ser la primera integración, puede tardar entre 2 y 3 minutos en configurar la infraestructura inicial. Mientras tanto, exploremos la nueva extensión **pg&#95;clickhouse**.
 
-### Consulta ClickHouse desde Postgres
+### Consulta ClickHouse desde Postgres {#pg-clickhouse-extension}
 
     La extensión `pg_clickhouse` te permite consultar datos de ClickHouse directamente desde Postgres usando SQL estándar. Esto significa que tu aplicación puede usar Postgres como una capa de consulta unificada tanto para datos transaccionales como analíticos. Consulta la [documentación completa](/es/products/managed-postgres/extensions/pg_clickhouse/introduction) para más detalles.
 
@@ -334,13 +312,9 @@ import QuickstartCLI from "/snippets/es/managed-postgres/_quickstart_cli.mdx";
     Reemplaza `<clickhouse_cloud_host>` con el hostname de tu ClickHouse y `<database_name>` con la base de datos que seleccionaste durante la configuración de la replicación. Puedes encontrar el hostname en tu servicio de ClickHouse haciendo clic en **Connect** en la barra lateral.
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![Obtén el host de ClickHouse](/images/managed-postgres/get-clickhouse-host.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Obtén el host de ClickHouse](/images/managed-postgres/get-clickhouse-host.webp)
+      </Frame>
     </div>
 
     <Note>
@@ -373,33 +347,25 @@ import QuickstartCLI from "/snippets/es/managed-postgres/_quickstart_cli.mdx";
     \det+ organization.*
     ```
 
-### Ve tu analítica en acción
+### Ve tu analítica en acción {#analytics-after-integration}
 
     Vuelve a la página de integración. Deberías ver que la replicación inicial ha finalizado. Haz clic en el nombre de la integración para ver los detalles.
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![Lista de analítica de ClickHouse Managed Postgres](/images/managed-postgres/analytics-list.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Lista de analítica de ClickHouse Managed Postgres](/images/managed-postgres/analytics-list.webp)
+      </Frame>
     </div>
 
     Haz clic en el nombre del servicio para abrir la consola de ClickHouse y ver tus tablas replicadas.
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![Tablas replicadas de ClickHouse Managed Postgres en ClickHouse](/images/managed-postgres/replicated-tables.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Tablas replicadas de ClickHouse Managed Postgres en ClickHouse](/images/managed-postgres/replicated-tables.webp)
+      </Frame>
     </div>
 
-### Comparación del rendimiento de Postgres vs ClickHouse
+### Comparación del rendimiento de Postgres vs ClickHouse {#performance-comparison}
 
     Ahora ejecutemos algunas consultas analíticas y comparemos el rendimiento entre Postgres y ClickHouse. Ten en cuenta que las tablas replicadas utilizan la convención de nomenclatura `public_<table_name>`.
 
@@ -484,7 +450,7 @@ import QuickstartCLI from "/snippets/es/managed-postgres/_quickstart_cli.mdx";
       Los tiempos de las consultas varían según el tamaño de la instancia, la latencia de red entre servicios, las características de los datos y la carga actual.
     </Tip>
 
-## Limpieza
+## Limpieza {#cleanup}
 
     Para eliminar los recursos creados en esta guía de inicio rápido:
 
@@ -493,8 +459,6 @@ import QuickstartCLI from "/snippets/es/managed-postgres/_quickstart_cli.mdx";
   </View>
 
   <View title="CLI">
-    <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.quick-start-cli-beta" />
-
     Puedes seguir este camino tú mismo, automatizarlo con un script o entregárselo a un agente de IA. Cambia a la vista de **Cloud UI** para ver la versión de la consola.
 
     <QuickstartCLI />

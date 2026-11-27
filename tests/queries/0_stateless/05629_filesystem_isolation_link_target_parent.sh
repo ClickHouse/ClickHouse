@@ -66,6 +66,10 @@ if ! grep -q 'Ready for connections' "$DIR/real/server.log" 2>/dev/null || ! gre
     cat "$DIR/server.out" "$DIR/data/server.err.log" >&2
     exit 1
 fi
+# With `CAP_SYS_ADMIN`, the supervisor stays outside of the namespaces, and its child, the init of the PID
+# namespace, is inside. Otherwise that process is inside.
+INSIDE=$PID
+[ "$(cat "/proc/$PID/comm")" = clickhouse-isol ] && INSIDE=$(cut -d' ' -f1 "/proc/$PID/task/$PID/children")
 
 echo "log in the parent of the target: $([ -s "$DIR/real/server.log" ] && echo written || echo missing)"
-echo "target of the link: $([ -d "/proc/$PID/root$DIR/real/active" ] && echo visible || echo invisible)"
+echo "target of the link: $([ -d "/proc/$INSIDE/root$DIR/real/active" ] && echo visible || echo invisible)"

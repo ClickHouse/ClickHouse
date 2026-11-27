@@ -1,7 +1,5 @@
 -- Random settings limits: index_granularity=(100, None)
 
-set allow_experimental_dynamic_type=1;
-
 drop table if exists test;
 create table test (d Dynamic) engine=MergeTree order by tuple() settings min_rows_for_wide_part=1, min_bytes_for_wide_part=1;
 insert into test select number < 60000 ? number::Dynamic : ('str_' || number)::Dynamic from numbers(100000);

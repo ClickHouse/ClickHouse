@@ -1,6 +1,7 @@
 #include <Processors/QueryPlan/Profiling/Capture/CapturedPlan.h>
 
 #include <base/find_symbols.h>
+#include <Common/SensitiveDataMasker.h>
 #include <Common/UTF8Helpers.h>
 #include <Common/typeid_cast.h>
 
@@ -19,6 +20,20 @@ namespace DB
 
 namespace
 {
+
+/// Applies `query_masking_rules` to one captured string, the way the `query` column of the same
+/// `system.query_log` row is masked. A step renders the literals of the query into its text --
+/// filter constants, `IN` lists, output constants -- so without this the plan would show what the
+/// `query` column hides.
+///
+/// Each string is masked on its own, before it becomes a value of the plan document: the keys are
+/// added later by the renderer, and a rule never sees a quote or an escape of the `JSON` it ends
+/// up in, so it cannot make the document invalid.
+void maskSensitiveData(String & text, const SensitiveDataMasker * masker)
+{
+    if (masker)
+        masker->wipeSensitiveData(text);
+}
 
 /// Cuts a captured string to `max_bytes`, which is `query_plan_max_step_description_length`. Zero
 /// means no limit.
@@ -49,7 +64,8 @@ VectorWithMemoryTracking<String> stepDetails(
     const IQueryPlanStep & step,
     const ExplainPlanOptions & options,
     size_t max_description_length,
-    const PrettyNames * plan_pretty_names)
+    const PrettyNames * plan_pretty_names,
+    const SensitiveDataMasker * masker)
 {
     if (!options.actions)
         return {};
@@ -69,9 +85,14 @@ VectorWithMemoryTracking<String> stepDetails(
 
     step.describeActions(settings);
 
+    /// Masked as a whole, before it is split and cut: a match spanning a line, or one the cut
+    /// would split in half, is still masked.
+    String text = std::move(out.str());
+    maskSensitiveData(text, masker);
+
     /// Split the resulting lines into a vector of strings, dropping the empty ones.
     VectorWithMemoryTracking<String> details;
-    splitInto<'\n'>(details, out.str(), /*token_compress=*/ true);
+    splitInto<'\n'>(details, text, /*token_compress=*/ true);
 
     for (auto & line : details)
         line = truncateCapturedText(line, max_description_length);
@@ -81,44 +102,68 @@ VectorWithMemoryTracking<String> stepDetails(
 
 /// How the step describes itself in one line, trimmed and cut to length.
 String stepDescription(
-    const IQueryPlanStep & step, const ExplainPlanOptions & options, size_t max_description_length)
+    const IQueryPlanStep & step,
+    const ExplainPlanOptions & options,
+    size_t max_description_length,
+    const SensitiveDataMasker * masker)
 {
     if (!options.description)
         return {};
 
-    std::string_view description = step.getStepDescription();
+    String description = options.pretty
+        ? QueryPlanFormat::trimColumnIdentifier(step.getStepDescription())
+        : String(step.getStepDescription());
 
-    /// Backs the view when trimming produces a new string, as the text renderer does.
-    String pretty_description;
-    if (options.pretty)
-    {
-        pretty_description = QueryPlanFormat::trimColumnIdentifier(description);
-        description = pretty_description;
-    }
+    /// Before the cut, as in `stepDetails`.
+    maskSensitiveData(description, masker);
 
     return truncateCapturedText(description, max_description_length);
 }
 
 /// Only a `ReadFromMergeTree` analyses indexes, and the analysis is data it already holds --
 /// `describeIndexes` is one rendering of it, this capture is another.
-PlanIndexStats stepIndexes(const IQueryPlanStep & step, const ExplainPlanOptions & options)
+PlanIndexStats stepIndexes(const IQueryPlanStep & step, const ExplainPlanOptions & options, const SensitiveDataMasker * masker)
 {
     const auto * read_from_merge_tree = typeid_cast<const ReadFromMergeTree *>(&step);
     if (!options.indexes || !read_from_merge_tree)
         return {};
 
-    return read_from_merge_tree->getIndexStats();
+    /// The condition holds the constants the key was compared with.
+    PlanIndexStats indexes = read_from_merge_tree->getIndexStats();
+    for (auto & index : indexes)
+    {
+        maskSensitiveData(index.name, masker);
+        maskSensitiveData(index.part_name, masker);
+        maskSensitiveData(index.description, masker);
+        maskSensitiveData(index.condition, masker);
+        for (auto & key : index.used_keys)
+            maskSensitiveData(key, masker);
+
+        /// The logged plan does not say which replica analysed what, see `indexStatsToJSON`.
+        for (auto & replica : index.distributed)
+            replica.address.clear();
+    }
+
+    return indexes;
 }
 
 /// See `stepIndexes`: the same data, from the same step. A query served from a projection says so
 /// here, as `EXPLAIN` does.
-PlanProjectionStats stepProjections(const IQueryPlanStep & step, const ExplainPlanOptions & options)
+PlanProjectionStats stepProjections(const IQueryPlanStep & step, const ExplainPlanOptions & options, const SensitiveDataMasker * masker)
 {
     const auto * read_from_merge_tree = typeid_cast<const ReadFromMergeTree *>(&step);
     if (!options.projections || !read_from_merge_tree)
         return {};
 
-    return read_from_merge_tree->getProjectionStats();
+    PlanProjectionStats projections = read_from_merge_tree->getProjectionStats();
+    for (auto & projection : projections)
+    {
+        maskSensitiveData(projection.name, masker);
+        maskSensitiveData(projection.description, masker);
+        maskSensitiveData(projection.condition, masker);
+    }
+
+    return projections;
 }
 
 /// What the pipeline measured for this step. Absent when there was no pipeline to measure -- a
@@ -151,16 +196,17 @@ CapturedStep captureStep(
     const ExplainPlanOptions & options,
     size_t max_description_length,
     const AnalyzeStepsStats * steps_to_stats,
-    const PrettyNames * plan_pretty_names)
+    const PrettyNames * plan_pretty_names,
+    const SensitiveDataMasker * masker)
 {
     CapturedStep captured;
 
     captured.id = step.getUniqID();
     captured.type = step.getName();
-    captured.description = stepDescription(step, options, max_description_length);
-    captured.details = stepDetails(step, options, max_description_length, plan_pretty_names);
-    captured.indexes = stepIndexes(step, options);
-    captured.projections = stepProjections(step, options);
+    captured.description = stepDescription(step, options, max_description_length, masker);
+    captured.details = stepDetails(step, options, max_description_length, plan_pretty_names, masker);
+    captured.indexes = stepIndexes(step, options, masker);
+    captured.projections = stepProjections(step, options, masker);
     captured.statistics = stepStatistics(step, steps_to_stats);
 
     return captured;
@@ -181,11 +227,15 @@ CapturedPlan CapturedPlan::capture(
 
     result.root_id = walk.root_id;
 
+    /// Ids and step types are not masked: they hold no literal of the query, and a broad rule
+    /// rewriting an id would break the links between nodes.
+    const auto masker = SensitiveDataMasker::getInstance();
+
     result.nodes.reserve(walk.steps.size());
     for (const auto & visited : walk.steps)
     {
         auto captured = captureStep(
-            *visited.step, options, max_description_length, steps_to_stats, findPrettyNames(pretty_names, visited.owning_plan));
+            *visited.step, options, max_description_length, steps_to_stats, findPrettyNames(pretty_names, visited.owning_plan), masker.get());
         captured.children = visited.children;
         result.nodes.push_back(std::move(captured));
     }
@@ -207,7 +257,11 @@ CapturedPlan CapturedPlan::capture(
         const auto & root_step = *walk.plan->getRootNode()->step;
         if (root_step.hasOutputHeader() && root_step.getOutputHeader())
             for (const auto & column : *root_step.getOutputHeader())
-                result.output.push_back(QueryPlanFormat::formatColumnPretty(column.name, names));
+            {
+                /// A constant column is named by its value.
+                auto & name = result.output.emplace_back(QueryPlanFormat::formatColumnPretty(column.name, names));
+                maskSensitiveData(name, masker.get());
+            }
     }
 
     return result;

@@ -96,8 +96,8 @@ namespace CurrentMetrics
 class WorkloadEntityTestStorage : public WorkloadEntityStorageBase
 {
 public:
-    WorkloadEntityTestStorage()
-        : WorkloadEntityStorageBase(Context::getGlobalContextInstance())
+    explicit WorkloadEntityTestStorage(std::unique_ptr<IWorkloadEntityStorage> next_storage_ = {})
+        : WorkloadEntityStorageBase(Context::getGlobalContextInstance(), std::move(next_storage_))
     {}
 
     std::string_view getName() const override { return "test"; }
@@ -4574,8 +4574,8 @@ TEST(SchedulerWorkloadResourceManager, ConfigLoadValidatesWorkloadSettings)
     }
     {
         ResourceTest t;
-        // A `FOR <resource>` clause must target an existing RESOURCE, not a workload (parity with
-        // storeEntity's forEachReference check).
+        // A `FOR <resource>` clause must target an existing RESOURCE: a workload of that name does
+        // not count (parity with storeEntity's forEachReference check).
         EXPECT_THROW(
             t.storage.loadFromString(
                 "CREATE WORKLOAD all;\n"
@@ -4624,7 +4624,8 @@ TEST(SchedulerWorkloadResourceManager, ReversedHierarchyIsApplied)
     EXPECT_TRUE(hasWorkloadNodeUnder(t, "memory", "c", "a"));
 }
 
-// A workload replaced by a resource of the same name is dropped only after its children leave it
+// A workload dropped together with the creation of a resource of the same name is dropped only after its children
+// leave it
 TEST(SchedulerWorkloadResourceManager, WorkloadReplacedByResourceOutlivesItsChildren)
 {
     ResourceTest t;
@@ -4640,7 +4641,8 @@ TEST(SchedulerWorkloadResourceManager, WorkloadReplacedByResourceOutlivesItsChil
     EXPECT_TRUE(has_b_in_a);
 }
 
-// A resource replaced by a workload of the same name is created before its new children are attached to it
+// A workload created together with the drop of a resource of the same name is created before its new children are
+// attached to it
 TEST(SchedulerWorkloadResourceManager, ResourceReplacedByWorkloadPrecedesItsChildren)
 {
     ResourceTest t;
@@ -4648,6 +4650,55 @@ TEST(SchedulerWorkloadResourceManager, ResourceReplacedByWorkloadPrecedesItsChil
     t.storage.loadFromString("CREATE RESOURCE io (READ DISK d); CREATE WORKLOAD a; CREATE WORKLOAD b IN a");
     EXPECT_FALSE(t.manager->hasResource("a"));
     EXPECT_TRUE(hasWorkloadNodeUnder(t, "io", "a", "b"));
+}
+
+// A workload and a resource may have the same name, in one storage and across storages
+TEST(SchedulerWorkloadResourceManager, WorkloadAndResourceWithSameName)
+{
+    constexpr auto WORKLOAD = WorkloadEntityType::Workload;
+    constexpr auto RESOURCE = WorkloadEntityType::Resource;
+
+    auto config_storage = std::make_unique<WorkloadEntityTestStorage>();
+    auto * config = config_storage.get();
+    WorkloadEntityTestStorage storage(std::move(config_storage));
+    ResourceManagerPtr manager = std::make_shared<WorkloadResourceManager>(
+        std::shared_ptr<IWorkloadEntityStorage>(&storage, [](IWorkloadEntityStorage *) {}));
+
+    storage.executeQuery("CREATE RESOURCE x (WRITE DISK d, READ DISK d)");
+    storage.executeQuery("CREATE WORKLOAD x SETTINGS max_io_requests = 1 FOR x");
+    config->loadFromString("CREATE WORKLOAD io; CREATE RESOURCE all (READ DISK d2)");
+    storage.executeQuery("CREATE RESOURCE io (READ DISK d3)");
+    storage.executeQuery("CREATE WORKLOAD all IN io SETTINGS max_io_requests = 2 FOR all");
+
+    // As `system.workloads` and `system.resources` see them
+    std::set<WorkloadEntityKey> keys;
+    for (const auto & [key, entity] : storage.getAllEntities())
+        keys.insert(key);
+    std::set<WorkloadEntityKey> expected{
+        {WORKLOAD, "x"}, {RESOURCE, "x"},
+        {WORKLOAD, "io"}, {RESOURCE, "io"},
+        {WORKLOAD, "all"}, {RESOURCE, "all"}};
+    EXPECT_EQ(keys, expected);
+
+    for (const char * name : {"x", "io", "all"})
+        EXPECT_TRUE(manager->hasResource(name)) << name;
+    EXPECT_TRUE(manager->acquire("x")->has("x"));
+    EXPECT_TRUE(manager->acquire("all")->has("all"));
+
+    // Statements address one kind only
+    EXPECT_THROW(storage.executeQuery("CREATE RESOURCE x (READ DISK d)"), DB::Exception);
+    EXPECT_THROW(storage.executeQuery("DROP RESOURCE x"), DB::Exception); // referenced by the workload `x`
+    storage.executeQuery("DROP WORKLOAD x");
+    EXPECT_TRUE(storage.has(RESOURCE, "x"));
+    storage.executeQuery("DROP RESOURCE x");
+    storage.executeQuery("DROP RESOURCE io");
+    EXPECT_TRUE(storage.has(WORKLOAD, "io"));
+    EXPECT_FALSE(storage.has(RESOURCE, "io"));
+
+    // The configuration may define both kinds with one name as well
+    config->loadFromString("CREATE WORKLOAD io; CREATE RESOURCE all (READ DISK d2); CREATE WORKLOAD z; CREATE RESOURCE z (QUERY)");
+    EXPECT_TRUE(storage.has(WORKLOAD, "z"));
+    EXPECT_TRUE(storage.has(RESOURCE, "z"));
 }
 
 // Unit-test coverage for the lazy-allocation path in CPULeaseAllocation

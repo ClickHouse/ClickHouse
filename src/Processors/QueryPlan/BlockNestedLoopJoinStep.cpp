@@ -1,6 +1,7 @@
 #include <Core/Block.h>
 #include <Formats/FormatSettings.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/QueryExecutionCounters.h>
 #include <IO/Operators.h>
 #include <Processors/DelayedPortsProcessor.h>
 #include <Processors/QueryPlan/BlockNestedLoopJoinStep.h>
@@ -159,6 +160,9 @@ QueryPipelineBuilderPtr BlockNestedLoopJoinStep::updatePipeline(QueryPipelineBui
 {
     if (pipelines.size() != 2)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "BlockNestedLoopJoinStep expects two input pipelines, got {}", pipelines.size());
+
+    /// The step never swaps its inputs, so the kind it executes is the one it was built with.
+    QueryExecutionCounters::addExecutedJoin(kind, strictness, "BLOCK_NESTED_LOOP");
 
     ///  (build) ┐                                     (probe) ─> Probe ────────╖
     ///          ╞> Resize ─> BlockNestedLoopBuild ─> Resize(1) ─╖   Unmatched ─╢

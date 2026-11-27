@@ -47,8 +47,8 @@ public:
 
 TEST_F(DeltaKernelTest, ExpressionVisitor)
 {
-    auto * predicate = ffi::get_testing_kernel_predicate();
-    SCOPE_EXIT(ffi::free_kernel_predicate(predicate));
+    auto * predicate = ::get_testing_kernel_predicate();
+    SCOPE_EXIT(::free_kernel_predicate(predicate));
     try
     {
         auto dag = DeltaLake::visitExpression(

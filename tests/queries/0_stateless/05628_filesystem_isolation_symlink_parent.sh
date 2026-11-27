@@ -71,11 +71,15 @@ for start in 1 2; do
         cat "$DIR/server.out" "$DIR/log/server.err.log" >&2
         exit 1
     fi
+    # With `CAP_SYS_ADMIN`, the supervisor stays outside of the namespaces, and its child, the init of the PID
+    # namespace, is inside. Otherwise that process is inside.
+    INSIDE=$PID
+    [ "$(cat "/proc/$PID/comm")" = clickhouse-isol ] && INSIDE=$(cut -d' ' -f1 "/proc/$PID/task/$PID/children")
 
     # What the server created, from outside, and what it sees, through its root.
     echo "start $start: data: $(ls "$DIR/storage/data" | grep -E '^(existing|metadata)$' | paste -sd ' ')"
     echo "start $start: data next to the link: $([ -e "$DIR/work/data" ] && echo present || echo absent)"
-    echo "start $start: target of the link: $([ -d "/proc/$PID/root$DIR/storage/active" ] && echo visible || echo invisible)"
+    echo "start $start: target of the link: $([ -d "/proc/$INSIDE/root$DIR/storage/active" ] && echo visible || echo invisible)"
 
     kill "$PID"
     wait "$PID"

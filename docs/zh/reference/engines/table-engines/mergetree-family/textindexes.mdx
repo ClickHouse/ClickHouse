@@ -637,7 +637,7 @@ ORDER BY tuple();
 
   可选参数 `posting_list_block_size` (默认值：1048576) 指定倒排列表块的大小 (以行为单位) 。
 
-  可选参数 `posting_list_codec` (默认值：`none`) 指定倒排列表使用的编解码器：
+  可选参数 `posting_list_codec` (默认值：`pfor`) 指定倒排列表使用的编解码器：
 
   * `none` - 倒排列表存储时不使用额外压缩。
   * `bitpacking` - 先应用[差分 (delta) 编码](https://en.wikipedia.org/wiki/Delta_encoding)，再进行[位打包](https://dev.to/madhav_baby_giraffe/bit-packing-the-secret-to-optimizing-data-storage-and-transmission-m70) (二者都在固定大小的块内进行) 。会降低 SELECT 查询速度，目前不建议使用。
@@ -913,6 +913,16 @@ SELECT count() FROM table WHERE has(array, 'clickhouse');
 ```sql
 SELECT count() FROM table WHERE hasAny(tags, ['clickhouse', 'olap']);
 SELECT count() FROM table WHERE hasAll(tags, ['clickhouse', 'olap']);
+```
+
+#### `arrayJoin` {#functions-example-arrayjoin}
+
+针对被索引数组中单个元素的条件，其使用索引的方式与 `has` 和 `hasAny` 相同：`arrayJoin(tags) = 'clickhouse'` 会像 `has(tags, 'clickhouse')` 一样使用索引，`arrayJoin(tags) IN (set)` 则会像 `hasAny(tags, set)` 一样使用索引。这同样适用于 `GLOBAL IN`、设置了 `transform_null_in = 1` 且集合中不含 `NULL` 的 `IN`，以及 `ARRAY JOIN` 子句。索引仅用于跳过粒度，ClickHouse 仍会逐个元素检查该条件。`LEFT ARRAY JOIN` 不会使用索引。
+
+示例：
+
+```sql
+SELECT arrayJoin(tags) AS tag FROM table WHERE tag IN ('clickhouse', 'olap');
 ```
 
 #### `mapContains` {#functions-example-mapcontains}
@@ -1629,7 +1639,10 @@ Aggregating
 文本索引的磁盘格式版本由表级设置 [`text_index_serialization_version`](/zh/reference/settings/merge-tree-settings/text-index) (默认值：`v2_with_positions`) 控制。
 该设置表示一种偏好，而非硬性约束：如果配置的版本无法表示某个索引，系统会自动选择能够表示该索引的较新版本，因此写入文本索引不会因该设置而失败。
 进行滚动升级时，请在已升级的服务器上通过 [`compatibility`](/zh/reference/settings/session-settings/compatibility#compatibility) 设置固定格式：如果该设置指定的版本早于引入相应格式的版本，`text_index_serialization_version` 会自动回退到较旧的值，较新服务器会继续写入较旧服务器仍可读取的格式。
-倒排列表编解码器不受该版本控制：使用 `posting_list_codec = 'pfor'` (或 `text_index_posting_list_codec` 设置) 写入的分片无法被早于该编解码器的服务器读取，并且 `text_index_serialization_version` 和 `compatibility` 都无法阻止其被使用，因为为索引指定的编解码器优先次序高于版本偏好，这与 `support_phrase_search` 的处理方式相同。在所有可能读取该表的服务器都完成升级之前，请勿启用 `pfor`。
+
+倒排列表编解码器不受 `text_index_serialization_version` 控制。使用 `pfor` 编解码器写入的 parts 无法被早于 26.10 的服务器读取。
+
+自 26.11 起，`pfor` 成为 [`text_index_posting_list_codec`](/zh/reference/settings/merge-tree-settings/text-index#text_index_posting_list_codec) 设置的默认值。进行滚动升级时，请在已升级的服务器上将 [`compatibility`](/zh/reference/settings/session-settings/compatibility#compatibility) 设置为早于 26.11 的版本。这样默认值会回退为 `none`，这些服务器会继续写入较旧服务器可以读取的 parts。
 
 ## 文本索引与基于布隆过滤器的索引对比 {#text-index-vs-bloom-filter-indexes}
 

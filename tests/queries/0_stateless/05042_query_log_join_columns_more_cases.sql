@@ -285,7 +285,10 @@ SELECT log_comment, type, query_kind, used_number_of_joins, used_join_algorithms
        used_join_kinds, used_join_strictness, spilled_to_disk
 FROM system.query_log
 WHERE current_database = currentDatabase()
-  AND event_date >= yesterday();
+  AND event_date >= yesterday()
+  -- A query can send secondary queries that inherit its `log_comment`, e.g. the hint for an unknown table
+  -- lists the `Remote` databases of concurrent tests.
+  AND is_initial_query;
 
 SELECT 'join in a subquery in FROM';
 SELECT used_number_of_joins, used_join_algorithms, used_join_kinds, used_join_strictness, spilled_to_disk

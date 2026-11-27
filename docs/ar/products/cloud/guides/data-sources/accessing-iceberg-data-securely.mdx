@@ -7,10 +7,10 @@ keywords: ['Iceberg', 'RBAC', 'Amazon S3', 'المصادقة']
 doc_type: 'guide'
 ---
 
-يدعم ClickHouse Cloud وصولًا آمنًا قائمًا على الأدوار إلى بيانات Iceberg المخزنة في التخزين الكائني (عادةً S3)، وذلك باستخدام علاقة ثقة في AWS IAM مستندة إلى ARN. ويتبع هذا الدليل النمط نفسه للإعداد الآمن كما في [الوصول الآمن إلى بيانات S3](/ar/products/cloud/guides/data-sources/accessing-s3-data-securely)، مع إضافة إعدادات خاصة بـ Iceberg في ClickHouse.
+يدعم ClickHouse Cloud وصولًا آمنًا مستندًا إلى الأدوار إلى بيانات Iceberg المخزنة في التخزين الكائني (عادةً S3)، وذلك باستخدام علاقة ثقة في AWS IAM مستندة إلى ARN. ويتبع هذا الدليل النمط نفسه للإعداد الآمن كما في [الوصول الآمن إلى بيانات S3](/ar/products/cloud/guides/data-sources/accessing-s3-data-securely)، مع إضافة إعدادات خاصة بـ Iceberg في ClickHouse.
 
 <div id="overview">
-  ## نظرة عامة
+  ## نظرة عامة {#overview}
 </div>
 
 * احصل على معرّف دور خدمة ClickHouse Cloud ‏(IAM).
@@ -18,9 +18,7 @@ doc_type: 'guide'
 * أرفِق بالدور سياسات الكائنات وكتالوج الخاصة بـ Iceberg.
 * استخدم دوال جداول Iceberg أو محرك جدول IcebergS3 مع بيانات اعتماد قائمة على الدور.
 
-<div id="obtaining-the-clickhouse-service-iam-role-arn">
-  ## احصل على معرّف دور خدمة ClickHouse ‏(ARN)
-</div>
+## احصل على معرّف دور خدمة ClickHouse ‏(ARN) {#obtaining-the-clickhouse-service-iam-role-arn}
 
 <Steps>
   <Step title="1. سجّل الدخول إلى حسابك في ClickHouse Cloud." id="login" />
@@ -35,19 +33,15 @@ doc_type: 'guide'
     هذا الـ ARN مطلوب لسياسة الثقة في دور AWS IAM الذي سيصل إلى بيانات Iceberg الخاصة بك.
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![الحصول على ARN لدور IAM لخدمة ClickHouse](/images/cloud/security/secures3_arn.webp)
-
-    </Frame>
-
+      <Frame>
+        ![الحصول على ARN لدور IAM لخدمة ClickHouse](/images/cloud/security/secures3_arn.webp)
+      </Frame>
     </div>
   </Step>
 </Steps>
 
 <div id="setting-up-iam-assume-role">
-  ## إعداد IAM افتراض الدور
+  ## إعداد IAM افتراض الدور {#setting-up-iam-assume-role}
 </div>
 
 <Steps>
@@ -128,11 +122,11 @@ doc_type: 'guide'
 </Steps>
 
 <div id="configure-iceberg-access">
-  ## تهيئة الوصول إلى Iceberg في ClickHouse Cloud
+  ## تهيئة الوصول إلى Iceberg في ClickHouse Cloud {#configure-iceberg-access}
 </div>
 
 <div id="iceberg-table-function-with-role-arn">
-  ### الخيار A: دالة الجدول Iceberg مع ARN الخاص بالدور
+  ### الخيار A: دالة الجدول Iceberg مع ARN الخاص بالدور {#iceberg-table-function-with-role-arn}
 </div>
 
 استخدم دالة الجدول `icebergS3` مع الخيار `NOSIGN` وبيانات اعتماد مستندة إلى الدور. سيستدعي ClickHouse Cloud خدمة STS لافتراض هذا الدور.
@@ -147,7 +141,7 @@ FROM icebergS3(
 ```
 
 <div id="persistent-iceberg-table-engine">
-  ### الخيار ب: محرك جدول Iceberg الدائم
+  ### الخيار ب: محرك جدول Iceberg الدائم {#persistent-iceberg-table-engine}
 </div>
 
 ```sql
@@ -164,7 +158,7 @@ ENGINE = IcebergS3(
 ```
 
 <div id="glue-catalog-plus-icebergs3">
-  ### الخيار C: كتالوج Glue + IcebergS3
+  ### الخيار C: كتالوج Glue + IcebergS3 {#glue-catalog-plus-icebergs3}
 </div>
 
 ```sql
@@ -185,7 +179,7 @@ SETTINGS
 > ملاحظة: عند استخدام كتالوج Glue، تأكد من أن IAM role لديك يمتلك أذونات القراءة والعرض لكلٍّ من S3 وGlue.
 
 <div id="datalake-catalog-for-glue">
-  ### الخيار D: كتالوج DataLake لـ Glue
+  ### الخيار D: كتالوج DataLake لـ Glue {#datalake-catalog-for-glue}
 </div>
 
 <Note>
@@ -205,7 +199,7 @@ SETTINGS
 ```
 
 <div id="validate-access">
-  ## التحقّق من إمكانية الوصول
+  ## التحقّق من إمكانية الوصول {#validate-access}
 </div>
 
 1. شغّل استعلامًا بسيطًا:
@@ -218,7 +212,7 @@ LIMIT 5;
 2. تحقّق من أخطاء IAM مثل `AccessDenied` أو `InvalidAccessKeyId`.
 
 <div id="troubelshooting">
-  ## استكشاف الأخطاء وإصلاحها
+  ## استكشاف الأخطاء وإصلاحها {#troubelshooting}
 </div>
 
 * تحقّق من معرّف ARN الخاص بالدور في إعدادات ClickHouse Cloud service.

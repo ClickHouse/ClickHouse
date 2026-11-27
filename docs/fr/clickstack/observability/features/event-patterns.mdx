@@ -1,0 +1,40 @@
+---
+slug: /clickstack/observability/features/event-patterns
+title: 'Motifs d’événements avec ClickHouse Observability'
+sidebarTitle: 'Motifs d’événements'
+description: 'Motifs d’événements avec ClickHouse Observability'
+doc_type: 'guide'
+keywords: ['clickstack', 'event patterns', 'log analysis', 'pattern matching', 'observability']
+---
+
+Les motifs d’événements de ClickHouse Observability vous permettent de comprendre rapidement de grands volumes de logs ou de traces en regroupant automatiquement les messages similaires. Ainsi, au lieu de fouiller parmi des millions d’événements individuels, il vous suffit de passer en revue un petit nombre de groupes pertinents.
+
+<div className="ch-image-lg">
+  <Frame>
+    ![Motifs d’événements dans Recherche avec des graphiques de tendance, des nombres d’occurrences, des niveaux de sévérité et des messages de journalisation regroupés](/images/clickstack/observability-event-patterns.png)
+  </Frame>
+</div>
+
+Il devient ainsi beaucoup plus facile de repérer les erreurs ou avertissements nouveaux, ceux qui sont récurrents et ceux qui provoquent des pics soudains du volume de journaux. Comme les motifs sont générés dynamiquement, vous n’avez pas besoin de définir des expressions régulières ni de maintenir des règles d’analyse.
+
+Au-delà de la réponse aux incidents, cette vue d’ensemble vous aide également à identifier les sources de logs trop verbeuses qui peuvent être réduites pour diminuer les coûts, à découvrir les différents types de logs produits par un service et à déterminer plus rapidement si le système émet déjà les signaux qui vous intéressent.
+
+## Accès aux motifs d’événements {#accessing-event-patterns}
+
+Les motifs d’événements sont accessibles directement depuis le panneau **Recherche** de ClickHouse Observability.
+
+Dans la section **Mode d’analyse**, à gauche, sélectionnez **Motifs d’événements** pour passer du tableau de résultats standard à une vue regroupant les événements similaires.
+
+<div className="ch-image-lg">
+  <Frame>
+    ![Motifs d’événements mis en évidence sous Mode d’analyse dans Recherche](/images/clickstack/observability-event-patterns-highlight.png)
+  </Frame>
+</div>
+
+Cette vue offre une alternative au **Tableau des résultats** par défaut, qui permet de parcourir chaque journal ou trace un par un.
+
+## Recommandations {#recommendations}
+
+Les motifs d’événements sont plus efficaces lorsqu’ils sont appliqués à des **sous-ensembles restreints** de vos données. Par exemple, filtrer sur un seul service avant d’activer les motifs d’événements fait généralement ressortir des messages plus pertinents et plus intéressants que d’appliquer les motifs à des milliers de services à la fois.
+
+Ils sont également particulièrement efficaces pour synthétiser les messages d’erreur : les erreurs répétées dont les ID ou les charges utiles varient sont alors regroupées en clusters concis.

@@ -10,3 +10,7 @@ element renamed:	2	[(21),(22)]
 element added again:	1	[(NULL)]
 element added again:	2	[(NULL),(NULL)]
 cache entries of x:	2
+element renamed, subcolumn:	1	[11]
+element renamed, subcolumn:	2	[21,22]
+element added again, subcolumn:	1	[NULL]
+element added again, subcolumn:	2	[NULL,NULL]

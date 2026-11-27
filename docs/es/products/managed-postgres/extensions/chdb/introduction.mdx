@@ -2,7 +2,7 @@
 sidebarTitle: 'Introducción'
 description: 'Importa y exporta datos desde Postgres a una amplia variedad de formatos de datos y almacenes de objetos.'
 slug: '/cloud/managed-postgres/extensions/chdb'
-title: 'Documentación de referencia de la extensión chdb'
+title: 'Documentación de las extensiones chdb'
 doc_type: 'landing-page'
 keywords: ['PostgreSQL', 'Postgres', 'COPY', 'Import', 'Export', 'extension', 'chdb', 'Parquet', 'CSV', 'TSV']
 ---
@@ -146,7 +146,7 @@ A diferencia de un worker en segundo plano, el helper no retiene memoria compart
 Si un helper muere, el error solo se produce en el backend que lo inició, y las demás sessions no se ven afectadas.
 
 <Important>
-  Para cada consulta, el helper se conecta a una nueva database temporal de chdb en disco para ejecutarla. Como consecuencia, actualmente cada consulta se ejecuta con total aislamiento respecto de todas las demás. No cree una table esperando poder consultarla en una consulta posterior.
+  Para cada consulta, el helper se conecta a una nueva base de datos temporal de chDB en disco para ejecutarla. Como consecuencia, actualmente cada consulta se ejecuta con total aislamiento respecto de todas las demás. No cree una table esperando poder consultarla en una consulta posterior.
 </Important>
 
 ## Dependencias {#dependencies}
