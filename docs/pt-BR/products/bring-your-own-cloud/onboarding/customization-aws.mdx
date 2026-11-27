@@ -8,7 +8,7 @@ doc_type: 'reference'
 ---
 
 <div id="customer-managed-vpc-aws">
-  ## VPC gerenciada pelo cliente (BYO-VPC) para AWS
+  ## VPC gerenciada pelo cliente (BYO-VPC) para AWS {#customer-managed-vpc-aws}
 </div>
 
 Se você prefere usar uma VPC existente para implantar o ClickHouse BYOC, em vez de deixar que o ClickHouse Cloud provisione uma nova VPC, siga as etapas abaixo. Essa abordagem oferece maior controle sobre a configuração da rede e permite integrar o ClickHouse BYOC à infraestrutura de rede existente.
@@ -21,23 +21,15 @@ Se você prefere usar uma VPC existente para implantar o ClickHouse BYOC, em vez
     4. Adicione as tags `kubernetes.io/role/internal-elb=1` e `clickhouse-byoc="true"` a cada sub-rede para permitir a configuração correta do balanceador de carga.
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Sub-rede da VPC BYOC](/images/cloud/reference/byoc-subnet-1.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Sub-rede da VPC BYOC](/images/cloud/reference/byoc-subnet-1.webp)
+      </Frame>
     </div>
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Tags da sub-rede da VPC BYOC](/images/cloud/reference/byoc-subnet-2.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Tags da sub-rede da VPC BYOC](/images/cloud/reference/byoc-subnet-2.webp)
+      </Frame>
     </div>
   </Step>
 
@@ -45,13 +37,9 @@ Se você prefere usar uma VPC existente para implantar o ClickHouse BYOC, em vez
     Se sua VPC ainda não tiver um endpoint de gateway do S3 configurado, será necessário criar um para habilitar a comunicação segura e privada entre sua VPC e o Amazon S3. Esse endpoint permite que seus serviços do ClickHouse acessem o S3 sem passar pela internet pública. Consulte a captura de tela abaixo para ver um exemplo de configuração.
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Endpoint S3 do BYOC](/images/cloud/reference/byoc-s3-endpoint.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Endpoint S3 do BYOC](/images/cloud/reference/byoc-s3-endpoint.webp)
+      </Frame>
     </div>
   </Step>
 
@@ -78,10 +66,10 @@ Se você prefere usar uma VPC existente para implantar o ClickHouse BYOC, em vez
     Ao implantar uma configuração `BYO-VPC`, defina o parâmetro `IncludeVPCWritePermissions` como `false` para garantir que o ClickHouse Cloud não receba permissões para modificar sua VPC gerenciada pelo cliente.
 
     <Note>
-      Storage buckets, Kubernetes cluster, and compute resources required for running ClickHouse aren&#39;t included in this initial setup. They will be provisioned in a later step. While you control your VPC, ClickHouse Cloud still requires IAM permissions to create and manage the Kubernetes cluster, IAM roles for service accounts, S3 buckets, and other essential resources in your AWS account.
+      Os buckets de armazenamento, o cluster do Kubernetes e os recursos de capacidade computacional necessários para executar o ClickHouse não estão incluídos nesta configuração inicial. Eles serão provisionados em uma etapa posterior. Embora você controle sua VPC, o ClickHouse Cloud ainda precisa de permissões do IAM para criar e gerenciar o cluster do Kubernetes, funções do IAM para service accounts, buckets S3 e outros recursos essenciais em sua conta AWS.
     </Note>
 
-#### Módulo do Terraform
+#### Módulo do Terraform {#terraform-module-aws}
 
     Se você preferir usar Terraform em vez de CloudFormation, use o módulo [terraform-byoc-onboarding](https://github.com/ClickHouse/terraform-byoc-onboarding):
 
@@ -118,13 +106,9 @@ Se você prefere usar uma VPC existente para implantar o ClickHouse BYOC, em vez
     5. Clique em **Configurar infraestrutura** para iniciar o provisionamento.
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![UI de configuração do BYOC no ClickHouse Cloud com Usar VPC existente selecionado](/images/cloud/reference/byoc-aws-existing-vpc-ui.webp)
-
-    </Frame>
-
+      <Frame>
+        ![UI de configuração do BYOC no ClickHouse Cloud com Usar VPC existente selecionado](/images/cloud/reference/byoc-aws-existing-vpc-ui.webp)
+      </Frame>
     </div>
 
     <Note>

@@ -14,5 +14,5 @@ SYSTEM FLUSH LOGS query_log;
 
 SELECT log_comment, ProfileEvents['ExternalAggregationWritePart'] > 0, ProfileEvents['ExternalJoinWritePart'] > 0
 FROM system.query_log
-WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment LIKE '05843_%'
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment IN ('05843_group_by', '05843_join')
 ORDER BY log_comment;

@@ -8,7 +8,7 @@ doc_type: 'guide'
 ---
 
 <div id="introduction">
-  ## 简介
+  ## 简介 {#introduction}
 </div>
 
 [LAION 5b 数据集](https://laion.ai/blog/laion-5b/)包含 58.5 亿个图像-文本嵌入向量及
@@ -19,7 +19,7 @@ doc_type: 'guide'
 图像到图像搜索。
 
 <div id="dataset-details">
-  ## 数据集详情
+  ## 数据集详情 {#dataset-details}
 </div>
 
 完整数据集可使用 [opendatalab/laion5b-downloader](https://github.com/opendatalab/laion5b-downloader) 下载。
@@ -30,7 +30,7 @@ ClickHouse 在一个公网 `S3` bucket 中提供了包含 1000 万个向量的�
 我们建议用户先参考[文档](/zh/reference/engines/table-engines/mergetree-family/annindexes)进行容量评估，以估算该数据集所需的存储和内存。
 
 <div id="steps">
-  ## 步骤
+  ## 步骤 {#steps}
 </div>
 
 <Steps>
@@ -162,13 +162,9 @@ ClickHouse 在一个公网 `S3` bucket 中提供了包含 1000 万个向量的�
     上述搜索的结果如下：
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![向量相似度搜索结果](/images/getting-started/example-datasets/laion5b_visualization_1.webp)
-
-    </Frame>
-
+      <Frame>
+        ![向量相似度搜索结果](/images/getting-started/example-datasets/laion5b_visualization_1.webp)
+      </Frame>
     </div>
   </Step>
 </Steps>

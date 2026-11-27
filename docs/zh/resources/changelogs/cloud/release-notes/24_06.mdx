@@ -9,16 +9,12 @@ doc_type: 'changelog'
 
 以下是基于 v24.6 发布、与 ClickHouse Cloud 服务相关的变更。
 
-<div id="backward-incompatible-change">
-  ## 不兼容的向后变更
-</div>
+## 不兼容的向后变更 {#backward-incompatible-change}
 
 * 重构了存储 `S3Queue` 的 `Ordered` 模式下的并行处理。如果您使用过设置 `s3queue_processing_threads_num` 或 `s3queue_total_shards_num`，则此 PR 对 `Ordered` 模式来说是不向后兼容的。设置 `s3queue_total_shards_num` 已被删除；此前仅允许在 `s3queue_allow_experimental_sharded_mode` 下使用，而该设置现已弃用。新增了一个设置：`s3queue_buckets`。[#64349](https://github.com/ClickHouse/ClickHouse/pull/64349) ([Kseniia Sumarokova](https://github.com/kssenii)).
 * 新增了函数 `snowflakeIDToDateTime`、`snowflakeIDToDateTime64`、`dateTimeToSnowflakeID` 和 `dateTime64ToSnowflakeID`。与现有函数 `snowflakeToDateTime`、`snowflakeToDateTime64`、`dateTimeToSnowflake` 和 `dateTime64ToSnowflake` 不同，这些新函数与 `generateSnowflakeID` 兼容，也就是说，它们接受由 `generateSnowflakeID` 生成的 Snowflake ID，并生成与 `generateSnowflakeID` 相同类型的 Snowflake ID (即 `UInt64`) 。此外，新函数默认使用 UNIX 纪元 (即 1970-01-01) ，这与 `generateSnowflakeID` 一致。如有需要，也可以传入不同的纪元，例如 Twitter/X 的纪元 2010-11-04，即自 UNIX 纪元起的 1288834974657 毫秒。旧的转换函数已弃用，并将在过渡期后移除；如果仍需继续使用，请启用设置 `allow_deprecated_snowflake_conversion_functions`。[#64948](https://github.com/ClickHouse/ClickHouse/pull/64948) ([Robert Schulze](https://github.com/rschu1ze)).
 
-<div id="new-feature">
-  ## 新特性
-</div>
+## 新特性 {#new-feature}
 
 * 支持空 Tuple。[#55061](https://github.com/ClickHouse/ClickHouse/pull/55061) ([Amos Bird](https://github.com/amosbird)).
 * 新增 Hilbert Curve 编码和解码函数。[#60156](https://github.com/ClickHouse/ClickHouse/pull/60156) ([Artem Mustafin](https://github.com/Artemmm91)).
@@ -36,9 +32,7 @@ doc_type: 'changelog'
 * 在 `system.query_log` 中新增两列：`used_privileges` 和 `missing_privileges`。`used_privileges` 会记录查询执行期间检查过的特权，`missing_privileges` 则包含所缺失的必需特权。[#64597](https://github.com/ClickHouse/ClickHouse/pull/64597) ([Alexey Katsman](https://github.com/alexkats)).
 * 新增设置 `output_format_pretty_display_footer_column_names`；启用后，会在长表 (默认 50 行) 末尾显示列名，而最小行数阈值由 `output_format_pretty_display_footer_column_names_min_rows` 控制。[#65144](https://github.com/ClickHouse/ClickHouse/pull/65144) ([Shaun Struwig](https://github.com/Blargian)).
 
-<div id="performance-improvement">
-  ## 性能提升
-</div>
+## 性能提升 {#performance-improvement}
 
 * 修复了 #60459 (24.5) 中引入的 cross join 性能回归问题。#65243 (Nikita Taranov) 。
 * 提升 io&#95;uring 重提交流程的可观测性。将 profile 事件 IOUringSQEsResubmits 重命名为 IOUringSQEsResubmitsAsync，并新增 IOUringSQEsResubmitsSync。#63699 (Tomer Shafir) 。
@@ -68,9 +62,7 @@ doc_type: 'changelog'
 * 更新条件，使备份到 Azure Blob 存储时使用服务器端复制。[#64518](https://github.com/ClickHouse/ClickHouse/pull/64518) ([SmitaRKulkarni](https://github.com/SmitaRKulkarni)) 。
 * 优化了具有大量跳过索引的表在执行垂直合并时的内存占用。[#64580](https://github.com/ClickHouse/ClickHouse/pull/64580) ([Anton Popov](https://github.com/CurtizJ)) 。
 
-<div id="improvement">
-  ## 改进
-</div>
+## 改进 {#improvement}
 
 * 将 ClickHouse 在 CSV 格式中处理和解析 Tuples 的行为恢复为原来的方式。此更改实际上回退了 ClickHouse/ClickHouse#60994，并仅在少数几个设置下生效：output&#95;format&#95;csv&#95;serialize&#95;tuple&#95;into&#95;separate&#95;columns、input&#95;format&#95;csv&#95;deserialize&#95;separate&#95;columns&#95;into&#95;tuple 和 input&#95;format&#95;csv&#95;try&#95;infer&#95;strings&#95;from&#95;quoted&#95;tuples。#65170 (Nikita Mikhaylov) 。
 * 对系统表执行 `SHOW CREATE TABLE` 时，现在会显示每个表独有且非常实用的注释，说明为什么需要这张表。[#63788](https://github.com/ClickHouse/ClickHouse/pull/63788) ([Nikita Mikhaylov](https://github.com/nikitamikhaylov)) 。
@@ -96,9 +88,7 @@ doc_type: 'changelog'
 * 即使是 materialized views，也会对不受支持的存储禁用事务。[#64918](https://github.com/ClickHouse/ClickHouse/pull/64918) ([alesapin](https://github.com/alesapin)) 。
 * 在旧版 analyzer 中禁止使用 `QUALIFY` 子句。旧版 analyzer 会忽略 `QUALIFY`，因此可能导致在变更操作中发生非预期的数据删除。[#65356](https://github.com/ClickHouse/ClickHouse/pull/65356) ([Dmitry Novik](https://github.com/novikd)) 。
 
-<div id="bug-fix-user-visible-misbehavior-in-an-official-stable-release">
-  ## 缺陷修复 (官方稳定版本中用户可见的异常行为)
-</div>
+## 缺陷修复 (官方稳定版本中用户可见的异常行为) {#bug-fix-user-visible-misbehavior-in-an-official-stable-release}
 
 * 修复了 &#39;set&#39; 跳过索引在与 IN 和 indexHint() 一起使用时不起作用的问题。#62083 (Michael Kolupaev) 。
 * 修复了当表未使用自适应粒度时，带有 FINAL 的查询返回错误结果的问题。#62432 (Duc Canh Le) 。
@@ -124,7 +114,7 @@ doc_type: 'changelog'
 * 修复了在 GROUP BY 键中包含常量 CTE 的分布式查询中出现“Cannot find column”错误的问题。#64519 (Nikolai Kochetov) 。
 * 修复了在格式说明符生成的字符数为奇数且最后一个字符为 0 时，函数 formatDateTimeInJodaSyntax 输出错误的问题。例如，SELECT formatDateTimeInJodaSyntax(toDate(&#39;2012-05-29&#39;), &#39;D&#39;) 现在会正确返回 150，而此前返回的是 15。#64614 (LiuNeng) 。
 * 如果已使用 -If 组合器，则不要改写聚合。#64638 (Dmitry Novik) 。
-* 修复了浮点数类型推断的问题 (在缓冲区较小时，即 `--max&#95;read&#95;buffer&#95;size 1` 的情况下) 。#64641 (Azat Khuzhin) 。
+* 修复了浮点数类型推断的问题 (在缓冲区较小时，即 `--max_read_buffer_size` 1 的情况下) 。#64641 (Azat Khuzhin) 。
 * 修复了一个可能导致带表达式的生存时间 (TTL) 失效的问题。 #64694 (alesapin).
 * 修复移除始终为 true 的 WHERE 和 PREWHERE 表达式时出现的问题 (针对新的 analyzer) 。#64695 (Nikolai Kochetov) 。
 * 修复了在根据 startsWith、endsWith、match、multiSearchAny 的结果进行过滤时，基于标记的文本索引 (ngrambf , full&#95;text) 导致数据分片被过度裁剪的问题。#64720 (Eduard Karacharov) 。

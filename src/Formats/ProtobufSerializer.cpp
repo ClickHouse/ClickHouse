@@ -1,5 +1,6 @@
 #include <Formats/ProtobufSerializer.h>
 #include <Common/Arena.h>
+#include <base/sanitizer_defs.h>
 
 #if USE_PROTOBUF
 #    include <AggregateFunctions/IAggregateFunction.h>
@@ -150,7 +151,8 @@ namespace
     /// of a composite column would reach sub-columns that are also held by the serializers
     /// of its nested fields through the non-const `WrappedPtr` dereference.
     /// Exception-safe: on failure, the already appended sub-columns are rolled back.
-    void insertDefaultBorrowed(IColumn & column)
+    /// With `type`, a scalar gets the default of its type (e.g. the first element of an `Enum`), not the column's.
+    void insertDefaultBorrowed(IColumn & column, const IDataType * type = nullptr)
     {
         if (auto * column_array = typeid_cast<ColumnArray *>(&column))
         {
@@ -168,11 +170,12 @@ namespace
                 return;
             }
             const auto & elements = std::as_const(*column_tuple).getColumns();
+            const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type);
             size_t i = 0;
             try
             {
                 for (; i < elements.size(); ++i)
-                    insertDefaultBorrowed(borrowColumnRef(elements[i]));
+                    insertDefaultBorrowed(borrowColumnRef(elements[i]), tuple_type ? tuple_type->getElement(i).get() : nullptr);
             }
             catch (...)
             {
@@ -199,6 +202,10 @@ namespace
                 popBackBorrowed(nested_column, 1);
                 throw;
             }
+        }
+        else if (type)
+        {
+            type->insertDefaultInto(column);
         }
         else
         {
@@ -2257,8 +2264,8 @@ namespace
     class ProtobufSerializerNullable : public ProtobufSerializer
     {
     public:
-        explicit ProtobufSerializerNullable(std::unique_ptr<ProtobufSerializer> nested_serializer_)
-            : nested_serializer(std::move(nested_serializer_))
+        ProtobufSerializerNullable(DataTypePtr nested_type_, std::unique_ptr<ProtobufSerializer> nested_serializer_)
+            : nested_type(std::move(nested_type_)), nested_serializer(std::move(nested_serializer_))
         {
         }
 
@@ -2353,7 +2360,7 @@ namespace
             if (row_num < column_nullable.size())
                 return;
             auto & nested_column = borrowColumnRef(column_nullable.getNestedColumnPtr());
-            insertDefaultBorrowed(nested_column);
+            insertDefaultBorrowed(nested_column, nested_type.get());
             /// Same rollback contract as in `insertDefaults` above.
             try
             {
@@ -2378,6 +2385,7 @@ namespace
         }
 
     private:
+        const DataTypePtr nested_type;
         const std::unique_ptr<ProtobufSerializer> nested_serializer;
         ColumnPtr column;
     };
@@ -2557,7 +2565,7 @@ namespace
         {
             const auto & column_array = assert_cast<const ColumnArray &>(*column);
             const auto & offsets = column_array.getOffsets();
-            for (size_t i : collections::range(offsets[row_num - 1], offsets[row_num]))
+            for (size_t i : collections::range(offsets[static_cast<ssize_t>(row_num) - 1], offsets[row_num]))
                 element_serializer->writeRow(i);
         }
 
@@ -2884,14 +2892,14 @@ namespace
             else
                 reader->startMessage(with_length_delimiter);
 
-            if (!field_infos.empty())
+            size_t old_size = mutable_columns.empty() ? 0 : mutable_columns[0]->size();
+            try
             {
-                last_field_index = 0;
-                last_field_tag = field_infos[0].field_tag;
-                size_t old_size = mutable_columns.empty() ? 0 : mutable_columns[0]->size();
-
-                try
+                if (!field_infos.empty())
                 {
+                    last_field_index = 0;
+                    last_field_tag = field_infos[0].field_tag;
+
                     int field_tag = 0;
                     while (reader->readFieldNumber(field_tag))
                     {
@@ -2924,37 +2932,42 @@ namespace
                         }
                     }
                 }
-                catch (...)
-                {
-                    for (auto & column : mutable_columns)
-                    {
-                        if (column->size() > old_size)
-                            popBackBorrowed(*column, column->size() - old_size);
-                    }
-                    resetState();
-                    throw;
-                }
+
+                if (parent_field_descriptor || has_envelope_as_parent)
+                    reader->endNestedMessage();
+                else
+                    reader->endMessage(false);
+
+                addDefaultsToMissingColumns(row_num);
             }
-
-            if (parent_field_descriptor || has_envelope_as_parent)
-                reader->endNestedMessage();
-            else
-                reader->endMessage(false);
-
-            addDefaultsToMissingColumns(row_num);
+            catch (...)
+            {
+                popRowsAddedSince(old_size);
+                resetState();
+                throw;
+            }
         }
 
         void insertDefaults(size_t row_num) override
         {
-            for (const FieldInfo & info : field_infos)
+            size_t old_size = mutable_columns.empty() ? 0 : mutable_columns[0]->size();
+            try
             {
-                if (info.field_serializer)
+                for (const FieldInfo & info : field_infos)
                 {
-                    info.field_serializer->insertDefaults(row_num);
+                    if (info.field_serializer)
+                    {
+                        info.field_serializer->insertDefaults(row_num);
+                    }
                 }
-            }
 
-            addDefaultsToMissingColumns(row_num);
+                addDefaultsToMissingColumns(row_num);
+            }
+            catch (...)
+            {
+                popRowsAddedSince(old_size);
+                throw;
+            }
         }
 
         void resetState() override
@@ -3004,6 +3017,7 @@ namespace
         }
 
     private:
+        NO_SANITIZE_UNSIGNED_OVERFLOW
         size_t findFieldIndexByFieldTag(int field_tag)
         {
             while (true)
@@ -3029,6 +3043,15 @@ namespace
         {
             if (has_missing_columns)
                 missing_columns_filler->addDefaults(mutable_columns, row_num);
+        }
+
+        void popRowsAddedSince(size_t old_size)
+        {
+            for (auto & column : mutable_columns)
+            {
+                if (column->size() > old_size)
+                    popBackBorrowed(*column, column->size() - old_size);
+            }
         }
 
         bool isNullGoogleWrapper(size_t row_num)
@@ -3294,7 +3317,7 @@ namespace
         void writeRow(size_t row_num) override
         {
             const auto & offset_column0 = assert_cast<const ColumnArray::ColumnOffsets &>(*offset_columns[0]);
-            size_t start_offset = offset_column0.getElement(row_num - 1);
+            size_t start_offset = row_num ? offset_column0.getElement(row_num - 1) : 0;
             size_t end_offset = offset_column0.getElement(row_num);
             for (size_t i : collections::range(start_offset, end_offset))
                 message_serializer->writeRow(i);
@@ -4094,10 +4117,8 @@ namespace
             std::unique_ptr<RowInputMissingColumnsFiller> missing_columns_filler;
             if (reader_or_writer.reader)
             {
-                if (check_nested_while_filling_missing_columns)
-                    missing_columns_filler = std::make_unique<RowInputMissingColumnsFiller>(num_columns, column_names, data_types);
-                else
-                    missing_columns_filler = std::make_unique<RowInputMissingColumnsFiller>();
+                missing_columns_filler = std::make_unique<RowInputMissingColumnsFiller>(
+                    num_columns, column_names, data_types, check_nested_while_filling_missing_columns);
                 if (columns_are_reordered_outside && oneof_presence)
                 {
                     ::sort(used_column_indices.begin(), used_column_indices.end());
@@ -4186,7 +4207,7 @@ namespace
                         oneof_presence);
                     if (!nested_serializer)
                         return nullptr;
-                    return std::make_unique<ProtobufSerializerNullable>(std::move(nested_serializer));
+                    return std::make_unique<ProtobufSerializerNullable>(nullable_data_type.getNestedType(), std::move(nested_serializer));
                 }
 
                 case TypeIndex::LowCardinality:

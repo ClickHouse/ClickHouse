@@ -65,6 +65,8 @@ DataTypePtr tryInferDataTypeForSingleJSONField(std::string_view field, const For
 
 /// Try to parse Date or DateTime value from a string.
 DataTypePtr tryInferDateOrDateTimeFromString(std::string_view field, const FormatSettings & settings);
+/// The same, in the zone the value will be parsed in, which decides whether it fits DateTime.
+DataTypePtr tryInferDateOrDateTimeFromString(std::string_view field, const FormatSettings & settings, const DateLUTImpl & time_zone);
 
 bool tryInferDateFromString(std::string_view field, DayNum & date);
 bool tryInferDateTimeFromString(std::string_view field, time_t & date_time, const FormatSettings & settings, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone);
@@ -143,6 +145,10 @@ DataTypePtr removeNullableRecursively(DataTypePtr type, const FormatSettings & s
 /// Call makeNullableRecursively for all types
 /// in the block and return names and types.
 NamesAndTypesList getNamesAndRecursivelyNullableTypes(const Block & header, const FormatSettings & settings);
+
+/// The key by which the readers that follow `input_format_column_name_matching_mode` match a field to a column
+/// of the inferred schema: the name in lowercase with `ignore_case`, the name itself otherwise.
+String getColumnMatchingKeyForSchemaInference(std::string_view name, const FormatSettings & settings);
 
 /// Check if type contains Nothing, like Array(Tuple(Nullable(Nothing), String))
 bool checkIfTypeIsComplete(const DataTypePtr & type);

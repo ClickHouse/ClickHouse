@@ -22,16 +22,12 @@ keywords: ['демонстрационный набор данных', 'nypd', '
 **Источник**: [data.cityofnewyork.us](https://data.cityofnewyork.us/Public-Safety/NYPD-Complaint-Data-Current-Year-To-Date-/5uac-w243)
 **Условия использования**: https://www1.nyc.gov/home/terms-of-use.page
 
-<div id="prerequisites">
-  ## Необходимые условия
-</div>
+## Необходимые условия {#prerequisites}
 
 * Скачайте набор данных: перейдите на страницу [NYPD Complaint Data Current (Year To Date)](https://data.cityofnewyork.us/Public-Safety/NYPD-Complaint-Data-Current-Year-To-Date-/5uac-w243), нажмите кнопку Export и выберите **TSV for Excel**.
 * Установите [ClickHouse server and client](/ru/get-started/setup/install)
 
-<div id="a-note-about-the-commands-described-in-this-guide">
-  ### Примечание о командах, описанных в этом руководстве
-</div>
+### Примечание о командах, описанных в этом руководстве {#a-note-about-the-commands-described-in-this-guide}
 
 В этом руководстве используются два типа команд:
 
@@ -42,15 +38,11 @@ keywords: ['демонстрационный набор данных', 'nypd', '
   Примеры в этом руководстве предполагают, что вы сохранили файл в формате TSV по пути `${HOME}/NYPD_Complaint_Data_Current__Year_To_Date_.tsv`; при необходимости скорректируйте команды.
 </Note>
 
-<div id="familiarize-yourself-with-the-tsv-file">
-  ## Ознакомьтесь с файлом в формате TSV
-</div>
+## Ознакомьтесь с файлом в формате TSV {#familiarize-yourself-with-the-tsv-file}
 
 Прежде чем приступить к работе с базой данных ClickHouse, ознакомьтесь с данными.
 
-<div id="look-at-the-fields-in-the-source-tsv-file">
-  ### Посмотрите на поля в исходном файле в формате TSV
-</div>
+### Посмотрите на поля в исходном файле в формате TSV {#look-at-the-fields-in-the-source-tsv-file}
 
 Это пример команды для выполнения запроса к файлу в формате TSV, но пока не запускайте её.
 
@@ -70,7 +62,7 @@ CMPLNT_FR_TM                Nullable(String)
 ```
 
 <Tip>
-  В большинстве случаев приведённая выше команда покажет, какие поля во входных данных являются числовыми, какие — строковыми, а какие — кортежами. Но так бывает не всегда. Поскольку ClickHouse обычно работает с датасетами, содержащими миллиарды записей, по умолчанию для [определения схемы](/ru/guides/clickhouse/data-formats/json/inference) анализируется лишь ограниченное число строк (100), чтобы не выполнять парсинг миллиардов строк. Приведённый ниже результат может отличаться от того, что увидите вы, так как датасет обновляется несколько раз в год. Если заглянуть в словарь данных, можно увидеть, что CMPLNT&#95;NUM указан как текстовое, а не числовое поле. Переопределив значение по умолчанию — 100 строк для определения схемы — с помощью настройки `SETTINGS input_format_max_rows_to_read_for_schema_inference=2000`,
+  В большинстве случаев приведённая выше команда покажет, какие поля во входных данных являются числовыми, какие — строковыми, а какие — кортежами. Но так бывает не всегда. Поскольку ClickHouse обычно работает с наборами данных, содержащими миллиарды записей, по умолчанию для [определения схемы](/ru/guides/clickhouse/data-formats/json/inference) анализируется лишь ограниченное число строк (100), чтобы не выполнять парсинг миллиардов строк. Приведённый ниже результат может отличаться от того, что увидите вы, так как набор данных обновляется несколько раз в год. Если заглянуть в словарь данных, можно увидеть, что CMPLNT&#95;NUM указан как текстовое, а не числовое поле. Переопределив значение по умолчанию — 100 строк для определения схемы — с помощью настройки `SETTINGS input_format_max_rows_to_read_for_schema_inference=2000`,
   можно получить более точное представление о содержимом.
 
   Примечание: начиная с версии 22.5 значением по умолчанию теперь являются 25 000 строк для определения схемы, поэтому изменяйте эту настройку только если используете более старую версию или если вам нужно, чтобы в выборку попало более 25 000 строк.
@@ -125,9 +117,7 @@ New Georeferenced Column Nullable(String)
 
 На этом этапе следует проверить, что столбцы в файле в формате TSV соответствуют именам и типам, указанным в разделе **Столбцы в этом наборе данных** на [странице набора данных](https://data.cityofnewyork.us/Public-Safety/NYPD-Complaint-Data-Current-Year-To-Date-/5uac-w243).  Типы данных здесь не слишком конкретны: для всех числовых полей задан `Nullable(Float64)`, а для всех остальных — `Nullable(String)`.  При создании таблицы ClickHouse для хранения данных можно указать более подходящие и эффективные типы.
 
-<div id="determine-the-proper-schema">
-  ### Определите подходящую схему
-</div>
+### Определите подходящую схему {#determine-the-proper-schema}
 
 Чтобы понять, какие типы следует использовать для полей, нужно знать, как выглядят данные. Например, поле `JURISDICTION_CODE` содержит числовое значение: следует ли использовать `UInt8`, `Enum` или подойдет `Float64`?
 
@@ -211,9 +201,7 @@ clickhouse-local --input_format_max_rows_to_read_for_schema_inference=2000 \
 
 Используемый на момент написания набор данных содержит лишь несколько сотен различных парков и игровых площадок в столбце `PARK_NM`.  Это немного, если учитывать рекомендацию [LowCardinality](/ru/reference/data-types/lowcardinality#description) — не более 10 000 различных строковых значений в поле `LowCardinality(String)`.
 
-<div id="datetime-fields">
-  ### Поля DateTime
-</div>
+### Поля DateTime {#datetime-fields}
 
 Судя по разделу **Columns in this Dataset** на [странице набора данных](https://data.cityofnewyork.us/Public-Safety/NYPD-Complaint-Data-Current-Year-To-Date-/5uac-w243), в нём есть поля даты и времени, указывающие начало и окончание зарегистрированного события. Просмотр минимальных и максимальных значений `CMPLNT_FR_DT` и `CMPLT_TO_DT` позволяет понять, всегда ли эти поля заполнены:
 
@@ -273,9 +261,7 @@ FORMAT PrettyCompact"
 └───────────────────┴───────────────────┘
 ```
 
-<div id="make-a-plan">
-  ## Составьте план
-</div>
+## Составьте план {#make-a-plan}
 
 На основе приведённого выше анализа:
 
@@ -293,9 +279,7 @@ FORMAT PrettyCompact"
   Нужно внести ещё много изменений в типы, и все их можно определить, выполнив те же шаги анализа. Посмотрите на количество различных строковых значений в поле, минимальные и максимальные числовые значения и примите решение. В схеме таблицы, приведённой далее в руководстве, много строковых полей низкой кардинальности и беззнаковых целочисленных полей, и очень мало чисел с плавающей запятой.
 </Note>
 
-<div id="concatenate-the-date-and-time-fields">
-  ## Объедините поля даты и времени
-</div>
+## Объедините поля даты и времени {#concatenate-the-date-and-time-fields}
 
 Чтобы объединить поля даты и времени `CMPLNT_FR_DT` и `CMPLNT_FR_TM` в одну строку `String`, которую затем можно преобразовать в `DateTime`, выберите эти два поля, соединив их оператором конкатенации: `CMPLNT_FR_DT || ' ' || CMPLNT_FR_TM`. Аналогичным образом обрабатываются поля `CMPLNT_TO_DT` и `CMPLNT_TO_TM`.
 
@@ -323,9 +307,7 @@ FORMAT PrettyCompact"
 └─────────────────────┘
 ```
 
-<div id="convert-the-date-and-time-string-to-a-datetime64-type">
-  ## Преобразование строки с датой и временем в тип DateTime64
-</div>
+## Преобразование строки с датой и временем в тип DateTime64 {#convert-the-date-and-time-string-to-a-datetime64-type}
 
 Ранее в этом руководстве мы выяснили, что в файле в формате TSV есть даты до 1 января 1970 года, а это значит, что для них нужен 64-битный тип DateTime. Даты также нужно преобразовать из формата `MM/DD/YYYY` в формат `YYYY/MM/DD`. И то и другое можно сделать с помощью [`parseDateTime64BestEffort()`](/ru/reference/functions/regular-functions/type-conversion-functions#parseDateTime64BestEffort).
 
@@ -378,9 +360,7 @@ FORMAT PrettyCompact"
   Показанные выше даты `1925` — результат ошибок в данных.  В исходных данных есть несколько записей с датами в диапазоне `1019` - `1022`, хотя должно быть `2019` - `2022`.  Они сохраняются как 1 января 1925 года, поскольку это самая ранняя дата, поддерживаемая 64-битным DateTime.
 </Note>
 
-<div id="create-a-table">
-  ## Создание таблицы
-</div>
+## Создание таблицы {#create-a-table}
 
 Принятые выше решения о типах данных, используемых для столбцов, отражены в приведённой
 ниже схеме таблицы. Нам также нужно определить `ORDER BY` и `PRIMARY KEY` для таблицы. Как минимум один
@@ -388,9 +368,7 @@ FORMAT PrettyCompact"
 столбцов для включения в `ORDER BY`; более подробная информация приведена в разделе *Следующие шаги* в конце
 этого документа.
 
-<div id="order-by-and-primary-key-clauses">
-  ### Секции `ORDER BY` и `PRIMARY KEY`
-</div>
+### Секции `ORDER BY` и `PRIMARY KEY` {#order-by-and-primary-key-clauses}
 
 * Кортеж `ORDER BY` должен включать поля, используемые в фильтрах запроса
 * Чтобы максимально увеличить сжатие на диске, кортеж `ORDER BY` следует упорядочить по возрастанию мощности
@@ -482,9 +460,7 @@ CREATE TABLE NYPD_Complaint (
   ORDER BY ( borough, offense_description, date_reported )
 ```
 
-<div id="finding-the-primary-key-of-a-table">
-  ### Поиск первичного ключа таблицы
-</div>
+### Поиск первичного ключа таблицы {#finding-the-primary-key-of-a-table}
 
 База данных ClickHouse `system`, а точнее `system.table`, содержит всю информацию о только что созданной таблице. Этот запрос показывает `ORDER BY` (ключ сортировки) и `PRIMARY KEY`:
 
@@ -514,15 +490,11 @@ table:         NYPD_Complaint
 1 row in set. Elapsed: 0.001 sec.
 ```
 
-<div id="preprocess-import-data">
-  ## Предварительная обработка и импорт данных
-</div>
+## Предварительная обработка и импорт данных {#preprocess-import-data}
 
 Для предварительной обработки данных мы будем использовать инструмент `clickhouse-local`, а для их загрузки — `clickhouse-client`.
 
-<div id="clickhouse-local-arguments-used">
-  ### Используемые аргументы `clickhouse-local`
-</div>
+### Используемые аргументы `clickhouse-local` {#clickhouse-local-arguments-used}
 
 <Tip>
   `table='input'` встречается в аргументах `clickhouse-local` ниже. `clickhouse-local` принимает указанный вход (`cat ${HOME}/NYPD_Complaint_Data_Current__Year_To_Date_.tsv`) и выполняет вставку этих данных в таблицу. По умолчанию таблица называется `table`. В этом руководстве имя таблицы задано как `input`, чтобы поток данных был понятнее. Последний аргумент `clickhouse-local` — это запрос, который выбирает данные из таблицы (`FROM input`), а затем передаётся по конвейеру в `clickhouse-client` для заполнения таблицы `NYPD_Complaint`.
@@ -572,9 +544,7 @@ cat ${HOME}/NYPD_Complaint_Data_Current__Year_To_Date_.tsv \
   | clickhouse-client --query='INSERT INTO NYPD_Complaint FORMAT TSV'
 ```
 
-<div id="validate-data">
-  ## Проверьте данные
-</div>
+## Проверьте данные {#validate-data}
 
 <Note>
   Набор данных обновляется один или несколько раз в год, поэтому ваши результаты могут не совпадать с приведёнными в этом документе.
@@ -607,13 +577,9 @@ WHERE name = 'NYPD_Complaint'
 └─────────────────────────────────┘
 ```
 
-<div id="run-queries">
-  ## Выполните несколько запросов
-</div>
+## Выполните несколько запросов {#run-queries}
 
-<div id="query-1-compare-the-number-of-complaints-by-month">
-  ### Запрос 1. Сравните количество жалоб по месяцам
-</div>
+### Запрос 1. Сравните количество жалоб по месяцам {#query-1-compare-the-number-of-complaints-by-month}
 
 ```sql title="Query"
 SELECT
@@ -646,9 +612,7 @@ Query id: 7fbd4244-b32a-4acf-b1f3-c3aa198e74d9
 12 rows in set. Elapsed: 0.006 sec. Processed 208.99 thousand rows, 417.99 KB (37.48 million rows/s., 74.96 MB/s.)
 ```
 
-<div id="query-2-compare-total-number-of-complaints-by-borough">
-  ### Запрос 2. Сравните общее число жалоб по боро
-</div>
+### Запрос 2. Сравните общее число жалоб по боро {#query-2-compare-total-number-of-complaints-by-borough}
 
 ```sql title="Query"
 SELECT
@@ -675,8 +639,6 @@ Query id: 8cdcdfd4-908f-4be0-99e3-265722a2ab8d
 6 rows in set. Elapsed: 0.008 sec. Processed 208.99 thousand rows, 209.43 KB (27.14 million rows/s., 27.20 MB/s.)
 ```
 
-<div id="next-steps">
-  ## Следующие шаги
-</div>
+## Следующие шаги {#next-steps}
 
 [Практическое введение в разреженные первичные индексы в ClickHouse](/ru/guides/clickhouse/data-modelling/sparse-primary-indexes) рассказывает о различиях между индексированием в ClickHouse и в традиционных реляционных базах данных, о том, как ClickHouse строит и использует разреженный первичный индекс, а также о лучших практиках индексирования.

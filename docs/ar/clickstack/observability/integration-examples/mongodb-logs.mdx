@@ -1,0 +1,348 @@
+---
+slug: /clickstack/observability/integration-examples/mongodb-logs
+title: 'مراقبة سجلات MongoDB باستخدام ClickHouse Observability'
+sidebarTitle: 'سجلات MongoDB'
+description: 'اجمع سجلات خادم MongoDB بتنسيق JSON باستخدام OpenTelemetry، ثم أرسلها إلى ClickHouse Observability.'
+doc_type: 'guide'
+keywords: ['MongoDB', 'السجلات', 'OTEL', 'ClickHouse Observability', 'مراقبة قواعد البيانات', 'الاستعلامات البطيئة']
+---
+
+import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
+
+import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
+
+اجمع سجلات خادم MongoDB باستخدام المستقبِل `filelog` في OpenTelemetry، وأرسلها إلى ClickHouse Observability. يمكنك استخدام [مجموعة البيانات التجريبية](#demo-dataset) لتجربة التكامل دون الحاجة إلى نشر MongoDB.
+
+## المتطلبات المسبقة {#prerequisites}
+
+* خدمة ClickHouse Observability
+* Docker و`curl`
+* لاستخدام سجلاتك الخاصة: نشر MongoDB مُدار ذاتيًا بالإصدار 4.4 أو أحدث، مع إمكانية الوصول إلى ملفات السجل الخاصة به بتنسيق JSON
+
+### بيانات الاتصال {#connection-details}
+
+<Tabs>
+  <Tab title="مُدار بالكامل">
+    <BetaBadge label="عرض تجريبي" />
+
+    افتح ClickHouse Observability وانتقل إلى **Team Settings → Data → Managed Telemetry**. انسخ نقطة نهاية OTLP HTTP ومفتاح API الخاصين بك. يمكنك استخدام **Copy connection details** لنسخ التهيئة، أو **Reveal key** لإظهار المفتاح المخفي.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![بيانات الاتصال في Managed Telemetry](/images/clickstack/getting-started/observability-managed-telemetry.png)
+      </Frame>
+    </div>
+
+    لتشغيل أمثلة مُصدِّر OTLP أدناه، عيّن المتغيرات التالية في الطرفية التي ستشغّل فيها جامع البيانات:
+
+    ```bash
+    export OTEL_EXPORTER_OTLP_ENDPOINT='https://YOUR_OTEL_ENDPOINT:4318'
+    export OTEL_EXPORTER_OTLP_AUTHORIZATION='Bearer YOUR_API_KEY'
+    ```
+
+    استبدل العناصر النائبة بنقطة النهاية الدقيقة، بما فيها المنفذ، وبمفتاح API الخاص بخدمتك. استخدم نقطة نهاية HTTP الأساسية دون اللاحقة `/v1/logs`، إذ يُلحق المُصدِّر مسار الإشارة تلقائيًا.
+  </Tab>
+
+  <Tab title="مُدار ذاتيًا">
+    استخدم نقطة نهاية OTLP HTTP الخاصة بجامع البيانات، على أن يكون الوصول إليها ممكنًا (مثل `http://YOUR_COLLECTOR_HOST:4318`)، إلى جانب إعدادات المصادقة. إذا كان جامع البيانات لا يتطلب مصادقة، فاحذف كتلة `headers` الخاصة بالمُصدِّر من التهيئات أدناه. راجع [دليل البدء للإصدار المُدار ذاتيًا](/ar/clickstack/self-configured/getting-started/managed) للاطلاع على إرشادات الإعداد.
+
+    ```bash
+    export OTEL_EXPORTER_OTLP_ENDPOINT='http://YOUR_COLLECTOR_HOST:4318'
+    export OTEL_EXPORTER_OTLP_AUTHORIZATION='YOUR_INGESTION_KEY'
+    ```
+  </Tab>
+</Tabs>
+
+يجب أن يكون الوصول إلى نقطة النهاية ممكنًا من حاوية جامع البيانات. إذا كان جامع البيانات الوجهة يعمل على هذا الحاسوب، فاستخدم `http://host.docker.internal:4318`. تتضمن أوامر Docker أدناه مطابقة المضيف.
+
+## التكامل مع نسخة MongoDB قائمة {#existing-mongodb}
+
+<Steps>
+  <Step title="التحقق من تهيئة التسجيل في MongoDB" id="verify-mongodb">
+    يستخدم MongoDB 4.4 والإصدارات الأحدث سجلات خادم منظَّمة بصيغة JSON. تحقّق من قسم `systemLog` في ملف تهيئة MongoDB. ومن المسارات الشائعة للسجل على Linux المسار `/var/log/mongodb/mongod.log`.
+
+    إذا كان MongoDB يكتب السجلات إلى stdout فقط، فهيّئ التسجيل إلى ملف في `mongod.conf`:
+
+    ```yaml
+    systemLog:
+      destination: file
+      path: /var/log/mongodb/mongod.log
+      logAppend: true
+    ```
+
+    أنشئ الدليل بصلاحيات تسمح لـ MongoDB بالكتابة فيه ولجامع البيانات بالقراءة منه. وفي عمليات النشر المعتمدة على الحاويات، شارك دليل السجلات مع جامع البيانات وتأكد من أن MongoDB يحمّل ملف التهيئة.
+
+    أعد تشغيل MongoDB وفق آلية النشر المعتمدة لديك، على سبيل المثال:
+
+    ```bash
+    sudo systemctl restart mongod
+    # أو، في حالة Docker:
+    docker restart <mongodb-container>
+    ```
+  </Step>
+
+  <Step title="تهيئة جامع البيانات" id="configure-collector">
+    احفظ ما يلي باسم `mongodb-monitoring.yaml`:
+
+    ```yaml
+    receivers:
+      filelog/mongodb:
+        include:
+          - /var/log/mongodb/mongod.log
+        start_at: end
+        operators:
+          - type: json_parser
+            parse_from: body
+            parse_to: attributes
+            timestamp:
+              parse_from: attributes.t.$$date
+              layout: '2006-01-02T15:04:05.000Z07:00'
+              layout_type: gotime
+            severity:
+              parse_from: attributes.s
+              overwrite_text: true
+              mapping:
+                fatal: F
+                error: E
+                warn: W
+                info: I
+                debug:
+                  - D1
+                  - D2
+                  - D3
+                  - D4
+                  - D5
+
+          - type: move
+            from: attributes.msg
+            to: body
+
+          - type: add
+            field: attributes.source
+            value: "mongodb"
+
+          - type: add
+            field: resource["service.name"]
+            value: "mongodb-service"
+    processors:
+      memory_limiter:
+        check_interval: 1s
+        limit_mib: 400
+        spike_limit_mib: 100
+      transform/mongodb:
+        error_mode: propagate
+        log_statements:
+          - context: log
+            statements:
+              - set(log.severity_text, ToLowerCase(log.severity_text))
+      batch:
+        timeout: 5s
+        send_batch_size: 500
+        send_batch_max_size: 500
+    exporters:
+      otlp_http/observability:
+        endpoint: ${env:OTEL_EXPORTER_OTLP_ENDPOINT}
+        headers:
+          authorization: ${env:OTEL_EXPORTER_OTLP_AUTHORIZATION}
+    service:
+      pipelines:
+        logs/mongodb:
+          receivers: [filelog/mongodb]
+          processors: [memory_limiter, transform/mongodb, batch]
+          exporters: [otlp_http/observability]
+    ```
+
+    يقرأ المحلل النحوي حقلَي الطابع الزمني ومستوى الخطورة في MongoDB، وينقل `msg` إلى متن السجل، ويُبقي حقولًا مثل `c` و`ctx` و`id` و`attr` بوصفها سمات للسجل. أبقِ `$$date` كما هو: إذ يحوّل جامع البيانات علامة الدولار المُهرَّبة إلى الحقل `$date` في MongoDB. ويقرأ المستقبِل في الوضع الحي العناصر الجديدة فقط بفضل `start_at: end`.
+  </Step>
+
+  <Step title="تشغيل جامع البيانات" id="run-collector">
+    اضبط [متغيرات الاتصال](#connection-details)، ثم شغّل الأمر من دليل التهيئة. وعدّل مسار السجل على المضيف عند الحاجة. وإذا كانت الملفات قابلة للقراءة من قِبل المجموعة، فأضف `--group-add LOG_GROUP_ID` مستخدمًا معرّف المجموعة الرقمي الذي يعرضه الأمر `ls -ln /var/log/mongodb`.
+
+    ```bash
+    docker run --rm --name mongodb-logs-collector \
+      --add-host=host.docker.internal:host-gateway \
+      --memory=512m \
+      -e OTEL_EXPORTER_OTLP_ENDPOINT \
+      -e OTEL_EXPORTER_OTLP_AUTHORIZATION \
+      -v "$(pwd)/mongodb-monitoring.yaml:/etc/otelcol-contrib/config.yaml:ro" \
+      -v /var/log/mongodb:/var/log/mongodb:ro \
+      otel/opentelemetry-collector-contrib:0.161.0 \
+      --config=/etc/otelcol-contrib/config.yaml
+    ```
+
+    اترك الطرفية مفتوحة، وولِّد نشاطًا على الخادم ينتج عنه إدخالات سجل جديدة. وأوقف التشغيل بالضغط على **Ctrl+C** عند الانتهاء من الاختبار.
+  </Step>
+
+  <Step title="التحقق من السجلات" id="verify-logs">
+    افتح **بحث**، واختر **Logs**، وصفِّ النتائج باستخدام `ServiceName:mongodb-service`، ثم اختر **Last 15 minutes**. يُفترض أن تظهر لك رسائل الخادم مع طوابعها الزمنية ومستويات خطورتها بعد تحليلها.
+  </Step>
+</Steps>
+
+## مجموعة بيانات تجريبية {#demo-dataset}
+
+تحتوي العينة على 6,956 إدخالًا من سجلات خادم MongoDB تغطي نحو 24 ساعة. يُحدِّث جامع البيانات الطوابع الزمنية لهذه الإدخالات مع الإبقاء على الرسائل والسمات المنظَّمة كما هي.
+
+<Steps>
+  <Step title="تنزيل العينة" id="download-sample">
+    ```bash
+    curl -fL -o mongod.log \
+      https://datasets-documentation.s3.eu-west-3.amazonaws.com/clickstack-integrations/mongodb/mongod.log
+    ```
+  </Step>
+
+  <Step title="تهيئة جامع البيانات التجريبي" id="configure-demo">
+    احفظ ما يلي باسم `mongodb-demo.yaml`:
+
+    ```yaml
+    receivers:
+      filelog/mongodb:
+        include:
+          - /var/log/mongodb/mongod.log
+        start_at: beginning
+        operators:
+          - type: json_parser
+            parse_from: body
+            parse_to: attributes
+            timestamp:
+              parse_from: attributes.t.$$date
+              layout: '2006-01-02T15:04:05.000Z07:00'
+              layout_type: gotime
+            severity:
+              parse_from: attributes.s
+              overwrite_text: true
+              mapping:
+                fatal: F
+                error: E
+                warn: W
+                info: I
+                debug:
+                  - D1
+                  - D2
+                  - D3
+                  - D4
+                  - D5
+
+          - type: move
+            from: attributes.msg
+            to: body
+
+          - type: add
+            field: attributes.source
+            value: "mongodb-demo"
+
+          - type: add
+            field: resource["service.name"]
+            value: "mongodb-demo"
+    processors:
+      memory_limiter:
+        check_interval: 1s
+        limit_mib: 400
+        spike_limit_mib: 100
+      transform/mongodb:
+        error_mode: propagate
+        log_statements:
+          - context: log
+            statements:
+              - set(log.severity_text, ToLowerCase(log.severity_text))
+      transform/demo_timestamps:
+        error_mode: propagate
+        log_statements:
+          - context: log
+            statements:
+              - set(log.time, Now() - Duration("2m") - (Time("2026-03-09T23:59:52.193Z", "%Y-%m-%dT%H:%M:%S.%LZ") - log.time))
+      batch:
+        timeout: 5s
+        send_batch_size: 500
+        send_batch_max_size: 500
+    exporters:
+      otlp_http/observability:
+        endpoint: ${env:OTEL_EXPORTER_OTLP_ENDPOINT}
+        headers:
+          authorization: ${env:OTEL_EXPORTER_OTLP_AUTHORIZATION}
+    service:
+      pipelines:
+        logs/mongodb:
+          receivers: [filelog/mongodb]
+          processors: [memory_limiter, transform/mongodb, transform/demo_timestamps, batch]
+          exporters: [otlp_http/observability]
+    ```
+  </Step>
+
+  <Step title="تشغيل جامع البيانات التجريبي" id="run-demo">
+    اضبط [متغيرات الاتصال](#connection-details)، ثم شغِّل الأمر التالي من الدليل الذي يضم الملفين:
+
+    ```bash
+    docker run --rm --name mongodb-logs-demo-collector \
+      --add-host=host.docker.internal:host-gateway \
+      --memory=512m \
+      -e OTEL_EXPORTER_OTLP_ENDPOINT \
+      -e OTEL_EXPORTER_OTLP_AUTHORIZATION \
+      -v "$(pwd)/mongodb-demo.yaml:/etc/otelcol-contrib/config.yaml:ro" \
+      -v "$(pwd)/mongod.log:/var/log/mongodb/mongod.log:ro" \
+      otel/opentelemetry-collector-contrib:0.161.0 \
+      --config=/etc/otelcol-contrib/config.yaml
+    ```
+
+    أبقِ الطرفية مفتوحة ريثما تتحقق من استيعاب البيانات، ثم أوقف التشغيل بالضغط على **Ctrl+C** عند الانتهاء. وعند تشغيل العرض التوضيحي مجددًا، يُعاد استيعاب العينة بطوابع زمنية محدَّثة.
+  </Step>
+
+  <Step title="التحقق من السجلات التجريبية" id="verify-demo">
+    افتح **بحث**، واختر **Logs**، ثم صفِّ النتائج باستخدام `ServiceName:mongodb-demo`، واختر **Last 2 days**.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![سجلات MongoDB التجريبية مع الرسائل المحلَّلة ومستوى الخطورة في صفحة البحث في ClickHouse Observability](/images/clickstack/observability-mongodb-demo-logs.png)
+      </Frame>
+    </div>
+  </Step>
+</Steps>
+
+## لوحات المعلومات والتصور المرئي {#dashboards}
+
+<Steps>
+  <Step title={<TrackedLink href="https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/mongodb-logs-dashboard.json" download="mongodb-logs-dashboard.json" eventName="docs.mongodb_logs_monitoring.dashboard_download">تنزيل تهيئة لوحة المعلومات</TrackedLink>} id="download-dashboard" />
+
+  <Step title="استيراد لوحة المعلومات" id="import-dashboard">
+    1. افتح **لوحات المعلومات** وانقر على **Import** في الزاوية العلوية اليمنى.
+    2. حمّل الملف `mongodb-logs-dashboard.json`.
+    3. اربط المخططات بمصدر **Logs** الخاص بك، ثم انقر على **Finish Import**.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![زر استيراد لوحة المعلومات](/images/clickstack/observability-import-dashboard.png)
+      </Frame>
+    </div>
+  </Step>
+
+  <Step title="عرض لوحة المعلومات" id="view-dashboard">
+    لبيانات العينة، يمكنك اختياريًا التصفية حسب `ServiceName:mongodb-demo` واختيار **Last 2 days**. أما لسجلاتك الخاصة، فاستخدم `ServiceName:mongodb-service` مع نطاق زمني يشمل سجلاتك.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![لوحة معلومات سجلات MongoDB في ClickHouse Observability تعرض حجم السجلات ومستويات الخطورة والمكوّنات والاستعلامات البطيئة وأحداث الاتصال](/images/clickstack/observability-mongodb-logs-dashboard.png)
+      </Frame>
+    </div>
+  </Step>
+</Steps>
+
+## استكشاف الأخطاء وإصلاحها {#troubleshooting}
+
+### عدم ظهور السجلات {#no-logs}
+
+افحص مخرجات جامع البيانات بحثًا عن أخطاء في صلاحيات الملفات أو التحليل النحوي أو المصادقة أو التصدير. وتأكد من أن الخادم يكتب إلى الدليل المربوط، وأن أسماء الملفات تتطابق مع قائمة `include` الخاصة بالمستقبِل. علمًا بأن التهيئة الحالية لا تقرأ إلا العناصر الجديدة.
+
+### عدم تحليل السجلات نحويًا بشكل صحيح {#parsing-errors}
+
+تحقّق من أن الملف يحتوي على كائن JSON واحد في كل سطر:
+
+```bash
+tail -n 1 /var/log/mongodb/mongod.log | python3 -m json.tool
+```
+
+يتوقع المحلل النحوي سجلات MongoDB بتنسيق JSON من الإصدار 4.4 أو أحدث، أما السجلات النصية القديمة فتتطلب محللًا نحويًا مختلفًا. احرص على الإبقاء على إفلات `$$date` في تهيئة collector.
+
+## الخطوات التالية {#next-steps}
+
+* أعدّ [التنبيهات](/ar/clickstack/observability/features/alerts) للأخطاء أو الاستعلامات البطيئة.
+* أنشئ [لوحات معلومات](/ar/clickstack/observability/features/dashboards/overview) إضافية لمراقبة مجموعة النسخ المتماثلة أو تتبّع الاتصالات.
+* راجع [إرسال بيانات OpenTelemetry](/ar/clickstack/observability/ingesting-data/opentelemetry) للاطلاع على إرشادات النشر.

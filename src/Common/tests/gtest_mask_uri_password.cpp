@@ -75,14 +75,14 @@ TEST(MaskURIPassword, FollowsRFC3986AndFailsClosed)
     for (const auto & [input, expected] : cases)
     {
         std::string uri = input;
-        EXPECT_EQ(maskURIPassword(&uri), input != expected) << "return value for: " << input;
+        EXPECT_EQ(maskURIPassword(uri), input != expected) << "return value for: " << input;
         EXPECT_EQ(uri, expected) << "result for: " << input;
     }
 
     for (const auto & [input, expected] : rfc_cases)
     {
         std::string uri = input;
-        EXPECT_EQ(maskURIPassword(&uri, URI_AUTHORITY_TERMINATORS), input != expected) << "return value for: " << input;
+        EXPECT_EQ(maskURIPassword(uri, URI_AUTHORITY_TERMINATORS), input != expected) << "return value for: " << input;
         EXPECT_EQ(uri, expected) << "result for: " << input;
     }
 }
@@ -90,14 +90,14 @@ TEST(MaskURIPassword, FollowsRFC3986AndFailsClosed)
 TEST(MaskURIPassword, MasksThePassword)
 {
     std::string uri = "https://user:hunter2@example.com:443/db";
-    EXPECT_TRUE(maskURIPassword(&uri));
+    EXPECT_TRUE(maskURIPassword(uri));
     EXPECT_EQ(uri, "https://user:[HIDDEN]@example.com:443/db");
 }
 
 TEST(MaskURIPassword, LeavesURIsWithoutAPasswordAlone)
 {
     std::string uri = "https://example.com/db";
-    EXPECT_FALSE(maskURIPassword(&uri));
+    EXPECT_FALSE(maskURIPassword(uri));
     EXPECT_EQ(uri, "https://example.com/db");
 }
 

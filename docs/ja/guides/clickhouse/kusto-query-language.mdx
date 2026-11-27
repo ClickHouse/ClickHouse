@@ -11,7 +11,7 @@ ClickHouse では、SQL の代わりに [Kusto Query Language](https://learn.mic
 のサブセットをパースできます。このダイアレクトは**ベータ**版で、デフォルトでは無効です。
 
 ```sql
-SET allow_experimental_kusto_dialect = 1;
+SET enable_kusto_dialect = 1;
 SET dialect = 'kusto';
 
 StormEvents

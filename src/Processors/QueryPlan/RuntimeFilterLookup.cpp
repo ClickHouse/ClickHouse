@@ -10,13 +10,16 @@
 #include <vector>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/replaceNegativeZeros.h>
 #include <Columns/ColumnSet.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/IColumn.h>
 #include <Core/ProtocolDefines.h>
+#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeSet.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/TypeTree.h>
@@ -32,6 +35,7 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/HashTablesStatistics.h>
 #include <Interpreters/PreparedSets.h>
+#include <Planner/PlannerActionsVisitor.h>
 #include <Processors/QueryPlan/RuntimeFilterBloomSizing.h>
 #include <Processors/QueryPlan/RuntimeFilterLookup.h>
 #include <Common/FieldAccurateComparison.h>
@@ -297,6 +301,17 @@ bool equalsCanDisagreeWithHashTable(const IDataType & type)
     return anyInTypeTree(type, [](const IDataType & nested) { return isFloat(nested) || isObject(nested); });
 }
 
+/// The JOIN compares the bytes, while `Set` converts a key to a `Bool` member type, turning every nonzero byte into 1.
+DataTypePtr setTypeComparingBytes(const DataTypePtr & type)
+{
+    if (!isBool(removeLowCardinalityAndNullable(type)))
+        return type;
+    return rewriteTypeTree(
+        type,
+        [](const DataTypePtr & nested) -> DataTypePtr { return isBool(nested) ? std::make_shared<DataTypeUInt8>() : nested; },
+        CustomizationPolicy::Keep);
+}
+
 /// A runtime filter key comes from an `=` predicate, which never matches NULL, so a `Nullable` integer key keeps
 /// only its non-NULL values, in the set of the nested type.
 bool canDropNullKeys(const DataTypePtr & type)
@@ -318,8 +333,13 @@ void hashFixedSizeColumn(const char * raw_data, size_t value_size, size_t row_co
 }
 
 template <typename ProcessBatch>
-void forEachColumnHashBatch(const IColumn & column, UInt64 seed, ProcessBatch && process_batch, size_t first_row = 0)
+void forEachColumnHashBatch(const IColumn & original_column, UInt64 seed, ProcessBatch && process_batch, size_t first_row = 0)
 {
+    /// The join matches `-0.` and `0.` as equal keys, so the Bloom filter has to hash them identically,
+    /// both when inserting and when probing.
+    const ColumnPtr normalized_column = replaceNegativeZeros(original_column);
+    const IColumn & column = normalized_column ? *normalized_column : original_column;
+
     const size_t row_count = column.size();
     if (row_count <= first_row)
         return;
@@ -409,7 +429,7 @@ ExactSetRuntimeFilter<negate>::ExactSetRuntimeFilter(
     , exact_values_limit(exact_values_limit_)
     , lookup_state(Many{std::make_shared<Set>(SizeLimits{}, -1, argument_can_have_nulls && !drop_null_keys)})
 {
-    ColumnsWithTypeAndName set_header = {ColumnWithTypeAndName(filter_column_target_type_, String())};
+    ColumnsWithTypeAndName set_header = {ColumnWithTypeAndName(setTypeComparingBytes(filter_column_target_type_), String())};
     getExactValues().setHeader(set_header);
     getExactValues().fillSetElements(); /// Save the values, not just hashes.
 }
@@ -1451,6 +1471,31 @@ static const ActionsDAG::Node & findOrAddInput(ActionsDAG & dag, const String & 
     return dag.addInput(name, type);
 }
 
+/// Whether `CAST` returns the values unchanged, as `FunctionCast::prepareImpl` decides: the types are `equals` and have the
+/// same custom name, and it is not a cast from `UInt8` to `Bool`, which converts 2 to 1.
+static bool isIdentityCast(const DataTypePtr & from, const DataTypePtr & to)
+{
+    const auto from_nested = removeLowCardinalityAndNullable(from);
+    const auto to_nested = removeLowCardinalityAndNullable(to);
+    if (isUInt8(from_nested) && (isBool(to_nested) || isSimpleAggregateFunctionOfBool(*to_nested)))
+        return false;
+    const auto * from_name = from_nested->getCustomName();
+    const auto * to_name = to_nested->getCustomName();
+    const bool same_custom_name = from_name ? to_name && from_name->getName() == to_name->getName() : !to_name;
+    return same_custom_name && from->equals(*to);
+}
+
+/// The function of the recorded cast is reused, so that it converts with the settings it was resolved with, e.g.
+/// `date_time_overflow_behavior`.
+static const ActionsDAG::Node & addKeyCast(ActionsDAG & dag, const ActionsDAG::Node & key, const FunctionBasePtr & cast)
+{
+    Field type_name = cast->getResultType()->getName();
+    auto string_type = std::make_shared<DataTypeString>();
+    const auto & type_name_node
+        = dag.addColumn(string_type->createColumnConst(0, type_name), string_type, calculateConstantActionNodeName(type_name));
+    return dag.addFunction(cast, {&key, &type_name_node}, {});
+}
+
 static const ActionsDAG::Node * convertRuntimeFilterToKeyConditionDAG(
     const RuntimeFilter & filter,
     const RuntimeFilterIndexAnalysisDescriptor & descriptor,
@@ -1482,13 +1527,16 @@ static const ActionsDAG::Node * convertRuntimeFilterToKeyConditionDAG(
     else
         key_node_ptr = &dag.addInput(column_name, column_type);
     const auto & key_node = *key_node_ptr;
-    const auto & key_casted = key_node.result_type->equals(*target_type)
-        ? key_node
-        : dag.addCast(key_node, target_type, {}, context);
+    /// A cast that keeps the values (e.g. a `DateTime` time zone change) is left out, so the indexes can use the key.
+    const auto & cast = descriptor.key_cast;
+    const bool apply_cast = cast && !isIdentityCast(key_node.result_type, cast->getResultType());
+    const auto & key_casted = apply_cast ? addKeyCast(dag, key_node, cast) : key_node;
+    chassert(key_casted.result_type->equals(*target_type));
 
     if (exact_values)
     {
-        ColumnWithTypeAndName set_values(exact_values, target_type, "__runtime_filter_in_values_" + column_name);
+        ColumnWithTypeAndName set_values(
+            exact_values, setTypeComparingBytes(key_casted.result_type), "__runtime_filter_in_values_" + column_name);
         auto future_set = std::make_shared<FutureSetFromTuple>(
             CityHash_v1_0_2::uint128{}, ASTPtr{}, ColumnsWithTypeAndName{set_values}, false, SizeLimits{});
         auto set_column = ColumnConst::create(ColumnSet::create(1, std::move(future_set)), 0);

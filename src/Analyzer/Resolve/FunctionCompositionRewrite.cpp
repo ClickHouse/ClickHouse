@@ -655,7 +655,7 @@ QueryTreeNodePtr fuseCompositionToLambda(
     const ResolveIdentifierOperand & resolve_identifier_operand,
     const IsHigherOrderFunction & is_higher_order_function)
 {
-    if (!compose_node.getParameters().getNodes().empty() || compose_node.isWindowFunction()
+    if (!compose_node.getParameters().getNodes().empty() || compose_node.hasWindow()
         || compose_node.getNullsAction() != NullsAction::EMPTY)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "The function composition operator `|` cannot have parameters, a window, or a NULLS action: {}",

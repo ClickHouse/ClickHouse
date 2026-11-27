@@ -11,7 +11,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # With the setting off the extracted tuple is not Nullable, so the null map is the only place that can
 # say the element is absent. Part thresholds are pinned so that the compact and the wide reader, which
 # resolve the subcolumn through different code, are each covered on every run.
-${CLICKHOUSE_LOCAL} --allow_nullable_tuple_in_extracted_subcolumns=0 --enable_variant_type=1 --query "
+${CLICKHOUSE_LOCAL} --allow_nullable_tuple_in_extracted_subcolumns=0 --query "
 CREATE TABLE t_dyn (id UInt64, value Dynamic) ENGINE = MergeTree ORDER BY id
     SETTINGS min_bytes_for_wide_part = 1000000000, min_rows_for_wide_part = 1000000000;
 INSERT INTO t_dyn VALUES (1, CAST(tuple(CAST(1, 'Nullable(UInt32)'), 's'), 'Tuple(a Nullable(UInt32), b String)'));
@@ -228,7 +228,7 @@ SELECT 'element null map', id, value.UInt32.null FROM t_controls ORDER BY id;
 
 # With the setting on the extracted tuple is itself Nullable, so absence is already expressed as NULL
 # and none of the above applies: this invocation must print exactly what it printed before the fix.
-${CLICKHOUSE_LOCAL} --allow_nullable_tuple_in_extracted_subcolumns=1 --enable_variant_type=1 --query "
+${CLICKHOUSE_LOCAL} --allow_nullable_tuple_in_extracted_subcolumns=1 --query "
 CREATE TABLE t_dyn (id UInt64, value Dynamic) ENGINE = MergeTree ORDER BY id
     SETTINGS min_bytes_for_wide_part = 1000000000, min_rows_for_wide_part = 1000000000;
 INSERT INTO t_dyn VALUES (1, CAST(tuple(CAST(1, 'Nullable(UInt32)'), 's'), 'Tuple(a Nullable(UInt32), b String)'));
