@@ -464,6 +464,13 @@ Chunk RabbitMQSource::generateImpl()
     if (total_rows == 0)
         return {};
 
+    /// If the broker has closed the connection in the meantime, it delivers these messages again, so they are not inserted now.
+    if (!consumer->checkConnection())
+    {
+        LOG_DEBUG(log, "The connection was lost while reading, discarding the block of {} rows, which will be delivered again", total_rows);
+        return {};
+    }
+
     auto result_columns = executor.getResultColumns();
     for (auto & column : virtual_columns)
         result_columns.push_back(std::move(column));

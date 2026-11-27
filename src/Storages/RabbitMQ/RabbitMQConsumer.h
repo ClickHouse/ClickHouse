@@ -71,6 +71,11 @@ public:
     /// Waits until a message is available, the timeout passes, the consumer is stopped, or `is_cancelled` returns true.
     void waitForMessages(std::optional<uint64_t> timeout_ms = std::nullopt, std::function<bool()> is_cancelled = {});
 
+    /// Whether the connection is still usable, reading what is already in the socket to notice its closing by the broker.
+    /// Messages that are read from a connection which is closed already are delivered again by the broker, so a source checks
+    /// the connection before it lets its block be inserted, to avoid inserting them twice.
+    bool checkConnection();
+
     /// Sends a heartbeat if it is due, so that the broker does not close the connection of an idle consumer.
     void heartbeat();
 

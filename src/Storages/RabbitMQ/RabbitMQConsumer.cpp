@@ -14,6 +14,9 @@ namespace DB
 /// Waiting for messages is done in slices of this length, to notice that the consumer is stopped or the read is cancelled.
 static constexpr UInt64 WAIT_SLICE_MS = 100;
 
+/// Bounds the deliveries buffered in memory by `checkConnection`.
+static constexpr size_t MAX_READ_AHEAD_DELIVERIES = 100000;
+
 RabbitMQConsumer::RabbitMQConsumer(
         const RabbitMQConfiguration & configuration_,
         const std::vector<String> & queues_,
@@ -116,6 +119,22 @@ void RabbitMQConsumer::waitForMessages(std::optional<uint64_t> timeout_ms, std::
         if (receive(std::min(WAIT_SLICE_MS, timeout - elapsed)))
             return;
     }
+}
+
+bool RabbitMQConsumer::checkConnection()
+{
+    if (state != State::OK)
+        return false;
+
+    try
+    {
+        connection.get().receiveAvailable(MAX_READ_AHEAD_DELIVERIES);
+    }
+    catch (...) /// Ok: setError logs the exception
+    {
+        setError("checking the connection");
+    }
+    return state == State::OK;
 }
 
 void RabbitMQConsumer::heartbeat()
