@@ -144,11 +144,13 @@ CatalogTables S3TablesCatalog::getTables() const
 {
     auto namespaces = listChildNamespaces("");
 
-    auto & pool = getContext()->getIcebergCatalogThreadpool();
-    DB::ThreadPoolCallbackRunnerLocal<void> runner(pool, DB::ThreadName::DATALAKE_REST_CATALOG);
-
+    /// Must outlive `runner`: its jobs capture them by reference.
     DB::Names tables;
     std::mutex mutex;
+
+    auto & pool = getContext()->getIcebergCatalogThreadpool();
+    DB::ThreadPoolCallbackRunnerLocal<void> runner(pool, DB::ThreadName::DATALAKE_REST_CATALOG);
+    runner.reserve(namespaces.size());
     for (const auto & ns : namespaces)
     {
         runner.enqueueAndKeepTrack(
