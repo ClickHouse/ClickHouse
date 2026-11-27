@@ -647,6 +647,7 @@
 
 namespace CurrentMetrics
 {
+    /// Compiled without LTO in ThinLTO builds (see src/CMakeLists.txt): keep this file to the list of metrics and its data.
     #define M(NAME, DOCUMENTATION) extern const Metric NAME = Metric(__COUNTER__);
         APPLY_FOR_METRICS(M)
     #undef M

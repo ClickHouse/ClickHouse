@@ -147,6 +147,10 @@ if (OMIT_HEAVY_DEBUG_SYMBOLS)
 endif()
 
 add_headers_and_sources(clickhouse_common_io Common)
+# Without LTO these lists (and their data) are not imported into other modules, so adding an entry does not
+# invalidate the ThinLTO cache entries of the modules that use them.
+set_source_files_properties(Common/ProfileEvents.cpp Common/CurrentMetrics.cpp
+    PROPERTIES COMPILE_OPTIONS "${NO_LTO_COMPILE_OPTIONS}")
 add_headers_and_sources(clickhouse_common_io Common/RegexpJIT)
 add_headers_and_sources(clickhouse_common_io Common/Crypto)
 add_headers_and_sources(clickhouse_common_io Common/JSONParsers)
