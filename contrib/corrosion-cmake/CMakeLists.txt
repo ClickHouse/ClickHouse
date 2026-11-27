@@ -184,17 +184,10 @@ if (LINKER_NAME MATCHES "lld")
     list(APPEND RUSTFLAGS "-C" "link-arg=-fuse-ld=lld")
 endif()
 
-if (CMAKE_OSX_SYSROOT)
-    list(APPEND RUSTFLAGS "-C" "link-arg=-isysroot")
-    list(APPEND RUSTFLAGS "-C" "link-arg=${CMAKE_OSX_SYSROOT}")
-elseif(CMAKE_SYSROOT)
-    list(APPEND RUSTFLAGS "-C" "link-arg=--sysroot")
-    list(APPEND RUSTFLAGS "-C" "link-arg=${CMAKE_SYSROOT}")
-endif()
-
-if (TOOLCHAIN_PATH)
-    list(APPEND RUSTFLAGS "-C" "link-arg=--gcc-toolchain=${TOOLCHAIN_PATH}")
-endif()
+# RUSTFLAGS must not contain absolute paths (such as the sysroot): Cargo hashes them into the names of the files and the
+# directories of every crate, including the `OUT_DIR` of build scripts, whose path goes into the generated code, so the
+# build would depend on the directory of the checkout. Corrosion always passes `--target`, so RUSTFLAGS are not passed
+# to build scripts and procedural macros, the only crates that rustc links, and need no sysroot.
 
 # Rebuild the standard library with our RUSTFLAGS, so it gets the sanitizer instrumentation and the stack protector too.
 set(RUST_CARGO_BUILD_STD "-Zbuild-std=std,panic_abort,core,alloc")
