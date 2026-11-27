@@ -8,6 +8,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeTime64.h>
+#include <DataTypes/DataTypeFunction.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <unordered_set>
@@ -1741,51 +1742,106 @@ static NameSet getAllSubexpressionNames(const ExpressionActions & key_expr)
     return names;
 }
 
-/// A filter names a column by its raw name and a key node by its expression, so a column
-/// named `f(x)` and the key node computing `f(x)` look the same.
-static NameSet getColumnsNamedLikeKeyExpressions(const ActionsDAGWithInversionPushDown & filter_dag, const ExpressionActions & key_expr)
+static bool hasInputNamedLikeExpression(const ActionsDAG & dag)
 {
-    if (!filter_dag.dag)
-        return {};
+    return std::ranges::any_of(dag.getInputs(), [](const auto * input) { return input->result_name.contains('('); });
+}
 
+/// Index analysis finds the nodes of a key by name, and a stored column can have the name of an expression.
+/// This makes a copy of the filter where a node that is named like a key node of the other kind is a column that
+/// the key does not read: an expression named like a column of the key, and a column named like a node that the key computes.
+struct KeyNameCollisionResolver
+{
+    const ContextPtr & context;
+    NameSet key_names;
+    NameSet stored_names;
     NameSet computed_names;
-    NameSet input_names;
-    for (const auto & node : key_expr.getActionsDAG().getNodes())
+    ActionsDAG dag;
+    std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> copies;
+
+    KeyNameCollisionResolver(const ActionsDAG & key_dag, const ContextPtr & context_)
+        : context(context_)
     {
-        if (node.type == ActionsDAG::ActionType::INPUT)
-            input_names.insert(node.result_name);
-        else if (node.type != ActionsDAG::ActionType::COLUMN)
-            computed_names.insert(node.result_name);
+        for (const auto & node : key_dag.getNodes())
+        {
+            key_names.insert(node.result_name);
+            if (node.type == ActionsDAG::ActionType::INPUT)
+                stored_names.insert(node.result_name);
+            else if (node.type != ActionsDAG::ActionType::COLUMN)
+                computed_names.insert(node.result_name);
+        }
     }
 
-    NameSet result;
-    for (const auto * input : filter_dag.dag->getInputs())
-        if (computed_names.contains(input->result_name) && !input_names.contains(input->result_name))
-            result.insert(input->result_name);
-
-    return result;
-}
-
-static bool readsInputNamedIn(const ActionsDAG::Node & root, const NameSet & names)
-{
-    std::unordered_set<const ActionsDAG::Node *> visited;
-    std::vector<const ActionsDAG::Node *> stack{&root};
-    while (!stack.empty())
+    const ActionsDAG::Node & addColumnThatKeyDoesNotRead(String name, const DataTypePtr & type)
     {
-        const auto * node = stack.back();
-        stack.pop_back();
-        if (!visited.insert(node).second)
-            continue;
-
-        if (node->type == ActionsDAG::ActionType::INPUT && names.contains(node->result_name))
-            return true;
-
-        for (const auto * child : node->children)
-            stack.push_back(child);
+        do
+            name += '#';
+        while (key_names.contains(name));
+        return dag.addInput(std::move(name), type);
     }
 
-    return false;
-}
+    bool isNamedLikeStoredColumn(const ActionsDAG::Node & node) const
+    {
+        /// The body of a lambda is not in the DAG, but the names of its nodes are in the name of the lambda.
+        const bool is_lambda = typeid_cast<const DataTypeFunction *>(node.result_type.get());
+        RPNBuilderTreeNode tree_node(&node, context);
+        for (const auto & name : {tree_node.getColumnName(), tree_node.getColumnNameWithModuloLegacy()})
+        {
+            if (is_lambda
+                    ? std::ranges::any_of(stored_names, [&](const auto & column) { return column.contains('(') && name.contains(column); })
+                    : stored_names.contains(name))
+                return true;
+        }
+        return false;
+    }
+
+    const ActionsDAG::Node & copy(const ActionsDAG::Node & node)
+    {
+        if (auto it = copies.find(&node); it != copies.end())
+            return *it->second;
+
+        const ActionsDAG::Node * res = nullptr;
+        bool is_expression = true;
+        switch (node.type)
+        {
+            case ActionsDAG::ActionType::INPUT:
+                is_expression = false;
+                res = computed_names.contains(node.result_name)
+                    ? &addColumnThatKeyDoesNotRead(node.result_name, node.result_type)
+                    : &dag.addInput({node.column, node.result_type, node.result_name});
+                break;
+            case ActionsDAG::ActionType::COLUMN:
+                res = &dag.addColumn(node.column, node.result_type, node.result_name);
+                break;
+            case ActionsDAG::ActionType::ALIAS:
+                is_expression = false;
+                res = &dag.addAlias(copy(*node.children.front()), node.result_name);
+                break;
+            case ActionsDAG::ActionType::ARRAY_JOIN:
+                res = &dag.addArrayJoin(copy(*node.children.front()), node.result_name);
+                break;
+            case ActionsDAG::ActionType::FUNCTION:
+            {
+                ActionsDAG::NodeRawConstPtrs children;
+                children.reserve(node.children.size());
+                for (const auto * child : node.children)
+                    children.push_back(&copy(*child));
+                res = &dag.addFunction(node.function_base, std::move(children), node.result_name);
+                break;
+            }
+            case ActionsDAG::ActionType::PLACEHOLDER:
+                is_expression = false;
+                res = &dag.addPlaceholder(node.result_name, node.result_type);
+                break;
+        }
+
+        if (is_expression && isNamedLikeStoredColumn(*res))
+            res = &addColumnThatKeyDoesNotRead(node.result_name, node.result_type);
+
+        copies.emplace(&node, res);
+        return *res;
+    }
+};
 
 void KeyCondition::getAllSpaceFillingCurves(const BuildInfo & info)
 {
@@ -1885,7 +1941,6 @@ KeyCondition::KeyCondition(
     auto info = BuildInfo {
         .key_expr = key_expr_,
         .key_subexpr_names = getAllSubexpressionNames(*key_expr_),
-        .columns_named_like_key_expressions = getColumnsNamedLikeKeyExpressions(filter_dag, *key_expr_),
         .require_ready_sets = require_ready_sets_};
 
     if (context->getSettingsRef()[Setting::analyze_index_with_space_filling_curves])
@@ -1900,7 +1955,12 @@ KeyCondition::KeyCondition(
 
     has_filter = true;
 
-    RPNBuilder<RPNElement> builder(filter_dag.predicate, context, [&](const RPNBuilderTreeNode & node, RPNElement & out)
+    const auto * predicate = filter_dag.predicate;
+    std::optional<KeyNameCollisionResolver> name_collision_resolver;
+    if (hasInputNamedLikeExpression(key_expr_->getActionsDAG()) || hasInputNamedLikeExpression(*filter_dag.dag))
+        predicate = &name_collision_resolver.emplace(key_expr_->getActionsDAG(), context).copy(*predicate);
+
+    RPNBuilder<RPNElement> builder(predicate, context, [&](const RPNBuilderTreeNode & node, RPNElement & out)
     {
         return extractAtomFromTree(node, info, out);
     });
@@ -5476,10 +5536,6 @@ void KeyCondition::extractAtomsFromTree(const RPNBuilderTreeNode & node, const B
         group.atoms.emplace_back(RPNElement::ALWAYS_FALSE);
         return;
     }
-
-    if (node_dag && !info.columns_named_like_key_expressions.empty()
-        && readsInputNamedIn(*node_dag, info.columns_named_like_key_expressions))
-        return;
 
     /// For example, `ORDER BY a` and `WHERE a = 1`. Here, the function is "equals".
     if (node.isFunction())
