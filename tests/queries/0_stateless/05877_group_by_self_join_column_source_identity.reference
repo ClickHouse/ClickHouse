@@ -25,3 +25,8 @@ column sources inside of the key
 []
 [1]
 [2]
+different sets for subqueries that differ in the side of the join
+0	0	1
+1	0	1
+1	1	1
+1

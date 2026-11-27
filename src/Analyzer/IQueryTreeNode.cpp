@@ -376,6 +376,12 @@ IQueryTreeNode::Hash IQueryTreeNode::getTreeHashWithColumnSources(
       * For each node in tree we update hash state with their content.
       * For weak nodes there is special handling. If we visit weak node first time we update hash state with weak node content and register
       * identifier for this node, for subsequent visits of this weak node we hash weak node identifier instead of content.
+      *
+      * A table expression that is a part of the tree has the identifier too, and the identifier is hashed at the position
+      * of the table expression in the tree. So the hash depends on which of the table expressions of the tree a column refers to:
+      * the hashes of `SELECT l.x FROM t AS l JOIN t AS r` and `SELECT r.x FROM t AS l JOIN t AS r` are different without
+      * the comparison of aliases, although the column sources `l` and `r` have the same content.
+      * The hash is used as the identity of a subquery, for example, in the name of a set for the `IN` function.
       */
     size_t & hashed_nodes = getTreeHashWorkCounter();
 
@@ -418,6 +424,12 @@ IQueryTreeNode::Hash IQueryTreeNode::getTreeHashWithColumnSources(
             }
 
             weak_node_to_identifier.emplace(node_to_process, weak_node_to_identifier.size());
+        }
+        else if (column_sources_comparison == ColumnSourcesComparison::ByContent && node_to_process->asTableExpression())
+        {
+            /// The identifier is new, or it is from a column that was visited before this table expression.
+            auto node_identifier_it = weak_node_to_identifier.emplace(node_to_process, weak_node_to_identifier.size()).first;
+            hash_state.update(node_identifier_it->second);
         }
 
         hash_state.update(static_cast<size_t>(node_to_process->getNodeType()));

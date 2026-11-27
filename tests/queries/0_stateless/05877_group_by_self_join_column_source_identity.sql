@@ -110,4 +110,27 @@ GROUP BY arrayMap(x -> x + l.number, [1]) WITH ROLLUP
 ORDER BY 1
 SETTINGS group_by_use_nulls = 1;
 
+SELECT 'different sets for subqueries that differ in the side of the join';
+
+SELECT
+    number IN (SELECT l.number AS n FROM numbers(2) AS l LEFT JOIN numbers(2) AS r ON 0) AS a,
+    number IN (SELECT r.number AS n FROM numbers(2) AS l LEFT JOIN numbers(2) AS r ON 0) AS b,
+    count()
+FROM numbers(3)
+GROUP BY a, b
+ORDER BY a, b
+SETTINGS rewrite_in_to_join = 0;
+
+-- Equal subqueries still use one set.
+SELECT count() FROM
+(
+    EXPLAIN
+    SELECT
+        number IN (SELECT l.number AS n FROM numbers(2) AS l LEFT JOIN numbers(2) AS r ON 0) AS a,
+        number + 1 IN (SELECT l.number AS n FROM numbers(2) AS l LEFT JOIN numbers(2) AS r ON 0) AS b
+    FROM numbers(3)
+    SETTINGS rewrite_in_to_join = 0
+)
+WHERE explain LIKE '%CreatingSet %';
+
 DROP TABLE t_self_join;

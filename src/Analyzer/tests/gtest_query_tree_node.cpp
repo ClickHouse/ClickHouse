@@ -269,6 +269,11 @@ TEST(QueryTreeNode, LocalComparisonOfColumnSources)
         ASSERT_TRUE(make_tree_with_column_from(0)->isEqual(*make_tree_with_column_from(0)));
         ASSERT_FALSE(make_tree_with_column_from(0)->isEqual(*make_tree_with_column_from(1)));
         ASSERT_FALSE(make_tree_with_column_from(1)->isEqual(*make_tree_with_column_from(0)));
+
+        /// And for the hash, which is used as the identity of a subquery.
+        ASSERT_EQ(make_tree_with_column_from(0)->getTreeHash(), make_tree_with_column_from(0)->getTreeHash());
+        ASSERT_EQ(make_tree_with_column_from(1)->getTreeHash(), make_tree_with_column_from(1)->getTreeHash());
+        ASSERT_NE(make_tree_with_column_from(0)->getTreeHash(), make_tree_with_column_from(1)->getTreeHash());
     }
 
     /// A column source inside of one tree is not equal to a column source outside of the other tree.
