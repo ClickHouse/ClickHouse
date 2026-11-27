@@ -54,6 +54,9 @@ RUN addgroup -S -g "${DEFAULT_GID}" clickhouse && \
     adduser -S -h "/var/lib/clickhouse" -s /bin/bash -G clickhouse -g "ClickHouse keeper" -u "${DEFAULT_UID}" clickhouse
 
 ARG TARGETARCH
+# `apk upgrade` runs before `apk add` because `apk add` never bumps packages already in
+# the base image, so without it the image keeps whatever (possibly vulnerable) packages
+# the `alpine` snapshot had at build time.
 RUN arch=${TARGETARCH:-amd64} \
     && cd /tmp && rm -f /tmp/*tgz && rm -f /tmp/*tgz.sha512 |: \
     && if [ -n "${DIRECT_DOWNLOAD_URLS}" ]; then \
@@ -79,6 +82,7 @@ RUN arch=${TARGETARCH:-amd64} \
     ; done \
     && rm /tmp/*.tgz /install -r \
     && chmod +x /entrypoint.sh \
+    && apk upgrade --no-cache \
     && apk add --no-cache su-exec bash tzdata \
     && cp /usr/share/zoneinfo/UTC /etc/localtime \
     && echo "UTC" > /etc/timezone
