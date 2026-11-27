@@ -14,12 +14,14 @@ struct DistributedQueryTaskBatch;
 String sendTaskBatch(const String & endpoint_uri, const String & unique_query_id, const DistributedQueryTaskBatch & batch,
     const String & unique_temp_file_path, const TaskCollectors & collectors, const ContextPtr & context);
 
-/// `for_cleanup` uses short HTTP timeouts and no retries so best-effort cleanup cannot block for the
-/// normal multi-minute request budget when a worker is slow or unreachable.
-DistributedQueryTaskStatus getTaskStatus(const String & endpoint_uri, const String & task_id, UInt32 wait_for_ms, const ContextPtr & context, bool for_cleanup = false);
+/// Returns the statuses of `task_ids`, in order, once one of them ends or fails or after `wait_for_ms`. `for_cleanup`: short
+/// timeouts and no retries.
+std::vector<DistributedQueryTaskStatusEntry> getTaskStatuses(const String & endpoint_uri, const Strings & task_ids, UInt32 wait_for_ms,
+    const ContextPtr & context, bool for_cleanup = false);
 
-void cancelTask(const String & endpoint_uri, const String & task_id, const ContextPtr & context);
+/// Cancels every task of the query on this worker; the worker then ignores the query's later batches.
+void cancelQueryTasks(const String & endpoint_uri, const String & unique_query_id, const ContextPtr & context);
 
-void forgetTask(const String & endpoint_uri, const String & task_id, const ContextPtr & context);
+void forgetTasks(const String & endpoint_uri, const Strings & task_ids, const ContextPtr & context);
 
 }

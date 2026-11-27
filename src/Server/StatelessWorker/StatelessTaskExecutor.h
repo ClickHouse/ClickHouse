@@ -10,6 +10,7 @@
 #include <base/defines.h>
 
 #include <atomic>
+#include <condition_variable>
 #include <deque>
 #include <future>
 #include <memory>
@@ -17,6 +18,7 @@
 #include <optional>
 #include <unordered_map>
 #include <unordered_set>
+#include <vector>
 
 namespace DB
 {
@@ -77,10 +79,16 @@ public:
     /// Returns false for a query with no task on this worker when `max_queries` queries have tasks here.
     bool startTasks(const String & unique_query_id, DistributedQueryTaskBatch batch, const String & unique_temp_file_path, const TaskCollectors & collectors);
     TaskStatus getStatus(const String & task_id, UInt64 wait_milliseconds);
+    /// Waits up to `wait_milliseconds` until one of the tasks is unknown, ends or starts failing, then returns the status of
+    /// each, in order.
+    std::vector<TaskStatus> getStatuses(const Strings & task_ids, UInt64 wait_milliseconds);
     /// Remembers an unknown id, so its start, still on the wire, is ignored when it arrives.
     Result cancelTask(const String & task_id);
+    /// Cancels every task of the query `unique_query_id` and ignores its tasks that arrive later.
+    void cancelQuery(const String & unique_query_id);
     /// Drops a task that has ended; a running one is dropped when it ends.
     Result forgetTask(const String & task_id);
+    void forgetTasks(const Strings & task_ids);
 
     void shutdown();
 
@@ -138,7 +146,7 @@ private:
         std::shared_ptr<Progress> progress = std::make_shared<Progress>();
         /// What the coordinator asked to collect for this task; decides which payloads a status reply carries.
         TaskCollectors collectors;
-        /// Filled by the task's setup only when logs are collected; drained by `getStatus`.
+        /// Filled by the task's setup only when logs are collected; drained by `currentStatus`.
         std::shared_ptr<LogsQueueSlot> logs_queue = std::make_shared<LogsQueueSlot>();
         /// Lines handed to status replies so far.
         std::shared_ptr<ForwardedLogsCounter> forwarded_logs = std::make_shared<ForwardedLogsCounter>();
@@ -150,6 +158,18 @@ private:
 
     using TaskStatePtr = std::shared_ptr<TaskState>;
 
+    /// The status of a task now; `completion_future` is the caller's copy, since one future object is not shared by threads.
+    static TaskStatus currentStatus(const TaskState & task_state, const std::shared_future<std::optional<TaskFailure>> & completion_future);
+
+    /// Wakes `getStatuses` when a task reports its failure or ends. Shared with the tasks, which can end after `shutdown`.
+    struct StatusChanges
+    {
+        std::mutex mutex;
+        std::condition_variable changed;
+
+        void notify();
+    };
+
     /// The query context and the rest of what a task needs besides its description.
     struct TaskSetup;
 
@@ -160,6 +180,7 @@ private:
     bool tryRegisterTaskLocked(const String & unique_task_id, const TaskStatePtr & task_state) TSA_REQUIRES(tasks_mutex);
     /// Removes a task from `tasks`; false for an unknown one.
     bool eraseTaskLocked(const String & unique_task_id) TSA_REQUIRES(tasks_mutex);
+    Result forgetTaskLocked(const String & task_id) TSA_REQUIRES(tasks_mutex);
     /// Removes the task if it was forgotten while running; called by its thread after its promise is set.
     void onTaskEnded(const String & unique_task_id) noexcept;
 
@@ -178,6 +199,11 @@ private:
     std::unordered_set<String> cancelled_before_start TSA_GUARDED_BY(tasks_mutex);
     std::deque<String> cancelled_before_start_order TSA_GUARDED_BY(tasks_mutex);
     std::unordered_map<String, WorkerQueryControllerPtr> query_controllers TSA_GUARDED_BY(tasks_mutex);
+    /// Queries cancelled by `cancelQuery`. Bounded: past the cap the oldest is dropped.
+    static constexpr size_t MAX_CANCELLED_QUERIES = 1000;
+    std::unordered_set<String> cancelled_queries TSA_GUARDED_BY(tasks_mutex);
+    std::deque<String> cancelled_queries_order TSA_GUARDED_BY(tasks_mutex);
+    std::shared_ptr<StatusChanges> status_changes = std::make_shared<StatusChanges>();
     std::mutex tasks_mutex;
 };
 

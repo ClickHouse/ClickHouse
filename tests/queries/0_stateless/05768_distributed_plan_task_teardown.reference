@@ -1,10 +1,12 @@
 -- finished: a query with persisted exchanges runs its tasks in three waves, keeps one query controller for all of them and
 -- drops it at its end (both worker addresses of the test cluster are this server, so one controller); the result equals local.
-┌─tasks─┬─workers─┬─controllers_created─┬─controllers_dropped─┬─result_same─┐
-│     5 │       2 │                   1 │                   1 │           1 │
-└───────┴─────────┴─────────────────────┴─────────────────────┴─────────────┘
+-- It polls the workers, cancels nothing and sends one forget_tasks per worker address at its end.
+┌─tasks─┬─workers─┬─controllers_created─┬─controllers_dropped─┬─result_same─┬─polled─┬─cancel_requests─┬─forget_requests─┐
+│     5 │       2 │                   1 │                   1 │           1 │      1 │               0 │               2 │
+└───────┴─────────┴─────────────────────┴─────────────────────┴─────────────┴────────┴─────────────────┴─────────────────┘
 -- killed: the kill ends the query's tasks (some readers end on their own before it, so only that some end after it is
--- shown), none of the tasks that end after the kill reports a success, and the query controller is dropped.
-┌─tasks─┬─workers─┬─tasks_ended_after_kill─┬─succeeded_after_kill─┬─controllers_created─┬─controllers_dropped─┐
-│     7 │       2 │                      1 │                    0 │                   1 │                   1 │
-└───────┴─────────┴────────────────────────┴──────────────────────┴─────────────────────┴─────────────────────┘
+-- shown), none of the tasks that end after the kill reports a success, and the query controller is dropped. Each worker
+-- address gets at most one cancel_tasks (none if its tasks had all ended) and one forget_tasks.
+┌─tasks─┬─workers─┬─tasks_ended_after_kill─┬─succeeded_after_kill─┬─controllers_created─┬─controllers_dropped─┬─polled─┬─cancels_at_most_one_per_worker─┬─forget_requests─┐
+│     7 │       2 │                      1 │                    0 │                   1 │                   1 │      1 │                              1 │               2 │
+└───────┴─────────┴────────────────────────┴──────────────────────┴─────────────────────┴─────────────────────┴────────┴────────────────────────────────┴─────────────────┘
