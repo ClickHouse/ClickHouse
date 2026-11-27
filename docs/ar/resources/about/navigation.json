@@ -1,7 +1,7 @@
 {
   "groups": [
     {
-      "group": "حول ClickHouse",
+      "group": "About ClickHouse",
       "pages": [
         "ar/resources/about/index",
         "ar/resources/about/adopters",
@@ -9,5 +9,5 @@
       ]
     }
   ],
-  "item": "حول"
+  "item": "About"
 }

@@ -15,6 +15,7 @@ class SipHash;
 namespace DB
 {
 
+class AggregatingStep;
 class JoinStepLogical;
 class ReadFromMergeTree;
 
@@ -26,7 +27,11 @@ namespace QueryPlanOptimizations
 
 /// Main functions which optimize QueryPlan tree.
 /// First pass (ideally) apply local idempotent operations on top of Plan.
-void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes);
+void optimizeTreeFirstPass(
+    const QueryPlanOptimizationSettings & optimization_settings,
+    QueryPlan::Node & root,
+    QueryPlan::Nodes & nodes,
+    const QueryPlan & query_plan);
 /// Second pass is used to apply read-in-order and attach a predicate to PK.
 void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes, QueryPlan & query_plan);
 /// Third pass is used to apply filters such as key conditions and skip indexes to the storages that support them.
@@ -76,11 +81,18 @@ struct Optimization
         bool enable_group_by_top_k_optimization{};
         UInt64 top_k_optimization_observation_rows{};
         bool top_k_optimization_shared_boundary{};
+        /// The heap refuses it, and `MergingAggregatedStep` does not carry it.
+        UInt64 max_rows_to_group_by{};
         bool enable_group_by_top_k_dynamic_filtering{};
         bool use_query_condition_cache_for_top_k{};
         bool is_explain{};
 
         size_t max_block_size{};
+
+        /// The plan being optimized. Standalone plans extracted by optimizations inherit its execution
+        /// limits and its resource holder (table locks, storage holders, interpreter contexts), because
+        /// they may be executed after the outer plan has been consumed into a pipeline.
+        const QueryPlan * source_plan = nullptr;
 
         /// Mirrors `QueryPlanOptimizationSettings::push_down_volume_reducing_functions`.
         /// `tryExecuteFunctionsAfterSorting` consults it to avoid pinging volume-reducing
@@ -186,6 +198,10 @@ size_t tryConvertOuterJoinToInnerJoin(QueryPlan::Node * parent_node, QueryPlan::
 /// join validation still runs.
 size_t tryShortCircuitConstantFalseJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings &);
 
+/// Replace a LEFT or RIGHT JOIN by the side it preserves if nothing of the other side is read and the join outputs
+/// every preserved row exactly once: an ANY join, or a join whose other side is unique by the join keys.
+size_t tryRemoveUnusedJoin(QueryPlan::Node * node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings &);
+
 /// Convert ANY JOIN to SEMI or ANTI JOIN if filter after JOIN always evaluates to false for not-matched or matched rows
 size_t tryConvertAnyJoinToSemiOrAntiJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings &);
 
@@ -252,6 +268,19 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, 
 /// Push LIMIT into GROUP BY via bounded heap when GROUP BY matches or is a prefix of ORDER BY keys
 size_t tryOptimizeGroupByTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings);
 
+/// On a parallel replicas follower, the heap of `distributed_group_by_top_k` on the partial aggregation.
+void applyGroupByTopKOfInitiator(
+    QueryPlan::Node & root, QueryPlan::Nodes & nodes, size_t limit, const Optimization::ExtraSettings & settings);
+
+/// When plan-based parallel replicas split the aggregation of `GROUP BY ... ORDER BY ... LIMIT n` below `limit_node`, gives
+/// the partial aggregation the heap `tryOptimizeGroupByTopK` would give the whole one, so that the shipped fragment runs it.
+void applyOrderedGroupByTopKToSplit(
+    QueryPlan::Node * limit_node,
+    QueryPlan::Node * aggregating_node,
+    AggregatingStep & partial_aggregating_step,
+    QueryPlan::Nodes & nodes,
+    const Optimization::ExtraSettings & settings);
+
 /// Let an aggregation's output conversion skip the keys of the groups a HAVING count() bound above it rejects
 size_t tryPushHavingPrefilterIntoAggregation(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings);
 
@@ -280,6 +309,7 @@ inline const auto & getOptimizations()
         {tryShortCircuitConstantFalseJoin,
          "shortCircuitConstantFalseJoin",
          &QueryPlanOptimizationSettings::short_circuit_constant_false_join},
+        {tryRemoveUnusedJoin, "removeUnusedJoin", &QueryPlanOptimizationSettings::remove_unused_joins},
         /// the steps that other optimizations create after `lowerArrayJoinFunctions`
         {tryLowerArrayJoinFunction, "lowerArrayJoinFunction", &QueryPlanOptimizationSettings::lower_array_join_function},
         {tryLiftUpArrayJoin, "liftUpArrayJoin", &QueryPlanOptimizationSettings::lift_up_array_join},
@@ -350,6 +380,8 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
 bool optimizeLazyMaterialization3(QueryPlan::Node & root, QueryPlan & query_plan, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & settings);
 void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
 bool optimizeJoinLegacy(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
+/// Replace a subtree of `full_sorting_merge` inner joins on one key by one merge join of all its inputs.
+void optimizeMultiwayMergeJoin(QueryPlan::Node & root);
 void optimizeJoinByShards(QueryPlan::Node & root);
 /// Mark hash joins with a probe-side MergeTree read prunable by the join's runtime filter:
 /// the reading is then gated on the build completion seal which delivers the filter for
@@ -362,10 +394,21 @@ void optimizeLimitForAggregationInOrder(QueryPlan::Node & root);
 void useShuffleForOrderByRand(QueryPlan::Node & node);
 void optimizeLimitByInOrder(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
 void pushLimitByIntoSort(QueryPlan::Node & node);
+/// Descends from `node` through order-preserving steps to the reading step below it and marks that
+/// read as preferring multiple streams, so `PrefetchingConcatProcessor` does not collapse the
+/// per-stream pipeline into a single stream and serialize per-stream work above the read.
+void preferMultipleStreamsForReadingBelow(QueryPlan::Node * node);
 void optimizeAggregationPerPartition(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
 void optimizeLimitByPerPartition(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
 void optimizeDistinctPerPartition(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
 void optimizeWindowPerPartition(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
+/// Whether `optimizeWindowPerPartition` would make every table partition of the reading below the window
+/// sorting at `node` be processed by its own window.
+bool canOptimizeWindowPerPartition(QueryPlan::Node & node);
+/// A window sorting that reads in order (`query_plan_reuse_storage_ordering_for_window_functions`) and whose
+/// `PARTITION BY` determines a prefix of the primary key reads the table by ranges of that prefix: every range
+/// holds whole window partitions, so the sorting and the window functions run for each range independently.
+void optimizeWindowByLayers(QueryPlan::Node & root);
 void optimizeCreatingSetPerPartition(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
 void updateQueryConditionCache(const Stack & stack, const QueryPlanOptimizationSettings & optimization_settings);
 void disableTopKQueryConditionCacheUnderNonDeterministicFilters(const Stack & stack, const QueryPlanOptimizationSettings & optimization_settings);
@@ -391,7 +434,8 @@ UnorderedMapWithMemoryTracking<const QueryPlan::Node *, UInt64> calculateHashTab
 void setAggregationHashTableCacheKeys(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root);
 
 /// Populates two maps in lock-step:
-///   raw_hashes[N]  = bottom-up hash of the sub-plan rooted at N, independent of N's parent.
+///   raw_hashes[N]  = bottom-up hash of the sub-plan rooted at N, independent of N's parent,
+///                    or zero if the sub-plan reads query-local data and gets no `HashTablesStatistics` entry.
 ///   cache_keys[N]  = raw_hashes[N] XOR (the per-side contribution of N's parent join step).
 /// `raw_hashes` is what the join reorder pass needs to derive cache keys for sub-join nodes
 /// it builds itself; `cache_keys` matches the value `HashTablesStatistics` is keyed by.
@@ -409,6 +453,9 @@ bool convertLogicalJoinToPhysical(
     const QueryPlanOptimizationSettings & optimization_settings);
 
 void optimizeJoinLogical(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
+
+/// Skip the deduplication of the `DISTINCT` after `EXCEPT DISTINCT` executed as RIGHT ANTI. Needs the physical join.
+void skipDeduplicationAfterSetOperationJoin(QueryPlan::Node & node);
 
 /// Convert an OUTER join whose null-extended rows cannot survive above it, when the proof comes from
 /// arbitrarily higher in the plan (a filter, or the conditions of an enclosing INNER/SEMI join).

@@ -2,7 +2,6 @@
 
 #include <cstring>
 
-#include <IO/WriteHelpers.h>
 #include <Columns/IColumn.h>
 #include <Columns/IColumnImpl.h>
 #include <Common/PODArray.h>
@@ -109,11 +108,7 @@ public:
         res = std::string_view{reinterpret_cast<const char *>(&chars[offsetAt(n)]), sizeAt(n)};
     }
 
-    void getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const override
-    {
-        if (options.notFull(name_buf))
-            writeQuoted(std::string_view{reinterpret_cast<const char *>(&chars[offsetAt(n)]), sizeAt(n)}, name_buf);
-    }
+    void getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const override;
 
     std::string_view getDataAt(size_t n) const override
     {
@@ -239,6 +234,13 @@ public:
 #else
     void doInsertRangeFrom(const IColumn & src, size_t start, size_t length) override;
 #endif
+
+    void insertFromEither(
+        const IColumn & src_true,
+        bool src_true_is_const,
+        const IColumn & src_false,
+        bool src_false_is_const,
+        const IColumn::Filter & condition) override;
 
     ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override;
 

@@ -43,7 +43,7 @@ static const UInt64 max_block_size = 8192;
 /// (`access_token`, `sig`, ...). Returns whether anything was masked.
 static bool maskURLCredentials(String & url)
 {
-    bool masked = maskURIPassword(&url, URI_AUTHORITY_TERMINATORS);
+    bool masked = maskURIPassword(url, URI_AUTHORITY_TERMINATORS);
     String without_parameters = maskSensitiveQueryParametersInURI(url);
     masked |= without_parameters != url;
     url = std::move(without_parameters);
@@ -62,7 +62,7 @@ static bool maskQuotedURLCredentials(String & literal)
     return true;
 }
 
-static const std::unordered_set<std::string_view> optional_configuration_keys = { // STYLE_CHECK_ALLOW_STD_CONTAINERS
+[[clang::no_destroy]] static const std::unordered_set<std::string_view> optional_configuration_keys = { // STYLE_CHECK_ALLOW_STD_CONTAINERS
     "url",
     "endpoint",
     "user",

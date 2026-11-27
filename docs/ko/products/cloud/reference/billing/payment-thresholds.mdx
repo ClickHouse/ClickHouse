@@ -7,9 +7,7 @@ keywords: ['청구', '임계값', '자동 인보이스 발행', '인보이스']
 doc_type: 'guide'
 ---
 
-<div id="threshholds">
-  ## 임계값
-</div>
+## 임계값 {#threshholds}
 
 종량제(pay as you go) 고객의 경우, ClickHouse Cloud의 청구 주기 동안 청구 금액이 1,000 USD 또는 이에 상응하는 금액에 도달하면 조직에 설정된 결제 수단으로 자동 청구됩니다.
 
@@ -26,29 +24,21 @@ doc_type: 'guide'
 아래 예시에서는 Cloud Console의 Billing UI를 보여줍니다.
 
 <div className="ch-image-sm">
-
-<Frame>
-
-![UI에서 청구를 찾는 위치](/images/cloud/reference/billing_payment_threshhold.webp)
-
-</Frame>
-
+  <Frame>
+    ![UI에서 청구를 찾는 위치](/images/cloud/reference/billing_payment_threshhold.webp)
+  </Frame>
 </div>
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![인보이스](/images/cloud/reference/billing_payment_threshhold_2.webp)
-
-</Frame>
-
+  <Frame>
+    ![인보이스](/images/cloud/reference/billing_payment_threshhold_2.webp)
+  </Frame>
 </div>
 
 위 예시에서 볼 수 있듯이, 2월 28일~3월 31일 청구 주기 동안 임계값 인보이스가 발송되었고, 같은 청구 주기 내에 1,000 USD를 초과한 나머지 사용량에 대해서도 또 다른 인보이스가 발송되었습니다.
 
 <div id="threshholds-notifications">
-  ## 임계값 알림
+  ## 임계값 알림 {#threshholds-notifications}
 </div>
 
 조직의 사용량이 임계값의 90%에 도달했고 청구 주기 중 임계값을 초과할 것으로 예상되면, 해당 조직에 연결된 청구 담당자(Billing Contact) 이메일 주소로 알림 이메일이 전송됩니다.

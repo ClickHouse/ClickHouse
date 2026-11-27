@@ -185,7 +185,7 @@ ORDER BY per_trace_sum ASC
 </Note>
 
 ClickHouse fournit une interface web intégrée pour consulter les statistiques mémoire de jemalloc au point de terminaison HTTP `/jemalloc`.
-Elle affiche des métriques mémoire en temps réel sous forme de graphiques, notamment la mémoire allouée, active, résidente et mappée, ainsi que des statistiques par arène et par bin.
+Elle affiche des metrics mémoire en temps réel sous forme de graphiques, notamment la mémoire allouée, active, résidente et mappée, ainsi que des statistiques par arena et par bin.
 Vous pouvez également récupérer directement depuis l’interface des profils du tas globaux et par requête.
 
 <Tabs>
@@ -227,8 +227,8 @@ Vous pouvez également récupérer directement depuis l’interface des profils 
     Keeper expose également des points de terminaison de l’API REST pour un accès programmatique :
 
     * `GET /jemalloc/stats` — sortie brute de `malloc_stats_print`
-    * `GET /jemalloc/status` — état du profiling au format JSON (`prof_enabled`, `prof_active`, `thread_active_init`, `lg_sample`)
-    * `GET /jemalloc/profile?format={collapsed|raw}` — effectue le flush d’un profil du tas avec symbolisation côté serveur, renvoie des collapsed stacks adaptées au rendu en flame graph (par défaut) ou le dump jemalloc brut
+    * `GET /jemalloc/status` — état du profilage au format JSON (`prof_enabled`, `prof_active`, `thread_active_init`, `lg_sample`)
+    * `GET /jemalloc/profile?format={collapsed|raw}` — effectue le vidage d’un profil du tas avec symbolisation côté serveur, renvoie des collapsed stacks adaptées au rendu en flame graph (par défaut) ou le profil du tas sous la même forme que le format `raw` de `system.jemalloc_profile_text`
   </Tab>
 </Tabs>
 
@@ -254,20 +254,20 @@ SELECT * FROM system.jemalloc_profile_text
 
 ### Format de sortie {#output-format}
 
-Le format de sortie est contrôlé par le paramètre `jemalloc_profile_text_output_format`, qui accepte trois valeurs :
+Le format de sortie est contrôlé par le paramètre `jemalloc_profile_text_output_format`, qui accepte trois valeurs :
 
-* `raw` — profil du tas brut généré par jemalloc.
+* `raw` — profil du tas tel que généré par jemalloc, à ceci près que les adresses à l’exécution ne sont pas publiées : les adresses de pile situées dans le binaire ClickHouse sont remplacées par leurs décalages dans celui-ci, les autres adresses (bibliothèques partagées, code JIT) par `0`, et la table de mappage mémoire (`MAPPED_LIBRARIES`) est supprimée. `jeprof` l’analyse à l’aide du binaire ClickHouse : `jeprof /path/to/clickhouse profile.heap`.
 * `symbolized` — format compatible avec jeprof, avec symboles de fonction intégrés. Les symboles étant déjà intégrés, `jeprof` peut analyser la sortie sans avoir besoin du binaire ClickHouse.
 * `collapsed` (par défaut) — collapsed stacks compatibles avec FlameGraph, avec une pile par ligne et le nombre d’octets correspondant.
 
-Par exemple, pour obtenir le profil brut :
+Par exemple, pour obtenir le profil brut :
 
 ```sql
 SELECT * FROM system.jemalloc_profile_text
 SETTINGS jemalloc_profile_text_output_format = 'raw'
 ```
 
-Pour obtenir une sortie symbolisée :
+Pour obtenir une sortie symbolisée :
 
 ```sql
 SELECT * FROM system.jemalloc_profile_text

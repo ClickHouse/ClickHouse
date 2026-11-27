@@ -69,6 +69,7 @@
 #include <Storages/ObjectStorage/DataLakes/Paimon/PaimonMetadataFilesCache.h>
 #include <Processors/Formats/Impl/ParquetMetadataCache.h>
 #include <Storages/StreamingStorageRegistry.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/MergeTree/VectorSimilarityIndexCache.h>
 #include <Storages/Distributed/DistributedSettings.h>
 #include <Storages/CompressionCodecSelector.h>
@@ -372,6 +373,7 @@ namespace Setting
     extern const SettingsUInt64 hsts_max_age;
     extern const SettingsString local_filesystem_read_method;
     extern const SettingsBool local_filesystem_read_prefetch;
+    extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsUInt64 max_backup_bandwidth;
     extern const SettingsUInt64 max_local_read_bandwidth;
     extern const SettingsUInt64 max_local_write_bandwidth;
@@ -534,6 +536,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_DISK;
     extern const int UNKNOWN_READ_METHOD;
     extern const int TIMEOUT_EXCEEDED;
+    extern const int INVALID_USAGE_OF_INPUT;
 }
 
 namespace
@@ -564,7 +567,7 @@ MergeTreeSettings mergeTreeSettingsFromCompatibility(const String & compatibilit
 /// mutations and `Buffer` flushes. They are dropped there so the server setting always wins.
 /// The global context is dropped at resolution time instead (`resolveReadThroughDistributedCache`):
 /// it is already shared with running threads when profiles are applied, so a reset would race there.
-static const std::vector<String> distributed_cache_force_setting_names
+[[clang::no_destroy]] static const std::vector<String> distributed_cache_force_setting_names
     = {"force_read_through_distributed_cache", "force_write_through_distributed_cache"};
 
 #define SHUTDOWN(log, desc, ptr, method) do             \
@@ -3607,11 +3610,7 @@ void Context::addQueryFactoriesInfo(QueryLogFactories factory_type, const String
 
 void Context::addQueryPrivilegesInfo(const String & privilege, bool granted) const
 {
-    std::lock_guard lock(query_privileges_info->mutex);
-    if (granted)
-        query_privileges_info->used_privileges.emplace(privilege);
-    else
-        query_privileges_info->missing_privileges.emplace(privilege);
+    query_privileges_info->add(privilege, granted);
 }
 
 static bool findIdentifier(const ASTFunction * function)
@@ -5964,12 +5963,27 @@ VectorSimilarityIndexCachePtr Context::getVectorSimilarityIndexCache() const
     return shared->vector_similarity_index_cache;
 }
 
-void Context::clearVectorSimilarityIndexCache() const
+void Context::clearVectorSimilarityIndexCache(const StorageID & table_id) const
 {
-    std::lock_guard lock(shared->mutex);
+    if (table_id)
+    {
+        auto table = DatabaseCatalog::instance().getTable(table_id, shared_from_this());
 
-    if (shared->vector_similarity_index_cache)
-        shared->vector_similarity_index_cache->clear();
+        auto table_lock = table->lockForShare(getCurrentQueryId(), getSettingsRef()[Setting::lock_acquire_timeout]);
+
+        auto merge_tree = castStorage<MergeTreeData>(table, DeferredTable::Load);
+
+        /// Only `MergeTree` tables can have vector similarity indexes, so there is nothing to clear for other tables.
+        if (merge_tree)
+            merge_tree->clearVectorSimilarityIndexCache();
+    }
+    else
+    {
+        std::lock_guard lock(shared->mutex);
+
+        if (shared->vector_similarity_index_cache)
+            shared->vector_similarity_index_cache->clear();
+    }
 }
 
 void Context::setTextIndexTokensCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_entries, double size_ratio)
@@ -9443,7 +9457,13 @@ void Context::setInputInitializer(InputInitializer && initializer)
 void Context::initializeInput(const ColumnsDescription & columns, const Block & header)
 {
     if (!input_initializer_callback)
+    {
+        /// The server sets both callbacks together and resets only the initializer once `input` is read, so the
+        /// blocks reader without the initializer means a second read of the same input, e.g. from a view in RETURNING.
+        if (input_blocks_reader)
+            throw Exception(ErrorCodes::INVALID_USAGE_OF_INPUT, "The `input` table function can be read only once per query");
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Input initializer is not set");
+    }
 
     input_initializer_callback(shared_from_this(), columns, header);
     /// Reset callback
@@ -10697,10 +10717,10 @@ const ServerSettings & Context::getServerSettings() const
     return shared->server_settings;
 }
 
-void Context::enablePlanLogCapture()
+void Context::enablePlanLogCapture(const CollectedStatistics & collected)
 {
-    query_plan_log_capture = std::make_shared<QueryPlanLogCapture>();
-    setJoinAnalyzeMode(JoinAnalyzeMode::Derived);
+    query_plan_log_capture = std::make_shared<QueryPlanLogCapture>(collected);
+    setJoinAnalyzeMode(collected.join_matches ? JoinAnalyzeMode::Exact : JoinAnalyzeMode::Derived);
 }
 
 QueryPlanLogCapturePtr Context::getPlanLogCapture() const

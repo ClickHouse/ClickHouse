@@ -1,0 +1,10 @@
+valid
+2	1
+null count overflowing the subtraction
+INCORRECT_DATA
+negative null count
+INCORRECT_DATA
+null count greater than the number of values
+INCORRECT_DATA
+negative number of values
+INCORRECT_DATA
