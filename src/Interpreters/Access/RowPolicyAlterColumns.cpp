@@ -34,13 +34,18 @@ namespace ErrorCodes
 namespace
 {
 
-/// if exists on a missing column is a no-op (ignore), clear column keeps the column, a new type can lose subcolumns
-bool removesColumn(const AlterCommand & command)
+/// if exists on a missing column is a no-op (ignore), clear column keeps the column; a new type can break any filter
+/// that reads the column, `n = 1` after `n String` or `tupleElement(tp, 'b')` after `tp Tuple(a UInt8)`, so it counts too
+bool changesColumn(const AlterCommand & command, const ColumnsDescription & columns)
 {
     if (command.ignore)
         return false;
-    return (command.type == AlterCommand::DROP_COLUMN && !command.clear) || command.type == AlterCommand::RENAME_COLUMN
-        || (command.type == AlterCommand::MODIFY_COLUMN && command.data_type);
+    if (command.type == AlterCommand::MODIFY_COLUMN)
+    {
+        const auto * column = columns.tryGet(command.column_name);
+        return command.data_type && column && !column->type->equals(*command.data_type);
+    }
+    return (command.type == AlterCommand::DROP_COLUMN && !command.clear) || command.type == AlterCommand::RENAME_COLUMN;
 }
 
 /// the storage columns a name reads when it resolves as written, like `tryResolveIdentifierFromStorage`: a column,
@@ -133,7 +138,7 @@ struct FilterNames
 
 /// a name binds as written first and with a `table.` or `db.table.` qualifier removed only after that (see
 /// `tryResolveIdentifierFromTableExpression`); an alter of a column removes the column itself, or every child of
-/// a nested one when no column has that name (see `getNameRange`); a new type removes the subcolumns it does not have
+/// a nested one when no column has that name (see `getNameRange`)
 bool mentions(const String & name, const Strings & qualifiers, const AlterCommand & command, const ColumnsDescription & columns)
 {
     Strings candidates{name};
@@ -145,12 +150,6 @@ bool mentions(const String & name, const Strings & qualifiers, const AlterComman
         auto read = storageColumns(candidate, columns);
         if (read.empty())
             continue;
-        if (command.type == AlterCommand::MODIFY_COLUMN)
-        {
-            auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, candidate);
-            return column && column->isSubcolumn() && column->getNameInStorage() == command.column_name
-                && !command.data_type->tryGetSubcolumnType(column->getSubcolumnName());
-        }
         return std::ranges::any_of(read, [&](const auto & storage_column)
         {
             return columns.has(command.column_name) ? storage_column == command.column_name : storage_column.starts_with(command.column_name + ".");
@@ -189,7 +188,8 @@ std::vector<StorageID> tablesSharingColumns(const StoragePtr & table, const Cont
 void checkRowPoliciesBeforeAlter(const StoragePtr & table, const ColumnsDescription & columns, const AlterCommands & commands, const ContextPtr & context)
 {
     /// row policies are local to a server, so a replica must apply what its initiator already committed
-    if (isSecondaryDDLReplay(context) || std::none_of(commands.begin(), commands.end(), removesColumn))
+    auto changes = [&](const AlterCommand & command) { return changesColumn(command, columns); };
+    if (isSecondaryDDLReplay(context) || std::ranges::none_of(commands, changes))
         return;
 
     const auto tables = tablesSharingColumns(table, context);
@@ -218,7 +218,7 @@ void checkRowPoliciesBeforeAlter(const StoragePtr & table, const ColumnsDescript
 
         for (const auto & command : commands)
         {
-            if (!removesColumn(command))
+            if (!changes(command))
                 continue;
             if (std::ranges::any_of(policy_tables, [&](const auto & table_id)
                 {
@@ -227,13 +227,11 @@ void checkRowPoliciesBeforeAlter(const StoragePtr & table, const ColumnsDescript
                     return std::ranges::any_of(filter_names.names, [&](const auto & name) { return mentions(name, qualifiers, command, columns); });
                 }))
             {
-                if (command.type == AlterCommand::MODIFY_COLUMN)
-                    throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
-                        "Cannot modify column {}: row policy {} reads a subcolumn that the new type does not have. Change or drop the policy first",
-                        backQuote(command.column_name), policy->getFullName().toString());
+                const char * action = command.type == AlterCommand::DROP_COLUMN ? "drop"
+                    : command.type == AlterCommand::RENAME_COLUMN ? "rename" : "change the type of";
                 throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
                     "Cannot {} column {}: row policy {} mentions it. Change or drop the policy first",
-                    command.type == AlterCommand::DROP_COLUMN ? "drop" : "rename", backQuote(command.column_name), policy->getFullName().toString());
+                    action, backQuote(command.column_name), policy->getFullName().toString());
             }
         }
     }

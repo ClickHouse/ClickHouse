@@ -4,7 +4,9 @@ ALTER_OF_COLUMN_IS_FORBIDDEN
 ALTER_OF_COLUMN_IS_FORBIDDEN
 -- other columns are free
 after	[1,3]
--- a type change and CLEAR keep the column, so they are allowed
+-- a new type of a column the policy mentions is refused, the same type and CLEAR are allowed
+ALTER_OF_COLUMN_IS_FORBIDDEN
+ALTER_OF_COLUMN_IS_FORBIDDEN
 after modify	[1,3]
 after clear	[]
 after reinsert	[4]
@@ -56,7 +58,10 @@ qualifier column policy after drop	[1]
 ALTER_OF_COLUMN_IS_FORBIDDEN
 ALTER_OF_COLUMN_IS_FORBIDDEN
 ALTER_OF_COLUMN_IS_FORBIDDEN
--- a new type of a column cannot lose a subcolumn that the policy reads
+-- a column read as a subcolumn, through a function or next to a scalar subquery cannot get a new type
+ALTER_OF_COLUMN_IS_FORBIDDEN
+ALTER_OF_COLUMN_IS_FORBIDDEN
+ALTER_OF_COLUMN_IS_FORBIDDEN
 ALTER_OF_COLUMN_IS_FORBIDDEN
 ALTER_OF_COLUMN_IS_FORBIDDEN
 ALTER_OF_COLUMN_IS_FORBIDDEN

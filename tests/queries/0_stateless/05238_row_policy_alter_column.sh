@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# a column that a row policy mentions cannot be dropped or renamed, everything else stays allowed
+# a column that a row policy mentions cannot be dropped, renamed or get a new type, everything else stays allowed
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -26,8 +26,10 @@ $CLICKHOUSE_CLIENT -q "ALTER TABLE t DROP COLUMN extra"
 $CLICKHOUSE_CLIENT -q "ALTER TABLE t RENAME COLUMN misc TO misc2"
 $CLICKHOUSE_CLIENT -q "SELECT 'after', arraySort(groupArray(id)) FROM t"
 
-echo "-- a type change and CLEAR keep the column, so they are allowed"
-$CLICKHOUSE_CLIENT -q "ALTER TABLE t MODIFY COLUMN tenant UInt64"
+echo "-- a new type of a column the policy mentions is refused, the same type and CLEAR are allowed"
+refused "ALTER TABLE t MODIFY COLUMN tenant String" ALTER_OF_COLUMN_IS_FORBIDDEN
+refused "ALTER TABLE t MODIFY COLUMN tenant UInt64" ALTER_OF_COLUMN_IS_FORBIDDEN
+$CLICKHOUSE_CLIENT -q "ALTER TABLE t MODIFY COLUMN tenant UInt32 CODEC(ZSTD)"
 $CLICKHOUSE_CLIENT -q "SELECT 'after modify', arraySort(groupArray(id)) FROM t"
 $CLICKHOUSE_CLIENT -q "ALTER TABLE t CLEAR COLUMN tenant"
 $CLICKHOUSE_CLIENT -q "SELECT 'after clear', arraySort(groupArray(id)) FROM t"
@@ -197,17 +199,20 @@ refused "ALTER TABLE tng DROP COLUMN n.y" ALTER_OF_COLUMN_IS_FORBIDDEN
 refused "ALTER TABLE tng RENAME COLUMN n.x TO n.z" ALTER_OF_COLUMN_IS_FORBIDDEN
 $CLICKHOUSE_CLIENT -q "ALTER TABLE tng DROP COLUMN other"
 
-echo "-- a new type of a column cannot lose a subcolumn that the policy reads"
+echo "-- a column read as a subcolumn, through a function or next to a scalar subquery cannot get a new type"
 $CLICKHOUSE_CLIENT --multiquery -q "
-CREATE TABLE tm (id UInt32, tp Tuple(a UInt8, b UInt8), n Nullable(UInt8)) ENGINE = MergeTree ORDER BY id;
-INSERT INTO tm VALUES (1, (1, 1), 1), (2, (1, 2), 2);
-CREATE ROW POLICY pm ON $DB.tm FOR SELECT USING tm.tp.b = 1 AND NOT n.null TO CURRENT_USER;
+CREATE TABLE tm (id UInt32, tp Tuple(a UInt8, b UInt8), n Nullable(UInt8), k UInt32, u Tuple(a UInt8, b UInt8), free UInt8) ENGINE = MergeTree ORDER BY id;
+INSERT INTO tm VALUES (1, (1, 1), 1, 1, (1, 1), 0), (2, (1, 2), 2, 1, (1, 2), 0);
+CREATE ROW POLICY pm ON $DB.tm FOR SELECT USING tm.tp.b = 1 AND NOT n.null AND k = 1 AND (SELECT 1) = 1 AND tupleElement(u, 'b') = 1 TO CURRENT_USER;
 "
 refused "ALTER TABLE tm MODIFY COLUMN tp Tuple(a UInt8)" ALTER_OF_COLUMN_IS_FORBIDDEN
 refused "ALTER TABLE tm MODIFY COLUMN tp Tuple(a UInt8, c UInt8)" ALTER_OF_COLUMN_IS_FORBIDDEN
+refused "ALTER TABLE tm MODIFY COLUMN tp Tuple(a UInt8, b UInt8, c UInt8)" ALTER_OF_COLUMN_IS_FORBIDDEN
 refused "ALTER TABLE tm MODIFY COLUMN n UInt8 DEFAULT 0" ALTER_OF_COLUMN_IS_FORBIDDEN
-$CLICKHOUSE_CLIENT -q "ALTER TABLE tm MODIFY COLUMN tp Tuple(a UInt8, b UInt8, c UInt8)"
+refused "ALTER TABLE tm MODIFY COLUMN k String" ALTER_OF_COLUMN_IS_FORBIDDEN
+refused "ALTER TABLE tm MODIFY COLUMN u Tuple(a UInt8)" ALTER_OF_COLUMN_IS_FORBIDDEN
 $CLICKHOUSE_CLIENT -q "ALTER TABLE tm MODIFY COLUMN n COMMENT 'kept'"
+$CLICKHOUSE_CLIENT -q "ALTER TABLE tm MODIFY COLUMN free String"
 $CLICKHOUSE_CLIENT -q "SELECT 'modified columns policy', arraySort(groupArray(id)) FROM tm"
 
 echo "-- the policy pins an ALIAS column, the alias pins its base column"
