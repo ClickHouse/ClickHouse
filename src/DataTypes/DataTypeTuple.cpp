@@ -17,6 +17,7 @@
 #include <Parsers/ASTNameTypePair.h>
 #include <Common/assert_cast.h>
 #include <Common/quoteString.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
@@ -29,6 +30,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int AMBIGUOUS_COLUMN_NAME;
     extern const int BAD_ARGUMENTS;
     extern const int DUPLICATE_COLUMN;
     extern const int NOT_FOUND_COLUMN_IN_BLOCK;
@@ -312,6 +314,69 @@ std::optional<size_t> DataTypeTuple::tryGetPositionByName(std::string_view name,
         }
     }
     return std::nullopt;
+}
+
+VectorWithMemoryTracking<std::optional<size_t>> DataTypeTuple::matchElementsByName(const DataTypeTuple & to, bool case_insensitive) const
+{
+    return matchElementsByName(names, to.names, case_insensitive);
+}
+
+VectorWithMemoryTracking<std::optional<size_t>> DataTypeTuple::matchElementsByName(
+    const Strings & from_names, const Strings & to_names, bool case_insensitive, bool * ambiguous)
+{
+    UnorderedMapWithMemoryTracking<std::string_view, size_t> positions_by_name;
+    positions_by_name.reserve(from_names.size());
+    for (size_t i = 0; i < from_names.size(); ++i)
+        positions_by_name.emplace(from_names[i], i);
+
+    VectorWithMemoryTracking<std::optional<size_t>> positions(to_names.size());
+    VectorWithMemoryTracking<UInt8> taken(from_names.size());
+    for (size_t i = 0; i < to_names.size(); ++i)
+    {
+        if (auto it = positions_by_name.find(to_names[i]); it != positions_by_name.end())
+        {
+            positions[i] = it->second;
+            taken[it->second] = true;
+        }
+    }
+
+    if (!case_insensitive)
+        return positions;
+
+    for (size_t i = 0; i < to_names.size(); ++i)
+    {
+        if (positions[i])
+            continue;
+        std::optional<size_t> match;
+        for (size_t j = 0; j < from_names.size(); ++j)
+        {
+            if (!boost::iequals(from_names[j], to_names[i]))
+                continue;
+            if (match)
+            {
+                if (!ambiguous)
+                    throwAmbiguousCaseInsensitiveName(to_names[i], from_names[*match], from_names[j]);
+                *ambiguous = true;
+                match.reset();
+                break;
+            }
+            match = j;
+        }
+        if (match && !taken[*match])
+        {
+            positions[i] = match;
+            taken[*match] = true;
+        }
+    }
+    return positions;
+}
+
+void DataTypeTuple::throwAmbiguousCaseInsensitiveName(std::string_view name, std::string_view first, std::string_view second)
+{
+    throw Exception(
+        ErrorCodes::AMBIGUOUS_COLUMN_NAME,
+        "Name '{}' matches both '{}' and '{}' case-insensitively, and neither is spelled the same",
+        name, first, second);
 }
 
 String DataTypeTuple::getNameByPosition(size_t i) const

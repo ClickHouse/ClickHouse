@@ -1,7 +1,7 @@
 -- Lazy materialization over joins matches the columns of the steps it rebuilds by position, so a name that occurs twice
--- in a header does not confuse it. A join whose condition reads a name that occurs twice does not prune its columns,
--- and the optimization does not apply there. Every query is followed by the number of lazy reads in its plan, and the
--- results are compared with the optimization disabled.
+-- in a header does not confuse it. A join whose condition reads a name that occurs twice keeps the columns of that name
+-- and prunes the others, so the optimization applies to them. Every query is followed by the number of lazy reads in its
+-- plan, and the results are compared with the optimization disabled.
 
 SET query_plan_optimize_lazy_materialization = 1;
 SET query_plan_max_limit_for_lazy_materialization = 100;
@@ -20,7 +20,7 @@ CREATE TABLE r (k UInt64, b UInt64, rheavy String) ENGINE = MergeTree ORDER BY k
 INSERT INTO l SELECT number, number % 97, concat('l', toString(number)) FROM numbers(10000);
 INSERT INTO r SELECT number * 3, number % 89, concat('r', toString(number * 3)) FROM numbers(4000);
 
-SELECT '-- the join key twice: the join does not prune, so nothing is read lazily';
+SELECT '-- the join key twice: the join keeps both, and the other columns are read lazily';
 SELECT * FROM (SELECT k, k, heavy FROM l) AS l JOIN r ON l.k = r.k ORDER BY r.b, l.k LIMIT 5 SETTINGS query_plan_lazy_materialization_for_join = 1;
 SELECT * FROM (SELECT k, k, heavy FROM l) AS l JOIN r ON l.k = r.k ORDER BY r.b, l.k LIMIT 5 SETTINGS query_plan_lazy_materialization_for_join = 0;
 SELECT countIf(explain LIKE '%LazilyReadFromMergeTree%') FROM (EXPLAIN SELECT * FROM (SELECT k, k, heavy FROM l) AS l JOIN r ON l.k = r.k ORDER BY r.b, l.k LIMIT 5 SETTINGS query_plan_lazy_materialization_for_join = 1);

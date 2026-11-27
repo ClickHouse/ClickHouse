@@ -1672,6 +1672,10 @@ Distributed Cache read buffer event. The number of read request retries after a 
 
 Distributed Cache read buffer event. Number of times a retriable read error did not succeed within the read request retries limit
 
+### DistrCacheReadsSkippedRegistryNotReady {#distrcachereadsskippedregistrynotready}
+
+Distributed Cache client event. Number of read buffers of object storage disks that asked for the distributed cache but were created without it because the distributed cache registry was not ready (e.g. no cache server was registered)
+
 ### DistrCacheReadThrottlerBytes {#distrcachereadthrottlerbytes}
 
 Bytes passed through 'max_distributed_cache_read_bandwidth_for_server' throttler.
@@ -2135,6 +2139,18 @@ Total time spent during distributed index analysis
 ### DistributedIndexAnalysisMissingParts {#distributedindexanalysismissingparts}
 
 Number of missing parts during distributed index analysis that will be resolved locally
+
+### DistributedIndexAnalysisOnWorkersAnalyzedParts {#distributedindexanalysisonworkersanalyzedparts}
+
+Number of parts a stateless worker analyzed for index analysis
+
+### DistributedIndexAnalysisOnWorkersParts {#distributedindexanalysisonworkersparts}
+
+Number of parts sent to stateless workers for index analysis (on the coordinator)
+
+### DistributedIndexAnalysisOnWorkersTasks {#distributedindexanalysisonworkerstasks}
+
+Number of tasks sent to stateless workers for index analysis (on the coordinator)
 
 ### DistributedIndexAnalysisReplicaFallback {#distributedindexanalysisreplicafallback}
 
@@ -3432,6 +3448,14 @@ Number of times a Keeper changelog read-ahead reader could not be created becaus
 
 Number of times a Keeper changelog read-ahead serve request timed out waiting for the fill task and fell back to a direct read of the remaining tail
 
+### KeeperLogStoreAppend {#keeperlogstoreappend}
+
+Number of entries appended to the Keeper log store
+
+### KeeperLogStoreAppendMicroseconds {#keeperlogstoreappendmicroseconds}
+
+Time spent appending entries to the Keeper log store, including the changelog lock wait (the entry is written and fsynced by the background changelog writer, see KeeperChangelogFileSyncMicroseconds)
+
 ### KeeperLSMTCommittedEntryBytes {#keeperlsmtcommittedentrybytes}
 
 Serialized bytes of entries appended to the Keeper LSMT committed memtable
@@ -3708,6 +3732,10 @@ Number of set requests
 
 Number of set watches requests
 
+### KeeperSnapshotApplyMicroseconds {#keepersnapshotapplymicroseconds}
+
+Time spent applying a Keeper snapshot to the Keeper state machine
+
 ### KeeperSnapshotApplys {#keepersnapshotapplys}
 
 Number of snapshot applying
@@ -3731,6 +3759,10 @@ Time spent in fsync for Keeper snapshot files
 ### KeeperSnapshotRemoteLoaderErrors {#keepersnapshotremoteloadererrors}
 
 Number of remote read errors in RemoteSnapshotLoader while serving a snapshot to a follower
+
+### KeeperSnapshotWriteMicroseconds {#keepersnapshotwritemicroseconds}
+
+Time spent writing a Keeper snapshot file (serialization, compression and sync)
 
 ### KeeperSnapshotWrittenBytes {#keepersnapshotwrittenbytes}
 
@@ -4864,6 +4896,10 @@ The number of Parquet files that a read skipped without opening them, because th
 
 Total time spent reading and deserializing parquet file footers (not served from the parquet metadata cache).
 
+### ParquetMetadataCacheColumnIndexHits {#parquetmetadatacachecolumnindexhits}
+
+Number of Parquet column chunks whose column index was taken from the parquet metadata cache instead of being read from the file.
+
 ### ParquetMetadataCacheHits {#parquetmetadatacachehits}
 
 Number of times parquet metadata has been found in the cache.
@@ -5111,6 +5147,10 @@ Number of times an entry has been found in the primary index cache, so we didn't
 ### PrimaryIndexCacheMisses {#primaryindexcachemisses}
 
 Number of times an entry has not been found in the primary index cache, so we had to load an index file in memory, which is a costly operation, adding to query latency.
+
+### PrometheusRemoteWriteDroppedExemplars {#prometheusremotewritedroppedexemplars}
+
+Number of exemplars received through the Prometheus remote-write protocol and dropped because the TimeSeries table does not store exemplars. They are counted only when the write is stored, for an async insert when its flush succeeds.
 
 ### QueriesWithSubqueries {#querieswithsubqueries}
 
@@ -7359,6 +7399,10 @@ Time spent executing WebAssembly code
 ### WasmTotalExecuteMicroseconds {#wasmtotalexecutemicroseconds}
 
 Time spent executing WebAssembly code
+
+### WriteBufferFromAzureBytes {#writebufferfromazurebytes}
+
+Bytes written to Azure.
 
 ### WriteBufferFromFileDescriptorWrite {#writebufferfromfiledescriptorwrite}
 
