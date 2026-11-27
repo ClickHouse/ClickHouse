@@ -651,16 +651,16 @@ AggregateFunctionPtr getAggregateFunctionWithMarker(const AggregateDescription &
 /// addMissingCorrelatedGroupsToAggregateInput). With `empty_result_for_aggregation_by_empty_set` the
 /// user asked for no row over an empty input, which is what the plain `GROUP BY correlated_columns`
 /// already produces. A scalar subquery does not restore the groups: its missing group is rendered as NULL.
-bool canRestoreEmptyGroups(const DecorrelationContext & context, const Aggregator::Params & params)
+bool canRestoreEmptyGroups(CorrelatedSubqueryKind kind, const Aggregator::Params & params)
 {
     if (!params.keys.empty() || params.empty_result_for_aggregation_by_empty_set)
         return false;
-    if (context.correlated_subquery.kind == CorrelatedSubqueryKind::LATERAL_JOIN)
+    if (kind == CorrelatedSubqueryKind::LATERAL_JOIN)
         return true;
 
     /// The -If form can have another type: for `sumState` over a Nullable argument it is the state of `sum` over the
     /// non-Nullable type.
-    return context.correlated_subquery.kind == CorrelatedSubqueryKind::EXISTS
+    return kind == CorrelatedSubqueryKind::EXISTS
         && std::ranges::all_of(params.aggregates, [](const AggregateDescription & aggregate)
         {
             return foldsMarkerIntoCondition(aggregate) || ignoresInputRows(aggregate)
@@ -1012,7 +1012,7 @@ QueryPlan decorrelateQueryPlan(
         {
             /// `LATERAL` always restores: the probe sees the group alone, while the runtime `HAVING` sees a block of groups.
             if (context.correlated_subquery.kind == CorrelatedSubqueryKind::EXISTS
-                && canRestoreEmptyGroups(context, aggregating->getParams())
+                && canRestoreEmptyGroups(context.correlated_subquery.kind, aggregating->getParams())
                 && filterRejectsGroupWithoutRows(*filter_step, *aggregating))
                 context.aggregates_with_rejected_empty_groups.insert(child);
         }
@@ -1217,7 +1217,7 @@ QueryPlan decorrelateQueryPlan(
 
         AggregateDescriptions new_aggregates = original_aggregator_params.aggregates;
 
-        bool restore_empty_groups = canRestoreEmptyGroups(context, original_aggregator_params)
+        bool restore_empty_groups = canRestoreEmptyGroups(context.correlated_subquery.kind, original_aggregator_params)
             && !context.aggregates_with_rejected_empty_groups.contains(node);
         if (restore_empty_groups)
         {
@@ -1954,6 +1954,11 @@ void addStepForResultRenaming(
     correlated_subquery_plan.addStep(std::move(expression_step));
 }
 
+}
+
+bool canRestoreEmptyGroupsOfExists(const AggregatingStep & aggregating_step)
+{
+    return canRestoreEmptyGroups(CorrelatedSubqueryKind::EXISTS, aggregating_step.getParams());
 }
 
 /* Build query plan for correlated subquery using decorrelation algorithm

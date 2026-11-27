@@ -53,6 +53,7 @@
 #include <Planner/CollectSets.h>
 #include <Planner/CollectTableExpressionData.h>
 #include <Planner/PlannerActionsVisitor.h>
+#include <Planner/PlannerCorrelatedSubqueries.h>
 
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
@@ -951,9 +952,9 @@ bool optimizePlanForExists(QueryPlan & query_plan, bool is_correlated)
         {
             const auto & params = aggregation->getParams();
             bool always_one_row = params.keys_size == 0 && !params.empty_result_for_aggregation_by_empty_set;
-            /// Decorrelation loses the row of an empty input of a keyless aggregate and applies `max_rows_to_group_by`
-            /// to all outer rows at once, so for a correlated subquery the steps above such an aggregate are ignored.
-            if (is_correlated && (always_one_row || params.max_rows_to_group_by != 0))
+            /// Decorrelation applies `max_rows_to_group_by` to all outer rows at once and loses the row of an empty input of
+            /// some keyless aggregates, so for a correlated subquery the steps above such an aggregate are ignored.
+            if (is_correlated && (always_one_row ? !canRestoreEmptyGroupsOfExists(*aggregation) : params.max_rows_to_group_by != 0))
                 changes_number_of_rows = nullptr;
             if (always_one_row)
             {

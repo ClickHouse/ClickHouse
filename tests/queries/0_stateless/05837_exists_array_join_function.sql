@@ -22,6 +22,10 @@ SELECT count() FROM numbers(3) AS l WHERE EXISTS (SELECT arrayJoin(if(t.k = 1, C
 SELECT count() FROM numbers(3) AS l WHERE EXISTS (SELECT arrayJoin([count()]) FROM t WHERE t.k = l.number);
 SELECT count() FROM numbers(3) AS l WHERE NOT EXISTS (SELECT arrayJoin([count()]) FROM t WHERE t.k = l.number);
 SELECT count() FROM numbers(3) AS l WHERE EXISTS (SELECT arrayJoin([sumState(toNullable(t.k))]) FROM t WHERE t.k = l.number);
+SELECT count() FROM numbers(3) AS l WHERE EXISTS (SELECT arrayJoin(CAST([], 'Array(UInt8)')), count() FROM t WHERE t.k = l.number);
+SELECT count() FROM numbers(3) AS l WHERE NOT EXISTS (SELECT arrayJoin(CAST([], 'Array(UInt8)')), count() FROM t WHERE t.k = l.number);
+SELECT count() FROM numbers(3) AS l WHERE EXISTS (SELECT arrayJoin(if(count() = 0, [], [1])) FROM t WHERE t.k = l.number);
+SELECT count() FROM numbers(3) AS l WHERE NOT EXISTS (SELECT arrayJoin(if(count() = 0, [], [1])) FROM t WHERE t.k = l.number);
 SELECT count() FROM numbers(5) AS l WHERE EXISTS (SELECT arrayJoin([t.number]) FROM numbers(5) AS t WHERE t.number = l.number GROUP BY t.number SETTINGS max_rows_to_group_by = 1, group_by_overflow_mode = 'any', max_block_size = 1) SETTINGS max_threads = 1;
 SELECT count() FROM numbers(5) AS l WHERE EXISTS (SELECT arrayJoin([t.number]) FROM numbers(5) AS t WHERE t.number = l.number GROUP BY t.number SETTINGS max_rows_to_group_by = 1, group_by_overflow_mode = 'break', max_block_size = 1) SETTINGS max_threads = 1;
 SELECT count() FROM numbers(5) AS l WHERE EXISTS (SELECT arrayJoin([t.number]) FROM numbers(5) AS t WHERE t.number = l.number GROUP BY t.number SETTINGS max_rows_to_group_by = 1, group_by_overflow_mode = 'throw', max_block_size = 1) SETTINGS max_threads = 1;
