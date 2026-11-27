@@ -5,8 +5,11 @@
 SET enable_analyzer = 1;
 SET use_query_condition_cache = 0;
 SET query_plan_direct_read_from_text_index = 1;
+-- Otherwise `count()` over the bare atom is answered by `ReadFromTextIndexCount` and shows no `Granules` line.
+SET query_plan_optimize_count_from_text_index = 0;
 
 DROP TABLE IF EXISTS tab;
+DROP TABLE IF EXISTS tab_nullable;
 
 -- One row per granule (index_granularity = 1) so the granule counts asserted below are stable
 -- regardless of CI-randomized merge-tree settings. index_granularity_bytes must not be 0 (0 disables
@@ -43,6 +46,14 @@ SELECT '= 5 no prune', countIf(explain ILIKE '%Name: idx%') = 0 FROM (EXPLAIN in
 SELECT 'IN (true) null_in', countIf(explain ILIKE '%Name: idx%') = 1 AND countIf(explain ILIKE '%Granules: 1/128%') = 1 FROM (EXPLAIN indexes = 1 SELECT count() FROM tab WHERE hasToken(s, 'rare') IN (true) SETTINGS transform_null_in = 1);
 SELECT 'IN (true,false) null_in no prune', countIf(explain ILIKE '%Name: idx%') = 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM tab WHERE hasToken(s, 'rare') IN (true, false) SETTINGS transform_null_in = 1);
 
+-- A NULL member of a null-aware set also matches NULL atoms, so a Nullable atom must not prune here:
+-- every row but the rare one is NULL, and pruning by the atom would return 1 instead of 128.
+CREATE TABLE tab_nullable (id UInt32, s Nullable(String), INDEX idx(s) TYPE text(tokenizer = 'splitByNonAlpha') GRANULARITY 1)
+ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1, index_granularity_bytes = 10485760;
+INSERT INTO tab_nullable SELECT number, if(number = 42, 'the rare token here', NULL) FROM numbers(128);
+SELECT 'IN (true, NULL) null_in nullable', count() FROM tab_nullable WHERE hasToken(s, 'rare') IN (true, NULL) SETTINGS transform_null_in = 1;
+SELECT 'IN (true) null_in nullable', count() FROM tab_nullable WHERE hasToken(s, 'rare') IN (true) SETTINGS transform_null_in = 1;
+
 -- The bare inner atom of a positive wrapper is still optimized for direct read independently: the
 -- `__text_index_idx_...` virtual column must appear in the plan for `= true` and `IN (true)`, exactly as
 -- for the bare atom. (Uses `count(explain) > 0` on the actions to stay robust to plan-format churn.)
@@ -62,4 +73,20 @@ FROM tab;
 
 SELECT 'results null_in', countIf(hasToken(s, 'rare') IN (true)) FROM tab SETTINGS transform_null_in = 1;
 
+-- The wrapped filters select the same rows as the bare atom, with and without direct read.
+SELECT 'filtered results',
+    (SELECT count() FROM tab WHERE hasToken(s, 'rare') = true),
+    (SELECT count() FROM tab WHERE hasToken(s, 'rare') != false),
+    (SELECT count() FROM tab WHERE hasToken(s, 'rare') IN (true)),
+    (SELECT count() FROM tab WHERE hasToken(s, 'rare') IS TRUE),
+    (SELECT count() FROM tab WHERE (hasToken(s, 'rare') = true) = true);
+SELECT 'filtered results no direct read',
+    (SELECT count() FROM tab WHERE hasToken(s, 'rare') = true),
+    (SELECT count() FROM tab WHERE hasToken(s, 'rare') != false),
+    (SELECT count() FROM tab WHERE hasToken(s, 'rare') IN (true)),
+    (SELECT count() FROM tab WHERE hasToken(s, 'rare') IS TRUE),
+    (SELECT count() FROM tab WHERE (hasToken(s, 'rare') = true) = true)
+SETTINGS query_plan_direct_read_from_text_index = 0;
+
 DROP TABLE tab;
+DROP TABLE tab_nullable;
