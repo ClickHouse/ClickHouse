@@ -68,6 +68,29 @@ bool isFullyDictionaryEncoded(const parq::ColumnMetaData & meta)
     return has_dictionary_data_page;
 }
 
+/// Whether all encodings of the column chunk keep the repetition of the values for the compression codec, as the
+/// general purpose codecs of `MergeTree` do. `RLE` and `BIT_PACKED` encode the repetition and definition levels (and
+/// the values of a `BOOLEAN` column, which has at most two). The delta encodings, `BYTE_STREAM_SPLIT`, and the
+/// encodings unknown here make the compressed size say nothing about the number of distinct values.
+bool hasOnlyRepetitionPreservingEncodings(const parq::ColumnMetaData & meta)
+{
+    for (const auto & encoding : meta.encodings)
+    {
+        switch (thriftEnumValue(encoding))
+        {
+            case parq::Encoding::PLAIN:
+            case parq::Encoding::PLAIN_DICTIONARY:
+            case parq::Encoding::RLE_DICTIONARY:
+            case parq::Encoding::RLE:
+            case parq::Encoding::BIT_PACKED:
+                break;
+            default:
+                return false;
+        }
+    }
+    return true;
+}
+
 /// The number of values of the dictionary page of a column chunk, from its header; nullopt if it is not a dictionary page.
 std::optional<UInt64> readDictionaryPageValues(Parquet::Prefetcher & prefetcher, const parq::ColumnMetaData & meta, size_t file_size)
 {
@@ -233,6 +256,7 @@ ParquetFileSummary summarizeParquetFile(
 
             summary.rows += static_cast<UInt64>(std::max<Int64>(metadata.row_groups[row_group].num_rows, 0));
             summary.compressed_bytes += static_cast<UInt64>(std::max<Int64>(meta.total_compressed_size, 0));
+            summary.compressed_size_measures_repetition = summary.compressed_size_measures_repetition && hasOnlyRepetitionPreservingEncodings(meta);
             if (!required)
             {
                 if (summary.nulls && meta.__isset.statistics && meta.statistics.__isset.null_count && meta.statistics.null_count >= 0)

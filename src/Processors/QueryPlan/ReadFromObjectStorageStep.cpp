@@ -230,6 +230,8 @@ std::optional<DataLakeReadEstimate> ReadFromObjectStorageStep::estimatePlainParq
         DataTypePtr type;
         UInt64 rows = 0;
         UInt64 compressed_bytes = 0;
+        /// All column chunks keep the repetition of the values, see `ParquetColumnSummary`.
+        bool compressed_size_measures_repetition = true;
         /// All files have the column, and all its column chunks are dictionary-encoded.
         bool fully_dictionary_encoded = true;
         std::optional<UInt64> max_dictionary_values = {};
@@ -291,6 +293,7 @@ std::optional<DataLakeReadEstimate> ReadFromObjectStorageStep::estimatePlainParq
             const auto & column = it->second;
             target.rows += column.rows;
             target.compressed_bytes += column.compressed_bytes;
+            target.compressed_size_measures_repetition = target.compressed_size_measures_repetition && column.compressed_size_measures_repetition;
             target.fully_dictionary_encoded = target.fully_dictionary_encoded && column.fully_dictionary_encoded && column.max_dictionary_values;
             if (column.max_dictionary_values)
                 target.max_dictionary_values = std::max(target.max_dictionary_values.value_or(0), *column.max_dictionary_values);
@@ -313,7 +316,7 @@ std::optional<DataLakeReadEstimate> ReadFromObjectStorageStep::estimatePlainParq
         auto & target = targets[i];
         if (target.fully_dictionary_encoded && target.max_dictionary_values)
             distinct_values[i] = target.max_dictionary_values;
-        else if (settings[Setting::estimate_distinct_values_from_metadata])
+        else if (settings[Setting::estimate_distinct_values_from_metadata] && target.compressed_size_measures_repetition)
             distinct_values[i] = estimateDistinctValuesFromCompressedSize(target.rows, target.compressed_bytes);
 
         /// A column without the NULL counts (the writer may omit them) still has its number of distinct values, so it

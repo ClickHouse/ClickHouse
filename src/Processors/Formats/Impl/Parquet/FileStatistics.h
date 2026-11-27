@@ -26,6 +26,11 @@ struct ParquetColumnSummary
     UInt64 rows = 0;
     /// The sum of `total_compressed_size` of its column chunks, with the dictionary pages.
     UInt64 compressed_bytes = 0;
+    /// Every column chunk stores its values only by encodings that keep their repetition for the compression codec
+    /// (`PLAIN` and the dictionary encodings), so `compressed_bytes` measures how often the values repeat. The other
+    /// encodings, such as `DELTA_BINARY_PACKED`, encode the differences between consecutive values: 100000 sorted
+    /// unique numbers take a few hundred bytes.
+    bool compressed_size_measures_repetition = true;
     /// The sum of `null_count` of its column chunks; nullopt if a chunk does not have it.
     std::optional<UInt64> nulls = 0;
     /// Every column chunk is dictionary-encoded in all its data pages (by `encoding_stats`), so its dictionary page has
