@@ -3593,7 +3593,12 @@ void ORCColumnToCHColumn::orcColumnsToCHChunk(
                         if (name_and_type.name.starts_with(nested_table_name + "."))
                             nested_columns.push_back(name_and_type);
                     }
-                    auto nested_table_type = Nested::collect(nested_columns).front().type;
+                    /// `collect` lists the requests it does not group, such as `size0`, before the grouped `Nested`.
+                    auto collected_columns = Nested::collect(nested_columns);
+                    auto nested_table_type = collected_columns.front().type;
+                    for (const auto & collected_column : collected_columns)
+                        if (collected_column.name == nested_table_name)
+                            nested_table_type = collected_column.type;
 
                     const auto & orc_column_with_type = orc_nested_column_it->second;
                     /// Under the data lake schema the fields of a struct are matched by field id and get their defaults, which
