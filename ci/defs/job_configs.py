@@ -1,5 +1,6 @@
+import os
+
 from praktika import Job
-from praktika.info import Info
 from praktika.settings import Settings
 from praktika.utils import Utils
 
@@ -106,14 +107,14 @@ integration_dind_env = dind_containment_env(LIMITED_MEM)
 BINARY_DOCKER_MEM = Utils.physical_memory() // 1024**3 * 1024**3
 
 # Only a pull request against the default branch of the public repository runs
-# without host networking; every other context keeps it.
-_info = Info()
+# without host networking; every other context keeps it. Read the trigger from the
+# environment directly: this module is imported during workflow discovery, before the
+# praktika environment is resolvable.
 HOST_NETWORK = (
     ""
     if (
-        _info.repo_name == "ClickHouse/ClickHouse"
-        and _info.pr_number > 0
-        and _info.base_branch == Settings.MAIN_BRANCH
+        os.getenv("GITHUB_REPOSITORY") == "ClickHouse/ClickHouse"
+        and os.getenv("GITHUB_BASE_REF") == Settings.MAIN_BRANCH
     )
     else "+--network=host"
 )
