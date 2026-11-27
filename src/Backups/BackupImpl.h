@@ -177,7 +177,6 @@ private:
     String original_endpoint; /// endpoint of source disk, we need to write it to metafile to restore a snapshot.
     String original_namespace; /// namespace of source disk, we need to write it to metafile to restore a snapshot.
 
-    BackupDataFileNameGeneratorType data_file_name_generator = BackupDataFileNameGeneratorType::FirstFileName;
     std::shared_ptr<IBackupCoordination> coordination;
 
     mutable std::mutex mutex;

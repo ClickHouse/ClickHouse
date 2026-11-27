@@ -221,7 +221,6 @@ BackupImpl::BackupImpl(
     , archive_params(archive_params_)
     , open_mode(OpenMode::WRITE)
     , writer(std::move(writer_))
-    , data_file_name_generator(params.data_file_name_generator)
     , coordination(params.backup_coordination)
     , uuid(params.backup_uuid)
     , backup_id(params.backup_id)
@@ -570,8 +569,8 @@ void BackupImpl::writeBackupMetadata()
     *out << "<uuid>" << toString(*uuid) << "</uuid>";
     if (!backup_id.empty())
         *out << "<backup_id>" << xml << xml_string("backup_id", backup_id) << "</backup_id>";
-    if (data_file_name_generator != BackupDataFileNameGeneratorType::FirstFileName)
-        *out << "<data_file_name_generator>" << SettingFieldBackupDataFileNameGeneratorTypeTraits::toString(data_file_name_generator)
+    if (params.data_file_name_generator != BackupDataFileNameGeneratorType::FirstFileName)
+        *out << "<data_file_name_generator>" << SettingFieldBackupDataFileNameGeneratorTypeTraits::toString(params.data_file_name_generator)
              << "</data_file_name_generator>";
 
     /// Iterate in place instead of copying all file infos (a backup can contain millions).
