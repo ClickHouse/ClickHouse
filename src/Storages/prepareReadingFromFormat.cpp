@@ -530,6 +530,9 @@ bool ReadFromFormatInfo::defaultsDependOnTheirBlock(const ContextPtr & context) 
         for (const auto & physical_column : physical_columns)
             if (physical_column.name != column.name)
                 available.insert({physical_column.type->createColumn(), physical_column.type, physical_column.name});
+        for (const auto & hive_column : hive_partition_columns_read_by_defaults)
+            if (!available.has(hive_column.name))
+                available.insert({hive_column.type->createColumn(), hive_column.type, hive_column.name});
         if (!available.columns())
             available.insert({DataTypeUInt8().createColumn(), std::make_shared<DataTypeUInt8>(), "_dummy"});
 

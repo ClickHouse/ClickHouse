@@ -10,6 +10,7 @@ INSERT INTO FUNCTION file(currentDatabase() || '/k=abc/q=bad/f.csv', LineAsStrin
 INSERT INTO FUNCTION file(currentDatabase() || '/k=abc/dotted.csv', LineAsString, 's String') SETTINGS engine_file_truncate_on_insert = 1 VALUES ('1,ok,');
 INSERT INTO FUNCTION file(currentDatabase() || '/k=abc/dotted2.csv', LineAsString, 's String') SETTINGS engine_file_truncate_on_insert = 1 VALUES ('1,ok,,zz');
 INSERT INTO FUNCTION file(currentDatabase() || '/k=abc/null.jsonl', LineAsString, 's String') SETTINGS engine_file_truncate_on_insert = 1 VALUES ('{"c0":1,"k.null":"file","d1":"x"}');
+INSERT INTO FUNCTION file(currentDatabase() || '/k=abc/f.parquet', Parquet, 'c0 Int32') SETTINGS engine_file_truncate_on_insert = 1 VALUES (1), (2);
 -- Not async: an async insert flush evaluates `currentDatabase()` in the table function arguments without the session database.
 INSERT INTO FUNCTION s3(s3_conn, filename = currentDatabase() || '/k=abc/f.jsonl', format = LineAsString, structure = 's String') SETTINGS async_insert = 0, s3_truncate_on_insert = 1 VALUES ('{"c0":1}'), ('{"c0":2,"d":"x"}');
 
@@ -22,6 +23,8 @@ SELECT * FROM file(currentDatabase() || '/k=abc/f.jsonl', JSONEachRow, 'c0 Int32
 SELECT * FROM file(currentDatabase() || '/k=abc/f.csv', CSV, 'c0 Int32, k String DEFAULT \'none\', d String DEFAULT k') ORDER BY c0;
 SELECT * FROM s3(s3_conn, filename = currentDatabase() || '/k=abc/f.jsonl', format = JSONEachRow, structure = 'c0 Int32, k String, d String DEFAULT k') ORDER BY c0;
 SELECT * FROM url('http://localhost:11111/test/' || currentDatabase() || '/k=abc/f.jsonl', JSONEachRow, 'c0 Int32, k String, d String DEFAULT k') ORDER BY c0;
+-- The top-K filter of `ORDER BY ... LIMIT` over Parquet checks the defaults when the query is planned.
+SELECT c0, d FROM file(currentDatabase() || '/k=abc/f.parquet', Parquet, 'c0 Int32, k String, d String DEFAULT k') ORDER BY c0 LIMIT 1 SETTINGS use_top_k_dynamic_filtering = 1;
 
 -- `abc` does not fit `UInt32` and `nokey/` has no `k`: an error only when a row needs a default that reads `k`.
 SELECT d FROM file(currentDatabase() || '/k=abc/full.jsonl', JSONEachRow, 'c0 Int32, k UInt32, d String DEFAULT toString(k)');
