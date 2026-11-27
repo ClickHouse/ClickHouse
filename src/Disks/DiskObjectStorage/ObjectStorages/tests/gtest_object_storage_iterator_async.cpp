@@ -27,6 +27,7 @@ namespace CurrentMetrics
 namespace DB::ErrorCodes
 {
     extern const int QUERY_WAS_CANCELLED;
+    extern const int TIMEOUT_EXCEEDED;
 }
 
 using namespace DB;
@@ -178,4 +179,43 @@ TEST(ObjectStorageIteratorAsync, CancelledQueryStopsFollowingEmptyPages)
 
     EXPECT_EQ(error_code, ErrorCodes::QUERY_WAS_CANCELLED);
     EXPECT_LE(served_pages, 3u);
+}
+
+/// The caller's stop check also runs between empty pages. It models a query deadline under
+/// `timeout_overflow_mode = 'break'`, which expires mid-listing and never marks the query killed.
+TEST(ObjectStorageIteratorAsync, StopCheckStopsFollowingEmptyPages)
+{
+    Pages pages(1000, ScriptedIteratorAsync::Page{{}, true});
+    pages.push_back({{"a"}, false});
+
+    std::optional<int> error_code;
+    size_t served_pages = 0;
+
+    /// A dedicated thread with no thread group, so only the stop check can stop the listing.
+    std::thread t([&]
+    {
+        ThreadStatus thread_status;
+        size_t checks = 0;
+        ScriptedIteratorAsync it(std::move(pages));
+        it.setStopCheck([&checks]
+        {
+            if (++checks > 10)
+                throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded");
+        });
+        try
+        {
+            it.getCurrentBatchAndScheduleNext();
+        }
+        catch (const Exception & e)
+        {
+            error_code = e.code();
+        }
+        it.deactivate();
+        served_pages = it.getServedPages();
+    });
+    t.join();
+
+    EXPECT_EQ(error_code, ErrorCodes::TIMEOUT_EXCEEDED);
+    EXPECT_GT(served_pages, 10u);
+    EXPECT_LE(served_pages, 12u);
 }

@@ -98,6 +98,8 @@ void IObjectStorageIteratorAsync::nextBatch()
 
             /// The caller cannot check for a stop between empty pages.
             CurrentThread::checkIfNotCancelled();
+            if (stop_check)
+                stop_check();
         }
     }
     catch (...)
@@ -175,6 +177,12 @@ std::optional<RelativePathsWithMetadata> IObjectStorageIteratorAsync::getCurrent
     auto temp_current_batch = std::move(current_batch);
     nextBatch();
     return temp_current_batch;
+}
+
+void IObjectStorageIteratorAsync::setStopCheck(std::function<void()> stop_check_)
+{
+    std::lock_guard lock(mutex);
+    stop_check = std::move(stop_check_);
 }
 
 size_t IObjectStorageIteratorAsync::getAccumulatedSize() const

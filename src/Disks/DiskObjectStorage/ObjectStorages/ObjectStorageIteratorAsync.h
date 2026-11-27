@@ -33,6 +33,8 @@ public:
     size_t getAccumulatedSize() const override;
     std::optional<RelativePathsWithMetadata> getCurrentBatchAndScheduleNext() override;
 
+    void setStopCheck(std::function<void()> stop_check_) override;
+
     void deactivate();
 
 protected:
@@ -62,6 +64,7 @@ protected:
     RelativePathsWithMetadata current_batch;
     RelativePathsWithMetadata::iterator current_batch_iterator;
     std::atomic<size_t> accumulated_size = 0;
+    std::function<void()> stop_check;
 };
 
 

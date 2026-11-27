@@ -314,6 +314,7 @@ RemoveOrphanFilesResult removeOrphanFiles(
     RelativePathsWithMetadata actual_files;
     throwIfQueryCancelled(context);
     auto files_iterator = object_storage->iterate(scan_path, /* max_keys = */ 0, /* with_tags = */ false, /* start_after = */ std::nullopt);
+    files_iterator->setStopCheck([context] { throwIfQueryCancelled(context); });
     while (true)
     {
         auto batch = files_iterator->getCurrentBatchAndScheduleNext();
