@@ -2050,6 +2050,31 @@ TEST(PromQLParser, RejectUnicodeSurrogateEscapes)
     EXPECT_EQ(parseStringLiteral(R"("\U0010FFFF")"), "\xF4\x8F\xBF\xBF");
 }
 
+
+TEST(PromQLParser, RejectSignInHexadecimalEscapes)
+{
+    for (const auto & [query, expected_error_pos] : std::initializer_list<std::pair<std::string_view, size_t>>{
+             {R"("\x+1")", 1},
+             {R"("\x-1")", 1},
+             {R"("\u+041")", 1},
+             {R"("\u+D800")", 1},
+             {R"("\U+0000041")", 1},
+             {R"("ab\x+1")", 3},
+         })
+    {
+        PrometheusQueryTree query_tree;
+        String error_message;
+        size_t error_pos = String::npos;
+
+        EXPECT_FALSE(query_tree.tryParse(query, 3, &error_message, &error_pos)) << query;
+        EXPECT_EQ(error_pos, expected_error_pos) << query;
+        EXPECT_NE(error_message.find("Cannot parse a hexadecimal number"), String::npos) << query << ": " << error_message;
+    }
+
+    EXPECT_EQ(parseStringLiteral(R"("\x4a\x4B")"), "JK");
+    EXPECT_EQ(parseStringLiteral(R"("A\U00000042")"), "AB");
+}
+
 TEST(PromQLParser, UnimplementedCalls)
 {
     EXPECT_EQ(parse("start()"), R"(
