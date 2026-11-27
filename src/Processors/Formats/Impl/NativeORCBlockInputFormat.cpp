@@ -2786,7 +2786,6 @@ static bool orcUnionBranchPrefersType(const ORC::Type * orc_branch_type, const D
     }
 }
 
-/// The node of the type tree `root` with the column id `id`.
 static const ORC::Type & getORCTypeByColumnId(const ORC::Type & root, UInt64 id)
 {
     const ORC::Type * node = &root;
