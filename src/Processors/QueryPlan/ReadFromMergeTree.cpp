@@ -3345,7 +3345,10 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToReadApplyi
         allow_query_condition_cache,
         allow_top_k_prewhere_query_condition_cache,
         /*supports_skip_indexes_on_data_read=*/false,
-        /*check_row_limits=*/true);
+        /*check_row_limits=*/true,
+        /*skip_ranges_analysis=*/false,
+        /*report_index_usage=*/false,
+        /*stop_at_first_match=*/false);
 
     /// The analysis above records in `indexes` that they are not applied on reading, which is still so for this read.
     indexes->use_skip_indexes_on_data_read = true;

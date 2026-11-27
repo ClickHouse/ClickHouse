@@ -180,9 +180,8 @@ struct QueryPlanOptimizationSettings
     bool limit_by_in_order;
     bool optimize_sorting_by_input_stream_properties;
     bool aggregation_in_order;
-    /// `allow_experimental_gpu_aggregation`: an `AggregatingStep` a rewrite made after the planner is made a `GPUAggregatingStep` where the device runs it.
+    /// `allow_experimental_gpu_aggregation`: an aggregation over a `MergeTree` table is read and computed on the device.
     bool gpu_aggregation = false;
-    UInt64 gpu_aggregation_batch_bytes = 0;
     bool optimize_projection;
     bool use_query_condition_cache;
     bool use_query_condition_cache_for_top_k;

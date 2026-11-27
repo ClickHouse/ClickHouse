@@ -480,9 +480,9 @@ UseProjectionsResult optimizeUseNormalProjections(
 /// Returns `COUNT()` query directly from the text index posting metadata.
 bool optimizeTrivialCountFromTextIndex(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
 
-/// Answers a keyless `sum`, `min` or `max` over a `MergeTree` table by decompressing its columns on
-/// the device, replacing the read under a `GPUAggregatingStep` with a source that emits one row of
-/// per-part results. Refuses everything in a build without GPU support, where there is no such step.
+/// Replaces an aggregation over a `MergeTree` table, and the read under it, with `ReadFromGPUCompressedColumns`, which
+/// reads the compressed blocks of the columns, and expands and groups them on the device. Refuses everything in a build
+/// without GPU support.
 bool optimizeAggregationFromGPUCompressedColumns(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
 
 /// Replaces a read of a `MergeTree` table with a `PREWHERE` by a read whose `PREWHERE` the device evaluates, as far as it

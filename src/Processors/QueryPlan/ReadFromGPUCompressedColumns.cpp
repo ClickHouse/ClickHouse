@@ -76,7 +76,7 @@ struct SharedState
     /// the values, which is read once for both.
     std::vector<std::optional<uint32_t>> filter_aliases;
 
-    std::shared_ptr<const GPU::GPUCompressedLayout> layout;
+    std::shared_ptr<const GPU::GPUReadLayout> layout;
     /// The parts the groups of the lanes are split into by the keys, each merged on its own, see `GPUSplitLanes`.
     size_t num_parts = 1;
 
@@ -93,9 +93,9 @@ bool expandsOnDevice(GPUDecompressionMode mode)
     return mode == GPUDecompressionMode::DEVICE;
 }
 
-GPU::GPUCodec codecOrThrow(UInt8 method, std::string_view payload, const String & column_name, const IMergeTreeDataPart & part)
+GPU::GPUCodec codecOrThrow(UInt8 method, const String & column_name, const IMergeTreeDataPart & part)
 {
-    const auto codec = GPU::deviceCodecOf(method, payload);
+    const auto codec = GPU::codecOf(method);
     if (!codec)
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
@@ -109,7 +109,7 @@ GPU::GPUCodec codecOrThrow(UInt8 method, std::string_view payload, const String 
 const std::vector<NameAndTypePair> & filterColumnsOf(const SharedState & state)
 {
     static const std::vector<NameAndTypePair> none;
-    return state.filter ? state.filter->columns : none;
+    return state.filter ? state.filter->compiled.columns : none;
 }
 
 DataTypes typesOf(const std::vector<NameAndTypePair> & columns)
@@ -230,40 +230,33 @@ DataTypes argumentTypesOf(const std::vector<ColumnToReduce> & columns)
     return types;
 }
 
-std::vector<GPU::GPUGroupByAggregate> groupByAggregatesOf(
-    const std::vector<ColumnToReduce> & columns, const std::vector<DerivedColumn> & derived, const std::vector<AggregateToCompute> & aggregates)
+std::vector<GPU::GPUGroupByAggregate> groupByAggregatesOf(const std::vector<ColumnToReduce> & columns, const std::vector<AggregateToCompute> & aggregates)
 {
     std::vector<GPU::GPUGroupByAggregate> result;
     result.reserve(aggregates.size());
     for (const auto & aggregate : aggregates)
     {
-        const IDataType * argument_type = nullptr;
         uint32_t column = GPU::GPUGroupByAggregate::no_column;
         if (aggregate.column)
-        {
-            argument_type = columns.at(*aggregate.column).column.type.get();
             column = static_cast<uint32_t>(*aggregate.column);
-        }
         else if (aggregate.derived)
-        {
-            argument_type = derived.at(*aggregate.derived).type.get();
             column = static_cast<uint32_t>(columns.size() + *aggregate.derived);
-        }
+        /// The plan checked that the device computes it into the type of the result, see `canAggregateOnDevice`.
         result.push_back({
             .aggregation = aggregate.aggregation,
             .column = column,
-            .result_type = GPU::groupByResultTypeOrThrow(argument_type, *aggregate.result_type, aggregate.aggregation),
+            .result_type = GPU::columnTypeOrThrow(*aggregate.result_type),
         });
     }
     return result;
 }
 
-std::vector<GPU::GPUDerivedValue> derivedValuesOf(const std::vector<DerivedColumn> & derived)
+std::vector<GPU::GPUComputedArgument> computedArgumentsOf(const std::vector<DerivedColumn> & derived)
 {
-    std::vector<GPU::GPUDerivedValue> result;
+    std::vector<GPU::GPUComputedArgument> result;
     result.reserve(derived.size());
     for (const auto & column : derived)
-        result.push_back({.expression = column.expression, .columns = GPU::GPUSpan<uint32_t>(column.columns)});
+        result.push_back({.expression = column.compiled, .columns = column.columns});
     return result;
 }
 
@@ -272,10 +265,8 @@ std::vector<GPU::GPUDerivedValue> derivedValuesOf(const std::vector<DerivedColum
 ///     GPUCompressedBlocks ×N -> GPUUpload ×N -> resize N -> L -> GPUGrouping ×L -> resize L -> 1 -> GPUSplitLanes
 ///         -> resize 1 -> P -> GPUMergePart ×P
 ///
-/// Chunks between them carry only a chunk info. Without aggregates there is no merge: each lane emits the rows it kept.
-
-/// The rows a lane collects on the device before it sends them to the host.
-constexpr size_t collect_flush_rows = 1UL << 20;
+/// Chunks between them carry only a chunk info. Without aggregates, `GPUFilterRows` ×L takes the place of the lanes and
+/// the merge: it emits the rows of each batch that the `WHERE` keeps.
 
 SharedHeader emptyHeader()
 {
@@ -377,7 +368,7 @@ protected:
     }
 
 private:
-    /// Hands what the reader reads of a part to the stager, as the layout numbers the columns.
+    /// Hands what the reader reads of a part to the stager, by the streams of the layout.
     class Feed final : public MergeTreeCompressedColumnsReader::Consumer
     {
     public:
@@ -385,10 +376,10 @@ private:
 
         Feed(GPUCompressedBlocksSource & source_, const IMergeTreeDataPart & part_) : source(source_), part(part_) { }
 
-        /// Of each column read: its name, and the layout's column of its values and of its sizes.
+        /// Of each column read: its name, and the layout's stream of its values and of its sizes.
         std::vector<String> names;
-        std::vector<size_t> columns;
-        std::vector<size_t> sizes_columns;
+        std::vector<size_t> values_streams;
+        std::vector<size_t> sizes_streams;
         /// Of the columns read, the bytes they expand to.
         size_t bytes = 0;
 
@@ -400,20 +391,20 @@ private:
             size_t kept,
             size_t remaining_bytes) override
         {
-            codecOrThrow(block.method, block.payload, names[column] + (stream == Stream::Sizes ? ".size" : ""), part);
+            codecOrThrow(block.method, names[column] + (stream == Stream::Sizes ? ".size" : ""), part);
             source.stager.addCompressedBlock(
-                layoutColumnOf(column, stream), block.method, block.payload, block.decompressed_bytes, remaining_bytes, skipped, kept);
+                layoutStreamOf(column, stream), block.method, block.payload, block.decompressed_bytes, remaining_bytes, skipped, kept);
             bytes += kept;
         }
 
         std::span<char> reserveBytes(size_t column, Stream stream, size_t max_bytes, size_t remaining_bytes) override
         {
-            return source.stager.reserveRawBytes(layoutColumnOf(column, stream), max_bytes, remaining_bytes);
+            return source.stager.reserveRawBytes(layoutStreamOf(column, stream), max_bytes, remaining_bytes);
         }
 
         void commitBytes(size_t column, Stream stream, size_t committed) override
         {
-            source.stager.commitRawBytes(layoutColumnOf(column, stream), committed);
+            source.stager.commitRawBytes(layoutStreamOf(column, stream), committed);
             bytes += committed;
         }
 
@@ -426,7 +417,7 @@ private:
         }
 
     private:
-        size_t layoutColumnOf(size_t column, Stream stream) const { return stream == Stream::Sizes ? sizes_columns[column] : columns[column]; }
+        size_t layoutStreamOf(size_t column, Stream stream) const { return stream == Stream::Sizes ? sizes_streams[column] : values_streams[column]; }
 
         GPUCompressedBlocksSource & source;
         const IMergeTreeDataPart & part;
@@ -440,7 +431,7 @@ private:
     };
 
     /// Opens the next part no source took yet, in the layout's order of columns: the keys, the values, then the columns
-    /// of the `WHERE` that are not aliases. The rows of all the ranges of a part are read as the rows of one part.
+    /// of the `WHERE` that are neither. The rows of all the ranges of a part are read as the rows of one part.
     std::optional<OpenPart> openNextPart()
     {
         const size_t part_index = state->next_part.fetch_add(1);
@@ -449,18 +440,18 @@ private:
 
         const PartToRead & part_to_read = state->parts[part_index];
         const IMergeTreeDataPart & part = *part_to_read.part;
-        const GPU::GPUCompressedLayout & layout = *state->layout;
+        const GPU::GPUReadLayout & layout = *state->layout;
 
         auto feed = std::make_unique<Feed>(*this, part);
         std::vector<NameAndTypePair> columns;
-        size_t column_index = 0;
         const auto add_column = [&](const NameAndTypePair & column)
         {
+            const size_t column_index = columns.size();
             columns.push_back(column);
             feed->names.push_back(column.name);
-            feed->columns.push_back(column_index);
-            feed->sizes_columns.push_back(isString(*column.type) ? layout.sizesColumnOf(column_index) : 0);
-            ++column_index;
+            const size_t values_stream = layout.valuesStreamOf(column_index);
+            feed->values_streams.push_back(values_stream);
+            feed->sizes_streams.push_back(layout.streams[values_stream].sizes.value_or(values_stream));
         };
         for (const auto & key : state->keys)
             add_column(key);
@@ -469,9 +460,8 @@ private:
         const std::vector<NameAndTypePair> & filter_columns = filterColumnsOf(*state);
         for (size_t i = 0; i < filter_columns.size(); ++i)
         {
-            if (layout.isAliased(column_index))
-                ++column_index;
-            else
+            /// Not read again where it is a key or a value.
+            if (layout.filter_columns[i] == columns.size())
                 add_column(filter_columns[i]);
         }
 
@@ -484,11 +474,14 @@ private:
     /// part: the uploader tells how many rows a batch really has.
     Chunk chunkOf(std::unique_ptr<GPU::GPUStagedBatch> batch) const
     {
-        const GPU::GPUCompressedLayout & layout = *state->layout;
+        const GPU::GPUReadLayout & layout = *state->layout;
         size_t rows = 0;
-        for (size_t c = 0; c < layout.numColumns(); ++c)
-            if (!layout.isAliased(c) && !layout.isVariable(c))
-                rows = std::max(rows, batch->columns[c].kept_bytes / layout.elementBytesOf(c));
+        for (size_t s = 0; s < layout.numStreams(); ++s)
+        {
+            const GPU::GPUReadStream & stream = layout.streams[s];
+            if (!stream.isSizes() && !stream.isVariable())
+                rows = std::max(rows, batch->streams[s].kept_bytes / stream.elementBytes());
+        }
 
         Chunk chunk(Columns{}, std::max<size_t>(rows, 1));
         chunk.getChunkInfos().add(std::make_shared<StagedBatchInfo>(
@@ -540,7 +533,7 @@ private:
 Chunk chunkOfGroups(const SharedState & state, const Block & header, GPU::GPUGroupingLane & lane, size_t num_groups)
 {
     if (num_groups != 0 && state.group_filter)
-        num_groups = lane.filterGroups(state.group_filter->expression, state.group_filter->columns);
+        num_groups = lane.filterGroups(state.group_filter->compiled, state.group_filter->columns);
     if (num_groups == 0)
         return {};
 
@@ -574,24 +567,23 @@ Chunk chunkOfGroups(const SharedState & state, const Block & header, GPU::GPUGro
     return Chunk(std::move(result_columns), num_groups);
 }
 
-std::shared_ptr<GPU::GPUGroupingLane> makeLane(const SharedState & state, size_t num_parts)
+std::unique_ptr<GPU::GPUGroupingLane> makeLane(const SharedState & state, size_t num_parts)
 {
-    return std::make_shared<GPU::GPUGroupingLane>(
+    return std::make_unique<GPU::GPUGroupingLane>(
         state.layout->keys,
         state.layout->values,
-        groupByAggregatesOf(state.columns, state.derived, state.aggregates),
-        derivedValuesOf(state.derived),
-        state.filter ? std::optional(state.filter->expression) : std::nullopt,
+        groupByAggregatesOf(state.columns, state.aggregates),
+        computedArgumentsOf(state.derived),
+        state.filter ? std::optional(state.filter->compiled) : std::nullopt,
         num_parts);
 }
 
-/// A lane: groups the batches it takes on a CUDA stream of its own, and then emits its groups, for the merge. Of a read
-/// that collects rows, emits the rows its `WHERE` keeps instead, as they come.
+/// A lane: groups the batches it takes on a CUDA stream of its own, and then emits its groups, for the merge.
 class GPUGroupingTransform : public IAccumulatingTransform
 {
 public:
-    GPUGroupingTransform(SharedStatePtr state_, SharedHeader output_header)
-        : IAccumulatingTransform(emptyHeader(), std::move(output_header))
+    explicit GPUGroupingTransform(SharedStatePtr state_)
+        : IAccumulatingTransform(emptyHeader(), emptyHeader())
         , state(std::move(state_))
         , lane(makeLane(*state, state->num_parts))
     {
@@ -600,15 +592,7 @@ public:
     String getName() const override { return "GPUGrouping"; }
 
 protected:
-    void consume(Chunk chunk) override
-    {
-        auto info = infoOrThrow<DeviceBatchInfo>(chunk, getName());
-        lane->add(std::move(*info->batch));
-
-        if (state->collect && lane->collectedRows() >= collect_flush_rows)
-            if (Chunk collected = takeCollected())
-                setReadyChunk(std::move(collected));
-    }
+    void consume(Chunk chunk) override { lane->add(std::move(*infoOrThrow<DeviceBatchInfo>(chunk, getName())->batch)); }
 
     Chunk generate() override
     {
@@ -616,21 +600,41 @@ protected:
             return {};
         generated = true;
 
-        if (state->collect)
-            return takeCollected();
-
         Chunk chunk(Columns{}, 1);
         chunk.getChunkInfos().add(std::make_shared<LaneGroupsInfo>(lane));
         return chunk;
     }
 
 private:
-    /// The rows collected so far, in the order of the read's header.
-    Chunk takeCollected()
+    const SharedStatePtr state;
+    const std::shared_ptr<GPU::GPUGroupingLane> lane;
+    bool generated = false;
+};
+
+/// Of a read that collects rows: emits the rows of each batch that the `WHERE` keeps, in the order of the read's header,
+/// on a CUDA stream of its own.
+class GPUFilterRowsTransform : public ISimpleTransform
+{
+public:
+    GPUFilterRowsTransform(SharedStatePtr state_, SharedHeader output_header)
+        : ISimpleTransform(emptyHeader(), std::move(output_header), /*skip_empty_chunks=*/true)
+        , state(std::move(state_))
+        , lane(makeLane(*state, 1))
+        , types(argumentTypesOf(state->columns))
     {
-        MutableColumns columns = lane->takeCollected(argumentTypesOf(state->columns));
+    }
+
+    String getName() const override { return "GPUFilterRows"; }
+
+protected:
+    void transform(Chunk & chunk) override
+    {
+        const auto info = infoOrThrow<DeviceBatchInfo>(chunk, getName());
+        chunk.clear();
+
+        MutableColumns columns = lane->filterRows(std::move(*info->batch), types);
         if (columns.empty())
-            return {};
+            return;
 
         const Block & header = getOutputPort().getHeader();
         if (header.columns() != state->columns.size())
@@ -641,12 +645,13 @@ private:
         Columns result_columns(header.columns());
         for (size_t i = 0; i < state->columns.size(); ++i)
             result_columns[header.getPositionByName(state->columns[i].column.name)] = std::move(columns[i]);
-        return Chunk(std::move(result_columns), num_rows);
+        chunk = Chunk(std::move(result_columns), num_rows);
     }
 
+private:
     const SharedStatePtr state;
-    const std::shared_ptr<GPU::GPUGroupingLane> lane;
-    bool generated = false;
+    const std::unique_ptr<GPU::GPUGroupingLane> lane;
+    const DataTypes types;
 };
 
 struct LanePartInfo : public ChunkInfoCloneable<LanePartInfo>
@@ -797,7 +802,7 @@ void ReadFromGPUCompressedColumns::initializePipeline(QueryPipelineBuilder & pip
     state->collect = collect;
     if (filter)
     {
-        for (const NameAndTypePair & column : filter->columns)
+        for (const NameAndTypePair & column : filter->compiled.columns)
         {
             std::optional<uint32_t> alias;
             for (size_t i = 0; i < keys.size() && !alias; ++i)
@@ -815,7 +820,7 @@ void ReadFromGPUCompressedColumns::initializePipeline(QueryPipelineBuilder & pip
         splitPartsAmongReaders(state->parts, 2 * state->num_readers);
 
     const DataTypes filter_types = typesOf(filterColumnsOf(*state));
-    state->layout = std::make_shared<const GPU::GPUCompressedLayout>(
+    state->layout = std::make_shared<const GPU::GPUReadLayout>(
         typesOf(keys), argumentTypesOf(columns), collect, filter_types, state->filter_aliases, batch_bytes);
 
     const size_t num_sources = std::max<size_t>(1, std::min(state->num_readers, state->parts.size()));
@@ -832,10 +837,13 @@ void ReadFromGPUCompressedColumns::initializePipeline(QueryPipelineBuilder & pip
 
     pipe.addSimpleTransform([&](const SharedHeader &) { return std::make_shared<GPUUploadTransform>(*state); });
     pipe.resize(num_lanes);
-    const SharedHeader lane_header = collect ? getOutputHeader() : emptyHeader();
-    pipe.addSimpleTransform([&](const SharedHeader &) { return std::make_shared<GPUGroupingTransform>(state, lane_header); });
-    if (!collect)
+    if (collect)
     {
+        pipe.addSimpleTransform([&](const SharedHeader &) { return std::make_shared<GPUFilterRowsTransform>(state, getOutputHeader()); });
+    }
+    else
+    {
+        pipe.addSimpleTransform([&](const SharedHeader &) { return std::make_shared<GPUGroupingTransform>(state); });
         pipe.resize(1);
         pipe.addSimpleTransform([&](const SharedHeader &) { return std::make_shared<GPUSplitLanesTransform>(state); });
         pipe.resize(state->num_parts);
@@ -887,8 +895,8 @@ void ReadFromGPUCompressedColumns::describeActions(FormatSettings & format_setti
     {
         format_settings.out << format_settings.detail_prefix << "Filter on the device: " << filter->description << "\n";
         format_settings.out << format_settings.detail_prefix << "Filter columns: ";
-        for (size_t i = 0; i < filter->columns.size(); ++i)
-            format_settings.out << (i == 0 ? "" : ", ") << filter->columns[i].name;
+        for (size_t i = 0; i < filter->compiled.columns.size(); ++i)
+            format_settings.out << (i == 0 ? "" : ", ") << filter->compiled.columns[i].name;
         format_settings.out << "\n";
     }
 }
@@ -936,7 +944,7 @@ void ReadFromGPUCompressedColumns::describeActions(JSONBuilder::JSONMap & map) c
         map.add("Filter on the device", filter->description);
 
         auto filter_columns_array = std::make_unique<JSONBuilder::JSONArray>();
-        for (const auto & column : filter->columns)
+        for (const auto & column : filter->compiled.columns)
             filter_columns_array->add(column.name);
         map.add("Filter columns", std::move(filter_columns_array));
     }
