@@ -2,10 +2,12 @@
 #include <Client/BuzzHouse/Generator/RandomGenerator.h>
 
 #include <ranges>
+#include <Core/Settings.h>
 #include <IO/copyData.h>
 #include <fmt/ranges.h>
 #include <Common/Base64.h>
 #include <Common/Exception.h>
+#include <Common/FieldVisitorToString.h>
 #include <Common/formatReadable.h>
 #include <Common/quoteString.h>
 
@@ -648,13 +650,55 @@ bool FuzzConfig::processServerQuery(const bool outlog, const String & query)
     return res;
 }
 
+/// Session settings that make the helper query fail, e.g. `make_distributed_plan` with `extremes`, or change its rows,
+/// e.g. a stale query cache entry, a timeout that stops quietly, or no row for `count` over an empty set
+const std::vector<std::pair<String, String>> FuzzConfig::helper_query_settings
+    = {{"extremes", "0"},
+       {"limit", "0"},
+       {"make_distributed_plan", "0"},
+       {"enable_parallel_replicas", "0"},
+       {"use_query_cache", "0"},
+       {"empty_result_for_aggregation_by_empty_set", "0"},
+       {"timeout_overflow_mode", "'throw'"},
+       {"timeout_overflow_mode_leaf", "'throw'"},
+       {"max_estimated_execution_time", "0"},
+       {"force_optimize_skip_unused_shards", "0"},
+       {"format_tsv_null_representation", "'\\\\N'"},
+       {"output_format_tsv_crlf_end_of_line", "0"}};
+
+String FuzzConfig::helperQuery(const String & query, const String & format, const String & settings) const
+{
+    String res = fmt::format("{} INTO OUTFILE '{}' TRUNCATE FORMAT {} SETTINGS ", query, fuzzer_out_file.generic_string(), format);
+
+    for (size_t i = 0; i < helper_query_settings.size(); i++)
+    {
+        res += fmt::format("{}{} = {}", i == 0 ? "" : ", ", helper_query_settings[i].first, helper_query_settings[i].second);
+    }
+    res += fmt::format("{}{};", settings.empty() ? "" : ", ", settings);
+    return res;
+}
+
+std::vector<std::pair<String, String>> FuzzConfig::changedHelperQuerySettings() const
+{
+    std::vector<std::pair<String, String>> res;
+    const auto & session_settings = cb->getClientSettings();
+
+    for (const auto & [nname, _] : helper_query_settings)
+    {
+        if (session_settings.isChanged(nname))
+        {
+            res.emplace_back(nname, DB::convertFieldToString(session_settings.get(nname)));
+        }
+    }
+    return res;
+}
+
 std::optional<DB::Strings> FuzzConfig::queryLines(const String & query, const bool outlog, const String & format)
 {
     String buf;
     DB::Strings res;
 
-    if (!processServerQuery(
-            outlog, fmt::format("{} INTO OUTFILE '{}' TRUNCATE FORMAT {};", query, fuzzer_out_file.generic_string(), format)))
+    if (!processServerQuery(outlog, helperQuery(query, format)))
     {
         return std::nullopt;
     }
@@ -1023,7 +1067,7 @@ ORDER BY f.name)sql";
         simple_det_aggrs.emplace_back("any", 0, 0, 1, 1, false);
 }
 
-void FuzzConfig::loadServerConfigurations()
+void FuzzConfig::loadServerConfigurations(RandomGenerator & rg)
 {
     loadServerSettings<String>(this->collations, "collations", R"(SELECT "name" FROM "system"."collations")");
     loadServerSettings<String>(this->in_formats, "input formats", R"(SELECT "name" FROM "system"."formats" WHERE "is_input" = 1)");
@@ -1071,11 +1115,73 @@ void FuzzConfig::loadServerConfigurations()
     loadServerSettings<String>(this->caches, "caches", "SHOW FILESYSTEM CACHES");
     if (enable_failpoints)
     {
-        loadServerSettings<String>(
-            this->failpoints,
-            "failpoints",
-            "SELECT \"name\" FROM \"system\".\"fail_points\""
-            " WHERE \"type\" NOT IN ('pauseable', 'pauseable_once') ORDER BY rand() LIMIT 10");
+        /// Only fail points that throw an exception, or fail a Keeper operation once, in background work and writes.
+        /// Others sleep, pause, abort, wedge a queue entry, change results, or fail every merge with an ordinary code.
+        static const DB::Strings allowed_failpoints
+            = {"azure_inject_auth_failure_on_request_once",
+               "azure_inject_poco_network_error_once",
+               "azure_inject_poco_timeout_once",
+               "backup_fail_before_writing_metadata",
+               "backup_fail_lock_file_check_after_creation",
+               "backup_fail_lock_file_write_after_commit",
+               "backup_fail_lock_file_write_after_open",
+               "backup_fail_reading_archive_size",
+               "check_table_inject_retryable_zk_error",
+               "compact_part_writer_fail_in_add_streams",
+               "deduplication_log_fail_durable_drop_sync",
+               "delta_lake_commit_fail_before_log_write",
+               "disk_object_storage_fail_commit_metadata_transaction",
+               "disk_object_storage_fail_precommit_metadata_transaction",
+               "file_cache_slru_downgrade_fail_before_finalize",
+               "iceberg_writes_cleanup",
+               "keepermap_fail_drop_data",
+               "local_directory_sync_fail",
+               "local_object_storage_network_error_during_remove",
+               "merge_task_throw_while_preparing_next_column",
+               "merge_tree_load_part_io_error",
+               "merge_tree_refresh_parts_throw_once",
+               "merge_tree_sequential_source_throw_in_constructor",
+               "mt_alter_readonly_throw_in_start_background_workers",
+               "mt_alter_settings_throw_before_metadata_commit",
+               "mt_alter_throw_after_mutation_registered",
+               "mt_alter_throw_in_durable_rollback",
+               "mt_alter_throw_in_start_mutation",
+               "mt_background_jobs_assignee_throw_after_task_created",
+               "mt_drop_selected_ttl_merge_once",
+               "mt_fail_selected_merge_before_start_once",
+               "mt_skip_scheduling_merge_once",
+               "mt_throw_after_mutation_commit",
+               "mt_throw_after_renaming_empty_parts",
+               "object_storage_queue_fail_commit_after_success",
+               "object_storage_queue_fail_commit_once",
+               "object_storage_queue_fail_delete",
+               "object_storage_queue_fail_in_the_middle_of_file",
+               "object_storage_queue_fail_tags_fetch",
+               "plain_object_storage_copy_fail_on_file_move",
+               "plain_object_storage_copy_temp_source_file_fail_on_file_move",
+               "plain_object_storage_copy_temp_target_file_fail_on_file_move",
+               "plain_object_storage_fail_after_copy_on_file_move",
+               "plain_object_storage_fail_on_finalize",
+               "plain_object_storage_write_fail_on_directory_create",
+               "plain_object_storage_write_fail_on_directory_move",
+               "refresh_mv_fail_znodes_read",
+               "replicated_merge_tree_commit_zk_fail_after_op",
+               "replicated_merge_tree_commit_zk_fail_when_recovering_from_hw_fault",
+               "replicated_merge_tree_insert_quorum_fail_0",
+               "restore_part_inject_no_space_error",
+               "rocksdb_rename_throw_filesystem_error",
+               "s3_read_buffer_throw_expired_token",
+               "s3_send_request_throw_expired_token",
+               "smt_insert_fake_hardware_error",
+               "stripe_log_sink_write_fallpoint",
+               "wide_part_writer_fail_in_add_streams",
+               "write_through_cache_fail"};
+        /// A build without one of them rejects its `SYSTEM ENABLE FAILPOINT`, which is harmless
+        DB::Strings shuffled = allowed_failpoints;
+
+        std::shuffle(shuffled.begin(), shuffled.end(), rg.generator);
+        shuffled.resize(rg.randomInt<size_t>(1, 6));
+        this->failpoints = std::move(shuffled);
     }
     loadServerSettings<String>(this->tokenizers, "tokenizers", R"(SELECT "name" FROM "system"."tokenizers")");
     loadFunctions();
@@ -1184,8 +1290,11 @@ String FuzzConfig::getRandomIcebergHistoryValue(const String & property)
 
 String FuzzConfig::getRandomFileSystemCacheValue()
 {
-    /// Can't use sampling here either
-    return queryFirstLine(R"(SELECT "cache_name" FROM "system"."filesystem_cache_settings" ORDER BY rand() LIMIT 1)", false);
+    /// Can't use sampling here either. Only the distributed cache servers' caches, which require an overcommit policy:
+    /// a disk cache keeps no owners across restarts (FILECACHE_ACCESS_DENIED), and may be too small for temporary data
+    return queryFirstLine(
+        R"(SELECT "cache_name" FROM "system"."filesystem_cache_settings" WHERE "cache_policy" ILIKE '%OVERCOMMIT%' ORDER BY rand() LIMIT 1)",
+        false);
 }
 
 String FuzzConfig::getRandomFuzzedPartName(const uint64_t rand_val)
@@ -1365,19 +1474,25 @@ String FuzzConfig::getRandomDistributedCacheServer(const uint64_t rand_val)
 void FuzzConfig::validateClickHouseHealth()
 {
     /// Errors caused by the data, not the server, e.g. a mutation stuck on `MODIFY COLUMN` to a non-Nullable type
-    /// over NULLs retries forever. `CANNOT_PARSE_*`, `CANNOT_CONVERT_TYPE`, out of range, `CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN`
-    static const String data_conversion_errors = "(6, 25, 26, 27, 38, 41, 70, 72, 321, 349, 376, 407, 441, 467, 675, 676)";
+    /// over NULLs retries forever. `CANNOT_PARSE_*`, `CANNOT_CONVERT_TYPE`, out of range, `CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN`,
+    /// and `NO_COMMON_TYPE`, which a comparison of a number with a non-constant `String` throws only when it runs
+    static const String data_conversion_errors = "(6, 25, 26, 27, 38, 41, 70, 72, 321, 349, 376, 386, 407, 441, 467, 675, 676)";
     /// The same errors in a replicated mutation, which records them in its queue entry too. The code is only in the text.
-    static const String unexpected_queue_error = "\"last_exception\" != '' AND NOT (\"type\" = 'MUTATE_PART' AND "
+    /// `FAULT_INJECTED` comes from the fail points BuzzHouse enables, and `MEMORY_LIMIT_EXCEEDED` with `fault injected`
+    /// from `memory_tracker_fault_probability`, which the task retries
+    static const String unexpected_queue_error = "\"last_exception\" != '' AND NOT startsWith(\"last_exception\", 'Code: 710.') AND "
+                                                 "NOT (startsWith(\"last_exception\", 'Code: 241.') AND \"last_exception\" LIKE '%fault injected%') AND "
+                                                 "NOT (\"type\" = 'MUTATE_PART' AND "
                                                  "toUInt32OrZero(extract(\"last_exception\", '^Code: ([0-9]+)[.]')) IN "
         + data_conversion_errors + ")";
     /// Temporary data only in the distributed cache fails merges while no cache server is registered, e.g. after a restart
-    static const String unexpected_part_error = "exception != '' AND error NOT IN " + data_conversion_errors
+    static const String unexpected_part_error = "exception != '' AND error != 710 AND error NOT IN " + data_conversion_errors
+        + " AND NOT (error = 241 AND exception LIKE '%fault injected%')"
         + " AND NOT (error = 900 AND exception LIKE '%no server is available%')";
 
     if (processServerQuery(
             false,
-            fmt::format(
+            helperQuery(fmt::format(
                 "SELECT x FROM ("
                 "(SELECT count() x, 1 y FROM \"system\".\"detached_parts\" WHERE startsWith(\"name\", 'broken'))"
                 " UNION ALL "
@@ -1416,12 +1531,10 @@ void FuzzConfig::validateClickHouseHealth()
                 " UNION ALL "
                 "(SELECT count() x, 14 y FROM \"system\".\"replication_queue\""
                 " WHERE {} AND \"num_tries\" > 5)"
-                ") tx ORDER BY y SETTINGS use_query_cache = 0, use_query_condition_cache = 0 INTO OUTFILE '{}' TRUNCATE FORMAT "
-                "TabSeparated;",
-                unexpected_part_error,
-                unexpected_queue_error,
-                unexpected_queue_error,
-                fuzzer_out_file.generic_string())))
+                ") tx ORDER BY y SETTINGS use_query_cache = 0, use_query_condition_cache = 0",
+                    unexpected_part_error,
+                    unexpected_queue_error,
+                    unexpected_queue_error))))
     {
         String buf;
         size_t i = 0;
@@ -1466,10 +1579,7 @@ void FuzzConfig::validateClickHouseHealth()
             {
                 String details;
                 if (i < detail_queries.size() && !detail_queries[i].empty()
-                    && processServerQuery(
-                        false,
-                        fmt::format(
-                            "{} INTO OUTFILE '{}' TRUNCATE FORMAT TabSeparated;", detail_queries[i], fuzzer_out_file.generic_string())))
+                    && processServerQuery(false, helperQuery(detail_queries[i])))
                 {
                     String dbuf;
                     std::ifstream detail_file(fuzzer_out_file, std::ios::in);
@@ -1490,6 +1600,61 @@ void FuzzConfig::validateClickHouseHealth()
             }
             i++;
             buf.resize(0);
+        }
+    }
+
+    checkTablesIntegrity("ALL TABLES");
+}
+
+void FuzzConfig::checkTablesIntegrity(const String & target)
+{
+    /// Verify the parts on disk, e.g. after a merge hit by `memory_tracker_fault_probability`. The server rethrows memory
+    /// and network errors, a timeout stops quietly, and other failures can be remote disk outages, so only these are damage.
+    /// `ReplicatedMergeTree` reports only `looks broken`, and detaches the part as `broken` too. A truncated file reports
+    /// `CANNOT_READ_ALL_DATA`, `ATTEMPT_TO_READ_AFTER_EOF` or, for `columns.txt`, `CANNOT_PARSE_INPUT_ASSERTION_FAILED`.
+    /// The CI profile caps `max_execution_time` at 10 seconds.
+    static const DB::Strings corruption_errors
+        = {"CHECKSUM_DOESNT_MATCH",
+           "CANNOT_READ_ALL_DATA",
+           "ATTEMPT_TO_READ_AFTER_EOF",
+           "CANNOT_PARSE_INPUT_ASSERTION_FAILED",
+           "CORRUPTED_DATA",
+           "BAD_SIZE_OF_FILE_IN_DATA_PART",
+           "NO_FILE_IN_DATA_PART",
+           "UNEXPECTED_FILE_IN_DATA_PART",
+           "UNKNOWN_PART_TYPE",
+           "BROKEN_PROJECTION",
+           "CANNOT_DECOMPRESS",
+           "TOO_LARGE_SIZE_COMPRESSED",
+           "UNKNOWN_CODEC",
+           "UNKNOWN_FORMAT",
+           "looks broken"};
+    if (processServerQuery(
+            false,
+            helperQuery(
+                "CHECK " + target,
+                "TabSeparated",
+                "check_query_single_value_result = 0, max_execution_time = 10, timeout_overflow_mode = 'break'")))
+    {
+        String buf;
+        std::ifstream infile(fuzzer_out_file, std::ios::in);
+        while (std::getline(infile, buf))
+        {
+            /// The last two columns are `is_passed` and `message`, `CHECK ALL TABLES` adds the database and table first
+            const size_t message_pos = buf.rfind('\t');
+            const size_t passed_pos = (message_pos == String::npos || message_pos == 0) ? String::npos : buf.rfind('\t', message_pos - 1);
+
+            if (passed_pos != String::npos && buf.compare(passed_pos + 1, 2, "0\t") == 0
+                && std::ranges::any_of(corruption_errors, [&](const String & code) { return buf.find(code, message_pos) != String::npos; }))
+            {
+                throw DB::Exception(
+                    DB::ErrorCodes::BUZZHOUSE_ORACLE,
+                    "ClickHouse health check on {}:{}: CHECK {} found a broken part: {}",
+                    host,
+                    port,
+                    target,
+                    buf);
+            }
         }
     }
 }

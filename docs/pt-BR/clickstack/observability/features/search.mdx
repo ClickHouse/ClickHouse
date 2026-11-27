@@ -1,0 +1,95 @@
+---
+slug: /clickstack/observability/features/search
+title: 'Busca com o ClickHouse Observability'
+sidebarTitle: 'Busca'
+description: 'Busca com o ClickHouse Observability'
+doc_type: 'guide'
+keywords: ['clickstack', 'busca', 'logs', 'observabilidade', 'busca de texto completo']
+---
+
+import Tagging from '/snippets/pt-BR/_observability_tagging.mdx';
+
+O ClickHouse Observability permite fazer uma busca de texto completo nos seus eventos (logs e rastros). Para começar a pesquisar, basta digitar palavras-chave que correspondam aos seus eventos. Por exemplo, se o seu log contiver &quot;Error&quot;, basta digitar &quot;Error&quot; na barra de pesquisa para encontrá-lo.
+
+A mesma sintaxe de pesquisa é usada para filtrar eventos em dashboards e gráficos.
+
+## Funcionalidades de busca {#search-features}
+
+### Sintaxe de pesquisa Lucene {#natural-language-syntax}
+
+* As pesquisas não diferenciam maiúsculas de minúsculas
+* Por padrão, as pesquisas correspondem a palavras inteiras (ex.: `Error` corresponde a `Error here`,
+  mas não a `Errors here`). Você pode envolver uma palavra com caracteres curinga para corresponder a
+  palavras parciais (ex.: `*Error*` corresponde a `AnyError` e `AnyErrors`)
+* Os termos de busca são pesquisados em qualquer ordem (ex.: `Hello World` corresponde a logs que
+  contenham `Hello World` e `World Hello`)
+* Você pode excluir palavras-chave usando `NOT` ou `-` (ex.: `Error NOT Exception` ou
+  `Error -Exception`)
+* Você pode usar `AND` e `OR` para combinar várias palavras-chave (ex.:
+  `Error OR Exception`)
+* Para buscar correspondências exatas, use aspas duplas (ex.: `"Error tests not found"`)
+
+<div className="ch-image-md">
+  <Frame>
+    ![Busca totalmente gerenciada mostrando resultados de logs para a consulta failed to watch](/images/clickstack/observability-search.png)
+  </Frame>
+</div>
+
+#### Busca por coluna/propriedade {#column-search}
+
+* Você pode pesquisar colunas e propriedades de JSON/map usando `column:value` (ex.: `SeverityText:error`,
+  `ServiceName:app`)
+* Você pode buscar um intervalo de valores usando operadores de comparação (`>`, `<`,
+  `>=`, `<=`) (ex.: `Duration:>1000`)
+* Você pode verificar a existência de uma propriedade usando `property:*` (ex.:
+  `Duration:*`)
+
+### Entrada de tempo {#time-input}
+
+* A entrada de tempo aceita linguagem natural (ex.: `1 hour ago`, `yesterday`,
+  `last week`)
+* Ao especificar um único ponto no tempo, a busca será feita desse ponto no
+  tempo até o momento atual.
+* Ao realizar a busca, o intervalo de tempo sempre será convertido no intervalo de tempo interpretado, para
+  facilitar a depuração de consultas de tempo.
+* Você também pode selecionar uma barra do histograma para ampliar um intervalo de tempo específico.
+
+### Sintaxe de pesquisa SQL {#sql-syntax}
+
+Opcionalmente, você pode alternar os campos de pesquisa para o modo SQL. Nesse modo, qualquer
+cláusula `WHERE` válida é aceita na pesquisa. Isso é útil para consultas complexas que não podem ser
+expressas na sintaxe do Lucene.
+
+### Instrução SELECT {#select-statement}
+
+Para especificar as colunas exibidas nos resultados da busca, use o campo de entrada `SELECT`.
+Trata-se de uma expressão SQL `SELECT` com as colunas a serem selecionadas na página de busca.
+No momento, não há suporte a aliases (por exemplo, não é possível usar `column as "alias"`).
+
+## Buscas salvas {#saved-searches}
+
+Você pode salvar suas pesquisas para acessá-las rapidamente depois. Uma vez salvas, elas aparecerão na página `Saved Searches`, o que facilita retomar consultas usadas com frequência sem precisar montá-las novamente.
+
+<div className="ch-image-lg">
+  <Frame>
+    ![Buscas salvas no ClickHouse Observability totalmente gerenciado mostrando My Saved Search](/images/clickstack/observability-saved-search-listing.png)
+  </Frame>
+</div>
+
+Para salvar uma pesquisa, configure sua consulta, selecione **Save** e dê à pesquisa um nome descritivo. Ao editar uma busca salva existente, a caixa de diálogo exibe **Update**, como no exemplo abaixo.
+
+<div className="ch-image-md">
+  <Frame>
+    ![Caixa de diálogo Save Search mostrando a consulta, o nome, os rótulos e o botão Update de uma busca salva existente](/images/clickstack/observability-save-search.png)
+  </Frame>
+</div>
+
+### Adicionando alertas a buscas salvas {#alerts-on-saved-searches}
+
+Buscas salvas podem ser monitoradas com alertas que notificam você quando determinadas condições forem atendidas. É possível configurar alertas para serem disparados quando o número de eventos correspondentes à sua busca salva ficar acima ou abaixo de um limiar especificado.
+
+Para obter mais informações sobre como criar e configurar alertas, consulte a [documentação de Alertas](/pt-BR/clickstack/observability/features/alerts).
+
+### Rotulagem {#tagging}
+
+<Tagging />

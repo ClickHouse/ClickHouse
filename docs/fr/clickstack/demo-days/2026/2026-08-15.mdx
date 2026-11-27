@@ -7,9 +7,7 @@ doc_type: 'guide'
 keywords: ['ClickStack', 'Demo days']
 ---
 
-<div id="dashboard-variables">
-  ## Variables de tableau de bord
-</div>
+## Variables de tableau de bord {#dashboard-variables}
 
 *Démo par [@pulpdrew](https://github.com/pulpdrew)*
 
@@ -35,9 +33,7 @@ La configuration des variables reste conditionnée par `NEXT_PUBLIC_ENABLE_DASHB
 
 **PR associés :** [#2836](https://github.com/hyperdxio/hyperdx/pull/2836) ajoute la configuration des variables de filtre, [#2873](https://github.com/hyperdxio/hyperdx/pull/2873) substitue les variables dans les graphiques en SQL brut, [#2874](https://github.com/hyperdxio/hyperdx/pull/2874) autocomplétion et validation des variables SQL de tableau de bord, [#2901](https://github.com/hyperdxio/hyperdx/pull/2901) prend en charge les variables de tableau de bord dans les tuiles du builder de graphiques, [#2910](https://github.com/hyperdxio/hyperdx/pull/2910) développe les variables en valeurs vides dans les requêtes d&#39;alerte, [#2923](https://github.com/hyperdxio/hyperdx/pull/2923) prend en charge les requêtes de valeurs de variables dépendantes, [#2937](https://github.com/hyperdxio/hyperdx/pull/2937) prend en charge les macros imbriquées et les références à des variables dans les macros, [#2944](https://github.com/hyperdxio/hyperdx/pull/2944) ajoute les variables de tableau de bord à l&#39;API externe
 
-<div id="alert-detail-page-with-evaluation-history">
-  ## Page de détail d’une alerte avec historique des évaluations
-</div>
+## Page de détail d’une alerte avec historique des évaluations {#alert-detail-page-with-evaluation-history}
 
 *Démo par [@wrn14897](https://github.com/wrn14897)*
 
@@ -57,15 +53,13 @@ La page reste derrière `NEXT_PUBLIC_ENABLE_ALERT_DETAILS`.
 
 **PR associés :** [#2833](https://github.com/hyperdxio/hyperdx/pull/2833) modèle de lecture des évaluations d’alerte et `GET /alerts/:id/evaluations`, [#2834](https://github.com/hyperdxio/hyperdx/pull/2834) persistance des erreurs d’évaluation des alertes et des analytics dans AlertHistory, [#2835](https://github.com/hyperdxio/hyperdx/pull/2835) page de détail d’une alerte avec historique des évaluations, [#2928](https://github.com/hyperdxio/hyperdx/pull/2928) alignement des marqueurs du graphique d’alerte sur le début du bucket évalué, [#2931](https://github.com/hyperdxio/hyperdx/pull/2931) possibilité de modifier et supprimer des alertes depuis la page de détail de l’alerte
 
-<div id="investigating-alerts-and-mcp-tool-annotations">
-  ## Investigation des alertes et annotations des outils MCP
-</div>
+## Investigation des alertes et annotations des outils MCP {#investigating-alerts-and-mcp-tool-annotations}
 
 *Démo par [@brandon-pereira](https://github.com/brandon-pereira)*
 
 <iframe width="768" height="432" src="https://www.youtube.com/embed/942yeJitK4Q" title="Lecteur vidéo YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
 
-Les alertes déclenchées disposent désormais d&#39;un bouton Investiguer. Cliquez dessus pour lancer une investigation dans un notebook depuis la page des alertes ou la page de détail d&#39;une alerte.
+**ClickHouse Observability uniquement :** Les alertes déclenchées disposent désormais d&#39;un bouton Investiguer. Cliquez dessus pour lancer une investigation dans un notebook depuis la page des alertes ou la page de détail d&#39;une alerte.
 
 L&#39;objectif à terme est de lancer automatiquement ces investigations lorsqu&#39;une alerte se déclenche. Le bouton constitue une étape intermédiaire utile, et non la forme finale envisagée.
 
@@ -73,17 +67,15 @@ Chaque outil du serveur MCP ClickStack inclut désormais des indications d&#39;a
 
 L&#39;ajout de `readOnlyHint` et `destructiveHint` fournit aux clients suffisamment d&#39;informations pour traiter ces outils différemment. Les opérations de lecture peuvent se poursuivre sans interruption, tandis que les actions destructrices peuvent attendre une approbation explicite. La suppression d&#39;une alerte en est l&#39;exemple évident. Vous devriez être invité à confirmer avant qu&#39;elle ne soit effectuée.
 
-La dernière modification concerne les outils que les agents choisissent en premier lieu. L&#39;utilisation de `clickstack_sql` avait augmenté à mesure que l&#39;ensemble d&#39;outils s&#39;élargissait, faute de politique de sélection claire. Les agents recouraient au SQL brut même lorsque les outils de création étaient mieux adaptés.
+La dernière modification concerne les outils que les agents choisissent en premier lieu. L&#39;utilisation de `clickstack_sql` avait augmenté à mesure que l&#39;ensemble d&#39;outils s&#39;élargissait, faute de politique de sélection claire. Les agents recouraient au SQL brut même lorsque les outils du constructeur étaient mieux adaptés.
 
-Cela a des implications qui vont au-delà de l&#39;exactitude des requêtes. Le SQL brut crée des tuiles de résultats statiques. Les outils de création, `clickstack_table`, `clickstack_timeseries` et `clickstack_search`, produisent des tuiles que vous pouvez explorer et à partir desquelles vous pouvez pivoter.
+Cela a des implications qui vont au-delà de l&#39;exactitude des requêtes. Le SQL brut crée des tuiles de résultats statiques. Les outils du constructeur, `clickstack_table`, `clickstack_timeseries` et `clickstack_search`, produisent des tuiles que vous pouvez explorer et à partir desquelles vous pouvez pivoter.
 
-Le MCP oriente désormais les agents en priorité vers ces outils de création et réserve le SQL brut aux requêtes qu&#39;ils ne peuvent véritablement pas exprimer. Les scores d&#39;évaluation se sont sensiblement améliorés après cette modification.
+Le MCP oriente désormais les agents en priorité vers ces outils du constructeur et réserve le SQL brut aux requêtes qu&#39;ils ne peuvent véritablement pas exprimer. Les scores d&#39;évaluation se sont sensiblement améliorés après cette modification.
 
-**PR associés :** [#2838](https://github.com/hyperdxio/hyperdx/pull/2838) ajoute des annotations aux outils MCP (`readOnlyHint`, etc.), [#2840](https://github.com/hyperdxio/hyperdx/pull/2840) oriente les agents vers les outils de création de requêtes plutôt que vers le SQL brut, [#2870](https://github.com/hyperdxio/hyperdx/pull/2870) oriente les agents de tableau de bord vers des filtres de tuiles par série. Le bouton Investiguer lui-même n&#39;a pas de PR publique associée.
+**PR associés :** [#2838](https://github.com/hyperdxio/hyperdx/pull/2838) ajoute des annotations aux outils MCP (`readOnlyHint`, etc.), [#2840](https://github.com/hyperdxio/hyperdx/pull/2840) oriente les agents vers les outils du constructeur de requêtes plutôt que vers le SQL brut, [#2870](https://github.com/hyperdxio/hyperdx/pull/2870) oriente les agents de tableau de bord vers des filtres de tuiles par série. Le bouton Investiguer lui-même n&#39;a pas de PR publique associée.
 
-<div id="multi-series-metric-charts-in-a-single-query">
-  ## Graphiques de métriques à plusieurs séries dans une seule requête
-</div>
+## Graphiques de métriques à plusieurs séries dans une seule requête {#multi-series-metric-charts-in-a-single-query}
 
 *Démo par [@wrn14897](https://github.com/wrn14897)*
 
@@ -101,9 +93,7 @@ Le `UNION ALL` composé et le pivot faisaient passer chaque série par la même 
 
 **PR associées :** [#2858](https://github.com/hyperdxio/hyperdx/pull/2858) étendre la couverture des tests d&#39;entiers pour la fusion de métriques à plusieurs séries, [#2859](https://github.com/hyperdxio/hyperdx/pull/2859) déplacer vers ClickHouse le calcul de fusion des métriques à plusieurs séries, [#2907](https://github.com/hyperdxio/hyperdx/pull/2907) couverture des tâches d&#39;alerte pour les tuiles de métriques à plusieurs séries, [#2916](https://github.com/hyperdxio/hyperdx/pull/2916) corriger les graphiques de métriques à plusieurs séries mélangeant des agrégations de flottants et d&#39;entiers, [#2872](https://github.com/hyperdxio/hyperdx/pull/2872) modèle d&#39;expression de formule, [#2908](https://github.com/hyperdxio/hyperdx/pull/2908) afficher les formules dans la requête de métriques composée, [#2909](https://github.com/hyperdxio/hyperdx/pull/2909) interface de l&#39;éditeur de graphiques pour les formules de métriques
 
-<div id="lucene-autocomplete-and-password-requirement-fixes">
-  ## Correctifs de l’autocomplétion Lucene et des exigences de mot de passe
-</div>
+## Correctifs de l’autocomplétion Lucene et des exigences de mot de passe {#lucene-autocomplete-and-password-requirement-fixes}
 
 *Démo par [@pulpdrew](https://github.com/pulpdrew)*
 

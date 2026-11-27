@@ -3,25 +3,33 @@
 #if USE_AVRO
 
 #include <algorithm>
+#include <functional>
 
 #include <Common/CacheBase.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/HTTPHeaderFilter.h>
 #include <Common/SipHash.h>
+#include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
 #include <Common/maskURIPassword.h>
 
 #include <base/sleep.h>
+
+#include <Core/Settings.h>
 
 #include <Formats/FormatSettings.h>
 
 #include <IO/HTTPCommon.h>
 
 #include <Interpreters/Context.h>
+#include <Interpreters/ProcessList.h>
 
 #include <Processors/Formats/Impl/AvroRowInputFormat.h>
+
+#include <QueryPipeline/ExecutionSpeedLimits.h>
 
 #include <Compiler.hh>
 #include <ValidSchema.hh>
@@ -48,6 +56,12 @@ namespace CurrentMetrics
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsSeconds max_execution_time;
+    extern const SettingsOverflowMode timeout_overflow_mode;
+}
 
 namespace ErrorCodes
 {
@@ -99,23 +113,60 @@ bool isRetryableException(const Exception & e)
     return false;
 }
 
+/// Throws on `KILL QUERY` and at `max_execution_time` in the `throw` overflow mode. Without a query, as for the
+/// external data of an HTTP request, which is read before the query starts, the time counts from this call.
+std::function<void()> makeTimeLimitCheck()
+{
+    auto query_context = CurrentThread::tryGetQueryContext();
+    if (!query_context)
+        return {};
+    if (auto query_status = query_context->getProcessListElementSafe())
+        return [query_status] { std::ignore = query_status->checkTimeLimit(); };
+
+    const auto & settings = query_context->getSettingsRef();
+    ExecutionSpeedLimits limits;
+    limits.max_execution_time = settings[Setting::max_execution_time];
+    if (limits.max_execution_time.totalMicroseconds() == 0)
+        return {};
+    const OverflowMode overflow_mode = settings[Setting::timeout_overflow_mode];
+    return [limits, overflow_mode, watch = Stopwatch()] { std::ignore = limits.checkTimeLimit(watch.elapsed(), overflow_mode); };
+}
+
+/// Sleeps in short steps, so that `KILL QUERY` and an expired `max_execution_time` interrupt the backoff.
+void sleepBeforeRetry(UInt64 milliseconds, const std::function<void()> & check)
+{
+    static constexpr UInt64 check_interval_ms = 100;
+    while (true)
+    {
+        /// Throws on `KILL QUERY` and in the `throw` overflow mode; the `break` mode keeps waiting.
+        if (check)
+            check();
+        if (milliseconds == 0)
+            return;
+        const UInt64 step = std::min(milliseconds, check_interval_ms);
+        sleepForMilliseconds(step);
+        milliseconds -= step;
+    }
+}
+
 /// Run `op` once, then retry on transient transport failures. Backoff doubles
 /// each attempt up to a 10-second cap.
 template <typename Op>
 auto runWithRetry(
     const FormatSettings::AvroSchemaRegistryRetryConfig & retry,
     const std::string & operation_for_log,
-    Op && op) -> decltype(op())
+    Op && op) -> decltype(op(std::declval<const std::function<void()> &>()))
 {
     static constexpr UInt64 max_backoff_ms = 10000;
     /// Cap each individual sleep (including the first) at `max_backoff_ms`.
     UInt64 backoff_ms = std::min<UInt64>(std::max<UInt64>(retry.initial_backoff_ms, 1), max_backoff_ms);
     UInt64 attempt = 0;
+    const auto check = makeTimeLimitCheck();
     while (true)
     {
         try
         {
-            return op();
+            return op(check);
         }
         catch (const Exception & e)
         {
@@ -126,7 +177,7 @@ auto runWithRetry(
                 "Retry {}/{} for {} after transient error: {}",
                 attempt + 1, retry.max_retries, operation_for_log, e.displayText());
         }
-        sleepForMilliseconds(backoff_ms);
+        sleepBeforeRetry(backoff_ms, check);
         backoff_ms = std::min(backoff_ms * 2, max_backoff_ms);
         ++attempt;
     }
@@ -176,7 +227,7 @@ avro::ValidSchema ConfluentSchemaRegistry::fetchSchema(
     const FormatSettings::AvroSchemaRegistryTimeouts & timeouts,
     const FormatSettings::AvroSchemaRegistryRetryConfig & retry)
 {
-    auto do_fetch = [&]() -> avro::ValidSchema
+    auto do_fetch = [&](const std::function<void()> & check) -> avro::ValidSchema
     {
         try
         {
@@ -202,7 +253,9 @@ avro::ValidSchema ConfluentSchemaRegistry::fetchSchema(
                 sendHTTPRequest(*session, request)->finalize();
 
                 Poco::Net::HTTPResponse response;
-                auto response_body = receiveResponse(*session, request, response, false);
+                auto response_body = receiveHTTPResponse(*session, response);
+                response_body->setBeforeReadCallback(check);
+                assertResponseIsOk(request.getURI(), response, *response_body, false, requestCredentialSecrets(request));
 
                 String response_text;
                 readStringUntilEOF(response_text, *response_body);
@@ -265,7 +318,7 @@ uint32_t ConfluentSchemaRegistry::registerSchema(
     const UInt64 schema_hash = sipHash64(schema_json);
     cache_key.append(reinterpret_cast<const char *>(&schema_hash), sizeof(schema_hash));
 
-    auto do_register_one_attempt = [&]() -> uint32_t
+    auto do_register_one_attempt = [&](const std::function<void()> & check) -> uint32_t
     {
         try
         {
@@ -310,6 +363,7 @@ uint32_t ConfluentSchemaRegistry::registerSchema(
 
                 Poco::Net::HTTPResponse response;
                 auto response_stream = receiveHTTPResponse(*session, response);
+                response_stream->setBeforeReadCallback(check);
 
                 if (response.getStatus() == Poco::Net::HTTPResponse::HTTP_CONFLICT)
                 {

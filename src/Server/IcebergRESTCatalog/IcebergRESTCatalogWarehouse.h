@@ -31,6 +31,7 @@ public:
     const String base_location;
     const ObjectStoragePtr object_storage;
 
+    /// For a table or namespace location. It must be inside `base_location`.
     void validateLocation(const String & location) const;
     [[nodiscard]] String objectKey(const String & location) const;
 
@@ -44,7 +45,11 @@ public:
     [[nodiscard]] std::vector<IcebergNamespaceName> listNamespaces(const IcebergNamespaceName & parent) const;
 
     using CreateTableResult = KeeperIcebergRESTCatalogStore::CreateTableResult;
-    [[nodiscard]] CreateTableResult createTable(const IcebergNamespaceName & ns, const String & table, const IcebergTablePointer & pointer) const;
+    using CreateTableOutcome = KeeperIcebergRESTCatalogStore::CreateTableOutcome;
+    [[nodiscard]] CreateTableOutcome
+    createTable(const IcebergNamespaceName & ns, const String & table, const IcebergTablePointer & pointer, const String & table_root) const;
+    [[nodiscard]] std::optional<CreateTableOutcome>
+    checkForLocationConflict(const IcebergNamespaceName & ns, const String & table, const String & table_root) const;
     [[nodiscard]] std::optional<IcebergTablePointer> getTable(const IcebergNamespaceName & ns, const String & table) const;
     [[nodiscard]] bool tableExists(const IcebergNamespaceName & ns, const String & table) const;
     [[nodiscard]] std::optional<Strings> listTables(const IcebergNamespaceName & ns) const;
