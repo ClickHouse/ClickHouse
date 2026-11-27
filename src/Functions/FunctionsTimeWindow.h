@@ -60,10 +60,20 @@ struct ToStartOfTransform;
             return static_cast<UInt32>(time_zone.toStartOf##INTERVAL_KIND##Interval(t, delta)); \
         } \
     };
-    TRANSFORM_TIME(Hour)
     TRANSFORM_TIME(Minute)
     TRANSFORM_TIME(Second)
 #undef TRANSFORM_TIME
+
+    /// A window ends a fixed number of seconds after it starts (see `AddTime`), so the start of an hour window stays on the
+    /// grid counted from the local midnight, also on a day when the offset changes by a fraction of an hour.
+    template <>
+    struct ToStartOfTransform<IntervalKind::Kind::Hour>
+    {
+        static UInt32 execute(UInt32 t, UInt64 delta, const DateLUTImpl & time_zone)
+        {
+            return static_cast<UInt32>(time_zone.toStartOfHourWindow(t, delta));
+        }
+    };
 
 #define TRANSFORM_SUBSECONDS(INTERVAL_KIND, DEF_SCALE) \
 template<> \

@@ -20,6 +20,10 @@ Estas opciones de configuración corresponden al servidor de ClickHouse y se gen
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />Reserva la GPU al iniciar el servidor para ejecutar consultas en ella. El servidor se niega a iniciarse si se compiló sin soporte para GPU o si no hay ningún dispositivo CUDA.
 
+## enable_iceberg_rest_catalog {#enable_iceberg_rest_catalog}
+
+<SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />Activa el servidor experimental de catálogo REST de Iceberg, configurado en la sección `iceberg_rest_catalog`. Los cambios surten efecto tras reiniciar el servidor.
+
 ## enable_read_through_distributed_cache {#enable_read_through_distributed_cache}
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="Yes" />Solo tiene efecto en ClickHouse Cloud. Permite leer desde la caché distribuida. Es una opción de configuración a nivel de servidor que se aplica sin necesidad de reiniciar, de modo que también la sigan las operaciones en segundo plano que no tienen su propio perfil de consulta (fusiones, mutaciones, vaciados de tablas `Buffer`). Las consultas individuales pueden anularla mediante la configuración `force_read_through_distributed_cache`.

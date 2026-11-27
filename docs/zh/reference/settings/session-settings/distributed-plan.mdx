@@ -20,12 +20,15 @@ import { PrivatePreviewBadge } from "/snippets/zh/components/PrivatePreviewBadge
 
 <ExperimentalBadge />
 
-<SettingsInfoBlock type="NonZeroUInt64" default_value="8" />
+<SettingsInfoBlock type="UInt64" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "8"},{"label": "新的 Experimental 设置。"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "默认根据待读取的行数和工作线程数量选择读取任务的数量。"}]}, {"id": "row-2","items": [{"label": "25.5"},{"label": "8"},{"label": "新增实验性设置。"}]}]} />
 
-用于分布式查询并行读取的默认任务数。任务会分配到各个副本之间。
-由基于规则的分布式查询计划器使用。基于成本的优化器会根据估算成本选择读取扇出，不使用此设置。
+分布式查询中用于并行读取的任务数量。这些任务会分配到各个工作线程上执行。
+
+`0` 表示自动选择任务数量：读取操作选中的行中，每 `distributed_plan_min_rows_per_reader` 行对应一个任务，至少为一个，最多不超过工作线程数量。
+
+此设置由基于规则的分布式查询计划器使用。基于成本的优化器会根据估算成本选择读取的 fan-out，不使用此设置。
 
 ## distributed_plan_default_shuffle_join_bucket_count {#distributed_plan_default_shuffle_join_bucket_count}
 
@@ -145,6 +148,17 @@ import { PrivatePreviewBadge } from "/snippets/zh/components/PrivatePreviewBadge
 
 在分布式查询计划中，使用 broadcast join 而非 shuffle join 的最大行数。
 这是基于规则的分布式查询计划器使用的启发式规则。启用基于成本的优化器后，broadcast 与 shuffle 的选择由估算成本决定，此设置不起作用。
+
+## distributed_plan_min_rows_per_reader {#distributed_plan_min_rows_per_reader}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="NonZeroUInt64" default_value="1000000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1000000"},{"label": "新增实验性设置。"}]}]} />
+
+当 `distributed_plan_default_reader_bucket_count` 为 `0` 时，每个读取任务的最小行数。
+供基于规则的分布式查询计划器使用。
 
 ## distributed_plan_optimize_exchanges {#distributed_plan_optimize_exchanges}
 

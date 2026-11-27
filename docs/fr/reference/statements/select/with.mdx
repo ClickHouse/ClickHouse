@@ -376,9 +376,9 @@ SELECT * FROM search_tree;
 
 ### Ordre de parcours {#search-order}
 
-Pour établir un parcours en profondeur, nous calculons pour chaque ligne de résultat un tableau des lignes déjà visitées :
+Pour établir un parcours en profondeur, nous calculons pour chaque ligne de résultat un tableau des lignes déjà visitées :
 
-**Exemple :** Parcours d’arbre en profondeur
+**Exemple :** Parcours d’arbre en profondeur
 
 ```sql
 WITH RECURSIVE search_tree AS (
@@ -402,9 +402,9 @@ SELECT * FROM search_tree ORDER BY path;
 └────┴───────────┴───────────┴─────────┘
 ```
 
-Pour obtenir un parcours en largeur, l’approche standard consiste à ajouter une colonne qui indique la profondeur de la recherche :
+Pour obtenir un parcours en largeur, l’approche standard consiste à ajouter une colonne qui indique la profondeur de la recherche :
 
-**Exemple :** parcours d’arbre en largeur
+**Exemple :** parcours d’arbre en largeur
 
 ```sql
 WITH RECURSIVE search_tree AS (
@@ -420,12 +420,12 @@ SELECT * FROM search_tree ORDER BY depth;
 ```
 
 ```text
-┌─id─┬─link─┬─data──────┬─path────┬─depth─┐
-│  0 │ ᴺᵁᴸᴸ │ ROOT      │ [0]     │     0 │
-│  1 │    0 │ Child_1   │ [0,1]   │     1 │
-│  2 │    0 │ Child_2   │ [0,2]   │     1 │
-│  3 │    1 │ Child_1_1 │ [0,1,3] │     2 │
-└────┴──────┴───────────┴─────────┴───────┘
+┌─id─┬─parent_id─┬─data──────┬─path────┬─depth─┐
+│  0 │      ᴺᵁᴸᴸ │ ROOT      │ [0]     │     0 │
+│  1 │         0 │ Child_1   │ [0,1]   │     1 │
+│  2 │         0 │ Child_2   │ [0,2]   │     1 │
+│  3 │         1 │ Child_1_1 │ [0,1,3] │     2 │
+└────┴───────────┴───────────┴─────────┴───────┘
 ```
 
 ### Détection des cycles {#cycle-detection}

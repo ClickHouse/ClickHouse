@@ -825,7 +825,9 @@ void HashedArrayDictionary<dictionary_key_type, sharded>::getItemsImpl(
     ValueSetter && set_value,
     DefaultValueExtractor & default_value_extractor) const
 {
-    const auto & attribute_containers = std::get<AttributeContainerShardsType<AttributeType>>(attribute.containers);
+    /// `getShard` returns an index below the number of shards, which is the size of both vectors.
+    const auto * attribute_containers = std::get<AttributeContainerShardsType<AttributeType>>(attribute.containers).data();
+    const auto * key_attribute_containers = key_attribute.containers.data();
     const size_t keys_size = keys_extractor.getKeysSize();
 
     size_t keys_found = 0;
@@ -834,7 +836,7 @@ void HashedArrayDictionary<dictionary_key_type, sharded>::getItemsImpl(
     {
         auto key = keys_extractor.extractCurrentKey();
         auto shard = getShard(key);
-        const auto & key_attribute_container = key_attribute.containers[shard];
+        const auto & key_attribute_container = key_attribute_containers[shard];
         const auto & attribute_container = attribute_containers[shard];
 
         const auto it = key_attribute_container.find(key);
@@ -875,7 +877,9 @@ void HashedArrayDictionary<dictionary_key_type, sharded>::getItemsShortCircuitIm
     ValueSetter && set_value,
     IColumn::Filter & default_mask) const
 {
-    const auto & attribute_containers = std::get<AttributeContainerShardsType<AttributeType>>(attribute.containers);
+    /// `getShard` returns an index below the number of shards, which is the size of both vectors.
+    const auto * attribute_containers = std::get<AttributeContainerShardsType<AttributeType>>(attribute.containers).data();
+    const auto * key_attribute_containers = key_attribute.containers.data();
     const size_t keys_size = keys_extractor.getKeysSize();
     default_mask.resize(keys_size);
     size_t keys_found = 0;
@@ -884,7 +888,7 @@ void HashedArrayDictionary<dictionary_key_type, sharded>::getItemsShortCircuitIm
     {
         auto key = keys_extractor.extractCurrentKey();
         auto shard = getShard(key);
-        const auto & key_attribute_container = key_attribute.containers[shard];
+        const auto & key_attribute_container = key_attribute_containers[shard];
         const auto & attribute_container = attribute_containers[shard];
 
         const auto it = key_attribute_container.find(key);

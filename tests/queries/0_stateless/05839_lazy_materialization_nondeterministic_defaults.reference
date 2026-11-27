@@ -1,0 +1,42 @@
+join
+20	20	20	20
+20	20	20	20
+order by
+20	20	20	20
+20	20	20	20
+prewhere
+20	20	20	20
+lazily read
+Lazily read columns: k, d
+Lazily read columns: d
+Lazily read columns: payload
+join, aggregate function
+20	20
+join, subcolumn
+20	20
+order by, aggregate function
+20	20
+order by, subcolumn
+20	20
+materialized, order by
+20	20	20
+materialized, join
+20	20	20
+disabled feature
+999	1
+998	1
+997	1
+999	1	999
+998	1	998
+997	1	997
+in table, order by
+999	1	1	1	1
+998	0	0	1	0
+997	0	0	0	0
+Lazily read columns: c, c1
+in table, join
+999	1	1	1	1	999
+998	0	0	1	0	998
+997	0	0	0	0	997
+Lazily read columns: c, c1
+Lazily read columns: payload

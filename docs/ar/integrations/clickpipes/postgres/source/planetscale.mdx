@@ -15,14 +15,12 @@ integration:
 </Info>
 
 <div id="supported-postgres-versions">
-  ## إصدارات Postgres المدعومة
+  ## إصدارات Postgres المدعومة {#supported-postgres-versions}
 </div>
 
 يدعم ClickPipes الإصدار 12 من Postgres وما بعده.
 
-<div id="enable-logical-replication">
-  ## تمكين النسخ المتماثل المنطقي
-</div>
+## تمكين النسخ المتماثل المنطقي {#enable-logical-replication}
 
 1. لتمكين النسخ المتماثل على مثيل Postgres لديك، نحتاج إلى التأكد من ضبط الإعدادات التالية:
 
@@ -39,13 +37,9 @@ integration:
    يجب أن تكون القيمة الناتجة `logical` افتراضيًا. وإذا لم تكن كذلك، فيُرجى تسجيل الدخول إلى Console الخاصة بـ PlanetScale والانتقال إلى `Cluster configuration->Parameters` ثم التمرير لأسفل إلى `Write-ahead log` لتغييرها.
 
 <div className="ch-image-md">
-
-<Frame>
-
-![ضبط wal_level في Console الخاصة بـ PlanetScale](/images/integrations/data-ingestion/clickpipes/postgres/source/planetscale/planetscale_wal_level_logical.webp)
-
-</Frame>
-
+  <Frame>
+    ![ضبط wal_level في Console الخاصة بـ PlanetScale](/images/integrations/data-ingestion/clickpipes/postgres/source/planetscale/planetscale_wal_level_logical.webp)
+  </Frame>
 </div>
 
 <Warning>
@@ -55,18 +49,12 @@ integration:
 2. بالإضافة إلى ذلك، يُوصى بزيادة الإعداد `max_slot_wal_keep_size` من قيمته الافتراضية البالغة 4GB. ويتم ذلك أيضًا عبر Console الخاصة بـ PlanetScale بالانتقال إلى `Cluster configuration->Parameters` ثم التمرير لأسفل إلى `Write-ahead log`. للمساعدة في تحديد القيمة الجديدة، يُرجى الاطلاع [هنا](/ar/integrations/clickpipes/postgres/faq#recommended-max_slot_wal_keep_size-settings).
 
 <div className="ch-image-md">
-
-<Frame>
-
-![ضبط max_slot_wal_keep_size في Console الخاصة بـ PlanetScale](/images/integrations/data-ingestion/clickpipes/postgres/source/planetscale/planetscale_max_slot_wal_keep_size.webp)
-
-</Frame>
-
+  <Frame>
+    ![ضبط max_slot_wal_keep_size في Console الخاصة بـ PlanetScale](/images/integrations/data-ingestion/clickpipes/postgres/source/planetscale/planetscale_max_slot_wal_keep_size.webp)
+  </Frame>
 </div>
 
-<div id="creating-a-user-with-permissions-and-publication">
-  ## إنشاء مستخدم مع أذونات وpublication
-</div>
+## إنشاء مستخدم مع أذونات وpublication {#creating-a-user-with-permissions-and-publication}
 
 اتصل بمثيل PlanetScale Postgres الخاص بك باستخدام المستخدم الافتراضي `postgres.<...>`، ثم شغّل الأوامر التالية:
 
@@ -102,16 +90,16 @@ integration:
   CREATE PUBLICATION clickpipes FOR TABLE table_to_replicate, table_to_replicate2;
   ```
 
-  * لإنشاء publication لكل الجداول ضمن schema محدد:
+* لإنشاء publication لكل الجداول ضمن schema محدد:
 
-    ```sql
-    CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
-    ```
+  ```sql
+  CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
+  ```
 
 يحدّد الـ publication باسم `clickpipes` مجموعة الجداول التي سيتم بث أحداث التغيير الخاصة بها إلى ClickPipes. نوصي بعدم استخدام `FOR ALL TABLES` إلا إذا كنت تنوي تكرار كل الجداول، لأن تضمين جداول غير ضرورية يزيد من حركة WAL من Postgres إلى ClickPipes ويقلّل الكفاءة الإجمالية للنسخ المتماثل.
 
 <div id="caveats">
-  ## محاذير
+  ## محاذير {#caveats}
 </div>
 
 1. للاتصال بـ PlanetScale Postgres، يجب إلحاق الفرع الحالي باسم المستخدم الذي أُنشئ أعلاه. على سبيل المثال، إذا كان اسم المستخدم الذي أنشأته هو `clickpipes_user`، فيجب أن يكون اسم المستخدم الفعلي المُستخدَم أثناء إنشاء ClickPipe هو `clickpipes_user`.`branch`، حيث يشير `branch` إلى &quot;id&quot; الخاص بـ [الفرع](https://planetscale.com/docs/postgres/branching) الحالي في PlanetScale Postgres. ولمعرفة ذلك بسرعة، يمكنك الرجوع إلى اسم المستخدم الخاص بالمستخدم `postgres` الذي استخدمته سابقًا لإنشاء هذا المستخدم؛ فالجزء الذي يلي النقطة هو معرّف الفرع.
@@ -119,7 +107,7 @@ integration:
 3. يُرجى التأكد من أنك تتصل فقط بـ المثيل الأساسي، إذ إن [الاتصال بالمثيلات المتماثلة](https://planetscale.com/docs/postgres/scaling/replicas#how-to-query-postgres-replicas) غير مدعوم حاليًا.
 
 <div id="whats-next">
-  ## ما الخطوة التالية؟
+  ## ما الخطوة التالية؟ {#whats-next}
 </div>
 
 يمكنك الآن [إنشاء ClickPipe الخاص بك](/ar/integrations/clickpipes/postgres/index) وبدء إدخال البيانات من مثيل Postgres الخاص بك إلى ClickHouse Cloud.

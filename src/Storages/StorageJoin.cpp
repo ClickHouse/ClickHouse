@@ -903,7 +903,8 @@ private:
             {
                 if constexpr (STRICTNESS == JoinStrictness::Asof)
                     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "This JOIN is not implemented yet");
-                else if constexpr (readsAllRowsOfKey(KIND, STRICTNESS))
+                /// RIGHT ANTI has a map with one row per key only for `EXCEPT DISTINCT`, never in a `Join` table.
+                else if constexpr (readsAllRowsOfKey(KIND, STRICTNESS) && std::is_same_v<std::decay_t<decltype(mapped)>, RowRefList>)
                     return fillAll(columns, column_indices, is_key_column, mapped, stored_columns);
                 else
                     return fillOne(columns, column_indices, is_key_column, mapped, stored_columns);
