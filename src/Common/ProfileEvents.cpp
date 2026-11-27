@@ -134,6 +134,7 @@
     M(TimeSeriesMetricFamiliesDeduplicationCacheMisses, "Number of rows written to the metric families tables of TimeSeries tables after they were not found in the deduplication cache.", ValueType::Number) \
     M(TimeSeriesTagsDeduplicationCacheHits, "Number of rows not written to the tags tables of TimeSeries tables because the deduplication cache already had them or the same insert had already written them.", ValueType::Number) \
     M(TimeSeriesTagsDeduplicationCacheMisses, "Number of rows written to the tags tables of TimeSeries tables after they were not found in the deduplication cache.", ValueType::Number) \
+    M(PrometheusRemoteWriteDroppedExemplars, "Number of exemplars received through the Prometheus remote-write protocol and dropped because the TimeSeries table does not store exemplars. They are counted only when the write is stored, for an async insert when its flush succeeds.", ValueType::Number) \
     M(IcebergMetadataReadWaitTimeMicroseconds, "Total time data readers spend waiting for iceberg metadata files to be read and parsed, summed across all reader threads.", ValueType::Microseconds) \
     M(ParquetMetadataCacheHits, "Number of times parquet metadata has been found in the cache.", ValueType::Number) \
     M(ParquetMetadataCacheMisses, "Number of times parquet metadata has not been found in the cache and had to be read from disk.", ValueType::Number) \
@@ -1039,6 +1040,8 @@ The server successfully detected this situation and will download merged part fr
     M(ReadBufferFromAzureInitMicroseconds, "Time spent initializing connection to Azure.", ValueType::Microseconds) \
     M(ReadBufferFromAzureBytes, "Bytes read from Azure.", ValueType::Bytes) \
     M(ReadBufferFromAzureRequestsErrors, "Number of exceptions while reading from Azure", ValueType::Number) \
+    \
+    M(WriteBufferFromAzureBytes, "Bytes written to Azure.", ValueType::Bytes) \
     \
     M(CachedReadBufferReadFromCacheHits, "Number of times the read from filesystem cache hit the cache.", ValueType::Number) \
     M(CachedReadBufferReadFromCacheMisses, "Number of times the read from filesystem cache miss the cache.", ValueType::Number) \

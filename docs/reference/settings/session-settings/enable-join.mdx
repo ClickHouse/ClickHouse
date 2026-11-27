@@ -50,13 +50,15 @@ Only has an effect if `use_skip_indexes_on_data_read = 1`.
 Only a join key that is a primary key column of the probe side, or is covered by a `minmax`, `set` or `bloom_filter` skip index, or is the global row index `_part_starting_offset + _part_offset`, can be pruned. A self-join on the global row index, which fetches the rows found by a subquery, reads only the granules of those rows. The global row index identifies a row only within one query, so both sides of the join must read the table in the same query.
 If the runtime filter kept the exact key values, the pruning predicate is an `IN` set of them, otherwise the minimum/maximum key range is used (this has a lower pruning power).
 
-For an Iceberg table, the setting also allows skipping whole data files and the Parquet row groups and pages of the files that are read, see [use_join_runtime_filters_for_iceberg_pruning](/reference/settings/session-settings/use#use_join_runtime_filters_for_iceberg_pruning); that does not depend on `use_skip_indexes_on_data_read`.
+For a read from object storage, the setting also allows skipping the Parquet row groups and pages of the files that are read, and whole data files of an Iceberg table, see [use_join_runtime_filters_for_iceberg_pruning](/reference/settings/session-settings/use#use_join_runtime_filters_for_iceberg_pruning); that does not depend on `use_skip_indexes_on_data_read`.
 
 Works with parallel replicas (`enable_parallel_replicas = 1`): each replica prunes the granules it reads with the filter it built itself. That filter can be partial - for a `RIGHT` join the build side is the one split among the replicas, so each replica's filter covers only its own share of it - but the result stays correct, because exactly one side of the join is split, every matching pair of rows meets on exactly one replica, and each replica emits a disjoint share of the result.
 
 The granule pruning does not happen with a distributed query plan (`make_distributed_plan = 1`). There the setting is a no-op: the query returns the same result and the JOIN runtime filter itself behaves exactly as it does with this setting disabled, only the granule pruning is lost.
 
-The granule pruning is also skipped for a probe side read with `FINAL` (the pruning is not implemented for `FINAL` reads, and `optimizeLazyFinal` rebuilds such a read without the descriptors), and for a table with pending data or `ALTER` mutations or patch parts. These cases are a no-op in the same sense.
+With `FINAL` on the probe side, granules are pruned only by a join key that is a sorting key column of the table; a skip index is used for that only if `use_skip_indexes_if_final = 1`.
+
+The granule pruning is also skipped for a table with pending data or `ALTER` mutations or patch parts. This case is a no-op in the same sense.
 
 ## enable_join_seal_gated_reading {#enable_join_seal_gated_reading}
 

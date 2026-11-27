@@ -251,6 +251,9 @@ public:
         legacy_header_names = std::move(legacy_header_names_);
     }
 
+    /// The header is the structure of the result of the remote query: the blocks received are adapted to it,
+    /// and a header with no columns means a result whose rows carry no values. A caller that does not know
+    /// the structure passes no header (`nullptr`) and gets the blocks as the remote server sends them.
     const Block & getHeader() const { return *header; }
     const SharedHeader & getSharedHeader() const { return header; }
 
@@ -455,6 +458,13 @@ private:
 
     /// Process packet for read and return data block if possible.
     ReadResult processPacket(Packet packet) TSA_REQUIRES(was_cancelled_mutex);
+
+    /// Adapt a received block to the header, if there is one. `packet` is the packet the block came in: a block
+    /// from a pre-26.5 peer is read by the legacy spellings of the header's identifiers.
+    Block adaptBlock(Block block, const Packet & packet);
+
+    /// Refuse a result with no columns from a server too old to send its rows.
+    void throwIfColumnLessResultFromOldServer() const;
 
     /// Attributes identifying the query fragment this executor runs, for the OpenTelemetry span
     /// covering it (the read context fiber span or the synchronous-path fragment span).
