@@ -62,6 +62,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
 }
@@ -1276,6 +1277,16 @@ void RuntimeFilter::finishInsert()
 
 ColumnPtr RuntimeFilter::find(const ColumnWithTypeAndName & values) const
 {
+    /// The filters access the probe column as one of `filter_column_target_type`. A planner-built probe
+    /// is cast to that type, but a shipped plan pairs the probe with its builder only by key.
+    /// `__applyFilter` receives the probe without `LowCardinality`.
+    if (!recursiveRemoveLowCardinality(values.type)->equals(*recursiveRemoveLowCardinality(filter_column_target_type)))
+        throw Exception(
+            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+            "Runtime filter on type {} cannot look up values of type {}",
+            filter_column_target_type->getName(),
+            values.type->getName());
+
     SharedLockGuard lock(mutex);
     data.build_state.assertCanFind();
 
@@ -1531,7 +1542,14 @@ static const ActionsDAG::Node * convertRuntimeFilterToKeyConditionDAG(
     const auto & cast = descriptor.key_cast;
     const bool apply_cast = cast && !isIdentityCast(key_node.result_type, cast->getResultType());
     const auto & key_casted = apply_cast ? addKeyCast(dag, key_node, cast) : key_node;
-    chassert(key_casted.result_type->equals(*target_type));
+    /// The predicate compares the key with the values of the filter as if they had the type of the key, so they
+    /// must have the same type. A shipped plan pairs the probe with its builder only by key, like in `RuntimeFilter::find`.
+    if (!key_casted.result_type->equals(*target_type))
+        throw Exception(
+            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+            "Runtime filter on type {} cannot prune by a key of type {}",
+            target_type->getName(),
+            key_casted.result_type->getName());
 
     if (exact_values)
     {

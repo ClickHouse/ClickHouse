@@ -1,10 +1,15 @@
 #include <gtest/gtest.h>
 
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
+#include <Interpreters/ActionsDAG.h>
 #include <Processors/QueryPlan/RuntimeFilterLookup.h>
 #include <base/scope_guard.h>
 #include <base/unit.h>
@@ -35,6 +40,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 extern const int LOGICAL_ERROR;
 extern const int MEMORY_LIMIT_EXCEEDED;
 }
@@ -142,6 +148,83 @@ TEST(RuntimeFilterLookup, ExactContainsQueriesSet)
     expectMask(filter.find(makeUInt64ColumnWithType({1, 2, 5, 7}, type)), {1, 0, 1, 0});
     EXPECT_EQ(filter.getStats().rows_checked.load(), 4);
     EXPECT_EQ(filter.getStats().rows_passed.load(), 2);
+}
+
+TEST(RuntimeFilterLookup, FindRejectsProbeOfAnotherType)
+{
+    /// A shipped plan can pair a builder with a probe of another type. A single-value set would
+    /// compare the probe with its scalar value as if that value had the probe type.
+    const auto type = makeUInt64Type();
+    RuntimeFilter filter(
+        /*filters_to_merge_=*/0,
+        makeRuntimeFilterConfig(),
+        RuntimeFilter::ExactContains(
+            type,
+            /*bytes_limit_=*/1_MiB,
+            /*exact_values_limit_=*/100));
+
+    filter.insert(makeUInt64Column({1}));
+    filter.finishInsert();
+
+    const auto tuple_type = std::make_shared<DataTypeTuple>(DataTypes{type});
+    const ColumnWithTypeAndName tuple_probe(ColumnTuple::create(Columns{makeUInt64Column({1, 2})}), tuple_type, "k");
+    try
+    {
+        filter.find(tuple_probe);
+        FAIL() << "Expected an exception";
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_EQ(e.code(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+    }
+
+    /// `__applyFilter` passes the probe without `LowCardinality`, so a `LowCardinality` target type matches it.
+    const auto low_cardinality_type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
+    RuntimeFilter low_cardinality_filter(
+        /*filters_to_merge_=*/0,
+        makeRuntimeFilterConfig(),
+        RuntimeFilter::ExactContains(
+            low_cardinality_type,
+            /*bytes_limit_=*/1_MiB,
+            /*exact_values_limit_=*/100));
+    auto build_values = low_cardinality_type->createColumn();
+    build_values->insert(Field("a"));
+    low_cardinality_filter.insert(std::move(build_values));
+    low_cardinality_filter.finishInsert();
+    auto probe_values = ColumnString::create();
+    probe_values->insertData("a", 1);
+    probe_values->insertData("b", 1);
+    expectMask(low_cardinality_filter.find(ColumnWithTypeAndName(std::move(probe_values), std::make_shared<DataTypeString>(), "k")), {1, 0});
+}
+
+TEST(RuntimeFilterLookup, PruningPredicateRejectsKeyOfAnotherType)
+{
+    /// A shipped plan can pair a `UInt64` builder with a probe on a `UInt8` column. The pruning predicate would
+    /// read that column with a set of the `UInt64` values.
+    const auto type = makeUInt64Type();
+    auto filter = std::make_unique<RuntimeFilter>(
+        /*filters_to_merge_=*/0,
+        makeRuntimeFilterConfig(),
+        RuntimeFilter::Adaptive(type, makeGeometry(1_MiB, 100, 3, 1.0), std::nullopt, false));
+    filter->enableIndexAnalysis();
+    filter->insert(makeUInt64Column({1, 2}));
+    auto lookup = createRuntimeFilterLookup();
+    lookup->add("runtime_filter", "runtime_filter", std::move(filter));
+
+    const VectorWithMemoryTracking<RuntimeFilterIndexAnalysisDescriptor> descriptors{
+        {.filter_id = "runtime_filter", .key_column_name = "k", .key_column_type = std::make_shared<DataTypeUInt8>(),
+         .is_global_row_index = false,
+         .key_cast = nullptr}};
+    ActionsDAG dag;
+    try
+    {
+        buildRuntimeRangePredicate(*lookup, descriptors, dag, getContext().context);
+        FAIL() << "Expected an exception";
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_EQ(e.code(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+    }
 }
 
 TEST(RuntimeFilterLookup, ExactNotContainsQueriesSet)

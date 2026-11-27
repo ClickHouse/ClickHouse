@@ -52,6 +52,16 @@ public:
     void setEstimatedBuildRows(std::optional<UInt64> estimated_build_rows_) { estimated_build_rows = estimated_build_rows_; }
     [[nodiscard]] std::optional<UInt64> getEstimatedBuildRows() const { return estimated_build_rows; }
 
+    /// Deserialized local builds are paired once. Locally built and already paired steps keep their keys
+    /// when the plan is optimized again.
+    [[nodiscard]] bool needsPairing() const { return needs_pairing; }
+    void finishPairing(bool keep_key)
+    {
+        needs_pairing = false;
+        if (!keep_key)
+            filter_key.clear();
+    }
+
     /// Make the built filter record its key values/range (see track_key_range). Called by plan
     /// optimizations whose pruning consumes them, e.g. markSealGatedReading.
     void enableKeyRangeTracking() { build_options.track_key_range = true; }
@@ -91,11 +101,9 @@ private:
     /// Stable structural id (`_runtime_filter_<hash>`), shown in EXPLAIN and serialized, so the build
     /// step and its matching `__applyFilter` carry the same visible id.
     String filter_name;
-    /// Random per-plan-build key the built filter is registered under in the `IRuntimeFilterLookup`;
-    /// the matching `__applyFilter` looks it up by the same key. `EXPLAIN` does not show it. Only a build
-    /// with filter exchanges serializes it, and a cache key never contains it. A deserialized step
-    /// without exchanges has an empty key and is inert.
+    /// Random per-plan-build rendezvous key, excluded from EXPLAIN and cache keys. Empty for an inert step.
     String filter_key;
+    bool needs_pairing = false;
 
     RuntimeFilterBuildOptions build_options;
 

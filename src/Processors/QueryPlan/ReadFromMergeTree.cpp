@@ -3459,6 +3459,10 @@ void ReadFromMergeTree::addJoinRuntimeFilterIndexAnalysisOnDataRead(const Runtim
 {
     const auto & column_name = descriptor.key_column_name;
     const auto & filter_id = descriptor.filter_id;
+    if (std::ranges::any_of(join_runtime_filters_for_index_analysis,
+            [&](const auto & descr) { return descr.filter_id == filter_id && descr.key_column_name == column_name; }))
+        return;
+
     const auto & metadata = *storage_snapshot->metadata;
     if (descriptor.is_global_row_index)
     {
