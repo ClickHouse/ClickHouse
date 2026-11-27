@@ -91,7 +91,7 @@ private:
 
     struct Op
     {
-        OpType type;
+        OpType type = OpType::Match;
         size_t first = 0;
         size_t second = 0;
     };
