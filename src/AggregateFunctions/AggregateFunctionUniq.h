@@ -269,6 +269,10 @@ struct IsUniquesHashSet<UniquesHashSet<Hash>> : std::true_type
 {
 };
 
+/// The sets that implement `intersect`: `UniquesHashSet`, `UniqExactSet` and `ThetaSketchData`, but not HyperLogLog.
+template <typename Set>
+concept IntersectableSet = requires(Set & lhs, const Set & rhs) { lhs.intersect(rhs); };
+
 /** Hash function for uniq.
   */
 template <typename T, typename ColumnType>
@@ -935,6 +939,16 @@ public:
         this->data(place).set.merge(this->data(rhs).set);
     }
 
+    [[nodiscard]] bool canIntersect() const override { return detail::IntersectableSet<typename Data::Set>; }
+
+    void intersect(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    {
+        if constexpr (detail::IntersectableSet<typename Data::Set>)
+            this->data(place).set.intersect(this->data(rhs).set);
+        else
+            IAggregateFunction::intersect(place, rhs, arena);
+    }
+
     [[nodiscard]] bool isAbleToParallelizeMerge() const override { return is_able_to_parallelize_merge; }
     [[nodiscard]] bool canOptimizeEqualKeysRanges() const override { return !is_able_to_parallelize_merge; }
     [[nodiscard]] bool ignoresRepeatedValues() const override { return true; }
@@ -1209,6 +1223,16 @@ public:
     void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         this->data(place).set.merge(this->data(rhs).set);
+    }
+
+    [[nodiscard]] bool canIntersect() const override { return detail::IntersectableSet<typename Data::Set>; }
+
+    void intersect(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    {
+        if constexpr (detail::IntersectableSet<typename Data::Set>)
+            this->data(place).set.intersect(this->data(rhs).set);
+        else
+            IAggregateFunction::intersect(place, rhs, arena);
     }
 
     [[nodiscard]] bool isAbleToParallelizeMerge() const override { return is_able_to_parallelize_merge; }

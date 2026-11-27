@@ -358,6 +358,46 @@ public:
         }
     }
 
+    /// Leave only the keys that `other` has too. The smaller set is iterated and the larger one is probed.
+    /// The result is built anew rather than by erasing in place: the two-level pointee may be shared.
+    void intersect(const UniqExactSet & other)
+    {
+        const bool iterate_other = other.size() < size();
+        const UniqExactSet & iterated = iterate_other ? other : *this;
+        const UniqExactSet & probed = iterate_other ? *this : other;
+
+        if (iterated.isSingleLevel())
+        {
+            SingleLevelSet result;
+            for (const auto & cell : iterated.asSingleLevel())
+                if (probed.has(cell.getKey()))
+                    result.insert(cell.getKey());
+
+            two_level_set.reset();
+            /// Copy-assigned, because moving a set with stack memory is not possible.
+            single_level_set = result;
+        }
+        else
+        {
+            auto result = std::make_shared<SharedTwoLevelSet>();
+            const TwoLevelSet & src = iterated.asTwoLevel();
+            for (size_t bucket = 0; bucket < TwoLevelSet::NUM_BUCKETS; ++bucket)
+                for (const auto & cell : src.impls[bucket])
+                    if (probed.has(cell.getKey()))
+                        result->set.impls[bucket].insert(cell.getKey());
+
+            single_level_set.clear();
+            two_level_set = std::move(result);
+        }
+    }
+
+    [[nodiscard]] bool has(const value_type & key) const
+    {
+        if (isSingleLevel())
+            return asSingleLevel().has(key);
+        return asTwoLevel().find(key) != nullptr;
+    }
+
     void read(ReadBuffer & in)
     {
         size_t new_size = 0;

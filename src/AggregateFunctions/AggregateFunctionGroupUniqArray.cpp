@@ -104,6 +104,30 @@ public:
         }
     }
 
+    /// With a limit, a full state may have dropped any element of the intersection.
+    [[nodiscard]] bool canIntersect() const override { return !limit_num_elems; }
+
+    void intersect(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    {
+        if constexpr (limit_num_elems)
+        {
+            IAggregateFunction::intersect(place, rhs, arena);
+        }
+        else
+        {
+            auto & cur_set = this->data(place).value;
+            const auto & rhs_set = this->data(rhs).value;
+
+            typename State::Set result;
+            for (const auto & elem : cur_set)
+                if (rhs_set.has(elem.getValue()))
+                    result.insert(elem.getValue());
+
+            /// Copy-assigned, because moving a set with stack memory is not possible.
+            cur_set = result;
+        }
+    }
+
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
         auto & set = this->data(place).value;
@@ -228,6 +252,24 @@ public:
                     w &= w - 1;
                 }
             }
+        }
+    }
+
+    /// With a limit, a full state may have dropped any element of the intersection.
+    [[nodiscard]] bool canIntersect() const override { return !limit_num_elems; }
+
+    void intersect(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    {
+        if constexpr (limit_num_elems)
+        {
+            IAggregateFunction::intersect(place, rhs, arena);
+        }
+        else
+        {
+            auto & cur = this->data(place);
+            const auto & other = this->data(rhs);
+            for (size_t word = 0; word < 4; ++word)
+                cur.bits[word] &= other.bits[word];
         }
     }
 
@@ -364,6 +406,31 @@ public:
             // We have to copy the keys to our arena.
             chassert(arena != nullptr);
             cur_set.emplace(ArenaKeyHolder{rhs_elem.getValue(), *arena}, it, inserted);
+        }
+    }
+
+    /// With a limit, a full state may have dropped any element of the intersection.
+    [[nodiscard]] bool canIntersect() const override { return !limit_num_elems; }
+
+    void intersect(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    {
+        if constexpr (limit_num_elems)
+        {
+            IAggregateFunction::intersect(place, rhs, arena);
+        }
+        else
+        {
+            auto & cur_set = this->data(place).value;
+            const auto & rhs_set = this->data(rhs).value;
+
+            /// The kept keys point to the memory that `place` already owns, so they are not copied.
+            State::Set result;
+            for (const auto & elem : cur_set)
+                if (rhs_set.has(elem.getValue()))
+                    result.insert(elem.getValue());
+
+            /// Copy-assigned, because moving a set with stack memory is not possible.
+            cur_set = result;
         }
     }
 
