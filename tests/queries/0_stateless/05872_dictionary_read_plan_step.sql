@@ -25,15 +25,17 @@ PRIMARY KEY id SOURCE(CLICKHOUSE(DB currentDatabase() TABLE 'dim')) LAYOUT(HASHE
 CREATE DICTIONARY dict_direct (id UInt64, name String, value UInt32)
 PRIMARY KEY id SOURCE(CLICKHOUSE(DB currentDatabase() TABLE 'dim')) LAYOUT(DIRECT());
 
+-- The plans are checked without parallel replicas: those copy the dictionary into a temporary table for a `GLOBAL` JOIN,
+-- so the plan has neither a JOIN that looks the keys up nor the step that reads the dictionary.
 SELECT 'A JOIN that looks the keys up has no reading step';
-SELECT count() FROM (EXPLAIN actions = 1 SELECT f.id, d.name FROM fact AS f LEFT JOIN dict_hashed AS d ON f.key = d.id)
+SELECT count() FROM (EXPLAIN actions = 1 SELECT f.id, d.name FROM fact AS f LEFT JOIN dict_hashed AS d ON f.key = d.id SETTINGS enable_parallel_replicas = 0)
 WHERE explain LIKE '%Algorithm: DirectKeyValueJoin%';
-SELECT count() FROM (EXPLAIN SELECT f.id, d.name FROM fact AS f LEFT JOIN dict_hashed AS d ON f.key = d.id)
+SELECT count() FROM (EXPLAIN SELECT f.id, d.name FROM fact AS f LEFT JOIN dict_hashed AS d ON f.key = d.id SETTINGS enable_parallel_replicas = 0)
 WHERE explain LIKE '%ReadFromDictionary%';
 SELECT f.id, d.name FROM fact AS f LEFT JOIN dict_hashed AS d ON f.key = d.id ORDER BY f.id;
 
 SELECT 'A hash JOIN reads the dictionary';
-SELECT count() FROM (EXPLAIN SELECT f.id, d.name FROM fact AS f LEFT JOIN dict_hashed AS d ON f.key = d.id SETTINGS join_algorithm = 'hash')
+SELECT count() FROM (EXPLAIN SELECT f.id, d.name FROM fact AS f LEFT JOIN dict_hashed AS d ON f.key = d.id SETTINGS join_algorithm = 'hash', enable_parallel_replicas = 0)
 WHERE explain LIKE '%ReadFromDictionary%';
 SELECT f.id, d.name FROM fact AS f LEFT JOIN dict_hashed AS d ON f.key = d.id ORDER BY f.id SETTINGS join_algorithm = 'hash';
 
