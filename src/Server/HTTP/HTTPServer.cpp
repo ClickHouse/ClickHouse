@@ -8,7 +8,7 @@ namespace DB
 HTTPServer::HTTPServer(
     HTTPContextPtr context,
     HTTPRequestHandlerFactoryPtr factory_,
-    Poco::ThreadPool & thread_pool,
+    TCPServerThreadPool & thread_pool,
     Poco::Net::ServerSocket & socket_,
     Poco::Net::HTTPServerParams::Ptr params,
     const TCPServerConnectionFilter::Ptr & filter,

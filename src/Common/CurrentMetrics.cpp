@@ -621,6 +621,9 @@
     M(ExchangeServerThreads, "Number of threads in the distributed exchange server handshake thread pool.") \
     M(ExchangeServerThreadsActive, "Number of threads in the distributed exchange server handshake thread pool running a task.") \
     M(ExchangeServerThreadsScheduled, "Number of queued or active jobs in the distributed exchange server handshake thread pool.") \
+    M(TCPServerThreads, "Number of threads in the thread pool that serves the connections of the TCP-based listeners: native, HTTP, MySQL, PostgreSQL, interserver, Keeper and the other servers built on `TCPServer`.") \
+    M(TCPServerThreadsActive, "Number of threads in the thread pool of the TCP-based listeners serving a connection.") \
+    M(TCPServerThreadsScheduled, "Number of connections of the TCP-based listeners being served or waiting for a thread.") \
     M(StreamingExchangeSinksWithFullSendQueue, "Number of streaming exchange sinks that take no chunks because their queue of packets waiting for the socket is full.") \
     M(ReadonlyDisks, "Number of disks that were marked as readonly during disk check.") \
     M(BrokenDisks, "Number of disks that were marked as broken during disk check.") \

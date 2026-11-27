@@ -1,0 +1,6 @@
+<clickhouse>
+    <max_connections>4</max_connections>
+    <listen_backlog>1</listen_backlog>
+    <!-- Raw connections that send nothing keep their handler thread for the whole test. -->
+    <handshake_timeout_milliseconds>120000</handshake_timeout_milliseconds>
+</clickhouse>

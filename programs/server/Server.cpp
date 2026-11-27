@@ -139,7 +139,6 @@
 #include <Server/TCPServer.h>
 #include <Common/SensitiveDataMasker.h>
 #include <Common/ThreadFuzzer.h>
-#include <Common/ThreadStackSize.h>
 #include <Common/getHashOfLoadedBinary.h>
 #include <Common/filesystemHelpers.h>
 #include <Compression/CompressionCodecEncrypted.h>
@@ -1549,15 +1548,9 @@ try
     total_memory_tracker.setJemallocFlushProfileOnMemoryExceeded(server_settings[ServerSetting::jemalloc_flush_profile_on_memory_exceeded]);
     total_memory_tracker.setJemallocFlushProfileOnMemoryExceededSeconds(server_settings[ServerSetting::jemalloc_flush_profile_on_memory_exceeded_interval]);
 
-    Poco::ThreadPool server_pool(
-        /* minCapacity */3,
-        /* maxCapacity */server_settings[ServerSetting::max_connections],
-        /* idleTime */60,
-        /* stackSize */DEFAULT_THREAD_STACK_SIZE ? static_cast<int>(DEFAULT_THREAD_STACK_SIZE) : POCO_THREAD_STACK_SIZE,
-        server_settings[ServerSetting::global_profiler_real_time_period_ns],
-        server_settings[ServerSetting::global_profiler_cpu_time_period_ns]);
+    TCPServerThreadPool server_pool(server_settings[ServerSetting::max_connections]);
 
-    std::unique_ptr<Poco::ThreadPool> introspection_server_pool;
+    std::unique_ptr<TCPServerThreadPool> introspection_server_pool;
 
     std::mutex servers_lock;
     std::vector<ProtocolServerAdapter> servers;
@@ -1691,8 +1684,8 @@ try
 
         /// Stop accepting connections on the regular servers. In the normal shutdown path they are
         /// already stopped, but on startup failure some of them can still be running: the Prometheus
-        /// endpoint is started before tables are loaded. Otherwise `server_pool.joinAll()` below
-        /// would wait forever for their listener threads.
+        /// endpoint is started before tables are loaded. Otherwise `server_pool.wait()` below
+        /// would wait forever for their connections.
         {
             std::lock_guard lock(servers_lock);
             for (auto & server : servers)
@@ -1786,7 +1779,7 @@ try
         global_context->shutdownKeeperDispatcherAfterConnectionsFinish(keeper_tcp_connections == 0);
 
         /// Wait server pool to avoid use-after-free of destroyed context in the handlers
-        server_pool.joinAll();
+        server_pool.wait();
 
         /** Explicitly destroy Context. It is more convenient than in destructor of Server, because logger is still available.
           * At this moment, no one could own shared part of Context.
@@ -3755,16 +3748,10 @@ try
             }
 
             LOG_INFO(log, "Closed connections to introspection servers.");
-            introspection_server_pool->joinAll();
+            introspection_server_pool->wait();
         });
 
-        introspection_server_pool = std::make_unique<Poco::ThreadPool>(
-            /* minCapacity */ 1,
-            /* maxCapacity */ server_settings[ServerSetting::max_connections],
-            /* idleTime */ 60,
-            /* stackSize */ DEFAULT_THREAD_STACK_SIZE ? static_cast<int>(DEFAULT_THREAD_STACK_SIZE) : POCO_THREAD_STACK_SIZE,
-            server_settings[ServerSetting::global_profiler_real_time_period_ns],
-            server_settings[ServerSetting::global_profiler_cpu_time_period_ns]);
+        introspection_server_pool = std::make_unique<TCPServerThreadPool>(server_settings[ServerSetting::max_connections]);
 
         std::lock_guard lock(servers_lock);
         createServers(
@@ -4554,7 +4541,7 @@ void Server::createServers(
     const ServerSettings & server_settings,
     const Strings & listen_hosts,
     bool listen_try,
-    Poco::ThreadPool & server_pool,
+    TCPServerThreadPool & server_pool,
     AsynchronousMetrics & async_metrics,
     std::vector<ProtocolServerAdapter> & servers,
     bool start_servers,
@@ -5024,7 +5011,7 @@ void Server::createInterserverServers(
     const ServerSettings & server_settings,
     const Strings & interserver_listen_hosts,
     bool listen_try,
-    Poco::ThreadPool & server_pool,
+    TCPServerThreadPool & server_pool,
     AsynchronousMetrics & async_metrics,
     std::vector<ProtocolServerAdapter> & servers,
     bool start_servers,
@@ -5112,7 +5099,7 @@ void Server::stopServers(
 void Server::updateServers(
     Poco::Util::AbstractConfiguration & config,
     const ServerSettings & server_settings,
-    Poco::ThreadPool & server_pool,
+    TCPServerThreadPool & server_pool,
     AsynchronousMetrics & async_metrics,
     std::vector<ProtocolServerAdapter> & servers,
     std::vector<ProtocolServerAdapter> & servers_to_start_before_tables)

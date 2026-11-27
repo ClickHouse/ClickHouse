@@ -43,7 +43,6 @@
 #include <base/errnoToString.h>
 #include <Common/Macros.h>
 #include <Common/Config/ConfigProcessor.h>
-#include <Common/ThreadStackSize.h>
 #include <Common/ThreadStatus.h>
 #include <Common/ThreadFuzzer.h>
 #include <Common/TLDListsHolder.h>
@@ -102,7 +101,6 @@
 #include <Server/TCPServer.h>
 #include <Server/ServerType.h>
 #include <Poco/Net/HTTPServerParams.h>
-#include <Poco/ThreadPool.h>
 
 #include <algorithm>
 #include <thread>
@@ -267,8 +265,6 @@ namespace ServerSetting
     extern const ServerSettingsBool listen_try;
     extern const ServerSettingsInt32 max_connections;
     extern const ServerSettingsUInt64 max_concurrent_queries;
-    extern const ServerSettingsUInt64 global_profiler_real_time_period_ns;
-    extern const ServerSettingsUInt64 global_profiler_cpu_time_period_ns;
     extern const ServerSettingsSeconds keep_alive_timeout;
     extern const ServerSettingsUInt64 max_keep_alive_requests;
     extern const ServerSettingsBool asynchronous_metrics_enable_heavy_metrics;
@@ -902,16 +898,9 @@ void LocalServer::startServers(const ServerType & server_type)
     }
 
     /// Size the connection pool from the same server settings as `Server::main` so that a
-    /// `SYSTEM START LISTEN` in `clickhouse-local` honors `max_connections` (and the global
-    /// profiler periods) instead of a hard-coded limit.
+    /// `SYSTEM START LISTEN` in `clickhouse-local` honors `max_connections` instead of a hard-coded limit.
     if (!server_pool)
-        server_pool = std::make_unique<Poco::ThreadPool>(
-            /* minCapacity */ 3,
-            /* maxCapacity */ server_settings[ServerSetting::max_connections],
-            /* idleTime */ 60,
-            /* stackSize */ DEFAULT_THREAD_STACK_SIZE ? static_cast<int>(DEFAULT_THREAD_STACK_SIZE) : POCO_THREAD_STACK_SIZE,
-            server_settings[ServerSetting::global_profiler_real_time_period_ns],
-            server_settings[ServerSetting::global_profiler_cpu_time_period_ns]);
+        server_pool = std::make_unique<TCPServerThreadPool>(server_settings[ServerSetting::max_connections]);
 
     if (!async_metrics)
     {
@@ -1136,21 +1125,21 @@ void LocalServer::cleanup()
         if (current_connections)
         {
             /// There is no better way to force connections to close in Poco. If we tried
-            /// `server_pool->joinAll`, connection handlers would keep the threads busy and
+            /// `server_pool->wait`, connection handlers would keep the threads busy and
             /// shutdown would be unbounded. Mirror `Server::main`: log and force-exit.
             LOG_WARNING(&logger(), "Closed connections. But {} remain.", current_connections);
             LOG_WARNING(&logger(), "Will shutdown forcefully.");
             /// `cleanup` can run from `SCOPE_EXIT` in `main` while the stack is unwinding from a
             /// failed query. Force-exiting here bypasses the surrounding `catch`, so preserve a
             /// nonzero status in that case instead of always reporting success.
-            /// No leak check: handlers below `server_pool->joinAll()` still own memory it would
+            /// No leak check: handlers below `server_pool->wait()` still own memory it would
             /// report as leaked. Quiet, because here stderr is program output, not a log.
             safeExit(std::uncaught_exceptions() ? 1 : 0, LeakCheck::SkipQuietly);
         }
 
         /// Join the server thread pool to avoid use-after-free of destroyed context in handlers.
         if (server_pool)
-            server_pool->joinAll();
+            server_pool->wait();
 
         {
             std::lock_guard lock(servers_lock);

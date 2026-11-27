@@ -423,7 +423,7 @@ try
     /// Don't want to use DNS cache
     DNSResolver::instance().setDisableCacheFlag();
 
-    Poco::ThreadPool server_pool(3, config().getUInt("max_connections", 1024));
+    TCPServerThreadPool server_pool(config().getUInt("max_connections", 1024));
     std::mutex servers_lock;
     auto servers = std::make_shared<std::vector<ProtocolServerAdapter>>();
 
@@ -745,7 +745,7 @@ try
         global_context->shutdownKeeperDispatcherAfterConnectionsFinish(keeper_tcp_connections == 0);
 
         /// Wait server pool to avoid use-after-free of destroyed context in the handlers
-        server_pool.joinAll();
+        server_pool.wait();
 
         LOG_DEBUG(log, "Destroyed global context.");
 

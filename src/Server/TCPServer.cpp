@@ -1,40 +1,209 @@
-#include <Poco/Net/TCPServer.h>
-#include <Poco/Net/TCPServerConnectionFactory.h>
 #include <Server/TCPServer.h>
+
+#include <Common/CurrentMetrics.h>
+#include <Common/Exception.h>
+#include <Common/logger_useful.h>
+
+#include <Poco/Exception.h>
+#include <Poco/Net/TCPServerConnection.h>
+#include <Poco/Timespan.h>
+
+
+namespace CurrentMetrics
+{
+    extern const Metric TCPServerThreads;
+    extern const Metric TCPServerThreadsActive;
+    extern const Metric TCPServerThreadsScheduled;
+}
 
 namespace DB
 {
 
-class TCPServerConnectionFactoryImpl : public Poco::Net::TCPServerConnectionFactory
+namespace ErrorCodes
 {
-public:
-    TCPServerConnectionFactoryImpl(TCPServer & tcp_server_, DB::TCPServerConnectionFactory::Ptr factory_)
-        : tcp_server(tcp_server_)
-        , factory(factory_)
-    {}
+    extern const int INVALID_CONFIG_PARAMETER;
+}
 
-    Poco::Net::TCPServerConnection * createConnection(const Poco::Net::StreamSocket & socket) override
-    {
-        return factory->createConnection(socket, tcp_server);
-    }
-private:
-    TCPServer & tcp_server;
-    DB::TCPServerConnectionFactory::Ptr factory;
-};
+namespace
+{
+
+size_t checkMaxConnections(Int64 max_connections)
+{
+    if (max_connections < 1)
+        throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Setting `max_connections` must be at least 1, got {}", max_connections);
+    return static_cast<size_t>(max_connections);
+}
+
+}
+
+TCPServerThreadPool::TCPServerThreadPool(Int64 max_connections)
+    : ThreadPool(
+        CurrentMetrics::TCPServerThreads,
+        CurrentMetrics::TCPServerThreadsActive,
+        CurrentMetrics::TCPServerThreadsScheduled,
+        checkMaxConnections(max_connections),
+        /* max_free_threads = */ 0,
+        /* queue_size = */ 0,
+        /* shutdown_on_exception = */ false)
+{
+    /// Every thread of this pool holds a global thread for a whole connection, so the global pool gets room for them.
+    auto & global_pool = GlobalThreadPool::instance();
+    const size_t threads = getMaxThreads();
+    /// Read before `setMaxThreads`, which can raise it.
+    const size_t global_queue_size = global_pool.getQueueSize();
+    global_pool.setMaxThreads(global_pool.getMaxThreads() + threads);
+    if (global_queue_size)
+        global_pool.setQueueSize(global_queue_size + threads);
+}
 
 TCPServer::TCPServer(
     TCPServerConnectionFactory::Ptr factory_,
-    Poco::ThreadPool & thread_pool,
+    TCPServerThreadPool & thread_pool_,
     Poco::Net::ServerSocket & socket_,
     Poco::Net::TCPServerParams::Ptr params,
-    const TCPServerConnectionFilter::Ptr & filter)
-    : Poco::Net::TCPServer(new TCPServerConnectionFactoryImpl(*this, factory_), thread_pool, socket_, params)
-    , factory(factory_)
+    const TCPServerConnectionFilter::Ptr & filter_)
+    : factory(factory_)
+    , thread_pool(thread_pool_)
     , socket(socket_)
-    , is_open(true)
+    , filter(filter_)
+    , no_delay(!params || params->getNoDelay())
+    , max_queued(params ? static_cast<size_t>(params->getMaxQueued()) : 64)
     , port_number(socket.address().port())
+    , accept_thread("TCPServer: " + socket.address().toString())
+    , log(getLogger("TCPServer"))
 {
-    setConnectionFilter(filter);
+}
+
+TCPServer::~TCPServer()
+{
+    try
+    {
+        stop();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log);
+    }
+}
+
+void TCPServer::start()
+{
+    chassert(!accepting);
+    accepting = true;
+    accept_thread.start(*this);
+}
+
+void TCPServer::stop()
+{
+    if (!is_open)
+        return;
+
+    // FIXME: On Darwin and illumos, shutdown(SHUT_RD) on a listening socket
+    // returns ENOTCONN, so accept() is not explicitly awakened.
+#if !defined(OS_DARWIN) && !defined(OS_SUNOS)
+    // Shutdown the listen socket before stopping tcp server to avoid 2.5second delay
+    socket.shutdownReceive();
+#endif
+
+    if (accepting.exchange(false))
+        accept_thread.join();
+    // This notifies already established connections that they should stop serving
+    // queries and close their socket as soon as they can.
+    is_open = false;
+    // Stopping the accept thread leaves the socket open.
+    // To be able to hand over control of the listening port to a new server, and
+    // to get fast connection refusal instead of timeouts, we also need to close
+    // the listening socket.
+    socket.close();
+}
+
+void TCPServer::run()
+{
+    while (accepting)
+    {
+        Poco::Timespan timeout(250000);
+        try
+        {
+            if (socket.poll(timeout, Poco::Net::Socket::SELECT_READ))
+            {
+                try
+                {
+                    Poco::Net::StreamSocket connection_socket = socket.acceptConnection();
+
+                    if (filter && !filter->accept(connection_socket))
+                    {
+                        LOG_WARNING(log, "Filtered out connection from {}", connection_socket.peerAddress().toString());
+                        continue;
+                    }
+
+#if defined(POCO_OS_FAMILY_UNIX)
+                    if (connection_socket.address().family() != Poco::Net::AddressFamily::UNIX_LOCAL)
+#endif
+                        connection_socket.setNoDelay(no_delay);
+
+                    /// Read first: only this thread adds connections, and a finishing one leaves `current_threads` first.
+                    const size_t connections = current_connections;
+                    const size_t threads = current_threads;
+                    if (connections - threads >= max_queued)
+                    {
+                        ++refused_connections;
+                        LOG_WARNING(log, "Refusing connection from {}, reached max queue size {}",
+                            connection_socket.peerAddress().toString(), max_queued);
+                        continue;
+                    }
+
+                    /// Created before the counter is incremented, because creating it may throw.
+                    ThreadPool::Job job = [this, connection_socket] { serveConnection(connection_socket); };
+                    ++current_connections;
+                    if (!thread_pool.trySchedule(std::move(job)))
+                    {
+                        --current_connections;
+                        ++refused_connections;
+                        LOG_WARNING(log, "Refusing connection from {}: cannot start a thread for it",
+                            connection_socket.peerAddress().toString());
+                    }
+                }
+                catch (const Poco::InvalidArgumentException & e)
+                {
+                    /// Termination request
+                    LOG_INFO(log, "Shutting down TCPServer: {}", e.displayText());
+                }
+                catch (...)
+                {
+                    tryLogCurrentException(log);
+                }
+            }
+        }
+        catch (const Poco::Exception &)
+        {
+            tryLogCurrentException(log);
+            // possibly a resource issue since poll() failed;
+            // give some time to recover before trying again
+            Poco::Thread::sleep(50);
+        }
+    }
+}
+
+void TCPServer::serveConnection(const Poco::Net::StreamSocket & connection_socket)
+{
+    /// A connection that was still waiting for a thread when the server stopped is dropped.
+    if (is_open)
+    {
+        ++current_threads;
+        try
+        {
+            std::unique_ptr<Poco::Net::TCPServerConnection> connection(factory->createConnection(connection_socket, *this));
+            if (connection)
+                connection->run();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log);
+        }
+        --current_threads;
+    }
+    /// The last access to `this`: the server is destroyed only when it has no connections.
+    --current_connections;
 }
 
 }
