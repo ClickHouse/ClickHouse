@@ -11,6 +11,7 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
 #include <Interpreters/Context.h>
+#include <Common/parseRemoteDescription.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
@@ -37,6 +38,7 @@ namespace Setting
     extern const SettingsString cluster_for_parallel_replicas;
     extern const SettingsParallelReplicasMode parallel_replicas_mode;
     extern const SettingsString url_base;
+    extern const SettingsUInt64 glob_expansion_max_elements;
 }
 
 namespace ErrorCodes
@@ -229,9 +231,18 @@ void TableFunctionURL::parseArgumentsImpl(ASTs & args, const ContextPtr & contex
     {
         configuration.body.query_tree = resolved_body_query_tree;
 
-        /// A pattern such as `{1..3}` generates several URLs, each of them is sent its own request, and the subquery
-        /// would be executed again for every one. Alternatives separated by `|` are failover options of one request.
-        if (filename.contains('{') && filename.contains('}'))
+        /// A pattern such as `{1..3}` or a list such as `a,b` generates several URLs, each of them is sent its own
+        /// request, and the subquery would be executed again for every one. Alternatives separated by `|`, such as
+        /// `{1|2}`, are failover options of one request. Count the requests with the same expansion the read uses.
+        bool generates_multiple_urls = false;
+        if (urlWithGlobs(filename))
+        {
+            RemoteDescriptionGenerator generator(
+                filename, 0, filename.size(), ',', context->getSettingsRef()[Setting::glob_expansion_max_elements], globCaller(), '|');
+            auto total_count = generator.totalCount();
+            generates_multiple_urls = !total_count || *total_count > 1;
+        }
+        if (generates_multiple_urls)
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "The url table function does not support a subquery in the 'body' argument for a URL with a pattern "
@@ -721,7 +732,7 @@ SELECT * FROM url('https://api.example.com/echo', JSONEachRow, body(payload));
 
 `MATERIALIZED` common table expressions cannot be used in a query body.
 
-A URL with a pattern that generates multiple URLs, such as `{1..3}` or `{a,b}`, sends a separate request to each of the URLs. A constant string body is sent with every request, while a query body is rejected for such URLs, because the query would be executed for every URL. Alternatives separated by `|` are failover options of a single request: when the request falls over to the next alternative, the body is sent again, and the query is executed again, as for a retry.
+A URL with a pattern that generates multiple URLs, such as `{1..3}` or `{a,b}`, or a list of URLs separated by `,` (when the URL also contains `|`), sends a separate request to each of the URLs. A constant string body is sent with every request, while a query body is rejected for such URLs, because the query would be executed for every URL. Alternatives separated by `|` are failover options of a single request: when the request falls over to the next alternative, the body is sent again, and the query is executed again, as for a retry.
 
 A query body is not supported for clustered reads: [`urlCluster`](/reference/functions/table-functions/urlCluster) rejects it, and `url` does not use parallel replicas when the body is a query. Every participating server would re-execute the query locally, so the request body could differ between the servers. A constant string body is identical everywhere and works with both.
 
