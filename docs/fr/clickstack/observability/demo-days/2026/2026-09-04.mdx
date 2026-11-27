@@ -1,0 +1,104 @@
+---
+slug: /clickstack/observability/demo-days/2026/2026-09-04
+title: 'Demo days - 2026-09-04'
+sidebarTitle: '2026-09-04'
+description: 'Journées de démonstration ClickStack du 2026-09-04'
+doc_type: 'guide'
+keywords: ['ClickStack', 'Demo days']
+---
+
+## Nouveaux types de filtres de tableau de bord {#new-types-of-dashboard-filter}
+
+*Démonstration par [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/VnlNxvcvg-g" title="Lecteur vidéo YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+Jusqu&#39;à présent, les filtres de tableau de bord ne proposaient qu&#39;un seul type de valeur : les valeurs issues d&#39;une requête, où les options de la liste déroulante proviennent d&#39;une colonne dans ClickHouse. Ouvrez la fenêtre modale des filtres et variables : deux nouveaux types sont désormais disponibles.
+
+Les valeurs statiques vous permettent de saisir vous-même les options lors de la création du filtre ; un filtre d&#39;environnement peut ainsi proposer simplement `dev`, `staging` et `prod` sans aucune requête sous-jacente. Un filtre à liste statique n&#39;a pas d&#39;`expression` : il ne prend donc en charge que le mode variable et ne peut pas être converti en condition SQL pour le mode diffusion.
+
+Avec les valeurs de label PromQL, les options sont récupérées depuis l&#39;endpoint `<label>/values` d&#39;une source PromQL. Vous choisissez le label souhaité et pouvez éventuellement le restreindre à l&#39;aide d&#39;un matcher, qui peut lui-même faire référence à d&#39;autres variables. Les filtres deviennent ainsi interdépendants : sélectionnez un environnement, et les instances proposées par le filtre suivant se restreignent en conséquence, tandis que les graphiques PromQL s&#39;affinent au fur et à mesure.
+
+Les deux types peuvent être exposés en tant que variables, ce qui permet à un filtre de servir à bien plus qu&#39;une clause `WHERE`. Dans la démonstration, un filtre statique listant `ServiceName` et `SeverityText` sert de dimension de group-by pour un graphique : choisir une valeur dans la liste déroulante modifie le critère de regroupement du graphique, quelle que soit la combinaison.
+
+**PR associées :** [#3017](https://github.com/hyperdxio/hyperdx/pull/3017) ajout des filtres à liste de valeurs statiques aux schémas et aux API, [#3022](https://github.com/hyperdxio/hyperdx/pull/3022) rendu des champs de saisie des filtres à liste de valeurs statiques, [#3020](https://github.com/hyperdxio/hyperdx/pull/3020) possibilité de créer et de modifier des filtres à liste statique dans l&#39;UI, [#3060](https://github.com/hyperdxio/hyperdx/pull/3060) prise en charge des filtres à valeurs personnalisées statiques dans MCP, [#3053](https://github.com/hyperdxio/hyperdx/pull/3053) prise en charge des filtres de tableau de bord basés sur les valeurs de label Prometheus, [#3072](https://github.com/hyperdxio/hyperdx/pull/3072) prise en charge de la complétion automatique pour les filtres de label PromQL, [#3039](https://github.com/hyperdxio/hyperdx/pull/3039) acceptation de limites temporelles facultatives sur l&#39;endpoint des valeurs de label Prometheus, [#3079](https://github.com/hyperdxio/hyperdx/pull/3079) prise en charge de match[] sur les endpoints de labels et de valeurs PromQL, [#3080](https://github.com/hyperdxio/hyperdx/pull/3080) prise en charge de match[] dans les filtres de label PromQL, [#3083](https://github.com/hyperdxio/hyperdx/pull/3083) dédoublonnage des labels et valeurs PromQL pour éviter un plantage de Mantine, [#3005](https://github.com/hyperdxio/hyperdx/pull/3005) demande de confirmation avant d&#39;abandonner les modifications non enregistrées à la fermeture de l&#39;éditeur de filtres, [#3078](https://github.com/hyperdxio/hyperdx/pull/3078) possibilité de configurer des filtres de tableau de bord comme obligatoires, [#3093](https://github.com/hyperdxio/hyperdx/pull/3093) application facultative des filtres de tableau de bord à l&#39;aperçu de l&#39;éditeur de tuiles
+
+## Modèles de légende personnalisés pour les graphiques PromQL {#custom-legend-templates-for-promql-charts}
+
+*Démonstration par [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/2rR_kRAEvWw" title="Lecteur vidéo YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+Les légendes PromQL étaient difficiles à lire, comme l&#39;a souligné Vladimir. Par défaut, nous affichons le nom de la métrique suivi de chaque label qui diffère d&#39;une série renvoyée à l&#39;autre. Pour une requête renvoyant de nombreuses séries, cela produit une longue chaîne sur laquelle il faut cliquer pour s&#39;y retrouver.
+
+Les paramètres d&#39;affichage du graphique acceptent désormais un modèle de légende. Il s&#39;agit d&#39;un modèle Handlebars : vous référencez uniquement les labels qui vous intéressent et obtenez un nom de série court, aussi bien dans la légende que dans l&#39;infobulle.
+
+Si le modèle référence un label absent, cette référence produit une valeur vide. Si le résultat est vide ou n&#39;est pas unique d&#39;une série à l&#39;autre, nous nous rabattons sur l&#39;ensemble complet des labels distinctifs : vous ne risquez donc jamais de vous retrouver avec deux séries impossibles à distinguer.
+
+**PRs associées :** [#3055](https://github.com/hyperdxio/hyperdx/pull/3055) prise en charge d&#39;un modèle personnalisé pour les légendes des séries PromQL
+
+## Enregistrer une plage de dates relative comme valeur par défaut d’un tableau de bord {#saving-a-relative-date-range-as-a-dashboard-default}
+
+*Démonstration par [@knudtty](https://github.com/knudtty)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/8KzwsEG-KSg" title="Lecteur vidéo YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+Les tableaux de bord peuvent désormais enregistrer une plage de dates relative comme valeur par défaut. Définissez l’intervalle de temps souhaité, puis cliquez sur « Save Query and Filters as default » : le tableau de bord s’ouvrira dorénavant sur cette plage.
+
+Tout l’intérêt réside dans le caractère relatif de la plage. En enregistrant « les 6 dernières heures », le tableau de bord reste pertinent chaque fois que vous l’ouvrez, au lieu d’être figé sur une période fixe qui devient obsolète. Vous pouvez toujours modifier la plage lorsque vous consultez le tableau de bord, par exemple pour afficher les 7 derniers jours, puis quitter la page et retrouver la valeur par défaut enregistrée à votre retour.
+
+**PRs associées :** [#3073](https://github.com/hyperdxio/hyperdx/pull/3073) les plages de dates relatives peuvent être enregistrées pour les tableaux de bord
+
+## Alertes sans recherche enregistrée ni tuile de tableau de bord {#alerts-without-a-saved-search-or-dashboard-tile}
+
+*Démonstration par [@wrn14897](https://github.com/wrn14897)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/wuK7geV7F94" title="Lecteur vidéo YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+Auparavant, chaque alerte devait s&#39;appuyer sur un élément existant : une recherche enregistrée pour les logs, ou une tuile de tableau de bord pour les métriques. Cette approche ne passe pas à l&#39;échelle lorsque vous migrez des milliers d&#39;alertes Grafana.
+
+Les alertes intégrées lèvent cette contrainte. Une action **Create alert** est disponible dans la barre d&#39;actions de l&#39;Explorateur de graphiques : vous pouvez ainsi construire un graphique sur des métriques ou des événements et y associer directement une alerte, sans rien enregistrer au préalable. Vous pouvez également créer une alerte intégrée depuis la page des alertes, ce qui est la marche à suivre lorsque vous ne souhaitez justement pas associer l&#39;alerte à une recherche enregistrée ou à un tableau de bord.
+
+Une alerte intégrée conserve son propre `chartConfig` dans le document de l&#39;alerte, avec exactement la même structure que celle stockée par une tuile de tableau de bord. Elle est donc évaluée par le même chemin de code que les alertes de tuiles, et non par un chemin parallèle. Elle prend en charge le constructeur et le SQL brut pour les affichages `line`, `stacked_bar` et `number`. PromQL n&#39;est pas pris en charge pour le moment.
+
+La même structure `source: 'inline'` est acceptée par l&#39;API externe v2 et par l&#39;outil MCP `save_alert`, avec le même dialecte de configuration de tuile que celui des tableaux de bord v2, ce qui permet de créer des alertes par programmation à grande échelle. Le routeur réutilise les convertisseurs de tuiles de tableau de bord, ce qui évite toute dérive entre les deux interfaces.
+
+**PR associées :** [#3010](https://github.com/hyperdxio/hyperdx/pull/3010) prise en charge de la création d&#39;alertes sans recherche enregistrée ni tuile de tableau de bord (backend), [#3069](https://github.com/hyperdxio/hyperdx/pull/3069) UI de création et de modification d&#39;alertes de graphiques intégrées, [#3043](https://github.com/hyperdxio/hyperdx/pull/3043) prise en charge des alertes de graphiques dans l&#39;API externe v2 et MCP
+
+## Noms et balises des alertes {#alert-names-and-tags}
+
+*Démonstration par [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/nIJGusSLBuk" title="Lecteur vidéo YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+Les alertes peuvent désormais avoir leur propre nom et leurs propres balises. Le formulaire d&#39;alerte d&#39;une tuile de tableau de bord ou d&#39;une recherche enregistrée comporte désormais un champ de nom et un champ de balises. Par défaut, une nouvelle alerte reprend le nom du graphique ou de la recherche enregistrée, et hérite des balises du tableau de bord ou de la recherche enregistrée auquel elle est rattachée.
+
+C&#39;est ce nom qui s&#39;affiche sur la page des alertes, et c&#39;est sur lui que portent la recherche et le filtrage. Les alertes déjà présentes dans la base de données sans nom défini continuent de tirer le leur de la recherche enregistrée ou du tableau de bord auxquels elles font référence.
+
+Les balises renvoyées par l&#39;endpoint `team/tags` incluent désormais celles des documents d&#39;alerte, en plus de celles des tableaux de bord et des recherches enregistrées. Sans cela, une balise utilisée uniquement par une alerte ne serait pas proposée au moment de baliser la suivante.
+
+Ce travail prépare la pagination de la page des alertes tout en conservant la recherche et le filtrage par balise : il faut pour cela que le nom et les balises figurent directement dans le document d&#39;alerte, plutôt que de passer par une jointure avec les collections de tableaux de bord et de recherches enregistrées. La pagination n&#39;est pas encore finalisée.
+
+**PRs associées :** [#3063](https://github.com/hyperdxio/hyperdx/pull/3063) persistance du displayName et des balises au niveau de l&#39;alerte, [#3065](https://github.com/hyperdxio/hyperdx/pull/3065) prise en charge de l&#39;écriture du displayName et des balises des alertes, [#3067](https://github.com/hyperdxio/hyperdx/pull/3067) affichage et modification du displayName et des balises des alertes dans l&#39;UI, [#3092](https://github.com/hyperdxio/hyperdx/pull/3092) inclusion des balises d&#39;alerte dans la réponse de l&#39;API des balises, [#3029](https://github.com/hyperdxio/hyperdx/pull/3029) chargement de données historiques pour le nom et les balises des alertes (ouverte)
+
+## Un prototype Explorer {#an-explore-prototype}
+
+*Démonstration par [@elizabetdev](https://github.com/elizabetdev)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/vlGMKp5Eroc" title="Lecteur vidéo YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+**Il s&#39;agit d&#39;un travail exploratoire, sans engagement de mise en production.**
+
+Le prototype est une page Explorer unique qui remplacerait à la fois la page de recherche et l&#39;explorateur de graphiques. Il est à l&#39;état de brouillon dans le dépôt HyperDX. Il pourrait remplacer ces pages, coexister avec elles comme troisième page, ou ne jamais aboutir.
+
+Il s&#39;attaque à la difficulté de passer d&#39;une page à l&#39;autre parmi les deux dont nous disposons aujourd&#39;hui. Les clients nous disent qu&#39;il est peu pratique de poursuivre une question de la recherche vers l&#39;explorateur de graphiques : il faut souvent resélectionner la source de données et reconstruire la même requête de l&#39;autre côté. Explorer regroupe tout sur une seule page : la vue bascule entre événements, motifs, deltas et graphiques, sans que la page change sous vos yeux.
+
+Le second axe consiste à abaisser la barrière d&#39;entrée pour les personnes qui ne maîtrisent pas les langages de requête. L&#39;ajout d&#39;une colonne au tableau, le tri et le choix d&#39;un group-by passent par des listes déroulantes, le SQL restant disponible si besoin. Le group-by illustre bien les limites actuelles : l&#39;histogramme de la page de recherche est regroupé par code d’état sans possibilité de le modifier, si bien que quiconque souhaite un autre regroupement doit passer par l&#39;explorateur de graphiques. Ici, vous définissez le group-by dans la vue des événements, passez à une série temporelle ou à un graphique à barres lorsque le petit histogramme ne suffit plus, changez l&#39;agrégation pour `p99` par exemple, puis enregistrez le résultat dans un tableau de bord.
+
+La barre de filtres est un petit constructeur de requêtes qui fait abstraction de Lucene comme de SQL : choisissez un champ, puis un opérateur, et saisissez une valeur ; l&#39;éditeur de requêtes complet et les macros restent disponibles pour les utilisateurs avancés. Reste à savoir s&#39;il est vraiment judicieux de proposer deux langages de requête : c&#39;est l&#39;une des questions encore ouvertes.
+
+De nombreuses questions restent en suspens. PromQL n&#39;est pas encore pris en charge, et rien n&#39;est tranché quant à la place des métriques sur cette page, ni quant au risque de trop en demander à une seule page. Le prototype se concentre sur l&#39;expérience des logs et des traces.
+
+Vos retours sont les bienvenus.
+
+**PR associées :** [#2985](https://github.com/hyperdxio/hyperdx/pull/2985) Explorer as search-first visualization (prototype) (ouverte)

@@ -1513,6 +1513,10 @@ std::unique_ptr<S3::Client> ClientFactory::create( // NOLINT
         credentials_configuration.use_environment_credentials =
             credentials_configuration.use_environment_credentials || (credentials.IsEmpty() && !credentials_configuration.role_arn.empty());
 
+    /// The web identity credentials provider calls STS in the region of this S3 client,
+    /// which `updateSchemeAndRegion` took from the `region` setting or from the endpoint.
+    credentials_configuration.s3_client_region = client_configuration.region;
+
     auto credentials_provider = getCredentialsProvider(client_configuration, credentials, credentials_configuration);
 
     /// Only after the credentials providers have taken their copies of the configuration: their

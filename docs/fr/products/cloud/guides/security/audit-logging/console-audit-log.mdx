@@ -22,13 +22,9 @@ Pour une description de toutes les permissions, consultez [Rôles et permissions
     Dans ClickHouse Cloud, accédez aux détails de votre organisation.
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![Onglet Activity de ClickHouse Cloud](/images/cloud/security/activity_log1.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Onglet Activity de ClickHouse Cloud](/images/cloud/security/activity_log1.webp)
+      </Frame>
     </div>
 
     <br />
@@ -37,21 +33,17 @@ Pour une description de toutes les permissions, consultez [Rôles et permissions
   <Step title="Sélectionnez Audit" id="select-audit">
     Sélectionnez l’onglet **Audit** dans le menu de gauche pour voir les modifications apportées à votre organisation ClickHouse Cloud, notamment qui les a effectuées et à quel moment.
 
-    La page **Activity** affiche un tableau contenant la liste des événements enregistrés pour votre organisation. Par défaut, cette liste est triée en ordre chronologique inverse (l’événement le plus récent en haut). Modifiez l’ordre du tableau en cliquant sur les en-têtes de colonnes. Chaque élément du tableau contient les champs suivants :
+    La page **Activity** affiche un tableau contenant la liste des événements enregistrés pour votre organisation. Par défaut, cette liste est triée en ordre chronologique inverse (l’événement le plus récent en haut). Modifiez l’ordre du tableau en cliquant sur les en-têtes de colonnes. Chaque élément du tableau contient les champs suivants :
 
-    * **Activity :** Un court texte décrivant l’événement
-    * **User :** L’utilisateur à l’origine de l’événement
-    * **IP Address :** Le cas échéant, ce champ indique l’adresse IP de l’utilisateur à l’origine de l’événement
-    * **Time :** L’horodatage de l’événement
+    * **Activity :** Un court texte décrivant l’événement
+    * **User :** L’utilisateur à l’origine de l’événement
+    * **Adresse IP :** Le cas échéant, ce champ indique l’adresse IP de l’utilisateur à l’origine de l’événement
+    * **Time :** L’horodatage de l’événement
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![Tableau Activity de ClickHouse Cloud](/images/cloud/security/activity_log2.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Tableau Activity de ClickHouse Cloud](/images/cloud/security/activity_log2.webp)
+      </Frame>
     </div>
 
     <br />
@@ -64,18 +56,14 @@ Pour une description de toutes les permissions, consultez [Rôles et permissions
 
 <div class="eighty-percent">
   <div className="ch-image-lg">
-
-  <Frame>
-
-  ![Export CSV d’Activity dans ClickHouse Cloud](/images/cloud/security/activity_log3.webp)
-
-  </Frame>
-
+    <Frame>
+      ![Export CSV d’Activity dans ClickHouse Cloud](/images/cloud/security/activity_log3.webp)
+    </Frame>
   </div>
 </div>
 
 <div id="console-audit-log-api">
-  ## Accéder au journal d’audit de la console via l’API
+  ## Accéder au journal d’audit de la console via l’API {#console-audit-log-api}
 </div>
 
 Vous pouvez utiliser le endpoint `activity` de la ClickHouse Cloud API pour obtenir une exportation
@@ -86,3 +74,7 @@ des événements d’audit. Vous trouverez plus d’informations dans la [réfé
 Vous pouvez utiliser l’API pour vous connecter à la plateforme de journalisation de votre choix. Les solutions suivantes disposent de connecteurs prêts à l’emploi pris en charge :
 
 * [Add-on ClickHouse Cloud Audit pour Splunk](/fr/integrations/connectors/data-integrations/integrations/splunk)
+
+## Rétention du journal d’audit {#audit-log-retention}
+
+ClickHouse Cloud n’applique pas de time-to-live (TTL) aux enregistrements du journal d’audit de la console. Ces enregistrements ne sont donc pas supprimés automatiquement en fonction de leur ancienneté.

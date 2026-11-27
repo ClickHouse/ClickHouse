@@ -1,0 +1,5 @@
+slow registry, max_execution_time: TIMEOUT_EXCEEDED 1
+slow registry, registration: TIMEOUT_EXCEEDED 1
+slow registry, KILL QUERY: QUERY_WAS_CANCELLED 1
+HTTP external data, retries: TIMEOUT_EXCEEDED 1
+HTTP external data, slow registry: TIMEOUT_EXCEEDED 1

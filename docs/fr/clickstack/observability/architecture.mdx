@@ -1,0 +1,86 @@
+---
+slug: /clickstack/observability/architecture
+description: 'Architecture de ClickHouse Observability, service entièrement géré'
+title: 'Architecture'
+toc_max_heading_level: 2
+doc_type: 'reference'
+keywords: ['ClickHouse Observability', 'entièrement géré', 'architecture']
+sidebarTitle: 'Architecture'
+---
+
+import { BetaBadge } from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge label="Offre en version bêta" />
+
+ClickHouse Observability s’exécute entièrement dans **ClickHouse Cloud** et fournit un backend d’observability entièrement géré, tout en conservant le même modèle de données ClickStack et la même expérience utilisateur. Pour les déploiements autogérés, consultez la page [architecture autogérée](/fr/clickstack/self-configured/architecture).
+
+Dans ce modèle, **ClickHouse, l’interface utilisateur de ClickStack et le collecteur d’ingestion OpenTelemetry (OTel)** sont hébergés, exploités et sécurisés par ClickHouse Cloud. Il incombe aux utilisateurs d’instrumenter leurs applications et d’envoyer la télémétrie depuis leur environnement vers le service managé.
+
+<div className="ch-image-lg">
+  <Frame>
+    ![Architecture entièrement gérée, dans laquelle le collecteur OpenTelemetry, ClickHouse et l’interface utilisateur de ClickStack sont exploités par ClickHouse Cloud](/images/use-cases/observability/clickstack-managed-architecture.svg)
+  </Frame>
+</div>
+
+### Collecteur OpenTelemetry : ingestion de données {#open-telemetry-collector-managed}
+
+ClickHouse Observability inclut un collecteur OpenTelemetry (OTel) géré qui permet d’ingérer la télémétrie de manière ouverte et standardisée. Dans votre service, ouvrez **Paramètres de l’équipe → Données → Télémétrie gérée** pour copier le point de terminaison OTLP et l’API key. Consultez [Envoyer des données OpenTelemetry](/fr/clickstack/observability/ingesting-data/opentelemetry) pour connaître la procédure de connexion et d’authentification.
+
+Le collecteur exporte la télémétrie vers ClickHouse Cloud sous forme de batchs optimisés. Il utilise des schémas de table optimisés pour chaque signal de télémétrie.
+
+Le collecteur d’ingestion est géré par ClickHouse Cloud. Vous pouvez toutefois avoir besoin de collecteurs dans votre propre environnement pour recueillir des données de télémétrie, comme les metrics d’hôte ou les logs Kubernetes, et les transmettre au point de terminaison géré.
+
+### ClickHouse Cloud : le moteur {#clickhouse-cloud}
+
+Au cœur de ClickHouse Observability se trouve ClickHouse Cloud, une version sans serveur de ClickHouse, base de données orientée colonnes conçue pour l&#39;analyse en temps réel à grande échelle. ClickHouse Cloud prend en charge l&#39;ingestion et l&#39;interrogation des données d&#39;observability, ce qui permet :
+
+* Une recherche rapide sur de grands volumes d&#39;événements
+* L&#39;ingestion à grande échelle de télémétrie high-cardinality
+* Une compression orientée colonnes pour les données d&#39;observability
+* Une prise en charge native des données JSON semi-structurées, permettant une évolution dynamique du schéma
+* Un moteur SQL puissant doté de centaines de fonctions analytiques intégrées
+
+ClickHouse Cloud traite les données d&#39;observability sous forme d&#39;événements larges, ce qui permet une corrélation approfondie entre les logs, les metrics et les traces au sein d&#39;une structure unique et unifiée.
+
+Par rapport à ClickHouse Open Source, il offre de nombreux avantages pour l&#39;observability :
+
+* Mise à l’échelle automatique de la capacité de calcul, indépendamment du stockage
+* Stockage d’objet pour conserver la télémétrie indépendamment de la capacité de calcul
+* Authentification intégrée
+* Fonctionnalités de sécurité et de conformité
+* Mises à niveau transparentes
+
+### Interface utilisateur de ClickStack : l&#39;interface {#hyperdx}
+
+L&#39;interface utilisateur de ClickStack est l&#39;interface graphique de ClickStack. Elle offre :
+
+* Une recherche en langage naturel et de type Lucene
+* Le suivi en direct (live tailing) pour le débogage en temps réel
+* Des vues unifiées des logs, des metrics et des traces
+* La relecture de session pour l&#39;observability du frontend
+* La création de tableaux de bord et la configuration d&#39;alertes
+* Une interface de requêtes SQL pour les analyses avancées
+
+Conçue spécifiquement pour ClickHouse, l&#39;interface utilisateur de ClickStack associe une recherche puissante à des flux de travail intuitifs. Vous pouvez ainsi repérer des anomalies, analyser des problèmes et obtenir rapidement des informations exploitables.
+
+Dans ClickHouse Observability, l&#39;UI est intégrée au système d&#39;authentification de la Console ClickHouse Cloud.
+
+### Isolation de l’ingestion et des requêtes {#ingestion-query-isolation}
+
+ClickHouse Observability utilise des capacités de calcul distinctes pour l’ingestion et l’exécution des requêtes. La capacité de calcul en écriture traite la télémétrie entrante ainsi que la maintenance des données en arrière-plan. La capacité de calcul en lecture prend en charge les recherches, les tableaux de bord, les notebooks et les requêtes d’alerte. Toutes deux accèdent au même stockage d’objet sous-jacent.
+
+Cette séparation limite la concurrence entre les charges de travail d’ingestion et de requête. Si la capacité de calcul en écriture est temporairement indisponible, la capacité de calcul en lecture peut continuer à interroger les données stockées, bien que la télémétrie la plus récente puisse arriver avec du retard. Si la capacité de calcul en lecture est indisponible, l’ingestion se poursuit, mais les recherches et l’évaluation des alertes risquent d’être interrompues.
+
+### Mise à l’échelle {#scaling}
+
+ClickHouse Cloud ajuste la capacité à mesure que les charges de travail évoluent. Les collecteurs gérés sont mis à l’échelle horizontalement pour absorber le trafic d’ingestion, tandis que les capacités de calcul en écriture et en lecture évoluent indépendamment l’une de l’autre, ainsi que du stockage.
+
+La mise à l’échelle n’est pas instantanée. Une hausse soudaine de l’ingestion peut retarder le moment où les nouvelles données de télémétrie deviennent consultables, et des pics de requêtes peuvent allonger les temps de réponse pendant l’ajustement de la capacité. Séparer les charges de travail permet de limiter l’impact de l’une sur l’autre.
+
+### Mise en tampon et récupération de l’ingestion {#ingestion-buffering-recovery}
+
+Le collecteur géré tente d’abord d’écrire la télémétrie dans ClickHouse. Si ClickHouse ne peut temporairement pas accepter d’écritures, le pipeline d’ingestion peut stocker des batch dans Amazon S3 afin de les rejouer ultérieurement. Ce tampon d’ingestion temporaire est distinct du stockage d’objet dans lequel ClickHouse conserve la télémétrie stockée. Une fois les écritures rétablies, les données mises en mémoire tampon sont ingérées dans ClickHouse.
+
+Pendant la récupération, la télémétrie récente peut apparaître en retard ou dans le désordre, le temps que l’arriéré soit traité. Cette mise en tampon permet de se rétablir après des interruptions temporaires des écritures ; elle n’assure pas de basculement interrégional et ne garantit pas la livraison dans tous les scénarios de défaillance.
+
+Certaines données peuvent néanmoins être perdues, notamment celles qui ne sont conservées que dans la mémoire d’un collecteur au moment de son arrêt, ou les batch qui ne peuvent être écrits ni dans ClickHouse ni dans S3. Configurez vos agents d’envoi et vos collecteurs pour qu’ils effectuent une nouvelle tentative en cas d’échec des exportations et, lorsque cela est pris en charge, utilisez des files d’attente persistantes afin de conserver la télémétrie pendant les interruptions.

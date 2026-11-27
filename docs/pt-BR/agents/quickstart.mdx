@@ -1,9 +1,9 @@
 ---
-sidebarTitle: 'Início rápido'
+sidebarTitle: 'Guia de início rápido'
 slug: /agents/quickstart
-title: 'Início rápido'
+title: 'Guia de início rápido'
 description: 'Crie e execute seu primeiro ClickHouse Agent em um serviço do ClickHouse Cloud'
-keywords: ['AI', 'ClickHouse Cloud', 'agentes', 'início rápido', 'Agent Builder']
+keywords: ['AI', 'ClickHouse Cloud', 'agents', 'quickstart', 'agent builder']
 doc_type: 'guide'
 ---
 
@@ -11,116 +11,86 @@ import { BetaBadge } from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
 
 <BetaBadge />
 
-Crie um agente personalizado no Cloud Console e execute uma consulta em linguagem natural no seu serviço.
+Crie um agente personalizado no Console do Cloud e execute uma consulta em linguagem natural no seu serviço.
 
-<div id="prerequisites">
-  ## Pré-requisitos
-</div>
+## Pré-requisitos {#prerequisites}
 
-* Um serviço do ClickHouse Cloud que você possa consultar.
-* A opção **Criar agente** no Agent Builder. Se ela não aparecer, peça a um administrador da organização para conceder permissão para criar agentes em Configurações do Admin, conforme detalhado em [compartilhamento e acesso](/pt-BR/agents/sharing-and-access).
+* Um serviço do ClickHouse Cloud no qual você possa executar consultas.
+* A opção **Criar agente** no Criador de agentes. Se ela não estiver disponível, peça a um administrador da organização que conceda a permissão de criação de agentes em **Configurações de administrador**, conforme descrito em [compartilhamento e acesso](/pt-BR/agents/sharing-and-access).
 
-<div id="build-the-agent">
-  ## Crie o agente
-</div>
+## Crie o agente {#build-the-agent}
 
 <Steps>
   <Step title="Inicie o ClickHouse Agents" id="launch-agents">
-    No seu serviço Cloud, clique em **ClickHouse agents** na barra lateral esquerda para abrir a central dos agentes. Clique em **Launch ClickHouse agents** para abrir o Agent Builder.
+    No seu Serviço Cloud, clique em **ClickHouse agents** na barra lateral esquerda para abrir a página inicial de agentes. Clique em **Launch ClickHouse agents** para abrir o Criador de agentes.
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Navegação do serviço Cloud com ClickHouse agents (Beta) selecionado, mostrando a central dos agentes com o botão Launch ClickHouse agents](/images/cloud/agent-builder/launch-ch-agents.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Navegação do Serviço Cloud com ClickHouse agents (Beta) selecionado, mostrando a página inicial com o botão Launch ClickHouse agents](/images/cloud/agent-builder/launch-ch-agents.webp)
+      </Frame>
     </div>
   </Step>
 
   <Step title="Crie o agente" id="create-the-agent">
-    No Agent Builder, clique em **Create New Agent** na parte superior do painel esquerdo. Preencha os campos principais:
+    No Criador de agentes, clique em **Create New Agent** na parte superior do painel esquerdo. Preencha os campos principais:
 
     * **Name** - um identificador curto para o seu agente.
-    * **Description** - uma descrição da finalidade do agente, que ficará visível para os colegas da equipe.
-    * **Category** - uma categoria para o seu agente. Você pode deixar como `General`, a menos que sua organização tenha categorias personalizadas.
-    * **Instructions** - o system prompt, que descreve a função do agente, as perguntas que ele deve responder e quaisquer regras de negócio que precise seguir.
+    * **Description** - uma descrição da finalidade do agente, que ficará visível para os colegas de equipe.
+    * **Category** - uma categoria para o seu agente. Você pode manter `General`, a menos que sua organização tenha categorias personalizadas.
+    * **Instructions** - o prompt do sistema, que descreve o papel do agente, as perguntas que ele deve responder e as regras de negócio que ele deve seguir.
     * **Model** - escolha um modelo na lista suspensa.
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Painel do Agent Builder mostrando o menu suspenso Create New Agent, os campos do formulário (Name, Description, Category, Instructions, Model) e a seção Capabilities](/images/cloud/agent-builder/agent-builder.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Painel do Criador de agentes mostrando a lista suspensa Create New Agent, os campos do formulário (Name, Description, Category, Instructions, Model) e a seção Capabilities](/images/cloud/agent-builder/agent-builder.webp)
+      </Frame>
     </div>
   </Step>
 
-  <Step title="Adicione recursos e ferramentas" id="attach-tools">
+  <Step title="Anexe recursos e ferramentas" id="attach-tools">
     Os recursos e as ferramentas do agente ficam em dois lugares.
 
-    **Capabilities** no painel principal — recursos nativos como [Run Code](/pt-BR/agents/builder/code-interpreter), [Web Search](/pt-BR/agents/builder/web-search), File Context, Artifacts, [MCP Servers](/pt-BR/agents/builder/mcp-servers) e [Skills](/pt-BR/agents/builder/skills). Ative os que o agente precisar.
+    **Capabilities**, no painel principal — recursos nativos como [Run Code](/pt-BR/agents/builder/code-interpreter), [Web Search](/pt-BR/agents/builder/web-search), File Context, Artifacts, [MCP Servers](/pt-BR/agents/builder/mcp-servers) e [Skills](/pt-BR/agents/builder/skills). Ative os de que o agente precisa.
 
     <div className="ch-image-sm">
-
-    <Frame>
-
-    ![Seção Capabilities do painel do Agent Builder mostrando os controles de Run Code, Web Search, File Context, Artifacts, MCP Servers e Skills](/images/cloud/agent-builder/capabilities.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Seção Capabilities do painel do Criador de agentes mostrando os botões de alternância Run Code, Web Search, File Context, Artifacts, MCP Servers e Skills](/images/cloud/agent-builder/capabilities.webp)
+      </Frame>
     </div>
 
-    **Tools** no botão **Add Tools** na parte inferior do painel — integrações de terceiros como [image generation](/pt-BR/agents/builder/image-generation), [vision](/pt-BR/agents/builder/vision), APIs de busca e serviços externos.
+    **Tools**, acessíveis pelo botão **Add Tools** na parte inferior do painel — integrações de terceiros como [geração de imagens](/pt-BR/agents/builder/image-generation), [Vision](/pt-BR/agents/builder/vision), APIs de busca e serviços externos.
 
     <div className="ch-image-sm">
-
-    <Frame>
-
-    ![Parte inferior do painel do Agent Builder com o botão Add Tools destacado](/images/cloud/agent-builder/tools-button.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Parte inferior do painel do Criador de agentes com o botão Add Tools destacado](/images/cloud/agent-builder/tools-button.webp)
+      </Frame>
     </div>
 
-    Clique em **Add Tools** para navegar pelo catálogo:
+    Clique em **Add Tools** para explorar o catálogo:
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Modal Agent Tools mostrando uma grade de integrações de terceiros, incluindo Google, OpenAI Image Tools, Wolfram, DALL-E-3, Tavily Search, Calculator e Stable Diffusion](/images/cloud/agent-builder/tools-modal.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Modal Agent Tools mostrando uma grade de integrações de terceiros, incluindo Google, OpenAI Image Tools, Wolfram, DALL-E-3, Tavily Search, Calculator e Stable Diffusion](/images/cloud/agent-builder/tools-modal.webp)
+      </Frame>
     </div>
 
-    [Subagents](/pt-BR/agents/builder/subagents) são configurados em **Advanced settings** — consulte a página de Subagents para mais detalhes.
+    Os [Subagentes](/pt-BR/agents/builder/subagents) são configurados em **Advanced settings** — consulte a página de subagentes para mais detalhes.
 
-    Você pode alterar os recursos e as ferramentas adicionados a qualquer momento.
+    Você pode alterar os recursos e as ferramentas anexados a qualquer momento.
   </Step>
 
   <Step title="Execute uma consulta" id="run-a-query">
-    Salve o agente, abra uma nova conversa e selecione seu agente no seletor de agentes. Digite uma pergunta — por exemplo, *&quot;Quais são minhas 10 principais tabelas por contagem de linhas nesta semana?&quot;* — e o agente planeja, chama ferramentas conforme necessário e retorna uma resposta.
+    Salve o agente, abra uma nova conversa e selecione seu agente no seletor de agentes. Digite uma pergunta — por exemplo, *&quot;What are my top 10 tables by row count this week?&quot;* — e o agente planeja, chama ferramentas conforme necessário e retorna uma resposta.
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Conversa no chat mostrando a pergunta 'What are my top 10 tables by row count this week?' e a resposta do agente — uma tabela em Markdown classificando as 10 principais tabelas entre os serviços por contagem de linhas, com Key Observations abaixo](/images/cloud/agent-builder/chat-query.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Conversa mostrando a pergunta 'What are my top 10 tables by row count this week?' e a resposta do agente — uma tabela markdown classificando as 10 principais tabelas entre serviços por contagem de linhas, com Key Observations abaixo](/images/cloud/agent-builder/chat-query.webp)
+      </Frame>
     </div>
   </Step>
 </Steps>
 
-<div id="next-steps">
-  ## Próximos passos
-</div>
+## Próximos passos {#next-steps}
 
-* [Compartilhe o agente](/pt-BR/agents/sharing-and-access) com a equipe.
+* [Compartilhe o agente](/pt-BR/agents/sharing-and-access) com colegas de equipe.
 * Publique no [marketplace](/pt-BR/agents/marketplace) quando o agente estiver estável.

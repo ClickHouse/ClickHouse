@@ -18,53 +18,39 @@ import { PartnerBadge } from "/snippets/ja/components/PartnerBadge/PartnerBadge.
 このアドオンに含まれるのは モジュラー入力 のみで、追加の UI は提供されません。
 
 <div id="installation">
-  # インストール
+  # インストール {#installation}
 </div>
 
-<div id="for-splunk-enterprise">
-  ## Splunk Enterprise 向け
-</div>
+## Splunk Enterprise の場合 {#for-splunk-enterprise}
 
-[Splunkbase](https://splunkbase.splunk.com/app/7709) から、Splunk 用の ClickHouse Cloud Audit Add-on をダウンロードします。
+[Splunkbase](https://splunkbase.splunk.com/app/7709) から ClickHouse Cloud Audit Add-on for Splunk をダウンロードします。
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Splunk 用 ClickHouse Cloud Audit Add-on のダウンロードページが表示されている Splunkbase の Web サイト](/images/integrations/tools/data-integration/splunk/splunk_001.webp)
-
-</Frame>
-
+  <Frame>
+    ![ClickHouse Cloud Audit Add-on for Splunk のダウンロードページを表示している Splunkbase の Web サイト](/images/integrations/tools/data-integration/splunk/splunk_001.webp)
+  </Frame>
 </div>
 
-Splunk Enterprise で、Apps -&gt; Manage に移動します。次に、Install app from file をクリックします。
+Splunk Enterprise で Apps -&gt; Manage に移動し、Install app from file をクリックします。
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Install app from file オプションが表示されている Apps 管理ページの Splunk Enterprise インターフェイス](/images/integrations/tools/data-integration/splunk/splunk_002.webp)
-
-</Frame>
-
+  <Frame>
+    ![Install app from file オプションを含む Apps 管理ページを表示している Splunk Enterprise のインターフェイス](/images/integrations/tools/data-integration/splunk/splunk_002.webp)
+  </Frame>
 </div>
 
 Splunkbase からダウンロードしたアーカイブファイルを選択し、Upload をクリックします。
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![ClickHouse アドオンをアップロードするための Splunk アプリのインストールダイアログ](/images/integrations/tools/data-integration/splunk/splunk_003.webp)
-
-</Frame>
-
+  <Frame>
+    ![ClickHouse アドオンをアップロードするための Splunk アプリのインストールダイアログ](/images/integrations/tools/data-integration/splunk/splunk_003.webp)
+  </Frame>
 </div>
 
-問題なく完了すると、ClickHouse 監査ログ アプリケーションがインストールされているはずです。インストールされていない場合は、Splunkd logs を確認してエラーがないか調べてください。
+正常に完了すると、ClickHouse Audit logs アプリケーションがインストールされていることを確認できます。インストールされていない場合は、Splunkd のログでエラーを確認してください。
 
 <div id="modular-input-configuration">
-  # モジュラー入力の設定
+  # モジュラー入力の設定 {#modular-input-configuration}
 </div>
 
 モジュラー入力を設定するには、まず ClickHouse Cloud のデプロイメントから次の情報を取得する必要があります。
@@ -72,126 +58,84 @@ Splunkbase からダウンロードしたアーカイブファイルを選択し
 * Organization ID
 * Admin [APIキー](/ja/products/cloud/features/admin-features/api/openapi)
 
-<div id="getting-information-from-clickhouse-cloud">
-  ## ClickHouse Cloud から情報を取得する
-</div>
+## ClickHouse Cloud から情報を取得する {#getting-information-from-clickhouse-cloud}
 
 [ClickHouse Cloudコンソール](https://console.clickhouse.cloud/)にログインします。
 
 Organization -&gt; Organization details に移動します。そこで Organization ID をコピーできます。
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Organization ID が表示された Organization details ページを示す ClickHouse Cloudコンソール](/images/integrations/tools/data-integration/splunk/splunk_004.webp)
-
-</Frame>
-
+  <Frame>
+    ![Organization ID が表示された Organization details ページを示す ClickHouse Cloudコンソール](/images/integrations/tools/data-integration/splunk/splunk_004.webp)
+  </Frame>
 </div>
 
-次に、左側のメニューから API Keys に移動します。
+次に、左側のメニューから APIキー に移動します。
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![左側のナビゲーションメニューにある API Keys セクションを示す ClickHouse Cloudコンソール](/images/integrations/tools/data-integration/splunk/splunk_005.webp)
-
-</Frame>
-
+  <Frame>
+    ![左側のナビゲーションメニューにある APIキー セクションを示す ClickHouse Cloudコンソール](/images/integrations/tools/data-integration/splunk/splunk_005.webp)
+  </Frame>
 </div>
 
-APIキー を作成し、わかりやすい名前を付けて、`Admin` 権限を選択します。Generate API Key をクリックします。
+APIキー を作成し、わかりやすい名前を付けて、`Admin` 権限を選択します。Generate APIキー をクリックします。
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![`Admin` 権限が選択された APIキー 作成画面を示す ClickHouse Cloudコンソール](/images/integrations/tools/data-integration/splunk/splunk_006.webp)
-
-</Frame>
-
+  <Frame>
+    ![Admin 権限が選択された APIキー 作成画面を示す ClickHouse Cloudコンソール](/images/integrations/tools/data-integration/splunk/splunk_006.webp)
+  </Frame>
 </div>
 
 APIキー と secret は安全な場所に保存してください。
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![保存対象の生成された APIキー と secret を示す ClickHouse Cloudコンソール](/images/integrations/tools/data-integration/splunk/splunk_007.webp)
-
-</Frame>
-
+  <Frame>
+    ![保存する必要がある、生成された APIキー と secret を示す ClickHouse Cloudコンソール](/images/integrations/tools/data-integration/splunk/splunk_007.webp)
+  </Frame>
 </div>
 
-<div id="configure-data-input-in-splunk">
-  ## Splunk でデータ入力を設定する
-</div>
+## Splunk でデータ入力を設定する {#configure-data-input-in-splunk}
 
 Splunk に戻り、Settings -&gt; Data inputs に移動します。
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Data inputs オプションが表示された Settings メニューの Splunk インターフェイス](/images/integrations/tools/data-integration/splunk/splunk_008.webp)
-
-</Frame>
-
+  <Frame>
+    ![Data inputs オプションを含む Settings メニューを表示した Splunk インターフェイス](/images/integrations/tools/data-integration/splunk/splunk_008.webp)
+  </Frame>
 </div>
 
-ClickHouse Cloud 監査ログ のデータ入力を選択します。
+ClickHouse Cloud Audit Logs データ入力を選択します。
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![ClickHouse Cloud 監査ログ オプションが表示された Splunk の Data inputs ページ](/images/integrations/tools/data-integration/splunk/splunk_009.webp)
-
-</Frame>
-
+  <Frame>
+    ![ClickHouse Cloud Audit Logs オプションを表示した Splunk の Data inputs ページ](/images/integrations/tools/data-integration/splunk/splunk_009.webp)
+  </Frame>
 </div>
 
-&quot;New&quot; をクリックして、データ入力の新しいインスタンスを設定します。
+「New」をクリックして、データ入力の新しいインスタンスを設定します。
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![新しい ClickHouse Cloud 監査ログ データ入力を設定するための Splunk インターフェイス](/images/integrations/tools/data-integration/splunk/splunk_010.webp)
-
-</Frame>
-
+  <Frame>
+    ![新しい ClickHouse Cloud Audit Logs データ入力を設定する Splunk インターフェイス](/images/integrations/tools/data-integration/splunk/splunk_010.webp)
+  </Frame>
 </div>
 
-必要な情報をすべて入力したら、Next をクリックします。
+すべての情報を入力したら、Next をクリックします。
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![ClickHouse のデータ入力設定が入力済みの Splunk 設定ページ](/images/integrations/tools/data-integration/splunk/splunk_011.webp)
-
-</Frame>
-
+  <Frame>
+    ![ClickHouse データ入力の設定を入力し終えた Splunk の設定ページ](/images/integrations/tools/data-integration/splunk/splunk_011.webp)
+  </Frame>
 </div>
 
-データ入力の設定は完了です。監査ログの参照を開始できます。
+これで入力の設定は完了です。監査ログを閲覧できるようになりました。
 
-<div id="usage">
-  # 使用方法
-</div>
+# 使用方法 {#usage}
 
 モジュラー入力は Splunk にデータを保存します。データを表示するには、Splunk の一般的な検索ビューを使用できます。
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![ClickHouse の監査ログデータを表示する Splunk の検索インターフェイス](/images/integrations/tools/data-integration/splunk/splunk_012.webp)
-
-</Frame>
-
+  <Frame>
+    ![ClickHouse の監査ログデータを表示する Splunk の検索インターフェイス](/images/integrations/tools/data-integration/splunk/splunk_012.webp)
+  </Frame>
 </div>
