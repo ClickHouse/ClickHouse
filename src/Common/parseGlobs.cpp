@@ -1,23 +1,13 @@
 #include <Common/parseGlobs.h>
-#include <Common/checkStackSize.h>
 #include <Common/re2.h>
-#include <Common/UTF8Helpers.h>
-
 #include <IO/WriteBufferFromString.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/Operators.h>
-#include <IO/readIntText.h>
-#include <Interpreters/Context_fwd.h>
-#include <base/arithmeticOverflow.h>
-#include <base/defines.h>
-
+#include <IO/ReadHelpers.h>
 #include <algorithm>
-#include <cstdlib>
-#include <limits>
-#include <optional>
 #include <sstream>
 #include <iomanip>
-#include <string_view>
+#include <optional>
 
 namespace DB
 {
@@ -25,8 +15,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
-    extern const int CANNOT_COMPILE_REGEXP;
-    extern const int LOGICAL_ERROR;
 }
 
 namespace
@@ -42,9 +30,27 @@ struct Regexps
     /// regexp for {M..N}, where M and N - non-negative integers
     re2::RE2 range_regex{R"({([\d]+\.\.[\d]+)})"};
 
-    /// regexp for {expr1,expr2,expr3}, expr's should be without "{", "}", "*" and ","
-    re2::RE2 enum_regex{R"({([^{}*,]+[^{}*]*[^{}*,])})"};
+    /// regexp for {expr1,expr2,expr3}, expr's should be without "{", "}" and ",". An expr may contain
+    /// the "*" and "?" wildcards, which keep their meaning inside the alternation: {csv,csv.*} matches
+    /// both `.csv` and `.csv.gz`, which no single wildcard can spell (`.csv*` also matches `.csvwithnames`).
+    re2::RE2 enum_regex{R"({([^{},]+[^{}]*[^{},])})"};
 };
+
+/// Bounds on what a path pattern is allowed to expand to. A `{a,b,c}` selector glob is enumerated
+/// into separate paths - a Cartesian product of the groups - and a `{N..M}` range glob into a regexp
+/// alternation of every number of the range, so a pattern of a few hundred bytes can ask for more
+/// than could ever be listed. It has to bound itself: the expansion runs while a table function is
+/// being resolved, where the query is not cancellable and is not stopped by `max_memory_usage`.
+constexpr size_t MAX_SELECTOR_GLOBS = 1000;
+constexpr size_t MAX_EXPANDED_PATHS = 100000;
+constexpr size_t MAX_EXPANDED_BYTES = 64 * 1024 * 1024;
+constexpr size_t MAX_RANGE_GLOB_VALUES = 100000;
+
+/// A range alternation is the only part of the regexp larger than the pattern it came from, and a
+/// pattern may hold any number of ranges, so the total is bounded too: `MAX_RANGE_GLOB_VALUES`
+/// bounds one range, not how many there are. RE2's own default memory budget is 8 MiB, so a larger
+/// regexp is not one it could compile.
+constexpr size_t MAX_REGEXP_BYTES = 8 * 1024 * 1024;
 }
 
 bool containsRangeGlob(const std::string & input)
@@ -62,835 +68,38 @@ bool hasExactlyOneBracketsExpansion(const std::string & input)
     return std::count(input.begin(), input.end(), '{') == 1 && containsOnlyEnumGlobs(input);
 }
 
-namespace GlobAST
+bool canExpandSelectionGlobFirst(const std::string & input)
 {
+    /// The same shapes `scanNextSelectorGlob` refuses, answered without throwing: a '{' inside a
+    /// group, a '}' or a ',' outside one, and a group that is never closed. A ',' past the last
+    /// group is literal text - the scan stops at the '}' of that group and never looks at it.
+    const size_t last_open_bracket = input.rfind('{');
+    /// Without a '{' there is no group to scan at all, and the whole pattern stays literal text.
+    if (last_open_bracket == std::string::npos)
+        return true;
 
-namespace
-{
-size_t rangePadWidth(const Range & range)
-{
-    const bool lo_is_start = range.start <= range.end;
-    const size_t lo_digits = lo_is_start ? range.start_digit_count : range.end_digit_count;
-    const size_t hi_digits = lo_is_start ? range.end_digit_count : range.start_digit_count;
-    const bool lo_leading_zero = lo_is_start ? range.start_zero_padded : range.end_zero_padded;
-    return (lo_leading_zero && lo_digits > 1) ? std::max(lo_digits, hi_digits) : 0;
-}
-}
+    bool opened = false;
 
-std::string Expression::dump() const
-{
-    switch (type())
+    for (size_t i = 0; i < input.size(); ++i)
     {
-        case ExpressionType::CONSTANT:
-            return std::string(std::get<std::string_view>(getData()));
-        case ExpressionType::WILDCARD:
-            return dumpWildcard();
-        case ExpressionType::RANGE:
-            return dumpRange();
-        case ExpressionType::ENUM:
-            return dumpEnum();
-    }
-
-    UNREACHABLE();
-}
-
-std::string Expression::dumpWildcard() const
-{
-    const auto & wildcard = std::get<WildcardType>(getData());
-
-    switch (wildcard)
-    {
-        case WildcardType::QUESTION:
-            return "?";
-        case WildcardType::SINGLE_ASTERISK:
-            return "*";
-        case WildcardType::DOUBLE_ASTERISK:
-            return "**";
-        case WildcardType::GLOBSTAR:
-            return "**/";
-    }
-
-    UNREACHABLE();
-}
-
-std::string Expression::dumpEnum(char separator) const
-{
-    std::string result = "{";
-    const auto & enum_values = std::get<std::vector<std::string_view>>(getData());
-
-    for (const auto & e: enum_values)
-    {
-         result += e;
-         result += separator;
-    }
-
-    result.back() = '}';
-    return result;
-}
-
-std::string Expression::dumpRange() const
-{
-    std::string result = "{";
-    const auto & range = std::get<Range>(getData());
-
-    result += fmt::format("{:0>{}}", range.start, range.start_digit_count);
-    result += "..";
-    result += fmt::format("{:0>{}}", range.end, range.end_digit_count);
-    result += "}";
-
-    return result;
-}
-
-size_t Expression::cardinality() const
-{
-    switch (type())
-    {
-        case ExpressionType::CONSTANT:
-            return 1;
-        case ExpressionType::WILDCARD:
-            return std::numeric_limits<size_t>::max();
-        case ExpressionType::ENUM:
-            return std::get<std::vector<std::string_view>>(getData()).size();
-        case ExpressionType::RANGE:
+        const char letter = input[i];
+        if (letter == '{')
         {
-            Range range = std::get<Range>(getData());
-            const size_t range_len = (range.start > range.end)
-                ? range.start - range.end
-                : range.end - range.start;
-            /// Overflow guard: if range_len == SIZE_MAX, range_len + 1 wraps to 0.
-            if (range_len == std::numeric_limits<size_t>::max())
-                return std::numeric_limits<size_t>::max();
-            return range_len + 1;
-        }
-    }
-
-    UNREACHABLE();
-}
-
-size_t GlobString::cardinality() const
-{
-    size_t result = 1;
-
-    for (const auto & expression : expressions)
-    {
-        size_t expression_cardinality = expression.cardinality();
-        if (expression_cardinality == std::numeric_limits<size_t>::max())
-            return std::numeric_limits<size_t>::max();
-
-        bool overflow = common::mulOverflow(result, expression_cardinality, result);
-        if (overflow)
-            return std::numeric_limits<size_t>::max();
-    }
-
-    return result;
-}
-
-size_t GlobString::expansionSize(bool expand_ranges) const
-{
-    size_t result = 1;
-
-    for (const auto & expression : expressions)
-    {
-        /// Only enums (and ranges when expand_ranges is set) multiply the expansion;
-        /// everything else is rendered as literal text by expand() and is a factor of 1.
-        size_t factor = 1;
-        const auto type = expression.type();
-        if (type == ExpressionType::ENUM || (type == ExpressionType::RANGE && expand_ranges))
-            factor = expression.cardinality();
-
-        if (factor == std::numeric_limits<size_t>::max() || common::mulOverflow(result, factor, result))
-            return std::numeric_limits<size_t>::max();
-    }
-
-    return result;
-}
-
-size_t GlobString::firstGlobPosition() const
-{
-    size_t offset = 0;
-
-    for (const auto & expression : expressions)
-    {
-        if (expression.type() != ExpressionType::CONSTANT)
-            return offset;
-        offset += std::get<std::string_view>(expression.getData()).size();
-    }
-
-    return std::string::npos;
-}
-
-bool GlobString::hasExactlyOneEnum() const
-{
-    size_t enum_counter = 0;
-
-    for (const auto & expression : expressions)
-    {
-        switch (expression.type())
-        {
-            case ExpressionType::CONSTANT:
-            {
-                const auto text = std::get<std::string_view>(expression.getData());
-                /// A literal '{' in constant text is a brace group the parser rejected
-                /// (e.g. "{0}" or "{a}"). The legacy exact-expansion contract
-                /// (hasExactlyOneBracketsExpansion) requires the enum's '{' to be the
-                /// only one in the pattern, so such patterns stay on the listing path.
-                if (text.contains('{'))
-                    return false;
-                /// The legacy expandSelectionGlob scanner throws BAD_ARGUMENTS on a stray
-                /// '}' or ',' before the enum's '{' (after the enum they are plain text),
-                /// so such legacy-invalid patterns must not take the exact-key path either.
-                if (enum_counter == 0 && text.find_first_of("},") != std::string_view::npos)
-                    return false;
-                continue;
-            }
-            case ExpressionType::WILDCARD:
+            if (opened)
                 return false;
-            case ExpressionType::RANGE:
+            opened = true;
+        }
+        else if (letter == '}')
+        {
+            if (!opened)
                 return false;
-            case ExpressionType::ENUM:
-                enum_counter++;
-                break;
+            opened = false;
         }
+        else if (letter == ',' && !opened && i < last_open_bracket)
+            return false;
     }
 
-    return enum_counter == 1;
-};
-
-bool GlobString::hasSlashInsideEnums() const
-{
-    for (const auto & expression : expressions)
-    {
-        if (expression.type() != ExpressionType::ENUM)
-            continue;
-
-        for (const auto & value : std::get<std::vector<std::string_view>>(expression.getData()))
-            if (value.contains('/'))
-                return true;
-    }
-
-    return false;
-}
-
-std::string_view GlobString::consumeConstantExpression(const std::string_view & input) const
-{
-    auto first_nonconstant = input.find_first_of("{*?");
-
-    if (first_nonconstant == std::string::npos)
-        return input;
-
-    return input.substr(0, first_nonconstant);
-}
-
-std::string_view GlobString::consumeMatcher(const std::string_view & input) const
-{
-    auto first_curly_closing_brace = input.find_first_of('}');
-
-    if (first_curly_closing_brace == std::string::npos)
-        return {};
-
-    return input.substr(0, first_curly_closing_brace + 1);
-}
-
-std::vector<std::string_view> GlobString::tryParseEnumMatcher(const std::string_view & input) const
-{
-    chassert(input.length() > 2);
-    chassert(input.front() == '{');
-    chassert(input.back() == '}');
-
-    auto separator = ',';
-
-    std::vector<std::string_view> enum_elements;
-    std::string_view contents = input.substr(1, input.length() - 2);
-
-    size_t search_start_pos = 0;
-    while (true)
-    {
-        auto next_separator_pos = contents.find(separator, search_start_pos);
-
-        if (next_separator_pos == std::string_view::npos)
-        {
-            enum_elements.emplace_back(contents.begin() + search_start_pos, contents.end());
-            break;
-        }
-
-        enum_elements.emplace_back(contents.begin() + search_start_pos, contents.begin() + next_separator_pos);
-        search_start_pos = next_separator_pos + 1;
-    }
-
-    return enum_elements;
-}
-
-std::optional<Range> GlobString::tryParseRangeMatcher(const std::string_view & input) const
-{
-    chassert(input.length() > 2);
-
-    /// Range matcher must contain "..", like in "{0..10}".
-    auto double_dot_pos = input.find("..");
-    if (double_dot_pos == std::string_view::npos)
-        return std::nullopt;
-
-    Range range;
-    ReadBufferFromString read_buffer(input);
-    size_t first_digit_pos = 0;
-
-    bool ok = true;
-
-    ok &= checkChar('{', read_buffer);
-
-    if (!ok)
-        return std::nullopt;
-
-    first_digit_pos = read_buffer.offset();
-
-    ok &= tryReadIntText(range.start, read_buffer);
-    if (!ok)
-        return std::nullopt;
-
-    range.start_digit_count = read_buffer.offset() - first_digit_pos;
-    range.start_zero_padded = input[first_digit_pos] == '0';
-
-    /// Range endpoints are digits only: legacy range_regex is `[\d]+\.\.[\d]+` and the
-    /// GlobAST grammar's `integer` is `digit { digit }`. `tryReadIntText` also accepts a
-    /// leading sign ("{+1..2}") and an empty run ("{..1}"), so require the endpoint to start
-    /// with an ASCII digit; otherwise the brace group falls through to the enum/literal path.
-    if (range.start_digit_count == 0 || input[first_digit_pos] < '0' || input[first_digit_pos] > '9')
-        return std::nullopt;
-
-    ok &= checkChar('.', read_buffer);
-    ok &= checkChar('.', read_buffer);
-
-    if (!ok)
-        return std::nullopt;
-
-    first_digit_pos = read_buffer.offset();
-
-    ok &= tryReadIntText(range.end, read_buffer);
-    if (!ok)
-        return std::nullopt;
-
-    range.end_digit_count = read_buffer.offset() - first_digit_pos;
-    range.end_zero_padded = input[first_digit_pos] == '0';
-
-    if (range.end_digit_count == 0 || input[first_digit_pos] < '0' || input[first_digit_pos] > '9')
-        return std::nullopt;
-
-    ok &= checkChar('}', read_buffer);
-
-    if (!ok)
-        return std::nullopt;
-
-    return range;
-}
-
-GlobString::GlobString(std::string input): input_data(std::move(input))
-{
-    parse();
-}
-
-std::string GlobString::dump() const
-{
-    std::string result;
-
-    for (const auto & e: getExpressions())
-        result += e.dump();
-
-    return result;
-}
-
-std::vector<std::string> GlobString::expand(size_t max_expansion, bool expand_ranges) const
-{
-    std::vector<std::string> result;
-    result.emplace_back();
-
-    for (const auto & expression : expressions)
-    {
-        if (expression.type() == ExpressionType::ENUM)
-        {
-            const auto & enum_values = std::get<std::vector<std::string_view>>(expression.getData());
-
-            if (result.size() * enum_values.size() > max_expansion)
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Glob expansion would produce too many paths ({} * {} > {}). "
-                    "Consider simplifying the glob pattern or increasing the `glob_expansion_max_elements` setting.",
-                    result.size(), enum_values.size(), max_expansion);
-
-            std::vector<std::string> expanded;
-            expanded.reserve(result.size() * enum_values.size());
-
-            for (const auto & prefix : result)
-                for (const auto & value : enum_values)
-                    expanded.push_back(prefix + std::string(value));
-
-            result = std::move(expanded);
-        }
-        else if (expand_ranges && expression.type() == ExpressionType::RANGE)
-        {
-            const auto & range = std::get<Range>(expression.getData());
-            const size_t lo = std::min(range.start, range.end);
-            const size_t range_size = expression.cardinality();
-
-            if (range_size == 0 || range_size == std::numeric_limits<size_t>::max()
-                || result.size() > max_expansion / range_size)
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Glob expansion would produce too many paths ({} * {} > {}). "
-                    "Consider simplifying the glob pattern or increasing the `glob_expansion_max_elements` setting.",
-                    result.size(), range_size, max_expansion);
-
-            const size_t pad_width = rangePadWidth(range);
-
-            std::vector<std::string> expanded;
-            expanded.reserve(result.size() * range_size);
-
-            for (const auto & prefix : result)
-            {
-                for (size_t i = 0; i < range_size; ++i)
-                {
-                    const size_t value = lo + i;
-                    if (pad_width > 0)
-                        expanded.push_back(prefix + fmt::format("{:0>{}}", value, pad_width));
-                    else
-                        expanded.push_back(prefix + fmt::format("{}", value));
-                }
-            }
-
-            result = std::move(expanded);
-        }
-        else
-        {
-            /// For non-enum expressions, append their textual representation.
-            std::string text = expression.dump();
-            for (auto & path : result)
-                path += text;
-        }
-    }
-
-    return result;
-}
-
-bool GlobString::matches(std::string_view candidate) const
-{
-    static constexpr size_t max_match_states = 1ULL << 26;
-    const size_t cols = expressions.size() + 1;
-    size_t memo_size = 0;
-    if (common::mulOverflow(candidate.size() + 1, cols, memo_size) || memo_size > max_match_states)
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Glob pattern with {} expressions matched against a string of {} bytes needs more than {} match states. "
-            "Consider simplifying the glob pattern.",
-            expressions.size(), candidate.size(), max_match_states);
-
-    thread_local std::vector<int8_t> memo;
-    memo.assign(memo_size, 0);
-    const bool result = matchesImpl(candidate, 0, 0, memo);
-
-    /// Don't let one oversized candidate pin a large buffer to the thread forever.
-    static constexpr size_t max_kept_memo_bytes = 1ULL << 20;
-    if (memo.capacity() > max_kept_memo_bytes)
-    {
-        memo.clear();
-        memo.shrink_to_fit();
-    }
-
-    return result;
-}
-
-bool GlobString::matchesImpl(std::string_view candidate, size_t pos, size_t expr_idx, std::vector<int8_t> & memo) const
-{
-    /// Every backtracking expression adds a recursion frame; fail with an exception
-    /// instead of exhausting the thread stack.
-    checkStackSize();
-
-    const size_t cols = expressions.size() + 1;
-    const size_t initial_pos = pos;
-    const size_t initial_expr_idx = expr_idx;
-
-    /// Check memo before doing any work.
-    {
-        int8_t cached = memo[initial_pos * cols + initial_expr_idx];
-        if (cached != 0)
-            return cached > 0;
-    }
-
-    auto memoize = [&](bool result) -> bool
-    {
-        memo[initial_pos * cols + initial_expr_idx] = result ? 1 : -1;
-        return result;
-    };
-
-    /// Walk through expressions one by one, consuming characters from `candidate`.
-    while (expr_idx < expressions.size())
-    {
-        const auto & expr = expressions[expr_idx];
-
-        switch (expr.type())
-        {
-            case ExpressionType::CONSTANT:
-            {
-                const auto & text = std::get<std::string_view>(expr.getData());
-                if (candidate.size() - pos < text.size())
-                    return memoize(false);
-                if (candidate.substr(pos, text.size()) != text)
-                    return memoize(false);
-                pos += text.size();
-                ++expr_idx;
-                break;
-            }
-
-            case ExpressionType::WILDCARD:
-            {
-                const auto & wildcard = std::get<WildcardType>(expr.getData());
-
-                switch (wildcard)
-                {
-                    case WildcardType::QUESTION:
-                    {
-                        /// Match exactly one character that is not '/'. Like RE2's
-                        /// `[^/]` in UTF-8 mode, a multibyte code point counts as one
-                        /// character, so advance by the whole UTF-8 sequence.
-                        if (pos >= candidate.size() || candidate[pos] == '/')
-                            return memoize(false);
-                        size_t char_len = UTF8::seqLength(static_cast<UInt8>(candidate[pos]));
-                        if (pos + char_len > candidate.size())
-                            char_len = 1;
-                        pos += char_len;
-                        ++expr_idx;
-                        break;
-                    }
-
-                    case WildcardType::SINGLE_ASTERISK:
-                    {
-                        /// Match zero or more non-'/' characters. Try all possible lengths.
-                        ++expr_idx;
-                        for (size_t len = 0; pos + len <= candidate.size(); ++len)
-                        {
-                            if (len > 0 && candidate[pos + len - 1] == '/')
-                                break;
-                            if (matchesImpl(candidate, pos + len, expr_idx, memo))
-                                return memoize(true);
-                        }
-                        return memoize(false);
-                    }
-
-                    case WildcardType::DOUBLE_ASTERISK:
-                    {
-                        /// Legacy translates "**" to the regex `[^/]*[^{}]*`: a run of
-                        /// non-'/' characters followed by a run of non-'{','}' ones.
-                        /// A consumed prefix is valid iff no brace appears at or after
-                        /// the first '/'. Since braces and slashes only accumulate as the
-                        /// prefix grows, once invalid it stays invalid, so we can stop.
-                        ++expr_idx;
-                        size_t first_slash = std::string_view::npos;
-                        size_t last_brace = std::string_view::npos;
-                        for (size_t len = 0; pos + len <= candidate.size(); ++len)
-                        {
-                            if (len > 0)
-                            {
-                                const char c = candidate[pos + len - 1];
-                                if (c == '/' && first_slash == std::string_view::npos)
-                                    first_slash = len - 1;
-                                if (c == '{' || c == '}')
-                                    last_brace = len - 1;
-
-                                const bool valid = first_slash == std::string_view::npos
-                                    || last_brace == std::string_view::npos
-                                    || last_brace < first_slash;
-                                if (!valid)
-                                    break;
-                            }
-                            if (matchesImpl(candidate, pos + len, expr_idx, memo))
-                                return memoize(true);
-                        }
-                        return memoize(false);
-                    }
-
-                    case WildcardType::GLOBSTAR:
-                    {
-                        /// A whole-segment "**/" matches zero or more directory components
-                        /// (the legacy regex `([^/]*/)*`): the consumed prefix must be
-                        /// empty or end with '/'.
-                        ++expr_idx;
-                        for (size_t len = 0; pos + len <= candidate.size(); ++len)
-                        {
-                            if (len == 0 || candidate[pos + len - 1] == '/')
-                                if (matchesImpl(candidate, pos + len, expr_idx, memo))
-                                    return memoize(true);
-                        }
-                        return memoize(false);
-                    }
-                }
-                break;
-            }
-
-            case ExpressionType::RANGE:
-            {
-                const auto & range = std::get<Range>(expr.getData());
-
-                const size_t lo = std::min(range.start, range.end);
-                const size_t hi = std::max(range.start, range.end);
-                const size_t pad_width = rangePadWidth(range);
-
-                if (pad_width > 0)
-                {
-                    /// Zero-padded range: consume exactly pad_width digits.
-                    if (pos + pad_width > candidate.size())
-                        return memoize(false);
-
-                    size_t value = 0;
-                    bool overflow = false;
-                    for (size_t i = 0; i < pad_width; ++i)
-                    {
-                        const char ch = candidate[pos + i];
-                        if (ch < '0' || ch > '9')
-                            return memoize(false);
-                        /// Checked accumulation instead of a digit-count cap, so the full
-                        /// size_t range (e.g. up to 18446744073709551615) is matchable.
-                        overflow |= common::mulOverflow<size_t>(value, 10, value);
-                        overflow |= common::addOverflow<size_t>(value, static_cast<size_t>(ch - '0'), value);
-                        if (overflow || value > hi)
-                            return memoize(false);
-                    }
-
-                    if (value < lo)
-                        return memoize(false);
-
-                    pos += pad_width;
-                    ++expr_idx;
-                }
-                else
-                {
-                    /// Non-padded range: try consuming different digit lengths (backtracking).
-                    /// A non-padded number cannot have leading zeros (except "0" itself).
-                    ++expr_idx;
-
-                    /// Find the maximum run of consecutive digits.
-                    size_t max_digits = 0;
-                    while (pos + max_digits < candidate.size()
-                           && candidate[pos + max_digits] >= '0'
-                           && candidate[pos + max_digits] <= '9')
-                        ++max_digits;
-
-                    /// Try each possible digit count from 1 to max_digits.
-                    for (size_t digit_count = 1; digit_count <= max_digits; ++digit_count)
-                    {
-                        /// Leading zeros not allowed (except for single-digit "0").
-                        if (digit_count > 1 && candidate[pos] == '0')
-                            break; /// all longer counts would also have a leading zero
-
-                        size_t value = 0;
-                        bool overflow = false;
-                        for (size_t i = 0; i < digit_count; ++i)
-                        {
-                            overflow |= common::mulOverflow<size_t>(value, 10, value);
-                            overflow |= common::addOverflow<size_t>(value, static_cast<size_t>(candidate[pos + i] - '0'), value);
-                            if (overflow || value > hi)
-                                break;
-                        }
-
-                        /// Once the value exceeds hi (or overflows size_t), every longer
-                        /// digit count only makes it larger, so we can stop entirely.
-                        if (overflow || value > hi)
-                            break;
-
-                        if (value >= lo)
-                        {
-                            if (matchesImpl(candidate, pos + digit_count, expr_idx, memo))
-                                return memoize(true);
-                        }
-                    }
-                    return memoize(false);
-                }
-                break;
-            }
-
-            case ExpressionType::ENUM:
-            {
-                const auto & enum_values = std::get<std::vector<std::string_view>>(expr.getData());
-                ++expr_idx;
-
-                /// Match one alternative against candidate starting at `start`. A '?' in an
-                /// alternative is a wildcard for one non-'/' code point (legacy allows '?'
-                /// inside enums); other characters match literally. Returns the candidate
-                /// position past the alternative, or nullopt on mismatch.
-                auto match_alternative = [&](std::string_view alt, size_t start) -> std::optional<size_t>
-                {
-                    size_t cp = start;
-                    for (size_t ap = 0; ap < alt.size(); ++ap)
-                    {
-                        if (cp >= candidate.size())
-                            return std::nullopt;
-                        if (alt[ap] == '?')
-                        {
-                            if (candidate[cp] == '/')
-                                return std::nullopt;
-                            size_t char_len = UTF8::seqLength(static_cast<UInt8>(candidate[cp]));
-                            if (cp + char_len > candidate.size())
-                                char_len = 1;
-                            cp += char_len;
-                        }
-                        else
-                        {
-                            if (candidate[cp] != alt[ap])
-                                return std::nullopt;
-                            ++cp;
-                        }
-                    }
-                    return cp;
-                };
-
-                /// Try each alternative.
-                for (const auto & alt : enum_values)
-                {
-                    if (auto end = match_alternative(alt, pos); end && matchesImpl(candidate, *end, expr_idx, memo))
-                        return memoize(true);
-                }
-                return memoize(false);
-            }
-        }
-    }
-
-    /// All expressions consumed — match only if the entire candidate was consumed.
-    return memoize(pos == candidate.size());
-}
-
-void GlobString::parse()
-{
-    if (input_data.empty())
-        return;
-
-    std::string_view input = input_data;
-
-    size_t position = 0;
-    while (position < input.length())
-    {
-        if (input[position] == '?' || input[position] == '*')
-        {
-            has_globs = true;
-            has_question_or_asterisk = true;
-
-            if (position + 1 < input.length() && input[position] == input[position + 1] && input[position] == '*')
-            {
-                /// A "**" that forms a whole path segment is a globstar, consuming the
-                /// trailing '/'; otherwise it keeps the legacy DOUBLE_ASTERISK meaning
-                /// (same rule as makeRegexpPatternFromGlobs).
-                if (position + 2 < input.length() && input[position + 2] == '/'
-                    && (position == 0 || input[position - 1] == '/'))
-                {
-                    expressions.emplace_back(WildcardType::GLOBSTAR);
-                    position += 3;
-
-                    continue;
-                }
-
-                expressions.emplace_back(WildcardType::DOUBLE_ASTERISK);
-                position += 2;
-
-                continue;
-            }
-
-            switch (input[position])
-            {
-                case '?':
-                    expressions.emplace_back(WildcardType::QUESTION);
-                    break;
-                case '*':
-                    expressions.emplace_back(WildcardType::SINGLE_ASTERISK);
-                    break;
-                default:
-                    UNREACHABLE();
-            }
-            position += 1;
-
-            continue;
-        }
-        else if (input[position] == '{')  /// NOLINT
-        {
-            /// Handle double braces "{{" — the first '{' is a literal character,
-            /// and the second '{' starts a new expression (which may be a matcher).
-            /// E.g. "{{a,b,c}}" → literal '{' + enum {a,b,c} + literal '}'.
-            if (position + 1 < input.length() && input[position + 1] == '{')
-            {
-                expressions.emplace_back(input.substr(position, 1));
-                position += 1;
-                continue;
-            }
-
-            auto matcher_expression = consumeMatcher(input.substr(position));
-
-            /// If no closing '}' was found, or the brace group holds fewer than two
-            /// characters of content (e.g. empty "{}" or single-character "{a}"), treat
-            /// the '{' as a literal character. The legacy enum pattern only recognizes a
-            /// brace group as an enum when it holds at least two characters of content,
-            /// so "{a}" stays the literal text "{a}" rather than becoming an enum of "a".
-            if (matcher_expression.empty() || matcher_expression.length() <= 3)
-            {
-                expressions.emplace_back(input.substr(position, 1));
-                position += 1;
-                continue;
-            }
-
-            auto range = tryParseRangeMatcher(matcher_expression);
-            if (range.has_value())
-            {
-                position += matcher_expression.length();
-                expressions.push_back(Expression(range.value()));
-
-                has_globs = true;
-                has_ranges = true;
-
-                continue;
-            }
-
-            /// A brace group is an enum only if its body matches the legacy enum grammar
-            /// `[^{}*,]+[^{}*]*[^{}*,]`: it may not contain '{' or '*' (a '}' cannot occur
-            /// because the matcher stops at the first '}'), and neither its first nor its
-            /// last character may be ',' (an empty leading or trailing alternative).
-            /// Otherwise the '{' is a literal character — this keeps groups like "{a*b}",
-            /// "{a{b}", "{,a}", "{a,}", and "{,}" as literal text, matching the legacy
-            /// parser. The '*' case in particular lets the inner '*' parse as a wildcard.
-            const std::string_view enum_body = matcher_expression.substr(1, matcher_expression.length() - 2);
-            if (enum_body.contains('*') || enum_body.contains('{') || enum_body.front() == ',' || enum_body.back() == ',')
-            {
-                expressions.emplace_back(input.substr(position, 1));
-                position += 1;
-                continue;
-            }
-
-            auto enum_matcher = tryParseEnumMatcher(matcher_expression);
-
-            if (enum_matcher.empty())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected an enum expression, but read 0 bytes.");
-
-            position += matcher_expression.length();
-            expressions.push_back(Expression(enum_matcher));
-
-            has_globs = true;
-            has_enums = true;
-
-            /// Enum alternatives may contain '?' wildcards (legacy allows them inside
-            /// enums). Flag this so callers do not treat the alternatives as exact keys
-            /// for expansion — the '?' must be matched, not taken literally.
-            if (matcher_expression.contains('?'))
-                has_question_or_asterisk = true;
-
-            continue;
-        }
-        else
-        {
-            auto constant_expression = consumeConstantExpression(input.substr(position));
-
-            if (constant_expression.empty())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected a constant expression, but read 0 bytes.");
-
-            position += constant_expression.length();
-            expressions.push_back(Expression(constant_expression));
-
-            continue;
-        }
-    }
-}
-
+    return !opened;
 }
 
 
@@ -904,6 +113,7 @@ void GlobString::parse()
  */
 std::string makeRegexpPatternFromGlobs(const std::string & initial_str_with_globs)
 {
+    /// FIXME make it better
     WriteBufferFromOwnString buf_for_escaping;
     /// Escaping only characters that not used in glob syntax
     for (const auto & letter : initial_str_with_globs)
@@ -958,6 +168,12 @@ std::string makeRegexpPatternFromGlobs(const std::string & initial_str_with_glob
                 leading_zeros = buffer[buffer.find_last_of('.') + 1] == '0';
                 std::swap(range_begin_width,range_end_width);
             }
+
+            if (range_end - range_begin >= MAX_RANGE_GLOB_VALUES)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "The range glob '{{{}}}' in the path covers more than {} values.",
+                                buffer, MAX_RANGE_GLOB_VALUES);
+
             if (range_begin_width == 1 && leading_zeros)
                 output_width = 1; /// Special Case: {0..10} {0..999}
             else
@@ -967,15 +183,22 @@ std::string makeRegexpPatternFromGlobs(const std::string & initial_str_with_glob
                 oss_for_replacing << std::setfill('0') << std::setw(static_cast<int>(output_width));
             oss_for_replacing << range_begin;
 
-            for (size_t i = range_begin + 1; i <= range_end; ++i)
+            /// Counted rather than compared against `range_end`, so that the increment cannot wrap
+            /// when `range_begin` is the largest representable value.
+            for (size_t n = 1; n <= range_end - range_begin; ++n)
             {
                 oss_for_replacing << '|';
                 if (leading_zeros)
                     oss_for_replacing << std::setfill('0') << std::setw(static_cast<int>(output_width));
-                oss_for_replacing << i;
+                oss_for_replacing << range_begin + n;
             }
 
             oss_for_replacing << ")";
+
+            if (static_cast<size_t>(oss_for_replacing.tellp()) > MAX_REGEXP_BYTES)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "The '{{}}' globs in the path expand to more than {} bytes of regexp.",
+                                MAX_REGEXP_BYTES);
             current_index = input.data() - escaped_with_globs.data();
         }
         /// We matched enum, and it comes earlier than range.
@@ -1054,132 +277,284 @@ std::string makeRegexpPatternFromGlobs(const std::string & initial_str_with_glob
 
 namespace
 {
-void expandSelectorGlobImpl(const std::string & path, std::vector<std::string> & for_match_paths_expanded)
+
+/// One `{a,b,c}` selector glob of a path, together with the literal text preceding it.
+/// Both are views into the path.
+struct SelectorGlob
 {
-    std::string_view path_view(path);
-    std::string_view matched;
+    std::string_view literal_before;
+    std::vector<std::string_view> alternatives;
+};
 
-    /// enum_regexp does not match elements of one char, e.g. {a}.tsv
-    auto definitely_no_selector_globs = path.find_first_of("{}") == std::string::npos;
-    if (!definitely_no_selector_globs)
+/// Answers "does this tail still have a `{a,b,c}` selector glob to enumerate?" for tails that only
+/// ever move forward. A regexp that does not match early scans to the end of the tail, so asking one
+/// per glob would cost the product of the number of globs and the length of the pattern.
+class SelectorGlobScanner
+{
+public:
+    explicit SelectorGlobScanner(std::string_view pattern_)
+        : pattern(pattern_)
+        /// A `{N..M}` range glob anywhere stops the enumeration - ranges become a regexp in
+        /// `makeRegexpPatternFromGlobs` - and a tail cannot hold one the whole pattern does not.
+        , has_range_glob(RE2::PartialMatch(pattern, Regexps::instance().range_regex))
     {
-        auto left_bracket_pos = path.find_first_of('{');
-        auto right_bracket_pos = path.find_first_of('}');
-
-        auto is_this_enum_of_one_char =
-            left_bracket_pos != std::string::npos
-            && right_bracket_pos != std::string::npos
-            && (right_bracket_pos - left_bracket_pos) == 2;
-
-        definitely_no_selector_globs = !is_this_enum_of_one_char;
     }
 
-    auto is_this_range_glob = RE2::PartialMatch(path_view, Regexps::instance().range_regex, &matched);
-    auto is_this_enum_glob = RE2::PartialMatch(path_view, Regexps::instance().enum_regex, &matched);
-
-    /// No (more) selector globs found, quit
-    ///
-    /// range_glob regex is stricter than enum_glob, so we need to check
-    /// if whatever matched enum_glob is also range_glob. If it does match it too -- this is a range glob.
-    if ((!is_this_enum_glob || (is_this_range_glob && is_this_enum_glob)) && definitely_no_selector_globs)
+    bool noSelectorGlobsToExpand(std::string_view tail)
     {
-        for_match_paths_expanded.push_back(path);
-        return;
+        /// enum_regexp does not match elements of one char, e.g. {a}.tsv
+        bool definitely_no_selector_globs = tail.find_first_of("{}") == std::string_view::npos;
+        if (!definitely_no_selector_globs)
+        {
+            auto left_bracket_pos = tail.find_first_of('{');
+            auto right_bracket_pos = tail.find_first_of('}');
+
+            /// Compare the positions instead of their difference: a `}` before the `{`, as in `}a{`,
+            /// makes the subtraction wrap, and only the size of the wrapped value keeps the answer right.
+            auto is_this_enum_of_one_char =
+                left_bracket_pos != std::string_view::npos
+                && right_bracket_pos != std::string_view::npos
+                && right_bracket_pos == left_bracket_pos + 2;
+
+            definitely_no_selector_globs = !is_this_enum_of_one_char;
+        }
+
+        if (!definitely_no_selector_globs)
+            return false;
+
+        /// range_glob regex is stricter than enum_glob, so we need to check
+        /// if whatever matched enum_glob is also range_glob. If it does match it too -- this is a range glob.
+        if (has_range_glob)
+            return true;
+
+        return !hasEnumGlob(tail);
     }
 
-    std::vector<size_t> anchor_positions;
+private:
+    std::string_view pattern;
+    bool has_range_glob;
+
+    /// Where the leftmost glob matched by `enum_regex` starts, as an offset in `pattern`.
+    std::optional<size_t> enum_glob_offset;
+
+    /// A match is still ahead of every tail that starts at or before it, so it is searched for again
+    /// only once consumed past. Successive searches then cover disjoint parts of the pattern.
+    bool hasEnumGlob(std::string_view tail)
+    {
+        const size_t tail_offset = pattern.size() - tail.size();
+        if (enum_glob_offset && *enum_glob_offset >= tail_offset)
+            return true;
+
+        std::string_view matched;
+        if (!RE2::PartialMatch(tail, Regexps::instance().enum_regex, &matched))
+        {
+            enum_glob_offset.reset();
+            return false;
+        }
+
+        /// `matched` is the text between the braces, a view into `pattern`; hence the -1.
+        enum_glob_offset = static_cast<size_t>(matched.data() - pattern.data()) - 1;
+        return true;
+    }
+};
+
+/// Scans the first `{a,b,c}` selector glob of `tail`, calling `on_anchor(index, kind)` for its '{',
+/// for every comma inside it, and for its '}'. Returns the index of the '}'. `path` is the whole
+/// pattern, used to report positions in what the user has written.
+///
+/// Anchors are reported rather than collected so that a caller needing one alternative keeps
+/// nothing: an enormous group is scanned either way, but only one of the two callers must pay for
+/// its size.
+template <typename OnAnchor>
+size_t scanNextSelectorGlob(std::string_view path, std::string_view tail, OnAnchor && on_anchor)
+{
+    /// The offset of `tail` in `path`, to report positions in the path the user has written.
+    const size_t tail_offset = path.size() - tail.size();
     bool opened = false;
-    bool closed = false;
 
-    // Looking for first occurrence of {} selector: write down positions of {, } and all intermediate commas
-    for (auto it = path.begin(); it != path.end(); ++it)
+    for (size_t i = 0; i < tail.size(); ++i)
     {
-        if (*it == '{')
+        if (tail[i] == '{')
         {
             if (opened)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                                "Unexpected '{{' found in path '{}' at position {}.", path, it - path.begin());
-            anchor_positions.push_back(std::distance(path.begin(), it));
+                                "Unexpected '{{' found in path '{}' at position {}.", path, tail_offset + i);
+            on_anchor(i, '{');
             opened = true;
         }
-        else if (*it == '}')
+        else if (tail[i] == '}')
         {
             if (!opened)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                                "Unexpected '}}' found in path '{}' at position {}.", path, it - path.begin());
-            anchor_positions.push_back(std::distance(path.begin(), it));
-            closed = true;
-            break;
+                                "Unexpected '}}' found in path '{}' at position {}.", path, tail_offset + i);
+            on_anchor(i, '}');
+            return i;
         }
-        else if (*it == ',')
+        else if (tail[i] == ',')
         {
             if (!opened)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                                "Unexpected ',' found in path '{}' at position {}.", path, std::distance(path.begin(), it));
-            anchor_positions.push_back(std::distance(path.begin(), it));
+                                "Unexpected ',' found in path '{}' at position {}.", path, tail_offset + i);
+            on_anchor(i, ',');
         }
     }
-    if (!opened || !closed)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "Invalid {{}} glob in path {}.", path);
 
-    /// generate result: prefix/{a,b,c}/suffix -> [prefix/a/suffix, prefix/b/suffix, prefix/c/suffix]
-    std::string common_prefix = path.substr(0, anchor_positions.front());
-    std::string common_suffix = path.substr(anchor_positions.back() + 1);
-    for (size_t i = 1; i < anchor_positions.size(); ++i)
-    {
-        std::string current_selection =
-                path.substr(anchor_positions[i-1] + 1, (anchor_positions[i] - anchor_positions[i-1] - 1));
-
-        std::string expanded_matcher = common_prefix + current_selection + common_suffix;
-        expandSelectorGlobImpl(expanded_matcher, for_match_paths_expanded);
-    }
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid {{}} glob in path {}.", path);
 }
+
 }
 
 std::vector<std::string> expandSelectionGlob(const std::string & path)
 {
+    /// Split the path into its `{a,b,c}` selector globs and the literal text in between, looking at
+    /// one glob at a time, from left to right. What is a glob does not depend on the alternatives
+    /// picked for the globs before it, so the path is split once and not once per expanded path.
+    std::vector<SelectorGlob> globs;
+    std::string_view tail(path);
+    SelectorGlobScanner scanner(path);
+
+    /// The number of paths the globs seen so far expand to, a running Cartesian product.
+    size_t num_paths = 1;
+
+    while (!scanner.noSelectorGlobsToExpand(tail))
+    {
+        if (globs.size() >= MAX_SELECTOR_GLOBS)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "The path has more than {} '{{}}' globs to expand.", MAX_SELECTOR_GLOBS);
+
+        /// The positions of the '{', of all intermediate commas, and of the '}'.
+        std::vector<size_t> anchor_positions;
+
+        scanNextSelectorGlob(path, tail, [&](size_t i, char kind)
+        {
+            anchor_positions.push_back(i);
+
+            /// Refuse an oversized group while it is being scanned, and not after it has been
+            /// materialized: otherwise a single selector with an enormous number of alternatives -
+            /// a whole file passed as a path by `file(file(...))` - still costs memory proportional
+            /// to its number of commas before the limit below is reached. After `k` commas the
+            /// group has at least `k + 1` alternatives, and `anchor_positions` holds the '{' and
+            /// those `k` commas.
+            if (kind == ',' && num_paths > MAX_EXPANDED_PATHS / anchor_positions.size())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "The '{{}}' globs in the path expand to more than {} paths.", MAX_EXPANDED_PATHS);
+        });
+
+        SelectorGlob glob;
+        glob.literal_before = tail.substr(0, anchor_positions.front());
+        for (size_t i = 1; i < anchor_positions.size(); ++i)
+            glob.alternatives.push_back(
+                tail.substr(anchor_positions[i - 1] + 1, anchor_positions[i] - anchor_positions[i - 1] - 1));
+
+        /// Refuse a combinatorial explosion before generating anything.
+        if (num_paths > MAX_EXPANDED_PATHS / glob.alternatives.size())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "The '{{}}' globs in the path expand to more than {} paths.", MAX_EXPANDED_PATHS);
+        num_paths *= glob.alternatives.size();
+
+        globs.push_back(std::move(glob));
+        tail = tail.substr(anchor_positions.back() + 1);
+    }
+
+    /// generate result: prefix/{a,b,c}/suffix -> [prefix/a/suffix, prefix/b/suffix, prefix/c/suffix]
     std::vector<std::string> result;
-    expandSelectorGlobImpl(path, result);
+    result.reserve(num_paths);
+
+    std::vector<size_t> alternative_indices(globs.size(), 0);
+    size_t expanded_bytes = 0;
+
+    /// The length every expanded path has in common: the literal text around the globs.
+    size_t literal_size = tail.size();
+    for (const auto & glob : globs)
+        literal_size += glob.literal_before.size();
+
+    for (size_t path_index = 0; path_index < num_paths; ++path_index)
+    {
+        /// Charged and allocated by the length of the path itself, not of the pattern: one long
+        /// alternative among many short ones makes the two differ without bound, so reserving the
+        /// pattern per path would hold `num_paths * path.size()` while the charged amount stays small.
+        size_t expanded_size = literal_size;
+        for (size_t i = 0; i < globs.size(); ++i)
+            expanded_size += globs[i].alternatives[alternative_indices[i]].size();
+
+        expanded_bytes += expanded_size;
+        if (expanded_bytes > MAX_EXPANDED_BYTES)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "The '{{}}' globs in the path expand to more than {} bytes of paths.", MAX_EXPANDED_BYTES);
+
+        std::string expanded;
+        expanded.reserve(expanded_size);
+        for (size_t i = 0; i < globs.size(); ++i)
+            expanded.append(globs[i].literal_before).append(globs[i].alternatives[alternative_indices[i]]);
+        expanded.append(tail);
+
+        result.push_back(std::move(expanded));
+
+        /// The last glob changes fastest, so that the paths are generated in the order of the pattern.
+        for (size_t pos = globs.size(); pos > 0; --pos)
+        {
+            const size_t i = pos - 1;
+            if (++alternative_indices[i] < globs[i].alternatives.size())
+                break;
+            alternative_indices[i] = 0;
+        }
+    }
+
     return result;
 }
 
-GlobMatcher::GlobMatcher() = default;
-GlobMatcher::~GlobMatcher() = default;
-GlobMatcher::GlobMatcher(GlobMatcher &&) noexcept = default;
-GlobMatcher & GlobMatcher::operator=(GlobMatcher &&) noexcept = default;
-
-bool GlobMatcher::matches(const std::string & candidate) const
+std::string expandSelectionGlobFirst(const std::string & path)
 {
-    if (glob_string)
-        return glob_string->matches(candidate);
-    if (re2_matcher)
-        return re2::RE2::FullMatch(candidate, *re2_matcher);
-    return false;
+    /// The limits above do not apply and need not: keeping only each group's first alternative
+    /// costs one pass over the pattern whatever the groups multiply out to.
+    std::string result;
+    std::string_view tail(path);
+    SelectorGlobScanner scanner(path);
+
+    while (!scanner.noSelectorGlobsToExpand(tail))
+    {
+        size_t open_position = 0;
+        /// The ',' that ends the first alternative, or the '}' when the group has only one.
+        size_t first_alternative_end = 0;
+        bool alternative_ended = false;
+
+        const size_t close_position = scanNextSelectorGlob(path, tail, [&](size_t i, char kind)
+        {
+            if (kind == '{')
+                open_position = i;
+            else if (!alternative_ended)
+            {
+                first_alternative_end = i;
+                alternative_ended = true;
+            }
+        });
+
+        result.append(tail.substr(0, open_position));
+        result.append(tail.substr(open_position + 1, first_alternative_end - open_position - 1));
+        tail = tail.substr(close_position + 1);
+    }
+
+    result.append(tail);
+    return result;
 }
 
-GlobMatcher GlobMatcher::createNew(const std::string & glob_pattern)
+std::optional<std::string> tryExpandSelectionGlobFirstMatchedByRegexp(const std::string & path)
 {
-    GlobMatcher m;
-    m.glob_string = std::make_unique<GlobAST::GlobString>(glob_pattern);
-    return m;
-}
+    if (!canExpandSelectionGlobFirst(path))
+        return {};
 
-GlobMatcher GlobMatcher::createNew(std::unique_ptr<GlobAST::GlobString> glob_string)
-{
-    GlobMatcher m;
-    m.glob_string = std::move(glob_string);
-    return m;
-}
+    auto first = expandSelectionGlobFirst(path);
 
-GlobMatcher GlobMatcher::createLegacy(const std::string & glob_pattern)
-{
-    GlobMatcher m;
-    m.re2_matcher = std::make_unique<re2::RE2>(makeRegexpPatternFromGlobs(glob_pattern));
-    if (!m.re2_matcher->ok())
-        throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP,
-            "Cannot compile regex from glob ({}): {}", glob_pattern, m.re2_matcher->error());
-    return m;
-}
+    /// A selector glob and the regexp built for the same pattern do not always agree: an empty
+    /// alternative (`{,a}`) or an empty group (`{}`) is literal text for the regexp, and RE2 refuses
+    /// an alternation that is too large to compile. The first alternative is a sample of what the
+    /// regexp reader reads only when the regexp compiles and matches it.
+    re2::RE2::Options options;
+    options.set_log_errors(false);
+    re2::RE2 matcher(makeRegexpPatternFromGlobs(path), options);
+    if (!matcher.ok() || !re2::RE2::FullMatch(first, matcher))
+        return {};
 
+    return first;
+}
 }

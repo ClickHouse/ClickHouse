@@ -1,7 +1,7 @@
 ---
 slug: /changelogs/24.8
 title: 'Registro de cambios de Cloud para la v24.8'
-description: 'Registro de cambios de la versión rápida v24.8'
+description: 'Registro de cambios de la v24.8'
 keywords: ['registro de cambios', 'cloud']
 sidebarTitle: '24.8'
 doc_type: 'changelog'
@@ -9,9 +9,7 @@ doc_type: 'changelog'
 
 Cambios relevantes para los servicios de ClickHouse Cloud correspondientes a la versión v24.8.
 
-<div id="backward-incompatible-change">
-  ## Cambio incompatible con versiones anteriores
-</div>
+## Cambio incompatible con versiones anteriores {#backward-incompatible-change}
 
 * Se cambió la serialización binaria del tipo de dato Variant: se añadió el modo `compact` para evitar escribir el mismo discriminador varias veces en gránulos con una sola variante o solo con valores NULL. Se añadió la configuración de MergeTree `use_compact_variant_discriminators_serialization`, habilitada de forma predeterminada. Tenga en cuenta que el tipo Variant sigue siendo experimental y que este cambio incompatible con versiones anteriores en la serialización no debería afectarle, a menos que haya estado trabajando con soporte para habilitar esta funcionalidad con anterioridad. [#62774](https://github.com/ClickHouse/ClickHouse/pull/62774) (Kruglov Pavel).
 
@@ -19,7 +17,7 @@ Cambios relevantes para los servicios de ClickHouse Cloud correspondientes a la 
 
 * La métrica KeeperOutstandingRequets pasó a llamarse KeeperOutstandingRequests. Esto corrige un error tipográfico reportado en [#66179](https://github.com/ClickHouse/ClickHouse/issues/66179). [#66206](https://github.com/ClickHouse/ClickHouse/pull/66206) (Robert Schulze).
 
-* `clickhouse-client` y `clickhouse-local` ahora usan de forma predeterminada el modo multiconsulta (en lugar del modo de consulta única). Por ejemplo, `clickhouse-client -q "SELECT 1; SELECT 2"` ahora funciona, mientras que antes los usuarios tenían que añadir `--multiquery` (o `-n`). La opción `--multiquery/-n` quedó obsoleta. Las consultas INSERT en sentencias multiconsulta se tratan de forma especial según su cláusula FORMAT: si FORMAT es VALUES (el caso más común), el final de la sentencia INSERT se representa mediante un punto y coma `;` al final de la consulta. Para todos los demás formatos (por ejemplo, CSV o JSONEachRow), el final de la sentencia INSERT se representa mediante dos saltos de línea `\n\n` al final de la consulta. [#63898](https://github.com/ClickHouse/ClickHouse/pull/63898) (wxybear).
+* `clickhouse-client` y `clickhouse-local` ahora usan de forma predeterminada el modo multiconsulta (en lugar del modo de consulta única). Por ejemplo, `clickhouse-client -q "SELECT 1; SELECT 2"` ahora funciona, mientras que antes los usuarios tenían que añadir `--multiquery` (o `-n`). La opción `--multiquery`/-n quedó obsoleta. Las consultas INSERT en sentencias multiconsulta se tratan de forma especial según su cláusula FORMAT: si FORMAT es VALUES (el caso más común), el final de la sentencia INSERT se representa mediante un punto y coma `;` al final de la consulta. Para todos los demás formatos (por ejemplo, CSV o JSONEachRow), el final de la sentencia INSERT se representa mediante dos saltos de línea `\n\n` al final de la consulta. [#63898](https://github.com/ClickHouse/ClickHouse/pull/63898) (wxybear).
 
 * En versiones anteriores, era posible usar una sintaxis alternativa para los tipos de dato LowCardinality agregando WithDictionary al nombre del tipo de dato. Era una implementación inicial funcional y nunca se documentó ni se expuso públicamente. Ahora está obsoleta. Si ha usado esta sintaxis, debe aplicar ALTER a sus tablas y cambiar el nombre de los tipos de dato a LowCardinality. [#66842](https://github.com/ClickHouse/ClickHouse/pull/66842)(Alexey Milovidov).
 
@@ -31,9 +29,7 @@ Cambios relevantes para los servicios de ClickHouse Cloud correspondientes a la 
 
 * Se corrigió el formato del modificador REPLACE (ya no se permite omitir los paréntesis). [#67774](https://github.com/ClickHouse/ClickHouse/pull/67774) (Azat Khuzhin).
 
-<div id="new-feature">
-  ## Nueva funcionalidad
-</div>
+## Nueva funcionalidad {#new-feature}
 
 * Se amplió la función tuple para construir tuplas con nombre en la consulta. Se introdujo la función tupleNames para extraer nombres de las tuplas. [#54881](https://github.com/ClickHouse/ClickHouse/pull/54881) (Amos Bird).
 
@@ -57,7 +53,7 @@ Cambios relevantes para los servicios de ClickHouse Cloud correspondientes a la 
 
 * Se añade automáticamente un comodín * al final de la ruta de un directorio con la función de tabla file. [#66019](https://github.com/ClickHouse/ClickHouse/pull/66019) (Zhidong (David) Guo).
 
-* Se añadió la opción --memory-usage al cliente en modo no interactivo. [#66393](https://github.com/ClickHouse/ClickHouse/pull/66393) (vdimir).
+* Se añadió la opción `--memory-usage` al cliente en modo no interactivo. [#66393](https://github.com/ClickHouse/ClickHouse/pull/66393) (vdimir).
 
 * Se añadió la columna virtual &#95;etag para el motor de tabla S3. Corrige [#65312](https://github.com/ClickHouse/ClickHouse/issues/65312). [#65386](https://github.com/ClickHouse/ClickHouse/pull/65386) (skyoct)
 

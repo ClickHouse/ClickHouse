@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/PerCPU.h>
 #include <Common/PerCPUMemoryThreadState.h>
 #include <base/types.h>
 
@@ -55,10 +56,13 @@ public:
     /// per-CPU bound (only the per-thread cap applies).
     static constexpr Int64 UNLIMITED_BUDGET = std::numeric_limits<Int64>::max() / 2;
 
+    /// Slots are indexed by the raw `sched_getcpu` id, so the count must bound the ids, not the
+    /// affinity mask (which is what musl's `sysconf(_SC_NPROCESSORS_CONF)` reports): see `PerCPU::getNumPossibleCPUs`.
+    /// Not capped at `PerCPU::MAX_CPUS`: the slots are allocated dynamically, and on CPUs past the cap
+    /// every `publish` would fall through to the shared tracker.
     static int numberOfCPUs()
     {
-        Int64 n = ::sysconf(_SC_NPROCESSORS_CONF);
-        return n > 0 ? static_cast<int>(n) : 0;
+        return static_cast<int>(PerCPU::getNumPossibleCPUs());
     }
 
     PerCPUMemory(int cpu_count_, Int64 capacity_, Int64 buffer_)
@@ -82,6 +86,11 @@ public:
         if (likely(std::abs(untracked_memory - state.contributed) < buffer_now))
             return true;
 
+        return publish(untracked_memory, state);
+    }
+
+    [[nodiscard]] ALWAYS_INLINE bool publish(Int64 untracked_memory, PerCPUMemoryThreadState & state)
+    {
         const int cpu = sched_getcpu();
         if (unlikely(static_cast<unsigned>(cpu) >= static_cast<unsigned>(cpu_count)))
             return false;
@@ -210,6 +219,7 @@ public:
     static constexpr Int64 UNLIMITED_BUDGET = std::numeric_limits<Int64>::max() / 2;
 
     [[nodiscard]] bool sync(Int64 /*untracked_memory*/, PerCPUMemoryThreadState &) { return true; }
+    [[nodiscard]] bool publish(Int64 /*untracked_memory*/, PerCPUMemoryThreadState &) { return true; }
     void release(PerCPUMemoryThreadState &) {}
     void rollback(PerCPUMemoryThreadState &, const PerCPUMemoryThreadState &) {}
     void setThreadBuffer(Int64 bytes) { buffer.store(bytes < 0 ? 0 : bytes, std::memory_order_relaxed); }

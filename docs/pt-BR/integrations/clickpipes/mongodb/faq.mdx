@@ -10,9 +10,7 @@ integration:
   - category: 'clickpipes'
 ---
 
-<div id="can-i-query-for-individual-fields-in-the-json-datatype">
-  ### Posso consultar campos individuais no tipo de dados JSON?
-</div>
+### Posso consultar campos individuais no tipo de dados JSON? {#can-i-query-for-individual-fields-in-the-json-datatype}
 
 Para acessar campos diretamente, como em `{"user_id": 123}`, você pode usar **notação de ponto**:
 
@@ -34,9 +32,7 @@ SELECT sum(doc.shipping.cost::Float32) AS total_shipping_cost FROM t1;
 
 Para saber mais sobre como trabalhar com JSON, consulte nosso [guia Working with JSON](/pt-BR/integrations/clickpipes/mongodb/quickstart).
 
-<div id="how-do-i-flatten-the-nested-mongodb-documents-in-clickhouse">
-  ### Como desaninhar os documentos aninhados do MongoDB no ClickHouse?
-</div>
+### Como desaninhar os documentos aninhados do MongoDB no ClickHouse? {#how-do-i-flatten-the-nested-mongodb-documents-in-clickhouse}
 
 Os documentos do MongoDB são replicados como tipo JSON no ClickHouse por padrão, preservando a estrutura aninhada. Você tem várias opções para desaninhar esses dados. Se quiser desaninhar os dados em colunas, pode usar views normais, visões materializadas ou acesso em tempo de consulta.
 
@@ -46,59 +42,53 @@ Os documentos do MongoDB são replicados como tipo JSON no ClickHouse por padrã
 
 Para ver exemplos detalhados, consulte nosso [guia Working with JSON](/pt-BR/integrations/clickpipes/mongodb/quickstart).
 
-<div id="can-i-connect-mongodb-databases-that-dont-have-a-public-ip-or-are-in-private-networks">
-  ### Posso me conectar a bancos de dados MongoDB que não têm IP público ou estão em redes privadas?
-</div>
+### Posso me conectar a bancos de dados MongoDB que não têm IP público ou estão em redes privadas? {#can-i-connect-mongodb-databases-that-dont-have-a-public-ip-or-are-in-private-networks}
 
-Oferecemos suporte ao AWS PrivateLink para conectar bancos de dados MongoDB que não têm IP público ou estão em redes privadas. No momento, Azure Private Link e GCP Private Service Connect não são compatíveis.
+Sim. Consulte [rede do ClickPipes](/pt-BR/integrations/clickpipes/networking) para saber como o ClickPipes pode acessar uma fonte de dados que não está exposta à internet pública.
 
-<div id="what-happens-if-i-delete-a-database-table-from-my-mongodb-database">
-  ### O que acontece se eu excluir um banco de dados/uma tabela do meu banco de dados MongoDB?
-</div>
+### O que acontece se eu excluir um banco de dados/uma tabela do meu banco de dados MongoDB? {#what-happens-if-i-delete-a-database-table-from-my-mongodb-database}
 
 Quando você exclui um banco de dados/uma tabela do MongoDB, o ClickPipes continua em execução, mas o banco de dados/a tabela removido(a) deixa de replicar alterações. As tabelas correspondentes no ClickHouse são preservadas.
 
-<div id="how-does-mongodb-cdc-connector-handle-transactions">
-  ### Como o MongoDB CDC Connector lida com transações?
-</div>
+### Como o MongoDB CDC Connector lida com transações? {#how-does-mongodb-cdc-connector-handle-transactions}
 
 Cada alteração de documento dentro de uma transação é processada individualmente no ClickHouse. As alterações são aplicadas na ordem em que aparecem no oplog, e apenas as alterações confirmadas são replicadas para o ClickHouse. Se uma transação do MongoDB for desfeita, essas alterações não aparecerão no change stream.
 
 Para mais exemplos, consulte nosso [guia Working with JSON](/pt-BR/integrations/clickpipes/mongodb/quickstart).
 
-<div id="resume-point-may-no-longer-be-in-the-oplog-error">
-  ### Como lidar com o erro `resume of change stream was not possible, as the resume point may no longer be in the oplog.`?
-</div>
+### Como lidar com o erro `resume of change stream was not possible, as the resume point may no longer be in the oplog.`? {#resume-point-may-no-longer-be-in-the-oplog-error}
 
 Esse erro normalmente ocorre quando o oplog é truncado e o ClickPipe não consegue retomar o change stream no ponto esperado. Para resolver esse problema, [ressincronize o ClickPipe](/pt-BR/integrations/clickpipes/mongodb/resync). Para evitar que isso volte a acontecer, recomendamos aumentar o período de retenção do oplog. Consulte as instruções para [MongoDB Atlas](/pt-BR/integrations/clickpipes/mongodb/source/atlas#enable-oplog-retention), [MongoDB autogerenciado](/pt-BR/integrations/clickpipes/mongodb/source/generic#enable-oplog-retention) ou [Amazon DocumentDB](/pt-BR/integrations/clickpipes/mongodb/source/documentdb#configure-change-stream-log-retention).
 
-<div id="how-is-replication-managed">
-  ### Como a replicação é gerenciada?
-</div>
+### Como lidar com o erro `Cannot open a new cursor since too many cursors are already opened`? {#too-many-cursors-error}
+
+Alguns provedores gerenciados de MongoDB, como o Amazon DocumentDB, limitam a quantidade de cursores que podem ficar abertos simultaneamente em cada instância. No Amazon DocumentDB, o limite depende da classe da instância. Por exemplo, instâncias `t3.medium` e `t4g.medium` permitem apenas 30 cursores abertos. Consulte [limites de instância](https://docs.aws.amazon.com/documentdb/latest/devguide/limits.html#limits.instance) para ver o limite de cada classe de instância.
+
+O ClickPipe precisa de um cursor para ler o fluxo de alterações. Quando outras cargas de trabalho na instância ocupam todos os cursores disponíveis, o ClickPipe não consegue abrir o fluxo de alterações. O ClickPipe faz novas tentativas automaticamente e retoma a replicação assim que houver cursores disponíveis.
+
+Para resolver esse problema:
+
+1. Verifique quantos cursores estão abertos na instância lida pelo ClickPipe. Conecte-se à instância com `mongosh` e execute `db.serverStatus().metrics.cursor.open`. No Amazon DocumentDB, você também pode comparar as métricas `DatabaseCursorsMax` e `DatabaseCursorsLimit` no Amazon CloudWatch.
+2. Reduza o número de cursores que outras cargas de trabalho mantêm abertos. Por exemplo, feche os cursores quando a aplicação não precisar mais deles.
+3. Se sua carga de trabalho precisar de mais cursores, escale a instância para uma classe de instância maior.
+
+### Como a replicação é gerenciada? {#how-is-replication-managed}
 
 Usamos a API nativa de Change Streams do MongoDB para rastrear alterações no banco de dados. A API de Change Streams fornece um fluxo de alterações no banco de dados que pode ser retomado, aproveitando o oplog (log de operações) do MongoDB. O ClickPipe usa os tokens de retomada do MongoDB para rastrear a posição no oplog e garantir que cada alteração seja replicada para o ClickHouse.
 
-<div id="which-read-preference-should-i-use">
-  ### Qual preferência de leitura devo usar?
-</div>
+### Qual preferência de leitura devo usar? {#which-read-preference-should-i-use}
 
 A preferência de leitura ideal depende do seu caso de uso. Se você quiser minimizar a carga no nó primário, recomendamos usar a preferência de leitura `secondaryPreferred`. Se quiser otimizar a latência de ingestão, recomendamos usar a preferência de leitura `primaryPreferred`. Para mais detalhes, consulte a [documentação do MongoDB](https://www.mongodb.com/docs/manual/core/read-preference/#read-preference-modes-1).
 
-<div id="does-the-mongodb-clickpipe-support-sharded-cluster">
-  ### O ClickPipe do MongoDB oferece suporte a cluster fragmentado?
-</div>
+### O ClickPipe do MongoDB oferece suporte a cluster fragmentado? {#does-the-mongodb-clickpipe-support-sharded-cluster}
 
 Sim, o ClickPipe do MongoDB oferece suporte tanto a conjunto de réplicas quanto a cluster fragmentado.
 
-<div id="documentdb-support">
-  ### O ClickPipe do MongoDB suporta o Amazon DocumentDB?
-</div>
+### O ClickPipe do MongoDB suporta o Amazon DocumentDB? {#documentdb-support}
 
 Sim, o ClickPipe do MongoDB suporta o Amazon DocumentDB 5.0. Consulte o [guia de configuração da origem do Amazon DocumentDB](/pt-BR/integrations/clickpipes/mongodb/source/documentdb) para mais detalhes.
 
-<div id="privatelink-support">
-  ### O ClickPipe do MongoDB oferece suporte a PrivateLink?
-</div>
+### O ClickPipe do MongoDB oferece suporte a PrivateLink? {#privatelink-support}
 
 Oferecemos suporte a PrivateLink para clusters do MongoDB (e do DocumentDB) apenas na AWS.
 
@@ -108,4 +98,19 @@ Se você preferir se conectar a um único nó do cluster, poderá ignorar a desc
 
 Para conexão com conjunto de réplicas, você pode configurar o PrivateLink para MongoDB com VPC Resource ou VPC Endpoint Service. Se optar por VPC Resource, será necessário criar uma configuração de recurso `GROUP`, além de uma configuração de recurso `CHILD` para cada nó do cluster. Se optar por VPC Endpoint Service, será necessário criar um Endpoint Service separado (e um NLB separado) para cada nó do cluster.
 
-Consulte a documentação de [AWS PrivateLink para ClickPipes](/pt-BR/integrations/clickpipes/aws-privatelink) para mais detalhes. Entre em contato com o suporte do ClickHouse para obter ajuda.
+Consulte a documentação de [AWS PrivateLink](/pt-BR/integrations/clickpipes/networking/aws-privatelink) para mais detalhes. Entre em contato com o suporte do ClickHouse para obter ajuda.
+
+### Por que a tabela `_peerdb_raw_mirror_*` é tão grande e como posso limitá-la? {#raw-mirror-table-retention}
+
+Um ClickPipe de CDC primeiro grava os eventos de alteração em uma tabela bruta chamada `_peerdb_raw_mirror_<pipe id>` no banco de dados de destino e, em seguida, normaliza esses eventos nas tabelas de destino. O ClickPipes não executa TRUNCATE nessa tabela. Dependendo de quando o pipe foi criado, a tabela pode não ter TTL e reter todos os eventos. Verifique com `SHOW CREATE TABLE` e adicione ou altere o TTL com:
+
+```sql
+ALTER TABLE <db>._peerdb_raw_mirror_<id>
+    MODIFY TTL toDateTime(fromUnixTimestamp64Nano(_peerdb_timestamp)) + INTERVAL 30 DAY;
+```
+
+Se a tabela bruta não tiver chave de particionamento, a primeira execução do TTL reescreve as partes existentes e pode gerar uma carga perceptível de E/S em segundo plano em uma tabela grande. Acompanhe o progresso em `system.mutations`.
+
+<Warning>
+  O TTL é avaliado com base no tempo decorrido e não leva em conta o estado do pipe. Se o pipe ficar pausado ou travado por mais tempo que o TTL, os eventos que ainda não foram normalizados são excluídos e nunca chegam às tabelas de destino. Escolha um período de retenção maior do que qualquer pausa planejada.
+</Warning>

@@ -97,7 +97,8 @@ public:
         String comparator = literal_id > func_id ? function->getFunctionName() : swap_relations.at(function->getFunctionName());
 
         const auto * func_node = function->getArguments().getNodes()[func_id]->as<FunctionNode>();
-        /// Currently we only handle single-argument functions.
+        /// Explicit-time-zone overloads cannot be handled: the preimage API does not receive
+        /// constant function arguments.
         if (!func_node || func_node->getArguments().getNodes().size() != 1)
             return;
 
@@ -123,6 +124,9 @@ public:
         if (!converter_base || !converter_base->hasInformationAboutPreimage())
             return;
 
+        if (!canCalculatePreimageForConstant(*converter_base->getResultType(), *literal->getResultType()))
+            return;
+
         auto preimage_range = converter_base->getPreimage(*(column_id->getColumnType()), literal->getValue());
         if (!preimage_range)
             return;
@@ -136,7 +140,7 @@ public:
     }
 
 private:
-    QueryTreeNodePtr generateOptimizedDateFilter(
+    [[nodiscard]] QueryTreeNodePtr generateOptimizedDateFilter(
         const String & comparator, const QueryTreeNodePtr & column_node, const FieldInterval & range) const
     {
         const DateLUTImpl & date_lut = DateLUT::instance("UTC");

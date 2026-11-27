@@ -34,28 +34,27 @@ public:
 
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionStringToH3>(); }
 
-    std::string getName() const override { return name; }
+    [[nodiscard]] std::string getName() const override { return name; }
 
-    size_t getNumberOfArguments() const override { return 1; }
-    bool useDefaultImplementationForConstants() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    /// A `LowCardinality` dictionary always holds the type's default value at index 0, even when no
+    /// row references it, so a function that throws on the default value must not be executed on the
+    /// whole dictionary - it would fail on entirely valid data.
+    [[nodiscard]] bool canBeExecutedOnDefaultArguments() const override { return false; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] String getSignatureString() const override
     {
-        const auto * arg = arguments[0].get();
-        if (!WhichDataType(arg).isStringOrFixedString())
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument {} of function {}. "
-                "Must be String or FixedString", arg->getName(), std::to_string(1), getName());
+        return "(StringOrFixedString) -> UInt64";
+    }
 
+    [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    {
         return std::make_shared<DataTypeUInt64>();
     }
 
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
-    {
-        return std::make_shared<DataTypeUInt64>();
-    }
-
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const auto * col_hindex = arguments[0].column.get();
 
@@ -109,7 +108,7 @@ private:
 REGISTER_FUNCTION(StringToH3)
 {
     FunctionDocumentation::Description description = R"(
-Converts the string representation of an H3 index to the `H3Index` ([UInt64](/sql-reference/data-types/int-uint)) representation.
+Converts the string representation of an H3 index to the `H3Index` ([UInt64](/reference/data-types/int-uint)) representation.
     )";
     FunctionDocumentation::Syntax syntax = "stringToH3(index_str)";
     FunctionDocumentation::Arguments arguments = {

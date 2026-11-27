@@ -237,7 +237,7 @@ public:
             getContext().context,
             initialized_disks,
             /*attach*/ false,
-            /*custom_disk*/ true,
+            /*custom_disk*/ false,
             /*skip_types*/ {});
 
         initialized_disks.emplace(name, disk);
@@ -481,11 +481,41 @@ TEST_F(DiskObjectStorageTest, AppendFileTxReadFailDoesNotDeleteFile)
     // Commit fails because the failpoint fires during WriteFileOperation::execute()
     EXPECT_THROW(tx->commit(), DB::Exception);
 
-    // Without the fix: WriteFileOperation::undo() sees !prev_data and deletes the file.
-    // With the fix: undo() sees file_existed==true and preserves the file.
+    // The read fails before the write, so WriteFileOperation::undo() has nothing to revert and keeps the file.
     EXPECT_TRUE(disk->existsFile(file_name));
     EXPECT_EQ(readAll(*disk->readFile(file_name, {})), file_content);
     waitBlobsCount(disk, 1);
+}
+
+TEST_F(DiskObjectStorageTest, EmptyAppendLeavesNoBlob)
+{
+    auto disk = getDiskObjectStorage();
+
+    std::string file_name = getTestName() + "_file";
+    std::string empty_file_name = getTestName() + "_empty_file";
+    std::string file_content = getTestName() + "_content";
+
+    {
+        auto wb = disk->writeFile(file_name);
+        DB::writeText(file_content, *wb);
+        wb->finalize();
+    }
+    waitBlobsCount(disk, 1);
+
+    for (const auto & name : {file_name, empty_file_name})
+    {
+        auto wb = disk->writeFile(name, DB::DBMS_DEFAULT_BUFFER_SIZE, DB::WriteMode::Append, DB::WriteSettings{});
+        wb->finalize();
+    }
+
+    EXPECT_EQ(readAll(*disk->readFile(file_name, {})), file_content);
+    EXPECT_TRUE(disk->existsFile(empty_file_name));
+    EXPECT_EQ(disk->getFileSize(empty_file_name), 0);
+    waitBlobsCount(disk, 1);
+
+    disk->removeFile(file_name);
+    disk->removeFile(empty_file_name);
+    waitBlobsCount(disk, 0);
 }
 
 TEST_F(DiskObjectStorageTest, MoveAndRewriteFile)
@@ -1161,7 +1191,7 @@ try
     auto disk = getDiskObjectStorage();
 
     /// Wrap with encryption.
-    String key = "1234567890123456"; /// 16 bytes = AES-128-CTR
+    DB::SecretString key{"1234567890123456"}; /// 16 bytes = AES-128-CTR
     auto enc_settings = std::make_unique<DB::DiskEncryptedSettings>();
     enc_settings->wrapped_disk = disk;
     enc_settings->current_algorithm = DB::FileEncryption::Algorithm::AES_128_CTR;

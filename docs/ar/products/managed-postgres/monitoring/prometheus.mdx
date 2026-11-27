@@ -1,35 +1,30 @@
 ---
 slug: /cloud/managed-postgres/monitoring/prometheus
 sidebarTitle: 'نقطة نهاية Prometheus'
-title: 'تكامل Prometheus مع Managed Postgres'
-description: 'اجمع مقاييس Managed Postgres في Prometheus أو Grafana أو Datadog أو أي collector متوافق مع OpenMetrics'
-keywords: ['Managed Postgres', 'Prometheus', 'Grafana', 'Datadog', 'المقاييس', 'OpenMetrics', 'observability']
+title: 'تكامل Prometheus مع ClickHouse Managed Postgres'
+description: 'اجمع مقاييس ClickHouse Managed Postgres في Prometheus أو Grafana أو Datadog أو أي collector متوافق مع OpenMetrics'
+keywords: ['ClickHouse Managed Postgres', 'Prometheus', 'Grafana', 'Datadog', 'المقاييس', 'OpenMetrics', 'observability']
 doc_type: 'guide'
 ---
 
-import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
-<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.monitoring-prometheus-beta" />
-
-يوفّر Managed Postgres نقطتي نهاية للمقاييس متوافقتين مع Prometheus
+يوفّر ClickHouse Managed Postgres نقطتي نهاية للمقاييس متوافقتين مع Prometheus
 ضمن [واجهة برمجة تطبيقات ClickHouse Cloud][cloud-api]:
 
-| نقطة النهاية | المسار                                                 | القيم المعادة                               |
-| ------------ | ------------------------------------------------------ | ------------------------------------------- |
-| المؤسسة      | `/v1/organizations/{orgId}/postgres/prometheus`        | مقاييس لكل خدمة Managed Postgres في المؤسسة |
-| المثيل       | `/v1/organizations/{orgId}/postgres/{pgId}/prometheus` | مقاييس لخدمة واحدة                          |
+| نقطة النهاية | المسار                                                 | القيم المعادة                                          |
+| ------------ | ------------------------------------------------------ | ------------------------------------------------------ |
+| المؤسسة      | `/v1/organizations/{orgId}/postgres/prometheus`        | مقاييس لكل خدمة ClickHouse Managed Postgres في المؤسسة |
+| المثيل       | `/v1/organizations/{orgId}/postgres/{pgId}/prometheus` | مقاييس لخدمة واحدة                                     |
 
 <Note>
   تُرجِع نقطة النهاية على مستوى المؤسسة مقاييس لما يصل إلى 100 خدمة. إذا كانت
-  مؤسستك تضم أكثر من 100 خدمة Managed Postgres، [فتواصل مع
+  مؤسستك تضم أكثر من 100 خدمة ClickHouse Managed Postgres، [فتواصل مع
   الدعم](https://clickhouse.com/support/program).
 </Note>
 
 <div id="authentication">
-  ## المصادقة
+  ## المصادقة {#authentication}
 </div>
 
 تستخدم نقطة النهاية نفس [مفاتيح واجهة برمجة تطبيقات] المستخدمة في بقية OpenAPI؛ راجع
@@ -44,7 +39,7 @@ PG_ID=mypgid
 ```
 
 <div id="scrape-org">
-  ## جمع المقاييس من جميع الخدمات في المؤسسة
+  ## جمع المقاييس من جميع الخدمات في المؤسسة {#scrape-org}
 </div>
 
 ```bash
@@ -53,7 +48,7 @@ curl -s --user "$KEY_ID:$KEY_SECRET" \
 ```
 
 <div id="scrape-instance">
-  ## جمع المقاييس من خدمة واحدة
+  ## جمع المقاييس من خدمة واحدة {#scrape-instance}
 </div>
 
 ```bash
@@ -62,7 +57,7 @@ curl -s --user "$KEY_ID:$KEY_SECRET" \
 ```
 
 <div id="sample-response">
-  ## مثال على الاستجابة
+  ## مثال على الاستجابة {#sample-response}
 </div>
 
 ```response
@@ -84,7 +79,7 @@ PostgresServer_CacheHitRatio{clickhouse_org="ca04a310-730d-4ce0-93dd-39f2cd2d5e6
 [مرجع المقاييس](/ar/products/managed-postgres/monitoring/metrics).
 
 <div id="configuring-prometheus">
-  ## تهيئة Prometheus
+  ## تهيئة Prometheus {#configuring-prometheus}
 </div>
 
 يجمع هذا الإعداد المقاييس من نقطة النهاية على مستوى المؤسسة كل 60 ثانية:
@@ -113,9 +108,7 @@ scrape_configs:
 
 لجمع مقاييس خدمة واحدة، ألحِق `/<PG_ID>` بـ `metrics_path`.
 
-<div id="grafana-dashboard">
-  ## لوحة معلومات Grafana الجاهزة مسبقًا
-</div>
+## لوحة معلومات Grafana الجاهزة مسبقًا {#grafana-dashboard}
 
 تعرض لوحة معلومات Grafana الجاهزة مسبقًا كل مقياس توفره نقطة النهاية —
 جدول خدمات قابل للفرز، واستخدام CPU والذاكرة، واستخدام القرص
@@ -123,32 +116,34 @@ scrape_configs:
 التراجع، ونشاط Tuple، وI/O، والتخزين لكل قاعدة بيانات،
 وحالات الجمود.
 
-<Image img="/images/managed-postgres/monitoring/grafana-dashboard.webp" alt="لوحة معلومات Grafana لخدمات Managed Postgres" size="md" border />
-
-<div id="import-dashboard">
-  ### استيراد لوحة المعلومات
+<div className="ch-image-md">
+  <Frame>
+    ![لوحة معلومات Grafana لخدمات ClickHouse Managed Postgres](/images/managed-postgres/monitoring/grafana-dashboard.webp)
+  </Frame>
 </div>
+
+### استيراد لوحة المعلومات {#import-dashboard}
 
 <Steps>
   <Step title="تنزيل ملف JSON الخاص بلوحة المعلومات" id="download">
-    <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/managed-postgres-grafana-dashboard.json'} download="managed-postgres-grafana-dashboard.json" eventName="docs.managed_postgres_grafana_dashboard.download">تنزيل ملف JSON الخاص بلوحة المعلومات</TrackedLink>.
+    <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/managed-postgres-grafana-dashboard.json'} download="managed-postgres-grafana-dashboard.json" eventName="docs.managed_postgres_grafana_dashboard.download">نزّل ملف JSON الخاص بلوحة المعلومات</TrackedLink>.
   </Step>
 
-  <Step title="فتح مسار الاستيراد في Grafana" id="open-import">
-    انتقل إلى **Dashboards → New → Import**. حمّل ملف JSON أو الصق محتوياته.
+  <Step title="فتح واجهة الاستيراد في Grafana" id="open-import">
+    انتقل إلى **Dashboards → New → Import**. ارفع ملف JSON أو الصق محتوياته.
   </Step>
 
   <Step title="اختيار مصدر بيانات Prometheus" id="pick-datasource">
-    عندما يُطلب منك إدخال `DS_PROMETHEUS`، حدِّد مصدر بيانات Prometheus الذي يجمع المقاييس من نقطة النهاية المهيّأة في [القسم السابق](#configuring-prometheus).
+    عند مطالبتك بقيمة الإدخال `DS_PROMETHEUS`، اختر مصدر بيانات Prometheus الذي يجلب المقاييس من نقطة النهاية التي هيّأتها في [القسم السابق](#configuring-prometheus).
   </Step>
 </Steps>
 
-بالنسبة إلى عمليات نشر Grafana المُهيّأة مسبقًا، ضع ملف JSON في
-مسار تهيئة لوحات المعلومات لديك. يطابق Grafana المرجع `${DS_PROMETHEUS}`
+في عمليات نشر Grafana المُجهّزة تلقائيًا، ضع ملف JSON في
+مسار تجهيز لوحات المعلومات. سيطابق Grafana المرجع `${DS_PROMETHEUS}`
 مع مصدر بيانات Prometheus متاح في المثيل.
 
 <div id="template-variables">
-  ### متغيرات القالب
+  ### متغيرات القالب {#template-variables}
 </div>
 
 تعرض لوحة المعلومات ثلاثة متغيرات:
@@ -161,7 +156,7 @@ scrape_configs:
   ملف JSON إذا كان فاصل الجمع لديك مختلفًا.
 
 <div id="drill-in">
-  ### التصفية إلى خدمة واحدة للانتقال إلى التفاصيل
+  ### التصفية إلى خدمة واحدة للانتقال إلى التفاصيل {#drill-in}
 </div>
 
 صُممت عدة لوحات للانتقال إلى التفاصيل بعد التصفية إلى خدمة واحدة
@@ -171,15 +166,15 @@ scrape_configs:
 عمل النواة، أو فترات انتظار القرص، أو التنافس على موارد طبقة المحاكاة الافتراضية.
 
 <div id="third-party-integrations">
-  ## التكامل مع Grafana وDatadog
+  ## التكامل مع Grafana وDatadog {#third-party-integrations}
 </div>
 
 تتبع نقطة النهاية البنية نفسها الخاصة بـ[نقطة نهاية ClickHouse Prometheus
 ](/ar/products/cloud/features/monitoring/prometheus)، لذا فإن إعدادات Grafana Cloud وGrafana
 Alloy ووكيل Datadog OpenMetrics الموضحة هناك
 تنطبق هنا أيضًا. وجّه `metrics_path` إلى مسار org أو
-المثيل لـ Managed Postgres بدلًا من مسار ClickHouse.
+المثيل لـ ClickHouse Managed Postgres بدلًا من مسار ClickHouse.
 
-[cloud-api]: /products/cloud/features/admin-features/api/index "واجهة برمجة تطبيقات Cloud"
+[cloud-api]: /products/cloud/features/admin-features/api/api-overview "واجهة برمجة تطبيقات Cloud"
 
 [API keys]: /products/cloud/features/admin-features/api/openapi "إدارة مفاتيح واجهة برمجة تطبيقات"

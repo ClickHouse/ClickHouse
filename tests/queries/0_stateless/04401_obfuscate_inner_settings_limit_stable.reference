@@ -1,0 +1,4 @@
+--- inner SETTINGS limit is re-applied on every generation pass ---
+1
+--- deterministic across invocations for a fixed seed ---
+1

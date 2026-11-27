@@ -1,15 +1,13 @@
 ---
-description: 'TPC-H 基准数据集和查询。'
-sidebarTitle: 'TPC-H'
-slug: /getting-started/example-datasets/tpch
-title: 'TPC-H (1999)'
-doc_type: 'guide'
-keywords: ['示例数据集', 'tpch', '基准测试', '示例数据', '性能测试']
+title: "TPC-H (1999)"
+description: "TPC-H 基准数据集和查询。"
+sidebarTitle: "TPC-H"
+slug: "/getting-started/example-datasets/tpch"
+doc_type: "guide"
+keywords: ["示例数据集", "tpch", "基准测试", "示例数据", "性能测试"]
 ---
 
-TPC-H 是一项广泛使用的基准测试，用于模拟批发供应商的内部数据仓库。
-数据采用第三范式存储，因此在查询时需要进行大量 JOIN。
-尽管它历史悠久，且假设数据均匀且相互独立分布并不现实，TPC-H 至今仍是最流行的 OLAP 基准测试。
+TPC-H 是一项广泛使用的基准测试，用于模拟批发供应商的内部数据仓库。数据采用第三范式存储，因此在查询时需要进行大量 JOIN。尽管它历史悠久，且假设数据均匀且相互独立分布并不现实，TPC-H 至今仍是最流行的 OLAP 基准测试。
 
 **参考资料**
 
@@ -58,7 +56,7 @@ wait
 | orders   | 150.000.000    | 6.15 GB                         |
 | lineitem | 600.000.000    | 26.69 GB                        |
 
- (ClickHouse 中的压缩大小取自 `system.tables.total_bytes`，并基于下方的表定义。) 
+(ClickHouse 中的压缩大小取自 `system.tables.total_bytes`，并基于下方的表定义。)
 
 现在在 ClickHouse 中创建这些表。表定义可在 ClickHouse 软件源中的 [`init.sql`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/tpc-h/init.sql) 中找到。
 
@@ -79,7 +77,7 @@ clickhouse-client --format_csv_delimiter '|' --query "INSERT INTO lineitem FORMA
   除了使用 tpch-kit 自行生成表之外，您也可以直接从公共 S3 存储桶导入数据。请务必先使用 [`init.sql`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/tpc-h/init.sql) 创建空表。
 
   ```sql
-  -- 规模因子 1
+  -- Scale factor 1
   INSERT INTO nation SELECT * FROM s3('https://clickhouse-datasets.s3.amazonaws.com/h/1/nation.tbl', NOSIGN, CSV) SETTINGS format_csv_delimiter = '|', input_format_defaults_for_omitted_fields = 1, input_format_csv_empty_as_default = 1;
   INSERT INTO region SELECT * FROM s3('https://clickhouse-datasets.s3.amazonaws.com/h/1/region.tbl', NOSIGN, CSV) SETTINGS format_csv_delimiter = '|', input_format_defaults_for_omitted_fields = 1, input_format_csv_empty_as_default = 1;
   INSERT INTO part SELECT * FROM s3('https://clickhouse-datasets.s3.amazonaws.com/h/1/part.tbl', NOSIGN, CSV) SETTINGS format_csv_delimiter = '|', input_format_defaults_for_omitted_fields = 1, input_format_csv_empty_as_default = 1;
@@ -89,7 +87,7 @@ clickhouse-client --format_csv_delimiter '|' --query "INSERT INTO lineitem FORMA
   INSERT INTO orders SELECT * FROM s3('https://clickhouse-datasets.s3.amazonaws.com/h/1/orders.tbl', NOSIGN, CSV) SETTINGS format_csv_delimiter = '|', input_format_defaults_for_omitted_fields = 1, input_format_csv_empty_as_default = 1;
   INSERT INTO lineitem SELECT * FROM s3('https://clickhouse-datasets.s3.amazonaws.com/h/1/lineitem.tbl', NOSIGN, CSV) SETTINGS format_csv_delimiter = '|', input_format_defaults_for_omitted_fields = 1, input_format_csv_empty_as_default = 1;
 
-  -- 规模因子 10
+  -- Scale factor 10
   INSERT INTO nation SELECT * FROM s3('https://clickhouse-datasets.s3.amazonaws.com/h/10/nation.tbl.zst', NOSIGN, CSV) SETTINGS format_csv_delimiter = '|', input_format_defaults_for_omitted_fields = 1, input_format_csv_empty_as_default = 1;
   INSERT INTO region SELECT * FROM s3('https://clickhouse-datasets.s3.amazonaws.com/h/10/region.tbl.zst', NOSIGN, CSV) SETTINGS format_csv_delimiter = '|', input_format_defaults_for_omitted_fields = 1, input_format_csv_empty_as_default = 1;
   INSERT INTO part SELECT * FROM s3('https://clickhouse-datasets.s3.amazonaws.com/h/10/part.tbl.zst', NOSIGN, CSV) SETTINGS format_csv_delimiter = '|', input_format_defaults_for_omitted_fields = 1, input_format_csv_empty_as_default = 1;
@@ -99,7 +97,7 @@ clickhouse-client --format_csv_delimiter '|' --query "INSERT INTO lineitem FORMA
   INSERT INTO orders SELECT * FROM s3('https://clickhouse-datasets.s3.amazonaws.com/h/10/orders.tbl.zst', NOSIGN, CSV) SETTINGS format_csv_delimiter = '|', input_format_defaults_for_omitted_fields = 1, input_format_csv_empty_as_default = 1;
   INSERT INTO lineitem SELECT * FROM s3('https://clickhouse-datasets.s3.amazonaws.com/h/10/lineitem.tbl.zst', NOSIGN, CSV) SETTINGS format_csv_delimiter = '|', input_format_defaults_for_omitted_fields = 1, input_format_csv_empty_as_default = 1;
 
-  -- 规模因子 100
+  -- Scale factor 100
   INSERT INTO nation SELECT * FROM s3('https://clickhouse-datasets.s3.amazonaws.com/h/100/nation.tbl.gz', NOSIGN, CSV) SETTINGS format_csv_delimiter = '|', input_format_defaults_for_omitted_fields = 1, input_format_csv_empty_as_default = 1;
   INSERT INTO region SELECT * FROM s3('https://clickhouse-datasets.s3.amazonaws.com/h/100/region.tbl.gz', NOSIGN, CSV) SETTINGS format_csv_delimiter = '|', input_format_defaults_for_omitted_fields = 1, input_format_csv_empty_as_default = 1;
   INSERT INTO part SELECT * FROM s3('https://clickhouse-datasets.s3.amazonaws.com/h/100/part.tbl.gz', NOSIGN, CSV) SETTINGS format_csv_delimiter = '|', input_format_defaults_for_omitted_fields = 1, input_format_csv_empty_as_default = 1;
@@ -117,10 +115,14 @@ clickhouse-client --format_csv_delimiter '|' --query "INSERT INTO lineitem FORMA
 
 这 22 个 TPC-H 查询可在 ClickHouse 软件源的[此处](https://github.com/ClickHouse/ClickHouse/tree/master/tests/benchmarks/tpc-h/queries)找到。
 
-要获得与 SQL 标准兼容的行为和预期结果，请应用 [`settings.json`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/tpc-h/settings.json) 中的设置。
-有关已知问题以及特定查询的说明，请参阅 [README](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/tpc-h/README.md)。
+要获得与 SQL 标准兼容的行为和预期结果，请应用 [`settings.json`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/tpc-h/settings.json) 中的设置。有关已知问题以及特定查询的说明，请参阅 [README](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/tpc-h/README.md)。
 
 **正确性**
 
-除非另有说明，这些查询的结果与官方结果一致。要进行验证，请生成一个缩放
-因子 = 1 的 TPC-H 数据库 (`dbgen`，见上文) ，并与 [tpch-kit 中的预期结果](https://github.com/gregrahn/tpch-kit/tree/master/dbgen/answers)进行比较。
+除非另有说明，这些查询的结果与官方结果一致。要进行验证，请生成一个缩放因子 = 1 的 TPC-H 数据库 (`dbgen`，见上文) ，并与 [tpch-kit 中的预期结果](https://github.com/gregrahn/tpch-kit/tree/master/dbgen/answers)进行比较。
+
+<div id="performance-benchmark">
+  ## 性能基准测试
+</div>
+
+ClickHouse 会跟踪每个已发布版本的 TPC-H 查询性能。您可以在 [ClickHouse 版本基准测试](https://benchmark.clickhouse.com/versions/#version=+s\&dataset=+ph\&metric=hot\&queries=-) 页面查看全部 22 个 TPC-H 查询 (缩放因子为 40) 的运行时间，了解性能随时间的演进。

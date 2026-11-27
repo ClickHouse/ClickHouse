@@ -1,5 +1,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionTokens.h>
+#include <base/find_symbols.h>
 
 namespace DB
 {
@@ -18,6 +19,7 @@ private:
 
 public:
     static constexpr auto name = "extractURLParameterNames";
+    static constexpr auto signature = "(String) -> Array(String)";
 
     static bool isVariadic() { return false; }
     static size_t getNumberOfArguments() { return 1; }
@@ -108,9 +110,9 @@ The values are not decoded.
 SELECT extractURLParameterNames('http://example.com/?param1=value1&param2=value2');
         )",
         R"(
-┌─extractURLPa⋯m2=value2')─┐
-│ ['param1','param2']      │
-└──────────────────────────┘
+┌─extractURLParameterNames('http://example.com/?param1=value1&param2=value2')─┐
+│ ['param1','param2']                                                         │
+└─────────────────────────────────────────────────────────────────────────────┘
         )"
     }
     };

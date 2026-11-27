@@ -1,0 +1,3 @@
+<clickhouse>
+    <remap_executable>true</remap_executable>
+</clickhouse>

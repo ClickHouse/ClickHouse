@@ -1,11 +1,12 @@
 {
+  "group": "MergeTree tables settings",
+  "root": "pt-BR/reference/settings/merge-tree-settings",
   "directory": "none",
-  "group": "Configurações das tabelas MergeTree",
   "pages": [
     "pt-BR/reference/settings/merge-tree-settings/add-minmax",
     "pt-BR/reference/settings/merge-tree-settings/allow",
     "pt-BR/reference/settings/merge-tree-settings/allow-experimental",
-    "pt-BR/reference/settings/merge-tree-settings/always",
+    "pt-BR/reference/settings/merge-tree-settings/always-fetch",
     "pt-BR/reference/settings/merge-tree-settings/async",
     "pt-BR/reference/settings/merge-tree-settings/cache-populated-by-fetch",
     "pt-BR/reference/settings/merge-tree-settings/check",
@@ -84,6 +85,5 @@
     "pt-BR/reference/settings/merge-tree-settings/write-ahead",
     "pt-BR/reference/settings/merge-tree-settings/zero-copy",
     "pt-BR/reference/settings/merge-tree-settings/other"
-  ],
-  "root": "pt-BR/reference/settings/merge-tree-settings"
+  ]
 }

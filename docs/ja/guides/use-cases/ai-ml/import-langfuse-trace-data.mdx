@@ -1,0 +1,202 @@
+---
+slug: /use-cases/AI/import-langfuse-trace-data
+sidebarTitle: 'Langfuse Cloud のトレースデータをインポートする'
+title: 'Langfuse Cloud のトレースデータをインポートする'
+description: 'Langfuse Cloud からエクスポートした LLM のトレースデータを、ClickPipes を使用して ClickHouse Cloud に取り込む方法。'
+keywords: ['langfuse', 'observability', 'llm', 'clickpipes', 'object storage', 'blob storage', 'import']
+doc_type: 'guide'
+---
+
+このガイドでは、[Langfuse Cloud](https://cloud.langfuse.com/) の LLM トレースデータを ClickHouse Cloud に取り込み、リアルタイム分析に活用するまでの手順を説明します。
+
+## Langfuse Cloud からのエクスポート {#export-from-langfuse-cloud}
+
+[このガイド](https://langfuse.com/docs/api-and-data-platform/features/export-to-blob-storage)に従って、Langfuse Cloud で定期エクスポート用の Blob Storage インテグレーションを設定します。トレースデータのオブジェクトストレージへのエクスポートは、最短 `20 minutes` 間隔のほか、`hourly`、`daily`、`weekly` のスケジュールでも設定できます。デフォルトでは、各エクスポートに `observations` (トレース属性で拡充済み) と `scores` が含まれます。
+
+### エクスポートされるファイルの構成 {#exported-file-layout}
+
+Langfuse Cloud の Blob Storage インテグレーションは、以下のディレクトリ構造で、出力先のバケットまたはストレージコンテナーにデータを書き込みます。
+
+```text
+{prefix}{project-id}/
+├── observations_v2/   # observations enriched with trace attributes
+├── scores/            # scores
+└── manifests/         # one JSON file per completed run with export metadata
+```
+
+## ClickHouse Cloud へのインポート {#import-into-clickhouse-cloud}
+
+Langfuse Cloud で Blob Storage インテグレーションを設定すると、トレースデータが定期的に対象のバケットまたはストレージコンテナーへエクスポートされます。このデータを ClickHouse Cloud にインポートするには、[ClickPipes](/ja/integrations/clickpipes) が提供するマネージドなオブジェクトストレージコネクタを利用できます。
+
+| データソース                                                                                                                                                                                                                                                                                      | 詳細                                                                                                  |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| <span style={{display: 'inline-flex', alignItems: 'flex-start'}}><img src="/images/integrations/logos/amazon_s3_logo.svg" alt="Amazon S3 のロゴ" className="integration-table-logo" width="24" height="24" /><span><strong>Amazon S3</strong><br /><em>および S3 互換オブジェクトストレージ</em></span></span> | [S3 ClickPipes](/ja/integrations/clickpipes/object-storage/amazon-s3/overview) を使用して連携します。             |
+| <img src="/images/integrations/logos/gcs.svg" alt="Google Cloud Storage のロゴ" className="integration-table-logo" width="24" height="24" /> **Google Cloud Storage**                                                                                                                          | [GCS ClickPipes](/ja/integrations/clickpipes/object-storage/google-cloud-storage/overview) を使用して連携します。 |
+| <img src="/images/integrations/logos/azureblobstorage.svg" alt="Azure Blob Storage のロゴ" className="integration-table-logo" width="24" height="24" /> **Azure Blob Storage**                                                                                                                 | [ABS ClickPipes](/ja/integrations/clickpipes/object-storage/azure-blob-storage/overview) を使用して連携します。   |
+
+### ClickPipe を作成する {#create-a-clickpipe}
+
+この例では、S3 ClickPipe を使用して、Langfuse Cloud から定期的にエクスポートされたデータを受け取る S3 バケットからデータをインポートします。この手順は、あらゆるオブジェクトストレージのエクスポート先に共通するひな形としても利用できます。データソースごとの詳細な手順については、[ClickPipes ドキュメント](/ja/integrations/clickpipes)を参照してください。
+
+<Steps>
+  <Step title="データソースを選択する" id="1-select-the-data-source">
+    **1.** ClickHouse Cloud のメインナビゲーションメニューで **Data sources** を選択し、**Create ClickPipe** をクリックします。
+
+    <Frame>
+      <img src="/images/integrations/data-ingestion/clickpipes/cp_step0.webp" alt="ClickPipe の作成" />
+    </Frame>
+
+    **2.** **Amazon S3** タイルをクリックします。ClickPipes UI に表示されていないその他の S3 互換サービスに接続する場合も、このタイルを使用できます。
+
+    <Frame>
+      <img src="/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_step1.webp" alt="Amazon S3 データソースを選択" />
+    </Frame>
+  </Step>
+
+  <Step title="接続を設定する" id="2-set-up-the-connection">
+    **1.** Langfuse Cloud のエクスポートを受け取るバケットに ClickPipes が接続・認証するために必要な情報を入力します。
+
+    * **Authentication method**: S3 ClickPipe は [IAM 認証情報](/ja/integrations/clickpipes/object-storage/amazon-s3/overview#iam-credentials) (`Credentials`) と [IAM role ベースの認証](/ja/integrations/clickpipes/object-storage/amazon-s3/overview#iam-role) (`IAM role`) をサポートしています。ClickPipes に必要なのは、バケットへの読み取りアクセス権のみです。認証とアクセス許可の詳細については、[リファレンスドキュメント](/ja/integrations/clickpipes/object-storage/amazon-s3/overview#access-control)を参照してください。
+
+    * **S3 file path**: ClickPipe の参照先としてサブディレクトリを指定し、`*` ワイルドカードを使用してエクスポートされたすべてのファイルにマッチさせます。サブディレクトリごとにエクスポートファイルのスキーマが異なるため、サブディレクトリごとに ClickPipe を 1 つずつ作成する**必要があります**。
+
+      | サブディレクトリ           | ファイルパス                                                                                        |
+      | ------------------ | --------------------------------------------------------------------------------------------- |
+      | `observations_v2/` | `https://{bucket-name}.s3.{region-code}.amazonaws.com/{prefix}{project-id}/observations_v2/*` |
+      | `scores/`          | `https://{bucket-name}.s3.{region-code}.amazonaws.com/{prefix}{project-id}/scores/*`          |
+
+      ネストされたプレフィックスをまたいでファイルをマッチさせる方法など、サポートされているパターンの詳細については、[リファレンスドキュメント](/ja/integrations/clickpipes/object-storage/amazon-s3/overview#file-pattern-matching)を参照してください。
+
+    **2.** **Continuous ingestion** を選択します。これにより、Langfuse がターゲットバケットに新しいファイルを書き込むたびに、自動的に取り込まれるようになります。
+
+    <Frame>
+      <img src="/images/use-cases/AI_ML/Langfuse/cp_continuous_ingestion.webp" alt="継続的インジェストを有効にした Langfuse エクスポートの接続情報。" />
+    </Frame>
+
+    **3.** **Incoming data** をクリックします。ClickPipes がバケットからメタデータをフェッチし、次のステップでターゲットテーブルのスキーマを推論します。
+  </Step>
+
+  <Step title="取り込むデータを検証する" id="3-validate-incoming-data">
+    **1.** ClickPipes がバケットに接続し、指定したパス内のファイルを一覧表示して、ファイルフォーマットを推論します。この例では、Langfuse Cloud のデフォルトのエクスポートファイルフォーマット (Parquet) を使用しています。
+
+    <Frame>
+      <img src="/images/use-cases/AI_ML/Langfuse/cp_incoming_data.webp" alt="Langfuse のエクスポートパスに一致するファイル（ファイルタイプは Parquet に設定）" />
+    </Frame>
+
+    **2.** **Parse information** をクリックします。ClickPipes はサンプルファイルを使ってエクスポートされたデータのスキーマを推論し、ソースのフィールドを ClickHouse のターゲットテーブルに自動的にマッピングします。
+  </Step>
+
+  <Step title="取り込み先を設定する" id="4-configure-target">
+    **1.** このステップでは、推定したスキーマを確認し、ターゲットテーブルの設定をカスタマイズできます。具体的には、データ型マッピングの調整、[sorting key](/ja/best-practices/choosing-a-primary-key) の定義、[テーブルエンジン](/ja/reference/engines/table-engines) の選択などを行います。
+
+    <Frame>
+      <img src="/images/use-cases/AI_ML/Langfuse/cp_table_settings.webp" alt="専用の langfuse データベースに書き込む scores エクスポート。sorting key は environment、name、timestamp、trace_id、observation_id、id に設定されている" />
+    </Frame>
+
+    **Upload data to** では **New table** を選択したままにし、以下を設定します。
+
+    * **Database** と **Name**: Langfuse データ用の専用データベース (例: `langfuse`) と、宛先テーブルのわかりやすい名前 (例: `scores`) を指定します。ClickPipes では、名前の衝突を避けるため、デフォルトで `default.s3-<uuid>` が使用されます。
+
+    * **Sorting key**: 宛先テーブルの[ソートキー](/ja/best-practices/choosing-a-primary-key)です。ClickHouse がディスク上にデータをどのように格納するかを決定します。最適なパフォーマンスを得るには、sorting key をデータのアクセスパターンに合わせ、クエリがデータの読み取りをできるだけスキップできるようにする必要があります。
+
+      | サブディレクトリ           | 宛先テーブル            | 推奨される sorting key                                            |
+      | ------------------ | ----------------- | ------------------------------------------------------------ |
+      | `observations_v2/` | `observations_v2` | `environment, start_time, trace_id, id`                      |
+      | `scores/`          | `scores`          | `environment, name, timestamp, trace_id, observation_id, id` |
+
+      このキーは `ReplacingMergeTree` テーブルでの重複排除にも使用されるため、カラムの組み合わせでレコードを一意に識別できる必要があります。**複数の Langfuse プロジェクト**を 1 つのテーブルに読み込む場合は、sorting key の先頭に `project_id` を追加してください。sorting key の選び方については[リファレンスドキュメント](/ja/best-practices/choosing-a-primary-key)を参照してください。
+
+    * **Partition by**: 古いトレースを期限切れにする予定がなければ、空欄のままにします。ClickHouse における[パーティション化](/ja/best-practices/choosing-a-partitioning-key)はクエリ最適化ではなくデータ管理のための機能であり、時間範囲のクエリは推奨の sorting key によってすでに絞り込まれます。保持期間の管理が必要な場合は、時間カラム (`toYYYYMM(start_time)`、`scores` の場合は `toYYYYMM(timestamp)`) でパーティション化してください。こうすることで、1 か月分のトレースを 1 回の `DROP PARTITION` 操作で削除できます。
+
+    **2.** 次に、**Advanced settings** を展開し、重複排除を確実に行うため **Engine** を [`ReplacingMergeTree`](/ja/engines/table-engines/mergetree-family/replacingmergetree) に設定して、**Version** カラムに `updated_at` を指定します。
+
+    <Frame>
+      <img src="/images/use-cases/AI_ML/Langfuse/cp_advanced_settings.webp" alt="ReplacingMergeTree エンジンと、バージョンカラムとして updated_at が設定された Advanced settings" />
+    </Frame>
+
+    Langfuse Cloud の Blob Storage 連携では、エクスポート期間の開始・終了の両端が含まれるため、同じレコードが複数のエクスポートファイルに含まれることがあります。分析クエリのパターンが冪等 (例: `uniq()`、`max()`、`min()`) でない限り、ターゲットエンジンに `ReplacingMergeTree` を使用し、下流のデータモデルで重複排除を**必ず**行ってください。
+
+    <Note>
+      **ReplacingMergeTree による重複排除**
+
+      このテーブルエンジンは、バックグラウンドマージによって重複を統合します。読み取り時に完全な重複排除 (すなわち merge-on-read のセマンティクス) を行うには、クエリ実行時に `FINAL` 修飾子 (または `argMax()` 形式の集計) を**必ず**使用してください。
+    </Note>
+  </Step>
+
+  <Step title="アクセス許可を設定する" id="5-configure-permissions">
+    ClickPipes は、宛先テーブルへのデータ書き込み用に専用ユーザーを作成します。この内部ユーザーには、カスタムロールまたは事前定義済みロールのいずれかを選択して割り当てます。
+
+    * `Full access`: クラスターへのフルアクセス権を持ちます。宛先テーブルで materialized view または Dictionary を使用する場合は、このロールが必要です。
+    * `Only destination table`: 宛先テーブルに対する `INSERT` アクセス許可のみを持ちます。
+
+    <Frame>
+      <img src="/images/integrations/data-ingestion/clickpipes/cp_step5.webp" alt="アクセス許可" />
+    </Frame>
+
+    **Complete setup** をクリックすると、ClickPipe が作成されます。
+  </Step>
+
+  <Step title="設定を完了する" id="6-complete-setup">
+    これで設定は完了です。ClickPipes はまず、指定したパス内のすべてのファイルを対象に過去データのバックフィルを実行し、その後はバケットに新しいファイルが到着するたびに取り込みを開始します。
+
+    <Frame>
+      <img src="/images/use-cases/AI_ML/Langfuse/cp_clickpipes_running.webp" alt="Data sources の下で実行中の observations および scores の ClickPipes" />
+    </Frame>
+
+    ClickHouse Cloud にインポートしたいサブディレクトリごとに、このガイドの手順を繰り返してください。
+  </Step>
+</Steps>
+
+### トレースデータのクエリ {#query-trace-data}
+
+ClickPipes が稼働したら、Langfuse Cloud のトレースデータを ClickHouse Cloud 上で直接クエリできます。以下では、コストとレイテンシのロールアップ、単一トレースの再構築、スコアとモデルやプロンプトとの相関分析など、代表的なクエリパターンの例を紹介します。
+
+#### 時間バケット単位のメトリクスロールアップ {#time-bucketed-metric-rollups}
+
+<Tip>
+  `usage_details` や `cost_details` などの一部のフィールドは、`Map` 型のカラムとしてエクスポートされます。個々の値を取得するには、キーによるルックアップを使用します (例: `sum(cost_details['total'])`) 。
+</Tip>
+
+```sql
+SELECT
+    toStartOfHour(start_time) AS t,
+    provided_model_name,
+    count()                        AS spans,
+    quantile(0.95)(latency)        AS p95_latency,
+    sum(total_cost)                AS cost,
+    sum(usage_details['total'])    AS tokens
+FROM observations_v2 FINAL
+WHERE start_time >= now() - INTERVAL 7 DAY
+-- AND environment = '<environment>'
+GROUP BY t, provided_model_name
+ORDER BY t;
+```
+
+#### トレースの再構築 {#trace-reconstruction}
+
+```sql
+SELECT *
+FROM observations_v2 FINAL
+WHERE trace_id = '<trace_id>'
+ORDER BY start_time;
+```
+
+#### 品質分析 {#quality-analysis}
+
+```sql
+SELECT
+    o.provided_model_name,
+    s.name,
+    avg(s.value) AS avg_score
+FROM "s3-26237f63-84dc-4a7d-a0e1-7361cf55ee0b" AS s FINAL
+JOIN "s3-80899034-ce1e-4dc9-a4e6-b059ddec4175" AS o FINAL ON s.trace_id = o.trace_id
+--WHERE s.environment = '<environment>'
+GROUP BY o.provided_model_name, s.name
+ORDER BY avg_score DESC;
+```
+
+## 関連項目 {#see-also}
+
+* [Langfuse と ClickHouse](/ja/products/cloud/features/ai-ml/langfuse)
+* [Langfuse Cloud の Blob Storage へのエクスポート](https://langfuse.com/docs/api-and-data-platform/features/export-to-blob-storage)
+* [オブジェクトストレージ向け ClickPipes](/ja/integrations/clickpipes/object-storage/amazon-s3/overview)

@@ -1,35 +1,30 @@
 ---
 slug: /cloud/managed-postgres/monitoring/prometheus
 sidebarTitle: 'endpoint de Prometheus'
-title: 'Integración de Managed Postgres con Prometheus'
-description: 'Recopile métricas de Managed Postgres en Prometheus, Grafana, Datadog o cualquier collector compatible con OpenMetrics'
+title: 'Integración de ClickHouse Managed Postgres con Prometheus'
+description: 'Recopile métricas de ClickHouse Managed Postgres en Prometheus, Grafana, Datadog o cualquier collector compatible con OpenMetrics'
 keywords: ['managed postgres', 'prometheus', 'grafana', 'datadog', 'métricas', 'openmetrics', 'observabilidad']
 doc_type: 'guide'
 ---
 
-import { BetaBadge } from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/es/components/Image.jsx";
-
 import { TrackedLink } from "/snippets/es/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
-<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.monitoring-prometheus-beta" />
-
-Managed Postgres expone dos endpoints de métricas compatibles con Prometheus
+ClickHouse Managed Postgres expone dos endpoints de métricas compatibles con Prometheus
 en la [ClickHouse Cloud API][cloud-api]:
 
-| Endpoint | Path                                                   | Returns                                                                |
-| -------- | ------------------------------------------------------ | ---------------------------------------------------------------------- |
-| Org      | `/v1/organizations/{orgId}/postgres/prometheus`        | Métricas de todos los servicios de Managed Postgres de la organización |
-| Instance | `/v1/organizations/{orgId}/postgres/{pgId}/prometheus` | Métricas de un solo servicio                                           |
+| Endpoint | Path                                                   | Returns                                                                           |
+| -------- | ------------------------------------------------------ | --------------------------------------------------------------------------------- |
+| Org      | `/v1/organizations/{orgId}/postgres/prometheus`        | Métricas de todos los servicios de ClickHouse Managed Postgres de la organización |
+| Instance | `/v1/organizations/{orgId}/postgres/{pgId}/prometheus` | Métricas de un solo servicio                                                      |
 
 <Note>
   El endpoint a nivel de organización devuelve métricas de hasta 100 servicios. Si su
-  organización tiene más de 100 servicios de Managed Postgres, [póngase en contacto con
+  organización tiene más de 100 servicios de ClickHouse Managed Postgres, [póngase en contacto con
   soporte](https://clickhouse.com/support/program).
 </Note>
 
 <div id="authentication">
-  ## Autenticación
+  ## Autenticación {#authentication}
 </div>
 
 El endpoint utiliza las mismas [API keys] que el resto de OpenAPI; consulta
@@ -44,7 +39,7 @@ PG_ID=mypgid
 ```
 
 <div id="scrape-org">
-  ## Recopilación de métricas de todos los servicios de una organización
+  ## Recopilación de métricas de todos los servicios de una organización {#scrape-org}
 </div>
 
 ```bash
@@ -53,7 +48,7 @@ curl -s --user "$KEY_ID:$KEY_SECRET" \
 ```
 
 <div id="scrape-instance">
-  ## Recopilación de un solo servicio
+  ## Recopilación de un solo servicio {#scrape-instance}
 </div>
 
 ```bash
@@ -62,7 +57,7 @@ curl -s --user "$KEY_ID:$KEY_SECRET" \
 ```
 
 <div id="sample-response">
-  ## Respuesta de ejemplo
+  ## Respuesta de ejemplo {#sample-response}
 </div>
 
 ```response
@@ -84,7 +79,7 @@ Para ver la lista completa de métricas y su significado, consulta la
 [referencia de métricas](/es/products/managed-postgres/monitoring/metrics).
 
 <div id="configuring-prometheus">
-  ## Configuración de Prometheus
+  ## Configuración de Prometheus {#configuring-prometheus}
 </div>
 
 Esta configuración recopila métricas del endpoint de nivel de organización cada 60 segundos:
@@ -111,38 +106,38 @@ Establece `honor_labels: true` para que se conserven las labels `postgres_servic
 
 Para recopilar un solo servicio, añade `/<PG_ID>` a `metrics_path`.
 
-<div id="grafana-dashboard">
-  ## dashboard de Grafana preconfigurado
-</div>
+## dashboard de Grafana preconfigurado {#grafana-dashboard}
 
 Un dashboard de Grafana listo para usar visualiza todas las métricas que expone el endpoint: una tabla de servicios ordenable, uso de CPU y memoria, uso de disco con alertas por umbral, conexiones por estado, transacciones y proporción de reversiones, actividad de tuplas, E/S, almacenamiento por base de datos e interbloqueos.
 
-<Image img="/images/managed-postgres/monitoring/grafana-dashboard.webp" alt="dashboard de Grafana de los servicios de Managed Postgres" size="md" border />
-
-<div id="import-dashboard">
-  ### Importación del dashboard
+<div className="ch-image-md">
+  <Frame>
+    ![Dashboard de Grafana de los servicios de ClickHouse Managed Postgres](/images/managed-postgres/monitoring/grafana-dashboard.webp)
+  </Frame>
 </div>
+
+### Importar el dashboard {#import-dashboard}
 
 <Steps>
   <Step title="Descargar el JSON del dashboard" id="download">
-    <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/managed-postgres-grafana-dashboard.json'} download="managed-postgres-grafana-dashboard.json" eventName="docs.managed_postgres_grafana_dashboard.download">Descargar el JSON del dashboard</TrackedLink>.
+    <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/managed-postgres-grafana-dashboard.json'} download="managed-postgres-grafana-dashboard.json" eventName="docs.managed_postgres_grafana_dashboard.download">Descargue el JSON del dashboard</TrackedLink>.
   </Step>
 
-  <Step title="Abrir el asistente de importación en Grafana" id="open-import">
-    Ve a **Dashboards → New → Import**. Sube el archivo JSON o pega su contenido.
+  <Step title="Abrir el flujo de importación en Grafana" id="open-import">
+    Vaya a **Dashboards → New → Import**. Cargue el archivo JSON o pegue su contenido.
   </Step>
 
-  <Step title="Elige tu origen de datos de Prometheus" id="pick-datasource">
-    Cuando se te pida el valor de `DS_PROMETHEUS`, selecciona el origen de datos de Prometheus que recopila métricas del endpoint configurado en la [sección anterior](#configuring-prometheus).
+  <Step title="Seleccionar el origen de datos de Prometheus" id="pick-datasource">
+    Cuando se le solicite el valor de entrada `DS_PROMETHEUS`, seleccione el origen de datos de Prometheus que recopila las métricas del endpoint configurado en la [sección anterior](#configuring-prometheus).
   </Step>
 </Steps>
 
-Para implementaciones de Grafana aprovisionadas, coloca el JSON en la
-ruta de aprovisionamiento de dashboards. Grafana asocia la referencia `${DS_PROMETHEUS}`
-con un origen de datos de Prometheus disponible en la instancia.
+En implementaciones de Grafana aprovisionadas, coloque el JSON en la ruta de
+aprovisionamiento de dashboards. Grafana asocia la referencia `${DS_PROMETHEUS}`
+a un origen de datos de Prometheus disponible en la instancia.
 
 <div id="template-variables">
-  ### Variables de plantilla
+  ### Variables de plantilla {#template-variables}
 </div>
 
 El dashboard expone tres variables:
@@ -155,7 +150,7 @@ El dashboard expone tres variables:
   JSON si tu intervalo de scrape es diferente.
 
 <div id="drill-in">
-  ### Filtra por un único servicio para analizarlo en detalle
+  ### Filtra por un único servicio para analizarlo en detalle {#drill-in}
 </div>
 
 Varios paneles están pensados para analizar en detalle una vez que filtras por un único
@@ -165,14 +160,14 @@ para que puedas determinar si un pico se debe al código de la aplicación, al t
 a esperas de disco o a contención del hipervisor.
 
 <div id="third-party-integrations">
-  ## Integración con Grafana y Datadog
+  ## Integración con Grafana y Datadog {#third-party-integrations}
 </div>
 
 El endpoint sigue la misma estructura que el [endpoint de Prometheus de ClickHouse](/es/products/cloud/features/monitoring/prometheus), por lo que las configuraciones de Grafana Cloud, Grafana
 Alloy y el agente OpenMetrics de Datadog descritas allí
 también se aplican aquí. Apunte `metrics_path` a la ruta de la organización o de la
-instancia de Managed Postgres en lugar de la de ClickHouse.
+instancia de ClickHouse Managed Postgres en lugar de la de ClickHouse.
 
-[cloud-api]: /products/cloud/features/admin-features/api/index "Cloud API"
+[cloud-api]: /products/cloud/features/admin-features/api/api-overview "Cloud API"
 
 [API keys]: /products/cloud/features/admin-features/api/openapi "Gestión de API keys"

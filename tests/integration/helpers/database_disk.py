@@ -13,19 +13,22 @@ def get_database_disk_name(node):
     return disk_element.text if disk_element is not None else "default"
 
 
+def read_file(node, disk_name: str, file_path: str) -> str:
+    disk_cmd_prefix = f"/usr/bin/clickhouse disks -C /etc/clickhouse-server/config.xml --disk {disk_name} --save-logs --query "
+    return node.exec_in_container(["bash", "-c", f"{disk_cmd_prefix} 'read --path-from {file_path}'"])
+
+
+def replace_text_in_file(node, disk_name: str, file_path: str, old_value: str, new_value: str):
+    old_content = read_file(node, disk_name, file_path)
+    write_to_file(node, disk_name, file_path, old_content.replace(old_value, new_value))
+
+
 def read_metadata(node, metadata_path: str) -> str:
-    db_disk_name = get_database_disk_name(node)
-    disk_cmd_prefix = f"/usr/bin/clickhouse disks -C /etc/clickhouse-server/config.xml --disk {db_disk_name} --save-logs --query "
-    return node.exec_in_container(["bash", "-c", f"{disk_cmd_prefix} 'read --path-from {metadata_path}'"])
+    return read_file(node, get_database_disk_name(node), metadata_path)
 
 
 def replace_text_in_metadata(node, metadata_path: str, old_value: str, new_value: str):
-    db_disk_name = get_database_disk_name(node)
-
-    old_metadata = read_metadata(node, metadata_path)
-
-    new_metadata = old_metadata.replace(old_value, new_value)
-    write_to_file(node, db_disk_name, metadata_path, new_metadata)
+    replace_text_in_file(node, get_database_disk_name(node), metadata_path, old_value, new_value)
 
 
 def write_metadata(node, metadata_path: str, content: str):

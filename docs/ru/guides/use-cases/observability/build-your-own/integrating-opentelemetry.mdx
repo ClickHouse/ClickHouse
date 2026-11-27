@@ -7,8 +7,6 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 Любому решению для обсервабилити нужен механизм для сбора и экспорта журналов и трассировок. Для этого ClickHouse рекомендует [проект OpenTelemetry (OTel)](https://opentelemetry.io/).
 
 &quot;OpenTelemetry — это фреймворк и набор инструментов для обсервабилити, предназначенный для создания и управления телеметрическими данными, такими как трассировки, метрики и журналы.&quot;
@@ -16,7 +14,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 В отличие от ClickHouse или Prometheus, OpenTelemetry не является бэкендом для обсервабилити, а вместо этого сосредоточен на генерации, сборе, управлении и экспорте телеметрических данных. Хотя изначально OpenTelemetry был задуман для того, чтобы упростить инструментирование приложений и систем с помощью SDK для конкретных языков, со временем проект расширился и теперь также включает сбор журналов через OpenTelemetry Collector — агент или прокси, который принимает, обрабатывает и экспортирует телеметрические данные.
 
 <div id="clickhouse-relevant-components">
-  ## Компоненты ClickHouse, имеющие отношение к OpenTelemetry
+  ## Компоненты ClickHouse, имеющие отношение к OpenTelemetry {#clickhouse-relevant-components}
 </div>
 
 OpenTelemetry включает ряд компонентов. Помимо спецификации данных и API, стандартизированного протокола и соглашений об именовании полей/столбцов, OTel предоставляет две возможности, которые имеют ключевое значение для построения решения обсервабилити на базе ClickHouse:
@@ -27,7 +25,7 @@ OpenTelemetry включает ряд компонентов. Помимо сп�
 Решение обсервабилити на базе ClickHouse использует оба этих инструмента.
 
 <div id="distributions">
-  ## Дистрибутивы
+  ## Дистрибутивы {#distributions}
 </div>
 
 У OpenTelemetry Collector есть [несколько дистрибутивов](https://github.com/open-telemetry/opentelemetry-collector-releases?tab=readme-ov-file). Приёмник filelog вместе с экспортёром ClickHouse, необходимым для решения на базе ClickHouse, доступен только в [дистрибутиве OpenTelemetry Collector Contrib](https://github.com/open-telemetry/opentelemetry-collector-releases/tree/main/distributions/otelcol-contrib).
@@ -40,11 +38,11 @@ OpenTelemetry включает ряд компонентов. Помимо сп�
 Собрать [кастомный коллектор](https://opentelemetry.io/docs/collector/custom-collector/) можно с помощью [OpenTelemetry Collector Builder](https://github.com/open-telemetry/opentelemetry-collector/tree/main/cmd/builder).
 
 <div id="ingesting-data-with-otel">
-  ## Ингестия данных с OTel
+  ## Ингестия данных с OTel {#ingesting-data-with-otel}
 </div>
 
 <div id="collector-deployment-roles">
-  ### Роли развертывания коллектора
+  ### Роли развертывания коллектора {#collector-deployment-roles}
 </div>
 
 Чтобы собирать журналы и выполнять их вставку в ClickHouse, мы рекомендуем использовать OpenTelemetry Collector. OpenTelemetry Collector можно развернуть в двух основных ролях:
@@ -54,15 +52,17 @@ OpenTelemetry включает ряд компонентов. Помимо сп�
 
 Ниже мы предполагаем простой коллектор в роли агента, который отправляет свои события напрямую в ClickHouse. Дополнительные сведения об использовании шлюзов и о том, когда они уместны, см. в разделе [Масштабирование с помощью шлюзов](#scaling-with-gateways).
 
-<div id="collecting-logs">
-  ### Сбор журналов
-</div>
+### Сбор журналов {#collecting-logs}
 
 Основное преимущество использования коллектора в том, что он позволяет сервисам быстро выгружать данные, а всю дополнительную обработку — повторные попытки, батчинг, шифрование и даже фильтрацию конфиденциальных данных — берёт на себя сам коллектор.
 
 Коллектор использует термины [приёмник](https://opentelemetry.io/docs/collector/configuration/#receivers), [процессор](https://opentelemetry.io/docs/collector/configuration/#processors) и [экспортер](https://opentelemetry.io/docs/collector/configuration/#exporters) для обозначения трёх основных этапов обработки. Приёмники используются для сбора данных и могут работать либо по модели pull, либо push. Процессоры позволяют выполнять преобразования и обогащение сообщений. Экспортеры отвечают за отправку данных в целевой сервис. Хотя теоретически таким сервисом может быть и другой коллектор, в дальнейшем мы исходим из того, что все данные отправляются напрямую в ClickHouse.
 
-<Image img="/images/use-cases/observability/observability-3.webp" alt="Сбор журналов" size="md" />
+<div className="ch-image-md">
+  <Frame>
+    ![Сбор журналов](/images/use-cases/observability/observability-3.webp)
+  </Frame>
+</div>
 
 Мы рекомендуем ознакомиться с полным набором приёмников, процессоров и экспортеров.
 
@@ -70,13 +70,21 @@ OpenTelemetry включает ряд компонентов. Помимо сп�
 
 **Через OTLP** - В этом случае журналы отправляются (push) напрямую в коллектор из OpenTelemetry SDK по протоколу OTLP. В [демо OpenTelemetry](https://opentelemetry.io/docs/demo/) используется именно этот подход: OTLP-экспортеры для каждого языка предполагают локальную конечную точку коллектора. В этом случае коллектор должен быть настроен с OTLP-приёмником — см. [пример конфигурации в демо выше](https://github.com/ClickHouse/opentelemetry-demo/blob/main/src/otelcollector/otelcol-config.yml#L5-L12). Преимущество этого подхода в том, что данные журналов автоматически будут содержать Trace ID, что позволит впоследствии находить трассировки для конкретного журнала и наоборот.
 
-<Image img="/images/use-cases/observability/observability-4.webp" alt="Сбор журналов через OTLP" size="md" />
+<div className="ch-image-md">
+  <Frame>
+    ![Сбор журналов через OTLP](/images/use-cases/observability/observability-4.webp)
+  </Frame>
+</div>
 
 Этот подход требует, чтобы пользователи инструментировали свой код с помощью [подходящего SDK для своего языка](https://opentelemetry.io/docs/languages/).
 
 * **Сбор через ресивер filelog** - Этот приёмник читает файлы журналов на диске, формирует сообщения журналов и отправляет их в ClickHouse. Он также решает более сложные задачи: определяет многострочные сообщения, обрабатывает ротацию журналов, сохраняет контрольные точки для устойчивости к перезапуску и извлекает структуру. Кроме того, этот приёмник может читать журналы контейнеров Docker и Kubernetes, разворачиваться как Helm-чарт, [извлекать из них структуру](https://opentelemetry.io/blog/2024/otel-collector-container-log-parser/) и обогащать их сведениями о поде.
 
-<Image img="/images/use-cases/observability/observability-5.webp" alt="Ресивер filelog" size="md" />
+<div className="ch-image-md">
+  <Frame>
+    ![Ресивер filelog](/images/use-cases/observability/observability-5.webp)
+  </Frame>
+</div>
 
 **В большинстве развертываний используется комбинация указанных выше приёмников. Рекомендуем прочитать [документацию по коллектору](https://opentelemetry.io/docs/collector/) и ознакомиться с базовыми понятиями, а также со [структурой конфигурации](https://opentelemetry.io/docs/collector/configuration/) и [способами установки](https://opentelemetry.io/docs/collector/installation/).**
 
@@ -87,7 +95,7 @@ OpenTelemetry включает ряд компонентов. Помимо сп�
 </Info>
 
 <div id="structured-vs-unstructured">
-  ## Структурированные и неструктурированные
+  ## Структурированные и неструктурированные {#structured-vs-unstructured}
 </div>
 
 Журналы могут быть как структурированными, так и неструктурированными.
@@ -116,7 +124,7 @@ OpenTelemetry включает ряд компонентов. Помимо сп�
 Мы рекомендуем по возможности использовать структурированное логирование и записывать журналы в формате JSON (то есть ndjson). Это упростит дальнейшую обработку журналов: либо перед отправкой в ClickHouse с помощью [процессоров Collector](https://opentelemetry.io/docs/collector/configuration/#processors), либо во время вставки с использованием materialized views. В конечном итоге структурированные журналы помогут сэкономить ресурсы на последующей обработке и снизить требуемую загрузку CPU в вашем решении на базе ClickHouse.
 
 <div id="example">
-  ### Пример
+  ### Пример {#example}
 </div>
 
 В качестве примера мы предоставляем структурированный (JSON) и неструктурированный наборы журнальных данных, каждый примерно по 10 млн строк, доступные по следующим ссылкам:
@@ -214,13 +222,13 @@ Flags: 0
 Пользователям, которым нужно собирать локальные файлы журналов или файлы журналов Kubernetes, мы рекомендуем ознакомиться с доступными параметрами конфигурации [приёмника filelog](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/receiver/filelogreceiver/README.md#configuration), а также с тем, как обрабатываются [смещения](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/receiver/filelogreceiver#offset-tracking) и [разбор многострочных журналов](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/receiver/filelogreceiver#example---multiline-logs-parsing).
 
 <div id="collecting-kubernetes-logs">
-  ## Сбор журналов Kubernetes
+  ## Сбор журналов Kubernetes {#collecting-kubernetes-logs}
 </div>
 
 Для сбора журналов Kubernetes мы рекомендуем воспользоваться [руководством из документации OpenTelemetry](https://opentelemetry.io/docs/kubernetes/). Для обогащения журналов и метрик метаданными подов рекомендуется [Kubernetes Attributes Processor](https://opentelemetry.io/docs/kubernetes/collector/components/#kubernetes-attributes-processor). Это может приводить к появлению динамических метаданных, например меток, которые хранятся в столбце `ResourceAttributes`. В настоящее время ClickHouse использует для этого столбца тип `Map(String, String)`. Подробнее о работе с этим типом и его оптимизации см. в разделах [Using Maps](/ru/guides/use-cases/observability/build-your-own/schema-design#using-maps) и [Extracting from maps](/ru/guides/use-cases/observability/build-your-own/schema-design#extracting-from-maps).
 
 <div id="collecting-traces">
-  ## Сбор трассировок
+  ## Сбор трассировок {#collecting-traces}
 </div>
 
 Пользователям, которые хотят инструментировать свой код и собирать трассировки, мы рекомендуем обратиться к официальной [документации OTel](https://opentelemetry.io/docs/languages/).
@@ -228,7 +236,7 @@ Flags: 0
 Чтобы доставлять события в ClickHouse, вам потребуется развернуть OTel collector, который будет принимать события трассировки по протоколу OTLP через соответствующий приёмник. В демо OpenTelemetry приведён [пример инструментирования для каждого поддерживаемого языка](https://opentelemetry.io/docs/demo/) и отправки событий в OTel collector. Ниже показан пример подходящей конфигурации OTel collector, которая выводит события в stdout:
 
 <div id="example">
-  ### Пример
+  ### Пример {#example-1}
 </div>
 
 Поскольку трассировки нужно принимать через OTLP, для генерации данных трассировок мы используем инструмент [`telemetrygen`](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/cmd/telemetrygen). Инструкции по установке приведены [здесь](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/cmd/telemetrygen).
@@ -292,7 +300,7 @@ Attributes:
 Полная схема сообщений трассировки доступна [здесь](https://opentelemetry.io/docs/concepts/signals/traces/). Мы настоятельно рекомендуем пользователям ознакомиться с этой схемой.
 
 <div id="processing---filtering-transforming-and-enriching">
-  ## Обработка — фильтрация, преобразование и обогащение
+  ## Обработка — фильтрация, преобразование и обогащение {#processing---filtering-transforming-and-enriching}
 </div>
 
 Как было показано в предыдущем примере с установкой временной метки для события журнала, вам почти наверняка потребуется фильтровать, преобразовывать и обогащать сообщения событий. Это можно сделать с помощью ряда возможностей OpenTelemetry:
@@ -312,7 +320,7 @@ Attributes:
 Если обработка выполняется с помощью OTel collector, мы рекомендуем выполнять преобразования на экземплярах шлюза и сводить к минимуму любую работу на экземплярах агента. Это позволит сделать требования к ресурсам агентов на периферии, работающих на серверах, настолько низкими, насколько это возможно. Обычно пользователи выполняют в агентах только фильтрацию (чтобы минимизировать лишний сетевой трафик), установку временных меток (через операторы) и обогащение, требующее контекста. Например, если экземпляры шлюза находятся в другом кластере Kubernetes, обогащение k8s нужно будет выполнять в агенте.
 
 <div id="example">
-  ### Пример
+  ### Пример {#example-2}
 </div>
 
 Следующая конфигурация показывает сбор данных из неструктурированного файла журнала. Обратите внимание, что здесь используются операторы для извлечения структуры из строк журнала (`regex_parser`) и фильтрации событий, а также процессор для объединения событий в батчи и ограничения использования памяти.
@@ -356,7 +364,7 @@ service:
 ```
 
 <div id="exporting-to-clickhouse">
-  ## Экспорт в ClickHouse
+  ## Экспорт в ClickHouse {#exporting-to-clickhouse}
 </div>
 
 Экспортеры отправляют данные в одну или несколько целевых систем или пунктов назначения. Экспортеры могут работать по модели pull или push. Чтобы отправлять события в ClickHouse, нужно использовать push-ориентированный [экспортер ClickHouse](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/exporter/clickhouseexporter/README.md).
@@ -511,7 +519,7 @@ Links.Attributes:   []
 ```
 
 <div id="out-of-the-box-schema">
-  ## Стандартная схема
+  ## Стандартная схема {#out-of-the-box-schema}
 </div>
 
 <Tip>
@@ -570,10 +578,10 @@ SETTINGS ttl_only_drop_parts = 1
 Несколько важных замечаний по этой схеме:
 
 * По умолчанию таблица разбита на партиции по дате с помощью `PARTITION BY toDate(Timestamp)`. Это позволяет эффективно удалять данные после истечения срока их хранения.
-* TTL задаётся через `TTL toDateTime(Timestamp) + toIntervalDay(3)` и соответствует значению, заданному в конфигурации коллектора. [`ttl_only_drop_parts=1`](/ru/reference/settings/merge-tree-settings#ttl_only_drop_parts) означает, что удаляются только целые части, когда срок хранения истёк для всех содержащихся в них строк. Это эффективнее, чем удалять строки внутри частей, так как это требует дорогостоящей операции delete. Мы рекомендуем всегда включать этот параметр. Подробнее см. в разделе [Управление данными с помощью TTL](/ru/guides/use-cases/observability/build-your-own/managing-data#data-management-with-ttl-time-to-live).
+* TTL задаётся через `TTL toDateTime(Timestamp) + toIntervalDay(3)` и соответствует значению, заданному в конфигурации коллектора. [`ttl_only_drop_parts=1`](/ru/reference/settings/merge-tree-settings/other#ttl_only_drop_parts) означает, что удаляются только целые части, когда срок хранения истёк для всех содержащихся в них строк. Это эффективнее, чем удалять строки внутри частей, так как это требует дорогостоящей операции delete. Мы рекомендуем всегда включать этот параметр. Подробнее см. в разделе [Управление данными с помощью TTL](/ru/guides/use-cases/observability/build-your-own/managing-data#data-management-with-ttl-time-to-live).
 * В таблице используется классический [движок `MergeTree`](/ru/reference/engines/table-engines/mergetree-family/mergetree). Он рекомендуется для журналов и трассировок, и менять его обычно не требуется.
 * Таблица упорядочена по `ORDER BY (ServiceName, SeverityText, toUnixTimestamp(Timestamp), TraceId)`. Это означает, что запросы будут оптимизированы для фильтров по `ServiceName`, `SeverityText`, `Timestamp` и `TraceId` — столбцы, расположенные раньше в списке, фильтруются быстрее, чем более поздние; например, фильтрация по `ServiceName` будет значительно быстрее, чем по `TraceId`. Вам следует изменить этот порядок в соответствии с ожидаемыми шаблонами доступа — см. [Выбор первичного ключа](/ru/guides/use-cases/observability/build-your-own/schema-design#choosing-a-primary-ordering-key).
-* В приведённой выше схеме к столбцам применяется `ZSTD(1)`. Это обеспечивает наилучшее сжатие для журналов. Вы можете увеличить уровень сжатия ZSTD (выше значения по умолчанию, равного 1) для лучшего сжатия, хотя на практике это редко даёт заметную пользу. Увеличение этого значения приведёт к большей нагрузке на CPU во время вставки (при сжатии), хотя распаковка (а значит, и запросы) должна остаться примерно на том же уровне. Дополнительные сведения см. [здесь](https://clickhouse.com/blog/optimize-clickhouse-codecs-compression-schema). Дополнительное [delta-кодирование](/ru/reference/statements/create/table#delta) также применяется к Timestamp, чтобы уменьшить его размер на диске.
+* В приведённой выше схеме к столбцам применяется `ZSTD(1)`. Это обеспечивает наилучшее сжатие для журналов. Вы можете увеличить уровень сжатия ZSTD (выше значения по умолчанию, равного 1) для лучшего сжатия, хотя на практике это редко даёт заметную пользу. Увеличение этого значения приведёт к большей нагрузке на CPU во время вставки (при сжатии), хотя распаковка (а значит, и запросы) должна остаться примерно на том же уровне. Дополнительные сведения см. [здесь](https://clickhouse.com/blog/optimize-clickhouse-codecs-compression-schema). Дополнительное [delta-кодирование](/ru/reference/statements/create/table/codec#delta) также применяется к Timestamp, чтобы уменьшить его размер на диске.
 * Обратите внимание, что [`ResourceAttributes`](https://opentelemetry.io/docs/specs/otel/resource/sdk/), [`LogAttributes`](https://opentelemetry.io/docs/specs/otel/logs/data-model/#field-attributes) и [`ScopeAttributes`](https://opentelemetry.io/docs/specs/otel/logs/data-model/#field-instrumentationscope) имеют тип Map. Важно понимать различия между ними. О том, как обращаться к этим Map и оптимизировать доступ к ключам внутри них, см. в разделе [&quot;Использование maps&quot;](/ru/guides/use-cases/observability/build-your-own/schema-design#using-maps).
 * Большинство остальных типов здесь, например `ServiceName` как LowCardinality, уже оптимизированы. Обратите внимание, что `Body`, который в наших примерах логов представляет собой JSON, хранится как String.
 * К ключам и значениям Map, а также к столбцу `Body` применяются bloom-фильтры. Они помогают ускорить запросы, обращающиеся к этим столбцам, но обычно не являются обязательными. См. [Вторичные индексы/индексы пропуска данных](/ru/guides/use-cases/observability/build-your-own/schema-design#secondarydata-skipping-indices).
@@ -622,13 +630,13 @@ SETTINGS ttl_only_drop_parts = 1
 Мы рекомендуем пользователям отключить автоматическое создание схем и создавать таблицы вручную. Это позволяет изменять основные и вторичные ключи, а также добавлять дополнительные столбцы для оптимизации производительности запросов. Подробнее см. в разделе [Проектирование схемы](/ru/guides/use-cases/observability/build-your-own/schema-design).
 
 <div id="optimizing-inserts">
-  ## Оптимизация вставок
+  ## Оптимизация вставок {#optimizing-inserts}
 </div>
 
 Чтобы добиться высокой производительности вставки и при этом обеспечить строгие гарантии согласованности, при вставке данных обсервабилити в ClickHouse через OTel collector следует придерживаться простых правил. При правильной конфигурации OTel collector приведенные ниже правила будет легко соблюдать. Это также помогает избежать [распространенных проблем](https://clickhouse.com/blog/common-getting-started-issues-with-clickhouse), с которыми пользователи сталкиваются при первом знакомстве с ClickHouse.
 
 <div id="batching">
-  ### Батчинг
+  ### Батчинг {#batching}
 </div>
 
 По умолчанию каждая вставка, отправленная в ClickHouse, приводит к тому, что ClickHouse немедленно создаёт часть хранилища, содержащую данные этой вставки и другие метаданные, которые нужно сохранить. Поэтому если отправлять меньше вставок, но с большим объёмом данных в каждой, а не много вставок с меньшим объёмом данных, это уменьшит количество необходимых операций записи. Мы рекомендуем вставлять данные достаточно крупными батчами — не менее 1 000 строк за раз. Подробнее [здесь](https://clickhouse.com/blog/asynchronous-data-inserts-in-clickhouse#data-needs-to-be-batched-for-optimal-performance).
@@ -642,21 +650,23 @@ SETTINGS ttl_only_drop_parts = 1
 
 Мы рекомендуем использовать [пакетный процессор](https://github.com/open-telemetry/opentelemetry-collector/blob/main/processor/batchprocessor/README.md), показанный в предыдущих конфигурациях, чтобы выполнить эти требования. Это гарантирует, что вставки отправляются в виде согласованных батчей строк, соответствующих указанным выше условиям. Если от коллектора ожидается высокая пропускная способность (событий в секунду) и в каждой вставке можно отправлять не менее 10 000 событий, то обычно этого батчинга в конвейере достаточно. Если позволяет память, можно использовать значения до 100 000. В этом случае коллектор будет сбрасывать батчи до достижения `timeout` пакетного процессора, что обеспечит низкую сквозную задержку конвейера и стабильный размер батчей.
 
-<div id="use-asynchronous-inserts">
-  ### Использование асинхронных вставок
-</div>
+### Использование асинхронных вставок {#use-asynchronous-inserts}
 
-Обычно при низкой пропускной способности коллектора пользователям приходится отправлять меньшие батчи, но при этом они всё равно ожидают, что данные будут поступать в ClickHouse с минимальной сквозной задержкой. В таком случае небольшие батчи отправляются по истечении `timeout` пакетного процессора. Это может приводить к проблемам — именно в таких ситуациях и нужны асинхронные вставки. Обычно это происходит, когда **коллекторы в роли агента настроены на отправку данных напрямую в ClickHouse**. Шлюзы, выступая в роли агрегаторов, могут смягчить эту проблему — см. [Масштабирование с помощью шлюзов](#scaling-with-gateways).
+Обычно при низкой пропускной способности коллектора пользователям приходится отправлять меньшие батчи, но при этом они всё равно ожидают, что данные будут поступать в ClickHouse с минимальной сквозной задержкой. В таком случае небольшие батчи отправляются по истечении `timeout` пакетного процессора. Это может приводить к проблемам — именно в таких ситуациях и нужны асинхронные вставки. Обычно это происходит, когда **коллекторы в роли агента настроены на отправку данных напрямую в ClickHouse**. Шлюзы, выступая в роли агрегаторов, могут смягчить эту проблему — см. [Масштабирование со шлюзами](#scaling-with-gateways).
 
 Если нельзя гарантировать большие батчи, можно делегировать батчинг ClickHouse, используя [асинхронные вставки](/ru/concepts/best-practices/selecting-an-insert-strategy#asynchronous-inserts). При асинхронных вставках данные сначала помещаются в буфер, а затем позже, то есть асинхронно, записываются в хранилище базы данных.
 
-<Image img="/images/use-cases/observability/observability-6.webp" alt="Асинхронные вставки" size="md" />
+<div className="ch-image-md">
+  <Frame>
+    ![Асинхронные вставки](/images/use-cases/observability/observability-6.webp)
+  </Frame>
+</div>
 
 При [включенных асинхронных вставках](/ru/concepts/features/operations/insert/asyncinserts#enabling-asynchronous-inserts), когда ClickHouse ① получает запрос на вставку, данные запроса ② сразу записываются во внутренний буфер в памяти. Когда ③ происходит следующий сброс буфера, данные из буфера [сортируются](/ru/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-stored-on-disk-ordered-by-primary-key-columns) и записываются как часть в хранилище базы данных. Обратите внимание, что до сброса в хранилище базы данных эти данные недоступны для поиска запросами; сброс буфера [настраивается](/ru/concepts/features/operations/insert/asyncinserts).
 
 Чтобы включить асинхронные вставки для коллектора, добавьте `async_insert=1` в строку подключения. Мы рекомендуем использовать `wait_for_async_insert=1` (значение по умолчанию), чтобы получить гарантии доставки — дополнительные сведения см. [здесь](https://clickhouse.com/blog/asynchronous-data-inserts-in-clickhouse).
 
-Данные из async insert записываются после сброса буфера ClickHouse. Это происходит либо после превышения [`async_insert_max_data_size`](/ru/reference/settings/session-settings#async_insert_max_data_size), либо через [`async_insert_busy_timeout_ms`](/ru/reference/settings/session-settings#async_insert_max_data_size) миллисекунд с момента первого запроса INSERT. Если для `async_insert_stale_timeout_ms` установлено ненулевое значение, данные записываются через `async_insert_stale_timeout_ms milliseconds` с момента последнего запроса. Эти параметры можно настроить, чтобы управлять сквозной задержкой конвейера. Дополнительные параметры для настройки сброса буфера описаны [здесь](/ru/reference/settings/session-settings#async_insert). Обычно значений по умолчанию достаточно.
+Данные из async insert записываются после сброса буфера ClickHouse. Это происходит либо после превышения [`async_insert_max_data_size`](/ru/reference/settings/session-settings/async-insert#async_insert_max_data_size), либо через [`async_insert_busy_timeout_ms`](/ru/reference/settings/session-settings/async-insert#async_insert_busy_timeout_max_ms) миллисекунд с момента первого запроса INSERT. Если для `async_insert_stale_timeout_ms` установлено ненулевое значение, данные записываются через `async_insert_stale_timeout_ms milliseconds` с момента последнего запроса. Эти параметры можно настроить, чтобы управлять сквозной задержкой конвейера. Дополнительные параметры для настройки сброса буфера описаны [здесь](/ru/reference/settings/session-settings/async-insert#async_insert). Обычно значений по умолчанию достаточно.
 
 <Info>
   **Рассмотрите адаптивные асинхронные вставки**
@@ -664,23 +674,25 @@ SETTINGS ttl_only_drop_parts = 1
   В случаях, когда используется небольшое количество агентов, при низкой пропускной способности, но строгих требованиях к сквозной задержке, могут быть полезны [адаптивные асинхронные вставки](https://clickhouse.com/blog/clickhouse-release-24-02#adaptive-asynchronous-inserts). Однако обычно они не подходят для сценариев обсервабилити с высокой пропускной способностью, характерных для ClickHouse.
 </Info>
 
-Наконец, прежнее поведение дедупликации, связанное с синхронными вставками в ClickHouse, по умолчанию не включено при использовании асинхронных вставок. При необходимости см. параметр [`async_insert_deduplicate`](/ru/reference/settings/session-settings#async_insert_deduplicate).
+Наконец, прежнее поведение дедупликации, связанное с синхронными вставками в ClickHouse, по умолчанию не включено при использовании асинхронных вставок. При необходимости см. параметр [`async_insert_deduplicate`](/ru/reference/settings/session-settings/async-insert#async_insert_deduplicate).
 
 Полные сведения о настройке этой возможности можно найти [здесь](/ru/concepts/features/operations/insert/asyncinserts#enabling-asynchronous-inserts), а более подробный разбор — [здесь](https://clickhouse.com/blog/asynchronous-data-inserts-in-clickhouse).
 
 <div id="deployment-architectures">
-  ## Архитектуры развертывания
+  ## Архитектуры развертывания {#deployment-architectures}
 </div>
 
 При использовании OTel collector с ClickHouse возможны несколько архитектур развертывания. Ниже мы описываем каждую из них и указываем, в каких случаях она обычно применяется.
 
-<div id="agents-only">
-  ### Только агенты
+### Только агенты {#agents-only}
+
+В архитектуре только с агентами пользователи разворачивают OTel коллектор на периферии в роли агентов. Они получают трассировки от локальных приложений (например, из sidecar-контейнера) и собирают журналы с серверов и узлов Kubernetes. В этом режиме агенты отправляют данные напрямую в ClickHouse.
+
+<div className="ch-image-md">
+  <Frame>
+    ![Только агенты](/images/use-cases/observability/observability-7.webp)
+  </Frame>
 </div>
-
-В архитектуре только с агентами пользователи разворачивают OTel collector на периферии в роли агентов. Они получают трассировки от локальных приложений (например, из sidecar-контейнера) и собирают журналы с серверов и узлов Kubernetes. В этом режиме агенты отправляют данные напрямую в ClickHouse.
-
-<Image img="/images/use-cases/observability/observability-7.webp" alt="Только агенты" size="md" />
 
 Эта архитектура подходит для небольших и средних развертываний. Ее главное преимущество в том, что она не требует дополнительного оборудования и позволяет свести к минимуму общее потребление ресурсов решением ClickHouse для обсервабилити, сохраняя простое соответствие между приложениями и коллекторами.
 
@@ -688,15 +700,17 @@ SETTINGS ttl_only_drop_parts = 1
 
 * **Масштабирование соединений** - Каждый агент будет устанавливать соединение с ClickHouse. Хотя ClickHouse способен поддерживать сотни, а то и тысячи одновременных соединений для вставки, со временем это станет ограничивающим фактором и сделает вставки менее эффективными — то есть ClickHouse будет тратить больше ресурсов на поддержание соединений. Использование шлюзов уменьшает количество соединений и повышает эффективность вставок.
 * **Обработка на периферии** - В этой архитектуре любые преобразования или обработка событий должны выполняться либо на периферии, либо в ClickHouse. Это не только накладывает ограничения, но и может означать либо сложные materialized view в ClickHouse, либо перенос значительной вычислительной нагрузки на периферию, где ресурсы ограничены и могут пострадать критически важные сервисы.
-* **Маленькие батчи и задержки** - Коллекторы-агенты могут по отдельности собирать очень мало событий. Обычно это означает, что их нужно настроить на сброс данных через заданный интервал, чтобы соблюдать SLA доставки. В результате collector может отправлять в ClickHouse маленькие батчи. Хотя это и является недостатком, его можно смягчить с помощью асинхронных вставок — см. [Оптимизация вставок](#optimizing-inserts).
+* **Маленькие батчи и задержки** - Коллекторы-агенты могут по отдельности собирать очень мало событий. Обычно это означает, что их нужно настроить на сброс данных через заданный интервал, чтобы соблюдать SLA доставки. В результате коллектор может отправлять в ClickHouse маленькие батчи. Хотя это и является недостатком, его можно смягчить с помощью асинхронных вставок — см. [Оптимизация вставок](#optimizing-inserts).
 
-<div id="scaling-with-gateways">
-  ### Масштабирование со шлюзами
-</div>
+### Масштабирование со шлюзами {#scaling-with-gateways}
 
 OTel коллекторы можно развернуть в роли шлюзов, чтобы устранить перечисленные выше ограничения. Они предоставляют автономный сервис, как правило, на каждый центр обработки данных или регион. Они получают события от приложений (или других коллекторов в роли агента) через единую конечную точку OTLP. Обычно развертывается набор экземпляров шлюза, а для распределения нагрузки между ними используется стандартный балансировщик нагрузки.
 
-<Image img="/images/use-cases/observability/observability-8.webp" alt="Масштабирование со шлюзами" size="md" />
+<div className="ch-image-md">
+  <Frame>
+    ![Масштабирование со шлюзами](/images/use-cases/observability/observability-8.webp)
+  </Frame>
+</div>
 
 Цель этой архитектуры — снять с агентов ресурсоёмкую вычислительную обработку и тем самым минимизировать потребление ими ресурсов. Эти шлюзы могут выполнять задачи преобразования, которые в противном случае пришлось бы выполнять агентам. Кроме того, агрегируя события от множества агентов, шлюзы могут обеспечивать отправку в ClickHouse крупных батчей, что позволяет выполнять эффективную вставку. Эти коллекторы в роли шлюза можно легко масштабировать по мере добавления новых агентов и роста пропускной способности потока событий. Ниже показан пример конфигурации шлюза вместе со связанной конфигурацией агента, которая использует пример структурированного файла журнала. Обратите внимание на использование OTLP для взаимодействия между агентом и шлюзом.
 
@@ -780,9 +794,7 @@ service:
 
 Если вам нужен пример управления более крупными архитектурами на базе шлюзов и связанных с этим практических выводов, рекомендуем этот [пост в блоге](https://clickhouse.com/blog/building-a-logging-platform-with-clickhouse-and-saving-millions-over-datadog).
 
-<div id="adding-kafka">
-  ### Добавление Kafka
-</div>
+### Добавление Kafka {#adding-kafka}
 
 Читатели могли заметить, что в приведённых выше архитектурах Kafka не используется как очередь сообщений.
 
@@ -792,12 +804,16 @@ service:
 
 Тем не менее, если вам нужны высокие гарантии доставки или возможность повторного воспроизведения данных (возможно, в несколько источников), Kafka может стать полезным дополнением к архитектуре.
 
-<Image img="/images/use-cases/observability/observability-9.webp" alt="Добавление kafka" size="md" />
+<div className="ch-image-md">
+  <Frame>
+    ![Добавление kafka](/images/use-cases/observability/observability-9.webp)
+  </Frame>
+</div>
 
 В этом случае агентов OTel можно настроить на отправку данных в Kafka через [экспортёр Kafka](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/exporter/kafkaexporter/README.md). Экземпляры шлюза, в свою очередь, получают сообщения с помощью [приёмника Kafka](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/receiver/kafkareceiver/README.md). За дополнительной информацией рекомендуем обратиться к документации Confluent и OTel.
 
 <div id="estimating-resources">
-  ### Оценка ресурсов
+  ### Оценка ресурсов {#estimating-resources}
 </div>
 
 Требования к ресурсам для OTel collector зависят от пропускной способности по событиям, размера сообщений и объема выполняемой обработки. Проект OpenTelemetry поддерживает [бенчмарки,](https://opentelemetry.io/docs/collector/benchmarks/) которые можно использовать для оценки требуемых ресурсов.

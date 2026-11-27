@@ -7,17 +7,25 @@
 
 #include <Columns/ColumnConst.h>
 #include <Columns/IColumn.h>
+#include <Common/DateLUTImpl.h>
 #include <Common/assert_cast.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
+#include <Formats/FormatFactory.h>
 #include <Functions/CastOverloadResolver.h>
 #include <Functions/IFunction.h>
 #include <Functions/ComparisonNames.h>
 #include <IO/WriteHelpers.h>
+#include <Interpreters/convertFieldToType.h>
 #include <Functions/FunctionsLogical.h>
 
 #include <Interpreters/ActionsDAG.h>
+#include <Parsers/ASTHelpers.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelUtils.h>
+
+#include <array>
+#include <optional>
+#include <utility>
 
 namespace DB::ErrorCodes
 {
@@ -69,6 +77,104 @@ namespace
         const auto * nullable = assert_cast<const DB::DataTypeNullable *>(node->result_type.get());
         return nullable->getNestedType();
     }
+
+    /// Kernel visitor for `left OP right` over two expression IDs:
+    /// `visit_predicate_eq`, `_ne`, `_lt`, `_le`, `_gt`, `_ge`.
+    using ComparisonVisitor = uintptr_t (*)(::KernelExpressionVisitorState *, uintptr_t, uintptr_t);
+
+    struct ComparisonVisitors
+    {
+        ComparisonVisitor direct;
+        /// Reads the comparison with its operands swapped (`literal OP column`).
+        ComparisonVisitor mirrored;
+
+        [[nodiscard]] ComparisonVisitor forOperands(bool swapped) const
+        {
+            return swapped ? mirrored : direct;
+        }
+    };
+
+    std::optional<ComparisonVisitors> getComparisonVisitors(const String & name)
+    {
+        if (name == DB::NameEquals::name)
+            return ComparisonVisitors{&::visit_predicate_eq, &::visit_predicate_eq};
+        if (name == DB::NameNotEquals::name)
+            return ComparisonVisitors{&::visit_predicate_ne, &::visit_predicate_ne};
+        if (name == DB::NameLess::name)
+            return ComparisonVisitors{&::visit_predicate_lt, &::visit_predicate_gt};
+        if (name == DB::NameLessOrEquals::name)
+            return ComparisonVisitors{&::visit_predicate_le, &::visit_predicate_ge};
+        if (name == DB::NameGreater::name)
+            return ComparisonVisitors{&::visit_predicate_gt, &::visit_predicate_lt};
+        if (name == DB::NameGreaterOrEquals::name)
+            return ComparisonVisitors{&::visit_predicate_ge, &::visit_predicate_le};
+        return std::nullopt;
+    }
+
+    struct DateComparison
+    {
+        const DB::ActionsDAG::Node * column;
+        Int32 day;
+        bool narrows_to_date;
+        ComparisonVisitor visitor;
+    };
+
+    /// Matches `CAST`/`toDate`/`toDate32` on a `Date32` column against a literal, in either operand order.
+    /// Converts the literal and selects its visitor; returns nullopt when translation is unsafe.
+    std::optional<DateComparison> matchDateComparison(
+        const DB::ActionsDAG::Node * node,
+        const ComparisonVisitors & visitors,
+        const DB::FormatSettings & format_settings)
+    {
+        const auto * conversion = node->children[0];
+        const auto * literal = node->children[1];
+        bool swapped = false;
+        if (isConstNode(conversion))
+        {
+            std::swap(conversion, literal);
+            swapped = true;
+        }
+        if (!isFunctionNode(conversion) || !isConstNode(literal))
+            return std::nullopt;
+
+        const auto & name = conversion->function_base->getName();
+        const auto & children = conversion->children;
+        const bool is_cast = DB::isFunctionCast(name) && children.size() == 2 && isConstNode(children[1]);
+        /// The optional constant timezone of `toDate` / `toDate32` is inert for a `Date32` source.
+        const bool is_to_date = (name == "toDate" || name == "toDate32")
+            && (children.size() == 1 || (children.size() == 2 && isConstNode(children[1])));
+        if (!is_cast && !is_to_date)
+            return std::nullopt;
+
+        const auto * column = children[0];
+        const auto result_type = getTypeOrNestedType(conversion);
+        if (!isColumnNode(column) || getTypeIndex(column) != DB::TypeIndex::Date32
+            || !DB::isDateOrDate32(result_type->getTypeId()))
+            return std::nullopt;
+
+        /// Mixed temporal comparisons use a common type; a `Date`/`Date32` literal converts exactly or not at all (rejected below), anything else stays untranslated.
+        const auto literal_type = getTypeOrNestedType(literal);
+        if (!literal_type->equals(*result_type) && !isString(literal_type)
+            && !DB::isDateOrDate32(literal_type->getTypeId()))
+            return std::nullopt;
+
+        /// Convert the literal exactly as the real comparison does: under the query's format settings
+        /// (notably `date_time_overflow_behavior`), not the default `ignore`. `FunctionComparison`'s
+        /// `executeWithConstString` converts the constant string with `params.format_settings`, so a
+        /// bare `tryConvertFieldToType` here would translate e.g.
+        /// `toDate(d) = '1969-12-31' SETTINGS date_time_overflow_behavior='throw'` as if the literal
+        /// had been clamped, and could prune away the exception the comparison must raise. Under
+        /// `throw` an out-of-range literal makes this return null, so the file stays unpruned.
+        const auto value = DB::tryConvertFieldToType(literal->column->getField(), *result_type, literal_type.get(), format_settings);
+        if (value.isNull())
+            return std::nullopt;
+
+        return DateComparison{
+            column,
+            static_cast<Int32>(value.safeGet<Int32>()),
+            result_type->getTypeId() == DB::TypeIndex::Date,
+            visitors.forOperands(swapped)};
+    }
 }
 
 std::shared_ptr<EnginePredicate> getEnginePredicate(
@@ -82,7 +188,7 @@ std::shared_ptr<EnginePredicate> getEnginePredicate(
 struct EngineIteratorData
 {
     EngineIteratorData(
-        ffi::KernelExpressionVisitorState * state_,
+        ::KernelExpressionVisitorState * state_,
         const DB::ActionsDAG::NodeRawConstPtrs & nodes_,
         EnginePredicate & predicate_)
         : state(state_)
@@ -97,9 +203,9 @@ struct EngineIteratorData
         predicate.setException(exception_);
     }
 
-    bool hasException() const { return predicate.exception != nullptr; }
+    [[nodiscard]] bool hasException() const { return predicate.exception != nullptr; }
 
-    const LoggerPtr & log() const { return predicate.log; }
+    [[nodiscard]] const LoggerPtr & log() const { return predicate.log; }
 
     const DB::ActionsDAG::Node * next()
     {
@@ -108,7 +214,7 @@ struct EngineIteratorData
         return *(it++);
     }
 
-    ffi::KernelExpressionVisitorState * state;
+    ::KernelExpressionVisitorState * state;
     EnginePredicate & predicate;
 
 private:
@@ -118,7 +224,7 @@ private:
 
 /// An iterator over DB::ActionsDAG const node ptr's.
 /// Applies corresponding delta-kernel visitors to each node.
-class  EngineIterator : public ffi::EngineIterator
+class  EngineIterator : public ::EngineIterator
 {
 public:
     static constexpr uint64_t VISITOR_FAILED_OR_UNSUPPORTED = ~0;
@@ -147,7 +253,7 @@ private:
     static uintptr_t visitUntranslated(EngineIteratorData & iterator_data)
     {
         const std::string name{UNTRANSLATED_PREDICATE_NAME};
-        auto unknown = ffi::visit_predicate_unknown(iterator_data.state, KernelUtils::toDeltaString(name));
+        auto unknown = ::visit_predicate_unknown(iterator_data.state, KernelUtils::toDeltaString(name));
         if (!unknown)
         {
             /// Unreachable with a compile-time ASCII name unless an invariant broke: 0 is the
@@ -215,14 +321,18 @@ private:
     }
 
     static uintptr_t getNextImpl(EngineIteratorData & iterator_data, const DB::ActionsDAG::Node * node);
+
+    static uintptr_t visitComparisonOverDateConversion(
+        EngineIteratorData & iterator_data,
+        const DateComparison & comparison);
 };
 
-uintptr_t EnginePredicate::visitPredicate(void * data, ffi::KernelExpressionVisitorState * state)
+uintptr_t EnginePredicate::visitPredicate(void * data, ::KernelExpressionVisitorState * state)
 {
     auto * predicate = static_cast<EnginePredicate *>(data);
     EngineIteratorData iterator_data(state, predicate->filter.getOutputs(), *predicate);
     EngineIterator engine_iterator(iterator_data);
-    auto result = ffi::visit_predicate_and(state, &engine_iterator);
+    auto result = ::visit_predicate_and(state, &engine_iterator);
 
     LOG_TEST(iterator_data.log(), "visitPredicate finished (exception: {})", predicate->hasException());
     return result;
@@ -232,7 +342,7 @@ static uintptr_t visitLiteralValue(
     const DB::Field & value,
     DB::TypeIndex type_index,
     DB::DataTypePtr data_type,
-    ffi::KernelExpressionVisitorState * state)
+    ::KernelExpressionVisitorState * state)
 {
     LOG_TEST(getLogger("EnginePredicate"), "Type index: {}, data type: {}", type_index, data_type->getName());
 
@@ -249,7 +359,7 @@ static uintptr_t visitLiteralValue(
             const auto & value_str = value.safeGet<String>();
             auto value_delta_str = KernelUtils::toDeltaString(value_str);
             return KernelUtils::unwrapResult(
-                ffi::visit_expression_literal_string(
+                ::visit_expression_literal_string(
                     state,
                     value_delta_str,
                     &KernelUtils::allocateError), "visit_expression_literal_string");
@@ -257,61 +367,175 @@ static uintptr_t visitLiteralValue(
         case DB::TypeIndex::Int8:
         {
             auto result = value.safeGet<Int8>();
-            return ffi::visit_expression_literal_byte(state, static_cast<int8_t>(result));
+            return ::visit_expression_literal_byte(state, static_cast<int8_t>(result));
         }
         case DB::TypeIndex::UInt8:
         {
             if (isBool(data_type))
             {
                 bool result = value.safeGet<UInt8>();
-                return ffi::visit_expression_literal_bool(state, result); /// Accepts bool
+                return ::visit_expression_literal_bool(state, result); /// Accepts bool
             }
             else
             {
                 auto result = value.safeGet<Int16>();
-                return ffi::visit_expression_literal_short(state, static_cast<int16_t>(result));
+                return ::visit_expression_literal_short(state, static_cast<int16_t>(result));
             }
         }
         case DB::TypeIndex::Int16:
         {
             auto result = value.safeGet<Int16>();
-            return ffi::visit_expression_literal_short(state, static_cast<int16_t>(result));
+            return ::visit_expression_literal_short(state, static_cast<int16_t>(result));
         }
         case DB::TypeIndex::UInt16:
         {
             auto result = value.safeGet<Int32>();
-            return ffi::visit_expression_literal_int(state, static_cast<int32_t>(result));
+            return ::visit_expression_literal_int(state, static_cast<int32_t>(result));
         }
         case DB::TypeIndex::Int32:
         {
             auto result = value.safeGet<Int32>();
-            return ffi::visit_expression_literal_int(state, static_cast<int32_t>(result));
+            return ::visit_expression_literal_int(state, static_cast<int32_t>(result));
         }
         case DB::TypeIndex::UInt32:
         {
             auto result = value.safeGet<Int64>();
-            return ffi::visit_expression_literal_long(state, result); /// Accepts int64
+            return ::visit_expression_literal_long(state, result); /// Accepts int64
         }
         case DB::TypeIndex::Int64:
         {
             auto result = value.safeGet<Int64>();
-            return ffi::visit_expression_literal_long(state, result); /// Accepts int64
+            return ::visit_expression_literal_long(state, result); /// Accepts int64
         }
         case DB::TypeIndex::Date:
         {
             auto result = value.safeGet<Int32>();
-            return ffi::visit_expression_literal_date(state, static_cast<int32_t>(result));
+            return ::visit_expression_literal_date(state, static_cast<int32_t>(result));
         }
         case DB::TypeIndex::Date32:
         {
             auto result = value.safeGet<Int32>();
-            return ffi::visit_expression_literal_date(state, static_cast<int32_t>(result));
+            return ::visit_expression_literal_date(state, static_cast<int32_t>(result));
         }
         default:
         {
             return EngineIterator::VISITOR_FAILED_OR_UNSUPPORTED;
         }
     }
+}
+
+enum class Junction { And, Or };
+
+/// Builds an AND / OR over two predicate IDs.
+static uintptr_t visitJunction(
+    ::KernelExpressionVisitorState * state,
+    Junction junction,
+    std::array<uintptr_t, 2> ids)
+{
+    /// The kernel consumes the IDs synchronously and does not retain the iterator.
+    struct Cursor
+    {
+        const std::array<uintptr_t, 2> & ids;
+        size_t next = 0;
+    };
+    Cursor cursor{ids};
+
+    ::EngineIterator iterator
+    {
+        .data = &cursor,
+        .get_next = [](void * data) -> const void *
+        {
+            auto & current = *static_cast<Cursor *>(data);
+            if (current.next == current.ids.size())
+                return nullptr;
+            return reinterpret_cast<const void *>(current.ids[current.next++]);
+        },
+    };
+    return junction == Junction::And
+        ? ::visit_predicate_and(state, &iterator)
+        : ::visit_predicate_or(state, &iterator);
+}
+
+/// Builds predicates for one column and validates every kernel ID.
+struct ColumnPredicateBuilder
+{
+    ::KernelExpressionVisitorState * visitor_state;
+    const DB::ActionsDAG::Node * column_node;
+    DB::DataTypePtr column_type;
+
+    uintptr_t compare(ComparisonVisitor visitor, Int32 day) const
+    {
+        /// Comparisons consume expression IDs, so register a fresh column and literal each time.
+        auto column_id = assertValid(
+            KernelUtils::unwrapResult(
+                ::visit_expression_column(
+                    visitor_state,
+                    KernelUtils::toDeltaString(column_node->result_name),
+                    &KernelUtils::allocateError),
+                "visit_expression_column"),
+            "column");
+        auto literal_id = assertValid(
+            visitLiteralValue(
+                DB::Field(Int64(day)), column_type->getTypeId(), column_type, visitor_state),
+            "date literal");
+        return assertValid(visitor(visitor_state, column_id, literal_id), "date comparison");
+    }
+
+    [[nodiscard]] uintptr_t andOf(uintptr_t left, uintptr_t right) const
+    {
+        return junction(Junction::And, left, right, "AND");
+    }
+
+    [[nodiscard]] uintptr_t orOf(uintptr_t left, uintptr_t right) const
+    {
+        return junction(Junction::Or, left, right, "OR");
+    }
+
+private:
+    [[nodiscard]] uintptr_t junction(
+        Junction kind, uintptr_t left, uintptr_t right, std::string_view description) const
+    {
+        /// A zero child would end the iterator early and silently shrink the junction.
+        assertValid(left, description);
+        assertValid(right, description);
+        return assertValid(
+            visitJunction(visitor_state, kind, {left, right}), description);
+    }
+
+    uintptr_t assertValid(uintptr_t id, std::string_view description) const /// NOLINT(modernize-use-nodiscard): often called only for its side effect
+    {
+        if (!id || id == EngineIterator::VISITOR_FAILED_OR_UNSUPPORTED)
+            throw DB::Exception(
+                DB::ErrorCodes::LOGICAL_ERROR,
+                "delta-kernel rejected {} predicate on column `{}`",
+                description, column_node->result_name);
+        return id;
+    }
+};
+
+uintptr_t EngineIterator::visitComparisonOverDateConversion(
+    EngineIteratorData & iterator_data,
+    const DateComparison & comparison)
+{
+    ColumnPredicateBuilder predicates{
+        iterator_data.state, comparison.column, getTypeOrNestedType(comparison.column)};
+
+    auto compared = predicates.compare(comparison.visitor, comparison.day);
+    if (!comparison.narrows_to_date)
+        return compared;
+
+    /// `Date32` -> `Date` can wrap, saturate, or throw outside the Date domain.
+    /// Preserve outside-domain rows: (inside AND comparison) OR (outside AND Unknown).
+    auto is_date_range = predicates.andOf(
+        predicates.compare(::visit_predicate_ge, 0),
+        predicates.compare(::visit_predicate_le, DATE_LUT_MAX_DAY_NUM));
+    auto outside_date_range = predicates.orOf(
+        predicates.compare(::visit_predicate_lt, 0),
+        predicates.compare(::visit_predicate_gt, DATE_LUT_MAX_DAY_NUM));
+    auto unknown_outside_range =
+        predicates.andOf(outside_date_range, visitUntranslated(iterator_data));
+    return predicates.orOf(
+        predicates.andOf(is_date_range, compared), unknown_outside_range);
 }
 
 uintptr_t EngineIterator::getNextImpl(EngineIteratorData & iterator_data, const DB::ActionsDAG::Node * node)
@@ -338,7 +562,7 @@ uintptr_t EngineIterator::getNextImpl(EngineIteratorData & iterator_data, const 
 
                 EngineIterator current_engine_iterator(current_iterator_data);
 
-                return ffi::visit_predicate_and(iterator_data.state, &current_engine_iterator);
+                return ::visit_predicate_and(iterator_data.state, &current_engine_iterator);
             }
             else if (func_name == DB::NameNot::name)
             {
@@ -354,10 +578,10 @@ uintptr_t EngineIterator::getNextImpl(EngineIteratorData & iterator_data, const 
                 {
                     const auto column_name = KernelUtils::toDeltaString(node->children[0]->result_name);
                     uintptr_t column = KernelUtils::unwrapResult(
-                        ffi::visit_expression_column(iterator_data.state,
+                        ::visit_expression_column(iterator_data.state,
                                                      column_name,
                                                      &KernelUtils::allocateError), "visit_expression_column");
-                    return ffi::visit_predicate_not(iterator_data.state, column);
+                    return ::visit_predicate_not(iterator_data.state, column);
                 }
 
                 if (isFunctionNode(node->children[0]))
@@ -368,16 +592,11 @@ uintptr_t EngineIterator::getNextImpl(EngineIteratorData & iterator_data, const 
                             iterator_data.predicate);
 
                     EngineIterator current_engine_iterator(current_iterator_data);
-                    auto column = ffi::visit_predicate_and(iterator_data.state, &current_engine_iterator);
-                    return ffi::visit_predicate_not(iterator_data.state, column);
+                    auto column = ::visit_predicate_and(iterator_data.state, &current_engine_iterator);
+                    return ::visit_predicate_not(iterator_data.state, column);
                 }
             }
-            else if (func_name == DB::NameEquals::name
-                     || func_name == DB::NameNotEquals::name
-                     || func_name == DB::NameGreater::name
-                     || func_name == DB::NameGreaterOrEquals::name
-                     || func_name == DB::NameLess::name
-                     || func_name == DB::NameLessOrEquals::name)
+            else if (auto visitors = getComparisonVisitors(func_name))
             {
                 if (node->children.size() != 2)
                 {
@@ -448,7 +667,7 @@ uintptr_t EngineIterator::getNextImpl(EngineIteratorData & iterator_data, const 
 
                     const auto column_name = KernelUtils::toDeltaString(column_node->result_name);
                     uintptr_t column = KernelUtils::unwrapResult(
-                        ffi::visit_expression_column(iterator_data.state,
+                        ::visit_expression_column(iterator_data.state,
                                                     column_name,
                                                     &KernelUtils::allocateError), "visit_expression_column");
 
@@ -468,19 +687,13 @@ uintptr_t EngineIterator::getNextImpl(EngineIteratorData & iterator_data, const 
                         return VISITOR_FAILED_OR_UNSUPPORTED;
                     }
 
-                    if (func_name == DB::NameEquals::name)
-                        return ffi::visit_predicate_eq(iterator_data.state, column, constant);
-                    if (func_name == DB::NameNotEquals::name)
-                        return ffi::visit_predicate_ne(iterator_data.state, column, constant);
-                    if (func_name == DB::NameGreater::name)
-                        return ffi::visit_predicate_gt(iterator_data.state, column, constant);
-                    if (func_name == DB::NameGreaterOrEquals::name)
-                        return ffi::visit_predicate_ge(iterator_data.state, column, constant);
-                    if (func_name == DB::NameLess::name)
-                        return ffi::visit_predicate_lt(iterator_data.state, column, constant);
-                    if (func_name == DB::NameLessOrEquals::name)
-                        return ffi::visit_predicate_le(iterator_data.state, column, constant);
+                    auto visitor = visitors->forOperands(isConstNode(node->children[0]));
+                    return visitor(iterator_data.state, column, constant);
                 }
+
+                if (auto comparison = matchDateComparison(
+                        node, *visitors, iterator_data.predicate.getFormatSettings()))
+                    return visitComparisonOverDateConversion(iterator_data, *comparison);
             }
 
             break;

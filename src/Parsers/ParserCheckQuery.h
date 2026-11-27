@@ -9,8 +9,11 @@ namespace DB
  */
 class ParserCheckQuery : public IParserBase
 {
+public:
+    [[nodiscard]] std::map<String, Documentation> getDocumentation() const override;
+
 protected:
-    const char * getName() const  override{ return "CHECK query"; }
+    [[nodiscard]] const char * getName() const  override{ return "CHECK query"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 
     bool parseCheckTable(Pos & pos, ASTPtr & node, Expected & expected);

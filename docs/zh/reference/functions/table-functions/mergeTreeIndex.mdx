@@ -11,17 +11,13 @@ doc_type: 'reference'
 
 表示 MergeTree 表的索引和标记文件的内容。可用于查看内部信息。
 
-<div id="syntax">
-  ## 语法
-</div>
+## 语法 {#syntax}
 
 ```sql
 mergeTreeIndex(database, table [, with_marks = true] [, with_minmax = true])
 ```
 
-<div id="arguments">
-  ## 参数
-</div>
+## 参数 {#arguments}
 
 | 参数            | 描述                   |
 | ------------- | -------------------- |
@@ -30,9 +26,9 @@ mergeTreeIndex(database, table [, with_marks = true] [, with_minmax = true])
 | `with_marks`  | 是否在结果中包含标记列。         |
 | `with_minmax` | 是否在结果中包含 min-max 索引。 |
 
-<div id="returned_value">
-  ## 返回值
-</div>
+解析结果的结构 (例如使用 `DESCRIBE`) 需要对源表具有 `SHOW COLUMNS` 特权，从中读取数据则需要对所读取的列具有 `SELECT` 特权。
+
+## 返回值 {#returned-value}
 
 一个表对象，包含以下列：源表的主索引和 min-max 索引 (如果已启用) 的值列、源表各数据分区片段中所有可能文件的标记值列 (如果已启用) ，以及虚拟列：
 
@@ -42,9 +38,7 @@ mergeTreeIndex(database, table [, with_marks = true] [, with_minmax = true])
 
 如果某列在数据分区片段中不存在，或者其某个子流的标记未写入 (例如在 compact parts 中) ，则标记列可能包含 `(NULL, NULL)` 值。
 
-<div id="usage-example">
-  ## 使用示例
-</div>
+## 使用示例 {#usage-example}
 
 ```sql
 CREATE TABLE test_table

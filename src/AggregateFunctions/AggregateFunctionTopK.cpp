@@ -20,6 +20,7 @@
 
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/KeyHolderHelpers.h>
+#include <base/arithmeticOverflow.h>
 
 
 namespace DB
@@ -94,7 +95,7 @@ public:
         , is_approx_top_k(is_approx_top_k_)
     {}
 
-    String getName() const override
+    [[nodiscard]] String getName() const override
     {
         if (is_approx_top_k)
             return  is_weighted ? "approx_top_sum" : "approx_top_k";
@@ -127,7 +128,7 @@ public:
         return std::make_shared<DataTypeArray>(argument_types_[0]);
     }
 
-    bool allocatesMemoryInArena() const override { return false; }
+    [[nodiscard]] bool allocatesMemoryInArena() const override { return false; }
 
     void ensureCapacity(AggregateFunctionTopKData<T>::Set & set) const
     {
@@ -336,7 +337,7 @@ public:
         : IAggregateFunctionDataHelper<AggregateFunctionTopKGenericData, AggregateFunctionTopKGeneric<is_plain_column, is_weighted>>(argument_types_, params, createResultType(argument_types_, include_counts_))
         , threshold(threshold_), reserved(reserved_), include_counts(include_counts_), is_approx_top_k(is_approx_top_k_) {}
 
-    String getName() const override
+    [[nodiscard]] String getName() const override
     {
         if (is_approx_top_k)
             return  is_weighted ? "approx_top_sum" : "approx_top_k";
@@ -376,7 +377,7 @@ public:
         return std::make_shared<DataTypeArray>(argument_types_[0]);
     }
 
-    bool allocatesMemoryInArena() const override
+    [[nodiscard]] bool allocatesMemoryInArena() const override
     {
         return true;
     }
@@ -599,7 +600,8 @@ AggregateFunctionPtr createAggregateFunctionTopK(const std::string & name, const
 
         if (!is_approx_top_k || params.size() == 1)
         {
-            reserved = threshold * load_factor;
+            /// Bounded right below; the product only wraps once an operand is already out of range.
+            reserved = common::mulIgnoreOverflow(threshold, load_factor);
         }
 
         if (reserved > DB::TOP_K_MAX_SIZE || load_factor > DB::TOP_K_MAX_SIZE || threshold > DB::TOP_K_MAX_SIZE)
@@ -628,6 +630,7 @@ void registerAggregateFunctionTopK(AggregateFunctionFactory & factory);
 void registerAggregateFunctionTopK(AggregateFunctionFactory & factory)
 {
     AggregateFunctionProperties properties = { .returns_default_when_only_null = false, .is_order_dependent = true };
+    AggregateFunctionProperties weighted_properties = { .returns_default_when_only_null = false, .is_order_dependent = true, .variant_arguments_conversion = VariantArgumentsConversion::AllExceptFirst };
 
     FunctionDocumentation::Description description_topK = R"(
 Returns an array of the approximately most frequent values in the specified column. The resulting array is sorted in descending order of approximate frequency of values (not by the values themselves).
@@ -661,7 +664,7 @@ topK(N, load_factor, 'counts')(column)
         "Usage example",
         R"(
 SELECT topK(3)(AirlineID) AS res
-FROM ontime;
+FROM VALUES('AirlineID UInt32', (19393), (19393), (19393), (19393), (19790), (19790), (19790), (19805), (19805), (20304));
         )",
         R"(
 ┌─res─────────────────┐
@@ -710,9 +713,9 @@ SELECT topKWeighted(2)(k, w) FROM
 VALUES('k Char, w UInt64', ('y', 1), ('y', 1), ('x', 5), ('y', 1), ('z', 10));
         )",
         R"(
-┌─topKWeighted(2)(k, w)──┐
-│ ['z','x']              │
-└────────────────────────┘
+┌─topKWeighted(2)(k, w)─┐
+│ ['z','x']             │
+└───────────────────────┘
         )"
     },
     {
@@ -732,7 +735,7 @@ FROM VALUES('k Char, w UInt64', ('y', 1), ('y', 1), ('x', 5), ('y', 1), ('z', 10
     FunctionDocumentation::Category category_topKWeighted = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation_topKWeighted = {description_topKWeighted, syntax_topKWeighted, arguments_topKWeighted, parameters_topKWeighted, returned_value_topKWeighted, examples_topKWeighted, introduced_in_topKWeighted, category_topKWeighted};
 
-    factory.registerFunction("topKWeighted", { createAggregateFunctionTopK<true, false>, documentation_topKWeighted, properties });
+    factory.registerFunction("topKWeighted", { createAggregateFunctionTopK<true, false>, documentation_topKWeighted, weighted_properties });
 
     FunctionDocumentation::Description description_approx_top_k = R"(
 Returns an array of the approximately most frequent values and their counts in the specified column.
@@ -761,7 +764,7 @@ FROM VALUES('k Char, w UInt64', ('y', 1), ('y', 1), ('x', 5), ('y', 1), ('z', 10
         )",
         R"(
 ┌─approx_top_k(2)(k)────┐
-│ [('y',3,0),('x',1,0)] │
+│ [('y',3,0),('z',1,0)] │
 └───────────────────────┘
         )"
     }
@@ -816,7 +819,7 @@ FROM VALUES('k Char, w UInt64', ('y', 1), ('y', 1), ('x', 5), ('y', 1), ('z', 10
     FunctionDocumentation::Category category_approx_top_sum = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation_approx_top_sum = {description_approx_top_sum, syntax_approx_top_sum, arguments_approx_top_sum, parameters_approx_top_sum, returned_value_approx_top_sum, examples_approx_top_sum, introduced_in_approx_top_sum, category_approx_top_sum};
 
-    factory.registerFunction("approx_top_sum", { createAggregateFunctionTopK<true, true>, documentation_approx_top_sum, properties }, AggregateFunctionFactory::Case::Insensitive);
+    factory.registerFunction("approx_top_sum", { createAggregateFunctionTopK<true, true>, documentation_approx_top_sum, weighted_properties }, AggregateFunctionFactory::Case::Insensitive);
     factory.registerAlias("approx_top_count", "approx_top_k", AggregateFunctionFactory::Case::Insensitive);
 }
 

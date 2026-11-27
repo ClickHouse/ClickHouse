@@ -11,17 +11,13 @@ doc_type: 'reference'
 
 يمثل محتويات إسقاطٍ ما في جداول MergeTree. ويمكن استخدامه للفحص الداخلي.
 
-<div id="syntax">
-  ## الصيغة
-</div>
+## الصيغة {#syntax}
 
 ```sql
 mergeTreeProjection(database, table, projection)
 ```
 
-<div id="arguments">
-  ## الوسائط
-</div>
+## الوسائط {#arguments}
 
 | الوسيط       | الوصف                                        |
 | ------------ | -------------------------------------------- |
@@ -29,15 +25,13 @@ mergeTreeProjection(database, table, projection)
 | `table`      | اسم الجدول الذي سيُقرأ منه الإسقاط.          |
 | `projection` | الإسقاط الذي ستتم القراءة منه.               |
 
-<div id="returned_value">
-  ## القيمة المُعادة
-</div>
+يتطلب تحديد بنية النتيجة، باستخدام `DESCRIBE` مثلًا، امتياز `SHOW COLUMNS` على الجدول المصدر، بينما تتطلب القراءة منها امتياز `SELECT` على الجدول المصدر.
+
+## القيمة المُعادة {#returned-value}
 
 كائن جدول يحتوي على الأعمدة التي يوفّرها الإسقاط المحدد.
 
-<div id="usage-example">
-  ## مثال على الاستخدام
-</div>
+## مثال على الاستخدام {#usage-example}
 
 ```sql
 CREATE TABLE test

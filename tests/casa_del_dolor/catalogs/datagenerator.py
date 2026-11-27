@@ -1,15 +1,17 @@
 import random
 import re
-from decimal import Decimal, getcontext
-from datetime import datetime, timedelta, date
+from decimal import ROUND_HALF_UP, Decimal, getcontext, localcontext
+from datetime import datetime, timedelta, timezone, date
 import json
 import logging
 import math
 import string
 import sys
 import threading
-import traceback
+import uuid
+import pyarrow as pa
 from pyspark.sql import Row, SparkSession
+from pyspark.sql.pandas.types import to_arrow_type
 from pyspark.sql import functions as F
 from pyspark.sql.types import (
     StructType,
@@ -48,7 +50,7 @@ except ImportError:
     HAS_TIMESTAMP_NTZ = False
 
 from .tablegenerator import LakeTableGenerator
-from .clickhousetospark import ClickHouseTypeMapper
+from .clickhousetospark import ClickHouseMapping, ClickHouseTypeMapper
 
 from .laketables import SparkTable, LakeFormat
 
@@ -277,6 +279,22 @@ class LakeDataGenerator:
         res = f"{hours:02d}:{random.randint(0, 59):02d}:{random.randint(0, 59):02d}"
         return f"-{res}" if random.randint(1, 10) == 1 else res
 
+    def _rand_hinted_string(self, ch_hint: str):
+        """A valid text value of the STRING-mapped ClickHouse type `ch_hint`, None for other types."""
+        if ch_hint == "Date":
+            # `Date` holds [1970-01-01, 2149-06-06]
+            return str(date.fromordinal(self._rand_int(date(1970, 1, 1).toordinal(), date(2149, 6, 6).toordinal())))
+        if re.match(r"DateTime($|\()", ch_hint):
+            # `DateTime` holds [1970-01-01 00:00:00, 2106-02-07 06:28:15] UTC
+            return datetime.fromtimestamp(self._rand_int(0, 2**32 - 1), timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+        if ch_hint == "UUID":
+            return str(uuid.UUID(int=random.getrandbits(128)))
+        if ch_hint == "IPv4":
+            return ".".join(str(self._rand_int(0, 255)) for _ in range(4))
+        if ch_hint == "IPv6":
+            return ":".join(f"{self._rand_int(0, 65535):x}" for _ in range(8))
+        return None
+
     def _rand_binary(self, nlen):
         return bytes(random.getrandbits(8) for _ in range(nlen))
 
@@ -432,6 +450,26 @@ class LakeDataGenerator:
         LongType: [-9_223_372_036_854_775_808, 9_223_372_036_854_775_807],
     }
 
+    # Spark has no unsigned types, so every UInt maps to a signed type that is
+    # wider on the negative side and often narrower on the positive one (UInt8
+    # becomes SMALLINT). ClickHouse reads a value that does not fit by silently
+    # truncating it - -1 comes back as 255 - so Spark and ClickHouse hash
+    # different data with no error raised anywhere.
+    CH_INT_LIMITS = {
+        "UInt8": (0, 2**8 - 1),
+        "UInt16": (0, 2**16 - 1),
+        "UInt32": (0, 2**32 - 1),
+        "UInt64": (0, 2**64 - 1),
+        "UInt128": (0, 2**128 - 1),
+        "UInt256": (0, 2**256 - 1),
+        "Int8": (-(2**7), 2**7 - 1),
+        "Int16": (-(2**15), 2**15 - 1),
+        "Int32": (-(2**31), 2**31 - 1),
+        "Int64": (-(2**63), 2**63 - 1),
+        "Int128": (-(2**127), 2**127 - 1),
+        "Int256": (-(2**255), 2**255 - 1),
+    }
+
     def _take_nested_budget(self, n: int) -> int:
         # Nested containers multiply per-level counts (map of arrays of maps...), so an
         # unlucky min/max_nested draw explodes combinatorially. Cap the TOTAL container
@@ -455,6 +493,31 @@ class LakeDataGenerator:
                 return ch_hint
             ch_hint = m.group(1).strip()
 
+    # Keys for values of ClickHouse `JSON` columns. None of them is a typed path BuzzHouse
+    # declares (its `jcols` list), so no value can fail a typed path's type.
+    _JSON_KEYS = ("k0", "k1", "k2", "k3", "obj", "arr", "k.dotted", "k space")
+
+    def _rand_json_value(self, depth: int):
+        roll = random.randint(1, 8 if depth < 2 else 6)
+        if roll == 1:
+            return None
+        if roll == 2:
+            return self._rand_bool()
+        if roll == 3:
+            return random.randint(-(2**31), 2**31)
+        if roll == 4:
+            # Finite only: NaN and Infinity are not JSON
+            return random.uniform(-1e5, 1e5)
+        if roll <= 6:
+            return self._rand_string(random.randint(0, 10))
+        if roll == 7:
+            return [self._rand_json_value(depth + 1) for _ in range(random.randint(0, 3))]
+        return self._rand_json_object(depth + 1)
+
+    def _rand_json_object(self, depth: int = 0) -> dict:
+        keys = random.sample(self._JSON_KEYS, random.randint(0, 4))
+        return {k: self._rand_json_value(depth) for k in keys}
+
     def _random_value_for_type(
         self, dtype: DataType, null_rate: float, ch_hint: str = ""
     ):
@@ -468,25 +531,30 @@ class LakeDataGenerator:
             return self._rand_bool()
         if isinstance(dtype, (ByteType, ShortType, IntegerType, LongType)):
             next_limits = LakeDataGenerator.INT_LIMITS[type(dtype)]
+            # Stay inside the declared ClickHouse type as well, or the read back
+            # truncates and the Spark/ClickHouse hashes diverge. See CH_INT_LIMITS.
+            ch_limits = LakeDataGenerator.CH_INT_LIMITS.get(ch_hint)
+            if ch_limits is not None:
+                next_limits = [
+                    max(next_limits[0], ch_limits[0]),
+                    min(next_limits[1], ch_limits[1]),
+                ]
+            low, high = next_limits
             r = random.randint(1, 100)
             if r <= 10:
                 # Exact boundaries are almost never hit by uniform draws, but they are
                 # what stresses readers and narrowing casts
                 return random.choice(
                     [
-                        next_limits[0],
-                        next_limits[0] + 1,
-                        -1,
-                        0,
-                        1,
-                        next_limits[1] - 1,
-                        next_limits[1],
+                        value
+                        for value in (low, low + 1, -1, 0, 1, high - 1, high)
+                        if low <= value <= high
                     ]
                 )
             # Try reduced limits
             if r <= 55:
-                return self._rand_int(-100, 100)
-            return self._rand_int(next_limits[0], next_limits[1])
+                return self._rand_int(max(low, -100), min(high, 100))
+            return self._rand_int(low, high)
         if isinstance(dtype, FloatType):
             if random.randint(1, 100) <= 5:
                 # float32 boundaries and denormals; also values that overflow on
@@ -522,6 +590,10 @@ class LakeDataGenerator:
             # back to `Time`, so they must be valid times
             if re.match(r"Time(64)?($|\()", ch_hint):
                 return self._rand_time_string()
+            # Same for the other STRING-mapped types ClickHouse parses back
+            hinted = self._rand_hinted_string(ch_hint)
+            if hinted is not None:
+                return hinted
             # Same for Enum columns: values must be declared enum elements
             if ch_hint.startswith("Enum"):
                 enum_values = self._enum_text_values(self._parse_enum_values(ch_hint))
@@ -530,6 +602,11 @@ class LakeDataGenerator:
             # Empty `Tuple()` is STRING-mapped and casts back by parsing its text form
             if re.match(r"Tuple\(\s*\)$", ch_hint):
                 return "()"
+            # `JSON` casts back by parsing a JSON object
+            if ch_hint.startswith("JSON"):
+                return json.dumps(
+                    _to_json_safe(self._rand_json_object()), ensure_ascii=False
+                )
             return self._rand_string(
                 random.randint(
                     self._thread_local._min_str_len, self._thread_local._max_str_len
@@ -556,6 +633,10 @@ class LakeDataGenerator:
                     return random.choice(enum_values)
             if re.match(r"Tuple\(\s*\)$", ch_hint):
                 return b"()"
+            if ch_hint.startswith("JSON"):
+                return json.dumps(
+                    _to_json_safe(self._rand_json_object()), ensure_ascii=False
+                ).encode()
             return self._rand_binary(
                 random.randint(
                     self._thread_local._min_str_len, self._thread_local._max_str_len
@@ -568,6 +649,9 @@ class LakeDataGenerator:
         if HAS_TIMESTAMP_NTZ and isinstance(dtype, TimestampNTZType):
             return self._rand_timestamp()
         if HAS_VARIANT_TYPE and isinstance(dtype, VariantType):
+            # A ClickHouse `JSON` column only holds objects
+            if ch_hint.startswith("JSON"):
+                return json.dumps(_to_json_safe(self._rand_json_object()))
             # Spark stores variants as self-describing values, so any type works.
             inner_type = self.type_generator.generate_random_spark_type(
                 allow_variant=False, max_depth=random.randint(1, 5)
@@ -674,6 +758,39 @@ class LakeDataGenerator:
             )
         )
 
+    # Limits of `random_clickhouse_values`: each row goes into one broker message
+    _MESSAGE_LIMITS = {
+        "_min_nested": 0,
+        "_max_nested": 3,
+        "_min_str_len": 0,
+        "_max_str_len": 10,
+        "_nested_budget": 100,
+    }
+
+    def random_clickhouse_values(self, ch_types: list) -> list:
+        """Random values of the ClickHouse types `ch_types`, for the rows of a streaming table."""
+        local = self._thread_local
+        saved = {name: getattr(local, name) for name in self._MESSAGE_LIMITS if hasattr(local, name)}
+        for name, value in self._MESSAGE_LIMITS.items():
+            setattr(local, name, value)
+        try:
+            res = []
+            for ch_type in ch_types:
+                _, nullable, spark_type = self.type_generator.clickhouse_to_spark(
+                    ch_type, False, ClickHouseMapping.Spark
+                )
+                res.append(
+                    self._random_value_for_type(spark_type, 0.1 if nullable else 0.0, ch_type)
+                )
+            return res
+        finally:
+            # Restore the limits of a Spark insert running on this thread
+            for name in self._MESSAGE_LIMITS:
+                if name in saved:
+                    setattr(local, name, saved[name])
+                else:
+                    delattr(local, name)
+
     def _map_type_to_insert(self, dtype):
         # Char and Varchar have to be Strings
         if isinstance(dtype, (CharType, VarcharType)) or (
@@ -755,10 +872,8 @@ class LakeDataGenerator:
 
         return col_expr
 
-    def _create_random_df(self, spark: SparkSession, table: SparkTable, n_rows: int):
-        """
-        Build a DataFrame of random rows for the given schema (types as strings are fine).
-        """
+    def _random_rows(self, table: SparkTable, n_rows: int):
+        """The schema of `table`, the one its rows are inserted with, and `n_rows` random rows."""
         # Set limits
         self._thread_local._min_nested = random.randint(0, 100)
         self._thread_local._max_nested = max(
@@ -805,6 +920,13 @@ class LakeDataGenerator:
                     f.dataType, nr, getattr(col, "clickhouse_type", "")
                 )
             rows.append(Row(**rec))
+        return struct1, struct2, rows
+
+    def _create_random_df(self, spark: SparkSession, table: SparkTable, n_rows: int):
+        """
+        Build a DataFrame of random rows for the given schema (types as strings are fine).
+        """
+        struct1, struct2, rows = self._random_rows(table, n_rows)
         # Use explicit schema so types match exactly
         df = spark.createDataFrame(rows, schema=struct2)
         if HAS_VARIANT_TYPE:
@@ -815,6 +937,15 @@ class LakeDataGenerator:
                         self._build_variant_conversion(F.col(f.name), f.dataType),
                     )
         return df
+
+    def random_arrow_table(self, table: SparkTable, n_rows: int):
+        """The random rows of `_create_random_df` as a pyarrow table, without a Spark session.
+        `Variant` columns hold their JSON text, as in the rows Spark inserts."""
+        _, struct2, rows = self._random_rows(table, n_rows)
+        schema = pa.schema(
+            [pa.field(f.name, to_arrow_type(f.dataType), f.nullable) for f in struct2.fields]
+        )
+        return pa.Table.from_pylist([row.asDict() for row in rows], schema=schema)
 
     def _random_predicate(self, table: SparkTable) -> str:
         # Simple, always-valid filter for WHERE / overwrite conditions.
@@ -843,7 +974,12 @@ class LakeDataGenerator:
         if isinstance(dtype, BooleanType):
             return "true" if self._rand_bool() else "false"
         if isinstance(dtype, (ByteType, ShortType, IntegerType, LongType)):
-            return str(self._rand_int(-100, 100))
+            # Stay inside the declared ClickHouse type, e.g. no negative value for a `UInt8` column (see CH_INT_LIMITS)
+            low, high = -100, 100
+            ch_limits = LakeDataGenerator.CH_INT_LIMITS.get(self._ch_hint_strip(ch_type))
+            if ch_limits is not None:
+                low, high = max(low, ch_limits[0]), min(high, ch_limits[1])
+            return str(self._rand_int(low, high))
         if isinstance(dtype, FloatType):
             return self._float_literal(float(self._rand_float(-1e5, 1e5)), "FLOAT")
         if isinstance(dtype, DoubleType):
@@ -976,10 +1112,14 @@ class LakeDataGenerator:
                 int(value.year), int(value.month), int(value.day)
             )
         if isinstance(spark_type, DecimalType):
-            # Iceberg validates that the BigDecimal scale equals the field scale.
-            return jvm.java.math.BigDecimal(str(value)).setScale(
-                spark_type.scale, jvm.java.math.RoundingMode.HALF_UP
-            )
+            # Iceberg validates that the BigDecimal scale equals the field scale. py4j
+            # returns a JVM BigDecimal as a Python Decimal, so rescale here; it is sent
+            # back as `new BigDecimal(str(d))`, which keeps the scale.
+            with localcontext() as ctx:
+                ctx.prec = 80
+                return Decimal(str(value)).quantize(
+                    Decimal(1).scaleb(-spark_type.scale), rounding=ROUND_HALF_UP
+                )
         if isinstance(spark_type, BinaryType):
             return jvm.java.nio.ByteBuffer.wrap(bytes(value))
         return None
@@ -1382,6 +1522,5 @@ class LakeDataGenerator:
                     self.run_query(spark, stmt)
         except Exception as e:
             # If an error happens, ignore it, but log it
-            traceback.print_exc()
             self.logger.exception(e)
         return True

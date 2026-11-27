@@ -7,18 +7,14 @@ keywords: ['chdb', 'встроенный', 'clickhouse-lite', 'python', 'api', '
 doc_type: 'reference'
 ---
 
-<div id="core-query-functions">
-  ## Основные функции для запросов
-</div>
+## Основные функции для запросов {#core-query-functions}
 
-<div id="chdb-query">
-  ### `chdb.query`
-</div>
+### `chdb.query` {#chdb-query}
 
 Выполняет SQL-запрос с помощью движка chDB.
 
 Это основная функция для выполнения SQL-команд с использованием встроенного
-движка ClickHouse. Поддерживает различные форматы вывода и может работать с базами данных в памяти
+движка ClickHouse. Поддерживает различные форматы вывода и может работать с временными
 или файловыми базами данных.
 
 **Синтаксис**
@@ -32,24 +28,24 @@ chdb.query(sql, output_format='CSV', path='', udf_path='')
 | Parameter       | Type | Default    | Description                                                                                                                                                                                                                                                                                                                                   |
 | --------------- | ---- | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `sql`           | str  | *required* | Строка SQL-запроса для выполнения                                                                                                                                                                                                                                                                                                             |
-| `output_format` | str  | `"CSV"`    | Формат вывода результатов. Поддерживаемые форматы:<br />• `"CSV"` - значения, разделённые запятыми<br />• `"JSON"` - формат JSON<br />• `"Arrow"` - формат Apache Arrow<br />• `"Parquet"` - формат Parquet<br />• `"DataFrame"` - DataFrame Pandas<br />• `"ArrowTable"` - таблица PyArrow<br />• `"Debug"` - включает подробное логирование |
-| `path`          | str  | `""`       | Путь к файлу базы данных. По умолчанию используется база данных в памяти.<br />Может быть путём к файлу или `":memory:"` для базы данных в памяти                                                                                                                                                                                             |
-| `udf_path`      | str  | `""`       | Путь к каталогу пользовательских функций                                                                                                                                                                                                                                                                                                      |
+| `output_format` | str  | `"CSV"`    | Формат вывода результатов. Поддерживаемые форматы:<br />• `"CSV"` - значения, разделённые запятыми<br />• `"JSON"` - формат JSON<br />• `"Arrow"` - формат Apache Arrow<br />• `"Parquet"` - формат Parquet<br />• `"DataFrame"` - DataFrame в Pandas<br />• `"ArrowTable"` - таблица PyArrow<br />• `"Debug"` - включает подробное логирование |
+| `path`          | str  | `""`       | Путь к файлу базы данных. По умолчанию используется временная база данных, данные в которой не сохраняются (эквивалент `":memory:"`).<br />Передайте путь к файлу для сохранения данных на диске                                                                                                                                              |
+| `udf_path`      | str  | `""`       | Путь к устаревшему каталогу UDF на основе подпроцессов. Не требуется для нативного UDF Python ([`@func`](#func-decorator) / [`create_function`](#create-function))                                                                                                                                                                             |
 
 **Возвращает**
 
 Возвращает результат запроса в указанном формате:
 
-| Return Type            | Condition                                                             |
-| ---------------------- | --------------------------------------------------------------------- |
-| `str`                  | Для текстовых форматов, таких как CSV и JSON                          |
-| `pd.DataFrame`         | Если `output_format` имеет значение `"DataFrame"` или `"dataframe"`   |
-| `pa.Table`             | Если `output_format` имеет значение `"ArrowTable"` или `"arrowtable"` |
-| объект результата chDB | Для остальных форматов                                                |
+| тип возвращаемого значения | Condition                                                             |
+| -------------------------- | --------------------------------------------------------------------- |
+| `str`                      | Для текстовых форматов, таких как CSV и JSON                          |
+| `pd.DataFrame`             | Если `output_format` имеет значение `"DataFrame"` или `"dataframe"`   |
+| `pa.Table`                 | Если `output_format` имеет значение `"ArrowTable"` или `"arrowtable"` |
+| объект результата chDB     | Для остальных форматов                                                |
 
 **Вызывает**
 
-| Exception     | Condition                                                             |
+| Исключение    | Condition                                                             |
 | ------------- | --------------------------------------------------------------------- |
 | `ChdbError`   | Если выполнение SQL-запроса завершается ошибкой                       |
 | `ImportError` | Если отсутствуют необходимые зависимости для форматов DataFrame/Arrow |
@@ -57,14 +53,14 @@ chdb.query(sql, output_format='CSV', path='', udf_path='')
 **Примеры**
 
 ```pycon
->>> # Базовый CSV-запрос
+>>> # Basic CSV query
 >>> result = chdb.query("SELECT 1, 'hello'")
 >>> print(result)
 "1,hello"
 ```
 
 ```pycon
->>> # Запрос с выводом в формате DataFrame
+>>> # Query with DataFrame output
 >>> df = chdb.query("SELECT 1 as id, 'hello' as msg", "DataFrame")
 >>> print(df)
    id    msg
@@ -72,26 +68,19 @@ chdb.query(sql, output_format='CSV', path='', udf_path='')
 ```
 
 ```pycon
->>> # Запрос с файловой базой данных
+>>> # Query with file-based database
 >>> result = chdb.query("CREATE TABLE test (id INT) ENGINE = Memory", path="mydb.chdb")
-```
-
-```pycon
->>> # Запрос с UDF
->>> result = chdb.query("SELECT my_udf('test')", udf_path="/path/to/udfs")
 ```
 
 ***
 
-<div id="chdb_sql">
-  ### `chdb.sql`
-</div>
+### `chdb.sql` {#chdb_sql}
 
 Выполняет SQL-запрос с помощью движка chDB.
 
 Это основная функция для выполнения SQL-команд с помощью встроенного
-движка ClickHouse. Поддерживает различные форматы вывода и может работать с базами данных
-в памяти или файловыми базами данных.
+движка ClickHouse. Поддерживает различные форматы вывода и может работать с временными
+или файловыми базами данных.
 
 **Синтаксис**
 
@@ -104,20 +93,20 @@ chdb.sql(sql, output_format='CSV', path='', udf_path='')
 | Параметр        | Тип | По умолчанию | Описание                                                                                                                                                                                                                                                                                                                                      |
 | --------------- | --- | ------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `sql`           | str | *required*   | Строка SQL-запроса для выполнения                                                                                                                                                                                                                                                                                                             |
-| `output_format` | str | `"CSV"`      | Формат вывода результатов. Поддерживаемые форматы:<br />• `"CSV"` - значения, разделённые запятыми<br />• `"JSON"` - формат JSON<br />• `"Arrow"` - формат Apache Arrow<br />• `"Parquet"` - формат Parquet<br />• `"DataFrame"` - DataFrame Pandas<br />• `"ArrowTable"` - таблица PyArrow<br />• `"Debug"` - включает подробное логирование |
-| `path`          | str | `""`         | Путь к файлу базы данных. По умолчанию используется база данных в памяти.<br />Может быть путём к файлу или `":memory:"` для базы данных в памяти                                                                                                                                                                                             |
-| `udf_path`      | str | `""`         | Путь к каталогу пользовательских функций                                                                                                                                                                                                                                                                                                      |
+| `output_format` | str | `"CSV"`      | Формат вывода результатов. Поддерживаемые форматы:<br />• `"CSV"` - значения, разделённые запятыми<br />• `"JSON"` - формат JSON<br />• `"Arrow"` - формат Apache Arrow<br />• `"Parquet"` - формат Parquet<br />• `"DataFrame"` - DataFrame в Pandas<br />• `"ArrowTable"` - таблица PyArrow<br />• `"Debug"` - включает подробное логирование |
+| `path`          | str | `""`         | Путь к файлу базы данных. По умолчанию используется временная, непостоянная база данных (эквивалент `":memory:"`).<br />Передайте путь к файлу, чтобы сохранить данные на диске                                                                                                                                                               |
+| `udf_path`      | str | `""`         | Путь к каталогу устаревших UDF на основе подпроцессов. Не требуется для нативных UDF Python ([`@func`](#func-decorator) / [`create_function`](#create-function))                                                                                                                                                                              |
 
 **Возвращает**
 
 Возвращает результат запроса в указанном формате:
 
-| Возвращаемый тип       | Условие                                                               |
-| ---------------------- | --------------------------------------------------------------------- |
-| `str`                  | Для текстовых форматов, таких как CSV и JSON                          |
-| `pd.DataFrame`         | Если `output_format` имеет значение `"DataFrame"` или `"dataframe"`   |
-| `pa.Table`             | Если `output_format` имеет значение `"ArrowTable"` или `"arrowtable"` |
-| объект результата chDB | Для остальных форматов                                                |
+| Тип возвращаемого значения | Условие                                                               |
+| -------------------------- | --------------------------------------------------------------------- |
+| `str`                      | Для текстовых форматов, таких как CSV и JSON                          |
+| `pd.DataFrame`             | Если `output_format` имеет значение `"DataFrame"` или `"dataframe"`   |
+| `pa.Table`                 | Если `output_format` имеет значение `"ArrowTable"` или `"arrowtable"` |
+| объект результата chDB     | Для остальных форматов                                                |
 
 **Вызывает**
 
@@ -129,14 +118,14 @@ chdb.sql(sql, output_format='CSV', path='', udf_path='')
 **Примеры**
 
 ```pycon
->>> # Базовый CSV-запрос
+>>> # Basic CSV query
 >>> result = chdb.query("SELECT 1, 'hello'")
 >>> print(result)
 "1,hello"
 ```
 
 ```pycon
->>> # Запрос с выводом в формате DataFrame
+>>> # Query with DataFrame output
 >>> df = chdb.query("SELECT 1 as id, 'hello' as msg", "DataFrame")
 >>> print(df)
    id    msg
@@ -144,20 +133,13 @@ chdb.sql(sql, output_format='CSV', path='', udf_path='')
 ```
 
 ```pycon
->>> # Запрос с файловой базой данных
+>>> # Query with file-based database
 >>> result = chdb.query("CREATE TABLE test (id INT) ENGINE = Memory", path="mydb.chdb")
-```
-
-```pycon
->>> # Запрос с UDF
->>> result = chdb.query("SELECT my_udf('test')", udf_path="/path/to/udfs")
 ```
 
 ***
 
-<div id="chdb-state-sqlitelike-to_arrowtable">
-  ### `chdb.to_arrowTable`
-</div>
+### `chdb.to_arrowTable` {#chdb-state-sqlitelike-to_arrowtable}
 
 Преобразует результат запроса в таблицу PyArrow.
 
@@ -200,9 +182,7 @@ chdb.to_arrowTable(res)
 
 ***
 
-<div id="chdb_to_df">
-  ### `chdb.to_df`
-</div>
+### `chdb.to_df` {#chdb_to_df}
 
 Преобразует результат запроса в pandas DataFrame.
 
@@ -242,21 +222,16 @@ chdb.to_df(r)
 0   1  hello
 ```
 
-<div id="connection-session-management">
-  ## Управление соединениями и сеансами
-</div>
+## Управление соединениями и сеансами {#connection-session-management}
 
 Доступны следующие функции сеанса:
 
-<div id="chdb-connect">
-  ### `chdb.connect`
-</div>
+### `chdb.connect` {#chdb-connect}
 
 Создаёт соединение с фоновым сервером chDB.
 
 Эта функция устанавливает [соединение](#chdb-state-sqlitelike-connection) с движком базы данных chDB (ClickHouse).
-Для каждого процесса допускается только одно открытое соединение.
-Несколько вызовов с одной и той же строкой подключения вернут один и тот же объект соединения.
+Каждый вызов возвращает независимое соединение, при этом одновременно может быть открыто любое количество соединений с одним и тем же путём к базе данных.
 
 ```python
 chdb.connect(connection_string: str = ':memory:') → Connection
@@ -272,7 +247,7 @@ chdb.connect(connection_string: str = ':memory:') → Connection
 
 | Формат                    | Описание                                |
 | ------------------------- | --------------------------------------- |
-| `":memory:"`              | База данных в памяти (по умолчанию)     |
+| `":memory:"`              | Временная база данных (по умолчанию)    |
 | `"test.db"`               | Файл базы данных по относительному пути |
 | `"file:test.db"`          | То же, что относительный путь           |
 | `"/path/to/test.db"`      | Файл базы данных по абсолютному пути    |
@@ -283,7 +258,7 @@ chdb.connect(connection_string: str = ':memory:') → Connection
 | Формат                                             | Описание                         |
 | -------------------------------------------------- | -------------------------------- |
 | `"file:test.db?param1=value1&param2=value2"`       | Относительный путь с параметрами |
-| `"file::memory:?verbose&log-level=test"`           | В памяти с параметрами           |
+| `"file::memory:?verbose&log-level=test"`           | Временная база с параметрами     |
 | `"///path/to/test.db?param1=value1&param2=value2"` | Абсолютный путь с параметрами    |
 
 **Обработка параметров запроса**
@@ -311,31 +286,30 @@ chdb.connect(connection_string: str = ':memory:') → Connection
 | -------------- | ------------------------------------------ |
 | `RuntimeError` | Если не удалось подключиться к базе данных |
 
-<Warning>
-  Поддерживается только одно подключение на процесс.
-  При создании нового подключения все существующие подключения будут закрыты.
-</Warning>
+<Note>
+  В одном процессе может работать один встроенный движок, привязанный к одному пути базы данных. Несколько подключений к одному и тому же пути могут сосуществовать и выполнять запросы одновременно. Если при наличии открытого подключения открыть *другой* путь, возникнет `RuntimeError`; сначала закройте открытые подключения.
+</Note>
 
 **Примеры**
 
 ```pycon
->>> # База данных в памяти
+>>> # Temporary database
 >>> conn = connect()
 >>> conn = connect(":memory:")
 >>>
->>> # База данных на основе файла
+>>> # File-based database
 >>> conn = connect("my_data.db")
 >>> conn = connect("/path/to/data.db")
 >>>
->>> # С параметрами
->>> conn = connect("data.db?mode=ro")  # Режим только для чтения
->>> conn = connect(":memory:?verbose&log-level=debug")  # Отладочное логирование
+>>> # With parameters
+>>> conn = connect("data.db?mode=ro")  # Read-only mode
+>>> conn = connect(":memory:?verbose&log-level=debug")  # Debug logging
 >>>
->>> # Использование менеджера контекста для автоматической очистки ресурсов
+>>> # Using context manager for automatic cleanup
 >>> with connect("data.db") as conn:
 ...     result = conn.query("SELECT 1")
 ...     print(result)
->>> # Соединение закрывается автоматически
+>>> # Connection automatically closed
 ```
 
 **См. также**
@@ -343,13 +317,9 @@ chdb.connect(connection_string: str = ':memory:') → Connection
 * [`Connection`](#chdb-state-sqlitelike-connection) — класс подключения к базе данных
 * [`Cursor`](#chdb-state-sqlitelike-cursor) — курсор базы данных для операций DB-API 2.0
 
-<div id="chdb-exceptions">
-  ## Обработка исключений
-</div>
+## Обработка исключений {#chdb-exceptions}
 
-<div id="chdb_chdbError">
-  ### **class** `chdb.ChdbError`
-</div>
+### **class** `chdb.ChdbError` {#chdb_chdbError}
 
 Базовый класс: `Exception`
 
@@ -361,18 +331,15 @@ chdb.connect(connection_string: str = ':memory:') → Connection
 
 ***
 
-<div id="chdb_session_session">
-  ### **class** `chdb.session.Session`
-</div>
+### **class** `chdb.session.Session` {#chdb_session_session}
 
 Базовый класс: `object`
 
 Сеанс сохраняет состояние запроса.
-Если path имеет значение None, будет создан временный каталог, который будет использоваться как путь к базе данных,
-и этот временный каталог будет удалён при закрытии сеанса.
+Если path имеет значение None, сеанс использует общую для всего процесса временную базу данных (`:memory:`), поэтому все сеансы без path видят таблицы друг друга; её временный каталог удаляется только при закрытии последнего такого сеанса или соединения.
 Вы также можете передать path, чтобы создать базу данных по этому пути, где будут храниться ваши данные.
 
-Вы также можете использовать строку подключения, чтобы передать path и другие параметры.
+Вы также можете использовать строку соединения, чтобы передать path и другие параметры.
 
 ```python
 class chdb.session.Session(path=None)
@@ -380,42 +347,40 @@ class chdb.session.Session(path=None)
 
 **Примеры**
 
-| Строка подключения                                 | Описание                                   |
-| -------------------------------------------------- | ------------------------------------------ |
-| `":memory:"`                                       | База данных в памяти                       |
-| `"test.db"`                                        | Относительный путь                         |
-| `"file:test.db"`                                   | То же, что и выше                          |
-| `"/path/to/test.db"`                               | Абсолютный путь                            |
-| `"file:/path/to/test.db"`                          | То же, что и выше                          |
-| `"file:test.db?param1=value1&param2=value2"`       | Относительный путь с параметрами запроса   |
-| `"file::memory:?verbose&log-level=test"`           | База данных в памяти с параметрами запроса |
-| `"///path/to/test.db?param1=value1&param2=value2"` | Абсолютный путь с параметрами запроса      |
+| Строка соединения                                 | Описание                                    |
+| -------------------------------------------------- | ------------------------------------------- |
+| `":memory:"`                                       | Временная база данных                       |
+| `"test.db"`                                        | Относительный путь                          |
+| `"file:test.db"`                                   | То же, что и выше                           |
+| `"/path/to/test.db"`                               | Абсолютный путь                             |
+| `"file:/path/to/test.db"`                          | То же, что и выше                           |
+| `"file:test.db?param1=value1&param2=value2"`       | Относительный путь с параметрами запроса    |
+| `"file::memory:?verbose&log-level=test"`           | Временная база данных с параметрами запроса |
+| `"///path/to/test.db?param1=value1&param2=value2"` | Абсолютный путь с параметрами запроса       |
 
 <Info>
-  **Обработка аргументов строки подключения**
+  **Обработка аргументов строки соединения**
 
-  Строки подключения, содержащие параметры запроса, например “[file:test.db?param1=value1&amp;param2=value2](file:test.db?param1=value1\&param2=value2)”, передают
+  Строки соединения, содержащие параметры запроса, например “[file:test.db?param1=value1&amp;param2=value2](file:test.db?param1=value1\&param2=value2)”, передают
   “param1=value1” движку ClickHouse в качестве аргументов запуска.
 
-  Подробнее см. `clickhouse local –help –verbose`
+  Подробнее см. `clickhouse local --help --verbose`
 
   Обработка некоторых специальных аргументов:
 
-  * “mode=ro” будет преобразован в “–readonly=1” для ClickHouse (режим только для чтения)
+  * “mode=ro” будет преобразован в `--readonly=1` для ClickHouse (режим только для чтения)
 </Info>
 
-<Warning>
+<Note>
   **Важно**
 
-  * В каждый момент времени может существовать только один сеанс. Если вы хотите создать новый сеанс, необходимо закрыть текущий.
-  * При создании нового сеанса текущий будет закрыт.
-</Warning>
+  * Несколько сеансов могут сосуществовать, если используют один и тот же путь к базе данных.
+  * Чтобы использовать другой путь к базе данных, сначала закройте открытые сеансы.
+</Note>
 
 ***
 
-<div id="cleanup">
-  #### `cleanup`
-</div>
+#### `cleanup` {#cleanup}
 
 Очистка ресурсов сеанса с обработкой исключений.
 
@@ -451,9 +416,7 @@ cleanup()
 
 ***
 
-<div id="close">
-  #### `close`
-</div>
+#### `close` {#close}
 
 Закрывает сеанс и освобождает ресурсы.
 
@@ -488,9 +451,7 @@ close()
 
 ***
 
-<div id="chdb-session-session-query">
-  #### `query`
-</div>
+#### `query` {#chdb-session-session-query}
 
 Выполняет SQL-запрос и возвращает результаты.
 
@@ -510,7 +471,7 @@ query(sql, fmt='CSV', udf_path='')
 | ---------- | --- | ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `sql`      | str | *обязательно* | Строка SQL-запроса для выполнения                                                                                                                                                                                                                                                                                                                                      |
 | `fmt`      | str | `"CSV"`       | Формат вывода результатов. Доступные форматы:<br />• `"CSV"` - значения, разделённые запятыми<br />• `"JSON"` - формат JSON<br />• `"TabSeparated"` - значения, разделённые символами табуляции<br />• `"Pretty"` - табличный формат Pretty<br />• `"JSONCompact"` - компактный формат JSON<br />• `"Arrow"` - формат Apache Arrow<br />• `"Parquet"` - формат Parquet |
-| `udf_path` | str | `""`          | Путь к пользовательским функциям. Если не указан, используется путь к UDF, заданный при инициализации сеанса                                                                                                                                                                                                                                                           |
+| `udf_path` | str | `""`          | Путь к каталогу устаревших UDF на основе подпроцессов. Не требуется для нативных Python UDF ([`@func`](#func-decorator) / [`create_function`](#create-function)). Если не указан, используется путь к UDF, заданный при инициализации сеанса                                                                                                                      |
 
 **Возвращает**
 
@@ -546,7 +507,7 @@ query(sql, fmt='CSV', udf_path='')
 ```pycon
 >>> session = Session("test.db")
 >>>
->>> # Базовый запрос с форматом CSV по умолчанию
+>>> # Basic query with default CSV format
 >>> result = session.query("SELECT 1 as number")
 >>> print(result)
 number
@@ -554,14 +515,14 @@ number
 ```
 
 ```pycon
->>> # Запрос в формате JSON
+>>> # Query with JSON format
 >>> result = session.query("SELECT 1 as number", fmt="JSON")
 >>> print(result)
 {"number": "1"}
 ```
 
 ```pycon
->>> # Сложный запрос с созданием таблицы
+>>> # Complex query with table creation
 >>> session.query("CREATE TABLE test (id INT, name String) ENGINE = Memory")
 >>> session.query("INSERT INTO test VALUES (1, 'Alice'), (2, 'Bob')")
 >>> result = session.query("SELECT * FROM test ORDER BY id")
@@ -578,9 +539,7 @@ id,name
 
 ***
 
-<div id="chdb-session-session-send_query">
-  #### `send_query`
-</div>
+#### `send_query` {#chdb-session-session-send_query}
 
 Выполняет SQL-запрос и возвращает итератор для потокового получения результатов.
 
@@ -655,9 +614,7 @@ send_query(sql, fmt='CSV') → StreamingResult
 
 ***
 
-<div id="chdb-session-session-sql">
-  #### `sql`
-</div>
+#### `sql` {#chdb-session-session-sql}
 
 Выполняет SQL-запрос и возвращает результаты.
 
@@ -675,9 +632,9 @@ sql(sql, fmt='CSV', udf_path='')
 
 | Parameter  | Type | Default    | Description                                                                                                                                                                                                                                                                                                                                                            |
 | ---------- | ---- | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `sql`      | str  | *required* | SQL-запрос для выполнения                                                                                                                                                                                                                                                                                                                                              |
+| `sql`      | str  | *required* | Строка SQL-запроса для выполнения                                                                                                                                                                                                                                                                                                                                     |
 | `fmt`      | str  | `"CSV"`    | Формат вывода результатов. Доступные форматы:<br />• `"CSV"` - значения, разделённые запятыми<br />• `"JSON"` - формат JSON<br />• `"TabSeparated"` - значения, разделённые символами табуляции<br />• `"Pretty"` - табличный формат Pretty<br />• `"JSONCompact"` - компактный формат JSON<br />• `"Arrow"` - формат Apache Arrow<br />• `"Parquet"` - формат Parquet |
-| `udf_path` | str  | `""`       | Путь к пользовательским функциям. Если не указан, используется путь UDF, заданный при инициализации сеанса                                                                                                                                                                                                                                                             |
+| `udf_path` | str  | `""`       | Путь к каталогу устаревших UDF на основе подпроцессов. Не требуется для нативных UDF Python ([`@func`](#func-decorator) / [`create_function`](#create-function)). Если не указан, используется путь UDF, заданный при инициализации сеанса                                                                                                                             |
 
 **Возвращает**
 
@@ -689,7 +646,7 @@ sql(sql, fmt='CSV', udf_path='')
 
 **Вызывает:**
 
-| Exception      | Condition                             |
+| Исключение     | Condition                             |
 | -------------- | ------------------------------------- |
 | `RuntimeError` | Если сеанс закрыт или недействителен  |
 | `ValueError`   | Если SQL-запрос имеет неверный формат |
@@ -713,7 +670,7 @@ sql(sql, fmt='CSV', udf_path='')
 ```pycon
 >>> session = Session("test.db")
 >>>
->>> # Базовый запрос с форматом CSV по умолчанию
+>>> # Basic query with default CSV format
 >>> result = session.query("SELECT 1 as number")
 >>> print(result)
 number
@@ -721,14 +678,14 @@ number
 ```
 
 ```pycon
->>> # Запрос в формате JSON
+>>> # Query with JSON format
 >>> result = session.query("SELECT 1 as number", fmt="JSON")
 >>> print(result)
 {"number": "1"}
 ```
 
 ```pycon
->>> # Сложный запрос с созданием таблицы
+>>> # Complex query with table creation
 >>> session.query("CREATE TABLE test (id INT, name String) ENGINE = MergeTree() order by id")
 >>> session.query("INSERT INTO test VALUES (1, 'Alice'), (2, 'Bob')")
 >>> result = session.query("SELECT * FROM test ORDER BY id")
@@ -740,22 +697,17 @@ id,name
 
 **См. также**
 
-* [`send_query()`](#chdb-session-session-send_query) — Для выполнения запросов в потоковом режиме
+* [`send_query()`](#chdb-session-session-send_query) — Для потокового выполнения запросов
 * [`sql`](#chdb-session-session-sql) — Псевдоним этого метода
 
-<div id="chdb-state-management">
-  ## Управление состоянием
-</div>
+## Управление состоянием {#chdb-state-management}
 
-<div id="chdb_state_connect">
-  ### `chdb.state.connect`
-</div>
+### `chdb.state.connect` {#chdb_state_connect}
 
 Создаёт [подключение](#chdb-state-sqlitelike-connection) к фоновому серверу chDB.
 
 Эта функция устанавливает подключение к движку базы данных chDB (ClickHouse).
-В каждом процессе может быть открыто только одно подключение. Несколько вызовов с одной и той же
-строкой подключения вернут один и тот же объект подключения.
+Каждый вызов возвращает независимое подключение, при этом одновременно может быть открыто любое количество подключений к одной и той же базе данных.
 
 **Синтаксис**
 
@@ -806,7 +758,7 @@ chdb.state.connect(connection_string: str = ':memory:') → Connection
 
 | Возвращаемый тип | Описание                                                                                                                                                                                                                                                                                 |
 | ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Connection`     | Объект подключения к базе данных, который поддерживает:<br />• Создание курсоров через `Connection.cursor()`<br />• Прямые запросы через `Connection.query()`<br />• Потоковые запросы через `Connection.send_query()`<br />• Протокол контекстного менеджера для автоматической очистки |
+| `Connection`     | Объект подключения к базе данных, который поддерживает:<br />• Создание курсоров через `Connection.cursor()`<br />• Прямые запросы через `Connection.query()`<br />• Стриминговые запросы через `Connection.send_query()`<br />• Протокол менеджера контекста для автоматического освобождения ресурсов |
 
 **Выбрасывает исключения**
 
@@ -814,33 +766,30 @@ chdb.state.connect(connection_string: str = ':memory:') → Connection
 | -------------- | ------------------------------------------ |
 | `RuntimeError` | Если не удалось подключиться к базе данных |
 
-<Warning>
-  **Предупреждение**
-
-  Поддерживается только одно подключение на процесс.
-  При создании нового подключения текущее подключение будет закрыто.
-</Warning>
+<Note>
+  В рамках одного процесса запускается один встроенный движок, привязанный к одному пути к базе данных. Несколько подключений к одному пути могут существовать одновременно и выполнять запросы параллельно. Открытие *другого* пути, пока открыто хотя бы одно подключение, вызывает `RuntimeError`; сначала закройте открытые подключения.
+</Note>
 
 **Примеры**
 
 ```pycon
->>> # База данных в памяти
+>>> # Temporary database
 >>> conn = connect()
 >>> conn = connect(":memory:")
 >>>
->>> # База данных на основе файла
+>>> # File-based database
 >>> conn = connect("my_data.db")
 >>> conn = connect("/path/to/data.db")
 >>>
->>> # С параметрами
->>> conn = connect("data.db?mode=ro")  # Режим только для чтения
->>> conn = connect(":memory:?verbose&log-level=debug")  # Отладочное логирование
+>>> # With parameters
+>>> conn = connect("data.db?mode=ro")  # Read-only mode
+>>> conn = connect(":memory:?verbose&log-level=debug")  # Debug logging
 >>>
->>> # Использование контекстного менеджера для автоматической очистки ресурсов
+>>> # Using context manager for automatic cleanup
 >>> with connect("data.db") as conn:
 ...     result = conn.query("SELECT 1")
 ...     print(result)
->>> # Соединение закрывается автоматически
+>>> # Connection automatically closed
 ```
 
 **См. также**
@@ -848,9 +797,7 @@ chdb.state.connect(connection_string: str = ':memory:') → Connection
 * `Connection` — класс подключения к базе данных
 * `Cursor` — курсор базы данных для операций DB-API 2.0
 
-<div id="chdb-state-sqlitelike-connection">
-  ### **class** `chdb.state.sqlitelike.Connection`
-</div>
+### **class** `chdb.state.sqlitelike.Connection` {#chdb-state-sqlitelike-connection}
 
 Базовый класс: `object`
 
@@ -862,9 +809,7 @@ class chdb.state.sqlitelike.Connection(connection_string: str)
 
 ***
 
-<div id="close">
-  #### `close`
-</div>
+#### `close` {#chdb-session-session-close}
 
 Закрывает подключение и освобождает ресурсы.
 
@@ -908,9 +853,7 @@ close() → None
 
 ***
 
-<div id="chdb-state-sqlitelike-connection-cursor">
-  #### `cursor`
-</div>
+#### `cursor` {#chdb-state-sqlitelike-connection-cursor}
 
 Создаёт объект [Cursor](#chdb-state-sqlitelike-cursor) для выполнения запросов.
 
@@ -955,9 +898,7 @@ cursor() → Cursor
 
 ***
 
-<div id="chdb-session-session-query">
-  #### `query`
-</div>
+#### `query` {#chdb-state-sqlitelike-connection-query}
 
 Выполняет SQL-запрос и возвращает результат целиком.
 
@@ -1031,9 +972,7 @@ num,text
 
 ***
 
-<div id="chdb-session-session-send_query">
-  #### `send_query`
-</div>
+#### `send_query` {#chdb-state-sqlitelike-connection-send_query}
 
 Выполняет SQL-запрос и возвращает итератор потокового результата.
 
@@ -1106,9 +1045,7 @@ send_query(query: str, format: str = 'CSV') → StreamingResult
 
 ***
 
-<div id="chdb-state-sqlitelike-streamingresult">
-  ### **class** `chdb.state.sqlitelike.StreamingResult`
-</div>
+### **class** `chdb.state.sqlitelike.StreamingResult` {#chdb-state-sqlitelike-streamingresult}
 
 Базовый класс: `object`
 
@@ -1124,9 +1061,7 @@ class chdb.state.sqlitelike.StreamingResult
 
 ***
 
-<div id="streamingresult-fetch">
-  #### `fetch`
-</div>
+#### `fetch` {#streamingresult-fetch}
 
 Возвращает следующий фрагмент результатов стриминга.
 
@@ -1160,9 +1095,7 @@ fetch() → Any
 
 ***
 
-<div id="streamingresult-cancel">
-  #### `cancel`
-</div>
+#### `cancel` {#streamingresult-cancel}
 
 Отменяет потоковый запрос и освобождает ресурсы.
 
@@ -1189,9 +1122,7 @@ cancel() → None
 
 ***
 
-<div id="close">
-  #### `close`
-</div>
+#### `close` {#streamingresult-close}
 
 Закрывает потоковый результат и освобождает ресурсы.
 
@@ -1206,9 +1137,7 @@ close() → None
 
 ***
 
-<div id="streamingresult-record_batch">
-  #### `record_batch`
-</div>
+#### `record_batch` {#streamingresult-record_batch}
 
 Создает PyArrow RecordBatchReader для эффективной пакетной обработки.
 
@@ -1252,9 +1181,7 @@ record_batch(rows_per_batch: int = 1000000) → pa.RecordBatchReader
 
 ***
 
-<div id="streamingresult-iterator">
-  #### Протокол итерации
-</div>
+#### Протокол итерации {#streamingresult-iterator}
 
 StreamingResult поддерживает протокол итерации Python, поэтому его можно
 использовать напрямую в циклах for:
@@ -1267,9 +1194,7 @@ StreamingResult поддерживает протокол итерации Pytho
 
 ***
 
-<div id="streamingresult-context-manager">
-  #### Протокол контекстного менеджера
-</div>
+#### Протокол контекстного менеджера {#streamingresult-context-manager}
 
 StreamingResult поддерживает протокол контекстного менеджера для автоматического
 освобождения ресурсов:
@@ -1283,9 +1208,7 @@ StreamingResult поддерживает протокол контекстног
 
 ***
 
-<div id="chdb-state-sqlitelike-cursor">
-  ### **класс** `chdb.state.sqlitelike.Cursor`
-</div>
+### **класс** `chdb.state.sqlitelike.Cursor` {#chdb-state-sqlitelike-cursor}
 
 Базовый класс: `object`
 
@@ -1295,9 +1218,7 @@ class chdb.state.sqlitelike.Cursor(connection)
 
 ***
 
-<div id="close">
-  #### `close`
-</div>
+#### `close` {#cursor-close-none}
 
 Закрывает курсор и освобождает ресурсы.
 
@@ -1327,9 +1248,7 @@ close() → None
 
 ***
 
-<div id="chdb-state-sqlitelike-cursor-column_names">
-  #### `column_names`
-</div>
+#### `column_names` {#chdb-state-sqlitelike-cursor-column_names}
 
 Возвращает список имён столбцов из последнего выполненного запроса.
 
@@ -1365,9 +1284,7 @@ column_names() → list
 
 ***
 
-<div id="chdb-state-sqlitelike-cursor-column_types">
-  #### `column_types`
-</div>
+#### `column_types` {#chdb-state-sqlitelike-cursor-column_types}
 
 Возвращает список типов столбцов из последнего выполненного запроса.
 
@@ -1403,9 +1320,7 @@ column_types() → list
 
 ***
 
-<div id="commit">
-  #### `commit`
-</div>
+#### `commit` {#commit}
 
 Зафиксировать любую незавершённую транзакцию.
 
@@ -1435,9 +1350,7 @@ commit() → None
 
 ***
 
-<div id="chdb-state-sqlitelike-cursor-description">
-  #### `свойство description : list`
-</div>
+#### `свойство description : list` {#chdb-state-sqlitelike-cursor-description}
 
 Возвращает описание столбцов в соответствии со спецификацией DB-API 2.0.
 
@@ -1477,9 +1390,7 @@ Column: name, Type: String
 
 ***
 
-<div id="execute">
-  #### `execute`
-</div>
+#### `execute` {#execute}
 
 Выполняет SQL-запрос и подготавливает результаты для получения.
 
@@ -1549,9 +1460,7 @@ execute(query: str) → None
 
 ***
 
-<div id="chdb-state-sqlitelike-cursor-fetchall">
-  #### `fetchall`
-</div>
+#### `fetchall` {#chdb-state-sqlitelike-cursor-fetchall}
 
 Получает все оставшиеся строки из результата запроса.
 
@@ -1596,9 +1505,7 @@ fetchall() → tuple
 
 ***
 
-<div id="chdb-state-sqlitelike-cursor-fetchmany">
-  #### `fetchmany`
-</div>
+#### `fetchmany` {#chdb-state-sqlitelike-cursor-fetchmany}
 
 Извлекает несколько строк из результата запроса.
 
@@ -1650,9 +1557,7 @@ fetchmany(size: int = 1) → tuple
 
 ***
 
-<div id="chdb-state-sqlitelike-cursor-fetchone">
-  #### `fetchone`
-</div>
+#### `fetchone` {#chdb-state-sqlitelike-cursor-fetchone}
 
 Извлекает следующую строку из результата запроса.
 
@@ -1697,9 +1602,7 @@ fetchone() → tuple | None
 
 ***
 
-<div id="state-sqlitelike-to_arrowtable">
-  ### `chdb.state.sqlitelike`
-</div>
+### `chdb.state.sqlitelike` {#state-sqlitelike-to_arrowtable}
 
 Преобразует результат запроса в таблицу PyArrow.
 
@@ -1758,9 +1661,7 @@ text: string
 
 ***
 
-<div id="state-sqlitelike-to_df">
-  ### `chdb.state.sqlitelike.to_df`
-</div>
+### `chdb.state.sqlitelike.to_df` {#state-sqlitelike-to_df}
 
 Преобразует результат запроса в DataFrame Pandas.
 
@@ -1816,13 +1717,9 @@ text    object
 dtype: object
 ```
 
-<div id="dataframe-integration">
-  ## Интеграция с DataFrame
-</div>
+## Интеграция с DataFrame {#dataframe-integration}
 
-<div id="chdb-dataframe-table">
-  ### **class** `chdb.dataframe.Table`
-</div>
+### **class** `chdb.dataframe.Table` {#chdb-dataframe-table}
 
 Базовые классы:
 
@@ -1830,9 +1727,7 @@ dtype: object
 class chdb.dataframe.Table(*args: Any, **kwargs: Any)
 ```
 
-<div id="database-api-interface">
-  ## Интерфейс Database API (DBAPI) 2.0
-</div>
+## Интерфейс Database API (DBAPI) 2.0 {#database-api-interface}
 
 chDB предоставляет совместимый с Python DB-API 2.0 интерфейс для работы с базами данных, что позволяет использовать chDB с инструментами и фреймворками, рассчитанными на стандартные интерфейсы баз данных.
 
@@ -1846,15 +1741,11 @@ chDB предоставляет совместимый с Python DB-API 2.0 ин
 
 ***
 
-<div id="core-functions">
-  ### Основные функции
-</div>
+### Основные функции {#core-functions}
 
 Интерфейс Database API (DBAPI) 2.0 включает следующие основные функции:
 
-<div id="dbapi-connect">
-  #### `chdb.dbapi.connect`
-</div>
+#### `chdb.dbapi.connect` {#dbapi-connect}
 
 Инициализирует новое соединение с базой данных.
 
@@ -1866,9 +1757,9 @@ chdb.dbapi.connect(*args, **kwargs)
 
 **Параметры**
 
-| Параметр | Тип | По умолчанию | Описание                                                  |
-| -------- | --- | ------------ | --------------------------------------------------------- |
-| `path`   | str | `None`       | Путь к файлу базы данных. None — для базы данных в памяти |
+| Параметр | Тип | По умолчанию | Описание                                                                  |
+| -------- | --- | ------------ | ------------------------------------------------------------------------- |
+| `path`   | str | `None`       | Путь к файлу базы данных. None — для временной базы данных без сохранения |
 
 **Вызывает**
 
@@ -1878,9 +1769,7 @@ chdb.dbapi.connect(*args, **kwargs)
 
 ***
 
-<div id="dbapi-get-client-info">
-  #### `chdb.dbapi.get_client_info()`
-</div>
+#### `chdb.dbapi.get_client_info()` {#dbapi-get-client-info}
 
 Возвращает сведения о версии клиента.
 
@@ -1900,13 +1789,9 @@ chdb.dbapi.get_client_info()
 
 ***
 
-<div id="type-constructors">
-  ### Конструкторы типов
-</div>
+### Конструкторы типов {#type-constructors}
 
-<div id="dbapi-binary">
-  #### `chdb.dbapi.Binary(x)`
-</div>
+#### `chdb.dbapi.Binary(x)` {#dbapi-binary}
 
 Возвращает x в виде двоичного типа.
 
@@ -1933,22 +1818,18 @@ chdb.dbapi.Binary(x)
 
 ***
 
-<div id="connection-class">
-  ### Класс соединения
-</div>
+### Класс соединения {#connection-class}
 
-<div id="chdb-dbapi-connections-connection">
-  #### **class** `chdb.dbapi.connections.Connection(path=None)`
-</div>
+#### **class** `chdb.dbapi.connections.Connection(path=None)` {#chdb-dbapi-connections-connection}
 
 Базовый класс: `object`
 
 Подключение к базе данных chDB, совместимое с DB-API 2.0.
 
-Этот класс предоставляет стандартный интерфейс DB-API для подключения к базам данных chDB и работы с ними. Поддерживаются как базы данных в памяти, так и файловые базы данных.
+Этот класс предоставляет стандартный интерфейс DB-API для подключения к базам данных chDB и работы с ними. Поддерживаются как временные, так и файловые базы данных.
 
 Подключение управляет базовым движком chDB и предоставляет методы для
-выполнения запросов, управления транзакциями (для ClickHouse это no-op) и создания курсоров.
+выполнения запросов, управления транзакциями (для ClickHouse это операция-заглушка) и создания курсоров.
 
 ```python
 class chdb.dbapi.connections.Connection(path=None)
@@ -1956,9 +1837,9 @@ class chdb.dbapi.connections.Connection(path=None)
 
 **Параметры**
 
-| Параметр | Тип | По умолчанию | Описание                                                                                                                                                                  |
-| -------- | --- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `path`   | str | `None`       | Путь к файлу базы данных. Если указано None, используется база данных в памяти. Может быть путём к файлу, например &#39;database.db&#39;, или None для &#39;:memory:&#39; |
+| Параметр | Тип | По умолчанию | Описание                                                                                                                                                                                                                                     |
+| -------- | --- | ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `path`   | str | `None`       | Путь к файлу базы данных. Если None (значение по умолчанию), используется временная база данных без постоянного хранения (эквивалент `':memory:'`). Передайте путь к файлу, например &#39;database.db&#39;, чтобы сохранить данные на диске. |
 
 **Переменные**
 
@@ -1970,7 +1851,7 @@ class chdb.dbapi.connections.Connection(path=None)
 **Примеры**
 
 ```pycon
->>> # База данных в памяти
+>>> # Temporary database
 >>> conn = Connection()
 >>> cursor = conn.cursor()
 >>> cursor.execute("SELECT 1")
@@ -1979,7 +1860,7 @@ class chdb.dbapi.connections.Connection(path=None)
 ```
 
 ```pycon
->>> # База данных на основе файла
+>>> # File-based database
 >>> conn = Connection('mydata.db')
 >>> with conn.cursor() as cur:
 ...     cur.execute("CREATE TABLE users (id INT, name STRING) ENGINE = MergeTree() order by id")
@@ -1988,7 +1869,7 @@ class chdb.dbapi.connections.Connection(path=None)
 ```
 
 ```pycon
->>> # Использование в качестве менеджера контекста
+>>> # Context manager usage
 >>> with Connection() as cur:
 ...     cur.execute("SELECT version()")
 ...     version = cur.fetchone()
@@ -2001,9 +1882,7 @@ class chdb.dbapi.connections.Connection(path=None)
 
 ***
 
-<div id="close">
-  #### `close`
-</div>
+#### `close` {#dbapi-connection-close}
 
 Закрывает соединение с базой данных.
 
@@ -2024,9 +1903,7 @@ close()
 
 ***
 
-<div id="commit">
-  #### `commit`
-</div>
+#### `commit` {#dbapi-commit}
 
 Фиксирует текущую транзакцию.
 
@@ -2043,9 +1920,7 @@ commit()
 
 ***
 
-<div id="chdb-state-sqlitelike-connection-cursor">
-  #### `cursor`
-</div>
+#### `cursor` {#dbapi-cursor}
 
 Создает новый курсор для выполнения запросов.
 
@@ -2084,9 +1959,7 @@ cursor(cursor=None)
 
 ***
 
-<div id="escape">
-  #### `escape`
-</div>
+#### `escape` {#escape}
 
 Экранирование значения для безопасного включения в SQL-запросы.
 
@@ -2119,9 +1992,7 @@ escape(obj, mapping=None)
 
 ***
 
-<div id="escape-string">
-  #### `escape_string`
-</div>
+#### `escape_string` {#escape-string}
 
 Экранирует строковое значение для SQL-запросов.
 
@@ -2145,9 +2016,7 @@ escape_string(s)
 
 ***
 
-<div id="property-open">
-  #### `свойство open`
-</div>
+#### `свойство open` {#property-open}
 
 Проверяет, открыто ли соединение.
 
@@ -2159,9 +2028,7 @@ escape_string(s)
 
 ***
 
-<div id="chdb-session-session-query">
-  #### `query`
-</div>
+#### `query` {#dbapi-query}
 
 Выполняет SQL-запрос напрямую и возвращает необработанные результаты.
 
@@ -2204,9 +2071,7 @@ query(sql, fmt='CSV')
 
 ***
 
-<div id="property-resp">
-  #### `свойство resp`
-</div>
+#### `свойство resp` {#property-resp}
 
 Возвращает ответ на последний запрос.
 
@@ -2223,9 +2088,7 @@ query(sql, fmt='CSV')
 
 ***
 
-<div id="rollback">
-  #### `rollback`
-</div>
+#### `rollback` {#rollback}
 
 Откатывает текущую транзакцию.
 
@@ -2242,13 +2105,9 @@ rollback()
 
 ***
 
-<div id="cursor-class">
-  ### Класс Cursor
-</div>
+### Класс Cursor {#cursor-class}
 
-<div id="chdb-dbapi-cursors-cursor">
-  #### **class** `chdb.dbapi.cursors.Cursor`
-</div>
+#### **class** `chdb.dbapi.cursors.Cursor` {#chdb-dbapi-cursors-cursor}
 
 Наследует: `object`
 
@@ -2290,9 +2149,7 @@ class chdb.dbapi.cursors.Cursor(connection)
 
 ***
 
-<div id="callproc">
-  #### `callproc`
-</div>
+#### `callproc` {#callproc}
 
 Выполняет хранимую процедуру (временная реализация-заглушка).
 
@@ -2331,9 +2188,7 @@ callproc(procname, args=())
 
 ***
 
-<div id="close">
-  #### `close`
-</div>
+#### `close` {#dbapi-cursor-close}
 
 Закрывает курсор и освобождает связанные с ним ресурсы.
 
@@ -2348,9 +2203,7 @@ close()
 
 ***
 
-<div id="execute">
-  #### `execute`
-</div>
+#### `execute` {#dbapi-execute}
 
 Выполняет SQL-запрос с необязательной привязкой параметров.
 
@@ -2406,9 +2259,7 @@ execute(query, args=None)
 
 ***
 
-<div id="chdb-dbapi-cursors-cursor-executemany">
-  #### `executemany(query, args)`
-</div>
+#### `executemany(query, args)` {#chdb-dbapi-cursors-cursor-executemany}
 
 Выполняет запрос несколько раз с разными наборами параметров.
 
@@ -2459,9 +2310,7 @@ executemany(query, args)
 
 ***
 
-<div id="dbapi-fetchall">
-  #### `fetchall()`
-</div>
+#### `fetchall()` {#dbapi-fetchall}
 
 Получает все оставшиеся строки из результата запроса.
 
@@ -2500,9 +2349,7 @@ fetchall()
 
 ***
 
-<div id="chdb-state-sqlitelike-cursor-fetchmany">
-  #### `fetchmany`
-</div>
+#### `fetchmany` {#dbapi-fetchmany}
 
 Возвращает несколько строк из результата запроса.
 
@@ -2540,9 +2387,7 @@ fetchmany(size=1)
 
 ***
 
-<div id="chdb-state-sqlitelike-cursor-fetchone">
-  #### `fetchone`
-</div>
+#### `fetchone` {#dbapi-fetchone}
 
 Возвращает следующую строку из результата запроса.
 
@@ -2576,9 +2421,7 @@ fetchone()
 
 ***
 
-<div id="max-stmt-length">
-  #### `max_stmt_length = 1024000`
-</div>
+#### `max_stmt_length = 1024000` {#max-stmt-length}
 
 Максимальный размер оператора, создаваемого [`executemany()`](#chdb-dbapi-cursors-cursor-executemany).
 
@@ -2586,9 +2429,7 @@ fetchone()
 
 ***
 
-<div id="mogrify">
-  #### `mogrify`
-</div>
+#### `mogrify` {#mogrify}
 
 Возвращает точную строку запроса, которая будет отправлена в базу данных.
 
@@ -2627,9 +2468,7 @@ mogrify(query, args=None)
 
 ***
 
-<div id="nextset">
-  #### `nextset`
-</div>
+#### `nextset` {#nextset}
 
 Переход к следующему результирующему набору (не поддерживается).
 
@@ -2652,9 +2491,7 @@ nextset()
 
 ***
 
-<div id="setinputsizes">
-  #### `setinputsizes`
-</div>
+#### `setinputsizes` {#setinputsizes}
 
 Устанавливает размеры входных данных для параметров (реализация-заглушка).
 
@@ -2677,9 +2514,7 @@ setinputsizes(*args)
 
 ***
 
-<div id="setoutputsizes">
-  #### `setoutputsizes`
-</div>
+#### `setoutputsizes` {#setoutputsizes}
 
 Установить размеры выходных столбцов (реализация-заглушка).
 
@@ -2702,9 +2537,7 @@ setoutputsizes(*args)
 
 ***
 
-<div id="error-classes">
-  ### Классы ошибок
-</div>
+### Классы ошибок {#error-classes}
 
 Классы исключений для операций с базой данных chdb.
 
@@ -2774,9 +2607,7 @@ Constraint violation: Duplicate entry '1' for key 'PRIMARY'
 
 ***
 
-<div id="chdb-dbapi-err-dataerror">
-  #### **exception** `chdb.dbapi.err.DataError`
-</div>
+#### **exception** `chdb.dbapi.err.DataError` {#chdb-dbapi-err-dataerror}
 
 Наследуется от: [`DatabaseError`](#chdb-dbapi-err-databaseerror)
 
@@ -2814,9 +2645,7 @@ DataError: Invalid date format
 
 ***
 
-<div id="chdb-dbapi-err-databaseerror">
-  #### **исключение** `chdb.dbapi.err.DatabaseError`
-</div>
+#### **исключение** `chdb.dbapi.err.DatabaseError` {#chdb-dbapi-err-databaseerror}
 
 Базовый класс: [`Error`](#chdb-dbapi-err-error)
 
@@ -2840,9 +2669,7 @@ DataError: Invalid date format
 
 ***
 
-<div id="chdb-dbapi-err-error">
-  #### **исключение** `chdb.dbapi.err.Error`
-</div>
+#### **исключение** `chdb.dbapi.err.Error` {#chdb-dbapi-err-error}
 
 Базовый класс: [`StandardError`](#chdb-dbapi-err-standarderror)
 
@@ -2860,9 +2687,7 @@ DataError: Invalid date format
 
 * [`Warning`](#chdb-dbapi-err-warning) - Для нефатальных предупреждений, которые не мешают завершению операции
 
-<div id="chdb-dbapi-err-integrityerror">
-  #### **исключение** `chdb.dbapi.err.IntegrityError`
-</div>
+#### **исключение** `chdb.dbapi.err.IntegrityError` {#chdb-dbapi-err-integrityerror}
 
 Базовый класс: [`DatabaseError`](#chdb-dbapi-err-databaseerror)
 
@@ -2900,9 +2725,7 @@ IntegrityError: Cannot add or update a child row: foreign key constraint fails
 
 ***
 
-<div id="chdb-dbapi-err-interfaceerror">
-  #### **исключение** `chdb.dbapi.err.InterfaceError`
-</div>
+#### **исключение** `chdb.dbapi.err.InterfaceError` {#chdb-dbapi-err-interfaceerror}
 
 Базовый класс: [`Error`](#chdb-dbapi-err-error)
 
@@ -2929,9 +2752,7 @@ IntegrityError: Cannot add or update a child row: foreign key constraint fails
 
 ***
 
-<div id="chdb-dbapi-err-internalerror">
-  #### **исключение** `chdb.dbapi.err.InternalError`
-</div>
+#### **исключение** `chdb.dbapi.err.InternalError` {#chdb-dbapi-err-internalerror}
 
 Базовый класс: [`DatabaseError`](#chdb-dbapi-err-databaseerror)
 
@@ -2967,9 +2788,7 @@ IntegrityError: Cannot add or update a child row: foreign key constraint fails
 
 ***
 
-<div id="chdb-dbapi-err-notsupportederror">
-  #### **исключение** `chdb.dbapi.err.NotSupportedError`
-</div>
+#### **исключение** `chdb.dbapi.err.NotSupportedError` {#chdb-dbapi-err-notsupportederror}
 
 Базовый класс: [`DatabaseError`](#chdb-dbapi-err-databaseerror)
 
@@ -3011,9 +2830,7 @@ NotSupportedError: WITH clause not supported in this database version
 
 ***
 
-<div id="chdb-dbapi-err-operationalerror">
-  #### **исключение** `chdb.dbapi.err.OperationalError`
-</div>
+#### **исключение** `chdb.dbapi.err.OperationalError` {#chdb-dbapi-err-operationalerror}
 
 Базовый класс: [`DatabaseError`](#chdb-dbapi-err-databaseerror)
 
@@ -3050,9 +2867,7 @@ NotSupportedError: WITH clause not supported in this database version
 
 ***
 
-<div id="chdb-dbapi-err-programmingerror">
-  #### **исключение** `chdb.dbapi.err.ProgrammingError`
-</div>
+#### **исключение** `chdb.dbapi.err.ProgrammingError` {#chdb-dbapi-err-programmingerror}
 
 Базовый класс: [`DatabaseError`](#chdb-dbapi-err-databaseerror)
 
@@ -3096,9 +2911,7 @@ ProgrammingError: Column count doesn't match value count
 
 ***
 
-<div id="chdb-dbapi-err-standarderror">
-  #### **исключение** `chdb.dbapi.err.StandardError`
-</div>
+#### **исключение** `chdb.dbapi.err.StandardError` {#chdb-dbapi-err-standarderror}
 
 Базовый класс: `Exception`
 
@@ -3115,9 +2928,7 @@ ProgrammingError: Column count doesn't match value count
 
 ***
 
-<div id="chdb-dbapi-err-warning">
-  #### **исключение** `chdb.dbapi.err.Warning`
-</div>
+#### **исключение** `chdb.dbapi.err.Warning` {#chdb-dbapi-err-warning}
 
 Базовый класс: [`StandardError`](#chdb-dbapi-err-standarderror)
 
@@ -3137,13 +2948,9 @@ ProgrammingError: Column count doesn't match value count
 
 ***
 
-<div id="module-constants">
-  ### Константы модуля
-</div>
+### Константы модуля {#module-constants}
 
-<div id="apilevel">
-  #### `chdb.dbapi.apilevel = '2.0'`
-</div>
+#### `chdb.dbapi.apilevel = '2.0'` {#apilevel}
 
 ```python
 str(object=’’) -> str
@@ -3161,9 +2968,7 @@ errors, объект должен предоставлять буфер данн
 
 ***
 
-<div id="threadsafety">
-  #### `chdb.dbapi.threadsafety = 1`
-</div>
+#### `chdb.dbapi.threadsafety = 1` {#threadsafety}
 
 ```python
 int([x]) -> integer
@@ -3188,9 +2993,7 @@ int(x, base=10) -> integer
 
 ***
 
-<div id="paramstyle">
-  #### `chdb.dbapi.paramstyle = 'format'`
-</div>
+#### `chdb.dbapi.paramstyle = 'format'` {#paramstyle}
 
 ```python
 str(object=’’) -> str
@@ -3207,13 +3010,9 @@ errors, объект должен предоставлять буфер данн
 
 ***
 
-<div id="type-constants">
-  ### Константы типов
-</div>
+### Константы типов {#type-constants}
 
-<div id="string-type">
-  #### `chdb.dbapi.STRING = frozenset({247, 253, 254})`
-</div>
+#### `chdb.dbapi.STRING = frozenset({247, 253, 254})` {#string-type}
 
 Расширенный frozenset для сравнения типов в DB-API 2.0.
 
@@ -3235,9 +3034,7 @@ errors, объект должен предоставлять буфер данн
 
 ***
 
-<div id="binary-type">
-  #### `chdb.dbapi.BINARY = frozenset({249, 250, 251, 252})`
-</div>
+#### `chdb.dbapi.BINARY = frozenset({249, 250, 251, 252})` {#binary-type}
 
 Расширенный frozenset для сравнения типов в DB-API 2.0.
 
@@ -3259,9 +3056,7 @@ errors, объект должен предоставлять буфер данн
 
 ***
 
-<div id="number-type">
-  #### `chdb.dbapi.NUMBER = frozenset({0, 1, 3, 4, 5, 8, 9, 13})`
-</div>
+#### `chdb.dbapi.NUMBER = frozenset({0, 1, 3, 4, 5, 8, 9, 13})` {#number-type}
 
 Расширенный frozenset для сравнения типов в соответствии с DB-API 2.0.
 
@@ -3283,9 +3078,7 @@ errors, объект должен предоставлять буфер данн
 
 ***
 
-<div id="date-type">
-  #### `chdb.dbapi.DATE = frozenset({10, 14})`
-</div>
+#### `chdb.dbapi.DATE = frozenset({10, 14})` {#date-type}
 
 Расширенный frozenset для сравнения типов в DB-API 2.0.
 
@@ -3307,9 +3100,7 @@ errors, объект должен предоставлять буфер данн
 
 ***
 
-<div id="time-type">
-  #### `chdb.dbapi.TIME = frozenset({11})`
-</div>
+#### `chdb.dbapi.TIME = frozenset({11})` {#time-type}
 
 Расширенный frozenset для сравнения типов в DB-API 2.0.
 
@@ -3331,9 +3122,7 @@ errors, объект должен предоставлять буфер данн
 
 ***
 
-<div id="timestamp-type">
-  #### `chdb.dbapi.TIMESTAMP = frozenset({7, 12})`
-</div>
+#### `chdb.dbapi.TIMESTAMP = frozenset({7, 12})` {#timestamp-type}
 
 Расширенный frozenset для сравнения типов в DB-API 2.0.
 
@@ -3353,9 +3142,7 @@ errors, объект должен предоставлять буфер данн
 >>> FIELD_TYPE.BLOB in string_types    # Возвращает False
 ```
 
-<div id="datetime-type">
-  #### `chdb.dbapi.DATETIME = frozenset({7, 12})`
-</div>
+#### `chdb.dbapi.DATETIME = frozenset({7, 12})` {#datetime-type}
 
 Расширенный frozenset для сравнения типов в DB-API 2.0.
 
@@ -3377,15 +3164,13 @@ errors, объект должен предоставлять буфер данн
 
 ***
 
-<div id="rowid-type">
-  #### `chdb.dbapi.ROWID = frozenset({})`
-</div>
+#### `chdb.dbapi.ROWID = frozenset({})` {#rowid-type}
 
 Расширенный `frozenset` для сравнения типов в DB-API 2.0.
 
 Этот класс расширяет `frozenset`, добавляя поддержку семантики сравнения типов DB-API 2.0.
 Он позволяет гибко проверять типы, когда отдельные элементы можно сравнивать
-с набором с помощью операторов равенства и неравенства.
+с Set с помощью операторов равенства и неравенства.
 
 Используется для констант типов, таких как STRING, BINARY, NUMBER и т. д., чтобы поддерживать
 сравнения вида “field&#95;type == STRING”, где field&#95;type — это отдельное значение типа.
@@ -3394,9 +3179,9 @@ errors, объект должен предоставлять буфер данн
 
 ```pycon
 >>> string_types = DBAPISet([FIELD_TYPE.STRING, FIELD_TYPE.VAR_STRING])
->>> FIELD_TYPE.STRING == string_types  # Возвращает True
->>> FIELD_TYPE.INT != string_types     # Возвращает True
->>> FIELD_TYPE.BLOB in string_types    # Возвращает False
+>>> FIELD_TYPE.STRING == string_types  # Returns True
+>>> FIELD_TYPE.INT != string_types     # Returns True
+>>> FIELD_TYPE.BLOB in string_types    # Returns False
 ```
 
 **Примеры использования**
@@ -3408,16 +3193,16 @@ import chdb.dbapi as dbapi
 
 print("chdb driver version: {0}".format(dbapi.get_client_info()))
 
-# Создайте соединение и курсор
+# Create connection and cursor
 conn = dbapi.connect()
 cur = conn.cursor()
 
-# Выполните запрос
+# Execute query
 cur.execute('SELECT version()')
 print("description:", cur.description)
 print("data:", cur.fetchone())
 
-# Освободите ресурсы
+# Clean up
 cur.close()
 conn.close()
 ```
@@ -3430,7 +3215,7 @@ import chdb.dbapi as dbapi
 conn = dbapi.connect()
 cur = conn.cursor()
 
-# Создание таблицы
+# Create table
 cur.execute("""
     CREATE TABLE employees (
         id UInt32,
@@ -3440,7 +3225,7 @@ cur.execute("""
     ) ENGINE = Memory
 """)
 
-# Вставка данных
+# Insert data
 cur.execute("""
     INSERT INTO employees VALUES
     (1, 'Alice', 'Engineering', 75000.00),
@@ -3448,10 +3233,10 @@ cur.execute("""
     (3, 'Charlie', 'Engineering', 80000.00)
 """)
 
-# Запрос данных
+# Query data
 cur.execute("SELECT * FROM employees WHERE department = 'Engineering'")
 
-# Получение результатов
+# Fetch results
 print("Column names:", [desc[0] for desc in cur.description])
 for row in cur.fetchall():
     print(row)
@@ -3464,19 +3249,19 @@ conn.close()
 ```python
 import chdb.dbapi as dbapi
 
-# База данных в памяти (по умолчанию)
+# Temporary database (default)
 conn1 = dbapi.connect()
 
-# Файл базы данных на диске
+# Persistent database file
 conn2 = dbapi.connect("./my_database.chdb")
 
-# Соединение с параметрами
+# Connection with parameters
 conn3 = dbapi.connect("./my_database.chdb?log-level=debug&verbose")
 
-# Соединение только для чтения
+# Read-only connection
 conn4 = dbapi.connect("./my_database.chdb?mode=ro")
 
-# Автоматическое закрытие соединения
+# Automatic connection cleanup
 with dbapi.connect("test.chdb") as conn:
     cur = conn.cursor()
     cur.execute("SELECT count() FROM numbers(1000)")
@@ -3509,19 +3294,270 @@ with dbapi.connect("test.chdb") as conn:
   * Синтаксис привязки параметров соответствует стилю format: `%s`
 </Warning>
 
-<div id="user-defined-functions">
-  ## Пользовательские функции (UDF)
-</div>
+## Пользовательские функции Python (UDF) {#user-defined-functions}
 
-Модуль пользовательских функций для chDB.
+chDB поддерживает нативные UDF Python, выполняемые внутри процесса, с типизированными аргументами, автоматическим выводом типов и настраиваемой обработкой NULL и исключений. Функции Python, зарегистрированные как пользовательские функции (UDF), можно вызывать непосредственно из SQL-запросов.
 
-Этот модуль предоставляет средства для создания пользовательских функций (UDF) и управления ими
-в chDB. Он позволяет расширять возможности chDB, создавая собственные функции на Python,
-которые можно вызывать из SQL-запросов.
+В примерах ниже используется формат вывода CSV по умолчанию. Встроенные комментарии показывают логические значения результатов; в необработанном выводе `NULL` отображается как `\N`, а к строковым значениям и датам применяется CSV-экранирование.
 
-<div id="chdb-udf">
-  ### `chdb.udf.chdb_udf`
-</div>
+### `chdb.create_function` {#create-function}
+
+Зарегистрируйте функцию Python в качестве SQL-функции chDB.
+
+**Синтаксис**
+
+```python
+chdb.create_function(name, func, arg_types=None, return_type=None, *, on_null=None, on_error=None)
+```
+
+**Параметры**
+
+| Параметр      | Тип                                | По умолчанию       | Описание                                                                                                                                                          |
+| ------------- | ---------------------------------- | ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `name`        | str                                | *(обязательный)*   | Имя регистрируемой SQL-функции                                                                                                                                    |
+| `func`        | callable                           | *(обязательный)*   | Регистрируемая функция Python                                                                                                                                     |
+| `arg_types`   | list of ChdbType/str/type, or None | `None`             | Список типов аргументов. Если указано `None`, определяются по аннотациям типов                                                                                    |
+| `return_type` | ChdbType/str/type, or None         | `None`             | Возвращаемый тип. Если указано `None`, определяется по аннотации возвращаемого значения функции; регистрация завершится ошибкой, если аннотация также отсутствует |
+| `on_null`     | str or NullHandling                | `None` (skip)      | Обработка входных значений NULL: `"skip"` или `"pass"`. Только именованный аргумент                                                                               |
+| `on_error`    | str or ExceptionHandling           | `None` (propagate) | Обработка исключений: `"propagate"` или `"ignore"`. Только именованный аргумент                                                                                   |
+
+Каждый параметр типа (элементы `arg_types` и `return_type`) принимает:
+
+* Константу `ChdbType`: `INT64`, `STRING`, `FLOAT64` и т. д.
+* Строку типа ClickHouse: `"Int64"`, `"String"`, `"DateTime64(6)"`, `"DateTime('UTC')"` и т. д.
+* Тип Python: `int`, `float`, `str`, `bool`, `bytes`, `datetime.date`, `datetime.datetime` — сопоставляется согласно разделу [Автоматическое сопоставление типов](#udf-automatic-type-mapping)
+
+Попытка зарегистрировать уже зарегистрированное имя приводит к ошибке — пользовательские функции (UDF) не заменяются автоматически. Чтобы повторно зарегистрировать функцию, сначала вызовите [`drop_function`](#drop-function).
+
+**Пример**
+
+```python
+from chdb import create_function, drop_function, query
+from chdb.sqltypes import INT64, STRING
+
+create_function("strlen", len, arg_types=[STRING], return_type=INT64)
+print(query("SELECT strlen('hello')"))  # 5
+
+drop_function("strlen")
+```
+
+***
+
+### `chdb.drop_function` {#drop-function}
+
+Удаляет ранее зарегистрированную UDF Python. Если функция не зарегистрирована, ничего не происходит, поэтому её можно безопасно вызывать без проверки.
+
+**Синтаксис**
+
+```python
+chdb.drop_function(name)
+```
+
+**Параметры**
+
+| Параметр | Тип | Описание                               |
+| -------- | --- | -------------------------------------- |
+| `name`   | str | Имя SQL-функции, которую нужно удалить |
+
+***
+
+### Декоратор `@func` {#func-decorator}
+
+Декоратор для регистрации функции Python в качестве SQL-функции chDB. Функцию по-прежнему можно вызывать как обычную функцию Python; одновременно она доступна в SQL-запросах под именем `__name__`.
+
+**Синтаксис**
+
+```python
+from chdb import func
+
+@func(arg_types=None, return_type=None, *, on_null=None, on_error=None)
+def my_function(...):
+    ...
+```
+
+**Параметры**
+
+Такие же, как у [`create_function`](#create-function), за исключением `name` и `func`, которые определяются декорированной функцией.
+
+**Примеры**
+
+```python
+from chdb import func, query
+from chdb.sqltypes import INT64, STRING
+
+# Explicit types
+@func([INT64, INT64], INT64)
+def add(a, b):
+    return a + b
+
+# Types inferred from annotations
+@func()
+def multiply(a: int, b: int) -> int:
+    return a * b
+
+# Explicit return_type, arg_types inferred from annotations
+@func(return_type=STRING)
+def greet(name: str):
+    return f"Hello, {name}!"
+
+print(query("SELECT add(12, 22)"))       # 34
+print(query("SELECT multiply(3, 7)"))    # 21
+print(query("SELECT greet('world')"))    # Hello, world!
+```
+
+***
+
+### Система типов {#udf-type-system}
+
+#### Доступные типы {#udf-available-types}
+
+Импортируйте типы из `chdb.sqltypes`:
+
+```python
+from chdb.sqltypes import (
+    BOOL,
+    INT8, INT16, INT32, INT64, INT128, INT256,
+    UINT8, UINT16, UINT32, UINT64, UINT128, UINT256,
+    FLOAT32, FLOAT64,
+    STRING,
+    DATE, DATE32, DATETIME, DATETIME64,
+)
+```
+
+#### Автоматическое сопоставление типов {#udf-automatic-type-mapping}
+
+Если типы определяются на основе аннотаций Python, используется следующее сопоставление:
+
+| Тип Python          | Тип ClickHouse  |
+| ------------------- | --------------- |
+| `bool`              | `Bool`          |
+| `int`               | `Int64`         |
+| `float`             | `Float64`       |
+| `str`               | `String`        |
+| `bytes`             | `String`        |
+| `bytearray`         | `String`        |
+| `datetime.date`     | `Date`          |
+| `datetime.datetime` | `DateTime64(6)` |
+
+#### Способы задания типов {#udf-type-specification-methods}
+
+Типы можно задавать несколькими способами:
+
+```python
+from chdb import create_function, func
+from chdb.sqltypes import INT64
+
+# 1. ChdbType constants
+create_function("f1", lambda x: x, arg_types=[INT64], return_type=INT64)
+
+# 2. ClickHouse type strings
+create_function("f2", lambda x: x, arg_types=["Int64"], return_type="Int64")
+
+# 3. Parameterized type strings
+create_function("f3", lambda x: x, arg_types=["DateTime('UTC')"], return_type="DateTime('UTC')")
+
+# 4. Python types — passed directly or used as annotations
+create_function("f4", lambda x: x, arg_types=[int], return_type=int)
+
+@func()
+def f5(x: int) -> int:
+    return x
+```
+
+***
+
+### Обработка NULL {#udf-null-handling}
+
+Настройте обработку значений NULL с помощью параметра `on_null`.
+
+| Значение | Enum                | Поведение                                      |
+| -------- | ------------------- | ---------------------------------------------- |
+| `"skip"` | `NullHandling.SKIP` | Вернуть NULL без вызова функции (по умолчанию) |
+| `"pass"` | `NullHandling.PASS` | Преобразовать NULL в `None` и вызвать функцию  |
+
+```python
+from chdb import func, query, NullHandling
+
+# Default: NULL in → NULL out, function not called
+@func(return_type="Int64")
+def add_one(x: int) -> int:
+    return x + 1
+
+print(query("SELECT add_one(NULL)"))  # NULL
+
+# Pass NULL as None
+@func(return_type="Int64", on_null="pass")
+def null_safe(x):
+    return 0 if x is None else x + 1
+
+print(query("SELECT null_safe(NULL)"))  # 0
+```
+
+***
+
+### Обработка исключений {#udf-exception-handling}
+
+Управляйте обработкой исключений с помощью параметра `on_error`.
+
+| Значение      | Enum                          | Поведение                                           |
+| ------------- | ----------------------------- | --------------------------------------------------- |
+| `"propagate"` | `ExceptionHandling.PROPAGATE` | Вызвать исключение в виде SQL-ошибки (по умолчанию) |
+| `"ignore"`    | `ExceptionHandling.IGNORE`    | Перехватить исключение и вернуть NULL               |
+
+```python
+from chdb import func, query
+
+# Default: exception propagates
+@func(arg_types=["Int64", "Int64"], return_type="Int64")
+def divide(a, b):
+    return a // b
+
+# print(query("SELECT divide(1, 0)"))  # Error: division by zero
+
+# Ignore: exception → NULL
+@func(arg_types=["Int64", "Int64"], return_type="Int64", on_error="ignore")
+def safe_divide(a, b):
+    return a // b
+
+print(query("SELECT safe_divide(1, 0)"))   # NULL
+print(query("SELECT safe_divide(10, 2)"))  # 5
+```
+
+***
+
+### Поддержка DateTime и часовых поясов {#udf-datetime}
+
+Пользовательские функции (UDF) полностью поддерживают типы `Date`, `Date32`, `DateTime` и `DateTime64` с поддержкой часовых поясов.
+
+```python
+from chdb import func, query
+from datetime import datetime, timedelta, date
+
+@func(arg_types=["DateTime('UTC')"], return_type="DateTime('UTC')")
+def add_one_hour(dt):
+    return dt + timedelta(hours=1)
+
+@func()
+def get_year(d: date) -> int:
+    return d.year
+
+print(query("SELECT add_one_hour(toDateTime('2024-01-01 12:00:00', 'UTC'))"))  # 2024-01-01 13:00:00
+print(query("SELECT get_year(toDate('2024-06-15'))"))  # 2024
+```
+
+* Входные значения ClickHouse `DateTime`/`DateTime64` преобразуются в объекты Python `datetime` с информацией о часовом поясе
+* При возврате в ClickHouse выходные объекты Python `datetime` сохраняют информацию о часовом поясе
+* Тип `DATETIME64` из `chdb.sqltypes` по умолчанию имеет scale 6 (микросекунды), что эквивалентно `DateTime64(6)`
+
+***
+
+### Устаревший API {#legacy-udf}
+
+<Warning>
+  **Устарело:** декоратор `@chdb_udf` — устаревший механизм UDF на основе подпроцессов: он запускает вашу функцию в отдельном процессе Python и передаёт все аргументы в виде строк. Он по-прежнему доступен, но рекомендуется нативный API UDF Python ([`@func`](#func-decorator) / [`create_function`](#create-function)): нативные пользовательские функции (UDF) выполняются в том же процессе, поддерживают типизированные аргументы, обработку NULL и контроль исключений. Полное пошаговое руководство см. в [руководстве по UDF Python](/ru/chdb/guides/python-udf).
+</Warning>
+
+#### `chdb.udf.chdb_udf` {#chdb-udf}
 
 Декоратор для Python UDF (пользовательская функция) в chDB.
 
@@ -3556,14 +3592,12 @@ def sum_udf(lhs, rhs):
 @chdb_udf()
 def func_use_json(arg):
     import json
-    # ... использовать модуль json
+    # ... use json module
 ```
 
 ***
 
-<div id="generate-udf">
-  ### `chdb.udf.generate_udf`
-</div>
+#### `chdb.udf.generate_udf` {#generate-udf}
 
 Генерирует файлы конфигурации UDF и исполняемого скрипта.
 
@@ -3594,9 +3628,7 @@ chdb.udf.generate_udf(func_name, args, return_type, udf_body)
 
 ***
 
-<div id="utilities">
-  ## Утилиты
-</div>
+## Утилиты {#utilities}
 
 Служебные функции и вспомогательные средства для chDB.
 
@@ -3605,9 +3637,7 @@ chdb.udf.generate_udf(func_name, args, return_type, udf_body)
 
 ***
 
-<div id="convert-to-columnar">
-  ### `chdb.utils.convert_to_columnar`
-</div>
+### `chdb.utils.convert_to_columnar` {#convert-to-columnar}
 
 Преобразует список словарей в столбцовый формат.
 
@@ -3651,9 +3681,7 @@ chdb.utils.convert_to_columnar(items: List[Dict[str, Any]]) → Dict[str, List[A
 
 ***
 
-<div id="flatten-dict">
-  ### `chdb.utils.flatten_dict`
-</div>
+### `chdb.utils.flatten_dict` {#flatten-dict}
 
 Преобразует вложенный словарь в плоский.
 
@@ -3708,9 +3736,7 @@ chdb.utils.flatten_dict(d: Dict[str, Any], parent_key: str = '', sep: str = '_')
 
 ***
 
-<div id="infer-data-type">
-  ### `chdb.utils.infer_data_type`
-</div>
+### `chdb.utils.infer_data_type` {#infer-data-type}
 
 Определяет наиболее подходящий тип данных для списка значений.
 
@@ -3746,9 +3772,7 @@ chdb.utils.infer_data_type(values: List[Any]) → str
 
 ***
 
-<div id="infer-data-types">
-  ### `chdb.utils.infer_data_types`
-</div>
+### `chdb.utils.infer_data_types` {#infer-data-types}
 
 Определяет типы данных для каждого столбца в столбцовой структуре данных.
 
@@ -3774,13 +3798,9 @@ chdb.utils.infer_data_types`(column_data: Dict[str, List[Any]], n_rows: int = 10
 | ---------------- | ----------------------------------------------------------------------------------------------- |
 | `List[tuple]`    | Список кортежей, каждый из которых содержит имя столбца и автоматически определённый тип данных |
 
-<div id="abstract-base-classes">
-  ## Абстрактные базовые классы
-</div>
+## Абстрактные базовые классы {#abstract-base-classes}
 
-<div id="pyreader">
-  ### **class** `chdb.rwabc.PyReader`(data: Any)&#96;
-</div>
+### **class** `chdb.rwabc.PyReader`(data: Any)&#96; {#pyreader}
 
 Базовый класс: `ABC`
 
@@ -3790,9 +3810,7 @@ class chdb.rwabc.PyReader(data: Any)
 
 ***
 
-<div id="read">
-  #### **abstractmethod** `read`
-</div>
+#### **abstractmethod** `read` {#read}
 
 Считывает указанное количество строк из заданных столбцов и возвращает список объектов,
 где каждый объект содержит последовательность значений одного столбца.
@@ -3814,9 +3832,7 @@ abstractmethod (col_names: List[str], count: int) → List[Any]
 | ----------- | -------------------------------------------------------- |
 | `List[Any]` | Список последовательностей, по одной для каждого столбца |
 
-<div id="pywriter">
-  ### **class** `chdb.rwabc.PyWriter`
-</div>
+### **class** `chdb.rwabc.PyWriter` {#pywriter}
 
 Базовый класс: `ABC`
 
@@ -3826,9 +3842,7 @@ class chdb.rwabc.PyWriter(col_names: List[str], types: List[type], data: Any)
 
 ***
 
-<div id="finalize">
-  #### **abstractmethod** finalize
-</div>
+#### **abstractmethod** finalize {#finalize}
 
 Формирует и возвращает итоговые данные из блоков. Метод должен быть реализован в подклассах.
 
@@ -3844,9 +3858,7 @@ abstractmethod finalize() → bytes
 
 ***
 
-<div id="write">
-  #### **abstractmethod** `write`
-</div>
+#### **abstractmethod** `write` {#write}
 
 Записывает столбцы данных в блоки. Должен быть реализован в подклассах.
 
@@ -3861,13 +3873,9 @@ abstractmethod write(col_names: List[str], columns: List[List[Any]]) → None
 | `col_names` | `List[str]`       | Список имён столбцов, в которые записываются данные           |
 | `columns`   | `List[List[Any]]` | Список данных по столбцам; каждый столбец представлен списком |
 
-<div id="chdb-exceptions">
-  ## Обработка исключений
-</div>
+## Обработка исключений {#exception-handling}
 
-<div id="chdb_chdbError">
-  ### **class** `chdb.ChdbError`
-</div>
+### **class** `chdb.ChdbError` {#chdberror}
 
 Базовый класс: `Exception`
 
@@ -3912,13 +3920,9 @@ Syntax error: Syntax error near 'FROM'
   могут завершиться с ошибкой, чтобы обеспечить надлежащую обработку ошибок в вашем приложении.
 </Note>
 
-<div id="version-information">
-  ## Сведения о версии
-</div>
+## Сведения о версии {#version-information}
 
-<div id="chdb-version">
-  ### `chdb.chdb_version = ('3', '6', '0')`
-</div>
+### `chdb.chdb_version = ('3', '6', '0')` {#chdb-version}
 
 Встроенная неизменяемая последовательность.
 
@@ -3929,9 +3933,7 @@ Syntax error: Syntax error near 'FROM'
 
 ***
 
-<div id="engine-version">
-  ### `chdb.engine_version = '25.5.2.1'`
-</div>
+### `chdb.engine_version = '25.5.2.1'` {#engine-version}
 
 ```python
 str(object=’’) -> str
@@ -3949,9 +3951,7 @@ errors, объект должен предоставлять буфер данн
 
 ***
 
-<div id="version">
-  ### `chdb.__version__ = '3.6.0'`
-</div>
+### `chdb.__version__ = '3.6.0'` {#version}
 
 ```python
 str(object=’’) -> str

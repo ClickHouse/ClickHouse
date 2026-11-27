@@ -33,7 +33,7 @@ struct ContingencyData : CrossTabAggregateData
     *   = sqrt(φ² / (φ² + 1)).
     **/
 
-    Float64 getResult() const
+    [[nodiscard]] Float64 getResult() const
     {
         if (count < 2)
             return std::numeric_limits<Float64>::quiet_NaN();
@@ -51,7 +51,7 @@ struct ContingencyWindowData : CrossTabPhiSquaredWindowData
         return ContingencyData::getName();
     }
 
-    Float64 getResult() const
+    [[nodiscard]] Float64 getResult() const
     {
         if (count < 2)
             return std::numeric_limits<Float64>::quiet_NaN();
@@ -68,7 +68,7 @@ void registerAggregateFunctionContingency(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description description = R"(
 The `contingency` function calculates the [contingency coefficient](https://en.wikipedia.org/wiki/Contingency_table#Cram%C3%A9r's_V_and_the_contingency_coefficient_C), a value that measures the association between two columns in a table.
-The computation is similar to the [`cramersV`](/sql-reference/aggregate-functions/reference/cramersv) function but with a different denominator in the square root.
+The computation is similar to the [`cramersV`](/reference/functions/aggregate-functions/cramersV) function but with a different denominator in the square root.
     )";
     FunctionDocumentation::Syntax syntax = "contingency(column1, column2)";
     FunctionDocumentation::Arguments arguments = {
@@ -94,9 +94,9 @@ FROM
 );
         )",
         R"(
-┌─────cramersV(a, b)─┬──contingency(a, b)─┐
-│ 0.5798088336225178 │ 0.708607540104077  │
-└────────────────────┴────────────────────┘
+┌─────cramersV(a, b)─┬─contingency(a, b)─┐
+│ 0.5798088336225178 │ 0.708607540104077 │
+└────────────────────┴───────────────────┘
         )"
     }
     };

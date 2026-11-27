@@ -15,7 +15,6 @@ SELECT
     dictGet('03148_dictionary', 'name', number) as dict_value
 FROM numbers(1)
 SETTINGS
-    enable_analyzer = 1,
     log_comment = 'simple_with_analyzer'
 FORMAT Null;
 
@@ -35,7 +34,6 @@ FROM (
     FROM numbers(1)
 ) t
 SETTINGS
-    enable_analyzer = 1,
     log_comment = 'nested_with_analyzer'
 FORMAT Null;
 
@@ -48,13 +46,6 @@ WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_databa
   AND log_comment = 'nested_with_analyzer'
   AND is_internal = 0;
 
-SELECT
-    dictGet('03148_dictionary', 'name', number) as dict_value
-FROM numbers(1)
-SETTINGS
-    enable_analyzer = 0,
-    log_comment = 'simple_without_analyzer'
-FORMAT Null;
 
 SYSTEM FLUSH LOGS query_log;
 
@@ -65,16 +56,6 @@ WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_databa
   AND log_comment = 'simple_without_analyzer'
   AND is_internal = 0;
 
-SELECT *
-FROM (
-    SELECT
-        dictGet('03148_dictionary', 'name', number) as dict_value
-    FROM numbers(1)
-) t
-SETTINGS
-    enable_analyzer = 0,
-    log_comment = 'nested_without_analyzer'
-FORMAT Null;
 
 SYSTEM FLUSH LOGS query_log;
 

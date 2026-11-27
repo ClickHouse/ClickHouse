@@ -18,3 +18,7 @@ printf '1\n2\n3\n' | ${CLICKHOUSE_LOCAL} --enable_json_ast_dialect 1 --dialect c
 # 2. Embedded `SETTINGS enable_json_ast_dialect = 0`: the gate captured at parse time stays on.
 JSON_GATE=$(${CLICKHOUSE_LOCAL} -q "SELECT parseQueryToJSON('INSERT INTO FUNCTION null(''x UInt8'') SELECT * FROM input(''x UInt8'') SETTINGS enable_json_ast_dialect = 0 FORMAT TSV') FORMAT TSVRaw")
 printf '1\n2\n3\n' | ${CLICKHOUSE_LOCAL} --enable_json_ast_dialect 1 --dialect clickhouse_json -q "$JSON_GATE" 2>&1 && echo 'json_gate_ok'
+
+# 3. SQL accepted before query-local `SETTINGS dialect = 'kusto'` must stay SQL while the
+# input() initializer reparses it, rather than switching to KQL after the setting is applied.
+printf '1\n2\n3\n' | ${CLICKHOUSE_LOCAL} -q "INSERT INTO FUNCTION null('x UInt8') SELECT * FROM input('x UInt8') SETTINGS dialect = 'kusto' FORMAT TSV" 2>&1 && echo 'kusto_query_local_dialect_ok'

@@ -10,13 +10,9 @@ integration:
   - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 場合によっては、MongoDB ClickPipe から特定のテーブルを除外するのが合理的です。たとえば、あるテーブルが分析ワークロードに不要な場合、それをスキップすることで ClickHouse のストレージコストとレプリケーションコストを削減できます。
 
-<div id="remove-tables-steps">
-  ## 特定のテーブルを削除する手順
-</div>
+## 特定のテーブルを削除する手順 {#remove-tables-steps}
 
 最初のステップは、パイプからそのテーブルを削除することです。これは、次の手順で行えます。
 
@@ -27,7 +23,11 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
 <br />
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/remove_table.webp" border size="md" />
+<div className="ch-image-md">
+  <Frame>
+    ![](/images/integrations/data-ingestion/clickpipes/postgres/remove_table.webp)
+  </Frame>
+</div>
 
 5. update をクリックします。
 6. 更新が正常に完了すると、**メトリクス** タブの status は **Running** になります。このテーブルはこの ClickPipe では以後レプリケートされなくなります。

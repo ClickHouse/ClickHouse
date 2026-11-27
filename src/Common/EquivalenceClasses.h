@@ -23,6 +23,20 @@ struct EquivalenceClasses
     using ClassPtr = std::shared_ptr<Class>;
     using ConstClassPtr = std::shared_ptr<const Class>;
 
+    EquivalenceClasses() = default;
+
+    /// The default copy would share the class lists between the copy and the source.
+    /// Single-member classes (from `add(a, a)`) are not copied; they carry no information.
+    EquivalenceClasses(const EquivalenceClasses & other) { merge(other); }
+
+    EquivalenceClasses & operator=(EquivalenceClasses other)
+    {
+        member_to_class = std::move(other.member_to_class);
+        return *this;
+    }
+
+    EquivalenceClasses(EquivalenceClasses &&) = default;
+
     void add(const T & a, const T & b)
     {
         auto & class_a = member_to_class[a];
@@ -66,7 +80,7 @@ struct EquivalenceClasses
         }
     }
 
-    ConstClassPtr getClass(const T & name) const
+    [[nodiscard]] ConstClassPtr getClass(const T & name) const
     {
         auto it = member_to_class.find(name);
         if (it == member_to_class.end())
@@ -88,7 +102,7 @@ struct EquivalenceClasses
         }
     }
 
-    const std::unordered_map<T, ClassPtr, Hash> & getMemberToClassMap() const
+    [[nodiscard]] const std::unordered_map<T, ClassPtr, Hash> & getMemberToClassMap() const
     {
         return member_to_class;
     }

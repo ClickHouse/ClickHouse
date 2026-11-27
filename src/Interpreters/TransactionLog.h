@@ -1,225 +1,169 @@
 #pragma once
+
+#include <atomic>
+#include <functional>
 #include <mutex>
+#include <optional>
+#include <set>
 #include <unordered_map>
+#include <vector>
+
 #include <Interpreters/MergeTreeTransaction.h>
-#include <Interpreters/MergeTreeTransactionHolder.h>
+#include <Interpreters/TransactionPayloads.h>
+#include <Interpreters/TransactionSession.h>
 #include <base/types.h>
-#include <boost/noncopyable.hpp>
-#include <Common/ThreadPool_fwd.h>
+#include <Common/TransactionID.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
 
-/// We want to create a TransactionLog object lazily and avoid creation if it's not needed.
-/// But we also want to call shutdown() in a specific place to avoid race conditions.
-/// We cannot simply use return-static-variable pattern,
-/// because a call to shutdown() may construct unnecessary object in this case.
-template <typename Derived>
-class SingletonHelper : private boost::noncopyable
+/// The CSN log at `/clickhouse/txn/log/csn-<N>` and this replica's in-memory view of it. A commit
+/// appends one sequential znode and its number is the CSN; every replica mirrors the log into
+/// `tid_to_csn` so `getCSN` answers locally, and the cleanup-lease holder trims the front once
+/// every replica's `_tail_ptr` has passed it.
+///
+/// Owned by `TransactionManager`. Keeper-facing methods take the handle as an argument, because
+/// the Manager owns it and its reconnection; the two that retry across a reconnection take a
+/// getter instead, so each attempt re-reads the current handle.
+class TransactionLog
 {
 public:
-    static Derived & instance()
-    {
-        Derived * ptr = instance_raw_ptr.load();
-        if (likely(ptr))
-            return *ptr;
+    using GetZooKeeper = std::function<zkutil::ZooKeeperPtr()>;
 
-        return createInstanceOrThrow();
-    }
+    TransactionLog(
+        const String & zookeeper_path_,
+        const TransactionSession & session_,
+        const std::atomic_bool & stop_flag_,
+        LoggerPtr log_);
 
-    static void shutdownIfAny()
-    {
-        std::lock_guard lock{instance_mutex};
-        if (instance_holder)
-            instance_holder->shutdown();
-    }
+    const String & logPath() const { return zookeeper_path_log; }
+    String tableLastCommittedTidPath(Int64 cross_replica_id) const;
+    String tableProcessedCSNPath(Int64 cross_replica_id) const;
 
-private:
-    static Derived & createInstanceOrThrow();
-
-    static inline std::atomic<Derived *> instance_raw_ptr;
-    /// It was supposed to be std::optional, but gcc fails to compile it for some reason
-    static inline std::shared_ptr<Derived> instance_holder;
-    static inline std::mutex instance_mutex;
-};
-
-class TransactionsInfoLog;
-using TransactionsInfoLogPtr = std::shared_ptr<TransactionsInfoLog>;
-using ZooKeeperPtr = std::shared_ptr<zkutil::ZooKeeper>;
-
-/// This class maintains transaction log in ZooKeeper and a list of currently running transactions in memory.
-///
-/// Each transaction has unique ID (TID, see details below).
-/// TransactionID is allocated when transaction begins.
-///
-/// We use TransactionID to associate changes (created/removed data parts) with transaction that has made/is going to make these changes.
-/// To commit a transaction we create sequential node "/path_to_log/log/csn-" in ZK and write TID into this node.
-/// Allocated sequential number is a commit timestamp or Commit Sequence Number (CSN). It indicates a (logical) point in time
-/// when transaction is committed and all its changes became visible. So we have total order of all changes.
-///
-/// Also CSNs are used as snapshots: all changes that were made by a transaction that was committed with a CSN less or equal than some_csn
-/// are visible in some_csn snapshot.
-///
-/// TransactionID consists of three parts: (start_csn, local_tid, host_id)
-///   - start_csn is the newest CSN that existed when the transaction was started and also it's snapshot that is visible for this transaction
-///   - local_tid is local sequential number of the transaction, each server allocates local_tids independently without requests to ZK
-///   - host_id is persistent UUID of host that has started the transaction, it's kind of tie-breaker that makes ID unique across all servers
-///
-/// To check if some transaction is committed or not we fetch "csn-xxxxxx" nodes from ZK and construct TID -> CSN mapping,
-/// so for committed transactions we know commit timestamps.
-/// However, if we did not find a mapping for some TID, it means one of the following cases:
-///    1. Transaction is not committed (yet)
-///    2. Transaction is rolled back (quite similar to the first case, but it will never be committed)
-///    3. Transactions was committed a long time ago and we removed its entry from the log
-/// To distinguish the third case we store a "tail pointer" in "/path_to_log/tail_ptr". It's a CSN such that it's safe to remove from log
-/// entries with tid.start_csn < tail_ptr, because CSNs for those TIDs are already written into data parts
-/// and we will not do a CSN lookup for those TIDs anymore.
-///
-/// (however, transactions involving multiple hosts and/or ReplicatedMergeTree tables are currently not supported)
-class TransactionLog final : public SingletonHelper<TransactionLog>
-{
-public:
-
-    TransactionLog();
-
-    ~TransactionLog();
-
-    void shutdown();
-
-    /// Returns the newest snapshot available for reading
     CSN getLatestSnapshot() const;
-    /// Returns the oldest snapshot that is visible for some running transaction
-    CSN getOldestSnapshot() const;
+    CSN getOwnTailPtr() const { return tail_ptr.load(); }
+    CSN getGlobalTailPtr() const { return global_tail_ptr.load(); }
+    void notifyUpdated();
 
-    /// Allocates TID, returns new transaction object
-    MergeTreeTransactionPtr beginTransaction();
+    void initLogRoot(const zkutil::ZooKeeperPtr & zookeeper);
+    /// Parents for the per-table stamp and processed-CSN znodes.
+    void initTableNodes(const zkutil::ZooKeeperPtr & zookeeper);
+    void restoreOwnTailPtr(const zkutil::ZooKeeperPtr & zookeeper);
+    /// Block until a commit or the timeout, so the periodic tasks still run on an idle cluster.
+    void waitForUpdate(size_t milliseconds);
+    /// Return the newest CSN loaded, or nullopt if nothing was new.
+    std::optional<CSN> reloadCSNLogs(const zkutil::ZooKeeperPtr & zookeeper);
+    std::optional<CSN> loadNewEntries(const zkutil::ZooKeeperPtr & zookeeper);
+    /// Call under the lock `beginTransaction` uses: it pairs this with the local-TID counter, and
+    /// an old `start_csn` beside a rewound `local_tid` mints a TID that already exists.
+    void publishSnapshot(CSN csn);
+    void assertLoaded() const;
 
-    /// Tries to commit transaction. Returns Commit Sequence Number.
-    /// Throw if transaction was concurrently killed or if some precommit check failed.
-    /// May throw if ZK connection is lost. Transaction status is unknown in this case.
-    /// Returns CommittingCSN if throw_on_unknown_status is false and connection was lost.
-    CSN commitTransaction(const MergeTreeTransactionPtr & txn, bool throw_on_unknown_status);
-
-    /// Releases locks that that were acquired by transaction, releases snapshot, removes transaction from the list of active transactions.
-    /// Normally it should not throw, but if it does for some reason (global memory limit exceeded, disk failure, etc)
-    /// then we should terminate server and reinitialize it to avoid corruption of data structures. That's why it's noexcept.
-    void rollbackTransaction(const MergeTreeTransactionPtr & txn) noexcept;
-
-    /// Returns CSN if transaction with specified ID was committed and UnknownCSN if it was not.
-    /// Returns NonTransactionalCSN for NonTransactionalTID without creating a TransactionLog instance as a special case.
-    /// Some time a transaction could be committed concurrently, in order to resolve it provide failback_with_strict_load_csn
-    static CSN getCSN(const TransactionID & tid, const std::atomic<CSN> * failback_with_strict_load_csn = nullptr);
-    static CSN getCSN(const TIDHash & tid, const std::atomic<CSN> * failback_with_strict_load_csn = nullptr);
-    static CSN getCSNAndAssert(const TransactionID & tid, std::atomic<CSN> & failback_with_strict_load_csn);
-
-    /// Ensures that getCSN returned UnknownCSN because transaction is not committed and not because entry was removed from the log.
-    static void assertTIDIsNotOutdated(const TransactionID & tid, const std::atomic<CSN> * failback_with_strict_load_csn = nullptr);
-
-
-    /// Returns a pointer to transaction object if it's running or nullptr.
-    MergeTreeTransactionPtr tryGetRunningTransaction(const TIDHash & tid);
-
-    using TransactionsList = std::unordered_map<TIDHash, MergeTreeTransactionPtr>;
-    /// Returns copy of list of running transactions.
-    TransactionsList getTransactionsList() const;
-
-    /// Waits for provided CSN (and all previous ones) to be loaded from the log.
-    /// Returns false if waiting was interrupted (e.g. by shutdown)
+    /// Waits for `csn` and everything before it. False if interrupted by shutdown.
     bool waitForCSNLoaded(CSN csn) const;
+    void sync(const GetZooKeeper & get_zookeeper) const;
 
-    bool isShuttingDown() const { return stop_flag.load(); }
+    CSN lookupCSNInMap(const TIDHash & tid_hash) const;
+    /// A CSN an earlier gap read already resolved. `UnknownCSN` on miss.
+    CSN lookupGapCSN(const TIDHash & tid_hash) const;
+    /// For a TID newer than `latest_snapshot`: read it from Keeper rather than waiting for the
+    /// updating thread, which may be blocked on a lock the caller holds.
+    CSN resolveGapCSNFromKeeper(const GetZooKeeper & get_zookeeper, const TIDHash & tid_hash);
 
-    void sync() const;
+    void updateTableStamp(Int64 cross_replica_id, CSN stamp_csn);
+    void updateTableProcessedCSN(Int64 cross_replica_id, CSN processed_csn);
+    void advanceAffectedTablesStamps(const std::vector<MergeTreeTransaction::AffectedSMTTable> & affected_tables, CSN csn);
+    void forgetDroppedTable(const zkutil::ZooKeeperPtr & zookeeper, Int64 cross_replica_id);
 
-    static void increaseAsyncTablesLoadingJobNumber();
-    static void decreaseAsyncTablesLoadingJobNumber();
-    static Int64 asyncTablesLoadingJobNumber();
+    /// The caller supplies the clamps only it knows.
+    void advanceOwnTailPtr(const zkutil::ZooKeeperPtr & zookeeper, CSN oldest_snapshot, CSN oldest_unfinalized_start_csn);
+
+    /// Cleanup-lease holder only. `lease_czxid` guards every write, so a lost lease cannot trim.
+    void removeOldEntries(const zkutil::ZooKeeperPtr & zookeeper, const String & lease_path, int64_t lease_czxid);
+
+    /// Drop `tid_to_csn` entries whose CSN is already gone from `/log`. Runs on every replica, or
+    /// a peer's map grows forever. Prunes by what Keeper no longer holds, never by a floor of our
+    /// own: the map has to stay a superset of `/log`.
+    void pruneInMemoryEntriesRemovedFromLog(const zkutil::ZooKeeperPtr & zookeeper);
 
 private:
-    void loadLogFromZooKeeper() TSA_REQUIRES(mutex);
-    void runUpdatingThread();
+    std::optional<CSN> loadEntries(const zkutil::ZooKeeperPtr & zookeeper, Strings::const_iterator beg, Strings::const_iterator end);
+    std::optional<CSN> processCSNLogs(const Strings & names, const Strings & data);
+    std::optional<CSN> computeGlobalMinTailPtr(const zkutil::ZooKeeperPtr & zookeeper) const;
 
-    void loadEntries(Strings::const_iterator beg, Strings::const_iterator end);
-    void loadNewEntries();
-    void removeOldEntries();
+    const String zookeeper_path_log;
+    const String zookeeper_path_tables;
+    const String zookeeper_path_tables_stamp;
+    const String zookeeper_path_tables_processed;
+    const TransactionSession & session;
+    const std::atomic_bool & stop_flag;
+    LoggerPtr log;
 
-    CSN finalizeCommittedTransaction(MergeTreeTransaction * txn, CSN allocated_csn, scope_guard & state_guard) noexcept;
-
-    void tryFinalizeUnknownStateTransactions();
-
-    static UInt64 deserializeCSN(const String & csn_node_name);
-    static String serializeCSN(CSN csn);
-    static TransactionID deserializeTID(const String & csn_node_content);
-    static String serializeTID(const TransactionID & tid);
-
-    /// Defined out of line: a definition in the header gives every shared object its own copy.
-    static std::atomic<Int64> async_tables_loading_job_number;
-
-    ZooKeeperPtr getZooKeeper() const;
-
-    /// Some time a transaction could be committed concurrently, in order to resolve it provide failback_with_strict_load_csn
-    CSN getCSNImpl(const TIDHash & tid_hash, const std::atomic<CSN> * failback_with_strict_load_csn = nullptr) const;
-
-    const ContextPtr global_context;
-    LoggerPtr const log;
-
-    /// The newest snapshot available for reading
     std::atomic<CSN> latest_snapshot;
-
-    /// Local part of TransactionID number. We reset this counter for each new snapshot.
-    std::atomic<LocalTID> local_tid_counter;
+    Coordination::EventPtr log_updated_event = std::make_shared<Poco::Event>();
 
     mutable std::mutex mutex;
-    /// Mapping from TransactionID to CSN for recently committed transactions.
-    /// Allows to check if some transactions is committed.
+
+    /// `csn` is separate from the payload because the log entry carries it in the znode name.
     struct CSNEntry
     {
         CSN csn{};
-        TransactionID tid;
+        Tx::CSNEntryData data;
     };
     using TIDMap = std::unordered_map<TIDHash, CSNEntry>;
     TIDMap tid_to_csn TSA_GUARDED_BY(mutex);
+    /// Highest CSN absorbed into `tid_to_csn`. A number, not a znode name (see `serializeCSN`).
+    CSN last_loaded_csn TSA_GUARDED_BY(mutex) = Tx::UnknownCSN;
 
-    mutable std::mutex running_list_mutex;
-    /// Transactions that are currently processed
-    TransactionsList running_list TSA_GUARDED_BY(running_list_mutex);
-    /// If we lost connection on attempt to create csn- node then we don't know transaction's state.
-    using UnknownStateList = std::vector<std::pair<MergeTreeTransactionPtr, scope_guard>>;
-    UnknownStateList unknown_state_list TSA_GUARDED_BY(running_list_mutex);
-    UnknownStateList unknown_state_list_loaded TSA_GUARDED_BY(running_list_mutex);
-    /// Ordered list of snapshots that are currently used by some transactions. Needed for background cleanup.
-    std::list<CSN> snapshots_in_use TSA_GUARDED_BY(running_list_mutex);
+    /// Kept out of `tid_to_csn` on purpose: feeding it there would trip the dedup guard in
+    /// `loadEntries` and starve `table_affected_csns`. A CSN never changes, so a hit is correct.
+    mutable std::mutex gap_csn_cache_mutex;
+    std::unordered_map<TIDHash, CSN> gap_csn_cache TSA_GUARDED_BY(gap_csn_cache_mutex);
 
-    ZooKeeperPtr zookeeper TSA_GUARDED_BY(mutex);
-    const String zookeeper_path;
+    /// `cross_replica_id -> CSNs that touched the table`. `std::set` gives `upper_bound` in
+    /// O(log N) for the watermark walk. Pruned in lockstep with `tid_to_csn`.
+    using TableAffectedCSNs = std::unordered_map<Int64, std::set<CSN>>;
+    TableAffectedCSNs table_affected_csns TSA_GUARDED_BY(mutex);
+    /// What this replica's local view has absorbed. Missing entry treated as 0.
+    using TableStampCSNs = std::unordered_map<Int64, CSN>;
+    TableStampCSNs table_stamp_csns TSA_GUARDED_BY(mutex);
+    /// What `processPartsUpdate` has reconciled. Holds the cleanup floor below anything unapplied.
+    using TableProcessedCSNs = std::unordered_map<Int64, CSN>;
+    TableProcessedCSNs table_processed_csns TSA_GUARDED_BY(mutex);
 
-    const String zookeeper_path_log;
-    /// Name of the newest entry that was loaded from log in ZK
-    String last_loaded_entry TSA_GUARDED_BY(mutex);
-    /// The oldest CSN such that we store in log entries with TransactionIDs containing this CSN.
-    std::atomic<CSN> tail_ptr = Tx::UnknownCSN;
-    std::atomic<bool> updated_tail_ptr{false};
-
-    Coordination::EventPtr log_updated_event = std::make_shared<Poco::Event>();
-
-    std::atomic_bool stop_flag = false;
-    std::unique_ptr<ThreadFromGlobalPool> updating_thread;
-
-    const Float64 fault_probability_before_commit = 0;
-    const Float64 fault_probability_after_commit = 0;
-};
-
-template <typename Derived>
-Derived & SingletonHelper<Derived>::createInstanceOrThrow()
-{
-    std::lock_guard lock{instance_mutex};
-    if (!instance_holder)
+    /// One entry eligible for removal from `/log`: below `global_min`, and all its SMT mutations
+    /// CSN-stamped.
+    struct RemovableEntry
     {
-        instance_holder = std::make_shared<Derived>();
-        instance_raw_ptr = instance_holder.get();
-    }
-    return *instance_holder;
-}
+        CSN csn = Tx::UnknownCSN;
+        TransactionID tid;
+        UUID replica_id;
+        std::vector<MergeTreeTransaction::AffectedSMTTable> smt;
+        TIDHash hash = 0;
+    };
+
+    /// One cleanup pass's Keeper writes, batched into a single Multi and built offline from a
+    /// read-only snapshot.
+    struct CleanupPlan
+    {
+        std::vector<CSN> log_removes;
+        CSN new_watermark = Tx::UnknownCSN;
+    };
+
+    /// Walks `tid_to_csn` ascending by CSN, stopping at the first ineligible entry. Ascending
+    /// order matters: the Multi removes a `/log/csn-N` prefix and a retry replays that prefix.
+    std::vector<RemovableEntry> collectRemovableEntries(CSN global_min, CSN latest_entry_csn);
+    CleanupPlan computeCleanupPlan(const std::vector<RemovableEntry> & removable_list) const;
+    /// Drop the in-memory entries matching the prefix the Multi just removed, and no more, so the
+    /// mirror stays consistent with Keeper.
+    void evictInMemoryPrefix(const std::vector<RemovableEntry> & removable_list, size_t log_removed_idx);
+
+    std::atomic<CSN> tail_ptr = Tx::UnknownCSN;
+    /// min(`tail_ptr`) over live replicas — what cleanup may trim below.
+    std::atomic<CSN> global_tail_ptr = Tx::UnknownCSN;
+    CSN last_pruned_below = Tx::UnknownCSN;
+};
 
 }

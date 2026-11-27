@@ -15,17 +15,17 @@ import { BetaBadge } from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
 
 O ClickHouse oferece suporte à integração com vários catálogos (Unity, Glue, Polaris,
 etc.). Neste guia, mostraremos as etapas para consultar seus dados
-usando o ClickHouse e o [Apache catálogo Polaris](https://polaris.apache.org/releases/1.1.0/getting-started/using-polaris/#setup).
+usando o ClickHouse e o [catálogo Apache Polaris](https://polaris.apache.org/releases/1.1.0/getting-started/using-polaris/#setup).
 O Apache Polaris oferece suporte a tabelas Iceberg e Delta Tables (por meio de Generic Tables). No momento, esta integração oferece suporte apenas a tabelas Iceberg.
 
 <Note>
-  Como este recurso é experimental, você precisará ativá-lo usando:
-  `SET allow_experimental_database_unity_catalog = 1;`
+  Este recurso está em beta. Habilite-o com:
+  `SET allow_database_iceberg = 1;`
+
+  Em versões anteriores à 25.8, nas quais o recurso é experimental, use `SET allow_experimental_database_iceberg = 1;`.
 </Note>
 
-<div id="prerequisites">
-  ## Pré-requisitos
-</div>
+## Pré-requisitos {#prerequisites}
 
 Para se conectar ao catálogo Polaris, você precisará de:
 

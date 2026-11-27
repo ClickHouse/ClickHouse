@@ -1,9 +1,15 @@
 #include <Analyzer/ColumnNode.h>
+#include <Analyzer/ConstantNode.h>
 #include <Analyzer/IQueryTreeNode.h>
 
+#include <typeinfo>
 #include <unordered_map>
 
+#include <Common/CurrentThread.h>
 #include <Common/SipHash.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
@@ -76,6 +82,53 @@ struct NodePairHash
     }
 };
 
+/** The correspondence between the column sources of two compared trees.
+  *
+  * Column sources are compared by content, and they are not necessary part of the compared trees.
+  * The correspondence must be a bijection: if a column source of one tree was paired with a column source
+  * of the other tree, every other reference to one of them must be paired with the same counterpart.
+  * Otherwise `f(a.x, a.x)` is equal to `f(a.x, b.x)` when `a` and `b` have the same content.
+  * A column source can be paired with itself, when the two trees refer to the same table expression.
+  *
+  * This is also what `getTreeHash` does: it hashes the content of a column source on the first reference
+  * and the identifier of the column source on the subsequent references.
+  */
+class ColumnSourcesBijection
+{
+public:
+    enum class AddResult : uint8_t
+    {
+        /// The pair is new, and it does not contradict the bijection.
+        Added,
+        /// The pair is already known.
+        Exists,
+        /// One of the column sources is already paired with a different one.
+        Conflict,
+    };
+
+    AddResult add(const IQueryTreeNode * lhs_source, const IQueryTreeNode * rhs_source)
+    {
+        auto [lhs_it, lhs_inserted] = lhs_to_rhs.emplace(lhs_source, rhs_source);
+        auto [rhs_it, rhs_inserted] = rhs_to_lhs.emplace(rhs_source, lhs_source);
+
+        if (lhs_it->second != rhs_source || rhs_it->second != lhs_source)
+            return AddResult::Conflict;
+
+        if (lhs_source != rhs_source)
+            is_identity = false;
+
+        return lhs_inserted ? AddResult::Added : AddResult::Exists;
+    }
+
+    /// Every column source is paired with itself.
+    [[nodiscard]] bool isIdentity() const { return is_identity; }
+
+private:
+    UnorderedMapWithMemoryTracking<const IQueryTreeNode *, const IQueryTreeNode *> lhs_to_rhs;
+    UnorderedMapWithMemoryTracking<const IQueryTreeNode *, const IQueryTreeNode *> rhs_to_lhs;
+    bool is_identity = true;
+};
+
 }
 
 bool IQueryTreeNode::isEqual(const IQueryTreeNode & rhs, CompareOptions compare_options) const
@@ -85,6 +138,17 @@ bool IQueryTreeNode::isEqual(const IQueryTreeNode & rhs, CompareOptions compare_
 
     std::vector<NodePair> nodes_to_process;
     std::unordered_set<NodePair, NodePairHash> equals_pairs;
+
+    ColumnSourcesBijection column_sources;
+
+    /** A node that is shared between the two trees is not traversed, because it is equal to itself.
+      * But every column source that is referenced from a shared node is paired with itself,
+      * and this must not contradict the bijection: `f(a.x, a.x)` is not equal to `f(a.x, b.x)`
+      * also when the first argument is the same node in both trees.
+      * This is checked after the traversal, and only if some column source was paired with a different one.
+      * It is not so in the usual case, when the compared expressions refer to the same table expressions.
+      */
+    VectorWithMemoryTracking<const IQueryTreeNode *> shared_nodes;
 
     nodes_to_process.emplace_back(this, &rhs);
 
@@ -105,10 +169,13 @@ bool IQueryTreeNode::isEqual(const IQueryTreeNode & rhs, CompareOptions compare_
         if (lhs_node_to_compare == rhs_node_to_compare)
         {
             equals_pairs.emplace(lhs_node_to_compare, rhs_node_to_compare);
+            shared_nodes.push_back(lhs_node_to_compare);
             continue;
         }
 
-        if (lhs_node_to_compare->getNodeType() != rhs_node_to_compare->getNodeType() ||
+        /// isEqualImpl implementations downcast rhs to their own exact class, so the gate must compare
+        /// dynamic types: getNodeType is coarser, all column transformer kinds report TRANSFORMER.
+        if (typeid(*lhs_node_to_compare) != typeid(*rhs_node_to_compare) ||
             !lhs_node_to_compare->isEqualImpl(*rhs_node_to_compare, compare_options))
             return false;
 
@@ -145,10 +212,51 @@ bool IQueryTreeNode::isEqual(const IQueryTreeNode & rhs, CompareOptions compare_
                 return false;
 
             if (lhs_source && rhs_source)
-                nodes_to_process.emplace_back(lhs_source.get(), rhs_source.get());
+            {
+                auto add_result = column_sources.add(lhs_source.get(), rhs_source.get());
+
+                if (add_result == ColumnSourcesBijection::AddResult::Conflict)
+                    return false;
+
+                /// Compare the content of the column sources only once.
+                if (add_result == ColumnSourcesBijection::AddResult::Added)
+                    nodes_to_process.emplace_back(lhs_source.get(), rhs_source.get());
+            }
         }
 
         equals_pairs.emplace(lhs_node_to_compare, rhs_node_to_compare);
+    }
+
+    if (column_sources.isIdentity() || shared_nodes.empty())
+        return true;
+
+    UnorderedSetWithMemoryTracking<const IQueryTreeNode *> visited_shared_nodes;
+
+    while (!shared_nodes.empty())
+    {
+        const auto * shared_node = shared_nodes.back();
+        shared_nodes.pop_back();
+
+        if (!visited_shared_nodes.emplace(shared_node).second)
+            continue;
+
+        for (const auto & child : shared_node->children)
+        {
+            if (child)
+                shared_nodes.push_back(child.get());
+        }
+
+        if (const auto * column_node = shared_node->as<ColumnNode>())
+        {
+            if (auto source = column_node->getColumnSourceOrNull())
+            {
+                /// A column source that is referenced from a shared node is paired with itself.
+                if (column_sources.add(source.get(), source.get()) == ColumnSourcesBijection::AddResult::Conflict)
+                    return false;
+
+                shared_nodes.push_back(source.get());
+            }
+        }
     }
 
     return true;
@@ -159,7 +267,7 @@ size_t & getTreeHashWorkCounter()
     /// Thread-local accumulator of the number of nodes visited by getTreeHash. It lets a pass
     /// that hashes many subtrees (e.g. optimize_and_compare_chain) bound its own work directly,
     /// without separately measuring tree sizes -- it watches this counter and backs off once it
-    /// grows too much. The hashing itself is unchanged; this is a pure observability counter.
+    /// grows too much. getTreeHash also checks for query cancellation every 65536 visited nodes.
     static thread_local size_t counter = 0;
     return counter;
 }
@@ -176,8 +284,23 @@ IQueryTreeNode::Hash IQueryTreeNode::getTreeHash(CompareOptions compare_options)
       * For weak nodes there is special handling. If we visit weak node first time we update hash state with weak node content and register
       * identifier for this node, for subsequent visits of this weak node we hash weak node identifier instead of content.
       */
+    size_t & hashed_nodes = getTreeHashWorkCounter();
+
+    /// Analysis passes hash trees in per-key loops, so a long analysis observes query cancellation here.
+    static constexpr size_t cancellation_check_period = 1 << 16;
+
+    /// A constant has no children and only `convertToNullable` changes its value, so its hash without the alias is computed once.
+    const auto * constant_node = as<ConstantNode>();
+    const bool use_constant_hash_cache = constant_node && !(compare_options.compare_aliases && !alias.empty());
+    if (use_constant_hash_cache && constant_node->cached_tree_hash)
+    {
+        /// Counts as one hashed node, as without the cache.
+        if (++hashed_nodes % cancellation_check_period == 0)
+            CurrentThread::checkIfNotCancelled();
+        return *constant_node->cached_tree_hash;
+    }
+
     HashState hash_state;
-    size_t visited_nodes = 0;
 
     std::unordered_map<const IQueryTreeNode *, size_t> weak_node_to_identifier;
 
@@ -188,7 +311,9 @@ IQueryTreeNode::Hash IQueryTreeNode::getTreeHash(CompareOptions compare_options)
     {
         const auto [node_to_process, is_weak_node] = nodes_to_process.back();
         nodes_to_process.pop_back();
-        ++visited_nodes;
+
+        if (++hashed_nodes % cancellation_check_period == 0)
+            CurrentThread::checkIfNotCancelled();
 
         if (is_weak_node)
         {
@@ -228,8 +353,10 @@ IQueryTreeNode::Hash IQueryTreeNode::getTreeHash(CompareOptions compare_options)
         }
     }
 
-    getTreeHashWorkCounter() += visited_nodes;
-    return getSipHash128AsPair(hash_state);
+    auto tree_hash = getSipHash128AsPair(hash_state);
+    if (use_constant_hash_cache)
+        constant_node->cached_tree_hash = tree_hash;
+    return tree_hash;
 }
 
 QueryTreeNodePtr IQueryTreeNode::clone() const

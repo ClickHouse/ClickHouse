@@ -1,5 +1,4 @@
 #include <Core/Settings.h>
-#include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -15,12 +14,14 @@
 #include <Columns/ColumnNullable.h>
 
 #include <Interpreters/Context.h>
-#include <Interpreters/castColumn.h>
 
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/CastOverloadResolver.h>
 #include <Functions/extractTimeZoneFromFunctionArguments.h>
+#include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/NullableUtils.h>
 
 namespace DB
 {
@@ -46,21 +47,33 @@ public:
         return std::make_shared<FunctionCastOrDefault>(context);
     }
 
-    explicit FunctionCastOrDefault(ContextPtr context_) : keep_nullable(context_->getSettingsRef()[Setting::cast_keep_nullable]) { }
+    explicit FunctionCastOrDefault(ContextPtr context_)
+        : keep_nullable(context_->getSettingsRef()[Setting::cast_keep_nullable])
+        , cast_or_null_resolver(createCastOverloadResolver(context_, CastType::accurateOrNull, {}))
+    {
+    }
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    size_t getNumberOfArguments() const override { return 0; }
-    bool isVariadic() const override { return true; }
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] bool isVariadic() const override { return true; }
+    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
-    bool useDefaultImplementationForNulls() const override { return false; }
-    bool useDefaultImplementationForNothing() const override { return false; }
-    bool useDefaultImplementationForConstants() const override { return false; }
-    bool useDefaultImplementationForLowCardinalityColumns() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForNothing() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForLowCardinalityColumns() const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    /// Documentation-only — result type is parsed from the const-string
+    /// type-name (2nd argument). If the value can't be cast, the optional
+    /// default (3rd argument) is returned instead.
+    [[nodiscard]] String getSignatureString() const override
+    {
+        return "(Any, const String, [Any]) -> Any";
+    }
+
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         size_t arguments_size = arguments.size();
         if (arguments_size != 2 && arguments_size != 3)
@@ -78,9 +91,23 @@ public:
                 getName(),
                 arguments[1].type->getName());
 
-        DataTypePtr result_type = DataTypeFactory::instance().get(type_column_typed->getValue<String>());
+        /// Delegate type determination to the cast resolver. This ensures that
+        /// DataTypeValidationSettings and timezone substitution are applied
+        /// consistently between getReturnTypeImpl and executeImpl.
+        ColumnsWithTypeAndName cast_args{arguments[0], arguments[1]};
+        DataTypePtr result_type = removeNullable(cast_or_null_resolver->getReturnType(cast_args));
 
-        if (keep_nullable && arguments.front().type->isNullable())
+        /// The resolver uses CastType::accurateOrNull which wraps non-Nullable
+        /// targets in Nullable (to detect cast failures via NULL). We strip that
+        /// wrapper above. But when the user explicitly requested a Nullable target
+        /// type, the resolver didn't add the Nullable wrapper — the target was
+        /// already Nullable — so removeNullable incorrectly stripped the
+        /// user-requested Nullable. Restore it.
+        auto user_target_type = DataTypeFactory::instance().get(type_column_typed->getValue<String>());
+        if (user_target_type->isNullable())
+            result_type = makeNullable(result_type);
+
+        if (keep_nullable && canContainNull(*arguments.front().type) && result_type->canBeInsideNullable())
             result_type = makeNullable(result_type);
 
         if (arguments.size() == 3)
@@ -99,7 +126,7 @@ public:
         return result_type;
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type, size_t input_rows_count) const override
     {
         const ColumnWithTypeAndName & column_to_cast = arguments[0];
 
@@ -122,26 +149,39 @@ public:
         return executeOnNonConstArguments(arguments, return_type, input_rows_count);
     }
 
-    ColumnPtr executeOnNonConstArguments(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type, size_t /*input_rows_count*/) const
+    [[nodiscard]] ColumnPtr executeOnNonConstArguments(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type, size_t /*input_rows_count*/) const
     {
         const ColumnWithTypeAndName & column_to_cast = arguments[0];
         auto non_const_column_to_cast = column_to_cast.column->convertToFullColumnIfConst();
         ColumnWithTypeAndName column_to_cast_non_const{non_const_column_to_cast, column_to_cast.type, column_to_cast.name};
 
-        auto cast_result = castColumnAccurateOrNull(column_to_cast_non_const, return_type);
+        ColumnsWithTypeAndName cast_args
+        {
+            column_to_cast_non_const,
+            {
+                DataTypeString().createColumnConst(non_const_column_to_cast->size(), return_type->getName()),
+                std::make_shared<DataTypeString>(),
+                ""
+            }
+        };
+        auto probe_type = cast_or_null_resolver->getReturnType(cast_args);
+        auto cast_func = cast_or_null_resolver->build(cast_args);
+        auto cast_result = cast_func->execute(cast_args, probe_type, non_const_column_to_cast->size(), false);
+        auto cast_null_map_column = getOuterNullMap(*cast_result);
+        auto source_null_map_column = getOuterNullMap(*non_const_column_to_cast);
+        const auto * cast_null_map_data = cast_null_map_column
+            ? &assert_cast<const ColumnUInt8 &>(*cast_null_map_column).getData()
+            : nullptr;
+        const auto * source_null_map_data = source_null_map_column
+            ? &assert_cast<const ColumnUInt8 &>(*source_null_map_column).getData()
+            : nullptr;
+        if (!cast_null_map_data)
+            return cast_result;
 
-        const auto & cast_result_nullable = assert_cast<const ColumnNullable &>(*cast_result);
-        const auto & null_map_data = cast_result_nullable.getNullMapData();
-        size_t null_map_data_size = null_map_data.size();
-        const auto & nested_column = cast_result_nullable.getNestedColumn();
         auto result = return_type->createColumn();
-        result->reserve(null_map_data_size);
+        result->reserve(cast_result->size());
 
-        ColumnNullable * result_nullable = nullptr;
-        if (result->isNullable())
-            result_nullable = assert_cast<ColumnNullable *>(&*result);
-
-        size_t start_insert_index = 0;
+        const auto * cast_result_nullable = checkAndGetColumn<ColumnNullable>(cast_result.get());
 
         Field default_value;
         ColumnPtr default_column;
@@ -160,19 +200,24 @@ public:
             default_value = return_type->getDefault();
         }
 
-        for (size_t i = 0; i < null_map_data_size; ++i)
+        /// For a Nullable cast result and a non-Nullable target the values live in the nested column.
+        const IColumn & cast_values = cast_result_nullable && !result->isNullable()
+            ? cast_result_nullable->getNestedColumn()
+            : *cast_result;
+
+        const bool return_type_can_contain_null = canContainNull(*return_type);
+        const size_t rows = cast_result->size();
+        size_t start_insert_index = 0;
+
+        for (size_t i = 0; i < rows; ++i)
         {
-            bool is_current_index_null = null_map_data[i];
-            if (!is_current_index_null)
+            const bool is_source_null = source_null_map_data && (*source_null_map_data)[i];
+            const bool cast_failed = (*cast_null_map_data)[i] && (!is_source_null || !return_type_can_contain_null);
+            if (!cast_failed)
                 continue;
 
             if (i != start_insert_index)
-            {
-                if (result_nullable)
-                    result_nullable->insertRangeFromNotNullable(nested_column, start_insert_index, i - start_insert_index);
-                else
-                    result->insertRangeFrom(nested_column, start_insert_index, i - start_insert_index);
-            }
+                result->insertRangeFrom(cast_values, start_insert_index, i - start_insert_index);
 
             if (default_column)
                 result->insertFrom(*default_column, i);
@@ -182,20 +227,15 @@ public:
             start_insert_index = i + 1;
         }
 
-        if (null_map_data_size != start_insert_index)
-        {
-            if (result_nullable)
-                result_nullable->insertRangeFromNotNullable(nested_column, start_insert_index, null_map_data_size - start_insert_index);
-            else
-                result->insertRangeFrom(nested_column, start_insert_index, null_map_data_size - start_insert_index);
-        }
+        if (rows != start_insert_index)
+            result->insertRangeFrom(cast_values, start_insert_index, rows - start_insert_index);
 
         return result;
     }
 
 private:
-
     bool keep_nullable;
+    FunctionOverloadResolverPtr cast_or_null_resolver;
 };
 
 class FunctionCastOrDefaultTyped final : public IFunction
@@ -206,7 +246,7 @@ public:
     {
     }
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
 private:
     FunctionCastOrDefault impl;
@@ -214,19 +254,34 @@ private:
     DataTypePtr type;
     WhichDataType which;
 
-    size_t getNumberOfArguments() const override { return 0; }
-    bool isVariadic() const override { return true; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] bool isVariadic() const override { return true; }
 
-    bool useDefaultImplementationForNulls() const override { return impl.useDefaultImplementationForNulls(); }
-    bool useDefaultImplementationForNothing() const override { return impl.useDefaultImplementationForNothing(); }
-    bool useDefaultImplementationForLowCardinalityColumns() const override { return impl.useDefaultImplementationForLowCardinalityColumns();}
-    bool useDefaultImplementationForConstants() const override { return impl.useDefaultImplementationForConstants();}
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & arguments) const override
+    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return impl.useDefaultImplementationForNulls(); }
+    [[nodiscard]] bool useDefaultImplementationForNothing() const override { return impl.useDefaultImplementationForNothing(); }
+    [[nodiscard]] bool useDefaultImplementationForLowCardinalityColumns() const override { return impl.useDefaultImplementationForLowCardinalityColumns();}
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return impl.useDefaultImplementationForConstants();}
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & arguments) const override
     {
         return impl.isSuitableForShortCircuitArgumentsExecution(arguments);
     }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    /// Documentation-only — the result type is the destination type bound at
+    /// construction time. For `Decimal*` / `DateTime64` a const-`UInt` scale
+    /// is required before the optional default value; for `DateTime` /
+    /// `DateTime64` a const-`String` timezone may follow; the trailing
+    /// argument is the optional fallback that's returned when parsing fails.
+    [[nodiscard]] String getSignatureString() const override
+    {
+        const String target = type->getName();
+        if (isDecimal(type) || isDateTime64(type))
+            return "(Any, const UInt8, [const String], [" + target + "]) -> " + target;
+        if (isDateTimeOrDateTime64(type))
+            return "(Any, [const String], [" + target + "]) -> " + target;
+        return "(Any, [" + target + "]) -> " + target;
+    }
+
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors mandatory_args = {{"Value", nullptr, nullptr, "any type"}};
         FunctionArgumentDescriptors optional_args;
@@ -315,7 +370,7 @@ private:
         return impl.getReturnTypeImpl(arguments_with_cast_type);
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_size) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_size) const override
     {
         /// Scale and time zone
         size_t additional_arguments_size = (which.isDecimal() || which.isDateTime64()) + which.isDateTimeOrDateTime64();
@@ -376,9 +431,9 @@ SELECT accurateCastOrDefault(42, 'String')
 SELECT accurateCastOrDefault('abc', 'UInt32', 999::UInt32)
         )",
         R"(
-┌─accurateCastOrDefault('abc', 'UInt32', 999)─┐
-│                                         999 │
-└─────────────────────────────────────────────┘
+┌─accurateCastOrDefault('abc', 'UInt32', CAST('999', 'UInt32'))─┐
+│                                                           999 │
+└───────────────────────────────────────────────────────────────┘
         )"
     },
     {
@@ -774,7 +829,7 @@ or the provided default if an invalid argument is received.
     FunctionDocumentation::ReturnedValue toDateTime64OrDefault_returned_value = {"Value of type DateTime64 if successful, otherwise returns the default value if passed or 1970-01-01 00:00:00.000 if not.", {"DateTime64"}};
     FunctionDocumentation::Examples toDateTime64OrDefault_examples = {
         {"Successful conversion", "SELECT toDateTime64OrDefault('1976-10-18 00:00:00.30', 3)", "1976-10-18 00:00:00.300"},
-        {"Failed conversion", "SELECT toDateTime64OrDefault('1976-10-18 00:00:00 30', 3, 'UTC', toDateTime64('2001-01-01 00:00:00.00',3))", "2000-12-31 23:00:00.000"}
+        {"Failed conversion", "SELECT toDateTime64OrDefault('1976-10-18 00:00:00 30', 3, 'UTC', toDateTime64('2001-01-01 00:00:00.00',3))", "2001-01-01 00:00:00.000"}
     };
     FunctionDocumentation::Category toDateTime64OrDefault_category = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation::IntroducedIn toDateTime64OrDefault_introduced_in = {21, 11};
@@ -943,9 +998,9 @@ SELECT
     toIPv4OrDefault(malformed_string, toIPv4('8.8.8.8')) AS provided_default;
         )",
         R"(
-┌─valid─────────┬─default_value─┬─provided_default─┐
-│ 192.168.1.1   │ 0.0.0.0       │ 8.8.8.8          │
-└───────────────┴───────────────┴──────────────────┘
+┌─valid───────┬─default_value─┬─provided_default─┐
+│ 192.168.1.1 │ 0.0.0.0       │ 8.8.8.8          │
+└─────────────┴───────────────┴──────────────────┘
         )"
     }
     };
@@ -981,9 +1036,9 @@ SELECT
     toIPv6OrDefault(malformed_string, toIPv6('::1')) AS provided_default;
         )",
         R"(
-┌─valid──────────────────────────────────┬─default_value─┬─provided_default─┐
-│ 2001:db8:85a3::8a2e:370:7334           │ ::            │ ::1              │
-└────────────────────────────────────────┴───────────────┴──────────────────┘
+┌─valid────────────────────────┬─default_value─┬─provided_default─┐
+│ 2001:db8:85a3::8a2e:370:7334 │ ::            │ ::1              │
+└──────────────────────────────┴───────────────┴──────────────────┘
         )"
     }
     };

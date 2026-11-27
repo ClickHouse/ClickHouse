@@ -1,11 +1,12 @@
 {
+  "group": "MergeTree tables settings",
+  "root": "ko/reference/settings/merge-tree-settings",
   "directory": "none",
-  "group": "MergeTree 테이블 설정",
   "pages": [
     "ko/reference/settings/merge-tree-settings/add-minmax",
     "ko/reference/settings/merge-tree-settings/allow",
     "ko/reference/settings/merge-tree-settings/allow-experimental",
-    "ko/reference/settings/merge-tree-settings/always",
+    "ko/reference/settings/merge-tree-settings/always-fetch",
     "ko/reference/settings/merge-tree-settings/async",
     "ko/reference/settings/merge-tree-settings/cache-populated-by-fetch",
     "ko/reference/settings/merge-tree-settings/check",
@@ -84,6 +85,5 @@
     "ko/reference/settings/merge-tree-settings/write-ahead",
     "ko/reference/settings/merge-tree-settings/zero-copy",
     "ko/reference/settings/merge-tree-settings/other"
-  ],
-  "root": "ko/reference/settings/merge-tree-settings"
+  ]
 }

@@ -2,6 +2,7 @@
 #include <Interpreters/castColumn.h>
 #include <Columns/ColumnReplicated.h>
 #include <Common/memcpySmall.h>
+#include <base/sanitizer_defs.h>
 
 namespace DB
 {
@@ -63,7 +64,7 @@ static ColumnWithTypeAndName copyLeftKeyColumnToRight(
         correctNullabilityInplace(right_column, should_be_nullable);
 
     if (null_map_filter)
-        right_column.column = JoinCommon::filterWithBlanks(right_column.column, *null_map_filter);
+        right_column.column = JoinCommon::filterWithBlanks(right_column.column, *null_map_filter, false, right_column.type);
 
     if (!right_column.type->equals(*right_key_type))
         right_column.column = castColumnAccurate(right_column, right_key_type);
@@ -165,7 +166,10 @@ static void appendRightColumns(
         {
             /// All rows in the block are unmatched: emit type defaults for the right key.
             auto column = right_key.type->createColumn();
-            column->insertManyDefaults(block.rows());
+            if (right_key.type->isDefaultInsertTrivial())
+                column->insertManyDefaults(block.rows());
+            else
+                right_key.type->insertManyDefaultsInto(*column, block.rows());
             right_col = ColumnWithTypeAndName(std::move(column), right_key.type, right_col_name);
         }
         else
@@ -226,6 +230,7 @@ static MutableColumns copyEmptyColumns(const MutableColumns & columns)
     return res_columns;
 }
 
+NO_SANITIZE_UNSIGNED_OVERFLOW
 static void applyShiftAndLimitToOffsets(const IColumn::Offsets & offsets, IColumn::Offsets & out_offsets, UInt64 shift, UInt64 limit)
 {
     out_offsets.clear();
@@ -347,9 +352,13 @@ static size_t numLeftRowsForNextBlock(
 
     size_t max_rows = max_joined_block_rows;
     if (max_joined_block_bytes)
-        max_rows = std::min<size_t>(max_rows, max_joined_block_bytes / std::max<size_t>(avg_bytes_per_row, 1));
+    {
+        const size_t max_rows_by_bytes
+            = std::max<size_t>(1, max_joined_block_bytes / std::max<size_t>(avg_bytes_per_row, 1));
+        max_rows = max_rows ? std::min(max_rows, max_rows_by_bytes) : max_rows_by_bytes;
+    }
 
-    const size_t prev_offset = next_row ? offsets[next_row - 1] : 0;
+    const size_t prev_offset = next_row ? offsets[static_cast<ssize_t>(next_row) - 1] : 0;
     const size_t next_allowed_offset = prev_offset + max_rows;
 
     if (offsets.back() <= next_allowed_offset)
@@ -375,6 +384,7 @@ HashJoinResult::HashJoinResult(
     IColumn::Offsets offsets_,
     IColumn::Filter filter_,
     IColumn::Offsets && matched_rows_,
+    std::optional<size_t> matched_right_rows_,
     ScatteredBlock && block_,
     Properties properties_)
     : lazy_output(std::move(lazy_output_))
@@ -384,6 +394,7 @@ HashJoinResult::HashJoinResult(
     , offsets(std::move(offsets_))
     , filter(std::move(filter_))
     , matched_rows(std::move(matched_rows_))
+    , matched_right_rows(matched_right_rows_)
 {
 }
 
@@ -464,8 +475,8 @@ IJoinResult::JoinResultBlock HashJoinResult::next()
         return {std::move(block), next_block_ptr, !current_row_state.has_value()};
     }
 
-    const size_t prev_offset = next_row ? offsets[next_row - 1] : 0;
-    size_t num_rhs_rows = offsets[next_row + num_lhs_rows - 1] - prev_offset;
+    const size_t prev_offset = next_row ? offsets[static_cast<ssize_t>(next_row) - 1] : 0;
+    size_t num_rhs_rows = offsets[static_cast<ssize_t>(next_row + num_lhs_rows) - 1] - prev_offset;
 
     auto current_scattered_block = std::move(*scattered_block);
     scattered_block = current_scattered_block.cut(num_lhs_rows);
@@ -557,7 +568,7 @@ IJoinResult::JoinResultBlock HashJoinResult::next()
             /// Copy data from the original columns to preserve columns size in the block.
             rhs_columns.reserve(columns.size());
             for (auto & column : columns)
-                rhs_columns.push_back(column->cut(prev_offset, num_rhs_rows)->assumeMutable());
+                rhs_columns.push_back(IColumn::mutate(column->cut(prev_offset, num_rhs_rows)));
 
             if (is_last)
                 columns.clear();

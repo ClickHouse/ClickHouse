@@ -52,13 +52,9 @@ def test_memory_context_in_trace_log(started_cluster):
     #   * `JemallocSample` is emitted by `jemalloc`'s own profile sampler
     #     (~1 MiB of allocated memory per sample with `lg_prof_sample=20`),
     #     and a single small query is not guaranteed to allocate enough.
-    #   * `Memory`/`MemoryPeak` with `memory_context = 'Global'` require the
-    #     `total_memory_tracker` to cross its `total_memory_profiler_step`
-    #     watermark (4 MiB by default), which depends on cumulative
-    #     server-wide allocations including background activity, not just
-    #     this query's allocations.
     # Retrying bounds the test runtime while keeping it reliable.
     peak_forcing_attempt = 0
+    peak_forcing_query_id = None
     for attempt in range(0, 15):
         # Generate some logs to generate entries with memory_blocked_context=Global and trace_type=JemallocSample
         for i in range(10):
@@ -68,21 +64,20 @@ def test_memory_context_in_trace_log(started_cluster):
 
         node.query("SYSTEM FLUSH LOGS system.trace_log")
 
-        # `Memory`/`MemoryPeak` with `memory_context = 'Global'` are sent only when the
-        # server-wide memory usage grows past its previous peak by at least
-        # `total_memory_profiler_step` (4 MiB). The peak reached during server startup can
-        # be above anything the small queries here allocate, in which case retrying alone
-        # never helps. Force a new global peak by allocating more memory on each attempt
-        # where these events are still missing. The escalation is decoupled from the
-        # probabilistic per-query sample checks below, so retries that only miss a
-        # `MemorySample`/`JemallocSample` do not keep increasing the allocation size.
-        # `max_threads = 1` keeps the growth per attempt close to ~100 MB.
+        # `Memory`/`MemoryPeak` with `memory_context = 'Global'` are emitted by the thread whose
+        # allocation both crosses the 4 MiB `total_memory_profiler_step` watermark of
+        # `total_memory_tracker` and sets a new global peak. Both watermarks only ever grow, so
+        # after a query has raised them a query-less thread has to out-allocate that query to emit
+        # again: count the events of the query that forces the peak. `max_threads = 1` keeps the
+        # growth per attempt close to ~100 MB.
         if (
-            get_trace_events("Global", "Max", "Memory") == 0 or
-            get_trace_events("Global", "Max", "MemoryPeak") == 0
+            peak_forcing_query_id is None or
+            get_trace_events("Global", "Max", "Memory", peak_forcing_query_id) == 0 or
+            get_trace_events("Global", "Max", "MemoryPeak", peak_forcing_query_id) == 0
         ):
             peak_forcing_attempt += 1
-            node.query(f"SELECT groupArray(number) FROM numbers({peak_forcing_attempt * 12500000}) SETTINGS max_threads = 1 FORMAT Null")
+            peak_forcing_query_id = uuid.uuid4().hex
+            node.query(f"SELECT groupArray(number) FROM numbers({peak_forcing_attempt * 12500000}) SETTINGS max_threads = 1 FORMAT Null", query_id=peak_forcing_query_id)
             node.query("SYSTEM FLUSH LOGS system.trace_log")
 
         if (
@@ -90,8 +85,8 @@ def test_memory_context_in_trace_log(started_cluster):
             get_trace_events("Unknown", "Max", "JemallocSample", query_id) > 0 and
             get_trace_events("Unknown", "Max", "JemallocSample") > 0 and
             get_trace_events("Unknown", "Global", "JemallocSample") > 0 and
-            get_trace_events("Global", "Max", "Memory") > 0 and
-            get_trace_events("Global", "Max", "MemoryPeak") > 0 and
+            get_trace_events("Global", "Max", "Memory", peak_forcing_query_id) > 0 and
+            get_trace_events("Global", "Max", "MemoryPeak", peak_forcing_query_id) > 0 and
             True
         ):
             break
@@ -103,7 +98,7 @@ def test_memory_context_in_trace_log(started_cluster):
 
     for memory_context in ["Global"]:
         for trace_type in ["Memory", "MemoryPeak"]:
-            assert get_trace_events(memory_context, "Max", trace_type) > 0
+            assert get_trace_events(memory_context, "Max", trace_type, peak_forcing_query_id) > 0
 
     assert get_trace_events("Unknown", "Max", "MemorySample", query_id) > 0
     # It is better not to check for memory_blocked_context=Global, since we

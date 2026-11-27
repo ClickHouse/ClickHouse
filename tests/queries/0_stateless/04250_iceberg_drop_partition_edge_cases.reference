@@ -1,0 +1,7 @@
+=== Time-travel after DROP ===
+--- current snapshot (after DROP) ---
+2	keep
+--- parent snapshot (time-travel) ---
+1	drop-me-1
+1	drop-me-2
+2	keep

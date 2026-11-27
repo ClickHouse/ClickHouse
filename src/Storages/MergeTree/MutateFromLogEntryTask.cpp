@@ -3,6 +3,7 @@
 #include <Core/BackgroundSchedulePool.h>
 #include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
+#include <Common/ThreadStatus.h>
 #include <Common/FailPoint.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Interpreters/Context.h>
@@ -40,6 +41,8 @@ namespace MergeTreeSetting
 namespace FailPoints
 {
     extern const char rmt_mutate_task_pause_in_prepare[];
+    extern const char rmt_mutate_task_pause_before_rename_part[];
+    extern const char rmt_mutate_task_pause_after_temporary_part_released[];
     extern const char rmt_mutate_task_pause_after_zero_copy_lock[];
 }
 
@@ -52,6 +55,14 @@ MutateFromLogEntryTask::~MutateFromLogEntryTask()
     /// cleanup (MergeTreeBackgroundExecutor::routine), so set one explicitly here.
     auto component_guard = Coordination::setCurrentComponent("MutateFromLogEntryTask::~MutateFromLogEntryTask");
     zero_copy_lock.reset();
+}
+
+ContextMutablePtr MutateFromLogEntryTask::createTaskContext() const
+{
+    auto context = Context::createCopy(storage.getContext()->getBackgroundContext());
+    context->makeQueryContextForMutate(*storage.getSettings());
+    context->setCurrentQueryId(getQueryId());
+    return context;
 }
 
 ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
@@ -73,7 +84,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
 
     auto part_log_writer = [this](const ExecutionStatus & execution_status)
     {
-        auto profile_counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(profile_counters.getPartiallyAtomicSnapshot());
+        auto profile_counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(thread_group->performance_counters.getPartiallyAtomicSnapshot());
         storage.writePartLog(
             PartLogElement::MUTATE_PART, execution_status, stopwatch_ptr->elapsed(),
             entry.new_part_name, new_part, future_mutated_part->parts, merge_mutate_entry.get(), std::move(profile_counters_snapshot),
@@ -178,7 +189,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
     Strings mutation_ids;
     commands = std::make_shared<MutationCommands>(storage.queue.getMutationCommands(source_part, new_part_info.mutation, mutation_ids));
     LOG_TRACE(log, "Mutating part {} with mutation commands from {} mutations ({}): {}",
-              entry.new_part_name, commands->size(), fmt::join(mutation_ids, ", "), commands->toString(true));
+              entry.new_part_name, commands->size(), fmt::join(mutation_ids, ", "), commands->ast(true)->formatForLogging());
 
     /// mutation_ids can be empty here.
     mutation_ids_for_log = mutation_ids;
@@ -257,14 +268,11 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
         }
     }
 
-    task_context = Context::createCopy(storage.getContext()->getBackgroundContext());
-    task_context->makeQueryContextForMutate(*storage.getSettings());
-    task_context->setCurrentQueryId(getQueryId());
-
     merge_mutate_entry = storage.getContext()->getMergeList().insert(
         storage.getStorageID(),
         future_mutated_part,
-        task_context);
+        task_context,
+        thread_group);
 
     storage.writePartLog(
         PartLogElement::MUTATE_PART_START, {}, 0,
@@ -288,7 +296,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
 
 bool MutateFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWriter write_part_log)
 {
-    new_part = mutate_task->getFuture().get();
+    new_part = mutate_task->takeResultPart();
 
     auto & data_part_storage = new_part->getDataPartStorage();
 
@@ -302,6 +310,18 @@ bool MutateFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWrit
 
     storage.renameTempPartAndReplace(new_part, *transaction_ptr, /*rename_in_transaction=*/ true);
     new_part->getDataPartStorage().commitTransaction();
+
+    FailPointInjection::pauseFailPoint(FailPoints::rmt_mutate_task_pause_before_rename_part);
+
+    /// Explicitly rename the part while `mutate_task` is still alive, because it owns the RAII guard
+    /// that keeps `clearOldTemporaryDirectories` away from the `tmp_mut_<part>` directory. Releasing
+    /// the guard before the rename opens a window in which the cleanup thread starts removing the
+    /// directory while the rename is moving it to the persistent name: the part becomes active with
+    /// some of its files already deleted, so reads of it fail with `No such file or directory` and
+    /// the next mutation of it fails with `CANNOT_LINK` forever. `renameMergedTemporaryPart` renames
+    /// under the same guard for the same reason.
+    transaction_ptr->renameParts();
+
     /// We must reset the task here, similarly to MergeFromLogEntryTask::finalize.
     /// The task holds RAII guards for temporary part directories (TemporaryParts).
     /// If checkPartChecksumsAndCommit fails with a checksum mismatch, the execution
@@ -314,11 +334,15 @@ bool MutateFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWrit
     mutate_task->updateProfileEvents();
     mutate_task.reset();
 
+    /// The temporary directory of the part is no longer protected by `TemporaryParts` here.
+    /// This failpoint lets a test observe that window: with the rename above it is already gone,
+    /// while with the old ordering it is still on disk and the cleanup thread removes it.
+    FailPointInjection::pauseFailPoint(FailPoints::rmt_mutate_task_pause_after_temporary_part_released);
+
     Stopwatch commit_watch;
 
     try
     {
-        transaction_ptr->renameParts();
         storage.checkPartChecksumsAndCommit(*transaction_ptr, new_part, hardlinked_files);
     }
     catch (const Exception & e)

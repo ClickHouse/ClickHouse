@@ -2,12 +2,10 @@
 slug: /use-cases/observability/clickstack/integration-partners/bindplane
 title: 'Envío de OpenTelemetry a ClickStack con Bindplane'
 sidebarTitle: 'Bindplane'
-description: 'Envía la telemetría a ClickStack con Bindplane para gestionar los colectores de forma centralizada'
+description: 'Envía la telemetría a ClickStack con Bindplane para gestionar los recolectores de forma centralizada'
 doc_type: 'guide'
-keywords: ['Bindplane', 'OTEL', 'ClickStack', 'OpenTelemetry', 'gestión de colectores']
+keywords: ['Bindplane', 'OTEL', 'ClickStack', 'OpenTelemetry', 'gestión de recolectores']
 ---
-
-import { Image } from "/snippets/es/components/Image.jsx";
 
 import { PartnerBadge } from "/snippets/es/components/PartnerBadge/PartnerBadge.jsx";
 
@@ -16,26 +14,26 @@ import { PartnerBadge } from "/snippets/es/components/PartnerBadge/PartnerBadge.
 <Info>
   **Resumen rápido**
 
-  Esta guía le muestra cómo enrutar telemetría a ClickStack mediante el destino nativo de Bindplane para ClickStack. Aprenderá a:
+  Esta guía le muestra cómo enrutar la telemetría a ClickStack mediante el destino nativo de Bindplane para ClickStack. Aprenderá a:
 
   * Configurar ClickStack como destino en Bindplane
-  * Crear una configuración para procesar y enrutar telemetría
-  * Implementar configuraciones de forma remota en OTel collectors y empezar a recopilar datos
+  * Crear una configuración para procesar y enrutar la telemetría
+  * Implementar configuraciones de forma remota en recolectores de OTel y empezar a recopilar datos
   * Ver la telemetría en ClickStack
 
-  Esta integración combina la ingestión de alto rendimiento de ClickStack con la gestión centralizada de OTel collectors de Bindplane, lo que facilita escalar la observabilidad sin sobrecarga operativa.
+  Esta integración combina la ingestión de alto rendimiento de ClickStack con la gestión centralizada de recolectores de OTel de Bindplane, lo que facilita escalar la observabilidad sin sobrecarga operativa.
 
   Tiempo necesario: 10-15 minutos
 </Info>
 
 <div id="what-is-bindplane">
-  ## ¿Qué es Bindplane?
+  ## ¿Qué es Bindplane? {#what-is-bindplane}
 </div>
 
 Bindplane es un pipeline de telemetría nativo de OpenTelemetry que ofrece administración centralizada de OpenTelemetry Collectors. Simplifica la operación de grandes flotas de collectors al ofrecer edición visual de la configuración, rollouts seguros e inteligencia de pipeline.
 
 <div id="why-bindplane-clickstack">
-  ## ¿Por qué Bindplane + ClickStack?
+  ## ¿Por qué Bindplane + ClickStack? {#why-bindplane-clickstack}
 </div>
 
 A gran escala, gestionar flotas de OpenTelemetry Collectors se convierte en el cuello de botella operativo. ClickStack ha demostrado que puede manejar volúmenes de ingestión extremos: los clientes están ingestando telemetría a gigabytes por segundo y almacenando cientos de petabytes. El reto deja de ser el rendimiento de las consultas y pasa a ser la operación fiable de la infraestructura de collectors que alimenta ClickHouse.
@@ -56,7 +54,7 @@ Bindplane resuelve esto al ofrecer:
 </Tip>
 
 <div id="prerequisites">
-  ## Requisitos previos
+  ## Requisitos previos {#prerequisites}
 </div>
 
 * Una instancia de ClickStack en ejecución (local, Server o ClickHouse Cloud)
@@ -66,9 +64,7 @@ Bindplane resuelve esto al ofrecer:
 * API key de ingesta de ClickStack (se encuentra en ClickStack Team Settings &gt; API Keys; [consulta la documentación aquí](/es/clickstack/ingesting-data/opentelemetry#sending-otel-data))
 * Puertos de red necesarios abiertos (`4318` para HTTP/s o `4317` para gRPC)
 
-<div id="integrate-bindplane-clickstack">
-  ## Integra ClickStack con Bindplane
-</div>
+## Integra ClickStack con Bindplane {#integrate-bindplane-clickstack}
 
 <Steps>
   <Step title="Configura ClickStack como destino" id="configure-destination">
@@ -122,17 +118,17 @@ Bindplane resuelve esto al ofrecer:
     * **Transform**: Modificar la estructura o el contenido de la telemetría
     * **Batch**: Optimizar el tamaño de los lotes para una transmisión eficiente
 
-    Estos procesadores se aplican de forma coherente en toda tu flota de collectors antes de que los datos lleguen a ClickStack.
+    Estos procesadores se aplican de forma coherente en toda tu flota de recolectores antes de que los datos lleguen a ClickStack.
   </Step>
 
   <Step title="Implementa collectors e inicia el rollout" id="deploy-collectors">
-    1. Añade un collector (BDOT Collector) a tu configuración:
+    1. Añade un recolector (BDOT Collector) a tu configuración:
        * Ve a **Agents** en Bindplane
-       * Instala el collector de Bindplane en tus sistemas de destino [siguiendo las instrucciones de instalación de Bindplane](https://docs.bindplane.com/readme/install-your-first-collector)
-       * El collector aparecerá en tu lista de collectors una vez que se conecte
+       * Instala el recolector de Bindplane en tus sistemas de destino [siguiendo las instrucciones de instalación de Bindplane](https://docs.bindplane.com/readme/install-your-first-collector)
+       * El recolector aparecerá en tu lista de recolectores una vez que se conecte
 
-    2. Asigna la configuración a tus collectors:
-       * Selecciona los collectors que quieras usar
+    2. Asigna la configuración a tus recolectores:
+       * Selecciona los recolectores que quieras usar
        * Asígnales tu configuración de ClickStack
 
     3. Inicia un rollout:
@@ -143,30 +139,38 @@ Bindplane resuelve esto al ofrecer:
     <Tip>
       **Puntos clave**
 
-      Bindplane ofrece rollouts seguros con un solo clic y validación. Puedes supervisar el estado de los collectors, el throughput y cualquier error en tiempo real a través de la interfaz de Bindplane.
+      Bindplane ofrece rollouts seguros con un solo clic y validación. Puedes supervisar el estado de los recolectores, el throughput y cualquier error en tiempo real a través de la interfaz de Bindplane.
     </Tip>
 
-    <Image img="/images/clickstack/bindplane/bindplane-configuration.webp" alt="Señales de telemetría en ClickStack a través de Bindplane" size="lg" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![Señales de telemetría en ClickStack a través de Bindplane](/images/clickstack/bindplane/bindplane-configuration.webp)
+      </Frame>
+    </div>
   </Step>
 
   <Step title="Verifica la telemetría en ClickStack" id="verify-telemetry">
-    Una vez desplegada la configuración, la telemetría empezará a fluir hacia ClickStack desde tu flota gestionada de collectors:
+    Una vez desplegada la configuración, la telemetría empezará a fluir hacia ClickStack desde tu flota gestionada de recolectores:
 
-    1. Inicia sesión en tu instancia de ClickStack (UI de HyperDX)
+    1. Inicia sesión en tu instancia de ClickStack (UI de ClickStack)
     2. Ve al explorador de **Logs**, **Métricas** o **Trazas**
-    3. Deberías ver datos de telemetría de tus collectors gestionados por Bindplane
+    3. Deberías ver datos de telemetría de tus recolectores gestionados por Bindplane
     4. Los datos que llegan a ClickStack ya están enriquecidos y estructurados por los procesadores de Bindplane
 
-    <Image img="/images/clickstack/bindplane/bindplane-hyperdx.webp" alt="Señales de telemetría en ClickStack a través de Bindplane" size="lg" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![Señales de telemetría en ClickStack a través de Bindplane](/images/clickstack/bindplane/bindplane-hyperdx.webp)
+      </Frame>
+    </div>
   </Step>
 </Steps>
 
 <div id="advanced-configuration">
-  ## Configuración avanzada
+  ## Configuración avanzada {#advanced-configuration}
 </div>
 
 <div id="fan-out-routing">
-  ### Enrutamiento fan-out
+  ### Enrutamiento fan-out {#fan-out-routing}
 </div>
 
 Bindplane admite el enrutamiento fan-out, lo que le permite enviar los mismos flujos de telemetría a varios destinos simultáneamente. Puede:
@@ -178,7 +182,7 @@ Bindplane admite el enrutamiento fan-out, lo que le permite enviar los mismos fl
 Esto se configura agregando varios destinos a la configuración de Bindplane.
 
 <div id="compression">
-  ### Compresión y rendimiento
+  ### Compresión y rendimiento {#compression}
 </div>
 
 Para escenarios de alto volumen, configura la compresión en tu destino de ClickStack:
@@ -189,18 +193,18 @@ Para escenarios de alto volumen, configura la compresión en tu destino de Click
 La compresión reduce el consumo de ancho de banda al enviar telemetría a ClickStack, algo especialmente importante a gran escala.
 
 <div id="next-steps">
-  ## Próximos pasos
+  ## Próximos pasos {#next-steps}
 </div>
 
 Ahora que la telemetría fluye de Bindplane a ClickStack, puedes:
 
-* **Crear dashboards**: Crea visualizaciones en ClickStack (HyperDX) para logs, métricas y trazas
+* **Crear dashboards**: Crea visualizaciones en la UI de ClickStack para logs, métricas y trazas
 * **Configurar alertas**: Configura alertas en ClickStack para condiciones críticas
-* **Escalar tu implementación**: Agrega más collectors y fuentes a medida que crezcan tus necesidades de observabilidad
+* **Escalar tu implementación**: Agrega más recolectores y fuentes a medida que crezcan tus necesidades de observabilidad
 * **Optimizar tu pipeline**: Usa la inteligencia de pipeline de Bindplane para identificar oportunidades de optimización
 
 <div id="read-more">
-  ## Más información
+  ## Más información {#read-more}
 </div>
 
 * [Integración de ClickStack en la documentación de Bindplane](https://docs.bindplane.com/integrations/destinations/clickstack)

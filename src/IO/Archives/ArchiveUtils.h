@@ -9,6 +9,7 @@
 
 #include <archive.h>
 #include <archive_entry.h>
+#pragma clang diagnostic pop
 #endif
 
 #include <optional>
@@ -24,11 +25,16 @@ bool hasSupported7zExtension(std::string_view path);
 
 bool hasSupportedArchiveExtension(std::string_view path);
 
-/// Splits `source` at `::` into a path to an archive and a pattern inside the archive,
-/// when the left side can plausibly denote an archive. `use_glob_ast` selects the glob
-/// parser used for the "left side contains a glob" capability check: the legacy parser
-/// treats any of `*?{` as a glob, while the AST parser treats e.g. `data_{x}` as literal
-/// text, so under it such a path stays a plain (non-archive) path.
-std::pair<std::string, std::optional<std::string>> getURIAndArchivePattern(const std::string & source, bool use_glob_ast);
+std::pair<std::string, std::optional<std::string>> getURIAndArchivePattern(std::string_view source);
+
+/// Splits the archive path syntax (e.g. `archive.zip::file*.parquet`) into the path to the archive
+/// (`archive.zip`) and the path inside it (`file*.parquet`).
+/// If the source string doesn't follow the archive syntax, the function just returns it in the second part.
+std::pair<std::string, std::string> splitToArchivePathAndPathInArchive(const std::string & source);
+
+/// Whether `path_in_archive` names a file stored in the archive at `path_to_archive`, which has to
+/// exist. A member glob (e.g. `*.csv`) matches a dynamic set of files, possibly empty, so such a
+/// name is reported as present without reading the archive, the way a glob over paths is.
+bool archiveContainsFile(const std::string & path_to_archive, const std::string & path_in_archive);
 
 }

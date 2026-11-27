@@ -1,4 +1,5 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <Formats/FormatSettings.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Common/FieldVisitorToString.h>
 #include <AggregateFunctions/FactoryHelpers.h>
@@ -37,6 +38,7 @@ namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int INCORRECT_DATA;
 }
 
 
@@ -102,7 +104,7 @@ struct KeyFixed
         value = assert_cast<const ColumnVectorOrDecimal<ValueType> &>(column).getData()[row];
     }
 
-    bool less(const KeyFixed & other) const
+    [[nodiscard]] bool less(const KeyFixed & other) const
     {
         // For floating-point types, use nan_direction_hint = -1 to treat NaN as the minimum value
         // (same as argMax / IColumn::compareAt semantics): finite sort keys always beat NaN.
@@ -127,7 +129,7 @@ struct KeyString
         value = column.getDataAt(row);
     }
 
-    bool less(const KeyString & other) const { return value < other.value; }
+    [[nodiscard]] bool less(const KeyString & other) const { return value < other.value; }
 
     void serialize(WriteBuffer & buffer) const { writeStringBinary(value, buffer); }
 
@@ -141,7 +143,7 @@ struct KeyGeneric
 
     void set(const IColumn & column, size_t row) { column.get(row, value); }
 
-    bool less(const KeyGeneric & other) const
+    [[nodiscard]] bool less(const KeyGeneric & other) const
     {
         // Field::operator< uses nan_direction_hint = 1 (NaN is maximum), but we need NaN to be
         // the minimum (same as argMax / IColumn::compareAt semantics) so finite keys always win.
@@ -173,7 +175,7 @@ struct AggregateFunctionMergedJSONPatchData
         String value_blob;
         KeyData sort_key;
 
-        std::string_view pathView() const { return path; }
+        [[nodiscard]] std::string_view pathView() const { return path; }
     };
 
     VectorWithMemoryTracking<Entry> entries;
@@ -281,8 +283,9 @@ struct AggregateFunctionMergedJSONPatchData
         size_t size = 0;
         readVarUInt(size, buf);
 
+        /// Do not reserve `size` entries upfront: it comes from untrusted data and can be arbitrarily large.
+        /// A state with a wrong size fails on reading after the end of the buffer instead.
         VectorWithMemoryTracking<Entry> batch;
-        batch.reserve(size);
 
         for (size_t i = 0; i < size; ++i)
         {
@@ -290,6 +293,13 @@ struct AggregateFunctionMergedJSONPatchData
             readStringBinary(lv.path, buf);
             readStringBinary(lv.value_blob, buf);
             lv.sort_key.deserialize(buf);
+
+            /// `serialize` writes `entries`, which are sorted by path and have no duplicate paths.
+            /// A duplicate path would be inserted into the result twice for a single row of JSON.
+            if (i > 0 && batch[i - 1].path >= lv.path)
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "Paths in a serialized state of aggregate function mergedJSONPatch are not sorted or have duplicates (at path '{}')",
+                    lv.path);
         }
 
         insertBatchAtomic(batch);
@@ -297,13 +307,17 @@ struct AggregateFunctionMergedJSONPatchData
 
     void insertResultInto(
         IColumn & to,
+        const IDataType & result_type,
         const UnorderedMapWithMemoryTracking<String, SerializationPtr> & typed_path_serializations) const
     {
         auto & result_column = assert_cast<ColumnObject &>(to);
 
         if (entries.empty())
         {
-            result_column.insertDefault();
+            if (result_type.isDefaultInsertTrivial())
+                result_column.insertDefault();
+            else
+                result_type.insertDefaultInto(result_column);
             return;
         }
 
@@ -378,9 +392,9 @@ public:
     {
     }
 
-    String getName() const override { return "mergedJSONPatch"; }
+    [[nodiscard]] String getName() const override { return "mergedJSONPatch"; }
 
-    bool allocatesMemoryInArena() const override { return false; }
+    [[nodiscard]] bool allocatesMemoryInArena() const override { return false; }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
@@ -419,7 +433,7 @@ public:
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
-        this->data(place).insertResultInto(to, typed_path_serializations);
+        this->data(place).insertResultInto(to, *this->result_type, typed_path_serializations);
     }
 };
 
@@ -604,8 +618,8 @@ SELECT mergedJSONPatch(json, sort_key) FROM
             )",
             R"(
 ┌─mergedJSONPatch(json, sort_key)─┐
-│ {"a":3,"b":2,"c":4}              │
-└──────────────────────────────────┘
+│ {"a":3,"b":2,"c":4}             │
+└─────────────────────────────────┘
             )"
         }
     };

@@ -10,6 +10,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int CANNOT_READ_ALL_DATA;
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_DATA;
@@ -54,25 +55,14 @@ struct DeserializeBinaryBulkStateMapKeysOrValuesWithBuckets : public ISerializat
     ISerialization::DeserializeBinaryBulkStatePtr bucket_index_state;
     bool has_bucket_index = false;
 
-    ISerialization::DeserializeBinaryBulkStatePtr clone() const override
+    ISerialization::DeserializeBinaryBulkStatePtr cloneImpl(ISerialization::DeserializeBinaryBulkStateCloneContext & context) const override
     {
         auto new_state = std::make_shared<DeserializeBinaryBulkStateMapKeysOrValuesWithBuckets>(*this);
-        new_state->buckets_info_state = buckets_info_state ? buckets_info_state->clone() : nullptr;
+        new_state->buckets_info_state = buckets_info_state ? buckets_info_state->clone(context) : nullptr;
         for (size_t bucket = 0; bucket != bucket_keys_or_values_states.size(); ++bucket)
-            new_state->bucket_keys_or_values_states[bucket] = bucket_keys_or_values_states[bucket] ? bucket_keys_or_values_states[bucket]->clone() : nullptr;
-        new_state->bucket_index_state = bucket_index_state ? bucket_index_state->clone() : nullptr;
+            new_state->bucket_keys_or_values_states[bucket] = bucket_keys_or_values_states[bucket] ? bucket_keys_or_values_states[bucket]->clone(context) : nullptr;
+        new_state->bucket_index_state = bucket_index_state ? bucket_index_state->clone(context) : nullptr;
         return new_state;
-    }
-
-    void forEachNestedState(const std::function<void(const ISerialization::DeserializeBinaryBulkStatePtr &)> & callback) const override
-    {
-        if (buckets_info_state)
-            callback(buckets_info_state);
-        for (const auto & bucket_state : bucket_keys_or_values_states)
-        {
-            if (bucket_state)
-                callback(bucket_state);
-        }
     }
 };
 
@@ -267,6 +257,7 @@ void collectMapKeysOrValuesFromBucketsWithOrderImpl(
 
     const auto & bucket_index_data = bucket_index_col.getData();
     std::vector<size_t> bucket_positions(keys_or_values_buckets.size());
+    std::vector<size_t> bucket_ends(keys_or_values_buckets.size());
     size_t bucket_index_offset = 0;
 
     for (size_t i = 0; i != num_rows; ++i)
@@ -277,6 +268,7 @@ void collectMapKeysOrValuesFromBucketsWithOrderImpl(
             size_t offset_start = (*offsets_buckets[bucket])[ssize_t(i) - 1];
             size_t offset_end = (*offsets_buckets[bucket])[ssize_t(i)];
             bucket_positions[bucket] = offset_start;
+            bucket_ends[bucket] = offset_end;
             total_size += offset_end - offset_start;
         }
 
@@ -285,6 +277,10 @@ void collectMapKeysOrValuesFromBucketsWithOrderImpl(
             size_t bucket_idx = bucket_index_data[bucket_index_offset++];
             if (bucket_idx >= keys_or_values_buckets.size())
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Bucket index {} is out of range, total buckets: {}", bucket_idx, keys_or_values_buckets.size());
+            if (bucket_positions[bucket_idx] >= bucket_ends[bucket_idx])
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "Bucket indexes of row {} of a Map column refer to bucket {} more times than it has key-value pairs in this row",
+                    i, bucket_idx);
             size_t pos = bucket_positions[bucket_idx]++;
             data.insertFrom(*data_buckets[bucket_idx], pos);
         }
@@ -321,8 +317,7 @@ void collectMapKeysOrValuesFromBucketsWithOrder(
 }
 
 void SerializationMapKeysOrValues::deserializeBinaryBulkWithMultipleStreams(
-    ColumnPtr & column,
-    size_t rows_offset,
+    IColumn & column,
     size_t limit,
     DeserializeBinaryBulkSettings & settings,
     DeserializeBinaryBulkStatePtr & state,
@@ -331,7 +326,7 @@ void SerializationMapKeysOrValues::deserializeBinaryBulkWithMultipleStreams(
     /// BASIC format has no bucketing, delegate directly.
     if (serialization_version == MergeTreeMapSerializationVersion::BASIC)
     {
-        keys_or_values_serialization->deserializeBinaryBulkWithMultipleStreams(column, rows_offset, limit, settings, state, cache);
+        keys_or_values_serialization->deserializeBinaryBulkWithMultipleStreams(column, limit, settings, state, cache);
         return;
     }
 
@@ -343,7 +338,7 @@ void SerializationMapKeysOrValues::deserializeBinaryBulkWithMultipleStreams(
     {
         settings.path.push_back(Substream::Bucket);
         settings.path.back().bucket = 0;
-        keys_or_values_serialization->deserializeBinaryBulkWithMultipleStreams(column, rows_offset, limit, settings, map_keys_or_values_with_buckets_state->bucket_keys_or_values_states[0], cache);
+        keys_or_values_serialization->deserializeBinaryBulkWithMultipleStreams(column, limit, settings, map_keys_or_values_with_buckets_state->bucket_keys_or_values_states[0], cache);
         settings.path.pop_back();
     }
     /// Multiple buckets. Deserialize each bucket, then reassemble into a single Array column.
@@ -351,24 +346,18 @@ void SerializationMapKeysOrValues::deserializeBinaryBulkWithMultipleStreams(
     /// otherwise fall back to bucket-ascending order (old parts without the index stream).
     else
     {
-        /// The `bucket_indexes` stream is a flat array with one entry per key-value pair, so the
-        /// number of entries that belong to the first `rows_offset` rows is not known in advance
-        /// and those entries cannot be skipped on their own. Read the skipped rows together with
-        /// the requested ones, reassemble the whole range in the original order and drop the
-        /// prefix afterwards, so that the index stream stays in sync with the bucket streams.
-        const bool reorder_with_skipped_rows = map_keys_or_values_with_buckets_state->has_bucket_index && rows_offset != 0;
-        const size_t buckets_rows_offset = reorder_with_skipped_rows ? 0 : rows_offset;
-        const size_t buckets_limit = reorder_with_skipped_rows ? rows_offset + limit : limit;
-
         VectorWithMemoryTracking<ColumnPtr> keys_or_values_buckets(buckets_info_state_concrete->buckets);
         for (size_t bucket = 0; bucket != buckets_info_state_concrete->buckets; ++bucket)
         {
             settings.path.push_back(Substream::Bucket);
             settings.path.back().bucket = bucket;
-            keys_or_values_buckets[bucket] = column->cloneEmpty();
-            keys_or_values_serialization->deserializeBinaryBulkWithMultipleStreams(keys_or_values_buckets[bucket], buckets_rows_offset, buckets_limit, settings, map_keys_or_values_with_buckets_state->bucket_keys_or_values_states[bucket], cache);
+            auto mutable_bucket = column.cloneEmpty();
+            keys_or_values_serialization->deserializeBinaryBulkWithMultipleStreams(*mutable_bucket, limit, settings, map_keys_or_values_with_buckets_state->bucket_keys_or_values_states[bucket], cache);
+            keys_or_values_buckets[bucket] = std::move(mutable_bucket);
             settings.path.pop_back();
         }
+
+        SerializationMap::checkBucketsHaveSameNumberOfRows(keys_or_values_buckets);
 
         if (map_keys_or_values_with_buckets_state->has_bucket_index)
         {
@@ -382,27 +371,21 @@ void SerializationMapKeysOrValues::deserializeBinaryBulkWithMultipleStreams(
             }
 
             /// Read bucket indexes (flat array, one per key-value pair).
-            ColumnPtr bucket_index_column = map_keys_or_values_with_buckets_state->bucket_index_type->createColumn();
+            auto bucket_index_column = map_keys_or_values_with_buckets_state->bucket_index_type->createColumn();
             settings.path.push_back(Substream::MapBucketIndexes);
             map_keys_or_values_with_buckets_state->bucket_index_serialization->deserializeBinaryBulkWithMultipleStreams(
-                bucket_index_column, 0, total_kv_pairs, settings, map_keys_or_values_with_buckets_state->bucket_index_state, cache);
+                *bucket_index_column, total_kv_pairs, settings, map_keys_or_values_with_buckets_state->bucket_index_state, cache);
             settings.path.pop_back();
 
-            if (reorder_with_skipped_rows)
-            {
-                auto whole_range_column = column->cloneEmpty();
-                collectMapKeysOrValuesFromBucketsWithOrder(keys_or_values_buckets, *bucket_index_column, *whole_range_column);
-                if (whole_range_column->size() > rows_offset)
-                    column->assumeMutable()->insertRangeFrom(*whole_range_column, rows_offset, whole_range_column->size() - rows_offset);
-            }
-            else
-            {
-                collectMapKeysOrValuesFromBucketsWithOrder(keys_or_values_buckets, *bucket_index_column, *column->assumeMutable());
-            }
+            if (bucket_index_column->size() != total_kv_pairs)
+                throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read all bucket indexes of a Map column: read {} of {}",
+                    bucket_index_column->size(), total_kv_pairs);
+
+            collectMapKeysOrValuesFromBucketsWithOrder(keys_or_values_buckets, *bucket_index_column, column);
         }
         else
         {
-            collectMapKeysOrValuesFromBuckets(keys_or_values_buckets, *column->assumeMutable());
+            collectMapKeysOrValuesFromBuckets(keys_or_values_buckets, column);
         }
     }
 }

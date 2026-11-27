@@ -1,7 +1,7 @@
 ---
 slug: /changelogs/24.10
 title: 'Cloud용 v24.10 변경 로그'
-description: 'v24.10 빠른 릴리스 변경 로그'
+description: 'v24.10 변경 로그'
 keywords: ['변경 로그', '클라우드']
 sidebarTitle: '24.10'
 doc_type: 'changelog'
@@ -9,9 +9,7 @@ doc_type: 'changelog'
 
 다음은 v24.10 릴리스를 기반으로 한 ClickHouse Cloud 서비스의 관련 변경 사항입니다.
 
-<div id="backward-incompatible-change">
-  ## 하위 호환되지 않는 변경 사항
-</div>
+## 하위 호환되지 않는 변경 사항 {#backward-incompatible-change}
 
 * 서브쿼리가 괄호 안에 있을 때 `UNION`이 포함된 쿼리 체인에서 `FORMAT` 앞에 `SETTINGS`를 작성할 수 있게 되었습니다. 이로써 [#39712](https://github.com/ClickHouse/ClickHouse/issues/39712)가 해결되었습니다. 또한 쿼리 시퀀스에서 SETTINGS 절이 두 번 지정된 경우의 동작이 변경되었습니다. 해당 서브쿼리와 가장 가까운 SETTINGS 절이 우선 적용됩니다. 이전 버전에서는 가장 바깥쪽 SETTINGS 절이 안쪽 절보다 우선 적용될 수 있었습니다. [#60197](https://github.com/ClickHouse/ClickHouse/pull/60197)[#68614](https://github.com/ClickHouse/ClickHouse/pull/68614) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
 * Dynamic 타입을 재구현했습니다. 이제 동적 데이터 타입 한도에 도달하면 새 타입은 String으로 CAST되지 않고, 바이너리 인코딩된 데이터 타입을 포함하는 바이너리 형식의 특수한 데이터 구조에 저장됩니다. 이제 Dynamic 컬럼에 한 번이라도 삽입된 모든 타입을 서브컬럼으로 읽을 수 있습니다. [#68132](https://github.com/ClickHouse/ClickHouse/pull/68132) ([Pavel Kruglov](https://github.com/Avogar)).
@@ -20,9 +18,7 @@ doc_type: 'changelog'
 * 이제 `[PRE]WHERE` 절의 filter condition 재정렬이 기본적으로 허용됩니다. 필요하면 `allow_reorder_prewhere_conditions`를 `false`로 설정해 비활성화할 수 있습니다. [#70657](https://github.com/ClickHouse/ClickHouse/pull/70657) ([Nikita Taranov](https://github.com/nickitat)).
 * `mapKeys`/`mapValues`에서 `LowCardinality` 타입이 유지되도록 `optimize_functions_to_subcolumns` 최적화를 수정했습니다(이전에는 `Invalid column type for ColumnUnique::insertRangeFrom. Expected String, got LowCardinality(String)` 오류가 발생할 수 있었습니다). [#70716](https://github.com/ClickHouse/ClickHouse/pull/70716) ([Azat Khuzhin](https://github.com/azat)).
 
-<div id="new-feature">
-  ## 새 기능
-</div>
+## 새 기능 {#new-feature}
 
 * 갱신 가능 구체화 뷰는 프로덕션 환경에서 사용할 수 있을 만큼 안정화되었습니다. [#70550](https://github.com/ClickHouse/ClickHouse/pull/70550) ([Michael Kolupaev](https://github.com/al13n321)). 이제 갱신 가능 구체화 뷰는 복제된 데이터베이스에서도 지원됩니다. [#60669](https://github.com/ClickHouse/ClickHouse/pull/60669) ([Michael Kolupaev](https://github.com/al13n321)).
 * 이제 함수 `toStartOfInterval()`에 TimescaleDB의 `time_bucket()` 함수와 PostgreSQL의 `date_bin()` 함수를 각각 에뮬레이션하는 새 오버로드가 추가되었습니다. ([#55619](https://github.com/ClickHouse/ClickHouse/issues/55619)). 이를 사용하면 날짜 또는 타임스탬프 값을 *고정된* 원점인 0000-01-01 00:00:00.000 대신 *임의의* origin을 기준으로 지정된 인터벌의 배수에 맞춰 정렬할 수 있습니다. 예를 들어, `SELECT toStartOfInterval(toDateTime('2023-01-01 14:45:00'), INTERVAL 1 MINUTE, toDateTime('2023-01-01 14:35:30'));`는 origin `2023-01-01 14:35:30`을 시작점으로 하는 1분 인터벌의 배수인 `2023-01-01 14:44:30`을 반환합니다. [#56738](https://github.com/ClickHouse/ClickHouse/pull/56738) ([Yarik Briukhovetskyi](https://github.com/yariks5s)).
@@ -35,12 +31,12 @@ doc_type: 'changelog'
 * 문자열의 일부를 다른 문자열로 바꾸는 함수 `overlay` 및 `overlayUTF8`가 추가되었습니다. 예시: `SELECT overlay('Hello New York', 'Jersey', 11)`는 `Hello New Jersey`를 반환합니다. [#66933](https://github.com/ClickHouse/ClickHouse/pull/66933) ([李扬](https://github.com/taiyang-li)).
 * 새 명령인 파티션 내 경량한 삭제 추가 `DELETE FROM [db.]table [ON CLUSTER cluster] [IN PARTITION partition_expr] WHERE expr;` &#96;&#96;&#96; VM-114-29-tos :) select * from ads&#95;app&#95;poster&#95;ip&#95;source&#95;channel&#95;di&#95;replicated&#95;local;. [#67805](https://github.com/ClickHouse/ClickHouse/pull/67805) ([sunny](https://github.com/sunny19930321)).
 * `Interval` 데이터 타입 값 비교가 구현되어, 이제 가장 작은 공통 supertype으로 변환됩니다. [#68057](https://github.com/ClickHouse/ClickHouse/pull/68057) ([Yarik Briukhovetskyi](https://github.com/yariks5s)).
-* `create_if_not_exists` 설정을 추가하여 CREATE SQL 문에서 기본적으로 IF NOT EXISTS 동작을 하도록 했습니다. [#68164](https://github.com/ClickHouse/ClickHouse/pull/68164) ([Peter Nguyen](https://github.com/petern48)).
+* create&#95;if&#95;not&#95;exists 설정을 추가하여 CREATE SQL 문에서 기본적으로 IF NOT EXISTS 동작을 하도록 했습니다. [#68164](https://github.com/ClickHouse/ClickHouse/pull/68164) ([Peter Nguyen](https://github.com/petern48)).
 * Azure 및 로컬 환경의 Iceberg 테이블을 읽을 수 있습니다. [#68210](https://github.com/ClickHouse/ClickHouse/pull/68210) ([Daniil Ivanik](https://github.com/divanik)).
 * JSON 컬럼 타입 내용에 대한 내부 검사를 개선하기 위해 집계 함수 distinctDynamicTypes/distinctJSONPaths/distinctJSONPathsAndTypes를 추가했습니다. [#68463](https://github.com/ClickHouse/ClickHouse/pull/68463) ([Pavel Kruglov](https://github.com/Avogar)).
 * 이제 태그를 기준으로 쿼리 캐시 엔트리를 삭제할 수 있습니다. 예를 들어 `SELECT 1 SETTINGS use_query_cache = true, query_cache_tag = 'abc'`로 생성된 쿼리 캐시 엔트리는 `SYSTEM DROP QUERY CACHE TAG 'abc'`로 삭제할 수 있습니다(물론 `SYSTEM DROP QUERY CACHE`만 실행해도 전체 쿼리 캐시가 비워집니다). [#68477](https://github.com/ClickHouse/ClickHouse/pull/68477) ([Michał Tabaszewski](https://github.com/pinsvin00)).
 * 계산기 스타일의 표현식을 사용할 수 있도록 암시적 SELECT를 사용해 간단한 SELECT 쿼리를 작성할 수 있습니다. 예: `ch "1 + 2"`입니다. 이는 새로운 설정인 `implicit_select`로 제어됩니다. [#68502](https://github.com/ClickHouse/ClickHouse/pull/68502) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
-* 포맷 변환을 간편하게 수행할 수 있도록 `clickhouse local`에서 --copy 모드를 지원합니다 [#68503](https://github.com/ClickHouse/ClickHouse/issues/68503). [#68583](https://github.com/ClickHouse/ClickHouse/pull/68583) ([Denis Hananein](https://github.com/denis-hananein)).
+* 포맷 변환을 간편하게 수행할 수 있도록 clickhouse local에서 `--copy` 모드를 지원합니다 [#68503](https://github.com/ClickHouse/ClickHouse/issues/68503). [#68583](https://github.com/ClickHouse/ClickHouse/pull/68583) ([Denis Hananein](https://github.com/denis-hananein)).
 * 문자열의 RIPEMD-160 암호화 해시를 계산하는 `ripeMD160` 함수를 추가했습니다. 예시: `SELECT hex(ripeMD160('The quick brown fox jumps over the lazy dog'))`는 `37F332F68DB77BD9D7EDD4969571AD671CF9DD3B`를 반환합니다. [#68639](https://github.com/ClickHouse/ClickHouse/pull/68639) ([Dergousov Maxim](https://github.com/m7kss1)).
 * URL 테이블 엔진에 가상 컬럼 &#95;headers를 추가합니다. [#65026](https://github.com/ClickHouse/ClickHouse/issues/65026)를 닫습니다. [#68867](https://github.com/ClickHouse/ClickHouse/pull/68867) ([flynn](https://github.com/ucasfl)).
 * 사용 가능한 프로젝션을 추적할 수 있도록 `system.projections` 테이블을 추가했습니다. [#68901](https://github.com/ClickHouse/ClickHouse/pull/68901) ([Jordi Villar](https://github.com/jrdi)).

@@ -1,24 +1,19 @@
 ---
 slug: /cloud/managed-postgres/rbac
 sidebarTitle: 'RBAC'
-title: 'RBAC do Managed Postgres'
+title: 'RBAC do ClickHouse Managed Postgres'
 description: 'Saiba mais sobre o Controle de Acesso Baseado em Funções (RBAC) no ClickHouse Managed Postgres'
-keywords: ['RBAC do Managed Postgres', 'controle de acesso', 'roles', 'privilégios', 'permissões']
+keywords: ['RBAC do Managed Postgres', 'controle de acesso', 'função', 'privilégios', 'permissões']
 doc_type: 'reference'
 ---
 
-import { BetaBadge } from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
-
-<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.rbac-beta" />
-
-O ClickHouse Cloud oferece suporte ao Controle de Acesso Baseado em Funções (RBAC) para serviços do Managed Postgres. Você pode criar funções personalizadas com permissões específicas e atribuí-las aos membros da organização para controlar quem pode visualizar ou gerenciar seus serviços Postgres.
+O ClickHouse Cloud oferece suporte ao Controle de Acesso Baseado em Funções (RBAC) para serviços do ClickHouse Managed Postgres. Você pode criar papéis personalizados com permissões específicas e atribuí-los aos membros da organização para controlar quem pode visualizar ou gerenciar seus serviços Postgres.
 
 <div id="available-permissions">
-  ## Permissões disponíveis
+  ## Permissões disponíveis {#available-permissions}
 </div>
 
-Atualmente, o Managed Postgres oferece suporte a duas permissões:
+Atualmente, o ClickHouse Managed Postgres oferece suporte a duas permissões:
 
 | Permissão                        | Descrição                                                                      |
 | -------------------------------- | ------------------------------------------------------------------------------ |
@@ -31,27 +26,37 @@ A criação de um novo serviço Postgres exige a permissão existente **Organiza
   Permissões mais granulares estarão disponíveis em um lançamento futuro.
 </Note>
 
-<div id="creating-a-custom-role">
-  ## Criando uma função personalizada
-</div>
+## Criando um papel personalizado {#creating-a-custom-role}
 
 1. Clique no nome da sua organização na barra lateral esquerda e selecione **Usuários e funções**.
 
-<Image img="/images/managed-postgres/rbac/usersandroles.webp" alt="Menu Usuários e funções" size="md" border />
+<div className="ch-image-md">
+  <Frame>
+    ![Menu Usuários e funções](/images/managed-postgres/rbac/usersandroles.webp)
+  </Frame>
+</div>
 
-2. Vá para a guia **Funções** e clique em **Criar função**.
-3. Insira um nome para a função, clique em **+ Allow** e selecione **Serviço Postgres** na lista de entidades.
+2. Acesse a aba **Funções** e clique em **Criar função**.
+3. Digite um nome para a função, clique em **+ Permitir** e selecione **Serviço Postgres** na lista de entidades.
 
-<Image img="/images/managed-postgres/rbac/postgresentity.webp" alt="Selecionando a entidade Serviço Postgres" size="md" border />
+<div className="ch-image-md">
+  <Frame>
+    ![Selecionando a entidade Serviço Postgres](/images/managed-postgres/rbac/postgresentity.webp)
+  </Frame>
+</div>
 
-4. Escolha o serviço Postgres ao qual a função se aplicará e selecione as permissões a serem concedidas.
+4. Escolha o serviço Postgres ao qual a função ficará restrita e, em seguida, selecione as permissões que deseja conceder.
 
-<Image img="/images/managed-postgres/rbac/newpostgresperms.webp" alt="Configurando permissões do Postgres em uma função" size="md" border />
+<div className="ch-image-md">
+  <Frame>
+    ![Configurando permissões do Postgres em uma função](/images/managed-postgres/rbac/newpostgresperms.webp)
+  </Frame>
+</div>
 
 5. Clique em **Criar função** para salvar.
 
 <div id="assigning-a-role">
-  ## Atribuindo uma função
+  ## Atribuindo uma função {#assigning-a-role}
 </div>
 
 Depois de criar a função, atribua-a aos usuários na aba **Usuários** da mesma página **Usuários e funções**. Um usuário pode ter várias funções, e elas podem ser combinadas para compor exatamente o perfil de acesso de que você precisa.

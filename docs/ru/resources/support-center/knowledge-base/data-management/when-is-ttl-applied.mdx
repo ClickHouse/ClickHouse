@@ -10,7 +10,7 @@ keywords: ['TTL']
   ## Правила TTL и управление
 </div>
 
-TTL будет применён ***не сразу***. Что это значит? Настройка таблицы `MergeTree` [`merge_with_ttl_timeout`](/ru/reference/settings/merge-tree-settings#merge_with_ttl_timeout) задаёт минимальную задержку в секундах перед повторным слиянием с delete TTL. Значение по умолчанию — 14400 секунд (4 часа). Но это лишь минимальная задержка: фактический запуск слияния для delete TTL может произойти позже.
+TTL будет применён ***не сразу***. Что это значит? Настройка таблицы `MergeTree` [`merge_with_ttl_timeout`](/ru/reference/settings/merge-tree-settings/merge-with#merge_with_ttl_timeout) задаёт минимальную задержку в секундах перед повторным слиянием с delete TTL. Значение по умолчанию — 14400 секунд (4 часа). Но это лишь минимальная задержка: фактический запуск слияния для delete TTL может произойти позже.
 
 Вы можете просмотреть все текущие настройки TTL (например, `merge_with_ttl_timeout`) с помощью этого запроса:
 
@@ -69,11 +69,11 @@ WHERE name = 'background_pool_size';
 
 ```response
 ┌─name─────────────────┬─value─┬─changed─┬─description─────────────────────┬─min──┬─max──┬─readonly─┬─type───┬─default─┬─alias_for─┐
-│ background_pool_size │ 16    │       0 │ Устаревшая настройка, не выполняет никаких действий. │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │        0 │ UInt64 │ 16      │           │
+│ background_pool_size │ 16    │       0 │ Obsolete setting, does nothing. │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │        0 │ UInt64 │ 16      │           │
 └──────────────────────┴───────┴─────────┴─────────────────────────────────┴──────┴──────┴──────────┴────────┴─────────┴───────────┘
 ```
 
-О том, как изменить [параметр `background_pool_size`](/ru/reference/settings/server-settings/settings#background_pool_size), см. в документации; он задается следующим образом:
+О том, как изменить [параметр `background_pool_size`](/ru/reference/settings/server-settings/settings/background#background_pool_size), см. в документации; он задается следующим образом:
 
 ```xml
 <background_pool_size>16</background_pool_size>

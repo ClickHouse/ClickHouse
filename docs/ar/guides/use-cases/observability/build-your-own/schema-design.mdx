@@ -1,18 +1,16 @@
 ---
-title: 'تصميم مخطط للأوبزرفابيليتي'
-description: 'تصميم مخطط للأوبزرفابيليتي'
-keywords: ['الأوبزرفابيليتي', 'السجلات', 'التتبعات', 'المقاييس', 'OpenTelemetry', 'Grafana', 'OTel']
+title: 'تصميم مخطط لإمكانية المراقبة'
+description: 'تصميم مخطط لإمكانية المراقبة'
+keywords: ['إمكانية المراقبة', 'السجلات', 'التتبعات', 'المقاييس', 'OpenTelemetry', 'Grafana', 'OTel']
 slug: /use-cases/observability/schema-design
 show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 نوصي المستخدمين دائمًا بإنشاء مخططهم الخاص للسجلات والتتبعات للأسباب التالية:
 
 * **اختيار مفتاح أساسي** - تستخدم المخططات الافتراضية عبارة `ORDER BY` مُحسّنة لأنماط وصول محددة. ومن غير المرجح أن تتوافق أنماط وصولك مع ذلك.
-* **استخراج البنية** - قد ترغب في استخراج أعمدة جديدة من الأعمدة الموجودة، مثل العمود `Body`. ويمكن تنفيذ ذلك باستخدام الأعمدة المادية (وباستخدام العروض المادية في الحالات الأكثر تعقيدًا). وهذا يتطلب تغييرات على المخطط.
+* **استخراج البنية** - قد ترغب في استخراج أعمدة جديدة من الأعمدة الموجودة، مثل العمود `Body`. ويمكن تنفيذ ذلك باستخدام الأعمدة المادية (وباستخدام العروض المُجسَّدة في الحالات الأكثر تعقيدًا). وهذا يتطلب تغييرات على المخطط.
 * **تحسين الخرائط** - تستخدم المخططات الافتراضية النوع Map لتخزين السمات. وتتيح هذه الأعمدة تخزين بيانات وصفية عشوائية. ورغم أن هذه قدرة أساسية، لأن البيانات الوصفية القادمة من الأحداث لا تكون معرّفة مسبقًا في كثير من الأحيان، وبالتالي لا يمكن تخزينها بغير ذلك في قاعدة بيانات ذات أنواع صارمة مثل ClickHouse، فإن الوصول إلى مفاتيح الخريطة وقيمها ليس بالكفاءة نفسها التي يوفّرها الوصول إلى عمود عادي. ونعالج ذلك بتعديل المخطط والتأكد من أن مفاتيح الخريطة الأكثر استخدامًا تكون أعمدة من المستوى الأعلى - انظر [&quot;استخراج البنية باستخدام SQL&quot;](#extracting-structure-with-sql). وهذا يتطلب تغييرًا في المخطط.
 * **تبسيط الوصول إلى مفاتيح الخريطة** - يتطلب الوصول إلى المفاتيح داخل الخرائط صياغة أكثر تفصيلًا. ويمكنك التخفيف من ذلك باستخدام الأسماء المستعارة. راجع [&quot;استخدام الأسماء المستعارة&quot;](#using-aliases) لتبسيط الاستعلامات.
 * **الفهارس الثانوية** - يستخدم المخطط الافتراضي فهارس ثانوية لتسريع الوصول إلى الخرائط وتسريع الاستعلامات النصية. وهذه الفهارس لا تكون مطلوبة عادةً، كما أنها تستهلك مساحة إضافية على القرص. ويمكن استخدامها، لكن ينبغي اختبارها للتأكد من الحاجة إليها. راجع [&quot;الفهارس الثانوية / فهارس تخطي البيانات&quot;](#secondarydata-skipping-indices).
@@ -20,19 +18,19 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 *نشرح كل حالة من حالات الاستخدام المذكورة أعلاه بالتفصيل أدناه.*
 
-**مهم:** مع أنه يُشجَّع المستخدمون على توسيع مخططاتهم وتعديلها لتحقيق أفضل ضغط وأفضل أداء للاستعلامات، ينبغي لهم الالتزام بتسمية مخطط OTel للأعمدة الأساسية حيثما أمكن. يفترض ملحق ClickHouse Grafana وجود بعض أعمدة OTel الأساسية للمساعدة في بناء الاستعلامات، مثل Timestamp وSeverityText. والأعمدة المطلوبة للسجلات والتتبعات موثقة هنا [[1]](https://grafana.com/developers/plugin-tools/tutorials/build-a-logs-data-source-plugin#logs-data-frame-format)[[2]](https://grafana.com/docs/grafana/latest/explore/logs-integration/) و[هنا](https://grafana.com/docs/grafana/latest/explore/trace-integration/#data-frame-structure) على التوالي. ويمكنك اختيار تغيير أسماء هذه الأعمدة، مع تجاوز القيم الافتراضية في إعدادات الملحق.
+**مهم:** مع أنه يُشجَّع المستخدمون على توسيع مخططاتهم وتعديلها لتحقيق أفضل ضغط وأفضل أداء للاستعلامات، ينبغي لهم الالتزام بتسمية مخطط OTel للأعمدة الأساسية حيثما أمكن. يفترض ملحق ClickHouse Grafana وجود بعض أعمدة OTel الأساسية للمساعدة في بناء الاستعلامات، مثل Timestamp وSeverityText. والأعمدة المطلوبة للسجلات والتتبعات موثقة هنا [[1]](https://grafana.com/developers/plugin-tools/tutorials/build-a-logs-data-source-plugin#logs-data-frame-format)[[2]](https://grafana.com/docs/grafana/latest/explore/logs-integration/) و[هنا](https://grafana.com/docs/grafana/latest/explore/trace-integration/#data-frame-structure) على التوالي. ويمكنك اختيار تغيير أسماء هذه الأعمدة، مع تجاوز القيم الافتراضية في إعدادات الملحق.
 
 <Tip>
-  **يأتي ClickStack مع مخطط افتراضي مُحسَّن**
+  **يأتي ClickStack مع مخطط افتراضي مُحسَّن**
 
   **يوفّر ClickStack مخططات جاهزة للاستخدام للسجلات والتتبعات والمقاييس** تتضمن أحدث ميزات ClickHouse (فهارس نصية للبحث النصي الكامل والبحث في مفاتيح الخريطة، وأعمدة مادية ومصفوفات ALIAS للتصفية بالقراءة المباشرة، وعمليات بحث عن الصفوف برقم الكتلة)، وقد خضعت لاختبارات معيارية لتقديم أداء قوي جاهزًا للاستخدام لأحمال عمل السجلات والتتبعات. استخدمها كنقطة مرجعية لتصميمك الخاص.
 
   * DDL القياسي: [الجداول والمخططات التي يستخدمها ClickStack](/ar/clickstack/ingesting-data/schemas).
-  * وصفات التحسين: [ضبط أداء ClickStack](/ar/clickstack/managing/performance-tuning). ينطبق كثير من التوصيات الواردة في تلك الصفحة (الأعمدة المادية، skip indexes، اختيار المفتاح الأساسي، projections، والعروض المادية) مباشرةً على إعداد مخصّص تبنيه بنفسك.
+  * وصفات التحسين: [ضبط أداء ClickStack](/ar/clickstack/managing/performance-tuning). ينطبق كثير من التوصيات الواردة في تلك الصفحة (الأعمدة المادية، skip indexes، اختيار المفتاح الأساسي، projections، والعروض المُجسَّدة) مباشرةً على إعداد مخصّص تبنيه بنفسك.
 </Tip>
 
 <div id="extracting-structure-with-sql">
-  ## استخراج البنية باستخدام SQL
+  ## استخراج البنية باستخدام SQL {#extracting-structure-with-sql}
 </div>
 
 سواء كنت تُدخل سجلات مهيكلة أو غير مهيكلة، فغالبًا ما تحتاج إلى القدرة على:
@@ -175,9 +173,7 @@ LIMIT 5
   يمكنك أيضًا إجراء المعالجة باستخدام processors وoperators الخاصة بـ OTel المجمّع كما هو موضح [هنا](/ar/guides/use-cases/observability/build-your-own/integrating-opentelemetry#processing---filtering-transforming-and-enriching). في معظم الحالات، ستجد أن ClickHouse أكثر كفاءةً في استخدام الموارد وأسرع بكثير من processors الخاصة بـ المجمّع. ويتمثل العيب الأساسي لتنفيذ جميع عمليات معالجة الأحداث باستخدام SQL في ربط الحل لديك بـ ClickHouse. فعلى سبيل المثال، قد ترغب في إرسال السجلات المعالَجة إلى وجهات بديلة من OTel المجمّع، مثل S3.
 </Info>
 
-<div id="materialized-columns">
-  ### الأعمدة المادية
-</div>
+### الأعمدة المادية {#materialized-columns}
 
 توفّر الأعمدة المادية أبسط حل لاستخراج البنية من الأعمدة الأخرى. وتُحتسب قيم هذه الأعمدة دائمًا في وقت الإدراج، ولا يمكن تحديدها في استعلامات INSERT.
 
@@ -189,26 +185,26 @@ LIMIT 5
 
 تدعم الأعمدة المادية أي تعبير في ClickHouse، ويمكنها الاستفادة من أي من الدوال التحليلية الخاصة بـ [معالجة السلاسل النصية](/ar/reference/functions/regular-functions/string-functions) (بما في ذلك [التعابير النمطية والبحث](/ar/reference/functions/regular-functions/string-search-functions)) و[URL](/ar/reference/functions/regular-functions/url-functions)، وإجراء [تحويلات الأنواع](/ar/reference/functions/regular-functions/type-conversion-functions)، و[استخراج القيم من JSON](/ar/reference/functions/regular-functions/json-functions)، أو [العمليات الرياضية](/ar/reference/functions/regular-functions/math-functions).
 
-نوصي باستخدام الأعمدة المادية للمعالجة الأساسية. وهي مفيدة بشكل خاص لاستخراج القيم من نوع خريطة، ورفعها إلى أعمدة على المستوى الأعلى، وإجراء تحويلات الأنواع. وغالبًا ما تكون أكثر فائدة عند استخدامها في مخططات بسيطة جدًا أو بالاقتران مع العروض المادية. انظر إلى المخطط التالي للسجلات، حيث استخرج المجمّع بيانات JSON إلى العمود `LogAttributes`:
+نوصي باستخدام الأعمدة المادية للمعالجة الأساسية. وهي مفيدة بشكل خاص لاستخراج القيم من خرائط، ورفعها إلى أعمدة المستوى الأعلى، وإجراء تحويلات الأنواع. وغالبًا ما تكون أكثر فائدة عند استخدامها في مخططات بسيطة جدًا أو بالاقتران مع العروض المُجسَّدة. انظر إلى المخطط التالي للسجلات، حيث استخرج المجمّع بيانات JSON إلى العمود `LogAttributes`:
 
 ```sql
 CREATE TABLE otel_logs
 (
-        `Timestamp` DateTime64(9) CODEC(Delta(8), ZSTD(1)),
-        `TraceId` String CODEC(ZSTD(1)),
-        `SpanId` String CODEC(ZSTD(1)),
-        `TraceFlags` UInt32 CODEC(ZSTD(1)),
-        `SeverityText` LowCardinality(String) CODEC(ZSTD(1)),
-        `SeverityNumber` Int32 CODEC(ZSTD(1)),
-        `ServiceName` LowCardinality(String) CODEC(ZSTD(1)),
-        `Body` String CODEC(ZSTD(1)),
-        `ResourceSchemaUrl` String CODEC(ZSTD(1)),
-        `ResourceAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(1)),
-        `ScopeSchemaUrl` String CODEC(ZSTD(1)),
-        `ScopeName` String CODEC(ZSTD(1)),
-        `ScopeVersion` String CODEC(ZSTD(1)),
-        `ScopeAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(1)),
-        `LogAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(1)),
+        `Timestamp` DateTime64(9) CODEC(Delta, Default),
+        `TraceId` String,
+        `SpanId` String,
+        `TraceFlags` UInt32,
+        `SeverityText` LowCardinality(String),
+        `SeverityNumber` Int32,
+        `ServiceName` LowCardinality(String),
+        `Body` String,
+        `ResourceSchemaUrl` String,
+        `ResourceAttributes` Map(LowCardinality(String), String),
+        `ScopeSchemaUrl` String,
+        `ScopeName` String,
+        `ScopeVersion` String,
+        `ScopeAttributes` Map(LowCardinality(String), String),
+        `LogAttributes` Map(LowCardinality(String), String),
         `RequestPage` String MATERIALIZED path(LogAttributes['request_path']),
         `RequestType` LowCardinality(String) MATERIALIZED LogAttributes['request_type'],
         `RefererDomain` String MATERIALIZED domain(LogAttributes['referer'])
@@ -248,52 +244,54 @@ Peak memory usage: 3.16 MiB.
   لن تُعاد الأعمدة المادية افتراضيًا في `SELECT *`. وذلك لضمان بقاء الخاصية التالية قائمة: يمكن دائمًا إعادة إدراج نتيجة `SELECT *` في الجدول باستخدام INSERT. ويمكن تعطيل هذا السلوك بضبط `asterisk_include_materialized_columns=1`، كما يمكن تفعيل ذلك في Grafana (راجع `Additional Settings -> Custom Settings` في إعدادات مصدر البيانات).
 </Note>
 
-<div id="materialized-views">
-  ## العروض المادية
+## العروض المُجسَّدة {#materialized-views}
+
+توفّر [العروض المُجسَّدة](/ar/concepts/features/materialized-views/index) طريقة أقوى لتطبيق التصفية والتحويلات باستخدام SQL على السجلات والتتبعات.
+
+تتيح لك العروض المُجسَّدة نقل تكلفة المعالجة من وقت الاستعلام إلى وقت الإدراج. والعرض المُجسَّد في ClickHouse ليس سوى مُشغِّل ينفّذ استعلامًا على كتل البيانات أثناء إدراجها في جدول. وتُدرَج نتائج هذا الاستعلام في جدول &quot;هدف&quot; ثانٍ.
+
+<div className="ch-image-md">
+  <Frame>
+    ![عرض مُجسَّد](/images/use-cases/observability/observability-10.webp)
+  </Frame>
 </div>
-
-توفّر [العروض المادية](/ar/concepts/features/materialized-views/index) طريقة أقوى لتطبيق التصفية والتحويلات باستخدام SQL على السجلات والتتبعات.
-
-تتيح لك العروض المادية نقل تكلفة المعالجة من وقت الاستعلام إلى وقت الإدراج. والعرض المادي في ClickHouse ليس سوى مُشغِّل ينفّذ استعلامًا على كتل البيانات أثناء إدراجها في جدول. وتُدرَج نتائج هذا الاستعلام في جدول &quot;هدف&quot; ثانٍ.
-
-<Image img="/images/use-cases/observability/observability-10.webp" alt="عرض مادي" size="md" />
 
 <Info>
   **تحديثات في الوقت الفعلي**
 
-  تُحدَّث العروض المادية في ClickHouse في الوقت الفعلي مع تدفّق البيانات إلى الجدول الذي تستند إليه، لذا فهي تعمل بصورة أقرب إلى الفهارس التي تُحدَّث باستمرار. وعلى النقيض من ذلك، تكون العروض المادية في قواعد البيانات الأخرى عادةً لقطات ثابتة لاستعلام يجب تحديثها (على نحو مشابه لـ Refreshable Materialized Views في ClickHouse).
+  تُحدَّث العروض المُجسَّدة في ClickHouse في الوقت الفعلي مع تدفّق البيانات إلى الجدول الذي تستند إليه، لذا فهي تعمل بصورة أقرب إلى الفهارس التي تُحدَّث باستمرار. وعلى النقيض من ذلك، تكون العروض المُجسَّدة في قواعد البيانات الأخرى عادةً لقطات ثابتة لاستعلام يجب تحديثها (على نحو مشابه لـ العروض المُجسَّدة القابلة للتحديث في ClickHouse).
 </Info>
 
-يمكن نظريًا أن يكون الاستعلام المرتبط بالعرض المادي أي استعلام، بما في ذلك التجميع، رغم وجود [قيود على عمليات JOIN](https://clickhouse.com/blog/using-materialized-views-in-clickhouse#materialized-views-and-joins). وبالنسبة إلى أعباء عمل التحويلات والتصفية المطلوبة للسجلات والتتبعات، يمكنك اعتبار أي عبارة `SELECT` ممكنة.
+يمكن نظريًا أن يكون الاستعلام المرتبط بالعرض المُجسَّد أي استعلام، بما في ذلك التجميع، رغم وجود [قيود على عمليات JOIN](https://clickhouse.com/blog/using-materialized-views-in-clickhouse#materialized-views-and-joins). وبالنسبة إلى أعباء عمل التحويلات والتصفية المطلوبة للسجلات والتتبعات، يمكنك اعتبار أي عبارة `SELECT` ممكنة.
 
-يجب أن تتذكر أن الاستعلام ليس سوى مُشغِّل يُنفَّذ على الصفوف التي تُدرَج في جدول (الجدول المصدر)، وتُرسَل نتائجه إلى جدول جديد (الجدول الهدف).
+يجب أن تتذكر أن الاستعلام ليس سوى مُشغِّل يُنفَّذ على الصفوف التي تُدرَج في جدول (الجدول المصدر)، وتُرسَل نتائجه إلى جدول جديد (الجدول الهدف).
 
 ولضمان عدم تخزين البيانات مرتين (في الجدولَين المصدر والهدف)، يمكننا تغيير محرك الجدول المصدر إلى [Null table engine](/ar/reference/engines/table-engines/special/null)، مع الحفاظ على المخطط الأصلي. وستواصل مكونات OTel المجمّع لدينا إرسال البيانات إلى هذا الجدول. فعلى سبيل المثال، بالنسبة إلى السجلات، يصبح جدول `otel_logs` كما يلي:
 
 ```sql
 CREATE TABLE otel_logs
 (
-        `Timestamp` DateTime64(9) CODEC(Delta(8), ZSTD(1)),
-        `TraceId` String CODEC(ZSTD(1)),
-        `SpanId` String CODEC(ZSTD(1)),
-        `TraceFlags` UInt32 CODEC(ZSTD(1)),
-        `SeverityText` LowCardinality(String) CODEC(ZSTD(1)),
-        `SeverityNumber` Int32 CODEC(ZSTD(1)),
-        `ServiceName` LowCardinality(String) CODEC(ZSTD(1)),
-        `Body` String CODEC(ZSTD(1)),
-        `ResourceSchemaUrl` String CODEC(ZSTD(1)),
-        `ResourceAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(1)),
-        `ScopeSchemaUrl` String CODEC(ZSTD(1)),
-        `ScopeName` String CODEC(ZSTD(1)),
-        `ScopeVersion` String CODEC(ZSTD(1)),
-        `ScopeAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(1)),
-        `LogAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(1))
+        `Timestamp` DateTime64(9) CODEC(Delta, Default),
+        `TraceId` String,
+        `SpanId` String,
+        `TraceFlags` UInt32,
+        `SeverityText` LowCardinality(String),
+        `SeverityNumber` Int32,
+        `ServiceName` LowCardinality(String),
+        `Body` String,
+        `ResourceSchemaUrl` String,
+        `ResourceAttributes` Map(LowCardinality(String), String),
+        `ScopeSchemaUrl` String,
+        `ScopeName` String,
+        `ScopeVersion` String,
+        `ScopeAttributes` Map(LowCardinality(String), String),
+        `LogAttributes` Map(LowCardinality(String), String)
 ) ENGINE = Null
 ```
 
-يُعد Null table engine أسلوب تحسين قويًا — فكّر فيه على أنه `/dev/null`. هذا الجدول لن يخزّن أي بيانات، لكن أي عروض مادية مرفقة ستظل تُنفَّذ على الصفوف المُدرجة قبل التخلّص منها.
+يُعد Null table engine أسلوب تحسين قويًا — فكّر فيه على أنه `/dev/null`. هذا الجدول لن يخزّن أي بيانات، لكن أي عروض مُجسَّدة مرفقة ستظل تُنفَّذ على الصفوف المُدرجة قبل التخلّص منها.
 
-تأمّل الاستعلام التالي. فهو يحوّل صفوفنا إلى format نرغب في الاحتفاظ به، مع استخراج جميع الأعمدة من `LogAttributes` (ونفترض أن المجمّع قد ضبط ذلك باستخدام العامل `json_parser`)، وتعيين `SeverityText` و`SeverityNumber` (استنادًا إلى بعض الشروط البسيطة وتعريف [هذه الأعمدة](https://opentelemetry.io/docs/specs/otel/logs/data-model/#field-severitytext)). وفي هذه الحالة، نحدّد أيضًا فقط الأعمدة التي نعرف أنها ستُملأ — مع تجاهل أعمدة مثل `TraceId` و`SpanId` و`TraceFlags`.
+تأمّل الاستعلام التالي. فهو يحوّل صفوفنا إلى صيغة نرغب في الاحتفاظ بها، مع استخراج جميع الأعمدة من `LogAttributes` (ونفترض أن المجمّع قد ضبط ذلك باستخدام المشغّل `json_parser`)، وتعيين `SeverityText` و`SeverityNumber` (استنادًا إلى بعض الشروط البسيطة وتعريف [هذه الأعمدة](https://opentelemetry.io/docs/specs/otel/logs/data-model/#field-severitytext)). وفي هذه الحالة، نحدّد أيضًا فقط الأعمدة التي نعرف أنها ستُملأ — مع تجاهل أعمدة مثل `TraceId` و`SpanId` و`TraceFlags`.
 
 ```sql
 SELECT
@@ -384,7 +382,7 @@ ORDER BY (ServiceName, Timestamp)
   لاحظ كيف غيّرنا المخطط بشكل جذري. عمليًا، من المرجح أيضًا أن تكون لديك أعمدة Trace سترغب في الحفاظ عليها، بالإضافة إلى العمود `ResourceAttributes` (يحتوي هذا عادةً على بيانات Kubernetes الوصفية). يمكن لـ Grafana الاستفادة من أعمدة التتبّع لتوفير وظيفة الربط بين السجلات والتتبّعات - راجع [&quot;استخدام Grafana&quot;](/ar/guides/use-cases/observability/build-your-own/grafana).
 </Note>
 
-فيما يلي، ننشئ عرضًا ماديًا `otel_logs_mv`، ينفّذ عبارة SELECT المذكورة أعلاه على جدول `otel_logs` ويرسل النتائج إلى `otel_logs_v2`.
+ننشئ فيما يلي عرضًا مُجسَّدًا باسم `otel_logs_mv`، ينفّذ استعلام SELECT السابق على الجدول `otel_logs` ويرسل النتائج إلى `otel_logs_v2`.
 
 ```sql
 CREATE MATERIALIZED VIEW otel_logs_mv TO otel_logs_v2 AS
@@ -411,9 +409,13 @@ FROM otel_logs
 
 يوضح الشكل أدناه ما سبق:
 
-<Image img="/images/use-cases/observability/observability-11.webp" alt="OTel MV" size="md" />
+<div className="ch-image-md">
+  <Frame>
+    ![Otel MV](/images/use-cases/observability/observability-11.webp)
+  </Frame>
+</div>
 
-إذا أعدنا الآن تشغيل تهيئة المجمّع المستخدمة في [&quot;التصدير إلى ClickHouse&quot;](/ar/guides/use-cases/observability/build-your-own/integrating-opentelemetry#exporting-to-clickhouse)، فستظهر البيانات في `otel_logs_v2` بالتنسيق المطلوب. لاحظ استخدام دوال استخراج JSON ذات الأنواع المحددة.
+إذا أعدنا الآن تشغيل تهيئة المجمّع المستخدمة في [&quot;التصدير إلى ClickHouse&quot;](/ar/guides/use-cases/observability/build-your-own/integrating-opentelemetry#exporting-to-clickhouse)، فستظهر البيانات في `otel_logs_v2` بالصيغة المطلوبة. لاحظ استخدام دوال استخراج JSON ذات الأنواع المحددة.
 
 ```sql
 SELECT *
@@ -446,7 +448,7 @@ SeverityNumber:  9
 1 row in set. Elapsed: 0.010 sec.
 ```
 
-يُعرض أدناه عرض مادي مكافئ يعتمد على استخراج الأعمدة من العمود `Body` باستخدام دوال JSON:
+يُعرض أدناه عرض مُجسَّد مكافئ يعتمد على استخراج الأعمدة من العمود `Body` باستخدام دوال JSON:
 
 ```sql
 CREATE MATERIALIZED VIEW otel_logs_mv TO otel_logs_v2 AS
@@ -471,7 +473,7 @@ FROM otel_logs
 ```
 
 <div id="beware-types">
-  ### انتبه إلى الأنواع
+  ### انتبه إلى الأنواع {#beware-types}
 </div>
 
 تعتمد العروض المادية المذكورة أعلاه على التحويل الضمني للأنواع، وخاصةً عند استخدام خريطة `LogAttributes`. وغالبًا ما يقوم ClickHouse بتحويل القيمة المستخرجة تلقائيًا إلى نوع الجدول الهدف، مما يقلّل من الصياغة المطلوبة. ومع ذلك، نوصي المستخدمين دائمًا باختبار عروضهم باستخدام عبارة `SELECT` الخاصة بالعرض مع عبارة [`INSERT INTO`](/ar/reference/statements/insert-into) على جدول هدف يستخدم مخطط مطابقة. من المفترض أن يؤكد ذلك أن الأنواع تُعالَج بشكل صحيح. ويجب إيلاء اهتمام خاص للحالات التالية:
@@ -483,11 +485,11 @@ FROM otel_logs
 <Info>
   **تجنب Nullable**
 
-  تجنب استخدام [Nullable](/ar/reference/data-types/nullable) في ClickHouse لبيانات Observability. فنادرًا ما تكون هناك حاجة في logs وtraces إلى التمييز بين القيمة الفارغة وNULL. وتضيف هذه الميزة عبئًا إضافيًا على التخزين، كما تؤثر سلبًا في query performance. راجع [هنا](/ar/guides/clickhouse/data-modelling/schema-design#optimizing-types) لمزيد من التفاصيل.
+  تجنب استخدام [Nullable](/ar/reference/data-types/nullable) في ClickHouse لبيانات الأوبزرفابيليتي. فنادرًا ما تكون هناك حاجة في السجلات وعمليات التتبّع إلى التمييز بين القيمة الفارغة وNULL. وتضيف هذه الميزة عبئًا إضافيًا على التخزين، كما تؤثر سلبًا في query performance. راجع [هنا](/ar/guides/clickhouse/data-modelling/schema-design#optimizing-types) لمزيد من التفاصيل.
 </Info>
 
 <div id="choosing-a-primary-ordering-key">
-  ## اختيار مفتاح أساسي (ترتيبي)
+  ## اختيار مفتاح أساسي (ترتيبي) {#choosing-a-primary-ordering-key}
 </div>
 
 بمجرد استخراج الأعمدة المطلوبة، يمكنك البدء في تحسين مفتاح الترتيب/المفتاح الأساسي.
@@ -510,7 +512,7 @@ FROM otel_logs
 </Info>
 
 <div id="using-maps">
-  ## استخدام Map
+  ## استخدام Map {#using-maps}
 </div>
 
 تُظهر الأمثلة السابقة استخدام صيغة `map['key']` للوصول إلى القيم في الأعمدة من النوع `Map(String, String)`. وإلى جانب استخدام ترميز map للوصول إلى المفاتيح المتداخلة، تتوفر أيضًا [دوال map](/ar/reference/functions/regular-functions/tuple-map-functions#mapKeys) المتخصصة في ClickHouse لتصفية هذه الأعمدة أو تحديدها.
@@ -538,32 +540,30 @@ Peak memory usage: 71.90 MiB.
   لا نوصي باستخدام النقاط في أسماء أعمدة Map، وقد نلغي دعمها مستقبلًا. استخدم `_`.
 </Info>
 
-<div id="using-aliases">
-  ## استخدام الأسماء المستعارة
-</div>
+## استخدام الأسماء المستعارة {#using-aliases}
 
 الاستعلام عن أنواع `Map` أبطأ من الاستعلام عن الأعمدة العادية - راجع [&quot;تسريع الاستعلامات&quot;](#accelerating-queries). بالإضافة إلى ذلك، فهو أكثر تعقيدًا من حيث الصياغة وقد يكون من المرهق كتابته. ولمعالجة هذه المشكلة، نوصي باستخدام أعمدة Alias.
 
-تُحتسب أعمدة ALIAS وقت الاستعلام ولا تُخزَّن في الجدول. لذلك، لا يمكن إجراء INSERT لقيمة في عمود من هذا النوع. وباستخدام الأسماء المستعارة، يمكننا الإشارة إلى مفاتيح `Map` وتبسيط الصياغة، مع إظهار إدخالات `Map` كأنها عمود عادي بشكل شفاف. تأمل المثال التالي:
+تُحتسب أعمدة ALIAS وقت تنفيذ الاستعلام ولا تُخزَّن في الجدول. لذلك، لا يمكن إجراء INSERT لقيمة في عمود من هذا النوع. وباستخدام الأسماء المستعارة، يمكننا الإشارة إلى مفاتيح `Map` وتبسيط الصياغة، مع إظهار إدخالات `Map` كأنها عمود عادي بشكل شفاف. تأمل المثال التالي:
 
 ```sql
 CREATE TABLE otel_logs
 (
-        `Timestamp` DateTime64(9) CODEC(Delta(8), ZSTD(1)),
-        `TraceId` String CODEC(ZSTD(1)),
-        `SpanId` String CODEC(ZSTD(1)),
-        `TraceFlags` UInt32 CODEC(ZSTD(1)),
-        `SeverityText` LowCardinality(String) CODEC(ZSTD(1)),
-        `SeverityNumber` Int32 CODEC(ZSTD(1)),
-        `ServiceName` LowCardinality(String) CODEC(ZSTD(1)),
-        `Body` String CODEC(ZSTD(1)),
-        `ResourceSchemaUrl` String CODEC(ZSTD(1)),
-        `ResourceAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(1)),
-        `ScopeSchemaUrl` String CODEC(ZSTD(1)),
-        `ScopeName` String CODEC(ZSTD(1)),
-        `ScopeVersion` String CODEC(ZSTD(1)),
-        `ScopeAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(1)),
-        `LogAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(1)),
+        `Timestamp` DateTime64(9) CODEC(Delta, Default),
+        `TraceId` String,
+        `SpanId` String,
+        `TraceFlags` UInt32,
+        `SeverityText` LowCardinality(String),
+        `SeverityNumber` Int32,
+        `ServiceName` LowCardinality(String),
+        `Body` String,
+        `ResourceSchemaUrl` String,
+        `ResourceAttributes` Map(LowCardinality(String), String),
+        `ScopeSchemaUrl` String,
+        `ScopeName` String,
+        `ScopeVersion` String,
+        `ScopeAttributes` Map(LowCardinality(String), String),
+        `LogAttributes` Map(LowCardinality(String), String),
         `RequestPath` String MATERIALIZED path(LogAttributes['request_path']),
         `RequestType` LowCardinality(String) MATERIALIZED LogAttributes['request_type'],
         `RefererDomain` String MATERIALIZED domain(LogAttributes['referer']),
@@ -574,7 +574,7 @@ PARTITION BY toDate(Timestamp)
 ORDER BY (ServiceName, Timestamp)
 ```
 
-لدينا عدة أعمدة materialized وعمود `ALIAS` باسم `RemoteAddr` يقرأ من الـ map `LogAttributes`. يمكننا الآن الاستعلام عن قيم `LogAttributes['remote_addr']` عبر هذا العمود، مما يبسّط الاستعلام، أي:
+لدينا عدة أعمدة مُجسَّدة وعمود `ALIAS` باسم `RemoteAddr` يقرأ من الـ map `LogAttributes`. يمكننا الآن الاستعلام عن قيم `LogAttributes['remote_addr']` عبر هذا العمود، مما يبسّط الاستعلام، أي:
 
 ```sql
 SELECT RemoteAddr
@@ -624,13 +624,13 @@ LIMIT 5
 </Info>
 
 <div id="optimizing-types">
-  ## تحسين الأنواع
+  ## تحسين الأنواع {#optimizing-types}
 </div>
 
 تنطبق [أفضل ممارسات ClickHouse العامة](/ar/guides/clickhouse/data-modelling/schema-design#optimizing-types) لتحسين الأنواع على حالة استخدام ClickHouse.
 
 <div id="using-codecs">
-  ## استخدام codecs
+  ## استخدام codecs {#using-codecs}
 </div>
 
 بالإضافة إلى تحسينات الأنواع، يمكنك اتباع [أفضل الممارسات العامة لـ codecs](/ar/guides/clickhouse/data-modelling/compression/compression-in-clickhouse#choosing-the-right-column-compression-codec) عند محاولة تحسين الضغط لمخططات ClickHouse Observability.
@@ -639,13 +639,15 @@ LIMIT 5
 
 علاوة على ذلك، فرغم أن `timestamps` تستفيد من ترميز delta من ناحية الضغط، فقد تبيّن أنها قد تؤدي إلى تراجع `query performance` إذا استُخدم هذا `column` في المفتاح الأساسي/مفتاح الترتيب. نوصي المستخدمين بتقييم الموازنة بين الضغط و`query performance` في كل حالة.
 
-<div id="using-dictionaries">
-  ## استخدام القواميس
-</div>
+## استخدام القواميس {#using-dictionaries}
 
 تُعد [القواميس](/ar/reference/statements/create/dictionary) [ميزة رئيسية](https://clickhouse.com/blog/faster-queries-dictionaries-clickhouse) في ClickHouse، إذ توفّر تمثيلًا للبيانات داخل الذاكرة بصيغة [مفتاح-قيمة](https://en.wikipedia.org/wiki/Key%E2%80%93value_database) من [مصادر](/ar/reference/statements/create/dictionary/sources/overview#dictionary-sources) داخلية وخارجية متنوعة، ومُحسّنة لعمليات البحث بزمن انتقال منخفض للغاية.
 
-<Image img="/images/use-cases/observability/observability-12.webp" alt="Observability والقواميس" size="md" />
+<div className="ch-image-md">
+  <Frame>
+    ![Observability والقواميس](/images/use-cases/observability/observability-12.webp)
+  </Frame>
+</div>
 
 يفيد ذلك في سيناريوهات متعددة، بدءًا من إثراء البيانات الواردة أثناء تدفقها من دون إبطاء عملية الاستيعاب، ووصولًا إلى تحسين أداء الاستعلامات عمومًا، مع استفادة عمليات JOIN على نحو خاص.
 ومع أن عمليات ربط نادرًا ما تكون مطلوبة في حالات استخدام Observability، فإن القواميس تظل مفيدة لأغراض الإثراء، سواء وقت الإدراج أو وقت تنفيذ الاستعلام. ونورد أدناه أمثلة على الحالتين.
@@ -657,7 +659,7 @@ LIMIT 5
 </Info>
 
 <div id="insert-time-vs-query-time">
-  ### وقت الإدراج مقابل وقت الاستعلام
+  ### وقت الإدراج مقابل وقت الاستعلام {#insert-time-vs-query-time}
 </div>
 
 يمكن استخدام القواميس لإثراء مجموعات البيانات في وقت الاستعلام أو وقت الإدراج. ولكلٍّ من هذين النهجين مزاياه وعيوبه. باختصار:
@@ -670,7 +672,7 @@ LIMIT 5
 للاطلاع على أمثلة بسيطة على الإثراء، راجع دليل Dictionaries [هنا](/ar/concepts/features/dictionaries/index). وفيما يلي، نركّز على مهام إثراء observability الشائعة.
 
 <div id="using-ip-dictionaries">
-  ### استخدام قواميس IP
+  ### استخدام قواميس IP {#using-ip-dictionaries}
 </div>
 
 يُعد الإثراء الجغرافي للسجلات والتتبعات بقيم خط العرض وخط الطول باستخدام عناوين IP من المتطلبات الشائعة في مجال Observability. ويمكن تحقيق ذلك باستخدام القاموس المنظَّم `ip_trie`.
@@ -777,7 +779,7 @@ CREATE TABLE geoip
         `country_code` String
 )
 ENGINE = MergeTree
-ORDER BY cidr
+ORDER BY cidr;
 
 INSERT INTO geoip
 WITH
@@ -827,7 +829,7 @@ SELECT * FROM ip_trie LIMIT 3
 <Info>
   **التحديث الدوري**
 
-  تُحدَّث القواميس في ClickHouse دوريًا استنادًا إلى بيانات underlying table وبند lifetime المستخدم أعلاه. ولتحديث قاموس Geo IP لدينا بحيث يعكس أحدث التغييرات في dataset ‏DB-IP، نحتاج فقط إلى إعادة إدراج البيانات من الجدول البعيد geoip&#95;url إلى جدول `geoip` مع تطبيق التحويلات.
+  تُحدَّث القواميس في ClickHouse دوريًا استنادًا إلى بيانات الجدول الأساسي وبند lifetime المستخدم أعلاه. ولتحديث قاموس Geo IP لدينا بحيث يعكس أحدث التغييرات في مجموعة بيانات ‏DB-IP، نحتاج فقط إلى إعادة إدراج البيانات من الجدول البعيد geoip&#95;url إلى جدول `geoip` مع تطبيق التحويلات.
 </Info>
 
 الآن بعد أن حمّلنا بيانات Geo IP إلى قاموس `ip_trie` (الذي يحمل أيضًا الاسم `ip_trie`)، يمكننا استخدامه لتحديد الموقع الجغرافي لعناوين IP. ويمكن تنفيذ ذلك باستخدام [الدالة `dictGet()`](/ar/reference/functions/regular-functions/ext-dict-functions) كما يلي:
@@ -844,9 +846,9 @@ SELECT dictGet('ip_trie', ('country_code', 'latitude', 'longitude'), CAST('85.24
 1 row in set. Elapsed: 0.003 sec.
 ```
 
-لاحظ سرعة جلب البيانات هنا. يتيح لنا ذلك إثراء السجلات. في هذه الحالة، نختار **إجراء الإثراء في وقت الاستعلام**.
+لاحظ سرعة جلب البيانات هنا. يتيح لنا ذلك إثراء السجلات. في هذه الحالة، نختار **إجراء الإثراء في وقت تنفيذ الاستعلام**.
 
-وبالعودة إلى مجموعة بيانات السجلات الأصلية، يمكننا استخدام ما سبق لتجميع سجلاتنا بحسب البلد. ويفترض ما يلي أننا نستخدم المخطط الناتج عن العرض المادي السابق، والذي يتضمن عمود `RemoteAddress` مُستخرجًا.
+وبالعودة إلى مجموعة بيانات السجلات الأصلية، يمكننا استخدام ما سبق لتجميع سجلاتنا بحسب البلد. ويفترض ما يلي أننا نستخدم المخطط الناتج عن العرض المُجسَّد السابق، والذي يتضمن عمود `RemoteAddress` مُستخرجًا.
 
 ```sql
 SELECT dictGet('ip_trie', 'country_code', tuple(RemoteAddress)) AS country,
@@ -909,16 +911,14 @@ ORDER BY (ServiceName, Timestamp)
 
 توفّر البلدان والإحداثيات المذكورة أعلاه إمكانات تصور تتجاوز مجرد التجميع والتصفية حسب البلد. وللاستلهام، راجع [&quot;تصور البيانات الجغرافية&quot;](/ar/guides/use-cases/observability/build-your-own/grafana#visualizing-geo-data).
 
-<div id="using-regex-dictionaries-user-agent-parsing">
-  ### استخدام قواميس Regex (تحليل وكيل المستخدم)
-</div>
+### استخدام قواميس Regex (تحليل وكيل المستخدم) {#using-regex-dictionaries-user-agent-parsing}
 
-يُعدّ تحليل [سلاسل وكيل المستخدم](https://en.wikipedia.org/wiki/User_agent) من المشكلات الكلاسيكية في التعابير النمطية، وهو مطلب شائع في مجموعات البيانات المعتمدة على السجلات وآثار التتبع. ويوفّر ClickHouse تحليلًا فعّالًا لـ وكيل المستخدم باستخدام قواميس شجرة التعابير النمطية.
+يُعدّ تحليل [سلاسل وكيل المستخدم](https://en.wikipedia.org/wiki/User_agent) من المشكلات الكلاسيكية في التعابير النمطية، وهو مطلب شائع في مجموعات البيانات المعتمدة على السجلات والتتبّعات. ويوفّر ClickHouse تحليلًا فعّالًا لـ وكيل المستخدم باستخدام قواميس شجرة التعابير النمطية.
 
-تُعرَّف قواميس شجرة التعابير النمطية في ClickHouse مفتوح المصدر باستخدام نوع مصدر القاموس YAMLRegExpTree، الذي يوفّر المسار إلى ملف YAML يحتوي على شجرة التعابير النمطية. وإذا رغبت في توفير قاموس تعابير نمطية خاص بك، فيمكن العثور على تفاصيل البنية المطلوبة [هنا](/ar/reference/statements/create/dictionary/layouts/regexp-tree#use-regular-expression-tree-dictionary-in-clickhouse-open-source). نركّز أدناه على تحليل وكيل المستخدم باستخدام [uap-core](https://github.com/ua-parser/uap-core)، ونحمّل قاموسنا لاستخدامه مع تنسيق CSV المدعوم. هذا النهج متوافق مع OSS وClickHouse Cloud.
+تُعرَّف قواميس شجرة التعابير النمطية في ClickHouse مفتوح المصدر باستخدام نوع مصدر القاموس YAMLRegExpTree، الذي يوفّر المسار إلى ملف YAML يحتوي على شجرة التعابير النمطية. وإذا رغبت في توفير قاموس تعابير نمطية خاص بك، فيمكن العثور على تفاصيل البنية المطلوبة [هنا](/ar/reference/statements/create/dictionary/layouts/regexp-tree#use-regular-expression-tree-dictionary-in-clickhouse-open-source). نركّز أدناه على تحليل وكيل المستخدم باستخدام [uap-core](https://github.com/ua-parser/uap-core)، ونحمّل قاموسنا لاستخدامه مع تنسيق CSV المدعوم. هذا النهج متوافق مع OSS وClickHouse Cloud.
 
 <Note>
-  في الأمثلة أدناه، نستخدم لقطات snapshots من أحدث تعابير uap-core النمطية لتحليل وكيل المستخدم من يونيو 2024. ويمكن العثور على أحدث ملف، الذي يُحدَّث من حين لآخر، [هنا](https://raw.githubusercontent.com/ua-parser/uap-core/master/regexes.yaml). يمكنك اتباع الخطوات [هنا](/ar/reference/statements/create/dictionary/layouts/regexp-tree#collecting-attribute-values) للتحميل إلى ملف CSV المستخدم أدناه.
+  في الأمثلة أدناه، نستخدم لقطات snapshots من أحدث تعابير uap-core النمطية لتحليل وكيل المستخدم من يونيو 2024. ويمكن العثور على أحدث ملف، الذي يُحدَّث من حين لآخر، [هنا](https://raw.githubusercontent.com/ua-parser/uap-core/master/regexes.yaml). يمكنك اتباع الخطوات [هنا](/ar/reference/statements/create/dictionary/layouts/regexp-tree#collecting-attribute-values) للتحميل إلى ملف CSV المستخدم أدناه.
 </Note>
 
 أنشئ جداول Memory التالية. وتحتفظ هذه الجداول بالتعابير النمطية التي نستخدمها لتحليل الأجهزة والمتصفحات وأنظمة التشغيل.
@@ -955,14 +955,18 @@ CREATE TABLE regexp_device
 يمكن تعبئة هذه الجداول من ملفات CSV المستضافة علنًا التالية، باستخدام دالة الجدول url:
 
 ```sql
-INSERT INTO regexp_os SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/user_agent_regex/regexp_os.csv', 'CSV', 'id UInt64, parent_id UInt64, regexp String, keys Array(String), values Array(String)')
+INSERT INTO regexp_os SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/user_agent_regex/regexp_os.csv', NOSIGN, 'CSV', 'id UInt64, parent_id UInt64, regexp String, keys Array(String), values Array(String)')
 
-INSERT INTO regexp_device SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/user_agent_regex/regexp_device.csv', 'CSV', 'id UInt64, parent_id UInt64, regexp String, keys Array(String), values Array(String)')
+INSERT INTO regexp_device SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/user_agent_regex/regexp_device.csv', NOSIGN, 'CSV', 'id UInt64, parent_id UInt64, regexp String, keys Array(String), values Array(String)')
 
-INSERT INTO regexp_browser SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/user_agent_regex/regexp_browser.csv', 'CSV', 'id UInt64, parent_id UInt64, regexp String, keys Array(String), values Array(String)')
+INSERT INTO regexp_browser SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/user_agent_regex/regexp_browser.csv', NOSIGN, 'CSV', 'id UInt64, parent_id UInt64, regexp String, keys Array(String), values Array(String)')
 ```
 
 بعد تعبئة جداول الذاكرة، يمكننا تحميل قواميس التعبيرات النمطية. لاحظ أننا بحاجة إلى تحديد قيم المفاتيح كأعمدة، إذ ستكون هذه هي السمات التي يمكننا استخراجها من وكيل المستخدم.
+
+<Note title="ClickHouse Cloud">
+  عند إنشاء قاموس يقرأ من جدول ClickHouse، أدرِج اسم المستخدم وكلمة المرور الخاصين بمستخدم مخصّص في عبارة `SOURCE`. ويجب أن يمتلك هذا المستخدم صلاحية `SELECT` على الجدول المصدر. راجع [مثال مصدر القاموس من نوع ClickHouse](/ar/reference/statements/create/dictionary/sources/clickhouse).
+</Note>
 
 ```sql
 CREATE DICTIONARY regexp_os_dict
@@ -1004,7 +1008,7 @@ LIFETIME(0)
 LAYOUT(regexp_tree);
 ```
 
-بعد تحميل هذه القواميس، يمكننا إدخال وكيل المستخدم نموذجي واختبار إمكانات الاستخراج الجديدة باستخدام القواميس:
+بعد تحميل هذه القواميس، يمكننا تقديم وكيل مستخدم نموذجي واختبار إمكانات استخراج القواميس الجديدة:
 
 ```sql
 WITH 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:127.0) Gecko/20100101 Firefox/127.0' AS user_agent
@@ -1106,7 +1110,7 @@ Os:     ('Other','0','0','0')
 </Info>
 
 <div id="further-reading">
-  ### للمزيد من القراءة
+  ### للمزيد من القراءة {#further-reading}
 </div>
 
 للمزيد من الأمثلة والتفاصيل حول القواميس، نوصي بالمقالات التالية:
@@ -1116,13 +1120,13 @@ Os:     ('Other','0','0','0')
 * [القواميس](/ar/reference/statements/create/dictionary)
 
 <div id="accelerating-queries">
-  ## تسريع الاستعلامات
+  ## تسريع الاستعلامات {#accelerating-queries}
 </div>
 
 يدعم ClickHouse عددًا من الأساليب لتسريع أداء الاستعلامات. ولا ينبغي النظر فيما يلي إلا بعد اختيار مفتاح أساسي/مفتاح ترتيب مناسب لتحسين أكثر أنماط الوصول شيوعًا وزيادة كفاءة الضغط إلى أقصى حد. وعادةً ما يكون لذلك أكبر أثر على الأداء بأقل جهد.
 
 <div id="using-materialized-views-incremental-for-aggregations">
-  ### استخدام Materialized views (التدريجية) للتجميعات
+  ### استخدام Materialized views (التدريجية) للتجميعات {#using-materialized-views-incremental-for-aggregations}
 </div>
 
 في الأقسام السابقة، استعرضنا استخدام Materialized views لتحويل البيانات وتصفيتها. ومع ذلك، يمكن أيضًا استخدام Materialized views لاحتساب التجميعات مسبقًا عند الإدراج وتخزين النتيجة. ويمكن بعد ذلك تحديث هذه النتيجة بنتائج عمليات الإدراج اللاحقة، مما يتيح عمليًا احتساب التجميعات مسبقًا وقت الإدراج.
@@ -1261,7 +1265,7 @@ LIMIT 5
 </Note>
 
 <div id="a-more-complex-example">
-  #### مثال أكثر تعقيدًا
+  #### مثال أكثر تعقيدًا {#a-more-complex-example}
 </div>
 
 يُجمِّع المثال أعلاه عددًا بسيطًا لكل ساعة باستخدام [SummingMergeTree](/ar/reference/engines/table-engines/mergetree-family/summingmergetree). أما الإحصاءات التي تتجاوز المجاميع البسيطة فتتطلب محرك جدول هدف مختلفًا: [AggregatingMergeTree](/ar/reference/engines/table-engines/mergetree-family/aggregatingmergetree).
@@ -1348,7 +1352,7 @@ ORDER BY Hour DESC
 لاحظ أننا نستخدم `GROUP BY` هنا بدلًا من `FINAL`.
 
 <div id="using-materialized-views-incremental--for-fast-lookups">
-  ### استخدام العروض المادية (التزايدية)  لعمليات البحث السريع
+  ### استخدام العروض المادية (التزايدية)  لعمليات البحث السريع {#using-materialized-views-incremental--for-fast-lookups}
 </div>
 
 ينبغي مراعاة أنماط الوصول عند اختيار مفتاح الترتيب في ClickHouse، إلى جانب الأعمدة التي تُستخدم كثيرًا في عبارات التصفية والتجميع. وقد يكون ذلك مقيِّدًا في حالات استخدام Observability، حيث تكون لدى المستخدمين أنماط وصول أكثر تنوعًا لا يمكن حصرها ضمن مجموعة واحدة من الأعمدة. ويتضح ذلك بأفضل شكل في مثال مضمَّن في مخططات OTel الافتراضية. تأمّل المخطط الافتراضي للتتبعات:
@@ -1453,9 +1457,7 @@ LIMIT 1000
 
 يمكن تطبيق هذا النهج نفسه على أنماط وصول مشابهة. ونستعرض مثالًا مشابهًا في نمذجة البيانات [هنا](/ar/concepts/features/materialized-views/incremental-materialized-view#lookup-table).
 
-<div id="using-projections">
-  ### استخدام الإسقاطات
-</div>
+### استخدام الإسقاطات {#using-projections}
 
 تتيح لك إسقاطات ClickHouse تحديد عدة عبارات `ORDER BY` للجدول.
 
@@ -1473,7 +1475,11 @@ LIMIT 1000
   توفّر الإسقاطات كثيرًا من الإمكانيات نفسها التي توفّرها العروض المادية، لكن ينبغي استخدامها بحذر، وغالبًا ما تكون العروض المادية هي الخيار المفضّل. ويجب أن تفهم عيوبها ومتى يكون استخدامها مناسبًا. فعلى سبيل المثال، رغم إمكانية استخدام الإسقاطات لإجراء عمليات التجميع مسبقًا، فإننا نوصي المستخدمين باستخدام العروض المادية لهذا الغرض.
 </Info>
 
-<Image img="/images/use-cases/observability/observability-13.webp" alt="Observability والإسقاطات" size="md" />
+<div className="ch-image-md">
+  <Frame>
+    ![Observability والإسقاطات](/images/use-cases/observability/observability-13.webp)
+  </Frame>
+</div>
 
 انظر إلى الاستعلام التالي، الذي يرشّح جدول `otel_logs_v2` لدينا بحسب 500 من رموز الخطأ. ومن المرجح أن يكون هذا نمط وصول شائعًا في السجلّات، إذ يرغب المستخدمون في التصفية بحسب رموز الخطأ:
 
@@ -1542,7 +1548,7 @@ ENGINE = MergeTree
 ORDER BY (ServiceName, Timestamp)
 ```
 
-ومن المهم ملاحظة أنه إذا أُنشئ الإسقاط عبر `ALTER`، فسيُنفَّذ إنشاؤه بشكل غير متزامن عند إصدار الأمر `MATERIALIZE PROJECTION`. ويمكنك التحقق من تقدّم هذه العملية باستخدام الاستعلام التالي، مع انتظار `is_done=1`.
+ومن المهم ملاحظة أنه إذا أُنشئ الإسقاط عبر `ALTER`، فسيُنفَّذ إنشاؤه بشكل غير متزامن عند إصدار الأمر `MATERIALIZE PROJECTION`. ويمكنك التحقق من تقدّم هذه العملية باستخدام الاستعلام التالي، مع انتظار `is_done=1`.
 
 ```sql
 SELECT parts_to_do, is_done, latest_fail_reason
@@ -1575,7 +1581,7 @@ Peak memory usage: 27.85 MiB.
 في المثال أعلاه، نحدّد الأعمدة المستخدمة في الاستعلام السابق ضمن الإسقاط. وهذا يعني أنه لن تُخزَّن على القرص، كجزء من الإسقاط، سوى هذه الأعمدة المحددة، مرتبةً حسب Status. وإذا استخدمنا `SELECT *` هنا بدلًا من ذلك، فسيتم تخزين جميع الأعمدة. ورغم أن هذا سيتيح لعدد أكبر من الاستعلامات (باستخدام أي مجموعة فرعية من الأعمدة) الاستفادة من الإسقاط، فإنه سيؤدي إلى استهلاك مساحة تخزين إضافية. لقياس مساحة القرص والضغط، راجع [&quot;قياس حجم الجدول والضغط&quot;](#measuring-table-size--compression).
 
 <div id="secondarydata-skipping-indices">
-  ### الفهارس الثانوية/فهارس تخطي البيانات
+  ### الفهارس الثانوية/فهارس تخطي البيانات {#secondarydata-skipping-indices}
 </div>
 
 مهما كانت درجة إحكام ضبط المفتاح الأساسي في ClickHouse، فستتطلب بعض الاستعلامات حتمًا إجراء فحص كامل للجدول. ويمكن الحد من ذلك باستخدام العروض المادية (وكذلك الإسقاطات لبعض الاستعلامات)، لكن هذا يفرض أعمال صيانة إضافية ويتطلب أيضًا أن يكون المستخدمون على علم بتوفرها حتى يضمنوا الاستفادة منها. وفي حين تعالج قواعد البيانات العلائقية التقليدية هذه المشكلة باستخدام الفهارس الثانوية، فإن هذه الفهارس لا تكون فعّالة في قواعد البيانات العمودية مثل ClickHouse. وبدلًا من ذلك، يستخدم ClickHouse فهارس &quot;Skip&quot;، التي يمكنها تحسين أداء الاستعلام بشكل كبير من خلال تمكين قاعدة البيانات من تجاوز أجزاء كبيرة من البيانات التي لا تحتوي على أي قيم مطابقة.
@@ -1587,7 +1593,7 @@ Peak memory usage: 27.85 MiB.
 **وعمومًا، تكون فعّالة عندما توجد علاقة ارتباط قوية بين المفتاح الأساسي والعمود/التعبير المستهدف غير الأساسي، وعندما يبحث المستخدمون عن قيم نادرة، أي القيم التي لا تظهر في عدد كبير من الحبيبات.**
 
 <div id="text-index-for-full-text-search">
-  ### فهرس نصي للبحث النصي الكامل
+  ### فهرس نصي للبحث النصي الكامل {#text-index-for-full-text-search}
 </div>
 
 يوفّر ClickHouse [فهرسًا نصيًا](/ar/reference/engines/table-engines/mergetree-family/textindexes) مخصّصًا للبحث النصي الكامل.
@@ -1650,7 +1656,7 @@ Query id: ff0b866c-6df7-47be-9e36-795ef3888169
 ```
 
 <div id="adding-a-text-index">
-  #### إضافة فهرس نصي
+  #### إضافة فهرس نصي {#adding-a-text-index}
 </div>
 
 يمكن إضافة فهرس نصي إلى العمود Body عند إنشاء الجدول:
@@ -1710,7 +1716,7 @@ Peak memory usage: 15.23 MiB.
 ```
 
 <div id="using-a-preprocessor">
-  #### استخدام مُعالج مسبق
+  #### استخدام مُعالج مسبق {#using-a-preprocessor}
 </div>
 
 في مجموعة البيانات هذه، يحتوي العمود Body على سلسلة بتنسيق JSON تضم عدة أزواج مفتاح-قيمة (مثل `msg` و`id` و`ctx` و`attr` وغيرها).
@@ -1981,16 +1987,14 @@ Query id: 730e4b77-e697-40b3-a24d-67219ec42075
 </details>
 
 <div id="extracting-from-maps">
-  ### الاستخراج من قيم Map
+  ### الاستخراج من قيم Map {#extracting-from-maps}
 </div>
 
 ينتشر نوع Map على نطاق واسع في مخططات OTel. ويتطلب هذا النوع أن تكون المفاتيح والقيم من النوع نفسه، وهو ما يكفي للبيانات الوصفية مثل وسوم Kubernetes. انتبه إلى أنه عند الاستعلام عن مفتاح فرعي ضمن نوع Map، يُحمَّل العمود الأب بالكامل. وإذا كانت الخريطة تحتوي على مفاتيح كثيرة، فقد يفرض ذلك عبئًا كبيرًا على الاستعلام، إذ يلزم قراءة بيانات من القرص أكثر مما لو كان المفتاح موجودًا كعمود.
 
 إذا كنت تستعلم كثيرًا عن مفتاح محدد، ففكّر في نقله إلى عمود مخصص مستقل على المستوى الجذري. وعادةً ما يتم ذلك استجابةً لأنماط الوصول الشائعة بعد النشر، وقد يصعب توقّعه قبل بيئة الإنتاج. راجع [&quot;إدارة تغييرات المخطط&quot;](/ar/guides/use-cases/observability/build-your-own/managing-data#managing-schema-changes) لمعرفة كيفية تعديل مخططك بعد النشر.
 
-<div id="measuring-table-size--compression">
-  ## قياس حجم الجدول والضغط
-</div>
+## قياس حجم الجدول والضغط {#measuring-table-size--compression}
 
 أحد الأسباب الرئيسية لاستخدام ClickHouse في Observability هو الضغط.
 

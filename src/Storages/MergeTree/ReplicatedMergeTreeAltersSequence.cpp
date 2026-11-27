@@ -34,16 +34,25 @@ void ReplicatedMergeTreeAltersSequence::addMetadataAlter(
 
 void ReplicatedMergeTreeAltersSequence::finishMetadataAlter(int alter_version, std::unique_lock<SharedMutex> & /*state_lock*/)
 {
-    /// Sequence must not be empty
-    chassert(!queue_state.empty());
-    /// Alters have to be finished in order
-    chassert(queue_state.begin()->first == alter_version);
+    /// The queue may contain several `ALTER_METADATA` entries with the same `alter_version`: a replica that clones
+    /// another one prepends a dummy `ALTER_METADATA` entry to its own queue (see
+    /// `StorageReplicatedMergeTree::cloneMetadataIfNeeded`), and the copied queue of the source replica may already
+    /// contain an entry with that very version. Every such entry finishes the same alter, and all completions but the
+    /// first one have nothing left to do. Note that we must not use `operator[]` here: it would insert the alter back
+    /// into the sequence as unfinished, and, being the smallest version, it would block every later metadata alter
+    /// forever.
+    auto it = queue_state.find(alter_version);
+    if (it == queue_state.end())
+        return;
 
-    /// If metadata stage finished (or was never added) than we can remove this alter
-    if (queue_state[alter_version].data_finished)
-        queue_state.erase(alter_version);
+    /// Alters have to be finished in order
+    chassert(it == queue_state.begin());
+
+    /// If data stage finished (or was never added) than we can remove this alter
+    if (it->second.data_finished)
+        queue_state.erase(it);
     else
-        queue_state[alter_version].metadata_finished = true;
+        it->second.metadata_finished = true;
 }
 
 void ReplicatedMergeTreeAltersSequence::finishDataAlter(int alter_version, std::lock_guard<SharedMutex> & /*state_lock*/)
@@ -81,7 +90,15 @@ bool ReplicatedMergeTreeAltersSequence::canExecuteDataAlter(int alter_version, s
 
 bool ReplicatedMergeTreeAltersSequence::canExecuteMetaAlter(int alter_version, std::unique_lock<SharedMutex> & /*state_lock*/) const
 {
-    chassert(!queue_state.empty());
+    /// The sequence is empty when the alter is already finished, which happens when the queue holds several
+    /// `ALTER_METADATA` entries with the same version (see `finishMetadataAlter`). Executing such an entry is a no-op,
+    /// so let it through instead of postponing it forever.
+    if (queue_state.empty())
+        return true;
+
+    /// All versions smaller than head are finished already, they can be executed
+    if (alter_version < queue_state.begin()->first)
+        return true;
 
     /// We can execute only alters of metadata which are in head.
     return queue_state.begin()->first == alter_version;

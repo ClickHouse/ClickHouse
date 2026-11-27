@@ -68,9 +68,9 @@ FROM numbers(3)
         "ascii_vs_utf8 example",
         "SELECT 'ábc' AS str, length(str), lengthUTF8(str)",
         R"(
-┌─str─┬─length(str)──┬─lengthUTF8(str)─┐
-│ ábc │            4 │               3 │
-└─────┴──────────────┴─────────────────┘
+┌─str─┬─length(str)─┬─lengthUTF8(str)─┐
+│ ábc │           4 │               3 │
+└─────┴─────────────┴─────────────────┘
         )"
     }
     };

@@ -24,7 +24,10 @@ For more information and documentation see https://clickhouse.com/.
 <!-- docker-official-library:off -->
 <!-- This is not related to the docker official library, remove it before commit to https://github.com/docker-library/docs -->
 -	The tag `head` is built from the latest commit to the default branch.
+-	The tags without a suffix point to the image built `FROM scratch`: it contains only ClickHouse and the few system files it needs, without a shell, a package manager, or coreutils. See [Image without a shell](#image-without-a-shell) below.
+-	Each tag has optional `-ubuntu` suffix for the image built on top of `ubuntu`, with a shell and the usual tools, which runs the shell script `entrypoint.sh`.
 -	Each tag has optional `-alpine` suffix to reflect that it's built on top of `alpine`.
+-	Each tag has optional `-distroless` suffix for the image built on top of a distroless base image, which runs as the `clickhouse` user (uid 101) from the start.
 <!-- REMOVE UNTIL HERE -->
 <!-- docker-official-library:on -->
 
@@ -32,7 +35,7 @@ For more information and documentation see https://clickhouse.com/.
 
 -	The amd64 image requires support for the [x86-64-v3 microarchitecture level](https://en.wikipedia.org/wiki/X86-64#Microarchitecture_levels) (AVX2, BMI1, BMI2, F16C, FMA, LZCNT, MOVBE, XSAVE). Virtually all x86 CPUs after 2015 support x86-64-v3.
 -	The arm64 image requires support for the [ARMv8.2-A architecture](https://en.wikipedia.org/wiki/AArch64#ARMv8.2-A) and additionally the Load-Acquire RCpc register. The register is optional in version ARMv8.2-A and mandatory in [ARMv8.3-A](https://en.wikipedia.org/wiki/AArch64#ARMv8.3-A). Supported in Graviton >=2, Azure and GCP instances. Examples for unsupported devices are Raspberry Pi 4 (ARMv8.0-A) and Jetson AGX Xavier/Orin (ARMv8.2-A).
--	Since the Clickhouse 24.11 Ubuntu images started using `ubuntu:22.04` as its base image. It requires docker version >= `20.10.10` containing [patch](https://github.com/moby/moby/commit/977283509f75303bc6612665a04abf76ff1d2468). As a workaround you could use `docker run --security-opt seccomp=unconfined` instead, however that has security implications.
+-	Since the ClickHouse 24.11 Ubuntu images started using `ubuntu:22.04` as their base image. It requires docker version >= `20.10.10` containing [patch](https://github.com/moby/moby/commit/977283509f75303bc6612665a04abf76ff1d2468). As a workaround you could use `docker run --security-opt seccomp=unconfined` instead, however that has security implications.
 
 ## How to use this image
 
@@ -44,7 +47,7 @@ docker run -d --name some-clickhouse-server --ulimit nofile=262144:262144 clickh
 
 By default, ClickHouse will be accessible only via the Docker network. See the **networking** section below.
 
-By default, starting above server instance will be run as the `default` user without password.
+By default, the server instance runs as the `default` user without a password.
 
 ### connect to it from a native client
 
@@ -158,7 +161,9 @@ docker run --rm -e CLICKHOUSE_RUN_AS_ROOT=1 --name clickhouse-server-userns -v "
 
 ### How to create default database and user on starting
 
-Sometimes you may want to create a user (user named `default` is used by default) and database on a container start. You can do it using environment variables `CLICKHOUSE_DB`, `CLICKHOUSE_USER`, `CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT` and `CLICKHOUSE_PASSWORD`:
+Set `CLICKHOUSE_DB` to create a database when the container first initializes the data directory. Set `CLICKHOUSE_USER` and `CLICKHOUSE_PASSWORD` to configure a user. If you omit `CLICKHOUSE_USER`, the image uses the `default` user.
+
+`CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT=1` lets the configured user create users and grant privileges. In the example below, this is `username`. When you set a non-default username or a password, SQL access management is disabled if you omit this variable or set it to `0`.
 
 ```bash
 docker run --rm -e CLICKHOUSE_DB=my_database -e CLICKHOUSE_USER=username -e CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT=1 -e CLICKHOUSE_PASSWORD=password -p 9000:9000/tcp clickhouse/clickhouse-server
@@ -166,9 +171,9 @@ docker run --rm -e CLICKHOUSE_DB=my_database -e CLICKHOUSE_USER=username -e CLIC
 
 #### Managing `default` user
 
-The user `default` has disabled network access by default in the case none of `CLICKHOUSE_USER`, `CLICKHOUSE_PASSWORD`, or `CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT` are set.
+With the stock configuration, if you use the `default` user without a password and leave `CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT` unset or set it to `0`, the user retains SQL access management and can connect only from localhost.
 
-There's a way to make `default` user insecurely available by setting environment variable `CLICKHOUSE_SKIP_USER_SETUP` to 1:
+`CLICKHOUSE_SKIP_USER_SETUP=1` skips user configuration even if you set a username, password, or access-management flag. With the stock configuration, this allows network connections as the `default` user without a password.
 
 ```bash
 docker run --rm -e CLICKHOUSE_SKIP_USER_SETUP=1 -p 9000:9000/tcp clickhouse/clickhouse-server
@@ -190,6 +195,30 @@ clickhouse client -n <<-EOSQL
     CREATE TABLE docker.docker (x Int32) ENGINE = Log;
 EOSQL
 ```
+<!-- docker-official-library:off -->
+<!-- This is not related to the docker official library, remove it before commit to https://github.com/docker-library/docs -->
+
+## Image without a shell
+
+The default image (the tags without a suffix) is built `FROM scratch`. It contains the statically linked `clickhouse` binary, its configuration, and the few system files it needs: CA certificates, `/etc/passwd`. There is no shell, no package manager, no C library, and no other programs, so the only software to keep patched is ClickHouse.
+
+The logic of the entrypoint (preparing the directories, creating the user from `CLICKHOUSE_USER` and `CLICKHOUSE_PASSWORD`, creating `CLICKHOUSE_DB`, running the scripts from `/docker-entrypoint-initdb.d`) is built into the binary as `clickhouse docker-init`, and is configured with the same environment variables. The differences from the `-ubuntu` image:
+
+-	The `*.sql` and `*.sql.gz` init scripts work as usual. A `*.sh` script needs a shell: an executable script is run directly, and a non-executable one is run by `sh -e` (instead of being sourced), so it stops at the first failed command, like with `set -e` in `entrypoint.sh`. If there is no shell, the container stops with an error, rather than starting without the initialization.
+-	`docker run clickhouse/clickhouse-server <command>` and `docker exec` can run only the ClickHouse tools, such as `clickhouse-client` or `clickhouse-local`.
+
+When you need a shell, for example for troubleshooting, mount one into the container. It has to be statically linked, such as `busybox` from the `busybox-static` package of Debian and Ubuntu:
+
+```bash
+docker run --rm -it -v /bin/busybox:/bin/sh:ro --entrypoint /bin/sh clickhouse/clickhouse-server
+# Or, to add a shell to a running server, for `docker exec` and the `*.sh` init scripts:
+docker run -d -v /bin/busybox:/bin/sh:ro --name some-clickhouse-server --ulimit nofile=262144:262144 clickhouse/clickhouse-server
+docker exec -it some-clickhouse-server /bin/sh
+```
+
+Alternatively, use the image with the `-ubuntu` suffix.
+<!-- REMOVE UNTIL HERE -->
+<!-- docker-official-library:on -->
 
 ## License
 

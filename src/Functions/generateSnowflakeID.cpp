@@ -8,6 +8,7 @@
 #include <Common/ErrorCodes.h>
 #include <Common/logger_useful.h>
 #include <base/types.h>
+#include <base/sanitizer_defs.h>
 
 namespace DB
 {
@@ -50,6 +51,7 @@ uint64_t getTimestamp()
     return static_cast<uint64_t>(ticks_since_epoch) & ((1ull << timestamp_bits_count) - 1);
 }
 
+NO_SANITIZE_UNSIGNED_OVERFLOW
 uint64_t getMachineIdImpl()
 {
     UUID server_uuid = ServerUUID::get();
@@ -162,27 +164,20 @@ public:
 
     static FunctionPtr create(ContextPtr /*context*/) { return std::make_shared<FunctionGenerateSnowflakeID>(); }
 
-    String getName() const override { return name; }
-    size_t getNumberOfArguments() const override { return 0; }
-    bool isDeterministic() const override { return false; }
-    bool isDeterministicInScopeOfQuery() const override { return false; }
-    bool useDefaultImplementationForNulls() const override { return false; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
-    bool isVariadic() const override { return true; }
+    [[nodiscard]] String getName() const override { return name; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] bool isDeterministic() const override { return false; }
+    [[nodiscard]] bool isDeterministicInScopeOfQuery() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    [[nodiscard]] bool isVariadic() const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] String getSignatureString() const override
     {
-        FunctionArgumentDescriptors mandatory_args;
-        FunctionArgumentDescriptors optional_args{
-            {"expr", nullptr, nullptr, "Arbitrary expression"},
-            {"machine_id", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeUInt), static_cast<FunctionArgumentDescriptor::ColumnValidator>(&isColumnConst), "const UInt*"}
-        };
-        validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
-
-        return std::make_shared<DataTypeUInt64>();
+        return "() -> UInt64 OR ([Any]) -> UInt64 OR (Any, const NativeUInt) -> UInt64";
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         auto col_res = ColumnVector<UInt64>::create();
         typename ColumnVector<UInt64>::Container & vec_to = col_res->getData();
@@ -234,7 +229,7 @@ See section ["Snowflake ID generation"](#snowflake-id-generation) for implementa
     )";
     FunctionDocumentation::Syntax syntax = "generateSnowflakeID([expr, [machine_id]])";
     FunctionDocumentation::Arguments arguments = {
-        {"expr", "An arbitrary [expression](/sql-reference/syntax#expressions) used to bypass [common subexpression elimination](/sql-reference/functions/overview#common-subexpression-elimination) if the function is called multiple times in a query. The value of the expression has no effect on the returned Snowflake ID. Optional."},
+        {"expr", "An arbitrary [expression](/reference/syntax#expressions) used to bypass [common subexpression elimination](/reference/functions/regular-functions/overview#common-subexpression-elimination) if the function is called multiple times in a query. The value of the expression has no effect on the returned Snowflake ID. Optional."},
         {"machine_id", "A machine ID, the lowest 10 bits are used. [Int64](/reference/data-types/int-uint). Optional."}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns the Snowflake ID.", {"UInt64"}};

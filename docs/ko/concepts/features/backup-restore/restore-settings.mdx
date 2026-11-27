@@ -1,0 +1,87 @@
+---
+description: '백업에서 복원할 객체 카테고리를 제어하는 RESTORE 쿼리 설정입니다.'
+sidebarTitle: '복원 설정'
+slug: /operations/backup/restore-settings
+title: '복원 설정'
+keywords: ['backup', 'restore', 'structure_only', 'restore_table_data', 'restore_access_entities', 'restore_functions']
+doc_type: 'reference'
+---
+
+[`RESTORE`](/ko/concepts/features/backup-restore/overview#syntax) 쿼리는 `SETTINGS` 절에서 백업에서 읽어올 객체 카테고리를 제어하는
+설정을 지원합니다. 이 페이지에서는 테이블 데이터, 액세스 엔터티, 사용자 정의 함수 등 복원할 항목을 선택하는 설정을 설명합니다.
+
+<div id="structure-only">
+  ## `structure_only`
+</div>
+
+유형: `Bool`. 기본값: `false`.
+
+`true`로 설정하면 복원할 객체의 내용은 제외하고 백업에서 `CREATE` 쿼리만 읽습니다. 이는 아래 세 가지 범주 설정의 유효 기본값을 모두 `false`로 설정하는 편리한 단축 설정입니다.
+
+* `restore_table_data`
+* `restore_access_entities`
+* `restore_functions`
+
+<div id="restore-table-data">
+  ## `restore_table_data`
+</div>
+
+유형: `Bool`. 선택 사항이며, 설정하지 않으면 기본값은 `!structure_only`입니다(즉, `structure_only`가 설정되지 않은 경우 `true`).
+
+테이블 데이터를 복원할지 여부입니다. 명시적으로 설정하면 `structure_only`를 재정의합니다. `structure_only=true`인 경우에도 테이블 데이터를 복원하려면 `true`로 설정하고, `structure_only`가 설정되지 않은 경우에도 테이블 데이터를 건너뛰려면 `false`로 설정하십시오.
+
+<div id="restore-access-entities">
+  ## `restore_access_entities`
+</div>
+
+유형: `Bool`. 선택 사항이며, 설정하지 않으면 기본값은 `!structure_only`입니다.
+
+사용자, 역할, 설정 프로필, 행 정책 및 쿼터 등 액세스 엔터티를 복원할지 여부를 지정합니다. 명시적으로 설정하면 `structure_only`를 재정의합니다.
+
+<div id="restore-functions">
+  ## `restore_functions`
+</div>
+
+유형: `Bool`. 선택 사항이며, 설정하지 않으면 기본값은 `!structure_only`입니다.
+
+사용자 정의 함수를 복원할지 여부를 지정합니다. 명시적으로 설정하면
+`structure_only`를 재정의합니다.
+
+<div id="effective-behavior">
+  ## 실제 동작
+</div>
+
+각 범주는 해당 설정이 `true`일 때 복원됩니다. 범주별 설정을 지정하지 않으면 해당 값은 `structure_only`에 따라 결정됩니다. 기본적으로 세 가지 설정은 모두 `true`이며, `structure_only=true`이면 모두 `false`가 됩니다.
+
+| `structure_only` | `restore_*` 미설정 | `restore_* = true` | `restore_* = false` |
+| :--------------: | :-------------: | :----------------: | :-----------------: |
+|      `false`     |       복원됨       |         복원됨        |         건너뜀         |
+|      `true`      |       건너뜀       |         복원됨        |         건너뜀         |
+
+이 변경 사항은 완전히 이전 버전과 호환됩니다. 새로운 설정을 하나도 지정하지 않은 `RESTORE` 쿼리는 이전과 정확히 동일하게 동작합니다.
+
+<div id="examples">
+  ## 예시
+</div>
+
+테이블 정의와 액세스 엔터티는 복원하되 테이블 데이터는 복원하지 않습니다. 예를 들어,
+데이터를 복사하지 않고 테스트 환경을 구성하거나 쿼리를 재실행할 수 있습니다:
+
+```sql
+RESTORE ALL FROM backup_name
+SETTINGS structure_only = true, restore_access_entities = true
+```
+
+액세스 엔터티나 사용자 정의 함수를 다시 생성하지 않고 테이블 데이터만 복원합니다:
+
+```sql
+RESTORE ALL FROM backup_name
+SETTINGS structure_only = true, restore_table_data = true
+```
+
+사용자 정의 함수를 제외한 모든 항목 복원:
+
+```sql
+RESTORE ALL FROM backup_name
+SETTINGS restore_functions = false
+```

@@ -18,7 +18,6 @@ namespace ErrorCodes
 {
 extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 extern const int ILLEGAL_COLUMN;
-extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 class FunctionFlipCoordinates final : public IFunction
@@ -27,33 +26,28 @@ public:
     static constexpr auto name = "flipCoordinates";
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionFlipCoordinates>(); }
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    size_t getNumberOfArguments() const override { return 1; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
 
     /// Handle the `Geometry` `Variant` here so its type name is preserved; the generic
     /// `FunctionBaseVariantAdaptor` rebuilds a bare `Variant` and drops the custom name. Every other
     /// `Variant` still goes through the adaptor, keeping its `variant_throw_on_type_mismatch` handling.
-    bool useDefaultImplementationForVariantWithCustomName(const DataTypePtr & type) const override
+    [[nodiscard]] bool useDefaultImplementationForVariantWithCustomName(const DataTypePtr & type) const override
     {
         return type->getName() != "Geometry";
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    /// The signature returns the argument type verbatim, so a custom type name such as `Geometry`
+    /// survives return-type inference just like the legacy `getReturnTypeImpl` it replaced.
+    [[nodiscard]] String getSignatureString() const override
     {
-        if (arguments.size() != 1)
-            throw Exception(
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Function {} takes exactly one argument, got {}",
-                getName(),
-                arguments.size());
-
-        return arguments[0];
+        return "(T) -> T";
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t /*input_rows_count*/) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t /*input_rows_count*/) const override
     {
         const ColumnWithTypeAndName & arg = arguments[0];
 
@@ -164,7 +158,7 @@ private:
             column_variant->getLocalToGlobalDiscriminatorsMapping());
     }
 
-    ColumnPtr executeForPoint(const ColumnPtr & column) const
+    [[nodiscard]] ColumnPtr executeForPoint(const ColumnPtr & column) const
     {
         const auto * column_tuple = checkAndGetColumn<ColumnTuple>(column.get());
         if (!column_tuple)
@@ -248,19 +242,19 @@ The function supports both individual geometry types (Point, MultiPoint, Ring, P
     FunctionDocumentation::Examples examples = {
         {"basic_point",
          "SELECT flipCoordinates((1.0, 2.0));",
-         "(2.0, 1.0)"},
+         "(2,1)"},
         {"ring",
          "SELECT flipCoordinates([(1.0, 2.0), (3.0, 4.0)]);",
-         "[(2.0, 1.0), (4.0, 3.0)]"},
+         "[(2,1),(4,3)]"},
         {"polygon",
          "SELECT flipCoordinates([[(1.0, 2.0), (3.0, 4.0)], [(5.0, 6.0), (7.0, 8.0)]]);",
-         "[[(2.0, 1.0), (4.0, 3.0)], [(6.0, 5.0), (8.0, 7.0)]]"},
+         "[[(2,1),(4,3)],[(6,5),(8,7)]]"},
         {"geometry_wkt",
          "SELECT flipCoordinates(readWkt('POINT(10 20)'));",
-         "(20, 10)"},
+         "(20,10)"},
         {"geometry_polygon_wkt",
          "SELECT flipCoordinates(readWkt('POLYGON((0 0, 5 0, 5 5, 0 5, 0 0))'));",
-         "[[(0, 0), (0, 5), (5, 5), (5, 0), (0, 0)]]"}
+         "[[(0,0),(0,5),(5,5),(5,0),(0,0)]]"}
     };
     FunctionDocumentation::IntroducedIn introduced_in = {25, 11};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;

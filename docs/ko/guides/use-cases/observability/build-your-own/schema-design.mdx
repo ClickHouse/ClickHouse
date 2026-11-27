@@ -7,8 +7,6 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 다음과 같은 이유로 로그와 트레이스에는 항상 자체 스키마를 생성하는 것을 권장합니다:
 
 * **프라이머리 키(primary key) 선택** - 기본 스키마는 특정 액세스 패턴에 최적화된 `ORDER BY`를 사용합니다. 대부분의 경우 실제 액세스 패턴은 여기에 맞지 않습니다.
@@ -32,7 +30,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 </Tip>
 
 <div id="extracting-structure-with-sql">
-  ## SQL로 구조 추출하기
+  ## SQL로 구조 추출하기 {#extracting-structure-with-sql}
 </div>
 
 구조화된 로그와 비정형 로그를 수집할 때 모두, 다음 기능이 필요한 경우가 많습니다.
@@ -175,9 +173,7 @@ LIMIT 5
   [여기](/ko/guides/use-cases/observability/build-your-own/integrating-opentelemetry#processing---filtering-transforming-and-enriching)에 설명된 대로 OTel collector의 processor와 연산자를 사용해 처리할 수도 있습니다. 대부분의 경우 ClickHouse는 collector의 processor보다 리소스를 훨씬 적게 사용하며 더 빠릅니다. 모든 이벤트 처리를 SQL에서 수행할 때의 가장 큰 단점은 솔루션이 ClickHouse에 종속된다는 점입니다. 예를 들어, 처리된 로그를 OTel collector에서 S3와 같은 다른 대상으로 보내고자 할 수 있습니다.
 </Info>
 
-<div id="materialized-columns">
-  ### materialized 컬럼
-</div>
+### materialized 컬럼 {#materialized-columns}
 
 materialized 컬럼은 다른 컬럼에서 구조를 추출하는 가장 간단한 방법입니다. 이러한 컬럼의 값은 항상 삽입 시점에 계산되며 INSERT 쿼리에서 지정할 수 없습니다.
 
@@ -189,26 +185,26 @@ materialized 컬럼은 다른 컬럼에서 구조를 추출하는 가장 간단�
 
 materialized 컬럼은 모든 ClickHouse 표현식을 지원하며, [문자열 처리](/ko/reference/functions/regular-functions/string-functions)([정규식 및 검색](/ko/reference/functions/regular-functions/string-search-functions) 포함)와 [URL](/ko/reference/functions/regular-functions/url-functions), [유형 변환](/ko/reference/functions/regular-functions/type-conversion-functions), [JSON에서 값 추출](/ko/reference/functions/regular-functions/json-functions), [수학 연산](/ko/reference/functions/regular-functions/math-functions)에 사용할 수 있는 다양한 분석 함수를 활용할 수 있습니다.
 
-기본적인 처리에는 materialized 컬럼을 권장합니다. 특히 맵에서 값을 추출해 최상위 컬럼으로 올리고 유형 변환을 수행할 때 유용합니다. 아주 단순한 스키마에서 사용하거나 materialized view와 함께 사용할 때 특히 효과적입니다. 다음은 collector가 JSON을 `LogAttributes` 컬럼으로 추출한 로그의 스키마 예시입니다:
+기본적인 처리에는 materialized 컬럼을 권장합니다. 특히 맵에서 값을 추출해 최상위 컬럼(root columns)으로 올리고 유형 변환을 수행할 때 유용합니다. 아주 단순한 스키마에서 사용하거나 materialized view와 함께 사용할 때 특히 효과적입니다. 다음은 collector가 JSON을 `LogAttributes` 컬럼으로 추출한 로그의 스키마 예시입니다:
 
 ```sql
 CREATE TABLE otel_logs
 (
-        `Timestamp` DateTime64(9) CODEC(Delta(8), ZSTD(1)),
-        `TraceId` String CODEC(ZSTD(1)),
-        `SpanId` String CODEC(ZSTD(1)),
-        `TraceFlags` UInt32 CODEC(ZSTD(1)),
-        `SeverityText` LowCardinality(String) CODEC(ZSTD(1)),
-        `SeverityNumber` Int32 CODEC(ZSTD(1)),
-        `ServiceName` LowCardinality(String) CODEC(ZSTD(1)),
-        `Body` String CODEC(ZSTD(1)),
-        `ResourceSchemaUrl` String CODEC(ZSTD(1)),
-        `ResourceAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(1)),
-        `ScopeSchemaUrl` String CODEC(ZSTD(1)),
-        `ScopeName` String CODEC(ZSTD(1)),
-        `ScopeVersion` String CODEC(ZSTD(1)),
-        `ScopeAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(1)),
-        `LogAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(1)),
+        `Timestamp` DateTime64(9) CODEC(Delta, Default),
+        `TraceId` String,
+        `SpanId` String,
+        `TraceFlags` UInt32,
+        `SeverityText` LowCardinality(String),
+        `SeverityNumber` Int32,
+        `ServiceName` LowCardinality(String),
+        `Body` String,
+        `ResourceSchemaUrl` String,
+        `ResourceAttributes` Map(LowCardinality(String), String),
+        `ScopeSchemaUrl` String,
+        `ScopeName` String,
+        `ScopeVersion` String,
+        `ScopeAttributes` Map(LowCardinality(String), String),
+        `LogAttributes` Map(LowCardinality(String), String),
         `RequestPage` String MATERIALIZED path(LogAttributes['request_path']),
         `RequestType` LowCardinality(String) MATERIALIZED LogAttributes['request_type'],
         `RefererDomain` String MATERIALIZED domain(LogAttributes['referer'])
@@ -248,15 +244,17 @@ Peak memory usage: 3.16 MiB.
   기본적으로 materialized 컬럼은 `SELECT *` 결과에 포함되지 않습니다. 이는 `SELECT *`의 결과를 항상 INSERT를 사용해 다시 테이블에 삽입할 수 있다는 불변 조건을 유지하기 위한 것입니다. 이 동작은 `asterisk_include_materialized_columns=1`을 설정하면 비활성화할 수 있으며, Grafana에서도 활성화할 수 있습니다(데이터 소스 구성의 `Additional Settings -> Custom Settings` 참조).
 </Note>
 
-<div id="materialized-views">
-  ## materialized views
-</div>
+## materialized views {#materialized-views}
 
 [materialized views](/ko/concepts/features/materialized-views/index)는 로그와 트레이스에 SQL 필터링과 변환을 적용하는 더 강력한 수단을 제공합니다.
 
 Materialized Views를 사용하면 계산 비용을 쿼리 시점에서 삽입 시점으로 옮길 수 있습니다. ClickHouse materialized view는 테이블에 데이터 블록이 삽입될 때 해당 블록에 대해 쿼리를 실행하는 트리거일 뿐입니다. 이 쿼리의 결과는 두 번째 &quot;대상&quot; 테이블에 삽입됩니다.
 
-<Image img="/images/use-cases/observability/observability-10.webp" alt="materialized view" size="md" />
+<div className="ch-image-md">
+  <Frame>
+    ![materialized view](/images/use-cases/observability/observability-10.webp)
+  </Frame>
+</div>
 
 <Info>
   **실시간 업데이트**
@@ -266,28 +264,28 @@ Materialized Views를 사용하면 계산 비용을 쿼리 시점에서 삽입 �
 
 materialized view에 연결된 쿼리는 이론적으로는 집계를 포함해 어떤 쿼리든 될 수 있지만, [조인에는 제한 사항이 있습니다](https://clickhouse.com/blog/using-materialized-views-in-clickhouse#materialized-views-and-joins). 로그와 트레이스에 필요한 변환 및 필터링 작업에는 사실상 모든 `SELECT` SQL 문을 사용할 수 있다고 보면 됩니다.
 
-쿼리는 테이블에 삽입되는 행(소스 테이블)에 대해 실행되는 트리거일 뿐이며, 그 결과는 새 테이블(대상 테이블)로 전달된다는 점을 기억해야 합니다.
+쿼리는 테이블에 삽입되는 행(소스 테이블)에 대해 실행되는 트리거일 뿐이며, 그 결과는 새 테이블(대상 테이블(target table))로 전달된다는 점을 기억해야 합니다.
 
-데이터가 두 번 저장되지 않도록(소스 테이블과 대상 테이블 모두에) 원래 스키마를 유지한 채 소스 테이블의 테이블 엔진을 [Null table engine](/ko/reference/engines/table-engines/special/null)으로 변경할 수 있습니다. OTel collector는 계속 이 테이블로 데이터를 전송합니다. 예를 들어 로그의 경우 `otel_logs` 테이블은 다음과 같이 됩니다:
+데이터가 두 번 저장되지 않도록(소스 테이블과 대상 테이블(target table) 모두에) 원래 스키마를 유지한 채 소스 테이블의 테이블 엔진을 [Null table engine](/ko/reference/engines/table-engines/special/null)으로 변경할 수 있습니다. OTel collector는 계속 이 테이블로 데이터를 전송합니다. 예를 들어 로그의 경우 `otel_logs` 테이블은 다음과 같이 됩니다:
 
 ```sql
 CREATE TABLE otel_logs
 (
-        `Timestamp` DateTime64(9) CODEC(Delta(8), ZSTD(1)),
-        `TraceId` String CODEC(ZSTD(1)),
-        `SpanId` String CODEC(ZSTD(1)),
-        `TraceFlags` UInt32 CODEC(ZSTD(1)),
-        `SeverityText` LowCardinality(String) CODEC(ZSTD(1)),
-        `SeverityNumber` Int32 CODEC(ZSTD(1)),
-        `ServiceName` LowCardinality(String) CODEC(ZSTD(1)),
-        `Body` String CODEC(ZSTD(1)),
-        `ResourceSchemaUrl` String CODEC(ZSTD(1)),
-        `ResourceAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(1)),
-        `ScopeSchemaUrl` String CODEC(ZSTD(1)),
-        `ScopeName` String CODEC(ZSTD(1)),
-        `ScopeVersion` String CODEC(ZSTD(1)),
-        `ScopeAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(1)),
-        `LogAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(1))
+        `Timestamp` DateTime64(9) CODEC(Delta, Default),
+        `TraceId` String,
+        `SpanId` String,
+        `TraceFlags` UInt32,
+        `SeverityText` LowCardinality(String),
+        `SeverityNumber` Int32,
+        `ServiceName` LowCardinality(String),
+        `Body` String,
+        `ResourceSchemaUrl` String,
+        `ResourceAttributes` Map(LowCardinality(String), String),
+        `ScopeSchemaUrl` String,
+        `ScopeName` String,
+        `ScopeVersion` String,
+        `ScopeAttributes` Map(LowCardinality(String), String),
+        `LogAttributes` Map(LowCardinality(String), String)
 ) ENGINE = Null
 ```
 
@@ -343,7 +341,7 @@ SeverityNumber:  9
 1 row in set. Elapsed: 0.027 sec.
 ```
 
-위에서 `Body` 컬럼도 추출합니다. 이는 나중에 SQL로 추출되지 않는 추가 속성이 생길 경우를 대비한 것입니다. 이 컬럼은 ClickHouse에서 압축 효율이 높고 거의 조회되지 않으므로 쿼리 성능에 영향을 미치지 않습니다. 마지막으로, cast를 사용하여 Timestamp를 DateTime으로 변환합니다(공간 절약을 위해 [&quot;Optimizing Types&quot;](#optimizing-types) 참조).
+위에서 `Body` 컬럼도 추출합니다. 이는 나중에 SQL로 추출되지 않는 추가 속성이 생길 경우를 대비한 것입니다. 이 컬럼은 ClickHouse에서 압축 효율이 높고 거의 조회되지 않으므로 쿼리 성능에 영향을 미치지 않습니다. 마지막으로, CAST를 사용하여 Timestamp를 DateTime으로 변환합니다(공간 절약을 위해 [&quot;타입 최적화&quot;](#optimizing-types) 참조).
 
 <Info>
   **조건식**
@@ -384,7 +382,7 @@ ORDER BY (ServiceName, Timestamp)
   스키마가 크게 바뀐 점에 주목하십시오. 실제 환경에서는 보존해야 할 Trace 컬럼이 있을 가능성이 높고, `ResourceAttributes` 컬럼도 마찬가지입니다(이 컬럼에는 보통 Kubernetes 메타데이터가 포함됩니다). Grafana는 Trace 컬럼을 활용해 로그와 트레이스 사이를 연결하는 기능을 제공할 수 있습니다. 자세한 내용은 [&quot;Grafana 사용&quot;](/ko/guides/use-cases/observability/build-your-own/grafana)를 참조하십시오.
 </Note>
 
-아래에서는 `otel_logs` 테이블에 대해 위의 SELECT를 실행하고 그 결과를 `otel_logs_v2`로 전달하는 materialized view `otel_logs_mv`를 생성합니다.
+아래에서는 `otel_logs` 테이블에 대해 위의 SELECT 쿼리를 실행하고 그 결과를 `otel_logs_v2`로 전송하는 materialized view `otel_logs_mv`를 생성합니다.
 
 ```sql
 CREATE MATERIALIZED VIEW otel_logs_mv TO otel_logs_v2 AS
@@ -411,9 +409,13 @@ FROM otel_logs
 
 위 내용은 아래와 같이 시각화됩니다:
 
-<Image img="/images/use-cases/observability/observability-11.webp" alt="Otel MV" size="md" />
+<div className="ch-image-md">
+  <Frame>
+    ![Otel MV](/images/use-cases/observability/observability-11.webp)
+  </Frame>
+</div>
 
-이제 [&quot;Exporting to ClickHouse&quot;](/ko/guides/use-cases/observability/build-your-own/integrating-opentelemetry#exporting-to-clickhouse)에서 사용한 collector 구성을 다시 시작하면 데이터가 원하는 포맷으로 `otel_logs_v2`에 표시됩니다. typed JSON extract 함수를 사용한다는 점에 유의하십시오.
+이제 [&quot;Exporting to ClickHouse&quot;](/ko/guides/use-cases/observability/build-your-own/integrating-opentelemetry#exporting-to-clickhouse)에서 사용한 collector 구성을 다시 시작하면 데이터가 원하는 포맷으로 `otel_logs_v2`에 표시됩니다. typed JSON 추출 함수를 사용한다는 점에 유의하십시오.
 
 ```sql
 SELECT *
@@ -471,10 +473,10 @@ FROM otel_logs
 ```
 
 <div id="beware-types">
-  ### 타입에 주의하세요
+  ### 타입에 주의하세요 {#beware-types}
 </div>
 
-위의 materialized view는 암시적 형변환에 의존합니다. 특히 `LogAttributes` 맵을 사용할 때 그렇습니다. ClickHouse는 추출된 값을 대상 테이블의 타입으로 자동 형변환하는 경우가 많아 필요한 구문을 줄여 줍니다. 그러나 동일한 스키마(schema)를 사용하는 대상 테이블에 대해 뷰의 `SELECT` SQL 문을 [`INSERT INTO`](/ko/reference/statements/insert-into) SQL 문과 함께 사용해 항상 테스트하는 것을 권장합니다. 이렇게 하면 타입이 올바르게 처리되는지 확인할 수 있습니다. 특히 다음 경우에 유의하십시오.
+위의 materialized view는 암시적 형변환에 의존합니다. 특히 `LogAttributes` 맵을 사용할 때 그렇습니다. ClickHouse는 추출된 값을 대상 테이블의 타입으로 자동 형변환하는 경우가 많아 필요한 구문을 줄여 줍니다. 그러나 동일한 스키마를 사용하는 대상 테이블에 대해 뷰의 `SELECT` SQL 문을 [`INSERT INTO`](/ko/reference/statements/insert-into) SQL 문과 함께 사용해 항상 테스트하는 것을 권장합니다. 이렇게 하면 타입이 올바르게 처리되는지 확인할 수 있습니다. 특히 다음 경우에 유의하십시오.
 
 * 맵에 키가 없으면 빈 문자열이 반환됩니다. 숫자값의 경우 이를 적절한 값으로 매핑해야 합니다. 이는 [조건식](/ko/reference/functions/regular-functions/conditional-functions) 예: `if(LogAttributes['status'] = ", 200, LogAttributes['status'])` 또는 기본값을 허용할 수 있다면 [형변환 함수](/ko/reference/functions/regular-functions/type-conversion-functions) 예: `toUInt8OrDefault(LogAttributes['status'] )`로 처리할 수 있습니다.
 * 일부 타입은 항상 형변환되지 않습니다. 예를 들어 숫자의 문자열 표현은 enum 값으로 형변환되지 않습니다.
@@ -483,11 +485,11 @@ FROM otel_logs
 <Info>
   **Nullable 사용 피하기**
 
-  관측성 데이터에는 ClickHouse에서 [Nullable](/ko/reference/data-types/nullable) 사용을 피하십시오. logs 및 traces에서는 빈 값과 null을 구분해야 할 필요가 거의 없습니다. 이 기능은 추가 저장소 오버헤드를 유발하며 쿼리 성능에도 부정적인 영향을 줍니다. 자세한 내용은 [여기](/ko/guides/clickhouse/data-modelling/schema-design#optimizing-types)를 참조하십시오.
+  관측성 데이터에는 ClickHouse에서 [Nullable](/ko/reference/data-types/nullable) 사용을 피하십시오. 로그 및 트레이스에서는 빈 값과 null을 구분해야 할 필요가 거의 없습니다. 이 기능은 추가 저장소 오버헤드를 유발하며 쿼리 성능에도 부정적인 영향을 줍니다. 자세한 내용은 [여기](/ko/guides/clickhouse/data-modelling/schema-design#optimizing-types)를 참조하십시오.
 </Info>
 
 <div id="choosing-a-primary-ordering-key">
-  ## 프라이머리(정렬) 키 선택하기
+  ## 프라이머리(정렬) 키 선택하기 {#choosing-a-primary-ordering-key}
 </div>
 
 원하는 컬럼을 추출했다면, 이제 정렬/프라이머리 키 최적화를 시작할 수 있습니다.
@@ -510,7 +512,7 @@ FROM otel_logs
 </Info>
 
 <div id="using-maps">
-  ## 맵 사용하기
+  ## 맵 사용하기 {#using-maps}
 </div>
 
 앞선 예시에서는 `Map(String, String)` 컬럼의 값에 접근하기 위해 맵 구문 `map['key']`을 사용하는 방법을 보여주었습니다. 중첩된 키에 접근할 때도 맵 표기법을 사용할 수 있으며, 이와 함께 이러한 컬럼을 필터링하거나 선택하기 위한 ClickHouse의 특화된 [맵 함수](/ko/reference/functions/regular-functions/tuple-map-functions#mapKeys)도 제공됩니다.
@@ -538,9 +540,7 @@ Peak memory usage: 71.90 MiB.
   맵 컬럼 이름에는 점을 사용하지 않는 것이 좋으며, 이 사용 방식은 향후 더 이상 지원되지 않을 수 있습니다. 대신 `_`를 사용하십시오.
 </Info>
 
-<div id="using-aliases">
-  ## 별칭 사용
-</div>
+## 별칭 사용 {#using-aliases}
 
 맵(Map) 타입에 대한 쿼리는 일반 컬럼에 대한 쿼리보다 느립니다. [&quot;쿼리 가속화&quot;](#accelerating-queries)를 참조하십시오. 또한 구문이 더 복잡해지고 작성도 번거로울 수 있습니다. 이 문제를 해결하기 위해 별칭 컬럼 사용을 권장합니다.
 
@@ -549,21 +549,21 @@ ALIAS 컬럼은 쿼리 시점에 계산되며 테이블에 저장되지 않습�
 ```sql
 CREATE TABLE otel_logs
 (
-        `Timestamp` DateTime64(9) CODEC(Delta(8), ZSTD(1)),
-        `TraceId` String CODEC(ZSTD(1)),
-        `SpanId` String CODEC(ZSTD(1)),
-        `TraceFlags` UInt32 CODEC(ZSTD(1)),
-        `SeverityText` LowCardinality(String) CODEC(ZSTD(1)),
-        `SeverityNumber` Int32 CODEC(ZSTD(1)),
-        `ServiceName` LowCardinality(String) CODEC(ZSTD(1)),
-        `Body` String CODEC(ZSTD(1)),
-        `ResourceSchemaUrl` String CODEC(ZSTD(1)),
-        `ResourceAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(1)),
-        `ScopeSchemaUrl` String CODEC(ZSTD(1)),
-        `ScopeName` String CODEC(ZSTD(1)),
-        `ScopeVersion` String CODEC(ZSTD(1)),
-        `ScopeAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(1)),
-        `LogAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(1)),
+        `Timestamp` DateTime64(9) CODEC(Delta, Default),
+        `TraceId` String,
+        `SpanId` String,
+        `TraceFlags` UInt32,
+        `SeverityText` LowCardinality(String),
+        `SeverityNumber` Int32,
+        `ServiceName` LowCardinality(String),
+        `Body` String,
+        `ResourceSchemaUrl` String,
+        `ResourceAttributes` Map(LowCardinality(String), String),
+        `ScopeSchemaUrl` String,
+        `ScopeName` String,
+        `ScopeVersion` String,
+        `ScopeAttributes` Map(LowCardinality(String), String),
+        `LogAttributes` Map(LowCardinality(String), String),
         `RequestPath` String MATERIALIZED path(LogAttributes['request_path']),
         `RequestType` LowCardinality(String) MATERIALIZED LogAttributes['request_type'],
         `RefererDomain` String MATERIALIZED domain(LogAttributes['referer']),
@@ -624,13 +624,13 @@ LIMIT 5
 </Info>
 
 <div id="optimizing-types">
-  ## 타입 최적화
+  ## 타입 최적화 {#optimizing-types}
 </div>
 
 타입 최적화에 관한 [일반적인 ClickHouse 모범 사례](/ko/guides/clickhouse/data-modelling/schema-design#optimizing-types)는 ClickHouse 사용 사례에도 그대로 적용됩니다.
 
 <div id="using-codecs">
-  ## 코덱 사용
+  ## 코덱 사용 {#using-codecs}
 </div>
 
 데이터 유형 최적화 외에도, ClickHouse 관측성 스키마의 압축을 최적화할 때는 [코덱에 대한 일반적인 모범 사례](/ko/guides/clickhouse/data-modelling/compression/compression-in-clickhouse#choosing-the-right-column-compression-codec)를 따를 수 있습니다.
@@ -639,13 +639,15 @@ LIMIT 5
 
 또한 타임스탬프는 압축 측면에서는 델타 인코딩의 이점을 얻을 수 있지만, 이 컬럼을 프라이머리/정렬 키로 사용하면 느린 쿼리 성능을 유발할 수 있는 것으로 확인되었습니다. 따라서 압축률과 쿼리 성능 간의 절충점을 평가할 것을 권장합니다.
 
-<div id="using-dictionaries">
-  ## 딕셔너리 사용
-</div>
+## 딕셔너리 사용 {#using-dictionaries}
 
 [딕셔너리](/ko/reference/statements/create/dictionary)은 ClickHouse의 [핵심 기능](https://clickhouse.com/blog/faster-queries-dictionaries-clickhouse)으로, 다양한 내부 및 외부 [소스](/ko/reference/statements/create/dictionary/sources/overview#dictionary-sources)의 데이터를 인메모리 [키-값](https://en.wikipedia.org/wiki/Key%E2%80%93value_database) 형태로 표현하며, 초저지연 조회 쿼리에 최적화되어 있습니다.
 
-<Image img="/images/use-cases/observability/observability-12.webp" alt="관측성과 딕셔너리" size="md" />
+<div className="ch-image-md">
+  <Frame>
+    ![관측성과 딕셔너리](/images/use-cases/observability/observability-12.webp)
+  </Frame>
+</div>
 
 이 기능은 다양한 시나리오에서 유용합니다. 예를 들어 수집 성능 저하 없이 수집된 데이터를 실시간으로 보강할 수 있고, 전반적인 쿼리 성능도 향상할 수 있으며, 특히 JOIN에서 큰 이점을 얻을 수 있습니다.
 관측성 사용 사례에서는 조인이 필요한 경우는 드물지만, 딕셔너리는 여전히 보강 용도로 유용하며 삽입 시점과 쿼리 시점 모두에서 활용할 수 있습니다. 아래에서 두 경우의 예시를 제공합니다.
@@ -657,7 +659,7 @@ LIMIT 5
 </Info>
 
 <div id="insert-time-vs-query-time">
-  ### 삽입 시점 vs 쿼리 시점
+  ### 삽입 시점 vs 쿼리 시점 {#insert-time-vs-query-time}
 </div>
 
 딕셔너리는 데이터셋을 쿼리 시점 또는 삽입 시점에 보강하는 데 사용할 수 있습니다. 각 접근 방식에는 저마다 장단점이 있습니다. 요약하면 다음과 같습니다.
@@ -670,7 +672,7 @@ LIMIT 5
 간단한 보강 예시는 [여기](/ko/concepts/features/dictionaries/index)의 딕셔너리 가이드를 참조하십시오. 아래에서는 일반적인 관측성 보강 작업에 집중합니다.
 
 <div id="using-ip-dictionaries">
-  ### IP 딕셔너리 사용하기
+  ### IP 딕셔너리 사용하기 {#using-ip-dictionaries}
 </div>
 
 IP 주소를 사용해 로그와 트레이스에 위도 및 경도 값을 추가하는 지리 정보 보강은 관측성에서 흔한 요구 사항입니다. 이는 `ip_trie` 구조화된 딕셔너리를 사용해 구현할 수 있습니다.
@@ -777,7 +779,7 @@ CREATE TABLE geoip
         `country_code` String
 )
 ENGINE = MergeTree
-ORDER BY cidr
+ORDER BY cidr;
 
 INSERT INTO geoip
 WITH
@@ -793,7 +795,7 @@ SELECT
 FROM geoip_url
 ```
 
-ClickHouse에서 저지연 IP lookup을 수행하기 위해, Geo IP 데이터의 키 -&gt; 속성 매핑을 메모리에 저장하는 딕셔너리를 활용합니다. ClickHouse는 네트워크 프리픽스(CIDR 블록)를 좌표와 국가 코드에 매핑할 수 있는 `ip_trie` [딕셔너리 구조](/ko/reference/statements/create/dictionary/layouts/ip-trie)를 제공합니다. 다음 쿼리는 이 레이아웃을 사용하고 위 테이블을 소스로 하는 딕셔너리를 지정합니다.
+ClickHouse에서 저지연 IP 조회를 수행하기 위해, Geo IP 데이터의 키 -&gt; 속성 매핑을 메모리에 저장하는 딕셔너리를 활용합니다. ClickHouse는 네트워크 프리픽스(CIDR 블록)를 좌표와 국가 코드에 매핑할 수 있는 `ip_trie` [딕셔너리 구조](/ko/reference/statements/create/dictionary/layouts/ip-trie)를 제공합니다. 다음 쿼리는 이 레이아웃을 사용하고 위 테이블을 소스로 하는 딕셔너리를 지정합니다.
 
 ```sql
 CREATE DICTIONARY ip_trie (
@@ -841,7 +843,7 @@ SELECT dictGet('ip_trie', ('country_code', 'latitude', 'longitude'), CAST('85.24
 │ ('PT',38.7944,-9.34284) │
 └─────────────────────────┘
 
-1 행 in set. Elapsed: 0.003 sec.
+1 row in set. Elapsed: 0.003 sec.
 ```
 
 여기서 조회 속도를 확인하십시오. 이를 통해 로그를 보강할 수 있습니다. 이 경우 **쿼리 시점에 보강을 수행합니다**.
@@ -909,16 +911,14 @@ ORDER BY (ServiceName, Timestamp)
 
 위의 국가 및 좌표 정보는 국가별 그룹화와 필터링을 넘어서는 시각화 기능을 제공합니다. 참고할 만한 예시는 [&quot;Geo 데이터 시각화&quot;](/ko/guides/use-cases/observability/build-your-own/grafana#visualizing-geo-data)를 참조하십시오.
 
-<div id="using-regex-dictionaries-user-agent-parsing">
-  ### 정규식 딕셔너리 사용(user agent 파싱)
-</div>
+### 정규식 딕셔너리 사용(user agent 파싱) {#using-regex-dictionaries-user-agent-parsing}
 
-[user agent 문자열](https://en.wikipedia.org/wiki/User_agent) 파싱은 정규식을 사용하는 대표적인 문제이며, 로그 및 trace 기반 데이터셋에서 흔히 필요한 작업입니다. ClickHouse는 정규 표현식 트리 딕셔너리를 사용하여 user agent를 효율적으로 파싱할 수 있습니다.
+[user agent 문자열](https://en.wikipedia.org/wiki/User_agent) 파싱은 정규식을 사용하는 대표적인 문제이며, 로그 및 trace 기반 데이터셋에서 흔히 필요한 작업입니다. ClickHouse는 정규 표현식 트리(regular expression tree) 딕셔너리를 사용하여 user agent를 효율적으로 파싱할 수 있습니다.
 
-정규식 트리 딕셔너리는 ClickHouse 오픈소스에서 정규식 트리가 포함된 YAML 파일의 경로를 제공하는 YAMLRegExpTree 딕셔너리 소스 유형으로 정의합니다. 자체 정규식 딕셔너리를 제공하려는 경우, 필요한 구조에 대한 자세한 내용은 [여기](/ko/reference/statements/create/dictionary/layouts/regexp-tree#use-regular-expression-tree-dictionary-in-clickhouse-open-source)에서 확인할 수 있습니다. 아래에서는 [uap-core](https://github.com/ua-parser/uap-core)를 사용한 user-agent 파싱에 초점을 맞추고, 지원되는 CSV 형식에 맞게 딕셔너리를 로드합니다. 이 방식은 OSS와 ClickHouse Cloud 모두에서 호환됩니다.
+정규 표현식 트리(regular expression tree) 딕셔너리는 ClickHouse 오픈소스에서 정규 표현식 트리(regular expression tree)가 포함된 YAML 파일의 경로를 제공하는 YAMLRegExpTree 딕셔너리 소스 유형으로 정의합니다. 자체 정규식 딕셔너리를 제공하려는 경우, 필요한 구조에 대한 자세한 내용은 [여기](/ko/reference/statements/create/dictionary/layouts/regexp-tree#use-regular-expression-tree-dictionary-in-clickhouse-open-source)에서 확인할 수 있습니다. 아래에서는 [uap-core](https://github.com/ua-parser/uap-core)를 사용한 user-agent 파싱에 초점을 맞추고, 지원되는 CSV 형식에 맞게 딕셔너리를 로드합니다. 이 방식은 OSS와 ClickHouse Cloud 모두에서 호환됩니다.
 
 <Note>
-  아래 예시에서는 user-agent 파싱을 위해 2024년 06월 기준 최신 uap-core 정규식 스냅샷을 사용합니다. 최신 파일은 수시로 업데이트되며 [여기](https://raw.githubusercontent.com/ua-parser/uap-core/master/regexes.yaml)에서 확인할 수 있습니다. 아래에서 사용하는 CSV file에 로드하려면 [여기](/ko/reference/statements/create/dictionary/layouts/regexp-tree#collecting-attribute-values)의 단계를 따르십시오.
+  아래 예시에서는 user-agent 파싱을 위해 2024년 06월 기준 최신 uap-core 정규식 스냅샷을 사용합니다. 최신 파일은 수시로 업데이트되며 [여기](https://raw.githubusercontent.com/ua-parser/uap-core/master/regexes.yaml)에서 확인할 수 있습니다. 아래에서 사용하는 CSV 파일에 로드하려면 [여기](/ko/reference/statements/create/dictionary/layouts/regexp-tree#collecting-attribute-values)의 단계를 따르십시오.
 </Note>
 
 다음 Memory 테이블을 생성하십시오. 이 테이블에는 디바이스, 브라우저, 운영 체제를 파싱하기 위한 정규식이 저장됩니다.
@@ -955,14 +955,18 @@ CREATE TABLE regexp_device
 이 테이블은 `url` 테이블 함수를 사용해 다음과 같이 공개적으로 호스팅된 CSV 파일에서 데이터를 채울 수 있습니다:
 
 ```sql
-INSERT INTO regexp_os SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/user_agent_regex/regexp_os.csv', 'CSV', 'id UInt64, parent_id UInt64, regexp String, keys Array(String), values Array(String)')
+INSERT INTO regexp_os SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/user_agent_regex/regexp_os.csv', NOSIGN, 'CSV', 'id UInt64, parent_id UInt64, regexp String, keys Array(String), values Array(String)')
 
-INSERT INTO regexp_device SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/user_agent_regex/regexp_device.csv', 'CSV', 'id UInt64, parent_id UInt64, regexp String, keys Array(String), values Array(String)')
+INSERT INTO regexp_device SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/user_agent_regex/regexp_device.csv', NOSIGN, 'CSV', 'id UInt64, parent_id UInt64, regexp String, keys Array(String), values Array(String)')
 
-INSERT INTO regexp_browser SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/user_agent_regex/regexp_browser.csv', 'CSV', 'id UInt64, parent_id UInt64, regexp String, keys Array(String), values Array(String)')
+INSERT INTO regexp_browser SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/user_agent_regex/regexp_browser.csv', NOSIGN, 'CSV', 'id UInt64, parent_id UInt64, regexp String, keys Array(String), values Array(String)')
 ```
 
 메모리 테이블이 채워졌으므로 이제 정규식 딕셔너리를 로드할 수 있습니다. 키 값은 컬럼으로 지정해야 하며, 이 컬럼들이 user agent에서 추출할 수 있는 속성이 됩니다.
+
+<Note title="ClickHouse Cloud">
+  ClickHouse 테이블에서 데이터를 읽는 딕셔너리를 생성할 때는 `SOURCE` 절에 전용 사용자의 사용자 이름과 비밀번호를 지정하십시오. 해당 사용자에게는 원본 테이블에 대한 `SELECT` 권한이 있어야 합니다. 자세한 내용은 [ClickHouse 딕셔너리 소스 예시](/ko/reference/statements/create/dictionary/sources/clickhouse)를 참고하십시오.
+</Note>
 
 ```sql
 CREATE DICTIONARY regexp_os_dict
@@ -1106,7 +1110,7 @@ Os:     ('Other','0','0','0')
 </Info>
 
 <div id="further-reading">
-  ### 추가 자료
+  ### 추가 자료 {#further-reading}
 </div>
 
 더 많은 예시와 딕셔너리에 대한 자세한 내용은 다음 문서를 참고하십시오:
@@ -1116,13 +1120,13 @@ Os:     ('Other','0','0','0')
 * [딕셔너리](/ko/reference/statements/create/dictionary)
 
 <div id="accelerating-queries">
-  ## 쿼리 성능 가속화
+  ## 쿼리 성능 가속화 {#accelerating-queries}
 </div>
 
 ClickHouse는 쿼리 성능을 높이기 위한 여러 기법을 지원합니다. 아래 기법은 가장 일반적인 액세스 패턴에 맞게 최적화하고 압축 효율을 극대화할 수 있도록 적절한 기본 키/순서 지정 키를 선택한 다음에 고려해야 합니다. 일반적으로 이 방법이 가장 적은 노력으로 가장 큰 성능 향상을 가져옵니다.
 
 <div id="using-materialized-views-incremental-for-aggregations">
-  ### 집계를 위해 materialized view(증분) 사용
+  ### 집계를 위해 materialized view(증분) 사용 {#using-materialized-views-incremental-for-aggregations}
 </div>
 
 이전 섹션에서는 데이터 변환과 필터링에 materialized view를 사용하는 방법을 살펴보았습니다. 하지만 materialized view는 삽입 시점에 집계를 미리 계산해 그 결과를 저장하는 데에도 사용할 수 있습니다. 또한 이후의 삽입 결과를 반영해 이 결과를 갱신할 수 있으므로, 사실상 집계를 삽입 시점에 미리 계산할 수 있습니다.
@@ -1261,7 +1265,7 @@ LIMIT 5
 </Note>
 
 <div id="a-more-complex-example">
-  #### 더 복잡한 예시
+  #### 더 복잡한 예시 {#a-more-complex-example}
 </div>
 
 위 예시에서는 [SummingMergeTree](/ko/reference/engines/table-engines/mergetree-family/summingmergetree)를 사용해 시간당 단순 카운트를 집계합니다. 단순 합계 이상의 통계를 계산하려면 다른 대상 테이블 엔진이 필요합니다. 바로 [AggregatingMergeTree](/ko/reference/engines/table-engines/mergetree-family/aggregatingmergetree)입니다.
@@ -1348,7 +1352,7 @@ ORDER BY Hour DESC
 여기서는 `FINAL` 대신 `GROUP BY`를 사용한다는 점에 유의하십시오.
 
 <div id="using-materialized-views-incremental--for-fast-lookups">
-  ### 빠른 조회를 위한 Materialized views (incremental)  사용
+  ### 빠른 조회를 위한 Materialized views (incremental)  사용 {#using-materialized-views-incremental--for-fast-lookups}
 </div>
 
 ClickHouse 정렬 키를 선택할 때는 필터링 절과 집계 절에서 자주 사용되는 컬럼과 함께 액세스 패턴도 고려해야 합니다. 하지만 관측성 사용 사례에서는 액세스 패턴이 더 다양하므로, 이를 하나의 컬럼 집합만으로 포괄하기 어려워 제약이 될 수 있습니다. 이는 기본 OTel 스키마에 포함된 예시를 보면 가장 잘 이해할 수 있습니다. 트레이스의 기본 스키마를 살펴보겠습니다:
@@ -1453,9 +1457,7 @@ LIMIT 1000
 
 이와 같은 접근 방식은 유사한 액세스 패턴에도 적용할 수 있습니다. 비슷한 예시는 데이터 모델링의 [여기](/ko/concepts/features/materialized-views/incremental-materialized-view#lookup-table)에서 살펴봅니다.
 
-<div id="using-projections">
-  ### 프로젝션 사용하기
-</div>
+### 프로젝션 사용하기 {#using-projections}
 
 ClickHouse 프로젝션을 사용하면 하나의 테이블에 여러 `ORDER BY` 절을 지정할 수 있습니다.
 
@@ -1470,10 +1472,14 @@ ClickHouse 프로젝션을 사용하면 하나의 테이블에 여러 `ORDER BY`
 <Info>
   **프로젝션과 materialized view 비교**
 
-  프로젝션은 materialized view와 비슷한 기능을 많이 제공하지만, 대개는 후자가 더 적합하므로 제한적으로 사용하는 것이 좋습니다. 어떤 단점이 있는지, 그리고 언제 적절한지 이해해야 합니다. 예를 들어 프로젝션을 사용해 집계를 사전 계산할 수는 있지만, 이 용도에는 Materialized views를 사용할 것을 권장합니다.
+  프로젝션은 materialized view와 비슷한 기능을 많이 제공하지만, 대개는 후자가 더 적합하므로 제한적으로 사용하는 것이 좋습니다. 어떤 단점이 있는지, 그리고 언제 적절한지 이해해야 합니다. 예를 들어 프로젝션을 사용해 집계를 사전 계산할 수는 있지만, 이 용도에는 materialized view를 사용할 것을 권장합니다.
 </Info>
 
-<Image img="/images/use-cases/observability/observability-13.webp" alt="관측성과 프로젝션" size="md" />
+<div className="ch-image-md">
+  <Frame>
+    ![관측성과 프로젝션](/images/use-cases/observability/observability-13.webp)
+  </Frame>
+</div>
 
 다음 쿼리를 살펴보겠습니다. 이 쿼리는 `otel_logs_v2` 테이블에서 500 오류 코드를 기준으로 필터링합니다. 사용자가 오류 코드로 필터링하려는 경우가 많기 때문에, 이는 로깅에서 흔한 액세스 패턴일 가능성이 높습니다:
 
@@ -1575,7 +1581,7 @@ Peak memory usage: 27.85 MiB.
 위 예시에서는 앞선 쿼리에서 사용한 컬럼을 프로젝션에 지정합니다. 즉, 지정한 컬럼만 프로젝션의 일부로 디스크에 저장되며 Status를 기준으로 정렬됩니다. 반대로 여기서 `SELECT *`를 사용하면 모든 컬럼이 저장됩니다. 이렇게 하면 더 많은 쿼리(임의의 컬럼 부분집합을 사용하는 경우)가 프로젝션의 이점을 활용할 수 있지만, 그만큼 추가 저장 공간이 필요합니다. 디스크 공간과 압축을 측정하는 방법은 [&quot;테이블 크기 및 압축 측정&quot;](#measuring-table-size--compression)을 참조하십시오.
 
 <div id="secondarydata-skipping-indices">
-  ### 보조/데이터 스킵 인덱스
+  ### 보조/데이터 스킵 인덱스 {#secondarydata-skipping-indices}
 </div>
 
 ClickHouse에서 프라이머리 키를 아무리 잘 조정하더라도 일부 쿼리는 결국 전체 테이블 스캔이 필요합니다. 이는 materialized view(그리고 일부 쿼리에서는 프로젝션)를 사용해 어느 정도 완화할 수 있지만, 추가 유지 관리가 필요하며 이를 제대로 활용하려면 사용자가 이러한 기능이 있다는 사실을 알고 있어야 합니다. 기존 관계형 데이터베이스에서는 이를 보조 인덱스로 해결하지만, 이런 방식은 ClickHouse와 같은 컬럼 지향 데이터베이스에서는 효과적이지 않습니다. 대신 ClickHouse는 &quot;Skip&quot; 인덱스를 사용하며, 이를 통해 일치하는 값이 없는 대규모 데이터 청크를 건너뛸 수 있어 쿼리 성능을 크게 개선할 수 있습니다.
@@ -1587,7 +1593,7 @@ ClickHouse에서 프라이머리 키를 아무리 잘 조정하더라도 일부 
 **일반적으로 프라이머리 키와 대상 비프라이머리 컬럼/표현식 사이에 강한 상관관계가 있고, 조회 대상이 드물게 나타나는 값, 즉 많은 그래뉼에 걸쳐 나타나지 않는 값일 때 효과적입니다.**
 
 <div id="text-index-for-full-text-search">
-  ### 전문 검색을 위한 텍스트 인덱스
+  ### 전문 검색을 위한 텍스트 인덱스 {#text-index-for-full-text-search}
 </div>
 
 ClickHouse는 전문 검색을 위한 특수한 [텍스트 인덱스](/ko/reference/engines/table-engines/mergetree-family/textindexes)를 제공합니다.
@@ -1650,7 +1656,7 @@ Query id: ff0b866c-6df7-47be-9e36-795ef3888169
 ```
 
 <div id="adding-a-text-index">
-  #### 텍스트 인덱스 추가
+  #### 텍스트 인덱스 추가 {#adding-a-text-index}
 </div>
 
 Body 컬럼의 텍스트 인덱스는 테이블을 생성할 때 추가할 수 있습니다:
@@ -1710,7 +1716,7 @@ Peak memory usage: 15.23 MiB.
 ```
 
 <div id="using-a-preprocessor">
-  #### 전처리기 사용
+  #### 전처리기 사용 {#using-a-preprocessor}
 </div>
 
 이 데이터셋에서 Body 컬럼에는 여러 key-value 쌍(예: `msg`, `id`, `ctx`, `attr` 등)을 포함하는 JSON 형식의 문자열이 들어 있습니다.
@@ -1981,16 +1987,14 @@ Query id: 730e4b77-e697-40b3-a24d-67219ec42075
 </details>
 
 <div id="extracting-from-maps">
-  ### 맵에서 추출하기
+  ### 맵에서 추출하기 {#extracting-from-maps}
 </div>
 
 맵(Map) 타입은 OTel 스키마에서 널리 사용됩니다. 이 타입에서는 값과 키의 유형이 동일해야 하며, Kubernetes 레이블과 같은 메타데이터를 저장하기에는 충분합니다. 맵(Map) 타입의 하위 키를 쿼리할 때는 상위 컬럼 전체가 로드된다는 점에 유의하십시오. 맵에 키가 많으면, 해당 키가 별도 컬럼으로 존재하는 경우보다 디스크에서 더 많은 데이터를 읽어야 하므로 쿼리 성능에 상당한 불이익이 발생할 수 있습니다.
 
 특정 키를 자주 쿼리한다면 루트에 전용 컬럼으로 분리하는 것을 고려하십시오. 이는 일반적으로 공통적인 액세스 패턴에 대응해 배포 후 수행하는 작업이며, 프로덕션 환경에 배포하기 전에는 예측하기 어려울 수 있습니다. 배포 후 스키마를 수정하는 방법은 [&quot;스키마 변경 관리&quot;](/ko/guides/use-cases/observability/build-your-own/managing-data#managing-schema-changes)를 참조하십시오.
 
-<div id="measuring-table-size--compression">
-  ## 테이블 크기 및 압축 측정
-</div>
+## 테이블 크기 및 압축 측정 {#measuring-table-size--compression}
 
 ClickHouse가 관측성에 사용되는 주된 이유 중 하나는 압축입니다.
 

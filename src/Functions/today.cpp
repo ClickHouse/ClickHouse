@@ -17,9 +17,9 @@ class ExecutableFunctionToday final : public IExecutableFunction
 public:
     explicit ExecutableFunctionToday(time_t time_) : day_value(static_cast<UInt16>(time_)) {}
 
-    String getName() const override { return "today"; }
+    [[nodiscard]] String getName() const override { return "today"; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
     {
         return DataTypeDate().createColumnConst(input_rows_count, day_value);
     }
@@ -74,7 +74,7 @@ public:
 
     static FunctionOverloadResolverPtr create(ContextPtr) { return std::make_unique<TodayOverloadResolver>(); }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes &) const override { return std::make_shared<DataTypeDate>(); }
+    String getSignatureString() const override { return "() -> Date"; }
 
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName &, const DataTypePtr &) const override
     {
@@ -98,7 +98,7 @@ R"(
 ┏━━━━━━━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━━━━━━━┓
 ┃      today ┃    curdate ┃ current_date ┃
 ┡━━━━━━━━━━━━╇━━━━━━━━━━━━╇━━━━━━━━━━━━━━┩
-│ 2025-03-03 │ 2025-03-03 │   2025-03-03 │
+│ 2026-08-02 │ 2026-08-02 │   2026-08-02 │
 └────────────┴────────────┴──────────────┘
 )"
         },
@@ -106,10 +106,8 @@ R"(
 SELECT TODAY, CURDATE,CURRENT_DATE
         )",
         R"(
-┏━━━━━━━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━━━━━━━┓
-┃      TODAY ┃    CURDATE ┃ CURRENT_DATE ┃
-┡━━━━━━━━━━━━╇━━━━━━━━━━━━╇━━━━━━━━━━━━━━┩
-│ 2025-03-04 │ 2025-03-04 │   2025-03-04 │
+┌──────TODAY─┬────CURDATE─┬─CURRENT_DATE─┐
+│ 2026-08-02 │ 2026-08-02 │   2026-08-02 │
 └────────────┴────────────┴──────────────┘
         )"}
     };

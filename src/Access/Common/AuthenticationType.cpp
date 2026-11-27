@@ -94,4 +94,19 @@ const AuthenticationTypeInfo & AuthenticationTypeInfo::get(AuthenticationType ty
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown authentication type: {}", static_cast<int>(type_));
 }
 
+
+bool authenticationTypeIsVerifiedLocally(AuthenticationType type_)
+{
+    switch (type_)
+    {
+        case AuthenticationType::LDAP:
+        case AuthenticationType::KERBEROS:
+        case AuthenticationType::HTTP:
+        case AuthenticationType::JWT:
+            return false;
+        default:
+            return true;
+    }
+}
+
 }

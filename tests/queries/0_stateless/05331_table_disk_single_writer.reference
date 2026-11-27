@@ -1,0 +1,29 @@
+-- a second writable table on the same root is refused
+can hold the data of only one table, use a read-only disk for the other tables. (BAD_ARGUMENTS)
+can hold the data of only one table, use a read-only disk for the other tables. (BAD_ARGUMENTS)
+-- a read-only table on the same root is allowed
+1
+-- the same table can be attached again after a detach
+1
+-- an ALTER that keeps the disk is allowed
+1
+-- after the drop another table can use the root
+0
+-- a table dropped without SYNC keeps the root until the drop finishes
+It is dropped and keeps its data until the drop finishes, retry after that (`DROP TABLE ... SYNC` waits for the drop). (BAD_ARGUMENTS)
+-- a table detached without SYNC keeps the root while its detached instance is alive
+It is detached and its detached instance is still alive, retry after it is released (in an `Atomic` database `DETACH TABLE ... SYNC` waits for that). (BAD_ARGUMENTS)
+-- two cache disks over one writable disk share its root
+can hold the data of only one table, use a read-only disk for the other tables. (BAD_ARGUMENTS)
+-- encrypted disks over sibling paths of one disk are allowed, nested and parent paths are refused
+1
+2
+can hold the data of only one table, use a read-only disk for the other tables. (BAD_ARGUMENTS)
+can hold the data of only one table, use a read-only disk for the other tables. (BAD_ARGUMENTS)
+-- two tables on one write-once disk are allowed
+0
+-- clickhouse-local, default database
+1
+0
+-- the disk of the table cannot be changed
+cannot be changed. (BAD_ARGUMENTS)

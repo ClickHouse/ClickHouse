@@ -9,16 +9,16 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { ExperimentalBadge } from "/snippets/pt-BR/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import { BetaBadge } from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
 
-<ExperimentalBadge />
+<BetaBadge />
 
 <Note>
   A integração com o Nessie Catalog funciona apenas com tabelas Iceberg.
   Esta integração oferece suporte tanto ao S3 da AWS quanto a outros provedores de armazenamento em nuvem.
 </Note>
 
-O ClickHouse oferece suporte à integração com vários catálogos (Unity, Glue, REST, Polaris etc.). Este guia orienta você nas etapas para consultar seus dados usando o ClickHouse e o catálogo [Nessie](https://projectnessie.org/).
+O ClickHouse oferece suporte à integração com vários catálogos (Unity, Glue, REST, Polaris etc.). Este guia orienta você nas etapas para consultar seus dados usando o ClickHouse e o [Nessie Catalog](https://projectnessie.org/).
 
 O Nessie é um catálogo transacional de código aberto para lagos de dados que oferece:
 
@@ -29,26 +29,22 @@ O Nessie é um catálogo transacional de código aberto para lagos de dados que 
 * **Implantação pronta para produção** em Docker ou Kubernetes
 
 <Note>
-  Como este recurso é experimental, você precisará habilitá-lo usando:
-  `SET allow_experimental_database_iceberg = 1;`
+  Este recurso está em Beta. Habilite-o com:
+  `SET allow_database_iceberg = 1;`
+
+  Em versões anteriores à 25.8, nas quais o recurso é experimental, use `SET allow_experimental_database_iceberg = 1;`.
 </Note>
 
-<div id="local-development-setup">
-  ## Configuração para desenvolvimento local
-</div>
+## Configuração para desenvolvimento local {#local-development-setup}
 
 Para desenvolvimento e testes locais, você pode usar uma configuração conteinerizada do Nessie. Essa abordagem é ideal para aprendizado, prototipagem e ambientes de desenvolvimento.
 
-<div id="local-prerequisites">
-  ### Pré-requisitos
-</div>
+### Pré-requisitos {#local-prerequisites}
 
 1. **Docker e Docker Compose**: Certifique-se de que o Docker esteja instalado e em execução
 2. **Configuração de exemplo**: Você pode usar a configuração oficial do Nessie com docker-compose
 
-<div id="setting-up-local-nessie-catalog">
-  ### Configurando o Nessie Catalog local
-</div>
+### Configurando o Nessie Catalog local {#setting-up-local-nessie-catalog}
 
 Você pode usar o [setup oficial do Docker Compose do Nessie](https://projectnessie.org/guides/), que fornece um ambiente completo com Nessie, repositório de versões em memória e MinIO para armazenamento de objetos.
 
@@ -152,9 +148,7 @@ docker-compose logs -f
   A configuração do Nessie usa um armazenamento de versões em memória e exige que os dados de exemplo sejam carregados primeiro nas tabelas Iceberg. Certifique-se de que o ambiente tenha criado e populado as tabelas antes de tentar consultá-las pelo ClickHouse.
 </Note>
 
-<div id="connecting-to-local-nessie-catalog">
-  ### Conectando-se ao Nessie Catalog local
-</div>
+### Conectando-se ao Nessie Catalog local {#connecting-to-local-nessie-catalog}
 
 Conecte-se ao seu container do ClickHouse:
 
@@ -165,16 +159,14 @@ docker exec -it nessie-clickhouse clickhouse-client
 Em seguida, crie a conexão de banco de dados com o Nessie Catalog:
 
 ```sql
-SET allow_experimental_database_iceberg = 1;
+SET allow_database_iceberg = 1;
 
 CREATE DATABASE demo
 ENGINE = DataLakeCatalog('http://nessie:19120/iceberg', 'admin', 'password')
 SETTINGS catalog_type = 'rest', storage_endpoint = 'http://minio:9002/my-bucket', warehouse = 'warehouse'
 ```
 
-<div id="querying-nessie-catalog-tables-using-clickhouse">
-  ## Consultando tabelas do Nessie Catalog usando o ClickHouse
-</div>
+## Consultando tabelas do Nessie Catalog usando o ClickHouse {#querying-nessie-catalog-tables-using-clickhouse}
 
 Agora que a conexão está estabelecida, você pode começar a fazer consultas por meio do Nessie Catalog. Por exemplo:
 
@@ -258,9 +250,7 @@ SHOW CREATE TABLE `default.taxis`;
 └───────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-<div id="loading-data-from-your-data-lake-into-clickhouse">
-  ## Carregando dados do seu lago de dados para o ClickHouse
-</div>
+## Carregando dados do seu lago de dados para o ClickHouse {#loading-data-from-your-data-lake-into-clickhouse}
 
 Se você precisar carregar dados do Nessie Catalog para o ClickHouse, comece criando uma tabela local no ClickHouse:
 

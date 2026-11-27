@@ -18,33 +18,23 @@ A configuração do seu cluster do ClickHouse depende muito do caso de uso da su
 * Custos de hardware
 * Custos de manutenção
 
-<div id="disk">
-  ## Disco
-</div>
+## Disco {#disk}
 
 Os tipos de discos que você deve usar com o ClickHouse dependem do volume de dados e dos requisitos de latência e de taxa de transferência.
 
-<div id="optimizing-for-performance">
-  ### Otimizando o desempenho
-</div>
+### Otimizando o desempenho {#optimizing-for-performance}
 
 Para maximizar o desempenho, recomendamos anexar diretamente [volumes SSD com IOPS provisionadas da AWS](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/provisioned-iops.html) ou a oferta equivalente do seu provedor de nuvem, para otimizar o I/O.
 
-<div id="optimizing-for-storage-costs">
-  ### Otimizando os custos de armazenamento
-</div>
+### Otimizando os custos de armazenamento {#optimizing-for-storage-costs}
 
 Para reduzir os custos, você pode usar [volumes EBS SSD de uso geral](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/general-purpose.html).
 
 Você também pode implementar armazenamento em camadas usando SSDs e HDDs em uma [arquitetura hot/warm/cold](/pt-BR/concepts/features/operations/delete/ttl#implementing-a-hotwarmcold-architecture). Como alternativa, também é possível usar o [AWS S3](https://aws.amazon.com/s3/) como armazenamento para separar computação e armazenamento. Consulte nosso guia sobre como usar o ClickHouse de código aberto com separação entre computação e armazenamento [aqui](/pt-BR/guides/oss/deployment-and-scaling/separation-storage-compute). A separação entre computação e armazenamento está disponível por padrão no ClickHouse Cloud.
 
-<div id="cpu">
-  ## CPU
-</div>
+## CPU {#cpu}
 
-<div id="which-cpu-should-i-use">
-  ### Qual CPU devo usar?
-</div>
+### Qual CPU devo usar? {#which-cpu-should-i-use}
 
 O tipo de CPU que você deve usar depende do seu padrão de uso. Em geral, porém, aplicações com muitas consultas simultâneas frequentes, que processam mais dados ou usam UDFs com uso intensivo de computação exigirão mais núcleos de CPU.
 
@@ -62,15 +52,11 @@ Para cargas de trabalho de armazenamento de dados e consultas analíticas ad hoc
 
 ***
 
-<div id="what-should-cpu-utilization-be">
-  ### Qual deve ser a utilização de CPU?
-</div>
+### Qual deve ser a utilização de CPU? {#what-should-cpu-utilization-be}
 
 Não há uma meta padrão de utilização de CPU para o ClickHouse. Use uma ferramenta como [iostat](https://linux.die.net/man/1/iostat) para medir o uso médio de CPU e, com base nisso, ajuste o porte dos seus servidores para lidar com picos inesperados de tráfego. No entanto, para casos de uso analíticos ou de armazenamento de dados com consultas ad hoc, a meta deve ser de 10–20% de utilização de CPU.
 
-<div id="how-many-cpu-cores-should-i-use">
-  ### Quantos núcleos de CPU devo usar?
-</div>
+### Quantos núcleos de CPU devo usar? {#how-many-cpu-cores-should-i-use}
 
 A quantidade de CPUs que você deve usar depende da sua carga de trabalho. No entanto, em geral, recomendamos as seguintes proporções entre memória e núcleo de CPU com base no tipo de CPU:
 
@@ -80,9 +66,7 @@ A quantidade de CPUs que você deve usar depende da sua carga de trabalho. No en
 
 Por exemplo, ao usar CPUs do tipo M, recomendamos provisionar 100 GB de memória para cada 25 núcleos de CPU. Para determinar a quantidade de memória adequada para sua aplicação, é necessário analisar o perfil de uso de memória. Você pode ler [este guia sobre debugging de problemas de memória](/pt-BR/concepts/features/performance/troubleshoot/debugging-memory-issues) ou usar o [painel de observabilidade integrado](/pt-BR/guides/oss/deployment-and-scaling/monitoring/monitoring) para monitorar o ClickHouse.
 
-<div id="memory">
-  ## Memória
-</div>
+## Memória {#memory}
 
 Assim como a escolha da CPU, a escolha da proporção entre memória e armazenamento e entre memória e CPU depende do seu caso de uso.
 
@@ -92,11 +76,9 @@ O volume necessário de RAM geralmente depende de:
 * Da quantidade de dados processados nas consultas.
 
 No entanto, em geral, quanto mais memória você tiver, mais rápido suas consultas serão executadas.
-Se o seu caso de uso for sensível a custos, quantidades menores de memória também podem funcionar, pois é possível habilitar configurações ([`max_bytes_before_external_group_by`](/pt-BR/reference/settings/session-settings#max_bytes_before_external_group_by) e [`max_bytes_before_external_sort`](/pt-BR/reference/settings/session-settings#max_bytes_before_external_sort)) para permitir o spill de dados para disco, mas observe que isso pode afetar significativamente o desempenho das consultas.
+Se o seu caso de uso for sensível a custos, quantidades menores de memória também podem funcionar, pois é possível habilitar configurações ([`max_bytes_before_external_group_by`](/pt-BR/reference/settings/session-settings/max-bytes#max_bytes_before_external_group_by) e [`max_bytes_before_external_sort`](/pt-BR/reference/settings/session-settings/max-bytes#max_bytes_before_external_sort)) para permitir o spill de dados para disco, mas observe que isso pode afetar significativamente o desempenho das consultas.
 
-<div id="what-should-the-memory-to-storage-ratio-be">
-  ### Qual deve ser a proporção entre memória e armazenamento?
-</div>
+### Qual deve ser a proporção entre memória e armazenamento? {#what-should-the-memory-to-storage-ratio-be}
 
 Para volumes baixos de dados, uma proporção de 1:1 entre memória e armazenamento é aceitável, mas a memória total não deve ser inferior a 8GB.
 
@@ -104,9 +86,7 @@ Para casos de uso com longos períodos de retenção de dados ou com altos volum
 
 Para casos de uso com acesso frequente, como cargas de trabalho voltadas ao cliente, recomendamos usar mais memória, com uma proporção de 1:30 a 1:50 entre memória e armazenamento.
 
-<div id="replicas">
-  ## Réplicas
-</div>
+## Réplicas {#replicas}
 
 Recomendamos ter pelo menos três réplicas por shard (ou duas réplicas com [Amazon EBS](https://aws.amazon.com/ebs/)). Além disso, sugerimos escalar verticalmente todas as réplicas antes de adicionar mais réplicas (escalonamento horizontal).
 
@@ -114,17 +94,13 @@ O ClickHouse não faz sharding automaticamente, e refazer o sharding do seu conj
 
 Considere usar o [ClickHouse Cloud](https://clickhouse.com/cloud), que escala automaticamente e permite controlar com facilidade o número de réplicas para o seu caso de uso.
 
-<div id="example-configurations-for-large-workloads">
-  ## Configurações de exemplo para grandes cargas de trabalho
-</div>
+## Configurações de exemplo para grandes cargas de trabalho {#example-configurations-for-large-workloads}
 
 As configurações do ClickHouse dependem fortemente dos requisitos específicos da sua aplicação. Entre em [contato com a equipe de vendas](https://clickhouse.com/company/contact?loc=docs-sizing-and-hardware-recommendations) se quiser nossa ajuda para otimizar sua arquitetura em custo e desempenho.
 
 Para fornecer orientações (não recomendações), a seguir estão algumas configurações de exemplo de usuários do ClickHouse em produção:
 
-<div id="fortune-500-b2b-saas">
-  ### Fortune 500 B2B SaaS
-</div>
+### Fortune 500 B2B SaaS {#fortune-500-b2b-saas}
 
 <table>
   <tr>
@@ -200,9 +176,7 @@ Para fornecer orientações (não recomendações), a seguir estão algumas conf
   </tr>
 </table>
 
-<div id="fortune-500-telecom-operator-for-a-logging-use-case">
-  ### Operadora de telecom da Fortune 500 em um caso de uso de logging
-</div>
+### Operadora de telecom da Fortune 500 em um caso de uso de logging {#fortune-500-telecom-operator-for-a-logging-use-case}
 
 <table>
   <tr>
@@ -226,7 +200,7 @@ Para fornecer orientações (não recomendações), a seguir estão algumas conf
 
   <tr>
     <td><strong>Disco por nó</strong></td>
-    <td>13TB</td>
+    <td>16TB</td>
   </tr>
 
   <tr>
@@ -273,9 +247,7 @@ Para fornecer orientações (não recomendações), a seguir estão algumas conf
   </tr>
 </table>
 
-<div id="further-reading">
-  ## Leitura adicional
-</div>
+## Leitura adicional {#further-reading}
 
 Abaixo estão alguns posts de blog publicados sobre arquiteturas de empresas que usam ClickHouse de código aberto:
 

@@ -1,0 +1,20 @@
+-- a local disk
+-- another local disk in the same directory
+store data in the same place
+-- the same directory spelled differently
+store data in the same place
+-- a directory whose name differs only by a dot at the end
+-- an encrypted disk in the directory of another local disk
+store data in the same place
+-- layers over one disk in the same directory
+-- a local disk inside the directory of another one
+-- plain_rewritable disks with one path and different compatibility prefixes
+store data in the same place
+t_inner
+t_layer_1
+t_layer_2
+t_layer_3
+t_local
+t_local_dot
+t_nested
+t_plain

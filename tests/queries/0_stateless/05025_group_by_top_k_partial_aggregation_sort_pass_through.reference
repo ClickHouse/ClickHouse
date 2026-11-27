@@ -1,0 +1,35 @@
+alias shadowing the grouped key
+-999	200
+-998	200
+-997	200
+-996	200
+-995	200
+-999	200
+-998	200
+-997	200
+-996	200
+-995	200
+ORDER BY position over a rewritten projection column
+-999	200
+-998	200
+-997	200
+-996	200
+-995	200
+-999	200
+-998	200
+-997	200
+-996	200
+-995	200
+rewritten projection column, ORDER BY on the key itself
+0	200
+-1	200
+-2	200
+-3	200
+-4	200
+0	200
+-1	200
+-2	200
+-3	200
+-4	200
+shards still prune when the key reaches the sort unchanged
+1

@@ -6,11 +6,9 @@ tags: ['مصادر البيانات', 'تنسيقات البيانات']
 keywords: ['التحويل', 'Parquet', 'CSV', 'JSON']
 ---
 
-<div id="converting-files-from-parquet-to-csv-or-json">
-  ## تحويل الملفات من Parquet إلى CSV أو JSON
-</div>
+## تحويل الملفات من Parquet إلى CSV أو JSON {#converting-files-from-parquet-to-csv-or-json}
 
-يمكنك استخدام `clickhouse-local` لتحويل الملفات بين أي من [تنسيقات الإدخال والإخراج](/ar/reference/formats/index) التي يدعمها ClickHouse (وهي أكثر من 70 تنسيقًا مختلفًا!). في هذه المقالة، سنحوّل ملف Parquet في S3 إلى ملفي CSV وJSON.
+يمكنك استخدام `clickhouse-local` لتحويل الملفات بين أي من [صيغ الإدخال والإخراج](/ar/reference/formats/index) التي يدعمها ClickHouse (وهي أكثر من 70 صيغة مختلفة!). في هذه المقالة، سنحوّل ملف Parquet في S3 إلى ملفي CSV وJSON.
 
 لنبدأ من البداية. يوفّر ClickHouse مجموعة من [دوال الجداول](/ar/reference/functions/table-functions/index) التي تقرأ من الملفات وقواعد البيانات والموارد الأخرى، ثم تحوّل البيانات إلى جدول. للتوضيح، لنفترض أن لدينا ملف Parquet في S3. سنستخدم دالة الجدول `s3` لقراءته (ويعرف ClickHouse أنه ملف Parquet استنادًا إلى اسم الملف).
 
@@ -20,9 +18,7 @@ keywords: ['التحويل', 'Parquet', 'CSV', 'JSON']
 curl https://clickhouse.com/ | sh
 ```
 
-<div id="accessing-the-data-using-a-table-function">
-  ## الوصول إلى البيانات باستخدام دالة الجدول
-</div>
+## الوصول إلى البيانات باستخدام دالة الجدول {#accessing-the-data-using-a-table-function}
 
 لنتحقق من إمكانية قراءة الملف باستخدام `DESCRIBE` على الجدول الناتج الذي تُنشئه دالة الجدول `s3`:
 
@@ -76,9 +72,7 @@ ASCOT	551491.2975753123
 WEYBRIDGE	548974.828692494
 ```
 
-<div id="convert-the-parquet-file-to-a-csv">
-  ## حوِّل ملف Parquet إلى ملف CSV
-</div>
+## حوِّل ملف Parquet إلى ملف CSV {#convert-the-parquet-file-to-a-csv}
 
 يمكنك إرسال نتيجة أي استعلام SQL إلى ملف. لنأخذ جميع الأعمدة من ملف Parquet الموجود لدينا في S3 ونرسل الناتج إلى ملف CSV جديد. وبما أن ملف الإخراج ينتهي بـ `.csv`، فإن ClickHouse يعرف أنه يجب استخدام صيغة الإخراج `CSV`:
 
@@ -104,9 +98,7 @@ $ tail house_prices.csv
 250000,15950,"YO8","9YD","detached",0,"freehold","3","","ONE ACRE GARTH","HAMBLETON","SELBY","SELBY","NORTH YORKSHIRE"
 ```
 
-<div id="convert-the-parquet-file-to-a-json">
-  ## حوّل ملف Parquet إلى تنسيق JSON
-</div>
+## حوّل ملف Parquet إلى تنسيق JSON {#convert-the-parquet-file-to-a-json}
 
 لتحويل ملف Parquet إلى JSON، ما عليك سوى تغيير امتداد ملف الإخراج:
 
@@ -132,9 +124,7 @@ INTO OUTFILE 'house_prices.ndjson'"
 {"price":"250000","date":15950,"postcode1":"YO8","postcode2":"9YD","type":"detached","is_new":0,"duration":"freehold","addr1":"3","addr2":"","street":"ONE ACRE GARTH","locality":"HAMBLETON","town":"SELBY","district":"SELBY","county":"NORTH YORKSHIRE"}
 ```
 
-<div id="convert-csv-to-parquet">
-  ## تحويل CSV إلى Parquet
-</div>
+## تحويل CSV إلى Parquet {#convert-csv-to-parquet}
 
 يعمل هذا في كلا الاتجاهين - إذ يمكننا بسهولة قراءة ملف CSV الجديد وإخراجه كملف Parquet. ويمكن لـ ClickHouse قراءة الملف المحلي `house_prices.csv` باستخدام دالة الجدول `file`، كما يُخرج ClickHouse الملف بتنسيق Parquet استنادًا إلى امتداد اسم الملف `.parquet` (أو كان بإمكاننا إضافة بند `FORMAT Parquet`):
 

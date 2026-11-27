@@ -22,11 +22,14 @@ struct RowPolicyFilter
     std::shared_ptr<const std::pair<String, String>> database_and_table_name;
     std::vector<RowPolicyPtr> policies;
 
-    bool isAlwaysTrue() const;
-    bool isAlwaysFalse() const;
+    [[nodiscard]] bool isAlwaysTrue() const;
+    [[nodiscard]] bool isAlwaysFalse() const;
 };
 
 using RowPolicyFilterPtr = std::shared_ptr<const RowPolicyFilter>;
+
+/// Combines two prepared row policy filters with a logical AND and retains their contributing policies.
+RowPolicyFilterPtr combineRowPolicyFilters(RowPolicyFilterPtr filter, RowPolicyFilterPtr combine_with_filter);
 
 
 /// Provides fast access to row policies' conditions for a specific user and tables.
@@ -38,7 +41,7 @@ public:
         UUID user_id;
         boost::container::flat_set<UUID> enabled_roles;
 
-        auto toTuple() const { return std::tie(user_id, enabled_roles); }
+        [[nodiscard]] auto toTuple() const { return std::tie(user_id, enabled_roles); }
         friend bool operator ==(const Params & lhs, const Params & rhs) { return lhs.toTuple() == rhs.toTuple(); }
         friend bool operator !=(const Params & lhs, const Params & rhs) { return !(lhs == rhs); }
         friend bool operator <(const Params & lhs, const Params & rhs) { return lhs.toTuple() < rhs.toTuple(); }
@@ -66,7 +69,7 @@ private:
         std::string_view table_name;
         RowPolicyFilterType filter_type;
 
-        auto toTuple() const { return std::tie(database, table_name, filter_type); }
+        [[nodiscard]] auto toTuple() const { return std::tie(database, table_name, filter_type); }
         friend bool operator==(const MixedFiltersKey & left, const MixedFiltersKey & right) { return left.toTuple() == right.toTuple(); }
         friend bool operator!=(const MixedFiltersKey & left, const MixedFiltersKey & right) { return left.toTuple() != right.toTuple(); }
     };

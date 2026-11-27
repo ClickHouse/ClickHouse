@@ -36,7 +36,7 @@ void BackupWriterNull::copyDataToFile(const String & /* path_in_backup */, const
     /// no op
 }
 
-void BackupWriterNull::copyFileFromDisk(
+void BackupWriterNull::copyFileFromDiskWithFallback(
     const String & /* path_in_backup */,
     DiskPtr /* src_disk */,
     const String & /* src_path */,
@@ -115,7 +115,11 @@ void registerBackupEngineNull(BackupFactory & factory)
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Null backup destinations do not have a persistent identity");
     };
 
-    factory.registerBackupEngine("Null", creator_fn, destination_identity_fn);
+    /// No external location: nothing to authorize against the SOURCES grant model.
+    auto source_access_fn = [](const BackupInfo &, ContextPtr, IBackup::OpenMode)
+        -> std::optional<BackupFactory::SourceAccessTarget> { return std::nullopt; };
+
+    factory.registerBackupEngine("Null", creator_fn, destination_identity_fn, source_access_fn, credentialFreeBackupSecretArguments(0));
 }
 
 }

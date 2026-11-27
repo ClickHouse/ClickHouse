@@ -9,7 +9,6 @@ INSERT INTO users VALUES (8888, 'Alice', 50);
 -- For some reason planner sometimes decides to swap tables.
 -- It breaks test because it prints query plan with actions.
 SET query_plan_join_swap_table = 0;
-SET enable_analyzer = 1; -- Optimization requires LogicalJoinStep
 SET enable_parallel_replicas = 0; -- Optimization requires LogicalJoinStep
 SET parallel_hash_join_threshold = 0;
 SET max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0; -- Disable automatic spilling for this test

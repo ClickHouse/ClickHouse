@@ -1,20 +1,26 @@
 #include <algorithm>
+#include <Common/VectorWithMemoryTracking.h>
 #include <cstddef>
+#include <cstring>
 #include <limits>
 #include <memory>
 #include <optional>
 #include <ranges>
 #include <vector>
 
+#include <base/arithmeticOverflow.h>
 #include <base/defines.h>
 #include <base/types.h>
 
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnsNumber.h>
 #include <Columns/IColumn.h>
 #include <Columns/findEqualRangeEndAssumeSorted.h>
+#include <Core/Defines.h>
 #include <Core/SortCursor.h>
 #include <Core/SortDescription.h>
 #include <Columns/ColumnSparse.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/FullSortingMergeJoin.h>
 #include <Interpreters/TableJoin.h>
@@ -36,7 +42,7 @@ namespace
 
 FullMergeJoinCursor createCursor(const Block & block, const Names & columns, JoinStrictness strictness)
 {
-    std::vector<size_t> indices;
+    VectorWithMemoryTracking<size_t> indices;
     indices.reserve(columns.size());
     for (const auto & name : columns)
         indices.emplace_back(block.getPositionByName(name));
@@ -223,26 +229,51 @@ size_t ALWAYS_INLINE nextDistinct(FullMergeJoinCursor & impl)
 {
     chassert(impl.isValid());
     const size_t start_pos = impl.getRow();
-    size_t run_end = impl.rows;
 
     /// Find the end of the run of rows that share the same (multi-column) key, starting at start_pos.
-    for (size_t i = 0; i < impl.sort_columns.size(); ++i)
-    {
-        const auto * nm = getNullMapData(impl.null_maps[i]);
-        const bool ref_is_null = nm && (*nm)[start_pos] != 0;
+    const size_t run_end = impl.key_runs.findRunEnd(
+        start_pos,
+        impl.rows,
+        [&](size_t i, size_t from, size_t bound)
+        {
+            const auto * nm = getNullMapData(impl.null_maps[i]);
+            const bool ref_is_null = nm && (*nm)[from] != 0;
 
-        if (nm)
-            run_end = findEqualRangeEndAssumeSorted(start_pos, run_end, 16, [&](size_t row) { return ((*nm)[row] != 0) == ref_is_null; });
+            size_t column_run_end = bound;
+            if (nm)
+                column_run_end
+                    = findEqualRangeEndAssumeSorted(from, column_run_end, 16, [&](size_t row) { return ((*nm)[row] != 0) == ref_is_null; });
 
-        if (!ref_is_null)
-            run_end = impl.sort_columns[i]->getEqualRangeEndAssumeSorted(start_pos, run_end, 1);
+            if (!ref_is_null)
+                column_run_end = impl.sort_columns[i]->getEqualRangeEndAssumeSorted(from, column_run_end, 1);
 
-        if (run_end <= start_pos + 1)
-            break;
-    }
-
+            return column_run_end;
+        });
     impl.pos = run_end;
     return run_end - start_pos;
+}
+
+/// Lookup the equal range of the cursor, without moving the cursor
+/// Needed for EXPLAIN ANALYZE to compute the matches
+size_t ALWAYS_INLINE countMatchedRowsAheadIfNeeded(FullMergeJoinCursor & cursor, const JoinKeyRow & row_to_compare, bool collect_matches)
+{
+    if (!collect_matches || !row_to_compare.equals(cursor))
+        return 0;
+    size_t start = cursor.pos;
+    size_t len = nextDistinct(cursor);
+    cursor.pos = start;
+    return len;
+}
+
+/// Is used to compute the length of equal range between chunks
+/// Needed for EXPLAIN ANALYZE to ocmpute the matches
+size_t ALWAYS_INLINE consumeEqualRange(FullMergeJoinCursor & cursor, const JoinKeyRow & matched_range, size_t & matched_rows)
+{
+    const bool matched = matched_range.equals(cursor);
+    const size_t length = nextDistinct(cursor);
+    if (matched)
+        matched_rows += length;
+    return length;
 }
 
 /// Advances the cursor past the tracked run of lesser rows (see trackCursorsFirstKey); when the
@@ -410,7 +441,7 @@ void AsofJoinState::reset()
     value.clear();
 }
 
-FullMergeJoinCursor::FullMergeJoinCursor(std::vector<size_t> key_indices_, bool is_asof_)
+FullMergeJoinCursor::FullMergeJoinCursor(VectorWithMemoryTracking<size_t> key_indices_, bool is_asof_)
     : key_indices(std::move(key_indices_))
     , is_asof(is_asof_)
 {
@@ -436,6 +467,7 @@ void FullMergeJoinCursor::setChunk(Chunk && chunk)
     rows = current_chunk.getNumRows();
     sort_columns.clear();
     null_maps.clear();
+    key_runs.reset(0);
     asof_column = nullptr;
 
     if (!current_chunk)
@@ -461,6 +493,8 @@ void FullMergeJoinCursor::setChunk(Chunk && chunk)
         asof_column = std::move(sort_columns.back());
         sort_columns.pop_back();
     }
+
+    key_runs.reset(sort_columns.size());
 }
 
 bool FullMergeJoinCursor::fullyCompleted() const
@@ -476,10 +510,12 @@ MergeJoinAlgorithm::MergeJoinAlgorithm(
     JoinStrictness strictness_,
     const TableJoin::JoinOnClause & on_clause_,
     SharedHeaders & input_headers_,
-    size_t max_block_size_)
+    size_t max_block_size_,
+    JoinAnalyzeMode analyze_mode_)
     : input_headers(input_headers_)
     , kind(kind_)
     , strictness(strictness_)
+    , analyze_mode(analyze_mode_)
     , max_block_size(max_block_size_)
     , log(getLogger("MergeJoinAlgorithm"))
 {
@@ -517,7 +553,8 @@ MergeJoinAlgorithm::MergeJoinAlgorithm(
         join_ptr->getTableJoin().strictness(),
         join_ptr->getTableJoin().getOnlyClause(),
         input_headers_,
-        max_block_size_)
+        max_block_size_,
+        join_ptr->getTableJoin().analyzeMode())
 {
     /// This algorithm matches rows on the equality keys (plus the `ASOF` inequality) only, so a
     /// mixed `ON` condition reaching here would be dropped instead of applied.
@@ -612,7 +649,8 @@ struct AllJoinImpl
                      PaddedPODArray<UInt64> & left_map,
                      PaddedPODArray<UInt64> & right_map,
                      std::unique_ptr<AllJoinState> & state,
-                     int null_direction_hint)
+                     int null_direction_hint,
+                     MatchedRows & matched_rows)
     {
         right_map.clear();
         right_map.reserve(max_block_size);
@@ -623,6 +661,8 @@ struct AllJoinImpl
         size_t lpos = std::numeric_limits<size_t>::max();
         int cmp = 0;
         chassert(left_cursor.isValid() && right_cursor.isValid());
+        size_t matched_left = 0;
+        size_t matched_right = 0;
         while (left_cursor.isValid() && right_cursor.isValid())
         {
             lpos = left_cursor.getRow();
@@ -637,6 +677,8 @@ struct AllJoinImpl
             {
                 size_t lnum = nextDistinct(left_cursor);
                 size_t rnum = nextDistinct(right_cursor);
+                matched_left += lnum;
+                matched_right += rnum;
                 bool all_fit_in_block = !max_block_size || std::max(left_map.size(), right_map.size()) + lnum * rnum <= max_block_size;
                 bool have_all_ranges = left_cursor.isValid() && right_cursor.isValid();
                 if (all_fit_in_block && have_all_ranges)
@@ -654,6 +696,8 @@ struct AllJoinImpl
                     state = std::make_unique<AllJoinState>(left_cursor, lpos, right_cursor, rpos);
                     state->addRange(0, left_cursor.getCurrent().clone(), lpos, lnum);
                     state->addRange(1, right_cursor.getCurrent().clone(), rpos, rnum);
+                    matched_rows.left += matched_left;
+                    matched_rows.right += matched_right;
                     return;
                 }
             }
@@ -679,6 +723,8 @@ struct AllJoinImpl
                 }
             }
         }
+        matched_rows.left += matched_left;
+        matched_rows.right += matched_right;
     }
 };
 
@@ -757,6 +803,7 @@ std::optional<MergeJoinAlgorithm::Status> MergeJoinAlgorithm::handleAllJoinState
             {
                 size_t pos = cursors[i].getRow();
                 size_t num = nextDistinct(cursors[i]);
+                stat.matched_rows.side(i) += num;
                 all_join_state->addRange(i, cursors[i].getCurrent().clone(), pos, num);
             }
         }
@@ -823,6 +870,7 @@ std::optional<MergeJoinAlgorithm::Status> MergeJoinAlgorithm::handleAsofJoinStat
         for (const auto & col : asof_join_state.value.getColumns())
             result_cols[i++]->insertFrom(*col, asof_join_state.value_row);
         chassert(i == result_cols.size());
+        ++stat.matched_rows.left;
         left_cursor.next();
     }
 
@@ -852,7 +900,7 @@ MergeJoinAlgorithm::Status MergeJoinAlgorithm::allJoin()
 {
     PaddedPODArray<UInt64> idx_map[2];
 
-    dispatchKind<AllJoinImpl>(kind, cursors[0], cursors[1], max_block_size, idx_map[0], idx_map[1], all_join_state, null_direction_hint);
+    dispatchKind<AllJoinImpl>(kind, cursors[0], cursors[1], max_block_size, idx_map[0], idx_map[1], all_join_state, null_direction_hint, stat.matched_rows);
     chassert(idx_map[0].size() == idx_map[1].size());
 
     Chunk result;
@@ -915,7 +963,8 @@ struct AnyJoinImpl
                      PaddedPODArray<UInt64> & left_map,
                      PaddedPODArray<UInt64> & right_map,
                      AnyJoinState & any_join_state,
-                     int null_direction_hint)
+                     int null_direction_hint,
+                     MatchedRows & matched_rows)
     {
         chassert(enabled);
 
@@ -933,6 +982,10 @@ struct AnyJoinImpl
         size_t lpos = std::numeric_limits<size_t>::max();
         chassert(left_cursor.isValid() && right_cursor.isValid());
         int cmp = 0;
+        bool count_matches = any_join_state.count_matches;
+        size_t matched_left = 0;
+        size_t matched_right = 0;
+
         while (left_cursor.isValid() && right_cursor.isValid())
         {
             lpos = left_cursor.getRow();
@@ -945,28 +998,41 @@ struct AnyJoinImpl
 
             if (cmp == 0)
             {
+                if (count_matches)
+                {
+                    any_join_state.matched.left = JoinKeyRow(left_cursor, lpos);
+                    any_join_state.matched.right = JoinKeyRow(right_cursor, rpos);
+                }
+
                 if constexpr (isLeftOrFull(kind))
                 {
                     size_t lnum = nextDistinct(left_cursor);
+                    matched_left += lnum;
                     right_map.resize_fill(right_map.size() + lnum, rpos);
                 }
 
                 if constexpr (isRightOrFull(kind))
                 {
                     size_t rnum = nextDistinct(right_cursor);
+                    matched_right += rnum;
                     left_map.resize_fill(left_map.size() + rnum, lpos);
                 }
 
                 if constexpr (isInner(kind))
                 {
-                    nextDistinct(left_cursor);
-                    nextDistinct(right_cursor);
+                    size_t lnum = nextDistinct(left_cursor);
+                    size_t rnum = nextDistinct(right_cursor);
+
+                    matched_left += lnum;
+                    matched_right += rnum;
+
                     left_map.emplace_back(lpos);
                     right_map.emplace_back(rpos);
                 }
             }
             else if (cmp < 0)
             {
+                matched_left += countMatchedRowsAheadIfNeeded(left_cursor, any_join_state.matched.left, count_matches);
                 /// When a later key column decided the order, only the run of equal keys can be skipped.
                 size_t num = skipTracked(left_cursor, first_key.track);
                 if constexpr (isLeftOrFull(kind))
@@ -974,11 +1040,14 @@ struct AnyJoinImpl
             }
             else
             {
+                matched_right += countMatchedRowsAheadIfNeeded(right_cursor, any_join_state.matched.right, count_matches);
                 size_t num = skipTracked(right_cursor, first_key.track);
                 if constexpr (isRightOrFull(kind))
                     left_map.resize_fill(left_map.size() + num, left_cursor.rows);
             }
         }
+        matched_rows.left += matched_left;
+        matched_rows.right += matched_right;
 
         /// Remember last joined row to propagate it to next block
 
@@ -1012,7 +1081,7 @@ std::optional<MergeJoinAlgorithm::Status> MergeJoinAlgorithm::handleAnyJoinState
         if (any_join_state.keys[source_num].equals(current))
         {
             size_t start_pos = current.getRow();
-            size_t length = nextDistinct(current);
+            size_t length = consumeEqualRange(current, any_join_state.matched.side(source_num), stat.matched_rows.side(source_num));
 
             if (length && isLeft(kind) && source_num == 0)
             {
@@ -1061,7 +1130,8 @@ MergeJoinAlgorithm::Status MergeJoinAlgorithm::anyJoin()
     PaddedPODArray<UInt64> idx_map[2];
     size_t prev_pos[] = {current_left.getRow(), current_right.getRow()};
 
-    dispatchKind<AnyJoinImpl>(kind, cursors[0], cursors[1], idx_map[0], idx_map[1], any_join_state, null_direction_hint);
+    any_join_state.count_matches = analyze_mode == JoinAnalyzeMode::Exact;
+    dispatchKind<AnyJoinImpl>(kind, cursors[0], cursors[1], idx_map[0], idx_map[1], any_join_state, null_direction_hint, stat.matched_rows);
 
     chassert(idx_map[0].empty() || idx_map[1].empty() || idx_map[0].size() == idx_map[1].size());
     size_t num_result_rows = std::max(idx_map[0].size(), idx_map[1].size());
@@ -1091,6 +1161,24 @@ MergeJoinAlgorithm::Status MergeJoinAlgorithm::anyJoin()
     return Status(std::move(result));
 }
 
+JoinAnalysisCounters MergeJoinAlgorithm::getJoinAnalysisCounters() const
+{
+    JoinAnalysisCounters counters;
+    counters.left_rows = stat.num_rows[0];
+    counters.right_rows = stat.num_rows[1];
+
+    if (strictness == JoinStrictness::Any && analyze_mode != JoinAnalyzeMode::Exact)
+        return counters;
+
+    counters.matched_left = stat.matched_rows.left;
+
+    /// ASOF visits only the nearest right row of a key group, not every right row that satisfies
+    /// the `ON` condition, so the right side cannot be counted.
+    if (strictness != JoinStrictness::Asof)
+        counters.matched_right = stat.matched_rows.right;
+
+    return counters;
+}
 
 MergeJoinAlgorithm::Status MergeJoinAlgorithm::asofJoin()
 {
@@ -1138,6 +1226,7 @@ MergeJoinAlgorithm::Status MergeJoinAlgorithm::asofJoin()
                 for (const auto & col : right_columns)
                     result_cols[i++]->insertFrom(*col, rpos);
                 chassert(i == result_cols.size());
+                ++stat.matched_rows.left;
 
                 left_cursor.next();
                 continue;
@@ -1170,6 +1259,7 @@ MergeJoinAlgorithm::Status MergeJoinAlgorithm::asofJoin()
                     for (const auto & col : asof_join_state.value.getColumns())
                         result_cols[i++]->insertFrom(*col, asof_join_state.value_row);
                     chassert(i == result_cols.size());
+                    ++stat.matched_rows.left;
                 }
                 else
                 {
@@ -1201,6 +1291,7 @@ MergeJoinAlgorithm::Status MergeJoinAlgorithm::asofJoin()
                 for (const auto & col : asof_join_state.value.getColumns())
                     result_cols[i++]->insertFrom(*col, asof_join_state.value_row);
                 chassert(i == result_cols.size());
+                ++stat.matched_rows.left;
                 left_cursor.next();
                 continue;
             }
@@ -1313,6 +1404,13 @@ IMergingAlgorithm::Status MergeJoinAlgorithm::merge()
     if (auto result = handleAsofJoinState())
         return std::move(*result);
 
+    /// The paths below that drop rows instead of emitting them are the only chance to count a
+    /// dropped equal range that continues an already matched one. Only `ANY` needs it: it is the
+    /// only strictness that carries such a range in `any_join_state.matched`, while `ALL` and
+    /// `ASOF` close theirs in handleAllJoinState/handleAsofJoinState right above.
+    const bool analyze_exact_stats = analyze_mode == JoinAnalyzeMode::Exact;
+    const bool count_discarded_matches = analyze_exact_stats && strictness == JoinStrictness::Any;
+
     if (cursors[0].fullyCompleted() || cursors[1].fullyCompleted())
     {
         if (!cursors[0].fullyCompleted() && isLeftOrFull(kind))
@@ -1321,6 +1419,10 @@ IMergingAlgorithm::Status MergeJoinAlgorithm::merge()
         if (!cursors[1].fullyCompleted() && isRightOrFull(kind))
             return Status(createBlockWithDefaults(1));
 
+        if (count_discarded_matches && cursors[0].isValid())
+            consumeEqualRange(cursors[0], any_join_state.matched.left, stat.matched_rows.left);
+        if (count_discarded_matches && cursors[1].isValid())
+            consumeEqualRange(cursors[1], any_join_state.matched.right, stat.matched_rows.right);
         return Status({}, true);
     }
 
@@ -1331,6 +1433,8 @@ IMergingAlgorithm::Status MergeJoinAlgorithm::merge()
         {
             if (isLeftOrFull(kind))
                 return Status(createBlockWithDefaults(0));
+            if (count_discarded_matches)
+                consumeEqualRange(cursors[0], any_join_state.matched.left, stat.matched_rows.left);
             cursors[0].setChunk(Chunk());
             return Status(0);
         }
@@ -1339,6 +1443,8 @@ IMergingAlgorithm::Status MergeJoinAlgorithm::merge()
         {
             if (isRightOrFull(kind))
                 return Status(createBlockWithDefaults(1));
+            if (count_discarded_matches)
+                consumeEqualRange(cursors[1], any_join_state.matched.right, stat.matched_rows.right);
             cursors[1].setChunk(Chunk());
             return Status(1);
         }
@@ -1393,6 +1499,610 @@ MergeJoinTransform::MergeJoinTransform(
 }
 
 void MergeJoinTransform::onFinish()
+{
+    algorithm.logElapsed(static_cast<double>(merging_elapsed_ns) / 1000000000ULL);
+}
+
+namespace
+{
+
+/// The number of leading values that are bytewise equal in two arrays of `count` values of `value_size` bytes.
+size_t equalPrefixLength(const char * lhs, const char * rhs, size_t value_size, size_t count)
+{
+    static constexpr size_t values_per_block = 64;
+    size_t i = 0;
+    while (i + values_per_block <= count && memcmp(lhs + i * value_size, rhs + i * value_size, values_per_block * value_size) == 0)
+        i += values_per_block;
+    while (i < count && memcmp(lhs + i * value_size, rhs + i * value_size, value_size) == 0)
+        ++i;
+    return i;
+}
+
+/// The number of leading values of the array in which every value differs from the previous one.
+template <size_t value_size>
+size_t distinctPrefixLengthImpl(const char * data, size_t count)
+{
+    for (size_t i = 1; i < count; ++i)
+        if (memcmp(data + i * value_size, data + (i - 1) * value_size, value_size) == 0)
+            return i;
+    return count;
+}
+
+size_t distinctPrefixLength(const char * data, size_t value_size, size_t count)
+{
+    switch (value_size)
+    {
+        case 1: return distinctPrefixLengthImpl<1>(data, count);
+        case 2: return distinctPrefixLengthImpl<2>(data, count);
+        case 4: return distinctPrefixLengthImpl<4>(data, count);
+        case 8: return distinctPrefixLengthImpl<8>(data, count);
+        case 16: return distinctPrefixLengthImpl<16>(data, count);
+        case 32: return distinctPrefixLengthImpl<32>(data, count);
+        default: break;
+    }
+    for (size_t i = 1; i < count; ++i)
+        if (memcmp(data + i * value_size, data + (i - 1) * value_size, value_size) == 0)
+            return i;
+    return count;
+}
+
+bool hasNullKey(const FullMergeJoinCursor & cursor, size_t row)
+{
+    for (const auto & null_map : cursor.null_maps)
+        if (null_map && assert_cast<const ColumnUInt8 &>(*null_map).getData()[row])
+            return true;
+    return false;
+}
+
+/// A NULL in a key never matches. Returns whether the cursor still has rows.
+bool skipNullKeys(FullMergeJoinCursor & cursor)
+{
+    while (cursor.isValid() && hasNullKey(cursor, cursor.getRow()))
+        nextDistinct(cursor);
+    return cursor.isValid();
+}
+
+}
+
+/// The rows of one key that continue in the next chunks of the inputs, or whose product does not fit into a block.
+struct MultiwayMergeJoinAlgorithm::RangeState
+{
+    struct Range
+    {
+        Chunk chunk;
+        size_t begin = 0;
+        size_t length = 0;
+    };
+
+    struct InputRanges
+    {
+        JoinKeyRow key;
+        VectorWithMemoryTracking<Range> ranges;
+        /// No more rows of this input have the key.
+        bool closed = false;
+        /// The current row of the product: a range and a row in it.
+        size_t range = 0;
+        size_t row = 0;
+    };
+
+    VectorWithMemoryTracking<InputRanges> inputs;
+    bool emitting = false;
+
+    /// Moves to the next row of the product, the last input changing fastest. The row of the
+    /// last input is advanced by the caller. Returns false after the last row.
+    bool advance()
+    {
+        for (size_t i = inputs.size(); i > 0; --i)
+        {
+            auto & input = inputs[i - 1];
+            if (i != inputs.size())
+                ++input.row;
+            if (input.row < input.ranges[input.range].length)
+                return true;
+            input.row = 0;
+            ++input.range;
+            if (input.range < input.ranges.size())
+                return true;
+            input.range = 0;
+        }
+        return false;
+    }
+};
+
+void MultiwayMergeJoinAlgorithm::InputBatch::materialize()
+{
+    if (!contiguous)
+        return;
+    indices.resize(size);
+    for (size_t i = 0; i < size; ++i)
+        indices[i] = begin + i;
+    contiguous = false;
+}
+
+void MultiwayMergeJoinAlgorithm::InputBatch::appendRange(size_t from, size_t count)
+{
+    if (contiguous)
+    {
+        if (size == 0)
+            begin = from;
+        if (from == begin + size)
+        {
+            size += count;
+            return;
+        }
+        materialize();
+    }
+    size_t old_size = indices.size();
+    indices.resize(old_size + count);
+    for (size_t i = 0; i < count; ++i)
+        indices[old_size + i] = from + i;
+    size += count;
+}
+
+void MultiwayMergeJoinAlgorithm::InputBatch::appendRepeated(size_t row, size_t count)
+{
+    if (count == 1)
+    {
+        appendRange(row, 1);
+        return;
+    }
+    materialize();
+    indices.resize_fill(indices.size() + count, row);
+    size += count;
+}
+
+void MultiwayMergeJoinAlgorithm::InputBatch::clear()
+{
+    contiguous = true;
+    begin = 0;
+    size = 0;
+    indices.clear();
+}
+
+MultiwayMergeJoinAlgorithm::MultiwayMergeJoinAlgorithm(
+    const SharedHeaders & input_headers,
+    const VectorWithMemoryTracking<Names> & key_names,
+    VectorWithMemoryTracking<OutputColumn> output_columns_,
+    size_t max_block_size_,
+    int null_direction_hint_)
+    : output_columns(std::move(output_columns_))
+    , max_block_size(max_block_size_ ? max_block_size_ : DEFAULT_BLOCK_SIZE)
+    , null_direction_hint(null_direction_hint_)
+    , log(getLogger("MultiwayMergeJoinAlgorithm"))
+{
+    if (input_headers.size() < 2 || input_headers.size() != key_names.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "MultiwayMergeJoinAlgorithm requires at least two inputs with a key each, got {} inputs and {} keys",
+            input_headers.size(), key_names.size());
+
+    cursors.reserve(input_headers.size());
+    for (size_t i = 0; i < input_headers.size(); ++i)
+    {
+        if (key_names[i].size() != key_names[0].size())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "MultiwayMergeJoinAlgorithm got keys of different sizes");
+
+        cursors.push_back(createCursor(*input_headers[i], key_names[i], JoinStrictness::All));
+        for (const auto & name : key_names[i])
+        {
+            auto type = recursiveRemoveLowCardinality(input_headers[i]->getByName(name).type);
+            if (type->isNullable() || WhichDataType(type).isFloat() || !type->isValueUnambiguouslyRepresentedInContiguousMemoryRegion())
+                fast_path_key_types = false;
+        }
+    }
+
+    for (const auto & [input, position] : output_columns)
+        if (input >= input_headers.size() || position >= input_headers[input]->columns())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "MultiwayMergeJoinAlgorithm got an output column out of its inputs");
+
+    batches.resize(input_headers.size());
+}
+
+MultiwayMergeJoinAlgorithm::~MultiwayMergeJoinAlgorithm() = default;
+
+void MultiwayMergeJoinAlgorithm::initialize(Inputs inputs)
+{
+    if (inputs.size() != cursors.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "{} inputs are required, got {}", cursors.size(), inputs.size());
+
+    for (size_t i = 0; i < inputs.size(); ++i)
+        consume(inputs[i], i);
+}
+
+void MultiwayMergeJoinAlgorithm::consume(Input & input, size_t source_num)
+{
+    if (input.skip_last_row)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "skip_last_row is not supported");
+
+    if (input.permutation)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "permutation is not supported");
+
+    if (input.chunk)
+    {
+        stat.num_blocks += 1;
+        stat.num_rows += input.chunk.getNumRows();
+        stat.num_bytes += input.chunk.allocatedBytes();
+    }
+    else
+        cursors[source_num].setCompleted();
+
+    cursors[source_num].setChunk(std::move(input.chunk));
+}
+
+void MultiwayMergeJoinAlgorithm::logElapsed(double seconds) const
+{
+    LOG_TRACE(log, "Finished processing of {} inputs in {:.3f} seconds, {} blocks, {} rows",
+        cursors.size(), seconds, stat.num_blocks, stat.num_rows);
+}
+
+IMergingAlgorithm::MergedStats MultiwayMergeJoinAlgorithm::getMergedStats() const
+{
+    return {.bytes = stat.num_bytes, .rows = stat.num_rows, .blocks = stat.num_blocks};
+}
+
+/// Advances the cursors until all of them are at the same key without NULLs. `target` is the cursor
+/// the others are compared with. Returns false when a cursor runs out of rows (`required_source`).
+bool MultiwayMergeJoinAlgorithm::align(size_t & target, ssize_t & required_source)
+{
+    if (!skipNullKeys(cursors[target]))
+    {
+        required_source = static_cast<ssize_t>(target);
+        return false;
+    }
+
+    bool restart = true;
+    while (restart)
+    {
+        restart = false;
+        for (size_t i = 0; i < cursors.size() && !restart; ++i)
+        {
+            if (i == target)
+                continue;
+
+            auto & cursor = cursors[i];
+            while (true)
+            {
+                if (!skipNullKeys(cursor))
+                {
+                    required_source = static_cast<ssize_t>(i);
+                    return false;
+                }
+
+                const auto & target_cursor = cursors[target];
+                FirstKeyCompare first_key = trackCursorsFirstKey(cursor, target_cursor, null_direction_hint);
+                int cmp = first_key.cmp != 0
+                    ? first_key.cmp
+                    : compareCursors(cursor, cursor.getRow(), target_cursor, target_cursor.getRow(), null_direction_hint, /*from_key=*/ 1);
+
+                if (cmp < 0)
+                {
+                    skipTracked(cursor, first_key.track);
+                    continue;
+                }
+
+                /// A greater key is the new target. Each restart raises the target, so the loop ends.
+                if (cmp > 0)
+                {
+                    target = i;
+                    restart = true;
+                }
+                break;
+            }
+        }
+    }
+    return true;
+}
+
+/// For cursors at an equal key, the number of rows W from the current positions such that, for every m < W,
+/// the keys of all inputs are bytewise equal and, for m >= 1, differ from the keys at m - 1. Rows 0 .. W-2
+/// are then single matching rows in every input. Returns 0 when the keys are not compared by bytes.
+size_t MultiwayMergeJoinAlgorithm::alignedUniqueRun(size_t limit) const
+{
+    if (!fast_path_key_types)
+        return 0;
+
+    const auto & first = cursors[0];
+    const size_t num_keys = first.sort_columns.size();
+    for (const auto & cursor : cursors)
+    {
+        limit = std::min(limit, cursor.rowsLeft());
+        for (size_t k = 0; k < num_keys; ++k)
+        {
+            const auto & column = *cursor.sort_columns[k];
+            if (!column.isFixedAndContiguous() || column.sizeOfValueIfFixed() != first.sort_columns[k]->sizeOfValueIfFixed())
+                return 0;
+        }
+    }
+
+    auto key_data = [](const FullMergeJoinCursor & cursor, size_t k)
+    {
+        return cursor.sort_columns[k]->getRawData().data() + cursor.getRow() * cursor.sort_columns[k]->sizeOfValueIfFixed();
+    };
+
+    size_t run = limit;
+    for (size_t i = 1; i < cursors.size() && run > 1; ++i)
+        for (size_t k = 0; k < num_keys && run > 1; ++k)
+            run = equalPrefixLength(key_data(cursors[i], k), key_data(first, k), first.sort_columns[k]->sizeOfValueIfFixed(), run);
+
+    if (num_keys == 1)
+        return distinctPrefixLength(key_data(first, 0), first.sort_columns[0]->sizeOfValueIfFixed(), run);
+
+    for (size_t m = 1; m < run; ++m)
+    {
+        bool distinct = false;
+        for (size_t k = 0; k < num_keys && !distinct; ++k)
+        {
+            const size_t value_size = first.sort_columns[k]->sizeOfValueIfFixed();
+            const char * data = key_data(first, k);
+            distinct = memcmp(data + m * value_size, data + (m - 1) * value_size, value_size) != 0;
+        }
+        if (!distinct)
+            return m;
+    }
+    return run;
+}
+
+/// Appends the cartesian product of the ranges `[starts[i], starts[i] + lengths[i])`, input 0 changing slowest.
+void MultiwayMergeJoinAlgorithm::appendProduct(const VectorWithMemoryTracking<size_t> & starts, const VectorWithMemoryTracking<size_t> & lengths)
+{
+    size_t product = 1;
+    for (size_t length : lengths)
+        product *= length;
+
+    size_t outer = 1;
+    for (size_t i = 0; i < cursors.size(); ++i)
+    {
+        const size_t inner = product / outer / lengths[i];
+        for (size_t o = 0; o < outer; ++o)
+            for (size_t j = 0; j < lengths[i]; ++j)
+                batches[i].appendRepeated(starts[i] + j, inner);
+        outer *= lengths[i];
+    }
+}
+
+Chunk MultiwayMergeJoinAlgorithm::emitBatch(size_t num_rows)
+{
+    VectorWithMemoryTracking<ColumnPtr> index_columns(cursors.size());
+    Columns result;
+    result.reserve(output_columns.size());
+    for (const auto & [input, position] : output_columns)
+    {
+        const auto & column = cursors[input].getCurrent().getColumns()[position];
+        auto & batch = batches[input];
+        chassert(batch.size == num_rows);
+
+        if (batch.contiguous)
+        {
+            if (batch.begin == 0 && batch.size == column->size())
+                result.push_back(column);
+            else
+                result.push_back(column->cut(batch.begin, batch.size));
+            continue;
+        }
+
+        auto & index_column = index_columns[input];
+        if (!index_column)
+        {
+            auto indices = ColumnUInt64::create();
+            indices->getData().swap(batch.indices);
+            index_column = std::move(indices);
+        }
+        result.push_back(column->index(*index_column, 0));
+    }
+    return Chunk(std::move(result), num_rows);
+}
+
+std::optional<IMergingAlgorithm::Status> MultiwayMergeJoinAlgorithm::handleRangeState()
+{
+    auto & state = *range_state;
+    const size_t num_inputs = cursors.size();
+
+    if (!state.emitting)
+    {
+        for (size_t i = 0; i < num_inputs; ++i)
+        {
+            auto & input = state.inputs[i];
+            if (input.closed)
+                continue;
+
+            auto & cursor = cursors[i];
+            if (!cursor.isValid())
+            {
+                if (!cursor.fullyCompleted())
+                    return Status(i);
+                input.closed = true;
+                continue;
+            }
+
+            if (input.key.equals(cursor))
+            {
+                size_t begin = cursor.getRow();
+                size_t length = nextDistinct(cursor);
+                input.ranges.push_back({cursor.getCurrent().clone(), begin, length});
+                if (!cursor.isValid())
+                    return Status(i);
+            }
+            input.closed = true;
+        }
+        state.emitting = true;
+    }
+
+    MutableColumns result;
+    result.reserve(output_columns.size());
+    for (const auto & [input, position] : output_columns)
+        result.push_back(state.inputs[input].ranges.front().chunk.getColumns()[position]->cloneEmpty());
+
+    const size_t last = num_inputs - 1;
+    size_t num_rows = 0;
+    bool finished = false;
+    while (num_rows < max_block_size)
+    {
+        auto & last_input = state.inputs[last];
+        const auto & last_range = last_input.ranges[last_input.range];
+        const size_t length = std::min(last_range.length - last_input.row, max_block_size - num_rows);
+
+        for (size_t c = 0; c < output_columns.size(); ++c)
+        {
+            const auto & [input_num, position] = output_columns[c];
+            const auto & input = state.inputs[input_num];
+            const auto & range = input.ranges[input.range];
+            const auto & column = *range.chunk.getColumns()[position];
+            if (input_num == last)
+                result[c]->insertRangeFrom(column, range.begin + input.row, length);
+            else
+                result[c]->insertManyFrom(column, range.begin + input.row, length);
+        }
+
+        num_rows += length;
+        last_input.row += length;
+        if (!state.advance())
+        {
+            finished = true;
+            break;
+        }
+    }
+
+    if (finished)
+        range_state.reset();
+
+    return Status(Chunk(std::move(result), num_rows));
+}
+
+IMergingAlgorithm::Status MultiwayMergeJoinAlgorithm::merge()
+{
+    if (range_state)
+    {
+        if (auto status = handleRangeState())
+            return std::move(*status);
+    }
+
+    const size_t num_inputs = cursors.size();
+    for (size_t i = 0; i < num_inputs; ++i)
+    {
+        if (!cursors[i].isValid())
+        {
+            /// No row can match once an input is exhausted.
+            if (cursors[i].fullyCompleted())
+                return Status({}, true);
+            return Status(i);
+        }
+    }
+
+    /// The rows of an input that are all less than the current row of another input cannot match.
+    size_t target = 0;
+    for (size_t i = 1; i < num_inputs; ++i)
+        if (compareCursors(cursors[i], cursors[target], null_direction_hint) > 0)
+            target = i;
+
+    for (size_t i = 0; i < num_inputs; ++i)
+    {
+        if (i != target
+            && compareCursors(cursors[i], cursors[i].rows - 1, cursors[target], cursors[target].getRow(), null_direction_hint) < 0)
+        {
+            cursors[i].setChunk({});
+            return Status(i);
+        }
+    }
+
+    for (auto & batch : batches)
+        batch.clear();
+
+    VectorWithMemoryTracking<size_t> starts(num_inputs);
+    VectorWithMemoryTracking<size_t> lengths(num_inputs);
+    size_t num_rows = 0;
+    ssize_t required_source = -1;
+
+    while (num_rows < max_block_size)
+    {
+        if (!align(target, required_source))
+            break;
+
+        if (size_t run = alignedUniqueRun(max_block_size - num_rows); run > 1)
+        {
+            /// The last row of the run may have equal rows after it, the general path takes it.
+            for (size_t i = 0; i < num_inputs; ++i)
+            {
+                batches[i].appendRange(cursors[i].getRow(), run - 1);
+                cursors[i].pos += run - 1;
+            }
+            num_rows += run - 1;
+            continue;
+        }
+
+        bool continues_in_next_chunk = false;
+        bool too_large = false;
+        size_t product = 1;
+        for (size_t i = 0; i < num_inputs; ++i)
+        {
+            starts[i] = cursors[i].getRow();
+            lengths[i] = nextDistinct(cursors[i]);
+            continues_in_next_chunk |= !cursors[i].isValid();
+            too_large |= common::mulOverflow(product, lengths[i], product);
+        }
+        too_large |= product > max_block_size;
+
+        if (continues_in_next_chunk || too_large)
+        {
+            range_state = std::make_unique<RangeState>();
+            range_state->inputs.resize(num_inputs);
+            for (size_t i = 0; i < num_inputs; ++i)
+            {
+                auto & input = range_state->inputs[i];
+                input.key = JoinKeyRow(cursors[i], starts[i]);
+                input.ranges.push_back({cursors[i].getCurrent().clone(), starts[i], lengths[i]});
+                input.closed = cursors[i].isValid();
+            }
+            break;
+        }
+
+        if (product > max_block_size - num_rows)
+        {
+            /// The next block takes the whole product.
+            for (size_t i = 0; i < num_inputs; ++i)
+                cursors[i].pos = starts[i];
+            break;
+        }
+
+        appendProduct(starts, lengths);
+        num_rows += product;
+    }
+
+    if (num_rows == 0)
+    {
+        if (range_state)
+        {
+            if (auto status = handleRangeState())
+                return std::move(*status);
+        }
+
+        if (required_source < 0)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "MultiwayMergeJoinAlgorithm made no progress");
+        return Status(static_cast<size_t>(required_source));
+    }
+
+    Status status(emitBatch(num_rows));
+    status.required_source = required_source;
+    return status;
+}
+
+MultiwayMergeJoinTransform::MultiwayMergeJoinTransform(
+    const SharedHeaders & input_headers,
+    SharedHeader output_header,
+    const VectorWithMemoryTracking<Names> & key_names,
+    VectorWithMemoryTracking<MultiwayMergeJoinAlgorithm::OutputColumn> output_columns,
+    size_t max_block_size,
+    int null_direction_hint)
+    : IMergingTransform<MultiwayMergeJoinAlgorithm>(
+        input_headers,
+        std::move(output_header),
+        /* have_all_inputs_= */ true,
+        /* limit_hint_= */ 0,
+        /* always_read_till_end_= */ false,
+        /* empty_chunk_on_finish_= */ true,
+        input_headers, key_names, std::move(output_columns), max_block_size, null_direction_hint)
+{
+}
+
+void MultiwayMergeJoinTransform::onFinish()
 {
     algorithm.logElapsed(static_cast<double>(merging_elapsed_ns) / 1000000000ULL);
 }

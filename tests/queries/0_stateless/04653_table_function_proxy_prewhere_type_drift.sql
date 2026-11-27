@@ -1,6 +1,3 @@
--- Tags: no-fasttest
---       no-fasttest: needs the Parquet format.
-
 -- `CREATE TABLE ... AS file()` persists the columns inferred at DDL time, but file-like table
 -- functions rebuild the nested storage from the *current* external schema and ignore those cached
 -- columns. `StorageTableFunctionProxy::read` hands PREWHERE straight to the nested storage and only
@@ -52,7 +49,6 @@ SELECT count() FROM tf_drift WHERE y != 0;
 SELECT '-- a row policy on the drifted column is filtered above the read, not pushed --';
 CREATE ROW POLICY rp_04653 ON tf_drift FOR SELECT USING x != 0 TO CURRENT_USER;
 SELECT x, y FROM tf_drift ORDER BY x LIMIT 3;
-SELECT x, y FROM tf_drift ORDER BY x LIMIT 3 SETTINGS enable_analyzer = 0;
 DROP ROW POLICY rp_04653 ON tf_drift;
 
 SELECT '-- a policy on the non-drifted column is still pushed down and works --';

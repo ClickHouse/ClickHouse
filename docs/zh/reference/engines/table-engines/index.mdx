@@ -5,6 +5,7 @@ toc_folder_title: '表引擎'
 toc_priority: 26
 toc_title: '简介'
 title: '表引擎'
+sidebarTitle: '概览'
 doc_type: 'reference'
 ---
 
@@ -17,13 +18,9 @@ doc_type: 'reference'
 * 是否支持多线程请求执行。
 * 数据复制参数。
 
-<div id="engine-families">
-  ## 引擎系列
-</div>
+## 引擎系列 {#engine-families}
 
-<div id="mergetree">
-  ### MergeTree
-</div>
+### MergeTree {#mergetree}
 
 这是最通用、功能最丰富的一类表引擎，适用于高负载任务。这些引擎的共同特点是支持快速插入数据，并在后台对数据进行后续处理。`MergeTree` 家族引擎支持数据复制 (通过引擎的 [Replicated*](/zh/reference/engines/table-engines/mergetree-family/replication) 版本) 、分区、二级数据跳过索引，以及其他引擎不支持的功能。
 
@@ -45,9 +42,7 @@ doc_type: 'reference'
 | [Replicated* 系列表引擎](/zh/reference/engines/table-engines/mergetree-family/replication)                             |
 | [使用文本索引进行全文搜索](/zh/reference/engines/table-engines/mergetree-family/textindexes)                                  |
 
-<div id="log">
-  ### Log
-</div>
+### Log {#log}
 
 轻量级[引擎](/zh/reference/engines/table-engines/log-family/index)，功能精简。当你需要快速写入许多小表 (最多约 100 万行) ，并在之后整体读取时，这类引擎的效率最高。
 
@@ -60,9 +55,7 @@ doc_type: 'reference'
 | [StripeLog](/zh/reference/engines/table-engines/log-family/stripelog) |
 | [Log](/zh/reference/engines/table-engines/log-family/log)             |
 
-<div id="integration-engines">
-  ### 集成引擎
-</div>
+### 集成引擎 {#integration-engines}
 
 用于与其他数据存储和处理系统进行通信的引擎。
 
@@ -98,9 +91,7 @@ doc_type: 'reference'
 | [SQLite](/zh/reference/engines/table-engines/integrations/sqlite)                                  |
 | [YTsaurus](/zh/reference/engines/table-engines/integrations/ytsaurus)                              |
 
-<div id="special-engines">
-  ### 特殊引擎
-</div>
+### 特殊引擎 {#special-engines}
 
 该家族中的引擎：
 
@@ -125,9 +116,7 @@ doc_type: 'reference'
 | [KeeperMap](/zh/reference/engines/table-engines/special/keepermap)     |
 | [FileLog](/zh/reference/engines/table-engines/special/filelog)         |
 
-<div id="table_engines-virtual_columns">
-  ## 虚拟列
-</div>
+## 虚拟列 {#table_engines-virtual_columns}
 
 虚拟列是表引擎的内置属性，在引擎源代码中定义。
 
@@ -135,7 +124,7 @@ doc_type: 'reference'
 
 要从虚拟列中选择数据，你必须在 `SELECT` 查询中显式指定其名称。`SELECT *` 不会返回虚拟列中的值。
 
-如果你创建的表中某一列与该表的某个虚拟列同名，则该虚拟列将无法访问。我们不建议这样做。为帮助避免冲突，虚拟列名通常以下划线作为前缀。
+如果你创建的表中某一列与该表的某个虚拟列同名，则该虚拟列将无法访问。我们不建议这样做。为帮助避免冲突，虚拟列名通常以下划线作为前缀。对于 `MergeTree` 系列的表，除非启用了 `allow_reserved_column_names` 设置，否则此类列会被拒绝。
 
 * `_table` — 包含读取数据的表名。Type: [String](/zh/reference/data-types/string).
 

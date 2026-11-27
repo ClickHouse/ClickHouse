@@ -66,29 +66,29 @@ Para mejorar la gestión de recursos y el rendimiento:
 ```python
 import chdb
 
-# Crear conexión (en memoria por defecto)
+# Create connection (":memory:" is a temporary, non-persistent database)
 conn = chdb.connect(":memory:")
-# O usar basada en archivo: conn = chdb.connect("mydata.db")
+# Or use file-based: conn = chdb.connect("mydata.db")
 
-# Crear cursor para ejecución de consultas
+# Create cursor for query execution
 cur = conn.cursor()
 
-# Ejecutar consultas
+# Execute queries
 cur.execute("SELECT number, toString(number) as str FROM system.numbers LIMIT 3")
 
-# Obtener resultados de distintas formas
-print(cur.fetchone())    # Una fila: (0, '0')
-print(cur.fetchmany(2))  # Múltiples filas: ((1, '1'), (2, '2'))
+# Fetch results in different ways
+print(cur.fetchone())    # Single row: (0, '0')
+print(cur.fetchmany(2))  # Multiple rows: ((1, '1'), (2, '2'))
 
-# Obtener metadatos
+# Get metadata
 print(cur.column_names())  # ['number', 'str']
 print(cur.column_types())  # ['UInt64', 'String']
 
-# Usar el cursor como iterador
+# Use cursor as iterator
 for row in cur:
     print(row)
 
-# Cerrar siempre los recursos
+# Always close resources
 cur.close()
 conn.close()
 ```
@@ -358,121 +358,24 @@ cursor.executemany(
 ```
 
 <div id="user-defined-functions">
-  ### Funciones definidas por el usuario (UDF)
+  ### Funciones definidas por el usuario (UDF) en Python
 </div>
 
-Amplíe SQL con funciones personalizadas en Python:
-
-<div id="basic-udf-usage">
-  #### Uso básico de UDF
-</div>
+chDB admite UDF de Python nativas que se ejecutan en el mismo proceso, con argumentos tipados, inferencia automática de tipos y manejo configurable de NULL y excepciones.
 
 ```python
-from chdb.udf import chdb_udf
-from chdb import query
+from chdb import query, func
+from chdb.sqltypes import INT64
 
-# Función matemática simple
-@chdb_udf()
-def add_numbers(a, b):
-    return int(a) + int(b)
+@func([INT64, INT64], INT64)
+def add(a, b):
+    return a + b
 
-# Función de procesamiento de cadenas
-@chdb_udf()
-def reverse_string(text):
-    return text[::-1]
-
-# Función de procesamiento JSON  
-@chdb_udf()
-def extract_json_field(json_str, field):
-    import json
-    try:
-        data = json.loads(json_str)
-        return str(data.get(field, ''))
-    except:
-        return ''
-
-# Usar UDFs en consultas
-result = query("""
-    SELECT 
-        add_numbers('10', '20') as sum_result,
-        reverse_string('hello') as reversed,
-        extract_json_field('{"name": "John", "age": 30}', 'name') as name
-""")
-print(result)
+result = query("SELECT add(2, 3)")
+print(result)  # 5
 ```
 
-<div id="advanced-udf-custom-return-types">
-  #### UDF avanzadas con tipos de retorno personalizados
-</div>
-
-```python
-# UDF con tipo de retorno específico
-@chdb_udf(return_type="Float64")
-def calculate_bmi(height_str, weight_str):
-    height = float(height_str) / 100  # Convertir cm a metros
-    weight = float(weight_str)
-    return weight / (height * height)
-
-# UDF para validación de datos
-@chdb_udf(return_type="UInt8") 
-def is_valid_email(email):
-    import re
-    pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
-    return 1 if re.match(pattern, email) else 0
-
-# Uso en consultas complejas
-result = query("""
-    SELECT 
-        name,
-        calculate_bmi(height, weight) as bmi,
-        is_valid_email(email) as has_valid_email
-    FROM (
-        SELECT 
-            'John' as name, '180' as height, '75' as weight, 'john@example.com' as email
-        UNION ALL
-        SELECT 
-            'Jane' as name, '165' as height, '60' as weight, 'invalid-email' as email
-    )
-""", "Pretty")
-print(result)
-```
-
-<div id="udf-best-practices">
-  #### Buenas prácticas para las UDF
-</div>
-
-1. **Funciones sin estado**: las UDF deben ser funciones puras, sin efectos secundarios
-2. **Importaciones dentro de las funciones**: todos los módulos necesarios deben importarse dentro de la UDF
-3. **Entrada/salida de cadenas**: todos los parámetros de las UDF son cadenas (formato TabSeparated)
-4. **Manejo de errores**: incluya bloques try-catch para que las UDF sean robustas
-5. **Rendimiento**: las UDF se invocan para cada fila, así que optimícelas para obtener el mejor rendimiento
-
-```python
-# UDF bien estructurada con manejo de errores
-@chdb_udf(return_type="String")
-def safe_json_extract(json_str, path):
-    import json
-    try:
-        data = json.loads(json_str)
-        keys = path.split('.')
-        result = data
-        for key in keys:
-            if isinstance(result, dict) and key in result:
-                result = result[key]
-            else:
-                return 'null'
-        return str(result)
-    except Exception as e:
-        return f'error: {str(e)}'
-
-# Usar con JSON anidado complejo
-query("""
-    SELECT safe_json_extract(
-        '{"user": {"profile": {"name": "Alice", "age": 25}}}',
-        'user.profile.name'
-    ) as extracted_name
-""")
-```
+Para consultar la guía completa sobre métodos de registro, sistema de tipos, manejo de NULL y excepciones, y compatibilidad con DateTime, consulte la [guía de UDF de Python](/es/chdb/guides/python-udf). Para consultar la referencia completa de la API, vea la [referencia de la API de UDF de Python](/es/chdb/api/python#user-defined-functions). El antiguo decorador `@chdb_udf` sigue estando disponible, pero ha sido reemplazado por esta API; consulte la [API heredada](/es/chdb/api/python#legacy-udf).
 
 <div id="streaming-queries">
   ### Procesamiento de consultas en streaming

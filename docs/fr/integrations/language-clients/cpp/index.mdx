@@ -1,7 +1,7 @@
 ---
 description: 'Documentation de la bibliothèque client C++ de ClickHouse et de l’intégration
   avec le framework u-server'
-sidebarTitle: 'C++'
+sidebarTitle: 'Vue d’ensemble'
 slug: /interfaces/cpp
 title: 'Bibliothèque client C++'
 doc_type: 'reference'
@@ -23,9 +23,7 @@ dépôt GitHub du projet : [https://github.com/ClickHouse/clickhouse-cpp](https
   [https://github.com/ClickHouse/clickhouse-cpp/issues](https://github.com/ClickHouse/clickhouse-cpp/issues)
 </Note>
 
-<div id="including-library-into-project">
-  ## Inclure la bibliothèque dans votre projet
-</div>
+## Inclure la bibliothèque dans votre projet {#including-library-into-project}
 
 Le moyen le plus simple d’intégrer la bibliothèque à votre projet consiste à utiliser le
 module `FetchContent` de CMake. Cette approche vous permet de fixer une version précise de la bibliothèque et de
@@ -38,7 +36,7 @@ set(WITH_OPENSSL YES CACHE BOOL "Enable OpenSSL in clickhouse-cpp" FORCE)
 FetchContent_Declare(
     clickhouse-cpp
     GIT_REPOSITORY https://github.com/ClickHouse/clickhouse-cpp.git
-    GIT_TAG v2.6.0   # can also be `master` or other banch
+    GIT_TAG v2.6.0   # can also be `master` or other branch
 )
 FetchContent_MakeAvailable(clickhouse-cpp)
 ```
@@ -48,22 +46,18 @@ ClickHouse Cloud ou à d’autres déploiements ClickHouse avec SSL activé. Bie
 connexions non TLS, il est généralement recommandé de l’activer.
 
 La compilation avec la prise en charge SSL nécessite l’installation des paquets de développement OpenSSL. Installez
-`libssl-dev` sur Debian, Ubuntu ou leurs dérivés ; `openssl-devel` pour Fedora, Red Hat ; ou
+`libssl-dev` sur Debian, Ubuntu ou leurs dérivés ; `openssl-devel` pour Fedora, Red Hat ; ou
 `openssl` sur macOS, à l’aide de Homebrew.
 
-Une fois la dépendance disponible, liez votre cible à la cible de bibliothèque exportée :
+Une fois la dépendance disponible, liez votre cible à la cible de bibliothèque exportée :
 
 ```cmake
 target_link_libraries(your-target PRIVATE clickhouse-cpp-lib)
 ```
 
-<div id="examples">
-  ## Exemples
-</div>
+## Exemples {#examples}
 
-<div id="example-setup-client">
-  ### Création de l’objet client
-</div>
+### Création de l’objet client {#example-setup-client}
 
 Créez une instance `Client` pour établir une connexion à ClickHouse. L’exemple suivant
 montre comment se connecter à une instance locale de ClickHouse, pour laquelle aucun mot de passe n’est requis et où SSL n’est pas
@@ -91,9 +85,7 @@ clickhouse::Client client{
     };
 ```
 
-<div id="example-create-table">
-  ### Créer des tables et exécuter des requêtes sans renvoyer de données
-</div>
+### Créer des tables et exécuter des requêtes sans renvoyer de données {#example-create-table}
 
 Pour exécuter une requête qui ne renvoie aucune donnée, par exemple pour créer des tables, utilisez la méthode `Execute`.
 La même approche s’applique à d’autres instructions comme `ALTER TABLE`, `DROP`, etc.
@@ -107,9 +99,7 @@ client.Execute(R"(
     ENGINE = MergeTree ORDER BY id)");
 ```
 
-<div id="example-insert-data">
-  ### Insertion de données
-</div>
+### Insertion de données {#example-insert-data}
 
 Pour insérer des données dans une table, construisez un `Block` et remplissez-le avec des objets colonne conformes au
 schéma de la table. Les données sont ajoutées colonne par colonne, puis insérées en une seule opération à l’aide de la
@@ -140,9 +130,7 @@ block.AppendColumn("language", language);
 client.Insert("greetings", block);
 ```
 
-<div id="example-select">
-  ### Sélection des données
-</div>
+### Sélection des données {#example-select}
 
 Pour exécuter une requête qui renvoie des données, utilisez la méthode `Select` et fournissez une fonction de rappel pour traiter le
 résultat. Les résultats de la requête sont renvoyés sous forme d’objets `Block`, ce qui reflète la représentation native
@@ -161,9 +149,7 @@ client.Select(
     });
 ```
 
-<div id="supported-data-types">
-  ## Types de données pris en charge
-</div>
+## Types de données pris en charge {#supported-data-types}
 
 * `UInt8`, `UInt16`, `UInt32`, `UInt64`, `Int8`, `Int16`, `Int32`, `Int64`
 * `UInt128`, `Int128`

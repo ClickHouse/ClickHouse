@@ -1,14 +1,12 @@
 ---
-title: لماذا لا أستطيع رؤية بياناتي في قاموس على ClickHouse Cloud؟
+title: لماذا لا يمكنني رؤية بياناتي ضمن قاموس في ClickHouse Cloud؟
 description: توجد مشكلة قد تؤدي إلى عدم ظهور البيانات في القواميس مباشرةً بعد إنشائها.
 date: 2024-04-12
 tags: ['إدارة Cloud', 'نمذجة البيانات']
-keywords: ['Dictionaries']
+keywords: ['القواميس']
 ---
 
-<div id="dictionaries-in-clickhouse">
-  ## القواميس في ClickHouse
-</div>
+## القواميس في ClickHouse {#dictionaries-in-clickhouse}
 
 قد تشهد القواميس التي أُنشئت في ClickHouse Cloud بعض عدم الاتساق خلال المرحلة الأولية من الإنشاء. وهذا يعني أنك قد لا ترى أي بيانات في القاموس فور إنشائه. لكن بعد عدة إعادات للمحاولة، قد يصل استعلام الإنشاء إلى نُسخ متماثلة مختلفة، وعندها ستصبح البيانات مرئية.
 
@@ -20,16 +18,20 @@ keywords: ['Dictionaries']
 2024-01-25 13:38:25.733008 - Part all_0_0_0 downloaded
 ```
 
-كما ترى، لم يصل هذا الجزء إلا بعد إنشاء القاموس. وقد تصبح هذه المشكلة أكبر إذا كنت تستخدم `LIFETIME(MIN 0 MAX 0)`، لأن هذا يعني أن القاموس لن يُحدَّث تلقائيًا أبدًا. لذلك، سيظل القاموس فارغًا إلى أن يُنفَّذ الأمر `RELOAD DICTIONARIES`.
+كما ترى، لم يصل هذا الجزء إلا بعد إنشاء القاموس. وقد تصبح هذه المشكلة أكبر إذا كنت تستخدم `LIFETIME(MIN 0 MAX 0)`، لأن هذا يعني أن القاموس لن يُحدَّث تلقائيًا أبدًا. لذلك، سيظل القاموس فارغًا إلى أن يُنفَّذ الأمر `RELOAD DICTIONARIES`.
 
 يكمن حل هذه المشكلة في استخدام استعلام `SELECT` بدلًا من تحديد جدول مصدر عند إنشاء القاموس، مع تفعيل الإعداد `select_sequential_consistency=1`.
+
+<Note title="ClickHouse Cloud">
+  عند إنشاء قاموس يقرأ من جدول ClickHouse، أدرج اسم المستخدم وكلمة المرور لمستخدم مخصص في عبارة `SOURCE`. ويجب أن يمتلك هذا المستخدم صلاحية `SELECT` على الجدول المصدر. راجع [مثال على مصدر قاموس ClickHouse](/ar/reference/statements/create/dictionary/sources/clickhouse).
+</Note>
 
 بدلًا من تحديد جدول مصدر:
 
 ```sql
 SOURCE(CLICKHOUSE(
     table 'test.temp_title_table_1706189903924'
-    user default password 'PASSWORD'))
+    user 'dict_reader' password 'dict_reader_password'))
 ```
 
 استخدم استعلام `SELECT` مع `select_sequential_consistency=1`:
@@ -38,12 +40,10 @@ SOURCE(CLICKHOUSE(
 SOURCE(CLICKHOUSE(QUERY
     'SELECT songTitle, mappedTitle
     FROM test.temp_title_table_1706189903924
-    SETTINGS select_sequential_consistency=1' USER default PASSWORD ''))
+    SETTINGS select_sequential_consistency=1' USER 'dict_reader' PASSWORD 'dict_reader_password'))
 ```
 
-<div id="why-does-this-issue-occur">
-  ## لماذا تحدث هذه المشكلة؟
-</div>
+## لماذا تحدث هذه المشكلة؟ {#why-does-this-issue-occur}
 
 عندما تُدرِج بيانات ثم تُنشئ قاموسًا أو تعيد تحميله، قد تصل عبارة DDL إلى نسخة متماثلة قبل أن تصلها البيانات (أو البيانات الجديدة). ويؤدي ذلك إلى عدم اتساق القواميس بين النسخ المتماثلة. بعد ذلك، وبحسب النسخة المتماثلة التي تستقبل الاستعلام، قد تحصل على نتائج مختلفة.
 

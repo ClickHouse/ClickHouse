@@ -1,0 +1,7 @@
+<clickhouse>
+    <enable_iceberg_rest_catalog>1</enable_iceberg_rest_catalog>
+    <iceberg_rest_catalog>
+        <port>8182</port>
+        <zookeeper_path>aux:/clickhouse/iceberg_rest_catalog</zookeeper_path>
+    </iceberg_rest_catalog>
+</clickhouse>

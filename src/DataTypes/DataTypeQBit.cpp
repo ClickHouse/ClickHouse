@@ -40,6 +40,13 @@ DataTypeQBit::DataTypeQBit(const DataTypePtr & element_type_, const size_t dimen
             "QBit data type only supports Int8, BFloat16, Float32, or Float64 as element type. Got: {}",
             element_type_->getName());
 
+    if (dimension > MAX_DIMENSION)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "QBit dimension must not exceed {}. Got: {}",
+            MAX_DIMENSION,
+            dimension);
+
     if (stride == 0 || stride > dimension || dimension % stride != 0)
         throw Exception(
             ErrorCodes::UNEXPECTED_AST_STRUCTURE,
@@ -196,7 +203,7 @@ column_name QBit(element_type, dimension[, stride])
 ```
 
 * `element_type` – the type of each vector element. The allowed types are `Int8`, `BFloat16`, `Float32` and `Float64`
-* `dimension` – the number of elements in each vector
+* `dimension` – the number of elements in each vector, at most 1048576
 * `stride` – optional. The number of dimensions stored together in one group of streams. When omitted it defaults to `dimension` (a single group). When provided, `dimension` must be a multiple of `stride`, and, when `stride` is smaller than `dimension`, `stride` must be a multiple of 8. The `dimension` dimensions are split into `dimension / stride` contiguous groups, and each group's bit planes are stored in separate streams. This lets a search over the first `D` dimensions (with `D` a multiple of `stride`) read only the streams of the groups that cover those dimensions, which is useful for Matryoshka embeddings.
 
 ## Creating QBit {#creating-qbit}
@@ -326,6 +333,22 @@ CREATE TABLE test (id UInt32, vec QBit(BFloat16, 4096, 1024)) ENGINE = MergeTree
 Here the 4096 dimensions are split into 4 groups of 1024. The subcolumns follow a group-major order: with `BFloat16` (16 bit planes), `vec.1` … `vec.16` are the 16 bit planes of the first stride group (dimensions 1–1024), `vec.17` … `vec.32` belong to the second group (dimensions 1025–2048), and so on. In general `vec.N` reads bit plane `(N-1) % element_size` of stride group `(N-1) / element_size`.
 
 To run a reduced-dimension search, pass the number of dimensions to read as the fourth argument of the transposed distance functions (see below). The reference vector must have at least that many elements (any extra trailing elements are ignored), and the value must be a multiple of `stride`.
+
+## Element access and slicing {#qbit-element-access}
+
+[`arrayElement`](/reference/functions/regular-functions/array-functions#arrayElement) (and the `vec[n]` operator) returns the `n`-th vector element, reconstructed at the full precision of the element type. Only the bit planes of the stride group containing the element are read. [`arraySlice`](/reference/functions/regular-functions/array-functions#arraySlice) returns a `QBit` over the selected dimensions (a projection to a subset of dimensions); the offset and length must be constants, because the dimension of a `QBit` is part of its type. A slice aligned to stride-group boundaries keeps the stride and reuses the stored bit-plane streams without copying:
+
+```sql
+CREATE TABLE test (id UInt32, vec QBit(Float32, 8)) ENGINE = Memory;
+INSERT INTO test VALUES (1, [1, 2, 3, 4, 5, 6, 7, 8]);
+SELECT vec[3], arraySlice(vec, 2, 3) FROM test;
+```
+
+```text
+┌─arrayElement(vec, 3)─┬─arraySlice(vec, 2, 3)─┐
+│                    3 │ [2,3,4]               │
+└──────────────────────┴───────────────────────┘
+```
 
 ## Vector search functions {#vector-search-functions}
 

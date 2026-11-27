@@ -147,7 +147,7 @@ private:
     /// Overrides for response headers.
     std::unordered_map<String, String> http_response_headers_override;
     /// Returning std::nullopt means the handler should reject the request.
-    std::optional<std::string> getResourcePath(const std::string & uri) const;
+    [[nodiscard]] std::optional<std::string> getResourcePath(const std::string & uri) const;
 };
 
 class ProcessorsProfileWebUIRequestHandler : public HTTPRequestHandler
@@ -163,6 +163,22 @@ public:
 private:
     /// Overrides for response headers.
     std::unordered_map<String, String> http_response_headers_override;
+};
+
+class SQLConsoleUIRequestHandler : public HTTPRequestHandler
+{
+public:
+    explicit SQLConsoleUIRequestHandler(IServer &) {}
+    explicit SQLConsoleUIRequestHandler(IServer & server_, const std::unordered_map<String, String> & http_response_headers_override_)
+        : SQLConsoleUIRequestHandler(server_)
+    {
+        http_response_headers_override = http_response_headers_override_;
+    }
+    void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event) override;
+private:
+    /// Overrides for response headers.
+    std::unordered_map<String, String> http_response_headers_override;
+    [[nodiscard]] std::string getResourcePath(const std::string & uri) const;
 };
 
 }

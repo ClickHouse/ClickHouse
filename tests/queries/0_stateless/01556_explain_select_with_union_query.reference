@@ -12,85 +12,113 @@ Union
     ReadFromSystemOne
   Expression ((Project names + (Projection + Change column names to column identifiers)))
     ReadFromSystemOne
-Distinct
+Distinct (DISTINCT)
   Union
-    Expression ((Project names + (Projection + Change column names to column identifiers)))
-      ReadFromSystemOne
-    Expression ((Project names + (Projection + Change column names to column identifiers)))
-      ReadFromSystemOne
-    Expression ((Project names + (Projection + Change column names to column identifiers)))
-      ReadFromSystemOne
-Distinct
+    Distinct (Preliminary DISTINCT)
+      Expression ((Project names + (Projection + Change column names to column identifiers)))
+        ReadFromSystemOne
+    Distinct (Preliminary DISTINCT)
+      Expression ((Project names + (Projection + Change column names to column identifiers)))
+        ReadFromSystemOne
+    Distinct (Preliminary DISTINCT)
+      Expression ((Project names + (Projection + Change column names to column identifiers)))
+        ReadFromSystemOne
+Distinct (DISTINCT)
   Union
-    Expression ((Project names + (Projection + Change column names to column identifiers)))
-      ReadFromSystemOne
-    Expression ((Project names + (Projection + Change column names to column identifiers)))
-      ReadFromSystemOne
-    Expression ((Project names + (Projection + Change column names to column identifiers)))
-      ReadFromSystemOne
-Distinct
+    Distinct (Preliminary DISTINCT)
+      Expression ((Project names + (Projection + Change column names to column identifiers)))
+        ReadFromSystemOne
+    Distinct (Preliminary DISTINCT)
+      Expression ((Project names + (Projection + Change column names to column identifiers)))
+        ReadFromSystemOne
+    Distinct (Preliminary DISTINCT)
+      Expression ((Project names + (Projection + Change column names to column identifiers)))
+        ReadFromSystemOne
+Distinct (DISTINCT)
   Union
-    Expression ((Project names + (Projection + Change column names to column identifiers)))
-      ReadFromSystemOne
-    Expression ((Project names + (Projection + Change column names to column identifiers)))
-      ReadFromSystemOne
-    Expression ((Project names + (Projection + Change column names to column identifiers)))
-      ReadFromSystemOne
-Distinct
+    Distinct (Preliminary DISTINCT)
+      Expression ((Project names + (Projection + Change column names to column identifiers)))
+        ReadFromSystemOne
+    Distinct (Preliminary DISTINCT)
+      Expression ((Project names + (Projection + Change column names to column identifiers)))
+        ReadFromSystemOne
+    Distinct (Preliminary DISTINCT)
+      Expression ((Project names + (Projection + Change column names to column identifiers)))
+        ReadFromSystemOne
+Distinct (DISTINCT)
   Union
-    Expression ((Project names + (Projection + Change column names to column identifiers)))
-      ReadFromSystemOne
-    Expression ((Project names + (Projection + Change column names to column identifiers)))
-      ReadFromSystemOne
-    Expression ((Project names + (Projection + Change column names to column identifiers)))
-      ReadFromSystemOne
+    Distinct (Preliminary DISTINCT)
+      Expression ((Project names + (Projection + Change column names to column identifiers)))
+        ReadFromSystemOne
+    Distinct (Preliminary DISTINCT)
+      Expression ((Project names + (Projection + Change column names to column identifiers)))
+        ReadFromSystemOne
+    Distinct (Preliminary DISTINCT)
+      Expression ((Project names + (Projection + Change column names to column identifiers)))
+        ReadFromSystemOne
 Union
   Expression ((Project names + (Projection + Change column names to column identifiers)))
     ReadFromSystemOne
   Expression ((Project names + (Projection + Change column names to column identifiers)))
     ReadFromSystemOne
-  Distinct
+  Distinct (DISTINCT)
     Union
-      Expression ((Project names + (Projection + Change column names to column identifiers)))
-        ReadFromSystemOne
-      Expression ((Project names + (Projection + Change column names to column identifiers)))
-        ReadFromSystemOne
-      Expression ((Project names + (Projection + Change column names to column identifiers)))
-        ReadFromSystemOne
-  Distinct
+      Distinct (Preliminary DISTINCT)
+        Expression ((Project names + (Projection + Change column names to column identifiers)))
+          ReadFromSystemOne
+      Distinct (Preliminary DISTINCT)
+        Expression ((Project names + (Projection + Change column names to column identifiers)))
+          ReadFromSystemOne
+      Distinct (Preliminary DISTINCT)
+        Expression ((Project names + (Projection + Change column names to column identifiers)))
+          ReadFromSystemOne
+  Distinct (DISTINCT)
     Union
-      Expression ((Project names + (Projection + Change column names to column identifiers)))
-        ReadFromSystemOne
-      Expression ((Project names + (Projection + Change column names to column identifiers)))
-        ReadFromSystemOne
-      Expression ((Project names + (Projection + Change column names to column identifiers)))
-        ReadFromSystemOne
-      Expression ((Project names + (Projection + Change column names to column identifiers)))
-        ReadFromSystemOne
-      Expression ((Project names + (Projection + Change column names to column identifiers)))
-        ReadFromSystemOne
-      Expression ((Project names + (Projection + Change column names to column identifiers)))
-        ReadFromSystemOne
-Distinct
+      Distinct (Preliminary DISTINCT)
+        Expression ((Project names + (Projection + Change column names to column identifiers)))
+          ReadFromSystemOne
+      Distinct (Preliminary DISTINCT)
+        Expression ((Project names + (Projection + Change column names to column identifiers)))
+          ReadFromSystemOne
+      Distinct (Preliminary DISTINCT)
+        Expression ((Project names + (Projection + Change column names to column identifiers)))
+          ReadFromSystemOne
+      Distinct (Preliminary DISTINCT)
+        Expression ((Project names + (Projection + Change column names to column identifiers)))
+          ReadFromSystemOne
+      Distinct (Preliminary DISTINCT)
+        Expression ((Project names + (Projection + Change column names to column identifiers)))
+          ReadFromSystemOne
+      Distinct (Preliminary DISTINCT)
+        Expression ((Project names + (Projection + Change column names to column identifiers)))
+          ReadFromSystemOne
+Distinct (DISTINCT)
   Union
-    Expression ((Project names + (Projection + Change column names to column identifiers)))
-      ReadFromSystemOne
-    Expression ((Project names + (Projection + Change column names to column identifiers)))
-      ReadFromSystemOne
-    Expression ((Project names + (Projection + Change column names to column identifiers)))
-      ReadFromSystemOne
-Distinct
+    Distinct (Preliminary DISTINCT)
+      Expression ((Project names + (Projection + Change column names to column identifiers)))
+        ReadFromSystemOne
+    Distinct (Preliminary DISTINCT)
+      Expression ((Project names + (Projection + Change column names to column identifiers)))
+        ReadFromSystemOne
+    Distinct (Preliminary DISTINCT)
+      Expression ((Project names + (Projection + Change column names to column identifiers)))
+        ReadFromSystemOne
+Distinct (DISTINCT)
   Union
-    Expression ((Project names + (Projection + Change column names to column identifiers)))
-      ReadFromSystemOne
-    Expression ((Project names + (Projection + Change column names to column identifiers)))
-      ReadFromSystemOne
-Distinct
+    Distinct (Preliminary DISTINCT)
+      Expression ((Project names + (Projection + Change column names to column identifiers)))
+        ReadFromSystemOne
+    Distinct (Preliminary DISTINCT)
+      Expression ((Project names + (Projection + Change column names to column identifiers)))
+        ReadFromSystemOne
+Distinct (DISTINCT)
   Union
-    Expression ((Project names + (Projection + Change column names to column identifiers)))
-      ReadFromSystemOne
-    Expression ((Project names + (Projection + Change column names to column identifiers)))
-      ReadFromSystemOne
+    Distinct (Preliminary DISTINCT)
+      Expression ((Project names + (Projection + Change column names to column identifiers)))
+        ReadFromSystemOne
+    Distinct (Preliminary DISTINCT)
+      Expression ((Project names + (Projection + Change column names to column identifiers)))
+        ReadFromSystemOne
 Union
   Expression ((Project names + (Projection + Change column names to column identifiers)))
     ReadFromSystemOne
@@ -112,30 +140,39 @@ Union
     ReadFromSystemOne
   Expression ((Project names + (Projection + Change column names to column identifiers)))
     ReadFromSystemOne
-Distinct
+Distinct (DISTINCT)
   Union
-    Expression ((Project names + (Projection + Change column names to column identifiers)))
-      ReadFromSystemOne
-    Expression ((Project names + (Projection + Change column names to column identifiers)))
-      ReadFromSystemOne
-    Expression ((Project names + (Projection + Change column names to column identifiers)))
-      ReadFromSystemOne
-Distinct
+    Distinct (Preliminary DISTINCT)
+      Expression ((Project names + (Projection + Change column names to column identifiers)))
+        ReadFromSystemOne
+    Distinct (Preliminary DISTINCT)
+      Expression ((Project names + (Projection + Change column names to column identifiers)))
+        ReadFromSystemOne
+    Distinct (Preliminary DISTINCT)
+      Expression ((Project names + (Projection + Change column names to column identifiers)))
+        ReadFromSystemOne
+Distinct (DISTINCT)
   Union
-    Expression ((Project names + (Projection + Change column names to column identifiers)))
-      ReadFromSystemOne
-    Expression ((Project names + (Projection + Change column names to column identifiers)))
-      ReadFromSystemOne
-    Expression ((Project names + (Projection + Change column names to column identifiers)))
-      ReadFromSystemOne
-Distinct
+    Distinct (Preliminary DISTINCT)
+      Expression ((Project names + (Projection + Change column names to column identifiers)))
+        ReadFromSystemOne
+    Distinct (Preliminary DISTINCT)
+      Expression ((Project names + (Projection + Change column names to column identifiers)))
+        ReadFromSystemOne
+    Distinct (Preliminary DISTINCT)
+      Expression ((Project names + (Projection + Change column names to column identifiers)))
+        ReadFromSystemOne
+Distinct (DISTINCT)
   Union
-    Expression ((Project names + (Projection + Change column names to column identifiers)))
-      ReadFromSystemOne
-    Expression ((Project names + (Projection + Change column names to column identifiers)))
-      ReadFromSystemOne
-    Expression ((Project names + (Projection + Change column names to column identifiers)))
-      ReadFromSystemOne
+    Distinct (Preliminary DISTINCT)
+      Expression ((Project names + (Projection + Change column names to column identifiers)))
+        ReadFromSystemOne
+    Distinct (Preliminary DISTINCT)
+      Expression ((Project names + (Projection + Change column names to column identifiers)))
+        ReadFromSystemOne
+    Distinct (Preliminary DISTINCT)
+      Expression ((Project names + (Projection + Change column names to column identifiers)))
+        ReadFromSystemOne
 Union
   Expression ((Project names + (Projection + Change column names to column identifiers)))
     ReadFromSystemOne
@@ -151,16 +188,20 @@ Union
     ReadFromSystemOne
   Expression ((Project names + (Projection + Change column names to column identifiers)))
     ReadFromSystemOne
-  Distinct
+  Distinct (DISTINCT)
     Union
-      Expression ((Project names + (Projection + Change column names to column identifiers)))
-        ReadFromSystemOne
-      Expression ((Project names + (Projection + Change column names to column identifiers)))
-        ReadFromSystemOne
-      Expression ((Project names + (Projection + Change column names to column identifiers)))
-        ReadFromSystemOne
-      Expression ((Project names + (Projection + Change column names to column identifiers)))
-        ReadFromSystemOne
+      Distinct (Preliminary DISTINCT)
+        Expression ((Project names + (Projection + Change column names to column identifiers)))
+          ReadFromSystemOne
+      Distinct (Preliminary DISTINCT)
+        Expression ((Project names + (Projection + Change column names to column identifiers)))
+          ReadFromSystemOne
+      Distinct (Preliminary DISTINCT)
+        Expression ((Project names + (Projection + Change column names to column identifiers)))
+          ReadFromSystemOne
+      Distinct (Preliminary DISTINCT)
+        Expression ((Project names + (Projection + Change column names to column identifiers)))
+          ReadFromSystemOne
 Union
   Expression ((Project names + (Projection + Change column names to column identifiers)))
     ReadFromSystemOne

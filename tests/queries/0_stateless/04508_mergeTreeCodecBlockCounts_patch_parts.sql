@@ -4,7 +4,7 @@ DROP TABLE IF EXISTS t_patch;
 
 CREATE TABLE t_patch (a UInt64, b UInt64)
 ENGINE = MergeTree ORDER BY tuple()
-SETTINGS min_bytes_for_wide_part = 0, enable_block_number_column = 1, enable_block_offset_column = 1;
+SETTINGS min_bytes_for_wide_part = 0, enable_block_number_column = 1, enable_block_offset_column = 1, patch_parts_version = 'v2';
 
 SYSTEM STOP MERGES t_patch;
 

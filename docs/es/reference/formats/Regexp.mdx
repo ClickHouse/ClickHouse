@@ -23,13 +23,13 @@ El formato `Regex` analiza cada línea de los datos importados según la expresi
 
 **Uso**
 
-La expresión regular definida en la configuración [format&#95;regexp](/es/reference/settings/formats#format_regexp) se aplica a cada línea de los datos importados. El número de subpatrones de la expresión regular debe ser igual al número de columnas del conjunto de datos importado.
+La expresión regular definida en la configuración [format&#95;regexp](/es/reference/settings/formats/format-regexp#format_regexp) se aplica a cada línea de los datos importados. El número de subpatrones de la expresión regular debe ser igual al número de columnas del conjunto de datos importado.
 
 Las líneas de los datos importados deben estar separadas por el carácter de nueva línea `'\n'` o por una nueva línea de estilo DOS `"\r\n"`.
 
-El contenido de cada subpatrón coincidente se analiza con el método del tipo de dato correspondiente, de acuerdo con la configuración [format&#95;regexp&#95;escaping&#95;rule](/es/reference/settings/formats#format_regexp_escaping_rule).
+El contenido de cada subpatrón coincidente se analiza con el método del tipo de dato correspondiente, de acuerdo con la configuración [format&#95;regexp&#95;escaping&#95;rule](/es/reference/settings/formats/format-regexp#format_regexp_escaping_rule).
 
-Si la expresión regular no coincide con la línea y [format&#95;regexp&#95;skip&#95;unmatched](/es/reference/settings/formats#format_regexp_escaping_rule) está establecido en 1, la línea se omite sin avisar. De lo contrario, se genera una excepción.
+Si la expresión regular no coincide con la línea y [format&#95;regexp&#95;skip&#95;unmatched](/es/reference/settings/formats/format-regexp#format_regexp_skip_unmatched) está establecido en 1, la línea se omite sin avisar. De lo contrario, se genera una excepción.
 
 <div id="example-usage">
   ## Ejemplo de uso

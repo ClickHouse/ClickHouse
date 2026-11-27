@@ -11,17 +11,13 @@ doc_type: 'reference'
 
 MergeTree テーブル内のPROJECTIONの内容を表します。内部情報の確認に使用できます。
 
-<div id="syntax">
-  ## 構文
-</div>
+## 構文 {#syntax}
 
 ```sql
 mergeTreeProjection(database, table, projection)
 ```
 
-<div id="arguments">
-  ## 引数
-</div>
+## 引数 {#arguments}
 
 | 引数           | 説明                         |
 | ------------ | -------------------------- |
@@ -29,15 +25,13 @@ mergeTreeProjection(database, table, projection)
 | `table`      | PROJECTION の読み取り元のテーブル名。   |
 | `projection` | 読み取る PROJECTION の名前。       |
 
-<div id="returned_value">
-  ## 戻り値
-</div>
+`DESCRIBE` などで結果の構造を取得するにはソーステーブルに対する `SHOW COLUMNS` 権限が、結果を読み取るにはソーステーブルに対する `SELECT` 権限が必要です。
+
+## 戻り値 {#returned-value}
 
 指定されたPROJECTIONが提供するカラムを含むテーブルオブジェクト。
 
-<div id="usage-example">
-  ## 使用例
-</div>
+## 使用例 {#usage-example}
 
 ```sql
 CREATE TABLE test

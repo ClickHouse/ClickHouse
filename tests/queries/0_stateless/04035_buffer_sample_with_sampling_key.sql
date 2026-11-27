@@ -12,7 +12,6 @@ CREATE TABLE t_04035_buf (x UInt64, y String)
 INSERT INTO t_04035_mt SELECT number, toString(number) FROM numbers(10000);
 
 SELECT count() > 0 FROM t_04035_buf SAMPLE 0.5;
-SELECT count() > 0 FROM t_04035_buf SAMPLE 0.5 SETTINGS enable_analyzer = 0;
 
 DROP TABLE t_04035_buf;
 DROP TABLE t_04035_mt;

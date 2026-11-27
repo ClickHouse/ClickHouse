@@ -7,35 +7,35 @@ doc_type: 'guide'
 keywords: ['ClickStack', 'ダッシュボード', '可視化', 'sql', 'オブザーバビリティ']
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
-ClickStack は、生の SQL クエリに基づく可視化をサポートしています。これにより、ダッシュボード レベルの時間範囲、フィルター、チャートの描画と連携しながら、クエリ ロジックを完全に制御できます。
+ClickStack は、生の SQL クエリに基づく可視化をサポートしています。これにより、ダッシュボード レベルの時間範囲、フィルタ、チャートの描画と連携しながら、クエリ ロジックを完全に制御できます。
 
 SQL ベースの可視化は、組み込みの Chart Explorer では対応しきれないことを行いたい場合に有用です。たとえば、テーブルを結合したり、chart builder ではサポートされていない複雑な集計を作成したりする場合です。
 
-<div id="creating-a-raw-sql-chart">
-  ## SQL ベースの可視化の作成
-</div>
+## SQL ベースの可視化の作成 {#creating-a-raw-sql-chart}
 
 SQL ベースの可視化を作成するには、ダッシュボードタイルのエディタを開き、**SQL** タブを選択します。
 
-<Image img="/images/use-cases/observability/sql-editor-button.webp" alt="SQL エディタのボタン" size="lg" />
+<div className="ch-image-lg">
+  <Frame>
+    ![SQL エディタのボタン](/images/use-cases/observability/sql-editor-button.webp)
+  </Frame>
+</div>
 
 ここからは、次の手順で進めます。
 
 1. クエリの実行先となる **ClickHouse 接続** を選択します。
-2. 必要に応じて **ログソース** を選択します。これにより、`$__filters` マクロを介してダッシュボードレベルのフィルタをグラフに適用できるようになります。
-3. エディタで SQL クエリを記述し、クエリパラメータとマクロを使ってダッシュボードの時間範囲やフィルタと連携させます。
+2. 必要に応じて **ログソース** を選択します。これにより、`$__filters` マクロを介してダッシュボードレベルのフィルタをチャートに適用できるようになります。
+3. エディタで SQL クエリを記述し、クエリパラメータとマクロを使ってダッシュボードの時間範囲、フィルタ、変数と連携させます。
 4. **play** ボタンをクリックして結果をプレビューし、続けて **Save** をクリックします。
 
 <div id="query-parameters">
-  ## クエリパラメータ
+  ## クエリパラメータ {#query-parameters}
 </div>
 
 [クエリパラメータ](/ja/reference/syntax#defining-and-using-query-parameters) を使用すると、SQL からダッシュボードの現在の時間範囲と粒度を参照できます。構文には、ClickHouse のパラメータ化クエリ構文 `{paramName:Type}` を使用します。
 
 <div id="available-parameters">
-  ### 利用可能なパラメータ
+  ### 利用可能なパラメータ {#available-parameters}
 </div>
 
 使用できるパラメータは、チャートの種類によって異なります。
@@ -57,13 +57,13 @@ SQL ベースの可視化を作成するには、ダッシュボードタイル�
 | `{endDateMilliseconds:Int64}`   | Int64 | ダッシュボードの日付範囲の終了 (エポックからのミリ秒)  |
 
 <div id="macros">
-  ## マクロ
+  ## マクロ {#macros}
 </div>
 
 マクロは、よく使われる ClickHouse SQL の式に展開されるショートカットです。`$__` というプレフィックスが付き、クエリが ClickHouse に送信される前に置換されます。
 
 <div id="time-boundary-macros">
-  ### 時間境界マクロ
+  ### 時間境界マクロ {#time-boundary-macros}
 </div>
 
 これらのマクロは、ダッシュボードの開始時刻または終了時刻を表す ClickHouse の式を返します。引数はありません。
@@ -77,7 +77,7 @@ SQL ベースの可視化を作成するには、ダッシュボードタイル�
 | `$__interval_s`  | `{intervalSeconds:Int64}`                                             | Int64       |
 
 <div id="time-filter-macros">
-  ### 時間フィルターマクロ
+  ### 時間フィルターマクロ {#time-filter-macros}
 </div>
 
 これらのマクロは、カラムをダッシュボードの時間範囲で絞り込む `WHERE` 句のフラグメントを生成します。
@@ -98,7 +98,7 @@ AND TimestampTime <= toDateTime(fromUnixTimestamp64Milli({endDateMilliseconds:In
 ```
 
 <div id="time-interval-macros">
-  ### 時間インターバルマクロ
+  ### 時間インターバルマクロ {#time-interval-macros}
 </div>
 
 これらのマクロは、タイムスタンプのカラムをダッシュボードの粒度に合わせたインターバルにまとめます。通常は、時系列チャートの `SELECT` 句および `GROUP BY` 句で使用します。利用できるのは、折れ線グラフ と Stacked-bar の可視化のみです。
@@ -115,23 +115,39 @@ toStartOfInterval(toDateTime(TimestampTime), INTERVAL {intervalSeconds:Int64} se
 ```
 
 <div id="dashboard-filter-macro">
-  ### ダッシュボードフィルタ用マクロ
+  ### ダッシュボードフィルタ用マクロ {#dashboard-filter-macro}
 </div>
 
-| Macro        | Description                                       |
-| ------------ | ------------------------------------------------- |
-| `$__filters` | ダッシュボードレベルのフィルタ条件に置き換えられます (ログソースを選択している必要があります)  |
+| Macro        | Description                                      |
+| ------------ | ------------------------------------------------ |
+| `$__filters` | ダッシュボードレベルのフィルタ条件に置き換えられます (ログソースを選択している必要があります) |
 
 グラフで**ログソース**が選択されており、ダッシュボードフィルタが有効な場合、`$__filters` は対応する SQL の `WHERE` 条件に展開されます。ログソースが選択されていない場合、またはフィルタが適用されていない場合は、`(1=1)` に展開されるため、`WHERE` 句に含めても常に安全です。
 
+`$__filters` によって適用されるのは、**ブロードキャストフィルタ条件**が有効なフィルタのみです。変数として公開されているフィルタは、以下で説明するように明示的に参照します。
+
+<div id="dashboard-variables">
+  ### ダッシュボード変数マクロ {#dashboard-variables}
+</div>
+
+ダッシュボードフィルタが[変数として利用可能](/ja/clickstack/features/dashboards/overview#dashboard-variables)な場合、選択された値をクエリ内の任意の場所で参照できます。これらのマクロは、少なくとも1つの変数を宣言しているダッシュボードに属するタイルでのみ使用できます。
+
+| マクロ                                           | 説明                                                                                                |
+| --------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `$__filter($<variable>)`                      | `variable` に値が選択されている場合は `toString(<filter expression>) IN ($variable)` に、それ以外の場合は `1=1` に展開されます。 |
+| `$__filter(<expression>, $<variable>)`        | `variable` に値が選択されている場合は `<expression> IN ($variable)` に、それ以外の場合は `1=1` に展開されます。                  |
+| `$__conditionalAll(<condition>, $<variable>)` | 変数が選択されている場合は `<condition>` に、それ以外の場合は `1=1` に展開されます。                                             |
+
+変数の値は、オプションのフォーマットを指定して `$name` または `${name}` として直接補間することもできます。指定できる形式は `${name:sqlstring}` (デフォルト) 、`${name:csv}`、`${name:regex}` です。デフォルト形式では、何も選択されていない場合、直接参照は `NULL` としてレンダリングされます。そのため、述語が必要な箇所では、可能な限り上記のマクロを使用してください。
+
 <div id="how-results-are-plotted">
-  ## クエリ結果の表示方法
+  ## クエリ結果の表示方法 {#how-results-are-plotted}
 </div>
 
 ClickStack は、カラムの型に基づいて、クエリ結果のカラムをグラフ要素に自動的に対応付けます。対応付けのルールは、グラフの種類によって異なります。
 
 <div id="line-and-stacked-bar-charts">
-  ### 折れ線グラフと積み上げ棒グラフ
+  ### 折れ線グラフと積み上げ棒グラフ {#line-and-stacked-bar-charts}
 </div>
 
 | 役割          | カラム型                          | 説明                                      |
@@ -141,7 +157,7 @@ ClickStack は、カラムの型に基づいて、クエリ結果のカラムを
 | **グループ名**   | String、Map、または Array カラム      | 任意です。グループ値が異なる行は、それぞれ別のシリーズとしてプロットされます。 |
 
 <div id="pie-chart">
-  ### 円グラフ
+  ### 円グラフ {#pie-chart}
 </div>
 
 | 役割           | カラムの型                    | 説明                        |
@@ -150,7 +166,7 @@ ClickStack は、カラムの型に基づいて、クエリ結果のカラムを
 | **スライスのラベル** | String、Map、または Array カラム | 任意です。各一意の値がスライスのラベルになります。 |
 
 <div id="number-chart">
-  ### Number チャート
+  ### Number チャート {#number-chart}
 </div>
 
 | ロール        | カラムの種類   | 説明                     |
@@ -158,13 +174,13 @@ ClickStack は、カラムの型に基づいて、クエリ結果のカラムを
 | **Number** | 最初の数値カラム | 最初の数値カラムの先頭行の値が表示されます。 |
 
 <div id="table-chart">
-  ### テーブルチャート
+  ### テーブルチャート {#table-chart}
 </div>
 
 すべての結果カラムが、そのままテーブルのカラムとして表示されます。
 
 <div id="examples">
-  ## 例
+  ## 例 {#examples}
 </div>
 
 <Info>
@@ -174,7 +190,7 @@ ClickStack は、カラムの型に基づいて、クエリ結果のカラムを
 </Info>
 
 <div id="example-line-chart">
-  ### 折れ線グラフ — サービス別の時間ごとのログ件数
+  ### 折れ線グラフ — サービス別の時間ごとのログ件数 {#example-line-chart}
 </div>
 
 このクエリは、ダッシュボードの粒度に合わせた時間間隔で区切り、サービスごとのログイベント数を集計します。
@@ -197,7 +213,7 @@ ORDER BY ts ASC
 * `ServiceName` (文字列) は、サービスごとに別々の線として表示されます。
 
 <div id="example-line-chart-macros">
-  ### 折れ線グラフ — マクロを使う場合
+  ### 折れ線グラフ — マクロを使う場合 {#example-line-chart-macros}
 </div>
 
 簡潔にするため、マクロを使って同じクエリを記述すると次のようになります。
@@ -214,8 +230,26 @@ GROUP BY ServiceName, ts
 ORDER BY ts ASC
 ```
 
+<div id="example-line-chart-variables">
+  ### 折れ線グラフ — dashboard variables の使用 {#example-line-chart-variables}
+</div>
+
+`ServiceName` の `service` 変数と `SeverityText` の `severity` 変数を含む dashboard では、このクエリにより、グラフは現在選択されている service に絞り込まれ、選択した重要度は除外されます。どちらのマクロも対応する変数が未選択の場合は `1=1` に展開されるため、閲覧者が値を選択するまでグラフはフィルタリングされずに表示されます。
+
+```sql
+SELECT
+  $__timeInterval(TimestampTime) AS ts,
+  count() AS count
+FROM otel_logs
+WHERE $__timeFilter(TimestampTime)
+  AND $__filter(ServiceName, $service)
+  AND $__conditionalAll(SeverityText NOT IN ($severity), $severity)
+GROUP BY ts
+ORDER BY ts ASC
+```
+
 <div id="example-stacked-bar">
-  ### 積み上げ棒グラフ — 重大度別エラー数
+  ### 積み上げ棒グラフ — 重大度別エラー数 {#example-stacked-bar}
 </div>
 
 ```sql
@@ -232,7 +266,7 @@ ORDER BY ts ASC
 ```
 
 <div id="example-table">
-  ### テーブルチャート — 応答が最も遅いエンドポイント上位10件
+  ### テーブルチャート — 応答が最も遅いエンドポイント上位10件 {#example-table}
 </div>
 
 ```sql
@@ -249,7 +283,7 @@ LIMIT 10
 ```
 
 <div id="example-pie">
-  ### 円グラフ — サービス別リクエスト分布
+  ### 円グラフ — サービス別リクエスト分布 {#example-pie}
 </div>
 
 ```sql
@@ -266,7 +300,7 @@ GROUP BY ServiceName
 * `ServiceName` (文字列) は各スライスのラベルを表します。
 
 <div id="example-number">
-  ### Number チャート — エラーの総数
+  ### Number チャート — エラーの総数 {#example-number}
 </div>
 
 ```sql
@@ -281,10 +315,12 @@ WHERE $__timeFilter(TimestampTime)
 最初の行の数値 `total_errors` が表示されます。
 
 <div id="notes">
-  ## 注記
+  ## 注記 {#notes}
 </div>
 
 * SQL ベースの可視化は `readonly` モードを有効にして実行されるため、`SELECT` クエリのみ実行できます。
 * SQL ベースの可視化では、SQL クエリは必ず 1 つだけ指定する必要があります。複数クエリには対応していません。
 * SQL エディタでは、クエリパラメータとマクロの両方でオートコンプリート候補が表示されます。
 * SQL ベースの可視化にダッシュボードフィルタを適用するには、ログソースを選択する必要があります。正しくフィルタリングするには、ログソースをクエリ対象のテーブルに一致させる必要があります。
+* ダッシュボード変数にはログソースは不要です。値はタイル自体のログソースではなく、ダッシュボードのフィルタドロップダウンから取得されます。
+* ダッシュボード変数を参照する SQL タイルのアラートは、ダッシュボードで選択された値ではなく、すべての変数が空の状態で評価されます。

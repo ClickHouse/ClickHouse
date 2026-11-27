@@ -1,5 +1,6 @@
 #include <Parsers/ASTConstraintDeclaration.h>
 #include <Parsers/ASTWithAlias.h>
+#include <Common/SipHash.h>
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
 #include <Parsers/ASTJSONHelpers.h>
@@ -25,6 +26,17 @@ ASTPtr ASTConstraintDeclaration::clone() const
         res->set(res->expr, expr->clone());
 
     return res;
+}
+
+void ASTConstraintDeclaration::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
+{
+    /// `name` and `type` (CHECK/ASSUME) are not children, so the default implementation does not see them.
+    /// The expected size is for 64-bit targets; the layout differs on 32-bit ones (the wasm parser build).
+    static_assert(sizeof(void *) != 8 || sizeof(*this) == 72, "If members were added to ASTConstraintDeclaration, hash them here unless they are purely cosmetic.");
+    hash_state.update(name.size());
+    hash_state.update(name);
+    hash_state.update(type);
+    IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
 void ASTConstraintDeclaration::writeJSON(WriteBuffer & out) const
@@ -53,7 +65,7 @@ void ASTConstraintDeclaration::readJSON(const Poco::JSON::Object & json)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Unknown 'constraint_type' value '{}' in `ConstraintDeclaration` during AST JSON deserialization", constraint_type_str);
 
-    auto child = r.readChild("expr");
+    auto child = r.readExpressionChild("expr");
     if (!child)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'expr' field in `ConstraintDeclaration` during AST JSON deserialization");
     set(expr, child);

@@ -8,6 +8,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <Functions/FunctionHelpers.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <WindowFunctions/WindowFunctionFactory.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
@@ -84,6 +85,7 @@ const KnownIdentifierFunc & getKnownIdentifierFunc()
             std::string what(name);
             if (FunctionFactory::instance().has(what)
                 || AggregateFunctionFactory::instance().isAggregateFunctionName(what)
+                || WindowFunctionFactory::instance().isWindowFunctionName(what)
                 || TableFunctionFactory::instance().isTableFunctionName(what)
                 || FormatFactory::instance().isOutputFormat(what)
                 || FormatFactory::instance().isInputFormat(what)
@@ -109,7 +111,7 @@ public:
 
     explicit ObfuscateQueryFunction(String function_name_, Mode mode_) : function_name(std::move(function_name_)), mode(mode_) {}
 
-    ColumnPtr execute(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const;
+    [[nodiscard]] ColumnPtr execute(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const;
 
 private:
     String function_name;
@@ -227,7 +229,7 @@ ColumnPtr ObfuscateQueryFunction::execute(const ColumnsWithTypeAndName & argumen
 class ObfuscateQueryFunctionAdaptor final : public IFunction
 {
 private:
-    ObfuscateQueryFunction::Mode getMode(size_t num_args) const
+    [[nodiscard]] ObfuscateQueryFunction::Mode getMode(size_t num_args) const
     {
         if (name == "obfuscateQueryWithSeed")
         {
@@ -246,78 +248,50 @@ private:
 public:
     explicit ObfuscateQueryFunctionAdaptor(String name_) : name(std::move(name_)) {}
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    bool isVariadic() const override { return true; }
-    size_t getNumberOfArguments() const override { return 0; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] bool isVariadic() const override { return true; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    bool useDefaultImplementationForConstants() const override
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override
     {
         // Only deterministic for obfuscateQueryWithSeed with constant seed
         return name == "obfuscateQueryWithSeed";
     }
 
-    bool useDefaultImplementationForLowCardinalityColumns() const override
+    [[nodiscard]] bool useDefaultImplementationForLowCardinalityColumns() const override
     {
         return true;
     }
 
-    bool canBeExecutedOnLowCardinalityDictionary() const override
+    [[nodiscard]] bool canBeExecutedOnLowCardinalityDictionary() const override
     {
         // `obfuscateQuery` relies on per-row randomness, so dictionary execution
         // would collapse equal values and produce undesired behavior.
         return name == "obfuscateQueryWithSeed";
     }
 
-    bool isDeterministic() const override
+    [[nodiscard]] bool isDeterministic() const override
     {
         // obfuscateQueryWithSeed is deterministic when provided with constant seed
         return name == "obfuscateQueryWithSeed";
     }
 
-    bool isDeterministicInScopeOfQuery() const override
+    [[nodiscard]] bool isDeterministicInScopeOfQuery() const override
     {
         // Only obfuscateQueryWithSeed is deterministic in scope of query.
         return name == "obfuscateQueryWithSeed";
     }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] String getSignatureString() const override
     {
         if (name == "obfuscateQueryWithSeed")
-        {
-            if (arguments.size() != 2)
-                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                    "Function {} requires exactly 2 arguments", getName());
-        }
-        else
-        {
-            if (arguments.empty())
-                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                    "Function {} requires at least 1 argument", getName());
-
-            if (arguments.size() > 2)
-                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                    "Function {} requires at most 2 arguments", getName());
-        }
-
-        // First argument must be string
-        if (!isString(arguments[0].type))
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
-                "First argument of function {} must be String", getName());
-
-        // For both `obfuscateQuery` and `obfuscateQueryWithSeed`, second argument must be integer or String.
-        if (arguments.size() == 2)
-        {
-            if (!isInteger(arguments[1].type) && !isString(arguments[1].type))
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN,
-                    "Second argument of function {} must be an integer type or String", getName());
-        }
-
-        return std::make_shared<DataTypeString>();
+            return "(String, Integer | String) -> String";
+        return "(String, [Integer | String]) -> String";
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         ObfuscateQueryFunction::Mode mode = getMode(arguments.size());
         ObfuscateQueryFunction impl(name, mode);
@@ -353,7 +327,7 @@ REGISTER_FUNCTION(obfuscateQuery)
          "SELECT a FROM b, SELECT c FROM d"},
         {"Different rows produce different results",
          "SELECT obfuscateQuery('SELECT 1') AS a, obfuscateQuery('SELECT 1') AS b",
-         "A B"}
+         "SELECT 1\tSELECT 1"}
     };
 
     FunctionDocumentation::IntroducedIn introduced_in = {26, 4};
@@ -404,13 +378,13 @@ Features:
     FunctionDocumentation::Examples obfuscate_query_with_seed_examples = {
         {"Deterministic obfuscation with integer seed",
          "SELECT obfuscateQueryWithSeed('SELECT name FROM users', 42)",
-         "SELECT fruit FROM table"},
+         "SELECT name FROM users"},
         {"Deterministic obfuscation with string seed",
          "SELECT obfuscateQueryWithSeed('SELECT id, value FROM data', 'myseed')",
-         "SELECT a, b FROM c"},
+         "SELECT id, value FROM data"},
         {"Same seed produces same result",
          "SELECT obfuscateQueryWithSeed('SELECT 1', 100) = obfuscateQueryWithSeed('SELECT 1', 100)",
-         "true"}
+         "1"}
     };
 
     FunctionDocumentation obfuscate_query_with_seed_documentation = {

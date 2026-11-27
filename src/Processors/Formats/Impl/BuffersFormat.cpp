@@ -1,3 +1,4 @@
+#include <Common/Exception.h>
 #include <Formats/BuffersReader.h>
 #include <Formats/BuffersWriter.h>
 #include <Formats/FormatFactory.h>
@@ -9,6 +10,10 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
 
 class BuffersInputFormat final : public IInputFormat
 {
@@ -74,6 +79,15 @@ protected:
         if (!chunk)
             return;
 
+        /// A block of the format takes the number of its rows from its columns: the reader requires as many
+        /// buffers as the header has columns. Writing rows that carry no columns as a block without rows
+        /// would lose them.
+        if (!chunk.hasColumns())
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "Cannot write {} rows that carry no columns in the Buffers format",
+                chunk.getNumRows());
+
         auto block = getPort(PortKind::Main).getHeader();
         block.setColumns(chunk.detachColumns());
         writer.write(block);
@@ -89,7 +103,8 @@ void registerInputFormatBuffers(FormatFactory & factory)
     factory.registerInputFormat(
         "Buffers",
         [](ReadBuffer & buf, const Block & sample, const RowInputFormatParams &, const FormatSettings & settings)
-        { return std::make_shared<BuffersInputFormat>(buf, std::make_shared<const Block>(sample), settings); });
+        { return std::make_shared<BuffersInputFormat>(buf, std::make_shared<const Block>(sample), settings); },
+        /*supports_reset_parser=*/ true);
 
     factory.setDocumentation("Buffers", Documentation{
         .description = R"DOCS_MD(
@@ -103,7 +118,7 @@ void registerInputFormatBuffers(FormatFactory & factory)
 
 Unlike [Native](/reference/formats/Native), it does **not** store column names, column types, or any extra metadata.
 
-In this format, data is written and read by [blocks](/development/architecture#block) in a binary format. Buffers uses the same per-column binary representation as the [Native](/reference/formats/Native) format and respects the same Native format settings.
+In this format, data is written and read by [blocks](/resources/develop-contribute/introduction/architecture#block) in a binary format. Buffers uses the same per-column binary representation as the [Native](/reference/formats/Native) format and respects the same Native format settings.
 
 For each block, the following sequence is written:
 1. Number of columns (UInt64, little-endian).

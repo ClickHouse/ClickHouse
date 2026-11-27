@@ -1,0 +1,14 @@
+-- valid: db.*
+GRANT SELECT ON db.* TO user
+-- valid: mydb*.*
+GRANT SELECT ON db.* TO user
+GRANT SELECT ON mydb*.* TO user
+-- valid: db.mytable*
+GRANT SELECT ON db.mytable* TO user
+-- valid: *.*
+GRANT SELECT ON *.* TO user
+-- invalid: database wildcard with a table name
+SYNTAX_ERROR
+SYNTAX_ERROR
+SYNTAX_ERROR
+-- nothing was granted by the rejected queries

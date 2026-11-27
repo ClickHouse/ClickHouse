@@ -20,18 +20,14 @@ ClickHouse можно собрать на следующих платформа�
 * s390/x (экспериментальная)
 * RISC-V 64 (экспериментальная)
 
-<div id="assumptions">
-  ## Предварительные условия
-</div>
+## Предварительные условия {#assumptions}
 
 Следующее руководство основано на Ubuntu Linux, но при соответствующих изменениях оно должно работать и в любом другом дистрибутиве Linux.
 Минимальная рекомендуемая версия Ubuntu для разработки — 24.04 LTS.
 
 В этом руководстве предполагается, что у вас локально клонированы репозиторий ClickHouse и все подмодули.
 
-<div id="install-prerequisites">
-  ## Установите необходимые предварительные требования
-</div>
+## Установите необходимые предварительные требования {#install-prerequisites}
 
 Сначала ознакомьтесь с общей [документацией по предварительным требованиям](/ru/resources/develop-contribute/introduction/developer-instruction).
 
@@ -44,26 +40,32 @@ sudo apt-get update
 sudo apt-get install build-essential git cmake ccache python3 ninja-build nasm yasm gawk lsb-release wget software-properties-common gnupg
 ```
 
-<div id="install-the-clang-compiler">
-  ## Установите компилятор Clang
-</div>
+## Установите компилятор Clang {#install-the-clang-compiler}
 
 Чтобы установить Clang на Ubuntu/Debian, используйте автоматический скрипт установки LLVM, доступный [здесь](https://apt.llvm.org/).
 
 ```bash
 wget https://apt.llvm.org/llvm.sh
 chmod +x llvm.sh
-sudo ./llvm.sh 21
+sudo ./llvm.sh 23
 ```
+
+<Note>
+  `apt.llvm.org` предоставляет пакеты Clang 23 для Ubuntu 24.04 (Noble) и новее, а также для Debian 12 (Bookworm) и новее.
+  Для Ubuntu 22.04 (Jammy) репозитория Clang 23 нет; в Jammy вместо него установите Clang 21 командой `sudo ./llvm.sh 21`.
+</Note>
 
 Для других дистрибутивов Linux проверьте, можно ли установить один из [предварительно собранных пакетов LLVM](https://releases.llvm.org/download.html).
 
 По состоянию на февраль 2026 года требуется Clang 21 или выше.
 GCC и другие компиляторы не поддерживаются.
 
-<div id="install-the-rust-compiler-optional">
-  ## Установите компилятор Rust (необязательно)
-</div>
+<Tip>
+  В ClickHouse CI для компиляции используется сборка того же релиза Clang, оптимизированная с помощью PGO и BOLT: она компилирует ClickHouse быстрее.
+  В Linux с glibc 2.38 или новее команда `eval "$(utils/download-ci-toolchain.sh)"` загружает этот компилятор с помощью `curl` и `zstd` и прописывает его в `CC` и `CXX` для конфигурирования нового каталога сборки.
+</Tip>
+
+## Установите компилятор Rust (необязательно) {#install-the-rust-compiler-optional}
 
 <Note>
   Rust — необязательная зависимость ClickHouse.
@@ -77,14 +79,17 @@ GCC и другие компиляторы не поддерживаются.
 Хотя в режиме релизной сборки с этими зависимостями должна работать любая современная версия toolchain из rustup, если вы планируете включить санитайзеры, необходимо использовать версию, которая в точности соответствует той же `std`, что и версия, используемая в CI (для которой мы вендорим крейты):
 
 ```bash
-rustup toolchain install nightly-2026-03-22
-rustup default nightly-2026-03-22
+rustup toolchain install nightly-2026-11-02
+rustup default nightly-2026-11-02
 rustup component add rust-src
 ```
 
-<div id="build-clickhouse">
-  ## Сборка ClickHouse
-</div>
+<Tip>
+  ccache не кэширует Rust, поэтому в новом каталоге сборки все крейты Rust компилируются заново.
+  С параметром `-DRUST_BUILD_CACHE_DIR=<path>` Cargo сохраняет скомпилированные крейты в этом каталоге, и новые каталоги сборки для того же извлечения репозитория и той же конфигурации используют их повторно (за исключением delta-kernel-rs). На каждое извлечение и конфигурацию требуется около 7 ГБ; размер каталога не ограничен, и его можно удалить в любой момент.
+</Tip>
+
+## Сборка ClickHouse {#build-clickhouse}
 
 Мы рекомендуем создать внутри `ClickHouse` отдельный каталог `build`, в котором будут находиться все артефакты сборки:
 
@@ -98,8 +103,8 @@ cd build
 Необязательно: если у вас установлено несколько версий компилятора, при необходимости можно указать, какой именно компилятор использовать.
 
 ```sh
-export CC=clang-21
-export CXX=clang++-21
+export CC=clang-23
+export CXX=clang++-23
 ```
 
 Для разработки рекомендуется использовать отладочные сборки.
@@ -145,9 +150,7 @@ ninja -j 1 clickhouse
   ```
 </Tip>
 
-<div id="running-the-clickhouse-executable">
-  ## исполняемый файл ClickHouse
-</div>
+## исполняемый файл ClickHouse {#running-the-clickhouse-executable}
 
 После успешного завершения сборки исполняемый файл находится в `ClickHouse/<build_dir>/programs/`:
 
@@ -162,13 +165,9 @@ ninja -j 1 clickhouse
 clickhouse client --host 127.0.0.1
 ```
 
-<div id="advanced-options">
-  ## Дополнительные параметры
-</div>
+## Дополнительные параметры {#advanced-options}
 
-<div id="minimal-build">
-  ### Минимальная сборка
-</div>
+### Минимальная сборка {#minimal-build}
 
 Если вам не нужны возможности, предоставляемые сторонними библиотеками, вы можете ускорить сборку ещё сильнее:
 
@@ -184,9 +183,7 @@ cmake -DENABLE_LIBRARIES=OFF
 cmake -DENABLE_RUST=OFF
 ```
 
-<div id="running-the-clickhouse-executable-1">
-  ### Исполняемый файл ClickHouse
-</div>
+### Исполняемый файл ClickHouse {#running-the-clickhouse-executable-1}
 
 Вы можете заменить установленный в системе продакшн-бинарный файл ClickHouse на скомпилированный бинарный файл ClickHouse.
 Для этого установите ClickHouse на свой компьютер, следуя инструкциям на официальном сайте.
@@ -207,9 +204,7 @@ sudo service clickhouse-server stop
 sudo -u clickhouse ClickHouse/build/programs/clickhouse server --config-file /etc/clickhouse-server/config.xml
 ```
 
-<div id="building-on-any-linux">
-  ### Сборка в любом дистрибутиве Linux
-</div>
+### Сборка в любом дистрибутиве Linux {#building-on-any-linux}
 
 Установите необходимые зависимости в OpenSUSE Tumbleweed:
 
@@ -232,9 +227,7 @@ cmake -S . -B build
 cmake --build build
 ```
 
-<div id="building-in-docker">
-  ### Сборка в Docker
-</div>
+### Сборка в Docker {#building-in-docker}
 
 Вы можете выполнить любую сборку локально в среде, аналогичной CI, с помощью:
 

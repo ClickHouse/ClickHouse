@@ -49,8 +49,8 @@ c_nullable	Tuple(\n    a Nullable(UInt64),\n    b Nullable(String))
 Arrow
 c	Tuple(\n    a UInt64,\n    b String)					
 c_nullable	Tuple(\n    a UInt64,\n    b String)					
-c	Tuple(\n    a Nullable(UInt64),\n    b Nullable(String))					
-c_nullable	Tuple(\n    a Nullable(UInt64),\n    b Nullable(String))					
+c	Nullable(Tuple(a Nullable(UInt64), b Nullable(String)))					
+c_nullable	Nullable(Tuple(a Nullable(UInt64), b Nullable(String)))					
 c	Tuple(\n    a UInt64,\n    b String)					
 c_nullable	Tuple(\n    a Nullable(UInt64),\n    b Nullable(String))					
 c	Tuple(\n    a UInt64,\n    b String)					
@@ -63,7 +63,7 @@ d	Tuple(\n    a UInt64,\n    b Tuple(\n        a UInt64,\n        b String),\n  
 d	Tuple(\n    a UInt64,\n    b Tuple(\n        a UInt64,\n        b String),\n    d_nullable Tuple(\n        a UInt64,\n        b Tuple(\n            a Nullable(UInt64),\n            b Nullable(String))))					
 Arrow
 d	Tuple(\n    a UInt64,\n    b Tuple(\n        a UInt64,\n        b String),\n    d_nullable Tuple(\n        a UInt64,\n        b Tuple(\n            a UInt64,\n            b String)))					
-d	Tuple(\n    a Nullable(UInt64),\n    b Tuple(\n        a Nullable(UInt64),\n        b Nullable(String)),\n    d_nullable Tuple(\n        a Nullable(UInt64),\n        b Tuple(\n            a Nullable(UInt64),\n            b Nullable(String))))					
+d	Nullable(Tuple(a Nullable(UInt64), b Nullable(Tuple(a Nullable(UInt64), b Nullable(String))), d_nullable Nullable(Tuple(a Nullable(UInt64), b Nullable(Tuple(a Nullable(UInt64), b Nullable(String)))))))					
 d	Tuple(\n    a UInt64,\n    b Tuple(\n        a UInt64,\n        b String),\n    d_nullable Tuple(\n        a UInt64,\n        b Tuple(\n            a Nullable(UInt64),\n            b Nullable(String))))					
 d	Tuple(\n    a UInt64,\n    b Tuple(\n        a UInt64,\n        b String),\n    d_nullable Tuple(\n        a UInt64,\n        b Tuple(\n            a Nullable(UInt64),\n            b Nullable(String))))					
 select * from generateRandom('e Map(UInt64, String), e_nullable Map(UInt64, Nullable(String))', 42) limit 10

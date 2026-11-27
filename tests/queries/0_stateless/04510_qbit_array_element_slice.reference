@@ -1,0 +1,91 @@
+arrayElement on QBit(Float32, 8)
+1	1	8	8	3
+2	-1	-8	-8	-3
+Float32
+Array indices
+1	[2,4,1]	[8,0,0]
+2	[-2,-4,-1]	[-8,0,0]
+[20,40,10]
+[20,NULL,0]	Array(Nullable(Float32))
+[20,NULL,40]
+Out-of-range index gives the default value, or NULL for arrayElementOrNull
+0	0	\N	1
+0	0	\N	-1
+Non-constant index
+1	1	8	0	0
+2	-2	-7	0	0
+2	2	Nullable(Float32)
+-2	-2	Nullable(Float32)
+Constant index 0 is an error
+All element types
+3.25	Float64
+-2.5	BFloat16
+100	Int8
+arrayElement on strided QBit(Float32, 16, 8)
+1	8	9	16	16
+arraySlice on QBit(Float32, 8)
+[2,3,4]	QBit(Float32, 3)
+[-2,-3,-4]	QBit(Float32, 3)
+[1,2,3,4]	QBit(Float32, 4)
+[-1,-2,-3,-4]	QBit(Float32, 4)
+[5,6,7,8]	QBit(Float32, 4)
+[-5,-6,-7,-8]	QBit(Float32, 4)
+[6,7,8]	[2,3,4,5,6]	[3,4,5]
+[-6,-7,-8]	[-2,-3,-4,-5,-6]	[-3,-4,-5]
+[1,2,3]
+[-1,-2,-3]
+[5,6,7,8]	QBit(Float32, 4)
+[-5,-6,-7,-8]	QBit(Float32, 4)
+[1,2,3,4,5,6,7,8]	QBit(Float32, 8)
+[-1,-2,-3,-4,-5,-6,-7,-8]	QBit(Float32, 8)
+arraySlice errors
+arraySlice on strided QBit keeps the stride when aligned to stride groups
+[9,10,11,12,13,14,15,16]	QBit(Float32, 8)
+[9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24]	QBit(Float32, 16, 8)
+[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32]	QBit(Float32, 32, 8)
+[2,3,4,5,6,7,8,9,10,11]	QBit(Float32, 10)
+[9,10,11,12,13,14,15,16,17,18,19,20]	QBit(Float32, 12)
+Distance over a sliced strided QBit
+0
+Slices of QBits with other element types and non-multiple-of-8 dimensions
+[2,3,4]	QBit(Float32, 3)
+[-2,3,-4]	QBit(Int8, 3)
+[3.5,4.5]	QBit(Float64, 2)
+[2.5,3.5]	QBit(BFloat16, 2)
+Nullable(QBit)
+1	2	[3,4]
+2	\N	\N
+Nullable(Float32)	Nullable(QBit(Float32, 2))
+1	[2,4]	[2,NULL]	Array(Nullable(Float32))
+2	[NULL,NULL]	[NULL,NULL]	Array(Nullable(Float32))
+MergeTree round trip
+1	9	[9,10,11,12,13,14,15,16]
+2	25	[25,26,27,28,29,30,31,32]
+NULL arguments of the non-QBit paths keep the default conventions
+\N	Nullable(Nothing)
+\N	Nullable(Nothing)
+\N	Nullable(Nothing)
+\N	Nullable(UInt8)
+20	Nullable(UInt8)
+\N	Nullable(UInt8)
+\N	Nullable(String)
+Constant Nullable(QBit) source with a varying index
+0	1	Nullable(Float32)
+1	2	Nullable(Float32)
+2	3	Nullable(Float32)
+3	4	Nullable(Float32)
+0	[1,2]	Array(Nullable(Float32))
+1	[2,3]	Array(Nullable(Float32))
+0	\N	Nullable(Float32)
+1	\N	Nullable(Float32)
+0	[NULL,NULL]	Array(Nullable(Float32))
+1	[NULL,NULL]	Array(Nullable(Float32))
+0	[2,3]	Nullable(QBit(Float32, 2))
+1	[2,3]	Nullable(QBit(Float32, 2))
+A bare NULL index of a QBit keeps the default NULL convention
+\N	Nullable(Nothing)
+\N	Nullable(Nothing)
+\N	Nullable(Nothing)
+A NULL offset of arraySlice is a no-op for a QBit, as it is for an Array
+[1,2,3,4]	Array(UInt8)
+[1,2,3,4]	QBit(Float32, 4)

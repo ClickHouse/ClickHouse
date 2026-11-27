@@ -2,6 +2,7 @@
 
 #include <DataTypes/Serializations/SerializationWrapper.h>
 #include <Compression/CompressionCodecQuantized.h>
+#include <Core/NamesAndTypes.h>
 
 namespace DB
 {
@@ -55,6 +56,13 @@ public:
         SerializeBinaryBulkSettings & settings,
         SerializeBinaryBulkStatePtr & state) const override;
 
+    void deserializeBinaryBulkWithMultipleStreams(
+        IColumn & column,
+        size_t limit,
+        DeserializeBinaryBulkSettings & settings,
+        DeserializeBinaryBulkStatePtr & state,
+        SubstreamsCache * cache) const override;
+
 private:
     QuantizedCodecParams params;
     bool is_product_quantization;         /// trained Product Quantization (codebook + codes) vs data-independent codes
@@ -74,5 +82,8 @@ private:
     /// `pq` only: train a codebook from up to `count` vectors starting at `offset` (the part's first block).
     std::vector<float> trainCodebook(const IColumn & column, size_t offset, size_t count) const;
 };
+
+/// Throws ILLEGAL_COLUMN if a column, or a type nested in it, has the serialization of a `Quantized` codec.
+void checkNoQuantizedCodec(const NamesAndTypesList & columns, const String & engine_name);
 
 }

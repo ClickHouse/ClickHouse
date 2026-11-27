@@ -30,6 +30,10 @@ node = cluster.add_instance(
     user_configs=["configs/users.xml"],
     with_postgres=True,
     stay_alive=True,
+    # Pin HOME so libpq's default client-certificate directory (`$HOME/.postgresql`) is deterministic,
+    # which the ambient-default-credential test relies on. Shared cluster env (the default), so the
+    # node keeps the cluster `.env` that also carries `MINIO_CERTS_DIR`.
+    env_variables={"HOME": "/var/lib/clickhouse"},
 )
 
 # The docker service/alias name the ClickHouse node uses to reach PostgreSQL.
@@ -566,6 +570,43 @@ def test_client_certificate_is_required(started_cluster):
     assert "POSTGRESQL_CONNECTION_FAILURE" in error
 
 
+def test_ambient_default_client_certificate_is_not_used(started_cluster):
+    # A query that supplies no client certificate must not authenticate with the
+    # certificate libpq would otherwise load from its default location (`$HOME/.postgresql/postgresql.*`).
+    # Install a valid client certificate and key there and confirm the certificate-only database still
+    # rejects a connection that passes no certificate arguments.
+    default_dir = "/var/lib/clickhouse/.postgresql"
+    default_cert = f"{default_dir}/postgresql.crt"
+    default_key = f"{default_dir}/postgresql.key"
+    node_write_file(default_cert, client_cert_pem)
+    node_write_file(default_key, client_key_pem)
+    # libpq refuses a group/world-readable key and requires it owned by the connecting process's user.
+    node.exec_in_container(
+        ["bash", "-c", f"chown {os.getuid()}:{os.getgid()} {default_key} && chmod 600 {default_key}"]
+    )
+    try:
+        error = node.query_and_get_error(
+            f"SELECT count() FROM postgresql(pg_ssl_cert, sslmode='verify-full', sslrootcert_pem='{quote_pem(ca_pem)}')"
+        )
+        # Require PostgreSQL's exact certificate-rejection diagnostic, not just any connection failure,
+        # so neither a transient error nor an unrelated certificate error can satisfy the assertion.
+        assert "POSTGRESQL_CONNECTION_FAILURE" in error, error
+        assert "connection requires a valid client certificate" in error.lower(), error
+
+        # The installed default credential is valid: passing the same certificate and key explicitly
+        # succeeds, so the rejection above is caused by the ambient default being disabled, not a bad
+        # certificate.
+        assert (
+            node.query(
+                f"SELECT count() FROM postgresql(pg_ssl_cert, sslmode='verify-full', sslrootcert_pem='{quote_pem(ca_pem)}', "
+                f"sslcert_pem='{quote_pem(client_cert_pem)}', sslkey_pem='{quote_pem(client_key_pem)}')"
+            ).strip()
+            == "10"
+        )
+    finally:
+        node.exec_in_container(["bash", "-c", f"rm -f {default_cert} {default_key}"])
+
+
 def test_materialized_postgresql_database_ssl(started_cluster):
     seed_table("mat_table", 50)
     node.query("DROP DATABASE IF EXISTS mpg_ssl")
@@ -576,7 +617,7 @@ def test_materialized_postgresql_database_ssl(started_cluster):
                                         sslmode = 'verify-full', sslrootcert_pem = '{quote_pem(ca_pem)}')
         SETTINGS materialized_postgresql_tables_list = 'mat_table'
         """,
-        settings={"allow_experimental_database_materialized_postgresql": 1},
+        settings={"enable_database_materialized_postgresql": 1},
     )
 
     wait_for(
@@ -619,7 +660,7 @@ def test_materialized_postgresql_table_engine_ssl(started_cluster):
                                         sslmode = 'verify-full', sslrootcert_pem = '{quote_pem(ca_pem)}')
         ORDER BY key
         """,
-        settings={"allow_experimental_materialized_postgresql_table": 1},
+        settings={"enable_materialized_postgresql_table": 1},
     )
 
     wait_for(
@@ -664,7 +705,7 @@ def test_materialized_postgresql_table_engine_client_certificate(started_cluster
                                         sslcert_pem = '{quote_pem(client_cert_pem)}', sslkey_pem = '{quote_pem(client_key_pem)}')
         ORDER BY key
         """,
-        settings={"allow_experimental_materialized_postgresql_table": 1},
+        settings={"enable_materialized_postgresql_table": 1},
     )
 
     wait_for(
@@ -716,7 +757,7 @@ def test_materialized_postgresql_client_certificate(started_cluster):
                                         sslcert_pem = '{quote_pem(client_cert_pem)}', sslkey_pem = '{quote_pem(client_key_pem)}')
         SETTINGS materialized_postgresql_tables_list = 'mpg_cert_table'
         """,
-        settings={"allow_experimental_database_materialized_postgresql": 1},
+        settings={"enable_database_materialized_postgresql": 1},
     )
 
     wait_for(
@@ -762,7 +803,7 @@ def test_materialized_postgresql_table_engine_wrong_ca_is_rejected(started_clust
                                         sslmode = 'verify-full', sslrootcert_pem = '{quote_pem(wrong_ca_pem)}')
         ORDER BY key
         """,
-        settings={"allow_experimental_materialized_postgresql_table": 1},
+        settings={"enable_materialized_postgresql_table": 1},
     )
     assert "certificate verify failed" in error
     node.query("DROP TABLE IF EXISTS mpg_tbl_wrong_ca SYNC")
@@ -783,7 +824,7 @@ def test_materialized_postgresql_database_wrong_ca_is_rejected(started_cluster):
                                         sslmode = 'verify-full', sslrootcert_pem = '{quote_pem(wrong_ca_pem)}')
         SETTINGS materialized_postgresql_tables_list = 'db_wrong_ca_table'
         """,
-        settings={"allow_experimental_database_materialized_postgresql": 1},
+        settings={"enable_database_materialized_postgresql": 1},
     )
 
     # The startup task retries every 5 seconds, so a connection that libpq accepted
@@ -805,7 +846,7 @@ def test_materialized_postgresql_database_wrong_ca_is_rejected(started_cluster):
                                         sslmode = 'verify-full', sslrootcert_pem = '{quote_pem(ca_pem)}')
         SETTINGS materialized_postgresql_tables_list = 'db_wrong_ca_table'
         """,
-        settings={"allow_experimental_database_materialized_postgresql": 1},
+        settings={"enable_database_materialized_postgresql": 1},
     )
     wait_for(
         lambda: node.query("SELECT count() FROM mpg_right_ca.db_wrong_ca_table").strip() == "20",
@@ -855,6 +896,17 @@ def test_path_overrides_are_rejected(started_cluster):
     # Empty contents would drop the configured credential the same way.
     error = node.query_and_get_error("SELECT count() FROM postgresql(pg_ssl_paths, sslrootcert_pem='')")
     assert "cannot be overridden with an empty" in error
+
+
+def test_empty_override_without_stored_credential_is_noop(started_cluster):
+    # The rejection covers exactly the overrides that would drop a credential the collection
+    # carries. On a collection with no TLS keys at all there is nothing to drop, so an empty
+    # override stays the no-op it is for the direct arguments (`pg_ssl` stores no `ssl*` keys).
+    for key in ["sslrootcert_pem", "sslcert_pem", "sslkey_pem"]:
+        assert (
+            node.query(f"SELECT count() FROM postgresql(pg_ssl, sslmode='require', {key}='')").strip()
+            == "10"
+        )
 
 
 def test_tls_credentials_are_masked(started_cluster):

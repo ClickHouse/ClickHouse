@@ -2,20 +2,18 @@
 slug: /data-modeling/backfilling
 title: 'استكمال البيانات التاريخية'
 description: 'كيفية استخدام استكمال البيانات التاريخية لمجموعات البيانات الكبيرة في ClickHouse'
-keywords: ['العروض المادية', 'استكمال البيانات التاريخية', 'إدراج البيانات', 'تحميل بيانات عالي الاعتمادية']
+keywords: ['العروض المُجسَّدة', 'استكمال البيانات التاريخية', 'إدراج البيانات', 'تحميل بيانات عالي الاعتمادية']
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
-سواء كنت جديدًا على ClickHouse أو مسؤولًا عن عملية نشر قائمة، فستحتاج حتمًا إلى تعبئة الجداول ببيانات تاريخية بأثر رجعي. وفي بعض الحالات يكون ذلك بسيطًا نسبيًا، لكنه قد يصبح أكثر تعقيدًا عندما يلزم ملء العروض المادية. يشرح هذا الدليل بعض الآليات اللازمة لهذه المهمة، والتي يمكنك تطبيقها على حالة الاستخدام الخاصة بك.
+سواء كنت جديدًا على ClickHouse أو مسؤولًا عن عملية نشر قائمة، فستحتاج حتمًا إلى استكمال البيانات التاريخية في الجداول. وفي بعض الحالات يكون ذلك بسيطًا نسبيًا، لكنه قد يصبح أكثر تعقيدًا عندما يلزم ملء العروض المُجسَّدة. يشرح هذا الدليل بعض الآليات اللازمة لهذه المهمة، والتي يمكنك تطبيقها على حالة الاستخدام الخاصة بك.
 
 <Note>
-  يفترض هذا الدليل أن المستخدمين على دراية مسبقًا بمفهوم [العروض المادية التزايدية](/ar/concepts/features/materialized-views/incremental-materialized-view) و[تحميل البيانات باستخدام دوال الجداول مثل S3 وGCS](/ar/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse). كما نوصي المستخدمين بقراءة دليلنا حول [تحسين أداء الإدراج من تخزين الكائنات](/ar/integrations/connectors/data-ingestion/AWS/performance)، إذ يمكن تطبيق الإرشادات الواردة فيه على عمليات الإدراج المذكورة في هذا الدليل.
+  يفترض هذا الدليل أن المستخدمين على دراية مسبقًا بمفهوم [العروض المُجسَّدة التزايدية](/ar/concepts/features/materialized-views/incremental-materialized-view) و[تحميل البيانات باستخدام دوال الجداول مثل S3 وGCS](/ar/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse). كما نوصي المستخدمين بقراءة دليلنا حول [تحسين أداء الإدراج من تخزين الكائنات](/ar/integrations/connectors/data-ingestion/AWS/performance)، إذ يمكن تطبيق الإرشادات الواردة فيه على عمليات الإدراج المذكورة في هذا الدليل.
 </Note>
 
 <div id="example-dataset">
-  ## مجموعة بيانات مثال
+  ## مجموعة بيانات مثال {#example-dataset}
 </div>
 
 نستخدم في هذا الدليل مجموعة بيانات من PyPI. ويمثّل كل صف في مجموعة البيانات هذه عملية تنزيل لحزمة بايثون باستخدام أداة مثل `pip`.
@@ -24,7 +22,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 ```sql
 SELECT count()
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/*.parquet')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/*.parquet', NOSIGN)
 ```
 
 ```response
@@ -38,10 +36,10 @@ Peak memory usage: 239.50 MiB.
 
 تحتوي مجموعة البيانات الكاملة لهذه الحاوية على أكثر من 320 غيغابايت من ملفات Parquet. في الأمثلة أدناه، نستهدف عمدًا مجموعات فرعية باستخدام أنماط glob.
 
-نفترض أن المستخدم يستهلك تدفقًا من هذه البيانات، على سبيل المثال من Kafka أو التخزين الكائني، وذلك للبيانات اللاحقة لهذا التاريخ. يوضَّح مخطط هذه البيانات أدناه:
+نفترض أن المستخدم يستهلك تدفقًا من هذه البيانات، على سبيل المثال من Kafka أو تخزين الكائنات، وذلك للبيانات اللاحقة لهذا التاريخ. يوضَّح مخطط هذه البيانات أدناه:
 
 ```sql
-DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/*.parquet')
+DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/*.parquet', NOSIGN)
 FORMAT PrettyCompactNoEscapesMonoBlock
 SETTINGS describe_compact_output = 1
 ```
@@ -72,7 +70,7 @@ SETTINGS describe_compact_output = 1
 </Note>
 
 <div id="backfilling-scenarios">
-  ## سيناريوهات استكمال البيانات التاريخية
+  ## سيناريوهات استكمال البيانات التاريخية {#backfilling-scenarios}
 </div>
 
 تكون الحاجة إلى استكمال البيانات التاريخية مطلوبة عادةً عند استهلاك تدفق بيانات بدءًا من نقطة زمنية معينة. وتُدرَج هذه البيانات في جداول ClickHouse باستخدام [العروض المادية التزايدية](/ar/concepts/features/materialized-views/incremental-materialized-view)، التي تُفعَّل على مستوى الكتل عند إدراجها. وقد تقوم هذه العروض بتحويل البيانات قبل الإدراج أو بحساب التجميعات وإرسال النتائج إلى الجداول الهدف لاستخدامها لاحقًا في التطبيقات التابعة.
@@ -87,10 +85,10 @@ SETTINGS describe_compact_output = 1
 نوصي باستكمال البيانات التاريخية من تخزين الكائنات. وينبغي تصدير البيانات إلى Parquet حيثما أمكن لتحقيق أفضل أداء للقراءة والضغط (تقليل نقل البيانات عبر الشبكة). ويُفضَّل عادةً حجم ملف يقارب 150MB، لكن ClickHouse يدعم أكثر من [70 تنسيقًا للملفات](/ar/reference/formats/index) وهو قادر على التعامل مع ملفات بجميع الأحجام.
 
 <div id="using-duplicate-tables-and-views">
-  ## استخدام الجداول المكررة وطرق العرض
+  ## استخدام الجداول المكررة وطرق العرض {#using-duplicate-tables-and-views}
 </div>
 
-في جميع السيناريوهات، نعتمد على مفهوم &quot;الجداول والعروض المكررة&quot;. تمثّل هذه الجداول والعروض نسخًا من تلك المستخدمة لبيانات البث المباشر، وتتيح تنفيذ عملية الملء بصورة معزولة مع توفير وسيلة سهلة للاسترداد في حال وقوع أي فشل. على سبيل المثال، لدينا جدول `pypi` الرئيسي والعرض المُجسَّد التاليان، اللذان يحسبان عدد التنزيلات لكل مشروع بايثون:
+في جميع السيناريوهات، نعتمد على مفهوم &quot;الجداول والعروض المكررة&quot;. تمثّل هذه الجداول والعروض نسخًا من تلك المستخدمة لبيانات البث المباشر، وتتيح تنفيذ عملية استكمال البيانات التاريخية بصورة معزولة مع توفير وسيلة سهلة للاسترداد في حال وقوع أي فشل. على سبيل المثال، لدينا جدول `pypi` الرئيسي والعرض المادي التاليان، اللذان يحسبان عدد التنزيلات لكل مشروع بايثون:
 
 ```sql
 CREATE TABLE pypi
@@ -127,7 +125,7 @@ GROUP BY project
 
 ```sql
 INSERT INTO pypi SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{000..100}.parquet')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{000..100}.parquet', NOSIGN)
 ```
 
 ```response
@@ -161,9 +159,9 @@ FROM pypi_downloads
 Peak memory usage: 682.38 KiB.
 ```
 
-لنفترض أننا نريد تحميل مجموعة فرعية أخرى `{101..200}`. وبينما يمكننا الإدراج مباشرةً في `pypi`، يمكننا تنفيذ عملية الملء بالبيانات التاريخية هذه بصورة معزولة عبر إنشاء جداول مكررة.
+لنفترض أننا نريد تحميل مجموعة فرعية أخرى `{101..200}`. وبينما يمكننا الإدراج مباشرةً في `pypi`، يمكننا تنفيذ عملية استكمال البيانات التاريخية هذه بصورة معزولة عبر إنشاء جداول مكررة.
 
-في حال فشل عملية الإدراج التاريخي، لن تتأثر جداولنا الرئيسية، ويمكننا ببساطة [تطبيق TRUNCATE](/ar/concepts/features/operations/delete/truncate) على الجداول المكررة وإعادة المحاولة.
+في حال فشل عملية استكمال البيانات التاريخية، لن تتأثر جداولنا الرئيسية، ويمكننا ببساطة [تطبيق TRUNCATE](/ar/concepts/features/operations/delete/truncate) على الجداول المكررة وإعادة المحاولة.
 
 لإنشاء نسخ جديدة من طرق العرض هذه، يمكننا استخدام جملة `CREATE TABLE AS` مع اللاحقة `_v2`:
 
@@ -184,7 +182,7 @@ GROUP BY project
 
 ```sql
 INSERT INTO pypi_v2 SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{101..200}.parquet')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{101..200}.parquet', NOSIGN)
 ```
 
 ```response
@@ -221,7 +219,7 @@ Peak memory usage: 688.77 KiB.
 
 إذا واجهنا عطلًا في أي مرحلة أثناء عملية التحميل الثانية هذه، فيمكننا ببساطة [truncate](/ar/concepts/features/operations/delete/truncate) جدولَي `pypi_v2` و`pypi_downloads_v2` ثم إعادة تحميل البيانات.
 
-بعد اكتمال تحميل البيانات، يمكننا نقل البيانات من الجداول المنسوخة مؤقتًا إلى الجداول الرئيسية باستخدام عبارة [`ALTER TABLE MOVE PARTITION`](/ar/reference/statements/alter/partition#move-partition-to-table).
+بعد اكتمال تحميل البيانات، يمكننا نقل البيانات من الجداول المكررة إلى الجداول الرئيسية باستخدام عبارة [`ALTER TABLE MOVE PARTITION`](/ar/reference/statements/alter/partition#move-partition-to-table).
 
 ```sql
 ALTER TABLE pypi_v2 MOVE PARTITION () TO pypi
@@ -280,7 +278,7 @@ FROM pypi_v2
 
 ومن المهم أن تكون عملية `MOVE PARTITION` خفيفة الوزن (باستغلال الروابط الصلبة) وذرّية في الوقت نفسه، أي إنها إما أن تفشل أو تنجح من دون أي حالة وسيطة.
 
-نستفيد من هذه العملية كثيرًا في سيناريوهات التحميل الاستدراكي أدناه.
+نستفيد من هذه العملية كثيرًا في سيناريوهات استكمال البيانات التاريخية أدناه.
 
 لاحظ أن هذه العملية تتطلب من المستخدمين اختيار حجم كل عملية إدراج.
 
@@ -288,20 +286,20 @@ FROM pypi_v2
 
 ```sql
 INSERT INTO pypi_v2 SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{101..200}.parquet')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{101..200}.parquet', NOSIGN)
 INSERT INTO pypi_v2 SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{201..300}.parquet')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{201..300}.parquet', NOSIGN)
 INSERT INTO pypi_v2 SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{301..400}.parquet')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{301..400}.parquet', NOSIGN)
 --continued to all files loaded OR MOVE PARTITION call is performed
 ```
 
 <Note>
-  يستخدم ClickPipes هذا النهج عند تحميل البيانات من تخزين الكائنات، إذ ينشئ تلقائيًا جداول مكررة للجدول الهدف ولعروضه المادية، ما يجنّب المستخدم الحاجة إلى تنفيذ الخطوات المذكورة أعلاه. ومع استخدام عدة خيوط عاملة، يتعامل كل منها مع مجموعات فرعية مختلفة (عبر glob patterns) وتمتلك جداولها المكررة الخاصة بها، يمكن تحميل البيانات بسرعة مع ضمانات exactly-once semantics. ويمكن للمهتمين الاطلاع على مزيد من التفاصيل [في هذه المدوّنة](https://clickhouse.com/blog/supercharge-your-clickhouse-data-loads-part3).
+  يستخدم ClickPipes هذا النهج عند تحميل البيانات من تخزين الكائنات، إذ ينشئ تلقائيًا جداول مكررة للجدول الهدف ولعروضه المادية، ما يجنّب المستخدم الحاجة إلى تنفيذ الخطوات المذكورة أعلاه. ومع استخدام عدة خيوط عاملة، يتعامل كل منها مع مجموعات فرعية مختلفة (عبر نمط glob) وتمتلك جداولها المكررة الخاصة بها، يمكن تحميل البيانات بسرعة مع ضمانات exactly-once semantics. ويمكن للمهتمين الاطلاع على مزيد من التفاصيل [في هذه المدوّنة](https://clickhouse.com/blog/supercharge-your-clickhouse-data-loads-part3).
 </Note>
 
 <div id="scenario-1-backfilling-data-with-existing-data-ingestion">
-  ## السيناريو 1: استكمال البيانات التاريخية مع استمرار إدخال البيانات
+  ## السيناريو 1: استكمال البيانات التاريخية مع استمرار استيعاب البيانات {#scenario-1-backfilling-data-with-existing-data-ingestion}
 </div>
 
 في هذا السيناريو، نفترض أن البيانات المطلوب استكمالها تاريخيًا ليست موجودة في bucket معزول، ولذلك يلزم تطبيق التصفية. تكون البيانات قيد الإدراج بالفعل، ويمكن تحديد طابع زمني أو عمود ذي قيم متزايدة باستمرار يلزم استكمال البيانات التاريخية انطلاقًا منه.
@@ -343,7 +341,7 @@ FROM pypi_v2
 GROUP BY project
 
 INSERT INTO pypi_v2 SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-*.parquet')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-*.parquet', NOSIGN)
 WHERE timestamp < '2024-12-17 09:00:00'
 ```
 
@@ -372,7 +370,7 @@ ALTER TABLE pypi_downloads_v2 MOVE PARTITION () TO pypi_downloads
 </Info>
 
 <div id="scenario-2-adding-materialized-views-to-existing-tables">
-  ## السيناريو 2: إضافة العروض المادية إلى الجداول الحالية
+  ## السيناريو 2: إضافة العروض المادية إلى الجداول الحالية {#scenario-2-adding-materialized-views-to-existing-tables}
 </div>
 
 ليس من غير المعتاد أن تحتاج إلى إضافة عروض مادية جديدة إلى إعداد يحتوي بالفعل على كمية كبيرة من البيانات، بينما لا تزال البيانات تُدرج فيه. ويكون وجود `timestamp` أو عمود يزداد بشكل رتيب، بحيث يمكن استخدامه لتحديد نقطة في التدفق، مفيدًا هنا لأنه يجنّب إيقاف إدخال البيانات مؤقتًا. في الأمثلة أدناه، نفترض توفّر هاتين الحالتين، مع تفضيل الأساليب التي تتجنب الإيقاف المؤقت أثناء الإدخال.
@@ -384,7 +382,7 @@ ALTER TABLE pypi_downloads_v2 MOVE PARTITION () TO pypi_downloads
 </Info>
 
 <div id="timestamp-or-monotonically-increasing-column-available">
-  ### توفّر طابع زمني أو عمود متزايد رتيبًا
+  ### توفّر طابع زمني أو عمود متزايد رتيبًا {#timestamp-or-monotonically-increasing-column-available}
 </div>
 
 في هذه الحالة، نوصي بأن يتضمن العرض المادي الجديد عامل تصفية يقيّد الصفوف لتشمل فقط تلك التي تكون أكبر من وقت اعتباطي في المستقبل. ويمكن بعد ذلك إجراء الاستكمال التاريخي للعرض المادي انطلاقًا من هذا التاريخ باستخدام بيانات تاريخية من الجدول الرئيسي. ويعتمد أسلوب الاستكمال التاريخي على حجم البيانات وتعقيد الاستعلام المرتبط.
@@ -470,15 +468,17 @@ Peak memory usage: 543.71 MiB.
 
 ونستعرض (2) بمزيد من التفصيل أدناه.
 
-<div id="using-a-null-table-engine-for-filling-materialized-views">
-  #### استخدام محرك الجدول Null لتعبئة العروض المادية
+#### استخدام محرك الجدول Null لتعبئة العروض المُجسَّدة {#using-a-null-table-engine-for-filling-materialized-views}
+
+يوفّر [محرك الجدول Null](/ar/reference/engines/table-engines/special/null) محرك تخزين لا يحتفظ بالبيانات بشكل دائم (يمكن اعتباره نظير `/dev/null` في عالم محركات الجداول). ورغم أن هذا قد يبدو متناقضًا، فإن العروض المُجسَّدة تظل تُنفَّذ على البيانات التي تُدرج في محرك الجدول هذا. ويتيح ذلك إنشاء العروض المُجسَّدة من دون الاحتفاظ بالبيانات الأصلية، مما يتجنب عمليات I/O ومتطلبات التخزين المرتبطة بها.
+
+ومن المهم أن أي عروض مُجسَّدة مرتبطة بمحرك الجدول تظل تُنفَّذ على كتل من البيانات عند إدراجها، ثم ترسل نتائجها إلى الجدول الهدف. وتكون هذه الكتل بحجم قابل للتهيئة. ومع أن الكتل الأكبر قد تكون أكثر كفاءة (وأسرع في المعالجة)، فإنها تستهلك موارد أكثر (وخاصة الذاكرة). ويعني استخدام محرك الجدول هذا أنه يمكننا بناء العرض المُجسَّد بشكل تزايدي، أي كتلةً تلو الأخرى، مما يجنّب الحاجة إلى الاحتفاظ بالتجميع بالكامل في الذاكرة.
+
+<div className="ch-image-md">
+  <Frame>
+    ![إلغاء التطبيع في ClickHouse](/images/data-modeling/null_table_mv.webp)
+  </Frame>
 </div>
-
-يوفّر [محرك الجدول Null](/ar/reference/engines/table-engines/special/null) محرك تخزين لا يحتفظ بالبيانات بشكل دائم (يمكن اعتباره نظير `/dev/null` في عالم محركات الجداول). ورغم أن هذا قد يبدو متناقضًا، فإن العروض المادية تظل تُنفَّذ على البيانات التي تُدرج في محرك الجدول هذا. ويتيح ذلك إنشاء العروض المادية من دون الاحتفاظ بالبيانات الأصلية، مما يتجنب عمليات I/O ومتطلبات التخزين المرتبطة بها.
-
-ومن المهم أن أي عروض مادية مرتبطة بمحرك الجدول تظل تُنفَّذ على كتل من البيانات عند إدراجها، ثم ترسل نتائجها إلى الجدول الهدف. وتكون هذه الكتل بحجم قابل للتهيئة. ومع أن الكتل الأكبر قد تكون أكثر كفاءة (وأسرع في المعالجة)، فإنها تستهلك موارد أكثر (وخاصة الذاكرة). ويعني استخدام محرك الجدول هذا أنه يمكننا بناء العرض المادي بشكل تزايدي، أي كتلةً تلو الأخرى، مما يجنّب الحاجة إلى الاحتفاظ بالتجميع بالكامل في الذاكرة.
-
-<Image img="/images/data-modeling/null_table_mv.webp" size="md" alt="إلغاء التطبيع في ClickHouse" />
 
 <br />
 
@@ -503,13 +503,13 @@ GROUP BY
  project
 ```
 
-هنا ننشئ جدول Null، `pypi_v2,` لاستقبال الصفوف التي ستُستخدم في إنشاء العرض المادي. لاحظ كيف نقتصر في المخطط على الأعمدة التي نحتاج إليها فقط. وينفّذ العرض المادي لدينا عملية aggregation على الصفوف المُدرجة في هذا الجدول (بمعدل block واحدة في كل مرة)، ثم يرسل النتائج إلى الجدول الهدف، `pypi_downloads_per_day`.
+هنا ننشئ جدول Null، `pypi_v2,` لاستقبال الصفوف التي ستُستخدم في إنشاء العرض المُجسَّد. لاحظ كيف نقتصر في المخطط على الأعمدة التي نحتاج إليها فقط. وينفّذ العرض المُجسَّد لدينا عملية تجميع على الصفوف المُدرجة في هذا الجدول (بمعدل كتلة واحدة في كل مرة)، ثم يرسل النتائج إلى الجدول الهدف، `pypi_downloads_per_day`.
 
 <Note>
-  استخدمنا `pypi_downloads_per_day` هنا بصفته الجدول الهدف. ولمزيد من المتانة، يمكن للمستخدمين إنشاء جدول مكرّر، `pypi_downloads_per_day_v2`، واستخدامه بصفته الجدول الهدف للعرض، كما هو موضح في الأمثلة السابقة. وبعد اكتمال عملية insert، يمكن بعد ذلك نقل partitionات `pypi_downloads_per_day_v2` إلى `pypi_downloads_per_day.` ويتيح ذلك إمكانية recovery إذا فشلت عملية insert بسبب مشكلات في الذاكرة أو انقطاعات في server، أي يمكننا ببساطة تنفيذ TRUNCATE لـ `pypi_downloads_per_day_v2`، وضبط Settings، ثم إعادة المحاولة.
+  استخدمنا `pypi_downloads_per_day` هنا بصفته الجدول الهدف. ولمزيد من المتانة، يمكن للمستخدمين إنشاء جدول مكرّر، `pypi_downloads_per_day_v2`، واستخدامه بصفته الجدول الهدف للعرض، كما هو موضح في الأمثلة السابقة. وبعد اكتمال عملية إدراج، يمكن بعد ذلك نقل أقسام `pypi_downloads_per_day_v2` إلى `pypi_downloads_per_day.` ويتيح ذلك إمكانية استرداد إذا فشلت عملية إدراج بسبب مشكلات في الذاكرة أو انقطاعات في خادم، أي يمكننا ببساطة تنفيذ اقتطاع لـ `pypi_downloads_per_day_v2`، وضبط Settings، ثم إعادة المحاولة.
 </Note>
 
-ولملء هذا العرض المادي، نُدرج ببساطة البيانات ذات الصلة اللازمة لإجراء استكمال البيانات التاريخية في `pypi_v2` من `pypi.`
+ولملء هذا العرض المُجسَّد، نُدرج ببساطة البيانات ذات الصلة اللازمة لإجراء استكمال البيانات التاريخية في `pypi_v2` من `pypi.`
 
 ```sql
 INSERT INTO pypi_v2 SELECT timestamp, project FROM pypi WHERE timestamp < '2024-12-17 09:00:00'
@@ -523,21 +523,21 @@ Peak memory usage: 639.47 MiB.
 لاحظ أن استهلاك الذاكرة هنا هو `639.47 MiB`.
 
 <div id="tuning-performance--resources">
-  ##### ضبط الأداء والموارد
+  ##### ضبط الأداء والموارد {#tuning-performance--resources}
 </div>
 
-ستحدد عدة عوامل الأداء والموارد المستخدمة في السيناريو أعلاه. قبل الشروع في الضبط، نوصي القراء بالاطلاع على آليات الإدراج الموثقة بالتفصيل في قسم [استخدام الخيوط للقراءات](/ar/integrations/connectors/data-ingestion/AWS/performance#using-threads-for-reads) من [دليل تحسين أداء الإدراج والقراءة في S3](/ar/integrations/connectors/data-ingestion/AWS/performance). وخلاصة القول:
+ستحدد عدة عوامل الأداء والموارد المستخدمة في السيناريو أعلاه. قبل الشروع في الضبط، نوصي القراء بفهم آليات insert الموثقة بالتفصيل في قسم [استخدام الخيوط لعمليات القراءة](/ar/integrations/connectors/data-ingestion/AWS/performance#using-threads-for-reads) من [دليل تحسين أداء insert والقراءة في S3](/ar/integrations/connectors/data-ingestion/AWS/performance). وخلاصة القول:
 
-* **توازي القراءة** - عدد الخيوط المستخدمة للقراءة. يتم التحكم فيه عبر [`max_threads`](/ar/reference/settings/session-settings#max_threads). في ClickHouse Cloud، يتحدد ذلك بحسب حجم المثيل، ويكون افتراضيًا مساويًا لعدد وحدات vCPU. قد تؤدي زيادة هذه القيمة إلى تحسين أداء القراءة على حساب زيادة استخدام الذاكرة.
-* **توازي الإدراج** - عدد خيوط الإدراج المستخدمة لتنفيذ الإدراج. يتم التحكم فيه عبر [`max_insert_threads`](/ar/reference/settings/session-settings#max_insert_threads). **ملاحظة**: هذه القيمة مقيّدة بالحد `max_threads`، لذا فإن توازي الإدراج الفعلي هو `min(max_insert_threads, max_threads)`. في ClickHouse Cloud، يتحدد ذلك بحسب حجم المثيل (بين 2 و4)، ويتم ضبطه على 1 في OSS. قد تؤدي زيادة هذه القيمة إلى تحسين الأداء على حساب زيادة استخدام الذاكرة.
-* **حجم كتلة الإدراج** - تتم معالجة البيانات في حلقة، حيث يتم سحبها وتحليلها وتشكيلها في كتل إدراج داخل الذاكرة استنادًا إلى [مفتاح التقسيم](/ar/reference/engines/table-engines/mergetree-family/custom-partitioning-key). ثم تُفرز هذه الكتل وتُحسَّن وتُضغط وتُكتب إلى التخزين على شكل [أجزاء بيانات](/ar/concepts/core-concepts/parts) جديدة. يؤثر حجم كتلة الإدراج، الذي تتحكم فيه الإعدادات [`min_insert_block_size_rows`](/ar/reference/settings/session-settings#min_insert_block_size_rows) و[`min_insert_block_size_bytes`](/ar/reference/settings/session-settings#min_insert_block_size_bytes) (غير مضغوط)، في استخدام الذاكرة وعمليات I/O على القرص. تستخدم الكتل الأكبر ذاكرة أكثر، لكنها تنشئ أجزاءً أقل، مما يقلل من I/O وعمليات الدمج في الخلفية. تمثل هذه الإعدادات حدودًا دنيا (وأيهما يتم بلوغه أولًا يؤدي إلى تنفيذ عملية flush).
-* **حجم كتلة العرض المادي** - بالإضافة إلى الآليات المذكورة أعلاه لعملية الإدراج الرئيسية، تُدمج الكتل أيضًا قبل الإدراج في العروض المادية لتكون المعالجة أكثر كفاءة. يتحدد حجم هذه الكتل بواسطة الإعدادات [`min_insert_block_size_bytes_for_materialized_views`](/ar/reference/settings/session-settings#min_insert_block_size_bytes_for_materialized_views) و[`min_insert_block_size_rows_for_materialized_views`](/ar/reference/settings/session-settings#min_insert_block_size_rows_for_materialized_views). تتيح الكتل الأكبر معالجة أكثر كفاءة على حساب زيادة استخدام الذاكرة. افتراضيًا، تعود هذه الإعدادات إلى قيم إعدادات الجدول المصدر [`min_insert_block_size_rows`](/ar/reference/settings/session-settings#min_insert_block_size_rows) و[`min_insert_block_size_bytes`](/ar/reference/settings/session-settings#min_insert_block_size_bytes)، على التوالي.
+* **توازي القراءة** - عدد الخيوط المستخدمة للقراءة. يتم التحكم فيه عبر [`max_threads`](/ar/reference/settings/session-settings/max-threads#max_threads). في ClickHouse Cloud، يتحدد ذلك بحسب حجم المثيل، ويكون افتراضيًا مساويًا لعدد وحدات vCPU. قد تؤدي زيادة هذه القيمة إلى تحسين أداء القراءة على حساب زيادة استخدام الذاكرة.
+* **توازي insert** - عدد خيوط insert المستخدمة لتنفيذ insert. يتم التحكم فيه عبر [`max_insert_threads`](/ar/reference/settings/session-settings/max-insert#max_insert_threads). بالنسبة إلى القيم الموجبة، يكون توازي insert الفعلي هو `min(max_insert_threads, max_threads)`. تُحدَّد القيمة `0` تلقائيًا لتساوي عدد أنوية CPU، ويمكن تقليلها عند وجود ضغط على الذاكرة بواسطة [`max_insert_threads_min_free_memory_per_thread`](/ar/reference/settings/session-settings/max-insert#max_insert_threads_min_free_memory_per_thread). في ClickHouse Cloud، تتحدد القيمة الافتراضية بحسب حجم المثيل: `1` للعُقد ذات ذاكرة 8 GiB، و`2` للعُقد ذات 16 GiB، و`4` للعُقد الأكبر. في OSS منذ الإصدار 26.8، تكون القيمة الافتراضية هي `0`. قد تؤدي زيادة هذه القيمة إلى تحسين الأداء على حساب زيادة استخدام الذاكرة.
+* **حجم كتلة insert** - تتم معالجة البيانات في حلقة، حيث يتم سحبها وتحليلها وتشكيلها في كتل insert داخل الذاكرة استنادًا إلى [مفتاح التقسيم](/ar/reference/engines/table-engines/mergetree-family/custom-partitioning-key). ثم تُفرز هذه الكتل وتُحسَّن وتُضغط وتُكتب إلى التخزين على شكل [أجزاء بيانات](/ar/concepts/core-concepts/parts) جديدة. يؤثر حجم كتلة insert، الذي تتحكم فيه الإعدادات [`min_insert_block_size_rows`](/ar/reference/settings/session-settings/min-insert#min_insert_block_size_rows) و[`min_insert_block_size_bytes`](/ar/reference/settings/session-settings/min-insert#min_insert_block_size_bytes) (غير مضغوط)، في استخدام الذاكرة وعمليات I/O على القرص. تستخدم الكتل الأكبر ذاكرة أكثر، لكنها تنشئ أجزاءً أقل، مما يقلل من I/O وعمليات الدمج في الخلفية. تمثل هذه الإعدادات حدودًا دنيا (وأيهما يتم بلوغه أولًا يؤدي إلى تنفيذ عملية flush).
+* **حجم كتلة العرض المادي** - بالإضافة إلى الآليات المذكورة أعلاه لعملية insert الرئيسية، تُضغط الكتل أيضًا قبل إدراجها في العروض المادية لتكون المعالجة أكثر كفاءة. يتحدد حجم هذه الكتل بواسطة الإعدادات [`min_insert_block_size_bytes_for_materialized_views`](/ar/reference/settings/session-settings/min-insert#min_insert_block_size_bytes_for_materialized_views) و[`min_insert_block_size_rows_for_materialized_views`](/ar/reference/settings/session-settings/min-insert#min_insert_block_size_rows_for_materialized_views). تتيح الكتل الأكبر معالجة أكثر كفاءة على حساب زيادة استخدام الذاكرة. افتراضيًا، تعود هذه الإعدادات إلى قيم إعدادات الجدول المصدر [`min_insert_block_size_rows`](/ar/reference/settings/session-settings/min-insert#min_insert_block_size_rows) و[`min_insert_block_size_bytes`](/ar/reference/settings/session-settings/min-insert#min_insert_block_size_bytes)، على التوالي.
 
 <Note>
-  **نصيحة لاستعلامات `INSERT SELECT` البسيطة**: بالنسبة إلى الاستعلامات البسيطة من نوع `INSERT INTO t1 SELECT * FROM t2` من دون تحويلات معقدة، فكّر في تفعيل `optimize_trivial_insert_select=1`. يضبط هذا الإعداد (وهو معطّل افتراضيًا منذ الإصدار 24.7) تلقائيًا درجة التوازي في `SELECT` لتتوافق مع `max_insert_threads`، مما يقلّل من استهلاك الموارد وعدد الأجزاء التي يتم إنشاؤها. ويكون هذا مفيدًا بشكل خاص في عمليات الترحيل المجمّعة للبيانات بين الجداول.
+  **نصيحة لاستعلامات `INSERT SELECT` البسيطة**: بالنسبة إلى الاستعلامات البسيطة من نوع `INSERT INTO t1 SELECT * FROM t2` من دون تحويلات معقدة، فكّر في تفعيل `optimize_trivial_insert_select=1`. يضبط هذا الإعداد (وهو معطّل افتراضيًا منذ الإصدار 24.7) تلقائيًا درجة التوازي في `SELECT` لتتوافق مع `max_insert_threads`، مما يقلّل من استهلاك الموارد وعدد الأجزاء التي يتم إنشاؤها. ويكون هذا مفيدًا بشكل خاص في عمليات ترحيل البيانات المجمّعة بين الجداول.
 </Note>
 
-لتحسين الأداء، يمكنك اتباع الإرشادات الواردة في قسم [ضبط الخيوط وحجم الكتلة لعمليات الإدراج](/ar/integrations/connectors/data-ingestion/AWS/performance#tuning-threads-and-block-size-for-inserts) من [دليل تحسين أداء الإدراج والقراءة في S3](/ar/integrations/connectors/data-ingestion/AWS/performance). لا يكون من الضروري في معظم الحالات تعديل `min_insert_block_size_bytes_for_materialized_views` و`min_insert_block_size_rows_for_materialized_views` لتحسين الأداء. وإن أُجري تعديل عليهما، فاتبع أفضل الممارسات ذاتها المُشار إليها بشأن `min_insert_block_size_rows` و`min_insert_block_size_bytes`.
+لتحسين الأداء، يمكنك اتباع الإرشادات الواردة في قسم [ضبط الخيوط وحجم الكتلة لعمليات insert](/ar/integrations/connectors/data-ingestion/AWS/performance#tuning-threads-and-block-size-for-inserts) من [دليل تحسين أداء insert والقراءة في S3](/ar/integrations/connectors/data-ingestion/AWS/performance). لا يكون من الضروري في معظم الحالات تعديل `min_insert_block_size_bytes_for_materialized_views` و`min_insert_block_size_rows_for_materialized_views` لتحسين الأداء. وإن أُجري تعديل عليهما، فاتبع أفضل الممارسات ذاتها المُشار إليها بشأن `min_insert_block_size_rows` و`min_insert_block_size_bytes`.
 
 لتقليل استهلاك الذاكرة، يمكنك تجربة هذه الإعدادات، مع العلم أن ذلك سيؤدي حتمًا إلى تراجع في الأداء. باستخدام الاستعلام السابق، نستعرض فيما يلي بعض الأمثلة.
 
@@ -558,7 +558,7 @@ SETTINGS max_insert_threads = 1
 Peak memory usage: 506.78 MiB.
 ```
 
-يمكننا تقليل استهلاك الذاكرة بشكل أكبر عن طريق تخفيض إعداد `max_threads` إلى 1.
+يمكننا تقليل استهلاك الذاكرة بدرجة أكبر من خلال خفض قيمة الإعداد `max_threads` إلى 1.
 
 ```sql
 INSERT INTO pypi_v2
@@ -595,7 +595,7 @@ Peak memory usage: 218.64 MiB.
 أخيرًا، تجدر الإشارة إلى أن تقليل أحجام الكتل يؤدي إلى زيادة عدد الأجزاء ويفرض ضغطًا أكبر على عمليات الدمج. وكما نوقش [هنا](/ar/integrations/connectors/data-ingestion/AWS/performance#be-aware-of-merges)، ينبغي تعديل هذه الإعدادات بحذر.
 
 <div id="no-timestamp-or-monotonically-increasing-column">
-  ### لا يوجد عمود `timestamp` أو عمود متزايد باطراد
+  ### لا يوجد عمود `timestamp` أو عمود متزايد باطراد {#no-timestamp-or-monotonically-increasing-column}
 </div>
 
 تعتمد العمليات المذكورة أعلاه على توفّر عمود `timestamp` لدى المستخدم أو عمود متزايد باطراد. وفي بعض الحالات، لا يكون ذلك متاحًا ببساطة. في هذه الحالة، نوصي بالعملية التالية، التي تستفيد من كثير من الخطوات الموضّحة سابقًا، لكنها تتطلب من المستخدمين إيقاف الاستيعاب مؤقتًا.

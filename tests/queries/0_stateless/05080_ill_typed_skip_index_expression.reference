@@ -1,0 +1,20 @@
+A CREATE TABLE declaring an index expression that cannot be evaluated
+B ALTER TABLE ADD INDEX declaring one
+2
+E an ALTER whose own effect makes an existing index unevaluable
+2
+C1 index over a column
+2
+C2 index over a comparison against a literal of the column type
+2
+C3 index over arithmetic
+2
+C4 index over a wrapped type
+2
+F an expression containing a function that opts out of constant folding is not probed
+1
+G LowCardinality alone is probed, a Nullable operand is not
+2
+H an index the server generates itself never fails a user statement
+1
+1

@@ -10,7 +10,7 @@ keywords: ['TTL']
   ## 生存时间 (TTL) 规则与控制
 </div>
 
-生存时间 (TTL) 终究会被应用。这是什么意思？`MergeTree` 表设置 [`merge_with_ttl_timeout`](/zh/reference/settings/merge-tree-settings#merge_with_ttl_timeout) 用于设置再次执行带删除 TTL 的合并前的最短延迟时间，单位为秒。默认值为 14400 秒 (4 小时) 。但这只是最短延迟，实际触发删除 TTL 合并可能还需要更长时间。
+生存时间 (TTL) 终究会被应用。这是什么意思？`MergeTree` 表设置 [`merge_with_ttl_timeout`](/zh/reference/settings/merge-tree-settings/merge-with#merge_with_ttl_timeout) 用于设置再次执行带删除 TTL 的合并前的最短延迟时间，单位为秒。默认值为 14400 秒 (4 小时) 。但这只是最短延迟，实际触发删除 TTL 合并可能还需要更长时间。
 
 你可以使用以下查询查看当前所有 TTL 设置 (例如 `merge_with_ttl_timeout`) ：
 
@@ -69,11 +69,11 @@ WHERE name = 'background_pool_size';
 
 ```response
 ┌─name─────────────────┬─value─┬─changed─┬─description─────────────────────┬─min──┬─max──┬─readonly─┬─type───┬─default─┬─alias_for─┐
-│ background_pool_size │ 16    │       0 │ 已废弃，无任何效果。 │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │        0 │ UInt64 │ 16      │           │
+│ background_pool_size │ 16    │       0 │ Obsolete setting, does nothing. │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │        0 │ UInt64 │ 16      │           │
 └──────────────────────┴───────┴─────────┴─────────────────────────────────┴──────┴──────┴──────────┴────────┴─────────┴───────────┘
 ```
 
-请参阅文档，了解如何修改 [`background_pool_size` 设置](/zh/reference/settings/server-settings/settings#background_pool_size)，其配置如下：
+请参阅文档，了解如何修改 [`background_pool_size` 设置](/zh/reference/settings/server-settings/settings/background#background_pool_size)，其配置如下：
 
 ```xml
 <background_pool_size>16</background_pool_size>

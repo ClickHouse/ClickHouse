@@ -31,9 +31,6 @@ tokenkind_string.go	Smol
 -- pql::InAnd --
 13913	MISSISSIPPI	Thunderstorm Wind	20000
 -- pql::Let --
-Alabama	Montgomery
-Alaska	Juneau
-Arizona	Phoenix
 -- pql::Limit --
 11032	ATLANTIC SOUTH	Waterspout	0
 11098	FLORIDA	Heavy Rain	0
@@ -76,18 +73,18 @@ Thunderstorm Wind in MISSISSIPPI
 13913	MISSISSIPPI	Thunderstorm Wind	20000
 11503	GEORGIA	Thunderstorm Wind	2000
 -- pql::Summarize --
-.	0	78
-.	1	206
-parser	0	1757
-parser	1	1491
+.	false	78
+.	true	206
+parser	false	1757
+parser	true	1491
 -- pql::SummarizeBy --
 .
 parser
 -- pql::SummarizeCount --
-.	0	1
-.	1	3
-parser	0	4
-parser	1	2
+.	false	1
+.	true	3
+parser	false	4
+parser	true	2
 -- pql::SummarizeCountIf --
 .	1
 parser	4

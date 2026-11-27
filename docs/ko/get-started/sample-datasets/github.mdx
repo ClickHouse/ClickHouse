@@ -8,15 +8,13 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 이 데이터셋에는 ClickHouse 리포지토리의 모든 커밋과 변경 사항이 포함되어 있습니다. 이 데이터셋은 ClickHouse와 함께 배포되는 네이티브 `git-import` 도구를 사용해 생성할 수 있습니다.
 
 생성된 데이터는 다음 각 테이블(table)에 대한 `tsv` 파일을 제공합니다.
 
 * `commits` - 통계 정보가 포함된 커밋입니다.
 * `file_changes` - 각 커밋에서 변경된 파일과 해당 변경 내용 및 통계 정보입니다.
-* `line_changes` - 각 커밋에서 변경된 각 파일의 모든 변경된 줄과, 해당 줄의 전체 정보 및 이 줄의 이전 변경 정보입니다.
+* `line_changes` - 각 커밋에서 변경된 각 파일의 모든 변경된 선과, 해당 선의 전체 정보 및 이 선의 이전 변경 정보입니다.
 
 2022년 11월 8일 기준, 각 TSV의 대략적인 크기와 행 수는 다음과 같습니다.
 
@@ -25,7 +23,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 * `line_changes` - 2.7G - 7,535,157행
 
 <div id="generating-the-data">
-  ## 데이터 생성
+  ## 데이터 생성 {#generating-the-data}
 </div>
 
 이는 선택 사항입니다. 데이터는 무료로 제공되므로 [데이터 다운로드 및 삽입](#downloading-and-inserting-the-data)을 참조하십시오.
@@ -70,7 +68,7 @@ CREATE TABLE git.commits
 * Linux - `~/clickhouse git-import` - 160분
 
 <div id="downloading-and-inserting-the-data">
-  ## 데이터 다운로드 및 삽입
+  ## 데이터 다운로드 및 삽입 {#downloading-and-inserting-the-data}
 </div>
 
 다음 데이터는 실행 가능한 환경을 재현하는 데 사용할 수 있습니다. 또는 이 데이터셋은 play.clickhouse.com에서도 사용할 수 있습니다. 자세한 내용은 [쿼리](#queries)를 참조하십시오.
@@ -186,7 +184,7 @@ CREATE TABLE git.line_changes
 
 ```sql
 INSERT INTO git.commits SELECT *
-FROM s3('https://datasets-documentation.s3.amazonaws.com/github/commits/clickhouse/commits.tsv.xz', 'TSV', 'hash String,author LowCardinality(String), time DateTime, message String, files_added UInt32, files_deleted UInt32, files_renamed UInt32, files_modified UInt32, lines_added UInt32, lines_deleted UInt32, hunks_added UInt32, hunks_removed UInt32, hunks_changed UInt32')
+FROM s3('https://datasets-documentation.s3.amazonaws.com/github/commits/clickhouse/commits.tsv.xz', NOSIGN, 'TSV', 'hash String,author LowCardinality(String), time DateTime, message String, files_added UInt32, files_deleted UInt32, files_renamed UInt32, files_modified UInt32, lines_added UInt32, lines_deleted UInt32, hunks_added UInt32, hunks_removed UInt32, hunks_changed UInt32')
 ```
 
 ```response
@@ -197,7 +195,7 @@ FROM s3('https://datasets-documentation.s3.amazonaws.com/github/commits/clickhou
 
 ```sql
 INSERT INTO git.file_changes SELECT *
-FROM s3('https://datasets-documentation.s3.amazonaws.com/github/commits/clickhouse/file_changes.tsv.xz', 'TSV', 'change_type Enum(\'Add\' = 1, \'Delete\' = 2, \'Modify\' = 3, \'Rename\' = 4, \'Copy\' = 5, \'Type\' = 6), path LowCardinality(String), old_path LowCardinality(String), file_extension LowCardinality(String), lines_added UInt32, lines_deleted UInt32, hunks_added UInt32, hunks_removed UInt32, hunks_changed UInt32, commit_hash String, author LowCardinality(String), time DateTime, commit_message String, commit_files_added UInt32, commit_files_deleted UInt32, commit_files_renamed UInt32, commit_files_modified UInt32, commit_lines_added UInt32, commit_lines_deleted UInt32, commit_hunks_added UInt32, commit_hunks_removed UInt32, commit_hunks_changed UInt32')
+FROM s3('https://datasets-documentation.s3.amazonaws.com/github/commits/clickhouse/file_changes.tsv.xz', NOSIGN, 'TSV', 'change_type Enum(\'Add\' = 1, \'Delete\' = 2, \'Modify\' = 3, \'Rename\' = 4, \'Copy\' = 5, \'Type\' = 6), path LowCardinality(String), old_path LowCardinality(String), file_extension LowCardinality(String), lines_added UInt32, lines_deleted UInt32, hunks_added UInt32, hunks_removed UInt32, hunks_changed UInt32, commit_hash String, author LowCardinality(String), time DateTime, commit_message String, commit_files_added UInt32, commit_files_deleted UInt32, commit_files_renamed UInt32, commit_files_modified UInt32, commit_lines_added UInt32, commit_lines_deleted UInt32, commit_hunks_added UInt32, commit_hunks_removed UInt32, commit_hunks_changed UInt32')
 ```
 
 ```response
@@ -208,7 +206,7 @@ FROM s3('https://datasets-documentation.s3.amazonaws.com/github/commits/clickhou
 
 ```sql
 INSERT INTO git.line_changes SELECT *
-FROM s3('https://datasets-documentation.s3.amazonaws.com/github/commits/clickhouse/line_changes.tsv.xz', 'TSV', '    sign Int8, line_number_old UInt32, line_number_new UInt32, hunk_num UInt32, hunk_start_line_number_old UInt32, hunk_start_line_number_new UInt32, hunk_lines_added UInt32,\n    hunk_lines_deleted UInt32, hunk_context LowCardinality(String), line LowCardinality(String), indent UInt8, line_type Enum(\'Empty\' = 0, \'Comment\' = 1, \'Punct\' = 2, \'Code\' = 3), prev_commit_hash String, prev_author LowCardinality(String), prev_time DateTime, file_change_type Enum(\'Add\' = 1, \'Delete\' = 2, \'Modify\' = 3, \'Rename\' = 4, \'Copy\' = 5, \'Type\' = 6),\n    path LowCardinality(String), old_path LowCardinality(String), file_extension LowCardinality(String), file_lines_added UInt32, file_lines_deleted UInt32, file_hunks_added UInt32, file_hunks_removed UInt32, file_hunks_changed UInt32, commit_hash String,\n    author LowCardinality(String), time DateTime, commit_message String, commit_files_added UInt32, commit_files_deleted UInt32, commit_files_renamed UInt32, commit_files_modified UInt32, commit_lines_added UInt32, commit_lines_deleted UInt32, commit_hunks_added UInt32, commit_hunks_removed UInt32, commit_hunks_changed UInt32')
+FROM s3('https://datasets-documentation.s3.amazonaws.com/github/commits/clickhouse/line_changes.tsv.xz', NOSIGN, 'TSV', '    sign Int8, line_number_old UInt32, line_number_new UInt32, hunk_num UInt32, hunk_start_line_number_old UInt32, hunk_start_line_number_new UInt32, hunk_lines_added UInt32,\n    hunk_lines_deleted UInt32, hunk_context LowCardinality(String), line LowCardinality(String), indent UInt8, line_type Enum(\'Empty\' = 0, \'Comment\' = 1, \'Punct\' = 2, \'Code\' = 3), prev_commit_hash String, prev_author LowCardinality(String), prev_time DateTime, file_change_type Enum(\'Add\' = 1, \'Delete\' = 2, \'Modify\' = 3, \'Rename\' = 4, \'Copy\' = 5, \'Type\' = 6),\n    path LowCardinality(String), old_path LowCardinality(String), file_extension LowCardinality(String), file_lines_added UInt32, file_lines_deleted UInt32, file_hunks_added UInt32, file_hunks_removed UInt32, file_hunks_changed UInt32, commit_hash String,\n    author LowCardinality(String), time DateTime, commit_message String, commit_files_added UInt32, commit_files_deleted UInt32, commit_files_renamed UInt32, commit_files_modified UInt32, commit_lines_added UInt32, commit_lines_deleted UInt32, commit_hunks_added UInt32, commit_hunks_removed UInt32, commit_hunks_changed UInt32')
 ```
 
 ```response
@@ -216,7 +214,7 @@ FROM s3('https://datasets-documentation.s3.amazonaws.com/github/commits/clickhou
 ```
 
 <div id="queries">
-  ## 쿼리
+  ## 쿼리 {#queries}
 </div>
 
 이 도구는 도움말 출력에서 여러 쿼리를 제안합니다. 이 문서에서는 해당 쿼리들에 대한 답과 함께, 추가로 살펴볼 만한 몇 가지 보충 질문에 대한 답도 제공합니다. 이 쿼리들은 도구가 임의로 제시하는 순서와는 달리, 대체로 복잡도가 점차 높아지는 순서로 구성되어 있습니다.
@@ -224,7 +222,7 @@ FROM s3('https://datasets-documentation.s3.amazonaws.com/github/commits/clickhou
 이 데이터셋은 [play.clickhouse.com](https://sql.clickhouse.com?query_id=DCQPNPAIMAQXRLHYURLKVJ)의 `git_clickhouse` 데이터베이스에서 사용할 수 있습니다. 모든 쿼리에 대해 필요에 따라 데이터베이스 이름을 조정한 이 환경의 링크를 제공합니다. 데이터 수집 시점의 차이로 인해 `play`의 결과는 여기 제시된 결과와 다를 수 있습니다.
 
 <div id="history-of-a-single-file">
-  ### 단일 파일의 이력
+  ### 단일 파일의 이력 {#history-of-a-single-file}
 </div>
 
 가장 단순한 쿼리입니다. 여기서는 `StorageReplicatedMergeTree.cpp`의 모든 커밋 메시지를 살펴봅니다. 이런 메시지가 더 흥미로울 가능성이 높으므로 가장 최근 메시지가 먼저 표시되도록 정렬합니다.
@@ -304,7 +302,7 @@ LIMIT 10
 이름 변경까지 고려하여 [파일의 줄별 커밋 이력](#line-by-line-commit-history-of-a-file)을 찾는 더 복잡한 변형 쿼리도 있습니다.
 
 <div id="find-the-current-active-files">
-  ### 현재 활성 파일 찾기
+  ### 현재 활성 파일 찾기 {#find-the-current-active-files}
 </div>
 
 이는 이후 분석에서 리포지토리의 현재 파일만 대상으로 삼아야 하므로 중요합니다. 여기서는 이름이 변경되거나 삭제된 적이 없는 파일(이후 다시 추가되거나 다시 이름이 변경된 경우 제외)을 이 집합으로 간주합니다.
@@ -442,7 +440,7 @@ git ls-files | grep -v -E 'generated\.cpp|^(contrib|docs?|website|libs/(libcityh
 이러한 차이가 분석에 유의미한 영향을 미치지는 않을 것입니다. **이 쿼리의 개선안은 언제든 환영합니다**.
 
 <div id="list-files-with-most-modifications">
-  ### 수정이 가장 많은 파일 목록
+  ### 수정이 가장 많은 파일 목록 {#list-files-with-most-modifications}
 </div>
 
 현재 파일만 대상으로 하면 수정 횟수는 삭제 수와 추가 수의 합으로 봅니다.
@@ -501,7 +499,7 @@ LIMIT 10
 ```
 
 <div id="what-day-of-the-week-do-commits-usually-occur">
-  ### 커밋은 보통 무슨 요일에 이루어집니까?
+  ### 커밋은 보통 무슨 요일에 이루어집니까? {#what-day-of-the-week-do-commits-usually-occur}
 </div>
 
 [실행](https://sql.clickhouse.com?query_id=GED2STFSYJDRAA59H8RLIV)
@@ -529,9 +527,7 @@ GROUP BY dayOfWeek(time) AS day_of_week
 
 금요일에는 생산성이 다소 떨어지는 것도 자연스럽습니다. 주말에도 코드를 커밋하는 모습을 보니 정말 좋습니다! 기여해 주신 분들께 진심으로 감사드립니다!
 
-<div id="history-of-subdirectoryfile---number-of-lines-commits-and-contributors-over-time">
-  ### 하위 디렉터리/파일 이력 - 시간 경과에 따른 줄 수, 커밋 수, 기여자 수
-</div>
+### 하위 디렉터리/파일 이력 - 시간 경과에 따른 선 수, 커밋 수, 기여자 수 {#history-of-subdirectoryfile---number-of-lines-commits-and-contributors-over-time}
 
 필터링하지 않으면 쿼리 결과가 매우 커져 표시하거나 시각화하기에 현실적이지 않습니다. 따라서 다음 예시에서는 파일 또는 하위 디렉터리로 필터링할 수 있도록 했습니다. 여기서는 `toStartOfWeek` 함수를 사용해 주 단위로 그룹화합니다. 필요에 따라 조정하십시오.
 
@@ -569,16 +565,24 @@ LIMIT 10
 
 이 데이터는 시각화하기에 적합합니다. 아래에서는 Superset을 사용합니다.
 
-**추가 및 삭제된 라인의 경우:**
+**추가 및 삭제된 선의 경우:**
 
-<Image img="/images/getting-started/example-datasets/superset-github-lines-added-deleted.webp" alt="추가 및 삭제된 라인의 경우" size="md" />
+<div className="ch-image-md">
+  <Frame>
+    ![추가 및 삭제된 선의 경우](/images/getting-started/example-datasets/superset-github-lines-added-deleted.webp)
+  </Frame>
+</div>
 
 **커밋 및 작성자의 경우:**
 
-<Image img="/images/getting-started/example-datasets/superset-commits-authors.webp" alt="커밋 및 작성자의 경우" size="md" />
+<div className="ch-image-md">
+  <Frame>
+    ![커밋 및 작성자의 경우](/images/getting-started/example-datasets/superset-commits-authors.webp)
+  </Frame>
+</div>
 
 <div id="list-files-with-maximum-number-of-authors">
-  ### 작성자 수가 가장 많은 파일 목록
+  ### 작성자 수가 가장 많은 파일 목록 {#list-files-with-maximum-number-of-authors}
 </div>
 
 현재 존재하는 파일만 대상으로 합니다.
@@ -637,7 +641,7 @@ LIMIT 10
 ```
 
 <div id="oldest-lines-of-code-in-the-repository">
-  ### 리포지토리의 가장 오래된 코드 줄
+  ### 리포지토리의 가장 오래된 코드 줄 {#oldest-lines-of-code-in-the-repository}
 </div>
 
 현재 파일만 대상으로 합니다.
@@ -698,7 +702,7 @@ LIMIT 10
 ```
 
 <div id="files-with-longest-history">
-  ### 이력이 가장 긴 파일
+  ### 이력이 가장 긴 파일 {#files-with-longest-history}
 </div>
 
 현재 파일만 포함합니다.
@@ -760,7 +764,7 @@ LIMIT 10
 핵심 데이터 구조인 Merge Tree는 오랜 수정 이력을 거치며 지금도 계속 발전하고 있습니다!
 
 <div id="distribution-of-contributors-with-respect-to-docs-and-code-over-the-month">
-  ### 한 달 동안 문서와 코드 관련 기여자 분포
+  ### 한 달 동안 문서와 코드 관련 기여자 분포 {#distribution-of-contributors-with-respect-to-docs-and-code-over-the-month}
 </div>
 
 **데이터를 수집하는 과정에서 `docs/` 폴더의 변경 사항은 커밋 이력이 지나치게 복잡해 제외되었습니다. 따라서 이 쿼리의 결과는 정확하지 않습니다.**
@@ -827,7 +831,7 @@ FROM
 월말로 갈수록 조금 더 많아질 수는 있지만, 전반적으로는 고르게 잘 분포되어 있습니다. 다시 말씀드리지만 데이터 삽입 시 docs 필터가 적용되므로 이는 신뢰할 수 없습니다.
 
 <div id="authors-with-the-most-diverse-impact">
-  ### 가장 폭넓게 기여한 작성자
+  ### 가장 폭넓게 기여한 작성자 {#authors-with-the-most-diverse-impact}
 </div>
 
 여기서 다양성은 작성자가 기여한 고유 파일 수를 의미합니다.
@@ -910,7 +914,7 @@ LIMIT 10
 ```
 
 <div id="favorite-files-for-an-author">
-  ### 특정 작성자가 선호하는 파일
+  ### 특정 작성자가 선호하는 파일 {#favorite-files-for-an-author}
 </div>
 
 여기서는 창립자인 [Alexey Milovidov](https://github.com/alexey-milovidov)을 선택하고, 분석을 현재 파일로 한정합니다.
@@ -1002,7 +1006,7 @@ LIMIT 10
 이는 아마 그의 관심 분야를 더 잘 반영합니다.
 
 <div id="largest-files-with-lowest-number-of-authors">
-  ### 작성자 수가 가장 적은 가장 큰 파일
+  ### 작성자 수가 가장 적은 가장 큰 파일 {#largest-files-with-lowest-number-of-authors}
 </div>
 
 이를 위해서는 먼저 가장 큰 파일을 식별해야 합니다. 모든 파일의 커밋 이력에서 전체 파일을 재구성해 크기를 추정하는 방식은 비용이 매우 많이 듭니다!
@@ -1180,7 +1184,7 @@ LIMIT 10
 ```
 
 <div id="commits-and-lines-of-code-distribution-by-time-by-weekday-by-author-for-specific-subdirectories">
-  ### 시간별, 요일별, 작성자별, 특정 하위 디렉터리별 커밋 및 코드 줄 수 분포
+  ### 시간별, 요일별, 작성자별, 특정 하위 디렉터리별 커밋 및 코드 줄 수 분포 {#commits-and-lines-of-code-distribution-by-time-by-weekday-by-author-for-specific-subdirectories}
 </div>
 
 여기서는 이를 요일별로 추가 및 삭제된 코드 줄 수로 해석합니다. 이 경우 [Functions 디렉터리](https://github.com/ClickHouse/ClickHouse/tree/master/src/Functions)에 초점을 맞춥니다
@@ -1312,9 +1316,7 @@ FROM
 24 rows in set. Elapsed: 0.038 sec. Processed 266.05 thousand rows, 14.66 MB (7.09 million rows/s., 390.69 MB/s.)
 ```
 
-<div id="matrix-of-authors-that-shows-what-authors-tends-to-rewrite-another-authors-code">
-  ### 누가 다른 작성자의 코드를 재작성하는 경향이 있는지 보여주는 작성자 매트릭스
-</div>
+### 누가 다른 작성자의 코드를 재작성하는 경향이 있는지 보여주는 작성자 매트릭스 {#matrix-of-authors-that-shows-what-authors-tends-to-rewrite-another-authors-code}
 
 `sign = -1`은 코드 삭제를 나타냅니다. 구두점과 빈 줄 삽입은 제외합니다.
 
@@ -1364,14 +1366,22 @@ LIMIT 100
 
 Sankey chart(SuperSet)를 사용하면 이를 효과적으로 시각화할 수 있습니다. 시각화의 다양성을 높이기 위해 각 작성자별로 코드 제거량이 많은 상위 3명을 가져오도록 `LIMIT BY`를 3으로 늘렸다는 점에 유의하십시오.
 
-<Image img="/images/getting-started/example-datasets/superset-authors-matrix.webp" alt="Superset 작성자 매트릭스" size="md" />
+<div className="ch-image-md">
+  <Frame>
+    ![Superset 작성자 매트릭스](/images/getting-started/example-datasets/superset-authors-matrix.webp)
+  </Frame>
+</div>
 
 Alexey는 다른 사람의 코드를 제거하는 경향이 뚜렷합니다. 코드 제거 양상을 더 균형 있게 보기 위해 Alexey는 제외하겠습니다.
 
-<Image img="/images/getting-started/example-datasets/superset-authors-matrix_v2.webp" alt="Superset 작성자 매트릭스 v2" size="md" />
+<div className="ch-image-md">
+  <Frame>
+    ![Superset 작성자 매트릭스 v2](/images/getting-started/example-datasets/superset-authors-matrix_v2.webp)
+  </Frame>
+</div>
 
 <div id="who-is-the-highest-percentage-contributor-per-day-of-week">
-  ### 요일별로 가장 높은 비중을 차지하는 기여자는 누구입니까?
+  ### 요일별로 가장 높은 비중을 차지하는 기여자는 누구입니까? {#who-is-the-highest-percentage-contributor-per-day-of-week}
 </div>
 
 커밋 수만 고려하면:
@@ -1494,7 +1504,7 @@ INNER JOIN
 ```
 
 <div id="distribution-of-code-age-across-repository">
-  ### 리포지토리 전체의 코드 연령 분포
+  ### 리포지토리 전체의 코드 연령 분포 {#distribution-of-code-age-across-repository}
 </div>
 
 분석은 현재 파일로 제한합니다. 간결성을 위해 결과는 깊이 2, 루트 폴더당 파일 5개로 제한합니다. 필요에 따라 조정하십시오.
@@ -1581,7 +1591,7 @@ LIMIT 5 BY root
 ```
 
 <div id="what-percentage-of-code-for-an-author-has-been-removed-by-other-authors">
-  ### 한 작성자의 코드 중 다른 작성자에 의해 삭제된 비율은 얼마입니까?
+  ### 한 작성자의 코드 중 다른 작성자에 의해 삭제된 비율은 얼마입니까? {#what-percentage-of-code-for-an-author-has-been-removed-by-other-authors}
 </div>
 
 이 질문에는 작성자가 작성한 줄 수를 다른 기여자가 삭제한 해당 작성자의 전체 줄 수로 나누어 계산합니다.
@@ -1635,7 +1645,7 @@ LIMIT 10
 ```
 
 <div id="list-files-that-were-rewritten-most-number-of-times">
-  ### 가장 많이 다시 작성된 파일은 무엇입니까?
+  ### 가장 많이 다시 작성된 파일은 무엇입니까? {#list-files-that-were-rewritten-most-number-of-times}
 </div>
 
 이 질문에 답하는 가장 간단한 방법은 현재 파일만 대상으로 각 경로별 줄 수정 횟수를 집계해 가장 많은 순으로 보는 것입니다. 예를 들면 다음과 같습니다:
@@ -1782,7 +1792,7 @@ LIMIT 10
 ```
 
 <div id="what-weekday-does-the-code-have-the-highest-chance-to-stay-in-the-repository">
-  ### 코드가 리포지토리에 가장 오래 남는 경향이 있는 요일은 언제인가요?
+  ### 코드가 리포지토리에 가장 오래 남는 경향이 있는 요일은 언제인가요? {#what-weekday-does-the-code-have-the-highest-chance-to-stay-in-the-repository}
 </div>
 
 이를 위해 먼저 코드 한 줄을 고유하게 식별해야 합니다. 동일한 줄이 하나의 파일에 여러 번 나타날 수 있으므로, 경로와 줄 내용을 사용해 이를 추정합니다.
@@ -1848,7 +1858,7 @@ GROUP BY dayOfWeek(added_day) AS day_of_week_added
 ```
 
 <div id="files-sorted-by-average-code-age">
-  ### 평균 코드 연령 기준으로 정렬된 파일
+  ### 평균 코드 연령 기준으로 정렬된 파일 {#files-sorted-by-average-code-age}
 </div>
 
 이 쿼리는 [코드가 리포지토리에 남아 있을 가능성이 가장 높은 요일은 무엇인가요](#what-weekday-does-the-code-have-the-highest-chance-to-stay-in-the-repository)와 동일한 원리를 사용합니다. 즉, 경로와 줄 내용을 사용해 코드 줄을 고유하게 식별합니다.
@@ -1942,7 +1952,7 @@ LIMIT 10
 ```
 
 <div id="who-tends-to-write-more-tests--cpp-code--comments">
-  ### 누가 테스트 / CPP 코드 / 주석을 더 많이 작성하는 경향이 있습니까?
+  ### 누가 테스트 / CPP 코드 / 주석을 더 많이 작성하는 경향이 있습니까? {#who-tends-to-write-more-tests--cpp-code--comments}
 </div>
 
 이 질문에는 몇 가지 방법으로 답할 수 있습니다. 코드 대비 테스트 비율에 초점을 맞추면, 이 쿼리는 비교적 단순합니다. `tests`가 포함된 폴더에 대한 기여 수를 집계하고 전체 기여 수 대비 비율을 계산합니다.
@@ -2082,7 +2092,7 @@ LIMIT 10
 코드 기여도를 기준으로 정렬했다는 점에 유의하십시오. 놀랍게도 주요 기여자들은 모두 그 비율이 매우 높으며, 이것이 우리 코드의 가독성을 높이는 요인 중 하나입니다.
 
 <div id="how-does-an-authors-commits-change-over-time-with-respect-to-codecomments-percentage">
-  ### 작성자의 커밋은 코드/주석 비율에 따라 시간 경과에 따라 어떻게 변합니까?
+  ### 작성자의 커밋은 코드/주석 비율에 따라 시간 경과에 따라 어떻게 변합니까? {#how-does-an-authors-commits-change-over-time-with-respect-to-codecomments-percentage}
 </div>
 
 이를 작성자별로 계산하는 것은 간단합니다,
@@ -2204,7 +2214,7 @@ LIMIT 20
 고무적인 점은 주석 비율(%)이 비교적 일정하게 유지되며, 작성자의 기여 기간이 길어져도 감소하지 않는다는 점입니다.
 
 <div id="what-is-the-average-time-before-code-will-be-rewritten-and-the-median-half-life-of-code-decay">
-  ### 코드가 재작성되기까지 걸리는 평균 시간과 중앙값(코드 감쇠의 반감기)은 얼마입니까?
+  ### 코드가 재작성되기까지 걸리는 평균 시간과 중앙값(코드 감쇠의 반감기)은 얼마입니까? {#what-is-the-average-time-before-code-will-be-rewritten-and-the-median-half-life-of-code-decay}
 </div>
 
 재작성을 식별하기 위해 [가장 자주 재작성되었거나 가장 많은 작성자가 재작성한 파일 나열](#list-files-that-were-rewritten-most-number-of-times)과 같은 원리를 사용할 수 있지만, 여기서는 모든 파일을 대상으로 합니다. 각 파일에서 재작성 사이의 시간 간격을 계산하기 위해 윈도 함수가 사용됩니다. 이를 바탕으로 전체 파일에 대한 평균과 중앙값을 계산할 수 있습니다.
@@ -2268,7 +2278,7 @@ FROM rewrites
 ```
 
 <div id="what-is-the-worst-time-to-write-code-in-sense-that-the-code-has-highest-chance-to-be-re-written">
-  ### 코드가 재작성될 가능성이 가장 높은, 즉 코드를 작성하기에 가장 좋지 않은 시간대는 언제입니까?
+  ### 코드가 재작성될 가능성이 가장 높은, 즉 코드를 작성하기에 가장 좋지 않은 시간대는 언제입니까? {#what-is-the-worst-time-to-write-code-in-sense-that-the-code-has-highest-chance-to-be-re-written}
 </div>
 
 [코드가 재작성되기까지 걸리는 평균 시간과 중앙값(코드 감쇠의 반감기)은 얼마입니까?](#what-is-the-average-time-before-code-will-be-rewritten-and-the-median-half-life-of-code-decay) 및 [가장 많이 재작성되었거나 가장 많은 작성자가 재작성한 파일 목록](#list-files-that-were-rewritten-most-number-of-times)과 유사하지만, 여기서는 요일별로 집계합니다. 필요에 따라 연중 월별 등으로 조정하세요.
@@ -2336,7 +2346,7 @@ GROUP BY dayOfWeek
 ```
 
 <div id="which-authors-code-is-the-most-sticky">
-  ### 어떤 작성자의 코드가 가장 오래 남습니까?
+  ### 어떤 작성자의 코드가 가장 오래 남습니까? {#which-authors-code-is-the-most-sticky}
 </div>
 
 여기서 &quot;sticky&quot;는 작성자의 코드가 재작성되기 전까지 얼마나 오래 남아 있는지를 의미합니다. 이전 질문인 [코드가 재작성되기까지의 평균 시간과 중앙값(코드 감쇠의 반감기)은 얼마입니까?](#what-is-the-average-time-before-code-will-be-rewritten-and-the-median-half-life-of-code-decay)과 마찬가지로, 재작성에는 동일한 메트릭을 사용합니다. 즉, 파일 기준으로 추가 50%, 삭제 50%를 재작성으로 봅니다. 작성자별 평균 재작성 시간을 계산하고, 파일이 2개를 초과하는 contributors만 고려합니다.
@@ -2417,7 +2427,7 @@ LIMIT 10
 ```
 
 <div id="most-consecutive-days-of-commits-by-an-author">
-  ### 작성자별 최장 연속 커밋 일수
+  ### 작성자별 최장 연속 커밋 일수 {#most-consecutive-days-of-commits-by-an-author}
 </div>
 
 이 쿼리에서는 먼저 작성자가 커밋한 날짜를 계산해야 합니다. 작성자별로 파티셔닝한 윈도 함수를 사용하면 각 커밋 사이의 일수를 계산할 수 있습니다. 각 커밋에서 이전 커밋 이후 경과 시간이 1일이면 연속(1)으로 표시하고, 그렇지 않으면 0으로 표시해 이 결과를 `consecutive_day`에 저장합니다.
@@ -2476,7 +2486,7 @@ LIMIT 10
 ```
 
 <div id="line-by-line-commit-history-of-a-file">
-  ### 파일의 줄 단위 커밋 이력
+  ### 파일의 줄 단위 커밋 이력 {#line-by-line-commit-history-of-a-file}
 </div>
 
 파일은 이름이 변경될 수 있습니다. 이 경우 이름 변경 이벤트가 발생하며, 이때 `path` 컬럼은 파일의 새 경로로 설정되고 `old_path`는 이전 위치를 나타냅니다. 예시는 다음과 같습니다.
@@ -2561,11 +2571,11 @@ FORMAT PrettyCompactMonoBlock
 ```
 
 <div id="unsolved-questions">
-  ## 남은 질문
+  ## 남은 질문 {#unsolved-questions}
 </div>
 
 <div id="git-blame">
-  ### Git blame
+  ### Git blame {#git-blame}
 </div>
 
 현재 배열 함수에서 상태를 유지할 수 없기 때문에 정확한 결과를 얻기가 특히 어렵습니다. 이는 각 반복에서 상태를 유지할 수 있는 `arrayFold` 또는 `arrayReduce`로 가능해질 것입니다.

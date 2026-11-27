@@ -33,6 +33,7 @@
 #include <Common/randomDelay.h>
 #include <Common/thread_local_rng.h>
 #include <Core/UUID.h>
+#include <base/sleep.h>
 
 namespace fs = std::filesystem;
 
@@ -51,6 +52,11 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool enable_the_endpoint_id_with_zookeeper_name_prefix;
     extern const MergeTreeSettingsBool fsync_part_directory;
     extern const MergeTreeSettingsUInt64 min_compressed_bytes_to_fsync_after_fetch;
+}
+
+namespace FailPoints
+{
+    extern const char replicated_sends_sleep_before_file_send[];
 }
 
 namespace ErrorCodes
@@ -98,6 +104,12 @@ struct ReplicatedFetchReadCallback
 
     void operator() (size_t bytes_count)
     {
+        /// The entry is cancelled on server shutdown - there is no point in finishing
+        /// the download, its result would be discarded anyway.
+        if (replicated_fetch_entry->is_cancelled)
+            throw Exception(ErrorCodes::ABORTED,
+                "Fetching of part {} was cancelled", replicated_fetch_entry->result_part_name);
+
         replicated_fetch_entry->bytes_read_compressed.store(bytes_count, std::memory_order_relaxed);
 
         /// It's possible when we fetch part from very old clickhouse version
@@ -320,6 +332,15 @@ MergeTreeData::DataPart::Checksums Service::sendPartFromDisk(
     writeBinary(replicated_description.files.size(), out);
     for (const auto & [file_name, desc] : replicated_description.files)
     {
+        /// The flush makes the send observable by the receiver: without it, small (e.g. zero-copy
+        /// metadata) files accumulate in `out` and are sent in one piece at the end, and the sleeps
+        /// would just delay that single send instead of simulating a slow streaming transfer.
+        fiu_do_on(FailPoints::replicated_sends_sleep_before_file_send,
+        {
+            out.next();
+            sleepForSeconds(5);
+        });
+
         writeStringBinary(file_name, out);
         writeBinary(desc.file_size, out);
 
@@ -421,7 +442,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> Fetcher::fetchSelected
     int port,
     const ConnectionTimeouts & timeouts,
     const String & user,
-    const String & password,
+    const SecretString & password,
     const String & interserver_scheme,
     ThrottlerPtr throttler,
     bool to_detached,
@@ -511,7 +532,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> Fetcher::fetchSelected
     if (!user.empty())
     {
         creds.setUsername(user);
-        creds.setPassword(password);
+        creds.setPassword(String(password));
     }
 
     ReadSettings read_settings = context->getReadSettings();
@@ -524,8 +545,32 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> Fetcher::fetchSelected
                   .withMethod(Poco::Net::HTTPRequest::HTTP_POST)
                   .withTimeouts(timeouts)
                   .withSettings(read_settings)
-                  .withDelayInit(false)
+                  /// The buffer size determines how often `ReplicatedFetchReadCallback` observes the
+                  /// cancellation of the fetch (e.g. on server shutdown): the underlying read blocks
+                  /// until a whole buffer is received, and the callback runs between the refills.
+                  .withBufSize(read_settings.remote_fs_settings.buffer_size)
+                  /// Delay the request until the shutdown cancellation callback below is installed:
+                  /// with eager initialization the constructor would perform the first blocking read
+                  /// before `setNextCallback` can run.
+                  .withDelayInit(true)
                   .create(creds);
+
+    /// Make the shutdown cancellation (`ReplicatedFetchList::cancelAll`) effective from the very
+    /// first read of the response body: the part header (sizes, TTL infos, part type, UUID,
+    /// projection count) is read below before the fetch is registered in the list, and a sender
+    /// stalled in that prefix would otherwise pin the fetch worker until the HTTP timeouts fire.
+    /// The callback is replaced by `ReplicatedFetchReadCallback` after the registration.
+    auto & replicated_fetch_list = data.getContext()->getReplicatedFetchList();
+    in->setNextCallback([&replicated_fetch_list, part_name](size_t)
+    {
+        if (replicated_fetch_list.isAllCancelled())
+            throw Exception(ErrorCodes::ABORTED, "Fetching of part {} was cancelled", part_name);
+    });
+
+    /// Send the request and read the first chunk of the response body. `nextImpl` runs the callback
+    /// before the connection and each blocking refill, so the whole transfer is cancellable.
+    /// The response is needed just below for the cookies.
+    in->next();
 
     int server_protocol_version = parse<int>(in->getResponseCookie("server_protocol_version", "0"));
     String remote_fs_metadata = parse<String>(in->getResponseCookie("remote_fs_metadata", ""));
@@ -622,6 +667,18 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> Fetcher::fetchSelected
     if (server_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_PROJECTION)
         readBinary(projections, *in);
 
+    /// Register the fetch before branching on `remote_fs_metadata`, so that both the regular and the
+    /// zero-copy download participate in the shutdown cancellation (`ReplicatedFetchList::cancelAll`):
+    /// the callback aborts the fetch with `ABORTED` on the next buffer refill after the entry is cancelled.
+    auto storage_id = data.getStorageID();
+    String new_part_path = fs::path(data.getFullPathOnDisk(disk)) / part_name / "";
+    auto entry = replicated_fetch_list.insert(
+        storage_id.getDatabaseName(), storage_id.getTableName(),
+        part_info.getPartitionId(), part_name, new_part_path,
+        replica_path, uri, to_detached, sum_files_size);
+
+    in->setNextCallback(ReplicatedFetchReadCallback(*entry));
+
     if (!remote_fs_metadata.empty())
     {
         if (!try_zero_copy)
@@ -661,6 +718,9 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> Fetcher::fetchSelected
 
             LOG_WARNING(log, "Will retry fetching part without zero-copy: {}", e.message());
 
+            /// The recursive call registers its own entry in the `ReplicatedFetchList`.
+            /// `in` still holds a callback referencing this entry, but it is never read after this point.
+            entry.reset();
             temporary_directory_lock = {};
 
             /// Try again but without zero-copy
@@ -676,15 +736,6 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> Fetcher::fetchSelected
                 user, password, interserver_scheme, throttler, to_detached, tmp_prefix, nullptr, false, disk);
         }
     }
-
-    auto storage_id = data.getStorageID();
-    String new_part_path = fs::path(data.getFullPathOnDisk(disk)) / part_name / "";
-    auto entry = data.getContext()->getReplicatedFetchList().insert(
-        storage_id.getDatabaseName(), storage_id.getTableName(),
-        part_info.getPartitionId(), part_name, new_part_path,
-        replica_path, uri, to_detached, sum_files_size);
-
-    in->setNextCallback(ReplicatedFetchReadCallback(*entry));
 
     auto output_buffer_getter = [](IDataPartStorage & part_storage, const String & file_name, size_t file_size)
     {
@@ -912,7 +963,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
         new_data_part->version->setAndStoreCreationTID(Tx::NonTransactionalTID, nullptr);
         new_data_part->is_temp = true;
         /// In case of replicated merge tree with zero copy replication
-        /// Here Clickhouse claims that this new part can be deleted in temporary state without unlocking the blobs
+        /// Here ClickHouse claims that this new part can be deleted in temporary state without unlocking the blobs
         /// The blobs have to stay intact, this temporary part does not own them and does not share them yet.
         new_data_part->remove_tmp_policy = IMergeTreeDataPart::BlobsRemovalPolicyForTemporaryParts::PRESERVE_BLOBS;
         new_data_part->modification_time = time(nullptr);
@@ -966,20 +1017,8 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
             /// entries from the expected checksums when throw_on_broken_projection is false. Genuine
             /// base-file corruption still fails checkEqual, so it is left to propagate.
             bool is_broken_projection = false;
-            auto computed_checksums = checkDataPart(new_data_part, /*require_checksums=*/ true, is_broken_projection);
-
-            /// checkDataPart returns an empty result (instead of throwing) when it hits a retryable error
-            /// such as a transient read or memory-limit exception, expecting the check to be retried
-            /// later. On the fetch path there is no later check before the part is published, so an empty
-            /// result means the archive contents were never verified. Fail the fetch so it is retried
-            /// rather than accepting a possibly-corrupted packed part. (A real part always has files, so a
-            /// genuine part never yields empty checksums here.)
-            if (computed_checksums.empty())
-                throw Exception(
-                    ErrorCodes::ABORTED,
-                    "Could not verify packed part {} on fetch (checksum computation was skipped because of a "
-                    "transient error); the fetch will be retried",
-                    part_name);
+            /// checkDataPart rethrows a retryable error (transient read / memory limit / Azure 403), failing the fetch so it retries instead of publishing an unverified part.
+            checkDataPart(new_data_part, /*require_checksums=*/ true, is_broken_projection);
         }
         LOG_DEBUG(log, "Download of part {} onto disk {} finished.", part_name, disk->getName());
     }

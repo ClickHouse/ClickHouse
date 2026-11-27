@@ -12,6 +12,7 @@
 #include <Columns/IColumn.h>
 
 #include <Common/assert_cast.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 
 #include <Core/Field.h>
 
@@ -45,16 +46,25 @@ namespace
 
 constexpr auto FORMAT_NAME = "Prometheus";
 
-bool isDataTypeMapString(const DataTypePtr & type)
+bool isDataTypeMapString(const DataTypePtr & in_type, bool optional)
 {
+    const auto & type = optional ? removeNullable(in_type) : in_type;
     if (!isMap(type))
         return false;
     const auto * type_map = assert_cast<const DataTypeMap *>(type.get());
-    return isStringOrFixedString(type_map->getKeyType()) && isStringOrFixedString(type_map->getValueType());
+    return isStringOrFixedString(removeLowCardinality(type_map->getKeyType()))
+        && isStringOrFixedString(removeLowCardinality(type_map->getValueType()));
 }
 
-template <typename ResType>
-void getColumnPos(const Block & header, const String & col_name, bool (*pred)(const DataTypePtr &), ResType & res)
+bool isAcceptableString(const DataTypePtr & type, bool optional)
+{
+    const auto& t1 = removeLowCardinality(type);
+    const auto& t2 = optional ? removeNullable(t1) : t1;
+    return isStringOrFixedString(t2);
+}
+
+template <typename Pred, typename ResType>
+void getColumnPos(const Block & header, const String & col_name, Pred&& pred, ResType & res)
 {
     static_assert(std::is_same_v<ResType, size_t> || std::is_same_v<ResType, std::optional<size_t>>, "Illegal ResType");
 
@@ -64,7 +74,7 @@ void getColumnPos(const Block & header, const String & col_name, bool (*pred)(co
     {
         res = header.getPositionByName(col_name);
         const auto & col = header.getByName(col_name);
-        if (!pred(is_optional ? removeNullable(col.type) : col.type))
+        if (!pred(col.type, is_optional))
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Illegal type '{}' of column '{}' for output format '{}'",
                 col.type->getName(), col_name, FORMAT_NAME);
@@ -99,12 +109,17 @@ PrometheusTextOutputFormat::PrometheusTextOutputFormat(
 {
     const Block & header = getPort(PortKind::Main).getHeader();
 
-    getColumnPos(header, "name", isStringOrFixedString, pos.name);
-    getColumnPos(header, "value", isNumber, pos.value);
+    auto is_number = [](const DataTypePtr & type, bool optional)
+    {
+        return isNumber(optional ? removeNullable(type) : type);
+    };
 
-    getColumnPos(header, "help", isStringOrFixedString, pos.help);
-    getColumnPos(header, "type", isStringOrFixedString, pos.type);
-    getColumnPos(header, "timestamp", isNumber, pos.timestamp);
+    getColumnPos(header, "name", isAcceptableString, pos.name);
+    getColumnPos(header, "value", is_number, pos.value);
+
+    getColumnPos(header, "help", isAcceptableString, pos.help);
+    getColumnPos(header, "type", isAcceptableString, pos.type);
+    getColumnPos(header, "timestamp", is_number, pos.timestamp);
     getColumnPos(header, "labels", isDataTypeMapString, pos.labels);
 }
 
@@ -370,10 +385,10 @@ Exposes metrics in the [Prometheus text-based exposition format](https://prometh
 
 For this format, it is a requirement for the output table to be structured correctly, by the following rules:
 
-- Columns `name` ([String](/sql-reference/data-types/string.md)) and `value` (number) are required.
-- Rows may optionally contain `help` ([String](/sql-reference/data-types/string.md)) and `timestamp` (number).
-- Column `type` ([String](/sql-reference/data-types/string.md)) should be one of `counter`, `gauge`, `histogram`, `summary`, `untyped` or empty.
-- Each metric value may also have some `labels` ([Map(String, String)](/sql-reference/data-types/map.md)).
+- Columns `name` ([String](/reference/data-types/string)) and `value` (number) are required.
+- Rows may optionally contain `help` ([String](/reference/data-types/string)) and `timestamp` (number).
+- Column `type` ([String](/reference/data-types/string)) should be one of `counter`, `gauge`, `histogram`, `summary`, `untyped` or empty.
+- Each metric value may also have some `labels` ([Map(String, String)](/reference/data-types/map)).
 - Several consequent rows may refer to the one metric with different labels. The table should be sorted by metric name (e.g., with `ORDER BY name`).
 
 There are special requirements for the `histogram` and `summary` labels - see [Prometheus doc](https://prometheus.io/docs/instrumenting/exposition_formats/#histograms-and-summaries) for the details. 

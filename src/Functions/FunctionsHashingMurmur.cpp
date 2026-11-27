@@ -14,10 +14,10 @@ REGISTER_FUNCTION(HashingMurmur)
     FunctionDocumentation::Description murmurHash2_32_description = R"(
 Computes the [MurmurHash2](https://github.com/aappleby/smhasher) hash of the input value.
 
-:::note
+<Note>
 The calculated hash values may be equal for the same input values of different argument types.
 This affects for example integer types of different size, named and unnamed `Tuple` with the same data, `Map` and the corresponding `Array(Tuple(key, value))` type with the same data.
-:::
+</Note>
 )";
     FunctionDocumentation::Syntax murmurHash2_32_syntax = "murmurHash2_32(arg1[, arg2, ...])";
     FunctionDocumentation::Arguments murmurHash2_32_arguments = {
@@ -30,7 +30,7 @@ This affects for example integer types of different size, named and unnamed `Tup
         "SELECT murmurHash2_32(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00')) AS MurmurHash2, toTypeName(MurmurHash2) AS type;",
         R"(
 ┌─MurmurHash2─┬─type───┐
-│  3681770635 │ UInt32 │
+│  2947095100 │ UInt32 │
 └─────────────┴────────┘
         )"
     }
@@ -43,10 +43,10 @@ This affects for example integer types of different size, named and unnamed `Tup
     FunctionDocumentation::Description murmurHash2_64_description = R"(
 Computes the [MurmurHash2](https://github.com/aappleby/smhasher) hash of the input value.
 
-:::note
+<Note>
 The calculated hash values may be equal for the same input values of different argument types.
 This affects for example integer types of different size, named and unnamed `Tuple` with the same data, `Map` and the corresponding `Array(Tuple(key, value))` type with the same data.
-:::
+</Note>
 )";
     FunctionDocumentation::Syntax murmurHash2_64_syntax = "murmurHash2_64(arg1[, arg2, ...])";
     FunctionDocumentation::Arguments murmurHash2_64_arguments = {
@@ -59,7 +59,7 @@ This affects for example integer types of different size, named and unnamed `Tup
         "SELECT murmurHash2_64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00')) AS MurmurHash2, toTypeName(MurmurHash2) AS type;",
         R"(
 ┌──────────MurmurHash2─┬─type───┐
-│ 11832096901709403633 │ UInt64 │
+│ 16479669305841206229 │ UInt64 │
 └──────────────────────┴────────┘
         )"
     }
@@ -72,10 +72,10 @@ This affects for example integer types of different size, named and unnamed `Tup
     FunctionDocumentation::Description murmurHash3_32_description = R"(
 Produces a [MurmurHash3](https://github.com/aappleby/smhasher) hash value.
 
-:::note
+<Note>
 The calculated hash values may be equal for the same input values of different argument types.
 This affects for example integer types of different size, named and unnamed `Tuple` with the same data, `Map` and the corresponding `Array(Tuple(key, value))` type with the same data.
-:::
+</Note>
 )";
     FunctionDocumentation::Syntax murmurHash3_32_syntax = "murmurHash3_32(arg1[, arg2, ...])";
     FunctionDocumentation::Arguments murmurHash3_32_arguments = {
@@ -88,7 +88,7 @@ This affects for example integer types of different size, named and unnamed `Tup
         "SELECT murmurHash3_32(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00')) AS MurmurHash3, toTypeName(MurmurHash3) AS type;",
         R"(
 ┌─MurmurHash3─┬─type───┐
-│     2152717 │ UInt32 │
+│   317985299 │ UInt32 │
 └─────────────┴────────┘
         )"
     }
@@ -101,10 +101,10 @@ This affects for example integer types of different size, named and unnamed `Tup
     FunctionDocumentation::Description murmurHash3_64_description = R"(
 Computes the [MurmurHash3](https://github.com/aappleby/smhasher) hash of the input value.
 
-:::note
+<Note>
 The calculated hash values may be equal for the same input values of different argument types.
 This affects for example integer types of different size, named and unnamed `Tuple` with the same data, `Map` and the corresponding `Array(Tuple(key, value))` type with the same data.
-:::
+</Note>
 )";
     FunctionDocumentation::Syntax murmurHash3_64_syntax = "murmurHash3_64(arg1[, arg2, ...])";
     FunctionDocumentation::Arguments murmurHash3_64_arguments = {
@@ -117,7 +117,7 @@ This affects for example integer types of different size, named and unnamed `Tup
         "SELECT murmurHash3_64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00')) AS MurmurHash3, toTypeName(MurmurHash3) AS type;",
         R"(
 ┌──────────MurmurHash3─┬─type───┐
-│ 11832096901709403633 │ UInt64 │
+│ 11285022984631508790 │ UInt64 │
 └──────────────────────┴────────┘
         )"
     }

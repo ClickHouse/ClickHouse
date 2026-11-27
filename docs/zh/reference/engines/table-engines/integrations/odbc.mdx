@@ -38,7 +38,7 @@ ENGINE = ODBC(datasource, external_database, external_table)
 
 * 列名应与源表中的列名一致，但你也可以只使用其中部分列，且顺序可以任意。
 * 列类型可以与源表中的列类型不同。ClickHouse 会尝试将值[转换](/zh/reference/functions/regular-functions/type-conversion-functions#CAST)为 ClickHouse 数据类型。
-* [external&#95;table&#95;functions&#95;use&#95;nulls](/zh/reference/settings/session-settings#external_table_functions_use_nulls) 设置定义了如何处理 Nullable 列。默认值：1。如果为 0，表函数不会生成 Nullable 列，而是插入默认值来代替 null。这同样适用于数组中的 NULL 值。
+* [external&#95;table&#95;functions&#95;use&#95;nulls](/zh/reference/settings/session-settings/external-table#external_table_functions_use_nulls) 设置定义了如何处理 Nullable 列。默认值：1。如果为 0，表函数不会生成 Nullable 列，而是插入默认值来代替 null。这同样适用于数组中的 NULL 值。
 
 **引擎参数**
 

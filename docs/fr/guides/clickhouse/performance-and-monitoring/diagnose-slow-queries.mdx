@@ -1,0 +1,406 @@
+---
+slug: /optimize/diagnose-slow-queries
+sidebarTitle: 'Diagnostiquer les requêtes lentes'
+title: 'Diagnostiquer les requêtes lentes'
+description: 'Découvrez comment identifier les requêtes ClickHouse lentes et examiner leur utilisation des ressources ainsi que leurs plans d’exécution'
+doc_type: 'guide'
+keywords: ['optimisation des requêtes', 'journal des requêtes', 'requêtes lentes', 'EXPLAIN', 'performances']
+---
+
+import NYCTaxiExampleDataset from '/snippets/fr/_nyc_taxi_example_dataset.mdx';
+
+Le diagnostic d’une requête lente commence par l’analyse de son historique. Ce guide explique comment utiliser `system.query_log` pour identifier des schémas récurrents de requêtes lentes, choisir une exécution représentative et examiner son utilisation des ressources. Vous utiliserez ensuite `EXPLAIN` pour examiner le plan de requête et formuler une hypothèse sur le goulot d’étranglement avant de modifier la requête ou le schéma.
+
+<div id="before-you-begin">
+  ## Avant de commencer
+</div>
+
+Les exemples de ce guide utilisent la table `nyc_taxi.trips_small_inferred`. Pour les exécuter tels quels, créez et chargez la table si ce n&#39;est pas déjà fait :
+
+<Accordion title="Configurer le jeu de données d'exemple">
+  <NYCTaxiExampleDataset />
+</Accordion>
+
+Pour reproduire les résultats du journal des requêtes de ce guide, exécutez chacune des trois [requêtes de charge de travail d&#39;exemple](/fr/guides/clickhouse/performance-and-monitoring/query-optimization-example#define-the-baseline-workload) au moins deux fois après avoir chargé le jeu de données. Videz ensuite le journal des requêtes afin que les exécutions terminées soient disponibles pour les exemples ci-dessous :
+
+```sql
+SYSTEM FLUSH LOGS;
+```
+
+Si vous ne pouvez pas exécuter `SYSTEM FLUSH LOGS`, attendez que le journal des requêtes soit automatiquement écrit sur le stockage, puis réessayez la première recherche. Lorsque vous analysez votre propre charge de travail, assurez-vous que `system.query_log` contient des exécutions terminées couvrant l’intervalle de temps que vous souhaitez examiner.
+
+<div id="how-it-works">
+  ## Fonctionnement
+</div>
+
+Par défaut, ClickHouse enregistre des informations sur les requêtes terminées dans la table [`system.query_log`](/fr/reference/system-tables/query_log). Chaque enregistrement peut inclure la durée de la requête, le nombre de lignes lues, l’utilisation du CPU et de la mémoire, ainsi que l’activité du cache du système de fichiers.
+
+Ces mesures vous aident à identifier les modèles de requêtes lentes et à comprendre comment elles utilisent les ressources. Après avoir sélectionné une exécution représentative, vous pouvez examiner son plan d’exécution afin de déterminer à quel niveau la requête pourrait passer du temps.
+
+Dans un cluster, les données du journal des requêtes restent locales à chaque nœud. Les exemples de ce guide utilisent [`clusterAllReplicas`](/fr/reference/functions/table-functions/cluster) pour interroger chaque réplique et [`merge`](/fr/reference/functions/table-functions/merge) pour inclure la table `system.query_log` actuelle ainsi que les tables `query_log_N` versionnées conservées après des modifications du schéma des tables système.
+
+Chaque exemple du journal des requêtes comprend des onglets pour les déploiements en cluster et sur un nœud unique. ClickHouse Cloud fournit le cluster `default` utilisé dans les exemples de cluster. Dans un déploiement autogéré, remplacez `default` par un cluster répertorié dans [`system.clusters`](/fr/reference/system-tables/clusters).
+
+<Note>
+  Les exemples définissent [`skip_unavailable_shards`](/fr/reference/settings/session-settings#skip_unavailable_shards) afin qu’une réplique temporairement indisponible n’entraîne pas l’échec de la requête de diagnostic. Cela est particulièrement utile lors de la mise à l’échelle automatique. Les enregistrements d’une réplique ignorée ne sont pas inclus ; les résultats peuvent donc être incomplets.
+</Note>
+
+<div id="diagnose-a-slow-query">
+  ## Diagnostiquer une requête lente
+</div>
+
+À partir des exécutions terminées consignées dans le journal des requêtes, suivez ces trois étapes dans l’ordre. Vous identifierez un schéma récurrent de requête lente, choisirez une exécution représentative et examinerez le plan d’exécution de la requête.
+
+<Steps titleSize="h3">
+  <Step title="Identifier les requêtes candidates" id="identify-candidate-queries">
+    Commencez par regrouper les requêtes initiales terminées par `normalized_query_hash`. Cela permet de distinguer les modèles de requêtes récurrents des exécutions lentes isolées. La requête suivante classe les modèles par durée médiane et fournit un exemple de requête pour chaque modèle :
+
+    <Tabs>
+      <Tab title="Cluster">
+        ```sql
+        SELECT
+            normalized_query_hash,
+            count() AS executions,
+            quantile(0.5)(query_duration_ms) AS median_duration_ms,
+            max(query_duration_ms) AS max_duration_ms,
+            formatReadableSize(avg(read_bytes)) AS avg_read_bytes,
+            formatReadableSize(max(memory_usage)) AS max_memory,
+            any(query) AS example_query
+        FROM clusterAllReplicas('default', merge('system', '^query_log'))
+        WHERE type = 'QueryFinish'
+          AND is_initial_query = 1
+          AND query_kind = 'Select'
+          AND event_time >= now() - INTERVAL 1 HOUR
+          AND has(databases, 'nyc_taxi')
+        GROUP BY normalized_query_hash
+        HAVING executions >= 2
+        ORDER BY median_duration_ms DESC
+        LIMIT 10
+        SETTINGS skip_unavailable_shards = 1
+        ```
+      </Tab>
+
+      <Tab title="Nœud unique">
+        ```sql
+        SELECT
+            normalized_query_hash,
+            count() AS executions,
+            quantile(0.5)(query_duration_ms) AS median_duration_ms,
+            max(query_duration_ms) AS max_duration_ms,
+            formatReadableSize(avg(read_bytes)) AS avg_read_bytes,
+            formatReadableSize(max(memory_usage)) AS max_memory,
+            any(query) AS example_query
+        FROM merge('system', '^query_log')
+        WHERE type = 'QueryFinish'
+          AND is_initial_query = 1
+          AND query_kind = 'Select'
+          AND event_time >= now() - INTERVAL 1 HOUR
+          AND has(databases, 'nyc_taxi')
+        GROUP BY normalized_query_hash
+        HAVING executions >= 2
+        ORDER BY median_duration_ms DESC
+        LIMIT 10
+        ```
+      </Tab>
+    </Tabs>
+
+    Utilisez `executions` pour distinguer un workload récurrent de queries isolées. Un pattern présentant une durée médiane élevée, des exécutions fréquentes ou une consommation de ressources importante constitue un candidat plus pertinent pour une investigation qu&#39;une unique exécution lente.
+
+    Pour dresser un rapide inventaire, la requête suivante liste l&#39;exécution terminée la plus lente pour un maximum de cinq query patterns distincts sur le jeu de données des taxis de NYC. Elle exclut les statements de chargement du jeu de données ainsi que les exécutions répétées d&#39;un même pattern. À l&#39;étape suivante, vous restreindrez le query history aux exécutions correspondant au `normalized_query_hash` sélectionné ci-dessus.
+
+    <Tabs>
+      <Tab title="Cluster">
+        ```sql
+        -- Rechercher les 5 requêtes les plus longues de la base de données nyc_taxi au cours de la dernière heure
+        SELECT
+            normalized_query_hash,
+            type,
+            event_time,
+            query_duration_ms,
+            query,
+            read_rows,
+            tables
+        FROM clusterAllReplicas('default', merge('system', '^query_log'))
+        WHERE has(databases, 'nyc_taxi')
+          AND event_time >= now() - INTERVAL 1 HOUR
+          AND type = 'QueryFinish'
+          AND is_initial_query = 1
+          AND query_kind = 'Select'
+        ORDER BY query_duration_ms DESC
+        LIMIT 1 BY normalized_query_hash
+        LIMIT 5
+        SETTINGS skip_unavailable_shards = 1
+        FORMAT VERTICAL
+        ```
+      </Tab>
+
+      <Tab title="Nœud unique">
+        ```sql
+        -- Rechercher les 5 requêtes les plus longues de la base de données nyc_taxi au cours de la dernière heure
+        SELECT
+            normalized_query_hash,
+            type,
+            event_time,
+            query_duration_ms,
+            query,
+            read_rows,
+            tables
+        FROM merge('system', '^query_log')
+        WHERE has(databases, 'nyc_taxi')
+          AND event_time >= now() - INTERVAL 1 HOUR
+          AND type = 'QueryFinish'
+          AND is_initial_query = 1
+          AND query_kind = 'Select'
+        ORDER BY query_duration_ms DESC
+        LIMIT 1 BY normalized_query_hash
+        LIMIT 5
+        FORMAT VERTICAL
+        ```
+      </Tab>
+    </Tabs>
+
+    ```response
+    Query id: e3d48c9f-32bb-49a4-8303-080f59ed1835
+
+    Row 1:
+    ──────
+    normalized_query_hash: 11000678248135956062
+    type:              QueryFinish
+    event_time:        2024-11-27 11:12:36
+    query_duration_ms: 2967
+    query:             WITH
+      dateDiff('s', pickup_datetime, dropoff_datetime) as trip_time,
+      trip_distance / trip_time * 3600 AS speed_mph
+    SELECT
+      quantiles(0.5, 0.75, 0.9, 0.99)(trip_distance)
+    FROM
+      nyc_taxi.trips_small_inferred
+    WHERE
+      speed_mph > 30
+    FORMAT JSON
+    read_rows:         329044175
+    tables:            ['nyc_taxi.trips_small_inferred']
+
+    Row 2:
+    ──────
+    normalized_query_hash: 4194765292165295011
+    type:              QueryFinish
+    event_time:        2024-11-27 11:11:33
+    query_duration_ms: 2026
+    query:             SELECT
+        payment_type,
+        COUNT() AS trip_count,
+        formatReadableQuantity(SUM(trip_distance)) AS total_distance,
+        AVG(total_amount) AS total_amount_avg,
+        AVG(tip_amount) AS tip_amount_avg
+    FROM
+        nyc_taxi.trips_small_inferred
+    WHERE
+        pickup_datetime >= '2009-01-01' AND pickup_datetime < '2009-04-01'
+    GROUP BY
+        payment_type
+    ORDER BY
+        trip_count DESC;
+
+    read_rows:         329044175
+    tables:            ['nyc_taxi.trips_small_inferred']
+
+    Row 3:
+    ──────
+    normalized_query_hash: 1891814463795712754
+    type:              QueryFinish
+    event_time:        2024-11-27 11:12:17
+    query_duration_ms: 1860
+    query:             SELECT
+      avg(dateDiff('s', pickup_datetime, dropoff_datetime))
+    FROM nyc_taxi.trips_small_inferred
+    WHERE passenger_count = 1 or passenger_count = 2
+    FORMAT JSON
+    read_rows:         329044175
+    tables:            ['nyc_taxi.trips_small_inferred']
+    ```
+
+    Le champ `query_duration_ms` contient la durée de la requête en millisecondes. Dans ces résultats, la requête la plus longue a duré 2 967 ms.
+
+    Vous pouvez également identifier les requêtes candidates en fonction de l&#39;utilisation des ressources plutôt que de la durée des requêtes :
+
+    <Accordion title="Identifier les requêtes gourmandes en ressources">
+      Cette requête classe les requêtes récentes par utilisation de la mémoire et indique leur utilisation du CPU. Les résultats varient selon la charge de travail et le déploiement :
+
+      <Tabs>
+        <Tab title="Cluster">
+          ```sql
+          -- Requêtes consommant le plus de mémoire
+          SELECT
+              type,
+              event_time,
+              query_id,
+              formatReadableSize(memory_usage) AS memory,
+              ProfileEvents.Values[indexOf(ProfileEvents.Names, 'UserTimeMicroseconds')] AS userCPU,
+              ProfileEvents.Values[indexOf(ProfileEvents.Names, 'SystemTimeMicroseconds')] AS systemCPU,
+              (ProfileEvents['CachedReadBufferReadFromCacheMicroseconds']) / 1000000 AS FromCacheSeconds,
+              (ProfileEvents['CachedReadBufferReadFromSourceMicroseconds']) / 1000000 AS FromSourceSeconds,
+              normalized_query_hash
+          FROM clusterAllReplicas('default', merge('system', '^query_log'))
+          WHERE has(databases, 'nyc_taxi')
+            AND type = 'QueryFinish'
+            AND is_initial_query = 1
+            AND query_kind = 'Select'
+            AND event_time >= now() - INTERVAL 2 DAY
+            AND user NOT ILIKE '%internal%'
+          ORDER BY memory_usage DESC
+          LIMIT 30
+          SETTINGS skip_unavailable_shards = 1
+          ```
+        </Tab>
+
+        <Tab title="Nœud unique">
+          ```sql
+          -- Requêtes consommant le plus de mémoire
+          SELECT
+              type,
+              event_time,
+              query_id,
+              formatReadableSize(memory_usage) AS memory,
+              ProfileEvents.Values[indexOf(ProfileEvents.Names, 'UserTimeMicroseconds')] AS userCPU,
+              ProfileEvents.Values[indexOf(ProfileEvents.Names, 'SystemTimeMicroseconds')] AS systemCPU,
+              (ProfileEvents['CachedReadBufferReadFromCacheMicroseconds']) / 1000000 AS FromCacheSeconds,
+              (ProfileEvents['CachedReadBufferReadFromSourceMicroseconds']) / 1000000 AS FromSourceSeconds,
+              normalized_query_hash
+          FROM merge('system', '^query_log')
+          WHERE has(databases, 'nyc_taxi')
+            AND type = 'QueryFinish'
+            AND is_initial_query = 1
+            AND query_kind = 'Select'
+            AND event_time >= now() - INTERVAL 2 DAY
+            AND user NOT ILIKE '%internal%'
+          ORDER BY memory_usage DESC
+          LIMIT 30
+          ```
+        </Tab>
+      </Tabs>
+    </Accordion>
+  </Step>
+
+  <Step title="Choisissez l’exécution représentative d’une requête" id="choose-a-representative-query-run">
+    Une seule exécution lente peut être une valeur aberrante due à une requête ponctuelle ou à une charge système temporaire. Avant d’inspecter le plan de requête, examinez plusieurs exécutions terminées présentant le même [`normalized_query_hash`](/fr/reference/system-tables/query_log#columns), identique pour les requêtes qui ne diffèrent que par leurs valeurs littérales. Choisissez une exécution représentative de la durée et de l’utilisation habituelles des ressources pour ce modèle.
+
+    Remplacez la valeur affectée à `selected_hash` par le `normalized_query_hash` du modèle que vous souhaitez examiner :
+
+    <Tabs>
+      <Tab title="Cluster">
+        ```sql
+        WITH toUInt64(123456789) AS selected_hash
+        SELECT
+            event_time,
+            query_id,
+            query_duration_ms,
+            read_rows,
+            read_bytes,
+            memory_usage,
+            query
+        FROM clusterAllReplicas('default', merge('system', '^query_log'))
+        WHERE type = 'QueryFinish'
+          AND is_initial_query = 1
+          AND normalized_query_hash = selected_hash
+          AND event_time >= now() - INTERVAL 1 HOUR
+        ORDER BY event_time DESC
+        LIMIT 10
+        SETTINGS skip_unavailable_shards = 1;
+        ```
+      </Tab>
+
+      <Tab title="Nœud unique">
+        ```sql
+        WITH toUInt64(123456789) AS selected_hash
+        SELECT
+            event_time,
+            query_id,
+            query_duration_ms,
+            read_rows,
+            read_bytes,
+            memory_usage,
+            query
+        FROM merge('system', '^query_log')
+        WHERE type = 'QueryFinish'
+          AND is_initial_query = 1
+          AND normalized_query_hash = selected_hash
+          AND event_time >= now() - INTERVAL 1 HOUR
+        ORDER BY event_time DESC
+        LIMIT 10;
+        ```
+      </Tab>
+    </Tabs>
+
+    1. Recherchez les exécutions présentant des valeurs `read_rows` et `read_bytes` similaires.
+    2. Comparez `query_duration_ms` et `memory_usage` pour ces exécutions.
+    3. Sélectionnez le `query_id` dont le `query_duration_ms` est le plus proche de la médiane.
+
+    <Note>
+      Les résultats historiques du journal de requêtes peuvent varier en fonction de l’état du cache et de la charge système. Utilisez-les donc pour choisir une requête à examiner, et non pour comparer des modifications d’optimisation. Si le journal de requêtes ne contient pas suffisamment d’exécutions terminées, exécutez la requête plusieurs fois dans des conditions similaires. Le guide suivant, [Isoler les goulots d’étranglement des requêtes](/fr/guides/clickhouse/performance-and-monitoring/isolate-query-bottlenecks), explique comment recueillir des mesures contrôlées afin de comparer les modifications.
+    </Note>
+
+    Les exemples de résultats du journal de requêtes montrent que chaque candidat a lu environ 329,04 millions de lignes. Pour référence, confirmez le nombre de lignes de la table d’exemple :
+
+    ```sql
+    SELECT count()
+    FROM nyc_taxi.trips_small_inferred
+    ```
+
+    ```response
+    Query id: 733372c5-deaf-4719-94e3-261540933b23
+
+       ┌───count()─┐
+    1. │ 329044175 │ -- 329.04 million
+       └───────────┘
+    ```
+
+    La table contient 329,04 millions de lignes, soit approximativement le même nombre que celui indiqué dans `read_rows` pour chaque candidat. Cela suggère que les requêtes ont parcouru la majeure partie, voire la totalité, de la table, mais n’indique pas pourquoi ces lignes ont été lues ni si ce volume est approprié pour la requête. Examinez ensuite le plan de requête pour voir comment ClickHouse a sélectionné et traité les données.
+  </Step>
+
+  <Step title="Inspectez le plan d’exécution" id="explain-statement">
+    Après avoir choisi une exécution représentative, utilisez [`EXPLAIN`](/fr/reference/statements/explain) pour examiner comment ClickHouse planifie la requête sans l’exécuter. La sortie indique les opérations que ClickHouse prévoit d’effectuer et la façon dont les données circulent entre elles, apportant davantage de contexte aux mesures du journal des requêtes.
+
+    Pour une présentation détaillée des formats de sortie disponibles, consultez [Comprendre l’exécution des requêtes avec l’analyseur](/fr/guides/clickhouse/performance-and-monitoring/understanding-query-execution-with-the-analyzer). Dans cet exemple, `EXPLAIN` montre comment ClickHouse prévoit de lire et de filtrer les données, ainsi que s’il peut en ignorer une partie.
+
+    La sortie se présente sous la forme d’un arbre d’opérations qui montre comment ClickHouse prévoit de lire, filtrer et traiter les données. Les opérations enfants apparaissent sous leurs opérations parentes. Commencez par l’opération de lecture la plus profonde, puis remontez le plan pour voir comment ClickHouse transforme les données en résultat final.
+
+    Pour cet exemple, examinez la requête de calcul de vitesse dans les résultats du journal des requêtes :
+
+    ```sql
+    EXPLAIN actions = 1, compact = 1, pretty = 1, indexes = 1
+    WITH
+        dateDiff('s', pickup_datetime, dropoff_datetime) AS trip_time,
+        (trip_distance / trip_time) * 3600 AS speed_mph
+    SELECT quantiles(0.5, 0.75, 0.9, 0.99)(trip_distance)
+    FROM nyc_taxi.trips_small_inferred
+    WHERE speed_mph > 30
+    ```
+
+    La sortie comprend les opérations suivantes. Certains détails, comme le nombre de parts et de granules, dépendent du mode de stockage des données :
+
+    ```response
+    Output: quantiles(0.5, 0.75, 0.9, 0.99)(trip_distance)
+
+    Aggregating
+    │  Aggregates: quantiles(0.5, 0.75, 0.9, 0.99)(trip_distance)
+    └──Filter
+       │  Filter column: trip_distance / dateDiff('s', pickup_datetime, dropoff_datetime) * 3600 > 30
+       └──ReadFromMergeTree (nyc_taxi.trips_small_inferred)
+    ```
+
+    De bas en haut, le plan se rapporte à la requête comme suit :
+
+    1. `ReadFromMergeTree` lit la table `nyc_taxi.trips_small_inferred`. L&#39;absence de section `Indexes`, associée au fait que `read_rows` correspond au nombre de lignes de la table, montre que ClickHouse lit l&#39;intégralité de la table.
+    2. `Filter` affiche l&#39;expression développée pour `speed_mph > 30`. Pour chaque ligne lue, ClickHouse calcule la durée et la vitesse du trajet, puis ne conserve que les lignes dont la vitesse dépasse 30 miles par heure.
+    3. `Aggregating` calcule les quantiles à partir des valeurs filtrées de `trip_distance`.
+
+    Ce plan met en évidence trois sources de travail à tester : la lecture de toutes les lignes, le calcul de `speed_mph` lors du filtrage et le calcul des quantiles.
+  </Step>
+</Steps>
+
+<div id="next-steps">
+  ## Prochaines étapes
+</div>
+
+Ensuite, consultez [Isoler les goulots d’étranglement des requêtes](/fr/guides/clickhouse/performance-and-monitoring/isolate-query-bottlenecks) pour apprendre à tester, dans des conditions contrôlées, les sources de charge suspectées. Ce guide compare des formes de requêtes de plus en plus simples afin d’identifier les opérations qui nécessitent une analyse plus approfondie.

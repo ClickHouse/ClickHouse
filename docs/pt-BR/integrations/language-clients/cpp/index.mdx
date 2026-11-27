@@ -1,7 +1,7 @@
 ---
 description: 'Documentação da biblioteca cliente C++ do ClickHouse e da integração
   com o framework u-server'
-sidebarTitle: 'C++'
+sidebarTitle: 'Visão geral'
 slug: /interfaces/cpp
 title: 'Biblioteca cliente C++'
 doc_type: 'reference'
@@ -23,9 +23,7 @@ repositório GitHub do projeto: [https://github.com/ClickHouse/clickhouse-cpp](h
   [https://github.com/ClickHouse/clickhouse-cpp/issues](https://github.com/ClickHouse/clickhouse-cpp/issues)
 </Note>
 
-<div id="including-library-into-project">
-  ## Incluindo a biblioteca no seu projeto
-</div>
+## Incluindo a biblioteca no seu projeto {#including-library-into-project}
 
 A forma mais simples de incorporar a biblioteca ao seu projeto é usar o módulo
 `FetchContent` do CMake. Essa abordagem permite definir uma versão exata da biblioteca e compilá-la como parte do fluxo de trabalho padrão
@@ -38,7 +36,7 @@ set(WITH_OPENSSL YES CACHE BOOL "Enable OpenSSL in clickhouse-cpp" FORCE)
 FetchContent_Declare(
     clickhouse-cpp
     GIT_REPOSITORY https://github.com/ClickHouse/clickhouse-cpp.git
-    GIT_TAG v2.6.0   # can also be `master` or other banch
+    GIT_TAG v2.6.0   # can also be `master` or other branch
 )
 FetchContent_MakeAvailable(clickhouse-cpp)
 ```
@@ -57,13 +55,9 @@ Depois que a dependência estiver disponível, vincule seu alvo ao alvo de bibli
 target_link_libraries(your-target PRIVATE clickhouse-cpp-lib)
 ```
 
-<div id="examples">
-  ## Exemplos
-</div>
+## Exemplos {#examples}
 
-<div id="example-setup-client">
-  ### Configurando o objeto Client
-</div>
+### Configurando o objeto Client {#example-setup-client}
 
 Crie uma instância de `Client` para estabelecer uma conexão com o ClickHouse. O exemplo a seguir
 demonstra como se conectar a uma instância local do ClickHouse, na qual não é necessário usar senha e o SSL não está
@@ -91,9 +85,7 @@ clickhouse::Client client{
     };
 ```
 
-<div id="example-create-table">
-  ### Criando tabelas e executando consultas sem retorno de dados
-</div>
+### Criando tabelas e executando consultas sem retorno de dados {#example-create-table}
 
 Para executar uma consulta que não retorna dados, como ao criar tabelas, use o método `Execute`.
 A mesma abordagem se aplica a outras instruções, como `ALTER TABLE`, `DROP` etc.
@@ -107,9 +99,7 @@ client.Execute(R"(
     ENGINE = MergeTree ORDER BY id)");
 ```
 
-<div id="example-insert-data">
-  ### Inserindo dados
-</div>
+### Inserindo dados {#example-insert-data}
 
 Para inserir dados em uma tabela, construa um `Block` e preencha-o com objetos de coluna que correspondam ao
 esquema da tabela. Os dados são adicionados coluna por coluna e depois inseridos em uma única operação usando o
@@ -140,9 +130,7 @@ block.AppendColumn("language", language);
 client.Insert("greetings", block);
 ```
 
-<div id="example-select">
-  ### Selecionando os dados
-</div>
+### Selecionando os dados {#example-select}
 
 Para executar uma consulta que retorna dados, use o método `Select` e forneça um callback para processar o
 resultado. Os resultados da consulta são recebidos como objetos `Block`, refletindo a representação de dados nativa
@@ -161,9 +149,7 @@ client.Select(
     });
 ```
 
-<div id="supported-data-types">
-  ## Tipos de dados suportados
-</div>
+## Tipos de dados suportados {#supported-data-types}
 
 * `UInt8`, `UInt16`, `UInt32`, `UInt64`, `Int8`, `Int16`, `Int32`, `Int64`
 * `UInt128`, `Int128`

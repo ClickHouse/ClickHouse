@@ -1,0 +1,6 @@
+-- profile database only: the profile value is the default choice
+system
+-- config-file database key: wins over the profile database setting
+default
+-- --database option: wins over the profile database setting
+default

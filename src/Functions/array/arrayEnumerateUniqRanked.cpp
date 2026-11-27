@@ -34,14 +34,14 @@ It allows for enumeration of a multi-dimensional array with the ability to speci
 -- is identical to that which arrayEnumerateUniq would give for the same array.
 
 SELECT arrayEnumerateUniqRanked(1, [1, 2, 1], 1);
-        )", "[1, 1, 2]"},
+        )", "[1,1,2]"},
         {"Example 2", R"(
 -- with clear_depth=1 and max_array_depth=1, the result of arrayEnumerateUniqRanked
 -- is identical to that which arrayEnumerateUniqwould give for the same array.
 
-SELECT arrayEnumerateUniqRanked(1, [[1, 2, 3], [2, 2, 1], [3]], 2);", "[[1, 1, 1], [2, 3, 2], [2]]
+SELECT arrayEnumerateUniqRanked(1, [[1, 2, 3], [2, 2, 1], [3]], 2);
 
-)", "[1, 1, 2]"},
+)", "[[1,1,1],[2,3,2],[2]]"},
         {"Example 3", R"(
 -- In this example, arrayEnumerateUniqRanked is used to obtain an array indicating,
 -- for each element of the multidimensional array, what its position is among elements
@@ -53,12 +53,12 @@ SELECT arrayEnumerateUniqRanked(1, [[1, 2, 3], [2, 2, 1], [3]], 2);", "[[1, 1, 1
 -- corresponding result is [2] indicating that 3 is encountered for the second time.
 
 SELECT arrayEnumerateUniqRanked(1, [[1, 2, 3], [2, 2, 1], [3]], 2);
-        )", "[[1, 1, 1], [2, 3, 2], [2]]"
+        )", "[[1,1,1],[2,3,2],[2]]"
     },
     {"Example 4", R"(
 -- Changing clear_depth=2, results in elements being enumerated separately for each row.
 SELECT arrayEnumerateUniqRanked(2,[[1, 2, 3],[2, 2, 1],[3]], 2);
-        )", "[[1, 1, 1], [1, 2, 1], [1]]"},
+        )", "[[1,1,1],[1,2,1],[1]]"},
 };
     FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;

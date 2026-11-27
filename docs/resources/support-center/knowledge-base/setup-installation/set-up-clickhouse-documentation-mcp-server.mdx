@@ -1,0 +1,95 @@
+---
+title: 'Set up the ClickHouse documentation MCP server'
+sidebarTitle: 'Set up the documentation MCP server'
+slug: /resources/support-center/knowledge-base/setup-installation/set-up-clickhouse-documentation-mcp-server
+description: 'Connect AI tools to the ClickHouse documentation through the Model Context Protocol.'
+doc_type: 'guide'
+date: 2026-08-20
+tags: ['Tools and Utilities']
+keywords: ['MCP', 'Model Context Protocol', 'AI tools', 'documentation']
+---
+
+<Info>
+This page configures the MCP server for searching the ClickHouse documentation. To query ClickHouse data instead, use the [open-source ClickHouse MCP server](/guides/use-cases/ai-ml/MCP) or the [ClickHouse Cloud remote MCP server](/products/cloud/features/ai-ml/remote-mcp).
+</Info>
+
+Query the ClickHouse documentation directly from your AI tools using the Model Context Protocol (MCP).
+
+## Connect your AI tool {#connect-your-ai-tool}
+
+<Tabs>
+<Tab title="Claude Code" icon="https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/logo-claudecode-color.svg">
+
+Run in your terminal:
+
+```bash
+claude mcp add --transport http clickhouse-docs https://clickhouse.com/docs/mcp --scope user
+```
+
+</Tab>
+<Tab title="Claude Desktop" icon="https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/logo-claude.svg">
+
+Add to `claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "clickhouse-docs": {
+      "command": "npx",
+      "args": ["-y", "mcp-remote", "https://clickhouse.com/docs/mcp"]
+    }
+  }
+}
+```
+
+</Tab>
+<Tab title="Codex" icon="/images/logo-codex.svg">
+
+Run in your terminal:
+
+```bash
+codex mcp add clickhouse-docs --url https://clickhouse.com/docs/mcp
+```
+
+</Tab>
+<Tab title="Cursor" icon="https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/logo-cursor.png">
+
+Add to `.cursor/mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "clickhouse-docs": {
+      "command": "npx",
+      "args": ["-y", "mcp-remote", "https://clickhouse.com/docs/mcp"]
+    }
+  }
+}
+```
+
+</Tab>
+<Tab title="Windsurf" icon="https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/logo-windsurf.svg">
+
+Add to `~/.codeium/windsurf/mcp_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "clickhouse-docs": {
+      "command": "npx",
+      "args": ["-y", "mcp-remote", "https://clickhouse.com/docs/mcp"]
+    }
+  }
+}
+```
+
+</Tab>
+</Tabs>
+
+## Add ClickHouse skills to your coding agent {#add-clickhouse-skills}
+
+Install the ClickHouse skills to give your agent expert ClickHouse knowledge and best practices:
+
+```bash
+npx skills add https://clickhouse.com
+```

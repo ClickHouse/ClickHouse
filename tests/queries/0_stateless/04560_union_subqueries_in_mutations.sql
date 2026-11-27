@@ -43,15 +43,7 @@ ALTER TABLE t_union_mut UPDATE c0 = (SELECT sum(x) FROM ((SELECT 1 AS x) UNION D
 SELECT 'update union assignment', arraySort(groupArray(c0)) FROM t_union_mut;
 TRUNCATE TABLE t_union_mut;
 
--- The same must also work with the old analyzer.
-SET enable_analyzer = 0;
-INSERT INTO t_union_mut VALUES (0), (1), (2);
-DELETE FROM t_union_mut WHERE c0 IN ((SELECT 1) UNION DISTINCT (SELECT 0));
-SELECT 'delete union distinct, old analyzer', arraySort(groupArray(c0)) FROM t_union_mut;
-
 DROP TABLE t_union_mut;
-
-SET enable_analyzer = 1;
 
 -- A lightweight UPDATE (the default `update_parallel_mode = 'auto'`) computes its affected columns via
 -- `getUpdateAffectedColumns`, which builds the query tree for the re-parsed predicate and assignment

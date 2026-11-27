@@ -23,13 +23,13 @@ doc_type: 'reference'
 
 **用法**
 
-[format&#95;regexp](/zh/reference/settings/formats#format_regexp) 设置中的正则表达式会应用到导入数据的每一行。正则表达式中的子模式数量必须与导入数据集中的列数相等。
+[format&#95;regexp](/zh/reference/settings/formats/format-regexp#format_regexp) 设置中的正则表达式会应用到导入数据的每一行。正则表达式中的子模式数量必须与导入数据集中的列数相等。
 
 导入数据中的各行必须以换行符 `'\n'` 或 DOS 风格的换行符 `"\r\n"` 分隔。
 
-每个匹配到的子模式内容都会根据 [format&#95;regexp&#95;escaping&#95;rule](/zh/reference/settings/formats#format_regexp_escaping_rule) 设置，按对应数据类型的解析方法进行解析。
+每个匹配到的子模式内容都会根据 [format&#95;regexp&#95;escaping&#95;rule](/zh/reference/settings/formats/format-regexp#format_regexp_escaping_rule) 设置，按对应数据类型的解析方法进行解析。
 
-如果正则表达式与某一行不匹配，且 [format&#95;regexp&#95;skip&#95;unmatched](/zh/reference/settings/formats#format_regexp_escaping_rule) 设置为 1，则会静默跳过该行。否则将抛出异常。
+如果正则表达式与某一行不匹配，且 [format&#95;regexp&#95;skip&#95;unmatched](/zh/reference/settings/formats/format-regexp#format_regexp_skip_unmatched) 设置为 1，则会静默跳过该行。否则将抛出异常。
 
 <div id="example-usage">
   ## 示例用法

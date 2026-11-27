@@ -7,14 +7,10 @@ slug: /guides/working-with-joins
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
-
 O ClickHouse oferece suporte completo a junções SQL padrão, permitindo uma análise de dados eficiente.
-Neste guia, você vai explorar alguns dos tipos de junção mais usados e como utilizá-los com a ajuda de diagramas de Venn e consultas de exemplo em um conjunto de dados [IMDB](https://en.wikipedia.org/wiki/IMDb) normalizado, originado do [repositório de conjuntos de dados relacionais](https://relational.fit.cvut.cz/dataset/IMDb).
+Neste guia, você vai explorar alguns dos tipos de JOIN mais usados e como utilizá-los com a ajuda de diagramas de Venn e consultas de exemplo em um conjunto de dados [IMDB](https://en.wikipedia.org/wiki/IMDb) normalizado, originado do [repositório de conjuntos de dados relacionais](https://relational.fit.cvut.cz/dataset/IMDb).
 
-<div id="test-data-and-resources">
-  ## Dados de teste e recursos
-</div>
+## Dados de teste e recursos {#test-data-and-resources}
 
 As instruções para criar e carregar as tabelas podem ser encontradas [aqui](/pt-BR/integrations/connectors/data-ingestion/etl-tools/dbt/guides).
 O conjunto de dados também está disponível no [Playground](https://sql.clickhouse.com?query_id=AACTS8ZBT3G7SSGN8ZJBJY) se você não quiser criar e carregar
@@ -22,7 +18,11 @@ as tabelas localmente.
 
 Você usará as quatro tabelas a seguir do conjunto de dados de exemplo:
 
-<Image img="/images/starter_guides/joins/imdb_schema.webp" alt="Esquema do IMDB" />
+<div className="ch-image-lg">
+  <Frame>
+    ![Esquema do IMDB](/images/starter_guides/joins/imdb_schema.webp)
+  </Frame>
+</div>
 
 Os dados nessas quatro tabelas representam filmes que podem ter um ou vários gêneros.
 Os papéis em um filme são interpretados por atores.
@@ -34,7 +34,7 @@ Esse relacionamento muitos-para-muitos é normalizado em dois [relacionamentos u
 Cada linha da tabela `roles` contém os valores das colunas `id` da tabela `movies` e da tabela `actors`.
 
 <div id="join-types-supported-in-clickhouse">
-  ## Tipos de junção compatíveis com o ClickHouse
+  ## Tipos de junção compatíveis com o ClickHouse {#join-types-supported-in-clickhouse}
 </div>
 
 O ClickHouse oferece suporte aos seguintes tipos de junção:
@@ -49,14 +49,16 @@ O ClickHouse oferece suporte aos seguintes tipos de junção:
 
 Nas seções a seguir, você escreverá consultas de exemplo para cada um dos tipos de junção acima.
 
-<div id="inner-join">
-  ## INNER JOIN
-</div>
+## INNER JOIN {#inner-join}
 
 O `INNER JOIN` retorna, para cada par de linhas que correspondem às chaves de junção, os valores das colunas da linha da tabela à esquerda, combinados com os valores das colunas da linha da tabela à direita.
 Se uma linha tiver mais de uma correspondência, todas elas serão retornadas (ou seja, o [produto cartesiano](https://en.wikipedia.org/wiki/Cartesian_product) é gerado para linhas com chaves de junção correspondentes).
 
-<Image img="/images/starter_guides/joins/inner_join.webp" alt="Inner Join" />
+<div className="ch-image-lg">
+  <Frame>
+    ![Inner Join](/images/starter_guides/joins/inner_join.webp)
+  </Frame>
+</div>
 
 Esta consulta encontra os gêneros de cada filme ao unir a tabela `movies` à tabela `genres`:
 
@@ -92,22 +94,24 @@ LIMIT 10;
   A palavra-chave `INNER` pode ser omitida.
 </Note>
 
-O comportamento de `INNER JOIN` pode ser ampliado ou modificado com um dos seguintes tipos de junção.
+O comportamento de `INNER JOIN` pode ser ampliado ou modificado com um dos seguintes tipos de JOIN.
 
-<div id="left--right--full-outer-join">
-  ## (LEFT / RIGHT / FULL) OUTER JOIN
+## (LEFT / RIGHT / FULL) OUTER JOIN {#left--right--full-outer-join}
+
+O `LEFT OUTER JOIN` se comporta como um `INNER JOIN`; além disso, para linhas da tabela à esquerda sem correspondência, o ClickHouse retorna [valores padrão](/pt-BR/reference/statements/create/table#default_values) para as colunas da tabela da direita.
+
+Uma consulta `RIGHT OUTER JOIN` é semelhante e também retorna valores de linhas da tabela da direita sem correspondência, junto com valores padrão para as colunas da tabela à esquerda.
+
+Uma consulta `FULL OUTER JOIN` combina `LEFT` e `RIGHT OUTER JOIN` e retorna valores de linhas sem correspondência das tabelas à esquerda e da direita, junto com valores padrão para as colunas das tabelas da direita e à esquerda, respectivamente.
+
+<div className="ch-image-lg">
+  <Frame>
+    ![Junção externa](/images/starter_guides/joins/outer_join.webp)
+  </Frame>
 </div>
 
-O `LEFT OUTER JOIN` se comporta como um `INNER JOIN`; além disso, para linhas da tabela da esquerda sem correspondência, o ClickHouse retorna [valores padrão](/pt-BR/reference/statements/create/table#default_values) para as colunas da tabela da direita.
-
-Uma consulta `RIGHT OUTER JOIN` é semelhante e também retorna valores de linhas da tabela da direita sem correspondência, junto com valores padrão para as colunas da tabela da esquerda.
-
-Uma consulta `FULL OUTER JOIN` combina `LEFT` e `RIGHT OUTER JOIN` e retorna valores de linhas sem correspondência das tabelas da esquerda e da direita, junto com valores padrão para as colunas das tabelas da direita e da esquerda, respectivamente.
-
-<Image img="/images/starter_guides/joins/outer_join.webp" alt="Junção externa" />
-
 <Note>
-  O ClickHouse pode ser [configurado](/pt-BR/reference/settings/session-settings#join_use_nulls) para retornar [NULL](/pt-BR/reference/syntax#null) em vez de valores padrão (no entanto, por [motivos de desempenho](/pt-BR/reference/data-types/nullable#storage-features), isso é menos recomendável).
+  O ClickHouse pode ser [configurado](/pt-BR/reference/settings/session-settings/join#join_use_nulls) para retornar [NULL](/pt-BR/reference/syntax#null) em vez de valores padrão (no entanto, por [motivos de desempenho](/pt-BR/reference/data-types/nullable#storage-features), isso é menos recomendável).
 </Note>
 
 Esta consulta encontra todos os filmes sem gênero consultando todas as linhas da tabela `movies` que não têm correspondência na tabela `genres` e, por isso, recebem (no momento da consulta) o valor padrão 0 para a coluna `movie_id`:
@@ -142,14 +146,16 @@ LIMIT 10;
   A palavra-chave `OUTER` pode ser omitida.
 </Note>
 
-<div id="cross-join">
-  ## CROSS JOIN
-</div>
+## CROSS JOIN {#cross-join}
 
 O `CROSS JOIN` produz o produto cartesiano completo das duas tabelas, sem levar em conta as chaves de junção.
 Cada linha da tabela à esquerda é combinada com cada linha da tabela à direita.
 
-<Image img="/images/starter_guides/joins/cross_join.webp" alt="Junção cruzada" />
+<div className="ch-image-lg">
+  <Frame>
+    ![Junção cruzada](/images/starter_guides/joins/cross_join.webp)
+  </Frame>
+</div>
 
 A consulta a seguir, portanto, combina cada linha da tabela `movies` com cada linha da tabela `genres`:
 
@@ -232,7 +238,7 @@ LIMIT 10;
 └─────────────────────────────────────────────┘
 ```
 
-A cláusula `INNER JOIN` na versão da consulta `CROSS JOIN` otimizada sintaticamente contém a palavra-chave `ALL`, que foi adicionada explicitamente para preservar a semântica do produto cartesiano do `CROSS JOIN` mesmo quando a consulta é reescrita como um `INNER JOIN`, para o qual o produto cartesiano pode ser [desativado](/pt-BR/reference/settings/session-settings#join_default_strictness).
+A cláusula `INNER JOIN` na versão da consulta `CROSS JOIN` otimizada sintaticamente contém a palavra-chave `ALL`, que foi adicionada explicitamente para preservar a semântica do produto cartesiano do `CROSS JOIN` mesmo quando a consulta é reescrita como um `INNER JOIN`, para o qual o produto cartesiano pode ser [desativado](/pt-BR/reference/settings/session-settings/join#join_default_strictness).
 
 ```sql
 ALL
@@ -240,16 +246,18 @@ ALL
 
 E, como mencionado acima, a palavra-chave `OUTER` pode ser omitida em um `RIGHT OUTER JOIN`, e a palavra-chave opcional `ALL` pode ser adicionada; portanto, você pode escrever `ALL RIGHT JOIN`, e tudo funcionará normalmente.
 
-<div id="left--right-semi-join">
-  ## (LEFT / RIGHT) SEMI JOIN
-</div>
+## (LEFT / RIGHT) SEMI JOIN {#left--right-semi-join}
 
 Uma consulta `LEFT SEMI JOIN` retorna os valores das colunas de cada linha da tabela à esquerda que tenha pelo menos uma correspondência de chave de junção na tabela à direita.
 Apenas a primeira correspondência encontrada é retornada (o produto cartesiano fica desativado).
 
 Uma consulta `RIGHT SEMI JOIN` é semelhante e retorna valores para todas as linhas da tabela à direita com pelo menos uma correspondência na tabela à esquerda, mas apenas a primeira correspondência encontrada é retornada.
 
-<Image img="/images/starter_guides/joins/semi_join.webp" alt="Junção semi" />
+<div className="ch-image-lg">
+  <Frame>
+    ![Junção semi](/images/starter_guides/joins/semi_join.webp)
+  </Frame>
+</div>
 
 Esta consulta encontra todos os atores/atrizes que atuaram em um filme em 2023.
 Observe que, com uma junção (`INNER`) normal, o mesmo ator/atriz apareceria mais de uma vez se tivesse mais de um papel em 2023:
@@ -280,15 +288,17 @@ LIMIT 10;
 └────────────┴────────────────────────┘
 ```
 
-<div id="left--right-anti-join">
-  ## (LEFT / RIGHT) ANTI JOIN
-</div>
+## (LEFT / RIGHT) ANTI JOIN {#left--right-anti-join}
 
 Um `LEFT ANTI JOIN` retorna os valores das colunas de todas as linhas sem correspondência da tabela à esquerda.
 
 Da mesma forma, o `RIGHT ANTI JOIN` retorna os valores das colunas de todas as linhas sem correspondência da tabela à direita.
 
-<Image img="/images/starter_guides/joins/anti_join.webp" alt="Anti Join" />
+<div className="ch-image-lg">
+  <Frame>
+    ![Anti Join](/images/starter_guides/joins/anti_join.webp)
+  </Frame>
+</div>
 
 Uma formulação alternativa da consulta de exemplo anterior com junção externa é usar uma anti junção para encontrar filmes que não têm gênero no conjunto de dados:
 
@@ -317,9 +327,7 @@ LIMIT 10;
 └───────────────────────────────────────────┘
 ```
 
-<div id="left--right--inner-any-join">
-  ## (LEFT / RIGHT / INNER) ANY JOIN
-</div>
+## (LEFT / RIGHT / INNER) ANY JOIN {#left--right--inner-any-join}
 
 Um `LEFT ANY JOIN` é a combinação de `LEFT OUTER JOIN` + `LEFT SEMI JOIN`, o que significa que o ClickHouse retorna os valores das colunas de cada linha da tabela à esquerda, combinados com os valores das colunas de uma linha correspondente da tabela à direita ou, se não houver correspondência, com os valores padrão das colunas da tabela à direita.
 Se uma linha da tabela à esquerda tiver mais de uma correspondência na tabela à direita, o ClickHouse retornará apenas os valores das colunas combinados da primeira correspondência encontrada (o produto cartesiano fica desabilitado).
@@ -328,7 +336,11 @@ Da mesma forma, o `RIGHT ANY JOIN` é a combinação de `RIGHT OUTER JOIN` + `RI
 
 E o `INNER ANY JOIN` é um `INNER JOIN` com o produto cartesiano desabilitado.
 
-<Image img="/images/starter_guides/joins/any_join.webp" alt="Any Join" />
+<div className="ch-image-lg">
+  <Frame>
+    ![Any Join](/images/starter_guides/joins/any_join.webp)
+  </Frame>
+</div>
 
 O exemplo a seguir demonstra o `LEFT ANY JOIN` com um exemplo abstrato usando duas tabelas temporárias (`left_table` e `right_table`) criadas com a [função de tabela](/pt-BR/reference/functions/table-functions/index) [values](https://github.com/ClickHouse/ClickHouse/blob/23.2/src/TableFunctions/TableFunctionValues.h):
 
@@ -394,23 +406,29 @@ INNER ANY JOIN right_table AS r ON l.c = r.c;
 └─────┴─────┘
 ```
 
-<div id="asof-join">
-  ## ASOF JOIN
-</div>
+## ASOF JOIN {#asof-join}
 
 O `ASOF JOIN` oferece recursos de correspondência não exata.
 Se uma linha da tabela à esquerda não tiver uma correspondência exata na tabela à direita, a linha mais próxima da tabela à direita será usada como correspondência.
 
 Isso é particularmente útil para análises de séries temporais e pode reduzir drasticamente a complexidade da consulta.
 
-<Image img="/images/starter_guides/joins/asof_join.webp" alt="Asof Join" />
+<div className="ch-image-lg">
+  <Frame>
+    ![Asof Join](/images/starter_guides/joins/asof_join.webp)
+  </Frame>
+</div>
 
 O exemplo a seguir faz uma análise de séries temporais de dados do mercado de ações.
 Uma tabela `quotes` contém cotações de símbolos de ações com base em horários específicos do dia.
 Nos dados de exemplo, o preço é atualizado a cada 10 segundos.
 Uma tabela `trades` lista negociações de símbolos — um determinado volume de um símbolo foi comprado em um horário específico:
 
-<Image img="/images/starter_guides/joins/asof_example.webp" alt="Asof Example" />
+<div className="ch-image-lg">
+  <Frame>
+    ![Asof Example](/images/starter_guides/joins/asof_example.webp)
+  </Frame>
+</div>
 
 Para calcular o custo efetivo de cada negociação, precisamos associar as negociações ao horário de cotação mais próximo.
 
@@ -453,9 +471,7 @@ final_price:        9645
   A cláusula `ON` do `ASOF JOIN` é obrigatória e especifica uma condição de correspondência exata junto à condição de correspondência não exata da cláusula `AND`.
 </Note>
 
-<div id="summary">
-  ## Resumo
-</div>
+## Resumo {#summary}
 
 Este guia mostra como o ClickHouse oferece suporte a todos os tipos padrão de JOIN do SQL, além de junções especializadas para consultas analíticas.
 Consulte a documentação da instrução [JOIN](/pt-BR/reference/statements/select/join) para mais detalhes sobre junções.

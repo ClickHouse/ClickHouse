@@ -12,9 +12,7 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 
 تتوفر هذه الإعدادات في [system.settings](/ar/reference/system-tables/settings)، وهي مُولَّدة تلقائيًا من [الشفرة المصدرية](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="max_execution_speed">
-  ## max_execution_speed
-</div>
+## max_execution_speed {#max_execution_speed}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -22,9 +20,7 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 [`timeout_before_checking_execution_speed`](/ar/reference/settings/session-settings/other#timeout_before_checking_execution_speed).
 إذا كانت سرعة التنفيذ مرتفعة، فستُخفَّض.
 
-<div id="max_execution_speed_bytes">
-  ## max_execution_speed_bytes
-</div>
+## max_execution_speed_bytes {#max_execution_speed_bytes}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -32,38 +28,23 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 [`timeout_before_checking_execution_speed`](/ar/reference/settings/session-settings/other#timeout_before_checking_execution_speed).
 إذا كانت سرعة التنفيذ مرتفعة، فستُخفَّض.
 
-<div id="max_execution_time">
-  ## max_execution_time
-</div>
+## max_execution_time {#max_execution_time}
 
 <SettingsInfoBlock type="ثوانٍ" default_value="0" />
 
 الحد الأقصى لوقت تنفيذ الاستعلام، بالثواني.
 
-قد يكون فهم المَعلَمة `max_execution_time` مربكًا بعض الشيء.
-إذ إنها تعمل بالاعتماد على الاستيفاء وفقًا لسرعة تنفيذ الاستعلام الحالية
-(ويُتحكَّم في هذا السلوك بواسطة [`timeout_before_checking_execution_speed`](/ar/reference/settings/session-settings/other#timeout_before_checking_execution_speed)).
-
-سيُوقِف ClickHouse الاستعلام إذا تجاوز وقت التنفيذ المتوقَّع
-القيمة المحددة في `max_execution_time`. افتراضيًا، تُضبط `timeout_before_checking_execution_speed`
-على 10 ثوانٍ. وهذا يعني أنه بعد 10 ثوانٍ من تنفيذ الاستعلام، سيبدأ ClickHouse
-في تقدير وقت التنفيذ الإجمالي. فإذا كانت `max_execution_time`، على سبيل المثال،
-مضبوطة على 3600 ثانية (ساعة واحدة)، فسينهي ClickHouse الاستعلام إذا تجاوز الوقت المقدَّر
-هذا الحد البالغ 3600 ثانية. وإذا ضبطت `timeout_before_checking_execution_speed`
-على 0، فسيستخدم ClickHouse الوقت الفعلي كأساس لـ `max_execution_time`.
-
-إذا تجاوز وقت تشغيل الاستعلام عدد الثواني المحدد، فسيُحدَّد
+إذا تجاوز وقت تشغيل الاستعلام عدد الثواني المحدد، فسيُحدَّد
 السلوك بواسطة `timeout_overflow_mode`، والتي تُضبط افتراضيًا على `throw`.
 
 <Note>
   تُفحَص المهلة، ولا يمكن إيقاف الاستعلام إلا في مواضع محددة أثناء معالجة البيانات.
-  وحاليًا، لا يمكن إيقافه أثناء دمج حالات التجميع أو أثناء تحليل الاستعلام،
-  ولذلك سيكون وقت التشغيل الفعلي أعلى من قيمة هذا الإعداد.
+  وحاليًا، لا يمكن إيقافه أثناء دمج حالات التجميع، ولا أثناء معظم عمليات تحليل الاستعلام
+  (إذ إن إنشاء اتصال بنسخة متماثلة بعيدة هو أحد المواضع التي يمكن فيها ذلك)، وسيكون وقت التشغيل الفعلي
+  أعلى من قيمة هذا الإعداد.
 </Note>
 
-<div id="max_execution_time_leaf">
-  ## max_execution_time_leaf
-</div>
+## max_execution_time_leaf {#max_execution_time_leaf}
 
 <SettingsInfoBlock type="ثوانٍ" default_value="0" />
 

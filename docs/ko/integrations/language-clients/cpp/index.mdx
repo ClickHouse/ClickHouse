@@ -1,6 +1,6 @@
 ---
 description: 'u-server 프레임워크와의 통합을 포함한 ClickHouse C++ 클라이언트 라이브러리 및 통합 문서'
-sidebarTitle: 'C++'
+sidebarTitle: '개요'
 slug: /interfaces/cpp
 title: 'C++ 클라이언트 라이브러리'
 doc_type: 'reference'
@@ -22,9 +22,7 @@ GitHub 리포지토리에서 확인할 수 있습니다: [https://github.com/Cli
   [https://github.com/ClickHouse/clickhouse-cpp/issues](https://github.com/ClickHouse/clickhouse-cpp/issues)
 </Note>
 
-<div id="including-library-into-project">
-  ## 프로젝트에 라이브러리 포함하기
-</div>
+## 프로젝트에 라이브러리 포함하기 {#including-library-into-project}
 
 라이브러리를 프로젝트에 포함하는 가장 간단한 방법은 CMake의 `FetchContent`
 모듈을 사용하는 것입니다. 이 방법을 사용하면 특정 라이브러리 버전을 정확히 고정하고, 일반적인
@@ -37,7 +35,7 @@ set(WITH_OPENSSL YES CACHE BOOL "Enable OpenSSL in clickhouse-cpp" FORCE)
 FetchContent_Declare(
     clickhouse-cpp
     GIT_REPOSITORY https://github.com/ClickHouse/clickhouse-cpp.git
-    GIT_TAG v2.6.0   # can also be `master` or other banch
+    GIT_TAG v2.6.0   # can also be `master` or other branch
 )
 FetchContent_MakeAvailable(clickhouse-cpp)
 ```
@@ -56,13 +54,9 @@ Homebrew를 사용하여 `openssl`을 설치하십시오.
 target_link_libraries(your-target PRIVATE clickhouse-cpp-lib)
 ```
 
-<div id="examples">
-  ## 예시
-</div>
+## 예시 {#examples}
 
-<div id="example-setup-client">
-  ### 클라이언트 객체 설정
-</div>
+### 클라이언트 객체 설정 {#example-setup-client}
 
 ClickHouse에 연결하려면 `Client` 인스턴스를 생성합니다. 다음 예시는
 비밀번호가 필요 없고 SSL이 활성화되지 않은 로컬 ClickHouse 인스턴스에 연결하는 방법을 보여줍니다.
@@ -89,9 +83,7 @@ clickhouse::Client client{
     };
 ```
 
-<div id="example-create-table">
-  ### 데이터 없이 테이블을 생성하고 쿼리 실행하기
-</div>
+### 데이터 없이 테이블을 생성하고 쿼리 실행하기 {#example-create-table}
 
 테이블 생성처럼 데이터를 반환하지 않는 쿼리를 실행하려면 `Execute` 메서드를 사용합니다.
 이 방법은 `ALTER TABLE`, `DROP` 등 다른 SQL 문에도 동일하게 적용됩니다.
@@ -105,9 +97,7 @@ client.Execute(R"(
     ENGINE = MergeTree ORDER BY id)");
 ```
 
-<div id="example-insert-data">
-  ### 데이터 삽입
-</div>
+### 데이터 삽입 {#example-insert-data}
 
 테이블에 데이터를 삽입하려면 `Block`을 만들고 테이블 스키마(table schema)에 맞는 컬럼 객체를 채워 넣습니다. 데이터는 컬럼별로 추가되며, 그다음 효율적인 배치 쓰기에 최적화된 `Insert` 메서드를 사용해 한 번에 삽입됩니다.
 
@@ -136,9 +126,7 @@ block.AppendColumn("language", language);
 client.Insert("greetings", block);
 ```
 
-<div id="example-select">
-  ### 데이터 조회
-</div>
+### 데이터 조회 {#example-select}
 
 데이터를 반환하는 쿼리를 실행하려면 `Select` 메서드를 사용하고, 결과를 처리할 콜백을 제공하십시오. 쿼리 결과는 ClickHouse의 네이티브 컬럼 지향 데이터 표현을 반영하는 `Block` 객체로 전달됩니다.
 
@@ -155,9 +143,7 @@ client.Select(
     });
 ```
 
-<div id="supported-data-types">
-  ## 지원되는 데이터 타입
-</div>
+## 지원되는 데이터 타입 {#supported-data-types}
 
 * `UInt8`, `UInt16`, `UInt32`, `UInt64`, `Int8`, `Int16`, `Int32`, `Int64`
 * `UInt128`, `Int128`

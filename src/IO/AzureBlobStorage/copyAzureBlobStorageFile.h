@@ -18,14 +18,19 @@ class SeekableReadBuffer;
 
 using CreateReadBuffer = std::function<std::unique_ptr<SeekableReadBuffer>()>;
 
-/// Copies a file from AzureBlobStorage to AzureBlobStorage.
-/// The parameters `src_offset` and `src_size` specify a part in the source to copy.
-void copyAzureBlobStorageFile(
+/// Copies a whole blob from AzureBlobStorage to AzureBlobStorage. `src_size` is the size of the source blob.
+///
+/// There is deliberately no way to ask for a part of the source: the native copy (`CopyFromUri` /
+/// `StartCopyFromUri`) carries no byte range and always transfers the entire source blob, so a range
+/// argument could only be honored by the read-write fallback and would be silently ignored whenever
+/// the native copy is enabled. Callers that need a range read the source themselves and use
+/// `copyDataToAzureBlobStorageFile()`.
+/// Returns false when native copy cannot finish and `allow_copy_through_buffers` is false.
+bool copyAzureBlobStorageFile(
     std::shared_ptr<const AzureBlobStorage::ContainerClient> src_client,
     std::shared_ptr<const AzureBlobStorage::ContainerClient> dest_client,
     const String & src_container_for_logging,
     const String & src_blob,
-    size_t src_offset,
     size_t src_size,
     const String & dest_container_for_logging,
     const String & dest_blob,
@@ -33,7 +38,8 @@ void copyAzureBlobStorageFile(
     const ReadSettings & read_settings,
     const std::optional<ObjectAttributes> & object_to_attributes,
     ThreadPoolCallbackRunnerUnsafe<void> schedule_ = {},
-    BlobStorageLogWriterPtr blob_storage_log = {});
+    BlobStorageLogWriterPtr blob_storage_log = {},
+    bool allow_copy_through_buffers = true);
 
 
 /// Copies data from any seekable source to AzureBlobStorage.

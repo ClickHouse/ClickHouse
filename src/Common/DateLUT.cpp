@@ -1,4 +1,5 @@
 #include <Common/DateLUT.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
 
 #include <Interpreters/Context.h>
 #include <Common/CurrentThread.h>
@@ -36,6 +37,39 @@ Poco::DigestEngine::Digest calcSHA1(const std::string & path)
     if (!stream.eof())
         throw Poco::Exception("Error while reading file: '" + path + "'.");
     return digest_engine.digest();
+}
+
+
+/// Some time zone databases keep alternate copies of the zones next to the canonical ones:
+/// `posix/` holds copies of the top-level files, and `right/` holds the same zones counting
+/// leap seconds. Neither directory name is part of a zone name - the zone is what follows it,
+/// and ClickHouse does not model leap seconds, so `right/Europe/Berlin` is `Europe/Berlin` here.
+/// The content-scan below already skips both directories; the relative-path fast paths above it
+/// see the host-selected name verbatim, so they have to strip the prefix themselves.
+std::string canonicalTimeZoneName(std::string name)
+{
+    for (std::string_view prefix : {"posix/", "right/"})
+        if (name.starts_with(prefix))
+            return name.substr(prefix.size());
+    return name;
+}
+
+
+/// The host selects its time zone by a path, and the same zone has many path spellings that the
+/// filesystem accepts but a zone name does not: `Europe/./Amsterdam`, `Europe//Amsterdam`, and any
+/// repetition of `./` and `/`. The raw spelling is preferred only because resolving symlinks can
+/// rename a zone (`UTC` -> `UCT`), so keep it when the time zone database knows it, and otherwise
+/// use the name that resolving the path produced.
+std::string preferredTimeZoneName(const std::string & tz_name, const std::filesystem::path & relative_path)
+{
+    if (!tz_name.empty())
+    {
+        std::string candidate = canonicalTimeZoneName(tz_name);
+        if (DateLUTImpl::isSupportedTimeZoneName(candidate))
+            return candidate;
+    }
+
+    return canonicalTimeZoneName(relative_path.lexically_normal().string());
 }
 
 
@@ -108,7 +142,7 @@ std::string determineDefaultTimeZone()
             fs::path relative_path = tz_file_path.lexically_relative(tz_database_path);
 
             if (!relative_path.empty() && *relative_path.begin() != ".." && *relative_path.begin() != ".")
-                return tz_name.empty() ? relative_path.string() : tz_name;
+                return preferredTimeZoneName(tz_name, relative_path);
         }
 
         /// Try the same with full symlinks resolution
@@ -120,7 +154,7 @@ std::string determineDefaultTimeZone()
 
             fs::path relative_path = tz_file_path.lexically_relative(tz_database_path);
             if (!relative_path.empty() && *relative_path.begin() != ".." && *relative_path.begin() != ".")
-                return tz_name.empty() ? relative_path.string() : tz_name;
+                return preferredTimeZoneName(tz_name, relative_path);
         }
 
         /// The file is not inside the tz_database_dir, so we hope that it was copied (not symlinked)
@@ -195,6 +229,18 @@ DateLUT::DateLUT()
 {
     /// Initialize the pointer to the default DateLUTImpl.
     std::string default_time_zone = determineDefaultTimeZone();
+
+    /// The name comes from the host's time zone database, while the zones ClickHouse can load come
+    /// from the database linked into the binary. Report the mismatch here, where the name and where
+    /// it came from are both known, instead of letting `DateLUTImpl` report an unsupported name with
+    /// no hint that the host, and not the query, chose it.
+    if (!DateLUTImpl::isSupportedTimeZoneName(default_time_zone))
+        throw Poco::Exception(
+            "The local time zone is '" + default_time_zone
+            + "', which ClickHouse does not know. Set the TZ environment variable, or the `timezone` "
+              "server setting, to a name from `system.time_zones`, or to a fixed offset spelled "
+              "`Fixed/UTC±HH:MM:SS`.");
+
     default_impl.store(&getImplementation(default_time_zone), std::memory_order_release);
 }
 
@@ -206,6 +252,9 @@ const DateLUTImpl & DateLUT::getImplementation(std::string_view time_zone) const
     auto [it, inserted] = impls.emplace(time_zone, nullptr);
     if (inserted)
     {
+        /// Lives as long as the process, not the query that first named this time zone.
+        MemoryTrackerBlockerInThread not_charged_to_the_query;
+
         try
         {
             it->second = std::unique_ptr<DateLUTImpl>(new DateLUTImpl(time_zone));

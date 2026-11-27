@@ -7,10 +7,8 @@ doc_type: 'changelog'
 keywords: ['changelog', 'notas de lançamento', 'atualizações', 'novos recursos', 'alterações no Cloud', '2025']
 ---
 
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
-
 <div id="december-19-2025">
-  ## 19 de dezembro de 2025
+  ## 19 de dezembro de 2025 {#december-19-2025}
 </div>
 
 * A região AWS ap-south-1 agora oferece suporte ao lançamento de serviços em conformidade com PCI.
@@ -23,7 +21,7 @@ import { Image } from "/snippets/pt-BR/components/Image.jsx";
 * O conector do Fivetran entrou recentemente em Beta. Se você usa o Fivetran e quer configurar o ClickHouse como destino, confira esta [documentação](https://fivetran.com/docs/destinations/clickhouse/setup-guide).
 
 <div id="december-12-2025">
-  ## 12 de dezembro de 2025
+  ## 12 de dezembro de 2025 {#december-12-2025}
 </div>
 
 * **Configuração por autoatendimento do SAML SSO**
@@ -36,14 +34,14 @@ import { Image } from "/snippets/pt-BR/components/Image.jsx";
   Agora, os clientes podem definir o tamanho máximo da réplica em 356 GiB em todas as regiões do Azure, exceto `eastus2`, onde o tamanho máximo de réplica disponível é de 120 GiB.
 
 <div id="november-21-2025">
-  ## 21 de novembro de 2025
+  ## 21 de novembro de 2025 {#november-21-2025}
 </div>
 
 * O ClickHouse Cloud agora está disponível na **AWS Israel (Tel Aviv) — il-central-1**
 * Melhoramos a experiência de onboarding do marketplace para configurar organizações do ClickHouse com cobrança por assinaturas Pay-As-You-Go do marketplace ou ofertas privadas.
 
 <div id="november-14-2025">
-  ## 14 de novembro de 2025
+  ## 14 de novembro de 2025 {#november-14-2025}
 </div>
 
 * Temos o prazer de anunciar que o **ClickHouse Cloud** agora está disponível em **mais duas regiões públicas**:
@@ -55,7 +53,7 @@ import { Image } from "/snippets/pt-BR/components/Image.jsx";
 * Terraform e API agora oferecem suporte à adição de tags aos serviços e à filtragem de serviços por tags.
 
 <div id="november-7-2025">
-  ## 7 de novembro de 2025
+  ## 7 de novembro de 2025 {#november-7-2025}
 </div>
 
 * O console do ClickHouse Cloud agora permite configurar tamanhos de réplica em incrementos de 1 vCPU e 4 GiB pelo console do ClickHouse Cloud.
@@ -68,7 +66,7 @@ import { Image } from "/snippets/pt-BR/components/Image.jsx";
   Para mais informações, consulte a [documentação de alertas](/pt-BR/clickstack/features/alerts).
 
 <div id="october-17-2025">
-  ## 17 de outubro de 2025
+  ## 17 de outubro de 2025 {#october-17-2025}
 </div>
 
 * **Monitoramento de serviço - Painel de utilização de recursos**
@@ -79,25 +77,25 @@ import { Image } from "/snippets/pt-BR/components/Image.jsx";
   Conecte seu bucket de armazenamento externo - AWS S3, Google Cloud Storage ou Azure Blob Storage - e tenha mais controle sobre o gerenciamento dos seus backups.
 
 <div id="august-29-2025">
-  ## 29 de agosto de 2025
+  ## 29 de agosto de 2025 {#august-29-2025}
 </div>
 
 * O [ClickHouse Cloud Azure Private Link](/pt-BR/products/cloud/guides/security/connectivity/private-networking/azure-privatelink) passou a usar filtros de Resource ID em vez de Resource GUID para identificação de recursos. Você ainda pode usar o Resource GUID legado, que é compatível com versões anteriores, mas recomendamos migrar para filtros de Resource ID. Para detalhes da migração, consulte a [documentação](/pt-BR/products/cloud/guides/security/connectivity/private-networking/azure-privatelink#obtaining-private-endpoint-resourceid) do Azure Private Link.
 
 <div id="august-22-2025">
-  ## 22 de agosto de 2025
+  ## 22 de agosto de 2025 {#august-22-2025}
 </div>
 
 * **ClickHouse Connector for AWS Glue**
   Agora você pode usar o [ClickHouse Connector for AWS Glue](/pt-BR/integrations/connectors/data-ingestion/AWS/glue) oficial, disponível no [AWS Marketplace](https://aws.amazon.com/marketplace/pp/prodview-eqvmuopqzdg7s). Ele utiliza o mecanismo serverless baseado em Apache
   Spark do AWS Glue para extrair, transformar e carregar dados na integração entre o ClickHouse e outras fontes de dados. Para começar,
-  siga o [post de anúncio no blog](http://clickhouse.com/blog/clickhouse-connector-aws-glue), que mostra como criar tabelas, gravar e ler dados entre o ClickHouse e o Spark.
+  siga o [post de anúncio no blog](https://clickhouse.com/blog/clickhouse-connector-aws-glue), que mostra como criar tabelas, gravar e ler dados entre o ClickHouse e o Spark.
 * **Alteração no número mínimo de réplicas em um serviço**
   Os serviços que foram escalados para cima agora podem ser [reduzidos novamente](/pt-BR/products/cloud/features/autoscaling/overview) para usar uma única réplica (antes, o mínimo era de 2 réplicas). Observação: serviços com uma única réplica têm disponibilidade reduzida e não são recomendados para uso em produção.
-* O ClickHouse Cloud começará a enviar notificações relacionadas ao escalonamento de serviços e a atualizações de versão dos serviços, por padrão, para roles de administrador. Os usuários podem ajustar suas preferências de notificação nas configurações de notificação.
+* O ClickHouse Cloud começará a enviar notificações relacionadas ao escalonamento de serviços e a atualizações de versão dos serviços, por padrão, para funções de administrador. Os usuários podem ajustar suas preferências de notificação nas configurações de notificação.
 
 <div id="august-13-2025">
-  ## 13 de agosto de 2025
+  ## 13 de agosto de 2025 {#august-13-2025}
 </div>
 
 * **ClickPipes for MongoDB CDC agora em prévia privada**
@@ -107,7 +105,7 @@ import { Image } from "/snippets/pt-BR/components/Image.jsx";
   auto-hospedadas. Leia o [post no blog](https://clickhouse.com/blog/mongodb-cdc-clickhouse-preview) para ter uma visão geral do conector MongoDB CDC e [cadastre-se aqui para obter acesso antecipado](https://clickhouse.com/cloud/clickpipes/mongodb-cdc-connector)!
 
 <div id="august-08-2025">
-  ## 8 de agosto de 2025
+  ## 8 de agosto de 2025 {#august-08-2025}
 </div>
 
 * **Notificações**: Agora você receberá uma notificação na UI quando seu serviço começar a ser atualizado para uma nova versão do ClickHouse. Notificações adicionais por e-mail e Slack podem ser adicionadas pelo centro de notificações.
@@ -117,7 +115,7 @@ import { Image } from "/snippets/pt-BR/components/Image.jsx";
 * **Private Link entre regiões (AWS)** agora está em disponibilidade geral. Consulte a [documentação](/pt-BR/products/cloud/guides/security/connectivity/private-networking/aws-privatelink) para ver a lista de regiões compatíveis.
 
 <div id="july-31-2025">
-  ## 31 de julho de 2025
+  ## 31 de julho de 2025 {#july-31-2025}
 </div>
 
 **Escalonamento vertical para ClickPipes agora disponível**
@@ -129,7 +127,7 @@ também inclui o uso de CPU e memória por réplica, o que ajuda você a
 entender melhor suas cargas de trabalho e planejar operações de redimensionamento com mais confiança.
 
 <div id="july-24-2025">
-  ## 24 de julho de 2025
+  ## 24 de julho de 2025 {#july-24-2025}
 </div>
 
 **ClickPipes para MySQL CDC agora em beta pública**
@@ -141,7 +139,7 @@ para uma visão geral do conector e siga o [guia de início rápido](/pt-BR/inte
 para começar a usar.
 
 <div id="june-11-2025">
-  ## 11 de julho de 2025
+  ## 11 de julho de 2025 {#june-11-2025}
 </div>
 
 * Novos serviços agora armazenam metadados de banco de dados e tabela em um **SharedCatalog** central,
@@ -157,7 +155,7 @@ para começar a usar.
 * Agora também oferecemos suporte ao lançamento de serviços compatíveis com HIPAA no GCP `europe-west4`
 
 <div id="june-27-2025">
-  ## 27 de junho de 2025
+  ## 27 de junho de 2025 {#june-27-2025}
 </div>
 
 * Agora oferecemos suporte oficial a um provider do Terraform para gerenciar privilégios de banco de dados,
@@ -170,15 +168,13 @@ para começar a usar.
   testes.
 
 <div id="june-13-2025">
-  ## 13 de junho de 2025
+  ## 13 de junho de 2025 {#june-13-2025}
 </div>
 
 * Temos o prazer de anunciar que os Dashboards do ClickHouse Cloud agora estão disponíveis para uso geral. Os dashboards permitem visualizar consultas, interagir com os dados por meio de filtros e parâmetros de consulta e gerenciar o compartilhamento.
 * Filtros de IP para API key: estamos introduzindo uma camada adicional de proteção para suas interações com o ClickHouse Cloud. Ao gerar uma API key, você pode configurar uma lista de IPs permitidos para limitar onde a API key pode ser usada. Consulte a [documentação](/pt-BR/products/cloud/guides/security/connectivity/setting-ip-filters) para mais detalhes.
 
-<div id="may-30-2025">
-  ## 30 de maio de 2025
-</div>
+## 30 de maio de 2025 {#may-30-2025}
 
 * Temos o prazer de anunciar a disponibilidade geral do **ClickPipes para Postgres CDC**
   no ClickHouse Cloud. Com apenas alguns cliques, agora você pode replicar seus bancos de dados
@@ -197,13 +193,17 @@ para começar a usar.
   * Para dashboards existentes já criados, os administradores da organização podem se atribuir a propriedade desses dashboards.
   * Agora você pode adicionar uma tabela ou gráfico do console SQL a um dashboard a partir da visualização da consulta.
 
-<Image img="/images/cloud/reference/may-30-dashboards.webp" size="md" alt="Melhorias nos dashboards" border />
+<div className="ch-image-md">
+  <Frame>
+    ![Melhorias nos dashboards](/images/cloud/reference/may-30-dashboards.webp)
+  </Frame>
+</div>
 
 * Estamos recrutando participantes para a prévia do [Distributed cache](https://clickhouse.com/cloud/distributed-cache-waitlist)
   para AWS e GCP. Leia mais no [blog](https://clickhouse.com/blog/building-a-distributed-cache-for-s3).
 
 <div id="may-16-2025">
-  ## 16 de maio de 2025
+  ## 16 de maio de 2025 {#may-16-2025}
 </div>
 
 * Apresentamos o Painel de Utilização de Recursos, que oferece uma visão dos
@@ -220,7 +220,7 @@ para começar a usar.
   e do desempenho dos seus serviços. Consulte o [blog](https://clickhouse.com/blog/monitor-with-new-prometheus-grafana-mix-in) de lançamento para saber mais.
 
 <div id="april-18-2025">
-  ## 18 de abril de 2025
+  ## 18 de abril de 2025 {#april-18-2025}
 </div>
 
 * Foi introduzida uma nova função **Member** no nível da organização e duas novas funções no nível do serviço: **Service Admin** e **Service Read Only**.
@@ -237,29 +237,29 @@ para começar a usar.
   configuradas por pipe. Para **ClickPipes de Postgres CDC**, os alertas também abrangem
   o limiar do replication slot (configurável na aba **Settings**), tipos específicos de erro
   e etapas de autoatendimento para resolver falhas.
-* A **private preview do MySQL CDC** já está aberta. Isso permite que os clientes repliquem bancos de dados MySQL
+* A **prévia privada do MySQL CDC** já está aberta. Isso permite que os clientes repliquem bancos de dados MySQL
   para o ClickHouse Cloud com apenas alguns cliques, viabilizando análises rápidas e
   eliminando a necessidade de ferramentas ETL externas. O conector oferece suporte tanto à replicação contínua
   quanto a migrações pontuais, independentemente de o MySQL estar na nuvem (RDS,
-  Aurora, Cloud SQL, Azure etc.) ou em ambiente on-premises. Você pode se inscrever na private
-  preview [seguindo este link](https://clickhouse.com/cloud/clickpipes/mysql-cdc-connector).
+  Aurora, Cloud SQL, Azure etc.) ou em ambiente on-premises. Você pode se inscrever na prévia
+  privada [seguindo este link](https://clickhouse.com/cloud/clickpipes/mysql-cdc-connector).
 * Foi introduzido o **AWS PrivateLink para ClickPipes**. Você pode usar o AWS PrivateLink para
   estabelecer conectividade segura entre VPCs, serviços da AWS, seus sistemas on-premises
   e o ClickHouse Cloud. Isso pode ser feito sem expor o tráfego à
   internet pública ao mover dados de fontes como Postgres, MySQL e
   MSK na AWS. Ele também oferece suporte ao acesso entre regiões por meio de endpoints de serviço da VPC.
-  A configuração da conectividade do PrivateLink agora é [totalmente autoatendimento](/pt-BR/integrations/clickpipes/aws-privatelink)
+  A configuração da conectividade do PrivateLink agora é [totalmente autoatendimento](/pt-BR/integrations/clickpipes/networking/aws-privatelink)
   por meio do ClickPipes.
 
 <div id="april-4-2025">
-  ## 4 de abril de 2025
+  ## 4 de abril de 2025 {#april-4-2025}
 </div>
 
 * Notificações no Slack para o ClickHouse Cloud: o ClickHouse Cloud agora oferece suporte a notificações no Slack para eventos de faturamento, escalonamento e ClickPipes, além de notificações no console e por e-mail. Essas notificações são enviadas por meio do aplicativo do ClickHouse Cloud no Slack. Os administradores da organização podem configurar essas notificações na central de notificações, informando os canais do Slack para os quais elas devem ser enviadas.
 * Os usuários de serviços Production e Development agora verão, em suas faturas, o preço de uso do ClickPipes e da transferência de dados.
 
 <div id="march-21-2025">
-  ## 21 de março de 2025
+  ## 21 de março de 2025 {#march-21-2025}
 </div>
 
 * A conectividade do Private Link entre regiões na AWS agora está em Beta. Consulte a
@@ -270,7 +270,7 @@ para começar a usar.
   para processos em segundo plano.
 
 <div id="march-7-2025">
-  ## 7 de março de 2025
+  ## 7 de março de 2025 {#march-7-2025}
 </div>
 
 * Novo endpoint da API `UsageCost`: a especificação da API agora oferece suporte a um novo endpoint
@@ -281,11 +281,11 @@ para começar a usar.
 * A versão [v2.1.0](https://registry.terraform.io/providers/ClickHouse/clickhouse/2.1.0/docs/resources/service#nestedatt--endpoints_configuration) do provider do Terraform oferece suporte à habilitação do endpoint MySQL.
 
 <div id="february-21-2025">
-  ## 21 de fevereiro de 2025
+  ## 21 de fevereiro de 2025 {#february-21-2025}
 </div>
 
 <div id="clickhouse-byoc-for-aws-ga">
-  ### ClickHouse Bring Your Own Cloud (BYOC) para AWS agora está em disponibilidade geral
+  ### ClickHouse Bring Your Own Cloud (BYOC) para AWS agora está em disponibilidade geral {#clickhouse-byoc-for-aws-ga}
 </div>
 
 Nesse modelo de implantação, os componentes do plano de dados (computação, armazenamento, backups, logs, métricas)
@@ -299,7 +299,7 @@ em um ambiente seguro do cliente.
 * [Entre em contato](https://clickhouse.com/cloud/bring-your-own-cloud) para solicitar acesso.
 
 <div id="postgres-cdc-connector-for-clickpipes">
-  ### Conector Postgres CDC para ClickPipes
+  ### Conector Postgres CDC para ClickPipes {#postgres-cdc-connector-for-clickpipes}
 </div>
 
 O conector Postgres CDC para ClickPipes permite replicar seus bancos de dados Postgres para o ClickHouse Cloud de forma transparente.
@@ -308,7 +308,7 @@ O conector Postgres CDC para ClickPipes permite replicar seus bancos de dados Po
 * Para mais informações sobre casos de uso de clientes e recursos, consulte a [página de apresentação](https://clickhouse.com/cloud/clickpipes/postgres-cdc-connector) e o [blog de lançamento](https://clickhouse.com/blog/postgres-cdc-connector-clickpipes-public-beta).
 
 <div id="pci-compliance-for-clickhouse-cloud-on-aws">
-  ### Conformidade com o PCI para o ClickHouse Cloud na AWS
+  ### Conformidade com o PCI para o ClickHouse Cloud na AWS {#pci-compliance-for-clickhouse-cloud-on-aws}
 </div>
 
 O ClickHouse Cloud agora oferece suporte a **serviços compatíveis com PCI** para
@@ -317,7 +317,7 @@ um serviço em um ambiente compatível com PCI podem entrar em contato com o [su
 para obter ajuda.
 
 <div id="tde-and-cmek-on-gcp">
-  ### Transparent Data Encryption and Customer Managed Encryption Keys no Google Cloud Platform
+  ### Transparent Data Encryption and Customer Managed Encryption Keys no Google Cloud Platform {#tde-and-cmek-on-gcp}
 </div>
 
 O suporte a **Transparent Data Encryption (TDE)** e **Customer Managed
@@ -326,14 +326,14 @@ Encryption Keys (CMEK)** já está disponível no ClickHouse Cloud para **Google
 * Consulte a [documentação](/pt-BR/products/cloud/guides/security/cmek#transparent-data-encryption-tde) desses recursos para obter mais informações.
 
 <div id="aws-middle-east-uae-availability">
-  ### Disponibilidade na AWS Middle East (UAE)
+  ### Disponibilidade na AWS Middle East (UAE) {#aws-middle-east-uae-availability}
 </div>
 
 O suporte a uma nova região foi adicionado ao ClickHouse Cloud, que agora está disponível na
 região **AWS Middle East (UAE) me-central-1**.
 
 <div id="clickhouse-cloud-guardrails">
-  ### Proteções do ClickHouse Cloud
+  ### Proteções do ClickHouse Cloud {#clickhouse-cloud-guardrails}
 </div>
 
 Para promover as melhores práticas e garantir o uso estável do ClickHouse Cloud, estamos
@@ -346,11 +346,11 @@ em uso.
   Entre em contato com o [suporte](https://clickhouse.com/support/program) se tiver alguma dúvida.
 
 <div id="january-27-2025">
-  ## 27 de janeiro de 2025
+  ## 27 de janeiro de 2025 {#january-27-2025}
 </div>
 
 <div id="changes-to-clickhouse-cloud-tiers">
-  ### Mudanças nos tiers do ClickHouse Cloud
+  ### Mudanças nos tiers do ClickHouse Cloud {#changes-to-clickhouse-cloud-tiers}
 </div>
 
 Estamos comprometidos em adaptar nossos produtos para atender às necessidades em constante evolução dos nossos clientes. Desde seu lançamento em GA nos últimos dois anos, o ClickHouse Cloud evoluiu substancialmente, e obtivemos insights valiosos sobre como nossos clientes usam nossas ofertas em nuvem.
@@ -364,76 +364,74 @@ Para dar suporte a essas mudanças, estamos reestruturando nossos tiers atuais *
 Você pode ler sobre essas e outras mudanças funcionais neste [blog](https://clickhouse.com/blog/evolution-of-clickhouse-cloud-new-features-superior-performance-tailored-offerings). Os clientes atuais precisarão tomar uma ação para selecionar um [novo plano](https://clickhouse.com/pricing). A comunicação aos clientes foi enviada por e-mail aos administradores da organização.
 
 <div id="warehouses-compute-compute-separation-ga">
-  ### Warehouses: Compute-compute separation (GA)
+  ### Warehouses: Compute-compute separation (GA) {#warehouses-compute-compute-separation-ga}
 </div>
 
 Compute-compute separation (também conhecida como &quot;Warehouses&quot;) está disponível para uso geral; consulte o [blog](https://clickhouse.com/blog/introducing-warehouses-compute-compute-separation-in-clickhouse-cloud) para mais detalhes e a [documentação](/pt-BR/products/cloud/features/infrastructure/warehouses).
 
 <div id="single-replica-services">
-  ### Serviços de réplica única
+  ### Serviços de réplica única {#single-replica-services}
 </div>
 
 Estamos introduzindo o conceito de &quot;serviço de réplica única&quot;, tanto como uma oferta independente quanto dentro de warehouses. Como oferta independente, os serviços de réplica única têm tamanho limitado e são destinados a pequenas cargas de trabalho de teste. Dentro de warehouses, os serviços de réplica única podem ser implantados em tamanhos maiores e usados para cargas de trabalho que não exigem alta disponibilidade em escala, como jobs de ETL reiniciáveis.
 
 <div id="vertical-auto-scaling-improvements">
-  ### Melhorias no escalonamento automático vertical
+  ### Melhorias no escalonamento automático vertical {#vertical-auto-scaling-improvements}
 </div>
 
 Estamos introduzindo um novo mecanismo de escalonamento vertical para réplicas de computação, chamado &quot;Make Before Break&quot; (MBB). Essa abordagem adiciona uma ou mais réplicas no novo tamanho antes de remover as réplicas antigas, evitando qualquer perda de capacidade durante as operações de escalonamento. Ao eliminar o intervalo entre a remoção das réplicas existentes e a adição das novas, o MBB torna o processo de escalonamento mais contínuo e com menos interrupções. Ele é especialmente benéfico em cenários de aumento de escala, nos quais a alta utilização de recursos desencadeia a necessidade de capacidade adicional, já que remover réplicas prematuramente só agravaria as limitações de recursos.
 
 <div id="horizontal-scaling-ga">
-  ### Escalonamento horizontal (GA)
+  ### Escalonamento horizontal (GA) {#horizontal-scaling-ga}
 </div>
 
 O escalonamento horizontal agora está em GA. Você pode adicionar mais réplicas para escalar o serviço horizontalmente por meio das APIs e do Cloud Console. Consulte a [documentação](/pt-BR/products/cloud/features/autoscaling/horizontal#manual-horizontal-scaling) para mais informações.
 
 <div id="configurable-backups">
-  ### Backups configuráveis
+  ### Backups configuráveis {#configurable-backups}
 </div>
 
 Agora oferecemos suporte para que os clientes exportem backups para sua própria conta de nuvem; consulte a [documentação](/pt-BR/products/cloud/guides/backups/configurable-backups) para mais informações.
 
 <div id="managed-upgrade-improvements">
-  ### Melhorias nas atualizações gerenciadas
+  ### Melhorias nas atualizações gerenciadas {#managed-upgrade-improvements}
 </div>
 
 Atualizações gerenciadas seguras trazem valor significativo aos nossos usuários, pois permitem manter o banco de dados atualizado à medida que novos recursos são adicionados. Com este rollout, aplicamos a abordagem &quot;make before break&quot; (ou MBB) às atualizações, reduzindo ainda mais o impacto sobre as cargas de trabalho em execução.
 
 <div id="hipaa-support">
-  ### Suporte a HIPAA
+  ### Suporte a HIPAA {#hipaa-support}
 </div>
 
 Agora oferecemos suporte a HIPAA em regiões compatíveis, incluindo AWS `us-east-1`, `us-west-2` e GCP `us-central1`, `us-east1`. Os clientes que desejarem fazer a adesão devem assinar um Business Associate Agreement (BAA) e implantar na versão compatível da região. Para mais informações sobre HIPAA, consulte a [documentação](/pt-BR/products/cloud/reference/security/compliance-overview).
 
 <div id="scheduled-upgrades">
-  ### Atualizações agendadas
+  ### Atualizações agendadas {#scheduled-upgrades}
 </div>
 
 Você pode agendar atualizações para seus serviços. Esse recurso é compatível apenas com serviços do tier Enterprise. Para mais informações sobre Atualizações agendadas, consulte a [documentação](/pt-BR/products/cloud/features/admin-features/upgrades).
 
 <div id="language-client-support-for-complex-types">
-  ### Suporte de clientes de linguagem para tipos complexos
+  ### Suporte de clientes de linguagem para tipos complexos {#language-client-support-for-complex-types}
 </div>
 
 Os clientes [Golang](https://github.com/ClickHouse/clickhouse-go/releases/tag/v2.30.1), [Python](https://github.com/ClickHouse/clickhouse-connect/releases/tag/v0.8.11) e [NodeJS](https://github.com/ClickHouse/clickhouse-js/releases/tag/1.10.1) passaram a oferecer suporte aos tipos Dynamic, Variant e JSON.
 
 <div id="dbt-support-for-refreshable-materialized-views">
-  ### Suporte do DBT para views materializadas atualizáveis
+  ### Suporte do DBT para views materializadas atualizáveis {#dbt-support-for-refreshable-materialized-views}
 </div>
 
 O DBT agora [oferece suporte a views materializadas atualizáveis](https://github.com/ClickHouse/dbt-clickhouse/releases/tag/v1.8.7) no lançamento `1.8.7`.
 
 <div id="jwt-token-support">
-  ### Suporte a token JWT
+  ### Suporte a token JWT {#jwt-token-support}
 </div>
 
 Foi adicionado suporte à autenticação com JWT no driver JDBC v2, no clickhouse-java e nos clientes [Python](https://github.com/ClickHouse/clickhouse-connect/releases/tag/v0.8.12) e[ NodeJS](https://github.com/ClickHouse/clickhouse-js/releases/tag/1.10.0).
 
 JDBC / Java estará disponível na versão[ 0.8.0](https://github.com/ClickHouse/clickhouse-java/releases/tag/v0.8.0) quando ela for lançada - previsão ainda pendente.
 
-<div id="prometheus-integration-improvements">
-  ### Melhorias na integração com o Prometheus
-</div>
+### Melhorias na integração com o Prometheus {#prometheus-integration-improvements}
 
 Adicionamos várias melhorias à integração com o Prometheus:
 

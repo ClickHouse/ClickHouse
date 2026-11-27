@@ -1,0 +1,85 @@
+-- https://github.com/ClickHouse/ClickHouse/issues/115164
+-- Several right rows with the same ASOF value: hash join returns the last arrived one for `>` and `>=`
+-- and the first arrived one for `<` and `<=`, whatever the number of rows and the type of the column.
+-- The right side is a subquery with ORDER BY, so the arrival order is known.
+-- Ties are not checked for full_sorting_merge: it sorts the right side with an unstable sort.
+
+SET join_algorithm = 'hash';
+SET max_threads = 1;
+SET query_plan_join_swap_table = 'false';
+-- Otherwise the ORDER BY of the right subquery is optimized away
+SET query_plan_remove_redundant_sorting = 0;
+
+DROP TABLE IF EXISTS asof_tie_l;
+DROP TABLE IF EXISTS asof_tie_r;
+
+{% for typename, label in [('UInt32', 'UInt32'), ('Int128', 'Int128'), ('Float64', 'Float64'), ('Decimal64(3)', 'Decimal64'), ("DateTime64(3, 'UTC')", 'DateTime64')] -%}
+
+-- The key is the number of filler rows: one lookup structure per key, on both sides of the 256-row threshold
+CREATE TABLE asof_tie_r (id UInt32, t {{ typename }}, v String) ENGINE = Memory;
+INSERT INTO asof_tie_r SELECT id, 1, 'filler' FROM (SELECT arrayJoin([0, 250, 257, 1000]) AS id) ARRAY JOIN range(id) AS n;
+-- Tied rows below and above the left value 20
+INSERT INTO asof_tie_r SELECT id, 10, v FROM (SELECT arrayJoin([0, 250, 257, 1000]) AS id) ARRAY JOIN ['A', 'B', 'C'] AS v;
+INSERT INTO asof_tie_r SELECT id, 30, v FROM (SELECT arrayJoin([0, 250, 257, 1000]) AS id) ARRAY JOIN ['X', 'Y', 'Z'] AS v;
+-- A key without ties
+INSERT INTO asof_tie_r VALUES (9999, 10, 'single');
+
+CREATE TABLE asof_tie_l (id UInt32, t {{ typename }}) ENGINE = Memory;
+INSERT INTO asof_tie_l SELECT id, t FROM (SELECT arrayJoin([0, 250, 257, 1000]) AS id) ARRAY JOIN [20, 10, 30] AS t;
+INSERT INTO asof_tie_l VALUES (9999, 20);
+
+{% for op in ['>=', '>', '<=', '<'] -%}
+SELECT '{{ label }}', l.id, toInt32(l.t), '{{ op }}', r.v
+FROM asof_tie_l AS l
+ASOF JOIN (SELECT * FROM asof_tie_r ORDER BY id, t, v) AS r ON l.id = r.id AND l.t {{ op }} r.t
+ORDER BY l.id, l.t;
+
+{% endfor -%}
+
+-- Reversed arrival order, reversed answer
+{% for op in ['>=', '<='] -%}
+SELECT '{{ label }}', l.id, toInt32(l.t), '{{ op }} reversed', r.v
+FROM asof_tie_l AS l
+ASOF JOIN (SELECT * FROM asof_tie_r ORDER BY id, t, v DESC) AS r ON l.id = r.id AND l.t {{ op }} r.t
+WHERE l.t = 20 AND l.id != 9999
+ORDER BY l.id;
+
+{% endfor -%}
+
+-- Rows arriving out of order by `t` go through the sort (radix above 256 rows, comparison sort below), same answers
+{% for op in ['>=', '<='] -%}
+SELECT '{{ label }}', l.id, toInt32(l.t), '{{ op }} unsorted', r.v
+FROM asof_tie_l AS l
+ASOF JOIN (SELECT * FROM asof_tie_r ORDER BY id, v, t) AS r ON l.id = r.id AND l.t {{ op }} r.t
+WHERE l.t = 20 AND l.id != 9999
+ORDER BY l.id;
+
+SELECT '{{ label }}', l.id, toInt32(l.t), '{{ op }} unsorted reversed', r.v
+FROM asof_tie_l AS l
+ASOF JOIN (SELECT * FROM asof_tie_r ORDER BY id, v DESC, t) AS r ON l.id = r.id AND l.t {{ op }} r.t
+WHERE l.t = 20 AND l.id != 9999
+ORDER BY l.id;
+
+{% endfor -%}
+
+DROP TABLE asof_tie_l;
+DROP TABLE asof_tie_r;
+
+{% endfor -%}
+
+-- Without duplicates both algorithms give the same rows, on both sides of the 256-row threshold
+CREATE TABLE asof_tie_r (id UInt32, t UInt32, v UInt32) ENGINE = Memory;
+INSERT INTO asof_tie_r SELECT number % 7, number, number FROM numbers(3000);
+CREATE TABLE asof_tie_l (id UInt32, t UInt32) ENGINE = Memory;
+INSERT INTO asof_tie_l SELECT number % 7, number * 3 + 1 FROM numbers(1000);
+
+{% for algorithm in ['hash', 'full_sorting_merge'] -%}
+{% for op in ['>=', '>', '<=', '<'] -%}
+SELECT 'no duplicates', '{{ op }}', count(), sum(cityHash64(l.id, l.t, r.v))
+FROM asof_tie_l AS l ASOF JOIN asof_tie_r AS r ON l.id = r.id AND l.t {{ op }} r.t
+SETTINGS join_algorithm = '{{ algorithm }}';
+{% endfor -%}
+{% endfor -%}
+
+DROP TABLE asof_tie_l;
+DROP TABLE asof_tie_r;

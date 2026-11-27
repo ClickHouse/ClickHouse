@@ -1,0 +1,4 @@
+the interrupted query succeeded
+cache entries after the interrupted read:	0
+rows read by the complete read:	5
+cached row count after the complete read:	5

@@ -81,7 +81,7 @@ public:
     void next() override;
 
     /// Peek the next node (in iteration order) and return true if its path is equal to `node.path`.
-    bool isNextPathEqualToCurrent() const;
+    [[nodiscard]] bool isNextPathEqualToCurrent() const;
 };
 
 /// Iterates over Memtable in reverse order. Used by snapshotting.
@@ -157,10 +157,14 @@ struct SnapshotWriterNodeStream : public NodeStream
     std::vector<SortedRunNodeStream> run_streams;
     std::optional<MergingNodeStream> merging_stream;
 
+    /// Total number of nodes, calculated in the constructor. Can't be recalculated on demand
+    /// because next() consumes `memtables` as it iterates (to free memory as we go).
+    size_t node_count = 0;
+
     /// Caller must hold storage_mutex in shared or exclusive mode.
     explicit SnapshotWriterNodeStream(const StorageState & storage);
 
-    size_t getNodeCount() const;
+    [[nodiscard]] size_t getNodeCount() const { return node_count; }
 
     void next() override;
 };

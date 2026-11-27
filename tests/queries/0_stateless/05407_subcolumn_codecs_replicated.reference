@@ -1,0 +1,20 @@
+columns node
+columns format version: 1
+2 columns:
+`id` UInt64
+`p` Tuple(a UInt64, b Float64)
+CODEC `p.a` (Delta(8), ZSTD(1))
+
+after alter
+t_subcolumn_codecs_r1	{'a':'CODEC(Delta(8), ZSTD(1))','b':'CODEC(Gorilla(8), LZ4)'}
+t_subcolumn_codecs_r2	{'a':'CODEC(Delta(8), ZSTD(1))','b':'CODEC(Gorilla(8), LZ4)'}
+columns format version: 1
+2 columns:
+`id` UInt64
+`p` Tuple(a UInt64, b Float64)
+CODEC `p.a` (Delta(8), ZSTD(1))
+CODEC `p.b` (Gorilla(8), LZ4)
+
+100	4950
+after attach
+t_subcolumn_codecs_r2	{'a':'CODEC(Delta(8), ZSTD(1))','b':'CODEC(Gorilla(8), LZ4)'}

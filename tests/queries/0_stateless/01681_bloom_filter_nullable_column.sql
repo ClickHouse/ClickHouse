@@ -14,9 +14,9 @@ INSERT INTO bloom_filter_nullable_index VALUES (2, 'test2');
 
 SELECT 'NullableTuple with transform_null_in=0';
 SELECT * FROM bloom_filter_nullable_index WHERE str IN
-    (SELECT '1048576', str FROM bloom_filter_nullable_index) SETTINGS transform_null_in = 0;
+    (SELECT '1048576', str FROM bloom_filter_nullable_index) SETTINGS transform_null_in = 0; -- { serverError NUMBER_OF_COLUMNS_DOESNT_MATCH }
 SELECT * FROM bloom_filter_nullable_index WHERE str IN
-    (SELECT '1048576', str FROM bloom_filter_nullable_index) SETTINGS transform_null_in = 0;
+    (SELECT '1048576', str FROM bloom_filter_nullable_index) SETTINGS transform_null_in = 0; -- { serverError NUMBER_OF_COLUMNS_DOESNT_MATCH }
 
 SELECT 'NullableTuple with transform_null_in=1';
 

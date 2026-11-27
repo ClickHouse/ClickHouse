@@ -1,4 +1,4 @@
--- Tags: no-parallel, no-random-settings, no-random-merge-tree-settings
+-- Tags: no-parallel, no-random-settings, no-random-merge-tree-settings, no-fasttest
 -- no-parallel -- enables failpoint
 -- no-random-settings -- depend on type of part, should always fail
 drop table if exists prefetched_table;
@@ -14,6 +14,7 @@ INSERT INTO prefetched_table SELECT rand(), randomString(5) from numbers(1000);
 SET local_filesystem_read_prefetch=1;
 SET allow_prefetched_read_pool_for_remote_filesystem=1;
 SET allow_prefetched_read_pool_for_local_filesystem=1;
+SET local_filesystem_read_method='pread_threadpool';
 
 SYSTEM ENABLE FAILPOINT prefetched_reader_pool_failpoint;
 

@@ -306,7 +306,7 @@ SELECT * FROM mongodb(
 
 - [The `MongoDB` table engine](/reference/engines/table-engines/integrations/mongodb)
 - [Using MongoDB as a dictionary source](/reference/statements/create/dictionary/sources/mongodb)
-)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction});
+)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, mongoDBSecretArguments());
 }
 
 }

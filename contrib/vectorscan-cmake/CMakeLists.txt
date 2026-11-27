@@ -37,8 +37,8 @@ set (SRCS
     "${LIBRARY_DIR}/src/fdr/fdr_confirm_compile.cpp"
     "${LIBRARY_DIR}/src/fdr/fdr_engine_description.cpp"
     "${LIBRARY_DIR}/src/fdr/flood_compile.cpp"
-    "${LIBRARY_DIR}/src/fdr/teddy.c"
-    "${LIBRARY_DIR}/src/fdr/teddy_avx2.c"
+    "${LIBRARY_DIR}/src/fdr/teddy.cpp"
+    "${LIBRARY_DIR}/src/fdr/teddy_fat.cpp"
     "${LIBRARY_DIR}/src/fdr/teddy_compile.cpp"
     "${LIBRARY_DIR}/src/fdr/teddy_engine_description.cpp"
 
@@ -238,6 +238,11 @@ set (SRCS
 # weird reasons different constants in the output.
 #
 # Also, please use upstream versions of colm and ragel, the packages in Ubuntu 22.04 seem to produce wrong output on ARM.
+#
+# The scanners read the input through `const char *` but compare it against `unsigned char` tables (`alphtype unsigned char`). Upstream
+# compiles them with `-funsigned-char`; our .rl files read every byte as `unsigned char` instead (`getkey`, casts), so they are compiled
+# with the `char` of the platform. A TU with another `char` breaks Clang CFI: its checks on `char` types such as `std::ostream` expect
+# type ids that no vtable has. Generated with ragel 7.0.0.12 (`nixpkgs#ragelDev`): `ragel Parser.rl -o Parser.cpp`.
 if (ARCH_AMD64)
     list (APPEND SRCS
         "${LIBRARY_DIR}/../vectorscan-cmake/rageled_files/amd64/Parser.cpp"

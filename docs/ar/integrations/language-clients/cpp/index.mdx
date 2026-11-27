@@ -1,7 +1,7 @@
 ---
 description: 'توثيق لمكتبة العميل ClickHouse بلغة C++ والتكامل
   مع إطار العمل u-server'
-sidebarTitle: 'C++'
+sidebarTitle: 'نظرة عامة'
 slug: /interfaces/cpp
 title: 'مكتبة العميل C++'
 doc_type: 'reference'
@@ -23,9 +23,7 @@ doc_type: 'reference'
   [https://github.com/ClickHouse/clickhouse-cpp/issues](https://github.com/ClickHouse/clickhouse-cpp/issues)
 </Note>
 
-<div id="including-library-into-project">
-  ## تضمين المكتبة في مشروعك
-</div>
+## تضمين المكتبة في مشروعك {#including-library-into-project}
 
 أبسط طريقة لتضمين المكتبة في مشروعك هي استخدام وحدة `FetchContent` في CMake.
 ويتيح لك هذا الأسلوب تثبيت إصدار محدد بعينه من المكتبة وبناءه كجزء من
@@ -38,12 +36,12 @@ set(WITH_OPENSSL YES CACHE BOOL "Enable OpenSSL in clickhouse-cpp" FORCE)
 FetchContent_Declare(
     clickhouse-cpp
     GIT_REPOSITORY https://github.com/ClickHouse/clickhouse-cpp.git
-    GIT_TAG v2.6.0   # can also be `master` or other banch
+    GIT_TAG v2.6.0   # can also be `master` or other branch
 )
 FetchContent_MakeAvailable(clickhouse-cpp)
 ```
 
-يُفعِّل الخيار `WITH_OPENSSL` دعم TLS في المكتبة، وهو مطلوب عند الاتصال بـ
+يُفعِّل الخيار `WITH_OPENSSL` دعم TLS في المكتبة، وهو مطلوب عند الاتصال بـ
 ClickHouse Cloud أو بعمليات نشر ClickHouse الأخرى التي تدعم SSL. ومع أنه يمكن الاستغناء عنه في
 الاتصالات التي لا تستخدم TLS، فإن تفعيله يُنصح به عمومًا.
 
@@ -51,19 +49,15 @@ ClickHouse Cloud أو بعمليات نشر ClickHouse الأخرى التي ت�
 `libssl-dev` على Debian وUbuntu أو مشتقاتهما؛ و`openssl-devel` على Fedora وRed Hat؛ أو
 `openssl` على macOS باستخدام homebrew.
 
-بعد إتاحة هذه التبعية، اربط هدفك بهدف المكتبة المُصدَّر التالي:
+بعد إتاحة هذه التبعية، اربط هدفك بهدف المكتبة المُصدَّر التالي:
 
 ```cmake
 target_link_libraries(your-target PRIVATE clickhouse-cpp-lib)
 ```
 
-<div id="examples">
-  ## أمثلة
-</div>
+## أمثلة {#examples}
 
-<div id="example-setup-client">
-  ### إعداد كائن `Client`
-</div>
+### إعداد كائن `Client` {#example-setup-client}
 
 أنشئ مثيلاً من `Client` لإقامة اتصال مع ClickHouse. يوضّح المثال التالي
 كيفية الاتصال بمثيل ClickHouse محلي، حيث لا يلزم إدخال كلمة مرور ولا يكون SSL
@@ -91,9 +85,7 @@ clickhouse::Client client{
     };
 ```
 
-<div id="example-create-table">
-  ### إنشاء الجداول وتنفيذ الاستعلامات من دون بيانات
-</div>
+### إنشاء الجداول وتنفيذ الاستعلامات من دون بيانات {#example-create-table}
 
 لتنفيذ استعلام لا يُرجع أي بيانات، مثل إنشاء الجداول، استخدم الطريقة `Execute`.
 وينطبق النهج نفسه على عبارات أخرى مثل `ALTER TABLE` و`DROP` وما إلى ذلك.
@@ -107,9 +99,7 @@ client.Execute(R"(
     ENGINE = MergeTree ORDER BY id)");
 ```
 
-<div id="example-insert-data">
-  ### إدراج البيانات
-</div>
+### إدراج البيانات {#example-insert-data}
 
 لإدراج البيانات في جدول، أنشئ `Block` واملأه بكائنات الأعمدة المطابقة لـ
 مخطط الجدول. تُضاف البيانات عمودًا بعمود، ثم تُدرَج في عملية واحدة باستخدام
@@ -140,9 +130,7 @@ block.AppendColumn("language", language);
 client.Insert("greetings", block);
 ```
 
-<div id="example-select">
-  ### اختيار البيانات
-</div>
+### اختيار البيانات {#example-select}
 
 لتنفيذ استعلام يُرجع بيانات، استخدم الطريقة `Select` ومرّر `callback` لمعالجة
 النتيجة. تُمرَّر نتائج الاستعلام على شكل كائنات `Block`، بما يعكس تمثيل البيانات
@@ -161,9 +149,7 @@ client.Select(
     });
 ```
 
-<div id="supported-data-types">
-  ## أنواع البيانات المدعومة
-</div>
+## أنواع البيانات المدعومة {#supported-data-types}
 
 * `UInt8`, `UInt16`, `UInt32`, `UInt64`, `Int8`, `Int16`, `Int32`, `Int64`
 * `UInt128`, `Int128`

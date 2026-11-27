@@ -23,11 +23,13 @@ void TTLUpdateInfoAlgorithm::execute(Block & block)
         return;
 
     auto ttl_column = executeExpressionAndGetColumn(ttl_expressions.expression, block, description.result_column);
-    for (size_t i = 0; i < block.rows(); ++i)
-    {
-        Int64 cur_ttl = ITTLAlgorithm::getTimestampByIndex(ttl_column.get(), i);
-        new_ttl_info.update(cur_ttl);
-    }
+
+    const size_t rows = block.rows();
+    PaddedPODArray<Int64> timestamps;
+    extractTimestamps(ttl_column.get(), timestamps);
+
+    for (size_t i = 0; i < rows; ++i)
+        new_ttl_info.update(timestamps[i]);
 }
 
 void TTLUpdateInfoAlgorithm::finalize(const MutableDataPartPtr & data_part) const

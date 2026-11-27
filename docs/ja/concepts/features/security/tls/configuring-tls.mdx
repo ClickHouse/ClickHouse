@@ -3,13 +3,11 @@ slug: /guides/sre/tls/configuring-tls
 sidebarTitle: 'TLS の設定'
 title: 'TLS の設定'
 description: 'このガイドでは、OpenSSL 証明書を使用して接続を検証するよう ClickHouse を設定するための、シンプルで最小限の設定について説明します。'
-keywords: ['SSL 設定', 'TLS の設定', 'OpenSSL 証明書', 'セキュアな接続', 'SRE ガイド']
+keywords: ['SSL 設定', 'TLS の設定', 'OpenSSL 証明書', '安全な接続', 'SRE ガイド']
 doc_type: 'guide'
 ---
 
 import SelfManaged from '/snippets/ja/_self_managed_only_automated.mdx';
-
-import { Image } from "/snippets/ja/components/Image.jsx";
 
 <SelfManaged />
 
@@ -118,7 +116,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
   </Step>
 
   <Step title="ClickHouse Keeperを使用した基本クラスターによる環境の構成" id="4-configure-the-environment-with-basic-clusters-using-clickhouse-keeper">
-    このデプロイメント環境では、各ノードで以下の ClickHouse Keeper 設定を使用します。各サーバーにはそれぞれ固有の `<server_id>` が設定されます (例：ノード `chnode1` には `<server_id>1</server_id>`、以降も同様) 。
+    このデプロイ環境では、各ノードで以下の ClickHouse Keeper 設定が使用されます。各サーバーはそれぞれ固有の `<server_id>` を持ちます (例：ノード `chnode1` の場合は `<server_id>1</server_id>`) 。
 
     <Note>
       ClickHouse Keeper の推奨ポートは `9281` です。ただし、ポートは設定可能であり、このポートが環境内の別のアプリケーションですでに使用されている場合は、別のポートに設定できます。
@@ -171,7 +169,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
       ClickHouse Keeper が ClickHouse server に埋め込まれている場合 (上図のとおり) 、Keeper は [ClickHouse ノードで TLS インターフェイスを構成する](#5-configure-tls-interfaces-on-clickhouse-nodes) の OpenSSL セクションで定義された、server の OpenSSL 設定を使用します。ClickHouse Keeper をスタンドアロンのプロセスとして実行する場合は、同じ CA 証明書とノード証明書 / 秘密鍵の設定を含む `<openSSL>` セクションを Keeper の設定ファイルに追加する必要があります。詳細については、以下の [スタンドアロンの ClickHouse Keeper 用に OpenSSL を構成する](#configure-openssl-for-standalone-clickhouse-keeper) を参照してください。
     </Note>
 
-    2. すべてのノードで Keeper の設定のコメントを外して更新し、`<secure>` フラグを 1 に設定します。
+    2. すべてのノードで Keeper の設定のコメントを外して更新し、`<secure>` フラグを 1 に設定します:
        ```xml
        <zookeeper>
            <node>
@@ -305,7 +303,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
     </openSSL>
     ```
 
-    詳細については、[このページ](/ja/reference/settings/server-settings/settings#openssl)を参照してください。
+    詳細については、[このページ](/ja/reference/settings/server-settings/settings/other#openssl)を参照してください。
 
     7. すべてのノードで gRPC 用の TLS を設定します。
 
@@ -320,7 +318,6 @@ import { Image } from "/snippets/ja/components/Image.jsx";
            <transport_compression_level>0</transport_compression_level>
            <max_send_message_size>-1</max_send_message_size>
            <max_receive_message_size>-1</max_receive_message_size>
-           <verbose_logs>false</verbose_logs>
        </grpc>
        ```
 
@@ -461,7 +458,11 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
     5. `https://chnode1.marsnet.local:8443/play` の `https` インターフェイス経由で Play UI にログインします。
 
-       <Image img="/images/guides/sre/configuring-ssl_01.webp" alt="TLS の設定" size="md" border />
+       <div className="ch-image-md">
+         <Frame>
+           ![TLS の設定](/images/guides/sre/configuring-ssl_01.webp)
+         </Frame>
+       </div>
 
     <Note>
       ブラウザは、ワークステーションからアクセスしており、かつ証明書がクライアントマシンのルート CA ストアに含まれていないため、信頼されていない証明書として表示します。
@@ -513,7 +514,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 </Steps>
 
 <div id="configure-openssl-for-standalone-clickhouse-keeper">
-  ## スタンドアロンの ClickHouse Keeper 向けに OpenSSL を設定する
+  ## スタンドアロンの ClickHouse Keeper 向けに OpenSSL を設定する {#configure-openssl-for-standalone-clickhouse-keeper}
 </div>
 
 ClickHouse Keeper をスタンドアロンのプロセスとして実行する場合 (ClickHouse server に埋め込んで実行するのではなく) 、OpenSSL の証明書と設定は Keeper の設定ファイルで個別に構成する必要があります。これを行わないと、Keeper はクライアント通信用の secure connections (`tcp_port_secure`) や、Keeper ノード間の Raft レプリケーションを確立できません。
@@ -557,13 +558,13 @@ ClickHouse Keeper をスタンドアロンのプロセスとして実行する�
 </Note>
 
 <div id="openssl-verification-modes">
-  ## OpenSSL の検証モードと証明書ハンドラ
+  ## OpenSSL の検証モードと証明書ハンドラ {#openssl-verification-modes}
 </div>
 
 `<openSSL>` の設定では、ClickHouse による TLS 証明書の検証方法を制御する `<verificationMode>` と `<invalidCertificateHandler>` に、いくつかのオプションが用意されています。これらの設定は、clickhouse-server、clickhouse-client、およびスタンドアロンの ClickHouse Keeper に適用されます。
 
 <div id="verification-modes">
-  ### 検証モード
+  ### 検証モード {#verification-modes}
 </div>
 
 `<openSSL>` の `<server>` または `<client>` セクション内で `<verificationMode>` を設定します。
@@ -576,7 +577,7 @@ ClickHouse Keeper をスタンドアロンのプロセスとして実行する�
 | `strict`  | ピア証明書を必須とし、完全に検証します。証明書がない場合、期限切れの場合、または信頼された CA によって署名されていない場合、接続は失敗します。本番環境に推奨されます。  |
 
 <div id="invalid-certificate-handlers">
-  ### 無効な証明書ハンドラ
+  ### 無効な証明書ハンドラ {#invalid-certificate-handlers}
 </div>
 
 `<openSSL>` の `<server>` または `<client>` セクション内で `<invalidCertificateHandler>` を設定します。このハンドラーは、証明書の検証に失敗した場合の動作を決定します。サーバー側では、無効なクライアント証明書に対する応答を制御します。クライアント側では、無効なサーバー証明書に対する応答を制御します。
@@ -587,7 +588,7 @@ ClickHouse Keeper をスタンドアロンのプロセスとして実行する�
 | `AcceptCertificateHandler` | 証明書が無効でも接続を受け入れます。これはテスト目的でのみ使用してください。 |
 
 <div id="disabling-certificate-verification">
-  ### 例: 証明書の検証を無効にする
+  ### 例: 証明書の検証を無効にする {#disabling-certificate-verification}
 </div>
 
 <Warning>
@@ -667,8 +668,14 @@ ClickHouse Keeper をスタンドアロンのプロセスとして実行する�
 </openSSL>
 ```
 
+## 再起動なしでの証明書および CA 証明書のローテーション {#rotating-certificates-without-restart}
+
+ClickHouse server と ClickHouse Keeper は、`openSSL.server` および `openSSL.client` セクション (コンポーザブルプロトコルの場合は `protocols.*`) 内の `certificateFile`、`privateKeyFile`、`caConfig` が参照するファイルを監視します。`caConfig` がディレクトリを指す場合は、そのディレクトリ内のファイルが監視対象となります。これらのファイルのいずれかが変更された場合、または `SYSTEM RELOAD CONFIG` が実行された場合、証明書は再読み込みされ、HTTPS、セキュアなネイティブプロトコル、interserver 接続、Keeper への接続、Keeper ノード間の Raft 接続を含む、以降のすべての新規 TLS 接続で使用されます。確立済みの接続では、接続時に使用された証明書がそのまま使われ続けます。
+
+ダウンタイムなしで CA をローテーションするには、まず `caConfig` ファイルを、古い CA 証明書と新しい CA 証明書の両方を含むバンドルに置き換えます。次にノード証明書とクライアント証明書を新しい CA が発行したものに切り替え、最後にそのバンドルを新しい CA 証明書のみに置き換えます。
+
 <div id="summary">
-  ## まとめ
+  ## まとめ {#summary}
 </div>
 
 この記事では、TLS を使用する ClickHouse 環境の構成について説明しました。本番環境では要件に応じて設定が異なり、たとえば証明書の検証レベル、プロトコル、暗号スイートなどが変わります。これで、安全な接続を構成して実装するために必要な手順を十分に理解できたはずです。
