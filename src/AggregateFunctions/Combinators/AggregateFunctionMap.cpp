@@ -46,7 +46,14 @@ struct CompareHelperEqual
 template <typename T>
 struct CompareHelperLess
 {
-    bool operator()(const T & a, const T & b) const { return CompareHelper<T>::less(a, b, 1); }
+    bool operator()(const T & a, const T & b) const
+    {
+        /// Only floating point keys need `CompareHelper` (to order `NaN`), and it takes the arguments by value.
+        if constexpr (is_floating_point<T>)
+            return CompareHelper<T>::less(a, b, 1);
+        else
+            return a < b;
+    }
 };
 
 /// The hash has to agree with `CompareHelperEqual`, which is used as the equality predicate of `merged_maps`:
