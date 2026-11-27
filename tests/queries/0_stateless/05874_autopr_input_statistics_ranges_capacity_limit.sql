@@ -1,7 +1,8 @@
 -- `automatic_parallel_replicas_max_counted_ranges` is charged by the ranges of compressed blocks a query keeps, not
 -- only by the files it reads: a budget that admits both files of the read is exhausted by their disjoint ranges, the
--- query still completes, and the next run declines parallel replicas because its input was not measured. With no
--- limit, the statistics collected again measure the input, and the next run is decided by the cost model.
+-- query still completes, and the next run declines parallel replicas because its input was not measured, as does one
+-- with a smaller limit. One with no limit collects the statistics again, which measure the input, and the next run is
+-- decided by the cost model.
 
 DROP TABLE IF EXISTS t_autopr_ranges_capacity;
 
@@ -33,8 +34,9 @@ SETTINGS automatic_parallel_replicas_max_counted_ranges = 100, log_comment = 'au
 SELECT key % 10 AS k, max(value) FROM t_autopr_ranges_capacity PREWHERE key % 256 < 128 GROUP BY k FORMAT Null
 SETTINGS automatic_parallel_replicas_max_counted_ranges = 100, log_comment = 'autopr_ranges_capacity_2_rejected';
 
--- The table grows past the drift ratio, so the next run collects the statistics again, now without a limit.
-INSERT INTO t_autopr_ranges_capacity SELECT number + 100000, toString(number) FROM numbers(300000);
+SELECT key % 10 AS k, max(value) FROM t_autopr_ranges_capacity PREWHERE key % 256 < 128 GROUP BY k FORMAT Null
+SETTINGS automatic_parallel_replicas_max_counted_ranges = 50, log_comment = 'autopr_ranges_capacity_2_rejected_smaller';
+
 SELECT key % 10 AS k, max(value) FROM t_autopr_ranges_capacity PREWHERE key % 256 < 128 GROUP BY k FORMAT Null
 SETTINGS automatic_parallel_replicas_max_counted_ranges = 0, log_comment = 'autopr_ranges_capacity_3_recollect';
 SELECT key % 10 AS k, max(value) FROM t_autopr_ranges_capacity PREWHERE key % 256 < 128 GROUP BY k FORMAT Null
@@ -46,7 +48,7 @@ SYSTEM FLUSH LOGS query_log;
 
 SELECT log_comment,
        ProfileEvents['AutoParallelReplicasNoStatistics'] AS collected,
-       ProfileEvents['AutoParallelReplicasStatisticsDrifted'] AS recollected,
+       ProfileEvents['AutoParallelReplicasUnmeasuredInputRecounted'] AS recollected,
        ProfileEvents['AutoParallelReplicasRejectedByUnmeasuredInput'] AS rejected,
        ProfileEvents['AutoParallelReplicasCostModelEvaluated'] AS evaluated
 FROM system.query_log
