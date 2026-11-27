@@ -382,6 +382,9 @@ void ProxyServer::start(const Poco::Util::AbstractConfiguration & abstract_confi
 
     health->start();
 
+    /// A running accept loop holds the address of the future in its state, so the state has to be retained
+    /// for `stop` to join the loop: make room for it before the fiber is started, not after.
+    accept_states.reserve(listen_sockets.size());
     for (size_t i = 0; i < listen_sockets.size(); ++i)
     {
         auto state = std::make_unique<AcceptState>();
