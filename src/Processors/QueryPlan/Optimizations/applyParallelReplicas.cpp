@@ -96,6 +96,10 @@ static JoinSide coordinatedJoinSide(const QueryPlan::Node * node)
     if (!join)
         return JoinSide::None;
 
+    /// A set-operation join removes duplicates only among the rows it sees, so neither side may be split.
+    if (join->getJoinOperator().set_operation != JoinSetOperation::None)
+        return JoinSide::None;
+
     const JoinKind kind = join->getJoinOperator().kind;
     const JoinStrictness strictness = join->getJoinOperator().strictness;
 
@@ -157,6 +161,11 @@ bool mergeTreeReadCanBeShipped(const ReadFromMergeTree & read)
     /// The pinned block-number boundary is not serialized: a follower rebuilds the read with
     /// max_block_numbers_to_read = nullptr and would read past the initiator's snapshot boundary.
     if (read.hasPinnedBlockNumbers())
+        return false;
+
+    /// A read of a `UNIQUE KEY` table cannot be serialized, see `ReadFromMergeTree::serialize`. Query-based parallel
+    /// replicas does not distribute such a read either (`isStorageEligibleForParallelReplicas`).
+    if (read.getStorageMetadata()->hasUniqueKey())
         return false;
 
     /// A non-replicated table can hold different data on each replica, so reading it remotely is opt-in.
@@ -608,6 +617,10 @@ public:
             partial_aggregation_node.step = aggregating_step->clone();
             auto * partial_aggregation_step = typeid_cast<AggregatingStep *>(partial_aggregation_node.step.get());
             partial_aggregation_step->setFinal(false);
+            /// The remote replicas get the step without the kept-keys cutoff (see `AggregatingStep::serializeSettings`), but
+            /// the local replica runs this copy as is: with the cutoff it would drop its rows of the keys it did not keep,
+            /// which the merge could still return.
+            partial_aggregation_step->disableKeptKeysCutoff();
             /// Keep the bucket order when the original step already promised it to its consumer.
             partial_aggregation_step->setProduceResultsInBucketOrder(
                 should_produce_results_in_order_of_bucket_number || memory_efficient_aggregation);

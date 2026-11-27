@@ -54,7 +54,6 @@ namespace Setting
     extern const SettingsNonZeroUInt64 max_insert_block_size;
     extern const SettingsUInt64 output_format_avro_rows_in_file;
     extern const SettingsMilliseconds stream_flush_interval_ms;
-    extern const SettingsMilliseconds stream_poll_timeout_ms;
     extern const SettingsBool stream_like_engine_allow_direct_select;
 }
 
@@ -91,6 +90,7 @@ namespace RabbitMQSetting
 }
 
 static const uint32_t QUEUE_SIZE = 100000;
+static const auto MAX_FAILED_READ_ATTEMPTS = 10;
 static const auto RESCHEDULE_MS = 500;
 static const auto MAX_THREAD_WORK_DURATION_MS = 60000;
 static const auto PUBLISHER_CLEANUP_INTERVAL_MS = 5000;
@@ -1364,11 +1364,10 @@ void StorageRabbitMQ::threadFunc()
 
                     /// The claimed blocked-REFRESH permit is spent on this cycle: have the source drive the
                     /// AMQP loop itself so the permit is not wasted (see RabbitMQSource). Every following
-                    /// iteration is an ordinary cycle (the loop below breaks while blocked).
+                    /// iteration is an ordinary cycle (the loop below breaks while blocked) and keeps the
+                    /// fast empty return, letting the looping task deliver.
                     const bool drive_loop_on_worker = std::exchange(claimed_blocked_refresh, false);
                     bool continue_reading = streamToViews(cycle_epoch, drive_loop_on_worker);
-                    /// A cycle ran, so the next round starts soon; the backoff grows only while cycles fail.
-                    milliseconds_to_wait = (*rabbitmq_settings)[RabbitMQSetting::rabbitmq_empty_queue_backoff_start_ms];
                     if (!continue_reading)
                         break;
 
@@ -1382,6 +1381,8 @@ void StorageRabbitMQ::threadFunc()
                         LOG_TRACE(log, "Reschedule streaming. Thread work duration limit exceeded.");
                         break;
                     }
+
+                    milliseconds_to_wait = (*rabbitmq_settings)[RabbitMQSetting::rabbitmq_empty_queue_backoff_start_ms];
                 }
             }
             else if (num_views == 0)
@@ -1460,8 +1461,7 @@ bool StorageRabbitMQ::streamToViews(UInt64 cycle_epoch, bool drive_loop_on_worke
             *this, storage_snapshot, new_context, Names{}, block_size,
             max_execution_time_ms, (*rabbitmq_settings)[RabbitMQSetting::rabbitmq_handle_error_mode],
             reject_unhandled_messages, /* ack_in_suffix */false, log, cycle_epoch,
-            /* drive_loop_on_worker */drive_loop_on_worker,
-            /* first_poll_timeout_ms */static_cast<UInt64>(getContext()->getSettingsRef()[Setting::stream_poll_timeout_ms].totalMilliseconds()));
+            /* drive_loop_on_worker */drive_loop_on_worker);
 
         sources.emplace_back(source);
         pipes.emplace_back(source);
@@ -1497,7 +1497,7 @@ bool StorageRabbitMQ::streamToViews(UInt64 cycle_epoch, bool drive_loop_on_worke
     std::atomic_size_t rows = 0;
     block_io.pipeline.setProgressCallback([&](const Progress & progress) { rows += progress.read_rows.load(); });
 
-    /// Pump deliveries via the background looping task. While waiting for a first message the source also
+    /// Pump deliveries via the background looping task. On the self-driving path the source also
     /// drives the loop itself as a fallback for when a message-broker worker is starved; startup_mutex
     /// serializes the two, so uv_run is never driven concurrently and the loop always makes progress.
     if (!connection->getHandler().loopRunning())
@@ -1610,10 +1610,10 @@ bool StorageRabbitMQ::streamToViews(UInt64 cycle_epoch, bool drive_loop_on_worke
         return false;
     }
 
-    /// The source already waited up to the poll timeout for a message, so end the round, as Kafka does.
-    if (rows == 0 && queue_empty == num_created_consumers)
+    if ((queue_empty == num_created_consumers) && (++read_attempts == MAX_FAILED_READ_ATTEMPTS))
     {
         connection->heartbeat();
+        read_attempts = 0;
         LOG_TRACE(log, "Reschedule streaming. Queues are empty.");
         return false;
     }
@@ -1836,7 +1836,7 @@ Setting `rabbitmq_queue_base` may be used for the following cases:
 - to be able to restore reading from certain durable queues when not all messages were successfully consumed. To resume consumption from one specific queue - set its name in `rabbitmq_queue_base` setting and do not specify `rabbitmq_num_consumers` and `rabbitmq_num_queues` (defaults to 1). To resume consumption from all queues, which were declared for a specific table - just specify the same settings: `rabbitmq_queue_base`, `rabbitmq_num_consumers`, `rabbitmq_num_queues`. By default, queue names will be unique to tables.
 - to reuse queues as they are declared durable and not auto-deleted. (Can be deleted via any of RabbitMQ CLI tools.)
 
-To improve performance, received messages are grouped into blocks the size of [max_insert_block_size](/reference/settings/session-settings/max-insert#max_insert_block_size). If the block wasn't formed within [stream_flush_interval_ms](/reference/settings/session-settings/stream#stream_flush_interval_ms) milliseconds, the data will be flushed to the table regardless of the completeness of the block. While its queues are empty, background streaming waits up to [stream_poll_timeout_ms](/reference/settings/session-settings/stream#stream_poll_timeout_ms) for a message before it reschedules, as the Kafka engine does.
+To improve performance, received messages are grouped into blocks the size of [max_insert_block_size](/reference/settings/session-settings/max-insert#max_insert_block_size). If the block wasn't formed within [stream_flush_interval_ms](/reference/settings/session-settings/stream#stream_flush_interval_ms) milliseconds, the data will be flushed to the table regardless of the completeness of the block.
 
 If `rabbitmq_num_consumers` and/or `rabbitmq_num_queues` settings are specified along with `rabbitmq_exchange_type`, then:
 

@@ -184,7 +184,8 @@ std::future<IAsynchronousReader::Result> ThreadPoolReader::submit(Request reques
                 throw ErrnoException(ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR, "Cannot read from file {}", fd);
             }
 
-            bytes_read += res;
+            if (res > 0)
+                bytes_read += res;
         }
 
         watch.stop();

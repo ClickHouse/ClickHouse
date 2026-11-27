@@ -436,6 +436,69 @@ SELECT extractGroups(s, '< ([\\w\\-]+): ([^\\r\\n]+)');
 ['Server','nginx']
 ```
 
+## fullMatch {#fullMatch}
+
+Introduced in: v26.11.0
+
+Checks if a provided string matches the provided regular expression pattern as a whole.
+
+Unlike [`match`](#match), which searches for a match anywhere in the string, this function
+returns `1` only if the pattern matches the entire string, as if the pattern was anchored at
+both ends with `^` and `$`. This corresponds to `RE2::FullMatch` of the RE2 library, to
+`re.fullmatch` in Python, and to `regexp_full_match` in DuckDB.
+
+This function uses the RE2 regular expression library. Please refer to [re2](https://github.com/google/re2/wiki/Syntax) for supported syntax.
+
+Matching works under UTF-8 assumptions, e.g. `¥` uses two bytes internally but matching treats it as a single codepoint.
+The regular expression must not contain NULL bytes.
+If the haystack or the pattern are not valid UTF-8, the behavior is undefined.
+
+Unlike re2's default behavior, `.` matches line breaks. To disable this, prepend the pattern with `(?-s)`.
+    
+
+**Syntax**
+
+```sql
+fullMatch(haystack, pattern)
+```
+
+**Aliases**: `regexp_full_match`
+
+**Arguments**
+
+- `haystack` — String in which the pattern is searched. [`String`](/reference/data-types/string)
+- `pattern` — Regular expression pattern. Can be a constant or come from a column. [`String`](/reference/data-types/string)
+
+**Returned value**
+
+Returns `1` if the pattern matches the whole string, `0` otherwise. [`UInt8`](/reference/data-types/int-uint)
+
+**Examples**
+
+**Matching the whole string**
+
+```sql title=Query
+SELECT fullMatch('abcde', 'a.*e'), fullMatch('abcde', 'b.*d'), match('abcde', 'b.*d')
+```
+
+```response title=Response
+┌─fullMatch('abcde', 'a.*e')─┬─fullMatch('abcde', 'b.*d')─┬─match('abcde', 'b.*d')─┐
+│                          1 │                          0 │                      1 │
+└────────────────────────────┴────────────────────────────┴────────────────────────┘
+```
+
+**Pattern with a top-level alternation**
+
+```sql title=Query
+SELECT fullMatch('gold-1', 'zzz|gold.*'), fullMatch('app-gold-1', 'zzz|gold.*')
+```
+
+```response title=Response
+┌─fullMatch('gold-1', 'zzz|gold.*')─┬─fullMatch('app-gold-1', 'zzz|gold.*')─┐
+│                                 1 │                                     0 │
+└───────────────────────────────────┴───────────────────────────────────────┘
+```
+
 ## hasAllTokens {#hasAllTokens}
 
 Introduced in: v25.10.0
@@ -921,7 +984,7 @@ Prior to searching, the function tokenizes the `input` and, when it is a `String
 If the column has no text index defined, the `splitByNonAlpha` tokenizer is used instead — unless a tokenizer is provided as the optional third argument.
 The tokenizer argument must be one of `splitByNonAlpha`, `splitByString`, `splitByRegexp`, `array`, `ngrams`, `asciiCJK`, or `icu`.
 
-If `input` is an [Array(String)](/reference/data-types/array), its elements are tokenized like any other input and their tokens form a single sequence per row, so a phrase may span two elements. With the `array` tokenizer each element is one token, which is how a column of already tokenized values is searched.
+If `input` is an [Array(String)](/reference/data-types/array), its elements are tokenized like any other input and a phrase must lie within a single element. With the `array` tokenizer each element is one token and a phrase spans consecutive elements, which is how a column of already tokenized values is searched.
 If `phrase` is an [Array(String)](/reference/data-types/array), its elements are the tokens to search for, in order and
 including duplicates. Empty phrase elements are ignored, because no tokenizer produces an empty token.
 
@@ -979,28 +1042,28 @@ SELECT hasPhrase('the quick brown fox jumps', 'quick fox')
 └─────────────────────────────────────────────────────┘
 ```
 
-**Token sequence given as arrays**
+**Already tokenized values with the `array` tokenizer**
 
 ```sql title=Query
-SELECT hasPhrase(['the', 'quick', 'brown', 'fox'], ['quick', 'brown'])
+SELECT hasPhrase(['the', 'quick', 'brown', 'fox'], ['quick', 'brown'], 'array')
 ```
 
 ```response title=Response
-┌─hasPhrase(['the', 'quick', 'brown', 'fox'], ['quick', 'brown'])─┐
-│                                                               1 │
-└─────────────────────────────────────────────────────────────────┘
+┌─hasPhrase(['the', 'quick', 'brown', 'fox'], ['quick', 'brown'], 'array')─┐
+│                                                                        1 │
+└──────────────────────────────────────────────────────────────────────────┘
 ```
 
-**Phrase spanning two elements**
+**A phrase does not span two elements**
 
 ```sql title=Query
-SELECT hasPhrase(['the quick', 'brown fox'], ['quick', 'brown'])
+SELECT hasPhrase(['the quick', 'brown fox'], 'quick brown')
 ```
 
 ```response title=Response
-┌─hasPhrase(['the quick', 'brown fox'], ['quick', 'brown'])─┐
-│                                                         1 │
-└───────────────────────────────────────────────────────────┘
+┌─hasPhrase(['the quick', 'brown fox'], 'quick brown')─┐
+│                                                    0 │
+└──────────────────────────────────────────────────────┘
 ```
 
 ## hasSubsequence {#hasSubsequence}
@@ -1549,7 +1612,7 @@ If the haystack or the pattern are not valid UTF-8, the behavior is undefined.
 
 Unlike re2's default behavior, `.` matches line breaks. To disable this, prepend the pattern with `(?-s)`.
 
-The pattern is not anchored. To match the entire string, anchor the pattern yourself using `^` and `$`.
+The pattern is not anchored. To match the entire string, anchor the pattern yourself using `^` and `$`, or use the [`fullMatch`](#fullMatch) function.
 
 If you just want to search for substrings, you can use functions [`like`](#like) or [`position`](#position) instead, which work much faster than this function.
 

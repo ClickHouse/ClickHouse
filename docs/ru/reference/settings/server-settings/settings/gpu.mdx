@@ -12,6 +12,14 @@ import SettingsInfoBlock from "/snippets/ru/components/SettingsInfoBlock/Setting
 
 Эти настройки определяют конфигурацию сервера ClickHouse и автоматически генерируются из исходного кода ClickHouse.
 
+## gpu_expression_kernel_cache_elements_size {#gpu_expression_kernel_cache_elements_size}
+
+<SettingsInfoBlock type="UInt64" default_value="10000" changeable_without_restart="No" />Максимальное количество ядер в кэше ядер, которые движок GPU компилирует для выражений. Изменение вступает в силу без перезапуска.
+
+## gpu_expression_kernel_cache_size {#gpu_expression_kernel_cache_size}
+
+<SettingsInfoBlock type="UInt64" default_value="268435456" changeable_without_restart="No" />Максимальный размер (в байтах PTX) кэша ядер, которые GPU-движок компилирует для выражений. Ядра сверх лимита выгружаются с устройства. Изменение вступает в силу без перезапуска.
+
 ## gpu_memory_pool_release_threshold {#gpu_memory_pool_release_threshold}
 
 <SettingsInfoBlock type="UInt64" default_value="18446744073709551615" changeable_without_restart="No" />Объём освобождённой памяти устройства, который стандартный пул памяти GPU удерживает у себя вместо того, чтобы возвращать его драйверу. При значении по умолчанию пул разрастается до пикового объёма, который требовался запросам, и остаётся таким до завершения работы сервера.

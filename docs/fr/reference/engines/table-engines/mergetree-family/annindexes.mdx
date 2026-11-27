@@ -148,28 +148,29 @@ ORDER BY [...]
 
 Les paramètres spécifiques à HNSW suivants sont disponibles :
 
-* `<quantization>` contrôle la quantification des vecteurs dans le graphe de proximité. Les valeurs possibles sont `f64`, `f32`, `f16`, `bf16`, `i8` ou `b1`. La valeur par défaut est `bf16`. Notez que ce paramètre n’affecte pas la représentation des vecteurs dans la colonne source.
-* `<hnsw_max_connections_per_layer>` contrôle le nombre de voisins par nœud du graphe, également appelé hyperparamètre HNSW `M`. La valeur par défaut est `32`. La valeur `0` signifie que la valeur par défaut est utilisée.
-* `<hnsw_candidate_list_size_for_construction>` contrôle la taille de la liste dynamique de candidats lors de la construction du graphe HNSW, également appelée hyperparamètre HNSW `ef_construction`. La valeur par défaut est `128`. La valeur `0` signifie que la valeur par défaut est utilisée.
+* `<quantization>` contrôle la quantification des vecteurs dans le graphe de proximité. Les valeurs possibles sont `f64`, `f32`, `f16`, `bf16`, `i8` ou `b1`. La valeur par défaut est `bf16`. Notez que ce paramètre n’affecte pas la représentation des vecteurs dans la colonne sous-jacente.
+* `<hnsw_max_connections_per_layer>` contrôle le nombre de voisins par nœud du graphe, également appelé hyperparamètre HNSW `M`. La valeur par défaut est `32`. La valeur `0` signifie que la valeur par défaut est utilisée. La valeur maximale est `512`.
+* `<hnsw_candidate_list_size_for_construction>` contrôle la taille de la liste dynamique de candidats lors de la construction du graphe HNSW, également appelée hyperparamètre HNSW `ef_construction`. La valeur par défaut est `128`. La valeur `0` signifie que la valeur par défaut est utilisée. La valeur maximale est `3200`.
 
 Les valeurs par défaut de tous les paramètres spécifiques à HNSW fonctionnent correctement dans la grande majorité des cas d’usage.
 Nous ne recommandons donc pas de personnaliser les paramètres spécifiques à HNSW.
 
-D’autres restrictions s’appliquent :
+D’autres restrictions s’appliquent :
 
-* Les index de similarité vectorielle ne peuvent être construits que sur des colonnes de type [Array(Float32)](/fr/reference/data-types/array), [Array(Float64)](/fr/reference/data-types/array) ou [Array(BFloat16)](/fr/reference/data-types/array). Les tableaux de flottants nullable ou à faible cardinalité, tels que `Array(Nullable(Float32))` et `Array(LowCardinality(Float32))`, ne sont pas autorisés.
+* Les index de similarité vectorielle ne peuvent être construits que sur des colonnes de type [Array(Float32)](/fr/reference/data-types/array), [Array(Float64)](/fr/reference/data-types/array) ou [Array(BFloat16)](/fr/reference/data-types/array). Les tableaux de nombres à virgule flottante nullable ou à faible cardinalité, tels que `Array(Nullable(Float32))` et `Array(LowCardinality(Float32))`, ne sont pas autorisés.
 * Les index de similarité vectorielle doivent être construits sur une seule colonne.
 * Les index de similarité vectorielle peuvent être construits sur des expressions calculées (par exemple, `INDEX index_name arraySort(vectors) TYPE vector_similarity([...])`), mais ces index ne pourront pas être utilisés ensuite pour la recherche approximative de voisins.
-* Les index de similarité vectorielle exigent que tous les tableaux de la colonne source contiennent `<dimension>` éléments ; cela est vérifié lors de la création de l’index. Pour détecter les violations de cette exigence le plus tôt possible, les utilisateurs peuvent ajouter une [contrainte](/fr/reference/statements/create/table#constraints) sur la colonne vectorielle, par exemple `CONSTRAINT same_length CHECK length(vectors) = 256`.
-* De même, les valeurs de tableau dans la colonne source ne doivent pas être vides (`[]`) ni avoir la valeur par défaut (également `[]`).
+* Les index de similarité vectorielle exigent que tous les tableaux de la colonne sous-jacente contiennent `<dimension>` éléments ; cela est vérifié lors de la création de l’index. Pour détecter les violations de cette exigence le plus tôt possible, les utilisateurs peuvent ajouter une [contrainte](/fr/reference/statements/create/table#constraints) sur la colonne vectorielle, par exemple `CONSTRAINT same_length CHECK length(vectors) = 256`.
+* De même, les valeurs de tableau dans la colonne sous-jacente ne doivent pas être vides (`[]`) ni avoir la valeur par défaut (également `[]`).
+* Les index de similarité vectorielle ne peuvent être créés que sur des tables utilisant le moteur `MergeTree` ou `ReplicatedMergeTree`. Les autres moteurs de la famille, par exemple `ReplacingMergeTree` ou `CollapsingMergeTree`, sont refusés, car `SELECT ... FINAL` peut renvoyer des résultats incorrects avec l’index. Le paramètre MergeTree `allow_vector_similarity_index_in_specialized_merge_tree` permet de passer outre cette restriction.
 
 **Estimation de la consommation de stockage et de mémoire**
 
 Un vecteur généré pour être utilisé avec un modèle d’IA classique (par exemple un Large Language Model, [LLM](https://en.wikipedia.org/wiki/Large_language_model)) se compose de centaines, voire de milliers, de valeurs en virgule flottante.
 Ainsi, une seule valeur vectorielle peut consommer plusieurs kilo-octets de mémoire.
-Les utilisateurs qui souhaitent estimer l’espace de stockage requis pour la colonne vectorielle source dans la table, ainsi que la mémoire vive nécessaire pour l’index de similarité vectorielle, peuvent utiliser les deux formules ci-dessous :
+Les utilisateurs qui souhaitent estimer l’espace de stockage requis pour la colonne vectorielle sous-jacente dans la table, ainsi que la mémoire principale nécessaire pour l’index de similarité vectorielle, peuvent utiliser les deux formules ci-dessous :
 
-Consommation de stockage de la colonne vectorielle dans la table (non compressée) :
+Consommation de stockage de la colonne vectorielle dans la table (non compressée) :
 
 ```text
 Storage consumption = Number of vectors * Dimension * Size of column data type
@@ -184,7 +185,7 @@ Storage consumption = 1 million * 1536 * 4 (for Float32) = 6.1 GB
 L’index de similarité vectorielle doit être entièrement chargé du disque vers la mémoire principale pour exécuter les recherches.
 De même, l’index vectoriel est lui aussi entièrement construit en mémoire, puis enregistré sur disque.
 
-Consommation mémoire requise pour charger un index vectoriel :
+Consommation mémoire requise pour charger un index vectoriel :
 
 ```text
 Memory for vectors in the index (mv) = Number of vectors * Dimension * Size of quantized data type
@@ -193,7 +194,7 @@ Memory for in-memory graph (mg) = Number of vectors * hnsw_max_connections_per_l
 Memory consumption: mv + mg
 ```
 
-Exemple avec le [jeu de données dbpedia](https://huggingface.co/datasets/KShivendu/dbpedia-entities-openai-1M) :
+Exemple avec le [jeu de données dbpedia](https://huggingface.co/datasets/KShivendu/dbpedia-entities-openai-1M) :
 
 ```text
 Memory for vectors in the index (mv) = 1 million * 1536 * 2 (for BFloat16) = 3072 MB
@@ -267,7 +268,7 @@ peut renvoyer
     └─────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-Dans cet exemple, 1 million de vecteurs issus du [dbpedia dataset](https://huggingface.co/datasets/KShivendu/dbpedia-entities-openai-1M), chacun de dimension 1536, sont stockés dans 575 granules, soit 1,7k lignes par granule.
+Dans cet exemple, 1 million de vecteurs issus du [jeu de données dbpedia](https://huggingface.co/datasets/KShivendu/dbpedia-entities-openai-1M), chacun de dimension 1536, sont stockés dans 575 granules, soit 1,7k lignes par granule.
 La requête demande 10 voisins et l’index de similarité vectorielle les identifie dans 10 granules distincts.
 Ces 10 granules seront lus lors de l&#39;exécution de la requête.
 
@@ -276,13 +277,13 @@ Dans ce cas, l&#39;index de similarité vectorielle a éliminé deux des quatre 
 Plus le nombre de granules pouvant être éliminés est important, plus l&#39;utilisation de l&#39;index est efficace.
 
 <Tip>
-  Pour forcer l’utilisation de l’index, vous pouvez exécuter la requête SELECT avec le paramètre [force&#95;data&#95;skipping&#95;indices](/fr/reference/settings/session-settings/force#force_data_skipping_indices) (indiquez le nom de l’index comme valeur du paramètre).
+  Pour forcer l’utilisation de l’index, vous pouvez exécuter la requête SELECT avec le paramètre [force&#95;data&#95;skipping&#95;indices](/fr/reference/settings/session-settings/force#force_data_skipping_indexes) (indiquez le nom de l’index comme valeur du paramètre).
 </Tip>
 
 **Post-filtrage et pré-filtrage**
 
-Les utilisateurs peuvent éventuellement spécifier une clause `WHERE` avec des conditions de filtre supplémentaires pour la requête SELECT.
-ClickHouse évaluera ces conditions de filtre selon une stratégie de post-filtrage ou de pré-filtrage.
+Les utilisateurs peuvent éventuellement spécifier une clause `WHERE` avec des conditions de filtrage supplémentaires pour la requête SELECT.
+ClickHouse évaluera ces conditions de filtrage selon une stratégie de post-filtrage ou de pré-filtrage.
 En résumé, les deux stratégies déterminent l&#39;ordre dans lequel les filtres sont évalués :
 
 * Le post-filtrage signifie que l’index de similarité vectorielle est évalué en premier, puis ClickHouse évalue le ou les filtres supplémentaires spécifiés dans la clause `WHERE`.

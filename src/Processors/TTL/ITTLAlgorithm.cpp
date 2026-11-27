@@ -76,12 +76,11 @@ ColumnPtr ITTLAlgorithm::executeExpressionAndGetColumn(
     return block_copy.getByName(result_column).column->convertToFullColumnIfSparse();
 }
 
-/// Shared by every TTL algorithm and by `TTLDeleteFilterTransform`, so a new result type is added
+/// Shared by every TTL algorithm, so a new result type is added
 /// once for all of them. Not shared with the insert path: `MergeTreeDataWriter::updateTTLInfo` and
 /// `updateTTLInfoConst` fold the same types into `MergeTreeDataPartTTLInfo` without building an
 /// array, and still need the new type too.
-void ITTLAlgorithm::extractTimestamps(
-    const IColumn * column, const DateLUTImpl & date_lut, PaddedPODArray<Int64> & timestamps)
+void ITTLAlgorithm::extractTimestamps(const IColumn * column, PaddedPODArray<Int64> & timestamps) const
 {
     const IColumn * ttl_column = column;
     const size_t num_rows = column->size();

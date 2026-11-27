@@ -1077,7 +1077,7 @@ SELECT
 
 ## toIPv6 {#toIPv6}
 
-Introduced in: v20.1.0
+引入版本： v20.1.0
 
 将字符串或 IPv6 地址的 `UInt128` 形式转换为 [`IPv6`](/zh/reference/data-types/ipv6) 类型。
 对于字符串，如果 IPv6 地址格式无效，则返回空值。
@@ -1085,7 +1085,7 @@ Introduced in: v20.1.0
 
 如果输入字符串包含有效的 IPv4 地址，则返回该 IPv4 地址对应的 IPv6 等效形式。
 
-**Syntax**
+**语法**
 
 ```sql
 toIPv6(x)
@@ -1101,7 +1101,7 @@ toIPv6(x)
 
 **示例**
 
-**用法示例**
+**使用示例**
 
 ```sql title=Query
 WITH '2001:438:ffff::407d:1bc1' AS IPv6_string

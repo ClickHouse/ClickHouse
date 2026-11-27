@@ -30,6 +30,7 @@ def generate_config(port):
                         <container_name>cont</container_name>
                         <skip_access_check>false</skip_access_check>
                         <use_native_copy>true</use_native_copy>
+                        <persistent_removal_log>true</persistent_removal_log>
                     </disk_azure>
                     <disk_azure_other_bucket>
                         <metadata_type>local</metadata_type>
@@ -39,6 +40,7 @@ def generate_config(port):
                         <connection_string>DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite1:{port}/devstoreaccount1;</connection_string>
                         <container_name>othercontainer</container_name>
                         <skip_access_check>false</skip_access_check>
+                        <persistent_removal_log>true</persistent_removal_log>
                     </disk_azure_other_bucket>
                     <disk_azure_cache>
                         <type>cache</type>
@@ -56,6 +58,7 @@ def generate_config(port):
                         <skip_access_check>false</skip_access_check>
                         <use_native_copy>true</use_native_copy>
                         <max_single_part_copy_size>4</max_single_part_copy_size>
+                        <persistent_removal_log>true</persistent_removal_log>
                     </disk_azure_small_native_copy>
                     <disk_azure_no_native_copy>
                         <metadata_type>local</metadata_type>
@@ -65,6 +68,7 @@ def generate_config(port):
                         <container_name>cont</container_name>
                         <skip_access_check>false</skip_access_check>
                         <use_native_copy>false</use_native_copy>
+                        <persistent_removal_log>true</persistent_removal_log>
                     </disk_azure_no_native_copy>
                 </disks>
                 <policies>

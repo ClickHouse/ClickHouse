@@ -90,7 +90,7 @@ Possible values:
 
 <SettingsInfoBlock type="UInt64" default_value="1000000000" />
 
-In case of ORDER BY with LIMIT, when memory usage is higher than specified threshold, perform additional steps of merging blocks before final merge to keep just top LIMIT rows.
+In case of `ORDER BY` with `LIMIT`, when the memory used by the blocks accumulated since the previous such step is higher than specified threshold, perform additional steps of merging blocks before final merge to keep just top `LIMIT` rows. Before spilling to disk because of `max_bytes_before_external_sort`, all accumulated blocks are counted.
 
 ## max_bytes_for_external_set_bloom_filter {#max_bytes_for_external_set_bloom_filter}
 
