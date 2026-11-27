@@ -780,6 +780,7 @@ size_t NO_INLINE Aggregator::drainAdaptivePartition(
 
             places.clear();
             records.clear();
+
             walk = walkStagedRecords<Key>(
                 format,
                 table,
@@ -801,6 +802,22 @@ size_t NO_INLINE Aggregator::drainAdaptivePartition(
                     }
                     places.push_back(it->getMapped());
                     records.push_back(record);
+
+                    /// A record that combined several misses of its key stands for their rows (see
+                    /// `AdaptiveMissCombiner`): each `count` takes one of them with the record's arguments
+                    /// (see `executeStagedArgumentRecords`), and the others here, from the record's
+                    /// multiplicity. The walk has just read the record's key, which follows the multiplicity,
+                    /// so the multiplicity costs no wait on memory here, while a pass over the records
+                    /// afterwards would wait on each of them once more.
+                    if constexpr (Record::with_multiplicity)
+                    {
+                        const UInt32 further_rows = format.multiplicity(record) - 1;
+                        if (further_rows)
+                        {
+                            for (const size_t aggregate : adaptive_row_selection->count_aggregates)
+                                getCountState(it->getMapped() + offsets_of_aggregate_states[aggregate]) += further_rows;
+                        }
+                    }
                 });
 
             if (!places.empty())
@@ -1108,19 +1125,6 @@ void Aggregator::executeStagedArgumentRecords(
     }
 
     executeStagedArguments(arena, places, arguments, use_compiled_functions);
-
-    /// A record that combined several misses of its key stands for their rows (see `AdaptiveMissCombiner`):
-    /// each `count` took one of them above and takes the others from the record's multiplicity.
-    if (argument_layout.multiplicity_offset)
-    {
-        for (const size_t aggregate : adaptive_row_selection->count_aggregates)
-        {
-            const size_t state_offset = offsets_of_aggregate_states[aggregate];
-            for (size_t row = 0; row < rows; ++row)
-                getCountState(places[row] + state_offset)
-                    += argument_layout.multiplicityOf(records[row]) - 1;
-        }
-    }
 }
 
 void Aggregator::executeStagedArguments(

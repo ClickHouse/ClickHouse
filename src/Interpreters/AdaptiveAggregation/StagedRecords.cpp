@@ -54,7 +54,7 @@ std::unique_ptr<const AdaptiveArgumentLayout> AdaptiveArgumentLayout::build(
     if (with_multiplicity)
     {
         layout->multiplicity_offset = layout->fixed_bytes;
-        layout->fixed_bytes += sizeof(UInt32);
+        layout->fixed_bytes += sizeof(UInt8);
     }
     return layout;
 }

@@ -1273,8 +1273,9 @@ private:
     /// whose count bin the top-K pruning keeps alive (see `AdaptiveTopKPruning`), or those of the best groups of a
     /// count-first unit. New groups get their states in `arena`, the arena of the unit. String-like keys are emplaced
     /// pointing into the records, which are freed only after the table is converted or written, unless `copy_keys`:
-    /// records read back from a spill go before, so their new keys are copied into `arena` too. Returns how many
-    /// records it skipped.
+    /// records read back from a spill go before, so their new keys are copied into `arena` too. The rows
+    /// that an argument record stands for beyond its own go to the `count` states here (see
+    /// `AdaptiveArgumentLayout::multiplicity_offset`). Returns how many records it skipped.
     template <typename Method, bool copy_keys, typename Table, typename Filter>
     size_t drainAdaptivePartition(
         Table & table,
