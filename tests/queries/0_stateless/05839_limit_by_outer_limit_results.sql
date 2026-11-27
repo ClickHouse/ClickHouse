@@ -4,6 +4,7 @@
 
 DROP TABLE IF EXISTS t_lbol;
 DROP TABLE IF EXISTS t_lbol_final;
+DROP TABLE IF EXISTS t_lbol_rows;
 
 CREATE TABLE t_lbol (k UInt32, v UInt32) ENGINE = MergeTree ORDER BY (k, v) SETTINGS index_granularity = 64;
 SYSTEM STOP MERGES t_lbol;
@@ -84,5 +85,61 @@ INSERT INTO t_lbol_final SELECT number, number + 1000000, 2 FROM numbers(5000);
 SELECT 'final';
 SELECT k, v FROM t_lbol_final FINAL ORDER BY k DESC LIMIT 1 BY k LIMIT 4 OFFSET 2;
 
+-- Rows read. Every key has 100 rows in each of four parts, so for `LIMIT n OFFSET m BY k LIMIT l OFFSET o` the stream of
+-- a part needs `ceil((l + o) / n)` groups and stops within a granule after them. Parallel replicas are disabled: with them
+-- the rows are read on the replicas and `read_rows` varies from run to run.
+CREATE TABLE t_lbol_rows (k UInt32, v UInt32) ENGINE = MergeTree ORDER BY (k, v) SETTINGS index_granularity = 64;
+SYSTEM STOP MERGES t_lbol_rows;
+INSERT INTO t_lbol_rows SELECT intDiv(number, 100), number FROM numbers(50000);
+INSERT INTO t_lbol_rows SELECT intDiv(number, 100), number + 1000000 FROM numbers(50000);
+INSERT INTO t_lbol_rows SELECT intDiv(number, 100), number + 2000000 FROM numbers(50000);
+INSERT INTO t_lbol_rows SELECT intDiv(number, 100), number + 3000000 FROM numbers(50000);
+
+SELECT k, v FROM t_lbol_rows ORDER BY k DESC, v DESC LIMIT 1 OFFSET 0 BY k LIMIT 7 OFFSET 0 SETTINGS enable_parallel_replicas = 0, log_comment = '05839_rows|desc, n = 1, m = 0, offset = 0|1|7|0|4' FORMAT Null;
+SELECT k, v FROM t_lbol_rows ORDER BY k DESC, v DESC LIMIT 1 OFFSET 0 BY k LIMIT 7 OFFSET 5 SETTINGS enable_parallel_replicas = 0, log_comment = '05839_rows|desc, n = 1, m = 0, offset = 5|1|7|5|4' FORMAT Null;
+SELECT k, v FROM t_lbol_rows ORDER BY k DESC, v DESC LIMIT 1 OFFSET 2 BY k LIMIT 7 OFFSET 0 SETTINGS enable_parallel_replicas = 0, log_comment = '05839_rows|desc, n = 1, m = 2, offset = 0|1|7|0|4' FORMAT Null;
+SELECT k, v FROM t_lbol_rows ORDER BY k DESC, v DESC LIMIT 1 OFFSET 2 BY k LIMIT 7 OFFSET 5 SETTINGS enable_parallel_replicas = 0, log_comment = '05839_rows|desc, n = 1, m = 2, offset = 5|1|7|5|4' FORMAT Null;
+SELECT k, v FROM t_lbol_rows ORDER BY k DESC, v DESC LIMIT 1 OFFSET 6 BY k LIMIT 7 OFFSET 0 SETTINGS enable_parallel_replicas = 0, log_comment = '05839_rows|desc, n = 1, m = 6, offset = 0|1|7|0|4' FORMAT Null;
+SELECT k, v FROM t_lbol_rows ORDER BY k DESC, v DESC LIMIT 1 OFFSET 6 BY k LIMIT 7 OFFSET 5 SETTINGS enable_parallel_replicas = 0, log_comment = '05839_rows|desc, n = 1, m = 6, offset = 5|1|7|5|4' FORMAT Null;
+SELECT k, v FROM t_lbol_rows ORDER BY k DESC, v DESC LIMIT 3 OFFSET 0 BY k LIMIT 7 OFFSET 0 SETTINGS enable_parallel_replicas = 0, log_comment = '05839_rows|desc, n = 3, m = 0, offset = 0|3|7|0|4' FORMAT Null;
+SELECT k, v FROM t_lbol_rows ORDER BY k DESC, v DESC LIMIT 3 OFFSET 0 BY k LIMIT 7 OFFSET 5 SETTINGS enable_parallel_replicas = 0, log_comment = '05839_rows|desc, n = 3, m = 0, offset = 5|3|7|5|4' FORMAT Null;
+SELECT k, v FROM t_lbol_rows ORDER BY k DESC, v DESC LIMIT 3 OFFSET 2 BY k LIMIT 7 OFFSET 0 SETTINGS enable_parallel_replicas = 0, log_comment = '05839_rows|desc, n = 3, m = 2, offset = 0|3|7|0|4' FORMAT Null;
+SELECT k, v FROM t_lbol_rows ORDER BY k DESC, v DESC LIMIT 3 OFFSET 2 BY k LIMIT 7 OFFSET 5 SETTINGS enable_parallel_replicas = 0, log_comment = '05839_rows|desc, n = 3, m = 2, offset = 5|3|7|5|4' FORMAT Null;
+SELECT k, v FROM t_lbol_rows ORDER BY k DESC, v DESC LIMIT 3 OFFSET 6 BY k LIMIT 7 OFFSET 0 SETTINGS enable_parallel_replicas = 0, log_comment = '05839_rows|desc, n = 3, m = 6, offset = 0|3|7|0|4' FORMAT Null;
+SELECT k, v FROM t_lbol_rows ORDER BY k DESC, v DESC LIMIT 3 OFFSET 6 BY k LIMIT 7 OFFSET 5 SETTINGS enable_parallel_replicas = 0, log_comment = '05839_rows|desc, n = 3, m = 6, offset = 5|3|7|5|4' FORMAT Null;
+SELECT k, v FROM t_lbol_rows ORDER BY k ASC, v ASC LIMIT 1 OFFSET 0 BY k LIMIT 7 OFFSET 0 SETTINGS enable_parallel_replicas = 0, log_comment = '05839_rows|asc, n = 1, m = 0, offset = 0|1|7|0|4' FORMAT Null;
+SELECT k, v FROM t_lbol_rows ORDER BY k ASC, v ASC LIMIT 1 OFFSET 0 BY k LIMIT 7 OFFSET 5 SETTINGS enable_parallel_replicas = 0, log_comment = '05839_rows|asc, n = 1, m = 0, offset = 5|1|7|5|4' FORMAT Null;
+SELECT k, v FROM t_lbol_rows ORDER BY k ASC, v ASC LIMIT 1 OFFSET 2 BY k LIMIT 7 OFFSET 0 SETTINGS enable_parallel_replicas = 0, log_comment = '05839_rows|asc, n = 1, m = 2, offset = 0|1|7|0|4' FORMAT Null;
+SELECT k, v FROM t_lbol_rows ORDER BY k ASC, v ASC LIMIT 1 OFFSET 2 BY k LIMIT 7 OFFSET 5 SETTINGS enable_parallel_replicas = 0, log_comment = '05839_rows|asc, n = 1, m = 2, offset = 5|1|7|5|4' FORMAT Null;
+SELECT k, v FROM t_lbol_rows ORDER BY k ASC, v ASC LIMIT 1 OFFSET 6 BY k LIMIT 7 OFFSET 0 SETTINGS enable_parallel_replicas = 0, log_comment = '05839_rows|asc, n = 1, m = 6, offset = 0|1|7|0|4' FORMAT Null;
+SELECT k, v FROM t_lbol_rows ORDER BY k ASC, v ASC LIMIT 1 OFFSET 6 BY k LIMIT 7 OFFSET 5 SETTINGS enable_parallel_replicas = 0, log_comment = '05839_rows|asc, n = 1, m = 6, offset = 5|1|7|5|4' FORMAT Null;
+SELECT k, v FROM t_lbol_rows ORDER BY k ASC, v ASC LIMIT 3 OFFSET 0 BY k LIMIT 7 OFFSET 0 SETTINGS enable_parallel_replicas = 0, log_comment = '05839_rows|asc, n = 3, m = 0, offset = 0|3|7|0|4' FORMAT Null;
+SELECT k, v FROM t_lbol_rows ORDER BY k ASC, v ASC LIMIT 3 OFFSET 0 BY k LIMIT 7 OFFSET 5 SETTINGS enable_parallel_replicas = 0, log_comment = '05839_rows|asc, n = 3, m = 0, offset = 5|3|7|5|4' FORMAT Null;
+SELECT k, v FROM t_lbol_rows ORDER BY k ASC, v ASC LIMIT 3 OFFSET 2 BY k LIMIT 7 OFFSET 0 SETTINGS enable_parallel_replicas = 0, log_comment = '05839_rows|asc, n = 3, m = 2, offset = 0|3|7|0|4' FORMAT Null;
+SELECT k, v FROM t_lbol_rows ORDER BY k ASC, v ASC LIMIT 3 OFFSET 2 BY k LIMIT 7 OFFSET 5 SETTINGS enable_parallel_replicas = 0, log_comment = '05839_rows|asc, n = 3, m = 2, offset = 5|3|7|5|4' FORMAT Null;
+SELECT k, v FROM t_lbol_rows ORDER BY k ASC, v ASC LIMIT 3 OFFSET 6 BY k LIMIT 7 OFFSET 0 SETTINGS enable_parallel_replicas = 0, log_comment = '05839_rows|asc, n = 3, m = 6, offset = 0|3|7|0|4' FORMAT Null;
+SELECT k, v FROM t_lbol_rows ORDER BY k ASC, v ASC LIMIT 3 OFFSET 6 BY k LIMIT 7 OFFSET 5 SETTINGS enable_parallel_replicas = 0, log_comment = '05839_rows|asc, n = 3, m = 6, offset = 5|3|7|5|4' FORMAT Null;
+SELECT k, v FROM t_lbol_rows ORDER BY k DESC, v DESC LIMIT 1 BY k LIMIT 5 OFFSET 2 SETTINGS max_threads = 1, enable_parallel_replicas = 0, log_comment = '05839_rows|single thread|1|5|2|4' FORMAT Null;
+-- Two shards, each with the four streams.
+SELECT k, v FROM remote('127.0.0.{1,2}', currentDatabase(), t_lbol_rows) ORDER BY k DESC, v DESC LIMIT 3 BY k LIMIT 7 OFFSET 4 SETTINGS enable_parallel_replicas = 0, log_comment = '05839_rows|distributed|3|7|4|8' FORMAT Null;
+
+SYSTEM FLUSH LOGS query_log;
+SELECT 'rows read';
+-- At most the groups that each stream needs and one more granule.
+SELECT p[2], if(read_rows <= bound, 'ok', format('read {} rows, more than {}', read_rows, bound))
+FROM
+(
+    SELECT
+        splitByChar('|', log_comment) AS p,
+        read_rows,
+        toUInt64(p[6]) * (100 * intDiv(toUInt64(p[4]) + toUInt64(p[5]) + toUInt64(p[3]) - 1, toUInt64(p[3])) + 64) AS bound,
+        query_start_time_microseconds
+    FROM system.query_log
+    WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND is_initial_query AND log_comment LIKE '05839\\_rows|%'
+)
+ORDER BY query_start_time_microseconds
+SETTINGS max_block_size = 65536;
+
 DROP TABLE t_lbol;
 DROP TABLE t_lbol_final;
+DROP TABLE t_lbol_rows;

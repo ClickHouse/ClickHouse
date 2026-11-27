@@ -117,3 +117,30 @@ final
 4996	1004996
 4995	1004995
 4994	1004994
+rows read
+desc, n = 1, m = 0, offset = 0	ok
+desc, n = 1, m = 0, offset = 5	ok
+desc, n = 1, m = 2, offset = 0	ok
+desc, n = 1, m = 2, offset = 5	ok
+desc, n = 1, m = 6, offset = 0	ok
+desc, n = 1, m = 6, offset = 5	ok
+desc, n = 3, m = 0, offset = 0	ok
+desc, n = 3, m = 0, offset = 5	ok
+desc, n = 3, m = 2, offset = 0	ok
+desc, n = 3, m = 2, offset = 5	ok
+desc, n = 3, m = 6, offset = 0	ok
+desc, n = 3, m = 6, offset = 5	ok
+asc, n = 1, m = 0, offset = 0	ok
+asc, n = 1, m = 0, offset = 5	ok
+asc, n = 1, m = 2, offset = 0	ok
+asc, n = 1, m = 2, offset = 5	ok
+asc, n = 1, m = 6, offset = 0	ok
+asc, n = 1, m = 6, offset = 5	ok
+asc, n = 3, m = 0, offset = 0	ok
+asc, n = 3, m = 0, offset = 5	ok
+asc, n = 3, m = 2, offset = 0	ok
+asc, n = 3, m = 2, offset = 5	ok
+asc, n = 3, m = 6, offset = 0	ok
+asc, n = 3, m = 6, offset = 5	ok
+single thread	ok
+distributed	ok
