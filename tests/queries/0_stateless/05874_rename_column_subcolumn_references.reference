@@ -19,3 +19,7 @@ n.y.z
 7	7
 7
 1
+[8]	[1]
+arrayMap(s -> s.x, [CAST(tuple(1), \'Tuple(x UInt32)\')])
+(-1)
+7	7

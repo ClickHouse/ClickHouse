@@ -6638,9 +6638,11 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
         /// definition stays as it was, up to a column rename.
         if (is_initial_alter)
         {
-            /// Each rename sees the columns as they are right before and after it, as in `AlterCommands::apply`.
+            /// Each rename sees the columns as they are right before it, as in `AlterCommands::apply`. It is not checked against
+            /// the columns after it: `AlterCommands::apply` did that for the definitions it kept, and an old definition the
+            /// ALTER replaced is not renamed there.
             std::vector<RenameColumnData> renames;
-            std::list<ColumnsDescription> columns_around_renames;
+            std::list<ColumnsDescription> columns_before_renames;
             if (std::ranges::any_of(commands, [](const auto & command) { return command.type == AlterCommand::RENAME_COLUMN; }))
             {
                 StorageInMemoryMetadata replayed_metadata = old_metadata;
@@ -6649,14 +6651,11 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
                     if (command.ignore)
                         continue;
                     if (command.type == AlterCommand::RENAME_COLUMN)
-                        columns_around_renames.push_back(replayed_metadata.columns);
-                    command.apply(replayed_metadata, apply_context, share_nested_offsets, &old_metadata.columns, settings_defaults.get());
-                    if (command.type == AlterCommand::RENAME_COLUMN)
                     {
-                        const auto & columns_before = columns_around_renames.back();
-                        columns_around_renames.push_back(replayed_metadata.columns);
-                        renames.push_back({command.column_name, command.rename_to, &columns_before, &columns_around_renames.back()});
+                        columns_before_renames.push_back(replayed_metadata.columns);
+                        renames.push_back({command.column_name, command.rename_to, &columns_before_renames.back()});
                     }
+                    command.apply(replayed_metadata, apply_context, share_nested_offsets, &old_metadata.columns, settings_defaults.get());
                 }
             }
 

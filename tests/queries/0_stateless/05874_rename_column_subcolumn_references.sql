@@ -158,9 +158,52 @@ INSERT INTO t_drop_rename (r) VALUES (tuple(-1)); -- { serverError VIOLATED_CONS
 INSERT INTO t_drop_rename (r) VALUES (tuple(1));
 SELECT r.x FROM t_drop_rename;
 
+-- The new name is a lambda parameter where `s.x` is used; the lambda parameter `s` is not the column.
+CREATE TABLE t_lambda
+(
+    s Tuple(x UInt32),
+    a Array(UInt32) ALIAS arrayMap(r -> s.x + r.x, [CAST(tuple(1), 'Tuple(x UInt32)')]),
+    b Array(UInt32) ALIAS arrayMap(s -> s.x, [CAST(tuple(1), 'Tuple(x UInt32)')])
+)
+ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_lambda (s) VALUES (tuple(7));
+ALTER TABLE t_lambda RENAME COLUMN s TO r; -- { serverError BAD_ARGUMENTS }
+ALTER TABLE t_lambda RENAME COLUMN s TO q;
+SELECT a, b FROM t_lambda;
+SELECT default_expression FROM system.columns WHERE database = currentDatabase() AND table = 't_lambda' AND name = 'b';
+
+-- The constraint that uses `s.x` is replaced before the rename in the same query.
+CREATE TABLE t_replace_constraint
+(
+    s Tuple(x Int32),
+    `r.x` UInt32 ALIAS 100,
+    CONSTRAINT c CHECK s.x > 0
+)
+ENGINE = MergeTree ORDER BY tuple();
+ALTER TABLE t_replace_constraint DROP CONSTRAINT c, ADD CONSTRAINT c CHECK 1, RENAME COLUMN s TO r;
+INSERT INTO t_replace_constraint (r) VALUES (tuple(-1));
+SELECT r FROM t_replace_constraint;
+
+-- After the rename `r.x.y` still refers to the subcolumn of `r`, not to the element of the alias column `r.x`.
+CREATE TABLE t_alias_prefix
+(
+    s Tuple(x Tuple(y UInt32)),
+    `r.x` Tuple(y UInt32) ALIAS CAST(tuple(20), 'Tuple(y UInt32)'),
+    a UInt32 ALIAS s.x.y
+)
+ENGINE = MergeTree ORDER BY tuple() SETTINGS share_nested_offsets = 0;
+INSERT INTO t_alias_prefix (s) VALUES (tuple(tuple(7)));
+ALTER TABLE t_alias_prefix RENAME COLUMN s TO r;
+DETACH TABLE t_alias_prefix;
+ATTACH TABLE t_alias_prefix;
+SELECT a, r.x.y FROM t_alias_prefix;
+
 DROP TABLE t_rebind;
 DROP TABLE t_alias_owner;
 DROP TABLE t_nested;
 DROP TABLE t_alias_shadowed;
 DROP TABLE t_quoted;
 DROP TABLE t_drop_rename;
+DROP TABLE t_lambda;
+DROP TABLE t_replace_constraint;
+DROP TABLE t_alias_prefix;
