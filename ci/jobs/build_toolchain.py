@@ -1004,11 +1004,14 @@ def main():
             # The watcher processes notice their clang has exited within a second and only then
             # write the profile. They are named like the instrumented `clang-<version>.inst` and
             # `clang++.inst`; matching the process name, not the command line, skips this shell.
+            # Exited watchers are orphans that the container's init (this job) never reaps, so
+            # zombies are not counted.
             result = Result.from_commands_run(
                 name="Wait for BOLT profile writers",
                 command=(
-                    "timeout 120 bash -c"
-                    " 'while pgrep \"\\.inst$\" > /dev/null; do sleep 1; done'"
+                    "timeout 120 bash -c 'while ps -eo stat=,comm="
+                    " | awk \"\\$1 !~ /^Z/ && \\$2 ~ /\\\\.inst\\$/ {found = 1} END {exit !found}\";"
+                    " do sleep 1; done'"
                 ),
             )
             bolt_results.append(result)
