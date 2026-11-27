@@ -775,7 +775,11 @@ ContextMutablePtr Session::makeQueryContextImpl(const ClientInfo * client_info_t
             query_context->setClientVersion(VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH, DBMS_TCP_PROTOCOL_VERSION);
     }
 
-    if (query_context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
+    if (query_context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY ||
+        /// Some places can send SECONDARY_QUERY with initial_user empty (e.g. dictionaries), and this is OK,
+        /// it should not block subsequent queries over TCP_INTERSERVER in this session
+        /// (Connection::sendQuery() forbids forwarding if initial_user != current_user)
+        (query_context->getClientInfo().initial_user.empty() && !query_context->getClientInfo().current_user.empty()))
     {
         query_context->setInitialUserName(query_context->getClientInfo().current_user);
         query_context->setInitialAddress(*query_context->getClientInfo().current_address);
