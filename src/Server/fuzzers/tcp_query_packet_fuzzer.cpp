@@ -16,7 +16,10 @@
 #include <Storages/MergeTree/RequestResponse.h>
 #include <Common/CurrentThread.h>
 #include <Common/MemoryTracker.h>
+#include <Common/SettingsChanges.h>
 #include <Common/ThreadStatus.h>
+
+#include <algorithm>
 
 
 /// The input is a packet body the server or the client of the native protocol reads from its peer
@@ -59,6 +62,28 @@ void checkReserialization(Write && write, Read && read)
         __builtin_trap();
 }
 
+/// For the values with unordered maps, which can write their entries in another order after they are read back.
+template <typename T, typename Write, typename Read, typename Entries>
+void checkReread(const T & value, Write && write, Read && read, Entries && entries)
+{
+    WriteBufferFromOwnString out;
+    write(value, out);
+    out.finalize();
+
+    ReadBufferFromString in(out.str());
+    T reread = read(in);
+    if (!in.eof() || entries(reread) != entries(value))
+        __builtin_trap();
+}
+
+/// The custom settings are in an unordered map.
+SettingsChanges sortedChanges(const Settings & settings)
+{
+    auto changes = settings.changes();
+    std::ranges::sort(changes, {}, &SettingChange::name);
+    return changes;
+}
+
 void readQueryPacket(ReadBuffer & in, UInt64 revision)
 {
     String query_id;
@@ -77,9 +102,16 @@ void readQueryPacket(ReadBuffer & in, UInt64 revision)
     if (revision >= DBMS_MIN_REVISION_WITH_SETTINGS_SERIALIZED_AS_STRINGS)
     {
         settings.read(in);
-        checkReserialization(
-            [&](WriteBuffer & out) { settings.write(out); },
-            [&](ReadBuffer & reread_in) { settings.read(reread_in); });
+        checkReread(
+            settings,
+            [](const Settings & value, WriteBuffer & out) { value.write(out); },
+            [](ReadBuffer & reread_in)
+            {
+                Settings reread;
+                reread.read(reread_in);
+                return reread;
+            },
+            sortedChanges);
     }
 
     if (revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_INTERSERVER_EXTERNALLY_GRANTED_ROLES)
@@ -110,10 +142,13 @@ void readQueryPacket(ReadBuffer & in, UInt64 revision)
 
     if (revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_PARAMETERS)
     {
+        /// `NameToNameMap` is unordered, and its comparison does not depend on the order.
         auto parameters = readQueryParameters(in);
-        checkReserialization(
-            [&](WriteBuffer & out) { writeQueryParameters(parameters, out); },
-            [&](ReadBuffer & reread_in) { parameters = readQueryParameters(reread_in); });
+        checkReread(
+            parameters,
+            [](const NameToNameMap & value, WriteBuffer & out) { writeQueryParameters(value, out); },
+            [](ReadBuffer & reread_in) { return readQueryParameters(reread_in); },
+            [](const NameToNameMap & value) -> const NameToNameMap & { return value; });
     }
 }
 

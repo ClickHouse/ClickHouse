@@ -147,7 +147,7 @@ String makeFuzzerQuery(const uint8_t * data, size_t size)
                 queries.push_back(std::move(query));
         }
         readStringBinary(part_name, in, 255);
-        if (input_table.empty() || input_table.find(';') != String::npos || !isValidName(part_name))
+        if (!isValidName(part_name))
             return {};
 
         for (size_t i = 0; i < max_files && !in.eof(); ++i)
@@ -179,7 +179,8 @@ String makeFuzzerQuery(const uint8_t * data, size_t size)
         /// A truncated input attaches the files read before the end.
     }
 
-    if (part_name.empty())
+    /// A truncated string keeps the bytes read before the end, so the header is checked after the catch too.
+    if (input_table.empty() || input_table.find(';') != String::npos || !isValidName(part_name))
         return {};
 
     String script;

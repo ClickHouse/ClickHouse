@@ -5,6 +5,7 @@
 #include <Interpreters/Context.h>
 #include <Parsers/SecretArguments.h>
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Common/CurrentThread.h>
 #include <Common/MemoryTracker.h>
 #include <Common/ThreadStatus.h>
@@ -35,6 +36,8 @@ extern "C" int LLVMFuzzerInitialize(int *, char ***)
 
     registerFunctions();
     registerAggregateFunctions();
+    /// As `Server` and `LocalServer` do, otherwise every step is unknown.
+    QueryPlanStepRegistry::registerPlanSteps();
     return 0;
 }
 
