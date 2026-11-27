@@ -135,7 +135,7 @@ private:
 
     bool checkDAGUseless(const ActionsDAG::Node & node, const ContextPtr & context, std::vector<FutureSetPtr> & sets_to_prepare, bool atomic = false) const;
 
-    bool isNamedLikeOtherKeyNode(const ActionsDAG::Node & node, const ContextPtr & context) const;
+    [[nodiscard]] bool isNamedLikeOtherKeyNode(const ActionsDAG::Node & node, const ContextPtr & context) const;
 
     String index_name;
     size_t max_rows;
