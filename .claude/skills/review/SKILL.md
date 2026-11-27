@@ -83,7 +83,7 @@ ATTRIBUTION
 Decide for every candidate Blocker or Major whether this PR introduces it, before choosing its severity.
 - Check the base: run the repro with a build of the base revision or of an earlier master commit, or read the code of the base revision. In CI, take the newest master build at or before the base: list the master commits from the base (`commits?sha=<base sha>` in `references/binaries.md`), not from the head of master. When the code that the repro reaches changed between that build and the base, read the base code instead. A defect that gives the same result on the base is pre-existing.
 - A pre-existing defect is in scope at full severity only when the PR claims to fix it or its class. For a `Bug Fix`, the class is the bad value or state that the fix rejects: check the other producers of that value before anything inside the fixed lines. An unfixed producer reachable by a query is the most important finding of that review.
-- Report every other pre-existing defect only as one line in the summary section `Pre-existing issues`, with no inline comment. Find the GitHub issue that tracks it: one linked in the PR or in a reply, or one found with the search command of the review tools. An untracked defect only withholds the approval (see Final Verdict).
+- Report every other pre-existing defect only as one line in the summary section `Pre-existing issues`, with no inline comment. Find the GitHub issue that tracks it: one linked in the PR or in a reply, or one found by searching open and closed issues. An open issue, or one closed as not planned or as a duplicate, counts as tracked. An untracked defect only withholds the approval (see Final Verdict).
 - A behavior change that the PR states as its purpose (in the title, the description, the changelog entry, or the `Backward Incompatible Change` category) is not a finding. This includes fixing a bug or closing a security hole that someone may rely on: never ask for a setting or a `compatibility` value that restores a bug or an insecure behavior. When the change is evidently intended but the PR does not state it, the finding is the missing changelog category or entry, in `PR Metadata`. A change that the PR does not intend, such as a different query result, is a correctness finding with the usual severity.
 
 SIGNAL AND UNCERTAINTY
@@ -247,7 +247,7 @@ Findings about tests, documentation, performance evidence, CI scripts, or PR met
 - Pure formatting or "style wars".
 
 REQUESTED OUTPUT FORMAT
-Respond with the following sections. Be terse but specific. Suggest a fix only as described for Fix under Findings.
+Respond with the following sections. Be terse but specific. Do not propose fixes for Blockers and Majors: the author owns the fix.
 Focus on problems — do not describe what was checked and found to be fine. Use emojis (❌ ⚠️ ✅ 💡) to make findings scannable.
 **Omit any section entirely if there is nothing notable to report in it** — do not include a section just to say "looks good" or "no concerns". The only mandatory sections are Summary and Final Verdict.
 
@@ -272,13 +272,11 @@ Focus on problems — do not describe what was checked and found to be fine. Use
     - **Repro:** <```sql``` block>
     - **Evidence:** <one line>
     - **Cause:** <defect>
-    - **Fix:** <optional>
   ```
   - **Impact**: one sentence (after the severity tag, if any) saying what a user or operator sees and when: a wrong result, an exception, a crash, data loss, a stuck job, a slowdown. The mechanism belongs in Cause.
   - **Repro**: the smallest code block that shows it, with the expected and the actual result: a ```sql``` block whenever SQL can show it, otherwise a ```bash``` block with the commands. Prose steps only when neither can. When no runnable repro exists (a race, a failure path, an environment the review cannot set up), give the concrete input and the sequence of events that reach the defect.
   - **Evidence**: one short line, exactly one of `✅ Reproduced with <binary>` or `📖 Code reading: <reason it was not run>`. Name the binary by job and short commit in CI (`Fast test` of `b92c716f`, `Build (arm_asan_ubsan)` of `b92c716f`), or by path and build type in a local review. Outputs belong in Repro, not here.
   - **Cause**: the defect in the code, in a few sentences.
-  - **Fix** (optional): only when the defect and its fix are both clear and simple, such as a missing check or a wrong bound. Otherwise omit the line and leave the fix to the author: a partial fix proposed with confidence is taken as complete.
 - **❌ Blockers**: findings in the layout above.
 - **⚠️ Majors**: findings in the layout above.
 - **💡 Nits**
@@ -314,7 +312,6 @@ Focus on problems — do not describe what was checked and found to be fine. Use
 
 STYLE & CONDUCT
 - Be precise, evidence-based, and neutral.
-- When you suggest a fix, prefer a small, surgical one over a broad rewrite.
 - Do not assume unstated behavior; if necessary, ask for clarification in "Missing context / blind spots."
 - Avoid changing scope: review what's in the PR; suggest follow-ups separately. Read the unchanged code that the PR's inputs reach, and classify a defect there with ATTRIBUTION.
 - Avoid uncertain minor comments. For serious plausible risks, state the uncertainty and request the needed verification or tests.

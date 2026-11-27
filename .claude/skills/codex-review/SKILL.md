@@ -43,7 +43,7 @@ EFFORT=$(git config --global --get codex-review.effort)
 If either is empty, or `--model` was passed, find the model CI uses:
 
 ```bash
-grep -oP '^MODEL = "\K[^"]+' ci/jobs/codex_review_job.py
+sed -n 's/^MODEL = "\([^"]*\)"$/\1/p' ci/jobs/codex_review_job.py
 ```
 
 Ask with `AskUserQuestion` (one call, two questions):
@@ -119,9 +119,8 @@ Review the changes on the current branch. Get the diff with 'git diff ${BASE}...
 current code, not only the diff.
 ${BINARY_NOTE}
 Write the review to stdout using the REQUESTED OUTPUT FORMAT from .claude/skills/review/SKILL.md.
-Use gh only to read. Search for an existing issue about a pre-existing defect with
-\`gh search issues --repo ${REPO} --state open --limit 10 '<keywords>'\`, once per defect: the search API
-allows 30 requests per minute. Do not post anything."
+Use gh only to read. Look for an existing issue about each pre-existing defect with \`gh search issues\`
+in ${REPO}, open and closed; the search API allows 30 requests per minute. Do not post anything."
 
 MODEL_ARGS=(); [ "$MODEL" != default ] && MODEL_ARGS=(-m "$MODEL")
 codex exec "${MODEL_ARGS[@]}" -c "model_reasoning_effort=$EFFORT" \

@@ -152,10 +152,9 @@ Tools:
 - Resolve or unresolve bot-authored review threads with:
   `{GH_PREFIX} python3 -m ci.praktika.gh resolve-pr-review-thread --thread-id <thread_node_id>`
   `{GH_PREFIX} python3 -m ci.praktika.gh unresolve-pr-review-thread --thread-id <thread_node_id>`.
-- Search for an existing issue about a pre-existing defect with
-  `{GH_PREFIX} gh search issues --repo {repo_name} --state open --limit 10 '<keywords>'`; for `ClickHouse/ClickHouse-private`,
-  search `ClickHouse/ClickHouse` too. The search API allows 30 requests per minute: search once per defect, with the
-  function or setting name and one word of the symptom.
+- Look for an existing issue about each pre-existing defect with `{GH_PREFIX} gh search issues` in `{repo_name}`,
+  open and closed; for `ClickHouse/ClickHouse-private`, in `ClickHouse/ClickHouse` too. The search API allows 30
+  requests per minute.
 - To reproduce a finding, download a CI binary as described in
   `.claude/skills/review/references/binaries.md` into `./ci/tmp`, and run it there.
 - Do NOT run `python3 -m ci.praktika run ...` (for example to run tests): you are inside a CI job, and
@@ -181,8 +180,9 @@ Procedure:
 5. Apply the same judgment to your own prior summary: drop findings that have been addressed, keep
    or sharpen the rest. Verify by reading the current code, not by trusting the author's reply.
    Findings the author dismissed but you still consider real STAY in the summary's `Findings`
-   section, marked `[dismissed by author -- <thread URL>]` with a one-line note on why you still
-   consider it real. Do NOT migrate them back to the inline thread.
+   section, after the other findings, with their thread link and location as usual. Their first
+   nested line is `- Dismissed by author.`, and the second says in one sentence why the issue is
+   still open in the current code. Nothing else. Do NOT migrate them back to the inline thread.
 6. On existing threads, post a new comment only in these two cases:
    (a) The author asked you a direct, answerable question (e.g. "what would the fix look like?",
        "do you have a repro?"). Answer it once and stop -- do not restate the original finding.
