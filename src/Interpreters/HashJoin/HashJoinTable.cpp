@@ -63,9 +63,11 @@ HashJoinTable::HashJoinTable(
     joinDispatchInit(kind, strictness, maps, maps_kind);
     std::visit([&](auto & maps_) { maps_.create(key_type, robin_hood_allowed); }, maps);
 
+    /// The arenas are counted after each insert, so an insert can allocate one chunk past the spill budget per build stream.
+    static constexpr size_t arena_linear_growth_threshold = 4 * 1024 * 1024;
     arenas.reserve(layout.num_build_streams);
     for (size_t stream = 0; stream < layout.num_build_streams; ++stream)
-        arenas.push_back(std::make_unique<Arena>());
+        arenas.push_back(std::make_unique<Arena>(/*initial_size_=*/4096, /*growth_factor_=*/2, arena_linear_growth_threshold));
 }
 
 size_t HashJoinTable::arenaBytes() const

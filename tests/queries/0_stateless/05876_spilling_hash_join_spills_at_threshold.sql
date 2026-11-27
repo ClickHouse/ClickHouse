@@ -67,6 +67,13 @@ FROM (SELECT number AS k FROM numbers(4000000)) AS l
 INNER JOIN (SELECT number AS k, number * 3 AS v FROM numbers(4000000)) AS r ON l.k = r.k
 SETTINGS join_algorithm = 'grace_hash', max_threads = 2, max_bytes_before_external_join = 60000000, log_comment = 'spill_at_threshold_grace_splits';
 
+-- One bucket at most, so a block the budget refuses goes in unchecked: the refusal must leave no key that references it.
+SELECT 'grace_hash at the bucket limit', count(), sum(r.v)
+FROM (SELECT number AS k FROM numbers(600000)) AS l
+INNER JOIN (SELECT number AS k, number AS v FROM numbers(600000)) AS r ON l.k = r.k
+SETTINGS join_algorithm = 'grace_hash', grace_hash_join_max_buckets = 1, max_threads = 1, max_bytes_before_external_join = 90000000,
+    log_comment = 'spill_at_threshold_grace_bucket_limit';
+
 -- `RIGHT` and `FULL` joins keep the right rows that match nothing, and a condition on both sides keeps a used flag per row.
 SELECT 'right fits', count(), sum(r.v), sum(l.k)
 FROM (SELECT number AS k FROM numbers(1000000)) AS l
@@ -161,6 +168,17 @@ SELECT
     ProfileEvents['ExternalJoinUncompressedBytes'] > 0 AS wrote_to_disk
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment LIKE 'spill\_at\_threshold\_%'
+ORDER BY event_time_microseconds;
+
+-- What the join holds when it switches: below the threshold, and above half of it. The row lists of `duplicate keys spill`
+-- are counted after each insert, so it can switch above the threshold.
+SELECT
+    replaceOne(log_comment, 'spill_at_threshold_', '') AS query,
+    ProfileEvents['JoinSpillingHashJoinBytesAtSwitch'] < toUInt64(Settings['max_bytes_before_external_join']) AS below_threshold,
+    ProfileEvents['JoinSpillingHashJoinBytesAtSwitch'] > toUInt64(Settings['max_bytes_before_external_join']) / 2 AS above_half
+FROM system.query_log
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment LIKE 'spill\_at\_threshold\_%'
+    AND ProfileEvents['JoinSpillingHashJoinSwitchedToGraceJoin'] > 0 AND log_comment != 'spill_at_threshold_duplicate_keys_spills'
 ORDER BY event_time_microseconds;
 
 -- A join that spills switches before it holds its whole right side (about 72 MiB), so its query peak stays below that.

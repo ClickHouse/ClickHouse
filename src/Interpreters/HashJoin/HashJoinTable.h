@@ -22,6 +22,7 @@
 #include <functional>
 #include <optional>
 #include <span>
+#include <tuple>
 #include <unordered_set>
 
 namespace ProfileEvents
@@ -799,6 +800,16 @@ private:
 
     [[noreturn]] static void throwKeysNotRecoverable(Type type);
 
+    /// The growth of a bucket that stays after its inserts, and the buffer its last resize replaces, which is allocated only
+    /// during that resize. One thread inserts the rows of a slot, so its buckets resize one at a time.
+    template <typename Table>
+    static std::pair<size_t, size_t> bucketGrowth(const Table & table, size_t keys, size_t reserve = 0)
+    {
+        size_t net = std::numeric_limits<size_t>::max();
+        const size_t peak = table.estimateGrowthMemory(keys, reserve, &net);
+        return {net, peak - std::min(peak, net)};
+    }
+
     /// The most the buckets of `slot` allocate while `slot_rows` rows are inserted, `bucket_rows[b]` of them into bucket `b`,
     /// or split in any way if `bucket_rows` is empty, including the first-insert reserve of the slot (then every row into each bucket).
     template <typename Map>
@@ -811,14 +822,19 @@ private:
             const size_t reserve = slots.keysToReservePerBucket<Map>(slot);
             if (bucket_rows.empty() && !reserve)
                 return estimateAnySplitGrowth(map, slot, slot_rows);
-            size_t growth = 0;
+            size_t net = 0;
+            size_t replaced = 0;
             for (size_t bucket = slot; bucket < Map::NUM_BUCKETS; bucket += slots.size())
             {
                 const size_t bucket_keys = bucket_rows.empty() ? slot_rows : bucket_rows[bucket];
                 if (bucket_keys || reserve)
-                    growth = JoinSpillBudget::add(growth, map.impls[bucket].estimateGrowthMemory(bucket_keys, reserve));
+                {
+                    const auto [bucket_net, bucket_replaced] = bucketGrowth(map.impls[bucket], bucket_keys, reserve);
+                    net = JoinSpillBudget::add(net, bucket_net);
+                    replaced = std::max(replaced, bucket_replaced);
+                }
             }
-            return growth;
+            return JoinSpillBudget::add(net, replaced);
         }
     }
 
@@ -828,21 +844,26 @@ private:
     size_t estimateAnySplitGrowth(const Map & map, size_t slot, size_t slot_rows) const
     {
         std::array<size_t, Map::NUM_BUCKETS> free_keys{};
-        std::array<size_t, Map::NUM_BUCKETS> growth{};
+        std::array<size_t, Map::NUM_BUCKETS> net{};
+        size_t replaced = 0;
         size_t num_buckets = 0;
         for (size_t bucket = slot; bucket < Map::NUM_BUCKETS; bucket += slots.size(), ++num_buckets)
         {
             free_keys[num_buckets] = map.impls[bucket].keysBeforeResize();
-            growth[num_buckets] = map.impls[bucket].estimateGrowthMemory(slot_rows);
+            size_t bucket_replaced = 0;
+            std::tie(net[num_buckets], bucket_replaced) = bucketGrowth(map.impls[bucket], slot_rows);
+            replaced = std::max(replaced, bucket_replaced);
         }
         std::sort(free_keys.begin(), free_keys.begin() + num_buckets);
         size_t growing = 0;
         for (size_t keys_left = slot_rows; growing < num_buckets && free_keys[growing] < keys_left; ++growing)
             keys_left -= free_keys[growing] + 1;
-        std::nth_element(growth.begin(), growth.begin() + growing, growth.begin() + num_buckets, std::greater<>());
-        size_t bound = 0;
+        if (!growing)
+            return 0;
+        std::nth_element(net.begin(), net.begin() + growing, net.begin() + num_buckets, std::greater<>());
+        size_t bound = replaced;
         for (size_t i = 0; i < growing; ++i)
-            bound = JoinSpillBudget::add(bound, growth[i]);
+            bound = JoinSpillBudget::add(bound, net[i]);
         return bound;
     }
 

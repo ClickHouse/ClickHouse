@@ -157,25 +157,25 @@ public:
     void addLeftBlock(const Block & block)
     {
         std::unique_lock<std::mutex> lock(left_file_mutex);
-        addBlockImpl(block, left_file, lock);
+        addBlockImpl(block, left_file, left_write_error, lock);
     }
 
     void addRightBlock(const Block & block)
     {
         std::unique_lock<std::mutex> lock(right_file_mutex);
-        addBlockImpl(block, right_file, lock);
+        addBlockImpl(block, right_file, right_write_error, lock);
     }
 
     bool tryAddLeftBlock(const Block & block)
     {
         std::unique_lock<std::mutex> lock(left_file_mutex, std::try_to_lock);
-        return addBlockImpl(block, left_file, lock);
+        return addBlockImpl(block, left_file, left_write_error, lock);
     }
 
     bool tryAddRightBlock(const Block & block)
     {
         std::unique_lock<std::mutex> lock(right_file_mutex, std::try_to_lock);
-        return addBlockImpl(block, right_file, lock);
+        return addBlockImpl(block, right_file, right_write_error, lock);
     }
 
     bool empty() const { return is_empty.load(); }
@@ -206,17 +206,35 @@ public:
     const size_t idx;
 
 private:
-    bool addBlockImpl(const Block & block, TemporaryBlockStreamHolder & writer, std::unique_lock<std::mutex> & lock)
+    struct WriteError
+    {
+        int code = 0;
+        String message;
+    };
+
+    bool addBlockImpl(const Block & block, TemporaryBlockStreamHolder & writer, WriteError & error, std::unique_lock<std::mutex> & lock)
     {
         ensureState(State::WRITING_BLOCKS);
 
         if (!lock.owns_lock())
             return false;
 
+        /// A failed write cancels the file, and the query fails with that error, not with a write to the canceled file.
+        if (error.code)
+            throw Exception(error.code, "Bucket {} failed to write a block before: {}", idx, error.message);
+
         if (block.rows())
             is_empty = false;
 
-        writer->write(block);
+        try
+        {
+            writer->write(block);
+        }
+        catch (...)
+        {
+            error = {getCurrentExceptionCode(), getCurrentExceptionMessage(/*with_stacktrace=*/false)};
+            throw;
+        }
         return true;
     }
 
@@ -238,6 +256,9 @@ private:
     TemporaryBlockStreamHolder right_file;
     mutable std::mutex left_file_mutex;
     mutable std::mutex right_file_mutex;
+    /// Under the mutex of their file.
+    WriteError left_write_error;
+    WriteError right_write_error;
 
     std::atomic_bool is_empty = true;
 
@@ -895,12 +916,18 @@ static size_t storedBlocks(const HashJoin & join)
     return blocks;
 }
 
-void GraceHashJoin::addResidentRows(const Block & block, size_t blocks_before)
+std::optional<UInt32> GraceHashJoin::residentHashOf(const Block & block) const
 {
     /// Only the admission against `spill_budget` reads it, and different hashes stay different.
+    if (!spill_budget || (has_resident_rows && !resident_hash))
+        return {};
+    return JoinCommon::oneScatterHash(right_key_names, block);
+}
+
+void GraceHashJoin::addResidentRows(std::optional<UInt32> block_hash, size_t blocks_before)
+{
     if (!spill_budget || (has_resident_rows && !resident_hash) || storedBlocks(*hash_join) == blocks_before)
         return;
-    const auto block_hash = JoinCommon::oneScatterHash(right_key_names, block);
     resident_hash = !has_resident_rows || resident_hash == block_hash ? block_hash : std::nullopt;
     has_resident_rows = true;
 }
@@ -949,15 +976,17 @@ void GraceHashJoin::repartitionCurrentBucket(Block leftover, JoinBuildContext co
 
     /// It keeps at most `kept_rows` keys, and at most `keys_before` unless `leftover` adds new ones: a table reserved for
     /// fewer grows while they go in, up to four times over.
-    hash_join = makeInMemoryJoin(fmt::format("grace{}", bucket_index), std::min(kept_rows, keys_before));
+    hash_join = makeInMemoryJoin(fmt::format("grace{}", bucket_index));
+    hash_join->reserveCountedKeys(std::min(kept_rows, keys_before));
     resetResidentRows();
     for (const Block & kept : kept_shares)
     {
         /// After its one split a block goes in whatever its size.
         bool refused = false;
+        const auto block_hash = residentHashOf(kept);
         const size_t blocks_before = storedBlocks(*hash_join);
         hash_join->addBlockToJoin(kept, context.callerChecksLimits(), refused, /*checked=*/false);
-        addResidentRows(kept, blocks_before);
+        addResidentRows(block_hash, blocks_before);
     }
 }
 
@@ -1073,23 +1102,20 @@ void GraceHashJoin::addBlockToJoinImpl(Block block, JoinBuildContext context, bo
             return;
         }
 
+        /// A split cannot separate rows of one hash, and the estimate must not fail the query at the bucket limit: the block goes
+        /// in unchecked then, and its size after the insert decides. A refused insert can leave keys that reference the block,
+        /// so only the split, which rebuilds the bucket, may follow it.
+        const auto block_hash = residentHashOf(current_block);
+        const bool checked = !(block_hash && (!has_resident_rows || resident_hash == block_hash)) && getNumBuckets() * 2 <= max_num_buckets;
         bool refused = false;
         const size_t blocks_before = storedBlocks(*hash_join);
-        hash_join->addBlockToJoin(current_block, context.callerChecksLimits(), refused);
-        /// A split cannot separate rows of one hash, and the estimate must not fail the query at the bucket limit: the block goes
-        /// in then, and its size after the insert decides. The join has one slot, so a refused block left nothing in it.
-        if (refused)
-        {
-            const auto block_hash = JoinCommon::oneScatterHash(right_key_names, current_block);
-            if ((block_hash && (!has_resident_rows || resident_hash == block_hash)) || getNumBuckets() * 2 > max_num_buckets)
-                hash_join->addBlockToJoin(current_block, context.callerChecksLimits(), refused, /*checked=*/false);
-        }
+        hash_join->addBlockToJoin(current_block, context.callerChecksLimits(), refused, checked);
         if (refused)
         {
             repartitionCurrentBucket(std::move(current_block), context);
             return;
         }
-        addResidentRows(current_block, blocks_before);
+        addResidentRows(block_hash, blocks_before);
         if (hasMemoryOverflow(hash_join->getTotalRowCount(), hash_join->getTotalByteCount()))
             repartitionCurrentBucket({}, context);
 

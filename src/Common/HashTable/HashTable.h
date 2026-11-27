@@ -1850,8 +1850,9 @@ public:
     /// its replacement before releasing the old buffer's accounting, even when allocation grows in place.
     /// Capacity gained by preceding resizes remains charged throughout subsequent resizes.
     /// Saturates at the maximum of `size_t` when the projected capacity or memory is not representable.
-    /// `reserve_elements` adds a `reserve` of that many elements before the inserts.
-    [[nodiscard]] size_t estimateGrowthMemory(size_t additional_keys, size_t reserve_elements = 0) const noexcept
+    /// `reserve_elements` adds a `reserve` of that many elements before the inserts. Unless it saturates, `net_bytes` gets
+    /// the growth left after the last resize; the rest of the peak is the buffer that resize replaced.
+    [[nodiscard]] size_t estimateGrowthMemory(size_t additional_keys, size_t reserve_elements = 0, size_t * net_bytes = nullptr) const noexcept
     {
         auto projected_grower = grower;
         const size_t initial_bytes = getBufferSizeInBytes();
@@ -1903,6 +1904,8 @@ public:
             if (!grow_to(projected_grower))
                 return max_size;
         }
+        if (net_bytes)
+            *net_bytes = buffer_bytes - initial_bytes;
         return peak_extra_bytes;
     }
 

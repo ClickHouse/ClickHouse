@@ -1020,6 +1020,12 @@ void HashJoin::setSpillBudget(JoinSpillBudget * budget, std::function<size_t()> 
     spill_held_elsewhere = std::move(held_elsewhere);
 }
 
+void HashJoin::reserveCountedKeys(size_t keys)
+{
+    for (auto & table : data->tables)
+        table->reserve(keys);
+}
+
 bool HashJoin::addBlockToJoin(const Block & source_block, size_t /* num_rows */, JoinBuildContext context)
 {
     bool refused = false;
@@ -2399,6 +2405,23 @@ void HashJoin::freezeMapsForProbing()
 {
     for (auto & table : data->tables)
         table->freezeForProbing();
+}
+
+size_t HashJoin::usedFlagsBytesAfterBuild() const
+{
+    if (!data || needUsedFlagsForPerRightTableRow(table_join))
+        return 0;
+    size_t bytes = 0;
+    dispatchJoinShape(
+        kind,
+        strictness,
+        getMapsKind(),
+        [&]<JoinKind kind_, JoinStrictness strictness_, typename Maps>()
+        {
+            if constexpr (MapGetter<kind_, strictness_, mapsKindOf<Maps>()>::flagged)
+                bytes = data->tables.front()->bufferSizeInCells() + 1;
+        });
+    return bytes;
 }
 
 void HashJoin::reinitUsedFlags()

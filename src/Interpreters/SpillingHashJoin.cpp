@@ -17,6 +17,7 @@
 
 namespace ProfileEvents
 {
+extern const Event JoinSpillingHashJoinBytesAtSwitch;
 extern const Event JoinSpillingHashJoinSwitchedToGraceJoin;
 extern const Event JoinSpillingHashJoinSwitchedToMergeJoin;
 }
@@ -277,15 +278,17 @@ void SpillingHashJoin::switchToExternalJoin(JoinBuildContext context, bool spill
         if (state.load(std::memory_order_relaxed) != State::COLLECTING)
             return;
 
+        const size_t held_bytes = hash_join->getTotalByteCount();
         LOG_DEBUG(
             log,
             "{}, switching to {}: {} holds {} bytes in {} rows",
             spill_immediately ? "Spill requested under memory pressure" : "Memory spill threshold reached",
             keep_left_block_order ? "MergeJoin (the plan requires the left block order)" : "GraceHashJoin",
             hash_join->getName(),
-            hash_join->getTotalByteCount(),
+            held_bytes,
             hash_join->getTotalRowCount());
         ProfileEvents::increment(switch_event);
+        ProfileEvents::increment(ProfileEvents::JoinSpillingHashJoinBytesAtSwitch, held_bytes);
 
         chosen_join = make_external_join();
         if (grace_join)
@@ -345,7 +348,7 @@ void SpillingHashJoin::onBuildPhaseFinish()
     if (state.load(std::memory_order_acquire) == State::COLLECTING)
     {
         /// A safety net: the bytes include what the in-memory join allocates once the build is over.
-        const size_t total_bytes = hash_join->getRawByteCount();
+        const size_t total_bytes = JoinSpillBudget::add(hash_join->getRawByteCount(), hash_join->usedFlagsBytesAfterBuild());
         if (total_bytes >= max_bytes_before_external_join)
         {
             switchToExternalJoin(JoinBuildContext::serial());

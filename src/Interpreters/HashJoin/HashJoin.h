@@ -249,9 +249,13 @@ public:
 
     /// Every insert is admitted against `budget`; `held_elsewhere` is what the owner holds outside this join. Call before the first insert.
     void setSpillBudget(JoinSpillBudget * budget, std::function<size_t()> held_elsewhere = {});
+    /// Reserves `keys` at the first insert like `reserve_num`, but not capped at the spill budget: a count, not an estimate.
+    void reserveCountedKeys(size_t keys);
 
     /// `getTotalByteCount` without the debug checks, which walk the block lists that other threads may be changing.
     size_t getRawByteCount() const;
+    /// The used flags that `onBuildPhaseFinish` allocates, one byte per cell of the map.
+    size_t usedFlagsBytesAfterBuild() const;
 
     void checkTypesOfKeys(const Block & block) const override;
 
