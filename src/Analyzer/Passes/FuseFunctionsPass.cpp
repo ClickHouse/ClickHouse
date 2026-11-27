@@ -26,7 +26,6 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool optimize_syntax_fuse_functions;
-    extern const SettingsBool allow_experimental_gpu_aggregation;
     extern const SettingsBool optimize_use_projections;
 }
 
@@ -96,8 +95,7 @@ public:
 
     void enterImpl(QueryTreeNodePtr & node)
     {
-        /// The GPU aggregates `sum`, `avg` and `count` of a column, reading it once, and not a `sumCount` of it.
-        if (!getSettings()[Setting::optimize_syntax_fuse_functions] || getSettings()[Setting::allow_experimental_gpu_aggregation])
+        if (!getSettings()[Setting::optimize_syntax_fuse_functions])
             return;
 
         auto * function_node = node->as<FunctionNode>();
