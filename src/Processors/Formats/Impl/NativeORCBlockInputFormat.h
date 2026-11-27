@@ -154,7 +154,7 @@ public:
     /// `absent_columns` are proven missing from the file by Iceberg field id (see `column_mapper_`): no field of the file
     /// is read into them, and they get their `absent_column_defaults_` if any. A struct or list column whose subcolumns are
     /// requested is read with its type in `nested_table_type_hints_`, the one its fields were selected with (or, for a plain
-    /// file, built from its flattened subcolumns), if it is there.
+    /// file, built from its flattened subcolumns and keyed by the file's name), if it is there.
     ORCColumnToCHColumn(
         const Block & header_,
         bool allow_missing_columns_,

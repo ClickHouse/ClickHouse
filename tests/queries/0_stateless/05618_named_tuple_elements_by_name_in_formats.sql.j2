@@ -48,6 +48,8 @@ SELECT * FROM file(currentDatabase() || '_05618_ci.{{ format }}', '{{ format }}'
 SELECT * FROM file(currentDatabase() || '_05618_ci.{{ format }}', '{{ format }}', 'id UInt32, c3 Tuple(ab Int32, AB Int32), `c4.Ab` Int32, `c4.AB` Int32, `c1.a` Int32, `c1.A` DateTime(\'UTC\'), ab Int32, AB Int32') ORDER BY id SETTINGS {{ ci }}, date_time_overflow_behavior = 'saturate';
 SELECT * FROM file(currentDatabase() || '_05618_ci.{{ format }}', '{{ format }}', 'id UInt32, `c1.A` DateTime(\'UTC\'), `s.A` DateTime(\'UTC\'), s Tuple(A DateTime(\'UTC\')), `S.a` Int32, S Tuple(a Int32)') ORDER BY id SETTINGS {{ ci }};
 SELECT * FROM file(currentDatabase() || '_05618_ci.{{ format }}', '{{ format }}', 'id UInt32, `S.A` DateTime(\'UTC\'), `s.a` Int32') ORDER BY id SETTINGS {{ ci }}; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+SELECT * FROM file(currentDatabase() || '_05618_ci.{{ format }}', '{{ format }}', 'id UInt32, `C1.missing` UInt8, `c1.a` DateTime(\'UTC\')') ORDER BY id SETTINGS {{ ci }}; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+SELECT * FROM file(currentDatabase() || '_05618_ci.{{ format }}', '{{ format }}', 'id UInt32, `c1.a` DateTime(\'UTC\'), `C1.missing` UInt8') ORDER BY id SETTINGS {{ ci }}; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
 SELECT * FROM file(currentDatabase() || '_05618_ci.{{ format }}', '{{ format }}', 'id UInt32, `c2.A` Int128, `c2.a` Int256') ORDER BY id;
 {% if format == 'ORC' -%}
 SELECT * FROM file(currentDatabase() || '_05618_ci.ORC', 'ORC', 'id UInt32, `S.a` Int32, `S.A` DateTime(\'UTC\')') ORDER BY id SETTINGS {{ ci }};

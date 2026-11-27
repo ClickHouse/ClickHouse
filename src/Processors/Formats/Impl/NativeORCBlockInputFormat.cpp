@@ -1662,7 +1662,7 @@ void NativeORCBlockInputFormat::prepareFileReader()
     bool absent_column_has_namesake = false;
     /// Under the data lake schema, the top-level struct and list columns of the file whose elements are requested, selected
     /// with the type hint that `orcColumnsToCHChunk` reads them with, so that their fields are matched by field id.
-    /// For a plain file, the structs read for their flattened subcolumns.
+    /// For a plain file, the structs read for their flattened subcolumns, by the file's name.
     UnorderedMapWithMemoryTracking<String, DataTypePtr> nested_table_type_hints;
     for (const auto & column : header)
     {
@@ -1735,8 +1735,8 @@ void NativeORCBlockInputFormat::prepareFileReader()
 
     if (!column_mapper)
     {
-        /// By the field of the file: the spellings of the struct in the header, and its subcolumns below them.
-        UnorderedMapWithMemoryTracking<size_t, std::pair<Strings, VectorWithMemoryTracking<std::pair<String, DataTypePtr>>>> structs;
+        /// By the field of the file, the subcolumns below all its spellings in the header.
+        UnorderedMapWithMemoryTracking<size_t, VectorWithMemoryTracking<std::pair<String, DataTypePtr>>> structs;
         for (const auto & column : header)
         {
             const String table = Nested::extractTableName(column.name);
@@ -1749,20 +1749,16 @@ void NativeORCBlockInputFormat::prepareFileReader()
             auto type = column.type;
             if (!traverseDownORCTypeByName(column.name, &file_schema, type, ignore_case))
                 continue;
-            auto & [tables, subcolumns] = structs[*field];
-            if (std::ranges::find(tables, table) == tables.end())
-                tables.push_back(table);
-            subcolumns.emplace_back(column.name.substr(table.size() + 1), column.type);
+            structs[*field].emplace_back(column.name.substr(table.size() + 1), column.type);
         }
-        for (auto & [field, tables_and_subcolumns] : structs)
+        for (auto & [field, subcolumns] : structs)
         {
-            auto & [tables, subcolumns] = tables_and_subcolumns;
             if (subcolumnPathsOverlap(subcolumns, ignore_case))
                 continue;
+            const String & name = file_schema.getFieldName(field);
             auto hint = makeTypeHintFromSubcolumns(
-                file_schema.getFieldName(field), file_schema.getSubtype(field), std::move(subcolumns), nullptr, ignore_case, field_ids_cache);
-            for (const auto & table : tables)
-                nested_table_type_hints.emplace(table, hint);
+                name, file_schema.getSubtype(field), std::move(subcolumns), nullptr, ignore_case, field_ids_cache);
+            nested_table_type_hints.emplace(name, std::move(hint));
         }
     }
 
@@ -3675,7 +3671,8 @@ void ORCColumnToCHColumn::orcColumnsToCHChunk(
                     /// needs the type of the column itself, not of a requested element of it.
                     const auto orc_kind = orc_column_with_type.second->getKind();
                     /// The read type of the file lacks the unselected fields, so the hint is the one `prepareFileReader` built.
-                    if (auto it = nested_table_type_hints.find(nested_table_name); it != nested_table_type_hints.end())
+                    if (auto it = nested_table_type_hints.find(column_mapper ? nested_table_name : resolved_nested_table_name);
+                        it != nested_table_type_hints.end())
                         nested_table_type = it->second;
                     else if (column_mapper && (orc_kind == ORC::STRUCT || orc_kind == ORC::LIST))
                     {
