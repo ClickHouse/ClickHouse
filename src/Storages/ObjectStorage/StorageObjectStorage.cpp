@@ -42,10 +42,6 @@
 #include <Storages/StorageSnapshot.h>
 #include <Storages/getEffectiveRowPolicyFilter.h>
 #include <Storages/VirtualColumnUtils.h>
-#include <Storages/ObjectStorage/DataLakes/DeltaLake/ReadFromTableChangesStep.h>
-#include <Storages/ObjectStorage/DataLakes/DeltaLake/TableChanges.h>
-#include <Storages/ObjectStorage/DataLakes/DeltaLake/TableSnapshot.h>
-#include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadataDeltaKernel.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeRefreshCursorStore.h>
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
 #include <Interpreters/StorageID.h>
@@ -166,6 +162,11 @@ String StorageObjectStorage::getPathSample(ContextPtr context)
     /// We don't want to throw an exception if there are no files with specified path.
     query_settings.throw_on_zero_files_match = false;
     query_settings.ignore_non_existent_file = true;
+    /// Force serial listing here: this sample path drives hive-partitioning detection, and the parallel
+    /// iterator returns keys in scheduler (non-deterministic) order, so parallel listing would make the
+    /// detected partitioning depend on listing timing. `s3_list_object_parallelism` must stay a pure
+    /// performance knob, so keep the sample path deterministic (S3's lexicographic order).
+    query_settings.list_object_parallelism = 1;
 
     auto file_iterator = StorageObjectStorageSource::createFileIterator(
         configuration,
@@ -915,46 +916,17 @@ void StorageObjectStorage::read(
     }
 
     const auto & settings = local_context->getSettingsRef();
-#if USE_DELTA_KERNEL_RS
-    if (configuration->isDataLakeConfiguration())
+    /// The change data feed of a Delta Lake table (`delta_lake_snapshot_start_version`) is read like a snapshot:
+    /// `IDataLakeMetadata::iterate` returns the data files with the changes.
+    if (configuration->isDataLakeConfiguration()
+        && settings[Setting::delta_lake_snapshot_start_version] == -1
+        && settings[Setting::delta_lake_snapshot_end_version] != -1)
     {
-        if (auto start_version = settings[Setting::delta_lake_snapshot_start_version].value;
-            start_version != DeltaLake::TableSnapshot::LATEST_SNAPSHOT_VERSION)
-        {
-            if (const auto delta_kernel_metadata = std::dynamic_pointer_cast<const DeltaLakeMetadataDeltaKernel>(configuration->getExternalMetadata());
-                delta_kernel_metadata != nullptr)
-            {
-                auto source_header = storage_snapshot->getSampleBlockForColumns(column_names);
-                auto version_range = DeltaLake::TableChanges::getVersionRange(
-                    start_version,
-                    settings[Setting::delta_lake_snapshot_end_version].value);
-                auto table_changes = delta_kernel_metadata->getTableChanges(
-                    version_range,
-                    source_header,
-                    format_settings,
-                    local_context);
-
-                auto read_step = std::make_unique<ReadFromDeltaLakeTableChangesStep>(
-                    std::move(table_changes),
-                    source_header,
-                    column_names,
-                    query_info,
-                    storage_snapshot,
-                    num_streams,
-                    local_context);
-                query_plan.addStep(std::move(read_step));
-                return;
-            }
-        }
-        else if (auto end_version = settings[Setting::delta_lake_snapshot_end_version].value;
-                 end_version != DeltaLake::TableSnapshot::LATEST_SNAPSHOT_VERSION)
-        {
-            throw DB::Exception(
-                DB::ErrorCodes::BAD_ARGUMENTS,
-                "Cannot use delta_lake_snapshot_end_version without delta_lake_snapshot_start_version");
-        }
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Cannot use delta_lake_snapshot_end_version without delta_lake_snapshot_start_version");
     }
-#endif
+
     const auto hive_columns = hive_partitioning_columns.get();
     auto read_from_format_info = configuration->prepareReadingFromFormat(
         object_storage,
@@ -1237,9 +1209,16 @@ std::unique_ptr<ReadBufferIterator> StorageObjectStorage::createReadBufferIterat
     ObjectInfos & read_keys,
     const ContextPtr & context)
 {
+    /// Force serial listing during schema/format inference: the parallel iterator returns keys in
+    /// scheduler (non-deterministic) order, and inference reads the first listed file(s), so parallel
+    /// listing could otherwise make the inferred format/schema depend on listing timing.
+    /// `s3_list_object_parallelism` must stay a pure performance knob.
+    auto query_settings = configuration->getQuerySettings(context);
+    query_settings.list_object_parallelism = 1;
+
     auto file_iterator = StorageObjectStorageSource::createFileIterator(
         configuration,
-        configuration->getQuerySettings(context),
+        query_settings,
         object_storage,
         nullptr, /* storage_metadata */
         false, /* distributed_processing */
