@@ -16,6 +16,7 @@
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <QueryPipeline/Pipe.h>
+#include <Storages/StorageDictionary.h>
 #include <Common/assert_cast.h>
 #include <Common/TargetSpecific.h>
 #include <Common/VectorWithMemoryTracking.h>
@@ -293,7 +294,7 @@ struct CentroidMatrix
             const size_t column = centroid_index - tile_start;
 
             const Float32 * centroid = row_major + centroid_index * dim;
-            const size_t centroid_id = id_values ? id_values[centroid_index] : centroid_index;
+            const UInt32 centroid_id = id_values ? id_values[centroid_index] : static_cast<UInt32>(centroid_index);
             double sq_norm = 0;
             for (size_t coord = 0; coord < dim; ++coord)
             {
@@ -310,7 +311,7 @@ struct CentroidMatrix
                 sq_norm += static_cast<double>(centroid[coord]) * static_cast<double>(centroid[coord]);
             }
             centroid_sq_norms[centroid_index] = static_cast<Float32>(sq_norm);
-            ids[centroid_index] = id_values ? id_values[centroid_index] : static_cast<UInt32>(centroid_index);
+            ids[centroid_index] = centroid_id;
         }
     }
 
@@ -639,13 +640,9 @@ private:
         if (cached_dict.lock() == dictionary)
             return cached_centroids;
 
-        const auto & structure = dictionary->getStructure();
-        auto has_column = [&](const String & column)
-        {
-            return structure.hasAttribute(column) || std::ranges::contains(structure.getKeysNames(), column);
-        };
-        const bool has_level = has_column("level");
-        const bool has_parent = has_column("parent");
+        const auto dictionary_columns = StorageDictionary::getNamesAndTypes(dictionary->getStructure(), /*validate_id_type=*/false);
+        const bool has_level = dictionary_columns.contains("level");
+        const bool has_parent = dictionary_columns.contains("parent");
         if (has_level != has_parent)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "assignCentroid: dictionary {} has a `{}` column but no `{}` column, a two-level dictionary needs both",

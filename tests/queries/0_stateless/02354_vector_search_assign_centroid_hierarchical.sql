@@ -194,6 +194,18 @@ FROM numbers(6000) SETTINGS max_block_size = 65536;
 DROP DICTIONARY chunk_dict;
 DROP TABLE chunk_src;
 
+SELECT '-- `level` and `parent` are looked up among all the columns of the dictionary, range bounds included';
+DROP DICTIONARY IF EXISTS range_dict;
+DROP TABLE IF EXISTS range_src;
+CREATE TABLE range_src (k UInt64, cid UInt64, vec Array(Float32), level UInt8, parent UInt64, range_end UInt64) ENGINE = MergeTree ORDER BY k;
+-- Coarse centroid 10 at 0 and its leaf 20 at 1: the two-level search returns 20, an exhaustive one would return 10.
+INSERT INTO range_src VALUES (1, 10, [0], 1, 0, 100), (2, 20, [1], 0, 10, 100);
+CREATE DICTIONARY range_dict (k UInt64, cid UInt64, vec Array(Float32), level UInt8, parent UInt64, range_end UInt64)
+PRIMARY KEY k SOURCE(CLICKHOUSE(TABLE 'range_src')) LAYOUT(RANGE_HASHED()) RANGE(MIN parent MAX range_end) LIFETIME(0);
+SELECT assignCentroid([0.1]::Array(Float32), 'range_dict');
+DROP DICTIONARY range_dict;
+DROP TABLE range_src;
+
 SELECT '-- errors';
 DROP DICTIONARY IF EXISTS err_dict;
 DROP TABLE IF EXISTS err_src;

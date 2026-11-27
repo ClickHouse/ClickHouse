@@ -26,5 +26,7 @@
 1
 -- rows past the first chunk of coarse scores are assigned like the first ones
 0	6000
+-- `level` and `parent` are looked up among all the columns of the dictionary, range bounds included
+20
 -- errors
 2
