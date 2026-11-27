@@ -16,7 +16,7 @@ SELECT 1;
 
 $CLICKHOUSE_CLIENT --use_hive_partitioning=1 -q "
 SELECT _headers FROM file('$DIR/_headers=abc/data.tsv', 'TSV', 'x UInt64');
--- The type pins that the Hive virtual resolves here, not a response-header `Map`.
+-- The type pins that the Hive virtual resolves here, not a response-header Map.
 SELECT toTypeName(_headers) FROM file('$DIR/_headers=abc/data.tsv', 'TSV', 'x UInt64');
 "
 
