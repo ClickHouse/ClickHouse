@@ -1,5 +1,6 @@
 import logging
 import re
+import traceback
 import random
 from pyspark.sql import SparkSession
 from pyspark.sql.types import (
@@ -25,17 +26,8 @@ try:
 except ImportError:
     _TEMPORAL_NTZ_TYPES = ()
 
-try:
-    from pyspark.sql.types import VariantType
-
-    # ClickHouse `JSON` maps to VARIANT, and the engines print it differently: e.g. Spark keeps
-    # null object fields (`{"k0":null}`) while ClickHouse drops them (`{}`)
-    _VARIANT_TYPES = (VariantType,)
-except ImportError:
-    _VARIANT_TYPES = ()
-
 from .laketables import SparkTable, LakeFormat, LakeCatalogs
-from tests.integration.helpers.client import Client
+from integration.helpers.client import Client
 
 # Row-hash placeholder for SQL NULL, so rows with a NULL in a compared column are
 # still compared instead of silently dropped (Spark CONCAT/COLLECT_LIST and ClickHouse
@@ -74,8 +66,7 @@ class SparkAndClickHouseCheck:
                 TimestampType,
                 DateType,
             )
-            + _TEMPORAL_NTZ_TYPES
-            + _VARIANT_TYPES,
+            + _TEMPORAL_NTZ_TYPES,
         ):
             # Map type is not comparable in Spark, Struct is complicated.
             # TIMESTAMP_NTZ is excluded like TimestampType: its string form differs
@@ -371,5 +362,6 @@ class SparkAndClickHouseCheck:
                 return False
         except Exception as e:
             # If an error happens, ignore it, but log it
+            traceback.print_exc()
             self.logger.exception(e)
         return True

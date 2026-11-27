@@ -34,7 +34,7 @@ import { HyperDXRum } from '@hyperdx/otel-react-native';
 HyperDXRum.init({
   url: '<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT>',
   service: 'my-rn-app',
-  apiKey: '<YOUR_INGESTION_API_KEY>',
+  apiKey: '<YOUR_INGESTION_API_KEY>', // Omit for Managed ClickStack
   tracePropagationTargets: [/api.myapp.domain/i], // Set to link traces from frontend to backend requests
 });
 ```
@@ -42,7 +42,7 @@ HyperDXRum.init({
 ### Attach user information or metadata (Optional) {#attach-user-information-metadata}
 
 Attaching user information will allow you to search/filter sessions and events
-in ClickStack UI. This can be called at any point during the client session. The
+in HyperDX. This can be called at any point during the client session. The
 current client session and all events sent after the call will be associated
 with the user information.
 

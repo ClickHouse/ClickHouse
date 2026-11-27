@@ -10,7 +10,6 @@
 #include <utility>
 
 #include <base/sort.h>
-#include <base/sanitizer_defs.h>
 
 #include <libdivide-config.h>
 #include <libdivide.h>
@@ -48,8 +47,8 @@ namespace ErrorCodes
 /// bucket keys are mostly consecutive, and `TrivialHash` puts a run of them in consecutive cells without collisions.
 struct TimeSeriesBucketsHashTableGrower : public HashTableGrower<4>
 {
-    [[nodiscard]] size_t maxFill() const { return bufSize() / 4 * 3; }
-    [[nodiscard]] bool overflow(size_t elems) const { return elems > maxFill(); }
+    size_t maxFill() const { return bufSize() / 4 * 3; }
+    bool overflow(size_t elems) const { return elems > maxFill(); }
 
     void increaseSize()
     {
@@ -116,7 +115,7 @@ public:
     /// taking such arguments shadows this constant, `State` and the hooks `addExtraArguments` and `getGridPointResult`.
     static constexpr size_t num_extra_arguments = 0;
 
-    [[nodiscard]] String getName() const override
+    String getName() const override
     {
         return Traits::getName();
     }
@@ -155,20 +154,20 @@ public:
     {
     }
 
-    [[nodiscard]] bool allocatesMemoryInArena() const override { return false; }
+    bool allocatesMemoryInArena() const override { return false; }
 
     /// The state is `FunctionImpl::State`: this `State` or a derived class's extension of it.
-    [[nodiscard]] bool hasTrivialDestructor() const override
+    bool hasTrivialDestructor() const override
     {
         return std::is_trivially_destructible_v<typename FunctionImpl::State>;
     }
 
-    [[nodiscard]] size_t alignOfData() const override
+    size_t alignOfData() const override
     {
         return alignof(typename FunctionImpl::State);
     }
 
-    [[nodiscard]] size_t sizeOfData() const override
+    size_t sizeOfData() const override
     {
         return sizeof(typename FunctionImpl::State);
     }
@@ -403,11 +402,11 @@ public:
     {
         size_t batch_index = row_begin;
 
+        ResultWriter writer(to, grid_size);
+        writer.reserve(row_end - row_begin);
+
         try
         {
-            ResultWriter writer(to, grid_size);
-            writer.reserve(row_end - row_begin);
-
             for (; batch_index < row_end; ++batch_index)
             {
                 derived().doInsertResultInto(places[batch_index] + place_offset, writer);
@@ -428,8 +427,8 @@ public:
 protected:
     /// Constructs the result array for one grid (one aggregate state). For each grid point the window's value is
     /// computed by a per-function sliding `Aggregator` (built by `createAggregator` in the derived class): as the
-    /// grid advances, buckets leaving the window are dropped by `removeBefore`, then buckets entering it are fed to
-    /// `Aggregator::add` (which preaggregates them into a `Summary` where needed), and `getResult` reads off the window's
+    /// grid advances, buckets entering the window are fed to `Aggregator::add` (which preaggregates them into a
+    /// `Summary` where needed), buckets leaving are dropped by `removeBefore`, and `getResult` reads off the window's
     /// value. The aggregator keeps only the window's worth of data, so there is no materialization of all buckets and
     /// no global sort in the dense case.
     void doInsertResultInto(AggregateDataPtr __restrict place, ResultWriter & writer) const
@@ -454,7 +453,6 @@ protected:
             size_t next_bucket = 0;
             for (size_t grid_index = 0; grid_index < grid_size; ++grid_index)
             {
-                removeOutOfWindow(aggregator, grid_index);
                 const size_t window_end = bucketRangeInWindow(grid_index).second;
                 for (; next_bucket < window_end; ++next_bucket)
                 {
@@ -462,6 +460,7 @@ protected:
                     if (it)
                         aggregator.add(it->getMapped(), bucketEnd(next_bucket));
                 }
+                removeOutOfWindow(aggregator, grid_index);
                 writer.store(grid_index, derived().getGridPointResult(aggregator, place, grid_index));
             }
         }
@@ -477,10 +476,10 @@ protected:
             size_t pos = 0;
             for (size_t grid_index = 0; grid_index < grid_size; ++grid_index)
             {
-                removeOutOfWindow(aggregator, grid_index);
                 const size_t window_end = bucketRangeInWindow(grid_index).second;
                 for (; pos < ordered_buckets.size() && ordered_buckets[pos].first < window_end; ++pos)
                     aggregator.add(*ordered_buckets[pos].second, bucketEnd(ordered_buckets[pos].first));
+                removeOutOfWindow(aggregator, grid_index);
                 writer.store(grid_index, derived().getGridPointResult(aggregator, place, grid_index));
             }
         }
@@ -492,13 +491,13 @@ protected:
         TimestampType start_time;
         TimestampType end_time;
 
-        [[nodiscard]] bool contains(TimestampType timestamp) const
+        bool contains(TimestampType timestamp) const
         {
             return timestamp >= start_time && timestamp <= end_time;
         }
 
         /// The range is empty if `start_time > end_time`.
-        [[nodiscard]] bool empty() const
+        bool empty() const
         {
             return static_cast<Int64>(start_time) > static_cast<Int64>(end_time);
         }
@@ -546,7 +545,6 @@ protected:
     /// cast back to `GridScaleTimestampType` preserves the same bit pattern that the signed accumulator
     /// `grid_timestamp += step` would produce for normal inputs, but does not trigger UBSAN
     /// on the adversarial boundary values generated by the AST fuzzer.
-    [[nodiscard]] NO_SANITIZE_UNSIGNED_OVERFLOW
     GridScaleTimestampType getGridPoint(size_t grid_index) const
     {
         chassert(grid_index < grid_size);
@@ -907,7 +905,6 @@ private:
     /// plus its `time_range` for run detection. With `ReturnType == size_t` the range is neither computed nor returned - the
     /// function returns just the bucket index.
     template <typename ReturnType = SampleClass>
-    NO_SANITIZE_UNSIGNED_OVERFLOW
     ALWAYS_INLINE ReturnType classifySample(const TimestampType timestamp) const
     {
         static_assert(std::is_same_v<ReturnType, SampleClass> || std::is_same_v<ReturnType, size_t>);
@@ -1049,7 +1046,7 @@ private:
 
     /// Returns a half-open range [first, last) of bucket indices that fall in a grid point's window. The range has
     /// `buckets_per_window` buckets, except early windows that are truncated at 0 by the dropped leading buckets.
-    [[nodiscard]] std::pair<size_t, size_t> bucketRangeInWindow(size_t grid_index) const
+    std::pair<size_t, size_t> bucketRangeInWindow(size_t grid_index) const
     {
         chassert(grid_index < grid_size);
         const size_t window_begin = grid_index * buckets_per_step;
@@ -1060,7 +1057,6 @@ private:
     /// End timestamp of bucket `bucket_index`: `first_bucket_end` plus the end-spacings (`even/odd_bucket_step`)
     /// of buckets 1..bucket_index. Wrapping unsigned arithmetic: the products can overflow for extreme grids, but the
     /// in-range end is recovered modulo 2^64.
-    [[nodiscard]] NO_SANITIZE_UNSIGNED_OVERFLOW
     GridScaleTimestampType ALWAYS_INLINE bucketEnd(size_t bucket_index) const
     {
         chassert(bucket_index < bucket_count);
@@ -1089,7 +1085,7 @@ private:
     /// The enable threshold is compared to the average number of populated buckets per window (not the dense
     /// maximum), so sparse data stays on the cheaper recompute path; the hard cap still forces two-stacks
     /// for large windows, where a low average can hide a locally dense window.
-    [[nodiscard]] size_t getStackSizeForTwoStacks(size_t num_populated_buckets) const
+    size_t getStackSizeForTwoStacks(size_t num_populated_buckets) const
     {
         if constexpr (requires { Traits::AVG_POPULATED_BPW_TO_ENABLE_TWO_STACKS; Traits::BPW_TO_FORCE_TWO_STACKS; })
         {
@@ -1152,7 +1148,7 @@ private:
     }
 
     /// Divides a timestamp of the grid by `column_to_grid_multiplier` rounding towards negative infinity.
-    [[nodiscard]] ALWAYS_INLINE Int64 divideByColumnToGridMultiplierRoundingDown(Int64 value) const
+    ALWAYS_INLINE Int64 divideByColumnToGridMultiplierRoundingDown(Int64 value) const
     {
         const Int64 quotient = value / column_to_grid_divider;   /// Rounds towards zero.
         const Int64 remainder = value - quotient * column_to_grid_multiplier;
@@ -1160,7 +1156,7 @@ private:
     }
 
     /// Divides a timestamp of the grid by `column_to_grid_multiplier` rounding towards positive infinity.
-    [[nodiscard]] ALWAYS_INLINE Int64 divideByColumnToGridMultiplierRoundingUp(Int64 value) const
+    ALWAYS_INLINE Int64 divideByColumnToGridMultiplierRoundingUp(Int64 value) const
     {
         const Int64 quotient = value / column_to_grid_divider;   /// Rounds towards zero.
         const Int64 remainder = value - quotient * column_to_grid_multiplier;
@@ -1262,7 +1258,7 @@ private:
 
         State * state = data(place);
 
-#if USE_X86_64_MULTITARGET_CODE
+#if USE_MULTITARGET_CODE
         if (isArchSupported(TargetArch::x86_64_v4))
         {
             addSamplesToBucketsImpl_x86_64_v4(state, timestamps, values, row_begin, row_end);
@@ -1344,8 +1340,8 @@ private:
             value_data = typeid_cast<const ValueColumnType &>(value_array_column.getData()).getData().data();
         }
 
-        size_t previous_timestamp_offset = (row_begin == 0 ? 0 : timestamp_offsets[static_cast<ssize_t>(row_begin) - 1]);
-        size_t previous_value_offset = (row_begin == 0 ? 0 : value_offsets[static_cast<ssize_t>(row_begin) - 1]);
+        size_t previous_timestamp_offset = (row_begin == 0 ? 0 : timestamp_offsets[row_begin - 1]);
+        size_t previous_value_offset = (row_begin == 0 ? 0 : value_offsets[row_begin - 1]);
 
         if (!flags_data)
         {
@@ -1353,7 +1349,7 @@ private:
 
             /// No row is skipped, so the samples of all the rows are stored contiguously and are added
             /// in a single call, which lets the vectorized kernel work on the whole batch.
-            const size_t samples_count = (row_end == 0 ? 0 : timestamp_offsets[static_cast<ssize_t>(row_end) - 1]) - previous_timestamp_offset;
+            const size_t samples_count = (row_end == 0 ? 0 : timestamp_offsets[row_end - 1]) - previous_timestamp_offset;
             addMany(place, timestamp_data + previous_timestamp_offset, value_data + previous_value_offset, 0, samples_count);
             return;
         }
@@ -1383,8 +1379,8 @@ private:
     static void checkSeriesSizes(size_t row_begin, size_t row_end,
         const ColumnArray::Offset * timestamp_offsets, const ColumnArray::Offset * value_offsets)
     {
-        size_t previous_timestamp_offset = (row_begin == 0 ? 0 : timestamp_offsets[static_cast<ssize_t>(row_begin) - 1]);
-        size_t previous_value_offset = (row_begin == 0 ? 0 : value_offsets[static_cast<ssize_t>(row_begin) - 1]);
+        size_t previous_timestamp_offset = (row_begin == 0 ? 0 : timestamp_offsets[row_begin - 1]);
+        size_t previous_value_offset = (row_begin == 0 ? 0 : value_offsets[row_begin - 1]);
 
         for (size_t i = row_begin; i < row_end; ++i)
         {

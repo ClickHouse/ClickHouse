@@ -1,5 +1,4 @@
 #include <memory>
-#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <optional>
 #include <stack>
 #include <Planner/PlannerExpressionAnalysis.h>
@@ -15,8 +14,6 @@
 
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
-
-#include <WindowFunctions/WindowFunctionFactory.h>
 
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/ConstantNode.h>
@@ -85,8 +82,7 @@ std::optional<FilterAnalysisResult> analyzeFilter(
     result.correlated_subtrees = std::move(correlated_subtrees);
 
     const auto * output = result.filter_actions->dag.getOutputs().at(0);
-    /// `arrayJoin` changes the number of rows, so the step is needed even if the filter is always true.
-    if (output->column && ConstantFilterDescription(*output->column).always_true && !result.filter_actions->dag.hasArrayJoin())
+    if (output->column && ConstantFilterDescription(*output->column).always_true)
         return {};
 
     result.filter_column_name = output->result_name;
@@ -125,7 +121,7 @@ bool canRemoveConstantFromGroupByKey(const ConstantNode & root)
         }
         else if (function_node)
         {
-            if (!function_node->isOrdinaryCall())
+            if (!function_node->isOrdinaryFunction())
             {
                 /// Non-ordinary functions (window, aggregate, lambda) cannot be server constants,
                 /// so it is safe to remove them from GROUP BY. We cannot call getFunctionOrThrow()
@@ -433,29 +429,18 @@ std::optional<WindowAnalysisResult> analyzeWindow(
                 }
             }
 
-            if (!types_changed)
-                continue;
-
-            if (window_function.general_function)
-            {
-                window_function.general_function = WindowFunctionFactory::instance().get(
-                    window_function.getFunctionName(),
-                    NullsAction::EMPTY,
-                    actual_argument_types,
-                    window_function.function_parameters);
-            }
-            else
+            if (types_changed)
             {
                 AggregateFunctionProperties properties;
-                window_function.aggregate_function = AggregateFunctionFactory::instance().get(
-                    window_function.getFunctionName(),
+                auto new_function = AggregateFunctionFactory::instance().get(
+                    window_function.aggregate_function->getName(),
                     NullsAction::EMPTY,
                     actual_argument_types,
                     window_function.function_parameters,
                     properties);
+                window_function.aggregate_function = std::move(new_function);
+                window_function.argument_types = std::move(actual_argument_types);
             }
-
-            window_function.argument_types = std::move(actual_argument_types);
         }
     }
 
@@ -463,7 +448,7 @@ std::optional<WindowAnalysisResult> analyzeWindow(
 
     for (auto & window_description : window_descriptions)
         for (auto & window_function : window_description.window_functions)
-            window_functions_additional_columns.emplace_back(nullptr, window_function.getResultType(), window_function.column_name);
+            window_functions_additional_columns.emplace_back(nullptr, window_function.aggregate_function->getResultType(), window_function.column_name);
 
     auto before_window_step = std::make_unique<ActionsChainStep>(before_window_actions,
         true /*use_actions_nodes_as_output_columns*/,
@@ -589,7 +574,6 @@ SortAnalysisResult analyzeSort(
     actions_chain.addStep(std::move(actions_step_before_sort));
 
     ActionsAndProjectInputsFlagPtr before_interpolate_actions;
-    NameToNameMap interpolated_column_names;
     NameToNameMap interpolate_target_column_names;
 
     /// We add only INPUT columns necessary for INTERPOLATE expression in before ORDER BY actions DAG
@@ -634,7 +618,6 @@ SortAnalysisResult analyzeSort(
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Interpolate expression must return single column");
             const auto * node = nodes.front();
             const auto & target_name = interpolate_node_typed.getExpressionName();
-            interpolated_column_names.emplace(target_name, node->result_name);
 
             /// A target alias may be the name of another column, as in `count() AS c, n AS `count()``.
             String column_name = target_name;
@@ -656,7 +639,6 @@ SortAnalysisResult analyzeSort(
         std::move(before_sort_actions),
         has_with_fill,
         std::move(before_interpolate_actions),
-        std::move(interpolated_column_names),
         std::move(interpolate_target_column_names)};
 }
 
@@ -967,7 +949,7 @@ PlannerExpressionsAnalysisResult buildExpressionAnalysisResult(const QueryTreeNo
     /// Keep source-constant INPUTs (`source_constants`) so `project`/`removeUnusedActions` does not
     /// fold-and-drop them; they must keep flowing as required inputs to stay in the stream at
     /// distributed stage boundaries. Literals and re-creatable alias constants stay foldable.
-    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> keep_inputs;
+    std::unordered_set<const ActionsDAG::Node *> keep_inputs;
     if (!source_constants.empty())
         for (const auto * input : project_names_actions->dag.getInputs())
             if (input->column && source_constants.contains(input->result_name))
@@ -976,10 +958,13 @@ PlannerExpressionsAnalysisResult buildExpressionAnalysisResult(const QueryTreeNo
     if (query_node.hasInterpolate() && sort_analysis_result_optional)
     {
         auto project_names = projection_analysis_result.projection_column_names_with_display_aliases;
-        const auto & interpolated_column_names = sort_analysis_result_optional->interpolated_column_names;
-        /// A result column takes the interpolated values only if it is the column the target interpolates.
+        NameSet interpolate_names;
+        auto & interpolate_list_node = query_node.getInterpolate()->as<ListNode &>();
+        for (auto & interpolate_node : interpolate_list_node.getNodes())
+            interpolate_names.insert(interpolate_node->as<InterpolateNode &>().getExpressionName());
+
         for (auto & [name, alias] : project_names)
-            if (auto it = interpolated_column_names.find(alias); it != interpolated_column_names.end() && it->second == name)
+            if (interpolate_names.contains(alias))
                 name = sort_analysis_result_optional->interpolate_target_column_names.at(alias);
 
         project_names_actions->dag.project(project_names, keep_inputs);

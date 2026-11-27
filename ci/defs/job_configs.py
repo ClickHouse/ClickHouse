@@ -12,8 +12,6 @@ from ci.defs.defs import (
     LLVM_FT_S3_DB_REPL_SEQUENTIAL_NUM_BATCHES,
     LLVM_FT_S3_PARALLEL_NUM_BATCHES,
     LLVM_IT_NUM_BATCHES,
-    NIGHTLY_PERF_BATCH_JOBS,
-    NIGHTLY_PERF_PLACEMENT,
     ArtifactNames,
     BuildTypes,
     JobNames,
@@ -111,7 +109,6 @@ else:
 
 # Submodules with test data only. They do not affect the builds, so a bump of them must not rebuild the binaries.
 test_data_submodules = [
-    "./contrib/arrow-testing",
     "./contrib/parquet-testing",
 ]
 
@@ -125,13 +122,11 @@ build_digest_config = Job.CacheDigestConfig(
         "./cmake",
         "./base",
         "./programs",
+        "./rust",
         "./ci/jobs/build_clickhouse.py",
-        "./ci/jobs/scripts/relocation_headroom.py",
         "./ci/jobs/scripts/job_hooks/build_profile_hook.py",
         "./ci/jobs/scripts/log_cluster.py",
         "./utils/prepare-time-trace/prepare-time-trace.sh",
-        "./utils/CMakeLists.txt",
-        "./utils/compact-symbols",
         # The build job also assembles the deb, rpm and tgz packages, so changes to
         # their definitions and to the packaging script have to schedule a rebuild.
         "./packages",
@@ -158,6 +153,7 @@ fast_test_digest_config = Job.CacheDigestConfig(
         "./cmake",
         "./base",
         "./programs",
+        "./rust",
     ],
 )
 
@@ -166,33 +162,6 @@ fast_test_digest_config = Job.CacheDigestConfig(
 darwin_fast_test_digest_config = Job.CacheDigestConfig(
     include_paths=fast_test_digest_config.include_paths
     + ["./ci/jobs/scripts/fast_test_darwin.sh"],
-)
-
-# The limited clang-tidy check is configured exactly like the full tidy build, so
-# it shares the build digest, and adds the files that decide what it reports or
-# whether it runs: its own selection logic, the config-time skip in
-# `filter_job.py`, the definitions of the job and of the merge-queue workflow,
-# and the clang-tidy configuration itself. These are the
-# `TIDY_CONFIG_PATHS` of `clang_tidy_changed_files.py` that the build digest does
-# not already cover, so a change to any of them is validated on the merge-group
-# state instead of reusing an older result.
-tidy_changed_files_digest_config = Job.CacheDigestConfig(
-    include_paths=build_digest_config.include_paths
-    + [
-        "./ci/jobs/scripts/clang_tidy_changed_files.py",
-        "./ci/jobs/scripts/workflow_hooks/filter_job.py",
-        "./ci/jobs/scripts/workflow_hooks/store_data.py",
-        "./ci/praktika/gh.py",
-        "./ci/praktika/info.py",
-        "./ci/defs/defs.py",
-        "./ci/defs/job_configs.py",
-        "./ci/workflows/merge_queue.py",
-        "./.github/workflows/merge_queue.yml",
-        "./.clang-tidy",
-        # An analyzed root the build digest does not cover.
-        "./utils",
-    ],
-    with_git_submodules=True,
 )
 
 TIDY_SHARDS = 4
@@ -285,9 +254,6 @@ common_stress_job_config = Job.Config(
             "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
             "./ci/jobs/scripts/stress/stress.py",
             "./tests/clickhouse-test",
-            # Runs the tests over the protocols other than native, see `clickhouse-test --protocols`.
-            "./tests/protocol_client.py",
-            "./utils/grpc-client/pb2",
             "./tests/config",
             "./tests/*.txt",
             "./tests/docker_scripts/",
@@ -340,25 +306,6 @@ common_integration_test_job_config = Job.Config(
 )
 
 
-# Cross-compiled builds that pull requests do not run: the merge queue builds them once per
-# merge instead of on every PR commit, and master builds them on every commit. Over
-# 2026-09-15 to 2026-11-14 each of them was the only failing build in 0 to 12 PRs (25 in
-# total, about 3 a week), while they cost about $2.4 per PR commit together.
-# `Build (arm_darwin)` stays in pull requests because `Fast test (arm_darwin)` needs its binary,
-# and so do `Build (wasm64)` (the only Emscripten build, 14 PRs) and `Build (arm_fuzzers)` (66 PRs).
-MERGE_QUEUE_SPECIAL_BUILD_TYPES = (
-    BuildTypes.AMD_DARWIN,
-    BuildTypes.ARM_V80COMPAT,
-    BuildTypes.AMD_FREEBSD,
-    BuildTypes.AMD_ILLUMOS,
-    BuildTypes.PPC64LE,
-    BuildTypes.AMD_COMPAT,
-    BuildTypes.RISCV64,
-    BuildTypes.S390X,
-    BuildTypes.LOONGARCH64,
-)
-
-
 class JobConfigs:
     style_check = Job.Config(
         name=JobNames.STYLE_CHECK,
@@ -372,8 +319,8 @@ class JobConfigs:
     )
     code_review = Job.Config(
         name=JobNames.CODE_REVIEW,
-        runs_on=RunnerLabels.ARM_SMALL_REVIEW,
-        command="python3 ./ci/jobs/codex_review_job.py",
+        runs_on=RunnerLabels.ARM_TINY,
+        command="python3 ./ci/jobs/copilot_review_job.py --codex",
         allow_failure=True,
         enable_gh_auth=True,
     )
@@ -409,7 +356,7 @@ class JobConfigs:
             # cannot fail the job, and a timed-out job already fails).
             'for i in $(seq 2 16); do sudo ifconfig lo0 -alias 127.0.0.$i 2>/dev/null || true; done',
             "python3 ./ci/jobs/scripts/job_hooks/clickhouse_test_cleanup_hook.py",
-            "sudo rm -rf ./ci/tmp/run* /System/Volumes/Data/System/Library/Caches/com.apple.coresymbolicationd/data /System/Volumes/Data/private/var/db/diagnostics/*",
+            "sudo rm -rf /Users/ec2-user/actions-runner/_work/ClickHouse/ClickHouse/ci/tmp/run* /System/Volumes/Data/System/Library/Caches/com.apple.coresymbolicationd/data /System/Volumes/Data/private/var/db/diagnostics/*",
         ],
     ).parametrize(
         Job.ParamSet(
@@ -426,7 +373,7 @@ class JobConfigs:
                 parameter=f"{BuildTypes.ARM_TIDY}, {i}/{TIDY_SHARDS}",
                 command=f'python3 ./ci/jobs/build_clickhouse.py --build-type "{BuildTypes.ARM_TIDY}" --shard {i}/{TIDY_SHARDS}',
                 provides=[],
-                runs_on=RunnerLabels.ARM_MEDIUM_CPU,
+                runs_on=RunnerLabels.ARM_LARGE,
             )
             for i in range(1, TIDY_SHARDS + 1)
         ]
@@ -435,27 +382,8 @@ class JobConfigs:
         Job.ParamSet(
             parameter=BuildTypes.AMD_TIDY,
             provides=[],
-            runs_on=RunnerLabels.ARM_MEDIUM_CPU,
+            runs_on=RunnerLabels.ARM_LARGE,
         ),
-    )
-    # The merge queue's clang-tidy gate. The full tidy build above walks the whole
-    # tree and takes hours, which is why the merge queue cannot run it - and why a
-    # pull request that was green on its own can still break clang-tidy on
-    # `master` once it is merged on top of later changes. This job runs clang-tidy
-    # only on the translation units the change touches and reports only the
-    # diagnostics in the changed files, which keeps it cheap and keeps a
-    # pre-existing diagnostic in a widely included header from blocking the queue.
-    # It is a `build_clickhouse.py` build type because it needs that job's
-    # checkout, version and cmake steps verbatim - the tidy cmake configuration is
-    # what makes its diagnostics the same ones the full check reports.
-    tidy_changed_files_job = Job.Config(
-        name=JobNames.CLANG_TIDY_CHANGED_FILES,
-        runs_on=RunnerLabels.ARM_LARGE,
-        command=f'python3 ./ci/jobs/build_clickhouse.py --build-type "{BuildTypes.ARM_TIDY_CHANGED_FILES}"',
-        run_in_docker=BINARY_DOCKER_COMMAND,
-        timeout=3600 * 2,
-        digest_config=tidy_changed_files_digest_config,
-        needs_submodules=True,
     )
     build_jobs = common_build_job_config.set_post_hooks(
         post_hooks=[
@@ -466,17 +394,23 @@ class JobConfigs:
         Job.ParamSet(
             parameter=BuildTypes.AMD_DEBUG,
             provides=[ArtifactNames.CH_AMD_DEBUG],
-            runs_on=RunnerLabels.ARM_MEDIUM_CPU,
+            runs_on=RunnerLabels.ARM_LARGE,
         ),
         Job.ParamSet(
             parameter=BuildTypes.AMD_ASAN_UBSAN,
-            provides=[ArtifactNames.CH_AMD_ASAN_UBSAN],
-            runs_on=RunnerLabels.ARM_MEDIUM_CPU,
+            provides=[
+                ArtifactNames.CH_AMD_ASAN_UBSAN,
+                ArtifactNames.UNITTEST_AMD_ASAN_UBSAN,
+            ],
+            runs_on=RunnerLabels.ARM_LARGE,
         ),
         Job.ParamSet(
             parameter=BuildTypes.AMD_TSAN,
-            provides=[ArtifactNames.CH_AMD_TSAN],
-            runs_on=RunnerLabels.ARM_MEDIUM_CPU,
+            provides=[
+                ArtifactNames.CH_AMD_TSAN,
+                ArtifactNames.UNITTEST_AMD_TSAN,
+            ],
+            runs_on=RunnerLabels.ARM_LARGE,
         ),
         Job.ParamSet(
             parameter=BuildTypes.AMD_MSAN,
@@ -484,75 +418,53 @@ class JobConfigs:
                 ArtifactNames.CH_AMD_MSAN,
                 ArtifactNames.UNITTEST_AMD_MSAN,
             ],
-            runs_on=RunnerLabels.ARM_MEDIUM_CPU,
+            runs_on=RunnerLabels.ARM_LARGE,
         ),
         Job.ParamSet(
             parameter=BuildTypes.AMD_BINARY,
             provides=[ArtifactNames.CH_AMD_BINARY],
-            runs_on=RunnerLabels.ARM_MEDIUM_CPU,
+            runs_on=RunnerLabels.ARM_LARGE,
         ),
         Job.ParamSet(
             parameter=BuildTypes.ARM_DEBUG,
-            provides=[
-                ArtifactNames.CH_ARM_DEBUG,
-                ArtifactNames.UNITTEST_ARM_DEBUG,
-            ],
-            runs_on=RunnerLabels.ARM_MEDIUM_CPU,
+            provides=[ArtifactNames.CH_ARM_DEBUG],
+            runs_on=RunnerLabels.ARM_LARGE,
         ),
         Job.ParamSet(
             parameter=BuildTypes.ARM_ASAN_UBSAN,
-            provides=[
-                ArtifactNames.CH_ARM_ASAN_UBSAN,
-                ArtifactNames.UNITTEST_ARM_ASAN_UBSAN,
-            ],
-            runs_on=RunnerLabels.ARM_MEDIUM_CPU,
+            provides=[ArtifactNames.CH_ARM_ASAN_UBSAN],
+            runs_on=RunnerLabels.ARM_LARGE,
         ),
         Job.ParamSet(
             parameter=BuildTypes.ARM_TSAN,
-            provides=[
-                ArtifactNames.CH_ARM_TSAN,
-                ArtifactNames.UNITTEST_ARM_TSAN,
-            ],
-            runs_on=RunnerLabels.ARM_MEDIUM_CPU,
+            provides=[ArtifactNames.CH_ARM_TSAN],
+            runs_on=RunnerLabels.ARM_LARGE,
         ),
         Job.ParamSet(
             parameter=BuildTypes.ARM_MSAN,
             provides=[ArtifactNames.CH_ARM_MSAN],
-            runs_on=RunnerLabels.ARM_MEDIUM_CPU,
+            runs_on=RunnerLabels.ARM_LARGE,
         ),
         Job.ParamSet(
             parameter=BuildTypes.ARM_BINARY,
             provides=[ArtifactNames.CH_ARM_BINARY],
-            runs_on=RunnerLabels.ARM_MEDIUM_CPU,
+            runs_on=RunnerLabels.ARM_LARGE,
         ),
     )
-    # `clickhouse-examples` (the parser and storage memory profilers of the memory checks) is
-    # built by `arm_binary`, which links without ThinLTO: the ThinLTO backend of a second
-    # binary over the same 10-12k modules cost the `arm_release` build 140-220 CPU-minutes.
-    # Only the workflows that run the memory checks (PR and MasterCI, which provides their
-    # master baseline) take this list.
-    build_jobs_with_examples = [
-        job.set_command(f"{job.command} --build-examples").set_provides(
-            ArtifactNames.CLICKHOUSE_EXAMPLES
-        )
-        if f"({BuildTypes.ARM_BINARY})" in job.name
-        else job
-        for job in build_jobs
-    ]
     coverage_build_jobs = common_build_job_config.parametrize(
         Job.ParamSet(
             parameter=BuildTypes.LLVM_COVERAGE_BUILD,
             provides=[
                 ArtifactNames.CH_AMD_LLVM_COVERAGE_BUILD,
             ],
-            runs_on=RunnerLabels.AMD_MEDIUM_CPU,
+            runs_on=RunnerLabels.AMD_LARGE,
         ),
         Job.ParamSet(
             parameter=BuildTypes.PER_TEST_COVERAGE,
             provides=[
                 ArtifactNames.CH_AMD_PER_TEST_COVERAGE_BUILD,
             ],
-            runs_on=RunnerLabels.AMD_MEDIUM_CPU,
+            runs_on=RunnerLabels.AMD_LARGE,
         ),
     )
     release_build_jobs = common_build_job_config.set_post_hooks(
@@ -583,11 +495,19 @@ class JobConfigs:
             runs_on=RunnerLabels.ARM_LARGE,
         ),
     )
+    release_build_jobs_with_examples = [
+        job.set_command(f"{job.command} --build-examples").set_provides(
+            ArtifactNames.CLICKHOUSE_EXAMPLES
+        )
+        if f"({BuildTypes.ARM_RELEASE})" in job.name
+        else job
+        for job in release_build_jobs
+    ]
     cfi_build_job = common_build_job_config.parametrize(
         Job.ParamSet(
             parameter=BuildTypes.AMD_CFI,
             provides=[ArtifactNames.CH_AMD_CFI],
-            runs_on=RunnerLabels.ARM_MEDIUM_CPU,
+            runs_on=RunnerLabels.ARM_LARGE,
             timeout=4 * 3600,
         ),
     )
@@ -609,29 +529,36 @@ class JobConfigs:
             requires=[ArtifactNames.CH_AMD_CFI],
         ),
     )
-    # MasterCI only: master release builds made exactly like a PR release build
-    # (see PERFORMANCE_REFERENCE_TO_RELEASE in build_clickhouse.py). Their server
-    # binary is the reference of the PR performance comparison, their compilation
-    # fills the shared sccache that PR builds read, and the arm one gives the
-    # "Build profile diff" check its master baseline for object sizes and compile
-    # times (see _PROFILED_BUILDS in build_profile_hook.py).
-    performance_reference_build_jobs = common_build_job_config.set_post_hooks(
-        post_hooks=[
-            "python3 ./ci/jobs/scripts/job_hooks/build_profile_hook.py",
-        ],
-    ).parametrize(
-        Job.ParamSet(
-            parameter=BuildTypes.AMD_RELEASE_PERFORMANCE_REFERENCE,
-            provides=[ArtifactNames.CH_AMD_RELEASE_PERFORMANCE_REFERENCE],
-            runs_on=RunnerLabels.ARM_LARGE,
-            timeout=3 * 3600,
-        ),
-        Job.ParamSet(
-            parameter=BuildTypes.ARM_RELEASE_PERFORMANCE_REFERENCE,
-            provides=[ArtifactNames.CH_ARM_RELEASE_PERFORMANCE_REFERENCE],
-            runs_on=RunnerLabels.ARM_LARGE,
-        ),
-    )
+    # sccache-warmup builds (MasterCI only): compile amd_release / arm_release
+    # with the PR release builds' cmake flags (see PR_CACHE_WARMUP_BUILD_TYPES
+    # in build_clickhouse.py) while keeping the shared sccache read-write. This
+    # populates the cache so that read-only PR release builds get cache hits.
+    # They provide no artifacts. The build profile hook runs so that the
+    # "Build profile diff" check gets a master baseline built with the PR
+    # flags - the arm warmup's object sizes and compile traces are the only
+    # master data directly comparable to a PR build (official master builds
+    # keep debug symbols, PR builds strip them). The hook uploads only for the
+    # arm variant (see _PROFILED_BUILDS in build_profile_hook.py).
+    sccache_warmup_build_jobs = [
+        job.set_command(f"{job.command} --build-examples")
+        if f"({BuildTypes.ARM_RELEASE_PR_CACHE_WARMUP})" in job.name
+        else job
+        for job in common_build_job_config.set_post_hooks(
+            post_hooks=[
+                "python3 ./ci/jobs/scripts/job_hooks/build_profile_hook.py",
+            ],
+        ).parametrize(
+            Job.ParamSet(
+                parameter=BuildTypes.AMD_RELEASE_PR_CACHE_WARMUP,
+                runs_on=RunnerLabels.ARM_LARGE,
+                timeout=3 * 3600,
+            ),
+            Job.ParamSet(
+                parameter=BuildTypes.ARM_RELEASE_PR_CACHE_WARMUP,
+                runs_on=RunnerLabels.ARM_LARGE,
+            ),
+        )
+    ]
     extra_validation_build_jobs = common_build_job_config.set_post_hooks(
         post_hooks=[
             "python3 ./ci/jobs/scripts/job_hooks/build_master_head_hook.py",
@@ -658,7 +585,7 @@ class JobConfigs:
                 ArtifactNames.CH_AMD_DARWIN_BIN,
                 ArtifactNames.CH_AMD_DARWIN_PLAIN,
             ],
-            runs_on=RunnerLabels.AMD_MEDIUM_CPU,  # cannot crosscompile on arm
+            runs_on=RunnerLabels.AMD_LARGE,  # cannot crosscompile on arm
         ),
         Job.ParamSet(
             parameter=BuildTypes.ARM_DARWIN,
@@ -666,52 +593,57 @@ class JobConfigs:
                 ArtifactNames.CH_ARM_DARWIN_BIN,
                 ArtifactNames.CH_ARM_DARWIN_PLAIN,
             ],
-            runs_on=RunnerLabels.ARM_MEDIUM_CPU,
+            runs_on=RunnerLabels.ARM_LARGE,
         ),
         Job.ParamSet(
             parameter=BuildTypes.ARM_V80COMPAT,
             provides=[ArtifactNames.CH_ARM_V80COMPAT],
-            runs_on=RunnerLabels.ARM_MEDIUM_CPU,
+            runs_on=RunnerLabels.ARM_LARGE,
         ),
         Job.ParamSet(
             parameter=BuildTypes.AMD_FREEBSD,
             provides=[ArtifactNames.CH_AMD_FREEBSD],
-            runs_on=RunnerLabels.ARM_MEDIUM_CPU,
+            runs_on=RunnerLabels.ARM_LARGE,
         ),
         Job.ParamSet(
             parameter=BuildTypes.AMD_ILLUMOS,
             provides=[ArtifactNames.CH_AMD_ILLUMOS],
-            runs_on=RunnerLabels.AMD_MEDIUM_CPU,
+            runs_on=RunnerLabels.AMD_LARGE,
         ),
         Job.ParamSet(
             parameter=BuildTypes.PPC64LE,
             provides=[ArtifactNames.CH_PPC64LE],
-            runs_on=RunnerLabels.ARM_MEDIUM_CPU,
+            runs_on=RunnerLabels.ARM_LARGE,
         ),
         Job.ParamSet(
             parameter=BuildTypes.AMD_COMPAT,
             provides=[ArtifactNames.CH_AMD_COMPAT],
-            runs_on=RunnerLabels.ARM_MEDIUM_CPU,
+            runs_on=RunnerLabels.ARM_LARGE,
+        ),
+        Job.ParamSet(
+            parameter=BuildTypes.AMD_MUSL,
+            provides=[ArtifactNames.CH_AMD_MUSL],
+            runs_on=RunnerLabels.ARM_LARGE,
         ),
         Job.ParamSet(
             parameter=BuildTypes.RISCV64,
             provides=[ArtifactNames.CH_RISCV64],
-            runs_on=RunnerLabels.ARM_MEDIUM_CPU,
+            runs_on=RunnerLabels.ARM_LARGE,
         ),
         Job.ParamSet(
             parameter=BuildTypes.S390X,
             provides=[ArtifactNames.CH_S390X],
-            runs_on=RunnerLabels.ARM_MEDIUM_CPU,
+            runs_on=RunnerLabels.ARM_LARGE,
         ),
         Job.ParamSet(
             parameter=BuildTypes.LOONGARCH64,
             provides=[ArtifactNames.CH_LOONGARCH64],
-            runs_on=RunnerLabels.ARM_MEDIUM_CPU,
+            runs_on=RunnerLabels.ARM_LARGE,
         ),
         Job.ParamSet(
             parameter=BuildTypes.WASM64,
             provides=[ArtifactNames.CH_WASM64],
-            runs_on=RunnerLabels.ARM_MEDIUM_CPU,
+            runs_on=RunnerLabels.ARM_LARGE,
         ),
         Job.ParamSet(
             parameter=BuildTypes.ARM_FUZZERS,
@@ -722,7 +654,7 @@ class JobConfigs:
             # repair with thunks, while aarch64 addresses +-4 GiB and does thunk calls.
             # The ~94 GiB of build output also does not fit the ~135 GiB free on
             # `amd-large` (`m7i.8xlarge`).
-            runs_on=RunnerLabels.ARM_MEDIUM_CPU,
+            runs_on=RunnerLabels.ARM_LARGE,
         ),
     )
     # tests/fuzz/build.sh runs as a POST_BUILD step of the `fuzzers` target and
@@ -747,21 +679,6 @@ class JobConfigs:
             else job
         )
         for job in special_build_jobs
-    ]
-    # See `MERGE_QUEUE_SPECIAL_BUILD_TYPES`.
-    special_build_pr_jobs = [
-        job
-        for job in special_build_jobs
-        if job.parameter not in MERGE_QUEUE_SPECIAL_BUILD_TYPES
-    ]
-    # Only checks that they compile: no artifacts, since no merge queue job uses them, and no post
-    # hooks, since the merge queue has no PR number, so `build_master_head_hook.py` would publish
-    # the binaries as the master ones and `build_profile_hook.py` would record the build as a
-    # master baseline.
-    special_build_mq_jobs = [
-        job.set_post_hooks([]).set_provides([], reset=True)
-        for job in special_build_jobs
-        if job.parameter in MERGE_QUEUE_SPECIAL_BUILD_TYPES
     ]
     # The standalone WebAssembly build of the SQL parser (utils/wasm-parser). It cross-compiles to
     # `wasm32-wasip1` with a wasi-sdk toolchain, which cannot be mixed into a tree configured for
@@ -798,7 +715,7 @@ class JobConfigs:
         Job.ParamSet(
             parameter=BuildTypes.WASM_PARSER,
             provides=[ArtifactNames.CH_WASM_PARSER],
-            runs_on=RunnerLabels.ARM_MEDIUM_CPU,
+            runs_on=RunnerLabels.ARM_LARGE,
         ),
     )
     install_check_jobs = Job.Config(
@@ -969,23 +886,9 @@ class JobConfigs:
             requires=[ArtifactNames.CH_AMD_DEBUG],
         ),
     )
-    # The non-sanitizer (`amd_binary`) stateless flaky check. Runs only in the
-    # pull request workflow, alongside the sanitizer flaky checks above, so a
-    # test that is only too slow or only flaky without a sanitizer is caught in
-    # the PR. See `ci/workflows/pull_request.py`.
-    stateless_tests_flaky_amd_binary_jobs = common_ft_job_config.parametrize(
+    stateless_tests_flaky_mq_jobs = common_ft_job_config.parametrize(
         Job.ParamSet(
             parameter="amd_binary, flaky check",
-            runs_on=RunnerLabels.AMD_MEDIUM,
-            requires=[ArtifactNames.CH_AMD_BINARY],
-        ),
-    )
-    # The merge queue reruns the targeted selection (the changed tests and the tests
-    # covering the changed lines) against the merge group state, on the only build
-    # the queue makes. See `ci/workflows/merge_queue.py`.
-    stateless_tests_targeted_mq_jobs = common_ft_job_config.parametrize(
-        Job.ParamSet(
-            parameter="amd_binary, targeted",
             runs_on=RunnerLabels.AMD_MEDIUM,
             requires=[ArtifactNames.CH_AMD_BINARY],
         ),
@@ -1226,18 +1129,11 @@ class JobConfigs:
             runs_on=RunnerLabels.ARM_MEDIUM_CPU,
             requires=[ArtifactNames.CH_ARM_BINARY],
         ),
-        # The sequential tests take about 48 minutes in total, so a single job ended about 25
-        # minutes after the rest of `CORE_BLOCKING_JOB_NAMES` in `ci/workflows/pull_request.py`
-        # and delayed every job gated by it. Two hash batches take about 24 minutes each.
-        *[
-            Job.ParamSet(
-                parameter=f"arm_binary, sequential, {batch}/{total_batches}",
-                runs_on=RunnerLabels.ARM_SMALL,
-                requires=[ArtifactNames.CH_ARM_BINARY],
-            )
-            for total_batches in (2,)
-            for batch in range(1, total_batches + 1)
-        ],
+        Job.ParamSet(
+            parameter="arm_binary, sequential",
+            runs_on=RunnerLabels.ARM_SMALL,
+            requires=[ArtifactNames.CH_ARM_BINARY],
+        ),
     )
     # MasterCI-only: run the plain (non-sanitizer) full stateless suite against the
     # optimized release binary instead of the plain `binary` build that PRs use (the
@@ -1307,14 +1203,6 @@ class JobConfigs:
             for batch in range(1, total_batches + 1)
         ],
     )
-    # PRs run the azure configuration as one targeted job (the changed tests, the tests covering
-    # the changed lines and the tests that failed in the PR before) instead of the full suite:
-    # over 30 days its PR failure rate (1.55% parallel, 0.76% sequential) was the same as on
-    # master (1.79%, 0.61%), so the full run found nothing specific to the PRs, and at 85-100
-    # minutes it was the last job of a sixth of the PR runs. Master keeps the full suite.
-    functional_tests_azure_targeted_pr_jobs = targeted_variants(
-        functional_tests_jobs_azure, allow_failure=True
-    )
     # Per-arch Bugfix Validation Check (integration tests). See the rationale
     # and status-model comment above for `bugfix_validation_ft_pr_jobs`. Each
     # per-arch variant has `allow_failure=True` so a genuine `ERROR` doesn't
@@ -1349,14 +1237,14 @@ class JobConfigs:
     )
     # Builds the "before" unit_tests_dbms (merge-base + only the PR's unit-test file
     # changes) in-job, so it needs the binary-builder image and submodules. It does NOT
-    # require the PR's UNITTEST_ARM_ASAN_UBSAN artifact: the "touched tests pass on the
+    # require the PR's UNITTEST_AMD_ASAN_UBSAN artifact: the "touched tests pass on the
     # PR binary" side is delegated to the regular `Unit tests (asan_ubsan)` job (see the
-    # module docstring), so this job is not gated behind `build_arm_asan_ubsan` and
+    # module docstring), so this job is not gated behind `build_amd_asan_ubsan` and
     # builds the "before" binary in parallel with the build matrix — matching the early
     # start of the functional/integration bugfix validators.
     bugfix_validation_ut_job = Job.Config(
         name=JobNames.BUGFIX_VALIDATE_UT,
-        runs_on=RunnerLabels.ARM_LARGE,
+        runs_on=RunnerLabels.AMD_LARGE,
         command="python3 ./ci/jobs/unit_tests_bugfix_validation_job.py",
         # The job both builds and RUNS the before-binary in this container. Running
         # `unit_tests_dbms` needs `io_uring` (the `silk` fiber runtime calls
@@ -1379,6 +1267,7 @@ class JobConfigs:
                 "./cmake",
                 "./base",
                 "./programs",
+                "./rust",
             ],
             exclude_paths=test_data_submodules,
             with_git_submodules=True,
@@ -1394,30 +1283,17 @@ class JobConfigs:
     _fuzzer_command = (
         "python3 ./ci/jobs/unit_tests_job.py --gtest_filter=FunctionsStress.*"
     )
-    # The sanitizer builds define `SANITIZER` and `DEBUG_OR_SANITIZER_BUILD`, so the suites
-    # under `#if !defined(SANITIZER)` (`DateLUTImpl`, `AllocationInterceptors`) are compiled
-    # only into a plain build. `Build (arm_debug)` already builds `unit_tests_dbms`
-    # (`-DENABLE_TESTS=1`); the `arm_debug` job runs it, so these suites run in pull requests
-    # and not only in `Unit tests (amd_llvm_coverage)`, which pull requests skip without the
-    # `ci-coverage` label. The debug build still defines `DEBUG_OR_SANITIZER_BUILD`, so the
-    # cases under `#ifndef DEBUG_OR_SANITIZER_BUILD` keep running only in the coverage job.
     unittest_jobs = common_unit_test_job_config.parametrize(
         Job.ParamSet(
-            parameter="arm_debug",
-            runs_on=RunnerLabels.ARM_LARGE,
-            requires=[ArtifactNames.UNITTEST_ARM_DEBUG],
-        ),
-        Job.ParamSet(
             parameter="asan_ubsan",
-            runs_on=RunnerLabels.ARM_LARGE,
-            requires=[ArtifactNames.UNITTEST_ARM_ASAN_UBSAN],
+            runs_on=RunnerLabels.AMD_LARGE,
+            requires=[ArtifactNames.UNITTEST_AMD_ASAN_UBSAN],
         ),
         Job.ParamSet(
             parameter="tsan",
-            runs_on=RunnerLabels.ARM_LARGE,
-            requires=[ArtifactNames.UNITTEST_ARM_TSAN],
+            runs_on=RunnerLabels.AMD_LARGE,
+            requires=[ArtifactNames.UNITTEST_AMD_TSAN],
         ),
-        # aarch64 MSan reports uninitialized values in fiber code that x86-64 MSan finds clean.
         Job.ParamSet(
             parameter="msan",
             runs_on=RunnerLabels.AMD_LARGE,
@@ -1425,14 +1301,14 @@ class JobConfigs:
         ),
         Job.ParamSet(
             parameter="asan_ubsan, function_prop_fuzzer",
-            runs_on=RunnerLabels.ARM_LARGE,
-            requires=[ArtifactNames.UNITTEST_ARM_ASAN_UBSAN],
+            runs_on=RunnerLabels.AMD_LARGE,
+            requires=[ArtifactNames.UNITTEST_AMD_ASAN_UBSAN],
             command=_fuzzer_command,
         ),
         Job.ParamSet(
             parameter="tsan, function_prop_fuzzer",
-            runs_on=RunnerLabels.ARM_LARGE,
-            requires=[ArtifactNames.UNITTEST_ARM_TSAN],
+            runs_on=RunnerLabels.AMD_LARGE,
+            requires=[ArtifactNames.UNITTEST_AMD_TSAN],
             command=_fuzzer_command,
         ),
         Job.ParamSet(
@@ -1694,9 +1570,6 @@ class JobConfigs:
     # `arm_binary, parallel`/`sequential` stateless jobs already run the whole suite. The parallel
     # jobs use the same runner shape as the coverage jobs (16 vCPU, 64 GiB): with 32 vCPU and the
     # same memory, the stateful data load and the doubled test concurrency exceed the memory limits.
-    # The `ParallelReplicas` jobs use the `amd_debug` build instead: every second run they put the
-    # whole suite through the automatic parallel replicas optimization (see `functional_tests.py`),
-    # and only a debug build checks the invariants (`chassert`, abort on `LOGICAL_ERROR`) on the way.
     functional_tests_arm_binary_coverage_replacement_pr_jobs = common_ft_job_config.parametrize(
         *[
             Job.ParamSet(
@@ -1713,14 +1586,14 @@ class JobConfigs:
             requires=[ArtifactNames.CH_ARM_BINARY],
         ),
         Job.ParamSet(
-            parameter="amd_debug, ParallelReplicas, s3 storage, parallel",
-            runs_on=RunnerLabels.AMD_MEDIUM,
-            requires=[ArtifactNames.CH_AMD_DEBUG],
+            parameter="arm_binary, ParallelReplicas, s3 storage, parallel",
+            runs_on=RunnerLabels.ARM_MEDIUM,
+            requires=[ArtifactNames.CH_ARM_BINARY],
         ),
         Job.ParamSet(
-            parameter="amd_debug, ParallelReplicas, s3 storage, sequential",
-            runs_on=RunnerLabels.AMD_SMALL,
-            requires=[ArtifactNames.CH_AMD_DEBUG],
+            parameter="arm_binary, ParallelReplicas, s3 storage, sequential",
+            runs_on=RunnerLabels.ARM_SMALL,
+            requires=[ArtifactNames.CH_ARM_BINARY],
         ),
         Job.ParamSet(
             parameter="arm_binary, AsyncInsert, s3 storage, parallel",
@@ -1733,27 +1606,8 @@ class JobConfigs:
             requires=[ArtifactNames.CH_ARM_BINARY],
         ),
     )
-    # The `ParallelReplicas` configuration with `parallel_replicas_plan_based` enabled. Not a coverage
-    # replacement: no coverage job runs it, so `ci-coverage` does not skip it (`ci-llvm-coverage`
-    # skips it like every other non-coverage job).
-    functional_tests_arm_binary_plan_based_parallel_replicas_jobs = common_ft_job_config.parametrize(
-        Job.ParamSet(
-            parameter="arm_binary, ParallelReplicas, plan-based, s3 storage, parallel",
-            runs_on=RunnerLabels.ARM_MEDIUM,
-            requires=[ArtifactNames.CH_ARM_BINARY],
-        ),
-        Job.ParamSet(
-            parameter="arm_binary, ParallelReplicas, plan-based, s3 storage, sequential",
-            runs_on=RunnerLabels.ARM_SMALL,
-            requires=[ArtifactNames.CH_ARM_BINARY],
-        ),
-    )
     # The same for the full integration run: all test modules, including the ones the coverage
-    # run leaves to `excluded_from_llvm`, except the modules that skip themselves on ARM
-    # (`is_arm()`: `test_storage_hdfs`, `test_storage_kafka`, `test_ytsaurus`, ...). Those are
-    # left to the targeted amd jobs, which select them by their per-module coverage;
-    # `test_ytsaurus` gets that coverage from the per-test coverage run only, see
-    # `PER_TEST_COVERAGE_KEEP_PREFIXES` in `integration_tests_configs.py`.
+    # run leaves to `excluded_from_llvm`.
     integration_test_arm_binary_coverage_replacement_pr_jobs = (
         common_integration_test_job_config.parametrize(
             *[
@@ -1762,9 +1616,7 @@ class JobConfigs:
                     runs_on=RunnerLabels.ARM_MEDIUM,
                     requires=[ArtifactNames.CH_ARM_BINARY],
                 )
-                # With 4 batches a batch took about 93 minutes and was the last job of a third
-                # of the PR runs.
-                for total_batches in (5,)
+                for total_batches in (4,)
                 for batch in range(1, total_batches + 1)
             ],
         )
@@ -1777,15 +1629,6 @@ class JobConfigs:
     integration_test_targeted_pr_jobs = targeted_variants(
         integration_test_jobs_required + integration_test_jobs_non_required,
         allow_failure=False,
-    )
-    # The merge-queue counterpart of `integration_test_targeted_pr_jobs`, on the only
-    # build the queue makes. See `ci/workflows/merge_queue.py`.
-    integration_test_targeted_mq_jobs = common_integration_test_job_config.parametrize(
-        Job.ParamSet(
-            parameter="amd_binary, targeted",
-            runs_on=RunnerLabels.AMD_MEDIUM,
-            requires=[ArtifactNames.CH_AMD_BINARY],
-        )
     )
     # Keeper stress job config — shared by PR and nightly workflows.
     # Mode (PR vs nightly faults vs nightly no-faults) is determined inside the job
@@ -1851,26 +1694,10 @@ class JobConfigs:
                 "./ci/jobs/scripts/log_export.py",
                 "./ci/jobs/scripts/log_cluster.py",
                 "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
-                "./ci/jobs/scripts/fuzzer/",
                 # Copied into the server config by `run-fuzzer.sh`
-                "./tests/config/config.d/clusters.xml",
-                "./tests/config/config.d/core_dump.yaml",
-                "./tests/config/config.d/named_collection.xml",
-                "./tests/config/config.d/disable_s3_env_credentials.xml",
-                "./tests/config/config.d/keeper_port.xml",
-                "./tests/config/config.d/zookeeper.xml",
-                "./tests/config/config.d/macros.xml",
-                # `run-fuzzer.sh` starts the S3 emulator with it
-                "./ci/jobs/scripts/functional_tests/setup_seaweedfs.sh",
-                "./tests/config/config.d/jemalloc_enable_global_profiler.yaml",
-                "./tests/config/config.d/jemalloc_flush_profile.yaml",
-                "./tests/config/config.d/listen.xml",
-                "./tests/config/config.d/secure_ports.xml",
-                "./tests/config/config.d/ssl_certs.xml",
-                "./tests/config/config.d/test_cluster_with_incorrect_pw.xml",
-                "./tests/config/server.crt",
-                "./tests/config/server.key",
                 "./tests/config/users.d/ci_logs_sender.yaml",
+                "./ci/jobs/scripts/fuzzer/",
+                "./tests/config/config.d/core_dump.yaml",
                 "./ci/docker/fuzzer",
             ],
         ),
@@ -1917,26 +1744,10 @@ class JobConfigs:
                 "./ci/jobs/scripts/log_export.py",
                 "./ci/jobs/scripts/log_cluster.py",
                 "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
-                "./ci/jobs/scripts/fuzzer/",
                 # Copied into the server config by `run-fuzzer.sh`
-                "./tests/config/config.d/clusters.xml",
-                "./tests/config/config.d/core_dump.yaml",
-                "./tests/config/config.d/named_collection.xml",
-                "./tests/config/config.d/disable_s3_env_credentials.xml",
-                "./tests/config/config.d/keeper_port.xml",
-                "./tests/config/config.d/zookeeper.xml",
-                "./tests/config/config.d/macros.xml",
-                # `run-fuzzer.sh` starts the S3 emulator with it
-                "./ci/jobs/scripts/functional_tests/setup_seaweedfs.sh",
-                "./tests/config/config.d/jemalloc_enable_global_profiler.yaml",
-                "./tests/config/config.d/jemalloc_flush_profile.yaml",
-                "./tests/config/config.d/listen.xml",
-                "./tests/config/config.d/secure_ports.xml",
-                "./tests/config/config.d/ssl_certs.xml",
-                "./tests/config/config.d/test_cluster_with_incorrect_pw.xml",
-                "./tests/config/server.crt",
-                "./tests/config/server.key",
                 "./tests/config/users.d/ci_logs_sender.yaml",
+                "./ci/jobs/scripts/fuzzer/",
+                "./tests/config/config.d/core_dump.yaml",
                 "./ci/docker/fuzzer",
             ],
         ),
@@ -1951,54 +1762,30 @@ class JobConfigs:
             runs_on=RunnerLabels.FUNC_TESTER_AMD,
             requires=[ArtifactNames.CH_AMD_DEBUG],
         ),
+
     )
-    lacasadeldolor_jobs = Job.Config(
-        name=JobNames.LACASADELDOLOR,
+    buzz_fuzzer_jobs = Job.Config(
+        name=JobNames.BUZZHOUSE,
         runs_on=[],  # from parametrize()
-        command="python3 ./ci/jobs/lacasadeldolor_job.py",
+        command="python3 ./ci/jobs/buzzhouse_job.py",
         digest_config=Job.CacheDigestConfig(
             include_paths=[
-                "./ci/docker/integration",
-                "./ci/jobs/ast_fuzzer_job.py",
+                "./ci/docker/fuzzer",
                 "./ci/jobs/buzzhouse_job.py",
-                "./ci/jobs/lacasadeldolor_job.py",
-                "./ci/jobs/scripts/cidb_cluster.py",
-                "./ci/jobs/scripts/clickhouse_service.py",
-                "./ci/jobs/scripts/docker_in_docker.sh",
-                "./ci/jobs/scripts/integration_tests_configs.py",
+                "./ci/jobs/ast_fuzzer_job.py",
                 "./ci/jobs/scripts/log_parser.py",
                 # `run-fuzzer.sh` runs `clickhouse_proc.py logs_export_*`
                 "./ci/jobs/scripts/clickhouse_proc.py",
                 "./ci/jobs/scripts/log_export.py",
                 "./ci/jobs/scripts/log_cluster.py",
                 "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
+                # Copied into the server config by `run-fuzzer.sh`
+                "./tests/config/users.d/ci_logs_sender.yaml",
                 "./ci/jobs/scripts/fuzzer/",
-                "./ci/jobs/scripts/server_fuzzer/",
-                "./tests/casa_del_dolor/",
-                # The target of the `tests/casa_del_dolor/nats_certs.sh` symlink
-                "./tests/integration/test_storage_nats/nats_certs.sh",
-                # The whole tree, as Keeper Stress does: listing only the imported modules
-                # misses the configs `cluster.py` reads through `write_embedded_config`.
-                "./tests/integration/helpers/",
-                # The service definitions `cluster.py` starts (Keeper, MinIO and whatever else `dolor.py` enables)
-                "./tests/integration/compose/",
-                # `dolor.py` mounts the TLS material out of `tests/config` as `main_configs`, and
-                # `cluster.py` copies these two out of `CLICKHOUSE_TESTS_BASE_CONFIG_DIR`.
-                "./tests/config/",
-                "./programs/server/config.xml",
-                "./programs/server/users.xml",
+                "./tests/config/config.d/core_dump.yaml",
                 "./ci/docker/fuzzer",
             ],
         ),
-        # Same DinD containment contract as `common_integration_test_job_config`: Dolor's servers
-        # are nested containers too, so without `--cgroupns=private` and the `CI_DIND_*` budgets
-        # `docker_in_docker.sh` starts an uncontained daemon, `--memory` bounds only the harness,
-        # and a nested OOM spills onto the runner instead of being classified here.
-        run_in_docker=f"clickhouse/integration-tests-runner+root+--memory={LIMITED_MEM}+--privileged+--dns-search='.'+--security-opt seccomp=unconfined+--cap-add=SYS_PTRACE+{docker_sock_mount}+--volume=clickhouse_integration_tests_volume:/var/lib/docker+--cgroupns=private+--ulimit nofile=262144:262144{integration_dind_env}",
-        # Dolor shares `clickhouse_integration_tests_volume` with the other DinD jobs, so without
-        # this its containers, images and volumes outlive the run and the next job on the runner
-        # inherits them. Same hook the other integration-tests-runner jobs register.
-        post_hooks=["python3 ci/jobs/scripts/job_hooks/docker_volume_clean_up_hook.py"],
     ).parametrize(
         Job.ParamSet(
             parameter="amd_debug",
@@ -2021,45 +1808,17 @@ class JobConfigs:
             requires=[ArtifactNames.CH_AMD_MSAN],
         ),
     )
-    # Separate instrumented run: no timings, comparison, sampling, or PR gate.
-    # Use the same per-test LLVM build as the stateless and integration collectors.
-    performance_coverage_jobs = Job.Config(
-        name=JobNames.PERFORMANCE,
-        runs_on=RunnerLabels.FUNC_TESTER_AMD,
-        command='python3 ./ci/jobs/performance_coverage.py --test-options "{PARAMETER}"',
-        run_in_docker="clickhouse/performance-comparison+--security-opt seccomp=unconfined",
-        # Whole instrumented XML files can exceed six hours even when placed
-        # alone. Allow the balanced collector twelve hours, including export.
-        timeout=12 * 3600,
-        digest_config=None,
-    ).parametrize(
-        *[
-            Job.ParamSet(
-                parameter=f"{BuildTypes.PER_TEST_COVERAGE}, per_query_coverage, {batch}/16",
-                requires=[ArtifactNames.CH_AMD_PER_TEST_COVERAGE_BUILD],
-            )
-            for batch in range(1, 17)
-        ],
-    )
-
-    performance_comparison_with_master_head_job = Job.Config(
+    performance_comparison_with_master_head_jobs = Job.Config(
         name=JobNames.PERFORMANCE,
         runs_on=["#from param"],
         command='python3 ./ci/jobs/performance_tests.py --test-options "{PARAMETER}"',
         # TODO: switch to stateless-test image
-        # Default seccomp blocks `io_uring` (`io_uring.xml`)
-        run_in_docker="clickhouse/performance-comparison+--security-opt seccomp=unconfined",
+        run_in_docker="clickhouse/performance-comparison",
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./tests/performance/",
                 "./ci/jobs/scripts/perf/",
                 "./ci/jobs/performance_tests.py",
-                "./ci/jobs/scripts/performance_selection.py",
-                "./ci/jobs/scripts/performance_fixed_tests.json",
-                "./ci/jobs/scripts/coverage_selection.py",
-                "./ci/jobs/scripts/test_selection_config.py",
-                "./ci/jobs/scripts/find_tests.py",
-                "./ci/jobs/performance_coverage_sharding.py",
                 "./ci/jobs/scripts/seaweedfs_service.py",
                 "./ci/jobs/scripts/dataset_download.py",
                 "./ci/docker/performance-comparison",
@@ -2074,8 +1833,7 @@ class JobConfigs:
         ),
         timeout=2 * 3600,
         result_name_for_cidb="Tests",
-    )
-    performance_comparison_with_master_head_jobs = performance_comparison_with_master_head_job.parametrize(
+    ).parametrize(
         *[
             Job.ParamSet(
                 parameter=f"amd_release, master_head, {batch}/{total_batches}",
@@ -2095,72 +1853,12 @@ class JobConfigs:
             for batch in range(1, total_batches + 1)
         ],
     )
-    # One family per architecture: six selected-test shards, or eight full-suite shards.
-    # pr-performance requests the full suite on ARM; ci-force-all does so on both architectures.
-    performance_comparison_pr_job = performance_comparison_with_master_head_job.copy()
-    performance_comparison_pr_job.enable_gh_read_token = True
-    performance_comparison_pr_jobs = performance_comparison_pr_job.parametrize(
-        *[
-            Job.ParamSet(
-                parameter=f"{arch}_release, master_head, {batch}/{total_batches}",
-                runs_on=runner,
-                requires=[artifact],
-            )
-            for arch, runner, artifact in (
-                ("amd", RunnerLabels.FUNC_TESTER_AMD, ArtifactNames.CH_AMD_RELEASE),
-                ("arm", RunnerLabels.FUNC_TESTER_ARM, ArtifactNames.CH_ARM_RELEASE),
-            )
-            for total_batches in (6, 8)
-            for batch in range(1, total_batches + 1)
-        ]
-    )
-    # The Iceberg configuration: the MergeTree tables of the tests are created as
-    # Iceberg tables (`perf.py --table-engine`). In pull requests only when the
-    # Iceberg code changes, see `filter_job.py`.
-    performance_comparison_iceberg_jobs = Job.Config(
-        name=JobNames.PERFORMANCE,
-        runs_on=RunnerLabels.FUNC_TESTER_ARM,
-        command='python3 ./ci/jobs/performance_tests.py --test-options "{PARAMETER}"',
-        # Default seccomp blocks `io_uring` (`io_uring.xml`)
-        run_in_docker="clickhouse/performance-comparison+--security-opt seccomp=unconfined",
-        digest_config=Job.CacheDigestConfig(
-            include_paths=[
-                "./tests/performance/",
-                "./ci/jobs/scripts/perf/",
-                "./ci/jobs/performance_tests.py",
-                "./ci/jobs/scripts/seaweedfs_service.py",
-                "./ci/jobs/scripts/dataset_download.py",
-                "./ci/docker/performance-comparison",
-                "./ci/jobs/scripts/log_export.py",
-                "./ci/jobs/scripts/log_cluster.py",
-                "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
-                "./tests/config/users.d/ci_logs_sender.yaml",
-                "./ci/jobs/scripts/functional_tests/setup_seaweedfs.sh",
-            ],
-        ),
-        timeout=2 * 3600,
-        result_name_for_cidb="Tests",
-        # Not a gate until the noise of this configuration is known.
-        allow_failure=True,
-    ).parametrize(
-        *[
-            Job.ParamSet(
-                parameter=f"arm_release, master_head, {table_engine}, {batch}/{total_batches}",
-                requires=[ArtifactNames.CH_ARM_RELEASE],
-            )
-            for table_engine in ("iceberg_local", "iceberg_s3")
-            # 270 tests: 2 batches of 135 took 103-121 min of the 2 h timeout.
-            for total_batches in (3,)
-            for batch in range(1, total_batches + 1)
-        ],
-    )
     performance_comparison_with_release_base_jobs = Job.Config(
         name=JobNames.PERFORMANCE,
         runs_on=["#from param"],
         command='python3 ./ci/jobs/performance_tests.py --test-options "{PARAMETER}"',
         # TODO: switch to stateless-test image
-        # Default seccomp blocks `io_uring` (`io_uring.xml`)
-        run_in_docker="clickhouse/performance-comparison+--security-opt seccomp=unconfined",
+        run_in_docker="clickhouse/performance-comparison",
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./tests/performance/",
@@ -2225,37 +1923,6 @@ class JobConfigs:
             requires=[ArtifactNames.CH_ARM_RELEASE],
         ),
     )
-    # No `requires`: the wrapper downloads both binaries from S3.
-    nightly_extended_performance_jobs = Job.Config(
-        name=JobNames.PERFORMANCE,
-        runs_on=RunnerLabels.ARM_MEDIUM_STORAGE,
-        command='python3 ./ci/jobs/nightly_extended_performance.py --test-options "{PARAMETER}"',
-        # Default seccomp blocks `io_uring` (`io_uring.xml`)
-        run_in_docker="clickhouse/performance-comparison+--security-opt seccomp=unconfined",
-        timeout=16 * 3600,
-        result_name_for_cidb="Tests",
-    ).parametrize(
-        *[
-            Job.ParamSet(parameter=f"arm_release, master_head, nightly, {job}")
-            for job in NIGHTLY_PERF_BATCH_JOBS + sorted(set(NIGHTLY_PERF_PLACEMENT.values()) - {*NIGHTLY_PERF_BATCH_JOBS, "skip"})
-        ]
-    )
-    # The Iceberg configuration of `performance_comparison_iceberg_jobs` in `NightlyExtendedPerformance`, every query of every test.
-    nightly_iceberg_performance_jobs = Job.Config(
-        name=JobNames.PERFORMANCE,
-        runs_on=RunnerLabels.ARM_MEDIUM_STORAGE,
-        command='python3 ./ci/jobs/nightly_extended_performance.py --test-options "{PARAMETER}"',
-        run_in_docker="clickhouse/performance-comparison+--security-opt seccomp=unconfined",
-        timeout=16 * 3600,
-        result_name_for_cidb="Tests",
-    ).parametrize(
-        *[
-            Job.ParamSet(parameter=f"arm_release, master_head, nightly, {table_engine}, {batch}/{total_batches}")
-            for table_engine in ("iceberg_local", "iceberg_s3")
-            for total_batches in (2,)
-            for batch in range(1, total_batches + 1)
-        ]
-    )
     docs_job_mintlify = Job.Config(
         name=JobNames.DOCS_MINTLIFY,
         runs_on=RunnerLabels.FUNC_TESTER_ARM,
@@ -2293,7 +1960,6 @@ class JobConfigs:
             include_paths=[
                 "./ci/jobs/docker_server.py",
                 "./ci/jobs/scripts/docker_server",
-                "./ci/jobs/scripts/buildx.py",
                 "./docker/server",
                 "./docker/keeper",
             ],
@@ -2311,7 +1977,6 @@ class JobConfigs:
             include_paths=[
                 "./ci/jobs/docker_server.py",
                 "./ci/jobs/scripts/docker_server",
-                "./ci/jobs/scripts/buildx.py",
                 "./docker/server",
                 "./docker/keeper",
             ],
@@ -2379,31 +2044,6 @@ class JobConfigs:
             runs_on=RunnerLabels.FUNC_TESTER_ARM,
             requires=[ArtifactNames.CH_ARM_ASAN_UBSAN],
         ),
-    )
-    # The data lake foreign-writer fuzzer (`tests/datalake_fuzzer`) on the integration test
-    # harness: Spark, PyIceberg, delta-rs and ClickHouse write Iceberg, Delta, Hudi and Paimon
-    # tables, and ClickHouse must read them back exactly as the writer does. Same runner image
-    # and docker-in-docker setup as the integration tests; random seeds every run.
-    datalake_fuzzer_jobs = (
-        common_integration_test_job_config.set_name(JobNames.DATALAKE_FUZZER)
-        .set_command("python3 ./ci/jobs/datalake_fuzzer_job.py")
-        # Not cacheable: every run draws new seeds, so a green run says nothing about the next.
-        .set_digest_config(None)
-        .set_post_hooks(["python3 ci/jobs/scripts/job_hooks/docker_volume_clean_up_hook.py"])
-        # 8 writers x 20 min (see NIGHTLY_BUDGET in the job script), shrinking and cluster start.
-        .set_timeout(3600 * 4)
-        .parametrize(
-            Job.ParamSet(
-                parameter="arm_release",
-                runs_on=RunnerLabels.ARM_MEDIUM,
-                requires=[ArtifactNames.CH_ARM_RELEASE],
-            ),
-            Job.ParamSet(
-                parameter="arm_asan_ubsan",
-                runs_on=RunnerLabels.ARM_MEDIUM,
-                requires=[ArtifactNames.CH_ARM_ASAN_UBSAN],
-            ),
-        )
     )
     sqltest_master_job = Job.Config(
         name=JobNames.SQL_TEST,
@@ -2628,12 +2268,12 @@ class JobConfigs:
     ).parametrize(
         Job.ParamSet(
             parameter="amd64",
-            runs_on=RunnerLabels.AMD_MEDIUM_CPU,
+            runs_on=RunnerLabels.AMD_LARGE,
             provides=[ArtifactNames.TOOLCHAIN_PGO_BOLT_AMD],
         ),
         Job.ParamSet(
             parameter="aarch64",
-            runs_on=RunnerLabels.ARM_MEDIUM_CPU,
+            runs_on=RunnerLabels.ARM_LARGE,
             provides=[ArtifactNames.TOOLCHAIN_PGO_BOLT_ARM],
         ),
     )
@@ -2696,7 +2336,6 @@ class JobConfigs:
                 "./ci/jobs/scripts/coverage_ignore_paths.sh",
                 "./ci/jobs/scripts/print_uncovered_code.py",
                 "./ci/jobs/scripts/dedup_lcov_instantiations.py",
-                "./ci/jobs/scripts/filter_coverage_lines.py",
                 "./ci/jobs/scripts/job_hooks/llvm_coverage_hook.py",
             ],
         ),

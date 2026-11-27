@@ -1,5 +1,4 @@
 #include <Formats/SchemaInferenceUtils.h>
-#include <Formats/FormatSettings.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
@@ -26,8 +25,6 @@
 #include <Common/checkStackSize.h>
 #include <Common/SipHash.h>
 #include <Core/TypeId.h>
-
-#include <Poco/String.h>
 
 namespace DB
 {
@@ -187,7 +184,7 @@ namespace
             /// Store path to this node for better exception message in case of ambiguous paths.
             String path;
 
-            [[nodiscard]] DataTypePtr getType(bool use_string_type_for_ambiguous_paths) const
+            DataTypePtr getType(bool use_string_type_for_ambiguous_paths) const
             {
                 if (nodes.empty())
                     return leaf_type;
@@ -639,9 +636,8 @@ namespace
         auto transform_func = [&](DataTypePtr & type1, DataTypePtr & type2){ transformInferredJSONTypesIfNeeded(type1, type2, settings, json_info); };
         for (auto & type : data_types)
         {
-            const auto * json_type = typeid_cast<const DataTypeJSONPaths *>(type.get());
-            if (json_type && !merged_type->merge(*json_type, transform_func))
-                return;
+            if (const auto * json_type = typeid_cast<const DataTypeJSONPaths *>(type.get()))
+                merged_type->merge(*json_type, transform_func);
         }
 
         for (auto & type : data_types)
@@ -855,17 +851,17 @@ namespace
         }
     }
 
-    bool tryInferDateTime64(std::string_view field, DateTime64 & date_time, const FormatSettings & settings, const DateLUTImpl & time_zone = DateLUT::instance(), const DateLUTImpl & utc_time_zone = DateLUT::instance("UTC"), UInt32 scale = 9)
+    bool tryInferDateTime64(std::string_view field, DateTime64 & date_time, const FormatSettings & settings, const DateLUTImpl & time_zone = DateLUT::instance(), const DateLUTImpl & utc_time_zone = DateLUT::instance("UTC"))
     {
         ReadBufferFromString buf(field);
         switch (settings.date_time_input_format)
         {
             case FormatSettings::DateTimeInputFormat::Basic:
-                return tryReadDateTime64Text(date_time, scale, buf,time_zone, /*allowed_date_delimiters=*/"-/:", /*allowed_time_delimiters=*/":", /*saturate_on_overflow=*/false) && buf.eof();
+                return tryReadDateTime64Text(date_time, 9, buf,time_zone, /*allowed_date_delimiters=*/"-/:", /*allowed_time_delimiters=*/":", /*saturate_on_overflow=*/false) && buf.eof();
             case FormatSettings::DateTimeInputFormat::BestEffort:
-                return tryParseDateTime64BestEffortStrict(date_time, scale, buf,time_zone, utc_time_zone, /*allowed_date_delimiters=*/"-/:") && buf.eof();
+                return tryParseDateTime64BestEffortStrict(date_time, 9, buf,time_zone, utc_time_zone, /*allowed_date_delimiters=*/"-/:") && buf.eof();
             case FormatSettings::DateTimeInputFormat::BestEffortUS:
-                return tryParseDateTime64BestEffortUSStrict(date_time, scale, buf,time_zone, utc_time_zone, /*allowed_date_delimiters=*/"-/:") && buf.eof();
+                return tryParseDateTime64BestEffortUSStrict(date_time, 9, buf,time_zone, utc_time_zone, /*allowed_date_delimiters=*/"-/:") && buf.eof();
         }
     }
 
@@ -985,21 +981,18 @@ namespace
         skipWhitespaceIfAny(buf);
 
         DataTypes nested_types;
-        size_t num_elements = 0;
+        bool first = true;
         bool have_invalid_nested_type = false;
         while (!buf.eof() && *buf.position() != ')')
         {
-            if (num_elements)
+            if (!first)
             {
                 if (!checkChar(',', buf))
                     return nullptr;
                 skipWhitespaceIfAny(buf);
-
-                /// A one-element tuple can be written with a trailing comma: (1,).
-                if (num_elements == 1 && !buf.eof() && *buf.position() == ')')
-                    break;
             }
-            ++num_elements;
+            else
+                first = false;
 
             auto nested_type = tryInferDataTypeForSingleFieldImpl<false>(buf, settings, json_info, depth + 1);
             if (nested_type)
@@ -1761,32 +1754,11 @@ bool tryInferDateTimeFromString(std::string_view field, time_t & date_time, cons
     return tryInferDateTime(field, date_time, settings, time_zone, utc_time_zone);
 }
 
-bool tryInferDateTime64FromString(std::string_view field, DateTime64 & date_time, const FormatSettings & settings, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone, UInt32 scale)
+bool tryInferDateTime64FromString(std::string_view field, DateTime64 & date_time, const FormatSettings & settings, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone)
 {
     if (fastCheckForInvalidDateTimeOrDateTime64(field))
         return false;
-    return tryInferDateTime64(field, date_time, settings, time_zone, utc_time_zone, scale);
-}
-
-bool tryInferDateTimeOrDateTime64FromString(std::string_view field, const FormatSettings & settings, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone, bool & is_datetime64, time_t & date_time, DateTime64 & date_time64)
-{
-    /// Run the invalid-datetime fast check once, then try DateTime and DateTime64 in turn.
-    if (fastCheckForInvalidDateTimeOrDateTime64(field))
-        return false;
-
-    if (!settings.try_infer_datetimes_only_datetime64 && tryInferDateTime(field, date_time, settings, time_zone, utc_time_zone))
-    {
-        is_datetime64 = false;
-        return true;
-    }
-
-    if (tryInferDateTime64(field, date_time64, settings, time_zone, utc_time_zone))
-    {
-        is_datetime64 = true;
-        return true;
-    }
-
-    return false;
+    return tryInferDateTime64(field, date_time, settings, time_zone, utc_time_zone);
 }
 
 DataTypePtr tryInferDataTypeForSingleField(ReadBuffer & buf, const FormatSettings & settings)
@@ -1923,14 +1895,6 @@ NamesAndTypesList getNamesAndRecursivelyNullableTypes(const Block & header, cons
     for (auto & [name, type] : header.getNamesAndTypesList())
         result.emplace_back(name, makeNullableRecursively(type, settings));
     return result;
-}
-
-String getColumnMatchingKeyForSchemaInference(std::string_view name, const FormatSettings & settings)
-{
-    String key(name);
-    if (settings.input_format_column_matching_case_sensitivity == FormatSettings::InputFormatColumnMatchingCaseSensitivity::IGNORE_CASE)
-        Poco::toLowerInPlace(key);
-    return key;
 }
 
 bool checkIfTypeIsComplete(const DataTypePtr & type)

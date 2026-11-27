@@ -72,4 +72,16 @@ void SettingFieldASTFunction::parseFromString(const String & str)
     *this = str;
 }
 
+void SettingFieldASTFunction::writeBinary(WriteBuffer & out) const
+{
+    writeStringBinary(toString(), out);
+}
+
+void SettingFieldASTFunction::readBinary(ReadBuffer & in)
+{
+    String str;
+    readStringBinary(str, in);
+    *this = str;
+}
+
 }

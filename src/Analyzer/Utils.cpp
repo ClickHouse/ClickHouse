@@ -1,5 +1,4 @@
 #include <Analyzer/Utils.h>
-#include <Formats/FormatSettings.h>
 
 #include <Core/Settings.h>
 
@@ -14,9 +13,7 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
 
 #include <IO/WriteHelpers.h>
-#include <IO/ReadBufferFromMemory.h>
 
-#include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -29,6 +26,7 @@
 #include <DataTypes/DataTypeQBit.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
 #include <DataTypes/TypeTree.h>
+#include <DataTypes/getLeastSupertype.h>
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnMap.h>
@@ -47,7 +45,6 @@
 #include <base/unit.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
-#include <WindowFunctions/WindowFunctionFactory.h>
 
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
@@ -55,8 +52,6 @@
 #include <Storages/IStorage.h>
 
 #include <Interpreters/Context.h>
-#include <Interpreters/DatabaseCatalog.h>
-#include <TableFunctions/ITableFunction.h>
 #include <Interpreters/castColumn.h>
 
 #include <Analyzer/ArrayJoinNode.h>
@@ -73,6 +68,8 @@
 #include <Analyzer/UnionNode.h>
 
 #include <Analyzer/Resolve/IdentifierResolveScope.h>
+
+#include <Poco/String.h>
 
 #include <ranges>
 
@@ -566,17 +563,11 @@ static ASTPtr convertIntoTableExpressionAST(
 
         const auto & sample_size_ratio = table_expression_modifiers->getSampleSizeRatio();
         if (sample_size_ratio.has_value())
-        {
             result_table_expression->sample_size = make_intrusive<ASTSampleRatio>(*sample_size_ratio);
-            result_table_expression->children.push_back(result_table_expression->sample_size);
-        }
 
         const auto & sample_offset_ratio = table_expression_modifiers->getSampleOffsetRatio();
         if (sample_offset_ratio.has_value())
-        {
             result_table_expression->sample_offset = make_intrusive<ASTSampleRatio>(*sample_offset_ratio);
-            result_table_expression->children.push_back(result_table_expression->sample_offset);
-        }
 
         const auto & stream_settings = table_expression_modifiers->getStreamSettings();
         if (stream_settings.has_value())
@@ -944,7 +935,7 @@ public:
         has_function = function_node->getFunctionName() == function_name;
     }
 
-    [[nodiscard]] bool needChildVisit(const QueryTreeNodePtr &, const QueryTreeNodePtr & child_node) const
+    bool needChildVisit(const QueryTreeNodePtr &, const QueryTreeNodePtr & child_node) const
     {
         if (has_function)
             return false;
@@ -953,7 +944,7 @@ public:
         return !(child_node_type == QueryTreeNodeType::QUERY || child_node_type == QueryTreeNodeType::UNION);
     }
 
-    [[nodiscard]] bool hasFunction() const
+    bool hasFunction() const
     {
         return has_function;
     }
@@ -970,7 +961,7 @@ inline DataTypes getArgumentNodeTypes(const FunctionNode & function_node)
         | std::ranges::to<DataTypes>();
 }
 
-inline Array getParameterValues(const FunctionNode & function_node)
+inline AggregateFunctionPtr resolveAggregateFunctionImpl(FunctionNode & function_node, const String & function_name, AggregateFunctionStateVariant state_variant)
 {
     Array parameters;
     for (const auto & param : function_node.getParameters())
@@ -979,27 +970,9 @@ inline Array getParameterValues(const FunctionNode & function_node)
         parameters.push_back(constant->getValue());
     }
 
-    return parameters;
-}
-
-inline AggregateFunctionPtr resolveAggregateFunctionImpl(FunctionNode & function_node, const String & function_name, AggregateFunctionStateVariant state_variant)
-{
     AggregateFunctionProperties properties;
     auto action = NullsAction::EMPTY;
-    return AggregateFunctionFactory::instance().get(function_name, action, getArgumentNodeTypes(function_node), getParameterValues(function_node), properties, state_variant);
-}
-
-inline GeneralWindowFunctionPtr resolveWindowFunctionImpl(FunctionNode & function_node, const String & function_name, const ContextPtr & context)
-{
-    const auto & window_function_factory = WindowFunctionFactory::instance();
-
-    auto & arguments = function_node.getArguments().getNodes();
-    auto argument_types = window_function_factory.bindArgumentTypes(function_name, getArgumentNodeTypes(function_node));
-    for (size_t i = 0; i < arguments.size(); ++i)
-        if (!arguments[i]->getResultType()->equals(*argument_types[i]))
-            arguments[i] = createCastFunction(arguments[i], argument_types[i], context);
-
-    return window_function_factory.get(function_name, NullsAction::EMPTY, argument_types, getParameterValues(function_node));
+    return AggregateFunctionFactory::instance().get(function_name, action, getArgumentNodeTypes(function_node), parameters, properties, state_variant);
 }
 
 inline AggregateFunctionPtr resolveAggregateFunction(FunctionNode & function_node, const String & function_name)
@@ -1007,14 +980,9 @@ inline AggregateFunctionPtr resolveAggregateFunction(FunctionNode & function_nod
     return resolveAggregateFunctionImpl(function_node, function_name, AggregateFunctionStateVariant::Aggregation);
 }
 
-inline AggregateFunctionPtr resolveWindowAggregateFunction(FunctionNode & function_node, const String & function_name)
+inline AggregateFunctionPtr resolveWindowFunction(FunctionNode & function_node, const String & function_name)
 {
     return resolveAggregateFunctionImpl(function_node, function_name, AggregateFunctionStateVariant::Window);
-}
-
-inline GeneralWindowFunctionPtr resolveWindowFunction(FunctionNode & function_node, const String & function_name, const ContextPtr & context)
-{
-    return resolveWindowFunctionImpl(function_node, function_name, context);
 }
 
 }
@@ -1083,7 +1051,7 @@ void rerunFunctionResolve(FunctionNode * function_node, ContextPtr context)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to rerun resolve of unresolved function '{}'", function_node->getFunctionName());
 
     const auto & name = function_node->getFunctionName();
-    if (function_node->isOrdinaryCall())
+    if (function_node->isOrdinaryFunction())
     {
         // Special case, don't need to be resolved. It must be processed by GroupingFunctionsResolvePass.
         if (name == "grouping")
@@ -1098,19 +1066,21 @@ void rerunFunctionResolve(FunctionNode * function_node, ContextPtr context)
         auto function = FunctionFactory::instance().get(name, context);
         function_node->resolveAsFunction(function->build(function_node->getArgumentColumns()));
     }
-    else if (function_node->getFunctionKind() == FunctionKind::AGGREGATE)
+    else if (function_node->isAggregateFunction())
     {
         if (name == "nothing" || name == "nothingUInt64" || name == "nothingNull")
             return;
-
-        if (function_node->hasWindow())
-            function_node->resolveAsAggregateFunction(resolveWindowAggregateFunction(*function_node, name));
-        else
-            function_node->resolveAsAggregateFunction(resolveAggregateFunction(*function_node, function_node->getFunctionName()));
+        function_node->resolveAsAggregateFunction(resolveAggregateFunction(*function_node, function_node->getFunctionName()));
     }
-    else if (function_node->getFunctionKind() == FunctionKind::WINDOW)
+    else if (function_node->isWindowFunction())
     {
-        function_node->resolveAsWindowFunction(resolveWindowFunction(*function_node, name, context));
+        auto & arguments = function_node->getArguments().getNodes();
+        auto argument_types = bindWindowFunctionArgumentTypes(name, getArgumentNodeTypes(*function_node));
+        for (size_t i = 0; i < arguments.size(); ++i)
+            if (!arguments[i]->getResultType()->equals(*argument_types[i]))
+                arguments[i] = createCastFunction(arguments[i], argument_types[i], context);
+
+        function_node->resolveAsWindowFunction(resolveWindowFunction(*function_node, name));
     }
 }
 
@@ -1247,11 +1217,26 @@ void resolveOrdinaryFunctionNodeByName(FunctionNode & function_node, const Strin
 
 void resolveAggregateFunctionNodeByName(FunctionNode & function_node, const String & function_name)
 {
-    /// A node with a window definition takes the window variant of the aggregate function.
+    /// A node that keeps its window definition must stay a window function: one that reports both
+    /// aggregate and window is collected by both the aggregation and the window analysis.
     if (function_node.hasWindow())
-        function_node.resolveAsAggregateFunction(resolveWindowAggregateFunction(function_node, function_name));
+        function_node.resolveAsWindowFunction(resolveWindowFunction(function_node, function_name));
     else
         function_node.resolveAsAggregateFunction(resolveAggregateFunction(function_node, function_name));
+}
+
+/// TODO(Michicosun): Move this to the window function factory.
+DataTypes bindWindowFunctionArgumentTypes(const String & function_name, DataTypes argument_types)
+{
+    const auto function_name_lowercase = Poco::toLower(function_name);
+
+    /// For lag/lead functions the value and the default are brought to their common type, like PostgreSQL's anycompatible.
+    const bool is_lag_or_lead = function_name_lowercase == "lag" || function_name_lowercase == "laginframe"
+                             || function_name_lowercase == "lead" || function_name_lowercase == "leadinframe";
+    if (is_lag_or_lead && argument_types.size() == 3)
+        argument_types[0] = argument_types[2] = getLeastSupertype(DataTypes{argument_types[0], argument_types[2]});
+
+    return argument_types;
 }
 
 std::pair<TableExpressionNodePtr, bool> getExpressionSource(const QueryTreeNodePtr & node)
@@ -1295,7 +1280,7 @@ namespace
 class CollectPrewhereTableExpressionVisitor : public ConstInDepthQueryTreeVisitor<CollectPrewhereTableExpressionVisitor>
 {
 public:
-    [[nodiscard]] const TableExpressionNodePtr & getTableExpression() const
+    const TableExpressionNodePtr & getTableExpression() const
     {
         return table_expression;
     }
@@ -1795,33 +1780,6 @@ String decimalFieldToText(const Field & field)
     return wb.str();
 }
 
-/// `String -> Decimal` rejects more digits than the precision of the type, while the type holds every value of
-/// its native integer, so a value beyond the precision is sent as that integer.
-template <typename T>
-ASTPtr makeDecimalLiteralASTImpl(const Field & field, const IDataType & type)
-{
-    using NativeType = typename T::NativeType;
-    const NativeType raw = field.safeGet<DecimalField<T>>().getValue().value;
-    const NativeType bound = DecimalUtils::scaleMultiplier<NativeType>(getDecimalPrecision(type));
-    if (raw > -bound && raw < bound)
-        return makeASTFunction("_CAST", make_intrusive<ASTLiteral>(decimalFieldToText(field)), make_intrusive<ASTLiteral>(type.getName()));
-
-    auto native = makeASTFunction("_CAST", make_intrusive<ASTLiteral>(toString(raw)), make_intrusive<ASTLiteral>(String(TypeName<NativeType>)));
-    return makeASTFunction("reinterpret", std::move(native), make_intrusive<ASTLiteral>(type.getName()));
-}
-
-ASTPtr makeDecimalLiteralAST(const Field & field, const IDataType & type)
-{
-    switch (field.getType())
-    {
-        case Field::Types::Decimal32: return makeDecimalLiteralASTImpl<Decimal32>(field, type);
-        case Field::Types::Decimal64: return makeDecimalLiteralASTImpl<Decimal64>(field, type);
-        case Field::Types::Decimal128: return makeDecimalLiteralASTImpl<Decimal128>(field, type);
-        case Field::Types::Decimal256: return makeDecimalLiteralASTImpl<Decimal256>(field, type);
-        default: throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected a decimal field");
-    }
-}
-
 ASTPtr makeASTFunctionFromList(std::string_view name, ASTs children)
 {
     auto function = make_intrusive<ASTFunction>();
@@ -1891,7 +1849,9 @@ ASTPtr columnConstantToExactLiteralASTImpl(const ColumnPtr & column, size_t row,
         case TypeIndex::Decimal128:
         case TypeIndex::Decimal256:
             /// Reconstruct with the value's exact decimal type so it stays a valid Variant member.
-            return makeDecimalLiteralAST((*column)[row], *type);
+            return makeASTFunction(
+                "_CAST", make_intrusive<ASTLiteral>(decimalFieldToText((*column)[row])),
+                make_intrusive<ASTLiteral>(type->getName()));
         case TypeIndex::QBit:
         {
             /// A QBit `Field` is its tuple of bit planes, which does not cast back to QBit. The bit patterns of its elements do,
@@ -2130,15 +2090,6 @@ bool verifyMaterializedCTESubqueryMatchesStorage(
     return true;
 }
 
-bool isInsertedDataOfTableFunction(const StoragePtr & storage, const StorageID & storage_id, const ContextPtr & context)
-{
-    auto view_source = context->getViewSource();
-    return view_source && storage == view_source && !context->isViewInnerQuery()
-        && storage_id.database_name == ITableFunction::getDatabaseName()
-        && !DatabaseCatalog::instance().isDatabaseExist(storage_id.database_name);
-}
-
-
 namespace
 {
 
@@ -2256,23 +2207,6 @@ TableOccurrences collectTableOccurrences(const QueryTreeNodePtr & tree)
 
     std::erase_if(result.identity_by_ast, [&](const auto & table) { return counts.at(table.second) != 1; });
     return result;
-}
-
-void removeAliasesRecursive(QueryTreeNodePtr & node)
-{
-    if (!node)
-        return;
-
-    node->removeAlias();
-
-    auto node_type = node->getNodeType();
-    if (node_type == QueryTreeNodeType::QUERY
-        || node_type == QueryTreeNodeType::UNION
-        || node_type == QueryTreeNodeType::LAMBDA)
-        return;
-
-    for (auto & child : node->getChildren())
-        removeAliasesRecursive(child);
 }
 
 }

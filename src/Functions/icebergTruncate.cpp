@@ -1,16 +1,12 @@
 #include <Functions/FunctionFactory.h>
 #include <Columns/ColumnConst.h>
-#include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnString.h>
 #include <Columns/IColumn.h>
-#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/castColumn.h>
-#include <base/arithmeticOverflow.h>
 
 namespace DB
 {
@@ -21,45 +17,10 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
-    extern const int DECIMAL_OVERFLOW;
 }
 
 namespace
 {
-
-/// `v - floormod(v, width)` on the unscaled value `v`, the scale is kept.
-template <typename T>
-ColumnPtr truncateDecimal(const ColumnPtr & column, Int64 width)
-{
-    using NativeType = typename T::NativeType;
-    /// `Int64` for `Decimal32`, so that a width above the `Int32` range is not narrowed.
-    using CalcType = std::conditional_t<std::is_same_v<T, Decimal32>, Int64, NativeType>;
-
-    const auto full_column = column->convertToFullColumnIfConst();
-    const auto * src = checkAndGetColumn<ColumnDecimal<T>>(full_column.get());
-    if (!src)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected decimal data type");
-
-    const auto & src_data = src->getData();
-    auto result = ColumnDecimal<T>::create(src_data.size(), src->getScale());
-    auto & result_data = result->getData();
-    const CalcType w = width;
-    for (size_t i = 0; i < src_data.size(); ++i)
-    {
-        const CalcType v = src_data[i].value;
-        CalcType r = v % w;
-        if (r < 0)
-            r += w;
-        CalcType truncated;
-        bool overflow = common::subOverflow(v, r, truncated);
-        if constexpr (std::is_same_v<T, Decimal32>)
-            overflow = overflow || truncated < std::numeric_limits<Int32>::min();
-        if (overflow)
-            throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Decimal math overflow");
-        result_data[i] = static_cast<NativeType>(truncated);
-    }
-    return result;
-}
 
 /// This function specification https://iceberg.apache.org/spec/#truncate-transform-details
 class FunctionIcebergTruncate final : public IFunction
@@ -77,41 +38,24 @@ public:
         return std::make_shared<FunctionIcebergTruncate>(context_);
     }
 
-    [[nodiscard]] String getName() const override
+    String getName() const override
     {
         return name;
     }
 
-    [[nodiscard]] bool isVariadic() const override
+    bool isVariadic() const override
     {
         return false;
     }
 
-    [[nodiscard]] size_t getNumberOfArguments() const override
+    size_t getNumberOfArguments() const override
     {
         return 2;
     }
 
-    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
 
-    /// Documentation-only — implements the Iceberg `truncate(W, v)` transform.
-    /// For string-like inputs the result is `String`; integers widen via internal
-    /// `plus`/`minus` calls (e.g. `UInt32 -> Int64`) and `Decimal(P, S)` becomes
-    /// `Decimal(max P, S)`, which isn't expressible in the DSL.
-    [[nodiscard]] String getSignatureString() const override
-    {
-        return "(const UInt, StringOrFixedString | NativeInteger | Decimal) -> Any";
-    }
-
-    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
-    {
-        DataTypes data_types(arguments.size());
-        for (size_t i = 0; i < arguments.size(); ++i)
-            data_types[i] = arguments[i].type;
-        return getReturnTypeImpl(data_types);
-    }
-
-    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         /// You may ask, why use global context and not the context provided
         /// in create/Constructor? Two reasons:
@@ -131,28 +75,12 @@ public:
 
         const auto & truncate_type = arguments[1];
         WhichDataType which_truncate(truncate_type);
-        if (!which_truncate.isDecimal() && !which_truncate.isStringOrFixedString() && !which_truncate.isNativeInteger())
+        if (!which_truncate.isDecimal64() && !which_truncate.isDecimal32() && !which_truncate.isStringOrFixedString() && !which_truncate.isNativeInteger())
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Second argument must be of native integer type, String/FixedString, Decimal");
 
         if (which_truncate.isStringOrFixedString())
         {
             return std::make_shared<DataTypeString>();
-        }
-        else if (which_truncate.isUInt64())
-        {
-            /// `value - value mod N` is in `[0, value]`, which the `Int64` result of `minus` cannot hold.
-            return std::make_shared<DataTypeUInt64>();
-        }
-        else if (which_truncate.isDecimal())
-        {
-            const UInt32 scale = getDecimalScale(*truncate_type);
-            if (which_truncate.isDecimal32())
-                return createDecimalMaxPrecision<Decimal32>(scale);
-            if (which_truncate.isDecimal64())
-                return createDecimalMaxPrecision<Decimal64>(scale);
-            if (which_truncate.isDecimal128())
-                return createDecimalMaxPrecision<Decimal128>(scale);
-            return createDecimalMaxPrecision<Decimal256>(scale);
         }
         else
         {
@@ -161,7 +89,17 @@ public:
                 return ColumnWithTypeAndName(data_type->createColumnConst(1, data_type->getDefault()), data_type, "");
             };
 
-            ColumnsWithTypeAndName modulo_arguments = {get_column_const(arguments[1]), get_column_const(arguments[0])};
+            ColumnsWithTypeAndName modulo_arguments;
+            if (which_truncate.isNativeInteger())
+            {
+                modulo_arguments = {get_column_const(arguments[1]), get_column_const(arguments[0])};
+            }
+            else
+            {
+                ColumnPtr decimal_scaled = arguments[1]->createColumnConst(1, arguments[1]->getDefault());
+                ColumnWithTypeAndName decimal_scaled_with_type(decimal_scaled, arguments[1], "");
+                modulo_arguments = {get_column_const(arguments[1]), decimal_scaled_with_type};
+            }
 
             auto modulo_func = FunctionFactory::instance().get("positiveModulo", context)->build(modulo_arguments);
             auto modulo_result_type = modulo_func->getResultType();
@@ -174,17 +112,10 @@ public:
 
     }
 
-    [[nodiscard]] bool hasInformationAboutMonotonicity() const override { return true; }
+    bool hasInformationAboutMonotonicity() const override { return true; }
+    Monotonicity getMonotonicityForRange(const IDataType &, const Field &, const Field &) const override { return { .is_monotonic = true, .is_always_monotonic = true }; }
 
-    [[nodiscard]] Monotonicity getMonotonicityForRange(const IDataType & type, const Field &, const Field &) const override
-    {
-        /// For `Int64`, `value - value mod N` of the lowest values is below the `Int64` minimum and wraps around.
-        if (WhichDataType(removeLowCardinalityAndNullable(type.getPtr())).isInt64())
-            return {};
-        return { .is_monotonic = true, .is_always_monotonic = true };
-    }
-
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /* result_type */, size_t input_rows_count) const override
     {
         auto value = (*arguments[0].column)[0].safeGet<Int64>();
         if (value <= 0)
@@ -206,21 +137,27 @@ public:
                 return substr_func->execute(string_arguments, std::make_shared<DataTypeString>(), input_rows_count, false);
             }
         }
-        else if (which_truncate.isDecimal())
+        else if (which_truncate.isNativeInteger() || which_truncate.isDecimal())
         {
-            if (checkDecimal<Decimal32>(*arguments[1].type))
-                return truncateDecimal<Decimal32>(arguments[1].column, value);
-            if (checkDecimal<Decimal64>(*arguments[1].type))
-                return truncateDecimal<Decimal64>(arguments[1].column, value);
-            if (checkDecimal<Decimal128>(*arguments[1].type))
-                return truncateDecimal<Decimal128>(arguments[1].column, value);
-            if (checkDecimal<Decimal256>(*arguments[1].type))
-                return truncateDecimal<Decimal256>(arguments[1].column, value);
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected decimal data type");
-        }
-        else if (which_truncate.isNativeInteger())
-        {
-            ColumnsWithTypeAndName modulo_arguments = {arguments[1], arguments[0]};
+            ColumnsWithTypeAndName modulo_arguments;
+            if (which_truncate.isNativeInteger())
+            {
+                modulo_arguments = {arguments[1], arguments[0]};
+            }
+            else
+            {
+                ColumnPtr decimal_scaled;
+                if (const auto * decimal_type = checkDecimal<Decimal32>(*arguments[1].type))
+                    decimal_scaled = arguments[1].type->createColumnConst(input_rows_count, DecimalField<Decimal32>(static_cast<Int32>(value), decimal_type->getScale()));
+                if (const auto * decimal_type = checkDecimal<Decimal64>(*arguments[1].type))
+                    decimal_scaled = arguments[1].type->createColumnConst(input_rows_count, DecimalField<Decimal64>(value, decimal_type->getScale()));
+
+                if (!decimal_scaled)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected decimal data type");
+
+                ColumnWithTypeAndName decimal_scaled_with_type(decimal_scaled, arguments[1].type, "");
+                modulo_arguments = {arguments[1], decimal_scaled_with_type};
+            }
 
             auto modulo_func = FunctionFactory::instance().get("positiveModulo", context)->build(modulo_arguments);
             auto modulo_result_type = modulo_func->getResultType();
@@ -229,29 +166,24 @@ public:
             auto minus_arguments = {arguments[1], modulo_result_with_type};
             auto minus_func = FunctionFactory::instance().get("minus", context)->build(minus_arguments);
             auto minus_result_type = minus_func->getResultType();
-            auto minus_result = minus_func->execute(minus_arguments, minus_result_type, input_rows_count, false);
-            if (which_truncate.isUInt64())
-                return castColumn({minus_result, minus_result_type, ""}, result_type);
-            return minus_result;
+            return minus_func->execute(minus_arguments, minus_result_type, input_rows_count, false);
         }
 
         std::unreachable();
     }
 
-    [[nodiscard]] bool useDefaultImplementationForConstants() const override
+    bool useDefaultImplementationForConstants() const override
     {
         return true;
     }
 
-    [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {
         return std::make_shared<DataTypeString>();
     }
 
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 };
-
-}
 
 REGISTER_FUNCTION(IcebergTruncate)
 {
@@ -264,6 +196,8 @@ REGISTER_FUNCTION(IcebergTruncate)
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
 
     factory.registerFunction<FunctionIcebergTruncate>({description, syntax, arguments, {}, returned_value, examples, introduced_in, category});
+}
+
 }
 
 }

@@ -49,10 +49,6 @@ backported to 26.3 and 26.5, not to 26.4
 60000
 1000
 60000
-backported to 26.10
-query_plan_join_order_use_interesting_orders	1
-query_plan_optimize_join_order_algorithm	dpsub,greedy
-query_plan_optimize_join_order_conflict_detector	c
-query_plan_join_order_use_interesting_orders	0
-query_plan_optimize_join_order_algorithm	greedy
-query_plan_optimize_join_order_conflict_detector	
+iceberg_manifest_decode_concurrency backported to 26.8
+4
+2

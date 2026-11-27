@@ -7,7 +7,6 @@
 
 #include <Interpreters/AggregationCommon.h>
 
-#include <base/arithmeticOverflow.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/HashTable/StringHashMap.h>
@@ -357,13 +356,13 @@ struct OneElementResizeGrower
 
     static constexpr size_t initial_count = 1;
 
-    [[nodiscard]] size_t bufSize() const { return buf_size; }
+    size_t bufSize() const { return buf_size; }
 
-    [[nodiscard]] size_t place(size_t x) const { return x % buf_size; }
+    size_t place(size_t x) const { return x % buf_size; }
 
-    [[nodiscard]] size_t next(size_t pos) const { return (pos + 1) % buf_size; }
+    size_t next(size_t pos) const { return (pos + 1) % buf_size; }
 
-    [[nodiscard]] bool overflow(size_t elems) const { return elems >= buf_size; }
+    bool overflow(size_t elems) const { return elems >= buf_size; }
 
     void increaseSize() { ++buf_size; }
 
@@ -576,7 +575,7 @@ struct GrowthTrackingAllocator : HashTableAllocator
     {
         peak_bytes = std::max(peak_bytes, allocated_bytes + new_bytes);
         void * result = HashTableAllocator::realloc(buffer, old_bytes, new_bytes);
-        allocated_bytes = allocated_bytes + new_bytes - old_bytes;
+        allocated_bytes += new_bytes - old_bytes;
         return result;
     }
 
@@ -660,7 +659,7 @@ struct HashTableWithInvariantsCheck : Base
 {
     using Base::Base;
 
-    [[nodiscard]] bool isRobinHoodMode() const { return this->isRobinHood(); }
+    bool isRobinHoodMode() const { return this->isRobinHood(); }
 
     void checkInvariants() const
     {
@@ -675,11 +674,10 @@ struct HashTableWithInvariantsCheck : Base
             /// The element is reachable from its optimal position.
             size_t distance = this->distanceFromOptimalPosition(this->buf[i], i);
             for (size_t j = 1; j <= distance; ++j)
-                ASSERT_FALSE(this->buf[grower.place(i + grower.bufSize() - j)].isZero(*this)) << "element at " << i << " is unreachable";
+                ASSERT_FALSE(this->buf[grower.place(i - j)].isZero(*this)) << "element at " << i << " is unreachable";
 
             /// The elements are ordered by their optimal positions.
-            /// The buffer size is added to avoid an unsigned wraparound when going back from position zero.
-            size_t prev = grower.place(i + grower.bufSize() - 1);
+            size_t prev = grower.place(i - 1);
             if (this->isRobinHood() && !this->buf[prev].isZero(*this))
                 ASSERT_GE(this->distanceFromOptimalPosition(this->buf[prev], prev) + 1, distance) << "elements at " << prev << " and " << i << " are out of order";
         }
@@ -690,7 +688,7 @@ struct HashTableWithInvariantsCheck : Base
 /// Many keys share the optimal position, and the chains wrap around the end of the buffer.
 struct CollidingHash
 {
-    size_t operator()(UInt64 key) const { return common::mulIgnoreOverflow(key / 8, 0x9E3779B97F4A7C15ULL); }
+    size_t operator()(UInt64 key) const { return (key / 8) * 0x9E3779B97F4A7C15ULL; }
 };
 
 template <typename Map>

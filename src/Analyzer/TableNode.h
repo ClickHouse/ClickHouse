@@ -65,41 +65,38 @@ public:
       */
     void updateStorage(StoragePtr storage_value, const ContextPtr & context);
 
-    /// Replace the storage that reads the table. Storage id and storage lock stay those of the table.
-    void replaceStorage(StoragePtr storage_value, StorageSnapshotPtr storage_snapshot_value);
-
     /// Get storage
-    [[nodiscard]] const StoragePtr & getStorage() const
+    const StoragePtr & getStorage() const
     {
         return storage;
     }
 
     /// Get storage id
-    [[nodiscard]] const StorageID & getStorageID() const
+    const StorageID & getStorageID() const
     {
         return storage_id;
     }
 
     /// Get storage snapshot
-    [[nodiscard]] const StorageSnapshotPtr & getStorageSnapshot() const
+    const StorageSnapshotPtr & getStorageSnapshot() const
     {
         return storage_snapshot;
     }
 
     /// Get storage lock
-    [[nodiscard]] const TableLockHolder & getStorageLock() const
+    const TableLockHolder & getStorageLock() const
     {
         return storage_lock;
     }
 
     /// Returns true if table was created as a temporary table
-    [[nodiscard]] bool isTemporaryTable() const
+    bool isTemporaryTable() const
     {
         return !temporary_table_name.empty();
     }
 
     /// Get temporary table name
-    [[nodiscard]] const std::string & getTemporaryTableName() const
+    const std::string & getTemporaryTableName() const
     {
         return temporary_table_name;
     }
@@ -111,13 +108,13 @@ public:
     }
 
     /// Return true if table node has table expression modifiers, false otherwise
-    [[nodiscard]] bool hasTableExpressionModifiers() const
+    bool hasTableExpressionModifiers() const
     {
         return table_expression_modifiers.has_value();
     }
 
     /// Get table expression modifiers
-    [[nodiscard]] const std::optional<TableExpressionModifiers> & getTableExpressionModifiers() const
+    const std::optional<TableExpressionModifiers> & getTableExpressionModifiers() const
     {
         return table_expression_modifiers;
     }
@@ -131,17 +128,17 @@ public:
     /// Set table expression modifiers and update the storage snapshot metadata accordingly
     void setTableExpressionModifiers(TableExpressionModifiers table_expression_modifiers_value);
 
-    [[nodiscard]] const MaterializedCTEPtr & getMaterializedCTE() const
+    const MaterializedCTEPtr & getMaterializedCTE() const
     {
         return materialized_cte;
     }
 
-    [[nodiscard]] bool isMaterializedCTE() const
+    bool isMaterializedCTE() const
     {
         return children[materialized_cte_subquery_index] != nullptr;
     }
 
-    [[nodiscard]] const QueryTreeNodePtr & getMaterializedCTESubquery() const
+    const QueryTreeNodePtr & getMaterializedCTESubquery() const
     {
         return children[materialized_cte_subquery_index];
     }
@@ -151,23 +148,23 @@ public:
         return children[materialized_cte_subquery_index];
     }
 
-    [[nodiscard]] QueryTreeNodeType getNodeType() const override
+    QueryTreeNodeType getNodeType() const override
     {
         return QueryTreeNodeType::TABLE;
     }
 
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
 
-    [[nodiscard]] boost::intrusive_ptr<ASTTableIdentifier> toASTIdentifier() const;
+    boost::intrusive_ptr<ASTTableIdentifier> toASTIdentifier() const;
 
 protected:
-    [[nodiscard]] bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const override;
+    bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const override;
 
     void updateTreeHashImpl(HashState & state, CompareOptions) const override;
 
-    [[nodiscard]] QueryTreeNodePtr cloneImpl() const override;
+    QueryTreeNodePtr cloneImpl() const override;
 
-    [[nodiscard]] ASTPtr toASTImpl(const ConvertToASTOptions & options) const override;
+    ASTPtr toASTImpl(const ConvertToASTOptions & options) const override;
 
 private:
     struct CloneTag

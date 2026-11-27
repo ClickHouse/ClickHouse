@@ -31,23 +31,12 @@ public:
 
     static Ptr create(const ColumnPtr & nested_column_, const ColumnPtr & indexes_)
     {
-        /// The underlying columns may be shared with the caller (the nested
-        /// column is in particular intentionally shared with the source block
-        /// during lazy join replication). `assumeMutable` here would
-        /// `chassert(use_count() == 1)` and abort. Bypass via `const_cast` +
-        /// `getPtr` — equivalent to the old `assumeMutable` fast path. The
-        /// result is returned as `Ptr` (immutable), and any mutation must go
-        /// through `IColumn::mutate`, which deep-clones shared sub-columns at
-        /// the proper time.
-        return Base::create(
-            const_cast<IColumn *>(nested_column_.get())->getPtr(),
-            const_cast<IColumn *>(indexes_.get())->getPtr());
+        return Base::create(nested_column_->assumeMutable(), indexes_->assumeMutable());
     }
 
     static Ptr create(const ColumnPtr & nested_column_)
     {
-        /// Same rationale as the two-argument overload above.
-        return Base::create(const_cast<IColumn *>(nested_column_.get())->getPtr());
+        return Base::create(nested_column_->assumeMutable());
     }
 
     static MutablePtr create(MutableColumnPtr && nested_column_, MutableColumnPtr && indexes_)
@@ -67,9 +56,7 @@ public:
 
     static Ptr create(const ColumnPtr & nested_column_, ColumnIndex && indexes_)
     {
-        /// The nested column may be shared with the caller; same rationale as the
-        /// `create(const ColumnPtr &, const ColumnPtr &)` overload above.
-        return Base::create(const_cast<IColumn *>(nested_column_.get())->getPtr(), std::move(indexes_));
+        return Base::create(nested_column_->assumeMutable(), std::move(indexes_));
     }
 
     bool isReplicated() const override { return true; }

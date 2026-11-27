@@ -81,13 +81,14 @@ Compared to the uniq function, the uniqCombined function:
 - Calculates with several times higher accuracy
 - Usually has slightly lower performance. In some scenarios, uniqCombined can perform better than uniq, for example, with distributed queries that transmit a large number of aggregation states over the network
 
-<Accordion title="Implementation details">
+<details>
+<summary>Implementation details</summary>
 This function calculates a hash (64-bit hash for String and 32-bit otherwise) for all parameters in the aggregate, then uses it in calculations.
 It uses a combination of three algorithms: array, hash table, and HyperLogLog with an error correction table:
 - For a small number of distinct elements, an array is used
 - When the set size is larger, a hash table is used
 - For a larger number of elements, HyperLogLog is used, which will occupy a fixed amount of memory
-</Accordion>
+</details>
     )";
     FunctionDocumentation::Syntax syntax_uniqCombined = R"(
 uniqCombined(HLL_precision)(x[, ...])
@@ -151,13 +152,14 @@ Compared to the [uniq](/reference/functions/aggregate-functions/uniq) function, 
 - Consumes several times less memory
 - Calculates with several times higher accuracy
 
-<Accordion title="Implementation details">
+<details>
+<summary>Implementation details</summary>
 This function calculates a 64-bit hash for all data types for all parameters in the aggregate, then uses it in calculations.
 It uses a combination of three algorithms: array, hash table, and [HyperLogLog](https://en.wikipedia.org/wiki/HyperLogLog) with an error correction table:
 - For a small number of distinct elements, an array is used
 - When the set size is larger, a hash table is used
 - For a larger number of elements, HyperLogLog is used, which will occupy a fixed amount of memory
-</Accordion>
+</details>
     )";
     FunctionDocumentation::Syntax syntax_uniqCombined64 = R"(
 uniqCombined64(HLL_precision)(x[, ...])

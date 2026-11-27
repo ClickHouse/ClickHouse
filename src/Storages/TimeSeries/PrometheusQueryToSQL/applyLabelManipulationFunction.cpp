@@ -8,7 +8,6 @@
 #include <Common/quoteString.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
-#include <Storages/TimeSeries/PrometheusQueryToSQL/checkArguments.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/makeNoDuplicateSeriesPerStepCheck.h>
 #include <Storages/TimeSeries/timeSeriesTypesToAST.h>
 #include <base/insertAtEnd.h>
@@ -33,13 +32,14 @@ namespace
     /// if the evaluation range of the literal is empty (see `fromLiteral`).
     void checkLabelName(const PrometheusQueryTree::Function * function_node, size_t argument_index)
     {
+        const auto & function_name = function_node->function_name;
         const auto * argument_node = function_node->getArguments().at(argument_index);
         if (argument_node->node_type != PrometheusQueryTree::NodeType::StringLiteral)
         {
             throw Exception(
                 ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
-                "{} expects a string literal in argument #{}",
-                function_node->getTypeAndName(),
+                "Function '{}' expects a string literal in argument #{}",
+                function_name,
                 argument_index + 1);
         }
 
@@ -48,8 +48,8 @@ namespace
         {
             throw Exception(
                 ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
-                "{} received invalid label name {} in argument #{}",
-                function_node->getTypeAndName(),
+                "Function '{}' received invalid label name {} in argument #{}",
+                function_name,
                 quoteString(label_name),
                 argument_index + 1);
         }
@@ -63,18 +63,40 @@ namespace
 
         if (function_name == "label_replace")
         {
-            checkNumberOfArguments(function_node, arguments, 5);
+            if (arguments.size() != 5)
+                throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
+                                "Function '{}' expects {} arguments, but was called with {} arguments",
+                                function_name, 5, arguments.size());
         }
         else
         {
             chassert(function_name == "label_join");
-            checkNumberOfArgumentsAtLeast(function_node, arguments, 3);
+            if (arguments.size() < 3)
+                throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
+                                "Function '{}' expects {} or more arguments, but was called with {} arguments",
+                                function_name, 3, arguments.size());
         }
 
-        checkArgumentType(function_node, arguments, 0, ResultType::INSTANT_VECTOR, context);
+        chassert(!arguments.empty());
+
+        const auto & first_argument = arguments[0];
+        if (first_argument.type != ResultType::INSTANT_VECTOR)
+        {
+            throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
+                            "Function '{}' expects the first argument of type {}, but expression {} has type {}",
+                            function_name, ResultType::INSTANT_VECTOR, getPromQLText(first_argument, context), first_argument.type);
+        }
 
         for (size_t i = 1; i < arguments.size(); ++i)
-            checkArgumentType(function_node, arguments, i, ResultType::STRING, context);
+        {
+            const auto & argument = arguments[i];
+            if (argument.type != ResultType::STRING)
+            {
+                throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
+                                "Function '{}' expects argument #{} of type {}, but expression {} has type {}",
+                                function_name, i + 1, ResultType::STRING, getPromQLText(argument, context), argument.type);
+            }
+        }
 
         if (function_name == "label_replace")
         {
@@ -313,8 +335,7 @@ SQLQueryPiece applyLabelManipulationFunction(
         }
 
         case StoreMethod::CONST_STRING:
-        case StoreMethod::SAMPLES:
-        case StoreMethod::TIMESTAMP_AND_VALUE:
+        case StoreMethod::RAW_DATA:
         {
             /// Can't get in here because these store methods are incompatible with the allowed argument types
             /// (see checkArgumentTypes()).

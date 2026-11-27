@@ -2,7 +2,8 @@
 
 #include <string_view>
 
-/// Flush the LLVM coverage report to file.
+/// Flush coverage report to file, depending on coverage system
+/// proposed by compiler (llvm for clang and gcov for gcc).
 ///
 /// Noop if build without coverage (WITH_COVERAGE_DEPTH=0).
 /// Thread safe (use exclusive lock).

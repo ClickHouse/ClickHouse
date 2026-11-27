@@ -8,7 +8,6 @@
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
-#include <Storages/MergeTree/DataPartStorageOnDiskBase.h>
 #include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
 #include <Interpreters/FileCache/FileCache.h>
 #include <Interpreters/FileCache/FileCacheFactory.h>
@@ -20,14 +19,12 @@
 #include <Common/SipHash.h>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ErrnoException.h>
-#include <Common/FailPoint.h>
 #include <IO/AzureBlobStorage/isRetryableAzureException.h>
 #if USE_AZURE_BLOB_STORAGE
 #include <azure/core/credentials/credentials.hpp>
 #endif
 #include <Poco/Net/NetException.h>
 
-namespace fs = std::filesystem;
 
 namespace CurrentMetrics
 {
@@ -39,7 +36,6 @@ namespace DB
 
 namespace MergeTreeSetting
 {
-    extern const MergeTreeSettingsBool check_part_use_direct_io;
     extern const MergeTreeSettingsFloat ratio_of_defaults_for_sparse_serialization;
     extern const MergeTreeSettingsMergeTreeSerializationInfoVersion serialization_info_version;
 }
@@ -64,11 +60,6 @@ namespace ErrorCodes
     extern const int QUERY_WAS_CANCELLED;
     extern const int QUERY_WAS_CANCELLED_BY_CLIENT;
     extern const int TIMEOUT_EXCEEDED;
-}
-
-namespace FailPoints
-{
-    extern const char check_data_part_retryable_error[];
 }
 
 
@@ -167,27 +158,6 @@ bool isRetryableException(std::exception_ptr exception_ptr)
     }
 }
 
-bool isIOErrorException(std::exception_ptr exception_ptr)
-{
-    try
-    {
-        rethrow_exception(exception_ptr);
-    }
-    catch (const ErrnoException & e)
-    {
-        return e.getErrno() == EIO;
-    }
-    catch (const std::filesystem::filesystem_error & e)
-    {
-        return e.code() == std::errc::io_error;
-    }
-    catch (...)
-    {
-        /// Ok: any other exception is not an I/O error.
-        return false;
-    }
-}
-
 /// A query that was killed or hit `max_execution_time` can throw from inside a part read, e.g. from
 /// `FileSegment::wait`, from the S3 client or from the marks loader. Such an exception says nothing
 /// about the data on disk, so a reader must not report the part as broken because of it.
@@ -233,36 +203,10 @@ static IMergeTreeDataPart::Checksums checkDataPart(
     CurrentMetrics::Increment metric_increment{CurrentMetrics::ReplicatedChecks};
     Poco::Logger * log = &Poco::Logger::get("checkDataPart");
 
-    /// Test-only: make checkDataPart's read raise a retryable error, after the part is on disk.
-    fiu_do_on(FailPoints::check_data_part_retryable_error,
-    {
-        throw Poco::TimeoutException("Injected transient error into checkDataPart");
-    });
-
-    /// `O_DIRECT` is chosen by the read hint, so it has to be the file size. The file is read through the disk,
-    /// because the part storage reads the `skp_idx.packed` index through the page cache.
-    auto read_file = [&read_settings](const IDataPartStorage & storage, const String & name) -> std::unique_ptr<ReadBufferFromFileBase>
-    {
-        if (read_settings.local_fs_settings.direct_io_threshold)
-        {
-            if (const auto * disk_storage = dynamic_cast<const DataPartStorageOnDiskBase *>(&storage))
-            {
-                auto disk = disk_storage->getDisk();
-                auto path = fs::path(storage.getRelativePath()) / name;
-                if (disk->existsFile(path))
-                {
-                    size_t size = disk->getFileSize(path);
-                    return disk->readFile(path, read_settings.adjustBufferSize(size), size);
-                }
-            }
-        }
-        return storage.readFile(name, read_settings, std::nullopt);
-    };
-
     NamesAndTypesList columns_txt;
 
     {
-        auto buf = read_file(data_part_storage, "columns.txt");
+        auto buf = data_part_storage.readFile("columns.txt", read_settings, std::nullopt);
         columns_txt.readText(*buf);
         assertEOF(*buf);
     }
@@ -275,9 +219,9 @@ static IMergeTreeDataPart::Checksums checkDataPart(
     IMergeTreeDataPart::Checksums checksums_data;
 
     /// This function calculates checksum for both compressed and decompressed contents of compressed file.
-    auto checksum_compressed_file = [&read_file](const IDataPartStorage & data_part_storage_, const String & file_path)
+    auto checksum_compressed_file = [&read_settings](const IDataPartStorage & data_part_storage_, const String & file_path)
     {
-        auto file_buf = read_file(data_part_storage_, file_path);
+        auto file_buf = data_part_storage_.readFile(file_path, read_settings, std::nullopt);
         HashingReadBuffer compressed_hashing_buf(*file_buf);
         CompressedReadBuffer uncompressing_buf(compressed_hashing_buf, /* allow_different_codecs */ true);
         HashingReadBuffer uncompressed_hashing_buf(uncompressing_buf);
@@ -295,14 +239,11 @@ static IMergeTreeDataPart::Checksums checkDataPart(
     {
         try
         {
-            auto serialization_file = read_file(data_part_storage, IMergeTreeDataPart::SERIALIZATION_FILE_NAME);
+            auto serialization_file = data_part_storage.readFile(IMergeTreeDataPart::SERIALIZATION_FILE_NAME, read_settings, std::nullopt);
             serialization_infos = SerializationInfoByName::readJSON(columns_txt, *serialization_file);
         }
         catch (...)
         {
-            if (isIOErrorException(std::current_exception()) || isRetryableException(std::current_exception()))
-                throw;
-
             throw Exception(
                 ErrorCodes::CORRUPTED_DATA,
                 "Failed to load file {} of data part {}, with error {}",
@@ -323,7 +264,7 @@ static IMergeTreeDataPart::Checksums checkDataPart(
     /// This function calculates only checksum of file content (compressed or uncompressed).
     auto checksum_file = [&](const String & file_name)
     {
-        auto file_buf = read_file(data_part_storage, file_name);
+        auto file_buf = data_part_storage.readFile(file_name, read_settings, std::nullopt);
         HashingReadBuffer hashing_buf(*file_buf);
         hashing_buf.ignoreAll();
         checksums_data.files[file_name] = IMergeTreeDataPart::Checksums::Checksum(hashing_buf.count(), hashing_buf.getHash());
@@ -342,14 +283,6 @@ static IMergeTreeDataPart::Checksums checkDataPart(
     }
     else if (part_type == MergeTreeDataPartType::Wide)
     {
-        /// Column files are never in `skp_idx.packed`, but the part storage reads its index through the page cache
-        /// to look up a column named `skp_idx_*`. So with `O_DIRECT` the streams are looked up in the directory listing.
-        const bool lookup_in_listing = read_settings.local_fs_settings.direct_io_threshold != 0;
-        IMergeTreeDataPart::Checksums files_in_listing;
-        if (lookup_in_listing)
-            for (auto it = data_part_storage.iterate(); it->isValid(); it->next())
-                files_in_listing.files[it->name()];
-
         const auto & cols_substreams = data_part->getColumnsSubstreams();
         if (!cols_substreams.empty())
         {
@@ -362,9 +295,7 @@ static IMergeTreeDataPart::Checksums checkDataPart(
                 const auto & substreams = cols_substreams.getColumnSubstreams(col_idx);
                 for (const auto & substream : substreams)
                 {
-                    auto stream_name = lookup_in_listing
-                        ? IMergeTreeDataPart::getStreamNameOrHash(substream, ".bin", files_in_listing)
-                        : IMergeTreeDataPart::getStreamNameOrHash(substream, ".bin", data_part_storage);
+                    auto stream_name = IMergeTreeDataPart::getStreamNameOrHash(substream, ".bin", data_part_storage);
                     if (!stream_name)
                         throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART,
                             "There is no file for column '{}' (substream {}) in data part '{}'",
@@ -387,15 +318,15 @@ static IMergeTreeDataPart::Checksums checkDataPart(
             for (const auto & column : columns_list)
             {
                 auto serialization = get_serialization(column);
-                auto data = ISerialization::SubstreamData(serialization).withType(column.type);
+                auto data = ISerialization::SubstreamData(serialization)
+                    .withType(column.type)
+                    .withColumn(data_part->getColumnSample(column));
                 serialization->enumerateStreams(settings, [&](const ISerialization::SubstreamPath & substream_path)
                 {
                     if (ISerialization::isEphemeralSubcolumn(substream_path, substream_path.size()))
                         return;
 
-                    auto stream_name = lookup_in_listing
-                        ? IMergeTreeDataPart::getStreamNameForColumn(column, substream_path, ".bin", files_in_listing, data_part->storage.getSettings())
-                        : IMergeTreeDataPart::getStreamNameForColumn(column, substream_path, ".bin", data_part_storage, data_part->storage.getSettings());
+                    auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(column, substream_path, ".bin", data_part_storage, data_part->storage.getSettings());
 
                     if (!stream_name)
                         throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART,
@@ -418,7 +349,7 @@ static IMergeTreeDataPart::Checksums checkDataPart(
 
     if (require_checksums || data_part_storage.existsFile("checksums.txt"))
     {
-        auto buf = read_file(data_part_storage, "checksums.txt");
+        auto buf = data_part_storage.readFile("checksums.txt", read_settings, std::nullopt);
         checksums_txt.read(*buf);
         assertEOF(*buf);
     }
@@ -494,7 +425,7 @@ static IMergeTreeDataPart::Checksums checkDataPart(
             NamesAndTypesList projection_columns = projection->getColumns();
             if (projection_columns.empty())
             {
-                auto buf = read_file(*projection_storage, "columns.txt");
+                auto buf = projection_storage->readFile("columns.txt", read_settings, std::nullopt);
                 projection_columns.readText(*buf);
                 assertEOF(*buf);
             }
@@ -620,22 +551,12 @@ static IMergeTreeDataPart::Checksums checkDataPart(
     return checksums_data;
 }
 
-/// Packed parts and object storages read the files of a part in their own way.
-static bool isCheckedWithDirectIO(const IMergeTreeDataPart & part)
-{
-    const auto & storage = part.getDataPartStorage();
-    return (*part.storage.getSettings())[MergeTreeSetting::check_part_use_direct_io]
-        && isFullPartStorage(storage)
-        && storage.getDiskType() == "local";
-}
-
 IMergeTreeDataPart::Checksums checkDataPart(
     MergeTreeData::DataPartPtr data_part,
     bool require_checksums,
     bool & is_broken_projection,
     std::function<bool()> is_cancelled,
-    bool throw_on_broken_projection,
-    bool allow_direct_io)
+    bool throw_on_broken_projection)
 {
     /// If check of part has failed and it is stored on disk with cache
     /// try to drop cache and check it once again because maybe the cache
@@ -689,10 +610,12 @@ IMergeTreeDataPart::Checksums checkDataPart(
             {
                 LOG_DEBUG(
                     getLogger("checkDataPart"),
-                    "Got retriable error {} checking data part {}, will rethrow", getCurrentExceptionMessage(false), data_part->name);
+                    "Got retriable error {} checking data part {}, will return empty", data_part->name, getCurrentExceptionMessage(false));
 
-                /// Transient error (memory limit, retryable Azure 403/timeout): rethrow so the caller retries later instead of treating the part as verified; a genuinely broken part still surfaces on retry.
-                throw;
+                /// We were unable to check data part because of some temporary exception
+                /// like Memory limit exceeded. If part is actually broken we will retry check
+                /// with the next read attempt of this data part.
+                return IMergeTreeDataPart::Checksums{};
             }
             throw;
         }
@@ -702,12 +625,6 @@ IMergeTreeDataPart::Checksums checkDataPart(
     try
     {
         ReadSettings read_settings;
-        if (allow_direct_io && isCheckedWithDirectIO(*data_part))
-        {
-            read_settings.local_fs_settings.direct_io_threshold = 1;
-            read_settings.local_fs_settings.buffer_size = 4 * 1024 * 1024;
-        }
-
         return checkDataPart(
             data_part,
             data_part->getDataPartStorage(),
@@ -726,10 +643,12 @@ IMergeTreeDataPart::Checksums checkDataPart(
         {
             LOG_DEBUG(
                 getLogger("checkDataPart"),
-                "Got retriable error {} checking data part {}, will rethrow", getCurrentExceptionMessage(false), data_part->name);
+                "Got retriable error {} checking data part {}, will return empty", data_part->name, getCurrentExceptionMessage(false));
 
-            /// Transient error (memory limit, retryable Azure 403/timeout): rethrow so the caller retries later instead of treating the part as verified; a genuinely broken part still surfaces on retry.
-            throw;
+            /// We were unable to check data part because of some temporary exception
+            /// like Memory limit exceeded. If part is actually broken we will retry check
+            /// with the next read attempt of this data part.
+            return {};
         }
         return drop_cache_and_check();
     }

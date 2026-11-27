@@ -8,7 +8,7 @@ namespace DB
 class ParserJSONPathRoot : public IParserBase
 {
 private:
-    [[nodiscard]] const char * getName() const override { return "ParserJSONPathRoot"; }
+    const char * getName() const override { return "ParserJSONPathRoot"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 
 public:

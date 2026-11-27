@@ -49,7 +49,7 @@ public:
 
     void extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & ast, ContextPtr context) const override;
 
-    [[nodiscard]] bool supportsTransactions() const override { return true; }
+    bool supportsTransactions() const override { return true; }
 
     /// Skip this query's own access check. Set only for the internal `ATTACH PARTITION` that fills the
     /// temporary table of a `CREATE OR REPLACE TABLE ... CLONE AS` (see `fillTableIfNeeded`): the query
@@ -59,7 +59,7 @@ public:
     void setSkipAccessCheck(bool skip) { skip_access_check = skip; }
 
 private:
-    [[nodiscard]] AccessRightsElements getRequiredAccess(const StoragePtr & storage) const;
+    AccessRightsElements getRequiredAccess(const StoragePtr & storage) const;
 
     /// Adds the grants `processSQLSecurityOption` demands for the view's stored SQL security, so replacing the
     /// body of a `DEFINER` or `NONE` view takes the same authority as declaring that security in the first place.

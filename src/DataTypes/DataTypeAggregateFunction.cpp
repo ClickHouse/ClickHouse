@@ -219,6 +219,14 @@ bool DataTypeAggregateFunction::nameMatchesState(const String & state_type_name,
     return strictEquals(aggregate_state_type->function->getNormalizedStateType(), function->getNormalizedStateType());
 }
 
+void DataTypeAggregateFunction::checkSupportedFunctions(const AggregateFunctionPtr & function)
+{
+    if (function->isOnlyWindowFunction())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "The function '{}' can only be used as a window function, not as an aggregate function, "
+                        "so its state cannot be used as a data type", function->getName());
+}
+
 void DataTypeAggregateFunction::updateHashImpl(SipHash & hash) const
 {
     hash.update(getFunctionName());
@@ -351,6 +359,7 @@ static DataTypePtr create(const ASTPtr & arguments)
 
     AggregateFunctionProperties properties;
     AggregateFunctionPtr function = AggregateFunctionFactory::instance().get(function_name, action, argument_types, params_row, properties);
+    DataTypeAggregateFunction::checkSupportedFunctions(function);
 
     return std::make_shared<DataTypeAggregateFunction>(function, argument_types, params_row, version);
 }
@@ -444,7 +453,7 @@ void registerDataTypeAggregateFunction(DataTypeFactory & factory)
             .description = R"DOCS_MD(
 ## Description {#description}
 
-All [Aggregate functions](/reference/functions/aggregate-functions/index) in ClickHouse have
+All [Aggregate functions](/reference/functions/aggregate-functions) in ClickHouse have
 an implementation-specific intermediate state that can be serialized to an
 `AggregateFunction` data type and stored in a table. This is usually done by
 means of a [materialized view](/reference/statements/create/view).

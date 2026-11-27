@@ -70,17 +70,15 @@ private:
         chassert(wrapped_column);
     }
 
-    /// Needed so that `IColumn::mutate` can clone a shared `ColumnBLOB` (e.g. in
-    /// `RemoteQueryExecutor::adaptBlockStructure` when applying a deferred cast).
-    /// `from_blob_task` must operate on its `BLOB` argument rather than capturing
-    /// `this->blob`, otherwise the clone would re-read the original's data.
-    ColumnBLOB(const ColumnBLOB & other)
+    // Only needed to make compiler happy.
+    [[noreturn]] ColumnBLOB(const ColumnBLOB & other)
         : COWHelper(other)
         , blob(other.blob.begin(), other.blob.end())
         , rows(other.rows)
         , wrapped_column(other.wrapped_column)
         , from_blob_task(other.from_blob_task)
     {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "ColumnBLOB copy constructor should not be called");
     }
 
 public:
@@ -124,7 +122,7 @@ public:
         ColumnWithTypeAndName wrapped_column,
         CompressionCodecPtr codec,
         UInt64 client_revision,
-        const FormatSettings & format_settings)
+        const std::optional<FormatSettings> & format_settings)
     {
         WriteBufferFromVector<BLOB> wbuf(blob);
         CompressedWriteBuffer compressed_buffer(wbuf, codec);
@@ -133,7 +131,7 @@ public:
         NativeWriter::setAggregateFunctionStateVersions(wrapped_column.type, client_revision);
         auto [serialization, _, column_to_write] = NativeWriter::getSerializationAndColumn(client_revision, wrapped_column);
         NativeWriter::writeData(
-            *serialization, column_to_write, compressed_buffer, &format_settings, 0, column_to_write->size(), client_revision);
+            *serialization, column_to_write, compressed_buffer, format_settings, 0, column_to_write->size(), client_revision);
         compressed_buffer.finalize();
     }
 
@@ -155,10 +153,10 @@ public:
     void addCast(DataTypePtr from, DataTypePtr to)
     {
         chassert(from_blob_task);
-        from_blob_task = [from_task = std::move(from_blob_task), from, to](const BLOB & blob_arg)
+        from_blob_task = [from_task = std::move(from_blob_task), from, to, this](const BLOB &)
         {
             ColumnWithTypeAndName col;
-            col.column = from_task(blob_arg);
+            col.column = from_task(blob);
             col.type = from;
             return castColumn(col, to);
         };

@@ -17,9 +17,9 @@ class ExecutableFunctionToday final : public IExecutableFunction
 public:
     explicit ExecutableFunctionToday(time_t time_) : day_value(static_cast<UInt16>(time_)) {}
 
-    [[nodiscard]] String getName() const override { return "today"; }
+    String getName() const override { return "today"; }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
     {
         return DataTypeDate().createColumnConst(input_rows_count, day_value);
     }
@@ -74,7 +74,7 @@ public:
 
     static FunctionOverloadResolverPtr create(ContextPtr) { return std::make_unique<TodayOverloadResolver>(); }
 
-    String getSignatureString() const override { return "() -> Date"; }
+    DataTypePtr getReturnTypeImpl(const DataTypes &) const override { return std::make_shared<DataTypeDate>(); }
 
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName &, const DataTypePtr &) const override
     {

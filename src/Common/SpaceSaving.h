@@ -2,8 +2,6 @@
 
 #include <IO/VarInt.h>
 #include <base/sort.h>
-#include <base/arithmeticOverflow.h>
-#include <base/sanitizer_defs.h>
 #include <Common/AllocatorWithMemoryTracking.h>
 #include <Common/ArenaUtils.h>
 #include <Common/ArenaWithFreeLists.h>
@@ -135,13 +133,10 @@ public:
             readVarUInt(error, rb);
         }
 
-        /// The weights are modular (see `insert`), so `count` may be less than `error`.
-        [[nodiscard]] UInt64 countMinusError() const { return common::subIgnoreOverflow(count, error); }
-
         // greater() taking error into account
         bool operator> (const Counter & b) const
         {
-            return (countMinusError() > b.countMinusError()) || (countMinusError() == b.countMinusError() && count > b.count);
+            return ((count - error) > (b.count - b.error)) || ((count - error) == (b.count - b.error) && count > b.count);
         }
 
         TKey key{};
@@ -158,14 +153,14 @@ public:
 
     ~SpaceSaving() { destroyElements(); }
 
-    [[nodiscard]] bool empty() const { return counter_list.empty(); }
+    bool empty() const { return counter_list.empty(); }
 
-    [[nodiscard]] size_t size() const
+    size_t size() const
     {
         return counter_list.size();
     }
 
-    [[nodiscard]] size_t capacity() const { return requested_capacity; }
+    size_t capacity() const { return requested_capacity; }
 
     void clear()
     {
@@ -185,11 +180,6 @@ public:
         }
     }
 
-    /// Every sum here is over weights straight from the caller's column, so `topKWeighted(k)(x, -2)`
-    /// contributes 2^64-2 and all of them are modular, as `merge` below already states. The attribute
-    /// is on the function rather than its individual sums because there are three of them - the two
-    /// below and the alpha-map one at the end - and annotating them one at a time kept missing one.
-    NO_SANITIZE_UNSIGNED_OVERFLOW
     void insert(const TKey & key, UInt64 increment = 1, UInt64 error = 0)
     {
         // Increase weight of a key that already exists
@@ -218,7 +208,6 @@ public:
      * Parallel Space Saving reduction and combine step from:
      *  https://arxiv.org/pdf/1401.0702.pdf
      */
-    NO_SANITIZE_UNSIGNED_OVERFLOW
     void merge(const Self & rhs)
     {
         if (rhs.empty())
@@ -283,7 +272,7 @@ public:
         truncateIfNeeded(true);
     }
 
-    [[nodiscard]] std::vector<Counter> topK(size_t k) const
+    std::vector<Counter> topK(size_t k) const
     {
         std::vector<Counter> new_list;
         new_list.reserve(counter_list.size());
@@ -432,7 +421,7 @@ protected:
             for (size_t i = requested_capacity; i < counter_list.size(); ++i)
             {
                 size_t pos = counter_list[i].hash & alpha_mask;
-                alpha_map[pos] = std::min(common::addIgnoreOverflow(alpha_map[pos], counter_list[i].countMinusError()), MAX_ALPHA_VALUE);
+                alpha_map[pos] = std::min(alpha_map[pos] + counter_list[i].count - counter_list[i].error, MAX_ALPHA_VALUE);
                 arena.free(counter_list[i].key);
             }
 

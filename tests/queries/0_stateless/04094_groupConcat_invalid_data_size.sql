@@ -17,9 +17,9 @@ SELECT finalizeAggregation(CAST(unhex('FFFFFFFFFFFFFFFF7F'), 'AggregateFunction(
 SELECT finalizeAggregation(CAST(unhex('FFFFFFFFFFFFFFFF7F'), 'AggregateFunction(groupConcat(\',\', 10), String)')); -- { serverError BAD_ARGUMENTS }
 
 -- Pin the exact cap boundary (2^48).
--- Just below/at cap: passes the check, then fails cleanly on the missing data (the buffer grows as
--- the data arrives), or via the memory tracker or malloc — the point is no LOGICAL_ERROR.
-SELECT finalizeAggregation(CAST(unhex('80808080808040'), 'AggregateFunction(groupConcat, String)')); -- { serverError CANNOT_READ_ALL_DATA, MEMORY_LIMIT_EXCEEDED, CANNOT_ALLOCATE_MEMORY }
+-- Just below/at cap: passes the check, then fails cleanly via the memory tracker
+-- or malloc — the point is no LOGICAL_ERROR.
+SELECT finalizeAggregation(CAST(unhex('80808080808040'), 'AggregateFunction(groupConcat, String)')); -- { serverError MEMORY_LIMIT_EXCEEDED, CANNOT_ALLOCATE_MEMORY }
 -- Just above cap: caught by the check.
 SELECT finalizeAggregation(CAST(unhex('81808080808040'), 'AggregateFunction(groupConcat, String)')); -- { serverError BAD_ARGUMENTS }
 

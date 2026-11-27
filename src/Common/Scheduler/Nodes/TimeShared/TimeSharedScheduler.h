@@ -71,7 +71,7 @@ public:
     {
         if (scheduler.joinable())
         {
-            stop_flag.store(true, std::memory_order_relaxed);
+            stop_flag.store(true);
             events.enqueue([]{}); // just to wake up thread
             scheduler.join();
             if (graceful)
@@ -212,7 +212,7 @@ private:
                 value->next = nullptr;
                 value->prev = nullptr;
                 current = nullptr;
-                incrementCounter(busy_periods);
+                busy_periods++;
                 return;
             }
             // Just move current to next to avoid invalidation
@@ -229,7 +229,7 @@ private:
         DB::setThreadName(name);
         EventQueue::SchedulerThread scheduler_thread(&events);
 
-        while (!stop_flag.load(std::memory_order_relaxed))
+        while (!stop_flag.load())
         {
             // Dequeue and execute single request
             auto [request, _] = dequeueRequest();

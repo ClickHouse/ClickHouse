@@ -76,10 +76,6 @@ IcebergDataObjectInfo::IcebergDataObjectInfo(
           data_manifest_file_entry_->first_row_id,
           std::move(identity_partition_columns_)}
 {
-    if (data_manifest_file_entry_->parsed_entry->split_offsets.has_value())
-        for (Int64 offset : *data_manifest_file_entry_->parsed_entry->split_offsets)
-            if (offset >= 0)
-                split_offsets.push_back(static_cast<UInt64>(offset));
 }
 
 IcebergDataObjectInfo::IcebergDataObjectInfo(const RelativePathWithMetadata & path_)
@@ -101,16 +97,10 @@ std::shared_ptr<ISimpleTransform> IcebergDataObjectInfo::getPositionDeleteTransf
     ContextPtr context_)
 {
     IcebergDataObjectInfoPtr self = shared_from_this();
-    if (!usesStreamingPositionDeletes(context_))
+    /// A deletion vector is already a bitmap, so there is nothing to stream.
+    if (info.deletion_vector.has_value() || context_->getSettingsRef()[Setting::use_roaring_bitmap_iceberg_positional_deletes].value)
         return std::make_shared<IcebergBitmapPositionDeleteTransform>(header, self, object_storage, format_settings, parser_shared_resources, context_);
     return std::make_shared<IcebergStreamingPositionDeleteTransform>(header, self, object_storage, format_settings, parser_shared_resources, context_);
-}
-
-bool IcebergDataObjectInfo::usesStreamingPositionDeletes(const ContextPtr & context_) const
-{
-    /// A deletion vector is already a bitmap, so there is nothing to stream.
-    return !info.position_deletes_objects.empty() && !info.deletion_vector.has_value()
-        && !context_->getSettingsRef()[Setting::use_roaring_bitmap_iceberg_positional_deletes].value;
 }
 
 namespace
@@ -118,12 +108,11 @@ namespace
 
 void checkDataFileSupportsPositionDeletes(const Iceberg::IcebergObjectSerializableInfo & info)
 {
-    const String format = Poco::toUpper(info.file_format);
-    if (format != "PARQUET" && format != "ORC" && format != "AVRO")
+    if (Poco::toUpper(info.file_format) != "PARQUET")
     {
         throw Exception(
             ErrorCodes::NOT_IMPLEMENTED,
-            "Position deletes are only supported for data files of Parquet, ORC and Avro formats in Iceberg, but got {}",
+            "Position deletes are only supported for data files of Parquet format in Iceberg, but got {}",
             info.file_format);
     }
 }

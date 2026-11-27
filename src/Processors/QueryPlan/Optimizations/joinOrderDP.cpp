@@ -1,5 +1,4 @@
 #include <Processors/QueryPlan/Optimizations/joinOrderDP.h>
-#include <Common/VectorWithMemoryTracking.h>
 
 #include <Interpreters/JoinOperator.h>
 #include <IO/Operators.h>
@@ -16,7 +15,7 @@ bool connects(const JoinActionRef * predicate, const BitSet & left, const BitSet
     return areIntersecting(participating, left) && areIntersecting(participating, right);
 }
 
-bool hasEquiConnection(const VectorWithMemoryTracking<JoinActionRef *> & edges, const BitSet & left, const BitSet & right)
+bool hasEquiConnection(const std::vector<JoinActionRef *> & edges, const BitSet & left, const BitSet & right)
 {
     for (const auto * edge : edges)
     {
@@ -37,7 +36,7 @@ DPJoinEntryPtr evaluateJoin(
     const DPJoinEntryPtr & left,
     const DPJoinEntryPtr & right,
     JoinKind join_kind,
-    VectorWithMemoryTracking<JoinActionRef *> & predicates,
+    std::vector<JoinActionRef *> & predicates,
     LoggerPtr log)
 {
     auto selectivity = computeSelectivity(query_graph, dp_table, expression_selectivity, predicates, left->relations, right->relations);
@@ -55,7 +54,7 @@ DPJoinEntryPtr evaluateJoin(
     auto cardinality = estimateJoinCardinality(left, right, selectivity, effective_kind);
     JoinOperator join_operator(
         effective_kind, JoinStrictness::All, JoinLocality::Unspecified,
-        std::ranges::to<VectorWithMemoryTracking<JoinActionRef>>(predicates | std::views::transform([](const auto * p) { return *p; })));
+        std::ranges::to<std::vector>(predicates | std::views::transform([](const auto * p) { return *p; })));
     auto new_entry = std::make_shared<DPJoinEntry>(
         left, right, new_cost, selectivity.reported_value, cardinality, std::move(join_operator));
 
