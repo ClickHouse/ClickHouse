@@ -7681,6 +7681,11 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
         }
     }
 
+    /// The data of these is dropped by `getMutationCommands` too.
+    for (const AlterCommand & command : commands)
+        if (command.stopsStoringUnreferencedColumn(old_metadata))
+            dropped_columns.emplace(command.column_name);
+
     if (!dropped_columns.empty())
     {
         auto parts = getDataPartsVectorForInternalUsage();

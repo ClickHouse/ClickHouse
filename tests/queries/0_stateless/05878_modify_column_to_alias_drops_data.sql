@@ -15,6 +15,7 @@ DROP TABLE IF EXISTS t_created_alias;
 DROP TABLE IF EXISTS t_replicated;
 DROP TABLE IF EXISTS t_indexed;
 DROP TABLE IF EXISTS t_pending_update;
+DROP TABLE IF EXISTS t_only_q;
 
 CREATE TABLE t_compact (id UInt64, q UInt32) ENGINE = MergeTree ORDER BY id
 SETTINGS min_bytes_for_wide_part = 1000000000, min_rows_for_wide_part = 1000000000;
@@ -114,6 +115,14 @@ SELECT 'pending update', id, q, z FROM t_pending_update;
 SELECT 'pending update mutations', countIf(NOT is_done), countIf(latest_fail_reason != '') FROM system.mutations
 WHERE database = currentDatabase() AND table = 't_pending_update';
 
+-- Like DROP COLUMN, the conversion is refused when it would leave a part without columns.
+CREATE TABLE t_only_q (q UInt32) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_only_q VALUES (42);
+ALTER TABLE t_only_q ADD COLUMN id UInt64;
+ALTER TABLE t_only_q MODIFY COLUMN q UInt32 ALIAS toUInt32(7); -- { serverError BAD_ARGUMENTS }
+SELECT 'only q', id, q FROM t_only_q;
+SELECT 'only q mutations', count() FROM system.mutations WHERE database = currentDatabase() AND table = 't_only_q';
+
 DROP TABLE t_compact;
 DROP TABLE t_wide;
 DROP TABLE t_ephemeral;
@@ -126,3 +135,4 @@ DROP TABLE t_created_alias;
 DROP TABLE t_replicated;
 DROP TABLE t_indexed;
 DROP TABLE t_pending_update;
+DROP TABLE t_only_q;
