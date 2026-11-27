@@ -1495,6 +1495,16 @@ bool StorageRabbitMQ::streamToViews(UInt64 cycle_epoch, bool drive_loop_on_worke
         /* async_isnert */ false);
     auto block_io = interpreter.execute();
 
+    /// A `DROP VIEW` or `DETACH TABLE` of the last view after the check in `threadFunc` leaves the interpreter a
+    /// pipeline that discards what it consumes. `streaming_views` may be empty already and then never differs, so
+    /// the sources would consume and the messages would be acked below. Repeat the readiness check, as
+    /// `StorageNATS::streamToViews` does.
+    if (!hasDependencies(table_id))
+    {
+        LOG_TRACE(log, "No dependencies, reschedule");
+        return false;
+    }
+
     block_io.pipeline.complete(Pipe::unitePipes(std::move(pipes)));
     /// Read all consumers in parallel, as Kafka does: with `parallel_view_processing = 0` the pipeline has one thread, and
     /// sources that share the flush deadline would run one after another, the later ones finding it already spent.
