@@ -1195,8 +1195,9 @@ void SchemaConverter::processSubtreeTuple(TraversalNode & node)
     VectorWithMemoryTracking<size_t> elements;
     if (tuple_type_hint)
     {
+        /// A map's key and value are identified by position (Parquet spec), whatever the requested names.
         if (tuple_type_hint->hasExplicitNames() && !tuple_type_hint->getElements().empty() &&
-            node.schema_context != SchemaContext::MapTuple)
+            node.schema_context != SchemaContext::MapTuple && node.schema_context != SchemaContext::MapTupleAsPlainTuple)
         {
             /// Allow reading a subset of tuple elements, matched by name, possibly reordered.
             lookup_by_name = true;

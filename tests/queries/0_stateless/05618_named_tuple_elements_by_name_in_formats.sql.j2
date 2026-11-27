@@ -124,3 +124,10 @@ SYSTEM FLUSH LOGS query_log;
 SELECT read_rows FROM system.query_log WHERE current_database = currentDatabase() AND log_comment = '05618_orc_push_down' AND type = 'QueryFinish';
 
 SELECT CAST(CAST(tuple(1), 'Tuple(a Int32)'), 'Tuple(b Int32)');
+
+-- A map read as an array of tuples pairs its key and value by position, as `CAST` does.
+{% for format in ['Parquet', 'ORC', 'Arrow', 'Native', 'Vortex'] -%}
+INSERT INTO FUNCTION file(currentDatabase() || '_05618_map.{{ format }}', '{{ format }}') SELECT map('k', NULL, 'j', 7)::Map(String, Nullable(Int8)) AS m;
+SELECT '{{ format }}', * FROM file(currentDatabase() || '_05618_map.{{ format }}', '{{ format }}', 'm Array(Tuple(k String, v Int8))') SETTINGS input_format_null_as_default = 1;
+SELECT * FROM file(currentDatabase() || '_05618_map.{{ format }}', '{{ format }}', 'm Array(Tuple(key String))'); -- { serverError TYPE_MISMATCH }
+{% endfor -%}

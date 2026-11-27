@@ -147,3 +147,8 @@ Vortex NULL rows
 0
 0
 (1)
+Parquet	[('k',0),('j',7)]
+ORC	[('k',0),('j',7)]
+Arrow	[('k',0),('j',7)]
+Native	[('k',0),('j',7)]
+Vortex	[('k',0),('j',7)]
