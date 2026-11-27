@@ -1,6 +1,6 @@
 -- A patch part whose ranges cannot follow those of the read is read in full by every replica, whatever share of the
 -- read it takes: a `MergeOnKey` patch of a table without a sorting key, or with a sorting key whose value is the same in
--- every row, or of the run of equal keys a query reads inside a larger part, and a `Join` patch of a part merged from its
+-- every row, or of the run of equal keys a query reads inside a larger part, also when the patch is a single granule, and a `Join` patch of a part merged from its
 -- source parts. Its bytes are duplicated reading, so when the patch is most of what a query reads, the duplicated-read
 -- gate declines parallel replicas, which the cost model alone would take.
 
@@ -8,6 +8,7 @@ DROP TABLE IF EXISTS t_patch_merge_on_key;
 DROP TABLE IF EXISTS t_patch_join;
 DROP TABLE IF EXISTS t_patch_equal_keys;
 DROP TABLE IF EXISTS t_patch_equal_run;
+DROP TABLE IF EXISTS t_patch_one_granule;
 
 -- Payloads that hardly compress; `sipHash128` because builds without SSL have no `SHA256`.
 -- Fixed granules: a part of fewer than 4 marks is taken to follow the read whatever its patch.
@@ -21,6 +22,12 @@ CREATE TABLE t_patch_equal_keys (c UInt64 DEFAULT 0, key UInt64, a String, b Str
 SETTINGS index_granularity = 8192, enable_block_number_column = 1, enable_block_offset_column = 1, patch_parts_version = 'v2', apply_patches_on_merge = 0;
 SYSTEM STOP MERGES t_patch_equal_keys;
 INSERT INTO t_patch_equal_keys (key, a, b) SELECT number, hex(sipHash128(number, 0)), '' FROM numbers(100000);
+
+-- The patch of 8192 rows is one granule, which every piece of the read takes.
+CREATE TABLE t_patch_one_granule (key UInt64, a String, b String) ENGINE = MergeTree ORDER BY tuple()
+SETTINGS index_granularity = 8192, enable_block_number_column = 1, enable_block_offset_column = 1, patch_parts_version = 'v2', apply_patches_on_merge = 0;
+SYSTEM STOP MERGES t_patch_one_granule;
+INSERT INTO t_patch_one_granule SELECT number, hex(sipHash128(number, 0)), '' FROM numbers(100000);
 
 -- 12 granules of equal keys inside the first quarter of a part of 64: the pieces of the part would not tell, those of
 -- the read do.
@@ -40,6 +47,7 @@ SET enable_lightweight_update = 1;
 UPDATE t_patch_merge_on_key SET b = concat(hex(sipHash128(key, 1)), hex(sipHash128(key, 2))) WHERE 1;
 UPDATE t_patch_join SET b = concat(hex(sipHash128(key, 1)), hex(sipHash128(key, 2))) WHERE 1;
 UPDATE t_patch_equal_keys SET b = concat(hex(sipHash128(key, 1)), hex(sipHash128(key, 2))) WHERE 1;
+UPDATE t_patch_one_granule SET b = arrayStringConcat(arrayMap(i -> hex(sipHash128(key, i)), range(1, 33))) WHERE key < 8192;
 UPDATE t_patch_equal_run SET b = concat(hex(sipHash128(key, 1)), hex(sipHash128(key, 2))) WHERE c = 32768;
 OPTIMIZE TABLE t_patch_join FINAL;
 SYSTEM STOP MERGES t_patch_join;
@@ -77,6 +85,13 @@ SETTINGS log_comment = 'patch_dup_equal_keys_2_at_default';
 SELECT key % 10 AS k, max(a), max(b) FROM t_patch_equal_keys GROUP BY k FORMAT Null
 SETTINGS log_comment = 'patch_dup_equal_keys_3_disabled', automatic_parallel_replicas_max_duplicated_read_ratio = 1;
 
+SELECT key % 10 AS k, max(a), max(b) FROM t_patch_one_granule GROUP BY k FORMAT Null
+SETTINGS log_comment = 'patch_dup_one_granule_1_collect';
+SELECT key % 10 AS k, max(a), max(b) FROM t_patch_one_granule GROUP BY k FORMAT Null
+SETTINGS log_comment = 'patch_dup_one_granule_2_at_default';
+SELECT key % 10 AS k, max(a), max(b) FROM t_patch_one_granule GROUP BY k FORMAT Null
+SETTINGS log_comment = 'patch_dup_one_granule_3_disabled', automatic_parallel_replicas_max_duplicated_read_ratio = 1;
+
 -- Fewer threads than the three replicas give, so that the cost model takes them for a read of 12 granules.
 SELECT key % 10 AS k, max(a), max(b) FROM t_patch_equal_run WHERE c = 32768 GROUP BY k FORMAT Null
 SETTINGS log_comment = 'patch_dup_equal_run_1_collect', max_threads = 4, merge_tree_min_rows_for_concurrent_read = 8192;
@@ -104,3 +119,4 @@ DROP TABLE t_patch_merge_on_key;
 DROP TABLE t_patch_join;
 DROP TABLE t_patch_equal_keys;
 DROP TABLE t_patch_equal_run;
+DROP TABLE t_patch_one_granule;

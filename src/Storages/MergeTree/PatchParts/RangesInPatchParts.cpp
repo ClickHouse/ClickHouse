@@ -311,8 +311,8 @@ bool patchSplitsWithRead(const DataPartPtr & original_part, const PatchPartInfoF
     if (marks < pieces)
         return true;
 
-    MarkRanges patch_ranges;
-    size_t selected_marks = 0;
+    /// The bounds of the patch ranges of all the pieces: +1 at the begin of a range, -1 at its end.
+    VectorWithMemoryTracking<std::pair<size_t, Int8>> bounds;
     auto range_it = read_ranges.begin();
     size_t taken_from_range = 0;
     for (size_t i = 0; i < pieces; ++i)
@@ -331,16 +331,36 @@ bool patchSplitsWithRead(const DataPartPtr & original_part, const PatchPartInfoF
                 taken_from_range = 0;
             }
         }
-        for (const auto & range : getRangesInPatchPart(original_part, patch, piece))
+        auto patch_ranges = getRangesInPatchPart(original_part, patch, piece);
+        std::ranges::sort(patch_ranges, std::less{}, &MarkRange::begin);
+        for (const auto & range : optimizeRanges(patch_ranges))
         {
-            selected_marks += range.getNumberOfMarks();
-            patch_ranges.push_back(range);
+            bounds.emplace_back(range.begin, 1);
+            bounds.emplace_back(range.end, -1);
         }
     }
 
-    std::ranges::sort(patch_ranges, std::less{}, &MarkRange::begin);
-    const size_t distinct_marks = optimizeRanges(patch_ranges).getNumberOfMarks();
-    return selected_marks <= distinct_marks + 2 * (pieces - 1);
+    /// An end sorts before a begin at the same mark, as the ranges do not include their ends.
+    std::ranges::sort(bounds);
+    Int64 pieces_taking = 0;
+    for (const auto & [_, delta] : bounds)
+    {
+        pieces_taking += delta;
+        if (pieces_taking > 2)
+            return false;
+    }
+    return true;
+}
+
+bool PatchesSplitWithRead::splits(const DataPartPtr & original_part, const PatchPartsForReader & patches, size_t patch_index)
+{
+    std::call_once(computed, [&]
+    {
+        splits_with_read.reserve(patches.size());
+        for (const auto & patch : patches)
+            splits_with_read.push_back(patchSplitsWithRead(original_part, patch, *read_ranges));
+    });
+    return splits_with_read.at(patch_index);
 }
 
 void RangesInPatchParts::addPart(const DataPartPtr & original_part, const PatchPartsForReader & patch_parts, const MarkRanges & original_ranges)
