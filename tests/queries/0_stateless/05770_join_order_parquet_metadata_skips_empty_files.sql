@@ -8,6 +8,7 @@ SET use_statistics = 1;
 SET use_parquet_metadata_statistics = 1;
 SET query_plan_optimize_join_order_limit = 10;
 SET enable_parallel_replicas = 0;
+SET query_plan_optimize_join_order_randomize = 0; -- Pinned because the test asserts on the estimated rows
 SET s3_truncate_on_insert = 1;
 SET s3_skip_empty_files = 1;
 

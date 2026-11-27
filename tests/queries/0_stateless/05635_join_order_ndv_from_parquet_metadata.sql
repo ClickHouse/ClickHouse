@@ -15,7 +15,10 @@ SET s3_truncate_on_insert = 1;
 -- `d` is dictionary-encoded with 300 values in every row group; `u` is unique.
 INSERT INTO FUNCTION s3(s3_conn, filename = currentDatabase() || '/05635/data.parquet', format = Parquet, structure = 'id UInt64, d String, u String')
 SELECT number, 'value ' || toString(intHash32(number) % 300), toString(intHash64(number)) FROM numbers(100000)
-SETTINGS output_format_parquet_row_group_size = 20000, output_format_parquet_use_custom_encoder = 1;
+SETTINGS output_format_parquet_row_group_size = 20000, output_format_parquet_use_custom_encoder = 1,
+    -- Pinned because the test asserts on the row groups and on the dictionary encoding of the columns.
+    output_format_parquet_row_group_size_bytes = 536870912, output_format_parquet_data_page_size = 1048576,
+    output_format_parquet_max_dictionary_size = 1048576;
 
 DROP TABLE IF EXISTS t;
 CREATE TABLE t (id UInt64, d String, u String) ENGINE = S3(s3_conn, filename = currentDatabase() || '/05635/data.parquet', format = Parquet);
