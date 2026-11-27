@@ -40,7 +40,7 @@ struct ClusterFunctionReadTaskResponse
     void serialize(WriteBuffer & out, size_t worker_protocol_version) const;
     /// Deserialize. Protocol version will be received from `in`
     /// and the result will be deserialized accordingly.
-    void deserialize(ReadBuffer & in);
+    void deserialize(ReadBuffer & in, const ContextPtr & context);
 };
 
 using ClusterFunctionReadTaskResponsePtr = std::shared_ptr<ClusterFunctionReadTaskResponse>;

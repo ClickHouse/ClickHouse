@@ -4,6 +4,7 @@
 #include <AggregateFunctions/AggregateFunctionGroupBitmapData.h>
 #include <Core/Settings.h>
 #include <Core/ProtocolDefines.h>
+#include <DataTypes/DataTypesBinaryEncoding.h>
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
 #include <IO/WriteHelpers.h>
@@ -201,7 +202,7 @@ void ClusterFunctionReadTaskResponse::serialize(WriteBuffer & out, size_t worker
     }
 }
 
-void ClusterFunctionReadTaskResponse::deserialize(ReadBuffer & in)
+void ClusterFunctionReadTaskResponse::deserialize(ReadBuffer & in, const ContextPtr & context)
 {
     size_t protocol_version = 0;
     readVarUInt(protocol_version, in);
@@ -219,8 +220,8 @@ void ClusterFunctionReadTaskResponse::deserialize(ReadBuffer & in)
     if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_DATA_LAKE_METADATA)
     {
         DeserializedSetsRegistry registry;
-        /// Trusted intra-cluster metadata: decode types without the input complexity limit.
-        auto transform = std::make_shared<ActionsDAG>(ActionsDAG::deserialize(in, registry, Context::getGlobalContextInstance(), 0));
+        auto transform = std::make_shared<ActionsDAG>(
+            ActionsDAG::deserialize(in, registry, context, getBinaryTypeDecodingComplexityLimit(context)));
 
         if (!path.empty() && !transform->getInputs().empty())
         {
