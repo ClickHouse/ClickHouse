@@ -50,6 +50,7 @@
 #include <Parsers/ASTQualifiedAsterisk.h>
 #include <Parsers/ASTSelectIntersectExceptQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
 
@@ -1512,6 +1513,22 @@ void InterpreterCreateQuery::validateTableStructure(const ASTCreateQuery & creat
     }
 }
 
+SharedHeader InterpreterCreateQuery::getMaterializedViewSampleBlock(const ASTCreateQuery & create) const
+{
+    /// We should treat SELECT as an initial query in order to properly analyze it.
+    auto context = Context::createCopy(getContext());
+    context->setQueryKindInitial();
+
+    /// For refreshable materialized views, use the MV's database as context.
+    /// This ensures unqualified references resolve in the MV's database, not session's database.
+    if (create.refresh_strategy)
+        context->setCurrentDatabaseUnchecked(create.getDatabase());
+
+    return InterpreterSelectQueryAnalyzer::getSampleBlock(create.select->clone(),
+        context,
+        SelectQueryOptions{}.analyze().createView().checkSubqueryTableAccess());
+}
+
 void InterpreterCreateQuery::validateMaterializedViewColumnsAndEngine(const ASTCreateQuery & create, const TableProperties & properties)
 {
     /// This is not strict validation, just catches common errors that would make the view not work.
@@ -1553,20 +1570,7 @@ void InterpreterCreateQuery::validateMaterializedViewColumnsAndEngine(const ASTC
     {
         try
         {
-            {
-                /// We should treat SELECT as an initial query in order to properly analyze it.
-                auto context = Context::createCopy(getContext());
-                context->setQueryKindInitial();
-
-                /// For refreshable materialized views, use the MV's database as context.
-                /// This ensures unqualified references resolve in the MV's database, not session's database.
-                if (create.refresh_strategy)
-                    context->setCurrentDatabaseUnchecked(create.getDatabase());
-
-                input_block = InterpreterSelectQueryAnalyzer::getSampleBlock(create.select->clone(),
-                    context,
-                    SelectQueryOptions{}.analyze().createView().checkSubqueryTableAccess());
-            }
+            input_block = getMaterializedViewSampleBlock(create);
         }
         catch (Exception & e)
         {
@@ -2517,6 +2521,34 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         if (mode == LoadingStrictnessLevel::CREATE && create.is_materialized_view_with_inner_table())
             getContext()->setSetting("flatten_nested", false);
         validateMaterializedViewColumnsAndEngine(create, properties);
+    }
+    else if (create.select && create.is_materialized_view && is_restore_from_backup && !is_secondary_query)
+    {
+        /// A restore does not validate the view, but checks the rights for the tables that its query reads, as `CREATE` does.
+        try
+        {
+            (void)getMaterializedViewSampleBlock(create);
+        }
+        catch (Exception & e)
+        {
+            /// The rights for a table function are checked only by the analysis.
+            std::function<bool(const IAST &)> has_table_function = [&](const IAST & ast)
+            {
+                const auto * table_expression = ast.as<ASTTableExpression>();
+                return (table_expression && table_expression->table_function)
+                    || std::ranges::any_of(ast.children, [&](const auto & child) { return has_table_function(*child); });
+            };
+            if (e.code() == ErrorCodes::ACCESS_DENIED || has_table_function(*create.select))
+                throw;
+
+            /// The query cannot be analyzed, for example a table is missing. Then the rights are checked for every table that it names.
+            const auto dependencies = getDependenciesFromCreateQuery(
+                getContext()->getGlobalContext(), {create.getDatabase(), create.getTable()}, query_ptr, getContext()->getCurrentDatabase());
+            for (const auto & table : dependencies.dependencies)
+                getContext()->checkAccess(AccessType::SELECT, table.database, table.table);
+            if (dependencies.mv_from_dependency)
+                getContext()->checkAccess(AccessType::SELECT, *dependencies.mv_from_dependency);
+        }
     }
 
     bool is_storage_replicated = false;
