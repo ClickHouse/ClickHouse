@@ -4,6 +4,7 @@
 #include <Parsers/ASTJSONReadHelpers.h>
 
 #include <IO/Operators.h>
+#include <Common/SipHash.h>
 #include <base/EnumReflection.h>
 
 namespace DB
@@ -12,6 +13,21 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+}
+
+void ASTRefreshStrategy::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
+{
+    IAST::updateTreeHashImpl(hash_state, ignore_aliases);
+    hash_state.update(static_cast<UInt8>(schedule_kind));
+    hash_state.update(static_cast<UInt8>(mode));
+    hash_state.update(if_changed);
+    /// The children do not tell which interval is which: `EVERY 1 HOUR OFFSET 5 MINUTE` and
+    /// `EVERY 1 HOUR RANDOMIZE FOR 5 MINUTE` have the same children otherwise.
+    hash_state.update(period != nullptr);
+    hash_state.update(offset != nullptr);
+    hash_state.update(spread != nullptr);
+    hash_state.update(settings != nullptr);
+    hash_state.update(dependencies != nullptr);
 }
 
 ASTPtr ASTRefreshStrategy::clone() const
@@ -59,6 +75,9 @@ void ASTRefreshStrategy::formatImpl(
         }
     }
 
+    if (if_changed)
+        ostr << " IF CHANGED";
+
     if (spread)
     {
         ostr << " RANDOMIZE FOR ";
@@ -89,6 +108,8 @@ void ASTRefreshStrategy::writeJSON(WriteBuffer & out) const
     w.writeChild("spread", spread);
     w.writeChild("settings", settings);
     w.writeChild("dependencies", dependencies);
+    if (if_changed)
+        w.writeBool("if_changed", true);
     if (isAppend())
         w.writeBool("append", true);
     if (isIncremental())
@@ -131,6 +152,7 @@ void ASTRefreshStrategy::readJSON(const Poco::JSON::Object & json)
                     "`RefreshStrategy` 'dependencies' must contain only table identifiers during AST JSON deserialization");
         set(dependencies, dependencies_child);
     }
+    if_changed = r.getBool("if_changed");
     const bool append = r.getBool("append");
     const bool incremental = r.getBool("incremental");
     mode = incremental ? RefreshMode::AppendIncremental : append ? RefreshMode::AppendFull : RefreshMode::Replace;

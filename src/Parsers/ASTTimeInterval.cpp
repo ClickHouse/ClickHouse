@@ -3,6 +3,7 @@
 #include <Parsers/ASTJSONReadHelpers.h>
 
 #include <IO/Operators.h>
+#include <Common/SipHash.h>
 
 #include <ranges>
 
@@ -17,6 +18,13 @@ namespace ErrorCodes
 ASTPtr ASTTimeInterval::clone() const
 {
     return make_intrusive<ASTTimeInterval>(*this);
+}
+
+void ASTTimeInterval::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
+{
+    IAST::updateTreeHashImpl(hash_state, ignore_aliases);
+    hash_state.update(interval.seconds);
+    hash_state.update(interval.months);
 }
 
 void ASTTimeInterval::formatImpl(WriteBuffer & ostr, const FormatSettings &, FormatState &, FormatStateStacked) const

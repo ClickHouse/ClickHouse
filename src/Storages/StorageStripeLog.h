@@ -9,6 +9,7 @@
 #include <Formats/IndexForNativeFormat.h>
 #include <Common/FileChecker.h>
 #include <Common/escapeForFileName.h>
+#include <Common/randomSeed.h>
 #include <Disks/IDisk.h>
 
 
@@ -67,6 +68,8 @@ public:
 
     std::optional<UInt64> totalRows(ContextPtr query_context) const override;
     std::optional<UInt64> totalBytes(ContextPtr query_context) const override;
+
+    std::optional<UInt128> getModificationHash(const StorageSnapshotPtr & storage_snapshot, ContextPtr context) const override;
 
     static VirtualColumnsDescription createVirtuals();
 
@@ -128,6 +131,17 @@ private:
 
     std::atomic<UInt64> total_rows = 0;
     std::atomic<UInt64> total_bytes = 0;
+
+    /// Monotonically increasing version, bumped on every data change (insert, truncate, restore). Used by
+    /// getModificationHash so that TRUNCATE followed by reinserting different rows with the same row/byte
+    /// counts still produces a different hash.
+    std::atomic<UInt64> data_version = 0;
+
+    /// Random per storage object, folded into `getModificationHash` next to `data_version`. The table UUID
+    /// survives a server restart but `data_version` starts from 0 again, and the on-disk query result cache
+    /// keeps its entries across restarts; without this, the first post-restart writes could reproduce a
+    /// hash of the previous server lifetime and hit a stale on-disk entry.
+    const UInt64 data_version_nonce = randomSeed();
 
     const size_t max_compress_block_size;
 

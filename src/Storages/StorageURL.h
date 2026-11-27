@@ -115,6 +115,8 @@ public:
         const ContextPtr & context,
         bool check_redirect_access);
 
+    std::optional<UInt128> getModificationHash(const StorageSnapshotPtr & storage_snapshot, ContextPtr context) const override;
+
 protected:
     friend class ReadFromURL;
 

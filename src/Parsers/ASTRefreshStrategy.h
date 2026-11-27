@@ -37,12 +37,19 @@ public:
 
     bool isAppend() const { return mode != RefreshMode::Replace; }
     bool isIncremental() const { return mode == RefreshMode::AppendIncremental; }
+    /// `REFRESH ... IF CHANGED`: skip a scheduled refresh if none of the tables the view reads from
+    /// changed since the last refresh.
+    bool if_changed = false;
 
     String getID(char) const override { return "Refresh strategy definition"; }
 
     ASTPtr clone() const override;
     void writeJSON(WriteBuffer & out) const override;
     void readJSON(const Poco::JSON::Object & json) override;
+
+    /// Includes the scalar fields and which of the intervals are present, so that two strategies
+    /// differing only in the schedule kind, the mode, `IF CHANGED` or the intervals hash differently.
+    void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
 
 protected:
     void formatImpl(WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame) const override;
