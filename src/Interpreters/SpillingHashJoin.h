@@ -31,7 +31,7 @@ class MergeJoin;
 /// Blocks are fed into a HashJoin, possibly from multiple threads concurrently.
 /// A SharedMutex protects the COLLECTING -> GRACE_HASH_JOIN / MERGE_JOIN transition: addBlockToJoin takes a shared lock, while
 /// switchToExternalJoin takes an exclusive lock.
-/// Every insert into the HashJoin is admitted against max_bytes_before_external_join before it allocates (see JoinSpillBudget).
+/// Every insert into the HashJoin is admitted against max_bytes_before_external_join (see JoinSpillBudget).
 /// The insert the threshold refuses creates the external join, and the stored blocks of the HashJoin are handed over to it one
 /// at a time, possibly from multiple threads. Inserts into a MergeJoin target are serialized
 /// by merge_join_insert_mutex, so its build stays single-threaded; GraceHashJoin inserts stay concurrent.
