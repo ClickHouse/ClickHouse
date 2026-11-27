@@ -42,6 +42,7 @@ WHERE event_date >= yesterday() AND current_database = currentDatabase() AND typ
     AND log_comment IN ('one stream, unique keys', 'one stream, repeated keys', 'two streams, repeated keys')
 ORDER BY log_comment;
 
+-- Only the processors logged since the test started: the log holds millions of rows on a CI server.
 SELECT log_comment, count() AS merge_sources
 FROM system.processors_profile_log AS processors
 INNER JOIN
@@ -52,5 +53,6 @@ INNER JOIN
         AND log_comment IN ('one stream, unique keys', 'one stream, repeated keys', 'two streams, repeated keys')
 ) AS queries USING (query_id)
 WHERE processors.event_date >= yesterday() AND processors.name = 'AdaptiveBucketMergingSource'
+    AND processors.event_time >= (SELECT min(query_start_time) FROM system.query_log WHERE event_date >= yesterday() AND current_database = currentDatabase())
 GROUP BY log_comment
 ORDER BY log_comment;
