@@ -1,0 +1,106 @@
+Parquet
+struct	0	10
+struct	1	11
+nested	0	20	30
+nested	1	21	31
+list	0	[0,1]	['p','q']
+list	1	[1,2]	['p','q']
+filter	1
+case-insensitive	0	10
+case-insensitive	1	11
+no missing columns	0	10
+no missing columns	1	11
+ORC
+struct	0	10
+struct	1	11
+nested	0	20	30
+nested	1	21	31
+list	0	[0,1]	['p','q']
+list	1	[1,2]	['p','q']
+filter	1
+case-insensitive	0	10
+case-insensitive	1	11
+with the struct	0	(10,(20),30)	10
+with the struct	1	(11,(21),31)	11
+no missing columns	0	10
+no missing columns	1	11
+unused prefix	0	2000-01-01 00:00:00
+unused prefix	1	2000-01-02 00:00:00
+reverse pair	0	2000-01-01 00:00:00
+reverse pair	1	2000-01-02 00:00:00
+whole name	0	2000-01-01 00:00:00
+whole name	1	2000-01-02 00:00:00
+two dotted roots	0	2000-01-01 00:00:00
+two dotted roots	1	2000-01-02 00:00:00
+two dotted roots, filter	1
+Arrow
+struct	0	10
+struct	1	11
+nested	0	20	30
+nested	1	21	31
+list	0	[0,1]	['p','q']
+list	1	[1,2]	['p','q']
+filter	1
+case-insensitive	0	10
+case-insensitive	1	11
+with the struct	0	(10,(20),30)	10
+with the struct	1	(11,(21),31)	11
+no missing columns	0	10
+no missing columns	1	11
+unused prefix	0	2000-01-01 00:00:00
+unused prefix	1	2000-01-02 00:00:00
+reverse pair	0	2000-01-01 00:00:00
+reverse pair	1	2000-01-02 00:00:00
+whole name	0	2000-01-01 00:00:00
+whole name	1	2000-01-02 00:00:00
+two dotted roots	0	2000-01-01 00:00:00
+two dotted roots	1	2000-01-02 00:00:00
+two dotted roots, filter	1
+whole name, struct first	0	2000-01-01 00:00:00
+whole name, struct first	1	2000-01-02 00:00:00
+ArrowStream
+struct	0	10
+struct	1	11
+nested	0	20	30
+nested	1	21	31
+list	0	[0,1]	['p','q']
+list	1	[1,2]	['p','q']
+filter	1
+case-insensitive	0	10
+case-insensitive	1	11
+with the struct	0	(10,(20),30)	10
+with the struct	1	(11,(21),31)	11
+no missing columns	0	10
+no missing columns	1	11
+unused prefix	0	2000-01-01 00:00:00
+unused prefix	1	2000-01-02 00:00:00
+reverse pair	0	2000-01-01 00:00:00
+reverse pair	1	2000-01-02 00:00:00
+whole name	0	2000-01-01 00:00:00
+whole name	1	2000-01-02 00:00:00
+two dotted roots	0	2000-01-01 00:00:00
+two dotted roots	1	2000-01-02 00:00:00
+two dotted roots, filter	1
+whole name, struct first	0	2000-01-01 00:00:00
+whole name, struct first	1	2000-01-02 00:00:00
+Vortex
+struct	0	10
+struct	1	11
+nested	0	20	30
+nested	1	21	31
+list	0	[0,1]	['p','q']
+list	1	[1,2]	['p','q']
+filter	1
+with the struct	0	(10,(20),30)	10
+with the struct	1	(11,(21),31)	11
+unused prefix	0	2000-01-01 00:00:00
+unused prefix	1	2000-01-02 00:00:00
+reverse pair	0	2000-01-01 00:00:00
+reverse pair	1	2000-01-02 00:00:00
+whole name	0	2000-01-01 00:00:00
+whole name	1	2000-01-02 00:00:00
+two dotted roots	0	2000-01-01 00:00:00
+two dotted roots	1	2000-01-02 00:00:00
+two dotted roots, filter	1
+whole name, struct first	0	2000-01-01 00:00:00
+whole name, struct first	1	2000-01-02 00:00:00

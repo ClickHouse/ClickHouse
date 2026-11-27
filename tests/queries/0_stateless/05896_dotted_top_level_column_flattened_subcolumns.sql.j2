@@ -1,0 +1,83 @@
+-- Tags: no-fasttest, no-msan
+-- no-fasttest, no-msan: the ORC, Arrow and Vortex formats are not included in the fast test, and Vortex not in MSan builds
+-- A flattened subcolumn of a top-level column whose own name has a dot (`d.e.a` of the struct `d.e`) is read from that column.
+
+SET engine_file_truncate_on_insert = 1;
+
+{% set ci = 'input_format_parquet_case_insensitive_column_matching = 1, input_format_orc_case_insensitive_column_matching = 1, input_format_arrow_case_insensitive_column_matching = 1' -%}
+{% set allow_missing = {'Parquet': 'input_format_parquet_allow_missing_columns', 'ORC': 'input_format_orc_allow_missing_columns', 'Arrow': 'input_format_arrow_allow_missing_columns', 'ArrowStream': 'input_format_arrow_allow_missing_columns'} -%}
+{% for format in ['Parquet', 'ORC', 'Arrow', 'ArrowStream', 'Vortex'] -%}
+{% set path = "currentDatabase() || '_05896." ~ format ~ "', '" ~ format ~ "'" -%}
+{% set pair_path = "currentDatabase() || '_05896_pair." ~ format ~ "', '" ~ format ~ "'" -%}
+{% set reverse_path = "currentDatabase() || '_05896_reverse." ~ format ~ "', '" ~ format ~ "'" -%}
+{% set whole_path = "currentDatabase() || '_05896_whole." ~ format ~ "', '" ~ format ~ "'" -%}
+{% set whole_struct_first_path = "currentDatabase() || '_05896_whole_sf." ~ format ~ "', '" ~ format ~ "'" -%}
+{% set roots_path = "currentDatabase() || '_05896_roots." ~ format ~ "', '" ~ format ~ "'" -%}
+SELECT '{{ format }}';
+INSERT INTO FUNCTION file({{ path }}) SELECT
+    number AS id,
+    tuple(toInt32(10 + number), tuple(toInt32(20 + number)), toInt32(30 + number))::Tuple(a Int32, b Tuple(c Int32), `f.g` Int32) AS `d.e`,
+    [tuple(toInt32(number), 'p'), tuple(toInt32(number + 1), 'q')]::Array(Tuple(x Int32, y String)) AS `n.m`,
+    tuple(toDate32('2200-01-01'))::Tuple(t Date32) AS `o.p`,
+    [tuple(toDate32('2200-01-01'))]::Array(Tuple(t Date32)) AS `l.q`
+FROM numbers(2);
+
+SELECT 'struct', id, `d.e.a` FROM file({{ path }}, 'id UInt64, `d.e.a` Int32') ORDER BY id;
+SELECT 'nested', id, `d.e.b.c`, `d.e.f.g` FROM file({{ path }}, 'id UInt64, `d.e.b.c` Int32, `d.e.f.g` Int32') ORDER BY id;
+SELECT 'list', id, `n.m.x`, `n.m.y` FROM file({{ path }}, 'id UInt64, `n.m.x` Array(Int32), `n.m.y` Array(String)') ORDER BY id;
+SELECT 'filter', id FROM file({{ path }}, 'id UInt64, `d.e.a` Int32') WHERE `d.e.a` = 11;
+{% if format != 'Vortex' -%}
+SELECT 'case-insensitive', id, `D.E.A` FROM file({{ path }}, 'id UInt64, `D.E.A` Int32') ORDER BY id SETTINGS {{ ci }};
+{% endif -%}
+{% if format != 'Parquet' -%}
+SELECT 'with the struct', id, `d.e`, `d.e.a` FROM file({{ path }}, 'id UInt64, `d.e` Tuple(a Int32, b Tuple(c Int32), `f.g` Int32), `d.e.a` Int32') ORDER BY id;
+{% endif -%}
+{% if format in allow_missing -%}
+SELECT 'no missing columns', id, `d.e.a` FROM file({{ path }}, 'id UInt64, `d.e.a` Int32') ORDER BY id SETTINGS {{ allow_missing[format] }} = 0;
+{% endif -%}
+{% if format != 'ORC' -%}
+SELECT * FROM file({{ path }}, '`o.p.t` DateTime(\'UTC\')'); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+{% endif -%}
+{% if format not in ['ORC', 'Vortex'] -%}
+SELECT * FROM file({{ path }}, '`O.P.T` DateTime(\'UTC\')') SETTINGS {{ ci }}; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+{% endif -%}
+SELECT * FROM file({{ path }}, '`l.q.t` Array(DateTime(\'UTC\'))'); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+{% if format != 'Parquet' -%}
+-- With a column named like the prefix before the first dot, the request is read from it, and the other prefix is not decoded.
+INSERT INTO FUNCTION file({{ pair_path }}) SELECT
+    number AS id,
+    tuple(tuple(toDate32('2000-01-01') + number))::Tuple(r Tuple(s Date32)) AS q,
+    tuple(toDate32('2200-01-01'))::Tuple(s Date32) AS `q.r`
+FROM numbers(2);
+SELECT 'unused prefix', id, `q.r.s` FROM file({{ pair_path }}, 'id UInt64, `q.r.s` DateTime(\'UTC\')') ORDER BY id;
+INSERT INTO FUNCTION file({{ reverse_path }}) SELECT
+    number AS id,
+    tuple(toDate32('2200-01-01'))::Tuple(s Date32) AS `q.r`,
+    tuple(tuple(toDate32('2000-01-01') + number))::Tuple(r Tuple(s Date32)) AS q
+FROM numbers(2);
+SELECT 'reverse pair', id, `q.r.s` FROM file({{ reverse_path }}, 'id UInt64, `q.r.s` DateTime(\'UTC\')') ORDER BY id;
+-- A column named like the whole request wins, and the struct prefix is not decoded.
+INSERT INTO FUNCTION file({{ whole_path }}) SELECT
+    number AS id,
+    toDate32('2000-01-01') + number AS `d.e.a`,
+    tuple(toDate32('2200-01-01'))::Tuple(a Date32) AS `d.e`
+FROM numbers(2);
+SELECT 'whole name', id, `d.e.a` FROM file({{ whole_path }}, 'id UInt64, `d.e.a` DateTime(\'UTC\')') ORDER BY id;
+-- Two dotted columns are prefixes of the request and none is named like the prefix before the first dot: the shortest one is read.
+INSERT INTO FUNCTION file({{ roots_path }}) SELECT
+    number AS id,
+    tuple(toDate32('2200-01-01'))::Tuple(t Date32) AS `q.r.s`,
+    tuple(tuple(toDate32('2000-01-01') + number))::Tuple(s Tuple(t Date32)) AS `q.r`
+FROM numbers(2);
+SELECT 'two dotted roots', id, `q.r.s.t` FROM file({{ roots_path }}, 'id UInt64, `q.r.s.t` DateTime(\'UTC\')') ORDER BY id;
+SELECT 'two dotted roots, filter', id FROM file({{ roots_path }}, 'id UInt64, `q.r.s.t` Date32') WHERE `q.r.s.t` = toDate32('2000-01-02');
+{% endif -%}
+{% if format in ['Arrow', 'ArrowStream', 'Vortex'] -%}
+INSERT INTO FUNCTION file({{ whole_struct_first_path }}) SELECT
+    number AS id,
+    tuple(toDate32('2200-01-01'))::Tuple(a Date32) AS `d.e`,
+    toDate32('2000-01-01') + number AS `d.e.a`
+FROM numbers(2);
+SELECT 'whole name, struct first', id, `d.e.a` FROM file({{ whole_struct_first_path }}, 'id UInt64, `d.e.a` DateTime(\'UTC\')') ORDER BY id;
+{% endif -%}
+{% endfor -%}

@@ -141,25 +141,35 @@ void ArrowIPCBlockInputFormat::collectDictionaryFields(const ArrowIPC::ArrowFiel
 }
 
 
-void ArrowIPCBlockInputFormat::prepareReader()
+void ArrowIPCBlockInputFormat::collectRequestedTopLevelFields()
 {
-    /// Determine which top-level Arrow fields the requested header needs, so the reader can skip the rest
-    /// (subset-of-columns support): a field is needed if a header column matches it by name, or is a
-    /// `Nested`/struct subcolumn of it (a header column `name.sub` keeps the field `name`) — mirroring how
-    /// `buildChunk` maps columns. This depends only on the header, so compute it before reading the file:
-    /// the file reader uses it below to skip the dictionaries of unrequested columns. Names are lower-cased
-    /// when case-insensitive matching is on, matching the lookup in `decodeBatch`.
+    /// The top-level fields the header needs, so the reader skips the rest: the field a header column names and the one it
+    /// is a `Nested`/struct subcolumn of, as `buildChunk` finds them. Lower-cased with case-insensitive matching, as
+    /// `decodeBatch` looks them up.
     const bool case_insensitive = format_settings.arrow.case_insensitive_column_matching;
     auto normalize = [&](String s) -> String { if (case_insensitive) boost::to_lower(s); return s; };
+    UnorderedSetWithMemoryTracking<String> field_names;
+    for (const auto & field : arrow_schema->fields)
+        field_names.insert(normalize(field.name));
+    auto is_field = [&](std::string_view name) { return field_names.contains(normalize(String(name))); };
     requested_top_level_fields.clear();
     for (const auto & header_column : getPort().getHeader())
     {
         requested_top_level_fields.insert(normalize(header_column.name));
         requested_top_level_fields.insert(normalize(Nested::extractTableName(header_column.name)));
+        if (!is_field(header_column.name))
+            if (const auto nested_names = Nested::tryGetColumnAndSubcolumnPair(header_column.name, is_field))
+                requested_top_level_fields.insert(normalize(String(nested_names->first)));
     }
+}
 
+void ArrowIPCBlockInputFormat::prepareReader()
+{
     if (stream)
+    {
         prepareStreamReader();
+        collectRequestedTopLevelFields();
+    }
     else
         prepareFileReader();
 
@@ -255,6 +265,7 @@ void ArrowIPCBlockInputFormat::prepareFileReader()
 
     ArrowIPC::ArrowFileFooter footer = ArrowIPC::readArrowFileFooter(*seekable, file_size);
     arrow_schema = std::move(footer.schema);
+    collectRequestedTopLevelFields();
     for (const auto & block : footer.record_batch_blocks)
         record_batch_blocks.push_back({block.offset, block.metadata_length, block.body_length});
 
@@ -964,10 +975,17 @@ Chunk ArrowIPC::buildChunk(
         {
             bool read_from_nested = false;
 
-            /// A subcolumn of a `Nested`/struct field: `table.a` is extracted from the Arrow field `table`.
-            const String nested_table_name = Nested::extractTableName(header_column.name);
-            if (const auto nested_index = find_decoded(nested_table_name))
+            /// A subcolumn of a `Nested`/struct field: `table.a` is extracted from the Arrow field `table`, the shortest dotted
+            /// prefix of the name that is a decoded field.
+            std::optional<size_t> nested_index;
+            const auto nested_names = Nested::tryGetColumnAndSubcolumnPair(header_column.name, [&](std::string_view name)
             {
+                nested_index = find_decoded(String(name));
+                return nested_index.has_value();
+            });
+            if (nested_index)
+            {
+                const String nested_table_name(nested_names->first);
                 auto extractor_it = nested_extractors.find(*nested_index);
                 if (extractor_it == nested_extractors.end())
                 {

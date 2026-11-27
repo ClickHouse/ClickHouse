@@ -133,18 +133,25 @@ VortexScanPlan planVortexScan(
     /// values, and if none is left there is no scan at all, only a row count.
     ///
     /// A header entry can also name a subcolumn, `name.sub`, which `ArrowIPC::buildChunk` can only
-    /// extract once the whole field `name` has been read - hence the second name per column.
+    /// extract once the whole field `name` has been read - hence the second name per column, and, when no
+    /// field has the whole name, the shortest dotted prefix that is a field (`d.e` of `d.e.a`).
     UnorderedSetWithMemoryTracking<std::string> added_column_names;
+    UnorderedSetWithMemoryTracking<std::string> file_field_names;
+    for (const auto & field : file_schema.fields)
+        file_field_names.insert(field.name);
+    auto in_file = [&](std::string_view name) { return file_field_names.contains(std::string(name)); };
     auto add_column_name = [&](const std::string & name)
     {
-        const bool in_file = std::ranges::any_of(file_schema.fields, [&](const auto & field) { return field.name == name; });
-        if (in_file && added_column_names.emplace(name).second)
+        if (in_file(name) && added_column_names.emplace(name).second)
             plan.column_names.push_back(name);
     };
     for (const auto & column : header)
     {
         add_column_name(column.name);
         add_column_name(Nested::extractTableName(column.name));
+        if (!in_file(column.name))
+            if (const auto nested_names = Nested::tryGetColumnAndSubcolumnPair(column.name, in_file))
+                add_column_name(String(nested_names->first));
     }
 
     if (filter_info)

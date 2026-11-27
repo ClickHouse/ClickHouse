@@ -1115,6 +1115,9 @@ static void getFileReader(
     file_reader = createORCReader(std::move(input_stream), options);
 }
 
+static VectorWithMemoryTracking<std::optional<size_t>> matchORCStructFieldsByName(
+    const ORC::Type * orc_type, const Strings & element_names, bool ignore_case, bool * ambiguous);
+
 /// With `ambiguous`, a name that matches several fields only case-insensitively sets it and resolves to nothing instead of throwing.
 static const ORC::Type * traverseDownORCTypeByName(
     const std::string & target, const ORC::Type * orc_type, DataTypePtr & type, bool ignore_case, bool * ambiguous = nullptr)
@@ -1172,6 +1175,27 @@ static const ORC::Type * traverseDownORCTypeByName(
 
     if (ORC::STRUCT == orc_type->getKind())
     {
+        /// At the file root a flattened request whose whole name is not a column is read from its shortest dotted prefix that is one.
+        if (orc_type->getColumnId() == 0 && target.contains('.'))
+        {
+            auto find_column = [&](std::string_view name)
+            { return matchORCStructFieldsByName(orc_type, {String(name)}, ignore_case, ambiguous).front(); };
+            if (!find_column(target))
+            {
+                if (ambiguous && *ambiguous)
+                    return nullptr;
+                std::optional<size_t> root;
+                const auto names = Nested::tryGetColumnAndSubcolumnPair(target, [&](std::string_view prefix)
+                {
+                    root = find_column(prefix);
+                    return root.has_value() || (ambiguous && *ambiguous);
+                });
+                if (ambiguous && *ambiguous)
+                    return nullptr;
+                if (root)
+                    return traverseDownORCTypeByName(String(names->second), orc_type->getSubtype(*root), type, ignore_case, ambiguous);
+            }
+        }
         const auto [next_target, next_orc_type] = search_struct_field(target, orc_type);
         return next_orc_type ? traverseDownORCTypeByName(next_target, next_orc_type, type, ignore_case, ambiguous) : nullptr;
     }
@@ -1757,6 +1781,10 @@ void NativeORCBlockInputFormat::prepareFileReader()
         }
     }
 
+    Names file_column_names;
+    for (size_t i = 0; i < file_schema.getSubtypeCount(); ++i)
+        file_column_names.push_back(file_schema.getFieldName(i));
+
     orc_column_to_ch_column = std::make_unique<ORCColumnToCHColumn>(
         header,
         format_settings.orc.allow_missing_columns,
@@ -1769,7 +1797,8 @@ void NativeORCBlockInputFormat::prepareFileReader()
         std::move(absent_columns),
         std::move(absent_column_defaults),
         std::move(nested_table_type_hints),
-        std::move(structs_without_field_ids));
+        std::move(structs_without_field_ids),
+        std::move(file_column_names));
 
     if (format_settings.orc.filter_push_down && format_filter_info && format_filter_info->key_condition && !sargs
         && !absent_column_has_namesake)
@@ -1996,7 +2025,8 @@ ORCColumnToCHColumn::ORCColumnToCHColumn(
     NameSet absent_columns_,
     UnorderedMapWithMemoryTracking<String, Field> absent_column_defaults_,
     UnorderedMapWithMemoryTracking<String, DataTypePtr> nested_table_type_hints_,
-    UnorderedSetWithMemoryTracking<UInt64> structs_without_field_ids_)
+    UnorderedSetWithMemoryTracking<UInt64> structs_without_field_ids_,
+    Names file_column_names_)
     : header(header_)
     , allow_missing_columns(allow_missing_columns_)
     , null_as_default(null_as_default_)
@@ -2009,6 +2039,16 @@ ORCColumnToCHColumn::ORCColumnToCHColumn(
     , absent_column_defaults(std::move(absent_column_defaults_))
     , nested_table_type_hints(std::move(nested_table_type_hints_))
     , structs_without_field_ids(std::move(structs_without_field_ids_))
+    , file_column_names(file_column_names_.begin(), file_column_names_.end())
+    , lowercase_file_column_names(
+          [&]
+          {
+              NameSet names;
+              if (case_insensitive_matching_)
+                  for (const auto & name : file_column_names_)
+                      names.insert(boost::to_lower_copy(name));
+              return names;
+          }())
 {
 }
 
@@ -3563,6 +3603,12 @@ void ORCColumnToCHColumn::orcColumnsToCHChunk(
         }
         return it;
     };
+    /// Whether `find_orc_column` would find `name` if every field of the file were read.
+    auto is_file_column = [&](std::string_view name)
+    {
+        return file_column_names.contains(String(name))
+            || (case_insensitive_matching && lowercase_file_column_names.contains(boost::to_lower_copy(String(name))));
+    };
 
     Columns columns_list;
     columns_list.reserve(header.columns());
@@ -3578,8 +3624,12 @@ void ORCColumnToCHColumn::orcColumnsToCHChunk(
         {
             bool read_from_nested = false;
 
-            /// Check if it's a column from nested table.
+            /// Check if it's a column from nested table: the shortest dotted prefix that is a field of the file, unless the
+            /// whole name is one, as the selection may then have taken another field for it.
             String nested_table_name = Nested::extractTableName(header_column.name);
+            if (!is_file_column(header_column.name))
+                if (const auto pair = Nested::tryGetColumnAndSubcolumnPair(header_column.name, is_file_column))
+                    nested_table_name = String(pair->first);
             auto orc_nested_column_it
                 = nested_table_name == header_column.name ? name_to_column_ptr.end() : find_orc_column(nested_table_name);
             if (orc_nested_column_it != name_to_column_ptr.end())
@@ -3594,7 +3644,11 @@ void ORCColumnToCHColumn::orcColumnsToCHChunk(
                         if (name_and_type.name.starts_with(nested_table_name + "."))
                             nested_columns.push_back(name_and_type);
                     }
-                    auto nested_table_type = Nested::collect(nested_columns).front().type;
+                    /// Named relative to the root under a dot-free table name, as `collect` groups by the first dot.
+                    NamesAndTypesList nested_members;
+                    for (const auto & nested_column : nested_columns)
+                        nested_members.emplace_back("_." + nested_column.name.substr(nested_table_name.size() + 1), nested_column.type);
+                    auto nested_table_type = Nested::collect(nested_members).front().type;
 
                     const auto & orc_column_with_type = orc_nested_column_it->second;
                     /// Under the data lake schema the fields of a struct are matched by field id and get their defaults, which
