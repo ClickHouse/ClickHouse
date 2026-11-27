@@ -1,50 +1,23 @@
-local
-1000	100000
-100000	49950000
-50000
-aggregation Streaming
-1000	100000
-1000	100000
-1000	100000
-1000	100000
-join Streaming
-100000	49950000
-100000	49950000
-100000	49950000
-100000	49950000
-set Streaming
-50000
-50000
-50000
-50000
-aggregation Persisted
-1000	100000
-1000	100000
-1000	100000
-1000	100000
-join Persisted
-100000	49950000
-100000	49950000
-100000	49950000
-100000	49950000
-shape	kind	arm	ran_remote_tasks	same_tasks_in_every_arm	batch_count	flush_count
-aggregation	Persisted	default	1	1	1	1
-aggregation	Persisted	flush_per_stage	1	1	1	1
-aggregation	Persisted	one_sender	1	1	1	1
-aggregation	Persisted	one_task_per_batch	1	1	1	1
-aggregation	Streaming	default	1	1	1	1
-aggregation	Streaming	flush_per_stage	1	1	1	1
-aggregation	Streaming	one_sender	1	1	1	1
-aggregation	Streaming	one_task_per_batch	1	1	1	1
-join	Persisted	default	1	1	1	1
-join	Persisted	flush_per_stage	1	1	1	1
-join	Persisted	one_sender	1	1	1	1
-join	Persisted	one_task_per_batch	1	1	1	1
-join	Streaming	default	1	1	1	1
-join	Streaming	flush_per_stage	1	1	1	1
-join	Streaming	one_sender	1	1	1	1
-join	Streaming	one_task_per_batch	1	1	1	1
-set	Streaming	default	1	1	1	1
-set	Streaming	flush_per_stage	1	1	1	1
-set	Streaming	one_sender	1	1	1	1
-set	Streaming	one_task_per_batch	1	1	1	1
+-- Every task is sent and runs (tasks = sent = ran), and both results equal local. Without batching each task has its own
+-- request (batches_without_batching = tasks). With batching and streaming exchanges each plan sends one request per worker
+-- (batches = workers; workers adds up the workers of each plan, and the set's subquery is a plan of its own), more with
+-- flush_per_stage. With persisted exchanges a plan sends one request per worker before each wait for producers and at the end.
+case	tasks	sent	ran	workers	batches	batches_without_batching	result_same
+aggregation Persisted default	9	9	9	2	5	9	1
+aggregation Persisted flush_per_stage	9	9	9	2	5	9	1
+aggregation Persisted one_sender	9	9	9	2	5	9	1
+aggregation Streaming default	9	9	9	2	2	9	1
+aggregation Streaming flush_per_stage	9	9	9	2	5	9	1
+aggregation Streaming one_sender	9	9	9	2	2	9	1
+join Persisted default	13	13	13	2	5	13	1
+join Persisted flush_per_stage	13	13	13	2	7	13	1
+join Persisted one_sender	13	13	13	2	5	13	1
+join Streaming default	13	13	13	2	2	13	1
+join Streaming flush_per_stage	13	13	13	2	7	13	1
+join Streaming one_sender	13	13	13	2	2	13	1
+set Persisted default	6	6	6	3	4	6	1
+set Persisted flush_per_stage	6	6	6	3	4	6	1
+set Persisted one_sender	6	6	6	3	4	6	1
+set Streaming default	6	6	6	3	3	6	1
+set Streaming flush_per_stage	6	6	6	3	4	6	1
+set Streaming one_sender	6	6	6	3	3	6	1

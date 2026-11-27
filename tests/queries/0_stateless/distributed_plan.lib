@@ -44,3 +44,48 @@ function unique_id_of()
     wait_for "SELECT count() > 0 $line" > /dev/null
     $CLICKHOUSE_CLIENT --query "SELECT extract(any(message), 'unique id: (\\\\S+)') $line"
 }
+
+# Cases of `run_case`, for `print_cases`; the query ids of a test run start with `CASE_RUN`.
+CASES=()
+CASE_RUN="${CLICKHOUSE_DATABASE}_${RANDOM}${RANDOM}"
+
+# Runs the query `$2` locally, then distributed with the settings `$3` and `distributed_plan_task_dispatch_batching` off and on,
+# as the case `$1`.
+function run_case()
+{
+    local name=$1 query=$2 settings=${3:+, $3} id="${CASE_RUN}_${#CASES[@]}" expected off on
+    expected=$($CLICKHOUSE_CLIENT --query "$query SETTINGS make_distributed_plan = 0")
+    off=$($CLICKHOUSE_CLIENT --query_id "${id}_off" --query "$query SETTINGS $DISTRIBUTED_PLAN_SETTINGS$settings, distributed_plan_task_dispatch_batching = 0")
+    on=$($CLICKHOUSE_CLIENT --query_id "${id}_on" --query "$query SETTINGS $DISTRIBUTED_PLAN_SETTINGS$settings, distributed_plan_task_dispatch_batching = 1")
+    CASES+=("('$name', '${id}_on', '${id}_off', $([[ $off == "$expected" && $on == "$expected" ]] && echo 1 || echo 0))")
+}
+
+# Prints a row per case: the coordinator's profile events of the run with batching, its task queries, the requests of the run
+# without batching, and whether both results equal the local one.
+function print_cases()
+{
+    $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS query_log"
+    $CLICKHOUSE_CLIENT --query "
+        WITH
+            initiators AS (SELECT query_id, ProfileEvents AS events FROM system.query_log
+                WHERE event_date >= yesterday() AND event_time >= now() - INTERVAL 30 MINUTE AND type = 'QueryFinish'
+                    AND current_database = currentDatabase() AND startsWith(query_id, '$CASE_RUN')),
+            task_queries AS (SELECT initial_query_id, count() AS ran FROM system.query_log
+                WHERE event_date >= yesterday() AND event_time >= now() - INTERVAL 30 MINUTE AND type = 'QueryFinish'
+                    AND startsWith(initial_query_id, '$CASE_RUN') AND query_id != initial_query_id
+                GROUP BY initial_query_id)
+        SELECT cases.name AS case,
+            on_run.events['DistributedPlanRemoteTasks'] AS tasks,
+            on_run.events['DistributedPlanRemoteTasksSent'] AS sent,
+            on_tasks.ran AS ran,
+            on_run.events['DistributedPlanHostsUsed'] AS workers,
+            on_run.events['DistributedPlanTaskBatches'] AS batches,
+            off_run.events['DistributedPlanTaskBatches'] AS batches_without_batching,
+            cases.result_same AS result_same
+        FROM VALUES('name String, on_id String, off_id String, result_same UInt8', $(IFS=,; echo "${CASES[*]}")) AS cases
+        LEFT JOIN initiators AS on_run ON on_run.query_id = cases.on_id
+        LEFT JOIN initiators AS off_run ON off_run.query_id = cases.off_id
+        LEFT JOIN task_queries AS on_tasks ON on_tasks.initial_query_id = cases.on_id
+        ORDER BY case
+        FORMAT TSVWithNames"
+}
