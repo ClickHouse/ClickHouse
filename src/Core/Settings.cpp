@@ -11865,6 +11865,134 @@ Enable table function `eval`.
 )", EXPERIMENTAL, allow_experimental_eval_table_function, \
         {"26.11", false, false, "Added an alias for setting `allow_experimental_eval_table_function`."}, \
         {"26.7", false, false, "New setting to enable the experimental table function `eval`."}) \
+    DECLARE(Bool, allow_experimental_gpu_aggregation, false, R"(
+Compute supported aggregations on a CUDA GPU instead of on the CPU.
+
+What is supported so far is `sum` over a column of a fixed-width numeric type (`UInt8` to
+`UInt64`, `Int8` to `Int64`, `Float32`, `Float64`), with or without `GROUP BY`, in a query over a
+single local `MergeTree` table. A `GROUP BY` key has to be a fixed-width integer or a `String`:
+floats are excluded from the keys, because cuDF groups them by IEEE equality, which would put `0.0`
+and `-0.0` in one group where ClickHouse puts them in two. A `GROUP BY` is grouped by cuDF's
+`streaming_groupby`, which keeps the groups on the device across the batches and grows its
+hash table with them; it does not sum a `Float32`, since cuDF sums a
+`Float32` into a `Float32` where ClickHouse sums it into a `Float64`. Over compressed blocks
+(`ReadFromGPUCompressedColumns`) its parts must keep the sizes of the strings in a stream of their
+own, as `string_serialization_version = 'with_size_stream'` writes them, and it takes no `PREWHERE`
+to the device.
+
+Everything else - another aggregate function, a `Nullable`, `Decimal` or `LowCardinality` argument
+or key, `ROLLUP`, `CUBE`, `GROUPING SETS`, `WITH TOTALS`, `group_by_use_nulls`, several tables, a
+distributed query - is aggregated on the CPU as before, so this setting does not change what a
+query returns, only where it is computed. `EXPLAIN` names the step `GPUAggregating` when the device
+is used.
+
+Requires a build with `-DENABLE_GPU=1` and has no effect without one. In a build that has it, a
+query which would have used the device on a machine that has none usable fails, rather than quietly
+aggregating on the CPU.
+
+:::note
+Every value has to cross the PCIe link to reach the device, and that link is narrower than the
+CPU's own path to memory - so a sum whose column has to be sent over is normally **slower** than
+the same sum on the CPU, and slower still than the CPU using several threads.
+
+Measured on a Tesla T4 over 1.49 GiB of `UInt64`: the reduction itself takes 8 ms, sending the
+values to the device takes 353 ms, and the whole query is 0.77 s against 0.35 s for the same query
+on sixteen cores. So a `sum` whose column has to be sent is currently about twice as slow as the
+CPU's, and the device pays for itself only once the data reaches it by some cheaper route than one
+uncompressed copy per query.
+
+`GPUAggregationRows`, `GPUAggregationBatches` and `GPUAggregationMicroseconds` in `system.events`
+say how much was summed and how long the device calls took.
+:::
+
+:::note
+`sum` over a `Float32` or `Float64` column adds the values in a different order than the CPU
+implementation does, so the last bits of the result can differ from it. Without `GROUP BY` the
+order is fixed, so repeated runs of the same query agree with each other; with `GROUP BY` the
+device adds the values of a group as they arrive, so the last bits can differ between runs too.
+Integer sums are identical to the CPU's,
+wraparound included.
+:::
+
+Possible values:
+
+- 0 - Aggregations are computed on the CPU.
+- 1 - Supported aggregations are computed on a GPU.
+)", EXPERIMENTAL, \
+        {"26.11", false, false, "New experimental setting to compute supported aggregations on a GPU."}) \
+    DECLARE(Bool, allow_experimental_gpu_filtered_read, false, R"(
+Read a `MergeTree` table whose `PREWHERE` a CUDA GPU evaluates through the device: the compressed blocks of its columns
+are sent to the device, which decompresses them, evaluates the conjuncts of the `PREWHERE` it can, and sends back only
+the rows they keep. The conjuncts it cannot evaluate, such as those over strings, are evaluated on the CPU over the rows
+sent back. It pays where the `PREWHERE` keeps few rows, and the CPU would spend more decompressing the columns than the
+link takes to carry their compressed blocks. Uses the settings of `allow_experimental_gpu_aggregation` for the reading.
+
+Possible values:
+
+- 0 - The table is read on the CPU.
+- 1 - A read whose `PREWHERE` the device can evaluate is filtered on a GPU.
+)", EXPERIMENTAL, \
+        {"26.11", false, false, "New experimental setting to filter the reads of a `MergeTree` table on a GPU."}) \
+    DECLARE(Float, gpu_filtered_read_max_selectivity, 0.2f, R"(
+The largest share of the rows of a table that its `PREWHERE` is estimated to keep, by the column statistics, for
+`allow_experimental_gpu_filtered_read` to read the table through the GPU. A read that keeps more sends most of the table
+back from the device, and is faster on the CPU.
+)", EXPERIMENTAL, \
+        {"26.11", 0.2, 0.2, "New setting: the selectivity above which a read is not filtered on a GPU."}) \
+    DECLARE(UInt64, gpu_aggregation_batch_bytes, 256 * 1024 * 1024, R"(
+How much of a column `allow_experimental_gpu_aggregation` gathers in host memory before sending it
+to the device.
+
+A block is 65536 rows, half a megabyte of `UInt64` - too little to occupy either the link or the
+device on its own, so blocks are gathered into a batch first. Measured on a Tesla T4 over 300
+million rows, the size barely matters to the time: `sum` of three columns without `GROUP BY` took
+2.3 s with a 16 MiB batch and 2.4 s with 256 MiB, and the keyed `sum` into ten million groups took
+3.2 s with 32 MiB and 3.0 s with 256 MiB, against 0.4 s and 3.3 s on sixteen cores.
+
+What the size does decide is memory. A batch is staged in pinned host memory and held on the
+device, and the device's table of groups is sized so that every row of a batch could be a new
+group, so a query with few groups still holds a batch's worth of them. The default favours the
+many-groups case, which is the one the device is for.
+
+A `GROUP BY` that reads whole parts as compressed blocks (`ReadFromGPUCompressedColumns`) groups
+each part as it arrives on the device, and this setting does not apply to it.
+)", EXPERIMENTAL, \
+        {"26.11", 268435456, 268435456, "New experimental setting, the batch size of the GPU aggregation."}) \
+    DECLARE(UInt64, gpu_aggregation_readers, 0, R"(
+How many threads read the parts of a `GROUP BY` that `allow_experimental_gpu_aggregation` runs over
+compressed blocks (`ReadFromGPUCompressedColumns`), each a part at a time. 0 chooses by what the
+threads have to do.
+
+A reading thread copies the compressed blocks of a part into pinned host memory for the device to
+fetch, and one thread copies slower than the link carries - about 4 GB/s against 6 GB/s of PCIe 3
+on a Tesla T4 - so one reader leaves the link idle, and two fill it: over 300 million rows grouped
+by a `UInt8` key, one reader took 0.95 s, two 0.53 s, and four or eight were slower than two.
+
+With `gpu_aggregation_decompression = 'host'` the reading threads expand the columns as well, which
+is work per byte rather than per block, and two threads no longer keep up with the link: grouping
+300 million rows of a `UInt64` by a `UInt32` key took 1.34 s with two readers, 0.84 s with four and
+0.77 s with eight. Yet each reader holds a part's buffers in pinned memory and on the device, and
+with four columns of a part in flight eight readers lost what they gained: grouping by two keys took
+1.37 s with four readers and 1.78 s with eight. So with 0 the query gets two readers when the
+columns are expanded on the device, and a quarter of the CPU cores, at least two, when they are
+expanded on the host. Parts on a remote disk, such as S3, get 32 readers either way: a reader there
+waits for responses most of the time, and over S3 TPC-H Q6 took 5.7 s with eight readers, 2.6 s
+with sixteen and 2.1 s with 32.
+
+Each reader holds a part's compressed blocks in pinned memory and its expanded columns on the
+device while they are grouped, so more readers take more of both.
+)", EXPERIMENTAL, \
+        {"26.11", 0, 0, "New experimental setting, the number of threads that read parts for a GPU aggregation over compressed blocks; 0 chooses by whether the columns are expanded on the device or on the host."}) \
+    DECLARE(GPUDecompressionMode, gpu_aggregation_decompression, GPUDecompressionMode::DEVICE, R"(
+Who expands a column of a part - the device or the CPU - in an aggregation that
+`allow_experimental_gpu_aggregation` runs over compressed blocks (`ReadFromGPUCompressedColumns`).
+
+Possible values:
+
+- `device` - Every column is expanded on the device: the compressed blocks go over the link as they are stored.
+- `host` - Every column is expanded on the CPU by the reading threads and sent whole.
+)", EXPERIMENTAL, \
+        {"26.11", "device", "device", "New experimental setting, whether a GPU aggregation over compressed blocks expands the columns on the device or on the host."}) \
     \
     /* ####################################################### */ \
     /* ############ END OF EXPERIMENTAL FEATURES ############# */ \

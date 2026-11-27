@@ -480,6 +480,16 @@ UseProjectionsResult optimizeUseNormalProjections(
 /// Returns `COUNT()` query directly from the text index posting metadata.
 bool optimizeTrivialCountFromTextIndex(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
 
+/// Answers a keyless `sum`, `min` or `max` over a `MergeTree` table by decompressing its columns on
+/// the device, replacing the read under a `GPUAggregatingStep` with a source that emits one row of
+/// per-part results. Refuses everything in a build without GPU support, where there is no such step.
+bool optimizeAggregationFromGPUCompressedColumns(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
+
+/// Replaces a read of a `MergeTree` table with a `PREWHERE` by a read whose `PREWHERE` the device evaluates, as far as it
+/// can, sending back only the rows it keeps, under `allow_experimental_gpu_filtered_read`. The conjuncts of the `PREWHERE`
+/// the device does not evaluate are a `FilterStep` above it. Refuses everything in a build without GPU support.
+bool optimizeReadFilteredOnGPU(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
+
 bool addPlansForSets(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan & plan, QueryPlan::Node & node, QueryPlan::Nodes & nodes);
 void removeSetsOfAlwaysFalseScope(QueryPlan::Node & node, QueryPlan::Nodes & nodes);
 
