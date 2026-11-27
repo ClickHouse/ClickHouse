@@ -67,6 +67,7 @@ public:
 
     void drop() override;
     void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & table_lock_holder, DDLGuardPtr & ddl_guard) override;
+    void updateReferencedTables(const ASTCreateQuery & create, ContextPtr local_context) override;
 
     static void replaceQueryParametersIfParameterizedView(ASTPtr & outer_query, const NameToNameMap & parameter_values);
 

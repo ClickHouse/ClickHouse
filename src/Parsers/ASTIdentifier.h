@@ -45,6 +45,8 @@ public:
     bool supposedToBeCompound() const;  // TODO(ilezhankin): get rid of this
 
     void setShortName(const String & new_name);
+    /// Replaces one part of a non-parameterized name, keeping the alias and the flags.
+    void setNamePart(size_t index, const String & new_part);
 
     /// The composite identifier will have a concatenated name (of the form a.b.c),
     /// and individual components will be available inside the name_parts.

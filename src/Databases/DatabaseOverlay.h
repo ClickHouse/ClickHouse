@@ -59,6 +59,9 @@ public:
 
     void alterTable(ContextPtr local_context, const StorageID & table_id, const StorageInMemoryMetadata & metadata, bool validate_new_create_query) override;
 
+    bool canAlterTableDefinition() const override;
+    void alterTableDefinition(ContextPtr local_context, const StorageID & table_id, const CreateQueryModifier & modifier) override;
+
     std::vector<std::pair<ASTPtr, StoragePtr>> getTablesForBackup(const FilterByNameFunction & filter, const ContextPtr & local_context) const override;
 
     void createTableRestoredFromBackup(const ASTPtr & create_table_query, ContextMutablePtr local_context, std::shared_ptr<IRestoreCoordination> restore_coordination, UInt64 timeout_ms) override;

@@ -53,6 +53,9 @@ public:
 
     void alterTable(ContextPtr local_context, const StorageID & table_id, const StorageInMemoryMetadata & metadata, bool validate_new_create_query) override;
 
+    bool canAlterTableDefinition() const override { return true; }
+    void alterTableDefinition(ContextPtr local_context, const StorageID & table_id, const CreateQueryModifier & modifier) override;
+
     std::vector<std::pair<ASTPtr, StoragePtr>> getTablesForBackup(const FilterByNameFunction & filter, const ContextPtr & local_context) const override;
 
 protected:
@@ -60,6 +63,7 @@ protected:
 
 private:
     void removeDataPath(ContextPtr local_context);
+    void alterTableImpl(ContextPtr local_context, const StorageID & table_id, const CreateQueryModifier & modifier);
     void checkMetadataFilenameAvailabilityUnlocked(const String & table_name) const TSA_REQUIRES(mutex);
 
     const String data_path;
