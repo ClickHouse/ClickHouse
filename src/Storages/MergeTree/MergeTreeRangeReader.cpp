@@ -59,6 +59,7 @@ LoggerPtr getMergeTreeRangeReaderLogger()
 
 FilterWithCachedCount::FilterWithCachedCount(const ColumnPtr & column_)
     : const_description(*column_)
+    , num_rows(column_->size())
 {
     if (const auto * sparse = typeid_cast<const ColumnSparse *>(column_.get()))
     {
@@ -78,10 +79,17 @@ FilterWithCachedCount::FilterWithCachedCount(const ColumnPtr & column_)
                 sparse_indices_holder = std::move(sparse_desc.valid_offsets);
             else
                 sparse_indices_holder = column_;
+            sparse_column = column_;
+            return;
         }
     }
 
-    ColumnPtr col = column_->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();
+    materialize(column_);
+}
+
+void FilterWithCachedCount::materialize(const ColumnPtr & filter_column) const
+{
+    ColumnPtr col = filter_column->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();
     FilterDescription desc(*col);
     column = desc.data_holder ? desc.data_holder : col;
     data = desc.data;
@@ -89,8 +97,9 @@ FilterWithCachedCount::FilterWithCachedCount(const ColumnPtr & column_)
 
 static void filterColumns(Columns & columns, const FilterWithCachedCount & filter)
 {
-    const auto & filter_data = filter.getData();
     const ColumnUInt64 * sparse_indices = filter.getSparseIndices();
+    /// `index` writes the kept rows to new columns: it is faster than the mask filter only when few rows are kept.
+    const bool few_rows_kept = sparse_indices && sparse_indices->size() * 8 <= filter.size();
 
     for (auto & column : columns)
     {
@@ -101,20 +110,20 @@ static void filterColumns(Columns & columns, const FilterWithCachedCount & filte
                     column->size(), filter.size());
 
             if (const auto * column_sparse = sparse_indices ? typeid_cast<const ColumnSparse *>(column.get()) : nullptr;
-                column_sparse && column_sparse->getOffsetsData() == sparse_indices->getData())
+                few_rows_kept || (column_sparse && column_sparse->getOffsetsData() == sparse_indices->getData()))
             {
-                /// The filter keeps exactly the non-default rows of this column, so `index` shares its values.
-                column = column_sparse->index(*sparse_indices, 0);
+                /// `index` shares the values of a sparse column whose non-default rows are exactly the kept ones.
+                column = column->index(*sparse_indices, 0);
             }
             else if (canInplaceFilter(column))
             {
                 auto mutable_column = IColumn::mutate(std::move(column));
-                mutable_column->filter(filter_data);
+                mutable_column->filter(filter.getData());
                 column = std::move(mutable_column);
             }
             else
             {
-                column = column->filter(filter_data, filter.countBytesInFilter());
+                column = column->filter(filter.getData(), filter.countBytesInFilter());
             }
 
             if (column->empty())

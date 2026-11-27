@@ -71,6 +71,12 @@ SELECT count() FROM system.role_grants WHERE user_name = currentDatabase() AND g
 DROP USER {CLICKHOUSE_DATABASE:Identifier};
 DROP ROLE {CLICKHOUSE_DATABASE_1:Identifier};
 
+-- Query parameters work as the target user of EXECUTE AS.
+CREATE USER {CLICKHOUSE_DATABASE:Identifier};
+EXECUTE AS {CLICKHOUSE_DATABASE:Identifier} SELECT currentUser() = currentDatabase();
+EXECUTE AS {nonexistent_param:Identifier} SELECT 1; -- { serverError UNKNOWN_QUERY_PARAMETER }
+DROP USER {CLICKHOUSE_DATABASE:Identifier};
+
 SELECT formatQuery('REVOKE SELECT ON *.* FROM ALL, role');
 SELECT formatQuery('GRANT SELECT ON *.* TO {g:Identifier}');
 SELECT formatQuery('DROP ROLE IF EXISTS r1@''%'', ''r2@%.myhost.com''');

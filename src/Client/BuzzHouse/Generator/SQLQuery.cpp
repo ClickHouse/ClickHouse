@@ -451,11 +451,12 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
     if (ofunc || myfunc)
     {
         static const std::unordered_map<String, CHSetting> mySQLTFSettings = {{"enable_compression", trueOrFalseSetting}};
+        /// A table function replacing a table in an oracle query must read the same rows
         const auto & engineSettings = myfunc
             ? mySQLTFSettings
-            : allTableSettings.at(
-                  t.isS3QueueEngine() ? TableEngineValues::S3
-                                      : (t.isAzureQueueEngine() ? TableEngineValues::AzureBlobStorage : t.engine.value));
+            : (this->allow_not_deterministic ? allTableSettings : oracleTableSettings)
+                  .at(t.isS3QueueEngine() ? TableEngineValues::S3
+                                          : (t.isAzureQueueEngine() ? TableEngineValues::AzureBlobStorage : t.engine.value));
 
         if (!engineSettings.empty() && rg.nextSmallNumber() < 8)
         {
