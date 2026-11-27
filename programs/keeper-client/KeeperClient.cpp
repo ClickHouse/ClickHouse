@@ -427,15 +427,6 @@ void KeeperClient::initialize(Poco::Util::Application & /* self */)
 
     history_max_entries = config().getUInt("history-max-entries", 1000000);
 
-    String default_log_level;
-    if (config().has("query"))
-        /// We don't want to see any information log in query mode, unless it was set explicitly
-        default_log_level = "error";
-    else
-        default_log_level = "information";
-
-    Poco::Logger::root().setLevel(config().getString("log-level", default_log_level));
-
     EventNotifier::init();
 
     const char * env_password = getenv("CLICKHOUSE_KEEPER_PASSWORD"); // NOLINT(concurrency-mt-unsafe)
@@ -750,14 +741,35 @@ void KeeperClient::connectToKeeper()
     zookeeper = zkutil::ZooKeeper::createWithoutKillingPreviousSessions(std::move(new_zk_args));
 }
 
-int KeeperClient::main(const std::vector<String> & /* args */)
+int KeeperClient::main(const std::vector<String> & args)
 {
+    /// As in `clickhouse-local`, a positional argument is the query: clickhouse keeper-client "ls /"
+    if (!args.empty())
+    {
+        if (args.size() > 1 || config().has("query"))
+        {
+            /// Not an exception: Poco catches the exceptions from `main` and returns `EXIT_SOFTWARE`.
+            std::cerr << "Positional option `" << args.back() << "` is not supported.\n";
+            return ErrorCodes::BAD_ARGUMENTS;
+        }
+        config().setString("query", args[0]);
+    }
+
+    String default_log_level;
+    if (config().has("query"))
+        /// We don't want to see any information log in query mode, unless it was set explicitly
+        default_log_level = "error";
+    else
+        default_log_level = "information";
+
+    Poco::Logger::root().setLevel(config().getString("log-level", default_log_level));
+
     if (config().hasOption("help"))
     {
         Poco::Util::HelpFormatter help_formatter(KeeperClient::options());
         std::string app_name = (commandName() == "clickhouse-keeper-client") ? "clickhouse-keeper-client" : "clickhouse keeper-client";
         help_formatter.setCommand(app_name);
-        help_formatter.setUsage("[OPTION]");
+        help_formatter.setUsage("[OPTION] [query]");
         help_formatter.setHeader("Without a query, the client starts in the interactive mode.");
         help_formatter.format(std::cout);
         return 0;

@@ -36,4 +36,4 @@ echo "-- unknown command"
 $CLICKHOUSE_KEEPER_CLIENT -q "no_such_command /x" 2>&1
 
 echo "-- --help"
-$CLICKHOUSE_KEEPER_CLIENT --help | grep -o -e '^Usage: clickhouse' -e 'keeper-client \[OPTION\]' -e 'non-interactive'
+$CLICKHOUSE_KEEPER_CLIENT --help | grep -o -e '^Usage: clickhouse' -e 'keeper-client \[OPTION\] \[query\]' -e 'non-interactive'

@@ -20,5 +20,5 @@ Syntax error: unexpected trailing input at position 12: expected one of: PERSIST
 Syntax error at position 0
 -- --help
 Usage: clickhouse
-keeper-client [OPTION]
+keeper-client [OPTION] [query]
 non-interactive

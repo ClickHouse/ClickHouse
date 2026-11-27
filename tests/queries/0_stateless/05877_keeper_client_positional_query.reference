@@ -1,0 +1,9 @@
+-- positional query
+1
+rc=0
+-- positional query together with --query
+Positional option `exists /` is not supported.
+rc=36
+-- two positional queries
+Positional option `ls /` is not supported.
+rc=36
