@@ -6,8 +6,18 @@ dictHas
 0
 0
 dictGetOrDefault
+1
+42
+2
 42
 42
-direct JOIN
+42
+direct JOIN matched keys
+0	1
+1	2
+direct JOIN unmatched keys
 0	0
+1	0
+hash JOIN unmatched keys
+0	1
 1	0
