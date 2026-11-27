@@ -2169,8 +2169,10 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
         const bool is_stored_definition = args.create_query.attach || is_recovery_from_stored_metadata;
 
         DatabaseDataLakeSettings database_settings;
+        /// `RESTORE DATABASE` replays the definition from a backup as a `CREATE` query. Its settings were accepted when the
+        /// database was created, maybe by an older version that accepted more of them, so they are not checked again.
         if (database_engine_define->settings)
-            database_settings.loadFromQuery(*database_engine_define, is_stored_definition);
+            database_settings.loadFromQuery(*database_engine_define, is_stored_definition || args.is_restore_from_backup);
 
         std::string_view auth_header_str = database_settings[DatabaseDataLakeSetting::auth_header].value;
         /// Validate `auth_header` on a fresh CREATE only (matches the `allow_experimental_database_*`

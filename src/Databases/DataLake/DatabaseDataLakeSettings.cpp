@@ -91,7 +91,7 @@ void DatabaseDataLakeSettings::applyChanges(const SettingsChanges & changes)
     impl->applyChanges(changes);
 }
 
-void DatabaseDataLakeSettings::loadFromQuery(const ASTStorage & storage_def, bool is_attach)
+void DatabaseDataLakeSettings::loadFromQuery(const ASTStorage & storage_def, bool is_existing_definition)
 {
     if (storage_def.settings)
     {
@@ -99,8 +99,8 @@ void DatabaseDataLakeSettings::loadFromQuery(const ASTStorage & storage_def, boo
         {
             for (const auto & change : storage_def.settings->changes)
             {
-                /// Only on `CREATE`, so that an existing definition still loads.
-                if (!is_attach)
+                /// Only for a new definition, so that an existing one still loads.
+                if (!is_existing_definition)
                     checkCanBeSetForDatabase(change.name);
                 if (change.name == "disk")
                     DiskFromAST::ensureDiskIsNotInline(change.value);

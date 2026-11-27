@@ -73,7 +73,9 @@ struct DatabaseDataLakeSettings
 
     DATABASE_ICEBERG_SETTINGS_SUPPORTED_TYPES(DatabaseDataLakeSettings, DECLARE_SETTING_SUBSCRIPT_OPERATOR)
 
-    void loadFromQuery(const ASTStorage & storage_def, bool is_attach);
+    /// `is_existing_definition` is for a definition that was accepted before, maybe by an older version: attached,
+    /// recovered from the stored metadata or restored from a backup. The settings of such a definition are not checked.
+    void loadFromQuery(const ASTStorage & storage_def, bool is_existing_definition);
 
     void applyChanges(const SettingsChanges & changes);
 
