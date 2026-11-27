@@ -1443,7 +1443,7 @@ void StorageObjectStorage::alter(const AlterCommands & params, ContextPtr contex
             const ColumnsDescription columns_before = columns;
             if (columns.has(command.column_name))
                 columns.rename(command.column_name, command.rename_to);
-            RenameColumnData rename_data{command.column_name, command.rename_to, &columns_before, &columns};
+            RenameColumnData rename_data{command.column_name, command.rename_to, &columns_before, &columns, {}};
             RenameColumnVisitor(rename_data).visit(renamed);
         }
         return renamed;
