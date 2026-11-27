@@ -7681,81 +7681,95 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
         }
     }
 
-    /// Includes the `DROP COLUMN` that `getMutationCommands` adds for a stored column turned into `ALIAS` or `EPHEMERAL`.
-    for (const auto & mutation_command : commands.getMutationCommands(
-             old_metadata, /*materialize_ttl=*/ false, local_context, /*with_alters=*/ false,
-             (*settings_from_storage)[MergeTreeSetting::share_nested_offsets]))
-        if (mutation_command.type == MutationCommand::DROP_COLUMN && old_metadata.columns.has(mutation_command.column_name))
-            dropped_columns.emplace(mutation_command.column_name);
+    /// Includes the `DROP COLUMN` that `getMutationCommands` adds for a stored column turned into `ALIAS` or `EPHEMERAL`,
+    /// which a secondary replica of a `Replicated` database cannot refuse, see `StorageMergeTree::alter`.
+    if (!is_secondary_replay)
+    {
+        for (const auto & mutation_command : commands.getMutationCommands(
+                 old_metadata, /*materialize_ttl=*/ false, local_context, /*with_alters=*/ false,
+                 (*settings_from_storage)[MergeTreeSetting::share_nested_offsets]))
+            if (mutation_command.type == MutationCommand::DROP_COLUMN && old_metadata.columns.has(mutation_command.column_name))
+                dropped_columns.emplace(mutation_command.column_name);
+    }
 
     if (!dropped_columns.empty())
     {
-        auto parts = getDataPartsVectorForInternalUsage();
-        auto parts_info = getPartsSnapshotInfo(parts);
-
-        /// A part can carry a column under a name the table does not know, because a rename this part
-        /// has not applied yet is recorded in the mutations, not in the part. Resolve those names, so a
-        /// pending rename is not mistaken for a column the table has lost.
-        IMutationsSnapshot::Params params
+        if (auto part_name = findPartLeftWithoutColumns(dropped_columns, old_metadata, local_context); !part_name.empty())
         {
-            .metadata_version = old_metadata.getMetadataVersion(),
-            .min_part_metadata_version = parts_info.min_metadata_version,
-            .min_part_data_versions = nullptr,
-            .max_mutation_versions = nullptr,
-            .need_data_mutations = false,
-            .need_alter_mutations = true,
-            .need_patch_parts = false,
-            .has_lightweight_delete_parts = parts_info.has_lightweight_delete_parts,
-        };
-
-        auto mutations_snapshot = getMutationsSnapshot(params);
-
-        for (const auto & part : parts)
-        {
-            auto alter_conversions = getAlterConversionsForPart(part, mutations_snapshot, local_context
-#if CLICKHOUSE_CLOUD
-                , nullptr
-#endif
-                );
-
-            bool at_least_one_column_rest = false;
-            for (const auto & column : part->getColumns())
-            {
-                auto name_in_table = alter_conversions->columnHasNewName(column.name)
-                    ? alter_conversions->getColumnNewName(column.name)
-                    : column.name;
-
-                /// A column the table no longer has does not keep the part alive: the mutation does not
-                /// carry it over into the new part either (`splitAndModifyMutationCommands` skips a column
-                /// absent from the table), so the part would be left with no columns at all. That is not a
-                /// loadable part - `loadColumns` and `loadIndexGranularity` reject it, and
-                /// `calculateColumnsSizesOnDisk` throws - so the mutation must not be allowed to produce
-                /// one. A partition detached before a `DROP COLUMN` and re-attached after it, or a
-                /// `KILL MUTATION` of a `RENAME COLUMN`, leaves a part in that state. The condition
-                /// mirrors the one `splitAndModifyMutationCommands` applies, virtual columns included:
-                /// a part written by a lightweight delete keeps its `_row_exists` through the mutation.
-                /// A column that a pending mutation drops does not keep the part alive either.
-                if (!dropped_columns.contains(name_in_table)
-                    && !alter_conversions->isColumnDropped(column.name, share_nested_offsets)
-                    && (old_metadata.columns.has(name_in_table) || old_metadata.virtuals.has(name_in_table)))
-                {
-                    at_least_one_column_rest = true;
-                    break;
-                }
-            }
-
-            if (!at_least_one_column_rest)
-            {
-                std::string postfix;
-                if (dropped_columns.size() > 1)
-                    postfix = "s";
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                                "Cannot drop or clear column{} '{}', because all columns "
-                                "in part '{}' will be removed from disk. Empty parts are not allowed",
-                                postfix, boost::algorithm::join(dropped_columns, ", "), part->name);
-            }
+            std::string postfix;
+            if (dropped_columns.size() > 1)
+                postfix = "s";
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Cannot drop or clear column{} '{}', because all columns "
+                            "in part '{}' will be removed from disk. Empty parts are not allowed",
+                            postfix, boost::algorithm::join(dropped_columns, ", "), part_name);
         }
     }
+}
+
+String MergeTreeData::findPartLeftWithoutColumns(
+    const NameSet & dropped_columns, const StorageInMemoryMetadata & metadata, ContextPtr local_context) const
+{
+    const bool share_nested_offsets = (*getSettings())[MergeTreeSetting::share_nested_offsets];
+    auto parts = getDataPartsVectorForInternalUsage();
+    auto parts_info = getPartsSnapshotInfo(parts);
+
+    /// A part can carry a column under a name the table does not know, because a rename this part
+    /// has not applied yet is recorded in the mutations, not in the part. Resolve those names, so a
+    /// pending rename is not mistaken for a column the table has lost.
+    IMutationsSnapshot::Params params
+    {
+        .metadata_version = metadata.getMetadataVersion(),
+        .min_part_metadata_version = parts_info.min_metadata_version,
+        .min_part_data_versions = nullptr,
+        .max_mutation_versions = nullptr,
+        .need_data_mutations = false,
+        .need_alter_mutations = true,
+        .need_patch_parts = false,
+        .has_lightweight_delete_parts = parts_info.has_lightweight_delete_parts,
+    };
+
+    auto mutations_snapshot = getMutationsSnapshot(params);
+
+    for (const auto & part : parts)
+    {
+        auto alter_conversions = getAlterConversionsForPart(part, mutations_snapshot, local_context
+#if CLICKHOUSE_CLOUD
+            , nullptr
+#endif
+            );
+
+        bool at_least_one_column_rest = false;
+        for (const auto & column : part->getColumns())
+        {
+            auto name_in_table = alter_conversions->columnHasNewName(column.name)
+                ? alter_conversions->getColumnNewName(column.name)
+                : column.name;
+
+            /// A column the table no longer has does not keep the part alive: the mutation does not
+            /// carry it over into the new part either (`splitAndModifyMutationCommands` skips a column
+            /// absent from the table), so the part would be left with no columns at all. That is not a
+            /// loadable part - `loadColumns` and `loadIndexGranularity` reject it, and
+            /// `calculateColumnsSizesOnDisk` throws - so the mutation must not be allowed to produce
+            /// one. A partition detached before a `DROP COLUMN` and re-attached after it, or a
+            /// `KILL MUTATION` of a `RENAME COLUMN`, leaves a part in that state. The condition
+            /// mirrors the one `splitAndModifyMutationCommands` applies, virtual columns included:
+            /// a part written by a lightweight delete keeps its `_row_exists` through the mutation.
+            /// A column that a pending mutation drops does not keep the part alive either.
+            if (!dropped_columns.contains(name_in_table)
+                && !alter_conversions->isColumnDropped(column.name, share_nested_offsets)
+                && (metadata.columns.has(name_in_table) || metadata.virtuals.has(name_in_table)))
+            {
+                at_least_one_column_rest = true;
+                break;
+            }
+        }
+
+        if (!at_least_one_column_rest)
+            return part->name;
+    }
+
+    return {};
 }
 
 static bool hasTextIndexMaterialization(const MutationCommands & commands, StorageMetadataPtr metadata_snapshot)

@@ -2873,7 +2873,7 @@ static MutationCommand createDropColumnCommand(const String & column_name, UInt6
     return command;
 }
 
-MutationCommands AlterCommands::getMutationCommands(StorageInMemoryMetadata metadata, bool materialize_ttl, ContextPtr context, bool with_alters, bool share_nested_offsets) const
+MutationCommands AlterCommands::getMutationCommands(StorageInMemoryMetadata metadata, bool materialize_ttl, ContextPtr context, bool with_alters, bool share_nested_offsets, bool drop_stored_data) const
 {
     /// Save a copy of the original metadata before applying commands.
     /// We need it for isTTLAlter check below, because apply() updates TTL in metadata,
@@ -2893,7 +2893,7 @@ MutationCommands AlterCommands::getMutationCommands(StorageInMemoryMetadata meta
     MutationCommands result;
     for (const auto & alter_cmd : *this)
     {
-        const bool drop_stored_data = alter_cmd.stopsStoringUnreferencedColumn(metadata);
+        const bool drops_column_data = drop_stored_data && alter_cmd.stopsStoringUnreferencedColumn(metadata);
 
         if (auto mutation_cmd = alter_cmd.tryConvertToMutationCommand(metadata, context, share_nested_offsets); mutation_cmd)
         {
@@ -2910,7 +2910,7 @@ MutationCommands AlterCommands::getMutationCommands(StorageInMemoryMetadata meta
             });
         }
 
-        if (drop_stored_data)
+        if (drops_column_data)
             result.push_back(createDropColumnCommand(alter_cmd.column_name, max_parser_depth, max_parser_backtracks));
     }
 

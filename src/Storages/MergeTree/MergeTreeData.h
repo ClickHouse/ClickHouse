@@ -1237,6 +1237,9 @@ public:
     /// transient guards. lets a caller ask whether a command is eligible at all
     void checkAlterEligibility(const AlterCommands & commands, ContextPtr context) const;
 
+    /// Returns the name of a part that dropping `dropped_columns` after the pending mutations would leave without columns, or "".
+    String findPartLeftWithoutColumns(const NameSet & dropped_columns, const StorageInMemoryMetadata & metadata, ContextPtr local_context) const;
+
     /// Throws if a column TTL is set on a column that a key reads, directly or through a subcolumn.
     static void checkColumnTTLsForKeyColumns(const StorageInMemoryMetadata & new_metadata, const StorageInMemoryMetadata & old_metadata);
 
