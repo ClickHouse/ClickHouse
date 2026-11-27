@@ -16,6 +16,8 @@ DROP TABLE IF EXISTS t_replicated;
 DROP TABLE IF EXISTS t_indexed;
 DROP TABLE IF EXISTS t_pending_update;
 DROP TABLE IF EXISTS t_only_q;
+DROP TABLE IF EXISTS t_only_q_drop_index;
+DROP TABLE IF EXISTS t_only_q_add_index;
 
 CREATE TABLE t_compact (id UInt64, q UInt32) ENGINE = MergeTree ORDER BY id
 SETTINGS min_bytes_for_wide_part = 1000000000, min_rows_for_wide_part = 1000000000;
@@ -123,6 +125,21 @@ ALTER TABLE t_only_q MODIFY COLUMN q UInt32 ALIAS toUInt32(7); -- { serverError 
 SELECT 'only q', id, q FROM t_only_q;
 SELECT 'only q mutations', count() FROM system.mutations WHERE database = currentDatabase() AND table = 't_only_q';
 
+-- The same when an earlier clause of the ALTER drops or adds the column's only dependent.
+CREATE TABLE t_only_q_drop_index (q UInt32, INDEX i q TYPE minmax GRANULARITY 1) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_only_q_drop_index VALUES (42);
+ALTER TABLE t_only_q_drop_index ADD COLUMN id UInt64;
+ALTER TABLE t_only_q_drop_index DROP INDEX i, MODIFY COLUMN q UInt32 ALIAS toUInt32(id + 100); -- { serverError BAD_ARGUMENTS }
+SELECT 'only q drop index', id, q FROM t_only_q_drop_index;
+
+CREATE TABLE t_only_q_add_index (q UInt32) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_only_q_add_index VALUES (42);
+ALTER TABLE t_only_q_add_index ADD COLUMN id UInt64;
+ALTER TABLE t_only_q_add_index ADD INDEX i q TYPE minmax GRANULARITY 1, MODIFY COLUMN q UInt32 ALIAS toUInt32(id + 100);
+SELECT 'only q add index', id, q FROM t_only_q_add_index;
+SELECT 'only q index mutations', count() FROM system.mutations
+WHERE database = currentDatabase() AND table IN ('t_only_q_drop_index', 't_only_q_add_index');
+
 DROP TABLE t_compact;
 DROP TABLE t_wide;
 DROP TABLE t_ephemeral;
@@ -136,3 +153,5 @@ DROP TABLE t_replicated;
 DROP TABLE t_indexed;
 DROP TABLE t_pending_update;
 DROP TABLE t_only_q;
+DROP TABLE t_only_q_drop_index;
+DROP TABLE t_only_q_add_index;

@@ -19,3 +19,6 @@ pending update	1	7	7
 pending update mutations	0	0
 only q	0	42
 only q mutations	0
+only q drop index	0	42
+only q add index	0	100
+only q index mutations	0

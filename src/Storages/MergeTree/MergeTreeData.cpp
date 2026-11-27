@@ -7681,10 +7681,12 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
         }
     }
 
-    /// The data of these is dropped by `getMutationCommands` too.
-    for (const AlterCommand & command : commands)
-        if (command.stopsStoringUnreferencedColumn(old_metadata))
-            dropped_columns.emplace(command.column_name);
+    /// Includes the `DROP COLUMN` that `getMutationCommands` adds for a stored column turned into `ALIAS` or `EPHEMERAL`.
+    for (const auto & mutation_command : commands.getMutationCommands(
+             old_metadata, /*materialize_ttl=*/ false, local_context, /*with_alters=*/ false,
+             (*settings_from_storage)[MergeTreeSetting::share_nested_offsets]))
+        if (mutation_command.type == MutationCommand::DROP_COLUMN && old_metadata.columns.has(mutation_command.column_name))
+            dropped_columns.emplace(mutation_command.column_name);
 
     if (!dropped_columns.empty())
     {
