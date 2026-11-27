@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-fasttest, zookeeper
+# Tags: no-parallel, no-fasttest, no-replicated-database, zookeeper
 # no-parallel, no-fasttest: the fail points are server-wide and pause the first query that reaches them.
+# no-replicated-database: a mutation of a MergeTree table goes through the DDL queue of the database there,
+# so the query paused on the fail point blocks the queue, and the next mutation cannot be started.
 
 # A query that waits for a mutation (`mutations_sync`) must not take a mutation that is finished,
 # and whose entry is already removed by the cleanup thread, for a killed one.
