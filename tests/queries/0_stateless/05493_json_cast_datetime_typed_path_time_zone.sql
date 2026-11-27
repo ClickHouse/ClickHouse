@@ -15,7 +15,7 @@ FROM (SELECT CAST('{"a":["2026-01-01 00:00:00"],"t":{"d":"2026-01-01 00:00:00"},
 -- Without the setting, the typed path `t` reads the whole object, with the text of `t.d`.
 SELECT tupleElement(CAST('{"t":{"d":"2026-01-01 00:00:00"}}'::JSON(`t.d` DateTime('Asia/Tokyo')), 'JSON(t Tuple(d String), `t.d` DateTime(''UTC''))').t, 'd') SETTINGS type_json_allow_duplicated_key_with_literal_and_nested_object = 0;
 -- With it, the object at `t` fills the typed path `t.d`.
-SELECT toUnixTimestamp(CAST('{"t":{"d":"2026-01-01 00:00:00"}}'::JSON(t Tuple(d DateTime('Asia/Tokyo'))), 'JSON(t Tuple(d DateTime(''UTC'')), `t.d` DateTime(''Asia/Tokyo''))').`t.d`);
+SELECT toUnixTimestamp(CAST('{"t":{"d":"2026-01-01 00:00:00"}}'::JSON(t Tuple(d DateTime('Asia/Tokyo'))), 'JSON(t Tuple(d DateTime(''UTC'')), `t.d` DateTime(''Asia/Tokyo''))').`t.d`) SETTINGS json_use_optimized_type_conversion = 0;
 -- Tuple elements are read by name.
 SELECT toUnixTimestamp(tupleElement(CAST('{"t":{"a":"2026-01-01 00:00:00","b":"2026-01-01 00:00:00"}}'::JSON(t Tuple(a DateTime('Asia/Tokyo'), b String)), 'JSON(t Tuple(b DateTime(''UTC''), a DateTime(''Asia/Tokyo'')))').t, 'a'));
 -- An element that does not pair keeps its text and does not hold back the ones that do.
