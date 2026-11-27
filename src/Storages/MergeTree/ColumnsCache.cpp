@@ -8,6 +8,7 @@
 #include <Common/Jemalloc.h>
 #include <Common/LockMemoryExceptionInThread.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/ServerOwnedMemory.h>
 #include <Common/MemoryTrackerUtils.h>
 #include <Common/formatReadable.h>
 #include <Common/memory.h>
@@ -203,7 +204,8 @@ size_t chargedBytesOfColumn(const IColumn & column)
 
 std::shared_ptr<ColumnsCacheEntry> makeColumnsCacheEntry()
 {
-    return std::allocate_shared<ColumnsCacheEntry>(ServerOwnedCacheEntryAllocator<ColumnsCacheEntry>{});
+    /// Storage only: the destructor decides whether the column is the server's or the query's.
+    return std::allocate_shared<ColumnsCacheEntry>(ServerOwnedAllocator<ColumnsCacheEntry>{});
 }
 
 /// Only the root is checked for other holders: a subcolumn a query keeps past the eviction (e.g. from `assumeNotNull`)
@@ -212,7 +214,7 @@ std::shared_ptr<ColumnsCacheEntry> makeColumnsCacheEntry()
 /// deallocated, so such a subcolumn does not count as released there.
 ColumnsCacheEntry::~ColumnsCacheEntry()
 {
-    MemoryTrackerBlockerInThread not_charged_to_query_or_user;
+    ServerOwnedMemoryScope not_charged_to_query_or_user;
     String().swap(part_name);
     String().swap(column_name);
     source.reset();
@@ -438,7 +440,7 @@ size_t ColumnsCache::setMany(const std::vector<MappedPtr> & entries, UInt64 expe
     size_t bytes_to_hand_over = 0;
     size_t bytes_admitted = 0;
     {
-        MemoryTrackerBlockerInThread not_charged_to_query_or_user;
+        ServerOwnedMemoryScope not_charged_to_query_or_user;
         bytes_admitted = setManyImpl(entries, expected_table_generation, bytes_to_hand_over, entries_resident);
     }
     if (bytes_to_hand_over)
@@ -741,7 +743,7 @@ void ColumnsCache::removeEntries(const std::vector<MappedPtr> & entries)
     /// A withdrawal must not stop halfway, with the index and the shards out of step, see `setMany`.
     LockMemoryExceptionInThread lock_memory_exception(VariableContext::Global);
     /// The memory of the cache is the server's, see `setMany`.
-    MemoryTrackerBlockerInThread not_charged_to_query_or_user;
+    ServerOwnedMemoryScope not_charged_to_query_or_user;
 
     std::vector<Key> keys;
     keys.reserve(entries.size());
@@ -763,7 +765,7 @@ void ColumnsCache::removeTable(const UUID & table_uuid)
     /// An invalidation must not stop halfway, with the index and the shards out of step, see `setMany`.
     LockMemoryExceptionInThread lock_memory_exception(VariableContext::Global);
     /// The memory of the cache is the server's, see `setMany`.
-    MemoryTrackerBlockerInThread not_charged_to_query_or_user;
+    ServerOwnedMemoryScope not_charged_to_query_or_user;
 
     /// Not under `index_mutex`: `maxSizeInBytes` of a shard takes the mutex of the shard.
     const bool disabled = shards.front()->maxSizeInBytes() == 0;
@@ -820,7 +822,7 @@ void ColumnsCache::removePart(const UUID & table_uuid, const String & part_name)
     /// An invalidation must not stop halfway, with the index and the shards out of step, see `setMany`.
     LockMemoryExceptionInThread lock_memory_exception(VariableContext::Global);
     /// The memory of the cache is the server's, see `setMany`.
-    MemoryTrackerBlockerInThread not_charged_to_query_or_user;
+    ServerOwnedMemoryScope not_charged_to_query_or_user;
 
     /// No invalidation stamp is advanced here, see the declaration.
     std::vector<Key> keys_to_remove;
@@ -854,7 +856,7 @@ void ColumnsCache::clearAll()
     /// An invalidation must not stop halfway, with the index and the shards out of step, see `setMany`.
     LockMemoryExceptionInThread lock_memory_exception(VariableContext::Global);
     /// The memory of the cache is the server's, see `setMany`.
-    MemoryTrackerBlockerInThread not_charged_to_query_or_user;
+    ServerOwnedMemoryScope not_charged_to_query_or_user;
 
     {
         std::lock_guard lock(index_mutex);
