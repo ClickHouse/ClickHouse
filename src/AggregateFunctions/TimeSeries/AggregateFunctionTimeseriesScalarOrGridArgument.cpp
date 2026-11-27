@@ -7,6 +7,7 @@
 #include <Columns/ColumnVector.h>
 #include <Common/Exception.h>
 #include <Common/typeid_cast.h>
+#include <DataTypes/DataTypeArray.h>
 #include <Functions/castTypeToEither.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -18,6 +19,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
 }
@@ -29,6 +31,16 @@ namespace
     {
         return (lhs == rhs) || (std::isnan(lhs) && std::isnan(rhs));
     }
+}
+
+
+void checkTimeseriesScalarOrGridArgumentType(TimeseriesScalarOrGridArgumentNames names, const DataTypePtr & type)
+{
+    const auto * array_type = typeid_cast<const DataTypeArray *>(type.get());
+    if (!isNativeNumber(array_type ? array_type->getNestedType() : type))
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+            "Illegal type {} of the argument `{}` for aggregate function {}, expected a number or an array of numbers",
+            type->getName(), names.argument_name, names.function_name);
 }
 
 
@@ -119,7 +131,7 @@ void AggregateFunctionTimeseriesScalarOrGridArgument::captureOrCheck(
     });
 
     if (!dispatched)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected column {} for the argument `{}`", number_column.getName(), names.argument_name);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected column {} for the argument `{}` of aggregate function {}", number_column.getName(), names.argument_name, names.function_name);
 }
 
 
@@ -155,7 +167,8 @@ void AggregateFunctionTimeseriesScalarOrGridArgument::deserialize(TimeseriesScal
     readBinaryLittleEndian(size, buf);
     if (size > 1 && size != grid_size)
         throw Exception(ErrorCodes::INCORRECT_DATA,
-            "Cannot deserialize data with {} values of the argument `{}`, expected 0, 1 or {}", size, names.argument_name, grid_size);
+            "Cannot deserialize data of aggregate function {} with {} values of the argument `{}`, expected 0, 1 or {}",
+            names.function_name, size, names.argument_name, grid_size);
 
     values.resize(size);
     for (auto & value : values)

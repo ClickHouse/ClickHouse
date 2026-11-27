@@ -1547,6 +1547,42 @@ def test_function_over_time():
         [["[]", "1970-01-01 00:03:30.000", "nan"]],
     )
 
+    # double_exponential_smoothing: the windows at 120, 135, 150, 165 and 210 hold {1,1}, {1,1,3}, {1,1,3,4}, {3,4}
+    # and {5,5,8}; the other windows hold fewer than two samples and give nothing.
+    do_query_test(
+        "double_exponential_smoothing(test[45s], 0.5, 0.5)[120s:15s]",
+        210,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[120, "1"], [135, "2"], [150, "3.25"], [165, "4"], [210, "6.5"]]}]}',
+        [
+            [
+                "[]",
+                "[('1970-01-01 00:02:00.000',1),('1970-01-01 00:02:15.000',2),('1970-01-01 00:02:30.000',3.25),('1970-01-01 00:02:45.000',4),('1970-01-01 00:03:30.000',6.5)]",
+            ]
+        ],
+    )
+
+    # The smoothing factor `time() / 300` is another one at every step: 0.4, 0.45, 0.5, 0.55 and 0.7.
+    do_query_test(
+        "double_exponential_smoothing(test[45s], time() / 300, 0.5)[120s:15s]",
+        210,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[120, "1"], [135, "1.9"], [150, "3.25"], [165, "4"], [210, "7.1"]]}]}',
+        [
+            [
+                "[]",
+                "[('1970-01-01 00:02:00.000',1),('1970-01-01 00:02:15.000',1.9),('1970-01-01 00:02:30.000',3.25),('1970-01-01 00:02:45.000',4),('1970-01-01 00:03:30.000',7.1)]",
+            ]
+        ],
+        eps=1e-9,
+    )
+
+    # A factor must be greater than 0 and less than 1. One sample in the window is enough for the check.
+    do_query_test_expect_error(
+        "double_exponential_smoothing(test[45s], 2, 0.5)",
+        180,
+        "invalid smoothing factor",
+        "Invalid smoothing factor",
+    )
+
     # mad_over_time: the median absolute deviation `median(|x - median(x)|)`, on `resets` because it goes up and down.
     # The windows hold one to five samples. At 140 the window holds {1,5,8,2}: median 3.5, deviations {2.5,1.5,1.5,4.5}
     # -> 2. At 150 it holds {1,5,8,2,6}: median 5, deviations {4,0,3,3,1} -> 3. At 160 it holds {5,8,2,6}: median 5.5,

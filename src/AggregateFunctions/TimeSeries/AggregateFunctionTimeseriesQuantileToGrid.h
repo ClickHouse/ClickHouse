@@ -27,9 +27,11 @@ struct AggregateFunctionTimeseriesQuantileToGridTraits
     /// The quantile is interpolated between the samples, so it's calculated with double precision.
     using ResultType = Float64;
 
+    static constexpr std::string_view name = "timeSeriesQuantileToGrid";
+
     static String getName()
     {
-        return "timeSeriesQuantileToGrid";
+        return String{name};
     }
 
     using Samples = AggregateFunctionTimeseriesSamples<TimestampType, ValueType>;
@@ -127,13 +129,14 @@ public:
 
     /// The quantile level `phi` is one more argument after the samples, kept in the state.
     static constexpr size_t num_extra_arguments = 1;
+
     struct State : Base::State
     {
         AggregateFunctionTimeseriesScalarOrGridArgument phi;
     };
 
     /// The names used in the error messages for the quantile level `phi`.
-    static constexpr TimeseriesScalarOrGridArgumentNames phi_names{"timeSeriesQuantileToGrid", "phi"};
+    static constexpr TimeseriesScalarOrGridArgumentNames phi_names{Traits::name, "phi"};
 
     Aggregator createAggregator(size_t /* stack_size_for_two_stacks */) const
     {

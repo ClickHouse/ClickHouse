@@ -5,6 +5,7 @@
 #include <Parsers/Prometheus/stepsInTimeSeriesRange.h>
 #include <Common/Exception.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/scalarToAST.h>
 #include <base/defines.h>
 
 
@@ -27,14 +28,14 @@ const PrometheusQueryTree::Offset * getFixedAtModifier(const SQLQueryPiece & arg
 }
 
 
-void checkFixedAtModifier(
+void checkNoTimeVaryingArgumentWithFixedAt(
     const PrometheusQueryTree::Node * function_node,
     const SQLQueryPiece & range_argument,
-    bool is_constant,
+    const ScalarAST & scalar_argument,
     std::string_view argument_description,
     const ConverterContext & context)
 {
-    if (!is_constant && getFixedAtModifier(range_argument))
+    if (!scalar_argument.is_constant && getFixedAtModifier(range_argument))
     {
         throw Exception(
             ErrorCodes::NOT_IMPLEMENTED,

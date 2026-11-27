@@ -3,18 +3,9 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesHelpers.h>
 
-#include <Common/Exception.h>
-#include <Common/typeid_cast.h>
-#include <DataTypes/DataTypeArray.h>
-
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-}
 
 void registerAggregateFunctionTimeseriesQuantileToGrid(AggregateFunctionFactory & factory);
 void registerAggregateFunctionTimeseriesQuantileToGrid(AggregateFunctionFactory & factory)
@@ -59,14 +50,10 @@ timeSeriesQuantileToGrid(start_timestamp, end_timestamp, grid_step, staleness)(s
             auto make_function = [&]<typename TimestampType, typename ValueType>(DateTime64 start, DateTime64 end, Decimal64 step, Decimal64 window, UInt32 grid_scale, UInt32 column_timestamp_scale) -> AggregateFunctionPtr
             {
                 /// The quantile level follows the samples: a number for the whole grid, or an array with a number for each grid point.
-                const auto & phi_type = argument_types.back();
-                const auto * array_type = typeid_cast<const DataTypeArray *>(phi_type.get());
-                if (!isNativeNumber(array_type ? array_type->getNestedType() : phi_type))
-                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                        "Illegal type {} of the last argument for aggregate function {}, expected a number or an array of numbers",
-                        phi_type->getName(), name);
+                using Function = AggregateFunctionTimeseriesQuantileToGrid<TimestampType, ValueType>;
+                checkTimeseriesScalarOrGridArgumentType(Function::phi_names, argument_types.back());
 
-                return std::make_shared<AggregateFunctionTimeseriesQuantileToGrid<TimestampType, ValueType>>(argument_types, parameters, start, end, step, window, grid_scale, column_timestamp_scale);
+                return std::make_shared<Function>(argument_types, parameters, start, end, step, window, grid_scale, column_timestamp_scale);
             };
             return createAggregateFunctionTimeseries(name, argument_types, parameters, settings, make_function,
                 AggregateFunctionTimeseriesQuantileToGrid<DateTime64, Float64>::num_extra_arguments);

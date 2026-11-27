@@ -3,18 +3,9 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesHelpers.h>
 
-#include <Common/Exception.h>
-#include <Common/typeid_cast.h>
-#include <DataTypes/DataTypeArray.h>
-
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-}
 
 void registerAggregateFunctionTimeseriesDoubleExponentialSmoothingToGrid(AggregateFunctionFactory & factory);
 void registerAggregateFunctionTimeseriesDoubleExponentialSmoothingToGrid(AggregateFunctionFactory & factory)
@@ -92,18 +83,11 @@ SELECT timeSeriesDoubleExponentialSmoothingToGrid(start_ts, end_ts, step_seconds
             {
                 /// The factors follow the samples: each is a number for the whole grid, or an array with a number for each grid point.
                 /// Their range is not checked here but when a window with samples is calculated, like in PromQL.
-                auto check_factor_type = [&](const DataTypePtr & factor_type, std::string_view factor_name)
-                {
-                    const auto * array_type = typeid_cast<const DataTypeArray *>(factor_type.get());
-                    if (!isNativeNumber(array_type ? array_type->getNestedType() : factor_type))
-                        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                            "Illegal type {} of the argument `{}` for aggregate function {}, expected a number or an array of numbers",
-                            factor_type->getName(), factor_name, name);
-                };
-                check_factor_type(argument_types[argument_types.size() - 2], "smoothing_factor");
-                check_factor_type(argument_types.back(), "trend_factor");
+                using Function = AggregateFunctionTimeseriesDoubleExponentialSmoothingToGrid<TimestampType, ValueType>;
+                checkTimeseriesScalarOrGridArgumentType(Function::smoothing_factor_names, argument_types[argument_types.size() - 2]);
+                checkTimeseriesScalarOrGridArgumentType(Function::trend_factor_names, argument_types.back());
 
-                return std::make_shared<AggregateFunctionTimeseriesDoubleExponentialSmoothingToGrid<TimestampType, ValueType>>(
+                return std::make_shared<Function>(
                     argument_types, parameters, start, end, step, window, grid_scale, column_timestamp_scale);
             };
             return createAggregateFunctionTimeseries(name, argument_types, parameters, settings, make_function,

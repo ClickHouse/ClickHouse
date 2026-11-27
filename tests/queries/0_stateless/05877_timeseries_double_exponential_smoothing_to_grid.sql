@@ -32,11 +32,19 @@ SELECT timeSeriesDoubleExponentialSmoothingToGrid(90, 210, 15, 45)(timestamp, va
 FROM smoothing_input;
 
 SELECT '-- Float32 values';
-SELECT timeSeriesDoubleExponentialSmoothingToGrid(90, 210, 15, 45)(timestamp, value::Float32, 0.5, 0.5)
+-- 1.1 is not exact in binary, so `Float32` values give other digits than `Float64` values.
+SELECT timeSeriesDoubleExponentialSmoothingToGrid(90, 210, 15, 45)(timestamp, value + 0.1, 0.5, 0.5)
+FROM smoothing_input;
+
+SELECT timeSeriesDoubleExponentialSmoothingToGrid(90, 210, 15, 45)(timestamp, (value + 0.1)::Float32, 0.5, 0.5)
 FROM smoothing_input;
 
 SELECT '-- Float32 factors';
-SELECT timeSeriesDoubleExponentialSmoothingToGrid(90, 210, 15, 45)(timestamp, value, 0.5::Float32, 0.5::Float32)
+-- 0.3 is not exact in binary either, so a `Float32` factor gives other digits than a `Float64` factor.
+SELECT timeSeriesDoubleExponentialSmoothingToGrid(90, 210, 15, 45)(timestamp, value, 0.3, 0.5)
+FROM smoothing_input;
+
+SELECT timeSeriesDoubleExponentialSmoothingToGrid(90, 210, 15, 45)(timestamp, value, 0.3::Float32, 0.5::Float32)
 FROM smoothing_input;
 
 SELECT '-- factors per grid point';
@@ -48,6 +56,11 @@ FROM smoothing_input;
 SELECT timeSeriesDoubleExponentialSmoothingToGrid(90, 210, 15, 45)(timestamp, value, 0.5, [0.5, 0.5, 0.5, 0.5, 0.25, 0.5, 0.5, 0.5, 0.5])
 FROM smoothing_input;
 
+-- With a window of 120 seconds the windows of the grid points 150 to 210 hold four to seven samples, so the trend
+-- factor, which is another one at each of them, is applied several times.
+SELECT timeSeriesDoubleExponentialSmoothingToGrid(90, 210, 15, 120)(timestamp, value, 0.5, [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9])
+FROM smoothing_input;
+
 -- The windows of the grid points 90 and 105 are empty, so the factor 2 is not checked there.
 SELECT timeSeriesDoubleExponentialSmoothingToGrid(90, 210, 15, 45)(timestamp, value, [2, 2, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5], 0.5)
 FROM smoothing_input;
@@ -55,6 +68,18 @@ FROM smoothing_input;
 SELECT '-- partial states merge';
 SELECT timeSeriesDoubleExponentialSmoothingToGridMerge(90, 210, 15, 45)(st)
 FROM (SELECT timeSeriesDoubleExponentialSmoothingToGridState(90, 210, 15, 45)(timestamp, value, 0.5, 0.5) AS st FROM smoothing_input GROUP BY grp);
+
+SELECT '-- stored states';
+-- The states are written to a table and read back, so the two factors go through serialization. They differ from each
+-- other, so the result shows that they are read back in the right order.
+CREATE TABLE smoothing_states (st AggregateFunction(timeSeriesDoubleExponentialSmoothingToGrid(90, 210, 15, 45), DateTime, Float64, Float64, Float64)) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO smoothing_states
+SELECT timeSeriesDoubleExponentialSmoothingToGridState(90, 210, 15, 45)(timestamp, value, 0.25, 0.75) FROM smoothing_input GROUP BY grp;
+
+SELECT timeSeriesDoubleExponentialSmoothingToGridMerge(90, 210, 15, 45)(st)
+FROM smoothing_states;
+
+DROP TABLE smoothing_states;
 
 SELECT '-- window not a multiple of the step';
 -- Every step is then split into two buckets. The window of the grid point 150 loses the sample at 110 and holds {1, 3, 4}.
@@ -88,8 +113,9 @@ SELECT timeSeriesDoubleExponentialSmoothingToGrid(90, 210, 15, 45)(timestamp, va
 FROM smoothing_input WHERE timestamp = 110; -- { serverError BAD_ARGUMENTS }
 
 SELECT '-- factor not checked without samples';
-SELECT timeSeriesDoubleExponentialSmoothingToGrid(90, 210, 15, 45)(timestamp, value, 2, 2)
-FROM smoothing_input WHERE 0;
+-- The rows are read and the factors are captured, but the grid lies after all samples, so every window is empty.
+SELECT timeSeriesDoubleExponentialSmoothingToGrid(300, 420, 15, 45)(timestamp, value, 2, 2)
+FROM smoothing_input;
 
 SELECT '-- NaN factor is accepted';
 SELECT timeSeriesDoubleExponentialSmoothingToGrid(90, 210, 15, 45)(timestamp, value, nan, 0.5)

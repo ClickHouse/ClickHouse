@@ -11,7 +11,7 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/fixedAtModifier.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/dropMetricName.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/getToGridAggregateFunctionArguments.h>
-#include <Storages/TimeSeries/PrometheusQueryToSQL/getToGridAggregateFunctionScalarArgument.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/scalarToAST.h>
 #include <Storages/TimeSeries/timeSeriesTypesToAST.h>
 
 
@@ -46,14 +46,13 @@ SQLQueryPiece applyFunctionQuantileOverTime(
         return SQLQueryPiece{function_node, ResultType::INSTANT_VECTOR, StoreMethod::EMPTY}; /// The range vector is empty, so is the result.
 
     /// The level goes last: it may register a scalar subquery, which is left unused if the result is found empty above.
-    auto quantile_level = getToGridAggregateFunctionScalarArgument(arguments[0], context);
+    auto quantile_level = scalarToAST(std::move(arguments[0]), context);
     if (!quantile_level.ast)
         return SQLQueryPiece{function_node, ResultType::INSTANT_VECTOR, StoreMethod::EMPTY};
 
     ASTs aggregate_function_arguments = getToGridAggregateFunctionArguments(range_argument, context);
 
-    /// With a constant level, a fixed @ on the range vector makes the whole call step-invariant in PromQL, so it is evaluated once.
-    checkFixedAtModifier(function_node, range_argument, quantile_level.is_constant, "quantile", context);
+    checkNoTimeVaryingArgumentWithFixedAt(function_node, range_argument, quantile_level, "quantile", context);
 
     const auto aggregation_range = getRangeAggregationRange(range_argument, node_range, context);
 
@@ -87,6 +86,7 @@ SQLQueryPiece applyFunctionQuantileOverTime(
         timeSeriesDurationToAST(aggregation_range.step, context.result_timestamp_type),
         timeSeriesDurationToAST(window, context.result_timestamp_type));
 
+    /// With a constant level, a fixed @ on the range vector makes the whole call step-invariant in PromQL, so it is evaluated once.
     const auto * const fixed_at_node = getFixedAtModifier(range_argument);
     if (fixed_at_node)
         result_values = repeatFixedAtResultOverGrid(

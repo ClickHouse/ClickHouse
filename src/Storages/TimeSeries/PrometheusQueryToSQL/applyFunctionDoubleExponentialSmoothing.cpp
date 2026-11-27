@@ -1,6 +1,5 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyFunctionDoubleExponentialSmoothing.h>
 
-#include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/Prometheus/stepsInTimeSeriesRange.h>
@@ -11,7 +10,7 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/dropMetricName.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/fixedAtModifier.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/getToGridAggregateFunctionArguments.h>
-#include <Storages/TimeSeries/PrometheusQueryToSQL/getToGridAggregateFunctionScalarArgument.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/scalarToAST.h>
 #include <Storages/TimeSeries/timeSeriesTypesToAST.h>
 
 
@@ -38,11 +37,11 @@ SQLQueryPiece applyFunctionDoubleExponentialSmoothing(
         || arguments[2].store_method == StoreMethod::EMPTY)
         return SQLQueryPiece{function_node, ResultType::INSTANT_VECTOR, StoreMethod::EMPTY};
 
-    auto smoothing_factor = getToGridAggregateFunctionScalarArgument(arguments[1], context);
-    auto trend_factor = getToGridAggregateFunctionScalarArgument(arguments[2], context);
+    auto smoothing_factor = scalarToAST(std::move(arguments[1]), context);
+    auto trend_factor = scalarToAST(std::move(arguments[2]), context);
 
-    checkFixedAtModifier(function_node, range_argument, smoothing_factor.is_constant, "smoothing factor", context);
-    checkFixedAtModifier(function_node, range_argument, trend_factor.is_constant, "trend factor", context);
+    checkNoTimeVaryingArgumentWithFixedAt(function_node, range_argument, smoothing_factor, "smoothing factor", context);
+    checkNoTimeVaryingArgumentWithFixedAt(function_node, range_argument, trend_factor, "trend factor", context);
 
     /// A range vector made from a scalar has no `group` column. The result is still a vector grid with one series without
     /// tags, because the aggregate function returns NULL for a window without enough samples and only VECTOR_GRID can hold NULL.

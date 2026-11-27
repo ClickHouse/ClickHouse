@@ -1,13 +1,10 @@
 #pragma once
 
 #include <optional>
-#include <utility>
 
-#include <absl/container/inlined_vector.h>
 #include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesBase.h>
 #include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesSamples.h>
 #include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesScalarOrGridArgument.h>
-#include <Common/AllocatorWithMemoryTracking.h>
 #include <Common/DequeWithMemoryTracking.h>
 #include <Common/Exception.h>
 
@@ -31,9 +28,11 @@ struct AggregateFunctionTimeseriesDoubleExponentialSmoothingToGridTraits
     /// The level and the trend are fractions even for integer-like values, so the result is calculated with double precision.
     using ResultType = Float64;
 
+    static constexpr std::string_view name = "timeSeriesDoubleExponentialSmoothingToGrid";
+
     static String getName()
     {
-        return "timeSeriesDoubleExponentialSmoothingToGrid";
+        return String{name};
     }
 
     using Samples = AggregateFunctionTimeseriesSamples<TimestampType, ValueType>;
@@ -48,31 +47,23 @@ struct AggregateFunctionTimeseriesDoubleExponentialSmoothingToGridTraits
         /// Adds the bucket that entered the window. Buckets are added in time order.
         void add(const Samples & samples, GridScaleTimestampType bucket_end_timestamp)
         {
-            /// `getResult` relies on every stored bucket having a value.
-            if (samples.maxSampleCount() == 0)
-                return;
-
-            BucketValues bucket{.bucket_end = bucket_end_timestamp, .values = {}};
-            bucket.values.reserve(samples.maxSampleCount());
-            samples.forEachSample([&bucket](TimestampType /*timestamp*/, ValueType value)
+            samples.forEachSample([&](TimestampType /*timestamp*/, ValueType value)
             {
-                bucket.values.push_back(value);
+                values_in_window.push_back({.bucket_end = bucket_end_timestamp, .value = value});
             });
-
-            buckets_in_window.push_back(std::move(bucket));
         }
 
         /// Drops the buckets that left the window. The window is open on the left, so a bucket that ends at `cut_off` is out.
         void removeBefore(GridScaleTimestampType cut_off)
         {
-            while (!buckets_in_window.empty() && buckets_in_window.front().bucket_end <= cut_off)
-                buckets_in_window.pop_front();
+            while (!values_in_window.empty() && values_in_window.front().bucket_end <= cut_off)
+                values_in_window.pop_front();
         }
 
         /// Returns the last smoothed value of the window, or nothing if the window has fewer than two values.
         [[nodiscard]] std::optional<ResultType> getResult(GridScaleTimestampType /*grid_timestamp*/, Float64 smoothing_factor, Float64 trend_factor) const
         {
-            if (buckets_in_window.empty())
+            if (values_in_window.empty())
                 return std::nullopt;
 
             /// The factors are checked only for a window with samples: like Prometheus, an empty window gives no result
@@ -84,27 +75,24 @@ struct AggregateFunctionTimeseriesDoubleExponentialSmoothingToGridTraits
             Float64 previous_level = 0;
             Float64 trend = 0;
 
-            for (const auto & bucket : buckets_in_window)
+            for (const auto & value_in_window : values_in_window)
             {
-                for (const ValueType bucket_value : bucket.values)
+                const Float64 value = static_cast<Float64>(value_in_window.value);
+                if (count == 0)
+                    level = value;
+                else
                 {
-                    const Float64 value = static_cast<Float64>(bucket_value);
-                    if (count == 0)
-                        level = value;
+                    /// The first trend is the difference of the first two values. Later ones mix the last change of
+                    /// the level with the previous trend.
+                    if (count == 1)
+                        trend = value - level;
                     else
-                    {
-                        /// The first trend is the difference of the first two values. Later ones mix the last change of
-                        /// the level with the previous trend.
-                        if (count == 1)
-                            trend = value - level;
-                        else
-                            trend = trend_factor * (level - previous_level) + (1 - trend_factor) * trend;
+                        trend = trend_factor * (level - previous_level) + (1 - trend_factor) * trend;
 
-                        previous_level = level;
-                        level = smoothing_factor * value + (1 - smoothing_factor) * (previous_level + trend);
-                    }
-                    ++count;
+                    previous_level = level;
+                    level = smoothing_factor * value + (1 - smoothing_factor) * (previous_level + trend);
                 }
+                ++count;
             }
 
             return (count < 2) ? std::optional<ResultType>{} : level;
@@ -122,18 +110,15 @@ struct AggregateFunctionTimeseriesDoubleExponentialSmoothingToGridTraits
                     "Invalid trend factor {} of function {}: it must be greater than 0 and less than 1", trend_factor, getName());
         }
 
-        /// Two values fit into the space the vector needs anyway for its heap pointer and capacity, so they cost nothing.
-        static constexpr size_t INLINE_VALUES_PER_BUCKET = 2;
-
-        /// The values of one bucket, in time order. A bucket enters and leaves the window as a whole.
-        struct BucketValues
+        /// A value with the end of its bucket: a bucket leaves the window as a whole.
+        struct ValueInWindow
         {
             GridScaleTimestampType bucket_end;
-            absl::InlinedVector<ValueType, INLINE_VALUES_PER_BUCKET, AllocatorWithMemoryTracking<ValueType>> values;
+            ValueType value;
         };
 
-        /// The buckets of the current window, oldest first. The bucket end is kept once per bucket, not once per value.
-        DequeWithMemoryTracking<BucketValues> buckets_in_window;
+        /// The values of the current window, oldest first.
+        DequeWithMemoryTracking<ValueInWindow> values_in_window;
     };
 
     static constexpr UInt16 FORMAT_VERSION = 1;
@@ -169,8 +154,8 @@ public:
     };
 
     /// The names used in the error messages for the smoothing factor and the trend factor.
-    static constexpr TimeseriesScalarOrGridArgumentNames smoothing_factor_names{"timeSeriesDoubleExponentialSmoothingToGrid", "smoothing_factor"};
-    static constexpr TimeseriesScalarOrGridArgumentNames trend_factor_names{"timeSeriesDoubleExponentialSmoothingToGrid", "trend_factor"};
+    static constexpr TimeseriesScalarOrGridArgumentNames smoothing_factor_names{Traits::name, "smoothing_factor"};
+    static constexpr TimeseriesScalarOrGridArgumentNames trend_factor_names{Traits::name, "trend_factor"};
 
     Aggregator createAggregator(size_t /* stack_size_for_two_stacks */) const
     {

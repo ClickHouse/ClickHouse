@@ -207,12 +207,6 @@ public:
             f(timestamp, value);
     }
 
-    /// An upper bound on the number of samples: the unsorted tail can still hold duplicate timestamps.
-    [[nodiscard]] size_t maxSampleCount() const
-    {
-        return buffer.size();
-    }
-
 private:
     /// How many samples `deserialize` reserves before reading the data. Bigger buckets grow while they are read.
     static constexpr size_t MAX_SAMPLES_TO_RESERVE = 4096;

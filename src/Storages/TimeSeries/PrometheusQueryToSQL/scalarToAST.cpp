@@ -1,4 +1,4 @@
-#include <Storages/TimeSeries/PrometheusQueryToSQL/getToGridAggregateFunctionScalarArgument.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/scalarToAST.h>
 
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -9,16 +9,16 @@
 namespace DB::PrometheusQueryToSQL
 {
 
-ToGridAggregateFunctionScalarArgument getToGridAggregateFunctionScalarArgument(SQLQueryPiece & scalar, ConverterContext & context)
+ScalarAST scalarToAST(SQLQueryPiece && scalar, ConverterContext & context)
 {
-    ToGridAggregateFunctionScalarArgument argument;
+    ScalarAST scalar_ast;
     switch (scalar.store_method)
     {
         case StoreMethod::CONST_SCALAR:
         {
             /// Keep the literal at Float64: casting it to a Float32 scalar type would round e.g. 1.00000003 to 1.0
-            /// and hide a value that is just out of the range the aggregate function accepts.
-            argument.ast = make_intrusive<ASTLiteral>(scalar.scalar_value);
+            /// and hide a value that is just out of the accepted range.
+            scalar_ast.ast = make_intrusive<ASTLiteral>(scalar.scalar_value);
             break;
         }
 
@@ -26,16 +26,16 @@ ToGridAggregateFunctionScalarArgument getToGridAggregateFunctionScalarArgument(S
         {
             /// A scalar subquery is nullable, but it always has exactly one row here.
             context.subqueries.emplace_back(context.subqueries.size(), std::move(scalar.select_query), SQLSubqueryType::SCALAR);
-            argument.ast = makeASTFunction("assumeNotNull", make_intrusive<ASTIdentifier>(context.subqueries.back().name));
+            scalar_ast.ast = makeASTFunction("assumeNotNull", make_intrusive<ASTIdentifier>(context.subqueries.back().name));
             break;
         }
 
         case StoreMethod::SCALAR_GRID:
         {
             /// A scalar grid is one row with one Array column, so it is a scalar subquery too.
-            argument.is_constant = false;
+            scalar_ast.is_constant = false;
             context.subqueries.emplace_back(context.subqueries.size(), std::move(scalar.select_query), SQLSubqueryType::SCALAR);
-            argument.ast = make_intrusive<ASTIdentifier>(context.subqueries.back().name);
+            scalar_ast.ast = make_intrusive<ASTIdentifier>(context.subqueries.back().name);
             break;
         }
 
@@ -53,7 +53,7 @@ ToGridAggregateFunctionScalarArgument getToGridAggregateFunctionScalarArgument(S
             throwUnexpectedStoreMethod(scalar, context);
         }
     }
-    return argument;
+    return scalar_ast;
 }
 
 }
