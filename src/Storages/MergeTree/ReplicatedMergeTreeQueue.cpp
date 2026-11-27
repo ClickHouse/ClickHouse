@@ -93,6 +93,7 @@ void ReplicatedMergeTreeQueue::clear()
     mutations_by_partition.clear();
     mutation_pointer.clear();
     mutation_pointer_mtime = 0;
+    mutation_pointer_being_written.clear();
     mutation_counters = {};
     num_metadata_mutations_in_map.store(0, std::memory_order_release);
 }
@@ -1191,9 +1192,7 @@ int32_t ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper
                 {
                     LOG_DEBUG(log, "Removing killed mutation {} from local state.", entry.znode_name);
                     some_active_mutations_were_killed = true;
-                    /// A mutation that is not greater than the mutation pointer is considered done
-                    /// even if it is not marked as done yet, see `tryFinalizeMutations`.
-                    if (entry.znode_name > mutation_pointer)
+                    if (isRemovedMutationKilled(it->second))
                         killed_mutations.insert(entry.znode_name);
                     if (entry.isAlterMutation())
                     {
@@ -1368,8 +1367,7 @@ ReplicatedMergeTreeMutationEntryPtr ReplicatedMergeTreeQueue::removeMutation(
         if (mutation_was_active)
         {
             decrementMutationsCounters(mutation_counters, entry->commands);
-            /// See the comment in `updateMutations`.
-            if (entry->znode_name > mutation_pointer)
+            if (isRemovedMutationKilled(it->second))
                 killed_mutations.insert(entry->znode_name);
         }
 
@@ -2724,6 +2722,13 @@ bool ReplicatedMergeTreeQueue::tryFinalizeMutations(zkutil::ZooKeeperPtr zookeep
 
     if (!finished.empty())
     {
+        {
+            /// As soon as the pointer is written, the cleanup thread of another replica can remove the entries
+            /// of the finalized mutations, so `updateMutations` has to know about them before the write.
+            std::lock_guard lock(state_mutex);
+            mutation_pointer_being_written = std::max(mutation_pointer_being_written, finished.back()->znode_name);
+        }
+
         Coordination::Stat mutation_pointer_stat;
         zookeeper->set(fs::path(replica_path) / "mutation_pointer", finished.back()->znode_name, -1, &mutation_pointer_stat);
 
@@ -2891,6 +2896,12 @@ bool ReplicatedMergeTreeQueue::isMutationKilled(const String & znode_name) const
 {
     std::shared_lock lock(state_mutex);
     return killed_mutations.contains(znode_name);
+}
+
+bool ReplicatedMergeTreeQueue::isRemovedMutationKilled(const MutationStatus & status) const
+{
+    const String & znode_name = status.entry->znode_name;
+    return !status.is_done && znode_name > mutation_pointer && znode_name > mutation_pointer_being_written;
 }
 
 std::vector<MergeTreeMutationStatus> ReplicatedMergeTreeQueue::getMutationsStatus() const

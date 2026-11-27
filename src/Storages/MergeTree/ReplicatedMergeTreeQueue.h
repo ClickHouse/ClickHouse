@@ -179,6 +179,11 @@ private:
     /// that is, the killed ones, see `isMutationKilled`. There is one element per such mutation, and they are rare.
     std::set<String> killed_mutations;
 
+    /// Tells whether a mutation whose entry has just been removed was killed rather than finished on this replica.
+    /// A mutation that is not greater than the mutation pointer is considered done even if it is not marked
+    /// as done yet, see `tryFinalizeMutations`. Requires `state_mutex`.
+    bool isRemovedMutationKilled(const MutationStatus & status) const;
+
     /// Mapping from part name to postpone reason
     mutable std::map<String, String> current_parts_postpone_reasons;
 
@@ -196,6 +201,11 @@ private:
     /// Modification time of the `mutation_pointer` znode, i.e. the time when the mutation
     /// it points at was finalized on this replica. Used as `finish_time` of that mutation.
     time_t mutation_pointer_mtime = 0;
+    /// The value that `tryFinalizeMutations` writes to the `mutation_pointer` znode. It is set before the write,
+    /// while `mutation_pointer` and `is_done` of the finalized mutations are updated after it. In between,
+    /// the cleanup thread of another replica can already remove the entries of these mutations,
+    /// and they must not be taken for killed ones, see `isRemovedMutationKilled`.
+    String mutation_pointer_being_written;
 
     /// Provides only one simultaneous call to pullLogsToQueue.
     std::mutex pull_logs_to_queue_mutex;
