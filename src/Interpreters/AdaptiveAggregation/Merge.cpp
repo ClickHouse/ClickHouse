@@ -17,8 +17,8 @@
 #include <Common/threadPoolCallbackRunner.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <Interpreters/AdaptiveAggregation/AdaptiveAggregationImpl.h>
-#include <Interpreters/AdaptiveAggregation/AdaptiveRowSelection.h>
-#include <Interpreters/AdaptiveAggregation/GrowingCountTopK.h>
+#include <Interpreters/AdaptiveAggregation/Combining/AdaptiveRowSelection.h>
+#include <Interpreters/AdaptiveAggregation/TopK/GrowingCountTopK.h>
 #include <Interpreters/Aggregator.h>
 #include <Interpreters/RowDataStore.h>
 #include <Interpreters/Squashing.h>

@@ -17,11 +17,12 @@
 #include <DataTypes/IDataType.h>
 #include <Interpreters/AdaptiveAggregation/AdaptiveAggregation.h>
 #include <Interpreters/AdaptiveAggregation/AdaptivePartitionLayout.h>
-#include <Interpreters/AdaptiveAggregation/AdaptivePartitionTails.h>
-#include <Interpreters/AdaptiveAggregation/AdaptiveTopKNullKey.h>
-#include <Interpreters/AdaptiveAggregation/AdaptiveTopKPruning.h>
-#include <Interpreters/AdaptiveAggregation/AdaptiveTopKThreshold.h>
+#include <Interpreters/AdaptiveAggregation/Combining/AdaptivePartitionTails.h>
+#include <Interpreters/AdaptiveAggregation/Combining/AdaptiveRowSelection.h>
 #include <Interpreters/AdaptiveAggregation/StagedRecords.h>
+#include <Interpreters/AdaptiveAggregation/TopK/AdaptiveTopKNullKey.h>
+#include <Interpreters/AdaptiveAggregation/TopK/AdaptiveTopKPruning.h>
+#include <Interpreters/AdaptiveAggregation/TopK/AdaptiveTopKThreshold.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
 
 namespace DB

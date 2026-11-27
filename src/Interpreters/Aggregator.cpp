@@ -36,7 +36,7 @@
 #include <IO/Operators.h>
 #include <Interpreters/AggregationUtils.h>
 #include <Interpreters/AdaptiveAggregation/AdaptiveAggregationImpl.h>
-#include <Interpreters/AdaptiveAggregation/AdaptiveRowSelection.h>
+#include <Interpreters/AdaptiveAggregation/Combining/AdaptiveRowSelection.h>
 #include <Interpreters/Aggregator.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>

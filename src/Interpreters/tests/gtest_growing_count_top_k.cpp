@@ -5,7 +5,7 @@
 #include <string_view>
 #include <vector>
 
-#include <Interpreters/AdaptiveAggregation/GrowingCountTopK.h>
+#include <Interpreters/AdaptiveAggregation/TopK/GrowingCountTopK.h>
 
 using namespace DB;
 

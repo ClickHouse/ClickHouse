@@ -1,4 +1,4 @@
-#include <Interpreters/AdaptiveAggregation/AdaptiveRowSelection.h>
+#include <Interpreters/AdaptiveAggregation/Combining/AdaptiveRowSelection.h>
 
 #include <optional>
 #include <type_traits>

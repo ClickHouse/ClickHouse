@@ -19,8 +19,8 @@
 #include <Common/assert_cast.h>
 #include <Common/findExtreme.h>
 #include <Interpreters/AdaptiveAggregation/AdaptiveAggregationImpl.h>
-#include <Interpreters/AdaptiveAggregation/AdaptiveMissCombiner.h>
-#include <Interpreters/AdaptiveAggregation/AdaptiveRowSelection.h>
+#include <Interpreters/AdaptiveAggregation/Combining/AdaptiveMissCombiner.h>
+#include <Interpreters/AdaptiveAggregation/Combining/AdaptiveRowSelection.h>
 #include <Interpreters/Aggregator.h>
 #include <base/sort.h>
 
