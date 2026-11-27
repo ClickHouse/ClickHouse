@@ -58,19 +58,19 @@ WYRD_ADVERSARY_TEST(
     .adversary = {.pin_to_single_core = false, .yield_probability = 0.5, .suspend_probability = 1.0, .max_suspended_threads = 1, .resume_probability = 1.0})
 {
     Atomic<size_t> counter{0};
-    Atomic<UInt32> arrived{0};
+    Atomic<UInt32> inside{0};
 
     Race race;
     race.add(
         3,
         [&](size_t)
         {
-            arrived.fetch_add(1);
-            arrived.notify_all();
-            for (UInt32 seen = arrived.load(); seen < 3; seen = arrived.load())
-                arrived.wait(seen);
-
             LockFreeScope scope;
+
+            inside.fetch_add(1);
+            while (inside.load() < 3)
+                progress();
+
             for (size_t i = 0; i < 200; ++i)
             {
                 counter.fetch_add(1);
