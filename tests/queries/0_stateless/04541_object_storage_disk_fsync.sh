@@ -127,6 +127,8 @@ CASES="wide_1 compact_1 wide_0 compact_0 merge_1 merge_0 alter"
 
 # A row missing from query_log would be read as a sync count of 0, which no assertion here can tell
 # from a real 0, so all 14 must be present. The 'rows-' rows share the shape to ride the same pass.
+# In a Replicated database an ALTER is logged twice, once more as the secondary query it executes
+# in the same thread, so only initial queries are read; the initial row carries the counters.
 read_all() {
     local sel=""
     for c in $CASES; do
@@ -139,14 +141,14 @@ read_all() {
                    argMax(ProfileEvents['FileSync'], event_time_microseconds) as a,
                    argMax(ProfileEvents['DirectorySync'], event_time_microseconds) as b
             from system.query_log
-            where current_database = currentDatabase() and type = 'QueryFinish'
+            where current_database = currentDatabase() and type = 'QueryFinish' and is_initial_query
               and log_comment like 'c-%'
             group by log_comment
             union all
             ${sel}
             select 'guard', throwIf(count() != 14, 'missing query_log rows'), 0
             from system.query_log
-            where current_database = currentDatabase() and type = 'QueryFinish'
+            where current_database = currentDatabase() and type = 'QueryFinish' and is_initial_query
               and log_comment like 'c-%'
         )
         format TSV;
