@@ -644,6 +644,13 @@ bool isUniqueByColumns(const QueryPlan::Node & root, NameSet columns)
             expression = &expression_step->getExpression();
         else if (const auto * filter_step = typeid_cast<const FilterStep *>(step))
             expression = &filter_step->getExpression();
+        else if (const auto * reading = typeid_cast<const ReadFromMergeTree *>(step))
+        {
+            /// The rows that a read of a table with `UNIQUE KEY` outputs are unique by the key within each partition.
+            const auto & metadata = reading->getStorageMetadata();
+            return metadata->hasUniqueKey() && !metadata->hasPartitionKey() && has_all(metadata->getUniqueKeyColumns())
+                && !reading->getMergeTreeData().hasEnabledMaskingPolicies(reading->getContext());
+        }
         else if (!typeid_cast<const SortingStep *>(step) && !typeid_cast<const OffsetStep *>(step))
             return false;
 

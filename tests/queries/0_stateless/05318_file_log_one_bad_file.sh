@@ -58,7 +58,9 @@ wait_for_rows 2
 ${CLICKHOUSE_CLIENT} -q "SELECT file, a FROM dst ORDER BY file, a"
 
 # The file becomes readable again without any event in the directory: it is retried and read.
-printf '{"a":100}\n' > "${target}"
+# The target appears complete at once: later writes to a symlink's target raise no event in the directory.
+printf '{"a":100}\n' > "${target}.tmp"
+mv "${target}.tmp" "${target}"
 wait_for_rows 3
 ${CLICKHOUSE_CLIENT} -q "SELECT file, a FROM dst WHERE file = 'broken.jsonl'"
 

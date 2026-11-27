@@ -14,6 +14,7 @@ namespace DB
 {
 
 struct FormatSettings;
+struct Map;
 class Block;
 class Chunk;
 class NamesAndTypesList;
@@ -218,6 +219,8 @@ struct VirtualsForFileLikeStorage
     std::optional<UInt64> first_row_id = std::nullopt;
     ColumnPtr materialized_row_ids = {};
     ColumnPtr materialized_last_updated_sequence_numbers = {};
+    /// The HTTP response headers of the read: the value of the `_headers` virtual column of the storages which read over HTTP.
+    const Map * http_response_headers { nullptr };
 };
 
 void addRequestedFileLikeStorageVirtualsToChunk(
