@@ -371,7 +371,6 @@ if (ENABLE_BUILD_PATH_MAPPING)
 
     # `-ffile-prefix-map` does not apply to the path of the source file that Clang writes into the module, which goes
     # into the hashes of ThinLTO, so the compiler gets it relative to the build directory (see the script).
-    # A nested build (see NATIVE_BUILD_TARGETS) gets the launcher from this one.
     set (RELATIVE_SOURCE_PATH_LAUNCHER "${PROJECT_SOURCE_DIR}/cmake/relative_source_path.sh")
     if (NOT USING_DUMMY_LAUNCHERS AND NOT CMAKE_CXX_COMPILER_LAUNCHER MATCHES "/cmake/relative_source_path.sh")
         set (CMAKE_CXX_COMPILER_LAUNCHER "${RELATIVE_SOURCE_PATH_LAUNCHER}" ${CMAKE_CXX_COMPILER_LAUNCHER})
@@ -1093,14 +1092,22 @@ if (NATIVE_BUILD_TARGETS
 
     disable_dummy_launchers_if_needed()
 
+    # The nested build adds the launcher for relative source paths itself, after its compiler cache.
+    set (NATIVE_C_COMPILER_LAUNCHER ${CMAKE_C_COMPILER_LAUNCHER})
+    set (NATIVE_CXX_COMPILER_LAUNCHER ${CMAKE_CXX_COMPILER_LAUNCHER})
+    if (RELATIVE_SOURCE_PATH_LAUNCHER)
+        list (REMOVE_ITEM NATIVE_C_COMPILER_LAUNCHER "${RELATIVE_SOURCE_PATH_LAUNCHER}")
+        list (REMOVE_ITEM NATIVE_CXX_COMPILER_LAUNCHER "${RELATIVE_SOURCE_PATH_LAUNCHER}")
+    endif ()
+
     execute_process(
         COMMAND ${CMAKE_COMMAND}
             "-G${CMAKE_GENERATOR}"
             "-DCMAKE_MAKE_PROGRAM=${CMAKE_MAKE_PROGRAM}"
             "-DCMAKE_C_COMPILER=${CMAKE_C_COMPILER}"
             "-DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER}"
-            "-DCMAKE_C_COMPILER_LAUNCHER=${CMAKE_C_COMPILER_LAUNCHER}"
-            "-DCMAKE_CXX_COMPILER_LAUNCHER=${CMAKE_CXX_COMPILER_LAUNCHER}"
+            "-DCMAKE_C_COMPILER_LAUNCHER=${NATIVE_C_COMPILER_LAUNCHER}"
+            "-DCMAKE_CXX_COMPILER_LAUNCHER=${NATIVE_CXX_COMPILER_LAUNCHER}"
             "-DCMAKE_BUILD_TYPE=Release"
             # Avoid overriding .cargo/config.toml with native toolchain.
             "-DENABLE_RUST=OFF"
