@@ -18,6 +18,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/Utils.h>
+#include <DataTypes/hasNullable.h>
 
 #include <Disks/IVolume.h>
 
@@ -892,6 +893,14 @@ bool StorageDistributed::isShardingKeySuitsQueryTreeNodeExpression(
     for (const auto & col : sharding_key_dag.getRequiredColumnsNames())
     {
         if (std::ranges::find(expr_key_required_columns, col) == expr_key_required_columns.end())
+            return false;
+    }
+
+    /// `-0.` and `0.` are the same key of `GROUP BY`, `DISTINCT` and `LIMIT BY`, but a sharding key can send them
+    /// to different shards (e.g. `cityHash64(f)` hashes the binary representation), so a group can span shards.
+    for (const auto * input : sharding_key_dag.getInputs())
+    {
+        if (hasTypeThatCanContainFloat(input->result_type))
             return false;
     }
 
@@ -2985,7 +2994,12 @@ void registerStorageRemote(StorageFactory & factory)
             /* is_cluster_function = */ false,
             secure,
             help_message,
-            /* dependent_table_id = */ &args.table_id);
+            /* dependent_table_id = */ &args.table_id,
+            RemoteDescriptionCaller{
+                fmt::format("Table engine '{}'", secure ? "RemoteSecure" : "Remote"),
+                TABLE_FUNCTION_REMOTE_MAX_ADDRESSES_SETTING,
+                /*listing_alternative=*/ {}},
+            /* limit_total_addresses = */ !isReplayedTableDefinition(args.mode, args.query, args.getLocalContext()));
 
         DistributedSettings distributed_settings = args.getContext()->getDistributedSettings();
         if (args.storage_def->settings)

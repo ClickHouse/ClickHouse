@@ -1694,6 +1694,7 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
     MergeTreeDataMergerMutator & merger_mutator,
     MergeTreeData & data,
     const CommittingBlocks & committing_blocks,
+    bool merges_delayed_after_startup,
     std::unique_lock<SharedMutex> & state_lock) const
 {
     if (auto postpone_time = getPostponeTimeMsForEntry(entry, data))
@@ -1796,6 +1797,13 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
         {
             constexpr auto fmt_string = "Not executing log entry {} of type {} for part {} because merges and mutations are cancelled now.";
             LOG_DEBUG(LogToStr(out_postpone_reason, log), fmt_string, entry.znode_name, entry.typeToString(), entry.new_part_name);
+            return false;
+        }
+
+        if (entry.type == LogEntry::MERGE_PARTS && merges_delayed_after_startup)
+        {
+            constexpr auto fmt_string = "Not executing log entry {} for part {} because merges are delayed after the table startup (delay_merges_after_startup_seconds).";
+            LOG_TRACE(LogToStr(out_postpone_reason, log), fmt_string, entry.znode_name, entry.new_part_name);
             return false;
         }
 
@@ -2214,6 +2222,8 @@ ReplicatedMergeTreeQueue::SelectedEntryPtr ReplicatedMergeTreeQueue::selectEntry
         committing_blocks = getCommittingBlocks(zookeeper, zookeeper_path, partition_ids_hint, /*with_data=*/ true);
     }
 
+    const bool merges_delayed_after_startup = data.areMergesDelayedAfterStartup();
+
     std::unique_lock lock(state_mutex);
 
     for (auto it = queue.begin(); it != queue.end(); ++it)
@@ -2221,7 +2231,7 @@ ReplicatedMergeTreeQueue::SelectedEntryPtr ReplicatedMergeTreeQueue::selectEntry
         if ((*it)->currently_executing)
             continue;
 
-        if (shouldExecuteLogEntry(**it, (*it)->postpone_reason, merger_mutator, data, committing_blocks, lock))
+        if (shouldExecuteLogEntry(**it, (*it)->postpone_reason, merger_mutator, data, committing_blocks, merges_delayed_after_startup, lock))
         {
             entry = *it;
             /// We gave a chance for the entry, move it to the tail of the queue, after that
@@ -2831,6 +2841,30 @@ void ReplicatedMergeTreeQueue::getInsertTimes(time_t & out_min_unprocessed_inser
     out_max_processed_insert_time = max_processed_insert_time.load(std::memory_order_relaxed);
 }
 
+
+Strings ReplicatedMergeTreeQueue::getUnfinishedClearsOfBlockColumns(const PartitionIdToMaxBlock & partitions, const StorageInMemoryMetadata & metadata) const
+{
+    std::set<String> result;
+    std::shared_lock lock(state_mutex);
+
+    for (const auto & [partition_id, max_block] : partitions)
+    {
+        auto in_partition = mutations_by_partition.find(partition_id);
+        if (in_partition == mutations_by_partition.end())
+            continue;
+
+        for (const auto & [block_number, status] : in_partition->second)
+        {
+            if (block_number >= max_block)
+                break;
+
+            if (!status->is_done && std::ranges::any_of(status->entry->commands, [&](const MutationCommand & command) { return command.isClearOfBlockColumns(metadata); }))
+                result.insert(status->entry->znode_name);
+        }
+    }
+
+    return Strings(result.begin(), result.end());
+}
 
 std::optional<MergeTreeMutationStatus> ReplicatedMergeTreeQueue::getIncompleteMutationsStatus(const String & znode_name, std::set<String> * mutation_ids) const
 {

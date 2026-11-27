@@ -227,8 +227,9 @@ bool convertLowCardinalityColumnsToFull(ColumnsWithTypeAndName & args);
 
 void checkFunctionArgumentSizes(const ColumnsWithTypeAndName & arguments, size_t input_rows_count);
 
-/// Casts a `Nullable(Enum)` column to the `Nullable` form of `result_type`. A cast of its nested column instead would also
-/// convert the values under `NULL`, which can be invalid, e.g. `0` for an `Enum` without such an element.
+/// Casts a `Nullable(Enum)` column, or a `Nullable` column of a `Tuple`/`Object` containing an `Enum`, to the
+/// `Nullable` form of `result_type`. A cast of its nested column instead would also convert the values under
+/// `NULL`, which can be invalid, e.g. `0` for an `Enum` without such an element.
 ColumnWithTypeAndName castNullableEnumToResultType(const ColumnWithTypeAndName & argument, const DataTypePtr & result_type);
 
 /// Throws VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE if a UInt64 argument holds 2^63 or more, which `IColumn::getInt`

@@ -8,7 +8,6 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/Serializations/SerializationJSON.h>
-#include <DataTypes/Serializations/SerializationInfoObject.h>
 #include <DataTypes/Serializations/SerializationObjectTypedPath.h>
 #include <DataTypes/Serializations/SerializationObjectTypedSharedDataPath.h>
 #include <DataTypes/Serializations/SerializationSubObjectTypedSharedData.h>
@@ -19,9 +18,7 @@
 #include <DataTypes/Serializations/SerializationNamed.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnObject.h>
-#include <Columns/ColumnBLOB.h>
 #include <Columns/ColumnDynamic.h>
-#include <Columns/ColumnReplicated.h>
 #include <Interpreters/castColumn.h>
 #include <Common/CurrentThread.h>
 #include <Common/SipHash.h>
@@ -227,48 +224,12 @@ bool DataTypeObject::equalsIgnoringSharedTypedPaths(const DataTypeObject & rhs) 
 
 SerializationPtr DataTypeObject::doGetSerialization(const SerializationInfoSettings & settings) const
 {
-    return getSerializationImpl(settings, nullptr, true);
-}
-
-SerializationPtr DataTypeObject::getSerialization(const SerializationInfo & info) const
-{
-    return getSerialization(info, true);
-}
-
-SerializationPtr DataTypeObject::getSerialization(const SerializationInfo & info, bool use_type_serialization_settings) const
-{
-    const auto * object_info = typeid_cast<const SerializationInfoObject *>(&info);
-    return wrapSerializationBasedOnKindStack(
-        getSerializationImpl(info.getSettings(), object_info, use_type_serialization_settings),
-        info.getKindStack(),
-        info.getSettings());
-}
-
-SerializationPtr DataTypeObject::getSerializationImpl(
-    const SerializationInfoSettings & settings,
-    const SerializationInfoObject * serialization_info,
-    bool use_type_serialization_settings) const
-{
     std::unordered_map<String, SerializationPtr> typed_paths_serializations;
     typed_paths_serializations.reserve(typed_paths.size());
     for (const auto & [path, type] : typed_paths)
-    {
-        if (serialization_info)
-        {
-            bool use_nested_type_serialization_settings
-                = use_type_serialization_settings && settings.propagate_types_serialization_versions_to_nested_types;
-            typed_paths_serializations[path]
-                = type->getSerialization(*serialization_info->getTypedPathInfo(path), use_nested_type_serialization_settings);
-        }
-        else
-        {
-            typed_paths_serializations[path] = use_type_serialization_settings && settings.propagate_types_serialization_versions_to_nested_types
-                ? type->getSerialization(settings)
-                : type->getDefaultSerialization();
-        }
-    }
+        typed_paths_serializations[path] = settings.propagate_types_serialization_versions_to_nested_types ? type->getSerialization(settings) : type->getDefaultSerialization();
 
-    SerializationPtr dynamic_serialization = use_type_serialization_settings && settings.propagate_types_serialization_versions_to_nested_types
+    SerializationPtr dynamic_serialization = settings.propagate_types_serialization_versions_to_nested_types
         ? getDynamicType()->getSerialization(settings)
         : getDynamicType()->getDefaultSerialization();
 
@@ -313,80 +274,6 @@ SerializationPtr DataTypeObject::getSerializationImpl(
                 buildJSONExtractTree<DummyJSONParser>(getPtr(), "JSON serialization"));
 #endif
     }
-}
-
-MutableSerializationInfoPtr DataTypeObject::createSerializationInfo(const SerializationInfoSettings & settings) const
-{
-    if (settings.version < MergeTreeSerializationInfoVersion::WITH_SUBCOLUMNS)
-        return IDataType::createSerializationInfo(settings);
-
-    Names paths;
-    MutableSerializationInfos infos;
-    paths.reserve(sorted_typed_paths.size());
-    infos.reserve(sorted_typed_paths.size());
-    for (const auto & [path, type] : sorted_typed_paths)
-    {
-        auto path_settings = settings;
-        if (!settings.shouldCollectSerializationInfo(*type))
-            path_settings.version = MergeTreeSerializationInfoVersion::WITH_TYPES;
-        /// A SHARED path is stored in the typed shared data of the part, whose reader decodes a path into a column
-        /// of the default layout, so a part never stores it with another kind.
-        if (shared_typed_paths.contains(path))
-            path_settings.choose_kind = false;
-        paths.push_back(path);
-        infos.push_back(type->createSerializationInfo(path_settings));
-    }
-
-    return std::make_shared<SerializationInfoObject>(std::move(infos), std::move(paths), settings);
-}
-
-SerializationInfoPtr DataTypeObject::getSerializationInfo(const IColumn & column, const SerializationInfoSettings & settings) const
-{
-    if (settings.version < MergeTreeSerializationInfoVersion::WITH_SUBCOLUMNS)
-        return IDataType::getSerializationInfo(column, settings);
-
-    if (const auto * column_const = checkAndGetColumn<ColumnConst>(&column))
-        return getSerializationInfo(column_const->getDataColumn(), settings);
-
-    if (const auto * column_replicated = checkAndGetColumn<ColumnReplicated>(&column))
-    {
-        auto info = const_pointer_cast<SerializationInfo>(getSerializationInfo(*column_replicated->getNestedColumn(), settings));
-        info->appendToKindStack(ISerialization::Kind::REPLICATED);
-        return info;
-    }
-
-    if (const auto * column_blob = checkAndGetColumn<ColumnBLOB>(&column))
-    {
-        auto info = const_pointer_cast<SerializationInfo>(getSerializationInfo(*column_blob->getWrappedColumn(), settings));
-        info->appendToKindStack(ISerialization::Kind::DETACHED);
-        return info;
-    }
-
-    const auto & column_object = assert_cast<const ColumnObject &>(column);
-    const auto & column_typed_paths = column_object.getTypedPaths();
-
-    Names paths;
-    MutableSerializationInfos infos;
-    paths.reserve(sorted_typed_paths.size());
-    infos.reserve(sorted_typed_paths.size());
-    for (const auto & [path, type] : sorted_typed_paths)
-    {
-        auto path_settings = settings;
-        if (!settings.shouldCollectSerializationInfo(*type))
-            path_settings.version = MergeTreeSerializationInfoVersion::WITH_TYPES;
-        paths.push_back(path);
-        infos.push_back(const_pointer_cast<SerializationInfo>(type->getSerializationInfo(*column_typed_paths.at(path), path_settings)));
-    }
-
-    return std::make_shared<SerializationInfoObject>(std::move(infos), std::move(paths), settings);
-}
-
-bool DataTypeObject::hasSparseSerializationSubcolumns(const SerializationInfoSettings & settings) const
-{
-    return std::any_of(typed_paths.begin(), typed_paths.end(), [&](const auto & path)
-    {
-        return settings.canUseSparseSerialization(*path.second) || path.second->hasSparseSerializationSubcolumns(settings);
-    });
 }
 
 String DataTypeObject::getSchemaFormatString() const
@@ -755,6 +642,32 @@ SerializationPtr createSharedTypedPathSerialization(
         nested, *shared_it, shared_it - all_shared_typed_paths.begin(), all_shared_typed_paths.size(), path_subcolumn);
 }
 
+/// Skip rules are not inherited: they act only while parsing input, and they refer to paths of the root object.
+DataTypePtr createSubObjectType(
+    const String & prefix,
+    const DataTypeObject::TypedPathsMap & typed_paths,
+    const std::unordered_set<String> & shared_typed_paths,
+    DataTypeObject::SchemaFormat schema_format,
+    size_t max_dynamic_paths,
+    size_t max_dynamic_types)
+{
+    DataTypeObject::TypedPathsMap typed_sub_paths;
+    std::unordered_set<String> shared_typed_sub_paths;
+    for (const auto & [path, type] : typed_paths)
+    {
+        if (!path.starts_with(prefix))
+            continue;
+        String sub_path = path.substr(prefix.size());
+        /// Placement is a property of the stored data, so a path under the prefix keeps its SHARED mark.
+        if (shared_typed_paths.contains(path))
+            shared_typed_sub_paths.insert(sub_path);
+        typed_sub_paths.emplace(std::move(sub_path), type);
+    }
+    return std::make_shared<DataTypeObject>(
+        schema_format, std::move(typed_sub_paths), std::unordered_set<String>{}, std::vector<String>{},
+        max_dynamic_paths, max_dynamic_types, std::move(shared_typed_sub_paths));
+}
+
 /// Builds the sub-object type and serialization for a given path prefix.
 /// Returns a pair of (sub_object_type, sub_object_serialization), shared between
 /// the sub-object subcolumn (^) and the combined subcolumn (@) branches.
@@ -765,28 +678,17 @@ std::pair<DataTypePtr, SerializationPtr> buildSubObjectTypeAndSerialization(
     const std::unordered_map<String, SerializationPtr> & all_typed_paths_serializations,
     const SerializationObjectTypedSharedData::SharedTypedPaths & all_shared_typed_paths,
     const DataTypeObject::SchemaFormat & schema_format,
-    const std::unordered_set<String> & paths_to_skip,
-    const std::vector<String> & path_regexps_to_skip,
     size_t max_dynamic_paths,
     size_t max_dynamic_types,
     const DataTypePtr & dynamic_type,
     const SerializationPtr & dynamic_serialization)
 {
-    DataTypeObject::TypedPathsMap typed_sub_paths;
-    std::unordered_set<String> shared_typed_sub_paths;
+    /// The shared paths are read together by the typed shared data serialization below.
     std::unordered_map<String, SerializationPtr> typed_sub_paths_serializations;
-    for (const auto & [path, type] : typed_paths)
+    for (const auto & [path, _] : typed_paths)
     {
-        if (path.starts_with(prefix))
-        {
-            typed_sub_paths[path.substr(prefix.size())] = type;
-            /// Placement is a property of the stored data, so a path under the prefix keeps its SHARED mark.
-            /// The shared paths are read together by the typed shared data serialization below.
-            if (shared_typed_paths.contains(path))
-                shared_typed_sub_paths.insert(path.substr(prefix.size()));
-            else
-                typed_sub_paths_serializations[path] = all_typed_paths_serializations.at(path);
-        }
+        if (path.starts_with(prefix) && !shared_typed_paths.contains(path))
+            typed_sub_paths_serializations[path] = all_typed_paths_serializations.at(path);
     }
 
     /// The shared paths under the prefix are adjacent in the sorted list.
@@ -805,8 +707,7 @@ std::pair<DataTypePtr, SerializationPtr> buildSubObjectTypeAndSerialization(
     if (!shared_typed_paths_under_prefix.empty())
         typed_shared_data_serialization = SerializationSubObjectTypedSharedData::create(prefix, std::move(shared_typed_paths_under_prefix), first_shared_path_index, all_shared_typed_paths.size());
 
-    auto sub_object_type = std::make_shared<DataTypeObject>(
-        schema_format, typed_sub_paths, paths_to_skip, path_regexps_to_skip, max_dynamic_paths, max_dynamic_types, shared_typed_sub_paths);
+    auto sub_object_type = createSubObjectType(prefix, typed_paths, shared_typed_paths, schema_format, max_dynamic_paths, max_dynamic_types);
     auto sub_object_serialization = SerializationSubObject::create(prefix, typed_sub_paths_serializations, dynamic_type, dynamic_serialization, typed_shared_data_serialization);
     return {std::move(sub_object_type), std::move(sub_object_serialization)};
 }
@@ -918,7 +819,7 @@ std::unique_ptr<IDataType::SubcolumnInfo> DataTypeObject::getDynamicSubcolumnInf
             const String prefix = *sub_object_subcolumn + ".";
             auto [sub_object_type, sub_object_serialization] = buildSubObjectTypeAndSerialization(
                 prefix, typed_paths, shared_typed_paths, typed_paths_serializations, object_serialization.getSharedTypedPaths(), schema_format,
-                paths_to_skip, path_regexps_to_skip, max_dynamic_paths, max_dynamic_types, getDynamicType(), dynamic_path_serialization);
+                max_dynamic_paths, max_dynamic_types, getDynamicType(), dynamic_path_serialization);
 
             auto res = std::make_unique<SubcolumnInfo>();
             res->data = SubstreamData(sub_object_serialization);
@@ -969,7 +870,7 @@ std::unique_ptr<IDataType::SubcolumnInfo> DataTypeObject::getDynamicSubcolumnInf
             auto dynamic_result_type = getDynamicType();
             auto [sub_object_type, sub_object_serialization] = buildSubObjectTypeAndSerialization(
                 prefix, typed_paths, shared_typed_paths, typed_paths_serializations, object_serialization.getSharedTypedPaths(), schema_format,
-                paths_to_skip, path_regexps_to_skip, max_dynamic_paths, max_dynamic_types, dynamic_result_type, dynamic_path_serialization);
+                max_dynamic_paths, max_dynamic_types, dynamic_result_type, dynamic_path_serialization);
 
             auto literal_serialization = SerializationObjectDynamicPath::create(dynamic_path_serialization, combined_path, /*path_subcolumn=*/"", dynamic_result_type, dynamic_path_serialization, dynamic_result_type);
 
@@ -1194,23 +1095,7 @@ ColumnPtr DataTypeObject::extractCombinedSubcolumn(const String & path, const Co
     const auto & object_column = assert_cast<const ColumnObject &>(*column);
     const String prefix = path + ".";
 
-    /// Build sub-object type: collect typed paths that start with prefix, with their SHARED marks.
-    TypedPathsMap typed_sub_paths;
-    std::unordered_set<String> shared_typed_sub_paths;
-    for (const auto & [p, type] : typed_paths)
-    {
-        if (p.starts_with(prefix))
-        {
-            typed_sub_paths[p.substr(prefix.size())] = type;
-            if (shared_typed_paths.contains(p))
-                shared_typed_sub_paths.insert(p.substr(prefix.size()));
-        }
-    }
-
-    /// Skip rules are only relevant while parsing input. This synthetic type represents descendants
-    /// that are already stored, and the original rules refer to paths relative to the root object.
-    auto sub_object_type = std::make_shared<DataTypeObject>(
-        schema_format, typed_sub_paths, std::unordered_set<String>{}, std::vector<String>{}, max_dynamic_paths, max_dynamic_types, shared_typed_sub_paths);
+    auto sub_object_type = createSubObjectType(prefix, typed_paths, shared_typed_paths, schema_format, max_dynamic_paths, max_dynamic_types);
     auto dynamic_result_type = getDynamicType();
 
     DataTypePtr literal_type;
@@ -2098,8 +1983,11 @@ Currently, there are 4 different shared data structure serializations in MergeTr
 
 The serialization version is controlled by MergeTree
 settings [object_shared_data_serialization_version](/reference/settings/merge-tree-settings/object-shared#object_shared_data_serialization_version)
-and [object_shared_data_serialization_version_for_zero_level_parts](/reference/settings/merge-tree-settings/object-shared#object_shared_data_serialization_version_for_zero_level_parts)
-(zero level part is the part created during inserting data into the table, during merges parts have higher level).
+and [object_shared_data_serialization_version_for_small_parts](/reference/settings/merge-tree-settings/object-shared#object_shared_data_serialization_version_for_small_parts).
+The second one is used for small parts: parts created during inserts (unless
+[use_object_shared_data_serialization_version_for_small_parts_on_insert](/reference/settings/merge-tree-settings/use#use_object_shared_data_serialization_version_for_small_parts_on_insert)
+is disabled) and parts below the minimal size
+[min_bytes_for_object_shared_data_main_serialization_version](/reference/settings/merge-tree-settings/min-bytes#min_bytes_for_object_shared_data_main_serialization_version).
 
 Note: changing shared data structure serialization is supported only
 for `v3` [object serialization version](/reference/settings/merge-tree-settings/other#object_serialization_version)

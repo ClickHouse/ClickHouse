@@ -5,8 +5,6 @@
 -- the "no bucket index" path, reordering the map elements. with_buckets serialization and a constant
 -- multi-bucket layout are forced so the substream is actually produced.
 
-set enable_variant_type=1;
-
 -- Case 1: written with escaping disabled, then enabled.
 drop table if exists test_escape_compact;
 create table test_escape_compact (v Variant(Map(String, UInt32))) engine=MergeTree order by tuple()

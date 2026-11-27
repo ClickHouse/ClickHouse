@@ -1200,8 +1200,15 @@ def test_request_payer(started_cluster):
         )
         == "1\n"
     )
+    # `DROP TABLE ... SYNC` does not wait for the removal of the blobs (`disk_transaction_wait_for_blob_removal` is
+    # disabled in the tests): the disk removes them in background, with requests through the mock. Wait for them,
+    # otherwise the mock records them during `test_request_payer_does_not_send_endpoint_headers`.
+    disk_name = node.query(
+        "SELECT DISTINCT disk_name FROM system.parts WHERE table IN ('t_request_payer_src', 't_request_payer_restored')"
+    ).strip()
     node.query("DROP TABLE t_request_payer_src SYNC")
     node.query("DROP TABLE t_request_payer_restored SYNC")
+    node.query(f"SYSTEM WAIT BLOBS CLEANUP '{disk_name}'")
 
     # `<http_forbid_headers>` refuses the header before any request is sent.
     other = started_cluster.instances["s3_non_default"]
@@ -2090,17 +2097,20 @@ def test_select_columns(started_cluster):
     instance.query(
         f"INSERT INTO {name} SELECT * FROM generateRandom('{structure}') LIMIT {limit} SETTINGS s3_truncate_on_insert=1"
     )
-    instance.query(f"SELECT value2, '{id}' FROM {name}")
+    # The instance has a page cache, which is used for object storage by default: the second query would read
+    # the column of the first one from it and not from S3.
+    no_page_cache = "SETTINGS use_page_cache_for_object_storage = 0"
+    instance.query(f"SELECT value2, '{id}' FROM {name} {no_page_cache}")
 
     instance.query("SYSTEM FLUSH LOGS")
     result1 = instance.query(
-        f"SELECT ProfileEvents['ReadBufferFromS3Bytes'] FROM system.query_log WHERE type='QueryFinish' and query LIKE 'SELECT value2, ''{id}'' FROM {name}'"
+        f"SELECT ProfileEvents['ReadBufferFromS3Bytes'] FROM system.query_log WHERE type='QueryFinish' and query LIKE 'SELECT value2, ''{id}'' FROM {name} {no_page_cache}'"
     )
 
-    instance.query(f"SELECT *, '{id}' FROM {name}")
+    instance.query(f"SELECT *, '{id}' FROM {name} {no_page_cache}")
     instance.query("SYSTEM FLUSH LOGS")
     result2 = instance.query(
-        f"SELECT ProfileEvents['ReadBufferFromS3Bytes'] FROM system.query_log WHERE type='QueryFinish' and query LIKE 'SELECT *, ''{id}'' FROM {name}'"
+        f"SELECT ProfileEvents['ReadBufferFromS3Bytes'] FROM system.query_log WHERE type='QueryFinish' and query LIKE 'SELECT *, ''{id}'' FROM {name} {no_page_cache}'"
     )
 
     assert round(int(result2) / int(result1)) == 3
@@ -3350,9 +3360,7 @@ def test_archive(started_cluster):
     )
 
     query_id = f"query_{uuid.uuid4()}"
-    # Implementation with whole archive sending can have duplicates,
-    # this is was a mistake in implementation.
-    assert expected_count <= int(
+    assert expected_count == int(
         node2.query(f"SELECT count() FROM {cluster_function_old}", query_id=query_id)
     )
     node2.query("SYSTEM FLUSH LOGS")

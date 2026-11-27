@@ -3,6 +3,7 @@ import pytest
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import assert_eq_with_retry
 from .prometheus_test_utils import (
+    compress_remote_write_request,
     convert_read_request_to_protobuf,
     convert_time_series_to_protobuf,
     execute_query_via_http_api,
@@ -10,10 +11,12 @@ from .prometheus_test_utils import (
     get_response_to_remote_write,
     receive_protobuf_from_remote_read,
     send_protobuf_to_remote_write,
+    types_pb2,
 )
 import re
 import requests
 import time
+import uuid
 
 
 cluster = ClickHouseCluster(__file__)
@@ -187,6 +190,49 @@ def test_remote_write_zstd():
     assert len(read_response.results[0].timeseries[0].samples) == count
 
 
+def get_dropped_exemplars():
+    return int(
+        node.query(
+            "SELECT sum(value) FROM system.events WHERE event = 'PrometheusRemoteWriteDroppedExemplars'"
+        )
+    )
+
+
+def test_remote_write_counts_dropped_exemplars():
+    timestamp = 1724118000
+    # A unique metric name keeps repeated runs from seeing each other's samples.
+    metric_name = f"exemplar_data_{uuid.uuid4().hex}"
+    write_request = convert_time_series_to_protobuf(
+        [
+            ({"__name__": metric_name, "series": "a"}, {timestamp: 1.0}),
+            ({"__name__": metric_name, "series": "a"}, {}),
+            ({"__name__": metric_name, "series": "b"}, {timestamp: 2.0}),
+        ]
+    )
+    exemplar = types_pb2.Exemplar(
+        labels=[types_pb2.Label(name="trace_id", value="abc")],
+        value=1.0,
+        timestamp=timestamp * 1000,
+    )
+    # Prometheus sends each exemplar in its own series without samples.
+    write_request.timeseries[1].exemplars.append(exemplar)
+    # Exemplars next to a sample are dropped too.
+    write_request.timeseries[2].exemplars.extend([exemplar, exemplar])
+
+    before = get_dropped_exemplars()
+    send_protobuf_to_remote_write(node.ip_address, 9093, "/write", write_request)
+    assert get_dropped_exemplars() - before == 3
+
+    # The samples are stored even though the exemplars are dropped.
+    assert (
+        node.query(
+            "SELECT count() FROM timeSeriesData(prometheus) WHERE id IN "
+            f"(SELECT id FROM timeSeriesTags(prometheus) WHERE metric_name = '{metric_name}')"
+        )
+        == "2\n"
+    )
+
+
 def test_remote_write_unsupported_content_encoding():
     time_series = [({"__name__": "gzip_data"}, {1724117000: 1.0})]
     protobuf = convert_time_series_to_protobuf(time_series)
@@ -230,6 +276,29 @@ def test_remote_write_undecodable_body(content_encoding):
     response = post_undecodable_body("/write", content_encoding)
     assert response.status_code == requests.codes.bad_request, response.text
     assert "Cannot decode the request body" in response.text
+
+
+@pytest.mark.parametrize("content_encoding", ["snappy", "zstd"])
+def test_remote_write_truncated_request(content_encoding):
+    """A body that ends in the middle of its second series gets 400, and no series of it is written."""
+    time_series = [
+        ({"__name__": "truncated_data", "job": "first"}, {1724117000: 1.0}),
+        ({"__name__": "truncated_data", "job": "second" * 10}, {1724117000: 2.0}),
+    ]
+    serialized = convert_time_series_to_protobuf(time_series).SerializeToString()
+    response = requests.post(
+        f"http://{node.ip_address}:9093/write",
+        data=compress_remote_write_request(serialized[: len(serialized) - 30], content_encoding),
+        headers={
+            "Content-Encoding": content_encoding,
+            "Content-Type": "application/x-protobuf",
+            "User-Agent": requests.utils.default_user_agent(),
+            "X-Prometheus-Remote-Write-Version": "0.1.0",
+        },
+    )
+    assert response.status_code == requests.codes.bad_request, response.text
+    assert "Cannot parse WriteRequest" in response.text
+    assert node.query("SELECT count() FROM timeSeriesTags(prometheus) WHERE metric_name = 'truncated_data'") == "0\n"
 
 
 def test_remote_read_undecodable_body():

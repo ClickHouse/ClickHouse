@@ -11,6 +11,9 @@ SET enable_group_by_top_k_optimization = 1;
 SET query_plan_max_limit_for_top_k_optimization = 1000;
 SET max_threads = 1;
 SET max_rows_to_group_by = 0;
+-- The adaptive aggregator also takes one thread. It freezes its table at its freeze threshold, before a
+-- tie-set of the heap can grow past its cap, so the heap's own freezes are checked on the ordinary path.
+SET enable_adaptive_aggregator = 0;
 
 -- Heavy eviction across aggregation methods.
 

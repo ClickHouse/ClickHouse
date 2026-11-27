@@ -1,6 +1,7 @@
 #include <Formats/FormatFactory.h>
 
 #include <unistd.h>
+#include <Common/DateLUT.h>
 #include <Formats/FormatSettings.h>
 #include <Formats/FormatParserSharedResources.h>
 #include <Formats/FormatFilterInfo.h>
@@ -59,6 +60,7 @@ FORMAT_FACTORY_SETTINGS(DECLARE_FORMAT_EXTERN, INITIALIZE_SETTING_EXTERN)
     extern const SettingsAggregateFunctionInputFormat aggregate_function_input_format;
     extern const SettingsBool allow_special_serialization_kinds_in_output_formats;
     extern const SettingsBool enable_nullable_tuple_type;
+    extern const SettingsTimezone session_timezone;
 }
 
 namespace ErrorCodes
@@ -118,6 +120,12 @@ FormatSettings::ArrowUnsupportedTypes getArrowUnsupportedTypesMode(const Setting
 FormatSettings getFormatSettings(const ContextPtr & context, const Settings & settings)
 {
     FormatSettings format_settings;
+
+    /// From the supplied settings rather than the ambient context, because storage engines build
+    /// persistent format settings from a copied `Settings`. An empty value means the server's zone.
+    const String & session_timezone = settings[Setting::session_timezone].value;
+    format_settings.session_time_zone
+        = session_timezone.empty() ? &DateLUT::serverTimezoneInstance() : &DateLUT::instance(session_timezone);
 
     format_settings.avro.allow_missing_fields = settings[Setting::input_format_avro_allow_missing_fields];
     format_settings.avro.output_codec = settings[Setting::output_format_avro_codec];
@@ -352,6 +360,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.schema.format_schema_path = context->getFormatSchemaPath();
     format_settings.schema.is_server = context->hasGlobalContext() && (context->getGlobalContext()->getApplicationType() == Context::ApplicationType::SERVER);
     format_settings.schema.output_format_schema = settings[Setting::output_format_schema];
+    format_settings.skip_duplicated_fields = settings[Setting::input_format_skip_duplicated_fields];
     format_settings.skip_unknown_fields = settings[Setting::input_format_skip_unknown_fields];
     format_settings.template_settings.resultset_format = settings[Setting::format_template_resultset];
     format_settings.template_settings.row_between_delimiter = settings[Setting::format_template_rows_between_delimiter];
@@ -634,11 +643,16 @@ InputFormatPtr FormatFactory::getInputImpl(
         && creators.file_segmentation_engine_creator && !(creators.random_access_input_creator || creators.random_access_input_creator_with_metadata)
         && !need_only_count;
 
-    if (settings[Setting::max_memory_usage]
-        && settings[Setting::min_chunk_bytes_for_parallel_parsing] * max_parsing_threads * 2 > settings[Setting::max_memory_usage])
+    /// Whether `min_chunk_bytes_for_parallel_parsing * max_parsing_threads * 2` exceeds the memory limit, without overflowing.
+    auto exceeds_memory_limit = [&](UInt64 memory_limit)
+    {
+        const UInt64 min_chunk_bytes = settings[Setting::min_chunk_bytes_for_parallel_parsing];
+        return memory_limit && min_chunk_bytes && max_parsing_threads > memory_limit / min_chunk_bytes / 2;
+    };
+
+    if (exceeds_memory_limit(settings[Setting::max_memory_usage]))
         parallel_parsing = false;
-    if (settings[Setting::max_memory_usage_for_user]
-        && settings[Setting::min_chunk_bytes_for_parallel_parsing] * max_parsing_threads * 2 > settings[Setting::max_memory_usage_for_user])
+    if (exceeds_memory_limit(settings[Setting::max_memory_usage_for_user]))
         parallel_parsing = false;
 
     if (format_settings.connection_handling)
@@ -800,7 +814,7 @@ std::unique_ptr<ReadBuffer> FormatFactory::wrapReadBufferIfNeeded(
         try
         {
             file_size = getFileSizeFromReadBuffer(buf);
-            parallel_read = file_size >= 2 * settings[Setting::max_download_buffer_size];
+            parallel_read = file_size / 2 >= settings[Setting::max_download_buffer_size];
         }
         catch (const Poco::Exception & e)
         {

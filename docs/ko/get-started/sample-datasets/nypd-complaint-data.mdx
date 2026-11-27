@@ -22,16 +22,12 @@ Tab Separated Value, 즉 TSV 파일은 널리 사용되며 파일의 첫 번째 
 **출처**: [data.cityofnewyork.us](https://data.cityofnewyork.us/Public-Safety/NYPD-Complaint-Data-Current-Year-To-Date-/5uac-w243)
 **이용 약관**: https://www1.nyc.gov/home/terms-of-use.page
 
-<div id="prerequisites">
-  ## 사전 준비 사항
-</div>
+## 사전 준비 사항 {#prerequisites}
 
 * [NYPD Complaint Data Current (Year To Date)](https://data.cityofnewyork.us/Public-Safety/NYPD-Complaint-Data-Current-Year-To-Date-/5uac-w243) 페이지로 이동한 다음 Export 버튼을 클릭하고 **TSV for Excel**을 선택하여 데이터셋을 다운로드합니다.
 * [ClickHouse 서버 및 클라이언트](/ko/get-started/setup/install)를 설치합니다
 
-<div id="a-note-about-the-commands-described-in-this-guide">
-  ### 이 가이드에서 설명하는 명령에 대한 참고 사항
-</div>
+### 이 가이드에서 설명하는 명령에 대한 참고 사항 {#a-note-about-the-commands-described-in-this-guide}
 
 이 가이드에는 두 가지 유형의 명령이 있습니다:
 
@@ -42,17 +38,13 @@ Tab Separated Value, 즉 TSV 파일은 널리 사용되며 파일의 첫 번째 
   이 가이드의 예시는 TSV 파일이 `${HOME}/NYPD_Complaint_Data_Current__Year_To_Date_.tsv`에 저장되어 있다고 가정합니다. 필요에 따라 명령을 조정하십시오.
 </Note>
 
-<div id="familiarize-yourself-with-the-tsv-file">
-  ## TSV 파일 살펴보기
-</div>
+## TSV 파일 살펴보기 {#familiarize-yourself-with-the-tsv-file}
 
 ClickHouse 데이터베이스 작업을 시작하기 전에 먼저 데이터를 살펴보십시오.
 
-<div id="look-at-the-fields-in-the-source-tsv-file">
-  ### 원본 TSV 파일의 필드 살펴보기
-</div>
+### 원본 TSV 파일의 필드 살펴보기 {#look-at-the-fields-in-the-source-tsv-file}
 
-다음은 TSV 파일을 쿼리하는 명령어 예시이지만, 아직 실행하지 마십시오.
+다음은 TSV 파일을 쿼리하는 명령 예시이지만, 아직 실행하지 마십시오.
 
 ```sh title="Query"
 clickhouse-local --query \
@@ -125,9 +117,7 @@ New Georeferenced Column Nullable(String)
 
 이 단계에서는 TSV 파일의 컬럼이 [데이터셋 웹 페이지](https://data.cityofnewyork.us/Public-Safety/NYPD-Complaint-Data-Current-Year-To-Date-/5uac-w243)의 **이 데이터셋의 컬럼** 섹션에 지정된 이름 및 타입과 일치하는지 확인해야 합니다. 데이터 타입은 그다지 구체적이지 않아서, 모든 숫자 필드는 `Nullable(Float64)`로 설정되어 있고 그 외의 모든 필드는 `Nullable(String)`입니다. 데이터를 저장할 ClickHouse 테이블을 만들 때는 더 적절하고 성능에 유리한 타입을 지정할 수 있습니다.
 
-<div id="determine-the-proper-schema">
-  ### 적절한 스키마 결정
-</div>
+### 적절한 스키마 결정 {#determine-the-proper-schema}
 
 필드에 어떤 타입을 사용해야 하는지 판단하려면 먼저 데이터가 어떤 형태인지 알아야 합니다. 예를 들어 `JURISDICTION_CODE` 필드는 숫자형입니다. `UInt8`을 사용해야 할까요, `Enum`을 사용해야 할까요, 아니면 `Float64`가 적절할까요?
 
@@ -211,9 +201,7 @@ clickhouse-local --input_format_max_rows_to_read_for_schema_inference=2000 \
 
 작성 시점 기준으로 사용 중인 데이터셋에는 `PARK_NM` 컬럼에 서로 다른 공원과 놀이터가 수백 개 정도밖에 없습니다. 이는 `LowCardinality(String)` 필드에서는 고유한 문자열 수를 10,000개 미만으로 유지하라는 [LowCardinality](/ko/reference/data-types/lowcardinality#description) 권장 사항을 고려하면 적은 수입니다.
 
-<div id="datetime-fields">
-  ### DateTime 필드
-</div>
+### DateTime 필드 {#datetime-fields}
 
 [데이터셋 웹 페이지](https://data.cityofnewyork.us/Public-Safety/NYPD-Complaint-Data-Current-Year-To-Date-/5uac-w243)의 **이 데이터셋의 컬럼** 섹션을 보면, 신고된 이벤트의 시작 시점과 종료 시점을 나타내는 날짜 및 시간 필드가 있습니다. `CMPLNT_FR_DT` 및 `CMPLT_TO_DT`의 최솟값과 최댓값을 확인하면 해당 필드가 항상 채워지는지 여부를 가늠할 수 있습니다:
 
@@ -273,9 +261,7 @@ FORMAT PrettyCompact"
 └───────────────────┴───────────────────┘
 ```
 
-<div id="make-a-plan">
-  ## 계획 세우기
-</div>
+## 계획 세우기 {#make-a-plan}
 
 위 조사 결과를 바탕으로 합니다.
 
@@ -293,9 +279,7 @@ FORMAT PrettyCompact"
   타입에 적용해야 할 변경 사항은 이보다 훨씬 많지만, 모두 동일한 조사 단계에 따라 결정할 수 있습니다. 필드에 있는 고유 문자열 수와 숫자값의 최솟값 및 최댓값을 살펴보고 판단하십시오. 이 가이드 뒤쪽에 제시된 테이블 스키마에는 낮은 카디널리티 문자열과 부호 없는 정수 필드가 많고, 부동소수점 숫자 필드는 매우 적습니다.
 </Note>
 
-<div id="concatenate-the-date-and-time-fields">
-  ## 날짜 및 시간 필드 연결하기
-</div>
+## 날짜 및 시간 필드 연결하기 {#concatenate-the-date-and-time-fields}
 
 날짜 및 시간 필드 `CMPLNT_FR_DT`와 `CMPLNT_FR_TM`을 연결해 `DateTime`으로 CAST할 수 있는 단일 `String`으로 만들려면, 연결 연산자로 두 필드를 이어 붙인 `CMPLNT_FR_DT || ' ' || CMPLNT_FR_TM`를 선택합니다. `CMPLNT_TO_DT`와 `CMPLNT_TO_TM` 필드도 같은 방식으로 처리합니다.
 
@@ -323,9 +307,7 @@ FORMAT PrettyCompact"
 └─────────────────────┘
 ```
 
-<div id="convert-the-date-and-time-string-to-a-datetime64-type">
-  ## 날짜 및 시간 String을 DateTime64 타입으로 변환
-</div>
+## 날짜 및 시간 String을 DateTime64 타입으로 변환 {#convert-the-date-and-time-string-to-a-datetime64-type}
 
 가이드 앞부분에서 TSV 파일에 1970년 1월 1일 이전 날짜가 포함되어 있음을 확인했습니다. 따라서 이러한 날짜를 처리하려면 64비트 DateTime 타입이 필요합니다. 또한 날짜 포맷도 `MM/DD/YYYY`에서 `YYYY/MM/DD`로 변환해야 합니다. 이 두 작업은 모두 [`parseDateTime64BestEffort()`](/ko/reference/functions/regular-functions/type-conversion-functions#parseDateTime64BestEffort)를 사용해 수행할 수 있습니다.
 
@@ -378,15 +360,11 @@ FORMAT PrettyCompact"
   위에 `1925`로 표시된 날짜는 데이터 오류로 인한 것입니다. 원본 데이터에는 `1019` - `1022`년으로 되어 있지만 실제로는 `2019` - `2022`년이어야 하는 레코드가 여러 개 있습니다. `64 bit DateTime`에서 표현할 수 있는 가장 이른 날짜가 1925년 1월 1일이기 때문에 해당 값으로 저장됩니다.
 </Note>
 
-<div id="create-a-table">
-  ## 테이블 생성
-</div>
+## 테이블 생성 {#create-a-table}
 
 위에서 컬럼에 사용할 데이터 타입을 결정한 내용은 아래 테이블 스키마에 반영되어 있습니다. 또한 테이블에 사용할 `ORDER BY`와 `PRIMARY KEY`도 결정해야 합니다. `ORDER BY` 또는 `PRIMARY KEY` 중 하나 이상은 반드시 지정해야 합니다. 아래에는 `ORDER BY`에 포함할 컬럼을 결정할 때 참고할 몇 가지 지침을 정리했습니다. 자세한 내용은 이 문서 끝의 *다음 단계* 섹션에서 확인할 수 있습니다.
 
-<div id="order-by-and-primary-key-clauses">
-  ### `ORDER BY` 및 `PRIMARY KEY` 절
-</div>
+### `ORDER BY` 및 `PRIMARY KEY` 절 {#order-by-and-primary-key-clauses}
 
 * `ORDER BY` 튜플에는 쿼리 필터에 사용되는 필드가 포함되어야 합니다
 * 디스크 압축을 최대화하려면 `ORDER BY` 튜플을 카디널리티가 낮은 순서대로 정렬해야 합니다
@@ -478,9 +456,7 @@ CREATE TABLE NYPD_Complaint (
   ORDER BY ( borough, offense_description, date_reported )
 ```
 
-<div id="finding-the-primary-key-of-a-table">
-  ### 테이블의 기본 키 찾기
-</div>
+### 테이블의 기본 키 찾기 {#finding-the-primary-key-of-a-table}
 
 ClickHouse의 `system` 데이터베이스, 특히 `system.table`에는 방금 생성한 테이블의 모든 정보가 들어 있습니다. 이 쿼리는 `ORDER BY`(정렬 키)와 `PRIMARY KEY`를 보여줍니다:
 
@@ -510,15 +486,11 @@ table:         NYPD_Complaint
 1 row in set. Elapsed: 0.001 sec.
 ```
 
-<div id="preprocess-import-data">
-  ## 데이터 전처리 및 가져오기
-</div>
+## 데이터 전처리 및 가져오기 {#preprocess-import-data}
 
 데이터 전처리에는 `clickhouse-local` 도구를 사용하고, 업로드에는 `clickhouse-client`를 사용합니다.
 
-<div id="clickhouse-local-arguments-used">
-  ### 사용된 `clickhouse-local` 인수
-</div>
+### 사용된 `clickhouse-local` 인수 {#clickhouse-local-arguments-used}
 
 <Tip>
   아래 `clickhouse-local` 인수에 `table='input'`이 포함되어 있습니다. `clickhouse-local`은 제공된 입력(`cat ${HOME}/NYPD_Complaint_Data_Current__Year_To_Date_.tsv`)을 받아 테이블에 삽입합니다. 기본 테이블 이름은 `table`입니다. 이 가이드에서는 데이터 흐름을 더 명확히 보여주기 위해 테이블 이름을 `input`으로 설정합니다. `clickhouse-local`의 마지막 인수는 테이블(`FROM input`)에서 선택하는 쿼리이며, 이 쿼리는 `clickhouse-client`로 파이프되어 `NYPD_Complaint` 테이블을 채웁니다.
@@ -568,9 +540,7 @@ cat ${HOME}/NYPD_Complaint_Data_Current__Year_To_Date_.tsv \
   | clickhouse-client --query='INSERT INTO NYPD_Complaint FORMAT TSV'
 ```
 
-<div id="validate-data">
-  ## 데이터 확인
-</div>
+## 데이터 확인 {#validate-data}
 
 <Note>
   데이터셋은 매년 한 번 이상 변경되므로, 집계 건수가 이 문서에 있는 값과 일치하지 않을 수 있습니다.
@@ -603,13 +573,9 @@ WHERE name = 'NYPD_Complaint'
 └─────────────────────────────────┘
 ```
 
-<div id="run-queries">
-  ## 몇 가지 쿼리 실행
-</div>
+## 몇 가지 쿼리 실행 {#run-queries}
 
-<div id="query-1-compare-the-number-of-complaints-by-month">
-  ### 쿼리 1. 월별 민원 건수 비교
-</div>
+### 쿼리 1. 월별 민원 건수 비교 {#query-1-compare-the-number-of-complaints-by-month}
 
 ```sql title="Query"
 SELECT
@@ -642,9 +608,7 @@ Query id: 7fbd4244-b32a-4acf-b1f3-c3aa198e74d9
 12 rows in set. Elapsed: 0.006 sec. Processed 208.99 thousand rows, 417.99 KB (37.48 million rows/s., 74.96 MB/s.)
 ```
 
-<div id="query-2-compare-total-number-of-complaints-by-borough">
-  ### 쿼리 2. 자치구별 총 민원 건수 비교
-</div>
+### 쿼리 2. 자치구별 총 민원 건수 비교 {#query-2-compare-total-number-of-complaints-by-borough}
 
 ```sql title="Query"
 SELECT
@@ -671,8 +635,6 @@ Query id: 8cdcdfd4-908f-4be0-99e3-265722a2ab8d
 6 rows in set. Elapsed: 0.008 sec. Processed 208.99 thousand rows, 209.43 KB (27.14 million rows/s., 27.20 MB/s.)
 ```
 
-<div id="next-steps">
-  ## 다음 단계
-</div>
+## 다음 단계 {#next-steps}
 
 [ClickHouse의 희소 프라이머리 인덱스 실용 입문](/ko/guides/clickhouse/data-modelling/sparse-primary-indexes)에서는 기존 관계형 데이터베이스와 비교했을 때 ClickHouse 인덱싱이 어떻게 다른지, ClickHouse가 희소 프라이머리 인덱스를 어떻게 생성하고 활용하는지, 그리고 인덱싱 모범 사례를 설명합니다.

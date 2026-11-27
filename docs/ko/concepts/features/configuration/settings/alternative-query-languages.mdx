@@ -37,7 +37,7 @@ SET dialect = 'clickhouse'
 PRQL을 활성화하려면:
 
 ```sql
-SET allow_experimental_prql_dialect = 1; -- 이 SET 문은 ClickHouse v25.1 이상 버전에서만 필요합니다
+SET enable_prql_dialect = 1; -- before ClickHouse 26.11 the setting is named `allow_experimental_prql_dialect` (since 25.1)
 SET dialect = 'prql'
 ```
 
@@ -60,7 +60,7 @@ aggregate {
 KQL을 활성화하려면:
 
 ```sql
-SET allow_experimental_kusto_dialect = 1; -- this SET statement is required only for ClickHouse versions >= 25.1
+SET enable_kusto_dialect = 1; -- before ClickHouse 26.11 the setting is named `allow_experimental_kusto_dialect` (since 25.1)
 SET dialect = 'kusto'
 ```
 
