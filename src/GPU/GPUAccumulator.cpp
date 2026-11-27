@@ -264,7 +264,7 @@ void GPUBlockStager::addCompressedBlock(
     column.codec = codec;
 
     column.bytes.resize_fill(alignedUp(column.bytes.size()), 0);
-    column.blocks.push_back({.offset = column.bytes.size(), .compressed_bytes = payload.size(), .decompressed_bytes = decompressed_bytes});
+    addCompressedBlocksOf(*codec, payload, column.bytes.size(), decompressed_bytes, column.blocks);
     appendHostBytes(column.bytes, payload);
 
     if (isFull())

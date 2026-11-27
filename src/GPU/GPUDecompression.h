@@ -25,6 +25,11 @@ struct CompressedBlock
 
 size_t decompressedBytesOf(std::span<const CompressedBlock> blocks);
 
+/// Adds what nvcomp expands of a block of `codec`, `payload`, staged at `offset`, to `blocks`: the block, or each chunk
+/// of a `GDeflate` one, in order. Throws on a block that does not hold the chunks it declares.
+void addCompressedBlocksOf(
+    GPUCodec codec, std::string_view payload, size_t offset, size_t decompressed_bytes, std::vector<CompressedBlock> & blocks);
+
 struct CompressedPiece
 {
     const char * device_compressed = nullptr;
