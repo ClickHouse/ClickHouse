@@ -19,13 +19,13 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 يدعم Apache Polaris جداول Iceberg وDelta Tables ‏(عبر Generic Tables). ولا يدعم هذا التكامل حاليًا سوى جداول Iceberg.
 
 <Note>
-  بما أن هذه الميزة تجريبية، فستحتاج إلى تفعيلها باستخدام:
-  `SET allow_experimental_database_unity_catalog = 1;`
+  هذه الميزة في مرحلة تجريبية (Beta). فعّلها باستخدام:
+  `SET allow_database_iceberg = 1;`
+
+  في الإصدارات السابقة للإصدار 25.8، حيث كانت الميزة تجريبية (Experimental)، استخدم `SET allow_experimental_database_iceberg = 1;` بدلًا من ذلك.
 </Note>
 
-<div id="prerequisites">
-  ## المتطلبات الأساسية
-</div>
+## المتطلبات الأساسية {#prerequisites}
 
 للاتصال بكتالوج Polaris، ستحتاج إلى:
 

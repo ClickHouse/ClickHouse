@@ -1,0 +1,73 @@
+---
+slug: /clickstack/observability/migration/elastic/migrating-sdks
+title: 'ترحيل SDKS من Elastic'
+sidebarTitle: 'ترحيل SDKS'
+description: 'رحّل أدوات الرصد المضافة عبر Elastic SDK إلى ClickHouse Observability المُدار بالكامل، مع إعدادات اتصال منفصلة لعمليات النشر المُدارة ذاتيًا.'
+show_related_blogs: true
+keywords: ['ClickHouse Observability']
+doc_type: 'guide'
+---
+
+import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
+
+يوفّر Elastic Stack نوعين من حزم SDKS للغات البرمجة لتزويد التطبيقات بأدوات جمع بيانات الرصد:
+
+1. **[وكلاء APM الرسميون من Elastic](https://www.elastic.co/docs/reference/apm-agents/)** – صُمّم هؤلاء الوكلاء خصيصًا للعمل مع Elastic Stack. إذا كنت تستخدمهم، فخطّط للانتقال إلى [إضافة أدوات الرصد عبر OpenTelemetry](https://opentelemetry.io/docs/languages/) الخاصة بلغتك، بما في ذلك أي مقاطع تتبع وسمات مخصصة يستخدمها تطبيقك.
+
+2. **[توزيعات Elastic لـ OpenTelemetry (حزم SDKS الخاصة بـ EDOT)](https://www.elastic.co/docs/reference/opentelemetry/edot-sdks/)** – هي توزيعات Elastic لحزم SDKS القياسية لـ OpenTelemetry، وتتوفر لـ .NET وJava وNode.js وPHP وبايثون. إذا كان تطبيقك يستخدم حزمة EDOT SDK بالفعل، فلا حاجة إلى إعادة إضافة أدوات الرصد إلى شيفرتك، إذ يكفي أن تعيد تهيئة حزمة SDK لتصدير بيانات القياس عن بُعد إلى نقطة نهاية OTLP الخاصة بـ ClickHouse Observability. لمزيد من التفاصيل، راجع [&quot;ترحيل حزم SDKS الخاصة بـ EDOT&quot;](#migrating-edot-sdks-self-configured).
+
+## ترحيل حزم SDKS الخاصة بـ EDOT {#migrating-edot-sdks-self-configured}
+
+توزيعات Elastic لحزم SDKS الخاصة بـ OpenTelemetry (حزم SDKS الخاصة بـ EDOT) هي نسخ مخصّصة من حزم SDKS الرسمية لـ OpenTelemetry. فعلى سبيل المثال، تُعد [EDOT Python SDK](https://www.elastic.co/docs/reference/opentelemetry/edot-sdks/python/) توزيعة خصّصها المورّد من [OpenTelemetry Python SDK](https://opentelemetry.io/docs/languages/python/)، وقد صُممت لتعمل بسلاسة مع Elastic Observability.
+
+ولأن هذه الحزم مبنية على مكتبات OpenTelemetry القياسية، فإن الترحيل إلى ClickHouse Observability أمر سهل، ولا يتطلب إعادة إضافة أدوات الرصد. كل ما عليك هو تعديل التهيئة لتوجيه بيانات القياس عن بُعد إلى نقطة نهاية OTLP الخاصة بـ ClickHouse Observability.
+
+تخضع التهيئة لآليات OpenTelemetry القياسية. وفي حالة بايثون، تتم عادةً عبر متغيرات البيئة، كما هو موضح في [وثائق OpenTelemetry لإضافة أدوات الرصد دون كتابة شيفرة](https://opentelemetry.io/docs/zero-code/python/configuration/).
+
+وفيما يلي مثال على تهيئة نموذجية لـ EDOT SDK:
+
+```shell
+export OTEL_RESOURCE_ATTRIBUTES='service.name=YOUR_APP_NAME'
+export OTEL_EXPORTER_OTLP_ENDPOINT=https://my-deployment.ingest.us-west1.gcp.cloud.es.io
+export OTEL_EXPORTER_OTLP_HEADERS="Authorization=ApiKey P....l"
+```
+
+لإجراء الترحيل، حدّث إعدادات اتصال OTLP في بيئة تطبيقك ثم أعد تشغيل التطبيق. تستخدم الأمثلة أدناه OTLP عبر HTTP مع ترميز protobuf.
+
+<Tabs>
+  <Tab title="مُدار بالكامل">
+    <BetaBadge label="خدمة تجريبية" />
+
+    انسخ نقطة نهاية OTLP HTTP ومفتاح API من **Team Settings → Data → Managed Telemetry**:
+
+    ```shell
+    export OTEL_RESOURCE_ATTRIBUTES='service.name=YOUR_APP_NAME'
+    export OTEL_EXPORTER_OTLP_PROTOCOL='http/protobuf'
+    export OTEL_EXPORTER_OTLP_ENDPOINT='https://YOUR_OTEL_ENDPOINT:4318'
+    export OTEL_EXPORTER_OTLP_HEADERS='authorization=Bearer%20YOUR_API_KEY'
+    ```
+
+    استخدم نقطة النهاية كما هي تمامًا بما فيها المنفذ، ومن دون لاحقة خاصة بنوع الإشارة مثل `/v1/traces`. تستخدم قيمة الترويسة `%20` لترميز المسافة التي تلي `Bearer`. راجع [إرسال بيانات OpenTelemetry](/ar/clickstack/observability/ingesting-data/opentelemetry) للاطلاع على بيانات الاتصال.
+  </Tab>
+
+  <Tab title="مُدار ذاتيًا">
+    وجّه SDK إلى نقطة نهاية OTLP HTTP لجامع البيانات المستقبِل، على أن يكون الوصول إليها ممكنًا:
+
+    ```shell
+    export OTEL_RESOURCE_ATTRIBUTES='service.name=YOUR_APP_NAME'
+    export OTEL_EXPORTER_OTLP_PROTOCOL='http/protobuf'
+    export OTEL_EXPORTER_OTLP_ENDPOINT='http://YOUR_COLLECTOR_HOST:4318'
+    export OTEL_EXPORTER_OTLP_HEADERS='authorization=YOUR_COLLECTOR_TOKEN'
+    ```
+
+    إذا كنت قد أمّنت جامع البيانات المستقبِل باستخدام `OTLP_AUTH_TOKEN`، فاستخدم هذا الرمز قيمةً للتفويض. لا تستخدم `localhost` إلا إذا كان التطبيق وجامع البيانات يتشاركان مساحة أسماء الشبكة نفسها. أما إذا كان TLS مفعّلًا في جامع البيانات، فاستخدم نقطة نهاية HTTPS الخاصة به وهيّئ SDK بحيث يثق بشهادته. راجع [تأمين جامع البيانات](/ar/clickstack/self-configured/ingesting-data/collector#securing-the-collector-self-configured).
+
+    إذا كانت المصادقة معطّلة في جامع البيانات، فامسح ترويسة Elastic السابقة:
+
+    ```shell
+    unset OTEL_EXPORTER_OTLP_HEADERS
+    ```
+  </Tab>
+</Tabs>
+
+إذا كان تطبيقك يعيّن متغيرات خاصة بنوع إشارة معيّن لنقطة نهاية OTLP أو البروتوكول أو الترويسة، فحدّثها أيضًا؛ إذ إن لها الأسبقية على الإعدادات العامة المذكورة أعلاه. واحرص على الإبقاء على سمات الموارد الحالية عند تعيين اسم الخدمة.

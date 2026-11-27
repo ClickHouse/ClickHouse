@@ -1,7 +1,6 @@
 #include <Common/Exception.h>
 #include <Common/SensitiveDataMasker.h>
 #include <Common/logger_useful.h>
-#include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/thread_local_rng.h>
 #include <Core/Settings.h>
 #include <Interpreters/ClientInfo.h>
@@ -31,6 +30,8 @@ namespace Setting
 extern const SettingsBool allow_experimental_analyzer;
 extern const SettingsBool log_queries;
 extern const SettingsBool log_query_plans;
+extern const SettingsBool log_query_plans_join_matches;
+extern const SettingsBool log_query_plans_time;
 extern const SettingsFloat log_query_plans_probability;
 extern const SettingsBool make_distributed_plan;
 }
@@ -152,6 +153,13 @@ bool QueryPlanLogCapture::canCapturePlan(const ContextPtr & context, const ASTPt
     return true;
 }
 
+CollectedStatistics QueryPlanLogCapture::collectedStatisticsFromSettings(const Settings & settings)
+{
+    return {
+        .work_intervals = settings[Setting::log_query_plans_time],
+        .join_matches = settings[Setting::log_query_plans_join_matches]};
+}
+
 void QueryPlanLogCapture::declineCapture(const ContextPtr & context, const char * reason)
 {
     if (!context->getSettingsRef()[Setting::log_query_plans])
@@ -171,6 +179,7 @@ void QueryPlanLogCapture::capturePlanStructure(const PlanWalk & walk, const Pret
 
     /// Without statistics: the query has not run yet. They are filled in by `captureStatistics`.
     captured = CapturedPlan::capture(walk, planExplainOptions(), max_description_length, /*steps_to_stats=*/ nullptr, &pretty_names);
+    captured->collected = collected;
 }
 
 void QueryPlanLogCapture::captureStatistics(QueryPipeline & pipeline)
@@ -182,8 +191,10 @@ void QueryPlanLogCapture::captureStatistics(QueryPipeline & pipeline)
 
     /// Runs on the query-finish path after the client has already received the result. An exception
     /// here would fail a query that had already succeeded, so diagnostics must not propagate.
-    MemoryTrackerBlockerInThread block_memory_tracker;
-
+    ///
+    /// The memory is tracked: with work intervals collected, the analysis allocates in proportion to
+    /// the number of tasks the query ran, so it must stay within the query and user limits. Running
+    /// out of them fails only the statistics, never the query.
     try
     {
         /// Both come from the profiler: the executor stamped the end when it finished, so the
@@ -204,6 +215,7 @@ void QueryPlanLogCapture::captureStatistics(QueryPipeline & pipeline)
 
         captured->execution_time_ns = stats.getExecutionTimeNs();
         captured->max_threads = stats.getMaxThreads();
+        captured->execution_time_breakdown = stats.executionTimeBreakdown();
     }
     catch (...)
     {

@@ -37,6 +37,7 @@
 #include <Common/randomSeed.h>
 #include <Core/Block.h>
 #include <Core/ProtocolDefines.h>
+#include <Core/QueryProcessingStage.h>
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/ClusterFunctionReadTask.h>
@@ -254,6 +255,8 @@ void Connection::connectToAnyAddress(const ConnectionTimeouts & timeouts)
 
         try
         {
+            /// Set only now, so a failure in the local setup above is not reported as this peer's.
+            current_resolved_address = *it;
             if (async_callback)
             {
                 address_connect_timeout_expired = false;
@@ -266,7 +269,7 @@ void Connection::connectToAnyAddress(const ConnectionTimeouts & timeouts)
                 }
 
                 if (auto err = socket->impl()->socketError())
-                    socket->impl()->error(err); // Throws an exception /// NOLINT(readability-static-accessed-through-instance)
+                    Poco::Net::SocketImpl::error(err, it->toString());
 
                 socket->setBlocking(true);
             }
@@ -275,7 +278,6 @@ void Connection::connectToAnyAddress(const ConnectionTimeouts & timeouts)
                 socket->connect(*it, connection_timeout);
             }
 
-            current_resolved_address = *it;
             have_more_addresses_to_connect = false;
             break;
         }
@@ -308,6 +310,19 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
 {
     /// if connection was broken it is necessary to cancel it before reconnecting
     disconnect();
+    current_resolved_address.reset();
+    setDescription();
+
+    /// The socket error names the dialled address in its canonical form (IPv6 literals are bracketed).
+    /// Suppress the duplicate only when the configured host is that very address, not a name resolving to it.
+    const auto endpoint_already_named = [this](const String & message)
+    {
+        if (!current_resolved_address || port != current_resolved_address->port())
+            return false;
+        const auto address = current_resolved_address->host().toString();
+        return (host == address || host == "[" + address + "]")
+            && message.contains(current_resolved_address->toString());
+    };
 
     ProfileEvents::increment(ProfileEvents::DistributedConnectionConnectCount);
 
@@ -443,8 +458,9 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
 
         remove_stale_entries_from_dns_cache();
 
-        /// Add server address to exception. Exception will preserve stack trace.
-        e.addMessage("({})", getDescription(/*with_extra*/ true));
+        /// Add server address to exception unless the error already names it. Exception will preserve stack trace.
+        if (!endpoint_already_named(e.displayText()))
+            e.addMessage("({})", getDescription(/*with_extra*/ true));
         throw;
     }
     catch (Poco::Net::NetException & e)
@@ -453,7 +469,10 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
 
         remove_stale_entries_from_dns_cache();
 
-        /// Add server address to exception. Also Exception will remember new stack trace. It's a pity that more precise exception type is lost.
+        /// Add server address to exception unless the error already names it. Exception will remember new stack trace.
+        /// It's a pity that more precise exception type is lost.
+        if (endpoint_already_named(e.displayText()))
+            throw NetException(ErrorCodes::NETWORK_ERROR, "{}", e.displayText());
         throw NetException(ErrorCodes::NETWORK_ERROR, "{} ({})", e.displayText(), getDescription(/*with_extra*/ true));
     }
     catch (Poco::TimeoutException & e)
@@ -462,9 +481,11 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
 
         remove_stale_entries_from_dns_cache();
 
-        /// Add server address to exception. Also Exception will remember new stack trace. It's a pity that more precise exception type is lost.
-        /// This exception can only be thrown from socket->connect(), so add information about connection timeout.
+        /// This exception can only be thrown from socket->connect(), so add the connection timeout.
         const auto & connection_timeout = static_cast<bool>(secure) ? timeouts.secure_connection_timeout : timeouts.connection_timeout;
+        if (endpoint_already_named(e.displayText()))
+            throw NetException(
+                ErrorCodes::SOCKET_TIMEOUT, "{} (connection timeout {} ms)", e.displayText(), connection_timeout.totalMilliseconds());
         throw NetException(
             ErrorCodes::SOCKET_TIMEOUT,
             "{} ({}, connection timeout {} ms)",
@@ -1016,6 +1037,11 @@ void Connection::sendQuery(
     std::function<void(const Progress &)>)
 {
     OpenTelemetry::SpanHolder span("Connection::sendQuery()", OpenTelemetry::SpanKind::CLIENT);
+
+    /// Only an intermediate result can have rows that carry no columns: at `Complete` a result always has
+    /// columns. A block of this kind in answer to any other query is malformed data.
+    rows_without_columns_expected = stage != QueryProcessingStage::Complete;
+
     span.addAttribute("clickhouse.query_id", query_id_);
     span.addAttribute("clickhouse.query", query);
     span.addAttribute("target", [this] () { return this->getHost() + ":" + std::to_string(this->getPort()); });
@@ -1758,6 +1784,7 @@ void Connection::initBlockInput()
         /// The server may send marshalled result blocks; their consumers convert them back.
         block_in = std::make_unique<NativeReader>(
             *maybe_compressed_in, server_revision, optionalFormatSettings(), ISerialization::KindSet::all());
+        block_in->setAllowRowsWithoutColumns(rows_without_columns_expected);
     }
 }
 

@@ -1,7 +1,11 @@
 #pragma once
 
+#include <atomic>
 #include <cstdint>
+#include <ctime>
+#include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 #include <memory>
 #include <boost/core/noncopyable.hpp>
@@ -52,6 +56,9 @@ public:
     /// Create a per-query allocation of workers.
     virtual StatelessWorkerAllocationPtr allocate(size_t desired_workers, uint64_t provisioning_timeout_ms) = 0;
 
+    /// Like `allocate`, but returns nullptr instead of throwing when no worker can be provided.
+    virtual StatelessWorkerAllocationPtr tryAllocate(size_t desired_workers, uint64_t provisioning_timeout_ms) = 0;
+
     /// Snapshot of all workers this provider knows about, for introspection.
     [[nodiscard]] virtual std::vector<StatelessWorkerState> getWorkersState() const = 0;
 
@@ -79,11 +86,36 @@ public:
         (void)config_prefix;
     }
 
+    /// Called on a config reload for a retired provider, whose cluster may have been removed or redefined
+    /// since it was built. Re-reads its credentials only from sources that `config` shares across all
+    /// clusters, never from the new definition of its cluster.
+    virtual void refreshSharedCredentials(const Poco::Util::AbstractConfiguration & config) { (void)config; }
+
+    /// When the provider was retired because its cluster was removed or redefined while queries still used
+    /// it; unset while it serves the current configuration.
+    std::optional<time_t> getRetireTime() const
+    {
+        const time_t retired_at = retire_time.load();
+        return retired_at ? std::optional<time_t>(retired_at) : std::nullopt;
+    }
+
+    /// Called by the registry when it retires the provider.
+    void markRetired() { retire_time.store(::time(nullptr)); }
+
+    /// The registry key of the provider's cluster: empty for the default cluster. Set by the registry before
+    /// it hands the provider out, and never changed afterwards.
+    const std::string & getClusterName() const { return cluster_name; }
+    void setClusterName(std::string name) { cluster_name = std::move(name); }
+
 protected:
     friend class StatelessWorkerAllocation;
 
     /// Return the workers of a destroyed allocation (by worker_id). Nothing to return by default.
     virtual void release(const std::vector<std::string> & worker_ids) { (void)worker_ids; }
+
+private:
+    std::atomic<time_t> retire_time = 0;
+    std::string cluster_name;
 };
 
 using StatelessWorkersProviderPtr = std::shared_ptr<IStatelessWorkersProvider>;

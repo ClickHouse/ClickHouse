@@ -15,39 +15,37 @@ doc_type: 'reference'
 * バックアップに含まれるデータベース、テーブル、パーツに関する有用な情報を読みやすい形式で取得する
 * バックアップの整合性を確認する
 
-<div id="example">
-  ## 例:
-</div>
+## 例: {#example}
 
 ```python
 from clickhouse_backupview import open_backup, S3, FileInfo
 
-# バックアップを開く。ローカルパスを使用することもできる:
+# Open a backup. We could also use a local path:
 # backup = open_backup("/backups/my_backup_1/")
 backup = open_backup(S3("uri", "access_key_id", "secret_access_key"))
 
-# バックアップ内のデータベース一覧を取得する。
+# Get a list of databases inside the backup.
 print(backup.get_databases()))
 
-# バックアップ内のテーブル一覧を取得し、
-# 各テーブルのcreate queryおよびパーツとパーティションの一覧を取得する。
+# Get a list of tables inside the backup,
+# and for each table its create query and a list of parts and partitions.
 for db in backup.get_databases():
     for tbl in backup.get_tables(database=db):
         print(backup.get_create_query(database=db, table=tbl))
         print(backup.get_partitions(database=db, table=tbl))
         print(backup.get_parts(database=db, table=tbl))
 
-# バックアップからすべてを展開する。
+# Extract everything from the backup.
 backup.extract_all(table="mydb.mytable", out='/tmp/my_backup_1/all/')
 
-# 特定のテーブルのデータを展開する。
+# Extract the data of a specific table.
 backup.extract_table_data(table="mydb.mytable", out='/tmp/my_backup_1/mytable/')
 
-# 単一のパーティションを展開する。
+# Extract a single partition.
 backup.extract_table_data(table="mydb.mytable", partition="202201", out='/tmp/my_backup_1/202201/')
 
-# 単一のパーツを展開する。
+# Extract a single part.
 backup.extract_table_data(table="mydb.mytable", part="202201_100_200_3", out='/tmp/my_backup_1/202201_100_200_3/')
 ```
 
-さらに多くの例については、[test](https://github.com/ClickHouse/ClickHouse/blob/master/utils/backupview/test/test.py)を参照してください。
+さらに多くの例については、[test](https://github.com/ClickHouse/ClickHouse/blob/master/utils/backupview/test/test_backupview.py)を参照してください。

@@ -1,0 +1,235 @@
+---
+slug: /clickstack/observability/features/session-replay
+title: '会话回放'
+sidebarTitle: '会话回放'
+description: '在 ClickHouse Observability 中捕获并回放用户会话，用于调试前端问题、了解用户行为，并将浏览器活动与后端日志和链路追踪关联起来。'
+doc_type: 'guide'
+keywords: ['ClickHouse Observability', '会话回放', '浏览器 SDK', '前端可观测性', '用户会话', '调试']
+---
+
+import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
+
+ClickHouse Observability 中的会话回放功能可以捕获并重建用户在 Web 应用中的交互，让您以可视化方式精确回放用户在会话期间看到的内容和执行的操作。SDK 并非录制视频，而是记录 DOM 变更、鼠标移动、点击、滚动、键盘输入、控制台日志、网络请求 (XHR 和 Fetch) 以及 JavaScript 异常，然后在浏览器中重现用户体验。
+
+由于会话回放与日志、链路追踪和指标一同存储在 ClickHouse 中，您只需点击几下，即可从查看用户体验直接跳转到检查其背后的后端追踪和数据库查询。因此，会话回放可用于调试生产环境问题、了解用户行为、发现 UX 痛点，以及直观地确认用户向技术支持反馈的问题。
+
+## 为应用程序插桩 {#instrumentation}
+
+<Tabs>
+  <Tab title="全托管">
+    <BetaBadge label="Beta 版产品" />
+
+    ClickHouse Observability 完全兼容 OpenTelemetry，因此您可以使用标准的 OpenTelemetry JavaScript SDK 或任意 [语言 SDK](/zh/clickstack/observability/ingesting-data/sdks) 发送浏览器遥测数据 (链路追踪、异常) 。不过，**会话回放必须使用浏览器 SDK** (`@clickhouse/clickstack-browser`) ，它在 OpenTelemetry SDK 的基础上扩展了会话录制、控制台输出捕获和网络请求捕获功能。如果您只需要链路追踪而不需要会话回放，任何兼容 OTel 的浏览器 SDK 均可与该服务配合使用。
+
+    以下示例使用浏览器 SDK。在您的 ClickHouse Observability 服务中，打开 **Team Settings → Data → Managed Telemetry**，复制 **OTLP HTTP 端点** 和 **API key**，然后将示例中的 `YOUR_OTEL_ENDPOINT` 和 `YOUR_API_KEY` 替换为这些连接详情。
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Managed Telemetry 中显示的已掩码 OTLP HTTP 端点和 API key](/images/clickstack/getting-started/observability-managed-telemetry.png)
+      </Frame>
+    </div>
+
+    请使用 Managed Telemetry 中显示的完整 HTTPS 端点，不要附加 `/v1/traces` 等信号路径。按如下方式通过 `apiKey` 传入带 `Bearer ` 前缀的 API key，然后在应用程序中安装并初始化 SDK。
+
+    <Tip>
+      请在客户端入口模块的顶层初始化 SDK，且只初始化一次，例如 Vite 中的 `src/main.ts` 或 Next.js 中的 `instrumentation-client.ts`。初始化是异步进行的，因此在同一 tick 内紧接 `init` 之后发出的请求可能无法被捕获。
+    </Tip>
+
+    <Tabs>
+      <Tab title="NPM">
+        ```shell
+        npm install @clickhouse/clickstack-browser
+        ```
+
+        ```javascript
+        import { init } from '@clickhouse/clickstack-browser';
+
+        init({
+          endpoint: 'https://YOUR_OTEL_ENDPOINT:4318',
+          apiKey: 'Bearer YOUR_API_KEY',
+          serviceName: 'my-frontend-app',
+          traceOrigins: ['https://api.myapp.domain'],
+          console: 'debug',
+        });
+        ```
+      </Tab>
+
+      <Tab title="Yarn">
+        ```shell
+        yarn add @clickhouse/clickstack-browser @opentelemetry/api@~1.9.1 @opentelemetry/browser-sdk@^0.6.0
+        ```
+
+        ```javascript
+        import { init } from '@clickhouse/clickstack-browser';
+
+        init({
+          endpoint: 'https://YOUR_OTEL_ENDPOINT:4318',
+          apiKey: 'Bearer YOUR_API_KEY',
+          serviceName: 'my-frontend-app',
+          traceOrigins: ['https://api.myapp.domain'],
+          console: 'debug',
+        });
+        ```
+      </Tab>
+
+      <Tab title="Script 标签">
+        对于未使用打包工具的应用程序，可通过 script 标签直接引入 SDK。引入后会暴露全局变量 `ClickStack`，其用法与 NPM 包相同。
+
+        ```html
+        <script src="https://cdn.jsdelivr.net/npm/@clickhouse/clickstack-browser@1.0.0/dist/clickstack.iife.js" integrity="sha384-NW4JhbuY4Thx4fMuqFwKvifcPn7ad9dJ7DU/MTxhkoHeadG27i4F38Yo1Gz6y0WA" crossorigin="anonymous"></script>
+        <script>
+          window.ClickStack.init({
+            endpoint: 'https://YOUR_OTEL_ENDPOINT:4318',
+            apiKey: 'Bearer YOUR_API_KEY',
+            serviceName: 'my-frontend-app',
+            traceOrigins: ['https://api.myapp.domain'],
+            console: 'debug',
+          });
+        </script>
+        ```
+      </Tab>
+    </Tabs>
+
+    <Note>
+      `traceOrigins` 选项是将会话回放与后端追踪关联起来的关键：将其设置为您的 API 域名，即可实现从前端到后端的完整分布式链路追踪。有关通用 SDK 选项 (包括隐私控制和错误报告) ，请参阅 [Browser SDK 参考文档](/zh/clickstack/observability/ingesting-data/sdks/browser#session-replay-and-privacy)。初始化 SDK 时，请使用上文中的托管连接详情。
+    </Note>
+
+    浏览器 SDK 默认会对输入内容和文本进行掩码处理。对于涉及隐私敏感数据的应用程序，请参阅 [隐私控制](/zh/clickstack/observability/ingesting-data/sdks/browser#session-replay-and-privacy)；如需在 UI 中按用户搜索和筛选会话，请参阅 [附加用户信息](/zh/clickstack/observability/ingesting-data/sdks/browser#users-and-errors)。
+  </Tab>
+
+  <Tab title="自管理" id="self-managed">
+    Self-managed ClickHouse Observability 与 OpenTelemetry 完全兼容，因此您可以使用标准的 OpenTelemetry JavaScript SDK 或任意[语言 SDK](/zh/clickstack/observability/ingesting-data/sdks) 发送浏览器遥测数据 (链路追踪、异常) 。 不过，**会话回放必须使用浏览器 SDK** (`@clickhouse/clickstack-browser`) ，该 SDK 在 OpenTelemetry SDK 的基础上增加了会话录制、控制台输出捕获和网络请求捕获功能。如果您只需要链路追踪而不需要会话回放，任何兼容 OTel 的浏览器 SDK 都能与该服务配合使用。
+
+    在对应用程序进行插桩之前，您需要先运行一个 ClickStack OpenTelemetry 采集器，并将其连接到您的 ClickHouse Cloud 服务。请按照[使用 OpenTelemetry 摄取数据](/zh/clickstack/observability/ingesting-data/opentelemetry#installing-otel-collector-managed-self-configured)指南配置连接，或参照[部署指南](/zh/clickstack/self-configured/deployment/managed#start-a-collector-existing)启动采集器。
+
+    在下文示例中，将 `http://your-otel-collector:4318` 替换为采集器可供浏览器访问的 OTLP HTTP 端点。将 `apiKey` 设置为采集器的摄取 key (不带 `Bearer` 前缀) ；如果接收器无需身份验证，可省略此项。在采集器的 CORS 配置中将您的应用程序来源 (origin) 加入允许列表。然后安装并初始化浏览器 SDK。
+
+    <Tip>
+      请在客户端入口模块 (例如 Vite 中的 `src/main.ts` 或 Next.js 中的 `instrumentation-client.ts`) 的顶层初始化一次 SDK。初始化是异步进行的，因此在同一 tick 内紧随 `init` 之后发出的请求可能不会被捕获。
+    </Tip>
+
+    <Tabs>
+      <Tab title="NPM">
+        ```shell
+        npm install @clickhouse/clickstack-browser
+        ```
+
+        ```javascript
+        import { init } from '@clickhouse/clickstack-browser';
+
+        init({
+          endpoint: 'http://your-otel-collector:4318',
+          apiKey: 'YOUR_INGESTION_API_KEY',
+          serviceName: 'my-frontend-app',
+          traceOrigins: ['https://api.myapp.domain'],
+          console: 'debug',
+        });
+        ```
+      </Tab>
+
+      <Tab title="Yarn">
+        ```shell
+        yarn add @clickhouse/clickstack-browser @opentelemetry/api@~1.9.1 @opentelemetry/browser-sdk@^0.6.0
+        ```
+
+        ```javascript
+        import { init } from '@clickhouse/clickstack-browser';
+
+        init({
+          endpoint: 'http://your-otel-collector:4318',
+          apiKey: 'YOUR_INGESTION_API_KEY',
+          serviceName: 'my-frontend-app',
+          traceOrigins: ['https://api.myapp.domain'],
+          console: 'debug',
+        });
+        ```
+      </Tab>
+
+      <Tab title="Script 标签">
+        如果应用程序未使用打包工具，可通过 script 标签直接引入 SDK。这样会暴露全局变量 `ClickStack`，其用法与 NPM 软件包相同。
+
+        ```html
+        <script src="https://cdn.jsdelivr.net/npm/@clickhouse/clickstack-browser@1.0.0/dist/clickstack.iife.js" integrity="sha384-NW4JhbuY4Thx4fMuqFwKvifcPn7ad9dJ7DU/MTxhkoHeadG27i4F38Yo1Gz6y0WA" crossorigin="anonymous"></script>
+        <script>
+          window.ClickStack.init({
+            endpoint: 'http://your-otel-collector:4318',
+            apiKey: 'YOUR_INGESTION_API_KEY',
+            serviceName: 'my-frontend-app',
+            traceOrigins: ['https://api.myapp.domain'],
+            console: 'debug',
+          });
+        </script>
+        ```
+      </Tab>
+    </Tabs>
+
+    <Note>
+      `traceOrigins` 选项是将会话回放与后端追踪关联起来的关键：将其设置为您的 API 域名，即可实现从前端到后端的完整分布式链路追踪。如需查看完整的 SDK 选项列表 (包括隐私控制和错误上报) ，请参阅 [Browser SDK 参考文档](/zh/clickstack/observability/ingesting-data/sdks/browser)。
+    </Note>
+
+    浏览器 SDK 默认会对输入内容和文本进行掩码处理。如果应用涉及隐私敏感数据，请参阅[隐私控制](/zh/clickstack/observability/ingesting-data/sdks/browser#session-replay-and-privacy)；如需在 UI 中按用户搜索和过滤会话，请参阅[附加用户信息](/zh/clickstack/observability/ingesting-data/sdks/browser#users-and-errors)。
+
+    <Note>
+      ClickStack 浏览器 SDK 使用标准的 `session.id` 属性。请使用在 Sessions 页面中支持该属性的 ClickStack 版本，详见 [SDK 兼容性要求](https://github.com/ClickHouse/clickstack-browser#clickstack-versions)。
+    </Note>
+
+### 会话数据的存储方式 {#data-storage}
+
+    <Note>
+      以上存储相关说明仅适用于自管理的 ClickHouse Observability。如使用全托管服务，会话回放的存储和 schema 均由平台为您处理。
+    </Note>
+
+    会话回放数据存储在 ClickHouse 中专用的 [`hyperdx_sessions`](/zh/clickstack/self-configured/ingesting-data/schemas#sessions) 表中，与日志和链路追踪分开存放。 每个会话事件对应一行，其中 `Body` 字段包含事件载荷，`LogAttributes` Map 则存储事件元数据。 `Body` 和 `LogAttributes` 两列共同保存了实际会话事件的详细信息，用于重建会话回放。
+
+    有关完整的表结构信息，请参阅[表和 schema](/zh/clickstack/self-configured/ingesting-data/schemas)。
+  </Tab>
+</Tabs>
+
+## 查看会话回放 {#viewing-replays}
+
+在 UI 左侧侧边栏中进入 **Client Sessions**。该视图列出了所有已捕获的浏览器会话，以及每个会话的耗时和事件数。
+
+<div className="ch-image-lg">
+  <Frame>
+    ![会话回放搜索视图](/images/clickstack/session-replay/observability-client-sessions.png)
+  </Frame>
+</div>
+
+打开一个会话，然后点击 **Play** 回放录制的交互。回放视图右侧呈现重建后的用户体验，左侧则是浏览器事件时间线，包括网络请求、控制台日志和错误。
+
+<div className="ch-image-lg">
+  <Frame>
+    ![会话回放播放界面](/images/clickstack/session-replay/observability-session-replay.png)
+  </Frame>
+</div>
+
+可在 **Highlighted** 和 **All Events** 模式之间切换，以调整时间线上显示的详细程度。错误以红色标注，点击任意事件即可将回放跳转到会话中的对应时间点。
+
+### 从会话到 trace {#session-to-trace}
+
+在会话时间线中选中某个网络请求或错误后，您可以点击进入 **Trace** 选项卡，追踪该请求在后端服务中的完整链路，查看由该用户交互触发的相关日志、span 和数据库查询。
+
+这一功能得以实现，是因为 `traceOrigins` 配置会通过 `traceparent` 请求头将浏览器 span 关联到服务端跨度，从而形成一条从用户点击一直延伸到数据库的完整分布式 trace。如需了解实际操作的详细演练 (包括对前端和后端进行插桩) ，请参阅[使用 OpenTelemetry 和 ClickStack 为 NextJS 应用添加插桩](https://clickhouse.com/blog/instrumenting-your-app-with-otel-clickstack)。
+
+<div className="ch-image-lg">
+  <Frame>
+    ![打开会话回放并从事件跳转到其 trace](/images/clickstack/session-replay/observability-session-to-trace.gif)
+  </Frame>
+</div>
+
+### 从 trace 到会话 {#trace-to-session}
+
+这种关联也可以反向使用。在 **搜索** 视图中查看某个 trace 时，点击该 trace 打开其详情，然后选择 **会话回放** 选项卡，即可确切了解该 trace 发生时用户所经历的情况。这在排查错误或慢请求时尤为有用——您可以从后端问题入手，立即切换到用户视角查看问题。
+
+## 动手试试 {#try-it-out}
+
+请参照[会话回放演示](/zh/clickstack/observability/example-datasets/session-replay)，为交互式应用程序进行插桩，将会话数据发送到您的 ClickHouse Observability 服务，然后回放您的交互过程。
+
+## 了解更多 {#learn-more}
+
+* [会话回放演示](/zh/clickstack/observability/example-datasets/session-replay) — 使用托管服务的连接详情为交互式应用程序插桩
+* [Browser SDK 参考文档](/zh/clickstack/observability/ingesting-data/sdks/browser#session-replay-and-privacy) — 通用 SDK 选项与高级配置
+* [搜索](/zh/clickstack/observability/features/search) — 用于筛选会话和事件的搜索语法
+* [仪表盘](/zh/clickstack/observability/features/dashboards/overview) — 基于会话和链路追踪数据构建可视化图表与仪表盘
+* [告警](/zh/clickstack/observability/features/alerts) — 针对错误、延迟及其他信号设置告警
+* [架构](/zh/clickstack/observability/architecture) — 服务各组件如何协同工作

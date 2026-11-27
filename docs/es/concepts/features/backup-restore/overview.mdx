@@ -125,7 +125,7 @@ BACKUP TABLE test.table
 
 ## Uso de colecciones con nombre {#using-named-collections}
 
-Las colecciones con nombre le permiten almacenar pares clave-valor (como credenciales de S3, endpoints y opciones de configuración) que pueden reutilizarse en operaciones de copia de seguridad y restauración.
+Las colecciones con nombre le permiten almacenar pares clave-valor (como credenciales de S3, endpoints y ajustes) que pueden reutilizarse en operaciones de copia de seguridad y restauración.
 Ayudan a:
 
 * Ocultar las credenciales a los usuarios sin acceso de administrador
@@ -134,6 +134,10 @@ Ayudan a:
 * Evitar la exposición de credenciales en los logs de consultas
 
 Consulte [&quot;colecciones con nombre&quot;](/es/concepts/features/configuration/server-config/named-collections) para obtener más información.
+
+Las colecciones con nombre creadas mediante SQL también pueden exportarse a una copia de seguridad y restaurarse a partir de
+ella mediante la tabla `system.named_collections`; consulte
+[&quot;Copia de seguridad y restauración de colecciones con nombre&quot;](/es/concepts/features/backup-restore/named-collections).
 
 ## Copia de seguridad de tablas del sistema, de registro o de gestión de acceso {#system-backups}
 
@@ -161,6 +165,13 @@ Esta funcionalidad solo funciona para configuraciones gestionadas mediante coman
 (conocidas como [&quot;Control de acceso y gestión de cuentas controlados por SQL&quot;](/es/concepts/features/security/access-rights#enabling-access-control)).
 Las configuraciones de acceso definidas en los archivos de configuración del ClickHouse server (p. ej. `users.xml`)
 no se incluyen en las copias de seguridad y no pueden restaurarse mediante este método.
+
+<Note>
+  En las versiones de ClickHouse anteriores a la 26.10, las políticas de fila, los perfiles de configuración y las cuotas restaurados con `RESTORE` aparecen
+  en `system.row_policies`, `system.settings_profiles` y `system.quotas`, pero no se aplican a las consultas
+  de inmediato. Ejecute [`SYSTEM RELOAD USERS`](/es/reference/statements/system#reload-users) una vez finalizada la restauración
+  para aplicarlos.
+</Note>
 
 ## Sintaxis general {#syntax}
 

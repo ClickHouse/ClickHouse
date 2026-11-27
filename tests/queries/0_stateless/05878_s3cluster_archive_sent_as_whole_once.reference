@@ -1,0 +1,9 @@
+8
+1	example1.csv	test/03036_archive1.zip::example1.csv
+2	example1.csv	test/03036_archive1.zip::example1.csv
+3	example2.csv	test/03036_archive1.zip::example2.csv
+3	example2.csv	test/03036_archive2.zip::example2.csv
+4	example2.csv	test/03036_archive1.zip::example2.csv
+4	example2.csv	test/03036_archive2.zip::example2.csv
+5	example3.csv	test/03036_archive2.zip::example3.csv
+6	example3.csv	test/03036_archive2.zip::example3.csv

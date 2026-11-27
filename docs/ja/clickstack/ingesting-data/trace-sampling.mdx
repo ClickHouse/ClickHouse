@@ -14,7 +14,7 @@ keywords: ['clickstack', 'トレースサンプリング', 'テイルサンプ�
 ClickStack は、サンプリングを考慮したクエリエンジンでこれを解決します。トレースソースでサンプルレート式を設定すると、クエリビルダーが SQL の集計を書き換え、ダッシュボード、アラート、アドホック検索全体で各スパンをそのサンプルレートに基づいて重み付けします。
 
 <div id="how-it-works">
-  ## 仕組み
+  ## 仕組み {#how-it-works}
 </div>
 
 トレースソースに `sampleRateExpression` が設定されている場合、ClickStack はこれを次のようにラップします:
@@ -42,7 +42,7 @@ greatest(toUInt64OrZero(toString(expr)), 1)
 </Note>
 
 <div id="configuring">
-  ## サンプルレート式の設定
+  ## サンプルレート式の設定 {#configuring}
 </div>
 
 トレースソースの **ソース設定** を開き、各スパンのサンプルレートとして評価される ClickHouse 式を **サンプルレート式** フィールドに入力します。
@@ -50,13 +50,9 @@ greatest(toUInt64OrZero(toString(expr)), 1)
 たとえば、OpenTelemetry tail-sampling processor がそのレートを `SpanAttributes['SampleRate']` に書き込む場合:
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![ClickStack のソース設定にあるサンプルレート式フィールド](/images/clickstack/trace-sampling-source-settings.webp)
-
-</Frame>
-
+  <Frame>
+    ![ClickStack のソース設定にあるサンプルレート式フィールド](/images/clickstack/trace-sampling-source-settings.webp)
+  </Frame>
 </div>
 
 設定すると、すべてのチャート、ダッシュボード、アラート、サービスダッシュボードのパネルで、サンプルレートに基づく重み付き集計が自動的に適用されます。個々のクエリを変更する必要はありません。

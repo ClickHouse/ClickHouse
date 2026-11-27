@@ -14,7 +14,7 @@ doc_type: 'guide'
 
 パーティション化は、[MergeTree family tables](/ja/reference/engines/table-engines/mergetree-family/mergetree) ([レプリケートテーブル](/ja/reference/engines/table-engines/mergetree-family/replication) や [materialized view](/ja/reference/statements/create/view#materialized-view) を含む) で利用できます。
 
-パーティションは、指定した条件に基づいてテーブル内のレコードを論理的にまとめたものです。月ごと、日ごと、イベントタイプごとなど、任意の条件でパーティションを設定できます。各パーティションは個別に保存されるため、このデータの操作が容易になります。データにアクセスする際、ClickHouse は可能な限り最小のパーティション集合を使用します。パーティションキーを含むクエリでは、ClickHouse がパーティション内のパーツやグラニュールを選択する前に、そのパーティションで絞り込みを行うため、パーティション化はパフォーマンス向上に役立ちます。
+パーティションは、指定した条件に基づいてテーブル内のレコードを論理的にまとめたものです。月ごと、日ごと、イベントタイプごとなど、任意の条件でパーティションを設定できます。各パーティションは個別に保存されるため、このデータの操作が容易になります。データにアクセスする際、ClickHouse は可能な限り最小のパーティション集合を使用します。パーティション化は主にデータ管理のための手法です。クエリがパーティションキーでフィルタする場合、ClickHouse はパーツやグラニュールを選択する前にそれ以外のパーティションをスキップできるため、フィルタ対象のカラムが主キーに含まれていない場合に有効です。一方、多数のパーティションにまたがるクエリは、読み取るパーツが増えるため遅くなる可能性があります。詳しくは [パーティションキーの選び方](/ja/best-practices/choosing-a-partitioning-key) を参照してください。
 
 パーティションは、[テーブル作成時](/ja/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-creating-a-table) の `PARTITION BY expr` 句で指定します。パーティションキーには、テーブルのカラムを使った任意の式を指定できます。たとえば、月単位のパーティション化を指定するには、`toYYYYMM(date_column)` 式を使用します。
 
@@ -134,9 +134,7 @@ drwxr-xr-x 2 clickhouse clickhouse 4096 Feb  1 16:48 detached
 
 ClickHouse では、パーティションに対して削除、あるテーブルから別のテーブルへのコピー、バックアップの作成といった操作を実行できます。すべての操作の一覧については、[Manipulations With Partitions and Parts](/ja/reference/statements/alter/partition) セクションを参照してください。
 
-<div id="group-by-optimisation-using-partition-key">
-  ## パーティションキーを使った Group By の最適化
-</div>
+## パーティションキーを使った Group By の最適化 {#group-by-optimisation-using-partition-key}
 
 テーブルのパーティションキーとクエリの Group By キーの組み合わせによっては、各パーティションごとに独立して集計を実行できる場合があります。
 その場合、最後にすべての実行スレッドから部分的に集計されたデータをマージする必要はありません。
