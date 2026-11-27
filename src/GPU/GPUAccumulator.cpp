@@ -25,6 +25,7 @@ namespace DB::ErrorCodes
 {
     extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
 }
 
 namespace DB::GPU
@@ -211,19 +212,19 @@ bool GPUBlockStager::isFull() const
     return rows >= batch_rows;
 }
 
-void GPUBlockStager::seal(std::optional<size_t> part_rows)
+void GPUBlockStager::finishBatch(std::optional<size_t> part_rows)
 {
     current->part_rows = part_rows;
-    sealed.push_back(std::move(current));
+    finished.push_back(std::move(current));
     current = pool->take(column_types.size());
 }
 
-std::unique_ptr<GPUStagedBatch> GPUBlockStager::takeSealed()
+std::unique_ptr<GPUStagedBatch> GPUBlockStager::takeFinished()
 {
-    if (sealed.empty())
+    if (finished.empty())
         return nullptr;
-    auto batch = std::move(sealed.front());
-    sealed.pop_front();
+    auto batch = std::move(finished.front());
+    finished.pop_front();
     return batch;
 }
 
@@ -238,9 +239,14 @@ void GPUBlockStager::addCompressedBlock(
     size_t kept_bytes)
 {
     const auto codec = codecOf(method);
+    /// The plan knows the codecs of the table, not those of the blocks of a part: a part written before an `ALTER` of a
+    /// codec, or by the adaptive codec, may hold blocks of others.
     if (!codec)
         throw Exception(
-            ErrorCodes::LOGICAL_ERROR, "A block of compression method {:#x} for the GPU, which the device does not expand", static_cast<UInt16>(method));
+            ErrorCodes::NOT_IMPLEMENTED,
+            "A block of compression method {:#x} read for the GPU, which the device does not expand; such a part is aggregated "
+            "on the CPU with `allow_experimental_gpu_aggregation = 0`",
+            static_cast<UInt16>(method));
 
     if (skipped_bytes + kept_bytes > decompressed_bytes)
         throw Exception(
@@ -250,7 +256,7 @@ void GPUBlockStager::addCompressedBlock(
     {
         const CompressedHostColumn & column = streamOrThrow(column_index, stream);
         if (column.isCut() || (!column.empty() && (skipped_bytes != 0 || column.codec != codec)))
-            seal();
+            finishBatch();
     }
 
     CompressedHostColumn & column = streamOrThrow(column_index, stream);
@@ -267,12 +273,12 @@ void GPUBlockStager::addCompressedBlock(
     appendHostBytes(column.bytes, payload);
 
     if (isFull())
-        seal();
+        finishBatch();
 }
 
 void GPUBlockStager::finishPart(size_t num_rows)
 {
-    seal(num_rows);
+    finishBatch(num_rows);
 }
 
 GPUDeviceBatch::GPUDeviceBatch(std::shared_ptr<StreamPtr> upload_stream_)
