@@ -23,6 +23,7 @@ class TableJoin;
 class HashJoin;
 class JoinSpillBudget;
 struct StoredBlock;
+namespace JoinCommon { struct ShardHash; }
 
 /**
  * Efficient and highly parallel implementation of external memory JOIN based on HashJoin.
@@ -147,8 +148,9 @@ private:
     void addBlockToJoinImpl(Block block, JoinBuildContext context, bool owned = false, HandedOver * handed_over = nullptr);
     size_t heldBytes() const;
 
-    /// The scatter hash of all rows of `block`, if any, while `resident_hash` needs it. Caller holds `hash_join_mutex`.
-    std::optional<UInt32> residentHashOf(const Block & block) const;
+    /// The scatter hash of all rows of `block`, if any, while `resident_hash` needs it; `scattered` is what the scatter
+    /// that produced `block` found. Caller holds `hash_join_mutex`.
+    std::optional<UInt32> residentHashOf(const Block & block, const JoinCommon::ShardHash & scattered) const;
     /// After a block with `block_hash` went into `hash_join`, which stored `blocks_before` blocks then. Caller holds `hash_join_mutex`.
     void addResidentRows(std::optional<UInt32> block_hash, size_t blocks_before);
     void resetResidentRows();

@@ -918,12 +918,12 @@ static size_t storedBlocks(const HashJoin & join)
     return blocks;
 }
 
-std::optional<UInt32> GraceHashJoin::residentHashOf(const Block & block) const
+std::optional<UInt32> GraceHashJoin::residentHashOf(const Block & block, const JoinCommon::ShardHash & scattered) const
 {
     /// Only the admission against `spill_budget` reads it, and different hashes stay different.
     if (!spill_budget || (has_resident_rows && !resident_hash))
         return {};
-    return JoinCommon::oneScatterHash(right_key_names, block);
+    return scattered.hashed ? scattered.hash : JoinCommon::oneScatterHash(right_key_names, block);
 }
 
 void GraceHashJoin::addResidentRows(std::optional<UInt32> block_hash, size_t blocks_before)
@@ -954,18 +954,20 @@ void GraceHashJoin::repartitionCurrentBucket(Block leftover, JoinBuildContext co
     auto released_join = std::move(hash_join);
     auto right_blocks = released_join->takeStoredBlocks();
 
-    Blocks kept_shares;
+    std::vector<std::pair<Block, JoinCommon::ShardHash>> kept_shares;
     size_t kept_rows = 0;
     auto scatter_share = [&](Block && block)
     {
         if (!block.rows())
             return;
-        Blocks blocks = JoinCommon::scatterBlockByHash(right_key_names, std::move(block), buckets_snapshot.size());
+        JoinCommon::ShardHash shard_hash(bucket_index);
+        Blocks blocks = JoinCommon::scatterBlockByHash(
+            right_key_names, std::move(block), buckets_snapshot.size(), spill_budget ? &shard_hash : nullptr);
         flushBlocksToBuckets<JoinTableSide::Right>(blocks, buckets_snapshot, bucket_index);
         if (!blocks[bucket_index].rows())
             return;
         kept_rows += blocks[bucket_index].rows();
-        kept_shares.push_back(std::move(blocks[bucket_index]));
+        kept_shares.emplace_back(std::move(blocks[bucket_index]), shard_hash);
     };
 
     scatter_share(std::move(leftover));
@@ -981,11 +983,11 @@ void GraceHashJoin::repartitionCurrentBucket(Block leftover, JoinBuildContext co
     hash_join = makeInMemoryJoin(fmt::format("grace{}", bucket_index));
     hash_join->reserveCountedKeys(std::min(kept_rows, keys_before));
     resetResidentRows();
-    for (const Block & kept : kept_shares)
+    for (const auto & [kept, shard_hash] : kept_shares)
     {
         /// After its one split a block goes in whatever its size.
         bool refused = false;
-        const auto block_hash = residentHashOf(kept);
+        const auto block_hash = residentHashOf(kept, shard_hash);
         const size_t blocks_before = storedBlocks(*hash_join);
         hash_join->addBlockToJoin(kept, context.callerChecksLimits(), refused, /*checked=*/false);
         addResidentRows(block_hash, blocks_before);
@@ -1045,10 +1047,12 @@ void GraceHashJoin::addBlockToJoinImpl(Block block, JoinBuildContext context, bo
     Buckets buckets_snapshot = getCurrentBuckets();
     size_t bucket_index = current_bucket->idx;
     Block current_block;
+    JoinCommon::ShardHash shard_hash(bucket_index);
+    auto * const scattered = spill_budget ? &shard_hash : nullptr;
 
     {
-        Blocks blocks = owned ? JoinCommon::scatterBlockByHash(right_key_names, std::move(block), buckets_snapshot.size())
-                              : JoinCommon::scatterBlockByHash(right_key_names, block, buckets_snapshot.size());
+        Blocks blocks = owned ? JoinCommon::scatterBlockByHash(right_key_names, std::move(block), buckets_snapshot.size(), scattered)
+                              : JoinCommon::scatterBlockByHash(right_key_names, block, buckets_snapshot.size(), scattered);
         flushBlocksToBuckets<JoinTableSide::Right>(blocks, buckets_snapshot, bucket_index);
         current_block = std::move(blocks[bucket_index]);
     }
@@ -1087,7 +1091,8 @@ void GraceHashJoin::addBlockToJoinImpl(Block block, JoinBuildContext context, bo
         if (buckets_snapshot.size() != current_buckets.size())
         {
             LOG_TRACE(log, "mismatch buckets size. previous:{}, current:{}", buckets_snapshot.size(), getCurrentBuckets().size());
-            Blocks blocks = JoinCommon::scatterBlockByHash(right_key_names, std::move(current_block), current_buckets.size());
+            shard_hash = JoinCommon::ShardHash(bucket_index);
+            Blocks blocks = JoinCommon::scatterBlockByHash(right_key_names, std::move(current_block), current_buckets.size(), scattered);
             flushBlocksToBuckets<JoinTableSide::Right>(blocks, current_buckets, bucket_index);
             current_block = std::move(blocks[bucket_index]);
         }
@@ -1107,7 +1112,7 @@ void GraceHashJoin::addBlockToJoinImpl(Block block, JoinBuildContext context, bo
         /// A split cannot separate rows of one hash, and the estimate must not fail the query at the bucket limit: the block goes
         /// in unchecked then, and its size after the insert decides. A refused insert can leave keys that reference the block,
         /// so only the split, which rebuilds the bucket, may follow it.
-        const auto block_hash = residentHashOf(current_block);
+        const auto block_hash = residentHashOf(current_block, shard_hash);
         /// The keys of the previous bucket say nothing about a bucket of one key.
         if (block_hash && !has_resident_rows)
             hash_join->reserveCountedKeys(0);
