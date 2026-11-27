@@ -54,9 +54,26 @@ public:
     requires std::is_convertible_v<G, F>
     constexpr BasicScopeGuard(G && function_) : function{std::move(function_)} {} // NOLINT(google-explicit-constructor, bugprone-forwarding-reference-overload, bugprone-move-forwarding-reference, cppcoreguidelines-missing-std-forward)
 
-    /// While another exception is in flight, `invoke` swallows an exception from the function,
-    /// because a throw would call `std::terminate`.
-    ~BasicScopeGuard() noexcept(!may_throw) { invoke(); }
+    /// While another exception is in flight, an exception from the function is logged and swallowed,
+    /// because a throw there would call `std::terminate`.
+    ~BasicScopeGuard() noexcept(!may_throw)
+    {
+        if (exceptions == std::uncaught_exceptions())
+        {
+            invoke();
+        }
+        else
+        {
+            try
+            {
+                invoke();
+            }
+            catch (...)
+            {
+                DB::tryLogCurrentException(__PRETTY_FUNCTION__);
+            }
+        }
+    }
 
     static constexpr bool is_nullable = std::is_constructible_v<bool, F>;
 
@@ -108,19 +125,7 @@ private:
                 return;
         }
 
-        if (exceptions == std::uncaught_exceptions())
-            std::move(function)();
-        else
-        {
-            try
-            {
-                std::move(function)();
-            }
-            catch (...)
-            {
-                DB::tryLogCurrentException(__PRETTY_FUNCTION__);
-            }
-        }
+        std::move(function)();
     }
 
     F function = F{};
