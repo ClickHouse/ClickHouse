@@ -12,6 +12,7 @@
 
 #include <Poco/Util/AbstractConfiguration.h>
 
+#include <limits>
 #include <optional>
 #include <utility>
 
@@ -58,6 +59,22 @@ void parseLDAPSearchParams(LDAPClient::SearchParams & params, const Poco::Util::
     }
 }
 
+std::chrono::seconds parseLDAPTimeout(const Poco::Util::AbstractConfiguration & config, const String & server_config, const String & entry_name)
+{
+    const UInt64 seconds = config.getUInt64(server_config + "." + entry_name);
+
+    /// A zero timeout makes the corresponding LDAP operation fail immediately, and for `network_timeout`
+    /// it also disables the per-address failover in libldap (a zero `timeval` is treated as a successful
+    /// non-blocking connect), so it must not be accepted. The upper bound keeps the value within the
+    /// types used by the LDAP client library.
+    if (seconds == 0 || seconds > static_cast<UInt64>(std::numeric_limits<Int32>::max()))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Bad value for '{}' entry, must be between 1 and {}",
+                        entry_name, std::numeric_limits<Int32>::max());
+
+    return std::chrono::seconds{seconds};
+}
+
 void parseLDAPServer(LDAPClient::Params & params, const Poco::Util::AbstractConfiguration & config, const String & name)
 {
     if (name.empty())
@@ -82,6 +99,9 @@ void parseLDAPServer(LDAPClient::Params & params, const Poco::Util::AbstractConf
     const bool has_tls_cipher_suite = config.has(ldap_server_config + ".tls_cipher_suite");
     const bool has_search_limit = config.has(ldap_server_config + ".search_limit");
     const bool has_follow_referrals = config.has(ldap_server_config + ".follow_referrals");
+    const bool has_operation_timeout = config.has(ldap_server_config + ".operation_timeout");
+    const bool has_network_timeout = config.has(ldap_server_config + ".network_timeout");
+    const bool has_search_timeout = config.has(ldap_server_config + ".search_timeout");
 
     if (!has_host)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'host' entry");
@@ -118,6 +138,15 @@ void parseLDAPServer(LDAPClient::Params & params, const Poco::Util::AbstractConf
 
     if (has_verification_cooldown)
         params.verification_cooldown = std::chrono::seconds{config.getUInt64(ldap_server_config + ".verification_cooldown")};
+
+    if (has_operation_timeout)
+        params.operation_timeout = parseLDAPTimeout(config, ldap_server_config, "operation_timeout");
+
+    if (has_network_timeout)
+        params.network_timeout = parseLDAPTimeout(config, ldap_server_config, "network_timeout");
+
+    if (has_search_timeout)
+        params.search_timeout = parseLDAPTimeout(config, ldap_server_config, "search_timeout");
 
     if (has_enable_tls)
     {

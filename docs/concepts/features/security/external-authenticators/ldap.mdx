@@ -32,6 +32,9 @@ To define LDAP server you must add `ldap_servers` section to the `config.xml`.
             <port>636</port>
             <bind_dn>uid={user_name},ou=users,dc=example,dc=com</bind_dn>
             <verification_cooldown>300</verification_cooldown>
+            <operation_timeout>40</operation_timeout>
+            <network_timeout>30</network_timeout>
+            <search_timeout>20</search_timeout>
             <follow_referrals>false</follow_referrals>
             <enable_tls>yes</enable_tls>
             <tls_minimum_protocol_version>tls1.2</tls_minimum_protocol_version>
@@ -60,6 +63,8 @@ To define LDAP server you must add `ldap_servers` section to the `config.xml`.
 
 Note, that you can define multiple LDAP servers inside the `ldap_servers` section using distinct names.
 
+When `host` is a DNS name that resolves to several addresses (several `A` or `AAAA` records), the LDAP client library tries them one by one inside a single authentication attempt, so an unreachable address does not prevent authentication against a reachable one. `SRV` records are not used. The client switches to the next address only when the TCP connection fails; a bind or TLS handshake timeout against a reachable address does not fall through to the next one.
+
 When `verification_cooldown` is enabled, a cached verification survives a configuration reload: `SYSTEM RELOAD CONFIG` keeps the entries of the servers that remain configured, so a reload does not force users to re-enter their passwords (see issue [#66698](https://github.com/ClickHouse/ClickHouse/issues/66698)). An entry is dropped when it expires or when a change of a parameter that affects the bind, such as `host`, `port`, `bind_dn`, or a TLS setting, makes the cached verification no longer valid. To force re-validation against the directory, restart the server or set `verification_cooldown` to `0`.
 
 **Parameters**
@@ -72,6 +77,9 @@ When `verification_cooldown` is enabled, a cached verification survives a config
 | `auth_dn_prefix` | — | **Deprecated.** An alternative to `bind_dn`. Cannot be used together with `bind_dn`. When specified, the bind DN is constructed as `auth_dn_prefix + {user_name} + auth_dn_suffix`. For example, setting `auth_dn_prefix` to `uid=` and `auth_dn_suffix` to `,ou=users,dc=example,dc=com` is equivalent to setting `bind_dn` to `uid={user_name},ou=users,dc=example,dc=com`. |
 | `auth_dn_suffix` | — | **Deprecated.** See `auth_dn_prefix`. |
 | `verification_cooldown` | `0` | A period of time, in seconds, after a successful bind attempt, during which the user will be assumed to be successfully authenticated for all consecutive requests without contacting the LDAP server. Specify `0` to disable caching and force contacting the LDAP server for each authentication request. |
+| `operation_timeout` | `40` | Timeout in seconds for one LDAP operation, in particular the bind request. This is not a total budget for a whole login. Accepted values: from `1` to `2147483647`. |
+| `network_timeout` | `30` | Timeout in seconds for one connection attempt to one resolved address of `host`. When `host` resolves to several addresses, the timeout applies to each address separately, so the worst case is the number of addresses multiplied by this value. Accepted values: from `1` to `2147483647`. |
+| `search_timeout` | `20` | Time limit in seconds for LDAP search queries performed by this server definition (user DN detection and role mapping). Accepted values: from `1` to `2147483647`. |
 | `follow_referrals` | `false` | A flag to allow the LDAP client library to automatically chase LDAP referrals returned by the server. Mostly relevant for Microsoft Active Directory environments where subtree searches at a high-level base DN (e.g. `DC=example,DC=com`) can return referrals/search references (e.g. `DC=DomainDnsZones,...`). Set to `true` only when you explicitly need cross-partition searches. |
 | `enable_tls` | `yes` | A flag to trigger the use of the secure connection to the LDAP server. Specify `no` for plain text `ldap://` protocol (not recommended), `yes` for LDAP over SSL/TLS `ldaps://` protocol (recommended), or `starttls` for legacy StartTLS protocol (plain text `ldap://` protocol, upgraded to TLS). |
 | `tls_minimum_protocol_version` | `tls1.2` | The minimum protocol version of SSL/TLS. Accepted values: `ssl2`, `ssl3`, `tls1.0`, `tls1.1`, `tls1.2`. |
