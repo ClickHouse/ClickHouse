@@ -10400,7 +10400,9 @@ When the setting is enabled, the analyzer additionally:
   a `Distributed` table or the `remote` / `cluster` table functions read from a shard that the initiator
   plans itself (its local replica with `prefer_localhost_replica`, or a shard that gets a serialized
   query plan). A shard that receives the query as text reads it with its own current database. A filter
-  from `additional_table_filters` applied to such a table is read as written too.
+  from `additional_table_filters` applied to such a table is read as written too. A `Buffer` table over
+  such a table (for example, over a `Distributed` table) reads the rows it still holds through a query
+  generated from the calling one, and table names in that query are read as written too.
   Parts of the calling query that are resolved inside
   a SQL function body are read as written too: a lambda passed as an argument, a `WITH` lambda that the body
   calls, and a CTE that the body or such a lambda refers to. Such a CTE stays read as written for its later

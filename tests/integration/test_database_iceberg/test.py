@@ -3289,6 +3289,8 @@ def test_namespace_merge_and_distributed_read_children_as_written(started_cluste
     which names the table as `db`.`table`; the name is read as written, not also as table
     `db.table` of the current database. The input query of an `Executable` table is read as
     written too, while that of the `executable` table function is a part of the calling query.
+    A `Buffer` table over a `Distributed` table analyzes the printed query again for the rows
+    it holds, and the tables of that query are read as written too.
     """
     node1 = started_cluster.instances["node1"]
     # the tables exist on `node1` only: its replica of the shard is read in the same server
@@ -3300,6 +3302,10 @@ def test_namespace_merge_and_distributed_read_children_as_written(started_cluste
     D = f"dist_{test_ref}"
     D2 = f"dist2_{test_ref}"
     E = f"exec_{test_ref}"
+    B = f"buf_{test_ref}"
+    MV = f"mv_{test_ref}"
+    V = f"view_{test_ref}"
+    F = f"f_{test_ref}"
     user = f"u_dist_{test_ref}"
     script = f"{test_ref}.sh"
     scripts_path = node1.query(
@@ -3385,9 +3391,34 @@ def test_namespace_merge_and_distributed_read_children_as_written(started_cluste
             f"USE {CATALOG_NAME}; SELECT count() FROM default.{E}", settings=executable_on, user=user
         )
         assert "ACCESS_DENIED" in err, f"`Executable` table must read the database table: {err}"
+
+        # a `Buffer` over the `Distributed` table analyzes the printed query once more for the rows in its buffers
+        node1.query(
+            f"CREATE TABLE default.{B} (symbol Nullable(String)) "
+            f"ENGINE = Buffer(default, {D}, 1, 3600, 3600, 1000000, 10000000, 1000000000, 10000000000)"
+        )
+        # the body of a SQL function is read as written, and its tables stay the same in the printed query
+        node1.query(f"CREATE FUNCTION {F} AS x -> x IN (SELECT symbol FROM default.{L})")
+        result = int(
+            node1.query(f"USE {CATALOG_NAME}; SELECT count() FROM default.{B} WHERE {F}(symbol)", settings=on)
+        )
+        assert result == 1, f"`Buffer` table with a SQL function: expected 1 row, got {result}"
+
+        # a materialized view with a definer reads its target with a context made from the global one
+        node1.query(
+            f"CREATE MATERIALIZED VIEW default.{MV} TO default.{B} DEFINER = CURRENT_USER SQL SECURITY DEFINER "
+            f"AS SELECT symbol FROM default.{L2}"
+        )
+        node1.query(
+            f"CREATE VIEW default.{V} AS SELECT count() AS c FROM default.{MV} "
+            f"WHERE symbol IN (SELECT symbol FROM default.{L})"
+        )
+        result = int(node1.query(f"USE {CATALOG_NAME}; SELECT c FROM default.{V}", settings=on))
+        assert result == 1, f"view over a materialized view over the `Buffer` table: expected 1 row, got {result}"
     finally:
         node1.query(f"DROP USER IF EXISTS {user}")
-        for table in (D, D2, E, L, L2):
+        node1.query(f"DROP FUNCTION IF EXISTS {F}")
+        for table in (V, MV, B, D, D2, E, L, L2):
             node1.query(f"DROP TABLE IF EXISTS default.{table}")
         node1.query(f"DROP TABLE IF EXISTS {CATALOG_NAME}.`default.{L}`")
         node1.exec_in_container(["rm", "-f", f"{scripts_path}/{script}"], user="root")
