@@ -836,6 +836,7 @@ class ClickHouseCluster:
                 self.env_variables[key] = value
 
         self.up_called = False
+        self.kazoo_clients = []
 
         custom_dockerd_host = custom_dockerd_host or os.environ.get(
             "CLICKHOUSE_TESTS_DOCKERD_HOST"
@@ -4742,6 +4743,15 @@ class ClickHouseCluster:
         ignore_logical_errors=False,
         ignore_sanitizer=False,
     ):
+        # A client left running reconnects to whichever cluster gets these addresses next.
+        for zk in self.kazoo_clients:
+            try:
+                zk.stop()
+                zk.close()
+            except Exception as e:
+                logging.warning("Failed to stop a Kazoo client: %s", repr(e))
+        self.kazoo_clients = []
+
         sanitizer_assert_instance = None
         failure_logs = []
 
@@ -5161,6 +5171,7 @@ class ClickHouseCluster:
             certfile=self.zookeeper_certfile,
             keyfile=self.zookeeper_keyfile,
         )
+        self.kazoo_clients.append(zk)
         zk.start(timeout=timeout)
         return zk
 
