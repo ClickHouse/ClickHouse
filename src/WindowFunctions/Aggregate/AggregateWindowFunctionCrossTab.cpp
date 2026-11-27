@@ -5,15 +5,19 @@
 #include <AggregateFunctions/AggregateFunctionTheilsU.h>
 #include <AggregateFunctions/CrossTab.h>
 #include <AggregateFunctions/UniqVariadicHash.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Interpreters/CancellationBudget.h>
 #include <Interpreters/WindowDescription.h>
 
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsNumber.h>
 
 #include <Common/assert_cast.h>
+#include <Common/typeid_cast.h>
 
 #include <base/defines.h>
 
+#include <algorithm>
 #include <cmath>
 #include <functional>
 #include <limits>
@@ -109,11 +113,20 @@ UInt64 hashArgument(const ArgumentsSegment & segment, size_t argument, size_t ro
     return UniqVariadicHash<false, false>::apply(1, const_cast<const IColumn **>(segment.columns.data()) + argument, row);
 }
 
+bool passesFilter(const ArgumentsSegment & segment, size_t row)
+{
+    const bool first_is_null = segment.columns[0]->isNullAt(row);
+    const bool second_is_null = segment.columns[1]->isNullAt(row);
+    const bool condition_is_true = segment.columns.size() == 2 || segment.columns[2]->getBool(row);
+    return !first_is_null && !second_is_null && condition_is_true;
+}
+
 class AggregateWindowFunctionPhiSquared final : public IAggregateWindowFunction
 {
 public:
-    explicit AggregateWindowFunctionPhiSquared(PhiSquaredStatistic statistic_)
+    AggregateWindowFunctionPhiSquared(PhiSquaredStatistic statistic_, bool filters_rows_)
         : statistic(statistic_)
+        , filters_rows(filters_rows_)
         , check_cancellation(makeCancellationCheck(statisticName(statistic_)))
         , budget(check_cancellation)
     {
@@ -128,7 +141,8 @@ public:
 
     Int64 evaluate(const WindowBounds & bounds, const WindowArguments & arguments, IColumn & result) override
     {
-        auto & values = assert_cast<ColumnFloat64 &>(result).getData();
+        auto * nullable = typeid_cast<ColumnNullable *>(&result);
+        auto & values = assert_cast<ColumnFloat64 &>(nullable ? nullable->getNestedColumn() : result).getData();
 
         for (Int64 from = 0; from < bounds.rows;)
         {
@@ -139,11 +153,14 @@ public:
                 const ArgumentsSegment segment = arguments.segment(covered_end, frame_end);
                 budget.chargeUnits(segment.row_end - segment.row_begin);
                 for (size_t row = segment.row_begin; row < segment.row_end; ++row)
-                    data->add(hashArgument(segment, 0, row), hashArgument(segment, 1, row));
+                    if (!filters_rows || passesFilter(segment, row))
+                        data->add(hashArgument(segment, 0, row), hashArgument(segment, 1, row));
                 covered_end += segment.row_end - segment.row_begin;
             }
 
             values.resize_fill(values.size() + static_cast<size_t>(to - from), calculateStatistic(statistic, *data));
+            if (nullable)
+                nullable->getNullMapData().resize_fill(values.size(), data->count == 0);
             from = to;
         }
 
@@ -152,17 +169,21 @@ public:
 
 private:
     const PhiSquaredStatistic statistic;
+    const bool filters_rows;
+
     std::optional<CrossTabPhiSquaredWindowData> data;
+    Int64 covered_end = 0;
+
     std::function<void()> check_cancellation;
     CancellationBudget budget;
-    Int64 covered_end = 0;
 };
 
 class AggregateWindowFunctionTheilsU final : public IAggregateWindowFunction
 {
 public:
-    AggregateWindowFunctionTheilsU()
-        : check_cancellation(makeCancellationCheck("theilsU"))
+    explicit AggregateWindowFunctionTheilsU(bool filters_rows_)
+        : filters_rows(filters_rows_)
+        , check_cancellation(makeCancellationCheck("theilsU"))
         , budget(check_cancellation)
     {
         data.emplace();
@@ -176,7 +197,8 @@ public:
 
     Int64 evaluate(const WindowBounds & bounds, const WindowArguments & arguments, IColumn & result) override
     {
-        auto & values = assert_cast<ColumnFloat64 &>(result).getData();
+        auto * nullable = typeid_cast<ColumnNullable *>(&result);
+        auto & values = assert_cast<ColumnFloat64 &>(nullable ? nullable->getNestedColumn() : result).getData();
 
         for (Int64 from = 0; from < bounds.rows;)
         {
@@ -187,11 +209,14 @@ public:
                 const ArgumentsSegment segment = arguments.segment(covered_end, frame_end);
                 budget.chargeUnits(segment.row_end - segment.row_begin);
                 for (size_t row = segment.row_begin; row < segment.row_end; ++row)
-                    data->add(hashArgument(segment, 0, row), hashArgument(segment, 1, row));
+                    if (!filters_rows || passesFilter(segment, row))
+                        data->add(hashArgument(segment, 0, row), hashArgument(segment, 1, row));
                 covered_end += segment.row_end - segment.row_begin;
             }
 
             values.resize_fill(values.size() + static_cast<size_t>(to - from), data->getResult());
+            if (nullable)
+                nullable->getNullMapData().resize_fill(values.size(), data->count == 0);
             from = to;
         }
 
@@ -199,27 +224,50 @@ public:
     }
 
 private:
+    const bool filters_rows;
+
     std::optional<TheilsUWindowData> data;
+    Int64 covered_end = 0;
+
     std::function<void()> check_cancellation;
     CancellationBudget budget;
-    Int64 covered_end = 0;
 };
+
+String getNameWithoutIf(const IAggregateFunction & function)
+{
+    String name = function.getName();
+    if (name.ends_with("If"))
+        name.resize(name.size() - 2);
+
+    return name;
+}
+
+bool hasNullableArgument(const IAggregateFunction & function)
+{
+    return std::ranges::any_of(function.getArgumentTypes(), [](const DataTypePtr & type) { return type->isNullable(); });
+}
+
+bool hasArgumentWithInternalNulls(const IAggregateFunction & function)
+{
+    return std::ranges::any_of(function.getArgumentTypes(), [](const DataTypePtr & type) { return canContainNull(*type) && !type->isNullable(); });
+}
 
 }
 
 AggregateWindowFunctionPtr tryCreateAggregateWindowFunctionCrossTab(const AggregateFunctionPtr & function, const WindowDescription & window)
 {
-    if (window.frame.begin_type == WindowFrame::BoundaryType::Unbounded && !function->getNestedFunction())
+    const String name = getNameWithoutIf(*function);
+    if (window.frame.begin_type == WindowFrame::BoundaryType::Unbounded && !hasArgumentWithInternalNulls(*function))
     {
-        const String name = function->getName();
+        const bool filters_rows = name != function->getName() || hasNullableArgument(*function);
         if (name == "cramersV")
-            return std::make_shared<AggregateWindowFunctionPhiSquared>(PhiSquaredStatistic::CramersV);
+            return std::make_shared<AggregateWindowFunctionPhiSquared>(PhiSquaredStatistic::CramersV, filters_rows);
         if (name == "cramersVBiasCorrected")
-            return std::make_shared<AggregateWindowFunctionPhiSquared>(PhiSquaredStatistic::CramersVBiasCorrected);
+            return std::make_shared<AggregateWindowFunctionPhiSquared>(PhiSquaredStatistic::CramersVBiasCorrected, filters_rows);
         if (name == "contingency")
-            return std::make_shared<AggregateWindowFunctionPhiSquared>(PhiSquaredStatistic::Contingency);
+            return std::make_shared<AggregateWindowFunctionPhiSquared>(PhiSquaredStatistic::Contingency, filters_rows);
         if (name == "theilsU")
-            return std::make_shared<AggregateWindowFunctionTheilsU>();
+            return std::make_shared<AggregateWindowFunctionTheilsU>(filters_rows);
     }
 
     return nullptr;
