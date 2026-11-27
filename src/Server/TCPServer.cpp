@@ -91,7 +91,7 @@ void TCPServer::stop()
     if (!is_open)
         return;
 
-    /// Runs even if `shutdownReceive` throws: the accept thread uses this object (a failed join terminates).
+    /// A failed join terminates: the accept thread uses this object.
     SCOPE_EXIT({
         if (accepting.exchange(false))
             accept_thread.join();
@@ -110,7 +110,15 @@ void TCPServer::stop()
     // returns ENOTCONN, so accept() is not explicitly awakened.
 #if !defined(OS_DARWIN) && !defined(OS_SUNOS)
     // Shutdown the listen socket before stopping tcp server to avoid 2.5second delay
-    socket.shutdownReceive();
+    try
+    {
+        socket.shutdownReceive();
+    }
+    catch (...)
+    {
+        /// Only an early wake-up: the accept thread also stops within its 250 ms poll.
+        tryLogCurrentException(log, "Cannot shut down the listening socket", LogsLevel::warning);
+    }
 #endif
 }
 

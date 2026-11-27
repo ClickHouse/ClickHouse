@@ -34,13 +34,10 @@ HTTPServerConnection::HTTPServerConnection(const StreamSocket& socket, HTTPServe
 	_pFactory(pFactory)
 {
 	poco_check_ptr (pFactory);
-	
 }
 
 
-HTTPServerConnection::~HTTPServerConnection()
-{
-}
+HTTPServerConnection::~HTTPServerConnection() = default;
 
 
 void HTTPServerConnection::run()
