@@ -12,6 +12,22 @@ SELECT removeGarbageParametersFromURL('https://example.com/?h=d41d8cd98f00b204e9
 SELECT removeGarbageParametersFromURL('https://example.com/?a=aaaaaaaaaaaaaaaa&b=0000000000000000&c=1458904227333123&d=0a0a0a0a0a0a0a0a&e=deadbeefdeadbeef');
 SELECT removeGarbageParametersFromURL('https://example.com/?utm_campaign=SummerSaleCampaign&utm_content=summer_sale_2024&q=how+to+cook+pasta+at+home&host=www.example.com&path=/account/settings/profile&ts=1458904227333&v=1.584962500721156');
 
+-- Boundaries: base64 needs 11 symbols without padding and at most two `=`, hex needs 16 digits, every part but the last
+-- needs 11 symbols, and a repeated pattern is not close to uniform.
+SELECT removeGarbageParametersFromURL(arrayJoin([
+    'https://example.com/?v=dQw4w9WgXc',
+    'https://example.com/?v=dQw4w9WgXc=',
+    'https://example.com/?v=dQw4w9WgXcQ==',
+    'https://example.com/?v=dQw4w9WgXcQ===',
+    'https://example.com/?h=d41d8cd98f00b204',
+    'https://example.com/?v=Xyz1Xyz1Xyz1Xyz1Xyz1',
+    'https://example.com/?v=dQw4w9WgXcQ.mp4',
+    'https://example.com/?v=.dQw4w9WgXcQ',
+    'https://example.com/?v=dQw4w9WgXcQ..q3Cx9Lm2RtW',
+    'https://example.com/?v=dQw4w9WgXcQ.',
+    'https://example.com/?t=eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.'
+]));
+
 -- Position of the removed parameter, flags, empty values, hash routes and `?` inside a name or a value.
 SELECT removeGarbageParametersFromURL(arrayJoin([
     'https://example.com/?v=dQw4w9WgXcQ&a=1',

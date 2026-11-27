@@ -109,7 +109,7 @@ bool isGarbage(const char * begin, const char * end)
     {
         if (*pos == '.')
         {
-            if (part_size > 0 && part_size < min_base64_length)
+            if (part_size < min_base64_length)
                 return false;
             part_size = 0;
             continue;
@@ -230,7 +230,7 @@ REGISTER_FUNCTION(RemoveGarbageParametersFromURL)
 Removes URL parameters whose values look like random tokens, such as session IDs, signatures, hashes and JWTs.
 
 A value is removed when both hold:
-- It is hex of at least 16 digits, or base64 of at least 11 characters. Base64 can use the standard or the URL-safe alphabet, with or without `=` padding. It can be split by `.` into parts of at least 11 characters each, as in JWT.
+- It is hex of at least 16 digits, or base64 of at least 11 characters without padding. A value of hex digits only is checked as hex. Base64 can use the standard or the URL-safe alphabet, with up to two `=` of padding. It can be split by `.` into parts of at least 11 characters each, as in JWT, and the last part can be empty.
 - Its symbol histogram is close to uniform. Letters, digits and other symbols occur in the proportions of a random string, and no symbol repeats much more often than in one.
 
 A removed parameter goes together with one `&` next to it. The `?` and `#` delimiters stay, as with `cutURLParameter`.
