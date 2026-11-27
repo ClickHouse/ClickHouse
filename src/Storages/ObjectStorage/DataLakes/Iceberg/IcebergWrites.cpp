@@ -142,6 +142,36 @@ static constexpr auto MAX_TRANSACTION_RETRIES = 100;
 namespace
 {
 
+/// Whether an incremental refresh of a materialized view has a cursor different from the one of the current snapshot.
+/// A refresh that appends nothing (e.g. its query filters out all the new rows of the source) has still consumed these
+/// rows, so its cursor is committed in a snapshot without data files: otherwise the next refresh would start from the
+/// previous cursor (and fail if the source no longer keeps these rows). An unchanged cursor is not committed, so that
+/// an idle refresh does not add a snapshot.
+bool hasNewRefreshCursor(const Poco::JSON::Object::Ptr & metadata, const ContextPtr & context)
+{
+    auto streaming_cursor = context->getStreamingCursor();
+    if (!streaming_cursor)
+        return false;
+
+    const String cursor = refreshCursorToStorage(streaming_cursor->tree);
+    if (!metadata->has(Iceberg::f_current_snapshot_id) || metadata->isNull(Iceberg::f_current_snapshot_id) || !metadata->has(Iceberg::f_snapshots))
+        return true;
+
+    const auto current_snapshot_id = metadata->getValue<Int64>(Iceberg::f_current_snapshot_id);
+    auto snapshots = metadata->getArray(Iceberg::f_snapshots);
+    for (size_t i = 0; i < snapshots->size(); ++i)
+    {
+        const auto snapshot = snapshots->getObject(static_cast<UInt32>(i));
+        if (snapshot->getValue<Int64>(Iceberg::f_metadata_snapshot_id) != current_snapshot_id)
+            continue;
+        if (!snapshot->has(Iceberg::f_summary))
+            return true;
+        const auto summary = snapshot->getObject(Iceberg::f_summary);
+        return !summary->has(Iceberg::f_refresh_cursor) || summary->getValue<String>(Iceberg::f_refresh_cursor) != cursor;
+    }
+    return true;
+}
+
 bool canDumpIcebergStats(const Field & field, DataTypePtr type)
 {
     switch (type->getTypeId())
@@ -1699,7 +1729,16 @@ void IcebergStorageSink::finalizeBuffers()
     data_file_uploads.finalize();
 
     if (writer_per_partition_key.empty())
-        return;
+    {
+        /// An incremental refresh that appends nothing may still have to commit its cursor, see `hasNewRefreshCursor`.
+        /// A sink without data has not read the metadata yet.
+        if (!context->getStreamingCursor())
+            return;
+        if (!metadata)
+            readLatestMetadata();
+        if (!hasNewRefreshCursor(metadata, context))
+            return;
+    }
 
     snapshot_id = MetadataGenerator(metadata, context->getSettingsRef()[Setting::iceberg_metadata_previous_versions_max]).generateSnapshotId();
 
@@ -1723,6 +1762,10 @@ void IcebergStorageSink::finalizeBuffers()
             waitBeforeCommitRetry(delay_ms);
 
             readLatestMetadata();
+
+            /// Another sink of the same refresh committed the cursor, and this one has nothing else to commit.
+            if (writer_per_partition_key.empty() && !hasNewRefreshCursor(metadata, context))
+                return;
         }
 
         if (initializeMetadata())
@@ -1975,7 +2018,8 @@ bool IcebergStorageSink::initializeMetadata()
                 if (!single_manifest)
                     write_manifest();
             }
-            if (single_manifest)
+            /// A snapshot of an incremental refresh that appends nothing has no data files, see `hasNewRefreshCursor`.
+            if (single_manifest && !writer_per_partition_key.empty())
                 write_manifest();
         }
         {
