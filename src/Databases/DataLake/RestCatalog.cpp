@@ -1094,7 +1094,7 @@ BigLakeCatalog::BigLakeCatalog(
 }
 
 JWTEndpointAuth::JWTEndpointAuth(
-    const std::string & token_url_, const std::string & token_header_,
+    std::string_view token_url_, std::string_view token_header_,
     const std::string & response_format_, const std::string & response_field_,
     DB::ContextPtr context_, bool allow_server_credentials_in_user_queries_)
     : DB::WithContext(context_)
@@ -1134,7 +1134,7 @@ AccessToken JWTEndpointAuth::retrieveToken() const
     Poco::URI url;
     try
     {
-        url = Poco::URI(token_url);
+        url = Poco::URI(String(token_url));
     }
     catch (...)
     {

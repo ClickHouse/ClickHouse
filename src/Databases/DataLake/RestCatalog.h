@@ -30,7 +30,7 @@ class JWTEndpointAuth : public DB::WithContext
 {
 public:
     JWTEndpointAuth(
-        const std::string & token_url_, const std::string & token_header_,
+        std::string_view token_url_, std::string_view token_header_,
         const std::string & response_format_, const std::string & response_field_,
         DB::ContextPtr context_, bool allow_server_credentials_in_user_queries_);
 
@@ -39,7 +39,7 @@ public:
 private:
     AccessToken retrieveToken() const;
 
-    const std::string token_url;
+    const DB::SecretString token_url;
     DB::HTTPHeaderEntries token_headers;
     const std::string response_format;
     const std::string response_field;

@@ -88,8 +88,8 @@ namespace DatabaseDataLakeSetting
     extern const DatabaseDataLakeSettingsSecretString catalog_credential;
     extern const DatabaseDataLakeSettingsBool use_unity_catalog_v2;
     extern const DatabaseDataLakeSettingsSecretString auth_header;
-    extern const DatabaseDataLakeSettingsString bearer_token_endpoint;
-    extern const DatabaseDataLakeSettingsString bearer_token_header;
+    extern const DatabaseDataLakeSettingsSecretString bearer_token_endpoint;
+    extern const DatabaseDataLakeSettingsSecretString bearer_token_header;
     extern const DatabaseDataLakeSettingsString bearer_token_response_format;
     extern const DatabaseDataLakeSettingsString bearer_token_response_field;
     extern const DatabaseDataLakeSettingsString auth_scope;

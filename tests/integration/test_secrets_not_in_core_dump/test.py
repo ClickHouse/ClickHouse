@@ -1,8 +1,11 @@
+import os
+
 import pyarrow.flight as flight
 import pytest
 import redis
 
 from helpers.cluster import ClickHouseCluster
+from helpers.mock_servers import start_mock_servers
 
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
@@ -19,6 +22,10 @@ DICTIONARY_PASSWORD = "nodump_dictionary_password_5c1e8a3f7b2d9064"
 SQL_NAMED_COLLECTION_PASSWORD = "nodump_sql_named_collection_password_6e2a9c4f8b1d3075"
 TABLE_SETTING_DISK_KEY = "nodump_table_disk_key_1f8b2c4d6e"
 DATA_LAKE_CATALOG_CREDENTIAL = "nodump_data_lake_catalog_credential_3d7f1b9e5a2c8046"
+LAZY_BEARER_ENDPOINT_SECRET = "nodump_lazy_bearer_endpoint_4e8c1a6b9d2f7053"
+LAZY_BEARER_HEADER_SECRET = "nodump_lazy_bearer_header_7c3e9a1d5b2f8064"
+BEARER_ENDPOINT_SECRET = "nodump_bearer_endpoint_2a6e8c4d1b9f3075"
+BEARER_HEADER_SECRET = "nodump_bearer_header_5d1a7c9e3b2f8064"
 REDIS_PASSWORD = "nodump_redis_password_9e4b7c2a6f1d3085"
 S3_TABLE_SESSION_TOKEN = "nodump_s3_table_session_token_4a8d2f6b9c1e3057"
 MEMORY_DATABASE_TABLE_SECRET = "nodump_memory_database_table_secret_8c2e5a9f3b7d1064"
@@ -42,6 +49,10 @@ SECRETS = [
     SQL_NAMED_COLLECTION_PASSWORD,
     TABLE_SETTING_DISK_KEY,
     DATA_LAKE_CATALOG_CREDENTIAL,
+    LAZY_BEARER_ENDPOINT_SECRET,
+    LAZY_BEARER_HEADER_SECRET,
+    BEARER_ENDPOINT_SECRET,
+    BEARER_HEADER_SECRET,
     REDIS_PASSWORD,
     S3_TABLE_SESSION_TOKEN,
     MEMORY_DATABASE_TABLE_SECRET,
@@ -58,6 +69,11 @@ SECRETS = [
 def started_cluster():
     try:
         cluster.start()
+        start_mock_servers(
+            cluster,
+            os.path.dirname(__file__),
+            [("bearer_catalog_server.py", "node", 8085)],
+        )
         yield cluster
     finally:
         cluster.shutdown()
@@ -104,6 +120,24 @@ def test_core_dump_has_no_secrets(started_cluster):
         "ATTACH DATABASE data_lake ENGINE = DataLakeCatalog('http://localhost:1/') "
         f"SETTINGS catalog_type = 'rest', warehouse = 'warehouse', catalog_credential = 'client_id:{DATA_LAKE_CATALOG_CREDENTIAL}'"
     )
+    node.query(
+        "ATTACH DATABASE lazy_bearer_catalog ENGINE = DataLakeCatalog('http://localhost:1/') "
+        "SETTINGS catalog_type = 'rest', warehouse = 'warehouse', "
+        f"bearer_token_endpoint = 'http://localhost:1/token?credential={LAZY_BEARER_ENDPOINT_SECRET}', "
+        f"bearer_token_header = 'X-Vault-Token: {LAZY_BEARER_HEADER_SECRET}'"
+    )
+    node.query(
+        "CREATE DATABASE bearer_catalog ENGINE = DataLakeCatalog('http://127.0.0.1:8085') "
+        "SETTINGS catalog_type = 'rest', warehouse = 'warehouse', "
+        f"bearer_token_endpoint = 'http://127.0.0.1:8085/token?credential={BEARER_ENDPOINT_SECRET}', "
+        f"bearer_token_header = 'X-Vault-Token: {BEARER_HEADER_SECRET}'",
+        settings={
+            "allow_database_iceberg": 1,
+            "s3_allow_server_credentials_in_user_queries": 1,
+        },
+    )
+    # Initialize `JWTEndpointAuth` so its stored URL and parsed header are covered.
+    assert node.query("SHOW TABLES FROM bearer_catalog") == ""
     redis.Redis(
         host="localhost", port=started_cluster.redis_port, password="clickhouse"
     ).config_set("requirepass", REDIS_PASSWORD)
