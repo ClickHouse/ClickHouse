@@ -204,9 +204,10 @@ static void initRowsBeforeLimit(const Processors & pipeline_processors, IOutputF
     /// Output -> the output whose rows it carries, through `DelayedPorts` and an `Offset` that skips nothing: they move the
     /// rows of each input only to its paired output. An `Offset` that skips rows takes them from whichever input comes first.
     UnorderedMapWithMemoryTracking<const OutputPort *, OutputPort *> paired_sources;
-    /// Producers of the `DelayedPorts` inputs that have no output (its delayed pipelines), followed from every output.
+    /// Producers of the `DelayedPorts` inputs without an output (the pipelines it waits for: sets, materialized CTEs,
+    /// block nested loop join build sides), followed from every output.
     UnorderedMapWithMemoryTracking<const IProcessor *, VectorWithMemoryTracking<OutputPort *>> unpaired_sources;
-    /// Owners of `paired_sources`, a few per pipeline: searched for every pushed child, cheaper than a hash lookup.
+    /// Owners of `paired_sources`, a few per pipeline.
     VectorWithMemoryTracking<const IProcessor *> paired_processors;
     for (const auto & processor : pipeline_processors)
     {
