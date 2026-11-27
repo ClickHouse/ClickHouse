@@ -584,13 +584,29 @@ void checkIntegerArgumentFitsInt64(const IColumn & column, std::string_view func
     if (const auto * column_const = typeid_cast<const ColumnConst *>(values))
         values = &column_const->getDataColumn();
 
+    /// A function that handles NULLs itself (`arraySlice`) gets a `Nullable` argument: the values under NULL are not inputs.
+    const NullMap * null_map = nullptr;
+    if (const auto * column_nullable = typeid_cast<const ColumnNullable *>(values))
+    {
+        null_map = &column_nullable->getNullMapData();
+        values = &column_nullable->getNestedColumn();
+    }
+
     /// Only UInt64 can exceed Int64, which `IColumn::getInt` returns: 2^63 or more would be read as a negative number
     const auto * column_uint64 = typeid_cast<const ColumnVector<UInt64> *>(values);
     if (!column_uint64)
         return;
 
     const auto & data = column_uint64->getData();
-    const auto max_value = findExtremeMax(data.data(), 0, data.size());
+    std::optional<UInt64> max_value;
+    if (null_map)
+    {
+        for (size_t i = 0; i < data.size(); ++i)
+            if (!(*null_map)[i] && (!max_value || data[i] > *max_value))
+                max_value = data[i];
+    }
+    else
+        max_value = findExtremeMax(data.data(), 0, data.size());
     if (max_value && *max_value > static_cast<UInt64>(std::numeric_limits<Int64>::max()))
         throw Exception(
             ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
