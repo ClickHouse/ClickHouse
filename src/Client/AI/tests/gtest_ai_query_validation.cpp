@@ -222,6 +222,13 @@ TEST(AIQueryValidation, RejectsRunningQueriesAndAccessMetadata)
     EXPECT_FALSE(isAllowedServerOwnedTableForAIAgent("system", "user_defined_functions"));
     EXPECT_FALSE(isAllowedServerOwnedTableForAIAgent("system", "workloads"));
     EXPECT_FALSE(isAllowedServerOwnedTableForAIAgent("system", "resources"));
+    /// The introspection of the server process shows the addresses of its code.
+    EXPECT_FALSE(isAllowedServerOwnedTableForAIAgent("system", "stack_trace"));
+    EXPECT_FALSE(isAllowedServerOwnedTableForAIAgent("system", "symbols"));
+    EXPECT_FALSE(isAllowedServerOwnedTableForAIAgent("system", "jemalloc_sampled_allocations"));
+    EXPECT_FALSE(isAllowedServerOwnedTableForAIAgent("system", "jemalloc_profile_text"));
+    /// The statistics of the allocator are numbers, like the other metrics of the server.
+    EXPECT_TRUE(isAllowedServerOwnedTableForAIAgent("system", "jemalloc_bins"));
     EXPECT_TRUE(isAllowedServerOwnedTableForAIAgent("system", "columns"));
     EXPECT_TRUE(isAllowedServerOwnedTableForAIAgent("system", "parts"));
 }

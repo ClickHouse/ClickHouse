@@ -1058,6 +1058,15 @@ bool isAllowedServerOwnedTableForAIAgent(const String & database, const String &
         "user_defined_functions",
         "workloads",
         "resources",
+        /// The introspection of the server process, which is neither the data nor the schema of
+        /// the user: the stacks of its threads (`stack_trace`), the symbols of its binary with
+        /// their addresses (`symbols`), and the heap profile of jemalloc with the stacks of the
+        /// allocations (`jemalloc_sampled_allocations`, `jemalloc_profile_text`). The addresses
+        /// of the code of the server must not leave it without the user seeing it.
+        "stack_trace",
+        "symbols",
+        "jemalloc_sampled_allocations",
+        "jemalloc_profile_text",
     };
     if (disallowed_system_tables.contains(table))
         return false;
