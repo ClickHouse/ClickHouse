@@ -2771,6 +2771,8 @@ void TCPHandler::processQuery(std::shared_ptr<QueryState> & state)
     if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_CLIENT_INFO)
     {
         client_info.read(*in, client_tcp_protocol_version);
+        if (client_info.interface == ClientInfo::Interface::TCP_INTERSERVER && !is_interserver_mode)
+            client_info.interface = ClientInfo::Interface::TCP;
 
         /// Validate query_kind: only INITIAL_QUERY and SECONDARY_QUERY are valid
         /// in a Query packet. NO_QUERY and any other value would bypass the
