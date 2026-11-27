@@ -2128,26 +2128,17 @@ protected:
         return running_tasks.waitForStage(stage_name, timeout_ms);
     }
 
-    /// Upper bound of the plans in one `start_tasks` batch; a single larger plan goes alone.
-    static constexpr size_t MAX_TASK_BATCH_PLAN_BYTES = 100 * 1024 * 1024;
-
-    struct QueuedBatch
-    {
-        DistributedQueryTaskBatch batch;
-        size_t plan_bytes = 0;
-    };
-
     /// The batches of one worker, sent by one sender at a time, so the worker gets them in order.
     struct WorkerSendQueue
     {
         std::mutex mutex;
-        DequeWithMemoryTracking<QueuedBatch> batches TSA_GUARDED_BY(mutex);
+        DequeWithMemoryTracking<DistributedQueryTaskBatch> batches TSA_GUARDED_BY(mutex);
         bool sending TSA_GUARDED_BY(mutex) = false;
     };
 
     using StagePerWorker = MapWithMemoryTracking<WorkerIndex, DistributedQueryTaskBatch::Stage>;
 
-    /// Appends the tasks of a stage to the batches of their workers, or one batch per task when batching is off;
+    /// Appends the tasks of a stage to the batch of their worker, or one batch per task when batching is off;
     /// `dispatchQueuedTasks` sends them.
     void queueStageTasks(const String & stage_name, const DistributedQueryStage & stage, const DistributedQueryTaskDescription & stage_description)
     {
@@ -2160,9 +2151,8 @@ protected:
         for (const auto & task : stage.tasks)
         {
             checkBeforeStartingTask();
-            auto & queued = addBatch(task_to_host_map->getTaskWorkerIndex(task.task_id), stage_description);
-            queued.batch.stages.push_back({stage_name, stage_description.serialized_query_plan, {{task, getExchangeStreamSources(task)}}});
-            queued.plan_bytes += stage_description.serialized_query_plan->size();
+            auto & batch = addBatch(task_to_host_map->getTaskWorkerIndex(task.task_id), stage_description);
+            batch.stages.push_back({stage_name, stage_description.serialized_query_plan, {{task, getExchangeStreamSources(task)}}});
         }
     }
 
@@ -2181,38 +2171,34 @@ protected:
         return stage_per_worker;
     }
 
-    /// Appends each worker's stage to its last queued batch, or to a new one when the plans would pass the cap.
+    /// Appends each worker's stage to the worker's batch of this flush.
     void appendStagesToBatches(StagePerWorker stage_per_worker, const DistributedQueryTaskDescription & stage_description)
     {
-        const size_t plan_bytes = stage_description.serialized_query_plan->size();
         for (auto & [worker, batch_stage] : stage_per_worker)
         {
             auto & batches = queued_batches[worker];
-            auto & queued = batches.empty() || batches.back().plan_bytes + plan_bytes > MAX_TASK_BATCH_PLAN_BYTES
-                ? addBatch(worker, stage_description)
-                : batches.back();
-            queued.batch.stages.push_back(std::move(batch_stage));
-            queued.plan_bytes += plan_bytes;
+            auto & batch = batches.empty() ? addBatch(worker, stage_description) : batches.back();
+            batch.stages.push_back(std::move(batch_stage));
         }
     }
 
     /// A new queued batch of `worker`, with the query's fields.
-    QueuedBatch & addBatch(WorkerIndex worker, const DistributedQueryTaskDescription & stage_description)
+    DistributedQueryTaskBatch & addBatch(WorkerIndex worker, const DistributedQueryTaskDescription & stage_description)
     {
-        auto & queued = queued_batches[worker].emplace_back();
-        queued.batch.initial_query_id = stage_description.initial_query_id;
-        queued.batch.exchanges = stage_description.exchanges;
-        queued.batch.settings_changes = stage_description.settings_changes;
-        return queued;
+        auto & batch = queued_batches[worker].emplace_back();
+        batch.initial_query_id = stage_description.initial_query_id;
+        batch.exchanges = stage_description.exchanges;
+        batch.settings_changes = stage_description.settings_changes;
+        return batch;
     }
 
     void dispatchQueuedTasks() override
     {
         for (auto & [worker, batches] : queued_batches)
         {
-            for (const auto & queued : batches)
+            for (const auto & batch : batches)
             {
-                for (const auto & batch_stage : queued.batch.stages)
+                for (const auto & batch_stage : batch.stages)
                 {
                     for (const auto & batch_task : batch_stage.tasks)
                     {
@@ -2231,8 +2217,8 @@ protected:
             bool start_sender = false;
             {
                 std::lock_guard lock(queue->mutex);
-                for (auto & queued : batches)
-                    queue->batches.push_back(std::move(queued));
+                for (auto & batch : batches)
+                    queue->batches.push_back(std::move(batch));
                 start_sender = !std::exchange(queue->sending, true);
             }
 
@@ -2281,7 +2267,7 @@ protected:
         {
             while (true)
             {
-                QueuedBatch queued;
+                DistributedQueryTaskBatch batch;
                 {
                     std::lock_guard lock(queue->mutex);
                     /// A cancelled query needs no more tasks; the teardown cancels the tracked ones on their worker.
@@ -2291,17 +2277,17 @@ protected:
                         queue->sending = false;
                         return;
                     }
-                    queued = std::move(queue->batches.front());
+                    batch = std::move(queue->batches.front());
                     queue->batches.pop_front();
                 }
 
                 size_t task_count = 0;
-                for (const auto & batch_stage : queued.batch.stages)
+                for (const auto & batch_stage : batch.stages)
                     task_count += batch_stage.tasks.size();
-                LOG_DEBUG(logger, "Sending a batch of {} tasks of {} stages to {}", task_count, queued.batch.stages.size(), worker_endpoint_uris[worker]);
-                sendTaskBatch(worker_endpoint_uris[worker], unique_query_id_string, queued.batch, unique_query_id_string, collectors, context);
+                LOG_DEBUG(logger, "Sending a batch of {} tasks of {} stages to {}", task_count, batch.stages.size(), worker_endpoint_uris[worker]);
+                sendTaskBatch(worker_endpoint_uris[worker], unique_query_id_string, batch, unique_query_id_string, collectors, context);
                 ProfileEvents::increment(ProfileEvents::DistributedPlanTaskBatches);
-                for (const auto & batch_stage : queued.batch.stages)
+                for (const auto & batch_stage : batch.stages)
                     for (const auto & batch_task : batch_stage.tasks)
                         running_tasks.startPolling(batch_stage.name, makeUniqueTaskId(unique_query_id, batch_task.task.task_id));
             }
@@ -2324,7 +2310,7 @@ protected:
     /// Stages queued since `startStage` last flushed; query thread only.
     size_t stages_since_flush = 0;
     /// The batches `startStage` built and `dispatchQueuedTasks` has not handed over yet; query thread only.
-    UnorderedMapWithMemoryTracking<WorkerIndex, VectorWithMemoryTracking<QueuedBatch>> queued_batches;
+    UnorderedMapWithMemoryTracking<WorkerIndex, VectorWithMemoryTracking<DistributedQueryTaskBatch>> queued_batches;
     /// The send queue of each worker that got batches; query thread only, a sender job holds its own queue.
     UnorderedMapWithMemoryTracking<WorkerIndex, std::shared_ptr<WorkerSendQueue>> send_queues;
     /// Sends the batches, so the query thread never waits for a worker; set in the constructor. Declared last, so its jobs are
