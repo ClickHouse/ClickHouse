@@ -1,5 +1,5 @@
 -- Tags: no-fasttest
--- no-fasttest: 1M-row joins, about 18 of them, and one of 4M rows.
+-- no-fasttest: 1M-row joins, about 20 of them, and one of 4M rows.
 -- Random settings limits: max_block_size=(65409, 65409); grace_hash_join_initial_buckets=(1, 1); query_plan_optimize_join_order_randomize=(0, 0); query_plan_read_in_order_through_join=(0, 0); enable_join_runtime_filters=(0, 0)
 
 -- A hash join that fits in `max_bytes_before_external_join` stays in memory, and one that does not switches to
@@ -98,6 +98,17 @@ SELECT 'duplicate keys spill', count(), sum(r.v)
 FROM (SELECT number AS k FROM numbers(100000)) AS l
 INNER JOIN (SELECT number % 100000 AS k, number AS v FROM numbers(1000000)) AS r ON l.k = r.k
 SETTINGS hash_join_layout = 'parallel', max_threads = 4, max_bytes_before_external_join = 10000000, log_comment = 'spill_at_threshold_duplicate_keys_spills';
+
+-- 1000 keys in 1M right rows: a block has far fewer new keys than rows, and the join fits.
+SELECT 'repeated keys fit', count(), sum(r.v)
+FROM (SELECT number AS k FROM numbers(1000)) AS l
+ANY LEFT JOIN (SELECT number % 1000 AS k, intDiv(number, 1000000) AS v FROM numbers(1000000)) AS r USING (k)
+SETTINGS hash_join_layout = 'serial', max_threads = 1, max_bytes_before_external_join = 3000000, log_comment = 'spill_at_threshold_repeated_keys_fits';
+
+SELECT 'repeated String keys fit', count(), sum(r.v)
+FROM (SELECT toString(number) AS k FROM numbers(1000)) AS l
+ANY LEFT JOIN (SELECT toString(number % 1000) AS k, intDiv(number, 1000000) AS v FROM numbers(1000000)) AS r USING (k)
+SETTINGS hash_join_layout = 'serial', max_threads = 1, max_bytes_before_external_join = 3000000, log_comment = 'spill_at_threshold_repeated_string_keys_fits';
 
 -- One key in every right row: a split cannot separate it, so the bucket goes over the threshold instead of
 -- splitting until it runs out of buckets. `v` is 0 in every row, so `sum` does not depend on the row that

@@ -9,6 +9,7 @@
 #include <Interpreters/JoinUtils.h>
 #include <Columns/IColumn.h>
 #include <Common/Arena.h>
+#include <Common/HashTable/HashSet.h>
 #include <Common/HashTable/Prefetching.h>
 #include <Common/ProfileEvents.h>
 #include <base/scope_guard.h>
@@ -937,7 +938,16 @@ private:
                 }
                 else
                 {
-                    const auto reserved = budget->reserve(estimateSlotGrowth(map, slot, selector.size(), bucket_rows));
+                    auto reserved = budget->reserve(estimateSlotGrowth(map, slot, selector.size(), bucket_rows));
+                    /// The estimate takes every row for a new key, so a block of repeated keys gets a second try with its new keys.
+                    if constexpr (!is_partitioned_fixed_table<HashMap>)
+                    {
+                        if (!reserved)
+                        {
+                            const auto new_keys = countNewKeys<TYPE, is_asof_join>(map, rows, selector);
+                            reserved = budget->reserve(estimateSlotGrowth(map, slot, 0, new_keys));
+                        }
+                    }
                     if (!reserved)
                         return false;
                     growth_reserved = *reserved;
@@ -1126,6 +1136,48 @@ private:
         if constexpr (is_set)
             result.is_inserted = new_keys != 0 && settings.must_keep_right_blocks;
         return result;
+    }
+
+    /// The keys of the rows of `selector` that are not in `map` yet, each counted once, per bucket. Call under the slot lock.
+    template <Type TYPE, bool is_asof_join, typename Map>
+    std::vector<UInt32> countNewKeys(const Map & map, const InsertRows & rows, const ScatteredBlock::Selector & selector) const
+    {
+        using KeyGetter = KeyGetterForType<TYPE, Map>::Type;
+        using KeySet = HashSet<typename Map::key_type, DefaultHash<typename Map::key_type>>;
+
+        KeyGetter key_getter = createJoinKeyGetter<KeyGetter, is_asof_join>(rows.key_columns, key_sizes);
+        IColumn::Filter skip_buffer;
+        const UInt8 * skip = buildRowSkipData(rows.null_map, rows.join_mask, skip_buffer, 0, rows.key_columns.at(0)->size());
+        Arena scratch_pool;
+        KeySet new_keys;
+        std::vector<UInt32> bucket_keys(Map::NUM_BUCKETS, 0);
+        auto count = [&](const auto & slot_rows)
+        {
+            const size_t num_rows = ScatteredBlock::Selector::size(slot_rows);
+            for (size_t i = 0; i < num_rows; ++i)
+            {
+                const size_t row = selectorIndexAt(slot_rows, i);
+                if (skip && skip[row])
+                    continue;
+
+                auto key_holder = key_getter.getKeyHolder(row, scratch_pool);
+                const auto & key = keyHolderGetKey(key_holder);
+                const size_t hash = map.hash(key);
+                const size_t bucket = getBucketOfKey<Map>(key, hash);
+                if (map.impls[bucket].find(key, hash))
+                    continue;
+
+                typename KeySet::LookupResult it;
+                bool inserted = false;
+                new_keys.emplace(key, it, inserted);
+                bucket_keys[bucket] += inserted;
+            }
+        };
+        if (selector.isContinuousRange())
+            count(selector.getRange());
+        else
+            count(selector.getIndexes());
+        return bucket_keys;
     }
 
     /// Routes each row the way `map` places its key: by `map.hash` and `getBucketOfKey`.
