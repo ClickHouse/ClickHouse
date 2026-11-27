@@ -81,10 +81,10 @@ Do not choose a final verdict until these gates are addressed. If a gate cannot 
 
 ATTRIBUTION
 Decide for every candidate Blocker or Major whether this PR introduces it, before choosing its severity.
-- Check the base: run the repro with a binary of the base (in CI, the master binary from `references/binaries.md`), or read the code of the base revision. A defect that gives the same result on the base is pre-existing.
+- Check the base: run the repro with a build of the base revision or of an earlier master commit, or read the code of the base revision. In CI, take the newest master build at or before the base: list the master commits from the base (`commits?sha=<base sha>` in `references/binaries.md`), not from the head of master. When the code that the repro reaches changed between that build and the base, read the base code instead. A defect that gives the same result on the base is pre-existing.
 - A pre-existing defect is in scope at full severity only when the PR claims to fix it or its class. For a `Bug Fix`, the class is the bad value or state that the fix rejects: check the other producers of that value before anything inside the fixed lines. An unfixed producer reachable by a query is the most important finding of that review.
 - Report every other pre-existing defect only as one line in the summary section `Pre-existing issues`, with no inline comment. Find the GitHub issue that tracks it: one linked in the PR or in a reply, or one found with the search command of the review tools. An untracked defect only withholds the approval (see Final Verdict).
-- A behavior change that the PR states as its purpose (in the title, the description, the changelog entry, or the `Backward Incompatible Change` category) is not a finding. This includes fixing a bug or closing a security hole that someone may rely on: never ask for a setting or a `compatibility` value that restores a bug or an insecure behavior. When the PR changes user-visible behavior without saying so, the finding is the missing changelog category or entry, in `PR Metadata`.
+- A behavior change that the PR states as its purpose (in the title, the description, the changelog entry, or the `Backward Incompatible Change` category) is not a finding. This includes fixing a bug or closing a security hole that someone may rely on: never ask for a setting or a `compatibility` value that restores a bug or an insecure behavior. When the change is evidently intended but the PR does not state it, the finding is the missing changelog category or entry, in `PR Metadata`. A change that the PR does not intend, such as a different query result, is a correctness finding with the usual severity.
 
 SIGNAL AND UNCERTAINTY
 - Avoid reporting minor issues when unsure: style preferences, naming opinions, speculative refactors, and micro-optimizations should be omitted unless they clearly affect correctness, maintainability, or user-facing quality.
@@ -214,6 +214,8 @@ A defect that needs a step only an administrator can take before a user can reac
 - Server configuration: a Major when it is a configuration that an administrator would normally use; not a finding when the configuration only makes sense to weaken or break the server, such as disabling a protective limit or check.
 
 This does not cover data that the server reads back, such as part files, caches, and metadata: it becomes malformed without anyone choosing it (disk damage, another version, a user's `ATTACH` or `RESTORE`), so "Reading back a binary representation" keeps its severity.
+
+Security outranks these conditions: a finding for which `references/hardening-flags.md`, `references/access-checks.md`, or `references/memory-addresses.md` require a Blocker is a Blocker even without an observed runtime impact.
 
 Findings about tests, documentation, performance evidence, CI scripts, or PR metadata are never Blockers.
 
