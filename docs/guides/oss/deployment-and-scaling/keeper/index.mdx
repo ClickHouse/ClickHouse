@@ -1387,6 +1387,21 @@ section manually. Make sure you the edit files on all replicas as only the leade
 Alternatively, you can send a `reconfig` query through any ZooKeeper-compatible client.
 </Note>
 
+<Note>
+By default, `reconfig` requires the client to be authenticated with a `super` identity (configured via
+`keeper_server.superdigest`). The `reconfig` and `clickhouse-keeper-client` examples below assume such a
+session (for example, `clickhouse-keeper-client --identity 'super:<password>'`, or `addauth digest
+super:<password>` from a client). Set `require_super_auth_for_reconfiguration` to `false` to restore the
+previous behaviour where any client may reconfigure the cluster. If you set it, remove it again before
+downgrading to a Keeper version that predates the setting, as Keeper refuses to start on an unknown
+coordination setting.
+
+This requirement applies to the ZooKeeper `reconfig` operation. The four-letter-word `rcfg` command is a
+separate reconfiguration path that is not tied to a client session, so it is not covered by this check; it
+is excluded from the default `four_letter_word_white_list` and should be enabled (explicitly or via `*`)
+only on a trusted network.
+</Note>
+
 A virtual node `/keeper/config` contains last committed cluster configuration in the following format:
 
 ```text
@@ -1421,9 +1436,13 @@ reconfig remove "3,4"
 reconfig add "server.5=localhost:5123;participant;8"
 ```
 
-And here are examples for `kazoo`:
+And here are examples for `kazoo` (authenticate as `super` first, unless
+`require_super_auth_for_reconfiguration` is disabled):
 
 ```python
+# Authenticate with the super identity before reconfiguring
+zk.add_auth("digest", "super:<password>")
+
 # Add two new servers, remove two other servers
 reconfig(joining="server.5=localhost:123,server.6=localhost:234;learner", leaving="3,4")
 

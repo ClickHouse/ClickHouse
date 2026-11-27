@@ -949,6 +949,15 @@ bool KeeperStorage::checkCommittedACL(std::string_view path, int32_t permission,
     return checkACL(acl_id, permission, session_id, /*committed=*/ true);
 }
 
+bool KeeperStorage::hasSuperAuth(int64_t session_id) const
+{
+    /// Reconfiguration is processed outside the Raft commit path, so an auth request from the same session
+    /// may still be uncommitted here. Check the uncommitted view (which also covers committed auth) so a
+    /// client that authenticated just before `reconfig` is not spuriously rejected. An attacker cannot
+    /// obtain a `super`-scheme auth without the configured superdigest, so this stays safe.
+    return uncommitted_state.hasACL(session_id, /*committed=*/ false, [](const auto & auth_id) { return auth_id.scheme == "super"; });
+}
+
 void KeeperStorage::finalize()
 {
     if (finalized)

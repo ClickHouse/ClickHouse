@@ -9,6 +9,7 @@
         <enable_reconfiguration>true</enable_reconfiguration>
 
         <coordination_settings>
+            <require_super_auth_for_reconfiguration>false</require_super_auth_for_reconfiguration>
             <operation_timeout_ms>5000</operation_timeout_ms>
             <session_timeout_ms>10000</session_timeout_ms>
             <raft_logs_level>trace</raft_logs_level>
