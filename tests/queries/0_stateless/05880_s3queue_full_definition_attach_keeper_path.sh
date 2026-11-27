@@ -23,7 +23,7 @@ FROM system.tables WHERE database = currentDatabase() ORDER BY name;
 "
 
 # RESTORE assigns the UUID of the table itself, so a {uuid} in keeper_path stays allowed.
-${CLICKHOUSE_CLIENT} -m -q "
+${CLICKHOUSE_CLIENT} --database_replicated_allow_explicit_uuid 1 -m -q "
 CREATE TABLE with_uuid UUID '${with_uuid_uuid}' (a UInt32) ${engine}, keeper_path = '/clickhouse/${CLICKHOUSE_TEST_UNIQUE_NAME}/{uuid}';
 BACKUP TABLE with_uuid TO Disk('backups', '${CLICKHOUSE_TEST_UNIQUE_NAME}') FORMAT Null;
 RESTORE TABLE with_uuid AS restored FROM Disk('backups', '${CLICKHOUSE_TEST_UNIQUE_NAME}') FORMAT Null;
