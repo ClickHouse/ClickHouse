@@ -78,11 +78,11 @@ struct SharedState
     size_t num_readers = 1;
     GPUDecompressionMode decompression = GPUDecompressionMode::DEVICE;
     bool collect = false;
-    /// Of each column of the filter: the key or the value column of the same name and type, among the keys and then
-    /// the values, which is read once for both.
-    std::vector<std::optional<uint32_t>> filter_aliases;
-
-    std::shared_ptr<const GPU::GPUReadLayout> layout;
+    /// The columns read: the keys, the values, then the columns of the filter that are neither, with the element types
+    /// the device takes them as, and the positions among them of what the lanes take.
+    std::vector<NameAndTypePair> read_columns;
+    std::vector<GPU::GPUElementType> column_types;
+    GPU::GPUBatchColumns batch_columns;
     /// The parts the groups of the lanes are split into by the keys, each merged on its own, see `GPUSplitLanes`.
     size_t num_parts = 1;
 
@@ -342,7 +342,7 @@ public:
         , state(std::move(state_))
         , query_status(std::move(query_status_))
         , pool(std::make_shared<GPU::GPUStagedBatchPool>())
-        , stager(state->layout, pool)
+        , stager(state->column_types, state->batch_bytes, pool)
     {
     }
 
@@ -379,7 +379,7 @@ protected:
     }
 
 private:
-    /// Hands what the reader reads of a part to the stager, by the streams of the layout.
+    /// Hands what the reader reads of a part to the stager, by the columns of the read.
     class Feed final : public MergeTreeCompressedColumnsReader::Consumer
     {
     public:
@@ -387,10 +387,8 @@ private:
 
         Feed(GPUCompressedBlocksSource & source_, const IMergeTreeDataPart & part_) : source(source_), part(part_) { }
 
-        /// Of each column read: its name, and the layout's stream of its values and of its sizes.
+        /// Of each column read: its name.
         std::vector<String> names;
-        std::vector<size_t> values_streams;
-        std::vector<size_t> sizes_streams;
         /// Of the columns read, the bytes they expand to.
         size_t bytes = 0;
 
@@ -405,18 +403,18 @@ private:
             codecOrThrow(block.method, names[column] + (stream == Stream::Sizes ? ".size" : ""), part);
             ProfileEvents::increment(ProfileEvents::GPUDecompressionBytes, block.payload.size());
             source.stager.addCompressedBlock(
-                layoutStreamOf(column, stream), block.method, block.payload, block.decompressed_bytes, remaining_bytes, skipped, kept);
+                column, streamOf(stream), block.method, block.payload, block.decompressed_bytes, remaining_bytes, skipped, kept);
             bytes += kept;
         }
 
         std::span<char> reserveBytes(size_t column, Stream stream, size_t max_bytes, size_t remaining_bytes) override
         {
-            return source.stager.reserveRawBytes(layoutStreamOf(column, stream), max_bytes, remaining_bytes);
+            return source.stager.reserveRawBytes(column, streamOf(stream), max_bytes, remaining_bytes);
         }
 
         void commitBytes(size_t column, Stream stream, size_t committed) override
         {
-            source.stager.commitRawBytes(layoutStreamOf(column, stream), committed);
+            source.stager.commitRawBytes(column, streamOf(stream), committed);
             bytes += committed;
         }
 
@@ -429,7 +427,7 @@ private:
         }
 
     private:
-        size_t layoutStreamOf(size_t column, Stream stream) const { return stream == Stream::Sizes ? sizes_streams[column] : values_streams[column]; }
+        static GPU::GPUStream streamOf(Stream stream) { return stream == Stream::Sizes ? GPU::GPUStream::Sizes : GPU::GPUStream::Values; }
 
         GPUCompressedBlocksSource & source;
         const IMergeTreeDataPart & part;
@@ -442,8 +440,8 @@ private:
         std::unique_ptr<MergeTreeCompressedColumnsReader> reader;
     };
 
-    /// Opens the next part no source took yet, in the layout's order of columns: the keys, the values, then the columns
-    /// of the `WHERE` that are neither. The rows of all the ranges of a part are read as the rows of one part.
+    /// Opens the next part no source took yet, of the columns read. The rows of all the ranges of a part are read as the
+    /// rows of one part.
     std::optional<OpenPart> openNextPart()
     {
         const size_t part_index = state->next_part.fetch_add(1);
@@ -452,33 +450,12 @@ private:
 
         const PartToRead & part_to_read = state->parts[part_index];
         const IMergeTreeDataPart & part = *part_to_read.part;
-        const GPU::GPUReadLayout & layout = *state->layout;
-
         auto feed = std::make_unique<Feed>(*this, part);
-        std::vector<NameAndTypePair> columns;
-        const auto add_column = [&](const NameAndTypePair & column)
-        {
-            const size_t column_index = columns.size();
-            columns.push_back(column);
+        for (const auto & column : state->read_columns)
             feed->names.push_back(column.name);
-            const size_t values_stream = layout.valuesStreamOf(column_index);
-            feed->values_streams.push_back(values_stream);
-            feed->sizes_streams.push_back(layout.streams[values_stream].sizes.value_or(values_stream));
-        };
-        for (const auto & key : state->keys)
-            add_column(key);
-        for (const auto & column : state->columns)
-            add_column(column.column);
-        const std::vector<NameAndTypePair> & filter_columns = filterColumnsOf(*state);
-        for (size_t i = 0; i < filter_columns.size(); ++i)
-        {
-            /// Not read again where it is a key or a value.
-            if (layout.filter_columns[i] == columns.size())
-                add_column(filter_columns[i]);
-        }
 
         auto reader = std::make_unique<MergeTreeCompressedColumnsReader>(
-            part, columns, state->reader_settings, expandsOnDevice(state->decompression), part_to_read.ranges);
+            part, state->read_columns, state->reader_settings, expandsOnDevice(state->decompression), part_to_read.ranges);
         return OpenPart{.feed = std::move(feed), .reader = std::move(reader)};
     }
 
@@ -486,13 +463,12 @@ private:
     /// part: the uploader tells how many rows a batch really has.
     Chunk chunkOf(std::unique_ptr<GPU::GPUStagedBatch> batch) const
     {
-        const GPU::GPUReadLayout & layout = *state->layout;
         size_t rows = 0;
-        for (size_t s = 0; s < layout.numStreams(); ++s)
+        for (size_t c = 0; c < state->column_types.size(); ++c)
         {
-            const GPU::GPUReadStream & stream = layout.streams[s];
-            if (!stream.isSizes() && !stream.isVariable())
-                rows = std::max(rows, batch->streams[s].kept_bytes / stream.elementBytes());
+            const GPU::GPUStagedColumn & column = batch->columns[c];
+            const GPU::GPUElementType type = state->column_types[c];
+            rows = std::max(rows, type == GPU::GPUElementType::String ? column.sizes.kept_bytes / sizeof(UInt64) : column.values.kept_bytes / GPU::sizeOf(type));
         }
 
         Chunk chunk(Columns{}, std::max<size_t>(rows, 1));
@@ -515,7 +491,7 @@ class GPUUploadTransform : public ISimpleTransform
 {
 public:
     explicit GPUUploadTransform(const SharedState & state)
-        : ISimpleTransform(emptyHeader(), emptyHeader(), /*skip_empty_chunks=*/true), uploader(state.layout)
+        : ISimpleTransform(emptyHeader(), emptyHeader(), /*skip_empty_chunks=*/true), uploader(state.column_types)
     {
     }
 
@@ -582,8 +558,8 @@ Chunk chunkOfGroups(const SharedState & state, const Block & header, GPU::GPUGro
 std::unique_ptr<GPU::GPUGroupingLane> makeLane(const SharedState & state, size_t num_parts)
 {
     return std::make_unique<GPU::GPUGroupingLane>(
-        state.layout->keys,
-        state.layout->values,
+        state.column_types,
+        state.batch_columns,
         groupByAggregatesOf(state.columns, state.aggregates),
         computedArgumentsOf(state.derived),
         state.filter ? std::optional(state.filter->compiled) : std::nullopt,
@@ -812,28 +788,43 @@ void ReadFromGPUCompressedColumns::initializePipeline(QueryPipelineBuilder & pip
     state->batch_bytes = batch_bytes;
     state->num_readers = num_readers != 0 ? num_readers : automaticReaders(*state);
     state->collect = collect;
-    if (filter)
+
+    /// The keys, then the values, then the columns of the filter that are neither, each read once: a column of the filter
+    /// of the name, the type and the element type of a key or a value is that column.
+    const auto add_column = [&](const NameAndTypePair & column, GPU::GPUElementType type)
     {
-        for (const NameAndTypePair & column : filter->compiled.columns)
+        state->read_columns.push_back(column);
+        state->column_types.push_back(type);
+        return state->read_columns.size() - 1;
+    };
+    const std::vector<GPU::GPUElementType> key_types = GPU::groupByKeysOrThrow(typesOf(keys));
+    for (size_t i = 0; i < keys.size(); ++i)
+        state->batch_columns.keys.push_back(add_column(keys[i], key_types[i]));
+    for (const auto & column : columns)
+    {
+        const auto type = collect ? GPU::collectElementTypeOf(*column.column.type) : GPU::columnTypeOf(*column.column.type);
+        if (!type)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "A column of {} read on the GPU", column.column.type->getName());
+        state->batch_columns.values.push_back(add_column(column.column, *type));
+    }
+    const std::vector<NameAndTypePair> & filter_columns = filterColumnsOf(*state);
+    const std::vector<GPU::GPUElementType> filter_types = GPU::filterElementTypesOrThrow(typesOf(filter_columns));
+    const size_t num_keys_and_values = state->read_columns.size();
+    for (size_t i = 0; i < filter_columns.size(); ++i)
+    {
+        std::optional<size_t> same;
+        for (size_t c = 0; c < num_keys_and_values && !same; ++c)
         {
-            std::optional<uint32_t> alias;
-            for (size_t i = 0; i < keys.size() && !alias; ++i)
-                if (keys[i].name == column.name && keys[i].type->equals(*column.type))
-                    alias = static_cast<uint32_t>(i);
-            for (size_t i = 0; i < columns.size() && !alias; ++i)
-                if (columns[i].column.name == column.name && columns[i].column.type->equals(*column.type))
-                    alias = static_cast<uint32_t>(keys.size() + i);
-            state->filter_aliases.push_back(alias);
+            const NameAndTypePair & read = state->read_columns[c];
+            if (read.name == filter_columns[i].name && read.type->equals(*filter_columns[i].type) && state->column_types[c] == filter_types[i])
+                same = c;
         }
+        state->batch_columns.where.push_back(same ? *same : add_column(filter_columns[i], filter_types[i]));
     }
 
     /// A read of columns of a fixed width reads a large part in pieces, a reader each.
     if (readsFixedWidthOnly(*state))
         splitPartsAmongReaders(state->parts, 2 * state->num_readers);
-
-    const DataTypes filter_types = typesOf(filterColumnsOf(*state));
-    state->layout = std::make_shared<const GPU::GPUReadLayout>(
-        typesOf(keys), argumentTypesOf(columns), collect, filter_types, state->filter_aliases, batch_bytes);
 
     const size_t num_sources = std::max<size_t>(1, std::min(state->num_readers, state->parts.size()));
     const size_t num_lanes = std::min(num_sources, max_lanes);
