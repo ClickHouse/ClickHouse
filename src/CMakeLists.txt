@@ -575,8 +575,8 @@ add_object_library(clickhouse_user_defined_functions Functions/UserDefined)
 
 if (USE_PARQUET)
     add_object_library(clickhouse_processors_formats_impl_parquet Processors/Formats/Impl/Parquet)
-elseif (USE_AVRO)
-    # The Avro input format reads Iceberg variants with the Parquet variant decoder.
+elseif (USE_AVRO OR USE_ORC)
+    # The Avro and ORC input formats read Iceberg variants with the Parquet variant decoder.
     list (APPEND dbms_sources Processors/Formats/Impl/Parquet/VariantEncoding.cpp)
     list (APPEND dbms_headers Processors/Formats/Impl/Parquet/VariantEncoding.h)
 endif()
