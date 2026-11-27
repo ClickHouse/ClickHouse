@@ -30,9 +30,9 @@ printf '{"a":4,"u_optout_%s":1}' "$DB" | insert t JSONEachRow "input_format_warn
 printf '{"a":5,"b":"y","u_after_%s":1}' "$DB" | insert t JSONEachRow
 printf '{"a":6,"b":"y","a":7}' | insert t JSONEachRow "input_format_json_ignore_unnecessary_fields=1&query_id=${DB}_dup"
 printf '{"Foo":1,"foo":2,"FOO":3}' | insert t_case JSONEachRow "input_format_json_ignore_unnecessary_fields=1&input_format_parallel_parsing=0&query_id=${DB}_ambiguous"
-$CLICKHOUSE_CLIENT -q "SELECT number AS a, 1 AS u_parallel_${DB} FROM numbers(100000) FORMAT JSONEachRow" \
+$CLICKHOUSE_CLIENT -q "SELECT number AS a, 1 AS u_parallel_${DB} FROM numbers(2000) FORMAT JSONEachRow" \
     | insert t_null JSONEachRow "input_format_parallel_parsing=1&max_parsing_threads=4&min_chunk_bytes_for_parallel_parsing=1024"
-$CLICKHOUSE_CLIENT -q "SELECT number AS a, 1 AS u_serial_${DB} FROM numbers(100000) FORMAT JSONEachRow" \
+$CLICKHOUSE_CLIENT -q "SELECT number AS a, 1 AS u_serial_${DB} FROM numbers(2000) FORMAT JSONEachRow" \
     | insert t_null JSONEachRow "input_format_parallel_parsing=0"
 # Only the first 100 fields skipped row by row are checked: u_late comes after 100 skipped u_early fields.
 $CLICKHOUSE_CLIENT -q "SELECT if(number < 100, '{\"a\":1,\"u_early_${DB}\":1}', '{\"a\":1,\"u_late_${DB}\":1}') FROM numbers(101) ORDER BY number FORMAT TSVRaw" \
@@ -74,22 +74,38 @@ for _ in {1..30}; do
     sleep 1
 done
 
+# Each check is a label and a condition on `message` and `query_id`; one scan of the log counts the warnings of all of them.
+CHECKS=()
+function check()
+{
+    CHECKS+=("('$1', countIf($2))")
+}
+
 for f in u_Native u2_Native u_JSONEachRow u2_JSONEachRow u_TSKV u2_TSKV u_BSONEachRow u2_BSONEachRow u_JSONColumns u2_JSONColumns \
     u_CSVWithNames u2_CSVWithNames u_JSONCompact u2_JSONCompact u_form u_mysqldump u_optout u_after u_parallel u_serial u_early u_late u_aggstate u_input \
     u_async u_async_optout u_async_fmt u_read u_insert_select; do
-    echo "$f $(warnings "position(message, 'Field \`${f}_${DB}\` ') > 0")"
+    check "$f" "position(message, 'Field \`${f}_${DB}\` ') > 0"
 done
-echo "dup $(warnings "query_id = '${DB}_dup' AND position(message, 'has no matching column') > 0")"
-echo "ambiguous $(warnings "query_id = '${DB}_ambiguous' AND position(message, 'has no matching column') > 0")"
-echo "cap fields $(warnings "query_id = '${DB}_cap' AND position(message, 'has no matching column') > 0")"
-echo "cap summary $(warnings "query_id = '${DB}_cap' AND position(message, 'more than 10 fields') > 0")"
-echo "async query id $(warnings "position(message, 'Field \`u_async_${DB}\` of the input data of query ${DB}_async in format JSONEachRow ') > 0")"
-echo "async format $(warnings "position(message, 'Field \`u_async_fmt_${DB}\` ') > 0 AND position(message, ' in format JSONEachRow ') > 0")"
+check dup "query_id = '${DB}_dup' AND position(message, 'has no matching column') > 0"
+check ambiguous "query_id = '${DB}_ambiguous' AND position(message, 'has no matching column') > 0"
+check "cap fields" "query_id = '${DB}_cap' AND position(message, 'has no matching column') > 0"
+check "cap summary" "query_id = '${DB}_cap' AND position(message, 'more than 10 fields') > 0"
+check "async query id" "position(message, 'Field \`u_async_${DB}\` of the input data of query ${DB}_async in format JSONEachRow ') > 0"
+check "async format" "position(message, 'Field \`u_async_fmt_${DB}\` ') > 0 AND position(message, ' in format JSONEachRow ') > 0"
 for i in 1 2; do
-    echo "batch $i $(warnings "position(message, 'Field \`u_batch_${DB}\` of the input data of query ${DB}_batch$i ') > 0")"
+    check "batch $i" "position(message, 'Field \`u_batch_${DB}\` of the input data of query ${DB}_batch$i ') > 0"
 done
 for i in 1 2; do
-    echo "mysqldump batch $i $(warnings "position(message, 'Field \`u_batch_mysqldump_${DB}\` of the input data of query ${DB}_mysqldump_batch$i ') > 0")"
+    check "mysqldump batch $i" "position(message, 'Field \`u_batch_mysqldump_${DB}\` of the input data of query ${DB}_mysqldump_batch$i ') > 0"
 done
+
+$CLICKHOUSE_CLIENT -q "
+    SELECT concat(c.1, ' ', toString(c.2))
+    FROM
+    (
+        SELECT [$(IFS=,; echo "${CHECKS[*]}")] AS checks FROM system.text_log
+        WHERE event_date >= yesterday() AND event_time >= now() - INTERVAL 1 HOUR AND level = 'Warning'
+    )
+    ARRAY JOIN checks AS c"
 
 $CLICKHOUSE_CLIENT -q "SELECT * FROM t ORDER BY a, b; SELECT k, sumMerge(s) FROM t_agg GROUP BY k; SELECT * FROM t_case"
