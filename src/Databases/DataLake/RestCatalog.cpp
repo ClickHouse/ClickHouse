@@ -212,6 +212,11 @@ Poco::JSON::Array::Ptr namespaceToJSON(const String & namespace_name)
 /// A 404 status alone does not separate a namespace that is gone from an endpoint the catalog does
 /// not serve: both answer the same status. Only the Iceberg REST error `type` names the cause, so a
 /// body that is absent, unparseable or typed as anything else is not a vanished namespace.
+///
+/// Google APIs (BigLake) answer with the `google.rpc.Status` error model instead, whose typed field is
+/// `status`, e.g. `{"error":{"code":404,"message":"Requested entity was not found.","status":"NOT_FOUND"}}`.
+/// The callers only ask about a listing scoped to one namespace, so that entity is the namespace. A route
+/// Google does not serve answers with an HTML page instead, which still does not match.
 bool isNamespaceNotFound(const DB::HTTPException & e)
 {
     if (e.getHTTPStatus() != Poco::Net::HTTPResponse::HTTPStatus::HTTP_NOT_FOUND)
@@ -222,7 +227,11 @@ bool isNamespaceNotFound(const DB::HTTPException & e)
         Poco::JSON::Parser parser;
         const auto response = parser.parse(e.getResponseBody()).extract<Poco::JSON::Object::Ptr>();
         const auto error = response->getObject("error");
-        return error && error->getValue<String>("type") == "NoSuchNamespaceException";
+        if (!error)
+            return false;
+        if (error->has("type"))
+            return error->getValue<String>("type") == "NoSuchNamespaceException";
+        return error->has("status") && error->getValue<String>("status") == "NOT_FOUND";
     }
     catch (...) /// Ok: `false` leaves the 404 to be reported by the caller.
     {

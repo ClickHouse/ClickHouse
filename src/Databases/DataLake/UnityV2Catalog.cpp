@@ -322,7 +322,7 @@ bool UnityV2Catalog::empty() const
     auto all_schemas = getSchemas("");
     for (const auto & schema : all_schemas)
     {
-        if (!getTablesForSchema(schema, 1).empty())
+        if (!getTablesForSchemaIfExists(schema, 1).empty())
             return false;
     }
     return true;
@@ -334,7 +334,7 @@ CatalogTables UnityV2Catalog::getTables() const
     auto all_schemas = getSchemas("");
     for (const auto & schema : all_schemas)
     {
-        auto schema_tables = getTablesForSchema(schema);
+        auto schema_tables = getTablesForSchemaIfExists(schema);
         result.insert(result.end(), schema_tables.begin(), schema_tables.end());
     }
     return result;
@@ -348,7 +348,7 @@ DataLake::ICatalog::Namespaces UnityV2Catalog::getNamespaces() const
 
 CatalogTables UnityV2Catalog::listTablesInNamespaceDirect(const std::string & namespace_name) const
 {
-    return getTablesForSchema(namespace_name);
+    return getTablesForSchemaIfExists(namespace_name);
 }
 
 bool UnityV2Catalog::existsTable(const std::string & schema_name, const std::string & table_name) const
@@ -374,20 +374,47 @@ bool UnityV2Catalog::existsTable(const std::string & schema_name, const std::str
     }
 }
 
-void UnityV2Catalog::checkNamespaceExists(const std::string & schema_name) const
+bool UnityV2Catalog::schemaExists(const std::string & schema_name) const
 {
     try
     {
-        getJSONRequest(std::filesystem::path{SCHEMAS_ENDPOINT} / fmt::format("{}.{}", warehouse, schema_name));
+        (void)getJSONRequest(std::filesystem::path{SCHEMAS_ENDPOINT} / fmt::format("{}.{}", warehouse, schema_name));
+        return true;
     }
     catch (const DB::HTTPException & e)
     {
         if (e.getHTTPStatus() == Poco::Net::HTTPResponse::HTTP_NOT_FOUND)
-            throw DB::Exception(
-                DB::ErrorCodes::DATALAKE_DATABASE_ERROR,
-                "DeltaLake catalog `{}` has no schema `{}` (or the catalog itself does not exist)",
-                warehouse, schema_name);
+            return false;
         throw;
+    }
+}
+
+void UnityV2Catalog::checkNamespaceExists(const std::string & schema_name) const
+{
+    if (!schemaExists(schema_name))
+        throw DB::Exception(
+            DB::ErrorCodes::DATALAKE_DATABASE_ERROR,
+            "DeltaLake catalog `{}` has no schema `{}` (or the catalog itself does not exist)",
+            warehouse, schema_name);
+}
+
+CatalogTables UnityV2Catalog::getTablesForSchemaIfExists(const std::string & schema, size_t limit) const
+{
+    try
+    {
+        return getTablesForSchema(schema, limit);
+    }
+    catch (const DB::HTTPException & e)
+    {
+        /// Another client may drop a schema between it being listed and its tables being listed, and
+        /// in a shared catalog that must not fail the whole `SHOW TABLES` / `system.tables`. A 404 does
+        /// not say what is missing (see `existsTable`), so probe the schema: if it is still there, the
+        /// 404 means something else and keeps propagating.
+        if (e.getHTTPStatus() != Poco::Net::HTTPResponse::HTTP_NOT_FOUND || schemaExists(schema))
+            throw;
+
+        LOG_DEBUG(log, "Unity schema {}.{} disappeared while listing its tables: {}", warehouse, schema, e.displayText());
+        return {};
     }
 }
 
