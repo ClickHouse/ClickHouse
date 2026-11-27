@@ -1,0 +1,23 @@
+local	64	100800
+broadcast	64	100800
+shuffle_filters_sent	64	100800
+shuffle_filters_sent_explicit_prewhere	64	100800
+shuffle_filters_sent_no_move_to_prewhere	64	100800
+shuffle_filters_not_sent	64	100800
+broadcast_minmax	64	100800
+shuffle_filters_sent_minmax	64	100800
+broadcast_bloom	64	100800
+shuffle_filters_sent_bloom	64	100800
+broadcast: probe side read in the fragment of the join	1
+shuffle: probe side read in a stage of its own	1
+broadcast_minmax: probe side read in the fragment of the join	1
+broadcast_bloom: probe side read in the fragment of the join	1
+05829_broadcast	1	1
+05829_broadcast_bloom	1	1
+05829_broadcast_minmax	1	1
+05829_shuffle_filters_not_sent	0	-
+05829_shuffle_filters_sent	1	-
+05829_shuffle_filters_sent_bloom	1	-
+05829_shuffle_filters_sent_explicit_prewhere	1	-
+05829_shuffle_filters_sent_minmax	1	-
+05829_shuffle_filters_sent_no_move_to_prewhere	1	-
