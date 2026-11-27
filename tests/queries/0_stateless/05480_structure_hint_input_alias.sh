@@ -43,8 +43,8 @@ ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&enable_analyzer=1" -d 'INSERT INTO t_s
 ${CLICKHOUSE_CLIENT} --query "SELECT * FROM t_structure_hint_input_join ORDER BY ALL"
 ${CLICKHOUSE_CLIENT} --query "TRUNCATE TABLE t_structure_hint_input_join"
 
-${CLICKHOUSE_CLIENT} --query "INSERT INTO t_structure_hint_input_join SELECT id, ${CLICKHOUSE_DATABASE}.t_structure_hint_input_joined.v FROM generateRandom(1, 10, 0) AS r CROSS JOIN ${CLICKHOUSE_DATABASE}.t_structure_hint_input_joined LIMIT 1"
-${CLICKHOUSE_CLIENT} --query "INSERT INTO t_structure_hint_input_join SELECT id, t_structure_hint_input_pv.v FROM generateRandom(1, 10, 0) AS r CROSS JOIN t_structure_hint_input_pv(value=94) LIMIT 1"
+${CLICKHOUSE_CLIENT} --query_plan_join_swap_table=false --query "INSERT INTO t_structure_hint_input_join SELECT id, ${CLICKHOUSE_DATABASE}.t_structure_hint_input_joined.v FROM generateRandom(1, 10, 0) AS r CROSS JOIN ${CLICKHOUSE_DATABASE}.t_structure_hint_input_joined LIMIT 1"
+${CLICKHOUSE_CLIENT} --query_plan_join_swap_table=false --query "INSERT INTO t_structure_hint_input_join SELECT id, t_structure_hint_input_pv.v FROM generateRandom(1, 10, 0) AS r CROSS JOIN t_structure_hint_input_pv(value=94) LIMIT 1"
 ${CLICKHOUSE_CLIENT} --query "SELECT v FROM t_structure_hint_input_join ORDER BY v"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE t_structure_hint_input_join"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE t_structure_hint_input_joined"
