@@ -47,6 +47,7 @@ $CLICKHOUSE_CLIENT -q "
     DROP USER IF EXISTS ${user};
     CREATE USER ${user} IDENTIFIED WITH no_password SETTINGS allow_alias_table_engine = 0;
     GRANT CREATE TABLE, SELECT, SHOW ON ${CLICKHOUSE_DATABASE}.* TO ${user};
+    GRANT TABLE ENGINE ON Alias TO ${user};
 "
 $CLICKHOUSE_CLIENT --user "${user}" -q "CREATE TABLE ${CLICKHOUSE_DATABASE}.a3 ENGINE = Alias('src')" 2>&1 | grep -om1 "SUPPORT_IS_DISABLED"
 $CLICKHOUSE_CLIENT --user "${user}" -q "SET allow_alias_table_engine = 1" 2>&1 | grep -om1 "QUERY_IS_PROHIBITED"
