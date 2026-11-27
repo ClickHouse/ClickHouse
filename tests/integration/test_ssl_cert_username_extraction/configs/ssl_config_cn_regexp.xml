@@ -1,0 +1,17 @@
+<clickhouse>
+    <https_port>8443</https_port>
+
+    <!-- Authenticate HTTPS requests by the TLS client certificate alone: the user name is extracted
+         with the regular expression from the certificate's Common Name, e.g. 'uid=alice,ou=Engineering'. -->
+    <ssl_certificate_username_field>CN</ssl_certificate_username_field>
+    <ssl_certificate_username_regexp>uid=([^,]+),.*</ssl_certificate_username_regexp>
+
+    <openSSL replace="replace">
+        <server>
+            <certificateFile>/etc/clickhouse-server/config.d/server-cert.pem</certificateFile>
+            <privateKeyFile>/etc/clickhouse-server/config.d/server-key.pem</privateKeyFile>
+            <caConfig>/etc/clickhouse-server/config.d/ca-cert.pem</caConfig>
+            <verificationMode>relaxed</verificationMode>
+        </server>
+    </openSSL>
+</clickhouse>

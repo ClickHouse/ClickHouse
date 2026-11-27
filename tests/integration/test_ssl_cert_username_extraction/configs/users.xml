@@ -14,6 +14,13 @@
                 <common_name>something-else</common_name>
             </ssl_certificates>
         </client2>
+        <!-- The user name is extracted with a regular expression from the Common Name of
+             'client_uid-cert.pem'; the user is still configured with the whole Common Name. -->
+        <alice>
+            <ssl_certificates>
+                <common_name>uid=alice,ou=Engineering</common_name>
+            </ssl_certificates>
+        </alice>
         <jane>
             <password>qwe123</password>
         </jane>

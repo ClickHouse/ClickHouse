@@ -1,10 +1,8 @@
 <clickhouse>
     <https_port>8443</https_port>
 
-    <!-- Authenticate HTTPS requests by the TLS client certificate alone: the user name is extracted
-         with the regular expression from the certificate's single URI Subject Alternative Name entry. -->
+    <!-- Authenticate HTTPS requests by the TLS client certificate alone: the user name is the certificate's single URI Subject Alternative Name entry. -->
     <ssl_certificate_username_field>SAN:URI</ssl_certificate_username_field>
-    <ssl_certificate_username_regexp>spiffe://foo\.com/(.+)</ssl_certificate_username_regexp>
 
     <openSSL replace="replace">
         <server>
