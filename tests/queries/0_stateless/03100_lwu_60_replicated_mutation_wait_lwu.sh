@@ -11,7 +11,6 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 set -e
 
 failpoint_name="rmt_lightweight_update_sleep_after_block_allocation"
-zk_path="/zookeeper/$CLICKHOUSE_DATABASE/t_lwu_60"
 
 function cleanup()
 {
@@ -36,11 +35,11 @@ $CLICKHOUSE_CLIENT --query "
     DROP TABLE IF EXISTS t_lwu_60_r2 SYNC;
 
     CREATE TABLE t_lwu_60_r1 (id UInt64, s String)
-    ENGINE = ReplicatedMergeTree('$zk_path', '1') ORDER BY id
+    ENGINE = ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/t_lwu_60', '1') ORDER BY id
     SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1;
 
     CREATE TABLE t_lwu_60_r2 (id UInt64, s String)
-    ENGINE = ReplicatedMergeTree('$zk_path', '2') ORDER BY id
+    ENGINE = ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/t_lwu_60', '2') ORDER BY id
     SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1;
 
     INSERT INTO t_lwu_60_r1 SELECT number, toString(number) FROM numbers(1000) SETTINGS insert_keeper_fault_injection_probability = 0;
@@ -56,7 +55,7 @@ $CLICKHOUSE_CLIENT --enable_lightweight_update 1 --insert_keeper_fault_injection
 update_pid=$!
 
 for _ in {1..300}; do
-    res=$($CLICKHOUSE_CLIENT --query "SELECT count() FROM system.zookeeper WHERE path = '$zk_path/block_numbers/all' AND name = 'block-0000000001'")
+    res=$($CLICKHOUSE_CLIENT --query "SELECT count() FROM system.zookeeper WHERE path = '/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/t_lwu_60/block_numbers/all' AND name = 'block-0000000001'")
     [[ "$res" -gt 0 ]] && break
     sleep 0.1
 done
