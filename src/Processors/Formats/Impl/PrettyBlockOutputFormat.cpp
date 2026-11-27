@@ -714,8 +714,9 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
         for (size_t i = 0; i < num_columns; ++i)
             vertical_filler_size += max_widths[i] + 3;
 
+        /// There can be no columns at all: the rows of an intermediate result can carry no values.
         if (style == Style::Space)
-            vertical_filler_size -= 2;
+            vertical_filler_size -= std::min<size_t>(vertical_filler_size, 2);
         else
             vertical_filler_size += 1;
 

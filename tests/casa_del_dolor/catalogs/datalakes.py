@@ -10,7 +10,13 @@ import threading
 from pathlib import Path
 from tests.integration.helpers.client import Client, QueryRuntimeException
 from pyiceberg.catalog import load_catalog
-from .streamingtest import KafkaHandler, NATSHandler, RabbitMQHandler
+from .streamingtest import (
+    FileLogHandler,
+    KafkaHandler,
+    NATSHandler,
+    ObjectQueueHandler,
+    RabbitMQHandler,
+)
 from .filetables import FileHandler
 from .laketables import (
     TableStorage,
@@ -167,8 +173,8 @@ class DolorCatalog:
 
 
 class SparkHandler:
-    # Engines whose tables a broker handler feeds, keyed in `streaming_handlers`
-    STREAMING_ENGINES = ("kafka", "nats", "rabbitmq")
+    # Engines whose tables a broker, an object storage or a file handler feeds, keyed in `streaming_handlers`
+    STREAMING_ENGINES = ("kafka", "nats", "rabbitmq", "s3queue", "azurequeue", "filelog")
 
     def __init__(self, cluster, with_unity: bool, env: dict[str, str]):
         self.logger = logging.getLogger(__name__)
@@ -248,8 +254,12 @@ logger.jetty.level = warn
 
         self.worker = BackgroundWorker(my_task, interval=1)
         self.worker.start()
-        # Kafka, NATS and RabbitMQ tables by engine name
-        self.streaming_handlers = {}
+        # Kafka, NATS, RabbitMQ, S3Queue, AzureQueue and FileLog tables by engine name
+        self.streaming_handlers = {"filelog": FileLogHandler(cluster, self)}
+        if cluster.with_minio:
+            self.streaming_handlers["s3queue"] = ObjectQueueHandler(cluster, self, False)
+        if cluster.with_azurite:
+            self.streaming_handlers["azurequeue"] = ObjectQueueHandler(cluster, self, True)
         if cluster.with_kafka:
             self.streaming_handlers["kafka"] = KafkaHandler(cluster, self)
         if cluster.with_nats:
