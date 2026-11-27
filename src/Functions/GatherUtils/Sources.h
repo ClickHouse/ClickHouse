@@ -587,24 +587,20 @@ struct UTF8StringSource : public StringSource
     {
         const auto * begin = &elements[prev_offset];
         const auto * end = elements.data() + offsets[row_num];
+
+        if (length >= offset)
+            return getSliceFromRight(offset);
+
+        /// Both boundaries are found walking backward, `offset` code points in total. A forward walk of `length`
+        /// code points from the start would count a lone continuation byte as its own code point, while the
+        /// backward walk merges it into the preceding byte, so on invalid UTF-8 it could stop before the end.
+        /// The end is `offset - length` code points from the right also when the start is clipped at `begin`.
         size_t skipped = 0;
-        const auto * res_begin = skipCodePointsBackward(end, offset, begin, &skipped);
+        const auto * res_end = skipCodePointsBackward(end, offset - length, begin, &skipped);
+        if (skipped < offset - length)
+            return {begin, 0};
 
-        if (skipped < offset)
-        {
-            size_t clipped_prefix = offset - skipped;
-            if (length <= clipped_prefix)
-                return {begin, 0};
-            length -= clipped_prefix;
-        }
-
-        if (length >= skipped)
-            return {res_begin, size_t(end - res_begin)};
-
-        /// Find the end walking backward too. A forward walk counts a lone continuation byte as its own
-        /// code point, while the backward walk merges it into the preceding byte, so on invalid UTF-8
-        /// a forward walk of `length` code points from `res_begin` can stop before the end of the suffix.
-        const auto * res_end = skipCodePointsBackward(end, skipped - length, begin);
+        const auto * res_begin = skipCodePointsBackward(res_end, length, begin);
         return {res_begin, size_t(res_end - res_begin)};
     }
 };
