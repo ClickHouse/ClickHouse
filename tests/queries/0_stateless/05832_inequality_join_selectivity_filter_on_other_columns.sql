@@ -17,6 +17,7 @@ SET query_plan_optimize_join_order_limit = 0;
 DROP TABLE IF EXISTS t_foc_l;
 DROP TABLE IF EXISTS t_foc_r;
 DROP TABLE IF EXISTS t_foc_d;
+DROP TABLE IF EXISTS t_foc_k;
 
 CREATE TABLE t_foc_l (c UInt32, a1 UInt32, a2 UInt32, a3 UInt32)
 ENGINE = MergeTree ORDER BY tuple()
@@ -34,9 +35,16 @@ CREATE TABLE t_foc_d (
 ENGINE = MergeTree ORDER BY tuple()
 SETTINGS auto_statistics_types = 'basic, uniq_v2';
 
+-- `t_foc_r` ordered by `b3`, in one part of 16 granules.
+CREATE TABLE t_foc_k (f UInt32, b1 UInt32, b2 UInt32, b3 UInt32)
+ENGINE = MergeTree ORDER BY b3
+SETTINGS auto_statistics_types = 'basic, uniq_v2', index_granularity = 64, index_granularity_bytes = '10Mi';
+
 INSERT INTO t_foc_l SELECT 0, number % 1000, number % 1000, (number * 97) % 100000 FROM numbers(1000);
 INSERT INTO t_foc_r SELECT number % 10, number % 1000, 1000 + number % 1000, number % 1000 FROM numbers(1000);
 INSERT INTO t_foc_d (f, b1, b2, b3) SELECT number % 10, number % 1000, 1000 + number % 1000, number % 1000 FROM numbers(1000);
+INSERT INTO t_foc_k SELECT number % 10, number % 1000, 1000 + number % 1000, number % 1000 FROM numbers(1000);
+OPTIMIZE TABLE t_foc_k FINAL;
 
 SELECT '-- unfiltered input: by selectivity';
 SELECT extract(explain, 'Conditions: .*') FROM (
@@ -176,6 +184,56 @@ SELECT extract(explain, 'Conditions: .*') FROM (
     ON l.a1 < r.b1 AND l.a2 < r.b2 AND l.a3 < r.b3
 ) WHERE explain LIKE '%Conditions:%';
 
+-- `indexHint` returns 1, but range analysis drops the granules where its argument cannot hold. The read returns whole
+-- granules, so the range of `b3` in the read is not the measured one.
+SELECT '-- indexHint on an operand drops granules';
+SELECT count(), min(b3), max(b3) FROM t_foc_k WHERE indexHint(b3 >= 990)
+SETTINGS optimize_use_implicit_projections = 0;
+
+-- A hint is not moved to PREWHERE. With the PREWHERE optimization, the `FilterStep` that keeps it reads the conditions
+-- that the PREWHERE computes, so no predicate is attributed; disable it so that the hints are.
+SELECT '-- indexHint on an operand: syntax order';
+SELECT extract(explain, 'Conditions: .*') FROM (
+    EXPLAIN actions = 1
+    SELECT count() FROM t_foc_l AS l JOIN (SELECT * FROM t_foc_k WHERE indexHint(b3 >= 990)) AS r
+    ON l.a1 < r.b1 AND l.a2 < r.b2 AND l.a3 < r.b3
+    SETTINGS optimize_move_to_prewhere = 0
+) WHERE explain LIKE '%Conditions:%';
+
+SELECT '-- WHERE on a column that is not an operand and indexHint on an operand: syntax order';
+SELECT extract(explain, 'Conditions: .*') FROM (
+    EXPLAIN actions = 1
+    SELECT count() FROM t_foc_l AS l JOIN (SELECT * FROM t_foc_k WHERE f < 5 AND indexHint(b3 >= 990)) AS r
+    ON l.a1 < r.b1 AND l.a2 < r.b2 AND l.a3 < r.b3
+    SETTINGS optimize_move_to_prewhere = 0
+) WHERE explain LIKE '%Conditions:%';
+
+SELECT '-- indexHint on an operand nested in indexHint: syntax order';
+SELECT extract(explain, 'Conditions: .*') FROM (
+    EXPLAIN actions = 1
+    SELECT count() FROM t_foc_l AS l JOIN (SELECT * FROM t_foc_k WHERE indexHint(f < 5 AND indexHint(b3 >= 990))) AS r
+    ON l.a1 < r.b1 AND l.a2 < r.b2 AND l.a3 < r.b3
+    SETTINGS optimize_move_to_prewhere = 0
+) WHERE explain LIKE '%Conditions:%';
+
+SELECT '-- indexHint on a column that is not an operand: by selectivity';
+SELECT extract(explain, 'Conditions: .*') FROM (
+    EXPLAIN actions = 1
+    SELECT count() FROM t_foc_l AS l JOIN (SELECT * FROM t_foc_k WHERE indexHint(f < 5)) AS r
+    ON l.a1 < r.b1 AND l.a2 < r.b2 AND l.a3 < r.b3
+    SETTINGS optimize_move_to_prewhere = 0
+) WHERE explain LIKE '%Conditions:%';
+
+-- The read returns `f`, so the hint in the `FilterStep` above it names `f` as the query does; the hint in the filter
+-- pushed into the read names the column of the read.
+SELECT '-- WHERE and indexHint on a column that is not an operand: by selectivity';
+SELECT extract(explain, 'Conditions: .*') FROM (
+    EXPLAIN actions = 1
+    SELECT count() FROM t_foc_l AS l JOIN (SELECT * FROM t_foc_k WHERE f < 8 AND indexHint(f < 5)) AS r
+    ON l.a1 < r.b1 AND l.a2 < r.b2 AND l.a3 < r.b3
+    SETTINGS optimize_move_to_prewhere = 0
+) WHERE explain LIKE '%Conditions:%';
+
 -- Rows dropped by something other than a predicate are not attributed to columns.
 SELECT '-- a LIMIT over the filtered input: syntax order';
 SELECT extract(explain, 'Conditions: .*') FROM (
@@ -195,3 +253,4 @@ SELECT extract(explain, 'Conditions: .*') FROM (
 DROP TABLE t_foc_l;
 DROP TABLE t_foc_r;
 DROP TABLE t_foc_d;
+DROP TABLE t_foc_k;

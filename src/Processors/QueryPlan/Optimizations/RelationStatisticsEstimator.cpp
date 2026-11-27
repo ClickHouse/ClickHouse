@@ -4,6 +4,7 @@
 #include <algorithm>
 
 #include <Core/Settings.h>
+#include <Functions/indexHint.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/ActionsDAGTraversal.h>
 #include <Interpreters/Context.h>
@@ -572,14 +573,27 @@ void addColumnsRelatedByDefaultExpressions(const ColumnsDescription & columns, N
 /// `FilterStep` right above the read, the row-level filter, the PREWHERE and the filter pushed into the read (which
 /// is resolved to the columns of the read through the steps above it, see `optimizePrimaryKeyConditionAndLimit`),
 /// with the columns related to them through default expressions (see `addColumnsRelatedByDefaultExpressions`).
+/// The columns that the argument of `indexHint` reads count as read: the argument is never evaluated, but range analysis
+/// drops the granules where it cannot hold.
 /// `std::nullopt` if a predicate reads a column that is not a stored column of the table (e.g. a virtual column, a
 /// subcolumn or a column computed by the read), contains `arrayJoin`, or calls a function that is stateful or not
 /// deterministic within the query (e.g. `rowNumberInAllBlocks` or `rand`).
 std::optional<NameSet> getColumnsReadByPredicates(const ReadFromMergeTree & reading, const ActionsDAG::Node * parent_predicate)
 {
+    /// The argument of an `indexHint` keeps the names of the columns in the query when the DAG that holds the hint is
+    /// resolved to the columns of the read. Range analysis reads the hints from the filter pushed into the read, where
+    /// their arguments are resolved as well. So the hints of a predicate that the filter was built from are read there.
     ActionsDAG::NodeRawConstPtrs predicates;
+    ActionsDAG::NodeRawConstPtrs predicates_with_hints_in_filter;
+    auto add_predicate = [&](const ActionsDAG::Node * predicate)
+    {
+        if (reading.filterActionsDAGWasBuiltFrom(predicate->result_name))
+            predicates_with_hints_in_filter.push_back(predicate);
+        else
+            predicates.push_back(predicate);
+    };
     if (parent_predicate)
-        predicates.push_back(parent_predicate);
+        add_predicate(parent_predicate);
 
     /// The row-level filter and the PREWHERE run inside the read and can compute columns under any name.
     NameSet columns_computed_by_read;
@@ -588,7 +602,7 @@ std::optional<NameSet> getColumnsReadByPredicates(const ReadFromMergeTree & read
         const auto * predicate = actions.tryFindInOutputs(column_name);
         if (!predicate)
             return false;
-        predicates.push_back(predicate);
+        add_predicate(predicate);
         for (const auto * output : actions.getOutputs())
             if (output->type != ActionsDAG::ActionType::INPUT)
                 columns_computed_by_read.insert(output->result_name);
@@ -605,29 +619,35 @@ std::optional<NameSet> getColumnsReadByPredicates(const ReadFromMergeTree & read
 
     const auto & columns = reading.getStorageMetadata()->getColumns();
     NameSet columns_read;
-    const bool is_attributed = visitReachableNodes(
-        predicates,
-        [&](const ActionsDAG::Node * node)
+    bool visit_hints = false;
+    auto visit = [&](this const auto & self, const ActionsDAG::Node * node) -> VisitResult
+    {
+        switch (node->type)
         {
-            switch (node->type)
-            {
-                case ActionsDAG::ActionType::INPUT:
-                    if (!columns.hasPhysical(node->result_name) || columns_computed_by_read.contains(node->result_name))
-                        return VisitResult::Stop;
-                    columns_read.insert(node->result_name);
-                    return VisitResult::Continue;
-                case ActionsDAG::ActionType::FUNCTION:
-                    if (!node->function_base || node->function_base->isStateful() || !node->function_base->isDeterministicInScopeOfQuery())
-                        return VisitResult::Stop;
-                    return VisitResult::Continue;
-                case ActionsDAG::ActionType::COLUMN:
-                case ActionsDAG::ActionType::ALIAS: return VisitResult::Continue;
-                case ActionsDAG::ActionType::ARRAY_JOIN:
-                case ActionsDAG::ActionType::PLACEHOLDER: return VisitResult::Stop;
-            }
-            return VisitResult::Stop;
-        });
-    if (!is_attributed)
+            case ActionsDAG::ActionType::INPUT:
+                if (!columns.hasPhysical(node->result_name) || columns_computed_by_read.contains(node->result_name))
+                    return VisitResult::Stop;
+                columns_read.insert(node->result_name);
+                return VisitResult::Continue;
+            case ActionsDAG::ActionType::FUNCTION:
+                if (!node->function_base || node->function_base->isStateful() || !node->function_base->isDeterministicInScopeOfQuery())
+                    return VisitResult::Stop;
+                /// `indexHint` holds its argument in its own DAG, not in its children, and hints may nest.
+                if (const auto * index_hint = FunctionIndexHint::tryGet(node->function_base);
+                    index_hint && visit_hints && !visitReachableNodes(index_hint->getActions().getOutputs(), self))
+                    return VisitResult::Stop;
+                return VisitResult::Continue;
+            case ActionsDAG::ActionType::COLUMN:
+            case ActionsDAG::ActionType::ALIAS: return VisitResult::Continue;
+            case ActionsDAG::ActionType::ARRAY_JOIN:
+            case ActionsDAG::ActionType::PLACEHOLDER: return VisitResult::Stop;
+        }
+        return VisitResult::Stop;
+    };
+    if (!visitReachableNodes(predicates_with_hints_in_filter, visit))
+        return {};
+    visit_hints = true;
+    if (!visitReachableNodes(predicates, visit))
         return {};
     addColumnsRelatedByDefaultExpressions(columns, columns_read);
     return columns_read;

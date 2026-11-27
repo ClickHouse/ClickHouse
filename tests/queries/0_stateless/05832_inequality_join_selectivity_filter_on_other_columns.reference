@@ -33,6 +33,18 @@ Conditions: __table1.a1 < __table2.b1 AND __table1.a2 < __table2.b2
 Conditions: __table1.a1 < __table2.b1 AND __table1.a3 < __table2.b3
 -- a predicate that selects rows by their position: syntax order
 Conditions: __table1.a1 < __table2.b1 AND __table1.a2 < __table2.b2
+-- indexHint on an operand drops granules
+40	960	999
+-- indexHint on an operand: syntax order
+Conditions: __table1.a1 < __table2.b1 AND __table1.a2 < __table2.b2
+-- WHERE on a column that is not an operand and indexHint on an operand: syntax order
+Conditions: __table1.a1 < __table2.b1 AND __table1.a2 < __table2.b2
+-- indexHint on an operand nested in indexHint: syntax order
+Conditions: __table1.a1 < __table2.b1 AND __table1.a2 < __table2.b2
+-- indexHint on a column that is not an operand: by selectivity
+Conditions: __table1.a1 < __table2.b1 AND __table1.a3 < __table2.b3
+-- WHERE and indexHint on a column that is not an operand: by selectivity
+Conditions: __table1.a1 < __table2.b1 AND __table1.a3 < __table2.b3
 -- a LIMIT over the filtered input: syntax order
 Conditions: __table1.a1 < __table2.b1 AND __table1.a2 < __table2.b2
 -- a non-throwing read limit on the filtered input: syntax order

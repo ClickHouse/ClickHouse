@@ -72,6 +72,11 @@ print_provenance "SELECT * FROM (SELECT f, b1, b2, b3, b3 + 1 AS x FROM t_r) WHE
 echo '-- the same filter pushed into the read: attributed to the operand'
 print_provenance "SELECT * FROM (SELECT f, b1, b2, b3, b3 + 1 AS x FROM t_r) WHERE x < 500"
 
+# The read returns `b3`, so the hint in the `FilterStep` above it names `b3` as the query does; the hint in the filter
+# pushed into the read names the column of the read.
+echo '-- indexHint on an operand: attributed to the operand'
+print_provenance "SELECT * FROM t_r WHERE indexHint(b3 >= 990)" "optimize_move_to_prewhere = 0"
+
 echo '-- a non-throwing read limit: no attribution'
 print_provenance "SELECT * FROM t_r WHERE f < 5" "max_rows_to_read = 1000000, read_overflow_mode = 'break'"
 
