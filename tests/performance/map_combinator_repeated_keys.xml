@@ -1,0 +1,21 @@
+<test>
+    <settings>
+        <max_threads>1</max_threads>
+    </settings>
+
+    <create_query>
+        CREATE TABLE map_repeated_keys ENGINE = Memory AS
+        SELECT
+            intDiv(number, 250) AS g,
+            map('c1', number % 100, 'c5', (number + 1) % 100, 'c10', (number + 2) % 100,
+                'c50', (number + 3) % 100, 'c100', (number + 4) % 100, 'c500', (number + 5) % 100) AS m
+        FROM numbers(5000000)
+    </create_query>
+
+    <query>SELECT sumMap(m) FROM map_repeated_keys FORMAT Null</query>
+    <query>SELECT g, sumMap(m) FROM map_repeated_keys GROUP BY g FORMAT Null</query>
+    <query>SELECT number % 100000 AS g, sumMap(map(leftPad(toString(intDiv(number, 100000)), 28, 'k'), 1)) FROM numbers(1000000) GROUP BY g FORMAT Null</query>
+    <query>SELECT sumMap(map(leftPad(toString(number), 23, 'x'), 1)) FROM numbers(700000) FORMAT Null</query>
+
+    <drop_query>DROP TABLE map_repeated_keys</drop_query>
+</test>
