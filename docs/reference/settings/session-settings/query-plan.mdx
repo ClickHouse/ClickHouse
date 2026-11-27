@@ -184,6 +184,18 @@ Only takes effect if setting [query_plan_enable_optimizations](/reference/settin
 This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
 </Note>
 
+## query_plan_join_multiway_merge {#query_plan_join_multiway_merge}
+
+<ExperimentalBadge/>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "0"},{"label": "New setting"}]}]}/>
+
+Execute a subtree of `full_sorting_merge` inner joins whose keys are equal to each other as one merge join of all its inputs instead of a tree of two-input joins. Every input is read once in the order of the key and every column is copied to the result once.
+
+Applies to `INNER` joins with `ALL` strictness and one condition. With `query_plan_join_shard_by_pk_ranges` the join is split by primary key ranges of all its tables.
+
 ## query_plan_join_order_use_interesting_orders {#query_plan_join_order_use_interesting_orders}
 
 <BetaBadge/>
