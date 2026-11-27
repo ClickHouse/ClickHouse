@@ -147,31 +147,44 @@ class FilterWithCachedCount
 {
     ConstantFilterDescription const_description;  /// TODO: ConstantFilterDescription only checks always true/false for const columns
                                                   /// think how to handle when the column in not const but has all 0s or all 1s
-    ColumnPtr column = nullptr;
-    const IColumn::Filter * data = nullptr;
+    /// The filter column as it was given.
+    ColumnPtr source = nullptr;
+    /// The full mask. A sparse filter lists the rows it keeps, so its mask is built only when something asks for it.
+    mutable ColumnPtr column = nullptr;
+    mutable const IColumn::Filter * data = nullptr;
     mutable size_t cached_count_bytes = -1;
 
     ColumnPtr sparse_indices_holder;
     const ColumnUInt64 * sparse_indices = nullptr;
+
+    void buildMask() const;
 
 public:
     explicit FilterWithCachedCount() = default;
 
     explicit FilterWithCachedCount(const ColumnPtr & column_);
 
-    bool present() const { return !!column; }
+    bool present() const { return !!source; }
 
     bool alwaysTrue() const { return const_description.always_true; }
     bool alwaysFalse() const { return const_description.always_false; }
 
-    ColumnPtr getColumn() const { return column; }
+    ColumnPtr getColumn() const
+    {
+        buildMask();
+        return column;
+    }
 
-    const IColumn::Filter & getData() const { return *data; }
+    const IColumn::Filter & getData() const
+    {
+        buildMask();
+        return *data;
+    }
 
     bool isSparse() const { return sparse_indices != nullptr; }
     const ColumnUInt64 * getSparseIndices() const { return sparse_indices; }
 
-    size_t size() const { return column->size(); }
+    size_t size() const { return source->size(); }
 
     size_t countBytesInFilter() const
     {

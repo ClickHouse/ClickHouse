@@ -59,6 +59,7 @@ LoggerPtr getMergeTreeRangeReaderLogger()
 
 FilterWithCachedCount::FilterWithCachedCount(const ColumnPtr & column_)
     : const_description(*column_)
+    , source(column_)
 {
     if (const auto * sparse = typeid_cast<const ColumnSparse *>(column_.get()))
     {
@@ -78,10 +79,19 @@ FilterWithCachedCount::FilterWithCachedCount(const ColumnPtr & column_)
                 sparse_indices_holder = std::move(sparse_desc.valid_offsets);
             else
                 sparse_indices_holder = column_;
+            return;
         }
     }
 
-    ColumnPtr col = column_->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();
+    buildMask();
+}
+
+void FilterWithCachedCount::buildMask() const
+{
+    if (column)
+        return;
+
+    ColumnPtr col = source->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();
     FilterDescription desc(*col);
     column = desc.data_holder ? desc.data_holder : col;
     data = desc.data;
@@ -89,9 +99,30 @@ FilterWithCachedCount::FilterWithCachedCount(const ColumnPtr & column_)
 
 static void filterColumns(Columns & columns, const FilterWithCachedCount & filter)
 {
-    const auto & filter_data = filter.getData();
-    const ColumnUInt64 * sparse_indices = filter.getSparseIndices();
+    /// A sparse filter lists the rows it keeps, so every column is gathered by that list and no full mask is built.
+    /// A sparse column whose non-default rows are exactly the kept rows shares its values (`ColumnSparse::index`).
+    if (const ColumnUInt64 * sparse_indices = filter.getSparseIndices())
+    {
+        for (auto & column : columns)
+        {
+            if (!column)
+                continue;
 
+            if (column->size() != filter.size())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of column {} doesn't match size of filter {}",
+                    column->size(), filter.size());
+
+            column = column->index(*sparse_indices, 0);
+            if (column->empty())
+            {
+                columns.clear();
+                return;
+            }
+        }
+        return;
+    }
+
+    const auto & filter_data = filter.getData();
     for (auto & column : columns)
     {
         if (column)
@@ -100,13 +131,7 @@ static void filterColumns(Columns & columns, const FilterWithCachedCount & filte
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of column {} doesn't match size of filter {}",
                     column->size(), filter.size());
 
-            if (const auto * column_sparse = sparse_indices ? typeid_cast<const ColumnSparse *>(column.get()) : nullptr;
-                column_sparse && column_sparse->getOffsetsData() == sparse_indices->getData())
-            {
-                /// The filter keeps exactly the non-default rows of this column, so `index` shares its values.
-                column = column_sparse->index(*sparse_indices, 0);
-            }
-            else if (canInplaceFilter(column))
+            if (canInplaceFilter(column))
             {
                 auto mutable_column = IColumn::mutate(std::move(column));
                 mutable_column->filter(filter_data);

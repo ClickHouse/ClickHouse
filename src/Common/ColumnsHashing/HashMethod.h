@@ -10,6 +10,7 @@
 #include <limits>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnLowCardinality.h>
+#include <Columns/ColumnReplicated.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsCommon.h>
@@ -334,9 +335,20 @@ struct PackedStringHash
 #endif
 };
 
+/// Returns the nested `String` column of a `ColumnReplicated` key column, or null for any other column. The methods of
+/// one `String` key and of fixed-width keys and one `String` read such a key column in place, through the indexes of
+/// its rows (`ColumnIndex::Reader`), instead of expanding it. The `Aggregator` turns a sparse `String` key into such a
+/// column (see `ColumnSparse::toReplicated`).
+inline const ColumnString * replicatedStrings(const IColumn & column)
+{
+    const auto * replicated = typeid_cast<const ColumnReplicated *>(&column);
+    return replicated ? typeid_cast<const ColumnString *>(replicated->getNestedColumn().get()) : nullptr;
+}
+
 /// For the case when there is one packed string key.
 /// Unlike `HashMethodString`, this method does not support nullable keys or key offsets,
 /// and the key is always persisted into the arena by `keyHolderPersistKey`.
+/// A `ColumnReplicated` over a `String` column is read in place, through the positions of its rows in its nested column.
 template <typename Value, typename Mapped, bool use_cache>
 struct HashMethodPackedString : public columns_hashing_impl::HashMethodBase<
                               HashMethodPackedString<Value, Mapped, use_cache>,
@@ -358,23 +370,32 @@ struct HashMethodPackedString : public columns_hashing_impl::HashMethodBase<
     /// use it.
     using Hash = PackedStringHash;
 
+    /// The buffers of the `String` key column, or of the nested column of a `ColumnReplicated` key column.
     const IColumn::Offset * offsets;
     const UInt8 * chars;
+
+    /// For a `ColumnReplicated` key column, the positions of its rows in its nested column.
+    std::optional<ColumnIndex::Reader> replicated_positions;
 
     HashMethodPackedString(const ColumnRawPtrs & key_columns, const Sizes & /*key_sizes*/, const HashMethodContextPtr &, RowRange /*rows*/ = {})
         : Base(key_columns[0])
     {
-        const ColumnString & column_string = assert_cast<const ColumnString &>(*key_columns[0]);
-        offsets = column_string.getOffsets().data();
-        chars = column_string.getChars().data();
+        const ColumnString * column_string = replicatedStrings(*key_columns[0]);
+        if (column_string)
+            replicated_positions.emplace(assert_cast<const ColumnReplicated &>(*key_columns[0]).getIndexes());
+        else
+            column_string = &assert_cast<const ColumnString &>(*key_columns[0]);
+        offsets = column_string->getOffsets().data();
+        chars = column_string->getChars().data();
     }
 
     /// Returns the row's bytes in the padded source column, without packing or persisting the key. The
     /// view remains valid for this block and permits reads up to 15 bytes past its end.
     [[nodiscard]] std::string_view getKeyBytes(ssize_t row) const
     {
-        const char * data = reinterpret_cast<const char *>(chars + offsets[row - 1]);
-        const size_t size = offsets[row] - offsets[row - 1];
+        const ssize_t position = replicated_positions ? static_cast<ssize_t>(replicated_positions->getIndexAt(row)) : row;
+        const char * data = reinterpret_cast<const char *>(chars + offsets[position - 1]);
+        const size_t size = offsets[position] - offsets[position - 1];
         return {data, size};
     }
 
@@ -456,13 +477,16 @@ struct HashMethodKeysAndPackedString : public columns_hashing_impl::HashMethodBa
     PaddedPODArray<Keys> prepared_keys;
     size_t prepared_keys_begin = 0;
 
-    /// The buffers of the `String` key column, whose rows are the strings, or of the dictionary of a
-    /// `LowCardinality(String)` key column, whose entries are.
+    /// The buffers that hold the strings: of the `String` key column, of the dictionary of a `LowCardinality(String)`
+    /// key column, or of the nested column of a `ColumnReplicated` key column.
     const IColumn::Offset * string_offsets = nullptr;
     const UInt8 * string_chars = nullptr;
 
     /// A `LowCardinality(String)` key column, whose rows are positions in its dictionary.
     const ColumnLowCardinality * low_cardinality_strings = nullptr;
+
+    /// For a `ColumnReplicated` key column over a `String` column, the positions of its rows in the nested column.
+    std::optional<ColumnIndex::Reader> replicated_positions;
 
     /// The content hashes of the dictionary entries that rows have asked for, so that the rows of one entry
     /// hash its string once. 0 marks an entry not hashed yet, so a string whose hash is 0 is hashed for each
@@ -496,6 +520,11 @@ struct HashMethodKeysAndPackedString : public columns_hashing_impl::HashMethodBa
                     column = low_cardinality->getDictionary().getNestedNotNullableColumn().get();
                     if (column->size() <= rows_end - rows.begin)
                         entry_hashes.resize_fill(column->size(), 0);
+                }
+                else if (const ColumnString * nested_strings = replicatedStrings(*column))
+                {
+                    replicated_positions.emplace(assert_cast<const ColumnReplicated &>(*column).getIndexes());
+                    column = nested_strings;
                 }
                 const auto & column_string = assert_cast<const ColumnString &>(*column);
                 string_offsets = column_string.getOffsets().data();
@@ -591,9 +620,12 @@ protected:
 
 private:
     /// The position of the string of the row in the buffers that `stringAt` reads: the row itself for a
-    /// `String` key column, its dictionary entry for a `LowCardinality(String)` one.
+    /// `String` key column, its dictionary entry for a `LowCardinality(String)` one, its row of the nested column for a
+    /// `ColumnReplicated` one.
     [[nodiscard]] ALWAYS_INLINE ssize_t stringPositionOf(ssize_t row) const
     {
+        if (replicated_positions)
+            return static_cast<ssize_t>(replicated_positions->getIndexAt(static_cast<size_t>(row)));
         if (low_cardinality_strings)
             return static_cast<ssize_t>(low_cardinality_strings->getIndexAt(static_cast<size_t>(row)));
         return row;

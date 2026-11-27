@@ -40,6 +40,34 @@ public:
     static size_t getSizeOfIndexType(const IColumn & column, size_t hint);
     [[nodiscard]] size_t getSizeOfIndexType() const { return size_of_type; }
 
+    /// Reads the indexes of rows in a hot loop. It reads the width of the index type once, so each read is a switch on a
+    /// constant value, without the call and the `typeid_cast` of `getIndexAt`. The reader stays valid while the index
+    /// column is not modified.
+    class Reader
+    {
+    public:
+        explicit Reader(const ColumnIndex & index)
+            : data(index.getIndexes()->getRawData().data())
+            , size_of_type(index.getSizeOfIndexType())
+        {
+        }
+
+        [[nodiscard]] ALWAYS_INLINE size_t getIndexAt(size_t row) const
+        {
+            switch (size_of_type)
+            {
+                case sizeof(UInt8): return reinterpret_cast<const UInt8 *>(data)[row];
+                case sizeof(UInt16): return reinterpret_cast<const UInt16 *>(data)[row];
+                case sizeof(UInt32): return reinterpret_cast<const UInt32 *>(data)[row];
+                default: return reinterpret_cast<const UInt64 *>(data)[row];
+            }
+        }
+
+    private:
+        const char * data;
+        size_t size_of_type;
+    };
+
     MutableColumnPtr detachIndexes() { return IColumn::mutate(std::move(indexes)); }
     void attachIndexes(MutableColumnPtr indexes_);
 

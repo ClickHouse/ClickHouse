@@ -95,7 +95,7 @@ The maximum number of streams (columns) that can be flushed in parallel
 only for Vertical merges.
 )", 0, \
         {"25.4", 40, 40, "New setting"}) \
-    DECLARE(Float, ratio_of_defaults_for_sparse_serialization, 0.9375f, R"(
+    DECLARE(Float, ratio_of_defaults_for_sparse_serialization, 0.8f, R"(
 Minimal ratio of the number of _default_ values to the number of _all_ values
 in a column. Setting this value causes the column to be stored using sparse
 serializations.
@@ -205,7 +205,8 @@ You can see which parts of `s` were stored using the sparse serialization:
 │ s      │ Sparse             │
 └────────┴────────────────────┘
 ```
-)", 0) \
+)", 0, \
+        {"26.12", 0.9375, 0.8, "Lower the default, so that more columns that hold mostly default values are stored sparse"}) \
     DECLARE(Bool, compute_exact_num_defaults_for_sparse_columns, true, R"(
 Compute the exact count of default values per column during inserts and
 merges, instead of the cheaper sampling estimate used to decide on sparse

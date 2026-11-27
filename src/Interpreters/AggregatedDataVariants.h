@@ -591,6 +591,10 @@ struct AggregatedDataVariants : private boost::noncopyable
     /// `keys64_packed_string`, `keys128_packed_string`, their key-only forms (`_void`) or a two-level form of
     /// them.
     static bool isKeysAndPackedString(Type type);
+    /// Returns whether the key state of the method reads a `ColumnReplicated` key column over a `String` column in
+    /// place, through the positions of its rows in the nested column (see `replicatedStrings`). These are the methods
+    /// of one `String` key and of fixed-width keys and one `String`.
+    static bool readsReplicatedStringKeyInPlace(Type type);
     void convertToTwoLevel();
     /// Builds the cell index of the single-level table (see `AggregationCellIndex`): its cells grouped by
     /// `partition_of(hash)`, so that a merge reads the cells of any run of consecutive partitions without

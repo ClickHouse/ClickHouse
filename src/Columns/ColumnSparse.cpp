@@ -161,6 +161,28 @@ ColumnPtr ColumnSparse::convertToFullColumnIfSparse() const
     return values->createWithOffsets(getOffsetsData(), *createColumnConst(values, 0), _size, /*shift=*/ 1);
 }
 
+ColumnPtr ColumnSparse::toReplicated() const
+{
+    const auto & offsets_data = getOffsetsData();
+    auto build = [&]<typename Index>() -> ColumnPtr
+    {
+        auto indexes = ColumnVector<Index>::create(_size, Index(0));
+        auto & indexes_data = indexes->getData();
+        for (size_t j = 0; j < offsets_data.size(); ++j)
+            indexes_data[offsets_data[j]] = static_cast<Index>(j + 1);
+        return ColumnReplicated::create(values, std::move(indexes));
+    };
+
+    const size_t max_position = values->size() - 1;
+    if (max_position <= std::numeric_limits<UInt8>::max())
+        return build.template operator()<UInt8>();
+    if (max_position <= std::numeric_limits<UInt16>::max())
+        return build.template operator()<UInt16>();
+    if (max_position <= std::numeric_limits<UInt32>::max())
+        return build.template operator()<UInt32>();
+    return build.template operator()<UInt64>();
+}
+
 void ColumnSparse::insertSingleValue(const Inserter & inserter)
 {
     inserter(*values);
@@ -559,8 +581,10 @@ ColumnPtr ColumnSparse::indexImpl(const PaddedPODArray<Type> & indexes, size_t l
     /// A sparse filter computed from this column selects exactly its non-default rows, so the result shares `values`.
     if constexpr (std::is_same_v<Type, UInt64>)
     {
+        /// Such a filter usually lists its rows in the offsets column of this column itself, which needs no comparison.
         const auto & offsets_data = getOffsetsData();
-        if (limit == offsets_data.size() && memcmp(indexes.data(), offsets_data.data(), limit * sizeof(UInt64)) == 0)
+        if (limit == offsets_data.size()
+            && (indexes.data() == offsets_data.data() || memcmp(indexes.data(), offsets_data.data(), limit * sizeof(UInt64)) == 0))
         {
             auto res_offsets = ColumnUInt64::create(limit);
             iota(res_offsets->getData().data(), limit, UInt64(0));
@@ -702,28 +726,58 @@ void ColumnSparse::compareColumn(const IColumn & rhs, size_t rhs_row_num,
                     PaddedPODArray<UInt64> * row_indexes, PaddedPODArray<Int8> & compare_results,
                     int direction, int nan_direction_hint) const
 {
-    if (row_indexes || !typeid_cast<const ColumnSparse *>(&rhs))
+    /// The value to compare with, as a row of a column of the type of `values`.
+    const IColumn * rhs_column = &rhs;
+    size_t rhs_row = rhs_row_num;
+    if (const auto * rhs_sparse = typeid_cast<const ColumnSparse *>(&rhs))
     {
-        /// TODO: implement without conversion to full column.
-        auto this_full = convertToFullColumnIfSparse();
-        auto rhs_full = rhs.convertToFullColumnIfSparse();
-        this_full->compareColumn(*rhs_full, rhs_row_num, row_indexes, compare_results, direction, nan_direction_hint);
+        rhs_column = &rhs_sparse->getValuesColumn();
+        rhs_row = rhs_sparse->getValueIndex(rhs_row_num);
     }
-    else
-    {
-        const auto & rhs_sparse = assert_cast<const ColumnSparse &>(rhs);
-        PaddedPODArray<Int8> nested_result;
-        values->compareColumn(
-            rhs_sparse.getValuesColumn(),
-            rhs_sparse.getValueIndex(rhs_row_num),
-            nullptr, nested_result, direction, nan_direction_hint);
 
-        const auto & offsets_data = getOffsetsData();
-        compare_results.resize(size());
+    /// Compares every value once: the result of the default value at position 0 holds for all default rows.
+    PaddedPODArray<Int8> nested_result;
+    values->compareColumn(*rhs_column, rhs_row, nullptr, nested_result, direction, nan_direction_hint);
+
+    const auto & offsets_data = getOffsetsData();
+    if (!row_indexes)
+    {
+        compare_results.resize(_size);
         std::fill(compare_results.begin(), compare_results.end(), nested_result[0]);
         for (size_t i = 0; i < offsets_data.size(); ++i)
             compare_results[offsets_data[i]] = nested_result[i + 1];
+        return;
     }
+
+    /// Only the listed rows get results, and the rows that compare equal stay listed. The value of a row is found by
+    /// following the offsets along the list. Sorting lists the rows in ascending order, so the walk takes one pass, and
+    /// a row before the current offset starts a new search.
+    if (compare_results.empty())
+        compare_results.resize(_size);
+    else if (compare_results.size() != _size)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of compare_results: {} doesn't match rows_num: {}",
+            compare_results.size(), _size);
+
+    const UInt64 * offsets_begin = offsets_data.data();
+    const UInt64 * offsets_end = offsets_begin + offsets_data.size();
+    const UInt64 * offset = offsets_begin;
+    UInt64 * next_index = row_indexes->data();
+    for (auto row : *row_indexes)
+    {
+        if (offset != offsets_begin && *(offset - 1) >= row)
+            offset = std::lower_bound(offsets_begin, offset, row);
+        while (offset != offsets_end && *offset < row)
+            ++offset;
+
+        const Int8 res = nested_result[offset != offsets_end && *offset == row ? offset - offsets_begin + 1 : 0];
+        compare_results[row] = res;
+        if (res == 0)
+        {
+            *next_index = row;
+            ++next_index;
+        }
+    }
+    row_indexes->resize(next_index - row_indexes->data());
 }
 
 int ColumnSparse::compareAtWithCollation(size_t n, size_t m, const IColumn & rhs, int null_direction_hint, const Collator & collator) const
@@ -850,6 +904,13 @@ void ColumnSparse::updatePermutationWithCollation(
 size_t ColumnSparse::byteSize() const
 {
     return values->byteSize() + offsets->byteSize() + sizeof(_size);
+}
+
+size_t ColumnSparse::byteSizeOfFullColumn() const
+{
+    /// `values` holds the default once, at position 0, whether or not any row is default.
+    size_t default_size = values->byteSizeAt(0);
+    return values->byteSize() - default_size + getNumberOfDefaultRows() * default_size;
 }
 
 size_t ColumnSparse::byteSizeAt(size_t n) const
