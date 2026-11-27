@@ -44,22 +44,3 @@ function unique_id_of()
     wait_for "SELECT count() > 0 $line" > /dev/null
     $CLICKHOUSE_CLIENT --query "SELECT extract(any(message), 'unique id: (\\\\S+)') $line"
 }
-
-function query_controllers()
-{
-    $CLICKHOUSE_CLIENT --query "SELECT value FROM system.metrics WHERE metric = 'StatelessWorkerQueryControllers'"
-}
-
-# Prints `query controllers left: N`, the number of query controllers above `$1` once it stops falling (at most 20 seconds).
-# Earlier tests can leave controllers, so a test compares with the number before its query.
-function query_controllers_left()
-{
-    local controllers
-    for _ in {1..200}
-    do
-        controllers=$(query_controllers)
-        (( controllers <= $1 )) && break
-        sleep 0.1
-    done
-    echo "query controllers left: $(( controllers > $1 ? controllers - $1 : 0 ))"
-}
