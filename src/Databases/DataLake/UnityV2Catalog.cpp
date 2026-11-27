@@ -17,6 +17,7 @@
 #include <Common/checkStackSize.h>
 #include <IO/Operators.h>
 #include <IO/WriteHelpers.h>
+#include <IO/parseURI.h>
 #include <sstream>
 #include <Core/NamesAndTypes.h>
 #include <Core/UUID.h>
@@ -197,11 +198,11 @@ AccessToken UnityV2Catalog::retrieveAccessToken() const
     Poco::URI url;
     if (oauth_server_uri.empty())
     {
-        url = Poco::URI(base_url_str);
+        url = DB::parseURI(base_url_str);
         url.setPathEtc("/oidc/v1/token");
     }
     else
-        url = Poco::URI(oauth_server_uri);
+        url = DB::parseURI(oauth_server_uri);
 
     return requestOAuthToken(getContext(), url, getOAuthRequestParams());
 }
