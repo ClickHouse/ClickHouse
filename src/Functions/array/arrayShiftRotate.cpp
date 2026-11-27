@@ -49,6 +49,20 @@ public:
     [[nodiscard]] bool useDefaultImplementationForNulls() const override { return strategy == ShiftRotateStrategy::Rotate; }
     [[nodiscard]] bool useDefaultImplementationForDynamic() const override { return true; }
     [[nodiscard]] bool useDefaultImplementationForVariant() const override { return true; }
+
+    /// A `Dynamic` or `Variant` default that the array elements already accept, as a `Dynamic` default of an `Array(Dynamic)`,
+    /// is handled here: the adaptor would apply its NULL handling to it and change the result type from `Array`.
+    [[nodiscard]] bool useDefaultImplementationForDynamicOrVariantArgument(const ColumnsWithTypeAndName & arguments, size_t argument_index) const override
+    {
+        if constexpr (strategy == ShiftRotateStrategy::Shift)
+        {
+            if (argument_index == 2 && arguments.size() == 3)
+                if (const auto * array_type = typeid_cast<const DataTypeArray *>(arguments[0].type.get()))
+                    return !defaultFitsElementType(array_type->getNestedType(), arguments[2].type);
+        }
+        return true;
+    }
+
     [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     /// Declarative signature for `Rotate` (preserves the element type);
@@ -61,6 +75,17 @@ public:
             return "(Array(T : Any), NativeInteger) -> Array(T)";
         else
             return "(Array(T : Any), NativeInteger, [Any]) -> Array(T)";
+    }
+
+    /// Whether the default of a shift needs no conversion of the array: its type, without `Nullable` for a non-nullable
+    /// element type, must not widen past the element type.
+    static bool defaultFitsElementType(const DataTypePtr & elem_type, DataTypePtr default_type)
+    {
+        if (!elem_type->isNullable())
+            default_type = removeNullable(default_type);
+
+        auto ret = tryGetLeastSupertype(DataTypes{elem_type, default_type});
+        return ret && ret->equals(*elem_type);
     }
 
     [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
@@ -107,23 +132,15 @@ public:
                 getName());
 
         const DataTypePtr & elem_type = static_cast<const DataTypeArray &>(*first_arg).getNestedType();
-        if (arguments.size() == 3)
-        {
-            auto default_type = arguments[2];
-            if (!elem_type->isNullable())
-                default_type = removeNullable(default_type);
-
-            auto ret = tryGetLeastSupertype(DataTypes{elem_type, default_type});
-            // Note that this will fail if the default value does not fit into the array element type (e.g. UInt64 and Array(UInt8)).
-            // In this case array should be converted to Array(UInt64) explicitly.
-            if (!ret || !ret->equals(*elem_type))
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Illegal type {} of argument of function {}, expected {}",
-                    arguments[2]->getName(),
-                    getName(),
-                    elem_type->getName());
-        }
+        // Note that this will fail if the default value does not fit into the array element type (e.g. UInt64 and Array(UInt8)).
+        // In this case array should be converted to Array(UInt64) explicitly.
+        if (arguments.size() == 3 && !defaultFitsElementType(elem_type, arguments[2]))
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of argument of function {}, expected {}",
+                arguments[2]->getName(),
+                getName(),
+                elem_type->getName());
 
         return std::make_shared<DataTypeArray>(elem_type);
     }

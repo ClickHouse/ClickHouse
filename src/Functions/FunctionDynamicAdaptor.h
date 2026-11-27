@@ -45,7 +45,10 @@ private:
 class FunctionBaseDynamicAdaptor final : public IFunctionBase
 {
 public:
-    FunctionBaseDynamicAdaptor(std::shared_ptr<const IFunctionOverloadResolver> function_overload_resolver_, DataTypes arguments_);
+    /// dynamic_argument_index_ is the argument the adaptor executes per type. The resolver picks it, because a function
+    /// may handle some `Dynamic` arguments itself (see `IFunctionOverloadResolver::useDefaultImplementationForDynamicOrVariantArgument`).
+    FunctionBaseDynamicAdaptor(
+        std::shared_ptr<const IFunctionOverloadResolver> function_overload_resolver_, DataTypes arguments_, size_t dynamic_argument_index_);
 
     String getName() const override { return function_overload_resolver->getName(); }
 

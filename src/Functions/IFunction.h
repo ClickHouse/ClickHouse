@@ -648,6 +648,12 @@ protected:
       */
     virtual bool useDefaultImplementationForVariantWithCustomName(const DataTypePtr & /*type*/) const { return useDefaultImplementationForVariant(); }
 
+    /** Controls the default `Dynamic` and `Variant` adaptors per argument. When it returns false, a `Dynamic` or `Variant`
+      * argument at `argument_index` does not make the function go through the adaptor: the function handles that argument
+      * itself, while another `Dynamic` or `Variant` argument still can go through the adaptor.
+      */
+    virtual bool useDefaultImplementationForDynamicOrVariantArgument(const ColumnsWithTypeAndName & /*arguments*/, size_t /*argument_index*/) const { return true; }
+
 private:
 
     DataTypePtr getReturnTypeWithoutLowCardinality(const ColumnsWithTypeAndName & arguments) const;
@@ -746,6 +752,7 @@ public:
 
     [[nodiscard]] virtual bool useDefaultImplementationForVariant() const { return useDefaultImplementationForNulls(); }
     [[nodiscard]] virtual bool useDefaultImplementationForVariantWithCustomName(const DataTypePtr & /*type*/) const { return useDefaultImplementationForVariant(); }
+    [[nodiscard]] virtual bool useDefaultImplementationForDynamicOrVariantArgument(const ColumnsWithTypeAndName & /*arguments*/, size_t /*argument_index*/) const { return true; }
 
     [[nodiscard]] virtual bool canBeExecutedOnDefaultArguments() const { return true; }
     [[nodiscard]] virtual bool canBeExecutedOnDefaultArguments(const ColumnsWithTypeAndName & /*arguments*/) const { return canBeExecutedOnDefaultArguments(); }

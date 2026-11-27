@@ -531,26 +531,16 @@ ColumnPtr ExecutableFunctionDynamicAdaptor::executeDryRunImpl(const ColumnsWithT
     return executeImpl(arguments, result_type, input_rows_count, true);
 }
 
-FunctionBaseDynamicAdaptor::FunctionBaseDynamicAdaptor(std::shared_ptr<const IFunctionOverloadResolver> function_overload_resolver_, DataTypes arguments_) : function_overload_resolver(function_overload_resolver_), arguments(arguments_)
+FunctionBaseDynamicAdaptor::FunctionBaseDynamicAdaptor(
+    std::shared_ptr<const IFunctionOverloadResolver> function_overload_resolver_, DataTypes arguments_, size_t dynamic_argument_index_)
+    : function_overload_resolver(function_overload_resolver_), arguments(arguments_), dynamic_argument_index(dynamic_argument_index_)
 {
     /// For resulting Dynamic type use the maximum max_dynamic_types from all Dynamic arguments.
     size_t result_max_dynamic_type = 0;
-    bool first = true;
-    for (size_t i = 0; i != arguments.size(); ++i)
+    for (const auto & argument : arguments)
     {
-        if (const auto * dynamic_type = typeid_cast<const DataTypeDynamic *>(arguments[i].get()))
-        {
-            if (first)
-            {
-                result_max_dynamic_type = dynamic_type->getMaxDynamicTypes();
-                dynamic_argument_index = i;
-                first = false;
-            }
-            else
-            {
-                result_max_dynamic_type = std::max(result_max_dynamic_type, dynamic_type->getMaxDynamicTypes());
-            }
-        }
+        if (const auto * dynamic_type = typeid_cast<const DataTypeDynamic *>(argument.get()))
+            result_max_dynamic_type = std::max(result_max_dynamic_type, dynamic_type->getMaxDynamicTypes());
     }
 
     if (auto type = function_overload_resolver->getReturnTypeForDefaultImplementationForDynamic(arguments))
