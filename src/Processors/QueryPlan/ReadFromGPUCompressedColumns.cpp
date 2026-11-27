@@ -338,7 +338,7 @@ protected:
     {
         while (true)
         {
-            if (auto batch = stager.takeSealed())
+            if (auto batch = stager.takeFinished())
                 return chunkOf(std::move(batch));
 
             if (!current)
