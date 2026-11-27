@@ -142,8 +142,6 @@ namespace
         return members;
     }
 
-    String serializeClusterMembers(const ClusterMembers & members) { return fmt::format("{}", fmt::join(members, "\n")); }
-
     struct ServerStats
     {
         bool is_clickhouse_keeper = false;
@@ -496,7 +494,7 @@ std::unique_ptr<Coordination::IKeeper> ZooKeeper::connectToAllNodes(ShuffleHosts
             candidate->session->finalize("Another ZooKeeper node was chosen");
 
     chosen.session->enableSessionExpiryNotification();
-    accepted_cluster_config = serializeClusterMembers(chosen.members);
+    accepted_cluster_config = fmt::format("{}", fmt::join(chosen.members, "\n"));
 
     LOG_INFO(
         log,
@@ -586,7 +584,7 @@ void ZooKeeper::init(ZooKeeperArgs args_, std::unique_ptr<Coordination::IKeeper>
                            " To preserve balance in ZooKeeper usage, this ZooKeeper session will expire in {} seconds",
                       impl->getConnectedHostPort(), *node_idx, reconnect_timeout_sec);
 
-            auto reconnect_task_holder = DB::Context::getGlobalContextInstance()->getSchedulePool()->createTask(DB::StorageID::createEmpty(), "ZKReconnect", [this, optimal_host = shuffled_hosts[0]]()
+            auto reconnect_task_holder = DB::Context::getGlobalContextInstance()->getSchedulePool()->createTask(DB::StorageID::createEmpty(), "ZKReconnect", [this, optimal_host = shuffled_hosts[0], connect_to_all_nodes]()
             {
                 auto component_guard = Coordination::setCurrentComponent("ZooKeeper::reconnect");
                 try
@@ -595,13 +593,11 @@ void ZooKeeper::init(ZooKeeperArgs args_, std::unique_ptr<Coordination::IKeeper>
                     ShuffleHosts node{optimal_host};
                     auto new_impl = std::make_unique<Coordination::ZooKeeper>(
                         node, args, zk_log, aggregated_zookeeper_log, /*notify_session_expiry_*/ false);
-                    String validated_cluster_config;
-                    if (!accepted_cluster_config.empty())
+                    if (connect_to_all_nodes)
                     {
-                        ServerStats stats = getServerStats(optimal_host, args);
-                        ClusterMembers members = getClusterConfig(*new_impl, optimal_host, stats.is_clickhouse_keeper);
-                        checkSharesServer(optimal_host, members, accepted_cluster_config);
-                        validated_cluster_config = serializeClusterMembers(members);
+                        /// The next session connects to all nodes, checks them and chooses one by the policy.
+                        impl->finalize("A more optimal node is available");
+                        return;
                     }
 
                     auto new_node_idx = new_impl->getConnectedNodeIdx();
@@ -615,8 +611,6 @@ void ZooKeeper::init(ZooKeeperArgs args_, std::unique_ptr<Coordination::IKeeper>
                     }
 
                     new_impl->enableSessionExpiryNotification();
-                    if (!validated_cluster_config.empty())
-                        accepted_cluster_config = std::move(validated_cluster_config);
                     optimal_impl = std::move(new_impl);
                     impl->finalize("Connected to a more optimal node");
                 }
