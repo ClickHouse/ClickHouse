@@ -277,6 +277,7 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
     , indexed_column_is_array(isIndexedColumnArray(header))
     , indexed_fixed_string_size(tryGetIndexedFixedStringSize(header))
     , normalized_index_column_name(normalized_index_column_name_)
+    , max_lookup_name_size(std::max(maxIndexLookupNameSize(header.getNames()), normalized_index_column_name_.value_or("").size()))
     , is_column_shadowing_map_subcolumn(std::move(is_column_shadowing_map_subcolumn_))
     , owned_tokenizer(tokenizer_ && tokenizer_->isStateful() ? std::shared_ptr<const ITokenizer>(tokenizer_->clone()) : nullptr)
     , tokenizer(owned_tokenizer ? owned_tokenizer.get() : tokenizer_)
@@ -535,7 +536,7 @@ bool MergeTreeIndexConditionText::canAnswerFunctionNode(const ActionsDAG::Node &
 
 bool MergeTreeIndexConditionText::isIndexExpression(const ActionsDAG::Node & node) const
 {
-    return hasIndexForColumn(unwrapLosslessConversion(RPNBuilderTreeNode(&node, getContext())).getColumnName());
+    return hasIndexForColumn(unwrapLosslessConversion(RPNBuilderTreeNode(&node, getContext())));
 }
 
 std::optional<String> MergeTreeIndexConditionText::tryGetVirtualColumnName(const TextSearchQuery & query, const String & index_name) const
@@ -1341,10 +1342,10 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         direct_read_mode = TextIndexDirectReadMode::None;
     }
 
-    auto index_column_name = index_column_node.getColumnName();
-    bool has_index_column = hasIndexForColumn(index_column_name);
-    bool has_map_keys_column = hasIndexForColumn(fmt::format("mapKeys({})", index_column_name));
-    bool has_map_values_column = hasIndexForColumn(fmt::format("mapValues({})", index_column_name));
+    auto index_column_name = index_column_node.tryGetColumnName(max_lookup_name_size);
+    bool has_index_column = index_column_name && hasIndexForColumn(*index_column_name);
+    bool has_map_keys_column = index_column_name && hasIndexForColumn(fmt::format("mapKeys({})", *index_column_name));
+    bool has_map_values_column = index_column_name && hasIndexForColumn(fmt::format("mapValues({})", *index_column_name));
 
     bool candidate_for_exact_mode = true;
     if (traverseMapElementValueNode(function_node, index_column_node, value_field))
@@ -2267,7 +2268,7 @@ std::optional<String> MergeTreeIndexConditionText::tryGetMapElementKeyForIndexCo
         if (function.getArgumentsSize() != 2 || function.getFunctionName() != "arrayElement")
             return std::nullopt;
 
-        if (!hasIndexForColumn(function.getArgumentAt(0).getColumnName()))
+        if (!hasIndexForColumn(function.getArgumentAt(0)))
             return std::nullopt;
 
         Field key_field;
@@ -2280,7 +2281,8 @@ std::optional<String> MergeTreeIndexConditionText::tryGetMapElementKeyForIndexCo
     }
 
     /// `m['key']` after the subcolumn rewrite (`optimize_functions_to_subcolumns`).
-    auto parsed = tryParseMapSubcolumnName(node.getColumnName(), is_column_shadowing_map_subcolumn);
+    auto column_name = node.tryGetColumnName(max_lookup_name_size);
+    auto parsed = column_name ? tryParseMapSubcolumnName(*column_name, is_column_shadowing_map_subcolumn) : std::nullopt;
     if (!parsed)
         return std::nullopt;
 
@@ -2397,7 +2399,7 @@ bool MergeTreeIndexConditionText::traverseMapContainsKeyValueNode(
     if (tokenizer->getType() != ITokenizer::Type::KeyValuePairs)
         return false;
 
-    if (!hasIndexForColumn(function_node.getArgumentAt(0).getColumnName()))
+    if (!hasIndexForColumn(function_node.getArgumentAt(0)))
         return false;
 
     /// FixedString excluded: its padding is compared away by the function but not stored in the token,
@@ -2440,14 +2442,15 @@ bool MergeTreeIndexConditionText::hasIndexForMapElementValue(const RPNBuilderTre
         const auto function = node.toFunctionNode();
         if (function.getArgumentsSize() == 2 && function.getFunctionName() == "arrayElement")
         {
-            const auto column_name = function.getArgumentAt(0).getColumnName();
-            return hasIndexForColumn(fmt::format("mapValues({})", column_name));
+            const auto column_name = function.getArgumentAt(0).tryGetColumnName(max_lookup_name_size);
+            return column_name && hasIndexForColumn(fmt::format("mapValues({})", *column_name));
         }
         return false;
     }
 
     /// Handle `map.key_<serialized_key>` subcolumn form.
-    auto parsed = tryParseMapSubcolumnName(node.getColumnName(), is_column_shadowing_map_subcolumn);
+    auto column_name = node.tryGetColumnName(max_lookup_name_size);
+    auto parsed = column_name ? tryParseMapSubcolumnName(*column_name, is_column_shadowing_map_subcolumn) : std::nullopt;
     if (!parsed)
         return false;
     auto & [map_column_name, serialized_key] = *parsed;
@@ -2591,12 +2594,12 @@ bool MergeTreeIndexConditionText::traverseJSONSubcolumnKeyNode(
 std::optional<RPNBuilderTreeNode> MergeTreeIndexConditionText::getIndexedArrayJoinArgument(const RPNBuilderTreeNode & node, bool & padded) const
 {
     auto argument = node.getArrayJoinArgument();
-    if (!argument || hasIndexForColumn(argument->getColumnName()))
+    if (!argument || hasIndexForColumn(*argument))
         return argument;
     if (!argument->isFunction() || argument->toFunctionNode().getFunctionName() != "emptyArrayToSingle")
         return std::nullopt;
     auto array = argument->toFunctionNode().getArgumentAt(0);
-    if (!hasIndexForColumn(array.getColumnName()))
+    if (!hasIndexForColumn(array))
         return std::nullopt;
     padded = true;
     return array;
@@ -2634,7 +2637,7 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
         /// `arrayJoin(arr) IN (set)` needs an element in the set, like `hasAny(arr, set)`
         if (getIndexedArrayJoinArgument(node, padded))
             return true;
-        return hasIndexForColumn(node.getColumnName())
+        return hasIndexForColumn(node)
             || tryMatchNodeToJSONIndex(node, header, "JSONAllValues", json_argument_types);
     };
 

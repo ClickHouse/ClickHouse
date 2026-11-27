@@ -501,6 +501,14 @@ const ActionsDAG::Node * unwrapLosslessConversion(const ActionsDAG::Node * node,
     return unwrapLosslessConversion(node_without_alias->children.front(), allow_drop_nullable);
 }
 
+size_t maxIndexLookupNameSize(const Names & names)
+{
+    size_t max_size = ActionsDAG::MAX_GENERATED_NAME_SIZE;
+    for (const auto & name : names)
+        max_size = std::max(max_size, name.size());
+    return max_size;
+}
+
 template <typename RPNElement>
 RPNBuilder<RPNElement>::RPNBuilder(
     const ActionsDAG::Node * filter_actions_dag_node,

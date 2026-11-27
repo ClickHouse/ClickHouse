@@ -110,6 +110,10 @@ bool isLosslessConversionFunction(const ActionsDAG::Node & node, bool allow_drop
 RPNBuilderTreeNode unwrapLosslessConversion(const RPNBuilderTreeNode & node, bool allow_drop_nullable = true);
 const ActionsDAG::Node * unwrapLosslessConversion(const ActionsDAG::Node * node, bool allow_drop_nullable = true);
 
+/// The `max_size` of `tryGetColumnName` for a skip index with columns `names`: a map key or a JSON path of a subcolumn
+/// is matched up to ActionsDAG::MAX_GENERATED_NAME_SIZE.
+size_t maxIndexLookupNameSize(const Names & names);
+
 /** RPN Builder build stack of reverse polish notation elements (RPNElements) required for index analysis.
   *
   * RPNBuilder client must provide RPNElement type that has following interface:

@@ -393,13 +393,17 @@ MergeTreeIndexConditionSet::MergeTreeIndexConditionSet(
     condition.relaxAtomsOverNaNHidingColumns(index_data_types);
 
     for (const auto & column : index_description.sample_block)
+    {
         key_columns.emplace(column.name, column.type);
+        max_key_name_size = std::max(max_key_name_size, column.name.size());
+    }
 
     if (!filter_dag.predicate)
         return;
 
     std::vector<FutureSetPtr> sets_to_prepare;
-    if (checkDAGUseless(*filter_dag.predicate, context, sets_to_prepare))
+    std::array<UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, bool>, 2> useless;
+    if (checkDAGUseless(*filter_dag.predicate, context, sets_to_prepare, useless))
         return;
     /// Try to run subqueries, don't use index if failed (e.g. if use_index_for_in_with_subqueries is disabled).
     for (auto & set : sets_to_prepare)
@@ -411,7 +415,8 @@ MergeTreeIndexConditionSet::MergeTreeIndexConditionSet(
 
     std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> node_to_result_node;
     std::unordered_map<String, const ActionsDAG::Node *> key_column_inputs;
-    const auto & predicate_node = traverseDAG(*filter_actions_dag_node, filter_actions_dag, context, node_to_result_node, key_column_inputs);
+    UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, const ActionsDAG::Node *> atoms;
+    const auto & predicate_node = traverseDAG(*filter_actions_dag_node, filter_actions_dag, context, node_to_result_node, key_column_inputs, atoms);
 
     auto sub_dag = ActionsDAG::cloneSubDAG({&predicate_node}, false);
 
@@ -577,7 +582,8 @@ const ActionsDAG::Node & MergeTreeIndexConditionSet::traverseDAG(const ActionsDA
     ActionsDAG & result_dag,
     const ContextPtr & context,
     std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> & node_to_result_node,
-    std::unordered_map<String, const ActionsDAG::Node *> & key_column_inputs) const
+    std::unordered_map<String, const ActionsDAG::Node *> & key_column_inputs,
+    UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, const ActionsDAG::Node *> & atoms) const
 {
     auto result_node_it = node_to_result_node.find(&node);
     if (result_node_it != node_to_result_node.end())
@@ -585,11 +591,11 @@ const ActionsDAG::Node & MergeTreeIndexConditionSet::traverseDAG(const ActionsDA
 
     const ActionsDAG::Node * result_node = nullptr;
 
-    if (const auto * operator_node_ptr = operatorFromDAG(node, result_dag, context, node_to_result_node, key_column_inputs))
+    if (const auto * operator_node_ptr = operatorFromDAG(node, result_dag, context, node_to_result_node, key_column_inputs, atoms))
     {
         result_node = operator_node_ptr;
     }
-    else if (const auto * atom_node_ptr = atomFromDAG(node, result_dag, context, key_column_inputs))
+    else if (const auto * atom_node_ptr = atomFromDAG(node, result_dag, context, key_column_inputs, atoms))
     {
         result_node = atom_node_ptr;
 
@@ -647,7 +653,12 @@ const ActionsDAG::Node & MergeTreeIndexConditionSet::traverseDAG(const ActionsDA
     return *result_node;
 }
 
-const ActionsDAG::Node * MergeTreeIndexConditionSet::atomFromDAG(const ActionsDAG::Node & node, ActionsDAG & result_dag, const ContextPtr & context, std::unordered_map<String, const ActionsDAG::Node *> & key_column_inputs) const
+const ActionsDAG::Node * MergeTreeIndexConditionSet::atomFromDAG(
+    const ActionsDAG::Node & node,
+    ActionsDAG & result_dag,
+    const ContextPtr & context,
+    std::unordered_map<String, const ActionsDAG::Node *> & key_column_inputs,
+    UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, const ActionsDAG::Node *> & atoms) const
 {
     /// Function, literal or column
 
@@ -676,8 +687,8 @@ const ActionsDAG::Node * MergeTreeIndexConditionSet::atomFromDAG(const ActionsDA
 
     /// A deterministic function like `plus(blockSize(), 1)` passes the check above, but its name still does not
     /// make it the key column with the same name.
-    auto column_name = tree_node.getColumnName();
-    if (auto key_column_it = key_columns.find(column_name);
+    auto column_name = tree_node.tryGetColumnName(max_key_name_size);
+    if (auto key_column_it = column_name ? key_columns.find(*column_name) : key_columns.end();
         key_column_it != key_columns.end() && VirtualColumnUtils::isDeterministicInScopeOfQuery(node_to_check))
     {
         /// A name match does not imply a type match: the query-side node can carry a `Nullable` the
@@ -698,7 +709,7 @@ const ActionsDAG::Node * MergeTreeIndexConditionSet::atomFromDAG(const ActionsDA
         const ActionsDAG::Node * result_node = nullptr;
 
         /// Check if we already created an INPUT for this key column
-        auto it = key_column_inputs.find(column_name);
+        auto it = key_column_inputs.find(*column_name);
         if (it != key_column_inputs.end())
         {
             result_node = it->second;
@@ -709,9 +720,9 @@ const ActionsDAG::Node * MergeTreeIndexConditionSet::atomFromDAG(const ActionsDA
 
             /// Bind to the type the granule block holds, not the query-side type.
             if (node.type != ActionsDAG::ActionType::INPUT)
-                result_node = &result_dag.addInput(column_name, index_type);
+                result_node = &result_dag.addInput(*column_name, index_type);
 
-            key_column_inputs[column_name] = result_node;
+            key_column_inputs[*column_name] = result_node;
         }
 
         /// Restore the query-side type for the enclosing function. `toNullable` wraps the type
@@ -736,21 +747,26 @@ const ActionsDAG::Node * MergeTreeIndexConditionSet::atomFromDAG(const ActionsDA
 
     for (size_t i = 0; i < arguments_size; ++i)
     {
-        children[i] = atomFromDAG(*arguments[i], result_dag, context, key_column_inputs);
+        auto it = atoms.find(arguments[i]);
+        if (it == atoms.end())
+            it = atoms.emplace(arguments[i], atomFromDAG(*arguments[i], result_dag, context, key_column_inputs, atoms)).first;
+        children[i] = it->second;
 
         if (!children[i])
             return nullptr;
     }
 
     /// Children carry their query-side types, so `node.function_base` still declares the right type.
-    return &result_dag.addFunction(node.function_base, children, {});
+    auto result_name = ActionsDAG::nameForRebuiltFunction(node.function_base->getName(), children, node.result_name);
+    return &result_dag.addFunction(node.function_base, children, std::move(result_name));
 }
 
 const ActionsDAG::Node * MergeTreeIndexConditionSet::operatorFromDAG(const ActionsDAG::Node & node,
     ActionsDAG & result_dag,
     const ContextPtr & context,
     std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> & node_to_result_node,
-    std::unordered_map<String, const ActionsDAG::Node *> & key_column_inputs) const
+    std::unordered_map<String, const ActionsDAG::Node *> & key_column_inputs,
+    UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, const ActionsDAG::Node *> & atoms) const
 {
     /// Functions AND, OR, NOT. Replace with bit*.
 
@@ -774,7 +790,7 @@ const ActionsDAG::Node * MergeTreeIndexConditionSet::operatorFromDAG(const Actio
         if (arguments_size != 1)
             return nullptr;
 
-        const ActionsDAG::Node * argument = &traverseDAG(*arguments[0], result_dag, context, node_to_result_node, key_column_inputs);
+        const ActionsDAG::Node * argument = &traverseDAG(*arguments[0], result_dag, context, node_to_result_node, key_column_inputs, atoms);
 
         auto bit_swap_last_two_function = FunctionFactory::instance().get("__bitSwapLastTwo", context);
         return &result_dag.addFunction(bit_swap_last_two_function, {argument}, {});
@@ -788,7 +804,7 @@ const ActionsDAG::Node * MergeTreeIndexConditionSet::operatorFromDAG(const Actio
         children.resize(arguments_size);
 
         for (size_t i = 0; i < arguments_size; ++i)
-            children[i] = &traverseDAG(*arguments[i], result_dag, context, node_to_result_node, key_column_inputs);
+            children[i] = &traverseDAG(*arguments[i], result_dag, context, node_to_result_node, key_column_inputs, atoms);
 
         FunctionOverloadResolverPtr function;
 
@@ -824,8 +840,23 @@ static std::optional<bool> tryGetConstantCondition(const ActionsDAG::Node & node
     return node.column->getBool(0);
 }
 
-bool MergeTreeIndexConditionSet::checkDAGUseless(const ActionsDAG::Node & node, const ContextPtr & context, std::vector<FutureSetPtr> & sets_to_prepare, bool atomic) const
+bool MergeTreeIndexConditionSet::checkDAGUseless(
+    const ActionsDAG::Node & node,
+    const ContextPtr & context,
+    std::vector<FutureSetPtr> & sets_to_prepare,
+    std::array<UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, bool>, 2> & useless,
+    bool atomic) const
 {
+    auto check_child = [&](const ActionsDAG::Node & child, bool child_atomic)
+    {
+        auto & results = useless[child_atomic];
+        if (auto it = results.find(&child); it != results.end())
+            return it->second;
+        bool result = checkDAGUseless(child, context, sets_to_prepare, useless, child_atomic);
+        results.emplace(&child, result);
+        return result;
+    };
+
     const auto * node_to_check = &node;
     while (node_to_check->type == ActionsDAG::ActionType::ALIAS)
         node_to_check = node_to_check->children[0];
@@ -846,8 +877,8 @@ bool MergeTreeIndexConditionSet::checkDAGUseless(const ActionsDAG::Node & node, 
         return true;
     if (node.type == ActionsDAG::ActionType::FUNCTION)
     {
-        auto column_name = tree_node.getColumnName();
-        if (key_columns.contains(column_name) && VirtualColumnUtils::isDeterministicInScopeOfQuery(node_to_check))
+        auto column_name = tree_node.tryGetColumnName(max_key_name_size);
+        if (column_name && key_columns.contains(*column_name) && VirtualColumnUtils::isDeterministicInScopeOfQuery(node_to_check))
             return false;
 
         auto function_name = node.function_base->getName();
@@ -866,21 +897,21 @@ bool MergeTreeIndexConditionSet::checkDAGUseless(const ActionsDAG::Node & node, 
                 if (function_name == "or" && tryGetConstantCondition(*arg) == false)
                     continue;
 
-                bool u = checkDAGUseless(*arg, context, sets_to_prepare, atomic);
+                bool u = check_child(*arg, atomic);
                 all_useless = all_useless && u;
             }
             return all_useless;
         }
         if (function_name == "not")
-            return checkDAGUseless(*arguments.at(0), context, sets_to_prepare, atomic);
+            return check_child(*arguments.at(0), atomic);
         return std::any_of(
             arguments.begin(),
             arguments.end(),
-            [&](const auto & arg) { return checkDAGUseless(*arg, context, sets_to_prepare, /*atomic=*/ true); });
+            [&](const auto & arg) { return check_child(*arg, /*atomic=*/ true); });
     }
 
-    auto column_name = tree_node.getColumnName();
-    return !key_columns.contains(column_name);
+    auto column_name = tree_node.tryGetColumnName(max_key_name_size);
+    return !column_name || !key_columns.contains(*column_name);
 }
 
 

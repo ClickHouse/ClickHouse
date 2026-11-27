@@ -185,7 +185,10 @@ std::optional<JSONSubcolumnIndexInfo> tryMatchNodeToJSONIndex(
     const JSONIndexArgumentTypes & json_argument_types,
     const IsShadowingJSONSubcolumn & is_shadowing_subcolumn)
 {
-    auto json_info = tryMatchJSONSubcolumnToIndex(node.getColumnName(), index_columns, json_function_name, json_argument_types, is_shadowing_subcolumn);
+    const size_t max_name_size = maxIndexLookupNameSize(index_columns);
+    std::optional<JSONSubcolumnIndexInfo> json_info;
+    if (auto name = node.tryGetColumnName(max_name_size))
+        json_info = tryMatchJSONSubcolumnToIndex(*name, index_columns, json_function_name, json_argument_types, is_shadowing_subcolumn);
 
     /// Try CAST unwrapping: CAST(json.path, 'Type') or _CAST(json.path, 'Type')
     if (!json_info && node.isFunction())
@@ -193,8 +196,8 @@ std::optional<JSONSubcolumnIndexInfo> tryMatchNodeToJSONIndex(
         auto func = node.toFunctionNode();
         auto fname = func.getFunctionName();
         if ((fname == "CAST" || fname == "_CAST") && func.getArgumentsSize() == 2)
-            json_info = tryMatchJSONSubcolumnToIndex(
-                func.getArgumentAt(0).getColumnName(), index_columns, json_function_name, json_argument_types, is_shadowing_subcolumn);
+            if (auto name = func.getArgumentAt(0).tryGetColumnName(max_name_size))
+                json_info = tryMatchJSONSubcolumnToIndex(*name, index_columns, json_function_name, json_argument_types, is_shadowing_subcolumn);
     }
 
     return json_info;

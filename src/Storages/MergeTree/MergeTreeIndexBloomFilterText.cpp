@@ -165,6 +165,7 @@ MergeTreeConditionBloomFilterText::MergeTreeConditionBloomFilterText(
     IsShadowingColumn is_column_shadowing_map_subcolumn_,
     JSONIndexArgumentTypes json_argument_types_)
     : index_columns(index_sample_block.getNames())
+    , max_lookup_name_size(maxIndexLookupNameSize(index_columns))
     , json_argument_types(std::move(json_argument_types_))
     , index_data_types(index_sample_block.getNamesAndTypesList().getTypes())
     , params(params_)
@@ -627,10 +628,10 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
         && likePatternHasUnknownBackslashEscape(const_value.safeGet<String>()))
         return false;
 
-    const auto column_name = key_node.getColumnName();
-    auto key_index = getKeyIndex(column_name);
-    const auto map_key_index = getKeyIndex(fmt::format("mapKeys({})", column_name));
-    const auto map_value_index = getKeyIndex(fmt::format("mapValues({})", column_name));
+    const auto column_name = key_node.tryGetColumnName(max_lookup_name_size);
+    auto key_index = column_name ? getKeyIndex(*column_name) : std::nullopt;
+    const auto map_key_index = column_name ? getKeyIndex(fmt::format("mapKeys({})", *column_name)) : std::nullopt;
+    const auto map_value_index = column_name ? getKeyIndex(fmt::format("mapValues({})", *column_name)) : std::nullopt;
     bool reads_map_element_against_values_index = false;
 
     if (key_node.isFunction())
@@ -651,8 +652,11 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
                 return false;
 
             auto first_argument = key_function_node.getArgumentAt(0);
-            const auto map_column_name = first_argument.getColumnName();
-            if (const auto map_keys_index = getKeyIndex(fmt::format("mapKeys({})", map_column_name)))
+            const auto map_column_name = first_argument.tryGetColumnName(max_lookup_name_size);
+            if (!map_column_name)
+                return false;
+
+            if (const auto map_keys_index = getKeyIndex(fmt::format("mapKeys({})", *map_column_name)))
             {
                 auto second_argument = key_function_node.getArgumentAt(1);
                 DataTypePtr const_type;
@@ -672,7 +676,7 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
                     return false;
                 }
             }
-            else if (const auto map_values_exists = getKeyIndex(fmt::format("mapValues({})", map_column_name)))
+            else if (const auto map_values_exists = getKeyIndex(fmt::format("mapValues({})", *map_column_name)))
             {
                 key_index = map_values_exists;
                 reads_map_element_against_values_index = true;
@@ -687,7 +691,7 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
     /// Try to parse map subcolumn reference like `map.key_<serialized_key>`.
     if (!key_index)
     {
-        if (auto parsed = tryParseMapSubcolumnName(column_name, is_column_shadowing_map_subcolumn))
+        if (auto parsed = column_name ? tryParseMapSubcolumnName(*column_name, is_column_shadowing_map_subcolumn) : std::nullopt)
         {
             auto & [map_column_name, serialized_key] = *parsed;
 
@@ -721,7 +725,7 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
         && constantIsIndexDomainDefault(index_data_types[*key_index], const_source_type, const_value))
         return false;
 
-    const auto lowercase_key_index = getKeyIndex(fmt::format("lower({})", column_name));
+    const auto lowercase_key_index = column_name ? getKeyIndex(fmt::format("lower({})", *column_name)) : std::nullopt;
     const auto is_has_token_case_insensitive = function_name.starts_with("hasTokenCaseInsensitive");
     if (const auto is_case_insensitive_scenario = is_has_token_case_insensitive && lowercase_key_index;
         function_name.starts_with("hasToken") && ((!is_has_token_case_insensitive && key_index) || is_case_insensitive_scenario))
@@ -962,12 +966,16 @@ bool MergeTreeConditionBloomFilterText::tryPrepareSetBloomFilter(
 
         for (size_t i = 0; i < left_argument_function_node_arguments_size; ++i)
         {
-            if (const auto key = getKeyIndex(unwrapLosslessConversion(left_argument_function_node.getArgumentAt(i)).getColumnName()))
+            const auto name = unwrapLosslessConversion(left_argument_function_node.getArgumentAt(i)).tryGetColumnName(max_lookup_name_size);
+            if (const auto key = name ? getKeyIndex(*name) : std::nullopt)
                 key_tuple_mapping.emplace_back(i, *key);
         }
     }
-    else if (const auto key = getKeyIndex(unwrapLosslessConversion(left_argument).getColumnName()))
-        key_tuple_mapping.emplace_back(0, *key);
+    else if (const auto name = unwrapLosslessConversion(left_argument).tryGetColumnName(max_lookup_name_size))
+    {
+        if (const auto key = getKeyIndex(*name))
+            key_tuple_mapping.emplace_back(0, *key);
+    }
 
     if (key_tuple_mapping.empty())
         return false;

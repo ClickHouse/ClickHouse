@@ -44,6 +44,13 @@ ${CLICKHOUSE_CLIENT} --query "CREATE TABLE t_final (k UInt64, val UInt64) ENGINE
 ${CLICKHOUSE_CLIENT} --query "INSERT INTO t_final VALUES (0, 0)"
 run "SELECT count() FROM $(chain 4 6 k ', val' 't_final FINAL') WHERE a4_6 = 0"
 
+${CLICKHOUSE_CLIENT} --query "CREATE TABLE t_skip (val UInt64, s String,
+    INDEX i_bloom val TYPE bloom_filter GRANULARITY 1, INDEX i_set val TYPE set(0) GRANULARITY 1,
+    INDEX i_ngram s TYPE ngrambf_v1(3, 256, 2, 0) GRANULARITY 1, INDEX i_token s TYPE tokenbf_v1(256, 2, 0) GRANULARITY 1,
+    INDEX i_text s TYPE text(tokenizer = 'splitByNonAlpha')) ENGINE = MergeTree ORDER BY tuple()"
+${CLICKHOUSE_CLIENT} --query "INSERT INTO t_skip VALUES (0, '0')"
+run "SELECT count() FROM $(chain 4 6 val '' t_skip) WHERE a4_6 = 0 AND toString(a4_6) = '0'"
+
 run "SELECT count() FROM $(chain 4 6 val ', n' '(SELECT number AS n, number - 1 AS val FROM numbers(1, 1))') WHERE n < 0 OR a4_6 <= 0"
 
 run "SELECT count() FROM $(chain 4 6 a0 '' '(SELECT l.x AS a0 FROM (SELECT number AS x FROM numbers(1)) AS l INNER JOIN (SELECT number AS y FROM numbers(1)) AS r ON l.x = r.y)') WHERE a4_6 <= 0"
@@ -59,3 +66,4 @@ run "SELECT count() FROM $(chain 5 8 'materialize(1)' ', val, y' "$join_two_colu
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE t_pad"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE t_marks"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE t_final"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE t_skip"
