@@ -5861,14 +5861,65 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
         const auto & expression_list = scope.scope_node->as<QueryNode &>().getProjection();
         auto expression = expression_list.begin();
 
+        auto hint_table_function_name = table_function_ptr->getName();
+        bool hint_is_structure
+            = hint_table_function_name == "input" || hint_table_function_name == "generateRandom" || hint_table_function_name == "null";
+        std::vector<Strings> table_qualifiers;
+        if (hint_is_structure)
+        {
+            for (const auto & join_table_expression : extractTableExpressions(scope.scope_node->as<QueryNode &>().getJoinTreeNodeTyped()))
+            {
+                if (join_table_expression->hasAlias())
+                    table_qualifiers.push_back({join_table_expression->getAlias()});
+                if (const auto * inlined_view_name = getInlinedViewName(join_table_expression.get()))
+                {
+                    table_qualifiers.push_back({inlined_view_name->table_name});
+                    table_qualifiers.push_back({inlined_view_name->database_name, inlined_view_name->table_name});
+                }
+                else if (const auto * table_node = join_table_expression->as<TableNode>())
+                {
+                    if (table_node->isMaterializedCTE())
+                        table_qualifiers.push_back({table_node->getMaterializedCTE()->cte_name});
+                    if (!table_node->getTemporaryTableName().empty())
+                        table_qualifiers.push_back({table_node->getTemporaryTableName()});
+                    const auto & table_storage_id = table_node->getStorageID();
+                    table_qualifiers.push_back({table_storage_id.table_name});
+                    table_qualifiers.push_back({table_storage_id.database_name, table_storage_id.table_name});
+                }
+                else if (const auto * other_table_function_node = join_table_expression->as<TableFunctionNode>(); other_table_function_node
+                    && !TableFunctionFactory::instance().isTableFunctionName(other_table_function_node->getTableFunctionName()))
+                {
+                    auto [view_database_name, view_table_name]
+                        = extractDatabaseAndTableNameForParameterizedView(other_table_function_node->getTableFunctionName(), scope_context);
+                    table_qualifiers.push_back({view_table_name});
+                    table_qualifiers.push_back({view_database_name, view_table_name});
+                }
+                else if (const auto * query_node = join_table_expression->as<QueryNode>(); query_node && query_node->isCTE())
+                    table_qualifiers.push_back({query_node->getCTEName()});
+                else if (const auto * union_node = join_table_expression->as<UnionNode>(); union_node && union_node->isCTE())
+                    table_qualifiers.push_back({union_node->getCTEName()});
+            }
+        }
+
         /// We want to go through SELECT expression list and correspond each expression to column in insert table
         /// which type will be used as a hint for the file structure inference.
         for (; expression != expression_list.end() && insert_column_name_it != insert_column_names_end; ++expression)
         {
             if (auto * identifier_node = (*expression)->as<IdentifierNode>())
             {
+                auto column_name = getStructureHintColumnName(
+                    identifier_node->getIdentifier().getParts(), table_function_node->getAlias(), hint_is_structure, table_qualifiers,
+                    use_structure_from_insertion_table_in_table_functions == 1);
 
-                if (!virtual_column_names.contains(identifier_node->getIdentifier().getFullName()))
+                if (column_name.empty())
+                {
+                    if (use_structure_from_insertion_table_in_table_functions == 2 && !hint_is_structure)
+                    {
+                        use_columns_from_insert_query = false;
+                        break;
+                    }
+                }
+                else if (!virtual_column_names.contains(column_name))
                 {
                     if (asterisk)
                     {
@@ -5880,7 +5931,7 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
                     }
 
                     ColumnDescription column = insert_columns.get(*insert_column_name_it);
-                    column.name = identifier_node->getIdentifier().getFullName();
+                    column.name = column_name;
                     /// Change ephemeral columns to default columns.
                     column.default_desc.kind = ColumnDefaultKind::Default;
 

@@ -146,6 +146,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
 #include <Common/Scheduler/createResourceManager.h>
 #include <Common/Scheduler/Workload/createWorkloadEntityStorage.h>
 #include <Common/StackTrace.h>
@@ -160,6 +161,7 @@
 #include <Common/HTTPHeaderFilter.h>
 #include <Interpreters/parseIdentifiersOrStringLiteralsWithSettings.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
+#include <Interpreters/getTableExpressions.h>
 #include <Interpreters/StorageID.h>
 #include <Interpreters/SystemLog.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
@@ -3743,13 +3745,50 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
             const auto & expression_list = select_query_hint->select()->as<ASTExpressionList>()->children;
             auto expression = expression_list.begin();
 
+            auto hint_table_function_name = table_function_ptr->getName();
+            bool hint_is_structure
+                = hint_table_function_name == "input" || hint_table_function_name == "generateRandom" || hint_table_function_name == "null";
+            std::vector<Strings> table_qualifiers;
+            if (hint_is_structure)
+            {
+                for (const auto * other_table_expression : getTableExpressions(*select_query_hint))
+                {
+                    DatabaseAndTableWithAlias other_table(*other_table_expression, getCurrentDatabase());
+                    if (const auto * other_table_function
+                        = other_table_expression->table_function ? other_table_expression->table_function->as<ASTFunction>() : nullptr;
+                        other_table_function && !TableFunctionFactory::instance().isTableFunctionName(other_table_function->name))
+                        std::tie(other_table.database, other_table.table)
+                            = extractDatabaseAndTableNameForParameterizedView(other_table_function->name, shared_from_this());
+                    if (!other_table.alias.empty())
+                        table_qualifiers.push_back({other_table.alias});
+                    if (!other_table.table.empty())
+                    {
+                        table_qualifiers.push_back({other_table.table});
+                        if (!other_table.database.empty())
+                            table_qualifiers.push_back({other_table.database, other_table.table});
+                    }
+                }
+            }
+
             /// We want to go through SELECT expression list and correspond each expression to column in insert table
             /// which type will be used as a hint for the file structure inference.
             for (; expression != expression_list.end() && insert_column_name_it != insert_column_names_end; ++expression)
             {
                 if (auto * identifier = (*expression)->as<ASTIdentifier>())
                 {
-                    if (!virtual_column_names.contains(identifier->name()))
+                    auto column_name = getStructureHintColumnName(
+                        identifier->name_parts, table_expression->tryGetAlias(), hint_is_structure, table_qualifiers,
+                        use_structure_from_insertion_table_in_table_functions == 1);
+
+                    if (column_name.empty())
+                    {
+                        if (use_structure_from_insertion_table_in_table_functions == 2 && !hint_is_structure)
+                        {
+                            use_columns_from_insert_query = false;
+                            break;
+                        }
+                    }
+                    else if (!virtual_column_names.contains(column_name))
                     {
                         if (asterisk)
                         {
@@ -3761,7 +3800,7 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
                         }
 
                         ColumnDescription column = insert_columns.get(*insert_column_name_it);
-                        column.name = identifier->name();
+                        column.name = column_name;
                         /// Change ephemeral columns to default columns.
                         column.default_desc.kind = ColumnDefaultKind::Default;
 

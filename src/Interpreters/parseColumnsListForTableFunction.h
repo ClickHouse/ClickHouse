@@ -41,6 +41,21 @@ NameSet getStorageColumnsReadByDefault(const ColumnsDescription & columns, const
 void removeMisboundDefaultsFromStructureHint(
     ColumnsDescription & structure_hint, const NameToNameSetMap & insertion_columns_by_hint_column, const ColumnsDescription & insertion_columns);
 
+/// Name of the column to use in the structure hint for the identifier with `identifier_parts` from the `SELECT` list.
+/// A single part is kept as it is, and `alias.column` with the table function alias becomes `column`. It is decided from the identifier
+/// alone, because looking up the source structure would run the schema inference that the hint is there to avoid. Empty for
+/// any other compound identifier, like a subcolumn or a column of another table, which must not be hinted. A quoted name with
+/// a dot like `t.a` can be a subcolumn too, so it is hinted only if `is_forced` (the setting is `1`). Set `hint_is_structure` for
+/// `input`, `generateRandom` and `null`: the hint is their only structure, so any name there, like `n.a`, is a column with this
+/// name, and only the alias is removed. Then empty only for a column of another table of the query, qualified by one of
+/// `table_qualifiers`, like `t` or `db`, `t`.
+String getStructureHintColumnName(
+    const Strings & identifier_parts,
+    const String & table_function_alias,
+    bool hint_is_structure,
+    const std::vector<Strings> & table_qualifiers,
+    bool is_forced);
+
 /// Names and types of `columns`, plus each `DEFAULT` without secret arguments that the nodes can evaluate from them.
 String getStructureToSend(const ColumnsDescription & columns, const ColumnsDescription * insertion_columns);
 

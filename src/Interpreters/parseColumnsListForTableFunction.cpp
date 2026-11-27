@@ -305,6 +305,43 @@ void removeMisboundDefaultsFromStructureHint(
         structure_hint.modify(name, [](ColumnDescription & column) { column.default_desc = {}; });
 }
 
+String getStructureHintColumnName(
+    const Strings & identifier_parts,
+    const String & table_function_alias,
+    bool hint_is_structure,
+    const std::vector<Strings> & table_qualifiers,
+    bool is_forced)
+{
+    if (identifier_parts.empty())
+        return {};
+
+    auto parts_begin = identifier_parts.begin();
+    if (identifier_parts.size() > 1 && !table_function_alias.empty() && identifier_parts.front() == table_function_alias)
+        ++parts_begin;
+
+    if (hint_is_structure)
+    {
+        if (parts_begin == identifier_parts.begin() && std::ranges::any_of(table_qualifiers, [&](const Strings & qualifier)
+            {
+                return qualifier.size() < identifier_parts.size() && std::equal(qualifier.begin(), qualifier.end(), identifier_parts.begin());
+            }))
+            return {};
+
+        String column_name = *parts_begin;
+        for (auto it = std::next(parts_begin); it != identifier_parts.end(); ++it)
+            column_name += "." + *it;
+        return column_name;
+    }
+
+    if (std::next(parts_begin) != identifier_parts.end())
+        return {};
+
+    if (!is_forced && parts_begin->contains('.'))
+        return {};
+
+    return *parts_begin;
+}
+
 String getStructureToSend(const ColumnsDescription & columns, const ColumnsDescription * insertion_columns)
 {
     const auto names = columns.getAll().getNameSet();
