@@ -1,0 +1,20 @@
+-- group by a partition column
+1	8
+2	7
+objects read: 0
+-- a partition column with a virtual column
+1	a.parquet	3
+1	b.parquet	5
+2	c.parquet	7
+objects read: 0
+-- filter by a partition column
+1	8
+objects read: 0
+-- optimize_count_from_files = 0
+1	8
+2	7
+objects read: 3
+-- a column of the data files
+1	13
+2	21
+objects read: 3
